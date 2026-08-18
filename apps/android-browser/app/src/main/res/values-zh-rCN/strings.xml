@@ -1,0 +1,7 @@
+<resources>
+    <string name="app_name">ZeroWeb</string>
+    <string name="bootstrap_title">ZeroWeb Android</string>
+    <string name="bootstrap_ready">原生浏览器进程已就绪</string>
+    <string name="bootstrap_starting">正在启动隔离浏览器服务…</string>
+    <string name="bootstrap_role_summary">渲染器、合成器和图像解码器均在浏览器进程外运行。</string>
+</resources>

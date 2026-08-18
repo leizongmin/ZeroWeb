@@ -33,3 +33,4 @@ quickjs = ["zero-engine/quickjs", "zero-webview/quickjs", "zero-script-sandbox/q
 
 [dev-dependencies]
 wat = "1"
+serial_test = { workspace = true }

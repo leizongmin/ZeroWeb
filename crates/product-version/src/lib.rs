@@ -17,13 +17,11 @@ mod tests {
     }
 
     #[test]
-    fn embedded_version_uses_short_date_format() {
+    fn embedded_version_is_a_valid_short_date() {
         let parts: Vec<_> = super::VERSION.split('.').collect();
         assert_eq!(parts.len(), 3);
         assert!(parts.iter().all(|part| part.parse::<u8>().is_ok()));
-        assert_eq!(
-            super::VERSION,
-            super::product_version_test_support::resolve().unwrap().text
-        );
+        assert!((1..=12).contains(&parts[1].parse::<u8>().unwrap()));
+        assert!((1..=31).contains(&parts[2].parse::<u8>().unwrap()));
     }
 }

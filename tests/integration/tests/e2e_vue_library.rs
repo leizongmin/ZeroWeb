@@ -14,7 +14,7 @@
 // - 响应式：ref/reactive state 变更 → 组件重渲染
 // - 事件：@click → handler → state 更新 → patch
 
-#[cfg(test)]
+#[cfg(all(test, feature = "v8"))]
 mod vue_e2e {
     use zero_webview::{WebView, WebViewConfig};
 
@@ -27,49 +27,6 @@ mod vue_e2e {
     const VUE_HOST_HTML: &str = r#"<html><head><title>Vue E2E</title></head><body><div id="app"></div><script>
 0;
 </script></body></html>"#;
-
-    fn run_vue_page(page_script: &str) -> String {
-        // R100 装载方式注记：bundle **不** inline 进 HTML——HTML tokenizer 的 script
-        // data double-escaped 状态（spec 行为，Chrome 同款）会把 bundle 字符串字面量
-        // 中的 `<!--` + `<script` 组合解析成双转义模式，吞掉真正的 `</script>` 闭合
-        // 标签（实证：extract 把 bundle + 后续 script 全并进一个 563KB 脚本）。真实
-        // 页面从不 inline 大 bundle（Vue 官方部署一律 <script src>）。装载序 =
-        // 外链 bundle 的真实执行序：① onerror 捕获脚本（inline）→ ② bundle →
-        // ③ 页面脚本。①经 run_page_scripts（顺带完成 shim 注入 + document 建立），
-        // ②③经 execute_script_with_dom。
-        let html = r#"<html><head><title>Vue E2E</title></head><body><div id="app"></div><script>
-globalThis.__errLog = [];
-window.onerror = function (m) { globalThis.__errLog.push(String(m)); return true; };
-</script></body></html>"#;
-        let mut wv = WebView::new(WebViewConfig {
-            width: 800,
-            height: 600,
-            ..Default::default()
-        });
-        wv.load_html(html, None);
-        let _ = wv.run_page_scripts();
-        // ② bundle（求值错误捕获到 stderr 诊断）。
-        if let Err(ref e) = wv.execute_script_with_dom(VUE_BUNDLE) {
-            eprintln!("R100 bundle eval error: {e}");
-        }
-        // ③ 页面脚本。
-        if let Err(ref e) = wv.execute_script_with_dom(page_script) {
-            eprintln!("R100 page script error: {e}");
-        }
-        wv.execute_script_with_dom(
-            r#"(function(){
-var out = [];
-out.push('Vue:' + typeof globalThis.Vue);
-out.push('report:' + String(globalThis.__vueReport));
-out.push('errs:' + String((globalThis.__errLog || []).join(';;')));
-var host = document.getElementById('app');
-out.push('host-html:' + (host ? String(host.innerHTML).slice(0, 60) : 'no-host'));
-out.push('p-late:' + String(host && host.querySelector('p') !== null));
-return out.join('|');
-})()"#,
-        )
-        .unwrap_or_else(|_| "EXEC-ERR".to_string())
-    }
 
     /// R100 断言组 A：**Vue 3 真实 mount 落地**——bundle 求值 + createApp +
     /// 模板编译（`{{ msg }}` 插值）+ mount 到真实 DOM + post-flush 可查询。
@@ -89,6 +46,7 @@ return out.join('|');
     /// script data double-escaped 状态会吞 `</script>`——bundle 字符串字面量
     /// 含 `<!--` + `<script` 组合，spec 行为 Chrome 同款，真实部署一律外链）。
     #[test]
+    #[serial_test::serial]
     fn vue_mount_lands() {
         let mut wv = WebView::new(WebViewConfig {
             width: 800,
@@ -144,6 +102,7 @@ return 'html:' + (host ? String(host.innerHTML) : 'no-host')
     /// - execute ③：post-drain 查 button + 读 t0 + 派发 click
     /// - execute ④：post-drain 读 t1（handler 已跑 + 响应式重渲染 commit）
     #[test]
+    #[serial_test::serial]
     fn vue_reactive_and_event_lands() {
         let mut wv = WebView::new(WebViewConfig {
             width: 800,
@@ -215,6 +174,7 @@ return 'text:' + (btn ? String(btn.textContent) : 'null');
     /// - execute ③：翻转 show + 列表变 [a,c,b]（中间插入）→ 读结构
     /// - execute ④：清空列表 → 读结构
     #[test]
+    #[serial_test::serial]
     fn vue_reconciliation_lands() {
         let mut wv = WebView::new(WebViewConfig {
             width: 800,

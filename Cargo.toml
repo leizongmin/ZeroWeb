@@ -38,6 +38,7 @@ members = [
     "apps/compositor",
     "apps/webdriver",
     "apps/webview-demo",
+    "apps/android-browser/rust",
 
     # 测试基础设施
     "tests/wpt-runner",

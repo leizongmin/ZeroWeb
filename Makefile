@@ -1,4 +1,4 @@
-.PHONY: setup-rusty-v8 fetch-wpt-data fetch-wpt-html-testharness update-wpt-data build browser-build browser browser-cpu browser-wpt-parity browser-debug browser-debug-wayland browser-debug-wayland-log browser-debug-x11 browser-compositor-smoke browser-compositor-real-site-smoke test testharness-html reftest reftest-oracle capture-oracle product-smoke-oracle product-smoke form-visual-smoke form-visual-browser-gpu-smoke product-smoke-legacy import-wpt audit-imported-font-resources reftest-trend reftest-trend-oracle reftest-smoke layout-golden layout-golden-update monthly-report bench bench-gate bench-capture bench-trend fetch-wpt-dom testharness-dom testharness-dom-native fetch-wpt-indexeddb testharness-indexeddb target-disk-guard
+.PHONY: setup-rusty-v8 fetch-wpt-data fetch-wpt-html-testharness update-wpt-data build browser-build browser browser-cpu browser-wpt-parity browser-debug browser-debug-wayland browser-debug-wayland-log browser-debug-x11 browser-compositor-smoke browser-compositor-real-site-smoke test testharness-html reftest reftest-oracle capture-oracle product-smoke-oracle product-smoke form-visual-smoke form-visual-browser-gpu-smoke product-smoke-legacy import-wpt audit-imported-font-resources reftest-trend reftest-trend-oracle reftest-smoke layout-golden layout-golden-update monthly-report bench bench-gate bench-capture bench-trend fetch-wpt-dom testharness-dom testharness-dom-native fetch-wpt-indexeddb testharness-indexeddb target-disk-guard android-preflight android-apk android-release-apk android-install-smoke
 
 # Windows 的 make recipe 可能落到 cmd.exe（本机）或 Git Bash（GitHub Actions runner）——
 # 统一显式走 Git Bash，避免 cmd 语法在 bash 下解析失败（2026-08-16 CI 实测）。
@@ -140,14 +140,17 @@ zero-wpt-runner-release:
 QUICKJS_CLIPPY_CRATES = zero-dom zero-css-parser zero-style-system zero-layout-engine zero-engine zero-canvas zero-host-runtime zero-net zero-security zero-storage zero-protocol zero-wasm-sandbox zero-page-runtime zero-render-foundation
 QUICKJS_TEST_CRATES = zero-script-sandbox zero-webview zero-browser zero-renderer zero-webview-demo zero-integration-tests zero-wpt-runner
 QUICKJS_TEST_CRATES_WITHOUT_BROWSER = $(filter-out zero-browser,$(QUICKJS_TEST_CRATES))
+QUICKJS_TEST_CRATES_WITHOUT_BROWSER_OR_RENDERER = $(filter-out zero-browser zero-renderer,$(QUICKJS_TEST_CRATES))
 ifeq ($(OS),Windows_NT)
 # Windows GUI 测试共享进程级 compositor；并行执行会让测试互相关闭其子进程。
 test: target-disk-guard target/test-guard
 	cargo build -p zero-renderer -p zero-compositor -p zero-image-decoder
-	set ZERO_NOPROXY=1&& .\target\test-guard --compile-first --per-proc-mem 10 --total-mem 28 --time-limit 900 -- cargo test --workspace --exclude zero-browser
+	set ZERO_NOPROXY=1&& .\target\test-guard --compile-first --per-proc-mem 10 --total-mem 28 --time-limit 900 -- cargo test --workspace --exclude zero-browser --exclude zero-renderer
+	set ZERO_NOPROXY=1&& .\target\test-guard --compile-first --per-proc-mem 10 --total-mem 28 --time-limit 900 -- cargo test -p zero-renderer --bin zero-renderer -- --test-threads=1
 	set ZERO_NOPROXY=1&& .\target\test-guard --compile-first --per-proc-mem 10 --total-mem 28 --time-limit 900 -- cargo test -p zero-browser --bin zero-browser -- --test-threads=1
 	cargo clippy --no-default-features --features quickjs $(addprefix -p ,$(QUICKJS_CLIPPY_CRATES)) --all-targets -- -D warnings
-	set ZERO_NOPROXY=1&& .\target\test-guard --compile-first --per-proc-mem 10 --total-mem 28 --time-limit 900 -- cargo test --no-default-features --features quickjs $(addprefix -p ,$(QUICKJS_TEST_CRATES_WITHOUT_BROWSER))
+	set ZERO_NOPROXY=1&& .\target\test-guard --compile-first --per-proc-mem 10 --total-mem 28 --time-limit 900 -- cargo test --no-default-features --features quickjs $(addprefix -p ,$(QUICKJS_TEST_CRATES_WITHOUT_BROWSER_OR_RENDERER))
+	set ZERO_NOPROXY=1&& .\target\test-guard --compile-first --per-proc-mem 10 --total-mem 28 --time-limit 900 -- cargo test --no-default-features --features quickjs -p zero-renderer --bin zero-renderer -- --test-threads=1
 	set ZERO_NOPROXY=1&& .\target\test-guard --compile-first --per-proc-mem 10 --total-mem 28 --time-limit 900 -- cargo test --no-default-features --features quickjs -p zero-browser -- --test-threads=1
 else
 test: target-disk-guard target/test-guard
@@ -167,9 +170,10 @@ test: target-disk-guard target/test-guard
 	#   quickjs feature 组合产物（与 v8 产物不冲突），cargo 各自持锁；v8 测试
 	#   （~50s）时长覆盖 clippy 编译，总时长省一个编译段。cargo test 先无约束编译，
 	#   再由 test-guard 仅监管运行阶段；clippy 本身不受内存阈值限制。
-	ZERO_NOPROXY=1 ./target/test-guard --compile-first --per-proc-mem 10 --total-mem 28 --time-limit 900 -- cargo test --workspace -- --skip gpu::renderer:: --skip surface::tests::test_gpu_cpu_rendering_consistency_solid_fill & test_pid=$$!; \
+	ZERO_NOPROXY=1 ./target/test-guard --compile-first --per-proc-mem 10 --total-mem 28 --time-limit 900 -- cargo test --workspace --exclude zero-renderer -- --skip gpu::renderer:: --skip surface::tests::test_gpu_cpu_rendering_consistency_solid_fill & test_pid=$$!; \
 	cargo clippy --no-default-features --features quickjs $(addprefix -p ,$(QUICKJS_CLIPPY_CRATES)) --all-targets -- -D warnings & clippy_pid=$$!; \
 	rc=0; wait $$test_pid || rc=$$?; wait $$clippy_pid || rc=$$?; exit $$rc
+	ZERO_NOPROXY=1 ./target/test-guard --compile-first --per-proc-mem 10 --total-mem 28 --time-limit 900 -- cargo test -p zero-renderer --bin zero-renderer -- --test-threads=1
 	@if ZERO_NOPROXY=1 ./target/test-guard --compile-first --per-proc-mem 10 --total-mem 28 --time-limit 120 -- cargo test -p zero-render-foundation gpu::renderer::tests::test_gpu_renderer_headless_creation -- --exact --test-threads=1 >/dev/null 2>&1; then \
 		echo "wgpu adapter available; running adapter-only GPU tests"; \
 		ZERO_NOPROXY=1 ./target/test-guard --compile-first --per-proc-mem 10 --total-mem 28 --time-limit 900 -- cargo test -p zero-render-foundation gpu::renderer:: -- --test-threads=1; \
@@ -178,7 +182,8 @@ test: target-disk-guard target/test-guard
 		echo "wgpu adapter unavailable; adapter-only GPU tests skipped"; \
 	fi
 	# QuickJS 运行测试（v8/quickjs 接口一致性保证）
-	ZERO_NOPROXY=1 ./target/test-guard --compile-first --per-proc-mem 10 --total-mem 28 --time-limit 900 -- cargo test --no-default-features --features quickjs $(addprefix -p ,$(QUICKJS_TEST_CRATES))
+	ZERO_NOPROXY=1 ./target/test-guard --compile-first --per-proc-mem 10 --total-mem 28 --time-limit 900 -- cargo test --no-default-features --features quickjs $(addprefix -p ,$(QUICKJS_TEST_CRATES_WITHOUT_BROWSER_OR_RENDERER))
+	ZERO_NOPROXY=1 ./target/test-guard --compile-first --per-proc-mem 10 --total-mem 28 --time-limit 900 -- cargo test --no-default-features --features quickjs -p zero-renderer --bin zero-renderer -- --test-threads=1
 endif
 
 # M4 HTML behavior: selected upstream forms/focus/InputEvent testharness cases.
@@ -379,3 +384,34 @@ product-smoke-legacy: target/test-guard
 # 从 docs/learnings/*/*.md 的 frontmatter 重建 docs/learnings/INDEX.md（生成物勿手改）
 learnings-index:
 	python3 scripts/gen-learnings-index.py
+
+# Android M0: Debug targets contain the local emulator ABI; Release remains arm64-only.
+ifeq ($(OS),Windows_NT)
+android-preflight:
+	powershell -NoProfile -ExecutionPolicy Bypass -File scripts\android\preflight.ps1
+
+android-apk: android-preflight
+	cd apps\android-browser && gradlew.bat --no-daemon :app:assembleEmulatorDebug
+
+android-release-apk: android-preflight
+	cd apps\android-browser && gradlew.bat --no-daemon :app:assembleArm64Release
+
+android-install-smoke: android-apk
+	powershell -NoProfile -ExecutionPolicy Bypass -File scripts\android\install-smoke.ps1 -ApkPath apps\android-browser\app\build\outputs\apk\emulator\debug\app-emulator-debug.apk
+else
+android-preflight:
+	@test -n "$$ANDROID_HOME" || (echo "ANDROID_HOME must be set"; exit 2)
+	@test -d "$$ANDROID_HOME/platforms/android-36" || (echo "Android SDK platform 36 is required"; exit 2)
+	@rustup target list --installed | grep -qx aarch64-linux-android
+	@rustup target list --installed | grep -qx x86_64-linux-android
+	@command -v cargo-ndk >/dev/null
+
+android-apk: android-preflight
+	cd apps/android-browser && ./gradlew --no-daemon :app:assembleEmulatorDebug
+
+android-release-apk: android-preflight
+	cd apps/android-browser && ./gradlew --no-daemon :app:assembleArm64Release
+
+android-install-smoke: android-apk
+	@echo "android-install-smoke is implemented by the Windows local-emulator script in M0"
+endif

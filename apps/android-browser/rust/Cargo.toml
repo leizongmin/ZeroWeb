@@ -1,0 +1,13 @@
+[package]
+name = "zero-android-browser"
+description = "ZeroWeb Android browser host native library"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[lib]
+name = "zero_android_browser"
+crate-type = ["cdylib"]
+
+[dependencies]
+jni = "0.21.1"

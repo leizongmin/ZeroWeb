@@ -2305,10 +2305,8 @@ fn expand_text_decoration(value: &str, important: bool, specificity: (u32, u32, 
                     return vec![];
                 }
                 seen_none_line = true;
-            } else {
-                if seen_none_line || line_toks.iter().any(|line| line.eq_ignore_ascii_case(part)) {
-                    return vec![];
-                }
+            } else if seen_none_line || line_toks.iter().any(|line| line.eq_ignore_ascii_case(part)) {
+                return vec![];
             }
             line_toks.push(part); // 累加多值（underline overline → "underline overline"）
         } else if is_dec_style(part) {

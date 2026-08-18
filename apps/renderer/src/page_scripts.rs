@@ -933,8 +933,15 @@ mod tests {
             .expect("schedule score mutation");
         // Timer expiry only queues a host callback; `drain_pending_dom_mutations`
         // must enter the worker once to execute it.
-        std::thread::sleep(std::time::Duration::from_millis(25));
-        assert!(drain_pending_dom_mutations(&mut ctx));
+        let deadline = std::time::Instant::now() + std::time::Duration::from_millis(250);
+        let mut committed = false;
+        while !committed && std::time::Instant::now() < deadline {
+            committed = drain_pending_dom_mutations(&mut ctx);
+            if !committed {
+                std::thread::sleep(std::time::Duration::from_millis(5));
+            }
+        }
+        assert!(committed, "timer mutation was not committed before the deadline");
         assert_eq!(worker.execution_count_for_test(), execution_baseline + 2);
         assert!(ctx.html.contains("265"), "mutated HTML: {}", ctx.html);
         assert!(

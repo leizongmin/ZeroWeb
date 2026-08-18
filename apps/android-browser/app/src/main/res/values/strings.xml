@@ -1,0 +1,7 @@
+<resources>
+    <string name="app_name">ZeroWeb</string>
+    <string name="bootstrap_title">ZeroWeb Android</string>
+    <string name="bootstrap_ready">Native browser process is ready</string>
+    <string name="bootstrap_starting">Starting isolated browser services…</string>
+    <string name="bootstrap_role_summary">Renderer, compositor, and image decoder run outside the browser process.</string>
+</resources>

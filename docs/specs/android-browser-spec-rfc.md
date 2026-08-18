@@ -10,8 +10,8 @@
 ## 0. 执行摘要
 
 - **一句话目标**：在 `apps/android-browser/` 新增应用 ID 为 `com.leizm.zeroweb` 的 Android 浏览器，以 Kotlin/Jetpack Compose 提供原生移动端 chrome，以 Rust 提供浏览器业务状态和 ZeroWeb 内核，并保持 renderer、compositor、image-decoder 物理多进程隔离。
-- **本期范围**：Android 手机 arm64 可侧载 APK；多标签、地址栏和导航、书签、历史、下载；触摸、软键盘、系统返回、旋转和进程恢复；真实网页 GPU 呈现；Android Service 多进程；自动化测试和至少一台 arm64 真机验收。
-- **明确排除**：Play 商店发布、账号同步、扩展、无痕模式、标签分组、桌面模式、广告拦截、平板专用双栏 UI、x86/x86_64/32 位 ABI、Android System WebView。
+- **本期范围**：Android 手机 arm64 可侧载 Release APK；x86_64 Debug APK 仅用于本机模拟器验证；多标签、地址栏和导航、书签、历史、下载；触摸、软键盘、系统返回、旋转和进程恢复；真实网页 GPU 呈现；Android Service 多进程；自动化测试和至少一台 arm64 真机验收。
+- **明确排除**：Play 商店发布、账号同步、扩展、无痕模式、标签分组、桌面模式、广告拦截、平板专用双栏 UI、x86/32 位 ABI、x86_64 Release 分发、Android System WebView。
 - **核心约束**：
   1. 页面必须使用 ZeroWeb 自研内核，不得调用 Android System WebView 渲染网页。
   2. renderer、compositor、image-decoder 必须由独立 Android Service 进程承载；不得提供进程内 renderer 回退或开关。
@@ -54,7 +54,7 @@ ZeroWeb 当前包含桌面 `apps/browser/`、独立 `apps/renderer/`、`apps/com
 
 - `apps/android-browser/` Android Gradle 工程及 Rust `cdylib`。
 - Android 手机布局，支持竖屏、横屏、分屏和系统字体缩放。
-- `arm64-v8a`，最低 Android API 26，`compileSdk`/`targetSdk` 为 36。
+- Release 使用 `arm64-v8a`；Debug 额外使用 `x86_64` 供本机模拟器验证。最低 Android API 26，`compileSdk`/`targetSdk` 为 36。
 - Kotlin + Jetpack Compose 浏览器 chrome。
 - Rust Action/Snapshot facade，复用 `zero-browser-shell`。
 - renderer、compositor、image-decoder Android Service 进程。
@@ -67,7 +67,7 @@ ZeroWeb 当前包含桌面 `apps/browser/`、独立 `apps/renderer/`、`apps/com
 
 - Google Play 上架、AAB、正式生产签名与商店合规材料。
 - Android 平板专用信息架构、折叠屏双栏界面；但布局不得锁定方向或在大窗口崩溃。
-- x86_64 模拟器可运行承诺；首期模拟器验证可使用 arm64 系统镜像。
+- x86/32 位 ABI 与 x86_64 Release 分发。
 - 账号、云同步、跨设备发送、密码管理器、自动填充服务。
 - 无痕模式、标签分组、扩展、开发者工具 UI。
 - Service Worker 后台常驻、后台音频和画中画。
@@ -291,7 +291,7 @@ ZeroWeb 当前包含桌面 `apps/browser/`、独立 `apps/renderer/`、`apps/com
 
 ### FR-010：可重复构建与 APK 交付
 
-- **描述**：仓库必须提供单一 Android 构建入口，生成仅含 `arm64-v8a` 的 Debug/Release APK；构建必须先生成 Rust `.so` 再由 Gradle 打包，并能在 Windows PowerShell 与 CI Linux 主机执行。
+- **描述**：仓库必须提供单一 Android 构建入口：Release APK 仅含 `arm64-v8a`，Debug APK 额外含 `x86_64` 以供本机模拟器验证；构建必须先生成 Rust `.so` 再由 Gradle 打包，并能在 Windows PowerShell 与 CI Linux 主机执行。
 - **优先级**：必须
 - **来源**：用户接受 arm64 与侧载 APK；仓库跨平台工作流
 
@@ -299,9 +299,9 @@ ZeroWeb 当前包含桌面 `apps/browser/`、独立 `apps/renderer/`、`apps/com
 
 ```text
 场景: 构建并安装 Debug APK
-  假设 Android SDK 36、NDK r29、JDK、Rust Android target 和 cargo-ndk 已安装
+  假设 Android SDK 36、NDK r30、JDK、Rust Android target 和 cargo-ndk 已安装
   当 执行项目 Android build 入口
-  那么 生成可通过 adb 安装并启动的 arm64-v8a APK，APK 中包含 browser、renderer、compositor、image-decoder 所需 native library
+  那么 生成可通过 adb 安装并启动的本机模拟器匹配 ABI Debug APK，Release APK 只包含 arm64-v8a，二者均包含 browser、renderer、compositor、image-decoder 所需 native library
   验证: make android-apk && make android-install-smoke
 
 场景: 缺失 V8 Android archive 或工具链
@@ -359,7 +359,7 @@ ZeroWeb 当前包含桌面 `apps/browser/`、独立 `apps/renderer/`、`apps/com
 
 ### NFR-008：构建可重复性与许可证
 
-- **描述**：Gradle、AGP、Kotlin、Compose、NDK、cargo-ndk 与 Rust crate 版本必须精确固定，禁止动态版本；新增依赖只能使用项目允许的宽松许可证；同一 commit 的两次 Release native 构建必须产生相同依赖图和相同 ABI 文件清单。
+- **描述**：Gradle、AGP、AGP 内建 Kotlin、Compose、NDK、cargo-ndk 与 Rust crate 版本必须精确固定，禁止动态版本；新增依赖只能使用项目允许的宽松许可证；同一 commit 的两次 Release native 构建必须产生相同依赖图和相同 ABI 文件清单。
 - **测量标准**：dependency lock/verification、许可证扫描、APK native library 清单 diff。
 - **优先级**：必须
 
@@ -434,7 +434,7 @@ ZeroWeb 当前包含桌面 `apps/browser/`、独立 `apps/renderer/`、`apps/com
 - **类型**：AIDL/Binder + ParcelFileDescriptor
 - **规格**：
   - browser 进程通过非导出的绑定 Service 创建角色实例：renderer slot、compositor、image-decoder。
-  - API 26 兼容实现预声明有限 renderer Service slots；首期最多 8 个驻留 renderer。标签数量不设 8 个上限，超额后台标签按 LRU 挂起并释放 renderer。
+- API 26 兼容实现预声明有限 renderer Service slots；首期最多 8 个驻留 renderer。标签数量不设 8 个上限，超额后台标签按 LRU 挂起并释放 renderer。`isolatedProcess` 角色不声明私有 `android:process` 名称，由 Android 分配独立进程。
   - renderer 与 image-decoder Service 声明 `isolatedProcess=true`；compositor 使用独立 `:compositor` 进程并与 browser 同应用 UID，以满足 GPU/Surface 平台访问。
   - Binder 仅负责 bootstrap、生命周期、health 和传递 `ParcelFileDescriptor`；`zero-protocol` 消息经 socket pair/流式 transport 传输。
   - 页面像素、PaintSnapshot 大对象和下载正文不得作为 Binder transaction payload。
@@ -469,7 +469,7 @@ ZeroWeb 当前包含桌面 `apps/browser/`、独立 `apps/renderer/`、`apps/com
 ### IF-008：Android 构建与打包
 
 - **类型**：构建接口
-- **规格**：Gradle 为 APK 权威打包器；固定 AGP 9.2、Gradle 9.4.1、Kotlin 2.3.21、Android SDK 36 和 NDK r29。Gradle 任务调用固定版本 cargo-ndk，为 `aarch64-linux-android` 构建 Rust `cdylib` 并写入生成目录，再合入 APK。V8 Android archive 必须由显式校验和锁定的构建输入提供。
+- **规格**：Gradle 为 APK 权威打包器；固定 AGP 9.2、Gradle 9.4.1、AGP 内建 Kotlin、Android SDK 36 和 NDK r30。Gradle 任务调用固定版本 cargo-ndk，为 `aarch64-linux-android` 构建 Rust `cdylib` 并写入生成目录，再合入 APK。V8 Android archive 必须由显式校验和锁定的构建输入提供。
 - **错误处理**：preflight 在编译前检查 JDK/SDK/NDK/Rust target/cargo-ndk/V8 archive；任一不匹配即失败。Gradle 禁止从旧 `jniLibs` 静默打包残留 `.so`。
 - **默认动作**：`make android-apk` 构建 Debug；Release 需要显式任务且不生成或提交密钥。
 - **交叉引用**：FR-010、NFR-008。
@@ -513,18 +513,18 @@ ZeroWeb 当前包含桌面 `apps/browser/`、独立 `apps/renderer/`、`apps/com
 | 业务状态 | Rust `zero-browser-shell` facade 为唯一事实源 | 防止 Kotlin/Rust 状态分叉 |
 | 进程启动 | Android bound Service + Binder bootstrap | Android 进程必须由 Activity Manager 创建 |
 | 数据通道 | Binder 控制面 + socket/FD 数据面 | 保持 `zero-protocol` 语义并避开 Binder 大对象限制 |
-| renderer 策略 | 8 个预声明 isolated Service slots；超额标签 LRU 挂起 | 兼容 API 26 并限制移动端内存 |
+| renderer 策略 | 8 个预声明 isolated Service slots；进程名由 Android 分配；超额标签 LRU 挂起 | 兼容 API 26 并限制移动端内存 |
 | compositor 策略 | 独立同 UID Service，持有 Android Surface | GPU/Surface 可用性优先；角色仍物理隔离 |
 | image-decoder 策略 | 单独 isolated Service | 隔离不可信图片解码，输入通过受限 FD/消息 |
 | 下载目标 | `ACTION_CREATE_DOCUMENT` content URI | 不申请广泛存储权限，API 26 起一致 |
-| ABI | 首期仅 arm64-v8a | 用户已确认，降低 V8 和 APK 构建矩阵 |
+| ABI | Release 仅 arm64-v8a；Debug 额外 x86_64 | 保持手机发布边界，同时满足本机 x86_64 模拟器验证 |
 | API 范围 | minSdk 26，compile/target 36 | 覆盖现代 64 位设备并对齐当前稳定 Android API |
 | V8 构建 | 受控脚本从 `rusty_v8` 对应源码交叉编译并缓存校验和产物 | 官方 Android 路径需要交叉编译；确保版本与仓库 crate 对齐 |
 
 ### 6.4 技术约束
 
 - Rust edition 2024，MSRV 1.85；Android target 为 `aarch64-linux-android`。
-- Android NDK r29，Android SDK 36；构建环境 JDK 版本以 AGP 9.2 官方兼容矩阵为准并在 preflight 固定。
+- Android NDK r30，Android SDK 36；构建环境 JDK 版本以 AGP 9.2 官方兼容矩阵为准并在 preflight 固定。
 - wgpu 30 和现有 `zero-render-foundation` 为 GPU/CPU 绘制来源；Android Surface 接入不得引入第二个渲染后端。
 - `apps/renderer`、`apps/compositor`、`apps/image-decoder` 的角色主循环必须抽为可复用 library entry；桌面 binary `main` 与 Android JNI entry 调用同一主循环。
 - Android 子进程 transport 必须实现 `zero-protocol` transport trait/等价共享接口，不得复制消息枚举。
@@ -554,7 +554,7 @@ ZeroWeb 当前包含桌面 `apps/browser/`、独立 `apps/renderer/`、`apps/com
 | Android native window | 系统能力 + 宽松许可封装 | NDK `ANativeWindow`，必要时使用 `ndk` crate | 所有权与 generation 必须测试 |
 | Activity/Compose/lifecycle | 官方 Android 依赖 | AndroidX Activity、Compose、Lifecycle、Navigation | 版本 catalog 精确固定 |
 | Service IPC | 系统能力 | AIDL、Binder、`ParcelFileDescriptor` socket pair | Binder 只作控制面 |
-| Rust Android 构建 | 新增工具 | cargo-ndk + NDK r29 | cargo-ndk 为 MIT/Apache-2.0，版本固定 |
+| Rust Android 构建 | 新增工具 | cargo-ndk + NDK r30 | cargo-ndk 为 MIT/Apache-2.0，版本固定 |
 | V8 Android archive | 上游源码构建 | 与 workspace `v8` crate 对应的 rusty_v8 source | CI/本地缓存产物必须记录 SHA-256 |
 | 下载文件访问 | 系统能力 | Storage Access Framework content URI | 不请求全盘权限 |
 | 性能与进程证据 | 系统工具 | Macrobenchmark、Perfetto、ADB、dumpsys | 固定 fixture 和报告格式 |
@@ -613,7 +613,7 @@ ZeroWeb 当前包含桌面 `apps/browser/`、独立 `apps/renderer/`、`apps/com
 
 - **M0：工具链、APK 与进程骨架**
   - 建立 Gradle/Compose 工程、application ID、版本锁和 preflight。
-  - 构建 arm64 Rust `cdylib`，加载 browser native library。
+  - 构建 arm64 与 x86_64 Debug Rust `cdylib`，加载 browser native library；Release 只打包 arm64。
   - 声明 renderer slots、compositor、image-decoder Service，完成 Binder/socket bootstrap。
   - 从源码交叉编译对应 V8，运行最小 isolate。
   - 门禁：Debug APK 可安装启动；四类角色 PID/UID 符合 IF-004；无网页功能。
@@ -670,7 +670,7 @@ ZeroWeb 当前包含桌面 `apps/browser/`、独立 `apps/renderer/`、`apps/com
 | `crates/render-foundation/**` | 最小修改 | Android Surface/字体接入 | 不 fork renderer；按已有 backend 扩展 |
 | `scripts/android/**` | 新增 | preflight、V8 build/cache、ADB 验收 | 墙钟/内存限制，校验工具版本 |
 | `Makefile` | 修改 | `android-apk`、`android-test`、`android-install-smoke` | Windows/Linux 同一语义 |
-| `.github/workflows/android.yml` | 新增 | arm64 APK 与 JVM/Rust 测试 | V8 cache key 含源码和配置 SHA |
+| `.github/workflows/android.yml` | 新增 | arm64 Release、x86_64 Debug 与 JVM/Rust 测试 | V8 cache key 含源码和配置 SHA |
 
 #### 职责映射
 
@@ -796,7 +796,7 @@ ZeroWeb 当前包含桌面 `apps/browser/`、独立 `apps/renderer/`、`apps/com
 
 `apps/android-browser/` 是独立 Gradle root，其 `app` module 生成 APK。Rust crate 生成四个逻辑角色可加载的 native library；优先采用单个包含共享代码的 `libzero_android.so` 并由不同 Service 调用不同 JNI entry，避免在 APK 中静态重复 V8/renderer 代码。若 Android linker/进程初始化证明单库角色入口不可行，允许拆为 browser/renderer/compositor/decoder `.so`，但必须通过 APK size 和符号清单验证，且不得改变进程边界。
 
-生成物只能写入 `build/generated/jniLibs/arm64-v8a/` 一类 Gradle build 目录；源目录不保存编译产物。Gradle task 明确依赖 cargo-ndk task，并在打包前清理/重建生成目录。
+生成物只能写入 `build/generated/jniLibs/<abi>/` 一类 Gradle build 目录；Release 只打包 arm64-v8a，Debug 可额外打包 x86_64。源目录不保存编译产物。Gradle task 明确依赖 cargo-ndk task，并在打包前清理/重建生成目录。
 
 #### 8.4.2 Rust 角色入口
 
@@ -816,7 +816,7 @@ Android JNI service entry(fd, bootstrap bytes)
 
 #### 8.4.3 Service slot 与 tab 生命周期
 
-- manifest 预声明 `RendererService0`～`RendererService7`，每个使用不同私有进程名和 `isolatedProcess=true`。
+- manifest 预声明 `RendererService0`～`RendererService7`，每个使用 `isolatedProcess=true`；进程名由 Android 分配，避免与显式 `android:process` 组合触发平台包解析缺陷。
 - browser 维护 `RendererSlot { slot, pid, binder, state, tab_id, last_used }`。
 - 前台标签必须驻留；后台标签按最近使用时间保留，slot 用尽时挂起最久未使用的后台标签。
 - 挂起前保存 URL、navigation stack、scroll restoration point、title/favicon/thumbnail；不承诺恢复 JS heap、未提交表单或媒体状态。
@@ -1081,3 +1081,7 @@ make test
 | 版本 | 日期 | 变更内容 |
 |---|---|---|
 | v0.1 | 2026-08-19 | 初始 Spec/RFC：确认 Compose + Rust、固定 Android 多进程、完整首期 MVP、arm64 和 application ID |
+| v0.2 | 2026-08-19 | 本机仅有 API 36 x86_64 模拟器；Debug 增加 x86_64 验证 ABI，Release 仍仅分发 arm64-v8a |
+| v0.3 | 2026-08-19 | AGP 9.2 启用内建 Kotlin；移除已被 AGP 拒绝的 `org.jetbrains.kotlin.android` 插件，保留 Kotlin/Compose UI 方案 |
+| v0.4 | 2026-08-19 | API 36 模拟器拒绝 `isolatedProcess` 与显式私有进程名组合；isolated renderer/decoder 改由 Android 分配进程名，隔离 UID 与 Service slot 语义不变 |
+| v0.5 | 2026-08-19 | 本机可用 NDK 为 r30；构建基线从 r29 更新为已验证的 r30，Release ABI/进程边界不变 |
