@@ -261,6 +261,7 @@ struct IndexedDbKeyRangeWire {
     upper_open: bool,
 }
 
+#[derive(Clone)]
 enum IndexedDbQuery {
     Key(IdbKey),
     Range(IdbKeyRange),
@@ -651,6 +652,7 @@ fn dispatch_request(
             cursor,
             key,
         } => step_transaction_cursor(
+            storage,
             transactions,
             origin,
             transaction,
@@ -663,6 +665,7 @@ fn dispatch_request(
             key,
             primary_key,
         } => step_transaction_cursor(
+            storage,
             transactions,
             origin,
             transaction,
@@ -678,6 +681,7 @@ fn dispatch_request(
                 return Err("TypeError: cursor advance count must be greater than zero".to_string());
             }
             step_transaction_cursor(
+                storage,
                 transactions,
                 origin,
                 transaction,

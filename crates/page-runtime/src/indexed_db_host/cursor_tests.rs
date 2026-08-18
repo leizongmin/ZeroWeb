@@ -151,3 +151,91 @@ fn transaction_cursor_continues_to_index_and_primary_key_pair() {
         assert!(error.starts_with("InvalidAccessError:"));
     }
 }
+
+#[test]
+fn transaction_cursor_rebuilds_index_view_after_key_update() {
+    let handler = indexed_db_handler(Arc::new(Mutex::new(StorageManager::new())));
+    call(
+        &handler,
+        "https://app.example",
+        json!({
+            "op": "sync_schema",
+            "name": "app",
+            "version": 1,
+            "stores": [{
+                "name": "items",
+                "keyPath": null,
+                "autoIncrement": false,
+                "indexes": [{"name": "by_group", "keyPath": "group"}]
+            }]
+        }),
+    )
+    .unwrap();
+    let transaction = call(
+        &handler,
+        "https://app.example",
+        json!({
+            "op": "begin_transaction",
+            "database": "app",
+            "stores": ["items"],
+            "mode": "readwrite"
+        }),
+    )
+    .unwrap()["transaction"]
+        .as_u64()
+        .unwrap();
+    for (primary_key, group) in [(1, 1), (2, 2)] {
+        call(
+            &handler,
+            "https://app.example",
+            json!({
+                "op": "transaction_add",
+                "transaction": transaction,
+                "store": "items",
+                "value": {"group": group},
+                "key": key(primary_key)
+            }),
+        )
+        .unwrap();
+    }
+
+    let opened = open_cursor(&handler, transaction, Some("by_group"), "next");
+    let cursor = opened["cursor"].as_u64().unwrap();
+    assert_eq!(opened["entry"]["primaryKey"], key(1));
+    call(
+        &handler,
+        "https://app.example",
+        json!({
+            "op": "transaction_put",
+            "transaction": transaction,
+            "store": "items",
+            "value": {"group": 3},
+            "key": key(1)
+        }),
+    )
+    .unwrap();
+
+    let next = call(
+        &handler,
+        "https://app.example",
+        json!({
+            "op": "transaction_cursor_continue",
+            "transaction": transaction,
+            "cursor": cursor
+        }),
+    )
+    .unwrap();
+    assert_eq!(next["entry"]["primaryKey"], key(2));
+    let moved_record = call(
+        &handler,
+        "https://app.example",
+        json!({
+            "op": "transaction_cursor_continue",
+            "transaction": transaction,
+            "cursor": cursor
+        }),
+    )
+    .unwrap();
+    assert_eq!(moved_record["entry"]["primaryKey"], key(1));
+    assert_eq!(moved_record["entry"]["key"], key(3));
+}

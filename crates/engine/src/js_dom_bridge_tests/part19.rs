@@ -127,6 +127,71 @@ fn test_indexeddb_detached_binary_keys_throw_data_error() {
 }
 
 #[test]
+fn test_indexeddb_get_key_and_cursor_mutations() {
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+
+    let mut sandbox = V8Sandbox::with_config(zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    })
+    .unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    sandbox
+        .execute(
+            "globalThis.__cursorMutations = [];\
+             var setup = indexedDB.open('cursor-mutations', 1);\
+             setup.onupgradeneeded = function () {\
+               setup.result.createObjectStore('items', {keyPath:'id'});\
+             };\
+             setup.onsuccess = function () {\
+               var db = setup.result;\
+               var seed = db.transaction('items', 'readwrite');\
+               seed.objectStore('items').put({id:1, value:'a'});\
+               seed.objectStore('items').put({id:2, value:'b'});\
+               seed.oncomplete = function () {\
+                 var mutate = db.transaction('items', 'readwrite');\
+                 var request = mutate.objectStore('items').openCursor();\
+                 request.onsuccess = function () {\
+                   var cursor = request.result;\
+                   if (!cursor) return;\
+                   if (cursor.primaryKey === 1) {\
+                     cursor.update({id:1, value:'updated'});\
+                     cursor.continue();\
+                   } else {\
+                     cursor.delete();\
+                   }\
+                 };\
+                 mutate.oncomplete = function () {\
+                   var verify = db.transaction('items', 'readonly');\
+                   var store = verify.objectStore('items');\
+                   store.getKey(IDBKeyRange.lowerBound(1)).onsuccess = function (event) {\
+                     __cursorMutations.push('key:' + event.target.result);\
+                   };\
+                   store.get(1).onsuccess = function (event) {\
+                     __cursorMutations.push('value:' + event.target.result.value);\
+                   };\
+                   store.get(2).onsuccess = function (event) {\
+                     __cursorMutations.push('deleted:' + String(event.target.result));\
+                   };\
+                   store.openKeyCursor().onsuccess = function (event) {\
+                     __cursorMutations.push('key-only:' + String(event.target.result.value));\
+                   };\
+                 };\
+               };\
+             };",
+        )
+        .unwrap();
+    for _ in 0..8 {
+        sandbox.execute("0").unwrap();
+    }
+
+    assert_eq!(
+        sandbox.execute("__cursorMutations.join('|')").unwrap().value,
+        "key:1|value:updated|deleted:undefined|key-only:undefined"
+    );
+}
+
+#[test]
 fn test_indexeddb_blocked_upgrade_waits_for_connection_close() {
     use zero_script_sandbox::{Sandbox, V8Sandbox};
 

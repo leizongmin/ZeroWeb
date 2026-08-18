@@ -1,0 +1,41 @@
+{
+  "date": "2026-08-18",
+  "scope": "M2 IndexedDB cursor mutations",
+  "wpt_revision": "315976933870b34d6ea30e3f6643403edae678ba",
+  "files_added": 7,
+  "driving_wpt": {
+    "before": {
+      "pass": 2,
+      "fail": 50
+    },
+    "after": {
+      "pass": 52,
+      "fail": 0
+    }
+  },
+  "imported_wpt": {
+    "files": 59,
+    "pass": 329,
+    "fail": 0,
+    "timeout": 0,
+    "not_run": 0
+  },
+  "capabilities": [
+    "IDBObjectStore.getKey",
+    "IDBObjectStore.openKeyCursor",
+    "IDBCursor.update",
+    "IDBCursor.delete",
+    "dynamic transaction-view cursor iteration"
+  ],
+  "gates": {
+    "cargo_fmt": "pass",
+    "cargo_clippy_workspace": "pass",
+    "make_testharness_indexeddb": "pass",
+    "make_test": "pass",
+    "manifest_counts": {
+      "fetch": 59,
+      "runner": 59,
+      "ledger": 59
+    }
+  }
+}

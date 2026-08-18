@@ -3572,6 +3572,45 @@
     _zwIDBRunTransactionOperation(this.transaction, perform);
     return req;
   };
+  _zwIDBStore.prototype.getKey = function (query) {
+    this._assertUsable(false);
+    if (arguments.length === 0) {
+      throw new TypeError('IDBObjectStore.getKey requires a query.');
+    }
+    if (!_zwIDBIsKeyRange(query) && !_zwIDBKey(query, [])) {
+      throw new globalThis.DOMException('The supplied value is not a valid key.', 'DataError');
+    }
+    var req = new _zwIDBRequest(this);
+    req.transaction = this.transaction;
+    var store = this;
+    var perform = function () {
+      if (store.transaction && store.transaction._hostId !== null) {
+        try {
+          var response = _zwIDBHostCall({
+            op: 'transaction_get_all',
+            transaction: store.transaction._hostId,
+            store: store.name,
+            query: _zwIDBQueryToWire(query),
+            count: 1,
+            keys_only: true
+          });
+          var first = response.records && response.records[0];
+          _zwIDBDispatch(req, 'success', first ? _zwIDBKeyFromWire(first.key) : undefined);
+        } catch (hostError) {
+          _zwIDBRequestHostError(req, hostError);
+        }
+        return;
+      }
+      var keys = [];
+      store._records.forEach(function (_value, key) {
+        if (_zwIDBQueryMatches(query, key)) keys.push(key);
+      });
+      keys.sort(_zwIDBCompareValues);
+      _zwIDBDispatch(req, 'success', keys.length ? keys[0] : undefined);
+    };
+    _zwIDBRunTransactionOperation(this.transaction, perform);
+    return req;
+  };
   _zwIDBStore.prototype.delete = function (key) {
     this._assertUsable(true);
     if (!_zwIDBIsKeyRange(key) && !_zwIDBKey(key, [])) {
@@ -3828,6 +3867,101 @@
       throw new globalThis.DOMException('The cursor is not positioned on a value.', 'InvalidStateError');
     }
   };
+  _zwIDBCursor.prototype._assertCanMutate = function () {
+    var transaction = this._store.transaction;
+    if (!transaction
+        || !transaction._active
+        || transaction._aborted
+        || transaction._finished
+        || transaction._committing) {
+      throw new globalThis.DOMException('The transaction is inactive.', 'TransactionInactiveError');
+    }
+    if ((this._store._metadata && this._store._metadata.deleted)
+        || (this.source._metadata && this.source._metadata.deleted)) {
+      throw new globalThis.DOMException('The cursor source has been deleted.', 'InvalidStateError');
+    }
+    if (transaction.mode === 'readonly') {
+      throw new globalThis.DOMException('The transaction is read-only.', 'ReadOnlyError');
+    }
+    if (!this._gotValue || this._keyOnly) {
+      throw new globalThis.DOMException('The cursor is not positioned on a value.', 'InvalidStateError');
+    }
+  };
+  _zwIDBCursor.prototype.delete = function () {
+    // https://w3c.github.io/IndexedDB/#dom-idbcursor-delete
+    this._assertCanMutate();
+    var req = new _zwIDBRequest(this);
+    req.transaction = this._store.transaction;
+    var cursor = this;
+    var perform = function () {
+      if (cursor._hostId !== null) {
+        try {
+          _zwIDBHostCall({
+            op: 'transaction_delete',
+            transaction: cursor._store.transaction._hostId,
+            store: cursor._store.name,
+            key: _zwIDBKeyToWire(cursor.primaryKey)
+          });
+        } catch (hostError) {
+          _zwIDBRequestHostError(req, hostError);
+          return;
+        }
+      }
+      var localKey = cursor._store._recordKey(cursor.primaryKey);
+      if (localKey !== undefined) cursor._store._records.delete(localKey);
+      _zwIDBDispatch(req, 'success', undefined);
+    };
+    _zwIDBRunTransactionOperation(this._store.transaction, perform);
+    return req;
+  };
+  _zwIDBCursor.prototype.update = function (value) {
+    // https://w3c.github.io/IndexedDB/#dom-idbcursor-update
+    if (arguments.length === 0) {
+      throw new TypeError('IDBCursor.update requires a value.');
+    }
+    this._assertCanMutate();
+    var storedValue = globalThis.structuredClone(value);
+    var store = this._store;
+    if (store.keyPath) {
+      var inlineKey = store._keyOf(storedValue);
+      if (!_zwIDBKey(inlineKey, [])
+          || _zwIDBCompareValues(inlineKey, this.primaryKey) !== 0) {
+        throw new globalThis.DOMException(
+          'The updated value changes the record key.',
+          'DataError'
+        );
+      }
+    }
+    var req = new _zwIDBRequest(this);
+    req.transaction = store.transaction;
+    var cursor = this;
+    var perform = function () {
+      if (store._hasUniqueConflict(storedValue, cursor.primaryKey)) {
+        store._constraintError(req);
+        return;
+      }
+      if (cursor._hostId !== null) {
+        var hostRequest = {
+          op: 'transaction_put',
+          transaction: store.transaction._hostId,
+          store: store.name,
+          value: _zwIDBValueToWire(storedValue),
+          key: _zwIDBKeyToWire(cursor.primaryKey)
+        };
+        try {
+          _zwIDBHostCall(hostRequest);
+        } catch (hostError) {
+          _zwIDBRequestHostError(req, hostError);
+          return;
+        }
+      }
+      var localKey = store._recordKey(cursor.primaryKey);
+      store._records.set(localKey === undefined ? cursor.primaryKey : localKey, storedValue);
+      _zwIDBDispatch(req, 'success', cursor.primaryKey);
+    };
+    _zwIDBRunTransactionOperation(store.transaction, perform);
+    return req;
+  };
   _zwIDBCursor.prototype.continue = function (key) {
     // https://w3c.github.io/IndexedDB/#dom-idbcursor-continue
     this._assertCanIterate();
@@ -4041,7 +4175,9 @@
       }
       var hostId = hosted && hosted.cursor !== null ? hosted.cursor : undefined;
       var cursor = entries.length
-        ? new _zwIDBCursorWithValue(store, store, req, entries, direction, hostId)
+        ? keyOnly
+          ? new _zwIDBCursor(store, store, req, entries, direction, hostId, true)
+          : new _zwIDBCursorWithValue(store, store, req, entries, direction, hostId)
         : null;
       _zwIDBDispatch(req, 'success', cursor);
     };
@@ -4050,6 +4186,9 @@
   }
   _zwIDBStore.prototype.openCursor = function (query, direction) {
     return _zwIDBOpenStoreCursor(this, query, direction, false);
+  };
+  _zwIDBStore.prototype.openKeyCursor = function (query, direction) {
+    return _zwIDBOpenStoreCursor(this, query, direction, true);
   };
 
   function _zwIDBIndex(store, name, metadata) {

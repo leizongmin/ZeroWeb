@@ -33,6 +33,7 @@ FILES=(
   "IndexedDB/idbobjectstore_count.any.js"
   "IndexedDB/idbobjectstore_getAll.any.js"
   "IndexedDB/idbobjectstore_getAllKeys.any.js"
+  "IndexedDB/idbobjectstore_getKey.any.js"
   "IndexedDB/idbindex_get.any.js"
   "IndexedDB/idbindex_getKey.any.js"
   "IndexedDB/idbindex_count.any.js"
@@ -48,6 +49,12 @@ FILES=(
   "IndexedDB/idbcursor-continuePrimaryKey.any.js"
   "IndexedDB/idbcursor-continuePrimaryKey-exceptions.any.js"
   "IndexedDB/idbcursor-continuePrimaryKey-exception-order.any.js"
+  "IndexedDB/idbcursor-delete-exception-order.any.js"
+  "IndexedDB/idbcursor_delete_index.any.js"
+  "IndexedDB/idbcursor_delete_objectstore.any.js"
+  "IndexedDB/idbcursor-update-exception-order.any.js"
+  "IndexedDB/idbcursor_update_index.any.js"
+  "IndexedDB/idbcursor_update_objectstore.any.js"
   "IndexedDB/idbrequest_result.any.js"
   "IndexedDB/idbrequest_error.any.js"
   "IndexedDB/idbtransaction-objectStore-finished.any.js"
@@ -133,7 +140,7 @@ fetch_from_checkout() {
 
 if [[ -n "${WPT_SOURCE:-}" ]]; then
   fetch_from_checkout
-  echo "IndexedDB testharness subset ready (52 cases, WPT ${WPT_REV})"
+  echo "IndexedDB testharness subset ready (59 cases, WPT ${WPT_REV})"
   exit 0
 fi
 
@@ -150,4 +157,4 @@ if [[ "${raw_failed}" == "1" ]]; then
   fetch_from_git
 fi
 
-echo "IndexedDB testharness subset ready (52 cases, WPT ${WPT_REV})"
+echo "IndexedDB testharness subset ready (59 cases, WPT ${WPT_REV})"

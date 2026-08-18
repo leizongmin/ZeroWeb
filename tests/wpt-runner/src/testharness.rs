@@ -170,6 +170,7 @@ pub const INDEXEDDB_CASES: &[(&str, &[&str])] = &[
             "resources/support-promises.js",
         ],
     ),
+    ("IndexedDB/idbobjectstore_getKey.any.js", &["resources/support.js"]),
     ("IndexedDB/idbindex_get.any.js", &["resources/support.js"]),
     ("IndexedDB/idbindex_getKey.any.js", &["resources/support.js"]),
     ("IndexedDB/idbindex_count.any.js", &["resources/support.js"]),
@@ -211,6 +212,24 @@ pub const INDEXEDDB_CASES: &[(&str, &[&str])] = &[
     ),
     (
         "IndexedDB/idbcursor-continuePrimaryKey-exception-order.any.js",
+        &["resources/support.js"],
+    ),
+    (
+        "IndexedDB/idbcursor-delete-exception-order.any.js",
+        &["resources/support.js"],
+    ),
+    ("IndexedDB/idbcursor_delete_index.any.js", &["resources/support.js"]),
+    (
+        "IndexedDB/idbcursor_delete_objectstore.any.js",
+        &["resources/support.js"],
+    ),
+    (
+        "IndexedDB/idbcursor-update-exception-order.any.js",
+        &["resources/support.js"],
+    ),
+    ("IndexedDB/idbcursor_update_index.any.js", &["resources/support.js"]),
+    (
+        "IndexedDB/idbcursor_update_objectstore.any.js",
         &["resources/support.js"],
     ),
     ("IndexedDB/idbrequest_result.any.js", &["resources/support.js"]),

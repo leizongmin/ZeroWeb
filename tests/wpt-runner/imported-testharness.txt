@@ -24,6 +24,7 @@ IndexedDB/idbobjectstore_clear.any.js 315976933870b34d6ea30e3f6643403edae678ba 2
 IndexedDB/idbobjectstore_count.any.js 315976933870b34d6ea30e3f6643403edae678ba 2026-08-17 IDB-M1-object-store-crud
 IndexedDB/idbobjectstore_getAll.any.js 315976933870b34d6ea30e3f6643403edae678ba 2026-08-17 IDB-M1-getall-index-cursor
 IndexedDB/idbobjectstore_getAllKeys.any.js 315976933870b34d6ea30e3f6643403edae678ba 2026-08-17 IDB-M1-getall-index-cursor
+IndexedDB/idbobjectstore_getKey.any.js 315976933870b34d6ea30e3f6643403edae678ba 2026-08-18 IDB-M2-cursor-mutations
 IndexedDB/idbindex_get.any.js 315976933870b34d6ea30e3f6643403edae678ba 2026-08-17 IDB-M1-getall-index-cursor
 IndexedDB/idbindex_getKey.any.js 315976933870b34d6ea30e3f6643403edae678ba 2026-08-17 IDB-M1-getall-index-cursor
 IndexedDB/idbindex_count.any.js 315976933870b34d6ea30e3f6643403edae678ba 2026-08-17 IDB-M1-getall-index-cursor
@@ -39,6 +40,12 @@ IndexedDB/idbcursor-advance-continue-async.any.js 315976933870b34d6ea30e3f664340
 IndexedDB/idbcursor-continuePrimaryKey.any.js 315976933870b34d6ea30e3f6643403edae678ba 2026-08-18 IDB-M2-continue-primary-key
 IndexedDB/idbcursor-continuePrimaryKey-exceptions.any.js 315976933870b34d6ea30e3f6643403edae678ba 2026-08-18 IDB-M2-continue-primary-key
 IndexedDB/idbcursor-continuePrimaryKey-exception-order.any.js 315976933870b34d6ea30e3f6643403edae678ba 2026-08-18 IDB-M2-continue-primary-key
+IndexedDB/idbcursor-delete-exception-order.any.js 315976933870b34d6ea30e3f6643403edae678ba 2026-08-18 IDB-M2-cursor-mutations
+IndexedDB/idbcursor_delete_index.any.js 315976933870b34d6ea30e3f6643403edae678ba 2026-08-18 IDB-M2-cursor-mutations
+IndexedDB/idbcursor_delete_objectstore.any.js 315976933870b34d6ea30e3f6643403edae678ba 2026-08-18 IDB-M2-cursor-mutations
+IndexedDB/idbcursor-update-exception-order.any.js 315976933870b34d6ea30e3f6643403edae678ba 2026-08-18 IDB-M2-cursor-mutations
+IndexedDB/idbcursor_update_index.any.js 315976933870b34d6ea30e3f6643403edae678ba 2026-08-18 IDB-M2-cursor-mutations
+IndexedDB/idbcursor_update_objectstore.any.js 315976933870b34d6ea30e3f6643403edae678ba 2026-08-18 IDB-M2-cursor-mutations
 IndexedDB/idbrequest_result.any.js 315976933870b34d6ea30e3f6643403edae678ba 2026-08-18 IDB-M2-request-event-model
 IndexedDB/idbrequest_error.any.js 315976933870b34d6ea30e3f6643403edae678ba 2026-08-18 IDB-M2-request-event-model
 IndexedDB/idbtransaction-objectStore-finished.any.js 315976933870b34d6ea30e3f6643403edae678ba 2026-08-18 IDB-M2-request-event-model
