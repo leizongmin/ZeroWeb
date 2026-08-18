@@ -2570,6 +2570,76 @@
   var _idb_databases = {};
   var _zwIDBTransactions = [];
   var _zwIDBConnectionQueues = {};
+  var _zwIDBHostConnections = {};
+  var _zwIDBNextConnectionId = 0;
+  var _zwIDBHostConnectionSupport;
+
+  function _zwIDBUsesHostConnections() {
+    if (_zwIDBHostConnectionSupport !== undefined) return _zwIDBHostConnectionSupport;
+    var capabilities = _zwIDBHostCall({ op: 'connection_capabilities' });
+    _zwIDBHostConnectionSupport = !!(capabilities && capabilities.crossRenderer);
+    return _zwIDBHostConnectionSupport;
+  }
+
+  function _zwIDBRegisterHostConnection(database) {
+    if (!_zwIDBUsesHostConnections() || database._hostConnectionRegistered) return;
+    _zwIDBHostCall({
+      op: 'register_connection',
+      connection: database._hostConnectionId,
+      database: database.name,
+      version: database.version
+    });
+    database._hostConnectionRegistered = true;
+    _zwIDBHostConnections[database._hostConnectionId] = database;
+  }
+
+  function _zwIDBWaitForHostConnections(req, database, newVersion, proceed) {
+    var change = _zwIDBHostCall({
+      op: 'request_connection_change',
+      database: database,
+      new_version: newVersion
+    });
+    if (!change || change.ready) {
+      proceed(change ? Number(change.oldVersion || 0) : undefined);
+      return;
+    }
+    var blocked = false;
+    var poll = function () {
+      var status = _zwIDBHostCall({
+        op: 'poll_connection_change',
+        request: change.request
+      });
+      if (status.ready) {
+        proceed(Number(change.oldVersion || 0));
+        return;
+      }
+      if (status.blocked && !blocked) {
+        blocked = true;
+        _zwIDBEmit(
+          req,
+          'blocked',
+          _zwIDBVersionEvent(
+            'blocked',
+            req,
+            Number(change.oldVersion || 0),
+            newVersion
+          )
+        );
+      }
+      setTimeout(poll, 0);
+    };
+    setTimeout(poll, 0);
+  }
+
+  globalThis.__zw_idb_connection_event = function (connectionId, oldVersion, newVersion) {
+    var connection = _zwIDBHostConnections[Number(connectionId)];
+    if (!connection || connection._closed) return;
+    _zwIDBEmit(
+      connection,
+      'versionchange',
+      _zwIDBVersionEvent('versionchange', connection, oldVersion, newVersion)
+    );
+  };
 
   // https://w3c.github.io/IndexedDB/#connection-queues
   function _zwIDBRunConnectionQueue(name) {
@@ -4279,6 +4349,9 @@
   };
 
   function _zwIDBDatabase(name, state) {
+    _zwIDBNextConnectionId++;
+    this._hostConnectionId = _zwIDBNextConnectionId;
+    this._hostConnectionRegistered = false;
     this.name = name;
     this.version = state.version;
     this._state = state;
@@ -4335,6 +4408,14 @@
     this._closed = true;
     var index = this._state.connections.indexOf(this);
     if (index !== -1) this._state.connections.splice(index, 1);
+    if (this._hostConnectionRegistered) {
+      delete _zwIDBHostConnections[this._hostConnectionId];
+      _zwIDBHostCall({
+        op: 'close_connection',
+        connection: this._hostConnectionId
+      });
+      this._hostConnectionRegistered = false;
+    }
     var queue = _zwIDBConnectionQueues[this.name];
     if (queue && typeof queue.retry === 'function') queue.retry();
   };
@@ -4503,6 +4584,7 @@
     });
     _zwIDBEmit(transaction, 'complete', new _zwIDBEvent('complete', transaction));
     req.transaction = null;
+    _zwIDBRegisterHostConnection(db);
     var successEvent = new _zwIDBEvent('success', req);
     req.readyState = 'done';
     req.result = db;
@@ -4632,6 +4714,29 @@
       var req = new _zwIDBRequest(null);
       _zwIDBEnqueueConnectionRequest(name, function (done, queue) {
         var state = _idb_databases[name];
+        if (state
+            && !state.connections.some(function (connection) { return !connection._closed; })
+            && _zwIDBUsesHostConnections()
+            && typeof globalThis.__zw_idb === 'function') {
+          try {
+            var refreshed = _zwIDBHostCall({ op: 'inspect', name: name });
+            if (refreshed && refreshed.database) {
+              state = _zwIDBStateFromHost(refreshed.database);
+              _idb_databases[name] = state;
+            } else {
+              state = undefined;
+              delete _idb_databases[name];
+            }
+          } catch (refreshError) {
+            req.error = refreshError;
+            var refreshErrorEvent = new _zwIDBEvent('error', req);
+            refreshErrorEvent.bubbles = true;
+            refreshErrorEvent.cancelable = true;
+            _zwIDBDispatch(req, 'error', undefined, refreshErrorEvent);
+            setTimeout(done, 0);
+            return;
+          }
+        }
         if (!state) {
           try {
             var inspected = _zwIDBHostCall({ op: 'inspect', name: name });
@@ -4716,6 +4821,7 @@
             var ev = new _zwIDBEvent('success', req);
             req.readyState = 'done';
             req.result = db;
+            _zwIDBRegisterHostConnection(db);
             _zwIDBEmit(req, 'success', ev);
             done();
           };
@@ -4723,14 +4829,18 @@
           else success();
         };
         if (needsUpgrade && oldVersion > 0) {
-          _zwIDBWaitForConnections(
-            req,
-            state,
-            oldVersion,
-            requestedVersion,
-            queue,
-            openConnection
-          );
+          if (_zwIDBUsesHostConnections()) {
+            _zwIDBWaitForHostConnections(req, name, requestedVersion, openConnection);
+          } else {
+            _zwIDBWaitForConnections(
+              req,
+              state,
+              oldVersion,
+              requestedVersion,
+              queue,
+              openConnection
+            );
+          }
         } else {
           openConnection();
         }
@@ -4770,7 +4880,12 @@
             done();
           }, 0);
         };
-        if (state) {
+        if (_zwIDBUsesHostConnections()) {
+          _zwIDBWaitForHostConnections(req, name, null, function (hostOldVersion) {
+            oldVersion = hostOldVersion;
+            performDeletion();
+          });
+        } else if (state) {
           _zwIDBWaitForConnections(
             req,
             state,

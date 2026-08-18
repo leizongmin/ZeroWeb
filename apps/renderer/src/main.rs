@@ -45,9 +45,10 @@ use zero_protocol::IpcChannel;
 use zero_protocol::message::{
     DispatchDomEventParams, DispatchDomEventResultParams, FetchParams, FetchResponseParams, FocusChangeInfo,
     FramePublishMode, HitTestElementResultParams, HitTestLinkParams, HitTestLinkResultParams, ImeEventParams,
-    ImeEventType, IpcColorScheme, IpcMediaType, IpcMessage, IpcMessageKind, KeyboardEventParams, LoadHtmlParams,
-    MouseEventParams, NavigateParams, NavigationCommittedParams, NavigationStartedParams, ScrollEventParams,
-    SetColorSchemeParams, SetMediaTypeParams, SetViewportParams, StorageOpParams,
+    ImeEventType, IndexedDbConnectionEventAckParams, IndexedDbConnectionEventParams, IpcColorScheme, IpcMediaType,
+    IpcMessage, IpcMessageKind, KeyboardEventParams, LoadHtmlParams, MouseEventParams, NavigateParams,
+    NavigationCommittedParams, NavigationStartedParams, ScrollEventParams, SetColorSchemeParams, SetMediaTypeParams,
+    SetViewportParams, StorageOpParams,
 };
 use zero_protocol::transport::PipeTransport;
 use zero_protocol::{ProcessRole, is_disconnected_channel_message};
@@ -2259,6 +2260,20 @@ impl RendererRuntime {
         Ok(())
     }
 
+    fn handle_indexed_db_connection_event(&mut self, params: IndexedDbConnectionEventParams) -> Result<(), String> {
+        self.js_worker.dispatch_indexed_db_connection_event(
+            params.connection_id,
+            params.old_version,
+            params.new_version,
+        )?;
+        self.send_regular(IpcMessageKind::IndexedDbConnectionEventAck(
+            IndexedDbConnectionEventAckParams {
+                connection_id: params.connection_id,
+                request_id: params.request_id,
+            },
+        ))
+    }
+
     fn dispatch_message(&mut self, msg: IpcMessage) -> Result<(), String> {
         match msg.kind {
             IpcMessageKind::Navigate(params) => self.handle_navigate(params),
@@ -2314,6 +2329,7 @@ impl RendererRuntime {
             IpcMessageKind::ImeEvent(params) => self.run_frame_transaction(|runtime| runtime.handle_ime_event(params)),
             IpcMessageKind::ScrollEvent(params) => self.handle_scroll_event(params),
             IpcMessageKind::StorageOp(params) => self.handle_storage_op(params),
+            IpcMessageKind::IndexedDbConnectionEvent(params) => self.handle_indexed_db_connection_event(params),
             IpcMessageKind::HitTestLink(params) => self.handle_hit_test_link(msg.id, params),
             IpcMessageKind::HitTestElement(params) => self.handle_hit_test_element(msg.id, params),
             IpcMessageKind::HitTestImage(params) => self.handle_hit_test_image(msg.id, params),
@@ -2351,6 +2367,7 @@ impl RendererRuntime {
             | IpcMessageKind::AutomationResponse(_)
             | IpcMessageKind::IndexedDbRequest(_)
             | IpcMessageKind::IndexedDbResponse(_)
+            | IpcMessageKind::IndexedDbConnectionEventAck(_)
             | IpcMessageKind::NavigationStarted(_)
             | IpcMessageKind::NavigationCommitted(_)
             | IpcMessageKind::CrashNotification(_) => {

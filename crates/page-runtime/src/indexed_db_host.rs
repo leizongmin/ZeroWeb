@@ -104,6 +104,7 @@ fn format_wire_number(value: f64) -> String {
 #[derive(Debug, Deserialize)]
 #[serde(tag = "op", rename_all = "snake_case")]
 enum IndexedDbRequest {
+    ConnectionCapabilities,
     Inspect {
         name: String,
     },
@@ -343,6 +344,7 @@ fn dispatch_request(
     request: IndexedDbRequest,
 ) -> Result<Value, String> {
     match request {
+        IndexedDbRequest::ConnectionCapabilities => Ok(json!({"crossRenderer": false})),
         IndexedDbRequest::Inspect { name } => {
             let database = storage.indexed_db(origin, &name).map(database_schema_json);
             Ok(json!({"database": database}))

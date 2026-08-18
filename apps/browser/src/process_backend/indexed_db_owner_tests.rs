@@ -278,6 +278,30 @@ fn navigation_start_revokes_previous_origin_and_transaction_registry() {
 }
 
 #[test]
+fn changing_private_partition_revokes_connections() {
+    let _multiprocess_guard = lock_multiprocess_tests();
+    let mut backend = ProcessTabBackend::with_renderer_bin(PathBuf::from("unused-renderer"));
+    let tab_id = TabId(706);
+    commit_navigation(&mut backend, tab_id, 96, "https://partition.example/page", 1);
+    backend
+        .indexed_db_connections
+        .register(
+            ConnectionKey {
+                renderer_id: 96,
+                connection_id: 1,
+            },
+            false,
+            "https://partition.example",
+            "app",
+        )
+        .unwrap();
+
+    backend.set_tab_private(tab_id, true);
+
+    assert_eq!(backend.indexed_db_connections.counts(), (0, 0));
+}
+
+#[test]
 fn independent_renderers_share_browser_owned_indexed_db() {
     let _multiprocess_guard = lock_multiprocess_tests();
     let Some(renderer_bin) = resolve_renderer_binary() else {
@@ -415,5 +439,229 @@ fn independent_renderers_share_browser_owned_indexed_db() {
             "globalThis.__ownerIsolation"
         ),
         "isolated"
+    );
+}
+
+#[test]
+fn cross_renderer_versionchange_blocks_until_connection_closes() {
+    let _multiprocess_guard = lock_multiprocess_tests();
+    let Some(renderer_bin) = resolve_renderer_binary() else {
+        eprintln!("zero-renderer binary unavailable; skipping connection owner smoke");
+        return;
+    };
+    let mut backend = ProcessTabBackend::with_renderer_bin(renderer_bin);
+    let mut snapshots = HashMap::new();
+    let first = TabId(811);
+    let second = TabId(812);
+    let origin_url = "https://connections.example/page";
+    load_blank_page(&mut backend, &mut snapshots, first, origin_url);
+    load_blank_page(&mut backend, &mut snapshots, second, origin_url);
+
+    let mut request_id = 100;
+    execute_script(
+        &mut backend,
+        &mut snapshots,
+        first,
+        request_id,
+        r#"
+          globalThis.__connectionReady = "pending";
+          globalThis.__versionChange = "pending";
+          var firstOpen = indexedDB.open("connection-db", 1);
+          firstOpen.onupgradeneeded = function () {
+            firstOpen.result.createObjectStore("items");
+          };
+          firstOpen.onsuccess = function () {
+            globalThis.__heldConnection = firstOpen.result;
+            __heldConnection.onversionchange = function (event) {
+              globalThis.__versionChange =
+                String(event.oldVersion) + ">" + String(event.newVersion);
+            };
+            globalThis.__connectionReady = "ready";
+          };
+          return "started";
+        "#,
+    )
+    .unwrap();
+    request_id += 1;
+    assert_eq!(
+        wait_for_value(
+            &mut backend,
+            &mut snapshots,
+            first,
+            &mut request_id,
+            "globalThis.__connectionReady"
+        ),
+        "ready"
+    );
+
+    execute_script(
+        &mut backend,
+        &mut snapshots,
+        second,
+        request_id,
+        r#"
+          globalThis.__upgradeState = "pending";
+          var secondOpen = indexedDB.open("connection-db", 2);
+          secondOpen.onblocked = function () {
+            globalThis.__upgradeState = "blocked";
+          };
+          secondOpen.onupgradeneeded = function () {
+            globalThis.__upgradeState = "upgrade";
+          };
+          secondOpen.onsuccess = function () {
+            globalThis.__upgradeState = "success:" + secondOpen.result.version;
+            secondOpen.result.close();
+          };
+          return "started";
+        "#,
+    )
+    .unwrap();
+    request_id += 1;
+
+    assert_eq!(
+        wait_for_value(
+            &mut backend,
+            &mut snapshots,
+            first,
+            &mut request_id,
+            "globalThis.__versionChange"
+        ),
+        "1>2"
+    );
+    assert_eq!(
+        wait_for_value(
+            &mut backend,
+            &mut snapshots,
+            second,
+            &mut request_id,
+            "globalThis.__upgradeState"
+        ),
+        "blocked"
+    );
+
+    execute_script(
+        &mut backend,
+        &mut snapshots,
+        first,
+        request_id,
+        r#"
+          __heldConnection.close();
+          return "closed";
+        "#,
+    )
+    .unwrap();
+    request_id += 1;
+    assert_eq!(
+        wait_for_value(
+            &mut backend,
+            &mut snapshots,
+            second,
+            &mut request_id,
+            "globalThis.__upgradeState === 'blocked' ? 'pending' : globalThis.__upgradeState"
+        ),
+        "success:2"
+    );
+    assert_eq!(backend.indexed_db_connections.counts(), (0, 0));
+
+    execute_script(
+        &mut backend,
+        &mut snapshots,
+        first,
+        request_id,
+        r#"
+          globalThis.__deleteConnectionReady = "pending";
+          globalThis.__deleteVersionChange = "pending";
+          var reopen = indexedDB.open("delete-db", 1);
+          reopen.onerror = function () {
+            globalThis.__deleteConnectionReady = "error:" + reopen.error.name;
+          };
+          reopen.onupgradeneeded = function () {
+            reopen.result.createObjectStore("items");
+          };
+          reopen.onsuccess = function () {
+            globalThis.__deleteConnection = reopen.result;
+            __deleteConnection.onversionchange = function (event) {
+              globalThis.__deleteVersionChange =
+                String(event.oldVersion) + ">" + String(event.newVersion);
+            };
+            globalThis.__deleteConnectionReady = "ready";
+          };
+          return "started";
+        "#,
+    )
+    .unwrap();
+    request_id += 1;
+    assert_eq!(
+        wait_for_value(
+            &mut backend,
+            &mut snapshots,
+            first,
+            &mut request_id,
+            "globalThis.__deleteConnectionReady"
+        ),
+        "ready"
+    );
+
+    execute_script(
+        &mut backend,
+        &mut snapshots,
+        second,
+        request_id,
+        r#"
+          globalThis.__deleteState = "pending";
+          var deletion = indexedDB.deleteDatabase("delete-db");
+          deletion.onblocked = function () {
+            globalThis.__deleteState = "blocked";
+          };
+          deletion.onsuccess = function (event) {
+            globalThis.__deleteState = "success:" + event.oldVersion;
+          };
+          return "started";
+        "#,
+    )
+    .unwrap();
+    request_id += 1;
+    assert_eq!(
+        wait_for_value(
+            &mut backend,
+            &mut snapshots,
+            first,
+            &mut request_id,
+            "globalThis.__deleteVersionChange"
+        ),
+        "1>null"
+    );
+    assert_eq!(
+        wait_for_value(
+            &mut backend,
+            &mut snapshots,
+            second,
+            &mut request_id,
+            "globalThis.__deleteState"
+        ),
+        "blocked"
+    );
+
+    execute_script(
+        &mut backend,
+        &mut snapshots,
+        first,
+        request_id,
+        r#"
+          __deleteConnection.close();
+          return "closed";
+        "#,
+    )
+    .unwrap();
+    request_id += 1;
+    assert_eq!(
+        wait_for_value(
+            &mut backend,
+            &mut snapshots,
+            second,
+            &mut request_id,
+            "globalThis.__deleteState === 'blocked' ? 'pending' : globalThis.__deleteState"
+        ),
+        "success:1"
     );
 }

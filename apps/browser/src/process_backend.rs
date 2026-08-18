@@ -13,16 +13,22 @@ use zero_engine::{IndexedDbHandler, PrefersColorSchemeValue};
 use zero_protocol::ProtocolError;
 use zero_protocol::message::{
     AutomationOperation, AutomationRequest, AutomationResponse, DispatchDomEventParams, FetchParams, FocusChangeInfo,
-    FramePublishMode, ImeEventParams, IndexedDbRequestParams, IndexedDbResponseParams, IpcColorScheme, IpcMediaType,
-    IpcMessage, IpcMessageKind, LoadHtmlParams, NavigationCommittedParams, NavigationStartedParams, ScrollEventParams,
-    SetColorSchemeParams, SetMediaTypeParams, SetViewportParams, StorageOpParams, StorageOperation, StorageType,
+    FramePublishMode, ImeEventParams, IndexedDbConnectionEventAckParams, IndexedDbConnectionEventParams,
+    IndexedDbRequestParams, IndexedDbResponseParams, IpcColorScheme, IpcMediaType, IpcMessage, IpcMessageKind,
+    LoadHtmlParams, NavigationCommittedParams, NavigationStartedParams, ScrollEventParams, SetColorSchemeParams,
+    SetMediaTypeParams, SetViewportParams, StorageOpParams, StorageOperation, StorageType,
 };
 use zero_protocol::process::{ProcessManager, RendererHandle};
 use zero_storage::StorageManager;
 
 use crate::fetch_proxy::TabFetchProxy;
 use crate::tab_snapshot::{CompositorSubmission, TabSnapshot};
+use indexed_db_connections::{
+    ConnectionKey, ConnectionRequestStatus, ConnectionWireRequest, IndexedDbConnectionOwner, parse_connection_request,
+};
 
+#[path = "process_backend/indexed_db_connections.rs"]
+mod indexed_db_connections;
 #[cfg(test)]
 #[path = "process_backend/indexed_db_owner_tests.rs"]
 mod indexed_db_owner_tests;
@@ -151,6 +157,7 @@ pub struct ProcessTabBackend {
     private_storage: Arc<Mutex<StorageManager>>,
     private_tabs: HashSet<TabId>,
     indexed_db_handlers: HashMap<u64, IndexedDbHandler>,
+    indexed_db_connections: IndexedDbConnectionOwner,
     indexed_db_origins: HashMap<u64, String>,
     pending_indexed_db_navigations: HashMap<u64, PendingIndexedDbNavigation>,
     indexed_db_init_error: Option<String>,
@@ -222,6 +229,7 @@ impl ProcessTabBackend {
             private_storage: Arc::new(Mutex::new(StorageManager::new())),
             private_tabs: HashSet::new(),
             indexed_db_handlers: HashMap::new(),
+            indexed_db_connections: IndexedDbConnectionOwner::default(),
             indexed_db_origins: HashMap::new(),
             pending_indexed_db_navigations: HashMap::new(),
             indexed_db_init_error: storage_error,
@@ -676,6 +684,7 @@ impl ProcessTabBackend {
 
     fn remove_indexed_db_renderer_state(&mut self, renderer_id: u64) {
         self.indexed_db_handlers.remove(&renderer_id);
+        self.indexed_db_connections.remove_renderer(renderer_id);
         self.indexed_db_origins.remove(&renderer_id);
         self.pending_indexed_db_navigations.remove(&renderer_id);
     }
@@ -760,6 +769,125 @@ impl ProcessTabBackend {
         self.indexed_db_origins.insert(renderer_id, origin);
     }
 
+    fn handle_indexed_db_connection_request(
+        &mut self,
+        renderer_id: u64,
+        private: bool,
+        origin: &str,
+        request: ConnectionWireRequest,
+    ) -> Result<String, String> {
+        match request {
+            ConnectionWireRequest::ConnectionCapabilities => Ok(serde_json::json!({"crossRenderer": true}).to_string()),
+            ConnectionWireRequest::RegisterConnection {
+                connection,
+                database,
+                version,
+            } => {
+                let storage = if private {
+                    Arc::clone(&self.private_storage)
+                } else {
+                    Arc::clone(&self.storage)
+                };
+                let storage = storage
+                    .lock()
+                    .map_err(|_| "UnknownError: IndexedDB storage lock is poisoned".to_string())?;
+                let database_version = storage
+                    .indexed_db(origin, &database)
+                    .map(|database| database.version)
+                    .ok_or_else(|| "NotFoundError: IndexedDB database does not exist".to_string())?;
+                if database_version != version {
+                    return Err("VersionError: IndexedDB connection version does not match storage".to_string());
+                }
+                drop(storage);
+                self.indexed_db_connections.register(
+                    ConnectionKey {
+                        renderer_id,
+                        connection_id: connection,
+                    },
+                    private,
+                    origin,
+                    &database,
+                )?;
+                Ok(serde_json::json!({"registered": true}).to_string())
+            }
+            ConnectionWireRequest::CloseConnection { connection } => {
+                self.indexed_db_connections.close(ConnectionKey {
+                    renderer_id,
+                    connection_id: connection,
+                })?;
+                Ok(serde_json::json!({"closed": true}).to_string())
+            }
+            ConnectionWireRequest::RequestConnectionChange { database, new_version } => {
+                let storage = if private {
+                    Arc::clone(&self.private_storage)
+                } else {
+                    Arc::clone(&self.storage)
+                };
+                let old_version = storage
+                    .lock()
+                    .map_err(|_| "UnknownError: IndexedDB storage lock is poisoned".to_string())?
+                    .indexed_db(origin, &database)
+                    .map(|database| database.version)
+                    .unwrap_or(0);
+                let (request_id, events) = self.indexed_db_connections.begin_request(
+                    renderer_id,
+                    private,
+                    origin,
+                    &database,
+                    old_version,
+                    new_version,
+                )?;
+                for event in events {
+                    let Some(tab_id) = self.tab_for_renderer(event.target.renderer_id) else {
+                        self.indexed_db_connections.remove_renderer(event.target.renderer_id);
+                        continue;
+                    };
+                    self.send_to_renderer(
+                        tab_id,
+                        IpcMessageKind::IndexedDbConnectionEvent(IndexedDbConnectionEventParams {
+                            connection_id: event.target.connection_id,
+                            request_id: event.request_id,
+                            old_version: event.old_version,
+                            new_version: event.new_version,
+                        }),
+                    );
+                }
+                Ok(match request_id {
+                    Some(request_id) => serde_json::json!({
+                        "ready": false,
+                        "request": request_id,
+                        "oldVersion": old_version,
+                    }),
+                    None => serde_json::json!({
+                        "ready": true,
+                        "oldVersion": old_version,
+                    }),
+                }
+                .to_string())
+            }
+            ConnectionWireRequest::PollConnectionChange { request } => {
+                let status = self.indexed_db_connections.status(renderer_id, request)?;
+                Ok(serde_json::json!({
+                    "ready": status == ConnectionRequestStatus::Ready,
+                    "blocked": status == ConnectionRequestStatus::Blocked,
+                })
+                .to_string())
+            }
+        }
+    }
+
+    fn handle_indexed_db_connection_event_ack(&mut self, renderer_id: u64, params: IndexedDbConnectionEventAckParams) {
+        if let Err(error) = self.indexed_db_connections.acknowledge(
+            params.request_id,
+            ConnectionKey {
+                renderer_id,
+                connection_id: params.connection_id,
+            },
+        ) {
+            tracing::warn!("Rejected IndexedDB connection event ack from renderer {renderer_id}: {error}");
+        }
+    }
+
     fn handle_indexed_db_request(&mut self, tab_id: TabId, request_id: u64, params: IndexedDbRequestParams) {
         const MAX_REQUEST_BYTES: usize = 8 * 1024 * 1024;
         let private = self.private_tabs.contains(&tab_id);
@@ -785,12 +913,18 @@ impl ProcessTabBackend {
             } else {
                 Arc::clone(&self.storage)
             };
-            let handler = Arc::clone(
-                self.indexed_db_handlers
-                    .entry(renderer_id)
-                    .or_insert_with(|| zero_page_runtime::indexed_db_handler(storage)),
-            );
-            handler(&origin, &params.request)
+            match parse_connection_request(&params.request) {
+                Ok(Some(request)) => self.handle_indexed_db_connection_request(renderer_id, private, &origin, request),
+                Ok(None) => {
+                    let handler = Arc::clone(
+                        self.indexed_db_handlers
+                            .entry(renderer_id)
+                            .or_insert_with(|| zero_page_runtime::indexed_db_handler(storage)),
+                    );
+                    handler(&origin, &params.request)
+                }
+                Err(error) => Err(error),
+            }
         };
         let params = match result {
             Ok(response) => IndexedDbResponseParams {
@@ -957,6 +1091,7 @@ impl ProcessTabBackend {
         }
         if let Some(renderer_id) = self.tab_to_renderer.get(&tab_id) {
             self.indexed_db_handlers.remove(renderer_id);
+            self.indexed_db_connections.remove_renderer(*renderer_id);
         }
     }
 
@@ -1155,6 +1290,9 @@ impl ProcessTabBackend {
                     }
                     IpcMessageKind::IndexedDbRequest(params) => {
                         self.handle_indexed_db_request(tab_id, msg.id, params);
+                    }
+                    IpcMessageKind::IndexedDbConnectionEventAck(params) => {
+                        self.handle_indexed_db_connection_event_ack(rid, params);
                     }
                     IpcMessageKind::NavigationStarted(params) => {
                         let snapshot = snapshots.entry(tab_id).or_default();

@@ -238,6 +238,10 @@ pub enum IpcMessageKind {
     NavigationStarted(NavigationStartedParams),
     /// 页面导航提交（renderer → browser storage-key authority）。
     NavigationCommitted(NavigationCommittedParams),
+    /// IndexedDB connection 的 versionchange 通知（browser → renderer）。
+    IndexedDbConnectionEvent(IndexedDbConnectionEventParams),
+    /// IndexedDB connection event 已在 JS owner 执行（renderer → browser）。
+    IndexedDbConnectionEventAck(IndexedDbConnectionEventAckParams),
 }
 
 /// 焦点变更信息（渲染→浏览器）。
@@ -555,6 +559,28 @@ pub struct IndexedDbResponseParams {
     pub response: Option<String>,
     /// 失败时的具名错误。
     pub error: Option<String>,
+}
+
+/// Browser owner 向 renderer connection 投递的版本变更事件。
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct IndexedDbConnectionEventParams {
+    /// Renderer realm 内 connection 标识。
+    pub connection_id: u64,
+    /// Browser owner 分配的 connection request 标识。
+    pub request_id: u64,
+    /// 变更前版本。
+    pub old_version: u64,
+    /// 目标版本；删除数据库时为 `None`。
+    pub new_version: Option<u64>,
+}
+
+/// Renderer 完成 versionchange event dispatch 后的确认。
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct IndexedDbConnectionEventAckParams {
+    /// Renderer realm 内 connection 标识。
+    pub connection_id: u64,
+    /// Browser owner 分配的 connection request 标识。
+    pub request_id: u64,
 }
 
 /// Renderer 页面导航开始信号。

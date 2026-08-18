@@ -70,6 +70,12 @@ enum JsWorkerCommand {
     ResetDocumentState {
         reply: Sender<()>,
     },
+    DispatchIndexedDbConnectionEvent {
+        connection_id: u64,
+        old_version: u64,
+        new_version: Option<u64>,
+        reply: Sender<Result<(), String>>,
+    },
     Shutdown,
 }
 
@@ -335,6 +341,26 @@ impl RendererJsWorker {
         let _ = self.cmd_tx.send(JsWorkerCommand::SetFetchHandler { handler });
     }
 
+    pub fn dispatch_indexed_db_connection_event(
+        &self,
+        connection_id: u64,
+        old_version: u64,
+        new_version: Option<u64>,
+    ) -> Result<(), String> {
+        let (reply_tx, reply_rx) = mpsc::channel();
+        self.cmd_tx
+            .send(JsWorkerCommand::DispatchIndexedDbConnectionEvent {
+                connection_id,
+                old_version,
+                new_version,
+                reply: reply_tx,
+            })
+            .map_err(|error| error.to_string())?;
+        reply_rx
+            .recv_timeout(TAB_JS_CHANNEL_TIMEOUT)
+            .map_err(|error| error.to_string())?
+    }
+
     /// 关闭 JS 线程。
     pub fn shutdown(&mut self) {
         let _ = self.cmd_tx.send(JsWorkerCommand::Shutdown);
@@ -494,6 +520,20 @@ fn js_worker_main(
                 }
                 async_callbacks_ready.store(false, Ordering::Release);
                 let _ = reply.send(());
+            }
+            JsWorkerCommand::DispatchIndexedDbConnectionEvent {
+                connection_id,
+                old_version,
+                new_version,
+                reply,
+            } => {
+                let new_version = new_version.map_or_else(|| "null".to_string(), |version| version.to_string());
+                let script = format!(
+                    "globalThis.__zw_idb_connection_event && \
+                     globalThis.__zw_idb_connection_event({connection_id}, {old_version}, {new_version});"
+                );
+                let result = sandbox.execute(&script).map(|_| ()).map_err(|error| error.to_string());
+                let _ = reply.send(result);
             }
             JsWorkerCommand::Shutdown => break,
         }

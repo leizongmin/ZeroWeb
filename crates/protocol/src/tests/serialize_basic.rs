@@ -1642,3 +1642,40 @@ fn test_navigation_storage_key_lifecycle_roundtrip() {
         }) if url == "https://app.example/page"
     ));
 }
+
+#[test]
+fn test_indexed_db_connection_event_roundtrip() {
+    let event = roundtrip(IpcMessage {
+        id: 0,
+        kind: IpcMessageKind::IndexedDbConnectionEvent(IndexedDbConnectionEventParams {
+            connection_id: 17,
+            request_id: 29,
+            old_version: 3,
+            new_version: Some(4),
+        }),
+    });
+    assert!(matches!(
+        event.kind,
+        IpcMessageKind::IndexedDbConnectionEvent(IndexedDbConnectionEventParams {
+            connection_id: 17,
+            request_id: 29,
+            old_version: 3,
+            new_version: Some(4),
+        })
+    ));
+
+    let ack = roundtrip(IpcMessage {
+        id: 0,
+        kind: IpcMessageKind::IndexedDbConnectionEventAck(IndexedDbConnectionEventAckParams {
+            connection_id: 17,
+            request_id: 29,
+        }),
+    });
+    assert!(matches!(
+        ack.kind,
+        IpcMessageKind::IndexedDbConnectionEventAck(IndexedDbConnectionEventAckParams {
+            connection_id: 17,
+            request_id: 29,
+        })
+    ));
+}

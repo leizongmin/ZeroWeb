@@ -1,0 +1,56 @@
+{
+  "date": "2026-08-18",
+  "scope": "M3 browser-owned cross-renderer IndexedDB connections",
+  "capabilities": [
+    "browser-owned connection registry",
+    "regular/private partition isolation",
+    "trusted navigation-commit origin binding",
+    "browser-to-renderer versionchange event",
+    "renderer event-dispatch acknowledgement",
+    "blocked after all event acknowledgements",
+    "close-driven upgrade and delete unblocking",
+    "navigation, crash, and partition-change revocation"
+  ],
+  "tests": {
+    "owner_state_machine": {
+      "pass": 4,
+      "fail": 0
+    },
+    "protocol_roundtrip": "pass",
+    "renderer": {
+      "pass": 194,
+      "fail": 0
+    },
+    "page_runtime": {
+      "pass": 44,
+      "fail": 0
+    },
+    "cross_renderer_upgrade": "1>2 -> blocked -> close -> success:2",
+    "cross_renderer_delete": "1>null -> blocked -> close -> success:1",
+    "workspace_clippy": "pass",
+    "make_test": {
+      "status": "pass",
+      "v8": "pass",
+      "quickjs": "pass",
+      "gpu_adapter": "pass",
+      "multiprocess": "pass"
+    },
+    "imported_wpt": {
+      "revision": "315976933870b34d6ea30e3f6643403edae678ba",
+      "files": 47,
+      "pass": 232,
+      "fail": 0
+    },
+    "bench_gate": {
+      "microbenches_pass": 16,
+      "microbenches_total": 16,
+      "absolute_page_budgets": "pass",
+      "retained_form_budget": "pass"
+    }
+  },
+  "remaining": [
+    "browser-owned cross-renderer transaction scheduling",
+    "deferred execution for all object store, index, and cursor operations",
+    "larger fixed-revision IndexedDB WPT coverage"
+  ]
+}
