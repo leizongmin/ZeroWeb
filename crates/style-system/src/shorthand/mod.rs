@@ -101,6 +101,18 @@ fn pending_shorthand_longhands(property: &str) -> Option<&'static [&'static str]
             "border-bottom-left-radius",
         ],
         "inset" => &["top", "right", "bottom", "left"],
+        "scroll-margin" => &[
+            "scroll-margin-top",
+            "scroll-margin-right",
+            "scroll-margin-bottom",
+            "scroll-margin-left",
+        ],
+        "scroll-padding" => &[
+            "scroll-padding-top",
+            "scroll-padding-right",
+            "scroll-padding-bottom",
+            "scroll-padding-left",
+        ],
         "gap" => &["gap", "row-gap", "column-gap"],
         "overflow" => &["overflow-x", "overflow-y"],
         "overscroll-behavior" => &["overscroll-behavior-x", "overscroll-behavior-y"],
@@ -609,6 +621,38 @@ fn expand_one(property: &str, value: &str, important: bool, specificity: (u32, u
             };
             vec![mk("top", t), mk("right", r), mk("bottom", b), mk("left", l)]
         }
+        "scroll-margin" => {
+            // https://drafts.csswg.org/css-scroll-snap-1/#margin-longhands-physical
+            let Some((t, r, b, l)) = (if matches_css_wide_keyword(value) {
+                parse_rect_values(value)
+            } else {
+                parse_rect_values_with(value, is_scroll_margin_rect_value)
+            }) else {
+                return vec![];
+            };
+            vec![
+                mk("scroll-margin-top", t),
+                mk("scroll-margin-right", r),
+                mk("scroll-margin-bottom", b),
+                mk("scroll-margin-left", l),
+            ]
+        }
+        "scroll-padding" => {
+            // https://drafts.csswg.org/css-scroll-snap-1/#padding-longhands-physical
+            let Some((t, r, b, l)) = (if matches_css_wide_keyword(value) {
+                parse_rect_values(value)
+            } else {
+                parse_rect_values_with(value, is_scroll_padding_rect_value)
+            }) else {
+                return vec![];
+            };
+            vec![
+                mk("scroll-padding-top", t),
+                mk("scroll-padding-right", r),
+                mk("scroll-padding-bottom", b),
+                mk("scroll-padding-left", l),
+            ]
+        }
 
         // ── transition 简写 ──
         // transition: <property> <duration> <timing-function> <delay>
@@ -998,6 +1042,14 @@ fn is_margin_rect_value(value: &str) -> bool {
 
 fn is_inset_rect_value(value: &str) -> bool {
     is_margin_rect_value(value)
+}
+
+fn is_scroll_margin_rect_value(value: &str) -> bool {
+    !value.eq_ignore_ascii_case("auto") && is_margin_rect_value(value)
+}
+
+fn is_scroll_padding_rect_value(value: &str) -> bool {
+    value.eq_ignore_ascii_case("auto") || is_padding_rect_value(value)
 }
 
 fn is_gap_value_token(value: &str) -> bool {

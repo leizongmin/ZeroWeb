@@ -49,6 +49,33 @@ fn test_inset_shorthand_rejects_invalid_tokens() {
 }
 
 #[test]
+fn test_scroll_edge_shorthands_expand_and_validate_tokens() {
+    assert!(expand_one("scroll-margin", "red", false, (0, 0, 1)).is_empty());
+    assert!(expand_one("scroll-margin", "auto", false, (0, 0, 1)).is_empty());
+    assert!(expand_one("scroll-margin", "thin", false, (0, 0, 1)).is_empty());
+
+    let margin = expand_one("scroll-margin", "1px -2px 3% 4px", false, (0, 0, 1));
+    assert_eq!(margin.len(), 4);
+    assert_eq!(margin[0].0, "scroll-margin-top");
+    assert_eq!(margin[1].0, "scroll-margin-right");
+    assert_eq!(margin[2].0, "scroll-margin-bottom");
+    assert_eq!(margin[3].0, "scroll-margin-left");
+    assert_eq!(margin[1].1, "-2px");
+
+    assert!(expand_one("scroll-padding", "red", false, (0, 0, 1)).is_empty());
+    assert!(expand_one("scroll-padding", "-1px", false, (0, 0, 1)).is_empty());
+
+    let padding = expand_one("scroll-padding", "auto 2px 3% 4px", false, (0, 0, 1));
+    assert_eq!(padding.len(), 4);
+    assert_eq!(padding[0].0, "scroll-padding-top");
+    assert_eq!(padding[1].0, "scroll-padding-right");
+    assert_eq!(padding[2].0, "scroll-padding-bottom");
+    assert_eq!(padding[3].0, "scroll-padding-left");
+    assert_eq!(padding[0].1, "auto");
+    assert_eq!(padding[2].1, "3%");
+}
+
+#[test]
 /// margin 仅包含空格应展开为默认值
 fn test_margin_empty_whitespace() {
     let result = expand_one("margin", "   ", false, (0, 0, 1));

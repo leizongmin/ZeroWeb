@@ -39,6 +39,8 @@ Logical border axis shorthands exposed the axis variant: 1-2 start/end mapping m
 
 `inset` and logical inset use the same permissive offset grammar as margin for shorthand validation: `auto` and negative offsets are valid, while colors and border-width keywords must still invalidate the entire shorthand.
 
+`scroll-margin` and `scroll-padding` exposed the missing-expander variant: implemented longhands are not enough if the shorthand is absent from `expand_one`; the declaration will pass through as a normal property and become a no-op during apply.
+
 ## Root Cause
 
 The shorthand layer used heuristic component classifiers and treated unrecognized tokens as absent optional components. That is wrong for CSS shorthands such as `border`, where every token must match one of the allowed component grammars. A shared parser can also be broader than the property grammar that consumes it: general length parsing may accept `auto`, intrinsic sizing keywords, or percentages that `border-width` must reject.
