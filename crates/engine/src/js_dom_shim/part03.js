@@ -257,6 +257,22 @@
         : Object.create(globalThis.HTMLElement.prototype);
     }
   }
+  // js-dom M4 R107：HTMLBodyElement/HTMLFrameSetElement.prototype 的 Window-forwarding
+  // handler 属性（onblur/onerror/onfocus/onload/onscroll/onresize）以 **enumerable**
+  // data property（值 null）挂原型——spec IDL handler 属性 for-in 可见（WPT
+  // Body-FrameSet-Event-Handlers "Enumerate"：for (var a in el) 须含这些名）。proxy 的
+  // get/set trap 对这 6 个名仍走 R107 转发（原型属性只是枚举面；读值时 trap 先于原型）。
+  ['HTMLBodyElement', 'HTMLFrameSetElement'].forEach(function (_r107i) {
+    var C = globalThis[_r107i];
+    if (!C || !C.prototype) return;
+    ['blur', 'error', 'focus', 'load', 'scroll', 'resize'].forEach(function (_r107t) {
+      if (!Object.prototype.hasOwnProperty.call(C.prototype, 'on' + _r107t)) {
+        Object.defineProperty(C.prototype, 'on' + _r107t, {
+          value: null, writable: true, enumerable: true, configurable: true,
+        });
+      }
+    });
+  });
   // spec tag → HTML 元素接口名映射（HTMLElement 接口表，html.spec.whatwg.org#toc-named-given）。
   // getPrototypeOf（part05）按元素 tag 查此表返对应子类 prototype；未知/自定义元素 → HTMLUnknownElement。
   // R11：使 `document.createElement('div') instanceof HTMLDivElement` 为 true（Node-cloneNode 用例）。

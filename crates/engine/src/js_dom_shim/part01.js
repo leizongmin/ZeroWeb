@@ -1092,6 +1092,10 @@
     _mo_notify(sel, null, { type: 'characterData', oldValue: oldValue, target: targetNode });
   };
 
+  // js-dom M4 R107：body/frameset 的 Window-forwarding event handler 名集（spec HTML
+  // handler-body-attributes / handler-frameset-attributes——onblur/onerror/onfocus/
+  // onload/onscroll/onresize 的 IDL 与 content attribute 均转发到 window）。
+  globalThis._ZW_BODY_FORWARD_ON = { blur: 1, error: 1, focus: 1, load: 1, scroll: 1, resize: 1 };
   function _mo_notify(sel, handle, baseRecord) {
     var id = _mo_id(handle, sel);
     _mo_deliverToId(id, baseRecord, false); // 精确 id，不要求 subtree

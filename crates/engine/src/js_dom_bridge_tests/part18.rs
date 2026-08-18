@@ -1964,3 +1964,65 @@ fn test_dispatch_event_entry_semantics_r106() {
         "R106 dispatchEvent 入口四语义（TypeError/未初始化/重入/异常不传播）"
     );
 }
+
+// ── js-dom M4 R107：body/frameset Window-forwarding event handler（spec HTML
+// handler-body-attributes / handler-frameset-attributes）──
+//
+// onblur/onerror/onfocus/onload/onscroll/onresize 三面：① IDL 写转发 window
+// （element.on<type> = fn 后 window.on<type> === fn）；② content attribute 反射转发
+// （setAttribute('on<type>', 'return') 后 typeof window.on<type> === 'function'，
+//不经 element getter 直读 window 可见）；③ for-in 枚举可见（原型 enumerable 属性）。
+// WPT dom/events/Body-FrameSet-Event-Handlers.html 驱动（24F→48P/0F 100%）。
+#[test]
+fn test_body_frameset_window_forwarding_handlers_r107() {
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+
+    let mut sandbox = V8Sandbox::with_config(zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    })
+    .unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: Arc<Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        Arc::new(Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry);
+
+    let out = sandbox
+        .execute(
+            r#"(function(){
+  var results = [];
+  var body = document.createElement('body');
+  // ① IDL 写转发：element.onfocus = fn → window.onfocus === fn（且非 function 写 null 化）。
+  function nop() {}
+  body.onfocus = nop;
+  results.push('idl-fwd:' + String(window.onfocus === nop));
+  body.onfocus = '';
+  results.push('idl-null:' + String(window.onfocus === null));
+  // ② content attribute 反射转发：setAttribute 后 window 直读为 function。
+  body.setAttribute('onload', 'return 1');
+  results.push('attr-fwd:' + typeof window.onload);
+  // ③ for-in 枚举可见。
+  var seen = {};
+  for (var a in body) seen[a] = true;
+  results.push('enum:' + String(seen.onload && seen.onblur && seen.onresize));
+  // frameset 同款（tag 判定第二分支）。
+  var fs = document.createElement('frameset');
+  fs.onerror = nop;
+  results.push('fs-fwd:' + String(window.onerror === nop));
+  return results.join('|');
+})()"#,
+        )
+        .unwrap()
+        .value;
+    assert_eq!(
+        out,
+        "idl-fwd:true|idl-null:true|attr-fwd:function|enum:true|fs-fwd:true",
+        "R107 body/frameset forwarding handler 三面（IDL 转发/content 反射/枚举）"
+    );
+}

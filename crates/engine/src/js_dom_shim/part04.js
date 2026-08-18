@@ -1121,6 +1121,20 @@
             else if (n === 'checked' || n === 'selected') _clearBoolDefault(key, n); // R2998：setAttribute('checked'/'selected') 重同步 defaultChecked/defaultSelected
             if (handle) __zw_set_attr_handle(handle, n, v);
             else __zw_set_attr(sel, n, v);
+            // js-dom M4 R107：body/frameset 的 Window-forwarding content attribute（spec
+            // HTML handler-body/frameset-attributes——`<body onload="...">` 内容属性反射为
+            // window 同名 handler）。setAttribute 即触发编译转发（Forward 用例：
+            // setAttribute 后直接读 window[on*] 须为 function，不经 element getter）。
+            // 编译委托 _ensureInlineHandler 缓存（先清缓存强制重读新 attr），再写 window。
+            var _r107n = n.toLowerCase().slice(2);
+            var _r107tag = _realTag(sel, handle);
+            if (_r107n.length && globalThis._ZW_BODY_FORWARD_ON[_r107n]
+                && (_r107tag === 'BODY' || _r107tag === 'FRAMESET') && globalThis.window) {
+              if (_onHandlers[key]) _onHandlers[key][_r107n] = undefined;
+              _ensureInlineHandler(key, sel, handle, _r107n);
+              var _r107f = _onHandlers[key] && _onHandlers[key][_r107n];
+              if (typeof _r107f === 'function') globalThis.window['on' + _r107n] = _r107f;
+            }
             _mo_notify(sel, handle, { type: 'attributes', attributeName: n, oldValue: moOld });
             if (ceEntry) _ce_dispatchAttrChange(ceEntry, proxy, n, ceOld, v);
           };
@@ -1541,6 +1555,22 @@
         // R2934：无 JS 设值时回落编译 inline on* 属性（<button onclick="...">）。
         if (typeof prop === 'string' && /^on[a-z]/.test(prop)) {
           var _gt = String(prop).slice(2);
+          // js-dom M4 R107：body/frameset 的 6 个 forwarding handler 读 window（spec
+          // handler-body/frameset-attributes——IDL 属性是 window 同名 handler 的转发）。
+          var _r107Tag = _realTag(sel, handle);
+          if (globalThis._ZW_BODY_FORWARD_ON[_gt] && (_r107Tag === 'BODY' || _r107Tag === 'FRAMESET')
+              && globalThis.window) {
+            // js-dom M4 R107：content attribute 反射路径——先编译 inline handler（本元素
+            // attr `on<type>` → fn，spec Reflect 用例：setAttribute 后 typeof 为 function），
+            // 再转发 window（spec：body/frameset 的 handler IDL 属性是 window 同名 handler
+            // 的转发——取值即 window 值；编译 fn 写 window 使 Forward content 断言一致）。
+            _ensureInlineHandler(key, sel, handle, _gt);
+            var _r107Fn = _onHandlers[key] && _onHandlers[key][_gt];
+            if (typeof _r107Fn === 'function' && typeof globalThis.window['on' + _gt] !== 'function') {
+              globalThis.window['on' + _gt] = _r107Fn;
+            }
+            return globalThis.window['on' + _gt];
+          }
           _ensureInlineHandler(key, sel, handle, _gt);
           return (_onHandlers[key] && _onHandlers[key][_gt]) || null;
         }
@@ -3026,6 +3056,14 @@
         // store（同 addEventListener 的 _listenerStore[key]）：移旧 fn + 加新 fn；非 function → 移除（spec IDL）。
         if (typeof prop === 'string' && /^on[a-z]/.test(p)) {
           var _ot = p.slice(2);
+          // js-dom M4 R107：body/frameset 的 forwarding handler 写 window（spec：element
+          // 的 IDL setter 先置 window 同名 handler——forwarding attributes 的取值即 window 值）。
+          var _r107sTag = _realTag(sel, handle);
+          if (globalThis._ZW_BODY_FORWARD_ON[_ot] && (_r107sTag === 'BODY' || _r107sTag === 'FRAMESET')
+              && globalThis.window) {
+            globalThis.window['on' + _ot] = value;
+            return true;
+          }
           var _prevH = _onHandlers[key] && _onHandlers[key][_ot];
           if (typeof _prevH === 'function' && _listenerStore[key] && _listenerStore[key][_ot]) {
             _listenerStore[key][_ot] = _listenerStore[key][_ot].filter(function (l) { return l.fn !== _prevH; });
