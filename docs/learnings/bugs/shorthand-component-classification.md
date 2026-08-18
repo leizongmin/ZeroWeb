@@ -32,6 +32,8 @@ Logical border axis shorthands exposed the axis variant: 1-2 start/end mapping m
 
 `padding` and logical padding exposed the box-edge validation variant: padding accepts neither `auto` nor negative lengths, so both 1-4 full expansion and 1-2 logical-axis expansion need property-specific token validation.
 
+`margin` and logical margin exposed the permissive edge variant: margin accepts `auto` and negative lengths, but still must reject colors and border-width keywords such as `thin`.
+
 ## Root Cause
 
 The shorthand layer used heuristic component classifiers and treated unrecognized tokens as absent optional components. That is wrong for CSS shorthands such as `border`, where every token must match one of the allowed component grammars. A shared parser can also be broader than the property grammar that consumes it: general length parsing may accept `auto`, intrinsic sizing keywords, or percentages that `border-width` must reject.

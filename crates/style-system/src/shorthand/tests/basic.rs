@@ -50,6 +50,22 @@ fn test_margin_4_values() {
     assert_eq!(result[3], ("margin-left".into(), "40px".into(), false, (0, 0, 1)));
 }
 
+#[test]
+fn test_margin_shorthand_rejects_invalid_tokens() {
+    assert!(expand_one("margin", "red", false, (0, 0, 1)).is_empty());
+    assert!(expand_one("margin", "thin", false, (0, 0, 1)).is_empty());
+
+    let result = expand_one("margin", "auto -1px 10% 2px", false, (0, 0, 1));
+    assert_eq!(result.len(), 4);
+    assert_eq!(result[0].1, "auto");
+    assert_eq!(result[1].1, "-1px");
+    assert_eq!(result[2].1, "10%");
+
+    let inherit = expand_one("margin", "inherit", false, (0, 0, 1));
+    assert_eq!(inherit.len(), 4);
+    assert!(inherit.iter().all(|(_, value, _, _)| value == "inherit"));
+}
+
 // ── padding 简写测试 ──
 
 #[test]

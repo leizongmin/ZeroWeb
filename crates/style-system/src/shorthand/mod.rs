@@ -288,7 +288,12 @@ fn expand_one(property: &str, value: &str, important: bool, specificity: (u32, u
     match property {
         // ── 4 边简写 ──
         "margin" => {
-            let Some((t, r, b, l)) = parse_rect_values(value) else {
+            // https://drafts.csswg.org/css-box-4/#margin-physical
+            let Some((t, r, b, l)) = (if matches_css_wide_keyword(value) {
+                parse_rect_values(value)
+            } else {
+                parse_rect_values_with(value, is_margin_rect_value)
+            }) else {
                 return vec![];
             };
             vec![
@@ -606,11 +611,20 @@ fn expand_one(property: &str, value: &str, important: bool, specificity: (u32, u
         "transition" => expand_transition(value, important, specificity),
 
         // ── 逻辑属性简写 ──
-        "margin-block" => expand_axis_logical(value, "margin-block-start", "margin-block-end", important, specificity),
-        "margin-inline" => expand_axis_logical(
+        // https://drafts.csswg.org/css-logical-1/#propdef-margin-block
+        "margin-block" => expand_axis_logical_with(
+            value,
+            "margin-block-start",
+            "margin-block-end",
+            is_margin_rect_value,
+            important,
+            specificity,
+        ),
+        "margin-inline" => expand_axis_logical_with(
             value,
             "margin-inline-start",
             "margin-inline-end",
+            is_margin_rect_value,
             important,
             specificity,
         ),
@@ -930,6 +944,36 @@ fn is_padding_rect_value(value: &str) -> bool {
         Some(zero_css_parser::values::LengthValue::Calc(_)) => true,
         _ => zero_css_parser::values::parse_math_function(value).is_some(),
     }
+}
+
+fn is_margin_rect_value(value: &str) -> bool {
+    if value.eq_ignore_ascii_case("thin") || value.eq_ignore_ascii_case("medium") || value.eq_ignore_ascii_case("thick")
+    {
+        return false;
+    }
+    matches!(
+        zero_css_parser::values::parse_length(value),
+        Some(
+            zero_css_parser::values::LengthValue::Px(_)
+                | zero_css_parser::values::LengthValue::Em(_)
+                | zero_css_parser::values::LengthValue::Ex(_)
+                | zero_css_parser::values::LengthValue::Rex(_)
+                | zero_css_parser::values::LengthValue::Cap(_)
+                | zero_css_parser::values::LengthValue::Rcap(_)
+                | zero_css_parser::values::LengthValue::Rem(_)
+                | zero_css_parser::values::LengthValue::Vh(_)
+                | zero_css_parser::values::LengthValue::Vw(_)
+                | zero_css_parser::values::LengthValue::Vmin(_)
+                | zero_css_parser::values::LengthValue::Vmax(_)
+                | zero_css_parser::values::LengthValue::Ch(_)
+                | zero_css_parser::values::LengthValue::Rch(_)
+                | zero_css_parser::values::LengthValue::Ic(_)
+                | zero_css_parser::values::LengthValue::Ric(_)
+                | zero_css_parser::values::LengthValue::Percentage(_)
+                | zero_css_parser::values::LengthValue::Auto
+                | zero_css_parser::values::LengthValue::Calc(_)
+        )
+    ) || zero_css_parser::values::parse_math_function(value).is_some()
 }
 
 fn is_gap_value_token(value: &str) -> bool {

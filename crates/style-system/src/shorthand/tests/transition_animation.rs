@@ -135,6 +135,17 @@ fn test_margin_inline_shorthand() {
 }
 
 #[test]
+fn test_logical_margin_rejects_invalid_tokens() {
+    assert!(expand_one("margin-block", "red", false, (0, 0, 1)).is_empty());
+    assert!(expand_one("margin-inline", "thin", false, (0, 0, 1)).is_empty());
+
+    let result = expand_one("margin-inline", "auto -1px", false, (0, 0, 1));
+    assert_eq!(result.len(), 2);
+    assert_eq!(result[0].1, "auto");
+    assert_eq!(result[1].1, "-1px");
+}
+
+#[test]
 fn test_padding_block_shorthand() {
     let result = expand_one("padding-block", "8px", false, (0, 0, 1));
     assert_eq!(result.len(), 2);
