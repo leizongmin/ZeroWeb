@@ -84,6 +84,22 @@ pub(crate) fn collect_font_overrides(
     root: NodeId,
     resolver: &HashMap<String, u32>,
 ) -> FontOverrides {
+    collect_font_overrides_mode(
+        doc,
+        styles,
+        root,
+        resolver,
+        std::env::var("ZW_FONT_OVERRIDE_TEXT_ONLY").as_deref() != Ok("0"),
+    )
+}
+
+fn collect_font_overrides_mode(
+    doc: &Document,
+    styles: &HashMap<NodeId, ComputedStyle>,
+    root: NodeId,
+    resolver: &HashMap<String, u32>,
+    text_only: bool,
+) -> FontOverrides {
     // OPTIMIZATION: 页面内 font-family/weight/style 组合远少于文本节点数
     // （morning fixture ~1500 节点 vs ~10 组合）——按组合 memo 解析结果，避免
     // 每节点重复 resolve_font_ids_for_style 的 format! 字符串分配（全文档 collect
@@ -102,6 +118,9 @@ pub(crate) fn collect_font_overrides(
         resolver: &HashMap<String, u32>,
         collector: &mut Collector,
     ) {
+        let is_text = doc
+            .get(node_id)
+            .is_some_and(|node| matches!(node.kind, NodeKind::Text(_)));
         let style_id = doc
             .get(node_id)
             .and_then(|node| {
@@ -110,7 +129,9 @@ pub(crate) fn collect_font_overrides(
                     .flatten()
             })
             .unwrap_or(node_id);
-        if let Some(style) = styles.get(&style_id) {
+        if (!collector.text_only || is_text)
+            && let Some(style) = styles.get(&style_id)
+        {
             let bold = matches!(style.font_weight, FontWeightValue::Bold | FontWeightValue::Bolder)
                 || matches!(style.font_weight, FontWeightValue::Absolute(weight) if weight >= 600);
             let italic = matches!(style.font_style, FontStyleValue::Italic | FontStyleValue::Oblique(_));
@@ -162,6 +183,7 @@ pub(crate) fn collect_font_overrides(
         size_adjust: HashMap<NodeId, zero_style_system::FontSizeAdjustValue>,
         variations: HashMap<NodeId, zero_style_system::FontVariationSettingsValue>,
         resolve_cache: HashMap<ResolveKey, Vec<u32>>,
+        text_only: bool,
         sparse_defaults: bool,
     }
     let mut collector = Collector {
@@ -169,6 +191,7 @@ pub(crate) fn collect_font_overrides(
         size_adjust: HashMap::new(),
         variations: HashMap::new(),
         resolve_cache: HashMap::new(),
+        text_only,
         sparse_defaults: std::env::var("ZW_SPARSE_FONT_OVERRIDES").as_deref() != Ok("0"),
     };
     visit(doc, styles, root, resolver, &mut collector);
@@ -260,7 +283,7 @@ mod tests {
     }
 
     #[test]
-    fn collects_ordered_faces_for_element_and_text_run_ids() {
+    fn collects_ordered_faces_for_text_run_ids() {
         let mut doc = Document::new();
         let root = doc.create_element("div");
         doc.append_child(doc.root(), root).unwrap();
@@ -273,7 +296,7 @@ mod tests {
         let resolver = HashMap::from([("Primary".to_string(), 7), ("Secondary".to_string(), 9)]);
 
         let overrides = collect_font_overrides(&doc, &styles, root, &resolver);
-        assert_eq!(overrides.ids.get(&root), Some(&vec![7, 9]));
+        assert_eq!(overrides.ids.get(&root), None);
         assert_eq!(overrides.ids.get(&text), Some(&vec![7, 9]));
         assert_eq!(overrides.size_adjust.get(&text), None);
         assert_eq!(overrides.variations.get(&text), None);
@@ -303,5 +326,28 @@ mod tests {
         let overrides = collect_font_overrides(&doc, &styles, root, &HashMap::new());
         assert_eq!(overrides.size_adjust.get(&text), Some(&style.font_size_adjust));
         assert_eq!(overrides.variations.get(&text), Some(&style.font_variation_settings));
+    }
+
+    #[test]
+    fn all_node_mode_preserves_collected_text_overrides() {
+        let mut doc = Document::new();
+        let root = doc.create_element("div");
+        doc.append_child(doc.root(), root).unwrap();
+        let text = doc.create_text_node("x");
+        doc.append_child(root, text).unwrap();
+
+        let mut style = ComputedStyle::default();
+        style.font_family = vec!["Primary".to_string(), "Secondary".to_string()];
+        let styles = HashMap::from([(root, style)]);
+        let resolver = HashMap::from([("Primary".to_string(), 7), ("Secondary".to_string(), 9)]);
+
+        let all_nodes = collect_font_overrides_mode(&doc, &styles, root, &resolver, false);
+        let text_only = collect_font_overrides_mode(&doc, &styles, root, &resolver, true);
+
+        assert_eq!(all_nodes.ids.get(&root), Some(&vec![7, 9]));
+        assert_eq!(text_only.ids.get(&root), None);
+        assert_eq!(text_only.ids.get(&text), all_nodes.ids.get(&text));
+        assert_eq!(text_only.size_adjust.get(&text), all_nodes.size_adjust.get(&text));
+        assert_eq!(text_only.variations.get(&text), all_nodes.variations.get(&text));
     }
 }
