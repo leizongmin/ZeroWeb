@@ -1,7 +1,16 @@
-//! 历史记录管理 — 页面访问历史的记录、搜索和清理。
+//! 历史记录管理 — 页面访问历史的记录、搜索、清理和持久化。
+
+use std::path::Path;
+
+use serde::{Deserialize, Serialize};
+
+use crate::profile::atomic_write;
+
+const MAX_ENTRIES: usize = 10_000;
+const MAX_TEXT_BYTES: usize = 16 * 1024;
 
 /// 历史记录条目。
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct HistoryEntry {
     /// URL。
     url: String,
@@ -22,6 +31,7 @@ impl HistoryEntry {
 }
 
 /// 历史记录管理器。
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct History {
     /// 历史记录列表（按时间倒序排列，最新的在前）。
     entries: Vec<HistoryEntry>,
@@ -57,6 +67,7 @@ impl History {
                 title: title.to_string(),
             },
         );
+        self.entries.truncate(MAX_ENTRIES);
     }
 
     /// 搜索历史记录（按 URL 或标题匹配）。
@@ -77,6 +88,31 @@ impl History {
     /// 遍历所有历史记录。
     pub fn iter(&self) -> impl Iterator<Item = &HistoryEntry> {
         self.entries.iter()
+    }
+
+    /// 从指定 JSON 文件恢复历史记录；损坏或越界内容返回空历史。
+    pub fn load(path: &Path) -> Self {
+        let Ok(content) = std::fs::read_to_string(path) else {
+            return Self::new();
+        };
+        let Ok(history) = serde_json::from_str::<Self>(&content) else {
+            return Self::new();
+        };
+        if history.entries.len() > MAX_ENTRIES
+            || history
+                .entries
+                .iter()
+                .any(|entry| entry.url.len() > MAX_TEXT_BYTES || entry.title.len() > MAX_TEXT_BYTES)
+        {
+            return Self::new();
+        }
+        history
+    }
+
+    /// 将历史记录原子保存到指定 JSON 文件。
+    pub fn save(&self, path: &Path) -> Result<(), String> {
+        let json = serde_json::to_string_pretty(self).map_err(|error| format!("serialize history failed: {error}"))?;
+        atomic_write(path, &json)
     }
 }
 

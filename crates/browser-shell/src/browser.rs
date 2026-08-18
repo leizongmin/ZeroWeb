@@ -7,6 +7,7 @@ use crate::autocomplete::Autocomplete;
 use crate::bookmarks::Bookmarks;
 use crate::download::DownloadManager;
 use crate::history::History;
+use crate::profile::ProfilePaths;
 use crate::session::{NavigationSnapshot, SessionState, TabInfo};
 use crate::settings::BrowserSettings;
 use crate::tab::{TabId, TabManager};
@@ -166,6 +167,32 @@ impl BrowserShell {
         shell.bookmarks = Bookmarks::load_default();
         shell.zoom = shell.settings.default_zoom;
         shell
+    }
+
+    /// 从宿主提供的 profile 路径恢复浏览器业务状态。
+    ///
+    /// 每类数据独立加载：某个文件损坏时不会阻止其他数据恢复。
+    pub fn load_profile(paths: &ProfilePaths) -> Self {
+        let mut shell = Self::new();
+        if let Some(session) = SessionState::load(&paths.session())
+            && !session.is_empty()
+        {
+            shell.restore_session(&session);
+        }
+        shell.bookmarks = Bookmarks::load(&paths.bookmarks());
+        shell.history = History::load(&paths.history());
+        shell.downloads = DownloadManager::load(&paths.downloads());
+        shell
+    }
+
+    /// 原子保存浏览器 profile 的各类状态文件。
+    ///
+    /// 每个文件单独提交，避免损坏一类数据时覆盖其他类别。
+    pub fn save_profile(&self, paths: &ProfilePaths) -> Result<(), String> {
+        self.save_session_to(&paths.session())?;
+        self.bookmarks.save(&paths.bookmarks())?;
+        self.history.save(&paths.history())?;
+        self.downloads.save(&paths.downloads())
     }
 
     /// 将当前设置保存到默认路径。

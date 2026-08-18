@@ -2,20 +2,39 @@
 
 use std::sync::atomic::{AtomicU64, Ordering};
 
+use std::path::Path;
+
+use serde::{Deserialize, Serialize};
+
+use crate::profile::atomic_write;
+
+const MAX_ENTRIES: usize = 10_000;
+const MAX_TEXT_BYTES: usize = 16 * 1024;
+static NEXT_DOWNLOAD_ID: AtomicU64 = AtomicU64::new(1);
+
 /// 下载唯一标识符。
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct DownloadId(pub u64);
 
 impl DownloadId {
     /// 生成下一个唯一 ID。
     fn next() -> Self {
-        static COUNTER: AtomicU64 = AtomicU64::new(1);
-        Self(COUNTER.fetch_add(1, Ordering::Relaxed))
+        Self(NEXT_DOWNLOAD_ID.fetch_add(1, Ordering::Relaxed))
+    }
+
+    fn sync_counter(min_next: u64) {
+        let mut current = NEXT_DOWNLOAD_ID.load(Ordering::Relaxed);
+        while current < min_next {
+            match NEXT_DOWNLOAD_ID.compare_exchange_weak(current, min_next, Ordering::Relaxed, Ordering::Relaxed) {
+                Ok(_) => return,
+                Err(actual) => current = actual,
+            }
+        }
     }
 }
 
 /// 下载状态。
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum DownloadState {
     /// 等待开始。
     Pending,
@@ -32,7 +51,7 @@ pub enum DownloadState {
 }
 
 /// 下载条目。
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DownloadEntry {
     /// 下载 ID。
     id: DownloadId,
@@ -99,6 +118,7 @@ impl DownloadEntry {
 }
 
 /// 下载管理器。
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DownloadManager {
     /// 所有下载条目。
     downloads: Vec<DownloadEntry>,
@@ -229,6 +249,35 @@ impl DownloadManager {
     /// 获取活跃下载数量。
     pub fn active_count(&self) -> usize {
         self.downloads.iter().filter(|d| d.is_active()).count()
+    }
+
+    /// 从指定 JSON 文件恢复下载元数据；损坏或越界内容返回空列表。
+    pub fn load(path: &Path) -> Self {
+        let Ok(content) = std::fs::read_to_string(path) else {
+            return Self::new();
+        };
+        let Ok(downloads) = serde_json::from_str::<Self>(&content) else {
+            return Self::new();
+        };
+        if downloads.downloads.len() > MAX_ENTRIES
+            || downloads
+                .downloads
+                .iter()
+                .any(|entry| entry.url.len() > MAX_TEXT_BYTES || entry.filename.len() > MAX_TEXT_BYTES)
+        {
+            return Self::new();
+        }
+        if let Some(maximum_id) = downloads.downloads.iter().map(|entry| entry.id.0).max() {
+            DownloadId::sync_counter(maximum_id.saturating_add(1));
+        }
+        downloads
+    }
+
+    /// 将下载元数据原子保存到指定 JSON 文件。
+    pub fn save(&self, path: &Path) -> Result<(), String> {
+        let json =
+            serde_json::to_string_pretty(self).map_err(|error| format!("serialize downloads failed: {error}"))?;
+        atomic_write(path, &json)
     }
 }
 
