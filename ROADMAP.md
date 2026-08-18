@@ -36,11 +36,11 @@
 | M6 | JavaScript 运行时与 DOM 绑定基础 | `✅ 已完成` | V8 / QuickJS feature gate、DOM bridge、事件基础、Web Worker、ES Modules、WASM bridge 等基础能力已落地；完整 Web API 兼容性放到 M13 |
 | M7 | 网络、安全与导航基础 | `✅ 已完成` | HTTP、URL、导航历史、Cookie、同源策略、CORS、CSP 基础能力 |
 | M8 | 协议与多进程基础 | `✅ 已完成` | IPC 消息、协议定义、序列化边界、renderer 入口和进程管理基础已经建立；合成器进程（C2）RFC v2.1 五切片落地（dma-buf/mailbox fence 零拷贝、landlock/seccomp 沙箱、GPU device-lost CPU 回退） |
-| M9 | Canvas 与存储 | `✅ 已完成` | Canvas 2D、localStorage、sessionStorage、IndexedDB、Cache API、Service Worker registry 基础已在仓库中；**IndexedDB 原生 Rust 路由落地（工厂 schema/事务 wire/object store/index/cursor/持久化，storage↔engine 双端接线）**；Canvas WPT 兼容性批量修复持续（line-styles/shadows/compositing/gradient/pattern/text 等 R34xx 系列），**canvas-2d goal 已完成（R57 终态：Chromium Oracle 不一致归零 41/41 100%、Mission 中期 80% 达成、DC-1~4 全部满足）**；**表单验证（form-validation）M1-M3 完成（提交阻断全链路，WPT 919/0 全灭）** |
+| M9 | Canvas 与存储 | `✅ 已完成` | Canvas 2D、localStorage、sessionStorage、IndexedDB、Cache API、Service Worker registry 基础已在仓库中；**IndexedDB 原生 Rust 路由落地（工厂 schema/事务 wire/object store/index/cursor/持久化，storage↔engine 双端接线）**，**storage-indexeddb goal 已完成（2026-08-19：WPT imported 168/210 文件 80.00%、1073/1073 Pass，含跨 renderer 连接/事务与持久化）**；Canvas WPT 兼容性批量修复持续（line-styles/shadows/compositing/gradient/pattern/text 等 R34xx 系列），**canvas-2d goal 已完成（R57 终态：Chromium Oracle 不一致归零 41/41 100%、Mission 中期 80% 达成、DC-1~4 全部满足）**；**表单验证（form-validation）M1-M3 完成（提交阻断全链路，WPT 919/0 全灭）** |
 | M10 | WebView API 与自动化基础 | `✅ 已完成` | 已有可嵌入 API、导航加载、测试和 headless/自动化相关基础，但还会继续演进 |
 | M11 | 浏览器产品层 | `🚧 进行中` | `browser-shell`、标签页、地址栏、历史、书签、下载、设置等基础逐步落地；真实窗口/GPU/display 产品验收仍需补齐 |
 | M12 | Render compatibility / render-compact | `🚧 进行中` | 2026-08-04 起降频守成、2026-08-09 字体栈重建获批后恢复主动实施；WPT/CSSWG reftest 对齐 Chromium Oracle，详见「当前重点」 |
-| M13 | 完整 JS/DOM API 兼容性 | `🚧 进行中` | 当前主线：P1a DOM/JS Bridge 原生化已主体落地（R30xx 系列），P1b V8 原生 DOM 绑定接续推进（R3095 起，native 替代 polyfill 字符串桥；S5 customElements/Web Components 里程碑已完，续 DOM/CSS 选择器一致化）；**js-dom M3 lit 框架端到端闭环（R97-R99：首渲染/响应式更新链/事件链三段全通）**；完整 Web API 兼容性仍在此阶段扩展 |
+| M13 | 完整 JS/DOM API 兼容性 | `🚧 进行中` | 当前主线：P1a DOM/JS Bridge 原生化已主体落地（R30xx 系列），P1b V8 原生 DOM 绑定接续推进（R3095 起，native 替代 polyfill 字符串桥；S5 customElements/Web Components 里程碑已完，续 DOM/CSS 选择器一致化）；**js-dom M3 lit 框架端到端闭环（R97-R99）**，**M4 续作（R100-R117：真实 Vue 3 端到端、M4 events 大簇 passive-by-default/dispatchEvent/合成 click、ChildNode/ParentNode mutation 族 viable-sibling pre-insert）**；完整 Web API 兼容性仍在此阶段扩展 |
 | M14 | Canvas / WebGL / WebGPU | `⏳ 计划中` | Canvas 2D 继续补全后，逐步进入 Khronos WebGL CTS 和 GPUWeb WebGPU CTS；不作为 render-compact 的阻塞项 |
 | M15 | SVG 文档与内联 SVG DOM 渲染 | `⏳ 计划中` | render-compact 只要求 SVG 作为图片资源栅格化；完整 SVG 文档、内联 SVG DOM、样式和交互放到后续阶段 |
 | M16 | CSS 动画逐帧一致性 | `⏳ 计划中` | render-compact 关注静态截图和必要的 CSS 视觉状态；动画/transition 的帧级时间轴、插值和截图一致性后续单独验收 |
@@ -88,7 +88,7 @@
 - 媒体播放（`<video>` / `<audio>`）
 - WebRTC
 - 浏览器扩展系统
-- 首期移动端发布
+- 首期移动端发布（Android M0 bootstrap 已落地：Kotlin chrome + Rust JNI 桥，decoder/compositor 复用共享 role 循环；renderer Android transport adapter 与完整移动端发布仍不在近期主线）
 - 完全复制 Chromium/Safari/Firefox 的平台字体像素差异
 
 ## 关联文档

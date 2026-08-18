@@ -118,7 +118,7 @@ ZeroWeb — 用 Rust 构建的跨平台浏览器。两个交付物：
 项目自建浏览器核心：DOM、CSSOM、样式系统、布局、渲染管线、导航、安全/运行时边界。外部 Rust crate 用于底层能力（html5ever、v8/rquickjs、wasmtime/wasmi、wgpu+winit、taffy）。
 
 - 语言：Rust（edition 2024，MSRV 1.85）
-- 工作区：29 个 workspace member（20 个库 + 6 个应用 + 2 个测试工具 + 1 个开发工具）
+- 工作区：30 个 workspace member（20 个库 + 7 个应用 + 2 个测试工具 + 1 个开发工具）
 - 许可证：MIT
 
 ## Setup 命令
@@ -148,7 +148,7 @@ ZeroWeb — 用 Rust 构建的跨平台浏览器。两个交付物：
 
 ## 架构指南
 
-工作区布局（29 个 workspace member，分 5 类）：
+工作区布局（30 个 workspace member，分 5 类）：
 
 ```
 apps/
@@ -157,7 +157,8 @@ apps/
 ├── image-decoder/    # zero-image-decoder — 图像解码独立进程（D1）
 ├── compositor/       # zero-compositor — 合成器进程（C2）
 ├── webdriver/        # zero-webdriver — WebDriver 服务（W3C 协议）
-└── webview-demo/     # zero-webview-demo — WebView 嵌入示例
+├── webview-demo/     # zero-webview-demo — WebView 嵌入示例
+└── android-browser/  # zero-android-browser — Android 浏览器（Kotlin chrome + Rust JNI 桥，M0）
 
 crates/
 ├── dom/              # zero-dom — DOM 树（基于 html5ever）

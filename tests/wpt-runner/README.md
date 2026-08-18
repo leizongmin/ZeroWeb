@@ -9,7 +9,7 @@
 ## 主要功能
 
 - **WPT testharness** — `run [filter]` 执行内置 testharness 用例（可选分类/模式过滤），`list` 列出用例，`summary` 仅输出汇总；`--json` / `--tap` / `--junit` 输出格式
-- **专项 testharness 套件** — `testharness-html`（media/forms/focus/input-event）、`testharness-canvas`（Canvas 2D M1）、`testharness-dom`（js-dom M4 / DC-3）、`testharness-indexeddb`（IndexedDB M1）
+- **专项 testharness 套件** — `testharness-html`（media/forms/focus/input-event）、`testharness-canvas`（Canvas 2D M1）、`testharness-canvas-worker`（Canvas 2D worker OffscreenCanvas）、`testharness-dom`（js-dom M4 / DC-3）、`testharness-indexeddb`（IndexedDB M1）、`testharness-constraints`（表单约束验证 / form-validation M1）
 - **reftest** — `reftest` 运行常驻 reftest 断言集（`reftest-skip-list.txt` / `reftest-smoke.txt` 分层控制）；`reftest-upstream` 运行上游 wpt-data reftest；`--media print|screen` 切换渲染媒体
 - **布局对比** — `layout-dump [filter]` 对上游测试页 dump 布局树与 golden 对比（`layout-golden/`，配套 `../../scripts/run-layout-golden.sh`）
 - **oracle 对比** — `reftest-oracle [filter]` 渲染上游测试页与 chromium oracle 截图对比（`oracle-shots/`），`product-smoke <html>` 渲染产品 fixture 到 CPU PNG 对比；`compare-png` 像素级对比（max-diff / channel-diff / pixel-radius）

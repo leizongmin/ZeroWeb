@@ -36,8 +36,9 @@ assert_eq!(psl.registrable_domain("www.ck"), "www.ck");
 assert_eq!(psl.registrable_domain("127.0.0.1"), "127.0.0.1");
 assert_eq!(psl.registrable_domain("localhost"), "localhost");
 
-// 注入完整上游数据（如经许可证合规流程审核的 PSL 文本）
-let full = PublicSuffixList::from_rules(include_str!("audited_psl.txt"));
+// 注入完整上游数据（如经许可证合规流程审核的 PSL 文本；
+// 本 crate 内置的原始规则集为 src/default_rules.txt）
+let full = PublicSuffixList::from_rules(include_str!("default_rules.txt"));
 assert_eq!(full.registrable_domain("www.example.co.uk"), "example.co.uk");
 ```
 

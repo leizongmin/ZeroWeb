@@ -1,6 +1,6 @@
 [package]
 name = "zero-webview-demo"
-description = "WebView 嵌入示例应用"
+description = "wgpu 渲染管线演示应用（渲染栈最小示例）"
 version.workspace = true
 edition.workspace = true
 license.workspace = true

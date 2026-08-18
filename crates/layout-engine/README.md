@@ -8,7 +8,7 @@
 
 ## 主要功能
 
-- **多布局模式**：支持 Block、Flexbox、Grid 三种主流布局算法
+- **多布局模式**：支持 Block、Inline（行内格式化上下文、文本布局与换行）、Flexbox、Grid 布局算法，并含 Table（表格布局与边框合并）、Multicol（多列碎片化与平衡）、margin collapse、float 定位等 CSS 布局特性
 - **样式转换层**：完整的 `ComputedStyle` 到 `taffy::Style` 映射，覆盖 display、position、size、margin、padding、border、overflow、flex 属性、对齐方式等
 - **布局盒树**：输出结构化的 `LayoutBox` 树，包含位置、尺寸、内容区域偏移、边框、内边距、外边距等完整几何信息
 - **定位支持**：支持 static、relative、absolute、fixed 定位模式

@@ -4,7 +4,7 @@
 
 ## 概述
 
-`ZeroBrowser Shell` (`zero-browser-shell`) 是 `ZeroBrowser` 的应用层 crate，负责构建浏览器的用户界面交互。它基于 `zero-webview` 提供的稳定嵌入式 API 和 `zero-host-runtime` 提供的窗口与事件循环能力，实现多标签页管理、收藏夹、地址栏、历史记录等核心浏览器 Shell 功能。
+`ZeroBrowser Shell` (`zero-browser-shell`) 是 `ZeroBrowser` 的应用层 crate，提供 UI-agnostic 的浏览器 shell 数据模型和协调逻辑，可被任何 UI 框架消费。它实现多标签页管理、收藏夹、地址栏、历史记录等核心浏览器 Shell 功能，本身不直接渲染 UI（实际渲染由上层宿主完成）。
 
 ## 主要功能
 

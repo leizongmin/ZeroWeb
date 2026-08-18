@@ -1,5 +1,6 @@
 [package]
 name = "zero-icon-gen"
+description = "ZeroBrowser 图标资产生成工具（从源 SVG 产出三端图标）"
 version.workspace = true
 edition.workspace = true
 license.workspace = true

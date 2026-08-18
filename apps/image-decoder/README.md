@@ -25,6 +25,10 @@
 cargo run --bin zero-image-decoder -- --type=image-decoder --instance-id=1
 ```
 
+> 注：`--type=image-decoder --instance-id=N` 是宿主 spawn 契约的一部分（由 webview 侧
+> `ImageDecoderProxy` 的 `child_process_args` 传递），本二进制本身不解析命令行参数——
+> 启动后即初始化 stdio 传输并进入请求-响应循环。
+
 ## 部署要求
 
 由 `zero-renderer` 固定使用；解码器不可用时资源加载失败，不会回退到 renderer 进程内解码。

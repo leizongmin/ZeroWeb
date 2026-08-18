@@ -4,7 +4,7 @@
 
 ## 概述
 
-`ZeroWeb Network` (`zero-net`) 是 ZeroWeb 的网络层，封装了 HTTP/HTTPS 请求的完整生命周期。它负责 URL 解析与同源判断、同步 HTTP 请求发送（支持重定向和超时控制）、浏览器风格的导航历史栈（前进/后退/替换），以及 Cookie 的解析、存储和按域名/路径匹配。
+`ZeroWeb Network` (`zero-net`) 是 ZeroWeb 的网络层，封装了 HTTP/HTTPS 请求的完整生命周期。它负责 URL 解析与同源判断、同步 HTTP 请求发送（支持重定向和超时控制）、浏览器风格的导航历史栈（前进/后退/替换）、Cookie 的解析、存储和按域名/路径匹配，以及 WebSocket 客户端（基于 tungstenite，支持 ws/wss 连接、文本/二进制消息、Close 帧与错误处理）。
 
 ## 协议支持
 
@@ -18,7 +18,10 @@
 - **HTTP 客户端** — 封装 reqwest blocking 客户端，提供 `get` / `get_with_headers` / `post` 便捷方法，其余方法（PUT/DELETE/PATCH/HEAD/OPTIONS 等）经 `HttpRequest` 构造后由 `send` 发送，可配置超时时间和最大重定向次数
 - **请求与响应类型** — `HttpRequest` 支持链式添加请求头，`HttpResponse` 提供状态码判断、Content-Type 获取和 UTF-8 文本解码
 - **导航历史** — 浏览器风格的双向历史栈，支持 navigate/go_back/go_forward/replace_current，超出容量时自动淘汰最早条目
-- **Cookie 管理** — 解析 Set-Cookie 头，支持 Secure、HttpOnly、SameSite、Domain、Path、Expires/Max-Age 属性，按域名（含子域名）和路径匹配
+- **Cookie 管理** — 解析 Set-Cookie 头，支持 Secure、HttpOnly、SameSite、Domain、Path、Expires/Max-Age 属性，按域名（含子域名）和路径匹配；`__Host-` / `__Secure-` 名称前缀校验、public-suffix Domain 拒绝与 RFC 6265 §5.4 排序（R3391/R3394/R3395）
+- **WebSocket 客户端** — 基于 tungstenite，支持 ws/wss 连接、文本/二进制消息、非阻塞轮询、Close 帧与错误类型
+- **HTTP 响应缓存** — Cache-Control / ETag / Last-Modified 条件请求、LRU 淘汰、s-maxage 私有缓存语义（RFC 9111）
+- **资源调度** — per-origin 并发上限的 fetch 调度器（`fetch_scheduler`）与资源优先级推断（`fetch_priority`）
 
 ## 使用示例
 

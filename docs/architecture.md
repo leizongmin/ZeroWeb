@@ -21,7 +21,7 @@
 
 ## 工作区分层
 
-整个工作区共 29 个 workspace member：20 个库 crate、6 个应用入口（`apps/`）、2 个测试工具（`tests/`）和 1 个开发工具（`tools/icon-gen`，不随发布产物分发）。下文按「应用与进程入口 / 产品层和 API 层 / 引擎层 / 基础设施层 / 测试基础设施」分组列出。
+整个工作区共 30 个 workspace member：20 个库 crate、7 个应用入口（`apps/`）、2 个测试工具（`tests/`）和 1 个开发工具（`tools/icon-gen`，不随发布产物分发）。下文按「应用与进程入口 / 产品层和 API 层 / 引擎层 / 基础设施层 / 测试基础设施」分组列出。
 
 ### 应用与进程入口
 
@@ -33,6 +33,7 @@
 | `apps/compositor` | 合成器进程（`zero-compositor`，C2）：Browser 固定经此进程合成——scroll transform bake、sync_token + Viz present、GPU mailbox fence + mmap 零拷贝、dma-buf fd 导出、owned window present surface、Linux landlock/seccomp 沙箱、GPU device-lost 模拟 + CPU 回退；Vulkan 真纹理 dma-buf 导出仍为后续 |
 | `apps/webdriver` | WebDriver 服务（`zero-webdriver`）：W3C 协议骨架（wdspec 第一步） |
 | `apps/webview-demo` | 最小演示程序，用于串起宿主窗口和渲染基础设施（wgpu/CPU 渲染静态文本） |
+| `apps/android-browser` | Android 浏览器应用（M0 bootstrap）：Kotlin/Jetpack Compose chrome + `zero-android-browser` JNI 桥接层（cdylib），decoder/compositor 经 Android socket transport 复用共享 Rust role 循环；renderer Android transport adapter 待 M1 |
 
 ### 产品层和 API 层
 
@@ -103,7 +104,7 @@
 粗略说，仓库现在分成三档：
 
 - **核心内核已有实质实现**: dom、css-parser、style-system、layout-engine、engine、render-foundation、host-runtime、net、security、storage、protocol、canvas、wasm-sandbox、script-sandbox、page-runtime、product-version、psl、webview 都有可运行代码和对应测试。
-- **产品层骨架已成，持续打磨**: `apps/browser`（桌面入口 + headless / remote debugging）、`browser-shell`（标签页 / 书签 / 历史 / 下载 / 设置 / 上下文菜单等数据模型）、`apps/renderer`（多进程渲染进程入口）、`apps/image-decoder`（D1 图像解码进程）、`apps/compositor`（C2 合成器进程）、`apps/webdriver`（WebDriver 服务）已打通，但产品形态、稳定性和真实站点兼容性仍在推进。
+- **产品层骨架已成，持续打磨**: `apps/browser`（桌面入口 + headless / remote debugging）、`browser-shell`（标签页 / 书签 / 历史 / 下载 / 设置 / 上下文菜单等数据模型）、`apps/renderer`（多进程渲染进程入口）、`apps/image-decoder`（D1 图像解码进程）、`apps/compositor`（C2 合成器进程）、`apps/webdriver`（WebDriver 服务）已打通，`apps/android-browser`（M0 bootstrap）已落地，但产品形态、稳定性和真实站点兼容性仍在推进。
 - **当前主线**: P1b V8 原生 DOM 绑定（2026-08-09 RFC 获批，R3095 起持续落地：S0 PoC 验证 native ~15.6×、S1 原生只读属性族 + NodeId 映射、S2 生产接线 + 树写/属性写原生、live Document 共享、S3 查询原生、S4 EventTarget 与事件派发/冒泡/stopPropagation 原生化，命名空间/序列化 spec 合规 R3181–R3208，**S5 customElements/Web Components 里程碑完成 R3262–R3269**，DOM/CSS 表单状态选择器一致化 R3277–R3284；P1a DOM/JS Bridge 原生化已主体落地）；渲染兼容性（WPT/CSSWG reftest 对齐 Chromium Oracle）2026-08-04 起降频守成、2026-08-09 字体栈重建 RFC v0.2.3 获批后恢复主动实施——多切片已落地（OpenType features 贯通、shaped fallback default-on、two-value `font-size-adjust` 全栈贯通 css-fonts Oracle 净改善 14.34pp、font-synthesis/font-size 绝对关键字）——Chromium Oracle 真一致约 47.5%、self-source 约 77%、strict 处低位 plateau，自主 clean-lever 轻量修复面已 11 vein 审计穷尽；残余缺口为 vertical writing modes（部分切片已落地，整体仍 user-gated）、multicol 碎片化、R109 inline-as-block 等结构性问题，根因是 layout↔paint IFC 度量不一致（Phase-A spread），Phase A IFC / R1043 / R2174 等深方向仍需用户点名授权。完整 Web API 与真实网站交互兼容性是后续阶段。详见 [路线图](../ROADMAP.md)。
 
 所以今天的 ZeroWeb 是一个内核已成形、产品层在打磨的浏览器工作区，但还不是一个做完的浏览器产品。

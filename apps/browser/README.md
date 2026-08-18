@@ -28,12 +28,19 @@ cargo run --bin zero-browser
 
 ## 架构
 
+浏览器采用固定多进程模型：`zero-browser` 作为宿主进程 spawn 独立 `zero-renderer`（页面渲染与脚本执行）、`zero-compositor`（合成与呈现）和 `zero-image-decoder`（图像解码）子进程，页面帧经 IPC 导入呈现；默认发布版不链接 WebView、脚本 sandbox 或任何 JS 引擎。headless 模式同样通过 renderer IPC 完成导航、脚本与截图。
+
 ```
 zero-browser
-├── app.rs          — BrowserApp 主循环（连接 Shell + WebView + HostRuntime）
-├── app_render.rs   — GPU 工具栏渲染（标签栏、地址栏、导航按钮）
-├── main.rs         — 应用入口
-└── pages.rs        — 内置页面（设置页等）
+├── app.rs               — BrowserApp 主循环（连接 Shell + WebView + HostRuntime）
+├── app_render.rs        — GPU 工具栏渲染（标签栏、地址栏、导航按钮）
+├── compositor_client.rs — zero-compositor 子进程发现与连接（ZW_COMPOSITOR_BIN）
+├── process_backend.rs   — renderer/image-decoder 子进程管理
+├── headless.rs          — headless 调试模式（renderer IPC 驱动）
+├── tab_js_worker.rs     — 标签页脚本 worker
+├── tab_manager.rs       — 标签页状态管理
+├── main.rs              — 应用入口
+└── pages.rs             — 内置页面（设置页等）
 ```
 
 ## 依赖关系

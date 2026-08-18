@@ -45,7 +45,7 @@ ZeroWeb 是一个用 Rust 写的实验性跨平台浏览器项目。这个仓库
 | 方向 | 现状 |
 |------|------|
 | `ZeroWebView` | 已有稳定嵌入 API、可运行 demo，以及跨 crate 和产品层 smoke 测试；Service Worker、WASM 桥接与 `SecurityContext` 安全检查等页面级能力已接入其中 |
-| 浏览器应用 | `zero-browser` 固定经 `zero-renderer`、`zero-image-decoder` 与 `zero-compositor` 子进程工作；browser 仅保留窗口、浏览器 chrome、网络代理、IPC 帧导入与呈现，默认发布版不链接 WebView、脚本 sandbox 或任何 JS 引擎，页面脚本由 renderer 独占执行。headless 调试同样通过 renderer IPC 完成导航、脚本和截图。`ZeroWebView` 作为嵌入 API 保持进程内实现；整体仍处于实验阶段 |
+| 浏览器应用 | `zero-browser` 固定经 `zero-renderer`、`zero-image-decoder` 与 `zero-compositor` 子进程工作；browser 仅保留窗口、浏览器 chrome、网络代理、IPC 帧导入与呈现，默认发布版不链接 WebView、脚本 sandbox 或任何 JS 引擎，页面脚本由 renderer 独占执行。headless 调试同样通过 renderer IPC 完成导航、脚本和截图。`ZeroWebView` 作为嵌入 API 保持进程内实现；Android 端 M0 bootstrap 已落地（`apps/android-browser`，Kotlin chrome + Rust JNI 桥，decoder/compositor 复用共享 role 循环）；整体仍处于实验阶段 |
 | 页面 JavaScript（当前主线） | `script-sandbox` 已提供 V8/QuickJS feature gate（含 V8 持久化 Context 复用）、Web Worker、ES Modules、WebAssembly JS API 到 `wasm-sandbox` 的自动桥接。**P1a DOM/JS Bridge 原生化已主体落地**：fetch 真实化（GET 端到端 + 二进制响应 body 真实字节）、setTimeout 真实延迟、MutationObserver（characterData 变化 / childList addedNodes 回填 / attributeFilter / subtree）与 IntersectionObserver/ResizeObserver 已真实触发回调；表单控件事件、Selectors L4、DOM 遍历/变异 API（含 innerHTML/outerHTML childList emission）、布局几何、`getComputedStyle` 动态 inline 覆盖 + 计算值序列化、classList 完整 DOMTokenList、HTMLCollection/NodeList item/namedItem。**P1b V8 原生 DOM 绑定为当前活跃主线**（2026-08-09 RFC 获批后 R3095 起持续落地）：S0 PoC 验证 → S1 原生只读属性族 + NodeId↔对象映射（native 比 polyfill 快 ~15.6×）→ S2 生产接线（kill-switch 默认关）+ 树写/属性写原生 → live Document 共享（原生写触发重渲染）→ S3 查询原生 → S4 EventTarget 原生 + 事件派发/冒泡/stopPropagation 原生化，dom_bindings 五子模块化闭合；命名空间/序列化 spec 合规（R3181–R3208）；**S5 customElements/Web Components 里程碑完成（R3262–R3269：native HTMLElement 基类 + class 继承、customElements.upgrade/createElement 原生实例、connected/disconnected 生命周期、attributeChangedCallback、子树 upgrade）**；DOM/CSS 表单状态选择器族一致化（R3277–R3284）。完整 Web API 与站点兼容性仍在推进 |
 | 渲染兼容性（恢复主动实施） | 以 WPT/CSSWG reftest 对齐 Chromium 为验收标准，Chromium Oracle 像素一致率（`make reftest-oracle`）为诚实度量（同源 reftest 存在假通过，仅作自一致性参考）。自源 reftest 约 77%、Chromium Oracle 真一致约 47.5%、strict 像素级处低位 plateau。自主 clean-lever 轻量修复面已 definitively 穷尽（11 vein 审计全 exhaust）；2026-08-04 起本方向降频守成、主线切回 zero-web DOM/JS Bridge 原生化，**2026-08-09 字体栈重建 RFC v0.2.3 获批后恢复主动实施，多切片已落地**——OpenType features 贯通（R3230-F–R3233-F）、generic advance 统一（R3234-F–R3235-F）、ordered fallback faces（R3236-F–R3241-F）、shaped fallback default-on（R3243-F）、**two-value `font-size-adjust` 全栈贯通（R3245-F，css-fonts Oracle 净改善 14.34pp）**、font-synthesis 与 font-size 绝对关键字（R3247-F–R3248-F）、font-variant 族与 bidi 处理（R3250-F–R3256-F、R3319-F）、@font-face stretch/相对度量（R3341-F–R3344-F）；Phase A IFC / R1043 vertical-mode / R2174 border-box 仍等用户点名。残余缺口集中在 vertical writing modes（部分切片已落地，整体仍待推进）、multicol 碎片化、R109 inline-as-block 等结构性方向，根因是 layout↔paint IFC 度量不一致（Phase-A spread）。详见 [路线图](ROADMAP.md) 与 [docs/goal/rendering-compat.md](docs/goal/rendering-compat.md) |
 | HTML 行为兼容（新赛道） | 2026-08-12 启动：以表单场景为起点的规范驱动并行开发线（源码深潜 + 官方规范交叉验证），范围为基础 HTML 元素的解析、DOM/IDL、交互状态、事件与默认动作；已建立表单兼容性基线 + 共享动作事务核心（form 动作/文本编辑/焦点经共享计划路由，可取消文本输入事件、form POST 导航、无 JS 保留默认动作、稳定页面节点身份），配套 [`html-behavior-compatibility-spec-rfc.md`](docs/specs/html-behavior-compatibility-spec-rfc.md) 规格与 `tests/integration/src/html_compat.rs` 常驻断言 |
@@ -115,7 +115,7 @@ macOS 下载产物要免除 Gatekeeper 手工放行，必须使用 Apple Develop
 
 ## 仓库结构
 
-整个工作区共 29 个 workspace member：20 个库 crate、6 个应用入口（`apps/`）、2 个测试工具（`tests/`）和 1 个开发工具（`tools/icon-gen`，不随发布产物分发）。下文按「应用与进程入口 / 核心引擎 / 基础设施 / 产品层与测试」分组列出。
+整个工作区共 30 个 workspace member：20 个库 crate、7 个应用入口（`apps/`）、2 个测试工具（`tests/`）和 1 个开发工具（`tools/icon-gen`，不随发布产物分发）。下文按「应用与进程入口 / 核心引擎 / 基础设施 / 产品层与测试」分组列出。
 
 ### 应用与进程入口
 
@@ -127,6 +127,7 @@ macOS 下载产物要免除 Gatekeeper 手工放行，必须使用 Apple Develop
 | `apps/compositor` | 合成器进程：protocol 消息族 + 真实光栅化（C2） |
 | `apps/webdriver` | WebDriver 服务（W3C 协议骨架，wdspec 第一步） |
 | `apps/webview-demo` | 最小渲染管线演示程序（wgpu/CPU 渲染静态文本，演示 render-foundation 与 host-runtime 集成） |
+| `apps/android-browser` | Android 浏览器应用（M0 bootstrap：Kotlin/Jetpack Compose chrome + Rust JNI 桥接层 `zero-android-browser`，decoder/compositor 经 Android socket 复用共享 role 循环） |
 
 ### 核心引擎
 
