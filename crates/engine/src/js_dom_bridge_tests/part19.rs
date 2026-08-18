@@ -603,13 +603,22 @@ fn test_indexeddb_transaction_exception_order() {
         .execute(
             "globalThis.__transactionOrder = [];\
              var request = indexedDB.open('transaction-exception-order', 1);\
-             request.onupgradeneeded = function () { request.result.createObjectStore('store'); };\
+             __transactionOrder.push(Object.prototype.toString.call(request));\
+             request.onupgradeneeded = function () {\
+               request.result.createObjectStore('store');\
+               __transactionOrder.push(Object.prototype.toString.call(request.result));\
+               __transactionOrder.push(Object.prototype.toString.call(request.transaction));\
+               try { request.result.transaction('store'); }\
+               catch (error) { __transactionOrder.push(error.name); }\
+             };\
              request.onsuccess = function () {\
                var db = request.result;\
                try { db.transaction('missing', 'versionchange'); }\
                catch (error) { __transactionOrder.push(error.name); }\
                try { db.transaction('store', 'versionchange'); }\
                catch (error) { __transactionOrder.push(error.name); }\
+               var relaxed = db.transaction('store', 'readonly', {durability:'relaxed'});\
+               __transactionOrder.push(relaxed.durability);\
                db.close();\
                try { db.transaction('missing'); }\
                catch (error) { __transactionOrder.push(error.name); }\
@@ -620,7 +629,8 @@ fn test_indexeddb_transaction_exception_order() {
 
     assert_eq!(
         sandbox.execute("__transactionOrder.join('|')").unwrap().value,
-        "NotFoundError|TypeError|InvalidStateError"
+        "[object IDBOpenDBRequest]|[object IDBDatabase]|[object IDBTransaction]|\
+         InvalidStateError|NotFoundError|TypeError|relaxed|InvalidStateError"
     );
 }
 

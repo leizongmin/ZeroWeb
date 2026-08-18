@@ -289,6 +289,35 @@ pub const INDEXEDDB_CASES: &[(&str, &[&str])] = &[
         "IndexedDB/idb-explicit-commit-throw.any.js",
         &["resources/support-promises.js"],
     ),
+    (
+        "IndexedDB/idb-explicit-commit.any.js",
+        &["resources/support-promises.js"],
+    ),
+    ("IndexedDB/idbtransaction.any.js", &["resources/support.js"]),
+    (
+        "IndexedDB/transaction-create_in_versionchange.any.js",
+        &["resources/support.js"],
+    ),
+    (
+        "IndexedDB/transaction-relaxed-durability.any.js",
+        &["resources/support-promises.js"],
+    ),
+    (
+        "IndexedDB/upgrade-transaction-lifecycle-committed.any.js",
+        &["resources/support.js", "resources/support-promises.js"],
+    ),
+    (
+        "IndexedDB/upgrade-transaction-lifecycle-user-aborted.any.js",
+        &["resources/support.js", "resources/support-promises.js"],
+    ),
+    (
+        "IndexedDB/upgrade-transaction-lifecycle-backend-aborted.any.js",
+        &["resources/support.js", "resources/support-promises.js"],
+    ),
+    (
+        "IndexedDB/upgrade-transaction-deactivation-timing.any.js",
+        &["resources/support.js", "resources/support-promises.js"],
+    ),
     ("IndexedDB/idbobjectstore_add.any.js", &["resources/support.js"]),
     ("IndexedDB/idbobjectstore_put.any.js", &["resources/support.js"]),
     ("IndexedDB/idbobjectstore_get.any.js", &["resources/support.js"]),

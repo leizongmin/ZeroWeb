@@ -81,6 +81,14 @@ FILES=(
   "IndexedDB/idbobjectstore-request-source.any.js"
   "IndexedDB/delete-range.any.js"
   "IndexedDB/idb-explicit-commit-throw.any.js"
+  "IndexedDB/idb-explicit-commit.any.js"
+  "IndexedDB/idbtransaction.any.js"
+  "IndexedDB/transaction-create_in_versionchange.any.js"
+  "IndexedDB/transaction-relaxed-durability.any.js"
+  "IndexedDB/upgrade-transaction-lifecycle-committed.any.js"
+  "IndexedDB/upgrade-transaction-lifecycle-user-aborted.any.js"
+  "IndexedDB/upgrade-transaction-lifecycle-backend-aborted.any.js"
+  "IndexedDB/upgrade-transaction-deactivation-timing.any.js"
   "IndexedDB/idbobjectstore_add.any.js"
   "IndexedDB/idbobjectstore_put.any.js"
   "IndexedDB/idbobjectstore_get.any.js"
@@ -220,7 +228,7 @@ fetch_from_checkout() {
 
 if [[ -n "${WPT_SOURCE:-}" ]]; then
   fetch_from_checkout
-  echo "IndexedDB testharness subset ready (139 cases, WPT ${WPT_REV})"
+  echo "IndexedDB testharness subset ready (147 cases, WPT ${WPT_REV})"
   exit 0
 fi
 
@@ -237,4 +245,4 @@ if [[ "${raw_failed}" == "1" ]]; then
   fetch_from_git
 fi
 
-echo "IndexedDB testharness subset ready (139 cases, WPT ${WPT_REV})"
+echo "IndexedDB testharness subset ready (147 cases, WPT ${WPT_REV})"

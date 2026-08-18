@@ -1,0 +1,45 @@
+{
+  "date": "2026-08-19",
+  "scope": "M2 IndexedDB transaction lifecycle",
+  "wpt_revision": "315976933870b34d6ea30e3f6643403edae678ba",
+  "files_added": 8,
+  "driving_wpt": {
+    "before": {
+      "pass": 21,
+      "fail": 9,
+      "timeout": 0
+    },
+    "after": {
+      "pass": 30,
+      "fail": 0,
+      "timeout": 0
+    }
+  },
+  "imported_wpt": {
+    "files": 147,
+    "pass": 868,
+    "fail": 0,
+    "timeout": 0,
+    "not_run": 0,
+    "empty": 0
+  },
+  "capabilities": [
+    "explicit commit active-state guard",
+    "transaction durability options",
+    "upgrade transaction creation restriction",
+    "upgrade commit and abort lifecycle",
+    "IndexedDB WebIDL class tags"
+  ],
+  "gates": {
+    "cargo_fmt": "pass",
+    "cargo_clippy_workspace": "pass",
+    "make_testharness_indexeddb": "pass",
+    "make_test": "pass",
+    "targeted_engine": "25 pass",
+    "manifest_counts": {
+      "fetch": 147,
+      "runner": 147,
+      "ledger": 147
+    }
+  }
+}

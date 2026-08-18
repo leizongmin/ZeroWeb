@@ -3369,6 +3369,11 @@
     this.onblocked = null;
     this._listeners = {};
   }
+  function _zwIDBOpenRequest() {
+    _zwIDBRequest.call(this, null);
+  }
+  _zwIDBOpenRequest.prototype = Object.create(_zwIDBRequest.prototype);
+  _zwIDBOpenRequest.prototype.constructor = _zwIDBOpenRequest;
   Object.defineProperties(_zwIDBRequest.prototype, {
     result: {
       configurable: true,
@@ -5156,11 +5161,12 @@
     setTimeout(function () { _zwIDBRunTransactionCompletion(transaction); }, 0);
   }
 
-  function _zwIDBTransaction(db, names, mode, deferCompletion) {
+  function _zwIDBTransaction(db, names, mode, deferCompletion, durability) {
     var storeNames = Array.isArray(names) ? names.map(String) : [String(names)];
     this._db = db;
     this.db = db;
     this.mode = mode || 'readonly';
+    this.durability = durability || 'default';
     this._scope = storeNames.filter(function (name, index, all) {
       return all.indexOf(name) === index;
     }).sort();
@@ -5276,7 +5282,7 @@
     }
   };
   _zwIDBTransaction.prototype.commit = function () {
-    if (this._aborted || this._finished || this._committing) {
+    if (!this._active || this._aborted || this._finished || this._committing) {
       throw new globalThis.DOMException('The transaction is inactive.', 'InvalidStateError');
     }
     this._committing = true;
@@ -5396,10 +5402,13 @@
     delete this._stores[name];
     transaction._scope = transaction._scope.filter(function (entry) { return entry !== name; });
   };
-  _zwIDBDatabase.prototype.transaction = function (names, mode) {
+  _zwIDBDatabase.prototype.transaction = function (names, mode, options) {
     // https://w3c.github.io/IndexedDB/#dom-idbdatabase-transaction
     if (this._closed) {
       throw new globalThis.DOMException('The database connection is closed.', 'InvalidStateError');
+    }
+    if (this._upgradeTransaction) {
+      throw new globalThis.DOMException('A version change transaction is running.', 'InvalidStateError');
     }
     var storeNames = Array.isArray(names) ? names.map(String) : [String(names)];
     if (storeNames.length === 0) {
@@ -5417,7 +5426,12 @@
     if (mode !== 'readonly' && mode !== 'readwrite') {
       throw new TypeError('The transaction mode is invalid.');
     }
-    return new _zwIDBTransaction(this, storeNames, mode);
+    options = options === undefined ? {} : Object(options);
+    var durability = options.durability === undefined ? 'default' : String(options.durability);
+    if (durability !== 'default' && durability !== 'strict' && durability !== 'relaxed') {
+      throw new TypeError('The transaction durability is invalid.');
+    }
+    return new _zwIDBTransaction(this, storeNames, mode, false, durability);
   };
   _zwIDBDatabase.prototype.close = function () {
     if (this._closed) return;
@@ -5780,7 +5794,7 @@
     open: function (name, version) {
       name = String(name);
       version = _zwIDBOpenVersion(version, arguments.length >= 2);
-      var req = new _zwIDBRequest(null);
+      var req = new _zwIDBOpenRequest();
       _zwIDBEnqueueConnectionRequest(name, function (done, queue) {
         var state = _idb_databases[name];
         if (state
@@ -5920,7 +5934,7 @@
     },
     deleteDatabase: function (name) {
       name = String(name);
-      var req = new _zwIDBRequest(null);
+      var req = new _zwIDBOpenRequest();
       _zwIDBEnqueueConnectionRequest(name, function (done, queue) {
         var state = _idb_databases[name];
         var oldVersion = state ? state.version : 0;
@@ -5996,7 +6010,7 @@
   // IDB 构造器占位（feature-detection / instanceof 用，rare）。
   globalThis.IDBKeyRange = _zwIDBKeyRange;
   globalThis.IDBRequest = _zwIDBRequest;
-  globalThis.IDBOpenDBRequest = _zwIDBRequest;
+  globalThis.IDBOpenDBRequest = _zwIDBOpenRequest;
   globalThis.IDBCursor = _zwIDBCursor;
   globalThis.IDBCursorWithValue = _zwIDBCursorWithValue;
   if (typeof Symbol !== 'undefined' && Symbol.toStringTag) {
@@ -6004,6 +6018,11 @@
       _zwIDBRequest.prototype,
       Symbol.toStringTag,
       { configurable: true, value: 'IDBRequest' }
+    );
+    Object.defineProperty(
+      _zwIDBOpenRequest.prototype,
+      Symbol.toStringTag,
+      { configurable: true, value: 'IDBOpenDBRequest' }
     );
     Object.defineProperty(
       _zwIDBCursor.prototype,
@@ -6024,6 +6043,16 @@
       _zwIDBIndex.prototype,
       Symbol.toStringTag,
       { configurable: true, value: 'IDBIndex' }
+    );
+    Object.defineProperty(
+      _zwIDBDatabase.prototype,
+      Symbol.toStringTag,
+      { configurable: true, value: 'IDBDatabase' }
+    );
+    Object.defineProperty(
+      _zwIDBTransaction.prototype,
+      Symbol.toStringTag,
+      { configurable: true, value: 'IDBTransaction' }
     );
   }
   globalThis.IDBDatabase = _zwIDBDatabase;

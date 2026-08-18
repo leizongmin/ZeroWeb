@@ -72,6 +72,14 @@ IndexedDB/idbobjectstore-query-exception-order.any.js 315976933870b34d6ea30e3f66
 IndexedDB/idbobjectstore-request-source.any.js 315976933870b34d6ea30e3f6643403edae678ba 2026-08-19 IDB-M2-object-store-ordering
 IndexedDB/delete-range.any.js 315976933870b34d6ea30e3f6643403edae678ba 2026-08-19 IDB-M2-object-store-ordering
 IndexedDB/idb-explicit-commit-throw.any.js 315976933870b34d6ea30e3f6643403edae678ba 2026-08-19 IDB-M2-object-store-ordering
+IndexedDB/idb-explicit-commit.any.js 315976933870b34d6ea30e3f6643403edae678ba 2026-08-19 IDB-M2-transaction-lifecycle
+IndexedDB/idbtransaction.any.js 315976933870b34d6ea30e3f6643403edae678ba 2026-08-19 IDB-M2-transaction-lifecycle
+IndexedDB/transaction-create_in_versionchange.any.js 315976933870b34d6ea30e3f6643403edae678ba 2026-08-19 IDB-M2-transaction-lifecycle
+IndexedDB/transaction-relaxed-durability.any.js 315976933870b34d6ea30e3f6643403edae678ba 2026-08-19 IDB-M2-transaction-lifecycle
+IndexedDB/upgrade-transaction-lifecycle-committed.any.js 315976933870b34d6ea30e3f6643403edae678ba 2026-08-19 IDB-M2-transaction-lifecycle
+IndexedDB/upgrade-transaction-lifecycle-user-aborted.any.js 315976933870b34d6ea30e3f6643403edae678ba 2026-08-19 IDB-M2-transaction-lifecycle
+IndexedDB/upgrade-transaction-lifecycle-backend-aborted.any.js 315976933870b34d6ea30e3f6643403edae678ba 2026-08-19 IDB-M2-transaction-lifecycle
+IndexedDB/upgrade-transaction-deactivation-timing.any.js 315976933870b34d6ea30e3f6643403edae678ba 2026-08-19 IDB-M2-transaction-lifecycle
 IndexedDB/idbobjectstore_add.any.js 315976933870b34d6ea30e3f6643403edae678ba 2026-08-17 IDB-M1-object-store-crud
 IndexedDB/idbobjectstore_put.any.js 315976933870b34d6ea30e3f6643403edae678ba 2026-08-17 IDB-M1-object-store-crud
 IndexedDB/idbobjectstore_get.any.js 315976933870b34d6ea30e3f6643403edae678ba 2026-08-17 IDB-M1-object-store-crud
