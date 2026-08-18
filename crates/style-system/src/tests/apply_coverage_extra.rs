@@ -447,6 +447,8 @@ fn test_apply_animation_direction_variants() {
         let (ok, _) = apply("animation-direction", v);
         assert!(ok, "animation-direction: {} should apply", v);
     }
+    let (ok, _) = apply("animation-direction", "normal, bogus");
+    assert!(!ok);
 }
 
 #[test]
@@ -455,6 +457,8 @@ fn test_apply_animation_fill_mode_variants() {
         let (ok, _) = apply("animation-fill-mode", v);
         assert!(ok, "animation-fill-mode: {} should apply", v);
     }
+    let (ok, _) = apply("animation-fill-mode", "both, bogus");
+    assert!(!ok);
 }
 
 #[test]
@@ -463,6 +467,8 @@ fn test_apply_animation_play_state_variants() {
     assert!(ok);
     let (ok, _) = apply("animation-play-state", "paused");
     assert!(ok);
+    let (ok, _) = apply("animation-play-state", "running, bogus");
+    assert!(!ok);
 }
 
 #[test]

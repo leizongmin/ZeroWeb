@@ -1238,6 +1238,13 @@ fn test_apply_animation_direction() {
         "normal, reverse"
     ));
     assert_eq!(style.animation_direction.len(), 2);
+
+    assert!(!apply_property_value(
+        &mut style,
+        "animation-direction",
+        "normal, bogus"
+    ));
+    assert_eq!(style.animation_direction.len(), 2);
 }
 
 #[test]
@@ -1247,6 +1254,9 @@ fn test_apply_animation_fill_mode() {
     assert_eq!(style.animation_fill_mode.len(), 1);
 
     assert!(apply_property_value(&mut style, "animation-fill-mode", "both"));
+    assert_eq!(style.animation_fill_mode.len(), 1);
+
+    assert!(!apply_property_value(&mut style, "animation-fill-mode", "both, bogus"));
     assert_eq!(style.animation_fill_mode.len(), 1);
 }
 
@@ -1260,6 +1270,13 @@ fn test_apply_animation_play_state() {
         &mut style,
         "animation-play-state",
         "running, paused"
+    ));
+    assert_eq!(style.animation_play_state.len(), 2);
+
+    assert!(!apply_property_value(
+        &mut style,
+        "animation-play-state",
+        "running, bogus"
     ));
     assert_eq!(style.animation_play_state.len(), 2);
 }

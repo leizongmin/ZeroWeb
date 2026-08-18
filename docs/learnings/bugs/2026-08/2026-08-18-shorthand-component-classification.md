@@ -67,6 +67,8 @@ Logical border axis shorthands exposed the axis variant: 1-2 start/end mapping m
 
 `transition-delay` and `animation-delay` exposed the partial-list variant: even when a sibling longhand intentionally accepts a wider primitive value such as negative time, comma lists must still fail atomically if any item is invalid. `filter_map` is unsafe at CSS grammar boundaries because it silently converts invalid lists into shorter valid lists.
 
+`animation-direction`, `animation-fill-mode`, and `animation-play-state` exposed the enum-list variant of the same bug: enum-valued comma lists must reject atomically when any item is unknown. This is especially easy to miss because a `filter_map` result still looks non-empty and can overwrite the previous computed value with a shorter list.
+
 ## Root Cause
 
 The shorthand layer used heuristic component classifiers and treated unrecognized tokens as absent optional components. That is wrong for CSS shorthands such as `border`, where every token must match one of the allowed component grammars. A shared parser can also be broader than the property grammar that consumes it: general length parsing may accept `auto`, intrinsic sizing keywords, or percentages that `border-width` must reject.

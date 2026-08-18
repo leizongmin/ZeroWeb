@@ -34,6 +34,33 @@ fn parse_time_list(value: &str) -> Option<Vec<f64>> {
     Some(out)
 }
 
+// https://drafts.csswg.org/css-animations-1/#animation-direction
+fn parse_animation_direction_list(value: &str) -> Option<Vec<zero_css_parser::values::AnimationDirectionValue>> {
+    let mut out = Vec::new();
+    for part in value.split(',') {
+        out.push(values::parse_animation_direction(part.trim())?);
+    }
+    Some(out)
+}
+
+// https://drafts.csswg.org/css-animations-1/#animation-fill-mode
+fn parse_animation_fill_mode_list(value: &str) -> Option<Vec<zero_css_parser::values::AnimationFillModeValue>> {
+    let mut out = Vec::new();
+    for part in value.split(',') {
+        out.push(values::parse_animation_fill_mode(part.trim())?);
+    }
+    Some(out)
+}
+
+// https://drafts.csswg.org/css-animations-1/#animation-play-state
+fn parse_animation_play_state_list(value: &str) -> Option<Vec<zero_css_parser::values::AnimationPlayStateValue>> {
+    let mut out = Vec::new();
+    for part in value.split(',') {
+        out.push(values::parse_animation_play_state(part.trim())?);
+    }
+    Some(out)
+}
+
 /// R2468：解析 contain-intrinsic-{inline,block}-size longhand 值。
 ///
 /// 接受可选 `auto` 前缀 + 单个 `<length>`（如 `auto 100px`、`100px`）。`auto` 在静态无
@@ -304,34 +331,25 @@ pub fn apply_advanced_property_value(style: &mut ComputedStyle, property: &str, 
             return true;
         }
         "animation-direction" => {
-            let dirs: Vec<_> = value
-                .split(',')
-                .filter_map(|s| values::parse_animation_direction(s.trim()))
-                .collect();
-            if !dirs.is_empty() {
-                style.animation_direction = dirs;
-                return true;
-            }
+            let Some(dirs) = parse_animation_direction_list(value) else {
+                return false;
+            };
+            style.animation_direction = dirs;
+            return true;
         }
         "animation-fill-mode" => {
-            let modes: Vec<_> = value
-                .split(',')
-                .filter_map(|s| values::parse_animation_fill_mode(s.trim()))
-                .collect();
-            if !modes.is_empty() {
-                style.animation_fill_mode = modes;
-                return true;
-            }
+            let Some(modes) = parse_animation_fill_mode_list(value) else {
+                return false;
+            };
+            style.animation_fill_mode = modes;
+            return true;
         }
         "animation-play-state" => {
-            let states: Vec<_> = value
-                .split(',')
-                .filter_map(|s| values::parse_animation_play_state(s.trim()))
-                .collect();
-            if !states.is_empty() {
-                style.animation_play_state = states;
-                return true;
-            }
+            let Some(states) = parse_animation_play_state_list(value) else {
+                return false;
+            };
+            style.animation_play_state = states;
+            return true;
         }
         // ── Scroll Snap 属性 ──
         "scroll-snap-type" => {
