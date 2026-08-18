@@ -26,6 +26,8 @@ Grid placement shorthands exposed the delimiter variant: splitting at the first 
 
 `border-width`, `border-style`, and `border-color` exposed the edge-quartet variant: 1-4 token expansion must still validate each mapped side against the specific target grammar.
 
+`border-radius` exposed the radius form of the same class: 1-4 corner expansion must reject non-radius tokens and negative simple radii before emitting corner longhands.
+
 ## Root Cause
 
 The shorthand layer used heuristic component classifiers and treated unrecognized tokens as absent optional components. That is wrong for CSS shorthands such as `border`, where every token must match one of the allowed component grammars. A shared parser can also be broader than the property grammar that consumes it: general length parsing may accept `auto`, intrinsic sizing keywords, or percentages that `border-width` must reject.

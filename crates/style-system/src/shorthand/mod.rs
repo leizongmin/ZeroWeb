@@ -871,6 +871,29 @@ fn is_border_width_rect_value(value: &str) -> bool {
     }
 }
 
+fn is_border_radius_rect_value(value: &str) -> bool {
+    match zero_css_parser::values::parse_length(value) {
+        Some(zero_css_parser::values::LengthValue::Px(v))
+        | Some(zero_css_parser::values::LengthValue::Em(v))
+        | Some(zero_css_parser::values::LengthValue::Ex(v))
+        | Some(zero_css_parser::values::LengthValue::Rex(v))
+        | Some(zero_css_parser::values::LengthValue::Cap(v))
+        | Some(zero_css_parser::values::LengthValue::Rcap(v))
+        | Some(zero_css_parser::values::LengthValue::Rem(v))
+        | Some(zero_css_parser::values::LengthValue::Vh(v))
+        | Some(zero_css_parser::values::LengthValue::Vw(v))
+        | Some(zero_css_parser::values::LengthValue::Vmin(v))
+        | Some(zero_css_parser::values::LengthValue::Vmax(v))
+        | Some(zero_css_parser::values::LengthValue::Ch(v))
+        | Some(zero_css_parser::values::LengthValue::Rch(v))
+        | Some(zero_css_parser::values::LengthValue::Ic(v))
+        | Some(zero_css_parser::values::LengthValue::Ric(v))
+        | Some(zero_css_parser::values::LengthValue::Percentage(v)) => v >= 0.0,
+        Some(zero_css_parser::values::LengthValue::Calc(_)) => true,
+        _ => zero_css_parser::values::parse_math_function(value).is_some(),
+    }
+}
+
 fn is_gap_value_token(value: &str) -> bool {
     if value.eq_ignore_ascii_case("normal") {
         return true;
@@ -1098,9 +1121,15 @@ fn looks_like_color(s: &str) -> bool {
 
 /// 展开 border-radius 简写。
 ///
+/// https://drafts.csswg.org/css-backgrounds-3/#border-radius
 /// 支持 1-4 值模式，与 4 边简写相同。
 fn expand_border_radius(value: &str, important: bool, specificity: (u32, u32, u32)) -> Vec<MatchingDecl> {
-    let Some((tl, tr, br, bl)) = parse_rect_values(value) else {
+    // FIXME: slash-separated elliptical radii need two-axis storage before shorthand validation can cover them.
+    let Some((tl, tr, br, bl)) = (if matches_css_wide_keyword(value) || value.contains('/') {
+        parse_rect_values(value)
+    } else {
+        parse_rect_values_with(value, is_border_radius_rect_value)
+    }) else {
         return vec![];
     };
     let mk = |prop: &str, val: &str| -> MatchingDecl { (prop.to_string(), val.to_string(), important, specificity) };

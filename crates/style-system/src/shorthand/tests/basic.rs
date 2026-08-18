@@ -244,6 +244,20 @@ fn test_border_radius_2_values() {
 }
 
 #[test]
+fn test_border_radius_rejects_invalid_tokens() {
+    assert!(expand_one("border-radius", "red", false, (0, 0, 1)).is_empty());
+    assert!(expand_one("border-radius", "-1px", false, (0, 0, 1)).is_empty());
+    let result = expand_one("border-radius", "10% 2px", false, (0, 0, 1));
+    assert_eq!(result.len(), 4);
+    assert_eq!(result[0].1, "10%");
+    assert_eq!(result[1].1, "2px");
+
+    let inherit = expand_one("border-radius", "inherit", false, (0, 0, 1));
+    assert_eq!(inherit.len(), 4);
+    assert!(inherit.iter().all(|(_, value, _, _)| value == "inherit"));
+}
+
+#[test]
 fn test_border_radius_4_values() {
     let result = expand_one("border-radius", "1px 2px 3px 4px", false, (0, 0, 1));
     assert_eq!(result[0].1, "1px"); // top-left
