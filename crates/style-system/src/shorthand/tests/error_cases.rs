@@ -33,6 +33,22 @@ fn test_invalid_inset_too_many_values() {
 }
 
 #[test]
+fn test_inset_shorthand_rejects_invalid_tokens() {
+    assert!(expand_one("inset", "red", false, (0, 0, 1)).is_empty());
+    assert!(expand_one("inset", "thin", false, (0, 0, 1)).is_empty());
+
+    let result = expand_one("inset", "auto -1px 10% 2px", false, (0, 0, 1));
+    assert_eq!(result.len(), 4);
+    assert_eq!(result[0].1, "auto");
+    assert_eq!(result[1].1, "-1px");
+    assert_eq!(result[2].1, "10%");
+
+    let inherit = expand_one("inset", "inherit", false, (0, 0, 1));
+    assert_eq!(inherit.len(), 4);
+    assert!(inherit.iter().all(|(_, value, _, _)| value == "inherit"));
+}
+
+#[test]
 /// margin 仅包含空格应展开为默认值
 fn test_margin_empty_whitespace() {
     let result = expand_one("margin", "   ", false, (0, 0, 1));

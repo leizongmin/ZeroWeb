@@ -599,7 +599,12 @@ fn expand_one(property: &str, value: &str, important: bool, specificity: (u32, u
 
         // ── inset ──
         "inset" => {
-            let Some((t, r, b, l)) = parse_rect_values(value) else {
+            // https://drafts.csswg.org/css-position-3/#inset-properties
+            let Some((t, r, b, l)) = (if matches_css_wide_keyword(value) {
+                parse_rect_values(value)
+            } else {
+                parse_rect_values_with(value, is_inset_rect_value)
+            }) else {
                 return vec![];
             };
             vec![mk("top", t), mk("right", r), mk("bottom", b), mk("left", l)]
@@ -645,8 +650,23 @@ fn expand_one(property: &str, value: &str, important: bool, specificity: (u32, u
             important,
             specificity,
         ),
-        "inset-block" => expand_axis_logical(value, "inset-block-start", "inset-block-end", important, specificity),
-        "inset-inline" => expand_axis_logical(value, "inset-inline-start", "inset-inline-end", important, specificity),
+        // https://drafts.csswg.org/css-logical-1/#propdef-inset-block
+        "inset-block" => expand_axis_logical_with(
+            value,
+            "inset-block-start",
+            "inset-block-end",
+            is_inset_rect_value,
+            important,
+            specificity,
+        ),
+        "inset-inline" => expand_axis_logical_with(
+            value,
+            "inset-inline-start",
+            "inset-inline-end",
+            is_inset_rect_value,
+            important,
+            specificity,
+        ),
 
         // ── animation 简写 ──
         // animation: name duration timing-function delay iteration-count direction fill-mode play-state
@@ -974,6 +994,10 @@ fn is_margin_rect_value(value: &str) -> bool {
                 | zero_css_parser::values::LengthValue::Calc(_)
         )
     ) || zero_css_parser::values::parse_math_function(value).is_some()
+}
+
+fn is_inset_rect_value(value: &str) -> bool {
+    is_margin_rect_value(value)
 }
 
 fn is_gap_value_token(value: &str) -> bool {
@@ -1334,26 +1358,6 @@ fn split_outside_parens(s: &str) -> Vec<String> {
     }
 
     result
-}
-
-/// 展开轴方向逻辑属性简写。
-///
-/// `margin-block: 10px` → `margin-block-start: 10px; margin-block-end: 10px`
-/// `margin-block: 10px 20px` → `margin-block-start: 10px; margin-block-end: 20px`
-fn expand_axis_logical(
-    value: &str,
-    start_prop: &str,
-    end_prop: &str,
-    important: bool,
-    specificity: (u32, u32, u32),
-) -> Vec<MatchingDecl> {
-    let parts: Vec<&str> = value.split_whitespace().collect();
-    let mk = |prop: &str, val: &str| -> MatchingDecl { (prop.to_string(), val.to_string(), important, specificity) };
-    match parts.len() {
-        1 => vec![mk(start_prop, parts[0]), mk(end_prop, parts[0])],
-        2 => vec![mk(start_prop, parts[0]), mk(end_prop, parts[1])],
-        _ => vec![],
-    }
 }
 
 fn expand_axis_logical_with(

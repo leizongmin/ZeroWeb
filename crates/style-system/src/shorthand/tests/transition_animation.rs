@@ -197,6 +197,17 @@ fn test_inset_inline_shorthand() {
     assert_eq!(result[1].1, "50px");
 }
 
+#[test]
+fn test_logical_inset_rejects_invalid_tokens() {
+    assert!(expand_one("inset-block", "red", false, (0, 0, 1)).is_empty());
+    assert!(expand_one("inset-inline", "thin", false, (0, 0, 1)).is_empty());
+
+    let result = expand_one("inset-inline", "auto -1px", false, (0, 0, 1));
+    assert_eq!(result.len(), 2);
+    assert_eq!(result[0].1, "auto");
+    assert_eq!(result[1].1, "-1px");
+}
+
 // ── border 逻辑属性轴简写（CSS Logical Properties §3.1）──
 
 #[test]
