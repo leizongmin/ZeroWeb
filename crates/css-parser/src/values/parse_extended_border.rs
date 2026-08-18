@@ -477,7 +477,10 @@ fn parse_clip_inset(rest: &str) -> Option<ClipPathValue> {
     };
 
     let values: Vec<&str> = split_comma_or_space(inset_part);
-    let top = parse_length(values.first()?)?;
+    if !(1..=4).contains(&values.len()) {
+        return None;
+    }
+    let top = parse_length(values[0])?;
     let right = values
         .get(1)
         .and_then(|s| parse_length(s))
@@ -491,7 +494,10 @@ fn parse_clip_inset(rest: &str) -> Option<ClipPathValue> {
         .and_then(|s| parse_length(s))
         .unwrap_or_else(|| right.clone());
 
-    let round_val = round.and_then(parse_clip_radius_single);
+    let round_val = match round {
+        Some(value) => Some(parse_clip_radius_single(value)?),
+        None => None,
+    };
 
     Some(ClipPathValue::Inset {
         top,

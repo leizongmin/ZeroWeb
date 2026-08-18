@@ -123,6 +123,12 @@ fn test_clip_path_inset_empty() {
     assert!(parse_clip_path("inset()").is_none());
 }
 
+#[test]
+fn test_clip_path_inset_rejects_extra_values_and_invalid_round() {
+    assert!(parse_clip_path("inset(1px 2px 3px 4px 5px)").is_none());
+    assert!(parse_clip_path("inset(10px round bogus)").is_none());
+}
+
 // ── circle() ──
 
 #[test]
