@@ -275,6 +275,20 @@ fn test_flex_flow_wide_keyword_inherit() {
 }
 
 #[test]
+fn test_flex_flow_rejects_invalid_or_duplicate_components() {
+    assert!(expand_one("flex-flow", "", false, (0, 0, 1)).is_empty());
+    assert!(expand_one("flex-flow", "row sparkle", false, (0, 0, 1)).is_empty());
+    assert!(expand_one("flex-flow", "row column", false, (0, 0, 1)).is_empty());
+    assert!(expand_one("flex-flow", "wrap nowrap", false, (0, 0, 1)).is_empty());
+
+    let result = expand_one("flex-flow", "wrap row-reverse", false, (0, 0, 1));
+    assert_eq!(result[0].0, "flex-direction");
+    assert_eq!(result[0].1, "row-reverse");
+    assert_eq!(result[1].0, "flex-wrap");
+    assert_eq!(result[1].1, "wrap");
+}
+
+#[test]
 fn test_flex_wide_keyword_inherit() {
     let result = expand_one("flex", "inherit", false, (0, 0, 1));
     assert!(!result.is_empty());

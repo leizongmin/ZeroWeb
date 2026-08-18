@@ -540,13 +540,23 @@ fn expand_one(property: &str, value: &str, important: bool, specificity: (u32, u
             }
             let mut direction = None;
             let mut wrap = None;
-            for token in value.split_whitespace() {
-                if direction.is_none() && matches!(token, "row" | "row-reverse" | "column" | "column-reverse") {
+            let parts: Vec<&str> = value.split_whitespace().collect();
+            if parts.is_empty() {
+                return vec![];
+            }
+            for token in parts {
+                if matches!(token, "row" | "row-reverse" | "column" | "column-reverse") {
+                    if direction.is_some() {
+                        return vec![];
+                    }
                     direction = Some(token);
-                } else if wrap.is_none() && matches!(token, "nowrap" | "wrap" | "wrap-reverse") {
+                } else if matches!(token, "nowrap" | "wrap" | "wrap-reverse") {
+                    if wrap.is_some() {
+                        return vec![];
+                    }
                     wrap = Some(token);
                 } else {
-                    // 无法识别的 token，忽略
+                    return vec![];
                 }
             }
             vec![
