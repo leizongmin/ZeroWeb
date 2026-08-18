@@ -212,6 +212,20 @@ pub enum DomMutation {
         /// 参考节点选择器。
         ref_selector: String,
     },
+    /// `parentHandle.insertBefore(child, refHandle)` — 父/子/参考全为 create 句柄
+    /// （js-dom M3 R101）。Vue v-for mount 的 li 挂接即此形态（anchor comment 与父 ul
+    /// 都是 createElement 句柄，无 selector 可翻译）——旧 shim 该分支只做 JS registry
+    /// splice 不发 host mutation，li 在 host 侧永久丢失（innerHTML 空、querySelectorAll
+    /// 全 miss）。ref_handle 在 apply 时查 ephemeral/persistent 表；miss 时降级 append 尾部
+    /// （参考节点不在树中的语义等价——insertBefore(node, null) == appendChild）。
+    InsertBeforeByHandleHandle {
+        /// 父节点句柄。
+        parent_handle: String,
+        /// 子节点句柄。
+        child_handle: String,
+        /// 参考节点句柄。
+        ref_handle: String,
+    },
     /// 对 create 句柄设置属性（append 前 `el.id = ...` 等）。
     SetAttrOnHandle {
         /// 节点句柄。
@@ -865,6 +879,31 @@ pub fn apply_dom_mutations_full(
                 let ref_node = find_by_selector(doc, &ref_selector)
                     .ok_or_else(|| format!("insert_before: no ref match for {ref_selector}"))?;
                 doc.insert_before(parent, child, ref_node).map_err(|e| e.to_string())?;
+            }
+            // js-dom M3 R101：全 handle 形态 insertBefore（见 enum 变体文档）。ref 在
+            // ephemeral/persistent 表 miss（未入树/已移除）时降级 append——等价
+            // insertBefore(node, null)。
+            DomMutation::InsertBeforeByHandleHandle {
+                parent_handle,
+                child_handle,
+                ref_handle,
+            } => {
+                let parent = handles
+                    .get(&parent_handle)
+                    .copied()
+                    .ok_or_else(|| format!("unknown parent handle {parent_handle}"))?;
+                let child = handles
+                    .get(&child_handle)
+                    .copied()
+                    .ok_or_else(|| format!("unknown child handle {child_handle}"))?;
+                match handles.get(&ref_handle).copied() {
+                    Some(ref_node) => {
+                        doc.insert_before(parent, child, ref_node).map_err(|e| e.to_string())?;
+                    }
+                    None => {
+                        doc.append_child(parent, child).map_err(|e| e.to_string())?;
+                    }
+                }
             }
             DomMutation::SetAttrOnHandle { handle, name, value } => {
                 let node = handles

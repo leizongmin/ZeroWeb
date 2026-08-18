@@ -2155,11 +2155,19 @@
                 else __zw_insert_before(sel, newNode.__zwHandle, refNode.__zwSelector);
               } else if (handle && refNode.__zwHandle) {
                 // js-dom M3 R97：refNode 为 create 句柄节点（comment marker / detached 元素，
-                // 无 selector）但父是 handle 容器——host 无对应 wire，JS 侧 registry 插入
-                // （appendChild R84 路径的带位变体：按 refNode 在 registry 中的位置 splice）。
-                // lit-html 的 renderRoot.insertBefore(marker, firstChild) 精确命中此形态
-                // （renderRoot = shadow root 容器，marker/firstChild 均无 selector）。
+                // 无 selector）但父是 handle 容器——JS 侧 registry 插入（appendChild R84 路径
+                // 的带位变体：按 refNode 在 registry 中的位置 splice）。lit-html 的
+                // renderRoot.insertBefore(marker, firstChild) 精确命中此形态（renderRoot =
+                // shadow root 容器，marker/firstChild 均无 selector）。
+                // js-dom M3 R101：**补发 host mutation**（全 handle 形态 wire）——旧版只做
+                // JS registry splice，li 在 host 侧永久丢失（Vue v-for 的 li 挂接即此形态：
+                // mount 后 innerHTML 的 ul 空、querySelectorAll('li') 全 miss，而 JS 视图
+                // childNodes 正常——JS registry 与 host 文档分裂）。apply 时 ref handle
+                // miss 降级 append 尾部（insertBefore(node, null) == appendChild 语义）。
                 ceAdded = [newNode];
+                if (typeof __zw_insert_before_handle_handle === 'function') {
+                  try { __zw_insert_before_handle_handle(handle, newNode.__zwHandle, refNode.__zwHandle); } catch (_e101w) {}
+                }
                 if (!_handleChildren[handle]) _handleChildren[handle] = [];
                 var _r97Kids = _handleChildren[handle];
                 var _r97At = _r97Kids.indexOf(refNode);

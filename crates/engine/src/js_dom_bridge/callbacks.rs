@@ -1442,6 +1442,25 @@ pub fn register_dom_callbacks(
         }),
     );
 
+    // js-dom M3 R101：全 handle 形态 insertBefore（父/子/ref 都是 create 句柄）——
+    // Vue v-for 的 li 挂接形态（anchor comment 无 selector 可翻译）。
+    let m = Arc::clone(mutations);
+    sandbox.register_callback(
+        "__zw_insert_before_handle_handle",
+        Box::new(move |args| {
+            if args.len() >= 3 {
+                m.lock()
+                    .unwrap_or_else(|e| e.into_inner())
+                    .push(DomMutation::InsertBeforeByHandleHandle {
+                        parent_handle: args[0].clone(),
+                        child_handle: args[1].clone(),
+                        ref_handle: args[2].clone(),
+                    });
+            }
+            "ok".into()
+        }),
+    );
+
     let m = Arc::clone(mutations);
     sandbox.register_callback(
         "__zw_set_attr_handle",

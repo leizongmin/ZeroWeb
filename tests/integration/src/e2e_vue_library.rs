@@ -205,4 +205,109 @@ return 'text:' + (btn ? String(btn.textContent) : 'null');
             "Vue @click handler + 响应式重渲染（count 0→1）, got: {post}"
         );
     }
+
+    /// R101 断言组 C：**Vue reconciliation 深场景**——v-if 分支切换（元素卸载/重建）+
+    /// v-for 列表 diff（追加/删除/重排）+ :key 复用语义。DC-2 第一项「非仅静态渲染」
+    /// 的深验收：状态变更驱动组件树结构性 diff，不是同元素文本 patch。
+    ///
+    /// 读数分段（post-drain 语义同组 B）：
+    /// - execute ②：mount（show=true，list=[a,b]）
+    /// - execute ③：翻转 show + 列表变 [a,c,b]（中间插入）→ 读结构
+    /// - execute ④：清空列表 → 读结构
+    #[test]
+    fn vue_reconciliation_lands() {
+        let mut wv = WebView::new(WebViewConfig {
+            width: 800,
+            height: 600,
+            ..Default::default()
+        });
+        wv.load_html(VUE_HOST_HTML, None);
+        let _ = wv.run_page_scripts();
+        assert!(wv.execute_script_with_dom(VUE_BUNDLE).is_ok(), "bundle 求值");
+        let page = wv.execute_script_with_dom(
+            r#"(function(){
+var Vue = globalThis.Vue;
+var app = Vue.createApp({
+  data: function () {
+    return { show: true, items: [{ k: 'a', t: 'A' }, { k: 'b', t: 'B' }] };
+  },
+  template: '<div><p v-if="show" class="cond">yes</p>'
+    + '<ul><li v-for="it in items" :key="it.k" class="item">{{ it.t }}</li></ul></div>'
+});
+var vm = app.mount('#app');
+globalThis.__vm = vm;
+return 'mount:' + typeof vm;
+})()"#,
+        );
+        assert_eq!(
+            page.unwrap_or_default().trim(),
+            "mount:object",
+            "Vue reconciliation 用例 mount 须成功"
+        );
+        // 首渲染结构（post-drain）：cond p + 两个 li（A、B）。
+        let initial = wv
+            .execute_script_with_dom(
+                r#"(function(){
+var host = document.getElementById('app');
+var cond = host ? host.querySelector('p.cond') : null;
+var lis = host ? host.querySelectorAll('li.item') : [];
+var texts = [];
+for (var i = 0; i < lis.length; i++) texts.push(lis[i].textContent);
+return 'cond:' + (cond ? cond.textContent : 'null') + '|lis:' + texts.join(',');
+})()"#,
+            )
+            .unwrap_or_else(|_| "EXEC-ERR".to_string());
+        assert_eq!(
+            initial, "cond:yes|lis:A,B",
+            "Vue v-if + v-for 首渲染结构, got: {initial}"
+        );
+        // reconciliation：show 翻转（p 卸载）+ 列表中间插入 c（keyed diff）。
+        let mutated = wv
+            .execute_script_with_dom(
+                r#"(function(){
+var vm = globalThis.__vm;
+vm.show = false;
+vm.items = [{ k: 'a', t: 'A' }, { k: 'c', t: 'C' }, { k: 'b', t: 'B' }];
+return 'set';
+})()"#,
+            )
+            .unwrap_or_else(|_| "EXEC-ERR".to_string());
+        assert_eq!(mutated, "set", "状态更新脚本须执行");
+        let after = wv
+            .execute_script_with_dom(
+                r#"(function(){
+var host = document.getElementById('app');
+var cond = host ? host.querySelector('p.cond') : null;
+var lis = host ? host.querySelectorAll('li.item') : [];
+var texts = [];
+for (var i = 0; i < lis.length; i++) texts.push(lis[i].textContent);
+return 'cond:' + (cond ? cond.textContent : 'null') + '|lis:' + texts.join(',');
+})()"#,
+            )
+            .unwrap_or_else(|_| "EXEC-ERR".to_string());
+        assert_eq!(
+            after, "cond:null|lis:A,C,B",
+            "Vue reconciliation（v-if 卸载 + keyed 列表中间插入）, got: {after}"
+        );
+        // 列表清空（全部 li 卸载）。
+        let cleared = wv
+            .execute_script_with_dom(
+                r#"(function(){
+globalThis.__vm.items = [];
+return 'cleared';
+})()"#,
+            )
+            .unwrap_or_else(|_| "EXEC-ERR".to_string());
+        assert_eq!(cleared, "cleared");
+        let final_state = wv
+            .execute_script_with_dom(
+                r#"(function(){
+var host = document.getElementById('app');
+var lis = host ? host.querySelectorAll('li.item') : [];
+return 'lis:' + lis.length;
+})()"#,
+            )
+            .unwrap_or_else(|_| "EXEC-ERR".to_string());
+        assert_eq!(final_state, "lis:0", "Vue v-for 清空后 li 全卸载, got: {final_state}");
+    }
 }
