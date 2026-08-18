@@ -665,3 +665,136 @@ fn cross_renderer_versionchange_blocks_until_connection_closes() {
         "success:1"
     );
 }
+
+#[test]
+fn cross_renderer_transactions_wait_for_conflicting_scope() {
+    let _multiprocess_guard = lock_multiprocess_tests();
+    let Some(renderer_bin) = resolve_renderer_binary() else {
+        eprintln!("zero-renderer binary unavailable; skipping transaction owner smoke");
+        return;
+    };
+    let mut backend = ProcessTabBackend::with_renderer_bin(renderer_bin);
+    let mut snapshots = HashMap::new();
+    let writer_tab = TabId(821);
+    let reader_tab = TabId(822);
+    let origin_url = "https://transactions.example/page";
+    load_blank_page(&mut backend, &mut snapshots, writer_tab, origin_url);
+    load_blank_page(&mut backend, &mut snapshots, reader_tab, origin_url);
+
+    let mut request_id = 200;
+    execute_script(
+        &mut backend,
+        &mut snapshots,
+        writer_tab,
+        request_id,
+        r#"
+          globalThis.__writerState = "pending";
+          globalThis.__releaseWriter = false;
+          var open = indexedDB.open("transaction-db", 1);
+          open.onupgradeneeded = function () {
+            open.result.createObjectStore("items");
+          };
+          open.onsuccess = function () {
+            globalThis.__writerConnection = open.result;
+            var tx = open.result.transaction("items", "readwrite");
+            var store = tx.objectStore("items");
+            store.put("new", "key").onsuccess = function () {
+              var hold = function () {
+                store.get("key").onsuccess = function () {
+                  if (globalThis.__releaseWriter) {
+                    globalThis.__writerState = "releasing";
+                  } else {
+                    globalThis.__writerState = "holding";
+                    hold();
+                  }
+                };
+              };
+              hold();
+            };
+            tx.oncomplete = function () {
+              globalThis.__writerState = "complete";
+              globalThis.__writerConnection.close();
+            };
+          };
+          return "started";
+        "#,
+    )
+    .unwrap();
+    request_id += 1;
+    assert_eq!(
+        wait_for_value(
+            &mut backend,
+            &mut snapshots,
+            writer_tab,
+            &mut request_id,
+            "globalThis.__writerState"
+        ),
+        "holding"
+    );
+
+    execute_script(
+        &mut backend,
+        &mut snapshots,
+        reader_tab,
+        request_id,
+        r#"
+          globalThis.__readerState = "pending";
+          var open = indexedDB.open("transaction-db");
+          open.onsuccess = function () {
+            var connection = open.result;
+            var tx = connection.transaction("items", "readonly");
+            tx.objectStore("items").get("key").onsuccess = function (event) {
+              globalThis.__readerState = String(event.target.result);
+            };
+            tx.oncomplete = function () { connection.close(); };
+          };
+          return "started";
+        "#,
+    )
+    .unwrap();
+    request_id += 1;
+    assert_eq!(
+        execute_script(
+            &mut backend,
+            &mut snapshots,
+            reader_tab,
+            request_id,
+            "return String(globalThis.__readerState);",
+        )
+        .unwrap(),
+        AutomationValue::String("pending".to_string())
+    );
+    request_id += 1;
+    assert_eq!(backend.indexed_db_transactions.counts(), (1, 1, 1));
+
+    execute_script(
+        &mut backend,
+        &mut snapshots,
+        writer_tab,
+        request_id,
+        "globalThis.__releaseWriter = true; return 'released';",
+    )
+    .unwrap();
+    request_id += 1;
+    assert_eq!(
+        wait_for_value(
+            &mut backend,
+            &mut snapshots,
+            writer_tab,
+            &mut request_id,
+            "globalThis.__writerState"
+        ),
+        "complete"
+    );
+    assert_eq!(
+        wait_for_value(
+            &mut backend,
+            &mut snapshots,
+            reader_tab,
+            &mut request_id,
+            "globalThis.__readerState"
+        ),
+        "new"
+    );
+    assert_eq!(backend.indexed_db_transactions.counts(), (0, 0, 0));
+}

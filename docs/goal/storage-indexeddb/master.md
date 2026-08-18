@@ -42,7 +42,7 @@ service-workers）。把页面 `indexedDB` 从 in-memory 近似接到 zero-stora
 - ✅ Cursor continuePrimaryKey：3 文件、18 subtest，18 Pass / 0 Fail（100.00%）
 - ✅ M2 request core：pending getter、capture/bubble、abort queue、error/complete 顺序已对齐
 - ✅ M2 transaction task：active flag、task/microtask deactivation、request task dispatch 已对齐
-- 🟨 M2 页面接线：factory/store/index/query/cursor stepping/continuePrimaryKey 已走 Rust；advanced scheduling 待扩面
+- ✅ M2 页面接线：factory/store/index/query/cursor stepping/continuePrimaryKey 已走 Rust；全 operation scheduling 已接
 - ✅ M2 key 基础：Rust Date key 与递归 JSON key wire 已完成
 - ✅ M2 transaction：页面 transaction 已绑定 Rust begin/mutation/view/commit/abort
 - ✅ M2 structured clone：cyclic/shared-reference graph wire 与 Rust index projection 已完成
@@ -52,6 +52,7 @@ service-workers）。把页面 `indexedDB` 从 in-memory 近似接到 zero-stora
 - ✅ M2 transaction scheduling core：同 realm 跨 connection 共享 scope 顺序表，固定 WPT 7/7
 - ✅ M2 connection queue：同 realm open/delete FIFO、`versionchange` / `blocked` / `close()` 解阻塞
 - ✅ M3 cross-renderer connections：browser owner registry + versionchange IPC/ack + per-scope FIFO + blocked/close 解阻塞
+- ✅ M3 cross-renderer transactions：browser owner lease + trusted scope scheduling + 全 operation deferred execution
 
 ## 缺口清单
 
@@ -60,12 +61,11 @@ service-workers）。把页面 `indexedDB` 从 in-memory 近似接到 zero-stora
 | I1 | WPT IndexedDB 用例覆盖为零 | 🟨 M1/M2 已导入 47 文件 |
 | I2 | 页面→Rust 引擎零接线 | ✅ factory/store/index/query/cursor stepping/continuePrimaryKey 已接 |
 | I3 | 无持久化（重启即失） | ✅ browser/renderer 与 embedded WebView production paths 完成 |
-| I4 | IDBRequest 事件模型（success/error/readyState/auto-commit）非 spec | 🟨 core + task active + browser-owned connection event 完成；全 operation transaction scheduling 待扩面 |
+| I4 | IDBRequest 事件模型（success/error/readyState/auto-commit）非 spec | 🟨 core + task active + browser-owned connection/transaction scheduling 完成；继续由 WPT 扩面 |
 
 ## 下一步计划
 
-1. **M2/M3**：扩展全 operation / 跨 renderer transaction scheduling
-2. **M1/M2**：扩大固定 revision 上游 IndexedDB WPT 导入范围
+1. **M1/M2**：扩大固定 revision 上游 IndexedDB WPT 导入范围
 
 **碰撞管理**：开工前先 `git log --since="14 days ago" -- crates/engine/src/js_dom_shim/`
 核对 js-dom 流活跃面。
@@ -75,8 +75,8 @@ service-workers）。把页面 `indexedDB` 从 in-memory 近似接到 zero-stora
 | 里程碑 | 状态 |
 |--------|------|
 | M1 — WPT IndexedDB 基线建立 | 🟨 imported 232/232 |
-| M2 — JS↔Rust 接线（核心通路） | 🟨 request task model complete；advanced scheduling pending |
-| M3 — 索引 + 事件模型 + 持久化 | 🟨 storage/connection ownership complete；cross-renderer transaction scheduling pending |
+| M2 — JS↔Rust 接线（核心通路） | 🟨 request task model + full operation scheduling complete；继续扩大 WPT |
+| M3 — 索引 + 事件模型 + 持久化 | 🟨 storage/connection/transaction ownership complete；继续扩大 WPT |
 
 ## 验证基线
 
@@ -128,7 +128,8 @@ service-workers）。把页面 `indexedDB` 从 in-memory 近似接到 zero-stora
   `evidence/2026-08-18-m3-safe-integer-version.{md,json}`、
   `evidence/2026-08-18-m2-transaction-scheduling.{md,json}`、
   `evidence/2026-08-18-m2-connection-queue.{md,json}`、
-  `evidence/2026-08-18-m3-cross-renderer-connections.{md,json}`
+  `evidence/2026-08-18-m3-cross-renderer-connections.{md,json}`、
+  `evidence/2026-08-18-m3-cross-renderer-transactions.{md,json}`
 - 回归门禁：`make test` 全绿；期间修复 DMA-BUF 测试缺失 scroll-transform 前提、
   renderer idle-drain 启动期计数假设、QuickJS-only 测试 feature-union 门控
 - 质量门禁：`cargo fmt` + `cargo clippy --workspace --all-targets -- -D warnings` 全过

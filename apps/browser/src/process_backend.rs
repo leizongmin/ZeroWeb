@@ -26,12 +26,15 @@ use crate::tab_snapshot::{CompositorSubmission, TabSnapshot};
 use indexed_db_connections::{
     ConnectionKey, ConnectionRequestStatus, ConnectionWireRequest, IndexedDbConnectionOwner, parse_connection_request,
 };
+use indexed_db_transactions::{IndexedDbTransactionOwner, parse_transaction_request};
 
 #[path = "process_backend/indexed_db_connections.rs"]
 mod indexed_db_connections;
 #[cfg(test)]
 #[path = "process_backend/indexed_db_owner_tests.rs"]
 mod indexed_db_owner_tests;
+#[path = "process_backend/indexed_db_transactions.rs"]
+mod indexed_db_transactions;
 
 fn renderer_binary_filename() -> &'static str {
     #[cfg(windows)]
@@ -158,6 +161,7 @@ pub struct ProcessTabBackend {
     private_tabs: HashSet<TabId>,
     indexed_db_handlers: HashMap<u64, IndexedDbHandler>,
     indexed_db_connections: IndexedDbConnectionOwner,
+    indexed_db_transactions: IndexedDbTransactionOwner,
     indexed_db_origins: HashMap<u64, String>,
     pending_indexed_db_navigations: HashMap<u64, PendingIndexedDbNavigation>,
     indexed_db_init_error: Option<String>,
@@ -230,6 +234,7 @@ impl ProcessTabBackend {
             private_tabs: HashSet::new(),
             indexed_db_handlers: HashMap::new(),
             indexed_db_connections: IndexedDbConnectionOwner::default(),
+            indexed_db_transactions: IndexedDbTransactionOwner::default(),
             indexed_db_origins: HashMap::new(),
             pending_indexed_db_navigations: HashMap::new(),
             indexed_db_init_error: storage_error,
@@ -685,6 +690,7 @@ impl ProcessTabBackend {
     fn remove_indexed_db_renderer_state(&mut self, renderer_id: u64) {
         self.indexed_db_handlers.remove(&renderer_id);
         self.indexed_db_connections.remove_renderer(renderer_id);
+        self.indexed_db_transactions.remove_renderer(renderer_id);
         self.indexed_db_origins.remove(&renderer_id);
         self.pending_indexed_db_navigations.remove(&renderer_id);
     }
@@ -777,7 +783,11 @@ impl ProcessTabBackend {
         request: ConnectionWireRequest,
     ) -> Result<String, String> {
         match request {
-            ConnectionWireRequest::ConnectionCapabilities => Ok(serde_json::json!({"crossRenderer": true}).to_string()),
+            ConnectionWireRequest::ConnectionCapabilities => Ok(serde_json::json!({
+                "crossRenderer": true,
+                "transactionScheduling": true,
+            })
+            .to_string()),
             ConnectionWireRequest::RegisterConnection {
                 connection,
                 database,
@@ -935,14 +945,25 @@ impl ProcessTabBackend {
             };
             match parse_connection_request(&params.request) {
                 Ok(Some(request)) => self.handle_indexed_db_connection_request(renderer_id, private, &origin, request),
-                Ok(None) => {
-                    let handler = Arc::clone(
-                        self.indexed_db_handlers
-                            .entry(renderer_id)
-                            .or_insert_with(|| zero_page_runtime::indexed_db_handler(storage)),
-                    );
-                    handler(&origin, &params.request)
-                }
+                Ok(None) => match parse_transaction_request(&params.request) {
+                    Ok(Some(request)) => self.handle_indexed_db_transaction_request(
+                        renderer_id,
+                        private,
+                        &origin,
+                        storage,
+                        &params.request,
+                        request,
+                    ),
+                    Ok(None) => {
+                        let handler = Arc::clone(
+                            self.indexed_db_handlers
+                                .entry(renderer_id)
+                                .or_insert_with(|| zero_page_runtime::indexed_db_handler(storage)),
+                        );
+                        handler(&origin, &params.request)
+                    }
+                    Err(error) => Err(error),
+                },
                 Err(error) => Err(error),
             }
         };
@@ -1112,6 +1133,7 @@ impl ProcessTabBackend {
         if let Some(renderer_id) = self.tab_to_renderer.get(&tab_id) {
             self.indexed_db_handlers.remove(renderer_id);
             self.indexed_db_connections.remove_renderer(*renderer_id);
+            self.indexed_db_transactions.remove_renderer(*renderer_id);
         }
     }
 

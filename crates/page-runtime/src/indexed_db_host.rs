@@ -344,7 +344,10 @@ fn dispatch_request(
     request: IndexedDbRequest,
 ) -> Result<Value, String> {
     match request {
-        IndexedDbRequest::ConnectionCapabilities => Ok(json!({"crossRenderer": false})),
+        IndexedDbRequest::ConnectionCapabilities => Ok(json!({
+            "crossRenderer": false,
+            "transactionScheduling": false,
+        })),
         IndexedDbRequest::Inspect { name } => {
             let database = storage.indexed_db(origin, &name).map(database_schema_json);
             Ok(json!({"database": database}))

@@ -1,0 +1,51 @@
+{
+  "date": "2026-08-18",
+  "scope": "M3 browser-owned cross-renderer IndexedDB transactions",
+  "capabilities": [
+    "browser-owned transaction scope scheduling",
+    "regular/private partition and trusted origin isolation",
+    "conflicting transaction FIFO",
+    "parallel readonly and disjoint-scope transactions",
+    "lease-gated begin transaction trust boundary",
+    "commit, abort, navigation, crash, and partition-change release",
+    "deferred object store, index, and cursor-open operations"
+  ],
+  "tests": {
+    "owner_state_machine": {
+      "pass": 5,
+      "fail": 0
+    },
+    "engine_indexed_db": {
+      "pass": 16,
+      "fail": 0
+    },
+    "page_runtime_indexed_db": {
+      "pass": 13,
+      "fail": 0
+    },
+    "cross_renderer": "writer readwrite active -> reader pending -> writer commit -> reader:new",
+    "workspace_clippy": "pass",
+    "make_test": {
+      "status": "pass",
+      "v8": "pass",
+      "quickjs": "pass",
+      "gpu_adapter": "pass",
+      "multiprocess": "pass"
+    },
+    "imported_wpt": {
+      "revision": "315976933870b34d6ea30e3f6643403edae678ba",
+      "files": 47,
+      "pass": 232,
+      "fail": 0
+    },
+    "bench_gate": {
+      "microbenches_pass": 16,
+      "microbenches_total": 16,
+      "absolute_page_budgets": "pass",
+      "retained_form_budget": "pass"
+    }
+  },
+  "remaining": [
+    "larger fixed-revision IndexedDB WPT coverage"
+  ]
+}
