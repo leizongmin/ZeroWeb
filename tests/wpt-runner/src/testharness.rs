@@ -146,6 +146,32 @@ pub const INDEXEDDB_CASES: &[(&str, &[&str])] = &[
         &["resources/support.js"],
     ),
     ("IndexedDB/idbversionchangeevent.any.js", &["resources/support.js"]),
+    (
+        "IndexedDB/idbdatabase_createObjectStore.any.js",
+        &["resources/support.js"],
+    ),
+    (
+        "IndexedDB/idbdatabase-createObjectStore-exception-order.any.js",
+        &["resources/support.js"],
+    ),
+    (
+        "IndexedDB/idbdatabase_deleteObjectStore.any.js",
+        &["resources/support.js"],
+    ),
+    (
+        "IndexedDB/idbdatabase-deleteObjectStore-exception-order.any.js",
+        &["resources/support.js"],
+    ),
+    ("IndexedDB/idbobjectstore_keyPath.any.js", &["resources/support.js"]),
+    (
+        "IndexedDB/idbobjectstore-transaction-SameObject.any.js",
+        &["resources/support.js"],
+    ),
+    (
+        "IndexedDB/idbtransaction_objectStoreNames.any.js",
+        &["resources/support.js"],
+    ),
+    ("IndexedDB/idbdatabase_transaction.any.js", &["resources/support.js"]),
     ("IndexedDB/idbobjectstore_add.any.js", &["resources/support.js"]),
     ("IndexedDB/idbobjectstore_put.any.js", &["resources/support.js"]),
     ("IndexedDB/idbobjectstore_get.any.js", &["resources/support.js"]),

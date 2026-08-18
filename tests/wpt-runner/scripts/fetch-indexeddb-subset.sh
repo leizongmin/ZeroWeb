@@ -25,6 +25,14 @@ FILES=(
   "IndexedDB/idbfactory-open-request-error.any.js"
   "IndexedDB/idbfactory-open-request-success.any.js"
   "IndexedDB/idbversionchangeevent.any.js"
+  "IndexedDB/idbdatabase_createObjectStore.any.js"
+  "IndexedDB/idbdatabase-createObjectStore-exception-order.any.js"
+  "IndexedDB/idbdatabase_deleteObjectStore.any.js"
+  "IndexedDB/idbdatabase-deleteObjectStore-exception-order.any.js"
+  "IndexedDB/idbobjectstore_keyPath.any.js"
+  "IndexedDB/idbobjectstore-transaction-SameObject.any.js"
+  "IndexedDB/idbtransaction_objectStoreNames.any.js"
+  "IndexedDB/idbdatabase_transaction.any.js"
   "IndexedDB/idbobjectstore_add.any.js"
   "IndexedDB/idbobjectstore_put.any.js"
   "IndexedDB/idbobjectstore_get.any.js"
@@ -164,7 +172,7 @@ fetch_from_checkout() {
 
 if [[ -n "${WPT_SOURCE:-}" ]]; then
   fetch_from_checkout
-  echo "IndexedDB testharness subset ready (83 cases, WPT ${WPT_REV})"
+  echo "IndexedDB testharness subset ready (91 cases, WPT ${WPT_REV})"
   exit 0
 fi
 
@@ -181,4 +189,4 @@ if [[ "${raw_failed}" == "1" ]]; then
   fetch_from_git
 fi
 
-echo "IndexedDB testharness subset ready (83 cases, WPT ${WPT_REV})"
+echo "IndexedDB testharness subset ready (91 cases, WPT ${WPT_REV})"

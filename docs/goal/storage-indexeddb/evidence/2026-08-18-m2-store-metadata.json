@@ -1,0 +1,48 @@
+{
+  "date": "2026-08-18",
+  "scope": "M2 IndexedDB store metadata",
+  "wpt_revision": "315976933870b34d6ea30e3f6643403edae678ba",
+  "files_added": 8,
+  "driving_wpt": {
+    "before": {
+      "pass": 8,
+      "fail": 43,
+      "timeout": 0
+    },
+    "after": {
+      "pass": 51,
+      "fail": 0,
+      "timeout": 0
+    }
+  },
+  "imported_wpt": {
+    "files": 91,
+    "pass": 471,
+    "fail": 0,
+    "timeout": 0,
+    "not_run": 0,
+    "empty": 0
+  },
+  "capabilities": [
+    "create and delete object-store exception ordering",
+    "DOMStringList indexed and sorted access",
+    "transaction object-store scope metadata",
+    "upgrade task and microtask ordering",
+    "UTF-16 host wire names"
+  ],
+  "gates": {
+    "cargo_fmt": "pass",
+    "cargo_clippy_workspace": "pass",
+    "make_testharness_indexeddb": "pass",
+    "make_test": "pass",
+    "targeted_engine": "20 pass",
+    "targeted_page_runtime": "15 pass",
+    "targeted_runner": "7 pass",
+    "transient_network_revalidation_retries": "3/3 pass",
+    "manifest_counts": {
+      "fetch": 91,
+      "runner": 91,
+      "ledger": 91
+    }
+  }
+}

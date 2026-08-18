@@ -2823,13 +2823,87 @@
     _zwIDBDeactivateTransactions(null);
   };
 
+  // https://webidl.spec.whatwg.org/#idl-DOMString
+  var _zwIDBWireNamePrefix = '__zw_utf16_name__:';
+
+  function _zwIDBNameToWire(value) {
+    value = String(value);
+    if (value.indexOf(_zwIDBWireNamePrefix) !== 0
+        && !/[\uD800-\uDFFF]/.test(value)) return value;
+    var encoded = '';
+    for (var i = 0; i < value.length; i++) {
+      encoded += ('0000' + value.charCodeAt(i).toString(16)).slice(-4);
+    }
+    return _zwIDBWireNamePrefix + encoded;
+  }
+
+  function _zwIDBNameFromWire(value) {
+    if (typeof value !== 'string'
+        || value.indexOf(_zwIDBWireNamePrefix) !== 0) return value;
+    var encoded = value.slice(_zwIDBWireNamePrefix.length);
+    if (encoded.length % 4 !== 0 || !/^[0-9a-f]*$/.test(encoded)) return value;
+    var decoded = '';
+    for (var i = 0; i < encoded.length; i += 4) {
+      decoded += String.fromCharCode(parseInt(encoded.slice(i, i + 4), 16));
+    }
+    return decoded;
+  }
+
+  function _zwIDBRequestNamesToWire(request) {
+    var wire = {};
+    Object.keys(request).forEach(function (key) { wire[key] = request[key]; });
+    ['name', 'database', 'store', 'index'].forEach(function (key) {
+      if (typeof wire[key] === 'string') wire[key] = _zwIDBNameToWire(wire[key]);
+    });
+    if (Array.isArray(wire.stores)) {
+      wire.stores = wire.stores.map(function (store) {
+        if (typeof store === 'string') return _zwIDBNameToWire(store);
+        var storeWire = {};
+        Object.keys(store).forEach(function (key) { storeWire[key] = store[key]; });
+        storeWire.name = _zwIDBNameToWire(store.name);
+        if (Array.isArray(store.indexes)) {
+          storeWire.indexes = store.indexes.map(function (index) {
+            var indexWire = {};
+            Object.keys(index).forEach(function (key) { indexWire[key] = index[key]; });
+            indexWire.name = _zwIDBNameToWire(index.name);
+            return indexWire;
+          });
+        }
+        return storeWire;
+      });
+    }
+    return wire;
+  }
+
+  function _zwIDBResponseNamesFromWire(response) {
+    if (!response || typeof response !== 'object') return response;
+    if (response.database && typeof response.database === 'object') {
+      response.database.name = _zwIDBNameFromWire(response.database.name);
+      (response.database.stores || []).forEach(function (store) {
+        store.name = _zwIDBNameFromWire(store.name);
+        (store.indexes || []).forEach(function (index) {
+          index.name = _zwIDBNameFromWire(index.name);
+        });
+      });
+    }
+    if (Array.isArray(response.databases)) {
+      response.databases.forEach(function (database) {
+        database.name = _zwIDBNameFromWire(database.name);
+      });
+    }
+    if (Array.isArray(response.stores)) {
+      response.stores = response.stores.map(_zwIDBNameFromWire);
+    }
+    return response;
+  }
+
   function _zwIDBHostCall(request) {
     if (typeof globalThis.__zw_idb !== 'function') return undefined;
-    var wire = String(globalThis.__zw_idb(JSON.stringify(request)));
+    var wire = String(globalThis.__zw_idb(JSON.stringify(_zwIDBRequestNamesToWire(request))));
     var okPrefix = '__zw_idb_ok:';
     var errorPrefix = '__zw_idb_error:';
     if (wire.indexOf(okPrefix) === 0) {
-      return JSON.parse(wire.slice(okPrefix.length));
+      return _zwIDBResponseNamesFromWire(JSON.parse(wire.slice(okPrefix.length)));
     }
     if (wire.indexOf(errorPrefix) === 0) {
       var detail = wire.slice(errorPrefix.length);
@@ -3453,20 +3527,89 @@
     else fire();
   }
 
+  // https://w3c.github.io/IndexedDB/#dom-idbdatabase-objectstorenames
+  function _zwIDBStringList(getNames) {
+    function values() {
+      return getNames().map(String).sort();
+    }
+    var list = {
+      contains: function (name) { return values().indexOf(String(name)) !== -1; },
+      item: function (index) {
+        var entries = values();
+        index = Number(index);
+        return index >= 0 && index < entries.length ? entries[index] : null;
+      }
+    };
+    if (typeof Symbol === 'function' && Symbol.iterator) {
+      list[Symbol.iterator] = function () { return values()[Symbol.iterator](); };
+    }
+    return new Proxy(list, {
+      get: function (target, property) {
+        var entries = values();
+        if (property === 'length') return entries.length;
+        if (typeof property === 'string' && /^(0|[1-9][0-9]*)$/.test(property)) {
+          return entries[Number(property)];
+        }
+        return target[property];
+      },
+      has: function (target, property) {
+        if (property === 'length') return true;
+        if (typeof property === 'string' && /^(0|[1-9][0-9]*)$/.test(property)) {
+          return Number(property) < values().length;
+        }
+        return property in target;
+      },
+      getOwnPropertyDescriptor: function (target, property) {
+        if (typeof property === 'string' && /^(0|[1-9][0-9]*)$/.test(property)
+            && Number(property) < values().length) {
+          return {
+            configurable: true,
+            enumerable: true,
+            value: values()[Number(property)],
+            writable: false
+          };
+        }
+        return Object.getOwnPropertyDescriptor(target, property);
+      }
+    });
+  }
+
+  function _zwIDBValidKeyPathString(keyPath) {
+    if (keyPath === '') return true;
+    return keyPath.split('.').every(function (part) {
+      return /^[$A-Z_a-z\u0080-\uFFFF][$0-9A-Z_a-z\u0080-\uFFFF]*$/.test(part);
+    });
+  }
+
+  function _zwIDBNormalizeKeyPath(value, supplied) {
+    if (!supplied || value == null) return null;
+    if (Array.isArray(value)) {
+      if (value.length === 0) {
+        throw new globalThis.DOMException('The key path sequence is empty.', 'SyntaxError');
+      }
+      var sequence = value.map(String);
+      if (!sequence.every(_zwIDBValidKeyPathString)) {
+        throw new globalThis.DOMException('The key path is invalid.', 'SyntaxError');
+      }
+      return sequence;
+    }
+    var keyPath = String(value);
+    if (!_zwIDBValidKeyPathString(keyPath)) {
+      throw new globalThis.DOMException('The key path is invalid.', 'SyntaxError');
+    }
+    return keyPath;
+  }
+
   function _zwIDBStore(db, name, keyPath, autoIncrement, records, indexes, transaction, metadata) {
     this._db = db;
     this.name = name;
-    this.keyPath = keyPath || null;
+    this.keyPath = Array.isArray(keyPath) ? keyPath.slice() : (keyPath == null ? null : keyPath);
     this.autoIncrement = !!autoIncrement;
     this._records = records; // Map<key, value>
     this._indexes = indexes; // {indexName: {keyPath, unique}}
     this.transaction = transaction || null;
     this._metadata = metadata;
-    var idxNames = indexes;
-    this.indexNames = {
-      contains: function (n) { return Object.prototype.hasOwnProperty.call(idxNames, n); },
-      get length() { return Object.keys(idxNames).length; },
-    };
+    this.indexNames = _zwIDBStringList(function () { return Object.keys(indexes); });
   }
   _zwIDBStore.prototype._assertUsable = function (write) {
     if (this._metadata && this._metadata.deleted) {
@@ -3960,8 +4103,12 @@
   };
   _zwIDBStore.prototype.index = function (name) {
     this._assertUsable(false);
+    name = String(name);
     var idx = this._indexes[name];
-    return idx ? new _zwIDBIndex(this, name, idx) : null;
+    if (!idx) {
+      throw new globalThis.DOMException('The index does not exist.', 'NotFoundError');
+    }
+    return new _zwIDBIndex(this, name, idx);
   };
 
   function _zwIDBCursor(source, store, request, entries, direction, hostId, keyOnly) {
@@ -4749,6 +4896,10 @@
     this._scope = storeNames.filter(function (name, index, all) {
       return all.indexOf(name) === index;
     }).sort();
+    var transaction = this;
+    this.objectStoreNames = _zwIDBStringList(function () {
+      return transaction._scope.slice();
+    });
     this.oncomplete = null;
     this.onerror = null;
     this.onabort = null;
@@ -4783,6 +4934,10 @@
   _zwIDBTransaction.prototype.objectStore = function (name) {
     if (this._aborted || this._finished || this._committing) {
       throw new globalThis.DOMException('The transaction is finished.', 'InvalidStateError');
+    }
+    name = String(name);
+    if (this._scope.indexOf(name) === -1) {
+      throw new globalThis.DOMException('The object store is not in this transaction.', 'NotFoundError');
     }
     var s = this._db._stores[name];
     if (!s) {
@@ -4863,34 +5018,64 @@
     this._stores = state.stores; // name → {keyPath, autoIncrement, records: Map, indexes: {}}
     this._transactions = [];
     this._closed = false;
+    this._closedStoreNames = null;
     this.onversionchange = null;
     this.onabort = null;
     this.onerror = null;
     this._listeners = {};
     var self = this;
-    this.objectStoreNames = {
-      contains: function (n) { return Object.prototype.hasOwnProperty.call(self._stores, n); },
-      get length() { return Object.keys(self._stores).length; },
-      item: function (i) { return Object.keys(self._stores)[i] || null; },
-    };
+    this.objectStoreNames = _zwIDBStringList(function () {
+      return self._closedStoreNames || Object.keys(self._stores);
+    });
   }
   _zwIDBDatabase.prototype.addEventListener = _zwIDBRequest.prototype.addEventListener;
   _zwIDBDatabase.prototype.removeEventListener = _zwIDBRequest.prototype.removeEventListener;
   _zwIDBDatabase.prototype.dispatchEvent = _zwIDBRequest.prototype.dispatchEvent;
   _zwIDBDatabase.prototype.createObjectStore = function (name, opts) {
-    opts = opts || {};
-    if (!this._stores[name]) {
-      this._stores[name] = {
-        keyPath: opts.keyPath || null,
-        autoIncrement: !!opts.autoIncrement,
-        records: new Map(),
-        indexes: {},
-        nextKey: 1,
-        deleted: false,
-        createdInUpgrade: !!this._upgradeTransaction
-      };
+    // https://w3c.github.io/IndexedDB/#dom-idbdatabase-createobjectstore
+    name = String(name);
+    var transaction = this._upgradeTransaction;
+    if (!transaction) {
+      throw new globalThis.DOMException(
+        'Object stores can only be created during an upgrade transaction.',
+        'InvalidStateError'
+      );
     }
-    var s = this._stores[name];
+    if (!transaction._active
+        || transaction._aborted
+        || transaction._finished
+        || transaction._committing) {
+      throw new globalThis.DOMException('The transaction is inactive.', 'TransactionInactiveError');
+    }
+    opts = opts == null ? {} : Object(opts);
+    var keyPath = _zwIDBNormalizeKeyPath(
+      opts.keyPath,
+      Object.prototype.hasOwnProperty.call(opts, 'keyPath')
+    );
+    if (Object.prototype.hasOwnProperty.call(this._stores, name)) {
+      throw new globalThis.DOMException('The object store already exists.', 'ConstraintError');
+    }
+    var autoIncrement = !!opts.autoIncrement;
+    if (autoIncrement && (keyPath === '' || Array.isArray(keyPath))) {
+      throw new globalThis.DOMException(
+        'autoIncrement cannot be combined with this key path.',
+        'InvalidAccessError'
+      );
+    }
+    var s = {
+      keyPath: keyPath,
+      autoIncrement: autoIncrement,
+      records: new Map(),
+      indexes: {},
+      nextKey: 1,
+      deleted: false,
+      createdInUpgrade: true
+    };
+    this._stores[name] = s;
+    transaction._scope.push(name);
+    transaction._scope = transaction._scope.filter(function (entry, index, all) {
+      return all.indexOf(entry) === index;
+    }).sort();
     return new _zwIDBStore(
       this,
       name,
@@ -4903,13 +5088,55 @@
     );
   };
   _zwIDBDatabase.prototype.deleteObjectStore = function (name) {
+    // https://w3c.github.io/IndexedDB/#dom-idbdatabase-deleteobjectstore
+    name = String(name);
+    var transaction = this._upgradeTransaction;
+    if (!transaction) {
+      throw new globalThis.DOMException(
+        'Object stores can only be deleted during an upgrade transaction.',
+        'InvalidStateError'
+      );
+    }
+    if (!transaction._active
+        || transaction._aborted
+        || transaction._finished
+        || transaction._committing) {
+      throw new globalThis.DOMException('The transaction is inactive.', 'TransactionInactiveError');
+    }
     var store = this._stores[name];
-    if (store) store.deleted = true;
+    if (!store) {
+      throw new globalThis.DOMException('The object store does not exist.', 'NotFoundError');
+    }
+    store.deleted = true;
     delete this._stores[name];
+    transaction._scope = transaction._scope.filter(function (entry) { return entry !== name; });
   };
-  _zwIDBDatabase.prototype.transaction = function (_names, mode) { return new _zwIDBTransaction(this, _names, mode); };
+  _zwIDBDatabase.prototype.transaction = function (names, mode) {
+    // https://w3c.github.io/IndexedDB/#dom-idbdatabase-transaction
+    if (this._closed) {
+      throw new globalThis.DOMException('The database connection is closed.', 'InvalidStateError');
+    }
+    mode = mode === undefined ? 'readonly' : String(mode);
+    if (mode !== 'readonly' && mode !== 'readwrite') {
+      throw new TypeError('The transaction mode is invalid.');
+    }
+    var storeNames = Array.isArray(names) ? names.map(String) : [String(names)];
+    if (storeNames.length === 0) {
+      throw new globalThis.DOMException('The transaction scope is empty.', 'InvalidAccessError');
+    }
+    storeNames = storeNames.filter(function (name, index, all) {
+      return all.indexOf(name) === index;
+    }).sort();
+    for (var i = 0; i < storeNames.length; i++) {
+      if (!Object.prototype.hasOwnProperty.call(this._stores, storeNames[i])) {
+        throw new globalThis.DOMException('The object store does not exist.', 'NotFoundError');
+      }
+    }
+    return new _zwIDBTransaction(this, storeNames, mode);
+  };
   _zwIDBDatabase.prototype.close = function () {
     if (this._closed) return;
+    this._closedStoreNames = Object.keys(this._stores).sort();
     this._closed = true;
     var index = this._state.connections.indexOf(this);
     if (index !== -1) this._state.connections.splice(index, 1);
@@ -5329,7 +5556,7 @@
                   done
                 );
               };
-              if (typeof queueMicrotask === 'function') queueMicrotask(finish);
+              if (typeof setTimeout === 'function') setTimeout(finish, 0);
               else finish();
             };
             if (typeof queueMicrotask === 'function') queueMicrotask(upgrade);

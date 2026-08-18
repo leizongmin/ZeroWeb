@@ -268,6 +268,66 @@ fn test_indexeddb_cursor_stepping_guards_and_compound_keys() {
 }
 
 #[test]
+fn test_indexeddb_metadata_tasks_and_utf16_name_wire() {
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+
+    let requests = Arc::new(Mutex::new(Vec::<String>::new()));
+    let captured = Arc::clone(&requests);
+    let mut sandbox = V8Sandbox::with_config(zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    })
+    .unwrap();
+    sandbox.register_callback(
+        "__zw_idb",
+        Box::new(move |args: &[String]| {
+            let request = args[0].clone();
+            captured.lock().unwrap().push(request.clone());
+            let response = if request.contains("\"op\":\"connection_capabilities\"") {
+                r#"{"crossRenderer":false,"transactionScheduling":false}"#
+            } else if request.contains("\"op\":\"inspect\"") {
+                r#"{"database":null}"#
+            } else if request.contains("\"op\":\"begin_transaction\"") {
+                r#"{"transaction":1}"#
+            } else {
+                "{}"
+            };
+            format!("__zw_idb_ok:{response}")
+        }),
+    );
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    sandbox
+        .execute(
+            "globalThis.__metadataOrder = [];\
+             var setup = indexedDB.open('metadata-wire', 1);\
+             setup.onupgradeneeded = function () {\
+               setup.result.createObjectStore('\\uD800');\
+               Promise.resolve().then(function () { __metadataOrder.push('microtask'); });\
+             };\
+             setup.onsuccess = function () {\
+               __metadataOrder.push('success');\
+               setup.result.close();\
+             };",
+        )
+        .unwrap();
+    for _ in 0..4 {
+        sandbox.execute("0").unwrap();
+    }
+
+    assert_eq!(
+        sandbox.execute("__metadataOrder.join('|')").unwrap().value,
+        "microtask|success"
+    );
+    let requests = requests.lock().unwrap();
+    let schema = requests
+        .iter()
+        .find(|request| request.contains("\"op\":\"sync_schema\""))
+        .expect("schema request");
+    assert!(schema.contains(r#""name":"__zw_utf16_name__:d800""#));
+}
+
+#[test]
 fn test_indexeddb_blocked_upgrade_waits_for_connection_close() {
     use zero_script_sandbox::{Sandbox, V8Sandbox};
 
