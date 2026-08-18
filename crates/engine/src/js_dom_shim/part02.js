@@ -4280,8 +4280,19 @@
     delete this._indexInstances[name];
   };
   _zwIDBStore.prototype.index = function (name) {
-    this._assertUsable(false);
     name = String(name);
+    if (this._metadata && this._metadata.deleted) {
+      throw new globalThis.DOMException('The object store has been deleted.', 'InvalidStateError');
+    }
+    if (this.transaction
+        && (this.transaction._aborted
+            || this.transaction._finished
+            || this.transaction._committing)) {
+      throw new globalThis.DOMException('The transaction is finished.', 'InvalidStateError');
+    }
+    if (this.transaction && !this.transaction._active) {
+      throw new globalThis.DOMException('The transaction is inactive.', 'TransactionInactiveError');
+    }
     var idx = this._indexes[name];
     if (!idx) {
       throw new globalThis.DOMException('The index does not exist.', 'NotFoundError');
@@ -5375,6 +5386,14 @@
       throw new globalThis.DOMException('The object store does not exist.', 'NotFoundError');
     }
     store.deleted = true;
+    Object.keys(store.indexes).forEach(function (indexName) {
+      store.indexes[indexName].deleted = true;
+    });
+    var storeInstance = transaction._storeInstances[name];
+    if (storeInstance) {
+      storeInstance._indexes = {};
+      storeInstance._indexInstances = {};
+    }
     delete this._stores[name];
     transaction._scope = transaction._scope.filter(function (entry) { return entry !== name; });
   };

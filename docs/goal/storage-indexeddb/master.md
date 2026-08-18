@@ -2,7 +2,7 @@
 
 **入口文档**: [../storage-indexeddb.md](../storage-indexeddb.md)
 **创建日期**: 2026-08-17（goal 拆分 bootstrap）
-**最后更新**: 2026-08-18（M2 schema rename WPT expansion）
+**最后更新**: 2026-08-19（M2 metadata rollback WPT expansion）
 
 ---
 
@@ -62,12 +62,13 @@ service-workers）。把页面 `indexedDB` 从 in-memory 近似接到 zero-stora
 - ✅ M2 key semantics：keyPath extraction、合法性、排序、File/Proxy/sparse array，新增 8 文件、136 subtest
 - ✅ M2 index metadata：create/deleteIndex、exception order、SameObject、keyPath，新增 8 文件、49 subtest
 - ✅ M2 schema rename：store/index rename、SameObject cache、abort rollback，新增 8 文件、41 subtest
+- ✅ M2 metadata rollback：store/index metadata、key generator、finished guards，新增 8 文件、19 subtest
 
 ## 缺口清单
 
 | # | 缺口 | 状态 |
 |---|------|------|
-| I1 | WPT IndexedDB 用例覆盖为零 | 🟨 M1/M2 已导入 115 文件 |
+| I1 | WPT IndexedDB 用例覆盖为零 | 🟨 M1/M2 已导入 123 文件 |
 | I2 | 页面→Rust 引擎零接线 | ✅ factory/store/index/query/cursor stepping/mutation 已接 |
 | I3 | 无持久化（重启即失） | ✅ browser/renderer 与 embedded WebView production paths 完成 |
 | I4 | IDBRequest 事件模型（success/error/readyState/auto-commit）非 spec | 🟨 core + task active + browser-owned connection/transaction scheduling 完成；继续由 WPT 扩面 |
@@ -83,7 +84,7 @@ service-workers）。把页面 `indexedDB` 从 in-memory 近似接到 zero-stora
 
 | 里程碑 | 状态 |
 |--------|------|
-| M1 — WPT IndexedDB 基线建立 | 🟨 imported 697/697 |
+| M1 — WPT IndexedDB 基线建立 | 🟨 imported 716/716 |
 | M2 — JS↔Rust 接线（核心通路） | 🟨 request task model + full operation scheduling complete；继续扩大 WPT |
 | M3 — 索引 + 事件模型 + 持久化 | 🟨 storage/connection/transaction ownership complete；继续扩大 WPT |
 
@@ -103,14 +104,15 @@ service-workers）。把页面 `indexedDB` 从 in-memory 近似接到 zero-stora
 - WPT Key + keyPath semantics：8 文件 / 136 subtest / 136 Pass / 0 Fail / 100.00%
 - WPT Index metadata + lifecycle：8 文件 / 49 subtest / 49 Pass / 0 Fail / 100.00%
 - WPT Schema rename + name scopes：8 文件 / 41 subtest / 41 Pass / 0 Fail / 100.00%
+- WPT Metadata rollback + lifecycle：8 文件 / 19 subtest / 19 Pass / 0 Fail / 100.00%
 - WPT Index cursor continue：1 文件 / 8 subtest / 8 Pass / 0 Fail / 100.00%
 - WPT Cursor continuePrimaryKey：3 文件 / 18 subtest / 18 Pass / 0 Fail / 100.00%
 - WPT Request/Transaction event core：8 文件 / 10 subtest / 10 Pass / 0 Fail / 100.00%
 - WPT Transaction deactivation/lifetime：3 文件 / 11 subtest / 11 Pass / 0 Fail / 100.00%
 - WPT Transaction scheduling：7 文件 / 7 subtest / 7 Pass / 0 Fail / 100.00%
 - WPT Connection queue：2 文件 / 3 subtest / 3 Pass / 0 Fail / 100.00%
-- imported 合计：115 文件 / 697 subtest / 697 Pass / 0 Fail / 100.00%
-- 当前 100% 仅覆盖 imported 115 文件，不代表上游 IndexedDB 目录整体通过率
+- imported 合计：123 文件 / 716 subtest / 716 Pass / 0 Fail / 100.00%
+- 当前 100% 仅覆盖 imported 123 文件，不代表上游 IndexedDB 目录整体通过率
 - 证据：`evidence/2026-08-17-m1-factory-baseline.{md,json}`、
   `evidence/2026-08-17-m1-cmp-fix.{md,json}`、
   `evidence/2026-08-17-m1-request-eventtarget-fix.{md,json}`、
@@ -156,7 +158,8 @@ service-workers）。把页面 `indexedDB` 从 in-memory 近似接到 zero-stora
   `evidence/2026-08-18-m2-store-metadata.{md,json}`、
   `evidence/2026-08-18-m2-key-semantics.{md,json}`、
   `evidence/2026-08-18-m2-index-metadata.{md,json}`、
-  `evidence/2026-08-18-m2-schema-rename.{md,json}`
+  `evidence/2026-08-18-m2-schema-rename.{md,json}`、
+  `evidence/2026-08-19-m2-metadata-rollback.{md,json}`
 - 回归门禁：`make test` 全绿；期间修复 DMA-BUF 测试缺失 scroll-transform 前提、
   renderer idle-drain 启动期计数假设、QuickJS-only 测试 feature-union 门控
 - 质量门禁：`cargo fmt` + `cargo clippy --workspace --all-targets -- -D warnings` 全过

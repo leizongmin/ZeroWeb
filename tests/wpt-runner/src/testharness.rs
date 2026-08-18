@@ -223,6 +223,35 @@ pub const INDEXEDDB_CASES: &[(&str, &[&str])] = &[
     ),
     ("IndexedDB/name-scopes.any.js", &["resources/support-promises.js"]),
     ("IndexedDB/list_ordering.any.js", &["resources/support.js"]),
+    (
+        "IndexedDB/transaction-abort-index-metadata-revert.any.js",
+        &["resources/support-promises.js", "resources/support.js"],
+    ),
+    (
+        "IndexedDB/transaction-abort-object-store-metadata-revert.any.js",
+        &["resources/support-promises.js", "resources/support.js"],
+    ),
+    (
+        "IndexedDB/transaction-abort-multiple-metadata-revert.any.js",
+        &["resources/support-promises.js", "resources/support.js"],
+    ),
+    (
+        "IndexedDB/transaction-abort-generator-revert.any.js",
+        &["resources/support-promises.js", "resources/support.js"],
+    ),
+    ("IndexedDB/idbobjectstore_index.any.js", &["resources/support.js"]),
+    (
+        "IndexedDB/idbobjectstore-index-finished.any.js",
+        &["resources/support.js"],
+    ),
+    (
+        "IndexedDB/idbtransaction-db-SameObject.any.js",
+        &["resources/support.js"],
+    ),
+    (
+        "IndexedDB/idbtransaction-objectStore-exception-order.any.js",
+        &["resources/support.js"],
+    ),
     ("IndexedDB/idbobjectstore_add.any.js", &["resources/support.js"]),
     ("IndexedDB/idbobjectstore_put.any.js", &["resources/support.js"]),
     ("IndexedDB/idbobjectstore_get.any.js", &["resources/support.js"]),
