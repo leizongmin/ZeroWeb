@@ -1,4 +1,22 @@
-.PHONY: setup-rusty-v8 fetch-wpt-data fetch-wpt-html-testharness update-wpt-data build browser-build browser browser-cpu browser-wpt-parity browser-debug browser-debug-wayland browser-debug-wayland-log browser-debug-x11 browser-compositor-smoke browser-compositor-real-site-smoke test testharness-html reftest reftest-oracle capture-oracle product-smoke-oracle product-smoke form-visual-smoke form-visual-browser-gpu-smoke product-smoke-legacy import-wpt audit-imported-font-resources reftest-trend reftest-trend-oracle reftest-smoke layout-golden layout-golden-update monthly-report bench bench-gate bench-capture bench-trend fetch-wpt-dom testharness-dom testharness-dom-native fetch-wpt-indexeddb testharness-indexeddb
+.PHONY: setup-rusty-v8 fetch-wpt-data fetch-wpt-html-testharness update-wpt-data build browser-build browser browser-cpu browser-wpt-parity browser-debug browser-debug-wayland browser-debug-wayland-log browser-debug-x11 browser-compositor-smoke browser-compositor-real-site-smoke test testharness-html reftest reftest-oracle capture-oracle product-smoke-oracle product-smoke form-visual-smoke form-visual-browser-gpu-smoke product-smoke-legacy import-wpt audit-imported-font-resources reftest-trend reftest-trend-oracle reftest-smoke layout-golden layout-golden-update monthly-report bench bench-gate bench-capture bench-trend fetch-wpt-dom testharness-dom testharness-dom-native fetch-wpt-indexeddb testharness-indexeddb target-disk-guard
+
+# Windows 的 make recipe 可能落到 cmd.exe（本机）或 Git Bash（GitHub Actions runner）——
+# 统一显式走 Git Bash，避免 cmd 语法在 bash 下解析失败（2026-08-16 CI 实测）。
+# 定义在前供所有 bash 脚本入口（target-disk-guard / fetch-wpt-data 等）共用。
+ifeq ($(OS),Windows_NT)
+WPT_BASH ?= "C:/Program Files/Git/bin/bash.exe"
+else
+WPT_BASH ?= bash
+endif
+
+# target/ 磁盘占用守卫（2026-08-18：长时间 rally 循环曾把整块磁盘跑满——target/
+# 多 feature 组合产物 + incremental 缓存只增不减，且仓库根 core.* OOM 转储无人清）。
+# 重型入口（build/test/reftest 家族/bench 家族）前置执行：每次清仓库根 core.* 转储，
+# target/ 超 100GB 自动清空并继续，阈值内零开销放行。阈值可调：
+# make test ZW_TARGET_DISK_LIMIT_GB=50；跳过：ZW_TARGET_DISK_GUARD=0。
+# 详见 scripts/target-disk-guard.sh 与 docs/rally/oom-guard.md。
+target-disk-guard:
+	@$(WPT_BASH) scripts/target-disk-guard.sh
 
 ifeq ($(OS),Windows_NT)
 setup-rusty-v8:
@@ -13,13 +31,6 @@ endif
 WPT_DATA_REPO ?= https://github.com/leizongmin/zeroweb-wpt-data.git
 WPT_DATA_REF  ?= v1.10
 WPT_DATA_DIR  ?= tests/wpt-runner/wpt-data
-ifeq ($(OS),Windows_NT)
-# Windows 的 make recipe 可能落到 cmd.exe（本机）或 Git Bash（GitHub Actions runner）——
-# 统一显式走 Git Bash，避免 cmd 语法在 bash 下解析失败（2026-08-16 CI 实测）。
-WPT_BASH ?= "C:/Program Files/Git/bin/bash.exe"
-else
-WPT_BASH ?= bash
-endif
 fetch-wpt-data:
 ifeq ($(OS),Windows_NT)
 	@$(WPT_BASH) -c 'if [ -d "$(WPT_DATA_DIR)" ] && [ -n "$$(ls -A $(WPT_DATA_DIR) 2>/dev/null)" ]; then echo "wpt-data 已存在 ($(WPT_DATA_DIR), ref=$(WPT_DATA_REF))；刷新请先 rm -rf 该目录"; else echo "fetch wpt-data $(WPT_DATA_REF) → $(WPT_DATA_DIR)"; git clone --depth=1 --branch $(WPT_DATA_REF) $(WPT_DATA_REPO) "$(WPT_DATA_DIR)"; rm -rf "$(WPT_DATA_DIR)/.git"; fi'
@@ -39,7 +50,7 @@ fetch-wpt-html-testharness:
 update-wpt-data:
 	bash scripts/update-wpt-data.sh $(if $(CHECK),--check,$(REF))
 
-build: setup-rusty-v8
+build: setup-rusty-v8 target-disk-guard
 	cargo build --workspace --exclude zero-browser
 	cargo build -p zero-browser
 
@@ -131,7 +142,7 @@ QUICKJS_TEST_CRATES = zero-script-sandbox zero-webview zero-browser zero-rendere
 QUICKJS_TEST_CRATES_WITHOUT_BROWSER = $(filter-out zero-browser,$(QUICKJS_TEST_CRATES))
 ifeq ($(OS),Windows_NT)
 # Windows GUI 测试共享进程级 compositor；并行执行会让测试互相关闭其子进程。
-test: target/test-guard
+test: target-disk-guard target/test-guard
 	cargo build -p zero-renderer -p zero-compositor -p zero-image-decoder
 	set ZERO_NOPROXY=1&& .\target\test-guard --compile-first --per-proc-mem 10 --total-mem 28 --time-limit 900 -- cargo test --workspace --exclude zero-browser
 	set ZERO_NOPROXY=1&& .\target\test-guard --compile-first --per-proc-mem 10 --total-mem 28 --time-limit 900 -- cargo test -p zero-browser --bin zero-browser -- --test-threads=1
@@ -139,7 +150,7 @@ test: target/test-guard
 	set ZERO_NOPROXY=1&& .\target\test-guard --compile-first --per-proc-mem 10 --total-mem 28 --time-limit 900 -- cargo test --no-default-features --features quickjs $(addprefix -p ,$(QUICKJS_TEST_CRATES_WITHOUT_BROWSER))
 	set ZERO_NOPROXY=1&& .\target\test-guard --compile-first --per-proc-mem 10 --total-mem 28 --time-limit 900 -- cargo test --no-default-features --features quickjs -p zero-browser -- --test-threads=1
 else
-test: target/test-guard
+test: target-disk-guard target/test-guard
 	# Browser 多进程单测直接 spawn target/debug/{zero-renderer,zero-compositor}；先刷新
 	# standalone binaries，避免协议结构变更后复用旧 wire schema，导致断管或 stale 帧。
 	cargo build -p zero-renderer -p zero-compositor -p zero-image-decoder
@@ -171,7 +182,7 @@ test: target/test-guard
 endif
 
 # M4 HTML behavior: selected upstream forms/focus/InputEvent testharness cases.
-testharness-html: fetch-wpt-html-testharness target/test-guard zero-wpt-runner-release
+testharness-html: fetch-wpt-html-testharness target-disk-guard target/test-guard zero-wpt-runner-release
 	./target/test-guard --per-proc-mem 10 --total-mem 28 --time-limit 900 -- ./target/release/zero-wpt-runner testharness-html
 
 # js-dom goal M4 / DC-3：上游 dom/ testharness 通过率基线（dom/nodes 首批）。
@@ -181,7 +192,7 @@ fetch-wpt-dom:
 
 # js-dom R51：TIME_LIMIT 可透传（默认 900s）。dom/ranges 等 mega-case 子目录
 #（Range-mutations 族 12 用例各 30-60s）需要更长墙钟。
-testharness-dom: fetch-wpt-dom target/test-guard zero-wpt-runner-release
+testharness-dom: target-disk-guard fetch-wpt-dom target/test-guard zero-wpt-runner-release
 	./target/test-guard --per-proc-mem 10 --total-mem 28 --time-limit $(or $(TIME_LIMIT),900) -- ./target/release/zero-wpt-runner testharness-dom $(if $(FILTER),$(FILTER),)
 
 # js-dom goal DC-3 native 路径对照：ZW_NATIVE_DOM=1 走原生绑定路径（非默认 polyfill）。
@@ -198,7 +209,7 @@ testharness-indexeddb: fetch-wpt-indexeddb target/test-guard zero-wpt-runner-rel
 	./target/test-guard --per-proc-mem 10 --total-mem 28 --time-limit $(or $(TIME_LIMIT),900) -- ./target/release/zero-wpt-runner testharness-indexeddb $(if $(FILTER),$(FILTER),)
 
 # WPT reftest：release 构建不受内存限制，已编译 runner 的执行由 test-guard 包裹。
-reftest: fetch-wpt-data target/test-guard zero-wpt-runner-release
+reftest: target-disk-guard fetch-wpt-data target/test-guard zero-wpt-runner-release
 	./target/test-guard -- ./target/release/zero-wpt-runner reftest
 
 # 上游 WPT reftest（wpt-data/，self-source 同源 ref）。test-guard 包裹（OOM 防护）。
@@ -207,7 +218,7 @@ reftest: fetch-wpt-data target/test-guard zero-wpt-runner-release
 # 用法: make reftest-upstream                     全量上游（快，~25s）
 #       make reftest-upstream FILTER=css-tables   单目录/子串过滤（case.id.contains）
 #       make reftest-upstream FILTER=css/CSS2/backgrounds
-reftest-upstream: fetch-wpt-data target/test-guard zero-wpt-runner-release
+reftest-upstream: target-disk-guard fetch-wpt-data target/test-guard zero-wpt-runner-release
 	./target/test-guard --time-limit 3600 -- ./target/release/zero-wpt-runner reftest-upstream $(FILTER)
 
 # DC-14 独立 Oracle：渲染上游 WPT test 页 vs chromium oracle-shots，报告真一致率
@@ -324,7 +335,7 @@ reftest-smoke: fetch-wpt-data target/test-guard
 # 用法: make layout-golden [FILTER=css/CSS2/backgrounds]   对比（diff 退出 1）
 #       make layout-golden-update [FILTER=...]             生成/更新 golden
 #       （新用例先 --update 生成基线并提交，此后作为布局回归常驻断言）
-layout-golden: fetch-wpt-data target/test-guard
+layout-golden: target-disk-guard fetch-wpt-data target/test-guard
 	./target/test-guard -- bash scripts/run-layout-golden.sh $(FILTER)
 
 layout-golden-update: fetch-wpt-data target/test-guard
@@ -342,17 +353,17 @@ monthly-report:
 #   make bench-trend      测量 + 记录趋势（NOTE=... 可加备注；weekly CI 用 --auto-tighten）
 # 全部经 test-guard 包裹（OOM/超时保护）。首次使用顺序：bench-gate（全 NEW/PASS）
 # → bench-capture JUSTIFICATION="初始基线" → bench-gate（真比较）。
-bench: target/test-guard
+bench: target-disk-guard target/test-guard
 	./target/test-guard -- bash scripts/bench-report.sh
 
-bench-gate: target/test-guard
+bench-gate: target-disk-guard target/test-guard
 	./target/test-guard -- bash scripts/bench-report.sh && bash scripts/perf-gate.sh
 
-bench-capture: target/test-guard
+bench-capture: target-disk-guard target/test-guard
 	@test -n "$(JUSTIFICATION)" || (echo "bench-capture: JUSTIFICATION=... 必填（基线变更须有理由）"; exit 2)
 	./target/test-guard -- bash scripts/bench-report.sh && bash scripts/record-bench-baseline.sh --justification "$(JUSTIFICATION)"
 
-bench-trend: target/test-guard
+bench-trend: target-disk-guard target/test-guard
 	./target/test-guard -- bash scripts/bench-report.sh && bash scripts/record-bench-trend.sh $(if $(NOTE),--note "$(NOTE)")
 
 # Legacy Static Web smoke（DC-13，goal rendering-compat.md line 316）：跑 20 页

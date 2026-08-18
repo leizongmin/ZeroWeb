@@ -51,11 +51,17 @@ jobs:
             v8_runtime: true
             release_build: true
             features: ''
+          # macos-x86_64：run_tests=false（2026-08-18）——macos-15-intel runner 测试段
+          # 实测 ~1180s（core 709s + app 172s + integration 144s + 其他），为 linux
+          # （116s）的 6 倍，且该型号临近退役。保留 fmt/clippy（--all-targets 已含
+          # 测试目标编译，x86_64-apple-darwin 编译覆盖不丢），跳过测试执行。
+          # aarch64-apple-darwin（macos-latest）仍跑全量测试。
           - name: macos-x86_64
             os: macos-15-intel
             target: x86_64-apple-darwin
             v8_runtime: true
             release_build: true
+            run_tests: false
             features: ''
           - name: macos-aarch64
             os: macos-latest
@@ -247,7 +253,7 @@ jobs:
             --all-targets --target ${{ matrix.target }} -- -D warnings
 
       - name: Run core crate tests without V8
-        if: matrix.v8_runtime != false
+        if: matrix.v8_runtime != false && matrix.run_tests != false
         timeout-minutes: 20
         shell: bash
         run: |
@@ -284,7 +290,7 @@ jobs:
           cargo build --target ${{ matrix.target }} -p zero-renderer --bin zero-renderer -p zero-image-decoder --bin zero-image-decoder
 
       - name: Run V8-backed core tests
-        if: matrix.v8_runtime != false && runner.os != 'Windows'
+        if: matrix.v8_runtime != false && runner.os != 'Windows' && matrix.run_tests != false
         timeout-minutes: 20
         shell: bash
         run: |
@@ -304,7 +310,7 @@ jobs:
           cargo build --target ${{ matrix.target }} -p zero-compositor --bin zero-compositor
 
       - name: Run app tests
-        if: matrix.v8_runtime != false
+        if: matrix.v8_runtime != false && matrix.run_tests != false
         timeout-minutes: 40
         shell: bash
         run: |
@@ -318,13 +324,13 @@ jobs:
       # This explicit Windows gate builds the renderer first, then verifies physical
       # clicks, both text controls, button actions, scale factors, and Chinese IME.
       - name: Run real form interaction GUI gate (Windows x86_64)
-        if: matrix.name == 'windows-x86_64'
+        if: matrix.name == 'windows-x86_64' && matrix.run_tests != false
         timeout-minutes: 25
         shell: pwsh
         run: ./scripts/test-form-interaction.ps1
 
       - name: Run integration and WPT runner tests
-        if: matrix.v8_runtime != false
+        if: matrix.v8_runtime != false && matrix.run_tests != false
         timeout-minutes: 20
         shell: bash
         run: |
@@ -334,6 +340,7 @@ jobs:
             --target ${{ matrix.target }}
 
       - name: Run render CPU tests
+        if: matrix.run_tests != false
         timeout-minutes: 10
         shell: bash
         run: |
@@ -347,6 +354,7 @@ jobs:
       # window_smoke 无 DISPLAY 自动跳过；parity 对照 + gpu:: 全量在无 GPU 的 runner 上
       # 经软件 fallback adapter 运行（mesa-vulkan-drivers 已装）。
       - name: Run render GPU tests
+        if: matrix.run_tests != false
         timeout-minutes: 15
         shell: bash
         run: |
@@ -377,7 +385,7 @@ jobs:
           cargo build ${{ matrix.features }} --target ${{ matrix.target }} -p zero-renderer --bin zero-renderer -p zero-image-decoder --bin zero-image-decoder
 
       - name: Run QuickJS-backed tests
-        if: matrix.v8_runtime == false
+        if: matrix.v8_runtime == false && matrix.run_tests != false
         timeout-minutes: 20
         shell: bash
         run: |
