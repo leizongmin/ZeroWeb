@@ -8,7 +8,7 @@ Related modules: `crates/style-system/src/shorthand`, `crates/css-parser/src/val
 
 `border: begin solid red` was expanded as if it were valid. The old `looks_like_length` classified `begin` as a length because it ended with `in`; after switching to the shared length parser, the parser still accepted broad values such as `auto`, and unknown border shorthand tokens were silently ignored.
 
-The same silent-defaulting pattern also affected `outline` and `column-rule`: unknown tokens were ignored while the valid remaining width/style/color components were expanded.
+The same silent-defaulting pattern also affected `outline`, `column-rule`, and `text-decoration`: unknown tokens were ignored while the valid remaining components were expanded.
 
 ## Root Cause
 
@@ -20,6 +20,6 @@ Use the shared value parsers for token boundaries, then filter by the specific p
 
 + accept only real length variants plus `thin`, `medium`, and `thick` as width components;
 + use the real color parser for color components;
-+ reject the entire shorthand when any token is not width, style, or color.
++ reject the entire shorthand when any token is not consumed by one of the allowed component grammars.
 
 Keep adjacent shorthand users covered with regression tests when a shared classifier changes. `columns: auto 100px` is a good guard because it depends on `auto` not being mistaken for a length.

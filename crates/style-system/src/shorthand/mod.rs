@@ -1797,6 +1797,8 @@ fn expand_text_decoration(value: &str, important: bool, specificity: (u32, u32, 
             color = part.to_string();
         } else if is_thickness(part) {
             thickness = part.to_string();
+        } else {
+            return vec![];
         }
     }
     let line = if line_toks.is_empty() {

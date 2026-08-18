@@ -246,6 +246,12 @@ fn test_text_decoration_order_color_line_style() {
 }
 
 #[test]
+fn test_text_decoration_rejects_unknown_component() {
+    let result = expand_one("text-decoration", "underline sparkle red", false, (0, 0, 1));
+    assert!(result.is_empty());
+}
+
+#[test]
 /// text-decoration blink
 fn test_text_decoration_blink() {
     let result = expand_one("text-decoration", "blink", false, (0, 0, 1));
