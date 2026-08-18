@@ -5,7 +5,10 @@ use std::sync::atomic::{AtomicU64, Ordering};
 
 use serde::{Deserialize, Serialize};
 
-use crate::profile::atomic_write;
+use crate::profile::{atomic_write, read_profile};
+
+const MAX_ENTRIES: usize = 10_000;
+const MAX_TEXT_BYTES: usize = 16 * 1024;
 
 /// 书签唯一标识符。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -225,12 +228,16 @@ impl Bookmarks {
     ///
     /// 如果文件不存在或解析失败，返回空书签集。
     pub fn load(path: &Path) -> Self {
-        match std::fs::read_to_string(path) {
-            Ok(content) => serde_json::from_str::<BookmarksSnapshot>(&content)
-                .map(Self::from_snapshot)
-                .unwrap_or_default(),
-            Err(_) => Self::new(),
+        let Some(content) = read_profile(path) else {
+            return Self::new();
+        };
+        let Ok(snapshot) = serde_json::from_str::<BookmarksSnapshot>(&content) else {
+            return Self::new();
+        };
+        if !snapshot.is_valid() {
+            return Self::new();
         }
+        Self::from_snapshot(snapshot)
     }
 
     /// 从默认路径加载书签。
@@ -322,6 +329,18 @@ impl Bookmarks {
 struct BookmarksSnapshot {
     bookmarks: Vec<BookmarkSnapshot>,
     folders: Vec<BookmarkFolderSnapshot>,
+}
+
+impl BookmarksSnapshot {
+    fn is_valid(&self) -> bool {
+        self.bookmarks.len() <= MAX_ENTRIES
+            && self.folders.len() <= MAX_ENTRIES
+            && self
+                .bookmarks
+                .iter()
+                .all(|bookmark| bookmark.title.len() <= MAX_TEXT_BYTES && bookmark.url.len() <= MAX_TEXT_BYTES)
+            && self.folders.iter().all(|folder| folder.name.len() <= MAX_TEXT_BYTES)
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

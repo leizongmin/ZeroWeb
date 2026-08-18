@@ -4,6 +4,9 @@ use std::fs::{self, File};
 use std::io::Write;
 use std::path::{Path, PathBuf};
 
+/// 单个 profile JSON 文件允许的最大字节数。
+pub const MAX_PROFILE_FILE_BYTES: u64 = 1024 * 1024;
+
 /// 一个浏览器 profile 内各类状态文件的路径。
 #[derive(Debug, Clone)]
 pub struct ProfilePaths {
@@ -55,9 +58,18 @@ pub(crate) fn atomic_write(path: &Path, content: &str) -> Result<(), String> {
     Ok(())
 }
 
+/// 读取受大小限制的 UTF-8 profile 文件。
+pub(crate) fn read_profile(path: &Path) -> Option<String> {
+    let metadata = fs::metadata(path).ok()?;
+    if metadata.len() > MAX_PROFILE_FILE_BYTES {
+        return None;
+    }
+    fs::read_to_string(path).ok()
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{ProfilePaths, atomic_write};
+    use super::{ProfilePaths, atomic_write, read_profile};
 
     #[test]
     fn profile_paths_stay_under_supplied_root() {
@@ -76,6 +88,16 @@ mod tests {
         atomic_write(&path, "first").unwrap();
         atomic_write(&path, "second").unwrap();
         assert_eq!(std::fs::read_to_string(&path).unwrap(), "second");
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn oversized_profile_file_is_rejected_before_reading() {
+        let root = std::env::temp_dir().join(format!("zero-browser-shell-profile-size-{}", std::process::id()));
+        std::fs::create_dir_all(&root).unwrap();
+        let path = root.join("state.json");
+        std::fs::write(&path, vec![b'x'; super::MAX_PROFILE_FILE_BYTES as usize + 1]).unwrap();
+        assert!(read_profile(&path).is_none());
         std::fs::remove_dir_all(root).unwrap();
     }
 }

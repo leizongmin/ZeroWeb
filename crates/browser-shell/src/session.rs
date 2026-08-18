@@ -7,7 +7,11 @@ use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 
-use crate::profile::atomic_write;
+use crate::profile::{atomic_write, read_profile};
+
+const MAX_TABS: usize = 10_000;
+const MAX_HISTORY_PER_TAB: usize = 10_000;
+const MAX_TEXT_BYTES: usize = 16 * 1024;
 
 /// 可序列化的浏览器会话快照。
 ///
@@ -83,8 +87,9 @@ impl SessionState {
     ///
     /// 如果文件不存在或解析失败，返回 `None`。
     pub fn load(path: &Path) -> Option<Self> {
-        let content = std::fs::read_to_string(path).ok()?;
-        serde_json::from_str(&content).ok()
+        let content = read_profile(path)?;
+        let session = serde_json::from_str::<Self>(&content).ok()?;
+        session.is_valid().then_some(session)
     }
 
     /// 从默认路径加载会话状态。
@@ -113,6 +118,21 @@ impl SessionState {
     /// 是否为空会话。
     pub fn is_empty(&self) -> bool {
         self.tabs.is_empty()
+    }
+
+    fn is_valid(&self) -> bool {
+        self.tabs.len() <= MAX_TABS
+            && self.active_tab_index.is_none_or(|index| index < self.tabs.len())
+            && self.tabs.iter().all(|tab| {
+                tab.url.as_deref().is_none_or(|url| url.len() <= MAX_TEXT_BYTES)
+                    && tab.title.as_deref().is_none_or(|title| title.len() <= MAX_TEXT_BYTES)
+                    && tab.history.len() <= MAX_HISTORY_PER_TAB
+                    && (tab.history.is_empty() || tab.history_index < tab.history.len())
+                    && tab.history.iter().all(|entry| {
+                        entry.url.len() <= MAX_TEXT_BYTES
+                            && entry.title.as_deref().is_none_or(|title| title.len() <= MAX_TEXT_BYTES)
+                    })
+            })
     }
 }
 
@@ -146,6 +166,17 @@ mod tests {
         assert!(session.is_empty());
         assert_eq!(session.tab_count(), 0);
         assert_eq!(session.active_tab_index, None);
+    }
+
+    #[test]
+    fn load_rejects_a_session_with_an_oversized_url() {
+        let root = std::env::temp_dir().join(format!("zero-browser-shell-session-size-{}", std::process::id()));
+        std::fs::create_dir_all(&root).unwrap();
+        let path = root.join("session.json");
+        let oversized_url = format!("https://example.com/{}", "x".repeat(MAX_TEXT_BYTES));
+        std::fs::write(&path, format!(r#"{{"tabs":[{{"url":"{oversized_url}","title":null,"history":[],"history_index":0}}],"active_tab_index":0}}"#)).unwrap();
+        assert!(SessionState::load(&path).is_none());
+        std::fs::remove_dir_all(root).unwrap();
     }
 
     #[test]

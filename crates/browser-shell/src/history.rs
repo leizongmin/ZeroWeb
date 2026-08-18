@@ -4,7 +4,7 @@ use std::path::Path;
 
 use serde::{Deserialize, Serialize};
 
-use crate::profile::atomic_write;
+use crate::profile::{atomic_write, read_profile};
 
 const MAX_ENTRIES: usize = 10_000;
 const MAX_TEXT_BYTES: usize = 16 * 1024;
@@ -92,7 +92,7 @@ impl History {
 
     /// 从指定 JSON 文件恢复历史记录；损坏或越界内容返回空历史。
     pub fn load(path: &Path) -> Self {
-        let Ok(content) = std::fs::read_to_string(path) else {
+        let Some(content) = read_profile(path) else {
             return Self::new();
         };
         let Ok(history) = serde_json::from_str::<Self>(&content) else {
