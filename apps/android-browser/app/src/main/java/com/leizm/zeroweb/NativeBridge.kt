@@ -17,4 +17,7 @@ object NativeBridge {
 
     @JvmStatic
     external fun nativeProbeDecoder(fd: Int): Boolean
+
+    @JvmStatic
+    external fun nativeProbeCompositor(fd: Int): Boolean
 }

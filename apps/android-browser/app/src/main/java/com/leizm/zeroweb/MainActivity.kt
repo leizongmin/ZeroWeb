@@ -71,6 +71,17 @@ class MainActivity : ComponentActivity() {
                         }
                     }.start()
                 }
+                if (roleService == CompositorService::class.java) {
+                    val sockets = ParcelFileDescriptor.createSocketPair()
+                    IRoleService.Stub.asInterface(service).start(sockets[1])
+                    Thread {
+                        if (NativeBridge.nativeProbeCompositor(sockets[0].detachFd())) {
+                            android.util.Log.i("ZeroWebRole", "compositor probe succeeded")
+                        } else {
+                            android.util.Log.e("ZeroWebRole", "compositor probe failed")
+                        }
+                    }.start()
+                }
             }
 
             override fun onServiceDisconnected(name: ComponentName) {
