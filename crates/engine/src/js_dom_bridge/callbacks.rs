@@ -406,9 +406,9 @@ pub fn register_dom_callbacks(
         Box::new(move |args| {
             let elem_sel = args.first().map(String::from).unwrap_or_default();
             let sel = args.get(1).map(String::from).unwrap_or_default();
-            // js-dom M1 L2 R102：helper 类查询暂保快照路径（live 化 helper 签名留下一片）。
-            let (snap, _live_ok) = apply_pending_query_html(&html, &m, &qv);
-            query_match_in_subtree(&snap, &elem_sel, &sel)
+            // js-dom M1 L2 R103：helper 类查询 live 化（_doc 变体）。
+            let (snap, live_ok) = apply_pending_query_html(&html, &m, &qv);
+            with_query_doc_live_aware(&snap, live_ok, |doc| query_match_in_subtree_doc(doc, &elem_sel, &sel))
         }),
     );
 
@@ -420,8 +420,8 @@ pub fn register_dom_callbacks(
         Box::new(move |args| {
             let elem_sel = args.first().map(String::from).unwrap_or_default();
             let sel = args.get(1).map(String::from).unwrap_or_default();
-            let (snap, _live_ok) = apply_pending_query_html(&html, &m, &qv);
-            query_all_in_subtree(&snap, &elem_sel, &sel)
+            let (snap, live_ok) = apply_pending_query_html(&html, &m, &qv);
+            with_query_doc_live_aware(&snap, live_ok, |doc| query_all_in_subtree_doc(doc, &elem_sel, &sel))
         }),
     );
 
@@ -433,8 +433,8 @@ pub fn register_dom_callbacks(
         "__zw_form_controls",
         Box::new(move |args| {
             let form = args.first().map(String::from).unwrap_or_default();
-            let (snap, _live_ok) = apply_pending_query_html(&html, &m, &qv);
-            form_control_selectors(&snap, &form).join("|")
+            let (snap, live_ok) = apply_pending_query_html(&html, &m, &qv);
+            with_query_doc_live_aware(&snap, live_ok, |doc| form_control_selectors_doc(doc, &form).join("|"))
         }),
     );
 

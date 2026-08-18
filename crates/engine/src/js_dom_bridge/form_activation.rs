@@ -44,26 +44,32 @@ pub fn summary_activation_snapshot(html: &str, selector: &str) -> Option<Summary
 /// "<input type=image> is not in form.elements"，与 Chromium 一致）。
 pub fn form_control_selectors(html: &str, form_selector: &str) -> Vec<String> {
     let doc = parse_html(html);
-    let Some(form) = find_by_selector(&doc, form_selector) else {
+    form_control_selectors_doc(&doc, form_selector)
+}
+
+/// [`form_control_selectors`] 的 doc 版（js-dom M1 L2 R102：调用方经
+/// `with_query_doc_live_aware` 供 doc——live 读 or 快照缓存）。
+pub fn form_control_selectors_doc(doc: &Document, form_selector: &str) -> Vec<String> {
+    let Some(form) = find_by_selector(doc, form_selector) else {
         return Vec::new();
     };
-    if element_local_name(&doc, form) != "form" {
+    if element_local_name(doc, form) != "form" {
         return Vec::new();
     }
     doc.collect_descendants(doc.root())
         .into_iter()
         .filter(|node| {
-            let tag = element_local_name(&doc, *node);
+            let tag = element_local_name(doc, *node);
             matches!(
                 tag,
                 "button" | "fieldset" | "input" | "object" | "output" | "select" | "textarea"
-            ) && form_owner_node(&doc, *node) == Some(form)
+            ) && form_owner_node(doc, *node) == Some(form)
                 && !(tag == "input"
                     && doc
                         .get_attribute(*node, "type")
                         .is_some_and(|value| value.eq_ignore_ascii_case("image")))
         })
-        .filter_map(|node| unique_selector_for_node(&doc, node))
+        .filter_map(|node| unique_selector_for_node(doc, node))
         .collect()
 }
 

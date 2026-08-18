@@ -49,13 +49,19 @@ pub fn closest_matching_selector(html: &str, elem_sel: &str, test_sel: &str) -> 
 /// `__zw_query_match_sub` 回调 → shim 元素 `el.querySelector()`。
 pub fn query_match_in_subtree(html: &str, elem_sel: &str, selector: &str) -> String {
     let doc = parse_html(html);
-    let Some(root) = find_by_selector(&doc, elem_sel) else {
+    query_match_in_subtree_doc(&doc, elem_sel, selector)
+}
+
+/// [`query_match_in_subtree`] 的 doc 版（js-dom M1 L2 R102：调用方经
+/// `with_query_doc_live_aware` 供 doc——live 读 or 快照缓存）。
+pub fn query_match_in_subtree_doc(doc: &Document, elem_sel: &str, selector: &str) -> String {
+    let Some(root) = find_by_selector(doc, elem_sel) else {
         return String::new();
     };
     doc.query_selector(root, selector.trim())
         // 子树作用域：排除元素自身（dom crate query_selector 含 root，spec descendants-only）。
         .filter(|n| *n != root)
-        .and_then(|n| unique_selector_for_node(&doc, n))
+        .and_then(|n| unique_selector_for_node(doc, n))
         .unwrap_or_default()
 }
 
@@ -64,14 +70,19 @@ pub fn query_match_in_subtree(html: &str, elem_sel: &str, selector: &str) -> Str
 /// 供 `__zw_query_all_sub` 回调 → shim 元素 `el.querySelectorAll()`。
 pub fn query_all_in_subtree(html: &str, elem_sel: &str, selector: &str) -> String {
     let doc = parse_html(html);
-    let Some(root) = find_by_selector(&doc, elem_sel) else {
+    query_all_in_subtree_doc(&doc, elem_sel, selector)
+}
+
+/// [`query_all_in_subtree`] 的 doc 版（js-dom M1 L2 R102：见 [`query_match_in_subtree_doc`]）。
+pub fn query_all_in_subtree_doc(doc: &Document, elem_sel: &str, selector: &str) -> String {
+    let Some(root) = find_by_selector(doc, elem_sel) else {
         return String::new();
     };
     doc.query_selector_all(root, selector.trim())
         .into_iter()
         // 子树作用域：排除元素自身（dom crate collect_matching 含 root，spec descendants-only）。
         .filter(|id| *id != root)
-        .filter_map(|id| unique_selector_for_node(&doc, id))
+        .filter_map(|id| unique_selector_for_node(doc, id))
         .collect::<Vec<_>>()
         .join("|")
 }
