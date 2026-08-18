@@ -114,3 +114,4 @@ html/semantics/forms/constraints/* 2026-08-16 R57-FV M1 constraints 约束校验
 html/semantics/forms/the-form-element/form-requestsubmit.html 2026-08-17 R57-FV M3 interactive validation/submitter 校验/重入守卫/click 提交
 html/semantics/forms/the-form-element/form-checkvalidity.html 2026-08-17 R57-FV M3 form.checkValidity 聚合
 dom/events/passive-by-default.html 2026-08-18 R105 passive-by-default（spec default-passive-value 四类 target × touch/wheel 族；57F→100P/0F）
+dom/events/EventTarget-dispatchEvent.html 2026-08-18 R106 dispatchEvent 入口语义（TypeError/未初始化 InvalidStateError/派发中重入/listener 异常不传播；24F→1F，剩 1F 为 handle 树祖先派发深结构）

@@ -1577,6 +1577,9 @@
         }
         if (prop === 'dispatchEvent') {
           return function(event) {
+            // js-dom M4 R106：spec 入口守卫（TypeError / InvalidStateError，
+            // WPT EventTarget-dispatchEvent "Calling dispatchEvent(null)" 等）。
+            globalThis._zwDispatchGuard(event);
             return _dispatchWithBubble(key, sel, handle, event);
           };
         }

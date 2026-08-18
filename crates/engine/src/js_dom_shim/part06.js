@@ -1797,7 +1797,11 @@
         throw new (globalThis.DOMException)('The provided event type is not supported.', 'NotSupportedError');
       }
       // 构造器接收 (type, options)；createEvent 返**空 type** 事件。
-      return new Ctor('');
+      // js-dom M4 R106：spec initialized flag——createEvent 返回的事件未初始化，
+      // dispatchEvent 前须 initEvent（否则 InvalidStateError，WPT EventTarget-dispatchEvent）。
+      var ev106 = new Ctor('');
+      ev106._zwUninitialized = true;
+      return ev106;
     },
     // execCommand / queryCommand*（R2826/R2936）——legacy 编辑/剪贴板命令表面（旧 copy 按钮
     // `el.select(); document.execCommand('copy')` / clipboard.js feature-detect `queryCommandSupported('copy')`
@@ -2251,7 +2255,9 @@
     // stopPropagation 第 3 断言：document.dispatchEvent → [document, window]）。
     // 返 `!defaultPrevented`（spec）。
     dispatchEvent: function (event) {
-      if (!event || typeof event.type !== 'string') return true;
+      // R106：spec 入口守卫（TypeError / InvalidStateError）——非 Event 抛 TypeError、
+      // 未初始化抛 InvalidStateError（旧版静默 return true）。
+      globalThis._zwDispatchGuard(event);
       return _dispatchWithBubble(_elKey('html', null), 'html', null, event, 'doc');
     },
     attachEvent: function(type, fn) {
@@ -2268,7 +2274,8 @@
   // `_dispatchWithBubble(…, 'win')`：window 为 target（AT_TARGET 只触发 tgt='win' 槽位注册，含
   // window.addEventListener + on* handler 注册），path = [window]，返 `!defaultPrevented`（spec）。
   globalThis.dispatchEvent = function(event) {
-    if (!event || typeof event.type !== 'string') return true;
+    // R106：spec 入口守卫（同 document.dispatchEvent）。
+    globalThis._zwDispatchGuard(event);
     return _dispatchWithBubble(_elKey('html', null), 'html', null, event, 'win');
   };
   // R2983 `window.postMessage(message, targetOrigin [, transfer])`——canonical 跨窗口消息 API。

@@ -5370,6 +5370,10 @@
   };
   if (typeof globalThis.Event.prototype.initEvent !== 'function') {
     globalThis.Event.prototype.initEvent = function (type, bubbles, cancelable) {
+      // js-dom M4 R106：spec `dom-eventtarget-dispatchevent` 步骤 1——event 的 initialized
+      // flag 未设时 dispatchEvent 抛 InvalidStateError。createEvent 返回的事件带
+      // `_zwUninitialized`（构造器路径不设——new Event() 即已初始化），initEvent 清除。
+      this._zwUninitialized = false;
       this.type = type;
       this.bubbles = !!bubbles;
       this.cancelable = !!cancelable;
@@ -5383,6 +5387,25 @@
       this._immediateStopped = false;
     };
   }
+  // js-dom M4 R106：dispatchEvent 入口守卫（spec `dom-eventtarget-dispatchevent`）——
+  // ① event 非 Event（null/undefined/无 type 字段对象）抛 TypeError（WebIDL Event 类型校验）；
+  // ② event 的 initialized flag 未设（createEvent 未 initEvent——`_zwUninitialized`）抛
+  // InvalidStateError。四个 dispatchEvent 入口（window/document/元素 proxy/EventTarget.prototype）
+  // 统一调用；返回 true = 守卫通过。
+  globalThis._zwDispatchGuard = function (event) {
+    if (event == null || typeof event !== 'object' || typeof event.type !== 'string') {
+      throw new globalThis.TypeError('Argument 1 is not of type \'Event\'.');
+    }
+    if (event._zwUninitialized) {
+      throw new (globalThis.DOMException)('The event is not initialized.', 'InvalidStateError');
+    }
+    // R106：dispatch flag 已设（该 event 正在派发中）——重入抛 InvalidStateError
+    //（spec `dom-eventtarget-dispatchevent` 步骤 2 / inner「dispatch flag」）。
+    if (event._zwDispatching) {
+      throw new (globalThis.DOMException)('The event is already being dispatched.', 'InvalidStateError');
+    }
+    return true;
+  };
   // R23：`Event` eventPhase 常量（spec `Event` 接口的静态 + 原型属性，WPT Event-constants.html testConstants）。
   // 挂在**接口对象**（Event 构造器，静态常量）+ **Event.prototype**（实例经原型链继承）。spec DOM：
   // NONE=0、CAPTURING_PHASE=1、AT_TARGET=2、BUBBLING_PHASE=3。createEvent('Event')/createEvent('CustomEvent')
@@ -5733,9 +5756,10 @@
     }
   };
   EventTarget.prototype.dispatchEvent = function (event) {
-    if (event == null || typeof event.type !== 'string') {
-      event = _makeEvent(event == null ? '' : String(event && event.type), {});
-    }
+    // js-dom M4 R106：spec 入口守卫（TypeError / InvalidStateError）——本原型此前的
+    // lenient 回落（非 Event 构造空事件）违反 spec `dom-eventtarget-dispatchevent`
+    // 步骤 1（WPT EventTarget-dispatchEvent "Calling dispatchEvent(null)" 抛 TypeError）。
+    globalThis._zwDispatchGuard(event);
     var target = this;
     event.target = target;
     event.currentTarget = target;

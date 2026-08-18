@@ -1598,9 +1598,18 @@
         // passive listener flag」——preventDefault 检查该 flag 不设 canceled）。
         // 用计数器包裹（支持嵌套派发）：fire 期间置位，正常路径 finally 复位。
         if (entry.passive) event._zwInPassive = (event._zwInPassive || 0) + 1;
+        // js-dom M4 R106：spec `concept-event-dispatch` 步骤 10 / inner invoke 步骤——
+        // listener 抛错**不传播**到 dispatchEvent 调用方（report error 后继续后续
+        // listener，WPT EventTarget-dispatchEvent "Exceptions from event listeners must
+        // not be propagated"：第一个 throw 后第二个 listener 仍须跑、dispatchEvent 返 true）。
         try {
           // 函数 listener: this=currentTarget；对象 listener: this=对象本身（spec EventListener invoke）。
           callable.call(typeof fn !== 'function' ? fn : ctx, event);
+        } catch (_e106) {
+          // best-effort 上报（console.error 语义；不中断派发）。
+          try {
+            if (typeof console !== 'undefined' && console.error) console.error('Uncaught (in event listener)', _e106);
+          } catch (_e106c) {}
         } finally {
           if (entry.passive) event._zwInPassive = Math.max(0, (event._zwInPassive || 1) - 1);
         }
@@ -1721,6 +1730,10 @@
   function _dispatchWithBubble(targetKey, targetSel, targetHandle, event, targetSlot) {
     var target = _makeProxy(targetSel, targetHandle);
     event.target = target;
+    // js-dom M4 R106：spec dispatch flag——派发进行中的 event 再 dispatchEvent 抛
+    // InvalidStateError（WPT EventTarget-dispatchEvent "If the event's dispatch flag
+    // is set"）。嵌套安全计数（listener 内派发其他 event 合法；finally 复位）。
+    event._zwDispatching = (event._zwDispatching || 0) + 1;
 
     // 祖先链 target→root（[直接父, ..., html]）；无 __zw_parent / handle-only → 空 → 仅 target 派发。
     var chain = [];
@@ -1889,6 +1902,8 @@
       // 走此 polyfill 但 native dispatch_event_impl 未跑故不自清；同 event 重派发需 fresh，与 _propagationStopped 同语义）。
       if (event.__zw_stop === true) event.__zw_stop = false;
       if (event.__zw_stop_immediate === true) event.__zw_stop_immediate = false;
+      // R106：dispatch flag 复位（嵌套计数——内层 finally 减一，外层结束归零）。
+      event._zwDispatching = Math.max(0, (event._zwDispatching || 1) - 1);
     }
   }
 
@@ -2569,6 +2584,8 @@
       }
     };
     node.dispatchEvent = function (ev) {
+      // js-dom M4 R106：spec 入口守卫（与主派发路径一致——TypeError/InvalidStateError）。
+      globalThis._zwDispatchGuard(ev);
       var t = String(ev && ev.type);
       var idx = [];
       for (var i = 0; i < _mEvListeners.length; i++) if (_mEvListeners[i].type === t) idx.push(i);

@@ -1892,3 +1892,75 @@ fn test_passive_by_default_r105() {
         "R105 passive-by-default 四类 target × 显式/缺省矩阵"
     );
 }
+
+// ── js-dom M4 R106：dispatchEvent 入口语义（spec dom-eventtarget-dispatchevent）──
+//
+// ① event 非 Event（null）→ TypeError；② createEvent 未 initEvent（initialized flag
+// 未设）→ InvalidStateError；③ 派发中重入（dispatch flag）→ InvalidStateError；
+// ④ listener 抛错不传播（后续 listener 仍跑、dispatchEvent 返 true）。
+// WPT dom/events/EventTarget-dispatchEvent.html 驱动（24F→1F，剩 1F 为 handle 树
+// 祖先派发深结构记档）。
+#[test]
+fn test_dispatch_event_entry_semantics_r106() {
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+
+    let mut sandbox = V8Sandbox::with_config(zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    })
+    .unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><div id=\"d\"></div></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: Arc<Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        Arc::new(Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry);
+
+    let out = sandbox
+        .execute(
+            r#"(function(){
+  var results = [];
+  var catchOf = function (f) {
+    try { f(); return 'no-throw'; } catch (e) { return e && e.name ? e.name : String(e); }
+  };
+  // ① dispatchEvent(null) → TypeError（document 与元素两入口）。
+  results.push('null-doc:' + catchOf(function () { document.dispatchEvent(null); }));
+  results.push('null-el:' + catchOf(function () { document.getElementById('d').dispatchEvent(null); }));
+  // ② createEvent 未 initEvent → InvalidStateError；initEvent 后正常（返 true）。
+  var ev = document.createEvent('Event');
+  results.push('uninit:' + catchOf(function () { document.dispatchEvent(ev); }));
+  ev.initEvent('x', false, false);
+  results.push('inited:' + String(document.dispatchEvent(ev)));
+  // ③ 派发中重入 → InvalidStateError（listener 内再 dispatch 同一 event）。
+  var ev2 = document.createEvent('Event');
+  ev2.initEvent('y', false, false);
+  var reentry = 'not-run';
+  document.addEventListener('y', function () {
+    reentry = catchOf(function () { document.dispatchEvent(ev2); });
+  });
+  document.dispatchEvent(ev2);
+  results.push('reentry:' + reentry);
+  // ④ listener 抛错不传播（第二个 listener 仍跑 + 返 true）。
+  var called = [];
+  var d = document.getElementById('d');
+  d.addEventListener('z', function () { called.push('first'); throw new Error('boom'); });
+  d.addEventListener('z', function () { called.push('second'); });
+  var ret = 'err-prop';
+  try { ret = String(d.dispatchEvent(new Event('z'))); } catch (e) { ret = 'threw:' + e.name; }
+  results.push('listener-err:' + ret + ':' + called.join(','));
+  return results.join('|');
+})()"#,
+        )
+        .unwrap()
+        .value;
+    assert_eq!(
+        out,
+        "null-doc:TypeError|null-el:TypeError|uninit:InvalidStateError|inited:true\
+         |reentry:InvalidStateError|listener-err:true:first,second",
+        "R106 dispatchEvent 入口四语义（TypeError/未初始化/重入/异常不传播）"
+    );
+}
