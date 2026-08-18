@@ -144,6 +144,38 @@ fn indexed_db_handler_reads_committed_data_after_manager_rebuild() {
 }
 
 #[test]
+fn indexed_db_handler_persists_compound_object_store_key_path() {
+    let directory = TestDirectory::new();
+    let origin = "https://compound.example";
+    {
+        let handler = persistent_handler(directory.path());
+        let synced = call(
+            &handler,
+            origin,
+            json!({
+                "op": "sync_schema",
+                "name": "compound",
+                "version": 1,
+                "stores": [{
+                    "name": "items",
+                    "keyPath": ["id", "nested.key"],
+                    "autoIncrement": false
+                }]
+            }),
+        )
+        .unwrap();
+        assert_eq!(synced["database"]["stores"][0]["keyPath"], json!(["id", "nested.key"]));
+    }
+
+    let rebuilt = persistent_handler(directory.path());
+    let inspected = call(&rebuilt, origin, json!({"op": "inspect", "name": "compound"})).unwrap();
+    assert_eq!(
+        inspected["database"]["stores"][0]["keyPath"],
+        json!(["id", "nested.key"])
+    );
+}
+
+#[test]
 fn indexed_db_handler_reports_persistence_failure_without_committing_live_data() {
     let directory = TestDirectory::new();
     let origin = "https://app.example";

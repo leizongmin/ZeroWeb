@@ -473,7 +473,7 @@ pub struct IdbObjectStore {
     /// 仓库名称。
     pub name: String,
     /// 主键路径。
-    pub key_path: Option<String>,
+    pub key_path: Option<IdbIndexKeyPath>,
     /// 是否自增主键。
     pub auto_increment: bool,
     /// 数据记录。
@@ -567,7 +567,7 @@ pub struct IdbObjectStoreInfo {
     /// Object store 名称。
     pub name: String,
     /// Inline key path；`None` 表示 out-of-line key。
-    pub key_path: Option<String>,
+    pub key_path: Option<IdbIndexKeyPath>,
     /// 是否启用 key generator。
     pub auto_increment: bool,
     /// 索引 schema，按名称排序。
@@ -597,13 +597,33 @@ impl IdbDatabase {
         }
     }
 
-    /// 创建 Object Store。
+    /// 创建使用字符串 key path 的 Object Store。
     pub fn create_object_store(
         &mut self,
         name: &str,
         key_path: Option<&str>,
         auto_increment: bool,
     ) -> Result<(), StorageError> {
+        self.create_object_store_with_key_path(
+            name,
+            key_path.map(|value| IdbIndexKeyPath::String(value.to_string())),
+            auto_increment,
+        )
+    }
+
+    /// 创建支持字符串或 sequence key path 的 Object Store。
+    pub fn create_object_store_with_key_path(
+        &mut self,
+        name: &str,
+        key_path: Option<IdbIndexKeyPath>,
+        auto_increment: bool,
+    ) -> Result<(), StorageError> {
+        // https://w3c.github.io/IndexedDB/#object-store-construct
+        if auto_increment && matches!(&key_path, Some(IdbIndexKeyPath::Sequence(_))) {
+            return Err(StorageError::Database(
+                "autoIncrement object stores cannot use a sequence key path".to_string(),
+            ));
+        }
         if self.stores.contains_key(name) {
             return Err(StorageError::Database(format!(
                 "Object store '{}' already exists",
@@ -614,7 +634,7 @@ impl IdbDatabase {
             name.to_string(),
             IdbObjectStore {
                 name: name.to_string(),
-                key_path: key_path.map(|s| s.to_string()),
+                key_path,
                 auto_increment,
                 records: Vec::new(),
                 next_key: 1,

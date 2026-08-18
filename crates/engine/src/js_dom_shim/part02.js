@@ -3485,6 +3485,9 @@
   };
   _zwIDBStore.prototype._keyOf = function (value) {
     if (!this.keyPath) return null;
+    if (Array.isArray(this.keyPath)) {
+      return this.keyPath.map(function (path) { return this._indexKey(value, path); }, this);
+    }
     var k = value;
     String(this.keyPath).split('.').forEach(function (p) { k = k == null ? undefined : k[p]; });
     return k;
@@ -4027,7 +4030,18 @@
     this._sync();
   };
   _zwIDBCursor.prototype._assertCanIterate = function () {
-    this._store._assertUsable(false);
+    var transaction = this._store.transaction;
+    if (!transaction
+        || !transaction._active
+        || transaction._aborted
+        || transaction._finished
+        || transaction._committing) {
+      throw new globalThis.DOMException('The transaction is inactive.', 'TransactionInactiveError');
+    }
+    if ((this._store._metadata && this._store._metadata.deleted)
+        || (this.source._metadata && this.source._metadata.deleted)) {
+      throw new globalThis.DOMException('The cursor source has been deleted.', 'InvalidStateError');
+    }
     if (!this._gotValue) {
       throw new globalThis.DOMException('The cursor is not positioned on a value.', 'InvalidStateError');
     }
@@ -4130,7 +4144,7 @@
   _zwIDBCursor.prototype.continue = function (key) {
     // https://w3c.github.io/IndexedDB/#dom-idbcursor-continue
     this._assertCanIterate();
-    var keyProvided = arguments.length >= 1;
+    var keyProvided = arguments.length >= 1 && key !== undefined;
     if (keyProvided) {
       if (!_zwIDBKey(key, [])) {
         throw new globalThis.DOMException('The supplied value is not a valid key.', 'DataError');
@@ -4252,7 +4266,6 @@
   };
   _zwIDBCursor.prototype.advance = function (count) {
     // https://w3c.github.io/IndexedDB/#dom-idbcursor-advance
-    this._assertCanIterate();
     count = Number(count);
     if (!isFinite(count)) {
       throw new TypeError('The cursor advance count must be an unsigned long greater than zero.');
@@ -4261,6 +4274,7 @@
     if (count <= 0 || count > 4294967295) {
       throw new TypeError('The cursor advance count must be an unsigned long greater than zero.');
     }
+    this._assertCanIterate();
     if (this._hostId !== null) {
       var hosted = _zwIDBHostCall({
         op: 'transaction_cursor_advance',

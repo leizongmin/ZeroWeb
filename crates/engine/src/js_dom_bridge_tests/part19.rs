@@ -204,6 +204,70 @@ fn test_indexeddb_get_key_and_cursor_mutations() {
 }
 
 #[test]
+fn test_indexeddb_cursor_stepping_guards_and_compound_keys() {
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+
+    let mut sandbox = V8Sandbox::with_config(zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    })
+    .unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    sandbox
+        .execute(
+            "globalThis.__cursorStepping = [];\
+             var setup = indexedDB.open('cursor-stepping-guards', 1);\
+             setup.onupgradeneeded = function () {\
+               var db = setup.result;\
+               var compound = db.createObjectStore('compound', {keyPath:['id','nested.key']});\
+               compound.createIndex('byCompound', ['id','nested.key']);\
+               compound.add({id:'a', nested:{key:'b'}, value:'stored'});\
+             };\
+             var guardSetup = indexedDB.open('cursor-stepping-deleted', 1);\
+             guardSetup.onupgradeneeded = function () {\
+               var db = guardSetup.result;\
+               var deleted = db.createObjectStore('deleted');\
+               deleted.put('value', 'key');\
+               var deletedCursor = deleted.openKeyCursor();\
+               deletedCursor.onsuccess = function () {\
+                 var cursor = deletedCursor.result;\
+                 db.deleteObjectStore('deleted');\
+                 guardSetup.transaction.abort();\
+                 try { cursor.advance(0); } catch (error) { __cursorStepping.push('zero:' + error.name); }\
+                 try { cursor.advance(1); } catch (error) { __cursorStepping.push('inactive:' + error.name); }\
+               };\
+             };\
+             setup.onsuccess = function () {\
+               var store = setup.result.transaction('compound').objectStore('compound');\
+               store.get(['a','b']).onsuccess = function (event) {\
+                 __cursorStepping.push('compound:' + event.target.result.value);\
+               };\
+               var request = store.index('byCompound').openCursor();\
+               var continued = false;\
+               request.onsuccess = function () {\
+                 var cursor = request.result;\
+                 if (!cursor || continued) return;\
+                 continued = true;\
+                 cursor.continue(undefined);\
+                 __cursorStepping.push('undefined:ok');\
+                 try { cursor.continue(); } catch (error) {\
+                   __cursorStepping.push('iterating:' + error.name);\
+                 }\
+               };\
+             };",
+        )
+        .unwrap();
+    for _ in 0..4 {
+        sandbox.execute("0").unwrap();
+    }
+
+    assert_eq!(
+        sandbox.execute("__cursorStepping.sort().join('|')").unwrap().value,
+        "compound:stored|inactive:TransactionInactiveError|iterating:InvalidStateError|undefined:ok|zero:TypeError"
+    );
+}
+
+#[test]
 fn test_indexeddb_blocked_upgrade_waits_for_connection_close() {
     use zero_script_sandbox::{Sandbox, V8Sandbox};
 

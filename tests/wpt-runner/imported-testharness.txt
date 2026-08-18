@@ -53,6 +53,14 @@ IndexedDB/idbcursor-continue.any.js 315976933870b34d6ea30e3f6643403edae678ba 202
 IndexedDB/idbcursor-advance.any.js 315976933870b34d6ea30e3f6643403edae678ba 2026-08-18 IDB-M2-rust-cursor-stepping
 IndexedDB/idbcursor-advance-invalid.any.js 315976933870b34d6ea30e3f6643403edae678ba 2026-08-18 IDB-M2-rust-cursor-stepping
 IndexedDB/idbcursor-advance-continue-async.any.js 315976933870b34d6ea30e3f6643403edae678ba 2026-08-18 IDB-M2-rust-cursor-stepping
+IndexedDB/idbcursor_advance_index.any.js 315976933870b34d6ea30e3f6643403edae678ba 2026-08-18 IDB-M2-cursor-stepping-expansion
+IndexedDB/idbcursor_advance_objectstore.any.js 315976933870b34d6ea30e3f6643403edae678ba 2026-08-18 IDB-M2-cursor-stepping-expansion
+IndexedDB/idbcursor-advance-exception-order.any.js 315976933870b34d6ea30e3f6643403edae678ba 2026-08-18 IDB-M2-cursor-stepping-expansion
+IndexedDB/idbcursor_continue_index.any.js 315976933870b34d6ea30e3f6643403edae678ba 2026-08-18 IDB-M2-cursor-stepping-expansion
+IndexedDB/idbcursor_continue_objectstore.any.js 315976933870b34d6ea30e3f6643403edae678ba 2026-08-18 IDB-M2-cursor-stepping-expansion
+IndexedDB/idbcursor_continue_invalid.any.js 315976933870b34d6ea30e3f6643403edae678ba 2026-08-18 IDB-M2-cursor-stepping-expansion
+IndexedDB/idbcursor-continue-exception-order.any.js 315976933870b34d6ea30e3f6643403edae678ba 2026-08-18 IDB-M2-cursor-stepping-expansion
+IndexedDB/cursor-overloads.any.js 315976933870b34d6ea30e3f6643403edae678ba 2026-08-18 IDB-M2-cursor-stepping-expansion
 IndexedDB/idbcursor-continuePrimaryKey.any.js 315976933870b34d6ea30e3f6643403edae678ba 2026-08-18 IDB-M2-continue-primary-key
 IndexedDB/idbcursor-continuePrimaryKey-exceptions.any.js 315976933870b34d6ea30e3f6643403edae678ba 2026-08-18 IDB-M2-continue-primary-key
 IndexedDB/idbcursor-continuePrimaryKey-exception-order.any.js 315976933870b34d6ea30e3f6643403edae678ba 2026-08-18 IDB-M2-continue-primary-key

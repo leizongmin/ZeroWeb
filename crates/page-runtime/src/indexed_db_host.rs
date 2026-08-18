@@ -125,7 +125,7 @@ enum IndexedDbRequest {
         database: String,
         name: String,
         #[serde(default)]
-        key_path: Option<String>,
+        key_path: Option<IndexedDbIndexKeyPath>,
         #[serde(default)]
         auto_increment: bool,
     },
@@ -271,7 +271,7 @@ enum IndexedDbQuery {
 struct IndexedDbStoreSchema {
     name: String,
     #[serde(default, rename = "keyPath")]
-    key_path: Option<String>,
+    key_path: Option<IndexedDbIndexKeyPath>,
     #[serde(default, rename = "autoIncrement")]
     auto_increment: bool,
     #[serde(default)]
@@ -412,7 +412,11 @@ fn dispatch_request(
             }
             storage
                 .mutate_indexed_db(origin, &database, |candidate| {
-                    candidate.create_object_store(&name, key_path.as_deref(), auto_increment)
+                    candidate.create_object_store_with_key_path(
+                        &name,
+                        key_path.as_ref().map(storage_index_key_path),
+                        auto_increment,
+                    )
                 })
                 .map_err(storage_error)?;
             Ok(json!({"created": true}))
@@ -850,7 +854,8 @@ fn sync_schema(
         let current_stores = database.store_info();
         for current in &current_stores {
             if let Some(requested) = stores.iter().find(|store| store.name == current.name)
-                && (requested.key_path != current.key_path || requested.auto_increment != current.auto_increment)
+                && (!optional_key_paths_match(&current.key_path, &requested.key_path)
+                    || requested.auto_increment != current.auto_increment)
             {
                 replaced_names.insert(current.name.clone());
             }
@@ -919,7 +924,11 @@ fn sync_schema(
     for requested in &stores {
         if !database.has_store(&requested.name) {
             database
-                .create_object_store(&requested.name, requested.key_path.as_deref(), requested.auto_increment)
+                .create_object_store_with_key_path(
+                    &requested.name,
+                    requested.key_path.as_ref().map(storage_index_key_path),
+                    requested.auto_increment,
+                )
                 .map_err(storage_error)?;
         }
     }
@@ -998,6 +1007,17 @@ fn index_key_paths_match(current: &zero_storage::IdbIndexKeyPath, requested: &In
     }
 }
 
+fn optional_key_paths_match(
+    current: &Option<zero_storage::IdbIndexKeyPath>,
+    requested: &Option<IndexedDbIndexKeyPath>,
+) -> bool {
+    match (current, requested) {
+        (None, None) => true,
+        (Some(current), Some(requested)) => index_key_paths_match(current, requested),
+        _ => false,
+    }
+}
+
 fn database_schema_json(database: &zero_storage::indexed_db::IdbDatabase) -> Value {
     let stores = database
         .store_info()
@@ -1019,9 +1039,14 @@ fn database_schema_json(database: &zero_storage::indexed_db::IdbDatabase) -> Val
                     })
                 })
                 .collect::<Vec<_>>();
+            let key_path = match store.key_path {
+                Some(zero_storage::IdbIndexKeyPath::String(value)) => json!(value),
+                Some(zero_storage::IdbIndexKeyPath::Sequence(values)) => json!(values),
+                None => Value::Null,
+            };
             json!({
                 "name": store.name,
-                "keyPath": store.key_path,
+                "keyPath": key_path,
                 "autoIncrement": store.auto_increment,
                 "indexes": indexes,
             })

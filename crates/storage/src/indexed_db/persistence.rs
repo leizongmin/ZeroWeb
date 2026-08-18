@@ -162,11 +162,18 @@ struct PersistedDatabase {
 #[derive(Serialize, Deserialize)]
 struct PersistedStore {
     name: String,
-    key_path: Option<String>,
+    key_path: Option<PersistedObjectStoreKeyPath>,
     auto_increment: bool,
     next_key: u64,
     indexes: Vec<PersistedIndex>,
     records: Vec<PersistedRecord>,
+}
+
+#[derive(Serialize, Deserialize)]
+#[serde(untagged)]
+enum PersistedObjectStoreKeyPath {
+    String(String),
+    Sequence(Vec<String>),
 }
 
 #[derive(Serialize, Deserialize)]
@@ -227,7 +234,7 @@ impl PersistedDatabase {
                 Ok(PersistedStore {
                     next_key: database.key_generator(&store.name)?,
                     name: store.name,
-                    key_path: store.key_path,
+                    key_path: store.key_path.map(PersistedObjectStoreKeyPath::from),
                     auto_increment: store.auto_increment,
                     indexes,
                     records,
@@ -263,7 +270,11 @@ impl PersistedDatabase {
                     "duplicate object store in IndexedDB persistence data".to_string(),
                 ));
             }
-            database.create_object_store(&store.name, store.key_path.as_deref(), store.auto_increment)?;
+            database.create_object_store_with_key_path(
+                &store.name,
+                store.key_path.map(IdbIndexKeyPath::from),
+                store.auto_increment,
+            )?;
             let mut record_keys = HashSet::new();
             for record in store.records {
                 let key = record.key.into_key()?;
@@ -333,6 +344,24 @@ impl PersistedKey {
             ));
         }
         Ok(key)
+    }
+}
+
+impl From<IdbIndexKeyPath> for PersistedObjectStoreKeyPath {
+    fn from(key_path: IdbIndexKeyPath) -> Self {
+        match key_path {
+            IdbIndexKeyPath::String(value) => Self::String(value),
+            IdbIndexKeyPath::Sequence(value) => Self::Sequence(value),
+        }
+    }
+}
+
+impl From<PersistedObjectStoreKeyPath> for IdbIndexKeyPath {
+    fn from(key_path: PersistedObjectStoreKeyPath) -> Self {
+        match key_path {
+            PersistedObjectStoreKeyPath::String(value) => Self::String(value),
+            PersistedObjectStoreKeyPath::Sequence(value) => Self::Sequence(value),
+        }
     }
 }
 

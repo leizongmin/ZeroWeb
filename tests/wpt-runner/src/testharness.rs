@@ -236,6 +236,26 @@ pub const INDEXEDDB_CASES: &[(&str, &[&str])] = &[
         "IndexedDB/idbcursor-advance-continue-async.any.js",
         &["resources/support.js"],
     ),
+    ("IndexedDB/idbcursor_advance_index.any.js", &["resources/support.js"]),
+    (
+        "IndexedDB/idbcursor_advance_objectstore.any.js",
+        &["resources/support.js"],
+    ),
+    (
+        "IndexedDB/idbcursor-advance-exception-order.any.js",
+        &["resources/support.js"],
+    ),
+    ("IndexedDB/idbcursor_continue_index.any.js", &["resources/support.js"]),
+    (
+        "IndexedDB/idbcursor_continue_objectstore.any.js",
+        &["resources/support.js"],
+    ),
+    ("IndexedDB/idbcursor_continue_invalid.any.js", &["resources/support.js"]),
+    (
+        "IndexedDB/idbcursor-continue-exception-order.any.js",
+        &["resources/support.js"],
+    ),
+    ("IndexedDB/cursor-overloads.any.js", &["resources/support.js"]),
     (
         "IndexedDB/idbcursor-continuePrimaryKey.any.js",
         &["resources/support.js"],
