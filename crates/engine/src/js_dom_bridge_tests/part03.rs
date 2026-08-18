@@ -3288,3 +3288,123 @@ fn test_mo_observe_options_and_textcontent_records_r49() {
         "④ 同值 textContent= 不发 record（本地注册文本优先判等）"
     );
 }
+
+#[test]
+fn test_event_subclass_constructors_r109() {
+    // R109（WPT Event-subclasses-constructors）：① `class X extends Event` 的 super() 须以
+    // [[Construct]] 语义填充 new.target 的 this——旧工厂返对象形态下子类 ctor 体 `this.customProp=5`
+    // 抛 TypeError / 实例 instanceof 子类 false。② 拷贝须含非枚举 accessor（cancelBubble/
+    // returnValue/srcElement——for-in 漏它们会读 undefined）。③ UIEvent view 非 WindowProxy 抛
+    // TypeError（WebIDL dictionary 校验）。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><div id=\"p\">x</div></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry);
+
+    // ① class extends Event：super() 后 this 可用、instanceof 双向、子类 getter 落到实例。
+    sandbox
+        .execute(
+            "self.SubE = class SubE extends Event {\
+               constructor(n, p) {\
+                 super(n, p);\
+                 this.customProp = (p && typeof p == 'object' && 'customProp' in p) ? p.customProp : 5;\
+               }\
+               get fixedProp() { return 17; }\
+             };\
+             var ev = new SubE('type', { customProp: 8 });\
+             globalThis.__r109a = [ev instanceof SubE, ev instanceof Event, ev.customProp, ev.fixedProp, ev.type].join(',');\
+             var ev2 = new SubE('t');\
+             globalThis.__r109b = ev2.customProp;",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__r109a").unwrap().value,
+        "true,true,8,17,type",
+        "① class extends Event：instanceof 子类/父类 + customProp/fixedProp"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__r109b").unwrap().value,
+        "5",
+        "① 缺省 customProp = 5"
+    );
+
+    // ② 拷贝含非枚举 accessor：cancelBubble/returnValue/srcElement 在子类实例上可读（非 undefined）。
+    sandbox
+        .execute(
+            "var ev3 = new SubE('t');\
+             globalThis.__r109c = [typeof ev3.cancelBubble, typeof ev3.returnValue, typeof ev3.srcElement].join(',');",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__r109c").unwrap().value,
+        "boolean,boolean,object",
+        "② cancelBubble(bool)/returnValue(bool)/srcElement(null→object) 非 undefined"
+    );
+    // stopPropagation → cancelBubble getter 联动（accessor 后端 _propagationStopped 已搬运）。
+    sandbox
+        .execute("ev3.stopPropagation(); globalThis.__r109d = String(ev3.cancelBubble);")
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__r109d").unwrap().value,
+        "true",
+        "② stopPropagation 后 cancelBubble=true（accessor 联动）"
+    );
+
+    // ③ UIEvent view 非 WindowProxy（数字 7）→ TypeError（WPT "view argument with wrong type"）。
+    sandbox
+        .execute(
+            "globalThis.__r109e = (function(){\
+               try { new UIEvent('x', { view: 7 }); return 'no-throw'; }\
+               catch (e) { return e instanceof TypeError ? 'TypeError' : String(e); }\
+             })();",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__r109e").unwrap().value,
+        "TypeError",
+        "③ UIEvent view=7 抛 TypeError"
+    );
+    // view 合法值（window / null / 缺省）不抛。
+    sandbox
+        .execute(
+            "globalThis.__r109f = (function(){\
+               try {\
+                 new UIEvent('x', { view: null });\
+                 new UIEvent('x');\
+                 new UIEvent('x', { view: window });\
+                 return 'ok';\
+               } catch (e) { return String(e); }\
+             })();",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__r109f").unwrap().value,
+        "ok",
+        "③ view=null/缺省/window 均不抛"
+    );
+
+    // ④ 事件基类回归：new Event() 仍 instanceof Event、dispatch 语义不破坏。
+    sandbox
+        .execute(
+            "var ev4 = new Event('e', { bubbles: true, cancelable: true });\
+             globalThis.__r109g = [ev4 instanceof Event, ev4.bubbles, ev4.cancelable, ev4.cancelBubble].join(',');",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__r109g").unwrap().value,
+        "true,true,true,false",
+        "④ new Event() 基类行为不回归"
+    );
+}

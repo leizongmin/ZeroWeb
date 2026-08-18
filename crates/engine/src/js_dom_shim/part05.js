@@ -5363,9 +5363,33 @@
   // 使 instanceof 成立（chromium 一致：new Event() instanceof Event、new CustomEvent() instanceof Event）。
   // dispatch 读 _-prefixed 私字段（_defaultPrevented 等，勿改名）；公开 defaultPrevented 经 preventDefault
   // 镜像同步。initEvent legacy API 在 Event.prototype。
+  // R109（WPT Event-subclasses-constructors SubclassedEvent 簇）：改为**真构造器**——`class X extends Event`
+  // 经 super() 走 [[Construct]]→`super(...)` 反射到本函数的 [[Construct]] 槽，内部须 `new.target` 派发
+  // proto（spec：derived constructor 的 super() 以 new.target.prototype 为实例 proto）。旧「工厂返回
+  // 对象」形态下 super() 拿到的返回值是 Event.prototype 实例 → 子类 ctor 体内 `this.customProp=5` 抛
+  // TypeError（this 未初始化）、get fixedProp 落不到实例。instanceof 检查仍成立（Reflect.construct/
+  // new 都有 new.target）；null new.target（Reflect.construct(Event, [], null)）回落 Event.prototype。
   globalThis.Event = function Event(type, options) {
     var ev = _makeEvent(type, options);
-    Object.setPrototypeOf(ev, globalThis.Event.prototype);
+    var nt = this instanceof globalThis.Event && this.constructor !== globalThis.Event
+      ? this
+      : null;
+    var proto = (nt && nt.constructor && nt.constructor.prototype) || globalThis.Event.prototype;
+    if (!proto || proto === Object.prototype) proto = globalThis.Event.prototype;
+    Object.setPrototypeOf(ev, proto);
+    // 真 [[Construct]] 语义：整对象搬运（own data 属性 for-in 拷贝 + getter/setter 属性
+    // getOwnPropertyDescriptor 逐个 defineProperty——cancelBubble/returnValue/srcElement 是
+    // 非枚举 accessor，for-in 漏它们会致 WPT Event-cancelBubble/returnValue 读 undefined）。
+    if (nt) {
+      var keys109 = Object.getOwnPropertyNames(ev);
+      for (var i109 = 0; i109 < keys109.length; i109++) {
+        var k109 = keys109[i109];
+        if (k109 === 'constructor') continue;
+        var d109 = Object.getOwnPropertyDescriptor(ev, k109);
+        if (d109) Object.defineProperty(nt, k109, d109);
+      }
+      return nt;
+    }
     return ev;
   };
   if (typeof globalThis.Event.prototype.initEvent !== 'function') {
@@ -5461,12 +5485,42 @@
   // Event-subclasses-constructors assert_props 递归检查父链 fail）。键=子类名，值=[ownProps, parentName]。
   var _eventSubclassProps = {};
   function _defineEventSubclass(name, parentName, props) {
-    if (globalThis[name]) return globalThis[name];
+    if (globalThis[name]) {
+      // js-dom M4 R109：native 叠加路径——native bindings 先装（MouseEvent/KeyboardEvent 为
+      // V8 FunctionTemplate），guard 早退会漏登 `_eventSubclassProps` 注册表 → 下游子类
+      //（WheelEvent extends MouseEvent）工厂分支沿父链收集 props 时断在未注册的父节点，
+      // 实例缺 ctrlKey/screenX/view（WPT Event-subclasses-constructors WheelEvent 簇）。
+      // 注册表登记 + shim 父链 prototype 接线（MouseEvent.prototype → shim UIEvent.prototype）
+      // 在别处（KeyboardEventCtor 块 R109 接线 IIFE）完成；此处保登记幂等。
+      _eventSubclassProps[name] = [props, parentName];
+      return globalThis[name];
+    }
     var Parent = globalThis[parentName] || globalThis.Event;
     var Ctor = function (type, options) {
+      // R109：真构造器化（同 Event 修复）——`class X extends MouseEvent` 的 super() 要求本 ctor
+      // 以 [[Construct]] 语义填充 new.target 的 this；工厂返对象会致子类 this 未初始化。
+      var o = (options == null || typeof options !== 'object') ? {} : options;
+      var isSuperCall = this instanceof Ctor && this.constructor !== Ctor;
+      if (isSuperCall) {
+        // super(type, options) 反射：以 new.target 的 this 为载体，先经父构造器（Event 真构造器
+        // 已填基础字段），再补子类 + 父链专属字段。
+        Parent.call(this, type, options);
+        var chainS = [];
+        var curS = name;
+        var guardS = 0;
+        while (curS && _eventSubclassProps[curS] && guardS++ < 32) {
+          var entryS = _eventSubclassProps[curS];
+          chainS = chainS.concat(entryS[0]);
+          curS = entryS[1];
+        }
+        for (var iS = 0; iS < chainS.length; iS++) {
+          var pS = chainS[iS];
+          this[pS[0]] = o[pS[1]] != null ? o[pS[1]] : pS[2];
+        }
+        return this;
+      }
       var ev = _makeEvent(type, options);
       Object.setPrototypeOf(ev, Ctor.prototype);
-      var o = (options == null || typeof options !== 'object') ? {} : options;
       // R24：沿父链收集 props（自身 + 所有祖先），子类 props 先于父类（同属性子类覆盖父类，spec 一致）。
       // _makeEvent 已设 Event 基础属性（type/bubbles/cancelable/...），此处补子类 + 父链专属字段。
       var chain = [];
@@ -5495,6 +5549,29 @@
     ['view', 'view', null],
     ['detail', 'detail', 0],
   ]);
+  // js-dom M4 R109（WPT Event-subclasses-constructors "view argument with wrong type"）：
+  // UIEventInit.view 是 `(WindowProxy or null)?`——显式非 null/undefined 且非 window（沙箱内
+  // WindowProxy 仅 globalThis）时构造器抛 TypeError（WebIDL dictionary 类型校验，spec
+  // `uievent` §constructor）。挂在 UIEvent 原构造器外层（保 prototype/子类注册不动）。
+  var UIEventBase = globalThis.UIEvent;
+  if (UIEventBase) {
+    var UIEventCtor109 = function UIEvent(type, options) {
+      if (options != null && typeof options === 'object'
+          && 'view' in options && options.view != null && options.view !== globalThis) {
+        throw new globalThis.TypeError(
+          "Failed to construct 'UIEvent': member view is not of type WindowProxy.");
+      }
+      // 透传 super：new UIEvent(...)（this instanceof UIEventCtor109 且 constructor===自身 → 工厂
+      // 分支）/ class extends UIEvent 的 super()（this.constructor 为子类 → 真 [[Construct]] 分支）。
+      return UIEventBase.apply(this, arguments);
+    };
+    try {
+      Object.defineProperty(UIEventCtor109, 'name', { value: 'UIEvent', configurable: true });
+    } catch (_e109) {}
+    UIEventCtor109.prototype = UIEventBase.prototype;
+    UIEventCtor109.prototype.constructor = UIEventCtor109;
+    globalThis.UIEvent = UIEventCtor109;
+  }
   // MouseEvent（UIEvent 子类）：坐标 / 修饰键 / button / buttons / relatedTarget。
   var MouseEventCtor = _defineEventSubclass('MouseEvent', 'UIEvent', [
     ['screenX', 'screenX', 0], ['screenY', 'screenY', 0],
@@ -5531,6 +5608,50 @@
     ['charCode', 'charCode', 0], ['keyCode', 'keyCode', 0], ['which', 'which', 0],
   ]);
   KeyboardEventCtor.prototype.getModifierState = MouseEventCtor.prototype.getModifierState;
+  // js-dom M4 R109：native KeyboardEvent（V8 模板 invoke）对空 dict `{}` 的 init_string 读
+  // `opts.get('key')` 得 undefined → ToString "undefined"（WPT 期望缺省 ""）。shim 侧在
+  // native ctor 装配后补齐缺省字段（仅 undefined 时补，显式值不覆盖）。
+  (function () {
+    var KB109 = globalThis.KeyboardEvent;
+    if (!KB109 || !KB109.__zwR109Patched) {
+      var WrappedKB = function KeyboardEvent(type, options) {
+        var r = KB109.apply(this, arguments);
+        var inst = (r && typeof r === 'object') ? r : this;
+        var defs = { key: '', code: '', location: 0, repeat: false, isComposing: false, charCode: 0, keyCode: 0, which: 0, detail: 0, ctrlKey: false, shiftKey: false, altKey: false, metaKey: false, view: null };
+        for (var d in defs) {
+          // native init_string 对 dict 缺省字段经 ToString 得**字符串 "undefined"**（非
+          // undefined 值）设到实例——两形态都补缺省。
+          if (inst[d] === undefined || inst[d] === 'undefined') inst[d] = defs[d];
+        }
+        return r !== undefined ? r : inst;
+      };
+      try { Object.defineProperty(WrappedKB, 'name', { value: 'KeyboardEvent', configurable: true }); } catch (_eN109) {}
+      WrappedKB.prototype = KB109.prototype;
+      try { Object.defineProperty(WrappedKB, '__zwR109Patched', { value: true }); } catch (_eP109) {}
+      globalThis.KeyboardEvent = WrappedKB;
+    }
+  })();
+  // js-dom M4 R109（native 叠加路径原型链接线）：ZW_NATIVE_DOM=1 时 native bindings 先装
+  //（Event/CustomEvent/MouseEvent/KeyboardEvent 为 V8 FunctionTemplate），shim 后装只覆盖
+  // Event/UIEvent 族——_defineEventSubclass 的 `if (globalThis[name]) return` guard 会把
+  // **native MouseEvent/KeyboardEvent 留在原地**，但其 V8 模板原型链指向 native Event 模板
+  //（已被 shim Event 覆盖替换）→ `new MouseEvent() instanceof MouseEvent` true 而
+  // `instanceof UIEvent/Event` false（WPT Event-subclasses-constructors MouseEvent/
+  // KeyboardEvent/WheelEvent 全簇 fail 的根因，R25 后双路径差 6pp+ 的主成分）。修法：
+  // 把留下的 native 子类原型**重接到 shim 父链**（MouseEvent→shim UIEvent.prototype、
+  // KeyboardEvent→shim UIEvent.prototype），instanceof 三层全通。native ctor 本体的
+  // 坐标/键字段装配保留（V8 模板 invoke），dispatch 读 _-flag 走实例字段兼容。
+  (function () {
+    var UIEV109 = globalThis.UIEvent;
+    if (UIEV109 && globalThis.MouseEvent
+        && Object.getPrototypeOf(globalThis.MouseEvent.prototype) !== UIEV109.prototype) {
+      try { Object.setPrototypeOf(globalThis.MouseEvent.prototype, UIEV109.prototype); } catch (_eM109) {}
+    }
+    if (UIEV109 && globalThis.KeyboardEvent
+        && Object.getPrototypeOf(globalThis.KeyboardEvent.prototype) !== UIEV109.prototype) {
+      try { Object.setPrototypeOf(globalThis.KeyboardEvent.prototype, UIEV109.prototype); } catch (_eK109) {}
+    }
+  })();
   // WheelEvent（MouseEvent 子类）：delta + deltaMode + DOM_DELTA_* 静态常量。
   var WheelEventCtor = _defineEventSubclass('WheelEvent', 'MouseEvent', [
     ['deltaX', 'deltaX', 0], ['deltaY', 'deltaY', 0], ['deltaZ', 'deltaZ', 0],

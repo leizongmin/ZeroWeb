@@ -355,6 +355,10 @@ fn native_keyboard_event_constructor_invoke(
     }
     // UIEvent.view（R25，缺省 null）——KeyboardEvent extends UIEvent，WPT 父链检查。
     set_ui_view(scope, this, &args);
+    // js-dom M4 R109：UIEvent.detail（缺省 0）——KeyboardEvent extends UIEvent，WPT
+    // Event-subclasses-constructors assert_props 递归父链检查 `'detail' in event`。
+    let detail = init_int(scope, &args, 1, "detail", 0);
+    set_int(scope, this, "detail", detail);
     // 修饰键。
     set_modifier_keys(scope, this, &args);
     // repeat / isComposing（缺省 false）。

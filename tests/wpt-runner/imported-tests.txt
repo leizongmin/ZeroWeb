@@ -117,3 +117,4 @@ dom/events/passive-by-default.html 2026-08-18 R105 passive-by-default（spec def
 dom/events/EventTarget-dispatchEvent.html 2026-08-18 R106 dispatchEvent 入口语义（TypeError/未初始化 InvalidStateError/派发中重入/listener 异常不传播；24F→1F，剩 1F 为 handle 树祖先派发深结构）
 dom/events/Body-FrameSet-Event-Handlers.html 2026-08-18 R107 body/frameset Window-forwarding handler（IDL/content attribute 转发 + enumerable 原型属性；24F→48P/0F 100%）
 dom/events/Event-dispatch-click.html 2026-08-18 R108 合成 click pre-click activation（pre 先于 listener/最近 activation 元素/disabled 双入口语义/legacy-canceled 回滚/Text 冒泡/submit form owner 反链兜底；16F→31P/0F 100%）
+dom/events/Event-subclasses-constructors.html 2026-08-18 R109 Event 构造器真 [[Construct]] 化（class extends Event super() 填充 this/UIEvent view 非 WindowProxy 抛 TypeError/native 叠加路径 MouseEvent·KeyboardEvent 原型链重接 + detail 补齐 + 缺省 "undefined" 字串修补；双路径 42P/7F→49P/0F 100%）

@@ -1,0 +1,47 @@
+{
+  "date": "2026-08-18",
+  "round": "R109",
+  "cluster": "dom/events/Event-subclasses-constructors.html",
+  "polyfill": {
+    "before": {
+      "pass": 356,
+      "fail": 94
+    },
+    "after": {
+      "pass": 363,
+      "fail": 64
+    }
+  },
+  "native": {
+    "before": {
+      "pass": 337,
+      "fail": 90
+    },
+    "after": {
+      "pass": 354,
+      "fail": 73
+    }
+  },
+  "cluster_subtests": {
+    "polyfill": {
+      "before": "42P/7F",
+      "after": "49P/0F"
+    },
+    "native": {
+      "before": "31P/18F",
+      "after": "49P/0F"
+    }
+  },
+  "regression": {
+    "dom/nodes": "6656P unchanged",
+    "dom/collections": "48P unchanged",
+    "dom/traversal": "1595P unchanged"
+  },
+  "gates": {
+    "make_test": "65 suites green (v8+quickjs)",
+    "fmt": "clean",
+    "clippy_v8": "clean",
+    "clippy_quickjs": "clean"
+  },
+  "unit_test": "test_event_subclass_constructors_r109"
+}
