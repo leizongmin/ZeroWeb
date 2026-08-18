@@ -783,14 +783,18 @@ impl LayoutEngine {
         // paint 系统消费存储的 IFC 结果，不再重跑 IFC。
         let mut paint_skip_set: HashSet<NodeId> = HashSet::new();
         let inline_fonts = self.inline_font_context(&font_overrides);
+        let mut final_inline_context = crate::inline_finalization::FinalInlineContext::new(
+            &mut paint_skip_set,
+            inline_fonts,
+            &positioned_inline_blocks,
+        );
         compute_final_inline_layouts(
             &mut root_box,
             doc,
             styles,
             &[],
             &intrinsic_for_r695,
-            &mut paint_skip_set,
-            inline_fonts,
+            &mut final_inline_context,
         );
 
         // 最终 IFC 会确定多列内文本的实际行数；在它之前回写高度会被覆盖，令父块背景

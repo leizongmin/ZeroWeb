@@ -19,11 +19,13 @@
 pub mod converter;
 pub mod dirty;
 pub mod engine;
+mod final_ifc_reuse;
 pub mod float_positioning;
 pub mod font_resolution;
 mod form_layout;
 pub mod inline;
 pub mod inline_block_split;
+mod inline_content;
 pub mod inline_finalization;
 mod inline_metric_storage;
 pub mod intrinsic_sizing;

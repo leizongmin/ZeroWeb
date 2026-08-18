@@ -11,6 +11,7 @@ use zero_dom::{Document, NodeId, NodeKind};
 use zero_style_system::ComputedStyle;
 
 use crate::inline::{FloatExclusion, InlineFormattingContext, TextAlign, WordBreakMode};
+pub(crate) use crate::inline_content::{has_direct_text, has_inline_content};
 pub(crate) use crate::inline_metric_storage::store_font_sizes_from_ifc;
 use crate::types::LayoutBox;
 use crate::{NodeIdMap, NodeIdSet};
@@ -33,6 +34,26 @@ pub(crate) struct InlineFontContext<'a> {
     /// layout_ms 10x 回归（6.8→72ms，collect 占 ~44ms）。提升为 pass 级一次收集，
     /// 所有 IFC 共享同一份 map（按 node_id 查询，多余 key 无副作用）。
     pub font_overrides: Option<&'a std::rc::Rc<crate::font_resolution::FontOverrides>>,
+}
+
+pub(crate) struct FinalInlineContext<'a> {
+    paint_skip: &'a mut std::collections::HashSet<NodeId>,
+    inline_fonts: InlineFontContext<'a>,
+    finalized_inline_blocks: &'a NodeIdSet,
+}
+
+impl<'a> FinalInlineContext<'a> {
+    pub(crate) fn new(
+        paint_skip: &'a mut std::collections::HashSet<NodeId>,
+        inline_fonts: InlineFontContext<'a>,
+        finalized_inline_blocks: &'a NodeIdSet,
+    ) -> Self {
+        Self {
+            paint_skip,
+            inline_fonts,
+            finalized_inline_blocks,
+        }
+    }
 }
 
 fn configure_inline_fonts(
@@ -656,8 +677,7 @@ pub(crate) fn compute_final_inline_layouts(
     styles: &HashMap<NodeId, ComputedStyle>,
     ancestor_floats: &[crate::inline::FloatExclusion],
     img_intrinsic_sizes: &HashMap<NodeId, (f32, f32)>,
-    paint_skip: &mut std::collections::HashSet<NodeId>,
-    inline_fonts: InlineFontContext<'_>,
+    context: &mut FinalInlineContext<'_>,
 ) {
     // R362：先收集本容器直接 float 子（既用于自身 IFC 排除，也向后代传播）。
     // 坐标系：c.y 是 float 子相对 root box 顶部的位置，与 IFC 行 y（0=root box 顶）一致。
@@ -702,15 +722,7 @@ pub(crate) fn compute_final_inline_layouts(
             .chain(ancestor_floats.iter().map(|f| transform(f, child)))
             .filter(|f| f.y + f.height > 0.0) // 裁掉完全在子节点上方的 float
             .collect();
-        compute_final_inline_layouts(
-            child,
-            doc,
-            styles,
-            &child_ancestor,
-            img_intrinsic_sizes,
-            paint_skip,
-            inline_fonts,
-        );
+        compute_final_inline_layouts(child, doc, styles, &child_ancestor, img_intrinsic_sizes, context);
     }
 
     // 仅处理有 node_id 且含有直接文本子节点的容器
@@ -739,7 +751,7 @@ pub(crate) fn compute_final_inline_layouts(
     // 子，welcome/legacy 不命中）。env `MULTICOL_COLUMN_FRAG=0` 可关闭作回退开关。
     if root.is_multicol {
         let enabled = std::env::var("MULTICOL_COLUMN_FRAG").as_deref() != Ok("0");
-        if enabled && store_inline_multicol_columns(root, doc, styles, inline_fonts) {
+        if enabled && store_inline_multicol_columns(root, doc, styles, context.inline_fonts) {
             return;
         }
         return;
@@ -815,6 +827,17 @@ pub(crate) fn compute_final_inline_layouts(
         has_text_children = has_inline_elem && !has_block_elem && !inline_children_have_elem;
     }
     if !has_text_children {
+        return;
+    }
+    if crate::final_ifc_reuse::can_skip_final_ifc(
+        root,
+        node_id,
+        style,
+        doc,
+        styles,
+        context.finalized_inline_blocks,
+        !own_floats.is_empty() || !ancestor_floats.is_empty(),
+    ) {
         return;
     }
 
@@ -945,7 +968,7 @@ pub(crate) fn compute_final_inline_layouts(
     // 消费者回退常数 1.164/Ahem 1.0 = 逐字节等价旧路径（零回归）。`Some` 时经既有
     // override-map 链路（frag.height → store_font_sizes → text_node_line_heights → paint）
     // 触达 paint，绕 R890 空 styles 阻塞。Handle 内部 `Rc` clone 廉价共享。
-    inline_ctx = configure_inline_fonts(inline_ctx, inline_fonts, false);
+    inline_ctx = configure_inline_fonts(inline_ctx, context.inline_fonts, false);
 
     if !exclusions.is_empty() {
         inline_ctx = inline_ctx.with_float_exclusions(exclusions);
@@ -982,7 +1005,7 @@ pub(crate) fn compute_final_inline_layouts(
     // R2197 Phase A slice 3：orphan inline 元素 LayoutBox 回填（gated default-off）。
     // 见 backfill_phasea_orphan_boxes 文档。须在 store-gate return 之前跑（对所有文本容器，
     // 非 stored-path 独占）——IFC 已在 line 916 跑完，inline_ctx.lines 普遍可用。
-    backfill_phasea_orphan_boxes(root, doc, styles, node_id, &inline_ctx, paint_skip);
+    backfill_phasea_orphan_boxes(root, doc, styles, node_id, &inline_ctx, context.paint_skip);
     let is_pure_ahem =
         style.font_family.len() == 1 && style.font_family[0].trim_matches('"').eq_ignore_ascii_case("Ahem");
     let is_floated = !matches!(style.float, FloatValue::None);
@@ -1516,39 +1539,6 @@ pub(crate) fn measure_text_content(
         width: known_dimensions.width.unwrap_or(measured_width),
         height: known_dimensions.height.unwrap_or(balanced_height),
     }
-}
-
-pub(crate) fn has_direct_text(doc: &Document, dom_id: NodeId) -> bool {
-    doc.child_nodes(dom_id).iter().any(|child_id| {
-        matches!(
-            doc.get(*child_id).map(|node| &node.kind),
-            Some(NodeKind::Text(text)) if !text.content.trim().is_empty()
-        )
-    })
-}
-
-/// 检查容器是否包含行内级内容（文本节点或行内级元素）。
-///
-/// CSS 2.1 规范要求空 inline 元素仍通过 line-height + padding + border
-/// 贡献到行盒高度。仅检查文本节点会遗漏仅包含空 inline 元素的容器，
-/// 导致 IFC 不被调用，行盒高度计算不正确。
-pub(crate) fn has_inline_content(doc: &Document, styles: &HashMap<NodeId, ComputedStyle>, dom_id: NodeId) -> bool {
-    // 快速路径：有直接文本子节点
-    if has_direct_text(doc, dom_id) {
-        return true;
-    }
-
-    // 检查是否有 inline-level 元素子节点
-    use zero_style_system::property::types::DisplayValue;
-    doc.child_nodes(dom_id).iter().any(|child_id| {
-        if let Some(node) = doc.get(*child_id)
-            && let NodeKind::Element(_elem_data) = &node.kind
-            && let Some(style) = styles.get(child_id)
-        {
-            return matches!(style.display, DisplayValue::Inline | DisplayValue::InlineBlock);
-        }
-        false
-    })
 }
 
 /// 为包含 float 元素的容器重新测量行内文本，使文本环绕 float 排列。
