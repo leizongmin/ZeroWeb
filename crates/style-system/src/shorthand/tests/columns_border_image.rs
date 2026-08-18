@@ -122,6 +122,13 @@ fn test_column_rule_rejects_unknown_component() {
     assert!(result.is_empty());
 }
 
+#[test]
+fn test_column_rule_rejects_duplicate_components() {
+    assert!(expand_one("column-rule", "solid dashed red", false, (0, 0, 1)).is_empty());
+    assert!(expand_one("column-rule", "1px 2px solid red", false, (0, 0, 1)).is_empty());
+    assert!(expand_one("column-rule", "solid red blue", false, (0, 0, 1)).is_empty());
+}
+
 // ── gap 简写测试 ──
 
 #[test]

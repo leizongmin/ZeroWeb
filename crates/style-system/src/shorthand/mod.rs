@@ -1426,13 +1426,28 @@ fn expand_outline(value: &str, important: bool, specificity: (u32, u32, u32)) ->
     let mut width = "0px";
     let mut style = "none";
     let mut color = "currentcolor";
+    let mut seen_width = false;
+    let mut seen_style = false;
+    let mut seen_color = false;
 
     for part in parts {
         if is_border_style_keyword(part) {
+            if seen_style {
+                return vec![];
+            }
+            seen_style = true;
             style = part;
         } else if looks_like_length(part) {
+            if seen_width {
+                return vec![];
+            }
+            seen_width = true;
             width = part;
         } else if looks_like_color(part) {
+            if seen_color {
+                return vec![];
+            }
+            seen_color = true;
             color = part;
         } else {
             return vec![];
@@ -1544,13 +1559,28 @@ fn expand_column_rule(value: &str, important: bool, specificity: (u32, u32, u32)
     let mut width = "medium".to_string();
     let mut style = "none".to_string();
     let mut color = "currentcolor".to_string();
+    let mut seen_width = false;
+    let mut seen_style = false;
+    let mut seen_color = false;
 
     for part in parts {
         if is_border_style_keyword(part) {
+            if seen_style {
+                return vec![];
+            }
+            seen_style = true;
             style = part.to_string();
         } else if looks_like_length(part) {
+            if seen_width {
+                return vec![];
+            }
+            seen_width = true;
             width = part.to_string();
         } else if looks_like_color(part) {
+            if seen_color {
+                return vec![];
+            }
+            seen_color = true;
             color = part.to_string();
         } else {
             return vec![];

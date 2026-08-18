@@ -146,6 +146,13 @@ fn test_outline_shorthand_rejects_unknown_component() {
 }
 
 #[test]
+fn test_outline_shorthand_rejects_duplicate_components() {
+    assert!(expand_one("outline", "solid dashed red", false, (0, 0, 1)).is_empty());
+    assert!(expand_one("outline", "1px 2px solid red", false, (0, 0, 1)).is_empty());
+    assert!(expand_one("outline", "solid red blue", false, (0, 0, 1)).is_empty());
+}
+
+#[test]
 fn test_outline_shorthand_preserves_important() {
     let result = expand_one("outline", "1px solid red", true, (0, 1, 0));
     assert_eq!(result.len(), 3);
