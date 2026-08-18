@@ -708,6 +708,27 @@ fn test_border_image_url_with_spaces() {
     assert!(has_source && has_slice);
 }
 
+#[test]
+fn test_border_image_rejects_invalid_components() {
+    assert!(expand_one("border-image", "url(img.png) sparkle", false, (0, 0, 1)).is_empty());
+    assert!(expand_one("border-image", "url(img.png) -1", false, (0, 0, 1)).is_empty());
+    assert!(expand_one("border-image", "url(img.png) 30 / bogus", false, (0, 0, 1)).is_empty());
+    assert!(expand_one("border-image", "url(img.png) 30 / 2 / 3 / 4", false, (0, 0, 1)).is_empty());
+    assert!(expand_one("border-image", "url(img.png) 30 repeat round stretch", false, (0, 0, 1)).is_empty());
+
+    let result = expand_one(
+        "border-image",
+        "url(img.png) 30 / 2 / 4 round stretch",
+        false,
+        (0, 0, 1),
+    );
+    assert!(
+        result
+            .iter()
+            .any(|(p, v, _, _)| p == "border-image-repeat" && v == "round stretch")
+    );
+}
+
 // ═══════════════════════════════════════════════════════════════════
 // list-style 边界测试
 // ═══════════════════════════════════════════════════════════════════

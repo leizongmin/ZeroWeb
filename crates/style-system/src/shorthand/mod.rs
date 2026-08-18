@@ -849,6 +849,9 @@ fn expand_border_image(value: &str, important: bool, specificity: (u32, u32, u32
     for token in &remaining {
         if token == "/" {
             slash_groups.push(Vec::new());
+            if slash_groups.len() > 3 {
+                return vec![];
+            }
         } else {
             slash_groups.last_mut().unwrap().push(token.clone());
         }
@@ -858,14 +861,19 @@ fn expand_border_image(value: &str, important: bool, specificity: (u32, u32, u32
     let mut slice_val = String::new();
     let mut width_val = String::new();
     let mut outset_val = String::new();
-    let mut repeat_val = String::new();
+    let mut repeat_tokens: Vec<String> = Vec::new();
 
     if let Some(s) = source {
         source_val = s;
     }
 
     // repeat 关键字
-    let is_repeat = |s: &str| matches!(s, "stretch" | "repeat" | "round" | "space");
+    let is_repeat = |s: &str| {
+        matches!(
+            s.to_ascii_lowercase().as_str(),
+            "stretch" | "repeat" | "round" | "space"
+        )
+    };
 
     // 从 slash_groups 中提取值
     // 第一组（slice）：可能包含数字和 fill 关键字
@@ -876,9 +884,10 @@ fn expand_border_image(value: &str, important: bool, specificity: (u32, u32, u32
         let mut group_tokens: Vec<String> = Vec::new();
         for token in group {
             if is_repeat(token) {
-                if repeat_val.is_empty() {
-                    repeat_val = token.clone();
+                if repeat_tokens.len() == 2 {
+                    return vec![];
                 }
+                repeat_tokens.push(token.clone());
             } else {
                 group_tokens.push(token.clone());
             }
@@ -891,6 +900,23 @@ fn expand_border_image(value: &str, important: bool, specificity: (u32, u32, u32
             2 => outset_val = group_str,
             _ => {}
         }
+    }
+
+    let repeat_val = repeat_tokens.join(" ");
+    if zero_css_parser::values::parse_border_image_source(&source_val).is_none() {
+        return vec![];
+    }
+    if !slice_val.is_empty() && zero_css_parser::values::parse_border_image_slice(&slice_val).is_none() {
+        return vec![];
+    }
+    if !width_val.is_empty() && zero_css_parser::values::parse_border_image_width(&width_val).is_none() {
+        return vec![];
+    }
+    if !outset_val.is_empty() && zero_css_parser::values::parse_border_image_outset(&outset_val).is_none() {
+        return vec![];
+    }
+    if !repeat_val.is_empty() && zero_css_parser::values::parse_border_image_repeat(&repeat_val).is_none() {
+        return vec![];
     }
 
     let mut result = Vec::new();

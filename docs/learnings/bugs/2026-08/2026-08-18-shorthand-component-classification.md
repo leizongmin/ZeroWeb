@@ -41,6 +41,8 @@ Logical border axis shorthands exposed the axis variant: 1-2 start/end mapping m
 
 `scroll-margin` and `scroll-padding` exposed the missing-expander variant: implemented longhands are not enough if the shorthand is absent from `expand_one`; the declaration will pass through as a normal property and become a no-op during apply.
 
+`border-image` exposed the routed-longhand validation variant: after splitting a complex shorthand into source, slice, width, outset, and repeat groups, each non-empty group must still be accepted by the corresponding longhand parser before any declaration is emitted.
+
 ## Root Cause
 
 The shorthand layer used heuristic component classifiers and treated unrecognized tokens as absent optional components. That is wrong for CSS shorthands such as `border`, where every token must match one of the allowed component grammars. A shared parser can also be broader than the property grammar that consumes it: general length parsing may accept `auto`, intrinsic sizing keywords, or percentages that `border-width` must reject.
