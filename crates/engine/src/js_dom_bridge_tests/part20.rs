@@ -1,6 +1,141 @@
-// js-dom M4 events 轮次测试（R111/R112：once 调用前移除 / 派发中移除跳过 / listener
+// js-dom M4 events 轮次测试（R111/R112/R113：once 调用前移除 / 派发中移除跳过 / listener
 // 异常上报 onerror / checkbox·radio 激活后 input+change / detached doc·解析元素事件面 /
-// parse_html_element_json path 字段）。
+// parse_html_element_json path 字段 / handleEvent 非 callable TypeError 上报 / prefixed
+// animation handler 别名映射 / handle-based CSSStyleSheet）。
+
+#[test]
+fn test_handle_event_not_callable_reports_typeerror_r113() {
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let mut sandbox = V8Sandbox::with_config(zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    })
+    .unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><div id=\"d\">x</div></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry);
+
+    // spec inner invoke 步骤 1-2（WebIDL EventListener 非 nullable callback）：handleEvent
+    // 为 null / 非 callable 值都抛 TypeError 经「report the exception」上报（fire error event
+    // at window）——WPT EventListener-handleEvent「throws if `handleEvent` is falsy and not
+    // callable」/「thruthy and not callable」。window 'error' listener 收 ErrorEvent（error
+    // 字段是原始 TypeError），后续 listener 不受影响。
+    let out = sandbox
+        .execute(
+            "var el = document.getElementById('d');\
+             var seen = [];\
+             window.addEventListener('error', function (e) {\
+               seen.push(e.type + ':' + String(e.message) + ':' + (e.error instanceof TypeError));\
+             });\
+             el.addEventListener('foo', { handleEvent: null });\
+             el.dispatchEvent(new Event('foo'));\
+             var afterFoo = seen.length;\
+             el.addEventListener('bar', { get handleEvent() { return 42; } });\
+             el.dispatchEvent(new Event('bar'));\
+             var afterBar = seen.length;\
+             JSON.stringify(seen) + '|foo:' + afterFoo + '|bar:' + afterBar;",
+        )
+        .unwrap()
+        .value;
+    assert_eq!(
+        out, "[\"error:Failed to execute 'addEventListener' on 'EventTarget': parameter 2's 'handleEvent' property is not a function.:true\",\"error:Failed to execute 'addEventListener' on 'EventTarget': parameter 2's 'handleEvent' property is not a function.:true\"]|foo:1|bar:2",
+        "handleEvent null/42 都须各上报一个 TypeError error 事件"
+    );
+}
+
+#[test]
+fn test_prefixed_animation_handler_alias_r113() {
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let mut sandbox = V8Sandbox::with_config(zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    })
+    .unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><div id=\"d\">x</div></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry);
+
+    // spec HTML「event handlers on elements…」表的 webkit 前缀族：`onwebkitanimationend`
+    // 的 event handler event type 是 camelCase `webkitAnimationEnd`——handler setter 经
+    // _ZW_PREFIXED_HANDLER_TYPES 映射注册，与 addEventListener 同 type 键触发；getter
+    // 同映射读回；非别名（onanimationend 独立）。
+    let out = sandbox
+        .execute(
+            "var el = document.getElementById('d');\
+             var hits = { h: 0, l: 0, plain: 0 };\
+             el.onwebkitanimationend = function () { hits.h++; };\
+             el.addEventListener('webkitAnimationEnd', function () { hits.l++; });\
+             el.onanimationend = function () { hits.plain++; };\
+             var readback = el.onwebkitanimationend === undefined ? 'null' : 'fn';\
+             el.dispatchEvent(new Event('webkitAnimationEnd'));\
+             el.dispatchEvent(new Event('animationend'));\
+             var cleared = el.onwebkitanimationend = null;\
+             el.dispatchEvent(new Event('webkitAnimationEnd'));\
+             'h:' + hits.h + ',l:' + hits.l + ',plain:' + hits.plain + ',read:' + readback + ',cleared:' + (cleared === null);",
+        )
+        .unwrap()
+        .value;
+    assert_eq!(
+        out, "h:1,l:2,plain:1,read:fn,cleared:true",
+        "prefixed handler 与 listener 同键触发（handler 1 次 + listener 2 次含清除后再派发不触发 handler）、非别名独立、getter 读回、置 null 清除"
+    );
+}
+
+#[test]
+fn test_style_sheet_from_handle_style_element_r113() {
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let mut sandbox = V8Sandbox::with_config(zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    })
+    .unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><div id=\"d\">x</div></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry);
+
+    // handle-based <style>（createElement 后 append——CSS-in-JS / WPT prefixed-animation
+    // 形态）：.sheet 返 CSSStyleSheet，cssRules 初始经 `__zw_style_rules_handle`（host 从
+    // mutation 历史取 SetTextOnHandle 文本），selectorText/cssText 可读。规则写回走
+    // SetTextOnHandle（本测只读 + length，写回路径由 shim flushToOwner 覆盖）。
+    let out = sandbox
+        .execute(
+            "var st = document.createElement('style');\
+             st.textContent = 'div { color: rgb(1, 2, 3); }';\
+             document.head.appendChild(st);\
+             var sheet = st.sheet;\
+             var n = sheet ? sheet.cssRules.length : -1;\
+             var sel0 = n > 0 ? sheet.cssRules[0].selectorText : 'none';\
+             var css0 = n > 0 ? sheet.cssRules[0].cssText : 'none';\
+             'has:' + (sheet !== null && sheet !== undefined) + ',n:' + n + ',sel:' + sel0 + ',css:' + css0;",
+        )
+        .unwrap()
+        .value;
+    assert_eq!(
+        out, "has:true,n:1,sel:div,css:div { color: rgb(1, 2, 3) }",
+        "handle-based style.sheet.cssRules 须从 mutation 历史解析出规则"
+    );
+}
 
 #[test]
 fn test_event_once_removed_before_invoke_r111() {

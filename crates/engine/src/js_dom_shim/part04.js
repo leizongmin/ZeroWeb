@@ -1555,6 +1555,11 @@
         // R2934：无 JS 设值时回落编译 inline on* 属性（<button onclick="...">）。
         if (typeof prop === 'string' && /^on[a-z]/.test(prop)) {
           var _gt = String(prop).slice(2);
+          // js-dom M4 R113：prefixed handler getter 同 setter 映射（`onwebkitanimationend`
+          // 的注册键是 camelCase `webkitAnimationEnd`——与 set trap 同一别名表）。
+          if (globalThis._ZW_PREFIXED_HANDLER_TYPES && globalThis._ZW_PREFIXED_HANDLER_TYPES[_gt]) {
+            _gt = globalThis._ZW_PREFIXED_HANDLER_TYPES[_gt];
+          }
           // js-dom M4 R107：body/frameset 的 6 个 forwarding handler 读 window（spec
           // handler-body/frameset-attributes——IDL 属性是 window 同名 handler 的转发）。
           var _r107Tag = _realTag(sel, handle);
@@ -2895,7 +2900,10 @@
               var _lrel = (handle ? __zw_get_attr_handle(handle, 'rel') : (sel ? __zw_get_attr(sel, 'rel') : '')) || '';
               if (!/\bstylesheet\b/i.test(_lrel)) return null; // link 非 stylesheet → null
             }
-            return sel ? _makeStyleSheet(_wrapSelector(sel)) : null;
+            // js-dom M4 R113：handle-based <style>（createElement 后 append 入 head——CSS-in-JS
+            // 与 WPT prefixed-animation 用例形态）也返 CSSStyleSheet。规则读写经 `_makeStyleSheet`
+            // 的 handle 分支（初始 rules 从 MUTATION_HISTORY 读，写回经 SetTextOnHandle）。
+            return _makeStyleSheet(sel ? _wrapSelector(sel) : _wrapHandle(handle));
           }
           // 非 style/link：fall through undefined（generic Element 无 .sheet）
         }
@@ -3084,6 +3092,15 @@
         // store（同 addEventListener 的 _listenerStore[key]）：移旧 fn + 加新 fn；非 function → 移除（spec IDL）。
         if (typeof prop === 'string' && /^on[a-z]/.test(p)) {
           var _ot = p.slice(2);
+          // js-dom M4 R113：prefixed animation/transition handler 的「event handler event
+          // type」映射（spec HTML webappapis 表）——`onwebkitanimationend` 的 handler event
+          // type 是 **camelCase `webkitAnimationEnd`**（非小写 handler 名去 on）。WPT
+          // prefixed-animation-event-tests：`div.onwebkitanimationend = fn` 后派发
+          // `webkitAnimationEnd` 事件 handler 须触发（与 addEventListener 同 type 键）。
+          // 注册键改用映射后的真实 type（别名表命中时），未命中保持原样（generic on* 面）。
+          if (globalThis._ZW_PREFIXED_HANDLER_TYPES && globalThis._ZW_PREFIXED_HANDLER_TYPES[_ot]) {
+            _ot = globalThis._ZW_PREFIXED_HANDLER_TYPES[_ot];
+          }
           // js-dom M4 R107：body/frameset 的 forwarding handler 写 window（spec：element
           // 的 IDL setter 先置 window 同名 handler——forwarding attributes 的取值即 window 值）。
           var _r107sTag = _realTag(sel, handle);

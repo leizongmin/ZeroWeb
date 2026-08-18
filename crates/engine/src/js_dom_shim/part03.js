@@ -1578,6 +1578,62 @@
     return proxy;
   }
 
+  // js-dom M4 R113：spec inner invoke「report the exception」统一上报 helper——fire 一个
+  // **error 事件**（ErrorEvent，message + error 字段）at window（HTML runtime-script-error：
+  // window.addEventListener('error') 的 listener 收到 Event 对象、event.error 是原始异常）。
+  // `window.onerror` 属性 handler 由 R2932 的 defineProperty setter 注册为 error listener——
+  // 但 spec onerror 是 **legacy 5-arg 签名**（msg, source, lineno, colno, error），非 (event)。
+  // 故采用 part06 `__zw_report_error` 同款流程：暂移 onerror listener → error 事件派发（其余
+  // listener 接 ErrorEvent）→ legacy 签名直调 onerror（返 true → preventDefault）→ 装回。
+  // 不向 dispatch 调用方传播异常。防递归：上报路径内的异常只 console，不再派 error 事件。
+  // https://html.spec.whatwg.org/#runtime-script-error
+  var _zwInReportError = false;
+  function _zwReportListenerError(err) {
+    var msg = String(err && err.message ? err.message : err);
+    if (_zwInReportError) {
+      // 上报路径内异常：防递归，只 console。
+      try { if (typeof console !== 'undefined' && console.error) console.error('Uncaught (in event listener)', err); } catch (_eR) {}
+      return;
+    }
+    _zwInReportError = true;
+    try {
+      var errEv = null;
+      try {
+        if (globalThis.ErrorEvent) {
+          errEv = new globalThis.ErrorEvent('error', { message: msg, error: err });
+        }
+      } catch (_eC) { errEv = null; }
+      if (!errEv) {
+        errEv = _makeEvent('error', { bubbles: false, cancelable: true });
+        errEv.message = msg;
+        errEv.error = err;
+      }
+      errEv.filename = '';
+      errEv.lineno = 0;
+      errEv.colno = 0;
+      // R2932 的 _winOnHandlers['error']（part06，运行期已初始化——shim 单 IIFE 共享作用域）；
+      // 无 window.onerror 时为 undefined，走纯事件派发。
+      var onErrFn = typeof _winOnHandlers !== 'undefined' ? _winOnHandlers['error'] : null;
+      if (typeof onErrFn === 'function') {
+        try { _globalRemoveEventListener('error', onErrFn); } catch (_eRm) {} // 暂移：dispatch 时 onerror 不被 event 形态触发
+      }
+      try {
+        // window 'error' listener（addEventListener 注册 + tgt==='win' 槽位）派发。
+        _dispatchToListeners(_elKey('html', null), errEv, 'all', globalThis, 'win');
+      } catch (_eD2) {}
+      if (typeof onErrFn === 'function') {
+        try {
+          if (onErrFn.call(globalThis, msg, '', 0, 0, err) === true) {
+            try { errEv.preventDefault(); } catch (_eP) {} // onerror 返 true → 已处理（spec cancelable:true）
+          }
+        } catch (_eO) {}
+        try { _globalAddEventListener('error', onErrFn); } catch (_eRa) {} // 装回
+      }
+    } finally {
+      _zwInReportError = false;
+    }
+  }
+
   // 派发某元素 key 上的事件 listener。`phase`：`'all'`（target 阶段，capture+非 capture，默认）、
   // `'capture'`（仅 capture listener，捕获期祖先用）、`'bubble'`（仅非 capture，冒泡期祖先用）。
   // `thisObj`：handler 内 `this` 与 `event.currentTarget`（默认 event.target）。`stopImmediatePropagation`
@@ -1626,8 +1682,20 @@
       var callable = fn;
       if (typeof fn !== 'function') {
         // 对象 listener：Get handleEvent（每次派发都 Get，spec invoke 步骤）。非对象/null handleEvent → 跳过
-        //（spec：callable 为 undefined/null 则不抛不调）。
-        callable = fn && fn.handleEvent;
+        //（spec：callback 为 null/undefined 则不抛不调——WebIDL nullable callback 语义）。
+        callable = fn ? fn.handleEvent : fn;
+        // js-dom M4 R113：spec inner invoke 步骤 1-2——`handleEvent` 非 callable 时抛
+        // TypeError。WebIDL EventListener 字典的 handleEvent 成员类型是 `(Function or
+        // callable object)`——**null 也不豁免**（非 nullable callback：null 转换失败同样
+        // 抛 TypeError）。WPT EventListener-handleEvent "throws if `handleEvent` is
+        // falsy and not callable"（getHandleEvent 返 **null**）与 "truthy and not
+        // callable"（返 42）都期望 TypeError 经 error 事件上报。listener 本体是
+        // null/undefined（fn 非对象）不进本分支——addEventListener 参数本身 nullable。
+        if (typeof callable !== 'function') {
+          _zwReportListenerError(new globalThis.TypeError(
+            "Failed to execute 'addEventListener' on 'EventTarget': parameter 2's 'handleEvent' property is not a function."));
+          return;
+        }
       }
       if (typeof callable === 'function') {
         // js-dom M4 R105：passive listener 内 preventDefault 是 no-op（spec HTML
@@ -1643,17 +1711,15 @@
           // 函数 listener: this=currentTarget；对象 listener: this=对象本身（spec EventListener invoke）。
           callable.call(typeof fn !== 'function' ? fn : ctx, event);
         } catch (_e106) {
-          // js-dom M4 R111：spec inner invoke 步骤 11「report the exception」——listener 异常
-          // 不传播（继续后续 listener）但**须上报**：`window.onerror`（string 形态首参，spec
-          // `window-onerror` handler「error message」）+ console.error 兜底。WPT
-          // Event-dispatch-throwing：window.onerror 计数 ===1、后续 listener 仍跑。
-          try {
-            if (typeof globalThis.onerror === 'function') {
-              globalThis.onerror.call(globalThis, String(_e106 && _e106.message ? _e106.message : _e106), '', 0, 0, _e106);
-            } else if (typeof console !== 'undefined' && console.error) {
-              console.error('Uncaught (in event listener)', _e106);
-            }
-          } catch (_e106c) {}
+          // js-dom M4 R113：spec inner invoke 步骤 11「report the exception」——spec
+          // `report the exception` 的标准形态是 **fire an error event at window**（HTML
+          // 「reporting exceptions」/runtime-script-error：ErrorEvent，message + error 字段），
+          // window.addEventListener('error') 的 listener 与 onerror 属性 handler 都须收到。
+          // R111 只调 onerror 属性——WPT EventListener-handleEvent 的 EventWatcher 等 window
+          // 的 **error 事件**（addEventListener 路径）超时。现改经 `_zwReportListenerError`
+          // 统一上报（error 事件派发 + onerror 属性调用 + console.error 兜底），异常不传播
+          //（继续后续 listener），WPT Event-dispatch-throwing 的 onerror 计数语义保持。
+          _zwReportListenerError(_e106);
         } finally {
           if (entry.passive) event._zwInPassive = Math.max(0, (event._zwInPassive || 1) - 1);
         }

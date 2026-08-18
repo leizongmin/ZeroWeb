@@ -80,6 +80,9 @@ fetch_raw "resources/testharnessreport.js"
 # dom 根共享 JS（dom/nodes 用例引用 ../constants.js / ../common.js）。
 fetch_raw "dom/constants.js"
 fetch_raw "dom/common.js"
+# dom/events 共享 JS（js-dom R113：webkit-animation/transition 四用例引用
+# resources/prefixed-animation-event-tests.js——缺文件时 runner 报 script fetch failed）。
+fetch_raw "dom/events/resources/prefixed-animation-event-tests.js"
 
 for dir in "${SUBDIRS[@]}"; do
   fetch_dir_html "${dir}"

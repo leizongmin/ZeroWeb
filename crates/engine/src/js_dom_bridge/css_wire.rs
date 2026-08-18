@@ -143,7 +143,13 @@ pub fn style_rules_wire(html: &str, selector: &str) -> String {
         return String::new();
     };
     let text = doc.text_content(node).unwrap_or_default();
-    let ss = zero_css_parser::Parser::parse_stylesheet(&text);
+    style_rules_text(&text)
+}
+
+/// [`style_rules_wire`] 的纯文本版（js-dom M4 R113）——handle-based `<style>`（createElement
+/// 后 append）的规则源是 mutation 历史里的 style 文本（无 selector 可查快照），解析同款。
+pub fn style_rules_text(text: &str) -> String {
+    let ss = zero_css_parser::Parser::parse_stylesheet(text);
     let mut entries: Vec<String> = Vec::new();
     for rule in &ss.rules {
         if let zero_css_parser::Rule::Style(sr) = rule {

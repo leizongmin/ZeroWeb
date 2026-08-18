@@ -1096,6 +1096,18 @@
   // handler-body-attributes / handler-frameset-attributes——onblur/onerror/onfocus/
   // onload/onscroll/onresize 的 IDL 与 content attribute 均转发到 window）。
   globalThis._ZW_BODY_FORWARD_ON = { blur: 1, error: 1, focus: 1, load: 1, scroll: 1, resize: 1 };
+  // js-dom M4 R113：prefixed animation/transition 事件 handler 的「event handler event type」
+  // 映射（spec HTML webappapis「event handlers on elements…」表）——`onwebkitanimationend`
+  // 等 handler IDL 名全小写，但其 event type 是 camelCase（webkitAnimationEnd）。on* setter
+  // 注册 listener 时经本表换算真实 type 键，使 handler 与 `addEventListener('webkitAnimationEnd')`
+  // 同键触发（WPT prefixed-animation-event-tests「prefixed listener and handler」断言 2）。
+  // 表内容 = spec 的 webkit 前缀事件族（animation 3 + transition 1）。
+  globalThis._ZW_PREFIXED_HANDLER_TYPES = {
+    webkitanimationstart: 'webkitAnimationStart',
+    webkitanimationiteration: 'webkitAnimationIteration',
+    webkitanimationend: 'webkitAnimationEnd',
+    webkittransitionend: 'webkitTransitionEnd',
+  };
   function _mo_notify(sel, handle, baseRecord) {
     var id = _mo_id(handle, sel);
     _mo_deliverToId(id, baseRecord, false); // 精确 id，不要求 subtree

@@ -1265,39 +1265,47 @@
   }
   function _makeStyleSheet(owner) {
     var sel = owner && owner.__zwSelector;
+    // js-dom M4 R113：handle-based owner（createElement('style') 后 append——CSS-in-JS /
+    // WPT prefixed-animation 形态）。初始规则经 `__zw_style_rules_handle`（host 从 mutation
+    // 历史解析该 handle 的 style 文本），写回经 `__zw_set_text_handle`（SetTextOnHandle）。
+    var handle = !sel && owner ? owner.__zwHandle : null;
     var rulesCache = null;
     function getRules() {
       if (rulesCache) return rulesCache;
       rulesCache = [];
+      var wire = '';
       if (sel && typeof __zw_style_rules === 'function') {
-        try {
-          var wire = String(__zw_style_rules(sel));
-          if (wire) {
-            var entries = wire.split('\x1f');
-            for (var i = 0; i < entries.length; i++) {
-              var parts = entries[i].split('\x1e');
-              if (parts.length >= 2) {
-                var r = {
-                  type: 1, // CSSRule.STYLE_RULE
-                  selectorText: parts[0],
-                  cssText: parts[1],
-                  style: null, // 由 _makeRuleStyle 填（per-rule CSSStyleDeclaration，R2810）
-                  parentStyleSheet: ss
-                };
-                r.style = _makeRuleStyle(r, flushToOwner);
-                rulesCache.push(r);
-              }
-            }
+        try { wire = String(__zw_style_rules(sel)); } catch (_e0) { wire = ''; }
+      } else if (handle && typeof __zw_style_rules_handle === 'function') {
+        try { wire = String(__zw_style_rules_handle(handle)); } catch (_e0h) { wire = ''; }
+      }
+      if (wire) {
+        var entries = wire.split('\x1f');
+        for (var i = 0; i < entries.length; i++) {
+          var parts = entries[i].split('\x1e');
+          if (parts.length >= 2) {
+            var r = {
+              type: 1, // CSSRule.STYLE_RULE
+              selectorText: parts[0],
+              cssText: parts[1],
+              style: null, // 由 _makeRuleStyle 填（per-rule CSSStyleDeclaration，R2810）
+              parentStyleSheet: ss
+            };
+            r.style = _makeRuleStyle(r, flushToOwner);
+            rulesCache.push(r);
           }
-        } catch (_e) { rulesCache = []; }
+        }
       }
       return rulesCache;
     }
     // 从 cache 重建 `<style>` 文本（join cssText）+ 写回 owner 元素（下次 render 重解析 cascade）。
     function flushToOwner() {
-      if (!sel || typeof __zw_set_text !== 'function') return;
       var text = getRules().map(function (r) { return r.cssText; }).join('\n');
-      try { __zw_set_text(sel, text); } catch (_e) {}
+      if (sel && typeof __zw_set_text === 'function') {
+        try { __zw_set_text(sel, text); } catch (_e) {}
+      } else if (handle && typeof __zw_set_text_handle === 'function') {
+        try { __zw_set_text_handle(handle, text); } catch (_eh) {}
+      }
     }
     var ss = {
       type: 'text/css',

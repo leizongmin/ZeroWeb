@@ -385,6 +385,27 @@ pub fn register_dom_callbacks(
         }),
     );
 
+    // js-dom M4 R113：`CSSStyleSheet.cssRules` 的 handle 版——createElement('style') 后 append 入
+    // head 的 CSS-in-JS / WPT prefixed-animation 形态（无 selector，owner 是 handle）。规则源 =
+    // mutation 历史（CreateElement 后的 SetTextOnHandle / SetInnerHtmlOnHandle latest-wins），
+    // 经既有 `query_inner_html_from_mutations` 取文本 + `style_rules_text` 解析。
+    let m = Arc::clone(mutations);
+    sandbox.register_callback(
+        "__zw_style_rules_handle",
+        Box::new(move |args| {
+            let handle = args.first().map(String::from).unwrap_or_default();
+            let list = m.lock().unwrap_or_else(|e| e.into_inner());
+            let mut text = query_inner_html_from_mutations(&list, &handle);
+            if text.is_empty() {
+                text = query_history_text(&handle);
+            }
+            if text.is_empty() {
+                return String::new();
+            }
+            style_rules_text(&text)
+        }),
+    );
+
     let html = Arc::clone(dom_html);
     sandbox.register_callback(
         "__zw_closest",
