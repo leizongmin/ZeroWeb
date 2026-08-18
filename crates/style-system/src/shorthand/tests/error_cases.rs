@@ -252,6 +252,13 @@ fn test_text_decoration_rejects_unknown_component() {
 }
 
 #[test]
+fn test_text_decoration_rejects_duplicate_non_line_components() {
+    assert!(expand_one("text-decoration", "underline dotted dashed red", false, (0, 0, 1)).is_empty());
+    assert!(expand_one("text-decoration", "underline red blue", false, (0, 0, 1)).is_empty());
+    assert!(expand_one("text-decoration", "underline 2px 3px", false, (0, 0, 1)).is_empty());
+}
+
+#[test]
 /// text-decoration blink
 fn test_text_decoration_blink() {
     let result = expand_one("text-decoration", "blink", false, (0, 0, 1));

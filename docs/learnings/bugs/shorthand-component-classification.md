@@ -10,6 +10,8 @@ Related modules: `crates/style-system/src/shorthand`, `crates/css-parser/src/val
 
 The same silent-defaulting pattern also affected `outline`, `column-rule`, and `text-decoration`: unknown tokens were ignored while the valid remaining components were expanded.
 
+`text-decoration` exposed another form of the same bug class: duplicate non-line components were accepted and the later value silently replaced the earlier one. For example, `underline dotted dashed red` became valid with style `dashed`.
+
 ## Root Cause
 
 The shorthand layer used heuristic component classifiers and treated unrecognized tokens as absent optional components. That is wrong for CSS shorthands such as `border`, where every token must match one of the allowed component grammars. A shared parser can also be broader than the property grammar that consumes it: general length parsing may accept `auto`, intrinsic sizing keywords, or percentages that `border-width` must reject.
@@ -21,5 +23,6 @@ Use the shared value parsers for token boundaries, then filter by the specific p
 + accept only real length variants plus `thin`, `medium`, and `thick` as width components;
 + use the real color parser for color components;
 + reject the entire shorthand when any token is not consumed by one of the allowed component grammars.
++ reject duplicate components unless the spec grammar explicitly allows repetition, such as multiple `text-decoration-line` keywords.
 
 Keep adjacent shorthand users covered with regression tests when a shared classifier changes. `columns: auto 100px` is a good guard because it depends on `auto` not being mistaken for a length.

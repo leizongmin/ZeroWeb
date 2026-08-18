@@ -1759,6 +1759,7 @@ fn expand_text_decoration(value: &str, important: bool, specificity: (u32, u32, 
 
     let toks = zero_css_parser::values::split_paren_aware_tokens(value);
     let parts: Vec<&str> = toks.iter().map(|s| s.as_str()).collect();
+    // https://drafts.csswg.org/css-text-decor-4/#text-decoration-property
     // 多值组合支持（CSS Text Decoration §3）：`text-decoration: underline overline red`
     // 需把多个 line 关键字累加为 `text-decoration-line: underline overline`（旧实现 `line = part`
     // 覆盖致仅保留最后一个）。driving: css-text-decor text-decoration-line-010/011/012/013。
@@ -1769,6 +1770,9 @@ fn expand_text_decoration(value: &str, important: bool, specificity: (u32, u32, 
     // （§2.3）。简写应把未显式给定的 longhand 重置为 initial（与 style:solid / color:currentcolor
     // 同谱），故默认 auto（initial）。R2592。driving: text-decoration-shorthands-001(auto)/002(100px)。
     let mut thickness = "auto".to_string();
+    let mut seen_style = false;
+    let mut seen_color = false;
+    let mut seen_thickness = false;
 
     let is_line = |s: &str| matches!(s, "underline" | "overline" | "line-through" | "blink" | "none");
 
@@ -1792,10 +1796,22 @@ fn expand_text_decoration(value: &str, important: bool, specificity: (u32, u32, 
         if is_line(part) {
             line_toks.push(part); // 累加多值（underline overline → "underline overline"）
         } else if is_dec_style(part) {
+            if seen_style {
+                return vec![];
+            }
+            seen_style = true;
             dec_style = part.to_string();
         } else if looks_like_color(part) {
+            if seen_color {
+                return vec![];
+            }
+            seen_color = true;
             color = part.to_string();
         } else if is_thickness(part) {
+            if seen_thickness {
+                return vec![];
+            }
+            seen_thickness = true;
             thickness = part.to_string();
         } else {
             return vec![];
