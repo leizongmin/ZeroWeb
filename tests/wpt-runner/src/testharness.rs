@@ -209,6 +209,26 @@ pub const INDEXEDDB_CASES: &[(&str, &[&str])] = &[
     ("IndexedDB/idbcursor-request.any.js", &["resources/support.js"]),
     ("IndexedDB/idbcursor-request-source.any.js", &["resources/support.js"]),
     ("IndexedDB/idbcursor-direction.any.js", &["resources/support.js"]),
+    ("IndexedDB/idbcursor-direction-index.any.js", &["resources/support.js"]),
+    (
+        "IndexedDB/idbcursor-direction-index-keyrange.any.js",
+        &["resources/support.js"],
+    ),
+    (
+        "IndexedDB/idbcursor-direction-objectstore.any.js",
+        &["resources/support.js"],
+    ),
+    (
+        "IndexedDB/idbcursor-direction-objectstore-keyrange.any.js",
+        &["resources/support.js"],
+    ),
+    ("IndexedDB/idbcursor_iterating.any.js", &["resources/support.js"]),
+    ("IndexedDB/idbcursor-iterating-update.any.js", &["resources/support.js"]),
+    ("IndexedDB/idbcursor-reused.any.js", &["resources/support.js"]),
+    (
+        "IndexedDB/idbcursor_continue_delete_objectstore.any.js",
+        &["resources/support.js"],
+    ),
     ("IndexedDB/idbcursor-continue.any.js", &["resources/support.js"]),
     ("IndexedDB/idbcursor-advance.any.js", &["resources/support.js"]),
     ("IndexedDB/idbcursor-advance-invalid.any.js", &["resources/support.js"]),
@@ -1005,9 +1025,23 @@ fn run_testharness_html_inner(
             }
         }
         if probe.complete {
+            if partial_results.is_empty() {
+                return vec![HarnessSubtestResult {
+                    name: case_name.to_string(),
+                    status: HarnessStatus::Timeout,
+                    message: Some(format!(
+                        "testharness completed without reporting registered tests (state={})",
+                        last_state
+                    )),
+                }];
+            }
             return map_harness_results(partial_results);
         }
-        std::thread::sleep(Duration::from_millis(1));
+        if probe.due_timer {
+            std::thread::yield_now();
+        } else {
+            std::thread::sleep(Duration::from_millis(1));
+        }
     }
 }
 
@@ -1270,6 +1304,7 @@ struct HarnessProbe {
     test_function: String,
     harness_hook: String,
     state: serde_json::Value,
+    due_timer: bool,
 }
 
 #[derive(Deserialize)]
@@ -1288,12 +1323,14 @@ struct TestdriverCommand {
 }
 
 fn take_probe(webview: &mut WebView) -> Result<HarnessProbe, String> {
-    // Keep short step_timeout callbacks observable without waiting for the
-    // harness's own 10-second watchdog after completion.
+    // Pump timer tasks first so the sandbox's microtask checkpoint has flushed
+    // testharness result callbacks before the state snapshot is serialized.
+    webview
+        .execute_script("if (typeof globalThis.__zw_fire_due_timers === 'function') globalThis.__zw_fire_due_timers()")
+        .map_err(|error| error.to_string())?;
     let value = webview
         .execute_script(
-            "if (typeof globalThis.__zw_fire_due_timers === 'function') globalThis.__zw_fire_due_timers();\
-             JSON.stringify({\
+            "JSON.stringify({\
              complete:(function(){\
                var timers = globalThis.__zw_timers || [];\
                var graceDeadline = Date.now() + 1000;\
@@ -1310,6 +1347,7 @@ fn take_probe(webview: &mut WebView) -> Result<HarnessProbe, String> {
              test_function:typeof globalThis.test,\
              harness_hook:typeof globalThis.__zw_mark_harness_loaded,\
              state:typeof globalThis.__zw_harness_state==='function'?globalThis.__zw_harness_state():null,\
+             due_timer:(globalThis.__zw_timers||[]).some(function(timer){ return timer.at <= Date.now(); }),\
              commands:(globalThis.__zw_td_queue||[]).splice(0)})",
         )
         .map_err(|error| error.to_string())?;
@@ -1510,6 +1548,28 @@ promise_test(async function() {
             Duration::from_millis(10),
         );
         assert_eq!(results[0].status, HarnessStatus::Timeout);
+    }
+
+    #[test]
+    fn registered_tests_cannot_complete_with_empty_results() {
+        let html = r#"
+<script src="/resources/testharness.js"></script>
+<script>
+test(function() {}, 'registered');
+add_completion_callback(function() { globalThis.__zw_harness_results = []; });
+</script>
+"#;
+        let results = run_testharness_html(
+            Path::new("/nonexistent-wpt-root-for-tests"),
+            "empty-results.html",
+            html,
+            MINI_HARNESS,
+            Duration::from_secs(1),
+        );
+
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].status, HarnessStatus::Timeout);
+        assert!(results[0].message.as_deref().unwrap().contains("without reporting"));
     }
 
     #[test]

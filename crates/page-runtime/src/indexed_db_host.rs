@@ -306,6 +306,7 @@ struct ActiveIndexedDbTransaction {
     origin: String,
     database: String,
     transaction: IdbTransaction,
+    mutation_generation: u64,
     next_cursor_id: u64,
     cursors: HashMap<u64, ActiveIndexedDbCursor>,
 }
@@ -459,6 +460,7 @@ fn dispatch_request(
                     origin: origin.to_string(),
                     database,
                     transaction,
+                    mutation_generation: 0,
                     next_cursor_id: 0,
                     cursors: HashMap::new(),
                 },
@@ -478,6 +480,7 @@ fn dispatch_request(
             let key = database
                 .tx_add(&active.transaction, &store, value, key)
                 .map_err(storage_error)?;
+            active.mutation_generation += 1;
             Ok(json!({"key": IndexedDbKeyWire::from(&key)}))
         }
         IndexedDbRequest::TransactionPut {
@@ -493,6 +496,7 @@ fn dispatch_request(
             let key = database
                 .tx_put(&active.transaction, &store, value, key)
                 .map_err(storage_error)?;
+            active.mutation_generation += 1;
             Ok(json!({"key": IndexedDbKeyWire::from(&key)}))
         }
         IndexedDbRequest::TransactionGet {
@@ -526,6 +530,7 @@ fn dispatch_request(
             let deleted = database
                 .tx_delete(&active.transaction, &store, &key)
                 .map_err(storage_error)?;
+            active.mutation_generation += 1;
             Ok(json!({"deleted": deleted}))
         }
         IndexedDbRequest::TransactionDeleteRange {
@@ -549,6 +554,9 @@ fn dispatch_request(
                     .tx_delete(&active.transaction, &store, key)
                     .map_err(storage_error)?;
             }
+            if !keys.is_empty() {
+                active.mutation_generation += 1;
+            }
             Ok(json!({"deleted": keys.len()}))
         }
         IndexedDbRequest::TransactionClear { transaction, store } => {
@@ -556,6 +564,7 @@ fn dispatch_request(
             require_write_transaction(active)?;
             let database = active_database_mut(storage, active)?;
             database.tx_clear(&active.transaction, &store).map_err(storage_error)?;
+            active.mutation_generation += 1;
             Ok(json!({"cleared": true}))
         }
         IndexedDbRequest::TransactionCount {

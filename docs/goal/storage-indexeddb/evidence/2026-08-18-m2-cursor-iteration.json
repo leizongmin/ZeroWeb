@@ -1,0 +1,49 @@
+{
+  "date": "2026-08-18",
+  "scope": "M2 IndexedDB cursor iteration",
+  "wpt_revision": "315976933870b34d6ea30e3f6643403edae678ba",
+  "files_added": 8,
+  "driving_wpt": {
+    "before": {
+      "pass": 20,
+      "fail": 0,
+      "timeout": 1
+    },
+    "after": {
+      "pass": 21,
+      "fail": 0,
+      "timeout": 0
+    }
+  },
+  "imported_wpt": {
+    "files": 75,
+    "pass": 381,
+    "fail": 0,
+    "timeout": 0,
+    "not_run": 0,
+    "empty": 0
+  },
+  "performance": {
+    "case": "IndexedDB/idbcursor_iterating.any.js",
+    "before_seconds": 10.3,
+    "after_seconds": 1.86
+  },
+  "capabilities": [
+    "cursor direction and key range iteration",
+    "cursor mutation generation fast path",
+    "transaction latest-view add semantics",
+    "event-driven transaction auto-commit",
+    "fail-closed testharness result accounting"
+  ],
+  "gates": {
+    "cargo_fmt": "pass",
+    "cargo_clippy_workspace": "pass",
+    "make_testharness_indexeddb": "pass",
+    "make_test": "pass",
+    "manifest_counts": {
+      "fetch": 75,
+      "runner": 75,
+      "ledger": 75
+    }
+  }
+}

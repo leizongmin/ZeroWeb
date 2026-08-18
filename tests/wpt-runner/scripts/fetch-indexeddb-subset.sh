@@ -50,6 +50,14 @@ FILES=(
   "IndexedDB/idbcursor-request.any.js"
   "IndexedDB/idbcursor-request-source.any.js"
   "IndexedDB/idbcursor-direction.any.js"
+  "IndexedDB/idbcursor-direction-index.any.js"
+  "IndexedDB/idbcursor-direction-index-keyrange.any.js"
+  "IndexedDB/idbcursor-direction-objectstore.any.js"
+  "IndexedDB/idbcursor-direction-objectstore-keyrange.any.js"
+  "IndexedDB/idbcursor_iterating.any.js"
+  "IndexedDB/idbcursor-iterating-update.any.js"
+  "IndexedDB/idbcursor-reused.any.js"
+  "IndexedDB/idbcursor_continue_delete_objectstore.any.js"
   "IndexedDB/idbcursor-continue.any.js"
   "IndexedDB/idbcursor-advance.any.js"
   "IndexedDB/idbcursor-advance-invalid.any.js"
@@ -148,7 +156,7 @@ fetch_from_checkout() {
 
 if [[ -n "${WPT_SOURCE:-}" ]]; then
   fetch_from_checkout
-  echo "IndexedDB testharness subset ready (67 cases, WPT ${WPT_REV})"
+  echo "IndexedDB testharness subset ready (75 cases, WPT ${WPT_REV})"
   exit 0
 fi
 
@@ -165,4 +173,4 @@ if [[ "${raw_failed}" == "1" ]]; then
   fetch_from_git
 fi
 
-echo "IndexedDB testharness subset ready (67 cases, WPT ${WPT_REV})"
+echo "IndexedDB testharness subset ready (75 cases, WPT ${WPT_REV})"

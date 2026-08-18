@@ -1316,27 +1316,15 @@ impl IdbDatabase {
             // 显式 key 时按 §1.8.2 max 推进。
         }
         drop(key_gens);
-        // 检查 store 中是否已存在相同主键
-        if store.records.iter().any(|r| r.key == key) {
+        // https://w3c.github.io/IndexedDB/#add-or-put
+        // Existence is evaluated against the transaction's latest view. A buffered
+        // delete or clear makes a live-store key available to a later add().
+        if self.tx_get(tx, store_name, &key)?.is_some() {
             return Err(StorageError::Database(format!(
                 "Key already exists in store '{}'",
                 store_name
             )));
         }
-        // 检查缓冲区中是否已有相同主键的 Add 操作
-        let mutations = tx.mutations.borrow();
-        if mutations.iter().any(|m| match m {
-            TxMutation::Add { store: s, key: k, .. } | TxMutation::Put { store: s, key: k, .. } => {
-                s == store_name && k == &key
-            }
-            _ => false,
-        }) {
-            return Err(StorageError::Database(format!(
-                "Key already exists in store '{}'",
-                store_name
-            )));
-        }
-        drop(mutations);
         // R3229：key generator 推进已移至事务局部 key_gens（见上方 key 解析），不再触碰 live store.next_key。
 
         tx.mutations.borrow_mut().push(TxMutation::Add {

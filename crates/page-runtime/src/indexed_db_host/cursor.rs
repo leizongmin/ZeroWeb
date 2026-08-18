@@ -33,6 +33,7 @@ pub(super) struct ActiveIndexedDbCursor {
     index: Option<String>,
     query: Option<IndexedDbQuery>,
     key_only: bool,
+    observed_mutation_generation: u64,
     entries: Vec<IndexedDbCursorEntry>,
     position: usize,
 }
@@ -64,6 +65,7 @@ pub(super) fn open_transaction_cursor(
     key_only: bool,
 ) -> Result<Value, String> {
     let active = active_transaction_mut(transactions, origin, transaction)?;
+    let mutation_generation = active.mutation_generation;
     let query = query.map(IndexedDbQueryWire::into_storage_query).transpose()?;
     let database = active_database_mut(storage, active)?;
     let mut entries = collect_cursor_entries(database, &active.transaction, store, index, query.as_ref(), key_only)?;
@@ -87,6 +89,7 @@ pub(super) fn open_transaction_cursor(
             index: index.map(str::to_string),
             query,
             key_only,
+            observed_mutation_generation: mutation_generation,
             entries,
             position: 0,
         },
@@ -149,6 +152,7 @@ pub(super) fn step_transaction_cursor(
     step: CursorStep,
 ) -> Result<Value, String> {
     let active = active_transaction_mut(transactions, origin, transaction)?;
+    let mutation_generation = active.mutation_generation;
     let cursor_state = active
         .cursors
         .get(&cursor)
@@ -156,13 +160,86 @@ pub(super) fn step_transaction_cursor(
     if cursor_state.position >= cursor_state.entries.len() {
         return Err("InvalidStateError: IndexedDB cursor has no current value".to_string());
     }
-    let current = cursor_state.entries[cursor_state.position].clone();
+    let current_position = cursor_state.position;
+    let current = cursor_state.entries[current_position].clone();
     let direction = cursor_state.direction;
     let index_cursor = cursor_state.index_cursor;
     let store = cursor_state.store.clone();
     let index = cursor_state.index.clone();
     let query = cursor_state.query.clone();
     let key_only = cursor_state.key_only;
+    let view_changed = cursor_state.observed_mutation_generation != mutation_generation;
+
+    match &step {
+        CursorStep::Continue(Some(key)) => {
+            let valid = if direction.is_reverse() {
+                key < &current.key
+            } else {
+                key > &current.key
+            };
+            if !valid {
+                return Err("DataError: cursor continue key must move in its direction".to_string());
+            }
+        }
+        CursorStep::ContinuePrimaryKey(key, primary_key) => {
+            if !index_cursor || direction.is_unique() {
+                return Err("InvalidAccessError: continuePrimaryKey requires a non-unique index cursor".to_string());
+            }
+            let target = (key, primary_key);
+            let current_pair = (&current.key, &current.primary_key);
+            let valid = if direction.is_reverse() {
+                target < current_pair
+            } else {
+                target > current_pair
+            };
+            if !valid {
+                return Err("DataError: cursor continue primary key must move in its direction".to_string());
+            }
+        }
+        CursorStep::Continue(None) | CursorStep::Advance(_) => {}
+    }
+
+    if !view_changed {
+        let cursor_state = active.cursors.get_mut(&cursor).expect("IndexedDB cursor checked above");
+        let next_position = match &step {
+            CursorStep::Advance(count) => current_position.saturating_add(*count),
+            CursorStep::Continue(None) => current_position.saturating_add(1),
+            CursorStep::Continue(Some(key)) => cursor_state
+                .entries
+                .iter()
+                .enumerate()
+                .skip(current_position.saturating_add(1))
+                .find(|(_, entry)| {
+                    if direction.is_reverse() {
+                        &entry.key <= key
+                    } else {
+                        &entry.key >= key
+                    }
+                })
+                .map_or(cursor_state.entries.len(), |(position, _)| position),
+            CursorStep::ContinuePrimaryKey(key, primary_key) => {
+                let target = (key, primary_key);
+                cursor_state
+                    .entries
+                    .iter()
+                    .enumerate()
+                    .skip(current_position.saturating_add(1))
+                    .find(|(_, entry)| {
+                        let pair = (&entry.key, &entry.primary_key);
+                        if direction.is_reverse() {
+                            pair <= target
+                        } else {
+                            pair >= target
+                        }
+                    })
+                    .map_or(cursor_state.entries.len(), |(position, _)| position)
+            }
+        };
+        cursor_state.position = next_position.min(cursor_state.entries.len());
+        let entry = cursor_state.entries.get(cursor_state.position).map(cursor_entry_json);
+        return Ok(json!({"entry": entry}));
+    }
+
     let database = active_database_mut(storage, active)?;
     let mut entries = collect_cursor_entries(
         database,
@@ -186,7 +263,7 @@ pub(super) fn step_transaction_cursor(
             compared.is_gt()
         }
     };
-    let next_position = match step {
+    let next_position = match &step {
         CursorStep::Advance(count) => entries
             .iter()
             .enumerate()
@@ -194,41 +271,19 @@ pub(super) fn step_transaction_cursor(
             .nth(count.saturating_sub(1))
             .map_or(entries.len(), |(position, _)| position),
         CursorStep::Continue(None) => entries.iter().position(after_current).unwrap_or(entries.len()),
-        CursorStep::Continue(Some(key)) => {
-            let valid = if direction.is_reverse() {
-                key < current.key
-            } else {
-                key > current.key
-            };
-            if !valid {
-                return Err("DataError: cursor continue key must move in its direction".to_string());
-            }
-            entries
-                .iter()
-                .enumerate()
-                .find(|(_, entry)| {
-                    if direction.is_reverse() {
-                        entry.key <= key
-                    } else {
-                        entry.key >= key
-                    }
-                })
-                .map_or(entries.len(), |(position, _)| position)
-        }
+        CursorStep::Continue(Some(key)) => entries
+            .iter()
+            .enumerate()
+            .find(|(_, entry)| {
+                if direction.is_reverse() {
+                    &entry.key <= key
+                } else {
+                    &entry.key >= key
+                }
+            })
+            .map_or(entries.len(), |(position, _)| position),
         CursorStep::ContinuePrimaryKey(key, primary_key) => {
-            if !index_cursor || direction.is_unique() {
-                return Err("InvalidAccessError: continuePrimaryKey requires a non-unique index cursor".to_string());
-            }
-            let target = (&key, &primary_key);
-            let current_pair = (&current.key, &current.primary_key);
-            let valid = if direction.is_reverse() {
-                target < current_pair
-            } else {
-                target > current_pair
-            };
-            if !valid {
-                return Err("DataError: cursor continue primary key must move in its direction".to_string());
-            }
+            let target = (key, primary_key);
             entries
                 .iter()
                 .enumerate()
@@ -243,10 +298,11 @@ pub(super) fn step_transaction_cursor(
                 .map_or(entries.len(), |(position, _)| position)
         }
     };
-    let cursor = active.cursors.get_mut(&cursor).expect("IndexedDB cursor checked above");
-    cursor.entries = entries;
-    cursor.position = next_position;
-    let entry = cursor.entries.get(cursor.position).map(cursor_entry_json);
+    let cursor_state = active.cursors.get_mut(&cursor).expect("IndexedDB cursor checked above");
+    cursor_state.observed_mutation_generation = mutation_generation;
+    cursor_state.entries = entries;
+    cursor_state.position = next_position;
+    let entry = cursor_state.entries.get(cursor_state.position).map(cursor_entry_json);
     Ok(json!({"entry": entry}))
 }
 

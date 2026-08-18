@@ -3407,6 +3407,7 @@
   function _zwIDBDispatch(req, type, result, event) {
     var transaction = req.transaction;
     if (transaction) transaction._pending++;
+    if (transaction) transaction._autoCommitPending = false;
     var dispatch = {
       request: req,
       type: type,
@@ -3441,6 +3442,10 @@
           transaction._pending--;
           var position = transaction._requestQueue.indexOf(dispatch);
           if (position !== -1) transaction._requestQueue.splice(position, 1);
+          if (transaction._pending === 0) {
+            transaction._autoCommitPending = true;
+            _zwIDBScheduleTransactionCompletion(transaction);
+          }
         }
       });
     };
@@ -4600,6 +4605,7 @@
     transaction._started = true;
     var operations = transaction._operations.splice(0);
     operations.forEach(function (operation) { operation(); });
+    _zwIDBScheduleTransactionCompletion(transaction);
   }
 
   function _zwIDBFailTransactionStart(transaction, error) {
@@ -4684,6 +4690,43 @@
     transaction._operations.push(operation);
   }
 
+  function _zwIDBRunTransactionCompletion(transaction) {
+    transaction._completionCheckScheduled = false;
+    transaction._active = false;
+    if (transaction._aborted || transaction._finished || transaction._deferCompletion) return;
+    var position = transaction._db._state.transactions.indexOf(transaction);
+    var earlierActive = transaction._db._state.transactions.slice(0, position).some(function (earlier) {
+      return !earlier._aborted
+        && !earlier._finished
+        && _zwIDBTransactionsConflict(earlier, transaction);
+    });
+    if (!transaction._started || transaction._pending > 0 || earlierActive) return;
+    transaction._committing = true;
+    if (transaction._hostId !== null) {
+      try {
+        _zwIDBHostCall({ op: 'commit_transaction', transaction: transaction._hostId });
+      } catch (hostError) {
+        _zwIDBFailHostTransaction(transaction, hostError);
+        transaction._finished = true;
+        _zwIDBUntrackTransaction(transaction);
+        return;
+      }
+      transaction._hostId = null;
+    }
+    transaction._finished = true;
+    _zwIDBUntrackTransaction(transaction);
+    _zwIDBEmit(transaction, 'complete', new _zwIDBEvent('complete', transaction));
+  }
+
+  function _zwIDBScheduleTransactionCompletion(transaction) {
+    if (transaction._aborted
+        || transaction._finished
+        || transaction._deferCompletion
+        || transaction._completionCheckScheduled) return;
+    transaction._completionCheckScheduled = true;
+    setTimeout(function () { _zwIDBRunTransactionCompletion(transaction); }, 0);
+  }
+
   function _zwIDBTransaction(db, names, mode, deferCompletion) {
     var storeNames = Array.isArray(names) ? names.map(String) : [String(names)];
     this._db = db;
@@ -4699,6 +4742,7 @@
     this._aborted = false;
     this._finished = false;
     this._committing = false;
+    this._autoCommitPending = false;
     this._active = true;
     this._pending = 0;
     this._requestQueue = [];
@@ -4707,6 +4751,8 @@
     this._hostId = null;
     this._hostStartRequest = null;
     this._snapshot = null;
+    this._deferCompletion = !!deferCompletion;
+    this._completionCheckScheduled = false;
     this._started = !!deferCompletion;
     this._operations = [];
     _zwIDBTransactions.push(this);
@@ -4715,39 +4761,7 @@
     if (!deferCompletion && this.mode !== 'versionchange') {
       _zwIDBStartEligibleTransactions(db._state);
     }
-    var self = this;
-    if (!deferCompletion) {
-      var completeWhenIdle = function () {
-        self._active = false;
-        if (self._aborted || self._finished) return;
-        var position = self._db._state.transactions.indexOf(self);
-        var earlierActive = self._db._state.transactions.slice(0, position).some(function (transaction) {
-          return !transaction._aborted
-            && !transaction._finished
-            && _zwIDBTransactionsConflict(transaction, self);
-        });
-        if (!self._started || self._pending > 0 || earlierActive) {
-          setTimeout(completeWhenIdle, 0);
-          return;
-        }
-        self._committing = true;
-        if (self._hostId !== null) {
-          try {
-            _zwIDBHostCall({ op: 'commit_transaction', transaction: self._hostId });
-          } catch (hostError) {
-            _zwIDBFailHostTransaction(self, hostError);
-            self._finished = true;
-            _zwIDBUntrackTransaction(self);
-            return;
-          }
-          self._hostId = null;
-        }
-        self._finished = true;
-        _zwIDBUntrackTransaction(self);
-        _zwIDBEmit(self, 'complete', new _zwIDBEvent('complete', self));
-      };
-      setTimeout(completeWhenIdle, 0);
-    }
+    _zwIDBScheduleTransactionCompletion(this);
   }
   _zwIDBTransaction.prototype.addEventListener = _zwIDBRequest.prototype.addEventListener;
   _zwIDBTransaction.prototype.removeEventListener = _zwIDBRequest.prototype.removeEventListener;
@@ -4763,7 +4777,7 @@
     return new _zwIDBStore(this._db, name, s.keyPath, s.autoIncrement, s.records, s.indexes, this, s);
   };
   _zwIDBTransaction.prototype.abort = function () {
-    if (this._aborted || this._finished || this._committing) {
+    if (this._aborted || this._finished || this._committing || this._autoCommitPending) {
       throw new globalThis.DOMException('The transaction is finished.', 'InvalidStateError');
     }
     if (this._hostStartRequest !== null) {
@@ -4822,6 +4836,7 @@
       throw new globalThis.DOMException('The transaction is inactive.', 'InvalidStateError');
     }
     this._committing = true;
+    _zwIDBScheduleTransactionCompletion(this);
   };
 
   function _zwIDBDatabase(name, state) {
@@ -5281,6 +5296,7 @@
             db._upgradeTransaction = transaction;
             req.transaction = transaction;
             var upgrade = function () {
+              transaction._active = true;
               req.readyState = 'done';
               req.result = db;
               _zwIDBEmit(

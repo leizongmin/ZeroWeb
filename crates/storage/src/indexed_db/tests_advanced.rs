@@ -78,6 +78,25 @@ fn test_tx_delete_then_abort_data_preserved() {
     assert_eq!(record.value, serde_json::json!("original"));
 }
 
+#[test]
+fn test_tx_delete_then_add_same_key_uses_latest_view() {
+    let mut db = IdbDatabase::new("test", 1);
+    db.create_object_store("store", None, false).unwrap();
+    let key = IdbKey::String("k1".into());
+    db.add("store", serde_json::json!("old"), Some(key.clone())).unwrap();
+
+    let mut tx = db.transaction(&["store"], IdbTransactionMode::ReadWrite).unwrap();
+    db.tx_delete(&tx, "store", &key).unwrap();
+    db.tx_add(&tx, "store", serde_json::json!("new"), Some(key.clone()))
+        .unwrap();
+    db.commit_tx(&mut tx).unwrap();
+
+    assert_eq!(
+        db.get("store", &key).map(|record| &record.value),
+        Some(&serde_json::json!("new"))
+    );
+}
+
 /// tx_add 后 commit_tx，数据应存在于 store 中。
 #[test]
 fn test_tx_add_then_commit_data_in_store() {
