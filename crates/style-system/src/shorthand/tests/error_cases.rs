@@ -61,25 +61,17 @@ fn test_gap_whitespace_only() {
 }
 
 #[test]
-/// overflow 单个非关键字值应展开为两个相同的值
-fn test_overflow_unknown_keyword() {
-    let result = expand_one("overflow", "invalid", false, (0, 0, 1));
-    assert_eq!(result.len(), 2);
-    assert_eq!(result[0].0, "overflow-x");
-    assert_eq!(result[0].1, "invalid");
-    assert_eq!(result[1].0, "overflow-y");
-    assert_eq!(result[1].1, "invalid");
+/// overflow 非法值应拒绝整条 shorthand。
+fn test_overflow_invalid_value() {
+    assert!(expand_one("overflow", "invalid", false, (0, 0, 1)).is_empty());
+    assert!(expand_one("overflow", "hidden scroll visible", false, (0, 0, 1)).is_empty());
 }
 
 #[test]
-/// overscroll-behavior 无效值应展开为两个相同的值
+/// overscroll-behavior 非法值应拒绝整条 shorthand。
 fn test_overscroll_behavior_invalid_value() {
-    let result = expand_one("overscroll-behavior", "invalid", false, (0, 0, 1));
-    assert_eq!(result.len(), 2);
-    assert_eq!(result[0].0, "overscroll-behavior-x");
-    assert_eq!(result[0].1, "invalid");
-    assert_eq!(result[1].0, "overscroll-behavior-y");
-    assert_eq!(result[1].1, "invalid");
+    assert!(expand_one("overscroll-behavior", "invalid", false, (0, 0, 1)).is_empty());
+    assert!(expand_one("overscroll-behavior", "auto contain none", false, (0, 0, 1)).is_empty());
 }
 
 #[test]

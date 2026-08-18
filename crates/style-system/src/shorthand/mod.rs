@@ -483,10 +483,18 @@ fn expand_one(property: &str, value: &str, important: bool, specificity: (u32, u
         // 双值：第一个为 overflow-x，第二个为 overflow-y
         "overflow" => {
             let parts: Vec<&str> = value.split_whitespace().collect();
+            if parts.is_empty()
+                || parts.len() > 2
+                || parts
+                    .iter()
+                    .any(|part| zero_css_parser::values::parse_overflow(part).is_none())
+            {
+                return vec![];
+            }
             match parts.len() {
                 1 => vec![mk("overflow-x", parts[0]), mk("overflow-y", parts[0])],
                 2 => vec![mk("overflow-x", parts[0]), mk("overflow-y", parts[1])],
-                _ => vec![mk("overflow-x", value.trim()), mk("overflow-y", value.trim())],
+                _ => unreachable!(),
             }
         }
 
@@ -495,6 +503,14 @@ fn expand_one(property: &str, value: &str, important: bool, specificity: (u32, u
         // 双值：第一个为 x，第二个为 y
         "overscroll-behavior" => {
             let parts: Vec<&str> = value.split_whitespace().collect();
+            if parts.is_empty()
+                || parts.len() > 2
+                || parts
+                    .iter()
+                    .any(|part| zero_css_parser::values::parse_overscroll_behavior(part).is_none())
+            {
+                return vec![];
+            }
             match parts.len() {
                 1 => vec![
                     mk("overscroll-behavior-x", parts[0]),
@@ -504,10 +520,7 @@ fn expand_one(property: &str, value: &str, important: bool, specificity: (u32, u
                     mk("overscroll-behavior-x", parts[0]),
                     mk("overscroll-behavior-y", parts[1]),
                 ],
-                _ => vec![
-                    mk("overscroll-behavior-x", value.trim()),
-                    mk("overscroll-behavior-y", value.trim()),
-                ],
+                _ => unreachable!(),
             }
         }
 

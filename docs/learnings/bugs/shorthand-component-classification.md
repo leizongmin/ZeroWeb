@@ -14,6 +14,8 @@ The same silent-defaulting pattern also affected `outline`, `column-rule`, and `
 
 For repeated components that are allowed by grammar, such as multiple `text-decoration-line` keywords, the repeated set still needs grammar-specific validation. `none` is mutually exclusive with other line keywords, and each line keyword can appear at most once.
 
+Some shorthands do not need component classification but still need value validation after token counting. `overflow` and `overscroll-behavior` accepted arbitrary one-token values and collapsed three-or-more tokens back into one invalid longhand value, instead of rejecting the shorthand before cascade.
+
 ## Root Cause
 
 The shorthand layer used heuristic component classifiers and treated unrecognized tokens as absent optional components. That is wrong for CSS shorthands such as `border`, where every token must match one of the allowed component grammars. A shared parser can also be broader than the property grammar that consumes it: general length parsing may accept `auto`, intrinsic sizing keywords, or percentages that `border-width` must reject.
@@ -28,5 +30,6 @@ Use the shared value parsers for token boundaries, then filter by the specific p
 + reject duplicate components unless the spec grammar explicitly allows repetition, such as multiple `text-decoration-line` keywords.
 + when grammar allows repetition, validate the repeated group itself instead of accepting arbitrary token lists.
 + preserve explicit grammar exceptions while adding duplicate guards, such as `list-style: none square url(...)`, where `none` supplies default type/image values that explicit type/image tokens may override.
++ for simple 1-2 value shorthands, validate each token against the corresponding longhand parser and reject overlong token lists.
 
 Keep adjacent shorthand users covered with regression tests when a shared classifier changes. `columns: auto 100px` is a good guard because it depends on `auto` not being mistaken for a length.
