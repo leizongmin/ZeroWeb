@@ -340,7 +340,7 @@ pub(crate) fn compute_cell_intrinsic_width(
                 LengthValue::Rem(v) => *v as f32,
                 _ => 16.0,
             };
-            let ahem = s.font_family.contains(&"Ahem".to_string());
+            let ahem = s.font_family.iter().any(|family| family == "Ahem");
             (fs, ahem)
         })
         .unwrap_or((16.0, false));

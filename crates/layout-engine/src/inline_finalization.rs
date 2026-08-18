@@ -335,7 +335,7 @@ pub(crate) fn store_inline_layout_results(
                         let is_ahem = box_node.node_id.is_some_and(|id| {
                             styles
                                 .get(&id)
-                                .is_some_and(|s| s.font_family.contains(&"Ahem".to_string()))
+                                .is_some_and(|s| s.font_family.iter().any(|family| family == "Ahem"))
                         });
                         crate::types::InlineLayoutFragment {
                             x: frag.x,
@@ -1200,7 +1200,7 @@ pub(crate) fn measure_text_content(
     // 尺寸，测量返回 0。（子元素已在 build_subtree 跳过，不入 taffy 树，故不经此回调。）
     // 文本节点（匿名 flex/grid item）的 dom_id 在 styles 中无条目 → 不受影响。
     // kill-switch `ZW_CONTENT_VISIBILITY`，default-on。
-    if std::env::var("ZW_CONTENT_VISIBILITY").as_deref() != Ok("0")
+    if crate::inline::content_visibility_enabled()
         && styles
             .get(&dom_id)
             .is_some_and(|s| s.content_visibility_hidden_effective())
@@ -1229,7 +1229,7 @@ pub(crate) fn measure_text_content(
             })
             .unwrap_or(false);
         let fallback_font_ids;
-        let ordered_font_ids: &[u32] = if std::env::var("ZW_SHAPED_FALLBACK").as_deref() == Ok("1") {
+        let ordered_font_ids: &[u32] = if crate::inline::shaped_fallback_enabled() {
             &[]
         } else if let Some(ids) = inline_fonts
             .font_overrides

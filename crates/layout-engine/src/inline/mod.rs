@@ -14,6 +14,10 @@ pub(crate) fn shaped_fallback_enabled() -> bool {
     runtime_flags::shaped_fallback()
 }
 
+pub(crate) fn content_visibility_enabled() -> bool {
+    runtime_flags::content_visibility()
+}
+
 // R830：行内布局核心数据类型抽出（2000 行规则 + Phase A IFC 统一 Phase 5 准备），
 // 通过 glob 再导出保持 `crate::inline::TextRun` 等 API 路径不变（纯移动，零行为变化）。
 mod inline_types;

@@ -70,6 +70,11 @@ pub(super) fn font_face_size_adjust_normal_line() -> bool {
     residual_selected(*VALUE, || default_on("ZW_FONT_FACE_SIZE_ADJUST_NORMAL_LINE"))
 }
 
+pub(super) fn content_visibility() -> bool {
+    static VALUE: LazyLock<bool> = LazyLock::new(|| default_on("ZW_CONTENT_VISIBILITY"));
+    residual_selected(*VALUE, || default_on("ZW_CONTENT_VISIBILITY"))
+}
+
 pub(super) fn shaped_advance_trace() -> bool {
     static VALUE: LazyLock<bool> = LazyLock::new(|| opt_in("ZW_SHAPED_ADVANCE_TRACE"));
     residual_selected(*VALUE, || opt_in("ZW_SHAPED_ADVANCE_TRACE"))
