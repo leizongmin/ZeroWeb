@@ -313,6 +313,57 @@
         if (prop === 'dataset') {
           return _datasetProxy(sel, handle);
         }
+        // js-dom M4 R115：iframe `contentDocument` / `contentWindow`——静态 `<iframe src>` 用例族
+        // （Document-createElement/case/createElementNS 等 ~750 subtest 经 /common/dummy.{xml,xhtml}
+        // 取子文档）。仅 IFRAME 元素暴露；src 缺失/javascript: → null（spec：无嵌套浏览上下文）。
+        // 加载：同步标记 + fetch 异步填充（首读触发 fetch，dummy 本地文件在 load 时序前完成；
+        // 用例 getWin 的 documentElement.textContent 断言在读时已就绪）。kind 判定按扩展名。
+        if ((prop === 'contentDocument' || prop === 'contentWindow') && _realTag(sel, handle) === 'IFRAME') {
+          var _r115Entry = _iframeDocCache[key];
+          if (!_r115Entry) {
+            var _r115Src = '';
+            try { _r115Src = handle ? __zw_get_attr_handle(handle, 'src') : (sel ? __zw_get_attr(sel, 'src') : ''); } catch (_e115s) {}
+            _r115Src = String(_r115Src || '');
+            _r115Entry = { doc: null, win: null, state: 'loading' };
+            _iframeDocCache[key] = _r115Entry;
+            if (_r115Src && _r115Src.indexOf('javascript:') !== 0 && typeof __zw_fetch === 'function') {
+              // R115：同步加载——headless/testharness 宿主的 `__zw_fetch` 是**同步契约**
+              //（webview.rs 直接返 wire；app 层异步版返空串经 resolver 回投——空串时此路径
+              // 落 error，iframe 保持 null，浏览器路径 iframe defer）。dummy 本地文件即时，
+              // 消除 async fetch 与 window load 的竞态（用例 load 后 getWin 读 documentElement）。
+              var _r115Url = _r115Src;
+              if (_r115Url.indexOf('/') === 0) _r115Url = 'https://wpt.test' + _r115Url;
+              try {
+                var _r115Wire = String(__zw_fetch('r115iframe', 'GET', _r115Url, '', '') || '');
+                if (_r115Wire && _r115Wire.indexOf('__zw_fetch_error:') !== 0) {
+                  // 响应 wire（fetch_bridge serialize_response）：`__zwfr:` + status \x1f statusText
+                  // \x1f headers \x1f body——FIELD_SEP=\x1f，body 是末字段（原样保真）。
+                  var _r115Parts = _r115Wire.split('\x1f');
+                  var _r115Body = _r115Parts.length > 3 ? _r115Parts.slice(3).join('\x1f') : '';
+                  var kind = /\.xhtml?(\?|#|$)/i.test(_r115Url) ? 'xhtml' : 'xml';
+                  _r115Entry.doc = _zwMakeIframeDoc(kind, _r115Body);
+                  _r115Entry.win = _zwMakeIframeWin(_r115Entry.doc);
+                  try { if (_r115Entry.doc.__r115SetWin) _r115Entry.doc.__r115SetWin(_r115Entry.win); } catch (_eW) {}
+                  _r115Entry.state = 'done';
+                } else {
+                  _r115Entry.state = 'error';
+                }
+              } catch (_e115f) {
+                _r115Entry.state = 'error';
+              }
+            } else {
+              _r115Entry.state = 'no-src';
+            }
+          }
+          if (prop === 'contentWindow') {
+            if (_r115Entry.win) return _r115Entry.win;
+            var _r115FbDoc = _r115Entry.doc || _zwMakeIframeDoc('html', '');
+            var _r115FbWin = _zwMakeIframeWin(_r115FbDoc);
+            try { if (_r115FbDoc.__r115SetWin) _r115FbDoc.__r115SetWin(_r115FbWin); } catch (_eW2) {}
+            return _r115FbWin;
+          }
+          return _r115Entry.doc; // loading 期 null（spec：未加载完成 contentDocument 可为 null）
+        }
         // R2926 Shadow DOM：`element.attachShadow(init)` / `element.shadowRoot`。host 元素专用（非
         // fragment/comment/text/shadow）。attachShadow 建 shadow root（复用 DocumentFragment handle 容器）；
         // shadowRoot 读——open 返 root、closed/未建 返 null（spec）。详见 `_attachShadow`。

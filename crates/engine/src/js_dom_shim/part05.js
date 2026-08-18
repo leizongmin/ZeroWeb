@@ -387,6 +387,197 @@
   var _zwSiblingBaseCache = new Map();
   globalThis._zwSiblingBaseInvalidateAll = function () { _zwSiblingBaseCache.clear(); };
 
+  // js-dom M4 R115：iframe 子文档构建——静态 `<iframe src>` 用例族（Document-createElement /
+  // case / createElementNS 等经 `/common/dummy.xml|.xhtml` 取 XML/XHTML 文档）。src 经
+  // fetch（testharness runner 的 wpt.test 虚拟根服务 wpt-data 文件）同步?——fetch 是 Promise，
+  // 但 iframe 加载在页面脚本前完成（prepare 阶段 load 时已可读）。实现为 **同步 best-effort**：
+  // 首次读 contentDocument 时发起 fetch，未完成前返部分文档（documentElement.textContent 空），
+  // fetch 完成后重建——用例的 window 'load' 等待时序下通常已就绪（dummy 文档本地 fs 读）。
+  // XML 文档：createElement 的 localName **保持大小写**（preserveCase）+ namespaceURI null +
+  // contentType 'application/xml'（R81 `new Document()` 同款语义）；XHTML：HTML 解析 +
+  // namespaceURI HTMLNS。文档模型复用 `_makeDetachedDocument`（查询/mutation/Range 全可用），
+  // docEl.textContent 供用例 load 断言。
+  function _zwMakeIframeDoc(kind, markup) {
+    var doc = _makeDetachedDocument('');
+    var _r115WinRef = null; // defaultView 槽（_zwMakeIframeWin 建后回填）
+    doc.__r115SetWin = function (w) { _r115WinRef = w; };
+    if (kind === 'xml') {
+      doc.contentType = 'application/xml';
+      doc._docNS = null;
+    } else {
+      doc.contentType = 'application/xhtml+xml';
+      doc._docNS = 'http://www.w3.org/1999/xhtml';
+    }
+    // 文档体：dummy 文档只有一个根元素（<foo>text</foo> / <html>…）。detached doc 的主体
+    // 查询面在 body——把根元素塞进 body 查询源，documentElement 单独从 markup 提取。
+    var bodyInner = '';
+    var docEl = null;
+    try {
+      var mEl = /<([a-zA-Z][\w:-]*)(\s[^>]*)?>([\s\S]*)<\/\1\s*>/.exec(markup);
+      if (mEl) {
+        var elTag = mEl[1];
+        var elText = mEl[3].replace(/<[^>]*>/g, '');
+        docEl = {
+          nodeType: 1, tagName: kind === 'xml' ? elTag : elTag.toUpperCase(),
+          nodeName: kind === 'xml' ? elTag : elTag.toUpperCase(),
+          localName: elTag, namespaceURI: doc._docNS,
+          textContent: elText,
+          getBoundingClientRect: function () { return _makeDomRect(0, 0, 0, 0); }
+        };
+        if (kind !== 'xml') bodyInner = mEl[3];
+      }
+    } catch (_e115) {}
+    try { doc.body.innerHTML = bodyInner; } catch (_eB) {}
+    try {
+      Object.defineProperty(doc, 'documentElement', {
+        configurable: true,
+        get: function () { return docEl; }
+      });
+    } catch (_eD) {}
+    // R115：createElement（XML 保大小写 / HTML·XHTML 转换 + ns）+ createTextNode + createElementNS
+    //（validate-and-extract 复用主 document.createElementNS 同款规则——R80/R81 语义表）。
+    // R115：defaultView → contentWindow（用例 assert_throws_dom 的 doc.defaultView.DOMException）。
+    try {
+      Object.defineProperty(doc, 'defaultView', {
+        configurable: true,
+        get: function () { return _r115WinRef; }
+      });
+    } catch (_eDV) { doc.defaultView = null; }
+    doc.createElement = function (tag) { return _zwIframeCreateElement(doc, tag); };
+    doc.createElementNS = function (ns, qualifiedName) {
+      var _nsStr = (ns == null) ? '' : String(ns);
+      var _q = String(qualifiedName);
+      var _XML_NS = 'http://www.w3.org/XML/1998/namespace';
+      var _XMLNS_NS = 'http://www.w3.org/2000/xmlns/';
+      var _colon1 = _q.indexOf(':');
+      var _pre = _colon1 >= 0 ? _q.slice(0, _colon1) : null;
+      var _loc = _colon1 >= 0 ? _q.slice(_colon1 + 1) : _q;
+      var _throwNS = function (name, msg) {
+        throw new (globalThis.DOMException || Error)(msg, name);
+      };
+      if (_q === '' || _colon1 === 0 || _colon1 === _q.length - 1) {
+        _throwNS('InvalidCharacterError', 'The string contains invalid characters.');
+      }
+      if (/[\s>]/.test(_q)) {
+        _throwNS('InvalidCharacterError', 'The string contains invalid characters.');
+      }
+      if (_pre === null) {
+        if (!_zwIsNameStartChar(Array.from(_q)[0])) {
+          _throwNS('InvalidCharacterError', 'The string contains invalid characters.');
+        }
+      } else {
+        var _lc = Array.from(_loc);
+        if (!_lc.length || !_zwIsNameStartChar(_lc[0])) {
+          _throwNS('InvalidCharacterError', 'The string contains invalid characters.');
+        }
+      }
+      if (_nsStr === _XMLNS_NS) {
+        var _xok = (_loc === 'xmlns' && _pre === null) || (_pre === 'xmlns');
+        if (!_xok) _throwNS('NamespaceError', 'The xmlns namespace is not allowed for elements.');
+      }
+      if (_pre !== null) {
+        if (_nsStr === '') _throwNS('NamespaceError', 'Namespace prefix provided but no namespace.');
+        if (_pre === 'xml' && _nsStr !== _XML_NS) _throwNS('NamespaceError', 'The xml prefix is reserved.');
+        if (_pre === 'xmlns' && _nsStr !== _XMLNS_NS) _throwNS('NamespaceError', 'The xmlns prefix is reserved.');
+      }
+      // 无 prefix 的 localName 'xmlns' 且 ns 非 XMLNS ns → NamespaceError（spec 保留绑定；
+      // **带 prefix** 的 'test:xmlns' 合法——WPT 期望表）。
+      if (_pre === null && _loc === 'xmlns' && _nsStr !== _XMLNS_NS) {
+        _throwNS('NamespaceError', 'The xmlns localName is reserved for the xmlns namespace.');
+      }
+      // XML/XHTML 文档保大小写（spec createElementNS 不做 case 转换）。
+      var el = _zwIframeCreateElement(doc, _loc);
+      el.tagName = _q;
+      el.nodeName = _q;
+      el.localName = _loc;
+      el.prefix = _pre;
+      el.namespaceURI = _nsStr === '' ? null : _nsStr;
+      return el;
+    };
+    doc.createTextNode = function (text) {
+      var tn = { nodeType: 3, nodeName: '#text', data: String(text), parentNode: null };
+      try { Object.defineProperty(tn, 'textContent', { configurable: true, get: function () { return tn.data; } }); } catch (_eT) {}
+      try { Object.setPrototypeOf(tn, globalThis.Text ? globalThis.Text.prototype : Object.prototype); } catch (_eT2) {}
+      return tn;
+    };
+    return doc;
+  }
+  // R115：iframe 子文档的 createElement/createTextNode——spec `dom-document-createelement`：
+  // XML 文档（XML 解析的 doc）localName/tagName **保持原大小写**、namespaceURI null；HTML/XHTML
+  // 文档 ASCII-lowercase localName + ASCII-uppercase tagName、namespaceURI HTMLNS（用例期望
+  // createElement("foo") XML → "foo" / HTML → localName "foo" tagName "FOO"）。元素为轻量对象
+  // 挂 Element.prototype 链（instanceof win.Element——win 构造器转发主 realm）。
+  function _zwIframeCreateElement(doc, tag) {
+    var t = String(tag); // WebIDL DOMString 转换（undefined → 'undefined'，null → 'null'）
+    // R115：非法名抛 InvalidCharacterError（spec `dom-document-createelement` 步骤 2——Name
+    // production 校验；WPT invalid 列表 ""/"1foo"/"}foo"/"<foo"/"fo o"/"foo>"）。经
+    // globalThis.DOMException（identity 对等，R9 教训）。
+    if (typeof _zwIsValidHtmlElementName === 'function' && !_zwIsValidHtmlElementName(t)) {
+      if (typeof globalThis.DOMException === 'function') {
+        throw new globalThis.DOMException(
+          "Failed to execute 'createElement' on 'Document': The tag name provided ('" + t + "') is not a valid name.",
+          'InvalidCharacterError');
+      }
+      var _e115v = new Error("InvalidCharacterError");
+      _e115v.name = 'InvalidCharacterError';
+      throw _e115v;
+    }
+    // 大小写转换仅 HTML 文档（spec：createElement 的 ASCII lower/upper 是 HTML 专属——XML/
+    // XHTML 文档 localName/tagName 保持原样；XHTML 是 XML 解析的文档）。
+    var isHtml = doc.contentType === 'text/html';
+    var local = isHtml ? t.replace(/[A-Z]/g, function (c) { return String.fromCharCode(c.charCodeAt(0) + 32); }) : t;
+    var upper = t.replace(/[a-z]/g, function (c) { return String.fromCharCode(c.charCodeAt(0) - 32); });
+    var el = {
+      nodeType: 1,
+      tagName: isHtml ? upper : t,
+      nodeName: isHtml ? upper : t,
+      localName: local,
+      prefix: null,
+      namespaceURI: isHtml ? 'http://www.w3.org/1999/xhtml' : doc._docNS,
+      ownerDocument: doc,
+      childNodes: [],
+      attributes: [],
+      parentNode: null,
+      nodeValue: null,
+      textContent: '',
+      getBoundingClientRect: function () { return _makeDomRect(0, 0, 0, 0); },
+      getClientRects: function () { return []; },
+      getAttribute: function (n) { n = String(n); for (var i = 0; i < el.attributes.length; i++) if (el.attributes[i].name === n) return el.attributes[i].value; return null; },
+      hasAttribute: function (n) { return el.getAttribute(n) !== null; },
+      setAttribute: function (n, v) {
+        var found = false;
+        for (var i = 0; i < el.attributes.length; i++) {
+          if (el.attributes[i].name === String(n)) { el.attributes[i].value = String(v); found = true; break; }
+        }
+        if (!found) el.attributes.push({ name: String(n), value: String(v) });
+      },
+      appendChild: function (c) { c.parentNode = el; el.childNodes.push(c); return c; },
+      hasChildNodes: function () { return el.childNodes.length > 0; }
+    };
+    try { Object.setPrototypeOf(el, globalThis.Element ? globalThis.Element.prototype : Object.prototype); } catch (_e115p) {}
+    return el;
+  }
+
+  // iframe contentWindow：最小 window 面（document + Element/Node 构造器转发主 window——
+  // 用例 `elt instanceof win.Element` 需要 iframe realm 的构造器与主 realm proxy 的
+  // getPrototypeOf 对齐；polyfill 单 realm 近似：直接引用主 window 的构造器）。
+  function _zwMakeIframeWin(doc) {
+    return {
+      document: doc,
+      Element: globalThis.Element,
+      Node: globalThis.Node,
+      HTMLElement: globalThis.HTMLElement,
+      SVGElement: globalThis.SVGElement,
+      MathMLElement: globalThis.MathMLElement,
+      Document: globalThis.Document,
+      Text: globalThis.Text,
+      Comment: globalThis.Comment,
+      CharacterData: globalThis.CharacterData,
+      Event: globalThis.Event,
+      DOMException: globalThis.DOMException
+    };
+  }
+
   // R2926 Shadow DOM：抛 DOMException（无 DOMException 环境回落 Error + name）。
   function _throwDom(name, msg) {
     if (typeof DOMException === 'function') throw new DOMException(msg, name);

@@ -436,6 +436,10 @@
   var _shadowRoots = {};
   var _shadowHandles = {};
   var _shadowHandleMeta = {};
+  // js-dom M4 R115：iframe contentDocument/contentWindow 缓存（iframe key → { promise, doc,
+  // win }）——静态 `<iframe src="/common/dummy.xml|.xhtml">` 用例族（Document-createElement /
+  // case / createElementNS 等 ~750 subtest）经此取子文档。导航清空（页级）。
+  var _iframeDocCache = {};
   // R2927 handle-children registry：容器 handle（shadow root / fragment）→ 其子节点 proxy 列表。
   // 这些容器无 selector（handle-only），既有 childNodes/children 经 `__zw_child_nodes(sel)` 读（须 sel）
   // → 恒返 []。本 registry 在 appendChild（容器父）时同步记录子节点，供 childNodes/firstChild/
