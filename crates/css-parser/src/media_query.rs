@@ -262,40 +262,20 @@ fn parse_single_media_query(input: &str) -> Option<MediaQuery> {
     // 尝试提取媒体类型（CSS 关键字不区分大小写）
     let after_prefix = remaining; // not/only 剥离后、media-type 提取前的剩余（R2426 未知 type 检测）
     let lower_remaining = remaining.to_ascii_lowercase();
-    if lower_remaining.starts_with("screen") {
-        let after = remaining[6..].trim_start();
-        if after.is_empty() || after.to_ascii_lowercase().starts_with("and") {
+    if let Some(after) = strip_media_type_prefix(remaining, &lower_remaining, "screen") {
+        if after.is_empty() || strip_and_prefix(after).is_some() {
             media_type = Some(MediaType::Screen);
-            let and_stripped = after
-                .char_indices()
-                .take_while(|(_, c)| c.is_ascii_alphabetic())
-                .map(|(i, _)| i)
-                .last()
-                .map(|i| i + 1)
-                .unwrap_or(3);
-            remaining = after.get(and_stripped..).unwrap_or(after).trim_start();
+            remaining = strip_and_prefix(after).unwrap_or(after);
         }
-    } else if lower_remaining.starts_with("print") {
-        let after = remaining[5..].trim_start();
-        if after.is_empty() || after.to_ascii_lowercase().starts_with("and") {
+    } else if let Some(after) = strip_media_type_prefix(remaining, &lower_remaining, "print") {
+        if after.is_empty() || strip_and_prefix(after).is_some() {
             media_type = Some(MediaType::Print);
-            remaining = after
-                .strip_prefix("and")
-                .or_else(|| after.strip_prefix("And"))
-                .or_else(|| after.strip_prefix("AND"))
-                .unwrap_or(after)
-                .trim_start();
+            remaining = strip_and_prefix(after).unwrap_or(after);
         }
-    } else if lower_remaining.starts_with("all") {
-        let after = remaining[3..].trim_start();
-        if after.is_empty() || after.to_ascii_lowercase().starts_with("and") {
+    } else if let Some(after) = strip_media_type_prefix(remaining, &lower_remaining, "all") {
+        if after.is_empty() || strip_and_prefix(after).is_some() {
             media_type = Some(MediaType::All);
-            remaining = after
-                .strip_prefix("and")
-                .or_else(|| after.strip_prefix("And"))
-                .or_else(|| after.strip_prefix("AND"))
-                .unwrap_or(after)
-                .trim_start();
+            remaining = strip_and_prefix(after).unwrap_or(after);
         }
     }
 
@@ -331,6 +311,23 @@ fn parse_single_media_query(input: &str) -> Option<MediaQuery> {
         negated,
         conditions,
     })
+}
+
+fn strip_media_type_prefix<'a>(remaining: &'a str, lower_remaining: &str, media_type: &str) -> Option<&'a str> {
+    if !lower_remaining.starts_with(media_type) {
+        return None;
+    }
+    let after = &remaining[media_type.len()..];
+    (after.is_empty() || after.starts_with(char::is_whitespace)).then(|| after.trim_start())
+}
+
+fn strip_and_prefix(input: &str) -> Option<&str> {
+    let lower = input.to_ascii_lowercase();
+    if !lower.starts_with("and") {
+        return None;
+    }
+    let after = &input[3..];
+    (after.starts_with(char::is_whitespace) || after.starts_with('(')).then(|| after.trim_start())
 }
 
 /// 评估媒体查询在给定上下文中是否为真。
@@ -740,6 +737,18 @@ mod tests {
         let q = first_query("screen and (min-width: 600px)");
         assert_eq!(q.media_type, Some(MediaType::Screen));
         assert_eq!(q.conditions.len(), 1);
+    }
+
+    #[test]
+    fn test_media_type_and_keyword_require_token_boundary() {
+        assert!(parse_media_query("screenand (min-width: 600px)").is_none());
+        assert!(parse_media_query("screen andfoo (min-width: 600px)").is_none());
+        assert!(parse_media_query("printand (min-width: 600px)").is_none());
+        assert!(parse_media_query("alland (min-width: 600px)").is_none());
+
+        let q = first_query("screen and(min-width: 600px)");
+        assert_eq!(q.media_type, Some(MediaType::Screen));
+        assert_eq!(q.conditions, vec![MediaCondition::MinWidth(600.0)]);
     }
 
     #[test]
