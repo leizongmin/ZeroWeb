@@ -34,6 +34,49 @@ fn parse_time_list(value: &str) -> Option<Vec<f64>> {
     Some(out)
 }
 
+// https://drafts.csswg.org/css-transitions-1/#transition-property-property
+fn parse_transition_property_list(value: &str) -> Option<Vec<String>> {
+    let mut out = Vec::new();
+    for part in value.split(',') {
+        let name = part.trim();
+        if name.is_empty() || !is_transition_property_ident(name) {
+            return None;
+        }
+        out.push(name.to_string());
+    }
+    Some(out)
+}
+
+fn is_transition_property_ident(token: &str) -> bool {
+    token.eq_ignore_ascii_case("all") || token.eq_ignore_ascii_case("none") || is_css_ident(token)
+}
+
+fn is_css_ident(value: &str) -> bool {
+    let mut chars = value.chars();
+    let Some(first) = chars.next() else {
+        return false;
+    };
+    if first == '-' {
+        let Some(second) = chars.next() else {
+            return false;
+        };
+        if second != '-' && !is_css_name_start(second) {
+            return false;
+        }
+    } else if !is_css_name_start(first) {
+        return false;
+    }
+    chars.all(is_css_name_char)
+}
+
+fn is_css_name_start(c: char) -> bool {
+    c == '_' || c.is_ascii_alphabetic() || !c.is_ascii()
+}
+
+fn is_css_name_char(c: char) -> bool {
+    is_css_name_start(c) || c.is_ascii_digit() || c == '-'
+}
+
 // https://drafts.csswg.org/css-animations-1/#animation-direction
 fn parse_animation_direction_list(value: &str) -> Option<Vec<zero_css_parser::values::AnimationDirectionValue>> {
     let mut out = Vec::new();
@@ -201,10 +244,10 @@ pub fn apply_advanced_property_value(style: &mut ComputedStyle, property: &str, 
         },
         // ── Transitions ──
         "transition-property" => {
-            // 保留 "none"（不滤空）：transition 引擎已在 transition.rs 跳过 "none"/空名，
-            // 故保留使 getComputedStyle 序列化能区分 `transition: none`（→ ["none"]→"none"）
-            // 与未设置（→ []→"all"），对齐 Chromium（R2756 修旧 filter 致 none 被吞→"all" diverge）。
-            style.transition_property = value.split(',').map(|s| s.trim().to_string()).collect();
+            let Some(properties) = parse_transition_property_list(value) else {
+                return false;
+            };
+            style.transition_property = properties;
             return true;
         }
         "transition-duration" => {

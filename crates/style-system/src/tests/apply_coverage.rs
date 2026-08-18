@@ -540,6 +540,25 @@ fn test_apply_transition_properties() {
     assert_eq!(s.transition_delay, vec![-1.0]);
 }
 
+#[test]
+fn test_apply_transition_property_invalid_list_keeps_old_values() {
+    let mut style = ComputedStyle::default();
+    style.transition_property = vec!["opacity".to_string()];
+
+    assert!(!apply_property_value(&mut style, "transition-property", "-1s"));
+    assert_eq!(style.transition_property, vec!["opacity".to_string()]);
+
+    assert!(!apply_property_value(
+        &mut style,
+        "transition-property",
+        "opacity, \"quoted\""
+    ));
+    assert_eq!(style.transition_property, vec!["opacity".to_string()]);
+
+    assert!(!apply_property_value(&mut style, "transition-property", "opacity,"));
+    assert_eq!(style.transition_property, vec!["opacity".to_string()]);
+}
+
 // === 逻辑属性 ===
 
 #[test]

@@ -77,6 +77,8 @@ Logical border axis shorthands exposed the axis variant: 1-2 start/end mapping m
 
 `animation-name` exposed the longhand/parser-divergence variant: fixing shorthand parsing is not enough when the corresponding longhand apply path directly stores raw comma items. Longhand list properties must reuse the same item grammar as their parser, reject empty comma items, and commit the list only after every item validates.
 
+`transition-property` exposed the sibling longhand variant of the same issue: when a shorthand helper has learned a target grammar, audit the longhand apply path too. Raw comma-splitting of custom-ident lists accepts quoted strings, time-shaped tokens, and empty items unless the longhand shares the same item validator.
+
 ## Root Cause
 
 The shorthand layer used heuristic component classifiers and treated unrecognized tokens as absent optional components. That is wrong for CSS shorthands such as `border`, where every token must match one of the allowed component grammars. A shared parser can also be broader than the property grammar that consumes it: general length parsing may accept `auto`, intrinsic sizing keywords, or percentages that `border-width` must reject.
