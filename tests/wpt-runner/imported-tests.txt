@@ -113,3 +113,4 @@ css/css-fonts/font-size-adjust-011.html css/css-fonts/font-size-adjust-009-ref.h
 html/semantics/forms/constraints/* 2026-08-16 R57-FV M1 constraints 约束校验全套（fetch-constraints-subset.sh 45 用例）
 html/semantics/forms/the-form-element/form-requestsubmit.html 2026-08-17 R57-FV M3 interactive validation/submitter 校验/重入守卫/click 提交
 html/semantics/forms/the-form-element/form-checkvalidity.html 2026-08-17 R57-FV M3 form.checkValidity 聚合
+dom/events/passive-by-default.html 2026-08-18 R105 passive-by-default（spec default-passive-value 四类 target × touch/wheel 族；57F→100P/0F）

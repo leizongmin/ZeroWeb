@@ -1826,3 +1826,69 @@ fn test_live_query_doc_read_path_r102() {
 
     crate::js_dom_bridge::publish_live_query_doc(None);
 }
+
+// ── js-dom M4 R105：passive-by-default（spec HTML default-passive-value）──
+//
+// window/document/documentElement/body 四类 target 的 touchstart/touchmove/wheel/
+// mousewheel listener 未显式 passive 时默认 passive（preventDefault no-op）；
+// {passive:false} 显式关闭；非 passive-by-default 元素（div）与非默认事件（touchend）
+// 默认非 passive。WPT dom/events/passive-by-default.html 驱动（100P/0F）。
+#[test]
+fn test_passive_by_default_r105() {
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+
+    let mut sandbox = V8Sandbox::with_config(zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    })
+    .unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><div id=\"d\"></div></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: Arc<Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        Arc::new(Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry);
+
+    let out = sandbox
+        .execute(
+            r#"(function(){
+  var results = [];
+  function probe(targetName, type, opts) {
+    var t = targetName === 'window' ? window : (targetName === 'document' ? document
+      : (targetName === 'html' ? document.documentElement : (targetName === 'body' ? document.body
+      : document.getElementById('d'))));
+    var prevented = null;
+    var h = function (e) { e.preventDefault(); prevented = e.defaultPrevented; };
+    t.addEventListener(type, h, opts);
+    t.dispatchEvent(new Event(type, { cancelable: true }));
+    t.removeEventListener(type, h, opts);
+    results.push(targetName + ':' + type + ':' + (opts === undefined ? 'omit' : JSON.stringify(opts)) + '=' + String(prevented));
+  }
+  probe('window', 'touchstart');           // 默认 passive → false
+  probe('window', 'touchstart', { passive: false }); // 显式非 → true
+  probe('window', 'wheel');                 // 默认 passive → false
+  probe('document', 'touchmove');           // 默认 passive → false
+  probe('html', 'mousewheel');              // documentElement 默认 passive → false
+  probe('body', 'touchstart');              // body 默认 passive → false
+  probe('div', 'touchstart');               // 非 pd target → true
+  probe('window', 'touchend');              // 非默认类型 → true
+  probe('window', 'touchstart', { passive: true });  // 显式 passive → false
+  probe('window', 'touchstart', { passive: undefined }); // undefined = 未指定 → false
+  return results.join('|');
+})()"#,
+        )
+        .unwrap()
+        .value;
+    assert_eq!(
+        out,
+        "window:touchstart:omit=false|window:touchstart:{\"passive\":false}=true|window:wheel:omit=false\
+         |document:touchmove:omit=false|html:mousewheel:omit=false|body:touchstart:omit=false\
+         |div:touchstart:omit=true|window:touchend:omit=true|window:touchstart:{\"passive\":true}=false\
+         |window:touchstart:{}=false",
+        "R105 passive-by-default 四类 target × 显式/缺省矩阵"
+    );
+}

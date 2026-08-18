@@ -50,13 +50,35 @@
     return !!(opts && opts.once);
   }
 
+  // js-dom M4 R105：`opts.passive` 提取 + **passive-by-default**（spec HTML
+  // `default-passive-value`：touchstart/touchmove/wheel（含 legacy mousewheel）的 listener
+  // 在 window/document/body 三类 target 上注册时，未显式指定 `passive` 则默认 true——
+  // passive listener 内 preventDefault() 是 no-op（canceled flag 不变，控制台告警语义
+  // 略）。WPT dom/events/passive-by-default.html。返回 null = 未显式指定（调用方按
+  // target+type 决定默认值）。
+  function _optPassive(opts) {
+    if (!opts || typeof opts !== 'object') return null;
+    return opts.passive === undefined ? null : !!opts.passive;
+  }
+  // R105：事件类型是否 passive-by-default（spec 只对 window/document/body target 生效，
+  // 调用方传 targetKind 判定）。
+  var _ZW_PASSIVE_DEFAULT_TYPES = { touchstart: 1, touchmove: 1, wheel: 1, mousewheel: 1 };
+  function _listenerPassiveDefault(type, opts, targetKind) {
+    var p = _optPassive(opts);
+    if (p !== null) return p;
+    // 未显式指定：window/document/body target 的 touch/wheel 族默认 passive（spec）。
+    return !!(targetKind && _ZW_PASSIVE_DEFAULT_TYPES[String(type)]);
+  }
+
   function _globalAddEventListener(type, fn, opts) {
     var key = _elKey('html', null);
     var t = String(type);
     if (!_listenerStore[key]) _listenerStore[key] = {};
     if (!_listenerStore[key][t]) _listenerStore[key][t] = [];
     // R40：window 注册打 tgt='win' 标（document/window/html 三合一 key 内槽位区分）。
-    _listenerStore[key][t].push({ fn: fn, capture: _optCapture(opts), once: _optOnce(opts), tgt: 'win' });
+    // R105：passive 字段——window target 的 touch/wheel 族默认 passive（spec default-passive-value）。
+    _listenerStore[key][t].push({ fn: fn, capture: _optCapture(opts), once: _optOnce(opts), tgt: 'win',
+      passive: _listenerPassiveDefault(t, opts, true) });
     if (t === 'pageshow') _maybeFirePageShow(); // R2931：首次 pageshow listener → _defer 派发一次
   }
 
@@ -1571,8 +1593,17 @@
         callable = fn && fn.handleEvent;
       }
       if (typeof callable === 'function') {
-        // 函数 listener: this=currentTarget；对象 listener: this=对象本身（spec EventListener invoke）。
-        callable.call(typeof fn !== 'function' ? fn : ctx, event);
+        // js-dom M4 R105：passive listener 内 preventDefault 是 no-op（spec HTML
+        // event-listener-invoke「if listener's passive is true, set event's in
+        // passive listener flag」——preventDefault 检查该 flag 不设 canceled）。
+        // 用计数器包裹（支持嵌套派发）：fire 期间置位，正常路径 finally 复位。
+        if (entry.passive) event._zwInPassive = (event._zwInPassive || 0) + 1;
+        try {
+          // 函数 listener: this=currentTarget；对象 listener: this=对象本身（spec EventListener invoke）。
+          callable.call(typeof fn !== 'function' ? fn : ctx, event);
+        } finally {
+          if (entry.passive) event._zwInPassive = Math.max(0, (event._zwInPassive || 1) - 1);
+        }
       }
       if (entry.once) {
         if (!firedOnce) firedOnce = [];
@@ -1900,7 +1931,12 @@
       composedPath: function() {
         return this._composedPath ? this._composedPath.slice() : [];
       },
-      preventDefault: function() { if (this.cancelable) { this.defaultPrevented = true; this._defaultPrevented = true; } },
+      preventDefault: function() {
+        // R105：in passive listener flag 期间 no-op（spec：passive listener 的 preventDefault
+        // 不设 canceled flag）。`_zwInPassive` 由 _dispatchToListeners 的 fire 包裹维护。
+        if (this._zwInPassive) return;
+        if (this.cancelable) { this.defaultPrevented = true; this._defaultPrevented = true; }
+      },
       stopPropagation: function() { this._propagationStopped = true; },
       stopImmediatePropagation: function() {
         this._immediateStopped = true;
@@ -1920,7 +1956,8 @@
       set: function(v) {
         // 仅 cancelable 且设 false 时触发 preventDefault（设 canceled flag）。设 true 永远 no-op（spec：canceled
         // flag 一旦设不可清）。cancelable=false 时任何设值 no-op（WPT "no effect if cancelable is false"）。
-        if (!v && this.cancelable) { this.defaultPrevented = true; this._defaultPrevented = true; }
+        // R105：passive listener 内同 preventDefault 语义（no-op，spec invoke 步骤 8）。
+        if (!v && this.cancelable && !this._zwInPassive) { this.defaultPrevented = true; this._defaultPrevented = true; }
       }
     });
     // js-dom M4 R29：`Event.cancelBubble` setter dispatch 副作用（spec `dom-event-cancelbubble`）。R26 用普通 data

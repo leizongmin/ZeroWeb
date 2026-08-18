@@ -2231,7 +2231,9 @@
       var t = String(type);
       if (!_listenerStore[key]) _listenerStore[key] = {};
       if (!_listenerStore[key][t]) _listenerStore[key][t] = [];
-      _listenerStore[key][t].push({ fn: fn, capture: _optCapture(opts), once: _optOnce(opts), tgt: 'doc' });
+      // R105：document target 的 touch/wheel 族默认 passive（spec default-passive-value）。
+      _listenerStore[key][t].push({ fn: fn, capture: _optCapture(opts), once: _optOnce(opts), tgt: 'doc',
+        passive: _listenerPassiveDefault(t, opts, true) });
       if (t === 'pageshow') _maybeFirePageShow(); // R2931：首次 pageshow listener → _defer 派发一次
     },
     removeEventListener: function(type, fn, opts) {

@@ -1548,7 +1548,12 @@
           return function(type, fn, opts) {
             if (!_listenerStore[key]) _listenerStore[key] = {};
             if (!_listenerStore[key][type]) _listenerStore[key][type] = [];
-            _listenerStore[key][type].push({ fn: fn, capture: _optCapture(opts), once: _optOnce(opts) });
+            // js-dom M4 R105：body 与 documentElement(html) 是 passive-by-default
+            // target（spec default-passive-value 对 window/document/documentElement/
+            // body 四类）——`body`/`html` 的 touch/wheel 族未显式 passive 时默认
+            // true；其他元素默认 false。
+            var _p105 = _listenerPassiveDefault(type, opts, sel === 'body' || sel === 'html');
+            _listenerStore[key][type].push({ fn: fn, capture: _optCapture(opts), once: _optOnce(opts), passive: _p105 });
           };
         }
         if (prop === 'removeEventListener') {
