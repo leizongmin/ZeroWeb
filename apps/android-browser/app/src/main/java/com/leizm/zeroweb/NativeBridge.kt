@@ -22,6 +22,9 @@ object NativeBridge {
     external fun nativeNewTab(): Boolean
 
     @JvmStatic
+    external fun nativeNewTabWithUrl(url: String): Boolean
+
+    @JvmStatic
     external fun nativeCloseTab(id: Long): Boolean
 
     @JvmStatic

@@ -41,6 +41,7 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         loadBrowserProfile()
+        handleExternalIntent(intent)
         bindBootstrapRoles()
         setContent {
             MaterialTheme {
@@ -75,8 +76,28 @@ class MainActivity : ComponentActivity() {
         ).forEach(::bindRole)
     }
 
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        handleExternalIntent(intent)
+    }
+
     private fun loadBrowserProfile() {
         applySnapshot(NativeBridge.nativeLoadProfile(filesDir.resolve("profile").absolutePath))
+    }
+
+    private fun handleExternalIntent(intent: Intent?) {
+        if (intent?.action != Intent.ACTION_VIEW) return
+        val url = intent.data?.toString() ?: return
+        if (url.length > 16 * 1024) {
+            browserError = "外部地址过长"
+            return
+        }
+        if (NativeBridge.nativeNewTabWithUrl(url)) {
+            refreshBrowserSnapshot()
+        } else {
+            browserError = "仅支持 HTTP(S) 外部地址"
+        }
     }
 
     private fun refreshBrowserSnapshot() {

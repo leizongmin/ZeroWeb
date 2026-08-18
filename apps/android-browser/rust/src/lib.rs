@@ -77,6 +77,19 @@ pub extern "system" fn Java_com_leizm_zeroweb_NativeBridge_nativeNewTab(_env: JN
     facade::new_tab().map_or(JNI_FALSE, |_| JNI_TRUE)
 }
 
+/// Creates a new tab for one externally supplied HTTP(S) URL.
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_com_leizm_zeroweb_NativeBridge_nativeNewTabWithUrl(
+    mut env: JNIEnv,
+    _class: JClass,
+    url: JString,
+) -> jboolean {
+    env.get_string(&url)
+        .map_err(|error| error.to_string())
+        .and_then(|url| facade::new_tab_with_url(url.to_str().map_err(|error| error.to_string())?))
+        .map_or(JNI_FALSE, |_| JNI_TRUE)
+}
+
 /// Closes one tab and persists the browser profile.
 #[unsafe(no_mangle)]
 pub extern "system" fn Java_com_leizm_zeroweb_NativeBridge_nativeCloseTab(

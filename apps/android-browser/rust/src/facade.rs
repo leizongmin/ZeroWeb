@@ -56,6 +56,13 @@ pub(crate) fn new_tab() -> Result<(), String> {
     })
 }
 
+pub(crate) fn new_tab_with_url(url: &str) -> Result<(), String> {
+    let url = validated_url(url)?;
+    mutate(|browser| {
+        browser.shell.new_tab(Some(url));
+    })
+}
+
 pub(crate) fn close_tab(id: u64) -> Result<(), String> {
     mutate(|browser| {
         browser.shell.close_tab(TabId(id));
