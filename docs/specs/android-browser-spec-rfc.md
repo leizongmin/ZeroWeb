@@ -1089,3 +1089,4 @@ make test
 | v0.7 | 2026-08-19 | winit native-activity glue 需要 `android_main` 链接符号；JNI cdylib 提供未被 manifest 调用的锚点，Kotlin Activity 仍是唯一宿主入口 |
 | v0.8 | 2026-08-19 | renderer Android 依赖图暴露 reqwest native-tls 的 OpenSSL 交叉编译缺口；workspace 网络栈改用 rustls TLS，保持同一 `zero-net` API 和平台行为 |
 | v0.9 | 2026-08-19 | 当前 rusty_v8 crate 不含 Android target binding；Android Gradle 按 variant 以 `V8_FROM_SOURCE=1` 构建单 ABI V8，避免 debug 构建同时编译 arm64 与 x86_64 |
+| v1.0 | 2026-08-19 | M1 构建探针证实 rusty_v8 的 Android source-build 在 Windows 主机解包 Linux sysroot 时因符号链接不受支持而失败；真实 renderer APK 构建须迁至 Linux/WSL CI 或获得 Android 预编译 V8，不能以进程内或 QuickJS 替代绕过 |
