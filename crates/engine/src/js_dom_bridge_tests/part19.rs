@@ -734,3 +734,98 @@ fn test_indexeddb_get_all_options_records_and_count_conversion() {
         "TypeError|TypeError|c,b|c,b|3|[object IDBRecord]:a:a:a:true|y:c:c,x:a:a"
     );
 }
+
+#[test]
+fn test_indexeddb_listener_exception_aborts_uncommitted_transaction() {
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+
+    let mut sandbox = V8Sandbox::with_config(zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    })
+    .unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    sandbox
+        .execute(
+            "globalThis.__listenerExceptions = [];\
+             var request = indexedDB.open('listener-exceptions', 1);\
+             request.onupgradeneeded = function () {\
+               request.result.createObjectStore('store');\
+             };\
+             request.onsuccess = function () {\
+               var db = request.result;\
+               var first = db.transaction('store', 'readonly');\
+               var firstRequest = first.objectStore('store').get(1);\
+               firstRequest.onsuccess = function () {\
+                 __listenerExceptions.push('first');\
+                 throw new Error('abort first');\
+               };\
+               firstRequest.addEventListener('success', function () {\
+                 __listenerExceptions.push('after-first');\
+               });\
+               first.onabort = function () {\
+                 __listenerExceptions.push('abort:' + first.error.name);\
+                 var second = db.transaction('store', 'readonly');\
+                 var secondRequest = second.objectStore('store').get(1);\
+                 secondRequest.onsuccess = function () {\
+                   __listenerExceptions.push('second');\
+                   throw new Error('keep committed');\
+                 };\
+                 second.oncomplete = function () {\
+                   __listenerExceptions.push('complete');\
+                 };\
+                 second.commit();\
+               };\
+             };",
+        )
+        .unwrap();
+    sandbox.execute("0").unwrap();
+
+    assert_eq!(
+        sandbox.execute("__listenerExceptions.join('|')").unwrap().value,
+        "first|after-first|abort:AbortError|second|complete"
+    );
+}
+
+#[test]
+fn test_indexeddb_close_during_upgrade_finishes_transaction_then_errors_open() {
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+
+    let mut sandbox = V8Sandbox::with_config(zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    })
+    .unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    sandbox
+        .execute(
+            "globalThis.__upgradeClose = [];\
+             var request = indexedDB.open('close-during-upgrade', 1);\
+             request.onupgradeneeded = function () {\
+               var db = request.result;\
+               db.createObjectStore('store');\
+               request.transaction.oncomplete = function () {\
+                 __upgradeClose.push('complete');\
+               };\
+               db.close();\
+             };\
+             request.onsuccess = function () { __upgradeClose.push('unexpected-success'); };\
+             request.onerror = function () {\
+               __upgradeClose.push(request.error.name);\
+               var verify = indexedDB.open('close-during-upgrade');\
+               verify.onsuccess = function () {\
+                 __upgradeClose.push(\
+                   verify.result.version + ':' + Array.from(verify.result.objectStoreNames).join(',')\
+                 );\
+                 verify.result.close();\
+               };\
+             };",
+        )
+        .unwrap();
+    sandbox.execute("0").unwrap();
+
+    assert_eq!(
+        sandbox.execute("__upgradeClose.join('|')").unwrap().value,
+        "complete|AbortError|1:store"
+    );
+}

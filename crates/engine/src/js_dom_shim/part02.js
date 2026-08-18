@@ -3424,30 +3424,54 @@
     return !event.defaultPrevented;
   };
 
+  // https://w3c.github.io/IndexedDB/#fire-an-event
+  function _zwIDBReportListenerException(error) {
+    if (typeof _zwReportListenerError === 'function') {
+      _zwReportListenerError(error);
+    }
+  }
+  function _zwIDBCallListener(target, callback, event) {
+    try {
+      var callable = callback;
+      var thisValue = target;
+      if (typeof callback !== 'function') {
+        callable = callback && callback.handleEvent;
+        thisValue = callback;
+        if (typeof callable !== 'function') {
+          throw new TypeError('The event listener is not callable.');
+        }
+      }
+      callable.call(thisValue, event);
+      return false;
+    } catch (error) {
+      _zwIDBReportListenerException(error);
+      return true;
+    }
+  }
   function _zwIDBInvoke(target, type, event, capture) {
     var listeners = ((target._listeners && target._listeners[type]) || []).slice();
+    var exceptionThrown = false;
     if (!capture && !event._immediatePropagationStopped) {
       var handler = target['on' + type];
       if (typeof handler === 'function') {
-        try { handler.call(target, event); } catch (_) {}
+        exceptionThrown = _zwIDBCallListener(target, handler, event) || exceptionThrown;
       }
     }
     for (var i = 0; i < listeners.length; i++) {
       if (event._immediatePropagationStopped) break;
       var listener = listeners[i];
       if (listener.capture !== capture) continue;
-      var callback = listener.callback;
-      try {
-        if (typeof callback === 'function') callback.call(target, event);
-        else if (callback && typeof callback.handleEvent === 'function') callback.handleEvent(event);
-      } catch (_) {}
+      exceptionThrown = _zwIDBCallListener(target, listener.callback, event)
+        || exceptionThrown;
     }
+    return exceptionThrown;
   }
 
   function _zwIDBEmit(target, type, event) {
     event.currentTarget = target;
-    _zwIDBInvoke(target, type, event, true);
-    _zwIDBInvoke(target, type, event, false);
+    var exceptionThrown = _zwIDBInvoke(target, type, event, true);
+    exceptionThrown = _zwIDBInvoke(target, type, event, false) || exceptionThrown;
+    return exceptionThrown;
   }
 
   function _zwIDBRequestEventSteps(request, transaction, event) {
@@ -3485,6 +3509,7 @@
     var position = 0;
     var currentGroup = -1;
     var invoked = false;
+    var exceptionThrown = false;
     event.target = request;
     function next() {
       if (invoked) _zwIDBDeactivateTransactions(transaction);
@@ -3494,18 +3519,14 @@
         if (event._propagationStopped && step.group !== currentGroup) break;
         currentGroup = step.group;
         event.currentTarget = step.target;
-        try {
-          if (typeof step.callback === 'function') step.callback.call(step.target, event);
-          else if (step.callback && typeof step.callback.handleEvent === 'function') {
-            step.callback.handleEvent(event);
-          }
-        } catch (_) {}
+        exceptionThrown = _zwIDBCallListener(step.target, step.callback, event)
+          || exceptionThrown;
         invoked = true;
         event.currentTarget = null;
         queueMicrotask(next);
         return;
       }
-      done();
+      done(exceptionThrown);
     }
     next();
   }
@@ -3557,9 +3578,17 @@
       );
       if (ev._requestError) req.error = ev._requestError;
       if (transaction) transaction._active = true;
-      _zwIDBDispatchRequestEvent(req, transaction, ev, function () {
+      _zwIDBDispatchRequestEvent(req, transaction, ev, function (listenerException) {
         dispatch.settled = true;
-        if (ev.type === 'error' && transaction && !ev.defaultPrevented && !transaction._aborted) {
+        if (listenerException && transaction && !transaction._aborted
+            && !transaction._committing && !transaction._finished) {
+          transaction._requestError = new globalThis.DOMException(
+            'An event listener threw while the request was being dispatched.',
+            'AbortError'
+          );
+          transaction.abort();
+        } else if (ev.type === 'error' && transaction
+            && !ev.defaultPrevented && !transaction._aborted) {
           transaction._requestError = req.error;
           transaction.abort();
         }
@@ -5737,6 +5766,20 @@
     });
     _zwIDBEmit(transaction, 'complete', new _zwIDBEvent('complete', transaction));
     req.transaction = null;
+    if (db._closed) {
+      req.readyState = 'done';
+      req.result = undefined;
+      req.error = new globalThis.DOMException(
+        'The connection was closed during the upgrade.',
+        'AbortError'
+      );
+      var closeErrorEvent = new _zwIDBEvent('error', req);
+      closeErrorEvent.bubbles = true;
+      closeErrorEvent.cancelable = true;
+      _zwIDBEmit(req, 'error', closeErrorEvent);
+      done();
+      return;
+    }
     _zwIDBRegisterHostConnection(db);
     var successEvent = new _zwIDBEvent('success', req);
     req.readyState = 'done';
@@ -5975,11 +6018,18 @@
               transaction._active = true;
               req.readyState = 'done';
               req.result = db;
-              _zwIDBEmit(
+              var upgradeException = _zwIDBEmit(
                 req,
                 'upgradeneeded',
                 _zwIDBVersionEvent('upgradeneeded', req, oldVersion, requestedVersion)
               );
+              if (upgradeException && !transaction._aborted) {
+                transaction._requestError = new globalThis.DOMException(
+                  'An upgradeneeded event listener threw.',
+                  'AbortError'
+                );
+                transaction.abort();
+              }
               var finish = function () {
                 _zwIDBFinishUpgrade(
                   req,

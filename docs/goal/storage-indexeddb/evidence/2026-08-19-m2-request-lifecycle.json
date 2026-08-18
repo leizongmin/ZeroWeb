@@ -1,0 +1,51 @@
+{
+  "date": "2026-08-19",
+  "scope": "M2 IndexedDB request lifecycle 80% milestone",
+  "wpt_revision": "315976933870b34d6ea30e3f6643403edae678ba",
+  "upstream_files": 210,
+  "files_added": 11,
+  "coverage": {
+    "imported_files": 168,
+    "percent": 80
+  },
+  "driving_wpt": {
+    "before": {
+      "pass": 11,
+      "fail": 30,
+      "timeout": 0
+    },
+    "after": {
+      "pass": 41,
+      "fail": 0,
+      "timeout": 0
+    }
+  },
+  "imported_wpt": {
+    "files": 168,
+    "pass": 1073,
+    "fail": 0,
+    "timeout": 0,
+    "not_run": 0,
+    "empty": 0
+  },
+  "capabilities": [
+    "listener exception reporting and continued dispatch",
+    "listener exception transaction abort semantics",
+    "committing transaction exception guard",
+    "upgradeneeded exception abort propagation",
+    "close during upgrade open-request cleanup",
+    "request and transaction event ordering"
+  ],
+  "gates": {
+    "cargo_fmt": "pass",
+    "cargo_clippy_workspace": "pass",
+    "make_testharness_indexeddb": "pass",
+    "make_test": "pass",
+    "targeted_engine": "28 pass",
+    "manifest_counts": {
+      "fetch": 168,
+      "runner": 168,
+      "ledger": 168
+    }
+  }
+}

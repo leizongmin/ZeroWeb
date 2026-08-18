@@ -388,6 +388,32 @@ pub const INDEXEDDB_CASES: &[(&str, &[&str])] = &[
             "resources/support-promises.js",
         ],
     ),
+    (
+        "IndexedDB/abort-in-initial-upgradeneeded.any.js",
+        &["resources/support.js"],
+    ),
+    ("IndexedDB/close-in-upgradeneeded.any.js", &["resources/support.js"]),
+    ("IndexedDB/delete-request-queue.any.js", &["resources/support.js"]),
+    ("IndexedDB/fire-error-event-exception.any.js", &["resources/support.js"]),
+    (
+        "IndexedDB/fire-success-event-exception.any.js",
+        &["resources/support.js"],
+    ),
+    (
+        "IndexedDB/fire-upgradeneeded-event-exception.any.js",
+        &["resources/support.js"],
+    ),
+    ("IndexedDB/idbrequest-onupgradeneeded.any.js", &[]),
+    (
+        "IndexedDB/request-abort-ordering.any.js",
+        &["resources/support-promises.js", "resources/support.js"],
+    ),
+    (
+        "IndexedDB/transaction_bubble-and-capture.any.js",
+        &["resources/support.js"],
+    ),
+    ("IndexedDB/transaction-lifetime.any.js", &["resources/support.js"]),
+    ("IndexedDB/transaction-requestqueue.any.js", &["resources/support.js"]),
     ("IndexedDB/idbobjectstore_add.any.js", &["resources/support.js"]),
     ("IndexedDB/idbobjectstore_put.any.js", &["resources/support.js"]),
     ("IndexedDB/idbobjectstore_get.any.js", &["resources/support.js"]),

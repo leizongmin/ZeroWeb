@@ -90,6 +90,17 @@ IndexedDB/idbindex-getAllKeys-enforcerange.any.js 315976933870b34d6ea30e3f664340
 IndexedDB/idbindex_getAll-options.any.js 315976933870b34d6ea30e3f6643403edae678ba 2026-08-19 IDB-M2-get-all-options
 IndexedDB/idbindex_getAllKeys-options.any.js 315976933870b34d6ea30e3f6643403edae678ba 2026-08-19 IDB-M2-get-all-options
 IndexedDB/idbindex_getAllRecords.any.js 315976933870b34d6ea30e3f6643403edae678ba 2026-08-19 IDB-M2-get-all-options
+IndexedDB/abort-in-initial-upgradeneeded.any.js 315976933870b34d6ea30e3f6643403edae678ba 2026-08-19 IDB-M2-request-lifecycle
+IndexedDB/close-in-upgradeneeded.any.js 315976933870b34d6ea30e3f6643403edae678ba 2026-08-19 IDB-M2-request-lifecycle
+IndexedDB/delete-request-queue.any.js 315976933870b34d6ea30e3f6643403edae678ba 2026-08-19 IDB-M2-request-lifecycle
+IndexedDB/fire-error-event-exception.any.js 315976933870b34d6ea30e3f6643403edae678ba 2026-08-19 IDB-M2-request-lifecycle
+IndexedDB/fire-success-event-exception.any.js 315976933870b34d6ea30e3f6643403edae678ba 2026-08-19 IDB-M2-request-lifecycle
+IndexedDB/fire-upgradeneeded-event-exception.any.js 315976933870b34d6ea30e3f6643403edae678ba 2026-08-19 IDB-M2-request-lifecycle
+IndexedDB/idbrequest-onupgradeneeded.any.js 315976933870b34d6ea30e3f6643403edae678ba 2026-08-19 IDB-M2-request-lifecycle
+IndexedDB/request-abort-ordering.any.js 315976933870b34d6ea30e3f6643403edae678ba 2026-08-19 IDB-M2-request-lifecycle
+IndexedDB/transaction_bubble-and-capture.any.js 315976933870b34d6ea30e3f6643403edae678ba 2026-08-19 IDB-M2-request-lifecycle
+IndexedDB/transaction-lifetime.any.js 315976933870b34d6ea30e3f6643403edae678ba 2026-08-19 IDB-M2-request-lifecycle
+IndexedDB/transaction-requestqueue.any.js 315976933870b34d6ea30e3f6643403edae678ba 2026-08-19 IDB-M2-request-lifecycle
 IndexedDB/idbobjectstore_add.any.js 315976933870b34d6ea30e3f6643403edae678ba 2026-08-17 IDB-M1-object-store-crud
 IndexedDB/idbobjectstore_put.any.js 315976933870b34d6ea30e3f6643403edae678ba 2026-08-17 IDB-M1-object-store-crud
 IndexedDB/idbobjectstore_get.any.js 315976933870b34d6ea30e3f6643403edae678ba 2026-08-17 IDB-M1-object-store-crud
