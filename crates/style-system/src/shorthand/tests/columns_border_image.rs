@@ -81,6 +81,18 @@ fn r1425_columns_auto_then_length() {
     assert_eq!(result[1].1, "100px");
 }
 
+#[test]
+fn test_columns_rejects_duplicate_or_invalid_width_components() {
+    assert!(expand_one("columns", "2 3", false, (0, 0, 1)).is_empty());
+    assert!(expand_one("columns", "-1px", false, (0, 0, 1)).is_empty());
+    assert!(expand_one("columns", "thin 3", false, (0, 0, 1)).is_empty());
+
+    let result = expand_one("columns", "0", false, (0, 0, 1));
+    assert_eq!(result.len(), 2);
+    assert_eq!(result[0].1, "auto");
+    assert_eq!(result[1].1, "0");
+}
+
 // ── column-rule 简写测试 ──
 
 #[test]

@@ -1879,9 +1879,43 @@ fn expand_columns(value: &str, important: bool, specificity: (u32, u32, u32)) ->
         s.eq_ignore_ascii_case("auto") || s.parse::<u32>().is_ok_and(|n| n >= 1)
     }
 
-    /// 检查值是否为有效的 column-width 值（长度或 auto）
+    /// 检查值是否为有效的 column-width 值（非负长度或 auto）。
+    /// CSS Multi-column §3.1: <length [0,∞]> | auto.
     fn is_valid_column_width(s: &str) -> bool {
-        s.eq_ignore_ascii_case("auto") || looks_like_length(s)
+        use zero_css_parser::values::LengthValue;
+
+        if s.eq_ignore_ascii_case("auto") {
+            return true;
+        }
+        if s.eq_ignore_ascii_case("thin")
+            || s.eq_ignore_ascii_case("medium")
+            || s.eq_ignore_ascii_case("thick")
+            || s.eq_ignore_ascii_case("min-content")
+            || s.eq_ignore_ascii_case("max-content")
+            || s.eq_ignore_ascii_case("fit-content")
+        {
+            return false;
+        }
+        matches!(
+            zero_css_parser::values::parse_length(s),
+            Some(
+                LengthValue::Px(v)
+                    | LengthValue::Em(v)
+                    | LengthValue::Ex(v)
+                    | LengthValue::Rex(v)
+                    | LengthValue::Cap(v)
+                    | LengthValue::Rcap(v)
+                    | LengthValue::Rem(v)
+                    | LengthValue::Vh(v)
+                    | LengthValue::Vw(v)
+                    | LengthValue::Vmin(v)
+                    | LengthValue::Vmax(v)
+                    | LengthValue::Ch(v)
+                    | LengthValue::Rch(v)
+                    | LengthValue::Ic(v)
+                    | LengthValue::Ric(v)
+                ) if v >= 0.0
+        ) || zero_css_parser::values::parse_math_function(s).is_some()
     }
 
     let parts: Vec<&str> = value.split_whitespace().collect();
@@ -1911,7 +1945,7 @@ fn expand_columns(value: &str, important: bool, specificity: (u32, u32, u32)) ->
                 (parts[0], parts[1])
             } else if p1_int {
                 (parts[1], parts[0])
-            } else if looks_like_length(parts[0]) {
+            } else if is_valid_column_width(parts[0]) && !parts[0].eq_ignore_ascii_case("auto") {
                 // parts[0] 是长度 → width，parts[1]（auto 或长度）→ count
                 (parts[1], parts[0])
             } else {

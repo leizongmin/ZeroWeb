@@ -49,6 +49,8 @@ Logical border axis shorthands exposed the axis variant: 1-2 start/end mapping m
 
 `font-variant` exposed the optional-slot overwrite variant: unknown tokens must not be ignored, and mutually exclusive longhand slots must reject repeats instead of allowing the last token to win.
 
+`columns` exposed the helper-scope variant: a token classifier built for border/outline widths is too permissive for `column-width`; shorthand helpers must encode the target property's own range restrictions such as non-negative lengths and keyword exclusions.
+
 ## Root Cause
 
 The shorthand layer used heuristic component classifiers and treated unrecognized tokens as absent optional components. That is wrong for CSS shorthands such as `border`, where every token must match one of the allowed component grammars. A shared parser can also be broader than the property grammar that consumes it: general length parsing may accept `auto`, intrinsic sizing keywords, or percentages that `border-width` must reject.
