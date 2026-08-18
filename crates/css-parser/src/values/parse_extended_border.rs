@@ -580,11 +580,11 @@ fn parse_clip_polygon(rest: &str) -> Option<ClipPathValue> {
     for pair in points_str.split(',') {
         let pair = pair.trim();
         if pair.is_empty() {
-            continue;
+            return None;
         }
         let coords: Vec<&str> = pair.split_whitespace().collect();
-        if coords.len() < 2 {
-            continue;
+        if coords.len() != 2 {
+            return None;
         }
         let x = parse_length(coords[0])?;
         let y = parse_length(coords[1])?;

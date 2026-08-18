@@ -87,6 +87,8 @@ Logical border axis shorthands exposed the axis variant: 1-2 start/end mapping m
 
 `box-shadow` exposed the optional-marker variant: optional keywords such as `inset?` are still grammar components with cardinality. Extracting them with `filter_map` or unconditional removal must track whether the component has already appeared; otherwise duplicate markers become invisible instead of invalidating the value.
 
+`clip-path: polygon()` exposed the point-list variant: list parsers must not skip malformed items just because later items are valid. Empty point segments, missing coordinates, and extra coordinates are declaration-level failures unless the target grammar explicitly supports recovery.
+
 ## Root Cause
 
 The shorthand layer used heuristic component classifiers and treated unrecognized tokens as absent optional components. That is wrong for CSS shorthands such as `border`, where every token must match one of the allowed component grammars. A shared parser can also be broader than the property grammar that consumes it: general length parsing may accept `auto`, intrinsic sizing keywords, or percentages that `border-width` must reject.

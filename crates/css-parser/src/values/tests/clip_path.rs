@@ -308,6 +308,13 @@ fn test_clip_path_polygon_empty() {
 }
 
 #[test]
+fn test_clip_path_polygon_invalid_points_are_not_dropped() {
+    assert!(parse_clip_path("polygon(0 0, , 100% 100%)").is_none());
+    assert!(parse_clip_path("polygon(0 0, 100%)").is_none());
+    assert!(parse_clip_path("polygon(0 0, 100% 100% 50%)").is_none());
+}
+
+#[test]
 fn test_clip_path_polygon_many_points() {
     // 五角星
     let v = parse_clip_path(
