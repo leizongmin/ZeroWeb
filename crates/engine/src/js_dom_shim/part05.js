@@ -5466,6 +5466,79 @@
 
   // append/replaceChildren 共用：variadic 节点/字符串追加到 this 末尾（DocumentFragment flatten）。
   // 返 added 列表（供 MO childList notify）。节点经 handle/selector append_child；字符串建 text 节点 append。
+  // js-dom M4 R119：handle 容器的 prepend——spec `dom-parentnode-prepend`（转换为
+  // insert(node, firstChild) 后逐参数 pre-insert）。实现：先逐参数「移除旧父（移动语义，
+  // R117 _zwDetachFromRegistry）+ 建 text 节点」，再**保持参数序头插**（对 registry 头部
+  // 依次 unshift 的逆序 = 参数序）；host mutation 经 R101 全 handle wire
+  //（__zw_insert_before_handle_handle，ref = 原首子；ref miss 时 apply 降级 append——
+  // prepend 到空容器 == appendChild 语义，天然正确）。WPT ParentNode-prepend 的
+  // createElement('div')/DocumentFragment/cloneNode 容器族 + null/undefined → WebIDL 文本。
+  // https://dom.spec.whatwg.org/#dom-parentnode-prepend
+  function _prependHandleVariadic(handle, args) {
+    if (!handle) return;
+    var kids = _handleChildren[handle] || (_handleChildren[handle] = []);
+    var firstRef = kids.length ? kids[0] : null;
+    var added = [];
+    // 参数序保持：逐参数 unshift 会逆序（[t1,t2]→[t2,t1]）——物化后逆序 unshift 得参数序。
+    for (var i = args.length - 1; i >= 0; i--) {
+      var item = args[i];
+      if (item && typeof item === 'object' && item.__zwHandle) {
+        // pre-insert 步骤 3：先从旧父移除（移动非复制；含 fragment flatten 记账）。
+        _zwDetachFromRegistry(item);
+        if (typeof __zw_insert_before_handle_handle === 'function') {
+          var ref = firstRef && firstRef.__zwHandle ? firstRef.__zwHandle : '';
+          try { __zw_insert_before_handle_handle(handle, item.__zwHandle, ref); } catch (_e119i) {}
+        }
+        if (_fragmentHandles[item.__zwHandle]) {
+          var fk = _handleChildren[item.__zwHandle];
+          if (fk && fk.length) {
+            for (var f = fk.length - 1; f >= 0; f--) kids.unshift(fk[f]);
+            _handleChildren[item.__zwHandle] = [];
+          }
+        } else {
+          // 同容器已含该子（prepend 自身子集）→ 先剔再头插（去重保持末位语义由 spec pre-insert 推出）。
+          var at = kids.indexOf(item);
+          if (at >= 0) kids.splice(at, 1);
+          kids.unshift(item);
+        }
+        try {
+          if (typeof _zwNodeParent !== 'undefined' && _zwNodeParent) {
+            _zwNodeParent[item.__zwHandle] = { parentSel: null, parentHandle: handle, nextSibling: null };
+          }
+        } catch (_e119p) {}
+        added.push(item);
+      } else {
+        var tn = (typeof __zw_create_text === 'function') ? __zw_create_text(String(item)) : '';
+        if (tn) {
+          _textHandles[tn] = true;
+          if (typeof __zw_insert_before_handle_handle === 'function') {
+            var tref = firstRef && firstRef.__zwHandle ? firstRef.__zwHandle : '';
+            try { __zw_insert_before_handle_handle(handle, tn, tref); } catch (_e119t) {}
+          }
+          kids.unshift(_wrapHandle(tn));
+          added.push(_wrapHandle(tn));
+        }
+      }
+    }
+    added.reverse(); // 逆序循环后恢复参数序（文档序）
+    if (added.length) {
+      _mo_notify(null, handle, { type: 'childList', addedNodes: added, removedNodes: [] });
+      var pconn = _ceParentConnected(null, handle);
+      for (var ci = 0; ci < added.length; ci++) _ceApplyConn(added[ci], pconn);
+    }
+    return undefined;
+  }
+
+  // js-dom M4 R119：handle 容器移除单个已记录子（replaceChildren 清空段复用）——registry
+  // 剔除 + 反链清 + host 侧 __zw_remove_handle（从父移除该节点，RemoveHandle mutation）。
+  function _zwRemoveHandleNode(handle, child) {
+    if (!handle || !child || !child.__zwHandle) return;
+    _unrecordHandleChild(handle, child);
+    if (typeof __zw_remove_handle === 'function') {
+      try { __zw_remove_handle(child.__zwHandle); } catch (_e119r) {}
+    }
+  }
+
   function _appendVariadic(sel, handle, args) {
     var added = [];
     for (var i = 0; i < args.length; i++) {

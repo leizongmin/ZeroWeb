@@ -610,3 +610,79 @@ fn test_query_selector_css_escapes_r118() {
         "CSS 转义：hex+空白终止符 / 转义字符属段内（\\, \\.）/ CSS 空白 ASCII 集 / EOF→FFFD / CRLF 单终止符 / 非 ASCII 空白是 ident 字符"
     );
 }
+
+// js-dom M4 R119：prepend/replaceChildren 的 handle 容器路径（createElement 元素 /
+// DocumentFragment / cloneNode 产物）+ detached doc replaceChildren 三缺口。
+// 驱动用例 WPT dom/nodes/ParentNode-prepend.html（8F→21P 全绿）+ ParentNode-replaceChildren.html
+// （13F→29P 全绿）。四层修复：① handle 容器 prepend 此前无实现（仅 sel-based）——
+// `_prependHandleVariadic` registry 头插（参数序）+ R101 全 handle wire；② handle 容器
+// replaceChildren 清空 + 移动记账（旧父每子 removed record、本容器单条合成 record）；
+// ③ detached doc replaceChildren：清空 firstChild-while、校验在清空后（whatwg/dom#1045）、
+// 字符串参数抛 HRE；④ doc prepend 的 doctype-vs-doctype 校验（spec pre-insert 步骤 6 II）。
+// https://dom.spec.whatwg.org/#dom-parentnode-prepend
+#[test]
+fn test_prepend_replace_children_handle_paths_r119() {
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let mut sandbox = V8Sandbox::with_config(zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    })
+    .unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><div id=\"d\">x</div></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry);
+
+    let out = sandbox
+        .execute(
+            r#"var parts = [];
+            var a = document.createElement('div');
+            a.prepend('text');
+            parts.push('A:' + a.childNodes[0].textContent);
+            a.prepend(null);
+            parts.push('A-null:' + a.childNodes[0].textContent + ':' + a.childNodes.length);
+            var e = document.createElement('div');
+            var ec = document.createElement('test');
+            e.appendChild(ec);
+            e.prepend('t1', 't2');
+            parts.push('E:' + e.childNodes[0].textContent + ',' + e.childNodes[1].textContent + ',' + e.childNodes[2].tagName);
+            var f = document.createElement('div');
+            f.appendChild(document.createElement('test'));
+            f.replaceChildren();
+            parts.push('F:' + f.childNodes.length);
+            var g = document.createElement('div');
+            g.appendChild(document.createElement('test'));
+            g.replaceChildren(null);
+            parts.push('G:' + g.childNodes.length + ':' + g.childNodes[0].textContent);
+            var pp = document.createElement('div');
+            var moved = document.createElement('m');
+            pp.appendChild(moved);
+            var g2 = document.createElement('div');
+            g2.replaceChildren(moved);
+            parts.push('MOVE:' + g2.childNodes.length + ':' + pp.childNodes.length + ':' + (g2.childNodes[0] === moved));
+            var doc = document.implementation.createHTMLDocument('title');
+            doc.replaceChildren();
+            parts.push('DOC-CLEAR:' + doc.childNodes.length);
+            var doc2 = document.implementation.createHTMLDocument('title');
+            var el = doc2.createElement('a');
+            doc2.replaceChildren(el);
+            parts.push('DOC-EL:' + doc2.childNodes.length + ':' + (doc2.childNodes[0] === el));
+            var threwText = '';
+            try { doc2.replaceChildren('text'); } catch (eT) { threwText = eT.name; }
+            parts.push('DOC-TEXT:' + threwText);
+            parts.join('|');"#,
+        )
+        .unwrap()
+        .value;
+    assert_eq!(
+        out,
+        "A:text|A-null:null:2|E:t1,t2,TEST|F:0|G:1:null|MOVE:1:0:true|DOC-CLEAR:0|DOC-EL:1:true|DOC-TEXT:HierarchyRequestError",
+        "prepend/replaceChildren handle 路径：文本/null、参数序+identity、清空、移动记账（旧父剔除断链）、doc 清空/doc 元素替换/字符串 HRE"
+    );
+}

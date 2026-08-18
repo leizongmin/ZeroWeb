@@ -3931,6 +3931,16 @@
       get previousSibling() { return null; },
       appendChild: function (c) {
         if (!c) return c;
+        // js-dom M4 R119：DocumentFragment 展平（spec dom-node-append-child 对 fragment
+        // 逐子 pre-insert 后清空 fragment——WPT replaceChildren「with a DocumentFragment
+        // containing a single element」期望 doc.childNodes = [el] 非 [df]）。
+        if (c.nodeType === 11) {
+          var fk = c.childNodes || [];
+          var fc = fk.slice();
+          for (var fi = 0; fi < fc.length; fi++) this.appendChild(fc[fi]);
+          fk.length = 0;
+          return c;
+        }
         if (c.parentNode && c.parentNode.removeChild) { try { c.parentNode.removeChild(c); } catch (_e) {} }
         c.parentNode = this;
         this.childNodes.push(c);
@@ -4531,8 +4541,28 @@
       if (!target.prepend) target.prepend = _mk('prepend');
       if (!target.append) target.append = _mk('append');
       if (!target.replaceChildren) target.replaceChildren = function () {
-        var kids = target.childNodes || [];
-        for (var r = 0; r < kids.length; r++) { try { target.removeChild(kids[r]); } catch (_e3) {} }
+        // js-dom M4 R119（WPT ParentNode-replaceChildren Document 域三缺口）：
+        // ① 清空用 firstChild while 循环（旧快照 for 循环在 removeChild 内部状态分裂
+        //（children/childNodes 不同步）时漏删——replaceChildren() 后残留 1 子）。
+        // ② spec whatwg/dom#1045：replace-all 先移除现有子**再**做 pre-insert 校验——
+        //「with an element, replacing an existing doctype and element」期望成功（校验时
+        // doc 已空，单元素不撞「more than one Element」）。旧先校验后清空致误抛。
+        // ③ 字符串参数在 Document 目标上抛 HierarchyRequestError（Text 节点不可进
+        // Document——_r117Validate 只查 object 参数，doc.replaceChildren('text') 须抛）。
+        var isDocT = false;
+        try { isDocT = target.nodeType === 9; } catch (_eT) {}
+        if (isDocT) {
+          for (var s0 = 0; s0 < arguments.length; s0++) {
+            if (arguments[s0] == null || typeof arguments[s0] !== 'object') {
+              throw new (globalThis.DOMException || Error)(
+                'Nodes of type 3 cannot be inserted into a Document.', 'HierarchyRequestError');
+            }
+          }
+        }
+        var guard = 0;
+        while (target.firstChild && guard++ < 1024) {
+          try { target.removeChild(target.firstChild); } catch (_e3) { break; }
+        }
         for (var a2 = 0; a2 < arguments.length; a2++) {
           _r117Validate(target, arguments[a2]);
           if (arguments[a2] && typeof arguments[a2] === 'object') { try { target.appendChild(arguments[a2]); } catch (_e4) {} }

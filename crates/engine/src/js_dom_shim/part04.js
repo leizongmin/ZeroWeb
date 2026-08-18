@@ -2641,6 +2641,42 @@
           return function() {
             // R117：层级校验先于清空插入（spec replace-all 同 pre-insert 校验）。
             _zwValidatePreInsert(sel, handle, arguments);
+            // js-dom M4 R119：handle 容器——JS registry 清空 + 反链/移除标记对称清理，
+            // 新子经 _appendVariadic 追加（host mutation + registry 记账同路径）。
+            // WPT ParentNode-replaceChildren：createElement 容器 replaceChildren() 清空、
+            // replaceChildren(null) 旧子清除只留新子。host 侧无 by-handle 全清回调——
+            // 逐子 remove（_zwRemoveHandleNode 复用 removeChild 的 handle 分支语义）。
+            if (!sel && handle) {
+              var rKids = (_handleChildren[handle] || []).slice();
+              for (var rKi = 0; rKi < rKids.length; rKi++) {
+                // 旧父的每子 removed record 是**旧父 observer** 的记账（见下移动段）；
+                // 本容器（parent）的 replace-all 是**单条**合成 record（spec：string
+                // replace-all 的 steps 6-7 一次 queue childList added=[新] removed=[旧]）。
+                _zwRemoveHandleNode(handle, rKids[rKi]);
+              }
+              // js-dom M4 R119：参数节点的移动记账（spec pre-insert 步骤 3——先从旧父移除）。
+              // 参数来自其他 handle 容器时：旧父 registry 剔除 + 旧父 observer 每子一条
+              // removed record（WPT move nodes in the right order 的 previousParent 断言）。
+              for (var rPi = 0; rPi < arguments.length; rPi++) {
+                var rPn = arguments[rPi];
+                if (rPn && typeof rPn === 'object' && rPn.__zwHandle && _zwNodeParent) {
+                  var rLink = _zwNodeParent[rPn.__zwHandle];
+                  if (rLink && rLink.parentHandle && rLink.parentHandle !== handle) {
+                    var rOldParent = rLink.parentHandle;
+                    _zwDetachFromRegistry(rPn);
+                    _mo_notify(null, rOldParent, { type: 'childList', addedNodes: [], removedNodes: [rPn] });
+                  }
+                }
+              }
+              var rAdded = _appendVariadic(null, handle, arguments);
+              if (rKids.length > 0 || rAdded.length > 0) {
+                _mo_notify(null, handle, { type: 'childList', addedNodes: rAdded, removedNodes: rKids });
+              }
+              for (var rCi = 0; rCi < rKids.length; rCi++) _ceApplyConn(rKids[rCi], false);
+              var rPconn = _ceParentConnected(null, handle);
+              for (var rAi = 0; rAi < rAdded.length; rAi++) _ceApplyConn(rAdded[rAi], rPconn);
+              return undefined;
+            }
             var removed = _childNodeList(sel, handle);
             if (handle && typeof __zw_set_inner_html_handle === 'function') __zw_set_inner_html_handle(handle, '');
             else if (typeof __zw_set_inner_html === 'function') __zw_set_inner_html(sel, '');
@@ -2657,11 +2693,18 @@
         }
         // `element.prepend(...nodesOrStrings)`（现代 API，区别于 appendChild/append）：插为元素
         // **首子**（保持参数序）。经 insertAdjacent afterbegin + 反序（见 _insertAdjacentVariadic）。
-        // 仅 sel-based 目标；handle-only detached 无操作。
+        // js-dom M4 R119：handle 容器（createElement 元素 / DocumentFragment / shadow root）
+        // 走 JS registry 头插 + host mutation（R101 wire 形态：__zw_insert_before_handle_handle
+        // 以原首子为 ref；ref miss 降级 append——spec prepend 到空容器 == append）。
+        // WPT ParentNode-prepend：createElement('div')/createDocumentFragment/cloneNode 容器
+        // 的 null→'null' 文本、元素 identity、参数序、既有子保持。
         if (prop === 'prepend') {
           return function() {
             // R117：层级校验先于插入（同 append）。
             _zwValidatePreInsert(sel, handle, arguments);
+            if (!sel && handle) {
+              return _prependHandleVariadic(handle, arguments);
+            }
             _insertAdjacentVariadic(sel, 'afterbegin', arguments, true);
             return undefined;
           };

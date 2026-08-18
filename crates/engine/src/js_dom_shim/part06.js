@@ -1434,6 +1434,22 @@
                 'A Document cannot contain more than one Element.', 'HierarchyRequestError');
             }
           }
+          // js-dom M4 R119：doctype 参数 + doc 已有另一 doctype → HierarchyRequestError
+          //（spec pre-insert 步骤 6 II；WPT pre-insertion-validation-hierarchy
+          //「node is a doctype and parent is a document with another doctype」）。
+          if (_nt117 === 10) {
+            var _dt117 = globalThis.document.doctype;
+            var _hasDt117 = false;
+            if (_dt117) _hasDt117 = true;
+            if (!_hasDt117) {
+              var _dk117b = globalThis.document.childNodes || [];
+              for (var _dq2 = 0; _dq2 < _dk117b.length; _dq2++) if (_dk117b[_dq2].nodeType === 10) { _hasDt117 = true; break; }
+            }
+            if (_hasDt117) {
+              throw new (globalThis.DOMException || Error)(
+                'A document cannot have more than one DocumentType node.', 'HierarchyRequestError');
+            }
+          }
         }
       }
       for (var _p117b = arguments.length - 1; _p117b >= 0; _p117b--) {
