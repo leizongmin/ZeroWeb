@@ -1360,6 +1360,9 @@ fn expand_list_style(value: &str, important: bool, specificity: (u32, u32, u32))
     let mut position = "outside".to_string();
     let mut image: Option<String> = None;
     let mut none_seen = false;
+    let mut seen_position = false;
+    let mut seen_type = false;
+    let mut seen_image = false;
 
     for token in &tokens {
         let t = token.trim();
@@ -1367,12 +1370,24 @@ fn expand_list_style(value: &str, important: bool, specificity: (u32, u32, u32))
             continue;
         }
         if t.eq_ignore_ascii_case("inside") || t.eq_ignore_ascii_case("outside") {
+            if seen_position {
+                return vec![];
+            }
+            seen_position = true;
             position = t.to_ascii_lowercase();
         } else if t.starts_with("url(") || t.starts_with("image(") || t.starts_with("image-set(") {
+            if seen_image {
+                return vec![];
+            }
+            seen_image = true;
             image = Some(t.to_string());
         } else if t.eq_ignore_ascii_case("none") {
             none_seen = true;
         } else {
+            if seen_type {
+                return vec![];
+            }
+            seen_type = true;
             // 任意计数器样式（内置关键字或自定义 @counter-style 名）——保留原样大小写，
             // 由 list-style-type longhand parser 负责关键字匹配/自定义名解析。
             list_type = Some(t.to_string());

@@ -580,6 +580,22 @@ fn test_list_style_none_with_type_and_image() {
 }
 
 #[test]
+fn test_list_style_rejects_duplicate_components() {
+    assert!(expand_one("list-style", "inside outside", false, (0, 0, 1)).is_empty());
+    assert!(expand_one("list-style", "disc square inside", false, (0, 0, 1)).is_empty());
+    assert!(expand_one("list-style", "disc url(one.png) url(two.png)", false, (0, 0, 1)).is_empty());
+
+    let result = expand_one(
+        "list-style",
+        "none square url(support/swatch-red.png)",
+        false,
+        (0, 0, 1),
+    );
+    assert_eq!(ls_get(&result, "list-style-type"), "square");
+    assert_eq!(ls_get(&result, "list-style-image"), "url(support/swatch-red.png)");
+}
+
+#[test]
 /// R2487：仅 image（无 type）→ type=初始 disc, image=url, position=outside
 fn test_list_style_image_only_type_initial_disc() {
     let result = expand_one("list-style", "url(star.png)", false, (0, 0, 1));

@@ -10,7 +10,7 @@ Related modules: `crates/style-system/src/shorthand`, `crates/css-parser/src/val
 
 The same silent-defaulting pattern also affected `outline`, `column-rule`, and `text-decoration`: unknown tokens were ignored while the valid remaining components were expanded.
 
-`text-decoration`, `outline`, and `column-rule` exposed another form of the same bug class: duplicate components were accepted and the later value silently replaced the earlier one. For example, `underline dotted dashed red` became valid with style `dashed`, and `solid red blue` became valid with color `blue`.
+`text-decoration`, `outline`, `column-rule`, and `list-style` exposed another form of the same bug class: duplicate components were accepted and the later value silently replaced the earlier one. For example, `underline dotted dashed red` became valid with style `dashed`, `solid red blue` became valid with color `blue`, and `inside outside` became valid with position `outside`.
 
 For repeated components that are allowed by grammar, such as multiple `text-decoration-line` keywords, the repeated set still needs grammar-specific validation. `none` is mutually exclusive with other line keywords, and each line keyword can appear at most once.
 
@@ -27,5 +27,6 @@ Use the shared value parsers for token boundaries, then filter by the specific p
 + reject the entire shorthand when any token is not consumed by one of the allowed component grammars.
 + reject duplicate components unless the spec grammar explicitly allows repetition, such as multiple `text-decoration-line` keywords.
 + when grammar allows repetition, validate the repeated group itself instead of accepting arbitrary token lists.
++ preserve explicit grammar exceptions while adding duplicate guards, such as `list-style: none square url(...)`, where `none` supplies default type/image values that explicit type/image tokens may override.
 
 Keep adjacent shorthand users covered with regression tests when a shared classifier changes. `columns: auto 100px` is a good guard because it depends on `auto` not being mistaken for a length.
