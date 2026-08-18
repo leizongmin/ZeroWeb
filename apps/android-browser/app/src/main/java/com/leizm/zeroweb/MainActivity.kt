@@ -7,6 +7,7 @@ import android.content.Intent
 import android.content.ServiceConnection
 import android.os.Bundle
 import android.os.IBinder
+import android.os.ParcelFileDescriptor
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.layout.Arrangement
@@ -59,6 +60,17 @@ class MainActivity : ComponentActivity() {
         val connection = object : ServiceConnection {
             override fun onServiceConnected(name: ComponentName, service: IBinder) {
                 readyServiceCount += 1
+                if (roleService == ImageDecoderService::class.java) {
+                    val sockets = ParcelFileDescriptor.createSocketPair()
+                    IRoleService.Stub.asInterface(service).start(sockets[1])
+                    Thread {
+                        if (NativeBridge.nativeProbeDecoder(sockets[0].detachFd())) {
+                            android.util.Log.i("ZeroWebRole", "decoder probe succeeded")
+                        } else {
+                            android.util.Log.e("ZeroWebRole", "decoder probe failed")
+                        }
+                    }.start()
+                }
             }
 
             override fun onServiceDisconnected(name: ComponentName) {

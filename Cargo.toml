@@ -85,7 +85,7 @@ unicode-segmentation = "=1.12.0"
 wuff = { version = "0.2.8", default-features = false, features = ["brotli"] }
 
 # 窗口与平台
-winit = "0.30"
+winit = { version = "0.30", features = ["android-native-activity"] }
 arboard = "3"
 
 # 网络

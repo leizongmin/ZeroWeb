@@ -2,13 +2,23 @@ package com.leizm.zeroweb
 
 import android.app.Service
 import android.content.Intent
-import android.os.Binder
 import android.os.IBinder
+import android.os.ParcelFileDescriptor
 import android.util.Log
 
 /** Base class for private Android process roles backed by the Rust native library. */
 abstract class NativeRoleService : Service() {
-    private val binder = Binder()
+    private val binder = object : IRoleService.Stub() {
+        override fun start(socket: ParcelFileDescriptor) {
+            if (role != "image-decoder") {
+                socket.close()
+                return
+            }
+            if (!NativeBridge.nativeRunRole(role, socket.detachFd())) {
+                Log.e(TAG, "native role transport bootstrap rejected: $role")
+            }
+        }
+    }
 
     protected abstract val role: String
 

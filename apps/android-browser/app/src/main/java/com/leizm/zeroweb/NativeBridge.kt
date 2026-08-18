@@ -11,4 +11,10 @@ object NativeBridge {
 
     @JvmStatic
     external fun nativeStartRole(role: String): Boolean
+
+    @JvmStatic
+    external fun nativeRunRole(role: String, fd: Int): Boolean
+
+    @JvmStatic
+    external fun nativeProbeDecoder(fd: Int): Boolean
 }

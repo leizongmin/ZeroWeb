@@ -19,6 +19,7 @@ if (-not (Test-Path -LiteralPath $ApkPath)) {
 }
 
 & $adb wait-for-device
+& $adb logcat -c
 & $adb install -r $ApkPath
 & $adb shell am start -W -n com.leizm.zeroweb/.MainActivity
 Start-Sleep -Seconds 2
@@ -42,3 +43,8 @@ if ($rendererUid -eq $browserUid -or $decoderUid -eq $browserUid -or $compositor
 }
 
 $processes | ForEach-Object { Write-Output $_.Line }
+
+$decoderProbe = & $adb logcat -d -t 500 | Select-String "decoder probe succeeded"
+if (-not $decoderProbe) {
+    throw "Image decoder socket probe did not report success."
+}

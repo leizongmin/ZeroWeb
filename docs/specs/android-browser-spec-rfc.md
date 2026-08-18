@@ -1085,3 +1085,5 @@ make test
 | v0.3 | 2026-08-19 | AGP 9.2 启用内建 Kotlin；移除已被 AGP 拒绝的 `org.jetbrains.kotlin.android` 插件，保留 Kotlin/Compose UI 方案 |
 | v0.4 | 2026-08-19 | API 36 模拟器拒绝 `isolatedProcess` 与显式私有进程名组合；isolated renderer/decoder 改由 Android 分配进程名，隔离 UID 与 Service slot 语义不变 |
 | v0.5 | 2026-08-19 | 本机可用 NDK 为 r30；构建基线从 r29 更新为已验证的 r30，Release ABI/进程边界不变 |
+| v0.6 | 2026-08-19 | AGP 9 需显式启用 AIDL；render foundation 经 winit 在 Android 编译时需启用 native-activity glue feature，均为构建适配，不改变 Kotlin Activity 宿主或多进程边界 |
+| v0.7 | 2026-08-19 | winit native-activity glue 需要 `android_main` 链接符号；JNI cdylib 提供未被 manifest 调用的锚点，Kotlin Activity 仍是唯一宿主入口 |

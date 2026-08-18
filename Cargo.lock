@@ -6381,6 +6381,9 @@ name = "zero-android-browser"
 version = "0.1.0"
 dependencies = [
  "jni 0.21.1",
+ "libc",
+ "zero-image-decoder",
+ "zero-protocol",
 ]
 
 [[package]]

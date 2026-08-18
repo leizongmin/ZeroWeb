@@ -120,6 +120,32 @@ pub fn stdio_transport() -> Result<PipeTransport<io::Stdin, io::Stdout>, Protoco
     Ok(PipeTransport::new(io::stdin(), io::stdout()))
 }
 
+/// Creates a bidirectional protocol transport from an Android-owned socket FD.
+///
+/// Kotlin must call `ParcelFileDescriptor.detachFd()` before crossing JNI. This
+/// function consumes that ownership and closes the descriptor when the returned
+/// transport is dropped.
+#[cfg(target_os = "android")]
+pub fn android_socket_transport_from_fd(
+    fd: std::os::unix::io::RawFd,
+) -> Result<PipeTransport<std::os::unix::net::UnixStream, std::os::unix::net::UnixStream>, ProtocolError> {
+    use std::os::unix::io::FromRawFd;
+
+    if fd < 0 {
+        return Err(ProtocolError::Channel(
+            "Android socket FD must be non-negative".to_string(),
+        ));
+    }
+
+    // SAFETY: `detachFd()` transfers sole ownership to native code. The cloned
+    // write stream owns a dup; both descriptors are released with the transport.
+    let reader = unsafe { std::os::unix::net::UnixStream::from_raw_fd(fd) };
+    let writer = reader
+        .try_clone()
+        .map_err(|error| ProtocolError::Channel(format!("duplicate Android socket FD failed: {error}")))?;
+    Ok(PipeTransport::new(reader, writer))
+}
+
 // ── 共享内存通道（测试和同进程模拟）──────────────────────────────
 
 /// 共享消息队列（VecDeque 实现 FIFO 语义）。
