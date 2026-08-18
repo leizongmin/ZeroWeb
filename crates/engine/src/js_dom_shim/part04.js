@@ -2404,10 +2404,38 @@
         //（selector-identity 子节点，作 insert ref）。返回 oldChild（spec）。
         if (prop === 'replaceChild') {
           return function(newChild, oldChild) {
+            // R117：WebIDL 非空参数——null → TypeError（WPT "Passing null to replaceChild"）。
+            if (newChild == null || oldChild == null) {
+              throw new globalThis.TypeError(
+                "Failed to execute 'replaceChild' on 'Node': parameter " + (newChild == null ? '1' : '2') + " is not of type 'Node'.");
+            }
             // js-dom M4 R51：spec `dom-node-replace-child` 步骤 2——newChild 是 parent 祖先 →
             // HierarchyRequestError（与 pre-insert 同族校验）。
             if (newChild && _zwIsAncestorOf(newChild, sel, handle)) {
               throw _zwDomException('A Node cannot replace its descendant.', 'HierarchyRequestError');
+            }
+            // js-dom M4 R117：步骤 1——parent 类型校验（Element/Document/DocumentFragment 外
+            // 的节点不可有子 → HierarchyRequestError；WPT pre-insertion-validation-notfound
+            // "Should check the 'parent' type before ..."——doctype/text/PI/comment/CDATA 作
+            // parent 调 replaceChild/insertBefore 须 HRE，且先于 child NotFound）。
+            var _r117pSelf = _makeProxy(sel, handle);
+            var _r117pnt = 0;
+            try { _r117pnt = _r117pSelf.nodeType | 0; } catch (_e117p) {}
+            if (_r117pnt !== 1 && _r117pnt !== 9 && _r117pnt !== 11) {
+              throw _zwDomException('Nodes of type ' + _r117pnt + ' cannot have children.', 'HierarchyRequestError');
+            }
+            // js-dom M4 R117：步骤 4-5——node 类型校验（child NotFound 之后）。
+            if (newChild && typeof newChild === 'object') {
+              var _r117nt = newChild.nodeType | 0;
+              var _r117self = _makeProxy(sel, handle);
+              var _r117selfIsDoc = false;
+              try { _r117selfIsDoc = _r117self.nodeType === 9; } catch (_e117r) {}
+              if (!_r117selfIsDoc && (_r117nt === 9 || _r117nt === 10)) {
+                throw _zwDomException('Only a Document can contain nodes of type ' + _r117nt + '.', 'HierarchyRequestError');
+              }
+              if (_r117selfIsDoc && (_r117nt === 3 || _r117nt === 4 || _r117nt === 9)) {
+                throw _zwDomException('Nodes of type ' + _r117nt + ' cannot be inserted into a Document.', 'HierarchyRequestError');
+              }
             }
             // js-dom M3 R100：handle-handle 形态（parent/new/old 全部 createElement 建立，
             // detached 容器内 replaceChild——WPT replaceChild 用例 setup 即此形态）。
@@ -2524,7 +2552,67 @@
               _insertAdjacentVariadic(sel, 'beforebegin', arguments, false);
               if (handle) __zw_remove_handle(handle);
               else __zw_remove(sel);
+              return undefined;
             }
+            // R117：handle 路径（createElement 容器内的 comment/text/元素——sel 为 null 旧整体
+            // no-op，WPT ChildNode-replaceWith 全挂）。spec replaceWith = 在自身位置顺序 pre-insert
+            // 参数 + 移除自身：ref = 自身在父 registry 的索引（每插入推进），先 registry 移除旧位
+            // 参数（移动语义），最后 splice 移除自身 + 反链清理。
+            var _rwParent = (handle && _zwNodeParent && _zwNodeParent[handle]) ? _zwNodeParent[handle] : null;
+            if (!handle || !_rwParent || !_rwParent.parentHandle) return undefined;
+            var _rwKids = _handleChildren[_rwParent.parentHandle];
+            if (!_rwKids) return undefined;
+            var _rwIdx = -1;
+            for (var _rwi = 0; _rwi < _rwKids.length; _rwi++) {
+              if (_rwKids[_rwi] && _rwKids[_rwi].__zwHandle === handle) { _rwIdx = _rwi; break; }
+            }
+            if (_rwIdx < 0) return undefined;
+            var _rwSeen = {};
+            var _rwAdded = [];
+            var _rwSelfInArgs = false;
+            for (var _ra = 0; _ra < arguments.length; _ra++) {
+              var _rv = arguments[_ra];
+              var _rNode = null;
+              if (typeof _rv === 'object' && _rv && _rv.__zwHandle) {
+                if (_rwSeen[_rv.__zwHandle]) continue;
+                _rwSeen[_rv.__zwHandle] = true;
+                if (_rv.__zwHandle === handle) { _rwSelfInArgs = true; } // self 作参数 = 移动重插（spec：末段移除被重插抵消）
+                _rNode = _rv;
+              } else {
+                var _rtn = (typeof __zw_create_text === 'function') ? __zw_create_text(String(_rv)) : '';
+                if (_rtn) {
+                  _textHandles[_rtn] = true;
+                  _rNode = _wrapHandle(_rtn);
+                }
+              }
+              if (!_rNode) continue;
+              var _rOld = -1;
+              for (var _rmi = 0; _rmi < _rwKids.length; _rmi++) {
+                if (_rwKids[_rmi] && _rwKids[_rmi].__zwHandle === _rNode.__zwHandle) { _rOld = _rmi; break; }
+              }
+              if (_rOld >= 0) {
+                _rwKids.splice(_rOld, 1);
+                if (_rOld < _rwIdx) _rwIdx--;
+              } else {
+                _zwDetachFromRegistry(_rNode);
+              }
+              if (_zwNodeParent) _zwNodeParent[_rNode.__zwHandle] = { parentHandle: _rwParent.parentHandle, nextSibling: null };
+              _rwKids.splice(_rwIdx, 0, _rNode);
+              _rwIdx++;
+              _rwAdded.push(_rNode);
+            }
+            // 移除自身（fresh 定位——参数插入可能推移）。self 作参数时已重插（spec replaceWith：
+            // 末段「remove context」发生在 insert 之后，self 重插的实例即最终态——不再移除）。
+            var _rwRemovedSelf = [];
+            if (!_rwSelfInArgs) {
+              for (var _rxi = 0; _rxi < _rwKids.length; _rxi++) {
+                if (_rwKids[_rxi] && _rwKids[_rxi].__zwHandle === handle) { _rwKids.splice(_rxi, 1); break; }
+              }
+              var _rwSelf = _makeProxy(null, handle);
+              delete _zwNodeParent[handle];
+              _rwRemovedSelf = [_rwSelf];
+            }
+            _mo_notify(null, _rwParent.parentHandle, { type: 'childList', addedNodes: _rwAdded, removedNodes: _rwRemovedSelf });
             return undefined;
           };
         }
@@ -2533,6 +2621,9 @@
         // createTextNode 回调，无需新增 Rust 端 callback。
         if (prop === 'append') {
           return function() {
+            // R117：spec pre-insert 层级校验（含 host 包容祖先 → HierarchyRequestError；Document
+            // 收 Text/Comment/PI / 非 Document 收 Document/DocumentType → 同错）。先于插入。
+            _zwValidatePreInsert(sel, handle, arguments);
             var added = _appendVariadic(sel, handle, arguments);
             if (added.length > 0) {
               _mo_notify(sel, handle, { type: 'childList', addedNodes: added, removedNodes: [] });
@@ -2548,6 +2639,8 @@
         // 追加复用 _appendVariadic；MO childList 同时上报 removedNodes（旧子快照）+ addedNodes（新子）。
         if (prop === 'replaceChildren') {
           return function() {
+            // R117：层级校验先于清空插入（spec replace-all 同 pre-insert 校验）。
+            _zwValidatePreInsert(sel, handle, arguments);
             var removed = _childNodeList(sel, handle);
             if (handle && typeof __zw_set_inner_html_handle === 'function') __zw_set_inner_html_handle(handle, '');
             else if (typeof __zw_set_inner_html === 'function') __zw_set_inner_html(sel, '');
@@ -2567,6 +2660,8 @@
         // 仅 sel-based 目标；handle-only detached 无操作。
         if (prop === 'prepend') {
           return function() {
+            // R117：层级校验先于插入（同 append）。
+            _zwValidatePreInsert(sel, handle, arguments);
             _insertAdjacentVariadic(sel, 'afterbegin', arguments, true);
             return undefined;
           };
@@ -2587,30 +2682,70 @@
                   if (_baKids[_bi] && _baKids[_bi].__zwHandle === handle) { _baIdx = _bi; break; }
                 }
                 if (_baIdx >= 0) {
-                  var _baNew = [];
+                  // R117：**spec viable-sibling 模型**（dom spec ChildNode.before/after 步骤 2：
+                  // viablePrev/Next = 上下文前/后第一个**不在参数集**中的兄弟；每参数 pre-insert 到
+                  // 该固定 ref 前——self/兄弟参数先移除再插（移动语义），顺序保持。after 的
+                  // after(self) 场景（'text<!--test-->' 期望）由「ref 恒固定 + self 移除后重插末尾」
+                  // 自然导出；before 的 ref = 上下文自身（fresh 定位——self 被移除时回落末尾）。
+                  var _baArgSet = {};
+                  for (var _si = 0; _si < arguments.length; _si++) {
+                    if (typeof arguments[_si] === 'object' && arguments[_si] && arguments[_si].__zwHandle) {
+                      _baArgSet[arguments[_si].__zwHandle] = true;
+                    }
+                  }
+                  // after 的 viableNext：上下文之后第一个不在参数集的兄弟（handle 或 null=末尾）。
+                  var _baViableNext = null;
+                  if (prop === 'after') {
+                    for (var _vi = _baIdx + 1; _vi < _baKids.length; _vi++) {
+                      var _vk = _baKids[_vi];
+                      if (_vk && _vk.__zwHandle && !_baArgSet[_vk.__zwHandle]) { _baViableNext = _vk.__zwHandle; break; }
+                    }
+                  }
+                  var _baSeen = {};
+                  var _baAdded = [];
+                  var _baRemoved = [];
                   for (var _ai = 0; _ai < arguments.length; _ai++) {
                     var _av = arguments[_ai];
+                    var _aNode = null;
                     if (typeof _av === 'object' && _av && _av.__zwHandle) {
-                      _baNew.push(_av);
+                      if (_baSeen[_av.__zwHandle]) continue;
+                      _baSeen[_av.__zwHandle] = true;
+                      _aNode = _av;
                     } else {
                       var _atn = (typeof __zw_create_text === 'function') ? __zw_create_text(String(_av)) : '';
                       if (_atn) {
                         _textHandles[_atn] = true;
-                        _baNew.push(_wrapHandle(_atn));
+                        _aNode = _wrapHandle(_atn);
                       }
                     }
-                  }
-                  var _pos = prop === 'before' ? _baIdx : _baIdx + 1;
-                  var _ins = _baNew.slice();
-                  Array.prototype.splice.apply(_baKids, [_pos, 0].concat(_ins));
-                  // 反链 + childList record（父 registry 变化）。
-                  for (var _ri2 = 0; _ri2 < _ins.length; _ri2++) {
-                    var _rn2 = _ins[_ri2];
-                    if (_rn2 && _rn2.__zwHandle && _zwNodeParent) {
-                      _zwNodeParent[_rn2.__zwHandle] = { parentHandle: _baParent.parentHandle, nextSibling: null };
+                    if (!_aNode) continue;
+                    // pre-insert 步骤 3：先移除（同容器 splice / 跨容器 registry 反链）。
+                    var _aOldIdx = -1;
+                    for (var _mi = 0; _mi < _baKids.length; _mi++) {
+                      if (_baKids[_mi] && _baKids[_mi].__zwHandle === _aNode.__zwHandle) { _aOldIdx = _mi; break; }
                     }
+                    if (_aOldIdx >= 0) {
+                      _baKids.splice(_aOldIdx, 1);
+                      _baRemoved.push(_aNode);
+                    } else {
+                      _zwDetachFromRegistry(_aNode);
+                    }
+                    if (_zwNodeParent) _zwNodeParent[_aNode.__zwHandle] = { parentHandle: _baParent.parentHandle, nextSibling: null };
+                    // ref：before = 上下文 fresh 定位（不在则末尾）；after = viableNext fresh 定位（无则末尾）。
+                    var _baRefIdx = _baKids.length;
+                    if (prop === 'before') {
+                      for (var _ri3 = 0; _ri3 < _baKids.length; _ri3++) {
+                        if (_baKids[_ri3] && _baKids[_ri3].__zwHandle === handle) { _baRefIdx = _ri3; break; }
+                      }
+                    } else if (_baViableNext) {
+                      for (var _ri4 = 0; _ri4 < _baKids.length; _ri4++) {
+                        if (_baKids[_ri4] && _baKids[_ri4].__zwHandle === _baViableNext) { _baRefIdx = _ri4; break; }
+                      }
+                    }
+                    _baKids.splice(_baRefIdx, 0, _aNode);
+                    _baAdded.push(_aNode);
                   }
-                  _mo_notify(null, _baParent.parentHandle, { type: 'childList', addedNodes: _ins, removedNodes: [] });
+                  _mo_notify(null, _baParent.parentHandle, { type: 'childList', addedNodes: _baAdded, removedNodes: _baRemoved });
                   return undefined;
                 }
               }

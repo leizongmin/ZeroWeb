@@ -1408,6 +1408,72 @@
     },
     // R34xx：id 含特殊字符（点号等——canvas WPT 的 id="green.png"）时 '#'+id 选择器
     // 解析错误（点号被当类）→ 改用属性选择器（[id="..."] 精确匹配）。
+    // js-dom M4 R117：主文档的 ParentNode 变异族（prepend/append/replaceChildren——WPT
+    // pre-insertion-validation-hierarchy 经 insert(doc, node) 调用，缺方法直接 TypeError）。
+    // 校验：Document 只收 DocumentFragment/DocumentType/Element（Text/Comment/PI → HRE）；
+    // Document 节点本身不可插入（node.nodeType 9 → HRE，parent 非 doc）。插入 best-effort 经
+    // appendChild（校验通过后）。
+    prepend: function () {
+      for (var _p117 = 0; _p117 < arguments.length; _p117++) {
+        var _pn = arguments[_p117];
+        if (_pn && typeof _pn === 'object') {
+          var _nt117 = _pn.nodeType | 0;
+          if (_nt117 === 3 || _nt117 === 4 || _nt117 === 9) {
+            throw new (globalThis.DOMException || Error)(
+              'Nodes of type ' + _nt117 + ' cannot be inserted into a Document.', 'HierarchyRequestError');
+          }
+          if (_nt117 === 11) {
+            var _fe117 = 0;
+            var _fk117 = _pn.childNodes || [];
+            for (var _fq = 0; _fq < _fk117.length; _fq++) if (_fk117[_fq].nodeType === 1) _fe117++;
+            var _hasEl117 = false;
+            var _dk117 = globalThis.document.childNodes || [];
+            for (var _dq = 0; _dq < _dk117.length; _dq++) if (_dk117[_dq].nodeType === 1) { _hasEl117 = true; break; }
+            if (_fe117 > 1 || (_fe117 === 1 && _hasEl117)) {
+              throw new (globalThis.DOMException || Error)(
+                'A Document cannot contain more than one Element.', 'HierarchyRequestError');
+            }
+          }
+        }
+      }
+      for (var _p117b = arguments.length - 1; _p117b >= 0; _p117b--) {
+        var _pn2 = arguments[_p117b];
+        if (_pn2 && typeof _pn2 === 'object') { try { globalThis.document.insertBefore(_pn2, globalThis.document.firstChild || null); } catch (_e117) {} }
+      }
+    },
+    append: function () {
+      for (var _a117 = 0; _a117 < arguments.length; _a117++) {
+        var _an = arguments[_a117];
+        if (_an && typeof _an === 'object') {
+          var _nt117b = _an.nodeType | 0;
+          if (_nt117b === 3 || _nt117b === 4 || _nt117b === 9) {
+            throw new (globalThis.DOMException || Error)(
+              'Nodes of type ' + _nt117b + ' cannot be inserted into a Document.', 'HierarchyRequestError');
+          }
+          if (_nt117b === 11) {
+            var _fe117b = 0;
+            var _fk117b = _an.childNodes || [];
+            for (var _fqb = 0; _fqb < _fk117b.length; _fqb++) if (_fk117b[_fqb].nodeType === 1) _fe117b++;
+            var _hasEl117b = false;
+            var _dk117b = globalThis.document.childNodes || [];
+            for (var _dqb = 0; _dqb < _dk117b.length; _dqb++) if (_dk117b[_dqb].nodeType === 1) { _hasEl117b = true; break; }
+            if (_fe117b > 1 || (_fe117b === 1 && _hasEl117b)) {
+              throw new (globalThis.DOMException || Error)(
+                'A Document cannot contain more than one Element.', 'HierarchyRequestError');
+            }
+          }
+        }
+      }
+      for (var _a117b = 0; _a117b < arguments.length; _a117b++) {
+        var _an2 = arguments[_a117b];
+        if (_an2 && typeof _an2 === 'object') { try { globalThis.document.appendChild(_an2); } catch (_e117b) {} }
+      }
+    },
+    replaceChildren: function () {
+      var _rc117 = globalThis.document.childNodes || [];
+      for (var _r117 = 0; _r117 < _rc117.length; _r117++) { try { globalThis.document.removeChild(_rc117[_r117]); } catch (_e117c) {} }
+      globalThis.document.append.apply(globalThis.document, arguments);
+    },
     getElementById: function(id) {
       var idText = String(id);
       var hit = globalThis.document.querySelector('[id="' + idText.replace(/"/g, '\\"') + '"]');
@@ -1988,6 +2054,11 @@
           // js-dom M4 R79：Node.contains / compareDocumentPosition（testNodes 的 doctype 族）。
           childNodes: [],
           hasChildNodes: function () { return false; },
+          // R117：cloneNode（WPT pre-insertion-validation-hierarchy 用 doc.childNodes[0].cloneNode()
+          // 复制 doctype）。浅拷贝（doctype 无子）。
+          cloneNode: function () {
+            return globalThis.document.implementation.createDocumentType(dt.name, dt.publicId, dt.systemId);
+          },
           contains: function (other) { return _zwNodeContains(dt, other); },
           compareDocumentPosition: function (other) { return _zwCompareDocumentPosition(dt, other); },
           // js-dom M4 R81：导航面补齐（WPT Node-properties doctype.previousSibling/nextSibling/
@@ -2009,6 +2080,7 @@
           },
           parentNode: null,
         };
+          try { Object.setPrototypeOf(dt, globalThis.Node ? globalThis.Node.prototype : Object.prototype); } catch (_eR117dt2) {}
         return dt;
       },
     },

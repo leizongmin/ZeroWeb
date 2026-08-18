@@ -671,6 +671,54 @@
       }
     } catch (_e91r) {}
   }
+  // js-dom M4 R117：spec pre-insert 层级校验（`dom-node-pre-insert` 步骤 2 + Document 类型约束）——
+  // element proxy 的 append/prepend/replaceChildren 先于插入调用（WPT
+  // pre-insertion-validation-hierarchy：node 是 parent 的祖先 / Text 插 doc / DocumentType 插
+  // 非 doc → HierarchyRequestError）。祖先判定沿 parentNode 上行（proxy 的 parentNode getter）。
+  function _zwValidatePreInsert(sel, handle, args) {
+    var parent = _makeProxy(sel, handle);
+    var parentIsDoc = false;
+    try { parentIsDoc = parent.nodeType === 9; } catch (_e) {}
+    for (var i = 0; i < args.length; i++) {
+      var node = args[i];
+      if (!node || typeof node !== 'object') continue;
+      var anc = parent, hops = 0;
+      while (anc && hops++ < 64) {
+        if (anc === node) {
+          throw new (globalThis.DOMException || Error)(
+            'The new node is an ancestor of this node.', 'HierarchyRequestError');
+        }
+        try { anc = anc.parentNode; } catch (_e2) { break; }
+        if (anc == null) break;
+      }
+      var nt = 0;
+      try { nt = node.nodeType | 0; } catch (_e3) {}
+      if (parentIsDoc && (nt === 3 || nt === 7 || nt === 8)) {
+        throw new (globalThis.DOMException || Error)(
+          'Nodes of type ' + nt + ' cannot be inserted into a Document.', 'HierarchyRequestError');
+      }
+      if (!parentIsDoc && (nt === 9 || nt === 10)) {
+        throw new (globalThis.DOMException || Error)(
+          'Only a Document can contain nodes of type ' + nt + '.', 'HierarchyRequestError');
+      }
+    }
+  }
+
+  // js-dom M4 R117：pre-insert 的「先从旧父移除」步骤（spec concept-node-pre-insert 步骤 3：node
+  // 有 parent 时先 remove——移动非复制）。before/after/replaceWith/append/prepend 等变异插入族的
+  // 节点参数若已在某容器 registry（pending 树），须先从旧位置移除再插入，否则旧位置残留 = 复制。
+  // 仅处理 JS 侧 registry（_handleChildren + _zwNodeParent 反链）——host 树内挂载节点的移动由
+  // host mutation 自身语义覆盖。返回 true = 发生了移除。
+  function _zwDetachFromRegistry(node) {
+    if (!node || !node.__zwHandle || !_zwNodeParent) return false;
+    var link = _zwNodeParent[node.__zwHandle];
+    if (!link || !link.parentHandle) return false;
+    var oldParent = link.parentHandle;
+    _unrecordHandleChild(oldParent, node);
+    delete _zwNodeParent[node.__zwHandle];
+    return true;
+  }
+
   // 从容器 registry 移除 child（removeChild 用）。
   function _unrecordHandleChild(parentHandle, child) {
     if (!parentHandle || !child || !child.__zwHandle) return;
@@ -5313,13 +5361,30 @@
     // R2994：目标 sel 已挂载（本函数要求 sel-based）→ 其自身及父均连入 document，故新插入的元素子/兄弟
     // 随之连入。收集插入的元素项，事后按 connected 传播（text 字符串项跳过——非 custom element）。
     var ceInserted = [];
+    // R117：先从旧父移除（spec pre-insert 移动语义）+ 去重（同节点多次出现在参数中只插一次）
+    // + 上下文自身跳过（before.call(el, el, ...) 的 self 参数 no-op——spec「node 是 context
+    // object 则跳过该参数」）。
+    var seenHandles = {};
+    var deduped = [];
+    for (var k0 = 0; k0 < items.length; k0++) {
+      var it0 = items[k0];
+      if (typeof it0 === 'object' && it0 && it0.__zwHandle) {
+        if (it0.__zwSelector === sel) continue; // self（sel 上下文）
+        if (seenHandles[it0.__zwHandle]) continue;
+        seenHandles[it0.__zwHandle] = true;
+        _zwDetachFromRegistry(it0);
+      }
+      deduped.push(it0);
+    }
+    items = deduped;
     for (var k = 0; k < items.length; k++) {
       var item = items[k];
       try {
-        if (typeof item === 'object' && item.__zwHandle) {
+        if (item && typeof item === 'object' && item.__zwHandle) {
           __zw_insert_adjacent_element(sel, position, item.__zwHandle);
           ceInserted.push(item);
         } else {
+          // R117：null/undefined → WebIDL DOMString（'null'/'undefined' 文本节点）。
           __zw_insert_adjacent_text(sel, position, String(item));
         }
       } catch (_e) {}
@@ -5333,8 +5398,9 @@
     var added = [];
     for (var i = 0; i < args.length; i++) {
       var item = args[i];
-      if (item == null) continue;
-      if (typeof item === 'object' && item.__zwHandle) {
+      // R117：null/undefined 不跳过——WebIDL DOMString 转换（'null'/'undefined' 文本节点，
+      // WPT ParentNode-append「with null as an argument」）。
+      if (item && typeof item === 'object' && item.__zwHandle) {
         // DocumentFragment：flatten 子节点到 this。
         if (_fragmentHandles[item.__zwHandle] && typeof __zw_append_fragment_children === 'function') {
           if (handle) __zw_append_fragment_children_handle(handle, item.__zwHandle);

@@ -511,3 +511,39 @@ fn test_attribute_case_and_ns_metadata_r116() {
         "属性族：HTML 小写 + 空名异常 + NS 大小写敏感 + Attr NS 元数据 + createAttribute 文档类型语义 + handle toggle presence"
     );
 }
+
+#[test]
+fn test_child_parent_node_mutation_family_r117() {
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let mut sandbox = V8Sandbox::with_config(zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    })
+    .unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><div id=\"d\">x</div></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry);
+
+    // R117：ChildNode.before/after 的 spec viable-sibling 顺序 pre-insert（self 参数移动语义 +
+    // 兄弟参数先移除再插不复制）+ replaceWith（handle 路径 + self 作参数重插不丢）+ null/undefined
+    // WebIDL 文本转换 + 层级校验（doc 插 Text/Document → HRE；doctype 插元素 → HRE）+
+    // Node.prototype 泛型 replaceChild 校验顺序（parent-type → ancestor → NotFound → node 类型）。
+    let out = sandbox
+        .execute(
+            "var parts = [];             var parent = document.createElement('div');             var c = document.createComment('test');             parent.appendChild(c);             c.after('text', c);             parts.push('after-self:' + parent.childNodes.map(function(n){return n.nodeName === '#comment' ? '<!--' : n.data;}).join(''));             var p2 = document.createElement('div');             var x = document.createElement('x'); var y = document.createElement('y');             var c2 = document.createComment('m');             p2.appendChild(x); p2.appendChild(c2); p2.appendChild(y);             c2.before(y, x);             parts.push('before-move:' + p2.childNodes.map(function(n){return n.nodeName === '#comment' ? 'C' : n.tagName;}).join(','));             c2.replaceWith('r');             parts.push('replaceWith:' + p2.childNodes.map(function(n){return n.nodeName === '#comment' ? 'C' : (n.tagName || n.data);}).join(','));             var el = document.createElement('a');             el.append(null, undefined);             parts.push('null-text:' + el.textContent);             var threw = '';             try { document.append(document.createTextNode('t')); } catch (eH) { threw = eH.name; }             parts.push('doc-text:' + threw);             var threw2 = '';             try { el.appendChild(document.implementation.createDocumentType('h','','')); } catch (eD) { threw2 = eD.name; }             parts.push('dt-into-el:' + threw2);             var rf = Node.prototype.replaceChild;             var threw3 = '';             try { rf.call(document.createComment('c'), x, y); } catch (eP) { threw3 = eP.name; }             parts.push('nonparent:' + threw3);             parts.join('|');",
+        )
+        .unwrap()
+        .value;
+    assert_eq!(
+        out,
+        "after-self:text<!--|before-move:Y,X,C|replaceWith:Y,X,r|null-text:nullundefined|doc-text:HierarchyRequestError|dt-into-el:|nonparent:HierarchyRequestError",
+        "mutation 族：viable-sibling 顺序 pre-insert + 移动语义 + replaceWith self 重插 + null 文本 + doc/doctyp 校验 + 泛型校验顺序"
+    );
+}

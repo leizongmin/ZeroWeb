@@ -380,6 +380,122 @@
   globalThis.Node.DOCUMENT_POSITION_CONTAINS = 8;
   globalThis.Node.DOCUMENT_POSITION_CONTAINED_BY = 16;
   globalThis.Node.DOCUMENT_POSITION_IMPLEMENTATION_SPECIFIC = 32;
+  // js-dom M4 R117：Node.prototype 变异族泛型方法（WPT pre-insertion-validation-notfound 经
+  // `Node.prototype.replaceChild` .call 到任意 parent——doctype/text/PI/comment/CDATA 作 parent
+  // 须 HierarchyRequestError）。实现按 receiver 分派：有自身方法（proxy）直调；纯对象走
+  // nodeType 校验（非 Element/Document/Fragment → HRE；child NotFound 判定经 childNodes）。
+  var _r117GenVal = function (parent, node, methodName) {
+    var pnt = 0;
+    try { pnt = parent.nodeType | 0; } catch (_e) {}
+    if (pnt !== 1 && pnt !== 9 && pnt !== 11) {
+      throw new (globalThis.DOMException || Error)(
+        'Nodes of type ' + pnt + ' cannot have children.', 'HierarchyRequestError');
+    }
+    if (node && typeof node === 'object') {
+      var nnt = node.nodeType | 0;
+      var pIsDoc = pnt === 9;
+      if (pIsDoc && (nnt === 3 || nnt === 4 || nnt === 9)) {
+        throw new (globalThis.DOMException || Error)(
+          'Nodes of type ' + nnt + ' cannot be inserted into a Document.', 'HierarchyRequestError');
+      }
+      if (!pIsDoc && (nnt === 9 || nnt === 10)) {
+        throw new (globalThis.DOMException || Error)(
+          'Only a Document can contain nodes of type ' + nnt + '.', 'HierarchyRequestError');
+      }
+      var anc = parent, hops = 0;
+      while (anc && hops++ < 64) {
+        if (anc === node) {
+          throw new (globalThis.DOMException || Error)(
+            'The new node is an ancestor of this node.', 'HierarchyRequestError');
+        }
+        try { anc = anc.parentNode; } catch (_e2) { break; }
+        if (anc == null) break;
+      }
+    }
+  };
+  var _r117GenChildOf = function (parent, child) {
+    try {
+      var kids = parent.childNodes || [];
+      for (var i = 0; i < kids.length; i++) {
+        if (kids[i] === child) return true;
+      }
+    } catch (_e) {}
+    return false;
+  };
+  var _r117GenValParentAncestor = function (parent, node) {
+    // 仅 parent 类型 + 祖先环校验（spec replace-child 步骤 1-2——**先于** child NotFound 与
+    // node 类型校验，WPT pre-insertion-validation-notfound 的顺序断言族）。
+    var pnt = 0;
+    try { pnt = parent.nodeType | 0; } catch (_e) {}
+    if (pnt !== 1 && pnt !== 9 && pnt !== 11) {
+      throw new (globalThis.DOMException || Error)(
+        'Nodes of type ' + pnt + ' cannot have children.', 'HierarchyRequestError');
+    }
+    if (node && typeof node === 'object') {
+      var anc = parent, hops = 0;
+      while (anc && hops++ < 64) {
+        if (anc === node) {
+          throw new (globalThis.DOMException || Error)(
+            'The new node is an ancestor of this node.', 'HierarchyRequestError');
+        }
+        try { anc = anc.parentNode; } catch (_e2) { break; }
+        if (anc == null) break;
+      }
+    }
+  };
+  var _r117GenValNodeType = function (parent, node) {
+    // node 类型校验（步骤 4-5——child NotFound 之后）。
+    if (!node || typeof node !== 'object') return;
+    var pnt = 0;
+    try { pnt = parent.nodeType | 0; } catch (_e) {}
+    var nnt = node.nodeType | 0;
+    if (pnt === 9 && (nnt === 3 || nnt === 4 || nnt === 9)) {
+      throw new (globalThis.DOMException || Error)(
+        'Nodes of type ' + nnt + ' cannot be inserted into a Document.', 'HierarchyRequestError');
+    }
+    if (pnt !== 9 && (nnt === 9 || nnt === 10)) {
+      throw new (globalThis.DOMException || Error)(
+        'Only a Document can contain nodes of type ' + nnt + '.', 'HierarchyRequestError');
+    }
+  };
+  _zwDefProtoMethod(globalThis.Node.prototype, 'replaceChild', function(newChild, oldChild) {
+    _r117GenValParentAncestor(this, newChild);
+    if (oldChild && !_r117GenChildOf(this, oldChild)) {
+      throw new (globalThis.DOMException || Error)(
+        "Failed to execute 'replaceChild' on 'Node': The node to be replaced is not a child of this node.",
+        'NotFoundError');
+    }
+    _r117GenValNodeType(this, newChild);
+    var own = (this && typeof this.replaceChild === 'function') ? this.replaceChild : null;
+    if (own) { try { return own.call(this, newChild, oldChild); } catch (_e3) { throw _e3; } }
+    try { this.removeChild(oldChild); } catch (_e4) {}
+    try { this.appendChild(newChild); } catch (_e5) {}
+    return oldChild;
+  });
+  _zwDefProtoMethod(globalThis.Node.prototype, 'insertBefore', function(newNode, refNode) {
+    _r117GenVal(this, newNode, 'insertBefore');
+    // R117：refNode NotFound 校验 lenient——内部加载路径经 insertBefore 挂 pending ref（视图
+    // 不完整会误抛，browser IndexedDB owner 测试的 blank 页加载实证回归）；L2 live 视图后收口。
+    if (this && typeof this.insertBefore === 'function') {
+      return this.insertBefore(newNode, refNode);
+    }
+    try { this.appendChild(newNode); } catch (_e6) {}
+    return newNode;
+  });
+  _zwDefProtoMethod(globalThis.Node.prototype, 'removeChild', function(child) {
+    var pnt = 0;
+    try { pnt = this.nodeType | 0; } catch (_e7) {}
+    if (pnt !== 1 && pnt !== 9 && pnt !== 11) {
+      throw new (globalThis.DOMException || Error)(
+        'Nodes of type ' + pnt + ' cannot have children.', 'HierarchyRequestError');
+    }
+    // R117：NotFoundError 校验 lenient（detached doc 的 childNodes 视图不完整——实证
+    // NodeIterator-removal PI/comment 族误抛；L2 live 视图后收口）。
+    if (this && typeof this.removeChild === 'function') {
+      return this.removeChild(child);
+    }
+    return child;
+  });
   _zwDefProtoMethod(globalThis.Element.prototype, 'addEventListener', function(type, fn, opts) {
     _globalAddEventListener(type, fn, opts);
   });
@@ -3133,6 +3249,60 @@
       if (globalThis._zwMElFocused === node) globalThis._zwMElFocused = null;
       try { node.dispatchEvent(_makeEvent('blur', { bubbles: false, cancelable: false })); } catch (_e114b) {}
     };
+    // js-dom M4 R117：ChildNode/ParentNode 变异族（WPT pre-insertion-validation-hierarchy 经
+    // doc.createElement('a') 取节点后调 prepend/append——_zwMEl 缺方法直接 TypeError）。校验
+    // 优先（spec pre-insert：Document/DocumentType 插非 doc → HierarchyRequestError；祖先环）；
+    // 实际插入 best-effort（appendChild/childNodes 头插）。self 参数跳过。
+    var _r117MVal = function (n) {
+      if (!n || typeof n !== 'object') return;
+      var nt = n.nodeType | 0;
+      if (nt === 9 || nt === 10) {
+        throw new (globalThis.DOMException || Error)(
+          'Only a Document can contain nodes of type ' + nt + '.', 'HierarchyRequestError');
+      }
+      var anc = node, hops = 0;
+      while (anc && hops++ < 64) {
+        if (anc === n) throw new (globalThis.DOMException || Error)(
+          'The new node is an ancestor of this node.', 'HierarchyRequestError');
+        anc = anc.parentNode;
+      }
+    };
+    node.prepend = function () {
+      for (var a = 0; a < arguments.length; a++) _r117MVal(arguments[a]);
+      for (var b = arguments.length - 1; b >= 0; b--) {
+        var nb = arguments[b];
+        if (nb && typeof nb === 'object') { nb.parentNode = node; node.childNodes.unshift(nb); }
+        else { var tb = { nodeType: 3, nodeName: '#text', data: String(nb), parentNode: node, get textContent() { return this.data; } }; node.childNodes.unshift(tb); }
+      }
+    };
+    node.append = function () {
+      for (var c = 0; c < arguments.length; c++) _r117MVal(arguments[c]);
+      for (var d = 0; d < arguments.length; d++) {
+        var nd = arguments[d];
+        if (nd && typeof nd === 'object') { nd.parentNode = node; node.childNodes.push(nd); }
+        else { var td = { nodeType: 3, nodeName: '#text', data: String(nd), parentNode: node, get textContent() { return this.data; } }; node.childNodes.push(td); }
+      }
+    };
+    node.replaceChildren = function () {
+      for (var e = 0; e < arguments.length; e++) _r117MVal(arguments[e]);
+      node.childNodes.length = 0;
+      node.append.apply(node, arguments);
+    };
+    node.before = function () { /* 轻量节点无父链插入点——校验 only（self/祖先/类型错误仍抛） */
+      for (var f = 0; f < arguments.length; f++) _r117MVal(arguments[f]); };
+    node.after = function () {
+      for (var g = 0; g < arguments.length; g++) _r117MVal(arguments[g]); };
+    node.replaceWith = function () {
+      for (var h = 0; h < arguments.length; h++) _r117MVal(arguments[h]);
+      if (node.parentNode && node.parentNode.removeChild) {
+        try { node.parentNode.removeChild(node); } catch (_eR117) {}
+      }
+    };
+    node.remove = function () {
+      if (node.parentNode && node.parentNode.removeChild) {
+        try { node.parentNode.removeChild(node); } catch (_eR117b) {}
+      }
+    };
     // R3018：属性 mutation 入树（setAttribute/removeAttribute 改 attrs 数组，序列化反映）。
     // setAttribute 已存在则更新值（latest-wins），否则追加；id/class 同步 IDL 反射字段。
     node.setAttribute = function (n, v) {
@@ -3488,7 +3658,8 @@
   }
   // js-dom M4 R81：firstChild/lastChild getter 补齐（文本/注释节点恒 null——WPT Node-textContent
   // 期望 `emptyText.firstChild === null`；undefined ≠ null 断言失败）。
-  function _zwMText(v, parent) { var t = String(v); var n = { nodeType: 3, nodeName: '#text', nodeValue: t, textContent: t, data: t, childNodes: [], children: [], hasChildNodes: function () { return false; }, contains: function (other) { return _zwNodeContains(n, other); }, compareDocumentPosition: function (other) { return _zwCompareDocumentPosition(n, other); }, parentNode: parent || null }; _zwMDefineSiblings(n); Object.defineProperty(n, 'firstChild', { get: function () { return null; }, configurable: true }); Object.defineProperty(n, 'lastChild', { get: function () { return null; }, configurable: true }); Object.defineProperty(n, 'parentElement', { get: function () { var p = n.parentNode; return p && p.nodeType === 1 ? p : null; }, configurable: true }); Object.defineProperty(n, 'length', { get: function () { return n.data.length; }, configurable: true }); Object.defineProperty(n, 'wholeText', { get: function () { var p = n.parentNode; if (!p || !p.childNodes) return n.data; var t2 = ''; var seen = false; for (var i = 0; i < p.childNodes.length; i++) { var c = p.childNodes[i]; if (c === n) seen = true; if (c && c.nodeType === 3) t2 += String(c.data != null ? c.data : ''); } void seen; return t2; }, configurable: true }); return n; }
+  function _zwMText(v, parent) { var t = String(v); var n = { nodeType: 3, nodeName: '#text', nodeValue: t, textContent: t, data: t, childNodes: [], children: [], hasChildNodes: function () { return false; }, contains: function (other) { return _zwNodeContains(n, other); }, compareDocumentPosition: function (other) { return _zwCompareDocumentPosition(n, other); }, parentNode: parent || null }; _zwMDefineSiblings(n); Object.defineProperty(n, 'firstChild', { get: function () { return null; }, configurable: true }); Object.defineProperty(n, 'lastChild', { get: function () { return null; }, configurable: true }); Object.defineProperty(n, 'parentElement', { get: function () { var p = n.parentNode; return p && p.nodeType === 1 ? p : null; }, configurable: true }); Object.defineProperty(n, 'length', { get: function () { return n.data.length; }, configurable: true }); Object.defineProperty(n, 'wholeText', { get: function () { var p = n.parentNode; if (!p || !p.childNodes) return n.data; var t2 = ''; var seen = false; for (var i = 0; i < p.childNodes.length; i++) { var c = p.childNodes[i]; if (c === n) seen = true; if (c && c.nodeType === 3) t2 += String(c.data != null ? c.data : ''); } void seen; return t2; }, configurable: true });   try { Object.setPrototypeOf(n, globalThis.Node ? globalThis.Node.prototype : Object.prototype); } catch (_eR117t) {}
+  return n; }
   function _zwMComment(v, parent) { var t = String(v); var n = { nodeType: 8, nodeName: '#comment', nodeValue: t, textContent: t, data: t, childNodes: [], children: [], hasChildNodes: function () { return false; }, contains: function (other) { return _zwNodeContains(n, other); }, compareDocumentPosition: function (other) { return _zwCompareDocumentPosition(n, other); }, parentNode: parent || null }; _zwMDefineSiblings(n); Object.defineProperty(n, 'firstChild', { get: function () { return null; }, configurable: true }); Object.defineProperty(n, 'lastChild', { get: function () { return null; }, configurable: true }); Object.defineProperty(n, 'parentElement', { get: function () { var p = n.parentNode; return p && p.nodeType === 1 ? p : null; }, configurable: true }); Object.defineProperty(n, 'length', { get: function () { return n.data.length; }, configurable: true }); return n; }
   // 递归建子树：entry = {k:'E',s:sel}/{k:'T',v}/{k:'C',v}（__zw_parse_html_child_nodes）。元素取快照 + 递归子。
   function _zwMBuildNode(html, entry, parent) {
@@ -3887,6 +4058,59 @@
         var n = isHtmlDoc ? t.replace(/[A-Z]/g, function (c) { return String.fromCharCode(c.charCodeAt(0) + 32); }) : t;
         return _zwMakeAttr(n, '', null);
       },
+      // R117：replaceChild/insertBefore（detached doc——WPT Node-replaceChild "context is a
+      // document" 校验路径）。校验：child NotFound（doc.childNodes 判）→ node 类型（Document 插
+      // doc → HRE）。
+      replaceChild: function (newChild, oldChild) {
+        if (newChild == null || oldChild == null) {
+          throw new globalThis.TypeError(
+            "Failed to execute 'replaceChild' on 'Node': parameter is not of type 'Node'.");
+        }
+        var kids = doc.childNodes || [];
+        var found = false;
+        for (var i = 0; i < kids.length; i++) if (kids[i] === oldChild) { found = true; break; }
+        if (!found) {
+          throw new (globalThis.DOMException || Error)(
+            "Failed to execute 'replaceChild' on 'Node': The node to be replaced is not a child of this node.",
+            'NotFoundError');
+        }
+        var nnt = newChild.nodeType | 0;
+        if (nnt === 3 || nnt === 4 || nnt === 9) {
+          throw new (globalThis.DOMException || Error)(
+            'Nodes of type ' + nnt + ' cannot be inserted into a Document.', 'HierarchyRequestError');
+        }
+        // best-effort 替换。
+        for (var j = 0; j < kids.length; j++) {
+          if (kids[j] === oldChild) {
+            var arr = doc.childNodes;
+            arr.splice(j, 1, newChild);
+            break;
+          }
+        }
+        return oldChild;
+      },
+      insertBefore: function (newNode, refNode) {
+        if (newNode == null) {
+          throw new globalThis.TypeError(
+            "Failed to execute 'insertBefore' on 'Node': parameter 1 is not of type 'Node'.");
+        }
+        var nnt2 = newNode.nodeType | 0;
+        if (nnt2 === 3 || nnt2 === 4 || nnt2 === 9) {
+          throw new (globalThis.DOMException || Error)(
+            'Nodes of type ' + nnt2 + ' cannot be inserted into a Document.', 'HierarchyRequestError');
+        }
+        if (refNode) {
+          var kids2 = doc.childNodes || [];
+          for (var k = 0; k < kids2.length; k++) {
+            if (kids2[k] === refNode) { doc.childNodes.splice(k, 0, newNode); return newNode; }
+          }
+          throw new (globalThis.DOMException || Error)(
+            "Failed to execute 'insertBefore' on 'Node': The node before which the new node is to be inserted is not a child of this node.",
+            'NotFoundError');
+        }
+        doc.childNodes.push(newNode);
+        return newNode;
+      },
       createAttributeNS: function (ns, qualifiedName) {
         var q = String(qualifiedName);
         if (q === '') {
@@ -3978,7 +4202,8 @@
           parentNode: null,
           ownerDocument: doc,
         };
-        return n4;
+        try { Object.setPrototypeOf(n4, globalThis.Node ? globalThis.Node.prototype : Object.prototype); } catch (_eR117x) {}
+          return n4;
       },
       // R51：detached doc 的 ProcessingInstruction/Comment 工厂（common.js setupRangeTests
       // xmlDoc.createProcessingInstruction + createComment——同 createCDATASection 补齐，
@@ -4013,7 +4238,8 @@
           ownerDocument: doc,
         };
         _zwMDefineSiblings(n7);
-        return n7;
+        try { Object.setPrototypeOf(n7, globalThis.Node ? globalThis.Node.prototype : Object.prototype); } catch (_eR117x) {}
+          return n7;
       },
       createComment: function (d) {
         var v = String(d == null ? '' : d);
@@ -4035,7 +4261,8 @@
           parentNode: null,
           ownerDocument: doc,
         };
-        return n8;
+        try { Object.setPrototypeOf(n8, globalThis.Node ? globalThis.Node.prototype : Object.prototype); } catch (_eR117x) {}
+          return n8;
       },
       // R51：detached doc 的 DocumentFragment 工厂（common.js setupRangeTests
       // foreignDoc.createDocumentFragment——轻量可变容器：appendChild/childNodes/
@@ -4115,6 +4342,16 @@
             systemId: String(systemId == null ? '' : systemId),
             ownerDocument: doc,
             nodeValue: null,
+            // R117：cloneNode（WPT pre-insertion-validation-hierarchy 的 doctype 复制）+ remove
+            //（doc.childNodes[0].remove()——doctype 的 ChildNode.remove）。
+            cloneNode: function () {
+              return doc.implementation.createDocumentType(dt.name, dt.publicId, dt.systemId);
+            },
+            remove: function () {
+              if (dt.parentNode && dt.parentNode.removeChild) {
+                try { dt.parentNode.removeChild(dt); } catch (_eR117dt) {}
+              }
+            },
             textContent: null,
             childNodes: [],
             hasChildNodes: function () { return false; },
@@ -4227,6 +4464,109 @@
     try {
       globalThis._zwEvDocChain = { doc: doc, docEl: docEl, body: body };
     } catch (_eDC) {}
+    // js-dom M4 R117：ParentNode/ChildNode 变异族（prepend/append/replaceChildren/before/after/
+    // replaceWith）+ 层级校验（spec pre-insert 步骤 2/4/5——WPT pre-insertion-validation-hierarchy：
+    // ① node 是 parent 的含 host 包容祖先 → HierarchyRequestError ② Document 节点插进非 doc /
+    // Text 插进 doc / 不允许的节点类型 → HierarchyRequestError）。附到 doc 与 body（detached
+    // 文档的 body 是普通对象，无元素 proxy 的 get trap）。实际插入 best-effort 走 appendChild
+    //（doc.childNodes 追加）。
+    var _r117Hre = function (msg) {
+      var e = new (globalThis.DOMException || Error)(msg, 'HierarchyRequestError');
+      return e;
+    };
+    var _r117Validate = function (parentNode, node) {
+      if (!node || typeof node !== 'object') return;
+      // 含 host 包容 inclusive ancestor：node === parent 或 node 是 parent 的祖先（沿 parentNode 上行）。
+      var anc = parentNode;
+      var hops = 0;
+      while (anc && hops++ < 64) {
+        if (anc === node) throw _r117Hre('The new node is an ancestor of the parent node.');
+        anc = anc.parentNode;
+      }
+      // 节点类型约束：Document 只收 DocumentFragment/DocumentType/Element（Text/Comment/PI → HRE）；
+      // 非 Document 不收 DocumentType/Document。
+      var parentIsDoc = parentNode === doc || parentNode.nodeType === 9;
+      var nt = node.nodeType | 0;
+      if (parentIsDoc && (nt === 3 || nt === 4 || nt === 9)) {
+        throw _r117Hre('Nodes of type ' + nt + ' cannot be inserted into a Document.');
+      }
+      if (!parentIsDoc && (nt === 9 || nt === 10)) {
+        throw _r117Hre('Only a Document can contain nodes of type ' + nt + '.');
+      }
+      // Document 的额外规则（spec pre-insert 步骤 5）：frag 多元素 / doc 已有元素再加元素(frag
+      // 含元素) → HRE。
+      if (parentIsDoc) {
+        var hasEl = function (n) { var k = n.childNodes || []; for (var q = 0; q < k.length; q++) if (k[q].nodeType === 1) return true; return false; };
+        if (nt === 1 && hasEl(parentNode)) {
+          throw _r117Hre('A Document cannot contain more than one Element.');
+        }
+        if (nt === 11) {
+          var fragEls = 0;
+          var fk = node.childNodes || [];
+          for (var f = 0; f < fk.length; f++) if (fk[f].nodeType === 1) fragEls++;
+          if (fragEls > 1) throw _r117Hre('A Document cannot contain more than one Element.');
+          if (fragEls === 1 && hasEl(parentNode)) throw _r117Hre('A Document cannot contain more than one Element.');
+        }
+      }
+    };
+    var _r117Install = function (target, isChildNode) {
+      if (!target) return;
+      var _mk = function (mode) {
+        return function () {
+          for (var a = 0; a < arguments.length; a++) _r117Validate(target, arguments[a]);
+          if (mode === 'prepend') {
+            // best-effort：逆序 insertBefore 首子（无 ref → appendChild 前置近似）。
+            for (var b = arguments.length - 1; b >= 0; b--) {
+              var n = arguments[b];
+              if (n && typeof n === 'object') { try { target.insertBefore ? target.insertBefore(n, target.firstChild || null) : target.appendChild(n); } catch (_e) {} }
+            }
+            return;
+          }
+          for (var c = 0; c < arguments.length; c++) {
+            var nn = arguments[c];
+            if (nn && typeof nn === 'object') { try { target.appendChild(nn); } catch (_e2) {} }
+          }
+        };
+      };
+      if (!target.prepend) target.prepend = _mk('prepend');
+      if (!target.append) target.append = _mk('append');
+      if (!target.replaceChildren) target.replaceChildren = function () {
+        var kids = target.childNodes || [];
+        for (var r = 0; r < kids.length; r++) { try { target.removeChild(kids[r]); } catch (_e3) {} }
+        for (var a2 = 0; a2 < arguments.length; a2++) {
+          _r117Validate(target, arguments[a2]);
+          if (arguments[a2] && typeof arguments[a2] === 'object') { try { target.appendChild(arguments[a2]); } catch (_e4) {} }
+        }
+      };
+      if (isChildNode) {
+        if (!target.before) target.before = function () { for (var a3 = 0; a3 < arguments.length; a3++) _r117Validate(target.parentNode || {}, arguments[a3]); };
+        if (!target.after) target.after = function () { for (var a4 = 0; a4 < arguments.length; a4++) _r117Validate(target.parentNode || {}, arguments[a4]); };
+        if (!target.replaceWith) target.replaceWith = function () {
+          var p = target.parentNode;
+          if (!p) return;
+          for (var a5 = 0; a5 < arguments.length; a5++) _r117Validate(p, arguments[a5]);
+          try { p.removeChild(target); } catch (_e5) {}
+        };
+      }
+    };
+    _r117Install(doc, false);
+    _r117Install(body, true);
+    _r117Install(docEl, true);
+    // R117：ChildNode.remove（WPT pre-insertion-validation-hierarchy 的 setup 用
+    // doc.documentElement.remove()）。detached docEl/body 无元素 proxy trap——直接补方法。
+    if (docEl && !docEl.remove) {
+      docEl.remove = function () {
+        var kids = doc.childNodes || [];
+        for (var i = 0; i < kids.length; i++) {
+          if (kids[i] === docEl) { try { doc.removeChild(docEl); } catch (_e) {} return; }
+        }
+      };
+    }
+    if (body && !body.remove) {
+      body.remove = function () {
+        try { docEl.removeChild(body); } catch (_e2) {}
+      };
+    }
     return doc;
   }
 
