@@ -644,6 +644,12 @@ fn test_text_emphasis_wide_keyword_expands_all_longhands() {
 }
 
 #[test]
+fn test_font_variant_rejects_unknown_or_duplicate_components() {
+    assert!(expand_one("font-variant", "small-caps sparkle", false, (0, 0, 1)).is_empty());
+    assert!(expand_one("font-variant", "small-caps all-small-caps", false, (0, 0, 1)).is_empty());
+}
+
+#[test]
 /// R2132：简写值首尾空白守卫——值字符串首尾的空白只能来自转义（consume_declaration
 /// deferred-ws 已保证无首尾空白 token），应丢弃整个简写声明（与 chromium 一致：
 /// 含转义首尾空白的简写值非法）。driving：escapes-014 `background:\0020red` → `" red"`。

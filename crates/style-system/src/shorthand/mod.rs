@@ -2371,28 +2371,54 @@ fn expand_font_variant(value: &str, important: bool, specificity: (u32, u32, u32
             | "historical-ligatures"
             | "no-contextual"
             | "contextual" => {
-                ligatures = Some(token.to_string());
+                let value = ligatures.get_or_insert_with(String::new);
+                if !value.is_empty() {
+                    value.push(' ');
+                }
+                value.push_str(&token);
+                if zero_css_parser::values::parse_font_variant_ligatures(value).is_none() {
+                    return vec![];
+                }
             }
             // font-variant-caps keywords
             "small-caps" | "all-small-caps" | "petite-caps" | "all-petite-caps" | "unicase" | "titling-caps" => {
+                if caps.is_some() {
+                    return vec![];
+                }
                 caps = Some(token.to_string());
             }
             // font-variant-numeric keywords
             "lining-nums" | "oldstyle-nums" | "proportional-nums" | "tabular-nums" | "ordinal" | "slashed-zero"
             | "diagonal-fractions" | "stacked-fractions" => {
+                if numeric.is_some() {
+                    return vec![];
+                }
                 numeric = Some(token.to_string());
             }
             // font-variant-east-asian keywords
             "jis78" | "jis83" | "jis90" | "jis04" | "simplified" | "traditional" | "full-width"
             | "proportional-width" | "ruby" => {
+                if east_asian.is_some() {
+                    return vec![];
+                }
                 east_asian = Some(token.to_string());
             }
             // font-variant-position keywords
             "sub" | "super" => {
+                if position.is_some() {
+                    return vec![];
+                }
                 position = Some(token.to_string());
             }
             "historical-forms" => {
-                alternates = Some(token.to_string());
+                let value = alternates.get_or_insert_with(String::new);
+                if !value.is_empty() {
+                    value.push(' ');
+                }
+                value.push_str(&token);
+                if zero_css_parser::values::parse_font_variant_alternates(value).is_none() {
+                    return vec![];
+                }
             }
             _ if zero_css_parser::values::parse_font_variant_alternates(&token).is_some() => {
                 let value = alternates.get_or_insert_with(String::new);
@@ -2400,8 +2426,11 @@ fn expand_font_variant(value: &str, important: bool, specificity: (u32, u32, u32
                     value.push(' ');
                 }
                 value.push_str(&token);
+                if zero_css_parser::values::parse_font_variant_alternates(value).is_none() {
+                    return vec![];
+                }
             }
-            _ => {}
+            _ => return vec![],
         }
     }
 
