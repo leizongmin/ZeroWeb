@@ -545,6 +545,51 @@ fn test_indexeddb_schema_rename_identity_and_abort_restore() {
 }
 
 #[test]
+fn test_indexeddb_key_range_conversion_edges() {
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+
+    let mut sandbox = V8Sandbox::with_config(zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    })
+    .unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+
+    assert_eq!(
+        sandbox
+            .execute(
+                "(function () {\
+                   var results = [];\
+                   var source = new Uint8Array([1, 2]);\
+                   var range = IDBKeyRange.lowerBound(source);\
+                   source[0] = 9;\
+                   results.push('binary:' + (range.lower instanceof ArrayBuffer) + ':' + new Uint8Array(range.lower)[0]);\
+                   var thrown = new Error('getter');\
+                   var key = [];\
+                   key.length = 1;\
+                   Object.defineProperty(key, '0', {get:function () { throw thrown; }});\
+                   try { IDBKeyRange.only(key); }\
+                   catch (error) { results.push('getter:' + (error === thrown)); }\
+                   var secondReads = 0;\
+                   var second = [];\
+                   second.length = 1;\
+                   Object.defineProperty(second, '0', {get:function () { secondReads++; return 1; }});\
+                   try { indexedDB.cmp({}, second); }\
+                   catch (error) { results.push('cmp:' + error.name + ':' + secondReads); }\
+                   try { IDBKeyRange.bound(2, 1); }\
+                   catch (error) { results.push('bound:' + error.name); }\
+                   try { range.includes(); }\
+                   catch (error) { results.push('includes:' + error.name); }\
+                   return results.join('|');\
+                 })()"
+            )
+            .unwrap()
+            .value,
+        "binary:true:1|getter:true|cmp:DataError:0|bound:DataError|includes:TypeError"
+    );
+}
+
+#[test]
 fn test_indexeddb_blocked_upgrade_waits_for_connection_close() {
     use zero_script_sandbox::{Sandbox, V8Sandbox};
 

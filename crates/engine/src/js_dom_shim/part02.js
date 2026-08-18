@@ -2992,6 +2992,10 @@
     throw new globalThis.DOMException('Invalid IndexedDB key response.', 'UnknownError');
   }
 
+  function _zwIDBConvertKey(value) {
+    return _zwIDBKeyFromWire(_zwIDBKeyToWire(value));
+  }
+
   function _zwIDBNeedsGraph(value, seen) {
     if (value === null || typeof value !== 'object') return false;
     if (seen.has(value)) return true;
@@ -4137,14 +4141,9 @@
   };
   _zwIDBStore.prototype._getAll = function (query, count, keysOnly, queryProvided) {
     this._assertUsable(false);
-    if (queryProvided && query !== undefined) {
-      var valid = false;
-      try {
-        valid = _zwIDBIsKeyRange(query) || !!_zwIDBKey(query, []);
-      } catch (_) {}
-      if (!valid) {
-        throw new globalThis.DOMException('The supplied value is not a valid key.', 'DataError');
-      }
+    if (queryProvided && query !== undefined
+        && !_zwIDBIsKeyRange(query) && !_zwIDBKey(query, [])) {
+      throw new globalThis.DOMException('The supplied value is not a valid key.', 'DataError');
     }
     var request = new _zwIDBRequest(this);
     request.transaction = this.transaction;
@@ -5727,6 +5726,8 @@
     this._zwIDBKeyRange = true;
   }
   _zwIDBKeyRange.prototype.includes = function (key) {
+    if (arguments.length < 1) throw new TypeError('IDBKeyRange.includes requires a key');
+    key = _zwIDBConvertKey(key);
     if (this.lower !== undefined) {
       var lower = _zwIDBCompareValues(key, this.lower);
       if (this.lowerOpen ? lower <= 0 : lower < 0) return false;
@@ -5738,16 +5739,27 @@
     return true;
   };
   _zwIDBKeyRange.bound = function (lower, upper, lowerOpen, upperOpen) {
+    if (arguments.length < 2) throw new TypeError('IDBKeyRange.bound requires two keys');
+    lower = _zwIDBConvertKey(lower);
+    upper = _zwIDBConvertKey(upper);
+    var compared = _zwIDBCompareValues(lower, upper);
+    if (compared > 0 || (compared === 0 && (lowerOpen || upperOpen))) {
+      throw new globalThis.DOMException('The key range is empty.', 'DataError');
+    }
     return new _zwIDBKeyRange(lower, upper, lowerOpen, upperOpen);
   };
   _zwIDBKeyRange.only = function (value) {
+    if (arguments.length < 1) throw new TypeError('IDBKeyRange.only requires a key');
+    value = _zwIDBConvertKey(value);
     return new _zwIDBKeyRange(value, value, false, false);
   };
   _zwIDBKeyRange.lowerBound = function (lower, open) {
-    return new _zwIDBKeyRange(lower, undefined, open, false);
+    if (arguments.length < 1) throw new TypeError('IDBKeyRange.lowerBound requires a key');
+    return new _zwIDBKeyRange(_zwIDBConvertKey(lower), undefined, open, true);
   };
   _zwIDBKeyRange.upperBound = function (upper, open) {
-    return new _zwIDBKeyRange(undefined, upper, false, open);
+    if (arguments.length < 1) throw new TypeError('IDBKeyRange.upperBound requires a key');
+    return new _zwIDBKeyRange(undefined, _zwIDBConvertKey(upper), true, open);
   };
 
   // https://w3c.github.io/IndexedDB/#dom-idbfactory-open
@@ -5973,10 +5985,11 @@
     cmp: function (a, b) {
       if (arguments.length < 2) throw new TypeError('IDBFactory.cmp requires two keys');
       var first = _zwIDBKey(a, []);
-      var second = _zwIDBKey(b, []);
-      if (!first || !second) {
+      if (!first) {
         throw new globalThis.DOMException('The supplied value is not a valid key.', 'DataError');
       }
+      var second = _zwIDBKey(b, []);
+      if (!second) throw new globalThis.DOMException('The supplied value is not a valid key.', 'DataError');
       return _zwIDBCompareKeys(first, second);
     },
   };

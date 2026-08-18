@@ -1,0 +1,45 @@
+{
+  "date": "2026-08-19",
+  "scope": "M2 IndexedDB key range and binary keys",
+  "wpt_revision": "315976933870b34d6ea30e3f6643403edae678ba",
+  "files_added": 8,
+  "driving_wpt": {
+    "before": {
+      "pass": 55,
+      "fail": 24,
+      "timeout": 0
+    },
+    "after": {
+      "pass": 79,
+      "fail": 0,
+      "timeout": 0
+    }
+  },
+  "imported_wpt": {
+    "files": 131,
+    "pass": 795,
+    "fail": 0,
+    "timeout": 0,
+    "not_run": 0,
+    "empty": 0
+  },
+  "capabilities": [
+    "IDBKeyRange validation and includes",
+    "canonical BufferSource key copies",
+    "detached and round-trip binary keys",
+    "array key getter exception propagation",
+    "key conversion short-circuit ordering"
+  ],
+  "gates": {
+    "cargo_fmt": "pass",
+    "cargo_clippy_workspace": "pass",
+    "make_testharness_indexeddb": "pass",
+    "make_test": "pass",
+    "targeted_engine": "24 pass",
+    "manifest_counts": {
+      "fetch": 131,
+      "runner": 131,
+      "ledger": 131
+    }
+  }
+}
