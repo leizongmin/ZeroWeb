@@ -1,6 +1,9 @@
 use std::collections::{HashMap, HashSet};
 use std::fmt::Write as _;
-use std::fs::{self, File, OpenOptions};
+use std::fs::{self, OpenOptions};
+// File 仅 unix 分支的 sync_directory 使用；不门卫则 Windows clippy 判 unused import
+#[cfg(unix)]
+use std::fs::File;
 use std::io::Write as _;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};

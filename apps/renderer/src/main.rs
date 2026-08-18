@@ -33,7 +33,7 @@ use std::sync::Arc;
 #[cfg(test)]
 use std::sync::mpsc;
 use std::sync::mpsc::{Receiver, RecvTimeoutError, TryRecvError};
-use std::thread::{self, JoinHandle};
+use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
 
 use std::io;
@@ -2697,6 +2697,11 @@ fn parse_renderer_launch() -> (ProcessRole, u64) {
     }
     (role, instance_id)
 }
+
+// use std::thread::{self, ...}：`self` 仅本函数使用，门卫随函数走——否则 macOS
+//（本函数被剔除）上 import 变 unused，CI -D warnings 挂（2026-08-18 实修）
+#[cfg(not(target_os = "macos"))]
+use std::thread;
 
 #[cfg(not(target_os = "macos"))]
 fn run_on_renderer_stack<T: Send + 'static>(
