@@ -264,6 +264,9 @@ fn classify_bg_token(token: &str, slots: &mut BgSlots, size_side: bool) -> bool 
     }
     // attachment 值
     if matches!(token, "scroll" | "fixed" | "local") {
+        if !slots.attachment.is_empty() {
+            return false;
+        }
         slots.attachment = token.to_string();
         return true;
     }
@@ -275,11 +278,17 @@ fn classify_bg_token(token: &str, slots: &mut BgSlots, size_side: bool) -> bool 
     }
     // size 关键字 contain/cover → background-size（改前误落 bg_color）
     if matches!(token, "contain" | "cover") {
+        if !size_side || !slots.size.is_empty() {
+            return false;
+        }
         slots.size = token.to_string();
         return true;
     }
     // auto → background-size（auto 在 background 简写中只作 size 关键字）
     if token == "auto" {
+        if !size_side || !can_append_background_size(slots) {
+            return false;
+        }
         bg_append(&mut slots.size, token);
         return true;
     }
@@ -294,6 +303,9 @@ fn classify_bg_token(token: &str, slots: &mut BgSlots, size_side: bool) -> bool 
     // 长度/百分比 → position（pos-side）或 size（size-side）
     if is_background_length_percentage(token) {
         if size_side {
+            if !can_append_background_size(slots) {
+                return false;
+            }
             bg_append(&mut slots.size, token);
         } else {
             bg_append(&mut slots.position, token);
@@ -307,6 +319,9 @@ fn classify_bg_token(token: &str, slots: &mut BgSlots, size_side: bool) -> bool 
     if let Ok(n) = token.parse::<f32>() {
         if n == 0.0 {
             if size_side {
+                if !can_append_background_size(slots) {
+                    return false;
+                }
                 bg_append(&mut slots.size, token);
             } else {
                 bg_append(&mut slots.position, token);
@@ -322,6 +337,13 @@ fn classify_bg_token(token: &str, slots: &mut BgSlots, size_side: bool) -> bool 
         return true;
     }
     false
+}
+
+fn can_append_background_size(slots: &BgSlots) -> bool {
+    if slots.size == "cover" || slots.size == "contain" {
+        return false;
+    }
+    slots.size.split_whitespace().count() < 2
 }
 
 fn is_background_length_percentage(token: &str) -> bool {

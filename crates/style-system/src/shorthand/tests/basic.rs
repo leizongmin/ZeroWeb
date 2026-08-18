@@ -722,3 +722,19 @@ fn test_background_rejects_unknown_or_duplicate_color_components() {
     );
     assert_eq!(result.len(), 8);
 }
+
+#[test]
+fn test_background_rejects_invalid_size_and_attachment_components() {
+    assert!(expand_one("background", "cover", false, (0, 0, 1)).is_empty());
+    assert!(expand_one("background", "auto", false, (0, 0, 1)).is_empty());
+    assert!(expand_one("background", "fixed local red", false, (0, 0, 1)).is_empty());
+    assert!(expand_one("background", "center / cover contain", false, (0, 0, 1)).is_empty());
+    assert!(expand_one("background", "center / 10px 20px 30px", false, (0, 0, 1)).is_empty());
+    assert!(expand_one("background", "center / 10px cover", false, (0, 0, 1)).is_empty());
+
+    let result = expand_one("background", "center / auto 10px fixed", false, (0, 0, 1));
+    let map: std::collections::HashMap<&str, &str> =
+        result.iter().map(|(p, v, _, _)| (p.as_str(), v.as_str())).collect();
+    assert_eq!(map.get("background-size"), Some(&"auto 10px"));
+    assert_eq!(map.get("background-attachment"), Some(&"fixed"));
+}

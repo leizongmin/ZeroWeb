@@ -57,6 +57,8 @@ Logical border axis shorthands exposed the axis variant: 1-2 start/end mapping m
 
 `background` exposed the default-to-color variant: a classifier must not route every unknown token to a permissive fallback slot. Only tokens accepted by the real color grammar may fill `background-color`, repeated color tokens must reject the shorthand, and tokens that are valid only on the position side must not be silently ignored after the `/` size delimiter.
 
+`background-size` and `background-attachment` exposed the slot cardinality variant: a token may be valid for a longhand but invalid in its shorthand position or as a repeated component. `cover`/`contain`/`auto` must be tied to the slash-delimited size side, `cover`/`contain` are exclusive, size accepts at most two simple components, and attachment accepts only one component per background layer.
+
 ## Root Cause
 
 The shorthand layer used heuristic component classifiers and treated unrecognized tokens as absent optional components. That is wrong for CSS shorthands such as `border`, where every token must match one of the allowed component grammars. A shared parser can also be broader than the property grammar that consumes it: general length parsing may accept `auto`, intrinsic sizing keywords, or percentages that `border-width` must reject.
