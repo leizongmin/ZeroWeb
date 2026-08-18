@@ -165,6 +165,21 @@ fn test_gap_shorthand_too_many_values() {
 }
 
 #[test]
+fn test_gap_shorthand_rejects_invalid_tokens() {
+    assert!(expand_one("gap", "sparkle", false, (0, 0, 1)).is_empty());
+    assert!(expand_one("gap", "10px sparkle", false, (0, 0, 1)).is_empty());
+    assert!(expand_one("gap", "auto", false, (0, 0, 1)).is_empty());
+    assert!(expand_one("gap", "thin", false, (0, 0, 1)).is_empty());
+    assert!(expand_one("gap", "-1px", false, (0, 0, 1)).is_empty());
+
+    let result = expand_one("gap", "normal 10px", false, (0, 0, 1));
+    assert_eq!(result[1].0, "row-gap");
+    assert_eq!(result[1].1, "normal");
+    assert_eq!(result[2].0, "column-gap");
+    assert_eq!(result[2].1, "10px");
+}
+
+#[test]
 /// gap 简写保留 important 和 specificity
 fn test_gap_shorthand_preserves_important() {
     let result = expand_one("gap", "5px", true, (0, 1, 0));

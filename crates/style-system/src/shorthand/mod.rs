@@ -652,14 +652,21 @@ fn expand_one(property: &str, value: &str, important: bool, specificity: (u32, u
         "columns" => expand_columns(value, important, specificity),
 
         // ── gap 简写 ──
+        // https://drafts.csswg.org/css-align-3/#gap-shorthand
         // gap: <row-gap> <column-gap>
         // 单值同时应用于 gap、row-gap 和 column-gap
         "gap" => {
+            if matches_css_wide_keyword(value) {
+                return wide_keyword_to_longhands(value, &["gap", "row-gap", "column-gap"], important, specificity);
+            }
             let parts: Vec<&str> = value.split_whitespace().collect();
+            if parts.is_empty() || parts.len() > 2 || parts.iter().any(|part| !is_gap_value_token(part)) {
+                return vec![];
+            }
             match parts.len() {
                 1 => vec![mk("gap", parts[0]), mk("row-gap", parts[0]), mk("column-gap", parts[0])],
                 2 => vec![mk("gap", parts[0]), mk("row-gap", parts[0]), mk("column-gap", parts[1])],
-                _ => vec![],
+                _ => unreachable!(),
             }
         }
 
@@ -812,6 +819,36 @@ fn parse_rect_values(value: &str) -> Option<(&str, &str, &str, &str)> {
         3 => Some((parts[0], parts[1], parts[2], parts[1])),
         4 => Some((parts[0], parts[1], parts[2], parts[3])),
         _ => None,
+    }
+}
+
+fn is_gap_value_token(value: &str) -> bool {
+    if value.eq_ignore_ascii_case("normal") {
+        return true;
+    }
+    if value.eq_ignore_ascii_case("thin") || value.eq_ignore_ascii_case("medium") || value.eq_ignore_ascii_case("thick")
+    {
+        return false;
+    }
+    match zero_css_parser::values::parse_length(value) {
+        Some(zero_css_parser::values::LengthValue::Px(v))
+        | Some(zero_css_parser::values::LengthValue::Em(v))
+        | Some(zero_css_parser::values::LengthValue::Ex(v))
+        | Some(zero_css_parser::values::LengthValue::Rex(v))
+        | Some(zero_css_parser::values::LengthValue::Cap(v))
+        | Some(zero_css_parser::values::LengthValue::Rcap(v))
+        | Some(zero_css_parser::values::LengthValue::Rem(v))
+        | Some(zero_css_parser::values::LengthValue::Vh(v))
+        | Some(zero_css_parser::values::LengthValue::Vw(v))
+        | Some(zero_css_parser::values::LengthValue::Vmin(v))
+        | Some(zero_css_parser::values::LengthValue::Vmax(v))
+        | Some(zero_css_parser::values::LengthValue::Ch(v))
+        | Some(zero_css_parser::values::LengthValue::Rch(v))
+        | Some(zero_css_parser::values::LengthValue::Ic(v))
+        | Some(zero_css_parser::values::LengthValue::Ric(v))
+        | Some(zero_css_parser::values::LengthValue::Percentage(v)) => v >= 0.0,
+        Some(zero_css_parser::values::LengthValue::Calc(_)) => true,
+        _ => zero_css_parser::values::parse_math_function(value).is_some(),
     }
 }
 
