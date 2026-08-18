@@ -1198,6 +1198,8 @@ fn expand_axis_logical(
 
 /// 展开 grid-column / grid-row 简写。
 ///
+/// https://drafts.csswg.org/css-grid-2/#placement-shorthands
+///
 /// `grid-column: 1` → `grid-column-start: 1; grid-column-end: auto`
 /// `grid-column: 1 / 3` → `grid-column-start: 1; grid-column-end: 3`
 /// `grid-column: span 2` → `grid-column-start: span 2; grid-column-end: auto`
@@ -1212,6 +1214,9 @@ fn expand_grid_axis(
     if matches_css_wide_keyword(value) {
         return vec![mk(start_prop, value), mk(end_prop, value)];
     }
+    if crate::property::parse::parse_grid_line_shorthand(value).is_none() {
+        return vec![];
+    }
     if let Some(slash_pos) = value.find('/') {
         let start = value[..slash_pos].trim();
         let end = value[slash_pos + 1..].trim();
@@ -1222,6 +1227,8 @@ fn expand_grid_axis(
 }
 
 /// 展开 grid-area 简写。
+///
+/// https://drafts.csswg.org/css-grid-2/#placement-shorthands
 ///
 /// `grid-area: 1` → row-start: 1
 /// `grid-area: 1 / 2` → row-start: 1, col-start: 2
@@ -1236,6 +1243,9 @@ fn expand_grid_area(value: &str, important: bool, specificity: (u32, u32, u32)) 
             important,
             specificity,
         );
+    }
+    if crate::property::parse::parse_grid_area_shorthand(value).is_none() {
+        return vec![];
     }
     // 用 `/` 分割，但 span 内部可能有空格
     let parts: Vec<&str> = value.split('/').map(|s| s.trim()).collect();

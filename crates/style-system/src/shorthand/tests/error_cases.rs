@@ -75,14 +75,16 @@ fn test_overscroll_behavior_invalid_value() {
 }
 
 #[test]
-/// grid-column 无效格式（如多个 /）应正确处理第一个 /
-fn test_grid_column_multiple_slashes() {
-    let result = expand_one("grid-column", "1 / 2 / 3", false, (0, 0, 1));
+/// grid-column/grid-row 无效 slash 格式应拒绝整条 shorthand。
+fn test_grid_placement_rejects_invalid_slash_components() {
+    assert!(expand_one("grid-column", "1 / 2 / 3", false, (0, 0, 1)).is_empty());
+    assert!(expand_one("grid-column", " / 3", false, (0, 0, 1)).is_empty());
+    assert!(expand_one("grid-row", "1 / ", false, (0, 0, 1)).is_empty());
+
+    let result = expand_one("grid-column", "span 2 / 5", false, (0, 0, 1));
     assert_eq!(result.len(), 2);
-    assert_eq!(result[0].0, "grid-column-start");
-    assert_eq!(result[0].1, "1");
-    assert_eq!(result[1].0, "grid-column-end");
-    assert_eq!(result[1].1, "2 / 3");
+    assert_eq!(result[0].1, "span 2");
+    assert_eq!(result[1].1, "5");
 }
 
 #[test]
@@ -90,6 +92,19 @@ fn test_grid_column_multiple_slashes() {
 fn test_grid_area_too_many_values() {
     let result = expand_one("grid-area", "1 / 2 / 3 / 4 / 5", false, (0, 0, 1));
     assert!(result.is_empty());
+}
+
+#[test]
+fn test_grid_area_rejects_empty_slash_components() {
+    assert!(expand_one("grid-area", "1 / / 3", false, (0, 0, 1)).is_empty());
+    assert!(expand_one("grid-area", "1 / 2 / 3 / ", false, (0, 0, 1)).is_empty());
+
+    let result = expand_one("grid-area", "1 / 2 / 3", false, (0, 0, 1));
+    assert_eq!(result.len(), 4);
+    assert_eq!(result[0].1, "1");
+    assert_eq!(result[1].1, "3");
+    assert_eq!(result[2].1, "2");
+    assert_eq!(result[3].1, "auto");
 }
 
 #[test]

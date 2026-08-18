@@ -20,6 +20,8 @@ Some shorthands do not need component classification but still need value valida
 
 `gap` exposed the value-validation variant: token count alone was treated as sufficient, so unknown tokens, `auto`, border-width keywords, and negative simple lengths crossed the shorthand boundary even though `gap` only accepts `normal` or non-negative length-percentage values.
 
+Grid placement shorthands exposed the delimiter variant: splitting at the first slash allowed extra slash-separated components and empty components to become longhand values instead of rejecting the shorthand.
+
 ## Root Cause
 
 The shorthand layer used heuristic component classifiers and treated unrecognized tokens as absent optional components. That is wrong for CSS shorthands such as `border`, where every token must match one of the allowed component grammars. A shared parser can also be broader than the property grammar that consumes it: general length parsing may accept `auto`, intrinsic sizing keywords, or percentages that `border-width` must reject.
@@ -36,5 +38,6 @@ Use the shared value parsers for token boundaries, then filter by the specific p
 + preserve explicit grammar exceptions while adding duplicate guards, such as `list-style: none square url(...)`, where `none` supplies default type/image values that explicit type/image tokens may override.
 + for simple 1-2 value shorthands, validate each token against the corresponding longhand grammar and reject overlong token lists.
 + for unordered component shorthands, reject unknown tokens and duplicate component slots before applying initial defaults for omitted slots.
++ for slash-delimited shorthands, validate the full shorthand grammar before splitting into raw longhand values.
 
 Keep adjacent shorthand users covered with regression tests when a shared classifier changes. `columns: auto 100px` is a good guard because it depends on `auto` not being mistaken for a length.
