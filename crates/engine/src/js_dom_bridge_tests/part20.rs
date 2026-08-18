@@ -359,3 +359,73 @@ fn test_parse_html_query_path_field_r112() {
         "id chain missing: {json}"
     );
 }
+
+
+#[test]
+fn test_window_event_shadow_suppression_r114() {
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let mut sandbox = V8Sandbox::with_config(zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    })
+    .unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><div id=\"host\"><span id=\"light\">x</span></div></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry);
+
+    // spec HTML current event：listener 节点 root 是 shadow root 时 window.event 为 undefined
+    //（shadow 段抑制）；composed 冒泡跨边界到 host 后恢复可见（host listener 见 event）。
+    // WPT event-global "target is in a shadow tree (dispatched inside shadow tree)"。
+    let out = sandbox
+        .execute(
+            "var host = document.getElementById('host');             var root = host.attachShadow({ mode: 'closed' });             var span = document.createElement('span');             root.appendChild(span);             var seq = [];             span.addEventListener('test', function (e) {               seq.push('shadow:' + (window.event === undefined ? 'undef' : (window.event === e ? 'ev' : 'other')));             });             host.addEventListener('test', function (e) {               seq.push('host:' + (window.event === e ? 'ev' : 'other'));             });             span.dispatchEvent(new Event('test', { composed: true, bubbles: true }));             var after = window.event === undefined ? 'undef' : 'set';             var nonComposed = [];             span.addEventListener('iso', function (e) {               nonComposed.push(window.event === undefined ? 'undef' : 'set');             });             host.addEventListener('iso', function (e) {               nonComposed.push('host-fired');             });             span.dispatchEvent(new Event('iso', { composed: false, bubbles: true }));             seq.join(',') + '|after:' + after + '|iso:' + nonComposed.join(',');",
+        )
+        .unwrap()
+        .value;
+    assert_eq!(
+        out, "shadow:undef,host:ev|after:undef|iso:undef",
+        "shadow 段 window.event 抑制 + host 恢复 + 非 composed 不跨边界（host 不触发）"
+    );
+}
+
+#[test]
+fn test_eventtarget_dispatch_on_property_and_window_event_r114() {
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let mut sandbox = V8Sandbox::with_config(zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    })
+    .unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><div id=\"d\">x</div></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry);
+
+    // XHR : EventTarget（原型链）+ dispatchEvent 派发 window.event（HTML current event 对
+    // 非 DOM EventTarget 同样生效）+ on* 属性 handler 同 fire（WPT event-global (2)）。
+    // shadow root getElementById（NonElementParentNode——innerHTML 解析子树按 id 查）。
+    let out = sandbox
+        .execute(
+            "var x = new XMLHttpRequest();             var parts = [];             parts.push(typeof x.dispatchEvent + ':' + typeof x.addEventListener);             x.onload = function (e) { parts.push('onload:' + (e === window.event ? 'cur' : 'other')); };             x.dispatchEvent(new Event('load'));             parts.push('after:' + (window.event === undefined ? 'undef' : 'set'));             var host = document.getElementById('d');             var root = host.attachShadow({ mode: 'open' });             root.innerHTML = \"<input id='si'><b id='bi'>t</b>\";             var si = root.getElementById('si');             parts.push('gebi:' + (si && si.tagName || 'none') + ':' + (root.getElementById('bi') ? 'bi-ok' : 'bi-miss'));             parts.push('focus:' + typeof (si && si.focus));             parts.join('|');",
+        )
+        .unwrap()
+        .value;
+    assert_eq!(
+        out, "function:function|onload:cur|after:undef|gebi:INPUT:bi-ok|focus:function",
+        "XHR EventTarget 面 + window.event 派发 + shadow getElementById + 解析子 focus"
+    );
+}
+

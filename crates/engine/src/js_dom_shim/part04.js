@@ -2574,6 +2574,20 @@
             return null;
           };
         }
+        // js-dom M4 R114：`getElementById`（NonElementParentNode——Document / ShadowRoot 专有，
+        // 元素无此方法；WPT shadow-relatedTarget `root.getElementById('shadowInput')`——
+        // shadow root 容器 handle 上按 id 查 shadow 子树）。仅容器 handle（shadow/fragment）
+        // 暴露；元素 proxy 不暴露（spec Element 无 getElementById）。
+        // https://dom.spec.whatwg.org/#dom-nonelementparentnode-getelementbyid
+        if (prop === 'getElementById' && _isContainerHandle(handle)) {
+          return function(id) {
+            var idText = String(id);
+            // id 纯形式（无特殊字符）走 #id；否则属性选择器（同 document.getElementById 的
+            // 转义路径——id 含点号等会被当类/伪类）。
+            var q = /^[A-Za-z][\w-]*$/.test(idText) ? '#' + idText : '[id="' + idText.replace(/"/g, '\\"') + '"]';
+            try { return _handleQueryFirst(handle, q); } catch (_e114i) { return null; }
+          };
+        }
         if (prop === 'querySelectorAll') {
           // 元素**子树**作用域（spec：仅后代）。同 querySelector：sel-based → host；handle-based → R2928 registry。
           // R3033：返 NodeList（item），包 _zwMakeCollection(arr, false)。

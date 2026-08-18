@@ -1623,9 +1623,17 @@
       } catch (_eD2) {}
       if (typeof onErrFn === 'function') {
         try {
+          // R114：spec「the onerror handler restores window.event」——legacy onerror 直调期间
+          // `window.event` 须是**被上报的 error 事件**（WPT event-global "restores window.event
+          // after it reports an exception"：onerror 内 typeof window.event === 'object' 且
+          // .type === 'error'）。外层 dispatch 可能正处于 shadow 段抑制窗口（window.event 为
+          // undefined）——直调前临时设 errEv，调后恢复外层值（save/restore 配对）。
+          var _r114Prev = globalThis.event;
+          globalThis.event = errEv;
           if (onErrFn.call(globalThis, msg, '', 0, 0, err) === true) {
             try { errEv.preventDefault(); } catch (_eP) {} // onerror 返 true → 已处理（spec cancelable:true）
           }
+          globalThis.event = _r114Prev;
         } catch (_eO) {}
         try { _globalAddEventListener('error', onErrFn); } catch (_eRa) {} // 装回
       }
@@ -2062,7 +2070,16 @@
     }
 
     // 祖先链 target→root（[直接父, ..., html]）；无 __zw_parent / handle-only → 空 → 仅 target 派发。
+    // js-dom M4 R114：handle-based target（shadow 树内元素/detached createElement 子树）经
+    // `_zwNodeParent` 反链上行——遇 shadow root 容器（`_shadowHandleMeta` 命中）时按
+    // `event.composed` 决定是否**跨 shadow 边界**到 host（spec DOM §2.9 dispatch：非
+    // composed 事件的 path 止于 shadow root，不 retarget 到 host；composed 跨边界继续）。
+    // 链元素统一 {sel, handle} 形态（sel 站沿用旧字符串 push 兼容——两形态消费点都在
+    // 本函数内）。shadow 段站序：target 的 shadow 祖先 → host → host 的 light 祖先。
+    // 链对象带 `shadow` 标记（该站是否仍在 shadow 段——window.event 抑制判定用；host
+    // 及以上站 false）。
     var chain = [];
+    var _r114ShadowDepth = 0; // target 处的 shadow 嵌套深度（每跨出一层边界 -1）
     if (targetSel && typeof __zw_parent === 'function') {
       var cur = targetSel;
       while (true) {
@@ -2071,6 +2088,75 @@
         if (!p) break;
         chain.push(p);
         cur = p;
+      }
+    } else if (targetHandle && typeof _zwNodeParent !== 'undefined' && _zwNodeParent) {
+      // 数 target 自身的 shadow 嵌套层数（在内层 shadow → 深度 ≥1，window.event 语义用）。
+      var _r114H = targetHandle, _r114D = 0, _r114Guard = 0;
+      while (_r114H && _r114Guard++ < 64) {
+        var _r114Meta = typeof _shadowHandleMeta !== 'undefined' ? _shadowHandleMeta[_r114H] : null;
+        if (_r114Meta) { _r114D++; _r114H = _r114Meta.hostHandle; continue; }
+        var _r114Link = _zwNodeParent[_r114H];
+        if (!_r114Link || !_r114Link.parentHandle) break;
+        _r114H = _r114Link.parentHandle;
+      }
+      _r114ShadowDepth = _r114D;
+      // 上行建链：sel 优先（sel 节点经 __zw_parent 走 host 快照链）——与
+      // _zwFindClickActivation 的混合上行同款。`_r114CurDepth` 跟踪当前站剩余 shadow 层数
+      //（每跨出一层边界 -1，到 0 即 host 站——host 及以上不再抑制）。
+      var _r114Sel = null, _r114Handle = targetHandle, _r114Hops = 0;
+      var _r114CurDepth = _r114ShadowDepth;
+      while (_r114Hops++ < 64) {
+        var _r114L = _zwNodeParent[_r114Handle];
+        if (!_r114L) break;
+        if (_r114L.parentSel) {
+          // 进入 sel 域：余下链走 __zw_parent（host 快照祖先）。parentSel 站本身在
+          // shadow 外（sel 节点 = light DOM / host 快照内节点）——spec 近似：sel 域视为
+          // 已出 shadow（快照树无 shadow 边界信息；hostSel 站 = host，正确不抑制）。
+          _r114Sel = _r114L.parentSel;
+          chain.push(_r114Sel);
+          _r114Handle = null;
+          break;
+        }
+        var _r114PH = _r114L.parentHandle;
+        if (!_r114PH) break;
+        var _r114Pm = typeof _shadowHandleMeta !== 'undefined' ? _shadowHandleMeta[_r114PH] : null;
+        if (_r114Pm) {
+          // 父是 shadow root 容器：非 composed 止于此（path 到 shadow root 为止——shadow root
+          // 本身无 listener 站，直接断链）；composed 跨到 host 继续。
+          if (!event.composed) break;
+          var _r114HostSel = _r114Pm.hostSel || null;
+          var _r114HostHandle = _r114Pm.hostHandle || null;
+          if (_r114HostSel) {
+            chain.push(_r114HostSel); // host 站（light 域，不抑制）
+            _r114Sel = _r114HostSel;
+            _r114Handle = null;
+            _r114CurDepth = 0;
+            break; // host 是 sel 节点——余下走 __zw_parent 链
+          }
+          if (_r114HostHandle) {
+            // host 站入链（shadow:false——host 即 light 域，window.event 从 host 起恢复可见），
+            // 然后从 host 继续上行（host 可能也在外层 shadow 内——嵌套 shadow 场景）。
+            // 注：只递减 _r114CurDepth（剩余 shadow 层数，站标记用）——**不动**
+            // _r114ShadowDepth（target 深度，target 站抑制判定用，immutable）。
+            chain.push({ sel: null, handle: _r114HostHandle, shadow: false });
+            _r114Handle = _r114HostHandle;
+            _r114CurDepth--;
+            continue;
+          }
+          break;
+        }
+        chain.push({ sel: null, handle: _r114PH, shadow: _r114CurDepth > 0 });
+        _r114Handle = _r114PH;
+      }
+      if (_r114Sel && typeof __zw_parent === 'function') {
+        var _r114C = _r114Sel;
+        while (true) {
+          var _r114P;
+          try { _r114P = __zw_parent(_r114C); } catch (_e114) { _r114P = ''; }
+          if (!_r114P) break;
+          chain.push(_r114P);
+          _r114C = _r114P;
+        }
       }
     }
     var propagate = chain.length > 0;
@@ -2096,6 +2182,28 @@
     if (targetSel && typeof __zw_contains === 'function') {
       try { inDoc = __zw_contains('html', targetSel) === '1'; } catch (_e) {}
     }
+    // js-dom M4 R114：handle-based target（shadow 树内/detached createElement 子树）的
+    // 连入文档判定——链上行到 sel 域（`_zwNodeParent` → parentSel/hostSel）即该 sel 在
+    // html 子树内 = connected（与 `_zwClickActivationConnected` 同判定）。连入 → 虚站
+    // doc/win 追加（spec：composed 冒泡经 host 到 document/window；WPT event-global
+    // ErrorEvent-in-shadow 用例：shadow 内派发 error，onerror 经 window 站冒泡触发）。
+    if (!targetSel && !inDoc) {
+      var _r114Hd = targetHandle, _r114Gd = 0;
+      while (_r114Hd && _r114Gd++ < 64) {
+        var _r114Md = typeof _shadowHandleMeta !== 'undefined' ? _shadowHandleMeta[_r114Hd] : null;
+        if (_r114Md) { _r114Hd = _r114Md.hostHandle; continue; }
+        var _r114Ld = (typeof _zwNodeParent !== 'undefined' && _zwNodeParent) ? _zwNodeParent[_r114Hd] : null;
+        if (!_r114Ld) break;
+        if (_r114Ld.parentSel) {
+          if (typeof __zw_contains === 'function') {
+            try { inDoc = __zw_contains('html', _r114Ld.parentSel) === '1'; } catch (_e114d) {}
+          }
+          break;
+        }
+        if (!_r114Ld.parentHandle) break;
+        _r114Hd = _r114Ld.parentHandle;
+      }
+    }
     // document 为 target：path = [document, window]（window 是 document 祖先）；元素 target：连入文档才追加。
     var docObj = globalThis.document
       ? (isDocTarget ? globalThis.document : (inDoc ? globalThis.document : null))
@@ -2119,7 +2227,14 @@
     var cpTarget = isDocTarget ? docObj : (isWinTarget ? winObj : target);
     if (!cpTarget) cpTarget = target;
     var cpPath = [cpTarget];
-    for (var cpi = 0; cpi < elemChain.length; cpi++) cpPath.push(_wrapSelector(elemChain[cpi]));
+    // R114：链元素统一 {sel, handle} 解析（旧字符串 sel 与新 handle 对象两形态）。
+    function _r114Entry(e) {
+      return (e && typeof e === 'object') ? { sel: e.sel || null, handle: e.handle || null } : { sel: e, handle: null };
+    }
+    for (var cpi = 0; cpi < elemChain.length; cpi++) {
+      var _r114E = _r114Entry(elemChain[cpi]);
+      cpPath.push(_r114E.sel ? _wrapSelector(_r114E.sel) : _wrapHandle(_r114E.handle));
+    }
     // R40：composedPath 与派发虚站一致——passDoc/passWin 控制 document/window 追加（document target 的
     // path = [document, window]；window target = [window]；元素连入文档 = [..., document, window]）。
     if (passDoc && docObj) cpPath.push(docObj);
@@ -2129,8 +2244,14 @@
     // js-dom M4 R33：`Window.event`（HTML `current event`）——dispatch 前 save 外层 event、set 当前 event。
     // 嵌套 dispatch（redispatch）时内层 finally 恢复外层（spec innermost-first，外层结束后其 event 仍可见）。
     // finally 统一 restore，与 _composedPath/_propagationStopped 清理同处。prevEvent 用局部变量保 dispatch 栈。
+    // js-dom M4 R114：**shadow 段抑制**——spec HTML「current event」：正在调度的 listener 其
+    // 节点 root 是 shadow root 时 `window.event` 为 undefined（shadow 树的 current event 不外
+    // 露到 window；WPT event-global "target is in a shadow tree" 两断言）。目标在 shadow 树内
+    //（_r114ShadowDepth ≥1）时 target/影子祖先站派发前临时置 undefined、站后复原 event；
+    // 跨出边界后（host 及以上）恢复可见。
     var prevEvent = globalThis.event;
-    globalThis.event = event;
+    var _r114Suppress = _r114ShadowDepth > 0;
+    globalThis.event = _r114Suppress ? undefined : event;
     // js-dom M4 R34：stop propagation flag 兼容——polyfill Event 设 `_propagationStopped`，native Event
     // （ZW_NATIVE_DOM=1 叠加，dispatch 仍走此 polyfill 路径，未解问题 #9）设 `__zw_stop`。两 flag 都须认。
     var bubbleStopped = function() { return event._propagationStopped || event.__zw_stop === true; };
@@ -2157,10 +2278,16 @@
         }
         if (elemChain.length > 0) {
           for (var i = elemChain.length - 1; i >= 0; i--) {
-            var capKey = _elKey(elemChain[i], null);
-            _ensureInlineHandler(capKey, elemChain[i], null, event.type); // R2935 祖先 inline on* handler 触发
-            var capAnc = _wrapSelector(elemChain[i]);
-            _dispatchToListeners(capKey, event, 'capture', capAnc, elemChain[i] === 'html' ? null : undefined);
+            // R114：链元素统一 {sel, handle} 解析（旧字符串 sel 与新 handle 对象两形态）。
+            var _r114C = _r114Entry(elemChain[i]);
+            var capKey = _elKey(_r114C.sel, _r114C.handle);
+            _ensureInlineHandler(capKey, _r114C.sel, _r114C.handle, event.type); // R2935 祖先 inline on* handler 触发
+            var capAnc = _r114C.sel ? _wrapSelector(_r114C.sel) : _wrapHandle(_r114C.handle);
+            // R114：shadow 段站（entry.shadow）派发期间 window.event 置 undefined，站后复原。
+            var _r114CapSup = !!_r114C.shadow;
+            if (_r114CapSup) globalThis.event = undefined;
+            _dispatchToListeners(capKey, event, 'capture', capAnc, _r114C.sel === 'html' ? null : undefined);
+            if (_r114CapSup) globalThis.event = event;
             if (bubbleStopped()) return !event._defaultPrevented;
           }
         }
@@ -2183,17 +2310,26 @@
       // 触发 = 双 fire，renderer R2941/R2943 回归）。其他元素 target 无共存槽位问题（slot undefined 全触发，
       // 旧行为）。
       var tgtSlotFilter = targetSlot !== undefined ? targetSlot : (targetSel === 'html' ? null : undefined);
+      // R114：target 在 shadow 树内 → target 站派发期间 window.event 抑制为 undefined。
+      if (_r114Suppress) globalThis.event = undefined;
       _dispatchToListeners(targetKey, event, 'all', target, tgtSlotFilter);
+      if (_r114Suppress) globalThis.event = event;
       if (bubbleStopped()) return !event._defaultPrevented;
 
       // ③ bubble 阶段：target→root 方向（chain 正序 → document → window），祖先派发非 capture（仅 event.bubbles）。
       if (event.bubbles && !globalThis.__zw_no_bubble) {
         if (elemChain.length > 0) {
           for (var k = 0; k < elemChain.length; k++) {
-            var bKey = _elKey(elemChain[k], null);
-            _ensureInlineHandler(bKey, elemChain[k], null, event.type); // R2935 祖先 inline on* handler 冒泡触发
-            var bAnc = _wrapSelector(elemChain[k]);
-            _dispatchToListeners(bKey, event, 'bubble', bAnc, elemChain[k] === 'html' ? null : undefined);
+            // R114：链元素统一 {sel, handle} 解析（旧字符串 sel 与新 handle 对象两形态）。
+            var _r114B = _r114Entry(elemChain[k]);
+            var bKey = _elKey(_r114B.sel, _r114B.handle);
+            _ensureInlineHandler(bKey, _r114B.sel, _r114B.handle, event.type); // R2935 祖先 inline on* handler 冒泡触发
+            var bAnc = _r114B.sel ? _wrapSelector(_r114B.sel) : _wrapHandle(_r114B.handle);
+            // R114：shadow 段站（entry.shadow）派发期间 window.event 置 undefined，站后复原。
+            var _r114BubSup = !!_r114B.shadow;
+            if (_r114BubSup) globalThis.event = undefined;
+            _dispatchToListeners(bKey, event, 'bubble', bAnc, _r114B.sel === 'html' ? null : undefined);
+            if (_r114BubSup) globalThis.event = event;
             if (bubbleStopped()) break;
           }
         }
@@ -2277,7 +2413,10 @@
       type: type,
       bubbles: !!options.bubbles,
       cancelable: !!options.cancelable,
-      composed: false, // spec Event.composed 初值 false
+      // js-dom M4 R114：EventInit.composed（spec dom-event-constructors——`new Event(t,
+      // {composed:true})` 的 composed 初值来自 init dict，缺省 false）。此前硬编码 false
+      // 使 composed 事件（shadow 边界穿越派发）永不生效（WPT event-global shadow 用例）。
+      composed: !!options.composed,
       eventPhase: 0, // spec NONE=0
       isTrusted: false, // spec（合成事件恒 false）
       target: null,
@@ -2980,6 +3119,20 @@
     // `_zwCompareDocumentPosition`（parentNode/childNodes 字段本地维护，链路完整）。
     node.contains = function (other) { return _zwNodeContains(node, other); };
     node.compareDocumentPosition = function (other) { return _zwCompareDocumentPosition(node, other); };
+    // js-dom M4 R114：`focus()` / `blur()`（WPT shadow-relatedTarget `root.getElementById
+    // ('shadowInput').focus()`——innerHTML 解析的 shadow 子树元素无 focus 抛 TypeError）。
+    // 轻量语义：本地 focus 事件经 node.dispatchEvent 派发（listener 可见）+ 更新全局
+    // `_zwMElFocused`（document.activeElement 读——无 sel/handle 不能进 _activeElKey 体系，
+    // 简化为「最近 focus 的解析节点」；spec activeElement 需布局可聚焦性，headless 近似）。
+    // https://html.spec.whatwg.org/#dom-focus
+    node.focus = function () {
+      globalThis._zwMElFocused = node;
+      try { node.dispatchEvent(_makeEvent('focus', { bubbles: false, cancelable: false })); } catch (_e114f) {}
+    };
+    node.blur = function () {
+      if (globalThis._zwMElFocused === node) globalThis._zwMElFocused = null;
+      try { node.dispatchEvent(_makeEvent('blur', { bubbles: false, cancelable: false })); } catch (_e114b) {}
+    };
     // R3018：属性 mutation 入树（setAttribute/removeAttribute 改 attrs 数组，序列化反映）。
     // setAttribute 已存在则更新值（latest-wins），否则追加；id/class 同步 IDL 反射字段。
     node.setAttribute = function (n, v) {

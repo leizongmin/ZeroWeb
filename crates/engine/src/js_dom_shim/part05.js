@@ -5959,9 +5959,13 @@
     var target = this;
     event.target = target;
     event.currentTarget = target;
+    // js-dom M4 R114：`window.event`（HTML current event）对非 DOM EventTarget 同样生效
+    //（WPT event-global "current event … (2)"——XHR dispatch 期 e === window.event）。
+    var _r114Prev = globalThis.event;
+    globalThis.event = event;
     var suffixes = ['', '|cap'];
     for (var s = 0; s < suffixes.length; s++) {
-      var arr = target._et_listeners[event.type + suffixes[s]];
+      var arr = (target._et_listeners || (target._et_listeners = {}))[event.type + suffixes[s]];
       if (!arr) continue;
       arr = arr.slice();
       for (var i = 0; i < arr.length; i++) {
@@ -5969,9 +5973,52 @@
         try { arr[i].call(target, event); } catch (_) {}
       }
     }
+    // R114：on* 属性 handler（IDL event handler）同 fire——spec 派发到 EventTarget 时先跑
+    // listeners 再跑 on* handler（`xhr.onload = fn` 后 dispatchEvent('load') 须触发 fn；
+    // WPT event-global (2) 正是此形态）。**去重**：BroadcastChannel/MessagePort 的 on* setter
+    // 已把 handler 注册进 _et_listeners（listener 循环已调）——handler 函数与已调 listener
+    // 同一引用时跳过，防双 fire（R2783 回归实证 b:hi 双发）。handler 返 true → preventDefault
+    //（HTML onerror 语义；其余 handler 返值 spec 忽略，此处仅 onerror 认）。
+    var _r114On = target['on' + event.type];
+    if (typeof _r114On === 'function') {
+      var _r114Already = false;
+      var _r114Arrs = target._et_listeners;
+      if (_r114Arrs) {
+        var _r114Ak = event.type + '', _r114AkC = event.type + '|cap';
+        var _r114A = (_r114Arrs[_r114Ak] || []).concat(_r114Arrs[_r114AkC] || []);
+        for (var _r114ai = 0; _r114ai < _r114A.length; _r114ai++) {
+          if (_r114A[_r114ai] === _r114On) { _r114Already = true; break; }
+        }
+      }
+      if (!_r114Already) {
+        try {
+          var _r114R = _r114On.call(target, event);
+          if (_r114R === true && event.type === 'error') { try { event.preventDefault(); } catch (_e114p) {} }
+        } catch (_e114o) {}
+      }
+    }
+    globalThis.event = _r114Prev;
     return !event._defaultPrevented;
   };
   globalThis.EventTarget = globalThis.EventTarget || EventTarget;
+
+  // js-dom M4 R114：XMLHttpRequest 补 EventTarget 面——spec XHR : XMLHttpRequestEventTarget :
+  // EventTarget（`xhr.addEventListener('load')` / `xhr.dispatchEvent(new Event('load'))` 与
+  // on* 属性 handler 同键派发；WPT event-global "current event … (2)" 用 XHR 验证非 DOM
+  // EventTarget 的 window.event 语义）。XHR ctor 在 part02 定义（先于本段执行），无
+  // dispatchEvent/addEventListener（探针实证 undefined）。接线：原型链挂 EventTarget.prototype
+  //（_et_listeners 自包含 map，与 Worker/MessagePort 同款）+ on* handler setter 语义由
+  // ctor 既有属性承担（send 直接调 onload 不变）；addEventListener 注册的 listener 经
+  // dispatchEvent 派发到（EventTarget.prototype.dispatchEvent 同款 target-only）。
+  // spec https://xhr.spec.whatwg.org/#interface-xmlhttprequest
+  if (globalThis.XMLHttpRequest && globalThis.EventTarget) {
+    try {
+      var _r114XhrProto = globalThis.XMLHttpRequest.prototype;
+      if (_r114XhrProto && Object.getPrototypeOf(_r114XhrProto) !== globalThis.EventTarget.prototype) {
+        Object.setPrototypeOf(_r114XhrProto, globalThis.EventTarget.prototype);
+      }
+    } catch (_e114x) {}
+  }
 
   // R3089：DedicatedWorker——`new Worker(url)`。真 worker 消息往返（闭合 R3080 defer 项「无真 worker 执行」）。
   // script-sandbox 为单上下文（无 sub-context API），真独立沙箱需多嵌入器 host 接线（browser/webview/reftest
