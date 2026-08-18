@@ -476,3 +476,38 @@ fn test_iframe_content_document_r115() {
         "iframe contentDocument：XML doc 语义（保大小写/ns null/instanceof/validate-and-extract/defaultView）"
     );
 }
+
+#[test]
+fn test_attribute_case_and_ns_metadata_r116() {
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let mut sandbox = V8Sandbox::with_config(zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    })
+    .unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><div id=\"d\">x</div></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry);
+
+    // R116：非 NS 属性族 HTML 小写 + 空名 InvalidCharacterError + NS 读大小写敏感 + Attr 的
+    // prefix/localName/namespaceURI 元数据（setAttributeNS 登记 registry）+ createAttribute
+    // 空名/文档类型大小写（WPT attributes.html / case.js / Document-createAttribute 同语义）。
+    let out = sandbox
+        .execute(
+            "var el = document.getElementById('d');             var parts = [];             el.setAttribute('CHEESE', 'x');             parts.push('lower:' + el.hasAttribute('cheese') + ':' + el.getAttribute('cheese'));             parts.push('uppermiss:' + el.hasAttributeNS('', 'CHEESE'));             var threw = '';             try { el.setAttribute('', 'v'); } catch (eA) { threw = eA.name; }             parts.push('empty:' + threw);             el.setAttributeNS('http://FOO', 'abc:def', '1');             parts.push('nsget:' + el.getAttributeNS('http://FOO', 'def'));             parts.push('nscase:' + (el.getAttributeNS('http://FOO', 'DEF') === null));             var attr = el.attributes[el.attributes.length - 1];             parts.push('meta:' + attr.prefix + '/' + attr.localName + '/' + attr.namespaceURI);             parts.push('tc:' + attr.textContent);             var cthrew = '';             try { document.createAttribute(''); } catch (eC) { cthrew = eC.name; }             parts.push('ca-empty:' + cthrew);             var ca = document.createAttribute('MiXeD');             parts.push('ca-lower:' + ca.name);             var xdoc = document.implementation.createDocument(null, null, null);             var cax = xdoc.createAttribute('MiXeD');             parts.push('ca-xml:' + cax.name);             var t1 = 0, t2 = 0;             var tel = document.createElement('foo');             tel.toggleAttribute('tt'); t1 = tel.hasAttribute('tt');             t2 = tel.toggleAttribute('tt');             parts.push('toggle:' + t1 + ':' + t2 + ':' + tel.hasAttribute('tt'));             parts.join('|');",
+        )
+        .unwrap()
+        .value;
+    assert_eq!(
+        out,
+        "lower:true:x|uppermiss:false|empty:InvalidCharacterError|nsget:1|nscase:true|meta:abc/def/http://FOO|tc:1|ca-empty:InvalidCharacterError|ca-lower:mixed|ca-xml:MiXeD|toggle:true:false:false",
+        "属性族：HTML 小写 + 空名异常 + NS 大小写敏感 + Attr NS 元数据 + createAttribute 文档类型语义 + handle toggle presence"
+    );
+}

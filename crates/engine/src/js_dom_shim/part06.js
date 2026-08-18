@@ -1723,8 +1723,19 @@
     // R3023：`document.createAttribute(name)`——建 Attr 节点（nodeType 2，value=''）。供 setAttributeNode /
     // element.attributes.setNamedItem(attr) 用法（属性库 / 序列化库高频）。真 Attr 实例（经 _zwMakeAttr，
     // 含 localName/namespaceURI=null/prefix=null/specified/ownerElement=null 全字段，非 plain {name,value}）。
+    // R116：① 空名抛 InvalidCharacterError（spec validate-and-extract——WPT invalid_names ['']）；
+    // ② HTML 文档 ASCII 小写、XML 文档保持原样（attr.name/localName——与 createElement 的
+    // 文档类型语义一致）。HTML-ness 经本 document 的 contentType（缺省按 HTML——主文档）。
     createAttribute: function(name) {
-      return _zwMakeAttr(name, '', null);
+      var t = String(name);
+      if (t === '') {
+        throw new (globalThis.DOMException || Error)(
+          "Failed to execute 'createAttribute' on 'Document': The name provided is empty.",
+          'InvalidCharacterError');
+      }
+      var isHtmlDoc = !(typeof this.contentType === 'string' && this.contentType.indexOf('html') < 0);
+      var n = isHtmlDoc ? t.replace(/[A-Z]/g, function (c) { return String.fromCharCode(c.charCodeAt(0) + 32); }) : t;
+      return _zwMakeAttr(n, '', null);
     },
     // R3024：`document.createAttributeNS(ns, qualifiedName)`——建命名空间 Attr（SVG/MathML/xlink）。
     // 解析 qualifiedName 的 `prefix:local`，设 namespaceURI/prefix/localName（区别 createAttribute 的 null ns）。

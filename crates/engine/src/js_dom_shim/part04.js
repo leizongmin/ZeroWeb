@@ -1106,9 +1106,23 @@
         if (prop === 'ownerDocument') {
           return globalThis.document;
         }
+        // js-dom M4 R116：非 NS 属性 API 的名字语义（spec dom-element-setattribute 等——HTML 文档
+        // 专属）：① ASCII 小写（`setAttribute('CHEESE','x')` 后 `hasAttribute('cheese')` 命中，
+        // `hasAttributeNS('', 'CHEEseCaKe')` 不命中）；② 空名抛 InvalidCharacterError（Name
+        // production 的空串违规——WPT productions.js invalid_names=['']）。NS 族（setAttributeNS 等）
+        // 保持大小写敏感（spec：qualified name 原样），不经本 helper。
+        var _r116AttrName = function (name) {
+          var n = String(name);
+          if (n === '') {
+            throw new (globalThis.DOMException || Error)(
+              "Failed to execute 'setAttribute' on 'Element': The name provided is empty.",
+              'InvalidCharacterError');
+          }
+          return n.replace(/[A-Z]/g, function (c) { return String.fromCharCode(c.charCodeAt(0) + 32); });
+        };
         if (prop === 'getAttribute') {
           return function(name) {
-            var n = String(name);
+            var n = _r116AttrName(name); // R116：HTML 文档小写（非 NS 读）
             // R2995：sel-based 走 latest-wins 变体（consult 变更列表，闭合 removeAttribute 后 stale 旧值）；
             // 回调未注册（polyfill/其它环境）→ fallback 纯快照 `__zw_get_attr`。
             var v = handle
@@ -1131,7 +1145,7 @@
         // 与 getAttributeNS 的 _nsQualName 一致语义）。
         if (prop === 'getAttributeNode' || prop === 'getAttributeNodeNS') {
           return function(a, b) {
-            var n = prop === 'getAttributeNode' ? String(a) : _nsQualName(a, b);
+            var n = prop === 'getAttributeNode' ? _r116AttrName(a) : _nsQualName(a, b); // R116：非 NS 小写
             var self = proxy;
             var v = handle
               ? __zw_get_attr_handle(handle, n)
@@ -1147,7 +1161,7 @@
         }
         if (prop === 'setAttribute') {
           return function(name, value) {
-            var n = String(name);
+            var n = _r116AttrName(name); // R116：空名 InvalidCharacterError + HTML 文档小写
             var v = String(value);
             // R2992 custom element attributeChangedCallback：变更前读 old（absent → null，spec 一致）。
             var ceEntry = _ceEntryFor(key, sel, handle);
@@ -1192,8 +1206,8 @@
         }
         if (prop === 'removeAttribute') {
           return function(name) {
-            var n = String(name);
-            var nLower = n.toLowerCase();
+            var n = _r116AttrName(name); // R116：空名 InvalidCharacterError + HTML 文档小写
+            var nLower = n;
             var targetTag = _realTag(sel, handle);
             // R2992 custom element attributeChangedCallback：移除前读 old（newVal=null）。
             var ceEntry = _ceEntryFor(key, sel, handle);
@@ -1237,7 +1251,7 @@
         // 回调未注册 → fallback 纯快照 `__zw_has_attr`。此前 handle-only 元素恒 false（latent bug，R2992 修）。
         if (prop === 'hasAttribute') {
           return function(name) {
-            var n = String(name);
+            var n = _r116AttrName(name); // R116：HTML 文档小写（非 NS 读）
             if (handle && typeof __zw_has_attr_handle === 'function') {
               try { return __zw_has_attr_handle(handle, n) === '1'; } catch (_e) { return false; }
             }
@@ -1273,6 +1287,15 @@
             var _nsMoId = _mo_id(handle, sel);
             var _nsOld = (_nsMoId != null && _mo_any_wants_attr_old(_nsMoId, local))
               ? _mo_read_attr(sel, handle, _nsQualName(ns, local)) : null;
+            // R116：per-attr NS 元数据登记（prefix/localName/namespaceURI 的唯一来源——host 存
+            // 扁平限定名）。get/hasAttributeNS 按 (ns, local) 反查限定名消费。
+            var _r116Colon = qn.indexOf(':');
+            var _r116Meta = _attrNSMeta[key] || (_attrNSMeta[key] = {});
+            _r116Meta[qn] = {
+              ns: ns,
+              prefix: _r116Colon >= 0 ? qn.slice(0, _r116Colon) : null,
+              local: _r116Colon >= 0 ? qn.slice(_r116Colon + 1) : qn
+            };
             // 直写 host 回调（不经 proxy.setAttribute——那条路径自带无 namespace 的 notify，会双发）。
             if (handle && typeof __zw_set_attr_handle === 'function') __zw_set_attr_handle(handle, qn, String(value));
             else if (typeof __zw_set_attr === 'function') __zw_set_attr(sel, qn, String(value == null ? '' : value));
@@ -1283,11 +1306,50 @@
             });
           };
         }
+        // R116：NS 读**大小写敏感**（spec：NS 查找按 localName 精确匹配——区别于非 NS 族的
+        // HTML 小写）。旧经 proxy.getAttribute/hasAttribute 转发会吃到 R116 小写 helper，
+        // 使 hasAttributeNS('', 'CHEEseCaKe') 误命中小写存储——WPT toggleAttribute lowercase
+        // 断言（须不命中）。绕过 helper 直查原始限定名。
+        // R116：NS 读按 (ns, local) 匹配——registry 反查限定名（setAttributeNS 可能以任意
+        // prefix 存储：ns='http://FOO' + local 'abc' 存 'abc:abc'）。无登记回落 _nsQualName
+        //（已知 prefix 映射）。**大小写敏感**（spec NS 查找精确匹配）。
+        var _r116NsQName = function (ns, localName) {
+          var meta = _attrNSMeta[key];
+          if (meta) {
+            var nsStr = ns == null ? null : String(ns);
+            var loc = String(localName);
+            for (var qn in meta) {
+              if (Object.prototype.hasOwnProperty.call(meta, qn) && meta[qn].local === loc
+                  && (meta[qn].ns || null) === nsStr) return qn;
+            }
+          }
+          return _nsQualName(ns, localName);
+        };
         if (prop === 'getAttributeNS') {
-          return function(ns, localName) { return proxy.getAttribute(_nsQualName(ns, localName)); };
+          return function(ns, localName) {
+            var n = _r116NsQName(ns, localName);
+            var v = handle ? __zw_get_attr_handle(handle, n)
+              : (typeof __zw_get_attr_lw === 'function' ? __zw_get_attr_lw(sel, n) : __zw_get_attr(sel, n));
+            if (v !== '') return v;
+            var present = (handle ? __zw_has_attr_handle(handle, n)
+              : (typeof __zw_has_attr_lw === 'function' ? __zw_has_attr_lw(sel, n) : __zw_has_attr(sel, n))) === '1';
+            return present ? '' : null;
+          };
         }
         if (prop === 'hasAttributeNS') {
-          return function(ns, localName) { return proxy.hasAttribute(_nsQualName(ns, localName)); };
+          return function(ns, localName) {
+            var n = _r116NsQName(ns, localName);
+            if (handle && typeof __zw_has_attr_handle === 'function') {
+              try { return __zw_has_attr_handle(handle, n) === '1'; } catch (_e) { return false; }
+            }
+            if (typeof __zw_has_attr_lw === 'function') {
+              try { return __zw_has_attr_lw(sel, n) === '1'; } catch (_e) { return false; }
+            }
+            if (typeof __zw_has_attr === 'function') {
+              try { return __zw_has_attr(sel, n) === '1'; } catch (_e) { return false; }
+            }
+            return false;
+          };
         }
         if (prop === 'removeAttributeNS') {
           return function(_ns, localName) {
@@ -1544,7 +1606,7 @@
         //（闭合 R3191 已知限制：连续 toggle 返值 stale）。handle-only / 无 host 回调回落 client-side 决策。
         if (prop === 'toggleAttribute') {
           return function(name, force) {
-            var n = String(name);
+            var n = _r116AttrName(name); // R116：空名 InvalidCharacterError + HTML 文档小写
             var hasForce = force !== undefined;
             // R3025：MutationObserver attributeOldValue——toggle 前捕获 old value（有 observer 请求时）。
             var moOld = _mo_any_wants_attr_old(_mo_id(handle, sel), n) ? _mo_read_attr(sel, handle, n) : null;
@@ -1555,14 +1617,20 @@
               return res === '1';
             }
             // handle-only / fallback（无 host toggle 回调）：client-side 决策（latest-wins presence）。
-            var snapHas = sel
-              ? ((typeof __zw_has_attr_lw === 'function'
+            // R116：handle 元素的 presence 经 __zw_has_attr_handle 判（旧只查 sel → handle 恒
+            // absent，第二次 toggle 仍返 true——WPT "Basic functionality" 二连 toggle 断言）。
+            var snapHas = false;
+            if (sel) {
+              snapHas = (typeof __zw_has_attr_lw === 'function'
                   ? __zw_has_attr_lw(sel, n)
-                  : (typeof __zw_has_attr === 'function' ? __zw_has_attr(sel, n) : '0')) === '1')
-              : false;
+                  : (typeof __zw_has_attr === 'function' ? __zw_has_attr(sel, n) : '0')) === '1';
+            } else if (handle && typeof __zw_has_attr_handle === 'function') {
+              try { snapHas = __zw_has_attr_handle(handle, n) === '1'; } catch (_eR116) { snapHas = false; }
+            }
             if (handle) {
               var want = hasForce ? !!force : !snapHas;
               if (want) __zw_set_attr_handle(handle, n, '');
+              else if (typeof __zw_remove_attr_handle === 'function') __zw_remove_attr_handle(handle, n);
             }
             return hasForce ? !!force : !snapHas;
           };

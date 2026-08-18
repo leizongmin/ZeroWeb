@@ -3872,7 +3872,40 @@
       // sibling/childNodes/setAttribute/序列化全套语义。HTML 文档 tagName 大写、localName 小写。
       // R51：产物补 ownerDocument=本 detached doc（spec ownerDocument 语义；common.js
       // rangeFromEndpoints 经 ownerDocument(node).createRange()——缺此字段时 undefined 崩）。
-      // js-dom M4 R81：产物补 namespaceURI/prefix/nodeValue（spec：元素 ns 由文档派生——HTML doc →
+
+      // js-dom M4 R116：`createAttribute` / `createAttributeNS`（detached doc——WPT
+      // Document-createAttribute 的 xml_document = implementation.createDocument(...)）。
+      // 空名 InvalidCharacterError；HTML-ness 按 contentType（缺省 HTML；XML 变体保持大小写）。
+      createAttribute: function (name) {
+        var t = String(name);
+        if (t === '') {
+          throw new (globalThis.DOMException || Error)(
+            "Failed to execute 'createAttribute' on 'Document': The name provided is empty.",
+            'InvalidCharacterError');
+        }
+        var isHtmlDoc = !(typeof doc.contentType === 'string' && doc.contentType.indexOf('html') < 0);
+        var n = isHtmlDoc ? t.replace(/[A-Z]/g, function (c) { return String.fromCharCode(c.charCodeAt(0) + 32); }) : t;
+        return _zwMakeAttr(n, '', null);
+      },
+      createAttributeNS: function (ns, qualifiedName) {
+        var q = String(qualifiedName);
+        if (q === '') {
+          throw new (globalThis.DOMException || Error)(
+            "Failed to execute 'createAttributeNS' on 'Document': The name provided is empty.",
+            'InvalidCharacterError');
+        }
+        var a = _zwMakeAttr(q, '', null);
+        a.namespaceURI = ns != null ? String(ns) : null;
+        var colon = q.indexOf(':');
+        if (colon > 0) {
+          a.prefix = q.slice(0, colon);
+          a.localName = q.slice(colon + 1);
+        } else {
+          a.prefix = null;
+          a.localName = q;
+        }
+        return a;
+      },      // js-dom M4 R81：产物补 namespaceURI/prefix/nodeValue（spec：元素 ns 由文档派生——HTML doc →
       // HTML ns，XML doc → null；WPT Document-createElement-namespace "Created element's namespace
       // in created HTML/XML/XHTML/SVG/MathML document" 簇）。`_docNS` 由 createDocument/
       // createHTMLDocument 按调用参数设（HTML ns 或 null）。
@@ -4307,6 +4340,10 @@
     a.prefix = null;
     a.namespaceURI = null;
     a.specified = true;
+    // R116：textContent/data（WPT attributes.js attr_is 读 attr.textContent——Attr 的 textContent
+    // 即 value，spec dom-attr `get value` 同源）。
+    a.textContent = v;
+    a.data = v;
     a.ownerElement = ownerEl || null;
     return a;
   }
@@ -4360,7 +4397,19 @@
       if (handle) v = __zw_get_attr_handle(handle, name);
       else if (typeof __zw_get_attr_lw === 'function') v = __zw_get_attr_lw(sel, name);
       else v = __zw_get_attr(sel, name);
-      return _zwMakeAttr(name, v || '', _makeProxy(sel, handle));
+      // R116：NS 属性的 Attr 字段（prefix/localName/namespaceURI）从 setAttributeNS 登记的
+      // 元数据取（host 扁平名无 ns 语义——WPT case.js setAttributeNS 断言 attr.prefix）。
+      var _r116Key = _elKey(sel, handle);
+      var _r116Meta = _attrNSMeta[_r116Key] && _attrNSMeta[_r116Key][name];
+      var attr = _zwMakeAttr(name, v || '', _makeProxy(sel, handle));
+      if (_r116Meta) {
+        attr.prefix = _r116Meta.prefix;
+        attr.localName = _r116Meta.local;
+        attr.namespaceURI = _r116Meta.ns;
+        attr.textContent = v || '';
+        attr.data = v || '';
+      }
+      return attr;
     };
     return new Proxy({}, {
       get: function(_t, p) {
