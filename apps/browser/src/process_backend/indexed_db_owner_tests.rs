@@ -557,7 +557,8 @@ fn cross_renderer_versionchange_blocks_until_connection_closes() {
             &mut snapshots,
             second,
             &mut request_id,
-            "globalThis.__upgradeState === 'blocked' ? 'pending' : globalThis.__upgradeState"
+            "['blocked', 'upgrade'].includes(globalThis.__upgradeState) ? \
+             'pending' : globalThis.__upgradeState"
         ),
         "success:2"
     );

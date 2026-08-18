@@ -73,6 +73,14 @@ FILES=(
   "IndexedDB/idb-binary-key-roundtrip.any.js"
   "IndexedDB/key-conversion-exceptions.any.js"
   "IndexedDB/objectstore_keyorder.any.js"
+  "IndexedDB/idbdatabase-transaction-exception-order.any.js"
+  "IndexedDB/idbobjectstore-add-put-exception-order.any.js"
+  "IndexedDB/idbobjectstore-clear-exception-order.any.js"
+  "IndexedDB/idbobjectstore-delete-exception-order.any.js"
+  "IndexedDB/idbobjectstore-query-exception-order.any.js"
+  "IndexedDB/idbobjectstore-request-source.any.js"
+  "IndexedDB/delete-range.any.js"
+  "IndexedDB/idb-explicit-commit-throw.any.js"
   "IndexedDB/idbobjectstore_add.any.js"
   "IndexedDB/idbobjectstore_put.any.js"
   "IndexedDB/idbobjectstore_get.any.js"
@@ -212,7 +220,7 @@ fetch_from_checkout() {
 
 if [[ -n "${WPT_SOURCE:-}" ]]; then
   fetch_from_checkout
-  echo "IndexedDB testharness subset ready (131 cases, WPT ${WPT_REV})"
+  echo "IndexedDB testharness subset ready (139 cases, WPT ${WPT_REV})"
   exit 0
 fi
 
@@ -229,4 +237,4 @@ if [[ "${raw_failed}" == "1" ]]; then
   fetch_from_git
 fi
 
-echo "IndexedDB testharness subset ready (131 cases, WPT ${WPT_REV})"
+echo "IndexedDB testharness subset ready (139 cases, WPT ${WPT_REV})"

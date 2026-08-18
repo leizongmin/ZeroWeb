@@ -5401,10 +5401,6 @@
     if (this._closed) {
       throw new globalThis.DOMException('The database connection is closed.', 'InvalidStateError');
     }
-    mode = mode === undefined ? 'readonly' : String(mode);
-    if (mode !== 'readonly' && mode !== 'readwrite') {
-      throw new TypeError('The transaction mode is invalid.');
-    }
     var storeNames = Array.isArray(names) ? names.map(String) : [String(names)];
     if (storeNames.length === 0) {
       throw new globalThis.DOMException('The transaction scope is empty.', 'InvalidAccessError');
@@ -5416,6 +5412,10 @@
       if (!Object.prototype.hasOwnProperty.call(this._stores, storeNames[i])) {
         throw new globalThis.DOMException('The object store does not exist.', 'NotFoundError');
       }
+    }
+    mode = mode === undefined ? 'readonly' : String(mode);
+    if (mode !== 'readonly' && mode !== 'readwrite') {
+      throw new TypeError('The transaction mode is invalid.');
     }
     return new _zwIDBTransaction(this, storeNames, mode);
   };

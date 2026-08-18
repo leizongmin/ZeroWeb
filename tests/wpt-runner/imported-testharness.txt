@@ -64,6 +64,14 @@ IndexedDB/idb-binary-key-detached.any.js 315976933870b34d6ea30e3f6643403edae678b
 IndexedDB/idb-binary-key-roundtrip.any.js 315976933870b34d6ea30e3f6643403edae678ba 2026-08-19 IDB-M2-key-range-binary
 IndexedDB/key-conversion-exceptions.any.js 315976933870b34d6ea30e3f6643403edae678ba 2026-08-19 IDB-M2-key-range-binary
 IndexedDB/objectstore_keyorder.any.js 315976933870b34d6ea30e3f6643403edae678ba 2026-08-19 IDB-M2-key-range-binary
+IndexedDB/idbdatabase-transaction-exception-order.any.js 315976933870b34d6ea30e3f6643403edae678ba 2026-08-19 IDB-M2-object-store-ordering
+IndexedDB/idbobjectstore-add-put-exception-order.any.js 315976933870b34d6ea30e3f6643403edae678ba 2026-08-19 IDB-M2-object-store-ordering
+IndexedDB/idbobjectstore-clear-exception-order.any.js 315976933870b34d6ea30e3f6643403edae678ba 2026-08-19 IDB-M2-object-store-ordering
+IndexedDB/idbobjectstore-delete-exception-order.any.js 315976933870b34d6ea30e3f6643403edae678ba 2026-08-19 IDB-M2-object-store-ordering
+IndexedDB/idbobjectstore-query-exception-order.any.js 315976933870b34d6ea30e3f6643403edae678ba 2026-08-19 IDB-M2-object-store-ordering
+IndexedDB/idbobjectstore-request-source.any.js 315976933870b34d6ea30e3f6643403edae678ba 2026-08-19 IDB-M2-object-store-ordering
+IndexedDB/delete-range.any.js 315976933870b34d6ea30e3f6643403edae678ba 2026-08-19 IDB-M2-object-store-ordering
+IndexedDB/idb-explicit-commit-throw.any.js 315976933870b34d6ea30e3f6643403edae678ba 2026-08-19 IDB-M2-object-store-ordering
 IndexedDB/idbobjectstore_add.any.js 315976933870b34d6ea30e3f6643403edae678ba 2026-08-17 IDB-M1-object-store-crud
 IndexedDB/idbobjectstore_put.any.js 315976933870b34d6ea30e3f6643403edae678ba 2026-08-17 IDB-M1-object-store-crud
 IndexedDB/idbobjectstore_get.any.js 315976933870b34d6ea30e3f6643403edae678ba 2026-08-17 IDB-M1-object-store-crud

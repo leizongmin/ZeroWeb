@@ -590,6 +590,41 @@ fn test_indexeddb_key_range_conversion_edges() {
 }
 
 #[test]
+fn test_indexeddb_transaction_exception_order() {
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+
+    let mut sandbox = V8Sandbox::with_config(zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    })
+    .unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    sandbox
+        .execute(
+            "globalThis.__transactionOrder = [];\
+             var request = indexedDB.open('transaction-exception-order', 1);\
+             request.onupgradeneeded = function () { request.result.createObjectStore('store'); };\
+             request.onsuccess = function () {\
+               var db = request.result;\
+               try { db.transaction('missing', 'versionchange'); }\
+               catch (error) { __transactionOrder.push(error.name); }\
+               try { db.transaction('store', 'versionchange'); }\
+               catch (error) { __transactionOrder.push(error.name); }\
+               db.close();\
+               try { db.transaction('missing'); }\
+               catch (error) { __transactionOrder.push(error.name); }\
+             };",
+        )
+        .unwrap();
+    sandbox.execute("0").unwrap();
+
+    assert_eq!(
+        sandbox.execute("__transactionOrder.join('|')").unwrap().value,
+        "NotFoundError|TypeError|InvalidStateError"
+    );
+}
+
+#[test]
 fn test_indexeddb_blocked_upgrade_waits_for_connection_close() {
     use zero_script_sandbox::{Sandbox, V8Sandbox};
 
