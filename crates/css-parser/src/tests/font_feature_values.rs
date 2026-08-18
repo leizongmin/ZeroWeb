@@ -44,6 +44,9 @@ fn parses_font_variant_alternates_combination_and_rejects_duplicates() {
     assert_eq!(values.ornaments.as_deref(), Some("or"));
     assert_eq!(values.annotation.as_deref(), Some("an"));
     assert!(parse_font_variant_alternates("stylistic(one) stylistic(two)").is_none());
+    assert!(parse_font_variant_alternates("stylistic(foo,)").is_none());
+    assert!(parse_font_variant_alternates("styleset(foo,)").is_none());
+    assert!(parse_font_variant_alternates("styleset(foo,,bar)").is_none());
 }
 
 #[test]

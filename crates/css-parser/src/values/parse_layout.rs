@@ -870,13 +870,14 @@ pub fn parse_font_variant_alternates(value: &str) -> Option<FontVariantAlternate
             return None;
         }
         let close = rest[open + 1..].find(')')? + open + 1;
-        let args: Vec<String> = rest[open + 1..close]
-            .split(',')
-            .map(str::trim)
-            .filter(|arg| !arg.is_empty())
-            .map(str::to_string)
-            .collect();
-        if args.is_empty() || args.iter().any(|arg| !valid_feature_value_name(arg)) {
+        let mut args = Vec::new();
+        for arg in rest[open + 1..close].split(',').map(str::trim) {
+            if arg.is_empty() || !valid_feature_value_name(arg) {
+                return None;
+            }
+            args.push(arg.to_string());
+        }
+        if args.is_empty() {
             return None;
         }
         match function.as_str() {
