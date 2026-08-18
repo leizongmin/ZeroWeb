@@ -1615,6 +1615,13 @@
     // is dispatched"）。旧实现恒 `entry.fn.call(...)`，对象 listener 抛（对象无 call）→ WPT
     // EventListener-handleEvent fail。
     var fire = function(entry) {
+      // js-dom M4 R111：spec inner invoke 步骤 4——once listener **调用前**移除（remove
+      // listener then call）。调用后移除不够：listener 内嵌套 dispatchEvent 时新 dispatch
+      // 的快照仍含本 listener → 无限递归（WPT remove-all-listeners "Nested usage of once
+      // listeners"）。firedOnce 仍记录（dispatch 尾部的批量过滤路径保留，双保险）。
+      if (entry.once && listeners[event.type]) {
+        listeners[event.type] = listeners[event.type].filter(function(e) { return e !== entry; });
+      }
       var fn = entry.fn;
       var callable = fn;
       if (typeof fn !== 'function') {
@@ -1636,14 +1643,23 @@
           // 函数 listener: this=currentTarget；对象 listener: this=对象本身（spec EventListener invoke）。
           callable.call(typeof fn !== 'function' ? fn : ctx, event);
         } catch (_e106) {
-          // best-effort 上报（console.error 语义；不中断派发）。
+          // js-dom M4 R111：spec inner invoke 步骤 11「report the exception」——listener 异常
+          // 不传播（继续后续 listener）但**须上报**：`window.onerror`（string 形态首参，spec
+          // `window-onerror` handler「error message」）+ console.error 兜底。WPT
+          // Event-dispatch-throwing：window.onerror 计数 ===1、后续 listener 仍跑。
           try {
-            if (typeof console !== 'undefined' && console.error) console.error('Uncaught (in event listener)', _e106);
+            if (typeof globalThis.onerror === 'function') {
+              globalThis.onerror.call(globalThis, String(_e106 && _e106.message ? _e106.message : _e106), '', 0, 0, _e106);
+            } else if (typeof console !== 'undefined' && console.error) {
+              console.error('Uncaught (in event listener)', _e106);
+            }
           } catch (_e106c) {}
         } finally {
           if (entry.passive) event._zwInPassive = Math.max(0, (event._zwInPassive || 1) - 1);
         }
       }
+      // R111：firedOnce 记录（dispatch 尾部批量过滤路径保留——fire 头已做调用前移除，
+      // 此处仅为 stopped() 早退路径的兜底记账）。
       if (entry.once) {
         if (!firedOnce) firedOnce = [];
         firedOnce.push(entry);
@@ -1659,6 +1675,11 @@
     if (phase !== 'bubble') {
       for (var i = 0; i < snap.length; i++) {
         if (snap[i].capture) {
+          // js-dom M4 R111：spec inner invoke「if listener's removed is true, continue」——
+          // 快照迭代期间被 removeEventListener 移除的 listener 跳过（WPT
+          // remove-all-listeners "Removing all listeners and then adding a new one"：
+          // listener1 内移除 listener2，listener2 不得触发）。
+          if (listeners[event.type] && listeners[event.type].indexOf(snap[i]) < 0) continue;
           fire(snap[i]);
           if (immediateStopped()) break;
         }
@@ -1678,6 +1699,8 @@
       }
       for (var j = 0; j < snap.length; j++) {
         if (!snap[j].capture) {
+          // R111：同 capture 分支——派发中被移除的 listener 跳过。
+          if (listeners[event.type] && listeners[event.type].indexOf(snap[j]) < 0) continue;
           fire(snap[j]);
           if (immediateStopped()) break;
         }
@@ -1766,6 +1789,43 @@
   // pre-click 不得触发 child 的 checked 已翻转…spec：target 起**最近的** activation 元素）。
   // checkbox → 翻 checked（内容属性存在性）；radio → 勾选 + 同 name 组互斥（复用 click() 的
   // post-activation 逻辑——本 helper 是其在 pre 阶段的统一版，click() 的 post 块后续收敛至此）。
+  // R112：定位 pre-click 激活元素（target 起最近 INPUT[checkbox/radio]，与 _zwPreClickActivation
+  // 同一遍历逻辑）——返回 { sel, handle, type } 或 null。disabled + click() 入口的「activation
+  // 不执行」也在此返回 null（post 阶段不派发 input/change）。
+  function _zwFindClickActivation(targetSel, targetHandle, isClickApi) {
+    var sel = targetSel, handle = targetHandle, hops = 0;
+    while (hops < 32) {
+      hops++;
+      var tag = null;
+      try { tag = _realTag ? _realTag(sel, handle) : null; } catch (_e) { tag = null; }
+      if (tag === 'INPUT') {
+        var ty = '';
+        try { ty = handle ? __zw_get_attr_handle(handle, 'type') : (sel ? __zw_get_attr(sel, 'type') : null); } catch (_e2) { ty = ''; }
+        ty = String(ty || '').toLowerCase();
+        if (ty === 'checkbox' || ty === 'radio') {
+          var dis = '0';
+          try { dis = handle ? __zw_has_attr_handle(handle, 'disabled') : (sel ? __zw_has_attr(sel, 'disabled') : '0'); } catch (_e3) {}
+          if (!isClickApi || dis !== '1') return { sel: sel, handle: handle, type: ty };
+          return null; // disabled + click()：无 activation（dispatch 早退路径同判定）。
+        }
+      }
+      if (sel && typeof __zw_parent === 'function') {
+        var ps = '';
+        try { ps = __zw_parent(sel); } catch (_e4) {}
+        if (ps) { sel = ps; handle = null; continue; }
+      }
+      if (handle && typeof _zwNodeParent !== 'undefined' && _zwNodeParent) {
+        var link = _zwNodeParent[handle];
+        if (link) {
+          if (link.parentHandle) { handle = link.parentHandle; sel = link.parentSel || null; continue; }
+          if (link.parentSel) { sel = link.parentSel; handle = null; continue; }
+        }
+      }
+      break;
+    }
+    return null;
+  }
+
   function _zwPreClickActivation(targetSel, targetHandle, isClickApi) {
     // 返回 legacy-canceled 回滚账 { kind, sel, handle, restore } 或 null（调用方挂 event）。
     globalThis._zwLastPreClickRollback = null;
@@ -1842,6 +1902,58 @@
     }
   }
 
+  // js-dom M4 R112：checkbox/radio 激活后的 input + change 事件派发（spec HTML input
+  // activation behavior 末段「fire an event named input / change at el」）。目标 = pre-click
+  // 激活元素（target 起最近 INPUT[checkbox/radio]——与 _zwPreClickActivation 同一元素，
+  // shadow 树内 input 也在其自身上派发，不穿透 shadow 边界）。前置条件：激活元素 connected
+  //（WPT Event-dispatch-detached-input-and-change：detached input click 后 input/change
+  // **不得**派发——「fire an event named input」的隐含前提是元素在文档/影子宿主链上）。
+  // 时序：post-activation（dispatch finally、rollback 之后）——WPT 同文件 detached 用例
+  // 断言不派发，attached 用例断言派发，均与 checked 翻转时序解耦。两个事件 bubbles:true、
+  // cancelable:false（spec input/change 事件定义），input 走 InputEvent 构造器（可用时）。
+  function _zwFireInputChange(sel, handle) {
+    var el = _makeProxy(sel, handle);
+    var inputEv;
+    try {
+      inputEv = globalThis.InputEvent
+        ? new globalThis.InputEvent('input', { bubbles: true, cancelable: false })
+        : _makeEvent('input', { bubbles: true, cancelable: false });
+    } catch (_eI) { inputEv = _makeEvent('input', { bubbles: true, cancelable: false }); }
+    try { _dispatchWithBubble(_elKey(sel, handle), sel, handle, inputEv); } catch (_e1) {}
+    try {
+      _dispatchWithBubble(_elKey(sel, handle), sel, handle,
+        _makeEvent('change', { bubbles: true, cancelable: false }));
+    } catch (_e2) {}
+    return el;
+  }
+  // R112：激活元素是否 connected——sel 经 __zw_contains('html', sel)；handle-only 经
+  // _zwNodeParent 反链上行（sel 节点即 connected；shadow root 容器经 _shadowHandleMeta
+  // 跳 host，host 是 sel 节点即 connected——与 isConnected getter R90/R91 同判定）。
+  function _zwClickActivationConnected(sel, handle) {
+    if (sel) {
+      if (typeof __zw_contains === 'function') {
+        try { return __zw_contains('html', sel) === '1'; } catch (_e) { return true; }
+      }
+      return true;
+    }
+    if (handle && typeof _zwNodeParent !== 'undefined' && _zwNodeParent) {
+      var hops = 0, link = _zwNodeParent[handle];
+      while (link && hops++ < 64) {
+        if (link.parentSel) return true;
+        var ph = link.parentHandle;
+        if (!ph) break;
+        var meta = typeof _shadowHandleMeta !== 'undefined' && _shadowHandleMeta[ph];
+        if (meta) {
+          if (meta.hostSel) return true;
+          link = _zwNodeParent[meta.hostHandle];
+          continue;
+        }
+        link = _zwNodeParent[ph];
+      }
+    }
+    return false;
+  }
+
   function _dispatchWithBubble(targetKey, targetSel, targetHandle, event, targetSlot) {
     var target = _makeProxy(targetSel, targetHandle);
     event.target = target;
@@ -1856,7 +1968,12 @@
     if (event.type === 'click' && globalThis.MouseEvent
         && (event instanceof globalThis.MouseEvent || event._zwSyntheticClick === true)) {
       var _r108IsClickApi = (event._zwSyntheticClick === true);
+      // R112：激活元素定位复用（与 _zwPreClickActivation 同一遍历——target 起最近
+      // INPUT[checkbox/radio]）。pre-click 已执行激活（checked 已翻转）时才在 post 阶段
+      // 派发 input/change；detached（click() 对 disabled 的早退、或未执行激活）不派发。
+      var _r112Act = null;
       try {
+        _r112Act = _zwFindClickActivation(targetSel, targetHandle, _r108IsClickApi);
         _zwPreClickActivation(targetSel, targetHandle, _r108IsClickApi);
         if (globalThis._zwLastPreClickRollback) event._zwLegacyCancelRollback = globalThis._zwLastPreClickRollback;
       } catch (_e108) {}
@@ -2069,6 +2186,21 @@
             else if (_rb.sel && typeof __zw_remove_attr === 'function') { try { __zw_remove_attr(_rb.sel, 'checked'); } catch (_eC) {} }
           }
         } catch (_eD) {}
+      }
+      // js-dom M4 R112：post-activation——checkbox/radio 的 input + change 事件（spec HTML
+      // input activation behavior 末段）。条件：① click 且激活元素已定位（_r112Act，pre-click
+      // 已翻转 checked）；② 顶层 dispatch（_zwDispatching 归零——嵌套内层不触发，由最外层收尾）；
+      // ③ 未 canceled（cancelable + preventDefault → 上方 rollback 已恢复 checked——canceled
+      // activation 不派发 input/change，spec legacy-canceled-activation 在 fire 前判断。注意
+      // rollback 块已把 ledger 置 null，此处按 canceled flag 判不能读 ledger）；④ 激活元素
+      // connected（detached 不派发，WPT Event-dispatch-detached-input-and-change）。两个事件
+      // 递归走 _dispatchWithBubble（各自完整的 capture/target/bubble），异常吞（不中断外层）。
+      if (_r112Act && event._zwDispatching === 0 && event.type === 'click'
+          && !(event.cancelable && event._defaultPrevented)
+          && _zwClickActivationConnected(_r112Act.sel, _r112Act.handle)) {
+        try {
+          _zwFireInputChange(_r112Act.sel, _r112Act.handle);
+        } catch (_e112) {}
       }
     }
   }
@@ -3178,6 +3310,91 @@
     if (typeof _zwMBuildBodyTree !== 'function') return [];
     try { return _zwMBuildBodyTree(String(html == null ? '' : html)).childNodes; } catch (_e) { return []; }
   }
+  // js-dom M4 R112：detached doc 的本地派发（WPT Event-dispatch-bubbles "In new Document()"）。
+  // 结构：doc → docEl → body（_makeDetachedDocument 的静态树）。listener 存 doc._zwLocalListeners
+  //（doc/docEl/body 三入口同表，entry.on 记注册节点）。派发：capture 逆链（doc→docEl→body 反向）→
+  // target（AT_TARGET，capture 先）→ bubble 正链（仅 event.bubbles）。eventPhase 按 spec 1/2/3，
+  // 结束复位 0 + currentTarget null。once listener 调用前移除（R111 语义）。异常吞（不中断）。
+  function _zwDispatchLocalDoc(doc, event) {
+    var docEl = doc.documentElement, body = doc.body;
+    var chain = [doc, docEl, body]; // 祖先序（浅结构）
+    var target = event.target;
+    if (!target || (target !== doc && target !== docEl && target !== body)) target = doc;
+    event.target = target;
+    var idx = chain.indexOf(target);
+    // R112：doc 入口注册在 doc._zwLocalListeners（entry.on 区分节点）；docEl/body 入口注册
+    // 在各自 _zwEvLs（view 形态，与 _zwParseEl path 派发共享 fire 语义）。两存储都派。
+    var ls = (doc._zwLocalListeners || {})[String(event.type)] || [];
+    var snap = ls.slice();
+    var fire = function (entry, cur, phase) {
+      if (ls.indexOf(entry) < 0) return; // 派发中被移除（R111 语义）
+      if (entry.once) {
+        doc._zwLocalListeners[String(event.type)] = ls.filter(function (e) { return e !== entry; });
+        ls = doc._zwLocalListeners[String(event.type)];
+        snap = ls.slice();
+      }
+      event.currentTarget = cur;
+      event.eventPhase = phase;
+      var callable = typeof entry.fn === 'function' ? entry.fn : (entry.fn && entry.fn.handleEvent);
+      if (typeof callable === 'function') {
+        try { callable.call(typeof entry.fn === 'function' ? cur : entry.fn, event); } catch (_e) {}
+      }
+    };
+    // R112：view 形态存储（docEl/body 的 _zwEvLs）派发——captureOnly 过滤（phase 2 双 pass
+    // 由调用侧控制：先 capture 后非 capture）。
+    var fireView = function (view, phase, captureOnly) {
+      if (!view || !view._zwEvLs) return;
+      var t = String(event.type);
+      var vls = view._zwEvLs[t];
+      if (!vls) return;
+      var vs = vls.slice();
+      for (var i = 0; i < vs.length; i++) {
+        var entry = vs[i];
+        if (captureOnly !== null && captureOnly !== entry.capture) continue;
+        var cur2 = view._zwEvLs[t];
+        if (!cur2 || cur2.indexOf(entry) < 0) continue;
+        if (entry.once) {
+          view._zwEvLs[t] = cur2.filter(function (e) { return e !== entry; });
+        }
+        event.currentTarget = view;
+        event.eventPhase = phase;
+        var callable2 = typeof entry.fn === 'function' ? entry.fn : (entry.fn && entry.fn.handleEvent);
+        if (typeof callable2 === 'function') {
+          try { callable2.call(typeof entry.fn === 'function' ? view : entry.fn, event); } catch (_e2) {}
+        }
+      }
+    };
+    // doc 站（chain[0]）的注册：doc-local fire；docEl/body 站：view fire（两存储）。
+    var stationFire = function (i, phase, captureOnly) {
+      var node = chain[i];
+      if (node === doc) {
+        for (var j = snap.length - 1; j >= 0; j--) {
+          if (captureOnly !== null && snap[j].capture !== captureOnly) continue;
+          if (snap[j].on === doc) fire(snap[j], doc, phase);
+        }
+      } else {
+        fireView(node, phase, captureOnly);
+        // 兼容：docEl/body 经 doc 入口表注册的存量路径（entry.on 匹配）。
+        for (var j2 = snap.length - 1; j2 >= 0; j2--) {
+          if (captureOnly !== null && snap[j2].capture !== captureOnly) continue;
+          if (snap[j2].on === node) fire(snap[j2], node, phase);
+        }
+      }
+    };
+    // capture：祖先逆序（远→近，仅 target 之前的节点）
+    for (var ci = idx - 1; ci >= 0; ci--) stationFire(ci, 1, true);
+    // target：AT_TARGET（2），capture listener 先
+    stationFire(idx, 2, true);
+    stationFire(idx, 2, false);
+    // bubble：祖先正序（仅 event.bubbles）
+    if (event.bubbles) {
+      for (var bi = idx - 1; bi >= 0; bi--) stationFire(bi, 3, false);
+    }
+    event.eventPhase = 0;
+    event.currentTarget = null;
+    return !event._defaultPrevented;
+  }
+
   function _makeDetachedDocument(title) {
     var bodyHtml = '';
     var _tree = null; // R3017：cached mutable body 树（首次 childNodes 访问建，innerHTML setter 失效）
@@ -3219,7 +3436,36 @@
       // parentNode=_tree ≠ foreignDoc.body——WPT Node-properties foreignPara1.parentNode 期望
       // body 对象 identity）。removeChild 同步清理。
       removeChild: function (c) { ensureTree(); if (globalThis._zwNotifyIteratorsRemove) { try { globalThis._zwNotifyIteratorsRemove(c); } catch (_e86c) {} } var r = _tree.removeChild(c); if (c && c.parentNode === _tree) c.parentNode = null; return r; },
-      appendChild: function (c) { ensureTree(); var r = _tree.appendChild(c); if (c && c.parentNode === _tree) c.parentNode = body; return r; },
+      appendChild: function (c) {
+        // js-dom M4 R112：handle 元素（cloneNode 产物等）append 到 detached body——其子树
+        // 对查询树（detHtml 串行化）不可见（_zwMSerialize 对 proxy child 的 childNodes 走
+        // host 侧数组，序列化深度丢失，WPT Event-dispatch-bubbles createHTMLDocument 变体
+        // #table 可查而 #table-body 以下全 NULL）。改为**串行合并**：handle 子的 outerHTML
+        // 字符串直接并入 bodyHtml 查询源（innerHTML 序列化保真）。
+        if (c && c.nodeType === 1 && c.__zwHandle && typeof __zw_get_inner_html_handle === 'function') {
+          try {
+            var oTag = String(c.tagName || '').toLowerCase();
+            var oih = String(__zw_get_inner_html_handle(c.__zwHandle) || '');
+            var oattrs = '';
+            try {
+              if (typeof __zw_attr_names_handle === 'function') {
+                var names = String(__zw_attr_names_handle(c.__zwHandle) || '');
+                if (names) {
+                  names.split('|').filter(Boolean).forEach(function (n) {
+                    var v = typeof __zw_get_attr_handle === 'function' ? __zw_get_attr_handle(c.__zwHandle, n) : '';
+                    oattrs += ' ' + n + '="' + String(v == null ? '' : v).replace(/"/g, '&quot;') + '"';
+                  });
+                }
+              }
+            } catch (_eA2) {}
+            var frag = '<' + oTag + oattrs + '>' + oih + '</' + oTag + '>';
+            bodyHtml = (_tree ? _tree.innerHTML : bodyHtml) + frag;
+            _tree = null;
+            return c;
+          } catch (_e112d) { /* 回落通用路径 */ }
+        }
+        ensureTree(); var r = _tree.appendChild(c); if (c && c.parentNode === _tree) c.parentNode = body; return r;
+      },
       // js-dom M4 R87：body 的 insertBefore（WPT NodeIterator-removal 恢复段经
       // oldParent.insertBefore——foreignPara 的父是 body 代理）。ref=null 等价 append；
       // _tree.insertBefore（R3018）已支持定位插入。
@@ -3299,6 +3545,26 @@
         c.parentNode = this;
         this.childNodes.push(c);
         if (c.nodeType === 1) this.children.push(c);
+        // js-dom M4 R112：append HTML 元素（documentElement 克隆）→ 其子树并入可查询树
+        //（WPT Event-dispatch-bubbles "In new Document()"：`new Document().appendChild(
+        // document.documentElement.cloneNode(true))` 后 getElementById/getElementsByTagName
+        // 须命中克隆子树内容。真实 DOM：doc 无子时 append html 元素即 documentElement，
+        // 其内容可查）。实现：克隆的 innerHTML（含 head+body）→ 提取 body 内容并入查询源
+        //（bodyHtml 串行化——查询走 detHtml → __zw_parse_html_query）。handle 克隆的
+        // childNodes 走 host 侧（proxy 数组非实时），innerHTML getter 是可靠源。
+        if (c.nodeType === 1 && String(c.tagName || '').toUpperCase() === 'HTML') {
+          try {
+            var cih = c.innerHTML != null ? String(c.innerHTML) : '';
+            if (cih) {
+              var mBody = cih.match(/<body[^>]*>([\s\S]*?)<\/body>/i);
+              var chtml = mBody ? mBody[1] : cih;
+              if (chtml && chtml.trim()) {
+                bodyHtml = chtml; // 查询树源更新（_tree 惰性重建）
+                _tree = null;
+              }
+            }
+          } catch (_e112a) {}
+        }
         return c;
       },
       removeChild: function (c) {
@@ -3346,11 +3612,42 @@
       },
       querySelector: function (sel) { return queryOne(sel); },
       querySelectorAll: function (sel) { return queryAll(sel); },
-      // R34xx：id 含特殊字符（点号等——canvas WPT 的 id="green.png"）时 '#'+id 选择器
-      // 解析错误（点号被当类）→ 改用属性选择器（[id="..."] 精确匹配）。
-      getElementById: function (id) { return queryOne('[id="' + String(id).replace(/"/g, '\\"') + '"]'); },
+      // js-dom M4 R112：doc 级 getElementsByTagName/ClassName（WPT Event-dispatch-bubbles
+      // targetsForDocumentChain `document.getElementsByTagName("body")[0]`——doc 旧只有
+      // querySelector 族，此二方法只在 body 上）。语义同 body：查 detHtml 树。
       getElementsByTagName: function (tag) { return queryAll(String(tag)); },
       getElementsByClassName: function (cls) { return queryAll('.' + String(cls)); },
+      // R112：doc 级 getElementById（同 R34xx 属性选择器形态——id 特殊字符安全）。
+      getElementById: function (id) { return queryOne('[id="' + String(id).replace(/"/g, '\\"') + '"]'); },
+      // R112：doc 级 createEvent（WPT Event-dispatch-bubbles testChain
+      // `document.createEvent("Event")`——detached doc 缺此方法直接 TypeError）。委托
+      // 主 document 的 createEvent（事件对象本身与文档无关）。
+      createEvent: function (type) { return globalThis.document.createEvent(type); },
+      // js-dom M4 R112：detached doc 的事件面（WPT Event-dispatch-bubbles-true/false
+      // "In new Document()" / "In DOMImplementation.createHTMLDocument()"——targets 含
+      // doc/docEl/body，三者 addEventListener 缺失直接 TypeError）。detached doc 不经
+      // host selector 派发链——用**本地 listener 表 + 本地派发**（capture/target/bubble
+      // 三阶段沿 doc→docEl→body 静态结构，event.currentTarget/eventPhase 按 spec 设置）。
+      // spec https://dom.spec.whatwg.org/#concept-event-dispatch
+      _zwLocalListeners: {},
+      addEventListener: function (type, fn, opts) {
+        var t = String(type);
+        if (!doc._zwLocalListeners[t]) doc._zwLocalListeners[t] = [];
+        var cap = opts != null && typeof opts === 'object' ? !!opts.capture : !!opts;
+        var once = opts != null && typeof opts === 'object' ? !!opts.once : false;
+        doc._zwLocalListeners[t].push({ fn: fn, capture: cap, once: once, on: doc });
+      },
+      removeEventListener: function (type, fn, opts) {
+        var t = String(type);
+        var cap = opts != null && typeof opts === 'object' ? !!opts.capture : !!opts;
+        var ls = doc._zwLocalListeners[t];
+        if (!ls) return;
+        doc._zwLocalListeners[t] = ls.filter(function (l) { return !(l.fn === fn && l.capture === cap); });
+      },
+      dispatchEvent: function (event) {
+        globalThis._zwDispatchGuard(event);
+        return _zwDispatchLocalDoc(doc, event);
+      },
       // R3018：createElement/createTextNode 返完整可变节点（_zwMEl/_zwMText），非 hollow stub。
       // DOMPurify / 模板引擎经 createElement 建替换节点后 insertBefore/appendChild 入树，须支持 parentNode/
       // sibling/childNodes/setAttribute/序列化全套语义。HTML 文档 tagName 大写、localName 小写。
@@ -3641,6 +3938,43 @@
     docEl.contains = function (other) { return _zwNodeContains(docEl, other); };
     docEl.compareDocumentPosition = function (other) { return _zwCompareDocumentPosition(docEl, other); };
     docEl.parentNode = doc;
+    // js-dom M4 R112：docEl/body 事件面（view 形态 _zwEvLs + tag 注册表——与 _zwParseEl
+    // path 派发共享 fire 语义；WPT Event-dispatch-bubbles targets = [doc, docEl, body, ...]
+    // 逐一 addEventListener）。tag 键经全局 _zwEvTagRegistry（part02 定义）注册，使解析
+    // 元素派发（path 键 sig:HTML|.../sig:BODY|... miss 时按 tag 兜底）可达 docEl/body 的
+    // listener。doc 入口仍走 doc._zwLocalListeners（_zwDispatchLocalDoc 链承载）。
+    var _zwWireLocalEvents = function (node, tag) {
+      node.addEventListener = function (type, fn, opts) {
+        if (!node._zwEvLs) node._zwEvLs = {};
+        var t = String(type);
+        if (!node._zwEvLs[t]) node._zwEvLs[t] = [];
+        var cap = opts != null && typeof opts === 'object' ? !!opts.capture : !!opts;
+        var once = opts != null && typeof opts === 'object' ? !!opts.once : false;
+        node._zwEvLs[t].push({ fn: fn, capture: cap, once: once });
+        try { globalThis._zwEvTagRegistry['tag:' + tag] = node; } catch (_eR) {}
+      };
+      node.removeEventListener = function (type, fn, opts) {
+        if (!node._zwEvLs) return;
+        var t = String(type);
+        var cap = opts != null && typeof opts === 'object' ? !!opts.capture : !!opts;
+        var ls = node._zwEvLs[t];
+        if (!ls) return;
+        node._zwEvLs[t] = ls.filter(function (l) { return !(l.fn === fn && l.capture === cap); });
+      };
+      node.dispatchEvent = function (event) {
+        globalThis._zwDispatchGuard(event);
+        event.target = node;
+        return _zwDispatchLocalDoc(doc, event);
+      };
+    };
+    _zwWireLocalEvents(docEl, 'HTML');
+    _zwWireLocalEvents(body, 'BODY');
+    // R112：doc 链注册（part02 解析视图派发的 path 末端可达 doc 站）——最新 detached doc
+    // 挂 globalThis（_zwParseEl.dispatchEvent 按链顶端 html/body tag 命中后派 doc 的
+    // _zwLocalListeners）。后建覆盖先建（每用例一 doc；跨用例 listener 不复用）。
+    try {
+      globalThis._zwEvDocChain = { doc: doc, docEl: docEl, body: body };
+    } catch (_eDC) {}
     return doc;
   }
 

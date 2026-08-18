@@ -1581,13 +1581,40 @@ pub fn parse_html_element_json(html: &str, selector: &str, all: bool) -> String 
         }
         let text = doc.text_content(id).unwrap_or_default();
         let outer = doc.outer_html(id);
+        // js-dom M4 R112：祖先链 path（元素自身的「身份键」数组，根→父方向，不含自身）——
+        // detached 解析元素的事件派发（WPT Event-dispatch-bubbles）沿祖先链 capture/bubble，
+        // JS 侧 `_zwParseEl` 快照无树上下文，path 是祖先身份的唯一来源。键形态与 shim
+        // `_zwEvKey` 对齐：有 id → `id:<id>`，否则 `sig:<TAG>|<class>|<outer前缀>`。
+        let mut path_parts: Vec<String> = Vec::new();
+        let mut cur = doc.parent_node(id);
+        while let Some(pid) = cur {
+            let Some(pnd) = doc.get(pid) else { break };
+            let NodeKind::Element(pe) = &pnd.kind else { break };
+            let ptag = pe.local_name().to_string();
+            let pid_attr = doc.get_attribute(pid, "id").unwrap_or_default();
+            let pcls = doc.get_attribute(pid, "class").unwrap_or_default();
+            let key = if pid_attr.is_empty() {
+                format!(
+                    "sig:{}|{}|{}",
+                    ptag.to_uppercase(),
+                    pcls,
+                    doc.outer_html(pid).chars().take(64).collect::<String>()
+                )
+            } else {
+                format!("id:{}", pid_attr)
+            };
+            path_parts.push(key);
+            cur = doc.parent_node(pid);
+        }
+        path_parts.reverse(); // 根→父（documentElement 在前）
         items.push(format!(
-            "{{\"tag\":{},\"id\":{},\"cls\":{},\"text\":{},\"outer\":{},\"attrs\":{{{}}}}}",
+            "{{\"tag\":{},\"id\":{},\"cls\":{},\"text\":{},\"outer\":{},\"path\":{},\"attrs\":{{{}}}}}",
             json_str(&tag),
             json_str(&doc.get_attribute(id, "id").unwrap_or_default()),
             json_str(&doc.get_attribute(id, "class").unwrap_or_default()),
             json_str(&text),
             json_str(&outer),
+            json_str(&path_parts.join("\u{1f}")),
             attrs_json.join(",")
         ));
     }

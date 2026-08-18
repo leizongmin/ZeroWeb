@@ -1502,6 +1502,9 @@
     this.outerHTML = info.outer || '';
     this.innerHTML = _zwInnerFromOuter(this.outerHTML, tag);
     this._attrs = info.attrs || {};
+    // R112：祖先链（host path 字段——身份键数组，根→父，\x1f 分隔）。事件派发沿此链
+    // 反查注册视图（WPT Event-dispatch-bubbles）。
+    this._zwPath = info.path ? String(info.path).split('\x1f') : [];
   }
   // innerHTML 从 outerHTML 派生：strip 首 `<tag ...>` + 尾 `</tag>`；void/自闭合无尾标签 → strip 首标签后剩 ''。
   function _zwInnerFromOuter(outer, tag) {
@@ -1567,6 +1570,130 @@
   _zwParseEl.prototype.setAttribute = function (n, v) { this._ensureMutTree().setAttribute(n, v); };
   _zwParseEl.prototype.removeAttribute = function (n) { this._ensureMutTree().removeAttribute(n); };
   _zwParseEl.prototype.hasChildNodes = function () { return this._ensureMutTree().hasChildNodes(); };
+  // js-dom M4 R112：detached 解析元素的事件面（WPT Event-dispatch-bubbles "In new Document()"
+  // 等——targets 链 [doc, docEl, body, #table, #table-body, #parent] 逐一 addEventListener，
+  // _zwParseEl 缺方法直接 TypeError）。listener 存元素自身（per-element 表 _zwEvLs）。
+  // **视图注册表**：detached 查询每次返新 _zwParseEl 实例、各自 lazy 建独立 mut 树——
+  // 祖先链不能经树 parentNode 直达（不同视图不同树）。改按 **身份键**（id 优先，回落
+  // tag+class+outer 前缀哈希）把「带 listener 的视图」注册进 doc 级表；派发沿自身 mut 树
+  // parentNode 上行，每层按身份键反查注册视图触发其 listener（capture 逆链 → target →
+  // bubble 正链，eventPhase/currentTarget 按 spec）。doc/docEl 的注册由
+  // _zwDispatchLocalDoc 链承载（chain 顶端 doc 视图直连）。
+  // spec https://dom.spec.whatwg.org/#concept-event-dispatch
+  var _zwEvViewRegistry = {}; // 身份键 -> 视图（_zwParseEl 或 wired docEl/body 对象）
+  // R112：tag 兜底注册表——detached doc 的 docEl/body（普通对象，无 id/outerHTML 快照）
+  // 经 `tag:<TAG>` 键注册；路径键（sig:TAG|... 形态）直查 miss 时按 tag 前缀反查本表。
+  // 挂 globalThis（part03 的 _makeDetachedDocument 跨 part 注册）。
+  var _zwEvTagRegistry = {};
+  globalThis._zwEvTagRegistry = _zwEvTagRegistry;
+  _zwParseEl.prototype._zwEvKey = function () {
+    if (this.id) return 'id:' + this.id;
+    return 'sig:' + this.tagName + '|' + String(this.className) + '|' + String(this.outerHTML).slice(0, 64);
+  };
+  _zwParseEl.prototype.addEventListener = function (type, fn, opts) {
+    if (!this._zwEvLs) this._zwEvLs = {};
+    var t = String(type);
+    if (!this._zwEvLs[t]) this._zwEvLs[t] = [];
+    var cap = opts != null && typeof opts === 'object' ? !!opts.capture : !!opts;
+    var once = opts != null && typeof opts === 'object' ? !!opts.once : false;
+    this._zwEvLs[t].push({ fn: fn, capture: cap, once: once });
+    _zwEvViewRegistry[this._zwEvKey()] = this;
+  };
+  _zwParseEl.prototype.removeEventListener = function (type, fn, opts) {
+    if (!this._zwEvLs) return;
+    var t = String(type);
+    var cap = opts != null && typeof opts === 'object' ? !!opts.capture : !!opts;
+    var ls = this._zwEvLs[t];
+    if (!ls) return;
+    this._zwEvLs[t] = ls.filter(function (l) { return !(l.fn === fn && l.capture === cap); });
+  };
+  _zwParseEl.prototype.dispatchEvent = function (event) {
+    if (globalThis._zwDispatchGuard) globalThis._zwDispatchGuard(event);
+    var self = this;
+    var fireView = function (view, phase, captureOnly) {
+      if (!view || !view._zwEvLs) return;
+      var t = String(event.type);
+      var ls = view._zwEvLs[t];
+      if (!ls) return;
+      var s = ls.slice();
+      for (var i = 0; i < s.length; i++) {
+        var entry = s[i];
+        // captureOnly：capture listener 派（capture 期与 target 期 capture-pass 共用）；
+        // 非 capture listener 在 target 期由第二次（captureOnly=false）调用派。AT_TARGET
+        // 两 pass 分 capture 先后（spec invoke：capture listener 先于 non-capture）。
+        if (captureOnly !== null && captureOnly !== entry.capture) continue;
+        var cur = view._zwEvLs[t];
+        if (!cur || cur.indexOf(entry) < 0) continue; // 派发中被移除（R111 语义）
+        if (entry.once) {
+          view._zwEvLs[t] = cur.filter(function (e) { return e !== entry; });
+        }
+        event.currentTarget = view;
+        event.eventPhase = phase;
+        var callable = typeof entry.fn === 'function' ? entry.fn : (entry.fn && entry.fn.handleEvent);
+        if (typeof callable === 'function') {
+          try { callable.call(typeof entry.fn === 'function' ? view : entry.fn, event); } catch (_e) {}
+        }
+      }
+    };
+    event.target = self;
+    // 祖先链：`_zwPath`（host path 字段——身份键数组，根→父）。每层反查注册视图；
+    // 直查 miss 时按 tag 兜底（path 键 sig:TAG|... → tag:<TAG> 表——detached doc 的
+    // docEl/body 普通对象经 tag 键注册，其 outerHTML 与解析视图不同源无法 sig 匹配）。
+    var viewForKey = function (key) {
+      var v = _zwEvViewRegistry[key];
+      if (v) return v;
+      if (key && key.indexOf('sig:') === 0) {
+        var bar = key.indexOf('|');
+        if (bar > 4) return _zwEvTagRegistry['tag:' + key.slice(4, bar)] || null;
+      }
+      return null;
+    };
+    var path = self._zwPath || [];
+    // R112：doc 站（detached doc 的 _zwLocalListeners）——path 顶端（html/body tag 命中
+    // _zwEvDocChain）时 doc 是链最外层：capture 最先（path 之前）、bubble 最后（path 之后）。
+    var docChain = globalThis._zwEvDocChain;
+    var docHasHtml = docChain && (path.indexOf('sig:HTML|') >= 0 || (docChain.docEl && _zwEvTagRegistry['tag:HTML'] === docChain.docEl));
+    var fireDoc = function (phase) {
+      if (!docChain || !docHasHtml) return;
+      var dl = (docChain.doc._zwLocalListeners || {})[String(event.type)] || [];
+      var ds = dl.slice();
+      for (var i = 0; i < ds.length; i++) {
+        var entry = ds[i];
+        if (entry.capture !== (phase === 1)) continue;
+        var cur = docChain.doc._zwLocalListeners[String(event.type)];
+        if (!cur || cur.indexOf(entry) < 0) continue;
+        if (entry.once) {
+          docChain.doc._zwLocalListeners[String(event.type)] = cur.filter(function (e) { return e !== entry; });
+        }
+        event.currentTarget = docChain.doc;
+        event.eventPhase = phase;
+        var callable = typeof entry.fn === 'function' ? entry.fn : (entry.fn && entry.fn.handleEvent);
+        if (typeof callable === 'function') {
+          try { callable.call(typeof entry.fn === 'function' ? docChain.doc : entry.fn, event); } catch (_eD) {}
+        }
+      }
+    };
+    fireDoc(1); // capture：doc 最先（链最外层）
+    // capture：path[0]=最外层祖先（html）→ path 末端=最近父级——正序迭代（WPT
+    // Event-dispatch-bubbles 预期 capture 序 doc→html→body→…→最近父级，首版逆序
+    // 迭代致 currentTarget 序反转，assert_array_equals 实证）。
+    for (var ci = 0; ci < path.length; ci++) {
+      fireView(viewForKey(path[ci]), 1, true);
+    }
+    // target：AT_TARGET——capture listener 先。
+    fireView(self, 2, true);
+    fireView(self, 2, false);
+    // bubble：近→远（path 逆序——最近父级先），仅 event.bubbles。doc 站最后。
+    if (event.bubbles) {
+      for (var bi = path.length - 1; bi >= 0; bi--) {
+        fireView(viewForKey(path[bi]), 3, false);
+      }
+      fireDoc(3);
+    }
+    event.eventPhase = 0;
+    event.currentTarget = null;
+    return !event._defaultPrevented;
+  };
   // DOMParser 解析出的 Document（只读）。querySelector/getElementById/body 经 host 回调重解析。
   function _zwParsedDoc(html) {
     this._html = html;

@@ -1431,6 +1431,20 @@
       }
       return null;
     },
+    // js-dom M4 R112：`document.cloneNode(deep)`（WPT Event-dispatch-bubbles "In
+    // window.document.cloneNode(true)"——主文档缺此方法直接 TypeError）。返回**可查询的
+    // detached Document**（body 子树 = 主文档 body innerHTML 快照，经 __zw_get_inner_html）
+    // ——getElementById/getElementsByTagName/事件面（R112 doc 级 + 视图 path 派发）全可用。
+    cloneNode: function(deep) {
+      var d = _makeDetachedDocument(globalThis.document.title || '');
+      if (deep) {
+        try {
+          var ih = typeof __zw_get_inner_html === 'function' ? __zw_get_inner_html('body') : '';
+          if (ih) d.body.innerHTML = ih;
+        } catch (_e112c) {}
+      }
+      return d;
+    },
     // R3067：`document.getAnimations()`（Web Animations API）——返文档内全部动画（所有元素，cancelled/idle 排除；
     // finished 含）。_elementAnimations per-element 注册表 flat + filter。headless 瞬间完成 → finished 动画可查询/commitStyles。
     getAnimations: function() {
