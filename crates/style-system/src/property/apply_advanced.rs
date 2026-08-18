@@ -8,6 +8,22 @@ use super::parse::*;
 use super::types::*;
 use zero_css_parser::values;
 
+fn parse_non_negative_time_list(value: &str) -> Option<Vec<f64>> {
+    let mut out = Vec::new();
+    for part in value.split(',') {
+        let time = values::parse_animation_duration(part.trim())?;
+        match time {
+            zero_css_parser::values::AnimationDurationValue::Time(n, zero_css_parser::values::TimeUnit::S) => {
+                out.push(n)
+            }
+            zero_css_parser::values::AnimationDurationValue::Time(n, zero_css_parser::values::TimeUnit::Ms) => {
+                out.push(n / 1000.0)
+            }
+        }
+    }
+    Some(out)
+}
+
 /// R2468：解析 contain-intrinsic-{inline,block}-size longhand 值。
 ///
 /// 接受可选 `auto` 前缀 + 单个 `<length>`（如 `auto 100px`、`100px`）。`auto` 在静态无
@@ -148,7 +164,9 @@ pub fn apply_advanced_property_value(style: &mut ComputedStyle, property: &str, 
             return true;
         }
         "transition-duration" => {
-            let durations = value.split(',').filter_map(|s| values::parse_time(s.trim())).collect();
+            let Some(durations) = parse_non_negative_time_list(value) else {
+                return false;
+            };
             style.transition_duration = durations;
             return true;
         }
@@ -241,7 +259,10 @@ pub fn apply_advanced_property_value(style: &mut ComputedStyle, property: &str, 
             return true;
         }
         "animation-duration" => {
-            style.animation_duration = value.split(',').filter_map(|s| values::parse_time(s.trim())).collect();
+            let Some(durations) = parse_non_negative_time_list(value) else {
+                return false;
+            };
+            style.animation_duration = durations;
             return true;
         }
         "animation-timing-function" => {

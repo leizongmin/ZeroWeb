@@ -63,6 +63,8 @@ Logical border axis shorthands exposed the axis variant: 1-2 start/end mapping m
 
 `animation-iteration-count` exposed the divergent-parser variant: parser and longhand apply must share the same target grammar. CSS allows zero iteration counts but rejects negatives; if the parser rejects zero while longhand accepts raw negative numbers, shorthand and longhand behavior diverge in both directions.
 
+`transition-duration` and `animation-duration` exposed the sibling-longhand variant: related longhands may share a primitive parser but not the same grammar. Duration requires non-negative time while delay accepts negative time, so duration apply must reuse the duration parser instead of the generic time parser, and delay must remain deliberately wider.
+
 ## Root Cause
 
 The shorthand layer used heuristic component classifiers and treated unrecognized tokens as absent optional components. That is wrong for CSS shorthands such as `border`, where every token must match one of the allowed component grammars. A shared parser can also be broader than the property grammar that consumes it: general length parsing may accept `auto`, intrinsic sizing keywords, or percentages that `border-width` must reject.

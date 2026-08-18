@@ -791,6 +791,9 @@ fn test_apply_transition_duration() {
 
     assert!(apply_property_value(&mut style, "transition-duration", "200ms"));
     assert_eq!(style.transition_duration, vec![0.2]);
+
+    assert!(!apply_property_value(&mut style, "transition-duration", "-1s"));
+    assert_eq!(style.transition_duration, vec![0.2]);
 }
 
 #[test]
@@ -1157,6 +1160,9 @@ fn test_apply_animation_duration() {
     assert_eq!(style.animation_duration, vec![0.3, 0.6]);
 
     assert!(apply_property_value(&mut style, "animation-duration", "200ms"));
+    assert_eq!(style.animation_duration, vec![0.2]);
+
+    assert!(!apply_property_value(&mut style, "animation-duration", "-1s"));
     assert_eq!(style.animation_duration, vec![0.2]);
 }
 

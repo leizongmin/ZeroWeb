@@ -530,6 +530,14 @@ fn test_apply_transition_properties() {
 
     let (ok, _) = apply("transition-delay", "0.1s");
     assert!(ok);
+
+    let (ok, s) = apply("transition-duration", "-1s");
+    assert!(!ok);
+    assert!(s.transition_duration.is_empty());
+
+    let (ok, s) = apply("transition-delay", "-1s");
+    assert!(ok);
+    assert_eq!(s.transition_delay, vec![-1.0]);
 }
 
 // === 逻辑属性 ===
@@ -571,6 +579,10 @@ fn test_apply_animation_properties() {
 
     let (ok, _) = apply("animation-timing-function", "linear");
     assert!(ok);
+
+    let (ok, s) = apply("animation-duration", "-1s");
+    assert!(!ok);
+    assert!(s.animation_duration.is_empty());
 
     let (ok, _) = apply("animation-delay", "0.5s");
     assert!(ok);
