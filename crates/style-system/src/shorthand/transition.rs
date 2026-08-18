@@ -115,7 +115,7 @@ fn parse_single_transition(entry: &str) -> Option<(String, String, String, Strin
             timing = t.to_string();
             found_timing = true;
         } else {
-            if found_property {
+            if found_property || !is_transition_property_ident(t) {
                 return None;
             }
             property = t.to_string();
@@ -154,6 +154,38 @@ fn split_top_level_commas(s: &str) -> Vec<String> {
 /// 检查字符串是否为 CSS 时间值。
 fn is_time_value(s: &str) -> bool {
     zero_css_parser::values::parse_animation_duration(s).is_some()
+}
+
+// https://drafts.csswg.org/css-transitions-1/#transition-property-property
+fn is_transition_property_ident(token: &str) -> bool {
+    let t = token.trim();
+    t.eq_ignore_ascii_case("all") || t.eq_ignore_ascii_case("none") || is_css_ident(t)
+}
+
+fn is_css_ident(value: &str) -> bool {
+    let mut chars = value.chars();
+    let Some(first) = chars.next() else {
+        return false;
+    };
+    if first == '-' {
+        let Some(second) = chars.next() else {
+            return false;
+        };
+        if second != '-' && !is_css_name_start(second) {
+            return false;
+        }
+    } else if !is_css_name_start(first) {
+        return false;
+    }
+    chars.all(is_css_name_char)
+}
+
+fn is_css_name_start(c: char) -> bool {
+    c == '_' || c.is_ascii_alphabetic() || !c.is_ascii()
+}
+
+fn is_css_name_char(c: char) -> bool {
+    is_css_name_start(c) || c.is_ascii_digit() || c == '-'
 }
 
 /// 展开 animation 简写。

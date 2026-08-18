@@ -110,6 +110,17 @@ fn test_transition_rejects_duplicate_or_empty_components() {
     assert!(expand_one("transition", "opacity 0.3s,", false, (0, 0, 1)).is_empty());
 }
 
+#[test]
+fn test_transition_rejects_invalid_property_ident_tokens() {
+    assert!(expand_one("transition", "-1s", false, (0, 0, 1)).is_empty());
+    assert!(expand_one("transition", "1foo", false, (0, 0, 1)).is_empty());
+    assert!(expand_one("transition", "\"opacity\" 1s", false, (0, 0, 1)).is_empty());
+
+    let result = expand_one("transition", "--custom-prop 1s", false, (0, 0, 1));
+    assert_eq!(result.len(), 4);
+    assert_eq!(result[0].1, "--custom-prop");
+}
+
 // ── 逻辑属性简写测试 ──
 
 #[test]
@@ -540,6 +551,16 @@ fn test_animation_preserves_none_name_fill_mode_ambiguity() {
     assert_eq!(result[0].1, "none");
     assert_eq!(result[1].1, "1s");
     assert_eq!(result[6].1, "backwards");
+}
+
+#[test]
+fn test_animation_rejects_invalid_name_ident_tokens() {
+    assert!(expand_one("animation", "-1s", false, (0, 0, 1)).is_empty());
+    assert!(expand_one("animation", "1fade 1s", false, (0, 0, 1)).is_empty());
+
+    let result = expand_one("animation", "--spin 1s", false, (0, 0, 1));
+    assert_eq!(result.len(), 8);
+    assert_eq!(result[0].1, "--spin");
 }
 
 // R2920：vendor 前缀 shorthand 别名须在简写展开前 canonical 化为标准名，否则透传后 apply

@@ -119,20 +119,50 @@ pub enum AnimationNameValue {
 
 /// 解析 CSS animation-name 属性值。
 ///
+/// https://drafts.csswg.org/css-animations-1/#animation-name
 /// 支持格式如 `"none"`、`"fadeIn"`、`"slide-in"`。
 pub fn parse_animation_name(value: &str) -> Option<AnimationNameValue> {
     let v = value.trim();
     if v.eq_ignore_ascii_case("none") {
         return Some(AnimationNameValue::None);
     }
-    // 动画名称必须是有效 CSS 标识符（字母/下划线/连字符开头，不含空格）
-    if v.is_empty() || v.starts_with(|c: char| c.is_ascii_digit()) {
-        return None;
+    if is_quoted_string(v) || is_css_ident(v) {
+        return Some(AnimationNameValue::Custom(v.to_string()));
     }
-    if v.contains(|c: char| c.is_whitespace()) {
-        return None;
+    None
+}
+
+fn is_quoted_string(value: &str) -> bool {
+    let bytes = value.as_bytes();
+    bytes.len() >= 2
+        && ((bytes[0] == b'"' && bytes[bytes.len() - 1] == b'"')
+            || (bytes[0] == b'\'' && bytes[bytes.len() - 1] == b'\''))
+}
+
+fn is_css_ident(value: &str) -> bool {
+    let mut chars = value.chars();
+    let Some(first) = chars.next() else {
+        return false;
+    };
+    if first == '-' {
+        let Some(second) = chars.next() else {
+            return false;
+        };
+        if second != '-' && !is_css_name_start(second) {
+            return false;
+        }
+    } else if !is_css_name_start(first) {
+        return false;
     }
-    Some(AnimationNameValue::Custom(v.to_string()))
+    chars.all(is_css_name_char)
+}
+
+fn is_css_name_start(c: char) -> bool {
+    c == '_' || c.is_ascii_alphabetic() || !c.is_ascii()
+}
+
+fn is_css_name_char(c: char) -> bool {
+    is_css_name_start(c) || c.is_ascii_digit() || c == '-'
 }
 
 // ── CSS Animation Duration 值类型 ──────────────────────────────────

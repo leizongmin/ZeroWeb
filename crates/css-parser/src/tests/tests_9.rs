@@ -1172,6 +1172,16 @@ fn test_background_image_invalid() {
 }
 
 #[test]
+fn test_animation_name_rejects_invalid_css_ident_tokens() {
+    use crate::values::parse_animation_name;
+
+    assert!(parse_animation_name("-1s").is_none());
+    assert!(parse_animation_name("1fade").is_none());
+    assert!(parse_animation_name("--spin").is_some());
+    assert!(parse_animation_name("\"my-animation\"").is_some());
+}
+
+#[test]
 fn test_background_repeat_values() {
     use crate::values::BackgroundRepeatValue;
     assert_eq!(parse_background_repeat("repeat"), Some(BackgroundRepeatValue::Repeat));

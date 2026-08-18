@@ -376,9 +376,9 @@ fn test_parse_transform_uncovered_cases() {
     let name = parse_animation_name("my animation");
     assert_eq!(name, None);
 
-    // Line 369: parse_animation_name with function name
+    // Line 369: parse_animation_name rejects function tokens.
     let name = parse_animation_name("function()");
-    assert_eq!(name, Some(AnimationNameValue::Custom("function()".to_string())));
+    assert_eq!(name, None);
 
     // Lines 422-424: parse_animation_play_state with "running"
     let state = parse_animation_play_state("running");

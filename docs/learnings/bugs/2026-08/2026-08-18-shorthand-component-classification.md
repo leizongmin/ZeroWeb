@@ -59,6 +59,8 @@ Logical border axis shorthands exposed the axis variant: 1-2 start/end mapping m
 
 `background-size` and `background-attachment` exposed the slot cardinality variant: a token may be valid for a longhand but invalid in its shorthand position or as a repeated component. `cover`/`contain`/`auto` must be tied to the slash-delimited size side, `cover`/`contain` are exclusive, size accepts at most two simple components, and attachment accepts only one component per background layer.
 
+`transition` and `animation` exposed the fallback-ident variant: after specialized slots fail, the final custom-ident/name slot must still validate the token shape against its own grammar. Negative time-shaped tokens, digit-start tokens, quoted strings for transition-property, and function tokens must not be accepted merely because no earlier classifier matched them; animation-name is a different grammar and may accept quoted keyframe names.
+
 ## Root Cause
 
 The shorthand layer used heuristic component classifiers and treated unrecognized tokens as absent optional components. That is wrong for CSS shorthands such as `border`, where every token must match one of the allowed component grammars. A shared parser can also be broader than the property grammar that consumes it: general length parsing may accept `auto`, intrinsic sizing keywords, or percentages that `border-width` must reject.
