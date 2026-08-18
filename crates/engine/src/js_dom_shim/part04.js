@@ -983,18 +983,19 @@
         }
         // Text/Comment 节点的 nodeValue/data = 文本（经 __zw_get_text_handle 读回，element 的 nodeValue 为 null）。
         if ((isText || isComment) && (prop === 'nodeValue' || prop === 'data')) {
-          return handle ? __zw_get_text_handle(handle) : '';
+          // R121：JS 侧覆盖缓存优先（孤立代理保真；miss 回落 wire）。
+          return handle ? _zwTextDataGet(handle, function () { return __zw_get_text_handle(handle); }) : '';
         }
         // js-dom M4 R81：Text/Comment 的 textContent = data（spec dom-node-textcontent——
         // CharacterData 的 textContent 与 data 同源；旧落到 undefined）。PI 分支在上方已处理。
         if ((isText || isComment) && prop === 'textContent') {
-          return handle ? __zw_get_text_handle(handle) : '';
+          return handle ? _zwTextDataGet(handle, function () { return __zw_get_text_handle(handle); }) : '';
         }
         // js-dom M4 R81：Text 的 wholeText = 同父相邻文本节点 data 拼接（spec dom-text-wholetext；
         // 无父/无兄弟即自身 data——WPT Node-properties detachedTextNode.wholeText）+ length
         // = data 长度（spec CharacterData.length）。
         if (isText && prop === 'wholeText') {
-          var _wtData = handle ? __zw_get_text_handle(handle) : '';
+          var _wtData = handle ? _zwTextDataGet(handle, function () { return __zw_get_text_handle(handle); }) : '';
           var _wtParent = _parentNodeFor(sel, handle);
           if (!_wtParent || !_wtParent.childNodes) return _wtData;
           var _wtOut = '';
@@ -1049,50 +1050,55 @@
         // 越界 clamp（spec 抛 IndexSizeError，此处 permissive 不抛）。contentEditable 编辑库（ProseMirror
         // / Slate / Quill）+ Range/Selection 高频。
         if ((isText || isComment) && prop === 'length') {
-          return handle ? __zw_get_text_handle(handle).length : 0;
+          return handle ? _zwTextDataGet(handle, function () { return __zw_get_text_handle(handle); }).length : 0;
         }
         if ((isText || isComment) && prop === 'appendData') {
           return function (s) {
-            if (handle) __zw_set_text_handle(handle, __zw_get_text_handle(handle) + String(s == null ? '' : s));
+            if (!handle) return undefined;
+            var nv = _zwTextDataGet(handle, function () { return __zw_get_text_handle(handle); }) + String(s == null ? '' : s);
+            _zwTextDataSet(handle, nv, function () { __zw_set_text_handle(handle, nv); });
             return undefined;
           };
         }
         if ((isText || isComment) && prop === 'deleteData') {
           return function (offset, count) {
             if (!handle) return undefined;
-            var cur = __zw_get_text_handle(handle);
+            var cur = _zwTextDataGet(handle, function () { return __zw_get_text_handle(handle); });
             var o = offset | 0, c = count | 0;
             if (o < 0) o = 0;
             if (c < 0) c = 0;
-            __zw_set_text_handle(handle, cur.slice(0, o) + cur.slice(o + c));
+            var nv = cur.slice(0, o) + cur.slice(o + c);
+            _zwTextDataSet(handle, nv, function () { __zw_set_text_handle(handle, nv); });
             return undefined;
           };
         }
         if ((isText || isComment) && prop === 'insertData') {
           return function (offset, s) {
             if (!handle) return undefined;
-            var cur = __zw_get_text_handle(handle);
+            var cur = _zwTextDataGet(handle, function () { return __zw_get_text_handle(handle); });
             var o = offset | 0;
             if (o < 0) o = 0;
-            __zw_set_text_handle(handle, cur.slice(0, o) + String(s == null ? '' : s) + cur.slice(o));
+            var nv = cur.slice(0, o) + String(s == null ? '' : s) + cur.slice(o);
+            _zwTextDataSet(handle, nv, function () { __zw_set_text_handle(handle, nv); });
             return undefined;
           };
         }
         if ((isText || isComment) && prop === 'replaceData') {
           return function (offset, count, s) {
             if (!handle) return undefined;
-            var cur = __zw_get_text_handle(handle);
+            var cur = _zwTextDataGet(handle, function () { return __zw_get_text_handle(handle); });
             var o = offset | 0, c = count | 0;
             if (o < 0) o = 0;
             if (c < 0) c = 0;
-            __zw_set_text_handle(handle, cur.slice(0, o) + String(s == null ? '' : s) + cur.slice(o + c));
+            var nv = cur.slice(0, o) + String(s == null ? '' : s) + cur.slice(o + c);
+            _zwTextDataSet(handle, nv, function () { __zw_set_text_handle(handle, nv); });
             return undefined;
           };
         }
         if ((isText || isComment) && prop === 'substringData') {
           return function (offset, count) {
             if (!handle) return '';
-            var cur = __zw_get_text_handle(handle);
+            var cur = _zwTextDataGet(handle, function () { return __zw_get_text_handle(handle); });
             var o = offset | 0, c = count | 0;
             if (o < 0) o = 0;
             if (c < 0) c = 0;
@@ -3393,7 +3399,8 @@
           if (handle) {
             var _tdMoId = _mo_id(handle, sel);
             var _tdMoOld = _mo_any_wants_char_old(_tdMoId) ? _mo_read_text(sel, handle) : null;
-            __zw_set_text_handle(handle, String(value == null ? '' : value));
+            var _tdNew = String(value == null ? '' : value);
+            _zwTextDataSet(handle, _tdNew, function () { __zw_set_text_handle(handle, _tdNew); });
             _mo_notify(sel, handle, { type: 'characterData', oldValue: _tdMoOld });
           }
           return true;

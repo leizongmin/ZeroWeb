@@ -752,3 +752,67 @@ fn test_get_elements_by_tag_name_family_r120() {
         "getElementsBy*：非 HTML ns 大小写敏感 / NS localName 原样 / uppercase-never-match / ASCII tagName / live collection / id-name 不对称暴露 / 接口构造器"
     );
 }
+
+// js-dom M4 R121：Text/Comment 真构造器 + CharacterData 孤立代理保真（JS 侧 data 覆盖缓存）。
+// 驱动用例 WPT dom/nodes Text-constructor.html（13F→15P 100%）+ Comment-constructor.html
+// （13F→15P 100%）+ CharacterData-surrogates.html（6F→8P 100%）：
+// ① new Text(data)/new Comment(data) 真构造（data/nodeValue String 转换 + ownerDocument=
+//   document + 原型链 Text.prototype→CharacterData→Node + instanceof 三层）——旧空 stub
+//   使 object.data undefined 全簇 fail。
+// ② `_zwTextDataCache`（JS Map，键 handle）：wire 层（to_rust_string_lossy，WTF-16→UTF-8）
+//   把孤立代理替换 U+FFFD，而 spec 允许 CharacterData 方法按 UTF-16 code unit 偏移**切开
+//   代理对**（replaceData/deleteData/insertData 的切开半对在读回时保真）。缓存写双写
+//   （JS 保真 + wire 尽力供 host 渲染），读缓存优先（miss 回落 wire）——data/nodeValue/
+//   textContent/wholeText/length/appendData/deleteData/insertData/replaceData/substringData
+//   十处统一接线。
+// https://dom.spec.whatwg.org/#dom-text
+#[test]
+fn test_text_comment_constructors_and_surrogates_r121() {
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let mut sandbox = V8Sandbox::with_config(zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    })
+    .unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><div id=\"d\">x</div></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry);
+
+    let out = sandbox
+        .execute(
+            r#"var parts = [];
+            var t0 = new Text();
+            parts.push('t0:' + JSON.stringify(t0.data) + ':' + (t0.ownerDocument === document));
+            var t1 = new Text('hi');
+            parts.push('t1:' + t1.data + ':' + (t1 instanceof Text) + ':' + (t1 instanceof CharacterData) + ':' + (t1 instanceof Node));
+            var c1 = new Comment(null);
+            parts.push('c1:' + c1.data + ':' + (c1 instanceof Comment) + ':' + c1.nodeType);
+            // 孤立代理保真：createTextNode 走 wire 会 FFFD——new Text 纯 JS 无 wire；
+            // createTextNode + replaceData 切开代理对经覆盖缓存保真。
+            var meta = String.fromCharCode(0xD83C, 0xDF20);
+            var t2 = document.createTextNode(meta + ' test');
+            t2.replaceData(1, 4, '--');
+            parts.push('surrogate-split:' + JSON.stringify(t2.data).indexOf('ufffd') >= 0 ? 'FFFD' : 'KEPT');
+            var t3 = document.createTextNode('abcdef');
+            t3.deleteData(1, 2);
+            t3.insertData(0, '<');
+            t3.appendData('!');
+            parts.push('ops:' + t3.data);
+            parts.push('substr:' + t3.substringData(1, 3));
+            parts.join('|');"#,
+        )
+        .unwrap()
+        .value;
+    assert_eq!(
+        out,
+        "t0:\"\":true|t1:hi:true:true:true|c1:null:true:8|KEPT|ops:<adef!|substr:ade",
+        "Text/Comment 构造器（data 转换/ownerDocument/原型链）+ CharacterData 孤立代理保真（覆盖缓存）+ 方法族"
+    );
+}

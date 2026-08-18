@@ -175,7 +175,16 @@
   try {
     globalThis.CharacterData.prototype = Object.create(globalThis.Node.prototype);
   } catch (_eCData) {}
-  globalThis.Text = globalThis.Text || function Text() {};
+  // js-dom M4 R121：Text 真构造器（spec dom-text——WPT Text-constructor：new Text(data)
+  // 经 _zwMText 建完整实例[data/nodeValue/ownerDocument=document/原型链
+  // Text.prototype→CharacterData→Node]，String() 转换参数；旧空 stub 使 object.data
+  // undefined 全簇 fail）。R108 的 dispatchEvent 保留（prototype 上补）。
+  globalThis.Text = globalThis.Text || function Text(data) {
+    var n = _zwMText(data === undefined ? '' : data, null);
+    try { Object.setPrototypeOf(n, globalThis.Text.prototype); } catch (_eR121a) {}
+    try { Object.defineProperty(n, 'ownerDocument', { get: function () { return globalThis.document; }, configurable: true }); } catch (_eR121b) {}
+    return n;
+  };
   try {
     globalThis.Text.prototype = Object.create(globalThis.CharacterData.prototype);
     // js-dom M4 R108：`new Text()` 实例的 dispatchEvent（WPT Event-dispatch-click
@@ -191,7 +200,13 @@
       };
     }
   } catch (_eT) {}
-  globalThis.Comment = globalThis.Comment || function Comment() {};
+  // js-dom M4 R121：Comment 真构造器（同 Text——WPT Comment-constructor 全簇）。
+  globalThis.Comment = globalThis.Comment || function Comment(data) {
+    var n = _zwMComment(data === undefined ? '' : data, null);
+    try { Object.setPrototypeOf(n, globalThis.Comment.prototype); } catch (_eR121c) {}
+    try { Object.defineProperty(n, 'ownerDocument', { get: function () { return globalThis.document; }, configurable: true }); } catch (_eR121d) {}
+    return n;
+  };
   try { globalThis.Comment.prototype = Object.create(globalThis.CharacterData.prototype); } catch (_eC) {}
   globalThis.ProcessingInstruction = globalThis.ProcessingInstruction || function ProcessingInstruction() {};
   try { globalThis.ProcessingInstruction.prototype = Object.create(globalThis.CharacterData.prototype); } catch (_ePI) {}

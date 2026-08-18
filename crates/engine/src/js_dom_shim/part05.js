@@ -376,6 +376,22 @@
     return _wrapSelector(sel);
   }
 
+
+  // js-dom M4 R121：handle text/comment 节点的 JS 侧 data 覆盖缓存——wire 层
+  // （to_rust_string_lossy，WTF-16→UTF-8）把孤立代理替换为 U+FFFD，而 spec 允许
+  // CharacterData 方法把代理对**切开**（replaceData/deleteData/insertData 按 UTF-16
+  // code unit 偏移，切开后的孤立代理在读回时保真——WPT CharacterData-surrogates）。
+  // 缓存 JS Map 键 handle，写双写（缓存保真 + wire 尽力供 host 渲染），读缓存优先。
+  var _zwTextDataCache = new Map();
+  function _zwTextDataGet(handle, wireFallback) {
+    if (handle && _zwTextDataCache.has(handle)) return _zwTextDataCache.get(handle);
+    return wireFallback();
+  }
+  function _zwTextDataSet(handle, value, wire) {
+    if (handle) _zwTextDataCache.set(handle, value);
+    try { wire(); } catch (_e) {}
+  }
+
   function _wrapHandle(handle) {
     return _makeProxy(null, handle);
   }
