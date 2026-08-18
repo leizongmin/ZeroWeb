@@ -134,7 +134,7 @@ pub struct IdbTransaction {
     /// 数据库名称。
     pub(crate) db_name: String,
     /// 数据库版本。
-    pub(crate) db_version: u32,
+    pub(crate) db_version: u64,
     /// 是否已中止。
     pub(crate) aborted: bool,
     /// 是否已提交。
@@ -218,7 +218,7 @@ impl IdbTransaction {
     }
 
     /// 获取数据库版本。
-    pub fn db_version(&self) -> u32 {
+    pub fn db_version(&self) -> u64 {
         self.db_version
     }
 }

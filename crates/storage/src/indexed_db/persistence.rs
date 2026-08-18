@@ -152,7 +152,7 @@ struct PersistedDatabase {
     format: u32,
     origin: String,
     name: String,
-    version: u32,
+    version: u64,
     stores: Vec<PersistedStore>,
 }
 

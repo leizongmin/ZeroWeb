@@ -1,0 +1,44 @@
+{
+  "date": "2026-08-18",
+  "scope": "M3 JavaScript safe-integer IndexedDB database versions",
+  "maximum_tested_version": 9007199254740991,
+  "capabilities": [
+    "u64 storage database version",
+    "u64 page-runtime request wire",
+    "u64 transaction database snapshot",
+    "u64 JSON persistence",
+    "IDBVersionChangeEvent safe-integer newVersion",
+    "IDBDatabase safe-integer version"
+  ],
+  "tests": {
+    "storage_open_and_list": "pass",
+    "page_runtime_response": "pass",
+    "persistence_rebuild": "pass",
+    "webview_upgrade_event": "pass",
+    "webview_database_version": "pass",
+    "make_test": {
+      "status": "pass",
+      "v8": "pass",
+      "quickjs": "pass",
+      "gpu_adapter": "pass",
+      "multiprocess": "pass"
+    },
+    "workspace_clippy": "pass",
+    "imported_wpt": {
+      "revision": "315976933870b34d6ea30e3f6643403edae678ba",
+      "files": 38,
+      "pass": 222,
+      "fail": 0
+    },
+    "bench_gate": {
+      "microbenches_pass": 16,
+      "microbenches_total": 16,
+      "absolute_page_budgets": "pass",
+      "retained_form_budget": "pass"
+    }
+  },
+  "remaining": [
+    "full cross-connection scheduling and blocked/versionchange events",
+    "larger fixed-revision IndexedDB WPT coverage"
+  ]
+}

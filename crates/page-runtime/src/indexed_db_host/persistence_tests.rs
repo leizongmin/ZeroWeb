@@ -187,3 +187,29 @@ fn indexed_db_handler_reports_persistence_failure_without_committing_live_data()
     .unwrap();
     assert!(record["record"].is_null());
 }
+
+#[test]
+fn indexed_db_handler_persists_javascript_safe_integer_version() {
+    const MAX_SAFE_INTEGER: u64 = 9_007_199_254_740_991;
+    let directory = TestDirectory::new();
+    let origin = "https://large-version.example";
+    {
+        let handler = persistent_handler(directory.path());
+        let response = call(
+            &handler,
+            origin,
+            json!({
+                "op": "sync_schema",
+                "name": "app",
+                "version": MAX_SAFE_INTEGER,
+                "stores": []
+            }),
+        )
+        .unwrap();
+        assert_eq!(response["database"]["version"].as_u64(), Some(MAX_SAFE_INTEGER));
+    }
+
+    let rebuilt = persistent_handler(directory.path());
+    let inspected = call(&rebuilt, origin, json!({"op": "inspect", "name": "app"})).unwrap();
+    assert_eq!(inspected["database"]["version"].as_u64(), Some(MAX_SAFE_INTEGER));
+}

@@ -556,7 +556,7 @@ pub struct IdbDatabase {
     /// 数据库名称。
     pub name: String,
     /// 版本号。
-    pub version: u32,
+    pub version: u64,
     /// Object stores。
     stores: HashMap<String, IdbObjectStore>,
 }
@@ -589,7 +589,7 @@ pub struct IdbIndexInfo {
 
 impl IdbDatabase {
     /// 创建新的 IndexedDB 数据库。
-    pub fn new(name: &str, version: u32) -> Self {
+    pub fn new(name: &str, version: u64) -> Self {
         Self {
             name: name.to_string(),
             version,

@@ -31,7 +31,7 @@ pub struct IndexedDbInfo {
     /// 数据库名称。
     pub name: String,
     /// 数据库版本。
-    pub version: u32,
+    pub version: u64,
 }
 
 /// 存储管理器 — 管理多个源的 localStorage、sessionStorage 与 IndexedDB。
@@ -98,7 +98,7 @@ impl StorageManager {
         &mut self,
         origin: &str,
         name: &str,
-        version: u32,
+        version: u64,
     ) -> Result<&mut IdbDatabase, StorageError> {
         if version == 0 {
             return Err(StorageError::Database(
@@ -470,6 +470,23 @@ mod tests {
         assert_eq!(upgraded.version, 2);
         assert_eq!(upgraded.get("items", &key).unwrap().value["value"], "a");
         assert!(manager.open_indexed_db("https://a.example", "app", 1).is_err());
+    }
+
+    #[test]
+    fn indexed_db_versions_support_javascript_safe_integer_limit() {
+        const MAX_SAFE_INTEGER: u64 = 9_007_199_254_740_991;
+        let mut manager = StorageManager::new();
+        let database = manager
+            .open_indexed_db("https://large-version.example", "app", MAX_SAFE_INTEGER)
+            .unwrap();
+        assert_eq!(database.version, MAX_SAFE_INTEGER);
+        assert_eq!(
+            manager.indexed_db_info("https://large-version.example"),
+            vec![IndexedDbInfo {
+                name: "app".to_string(),
+                version: MAX_SAFE_INTEGER,
+            }]
+        );
     }
 
     #[test]

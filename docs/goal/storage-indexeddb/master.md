@@ -2,7 +2,7 @@
 
 **入口文档**: [../storage-indexeddb.md](../storage-indexeddb.md)
 **创建日期**: 2026-08-17（goal 拆分 bootstrap）
-**最后更新**: 2026-08-18（M3 browser navigation storage-key authority）
+**最后更新**: 2026-08-18（M3 JavaScript safe-integer database versions）
 
 ---
 
@@ -48,6 +48,7 @@ service-workers）。把页面 `indexedDB` 从 in-memory 近似接到 zero-stora
 - ✅ M2 structured clone：cyclic/shared-reference graph wire 与 Rust index projection 已完成
 - ✅ M3 persistence：browser/renderer 单写 owner、embedded WebView owner 注入、private 隔离和跨会话恢复已完成
 - ✅ M3 storage key：browser navigation start/commit + epoch 校验确定 origin，覆盖 redirect final URL
+- ✅ M3 database version：Rust 全链路使用 `u64`，支持并持久化 `Number.MAX_SAFE_INTEGER`
 
 ## 缺口清单
 
@@ -118,7 +119,8 @@ service-workers）。把页面 `indexedDB` 从 in-memory 近似接到 zero-stora
   `evidence/2026-08-18-m3-persistence-engine.{md,json}`、
   `evidence/2026-08-18-m3-browser-storage-owner.{md,json}`、
   `evidence/2026-08-18-m3-embedded-webview-owner.{md,json}`、
-  `evidence/2026-08-18-m3-navigation-storage-key.{md,json}`
+  `evidence/2026-08-18-m3-navigation-storage-key.{md,json}`、
+  `evidence/2026-08-18-m3-safe-integer-version.{md,json}`
 - 回归门禁：`make test` 全绿；期间修复 DMA-BUF 测试缺失 scroll-transform 前提、
   renderer idle-drain 启动期计数假设、QuickJS-only 测试 feature-union 门控
 - 质量门禁：`cargo fmt` + `cargo clippy --workspace --all-targets -- -D warnings` 全过

@@ -136,3 +136,28 @@ fn persistent_owner_reads_record_after_webview_rebuild() {
     let mut restored = webview_with_owner(owner, origin);
     assert_eq!(read_record(&mut restored), "restored");
 }
+
+#[test]
+fn webview_exposes_javascript_safe_integer_database_version() {
+    let mut webview = webview_with_owner(IndexedDbOwner::in_memory(), "https://large-version.example/page");
+    webview
+        .execute_script(
+            r#"
+            globalThis.__largeVersions = [];
+            const request = indexedDB.open("large-version", Number.MAX_SAFE_INTEGER);
+            request.onupgradeneeded = event => {
+              __largeVersions.push(String(event.oldVersion));
+              __largeVersions.push(String(event.newVersion));
+            };
+            request.onsuccess = event => {
+              __largeVersions.push(String(event.target.result.version));
+            };
+            "#,
+        )
+        .unwrap();
+    webview.execute_script("0").unwrap();
+    assert_eq!(
+        webview.execute_script("__largeVersions.join('|')").unwrap(),
+        "0|9007199254740991|9007199254740991"
+    );
+}

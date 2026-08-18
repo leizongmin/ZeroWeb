@@ -109,12 +109,12 @@ enum IndexedDbRequest {
     },
     SyncSchema {
         name: String,
-        version: u32,
+        version: u64,
         stores: Vec<IndexedDbStoreSchema>,
     },
     Open {
         name: String,
-        version: u32,
+        version: u64,
     },
     DeleteDatabase {
         name: String,
@@ -787,7 +787,7 @@ fn sync_schema(
     storage: &mut StorageManager,
     origin: &str,
     name: &str,
-    version: u32,
+    version: u64,
     stores: Vec<IndexedDbStoreSchema>,
 ) -> Result<Value, String> {
     if version == 0 {
