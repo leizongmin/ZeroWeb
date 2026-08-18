@@ -432,47 +432,54 @@ fn expand_one(property: &str, value: &str, important: bool, specificity: (u32, u
         ),
 
         // ── border 逻辑属性轴简写（CSS Logical Properties §3.1）──
+        // https://drafts.csswg.org/css-logical-1/#border-shorthands
         // border-inline-width/style/color = 该轴 start+end 两边的同名组件，复用
         // expand_axis_logical（1 值两侧同、2 值 start/end），与 margin-inline 同模式。
-        "border-inline-width" => expand_axis_logical(
+        "border-inline-width" => expand_axis_logical_with(
             value,
             "border-inline-start-width",
             "border-inline-end-width",
+            is_border_width_rect_value,
             important,
             specificity,
         ),
-        "border-inline-style" => expand_axis_logical(
+        "border-inline-style" => expand_axis_logical_with(
             value,
             "border-inline-start-style",
             "border-inline-end-style",
+            is_border_style_keyword,
             important,
             specificity,
         ),
-        "border-inline-color" => expand_axis_logical(
+        "border-inline-color" => expand_axis_logical_with(
             value,
             "border-inline-start-color",
             "border-inline-end-color",
+            looks_like_color,
             important,
             specificity,
         ),
-        "border-block-width" => expand_axis_logical(
+        "border-block-width" => expand_axis_logical_with(
             value,
             "border-block-start-width",
             "border-block-end-width",
+            is_border_width_rect_value,
             important,
             specificity,
         ),
-        "border-block-style" => expand_axis_logical(
+        "border-block-style" => expand_axis_logical_with(
             value,
             "border-block-start-style",
             "border-block-end-style",
+            is_border_style_keyword,
             important,
             specificity,
         ),
-        "border-block-color" => expand_axis_logical(
+        "border-block-color" => expand_axis_logical_with(
             value,
             "border-block-start-color",
             "border-block-end-color",
+            looks_like_color,
             important,
             specificity,
         ),
@@ -1270,6 +1277,24 @@ fn expand_axis_logical(
     match parts.len() {
         1 => vec![mk(start_prop, parts[0]), mk(end_prop, parts[0])],
         2 => vec![mk(start_prop, parts[0]), mk(end_prop, parts[1])],
+        _ => vec![],
+    }
+}
+
+fn expand_axis_logical_with(
+    value: &str,
+    start_prop: &str,
+    end_prop: &str,
+    is_valid: fn(&str) -> bool,
+    important: bool,
+    specificity: (u32, u32, u32),
+) -> Vec<MatchingDecl> {
+    let parts: Vec<&str> = value.split_whitespace().collect();
+    let mk = |prop: &str, val: &str| -> MatchingDecl { (prop.to_string(), val.to_string(), important, specificity) };
+    let valid = matches_css_wide_keyword(value) || parts.iter().all(|part| is_valid(part));
+    match parts.len() {
+        1 if valid => vec![mk(start_prop, parts[0]), mk(end_prop, parts[0])],
+        2 if valid => vec![mk(start_prop, parts[0]), mk(end_prop, parts[1])],
         _ => vec![],
     }
 }

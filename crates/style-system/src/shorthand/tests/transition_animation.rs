@@ -215,6 +215,18 @@ fn test_border_block_style_and_color_shorthand() {
 }
 
 #[test]
+fn test_border_logical_axis_rejects_invalid_component_values() {
+    assert!(expand_one("border-inline-width", "red", false, (0, 0, 1)).is_empty());
+    assert!(expand_one("border-inline-width", "-1px", false, (0, 0, 1)).is_empty());
+    assert!(expand_one("border-block-style", "1px", false, (0, 0, 1)).is_empty());
+    assert!(expand_one("border-block-color", "solid", false, (0, 0, 1)).is_empty());
+
+    let inherit = expand_one("border-inline-color", "inherit", false, (0, 0, 1));
+    assert_eq!(inherit.len(), 2);
+    assert!(inherit.iter().all(|(_, value, _, _)| value == "inherit"));
+}
+
+#[test]
 fn test_border_inline_full_shorthand() {
     // <width> || <style> || <color>，应用于 start+end 两边（6 longhand）
     let result = expand_one("border-inline", "2px solid red", false, (0, 0, 1));
