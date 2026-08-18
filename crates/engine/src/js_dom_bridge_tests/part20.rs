@@ -547,3 +547,66 @@ fn test_child_parent_node_mutation_family_r117() {
         "mutation 族：viable-sibling 顺序 pre-insert + 移动语义 + replaceWith self 重插 + null 文本 + doc/doctyp 校验 + 泛型校验顺序"
     );
 }
+
+// js-dom M4 R118：querySelector CSS 转义（CSS Syntax 4.3.4「consume an escaped code point」）。
+// 驱动用例 WPT dom/nodes/ParentNode-querySelector-escapes.html（17P→64P 的四类修复面）：
+// ① hex 转义 + 空白终止符（`\30 next` 的终止空格不是组合器边界——_splitComplex 转义感知）
+// ② 转义字符属段内（`\,` 不是逗号组边界——_splitSelectorListOf 转义感知；`\.` 字面进 id 值）
+// ③ CSS 空白 = 5 ASCII 字符（JS /\s/ 含 U+2003 等 Unicode 空白会把 `# ` 误切分）
+// ④ EOF 反斜杠 → U+FFFD；CRLF 序列整体是单个终止符。
+// 已知限制（wire 协议深结构，R118 记档）：孤立代理 id 与字面 NUL selector 经
+// `to_rust_string_lossy`（WTF-16→UTF-8）必然替换 U+FFFD，never-match 用例不可达。
+// https://drafts.csswg.org/css-syntax/#consume-escaped-code-point
+#[test]
+fn test_query_selector_css_escapes_r118() {
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let mut sandbox = V8Sandbox::with_config(zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    })
+    .unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><div id=\"d\">x</div></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry);
+
+    // JS 以 raw string 内嵌（Rust 不二次转义，\ 等由 JS 解释——与 WPT 用例源码同构）。
+    let out = sandbox
+        .execute(
+            r#"var parts = [];
+            function q(id, sel) {
+              var c = document.createElement('div');
+              var k = document.createElement('span');
+              k.id = id;
+              c.appendChild(k);
+              return c.querySelector(sel) === k ? 'HIT' : 'MISS';
+            }
+            parts.push(q('spaces', '#spaces'));
+            parts.push(q('0nextIsWhiteSpace', '#\\30 nextIsWhiteSpace'));
+            parts.push(q('0spaceMoreThan6Hex', '#\\000030 spaceMoreThan6Hex'));
+            parts.push(q('aBMPRegular', '#\\61 BMPRegular'));
+            parts.push(q('spaces', '#spac\\65\r\ns'));
+            parts.push(q('hello', '#hel\\6C o'));
+            parts.push(q('.comma', '#\\.comma'));
+            parts.push(q('.,:!', '#\\.\\,\\:\\!'));
+            parts.push(q('-m', '#-\\6d'));
+            parts.push(q('test', '#te\\s\\t'));
+            parts.push(q('null�', '#null\\0'));
+            parts.push(q('null�', '#null\\0000'));
+                                    parts.push(q(' id', '#\\2003 id'));
+            parts.join('|');"#,
+        )
+        .unwrap()
+        .value;
+    assert_eq!(
+        out,
+        "HIT|HIT|HIT|HIT|HIT|HIT|HIT|HIT|HIT|HIT|HIT|HIT|HIT",
+        "CSS 转义：hex+空白终止符 / 转义字符属段内（\\, \\.）/ CSS 空白 ASCII 集 / EOF→FFFD / CRLF 单终止符 / 非 ASCII 空白是 ident 字符"
+    );
+}

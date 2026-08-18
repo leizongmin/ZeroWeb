@@ -781,13 +781,50 @@
   }
   // 读 compound 内裸 token（tag/id/class 名），遇 `.`/`#`/`[`/`:`/空白停。
   function _readCompoundToken(text, start) {
+    // js-dom M4 R118：CSS 转义解码（CSS Syntax 4.3.4「consume an escaped code point」——
+    // WPT ParentNode-querySelector-escapes：`\30 nextIsWhiteSpace` 的 id 是 '0nextIsWhiteSpace'
+    //（\30 = '0' + 空白终止符被吃掉）、`\000030 connect`（6 位 hex + 空格终止）、`\0` →
+    // U+FFFD（零点/越界/孤立代理的 special replacement）。`\` + 非 hex 非换行 → 字面字符。
+    // https://drafts.csswg.org/css-syntax/#consume-escaped-code-point
     var i = start, n = text.length;
+    var out = '';
     while (i < n) {
       var ch = text[i];
-      if (ch === '.' || ch === '#' || ch === '[' || ch === ':' || /\s/.test(ch)) break;
+      // CSS 空白仅 space/U+0009/U+000A/U+000C/U+000D（U+2003 等 Unicode 空白是 ident 字符，
+      // WPT "\u2003" id 直接可查）。https://drafts.csswg.org/css-syntax/#whitespace
+      if (ch === '.' || ch === '#' || ch === '[' || ch === ':' || /[ \t\n\f\r]/.test(ch)) break;
+      if (ch === '\\') {
+        var nc = text[i + 1];
+        if (nc === undefined) { out += '\uFFFD'; i++; continue; } // EOF 反斜杠 → U+FFFD（spec 4.3.4）
+        if (/[0-9a-fA-F]/.test(nc)) {
+          // 1-6 位 hex + 可选单个空白终止符。
+          var hx = '';
+          var h = i + 1;
+          while (h < n && hx.length < 6 && /[0-9a-fA-F]/.test(text[h])) { hx += text[h]; h++; }
+          var cp = parseInt(hx, 16);
+          // CSS 空白终止符：space/U+0009/U+000A/U+000C/U+000D；CRLF 序列整体是一个终止符。
+          if (h < n) {
+            if (text[h] === '\r' && text[h + 1] === '\n') h += 2;
+            else if (/[ \t\n\f\r]/.test(text[h])) h++;
+          }
+          var decoded;
+          if (cp === 0 || cp > 0x10FFFF || (cp >= 0xD800 && cp <= 0xDFFF)) {
+            decoded = '\uFFFD'; // 零点/越界/孤立代理 → U+FFFD
+          } else {
+            decoded = String.fromCodePoint(cp);
+          }
+          out += decoded;
+          i = h;
+          continue;
+        }
+        out += nc; // 字面转义（\. \# 等，含转义空白/换行——是 ident 字符非分隔符）
+        i += 2;
+        continue;
+      }
+      out += ch;
       i++;
     }
-    return text.substring(start, i);
+    return { raw: text.substring(start, i), value: out };
   }
   // 解析单个复合选择器（无空白组合器）。返 { tag, ids[], classes[], attrs[], unsupported }。
   // tag 为 null（任意 / `*`）或大写 tag。遇 `:`（伪类/伪元素）/ 空裸 token / 第二个裸 token → unsupported。
@@ -832,12 +869,12 @@
       }
       if (ch === '.') {
         var cls = _readCompoundToken(text, i + 1);
-        if (!cls) { c.unsupported = true; break; }
-        c.classes.push(cls); i += 1 + cls.length;
+        if (!cls.raw) { c.unsupported = true; break; }
+        c.classes.push(cls.value); i += 1 + cls.raw.length;
       } else if (ch === '#') {
         var idt = _readCompoundToken(text, i + 1);
-        if (!idt) { c.unsupported = true; break; }
-        c.ids.push(idt); i += 1 + idt.length;
+        if (!idt.raw) { c.unsupported = true; break; }
+        c.ids.push(idt.value); i += 1 + idt.raw.length;
       } else if (ch === '[') {
         var end = text.indexOf(']', i);
         if (end < 0) { c.unsupported = true; break; }
@@ -848,10 +885,10 @@
         i++;
       } else {
         var tg = _readCompoundToken(text, i);
-        if (!tg) { i++; continue; }
-        if (!seenTag) { c.tag = tg === '*' ? null : tg.toUpperCase(); seenTag = true; }
+        if (!tg.raw) { i++; continue; }
+        if (!seenTag) { c.tag = tg.value === '*' ? null : tg.value.toUpperCase(); seenTag = true; }
         else { c.unsupported = true; break; }
-        i += tg.length;
+        i += tg.raw.length;
       }
     }
     return c;
@@ -957,6 +994,25 @@
       var ch = text[i];
       if (quote) { cur += ch; if (ch === quote) quote = null; lastSegmentChar = true; continue; }
       if (ch === '"' || ch === "'") { quote = ch; cur += ch; lastSegmentChar = true; continue; }
+      if (ch === '\\') {
+        // js-dom M4 R118：CSS 转义感知——`\` + 1-6 位 hex 后的**单个空白是转义终止符**
+        //（属段内字符，不是组合器边界，CSS Syntax 4.3.4）；`\` + 任意其他字符（含空白/
+        // `.`/`#`/`>` 等）为字面转义，两字节一并计入段内。WPT ParentNode-querySelector-
+        // escapes：`#\30 x` 的 `\30 ` 不可切分。https://drafts.csswg.org/css-syntax/#consume-escaped-code-point
+        var escLen = 2; // `\x` 字面转义（含 \<空白>：转义空白是 ident 字符）
+        if (i + 1 < text.length && /[0-9a-fA-F]/.test(text[i + 1])) {
+          var hh = i + 1;
+          while (hh < text.length && hh - i <= 6 && /[0-9a-fA-F]/.test(text[hh])) hh++;
+          escLen = hh - i;
+          // 空白终止符被消费；CRLF 序列整体是一个终止符（CSS Syntax whitespace 定义）。
+          if (hh < text.length && text[hh] === '\r' && hh + 1 < text.length && text[hh + 1] === '\n') escLen += 2;
+          else if (hh < text.length && /[ \t\n\r\f]/.test(text[hh])) escLen++;
+        }
+        cur += text.substring(i, i + escLen);
+        i += escLen - 1;
+        lastSegmentChar = true;
+        continue;
+      }
       if (ch === '[') { depth++; cur += ch; lastSegmentChar = true; continue; }
       if (ch === ']') { depth--; cur += ch; lastSegmentChar = true; continue; }
       // 括号 `(``)` 亦计入深度——`:nth-child(2n+1)` / `:not(.a)` / `:is(a, b)` 内的 `+`/` `/`,`
@@ -974,7 +1030,8 @@
         lastSegmentChar = false;
         continue;
       }
-      if (depth === 0 && /\s/.test(ch)) {
+      // CSS 空白仅 5 个 ASCII 字符（JS /\s/ 含 U+2003 等 Unicode 空白——会把 `#\u2003` 误切分）。
+      if (depth === 0 && /[ \t\n\f\r]/.test(ch)) {
         if (lastSegmentChar && pendingExplicit === null) { flush(' '); }
         // 否则跳过连续空白 / 显式符号后的空白（pendingExplicit 保留待覆盖）。
         continue;
@@ -1000,13 +1057,28 @@
     }
     return out.length ? { compounds: out, combinators: parts.combinators } : null;
   }
-  // 逗号列表拆分（跳过 `[...]` / 引号内逗号）。
+  // 逗号列表拆分（跳过 `[...]` / 引号内逗号 / **CSS 转义**——js-dom M4 R118：`\,` 是字面
+  // 逗号 ident 字符不是组边界，WPT ParentNode-querySelector-escapes `#,\,\:\!`）。
   function _splitSelectorListOf(sel) {
     var out = [], cur = '', depth = 0, quote = null;
     for (var i = 0; i < sel.length; i++) {
       var ch = sel[i];
       if (quote) { cur += ch; if (ch === quote) quote = null; continue; }
       if (ch === '"' || ch === "'") { quote = ch; cur += ch; continue; }
+      if (ch === '\\') {
+        // 转义：`\` + hex 序列（+ 可选空白终止符，CRLF 整体）或 `\` + 单字符，整体属组内。
+        var el = 2;
+        if (i + 1 < sel.length && /[0-9a-fA-F]/.test(sel[i + 1])) {
+          var eh = i + 1;
+          while (eh < sel.length && eh - i <= 6 && /[0-9a-fA-F]/.test(sel[eh])) eh++;
+          el = eh - i;
+          if (eh < sel.length && sel[eh] === '\r' && eh + 1 < sel.length && sel[eh + 1] === '\n') el += 2;
+          else if (eh < sel.length && /[ \t\n\f\r]/.test(sel[eh])) el++;
+        }
+        cur += sel.substring(i, i + el);
+        i += el - 1;
+        continue;
+      }
       if (ch === '[') depth++;
       if (ch === ']') depth--;
       if (ch === ',' && depth === 0) { out.push(cur); cur = ''; continue; }
