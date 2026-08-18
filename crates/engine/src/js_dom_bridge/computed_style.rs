@@ -1102,7 +1102,7 @@ fn column_span_str(s: &ColumnSpanComputedValue) -> String {
 
 // ── CSS Multi-column / Lists / Text-decoration 简写（R2755）─────────────────
 // 复用上方 longhand helper 做 CSSOM 重组；oracle 锚定本地 Chromium 150（见
-// docs/learnings/patterns/local-chromium-getcomputedstyle-oracle.md）。
+// docs/learnings/patterns/2026-08/2026-08-05-local-chromium-getcomputedstyle-oracle.md）。
 
 /// `columns` 简写：`column-width || column-count`（CSS Multicol）。CSSOM 序列化省略 auto 值；
 /// 全 auto→`"auto"`。Chromium oracle：`columns:200px 4`→`"200px 4"`、`columns:5`→`"5"`、

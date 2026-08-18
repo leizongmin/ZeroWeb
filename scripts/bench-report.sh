@@ -110,7 +110,7 @@ FIXTURES_SORTED=$(printf '%s\n' "${PAGE_SCENARIOS[@]}" | sed 's/^[^:]*:\([^:]*\)
 # 而 sample-size 是采样下限（且 criterion 强制 ≥10）——慢档会强制采满 sample-size 次：
 # sample-size 20 时 5000 档 ~5 分钟封顶，全套 ~12 分钟，可接受。快档受 3s 时间上限
 # 约束采样量不变。参数入 config_hash（改测量配置必须重新 capture 基线）。
-# 详见 docs/learnings/performance/css-parser-quadratic-scaling.md）
+# 详见 docs/learnings/performance/2026-08/2026-08-08-css-parser-quadratic-scaling.md）
 CRITERION_FLAGS="--warm-up-time 1 --measurement-time 3 --sample-size 20 --noplot"
 CONFIG_HASH=$(printf 'profile=release;criterion=%s;benches=%s;scenarios=%s;viewport=800x600;iterations=%s;fixtures=%s;base_dir=%s' \
     "$CRITERION_FLAGS" "$(echo "$BENCH_LIST_SORTED" | paste -sd, -)" "$SCENARIOS_SORTED" "$PAGE_ITERATIONS" "$FIXTURES_SORTED" "$PAGE_BASE_DIR" \

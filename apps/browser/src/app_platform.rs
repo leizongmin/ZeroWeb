@@ -362,7 +362,7 @@ impl BrowserApp {
             ) {
                 // P0-1：GPU 不支持本帧特性（clips/blend_modes/半透明/带模糊阴影/
                 // 窗口模式滤镜变换）→ CPU 整帧渲染后上传 blit（慢但对，避免静默画错）。
-                // 基线：docs/learnings/bugs/cpu-gpu-path-divergence.md
+                // 基线：docs/learnings/bugs/2026-08/2026-08-12-cpu-gpu-path-divergence.md
                 let fb = self.render_scene_cpu(
                     width,
                     height,

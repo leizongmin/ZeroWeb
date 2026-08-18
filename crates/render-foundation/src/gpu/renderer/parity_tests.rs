@@ -1,7 +1,7 @@
 //! CPU↔GPU 全帧像素对照测试（P0-2）。
 //!
 //! 同一 `RenderPrimitives` 分别走 CPU 软件光栅与 GPU 无头渲染，全帧逐像素对比。
-//! 把 CPU/GPU 双链路的功能分叉（docs/learnings/bugs/cpu-gpu-path-divergence.md）
+//! 把 CPU/GPU 双链路的功能分叉（docs/learnings/bugs/2026-08/2026-08-12-cpu-gpu-path-divergence.md）
 //! 变成可量化失败清单：GPU 生产路径支持子集（无 clip/blend/半透明/带模糊阴影）
 //! 必须与 CPU 输出一致；`scene_supported` 拒绝的子集由回退机制兜底。
 //!

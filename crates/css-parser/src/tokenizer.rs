@@ -180,8 +180,8 @@ pub struct Tokenizer<'a> {
     ///
     /// 2026-08-08 性能修复背景：旧实现 `byte_offset()` 每 token 从字符串头
     /// `char_indices().nth(pos)` 重扫前缀，O(n) 每次 → 整段分词 O(n²)
-    /// （5000 规则 CSS 解析 14.7s；见 docs/learnings/performance/
-    /// css-parser-quadratic-scaling.md）。合并字节索引后 `byte_offset()` 即 `pos`，
+    /// （5000 规则 CSS 解析 14.7s；见 docs/learnings/performance/2026-08/
+    /// 2026-08-08-css-parser-quadratic-scaling.md）。合并字节索引后 `byte_offset()` 即 `pos`，
     /// O(1) 读取自然成立。
     pos: usize,
     /// 最近一次 `consume` 的字符 UTF-8 长度（回退用；回退点均紧跟 consume）。

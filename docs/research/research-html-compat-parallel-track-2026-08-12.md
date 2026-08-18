@@ -573,7 +573,7 @@ Gate 结论：核心推荐均有两个独立源码/规范证据；label 激活�
 | [9] | [`tests/wpt-runner/src/manifest.rs`](../../tests/wpt-runner/src/manifest.rs) | 一手事实 | WPT 类型解析能力 |
 | [10] | [`apps/webdriver/tests/http_session.rs`](../../apps/webdriver/tests/http_session.rs) | 一手事实 | WebDriver 当前交互成熟度 |
 | [11] | [`docs/specs/zeroui-gui-smoothness-migration-spec-rfc.md`](../specs/zeroui-gui-smoothness-migration-spec-rfc.md) | 前期调研/二手来源 | 表单 retained 状态与性能门禁 |
-| [12] | [`docs/learnings/platform/multiprocess-binaries-and-parallel-gui-tests.md`](../learnings/platform/multiprocess-binaries-and-parallel-gui-tests.md) | 一手事实 | 多进程测试假红根因与规避 |
+| [12] | [`docs/learnings/platform/2026-08/2026-08-12-multiprocess-binaries-and-parallel-gui-tests.md`](../learnings/platform/2026-08/2026-08-12-multiprocess-binaries-and-parallel-gui-tests.md) | 一手事实 | 多进程测试假红根因与规避 |
 | [13] | [WHATWG HTML: Form control infrastructure](https://html.spec.whatwg.org/multipage/form-control-infrastructure.html) | 官方规范 | value、form owner、submit、reset |
 | [14] | [WHATWG HTML: The input element](https://html.spec.whatwg.org/multipage/input.html) | 官方规范 | input 类型、checkedness、activation |
 | [15] | [WHATWG HTML: Form elements](https://html.spec.whatwg.org/multipage/form-elements.html) | 官方规范 | button、textarea、output、fieldset |

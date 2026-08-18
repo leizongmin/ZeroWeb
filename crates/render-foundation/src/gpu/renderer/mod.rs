@@ -904,7 +904,7 @@ impl GpuRenderer {
 
         // P0-1：GPU 生产路径未实现的特性（clips/blend_modes/半透明颜色/带模糊阴影/
         // 窗口模式滤镜变换）静默画错——返回 false 由调用方回退 CPU 整帧重画（慢但对）。
-        // 基线：docs/learnings/bugs/cpu-gpu-path-divergence.md
+        // 基线：docs/learnings/bugs/2026-08/2026-08-12-cpu-gpu-path-divergence.md
         if !crate::gpu::scene_support::scene_supported(primitives) {
             return false;
         }

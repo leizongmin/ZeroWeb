@@ -193,7 +193,7 @@ R3376 期间发现 3 处 master/注释陈旧描述，本轮纠正：
   - `test_shadow_blur_geom_caps_radius_r3355`：`shadow_blur_geom` 封顶行为锁（正常 blur=20→r=10/pad=30/passes=3；极大 1e30→r=封顶/pad=3·封顶<i32::MAX；blur≤0→(0,0,0) no-op）。
   - **确定性复现**：修复前 rect 测 panic（attempt to add with overflow），修复后 4 测全过。
 - **为何净正向且零回归**：纯算术 + 封顶修复，无公共 API 签名变更；既有 shadow 测试（R3240 single-pass / R3241 stroke footprint / R3242 multipass + 13 shadow 测）全用小 blur（半径 round(blur/2) 远 < 封顶 8192），封顶为 no-op，全保持过。**验证**：zero-canvas **733 passed / 0 failed**（729+4 新测，test-guard 包裹）+ engine canvas-bridge 32 + wpt-runner 161 全绿；`cargo fmt` clean + clippy `-D warnings` 零警告。canvas 为 zero-web 流自主域（无活跃面碰撞）。
-- **经验沉淀**：`docs/learnings/bugs/canvas-shadow-blur-pad-i32-overflow.md`——f32→窄整型**饱和**（非回绕）+ 窄整型算术溢出家族，与 [[canvas-image-data-u32-size-overflow]]（R3354，u32 乘法**回绕**）区分；cargo test debug overflow-checks 抓算术溢出，release 静默回绕藏 bug 但**挂起**仍是真 DoS。
+- **经验沉淀**：`docs/learnings/bugs/2026-08/2026-08-13-canvas-shadow-blur-pad-i32-overflow.md`——f32→窄整型**饱和**（非回绕）+ 窄整型算术溢出家族，与 [[canvas-image-data-u32-size-overflow]]（R3354，u32 乘法**回绕**）区分；cargo test debug overflow-checks 抓算术溢出，release 静默回绕藏 bug 但**挂起**仍是真 DoS。
 
 **下游判断**：R3355 = deep-review **第十四刀**（zero-canvas 二轮），**第十六项真 bug 修复**（R3334 起真 bug 线续，**canvas 整型溢出家族第 2 项**——R3354 u32 乘法回绕 + R3355 f32→i32 饱和+i32 算术）。**canvas 光栅化主面经两轮深审确认健壮**（R3354 ImageData 尺寸 + R3355 阴影半径链；composite_pixel / blend / fill/stroke 光栅化 / Pattern-Gradient sample / arcTo / stroke cap-join 全复核无真 bug）。**zero-web 流自主域审查覆盖（更新）**：engine(dom_bindings) R3338 / net R3339+R3346 / script-sandbox(es_module) R3349 + script-sandbox(worker) R3353(health) / dom R3350 / webview(async_load+net_pool) R3351 / webview(WASM bridge) R3352 / webview(worker)+image_decoder R3353(health) / security R3342-43 / storage R3341 / protocol R3340 / css-parser R3344 / style-system R3345 / wasm-sandbox R3347 / host-runtime+browser-shell+page-runtime R3348(health) / canvas R3354+R3355(两轮)。**剩余可推进**：① canvas 三轮（offscreen.rs / context_impl.rs 剩余 fill/stroke/clip 顶层路径未逐行审）；② 已审 crate 三轮复扫；③ webview.js render session / hit_test 子模块。下轮续 deep-review 倾向 canvas offscreen + 顶层绘制路径三轮（延续找真 bug，零碰撞），或查并行流活跃面后选零碰撞子域。
 
@@ -220,7 +220,7 @@ R3376 期间发现 3 处 master/注释陈旧描述，本轮纠正：
   - `test_context_create_image_data_overflow_saturates_r3354`：`usize::saturating_mul` 越界钳到 `usize::MAX` vs `u32::wrapping_mul` 回绕到 4 的**对照断言**（证明修复后 usize 域不回绕，回退到 u32 会被此对照捕获）。
   - **确定性复现需 16GB 量级分配**（最小触发点 `65536*65536*4`），不适合 CI——故以 usize 计算正确性 + saturating 不变量间接锁修复，panic 路径在注释中完整记录。
 - **为何净正向且零回归**：纯算术修复，无公共 API 签名变更；既有 canvas 测试（含 get_image_data / create_image_data / drawImage 系列）全用小尺寸（u32 域不溢出路径，`size` 计算结果与 usize 域一致），故全保持过。**验证**：zero-canvas **729 passed / 0 failed**（726+3 新测，test-guard 包裹）；`cargo fmt` clean + clippy `-D warnings` 零警告。canvas 为 zero-web 流自主域（无活跃面碰撞）。
-- **经验沉淀**：`docs/learnings/bugs/canvas-image-data-u32-size-overflow.md`——像素缓冲区尺寸恒用 usize `saturating_mul`（`w*h*channels` 反模式在 stack 反复出现：R3292 draw_image unsigned 下溢 / R3347 wasm read_memory offset 溢出 / R3346 net cookie day=0）。
+- **经验沉淀**：`docs/learnings/bugs/2026-08/2026-08-13-canvas-image-data-u32-size-overflow.md`——像素缓冲区尺寸恒用 usize `saturating_mul`（`w*h*channels` 反模式在 stack 反复出现：R3292 draw_image unsigned 下溢 / R3347 wasm read_memory offset 溢出 / R3346 net cookie day=0）。
 
 **下游判断**：R3354 = deep-review **第十三刀**（zero-canvas），**第十五项真 bug 修复**（R3334 起真 bug 线续）。**canvas 核心光栅化路径（composite_pixel / blend / shadow / fill/stroke / drawImage）经审确认健壮**，唯三处尺寸计算共用 u32 溢出反模式漏网（R3254-C* 系列审的是 canvas 显示链路 / resize / Path2D / roundRect 等增量面，未覆盖底层尺寸算式）。**zero-web 流自主域审查覆盖（更新）**：engine(dom_bindings) R3338 / net R3339+R3346 / script-sandbox(es_module) R3349 + script-sandbox(worker) R3353(health) / dom R3350 / webview(async_load+net_pool) R3351 / webview(WASM bridge) R3352 / webview(worker)+image_decoder R3353(health) / security R3342-43 / storage R3341 / protocol R3340 / css-parser R3344 / style-system R3345 / wasm-sandbox R3347 / host-runtime+browser-shell+page-runtime R3348(health) / **canvas R3354**。**剩余可推进**：① canvas 二轮复扫增量（raster.rs 剩余光栅化细节 / types.rs Pattern/Gradient sample）；② 已审 crate 三轮复扫；③ webview.js render session / hit_test 子模块。下轮续 deep-review 倾向 canvas raster/types 二轮复扫（延续找真 bug，零碰撞）。
 
@@ -597,12 +597,12 @@ R3376 期间发现 3 处 master/注释陈旧描述，本轮纠正：
 
 **② R3332 native-dom parity 门**：P1b S0–S5 原生绑定**无 CI 变体覆盖**（默认关，无测试在 native 路径跑 WPT）——原生绑定可静默漂移。本轮加 `check_js_executes_ok_native`（`native_dom=true` flag 入口，非 env `ZW_NATIVE_DOM`，无全局副作用可并行）+ 3 个单 WebView parity 门：`native_dom_path_parity_dataset_r3332`（dataset camelCase↔kebab 反射）、`_mutation_observer_r3332`（R3330 MO 记录逐条不合并）、`_storage_r3332`（R3331 localStorage round-trip）——三类经原生路径**全过**（native↔shim parity 确认）。
 
-**③ 多 WebView 隔离 bug 记录（实测发现，非阻塞）**：建 parity 门时实测**同线程顺序建多个 native WebView** 触 `v8::handle.rs:628 "Handle hosted by disposed Isolate"` panic——根因 gc.rs 线程局部 DOM-source / element_template 缓存跨 isolate 泄漏（首 WebView drop 销毁 Isolate，线程局部仍持旧 Handle）。记 `docs/learnings/bugs/native-dom-multi-webview-isolate-leak.md` 作 **P1b 默认开前必修阻塞项**（多标签生产 = 多 WebView 同进程，默认开会 break）。故 parity 门用**每测试 1 WebView** 粒度规避。
+**③ 多 WebView 隔离 bug 记录（实测发现，非阻塞）**：建 parity 门时实测**同线程顺序建多个 native WebView** 触 `v8::handle.rs:628 "Handle hosted by disposed Isolate"` panic——根因 gc.rs 线程局部 DOM-source / element_template 缓存跨 isolate 泄漏（首 WebView drop 销毁 Isolate，线程局部仍持旧 Handle）。记 `docs/learnings/bugs/2026-08/2026-08-13-native-dom-multi-webview-isolate-leak.md` 作 **P1b 默认开前必修阻塞项**（多标签生产 = 多 WebView 同进程，默认开会 break）。故 parity 门用**每测试 1 WebView** 粒度规避。
 
 | 文件 | 改动 |
 |------|------|
 | `tests/wpt-runner/src/runner/mod.rs` | +`check_js_executes_ok_native`（native_dom=true flag 入口）+ 3 单 WebView parity 门（dataset/MO/storage）|
-| `docs/learnings/bugs/native-dom-multi-webview-isolate-leak.md` | 新建：多 WebView 同线程 disposed-Isolate panic 根因 + 影响 + 闭合需 |
+| `docs/learnings/bugs/2026-08/2026-08-13-native-dom-multi-webview-isolate-leak.md` | 新建：多 WebView 同线程 disposed-Isolate panic 根因 + 影响 + 闭合需 |
 
 **为何净正向且零回归**：纯测试增强 + 文档（无生产代码改动）；parity 门默认关路径不触。**验证**：`runtime_path_tests` **18 passed / 0 failed**（+3 native parity 门，0 回归，test-guard 包裹，`--test-threads=1`）；`cargo fmt` clean + clippy `-p zero-wpt-runner --features v8` **和** `--no-default-features --features quickjs` 均零警告（`check_js_executes_ok_native` 加 `#[cfg(all(test, feature="v8"))]` 避 quickjs dead-code）。
 
@@ -644,7 +644,7 @@ R3376 期间发现 3 处 master/注释陈旧描述，本轮纠正：
 | 文件 | 改动 |
 |------|------|
 | `tests/wpt-runner/src/runner/test_cases/test_cases_js_dom.rs` | `js-dom/mutation-observer` 用例：textContent+setAttribute 改为 setAttribute×2，断言从 `records.length<1` 升级到 `!==2` + type/attributeName 严格校验（实测调准到 headless 真行为：textContent 在无 characterData 观测时不产记录，记 backlog #1 域） |
-| `docs/learnings/bugs/headless-js-dom-divergence-backlog.md` | 差异 #4 标记 ✅ 闭合（R3330 核实 + 机制说明）；#1/#2/#3 复测仍存在，待 P1b |
+| `docs/learnings/bugs/2026-08/2026-08-12-headless-js-dom-divergence-backlog.md` | 差异 #4 标记 ✅ 闭合（R3330 核实 + 机制说明）；#1/#2/#3 复测仍存在，待 P1b |
 
 **为何净正向且零回归**：纯测试增强（无生产代码改动）；断言调准到 headless 真行为后全过。**验证**：`runtime_path_tests` **14 passed / 0 failed**（含 js-dom 行为锁升级，0 回归，test-guard 包裹，`--test-threads=1`）；`cargo fmt` clean + `cargo clippy -p zero-wpt-runner --all-targets -D warnings` 零警告。
 
@@ -667,7 +667,7 @@ R3376 期间发现 3 处 master/注释陈旧描述，本轮纠正：
 
 ### headless JS-DOM 行为差异 backlog 文档化（本轮 R3324，docs/learnings）—— R3323 实测差异固化为 P1b 验收清单
 
-承接 R3323（js-dom 行为锁实测暴露 headless 真限制）。本轮把 R3323 实测定位的 **4 项 headless↔真浏览器行为差异**固化到 `docs/learnings/bugs/headless-js-dom-divergence-backlog.md`，作为 P1b escape-hatch 收敛（native DOM 直改，需用户点名 rule 11）的**具体可量化验收清单**：
+承接 R3323（js-dom 行为锁实测暴露 headless 真限制）。本轮把 R3323 实测定位的 **4 项 headless↔真浏览器行为差异**固化到 `docs/learnings/bugs/2026-08/2026-08-12-headless-js-dom-divergence-backlog.md`，作为 P1b escape-hatch 收敛（native DOM 直改，需用户点名 rule 11）的**具体可量化验收清单**：
 1. **innerHTML 写后读不回写**（mutation-queue stale-read）—— set→read 同脚本读 stale 快照（`__zw_set_inner_html` 入队 vs `__zw_get_inner_html` 读快照，时序差）。
 2. **selector-identity 父的 querySelectorAll 不反映 handle 子**（同 R3316 handle-childnodes 限制）。
 3. **shadow root 内容不经宿主 querySelectorAll 查询**（shadow 子树不走 parsed 树查询）。
@@ -840,7 +840,7 @@ R3376 期间发现 3 处 master/注释陈旧描述，本轮纠正：
 
 ### slot.assignedNodes 架构 gap 调查 + GUI 测试 flaky 归因修复（本轮 R3316 调查 + R3316-F 修复）
 
-**slot.assignedNodes/assignedElements 调查（未 land，记录架构 gap）**：核查发现 dom crate 后端 `assigned_nodes` 已存在但 JS shim 未暴露（真实 Tier 2 Web Components gap）。尝试实现时定位到 headless 架构限制：`slot.assignedNodes()` 需读 host light children，但 `_childNodeList` 对 handle-only 元素返 `[]`（无 sel），且 `__zw_child_nodes(sel)` 读 parsed DOM 树不含动态 appendChild 的 handle 子——仅 shadow/fragment 容器的 `_handleChildren` registry 记录子。host（普通元素）的 light DOM 子不可读 → assignedNodes 恒空。**结论：assignedNodes 暴露会误导（对真实场景不工作），R3316 实现 revert，根因 + 三条修复路径（均跨层）+ 规避指引沉淀到** `docs/learnings/bugs/headless-handle-childnodes-limit.md`**（避免下游重复尝试）**。
+**slot.assignedNodes/assignedElements 调查（未 land，记录架构 gap）**：核查发现 dom crate 后端 `assigned_nodes` 已存在但 JS shim 未暴露（真实 Tier 2 Web Components gap）。尝试实现时定位到 headless 架构限制：`slot.assignedNodes()` 需读 host light children，但 `_childNodeList` 对 handle-only 元素返 `[]`（无 sel），且 `__zw_child_nodes(sel)` 读 parsed DOM 树不含动态 appendChild 的 handle 子——仅 shadow/fragment 容器的 `_handleChildren` registry 记录子。host（普通元素）的 light DOM 子不可读 → assignedNodes 恒空。**结论：assignedNodes 暴露会误导（对真实场景不工作），R3316 实现 revert，根因 + 三条修复路径（均跨层）+ 规避指引沉淀到** `docs/learnings/bugs/2026-08/2026-08-12-headless-handle-childnodes-limit.md`**（避免下游重复尝试）**。
 
 **main 全量 make test 归因（rule 10）+ flaky 修复（R3316-F）**：全量 `make test` 偶发 1 红——`form_fixture_physical_clicks_reach_controls_at_windows_scale_factors` scale=1 「示例页命中快照未就绪」。**隔离重跑通过（17s）→ flaky 非真实回归**（本轮 zero-web 流无代码改动，并行 render-foundation 阴影改动不涉表单点击）。根因：500 次×10ms（5s）轮询在并发负载下（16+ 测试二进制 + GPU compositor 子进程争抢 CPU）不足以等 renderer 启动+首帧。修复：轮询上限 500→1200（5s→12s）覆盖并发峰值（`apps/browser/src/tests.rs:1201`，纯超时放宽不改断言/逻辑）。run-rules「flaky 当任务修到稳定」精神。
 
@@ -8793,7 +8793,7 @@ M1 完成浏览器侧交互路径四个切片（M2 资源风暴 / M3 renderer �
 **过程中抓到两个真实 bug**（等价测试驱动）：① region 语义是「剔除不相交图元」而非
 「裁剪绘制」——穿过条带的高图元污染条带外保留像素（scratch 方案修复）；② 部分高度
 overlay（查找栏/上下文菜单）平移后留残影（blit guard 禁用）。经验沉淀
-`docs/learnings/performance/scroll-blit-region-culling.md`。
+`docs/learnings/performance/2026-08/2026-08-08-scroll-blit-region-culling.md`。
 
 验证：render-foundation 554 测试（+blit 等价 +full_scene 基准）、zero-browser 225、
 `make test` 14128 全绿、clippy `-D warnings` 零警告、fmt clean。共享机器 flake
@@ -10939,7 +10939,7 @@ getComputedStyle 维护态续——补 `transform`（动画/布局测量高频�
 
 ### P1a `getComputedStyle` 残余简写批量 land（本轮 R2755，getComputedStyle 维护态续 + 本地 chromium oracle 续用）
 
-承接 R2754（本地 Chromium 150 oracle 解锁简写序列化验证）。续用 `/usr/bin/chromium --headless --dump-dom`（结果写 DOM 法，见 `docs/learnings/patterns/local-chromium-getcomputedstyle-oracle.md`）提取确切串，TDD red→green land 4 项残余简写 + 1 处 longhand diverge 修复：
+承接 R2754（本地 Chromium 150 oracle 解锁简写序列化验证）。续用 `/usr/bin/chromium --headless --dump-dom`（结果写 DOM 法，见 `docs/learnings/patterns/2026-08/2026-08-05-local-chromium-getcomputedstyle-oracle.md`）提取确切串，TDD red→green land 4 项残余简写 + 1 处 longhand diverge 修复：
 
 - **`columns` 简写**（column-width || column-count）：CSSOM 序列化省略 auto 值，全 auto→`"auto"`。oracle：`columns:200px 4`→`"200px 4"`、`columns:5`→`"5"`、`columns:12em`→`"192px"`、默认→`"auto"`。
 - **`column-rule` 简写**（width || style || color）：oracle 揭示 **style=none 时省略**（hidden 保留），width 恒显，color 恒显。`column-rule:thick double red`→`"5px double rgb(255, 0, 0)"`、默认→`"3px rgb(0, 0, 0)"`（style none 省）。

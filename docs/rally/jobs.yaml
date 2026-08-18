@@ -21,6 +21,25 @@ defaults:
     RALLY_ENV: "cron"
 
 jobs:
+  # 每日维护 learning 资产：重建索引（自动）+ 评估 skill 方法论变更（只出草案）。
+  # 操作手册：docs/rally/learning-maintenance.md（prompt 保持薄，规则改文档不改这里）。
+  - id: "learning-maintenance"
+    enabled: true
+    schedule: "33 5 * * *"
+    command: "rally"
+    args:
+      - "query"
+      - "维护 ZeroWeb learning 资产：完整阅读并严格按 docs/rally/learning-maintenance.md 执行每日维护流程（校验新增 learning 格式、make learnings-index 重建索引、按该文档第 3 步规则评估并维护 .agents/skills/zeroweb-guidelines/SKILL.md——已获常设授权可直接修改，无需草案审批；无新增 learning 时输出 DONE）。提交前按文档第 4 步执行 git diff --check 与 lei-pre-commit-guard。"
+      - "-w"
+      - "."
+      - "--agent-command"
+      - "claude-dsflash"
+    cwd: "$DIR/../.."
+    concurrency: "skip"
+    timeout_seconds: 3600
+    query:
+      session_reuse: false
+
   # 每周在 Weekly Build / 趋势任务完成后维护官网进展；首次运行会建立最小静态更新区，
   # 后续仅追加可追溯的中英双语周报，并提交到 main 触发 GitHub Pages 发布。
   - id: "website-progress-weekly"

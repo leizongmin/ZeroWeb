@@ -129,7 +129,7 @@ target/test-guard: scripts/test-guard.rs
 	rustc -O scripts/test-guard.rs -o target/test-guard
 
 # WPT/产品测试的 runner 必须先完成不受内存阈值限制的编译；各 target 随后只守卫运行。
-.PHONY: zero-wpt-runner-release
+.PHONY: zero-wpt-runner-release learnings-index
 zero-wpt-runner-release:
 	cargo build --release --bin zero-wpt-runner
 
@@ -375,3 +375,7 @@ bench-trend: target-disk-guard target/test-guard
 LEGACY_DIR := docs/goal/rendering-compat/evidence/product-static/legacy-html
 product-smoke-legacy: target/test-guard
 	bash $(LEGACY_DIR)/run-all.sh
+
+# 从 docs/learnings/*/*.md 的 frontmatter 重建 docs/learnings/INDEX.md（生成物勿手改）
+learnings-index:
+	python3 scripts/gen-learnings-index.py

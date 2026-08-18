@@ -4,7 +4,7 @@
 //! 会「静默画错」（测试通过但用户看到错误像素）。调用方（浏览器本地渲染 /
 //! 合成器 GPU 光栅）在返回 `false` 时回退 CPU 整帧重画——慢但对。
 //!
-//! 基线：docs/learnings/bugs/cpu-gpu-path-divergence.md（P0-1 回退项）。
+//! 基线：docs/learnings/bugs/2026-08/2026-08-12-cpu-gpu-path-divergence.md（P0-1 回退项）。
 
 use crate::primitive::RenderPrimitives;
 

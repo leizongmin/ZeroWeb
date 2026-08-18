@@ -19,7 +19,7 @@
   add_path_fill/add_path_stroke 调用统一转换。
 - 测试更新 ×11：图元顶点数断言从段格式（N×4）改点格式（N×2）——契约以
   render-foundation primitive/mod.rs 文档为准。详见
-  docs/learnings/bugs/render-primitives-path-vertex-format.md。
+  docs/learnings/bugs/2026-08/2026-08-16-render-primitives-path-vertex-format.md。
 
 ## 修复 3：GPU 测试扩展（gpu_path.rs 5 → 8 个 GPU 测试）
 
@@ -34,9 +34,9 @@
 ## 语义注记（learnings）
 
 - GPU clip 擦白 vs canvas clip() 持续裁剪语义差异：
-  docs/learnings/bugs/gpu-clip-erase-vs-canvas-clip-state.md
+  docs/learnings/bugs/2026-08/2026-08-16-gpu-clip-erase-vs-canvas-clip-state.md
 - 跨 crate 数据格式双向核验（R56h 教训同构变体）：
-  docs/learnings/bugs/render-primitives-path-vertex-format.md
+  docs/learnings/bugs/2026-08/2026-08-16-render-primitives-path-vertex-format.md
 
 ## 验证
 

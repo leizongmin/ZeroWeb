@@ -285,7 +285,18 @@ tools/
 - `docs/learnings/platform/` — 平台相关经验
 - `docs/learnings/performance/` — 性能优化经验
 
-每条经验一个 `.md` 文件，文件名简洁描述主题（如 `wsl-clipboard-empty.md`）。文件内容应包含：日期、相关模块、问题描述、根因分析、解决方案。
+每条经验一个 `.md` 文件。**格式契约**：
+
+- 路径：`docs/learnings/<分类>/<YYYY-MM>/<YYYY-MM-DD>-<topic>.md`；日期以 frontmatter 为事实源，文件名与目录由它派生（`make learnings-index` 会校验一致性）
+- topic 用 kebab-case 英文描述主题（如 `wsl-clipboard-empty.md`）
+- 文件头：YAML frontmatter（`date: YYYY-MM-DD` 必填、`modules: <逗号分隔>` 可空），随后 `# 标题`
+- 正文：问题描述、根因分析、解决方案
+
+learning 资产分三层维护：
+
+- 单条记录落地后无需手工维护索引——每日 cronjob（`docs/rally/jobs.yaml` 的 `learning-maintenance`）按 [`docs/rally/learning-maintenance.md`](docs/rally/learning-maintenance.md) 校验格式、`make learnings-index` 重建 `docs/learnings/INDEX.md`（生成物，勿手改）
+- 方法论蒸馏层 `.agents/skills/zeroweb-guidelines/SKILL.md`（从踩坑提炼的跨条目不变式）由该 cronjob 直接维护（用户已常设授权，仅限此文件；防膨胀约束见维护文档）
+- 编写/审查本仓 Rust 代码时应对照该 skill 的不变式，索引中按子系统检索相关 learning 原文
 
 ## 自进化（Self-Evolution）
 

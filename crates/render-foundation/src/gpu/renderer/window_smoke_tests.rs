@@ -2,7 +2,7 @@
 //!
 //! `new_for_window` 此前全工作区零测试执行——surface format 选择、swapchain
 //! 配置、present 生命周期都是「从未跑过一行」的代码（基线：
-//! docs/learnings/bugs/cpu-gpu-path-divergence.md P1-3）。本测试在存在显示
+//! docs/learnings/bugs/2026-08/2026-08-12-cpu-gpu-path-divergence.md P1-3）。本测试在存在显示
 //! 服务器时创建真实 winit 窗口，走完整窗口模式链路：
 //! new_for_window → configure_surface → render_full_scene_gpu → present → drop。
 //! 无 DISPLAY/WAYLAND_DISPLAY 环境时跳过（CI 无显示服务器时不失败）。
