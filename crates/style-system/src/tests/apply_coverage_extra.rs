@@ -170,6 +170,27 @@ fn test_apply_columns_invalid() {
 }
 
 #[test]
+fn test_apply_columns_invalid_pair_keeps_old_values() {
+    let mut style = ComputedStyle::default();
+    style.column_count = ColumnCountComputedValue::Number(2);
+    style.column_width = ColumnWidthComputedValue::Length(LengthValue::Px(100.0));
+
+    assert!(!apply_property_value(&mut style, "columns", "3 bogus"));
+    assert_eq!(style.column_count, ColumnCountComputedValue::Number(2));
+    assert_eq!(
+        style.column_width,
+        ColumnWidthComputedValue::Length(LengthValue::Px(100.0))
+    );
+
+    assert!(!apply_property_value(&mut style, "columns", "150px bogus"));
+    assert_eq!(style.column_count, ColumnCountComputedValue::Number(2));
+    assert_eq!(
+        style.column_width,
+        ColumnWidthComputedValue::Length(LengthValue::Px(100.0))
+    );
+}
+
+#[test]
 fn test_apply_columns_zero_is_width_not_count() {
     // CSS Multicol §3.2：column-count 须为正整数；0 非法。
     // 故 `columns: 0` 的单值 0 须归 column-width（zero-column-width-layout 第二 div），

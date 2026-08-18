@@ -897,32 +897,31 @@ pub fn apply_advanced_property_value(style: &mut ComputedStyle, property: &str, 
         "columns" => {
             let parts: Vec<&str> = value.split_whitespace().collect();
             if parts.len() == 2 {
-                // 尝试两种顺序
-                if let Some(v) = values::parse_column_count(parts[0]) {
-                    style.column_count = match v {
+                // https://drafts.csswg.org/css-multicol-1/#columns
+                let parsed = if let (Some(count), Some(width)) = (
+                    values::parse_column_count(parts[0]),
+                    values::parse_column_width(parts[1]),
+                ) {
+                    Some((count, width))
+                } else if let (Some(width), Some(count)) = (
+                    values::parse_column_width(parts[0]),
+                    values::parse_column_count(parts[1]),
+                ) {
+                    Some((count, width))
+                } else {
+                    None
+                };
+
+                if let Some((count, width)) = parsed {
+                    style.column_count = match count {
                         ColumnCountValue::Auto => ColumnCountComputedValue::Auto,
                         ColumnCountValue::Number(n) => ColumnCountComputedValue::Number(n),
                     };
-                    if let Some(w) = values::parse_column_width(parts[1]) {
-                        style.column_width = match w {
-                            ColumnWidthValue::Auto => ColumnWidthComputedValue::Auto,
-                            ColumnWidthValue::Length(l) => ColumnWidthComputedValue::Length(l),
-                        };
-                        return true;
-                    }
-                }
-                if let Some(v) = values::parse_column_width(parts[0]) {
-                    style.column_width = match v {
+                    style.column_width = match width {
                         ColumnWidthValue::Auto => ColumnWidthComputedValue::Auto,
                         ColumnWidthValue::Length(l) => ColumnWidthComputedValue::Length(l),
                     };
-                    if let Some(w) = values::parse_column_count(parts[1]) {
-                        style.column_count = match w {
-                            ColumnCountValue::Auto => ColumnCountComputedValue::Auto,
-                            ColumnCountValue::Number(n) => ColumnCountComputedValue::Number(n),
-                        };
-                        return true;
-                    }
+                    return true;
                 }
             } else if parts.len() == 1 {
                 // CSS Multi-column spec: 单值时，正整数优先解析为 column-count，
