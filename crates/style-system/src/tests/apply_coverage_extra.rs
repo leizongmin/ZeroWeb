@@ -475,8 +475,11 @@ fn test_apply_animation_timing_function() {
 fn test_apply_animation_delay() {
     let (ok, _) = apply("animation-delay", "0.5s");
     assert!(ok);
-    let (ok, _) = apply("animation-delay", "100ms");
+    let (ok, s) = apply("animation-delay", "-0.25s");
     assert!(ok);
+    assert_eq!(s.animation_delay, vec![-0.25]);
+    let (ok, _) = apply("animation-delay", "100ms, bogus");
+    assert!(!ok);
 }
 
 // === perspective-origin 双值 ===
@@ -872,6 +875,11 @@ fn test_apply_logical_properties_valid_and_invalid() {
 fn test_apply_transition_delay() {
     let (ok, _) = apply("transition-delay", "0.5s, 1s");
     assert!(ok);
+    let (ok, s) = apply("transition-delay", "-0.25s");
+    assert!(ok);
+    assert_eq!(s.transition_delay, vec![-0.25]);
+    let (ok, _) = apply("transition-delay", "0.5s, bogus");
+    assert!(!ok);
 }
 
 #[test]

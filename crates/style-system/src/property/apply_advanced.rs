@@ -24,6 +24,16 @@ fn parse_non_negative_time_list(value: &str) -> Option<Vec<f64>> {
     Some(out)
 }
 
+// https://drafts.csswg.org/css-transitions-1/#transition-delay-property
+// https://drafts.csswg.org/css-animations-1/#animation-delay
+fn parse_time_list(value: &str) -> Option<Vec<f64>> {
+    let mut out = Vec::new();
+    for part in value.split(',') {
+        out.push(values::parse_time(part.trim())?);
+    }
+    Some(out)
+}
+
 /// R2468：解析 contain-intrinsic-{inline,block}-size longhand 值。
 ///
 /// 接受可选 `auto` 前缀 + 单个 `<length>`（如 `auto 100px`、`100px`）。`auto` 在静态无
@@ -179,7 +189,9 @@ pub fn apply_advanced_property_value(style: &mut ComputedStyle, property: &str, 
             }
         }
         "transition-delay" => {
-            let delays = value.split(',').filter_map(|s| values::parse_time(s.trim())).collect();
+            let Some(delays) = parse_time_list(value) else {
+                return false;
+            };
             style.transition_delay = delays;
             return true;
         }
@@ -273,7 +285,10 @@ pub fn apply_advanced_property_value(style: &mut ComputedStyle, property: &str, 
             }
         }
         "animation-delay" => {
-            style.animation_delay = value.split(',').filter_map(|s| values::parse_time(s.trim())).collect();
+            let Some(delays) = parse_time_list(value) else {
+                return false;
+            };
+            style.animation_delay = delays;
             return true;
         }
         "animation-iteration-count" => {

@@ -832,6 +832,12 @@ fn test_apply_transition_delay() {
 
     assert!(apply_property_value(&mut style, "transition-delay", "50ms"));
     assert_eq!(style.transition_delay, vec![0.05]);
+
+    assert!(apply_property_value(&mut style, "transition-delay", "-1s"));
+    assert_eq!(style.transition_delay, vec![-1.0]);
+
+    assert!(!apply_property_value(&mut style, "transition-delay", "0.1s, bogus"));
+    assert_eq!(style.transition_delay, vec![-1.0]);
 }
 
 #[test]
@@ -1185,6 +1191,12 @@ fn test_apply_animation_delay() {
     let mut style = ComputedStyle::default();
     assert!(apply_property_value(&mut style, "animation-delay", "0.2s"));
     assert_eq!(style.animation_delay, vec![0.2]);
+
+    assert!(apply_property_value(&mut style, "animation-delay", "-1s"));
+    assert_eq!(style.animation_delay, vec![-1.0]);
+
+    assert!(!apply_property_value(&mut style, "animation-delay", "0.2s, bogus"));
+    assert_eq!(style.animation_delay, vec![-1.0]);
 }
 
 #[test]

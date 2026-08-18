@@ -65,6 +65,8 @@ Logical border axis shorthands exposed the axis variant: 1-2 start/end mapping m
 
 `transition-duration` and `animation-duration` exposed the sibling-longhand variant: related longhands may share a primitive parser but not the same grammar. Duration requires non-negative time while delay accepts negative time, so duration apply must reuse the duration parser instead of the generic time parser, and delay must remain deliberately wider.
 
+`transition-delay` and `animation-delay` exposed the partial-list variant: even when a sibling longhand intentionally accepts a wider primitive value such as negative time, comma lists must still fail atomically if any item is invalid. `filter_map` is unsafe at CSS grammar boundaries because it silently converts invalid lists into shorter valid lists.
+
 ## Root Cause
 
 The shorthand layer used heuristic component classifiers and treated unrecognized tokens as absent optional components. That is wrong for CSS shorthands such as `border`, where every token must match one of the allowed component grammars. A shared parser can also be broader than the property grammar that consumes it: general length parsing may accept `auto`, intrinsic sizing keywords, or percentages that `border-width` must reject.
