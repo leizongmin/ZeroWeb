@@ -139,12 +139,18 @@ pub fn apply_property_value_with_quirks(
         }
         "width" => {
             if let Some(v) = parse_length_fn(value) {
+                if !sizing_length_is_valid(value, &v) {
+                    return false;
+                }
                 style.width = v;
                 return true;
             }
         }
         "height" => {
             if let Some(v) = parse_length_fn(value) {
+                if !sizing_length_is_valid(value, &v) {
+                    return false;
+                }
                 style.height = v;
                 return true;
             }
@@ -155,12 +161,18 @@ pub fn apply_property_value_with_quirks(
         //（width↔height 互换），故无需在此感知 writing-mode。
         "inline-size" => {
             if let Some(v) = parse_length_fn(value) {
+                if !sizing_length_is_valid(value, &v) {
+                    return false;
+                }
                 style.width = v;
                 return true;
             }
         }
         "block-size" => {
             if let Some(v) = parse_length_fn(value) {
+                if !sizing_length_is_valid(value, &v) {
+                    return false;
+                }
                 style.height = v;
                 return true;
             }
@@ -169,12 +181,18 @@ pub fn apply_property_value_with_quirks(
         //（垂直模式轴交换由 converter 的 swap_writing_mode_axes 负责，同 inline-size/block-size）。
         "min-inline-size" => {
             if let Some(v) = parse_length_fn(value) {
+                if !sizing_length_is_valid(value, &v) {
+                    return false;
+                }
                 style.min_width = v;
                 return true;
             }
         }
         "min-block-size" => {
             if let Some(v) = parse_length_fn(value) {
+                if !sizing_length_is_valid(value, &v) {
+                    return false;
+                }
                 style.min_height = v;
                 return true;
             }
@@ -185,6 +203,9 @@ pub fn apply_property_value_with_quirks(
                 return true;
             }
             if let Some(v) = parse_length_fn(value) {
+                if !sizing_length_is_valid(value, &v) {
+                    return false;
+                }
                 style.max_width = v;
                 return true;
             }
@@ -195,6 +216,9 @@ pub fn apply_property_value_with_quirks(
                 return true;
             }
             if let Some(v) = parse_length_fn(value) {
+                if !sizing_length_is_valid(value, &v) {
+                    return false;
+                }
                 style.max_height = v;
                 return true;
             }

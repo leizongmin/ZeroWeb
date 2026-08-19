@@ -66,6 +66,17 @@ fn test_apply_width_height() {
     let (ok, s) = apply("height", "50em");
     assert!(ok);
     assert!(matches!(s.height, zero_css_parser::values::LengthValue::Em(50.0)));
+
+    let mut style = ComputedStyle::default();
+    assert!(apply_property_value(&mut style, "width", "100px"));
+    let previous = style.width.clone();
+    assert!(!apply_property_value(&mut style, "width", "-1px"));
+    assert_eq!(style.width, previous);
+
+    assert!(apply_property_value(&mut style, "height", "50px"));
+    let previous = style.height.clone();
+    assert!(!apply_property_value(&mut style, "height", "-1px"));
+    assert_eq!(style.height, previous);
 }
 
 #[test]
@@ -99,6 +110,37 @@ fn test_apply_inline_block_size_logical() {
         s.max_height,
         zero_css_parser::values::LengthValue::Px(f64::INFINITY)
     ));
+
+    let mut style = ComputedStyle::default();
+    assert!(apply_property_value(&mut style, "inline-size", "10px"));
+    let previous = style.width.clone();
+    assert!(!apply_property_value(&mut style, "inline-size", "-1px"));
+    assert_eq!(style.width, previous);
+
+    assert!(apply_property_value(&mut style, "block-size", "20px"));
+    let previous = style.height.clone();
+    assert!(!apply_property_value(&mut style, "block-size", "-1px"));
+    assert_eq!(style.height, previous);
+
+    assert!(apply_property_value(&mut style, "min-inline-size", "30px"));
+    let previous = style.min_width.clone();
+    assert!(!apply_property_value(&mut style, "min-inline-size", "-1px"));
+    assert_eq!(style.min_width, previous);
+
+    assert!(apply_property_value(&mut style, "min-block-size", "40px"));
+    let previous = style.min_height.clone();
+    assert!(!apply_property_value(&mut style, "min-block-size", "-1px"));
+    assert_eq!(style.min_height, previous);
+
+    assert!(apply_property_value(&mut style, "max-inline-size", "50px"));
+    let previous = style.max_width.clone();
+    assert!(!apply_property_value(&mut style, "max-inline-size", "-1px"));
+    assert_eq!(style.max_width, previous);
+
+    assert!(apply_property_value(&mut style, "max-block-size", "60px"));
+    let previous = style.max_height.clone();
+    assert!(!apply_property_value(&mut style, "max-block-size", "-1px"));
+    assert_eq!(style.max_height, previous);
 }
 
 #[test]
