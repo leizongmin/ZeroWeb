@@ -133,6 +133,8 @@ Image source properties exposed the copied-parser variant: fixing `background-im
 
 Generated content URLs exposed the cross-module consumer variant: `content: url(...)` lives outside the visual image parser module, but it still consumes the same CSS URL payload grammar. After extracting a shared helper, audit non-background image consumers across modules so generated content does not keep an older `trim_matches` parser.
 
+Font-face sources exposed the token-serialization variant: `Token::Url("a b.woff")` displayed as `url(a b.woff)` loses the fact that the original input was quoted. Downstream string consumers then cannot distinguish legal quoted whitespace from illegal unquoted whitespace. URL token display must emit a quoted, escaped form whenever the payload cannot be represented as an unquoted url-token.
+
 ## Root Cause
 
 The shorthand layer used heuristic component classifiers and treated unrecognized tokens as absent optional components. That is wrong for CSS shorthands such as `border`, where every token must match one of the allowed component grammars. A shared parser can also be broader than the property grammar that consumes it: general length parsing may accept `auto`, intrinsic sizing keywords, or percentages that `border-width` must reject.

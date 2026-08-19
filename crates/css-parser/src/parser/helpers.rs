@@ -213,27 +213,110 @@ fn parse_range_bound(tok: &str, is_upper: bool) -> Option<i32> {
 /// 支持 `url("X.woff")`、`url(X.woff)`、`url('X.woff')`，忽略 `format(...)` 等其他部分。
 pub(super) fn extract_urls_from_src(src: &str) -> Vec<String> {
     let mut urls = Vec::new();
-    let lower = src.to_ascii_lowercase();
-    let mut search_from = 0;
-    while let Some(rel_idx) = lower[search_from..].find("url(") {
-        let open_paren = search_from + rel_idx + 3; // 指向 '('
-        // 找匹配的 ')'
-        let after = &src[open_paren + 1..];
-        let close_rel = match after.find(')') {
-            Some(r) => r,
-            None => break,
-        };
-        let inner = after[..close_rel].trim();
-        let url = strip_css_quotes(inner);
-        if !url.is_empty() {
-            urls.push(url);
+    for source in split_top_level_src_items(src) {
+        let source = source.trim();
+        if source.len() < 4 || !source[..4].eq_ignore_ascii_case("url(") {
+            continue;
         }
-        search_from = open_paren + 1 + close_rel + 1;
-        if search_from >= src.len() {
-            break;
+        let Some(close) = find_matching_paren(source, 3) else {
+            continue;
+        };
+        let inner = source[4..close].trim();
+        let tail = source[close + 1..].trim();
+        if !src_url_tail_is_valid(tail) {
+            continue;
+        }
+        if let Some(url) = crate::values::parse_extended_visual::parse_css_url_payload(inner) {
+            urls.push(url);
         }
     }
     urls
+}
+
+fn split_top_level_src_items(src: &str) -> Vec<&str> {
+    let mut parts = Vec::new();
+    let mut depth = 0i32;
+    let mut quote: Option<char> = None;
+    let mut escaped = false;
+    let mut start = 0usize;
+    for (idx, ch) in src.char_indices() {
+        if let Some(q) = quote {
+            if escaped {
+                escaped = false;
+            } else if ch == '\\' {
+                escaped = true;
+            } else if ch == q {
+                quote = None;
+            }
+            continue;
+        }
+        match ch {
+            '"' | '\'' => quote = Some(ch),
+            '(' => depth += 1,
+            ')' => depth = (depth - 1).max(0),
+            ',' if depth == 0 => {
+                parts.push(&src[start..idx]);
+                start = idx + ch.len_utf8();
+            }
+            _ => {}
+        }
+    }
+    parts.push(&src[start..]);
+    parts
+}
+
+fn find_matching_paren(s: &str, open_idx: usize) -> Option<usize> {
+    let mut depth = 0i32;
+    let mut quote: Option<char> = None;
+    let mut escaped = false;
+    for (idx, ch) in s.char_indices().skip_while(|(idx, _)| *idx < open_idx) {
+        if let Some(q) = quote {
+            if escaped {
+                escaped = false;
+            } else if ch == '\\' {
+                escaped = true;
+            } else if ch == q {
+                quote = None;
+            }
+            continue;
+        }
+        match ch {
+            '"' | '\'' => quote = Some(ch),
+            '(' => depth += 1,
+            ')' => {
+                depth -= 1;
+                if depth == 0 {
+                    return Some(idx);
+                }
+                if depth < 0 {
+                    return None;
+                }
+            }
+            _ => {}
+        }
+    }
+    None
+}
+
+fn src_url_tail_is_valid(mut tail: &str) -> bool {
+    while !tail.is_empty() {
+        let trimmed = tail.trim_start();
+        if trimmed.is_empty() {
+            return true;
+        }
+        let Some(open) = trimmed.find('(') else {
+            return false;
+        };
+        let name = trimmed[..open].trim();
+        if name.is_empty() || name.chars().any(char::is_whitespace) {
+            return false;
+        }
+        let Some(close) = find_matching_paren(trimmed, open) else {
+            return false;
+        };
+        tail = &trimmed[close + 1..];
+    }
+    true
 }
 
 /// 解析 @page `size` 描述符为像素 `(width, height)`（@96dpi）。

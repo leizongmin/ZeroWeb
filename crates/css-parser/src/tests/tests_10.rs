@@ -452,6 +452,23 @@ fn test_font_face_multiple_sources_with_format_ignored() {
 }
 
 #[test]
+fn test_font_face_src_rejects_invalid_url_payloads() {
+    let css = r#"@font-face {
+        font-family: UrlPayload;
+        src: url("valid font.woff") format("woff"),
+             url(my font.woff),
+             url("tail.woff" extra);
+    }"#;
+    let ws = Parser::parse_stylesheet(css);
+    match &ws.rules[0] {
+        Rule::FontFace(ff) => {
+            assert_eq!(ff.sources, vec!["valid font.woff".to_string()]);
+        }
+        other => panic!("expected Rule::FontFace, got {other:?}"),
+    }
+}
+
+#[test]
 fn test_font_face_does_not_break_surrounding_rules() {
     let css = r#"
         p { color: red; }

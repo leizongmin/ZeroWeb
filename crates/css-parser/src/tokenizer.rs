@@ -81,6 +81,9 @@ impl fmt::Display for Token {
             Token::AtKeyword(s) => write!(f, "@{}", s),
             Token::Hash(s) => write!(f, "#{}", s),
             Token::String(s) => write!(f, "\"{}\"", s),
+            Token::Url(s) if url_needs_quoted_serialization(s) => {
+                write!(f, "url(\"{}\")", escape_css_string_for_url(s))
+            }
             Token::Url(s) => write!(f, "url({})", s),
             Token::Number(n) => write!(f, "{}", n),
             Token::Percentage(n) => write!(f, "{}%", n),
@@ -109,6 +112,22 @@ impl fmt::Display for Token {
             Token::Error(s) => write!(f, "<ERROR: {}>", s),
         }
     }
+}
+
+fn url_needs_quoted_serialization(s: &str) -> bool {
+    s.chars()
+        .any(|ch| ch.is_whitespace() || matches!(ch, '"' | '\'' | '(' | ')'))
+}
+
+fn escape_css_string_for_url(s: &str) -> String {
+    let mut escaped = String::with_capacity(s.len());
+    for ch in s.chars() {
+        if matches!(ch, '"' | '\\') {
+            escaped.push('\\');
+        }
+        escaped.push(ch);
+    }
+    escaped
 }
 
 // ── Spanned ──────────────────────────────────────────────────────────
