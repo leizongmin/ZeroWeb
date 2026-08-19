@@ -83,6 +83,13 @@ pub enum ServiceWorkerManagerEvent {
         /// Rejection or dispatch error diagnostic.
         message: String,
     },
+    /// Manager could not apply or dispatch an internal lifecycle transition.
+    CoordinationFailed {
+        /// Registration version ID.
+        registration_id: u64,
+        /// Internal transition diagnostic.
+        message: String,
+    },
     /// Install result moved the version to waiting or redundant.
     InstallCompleted {
         /// Registration version ID.
@@ -251,6 +258,13 @@ impl ServiceWorkerManager {
                 ServiceWorkerEvent::Evaluated { .. } => {
                     self.evaluated.insert(registration_id);
                     output.push(ServiceWorkerManagerEvent::ScriptEvaluated { registration_id });
+                    if let Err(error) = self.dispatch_install(registration_id) {
+                        self.fail_installing_version(registration_id);
+                        output.push(ServiceWorkerManagerEvent::CoordinationFailed {
+                            registration_id,
+                            message: error.to_string(),
+                        });
+                    }
                 }
                 ServiceWorkerEvent::ScriptError { kind, message, .. } => {
                     self.fail_installing_version(registration_id);
@@ -272,6 +286,39 @@ impl ServiceWorkerManager {
                         succeeded,
                         message,
                     });
+                    let transition = match phase {
+                        ServiceWorkerLifecyclePhase::Install => self.apply_install_result(registration_id, succeeded),
+                        ServiceWorkerLifecyclePhase::Activate => {
+                            self.apply_activation_result(registration_id, succeeded)
+                        }
+                    };
+                    match transition {
+                        Ok(completed) => {
+                            output.push(completed);
+                            if phase == ServiceWorkerLifecyclePhase::Install
+                                && succeeded
+                                && self
+                                    .key_for(registration_id)
+                                    .ok()
+                                    .and_then(|key| self.slots.get(key))
+                                    .is_some_and(|slot| slot.active.is_none())
+                                && let Err(error) = self.activate_waiting(registration_id)
+                            {
+                                self.mark_redundant_and_stop(registration_id);
+                                output.push(ServiceWorkerManagerEvent::CoordinationFailed {
+                                    registration_id,
+                                    message: error.to_string(),
+                                });
+                            }
+                        }
+                        Err(error) => {
+                            self.mark_redundant_and_stop(registration_id);
+                            output.push(ServiceWorkerManagerEvent::CoordinationFailed {
+                                registration_id,
+                                message: error.to_string(),
+                            });
+                        }
+                    }
                 }
                 ServiceWorkerEvent::Closed => {
                     if self.is_installing(registration_id) {
@@ -289,7 +336,7 @@ impl ServiceWorkerManager {
     }
 
     /// Apply the result of the install event and its lifetime promises.
-    pub fn complete_install(
+    fn apply_install_result(
         &mut self,
         registration_id: u64,
         succeeded: bool,
@@ -326,7 +373,7 @@ impl ServiceWorkerManager {
     }
 
     /// Dispatch the real install event for an evaluated installing version.
-    pub fn dispatch_install(&mut self, registration_id: u64) -> Result<(), ServiceWorkerManagerError> {
+    fn dispatch_install(&mut self, registration_id: u64) -> Result<(), ServiceWorkerManagerError> {
         self.require_state(registration_id, ServiceWorkerState::Installing)?;
         if !self.evaluated.contains(&registration_id) {
             return Err(ServiceWorkerManagerError::EvaluationPending(registration_id));
@@ -339,7 +386,7 @@ impl ServiceWorkerManager {
     }
 
     /// Move a waiting version into the activating state.
-    pub fn begin_activation(&mut self, registration_id: u64) -> Result<(), ServiceWorkerManagerError> {
+    fn begin_activation(&mut self, registration_id: u64) -> Result<(), ServiceWorkerManagerError> {
         self.require_state(registration_id, ServiceWorkerState::Installed)?;
         let key = self.key_for(registration_id)?;
         if self.slots.get(key).and_then(|slot| slot.waiting) != Some(registration_id) {
@@ -357,7 +404,7 @@ impl ServiceWorkerManager {
     }
 
     /// Dispatch the real activate event for an activating version.
-    pub fn dispatch_activate(&mut self, registration_id: u64) -> Result<(), ServiceWorkerManagerError> {
+    fn dispatch_activate(&mut self, registration_id: u64) -> Result<(), ServiceWorkerManagerError> {
         self.require_state(registration_id, ServiceWorkerState::Activating)?;
         self.runtimes
             .get_mut(&registration_id)
@@ -367,7 +414,7 @@ impl ServiceWorkerManager {
     }
 
     /// Apply the result of the activate event and its lifetime promises.
-    pub fn complete_activation(
+    fn apply_activation_result(
         &mut self,
         registration_id: u64,
         succeeded: bool,
@@ -400,6 +447,23 @@ impl ServiceWorkerManager {
             registration_id,
             succeeded,
         })
+    }
+
+    /// Activate a waiting replacement version.
+    ///
+    /// The first successful installation activates automatically. A replacement
+    /// remains waiting until the host determines it can activate or implements
+    /// `skipWaiting()` semantics.
+    pub fn activate_waiting(&mut self, registration_id: u64) -> Result<(), ServiceWorkerManagerError> {
+        self.begin_activation(registration_id)?;
+        if let Err(error) = self.dispatch_activate(registration_id) {
+            self.registry
+                .get_mut(registration_id)
+                .expect("validated registration must exist")
+                .state = ServiceWorkerState::Installed;
+            return Err(error);
+        }
+        Ok(())
     }
 
     /// Inspect one registration version.
@@ -531,6 +595,32 @@ mod tests {
             .unwrap()
     }
 
+    fn wait_for_state(
+        manager: &mut ServiceWorkerManager,
+        registration_id: u64,
+        expected: ServiceWorkerState,
+    ) -> Vec<ServiceWorkerManagerEvent> {
+        let deadline = Instant::now() + Duration::from_secs(5);
+        let mut events = Vec::new();
+        loop {
+            events.extend(manager.poll());
+            if manager
+                .registration(registration_id)
+                .is_some_and(|registration| registration.state == expected)
+            {
+                return events;
+            }
+            assert!(Instant::now() < deadline, "manager state timed out");
+            std::thread::sleep(Duration::from_millis(10));
+        }
+    }
+
+    fn start_active(manager: &mut ServiceWorkerManager, scope: &str, script: &str) -> u64 {
+        let id = start(manager, scope, script);
+        wait_for_state(manager, id, ServiceWorkerState::Activated);
+        id
+    }
+
     #[test]
     fn successful_version_moves_through_slots() {
         let mut manager = ServiceWorkerManager::new();
@@ -538,17 +628,16 @@ mod tests {
         assert_eq!(manager.registration(id).unwrap().state, ServiceWorkerState::Installing);
         assert_eq!(manager.slots(&key("/app/")).unwrap().installing, Some(id));
 
-        assert_eq!(
-            wait_for_event(&mut manager),
-            ServiceWorkerManagerEvent::ScriptEvaluated { registration_id: id }
-        );
-        manager.complete_install(id, true).unwrap();
-        assert_eq!(manager.registration(id).unwrap().state, ServiceWorkerState::Installed);
-        assert_eq!(manager.slots(&key("/app/")).unwrap().waiting, Some(id));
-
-        manager.begin_activation(id).unwrap();
-        assert_eq!(manager.registration(id).unwrap().state, ServiceWorkerState::Activating);
-        manager.complete_activation(id, true).unwrap();
+        let events = wait_for_state(&mut manager, id, ServiceWorkerState::Activated);
+        assert!(events.contains(&ServiceWorkerManagerEvent::ScriptEvaluated { registration_id: id }));
+        assert!(events.contains(&ServiceWorkerManagerEvent::InstallCompleted {
+            registration_id: id,
+            succeeded: true,
+        }));
+        assert!(events.contains(&ServiceWorkerManagerEvent::ActivationCompleted {
+            registration_id: id,
+            succeeded: true,
+        }));
         assert_eq!(manager.registration(id).unwrap().state, ServiceWorkerState::Activated);
         assert_eq!(manager.slots(&key("/app/")).unwrap().active, Some(id));
     }
@@ -583,44 +672,43 @@ mod tests {
                 event.waitUntil(Promise.reject(new Error('activate rejected')));
             });",
         );
-        wait_for_event(&mut manager);
-
-        manager.dispatch_install(id).unwrap();
-        assert_eq!(
-            wait_for_event(&mut manager),
-            ServiceWorkerManagerEvent::LifecycleSettled {
-                registration_id: id,
-                phase: ServiceWorkerLifecyclePhase::Install,
-                succeeded: true,
-                message: String::new(),
-            }
-        );
-        manager.complete_install(id, true).unwrap();
-        manager.begin_activation(id).unwrap();
-        manager.dispatch_activate(id).unwrap();
+        let events = wait_for_state(&mut manager, id, ServiceWorkerState::Redundant);
+        assert!(events.contains(&ServiceWorkerManagerEvent::LifecycleSettled {
+            registration_id: id,
+            phase: ServiceWorkerLifecyclePhase::Install,
+            succeeded: true,
+            message: String::new(),
+        }));
         assert!(matches!(
-            wait_for_event(&mut manager),
-            ServiceWorkerManagerEvent::LifecycleSettled {
+            events.iter().find(|event| matches!(
+                event,
+                ServiceWorkerManagerEvent::LifecycleSettled {
+                    phase: ServiceWorkerLifecyclePhase::Activate,
+                    ..
+                }
+            )),
+            Some(ServiceWorkerManagerEvent::LifecycleSettled {
                 registration_id,
                 phase: ServiceWorkerLifecyclePhase::Activate,
                 succeeded: false,
-                ref message,
-            } if registration_id == id && message.contains("activate rejected")
+                message,
+            }) if *registration_id == id && message.contains("activate rejected")
         ));
     }
 
     #[test]
     fn install_failure_preserves_existing_active() {
         let mut manager = ServiceWorkerManager::new();
-        let first = start(&mut manager, "/", "globalThis.version = 1;");
-        wait_for_event(&mut manager);
-        manager.complete_install(first, true).unwrap();
-        manager.begin_activation(first).unwrap();
-        manager.complete_activation(first, true).unwrap();
+        let first = start_active(&mut manager, "/", "globalThis.version = 1;");
 
-        let second = start(&mut manager, "/", "globalThis.version = 2;");
-        wait_for_event(&mut manager);
-        manager.complete_install(second, false).unwrap();
+        let second = start(
+            &mut manager,
+            "/",
+            "addEventListener('install', event => {
+                event.waitUntil(Promise.reject(new Error('install rejected')));
+            });",
+        );
+        wait_for_state(&mut manager, second, ServiceWorkerState::Redundant);
 
         let slots = manager.slots(&key("/")).unwrap();
         assert_eq!(slots.active, Some(first));
@@ -638,17 +726,18 @@ mod tests {
     #[test]
     fn activation_failure_preserves_existing_active() {
         let mut manager = ServiceWorkerManager::new();
-        let first = start(&mut manager, "/", "globalThis.version = 1;");
-        wait_for_event(&mut manager);
-        manager.complete_install(first, true).unwrap();
-        manager.begin_activation(first).unwrap();
-        manager.complete_activation(first, true).unwrap();
+        let first = start_active(&mut manager, "/", "globalThis.version = 1;");
 
-        let second = start(&mut manager, "/", "globalThis.version = 2;");
-        wait_for_event(&mut manager);
-        manager.complete_install(second, true).unwrap();
-        manager.begin_activation(second).unwrap();
-        manager.complete_activation(second, false).unwrap();
+        let second = start(
+            &mut manager,
+            "/",
+            "addEventListener('activate', event => {
+                event.waitUntil(Promise.reject(new Error('activate rejected')));
+            });",
+        );
+        wait_for_state(&mut manager, second, ServiceWorkerState::Installed);
+        manager.activate_waiting(second).unwrap();
+        wait_for_state(&mut manager, second, ServiceWorkerState::Redundant);
 
         let slots = manager.slots(&key("/")).unwrap();
         assert_eq!(slots.active, Some(first));
@@ -666,23 +755,13 @@ mod tests {
     #[test]
     fn activation_replaces_only_same_scope() {
         let mut manager = ServiceWorkerManager::new();
-        let root = start(&mut manager, "/", "globalThis.scope = 'root';");
-        wait_for_event(&mut manager);
-        manager.complete_install(root, true).unwrap();
-        manager.begin_activation(root).unwrap();
-        manager.complete_activation(root, true).unwrap();
-
-        let app = start(&mut manager, "/app/", "globalThis.scope = 'app';");
-        wait_for_event(&mut manager);
-        manager.complete_install(app, true).unwrap();
-        manager.begin_activation(app).unwrap();
-        manager.complete_activation(app, true).unwrap();
+        let root = start_active(&mut manager, "/", "globalThis.scope = 'root';");
+        let app = start_active(&mut manager, "/app/", "globalThis.scope = 'app';");
 
         let replacement = start(&mut manager, "/app/", "globalThis.scope = 'app-v2';");
-        wait_for_event(&mut manager);
-        manager.complete_install(replacement, true).unwrap();
-        manager.begin_activation(replacement).unwrap();
-        manager.complete_activation(replacement, true).unwrap();
+        wait_for_state(&mut manager, replacement, ServiceWorkerState::Installed);
+        manager.activate_waiting(replacement).unwrap();
+        wait_for_state(&mut manager, replacement, ServiceWorkerState::Activated);
 
         assert_eq!(manager.slots(&key("/")).unwrap().active, Some(root));
         assert_eq!(manager.slots(&key("/app/")).unwrap().active, Some(replacement));
@@ -748,12 +827,16 @@ mod tests {
     }
 
     #[test]
-    fn install_cannot_complete_before_evaluation() {
+    fn waiting_activation_rejects_installing_version() {
         let mut manager = ServiceWorkerManager::new();
         let id = start(&mut manager, "/", "void 0;");
         assert!(matches!(
-            manager.complete_install(id, true),
-            Err(ServiceWorkerManagerError::EvaluationPending(pending)) if pending == id
+            manager.activate_waiting(id),
+            Err(ServiceWorkerManagerError::InvalidState {
+                registration_id,
+                actual: ServiceWorkerState::Installing,
+                ..
+            }) if registration_id == id
         ));
         assert_eq!(manager.registration(id).unwrap().state, ServiceWorkerState::Installing);
     }

@@ -12,6 +12,7 @@ mod final_coverage;
 mod indexed_db_owner;
 mod integration;
 mod more_coverage;
+mod service_worker_runtime;
 mod uncovered_paths;
 mod user_actions;
 #[cfg(feature = "v8")]

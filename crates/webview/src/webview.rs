@@ -19,6 +19,9 @@ use zero_net::{FetchPriority, HttpClient, HttpResponse, NetError, ResourceLoader
 use zero_render_foundation::image_cache::{ImageCache, ImageData, ImageKey, decode_data_uri};
 
 use crate::image_decoder::decode_image;
+use zero_page_runtime::{
+    ServiceWorkerManager, ServiceWorkerManagerEvent, ServiceWorkerRegistrationKey, ServiceWorkerVersionSlots,
+};
 use zero_render_foundation::primitive::RenderPrimitives;
 use zero_script_sandbox::{SandboxConfig, WorkerEvent, WorkerRuntime};
 use zero_security::{ResourceCheckResult, SecurityContext};
@@ -305,6 +308,8 @@ pub struct WebView {
     event_callbacks: Vec<Option<EventCallback>>,
     /// Service Worker 注册表。
     sw_registry: ServiceWorkerRegistry,
+    /// 真实 Service Worker runtime/registration 单一 owner。
+    sw_manager: ServiceWorkerManager,
     /// Web Worker 实例（Dedicated Worker）。
     workers: HashMap<u64, WorkerRuntime>,
     /// Worker ID 生成器。
@@ -406,6 +411,7 @@ impl WebView {
             cached_css: String::new(),
             event_callbacks: Vec::new(),
             sw_registry: ServiceWorkerRegistry::new(),
+            sw_manager: ServiceWorkerManager::new(),
             workers: HashMap::new(),
             next_worker_id: 1,
             wasm_instances: HashMap::new(),
@@ -2254,6 +2260,122 @@ impl WebView {
     /// 获取 Service Worker 注册表（可变）。
     pub fn service_worker_registry_mut(&mut self) -> &mut ServiceWorkerRegistry {
         &mut self.sw_registry
+    }
+
+    /// Fetch, evaluate, install, and activate a Service Worker through the
+    /// in-process [`ServiceWorkerManager`].
+    ///
+    /// `document_url` supplies the registration client's security context.
+    /// Script and scope URLs are resolved against it and must remain same-origin.
+    pub fn register_service_worker_runtime(
+        &mut self,
+        script_url: &str,
+        scope: Option<&str>,
+        document_url: &str,
+    ) -> Result<u64, WebViewError> {
+        let (script_url, scope, origin) = Self::validate_service_worker_registration(script_url, scope, document_url)?;
+        let script = match &self.script_source_fetcher {
+            Some(fetcher) => fetcher(document_url, script_url.as_str())
+                .map_err(|error| WebViewError::Script(format!("Service Worker fetch failed: {error}")))?,
+            None => self.fetch_text_at(script_url.as_str())?,
+        };
+        self.sw_manager
+            .start_evaluation(
+                script_url.as_str(),
+                scope.as_str(),
+                &origin,
+                &script,
+                SandboxConfig::default(),
+            )
+            .map_err(|error| WebViewError::Script(error.to_string()))
+    }
+
+    /// Drain Service Worker manager events and advance lifecycle state.
+    pub fn poll_service_worker_runtime_events(&mut self) -> Vec<ServiceWorkerManagerEvent> {
+        self.sw_manager.poll()
+    }
+
+    /// Inspect one real Service Worker registration version.
+    pub fn service_worker_runtime_registration(
+        &self,
+        registration_id: u64,
+    ) -> Option<&zero_storage::ServiceWorkerRegistration> {
+        self.sw_manager.registration(registration_id)
+    }
+
+    /// Inspect real version slots for an origin/scope key.
+    pub fn service_worker_runtime_slots(
+        &self,
+        key: &ServiceWorkerRegistrationKey,
+    ) -> Option<ServiceWorkerVersionSlots> {
+        self.sw_manager.slots(key)
+    }
+
+    /// Activate a waiting real Service Worker replacement.
+    pub fn activate_waiting_service_worker_runtime(&mut self, registration_id: u64) -> Result<(), WebViewError> {
+        self.sw_manager
+            .activate_waiting(registration_id)
+            .map_err(|error| WebViewError::Script(error.to_string()))
+    }
+
+    fn validate_service_worker_registration(
+        script_url: &str,
+        scope: Option<&str>,
+        document_url: &str,
+    ) -> Result<(url::Url, url::Url, String), WebViewError> {
+        let document = url::Url::parse(document_url)
+            .map_err(|error| WebViewError::Script(format!("invalid document URL: {error}")))?;
+        let secure = document.scheme() == "https"
+            || (document.scheme() == "http"
+                && document.host_str().is_some_and(|host| {
+                    host == "localhost" || host.parse::<std::net::IpAddr>().is_ok_and(|ip| ip.is_loopback())
+                }));
+        if !secure {
+            return Err(WebViewError::Script(
+                "Service Worker registration requires a secure context".into(),
+            ));
+        }
+
+        let mut script = document
+            .join(script_url)
+            .map_err(|error| WebViewError::Script(format!("invalid Service Worker script URL: {error}")))?;
+        if !matches!(script.scheme(), "http" | "https") {
+            return Err(WebViewError::Script(
+                "Service Worker script URL must use http or https".into(),
+            ));
+        }
+        if script.origin() != document.origin() {
+            return Err(WebViewError::Script(
+                "Service Worker script URL must be same-origin".into(),
+            ));
+        }
+        if script.fragment().is_some() {
+            return Err(WebViewError::Script(
+                "Service Worker script URL must not contain a fragment".into(),
+            ));
+        }
+        script.set_fragment(None);
+
+        let scope = match scope {
+            Some(value) => document
+                .join(value)
+                .map_err(|error| WebViewError::Script(format!("invalid Service Worker scope: {error}")))?,
+            None => script
+                .join("./")
+                .map_err(|error| WebViewError::Script(format!("invalid default Service Worker scope: {error}")))?,
+        };
+        if !matches!(scope.scheme(), "http" | "https") || scope.origin() != document.origin() {
+            return Err(WebViewError::Script(
+                "Service Worker scope must be same-origin http(s)".into(),
+            ));
+        }
+        if scope.fragment().is_some() {
+            return Err(WebViewError::Script(
+                "Service Worker scope must not contain a fragment".into(),
+            ));
+        }
+
+        Ok((script, scope, document.origin().ascii_serialization()))
     }
 
     /// 处理 JS 端 WebAssembly 桥接请求。
