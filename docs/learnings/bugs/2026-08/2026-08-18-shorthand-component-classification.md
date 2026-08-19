@@ -195,6 +195,8 @@ Margins exposed the same physical/logical alias shape with a different property 
 
 Border-width exposed the alias-is-legitimate variant: `thin|medium|thick` are invalid for many length consumers but valid for `<line-width>`, so the consumer validator must distinguish property-owned aliases from shared-parser drift. Validate both physical border widths and logical border width aliases before mutating the mapped side.
 
+Gap exposed the legacy-field variant: even when a shorthand expands to validated longhands, any retained direct field for the shorthand must enforce the same consumer grammar. Keep `gap`, `row-gap`, and `column-gap` on one non-negative gap validator so direct apply cannot accept broader shared-parser values or reject valid `normal`.
+
 ## Root Cause
 
 The shorthand layer used heuristic component classifiers and treated unrecognized tokens as absent optional components. That is wrong for CSS shorthands such as `border`, where every token must match one of the allowed component grammars. A shared parser can also be broader than the property grammar that consumes it: general length parsing may accept `auto`, intrinsic sizing keywords, or percentages that `border-width` must reject.

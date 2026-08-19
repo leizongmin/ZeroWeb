@@ -407,6 +407,23 @@ fn test_apply_property_gap() {
     let mut style = ComputedStyle::default();
     assert!(apply_property_value(&mut style, "gap", "10px"));
     assert_eq!(style.gap, LengthValue::Px(10.0));
+    assert!(apply_property_value(&mut style, "gap", "normal"));
+    assert_eq!(style.gap, LengthValue::Px(0.0));
+    assert!(apply_property_value(&mut style, "gap", "25%"));
+    assert_eq!(style.gap, LengthValue::Percentage(25.0));
+    let previous = style.gap.clone();
+    for value in [
+        "auto",
+        "thin",
+        "-1px",
+        "min-content",
+        "fit-content(10px)",
+        "infpx",
+        "NaNpx",
+    ] {
+        assert!(!apply_property_value(&mut style, "gap", value));
+        assert_eq!(style.gap, previous, "{} should not overwrite", value);
+    }
 }
 
 #[test]

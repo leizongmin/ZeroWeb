@@ -905,9 +905,15 @@ pub fn apply_property_value_with_quirks(
             // gap 简写仅设置 style.gap（legacy 字段）
             // column_gap / row_gap 由各自的 longhand handler 设置，
             // 通过 shorthand expansion 生成的 "row-gap" / "column-gap" 声明。
-            if let Some(v) = parse_length_fn(value) {
-                style.gap = v;
+            if value.eq_ignore_ascii_case("normal") {
+                style.gap = LengthValue::Px(0.0);
                 return true;
+            }
+            if let Some(v) = parse_length_fn(value) {
+                if gap_length_is_valid(value, &v) {
+                    style.gap = v;
+                    return true;
+                }
             }
         }
         "column-gap" => {
