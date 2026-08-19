@@ -21,12 +21,12 @@
 #
 # 用法：scripts/target-disk-guard.sh [target_dir]   （默认 <repo>/target）
 # 环境变量：
-#   ZW_TARGET_DISK_LIMIT_GB  阈值（GB，默认 100；CI/磁盘小的机器可调小）
+#   ZW_TARGET_DISK_LIMIT_GB  阈值（GB，默认 50；CI/磁盘小的机器可调小）
 #   ZW_TARGET_DISK_GUARD=0   跳过守卫（紧急放行用，不推荐）
 # 退出码：0 放行（含清理后放行）/ 1 阈值配置非法
 set -euo pipefail
 
-LIMIT_GB=${ZW_TARGET_DISK_LIMIT_GB:-100}
+LIMIT_GB=${ZW_TARGET_DISK_LIMIT_GB:-50}
 if ! [[ "$LIMIT_GB" =~ ^[1-9][0-9]*$ ]]; then
     echo "target-disk-guard: invalid ZW_TARGET_DISK_LIMIT_GB=$LIMIT_GB"
     exit 1
