@@ -2,7 +2,7 @@
 
 **版本**: v1.0
 **日期**: 2026-08-17
-**状态**: Done（2026-08-19）
+**状态**: ✅ Completed（2026-08-19——DC-1~4 全部满足）
 **执行模式**: 轻量修复优先（永不停）；遇需用户决策项或深结构方向 → 记入「待用户决策」清单 → 跳过 → 继续其他轻量修复
 **父目标**: `docs/goal/zero-web.md`（Done Criteria §3「Storage：IndexedDB 基础」+ Tier 2「IndexedDB」）
 
@@ -128,7 +128,7 @@ objectStore/索引/cursor/请求事件模型）接到 zero-storage 真实引擎�
   `storage-indexeddb/evidence/2026-08-19-final-coverage.{md,json}`
 - [x] 每项修复的 driving WPT 经固定 fetch 清单、runner 清单与
   `imported-testharness.txt` 三方资产化（168 / 168 / 168）；`make import-wpt` 仅适用于 reftest
-- [x] 通过率报告持久化到 `docs/goal/storage-indexeddb/evidence/`，历史可追溯
+- [x] 通过率报告持久化到 `docs/goal/archive/storage-indexeddb/evidence/`，历史可追溯
 
 ### DC-2: 页面走真实引擎
 
@@ -220,9 +220,9 @@ objectStore/索引/cursor/请求事件模型）接到 zero-storage 真实引擎�
 
 - **入口文档**（本文件）：定义 Mission、Done Criteria、执行协议和文档治理规则。**修改条件**：
   仅在目标本身发生实质性变化时修改。**禁止行为**：每轮执行不重写本文件。
-- **运行时控制平面** `docs/goal/storage-indexeddb/master.md`：当前真实状态的唯一控制面板。
+- **运行时控制平面** `docs/goal/archive/storage-indexeddb/master.md`：当前真实状态的唯一控制面板。
   治理规则：持续演进、不允许无限增长（过时内容压缩或归档）、各章节必须自洽。
-- **归档区域** `docs/goal/storage-indexeddb/archive/`：存储已完成里程碑的详细过程与历史证据，
+- **归档区域** `docs/goal/archive/storage-indexeddb/archive/`：存储已完成里程碑的详细过程与历史证据，
   只追加不修改。
-- **证据区域** `docs/goal/storage-indexeddb/evidence/`：存储通过率报告、失败分析等验证证据，
+- **证据区域** `docs/goal/archive/storage-indexeddb/evidence/`：存储通过率报告、失败分析等验证证据，
   持续追加。

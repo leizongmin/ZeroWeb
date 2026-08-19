@@ -3,7 +3,7 @@
 **入口文档**: [../storage-indexeddb.md](../storage-indexeddb.md)
 **创建日期**: 2026-08-17（goal 拆分 bootstrap）
 **最后更新**: 2026-08-19（Done Criteria completion audit）
-**状态**: Done
+**状态**: ✅ Completed（2026-08-19——DC-1~4 全部满足）
 
 ---
 

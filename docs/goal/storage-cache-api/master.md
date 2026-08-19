@@ -13,7 +13,7 @@
 `cache-storage`（window 面）真实用例驱动。
 
 **与兄弟 goal 的边界**：
-- storage-indexeddb — IDB 归其管
+- [storage-indexeddb](../archive/storage-indexeddb.md)（已归档）— IDB 归其管
 - service-workers — SW 环境的 cache 用例（cache-storage/sw 类）归其验收；本目标只收
   window 环境可执行面
 - js-dom（DOM API 反射面）— 仅 host 回调注册段可能共享，run-rules §9 碰头管理

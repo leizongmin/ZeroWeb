@@ -14,7 +14,8 @@
 > Done Criteria、执行协议和文档治理规则，供后续 `rally run` 会话作为稳定输入。日常进展、
 > evidence、active milestone 更新写入 `master.md`。
 >
-> **▶ 拆分动机（2026-08-17 用户决策）**：与 storage-indexeddb 同批拆出（存储方向三拆之三）。
+> **▶ 拆分动机（2026-08-17 用户决策）**：与
+> [已归档 IndexedDB 目标](archive/storage-indexeddb.md) 同批拆出（存储方向三拆之三）。
 > 理由：① SW 是 PWA/离线能力的中枢——Top 真实网站 SW 注册脚本普遍存在，目前全靠 stub 糊弄；
 > ② Rust 侧已有 ServiceWorkerRegistry 状态机（service_worker.rs 818 行）+ 页面侧注册 API 面
 > （R3318），底座非零；③ 与 js-dom 流的碰撞面明确可控（fetch 拦截段等 js-dom S6 land 后再开，
@@ -88,7 +89,7 @@ cache-storage 用例归本目标（兄弟目标只收 window 面）。
 - **多客户端语义**（多 iframe/window 的 SW client 枚举与逐 client 控制）— headless 单页面
   环境外，记 skip list
 - **Cache API 自身语义** — 兄弟目标 `storage-cache-api.md`（本目标只消费 `caches` 接口）
-- **IndexedDB** — 兄弟目标 `storage-indexeddb.md`
+- **IndexedDB** — 兄弟目标已完成，见 [归档入口](archive/storage-indexeddb.md)
 
 ### 依赖约束
 

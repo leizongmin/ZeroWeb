@@ -424,7 +424,8 @@ zero-web/
 - [ ] `<canvas>` 元素与 DOM/渲染管线完整集成
 - [ ] Web Workers 基础支持（Dedicated Worker：`new Worker()`、`postMessage`、`onmessage`）
 - [ ] `storage` crate 实现 localStorage / sessionStorage（完整的 Storage API）
-- [ ] IndexedDB 基础实现（打开数据库、创建 object store、基础 CRUD 事务）
+- [x] IndexedDB 基础实现（打开数据库、创建 object store、基础 CRUD 事务）——
+  [专项已完成并归档](archive/storage-indexeddb.md)（WPT 168/210 文件，1073/1073 Pass）
 - [ ] CSSOM 基础（JS 读写元素样式、`getComputedStyle()`、操作 stylesheet）
 - [ ] **单元测试**：Canvas 2D 每类 API 独立测试集（路径/矩形/文本/图像/变换/合成/像素操作）、Web Workers 生命周期与消息传递、localStorage/sessionStorage CRUD 与边界、IndexedDB 事务完整性（≥60 个测试用例，canvas crate 覆盖率 ≥ 70%）
 - [ ] **基准测试**：1000 矩形绘制、文本渲染、getImageData/putImageData、Worker postMessage 吞吐量、localStorage 批量读写、IndexedDB 事务吞吐量（≥6 个基准）

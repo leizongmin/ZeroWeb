@@ -14,7 +14,8 @@
 > 边界、Done Criteria、执行协议和文档治理规则，供后续 `rally run` 会话作为稳定输入。日常
 > 进展、evidence、active milestone 更新写入 `master.md`。
 >
-> **▶ 拆分动机（2026-08-17 用户决策）**：与 storage-indexeddb 同批拆出（存储方向三拆之二）。
+> **▶ 拆分动机（2026-08-17 用户决策）**：与
+> [已归档 IndexedDB 目标](archive/storage-indexeddb.md) 同批拆出（存储方向三拆之二）。
 > 理由：① **页面侧完全空白**（indexedDB 至少有 in-memory 近似，`caches` 连全局对象都没有），
 > 是存储三件套里缺口最彻底的；② Rust 底座已有（cache_api.rs 976 行：Cache/CacheStorage/
 > match/matchAll/add/addAll/put/delete/keys 全 API 面）；③ 上游 WPT `cache-storage` 目录
@@ -81,7 +82,7 @@ form-validation——不允许手写 inline 用例替代或充数）。通过率
 ### 不在范围内（明确排除）
 
 - **Service Worker 环境的 cache 用例**（`cache-storage/sw` 类）— 兄弟目标 `service-workers.md`
-- **IndexedDB** — 兄弟目标 `storage-indexeddb.md`
+- **IndexedDB** — 兄弟目标已完成，见 [归档入口](archive/storage-indexeddb.md)
 - **HTTP disk cache（net crate 的 disk_cache.rs）** — 这是浏览器内部 HTTP 缓存，与页面
   Cache API 是两个东西；不碰
 - **Storage quota UI / `navigator.storage.estimate` 精确数值** — shell 域，仅 stub 反射可保留

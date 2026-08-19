@@ -13,7 +13,8 @@
 源码**；M0 期间可自主推进 WPT 可执行面分析与 RFC 起草。
 
 **与兄弟 goal 的边界**：
-- storage-indexeddb / storage-cache-api — IDB 与 Cache API 自身语义归其管；本目标只消费
+- [storage-indexeddb](../archive/storage-indexeddb.md)（已归档）/ storage-cache-api —
+  IDB 与 Cache API 自身语义归其管；本目标只消费
   `indexedDB`/`caches` 接口做 SW 模式集成验收
 - js-dom — fetch 拦截段**等其 fetch 改造（L2/S6）land 后再开**；生命周期段碰 part02.js
   R3318 段前先 `git log` 核对（run-rules §9）
