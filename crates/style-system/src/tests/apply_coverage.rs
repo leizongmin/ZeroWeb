@@ -283,6 +283,17 @@ fn test_apply_border_radius() {
         let (ok, _) = apply(prop, "8px");
         assert!(ok, "{} should apply", prop);
     }
+
+    let mut style = ComputedStyle::default();
+    assert!(apply_property_value(&mut style, "border-top-left-radius", "8px"));
+    let previous = style.border_top_left_radius.clone();
+    assert!(!apply_property_value(&mut style, "border-top-left-radius", "-1px"));
+    assert_eq!(style.border_top_left_radius, previous);
+
+    assert!(apply_property_value(&mut style, "border-top-right-radius", "9px"));
+    let previous = style.border_top_right_radius.clone();
+    assert!(!apply_property_value(&mut style, "border-top-right-radius", "thin"));
+    assert_eq!(style.border_top_right_radius, previous);
 }
 
 // === Outline 属性 ===

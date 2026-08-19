@@ -991,6 +991,12 @@ fn is_border_width_rect_value(value: &str) -> bool {
 }
 
 fn is_border_radius_rect_value(value: &str) -> bool {
+    if matches!(
+        value.trim().to_ascii_lowercase().as_str(),
+        "thin" | "medium" | "thick" | "auto" | "min-content" | "max-content" | "fit-content"
+    ) {
+        return false;
+    }
     match zero_css_parser::values::parse_length(value) {
         Some(zero_css_parser::values::LengthValue::Px(v))
         | Some(zero_css_parser::values::LengthValue::Em(v))
@@ -1007,7 +1013,7 @@ fn is_border_radius_rect_value(value: &str) -> bool {
         | Some(zero_css_parser::values::LengthValue::Rch(v))
         | Some(zero_css_parser::values::LengthValue::Ic(v))
         | Some(zero_css_parser::values::LengthValue::Ric(v))
-        | Some(zero_css_parser::values::LengthValue::Percentage(v)) => v >= 0.0,
+        | Some(zero_css_parser::values::LengthValue::Percentage(v)) => v.is_finite() && v >= 0.0,
         Some(zero_css_parser::values::LengthValue::Calc(_)) => true,
         _ => zero_css_parser::values::parse_math_function(value).is_some(),
     }

@@ -279,6 +279,8 @@ fn test_border_radius_2_values() {
 fn test_border_radius_rejects_invalid_tokens() {
     assert!(expand_one("border-radius", "red", false, (0, 0, 1)).is_empty());
     assert!(expand_one("border-radius", "-1px", false, (0, 0, 1)).is_empty());
+    assert!(expand_one("border-radius", "thin", false, (0, 0, 1)).is_empty());
+    assert!(expand_one("border-radius", "auto", false, (0, 0, 1)).is_empty());
     let result = expand_one("border-radius", "10% 2px", false, (0, 0, 1));
     assert_eq!(result.len(), 4);
     assert_eq!(result[0].1, "10%");

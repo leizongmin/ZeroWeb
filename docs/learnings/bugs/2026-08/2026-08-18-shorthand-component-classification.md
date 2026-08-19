@@ -177,6 +177,8 @@ Width/height logical sizing exposed the alias-branch drift variant: fixing the p
 
 Padding exposed the logical-shorthand parity variant: a shorthand can reject invalid values while both physical longhands and logical longhands still bypass that validator through direct apply arms. For non-negative box properties, route every physical and logical write through the same consumer grammar filter before mutating computed fields.
 
+Border-radius exposed the shared-alias variant inside a local validator: even a shorthand-specific validator can remain too broad if it accepts any `LengthValue` produced by the shared parser. Reject aliases that belong to another grammar, such as border-width `thin`/`medium`/`thick`, before accepting radius length-percentage values.
+
 ## Root Cause
 
 The shorthand layer used heuristic component classifiers and treated unrecognized tokens as absent optional components. That is wrong for CSS shorthands such as `border`, where every token must match one of the allowed component grammars. A shared parser can also be broader than the property grammar that consumes it: general length parsing may accept `auto`, intrinsic sizing keywords, or percentages that `border-width` must reject.

@@ -428,24 +428,36 @@ pub fn apply_property_value_with_quirks(
         }
         "border-top-left-radius" => {
             if let Some(v) = parse_length_fn(value) {
+                if !border_radius_length_is_valid(value, &v) {
+                    return false;
+                }
                 style.border_top_left_radius = v;
                 return true;
             }
         }
         "border-top-right-radius" => {
             if let Some(v) = parse_length_fn(value) {
+                if !border_radius_length_is_valid(value, &v) {
+                    return false;
+                }
                 style.border_top_right_radius = v;
                 return true;
             }
         }
         "border-bottom-right-radius" => {
             if let Some(v) = parse_length_fn(value) {
+                if !border_radius_length_is_valid(value, &v) {
+                    return false;
+                }
                 style.border_bottom_right_radius = v;
                 return true;
             }
         }
         "border-bottom-left-radius" => {
             if let Some(v) = parse_length_fn(value) {
+                if !border_radius_length_is_valid(value, &v) {
+                    return false;
+                }
                 style.border_bottom_left_radius = v;
                 return true;
             }
@@ -1192,6 +1204,10 @@ pub(crate) fn padding_length_is_valid(raw: &str, value: &LengthValue) -> bool {
         LengthValue::Calc(_) => true,
         _ => false,
     }
+}
+
+fn border_radius_length_is_valid(raw: &str, value: &LengthValue) -> bool {
+    padding_length_is_valid(raw, value)
 }
 
 /// 解析 `color-scheme` 描述符为「是否暗 used-scheme」标志（CSS Color Adjust L1 §2.3）。
