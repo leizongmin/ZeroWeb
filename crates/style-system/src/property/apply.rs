@@ -343,10 +343,7 @@ pub fn apply_property_value_with_quirks(
         }
         "border-top-width" => {
             if let Some(v) = parse_length_fn(value) {
-                // CSS 规范：border-width 不允许负值，负值视为无效
-                if let LengthValue::Px(px) = v
-                    && px < 0.0
-                {
+                if !border_width_length_is_valid(value, &v) {
                     return false;
                 }
                 style.border_top_width = v;
@@ -355,9 +352,7 @@ pub fn apply_property_value_with_quirks(
         }
         "border-right-width" => {
             if let Some(v) = parse_length_fn(value) {
-                if let LengthValue::Px(px) = v
-                    && px < 0.0
-                {
+                if !border_width_length_is_valid(value, &v) {
                     return false;
                 }
                 style.border_right_width = v;
@@ -366,9 +361,7 @@ pub fn apply_property_value_with_quirks(
         }
         "border-bottom-width" => {
             if let Some(v) = parse_length_fn(value) {
-                if let LengthValue::Px(px) = v
-                    && px < 0.0
-                {
+                if !border_width_length_is_valid(value, &v) {
                     return false;
                 }
                 style.border_bottom_width = v;
@@ -377,9 +370,7 @@ pub fn apply_property_value_with_quirks(
         }
         "border-left-width" => {
             if let Some(v) = parse_length_fn(value) {
-                if let LengthValue::Px(px) = v
-                    && px < 0.0
-                {
+                if !border_width_length_is_valid(value, &v) {
                     return false;
                 }
                 style.border_left_width = v;
@@ -1236,6 +1227,33 @@ pub(crate) fn padding_length_is_valid(raw: &str, value: &LengthValue) -> bool {
 
 fn border_radius_length_is_valid(raw: &str, value: &LengthValue) -> bool {
     padding_length_is_valid(raw, value)
+}
+
+pub(crate) fn border_width_length_is_valid(raw: &str, value: &LengthValue) -> bool {
+    let raw = raw.trim().to_ascii_lowercase();
+    match raw.as_str() {
+        "thin" | "medium" | "thick" => true,
+        "auto" | "min-content" | "max-content" | "fit-content" => false,
+        _ => match value {
+            LengthValue::Px(v)
+            | LengthValue::Em(v)
+            | LengthValue::Ex(v)
+            | LengthValue::Rex(v)
+            | LengthValue::Cap(v)
+            | LengthValue::Rcap(v)
+            | LengthValue::Rem(v)
+            | LengthValue::Vh(v)
+            | LengthValue::Vw(v)
+            | LengthValue::Vmin(v)
+            | LengthValue::Vmax(v)
+            | LengthValue::Ch(v)
+            | LengthValue::Rch(v)
+            | LengthValue::Ic(v)
+            | LengthValue::Ric(v) => v.is_finite() && *v >= 0.0,
+            LengthValue::Calc(_) => true,
+            _ => false,
+        },
+    }
 }
 
 fn letter_spacing_length_is_valid(raw: &str, value: &LengthValue) -> bool {

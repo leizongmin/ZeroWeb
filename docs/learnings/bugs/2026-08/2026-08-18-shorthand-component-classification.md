@@ -193,6 +193,8 @@ Positioned offsets exposed the physical/logical alias variant: fixing `top/right
 
 Margins exposed the same physical/logical alias shape with a different property owner: the grammar matches `auto | <length-percentage>`, but the validator should still be named for margin so later changes do not accidentally couple box spacing to positioned-offset semantics. Reuse the invariant, keep the public helper semantically scoped, and validate logical aliases before writing the mapped physical side.
 
+Border-width exposed the alias-is-legitimate variant: `thin|medium|thick` are invalid for many length consumers but valid for `<line-width>`, so the consumer validator must distinguish property-owned aliases from shared-parser drift. Validate both physical border widths and logical border width aliases before mutating the mapped side.
+
 ## Root Cause
 
 The shorthand layer used heuristic component classifiers and treated unrecognized tokens as absent optional components. That is wrong for CSS shorthands such as `border`, where every token must match one of the allowed component grammars. A shared parser can also be broader than the property grammar that consumes it: general length parsing may accept `auto`, intrinsic sizing keywords, or percentages that `border-width` must reject.

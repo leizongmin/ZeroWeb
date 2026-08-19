@@ -480,6 +480,25 @@ fn test_apply_property_multiple_different_properties() {
     assert!(apply_property_value(&mut style, "border-left-width", "4px"));
     assert_eq!(style.border_top_width, LengthValue::Px(1.0));
     assert_eq!(style.border_left_width, LengthValue::Px(4.0));
+    assert!(apply_property_value(&mut style, "border-top-width", "thin"));
+    assert_eq!(style.border_top_width, LengthValue::Px(1.0));
+    let previous_left_border = style.border_left_width.clone();
+    for value in [
+        "10%",
+        "auto",
+        "-1px",
+        "min-content",
+        "fit-content(10px)",
+        "infpx",
+        "NaNpx",
+    ] {
+        assert!(!apply_property_value(&mut style, "border-left-width", value));
+        assert_eq!(
+            style.border_left_width, previous_left_border,
+            "{} should not overwrite",
+            value
+        );
+    }
 
     // 圆角各角
     assert!(apply_property_value(&mut style, "border-top-left-radius", "8px"));
@@ -1115,6 +1134,19 @@ fn test_border_logical_block_start_vertical_rl() {
     assert!(apply_property_value(&mut style, "writing-mode", "vertical-rl"));
     assert!(apply_property_value(&mut style, "border-block-start-width", "5px"));
     assert_eq!(style.border_right_width, LengthValue::Px(5.0));
+    let previous = style.border_right_width.clone();
+    for value in [
+        "10%",
+        "auto",
+        "-1px",
+        "min-content",
+        "fit-content(10px)",
+        "infpx",
+        "NaNpx",
+    ] {
+        assert!(!apply_property_value(&mut style, "border-block-start-width", value));
+        assert_eq!(style.border_right_width, previous, "{} should not overwrite", value);
+    }
 }
 
 #[test]

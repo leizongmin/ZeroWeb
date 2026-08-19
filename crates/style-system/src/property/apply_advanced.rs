@@ -3,7 +3,8 @@
 //! 将 ComputedStyle 的高级属性匹配从 apply.rs 拆分出来，保持文件在 2000 行以内。
 
 use super::apply::{
-    margin_length_is_valid, padding_length_is_valid, parse_length_or_math, positioned_offset_length_is_valid,
+    border_width_length_is_valid, margin_length_is_valid, padding_length_is_valid, parse_length_or_math,
+    positioned_offset_length_is_valid,
 };
 use super::computed_style::ComputedStyle;
 use super::parse::*;
@@ -312,9 +313,7 @@ pub fn apply_advanced_property_value(style: &mut ComputedStyle, property: &str, 
         | "border-block-start-width"
         | "border-block-end-width" => {
             if let Some(v) = parse_length_or_math(value) {
-                if let LengthValue::Px(px) = v
-                    && px < 0.0
-                {
+                if !border_width_length_is_valid(value, &v) {
                     return false;
                 }
                 let side = logical_border_physical_side(property, &style.writing_mode);
