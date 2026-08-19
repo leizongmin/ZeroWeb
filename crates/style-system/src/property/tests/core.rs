@@ -1881,6 +1881,9 @@ fn test_scroll_padding_applied() {
     assert!(apply_property_value(&mut style, "scroll-padding-top", "10px"));
     assert_eq!(style.scroll_padding_top, ScrollPadding::Length(10.0));
 
+    assert!(apply_property_value(&mut style, "scroll-padding-top", "25%"));
+    assert_eq!(style.scroll_padding_top, ScrollPadding::Length(0.0));
+
     assert!(apply_property_value(&mut style, "scroll-padding-right", "auto"));
     assert_eq!(style.scroll_padding_right, ScrollPadding::Auto);
 
@@ -1889,6 +1892,22 @@ fn test_scroll_padding_applied() {
 
     assert!(apply_property_value(&mut style, "scroll-padding-left", "0px"));
     assert_eq!(style.scroll_padding_left, ScrollPadding::Length(0.0));
+
+    let previous = style.scroll_padding_bottom.clone();
+    for value in [
+        "-1px",
+        "-5%",
+        "thin",
+        "min-content",
+        "max-content",
+        "fit-content",
+        "fit-content(10px)",
+        "infpx",
+        "NaNpx",
+    ] {
+        assert!(!apply_property_value(&mut style, "scroll-padding-bottom", value));
+        assert_eq!(style.scroll_padding_bottom, previous, "{} should not overwrite", value);
+    }
 }
 
 #[test]

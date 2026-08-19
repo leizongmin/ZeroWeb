@@ -568,13 +568,45 @@ pub fn parse_scroll_padding(value: &str) -> Option<ScrollPadding> {
     if v.eq_ignore_ascii_case("auto") {
         return Some(ScrollPadding::Auto);
     }
-    values::parse_length(v).map(|l| {
+    values::parse_length(v).and_then(|l| {
+        if !scroll_padding_length_is_valid(v, &l) {
+            return None;
+        }
         let px = match l {
             LengthValue::Px(n) => n as f32,
             other => resolve_length_to_px(other),
         };
-        ScrollPadding::Length(px)
+        Some(ScrollPadding::Length(px))
     })
+}
+
+fn scroll_padding_length_is_valid(raw: &str, value: &LengthValue) -> bool {
+    if matches!(
+        raw.trim().to_ascii_lowercase().as_str(),
+        "thin" | "medium" | "thick" | "min-content" | "max-content" | "fit-content"
+    ) {
+        return false;
+    }
+    match value {
+        LengthValue::Px(v)
+        | LengthValue::Em(v)
+        | LengthValue::Ex(v)
+        | LengthValue::Rex(v)
+        | LengthValue::Cap(v)
+        | LengthValue::Rcap(v)
+        | LengthValue::Rem(v)
+        | LengthValue::Vh(v)
+        | LengthValue::Vw(v)
+        | LengthValue::Vmin(v)
+        | LengthValue::Vmax(v)
+        | LengthValue::Ch(v)
+        | LengthValue::Rch(v)
+        | LengthValue::Ic(v)
+        | LengthValue::Ric(v)
+        | LengthValue::Percentage(v) => v.is_finite() && *v >= 0.0,
+        LengthValue::Calc(_) => true,
+        _ => false,
+    }
 }
 
 /// 将 LengthValue 转换为 f32 px（简单近似，非相对单位返回 0.0）。

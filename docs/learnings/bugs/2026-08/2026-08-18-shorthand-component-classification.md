@@ -203,6 +203,8 @@ Font-size exposed the shorthand/direct parity variant: even after a shorthand ha
 
 Scroll-margin exposed the `<length>`-only variant: properties stored as px can still receive broader shared `LengthValue` inputs before conversion. Validate the source value before `resolve_length_to_px`, especially to reject percentages, aliases, sizing keywords, and non-finite values while preserving valid negative lengths.
 
+Scroll-padding exposed the px-storage length-percentage variant: a property may store resolved px while its grammar is still `auto | <length-percentage [0,∞]>`. Validate the parsed source value before conversion so percentages remain valid, negative values fail, and shared-parser aliases or non-finite values cannot overwrite the old computed value.
+
 ## Root Cause
 
 The shorthand layer used heuristic component classifiers and treated unrecognized tokens as absent optional components. That is wrong for CSS shorthands such as `border`, where every token must match one of the allowed component grammars. A shared parser can also be broader than the property grammar that consumes it: general length parsing may accept `auto`, intrinsic sizing keywords, or percentages that `border-width` must reject.

@@ -1126,9 +1126,23 @@ fn test_parse_scroll_snap_stop_variants() {
 fn test_parse_scroll_padding_variants() {
     assert!(matches!(parse_scroll_padding("auto"), Some(ScrollPadding::Auto)));
     assert!(matches!(parse_scroll_padding("10px"), Some(ScrollPadding::Length(_))));
+    assert!(matches!(parse_scroll_padding("25%"), Some(ScrollPadding::Length(_))));
     // 非 Px 单位 → resolve_length_to_px 返回 0.0
     assert!(parse_scroll_padding("2em").is_some());
     assert!(parse_scroll_padding("invalid").is_none());
+    for value in [
+        "-1px",
+        "-5%",
+        "thin",
+        "min-content",
+        "max-content",
+        "fit-content",
+        "fit-content(10px)",
+        "infpx",
+        "NaNpx",
+    ] {
+        assert!(parse_scroll_padding(value).is_none(), "{value} should be rejected");
+    }
 }
 
 #[test]
