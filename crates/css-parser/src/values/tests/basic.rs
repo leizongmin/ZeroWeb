@@ -1920,6 +1920,11 @@ fn test_parse_lab_lch_oklab_oklch() {
     assert_eq!(g("oklch(150% 0.17686 142.495)"), g("oklch(100% 0.17686 142.495)"));
     // 非 3 分量 → None
     assert!(g("lab(50% 40)").is_none());
+    assert!(g("lab(50%,,40,30)").is_none());
+    assert!(g("lab(50% 40 30 20)").is_none());
+    assert!(g("lch(50% 40 120 20)").is_none());
+    assert!(g("oklab(0.5 0.1 0.1 0.2)").is_none());
+    assert!(g("oklch(50% 0.1 120 20)").is_none());
 }
 
 #[test]

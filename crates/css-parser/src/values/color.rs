@@ -395,10 +395,18 @@ fn split_color_components(inner: &str) -> Option<(Vec<&str>, Option<f64>)> {
     } else {
         (inner.trim(), None)
     };
-    let comps: Vec<&str> = main
-        .split(|c: char| c.is_whitespace() || c == ',')
-        .filter(|s| !s.is_empty())
-        .collect();
+    let mut comps = Vec::new();
+    if main.contains(',') {
+        for item in main.split(',') {
+            let item = item.trim();
+            if item.is_empty() {
+                return None;
+            }
+            comps.extend(item.split_whitespace());
+        }
+    } else {
+        comps.extend(main.split_whitespace());
+    }
     let alpha = match slash_alpha {
         Some(ap) => Some(parse_alpha_value(ap)?),
         None => Some(1.0),
@@ -429,7 +437,7 @@ fn alpha_to_u8(a: Option<f64>) -> u8 {
 fn parse_lab(value: &str) -> Option<ColorValue> {
     let inner = inner_of_parens(value)?;
     let (comps, alpha) = split_color_components(&inner)?;
-    if comps.len() < 3 {
+    if comps.len() != 3 {
         return None;
     }
     let l = parse_scaled_component(comps[0], 100.0)?.clamp(0.0, 100.0);
@@ -443,7 +451,7 @@ fn parse_lab(value: &str) -> Option<ColorValue> {
 fn parse_lch(value: &str) -> Option<ColorValue> {
     let inner = inner_of_parens(value)?;
     let (comps, alpha) = split_color_components(&inner)?;
-    if comps.len() < 3 {
+    if comps.len() != 3 {
         return None;
     }
     let l = parse_scaled_component(comps[0], 100.0)?.clamp(0.0, 100.0);
@@ -457,7 +465,7 @@ fn parse_lch(value: &str) -> Option<ColorValue> {
 fn parse_oklab(value: &str) -> Option<ColorValue> {
     let inner = inner_of_parens(value)?;
     let (comps, alpha) = split_color_components(&inner)?;
-    if comps.len() < 3 {
+    if comps.len() != 3 {
         return None;
     }
     let l = parse_scaled_component(comps[0], 1.0)?.clamp(0.0, 1.0);
@@ -471,7 +479,7 @@ fn parse_oklab(value: &str) -> Option<ColorValue> {
 fn parse_oklch(value: &str) -> Option<ColorValue> {
     let inner = inner_of_parens(value)?;
     let (comps, alpha) = split_color_components(&inner)?;
-    if comps.len() < 3 {
+    if comps.len() != 3 {
         return None;
     }
     let l = parse_scaled_component(comps[0], 1.0)?.clamp(0.0, 1.0);

@@ -109,6 +109,8 @@ CSS gradients exposed the invalid-config-defaulting variant: once a configuratio
 
 Relative color syntax exposed the comma-channel variant: channel lists inside CSS functions are still grammar lists. A trailing or repeated comma in `rgb(from ... g, r, b,)` or `g,,b` must fail instead of filtering out empty segments and accepting the remaining three channels.
 
+Lab-like color functions exposed the component-cardinality variant: `lab()` / `lch()` / `oklab()` / `oklch()` have exactly three main components plus optional slash alpha. Parsers must reject empty comma segments and extra main components instead of accepting the first three values and ignoring the rest.
+
 ## Root Cause
 
 The shorthand layer used heuristic component classifiers and treated unrecognized tokens as absent optional components. That is wrong for CSS shorthands such as `border`, where every token must match one of the allowed component grammars. A shared parser can also be broader than the property grammar that consumes it: general length parsing may accept `auto`, intrinsic sizing keywords, or percentages that `border-width` must reject.
