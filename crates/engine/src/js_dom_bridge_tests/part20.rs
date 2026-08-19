@@ -1402,3 +1402,80 @@ fn test_clone_node_all_node_kinds_r128() {
         "cloneNode 全节点形态：text/comment/PI/fragment/Attr/doctype/doc deep/unknown/NS prefix/自定义原型不传染"
     );
 }
+
+// js-dom M4 R129：CharacterData 方法族 spec 校验 + WebIDL 转换语义（WPT
+// dom/nodes/CharacterData-*.html 44F 簇驱动）。断言组：
+// ① appendChild/insertBefore/replaceChild on Text/Comment → HierarchyRequestError
+// ② appendData 缺参 TypeError；null/undefined 显式 String 转换
+// ③ substringData/insertData/deleteData/replaceData offset 越界 IndexSizeError
+// ④ count 负值 unsigned long 回绕 + clamp 余量（非抛）
+// ⑤ data = null → ''（LegacyNullToEmptyString）；= undefined → 'undefined'
+// ⑥ text.remove() 真移除（父 childNodes 剔除 + parentNode null）
+// ⑦ 'remove' in textNode 方法存在性
+#[test]
+fn test_character_data_method_family_r129() {
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let mut sandbox = V8Sandbox::with_config(zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    })
+    .unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><div id=\"host\"><p id=\"a\">A</p></div></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry);
+
+    let out = sandbox
+        .execute(
+            "var parts = [];\
+             function threw(fn) { try { fn(); return 'none'; } catch (e) { return e.name; } }\
+             var t1 = document.createTextNode('test');\
+             var t2 = document.createTextNode('other');\
+             parts.push('nochild:' + threw(function () { t1.appendChild(t2); })\
+               + ':' + threw(function () { t1.insertBefore(t2, null); })\
+               + ':' + threw(function () { t1.replaceChild(t2, t1); }));\
+             var t3 = document.createTextNode('test');\
+             parts.push('appmissing:' + threw(function () { t3.appendData(); }));\
+             t3.appendData(null);\
+             var afterNull = t3.data;\
+             t3.appendData(undefined);\
+             parts.push('appnull:' + afterNull + ':appundef:' + t3.data);\
+             var t4 = document.createTextNode('test');\
+             parts.push('oob:' + threw(function () { t4.substringData(5, 0); })\
+               + ':' + threw(function () { t4.insertData(-1, 'x'); })\
+               + ':' + threw(function () { t4.deleteData(6, 1); })\
+               + ':' + threw(function () { t4.replaceData(-1, 1, 'y'); }));\
+             var t5 = document.createTextNode('test');\
+             parts.push('clamp-sub:' + t5.substringData(0, -1)\
+               + ':' + (function () { t5.deleteData(2, -1); return t5.data; })()\
+               + ':' + (function () { t5.replaceData(1, -1, 'yo'); return t5.data; })());\
+             var t6 = document.createTextNode('test');\
+             t6.data = null;\
+             var dn = t6.data;\
+             t6.data = undefined;\
+             parts.push('data-null:' + JSON.stringify(dn) + ':undef-here:' + t6.data);\
+             var parent = document.createElement('div');\
+             var t7 = document.createTextNode('mid');\
+             parent.appendChild(document.createComment('before'));\
+             parent.appendChild(t7);\
+             parent.appendChild(document.createComment('after'));\
+             t7.remove();\
+             parts.push('remove:' + (t7.parentNode === null)\
+               + ':kids:' + parent.childNodes.length\
+               + ':inop:' + ('remove' in t7 && 'appendData' in t7));\
+             parts.join('|');",
+        )
+        .unwrap()
+        .value;
+    assert_eq!(
+        out,
+        "nochild:HierarchyRequestError:HierarchyRequestError:HierarchyRequestError|appmissing:TypeError|appnull:testnull:appundef:testnullundefined|oob:IndexSizeError:IndexSizeError:IndexSizeError:IndexSizeError|clamp-sub:test:te:tyo|data-null:\"\":undef-here:undefined|remove:true:kids:2:inop:true",
+        "CharacterData 方法族：叶子节点 HRE/缺参 TypeError/offset IndexSizeError/count 回绕 clamp/LegacyNullToEmptyString/remove 真移除/方法存在性"
+    );
+}

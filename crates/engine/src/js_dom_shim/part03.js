@@ -5812,6 +5812,10 @@
     }
     var proxy = new Proxy(_fvTarget, {
       has: function(_t, prop) {
+        // R129 注：本键在 handler 字面量中**后被 part05 的 has 键覆盖**（JS 对象字面量
+        // 重复键后者胜——拼接后同一 Proxy handler）——生效实现见 part05（expando +
+        // R129 方法白名单）。此分支仅 FV 属性命中（validity 等），实际由 target own
+        // key（_fvTarget 预置）覆盖，本函数体不参与运行。
         if (prop === 'validity' || prop === 'validationMessage' || prop === 'willValidate' ||
             prop === 'checkValidity' || prop === 'reportValidity' || prop === 'setCustomValidity') {
           return true;

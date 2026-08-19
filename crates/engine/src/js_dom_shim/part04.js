@@ -901,6 +901,19 @@
         var isComment = handle && _commentHandles[handle];
         var isText = handle && _textHandles[handle];
         var isPI = handle && _piHandles[handle];
+        // R129（js-dom M4）：CharacterData/PI 是叶子节点——mutation 族方法一律
+        // HierarchyRequestError（spec `dom-node-pre-insert`「parent 不是 Element/Document/
+        // DocumentFragment」步骤；WPT CharacterData-appendChild/insertBefore/replaceChild
+        // 全簇 18F——`Text.appendChild(Text)` 等须 throw，旧落到元素 appendChild 静默
+        // 执行或 no-op）。remove()/removeChild 校验不受影响（ChildNode 面合法）。
+        if ((isText || isComment || isPI)
+            && (prop === 'appendChild' || prop === 'insertBefore' || prop === 'replaceChild')) {
+          return function () {
+            throw _zwDomException(
+              'Nodes of type ' + ((isText && 3) || (isComment && 8) || 7) + ' cannot have children.',
+              'HierarchyRequestError');
+          };
+        }
         // createElementNS handle（js-dom M4 / R18）：大小写敏感 + 带 prefix/namespace。其
         // tagName/nodeName/prefix/localName 经 `_nsHandles` 原值读回，不经 `_realTag`（强制大写）。
         var isNs = handle && _nsHandles[handle];
@@ -1156,21 +1169,41 @@
         if ((isText || isComment) && prop === 'length') {
           return handle ? _zwTextDataGet(handle, function () { return __zw_get_text_handle(handle); }).length : 0;
         }
+        // R129（js-dom M4）：CharacterData 方法的 spec `dom-cdata-*` 校验族（WPT
+        // CharacterData-{appendData,deleteData,insertData,replaceData,substringData}）——
+        // ① WebIDL 必参缺失 → TypeError ② offset/count 越界（offset > length 或负 /
+        // count 负）→ IndexSizeError ③ data 参数经 String() 显式转换（null→'null'，
+        // undefined→'undefined'——旧 `s == null ? '' : s` 把两者都吞成空串）。
+        // https://dom.spec.whatwg.org/#dom-characterdata-appenddata 等
         if ((isText || isComment) && prop === 'appendData') {
           return function (s) {
+            if (arguments.length < 1) {
+              throw new globalThis.TypeError(
+                "Failed to execute 'appendData' on 'CharacterData': 1 argument required, but only 0 present.");
+            }
             if (!handle) return undefined;
-            var nv = _zwTextDataGet(handle, function () { return __zw_get_text_handle(handle); }) + String(s == null ? '' : s);
+            var nv = _zwTextDataGet(handle, function () { return __zw_get_text_handle(handle); }) + String(s);
             _zwTextDataSet(handle, nv, function () { __zw_set_text_handle(handle, nv); });
             return undefined;
           };
         }
         if ((isText || isComment) && prop === 'deleteData') {
           return function (offset, count) {
+            if (arguments.length < 2) {
+              throw new globalThis.TypeError(
+                "Failed to execute 'deleteData' on 'CharacterData': 2 arguments required, but only " + arguments.length + " present.");
+            }
             if (!handle) return undefined;
             var cur = _zwTextDataGet(handle, function () { return __zw_get_text_handle(handle); });
-            var o = offset | 0, c = count | 0;
-            if (o < 0) o = 0;
-            if (c < 0) c = 0;
+            var o = offset | 0;
+            if (o < 0 || o > cur.length) {
+              throw _zwDomException("Failed to execute 'deleteData' on 'CharacterData': The offset " + o + " is out of range.", 'IndexSizeError');
+            }
+            // R129：count 是 unsigned long（WebIDL 回绕：-1→2^32-1），spec 步骤「count >
+            // length-offset → count = length-offset」——负小值 wrap 后恒 clamp 到余量
+            //（WPT "small negative count" `deleteData(2,-1)` → 'te'，非抛）。
+            var c = count >>> 0;
+            if (c > cur.length - o) c = cur.length - o;
             var nv = cur.slice(0, o) + cur.slice(o + c);
             _zwTextDataSet(handle, nv, function () { __zw_set_text_handle(handle, nv); });
             return undefined;
@@ -1178,34 +1211,58 @@
         }
         if ((isText || isComment) && prop === 'insertData') {
           return function (offset, s) {
+            if (arguments.length < 2) {
+              throw new globalThis.TypeError(
+                "Failed to execute 'insertData' on 'CharacterData': 2 arguments required, but only " + arguments.length + " present.");
+            }
             if (!handle) return undefined;
             var cur = _zwTextDataGet(handle, function () { return __zw_get_text_handle(handle); });
             var o = offset | 0;
-            if (o < 0) o = 0;
-            var nv = cur.slice(0, o) + String(s == null ? '' : s) + cur.slice(o);
+            if (o < 0 || o > cur.length) {
+              throw _zwDomException("Failed to execute 'insertData' on 'CharacterData': The offset " + o + " is out of range.", 'IndexSizeError');
+            }
+            var nv = cur.slice(0, o) + String(s) + cur.slice(o);
             _zwTextDataSet(handle, nv, function () { __zw_set_text_handle(handle, nv); });
             return undefined;
           };
         }
         if ((isText || isComment) && prop === 'replaceData') {
           return function (offset, count, s) {
+            if (arguments.length < 3) {
+              throw new globalThis.TypeError(
+                "Failed to execute 'replaceData' on 'CharacterData': 3 arguments required, but only " + arguments.length + " present.");
+            }
             if (!handle) return undefined;
             var cur = _zwTextDataGet(handle, function () { return __zw_get_text_handle(handle); });
-            var o = offset | 0, c = count | 0;
-            if (o < 0) o = 0;
-            if (c < 0) c = 0;
-            var nv = cur.slice(0, o) + String(s == null ? '' : s) + cur.slice(o + c);
+            var o = offset | 0;
+            if (o < 0 || o > cur.length) {
+              throw _zwDomException("Failed to execute 'replaceData' on 'CharacterData': The offset " + o + " is out of range.", 'IndexSizeError');
+            }
+            // R129：count unsigned long 回绕 + clamp 余量（WPT "negative clamped count"
+            // `replaceData(2,-1,'yo')` → 'teyo'，非抛）。
+            var c = count >>> 0;
+            if (c > cur.length - o) c = cur.length - o;
+            var nv = cur.slice(0, o) + String(s) + cur.slice(o + c);
             _zwTextDataSet(handle, nv, function () { __zw_set_text_handle(handle, nv); });
             return undefined;
           };
         }
         if ((isText || isComment) && prop === 'substringData') {
           return function (offset, count) {
+            if (arguments.length < 2) {
+              throw new globalThis.TypeError(
+                "Failed to execute 'substringData' on 'CharacterData': 2 arguments required, but only " + arguments.length + " present.");
+            }
             if (!handle) return '';
             var cur = _zwTextDataGet(handle, function () { return __zw_get_text_handle(handle); });
-            var o = offset | 0, c = count | 0;
-            if (o < 0) o = 0;
-            if (c < 0) c = 0;
+            var o = offset | 0;
+            if (o < 0 || o > cur.length) {
+              throw _zwDomException("Failed to execute 'substringData' on 'CharacterData': The offset " + o + " is out of range.", 'IndexSizeError');
+            }
+            // R129：count unsigned long 回绕 + clamp 余量（WPT "with negative count"
+            // `substringData(0,-1)` → 全串、`-0x100000000+2` 回绕 2 → 'te'，非抛）。
+            var c = count >>> 0;
+            if (c > cur.length - o) c = cur.length - o;
             return cur.slice(o, o + c);
           };
         }
@@ -3210,6 +3267,36 @@
         }
         if (prop === 'remove') {
           return function() {
+            // R129（js-dom M4）：Text/Comment/PI 的 ChildNode.remove（WPT
+            // CharacterData-remove 全簇——`text.remove()` 须真移除：handle 父 registry
+            // 剔除 + 反链断 + 迭代器通知 + record；旧落元素分支对 handle-only 文本
+            // 父 registry 不生效 → parent.childNodes 残留）。元素路径不受影响（下方原逻辑）。
+            if (isText || isComment || isPI) {
+              var _r129Parent = (handle && typeof _zwNodeParent !== 'undefined' && _zwNodeParent)
+                ? _zwNodeParent[handle] : null;
+              if (_r129Parent && _r129Parent.parentHandle && _handleChildren[_r129Parent.parentHandle]) {
+                var _r129Kids = _handleChildren[_r129Parent.parentHandle];
+                for (var _r129i = 0; _r129i < _r129Kids.length; _r129i++) {
+                  if (_r129Kids[_r129i] && _r129Kids[_r129i].__zwHandle === handle) {
+                    _r129Kids.splice(_r129i, 1);
+                    break;
+                  }
+                }
+                _mo_notify(_r129Parent.parentSel || null, _r129Parent.parentHandle, {
+                  type: 'childList', addedNodes: [], removedNodes: [_makeProxy(sel, handle)],
+                });
+              }
+              // sel 父形态（文本句柄挂主文档元素）：无 per-text wire（remove 由 host apply
+              // 后快照融合反映），仅标记 + 通知。
+              if (handle) {
+                if (typeof _zwMarkRemovedHandle === 'function') _zwMarkRemovedHandle(handle);
+                try { __zw_remove_handle(handle); } catch (_e129h) {}
+              }
+              if (globalThis._zwNotifyIteratorsRemove) {
+                try { globalThis._zwNotifyIteratorsRemove(_makeProxy(sel, handle)); } catch (_e129n) {}
+              }
+              return undefined;
+            }
             // R2994：移除自身（含 handle 子树）→ 断连（仅此前已连入的 custom element 分派 disconnectedCallback）。
             // R34xx：本地移除标记（同步脚本内 parentNode 立即返 null——host mutation 异步应用）。
             var ceSelf = _makeProxy(sel, handle);
@@ -4089,7 +4176,11 @@
           if (handle) {
             var _tdMoId = _mo_id(handle, sel);
             var _tdMoOld = _mo_any_wants_char_old(_tdMoId) ? _mo_read_text(sel, handle) : null;
-            var _tdNew = String(value == null ? '' : value);
+            // R129：WebIDL DOMString 显式转换——data/nodeValue 是
+            // [LegacyNullToEmptyString] DOMString：null→''（WPT CharacterData-data
+            // `Text.data = null` 期望 ''），undefined→'undefined'（期望 'undefined'——
+            // 旧 null-coalesce 把两者都吞成 ''）。
+            var _tdNew = value === null ? '' : String(value);
             // R123：PI 的 data= 同步 _piHandles（属性层解析源——pi.data='' 后
             // hasAttributes()=false，data='blabla=""' 后 getAttribute('blabla')=''，
             // WPT PI-attributes data-resync 簇）。

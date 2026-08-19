@@ -269,7 +269,23 @@
       // 读但非 target own，`'id' in el` 仍 false（pre-existing，documented）。has/ownKeys 不变量：target {} 无 own → 无约束。
       has: function(_t, prop) {
         var _exH = _expando[key];
-        return !!(_exH && Object.prototype.hasOwnProperty.call(_exH, prop)) || (prop in _t);
+        if (_exH && Object.prototype.hasOwnProperty.call(_exH, prop)) return true;
+        // R129（js-dom M4）：`'remove' in textNode` 等 CharacterData/ChildNode 方法存在性
+        //（WPT CharacterData-remove "should support remove()"——get trap 提供的方法面在
+        // target 上无 own key，`prop in _t` 恒 false）。方法白名单（文本/注释/PI 与元素
+        // 共有的 ChildNode/Node 面都在 get trap 分支）。**注**：part03 同 handler 字面量
+        // 早期还定义过一个 has 键（FV 属性分支）——JS 对象字面量重复键后者胜，本定义是
+        // 生效版（R129 定位实证）。
+        if (prop === 'remove' || prop === 'appendData' || prop === 'insertData'
+            || prop === 'deleteData' || prop === 'replaceData' || prop === 'substringData'
+            || prop === 'before' || prop === 'after' || prop === 'replaceWith'
+            || prop === 'data' || prop === 'length' || prop === 'cloneNode'
+            || prop === 'childNodes' || prop === 'parentNode' || prop === 'nodeValue'
+            || prop === 'textContent' || prop === 'ownerDocument' || prop === 'dispatchEvent'
+            || prop === 'addEventListener' || prop === 'removeEventListener') {
+          return true;
+        }
+        return prop in _t;
       },
       ownKeys: function() {
         var _exO = _expando[key];
@@ -4950,14 +4966,16 @@
         return cur.slice(o, o + c2);
       };
       // data/nodeValue setter（CharacterData data IDL 可写）——写经 _write；getter 读本地（_write 同步）。
+      // R129：[LegacyNullToEmptyString] DOMString——null→''、undefined→'undefined'（WPT
+      // CharacterData-data 两断言；旧 `v == null ? '' : v` 把 undefined 也吞成 ''）。
       Object.defineProperty(node, 'data', {
         get: function () { return node.nodeValue; },
-        set: function (v) { _write(String(v == null ? '' : v)); },
+        set: function (v) { _write(v === null ? '' : String(v)); },
         configurable: true, enumerable: true,
       });
       Object.defineProperty(node, 'nodeValue', {
         get: function () { return node.__nv; },
-        set: function (v) { _write(String(v == null ? '' : v)); },
+        set: function (v) { _write(v === null ? '' : String(v)); },
         configurable: true, enumerable: true,
       });
       node.__zwWriteChildText = _write;
