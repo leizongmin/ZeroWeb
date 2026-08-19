@@ -582,7 +582,7 @@ pub fn parse_background_image(value: &str) -> Option<BackgroundImageValue> {
     // 解析 url(...) 函数
     if (value.len() >= 4 && value[..4].eq_ignore_ascii_case("url(")) && value.ends_with(')') {
         let inner = value.get(4..value.len() - 1)?;
-        let url = parse_background_url_payload(inner)?;
+        let url = parse_css_url_payload(inner)?;
         return Some(BackgroundImageValue::Url(url));
     }
 
@@ -594,7 +594,7 @@ pub fn parse_background_image(value: &str) -> Option<BackgroundImageValue> {
     None
 }
 
-fn parse_background_url_payload(inner: &str) -> Option<String> {
+pub(crate) fn parse_css_url_payload(inner: &str) -> Option<String> {
     let url = inner.trim();
     if url.is_empty() {
         return None;

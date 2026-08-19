@@ -939,6 +939,8 @@ fn test_parse_border_image_source_url() {
 fn test_parse_border_image_source_url_quoted() {
     let v = parse_border_image_source("url('border.png')").unwrap();
     assert_eq!(v, BorderImageSourceValue::Url("border.png".to_string()));
+    let v = parse_border_image_source("url(\"border image.png\")").unwrap();
+    assert_eq!(v, BorderImageSourceValue::Url("border image.png".to_string()));
 }
 
 #[test]
@@ -946,6 +948,9 @@ fn test_parse_border_image_source_invalid() {
     assert_eq!(parse_border_image_source("invalid"), None);
     assert_eq!(parse_border_image_source("url()"), None);
     assert_eq!(parse_border_image_source(""), None);
+    assert_eq!(parse_border_image_source("url(border image.png)"), None);
+    assert_eq!(parse_border_image_source("url(\"border.png\" extra)"), None);
+    assert_eq!(parse_border_image_source("url(border\".png)"), None);
 }
 
 // ── border-image-slice ──
@@ -1247,6 +1252,8 @@ fn test_parse_list_style_image_url() {
 fn test_parse_list_style_image_quoted() {
     let v = parse_list_style_image("url('star.gif')").unwrap();
     assert_eq!(v, ListStyleImageValue::Url("star.gif".to_string()));
+    let v = parse_list_style_image("url(\"my marker.png\")").unwrap();
+    assert_eq!(v, ListStyleImageValue::Url("my marker.png".to_string()));
 }
 
 #[test]
@@ -1254,6 +1261,9 @@ fn test_parse_list_style_image_invalid() {
     assert_eq!(parse_list_style_image("invalid"), None);
     assert_eq!(parse_list_style_image(""), None);
     assert_eq!(parse_list_style_image("url()"), None);
+    assert_eq!(parse_list_style_image("url(my marker.png)"), None);
+    assert_eq!(parse_list_style_image("url(\"marker.png\" extra)"), None);
+    assert_eq!(parse_list_style_image("url(marker\".png)"), None);
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -1422,10 +1432,11 @@ fn test_parse_border_spacing_negative_value() {
 }
 
 /// 测试 parse_list_style_image URL 中包含空格
-/// URL 未加引号但含有空格时，解析器按括号到末尾取值，空格被保留
+/// URL 未加引号但含有空格时不是合法 url-token；quoted string payload 保留空格。
 #[test]
 fn test_parse_list_style_image_url_with_spaces() {
-    let v = parse_list_style_image("url(my image.png)").unwrap();
+    assert_eq!(parse_list_style_image("url(my image.png)"), None);
+    let v = parse_list_style_image("url(\"my image.png\")").unwrap();
     assert_eq!(v, ListStyleImageValue::Url("my image.png".to_string()));
 }
 

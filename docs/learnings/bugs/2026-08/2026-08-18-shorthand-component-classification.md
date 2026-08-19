@@ -129,6 +129,8 @@ Filter functions exposed the function-token-boundary variant: trimming the subst
 
 Background image URLs exposed the URL-payload token variant: after recognizing `url(...)`, the payload still has quoted-string vs unquoted-url-token grammar. Quoted payloads must be fully enclosed by matching quotes with no trailing token; unquoted payloads must reject raw whitespace, quotes, and parentheses instead of treating the entire slice as an opaque URL.
 
+Image source properties exposed the copied-parser variant: fixing `background-image` alone leaves `border-image-source` and `list-style-image` accepting the same invalid URL payloads if each property keeps a local string-slice parser. Shared CSS image source helpers should own URL payload grammar so all consumers reject the same invalid token shapes.
+
 ## Root Cause
 
 The shorthand layer used heuristic component classifiers and treated unrecognized tokens as absent optional components. That is wrong for CSS shorthands such as `border`, where every token must match one of the allowed component grammars. A shared parser can also be broader than the property grammar that consumes it: general length parsing may accept `auto`, intrinsic sizing keywords, or percentages that `border-width` must reject.

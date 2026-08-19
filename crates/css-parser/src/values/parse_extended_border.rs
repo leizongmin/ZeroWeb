@@ -25,16 +25,8 @@ pub fn parse_border_image_source(value: &str) -> Option<BorderImageSourceValue> 
     }
     if (value.len() >= 4 && value[..4].eq_ignore_ascii_case("url(")) && value.ends_with(')') {
         let inner = value.get(4..value.len() - 1)?;
-        let url = inner.trim();
-        let url = if (url.starts_with('"') && url.ends_with('"')) || (url.starts_with('\'') && url.ends_with('\'')) {
-            url.get(1..url.len() - 1)?
-        } else {
-            url
-        };
-        if url.is_empty() {
-            return None;
-        }
-        return Some(BorderImageSourceValue::Url(url.to_string()));
+        let url = super::parse_extended_visual::parse_css_url_payload(inner)?;
+        return Some(BorderImageSourceValue::Url(url));
     }
     // 渐变函数（linear/radial/conic/repeating-*）。
     if let Some(g) = parse_gradient(value) {
@@ -362,16 +354,8 @@ pub fn parse_list_style_image(value: &str) -> Option<ListStyleImageValue> {
     }
     if (value.len() >= 4 && value[..4].eq_ignore_ascii_case("url(")) && value.ends_with(')') {
         let inner = value.get(4..value.len() - 1)?;
-        let url = inner.trim();
-        let url = if (url.starts_with('"') && url.ends_with('"')) || (url.starts_with('\'') && url.ends_with('\'')) {
-            url.get(1..url.len() - 1)?
-        } else {
-            url
-        };
-        if url.is_empty() {
-            return None;
-        }
-        return Some(ListStyleImageValue::Url(url.to_string()));
+        let url = super::parse_extended_visual::parse_css_url_payload(inner)?;
+        return Some(ListStyleImageValue::Url(url));
     }
     None
 }
