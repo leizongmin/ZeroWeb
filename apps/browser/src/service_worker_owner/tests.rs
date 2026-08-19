@@ -139,6 +139,90 @@ fn normal_registration_survives_renderer_disconnect() {
 }
 
 #[test]
+fn new_renderer_discovers_normal_registration_without_known_id() {
+    let mut owner = BrowserServiceWorkerOwner::new();
+    let disposition = owner.begin_request(
+        TabId(1),
+        false,
+        46,
+        Some("https://example.test/page"),
+        register_request("https://example.test/page"),
+    );
+    attach_script(&mut owner, disposition, "void 0;");
+    let response = wait_for_response(&mut owner);
+    let Ok(ServiceWorkerResult::Registered { registration_id }) = response.params.result else {
+        panic!("registration failed");
+    };
+    owner.disconnect_tab(TabId(1));
+
+    let disposition = owner.begin_request(
+        TabId(2),
+        false,
+        47,
+        Some("https://example.test/next"),
+        ServiceWorkerRequestParams {
+            operation: ServiceWorkerOperation::GetRegistration {
+                client_url: "/app/page".into(),
+            },
+        },
+    );
+    let ServiceWorkerRequestDisposition::Respond(response) = disposition else {
+        panic!("discovery must complete immediately");
+    };
+    assert!(matches!(
+        response.params.result,
+        Ok(ServiceWorkerResult::OptionalSnapshot(Some(ServiceWorkerSnapshot {
+            registration_id: id,
+            ..
+        }))) if id == registration_id
+    ));
+
+    let disposition = owner.begin_request(
+        TabId(2),
+        false,
+        48,
+        Some("https://example.test/next"),
+        ServiceWorkerRequestParams {
+            operation: ServiceWorkerOperation::GetRegistrations,
+        },
+    );
+    let ServiceWorkerRequestDisposition::Respond(response) = disposition else {
+        panic!("list discovery must complete immediately");
+    };
+    assert!(matches!(
+        response.params.result,
+        Ok(ServiceWorkerResult::Snapshots(snapshots))
+            if snapshots.len() == 1 && snapshots[0].registration_id == registration_id
+    ));
+}
+
+#[test]
+fn discovery_rejects_cross_origin_client_url() {
+    let mut owner = BrowserServiceWorkerOwner::new();
+    let disposition = owner.begin_request(
+        TabId(1),
+        false,
+        49,
+        Some("https://example.test/page"),
+        ServiceWorkerRequestParams {
+            operation: ServiceWorkerOperation::GetRegistration {
+                client_url: "https://other.test/page".into(),
+            },
+        },
+    );
+    let ServiceWorkerRequestDisposition::Respond(response) = disposition else {
+        panic!("invalid discovery must complete immediately");
+    };
+    assert!(matches!(
+        response.params.result,
+        Err(ServiceWorkerError {
+            code: ServiceWorkerErrorCode::InvalidArgument,
+            ..
+        })
+    ));
+}
+
+#[test]
 fn private_tabs_have_isolated_registration_namespaces() {
     let mut owner = BrowserServiceWorkerOwner::new();
     let mut registration_ids = Vec::new();

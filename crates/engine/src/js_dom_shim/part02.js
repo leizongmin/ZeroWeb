@@ -2608,7 +2608,7 @@
           unregister: function () {
             var removed = false;
             if (typeof __zw_sw_unregister === 'function') {
-              try { removed = __zw_sw_unregister(String(id)) === 'true'; } catch (_e) {}
+              try { removed = __zw_sw_unregister(String(reg._id)) === 'true'; } catch (_e) {}
             }
             for (var i = 0; i < _registrations.length; i++) {
               if (_registrations[i] === reg) { _registrations.splice(i, 1); break; }
@@ -2621,6 +2621,17 @@
         };
         reg.installing = reg._worker;
         return reg;
+      }
+      function findReg(id, scope) {
+        for (var i = 0; i < _registrations.length; i++) {
+          if (String(_registrations[i]._id) === String(id)) return _registrations[i];
+        }
+        if (scope) {
+          for (var j = 0; j < _registrations.length; j++) {
+            if (_registrations[j].scope === scope) return _registrations[j];
+          }
+        }
+        return null;
       }
       function readSnapshot(id) {
         if (typeof __zw_sw_snapshot !== 'function') return null;
@@ -2650,6 +2661,18 @@
           setTimeout(function () { pollRegistration(reg); }, 0);
         }
       }
+      function upsertSnapshot(snapshot) {
+        if (!snapshot) return null;
+        var reg = findReg(snapshot.id, snapshot.scope);
+        if (!reg) {
+          reg = makeReg(snapshot.id, snapshot.scriptURL || '', snapshot.scope || '');
+          _registrations.push(reg);
+        } else {
+          reg._id = snapshot.id;
+        }
+        if (!applySnapshot(reg, snapshot)) pollRegistration(reg);
+        return reg;
+      }
       _container.register = function (scriptURL, options) {
         if (!scriptURL || typeof scriptURL !== 'string') {
           return Promise.reject(new TypeError('ServiceWorkerContainer.register: scriptURL is required'));
@@ -2667,20 +2690,30 @@
         if (!wire || !wire.ok) {
           return Promise.reject(new TypeError(wire && wire.error || 'Service Worker registration failed'));
         }
-        var snapshot = readSnapshot(wire.id);
-        var reg = makeReg(wire.id, scriptURL, snapshot && snapshot.scope || scope);
-        _registrations.push(reg);
+        var snapshot = readSnapshot(wire.id) || {
+          id: wire.id, scriptURL: scriptURL, scope: scope, state: 'installing'
+        };
+        var reg = upsertSnapshot(snapshot);
         if (typeof reg.onupdatefound === 'function') {
           try { reg.onupdatefound({ type: 'updatefound', target: reg }); } catch (_e) {}
         }
-        applySnapshot(reg, snapshot);
-        pollRegistration(reg);
         return Promise.resolve(reg);
       };
       _container.getRegistration = function (scope) {
         var absolute = scope;
-        if (scope) {
-          try { absolute = new URL(scope, globalThis.location.href).href; } catch (_e) {}
+        try {
+          absolute = new URL(scope || globalThis.location.href, globalThis.location.href).href;
+        } catch (_e) {}
+        if (typeof __zw_sw_get_registration === 'function') {
+          try {
+            var wire = JSON.parse(__zw_sw_get_registration(absolute));
+            if (!wire || !wire.ok) {
+              return Promise.reject(new TypeError(wire && wire.error || 'Service Worker discovery failed'));
+            }
+            return Promise.resolve(upsertSnapshot(wire.registration) || undefined);
+          } catch (error) {
+            return Promise.reject(error);
+          }
         }
         for (var i = 0; i < _registrations.length; i++) {
           if (!scope || _registrations[i].scope === absolute) {
@@ -2690,6 +2723,30 @@
         return Promise.resolve(undefined);
       };
       _container.getRegistrations = function () {
+        if (typeof __zw_sw_get_registrations === 'function') {
+          try {
+            var wire = JSON.parse(__zw_sw_get_registrations());
+            if (!wire || !wire.ok) {
+              return Promise.reject(new TypeError(wire && wire.error || 'Service Worker discovery failed'));
+            }
+            var snapshots = wire.registrations || [];
+            var discovered = [];
+            var ids = {};
+            for (var i = 0; i < snapshots.length; i++) {
+              var reg = upsertSnapshot(snapshots[i]);
+              if (reg) {
+                discovered.push(reg);
+                ids[String(reg._id)] = true;
+              }
+            }
+            for (var j = _registrations.length - 1; j >= 0; j--) {
+              if (!ids[String(_registrations[j]._id)]) _registrations.splice(j, 1);
+            }
+            return Promise.resolve(discovered);
+          } catch (error) {
+            return Promise.reject(error);
+          }
+        }
         return Promise.resolve(_registrations.slice());
       };
       Object.defineProperty(_container, 'ready', { get: function () { return _ready; } });

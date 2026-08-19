@@ -617,7 +617,17 @@ impl ServiceWorkerRequestParams {
             }
             ServiceWorkerOperation::Snapshot { .. }
             | ServiceWorkerOperation::Unregister { .. }
-            | ServiceWorkerOperation::ActivateWaiting { .. } => Ok(()),
+            | ServiceWorkerOperation::ActivateWaiting { .. }
+            | ServiceWorkerOperation::GetRegistrations => Ok(()),
+            ServiceWorkerOperation::GetRegistration { client_url } => {
+                if client_url.is_empty() {
+                    return Err("Service Worker client URL is required");
+                }
+                if client_url.len() > MAX_URL_BYTES {
+                    return Err("Service Worker client URL exceeds the length limit");
+                }
+                Ok(())
+            }
         }
     }
 }
@@ -649,6 +659,13 @@ pub enum ServiceWorkerOperation {
         /// Browser-assigned registration version ID.
         registration_id: u64,
     },
+    /// Find the registration whose scope contains one client URL.
+    GetRegistration {
+        /// Absolute or document-relative client URL.
+        client_url: String,
+    },
+    /// List the current document origin's registrations.
+    GetRegistrations,
 }
 
 /// Browser Service Worker owner response.
@@ -672,6 +689,10 @@ pub enum ServiceWorkerResult {
     Boolean(bool),
     /// Operation completed without a value.
     Empty,
+    /// Optional registration snapshot.
+    OptionalSnapshot(Option<ServiceWorkerSnapshot>),
+    /// Registration snapshots for one origin.
+    Snapshots(Vec<ServiceWorkerSnapshot>),
 }
 
 /// Pure-value registration snapshot.

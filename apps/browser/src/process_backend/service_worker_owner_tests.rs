@@ -191,3 +191,115 @@ fn multiprocess_navigator_registration_uses_browser_owner() {
     let expected_scope = format!("http://{}/", page_url.split('/').nth(2).unwrap());
     assert_eq!(result, format!("{expected_scope}|activated|true"));
 }
+
+#[test]
+fn new_renderer_discovers_browser_owned_registration() {
+    let _multiprocess_guard = lock_multiprocess_tests();
+    let renderer = resolve_renderer_binary().expect("fresh zero-renderer binary is required");
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let authority = listener.local_addr().unwrap().to_string();
+    let first_page = format!("http://{authority}/first");
+    let worker_source = "addEventListener('install', event => event.waitUntil(Promise.resolve()));";
+    let response = format!(
+        "HTTP/1.1 200 OK\r\nContent-Type: application/javascript\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+        worker_source.len(),
+        worker_source
+    );
+    let server = std::thread::spawn(move || {
+        let (mut stream, _) = listener.accept().unwrap();
+        let mut request = [0_u8; 2048];
+        let size = stream.read(&mut request).unwrap();
+        assert!(String::from_utf8_lossy(&request[..size]).starts_with("GET /sw.js "));
+        stream.write_all(response.as_bytes()).unwrap();
+    });
+
+    let mut backend = ProcessTabBackend::with_renderer_bin(renderer);
+    let first_tab = TabId(804);
+    let mut snapshots = HashMap::new();
+    load_committed_page(&mut backend, &mut snapshots, first_tab, &first_page);
+    execute_script(
+        &mut backend,
+        &mut snapshots,
+        first_tab,
+        1,
+        "globalThis.__swResult = 'pending';\
+         (async function () {\
+           try {\
+             var reg = await navigator.serviceWorker.register('/sw.js', { scope: '/app/' });\
+             await navigator.serviceWorker.ready;\
+             globalThis.__swResult = reg.active && reg.active.state;\
+           } catch (error) {\
+             globalThis.__swResult = 'error:' + String(error && error.message ? error.message : error);\
+           }\
+         })();",
+    )
+    .unwrap();
+    let deadline = Instant::now() + Duration::from_secs(20);
+    loop {
+        let value = execute_script(
+            &mut backend,
+            &mut snapshots,
+            first_tab,
+            2,
+            "return String(globalThis.__swResult);",
+        )
+        .unwrap();
+        if value == AutomationValue::String("activated".into()) {
+            break;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "first renderer registration did not activate"
+        );
+        std::thread::sleep(Duration::from_millis(5));
+    }
+    server.join().unwrap();
+    backend.remove_renderer(first_tab);
+    snapshots.remove(&first_tab);
+
+    let second_tab = TabId(805);
+    let second_page = format!("http://{authority}/app/second");
+    load_committed_page(&mut backend, &mut snapshots, second_tab, &second_page);
+    execute_script(
+        &mut backend,
+        &mut snapshots,
+        second_tab,
+        3,
+        "globalThis.__swDiscovery = 'pending';\
+         (async function () {\
+           try {\
+             var reg = await navigator.serviceWorker.getRegistration('/app/page');\
+             var all = await navigator.serviceWorker.getRegistrations();\
+             var state = reg && reg.active ? reg.active.state : 'none';\
+             var same = !!reg && all.length === 1 && reg === all[0];\
+             var removed = reg ? await reg.unregister() : false;\
+             globalThis.__swDiscovery = (reg ? reg.scope : 'none') + '|' + state + '|' +\
+               String(all.length) + '|' + String(same) + '|' + String(removed);\
+           } catch (error) {\
+             globalThis.__swDiscovery = 'error:' + String(error && error.message ? error.message : error);\
+           }\
+         })();",
+    )
+    .unwrap();
+    let deadline = Instant::now() + Duration::from_secs(20);
+    let result = loop {
+        let value = execute_script(
+            &mut backend,
+            &mut snapshots,
+            second_tab,
+            4,
+            "return String(globalThis.__swDiscovery);",
+        )
+        .unwrap();
+        if let AutomationValue::String(value) = value
+            && value != "pending"
+        {
+            break value;
+        }
+        assert!(Instant::now() < deadline, "new renderer discovery did not settle");
+        std::thread::sleep(Duration::from_millis(5));
+    };
+    backend.remove_renderer(second_tab);
+
+    assert_eq!(result, format!("http://{authority}/app/|activated|1|true|true"));
+}

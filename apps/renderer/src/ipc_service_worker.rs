@@ -120,14 +120,11 @@ impl ServiceWorkerIpcClient {
                     return error_wire("invalid registration id");
                 };
                 match snapshot_client.request(ServiceWorkerOperation::Snapshot { registration_id }) {
-                    Ok(ServiceWorkerResult::Snapshot(snapshot)) => serde_json::json!({
-                        "ok": true,
-                        "id": snapshot.registration_id,
-                        "scriptURL": snapshot.script_url,
-                        "scope": snapshot.scope,
-                        "state": state_wire(snapshot.state),
-                    })
-                    .to_string(),
+                    Ok(ServiceWorkerResult::Snapshot(snapshot)) => {
+                        let mut wire = snapshot_wire(snapshot);
+                        wire["ok"] = serde_json::Value::Bool(true);
+                        wire.to_string()
+                    }
                     Ok(_) => error_wire("invalid snapshot response"),
                     Err(error) => error_wire(error.message),
                 }
@@ -146,6 +143,39 @@ impl ServiceWorkerIpcClient {
                     _ => "false".into(),
                 }
             }),
+        );
+
+        let get_registration_client = self.clone();
+        sandbox.register_callback(
+            "__zw_sw_get_registration",
+            Box::new(move |args| {
+                let client_url = args.first().cloned().unwrap_or_default();
+                match get_registration_client.request(ServiceWorkerOperation::GetRegistration { client_url }) {
+                    Ok(ServiceWorkerResult::OptionalSnapshot(snapshot)) => serde_json::json!({
+                        "ok": true,
+                        "registration": snapshot.map(snapshot_wire),
+                    })
+                    .to_string(),
+                    Ok(_) => error_wire("invalid getRegistration response"),
+                    Err(error) => error_wire(error.message),
+                }
+            }),
+        );
+
+        let get_registrations_client = self.clone();
+        sandbox.register_callback(
+            "__zw_sw_get_registrations",
+            Box::new(
+                move |_args| match get_registrations_client.request(ServiceWorkerOperation::GetRegistrations) {
+                    Ok(ServiceWorkerResult::Snapshots(snapshots)) => serde_json::json!({
+                        "ok": true,
+                        "registrations": snapshots.into_iter().map(snapshot_wire).collect::<Vec<_>>(),
+                    })
+                    .to_string(),
+                    Ok(_) => error_wire("invalid getRegistrations response"),
+                    Err(error) => error_wire(error.message),
+                },
+            ),
         );
     }
 
@@ -189,6 +219,15 @@ fn state_wire(state: ServiceWorkerStateWire) -> &'static str {
         ServiceWorkerStateWire::Activated => "activated",
         ServiceWorkerStateWire::Redundant => "redundant",
     }
+}
+
+fn snapshot_wire(snapshot: zero_protocol::ServiceWorkerSnapshot) -> serde_json::Value {
+    serde_json::json!({
+        "id": snapshot.registration_id,
+        "scriptURL": snapshot.script_url,
+        "scope": snapshot.scope,
+        "state": state_wire(snapshot.state),
+    })
 }
 
 fn error_wire(message: impl Into<String>) -> String {

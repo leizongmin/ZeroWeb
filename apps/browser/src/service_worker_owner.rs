@@ -170,6 +170,40 @@ impl BrowserServiceWorkerOwner {
                     .map(|()| ServiceWorkerResult::Empty);
                 self.result_disposition(tab_id, request_id, result)
             }
+            ServiceWorkerOperation::GetRegistration { client_url } => {
+                let result = validate_client_url(&client_url, &authority)
+                    .map_err(|message| ServiceWorkerError {
+                        code: ServiceWorkerErrorCode::InvalidArgument,
+                        message: message.into(),
+                    })
+                    .map(|client_url| {
+                        self.manager(profile)
+                            .and_then(|manager| {
+                                manager.registration_for_url(
+                                    &authority.origin().ascii_serialization(),
+                                    client_url.as_str(),
+                                )
+                            })
+                            .cloned()
+                            .map(snapshot)
+                    })
+                    .map(ServiceWorkerResult::OptionalSnapshot);
+                self.result_disposition(tab_id, request_id, result)
+            }
+            ServiceWorkerOperation::GetRegistrations => {
+                let registrations = self
+                    .manager(profile)
+                    .map(|manager| {
+                        manager
+                            .registrations_for_origin(&authority.origin().ascii_serialization())
+                            .into_iter()
+                            .cloned()
+                            .map(snapshot)
+                            .collect()
+                    })
+                    .unwrap_or_default();
+                self.result_disposition(tab_id, request_id, Ok(ServiceWorkerResult::Snapshots(registrations)))
+            }
         }
     }
 
@@ -449,6 +483,17 @@ fn validate_registration(
         return Err("Service Worker scope must not contain a fragment");
     }
     Ok((script, scope, document.origin().ascii_serialization()))
+}
+
+fn validate_client_url(client_url: &str, document: &Url) -> Result<Url, &'static str> {
+    let mut client = document
+        .join(client_url)
+        .map_err(|_| "invalid Service Worker client URL")?;
+    if !matches!(client.scheme(), "http" | "https") || client.origin() != document.origin() {
+        return Err("Service Worker client URL must be same-origin http(s)");
+    }
+    client.set_fragment(None);
+    Ok(client)
 }
 
 fn snapshot(registration: ServiceWorkerRegistration) -> ServiceWorkerSnapshot {

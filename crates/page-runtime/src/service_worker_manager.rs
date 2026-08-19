@@ -519,6 +519,40 @@ impl ServiceWorkerManager {
             .map(|(_, registration)| registration)
     }
 
+    /// Find the representative registration with the longest matching scope.
+    ///
+    /// One manager key represents one web-visible registration. The active
+    /// version remains representative while a replacement installs or waits.
+    pub fn registration_for_url(&self, origin: &str, url: &str) -> Option<&ServiceWorkerRegistration> {
+        self.slots
+            .iter()
+            .filter(|(key, _)| key.origin == origin)
+            .filter_map(|(key, slot)| {
+                let registration = self.representative_registration(slot)?;
+                registration.is_in_scope(url).then_some((key.scope.len(), registration))
+            })
+            .max_by_key(|(scope_length, _)| *scope_length)
+            .map(|(_, registration)| registration)
+    }
+
+    /// List one representative registration per scope for an origin.
+    pub fn registrations_for_origin(&self, origin: &str) -> Vec<&ServiceWorkerRegistration> {
+        let mut registrations: Vec<_> = self
+            .slots
+            .iter()
+            .filter(|(key, _)| key.origin == origin)
+            .filter_map(|(key, slot)| {
+                self.representative_registration(slot)
+                    .map(|registration| (key.scope.as_str(), registration))
+            })
+            .collect();
+        registrations.sort_unstable_by_key(|(scope, _)| *scope);
+        registrations
+            .into_iter()
+            .map(|(_, registration)| registration)
+            .collect()
+    }
+
     /// Return the number of live worker runtimes.
     pub fn runtime_count(&self) -> usize {
         self.runtimes.len()
@@ -553,6 +587,11 @@ impl ServiceWorkerManager {
         self.registry
             .get(registration_id)
             .is_some_and(|registration| registration.state == ServiceWorkerState::Installing)
+    }
+
+    fn representative_registration(&self, slot: &ServiceWorkerVersionSlots) -> Option<&ServiceWorkerRegistration> {
+        let id = slot.active.or(slot.waiting).or(slot.installing)?;
+        self.registry.get(id)
     }
 
     fn fail_installing_version(&mut self, registration_id: u64) {
@@ -816,6 +855,50 @@ mod tests {
         );
         assert_eq!(manager.registration(root).unwrap().state, ServiceWorkerState::Activated);
         assert_eq!(manager.registration(app).unwrap().state, ServiceWorkerState::Redundant);
+    }
+
+    #[test]
+    fn discovery_returns_one_representative_version_per_scope() {
+        let mut manager = ServiceWorkerManager::new();
+        let root = start_active(&mut manager, "/", "globalThis.scope = 'root';");
+        let app = start_active(&mut manager, "/app/", "globalThis.scope = 'app';");
+        let replacement = start(&mut manager, "/app/", "globalThis.scope = 'app-v2';");
+
+        assert_eq!(
+            manager
+                .registration_for_url("https://example.test", "https://example.test/app/page")
+                .unwrap()
+                .id,
+            app,
+            "active version remains representative while replacement installs"
+        );
+        assert_eq!(
+            manager
+                .registrations_for_origin("https://example.test")
+                .into_iter()
+                .map(|registration| registration.id)
+                .collect::<Vec<_>>(),
+            vec![root, app]
+        );
+        assert!(manager.registrations_for_origin("https://other.test").is_empty());
+        assert_eq!(
+            manager.registration(replacement).unwrap().state,
+            ServiceWorkerState::Installing
+        );
+    }
+
+    #[test]
+    fn discovery_exposes_first_installing_version() {
+        let mut manager = ServiceWorkerManager::new();
+        let installing = start(&mut manager, "/app/", "void 0;");
+
+        assert_eq!(
+            manager
+                .registration_for_url("https://example.test", "https://example.test/app/page")
+                .unwrap()
+                .id,
+            installing
+        );
     }
 
     #[test]

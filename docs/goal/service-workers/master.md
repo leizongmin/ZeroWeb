@@ -2,7 +2,7 @@
 
 **入口文档**: [../service-workers.md](../service-workers.md)
 **创建日期**: 2026-08-17（goal 拆分 bootstrap）
-**最后更新**: 2026-08-19（M1-4c renderer IPC bridge 完成）
+**最后更新**: 2026-08-19（M1-4d registration discovery 完成）
 
 ---
 
@@ -88,12 +88,14 @@ M0 启动门禁解除；当前进入 M1 renderer IPC bridge。
   profile 隔离与 browser-owned async script fetch；response 保持原 `IpcMessage.id`
 - ✅ M1-4c：renderer Service Worker response router + JS worker host callbacks；
   fresh browser/renderer register→active→unregister 全链通过，normal owner 跨 renderer 存活
+- ✅ M1-4d：browser-backed `getRegistration()` / `getRegistrations()`；
+  新 renderer 无需旧 registration ID 即可恢复稳定 JS 投影
 
 ## 缺口清单
 
 | # | 缺口 | 状态 |
 |---|------|------|
-| S1 | SW 执行环境架构与独立 runtime | 🔄 production browser/renderer 真链路已落；registration discovery 待接 |
+| S1 | SW 执行环境架构与独立 runtime | ✅ production browser owner + renderer discovery 真链路 |
 | S2 | scriptURL 不下载执行 | ✅ production navigator 经 browser fetch/evaluate |
 | S3 | fetch 拦截为零 | ⬜ M2（等 js-dom fetch 改造） |
 | S4 | 事件为 setTimeout 模拟 | ✅ 生命周期状态仅来自 manager；timer 只轮询 snapshot |
@@ -107,16 +109,15 @@ M0 启动门禁解除；当前进入 M1 renderer IPC bridge。
 
 ## 下一步计划
 
-1. **M1-4d**：browser-backed getRegistration(s)，新 renderer 发现既有 registration
-2. **M1-5**：SW WPT runner，建立 Tier A red/green baseline
-3. **M2 继续门控**：js-dom S6 与 storage-cache-api M1 均 land 后才改 fetch 主路径
+1. **M1-5**：SW WPT runner，建立 Tier A red/green baseline
+2. **M2 继续门控**：js-dom S6 与 storage-cache-api M1 均 land 后才改 fetch 主路径
 
 ## 里程碑状态
 
 | 里程碑 | 状态 |
 |--------|------|
 | M0 — 选型 RFC（门控） | ✅ 方案 C 已批准 |
-| M1 — 脚本真实执行 + 生命周期真事件 | 🔄 M1-4c renderer IPC bridge 完成 |
+| M1 — 脚本真实执行 + 生命周期真事件 | 🔄 M1-4d registration discovery 完成 |
 | M2 — fetch 拦截 + Cache 集成 | ⬜ 门控：js-dom fetch 改造 land |
 | M3 — 控制语义 + 消息 + 收尾 | ⬜ |
 
@@ -186,6 +187,8 @@ M0 启动门禁解除；当前进入 M1 renderer IPC bridge。
   typed response correlation 见 [M1 browser owner](evidence/2026-08-19-m1-browser-owner.md)
 - M1-4c renderer bridge：独立 response router、JS callbacks、fresh peer production register 全链见
   [M1 renderer bridge](evidence/2026-08-19-m1-renderer-bridge.md)
+- M1-4d registration discovery：scope representative、browser-backed query、跨 renderer JS identity
+  恢复见 [M1 registration discovery](evidence/2026-08-19-m1-registration-discovery.md)
 
 ## M0 证据与决策记录
 
@@ -223,6 +226,7 @@ M0 启动门禁解除；当前进入 M1 renderer IPC bridge。
 | 2026-08-19 | M1-4a IPC contract | register/snapshot/unregister/activate-waiting typed wire；无 script source；protocol 298/298 |
 | 2026-08-19 | M1-4b browser owner | normal/private manager 单一 owner；committed URL authority；browser-owned async script fetch；browser 370 tests |
 | 2026-08-19 | M1-4c renderer bridge | request ID router + register/snapshot/unregister callbacks；fresh peer production E2E；owner 跨 renderer 存活 |
+| 2026-08-19 | M1-4d registration discovery | getRegistration(s) typed IPC；active-first scope representative；fresh renderer 无旧 ID 恢复 registration |
 | 2026-08-19 | 三方案对比 | 拒绝同线程 context（无调度隔离）；拒绝从零线程（复制安全基建）；推荐抽取 Worker 线程核 |
 | 2026-08-19 | owner | production browser process 单一 owner；WebView 只做同算法 in-process adapter |
 | 2026-08-19 | 首个 driving WPT | `activation-after-registration.https.html` |

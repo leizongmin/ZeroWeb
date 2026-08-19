@@ -203,3 +203,42 @@ fn navigator_register_rejects_script_compile_failure() {
         "rejected:TypeError"
     );
 }
+
+#[test]
+fn navigator_replacement_reuses_registration_identity_for_scope() {
+    let mut webview = WebViewBuilder::new()
+        .url("https://example.test/page.html")
+        .script_source_fetcher(Arc::new(|_, _| Ok(String::new())))
+        .build();
+
+    webview
+        .execute_script(
+            "globalThis.__identity = 'pending';
+             navigator.serviceWorker.register('/sw-v1.js', {scope:'/app/'}).then(function(first) {
+               globalThis.__firstReg = first;
+               return navigator.serviceWorker.ready;
+             }).then(function() {
+               return navigator.serviceWorker.register('/sw-v2.js', {scope:'/app/'});
+             }).then(function(second) {
+               return navigator.serviceWorker.getRegistrations().then(function(all) {
+                 globalThis.__identity = String(second === globalThis.__firstReg) + '|' +
+                   String(all.length) + '|' + String(all[0] === globalThis.__firstReg);
+               });
+             }, function(error) {
+               globalThis.__identity = 'error:' + String(error);
+             });
+             'started';",
+        )
+        .unwrap();
+
+    let deadline = Instant::now() + Duration::from_secs(5);
+    loop {
+        let value = webview.execute_script("globalThis.__identity").unwrap();
+        if value != "pending" {
+            assert_eq!(value, "true|1|true");
+            break;
+        }
+        assert!(Instant::now() < deadline, "replacement registration did not settle");
+        std::thread::sleep(Duration::from_millis(10));
+    }
+}
