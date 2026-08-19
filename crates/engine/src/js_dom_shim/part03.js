@@ -546,16 +546,37 @@
     return newNode;
   });
   _zwDefProtoMethod(globalThis.Node.prototype, 'removeChild', function(child) {
-    var pnt = 0;
-    try { pnt = this.nodeType | 0; } catch (_e7) {}
-    if (pnt !== 1 && pnt !== 9 && pnt !== 11) {
-      throw new (globalThis.DOMException || Error)(
-        'Nodes of type ' + pnt + ' cannot have children.', 'HierarchyRequestError');
+    // R126 spec 纠正：`dom-node-pre-remove` 步骤 1 是 **child 包含检查**（不在子的
+    // childNodes → NotFoundError）——先于任何「父类型不能有子」检查（WPT
+    // Node-removeChild synthetic：text/comment `s.removeChild(doc)` 期望
+    // NOT_FOUND_ERR 非 HierarchyRequestError——旧父类型前置检查顺序颠倒）。
+    // R126：WebIDL Node 类型校验（null / 非 Node 抛 TypeError）。
+    if (child === null || child === undefined || typeof child.nodeType !== 'number') {
+      throw new globalThis.TypeError(
+        "Failed to execute 'removeChild' on 'Node': parameter 1 is not of type 'Node'.");
     }
     // R117：NotFoundError 校验 lenient（detached doc 的 childNodes 视图不完整——实证
-    // NodeIterator-removal PI/comment 族误抛；L2 live 视图后收口）。
-    if (this && typeof this.removeChild === 'function') {
-      return this.removeChild(child);
+    // NodeIterator-removal PI/comment 族误抛；L2 live 视图后收口）。R126 收窄：**有自身
+    // removeChild**（proxy/_zwMEl/detached docEl——各自带完整校验与记账）直调——自身
+    // 判定用 own property（typeof this.removeChild 会命中本原型方法自身 → 无限递归
+    // 栈溢出，探针实证 RangeError）；**有完整 childNodes 视图**（_zwMText/_zwMComment
+    // 纯对象——叶子节点 childNodes 恒 []）就地校验抛 NotFoundError；无视图 lenient。
+    var _r126OwnRm = this && Object.prototype.hasOwnProperty.call(this, 'removeChild')
+      ? this.removeChild : null;
+    if (_r126OwnRm && typeof _r126OwnRm === 'function'
+        && _r126OwnRm !== globalThis.Node.prototype.removeChild) {
+      return _r126OwnRm.call(this, child);
+    }
+    if (this && Object.prototype.hasOwnProperty.call(this, 'childNodes')
+        && Array.isArray(this.childNodes)) {
+      if (this.childNodes.indexOf(child) < 0) {
+        throw new (globalThis.DOMException || Error)(
+          "Failed to execute 'removeChild' on 'Node': The node to be removed is not a child of this node.",
+          'NotFoundError');
+      }
+      this.childNodes.splice(this.childNodes.indexOf(child), 1);
+      if (child.parentNode === this) child.parentNode = null;
+      return child;
     }
     return child;
   });
@@ -3509,7 +3530,24 @@
       configurable: true
     });
     // R86：迭代器 retarget 通知（先于树状态变化——pred/succ 读移除前兄弟/父链）。
-    node.removeChild = function (c) { var i = node.childNodes.indexOf(c); if (i >= 0) { if (globalThis._zwNotifyIteratorsRemove) { try { globalThis._zwNotifyIteratorsRemove(c); } catch (_e86d) {} } node.childNodes.splice(i, 1); c.parentNode = null; } return c; };
+    // R126：spec `dom-node-pre-remove` NotFound 校验（WPT Node-removeChild synthetic
+    // `s3.removeChild(doc)`——旧静默返 c 不抛）；WebIDL Node 类型校验（null/非 Node TypeError）。
+    node.removeChild = function (c) {
+      if (c === null || c === undefined || typeof c.nodeType !== 'number') {
+        throw new globalThis.TypeError(
+          "Failed to execute 'removeChild' on 'Node': parameter 1 is not of type 'Node'.");
+      }
+      var i = node.childNodes.indexOf(c);
+      if (i < 0) {
+        throw new (globalThis.DOMException || Error)(
+          "Failed to execute 'removeChild' on 'Node': The node to be removed is not a child of this node.",
+          'NotFoundError');
+      }
+      if (globalThis._zwNotifyIteratorsRemove) { try { globalThis._zwNotifyIteratorsRemove(c); } catch (_e86d) {} }
+      node.childNodes.splice(i, 1);
+      c.parentNode = null;
+      return c;
+    };
     // R57（FV M1）：createElement 路径的 Constraint Validation API（validator.js
     // 的 ctl 经 document.createElement——R2825 只覆盖 selector-based 的
     // _makeProxy）。node-based 约束计算（getAttribute + value 字段——与
@@ -4117,7 +4155,50 @@
     // nextNode(node) 对树节点统一调 node.hasChildNodes()——旧 docEl 无此方法 → undefined 崩
     // "Cannot read properties of undefined (reading 'hasChildNodes')"——实际崩点在 prototype
     // 链上缺失（docEl.childNodes 数组存在但 hasChildNodes 函数缺失）。
-    var docEl = { nodeType: 1, tagName: 'HTML', nodeName: 'HTML', localName: 'html', childNodes: [], hasChildNodes: function () { return docEl.childNodes.length > 0; }, get firstChild() { return docEl.childNodes.length ? docEl.childNodes[0] : null; }, get lastChild() { return docEl.childNodes.length ? docEl.childNodes[docEl.childNodes.length - 1] : null; } };
+    var docEl = { nodeType: 1, tagName: 'HTML', nodeName: 'HTML', localName: 'html', childNodes: [], hasChildNodes: function () { return docEl.childNodes.length > 0; }, get firstChild() { return docEl.childNodes.length ? docEl.childNodes[0] : null; }, get lastChild() { return docEl.childNodes.length ? docEl.childNodes[docEl.childNodes.length - 1] : null; },
+      // R126：docEl 的 mutation 面（WPT Node-removeChild synthetic 变体
+      // `doc.documentElement.appendChild(s)`——docEl 旧无 appendChild 直接 TypeError）。
+      // appendChild relink parentNode（childNodes 视图 + 父链一致）；removeChild 带
+      // spec `dom-node-pre-remove` NotFound 校验（子判定走本对象 childNodes identity）。
+      appendChild: function (c) {
+        if (!c) return c;
+        if (c.nodeType === 11) {
+          var fk = c.childNodes || [];
+          for (var fi = 0; fi < fk.length; fi++) this.appendChild(fk[fi]);
+          return c;
+        }
+        if (c.parentNode && c.parentNode.removeChild) { try { c.parentNode.removeChild(c); } catch (_e126a) {} }
+        c.parentNode = docEl;
+        this.childNodes.push(c);
+        return c;
+      },
+      removeChild: function (c) {
+        if (c === null || c === undefined || typeof c.nodeType !== 'number') {
+          throw new globalThis.TypeError(
+            "Failed to execute 'removeChild' on 'Node': parameter 1 is not of type 'Node'.");
+        }
+        for (var i = 0; i < this.childNodes.length; i++) {
+          if (this.childNodes[i] === c) {
+            if (globalThis._zwNotifyIteratorsRemove) {
+              try { globalThis._zwNotifyIteratorsRemove(c); } catch (_e126b) {}
+            }
+            this.childNodes.splice(i, 1);
+            if (c.parentNode === docEl) c.parentNode = null;
+            return c;
+          }
+        }
+        throw new (globalThis.DOMException || Error)(
+          "Failed to execute 'removeChild' on 'Node': The node to be removed is not a child of this node.",
+          'NotFoundError');
+      },
+      insertBefore: function (c, ref) {
+        if (!c) return c;
+        if (c.parentNode && c.parentNode.removeChild) { try { c.parentNode.removeChild(c); } catch (_e126c) {} }
+        var i = ref ? this.childNodes.indexOf(ref) : -1;
+        if (i < 0) { c.parentNode = docEl; this.childNodes.push(c); }
+        else { c.parentNode = docEl; this.childNodes.splice(i, 0, c); }
+        return c;
+      } };
     var headEl = { nodeType: 1, tagName: 'HEAD', nodeName: 'HEAD', localName: 'head', childNodes: [], hasChildNodes: function () { return headEl.childNodes.length > 0; }, get firstChild() { return headEl.childNodes.length ? headEl.childNodes[0] : null; }, get lastChild() { return headEl.childNodes.length ? headEl.childNodes[headEl.childNodes.length - 1] : null; } };
     var doc = {
       nodeType: 9,

@@ -365,6 +365,28 @@ pub(super) fn native_remove_child_invoke(
         return;
     };
     let Some(child) = node_id_from_value(scope, args.get(0)) else {
+        // R126：WebIDL Node 类型校验——null/undefined/非对象（无 nodeType）抛 TypeError
+        //（WPT Node-removeChild "Passing a value that is not a Node reference should
+        // throw TypeError"）。带 nodeType 但无 internal slot 的对象（叠加路径的
+        // polyfill document 等）走 spec NotFound 语义——child 恒不在 parent 子列表。
+        let arg = args.get(0);
+        if arg.is_null_or_undefined() || !arg.is_object() {
+            if let Some(m) = v8::String::new(
+                scope,
+                "Failed to execute 'removeChild' on 'Node': parameter 1 is not of type 'Node'.",
+            ) {
+                scope.throw_exception(v8::Exception::type_error(scope, m));
+            }
+            return;
+        }
+        // polyfill 节点（有 nodeType 无 slot）：按「不是 this 的子」抛 NotFound
+        //（WPT Node-removeChild `s.removeChild(doc)`——叠加路径下 doc 是 shim 对象，
+        // 真 native-only 路径 document 有 slot、remove_child 返 NotFound 同语义）。
+        super::dom_exception::throw_dom_exception(
+            scope,
+            "NotFoundError",
+            "Failed to execute 'removeChild' on 'Node': The node to be removed is not a child of this node.",
+        );
         return;
     };
     match with_dom_mut(|d| d.remove_child(parent, child)) {

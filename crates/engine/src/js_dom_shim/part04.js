@@ -2708,6 +2708,67 @@
         }
         if (prop === 'removeChild') {
           return function(child) {
+            // R126：spec `dom-node-pre-remove` 步骤 1-2——① WebIDL Node 类型校验：
+            // null / 非 Node（无 nodeType 数字）抛 TypeError（WPT "Passing a value that
+            // is not a Node reference to removeChild should throw TypeError"）。
+            // ② child 不是 this 的子 → NotFoundError（WPT Node-removeChild 全簇
+            // "should throw NOT_FOUND_ERR" / "should not affect it"——ownerDocument
+            // 不变 + 不误摘）。子判定用**融合视图**（host 快照 ∪ pending added −
+            // pending removed ∪ handle registry——_childNodeList 与 handle 容器
+            // `_handleChildNodes` 同源）；融合视图**空且无 sel**（查询面不可用的
+            // 透明父——R117 lenient 教训：sel 父融合视图不完整时硬抛曾致
+            // NodeIterator-removal 14F 回归）维持静默穿透。
+            if (child === null || child === undefined || typeof child.nodeType !== 'number') {
+              throw new globalThis.TypeError(
+                "Failed to execute 'removeChild' on 'Node': parameter 1 is not of type 'Node'.");
+            }
+            function _r126IsChildOf(parentSel, parentHandle, target) {
+              // R126：已移除节点（sel 标记 / pending-removed——同批先前 removeChild 后
+              // shim 的 parentNode 读 host 快照仍指旧父，调用方按旧父再 remove 是 shim
+              // 融合视图限制下的合法重试[WPT Event-dispatch-target-moved 的 16 listener
+              // 对 `parent === target.parentNode` 旧值重复触发]，lenient 返 child 而非
+              // 抛——真被移除后「已非任何父的子」语义无偏差；未挂载的新节点不命中本
+              // 分支照常抛 NotFound。
+              if (target && typeof _zwIsRemovedNode === 'function' && _zwIsRemovedNode(target)) {
+                return 'lenient-already-removed';
+              }
+              // handle 容器：registry 子（_handleChildren）权威——命中 true，未命中且
+              // 无 sel（handle-only，registry 即全部子）→ false（NotFound）。
+              if (parentHandle) {
+                if (_handleChildNodes(parentHandle).indexOf(target) >= 0) return true;
+                // R87 注册文本子 / 物化缓存子（textContent= 建的静态包装，无
+                // __zwHandle——handle registry 不含但 remove 语义有效，R87b 分支记账）。
+                var _r126Cache = typeof _zwDetachedChildrenOf === 'function'
+                  ? _zwDetachedChildrenOf(parentHandle) : null;
+                if (_r126Cache && _r126Cache.indexOf(target) >= 0) return true;
+                if (_zwTextElsByEl && _zwTextElsByEl.get(_makeProxy(parentSel, parentHandle))
+                    && target && !target.__zwHandle && target.__zwIsText) return true;
+                if (!parentSel) return false;
+              }
+              // sel 父：融合 childNodes（快照 ∪ pending）identity 含 target。
+              if (parentSel) {
+                var kids = _childNodeList(parentSel, parentHandle);
+                for (var i = 0; i < kids.length; i++) if (kids[i] === target) return true;
+                // R126：parentNode 融合视图残留（移动后 __zw_parent 快照仍指旧父——
+                // host mutation 未 apply；WPT Event-dispatch-target-moved 的 listener 以
+                // `parent === target.parentNode` 旧值守卫重复 remove）：调用方视图
+                // （parentNode === this）与子列表视图不一致时按调用方视图 lenient——
+                // 同一融合视图体系内自洽，真 detached（parentNode null）不命中照抛。
+                try {
+                  var _r126Pn = target.parentNode;
+                  if (_r126Pn && _r126Pn === _makeProxy(parentSel, parentHandle)) return 'lenient-stale-parent';
+                } catch (_e126pn) {}
+                // pending-removed 命中（快照仍含但同批已移除）→ 已非子。
+                if (typeof _zwIsRemovedNode === 'function' && _zwIsRemovedNode(target)) return false;
+                return false;
+              }
+              return true; // 无 sel 无 handle registry：透明父（lenient 保持）
+            }
+            if (_r126IsChildOf(sel, handle, child) === false) {
+              throw _zwDomException(
+                "Failed to execute 'removeChild' on 'Node': The node to be removed is not a child of this node.",
+                'NotFoundError');
+            }
             // R87：注册文本子（textContent= 建的静态包装节点，无 __zwHandle）——旧直接
             // 静默 no-op（WPT NodeIterator-removal 的 `paras[0].parentNode.removeChild(
             // paras[0].firstChild)`：移除不生效 + 迭代器不 retarget）。经注册表注销

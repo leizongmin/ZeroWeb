@@ -873,7 +873,10 @@
 
   // R3254-C1：构造 DOMException（无 DOMException 环境回落 Error + name）——reject 用。
   function _zwDomException(msg, name) {
-    if (typeof DOMException === 'function') return new DOMException(msg, name);
+    // R126：globalThis.DOMException（native_dom 叠加路径 = 原生 DOMException；纯 polyfill =
+    // part01b）——assert_throws_dom "wrong global" 要求异常 ctor 与用例 realm 一致（R6 教训）。
+    var Ctor = globalThis.DOMException;
+    if (typeof Ctor === 'function') return new Ctor(msg, name);
     var e = new Error(msg);
     e.name = name;
     return e;

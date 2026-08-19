@@ -1147,3 +1147,85 @@ fn test_get_element_by_id_dynamic_id_r125() {
 }
 
 
+
+
+// js-dom M4 R126：removeChild 的 spec `dom-node-pre-remove` 校验族（WPT
+// dom/nodes/Node-removeChild.html 28F 簇驱动）。断言组：
+// ① WebIDL 类型校验：null / 非 Node（无 nodeType）→ TypeError
+// ② detached 子（createElement 未挂）→ NotFoundError + ownerDocument 不变
+// ③ 非本父的子（挂 documentElement 下，body.removeChild）→ NotFoundError
+// ④ s.removeChild(document)（handle-only 父，registry 空）→ NotFoundError
+// ⑤ 合成文档（createHTMLDocument）同族：docEl.appendChild 后主文档 remove 抛、
+//    body 内 s.removeChild(doc) 抛 + DOMException identity（(doc.defaultView||self)
+//    .DOMException —— defaultView undefined 回落 self，R126 _zwDomException globalThis 化）
+// ⑥ 文本/注释叶子（无自身 removeChild，childNodes 恒 []）→ NotFoundError 非
+//    HierarchyRequestError（spec pre-remove 步骤 1 是包含检查，先于父类型检查）
+// ⑦ 合法移除仍生效（R87 注册文本子路径不受校验影响）
+#[test]
+fn test_remove_child_not_found_validation_r126() {
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let mut sandbox = V8Sandbox::with_config(zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    })
+    .unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><div id=\"host\"><p id=\"a\">A</p></div></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry);
+
+    let out = sandbox
+        .execute(
+            "var parts = [];\
+             function threw(fn) { try { fn(); return 'none'; } catch (e) { return e.name; } }\
+             parts.push('null:' + threw(function () { document.body.removeChild(null); }));\
+             parts.push('obj:' + threw(function () { document.body.removeChild({'a':'b'}); }));\
+             var s = document.createElement('a');\
+             parts.push('detached:' + threw(function () { document.body.removeChild(s); })\
+               + ':od:' + (s.ownerDocument === document));\
+             var s2 = document.createElement('b');\
+             document.documentElement.appendChild(s2);\
+             parts.push('other-parent:' + threw(function () { document.body.removeChild(s2); })\
+               + ':od:' + (s2.ownerDocument === document));\
+             var s3 = document.createElement('test');\
+             document.body.appendChild(s3);\
+             parts.push('handle-empty:' + threw(function () { s3.removeChild(document); }));\
+             var sd = document.implementation.createHTMLDocument();\
+             var se = sd.createElement('b');\
+             sd.documentElement.appendChild(se);\
+             parts.push('syn-el:' + threw(function () { document.body.removeChild(se); })\
+               + ':od:' + (se.ownerDocument === sd));\
+             var se2 = sd.createElement('test');\
+             sd.body.appendChild(se2);\
+             var domExc = (sd.defaultView || self).DOMException;\
+             var e2n = 'none', e2ctor = 'none';\
+             try { se2.removeChild(sd); } catch (e2) { e2n = e2.name; e2ctor = String(e2.constructor === domExc); }\
+             parts.push('syn-child:' + e2n + ':ctor:' + e2ctor);\
+             var st = sd.createTextNode('t');\
+             sd.body.appendChild(st);\
+             parts.push('syn-text:' + threw(function () { st.removeChild(sd); }));\
+             var sc = sd.createComment('c');\
+             sd.body.appendChild(sc);\
+             parts.push('syn-comment:' + threw(function () { sc.removeChild(sd); }));\
+             var sp = document.createElement('p');\
+             document.getElementById('host').appendChild(sp);\
+             sp.textContent = 'inner';\
+             parts.push('legal-text:' + (threw(function () { sp.removeChild(sp.firstChild); }) === 'none')\
+               + ':fc-null:' + (sp.firstChild === null));\
+             parts.join('|');",
+        )
+        .unwrap()
+        .value;
+    assert_eq!(
+        out,
+        "null:TypeError|obj:TypeError|detached:NotFoundError:od:true|other-parent:NotFoundError:od:true|handle-empty:NotFoundError|syn-el:NotFoundError:od:true|syn-child:NotFoundError:ctor:true|syn-text:NotFoundError|syn-comment:NotFoundError|legal-text:true:fc-null:true",
+        "removeChild 校验族：TypeError/NotFoundError/ownerDocument 不变/合成文档 DOMException identity/合法移除不受影响"
+    );
+}
+

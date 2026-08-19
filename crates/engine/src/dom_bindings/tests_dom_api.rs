@@ -2932,3 +2932,39 @@ fn native_document_create_processing_instruction_r7() {
         "InvalidCharacterError"
     );
 }
+
+// R126：native removeChild 的 WebIDL 类型校验 + 无 slot 对象（叠加路径 polyfill 节点）
+// 的 NotFound 语义（WPT Node-removeChild "not a Node reference" TypeError /
+// `s.removeChild(doc)`——doc 是 shim 对象无 internal slot）。
+#[test]
+fn native_remove_child_type_and_slotless_validation_r126() {
+    let html = r#"<div id="a"></div>"#;
+    // null → TypeError（WebIDL Node 参数校验）。
+    assert_eq!(
+        run_script(
+            html,
+            "(()=>{ const a=__zw_native_element_for_id('a');\
+             try { a.removeChild(null); return 'no-throw'; } catch(e){ return e.name; } })()"
+        ),
+        "TypeError"
+    );
+    // 非对象（字符串）→ TypeError。
+    assert_eq!(
+        run_script(
+            html,
+            "(()=>{ const a=__zw_native_element_for_id('a');\
+             try { a.removeChild('x'); return 'no-throw'; } catch(e){ return e.name; } })()"
+        ),
+        "TypeError"
+    );
+    // 有 nodeType 但无 internal slot 的对象（polyfill document 形态）→ NotFoundError。
+    assert_eq!(
+        run_script(
+            html,
+            "(()=>{ const a=__zw_native_element_for_id('a');\
+             const fake = { nodeType: 9 };\
+             try { a.removeChild(fake); return 'no-throw'; } catch(e){ return e.name; } })()"
+        ),
+        "NotFoundError"
+    );
+}
