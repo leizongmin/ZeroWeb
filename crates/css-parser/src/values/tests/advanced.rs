@@ -6,6 +6,11 @@ fn test_parse_tab_size_invalid() {
     assert_eq!(parse_tab_size("-1"), None);
     assert_eq!(parse_tab_size("abc"), None);
     assert_eq!(parse_tab_size(""), None);
+    assert_eq!(parse_tab_size("-1px"), None);
+    assert_eq!(parse_tab_size("-0.5em"), None);
+    assert_eq!(parse_tab_size("50%"), None);
+    assert_eq!(parse_tab_size("thin"), None);
+    assert_eq!(parse_tab_size("min-content"), None);
 }
 
 // ═══════════════════════════════════════════════════════════════════

@@ -746,6 +746,13 @@ fn test_tab_size_apply() {
     assert_eq!(style.tab_size, TabSizeValue::Length(LengthValue::Em(2.0)));
 
     assert!(!apply_property_value(&mut style, "tab-size", "invalid"));
+    let previous = style.tab_size.clone();
+    assert!(!apply_property_value(&mut style, "tab-size", "-1px"));
+    assert_eq!(style.tab_size, previous);
+    assert!(!apply_property_value(&mut style, "tab-size", "50%"));
+    assert_eq!(style.tab_size, previous);
+    assert!(!apply_property_value(&mut style, "tab-size", "thin"));
+    assert_eq!(style.tab_size, previous);
 }
 
 #[test]

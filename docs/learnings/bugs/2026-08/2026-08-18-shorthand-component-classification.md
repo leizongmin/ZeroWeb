@@ -161,6 +161,8 @@ Column-width exposed the longhand-vs-shorthand grammar drift variant: the `colum
 
 Text-decoration-thickness exposed the narrowed-unit range-check variant: even when a property only accepts one `parse_length` output arm such as `Px`, that arm can still carry values outside the consumer grammar. Apply nonnegative or finite filters after matching the accepted unit, not only when accepting broad length families.
 
+Tab-size exposed the keyword-alias range-check variant: a property may first reject negative and percentage lengths correctly, yet still accept `thin` because shared `parse_length` aliases border-width keywords into positive `Px` values. Reject out-of-grammar keywords before calling the shared parser when the original token identity matters.
+
 ## Root Cause
 
 The shorthand layer used heuristic component classifiers and treated unrecognized tokens as absent optional components. That is wrong for CSS shorthands such as `border`, where every token must match one of the allowed component grammars. A shared parser can also be broader than the property grammar that consumes it: general length parsing may accept `auto`, intrinsic sizing keywords, or percentages that `border-width` must reject.

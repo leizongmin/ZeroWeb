@@ -647,8 +647,39 @@ pub fn parse_tab_size(value: &str) -> Option<TabSizeValue> {
     if let Ok(n) = value.parse::<u32>() {
         return Some(TabSizeValue::Number(n));
     }
+    if matches!(
+        value.to_ascii_lowercase().as_str(),
+        "thin" | "medium" | "thick" | "auto" | "min-content" | "max-content" | "fit-content"
+    ) {
+        return None;
+    }
     // 再尝试解析为长度值
-    parse_length(value).map(TabSizeValue::Length)
+    let length = parse_length(value)?;
+    if !tab_size_length_is_valid(&length) {
+        return None;
+    }
+    Some(TabSizeValue::Length(length))
+}
+
+fn tab_size_length_is_valid(value: &LengthValue) -> bool {
+    match value {
+        LengthValue::Px(v)
+        | LengthValue::Em(v)
+        | LengthValue::Ex(v)
+        | LengthValue::Rex(v)
+        | LengthValue::Cap(v)
+        | LengthValue::Rcap(v)
+        | LengthValue::Rem(v)
+        | LengthValue::Vh(v)
+        | LengthValue::Vw(v)
+        | LengthValue::Vmin(v)
+        | LengthValue::Vmax(v)
+        | LengthValue::Ch(v)
+        | LengthValue::Rch(v)
+        | LengthValue::Ic(v)
+        | LengthValue::Ric(v) => *v >= 0.0,
+        _ => false,
+    }
 }
 
 /// CSS overflow-wrap 值。
