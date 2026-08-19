@@ -1720,7 +1720,14 @@ fn test_apply_property_background_position_two_values() {
 #[test]
 fn test_apply_property_background_position_invalid() {
     let mut style = ComputedStyle::default();
+    assert!(apply_property_value(&mut style, "background-position", "10px 20px"));
+    let previous = style.background_position.clone();
     assert!(!apply_property_value(&mut style, "background-position", "invalid"));
+    assert_eq!(style.background_position, previous);
+    for value in ["thin", "medium", "infpx", "left thin", "right infpx top"] {
+        assert!(!apply_property_value(&mut style, "background-position", value));
+        assert_eq!(style.background_position, previous, "{value} should not overwrite");
+    }
 }
 
 #[test]

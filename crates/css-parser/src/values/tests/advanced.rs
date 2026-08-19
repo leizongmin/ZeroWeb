@@ -707,6 +707,28 @@ fn test_parse_background_position_length() {
         parse_background_position("2em"),
         Some(BackgroundPositionValue::Length(LengthValue::Em(2.0)))
     );
+    assert_eq!(
+        parse_background_position("-10px"),
+        Some(BackgroundPositionValue::Length(LengthValue::Px(-10.0)))
+    );
+}
+
+#[test]
+fn test_parse_background_position_rejects_invalid_length_grammar() {
+    for value in [
+        "thin",
+        "medium",
+        "thick",
+        "auto",
+        "min-content",
+        "fit-content",
+        "infpx",
+        "NaNpx",
+        "left thin",
+        "right infpx top",
+    ] {
+        assert_eq!(parse_background_position(value), None, "{value} should be rejected");
+    }
 }
 
 #[test]
