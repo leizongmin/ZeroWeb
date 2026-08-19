@@ -547,9 +547,9 @@ fn parse_transform_function(name: &str, args: &str) -> Option<TransformFunction>
             if parts.len() != 3 {
                 return None;
             }
-            let tx = parse_css_number(parts[0])?;
-            let ty = parse_css_number(parts[1])?;
-            let tz = parse_css_number(parts[2])?;
+            let tx = parse_translate_length_number(parts[0])?;
+            let ty = parse_translate_length_number(parts[1])?;
+            let tz = parse_translate_length_number(parts[2])?;
             Some(TransformFunction::Translate3d(tx, ty, tz))
         }
         "scale3d" => {

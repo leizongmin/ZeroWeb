@@ -1097,6 +1097,25 @@ fn test_transform_with_multiple_functions() {
 }
 
 #[test]
+fn test_transform_translate3d_accepts_length_units() {
+    let mut style = ComputedStyle::default();
+    assert!(apply_property_value(
+        &mut style,
+        "transform",
+        "translate3d(1vh, 2ch, 3vmin)"
+    ));
+    match &style.transform {
+        zero_css_parser::values::TransformValue::List(fns) => {
+            assert_eq!(
+                fns[0],
+                zero_css_parser::values::TransformFunction::Translate3d(1.0, 2.0, 3.0)
+            );
+        }
+        other => panic!("transform 应为 List 变体，实际为: {other:?}"),
+    }
+}
+
+#[test]
 fn test_transform_rejects_non_finite_numbers() {
     let mut style = ComputedStyle::default();
     assert!(apply_property_value(&mut style, "transform", "translate(10px)"));

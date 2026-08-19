@@ -231,6 +231,8 @@ Background-size exposed the suffix-gated image sizing variant: a helper can alre
 
 Translate exposed the shared-number transform variant: a helper reused by angle, scale, matrix, and translate cannot be widened with extra length units without admitting invalid angles. Give translate its own length parser, then keep angle/scale/matrix on the narrower numeric parser.
 
+Translate3d exposed the sibling transform variant: after creating a dedicated translate length parser for 2D translate, route the 3D translate length slots through the same helper instead of leaving them on the generic number parser. Keep the model distinction explicit because z accepts length, not percentage.
+
 ## Root Cause
 
 The shorthand layer used heuristic component classifiers and treated unrecognized tokens as absent optional components. That is wrong for CSS shorthands such as `border`, where every token must match one of the allowed component grammars. A shared parser can also be broader than the property grammar that consumes it: general length parsing may accept `auto`, intrinsic sizing keywords, or percentages that `border-width` must reject.

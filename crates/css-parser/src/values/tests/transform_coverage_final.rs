@@ -203,6 +203,12 @@ fn test_transform_translate3d_zero() {
     assert!(result.is_some());
 }
 
+#[test]
+fn test_transform_translate3d_accepts_length_units() {
+    let result = parse_transform("translate3d(1vh, 2ch, 3vmin)");
+    assert!(result.is_some());
+}
+
 // 测试 scale3d 中的负值
 #[test]
 fn test_transform_scale3d_negative() {
