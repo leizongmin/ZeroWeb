@@ -1486,10 +1486,26 @@ fn test_apply_outline_width() {
     assert!(apply_property_value(&mut style, "outline-width", "2px"));
     assert_eq!(style.outline_width, LengthValue::Px(2.0));
 
+    assert!(apply_property_value(&mut style, "outline-width", "thin"));
+    assert_eq!(style.outline_width, LengthValue::Px(1.0));
+
     assert!(apply_property_value(&mut style, "outline-width", "0.5em"));
     assert_eq!(style.outline_width, LengthValue::Em(0.5));
+    let previous = style.outline_width.clone();
 
     assert!(!apply_property_value(&mut style, "outline-width", "invalid"));
+    for value in [
+        "10%",
+        "auto",
+        "-1px",
+        "min-content",
+        "fit-content(10px)",
+        "infpx",
+        "NaNpx",
+    ] {
+        assert!(!apply_property_value(&mut style, "outline-width", value));
+        assert_eq!(style.outline_width, previous, "{} should not overwrite", value);
+    }
 }
 
 #[test]

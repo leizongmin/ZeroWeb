@@ -464,8 +464,10 @@ pub fn apply_property_value_with_quirks(
         // ── Outline 属性 ──
         "outline-width" => {
             if let Some(v) = parse_length_fn(value) {
-                style.outline_width = v;
-                return true;
+                if border_width_length_is_valid(value, &v) {
+                    style.outline_width = v;
+                    return true;
+                }
             }
         }
         "outline-style" => {
