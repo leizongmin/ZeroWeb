@@ -843,6 +843,15 @@ fn test_parse_background_size_length() {
     assert_eq!(parse_background_size("100px"), Some(BackgroundSizeValue::Length(100.0)));
     assert_eq!(parse_background_size("1.5em"), Some(BackgroundSizeValue::Length(1.5)));
     assert_eq!(parse_background_size("2rem"), Some(BackgroundSizeValue::Length(2.0)));
+    assert_eq!(parse_background_size("1vh"), Some(BackgroundSizeValue::Length(1.0)));
+    assert_eq!(parse_background_size("2ch"), Some(BackgroundSizeValue::Length(2.0)));
+    assert_eq!(
+        parse_background_size("1vh 2ch"),
+        Some(BackgroundSizeValue::TwoValue(
+            BgSizeComponent::Length(1.0),
+            BgSizeComponent::Length(2.0)
+        ))
+    );
 }
 
 #[test]

@@ -1107,11 +1107,32 @@ fn parse_bg_size_component(token: &str) -> Option<BgSizeComponent> {
 }
 
 fn bg_size_length_px(raw: &str, value: &LengthValue) -> Option<f32> {
-    if matches!(raw.trim().to_ascii_lowercase().as_str(), "thin" | "medium" | "thick") {
+    if matches!(
+        raw.trim().to_ascii_lowercase().as_str(),
+        "thin" | "medium" | "thick" | "auto" | "min-content" | "max-content" | "fit-content"
+    ) {
         return None;
     }
     match value {
-        LengthValue::Px(n) | LengthValue::Em(n) | LengthValue::Rem(n) if n.is_finite() && *n >= 0.0 => Some(*n as f32),
+        LengthValue::Px(n)
+        | LengthValue::Em(n)
+        | LengthValue::Ex(n)
+        | LengthValue::Rex(n)
+        | LengthValue::Cap(n)
+        | LengthValue::Rcap(n)
+        | LengthValue::Rem(n)
+        | LengthValue::Vh(n)
+        | LengthValue::Vw(n)
+        | LengthValue::Vmin(n)
+        | LengthValue::Vmax(n)
+        | LengthValue::Ch(n)
+        | LengthValue::Rch(n)
+        | LengthValue::Ic(n)
+        | LengthValue::Ric(n)
+            if n.is_finite() && *n >= 0.0 =>
+        {
+            Some(*n as f32)
+        }
         _ => None,
     }
 }

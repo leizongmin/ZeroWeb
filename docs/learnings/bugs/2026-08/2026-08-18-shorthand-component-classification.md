@@ -227,6 +227,8 @@ Text-decoration-inset exposed the two-value text-decoration inset variant: even 
 
 Text-decoration-thickness exposed the used-value text-decoration thickness variant: a parser that stores only px both rejects legal relative/percentage/calc values and can still admit shared-parser aliases such as `thin`. Store the specified `<length-percentage>` as `LengthValue`, validate the non-negative grammar at parse time, then resolve against font size only at paint/CSSOM used-value boundaries.
 
+Background-size exposed the suffix-gated image sizing variant: a helper can already call the shared length parser yet still narrow the accepted grammar by matching only `px|em|rem` afterwards. Keep the raw-token non-negative validator, but enumerate every real length unit the shared parser can return before mapping into the current computed size representation.
+
 ## Root Cause
 
 The shorthand layer used heuristic component classifiers and treated unrecognized tokens as absent optional components. That is wrong for CSS shorthands such as `border`, where every token must match one of the allowed component grammars. A shared parser can also be broader than the property grammar that consumes it: general length parsing may accept `auto`, intrinsic sizing keywords, or percentages that `border-width` must reject.

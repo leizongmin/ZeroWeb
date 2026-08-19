@@ -6,6 +6,14 @@ fn test_apply_property_background_size_length() {
     let mut style = ComputedStyle::default();
     assert!(apply_property_value(&mut style, "background-size", "100px"));
     assert_eq!(style.background_size, vec![BackgroundSizeComputedValue::Length(100.0)]);
+    assert!(apply_property_value(&mut style, "background-size", "1vh 2ch"));
+    assert_eq!(
+        style.background_size,
+        vec![BackgroundSizeComputedValue::TwoValue(
+            BgSizeComponentComputed::Length(1.0),
+            BgSizeComponentComputed::Length(2.0)
+        )]
+    );
 }
 
 #[test]
