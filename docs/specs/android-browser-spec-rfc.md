@@ -1092,3 +1092,4 @@ make test
 | v1.0 | 2026-08-19 | M1 构建探针证实 rusty_v8 的 Android source-build 在 Windows 主机解包 Linux sysroot 时因符号链接不受支持而失败；真实 renderer APK 构建须迁至 Linux/WSL CI 或获得 Android 预编译 V8，不能以进程内或 QuickJS 替代绕过 |
 | v1.1 | 2026-08-19 | Linux/WSL 复验表明迁移宿主仍不足：rusty_v8 150.2.0 source-build 缺少 Android GN 所需 Python 依赖文件，且构建脚本隐含 NDK/工具下载。真实 Android renderer 的前置条件调整为升级到具备完整 Android source build 的 V8 发行版，或引入经校验的官方 Android V8 archive；此前不接入 renderer 到 APK |
 | v1.2 | 2026-08-19 | 完整 recursive rusty_v8 150.2.0 源树在 WSL 验证可构建 Android x86_64 renderer：须使用 Chromium clang 23、Linux NDK r30、完整子模块，并为 upstream Android bindgen 提供 versioned target/sysroot 参数。crates.io 裁剪包与 Windows 原生构建均不足；后续将此 Linux 构建链脚本化，不以 QuickJS 替代 |
+| v1.3 | 2026-08-19 | renderer-enabled native host 还依赖 NDK 的 `libc++_shared.so`；隔离 WSL 构建脚本将其与 host library 同时复制进 APK，并由 renderer install-smoke 检查 C++ runtime、renderer socket 与固定四进程拓扑 |

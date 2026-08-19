@@ -10,7 +10,7 @@ import android.util.Log
 abstract class NativeRoleService : Service() {
     private val binder = object : IRoleService.Stub() {
         override fun start(socket: ParcelFileDescriptor) {
-            if (role != "image-decoder" && role != "compositor") {
+            if (role != "renderer" && role != "image-decoder" && role != "compositor") {
                 socket.close()
                 return
             }

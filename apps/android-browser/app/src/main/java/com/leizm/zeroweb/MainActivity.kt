@@ -36,6 +36,7 @@ import org.json.JSONObject
 /** Android launcher Activity for the ZeroWeb browser process. */
 class MainActivity : ComponentActivity() {
     private val serviceConnections = mutableListOf<ServiceConnection>()
+    private var rendererSocket: ParcelFileDescriptor? = null
     private var readyServiceCount by mutableStateOf(0)
     private var browserState by mutableStateOf(BrowserSnapshot.empty())
     private var browserError by mutableStateOf<String?>(null)
@@ -77,6 +78,8 @@ class MainActivity : ComponentActivity() {
     }
 
     override fun onDestroy() {
+        rendererSocket?.close()
+        rendererSocket = null
         serviceConnections.forEach(::unbindService)
         serviceConnections.clear()
         super.onDestroy()
@@ -171,6 +174,12 @@ class MainActivity : ComponentActivity() {
         val connection = object : ServiceConnection {
             override fun onServiceConnected(name: ComponentName, service: IBinder) {
                 readyServiceCount += 1
+                if (roleService == RendererService0::class.java && NativeBridge.nativeRendererLinked()) {
+                    val sockets = ParcelFileDescriptor.createSocketPair()
+                    IRoleService.Stub.asInterface(service).start(sockets[1])
+                    rendererSocket = sockets[0]
+                    android.util.Log.i("ZeroWebRole", "renderer socket connected")
+                }
                 if (roleService == ImageDecoderService::class.java) {
                     val sockets = ParcelFileDescriptor.createSocketPair()
                     IRoleService.Stub.asInterface(service).start(sockets[1])

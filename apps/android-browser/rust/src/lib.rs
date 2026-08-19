@@ -35,6 +35,22 @@ pub extern "system" fn Java_com_leizm_zeroweb_NativeBridge_nativeVersion(env: JN
         .map_or(std::ptr::null_mut(), |value| value.into_raw())
 }
 
+/// Reports whether this Android host binary includes the real renderer role.
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_com_leizm_zeroweb_NativeBridge_nativeRendererLinked(
+    _env: JNIEnv,
+    _class: JClass,
+) -> jboolean {
+    #[cfg(feature = "android-renderer")]
+    {
+        JNI_TRUE
+    }
+    #[cfg(not(feature = "android-renderer"))]
+    {
+        JNI_FALSE
+    }
+}
+
 /// Loads the Android profile into the Rust-owned browser shell and returns its chrome snapshot.
 #[unsafe(no_mangle)]
 pub extern "system" fn Java_com_leizm_zeroweb_NativeBridge_nativeLoadProfile(

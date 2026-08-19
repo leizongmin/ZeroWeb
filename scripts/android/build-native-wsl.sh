@@ -21,6 +21,9 @@ ndk_root=$(realpath "$ZERO_ANDROID_NDK")
 workspace=${ZERO_ANDROID_WSL_WORKSPACE:-"$HOME/.cache/zeroweb/android-native-workspace"}
 target_dir=${ZERO_ANDROID_WSL_TARGET_DIR:-"$HOME/.cache/zeroweb/android-native-target"}
 patch_file="$source_root/scripts/android/patches/rusty-v8-android-bindgen.patch"
+normalized_patch=$(mktemp)
+trap 'rm -f "$normalized_patch"' EXIT
+tr -d '\r' < "$patch_file" > "$normalized_patch"
 
 [[ "$workspace" == "$HOME/.cache/zeroweb/"* ]] || { echo "ZERO_ANDROID_WSL_WORKSPACE must stay under $HOME/.cache/zeroweb" >&2; exit 2; }
 [[ -f "$v8_source/Cargo.toml" ]] || { echo "invalid ZERO_V8_SOURCE: $v8_source" >&2; exit 2; }
@@ -28,8 +31,8 @@ grep -qx 'version = "150.2.0"' "$v8_source/Cargo.toml" || { echo "ZERO_V8_SOURCE
 [[ -x "$clang_root/bin/clang++" ]] || { echo "invalid ZERO_CHROMIUM_CLANG: $clang_root" >&2; exit 2; }
 [[ -x "$ndk_root/toolchains/llvm/prebuilt/linux-x86_64/bin/clang" ]] || { echo "invalid ZERO_ANDROID_NDK: $ndk_root" >&2; exit 2; }
 
-if ! git -C "$v8_source" apply --reverse --check "$patch_file" >/dev/null 2>&1; then
-  git -C "$v8_source" apply "$patch_file"
+if ! git -C "$v8_source" apply --reverse --check "$normalized_patch" >/dev/null 2>&1; then
+  git -C "$v8_source" apply "$normalized_patch"
 fi
 
 rm -rf "$v8_source/third_party/android_ndk" "$v8_source/third_party/android_toolchain/ndk"
@@ -57,3 +60,12 @@ cd "$workspace"
 cargo ndk -P 26 -t "$abi" -o "$output_dir" build --release \
   --config "patch.crates-io.v8.path=\"$v8_source\"" \
   -p zero-android-browser --features android-renderer
+
+case "$abi" in
+  x86_64) ndk_triple=x86_64-linux-android ;;
+  arm64-v8a) ndk_triple=aarch64-linux-android ;;
+  *) echo "unsupported ABI: $abi" >&2; exit 2 ;;
+esac
+runtime_lib="$ndk_root/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/lib/$ndk_triple/libc++_shared.so"
+[[ -f "$runtime_lib" ]] || { echo "missing NDK C++ runtime: $runtime_lib" >&2; exit 2; }
+cp "$runtime_lib" "$output_dir/$abi/libc++_shared.so"

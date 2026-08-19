@@ -7,6 +7,7 @@ val repositoryRoot = rootProject.projectDir.parentFile.parentFile
 val generatedJniLibs = layout.buildDirectory.dir("generated/jniLibs")
 val requestedTasks = gradle.startParameter.taskNames.joinToString(" ")
 val nativeAbis = if (requestedTasks.contains("Emulator")) listOf("x86_64") else listOf("arm64-v8a")
+val useWslRenderer = providers.gradleProperty("useWslRenderer").isPresent
 
 android {
     namespace = "com.leizm.zeroweb"
@@ -66,23 +67,45 @@ val buildRustNative by tasks.registering(Exec::class) {
     workingDir = repositoryRoot
     inputs.dir(repositoryRoot.resolve("apps/android-browser/rust"))
     inputs.file(repositoryRoot.resolve("Cargo.toml"))
+    inputs.file(repositoryRoot.resolve("scripts/android/build-native-wsl.ps1"))
+    inputs.file(repositoryRoot.resolve("scripts/android/build-native-wsl.sh"))
+    inputs.file(repositoryRoot.resolve("scripts/android/patches/rusty-v8-android-bindgen.patch"))
+    inputs.property("useWslRenderer", useWslRenderer)
     outputs.dir(generatedJniLibs)
     doFirst {
         generatedJniLibs.get().asFile.deleteRecursively()
     }
-    environment("V8_FROM_SOURCE", "1")
-    commandLine(
-        listOf("cargo", "ndk", "-P", "26") +
-            nativeAbis.flatMap { listOf("-t", it) } +
-            listOf(
-                "-o",
-                generatedJniLibs.get().asFile.absolutePath,
-                "build",
-                "--release",
-                "-p",
-                "zero-android-browser",
-            ),
-    )
+    if (useWslRenderer) {
+        require(nativeAbis.size == 1) { "WSL renderer builds require exactly one ABI" }
+        commandLine(
+            "powershell",
+            "-NoProfile",
+            "-ExecutionPolicy",
+            "Bypass",
+            "-File",
+            repositoryRoot.resolve("scripts/android/build-native-wsl.ps1").absolutePath,
+            "-SourceRoot",
+            repositoryRoot.absolutePath,
+            "-OutputDirectory",
+            generatedJniLibs.get().asFile.absolutePath,
+            "-Abi",
+            nativeAbis.single(),
+        )
+    } else {
+        environment("V8_FROM_SOURCE", "1")
+        commandLine(
+            listOf("cargo", "ndk", "-P", "26") +
+                nativeAbis.flatMap { listOf("-t", it) } +
+                listOf(
+                    "-o",
+                    generatedJniLibs.get().asFile.absolutePath,
+                    "build",
+                    "--release",
+                    "-p",
+                    "zero-android-browser",
+                ),
+        )
+    }
 }
 
 tasks.configureEach {

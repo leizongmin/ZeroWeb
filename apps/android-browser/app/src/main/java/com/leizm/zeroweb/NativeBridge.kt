@@ -10,6 +10,9 @@ object NativeBridge {
     external fun nativeVersion(): String
 
     @JvmStatic
+    external fun nativeRendererLinked(): Boolean
+
+    @JvmStatic
     external fun nativeLoadProfile(root: String): String
 
     @JvmStatic

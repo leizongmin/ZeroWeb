@@ -1,7 +1,8 @@
 [CmdletBinding()]
 param(
     [Parameter(Mandatory = $true)]
-    [string]$ApkPath
+    [string]$ApkPath,
+    [switch]$RequireRendererLinked
 )
 
 $ErrorActionPreference = "Stop"
@@ -16,6 +17,12 @@ if (-not (Test-Path -LiteralPath $adb)) {
 }
 if (-not (Test-Path -LiteralPath $ApkPath)) {
     throw "APK does not exist: $ApkPath"
+}
+if ($RequireRendererLinked) {
+    $apkEntries = & tar -tf $ApkPath
+    if (-not ($apkEntries | Select-String "lib/x86_64/libc\+\+_shared\.so")) {
+        throw "Renderer-enabled APK must package libc++_shared.so."
+    }
 }
 
 & $adb wait-for-device
@@ -49,4 +56,7 @@ foreach ($probe in "decoder probe succeeded", "compositor probe succeeded") {
     if (-not ($probes | Select-String $probe)) {
         throw "Android socket probe did not report success: $probe"
     }
+}
+if ($RequireRendererLinked -and -not ($probes | Select-String "renderer socket connected")) {
+    throw "Renderer-enabled APK did not connect its native renderer socket."
 }

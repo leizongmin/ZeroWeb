@@ -1,4 +1,4 @@
-.PHONY: setup-rusty-v8 fetch-wpt-data fetch-wpt-html-testharness update-wpt-data build browser-build browser browser-cpu browser-wpt-parity browser-debug browser-debug-wayland browser-debug-wayland-log browser-debug-x11 browser-compositor-smoke browser-compositor-real-site-smoke test testharness-html reftest reftest-oracle capture-oracle product-smoke-oracle product-smoke form-visual-smoke form-visual-browser-gpu-smoke product-smoke-legacy import-wpt audit-imported-font-resources reftest-trend reftest-trend-oracle reftest-smoke layout-golden layout-golden-update monthly-report bench bench-gate bench-capture bench-trend fetch-wpt-dom testharness-dom testharness-dom-native fetch-wpt-indexeddb testharness-indexeddb target-disk-guard target/test-guard android-preflight android-apk android-release-apk android-install-smoke
+.PHONY: setup-rusty-v8 fetch-wpt-data fetch-wpt-html-testharness update-wpt-data build browser-build browser browser-cpu browser-wpt-parity browser-debug browser-debug-wayland browser-debug-wayland-log browser-debug-x11 browser-compositor-smoke browser-compositor-real-site-smoke test testharness-html reftest reftest-oracle capture-oracle product-smoke-oracle product-smoke form-visual-smoke form-visual-browser-gpu-smoke product-smoke-legacy import-wpt audit-imported-font-resources reftest-trend reftest-trend-oracle reftest-smoke layout-golden layout-golden-update monthly-report bench bench-gate bench-capture bench-trend fetch-wpt-dom testharness-dom testharness-dom-native fetch-wpt-indexeddb testharness-indexeddb target-disk-guard target/test-guard android-preflight android-apk android-release-apk android-wsl-renderer-apk android-wsl-renderer-install-smoke android-install-smoke
 
 # Windows 的 make recipe 可能落到 cmd.exe（本机）或 Git Bash（GitHub Actions runner）——
 # 统一显式走 Git Bash，避免 cmd 语法在 bash 下解析失败（2026-08-16 CI 实测）。
@@ -401,6 +401,12 @@ android-apk: android-preflight
 
 android-release-apk: android-preflight
 	cd apps\android-browser && gradlew.bat --no-daemon :app:assembleArm64Release
+
+android-wsl-renderer-apk: android-preflight
+	cd apps\android-browser && gradlew.bat --no-daemon -PuseWslRenderer :app:assembleEmulatorDebug
+
+android-wsl-renderer-install-smoke: android-wsl-renderer-apk
+	powershell -NoProfile -ExecutionPolicy Bypass -File scripts\android\install-smoke.ps1 -ApkPath apps\android-browser\app\build\outputs\apk\emulator\debug\app-emulator-debug.apk -RequireRendererLinked
 
 android-install-smoke: android-apk
 	powershell -NoProfile -ExecutionPolicy Bypass -File scripts\android\install-smoke.ps1 -ApkPath apps\android-browser\app\build\outputs\apk\emulator\debug\app-emulator-debug.apk
