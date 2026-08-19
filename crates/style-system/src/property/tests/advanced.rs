@@ -1520,6 +1520,18 @@ fn test_apply_text_decoration_inset_invalid() {
 }
 
 #[test]
+fn test_apply_text_underline_offset_rejects_invalid_consumer_grammar() {
+    let mut style = ComputedStyle::default();
+    assert!(apply_property_value(&mut style, "text-underline-offset", "-3px"));
+    let old = style.text_underline_offset.clone();
+
+    for value in ["thin", "min-content", "fit-content(10px)", "infpx", "NaNpx"] {
+        assert!(!apply_property_value(&mut style, "text-underline-offset", value));
+        assert_eq!(style.text_underline_offset, old);
+    }
+}
+
+#[test]
 /// 测试 table-layout 默认值为 Auto
 fn test_table_layout_default() {
     let style = ComputedStyle::default();

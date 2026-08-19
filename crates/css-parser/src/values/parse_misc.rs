@@ -517,22 +517,36 @@ pub fn parse_text_underline_offset(value: &str) -> Option<TextUnderlineOffsetVal
     if v.eq_ignore_ascii_case("auto") {
         return Some(TextUnderlineOffsetValue::Auto);
     }
-    match parse_length(v)? {
-        v @ (LengthValue::Px(_)
-        | LengthValue::Em(_)
-        | LengthValue::Rem(_)
-        | LengthValue::Cap(_)
-        | LengthValue::Rcap(_)
-        | LengthValue::Ch(_)
-        | LengthValue::Ic(_)
-        | LengthValue::Ric(_)
-        | LengthValue::Percentage(_)
-        | LengthValue::Vh(_)
-        | LengthValue::Vw(_)
-        | LengthValue::Vmin(_)
-        | LengthValue::Vmax(_)) => Some(TextUnderlineOffsetValue::Length(v)),
-        // calc/fit-content 等非纯长度 → 拒绝。
-        _ => None,
+    let length = parse_length(v)?;
+    text_underline_offset_length_is_valid(v, &length).then_some(TextUnderlineOffsetValue::Length(length))
+}
+
+fn text_underline_offset_length_is_valid(raw: &str, value: &LengthValue) -> bool {
+    if matches!(
+        raw.trim().to_ascii_lowercase().as_str(),
+        "thin" | "medium" | "thick" | "auto" | "min-content" | "max-content" | "fit-content"
+    ) {
+        return false;
+    }
+    match value {
+        LengthValue::Px(v)
+        | LengthValue::Em(v)
+        | LengthValue::Ex(v)
+        | LengthValue::Rex(v)
+        | LengthValue::Cap(v)
+        | LengthValue::Rcap(v)
+        | LengthValue::Rem(v)
+        | LengthValue::Vh(v)
+        | LengthValue::Vw(v)
+        | LengthValue::Vmin(v)
+        | LengthValue::Vmax(v)
+        | LengthValue::Ch(v)
+        | LengthValue::Rch(v)
+        | LengthValue::Ic(v)
+        | LengthValue::Ric(v)
+        | LengthValue::Percentage(v) => v.is_finite(),
+        LengthValue::Calc(_) => true,
+        _ => false,
     }
 }
 

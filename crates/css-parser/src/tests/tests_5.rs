@@ -358,6 +358,11 @@ fn test_parse_text_underline_offset_length_em_percentage() {
 fn test_parse_text_underline_offset_invalid() {
     // 非法关键字（from-font 非该属性合法值）/ 多 token / 非长度 → None
     assert_eq!(parse_text_underline_offset("from-font"), None);
+    assert_eq!(parse_text_underline_offset("thin"), None);
+    assert_eq!(parse_text_underline_offset("min-content"), None);
+    assert_eq!(parse_text_underline_offset("fit-content(10px)"), None);
+    assert_eq!(parse_text_underline_offset("infpx"), None);
+    assert_eq!(parse_text_underline_offset("NaNpx"), None);
     assert_eq!(parse_text_underline_offset("11px 5px"), None);
     assert_eq!(parse_text_underline_offset("abc"), None);
     assert_eq!(parse_text_underline_offset(""), None);

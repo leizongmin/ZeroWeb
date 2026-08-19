@@ -221,6 +221,8 @@ Border-image width and outset exposed the suffix-gated length variant: checking 
 
 Overflow-clip-margin exposed the optional visual-box length variant: once a parser has consumed the optional box keyword, the remaining value still needs the property's non-negative `<length>` grammar rather than the broader shared length parser. Validate the raw length token before filling the defaulted length slot so percentages, aliases, keywords, negative values, and non-finite values cannot overwrite the previous computed margin.
 
+Text-underline-offset exposed the inherited text-decoration offset variant: a property may allow signed lengths and percentages while still needing to reject shared-parser keyword aliases and non-finite values. Keep `auto` on its keyword branch, then validate the raw `<length-percentage>` token before writing the inherited computed offset.
+
 ## Root Cause
 
 The shorthand layer used heuristic component classifiers and treated unrecognized tokens as absent optional components. That is wrong for CSS shorthands such as `border`, where every token must match one of the allowed component grammars. A shared parser can also be broader than the property grammar that consumes it: general length parsing may accept `auto`, intrinsic sizing keywords, or percentages that `border-width` must reject.
