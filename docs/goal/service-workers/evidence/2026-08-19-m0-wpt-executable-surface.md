@@ -1,0 +1,132 @@
+# Service Worker M0 WPT 可执行面分析
+
+**日期**：2026-08-19
+**基线提交**：`e3f5271c2`
+**上游观察点**：WPT `04067ce9c7c2165e71ad7d0dde10a4c5cb394a83`
+**状态**：M0 evidence（零源码改动）
+
+## 0. 结论
+
+- 当前 `zero-wpt-runner` 对 `service-workers` 的**端到端可执行文件数为 0**：本地
+  `wpt-data/` 没有该目录，CLI 没有 service-worker testharness 入口，页面注册 shim
+  不抓取或执行 worker 脚本。
+- 这不等于全部上游用例都超出 ZeroWeb 环境。M1 完成后，单页面、单注册、静态资源的
+  生命周期用例可形成第一批真实基线；M2 完成后再加入单客户端 fetch/respondWith 用例。
+- iframe、多客户端、SharedWorker、跨 origin、动态服务端 handler、WebSocket 和
+  navigation preload 依赖项不进入首批分母。每个 skip 必须记录具体依赖，不能用目录级
+  blanket skip 抬高通过率。
+- `make import-wpt` 是 reftest pair 导入器，不适合本目录的 testharness 用例。应沿用
+  IndexedDB/DOM 的 pinned fetch script + `imported-testharness.txt` 账本模式。
+
+## 1. 当前运行能力
+
+| 能力 | 当前事实 | 证据 | 裁决 |
+|------|----------|------|------|
+| 上游语料 | `tests/wpt-runner/wpt-data/` 无 `service-workers/` | 本地目录扫描 | 不可运行 |
+| CLI 入口 | 只有 DOM、Canvas、IndexedDB 等专用 testharness 入口 | `tests/wpt-runner/src/main.rs` | 不可发现 SW case |
+| 页面注册 | `register()` 只建 JS 对象并用两个 timer 推进状态 | `crates/engine/src/js_dom_shim/part02.js:2496-2591` | 仅表面近似 |
+| worker 脚本 | `register(scriptURL)` 不调用 `ScriptSourceFetcher`/网络 | 同上；`part05.js` 仅 Dedicated Worker 使用 fetcher | 不执行 |
+| 生命周期事件 | 无 install/activate 事件与 `waitUntil()` | 同上 | 不可验证 |
+| fetch 事件 | 页面 `fetch()` 直达宿主 handler | `crates/engine/src/fetch_bridge.rs` | 不经 SW |
+| 本地资源映射 | WPT 图片、脚本和 fetch 可映射到 `wpt-data` | `tests/wpt-runner/src/testharness.rs:1069-1209` | 可复用 |
+| testharness 轮询 | 单 WebView 可执行 Promise test 并收结果 | `tests/wpt-runner/src/testharness.rs:1211-1320` | 可复用 |
+| 静态 SW registry | storage 有状态机和 cache-first 静态拦截 | `crates/storage/src/service_worker.rs` | 不是事件执行环境 |
+| WebView 导航拦截 | 手工激活后主文档可命中 registry cache | `crates/webview/src/webview.rs:954-978` | 仅已有底座 |
+
+**基线口径**：现有 engine/WebView 单测验证的是 shim 或 Rust registry，不计作上游 WPT
+通过。M0 不制造 inline 测试代替 WPT。
+
+## 2. 上游依赖模型
+
+上游典型页面 `activation-after-registration.https.html` 依赖：
+
+1. `/resources/testharness.js` 和 `resources/test-helpers.sub.js`；
+2. `navigator.serviceWorker.register()` 抓取 `resources/empty-worker.js`；
+3. 注册 Promise resolve 时 `registration.installing` 可见；
+4. worker 经真实状态变更事件到 `activated`；
+5. 清理阶段按绝对 scope 精确注销。
+
+其中 1 可由现有本地资源内联机制承载；2-4 是 M1 的 driving 缺口；5 需要把页面对象与
+Rust 注册记录统一，而不是保留 shim 私有数组。
+
+上游公共 helper 还包含 iframe、MessageChannel、跨 origin 登录、WebSocket、SharedWorker
+和服务端动态脚本。存在 helper 不代表每个 case 都依赖全部能力，因此分类必须按 case
+实际调用链，而不是看到公共 helper 后整目录跳过。
+
+## 3. 分层导入建议
+
+| 层级 | 首批主题 | 开启条件 | 预期处理 |
+|------|----------|----------|----------|
+| A | 单页面 register、install、activate、statechange、scope、unregister | M1 | 纳入通过率分母 |
+| B | worker 内 `self`、`registration`、`location`、`importScripts` 的静态资源用例 | M1 | 纳入通过率分母 |
+| C | 单受控客户端 fetch、pass-through、`respondWith(new Response)` | M2 | 纳入通过率分母 |
+| D | CacheStorage 驱动的 cache-first fetch | storage-cache-api M1 + M2 | 纳入通过率分母 |
+| E | `postMessage`、`skipWaiting()`、单客户端 `clients.claim()` | M3 | 纳入通过率分母 |
+| S | 多 iframe/window、SharedWorker、多客户端枚举 | 超出当前 headless 单页面 envelope | skip，逐案注明 |
+| S | `.py` 动态响应、stash/counter、WebSocket、认证、跨 origin TLS | WPT server infra 未具备 | skip，逐案注明 |
+| S | navigation preload、push、background sync | goal 明确排除或远期 | skip，逐案注明 |
+
+首个 driving case 建议固定为
+`service-workers/service-worker/activation-after-registration.https.html`。它不需要 iframe
+或动态服务端，直接验证 M1 的核心链路，失败信号也能区分“脚本未抓取”“install 未派发”
+和“状态事件未推进”。
+
+## 4. 导入与 runner 设计约束
+
+1. 新增 pinned fetch script，只抓层级 A/B 的 case、worker 和实际引用资源；固定 WPT commit。
+2. 新增 `testharness-service-workers` CLI，复用 `run_testharness_html_inner`，但由 SW fixture
+   host 提供脚本 URL、origin、注册清理和事件循环 drain。
+3. `imported-testharness.txt` 记录每个 driving case；`wpt-data` 仍按现有约定不入主仓。
+4. runner 对未满足依赖返回 `Unsupported/NotRun` 并给出枚举原因；不得把超时算作 skip。
+5. 第一份通过率报告同时列文件数、subtest 数和 skip 原因分布，防止只报通过率百分比。
+6. 本轮不新增 fetch script 或 CLI：两者虽属测试基础设施，但会固化 M1 host 契约，必须等
+   M0 RFC 批准后与实现一起落地。
+
+## 5. 证据矩阵
+
+| 关键结论 | 来源 1 | 来源 2 | 一致性 | 置信度 | 处理 |
+|----------|--------|--------|--------|--------|------|
+| 当前无真实 SW 脚本执行 | `part02.js:2496-2591` | R3318 测试仅断言模拟状态 | 一致 | 高 | 直接采用 |
+| 当前 WPT SW 可执行数为 0 | 本地无目录 | CLI/runner 无入口 | 一致 | 高 | 直接采用 |
+| 通用 testharness 与本地资源映射可复用 | `testharness.rs:1044-1209` | DOM/IndexedDB runner 已使用同内核 | 一致 | 高 | 直接采用 |
+| activation case 可作为 M1 首案 | 上游 case 实际调用链 | 上游 `test-helpers.sub.js` | 一致 | 高 | 直接采用 |
+| 不能整目录跳过 | helper 含可选重依赖 | activation case 未调用这些 helper | 一致 | 高 | 逐案分类 |
+| fetch 用例必须等 M2 | goal 依赖约束 | 当前 FetchBridge 直达网络 handler | 一致 | 高 | M2 开启 |
+| cache-first 必须等兄弟 goal | storage-cache-api master 显示 M1 未启动 | 当前页面无 `caches` | 一致 | 高 | 联合门禁 |
+
+## 6. 来源与限制
+
+### 一手事实
+
+1. [Service Workers 规范](https://www.w3.org/TR/service-workers/)
+2. [Chromium Service Worker 架构说明](https://github.com/chromium/chromium/blob/main/content/browser/service_worker/README.md)
+3. [WPT 项目说明](https://github.com/web-platform-tests/wpt/blob/master/README.md)
+4. [WPT activation case](https://github.com/web-platform-tests/wpt/blob/master/service-workers/service-worker/activation-after-registration.https.html)
+5. [WPT Service Worker helper](https://github.com/web-platform-tests/wpt/blob/master/service-workers/service-worker/resources/test-helpers.sub.js)
+6. `crates/storage/src/service_worker.rs`
+7. `crates/webview/src/webview.rs`
+8. `crates/engine/src/js_dom_shim/part02.js`
+9. `crates/engine/src/fetch_bridge.rs`
+10. `tests/wpt-runner/src/testharness.rs`
+11. `tests/wpt-runner/src/main.rs`
+
+### 外部补证
+
+12. [MDN: Using Service Workers](https://developer.mozilla.org/en-US/docs/Web/API/Service_Worker_API/Using_Service_Workers)
+13. [MDN: ServiceWorkerGlobalScope](https://developer.mozilla.org/en-US/docs/Web/API/ServiceWorkerGlobalScope)
+
+### 限制
+
+- GitHub clone 在本机网络不可达；上游观察基于 2026-08-19 GitHub tree API、通过 jsDelivr
+  读取的 case/helper 正文和官方 WPT 链接。未声称完成整个目录的逐文件静态计数。
+- 因当前 runner 没有 SW 入口，未运行伪基线。这里的“0”指当前环境可由标准入口执行的
+  真实 SW WPT 文件数，不是未来层级 A/B 的预估通过数。
+- 层级 A-E 是实施排序（作者综合），不是上游 WPT 自带分类。
+
+## 7. 质量审查
+
+- [x] 核心结论均有两处本地源码或源码 + 上游 case 交叉证据。
+- [x] 区分“当前不可执行”和“未来可纳入”，未把 skip 当 pass。
+- [x] 未把 shim 单测计入 WPT。
+- [x] 已记录网络取证限制和固定上游 commit。
+- [x] 未修改源码、WPT 数据或共享账本。

@@ -2,7 +2,7 @@
 
 **入口文档**: [../service-workers.md](../service-workers.md)
 **创建日期**: 2026-08-17（goal 拆分 bootstrap）
-**最后更新**: 2026-08-17（立项——M0 选型 RFC 待启动）
+**最后更新**: 2026-08-19（M0 RFC 已完成并提交审批）
 
 ---
 
@@ -10,7 +10,12 @@
 
 **专项定位**：存储方向三拆之三（唯一带启动门控的）。把 `navigator.serviceWorker` 从注册表
 状态机近似（R3318）深化为真实 SW 执行环境 + fetch 拦截。**M0 选型 RFC 须用户批准后才动
-源码**；M0 期间可自主推进 WPT 可执行面分析与 RFC 起草。
+源码**；M0 WPT 可执行面分析和 RFC 已完成，当前等待用户批准方案 C。
+
+**M0 推荐决策**：抽取 `zero-script-sandbox::WorkerRuntime` 的独立线程/引擎/看门狗核心，
+新增 typed `ServiceWorkerRuntime`；production 由 browser process 的
+`ServiceWorkerManager` 单一拥有注册、控制与 fetch 路由，embedded WebView 使用同一 manager
+算法的 in-process adapter。详见 [M0 执行环境 RFC](m0-execution-environment-rfc.md)。
 
 **与兄弟 goal 的边界**：
 - [storage-indexeddb](../archive/storage-indexeddb.md)（已归档）/ storage-cache-api —
@@ -23,43 +28,47 @@
 
 ### 现有实现
 
-- ✅ 注册 API 面：R3318（part02.js:2369）——register/getRegistration/getRegistrations/
+- ✅ 注册 API 面：R3318（part02.js:2496）——register/getRegistration/getRegistrations/
   ready/unregister + scope 派生 + oncontrollerchange + installing/waiting/active 经
   setTimeout(0) 逐态推进
 - ✅ Rust 状态机：`crates/storage/src/service_worker.rs`（818 行）——
   ServiceWorkerRegistry register/unregister/state/scope 匹配 + 单测
+- ✅ WebView 静态拦截底座：手工激活 registry 后，`fetch_url()` 可先查该注册的
+  CacheStorage；**这不是 SW fetch 事件执行**，页面注册 shim 也未接入
 - ⚠️ register 的 scriptURL **不被下载执行**——SW 事件处理器无从注册
-- ⚠️ fetch 拦截为零；install/activate 为 setTimeout 模拟非真事件
-- ⚠️ WPT `service-workers` 未导入，无基线
-- ⚠️ SW 执行环境架构未选型（M0 门控项）
+- ⚠️ 页面 fetch 事件拦截为零；install/activate 为 setTimeout 模拟非真事件
+- ⚠️ WPT `service-workers` 未导入；当前标准入口真实可执行文件数为 0
+- ✅ SW 执行环境 RFC 已完成，待用户批准
 
 ## 缺口清单
 
 | # | 缺口 | 状态 |
 |---|------|------|
-| S1 | SW 执行环境架构未选型（深结构，须 RFC + 用户批准） | 🔄 M0（当前活跃） |
+| S1 | SW 执行环境架构未选型（深结构，须 RFC + 用户批准） | ⏳ RFC 完成，待批准 |
 | S2 | scriptURL 不下载执行 | ⬜ M1 |
 | S3 | fetch 拦截为零 | ⬜ M2（等 js-dom fetch 改造） |
 | S4 | 事件为 setTimeout 模拟 | ⬜ M1 |
-| S5 | WPT 覆盖为零 | ⬜ M0 期间可先做可执行面分析 |
+| S5 | WPT 覆盖为零 | ✅ M0 分层分析完成；导入/runner 等批准后实施 |
 
 ## 待用户决策
 
 | # | 事项 | 状态 |
 |---|------|------|
-| D1 | SW 执行环境选型 RFC（独立 V8 context / 独立线程 / 复用 Worker 基建） | ⬜ RFC 起草中——批准后解锁 M1+ |
+| D1 | 批准方案 C：抽取 Worker 线程核 + SW typed runtime + browser manager owner | ⏳ 待用户批准——批准后解锁 M1 |
 
 ## 下一步计划
 
-1. **M0 切片 1**：WPT `service-workers` 可执行面分析（哪些用例当前环境能跑——零源码改动）
-2. **M0 切片 2**：候选架构调研（工程量/风险/事件循环集成面对比）
-3. **M0 切片 3**：RFC 起草 → 提交用户审批（**批准前不动源码**）
+1. **等待 D1 审批**：审阅 [M0 RFC](m0-execution-environment-rfc.md)
+2. **批准后 M1-1**：抽取 script-sandbox threaded core，保持 Dedicated Worker 行为不变，
+   新增 SW typed runtime 骨架（双引擎测试）
+3. **M1-2**：manager 生命周期协调；随后接 in-process bridge、production IPC 和 WPT runner
+4. **M2 继续门控**：js-dom S6 与 storage-cache-api M1 均 land 后才改 fetch 主路径
 
 ## 里程碑状态
 
 | 里程碑 | 状态 |
 |--------|------|
-| M0 — 选型 RFC（门控） | 🔄 待启动（当前活跃） |
+| M0 — 选型 RFC（门控） | ⏳ 文档完成，待用户批准 |
 | M1 — 脚本真实执行 + 生命周期真事件 | ⬜ 门控：RFC 批准 |
 | M2 — fetch 拦截 + Cache 集成 | ⬜ 门控：js-dom fetch 改造 land |
 | M3 — 控制语义 + 消息 + 收尾 | ⬜ |
@@ -67,5 +76,15 @@
 ## 验证基线
 
 - 测试基线：storage crate 既有单测全绿（立项时点）；clippy 零警告
-- WPT service-workers 面：无基线（未导入）
+- WPT service-workers 面：当前标准入口可执行 0 文件；分层与首案见
+  [M0 WPT evidence](evidence/2026-08-19-m0-wpt-executable-surface.md)
 - 质量门禁：`cargo fmt` + `cargo clippy --workspace --all-targets -- -D warnings` 全过
+
+## M0 证据与决策记录
+
+| 日期 | 事项 | 结果 |
+|------|------|------|
+| 2026-08-19 | WPT 可执行面 | 当前 0；M1 纳入单页面生命周期，M2 纳入单客户端 fetch，重依赖用例逐案 skip |
+| 2026-08-19 | 三方案对比 | 拒绝同线程 context（无调度隔离）；拒绝从零线程（复制安全基建）；推荐抽取 Worker 线程核 |
+| 2026-08-19 | owner | production browser process 单一 owner；WebView 只做同算法 in-process adapter |
+| 2026-08-19 | 首个 driving WPT | `activation-after-registration.https.html` |
