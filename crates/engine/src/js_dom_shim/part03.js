@@ -3195,7 +3195,11 @@
   // DOMPurify 清洗所需 mutation 面（移禁元素 + 去 on*/style 属性 + 重定位）。
   var _ZW_VOID_TAGS = { area: 1, base: 1, br: 1, col: 1, embed: 1, hr: 1, img: 1, input: 1, link: 1, meta: 1, param: 1, source: 1, track: 1, wbr: 1 };
   function _zwMEscapeText(s) { return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
-  function _zwMEscapeAttr(s) { return String(s).replace(/&/g, '&amp;').replace(/"/g, '&quot;'); }
+  // R123：对齐 Rust escape_html 全集（& " < > U+00A0）——_zwMEl 序列化路径与 sel/handle
+  // outerHTML 路径三方一致（旧只转 & " 使 handle-create 元素 innerHTML 序列化分歧）。
+  // R123：对齐 Rust escape_html 全集（& " < > U+00A0）——_zwMEl 序列化路径与 sel/handle
+  // outerHTML 路径三方一致（旧只转 & " 使 handle-create 元素 innerHTML 序列化分歧）。
+  function _zwMEscapeAttr(s) { return String(s).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/ /g, '&nbsp;'); }
   // 节点 → HTML 串（元素含属性 + 子树；文本转义；注释包裹）。供 innerHTML/outerHTML 序列化（反映 mutation）。
   function _zwMSerialize(node) {
     if (!node) return '';
@@ -3737,9 +3741,124 @@
   return n; }
   function _zwMComment(v, parent) { var t = String(v); var n = { nodeType: 8, nodeName: '#comment', nodeValue: t, textContent: t, data: t, childNodes: [], children: [], hasChildNodes: function () { return false; }, contains: function (other) { return _zwNodeContains(n, other); }, compareDocumentPosition: function (other) { return _zwCompareDocumentPosition(n, other); }, parentNode: parent || null }; _zwMDefineSiblings(n); Object.defineProperty(n, 'firstChild', { get: function () { return null; }, configurable: true }); Object.defineProperty(n, 'lastChild', { get: function () { return null; }, configurable: true }); Object.defineProperty(n, 'parentElement', { get: function () { var p = n.parentNode; return p && p.nodeType === 1 ? p : null; }, configurable: true }); Object.defineProperty(n, 'length', { get: function () { return n.data.length; }, configurable: true }); return n; }
   // 递归建子树：entry = {k:'E',s:sel}/{k:'T',v}/{k:'C',v}（__zw_parse_html_child_nodes）。元素取快照 + 递归子。
+  // R123：`<?...?>` 的 bogus comment（data '?…?'——tokenizer 在首个 '>' 结束并保留 '?' 前缀）
+  // 转换为 PI 视图节点（nodeType 7）——Chrome「Parse processing instructions in HTML」后
+  // innerHTML 派生 PI 为真 PI 节点（WPT processing-instruction-attributes html-parser source
+  // 断言 nodeType 7 + 属性面）。属性面经 _piAttrsView（data 即属性序列化源，同 handle-based PI）。
+  function _zwMPiFromBogus(v, parent) {
+    var t = String(v);
+    var inner = t.charAt(0) === '?' ? t.slice(1) : t;
+    if (inner.charAt(inner.length - 1) === '?') inner = inner.slice(0, -1);
+    var sp = inner.indexOf(' ');
+    var target = sp >= 0 ? inner.slice(0, sp) : inner;
+    var data = sp >= 0 ? inner.slice(sp + 1) : '';
+    var n = _zwMComment(data, parent);
+    n.nodeType = 7;
+    n.nodeName = target;
+    n.target = target;
+    // R123：ownerDocument（WPT check-attribute-value 簇 `pi.ownerDocument.createElement`）+
+    // __zwIsText 标记（MutationObserver.observe 对无 sel/handle 节点回落父元素 id 的
+    // 既有路径——record.target 仍是 PI 视图节点）。
+    n.ownerDocument = globalThis.document;
+    n.__zwIsText = true;
+    var attrsOf = function () { return _zwPiParseAttrs(n.data) || []; };
+    // R123：属性写后发 characterData record 到父 id（WPT mutation-from html-parser 簇——
+    // PI 属性变更是 data 变更的观察面，record.target=PI 视图节点）。无父 selector 的
+    // detached PI 视图不可观测（与 parsed text 同款限制）。
+    var piNotify = function () {
+      // 沿 parentNode 链上行找首个 sel/handle 祖先（PI 视图挂在 _zwMEl innerHTML 解析树
+      // 下，真正的 id 载体是容器——createElement div 的 handle 或主文档 sel）。
+      try {
+        if (n.__zwMoSelfKey != null) {
+          // 自观测键（XML doc createPI 派生——observe(pi) 落此键，投递直达，无祖先）。
+          _mo_deliverToId(n.__zwMoSelfKey, { type: 'characterData', target: n }, false);
+          return;
+        }
+        if (n.__zwFragHostHandle != null) {
+          _mo_notify(null, n.__zwFragHostHandle, { type: 'characterData', target: n });
+          return;
+        }
+        var anc = parent, guard = 0;
+        while (anc && guard < 12) {
+          var aid = _mo_id(anc.__zwHandle, anc.__zwSelector);
+          if (aid) { _mo_notify(anc.__zwSelector, anc.__zwHandle, { type: 'characterData', target: n }); return; }
+          anc = anc.parentNode; guard++;
+        }
+      } catch (_eN) {}
+    };
+    n.hasAttributes = function () { return attrsOf().length > 0; };
+    n.getAttributeNames = function () { return attrsOf().map(function (a) { return a[0]; }); };
+    n.getAttribute = function (name) {
+      var attrs = attrsOf();
+      var q = String(name);
+      for (var i = 0; i < attrs.length; i++) if (attrs[i][0] === q) return attrs[i][1];
+      return null;
+    };
+    n.hasAttribute = function (name) { return n.getAttribute(name) !== null; };
+    n.setAttribute = function (name, value) {
+      if (!_zwPiValidName(String(name))) {
+        throw new (globalThis.DOMException || Error)(
+          "Failed to execute 'setAttribute' on 'ProcessingInstruction': The name provided is not valid.",
+          'InvalidCharacterError');
+      }
+      var attrs = attrsOf();
+      var hit = false;
+      for (var si = 0; si < attrs.length; si++) {
+        if (attrs[si][0] === String(name)) { attrs[si][1] = String(value); hit = true; break; }
+      }
+      if (!hit) attrs.push([String(name), String(value)]);
+      n.data = attrs.map(function (a) { return a[0] + '="' + _zwPiEscape(a[1]) + '"'; }).join(' ');
+      n.nodeValue = n.data;
+      n.textContent = n.data;
+      piNotify();
+    };
+    n.removeAttribute = function (name) {
+      var attrs = attrsOf();
+      var out = attrs.filter(function (a) { return a[0] !== String(name); });
+      if (out.length === attrs.length) return;
+      n.data = out.map(function (a) { return a[0] + '="' + _zwPiEscape(a[1]) + '"'; }).join(' ');
+      n.nodeValue = n.data;
+      n.textContent = n.data;
+      piNotify();
+    };
+    n.toggleAttribute = function (name, force) {
+      if (!_zwPiValidName(String(name))) {
+        throw new (globalThis.DOMException || Error)(
+          "Failed to execute 'toggleAttribute' on 'ProcessingInstruction': The name provided is not valid.",
+          'InvalidCharacterError');
+      }
+      var hasForce = force !== undefined;
+      var attrs = attrsOf();
+      var idx = -1;
+      for (var ti = 0; ti < attrs.length; ti++) if (attrs[ti][0] === String(name)) { idx = ti; break; }
+      var turnOn = hasForce ? Boolean(force) : idx < 0;
+      if (turnOn && idx >= 0) return true;
+      if (!turnOn && idx < 0) return false;
+      if (turnOn) { n.setAttribute(String(name), ''); return true; }
+      n.removeAttribute(String(name));
+      return false;
+    };
+    return n;
+  }
   function _zwMBuildNode(html, entry, parent) {
     if (entry.k === 'T') return _zwMText(entry.v, parent);
-    if (entry.k === 'C') return _zwMComment(entry.v, parent);
+    if (entry.k === 'C') {
+      // R123：bogus comment '?…?' 形态 → PI 视图（html-parser source 的 PI 语义）。
+      var cv = String(entry.v == null ? '' : entry.v);
+      // R123 lit 回归修正（同轮）：lit 模板串尾注入 '<?>' 占位（bundle N 函数
+      // `t[s]||"<?>"`）——tokenizer bogus comment data='?'，剥壳后 target 空。转换
+      // 会把 lit 的 part marker comment 变形（data 变化使 TreeWalker 的
+      // `r.data===marker` 定位失败，首渲染插值全空）。收紧守卫：须 '?target …?'
+      // 形态（剥壳后非空 target + 空格分隔）才转 PI 视图，'?'/裸 '?' 壳保回 comment。
+      if (cv.charAt(0) === '?') {
+        var _piInner = cv.slice(1, cv.length >= 1 && cv.charAt(cv.length - 1) === '?' ? -1 : undefined);
+        var _piSp = _piInner.indexOf(' ');
+        if (_piSp > 0 && /^[A-Za-z_:][-A-Za-z0-9_:.]*$/.test(_piInner.slice(0, _piSp))) {
+          return _zwMPiFromBogus(cv, parent);
+        }
+      }
+      return _zwMComment(cv, parent);
+    }
     var snap = {};
     if (typeof __zw_parse_html_query === 'function') {
       try { var a = JSON.parse(__zw_parse_html_query(html, entry.s, '0')); if (a.length) snap = a[0]; } catch (_e) {}
@@ -3771,9 +3890,20 @@
   // `.childNodes` 作 addedNodes：节点支持 nodeType/tagName/nodeName/getAttribute/hasAttribute/querySelector(All)/
   // childNodes 等 introspection，满足框架/库（React/Vue）observe 后递归观测新子树的典型消费。代理为解析快照
   //（非 live 文档节点——addedNodes 代表「被加入的结构」，host 未注册 `__zw_parse_html_child_nodes` → 返 [] 旧行为）。
-  function _zwFragmentAdded(html) {
+  function _zwFragmentAdded(html, hostHandle) {
     if (typeof _zwMBuildBodyTree !== 'function') return [];
-    try { return _zwMBuildBodyTree(String(html == null ? '' : html)).childNodes; } catch (_e) { return []; }
+    try {
+      var kids = _zwMBuildBodyTree(String(html == null ? '' : html)).childNodes;
+      // R123：顶层子盖宿主 handle 印章（__zwFragHostHandle）——PI 视图等解析节点上行找
+      // sel/handle 祖先时到片段根即断（_zwMEl parentNode=null），印章提供宿主回链
+      //（MutationObserver.observe 回落 + piNotify 投递）。
+      if (hostHandle != null) {
+        for (var i = 0; i < kids.length; i++) {
+          if (kids[i]) kids[i].__zwFragHostHandle = hostHandle;
+        }
+      }
+      return kids;
+    } catch (_e) { return []; }
   }
   // js-dom M4 R112：detached doc 的本地派发（WPT Event-dispatch-bubbles "In new Document()"）。
   // 结构：doc → docEl → body（_makeDetachedDocument 的静态树）。listener 存 doc._zwLocalListeners

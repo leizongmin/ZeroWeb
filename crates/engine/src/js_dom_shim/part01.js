@@ -1219,6 +1219,23 @@
     if (id == null && target.__zwIsText && target.parentNode && target.parentNode.__zwSelector) {
       id = 's:' + target.parentNode.__zwSelector;
     }
+    // R123：PI 视图（_zwMPiFromBogus 派生，挂在 innerHTML 解析树下）——沿 parentNode 链
+    // 上行找首个 sel/handle 祖先作为观测 id（record.target 仍是 PI 视图节点；WPT
+    // PI-attributes mutation-from html-parser 簇 observe(pi) 后 takeRecords 断言）。
+    if (id == null && target.__zwIsText && target.nodeType === 7) {
+      if (target.__zwMoSelfKey != null) {
+        id = target.__zwMoSelfKey;
+      } else if (target.__zwFragHostHandle != null) {
+        id = 'h:' + target.__zwFragHostHandle;
+      } else {
+        var _piAnc = target.parentNode, _piGuard = 0;
+        while (_piAnc && _piGuard < 12) {
+          var _piId = _mo_id(_piAnc.__zwHandle, _piAnc.__zwSelector);
+          if (_piId) { id = _piId; break; }
+          _piAnc = _piAnc.parentNode; _piGuard++;
+        }
+      }
+    }
     if (id == null) return;
     this._targets[id] = options || {};
     this._targetProxies[id] = target;

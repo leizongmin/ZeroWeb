@@ -494,7 +494,14 @@
               if (names) {
                 names.split('|').filter(Boolean).forEach(function(n) {
                   var v = typeof __zw_get_attr_handle === 'function' ? __zw_get_attr_handle(handle, n) : '';
-                  var esc = String(v == null ? '' : v).replace(/&/g, '&amp;').replace(/"/g, '&quot;');
+                  // R123：对齐 Rust escape_html 全集（& " < > U+00A0）——sel 路径（__zw_get_outer_html
+                  // Rust 序列化）已转 < >，handle 路径旧只转 & " 双路径分歧；WPT PI-attributes
+                  // check-attribute-value 簇要求 element.outerHTML 提取值与 PI data（同款转义）相等。
+                  // R123：对齐 Rust escape_html 全集（& " < > U+00A0）——sel 路径（__zw_get_outer_html
+                  // Rust 序列化）已转 < >，handle 路径旧只转 & " 双路径分歧；WPT PI-attributes
+                  // check-attribute-value 簇要求 element.outerHTML 提取值与 PI data（同款转义）相等。
+                  var esc = String(v == null ? '' : v).replace(/&/g, '&amp;').replace(/"/g, '&quot;')
+                    .replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/ /g, '&nbsp;');
                   attrStr += ' ' + n + '="' + esc + '"';
                 });
               }
@@ -1042,6 +1049,103 @@
           // R81：PI 的 textContent = data（spec CharacterData：textContent 与 data 同源；WPT
           // "For a ProcessingInstruction, textContent should set the data"）。
           if (prop === 'textContent') return _pi ? _pi.data : '';
+          // js-dom M4 R123：PI 属性五件套（WICG declarative-partial-updates——
+          // WPT processing-instruction-attributes.html）。PI 无 host 元素属性存储，data 即
+          // 属性序列化源（part05 _zwPi* 解析/序列化层）——属性读写全部经 JS 层，
+          // 变更后 data 重序列化 + SetTextOnHandle wire 同步；mutation record 记
+          // **characterData** 类型（spec PI 属性变更是 data 变更的观察面）。
+          if (prop === 'hasAttributes') {
+            return function () { return _zwPiAttrs(handle).length > 0; };
+          }
+          if (prop === 'getAttributeNames') {
+            return function () {
+              var attrs = _zwPiAttrs(handle);
+              var out = [];
+              for (var _pai = 0; _pai < attrs.length; _pai++) out.push(attrs[_pai][0]);
+              return out;
+            };
+          }
+          if (prop === 'getAttribute') {
+            return function (name) {
+              var attrs = _zwPiAttrs(handle);
+              var n = String(name);
+              for (var _pgi = 0; _pgi < attrs.length; _pgi++) {
+                if (attrs[_pgi][0] === n) return attrs[_pgi][1];
+              }
+              return null;
+            };
+          }
+          if (prop === 'hasAttribute') {
+            return function (name) {
+              var attrs = _zwPiAttrs(handle);
+              var n = String(name);
+              for (var _phi = 0; _phi < attrs.length; _phi++) {
+                if (attrs[_phi][0] === n) return true;
+              }
+              return false;
+            };
+          }
+          if (prop === 'setAttribute') {
+            return function (name, value) {
+              var n = String(name);
+              if (!_zwPiValidName(n)) {
+                throw new (globalThis.DOMException || Error)(
+                  "Failed to execute 'setAttribute' on 'ProcessingInstruction': The name provided is not valid.",
+                  'InvalidCharacterError');
+              }
+              var v = String(value);
+              var attrs = _zwPiAttrs(handle);
+              var hit = false;
+              for (var _psi = 0; _psi < attrs.length; _psi++) {
+                if (attrs[_psi][0] === n) { attrs[_psi][1] = v; hit = true; break; }
+              }
+              if (!hit) attrs.push([n, v]);
+              _zwPiSetData(handle, attrs);
+              _mo_notify(sel, handle, { type: 'characterData', target: _makeProxy(sel, handle) });
+            };
+          }
+          if (prop === 'removeAttribute') {
+            return function (name) {
+              var n = String(name);
+              var attrs = _zwPiAttrs(handle);
+              var out = [];
+              for (var _pri = 0; _pri < attrs.length; _pri++) {
+                if (attrs[_pri][0] !== n) out.push(attrs[_pri]);
+              }
+              if (out.length === attrs.length) return; // miss no-op（spec dom-element-removeattribute）
+              _zwPiSetData(handle, out);
+              _mo_notify(sel, handle, { type: 'characterData', target: _makeProxy(sel, handle) });
+            };
+          }
+          if (prop === 'toggleAttribute') {
+            return function (name, force) {
+              var n = String(name);
+              if (!_zwPiValidName(n)) {
+                throw new (globalThis.DOMException || Error)(
+                  "Failed to execute 'toggleAttribute' on 'ProcessingInstruction': The name provided is not valid.",
+                  'InvalidCharacterError');
+              }
+              var hasForce = force !== undefined;
+              var attrs = _zwPiAttrs(handle);
+              var idx = -1;
+              for (var _pti = 0; _pti < attrs.length; _pti++) {
+                if (attrs[_pti][0] === n) { idx = _pti; break; }
+              }
+              var turnOn = hasForce ? Boolean(force) : idx < 0;
+              if (turnOn && idx >= 0) return true; // 已存在且 force=true → 值不变
+              if (!turnOn && idx < 0) return false; // 不存在且 force=false → no-op
+              if (turnOn) {
+                attrs.push([n, '']);
+                _zwPiSetData(handle, attrs);
+                _mo_notify(sel, handle, { type: 'characterData', target: _makeProxy(sel, handle) });
+                return true;
+              }
+              attrs.splice(idx, 1);
+              _zwPiSetData(handle, attrs);
+              _mo_notify(sel, handle, { type: 'characterData', target: _makeProxy(sel, handle) });
+              return false;
+            };
+          }
         }
         // CharacterData 数据编辑方法（R2823，text/comment 节点）+ Text.splitText。仅 handle-based
         // 文本/注释节点（createTextNode/createComment 所建——parsed DOM 文本节点为 _wrapNodeEntry 静态
@@ -3758,11 +3862,15 @@
         // 父链，handle-based 无 sel → 不冒泡（同 R3026 detached 限制，documented）。
         var _isText = handle && _textHandles[handle];
         var _isComment = handle && _commentHandles[handle];
-        if ((_isText || _isComment) && (p === 'data' || p === 'nodeValue')) {
+        if ((_isText || _isComment || (handle && _piHandles[handle])) && (p === 'data' || p === 'nodeValue')) {
           if (handle) {
             var _tdMoId = _mo_id(handle, sel);
             var _tdMoOld = _mo_any_wants_char_old(_tdMoId) ? _mo_read_text(sel, handle) : null;
             var _tdNew = String(value == null ? '' : value);
+            // R123：PI 的 data= 同步 _piHandles（属性层解析源——pi.data='' 后
+            // hasAttributes()=false，data='blabla=""' 后 getAttribute('blabla')=''，
+            // WPT PI-attributes data-resync 簇）。
+            if (_piHandles[handle]) _piHandles[handle].data = _tdNew;
             _zwTextDataSet(handle, _tdNew, function () { __zw_set_text_handle(handle, _tdNew); });
             _mo_notify(sel, handle, { type: 'characterData', oldValue: _tdMoOld });
           }
@@ -3809,8 +3917,16 @@
         if (p === 'textContent' || p === 'innerText' || p === 'innerHTML') {
           // R81：PI 节点的 textContent= 直接写 data（spec CharacterData——不建文本子视图、不发
           // childList；WPT "For a ProcessingInstruction, textContent should set the data"）。
+          // R123：data 即属性序列化源——setter 后属性层随之重解析（pi.data='blabla=""' →
+          // getAttribute('blabla')=''，WPT PI-attributes data-resync 簇），且经 _zwPiSetData
+          // 统一同步 wire + 缓存。
           if (p === 'textContent' && handle && _piHandles[handle]) {
-            _piHandles[handle].data = (value === null || value === undefined) ? '' : String(value);
+            var _piTCv = (value === null || value === undefined) ? '' : String(value);
+            _piHandles[handle].data = _piTCv;
+            if (typeof __zw_set_text_handle === 'function') {
+              try { __zw_set_text_handle(handle, _piTCv); } catch (_ePiT) {}
+            }
+            _zwTextDataCache.set(handle, _piTCv);
             return true;
           }
           if (p === 'innerHTML') {
@@ -3820,7 +3936,7 @@
             // parse 建 _zwMEl 代理树，取 .childNodes（可读 nodeType/tagName/getAttribute/querySelector，满足
             // 框架 observe 后递归观测新子树）；host 未注册 `__zw_parse_html_child_nodes` → []（旧行为）。
             var _ihRemoved = _childNodeList(sel, handle);
-            var _ihAdded = _zwFragmentAdded(value);
+            var _ihAdded = _zwFragmentAdded(value, handle);
             // spec `LegacyNullToEmptyString`：null → 空串（清子），非写 "null" 文本；undefined 仍 ToString。
             var _ihVal = value === null ? '' : String(value);
             if (handle) __zw_set_inner_html_handle(handle, _ihVal);

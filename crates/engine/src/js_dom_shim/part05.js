@@ -393,6 +393,93 @@
   }
 
 
+  // js-dom M4 R123：ProcessingInstruction 属性层（WICG declarative-partial-updates——
+  // WPT dom/nodes/processing-instruction-attributes.html）。PI 的 data 即属性的序列化
+  // 形态：`a="b" x="yy"` ⇔ [['a','b'],['x','yy']]，读写双向同步——setAttribute 族改
+  // 属性后 data 重序列化，data= 重新解析属性。属性名大小写敏感（distinct：ABC ≠ abc）。
+  // 解析仅接受良构 name="value" 对（空白分隔，值双引号包裹）——畸形（a=b 无引号）整体
+  // 视为无属性（data 保留原串）。序列化的值转义镜像 host escape_html（& " < > U+00A0），
+  // WPT "check attribute value" 簇与 element.outerHTML 提取值逐串相等。
+  function _zwPiParseAttrs(data) {
+    var s = String(data == null ? '' : data);
+    var attrs = [];
+    var i = 0, n = s.length;
+    var isWs = function (c) { return c === ' ' || c === '\t' || c === '\n' || c === '\f' || c === '\r'; };
+    var isNameChar = function (c) {
+      return !isWs(c) && c !== '=' && c !== '>' && c !== '/' && c !== '"' && c !== '<';
+    };
+    while (i < n && isWs(s.charAt(i))) i++;
+    while (i < n) {
+      var start = i;
+      while (i < n && isNameChar(s.charAt(i))) i++;
+      var name = s.slice(start, i);
+      while (i < n && isWs(s.charAt(i))) i++;
+      if (i >= n || s.charAt(i) !== '=') return null;
+      i++;
+      while (i < n && isWs(s.charAt(i))) i++;
+      if (i >= n || s.charAt(i) !== '"') return null;
+      i++;
+      var vstart = i;
+      while (i < n && s.charAt(i) !== '"') i++;
+      if (i >= n) return null;
+      var value = _zwPiUnescape(s.slice(vstart, i));
+      i++;
+      if (!name) return null;
+      attrs.push([name, value]);
+      while (i < n && isWs(s.charAt(i))) i++;
+    }
+    return attrs;
+  }
+  // PI 属性值序列化转义（对齐 Rust escape_html / JS outerHTML 属性转义全集：& " < >
+  // U+00A0——WPT check-attribute-value 簇用 element.outerHTML 提取值逐串对照，
+  // element 与 PI 两面同款转义才相等）。
+  function _zwPiEscape(v) {
+    return String(v).replace(/&/g, '&amp;').replace(/"/g, '&quot;')
+      .replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/ /g, '&nbsp;');
+  }
+  // PI 属性值解析反转义（&amp; &quot; &lt; &gt; —— setAttribute 原值往返）。
+  function _zwPiUnescape(v) {
+    return String(v).replace(/&lt;/g, '<').replace(/&gt;/g, '>')
+      .replace(/&quot;/g, '"').replace(/&amp;/g, '&');
+  }
+  // WPT invalid_names 判定：名含 '=' '>' '/' 空白或首字符为 '=' → InvalidCharacterError
+  //（/x/、x/、b>、a=、=x、x\t 等；'$'/'_' 等按 XML Name 宽集合法）。
+  function _zwPiValidName(name) {
+    var n = String(name);
+    if (n === '') return false;
+    for (var i = 0; i < n.length; i++) {
+      var c = n.charAt(i);
+      if (c === '=' || c === '>' || c === '/' || c === '<' || c === '"' || c === ' '
+        || c === '\t' || c === '\n' || c === '\f' || c === '\r') return false;
+    }
+    return true;
+  }
+  // PI data 读写统一入口：解析层经 _piHandles[handle].data（JS 权威——createPI 登记 +
+  // 属性写重序列化 + data= setter 直写）。返属性数组（畸形 data → 空数组——无属性但 data 保留）。
+  function _zwPiAttrs(handle) {
+    var pi = handle && _piHandles[handle];
+    if (!pi) return [];
+    var parsed = _zwPiParseAttrs(pi.data);
+    return parsed || [];
+  }
+  // 属性写后 data 重序列化（保持既有属性位次，改值原位、新增尾追）+ wire 同步
+  //（SetTextOnHandle 供渲染 + 存量 wire 读回调一致）。
+  function _zwPiSetData(handle, attrs) {
+    var pi = handle && _piHandles[handle];
+    if (!pi) return;
+    var parts = [];
+    for (var i = 0; i < attrs.length; i++) {
+      parts.push(attrs[i][0] + '="' + _zwPiEscape(attrs[i][1]) + '"');
+    }
+    var d = parts.join(' ');
+    pi.data = d;
+    if (handle && typeof __zw_set_text_handle === 'function') {
+      try { __zw_set_text_handle(handle, d); } catch (_e) {}
+    }
+    _zwTextDataCache.set(handle, d);
+  }
+
+
   // js-dom M4 R122：Attr 节点身份绑定表——elKey → Map(限定名 → Attr 对象)。
   // setAttributeNode 族与 getAttributeNode 族的 identity 契约（WPT attributes.html：
   // `attrNode === el2.getAttributeNode('foo')`、`el.attributes[1] === attrNodeNS2`——
@@ -4779,7 +4866,7 @@
         var _old = (_moTgt != null && _mo_any_wants_char_old(_moTgt)) ? _cur() : null;
         node.__nv = nv; node.textContent = nv; node.length = nv.length;
         __zw_set_child_text(parentSel, String(node.__zwChildIndex || 0), nv);
-        _mo_notify(parentSel, null, { type: 'characterData', oldValue: _old, target: node });
+        _mo_notify(parentSel, null, { type: 'characterData', oldValue: _old, target: node.__zwNotifyTarget || node });
       };
       node.appendData = function (s) { _write(_cur() + String(s == null ? '' : s)); return undefined; };
       node.insertData = function (offset, s) {
@@ -4838,6 +4925,63 @@
     } else {
       node.previousSibling = null;
       node.nextSibling = null;
+    }
+    // R123：parsed 路径的 bogus comment '?…?' → PI 视图（与 _zwMBuildNode 的 innerHTML
+    // 路径同款——主文档 parse 的 <?t …?> 经 tokenizer bogus comment 落为 comment entry，
+    // WPT PI-attributes "in main parser" 断言 nodeType 7 + 属性面）。复用 part03
+    // _zwMPiFromBogus 的属性五件套（data 即属性序列化源）。
+    if (isComment && text.charAt(0) === '?') {
+      // R123 lit 同款守卫（见 part03 _zwMBuildNode）：'?target …?' 形态才转 PI 视图。
+      var _wpiInner = text.slice(1, text.charAt(text.length - 1) === '?' ? -1 : undefined);
+      var _wpiSp = _wpiInner.indexOf(' ');
+      if (!(_wpiSp > 0 && /^[A-Za-z_:][-A-Za-z0-9_:.]*$/.test(_wpiInner.slice(0, _wpiSp)))) {
+        return node;
+      }
+      var piView = _zwMPiFromBogus(text, parentProxy);
+      // parentSel 写路径（__zwSetChildText）接 PI 的 CharacterData 面——data setter +
+      // appendData/insertData/deleteData/replaceData（WPT MutationObserver-characterData
+      // "ProcessingInstruction: data mutations" 三连写都须发 record；首版只接 data setter
+      // 致 deleteData/replaceData undefined 回归）。写统一经 comment 节点的 _write（本地
+      // data 同步 + host SetChildText + record），PI 视图字段跟随。
+      if (parentSel && typeof __zw_set_child_text === 'function' && node.__zwWriteChildText) {
+        (function (pv) {
+          var sync = function (nv) {
+            pv.__nv = nv; pv.nodeValue = nv; pv.textContent = nv;
+            if (typeof pv.length === 'number' || true) { /* length getter 基础字段 */ }
+          };
+          var cur = function () { return String(pv.__nv != null ? pv.__nv : (pv.nodeValue != null ? pv.nodeValue : '')); };
+          var write = function (nv) { sync(String(nv)); node.__zwWriteChildText(String(nv)); };
+          Object.defineProperty(pv, 'data', {
+            get: function () { return cur(); },
+            set: function (v) { write(String(v == null ? '' : v)); },
+            configurable: true, enumerable: true,
+          });
+          pv.appendData = function (s2) { write(cur() + String(s2 == null ? '' : s2)); return undefined; };
+          pv.insertData = function (offset, s2) {
+            var c2 = cur(); var o2 = Math.max(0, offset | 0);
+            write(c2.slice(0, o2) + String(s2 == null ? '' : s2) + c2.slice(o2));
+            return undefined;
+          };
+          pv.deleteData = function (offset, count) {
+            var c3 = cur(); var o3 = Math.max(0, offset | 0); var e3 = o3 + Math.max(0, count | 0);
+            write(c3.slice(0, o3) + c3.slice(e3));
+            return undefined;
+          };
+          pv.replaceData = function (offset, count, s2) {
+            var c4 = cur(); var o4 = Math.max(0, offset | 0); var e4 = o4 + Math.max(0, count | 0);
+            write(c4.slice(0, o4) + String(s2 == null ? '' : s2) + c4.slice(e4));
+            return undefined;
+          };
+          pv.substringData = function (offset, count) {
+            var c5 = cur(); var o5 = Math.max(0, offset | 0);
+            return c5.substr(o5, Math.max(0, count | 0));
+          };
+        })(piView);
+      }
+      // record.target 身份对齐观察面（mutationobservers.js 断言 record.target === 观察的
+      // PI 视图——_write 默认 target 是内部 comment 对象，identity 不等）。
+      node.__zwNotifyTarget = piView;
+      return piView;
     }
     return node;
   }

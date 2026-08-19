@@ -1737,11 +1737,15 @@
     // createElement：轻量节点（tagName 大写 + localName 小写 + namespaceURI + parentNode null）。
     d.createElement = function (t) {
       var tag = String(t);
+      // R123：XML 文档 createElement 大小写敏感（spec——HTML 文档才 ASCII 大写；
+      // WPT PI-attributes check-attribute-value 经 `pi.ownerDocument.createElement('el')`
+      // 建 element，outerHTML 提取 regex 按原大小写 'el' 匹配）。
+      var _upTag = d._htmlDoc ? tag.toUpperCase() : tag;
       var n = {
         nodeType: 1,
-        tagName: tag.toUpperCase(),
-        nodeName: tag.toUpperCase(),
-        localName: tag.toLowerCase(),
+        tagName: _upTag,
+        nodeName: _upTag,
+        localName: d._htmlDoc ? tag.toLowerCase() : tag,
         namespaceURI: d._defaultNS,
         prefix: null,
         nodeValue: null,
@@ -1753,6 +1757,34 @@
         contains: function (other) { return globalThis._zwNodeContains ? globalThis._zwNodeContains(n, other) : other === n; },
         compareDocumentPosition: function (other) { return globalThis._zwCompareDocumentPosition ? globalThis._zwCompareDocumentPosition(n, other) : 1 | 32; },
       };
+      // R123：轻量属性面 + outerHTML 序列化（WPT PI-attributes check-attribute-value 簇经
+      // `pi.ownerDocument.createElement('el')` 建 element 对照——setAttribute 后 outerHTML
+      // 提取值与 PI data 逐串相等）。转义与 _zwPiEscape / part04 outerHTML 同款全集。
+      var _attrs = {};
+      n.setAttribute = function (name, value) {
+        _attrs[String(name)] = String(value);
+      };
+      n.getAttribute = function (name) {
+        return Object.prototype.hasOwnProperty.call(_attrs, String(name)) ? _attrs[String(name)] : null;
+      };
+      n.hasAttribute = function (name) {
+        return Object.prototype.hasOwnProperty.call(_attrs, String(name));
+      };
+      n.removeAttribute = function (name) { delete _attrs[String(name)]; };
+      n.getAttributeNames = function () { return Object.keys(_attrs); };
+      Object.defineProperty(n, 'outerHTML', {
+        get: function () {
+          var out = '<' + n.tagName;
+          var names = Object.keys(_attrs);
+          for (var i = 0; i < names.length; i++) {
+            var v = _attrs[names[i]].replace(/&/g, '&amp;').replace(/"/g, '&quot;')
+              .replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/ /g, '&nbsp;');
+            out += ' ' + names[i] + '="' + v + '"';
+          }
+          return out + '></' + n.tagName + '>';
+        },
+        configurable: true, enumerable: true,
+      });
       return n;
     };
     d.createElementNS = function (ns, q) {
@@ -1763,6 +1795,53 @@
       if (c > 0) { n.prefix = String(q).slice(0, c); n.localName = String(q).slice(c + 1); n.tagName = String(q); n.nodeName = String(q); }
       return n;
     };
+    // R123：PI 属性层（WPT processing-instruction-attributes xml-dom/xml-parser source）。
+    // ① createProcessingInstruction：真 PI 视图节点（part03 _zwMPiFromBogus 同款属性五件套，
+    //    target/data + data 即属性序列化源）+ spec 校验（target 合法 Name、data 无 '?>'）。
+    // ② XML 文档的 firstChild：输入以 '<?…?>' 开头时返 PI 视图（HTML tokenizer 把它落为
+    //    html>head 的 bogus comment，这里从原串直接合成 spec 序——doc 级 PI 在 documentElement
+    //    之前）。'<?xml' 声明除外（XML 声明不是 PI，spec Document.firstChild 跳过——按
+    //    target 是否 'xml' 判定）。
+    d.createProcessingInstruction = function (target, data) {
+      var t = String(target == null ? '' : target);
+      var dd2 = String(data == null ? '' : data);
+      if (!/^[A-Za-z_:][-A-Za-z0-9_:.]*$/.test(t)) {
+        throw new (globalThis.DOMException || Error)('The target provided is not a valid name.', 'InvalidCharacterError');
+      }
+      if (dd2.indexOf('?>') !== -1) {
+        throw new (globalThis.DOMException || Error)("The data provided contains '?>'.", 'InvalidCharacterError');
+      }
+      var pi = _zwMPiFromBogus('?' + t + ' ' + dd2 + '?', null);
+      pi.ownerDocument = d;
+      // R123：自观测键（observe(pi) 直接命中，无祖先可回落——xml-dom source 的
+      // MutationObserver observe/takeRecords 簇）。
+      pi.__zwMoSelfKey = 'zwpi:' + (d._zwPiSeq = (d._zwPiSeq || 0) + 1);
+      return pi;
+    };
+    d._zwIsXml = !d._htmlDoc;
+    Object.defineProperty(d, 'firstChild', {
+      get: function () {
+        if (!d._zwIsXml) return d.documentElement;
+        // R123 修正：负向前瞻字符类构造在含 '?>' 值上失配（正则三 case 全 no-match 实证）——
+        // 改 split 提取（trim 后 '<?' 开头 + 首个 '?>' 截断）。
+        var _fc = String(d._html || '').trim();
+        if (_fc.charAt(0) === '<' && _fc.charAt(1) === '?') {
+          var _fcEnd = _fc.indexOf('?>');
+          if (_fcEnd >= 0) {
+            var _fcInner = _fc.slice(2, _fcEnd);
+            var _fcSp = _fcInner.indexOf(' ');
+            if (_fcSp > 0) {
+              var _fcT = _fcInner.slice(0, _fcSp);
+              if (_fcT !== 'xml') {
+                return d.createProcessingInstruction(_fcT, _fcInner.slice(_fcSp + 1));
+              }
+            }
+          }
+        }
+        return d.documentElement;
+      },
+      configurable: true, enumerable: true,
+    });
     return d;
   };
 

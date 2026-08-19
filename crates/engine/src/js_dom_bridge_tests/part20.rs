@@ -921,3 +921,78 @@ fn test_attr_identity_and_multi_instance_r122() {
 
 // R122 调试探针（诊断 setNamedItem 真 Attr 形态用）——已定位并删除，正式断言在
 // test_namednodemap_setnameditem_main_dom_r3022（R122 spec 语义版）。
+
+// js-dom M4 R123：ProcessingInstruction 属性层（WICG declarative-partial-updates——WPT
+// dom/nodes/processing-instruction-attributes.html 7P/133F→140P/0F 驱动）。PI 的 data 即
+// 属性序列化源：`a="b" x="yy"` ⇔ [['a','b'],['x','yy']]，读写双向同步（setAttribute 族改
+// 属性后 data 重序列化；data= 重新解析属性）。断言组：
+// ① createPI 属性五件套（hasAttributes/getAttributeNames/getAttribute/hasAttribute/setAttribute/
+//    removeAttribute/toggleAttribute）+ data 重序列化（改值原位、新增尾追、移除收缩）
+// ② data= 重解析（清空 → 无属性；'blabla=""' → getAttribute('blabla')=''）
+// ③ Name production 校验（'=' '>' '/' 空白 → InvalidCharacterError；'$' '_' 合法）
+// ④ 大小写敏感（ABC ≠ abc distinct）+ 值转义往返（& " < > 与 element outerHTML 同款全集）
+// ⑤ bogus comment innerHTML 派生 PI 视图（html-parser source）+ 主文档 parse 同款
+// https://github.com/WICG/declarative-partial-updates
+#[test]
+fn test_pi_attribute_layer_r123() {
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let mut sandbox = V8Sandbox::with_config(zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    })
+    .unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><div id=\"d\">x</div><p id=\"n50\"><?processing data?></p></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry);
+
+    let out = sandbox
+        .execute(
+            "var parts = [];\
+             var pi = document.createProcessingInstruction('t', 'a=\"b\" x=\"yy\"');\
+             parts.push('init:' + pi.nodeType + ':' + pi.hasAttributes() + ':' + pi.getAttributeNames().join(',') + ':' + pi.getAttribute('a') + ':' + pi.getAttribute('X'));\
+             pi.setAttribute('x', 'yy2');\
+             parts.push('mod:' + pi.data + ':' + pi.getAttribute('x'));\
+             pi.setAttribute('z', '1');\
+             parts.push('add:' + pi.data + ':' + pi.getAttributeNames().join(','));\
+             pi.removeAttribute('x');\
+             parts.push('rm:' + pi.data + ':' + pi.getAttribute('x') + ':' + pi.getAttributeNames().join(','));\
+             pi.data = '';\
+             parts.push('clear:' + pi.hasAttributes() + ':' + pi.getAttributeNames().length);\
+             pi.data = 'blabla=\"\"';\
+             parts.push('reparse:' + pi.getAttribute('blabla') + ':' + pi.getAttribute('BLABLA') + ':' + pi.getAttributeNames().join(','));\
+             var threw = '';\
+             try { pi.setAttribute('a=', 'v'); } catch (e) { threw = e.name; }\
+             parts.push('invalid:' + threw);\
+             pi.setAttribute('$', 'd'); pi.setAttribute('a_b', 'e');\
+             parts.push('valid:' + pi.getAttribute('$') + ':' + pi.getAttribute('a_b'));\
+             pi.setAttribute('ABC', 'up');\
+             parts.push('case:' + pi.getAttribute('ABC') + ':' + pi.getAttribute('abc'));\
+             pi.setAttribute('esc', 'a<b>&\"c');\
+             parts.push('esc:' + pi.data);\
+             var tg = pi.toggleAttribute('tk');\
+             parts.push('toggle1:' + tg + ':' + pi.getAttribute('tk'));\
+             var tg2 = pi.toggleAttribute('tk');\
+             parts.push('toggle2:' + tg2 + ':' + pi.hasAttribute('tk'));\
+             var div = document.createElement('div');\
+             div.innerHTML = '<?t a=\"b\" x=\"yy\"?>';\
+             var f = div.firstChild;\
+             parts.push('htmlp:' + f.nodeType + ':' + f.target + ':' + f.getAttribute('a'));\
+             var n50 = document.getElementById('n50').firstChild;\
+             parts.push('mainp:' + n50.nodeType + ':' + n50.target + ':' + n50.getAttribute('a') + ':' + n50.data);\
+             parts.join('|');",
+        )
+        .unwrap()
+        .value;
+    assert_eq!(
+        out,
+        "init:7:true:a,x:b:null|mod:a=\"b\" x=\"yy2\":yy2|add:a=\"b\" x=\"yy2\" z=\"1\":a,x,z|rm:a=\"b\" z=\"1\":null:a,z|clear:false:0|reparse::null:blabla|invalid:InvalidCharacterError|valid:d:e|case:up:null|esc:blabla=\"\" $=\"d\" a_b=\"e\" ABC=\"up\" esc=\"a&lt;b&gt;&amp;&quot;c\"|toggle1:true:|toggle2:false:false|htmlp:7:t:b|mainp:7:processing:null:data",
+        "PI 属性层：五件套 + data 双向同步 + 校验 + 大小写敏感 + 转义 + toggle + 双 parse 派生视图"
+    );
+}
