@@ -470,6 +470,84 @@ mod tests {
     }
 
     #[test]
+    fn test_candidate_does_not_replace_active_before_activation() {
+        let mut registry = ServiceWorkerRegistry::new();
+        let active_id = registry.register("/sw-v1.js", "/", "https://example.com");
+        assert!(registry.install(active_id));
+        assert!(registry.activate(active_id));
+
+        let candidate_id = registry.register("/sw-v2.js", "/", "https://example.com");
+        assert_eq!(registry.get_active("https://example.com").unwrap().id, active_id);
+        assert_eq!(
+            registry.get(candidate_id).unwrap().state,
+            ServiceWorkerState::Registered
+        );
+
+        assert!(registry.install(candidate_id));
+        assert_eq!(registry.get_active("https://example.com").unwrap().id, active_id);
+        assert_eq!(registry.get(candidate_id).unwrap().state, ServiceWorkerState::Installed);
+        assert_eq!(registry.active_count(), 1);
+    }
+
+    #[test]
+    fn test_invalid_candidate_activation_preserves_active() {
+        let mut registry = ServiceWorkerRegistry::new();
+        let active_id = registry.register("/sw-v1.js", "/", "https://example.com");
+        assert!(registry.install(active_id));
+        assert!(registry.activate(active_id));
+
+        let candidate_id = registry.register("/sw-v2.js", "/", "https://example.com");
+        assert!(!registry.activate(candidate_id));
+
+        assert_eq!(registry.get_active("https://example.com").unwrap().id, active_id);
+        assert_eq!(registry.get(active_id).unwrap().state, ServiceWorkerState::Activated);
+        assert_eq!(
+            registry.get(candidate_id).unwrap().state,
+            ServiceWorkerState::Registered
+        );
+        assert_eq!(registry.active_count(), 1);
+    }
+
+    #[test]
+    fn test_unregister_redundant_version_preserves_replacement() {
+        let mut registry = ServiceWorkerRegistry::new();
+        let old_id = registry.register("/sw-v1.js", "/", "https://example.com");
+        assert!(registry.install(old_id));
+        assert!(registry.activate(old_id));
+
+        let replacement_id = registry.register("/sw-v2.js", "/", "https://example.com");
+        assert!(registry.install(replacement_id));
+        assert!(registry.activate(replacement_id));
+        assert_eq!(registry.get(old_id).unwrap().state, ServiceWorkerState::Redundant);
+
+        assert!(registry.unregister(old_id));
+        assert_eq!(registry.get_active("https://example.com").unwrap().id, replacement_id);
+        assert_eq!(registry.active_count(), 1);
+        assert_eq!(registry.len(), 1);
+    }
+
+    #[test]
+    fn test_replacement_isolated_from_other_origin() {
+        let mut registry = ServiceWorkerRegistry::new();
+        let a_v1 = registry.register("/sw-v1.js", "/", "https://a.example");
+        let b_v1 = registry.register("/sw-v1.js", "/", "https://b.example");
+        assert!(registry.install(a_v1));
+        assert!(registry.activate(a_v1));
+        assert!(registry.install(b_v1));
+        assert!(registry.activate(b_v1));
+
+        let a_v2 = registry.register("/sw-v2.js", "/", "https://a.example");
+        assert!(registry.install(a_v2));
+        assert!(registry.activate(a_v2));
+
+        assert_eq!(registry.get_active("https://a.example").unwrap().id, a_v2);
+        assert_eq!(registry.get_active("https://b.example").unwrap().id, b_v1);
+        assert_eq!(registry.get(a_v1).unwrap().state, ServiceWorkerState::Redundant);
+        assert_eq!(registry.get(b_v1).unwrap().state, ServiceWorkerState::Activated);
+        assert_eq!(registry.active_count(), 2);
+    }
+
+    #[test]
     fn test_registry_get_active() {
         let mut registry = ServiceWorkerRegistry::new();
         assert!(registry.get_active("https://example.com").is_none());
