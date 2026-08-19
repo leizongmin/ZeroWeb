@@ -93,6 +93,8 @@ Logical border axis shorthands exposed the axis variant: 1-2 start/end mapping m
 
 `clip-path` circle/ellipse exposed the invalid-optional-result variant: when a delimiter keyword such as `at` is present, failure to parse the following subgrammar is not the same as the subgrammar being absent. Return a failure state from split helpers so callers cannot silently continue with defaults.
 
+`background-position` exposed the axis-classification variant: normalizing order is not a substitute for validating grammar roles. Components with axis-specific meaning must be classified before swapping or defaulting, otherwise same-axis pairs can be reshuffled into nonsensical but accepted computed values.
+
 ## Root Cause
 
 The shorthand layer used heuristic component classifiers and treated unrecognized tokens as absent optional components. That is wrong for CSS shorthands such as `border`, where every token must match one of the allowed component grammars. A shared parser can also be broader than the property grammar that consumes it: general length parsing may accept `auto`, intrinsic sizing keywords, or percentages that `border-width` must reject.

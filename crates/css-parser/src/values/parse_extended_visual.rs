@@ -751,14 +751,19 @@ pub fn parse_background_position(value: &str) -> Option<BackgroundPositionValue>
     if parts.len() == 2 {
         let first = parse_position_component(&parts[0])?;
         let second = parse_position_component(&parts[1])?;
+        let first_horizontal = matches!(first, BackgroundPositionValue::Left | BackgroundPositionValue::Right);
+        let first_vertical = matches!(first, BackgroundPositionValue::Top | BackgroundPositionValue::Bottom);
+        let second_horizontal = matches!(second, BackgroundPositionValue::Left | BackgroundPositionValue::Right);
+        let second_vertical = matches!(second, BackgroundPositionValue::Top | BackgroundPositionValue::Bottom);
+        if (first_horizontal && second_horizontal) || (first_vertical && second_vertical) {
+            return None;
+        }
         // CSS background-position 两值语法（CSS Backgrounds §3.6）：关键字顺序无关——
         // 水平专属（left/right）→ x，垂直专属（top/bottom）→ y，center 兼容两轴。
         // 故须交换当：第一值是垂直专属（top/bottom），或第二值是水平专属（left/right）。
         // R508 仅覆盖前者；R2048 补后者——"center left" 应为 x=left/y=center，否则
         // resolve 把 Left 当 y 解析致 background-position-145/146 图像错位。
-        let (x, y) = if matches!(first, BackgroundPositionValue::Top | BackgroundPositionValue::Bottom)
-            || matches!(second, BackgroundPositionValue::Left | BackgroundPositionValue::Right)
-        {
+        let (x, y) = if first_vertical || second_horizontal {
             (second, first)
         } else {
             (first, second)

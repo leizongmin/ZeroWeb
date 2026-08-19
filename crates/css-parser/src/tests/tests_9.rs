@@ -1607,3 +1607,12 @@ fn test_background_position_three_four_invalid_same_axis_pair() {
     ));
     assert!(matches!(parse_background_position("center"), Some(Bp::Center)));
 }
+
+#[test]
+fn test_background_position_two_value_rejects_same_axis_keywords() {
+    use crate::values::parse_background_position;
+    assert!(parse_background_position("left right").is_none());
+    assert!(parse_background_position("right left").is_none());
+    assert!(parse_background_position("top bottom").is_none());
+    assert!(parse_background_position("bottom top").is_none());
+}
