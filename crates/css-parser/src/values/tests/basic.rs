@@ -1774,6 +1774,8 @@ fn test_parse_relative_color_non_identity() {
         super::super::parse_color("rgb(1 2 3)"),
         Some(ColorValue::Rgba(1, 2, 3, 255))
     ));
+    assert!(super::super::parse_color("rgb(from currentColor g, r, b,)").is_none());
+    assert!(super::super::parse_color("rgb(from currentColor g,, b)").is_none());
 }
 
 #[test]

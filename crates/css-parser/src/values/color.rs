@@ -871,7 +871,15 @@ fn parse_relative_color(value: &str) -> Option<ColorValue> {
     };
     // color() 的 main 形如 `<space> <ch1> <ch2> <ch3>`：首 token 为色彩空间名，其余为 3 通道。
     let mut comps: Vec<&str> = if main.contains(',') {
-        main.split(',').map(str::trim).filter(|s| !s.is_empty()).collect()
+        let mut comps = Vec::new();
+        for item in main.split(',') {
+            let item = item.trim();
+            if item.is_empty() {
+                return None;
+            }
+            comps.push(item);
+        }
+        comps
     } else {
         main.split_whitespace().collect()
     };

@@ -107,6 +107,8 @@ Logical border axis shorthands exposed the axis variant: 1-2 start/end mapping m
 
 CSS gradients exposed the invalid-config-defaulting variant: once a configuration keyword such as `at` or `from` appears, the following subgrammar is present and must parse successfully. Unknown radial shape/size tokens, invalid gradient positions, and invalid conic angles must reject the whole gradient instead of falling back to default center or `0deg`.
 
+Relative color syntax exposed the comma-channel variant: channel lists inside CSS functions are still grammar lists. A trailing or repeated comma in `rgb(from ... g, r, b,)` or `g,,b` must fail instead of filtering out empty segments and accepting the remaining three channels.
+
 ## Root Cause
 
 The shorthand layer used heuristic component classifiers and treated unrecognized tokens as absent optional components. That is wrong for CSS shorthands such as `border`, where every token must match one of the allowed component grammars. A shared parser can also be broader than the property grammar that consumes it: general length parsing may accept `auto`, intrinsic sizing keywords, or percentages that `border-width` must reject.
