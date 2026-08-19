@@ -473,23 +473,8 @@ pub fn parse_text_decoration_thickness(value: &str) -> Option<TextDecorationThic
 pub fn parse_text_decoration_inset(value: &str) -> Option<TextDecorationInsetValue> {
     // 仅认数值长度，过滤 auto/min-content/max-content 等关键字变体。
     let parse_one = |s: &str| -> Option<LengthValue> {
-        match parse_length(s)? {
-            v @ (LengthValue::Px(_)
-            | LengthValue::Em(_)
-            | LengthValue::Rem(_)
-            | LengthValue::Cap(_)
-            | LengthValue::Rcap(_)
-            | LengthValue::Ch(_)
-            | LengthValue::Ic(_)
-            | LengthValue::Ric(_)
-            | LengthValue::Percentage(_)
-            | LengthValue::Vh(_)
-            | LengthValue::Vw(_)
-            | LengthValue::Vmin(_)
-            | LengthValue::Vmax(_)) => Some(v),
-            // auto/min-content/max-content/calc/fit-content 等非纯长度 → 拒绝。
-            _ => None,
-        }
+        let length = parse_length(s)?;
+        text_decoration_inset_length_is_valid(s, &length).then_some(length)
     };
     let parts: Vec<&str> = value.split_ascii_whitespace().collect();
     match parts.len() {
@@ -505,6 +490,35 @@ pub fn parse_text_decoration_inset(value: &str) -> Option<TextDecorationInsetVal
             end: parse_one(parts[1])?,
         }),
         _ => None,
+    }
+}
+
+fn text_decoration_inset_length_is_valid(raw: &str, value: &LengthValue) -> bool {
+    if matches!(
+        raw.trim().to_ascii_lowercase().as_str(),
+        "thin" | "medium" | "thick" | "auto" | "min-content" | "max-content" | "fit-content"
+    ) {
+        return false;
+    }
+    match value {
+        LengthValue::Px(v)
+        | LengthValue::Em(v)
+        | LengthValue::Ex(v)
+        | LengthValue::Rex(v)
+        | LengthValue::Cap(v)
+        | LengthValue::Rcap(v)
+        | LengthValue::Rem(v)
+        | LengthValue::Vh(v)
+        | LengthValue::Vw(v)
+        | LengthValue::Vmin(v)
+        | LengthValue::Vmax(v)
+        | LengthValue::Ch(v)
+        | LengthValue::Rch(v)
+        | LengthValue::Ic(v)
+        | LengthValue::Ric(v)
+        | LengthValue::Percentage(v) => v.is_finite(),
+        LengthValue::Calc(_) => true,
+        _ => false,
     }
 }
 

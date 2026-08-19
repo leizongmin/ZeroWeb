@@ -223,6 +223,8 @@ Overflow-clip-margin exposed the optional visual-box length variant: once a pars
 
 Text-underline-offset exposed the inherited text-decoration offset variant: a property may allow signed lengths and percentages while still needing to reject shared-parser keyword aliases and non-finite values. Keep `auto` on its keyword branch, then validate the raw `<length-percentage>` token before writing the inherited computed offset.
 
+Text-decoration-inset exposed the two-value text-decoration inset variant: even when both slots allow signed offsets and percentages, each slot still needs the same raw-token validation before expansion. Validate every token before cloning or assigning the start/end pair so one invalid alias cannot partially overwrite the computed decoration inset.
+
 ## Root Cause
 
 The shorthand layer used heuristic component classifiers and treated unrecognized tokens as absent optional components. That is wrong for CSS shorthands such as `border`, where every token must match one of the allowed component grammars. A shared parser can also be broader than the property grammar that consumes it: general length parsing may accept `auto`, intrinsic sizing keywords, or percentages that `border-width` must reject.

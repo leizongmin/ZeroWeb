@@ -1515,8 +1515,19 @@ fn test_apply_text_decoration_inset_two_em() {
 /// 非法值不 apply（返回 false，保持默认）
 fn test_apply_text_decoration_inset_invalid() {
     let mut style = ComputedStyle::default();
+    assert!(apply_property_value(
+        &mut style,
+        "text-decoration-inset",
+        "0.25em -0.5em"
+    ));
+    let old = style.text_decoration_inset.clone();
+
     assert!(!apply_property_value(&mut style, "text-decoration-inset", "auto"));
-    assert_eq!(style.text_decoration_inset.start, LengthValue::Px(0.0));
+    assert_eq!(style.text_decoration_inset, old);
+    for value in ["thin", "min-content", "fit-content(10px)", "infpx", "NaNpx"] {
+        assert!(!apply_property_value(&mut style, "text-decoration-inset", value));
+        assert_eq!(style.text_decoration_inset, old);
+    }
 }
 
 #[test]
