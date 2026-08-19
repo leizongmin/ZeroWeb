@@ -529,12 +529,105 @@
         'NotFoundError');
     }
     _r117GenValNodeType(this, newChild);
-    var own = (this && typeof this.replaceChild === 'function') ? this.replaceChild : null;
-    if (own) { try { return own.call(this, newChild, oldChild); } catch (_e3) { throw _e3; } }
-    try { this.removeChild(oldChild); } catch (_e4) {}
-    try { this.appendChild(newChild); } catch (_e5) {}
+    // R127：own-property 委托判定（R126 removeChild 同款教训——`typeof this.replaceChild`
+    // 命中原型方法自身 → own.call 无限递归栈溢出被外层行为吞成静默 no-op，探针实证
+    // `a.replaceChild(c, b)` 后 childNodes 不变）。有自身实现（proxy/_zwMEl/detached
+    // doc——各自带完整校验与记账）直调；纯对象走下方本地替换语义。
+    var _r127OwnRp = this && Object.prototype.hasOwnProperty.call(this, 'replaceChild')
+      ? this.replaceChild : null;
+    if (_r127OwnRp && typeof _r127OwnRp === 'function'
+        && _r127OwnRp !== globalThis.Node.prototype.replaceChild) {
+      return _r127OwnRp.call(this, newChild, oldChild);
+    }
+    // R127：spec `dom-node-replace-child` 步骤 6（parent 是 Document 时 pre-insert
+    // step 6 的「给定当前子」校验——WPT Node-replaceChild 8 个 HierarchyRequestError
+    // 用例）。replace 语义上 oldChild 视为已移除（插入位之后的子）。
+    // https://dom.spec.whatwg.org/#concept-node-replace-all 检验表（fragment 数元素/
+    // text 禁入 / element 唯一 / doctype 唯一且位置约束）。
+    var _r127Pnt = 0;
+    try { _r127Pnt = this.nodeType | 0; } catch (_e127a) {}
+    if (_r127Pnt === 9 && newChild && typeof newChild === 'object') {
+      var _r127Kids = [];
+      try { _r127Kids = this.childNodes || []; } catch (_e127b) {}
+      _r127DocPreInsertCheck(newChild, _r127Kids, oldChild);
+    }
+    // R127：spec replace 语义——先 adopt（从原父移除 newChild——new 是 old 的兄弟时
+    // old 的 index 不受影响），再原位替换（splice index）。旧 fallback remove+append
+    // 使 replace-with-sibling / replace-with-self 丢失原位（WPT "Replacing a node with
+    // its next sibling should work"）。
+    if (newChild && newChild.parentNode && typeof newChild.parentNode.removeChild === 'function') {
+      try { newChild.parentNode.removeChild(newChild); } catch (_e127c) {}
+    }
+    var _r127Idx = -1;
+    try {
+      var _r127K2 = this.childNodes || [];
+      for (var _r127j = 0; _r127j < _r127K2.length; _r127j++) {
+        if (_r127K2[_r127j] === oldChild) { _r127Idx = _r127j; break; }
+      }
+    } catch (_e127d) {}
+    if (_r127Idx < 0) return oldChild;
+    // replace-with-self：new === old 时不动（spec「node is child」短路）。
+    if (newChild === oldChild) return oldChild;
+    this.childNodes[_r127Idx] = newChild;
+    try { newChild.parentNode = this; } catch (_e127e) {}
+    try { oldChild.parentNode = null; } catch (_e127f) {}
     return oldChild;
   });
+  // R127：Document pre-insert step 6 校验（`dom-node-replace-all` 的「给定当前子」
+  // 检验表——WPT Node-replaceChild "inserting a DocumentFragment that contains a
+  // text node or too many elements" 等 8 用例）。replace 语义：oldChild 先移除、
+  // newChild 插其原位。spec 检验（插入 reference = oldChild 原位）：
+  // - element：文档另有 element 子（≠oldChild）→ HRE；有 doctype 在插入位**之后** → HRE
+  // - doctype：文档另有 doctype 子（≠oldChild）→ HRE；有 element 在插入位**之前** → HRE
+  // - fragment：子含 text → HRE；子 element 数 + 既有 element 数（≠oldChild）> 1 → HRE；
+  //   含 element 且违反上述 element 位置约束 → HRE
+  var _r127DocPreInsertCheck = function (node, kids, oldChild) {
+    var nnt = node.nodeType | 0;
+    var oldIdx = -1;
+    for (var oi = 0; oi < kids.length; oi++) {
+      if (kids[oi] === oldChild) { oldIdx = oi; break; }
+    }
+    var hasOtherEl = false, hasOtherDt = false, dtAfter = false, elBefore = false;
+    for (var i = 0; i < kids.length; i++) {
+      if (i === oldIdx) continue;
+      var k = kids[i].nodeType | 0;
+      if (k === 1) hasOtherEl = true;
+      if (k === 10) hasOtherDt = true;
+      // 位置约束（插入位 = oldIdx；oldChild 移除后插入）。
+      if (k === 10 && oldIdx >= 0 && i > oldIdx) dtAfter = true;
+      if (k === 1 && oldIdx >= 0 && i < oldIdx) elBefore = true;
+    }
+    if (nnt === 1) {
+      if (hasOtherEl || dtAfter) {
+        throw new (globalThis.DOMException || Error)(
+          'Only one element can be added to a Document.', 'HierarchyRequestError');
+      }
+    } else if (nnt === 10) {
+      if (hasOtherDt || elBefore) {
+        throw new (globalThis.DOMException || Error)(
+          'Only one doctype is allowed to be added to a Document.', 'HierarchyRequestError');
+      }
+    } else if (nnt === 11) {
+      var fk = node.childNodes || [];
+      var fel = 0;
+      for (var fi = 0; fi < fk.length; fi++) {
+        var fnt = fk[fi].nodeType | 0;
+        if (fnt === 1) fel++;
+        if (fnt === 3) {
+          throw new (globalThis.DOMException || Error)(
+            'Nodes of type 3 cannot be inserted into a Document.', 'HierarchyRequestError');
+        }
+      }
+      if (fel > 1 || (fel === 1 && hasOtherEl)) {
+        throw new (globalThis.DOMException || Error)(
+          'Only one element can be added to a Document.', 'HierarchyRequestError');
+      }
+      if (fel === 1 && dtAfter) {
+        throw new (globalThis.DOMException || Error)(
+          'Only one element can be added to a Document.', 'HierarchyRequestError');
+      }
+    }
+  };
   _zwDefProtoMethod(globalThis.Node.prototype, 'insertBefore', function(newNode, refNode) {
     _r117GenVal(this, newNode, 'insertBefore');
     // R117：refNode NotFound 校验 lenient——内部加载路径经 insertBefore 挂 pending ref（视图
@@ -3720,6 +3813,8 @@
       if (n && n.parentNode) n.parentNode.removeChild(n);
       var i = node.childNodes.indexOf(o);
       if (i < 0) return o;
+      // R127：replace-with-self 短路（spec「node is child」——`a.replaceChild(b, b)` 不动）。
+      if (n === o) return o;
       node.childNodes[i] = n; n.parentNode = node; o.parentNode = null;
       return o;
     };
@@ -4408,14 +4503,50 @@
           throw new (globalThis.DOMException || Error)(
             'Nodes of type ' + nnt + ' cannot be inserted into a Document.', 'HierarchyRequestError');
         }
-        // best-effort 替换。
-        for (var j = 0; j < kids.length; j++) {
-          if (kids[j] === oldChild) {
-            var arr = doc.childNodes;
-            arr.splice(j, 1, newChild);
-            break;
+        // R127：Document pre-insert step 6「给定当前子」校验（kids + oldChild——
+        // WPT Node-replaceChild fragment 多元素/element 重复/doctype 位置 8 用例）。
+        _r127DocPreInsertCheck(newChild, kids, oldChild);
+        // R127：spec replace 语义——先 adopt（new 是 old 兄弟时移除不影响 old 位），
+        // 再定位 splice。fragment flatten（doc.childNodes = [...df 子] 而非 df 本身）。
+        if (newChild.parentNode && typeof newChild.parentNode.removeChild === 'function') {
+          try { newChild.parentNode.removeChild(newChild); } catch (_e127g) {}
+        }
+        var idx = -1;
+        for (var j = 0; j < doc.childNodes.length; j++) {
+          if (doc.childNodes[j] === oldChild) { idx = j; break; }
+        }
+        if (idx < 0) return oldChild;
+        if (newChild === oldChild) return oldChild;
+        if (nnt === 11) {
+          var fk = newChild.childNodes || [];
+          var fc = fk.slice();
+          doc.childNodes.splice(idx, 1);
+          for (var q = 0; q < fc.length; q++) {
+            doc.childNodes.splice(idx + q, 0, fc[q]);
+            fc[q].parentNode = doc;
+            if (fc[q].nodeType === 1) {
+              var qi = doc.children.indexOf(fc[q]);
+              if (qi < 0) doc.children.push(fc[q]);
+            }
+          }
+          fk.length = 0;
+        } else {
+          doc.childNodes.splice(idx, 1, newChild);
+          newChild.parentNode = doc;
+          // R127：spec `concept-node-adopt`——replace 入 doc 的节点 ownerDocument
+          // 重指本 doc（WPT Node-replaceChild "inserting a new doctype should work"
+          // `doctype2.ownerDocument === doc` 断言——跨 detached doc 移动后归属变更）。
+          try {
+            newChild.ownerDocument = doc;
+          } catch (_e127h) {}
+          if (nnt === 1) {
+            var ni = doc.children.indexOf(newChild);
+            if (ni < 0) doc.children.push(newChild);
+            var oi = doc.children.indexOf(oldChild);
+            if (oi >= 0) doc.children.splice(oi, 1);
           }
         }
+        oldChild.parentNode = null;
         return oldChild;
       },
       insertBefore: function (newNode, refNode) {

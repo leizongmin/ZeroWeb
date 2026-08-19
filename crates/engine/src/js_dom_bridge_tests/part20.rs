@@ -1229,3 +1229,91 @@ fn test_remove_child_not_found_validation_r126() {
     );
 }
 
+// js-dom M4 R127：replaceChild 的 spec `dom-node-replace-child` 校验族 + replace 语义
+//（WPT dom/nodes/Node-replaceChild.html 15F 簇 + MO-childList 两个悬挂 async_test 驱动）。
+// 断言组：
+// ① NotFound：非本父的子（detached createElement 三件）→ NotFoundError
+// ② Document pre-insert step 6：fragment 多元素/text、element 重复/doctype 前、doctype
+//    重复/element 后 → HierarchyRequestError（detached doc 路径）
+// ③ replace-with-sibling：[b,c] → replaceChild(c,b) → childNodes=[c]（adopt 先于定位）
+// ④ replace-with-self：replaceChild(b,b) 不动树
+// ⑤ fragment flatten：doc.replaceChild(df, docEl) → df 子展开进 doc.childNodes
+// ⑥ adopt ownerDocument：doc.replaceChild(doc2.doctype, doc.doctype) 后
+//    doctype2.ownerDocument === doc、doc2.childNodes 少 1
+#[test]
+fn test_replace_child_validation_and_semantics_r127() {
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let mut sandbox = V8Sandbox::with_config(zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    })
+    .unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><div id=\"host\"><p id=\"a\">A</p></div></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry);
+
+    let out = sandbox
+        .execute(
+            "var parts = [];\
+             function threw(fn) { try { fn(); return 'none'; } catch (e) { return e.name; } }\
+             var a = document.createElement('div');\
+             var b = document.createElement('div');\
+             var c = document.createElement('div');\
+             parts.push('nf:' + threw(function () { a.replaceChild(b, c); }));\
+             var doc = document.implementation.createHTMLDocument('T');\
+             var df2 = doc.createDocumentFragment();\
+             df2.appendChild(doc.createElement('a'));\
+             df2.appendChild(doc.createElement('b'));\
+             parts.push('frag-multi:' + threw(function () { doc.replaceChild(df2, doc.documentElement); }));\
+             var df3 = doc.createDocumentFragment();\
+             df3.appendChild(doc.createTextNode('t'));\
+             parts.push('frag-text:' + threw(function () { doc.replaceChild(df3, doc.documentElement); }));\
+             var cm = doc.appendChild(doc.createComment('foo'));\
+             parts.push('el-dup:' + threw(function () { doc.replaceChild(doc.createElement('a'), cm); }));\
+             var docB = document.implementation.createHTMLDocument('B');\
+             var cmB = docB.appendChild(docB.createComment('foo'));\
+             var dtNew = document.implementation.createDocumentType('html', '', '');\
+             parts.push('dt-dup:' + threw(function () { docB.replaceChild(dtNew, cmB); }));\
+             a.appendChild(b);\
+             a.appendChild(c);\
+             a.replaceChild(c, b);\
+             parts.push('sib:' + (a.childNodes.length === 1 && a.childNodes[0] === c));\
+             var a2 = document.createElement('div');\
+             var b2 = document.createElement('div');\
+             var cc2 = document.createElement('div');\
+             a2.appendChild(b2);\
+             a2.appendChild(cc2);\
+             a2.replaceChild(b2, b2);\
+             parts.push('self:' + (a2.childNodes.length === 2 && a2.childNodes[0] === b2));\
+             var docC = document.implementation.createHTMLDocument('C');\
+             var dfC = docC.createDocumentFragment();\
+             var elC = docC.createElement('x');\
+             dfC.appendChild(elC);\
+             docC.replaceChild(dfC, docC.documentElement);\
+             parts.push('flatten:' + (docC.childNodes.length === 2\
+               && docC.childNodes[0].nodeType === 10 && docC.childNodes[1] === elC));\
+             var docD = document.implementation.createHTMLDocument('D');\
+             var docE = document.implementation.createHTMLDocument('E');\
+             var dtE = docE.doctype;\
+             docD.replaceChild(docE.doctype, docD.doctype);\
+             parts.push('adopt-od:' + (dtE.ownerDocument === docD)\
+               + ':d2kids:' + docE.childNodes.length\
+               + ':dkids:' + docD.childNodes.length);\
+             parts.join('|');",
+        )
+        .unwrap()
+        .value;
+    assert_eq!(
+        out,
+        "nf:NotFoundError|frag-multi:HierarchyRequestError|frag-text:HierarchyRequestError|el-dup:HierarchyRequestError|dt-dup:HierarchyRequestError|sib:true|self:true|flatten:true|adopt-od:true:d2kids:1:dkids:2",
+        "replaceChild 校验族 + replace 语义：NotFound/step6 HRE/sibling/self/fragment flatten/adopt ownerDocument"
+    );
+}
+

@@ -2706,6 +2706,53 @@
             return child;
           };
         }
+        // R126（R127 提升）：removeChild/replaceChild 共用的融合视图子判定——原定义在
+        // removeChild 闭包内，R127 replaceChild 的 NotFound 校验（spec
+        // dom-node-replace-child 步骤 3）需同源判定，提升到 get trap 作用域。
+        // 返回 false = 确非子（抛 NotFound）；true = 是子；'lenient-*' = shim 视图
+        // 限制下的合法形态（穿透不抛）。
+        function _r126IsChildOf(parentSel, parentHandle, target) {
+          // R126：已移除节点（sel 标记 / pending-removed——同批先前 removeChild 后
+          // shim 的 parentNode 读 host 快照仍指旧父，调用方按旧父再 remove 是 shim
+          // 融合视图限制下的合法重试[WPT Event-dispatch-target-moved 的 16 listener
+          // 对 `parent === target.parentNode` 旧值重复触发]，lenient 返 child 而非
+          // 抛——真被移除后「已非任何父的子」语义无偏差；未挂载的新节点不命中本
+          // 分支照常抛 NotFound。
+          if (target && typeof _zwIsRemovedNode === 'function' && _zwIsRemovedNode(target)) {
+            return 'lenient-already-removed';
+          }
+          // handle 容器：registry 子（_handleChildren）权威——命中 true，未命中且
+          // 无 sel（handle-only，registry 即全部子）→ false（NotFound）。
+          if (parentHandle) {
+            if (_handleChildNodes(parentHandle).indexOf(target) >= 0) return true;
+            // R87 注册文本子 / 物化缓存子（textContent= 建的静态包装，无
+            // __zwHandle——handle registry 不含但 remove 语义有效，R87b 分支记账）。
+            var _r126Cache = typeof _zwDetachedChildrenOf === 'function'
+              ? _zwDetachedChildrenOf(parentHandle) : null;
+            if (_r126Cache && _r126Cache.indexOf(target) >= 0) return true;
+            if (_zwTextElsByEl && _zwTextElsByEl.get(_makeProxy(parentSel, parentHandle))
+                && target && !target.__zwHandle && target.__zwIsText) return true;
+            if (!parentSel) return false;
+          }
+          // sel 父：融合 childNodes（快照 ∪ pending）identity 含 target。
+          if (parentSel) {
+            var kids = _childNodeList(parentSel, parentHandle);
+            for (var i = 0; i < kids.length; i++) if (kids[i] === target) return true;
+            // R126：parentNode 融合视图残留（移动后 __zw_parent 快照仍指旧父——
+            // host mutation 未 apply；WPT Event-dispatch-target-moved 的 listener 以
+            // `parent === target.parentNode` 旧值守卫重复 remove）：调用方视图
+            // （parentNode === this）与子列表视图不一致时按调用方视图 lenient——
+            // 同一融合视图体系内自洽，真 detached（parentNode null）不命中照抛。
+            try {
+              var _r126Pn = target.parentNode;
+              if (_r126Pn && _r126Pn === _makeProxy(parentSel, parentHandle)) return 'lenient-stale-parent';
+            } catch (_e126pn) {}
+            // pending-removed 命中（快照仍含但同批已移除）→ 已非子。
+            if (typeof _zwIsRemovedNode === 'function' && _zwIsRemovedNode(target)) return false;
+            return false;
+          }
+          return true; // 无 sel 无 handle registry：透明父（lenient 保持）
+        }
         if (prop === 'removeChild') {
           return function(child) {
             // R126：spec `dom-node-pre-remove` 步骤 1-2——① WebIDL Node 类型校验：
@@ -2721,48 +2768,6 @@
             if (child === null || child === undefined || typeof child.nodeType !== 'number') {
               throw new globalThis.TypeError(
                 "Failed to execute 'removeChild' on 'Node': parameter 1 is not of type 'Node'.");
-            }
-            function _r126IsChildOf(parentSel, parentHandle, target) {
-              // R126：已移除节点（sel 标记 / pending-removed——同批先前 removeChild 后
-              // shim 的 parentNode 读 host 快照仍指旧父，调用方按旧父再 remove 是 shim
-              // 融合视图限制下的合法重试[WPT Event-dispatch-target-moved 的 16 listener
-              // 对 `parent === target.parentNode` 旧值重复触发]，lenient 返 child 而非
-              // 抛——真被移除后「已非任何父的子」语义无偏差；未挂载的新节点不命中本
-              // 分支照常抛 NotFound。
-              if (target && typeof _zwIsRemovedNode === 'function' && _zwIsRemovedNode(target)) {
-                return 'lenient-already-removed';
-              }
-              // handle 容器：registry 子（_handleChildren）权威——命中 true，未命中且
-              // 无 sel（handle-only，registry 即全部子）→ false（NotFound）。
-              if (parentHandle) {
-                if (_handleChildNodes(parentHandle).indexOf(target) >= 0) return true;
-                // R87 注册文本子 / 物化缓存子（textContent= 建的静态包装，无
-                // __zwHandle——handle registry 不含但 remove 语义有效，R87b 分支记账）。
-                var _r126Cache = typeof _zwDetachedChildrenOf === 'function'
-                  ? _zwDetachedChildrenOf(parentHandle) : null;
-                if (_r126Cache && _r126Cache.indexOf(target) >= 0) return true;
-                if (_zwTextElsByEl && _zwTextElsByEl.get(_makeProxy(parentSel, parentHandle))
-                    && target && !target.__zwHandle && target.__zwIsText) return true;
-                if (!parentSel) return false;
-              }
-              // sel 父：融合 childNodes（快照 ∪ pending）identity 含 target。
-              if (parentSel) {
-                var kids = _childNodeList(parentSel, parentHandle);
-                for (var i = 0; i < kids.length; i++) if (kids[i] === target) return true;
-                // R126：parentNode 融合视图残留（移动后 __zw_parent 快照仍指旧父——
-                // host mutation 未 apply；WPT Event-dispatch-target-moved 的 listener 以
-                // `parent === target.parentNode` 旧值守卫重复 remove）：调用方视图
-                // （parentNode === this）与子列表视图不一致时按调用方视图 lenient——
-                // 同一融合视图体系内自洽，真 detached（parentNode null）不命中照抛。
-                try {
-                  var _r126Pn = target.parentNode;
-                  if (_r126Pn && _r126Pn === _makeProxy(parentSel, parentHandle)) return 'lenient-stale-parent';
-                } catch (_e126pn) {}
-                // pending-removed 命中（快照仍含但同批已移除）→ 已非子。
-                if (typeof _zwIsRemovedNode === 'function' && _zwIsRemovedNode(target)) return false;
-                return false;
-              }
-              return true; // 无 sel 无 handle registry：透明父（lenient 保持）
             }
             if (_r126IsChildOf(sel, handle, child) === false) {
               throw _zwDomException(
@@ -3015,6 +3020,20 @@
                 throw _zwDomException('Nodes of type ' + _r117nt + ' cannot be inserted into a Document.', 'HierarchyRequestError');
               }
             }
+            // R127：spec `dom-node-replace-child` 步骤 3——oldChild 不是 parent 的子 →
+            // NotFoundError（WPT "If child's parent is not the context node"——
+            // `a.replaceChild(b, c)` 三 detached createElement：c 从未入 a，旧静默走
+            // host wire 无校验）。子判定复用 R126 融合视图（_childNodeList 快照∪pending
+            // ∪ handle registry）；lenient 分支同 R126（已移除节点/stale parentNode——
+            // 严格化前先枚举 leniency 依赖）。
+            if (_r126IsChildOf(sel, handle, oldChild) === false) {
+              throw _zwDomException(
+                "Failed to execute 'replaceChild' on 'Node': The node to be replaced is not a child of this node.",
+                'NotFoundError');
+            }
+            // R127：replace-with-self 短路（spec「node is child」步骤 2——
+            // `a.replaceChild(b, b)` 不动树；先于 wire 记账）。
+            if (newChild === oldChild) return oldChild;
             // js-dom M3 R100：handle-handle 形态（parent/new/old 全部 createElement 建立，
             // detached 容器内 replaceChild——WPT replaceChild 用例 setup 即此形态）。
             // host 无对应 wire（无 selector ref）；JS 侧 registry 原位替换（_handleChildren
@@ -3022,6 +3041,14 @@
             if (newChild && newChild.__zwHandle && oldChild && oldChild.__zwHandle && !oldChild.__zwSelector) {
               if (handle && _handleChildren[handle]) {
                 var _r100Kids = _handleChildren[handle];
+                // R127：replace-with-self 短路（spec「node is child」——不动树，返 old）。
+                if (newChild === oldChild) return oldChild;
+                // R127：spec replace 语义——先 adopt（new 是 old 兄弟时先从父移除，
+                // 再定位 old 的 index；旧「先定位后 splice(new,1,newChild)」在 new===
+                // 兄弟时定位的是 new 自己 → 把 new 换成自己 → old 残留，WPT
+                // "Replacing a node with its next sibling should work" length 差 1）。
+                var _r127NewAt = _r100Kids.indexOf(newChild);
+                if (_r127NewAt >= 0) _r100Kids.splice(_r127NewAt, 1);
                 var _r100At = _r100Kids.indexOf(oldChild);
                 var _r100Added100 = _fragmentHandles[newChild.__zwHandle]
                   ? (_handleChildren[newChild.__zwHandle] || []).slice()
@@ -3079,6 +3106,51 @@
               var cePconn = _ceParentConnected(sel, handle);
               for (var ci = 0; ci < ceAdded.length; ci++) _ceApplyConn(ceAdded[ci], cePconn);
               _ceApplyConn(oldChild, false);
+              return oldChild;
+            }
+            // R127：selector-based newChild（主文档内既有元素替换——WPT MO-childList
+            // "Node.replaceChild: replacement mutation" n50.replaceChild(d50, n50.firstChild)
+            // 与 "internal replacement" n52.replaceChild(n52.lastChild, n52.firstChild)。
+            // 旧此形态静默 no-op（MO 微任务永不成 record → async_test 悬挂不跑——R127
+            // 加严校验后测试真跑，暴露 record 缺口）。无 host wire（wire 只支持 handle
+            // 子插入），JS 侧按 spec replace 两段记账：
+            // ① adopt——newChild 有旧父时在其旧父发 removed record（prev/next 上下文）
+            // ② replace——本父发 removed=[old] + added=[new] 单条 record。
+            // 树位次：old 标记移除（pending 剔除）；new 与 old 同父时 remove old 后位次
+            // 近似正确（replace-with-sibling 常见形态），跨父移动的位次由 host 快照
+            // 残留近似（wire 限制，M1 L2 收口）。
+            if (newChild && newChild.__zwSelector && oldChild && oldChild.__zwSelector) {
+              var _r127NewParent = null, _r127NewPrev = null, _r127NewNext = null;
+              try {
+                _r127NewParent = newChild.parentNode || null;
+                _r127NewPrev = newChild.previousSibling || null;
+                _r127NewNext = newChild.nextSibling || null;
+              } catch (_e127p) {}
+              // ① adopt record（newChild 的旧父 ≠ 本父时——同父 internal replace 的
+              // spec 首段 removed record 一样要发，n52 双 record 期望）。
+              if (_r127NewParent && typeof _r127NewParent.__zwSelector === 'string') {
+                _mo_notify(_r127NewParent.__zwSelector, null, {
+                  type: 'childList', addedNodes: [], removedNodes: [newChild],
+                  previousSibling: _r127NewPrev, nextSibling: _r127NewNext,
+                });
+              }
+              // old 快照上下文（remove 前取）。
+              var _r127Prev = null, _r127Next = null;
+              try { _r127Prev = oldChild.previousSibling || null; _r127Next = oldChild.nextSibling || null; } catch (_e127n) {}
+              __zw_remove(oldChild.__zwSelector);
+              _zwMarkRemoved(oldChild.__zwSelector);
+              if (globalThis._zwNotifyIteratorsRemove) {
+                try { globalThis._zwNotifyIteratorsRemove(oldChild); } catch (_e127o) {}
+              }
+              if (typeof _zwUnregisterTextSubtree === 'function') _zwUnregisterTextSubtree(oldChild);
+              else if (typeof _zwUnregisterTextEl === 'function') _zwUnregisterTextEl(oldChild);
+              _ceApplyConn(oldChild, false);
+              // ② replace record（removed=[old] + added=[new] 单条——WPT n50/n52 期望）。
+              _mo_notify(sel, handle, {
+                type: 'childList', addedNodes: [newChild], removedNodes: [oldChild],
+                previousSibling: _r127Prev, nextSibling: _r127Next,
+              });
+              return oldChild;
             }
             return oldChild;
           };
