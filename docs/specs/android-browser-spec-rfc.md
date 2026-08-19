@@ -535,7 +535,7 @@ ZeroWeb 当前包含桌面 `apps/browser/`、独立 `apps/renderer/`、`apps/com
 
 | 假设 | 状态 | 处理 |
 |---|---|---|
-| rusty_v8 当前版本可从 x86_64 主机交叉编译到 aarch64 Android | 已由上游文档验证；本仓未验证 | M0 首个技术 spike 实际构建并运行最小 V8 isolate |
+| rusty_v8 当前版本可从 x86_64 主机交叉编译到 Android | x86_64 renderer APK 已在本机模拟器验证；aarch64 仍未验证 | M5 前在 arm64 真机完成 Release build、安装与 renderer socket 验证 |
 | wgpu 30 可从 Android Surface 创建 Vulkan/OpenGL ES 支持的 present surface | 上游平台支持已知；本仓未验证 | M1 真机 Surface spike，失败时只调整 adapter，不更换内核 |
 | compositor 使用同应用 UID 独立进程可稳定访问目标设备 GPU/Surface | 待实机验证 | M1 以至少一台 arm64 真机验证；不允许因此合并进程 |
 | `zero-browser-shell` 现有模型可作为 Android 业务模型基础 | 已验证具备标签/书签/历史/下载类型；持久化不完整 | M1 补显式路径、历史/下载持久化和 facade，不重写模型 |
@@ -1093,3 +1093,4 @@ make test
 | v1.1 | 2026-08-19 | Linux/WSL 复验表明迁移宿主仍不足：rusty_v8 150.2.0 source-build 缺少 Android GN 所需 Python 依赖文件，且构建脚本隐含 NDK/工具下载。真实 Android renderer 的前置条件调整为升级到具备完整 Android source build 的 V8 发行版，或引入经校验的官方 Android V8 archive；此前不接入 renderer 到 APK |
 | v1.2 | 2026-08-19 | 完整 recursive rusty_v8 150.2.0 源树在 WSL 验证可构建 Android x86_64 renderer：须使用 Chromium clang 23、Linux NDK r30、完整子模块，并为 upstream Android bindgen 提供 versioned target/sysroot 参数。crates.io 裁剪包与 Windows 原生构建均不足；后续将此 Linux 构建链脚本化，不以 QuickJS 替代 |
 | v1.3 | 2026-08-19 | renderer-enabled native host 还依赖 NDK 的 `libc++_shared.so`；隔离 WSL 构建脚本将其与 host library 同时复制进 APK，并由 renderer install-smoke 检查 C++ runtime、renderer socket 与固定四进程拓扑 |
+| v1.4 | 2026-08-19 | WSL 使用完整 recursive `rusty_v8`、Chromium clang 23、NDK r30 以及显式注入的 GN/Ninja，已构建、安装并在 API 36 x86_64 模拟器验证 renderer-enabled APK；该证据不外推为 arm64 Release 通过，arm64 继续作为 M5 真机门禁。 |
