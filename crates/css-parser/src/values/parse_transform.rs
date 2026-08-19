@@ -636,7 +636,8 @@ fn split_transform_value_args(args: &str) -> Option<Vec<&str>> {
 fn parse_len_or_pct(s: &str) -> Option<(f64, bool)> {
     let s = s.trim();
     if let Some(num) = s.strip_suffix('%') {
-        Some((num.trim().parse::<f64>().ok()?, true))
+        let value = num.trim().parse::<f64>().ok()?;
+        value.is_finite().then_some((value, true))
     } else {
         Some((parse_css_number(s)?, false))
     }
@@ -648,7 +649,7 @@ fn parse_len_or_pct(s: &str) -> Option<(f64, bool)> {
 /// 注意：grad 须在 rad 之前判定（"Xgrad" 后缀含 "rad"）。
 fn parse_css_number(s: &str) -> Option<f64> {
     let lower = s.trim().to_ascii_lowercase();
-    if let Some(n) = lower.strip_suffix("deg") {
+    let value = if let Some(n) = lower.strip_suffix("deg") {
         n.trim().parse::<f64>().ok()
     } else if let Some(n) = lower.strip_suffix("grad") {
         // 400grad = 360deg → 1grad = 0.9deg
@@ -663,7 +664,8 @@ fn parse_css_number(s: &str) -> Option<f64> {
         lower[..num_end].parse::<f64>().ok()
     } else {
         lower.parse::<f64>().ok()
-    }
+    }?;
+    value.is_finite().then_some(value)
 }
 
 /// 解析角度值（返回度数）。

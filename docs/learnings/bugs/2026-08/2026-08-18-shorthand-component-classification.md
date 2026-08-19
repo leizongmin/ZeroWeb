@@ -147,6 +147,8 @@ Aspect-ratio exposed the derived-number variant: even if a slash ratio rejects o
 
 Animation and transition timing exposed the keyword-vs-number variant: `animation-iteration-count: infinite` is a valid property keyword, but Rust `f64::parse("inf")` is not a valid CSS number token. Keep property keywords explicit and require every parsed numeric time/count to be finite before writing computed lists.
 
+Transform exposed the shared-numeric-entry variant: one helper can feed length, angle, percentage, matrix, scale, and perspective functions. Put the finite check in the shared numeric helper and in the percent wrapper, otherwise individual transform functions will keep accepting different `inf` / `NaN` spellings.
+
 ## Root Cause
 
 The shorthand layer used heuristic component classifiers and treated unrecognized tokens as absent optional components. That is wrong for CSS shorthands such as `border`, where every token must match one of the allowed component grammars. A shared parser can also be broader than the property grammar that consumes it: general length parsing may accept `auto`, intrinsic sizing keywords, or percentages that `border-width` must reject.

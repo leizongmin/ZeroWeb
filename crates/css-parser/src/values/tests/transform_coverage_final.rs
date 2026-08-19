@@ -81,6 +81,16 @@ fn test_parse_transform_function_invalid_arg_type() {
     assert!(result.is_none());
 }
 
+#[test]
+fn test_parse_transform_rejects_non_finite_numbers() {
+    assert!(parse_transform("scale(inf)").is_none());
+    assert!(parse_transform("rotate(NaNdeg)").is_none());
+    assert!(parse_transform("translate(infpx, 0)").is_none());
+    assert!(parse_transform("translate(50%, NaN%)").is_none());
+    assert!(parse_transform("matrix(1, 0, 0, 1, inf, 0)").is_none());
+    assert!(parse_transform("perspective(infpx)").is_none());
+}
+
 // 测试 parse_transform_function 中 scale 的负值
 #[test]
 fn test_parse_transform_function_scale_negative() {

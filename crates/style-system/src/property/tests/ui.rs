@@ -995,6 +995,20 @@ fn test_transform_with_multiple_functions() {
     }
 }
 
+#[test]
+fn test_transform_rejects_non_finite_numbers() {
+    let mut style = ComputedStyle::default();
+    assert!(apply_property_value(&mut style, "transform", "translate(10px)"));
+    let old = style.transform.clone();
+
+    assert!(!apply_property_value(&mut style, "transform", "scale(inf)"));
+    assert_eq!(style.transform, old);
+    assert!(!apply_property_value(&mut style, "transform", "rotate(NaNdeg)"));
+    assert_eq!(style.transform, old);
+    assert!(!apply_property_value(&mut style, "transform", "translate(infpx, 0)"));
+    assert_eq!(style.transform, old);
+}
+
 /// 验证 grid-auto-flow 仅使用 "dense" 关键字时，
 /// 解析为 RowDense（等效于 "row dense"）。
 #[test]
