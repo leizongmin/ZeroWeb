@@ -190,12 +190,12 @@ pub fn parse_animation_duration(value: &str) -> Option<AnimationDurationValue> {
     let v = value.trim().to_ascii_lowercase();
     if v.ends_with("ms") {
         let n: f64 = v.trim_end_matches("ms").trim().parse().ok()?;
-        if n >= 0.0 {
+        if n.is_finite() && n >= 0.0 {
             return Some(AnimationDurationValue::Time(n, TimeUnit::Ms));
         }
     } else if v.ends_with('s') {
         let n: f64 = v.trim_end_matches('s').trim().parse().ok()?;
-        if n >= 0.0 {
+        if n.is_finite() && n >= 0.0 {
             return Some(AnimationDurationValue::Time(n, TimeUnit::S));
         }
     }
@@ -223,7 +223,7 @@ pub fn parse_animation_iteration_count(value: &str) -> Option<AnimationIteration
         return Some(AnimationIterationCountValue::Infinite);
     }
     let n: f64 = v.parse().ok()?;
-    if n >= 0.0 {
+    if n.is_finite() && n >= 0.0 {
         Some(AnimationIterationCountValue::Number(n))
     } else {
         None
@@ -315,9 +315,11 @@ fn extract_parens_content<'a>(value: &'a str, func_name: &str) -> Option<&'a str
 pub fn parse_time(value: &str) -> Option<f64> {
     let lower = value.trim().to_ascii_lowercase();
     if let Some(n) = lower.strip_suffix("ms") {
-        n.trim().parse::<f64>().ok().map(|ms| ms / 1000.0)
+        let ms = n.trim().parse::<f64>().ok()?;
+        ms.is_finite().then_some(ms / 1000.0)
     } else if let Some(n) = lower.strip_suffix('s') {
-        n.trim().parse::<f64>().ok()
+        let seconds = n.trim().parse::<f64>().ok()?;
+        seconds.is_finite().then_some(seconds)
     } else {
         None
     }

@@ -35,6 +35,9 @@ fn test_animation_duration_s() {
 fn test_animation_duration_invalid() {
     assert!(parse_animation_duration("invalid").is_none());
     assert!(parse_animation_duration("-1s").is_none());
+    assert!(parse_animation_duration("infs").is_none());
+    assert!(parse_animation_duration("NaNs").is_none());
+    assert!(parse_animation_duration("infms").is_none());
 }
 
 // ═══════════════════════════════════════════════════════════════════════

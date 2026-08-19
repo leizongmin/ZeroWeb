@@ -69,6 +69,9 @@ fn test_parse_time_milliseconds() {
 fn test_parse_time_invalid() {
     assert_eq!(parse_time("10"), None);
     assert_eq!(parse_time("abc"), None);
+    assert_eq!(parse_time("infs"), None);
+    assert_eq!(parse_time("NaNs"), None);
+    assert_eq!(parse_time("infms"), None);
 }
 
 #[test]

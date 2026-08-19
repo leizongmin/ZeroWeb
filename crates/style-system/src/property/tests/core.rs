@@ -794,6 +794,14 @@ fn test_apply_transition_duration() {
 
     assert!(!apply_property_value(&mut style, "transition-duration", "-1s"));
     assert_eq!(style.transition_duration, vec![0.2]);
+
+    assert!(!apply_property_value(&mut style, "transition-duration", "infs"));
+    assert_eq!(style.transition_duration, vec![0.2]);
+
+    assert!(apply_property_value(&mut style, "transition-delay", "0.1s"));
+    assert_eq!(style.transition_delay, vec![0.1]);
+    assert!(!apply_property_value(&mut style, "transition-delay", "NaNs"));
+    assert_eq!(style.transition_delay, vec![0.1]);
 }
 
 #[test]
@@ -1173,6 +1181,14 @@ fn test_apply_animation_duration() {
 
     assert!(!apply_property_value(&mut style, "animation-duration", "-1s"));
     assert_eq!(style.animation_duration, vec![0.2]);
+
+    assert!(!apply_property_value(&mut style, "animation-duration", "infs"));
+    assert_eq!(style.animation_duration, vec![0.2]);
+
+    assert!(apply_property_value(&mut style, "animation-delay", "0.1s"));
+    assert_eq!(style.animation_delay, vec![0.1]);
+    assert!(!apply_property_value(&mut style, "animation-delay", "NaNs"));
+    assert_eq!(style.animation_delay, vec![0.1]);
 }
 
 #[test]
@@ -1226,6 +1242,11 @@ fn test_apply_animation_iteration_count() {
     assert_eq!(style.animation_iteration_count, vec![Some(0.0)]);
 
     assert!(!apply_property_value(&mut style, "animation-iteration-count", "-1"));
+    assert_eq!(style.animation_iteration_count, vec![Some(0.0)]);
+
+    assert!(!apply_property_value(&mut style, "animation-iteration-count", "inf"));
+    assert_eq!(style.animation_iteration_count, vec![Some(0.0)]);
+    assert!(!apply_property_value(&mut style, "animation-iteration-count", "NaN"));
     assert_eq!(style.animation_iteration_count, vec![Some(0.0)]);
 }
 
