@@ -497,6 +497,12 @@ fn test_filter_blur_empty_arg_and_bare_zero() {
 }
 
 #[test]
+fn test_filter_blur_rejects_negative_radius() {
+    assert!(parse_filter("blur(-5px)").is_none());
+    assert!(parse_filter("blur(-0.1px)").is_none());
+}
+
+#[test]
 fn test_filter_brightness() {
     let f = parse_filter("brightness(1.5)");
     assert!(f.is_some());
@@ -636,6 +642,12 @@ fn test_filter_drop_shadow_unitless_nonzero_rejected() {
     assert!(parse_filter("drop-shadow(2 3 red)").is_none());
     // 单独 0 合法（unitless-zero）
     assert!(parse_filter("drop-shadow(0 0 red)").is_some());
+}
+
+#[test]
+fn test_filter_drop_shadow_rejects_negative_blur_radius() {
+    assert!(parse_filter("drop-shadow(1px 2px -3px black)").is_none());
+    assert!(parse_filter("drop-shadow(-1px -2px red)").is_some());
 }
 
 #[test]

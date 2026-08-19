@@ -80,7 +80,7 @@ pub fn parse_filter(value: &str) -> Option<FilterValue> {
 
         match func_name.to_ascii_lowercase().as_str() {
             "blur" => {
-                let px: f32 = parse_filter_length_px(inner)?;
+                let px: f32 = parse_filter_non_negative_length_px(inner)?;
                 Some(FilterValue::Blur(px))
             }
             "brightness" => {
@@ -191,6 +191,11 @@ fn parse_filter_length_px(s: &str) -> Option<f32> {
     }
 }
 
+fn parse_filter_non_negative_length_px(s: &str) -> Option<f32> {
+    let px = parse_filter_length_px(s)?;
+    if px.is_finite() && px >= 0.0 { Some(px) } else { None }
+}
+
 /// 解析 filter 函数中的数值（0-1 范围，也接受百分比和大于 1 的值）。
 fn parse_filter_number(s: &str) -> Option<f32> {
     let s = s.trim();
@@ -257,7 +262,7 @@ fn parse_drop_shadow(inner: &str) -> Option<FilterValue> {
     let ox = parse_filter_length_px(lengths[0])?;
     let oy = parse_filter_length_px(lengths[1])?;
     let blur = if lengths.len() == 3 {
-        parse_filter_length_px(lengths[2])?
+        parse_filter_non_negative_length_px(lengths[2])?
     } else {
         0.0
     };
