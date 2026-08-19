@@ -519,7 +519,7 @@ fn parse_clip_circle(rest: &str) -> Option<ClipPathValue> {
         });
     }
 
-    let (radius_part, position) = parse_shape_position(inner);
+    let (radius_part, position) = parse_shape_position(inner)?;
     let radius = if radius_part.is_empty() {
         ClipPathRadius::ClosestSide
     } else {
@@ -540,14 +540,17 @@ fn parse_clip_ellipse(rest: &str) -> Option<ClipPathValue> {
         });
     }
 
-    let (dims_part, position) = parse_shape_position(inner);
+    let (dims_part, position) = parse_shape_position(inner)?;
 
     let (rx, ry) = if dims_part.is_empty() {
         (ClipPathRadius::ClosestSide, ClipPathRadius::ClosestSide)
     } else {
         let parts: Vec<&str> = split_comma_or_space(dims_part);
-        let rx = parse_clip_radius(parts.first()?)?;
-        let ry = parse_clip_radius(parts.get(1)?)?;
+        if parts.len() != 2 {
+            return None;
+        }
+        let rx = parse_clip_radius(parts[0])?;
+        let ry = parse_clip_radius(parts[1])?;
         (rx, ry)
     };
 
@@ -643,21 +646,21 @@ fn find_keyword_pos(s: &str, keyword: &str) -> Option<usize> {
 /// 从形状参数中分离 "at <position>" 部分。
 ///
 /// 返回 (形状参数部分, 位置部分)。
-fn parse_shape_position(inner: &str) -> (&str, Option<(LengthValue, LengthValue)>) {
+fn parse_shape_position(inner: &str) -> Option<(&str, Option<(LengthValue, LengthValue)>)> {
     if let Some(at_idx) = find_keyword_pos(inner, "at") {
         let shape_part = inner[..at_idx].trim();
         let pos_str = inner[at_idx + 2..].trim();
-        let pos = parse_position_pair(pos_str);
-        (shape_part, pos)
+        let pos = parse_position_pair(pos_str)?;
+        Some((shape_part, Some(pos)))
     } else {
-        (inner, None)
+        Some((inner, None))
     }
 }
 
 /// 解析位置对 "x y" 或 "center" 等。
 fn parse_position_pair(s: &str) -> Option<(LengthValue, LengthValue)> {
     let parts: Vec<&str> = s.split_whitespace().collect();
-    if parts.is_empty() {
+    if parts.is_empty() || parts.len() > 2 {
         return None;
     }
     let x = if parts[0].eq_ignore_ascii_case("center") {

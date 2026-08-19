@@ -204,6 +204,12 @@ fn test_clip_path_circle_at_center() {
     }
 }
 
+#[test]
+fn test_clip_path_circle_rejects_invalid_position() {
+    assert!(parse_clip_path("circle(50px at bogus)").is_none());
+    assert!(parse_clip_path("circle(50px at left top extra)").is_none());
+}
+
 // ── ellipse() ──
 
 #[test]
@@ -254,6 +260,13 @@ fn test_clip_path_ellipse_keyword_radii() {
         }
         _ => panic!("Expected Ellipse variant"),
     }
+}
+
+#[test]
+fn test_clip_path_ellipse_rejects_extra_radii_and_invalid_position() {
+    assert!(parse_clip_path("ellipse(10px 20px 30px)").is_none());
+    assert!(parse_clip_path("ellipse(10px 20px at bad)").is_none());
+    assert!(parse_clip_path("ellipse(10px 20px at left top extra)").is_none());
 }
 
 // ── polygon() ──
