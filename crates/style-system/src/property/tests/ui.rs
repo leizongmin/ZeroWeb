@@ -370,6 +370,11 @@ fn test_apply_property_border_image_width_invalid() {
         style.border_image_width.top,
         BorderImageWidthComputedComponent::Number(3.0)
     );
+    assert!(!apply_property_value(&mut style, "border-image-width", "-1px"));
+    assert_eq!(
+        style.border_image_width.top,
+        BorderImageWidthComputedComponent::Number(3.0)
+    );
 }
 
 #[test]
@@ -513,6 +518,11 @@ fn test_apply_property_border_image_outset_invalid() {
         BorderImageOutsetComputedComponent::Number(2.0)
     );
     assert!(!apply_property_value(&mut style, "border-image-outset", "inf"));
+    assert_eq!(
+        style.border_image_outset.top,
+        BorderImageOutsetComputedComponent::Number(2.0)
+    );
+    assert!(!apply_property_value(&mut style, "border-image-outset", "-1px"));
     assert_eq!(
         style.border_image_outset.top,
         BorderImageOutsetComputedComponent::Number(2.0)

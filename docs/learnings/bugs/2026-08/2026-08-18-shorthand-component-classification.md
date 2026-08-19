@@ -153,6 +153,8 @@ Border-spacing exposed the consumer-grammar negative-length variant: the shared 
 
 Border-image exposed the nonnegative-but-nonfinite variant: a guard like `value < 0.0` does not reject `inf` or `NaN`. For CSS grammar terms such as nonnegative number/percentage, require finite first, then apply range checks, before writing the computed border image components.
 
+Border-image also exposed the split-branch negative-length variant: fixing number/percentage branches is not enough when a sibling branch delegates to shared `parse_length`. For properties whose grammar says nonnegative length, run the parsed length through the same consumer-grammar negative filter before accepting it.
+
 ## Root Cause
 
 The shorthand layer used heuristic component classifiers and treated unrecognized tokens as absent optional components. That is wrong for CSS shorthands such as `border`, where every token must match one of the allowed component grammars. A shared parser can also be broader than the property grammar that consumes it: general length parsing may accept `auto`, intrinsic sizing keywords, or percentages that `border-width` must reject.

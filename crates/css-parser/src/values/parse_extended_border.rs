@@ -175,6 +175,9 @@ pub fn parse_border_image_width(value: &str) -> Option<BorderImageWidthValue> {
             components.push(BorderImageWidthComponent::Percent(pct));
         } else if lower.ends_with("px") || lower.ends_with("em") || lower.ends_with("rem") {
             let len = parse_length(token)?;
+            if length_is_negative(&len) {
+                return None;
+            }
             components.push(BorderImageWidthComponent::Length(len));
         } else {
             let n: f32 = lower.parse().ok()?;
@@ -304,6 +307,9 @@ pub fn parse_border_image_outset(value: &str) -> Option<BorderImageOutsetValue> 
         let lower = token.to_ascii_lowercase();
         if lower.ends_with("px") || lower.ends_with("em") || lower.ends_with("rem") {
             let len = parse_length(token)?;
+            if length_is_negative(&len) {
+                return None;
+            }
             components.push(BorderImageOutsetComponent::Length(len));
         } else {
             let n: f32 = lower.parse().ok()?;

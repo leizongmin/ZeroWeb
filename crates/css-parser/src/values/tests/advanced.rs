@@ -1051,6 +1051,8 @@ fn test_parse_border_image_width_four_values() {
 fn test_parse_border_image_width_invalid() {
     assert_eq!(parse_border_image_width(""), None);
     assert_eq!(parse_border_image_width("-1"), None);
+    assert_eq!(parse_border_image_width("-1px"), None);
+    assert_eq!(parse_border_image_width("1px -2em"), None);
     assert_eq!(parse_border_image_width("inf"), None);
     assert_eq!(parse_border_image_width("NaN"), None);
     assert_eq!(parse_border_image_width("inf%"), None);
@@ -1129,6 +1131,8 @@ fn test_parse_border_image_outset_four_values() {
 fn test_parse_border_image_outset_invalid() {
     assert_eq!(parse_border_image_outset(""), None);
     assert_eq!(parse_border_image_outset("-1"), None);
+    assert_eq!(parse_border_image_outset("-1px"), None);
+    assert_eq!(parse_border_image_outset("1px -2em"), None);
     assert_eq!(parse_border_image_outset("inf"), None);
     assert_eq!(parse_border_image_outset("NaN"), None);
     assert_eq!(parse_border_image_outset("1 2 3 4 5"), None);
