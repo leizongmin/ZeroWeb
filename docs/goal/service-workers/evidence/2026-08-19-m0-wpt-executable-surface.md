@@ -38,6 +38,8 @@
   lifecycle result-channel defer、controller/fetch/update gate 和 cross-origin client skip。
 - [M1 剩余裁决](2026-08-19-m1-final-review.md) 完成最后 25 个 M1 review：
   19 个 dynamic/server gated，6 个 support-envelope skip；M1 review 57/57 已收口。
+- [Static Routing 裁决](2026-08-19-static-routing-review.md) 将 11 case / 70 subtest
+  明确排除出基础 fetch 分母；连同前批 1 案，family 12/12 已裁决。
 - 这不等于全部上游用例都超出 ZeroWeb 环境。M1 完成后，单页面、单注册、静态资源的
   生命周期用例可形成第一批真实基线；M2 完成后再加入单客户端 fetch/respondWith 用例。
 - iframe、多客户端、SharedWorker、跨 origin、动态服务端 handler、WebSocket 和
@@ -270,5 +272,6 @@ case 仍是第 2 项。
 - [x] inventory 可反算 294 个唯一路径、331 个 URL 和 12 个候选。
 - [x] 12 个初筛候选已完成资源闭包并校准为 8/3/1。
 - [x] 14 个 M1/no-signal + 11 个 M1/iframe-only + 7 个 M1/message-channel +
-      25 个 M1/final review 已完成传递审计，M1 review 57/57，剩余逻辑 review 95。
+      25 个 M1/final review 已完成传递审计，M1 review 57/57。
+- [x] Static Routing family 12/12 已裁决，剩余逻辑 review 84。
 - [x] 未修改源码、WPT 数据或共享账本。

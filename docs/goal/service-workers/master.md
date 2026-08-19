@@ -2,7 +2,7 @@
 
 **入口文档**: [../service-workers.md](../service-workers.md)
 **创建日期**: 2026-08-17（goal 拆分 bootstrap）
-**最后更新**: 2026-08-19（M0 RFC + M1 WPT review 57/57 收口，待审批）
+**最后更新**: 2026-08-19（M0 RFC + Static Routing WPT 12/12 裁决，待审批）
 
 ---
 
@@ -50,6 +50,8 @@
   controller/fetch/update gate、cross-origin client skip；剩余逻辑 review 120
 - ✅ M1 剩余裁决：25 case / 99 subtest 分为 19 dynamic/server gated、6 support-envelope
   skip；M1 review 57/57 已收口，全量剩余逻辑 review 95
+- ✅ Static Routing 裁决：本批 11 case / 70 subtest 全部 skip；连同前批 1 案，
+  family 12/12 已裁决，全量剩余逻辑 review 84
 - ✅ SW 执行环境 RFC 已完成，待用户批准
 
 ## 缺口清单
@@ -60,7 +62,7 @@
 | S2 | scriptURL 不下载执行 | ⬜ M1 |
 | S3 | fetch 拦截为零 | ⬜ M2（等 js-dom fetch 改造） |
 | S4 | 事件为 setTimeout 模拟 | ⬜ M1 |
-| S5 | WPT 覆盖为零 | 🔄 11 case 已资产化；M1 review 57/57 已人工裁决；runner/真实 red baseline 等 RFC 批准 |
+| S5 | WPT 覆盖为零 | 🔄 11 case 已资产化；M1 review 57/57、Static Routing 12/12 已裁决；runner/真实 red baseline 等 RFC 批准 |
 
 ## 待用户决策
 
@@ -103,6 +105,8 @@
   [M1 message review](evidence/2026-08-19-m1-message-review.md)
 - M1 剩余面：25 case / 99 subtest 与 40 个关键资源闭包见
   [M1 final review](evidence/2026-08-19-m1-final-review.md)
+- Static Routing 面：11 case / 70 subtest 的 out-of-scope 裁决见
+  [Static Routing review](evidence/2026-08-19-static-routing-review.md)
 - Tier A 资产恢复：`make fetch-wpt-service-workers-tier-a`；默认使用独立
   `wpt-data/.service-workers-tier-a-root`，当前环境 18/18 blob SHA 验证通过
 - Tier A 资产审计：`make audit-wpt-service-workers-tier-a`（无网络、只读）；
@@ -129,6 +133,7 @@
 | 2026-08-19 | M1 iframe 裁决 | 11 case / 41 subtest：3 single-iframe / 1 worker / 3 controller defer，1 fetch gated，3 multi-client skip |
 | 2026-08-19 | M1 message-channel 裁决 | 7 case / 18 subtest：2 lifecycle defer，2 controller defer，2 update/fetch gated，1 cross-origin skip |
 | 2026-08-19 | M1 review 收口 | 最后 25 case / 99 subtest：19 gated / 6 skip；M1 review 57/57，全量逻辑 review 剩余 95 |
+| 2026-08-19 | Static Routing 裁决 | 本批 11 case / 70 subtest 全部 skip；family 12/12，全量逻辑 review 剩余 84 |
 | 2026-08-19 | 三方案对比 | 拒绝同线程 context（无调度隔离）；拒绝从零线程（复制安全基建）；推荐抽取 Worker 线程核 |
 | 2026-08-19 | owner | production browser process 单一 owner；WebView 只做同算法 in-process adapter |
 | 2026-08-19 | 首个 driving WPT | `activation-after-registration.https.html` |
