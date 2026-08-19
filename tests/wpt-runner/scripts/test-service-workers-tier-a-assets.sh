@@ -18,7 +18,7 @@ run_fetch() {
 run_fetch
 run_fetch --verify-only
 
-asset="service-workers/service-worker/resources/empty-worker.js"
+asset="${WPT_TAMPER_ASSET:-service-workers/service-worker/resources/empty-worker.js}"
 printf '\ntampered\n' >> "${TMP_ROOT}/${asset}"
 if run_fetch --verify-only >/dev/null 2>&1; then
   echo "verify-only unexpectedly accepted a tampered asset" >&2

@@ -31,7 +31,7 @@ pub use indexed_db_host::indexed_db_handler;
 pub mod service_worker_manager;
 pub use service_worker_manager::{
     ServiceWorkerManager, ServiceWorkerManagerError, ServiceWorkerManagerEvent, ServiceWorkerRegistrationKey,
-    ServiceWorkerVersionSlots,
+    ServiceWorkerUpdateOutcome, ServiceWorkerVersionSlots,
 };
 pub mod service_worker_registration;
 pub use service_worker_registration::{

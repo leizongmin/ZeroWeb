@@ -224,6 +224,94 @@ fn multiprocess_navigator_registration_uses_browser_owner() {
 }
 
 #[test]
+fn multiprocess_registration_update_compares_script_bytes() {
+    let _multiprocess_guard = lock_multiprocess_tests();
+    let renderer = resolve_renderer_binary().expect("fresh zero-renderer binary is required");
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let page_url = format!("http://{}/page", listener.local_addr().unwrap());
+    let server = std::thread::spawn(move || {
+        for source in [
+            "globalThis.version = 1;",
+            "globalThis.version = 1;",
+            "globalThis.version = 2;",
+        ] {
+            let (mut stream, _) = listener.accept().unwrap();
+            let mut request = [0_u8; 2048];
+            let size = stream.read(&mut request).unwrap();
+            assert!(String::from_utf8_lossy(&request[..size]).starts_with("GET /sw.js "));
+            let response = format!(
+                "HTTP/1.1 200 OK\r\nContent-Type: application/javascript\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                source.len(),
+                source
+            );
+            stream.write_all(response.as_bytes()).unwrap();
+        }
+    });
+
+    let mut backend = ProcessTabBackend::with_renderer_bin(renderer);
+    let tab_id = TabId(806);
+    let mut snapshots = HashMap::new();
+    load_committed_page(&mut backend, &mut snapshots, tab_id, &page_url);
+    execute_script(
+        &mut backend,
+        &mut snapshots,
+        tab_id,
+        1,
+        "globalThis.__updateResult = 'pending';\
+         (async function () {\
+           try {\
+             var reg = await navigator.serviceWorker.register('/sw.js', {scope:'/'});\
+             await navigator.serviceWorker.ready;\
+             globalThis.__updateReg = reg;\
+             globalThis.__updateActive = reg.active;\
+             globalThis.__updateFound = 0;\
+             reg.addEventListener('updatefound', function() { globalThis.__updateFound++; });\
+             var same = await reg.update();\
+             globalThis.__updateNoop =\
+               String(same === reg) + '|' + String(reg.active === globalThis.__updateActive);\
+             var changed = await reg.update();\
+             globalThis.__updateChanged = String(changed === reg);\
+             globalThis.__updateResult = 'waiting';\
+           } catch (error) {\
+             globalThis.__updateResult = 'error:' + String(error && error.message ? error.message : error);\
+           }\
+         })();",
+    )
+    .unwrap();
+
+    let deadline = Instant::now() + Duration::from_secs(20);
+    let result = loop {
+        let value = execute_script(
+            &mut backend,
+            &mut snapshots,
+            tab_id,
+            2,
+            "if (globalThis.__updateResult === 'waiting' &&\
+                 globalThis.__updateReg.waiting && globalThis.__updateFound === 1) {\
+               globalThis.__updateResult = globalThis.__updateNoop + '|' +\
+                 globalThis.__updateChanged + '|' +\
+                 String(globalThis.__updateReg.active === globalThis.__updateActive) + '|' +\
+                 String(globalThis.__updateReg.waiting !== globalThis.__updateActive) + '|1';\
+             }\
+             return String(globalThis.__updateResult);",
+        )
+        .unwrap();
+        if let AutomationValue::String(value) = value
+            && value != "pending"
+            && value != "waiting"
+        {
+            break value;
+        }
+        assert!(Instant::now() < deadline, "Service Worker update did not settle");
+        std::thread::sleep(Duration::from_millis(5));
+    };
+    server.join().unwrap();
+    backend.remove_renderer(tab_id);
+
+    assert_eq!(result, "true|true|true|true|true|1");
+}
+
+#[test]
 fn new_renderer_discovers_browser_owned_registration() {
     let _multiprocess_guard = lock_multiprocess_tests();
     let renderer = resolve_renderer_binary().expect("fresh zero-renderer binary is required");

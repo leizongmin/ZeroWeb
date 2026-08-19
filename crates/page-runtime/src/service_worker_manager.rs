@@ -57,6 +57,21 @@ pub struct ServiceWorkerVersionSlots {
     pub active: Option<u64>,
 }
 
+/// Result of comparing a fetched update script with the current version.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ServiceWorkerUpdateOutcome {
+    /// The fetched script is byte-for-byte identical to the current version.
+    Unchanged {
+        /// Existing registration version ID.
+        registration_id: u64,
+    },
+    /// A changed script started a new installing version.
+    Started {
+        /// New registration version ID.
+        registration_id: u64,
+    },
+}
+
 /// Typed manager event produced while polling worker runtimes.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ServiceWorkerManagerEvent {
@@ -220,6 +235,7 @@ pub struct ServiceWorkerManager {
     claimed_clients: HashSet<u64>,
     client_messages: HashMap<(u64, String), Vec<Vec<String>>>,
     pending_client_messages: HashMap<(u64, String), usize>,
+    script_sources: HashMap<u64, Vec<u8>>,
     runtimes: HashMap<u64, ServiceWorkerRuntime>,
     evaluated: HashSet<u64>,
     runtime_limit: usize,
@@ -236,6 +252,7 @@ impl ServiceWorkerManager {
             claimed_clients: HashSet::new(),
             client_messages: HashMap::new(),
             pending_client_messages: HashMap::new(),
+            script_sources: HashMap::new(),
             runtimes: HashMap::new(),
             evaluated: HashSet::new(),
             runtime_limit: DEFAULT_RUNTIME_LIMIT,
@@ -290,8 +307,67 @@ impl ServiceWorkerManager {
         self.slots.entry(key.clone()).or_default().installing = Some(id);
         self.registration_keys.insert(id, key);
         self.state_changes.insert(id, Vec::new());
+        self.script_sources.insert(id, script.as_bytes().to_vec());
         self.runtimes.insert(id, runtime);
         Ok(id)
+    }
+
+    /// Resolve the current waiting or active version for a registration key.
+    pub fn update_target(&self, registration_id: u64) -> Result<&ServiceWorkerRegistration, ServiceWorkerManagerError> {
+        let key = self.key_for(registration_id)?;
+        let slot = self
+            .slots
+            .get(key)
+            .ok_or(ServiceWorkerManagerError::UnknownRegistration(registration_id))?;
+        if let Some(installing) = slot.installing {
+            return Err(ServiceWorkerManagerError::JobInProgress(installing));
+        }
+        let Some(current_id) = slot.waiting.or(slot.active) else {
+            let actual = self
+                .registration(registration_id)
+                .map(|registration| registration.state)
+                .unwrap_or(ServiceWorkerState::Redundant);
+            return Err(ServiceWorkerManagerError::InvalidState {
+                registration_id,
+                expected: ServiceWorkerState::Activated,
+                actual,
+            });
+        };
+        self.registration(current_id)
+            .ok_or(ServiceWorkerManagerError::UnknownRegistration(current_id))
+    }
+
+    /// Compare a fetched script and start an installing replacement when changed.
+    pub fn start_update(
+        &mut self,
+        registration_id: u64,
+        script: &str,
+        config: SandboxConfig,
+    ) -> Result<ServiceWorkerUpdateOutcome, ServiceWorkerManagerError> {
+        if script.len() > MAX_SCRIPT_BYTES {
+            return Err(ServiceWorkerManagerError::InvalidInput(
+                "Service Worker script exceeds the size limit".into(),
+            ));
+        }
+        let registration = self.update_target(registration_id)?.clone();
+        let current_id = registration.id;
+        let source = self
+            .script_sources
+            .get(&current_id)
+            .ok_or(ServiceWorkerManagerError::UnknownRegistration(current_id))?;
+        if source.as_slice() == script.as_bytes() {
+            return Ok(ServiceWorkerUpdateOutcome::Unchanged {
+                registration_id: current_id,
+            });
+        }
+        let registration_id = self.start_evaluation(
+            &registration.script_url,
+            &registration.scope,
+            &registration.origin,
+            script,
+            config,
+        )?;
+        Ok(ServiceWorkerUpdateOutcome::Started { registration_id })
     }
 
     /// Drain all currently available runtime events and apply state changes.
@@ -864,6 +940,7 @@ impl ServiceWorkerManager {
         self.claimed_clients.remove(&registration_id);
         self.client_messages.retain(|(id, _), _| *id != registration_id);
         self.pending_client_messages.retain(|(id, _), _| *id != registration_id);
+        self.script_sources.remove(&registration_id);
         if let Some(mut runtime) = self.runtimes.remove(&registration_id) {
             runtime.shutdown();
         }
@@ -988,6 +1065,103 @@ mod tests {
                 3,
                 [ServiceWorkerState::Activating, ServiceWorkerState::Activated].as_slice()
             ))
+        );
+    }
+
+    #[test]
+    fn update_compares_script_bytes_before_starting_replacement() {
+        let mut manager = ServiceWorkerManager::new();
+        let first = start_active(&mut manager, "/", "globalThis.version = 1;");
+        let runtime_count = manager.runtime_count();
+
+        assert_eq!(
+            manager
+                .start_update(
+                    first,
+                    "globalThis.version = 1;",
+                    SandboxConfig {
+                        timeout_ms: 200,
+                        ..Default::default()
+                    },
+                )
+                .unwrap(),
+            ServiceWorkerUpdateOutcome::Unchanged { registration_id: first }
+        );
+        assert_eq!(manager.runtime_count(), runtime_count);
+        assert_eq!(manager.slots(&key("/")).unwrap().installing, None);
+
+        let ServiceWorkerUpdateOutcome::Started {
+            registration_id: replacement,
+        } = manager
+            .start_update(
+                first,
+                "globalThis.version = 2;",
+                SandboxConfig {
+                    timeout_ms: 200,
+                    ..Default::default()
+                },
+            )
+            .unwrap()
+        else {
+            panic!("changed update must start a replacement");
+        };
+        assert_ne!(replacement, first);
+        assert_eq!(manager.slots(&key("/")).unwrap().active, Some(first));
+        assert_eq!(manager.slots(&key("/")).unwrap().installing, Some(replacement));
+        assert_eq!(
+            manager.registration(replacement).unwrap().script_url,
+            "https://example.test/sw.js"
+        );
+        wait_for_state(&mut manager, replacement, ServiceWorkerState::Installed);
+        manager.activate_waiting(replacement).unwrap();
+        wait_for_state(&mut manager, replacement, ServiceWorkerState::Activated);
+        assert_eq!(
+            manager
+                .start_update(
+                    first,
+                    "globalThis.version = 2;",
+                    SandboxConfig {
+                        timeout_ms: 200,
+                        ..Default::default()
+                    },
+                )
+                .unwrap(),
+            ServiceWorkerUpdateOutcome::Unchanged {
+                registration_id: replacement,
+            }
+        );
+
+        let next = manager
+            .start_evaluation(
+                "https://example.test/sw-v3.js",
+                "/",
+                "https://example.test",
+                "globalThis.version = 3;",
+                SandboxConfig {
+                    timeout_ms: 200,
+                    ..Default::default()
+                },
+            )
+            .unwrap();
+        wait_for_state(&mut manager, next, ServiceWorkerState::Installed);
+        manager.activate_waiting(next).unwrap();
+        wait_for_state(&mut manager, next, ServiceWorkerState::Activated);
+        assert_eq!(
+            manager.update_target(first).unwrap().script_url,
+            "https://example.test/sw-v3.js"
+        );
+        assert_eq!(
+            manager
+                .start_update(
+                    first,
+                    "globalThis.version = 3;",
+                    SandboxConfig {
+                        timeout_ms: 200,
+                        ..Default::default()
+                    },
+                )
+                .unwrap(),
+            ServiceWorkerUpdateOutcome::Unchanged { registration_id: next }
         );
     }
 

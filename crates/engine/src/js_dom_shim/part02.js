@@ -2719,7 +2719,39 @@
             }
             return Promise.resolve(removed);
           };
-        reg.update = function () { return Promise.resolve(); };
+        reg.update = function () {
+          ensureDocument();
+          if (typeof __zw_sw_update !== 'function') {
+            return Promise.reject(new TypeError('Service Worker update bridge unavailable'));
+          }
+          var wire;
+          try {
+            wire = JSON.parse(__zw_sw_update(String(reg._id)));
+          } catch (error) {
+            return Promise.reject(error);
+          }
+          if (!wire || !wire.ok) {
+            return Promise.reject(new TypeError(
+              wire && wire.error || 'Service Worker update failed'));
+          }
+          if (!wire.changed) {
+            if (String(wire.id) !== String(reg._id)) {
+              upsertSnapshot(readSnapshot(wire.id), 'manual');
+            }
+            return Promise.resolve(reg);
+          }
+          var snapshot = readSnapshot(wire.id);
+          var updated = upsertSnapshot({
+            id: wire.id,
+            scriptURL: snapshot && snapshot.scriptURL || reg._worker.scriptURL,
+            scope: snapshot && snapshot.scope || reg.scope,
+            state: 'installing'
+          }, 'manual');
+          return Promise.resolve(updated).then(function (registration) {
+            scheduleRegistrationPoll(registration);
+            return registration;
+          });
+        };
         reg.getNotifications = function () { return Promise.resolve([]); };
         reg.showNotification = function () { return Promise.resolve(); };
         return reg;

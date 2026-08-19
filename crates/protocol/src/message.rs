@@ -620,7 +620,8 @@ impl ServiceWorkerRequestParams {
             | ServiceWorkerOperation::ActivateWaiting { .. }
             | ServiceWorkerOperation::GetRegistrations
             | ServiceWorkerOperation::Controller
-            | ServiceWorkerOperation::StateChanges { .. } => Ok(()),
+            | ServiceWorkerOperation::StateChanges { .. }
+            | ServiceWorkerOperation::Update { .. } => Ok(()),
             ServiceWorkerOperation::PostMessage { data_json, .. } => {
                 const MAX_MESSAGE_BYTES: usize = 1024 * 1024;
                 if data_json.len() > MAX_MESSAGE_BYTES {
@@ -699,6 +700,11 @@ pub enum ServiceWorkerOperation {
         /// Number of completed message-event batches already observed by this renderer.
         after_sequence: u64,
     },
+    /// Fetch and compare the current registration's top-level script.
+    Update {
+        /// Browser-assigned current registration version ID.
+        registration_id: u64,
+    },
 }
 
 /// Browser Service Worker owner response.
@@ -730,6 +736,13 @@ pub enum ServiceWorkerResult {
     StateChanges(ServiceWorkerStateChanges),
     /// Worker messages addressed to one committed document.
     ClientMessages(ServiceWorkerClientMessages),
+    /// Result of a registration update job.
+    Updated {
+        /// Existing or newly installing registration version ID.
+        registration_id: u64,
+        /// Whether the fetched script bytes started a replacement version.
+        changed: bool,
+    },
 }
 
 /// Immutable worker-to-client message log suffix.

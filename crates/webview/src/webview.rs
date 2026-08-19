@@ -2392,13 +2392,15 @@ impl WebView {
     ) {
         let controller_page_url = page_url.clone();
         let register_manager = manager.clone();
+        let register_page_url = page_url.clone();
+        let register_source_fetcher = source_fetcher.clone();
         sandbox.register_callback(
             "__zw_sw_register",
             Box::new(move |args| {
                 let script_input = args.first().map(String::as_str).unwrap_or("");
                 let scope_input = (args.get(3).map(String::as_str) == Some("true"))
                     .then(|| args.get(1).map(String::as_str).unwrap_or(""));
-                let document_url = match page_url.lock() {
+                let document_url = match register_page_url.lock() {
                     Ok(url) => url.clone(),
                     Err(_) => {
                         return serde_json::json!({
@@ -2422,7 +2424,7 @@ impl WebView {
                         }
                     };
                 let result = (|| -> Result<u64, String> {
-                    let source = match &source_fetcher {
+                    let source = match &register_source_fetcher {
                         Some(fetcher) => fetcher(&document_url, script_url.as_str())?,
                         None => Self::fetch_service_worker_script(script_url.as_str(), timeout_secs)?,
                     };
@@ -2438,44 +2440,74 @@ impl WebView {
                             SandboxConfig::default(),
                         )
                         .map_err(|error| error.to_string())?;
-                    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
-                    loop {
-                        let events = manager.poll();
-                        if events.iter().any(|event| {
-                            matches!(
-                                event,
-                                ServiceWorkerManagerEvent::ScriptEvaluated {
-                                    registration_id: id
-                                } if *id == registration_id
-                            )
-                        }) {
-                            return Ok(registration_id);
-                        }
-                        if let Some(error) = events.iter().find_map(|event| match event {
-                            ServiceWorkerManagerEvent::ScriptFailed {
-                                registration_id: id,
-                                message,
-                                ..
-                            } if *id == registration_id => Some(message.clone()),
-                            ServiceWorkerManagerEvent::CoordinationFailed {
-                                registration_id: id,
-                                message,
-                            } if *id == registration_id => Some(message.clone()),
-                            _ => None,
-                        }) {
-                            return Err(error);
-                        }
-                        if std::time::Instant::now() >= deadline {
-                            return Err("Service Worker script evaluation timed out".into());
-                        }
-                        std::thread::sleep(std::time::Duration::from_millis(1));
-                    }
+                    Self::wait_for_service_worker_evaluation(&mut manager, registration_id)?;
+                    Ok(registration_id)
                 })();
                 match result {
                     Ok(id) => serde_json::json!({"ok": true, "id": id}).to_string(),
                     Err(error) => {
                         serde_json::json!({"ok": false, "error": error, "errorName": "TypeError"}).to_string()
                     }
+                }
+            }),
+        );
+
+        let update_manager = manager.clone();
+        let update_page_url = page_url.clone();
+        sandbox.register_callback(
+            "__zw_sw_update",
+            Box::new(move |args| {
+                let Some(registration_id) = args.first().and_then(|value| value.parse::<u64>().ok()) else {
+                    return serde_json::json!({"ok": false, "error": "invalid registration id"}).to_string();
+                };
+                let document_url = match update_page_url.lock() {
+                    Ok(url) => url.clone(),
+                    Err(_) => {
+                        return serde_json::json!({"ok": false, "error": "page URL lock poisoned"}).to_string();
+                    }
+                };
+                let result = (|| -> Result<(u64, bool), String> {
+                    let document = url::Url::parse(&document_url).map_err(|_| "invalid Service Worker document URL")?;
+                    let script_url = {
+                        let manager = update_manager
+                            .lock()
+                            .map_err(|_| "Service Worker manager lock poisoned".to_string())?;
+                        let registration = manager
+                            .update_target(registration_id)
+                            .map_err(|error| error.to_string())?;
+                        if registration.origin != document.origin().ascii_serialization() {
+                            return Err("Service Worker registration does not exist".into());
+                        }
+                        registration.script_url.clone()
+                    };
+                    let source = match &source_fetcher {
+                        Some(fetcher) => fetcher(&document_url, &script_url)?,
+                        None => Self::fetch_service_worker_script(&script_url, timeout_secs)?,
+                    };
+                    let mut manager = update_manager
+                        .lock()
+                        .map_err(|_| "Service Worker manager lock poisoned".to_string())?;
+                    match manager
+                        .start_update(registration_id, &source, SandboxConfig::default())
+                        .map_err(|error| error.to_string())?
+                    {
+                        zero_page_runtime::ServiceWorkerUpdateOutcome::Unchanged { registration_id } => {
+                            Ok((registration_id, false))
+                        }
+                        zero_page_runtime::ServiceWorkerUpdateOutcome::Started { registration_id } => {
+                            Self::wait_for_service_worker_evaluation(&mut manager, registration_id)?;
+                            Ok((registration_id, true))
+                        }
+                    }
+                })();
+                match result {
+                    Ok((registration_id, changed)) => serde_json::json!({
+                        "ok": true,
+                        "id": registration_id,
+                        "changed": changed,
+                    })
+                    .to_string(),
+                    Err(error) => serde_json::json!({"ok": false, "error": error}).to_string(),
                 }
             }),
         );
@@ -2652,6 +2684,44 @@ impl WebView {
                 if removed { "true" } else { "false" }.to_string()
             }),
         );
+    }
+
+    fn wait_for_service_worker_evaluation(
+        manager: &mut ServiceWorkerManager,
+        registration_id: u64,
+    ) -> Result<(), String> {
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+        loop {
+            let events = manager.poll();
+            if events.iter().any(|event| {
+                matches!(
+                    event,
+                    ServiceWorkerManagerEvent::ScriptEvaluated {
+                        registration_id: id
+                    } if *id == registration_id
+                )
+            }) {
+                return Ok(());
+            }
+            if let Some(error) = events.iter().find_map(|event| match event {
+                ServiceWorkerManagerEvent::ScriptFailed {
+                    registration_id: id,
+                    message,
+                    ..
+                } if *id == registration_id => Some(message.clone()),
+                ServiceWorkerManagerEvent::CoordinationFailed {
+                    registration_id: id,
+                    message,
+                } if *id == registration_id => Some(message.clone()),
+                _ => None,
+            }) {
+                return Err(error);
+            }
+            if std::time::Instant::now() >= deadline {
+                return Err("Service Worker script evaluation timed out".into());
+            }
+            std::thread::sleep(std::time::Duration::from_millis(1));
+        }
     }
 
     fn fetch_service_worker_script(url: &str, timeout_secs: u64) -> Result<String, String> {

@@ -113,6 +113,29 @@ impl ServiceWorkerIpcClient {
             }),
         );
 
+        let update_client = self.clone();
+        sandbox.register_callback(
+            "__zw_sw_update",
+            Box::new(move |args| {
+                let Some(registration_id) = parse_registration_id(args) else {
+                    return error_wire("invalid registration id");
+                };
+                match update_client.request(ServiceWorkerOperation::Update { registration_id }) {
+                    Ok(ServiceWorkerResult::Updated {
+                        registration_id,
+                        changed,
+                    }) => serde_json::json!({
+                        "ok": true,
+                        "id": registration_id,
+                        "changed": changed,
+                    })
+                    .to_string(),
+                    Ok(_) => error_wire("invalid update response"),
+                    Err(error) => response_error_wire(error),
+                }
+            }),
+        );
+
         let snapshot_client = self.clone();
         sandbox.register_callback(
             "__zw_sw_snapshot",

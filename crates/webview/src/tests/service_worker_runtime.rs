@@ -382,6 +382,116 @@ fn navigator_replacement_reuses_registration_identity_for_scope() {
 }
 
 #[test]
+fn navigator_update_compares_script_bytes_and_dispatches_updatefound_only_when_changed() {
+    let source = Arc::new(Mutex::new("globalThis.version = 1;".to_string()));
+    let fetch_source = Arc::clone(&source);
+    let mut webview = WebViewBuilder::new()
+        .url("https://example.test/page.html")
+        .script_source_fetcher(Arc::new(move |_, _| Ok(fetch_source.lock().unwrap().clone())))
+        .build();
+
+    webview
+        .execute_script(
+            "globalThis.__updateStage = 'pending';
+             navigator.serviceWorker.register('/sw.js', {scope:'/update/'}).then(function(reg) {
+               globalThis.__updateReg = reg;
+               return navigator.serviceWorker.ready;
+             }).then(function() {
+               globalThis.__updateStage = 'ready';
+             }, function(error) {
+               globalThis.__updateStage = 'error:' + String(error);
+             });
+             'started';",
+        )
+        .unwrap();
+    let deadline = Instant::now() + Duration::from_secs(20);
+    while webview.execute_script("globalThis.__updateStage").unwrap() == "pending" {
+        assert!(Instant::now() < deadline, "initial update registration timed out");
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    assert_eq!(webview.execute_script("globalThis.__updateStage").unwrap(), "ready");
+
+    webview
+        .execute_script(
+            "globalThis.__updateFound = 0;
+             globalThis.__updateReg.addEventListener('updatefound', function() {
+               globalThis.__updateFound++;
+             });
+             globalThis.__updateNoop = 'pending';
+             globalThis.__updateReg.update().then(function(reg) {
+               globalThis.__updateNoop =
+                 String(reg === globalThis.__updateReg) + '|' +
+                 String(reg.active === globalThis.__updateReg.active);
+             }, function(error) {
+               globalThis.__updateNoop = 'error:' + String(error);
+             });
+             'updating';",
+        )
+        .unwrap();
+    assert_eq!(webview.execute_script("globalThis.__updateNoop").unwrap(), "true|true");
+    std::thread::sleep(Duration::from_millis(20));
+    assert_eq!(webview.execute_script("String(globalThis.__updateFound)").unwrap(), "0");
+
+    *source.lock().unwrap() = "globalThis.version = 2;".to_string();
+    webview
+        .execute_script(
+            "globalThis.__updateChanged = 'pending';
+             globalThis.__updateActive = globalThis.__updateReg.active;
+             globalThis.__updateReg.update().then(function(reg) {
+               globalThis.__updateChanged =
+                 String(reg === globalThis.__updateReg) + '|' +
+                 String(!!reg.installing) + '|' +
+                 String(reg.active === globalThis.__updateActive);
+             }, function(error) {
+               globalThis.__updateChanged = 'error:' + String(error);
+             });
+             'updating';",
+        )
+        .unwrap();
+
+    let deadline = Instant::now() + Duration::from_secs(20);
+    loop {
+        let value = webview
+            .execute_script(
+                "[
+                   globalThis.__updateChanged,
+                   globalThis.__updateFound,
+                   !!globalThis.__updateReg.waiting,
+                   globalThis.__updateReg.active === globalThis.__updateActive
+                 ].join('|')",
+            )
+            .unwrap();
+        if value == "true|true|true|1|true|true" {
+            break;
+        }
+        assert!(Instant::now() < deadline, "changed update timed out: {value}");
+        std::thread::sleep(Duration::from_millis(10));
+    }
+
+    *source.lock().unwrap() = "function(".to_string();
+    webview
+        .execute_script(
+            "globalThis.__updateFailure = 'pending';
+             globalThis.__updateWaiting = globalThis.__updateReg.waiting;
+             globalThis.__updateReg.update().then(function() {
+               globalThis.__updateFailure = 'unexpected success';
+             }, function(error) {
+               globalThis.__updateFailure =
+                 error.name + '|' +
+                 String(globalThis.__updateReg.active === globalThis.__updateActive) + '|' +
+                 String(globalThis.__updateReg.waiting === globalThis.__updateWaiting) + '|' +
+                 String(globalThis.__updateFound);
+             });
+             'updating';",
+        )
+        .unwrap();
+    assert_eq!(
+        webview.execute_script("globalThis.__updateFailure").unwrap(),
+        "TypeError|true|true|1"
+    );
+}
+
+#[test]
 fn navigator_skip_waiting_activates_replacement_version() {
     let mut webview = WebViewBuilder::new()
         .url("https://example.test/page.html")

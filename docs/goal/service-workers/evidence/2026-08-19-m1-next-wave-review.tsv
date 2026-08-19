@@ -12,4 +12,4 @@ service-workers/service-worker/state.https.html	7358e58ff14a74e04514eb9432151576
 service-workers/service-worker/synced-state.https.html	0e9f63a9a2e528e7ffb8f9913edffc8e0294ad98	1	next-wave-core	state-projection	同一 worker entity 的对象投影状态同步
 service-workers/service-worker/unregister-immediately-before-installed.https.html	c56674c0fb1ba7eb4b2100695ade8b3fd5357dac	2	defer-advanced	infinite-script;extendable-event;clear-site-data	需要脚本 watchdog、永不完成 install 和 Clear-Site-Data
 service-workers/service-worker/unregister.https.html	492aecb21a875814e3a8fb89e64069989b9e31f5	2	next-wave-core	unregister-result	注册后注销返回 true，重复注销返回 false
-service-workers/service-worker/update-result.https.html	d8ed94f776650c8a40ba82df9ca5e909b460bb79	1	defer-update	update-algorithm	update() 抓取与 job 语义不属于最小生命周期切片
+service-workers/service-worker/update-result.https.html	d8ed94f776650c8a40ba82df9ca5e909b460bb79	1	next-wave-update-core	update-algorithm	M3 已实现 update() 抓取、top-level byte comparison 与 registration result

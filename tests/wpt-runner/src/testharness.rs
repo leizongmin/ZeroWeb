@@ -623,6 +623,7 @@ pub const SERVICE_WORKER_CORE_CASES: &[&str] = &[
     "service-workers/service-worker/state.https.html",
     "service-workers/service-worker/synced-state.https.html",
     "service-workers/service-worker/unregister.https.html",
+    "service-workers/service-worker/update-result.https.html",
 ];
 
 /// WPT subtest status.
@@ -2044,13 +2045,13 @@ async_test(function(test) {
     }
 
     #[test]
-    fn service_worker_core_manifest_has_twelve_unique_cases() {
+    fn service_worker_core_manifest_has_thirteen_unique_cases() {
         let unique = SERVICE_WORKER_CORE_CASES
             .iter()
             .copied()
             .collect::<std::collections::BTreeSet<_>>();
-        assert_eq!(SERVICE_WORKER_CORE_CASES.len(), 12);
-        assert_eq!(unique.len(), 12);
+        assert_eq!(SERVICE_WORKER_CORE_CASES.len(), 13);
+        assert_eq!(unique.len(), 13);
         assert!(
             SERVICE_WORKER_CORE_CASES
                 .iter()

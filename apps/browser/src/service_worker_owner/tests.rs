@@ -40,6 +40,26 @@ fn wait_for_response(owner: &mut BrowserServiceWorkerOwner) -> CompletedServiceW
     }
 }
 
+fn wait_for_registration_state(
+    owner: &mut BrowserServiceWorkerOwner,
+    registration_id: u64,
+    expected: ServiceWorkerState,
+) {
+    let deadline = Instant::now() + Duration::from_secs(5);
+    loop {
+        let _ = owner.poll();
+        if owner
+            .normal
+            .registration(registration_id)
+            .is_some_and(|registration| registration.state == expected)
+        {
+            return;
+        }
+        assert!(Instant::now() < deadline, "registration state timed out");
+        std::thread::sleep(Duration::from_millis(5));
+    }
+}
+
 #[test]
 fn register_fetches_evaluates_and_returns_correlated_id() {
     let mut owner = BrowserServiceWorkerOwner::new();
@@ -59,6 +79,73 @@ fn register_fetches_evaluates_and_returns_correlated_id() {
         response.params.result,
         Ok(ServiceWorkerResult::Registered { .. })
     ));
+}
+
+#[test]
+fn update_fetch_compares_bytes_before_starting_replacement() {
+    let mut owner = BrowserServiceWorkerOwner::new();
+    let disposition = owner.begin_request(
+        TabId(1),
+        false,
+        51,
+        Some("https://example.test/page"),
+        register_request("https://example.test/page"),
+    );
+    attach_script(&mut owner, disposition, "globalThis.version = 1;");
+    let response = wait_for_response(&mut owner);
+    let Ok(ServiceWorkerResult::Registered { registration_id: first }) = response.params.result else {
+        panic!("registration failed");
+    };
+    wait_for_registration_state(&mut owner, first, ServiceWorkerState::Activated);
+    let runtime_count = owner.normal.runtime_count();
+
+    let disposition = owner.begin_request(
+        TabId(1),
+        false,
+        52,
+        Some("https://example.test/page"),
+        ServiceWorkerRequestParams {
+            operation: ServiceWorkerOperation::Update { registration_id: first },
+        },
+    );
+    attach_script(&mut owner, disposition, "globalThis.version = 1;");
+    assert_eq!(
+        wait_for_response(&mut owner).params.result,
+        Ok(ServiceWorkerResult::Updated {
+            registration_id: first,
+            changed: false,
+        })
+    );
+    assert_eq!(owner.normal.runtime_count(), runtime_count);
+
+    let disposition = owner.begin_request(
+        TabId(1),
+        false,
+        53,
+        Some("https://example.test/page"),
+        ServiceWorkerRequestParams {
+            operation: ServiceWorkerOperation::Update { registration_id: first },
+        },
+    );
+    attach_script(&mut owner, disposition, "globalThis.version = 2;");
+    let response = wait_for_response(&mut owner);
+    let Ok(ServiceWorkerResult::Updated {
+        registration_id: replacement,
+        changed: true,
+    }) = response.params.result
+    else {
+        panic!("changed update failed");
+    };
+    assert_ne!(replacement, first);
+    let slots = owner
+        .normal
+        .slots(
+            &zero_page_runtime::ServiceWorkerRegistrationKey::new("https://example.test", "https://example.test/app/")
+                .unwrap(),
+        )
+        .unwrap();
+    assert_eq!(slots.active, Some(first));
+    assert_eq!(slots.installing, Some(replacement));
 }
 
 #[test]

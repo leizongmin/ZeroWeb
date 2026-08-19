@@ -8,7 +8,7 @@ use zero_browser_shell::TabId;
 use zero_net::HttpResponse;
 use zero_page_runtime::{
     ServiceWorkerManager, ServiceWorkerManagerError, ServiceWorkerManagerEvent, ServiceWorkerRegistrationErrorKind,
-    validate_service_worker_registration,
+    ServiceWorkerUpdateOutcome, validate_service_worker_registration,
 };
 use zero_protocol::message::{
     ServiceWorkerClientMessages, ServiceWorkerError, ServiceWorkerErrorCode, ServiceWorkerOperation,
@@ -19,6 +19,11 @@ use zero_script_sandbox::SandboxConfig;
 use zero_storage::{ServiceWorkerRegistration, ServiceWorkerState};
 
 const MAX_SCRIPT_BYTES: usize = 16 * 1024 * 1024;
+
+enum ServiceWorkerFetchPurpose {
+    Register,
+    Update { registration_id: u64 },
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 enum ProfileKey {
@@ -34,6 +39,7 @@ pub(crate) struct ServiceWorkerFetchPlan {
     script_url: Url,
     scope: Url,
     origin: String,
+    purpose: ServiceWorkerFetchPurpose,
 }
 
 impl ServiceWorkerFetchPlan {
@@ -69,6 +75,7 @@ struct PendingScriptFetch {
 struct PendingEvaluation {
     tab_id: TabId,
     request_id: u64,
+    update: bool,
 }
 
 /// Browser-process single owner for Service Worker managers and runtimes.
@@ -163,6 +170,7 @@ impl BrowserServiceWorkerOwner {
                         script_url,
                         scope,
                         origin,
+                        purpose: ServiceWorkerFetchPurpose::Register,
                     }),
                     Err(error) => self.error_disposition(
                         tab_id,
@@ -305,6 +313,39 @@ impl BrowserServiceWorkerOwner {
                     });
                 self.result_disposition(tab_id, request_id, result)
             }
+            ServiceWorkerOperation::Update { registration_id } => {
+                if let Err(error) = self.authorized_registration(profile, registration_id, &authority) {
+                    return self.result_disposition(tab_id, request_id, Err(error));
+                }
+                let registration = match self
+                    .manager(profile)
+                    .expect("authorized registration requires a manager")
+                    .update_target(registration_id)
+                    .map_err(manager_error)
+                {
+                    Ok(registration) => registration.clone(),
+                    Err(error) => return self.result_disposition(tab_id, request_id, Err(error)),
+                };
+                let (Ok(script_url), Ok(scope)) =
+                    (Url::parse(&registration.script_url), Url::parse(&registration.scope))
+                else {
+                    return self.error_disposition(
+                        tab_id,
+                        request_id,
+                        ServiceWorkerErrorCode::Internal,
+                        "Service Worker registration URLs are invalid",
+                    );
+                };
+                ServiceWorkerRequestDisposition::Fetch(ServiceWorkerFetchPlan {
+                    tab_id,
+                    request_id,
+                    profile,
+                    script_url,
+                    scope,
+                    origin: registration.origin,
+                    purpose: ServiceWorkerFetchPurpose::Update { registration_id },
+                })
+            }
         }
     }
 
@@ -423,20 +464,46 @@ impl BrowserServiceWorkerOwner {
                 return;
             }
         };
-        let result = self.manager_mut(plan.profile).start_evaluation(
-            plan.script_url.as_str(),
-            plan.scope.as_str(),
-            &plan.origin,
-            &script,
-            SandboxConfig::default(),
-        );
+        let result = match plan.purpose {
+            ServiceWorkerFetchPurpose::Register => self
+                .manager_mut(plan.profile)
+                .start_evaluation(
+                    plan.script_url.as_str(),
+                    plan.scope.as_str(),
+                    &plan.origin,
+                    &script,
+                    SandboxConfig::default(),
+                )
+                .map(|registration_id| (registration_id, false)),
+            ServiceWorkerFetchPurpose::Update { registration_id } => {
+                match self
+                    .manager_mut(plan.profile)
+                    .start_update(registration_id, &script, SandboxConfig::default())
+                {
+                    Ok(ServiceWorkerUpdateOutcome::Unchanged { registration_id }) => {
+                        completed.push(success_response(
+                            plan.tab_id,
+                            plan.request_id,
+                            ServiceWorkerResult::Updated {
+                                registration_id,
+                                changed: false,
+                            },
+                        ));
+                        return;
+                    }
+                    Ok(ServiceWorkerUpdateOutcome::Started { registration_id }) => Ok((registration_id, true)),
+                    Err(error) => Err(error),
+                }
+            }
+        };
         match result {
-            Ok(registration_id) => {
+            Ok((registration_id, update)) => {
                 self.pending_evaluations.insert(
                     (plan.profile, registration_id),
                     PendingEvaluation {
                         tab_id: plan.tab_id,
                         request_id: plan.request_id,
+                        update,
                     },
                 );
             }
@@ -453,11 +520,15 @@ impl BrowserServiceWorkerOwner {
             match event {
                 ServiceWorkerManagerEvent::ScriptEvaluated { registration_id } => {
                     if let Some(pending) = self.pending_evaluations.remove(&(profile, registration_id)) {
-                        completed.push(success_response(
-                            pending.tab_id,
-                            pending.request_id,
-                            ServiceWorkerResult::Registered { registration_id },
-                        ));
+                        let result = if pending.update {
+                            ServiceWorkerResult::Updated {
+                                registration_id,
+                                changed: true,
+                            }
+                        } else {
+                            ServiceWorkerResult::Registered { registration_id }
+                        };
+                        completed.push(success_response(pending.tab_id, pending.request_id, result));
                     }
                 }
                 ServiceWorkerManagerEvent::ScriptFailed {

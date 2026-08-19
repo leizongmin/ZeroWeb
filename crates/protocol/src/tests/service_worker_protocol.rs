@@ -146,6 +146,7 @@ fn service_worker_discovery_operations_round_trip() {
                 after_sequence: 2,
             },
         ),
+        (9, ServiceWorkerOperation::Update { registration_id: 9 }),
     ] {
         let decoded = roundtrip(IpcMessage {
             id,
@@ -212,6 +213,29 @@ fn service_worker_client_messages_round_trip() {
         panic!("expected ServiceWorkerResponse");
     };
     assert_eq!(params.result, Ok(ServiceWorkerResult::ClientMessages(messages)));
+}
+
+#[test]
+fn service_worker_update_result_round_trips() {
+    let decoded = roundtrip(IpcMessage {
+        id: 47,
+        kind: IpcMessageKind::ServiceWorkerResponse(ServiceWorkerResponseParams {
+            result: Ok(ServiceWorkerResult::Updated {
+                registration_id: 13,
+                changed: true,
+            }),
+        }),
+    });
+    let IpcMessageKind::ServiceWorkerResponse(params) = decoded.kind else {
+        panic!("expected ServiceWorkerResponse");
+    };
+    assert_eq!(
+        params.result,
+        Ok(ServiceWorkerResult::Updated {
+            registration_id: 13,
+            changed: true,
+        })
+    );
 }
 
 #[test]
@@ -318,6 +342,7 @@ fn service_worker_nested_enum_discriminants_remain_append_only() {
         }),
         9
     );
+    assert_eq!(discriminant(&ServiceWorkerOperation::Update { registration_id: 1 }), 10);
 
     assert_eq!(discriminant(&ServiceWorkerResult::Registered { registration_id: 1 }), 0);
     assert_eq!(
@@ -347,6 +372,13 @@ fn service_worker_nested_enum_discriminants_remain_append_only() {
             data_json: Vec::new(),
         })),
         7
+    );
+    assert_eq!(
+        discriminant(&ServiceWorkerResult::Updated {
+            registration_id: 1,
+            changed: true,
+        }),
+        8
     );
 
     for (index, code) in [
