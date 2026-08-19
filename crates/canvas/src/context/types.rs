@@ -1261,8 +1261,16 @@ pub struct CanvasContext {
     pub(crate) font_loader: Option<Arc<Mutex<FontLoader>>>,
     /// R34xx：stroke 单次调用去重 mask（段矩形/join/cap 重叠区只合成一次——spec stroke
     /// 每像素画一次；2d.strokeStyle.colorObject.transparency 的 2px 高矩形 50px 线宽
-    /// 三段覆盖同像素致 alpha 128 变 224）。None = 非 stroke 绘制。
-    pub(crate) stroke_dedup_mask: Option<Vec<u8>>,
+    /// 三段覆盖同像素致 alpha 128 变 224）。
+    // OPTIMIZATION（2026-08-19）：常驻复用 + 脏索引回滚。旧实现每次 stroke 分配并清零
+    // 全画布 mask（w*h 字节）且用完丢弃——高频 stroke（bench 1000 次/帧）下分配/清零
+    // 吞吐成为主导（16.7x 回归，61a52486b）。现改为懒分配一次，stroke 结束按
+    // stroke_dirty 记录的线性索引只清触达像素（O(触达) 而非 O(全画布)）。
+    pub(crate) stroke_dedup_mask: Vec<u8>,
+    /// stroke 去重激活标记（区分「mask 未分配」与「非 stroke 绘制」——blit_pixel 快速路径）。
+    pub(crate) stroke_mask_active: bool,
+    /// 本次 stroke 触达的 mask 线性索引（结束回滚用）。
+    pub(crate) stroke_dirty: Vec<usize>,
     /// R34xx：当前字体解析到的 font_id（set_font 时经 loader 解析器查找）。
     pub(crate) font_id: Option<u32>,
 }

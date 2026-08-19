@@ -56,7 +56,9 @@ impl CanvasContext {
             color_space: CanvasColorSpace::Srgb,
             font_loader: None,
             font_id: None,
-            stroke_dedup_mask: None,
+            stroke_dedup_mask: Vec::new(),
+            stroke_mask_active: false,
+            stroke_dirty: Vec::new(),
         }
     }
 

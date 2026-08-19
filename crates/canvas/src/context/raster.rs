@@ -1682,12 +1682,13 @@ impl CanvasContext {
         }
         // R34xx：stroke 去重——同一次 stroke 调用内已覆盖像素跳过（段/join/cap 重叠区
         // 只合成一次）。
-        if let Some(mask) = self.stroke_dedup_mask.as_mut() {
+        if self.stroke_mask_active {
             let mi = (py as usize) * (self.width as usize) + px as usize;
-            if mask[mi] != 0 {
+            if self.stroke_dedup_mask[mi] != 0 {
                 return;
             }
-            mask[mi] = 1;
+            self.stroke_dedup_mask[mi] = 1;
+            self.stroke_dirty.push(mi);
         }
         let idx = ((py as usize) * (self.width as usize) + px as usize) * 4;
         let (r, g, b, a) = self.composite_pixel(
@@ -1802,12 +1803,13 @@ impl CanvasContext {
             return;
         }
         // R34xx：stroke 去重（同 blit_pixel——渐变 stroke 的段/join/cap 重叠只合成一次）。
-        if let Some(mask) = self.stroke_dedup_mask.as_mut() {
+        if self.stroke_mask_active {
             let mi = (py as usize) * (self.width as usize) + px as usize;
-            if mask[mi] != 0 {
+            if self.stroke_dedup_mask[mi] != 0 {
                 return;
             }
-            mask[mi] = 1;
+            self.stroke_dedup_mask[mi] = 1;
+            self.stroke_dirty.push(mi);
         }
         let color = self.apply_alpha(style.sample_at(px as f32, py as f32));
         let idx = ((py as usize) * (self.width as usize) + px as usize) * 4;
@@ -2231,8 +2233,9 @@ impl CanvasContext {
         // 覆盖；同时线宽须应用于垂直方向，2d.strokeRect.transform 期望 scale 后线仍 5px 宽）。
         // R34xx：stroke 单次调用去重 mask（段矩形/join/cap 重叠像素只合成一次——
         // 2d.strokeStyle.colorObject.transparency 的 2px 高矩形 50px 线宽）。
-        self.stroke_dedup_mask = Some(vec![0u8; (self.width as usize) * (self.height as usize)]);
-        self.stroke_dedup_mask = Some(vec![0u8; (self.width as usize) * (self.height as usize)]);
+        // OPTIMIZATION（2026-08-19）：mask 常驻复用——懒分配一次，结束按脏索引回滚
+        //（旧实现每次 stroke 分配+清零全画布并丢弃，高频 stroke 下 16.7x 回归）。
+        self.begin_stroke_mask();
         let mut dev_half_lw = half_lw;
         for seg in &segments {
             // R34xx：per-segment 设备空间半线宽（CTM 非均匀变换下随段方向变化）。
@@ -2362,7 +2365,29 @@ impl CanvasContext {
             // 终点端 cap
             self.blit_line_cap(last_seg[2], last_seg[3], last_seg[0], last_seg[1], dev_half_lw, color);
         }
-        self.stroke_dedup_mask = None;
+        self.end_stroke_mask();
+    }
+
+    /// R34xx→OPTIMIZATION（2026-08-19）：stroke 去重 mask 会话开关。开始：懒分配 +
+    /// 激活；结束（`end_stroke_mask`）：按 `stroke_dirty` 记录的索引清零触达像素，
+    /// 为下一次 stroke 复用做准备（mask 语义等价于「每次 stroke 全清零」）。
+    fn begin_stroke_mask(&mut self) {
+        if self.stroke_dedup_mask.len() != (self.width as usize) * (self.height as usize) {
+            self.stroke_dedup_mask = vec![0u8; (self.width as usize) * (self.height as usize)];
+        }
+        debug_assert!(
+            self.stroke_dirty.is_empty(),
+            "上次 stroke 未正常结束（end_stroke_mask 缺失？）"
+        );
+        self.stroke_mask_active = true;
+    }
+
+    fn end_stroke_mask(&mut self) {
+        self.stroke_mask_active = false;
+        for &mi in &self.stroke_dirty {
+            self.stroke_dedup_mask[mi] = 0;
+        }
+        self.stroke_dirty.clear();
     }
 
     /// 绘制线段端点的 cap。
@@ -2529,7 +2554,9 @@ impl CanvasContext {
             );
             self.blit_line_cap_gradient(last_seg[2], last_seg[3], last_seg[0], last_seg[1], dev_half_lw, style);
         }
-        self.stroke_dedup_mask = None;
+        // 61a52486b 起本（渐变）路径从未激活过 mask（Option 恒 None）——保持该现状，
+        // 仅防御性结束会话（若未来有人在上方开启 begin_stroke_mask，此处保证不悬挂）。
+        self.end_stroke_mask();
     }
 
     /// 线段端点 cap **渐变**光栅化（R3084）：与 `blit_line_cap` 同几何，每矩形经 `blit_rect_gradient`。
