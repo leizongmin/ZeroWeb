@@ -1497,6 +1497,53 @@ pub struct TextShadowValue {
     pub color: ColorValue,
 }
 
+fn shadow_length_is_valid(raw: &str, value: &LengthValue, allow_negative: bool) -> bool {
+    if matches!(
+        raw.trim().to_ascii_lowercase().as_str(),
+        "thin" | "medium" | "thick" | "auto" | "min-content" | "max-content" | "fit-content"
+    ) {
+        return false;
+    }
+    let finite = match value {
+        LengthValue::Px(v)
+        | LengthValue::Em(v)
+        | LengthValue::Ex(v)
+        | LengthValue::Rex(v)
+        | LengthValue::Cap(v)
+        | LengthValue::Rcap(v)
+        | LengthValue::Rem(v)
+        | LengthValue::Vh(v)
+        | LengthValue::Vw(v)
+        | LengthValue::Vmin(v)
+        | LengthValue::Vmax(v)
+        | LengthValue::Ch(v)
+        | LengthValue::Rch(v)
+        | LengthValue::Ic(v)
+        | LengthValue::Ric(v) => v.is_finite(),
+        _ => false,
+    };
+    finite
+        && (allow_negative
+            || match value {
+                LengthValue::Px(v)
+                | LengthValue::Em(v)
+                | LengthValue::Ex(v)
+                | LengthValue::Rex(v)
+                | LengthValue::Cap(v)
+                | LengthValue::Rcap(v)
+                | LengthValue::Rem(v)
+                | LengthValue::Vh(v)
+                | LengthValue::Vw(v)
+                | LengthValue::Vmin(v)
+                | LengthValue::Vmax(v)
+                | LengthValue::Ch(v)
+                | LengthValue::Rch(v)
+                | LengthValue::Ic(v)
+                | LengthValue::Ric(v) => *v >= 0.0,
+                _ => false,
+            })
+}
+
 /// 解析 CSS text-shadow 值。
 ///
 /// 格式：`"none"` | `"<color>? && <offset-x> <offset-y> [<blur-radius>] && <color>?"`。
@@ -1536,9 +1583,19 @@ pub fn parse_text_shadow(value: &str) -> Option<TextShadowValue> {
         return None;
     }
     let ox = parse_length(lengths[0])?;
+    if !shadow_length_is_valid(lengths[0], &ox, true) {
+        return None;
+    }
     let oy = parse_length(lengths[1])?;
+    if !shadow_length_is_valid(lengths[1], &oy, true) {
+        return None;
+    }
     let blur = if lengths.len() == 3 {
-        parse_length(lengths[2])?
+        let blur = parse_length(lengths[2])?;
+        if !shadow_length_is_valid(lengths[2], &blur, false) {
+            return None;
+        }
+        blur
     } else {
         LengthValue::Px(0.0)
     };
@@ -1673,14 +1730,28 @@ pub fn parse_box_shadow(value: &str) -> Option<BoxShadowValue> {
         return None;
     }
     let ox = parse_length(lengths[0])?;
+    if !shadow_length_is_valid(lengths[0], &ox, true) {
+        return None;
+    }
     let oy = parse_length(lengths[1])?;
+    if !shadow_length_is_valid(lengths[1], &oy, true) {
+        return None;
+    }
     let blur = if lengths.len() >= 3 {
-        parse_length(lengths[2])?
+        let blur = parse_length(lengths[2])?;
+        if !shadow_length_is_valid(lengths[2], &blur, false) {
+            return None;
+        }
+        blur
     } else {
         LengthValue::Px(0.0)
     };
     let spread = if lengths.len() >= 4 {
-        parse_length(lengths[3])?
+        let spread = parse_length(lengths[3])?;
+        if !shadow_length_is_valid(lengths[3], &spread, true) {
+            return None;
+        }
+        spread
     } else {
         LengthValue::Px(0.0)
     };

@@ -730,12 +730,24 @@ fn test_box_shadow_apply_initial() {
 fn test_box_shadow_invalid() {
     let mut style = ComputedStyle::default();
     assert!(!apply_property_value(&mut style, "box-shadow", "invalid"));
+    assert!(apply_property_value(&mut style, "box-shadow", "2px 3px 4px 5px red"));
+    let previous = style.box_shadow.clone();
+    for value in ["2px 3px -1px red", "2px 3px 10%", "2px 3px thin", "2px 3px infpx"] {
+        assert!(!apply_property_value(&mut style, "box-shadow", value));
+        assert_eq!(style.box_shadow, previous, "{value} should not overwrite");
+    }
 }
 
 #[test]
 fn test_text_shadow_invalid() {
     let mut style = ComputedStyle::default();
     assert!(!apply_property_value(&mut style, "text-shadow", "invalid"));
+    assert!(apply_property_value(&mut style, "text-shadow", "2px 3px 4px red"));
+    let previous = style.text_shadow.clone();
+    for value in ["2px 3px -1px red", "2px 3px 10%", "2px 3px thin", "2px 3px infpx"] {
+        assert!(!apply_property_value(&mut style, "text-shadow", value));
+        assert_eq!(style.text_shadow, previous, "{value} should not overwrite");
+    }
 }
 
 // ── 边界测试：text-shadow 通过 DOM 树继承 ──
@@ -1561,15 +1573,11 @@ fn test_edge_background_image_url_hero() {
 #[test]
 fn test_edge_box_shadow_negative_values() {
     let mut style = ComputedStyle::default();
-    assert!(apply_property_value(
-        &mut style,
-        "box-shadow",
-        "-3px -5px -2px -1px red"
-    ));
+    assert!(apply_property_value(&mut style, "box-shadow", "-3px -5px 2px -1px red"));
     let s = &style.box_shadow[0];
     assert_eq!(s.offset_x, -3.0);
     assert_eq!(s.offset_y, -5.0);
-    assert_eq!(s.blur_radius, -2.0);
+    assert_eq!(s.blur_radius, 2.0);
     assert_eq!(s.spread_radius, -1.0);
     assert_eq!(s.color, zero_css_parser::values::ColorValue::Rgba(255, 0, 0, 255));
     assert!(!s.inset);

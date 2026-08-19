@@ -561,6 +561,20 @@ fn test_text_shadow_too_few_values() {
     assert!(parse_text_shadow("2px").is_none());
 }
 
+#[test]
+fn test_text_shadow_rejects_invalid_length_grammar() {
+    for value in [
+        "2px 2px -1px",
+        "2px 2px 10%",
+        "2px 2px thin",
+        "2px 2px min-content",
+        "2px 2px infpx",
+        "2px 2px NaNpx",
+    ] {
+        assert!(parse_text_shadow(value).is_none(), "{value} should be rejected");
+    }
+}
+
 // ── R2305：parse_text_shadow_list — 多阴影列表（CSS Text Decoration §3：none | <shadow>#）──
 
 #[test]
@@ -664,6 +678,21 @@ fn test_box_shadow_none() {
 #[test]
 fn test_box_shadow_too_few_values() {
     assert!(parse_box_shadow("2px").is_none());
+}
+
+#[test]
+fn test_box_shadow_rejects_invalid_length_grammar() {
+    assert!(parse_box_shadow("-2px -3px 4px -1px red").is_some());
+    for value in [
+        "2px 2px -1px",
+        "2px 2px 10%",
+        "2px 2px thin",
+        "2px 2px min-content",
+        "2px 2px infpx",
+        "2px 2px NaNpx",
+    ] {
+        assert!(parse_box_shadow(value).is_none(), "{value} should be rejected");
+    }
 }
 
 // ── R2304：parse_box_shadow_list — 多阴影列表（CSS Backgrounds §7.2：<shadow>#）──
