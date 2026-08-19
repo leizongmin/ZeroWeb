@@ -75,6 +75,15 @@ pub struct Painter {
     font_resolver: HashMap<String, u32>,
     /// 小写 key 索引，供大小写不敏感的 face matching 使用。
     font_resolver_lower: HashMap<String, u32>,
+    /// OPTIMIZATION（2026-08-19）：resolve_font_id 结果 memoize——解析是纯函数
+    ///（family 列表 × weight × style × stretch → FontId），但含逐 family 的
+    /// `format!("{family}{suffix}")` 键构造 + HashMap probe。7a8ec1278 起非 bold
+    /// 文本也走真实解析链（此前直接返回哨兵 FontId(0)），paint 循环每元素一次，
+    /// paint_simple_page_100 基线 74µs → 113µs（1.4x）。同页样式大量重复
+    ///（同 font-family/weight/style），memoize 后每独特组合只解析一次。
+    /// RefCell：热循环常处于 `&mut self.primitives` 借用区，缓存须经 &self 访问。
+    pub(crate) font_id_cache:
+        std::cell::RefCell<std::collections::HashMap<(Vec<String>, u8, u8, (u32, u64)), (u32, bool)>>,
     /// generic family（含粗体/斜体变体）解析到的字体 ID 集。
     generic_font_ids: HashSet<u32>,
     /// 视口宽度（像素）。用于 CSS §14.2 画布背景传播——根元素（html）的背景
@@ -390,6 +399,7 @@ impl Painter {
             focused_node: None,
             font_resolver: HashMap::new(),
             font_resolver_lower: HashMap::new(),
+            font_id_cache: std::cell::RefCell::new(std::collections::HashMap::new()),
             generic_font_ids: HashSet::new(),
             viewport_w: 0.0,
             viewport_h: 0.0,

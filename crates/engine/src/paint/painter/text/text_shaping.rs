@@ -66,6 +66,37 @@ impl super::super::Painter {
         let want_bold = matches!(font_weight, FontWeightValue::Bold | FontWeightValue::Bolder)
             || matches!(font_weight, FontWeightValue::Absolute(weight) if *weight >= 600);
         let want_italic = matches!(font_style, FontStyleValue::Italic | FontStyleValue::Oblique(_));
+        // OPTIMIZATION（2026-08-19）：结果 memoize（见 Painter::font_id_cache 注释）。
+        // 键用「原始 family 列表 + bool×2 + stretch 位串」——完整保留解析输入，
+        // 不做语义归并（避免与下方解析逻辑产生等价类偏差）。
+        let oblique_angle = match font_style {
+            FontStyleValue::Oblique(Some(deg)) => deg.to_bits(),
+            _ => 0,
+        };
+        let cache_key = (
+            font_family.to_vec(),
+            want_bold as u8,
+            want_italic as u8,
+            (font_stretch.to_bits(), oblique_angle),
+        );
+        if let Some(hit) = self.font_id_cache.borrow().get(&cache_key) {
+            return (FontId(hit.0), hit.1);
+        }
+        let resolved = self.resolve_font_id_uncached(font_family, want_bold, want_italic, font_stretch);
+        self.font_id_cache
+            .borrow_mut()
+            .insert(cache_key, (resolved.0.0, resolved.1));
+        resolved
+    }
+
+    /// `resolve_font_id` 的未缓存实现（原逻辑原样保留）。
+    fn resolve_font_id_uncached(
+        &self,
+        font_family: &[String],
+        want_bold: bool,
+        want_italic: bool,
+        font_stretch: f32,
+    ) -> (FontId, bool) {
         const GENERIC_FAMILIES: &[&str] = &[
             "serif",
             "sans-serif",
