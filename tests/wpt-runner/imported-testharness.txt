@@ -183,3 +183,6 @@ service-workers/service-worker/registration-basic.https.html 04067ce9c7c2165e71a
 service-workers/service-worker/registration-scope.https.html 04067ce9c7c2165e71ad7d0dde10a4c5cb394a83 2026-08-19 SW-M1-tier-a
 service-workers/service-worker/registration-script-url.https.html 04067ce9c7c2165e71ad7d0dde10a4c5cb394a83 2026-08-19 SW-M1-tier-a
 service-workers/service-worker/rejections.https.html 04067ce9c7c2165e71ad7d0dde10a4c5cb394a83 2026-08-19 SW-M1-tier-a
+service-workers/service-worker/state.https.html 04067ce9c7c2165e71ad7d0dde10a4c5cb394a83 2026-08-19 SW-M1-next-wave
+service-workers/service-worker/synced-state.https.html 04067ce9c7c2165e71ad7d0dde10a4c5cb394a83 2026-08-19 SW-M1-next-wave
+service-workers/service-worker/unregister.https.html 04067ce9c7c2165e71ad7d0dde10a4c5cb394a83 2026-08-19 SW-M1-next-wave

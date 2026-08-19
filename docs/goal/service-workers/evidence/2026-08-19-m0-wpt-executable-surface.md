@@ -30,7 +30,8 @@
 - [Tier A 验收合约](2026-08-19-m1-tier-a-baseline-contract.md) 固定首批
   8 case / 28 subtest / 18 asset 及五阶段验收顺序。
 - [M1 第二批裁决](2026-08-19-m1-next-wave-review.md) 将 14 个
-  `M1 + review + no-signal` 文件校准为 3 core / 5 advanced / 5 dynamic-server / 1 update。
+  `M1 + review + no-signal` 文件校准为 3 core / 5 advanced / 5 dynamic-server / 1 update；
+  3 个 core case 已资产化。
 - 这不等于全部上游用例都超出 ZeroWeb 环境。M1 完成后，单页面、单注册、静态资源的
   生命周期用例可形成第一批真实基线；M2 完成后再加入单客户端 fetch/respondWith 用例。
 - iframe、多客户端、SharedWorker、跨 origin、动态服务端 handler、WebSocket 和

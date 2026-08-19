@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Restore the pinned Service Worker Tier A testharness corpus.
+# Restore a pinned Service Worker testharness corpus.
 
 set -euo pipefail
 
@@ -10,6 +10,8 @@ ASSET_MANIFEST="${WPT_ASSET_MANIFEST:-${REPO_ROOT}/docs/goal/service-workers/evi
 DATA_ROOT="${WPT_SERVICE_WORKER_DATA:-${REPO_ROOT}/tests/wpt-runner/wpt-data/.service-workers-tier-a-root}"
 REMOTE_ROOT="${WPT_REMOTE_ROOT:-https://raw.githubusercontent.com/web-platform-tests/wpt/${WPT_REV}}"
 FALLBACK_ROOT="${WPT_FALLBACK_ROOT:-https://cdn.jsdelivr.net/gh/web-platform-tests/wpt@${WPT_REV}}"
+CORPUS_LABEL="${WPT_CORPUS_LABEL:-Service Worker Tier A}"
+EXPECTED_ASSET_COUNT="${WPT_EXPECTED_ASSET_COUNT:-18}"
 MODE="restore"
 
 if [[ "${1:-}" == "--verify-only" ]]; then
@@ -18,6 +20,10 @@ if [[ "${1:-}" == "--verify-only" ]]; then
 fi
 if [[ "$#" -ne 0 ]]; then
   echo "Usage: $0 [--verify-only]" >&2
+  exit 2
+fi
+if [[ ! "${EXPECTED_ASSET_COUNT}" =~ ^[1-9][0-9]*$ ]]; then
+  echo "Invalid expected Service Worker WPT asset count: ${EXPECTED_ASSET_COUNT}" >&2
   exit 2
 fi
 
@@ -76,14 +82,14 @@ restore_asset() {
     if ! fetch_remote "${REMOTE_ROOT}" "${relative}" "${temporary}"; then
       if [[ -z "${FALLBACK_ROOT}" || "${FALLBACK_ROOT}" == "${REMOTE_ROOT}" ]] ||
         ! fetch_remote "${FALLBACK_ROOT}" "${relative}" "${temporary}"; then
-        echo "Tier A WPT download incomplete; resumable file kept: ${relative}" >&2
+        echo "${CORPUS_LABEL} download incomplete; resumable file kept: ${relative}" >&2
         return 1
       fi
     fi
   fi
 
   if ! matches_manifest "${temporary}" "${expected_bytes}" "${expected_sha}"; then
-    echo "Tier A WPT asset failed manifest verification: ${relative}" >&2
+    echo "${CORPUS_LABEL} asset failed manifest verification: ${relative}" >&2
     rm -f "${temporary}"
     return 1
   fi
@@ -91,7 +97,7 @@ restore_asset() {
 }
 
 [[ -f "${ASSET_MANIFEST}" ]] || {
-  echo "Tier A WPT asset manifest not found: ${ASSET_MANIFEST}" >&2
+  echo "${CORPUS_LABEL} asset manifest not found: ${ASSET_MANIFEST}" >&2
   exit 1
 }
 
@@ -101,12 +107,12 @@ while IFS=$'\t' read -r relative _manifest_type _roles _referenced_by expected_b
     continue
   fi
   if ! validate_entry "${relative}" "${expected_bytes}" "${expected_sha}"; then
-    echo "Invalid Tier A WPT manifest entry: ${relative}" >&2
+    echo "Invalid ${CORPUS_LABEL} manifest entry: ${relative}" >&2
     exit 1
   fi
   if [[ "${MODE}" == "verify" ]]; then
     if ! matches_manifest "${DATA_ROOT}/${relative}" "${expected_bytes}" "${expected_sha}"; then
-      echo "Tier A WPT asset does not match manifest: ${relative}" >&2
+      echo "${CORPUS_LABEL} asset does not match manifest: ${relative}" >&2
       exit 1
     fi
   else
@@ -115,9 +121,9 @@ while IFS=$'\t' read -r relative _manifest_type _roles _referenced_by expected_b
   count=$((count + 1))
 done < "${ASSET_MANIFEST}"
 
-if [[ "${count}" -ne 18 ]]; then
-  echo "Tier A WPT asset count mismatch: expected 18, found ${count}" >&2
+if [[ "${count}" -ne "${EXPECTED_ASSET_COUNT}" ]]; then
+  echo "${CORPUS_LABEL} asset count mismatch: expected ${EXPECTED_ASSET_COUNT}, found ${count}" >&2
   exit 1
 fi
 
-echo "Service Worker Tier A corpus ${MODE} complete (${count} assets, WPT ${WPT_REV})"
+echo "${CORPUS_LABEL} corpus ${MODE} complete (${count} assets, WPT ${WPT_REV})"

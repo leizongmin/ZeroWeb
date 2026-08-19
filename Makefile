@@ -1,4 +1,4 @@
-.PHONY: setup-rusty-v8 fetch-wpt-data fetch-wpt-html-testharness update-wpt-data build browser-build browser browser-cpu browser-wpt-parity browser-debug browser-debug-wayland browser-debug-wayland-log browser-debug-x11 browser-compositor-smoke browser-compositor-real-site-smoke test testharness-html reftest reftest-oracle capture-oracle product-smoke-oracle product-smoke form-visual-smoke form-visual-browser-gpu-smoke product-smoke-legacy import-wpt audit-imported-font-resources reftest-trend reftest-trend-oracle reftest-smoke layout-golden layout-golden-update monthly-report bench bench-gate bench-capture bench-trend fetch-wpt-dom testharness-dom testharness-dom-native fetch-wpt-indexeddb testharness-indexeddb fetch-wpt-service-workers-tier-a audit-wpt-service-workers-tier-a test-wpt-service-workers-tier-a-assets target-disk-guard target/test-guard android-preflight android-apk android-release-apk android-wsl-renderer-apk android-wsl-renderer-install-smoke android-install-smoke
+.PHONY: setup-rusty-v8 fetch-wpt-data fetch-wpt-html-testharness update-wpt-data build browser-build browser browser-cpu browser-wpt-parity browser-debug browser-debug-wayland browser-debug-wayland-log browser-debug-x11 browser-compositor-smoke browser-compositor-real-site-smoke test testharness-html reftest reftest-oracle capture-oracle product-smoke-oracle product-smoke form-visual-smoke form-visual-browser-gpu-smoke product-smoke-legacy import-wpt audit-imported-font-resources reftest-trend reftest-trend-oracle reftest-smoke layout-golden layout-golden-update monthly-report bench bench-gate bench-capture bench-trend fetch-wpt-dom testharness-dom testharness-dom-native fetch-wpt-indexeddb testharness-indexeddb fetch-wpt-service-workers-tier-a audit-wpt-service-workers-tier-a test-wpt-service-workers-tier-a-assets fetch-wpt-service-workers-next-wave audit-wpt-service-workers-next-wave test-wpt-service-workers-next-wave-assets target-disk-guard target/test-guard android-preflight android-apk android-release-apk android-wsl-renderer-apk android-wsl-renderer-install-smoke android-install-smoke
 
 # Windows 的 make recipe 可能落到 cmd.exe（本机）或 Git Bash（GitHub Actions runner）——
 # 统一显式走 Git Bash，避免 cmd 语法在 bash 下解析失败（2026-08-16 CI 实测）。
@@ -228,6 +228,22 @@ audit-wpt-service-workers-tier-a:
 
 test-wpt-service-workers-tier-a-assets: fetch-wpt-service-workers-tier-a
 	WPT_SERVICE_WORKER_SOURCE="$(CURDIR)/tests/wpt-runner/wpt-data/.service-workers-tier-a-root" \
+		$(WPT_BASH) tests/wpt-runner/scripts/test-service-workers-tier-a-assets.sh
+
+fetch-wpt-service-workers-next-wave:
+	WPT_ASSET_MANIFEST="$(CURDIR)/docs/goal/service-workers/evidence/2026-08-19-m1-next-wave-assets.tsv" \
+		WPT_EXPECTED_ASSET_COUNT=7 WPT_CORPUS_LABEL="Service Worker next-wave" \
+		$(WPT_BASH) tests/wpt-runner/scripts/fetch-service-workers-tier-a.sh
+
+audit-wpt-service-workers-next-wave:
+	WPT_ASSET_MANIFEST="$(CURDIR)/docs/goal/service-workers/evidence/2026-08-19-m1-next-wave-assets.tsv" \
+		WPT_EXPECTED_ASSET_COUNT=7 WPT_CORPUS_LABEL="Service Worker next-wave" \
+		$(WPT_BASH) tests/wpt-runner/scripts/fetch-service-workers-tier-a.sh --verify-only
+
+test-wpt-service-workers-next-wave-assets: fetch-wpt-service-workers-next-wave
+	WPT_SERVICE_WORKER_SOURCE="$(CURDIR)/tests/wpt-runner/wpt-data/.service-workers-tier-a-root" \
+		WPT_ASSET_MANIFEST="$(CURDIR)/docs/goal/service-workers/evidence/2026-08-19-m1-next-wave-assets.tsv" \
+		WPT_EXPECTED_ASSET_COUNT=7 WPT_CORPUS_LABEL="Service Worker next-wave" \
 		$(WPT_BASH) tests/wpt-runner/scripts/test-service-workers-tier-a-assets.sh
 
 # WPT reftest：release 构建不受内存限制，已编译 runner 的执行由 test-guard 包裹。

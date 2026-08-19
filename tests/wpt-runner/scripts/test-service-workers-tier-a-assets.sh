@@ -4,8 +4,9 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 FETCH_SCRIPT="${SCRIPT_DIR}/fetch-service-workers-tier-a.sh"
-SOURCE_ROOT="${WPT_SERVICE_WORKER_SOURCE:?set WPT_SERVICE_WORKER_SOURCE to a verified Tier A corpus}"
-TMP_ROOT="$(mktemp -d "${TMPDIR:-/tmp}/zeroweb-sw-tier-a.XXXXXX")"
+SOURCE_ROOT="${WPT_SERVICE_WORKER_SOURCE:?set WPT_SERVICE_WORKER_SOURCE to a verified Service Worker corpus}"
+CORPUS_LABEL="${WPT_CORPUS_LABEL:-Service Worker Tier A}"
+TMP_ROOT="$(mktemp -d "${TMPDIR:-/tmp}/zeroweb-sw-assets.XXXXXX")"
 trap 'rm -rf -- "${TMP_ROOT}"' EXIT
 
 run_fetch() {
@@ -32,4 +33,4 @@ if run_fetch --verify-only >/dev/null 2>&1; then
   exit 1
 fi
 
-echo "Service Worker Tier A asset regression: PASS"
+echo "${CORPUS_LABEL} asset regression: PASS"

@@ -2,7 +2,7 @@
 
 **日期**：2026-08-19
 **上游 revision**：`04067ce9c7c2165e71ad7d0dde10a4c5cb394a83`
-**状态**：M0 evidence（零 runtime 源码改动）
+**状态**：M0 assets ready（零 runtime 源码改动）
 **逐案裁决**：[next-wave review TSV](2026-08-19-m1-next-wave-review.tsv)
 **资产清单**：[next-wave assets TSV](2026-08-19-m1-next-wave-assets.tsv)
 **Subtest 清单**：[next-wave subtests TSV](2026-08-19-m1-next-wave-subtests.tsv)
@@ -27,6 +27,9 @@
 - 第二批 core 是 `state.https.html`、`synced-state.https.html`、`unregister.https.html`。
 - 第二批共有 **7 个唯一资产 / 217,890 bytes**；其中 4 个 support/worker 已在 Tier A
   corpus，只需新增 3 个 case HTML。
+- `make fetch-wpt-service-workers-next-wave` 和
+  `make audit-wpt-service-workers-next-wave` 已落，默认复用 Tier A 独立数据根。
+- `make test-wpt-service-workers-next-wave-assets` 复用 Tier A 的 fail-closed 回归。
 - 初筛的 `none` 只表示页面正文没有命中浅层关键词，**不表示无隐藏依赖**：11/14 案在
   helper/worker 中发现动态 handler、module graph、message/error、job scheduling 或 watchdog。
 
@@ -122,7 +125,7 @@ subtest。`registration-security-error` 即使 7/8 断言可静态执行，也�
 
 ## 5. 后续输入
 
-1. RFC 批准前可将 3 个 next-wave case 资产化到独立 corpus。
+1. 3 个 next-wave case 已资产化并记入 testharness 账本。
 2. RFC 批准后先跑 Tier A 28/28，再启用 next-wave 4/4。
 3. error/message、job/module、watchdog 能力各自落地时消费 `defer-advanced`。
 4. runner response adapter 落地前，5 个 dynamic-server case 保持 Unsupported。
@@ -136,4 +139,6 @@ subtest。`registration-security-error` 即使 7/8 断言可静态执行，也�
 - [x] next-wave 7/7 资产 blob SHA 匹配。
 - [x] 78 个 subtest 已展开并按裁决反算（4 + 8 + 65 + 1）。
 - [x] 动态 server、advanced runtime、update 未混入 core 分母。
+- [x] next-wave fetch/audit 在临时根和默认共享根 7/7 通过。
+- [x] 幂等、篡改 fail-closed/修复、非法 count 与 Tier A 18/18 回归通过。
 - [x] 未修改 runtime 源码或既有 inventory 初筛记录。
