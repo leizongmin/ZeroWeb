@@ -1,7 +1,9 @@
 //! Service Worker registration and lifecycle coordination.
 
 use std::collections::{HashMap, HashSet};
-use zero_script_sandbox::{SandboxConfig, ServiceWorkerEvent, ServiceWorkerRuntime, ServiceWorkerScriptErrorKind};
+use zero_script_sandbox::{
+    SandboxConfig, ServiceWorkerEvent, ServiceWorkerLifecyclePhase, ServiceWorkerRuntime, ServiceWorkerScriptErrorKind,
+};
 use zero_storage::{ServiceWorkerRegistration, ServiceWorkerRegistry, ServiceWorkerState};
 
 const DEFAULT_RUNTIME_LIMIT: usize = 32;
@@ -68,6 +70,17 @@ pub enum ServiceWorkerManagerEvent {
         /// Stable failure category.
         kind: ServiceWorkerScriptErrorKind,
         /// Engine diagnostic that does not contain script source.
+        message: String,
+    },
+    /// Runtime lifecycle dispatch and all `waitUntil()` promises settled.
+    LifecycleSettled {
+        /// Registration version ID.
+        registration_id: u64,
+        /// Install or activate phase.
+        phase: ServiceWorkerLifecyclePhase,
+        /// Whether dispatch and all lifetime promises fulfilled.
+        succeeded: bool,
+        /// Rejection or dispatch error diagnostic.
         message: String,
     },
     /// Install result moved the version to waiting or redundant.
@@ -247,6 +260,19 @@ impl ServiceWorkerManager {
                         message,
                     });
                 }
+                ServiceWorkerEvent::LifecycleSettled {
+                    phase,
+                    succeeded,
+                    message,
+                    ..
+                } => {
+                    output.push(ServiceWorkerManagerEvent::LifecycleSettled {
+                        registration_id,
+                        phase,
+                        succeeded,
+                        message,
+                    });
+                }
                 ServiceWorkerEvent::Closed => {
                     if self.is_installing(registration_id) {
                         self.fail_installing_version(registration_id);
@@ -299,6 +325,19 @@ impl ServiceWorkerManager {
         })
     }
 
+    /// Dispatch the real install event for an evaluated installing version.
+    pub fn dispatch_install(&mut self, registration_id: u64) -> Result<(), ServiceWorkerManagerError> {
+        self.require_state(registration_id, ServiceWorkerState::Installing)?;
+        if !self.evaluated.contains(&registration_id) {
+            return Err(ServiceWorkerManagerError::EvaluationPending(registration_id));
+        }
+        self.runtimes
+            .get_mut(&registration_id)
+            .ok_or(ServiceWorkerManagerError::UnknownRegistration(registration_id))?
+            .dispatch_install(registration_id)
+            .map_err(|error| ServiceWorkerManagerError::Runtime(error.to_string()))
+    }
+
     /// Move a waiting version into the activating state.
     pub fn begin_activation(&mut self, registration_id: u64) -> Result<(), ServiceWorkerManagerError> {
         self.require_state(registration_id, ServiceWorkerState::Installed)?;
@@ -315,6 +354,16 @@ impl ServiceWorkerManager {
             .expect("validated registration must exist")
             .state = ServiceWorkerState::Activating;
         Ok(())
+    }
+
+    /// Dispatch the real activate event for an activating version.
+    pub fn dispatch_activate(&mut self, registration_id: u64) -> Result<(), ServiceWorkerManagerError> {
+        self.require_state(registration_id, ServiceWorkerState::Activating)?;
+        self.runtimes
+            .get_mut(&registration_id)
+            .ok_or(ServiceWorkerManagerError::UnknownRegistration(registration_id))?
+            .dispatch_activate(registration_id)
+            .map_err(|error| ServiceWorkerManagerError::Runtime(error.to_string()))
     }
 
     /// Apply the result of the activate event and its lifetime promises.
@@ -519,6 +568,45 @@ mod tests {
         assert_eq!(manager.registration(id).unwrap().state, ServiceWorkerState::Redundant);
         assert_eq!(manager.slots(&key("/")).unwrap().installing, None);
         assert_eq!(manager.runtime_count(), 0);
+    }
+
+    #[test]
+    fn lifecycle_runtime_outcomes_are_forwarded_typed() {
+        let mut manager = ServiceWorkerManager::new();
+        let id = start(
+            &mut manager,
+            "/",
+            "addEventListener('install', event => {
+                event.waitUntil(Promise.resolve());
+            });
+            addEventListener('activate', event => {
+                event.waitUntil(Promise.reject(new Error('activate rejected')));
+            });",
+        );
+        wait_for_event(&mut manager);
+
+        manager.dispatch_install(id).unwrap();
+        assert_eq!(
+            wait_for_event(&mut manager),
+            ServiceWorkerManagerEvent::LifecycleSettled {
+                registration_id: id,
+                phase: ServiceWorkerLifecyclePhase::Install,
+                succeeded: true,
+                message: String::new(),
+            }
+        );
+        manager.complete_install(id, true).unwrap();
+        manager.begin_activation(id).unwrap();
+        manager.dispatch_activate(id).unwrap();
+        assert!(matches!(
+            wait_for_event(&mut manager),
+            ServiceWorkerManagerEvent::LifecycleSettled {
+                registration_id,
+                phase: ServiceWorkerLifecyclePhase::Activate,
+                succeeded: false,
+                ref message,
+            } if registration_id == id && message.contains("activate rejected")
+        ));
     }
 
     #[test]

@@ -9,9 +9,85 @@ const MAX_HEAP_BYTES: usize = 64 * 1024 * 1024;
 const DEFAULT_SCRIPT_TIMEOUT_MS: u64 = 5_000;
 
 enum ServiceWorkerCommand {
-    Evaluate { script: String, script_url: String },
+    Evaluate {
+        script: String,
+        script_url: String,
+    },
+    DispatchLifecycle {
+        event_id: u64,
+        phase: ServiceWorkerLifecyclePhase,
+    },
     Shutdown,
 }
+
+const SERVICE_WORKER_BOOTSTRAP: &str = r#"
+(function() {
+  const listeners = Object.create(null);
+  let currentWaitUntil = null;
+
+  class ExtendableEvent {
+    constructor(type) { this.type = type; }
+    waitUntil(value) {
+      if (typeof currentWaitUntil !== 'function') {
+        throw new Error('InvalidStateError: waitUntil called outside dispatch');
+      }
+      currentWaitUntil(value);
+    }
+  }
+  class InstallEvent extends ExtendableEvent {}
+
+  globalThis.self = globalThis;
+  globalThis.ServiceWorkerGlobalScope = function ServiceWorkerGlobalScope() {};
+  globalThis.ExtendableEvent = ExtendableEvent;
+  globalThis.InstallEvent = InstallEvent;
+  globalThis.addEventListener = function(type, listener) {
+    if (typeof listener !== 'function') return;
+    (listeners[String(type)] || (listeners[String(type)] = [])).push(listener);
+  };
+  globalThis.removeEventListener = function(type, listener) {
+    const list = listeners[String(type)] || [];
+    const index = list.indexOf(listener);
+    if (index >= 0) list.splice(index, 1);
+  };
+  globalThis.skipWaiting = function() { return Promise.resolve(); };
+  globalThis.__zwDispatchLifecycle = function(type, eventId) {
+    const pending = [];
+    const result = {
+      eventId: String(eventId),
+      phase: String(type),
+      settled: false,
+      succeeded: false,
+      message: ''
+    };
+    globalThis.__zwLifecycleResult = result;
+    currentWaitUntil = function(value) {
+      pending.push(Promise.resolve(value));
+    };
+    try {
+      const EventClass = type === 'install' ? InstallEvent : ExtendableEvent;
+      const event = new EventClass(type);
+      const callbacks = (listeners[type] || []).slice();
+      for (let i = 0; i < callbacks.length; i++) callbacks[i].call(globalThis, event);
+      const propertyHandler = globalThis['on' + type];
+      if (typeof propertyHandler === 'function') propertyHandler.call(globalThis, event);
+    } catch (error) {
+      currentWaitUntil = null;
+      result.settled = true;
+      result.message = String(error && error.message || error);
+      return;
+    }
+    currentWaitUntil = null;
+    Promise.all(pending).then(function() {
+      result.settled = true;
+      result.succeeded = true;
+    }, function(error) {
+      result.settled = true;
+      result.message = String(error && error.message || error);
+    });
+  };
+})();
+'bootstrap-ready';
+"#;
 
 /// Service Worker script evaluation failure category.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -26,6 +102,24 @@ pub enum ServiceWorkerScriptErrorKind {
     InvalidInput,
     /// The selected JavaScript engine could not be initialized.
     EngineUnavailable,
+}
+
+/// Lifecycle event phase dispatched inside the Service Worker global.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ServiceWorkerLifecyclePhase {
+    /// Install event.
+    Install,
+    /// Activate event.
+    Activate,
+}
+
+impl ServiceWorkerLifecyclePhase {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::Install => "install",
+            Self::Activate => "activate",
+        }
+    }
 }
 
 /// Events emitted by [`ServiceWorkerRuntime`].
@@ -43,6 +137,17 @@ pub enum ServiceWorkerEvent {
         /// Stable error category for lifecycle coordination.
         kind: ServiceWorkerScriptErrorKind,
         /// Engine diagnostic message.
+        message: String,
+    },
+    /// An install or activate event and all `waitUntil()` promises settled.
+    LifecycleSettled {
+        /// Host-assigned event ID.
+        event_id: u64,
+        /// Lifecycle phase.
+        phase: ServiceWorkerLifecyclePhase,
+        /// Whether dispatch and all lifetime promises fulfilled.
+        succeeded: bool,
+        /// Rejection or dispatch error diagnostic.
         message: String,
     },
     /// The runtime thread exited.
@@ -70,21 +175,24 @@ impl ServiceWorkerRuntime {
     /// Start a Service Worker engine thread and wait for engine initialization.
     pub fn new(config: SandboxConfig) -> Result<Self, ScriptError> {
         let config = normalize_config(config);
+        let lifecycle_timeout_ms = config.timeout_ms;
         let (init_sender, init_receiver) = mpsc::sync_channel(1);
         let mut core = ThreadedRuntimeCore::spawn(
             "zero-service-worker",
             "Service Worker",
             move |command_receiver, event_sender, _terminate_flag| {
                 let mut sandbox = match create_engine(config) {
-                    Ok(sandbox) => {
-                        let _ = init_sender.send(Ok(()));
-                        sandbox
-                    }
+                    Ok(sandbox) => sandbox,
                     Err(error) => {
                         let _ = init_sender.send(Err(error));
                         return;
                     }
                 };
+                if let Err(error) = sandbox.execute(SERVICE_WORKER_BOOTSTRAP) {
+                    let _ = init_sender.send(Err(error));
+                    return;
+                }
+                let _ = init_sender.send(Ok(()));
 
                 while let Ok(command) = command_receiver.recv() {
                     match command {
@@ -98,6 +206,10 @@ impl ServiceWorkerRuntime {
                                     message: error.to_string(),
                                 },
                             };
+                            let _ = event_sender.send(event);
+                        }
+                        ServiceWorkerCommand::DispatchLifecycle { event_id, phase } => {
+                            let event = dispatch_lifecycle(sandbox.as_mut(), event_id, phase, lifecycle_timeout_ms);
                             let _ = event_sender.send(event);
                         }
                         ServiceWorkerCommand::Shutdown => break,
@@ -146,6 +258,16 @@ impl ServiceWorkerRuntime {
             .map_err(|_| ScriptError::RuntimeError("Service Worker runtime disconnected".into()))
     }
 
+    /// Dispatch an install event.
+    pub fn dispatch_install(&mut self, event_id: u64) -> Result<(), ScriptError> {
+        self.dispatch_lifecycle(event_id, ServiceWorkerLifecyclePhase::Install)
+    }
+
+    /// Dispatch an activate event.
+    pub fn dispatch_activate(&mut self, event_id: u64) -> Result<(), ScriptError> {
+        self.dispatch_lifecycle(event_id, ServiceWorkerLifecyclePhase::Activate)
+    }
+
     /// Try to receive one runtime event without blocking.
     pub fn try_recv(&self) -> Option<ServiceWorkerEvent> {
         self.core.try_recv()
@@ -186,6 +308,17 @@ impl ServiceWorkerRuntime {
     pub fn is_running(&self) -> bool {
         !self.core.is_terminated()
     }
+
+    fn dispatch_lifecycle(&mut self, event_id: u64, phase: ServiceWorkerLifecyclePhase) -> Result<(), ScriptError> {
+        if self.core.is_terminated() {
+            return Err(ScriptError::InvalidInput(
+                "Cannot dispatch event on terminated Service Worker runtime".into(),
+            ));
+        }
+        self.core
+            .send(ServiceWorkerCommand::DispatchLifecycle { event_id, phase })
+            .map_err(|_| ScriptError::RuntimeError("Service Worker runtime disconnected".into()))
+    }
 }
 
 impl Drop for ServiceWorkerRuntime {
@@ -220,6 +353,70 @@ fn script_error_kind(error: &ScriptError) -> ServiceWorkerScriptErrorKind {
         ScriptError::Timeout(_) => ServiceWorkerScriptErrorKind::Timeout,
         ScriptError::InvalidInput(_) => ServiceWorkerScriptErrorKind::InvalidInput,
         ScriptError::EngineUnavailable(_) => ServiceWorkerScriptErrorKind::EngineUnavailable,
+    }
+}
+
+fn dispatch_lifecycle(
+    sandbox: &mut dyn Sandbox,
+    event_id: u64,
+    phase: ServiceWorkerLifecyclePhase,
+    timeout_ms: u64,
+) -> ServiceWorkerEvent {
+    let dispatch = format!(
+        "globalThis.__zwDispatchLifecycle({}, {}); 'dispatched';",
+        serde_json::to_string(phase.as_str()).expect("static phase is serializable"),
+        event_id
+    );
+    if let Err(error) = sandbox.execute(&dispatch) {
+        return ServiceWorkerEvent::LifecycleSettled {
+            event_id,
+            phase,
+            succeeded: false,
+            message: error.to_string(),
+        };
+    }
+
+    let deadline = std::time::Instant::now() + std::time::Duration::from_millis(timeout_ms);
+    loop {
+        match sandbox.execute("JSON.stringify(globalThis.__zwLifecycleResult)") {
+            Ok(result) => match serde_json::from_str::<serde_json::Value>(&result.value) {
+                Ok(value) if value["settled"].as_bool() == Some(true) => {
+                    return ServiceWorkerEvent::LifecycleSettled {
+                        event_id,
+                        phase,
+                        succeeded: value["succeeded"].as_bool() == Some(true),
+                        message: value["message"].as_str().unwrap_or_default().to_string(),
+                    };
+                }
+                Ok(_) => {}
+                Err(error) => {
+                    return ServiceWorkerEvent::LifecycleSettled {
+                        event_id,
+                        phase,
+                        succeeded: false,
+                        message: format!("invalid lifecycle result: {error}"),
+                    };
+                }
+            },
+            Err(error) => {
+                return ServiceWorkerEvent::LifecycleSettled {
+                    event_id,
+                    phase,
+                    succeeded: false,
+                    message: error.to_string(),
+                };
+            }
+        }
+        if std::time::Instant::now() >= deadline {
+            return ServiceWorkerEvent::LifecycleSettled {
+                event_id,
+                phase,
+                succeeded: false,
+                message: format!("lifecycle event exceeded {timeout_ms}ms"),
+            };
+        }
+        let _ = sandbox.execute("'checkpoint'");
+        std::thread::sleep(std::time::Duration::from_millis(1));
     }
 }
 
@@ -378,5 +575,97 @@ mod tests {
         let defaults = normalize_config(SandboxConfig::default());
         assert_eq!(defaults.heap_limit, MAX_HEAP_BYTES);
         assert_eq!(defaults.timeout_ms, DEFAULT_SCRIPT_TIMEOUT_MS);
+    }
+
+    #[test]
+    fn install_event_waits_for_fulfilled_lifetime_promise() {
+        let mut runtime = ServiceWorkerRuntime::new(test_config()).unwrap();
+        runtime
+            .evaluate(
+                "addEventListener('install', event => {
+                    if (!(event instanceof InstallEvent)) throw new Error('wrong event');
+                    event.waitUntil(Promise.resolve().then(() => {
+                        globalThis.installFinished = true;
+                    }));
+                });",
+                "https://example.test/sw.js",
+            )
+            .unwrap();
+        assert!(matches!(
+            runtime.recv_timeout(Duration::from_secs(5)).unwrap(),
+            ServiceWorkerEvent::Evaluated { .. }
+        ));
+
+        runtime.dispatch_install(11).unwrap();
+        assert_eq!(
+            runtime.recv_timeout(Duration::from_secs(5)).unwrap(),
+            ServiceWorkerEvent::LifecycleSettled {
+                event_id: 11,
+                phase: ServiceWorkerLifecyclePhase::Install,
+                succeeded: true,
+                message: String::new(),
+            }
+        );
+        runtime
+            .evaluate(
+                "if (!globalThis.installFinished) throw new Error('not settled');",
+                "https://example.test/check.js",
+            )
+            .unwrap();
+        assert!(matches!(
+            runtime.recv_timeout(Duration::from_secs(5)).unwrap(),
+            ServiceWorkerEvent::Evaluated { .. }
+        ));
+    }
+
+    #[test]
+    fn install_event_reports_rejected_wait_until() {
+        let mut runtime = ServiceWorkerRuntime::new(test_config()).unwrap();
+        runtime
+            .evaluate(
+                "addEventListener('install', event => {
+                    event.waitUntil(Promise.reject(new Error('install rejected')));
+                });",
+                "https://example.test/sw.js",
+            )
+            .unwrap();
+        let _ = runtime.recv_timeout(Duration::from_secs(5)).unwrap();
+
+        runtime.dispatch_install(12).unwrap();
+        assert!(matches!(
+            runtime.recv_timeout(Duration::from_secs(5)).unwrap(),
+            ServiceWorkerEvent::LifecycleSettled {
+                event_id: 12,
+                phase: ServiceWorkerLifecyclePhase::Install,
+                succeeded: false,
+                ref message,
+            } if message.contains("install rejected")
+        ));
+    }
+
+    #[test]
+    fn activate_event_dispatches_property_handler() {
+        let mut runtime = ServiceWorkerRuntime::new(test_config()).unwrap();
+        runtime
+            .evaluate(
+                "globalThis.onactivate = event => {
+                    if (event.type !== 'activate') throw new Error('wrong type');
+                    event.waitUntil(Promise.resolve());
+                };",
+                "https://example.test/sw.js",
+            )
+            .unwrap();
+        let _ = runtime.recv_timeout(Duration::from_secs(5)).unwrap();
+
+        runtime.dispatch_activate(13).unwrap();
+        assert_eq!(
+            runtime.recv_timeout(Duration::from_secs(5)).unwrap(),
+            ServiceWorkerEvent::LifecycleSettled {
+                event_id: 13,
+                phase: ServiceWorkerLifecyclePhase::Activate,
+                succeeded: true,
+                message: String::new(),
+            }
+        );
     }
 }

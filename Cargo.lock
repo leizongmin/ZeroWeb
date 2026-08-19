@@ -6632,6 +6632,7 @@ version = "0.1.0"
 dependencies = [
  "criterion",
  "rquickjs",
+ "serde_json",
  "thiserror 2.0.18",
  "v8",
 ]
