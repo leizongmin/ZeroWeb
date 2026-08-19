@@ -2358,9 +2358,9 @@ impl RendererRuntime {
             | IpcMessageKind::IndexedDbRequest(_)
             | IpcMessageKind::IndexedDbResponse(_)
             | IpcMessageKind::IndexedDbConnectionEventAck(_)
+            | IpcMessageKind::ServiceWorkerRequest(_)
             | IpcMessageKind::NavigationStarted(_)
             | IpcMessageKind::NavigationCommitted(_)
-            | IpcMessageKind::ServiceWorkerRequest(_)
             | IpcMessageKind::CrashNotification(_) => {
                 tracing::warn!("渲染进程收到非预期消息类型（应从渲染进程发出）");
                 Ok(())
