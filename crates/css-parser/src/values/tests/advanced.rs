@@ -1004,6 +1004,9 @@ fn test_parse_border_image_slice_fill_prefix() {
 fn test_parse_border_image_slice_invalid() {
     assert_eq!(parse_border_image_slice(""), None);
     assert_eq!(parse_border_image_slice("-5"), None);
+    assert_eq!(parse_border_image_slice("inf"), None);
+    assert_eq!(parse_border_image_slice("NaN"), None);
+    assert_eq!(parse_border_image_slice("inf%"), None);
     assert_eq!(parse_border_image_slice("1 2 3 4 5"), None);
     assert_eq!(parse_border_image_slice("fill fill 10"), None);
 }
@@ -1048,6 +1051,9 @@ fn test_parse_border_image_width_four_values() {
 fn test_parse_border_image_width_invalid() {
     assert_eq!(parse_border_image_width(""), None);
     assert_eq!(parse_border_image_width("-1"), None);
+    assert_eq!(parse_border_image_width("inf"), None);
+    assert_eq!(parse_border_image_width("NaN"), None);
+    assert_eq!(parse_border_image_width("inf%"), None);
     assert_eq!(parse_border_image_width("1 2 3 4 5"), None);
 }
 
@@ -1123,6 +1129,8 @@ fn test_parse_border_image_outset_four_values() {
 fn test_parse_border_image_outset_invalid() {
     assert_eq!(parse_border_image_outset(""), None);
     assert_eq!(parse_border_image_outset("-1"), None);
+    assert_eq!(parse_border_image_outset("inf"), None);
+    assert_eq!(parse_border_image_outset("NaN"), None);
     assert_eq!(parse_border_image_outset("1 2 3 4 5"), None);
 }
 

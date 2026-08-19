@@ -286,7 +286,21 @@ fn test_apply_property_border_image_slice_fill() {
 #[test]
 fn test_apply_property_border_image_slice_invalid() {
     let mut style = ComputedStyle::default();
+    assert!(apply_property_value(&mut style, "border-image-slice", "25"));
+    assert_eq!(
+        style.border_image_slice.top,
+        BorderImageSliceComputedComponent::Number(25.0)
+    );
     assert!(!apply_property_value(&mut style, "border-image-slice", "invalid"));
+    assert_eq!(
+        style.border_image_slice.top,
+        BorderImageSliceComputedComponent::Number(25.0)
+    );
+    assert!(!apply_property_value(&mut style, "border-image-slice", "inf"));
+    assert_eq!(
+        style.border_image_slice.top,
+        BorderImageSliceComputedComponent::Number(25.0)
+    );
 }
 
 #[test]
@@ -341,7 +355,21 @@ fn test_apply_property_border_image_width_px() {
 #[test]
 fn test_apply_property_border_image_width_invalid() {
     let mut style = ComputedStyle::default();
+    assert!(apply_property_value(&mut style, "border-image-width", "3"));
+    assert_eq!(
+        style.border_image_width.top,
+        BorderImageWidthComputedComponent::Number(3.0)
+    );
     assert!(!apply_property_value(&mut style, "border-image-width", "invalid"));
+    assert_eq!(
+        style.border_image_width.top,
+        BorderImageWidthComputedComponent::Number(3.0)
+    );
+    assert!(!apply_property_value(&mut style, "border-image-width", "NaN"));
+    assert_eq!(
+        style.border_image_width.top,
+        BorderImageWidthComputedComponent::Number(3.0)
+    );
 }
 
 #[test]
@@ -474,7 +502,21 @@ fn test_apply_property_border_image_outset_px() {
 #[test]
 fn test_apply_property_border_image_outset_invalid() {
     let mut style = ComputedStyle::default();
+    assert!(apply_property_value(&mut style, "border-image-outset", "2"));
+    assert_eq!(
+        style.border_image_outset.top,
+        BorderImageOutsetComputedComponent::Number(2.0)
+    );
     assert!(!apply_property_value(&mut style, "border-image-outset", "invalid"));
+    assert_eq!(
+        style.border_image_outset.top,
+        BorderImageOutsetComputedComponent::Number(2.0)
+    );
+    assert!(!apply_property_value(&mut style, "border-image-outset", "inf"));
+    assert_eq!(
+        style.border_image_outset.top,
+        BorderImageOutsetComputedComponent::Number(2.0)
+    );
 }
 
 #[test]

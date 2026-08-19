@@ -85,13 +85,13 @@ pub fn parse_border_image_slice(value: &str) -> Option<BorderImageSliceValue> {
         }
         if lower.ends_with('%') {
             let pct: f32 = lower.trim_end_matches('%').parse().ok()?;
-            if pct < 0.0 {
+            if !pct.is_finite() || pct < 0.0 {
                 return None;
             }
             numbers.push(BorderImageSliceComponent::Percent(pct));
         } else {
             let n: f32 = lower.parse().ok()?;
-            if n < 0.0 {
+            if !n.is_finite() || n < 0.0 {
                 return None;
             }
             numbers.push(BorderImageSliceComponent::Number(n));
@@ -169,7 +169,7 @@ pub fn parse_border_image_width(value: &str) -> Option<BorderImageWidthValue> {
             components.push(BorderImageWidthComponent::Auto);
         } else if lower.ends_with('%') {
             let pct: f32 = lower.trim_end_matches('%').parse().ok()?;
-            if pct < 0.0 {
+            if !pct.is_finite() || pct < 0.0 {
                 return None;
             }
             components.push(BorderImageWidthComponent::Percent(pct));
@@ -178,7 +178,7 @@ pub fn parse_border_image_width(value: &str) -> Option<BorderImageWidthValue> {
             components.push(BorderImageWidthComponent::Length(len));
         } else {
             let n: f32 = lower.parse().ok()?;
-            if n < 0.0 {
+            if !n.is_finite() || n < 0.0 {
                 return None;
             }
             components.push(BorderImageWidthComponent::Number(n));
@@ -307,7 +307,7 @@ pub fn parse_border_image_outset(value: &str) -> Option<BorderImageOutsetValue> 
             components.push(BorderImageOutsetComponent::Length(len));
         } else {
             let n: f32 = lower.parse().ok()?;
-            if n < 0.0 {
+            if !n.is_finite() || n < 0.0 {
                 return None;
             }
             components.push(BorderImageOutsetComponent::Number(n));
