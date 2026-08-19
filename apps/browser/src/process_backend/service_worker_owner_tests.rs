@@ -268,13 +268,17 @@ fn new_renderer_discovers_browser_owned_registration() {
         "globalThis.__swDiscovery = 'pending';\
          (async function () {\
            try {\
+             var controller = navigator.serviceWorker.controller;\
              var reg = await navigator.serviceWorker.getRegistration('/app/page');\
              var all = await navigator.serviceWorker.getRegistrations();\
              var state = reg && reg.active ? reg.active.state : 'none';\
              var same = !!reg && all.length === 1 && reg === all[0];\
+             var controlled = !!controller && controller === reg.active &&\
+               controller.scriptURL.endsWith('/sw.js');\
              var removed = reg ? await reg.unregister() : false;\
              globalThis.__swDiscovery = (reg ? reg.scope : 'none') + '|' + state + '|' +\
-               String(all.length) + '|' + String(same) + '|' + String(removed);\
+               String(all.length) + '|' + String(same) + '|' + String(controlled) + '|' +\
+               String(removed);\
            } catch (error) {\
              globalThis.__swDiscovery = 'error:' + String(error && error.message ? error.message : error);\
            }\
@@ -301,5 +305,5 @@ fn new_renderer_discovers_browser_owned_registration() {
     };
     backend.remove_renderer(second_tab);
 
-    assert_eq!(result, format!("http://{authority}/app/|activated|1|true|true"));
+    assert_eq!(result, format!("http://{authority}/app/|activated|1|true|true|true"));
 }

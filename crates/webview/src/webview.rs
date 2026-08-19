@@ -550,6 +550,7 @@ impl WebView {
 
     /// 加载 HTML 内容。
     pub fn load_html(&mut self, html: &str, css: Option<&str>) -> WebViewRenderResult {
+        self.reset_service_worker_document_projection();
         self.document_generation = self.document_generation.wrapping_add(1);
         self.focus_owner = None;
         self.pipeline.set_focused_selector(None);
@@ -1499,6 +1500,22 @@ impl WebView {
         }
     }
 
+    fn reset_service_worker_document_projection(&mut self) {
+        if !self.js_shim_initialized {
+            return;
+        }
+        let Some(sandbox) = self.js_sandbox.as_mut() else {
+            return;
+        };
+        if let Err(error) = sandbox.execute(
+            "if (typeof globalThis.__zwServiceWorkerDocumentCommit === 'function') {
+               globalThis.__zwServiceWorkerDocumentCommit();
+             }",
+        ) {
+            tracing::warn!("Service Worker document projection reset failed: {error}");
+        }
+    }
+
     /// P1b L1b（R3108）：在持久 V8 Context 安装/刷新原生 DOM 绑定（kill-switch `native_dom`
     /// 默认关 → 零回归）。
     ///
@@ -2352,6 +2369,7 @@ impl WebView {
         page_url: std::sync::Arc<std::sync::Mutex<String>>,
         timeout_secs: u64,
     ) {
+        let controller_page_url = page_url.clone();
         let register_manager = manager.clone();
         sandbox.register_callback(
             "__zw_sw_register",
@@ -2486,6 +2504,38 @@ impl WebView {
                     "ok": true,
                     "latestSequence": latest_sequence,
                     "states": states.iter().map(ToString::to_string).collect::<Vec<_>>(),
+                })
+                .to_string()
+            }),
+        );
+
+        let controller_manager = manager.clone();
+        sandbox.register_callback(
+            "__zw_sw_controller",
+            Box::new(move |_args| {
+                let document_url = match controller_page_url.lock() {
+                    Ok(url) => url.clone(),
+                    Err(_) => {
+                        return serde_json::json!({"ok": false, "error": "page URL lock poisoned"}).to_string();
+                    }
+                };
+                let Ok(document) = url::Url::parse(&document_url) else {
+                    return serde_json::json!({"ok": true, "controller": null}).to_string();
+                };
+                let Ok(mut manager) = controller_manager.lock() else {
+                    return serde_json::json!({"ok": false, "error": "manager lock poisoned"}).to_string();
+                };
+                let _ = manager.poll();
+                let controller =
+                    manager.active_registration_for_url(&document.origin().ascii_serialization(), document.as_str());
+                serde_json::json!({
+                    "ok": true,
+                    "controller": controller.map(|registration| serde_json::json!({
+                        "id": registration.id,
+                        "scriptURL": registration.script_url,
+                        "scope": registration.scope,
+                        "state": registration.state.to_string(),
+                    })),
                 })
                 .to_string()
             }),

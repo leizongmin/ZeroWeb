@@ -2589,9 +2589,11 @@
       var _readyResolve;
       var _ready = new Promise(function (resolve) { _readyResolve = resolve; });
       var _container = {
+        _et_listeners: {},
         oncontrollerchange: null,
         onmessage: null
       };
+      var _documentURL = null;
       function ServiceWorker(scriptURL, state) {
         this._et_listeners = {};
         this.scriptURL = scriptURL;
@@ -2671,6 +2673,13 @@
           return wire && wire.ok ? wire : null;
         } catch (_e) { return null; }
       }
+      function readControllerSnapshot() {
+        if (typeof __zw_sw_controller !== 'function') return null;
+        try {
+          var wire = JSON.parse(__zw_sw_controller(globalThis.location.href));
+          return wire && wire.ok ? wire.controller : null;
+        } catch (_e) { return null; }
+      }
       function stateSequence(state) {
         if (state === 'installed') return 1;
         if (state === 'activating') return 2;
@@ -2693,13 +2702,25 @@
         if (state === 'activating') {
           reg.active = worker;
         } else if (state === 'activated') {
+          var replaceController = false;
           if (reg._previousActive && reg._previousActive !== worker) {
             var previous = reg._previousActive;
             reg._previousActive = null;
+            replaceController = _controller === previous;
             previous.state = 'redundant';
             dispatchTargetEvent(previous, 'statechange');
           }
           reg.active = worker;
+          if (replaceController) {
+            _controller = worker;
+            if (typeof setTimeout === 'function') {
+              setTimeout(function () {
+                dispatchTargetEvent(_container, 'controllerchange');
+              }, 0);
+            } else {
+              dispatchTargetEvent(_container, 'controllerchange');
+            }
+          }
         } else if (state === 'redundant' && reg.active === worker) {
           reg.active = reg._previousActive;
           reg._previousActive = null;
@@ -2747,6 +2768,16 @@
           setTimeout(function () { pollRegistration(reg); }, 0);
         }
       }
+      function scheduleRegistrationPoll(reg) {
+        if (typeof setTimeout !== 'function') {
+          pollRegistration(reg);
+          return;
+        }
+        reg._updateFoundPending = true;
+        setTimeout(function () {
+          setTimeout(function () { pollRegistration(reg); }, 0);
+        }, 0);
+      }
       function upsertSnapshot(snapshot, deferPoll) {
         if (!snapshot) return null;
         var reg = findReg(snapshot.id, snapshot.scope);
@@ -2766,18 +2797,39 @@
           reg._id = snapshot.id;
         }
         if (!applySnapshot(reg, snapshot)) {
-          if (deferPoll && typeof setTimeout === 'function') {
-            reg._updateFoundPending = true;
-            setTimeout(function () {
-              setTimeout(function () { pollRegistration(reg); }, 0);
-            }, 0);
+          if (deferPoll === 'manual') {
+            return reg;
+          } else if (deferPoll) {
+            scheduleRegistrationPoll(reg);
           } else {
             pollRegistration(reg);
           }
         }
         return reg;
       }
+      function commitDocument(resetListeners) {
+        _documentURL = globalThis.location.href;
+        _registrations = [];
+        _controller = null;
+        _ready = new Promise(function (resolve) { _readyResolve = resolve; });
+        if (resetListeners) {
+          _container._et_listeners = {};
+          _container.oncontrollerchange = null;
+          _container.onmessage = null;
+        }
+        var snapshot = readControllerSnapshot();
+        if (!snapshot || snapshot.state !== 'activated') return;
+        var reg = upsertSnapshot(snapshot, false);
+        if (reg && reg.active) _controller = reg.active;
+      }
+      function ensureDocument() {
+        if (_documentURL !== globalThis.location.href) commitDocument(false);
+      }
+      globalThis.__zwServiceWorkerDocumentCommit = function () {
+        commitDocument(true);
+      };
       _container.register = function (scriptURL, options) {
+        ensureDocument();
         if (!scriptURL || typeof scriptURL !== 'string') {
           return Promise.reject(new TypeError('ServiceWorkerContainer.register: scriptURL is required'));
         }
@@ -2806,10 +2858,14 @@
           scriptURL: snapshot && snapshot.scriptURL || scriptURL,
           scope: snapshot && snapshot.scope || scope,
           state: 'installing'
-        }, true);
-        return Promise.resolve(reg);
+        }, 'manual');
+        return Promise.resolve(reg).then(function (registration) {
+          scheduleRegistrationPoll(registration);
+          return registration;
+        });
       };
       _container.getRegistration = function (scope) {
+        ensureDocument();
         var absolute = scope;
         try {
           absolute = new URL(scope || globalThis.location.href, globalThis.location.href).href;
@@ -2833,6 +2889,7 @@
         return Promise.resolve(undefined);
       };
       _container.getRegistrations = function () {
+        ensureDocument();
         if (typeof __zw_sw_get_registrations === 'function') {
           try {
             var wire = JSON.parse(__zw_sw_get_registrations());
@@ -2859,8 +2916,18 @@
         }
         return Promise.resolve(_registrations.slice());
       };
-      Object.defineProperty(_container, 'ready', { get: function () { return _ready; } });
-      Object.defineProperty(_container, 'controller', { get: function () { return _controller; } });
+      Object.defineProperty(_container, 'ready', {
+        get: function () {
+          ensureDocument();
+          return _ready;
+        }
+      });
+      Object.defineProperty(_container, 'controller', {
+        get: function () {
+          ensureDocument();
+          return _controller;
+        }
+      });
       return _container;
     })()
   };

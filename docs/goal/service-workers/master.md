@@ -2,7 +2,7 @@
 
 **入口文档**: [../service-workers.md](../service-workers.md)
 **创建日期**: 2026-08-17（goal 拆分 bootstrap）
-**最后更新**: 2026-08-20（M3-1 `skipWaiting()` activation 完成）
+**最后更新**: 2026-08-20（M3-2 Document controller 完成）
 
 ---
 
@@ -99,6 +99,8 @@ M0 启动门禁解除；M1 core WPT 已收敛，M2 依赖未满足，当前推�
 - ✅ M3-1：worker global `skipWaiting()` 经 typed lifecycle settlement 进入 manager；
   replacement install 成功后无需宿主命令即可激活，旧 active 随后 redundant，registration
   identity 保持稳定
+- ✅ M3-2：每 Document controller 按 active scope 初始化；首次注册不反向控制当前页面；
+  已受控页面的 `skipWaiting()` replacement 切换 controller 并按 task 派发 `controllerchange`
 
 ## 缺口清单
 
@@ -118,8 +120,8 @@ M0 启动门禁解除；M1 core WPT 已收敛，M2 依赖未满足，当前推�
 
 ## 下一步计划
 
-1. **M3 controller**：接入当前客户端 controller 与 `controllerchange` task 语义
-2. **M3 claim/message/update**：实现 `clients.claim()`、双向 message 与真实 update job
+1. **M3 claim**：实现单客户端 `clients.claim()` 与当前 Document 即时受控
+2. **M3 message/update**：实现双向 message 与真实 update job
 3. **M2 依赖复核**：js-dom S6 与 storage-cache-api M1 land 后启动 fetch pipeline
 
 ## 里程碑状态
@@ -129,7 +131,7 @@ M0 启动门禁解除；M1 core WPT 已收敛，M2 依赖未满足，当前推�
 | M0 — 选型 RFC（门控） | ✅ 方案 C 已批准 |
 | M1 — 脚本真实执行 + 生命周期真事件 | ✅ core WPT 36/36 Pass |
 | M2 — fetch 拦截 + Cache 集成 | ⬜ 门控：js-dom fetch 改造 land |
-| M3 — 控制语义 + 消息 + 收尾 | 🚧 `skipWaiting()` activation 完成 |
+| M3 — 控制语义 + 消息 + 收尾 | 🚧 `skipWaiting()` + Document controller 完成 |
 
 ## 验证基线
 
@@ -207,6 +209,8 @@ M0 启动门禁解除；M1 core WPT 已收敛，M2 依赖未满足，当前推�
   baseline 见 [M1 registration URL contract](evidence/2026-08-19-m1-registration-url-contract.md)
 - M3-1 `skipWaiting()`：typed worker signal、replacement activation、版本 identity 与全量门禁见
   [M3 skipWaiting activation](evidence/2026-08-20-m3-skip-waiting.md)
+- M3-2 controller：每 Document active scope、replacement controllerchange、双引擎及生产链见
+  [M3 Document controller](evidence/2026-08-20-m3-controller.md)
 
 ## M0 证据与决策记录
 
@@ -249,6 +253,7 @@ M0 启动门禁解除；M1 core WPT 已收敛，M2 依赖未满足，当前推�
 | 2026-08-19 | M1-5b lifecycle task | transition log + cursor；EventTarget/updatefound/statechange/slot task；30 Pass / 6 Fail / 0 Timeout；两轮稳定 |
 | 2026-08-19 | M1-5c registration URL | shared validator + WebIDL scope + typed rejection；36 Pass / 0 Fail / 0 Timeout；两轮稳定 |
 | 2026-08-20 | M3-1 skipWaiting | typed lifecycle signal；replacement 自动激活；旧 active redundant；core WPT 36/36 与全量门禁通过 |
+| 2026-08-20 | M3-2 controller | 新 Document active scope；首次注册保持 uncontrolled；replacement controllerchange；双引擎与生产链通过 |
 | 2026-08-19 | 三方案对比 | 拒绝同线程 context（无调度隔离）；拒绝从零线程（复制安全基建）；推荐抽取 Worker 线程核 |
 | 2026-08-19 | owner | production browser process 单一 owner；WebView 只做同算法 in-process adapter |
 | 2026-08-19 | 首个 driving WPT | `activation-after-registration.https.html` |

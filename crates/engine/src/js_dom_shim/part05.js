@@ -7023,6 +7023,12 @@
       globalThis.EventTarget.prototype
     );
   }
+  if (globalThis.navigator && globalThis.navigator.serviceWorker) {
+    Object.setPrototypeOf(
+      globalThis.navigator.serviceWorker,
+      globalThis.EventTarget.prototype
+    );
+  }
 
   // js-dom M4 R114：XMLHttpRequest 补 EventTarget 面——spec XHR : XMLHttpRequestEventTarget :
   // EventTarget（`xhr.addEventListener('load')` / `xhr.dispatchEvent(new Event('load'))` 与

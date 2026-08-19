@@ -345,9 +345,11 @@ fn navigator_replacement_reuses_registration_identity_for_scope() {
              }).then(function(second) {
                globalThis.__identityStage = 'second-registered:' +
                  String(second.installing && second.installing.state);
+               var installing = second.installing;
                var versionIdentity =
-                 String(second.installing !== globalThis.__firstWorker) + '|' +
-                 String(second.installing.scriptURL.endsWith('/sw-v2.js')) + '|' +
+                 String(!!installing) + '|' +
+                 String(installing !== globalThis.__firstWorker) + '|' +
+                 String(!!installing && installing.scriptURL.endsWith('/sw-v2.js')) + '|' +
                  String(second.active === globalThis.__firstWorker);
                return navigator.serviceWorker.getRegistrations().then(function(all) {
                  globalThis.__identity = String(second === globalThis.__firstReg) + '|' +
@@ -367,7 +369,7 @@ fn navigator_replacement_reuses_registration_identity_for_scope() {
     loop {
         let value = webview.execute_script("globalThis.__identity").unwrap();
         if value != "pending" {
-            assert_eq!(value, "true|1|true|true|true|true");
+            assert_eq!(value, "true|1|true|true|true|true|true");
             break;
         }
         assert!(
@@ -436,6 +438,97 @@ fn navigator_skip_waiting_activates_replacement_version() {
             break;
         }
         assert!(Instant::now() < deadline, "skipWaiting replacement timed out");
+        std::thread::sleep(Duration::from_millis(10));
+    }
+}
+
+#[test]
+fn navigator_controller_tracks_document_and_skip_waiting_replacement() {
+    let mut webview = WebViewBuilder::new()
+        .url("https://example.test/page.html")
+        .script_source_fetcher(Arc::new(|_, script| {
+            if script.ends_with("/sw-v2.js") {
+                Ok("addEventListener('install', event => {
+                    event.waitUntil(skipWaiting());
+                });"
+                .to_string())
+            } else {
+                Ok(String::new())
+            }
+        }))
+        .build();
+
+    webview
+        .execute_script(
+            "globalThis.__controllerSetup = 'pending';
+             navigator.serviceWorker.register('/app/sw-v1.js', {scope:'/app/'}).then(function() {
+               return navigator.serviceWorker.ready;
+             }).then(function() {
+               globalThis.__controllerSetup =
+                 String(navigator.serviceWorker.controller === null);
+             }, function(error) {
+               globalThis.__controllerSetup = 'error:' + String(error);
+             });
+             'started';",
+        )
+        .unwrap();
+
+    let deadline = Instant::now() + Duration::from_secs(20);
+    loop {
+        let value = webview.execute_script("globalThis.__controllerSetup").unwrap();
+        if value != "pending" {
+            assert_eq!(value, "true");
+            break;
+        }
+        assert!(Instant::now() < deadline, "initial controller setup timed out");
+        std::thread::sleep(Duration::from_millis(10));
+    }
+
+    webview.load_url("https://example.test/app/page.html");
+    webview.complete_load("<html><body></body></html>", None);
+    assert_eq!(
+        webview
+            .execute_script(
+                "[
+                   navigator.serviceWorker.controller &&
+                     navigator.serviceWorker.controller.scriptURL.endsWith('/app/sw-v1.js'),
+                   navigator.serviceWorker.controller &&
+                     navigator.serviceWorker.controller.state,
+                   navigator.serviceWorker instanceof EventTarget
+                 ].join('|')",
+            )
+            .unwrap(),
+        "true|activated|true"
+    );
+
+    webview
+        .execute_script(
+            "globalThis.__controllerChange = 'pending';
+             globalThis.__firstController = navigator.serviceWorker.controller;
+             navigator.serviceWorker.addEventListener('controllerchange', function(event) {
+               globalThis.__controllerChange = [
+                 event.target === navigator.serviceWorker,
+                 event.currentTarget === navigator.serviceWorker,
+                 navigator.serviceWorker.controller.scriptURL.endsWith('/app/sw-v2.js'),
+                 navigator.serviceWorker.controller.state,
+                 globalThis.__firstController.state
+               ].join('|');
+             });
+             navigator.serviceWorker.register('/app/sw-v2.js', {scope:'/app/'}).catch(function(error) {
+               globalThis.__controllerChange = 'error:' + String(error);
+             });
+             'started';",
+        )
+        .unwrap();
+
+    let deadline = Instant::now() + Duration::from_secs(20);
+    loop {
+        let value = webview.execute_script("globalThis.__controllerChange").unwrap();
+        if value != "pending" {
+            assert_eq!(value, "true|true|true|activated|redundant");
+            break;
+        }
+        assert!(Instant::now() < deadline, "controllerchange timed out");
         std::thread::sleep(Duration::from_millis(10));
     }
 }

@@ -187,6 +187,25 @@ impl ServiceWorkerIpcClient {
             }),
         );
 
+        let controller_client = self.clone();
+        sandbox.register_callback(
+            "__zw_sw_controller",
+            Box::new(move |args| {
+                let client_url = args.first().cloned().unwrap_or_default();
+                match controller_client.request(ServiceWorkerOperation::GetRegistration { client_url }) {
+                    Ok(ServiceWorkerResult::OptionalSnapshot(snapshot)) => serde_json::json!({
+                        "ok": true,
+                        "controller": snapshot
+                            .filter(|snapshot| snapshot.state == ServiceWorkerStateWire::Activated)
+                            .map(snapshot_wire),
+                    })
+                    .to_string(),
+                    Ok(_) => error_wire("invalid controller response"),
+                    Err(error) => error_wire(error.message),
+                }
+            }),
+        );
+
         let get_registrations_client = self.clone();
         sandbox.register_callback(
             "__zw_sw_get_registrations",
