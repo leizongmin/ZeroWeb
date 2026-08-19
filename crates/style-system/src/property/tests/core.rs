@@ -368,6 +368,13 @@ fn test_apply_property_line_height_number() {
     let mut style = ComputedStyle::default();
     assert!(apply_property_value(&mut style, "line-height", "1.6"));
     assert_eq!(style.line_height, LineHeightValue::Number(1.6));
+    let previous = style.line_height.clone();
+    assert!(!apply_property_value(&mut style, "line-height", "-1"));
+    assert_eq!(style.line_height, previous);
+    assert!(!apply_property_value(&mut style, "line-height", "-2px"));
+    assert_eq!(style.line_height, previous);
+    assert!(!apply_property_value(&mut style, "line-height", "thin"));
+    assert_eq!(style.line_height, previous);
 }
 
 #[test]
@@ -634,6 +641,12 @@ fn test_parse_line_height_length() {
     assert_eq!(parse_line_height("normal"), Some(LineHeightValue::Normal));
     assert_eq!(parse_line_height("1.5"), Some(LineHeightValue::Number(1.5)));
     assert_eq!(parse_line_height("invalid"), None);
+    assert_eq!(parse_line_height("-1"), None);
+    assert_eq!(parse_line_height("-2px"), None);
+    assert_eq!(parse_line_height("-50%"), None);
+    assert_eq!(parse_line_height("thin"), None);
+    assert_eq!(parse_line_height("inf"), None);
+    assert_eq!(parse_line_height("NaN"), None);
 }
 
 // ── Grid 属性测试 ──

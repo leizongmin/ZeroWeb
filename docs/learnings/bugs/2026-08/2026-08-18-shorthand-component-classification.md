@@ -163,6 +163,8 @@ Text-decoration-thickness exposed the narrowed-unit range-check variant: even wh
 
 Tab-size exposed the keyword-alias range-check variant: a property may first reject negative and percentage lengths correctly, yet still accept `thin` because shared `parse_length` aliases border-width keywords into positive `Px` values. Reject out-of-grammar keywords before calling the shared parser when the original token identity matters.
 
+Line-height exposed the shorthand-vs-longhand negative grammar drift variant: `font` shorthand can reject negative line-height while the longhand parser still accepts negative number/length/percentage and non-finite numbers. Keep longhand consumer grammar at least as strict as shorthand prevalidation, and apply finite checks to numeric property values before writing computed style.
+
 ## Root Cause
 
 The shorthand layer used heuristic component classifiers and treated unrecognized tokens as absent optional components. That is wrong for CSS shorthands such as `border`, where every token must match one of the allowed component grammars. A shared parser can also be broader than the property grammar that consumes it: general length parsing may accept `auto`, intrinsic sizing keywords, or percentages that `border-width` must reject.

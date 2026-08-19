@@ -160,14 +160,45 @@ pub fn parse_line_height(value: &str) -> Option<LineHeightValue> {
             && !value.contains("vh")
             && !value.contains("vw")
         {
-            return Some(LineHeightValue::Number(num));
+            return (num.is_finite() && num >= 0.0).then_some(LineHeightValue::Number(num));
         }
+    }
+    if matches!(
+        value.to_ascii_lowercase().as_str(),
+        "thin" | "medium" | "thick" | "auto" | "min-content" | "max-content" | "fit-content"
+    ) {
+        return None;
     }
     // 尝试解析为长度
     if let Some(length) = values::parse_length(value) {
+        if !line_height_length_is_valid(&length) {
+            return None;
+        }
         return Some(LineHeightValue::Length(length));
     }
     None
+}
+
+fn line_height_length_is_valid(value: &LengthValue) -> bool {
+    match value {
+        LengthValue::Px(v)
+        | LengthValue::Em(v)
+        | LengthValue::Ex(v)
+        | LengthValue::Rex(v)
+        | LengthValue::Cap(v)
+        | LengthValue::Rcap(v)
+        | LengthValue::Rem(v)
+        | LengthValue::Vh(v)
+        | LengthValue::Vw(v)
+        | LengthValue::Vmin(v)
+        | LengthValue::Vmax(v)
+        | LengthValue::Ch(v)
+        | LengthValue::Rch(v)
+        | LengthValue::Ic(v)
+        | LengthValue::Ric(v)
+        | LengthValue::Percentage(v) => v.is_finite() && *v >= 0.0,
+        _ => false,
+    }
 }
 
 /// 解析 CSS `font-size-adjust` 值。
