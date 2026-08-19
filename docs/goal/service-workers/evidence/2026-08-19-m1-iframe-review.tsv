@@ -1,0 +1,12 @@
+source_path	manifest_sha	subtests	decision	hidden_dependencies	rationale
+service-workers/service-worker/ServiceWorkerGlobalScope/isSecureContext.https.html	399820dd2c313b5023f63ea7846cc1f39fcbb1d6	2	defer-worker-harness	iframe;worker-testharness	页面 setup 后从 SW 内回传 isSecureContext 子测试
+service-workers/service-worker/getregistration.https.html	634c2efa12461a811d8e46345ece0298086f64b2	6	defer-single-iframe	iframe;controlled-client	5 个基础断言外含 controlled iframe 注销后查询
+service-workers/service-worker/installing.https.html	0f257b6aba4f3d65802e7d7f8a7503d6c6aedd42	2	defer-single-iframe	iframe;object-identity	单 iframe 未控制状态及 installing 对象身份
+service-workers/service-worker/ready.https.window.js	6c4e270682c256996c2d665a35ede28d39d6594b	9	defer-controller-ready	iframe;ready;controller;registration-replacement	单 iframe 上下文的 ready identity、匹配、注销与 controller
+service-workers/service-worker/register-same-scope-different-script-url.https.html	6eb00f3071a26ed3f55ac90ca32c1b377aec23e1	5	skip-mixed-multi-client-update	update-job;multiple-iframes;controller;intentional-404	4 个 update job 断言与 1 个多 client controller 切换同文件
+service-workers/service-worker/registration-iframe.https.html	ae39ddfea3e5186bdea4c6a1a5d9f0c7e6cbc212	3	defer-single-iframe	iframe;relevant-global	相对 scriptURL/scope 必须按 iframe global 解析
+service-workers/service-worker/skip-waiting-using-registration.https.html	412ee2a4438e2328f69337893465c4a66c671ce6	2	defer-controller-ready	iframe;skipWaiting;controllerchange;worker-testharness	受控 client 上 skipWaiting 与 controllerchange
+service-workers/service-worker/skip-waiting-without-using-registration.https.html	ced64e5f67fb667e5c233055ad920dbda0336336	2	defer-controller-ready	iframe;skipWaiting;worker-testharness	未受控 client 上 skipWaiting 不改变 controller
+service-workers/service-worker/unregister-controller.https.html	3bf4cff7200e71a7ad157f97f60e0bca45693485	3	gated-fetch-controller	iframe;controller;fetch-interception;XMLHttpRequest	注销前后既有/新 client 的 controller 与 fetch 拦截
+service-workers/service-worker/unregister-then-register-new-script.https.html	d046423e0c29c082c22c64c865ccb38a6a40adac	3	skip-mixed-multi-client-update	update-job;multiple-iframes;controller;intentional-404;rejected-install	旧 client 存活时新 script 注册、404 与 install reject
+service-workers/service-worker/unregister-then-register.https.html	b61608c8419fd4f362dee5330404e2743a2f05f6	4	skip-mixed-multi-client-update	registration-replacement;multiple-iframes;controller	旧新 registration 同时对应不同 client/controller
