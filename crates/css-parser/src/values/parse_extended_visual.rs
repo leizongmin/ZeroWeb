@@ -182,7 +182,8 @@ fn parse_filter_length_px(s: &str) -> Option<f32> {
         return Some(0.0);
     }
     if let Some(num_str) = s.strip_suffix("px") {
-        return num_str.trim().parse::<f32>().ok();
+        let px = num_str.trim().parse::<f32>().ok()?;
+        return px.is_finite().then_some(px);
     }
     // CSS Values §5.4：裸 0 是合法 `<length>`（unitless-zero）；其他无单位值对 `<length>` 无效。
     match s.parse::<f32>() {
@@ -212,18 +213,19 @@ fn parse_filter_number(s: &str) -> Option<f32> {
 /// 支持 deg/grad/turn/rad（grad 须先于 rad——"Xgrad" 后缀含 "rad"）。
 fn parse_filter_angle(s: &str) -> Option<f32> {
     let lower = s.trim().to_ascii_lowercase();
-    if let Some(n) = lower.strip_suffix("deg") {
-        n.trim().parse::<f32>().ok()
+    let degrees = if let Some(n) = lower.strip_suffix("deg") {
+        n.trim().parse::<f32>().ok()?
     } else if let Some(n) = lower.strip_suffix("grad") {
         // 400grad = 360deg → 1grad = 0.9deg
-        n.trim().parse::<f32>().ok().map(|g| g * 0.9)
+        n.trim().parse::<f32>().ok()? * 0.9
     } else if let Some(n) = lower.strip_suffix("turn") {
-        n.trim().parse::<f32>().ok().map(|t| t * 360.0)
+        n.trim().parse::<f32>().ok()? * 360.0
     } else if let Some(n) = lower.strip_suffix("rad") {
-        n.trim().parse::<f32>().ok().map(|r| r.to_degrees())
+        n.trim().parse::<f32>().ok()?.to_degrees()
     } else {
-        lower.parse::<f32>().ok()
-    }
+        lower.parse::<f32>().ok()?
+    };
+    degrees.is_finite().then_some(degrees)
 }
 
 /// 解析 drop-shadow 参数。

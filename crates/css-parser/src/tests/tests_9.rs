@@ -503,6 +503,14 @@ fn test_filter_blur_rejects_negative_radius() {
 }
 
 #[test]
+fn test_filter_rejects_non_finite_lengths_and_angles() {
+    assert!(parse_filter("drop-shadow(infpx 0 black)").is_none());
+    assert!(parse_filter("drop-shadow(0 NaNpx black)").is_none());
+    assert!(parse_filter("hue-rotate(infdeg)").is_none());
+    assert!(parse_filter("hue-rotate(NaNrad)").is_none());
+}
+
+#[test]
 fn test_filter_brightness() {
     let f = parse_filter("brightness(1.5)");
     assert!(f.is_some());
