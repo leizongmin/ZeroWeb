@@ -41,6 +41,15 @@ fn test_parse_length_boundary_conditions() {
     assert_eq!(parse_length("1e2px"), Some(LengthValue::Px(100.0)));
 }
 
+#[test]
+fn test_parse_text_decoration_thickness_rejects_negative_length() {
+    assert_eq!(
+        parse_text_decoration_thickness("2px"),
+        Some(TextDecorationThicknessValue::Length(2.0))
+    );
+    assert_eq!(parse_text_decoration_thickness("-1px"), None);
+}
+
 /// 测试 parse_color 边界条件：无效十六进制长度、超出范围的 rgb 分量、空 hwb
 #[test]
 fn test_parse_color_edge_cases() {

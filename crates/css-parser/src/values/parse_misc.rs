@@ -427,7 +427,7 @@ pub fn parse_text_decoration_thickness(value: &str) -> Option<TextDecorationThic
         "auto" => Some(TextDecorationThicknessValue::Auto),
         "from-font" => Some(TextDecorationThicknessValue::FromFont),
         _ => match parse_length(v) {
-            Some(LengthValue::Px(n)) => Some(TextDecorationThicknessValue::Length(n)),
+            Some(LengthValue::Px(n)) if n >= 0.0 => Some(TextDecorationThicknessValue::Length(n)),
             _ => None,
         },
     }

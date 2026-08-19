@@ -243,6 +243,13 @@ fn apply_text_decoration_thickness() {
         "text-decoration-thickness",
         "bogus"
     ));
+    let previous = style.text_decoration_thickness.clone();
+    assert!(!crate::property::apply::apply_property_value(
+        &mut style,
+        "text-decoration-thickness",
+        "-1px"
+    ));
+    assert_eq!(style.text_decoration_thickness, previous);
 }
 
 #[test]

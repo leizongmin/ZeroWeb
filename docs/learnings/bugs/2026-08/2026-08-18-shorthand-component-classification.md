@@ -159,6 +159,8 @@ Column-rule-width exposed the duplicated-entry consumer-grammar variant: the sam
 
 Column-width exposed the longhand-vs-shorthand grammar drift variant: the `columns` shorthand had a correct local validator for `auto | <length [0,∞]>`, but the longhand parser still delegated directly to shared `parse_length`. When a shorthand contains a stricter local validator for a longhand value, mirror that consumer grammar in the longhand parser as well.
 
+Text-decoration-thickness exposed the narrowed-unit range-check variant: even when a property only accepts one `parse_length` output arm such as `Px`, that arm can still carry values outside the consumer grammar. Apply nonnegative or finite filters after matching the accepted unit, not only when accepting broad length families.
+
 ## Root Cause
 
 The shorthand layer used heuristic component classifiers and treated unrecognized tokens as absent optional components. That is wrong for CSS shorthands such as `border`, where every token must match one of the allowed component grammars. A shared parser can also be broader than the property grammar that consumes it: general length parsing may accept `auto`, intrinsic sizing keywords, or percentages that `border-width` must reject.
