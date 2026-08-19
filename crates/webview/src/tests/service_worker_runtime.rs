@@ -378,3 +378,64 @@ fn navigator_replacement_reuses_registration_identity_for_scope() {
         std::thread::sleep(Duration::from_millis(10));
     }
 }
+
+#[test]
+fn navigator_skip_waiting_activates_replacement_version() {
+    let mut webview = WebViewBuilder::new()
+        .url("https://example.test/page.html")
+        .script_source_fetcher(Arc::new(|_, script| {
+            if script.ends_with("/sw-v2.js") {
+                Ok("addEventListener('install', event => {
+                    event.waitUntil(skipWaiting());
+                });"
+                .to_string())
+            } else {
+                Ok(String::new())
+            }
+        }))
+        .build();
+
+    webview
+        .execute_script(
+            "globalThis.__skipWaitingResult = 'pending';
+             navigator.serviceWorker.register('/sw-v1.js', {scope:'/'}).then(function(reg) {
+               return navigator.serviceWorker.ready.then(function() {
+                 globalThis.__skipWaitingReg = reg;
+                 globalThis.__skipWaitingFirst = reg.active;
+                 return navigator.serviceWorker.register('/sw-v2.js', {scope:'/'});
+               });
+             }).then(function(reg) {
+               globalThis.__skipWaitingSameReg =
+                 String(reg === globalThis.__skipWaitingReg);
+             }, function(error) {
+               globalThis.__skipWaitingResult = 'error:' + String(error);
+             });
+             'started';",
+        )
+        .unwrap();
+
+    let deadline = Instant::now() + Duration::from_secs(20);
+    loop {
+        let value = webview
+            .execute_script(
+                "var reg = globalThis.__skipWaitingReg;
+                 if (globalThis.__skipWaitingResult !== 'pending') {
+                   globalThis.__skipWaitingResult;
+                 } else if (reg && reg.active &&
+                            reg.active.scriptURL.endsWith('/sw-v2.js') &&
+                            globalThis.__skipWaitingFirst.state === 'redundant') {
+                   globalThis.__skipWaitingResult =
+                     globalThis.__skipWaitingSameReg + '|activated|redundant';
+                 } else {
+                   'pending';
+                 }",
+            )
+            .unwrap();
+        if value != "pending" {
+            assert_eq!(value, "true|activated|redundant");
+            break;
+        }
+        assert!(Instant::now() < deadline, "skipWaiting replacement timed out");
+        std::thread::sleep(Duration::from_millis(10));
+    }
+}

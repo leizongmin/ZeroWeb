@@ -80,6 +80,8 @@ pub enum ServiceWorkerManagerEvent {
         phase: ServiceWorkerLifecyclePhase,
         /// Whether dispatch and all lifetime promises fulfilled.
         succeeded: bool,
+        /// Whether the worker requested immediate activation.
+        skip_waiting: bool,
         /// Rejection or dispatch error diagnostic.
         message: String,
     },
@@ -280,6 +282,7 @@ impl ServiceWorkerManager {
                 ServiceWorkerEvent::LifecycleSettled {
                     phase,
                     succeeded,
+                    skip_waiting,
                     message,
                     ..
                 } => {
@@ -287,6 +290,7 @@ impl ServiceWorkerManager {
                         registration_id,
                         phase,
                         succeeded,
+                        skip_waiting,
                         message,
                     });
                     let transition = match phase {
@@ -300,11 +304,12 @@ impl ServiceWorkerManager {
                             output.push(completed);
                             if phase == ServiceWorkerLifecyclePhase::Install
                                 && succeeded
-                                && self
-                                    .key_for(registration_id)
-                                    .ok()
-                                    .and_then(|key| self.slots.get(key))
-                                    .is_some_and(|slot| slot.active.is_none())
+                                && (skip_waiting
+                                    || self
+                                        .key_for(registration_id)
+                                        .ok()
+                                        .and_then(|key| self.slots.get(key))
+                                        .is_some_and(|slot| slot.active.is_none()))
                                 && let Err(error) = self.activate_waiting(registration_id)
                             {
                                 self.mark_redundant_and_stop(registration_id);
@@ -805,6 +810,7 @@ mod tests {
             registration_id: id,
             phase: ServiceWorkerLifecyclePhase::Install,
             succeeded: true,
+            skip_waiting: false,
             message: String::new(),
         }));
         assert!(matches!(
@@ -820,6 +826,7 @@ mod tests {
                 phase: ServiceWorkerLifecyclePhase::Activate,
                 succeeded: false,
                 message,
+                ..
             }) if *registration_id == id && message.contains("activate rejected")
         ));
     }
@@ -914,6 +921,36 @@ mod tests {
         );
         assert_eq!(manager.registration(root).unwrap().state, ServiceWorkerState::Activated);
         assert_eq!(manager.registration(app).unwrap().state, ServiceWorkerState::Redundant);
+    }
+
+    #[test]
+    fn skip_waiting_activates_replacement_without_host_command() {
+        let mut manager = ServiceWorkerManager::new();
+        let first = start_active(&mut manager, "/", "globalThis.version = 1;");
+        let replacement = start(
+            &mut manager,
+            "/",
+            "addEventListener('install', event => {
+                event.waitUntil(skipWaiting());
+            });",
+        );
+
+        let events = wait_for_state(&mut manager, replacement, ServiceWorkerState::Activated);
+        assert!(events.iter().any(|event| matches!(
+            event,
+            ServiceWorkerManagerEvent::LifecycleSettled {
+                registration_id,
+                phase: ServiceWorkerLifecyclePhase::Install,
+                succeeded: true,
+                skip_waiting: true,
+                ..
+            } if *registration_id == replacement
+        )));
+        assert_eq!(manager.slots(&key("/")).unwrap().active, Some(replacement));
+        assert_eq!(
+            manager.registration(first).unwrap().state,
+            ServiceWorkerState::Redundant
+        );
     }
 
     #[test]

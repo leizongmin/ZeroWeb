@@ -24,6 +24,7 @@ const SERVICE_WORKER_BOOTSTRAP: &str = r#"
 (function() {
   const listeners = Object.create(null);
   let currentWaitUntil = null;
+  let skipWaitingRequested = false;
 
   class ExtendableEvent {
     constructor(type) { this.type = type; }
@@ -49,7 +50,13 @@ const SERVICE_WORKER_BOOTSTRAP: &str = r#"
     const index = list.indexOf(listener);
     if (index >= 0) list.splice(index, 1);
   };
-  globalThis.skipWaiting = function() { return Promise.resolve(); };
+  globalThis.skipWaiting = function() {
+    skipWaitingRequested = true;
+    if (globalThis.__zwLifecycleResult) {
+      globalThis.__zwLifecycleResult.skipWaitingRequested = true;
+    }
+    return Promise.resolve();
+  };
   globalThis.__zwDispatchLifecycle = function(type, eventId) {
     const pending = [];
     const result = {
@@ -57,7 +64,8 @@ const SERVICE_WORKER_BOOTSTRAP: &str = r#"
       phase: String(type),
       settled: false,
       succeeded: false,
-      message: ''
+      message: '',
+      skipWaitingRequested: skipWaitingRequested
     };
     globalThis.__zwLifecycleResult = result;
     currentWaitUntil = function(value) {
@@ -147,6 +155,8 @@ pub enum ServiceWorkerEvent {
         phase: ServiceWorkerLifecyclePhase,
         /// Whether dispatch and all lifetime promises fulfilled.
         succeeded: bool,
+        /// Whether the worker called `skipWaiting()` before settlement.
+        skip_waiting: bool,
         /// Rejection or dispatch error diagnostic.
         message: String,
     },
@@ -372,6 +382,7 @@ fn dispatch_lifecycle(
             event_id,
             phase,
             succeeded: false,
+            skip_waiting: false,
             message: error.to_string(),
         };
     }
@@ -385,6 +396,7 @@ fn dispatch_lifecycle(
                         event_id,
                         phase,
                         succeeded: value["succeeded"].as_bool() == Some(true),
+                        skip_waiting: value["skipWaitingRequested"].as_bool() == Some(true),
                         message: value["message"].as_str().unwrap_or_default().to_string(),
                     };
                 }
@@ -394,6 +406,7 @@ fn dispatch_lifecycle(
                         event_id,
                         phase,
                         succeeded: false,
+                        skip_waiting: false,
                         message: format!("invalid lifecycle result: {error}"),
                     };
                 }
@@ -403,6 +416,7 @@ fn dispatch_lifecycle(
                     event_id,
                     phase,
                     succeeded: false,
+                    skip_waiting: false,
                     message: error.to_string(),
                 };
             }
@@ -412,6 +426,7 @@ fn dispatch_lifecycle(
                 event_id,
                 phase,
                 succeeded: false,
+                skip_waiting: false,
                 message: format!("lifecycle event exceeded {timeout_ms}ms"),
             };
         }
@@ -603,6 +618,7 @@ mod tests {
                 event_id: 11,
                 phase: ServiceWorkerLifecyclePhase::Install,
                 succeeded: true,
+                skip_waiting: false,
                 message: String::new(),
             }
         );
@@ -638,9 +654,36 @@ mod tests {
                 event_id: 12,
                 phase: ServiceWorkerLifecyclePhase::Install,
                 succeeded: false,
+                skip_waiting: false,
                 ref message,
             } if message.contains("install rejected")
         ));
+    }
+
+    #[test]
+    fn install_event_reports_skip_waiting_request() {
+        let mut runtime = ServiceWorkerRuntime::new(test_config()).unwrap();
+        runtime
+            .evaluate(
+                "addEventListener('install', event => {
+                    event.waitUntil(skipWaiting());
+                });",
+                "https://example.test/sw.js",
+            )
+            .unwrap();
+        let _ = runtime.recv_timeout(Duration::from_secs(5)).unwrap();
+
+        runtime.dispatch_install(14).unwrap();
+        assert_eq!(
+            runtime.recv_timeout(Duration::from_secs(5)).unwrap(),
+            ServiceWorkerEvent::LifecycleSettled {
+                event_id: 14,
+                phase: ServiceWorkerLifecyclePhase::Install,
+                succeeded: true,
+                skip_waiting: true,
+                message: String::new(),
+            }
+        );
     }
 
     #[test]
@@ -664,6 +707,7 @@ mod tests {
                 event_id: 13,
                 phase: ServiceWorkerLifecyclePhase::Activate,
                 succeeded: true,
+                skip_waiting: false,
                 message: String::new(),
             }
         );

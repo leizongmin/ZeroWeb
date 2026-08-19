@@ -2625,6 +2625,7 @@
         reg.installing = reg._worker;
         reg.waiting = null;
         reg.active = null;
+        reg._previousActive = null;
         reg.onupdatefound = null;
         reg.unregister = function () {
             var removed = false;
@@ -2689,10 +2690,19 @@
         worker.state = state;
         reg.installing = state === 'installing' ? worker : null;
         reg.waiting = state === 'installed' ? worker : null;
-        if (state === 'activating' || state === 'activated') {
+        if (state === 'activating') {
+          reg.active = worker;
+        } else if (state === 'activated') {
+          if (reg._previousActive && reg._previousActive !== worker) {
+            var previous = reg._previousActive;
+            reg._previousActive = null;
+            previous.state = 'redundant';
+            dispatchTargetEvent(previous, 'statechange');
+          }
           reg.active = worker;
         } else if (state === 'redundant' && reg.active === worker) {
-          reg.active = null;
+          reg.active = reg._previousActive;
+          reg._previousActive = null;
         }
         if (state === 'activated' && _readyResolve) {
           _readyResolve(reg);
@@ -2745,6 +2755,7 @@
           _registrations.push(reg);
         } else {
           if (String(reg._id) !== String(snapshot.id)) {
+            reg._previousActive = reg.active;
             reg._worker = makeSW(snapshot.scriptURL || '', 'installing');
             reg._stateSequence = 0;
             reg._pendingStates = [];
