@@ -45,6 +45,8 @@
   其中 scriptURL 1 case / 4 subtest 已资产化。
 - [IDL harness 裁决](2026-08-19-idlharness-review.md) 固定 4 个 generated URL /
   787 个 subtest，并按 window、dedicated/shared、serviceworker context 分层。
+- [Navigation/redirect 裁决](2026-08-19-navigation-review.md) 将 15 source / 16 URL /
+  224 subtest 分为 navigation defer、dynamic gated 与 multi-client/cookie skip。
 - 这不等于全部上游用例都超出 ZeroWeb 环境。M1 完成后，单页面、单注册、静态资源的
   生命周期用例可形成第一批真实基线；M2 完成后再加入单客户端 fetch/respondWith 用例。
 - iframe、多客户端、SharedWorker、跨 origin、动态服务端 handler、WebSocket 和
@@ -280,4 +282,5 @@ case 仍是第 2 项。
       25 个 M1/final review 已完成传递审计，M1 review 57/57。
 - [x] Static Routing family 12/12 已裁决，剩余逻辑 review 84。
 - [x] 剩余 no-signal review 14/14 已裁决；剩余逻辑 review 70。
+- [x] Navigation/redirect family 15 source / 224 subtest 已裁决；剩余逻辑 review 55。
 - [x] 未修改源码、WPT 数据或共享账本。
