@@ -134,6 +134,7 @@ class MainActivity : ComponentActivity() {
     private fun navigate(url: String) {
         if (NativeBridge.nativeNavigate(url)) {
             refreshBrowserSnapshot()
+            refreshRendererPreview()
         } else {
             browserError = "仅支持有效的 HTTP(S) 地址"
         }
@@ -228,11 +229,17 @@ class MainActivity : ComponentActivity() {
         val socket = rendererSocket ?: return
         if (!compositorAttached || !NativeBridge.nativeAttachRenderer(socket.detachFd())) return
         rendererSocket = null
-        window.decorView.postDelayed({
-            rendererPreview = NativeBridge.nativeLatestPageFrame()?.toBitmap(320, 180)
-            if (rendererPreview == null) android.util.Log.e("ZeroWebRole", "renderer page frame unavailable")
-            else android.util.Log.i("ZeroWebRole", "renderer page frame ready")
-        }, 1_000)
+        refreshRendererPreview()
+    }
+
+    private fun refreshRendererPreview() {
+        listOf(1_000L, 5_000L, 10_000L).forEach { delayMillis ->
+            window.decorView.postDelayed({
+                rendererPreview = NativeBridge.nativeLatestPageFrame()?.toBitmap(320, 180)
+                if (rendererPreview == null) android.util.Log.e("ZeroWebRole", "renderer page frame unavailable")
+                else android.util.Log.i("ZeroWebRole", "renderer page frame ready")
+            }, delayMillis)
+        }
     }
 }
 

@@ -6293,8 +6293,10 @@ dependencies = [
  "zero-browser-shell",
  "zero-compositor",
  "zero-image-decoder",
+ "zero-net",
  "zero-protocol",
  "zero-renderer",
+ "zero-security",
 ]
 
 [[package]]

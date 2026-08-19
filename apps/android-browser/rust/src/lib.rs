@@ -9,6 +9,8 @@ use jni::sys::jbyteArray;
 use jni::sys::{JNI_FALSE, JNI_TRUE, jboolean, jstring};
 
 #[cfg(target_os = "android")]
+use std::sync::atomic::{AtomicU64, Ordering};
+#[cfg(target_os = "android")]
 use std::sync::{Mutex, OnceLock};
 #[cfg(target_os = "android")]
 use zero_protocol::CompositorUiSurfaceInfo;
@@ -16,7 +18,8 @@ use zero_protocol::CompositorUiSurfaceInfo;
 use zero_protocol::IpcChannel;
 #[cfg(target_os = "android")]
 use zero_protocol::message::{
-    FramePublishMode, ImageDecodeParams, IpcMessage, IpcMessageKind, LoadHtmlParams, SetViewportParams,
+    FetchParams, FetchResponseParams, FramePublishMode, ImageDecodeParams, IpcMessage, IpcMessageKind, LoadHtmlParams,
+    NavigateParams, SetViewportParams,
 };
 
 const NATIVE_VERSION: &str = "ZeroWeb Android M2";
@@ -41,6 +44,10 @@ static ANDROID_COMPOSITOR: OnceLock<Mutex<Option<AndroidCompositorTransport>>> =
 static ANDROID_RENDERER: OnceLock<Mutex<Option<AndroidRendererTransport>>> = OnceLock::new();
 #[cfg(target_os = "android")]
 static ANDROID_PAGE_FRAME: OnceLock<Mutex<Option<Vec<u8>>>> = OnceLock::new();
+#[cfg(target_os = "android")]
+static ANDROID_SECURITY: OnceLock<Mutex<zero_security::SecurityContext>> = OnceLock::new();
+#[cfg(target_os = "android")]
+static ANDROID_NAVIGATION_EPOCH: AtomicU64 = AtomicU64::new(1);
 
 #[cfg(target_os = "android")]
 fn android_compositor() -> &'static Mutex<Option<AndroidCompositorTransport>> {
@@ -55,6 +62,11 @@ fn android_renderer() -> &'static Mutex<Option<AndroidRendererTransport>> {
 #[cfg(target_os = "android")]
 fn android_page_frame() -> &'static Mutex<Option<Vec<u8>>> {
     ANDROID_PAGE_FRAME.get_or_init(|| Mutex::new(None))
+}
+
+#[cfg(target_os = "android")]
+fn android_security() -> &'static Mutex<zero_security::SecurityContext> {
+    ANDROID_SECURITY.get_or_init(|| Mutex::new(zero_security::SecurityContext::default()))
 }
 
 /// Satisfies winit's Android native-activity link contract.
@@ -125,7 +137,13 @@ pub extern "system" fn Java_com_leizm_zeroweb_NativeBridge_nativeNavigate(
 ) -> jboolean {
     env.get_string(&url)
         .map_err(|error| error.to_string())
-        .and_then(|url| facade::navigate(url.to_str().map_err(|error| error.to_string())?))
+        .and_then(|url| {
+            let url = url.to_str().map_err(|error| error.to_string())?;
+            facade::navigate(url)?;
+            #[cfg(target_os = "android")]
+            navigate_renderer(url)?;
+            Ok(())
+        })
         .map_or(JNI_FALSE, |_| JNI_TRUE)
 }
 
@@ -382,14 +400,19 @@ pub extern "system" fn Java_com_leizm_zeroweb_NativeBridge_nativeAttachRenderer(
         .spawn(move || {
             let mut inbound = zero_protocol::PipeTransport::new(reader, std::io::sink());
             while let Ok(message) = inbound.recv() {
-                if let IpcMessageKind::CompositorFrame {
-                    surface_id,
-                    navigation_epoch,
-                    frame_id,
-                    paint,
-                } = message.kind
-                {
-                    let _ = forward_renderer_frame(surface_id, navigation_epoch, frame_id, *paint);
+                match message.kind {
+                    IpcMessageKind::CompositorFrame {
+                        surface_id,
+                        navigation_epoch,
+                        frame_id,
+                        paint,
+                    } => {
+                        let _ = forward_renderer_frame(surface_id, navigation_epoch, frame_id, *paint);
+                    }
+                    IpcMessageKind::FetchRequest(params) => {
+                        let _ = proxy_renderer_fetch(params);
+                    }
+                    _ => {}
                 }
             }
         })
@@ -433,6 +456,98 @@ pub extern "system" fn Java_com_leizm_zeroweb_NativeBridge_nativeLatestPageFrame
         .as_ref()
         .and_then(|rgba| env.byte_array_from_slice(rgba).ok())
         .map_or(std::ptr::null_mut(), |frame| frame.into_raw())
+}
+
+#[cfg(target_os = "android")]
+fn navigate_renderer(url: &str) -> Result<(), String> {
+    let epoch = ANDROID_NAVIGATION_EPOCH
+        .fetch_add(1, Ordering::Relaxed)
+        .saturating_add(1);
+    android_security()
+        .lock()
+        .map_err(|_| "Android security context lock poisoned".to_string())?
+        .set_page_origin(url);
+    send_renderer(IpcMessageKind::Navigate(NavigateParams {
+        url: url.to_string(),
+        referrer: None,
+        navigation_epoch: epoch,
+    }))
+}
+
+#[cfg(target_os = "android")]
+fn proxy_renderer_fetch(params: FetchParams) -> Result<(), String> {
+    const MAX_RESPONSE_BYTES: usize = 64 * 1024 * 1024;
+    let resource_type = params
+        .headers
+        .iter()
+        .find(|(name, _)| name.eq_ignore_ascii_case("x-zero-resource-type"))
+        .map(|(_, value)| value.clone())
+        .unwrap_or_else(|| "document".to_string());
+    let url = match android_security()
+        .lock()
+        .map_err(|_| "Android security context lock poisoned".to_string())?
+        .check_resource_url(&params.url, &resource_type)
+    {
+        zero_security::ResourceCheckResult::Allow => params.url,
+        zero_security::ResourceCheckResult::Upgraded(url) => url,
+        zero_security::ResourceCheckResult::Blocked(reason) => {
+            return send_fetch_response(
+                params.request_id,
+                0,
+                Vec::new(),
+                format!("resource blocked: {reason}").into_bytes(),
+            );
+        }
+    };
+    let method = match params.method.to_ascii_uppercase().as_str() {
+        "POST" => zero_net::HttpMethod::Post,
+        "PUT" => zero_net::HttpMethod::Put,
+        "DELETE" => zero_net::HttpMethod::Delete,
+        "PATCH" => zero_net::HttpMethod::Patch,
+        "HEAD" => zero_net::HttpMethod::Head,
+        "OPTIONS" => zero_net::HttpMethod::Options,
+        _ => zero_net::HttpMethod::Get,
+    };
+    let headers = params
+        .headers
+        .into_iter()
+        .filter(|(name, _)| !name.to_ascii_lowercase().starts_with("x-zero-"))
+        .collect();
+    match zero_net::HttpClient::new().send(zero_net::HttpRequest {
+        method,
+        url,
+        headers,
+        body: params.body,
+    }) {
+        Ok(response) if response.body.len() <= MAX_RESPONSE_BYTES => {
+            let mut headers = response.headers;
+            headers.push(("X-Zero-Resource-Type".to_string(), resource_type.to_string()));
+            headers.push(("X-Zero-Final-Url".to_string(), response.url));
+            send_fetch_response(params.request_id, response.status_code, headers, response.body)
+        }
+        Ok(_) => send_fetch_response(
+            params.request_id,
+            0,
+            Vec::new(),
+            b"resource exceeds Android IPC frame limit".to_vec(),
+        ),
+        Err(error) => send_fetch_response(params.request_id, 0, Vec::new(), error.to_string().into_bytes()),
+    }
+}
+
+#[cfg(target_os = "android")]
+fn send_fetch_response(
+    request_id: u64,
+    status_code: u16,
+    headers: Vec<(String, String)>,
+    body: Vec<u8>,
+) -> Result<(), String> {
+    send_renderer(IpcMessageKind::FetchResponse(FetchResponseParams {
+        request_id,
+        status_code,
+        headers,
+        body,
+    }))
 }
 
 #[cfg(target_os = "android")]

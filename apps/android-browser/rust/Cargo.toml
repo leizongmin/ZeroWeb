@@ -22,4 +22,6 @@ serde_json = { workspace = true }
 
 [target.'cfg(target_os = "android")'.dependencies]
 libc = "0.2"
+zero-net = { path = "../../../crates/net" }
+zero-security = { path = "../../../crates/security" }
 zero-renderer = { path = "../../renderer", optional = true }
