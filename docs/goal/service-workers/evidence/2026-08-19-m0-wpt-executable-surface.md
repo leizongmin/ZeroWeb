@@ -5,11 +5,24 @@
 **上游观察点**：WPT `04067ce9c7c2165e71ad7d0dde10a4c5cb394a83`
 **状态**：M0 evidence（零源码改动）
 
+### 来源分级
+
+| 来源 | 覆盖 | 类型 | 置信度 |
+|------|------|------|--------|
+| WPT 官方 manifest API（version 9） | 完整文件分母、test URL 展开 | 一手事实 | 高 |
+| 固定 revision 的 jsDelivr 源文件镜像 | 221/294 个 testharness 正文 | 一手事实抽样 | 中高 |
+| ZeroWeb 当前源码与 runner | 当前可执行能力 | 一手事实 | 高 |
+| Service Workers 规范、Chromium/MDN 文档 | 规范与架构补证 | 外部官方资料 | 高 |
+| A-E 分层、文件名聚类 | 实施排序 | 作者综合 | 待实现验证 |
+
 ## 0. 结论
 
 - 当前 `zero-wpt-runner` 对 `service-workers` 的**端到端可执行文件数为 0**：本地
   `wpt-data/` 没有该目录，CLI 没有 service-worker testharness 入口，页面注册 shim
   不抓取或执行 worker 脚本。
+- 固定 revision 的完整 manifest 包含 **801 个源文件**：294 个 testharness 源生成
+  331 个测试 URL，另有 499 个 support、2 个 crashtest、5 个 manual 和 1 个 reftest。
+  核心 `service-worker/` 子树占 276 个 testharness 源 / 277 个 URL。
 - 这不等于全部上游用例都超出 ZeroWeb 环境。M1 完成后，单页面、单注册、静态资源的
   生命周期用例可形成第一批真实基线；M2 完成后再加入单客户端 fetch/respondWith 用例。
 - iframe、多客户端、SharedWorker、跨 origin、动态服务端 handler、WebSocket 和
@@ -53,6 +66,53 @@ Rust 注册记录统一，而不是保留 shim 私有数组。
 和服务端动态脚本。存在 helper 不代表每个 case 都依赖全部能力，因此分类必须按 case
 实际调用链，而不是看到公共 helper 后整目录跳过。
 
+## 2A. 完整 manifest 普查
+
+### 文件与 URL 分母
+
+| 类型 | 源文件 | 展开测试 URL | 说明 |
+|------|-------:|-------------:|------|
+| testharness | 294 | 331 | 276/277 属核心 `service-worker/` |
+| support | 499 | 不适用 | worker、fixture、server handler、header 配置 |
+| crashtest | 2 | 2 | 核心与 cache-storage 各 1 |
+| manual | 5 | 5 | 全在核心子树，不纳入自动基线 |
+| reftest | 1 | 1 | SVG target，非 M1 首批 |
+| **合计** | **801** | **339 个自动/手动入口** | testharness + crash/manual/ref |
+
+testharness 的 331 个 URL 由核心 service-worker 277、cache-storage 50 和根
+`idlharness.https.any.js` 的 4 个 global 变体组成。核心 URL 中 274 个标记为 HTTPS，
+11 个属于 navigation preload，10 个为 tentative，1 个要求 HTTP/2。
+
+### 核心 testharness 文件名聚类
+
+以下分类按路径关键词互斥归类，是实施规模上界，不是 WPT 官方分类：
+
+| 聚类 | 源文件 | 最早里程碑 | 裁决 |
+|------|-------:|-----------|------|
+| registration/lifecycle | 68 | M1 | 逐案检查资源闭包后纳入 |
+| fetch/interception | 60 | M2 | 等 fetch 管线门禁 |
+| clients/control | 31 | M3 | 单客户端子集可纳入，多客户端 skip |
+| message | 11 | M3 | 等 postMessage |
+| navigation preload | 11 | 排除/远期 | 当前 goal 不实现 |
+| other API/security | 95 | 分散 | 按 secure context、imports、routing 等拆分 |
+| **合计** | **276** | | |
+
+### support 资源结构
+
+| 子树 | support 文件 | JS | HTML | Python handler | headers/asis | 其他 |
+|------|-------------:|---:|-----:|---------------:|-------------:|-----:|
+| service-worker | 483 | 246（含 5 个 `.sub.js`） | 133（含 2 个 `.sub.html`） | 66 | 11 | 27 |
+| cache-storage | 14 | 6 | 3 | 2 | 0 | 3 |
+
+66 个核心 Python handler 是 WPT server 依赖的直接证据。它们不能由当前静态
+`wpt_data_fetch_handler` 正确模拟，因此相关 case 必须标 `Unsupported`，或先实现明确的
+fixture adapter；不能将 `.py` 当普通文本响应。
+
+> **来源说明（第 2A 章）**
+>
+> - **一手事实**：WPT manifest API `sha=04067ce...` 的完整 `items` 树，经确定性遍历统计。
+> - **作者综合**：文件名聚类与里程碑映射；数量来自完整 manifest，分类规则不是上游定义。
+
 ## 3. 分层导入建议
 
 | 层级 | 首批主题 | 开启条件 | 预期处理 |
@@ -70,6 +130,52 @@ Rust 注册记录统一，而不是保留 shim 私有数组。
 `service-workers/service-worker/activation-after-registration.https.html`。它不需要 iframe
 或动态服务端，直接验证 M1 的核心链路，失败信号也能区分“脚本未抓取”“install 未派发”
 和“状态事件未推进”。
+
+## 3A. 正文样本依赖信号
+
+固定 revision 的 CDN 正文成功取得 221/294 个 testharness 源（75.2%），其中核心子树
+203/276。下表按源码正文正则扫描，信号可重叠：
+
+| 信号 | 命中文件 | 对首批 runner 的含义 |
+|------|---------:|----------------------|
+| iframe 创建/helper | 140 | 当前单 WebView runner 无真实子 browsing context |
+| 动态 server（`.py`/stash/pipe） | 63 | 静态文件映射不足 |
+| fetch/respondWith | 58 | M2 前不纳入 |
+| cross-origin host helper | 51 | 需要多 origin + TLS fixture |
+| MessageChannel/MessagePort | 48 | M3 或专门消息基础设施 |
+| SharedWorker | 6 | 多 worker client，当前排除 |
+| WebSocket | 0 | 本样本无直接命中，不代表全量为 0 |
+| testdriver | 0 | 本样本无直接命中 |
+
+核心样本中 162/203 至少命中一个上述重依赖信号；其余 41 个只是“未命中已知信号”的筛选
+队列，不能直接当可执行分母，因为依赖还可能藏在外链 helper 或资源响应语义中。
+
+### M1 首批人工复核候选
+
+从这 41 个文件中再按目标范围和资源复杂度筛出 12 个候选：
+
+1. `activate-event-after-install-state-change.https.html`
+2. `activation-after-registration.https.html`
+3. `install-event-type.https.html`
+4. `onactivate-script-error.https.html`
+5. `oninstall-script-error.https.html`
+6. `register-default-scope.https.html`
+7. `registration-basic.https.html`
+8. `registration-scope.https.html`
+9. `registration-script-url.https.html`
+10. `registration-script.https.html`
+11. `registration-service-worker-attributes.https.html`
+12. `rejections.https.html`
+
+这些文件是批准后 M1-5 pinned fetch script 的初始审计队列，不是通过率承诺。每个文件只有
+在资源闭包抓取完成、动态响应依赖为零且 runner 能稳定清理 registration 后，才进入真实
+分母。首个 driving case 仍是第 2 项。
+
+> **来源说明（第 3A 章）**
+>
+> - **一手事实**：固定 revision 的 221 个已下载 testharness 正文。
+> - **作者综合**：依赖信号正则与 12 个候选筛选。
+> - **限制**：正文样本覆盖率 75.2%；未下载的 73 个源文件不参与信号数，故信号数是下界。
 
 ## 4. 导入与 runner 设计约束
 
@@ -93,6 +199,8 @@ Rust 注册记录统一，而不是保留 shim 私有数组。
 | 不能整目录跳过 | helper 含可选重依赖 | activation case 未调用这些 helper | 一致 | 高 | 逐案分类 |
 | fetch 用例必须等 M2 | goal 依赖约束 | 当前 FetchBridge 直达网络 handler | 一致 | 高 | M2 开启 |
 | cache-first 必须等兄弟 goal | storage-cache-api master 显示 M1 未启动 | 当前页面无 `caches` | 一致 | 高 | 联合门禁 |
+| 完整 testharness 分母为 294 源/331 URL | WPT manifest version 9 | 本地确定性遍历结果 | 一致 | 高 | 直接采用 |
+| 重基础设施用例占多数 | 样本 162/203 命中信号 | support 中有 68 个 Python handler | 一致 | 中高 | 逐案依赖闭包 |
 
 ## 6. 来源与限制
 
@@ -103,22 +211,23 @@ Rust 注册记录统一，而不是保留 shim 私有数组。
 3. [WPT 项目说明](https://github.com/web-platform-tests/wpt/blob/master/README.md)
 4. [WPT activation case](https://github.com/web-platform-tests/wpt/blob/master/service-workers/service-worker/activation-after-registration.https.html)
 5. [WPT Service Worker helper](https://github.com/web-platform-tests/wpt/blob/master/service-workers/service-worker/resources/test-helpers.sub.js)
-6. `crates/storage/src/service_worker.rs`
-7. `crates/webview/src/webview.rs`
-8. `crates/engine/src/js_dom_shim/part02.js`
-9. `crates/engine/src/fetch_bridge.rs`
-10. `tests/wpt-runner/src/testharness.rs`
-11. `tests/wpt-runner/src/main.rs`
+6. [WPT manifest API](https://wpt.fyi/api/manifest?sha=04067ce9c7c2165e71ad7d0dde10a4c5cb394a83)
+7. `crates/storage/src/service_worker.rs`
+8. `crates/webview/src/webview.rs`
+9. `crates/engine/src/js_dom_shim/part02.js`
+10. `crates/engine/src/fetch_bridge.rs`
+11. `tests/wpt-runner/src/testharness.rs`
+12. `tests/wpt-runner/src/main.rs`
 
 ### 外部补证
 
-12. [MDN: Using Service Workers](https://developer.mozilla.org/en-US/docs/Web/API/Service_Worker_API/Using_Service_Workers)
-13. [MDN: ServiceWorkerGlobalScope](https://developer.mozilla.org/en-US/docs/Web/API/ServiceWorkerGlobalScope)
+13. [MDN: Using Service Workers](https://developer.mozilla.org/en-US/docs/Web/API/Service_Worker_API/Using_Service_Workers)
+14. [MDN: ServiceWorkerGlobalScope](https://developer.mozilla.org/en-US/docs/Web/API/ServiceWorkerGlobalScope)
 
 ### 限制
 
-- GitHub clone 在本机网络不可达；上游观察基于 2026-08-19 GitHub tree API、通过 jsDelivr
-  读取的 case/helper 正文和官方 WPT 链接。未声称完成整个目录的逐文件静态计数。
+- GitHub/Gitiles clone 在本机网络不可达。完整**文件与 URL 分母**改由 WPT 官方 manifest
+  API 获取并已完成；**正文依赖信号**只覆盖 221/294 个 testharness 源，不外推为全量。
 - 因当前 runner 没有 SW 入口，未运行伪基线。这里的“0”指当前环境可由标准入口执行的
   真实 SW WPT 文件数，不是未来层级 A/B 的预估通过数。
 - 层级 A-E 是实施排序（作者综合），不是上游 WPT 自带分类。
@@ -129,4 +238,5 @@ Rust 注册记录统一，而不是保留 shim 私有数组。
 - [x] 区分“当前不可执行”和“未来可纳入”，未把 skip 当 pass。
 - [x] 未把 shim 单测计入 WPT。
 - [x] 已记录网络取证限制和固定上游 commit。
+- [x] 完整 manifest 分母与正文抽样信号分开报告，未将样本外推。
 - [x] 未修改源码、WPT 数据或共享账本。

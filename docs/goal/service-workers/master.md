@@ -2,7 +2,7 @@
 
 **入口文档**: [../service-workers.md](../service-workers.md)
 **创建日期**: 2026-08-17（goal 拆分 bootstrap）
-**最后更新**: 2026-08-19（M0 RFC 已完成并提交审批）
+**最后更新**: 2026-08-19（M0 RFC + WPT 完整分母普查完成，待审批）
 
 ---
 
@@ -37,7 +37,8 @@
   CacheStorage；**这不是 SW fetch 事件执行**，页面注册 shim 也未接入
 - ⚠️ register 的 scriptURL **不被下载执行**——SW 事件处理器无从注册
 - ⚠️ 页面 fetch 事件拦截为零；install/activate 为 setTimeout 模拟非真事件
-- ⚠️ WPT `service-workers` 未导入；当前标准入口真实可执行文件数为 0
+- ⚠️ WPT `service-workers` 未导入；当前标准入口真实可执行文件数为 0。固定 revision
+  完整 manifest 为 294 个 testharness 源 / 331 个 URL，M1 首批人工复核候选 12 个
 - ✅ SW 执行环境 RFC 已完成，待用户批准
 
 ## 缺口清单
@@ -48,7 +49,7 @@
 | S2 | scriptURL 不下载执行 | ⬜ M1 |
 | S3 | fetch 拦截为零 | ⬜ M2（等 js-dom fetch 改造） |
 | S4 | 事件为 setTimeout 模拟 | ⬜ M1 |
-| S5 | WPT 覆盖为零 | ✅ M0 分层分析完成；导入/runner 等批准后实施 |
+| S5 | WPT 覆盖为零 | ✅ M0 完整分母 + 75.2% 正文样本分析完成；导入/runner 等批准后实施 |
 
 ## 待用户决策
 
@@ -76,7 +77,8 @@
 ## 验证基线
 
 - 测试基线：storage crate 既有单测全绿（立项时点）；clippy 零警告
-- WPT service-workers 面：当前标准入口可执行 0 文件；分层与首案见
+- WPT service-workers 面：当前标准入口可执行 0 文件；上游完整分母 294 个 testharness
+  源 / 331 URL，正文样本 221/294；分层、依赖信号与 12 个 M1 候选见
   [M0 WPT evidence](evidence/2026-08-19-m0-wpt-executable-surface.md)
 - 质量门禁：`cargo fmt` + `cargo clippy --workspace --all-targets -- -D warnings` 全过
 
@@ -85,6 +87,7 @@
 | 日期 | 事项 | 结果 |
 |------|------|------|
 | 2026-08-19 | WPT 可执行面 | 当前 0；M1 纳入单页面生命周期，M2 纳入单客户端 fetch，重依赖用例逐案 skip |
+| 2026-08-19 | WPT 完整分母 | manifest：801 源文件；294 testharness 源生成 331 URL；正文样本 221/294，核心样本 162/203 命中重依赖信号 |
 | 2026-08-19 | 三方案对比 | 拒绝同线程 context（无调度隔离）；拒绝从零线程（复制安全基建）；推荐抽取 Worker 线程核 |
 | 2026-08-19 | owner | production browser process 单一 owner；WebView 只做同算法 in-process adapter |
 | 2026-08-19 | 首个 driving WPT | `activation-after-registration.https.html` |
