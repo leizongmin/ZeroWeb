@@ -433,6 +433,9 @@ fn parse_transform_function(name: &str, args: &str) -> Option<TransformFunction>
     match name.as_str() {
         "translate" => {
             let parts = split_transform_value_args(args)?;
+            if parts.len() > 2 {
+                return None;
+            }
             let (tx, txp) = parse_len_or_pct(parts.first()?)?;
             let (ty, typ) = match parts.get(1) {
                 Some(p) => parse_len_or_pct(p)?,
@@ -447,6 +450,9 @@ fn parse_transform_function(name: &str, args: &str) -> Option<TransformFunction>
         }
         "translatex" => {
             let parts = split_transform_value_args(args)?;
+            if parts.len() != 1 {
+                return None;
+            }
             let (tx, txp) = parse_len_or_pct(parts.first()?)?;
             Some(if txp {
                 TransformFunction::TranslateXMixed(tx, true)
@@ -456,6 +462,9 @@ fn parse_transform_function(name: &str, args: &str) -> Option<TransformFunction>
         }
         "translatey" => {
             let parts = split_transform_value_args(args)?;
+            if parts.len() != 1 {
+                return None;
+            }
             let (ty, typ) = parse_len_or_pct(parts.first()?)?;
             Some(if typ {
                 TransformFunction::TranslateYMixed(ty, true)
@@ -469,22 +478,34 @@ fn parse_transform_function(name: &str, args: &str) -> Option<TransformFunction>
         }
         "scale" => {
             let vals = parse_transform_args(args)?;
+            if vals.len() > 2 {
+                return None;
+            }
             let sx = vals.first().copied()?;
             let sy = vals.get(1).copied();
             Some(TransformFunction::Scale(sx, sy))
         }
         "scalex" => {
             let vals = parse_transform_args(args)?;
+            if vals.len() != 1 {
+                return None;
+            }
             let sx = vals.first().copied()?;
             Some(TransformFunction::ScaleX(sx))
         }
         "scaley" => {
             let vals = parse_transform_args(args)?;
+            if vals.len() != 1 {
+                return None;
+            }
             let sy = vals.first().copied()?;
             Some(TransformFunction::ScaleY(sy))
         }
         "skew" => {
             let vals = parse_transform_args(args)?;
+            if vals.len() > 2 {
+                return None;
+            }
             let ax = vals.first().copied()?;
             let ay = vals.get(1).copied();
             Some(TransformFunction::Skew(ax, ay))
@@ -555,25 +576,38 @@ fn parse_transform_function(name: &str, args: &str) -> Option<TransformFunction>
 /// 解析变换参数列表（逗号或空格分隔的数值）。
 fn parse_transform_args(args: &str) -> Option<Vec<f64>> {
     let mut result = Vec::new();
-    for part in args.split(|c: char| c == ',' || c.is_whitespace()) {
-        let part = part.trim();
-        if part.is_empty() {
-            continue;
+    if args.contains(',') {
+        for item in args.split(',') {
+            let item = item.trim();
+            if item.is_empty() {
+                return None;
+            }
+            for part in item.split_whitespace() {
+                result.push(parse_css_number(part)?);
+            }
         }
-        // 尝试解析为带单位的角度或长度
-        let val = parse_css_number(part)?;
-        result.push(val);
+    } else {
+        for part in args.split_whitespace() {
+            result.push(parse_css_number(part)?);
+        }
     }
     if result.is_empty() { None } else { Some(result) }
 }
 
 /// 按逗号/空白拆分 translate 参数为原始 token（保留 `%` 后缀供 [`parse_len_or_pct`] 判定）。
 fn split_transform_value_args(args: &str) -> Option<Vec<&str>> {
-    let parts: Vec<&str> = args
-        .split(|c: char| c == ',' || c.is_whitespace())
-        .map(str::trim)
-        .filter(|s| !s.is_empty())
-        .collect();
+    let mut parts = Vec::new();
+    if args.contains(',') {
+        for item in args.split(',') {
+            let item = item.trim();
+            if item.is_empty() {
+                return None;
+            }
+            parts.extend(item.split_whitespace());
+        }
+    } else {
+        parts.extend(args.split_whitespace());
+    }
     if parts.is_empty() { None } else { Some(parts) }
 }
 

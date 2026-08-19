@@ -63,9 +63,14 @@ fn test_parse_transform_empty_args() {
 #[test]
 fn test_parse_transform_function_invalid_args() {
     // translateX 不接受多个参数
-    let result = parse_transform("translateX(10px, 20px)");
-    // 行为取决于实现 — 不 panic 即可
-    let _ = result;
+    assert!(parse_transform("translateX(10px, 20px)").is_none());
+    assert!(parse_transform("translateY(10px, 20px)").is_none());
+    assert!(parse_transform("scaleX(1, 2)").is_none());
+    assert!(parse_transform("scaleY(1, 2)").is_none());
+    assert!(parse_transform("scale(1, 2, 3)").is_none());
+    assert!(parse_transform("skew(10deg, 20deg, 30deg)").is_none());
+    assert!(parse_transform("matrix(1,,0,0,1,10,20)").is_none());
+    assert!(parse_transform("translate(10px,,20px)").is_none());
 }
 
 // 测试 parse_transform_function 中的无效参数类型
