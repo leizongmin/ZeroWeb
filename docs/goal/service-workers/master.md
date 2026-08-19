@@ -2,7 +2,7 @@
 
 **入口文档**: [../service-workers.md](../service-workers.md)
 **创建日期**: 2026-08-17（goal 拆分 bootstrap）
-**最后更新**: 2026-08-19（M0 RFC + navigation/redirect WPT 裁决，待审批）
+**最后更新**: 2026-08-19（M0 RFC + request/response/timing WPT 裁决，待审批）
 
 ---
 
@@ -60,6 +60,8 @@
   155 shared + 302 serviceworker）；全量剩余逻辑 review 70
 - ✅ Navigation/redirect 裁决：15 source / 16 URL / 224 subtest 分为 2 defer /
   10 gated / 3 skip；全量剩余逻辑 review 55
+- ✅ Request/response/timing 裁决：17 source / 83 subtest 分为 7 defer /
+  9 gated / 1 skip；全量剩余逻辑 review 38
 - ✅ SW 执行环境 RFC 已完成，待用户批准
 
 ## 缺口清单
@@ -70,7 +72,7 @@
 | S2 | scriptURL 不下载执行 | ⬜ M1 |
 | S3 | fetch 拦截为零 | ⬜ M2（等 js-dom fetch 改造） |
 | S4 | 事件为 setTimeout 模拟 | ⬜ M1 |
-| S5 | WPT 覆盖为零 | 🔄 12 case 已资产化；M1、Static Routing、worker-global/import、IDL、navigation/redirect 分母已裁决；runner/真实 red baseline 等 RFC 批准 |
+| S5 | WPT 覆盖为零 | 🔄 12 case 已资产化；M1、Static Routing、worker-global/import、IDL、navigation、request/response 分母已裁决；runner/真实 red baseline 等 RFC 批准 |
 
 ## 待用户决策
 
@@ -121,6 +123,8 @@
   [IDL harness review](evidence/2026-08-19-idlharness-review.md)
 - Navigation/redirect 面：15 source / 16 URL / 224 subtest 的分层裁决见
   [Navigation review](evidence/2026-08-19-navigation-review.md)
+- Request/response/timing 面：17 source / 83 subtest 的分层裁决见
+  [Request/response review](evidence/2026-08-19-request-response-review.md)
 - Tier A 资产恢复：`make fetch-wpt-service-workers-tier-a`；默认使用独立
   `wpt-data/.service-workers-tier-a-root`，当前环境 18/18 blob SHA 验证通过
 - Tier A 资产审计：`make audit-wpt-service-workers-tier-a`（无网络、只读）；
@@ -155,6 +159,7 @@
 | 2026-08-19 | Static-wave 资产化 | scriptURL 1 case / 4 subtest / 2 assets；fetch/audit/regression targets 与账本已落 |
 | 2026-08-19 | IDL harness 裁决 | 4 generated URL / 787 subtest：window 175、dedicated/shared 各 155、serviceworker 302；剩余 70 |
 | 2026-08-19 | Navigation/redirect 裁决 | 15 source / 16 URL / 224 subtest：2 defer / 10 gated / 3 skip；剩余 55 |
+| 2026-08-19 | Request/response/timing 裁决 | 17 source / 83 subtest：7 defer / 9 gated / 1 skip；剩余 38 |
 | 2026-08-19 | 三方案对比 | 拒绝同线程 context（无调度隔离）；拒绝从零线程（复制安全基建）；推荐抽取 Worker 线程核 |
 | 2026-08-19 | owner | production browser process 单一 owner；WebView 只做同算法 in-process adapter |
 | 2026-08-19 | 首个 driving WPT | `activation-after-registration.https.html` |
