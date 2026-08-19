@@ -395,6 +395,8 @@ fn test_parse_overflow_clip_margin() {
     assert_eq!(parse_overflow_clip_margin("5px 10px"), None);
     assert_eq!(parse_overflow_clip_margin("content-box 5px 10px"), None);
     assert_eq!(parse_overflow_clip_margin("bogus"), None);
+    assert_eq!(parse_overflow_clip_margin(""), None);
+    assert_eq!(parse_overflow_clip_margin("   "), None);
 }
 
 #[test]

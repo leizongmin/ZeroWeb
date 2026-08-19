@@ -134,6 +134,9 @@ pub fn parse_overflow(value: &str) -> Option<OverflowValue> {
 ///（整条声明按解析错误丢）。driving: css-overflow/overflow-clip-margin-*。
 pub fn parse_overflow_clip_margin(value: &str) -> Option<OverflowClipMarginValue> {
     let parts: Vec<&str> = value.split_whitespace().collect();
+    if parts.is_empty() {
+        return None;
+    }
     if parts.len() > 2 {
         return None;
     }

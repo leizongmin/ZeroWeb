@@ -95,6 +95,8 @@ Logical border axis shorthands exposed the axis variant: 1-2 start/end mapping m
 
 `background-position` exposed the axis-classification variant: normalizing order is not a substitute for validating grammar roles. Components with axis-specific meaning must be classified before swapping or defaulting, otherwise same-axis pairs can be reshuffled into nonsensical but accepted computed values.
 
+`overflow-clip-margin` exposed the empty-input-defaulting variant: default values are only valid after the grammar has matched at least one component. An empty token list must fail before applying defaults, otherwise an absent declaration value becomes a real computed value.
+
 ## Root Cause
 
 The shorthand layer used heuristic component classifiers and treated unrecognized tokens as absent optional components. That is wrong for CSS shorthands such as `border`, where every token must match one of the allowed component grammars. A shared parser can also be broader than the property grammar that consumes it: general length parsing may accept `auto`, intrinsic sizing keywords, or percentages that `border-width` must reject.
