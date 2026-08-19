@@ -139,6 +139,8 @@ Tokenizer URL parsing exposed the bad-url truncation variant: when unquoted `url
 
 List-style shorthand exposed the late-validation variant: expanding a shorthand into three longhands and relying on the later apply layer to reject one invalid longhand breaks CSS atomicity. Shorthand expansion must validate every produced longhand before returning any declarations, especially when a component such as `url(...)` has a stricter property-specific parser.
 
+Background shorthand exposed the early-return variant: even after adding final longhand validation to the normal path, special branches such as `rgb()/hsl()/var()` color handling can still return partially validated longhands. Build the produced longhand vector first, then run one shared validation step for every non-wide-keyword path.
+
 ## Root Cause
 
 The shorthand layer used heuristic component classifiers and treated unrecognized tokens as absent optional components. That is wrong for CSS shorthands such as `border`, where every token must match one of the allowed component grammars. A shared parser can also be broader than the property grammar that consumes it: general length parsing may accept `auto`, intrinsic sizing keywords, or percentages that `border-width` must reject.

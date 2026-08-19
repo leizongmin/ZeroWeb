@@ -114,7 +114,7 @@ pub(super) fn expand_background(value: &str, important: bool, specificity: (u32,
         || working.contains("hsla(")
     {
         let bg_color = working.to_string();
-        return vec![
+        let result = vec![
             mk("background-color", &bg_color),
             mk("background-image", if bg_image.is_empty() { "none" } else { &bg_image }),
             mk("background-repeat", "repeat"),
@@ -124,6 +124,11 @@ pub(super) fn expand_background(value: &str, important: bool, specificity: (u32,
             mk("background-origin", "padding-box"),
             mk("background-size", "auto"),
         ];
+        return if background_longhands_are_valid(&result) {
+            result
+        } else {
+            vec![]
+        };
     }
 
     // R2481：分离 position 部分与 size 部分（depth-0 `/`，url()/渐变内的 `/` 被排除）。
@@ -152,7 +157,7 @@ pub(super) fn expand_background(value: &str, important: bool, specificity: (u32,
         }
     }
 
-    vec![
+    let result = vec![
         mk(
             "background-color",
             if slots.color.is_empty() {
@@ -204,7 +209,25 @@ pub(super) fn expand_background(value: &str, important: bool, specificity: (u32,
             "background-size",
             if slots.size.is_empty() { "auto" } else { &slots.size },
         ),
-    ]
+    ];
+    if !background_longhands_are_valid(&result) {
+        return vec![];
+    }
+    result
+}
+
+fn background_longhands_are_valid(decls: &[MatchingDecl]) -> bool {
+    decls.iter().all(|(property, value, _, _)| match property.as_str() {
+        "background-color" => zero_css_parser::values::parse_color(value).is_some(),
+        "background-image" => zero_css_parser::values::parse_background_image(value).is_some(),
+        "background-repeat" => zero_css_parser::values::parse_background_repeat(value).is_some(),
+        "background-position" => zero_css_parser::values::parse_background_position(value).is_some(),
+        "background-attachment" => zero_css_parser::values::parse_background_attachment(value).is_some(),
+        "background-clip" => zero_css_parser::values::parse_background_clip(value).is_some(),
+        "background-origin" => zero_css_parser::values::parse_background_origin(value).is_some(),
+        "background-size" => zero_css_parser::values::parse_background_size(value).is_some(),
+        _ => false,
+    })
 }
 
 /// R2481：background 简写分类累积槽。token 按 CSS Backgrounds §3.2/§3.10-§3.12 分类到

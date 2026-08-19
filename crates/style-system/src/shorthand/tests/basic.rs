@@ -713,6 +713,8 @@ fn test_background_rejects_unknown_or_duplicate_color_components() {
     assert!(expand_one("background", "red blue", false, (0, 0, 1)).is_empty());
     assert!(expand_one("background", "red sparkle", false, (0, 0, 1)).is_empty());
     assert!(expand_one("background", "center / top", false, (0, 0, 1)).is_empty());
+    assert!(expand_one("background", "red url(my image.png)", false, (0, 0, 1)).is_empty());
+    assert!(expand_one("background", "center url(\"image.png\" extra)", false, (0, 0, 1)).is_empty());
 
     let result = expand_one(
         "background",
