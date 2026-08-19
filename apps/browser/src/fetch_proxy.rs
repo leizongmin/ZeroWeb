@@ -272,6 +272,46 @@ impl TabFetchProxy {
         });
     }
 
+    /// Submit a Service Worker main script through the browser-owned loader.
+    ///
+    /// The caller owns response correlation, so this returns a dedicated
+    /// receiver instead of entering the renderer FetchRequest queue.
+    pub fn fetch_service_worker_script(
+        &mut self,
+        tab_id: TabId,
+        script_url: &str,
+    ) -> Receiver<Result<HttpResponse, String>> {
+        self.ensure_tab(tab_id);
+        let url = match self.security.get_mut(&tab_id) {
+            Some(context) => match context.check_resource_url(script_url, "script") {
+                ResourceCheckResult::Allow => script_url.to_string(),
+                ResourceCheckResult::Upgraded(url) => url,
+                ResourceCheckResult::Blocked(reason) => {
+                    return immediate_err(format!("resource blocked by security policy: {reason}"));
+                }
+            },
+            None => script_url.to_string(),
+        };
+        let partition = self
+            .security
+            .get(&tab_id)
+            .and_then(|context| context.page_origin())
+            .map(|origin| format!("{}://{}:{}", origin.scheme, origin.host, origin.port))
+            .unwrap_or_else(|| "default".to_string());
+        self.loader_for(tab_id).submit_http_with_context_in_partition(
+            HttpRequest {
+                method: HttpMethod::Get,
+                url,
+                headers: Vec::new(),
+                body: None,
+            },
+            FetchPriority::HIGH,
+            partition,
+            self.tab_epochs.get(&tab_id).copied(),
+            "serviceworker",
+        )
+    }
+
     /// 非阻塞轮询 pending fetch。
     pub fn drain(&mut self) -> Vec<CompletedFetch> {
         let mut still_pending = Vec::new();
@@ -588,6 +628,33 @@ mod tests {
         assert_eq!(done[0].request_id, 8);
         assert_eq!(done[0].status, 204);
         assert!(done[0].body.is_empty());
+    }
+
+    #[test]
+    fn service_worker_script_uses_browser_owned_loader() {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let url = format!("http://{}/sw.js", listener.local_addr().unwrap());
+        let server = std::thread::spawn(move || {
+            let (mut stream, _) = listener.accept().unwrap();
+            let mut request = [0_u8; 1024];
+            let size = stream.read(&mut request).unwrap();
+            assert!(String::from_utf8_lossy(&request[..size]).starts_with("GET /sw.js "));
+            stream
+                .write_all(
+                    b"HTTP/1.1 200 OK\r\nContent-Type: application/javascript\r\nContent-Length: 7\r\n\r\nvoid 0;",
+                )
+                .unwrap();
+        });
+
+        let mut proxy = TabFetchProxy::new();
+        proxy.on_navigate(TabId(4), &url);
+        let receiver = proxy.fetch_service_worker_script(TabId(4), &url);
+        let response = receiver.recv_timeout(Duration::from_secs(10)).unwrap().unwrap();
+        server.join().unwrap();
+
+        assert_eq!(response.status_code, 200);
+        assert_eq!(response.url, url);
+        assert_eq!(response.body, b"void 0;");
     }
 
     #[test]

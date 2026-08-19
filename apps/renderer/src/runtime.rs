@@ -2325,6 +2325,10 @@ impl RendererRuntime {
             IpcMessageKind::AutomationRequest(request) => {
                 self.run_frame_transaction(|runtime| runtime.handle_automation_request(msg.id, request))
             }
+            IpcMessageKind::ServiceWorkerResponse(_) => {
+                tracing::warn!("Service Worker renderer IPC bridge is unavailable");
+                Ok(())
+            }
             IpcMessageKind::FetchRequest(_)
             | IpcMessageKind::FetchResponse(_)
             | IpcMessageKind::ImageDecodeRequest(_)
@@ -2356,6 +2360,7 @@ impl RendererRuntime {
             | IpcMessageKind::IndexedDbConnectionEventAck(_)
             | IpcMessageKind::NavigationStarted(_)
             | IpcMessageKind::NavigationCommitted(_)
+            | IpcMessageKind::ServiceWorkerRequest(_)
             | IpcMessageKind::CrashNotification(_) => {
                 tracing::warn!("渲染进程收到非预期消息类型（应从渲染进程发出）");
                 Ok(())

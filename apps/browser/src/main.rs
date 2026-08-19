@@ -38,6 +38,7 @@ mod pages;
 mod paint_ipc;
 mod parity_smoke;
 mod process_backend;
+mod service_worker_owner;
 mod shutdown_signal;
 mod smoke_capture;
 mod tab_chrome;

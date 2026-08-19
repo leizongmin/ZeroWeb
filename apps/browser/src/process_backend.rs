@@ -15,13 +15,16 @@ use zero_protocol::message::{
     AutomationOperation, AutomationRequest, AutomationResponse, DispatchDomEventParams, FetchParams, FocusChangeInfo,
     FramePublishMode, ImeEventParams, IndexedDbConnectionEventAckParams, IndexedDbConnectionEventParams,
     IndexedDbRequestParams, IndexedDbResponseParams, IpcColorScheme, IpcMediaType, IpcMessage, IpcMessageKind,
-    LoadHtmlParams, NavigationCommittedParams, NavigationStartedParams, ScrollEventParams, SetColorSchemeParams,
-    SetMediaTypeParams, SetViewportParams, StorageOpParams, StorageOperation, StorageType,
+    LoadHtmlParams, NavigationCommittedParams, NavigationStartedParams, ScrollEventParams, ServiceWorkerRequestParams,
+    SetColorSchemeParams, SetMediaTypeParams, SetViewportParams, StorageOpParams, StorageOperation, StorageType,
 };
 use zero_protocol::process::{ProcessManager, RendererHandle};
 use zero_storage::StorageManager;
 
 use crate::fetch_proxy::TabFetchProxy;
+use crate::service_worker_owner::{
+    BrowserServiceWorkerOwner, CompletedServiceWorkerResponse, ServiceWorkerRequestDisposition,
+};
 use crate::tab_snapshot::{CompositorSubmission, TabSnapshot};
 use indexed_db_connections::{
     ConnectionKey, ConnectionRequestStatus, ConnectionWireRequest, IndexedDbConnectionOwner, parse_connection_request,
@@ -35,6 +38,9 @@ mod indexed_db_connections;
 mod indexed_db_owner_tests;
 #[path = "process_backend/indexed_db_transactions.rs"]
 mod indexed_db_transactions;
+#[cfg(test)]
+#[path = "process_backend/service_worker_owner_tests.rs"]
+mod service_worker_owner_tests;
 
 fn renderer_binary_filename() -> &'static str {
     #[cfg(windows)]
@@ -164,10 +170,12 @@ pub struct ProcessTabBackend {
     indexed_db_transactions: IndexedDbTransactionOwner,
     indexed_db_origins: HashMap<u64, String>,
     pending_indexed_db_navigations: HashMap<u64, PendingIndexedDbNavigation>,
+    committed_document_urls: HashMap<u64, String>,
     indexed_db_init_error: Option<String>,
     pending_loaded: Vec<(TabId, String, String)>,
     pending_errors: Vec<(TabId, String)>,
     fetch_proxy: TabFetchProxy,
+    service_worker_owner: BrowserServiceWorkerOwner,
     /// 异步 DOM 事件派发的回执（按 dispatch id 收集，由 TabManager 消费）。
     pending_dispatch_results: Vec<(u64, bool)>,
     /// 页面焦点所有者变更（R3254-H1，由 TabManager 消费同步 event_targets）。
@@ -237,10 +245,12 @@ impl ProcessTabBackend {
             indexed_db_transactions: IndexedDbTransactionOwner::default(),
             indexed_db_origins: HashMap::new(),
             pending_indexed_db_navigations: HashMap::new(),
+            committed_document_urls: HashMap::new(),
             indexed_db_init_error: storage_error,
             pending_loaded: Vec::new(),
             pending_errors: Vec::new(),
             fetch_proxy: TabFetchProxy::new(),
+            service_worker_owner: BrowserServiceWorkerOwner::new(),
             pending_dispatch_results: Vec::new(),
             pending_focus_changes: Vec::new(),
             pending_automation_responses: HashMap::new(),
@@ -636,6 +646,52 @@ impl ProcessTabBackend {
         }
     }
 
+    fn handle_service_worker_request(
+        &mut self,
+        tab_id: TabId,
+        renderer_id: u64,
+        request_id: u64,
+        params: ServiceWorkerRequestParams,
+    ) {
+        let authority = self.committed_document_urls.get(&renderer_id).cloned();
+        let disposition = self.service_worker_owner.begin_request(
+            tab_id,
+            self.private_tabs.contains(&tab_id),
+            request_id,
+            authority.as_deref(),
+            params,
+        );
+        match disposition {
+            ServiceWorkerRequestDisposition::Respond(response) => {
+                self.send_service_worker_response_now(response);
+            }
+            ServiceWorkerRequestDisposition::Fetch(plan) => {
+                let receiver = self
+                    .fetch_proxy
+                    .fetch_service_worker_script(plan.tab_id(), plan.script_url());
+                self.service_worker_owner.attach_fetch(plan, receiver);
+            }
+        }
+    }
+
+    fn drain_service_worker_responses(&mut self) {
+        for response in self.service_worker_owner.poll() {
+            self.send_service_worker_response_now(response);
+        }
+    }
+
+    fn send_service_worker_response_now(&mut self, response: CompletedServiceWorkerResponse) {
+        let Some(renderer) = self.renderer_mut(response.tab_id) else {
+            return;
+        };
+        if let Err(error) = renderer.send(IpcMessage {
+            id: response.request_id,
+            kind: IpcMessageKind::ServiceWorkerResponse(response.params),
+        }) {
+            tracing::warn!("ServiceWorkerResponse send failed tab {}: {error}", response.tab_id.0);
+        }
+    }
+
     /// 导航并在本线程轮询 IPC，直到该 Tab 加载完成/失败或超时（测试/同步场景用）。
     ///
     /// 正常运行时由事件循环 `poll` 驱动 fetch 代理；勿在主/UI 线程调用以免阻塞 winit。
@@ -693,9 +749,13 @@ impl ProcessTabBackend {
         self.indexed_db_transactions.remove_renderer(renderer_id);
         self.indexed_db_origins.remove(&renderer_id);
         self.pending_indexed_db_navigations.remove(&renderer_id);
+        self.committed_document_urls.remove(&renderer_id);
     }
 
     fn stage_indexed_db_navigation(&mut self, renderer_id: u64, url: &str, navigation_epoch: u64) {
+        if let Some(tab_id) = self.tab_for_renderer(renderer_id) {
+            self.service_worker_owner.disconnect_tab(tab_id);
+        }
         self.remove_indexed_db_renderer_state(renderer_id);
         self.pending_indexed_db_navigations.insert(
             renderer_id,
@@ -773,6 +833,7 @@ impl ProcessTabBackend {
         let origin = zero_engine::indexed_db_origin(&pending.url);
         self.indexed_db_handlers.remove(&renderer_id);
         self.indexed_db_origins.insert(renderer_id, origin);
+        self.committed_document_urls.insert(renderer_id, pending.url);
     }
 
     fn handle_indexed_db_connection_request(
@@ -1009,6 +1070,7 @@ impl ProcessTabBackend {
         if self.tab_to_renderer.get(&tab_id) == Some(&rid) {
             self.tab_to_renderer.remove(&tab_id);
         }
+        self.service_worker_owner.disconnect_tab(tab_id);
         self.remove_indexed_db_renderer_state(rid);
         self.fetch_proxy.remove_tab(tab_id);
         let _ = self.manager.shutdown_renderer(rid);
@@ -1114,6 +1176,7 @@ impl ProcessTabBackend {
     /// 关闭 Tab 对应渲染进程。
     pub fn remove_renderer(&mut self, tab_id: TabId) {
         self.fetch_proxy.remove_tab(tab_id);
+        self.service_worker_owner.remove_tab(tab_id);
         self.private_tabs.remove(&tab_id);
         if let Some(rid) = self.tab_to_renderer.remove(&tab_id) {
             self.remove_indexed_db_renderer_state(rid);
@@ -1129,6 +1192,7 @@ impl ProcessTabBackend {
             self.private_tabs.insert(tab_id);
         } else {
             self.private_tabs.remove(&tab_id);
+            self.service_worker_owner.remove_private_profile(tab_id);
         }
         if let Some(renderer_id) = self.tab_to_renderer.get(&tab_id) {
             self.indexed_db_handlers.remove(renderer_id);
@@ -1284,6 +1348,7 @@ impl ProcessTabBackend {
         poll_background: bool,
     ) -> bool {
         self.drain_pending_fetches();
+        self.drain_service_worker_responses();
         let mut changed = self.observe_compositor_status(snapshots, snapshot_seq);
         self.handle_crashes(snapshots);
         let mapping = Self::renderer_poll_order(
@@ -1335,6 +1400,9 @@ impl ProcessTabBackend {
                     }
                     IpcMessageKind::IndexedDbConnectionEventAck(params) => {
                         self.handle_indexed_db_connection_event_ack(rid, params);
+                    }
+                    IpcMessageKind::ServiceWorkerRequest(params) => {
+                        self.handle_service_worker_request(tab_id, rid, msg.id, params);
                     }
                     IpcMessageKind::NavigationStarted(params) => {
                         let snapshot = snapshots.entry(tab_id).or_default();
@@ -1394,6 +1462,7 @@ impl ProcessTabBackend {
             );
             changed |= Self::poll_compositor_present_frames(snapshots, snapshot_seq);
         }
+        self.drain_service_worker_responses();
         changed
     }
 
