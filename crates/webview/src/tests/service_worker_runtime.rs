@@ -134,7 +134,10 @@ fn navigator_register_projects_real_manager_state() {
              navigator.serviceWorker.ready.then(function() {
                globalThis.__swReady = 'ready';
              });
-             navigator.serviceWorker.register('/sw.js', {scope:'/app/'}).then(
+             navigator.serviceWorker.register('/sw.js', {
+               scope:'/app/',
+               updateViaCache:'none'
+             }).then(
                function(reg) {
                  globalThis.__swReg = reg;
                  globalThis.__swResult = 'resolved';
@@ -155,12 +158,13 @@ fn navigator_register_projects_real_manager_state() {
                    globalThis.__swResult,
                    globalThis.__swReady,
                    globalThis.__swReg && globalThis.__swReg.scope,
+                   globalThis.__swReg && globalThis.__swReg.updateViaCache,
                    globalThis.__swReg && globalThis.__swReg.active && globalThis.__swReg.active.state,
                    navigator.serviceWorker.controller === null
                  ].join('|')",
             )
             .unwrap();
-        if value == "resolved|ready|https://example.test/app/|activated|true" {
+        if value == "resolved|ready|https://example.test/app/|none|activated|true" {
             break;
         }
         assert!(Instant::now() < deadline, "page registration did not activate: {value}");
@@ -294,6 +298,13 @@ fn navigator_registration_normalizes_urls_and_preserves_error_types() {
                  function(error) { return result + '|' + error.name; }
                );
              }).then(function(result) {
+               return navigator.serviceWorker.register('/workers/sw.js', {
+                 updateViaCache: 'invalid'
+               }).then(
+                 function() { return 'cache-mode-resolved'; },
+                 function(error) { return result + '|' + error.name; }
+               );
+             }).then(function(result) {
                return navigator.serviceWorker.register('https://other.test/sw.js').then(
                  function() { return 'cross-origin-resolved'; },
                  function(error) {
@@ -315,7 +326,7 @@ fn navigator_registration_normalizes_urls_and_preserves_error_types() {
             assert_eq!(
                 value,
                 "https://example.test/workers/sw.js|https://example.test/workers/app/|\
-                 SecurityError|TypeError|SecurityError|true|true"
+                 SecurityError|TypeError|TypeError|SecurityError|true|true"
             );
             break;
         }

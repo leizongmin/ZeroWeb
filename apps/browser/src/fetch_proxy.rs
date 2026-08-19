@@ -280,6 +280,7 @@ impl TabFetchProxy {
         &mut self,
         tab_id: TabId,
         script_url: &str,
+        bypass_cache: bool,
     ) -> Receiver<Result<HttpResponse, String>> {
         self.ensure_tab(tab_id);
         let url = match self.security.get_mut(&tab_id) {
@@ -298,11 +299,16 @@ impl TabFetchProxy {
             .and_then(|context| context.page_origin())
             .map(|origin| format!("{}://{}:{}", origin.scheme, origin.host, origin.port))
             .unwrap_or_else(|| "default".to_string());
+        let headers = if bypass_cache {
+            vec![("Cache-Control".into(), "no-cache".into())]
+        } else {
+            Vec::new()
+        };
         self.loader_for(tab_id).submit_http_with_context_in_partition(
             HttpRequest {
                 method: HttpMethod::Get,
                 url,
-                headers: Vec::new(),
+                headers,
                 body: None,
             },
             FetchPriority::HIGH,
@@ -648,13 +654,56 @@ mod tests {
 
         let mut proxy = TabFetchProxy::new();
         proxy.on_navigate(TabId(4), &url);
-        let receiver = proxy.fetch_service_worker_script(TabId(4), &url);
+        let receiver = proxy.fetch_service_worker_script(TabId(4), &url, true);
         let response = receiver.recv_timeout(Duration::from_secs(10)).unwrap().unwrap();
         server.join().unwrap();
 
         assert_eq!(response.status_code, 200);
         assert_eq!(response.url, url);
         assert_eq!(response.body, b"void 0;");
+    }
+
+    #[test]
+    fn service_worker_script_cache_mode_bypasses_or_reuses_fresh_entry() {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let url = format!("http://{}/sw-cache.js", listener.local_addr().unwrap());
+        let server = std::thread::spawn(move || {
+            for body in ["version-1", "version-2"] {
+                let (mut stream, _) = listener.accept().unwrap();
+                let mut request = [0_u8; 1024];
+                let size = stream.read(&mut request).unwrap();
+                assert!(String::from_utf8_lossy(&request[..size]).starts_with("GET /sw-cache.js "));
+                let response = format!(
+                    "HTTP/1.1 200 OK\r\nCache-Control: max-age=3600\r\nContent-Length: {}\r\n\r\n{}",
+                    body.len(),
+                    body
+                );
+                stream.write_all(response.as_bytes()).unwrap();
+            }
+        });
+
+        let mut proxy = TabFetchProxy::new();
+        proxy.on_navigate(TabId(14), &url);
+        let first = proxy
+            .fetch_service_worker_script(TabId(14), &url, true)
+            .recv_timeout(Duration::from_secs(10))
+            .unwrap()
+            .unwrap();
+        let cached = proxy
+            .fetch_service_worker_script(TabId(14), &url, false)
+            .recv_timeout(Duration::from_secs(10))
+            .unwrap()
+            .unwrap();
+        let refreshed = proxy
+            .fetch_service_worker_script(TabId(14), &url, true)
+            .recv_timeout(Duration::from_secs(10))
+            .unwrap()
+            .unwrap();
+        server.join().unwrap();
+
+        assert_eq!(first.body, b"version-1");
+        assert_eq!(cached.body, b"version-1");
+        assert_eq!(refreshed.body, b"version-2");
     }
 
     #[test]

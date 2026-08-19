@@ -2690,7 +2690,7 @@
           try { target.dispatchEvent(new globalThis.Event(type)); } catch (_e) {}
         }
       }
-      function makeReg(id, scriptURL, scope) {
+      function makeReg(id, scriptURL, scope, updateViaCache) {
         var reg = new globalThis.ServiceWorkerRegistration();
         reg._id = id;
         reg._worker = makeSW(scriptURL, 'installing');
@@ -2700,7 +2700,7 @@
         reg._updateFoundPending = false;
         reg._claimClientsPending = false;
         reg.scope = scope;
-        reg.updateViaCache = 'imports';
+        reg.updateViaCache = updateViaCache || 'imports';
         reg.installing = reg._worker;
         reg.waiting = null;
         reg.active = null;
@@ -2904,9 +2904,14 @@
         if (!snapshot) return null;
         var reg = findReg(snapshot.id, snapshot.scope);
         if (!reg) {
-          reg = makeReg(snapshot.id, snapshot.scriptURL || '', snapshot.scope || '');
+          reg = makeReg(
+            snapshot.id,
+            snapshot.scriptURL || '',
+            snapshot.scope || '',
+            snapshot.updateViaCache || 'imports');
           _registrations.push(reg);
         } else {
+          reg.updateViaCache = snapshot.updateViaCache || reg.updateViaCache;
           if (String(reg._id) !== String(snapshot.id)) {
             reg._previousActive = reg.active;
             reg._worker = makeSW(snapshot.scriptURL || '', 'installing');
@@ -2962,10 +2967,21 @@
         }
         var scopeProvided = options != null && options.scope !== undefined;
         var scope = scopeProvided ? String(options.scope) : '';
+        var updateViaCache =
+          options != null && options.updateViaCache !== undefined
+            ? String(options.updateViaCache)
+            : 'imports';
+        if (updateViaCache !== 'imports' && updateViaCache !== 'all' && updateViaCache !== 'none') {
+          return Promise.reject(new TypeError('Invalid updateViaCache value'));
+        }
         var wire;
         try {
           wire = JSON.parse(__zw_sw_register(
-            scriptURL, scope, globalThis.location.href, scopeProvided ? 'true' : 'false'));
+            scriptURL,
+            scope,
+            globalThis.location.href,
+            scopeProvided ? 'true' : 'false',
+            updateViaCache));
         } catch (error) {
           return Promise.reject(error);
         }
@@ -2981,6 +2997,7 @@
           id: wire.id,
           scriptURL: snapshot && snapshot.scriptURL || scriptURL,
           scope: snapshot && snapshot.scope || scope,
+          updateViaCache: snapshot && snapshot.updateViaCache || updateViaCache,
           state: 'installing'
         }, 'manual');
         return Promise.resolve(reg).then(function (registration) {

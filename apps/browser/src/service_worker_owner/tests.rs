@@ -8,6 +8,7 @@ fn register_request(document_url: &str) -> ServiceWorkerRequestParams {
             script_url: "/sw.js".into(),
             scope: Some("/app/".into()),
             document_url: document_url.into(),
+            update_via_cache: ServiceWorkerUpdateViaCacheWire::Imports,
         },
     }
 }
@@ -16,6 +17,10 @@ fn attach_script(owner: &mut BrowserServiceWorkerOwner, disposition: ServiceWork
     let ServiceWorkerRequestDisposition::Fetch(plan) = disposition else {
         panic!("expected fetch plan");
     };
+    attach_script_plan(owner, plan, script);
+}
+
+fn attach_script_plan(owner: &mut BrowserServiceWorkerOwner, plan: ServiceWorkerFetchPlan, script: &str) {
     let (sender, receiver) = mpsc::channel();
     sender
         .send(Ok(HttpResponse {
@@ -64,6 +69,53 @@ fn persistence_path(label: &str) -> std::path::PathBuf {
     std::env::temp_dir()
         .join(format!("zeroweb-sw-{label}-{}", std::process::id()))
         .join("registrations.json")
+}
+
+#[test]
+fn update_via_cache_controls_main_script_fetch_policy_and_snapshot() {
+    let mut owner = BrowserServiceWorkerOwner::new();
+    let disposition = owner.begin_request(
+        TabId(1),
+        false,
+        49,
+        Some("https://example.test/page"),
+        ServiceWorkerRequestParams {
+            operation: ServiceWorkerOperation::Register {
+                script_url: "/sw.js".into(),
+                scope: Some("/app/".into()),
+                document_url: "https://example.test/page".into(),
+                update_via_cache: ServiceWorkerUpdateViaCacheWire::All,
+            },
+        },
+    );
+    let ServiceWorkerRequestDisposition::Fetch(plan) = disposition else {
+        panic!("registration must fetch");
+    };
+    assert!(plan.bypass_cache(), "initial registration bypasses HTTP cache");
+    attach_script_plan(&mut owner, plan, "globalThis.version = 1;");
+    let response = wait_for_response(&mut owner);
+    let Ok(ServiceWorkerResult::Registered { registration_id }) = response.params.result else {
+        panic!("registration failed");
+    };
+    wait_for_registration_state(&mut owner, registration_id, ServiceWorkerState::Activated);
+    assert_eq!(
+        owner.normal.registration(registration_id).unwrap().update_via_cache,
+        ServiceWorkerUpdateViaCache::All
+    );
+
+    let disposition = owner.begin_request(
+        TabId(1),
+        false,
+        50,
+        Some("https://example.test/page"),
+        ServiceWorkerRequestParams {
+            operation: ServiceWorkerOperation::Update { registration_id },
+        },
+    );
+    let ServiceWorkerRequestDisposition::Fetch(plan) = disposition else {
+        panic!("update must fetch");
+    };
+    assert!(!plan.bypass_cache(), "updateViaCache=all may reuse main-script cache");
 }
 
 #[test]
@@ -160,13 +212,11 @@ fn persistent_owner_restores_active_runtime_and_unregisters_durably() {
     let _ = std::fs::remove_dir_all(path.parent().unwrap());
     {
         let mut owner = BrowserServiceWorkerOwner::with_persistence(path.clone());
-        let disposition = owner.begin_request(
-            TabId(1),
-            false,
-            54,
-            Some("https://example.test/app/page"),
-            register_request("https://example.test/app/page"),
-        );
+        let mut request = register_request("https://example.test/app/page");
+        if let ServiceWorkerOperation::Register { update_via_cache, .. } = &mut request.operation {
+            *update_via_cache = ServiceWorkerUpdateViaCacheWire::None;
+        }
+        let disposition = owner.begin_request(TabId(1), false, 54, Some("https://example.test/app/page"), request);
         attach_script(
             &mut owner,
             disposition,
@@ -198,6 +248,10 @@ fn persistent_owner_restores_active_runtime_and_unregisters_durably() {
         assert!(Instant::now() < deadline, "persistent runtime restore timed out");
         std::thread::sleep(Duration::from_millis(5));
     };
+    assert_eq!(
+        restored.normal.registration(restored_id).unwrap().update_via_cache,
+        ServiceWorkerUpdateViaCache::None
+    );
     let ServiceWorkerRequestDisposition::Respond(controller) = restored.begin_request(
         TabId(2),
         false,
@@ -282,6 +336,18 @@ fn private_and_invalid_persistence_never_restore_into_normal_profile() {
             .registrations_for_origin("https://example.test")
             .is_empty()
     );
+    drop(invalid);
+    std::fs::write(
+        &path,
+        r#"{"version":1,"registrations":[{"script_url":"https://example.test/sw.js","scope":"https://example.test/","origin":"https://example.test","script_source":""}]}"#,
+    )
+    .unwrap();
+    let migrated = BrowserServiceWorkerOwner::with_persistence(path.clone());
+    assert_eq!(
+        migrated.normal.registrations_for_origin("https://example.test")[0].update_via_cache,
+        ServiceWorkerUpdateViaCache::Imports
+    );
+    drop(migrated);
     std::fs::remove_dir_all(path.parent().unwrap()).unwrap();
 }
 
@@ -302,6 +368,7 @@ fn persistence_restore_keeps_valid_scope_when_sibling_script_fails() {
                         script_url: script_url.into(),
                         scope: Some(scope.into()),
                         document_url: "https://example.test/page".into(),
+                        update_via_cache: ServiceWorkerUpdateViaCacheWire::Imports,
                     },
                 },
             );
@@ -446,6 +513,7 @@ fn registration_normalizes_fragments_and_classifies_url_errors() {
                 script_url: "resources/sw.js#script".into(),
                 scope: Some("resources/app/#scope".into()),
                 document_url: "https://example.test/service-worker/page".into(),
+                update_via_cache: ServiceWorkerUpdateViaCacheWire::Imports,
             },
         },
     );
@@ -475,6 +543,7 @@ fn registration_normalizes_fragments_and_classifies_url_errors() {
                     script_url: "resources/sw.js".into(),
                     scope: Some(scope.into()),
                     document_url: "https://example.test/service-worker/page".into(),
+                    update_via_cache: ServiceWorkerUpdateViaCacheWire::Imports,
                 },
             },
         );

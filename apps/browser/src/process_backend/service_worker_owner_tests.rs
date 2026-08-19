@@ -164,7 +164,7 @@ fn multiprocess_navigator_registration_uses_browser_owner() {
                globalThis.__swReply = event.data.echo + '|' + event.data.sourceURL + '|' +\
                  String(event.source === globalThis.__swReady.active);\
              });\
-             var reg = await navigator.serviceWorker.register('/sw.js');\
+             var reg = await navigator.serviceWorker.register('/sw.js', {updateViaCache:'all'});\
              var ready = await navigator.serviceWorker.ready;\
              ready.active.postMessage({kind:'page'});\
              globalThis.__swReg = reg;\
@@ -187,6 +187,7 @@ fn multiprocess_navigator_registration_uses_browser_owner() {
             "if (globalThis.__swResult === 'ready' && navigator.serviceWorker.controller &&\
                  globalThis.__swReply !== 'pending') {\
                globalThis.__swResult = globalThis.__swReg.scope + '|' +\
+                 globalThis.__swReg.updateViaCache + '|' +\
                  (globalThis.__swReady.active ? globalThis.__swReady.active.state : 'none') + '|' +\
                  String(navigator.serviceWorker.controller === globalThis.__swReady.active) + '|' +\
                  globalThis.__swReply;\
@@ -220,7 +221,10 @@ fn multiprocess_navigator_registration_uses_browser_owner() {
     backend.remove_renderer(tab_id);
 
     let expected_scope = format!("http://{}/", page_url.split('/').nth(2).unwrap());
-    assert_eq!(result, format!("{expected_scope}|activated|true|page|{page_url}|true"));
+    assert_eq!(
+        result,
+        format!("{expected_scope}|all|activated|true|page|{page_url}|true")
+    );
 }
 
 #[test]

@@ -5,13 +5,18 @@ use std::collections::{HashMap, HashSet};
 use zero_script_sandbox::{
     SandboxConfig, ServiceWorkerEvent, ServiceWorkerLifecyclePhase, ServiceWorkerRuntime, ServiceWorkerScriptErrorKind,
 };
-use zero_storage::{ServiceWorkerRegistration, ServiceWorkerRegistry, ServiceWorkerState};
+use zero_storage::{ServiceWorkerRegistration, ServiceWorkerRegistry, ServiceWorkerState, ServiceWorkerUpdateViaCache};
 
 const DEFAULT_RUNTIME_LIMIT: usize = 32;
 const MAX_CLIENTS_PER_VERSION: usize = 256;
 const MAX_MESSAGES_PER_CLIENT: usize = 1024;
 const MAX_URL_BYTES: usize = 64 * 1024;
 const MAX_SCRIPT_BYTES: usize = 16 * 1024 * 1024;
+
+struct EvaluationOptions {
+    update_via_cache: ServiceWorkerUpdateViaCache,
+    restoring_active: bool,
+}
 
 /// Stable registration key within one storage partition.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -84,6 +89,9 @@ pub struct ServiceWorkerPersistentRegistration {
     pub origin: String,
     /// UTF-8 top-level script source used to recreate the runtime.
     pub script_source: String,
+    /// Script update HTTP cache policy.
+    #[serde(default)]
+    pub update_via_cache: ServiceWorkerUpdateViaCache,
 }
 
 /// Typed manager event produced while polling worker runtimes.
@@ -292,7 +300,37 @@ impl ServiceWorkerManager {
         script: &str,
         config: SandboxConfig,
     ) -> Result<u64, ServiceWorkerManagerError> {
-        self.start_evaluation_internal(script_url, scope, origin, script, config, false)
+        self.start_evaluation_with_update_via_cache(
+            script_url,
+            scope,
+            origin,
+            script,
+            ServiceWorkerUpdateViaCache::Imports,
+            config,
+        )
+    }
+
+    /// Start evaluation with the registration's update cache policy.
+    pub fn start_evaluation_with_update_via_cache(
+        &mut self,
+        script_url: &str,
+        scope: &str,
+        origin: &str,
+        script: &str,
+        update_via_cache: ServiceWorkerUpdateViaCache,
+        config: SandboxConfig,
+    ) -> Result<u64, ServiceWorkerManagerError> {
+        self.start_evaluation_internal(
+            script_url,
+            scope,
+            origin,
+            script,
+            config,
+            EvaluationOptions {
+                update_via_cache,
+                restoring_active: false,
+            },
+        )
     }
 
     /// Recreate one persisted active runtime without replaying install/activate.
@@ -302,9 +340,20 @@ impl ServiceWorkerManager {
         scope: &str,
         origin: &str,
         script: &str,
+        update_via_cache: ServiceWorkerUpdateViaCache,
         config: SandboxConfig,
     ) -> Result<u64, ServiceWorkerManagerError> {
-        self.start_evaluation_internal(script_url, scope, origin, script, config, true)
+        self.start_evaluation_internal(
+            script_url,
+            scope,
+            origin,
+            script,
+            config,
+            EvaluationOptions {
+                update_via_cache,
+                restoring_active: true,
+            },
+        )
     }
 
     fn start_evaluation_internal(
@@ -314,7 +363,7 @@ impl ServiceWorkerManager {
         origin: &str,
         script: &str,
         config: SandboxConfig,
-        restoring_active: bool,
+        options: EvaluationOptions,
     ) -> Result<u64, ServiceWorkerManagerError> {
         if script_url.trim().is_empty() {
             return Err(ServiceWorkerManagerError::InvalidInput(
@@ -348,13 +397,15 @@ impl ServiceWorkerManager {
             .map_err(|error| ServiceWorkerManagerError::Runtime(error.to_string()))?;
 
         let id = self.registry.register(script_url, scope, origin);
-        self.registry.get_mut(id).expect("new registration must exist").state = ServiceWorkerState::Installing;
+        let registration = self.registry.get_mut(id).expect("new registration must exist");
+        registration.state = ServiceWorkerState::Installing;
+        registration.update_via_cache = options.update_via_cache;
         self.slots.entry(key.clone()).or_default().installing = Some(id);
         self.registration_keys.insert(id, key);
         self.state_changes.insert(id, Vec::new());
         self.script_sources.insert(id, script.as_bytes().to_vec());
         self.runtimes.insert(id, runtime);
-        if restoring_active {
+        if options.restoring_active {
             self.restoring_active.insert(id);
         }
         Ok(id)
@@ -408,11 +459,12 @@ impl ServiceWorkerManager {
                 registration_id: current_id,
             });
         }
-        let registration_id = self.start_evaluation(
+        let registration_id = self.start_evaluation_with_update_via_cache(
             &registration.script_url,
             &registration.scope,
             &registration.origin,
             script,
+            registration.update_via_cache,
             config,
         )?;
         Ok(ServiceWorkerUpdateOutcome::Started { registration_id })
@@ -975,6 +1027,7 @@ impl ServiceWorkerManager {
                     scope: key.scope.clone(),
                     origin: key.origin.clone(),
                     script_source,
+                    update_via_cache: registration.update_via_cache,
                 })
             })
             .collect::<Vec<_>>();
@@ -1286,6 +1339,7 @@ mod tests {
                 "https://example.test",
                 "addEventListener('install', () => { throw new Error('install replayed'); });
                  addEventListener('activate', () => { throw new Error('activate replayed'); });",
+                ServiceWorkerUpdateViaCache::Imports,
                 SandboxConfig {
                     timeout_ms: 200,
                     ..Default::default()

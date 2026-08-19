@@ -27,7 +27,7 @@ use zero_page_runtime::{
 use zero_render_foundation::primitive::RenderPrimitives;
 use zero_script_sandbox::{SandboxConfig, WorkerEvent, WorkerRuntime};
 use zero_security::{ResourceCheckResult, SecurityContext};
-use zero_storage::{CacheRequest, FetchInterceptResult, ServiceWorkerRegistry};
+use zero_storage::{CacheRequest, FetchInterceptResult, ServiceWorkerRegistry, ServiceWorkerUpdateViaCache};
 use zero_wasm_sandbox::WasmInstance;
 
 use crate::{IndexedDbOwner, WebViewError};
@@ -36,6 +36,14 @@ mod user_actions;
 pub use user_actions::WebViewUserActionResult;
 
 static NEXT_WEBVIEW_ID: AtomicU64 = AtomicU64::new(1);
+
+fn update_via_cache_name(value: ServiceWorkerUpdateViaCache) -> &'static str {
+    match value {
+        ServiceWorkerUpdateViaCache::Imports => "imports",
+        ServiceWorkerUpdateViaCache::All => "all",
+        ServiceWorkerUpdateViaCache::None => "none",
+    }
+}
 
 /// 外部 JS 执行器类型（浏览器 Tab JS 线程注入；为 None 时使用进程内 V8）。
 pub type ExternalScriptExecutor = std::sync::Arc<dyn Fn(&str) -> Result<String, String> + Send + Sync>;
@@ -2400,6 +2408,11 @@ impl WebView {
                 let script_input = args.first().map(String::as_str).unwrap_or("");
                 let scope_input = (args.get(3).map(String::as_str) == Some("true"))
                     .then(|| args.get(1).map(String::as_str).unwrap_or(""));
+                let update_via_cache = match args.get(4).map(String::as_str) {
+                    Some("all") => ServiceWorkerUpdateViaCache::All,
+                    Some("none") => ServiceWorkerUpdateViaCache::None,
+                    _ => ServiceWorkerUpdateViaCache::Imports,
+                };
                 let document_url = match register_page_url.lock() {
                     Ok(url) => url.clone(),
                     Err(_) => {
@@ -2432,11 +2445,12 @@ impl WebView {
                         .lock()
                         .map_err(|_| "Service Worker manager lock poisoned".to_string())?;
                     let registration_id = manager
-                        .start_evaluation(
+                        .start_evaluation_with_update_via_cache(
                             script_url.as_str(),
                             scope.as_str(),
                             &origin,
                             &source,
+                            update_via_cache,
                             SandboxConfig::default(),
                         )
                         .map_err(|error| error.to_string())?;
@@ -2531,6 +2545,7 @@ impl WebView {
                     "id": registration.id,
                     "scriptURL": registration.script_url,
                     "scope": registration.scope,
+                    "updateViaCache": update_via_cache_name(registration.update_via_cache),
                     "state": registration.state.to_string(),
                 })
                 .to_string()
@@ -2661,6 +2676,7 @@ impl WebView {
                         "id": registration.id,
                         "scriptURL": registration.script_url,
                         "scope": registration.scope,
+                        "updateViaCache": update_via_cache_name(registration.update_via_cache),
                         "state": registration.state.to_string(),
                     })),
                 })

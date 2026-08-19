@@ -9,6 +9,7 @@ fn service_worker_register_request_round_trips_without_script_source() {
                 script_url: "/sw.js".into(),
                 scope: Some("/app/".into()),
                 document_url: "https://example.test/page.html".into(),
+                update_via_cache: ServiceWorkerUpdateViaCacheWire::None,
             },
         }),
     };
@@ -23,6 +24,7 @@ fn service_worker_register_request_round_trips_without_script_source() {
             script_url: "/sw.js".into(),
             scope: Some("/app/".into()),
             document_url: "https://example.test/page.html".into(),
+            update_via_cache: ServiceWorkerUpdateViaCacheWire::None,
         }
     );
 }
@@ -36,6 +38,7 @@ fn service_worker_snapshot_response_round_trips() {
                 registration_id: 7,
                 script_url: "https://example.test/sw.js".into(),
                 scope: "https://example.test/app/".into(),
+                update_via_cache: ServiceWorkerUpdateViaCacheWire::All,
                 state: ServiceWorkerStateWire::Activated,
             })),
         }),
@@ -50,6 +53,7 @@ fn service_worker_snapshot_response_round_trips() {
             registration_id: 7,
             script_url: "https://example.test/sw.js".into(),
             scope: "https://example.test/app/".into(),
+            update_via_cache: ServiceWorkerUpdateViaCacheWire::All,
             state: ServiceWorkerStateWire::Activated,
         }))
     );
@@ -87,6 +91,7 @@ fn service_worker_request_rejects_oversized_urls() {
             script_url: oversized,
             scope: None,
             document_url: "https://example.test/".into(),
+            update_via_cache: ServiceWorkerUpdateViaCacheWire::Imports,
         },
     };
     assert!(params.validate().is_err());
@@ -244,6 +249,7 @@ fn service_worker_snapshot_list_response_round_trips() {
         registration_id: 11,
         script_url: "https://example.test/sw.js".into(),
         scope: "https://example.test/app/".into(),
+        update_via_cache: ServiceWorkerUpdateViaCacheWire::Imports,
         state: ServiceWorkerStateWire::Activated,
     };
     for result in [
@@ -298,6 +304,7 @@ fn service_worker_nested_enum_discriminants_remain_append_only() {
             script_url: "/sw.js".into(),
             scope: None,
             document_url: "https://example.test/".into(),
+            update_via_cache: ServiceWorkerUpdateViaCacheWire::Imports,
         }),
         0
     );
@@ -350,6 +357,7 @@ fn service_worker_nested_enum_discriminants_remain_append_only() {
             registration_id: 1,
             script_url: "https://example.test/sw.js".into(),
             scope: "https://example.test/".into(),
+            update_via_cache: ServiceWorkerUpdateViaCacheWire::Imports,
             state: ServiceWorkerStateWire::Activated,
         })),
         1

@@ -2,7 +2,7 @@
 
 **入口文档**: [../service-workers.md](../service-workers.md)
 **创建日期**: 2026-08-17（goal 拆分 bootstrap）
-**最后更新**: 2026-08-20（M3-7 registration persistence 完成）
+**最后更新**: 2026-08-20（M3-8 updateViaCache 完成）
 
 ---
 
@@ -111,6 +111,8 @@ M0 启动门禁解除；M1 core WPT 已收敛，M2 依赖未满足，当前推�
   byte comparison；相同脚本 no-op，变化脚本创建 replacement 并派发 `updatefound`
 - ✅ M3-7：production normal profile 原子持久化 active registration 与 script source；
   browser restart 重建 runtime/controller，不重放 install/activate；private profile 不落盘
+- ✅ M3-8：`updateViaCache` 作为 typed registration metadata 贯穿页面、IPC、manager 与
+  persistence；browser-owned top-level update fetch 按 `imports`/`all`/`none` 选择 cache mode
 
 ## 缺口清单
 
@@ -130,7 +132,7 @@ M0 启动门禁解除；M1 core WPT 已收敛，M2 依赖未满足，当前推�
 
 ## 下一步计划
 
-1. **M3 update follow-up**：imported script graph comparison 与 `updateViaCache` cache mode
+1. **M3 update follow-up**：classic `importScripts()` graph 抓取、顺序执行、持久化与 byte comparison
 2. **M2 依赖复核**：js-dom S6 与 storage-cache-api M1 land 后启动 fetch pipeline
 3. **M3 messaging follow-up**：MessagePort/MessageChannel transfer 与多 client 枚举
 
@@ -141,7 +143,7 @@ M0 启动门禁解除；M1 core WPT 已收敛，M2 依赖未满足，当前推�
 | M0 — 选型 RFC（门控） | ✅ 方案 C 已批准 |
 | M1 — 脚本真实执行 + 生命周期真事件 | ✅ current core WPT 37/37 Pass |
 | M2 — fetch 拦截 + Cache 集成 | ⬜ 门控：js-dom fetch 改造 land |
-| M3 — 控制语义 + 消息 + 收尾 | 🚧 控制语义 + 双向 message + update + persistence 完成 |
+| M3 — 控制语义 + 消息 + 收尾 | 🚧 控制语义 + 双向 message + update + persistence + top-level cache policy 完成 |
 
 ## 验证基线
 
@@ -234,6 +236,8 @@ M0 启动门禁解除；M1 core WPT 已收敛，M2 依赖未满足，当前推�
   [M3 update job](evidence/2026-08-20-m3-update-job.md)
 - M3-7 persistence：single-writer snapshot、runtime restart、controller restore、private 隔离与损坏恢复见
   [M3 registration persistence](evidence/2026-08-20-m3-registration-persistence.md)
+- M3-8 `updateViaCache`：typed metadata、browser HTTP cache mode、持久化迁移与双引擎投影见
+  [M3 updateViaCache](evidence/2026-08-20-m3-update-via-cache.md)
 
 ## M0 证据与决策记录
 
@@ -282,6 +286,7 @@ M0 启动门禁解除；M1 core WPT 已收敛，M2 依赖未满足，当前推�
 | 2026-08-20 | M3-5 worker-to-page message | Client.postMessage；per-Document immutable log；container MessageEvent；双引擎/生产链通过 |
 | 2026-08-20 | M3-6 update job | registration.update；top-level byte comparison；changed/no-op/error；disposition 13 core / 50 defer；WPT 13/37 |
 | 2026-08-20 | M3-7 registration persistence | normal active snapshot；runtime/controller restart；no lifecycle replay；private/损坏隔离 |
+| 2026-08-20 | M3-8 updateViaCache | typed registration policy；top-level browser cache mode；persistence migration；双引擎/生产链通过 |
 | 2026-08-19 | 三方案对比 | 拒绝同线程 context（无调度隔离）；拒绝从零线程（复制安全基建）；推荐抽取 Worker 线程核 |
 | 2026-08-19 | owner | production browser process 单一 owner；WebView 只做同算法 in-process adapter |
 | 2026-08-19 | 首个 driving WPT | `activation-after-registration.https.html` |

@@ -603,6 +603,7 @@ impl ServiceWorkerRequestParams {
                 script_url,
                 scope,
                 document_url,
+                ..
             } => {
                 if script_url.is_empty() || document_url.is_empty() {
                     return Err("Service Worker script and document URL are required");
@@ -654,6 +655,8 @@ pub enum ServiceWorkerOperation {
         scope: Option<String>,
         /// Renderer document URL; browser validates it against tab authority.
         document_url: String,
+        /// Script update HTTP cache policy.
+        update_via_cache: ServiceWorkerUpdateViaCacheWire,
     },
     /// Read one registration version snapshot.
     Snapshot {
@@ -763,8 +766,21 @@ pub struct ServiceWorkerSnapshot {
     pub script_url: String,
     /// Normalized scope URL.
     pub scope: String,
+    /// Script update HTTP cache policy.
+    pub update_via_cache: ServiceWorkerUpdateViaCacheWire,
     /// Current worker lifecycle state.
     pub state: ServiceWorkerStateWire,
+}
+
+/// IPC-safe Service Worker update cache policy.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum ServiceWorkerUpdateViaCacheWire {
+    /// Main script bypasses cache; imported scripts may use cache.
+    Imports,
+    /// Main and imported scripts may use cache.
+    All,
+    /// Main and imported scripts bypass cache.
+    None,
 }
 
 /// IPC-safe Service Worker lifecycle state.

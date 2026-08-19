@@ -17,10 +17,10 @@ use zero_page_runtime::{
 use zero_protocol::message::{
     ServiceWorkerClientMessages, ServiceWorkerError, ServiceWorkerErrorCode, ServiceWorkerOperation,
     ServiceWorkerRequestParams, ServiceWorkerResponseParams, ServiceWorkerResult, ServiceWorkerSnapshot,
-    ServiceWorkerStateChanges, ServiceWorkerStateWire,
+    ServiceWorkerStateChanges, ServiceWorkerStateWire, ServiceWorkerUpdateViaCacheWire,
 };
 use zero_script_sandbox::SandboxConfig;
-use zero_storage::{ServiceWorkerRegistration, ServiceWorkerState};
+use zero_storage::{ServiceWorkerRegistration, ServiceWorkerState, ServiceWorkerUpdateViaCache};
 
 const MAX_SCRIPT_BYTES: usize = 16 * 1024 * 1024;
 const MAX_PERSISTED_FILE_BYTES: u64 = 64 * 1024 * 1024;
@@ -34,8 +34,13 @@ struct PersistedServiceWorkers {
 }
 
 enum ServiceWorkerFetchPurpose {
-    Register,
-    Update { registration_id: u64 },
+    Register {
+        update_via_cache: ServiceWorkerUpdateViaCache,
+    },
+    Update {
+        registration_id: u64,
+        update_via_cache: ServiceWorkerUpdateViaCache,
+    },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -62,6 +67,15 @@ impl ServiceWorkerFetchPlan {
 
     pub(crate) fn script_url(&self) -> &str {
         self.script_url.as_str()
+    }
+
+    pub(crate) fn bypass_cache(&self) -> bool {
+        match self.purpose {
+            ServiceWorkerFetchPurpose::Register { .. } => true,
+            ServiceWorkerFetchPurpose::Update { update_via_cache, .. } => {
+                update_via_cache != ServiceWorkerUpdateViaCache::All
+            }
+        }
     }
 }
 
@@ -117,6 +131,7 @@ impl BrowserServiceWorkerOwner {
                         &registration.scope,
                         &registration.origin,
                         &registration.script_source,
+                        registration.update_via_cache,
                         SandboxConfig::default(),
                     ) {
                         Ok(registration_id) => {
@@ -213,6 +228,7 @@ impl BrowserServiceWorkerOwner {
                 script_url,
                 scope,
                 document_url,
+                update_via_cache,
             } => {
                 let Ok(renderer_document) = Url::parse(&document_url) else {
                     return self.error_disposition(
@@ -238,7 +254,9 @@ impl BrowserServiceWorkerOwner {
                         script_url,
                         scope,
                         origin,
-                        purpose: ServiceWorkerFetchPurpose::Register,
+                        purpose: ServiceWorkerFetchPurpose::Register {
+                            update_via_cache: update_via_cache_storage(update_via_cache),
+                        },
                     }),
                     Err(error) => self.error_disposition(
                         tab_id,
@@ -420,7 +438,10 @@ impl BrowserServiceWorkerOwner {
                     script_url,
                     scope,
                     origin: registration.origin,
-                    purpose: ServiceWorkerFetchPurpose::Update { registration_id },
+                    purpose: ServiceWorkerFetchPurpose::Update {
+                        registration_id,
+                        update_via_cache: registration.update_via_cache,
+                    },
                 })
             }
         }
@@ -542,17 +563,18 @@ impl BrowserServiceWorkerOwner {
             }
         };
         let result = match plan.purpose {
-            ServiceWorkerFetchPurpose::Register => self
+            ServiceWorkerFetchPurpose::Register { update_via_cache } => self
                 .manager_mut(plan.profile)
-                .start_evaluation(
+                .start_evaluation_with_update_via_cache(
                     plan.script_url.as_str(),
                     plan.scope.as_str(),
                     &plan.origin,
                     &script,
+                    update_via_cache,
                     SandboxConfig::default(),
                 )
                 .map(|registration_id| (registration_id, false)),
-            ServiceWorkerFetchPurpose::Update { registration_id } => {
+            ServiceWorkerFetchPurpose::Update { registration_id, .. } => {
                 match self
                     .manager_mut(plan.profile)
                     .start_update(registration_id, &script, SandboxConfig::default())
@@ -840,7 +862,24 @@ fn snapshot(registration: ServiceWorkerRegistration) -> ServiceWorkerSnapshot {
         registration_id: registration.id,
         script_url: registration.script_url,
         scope: registration.scope,
+        update_via_cache: update_via_cache_wire(registration.update_via_cache),
         state: state_wire(registration.state),
+    }
+}
+
+fn update_via_cache_storage(value: ServiceWorkerUpdateViaCacheWire) -> ServiceWorkerUpdateViaCache {
+    match value {
+        ServiceWorkerUpdateViaCacheWire::Imports => ServiceWorkerUpdateViaCache::Imports,
+        ServiceWorkerUpdateViaCacheWire::All => ServiceWorkerUpdateViaCache::All,
+        ServiceWorkerUpdateViaCacheWire::None => ServiceWorkerUpdateViaCache::None,
+    }
+}
+
+fn update_via_cache_wire(value: ServiceWorkerUpdateViaCache) -> ServiceWorkerUpdateViaCacheWire {
+    match value {
+        ServiceWorkerUpdateViaCache::Imports => ServiceWorkerUpdateViaCacheWire::Imports,
+        ServiceWorkerUpdateViaCache::All => ServiceWorkerUpdateViaCacheWire::All,
+        ServiceWorkerUpdateViaCache::None => ServiceWorkerUpdateViaCacheWire::None,
     }
 }
 

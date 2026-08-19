@@ -697,9 +697,9 @@ impl ProcessTabBackend {
                 self.send_service_worker_response_now(response);
             }
             ServiceWorkerRequestDisposition::Fetch(plan) => {
-                let receiver = self
-                    .fetch_proxy
-                    .fetch_service_worker_script(plan.tab_id(), plan.script_url());
+                let receiver =
+                    self.fetch_proxy
+                        .fetch_service_worker_script(plan.tab_id(), plan.script_url(), plan.bypass_cache());
                 self.service_worker_owner.attach_fetch(plan, receiver);
             }
         }
