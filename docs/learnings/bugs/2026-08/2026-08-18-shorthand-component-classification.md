@@ -199,6 +199,8 @@ Gap exposed the legacy-field variant: even when a shorthand expands to validated
 
 Outline-width exposed the shared-line-width variant: properties that share `<line-width>` with border width should reuse the same consumer validator, including legitimate `thin|medium|thick` aliases and rejection of percentages, `auto`, sizing keywords, negative values, and non-finite lengths.
 
+Font-size exposed the shorthand/direct parity variant: even after a shorthand has a local size grammar, the direct longhand must reject the same shared-parser drift. Keep keyword handling separate, then validate `<length-percentage [0,∞]>` before mutating `font_size`.
+
 ## Root Cause
 
 The shorthand layer used heuristic component classifiers and treated unrecognized tokens as absent optional components. That is wrong for CSS shorthands such as `border`, where every token must match one of the allowed component grammars. A shared parser can also be broader than the property grammar that consumes it: general length parsing may accept `auto`, intrinsic sizing keywords, or percentages that `border-width` must reject.

@@ -292,8 +292,26 @@ fn test_apply_property_position_absolute() {
 /// 测试 apply_property_value 对 font-size: em 单位
 fn test_apply_property_font_size_em() {
     let mut style = ComputedStyle::default();
+    assert!(apply_property_value(&mut style, "font-size", "large"));
+    assert_eq!(style.font_size, LengthValue::Px(18.0));
     assert!(apply_property_value(&mut style, "font-size", "1.5em"));
     assert_eq!(style.font_size, LengthValue::Em(1.5));
+    assert!(apply_property_value(&mut style, "font-size", "125%"));
+    assert_eq!(style.font_size, LengthValue::Percentage(125.0));
+    let previous = style.font_size.clone();
+    for value in [
+        "auto",
+        "thin",
+        "-1px",
+        "-5%",
+        "min-content",
+        "fit-content(10px)",
+        "infpx",
+        "NaNpx",
+    ] {
+        assert!(!apply_property_value(&mut style, "font-size", value));
+        assert_eq!(style.font_size, previous, "{} should not overwrite", value);
+    }
 }
 
 #[test]

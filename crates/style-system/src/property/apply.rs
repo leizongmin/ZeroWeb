@@ -546,8 +546,10 @@ pub fn apply_property_value_with_quirks(
                 return true;
             }
             if let Some(v) = parse_length_fn(value) {
-                style.font_size = v;
-                return true;
+                if font_size_length_is_valid(value, &v) {
+                    style.font_size = v;
+                    return true;
+                }
             }
         }
         "font-weight" => {
@@ -1234,6 +1236,10 @@ pub(crate) fn padding_length_is_valid(raw: &str, value: &LengthValue) -> bool {
 }
 
 fn border_radius_length_is_valid(raw: &str, value: &LengthValue) -> bool {
+    padding_length_is_valid(raw, value)
+}
+
+fn font_size_length_is_valid(raw: &str, value: &LengthValue) -> bool {
     padding_length_is_valid(raw, value)
 }
 
