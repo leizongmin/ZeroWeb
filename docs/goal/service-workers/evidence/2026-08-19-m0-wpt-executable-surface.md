@@ -25,6 +25,8 @@
   核心 `service-worker/` 子树占 276 个 testharness 源 / 277 个 URL。
 - [逐文件清单](2026-08-19-m0-wpt-case-inventory.tsv) 记录全部 294 个 testharness 源的
   manifest SHA、URL/context、里程碑、文件名聚类、直接依赖信号和候选裁决。
+- [M1 候选资源闭包](2026-08-19-m0-m1-candidate-resource-closure.md) 将初筛 12 个 case
+  校准为 8 个静态首批、3 个高阶事件案和 1 个动态 server 阻塞案。
 - 这不等于全部上游用例都超出 ZeroWeb 环境。M1 完成后，单页面、单注册、静态资源的
   生命周期用例可形成第一批真实基线；M2 完成后再加入单客户端 fetch/respondWith 用例。
 - iframe、多客户端、SharedWorker、跨 origin、动态服务端 handler、WebSocket 和
@@ -158,7 +160,7 @@ fixture adapter；不能将 `.py` 当普通文本响应。
 核心全量中 228/276 至少命中一个上述重依赖信号；其余 48 个只是“未命中已知信号”的筛选
 队列，不能直接当可执行分母，因为依赖还可能藏在外链 helper 或资源响应语义中。
 
-### M1 首批人工复核候选
+### M1 首批初筛候选
 
 从这 48 个文件中再按目标范围和资源复杂度筛出 12 个候选：
 
@@ -175,9 +177,9 @@ fixture adapter；不能将 `.py` 当普通文本响应。
 11. `registration-service-worker-attributes.https.html`
 12. `rejections.https.html`
 
-这些文件是批准后 M1-5 pinned fetch script 的初始审计队列，不是通过率承诺。每个文件只有
-在资源闭包抓取完成、动态响应依赖为零且 runner 能稳定清理 registration 后，才进入真实
-分母。首个 driving case 仍是第 2 项。
+这些文件是批准后 M1-5 pinned fetch script 的初始审计队列，不是通过率承诺。传递资源闭包
+审计现已完成：第 3、4、5 项归 Tier B（worker testharness/error event），第 10 项归
+Tier C（Python 动态 handler），其余 8 项归静态 Tier A。首个 driving case 仍是第 2 项。
 
 > **来源说明（第 3A 章）**
 >
@@ -210,6 +212,7 @@ fixture adapter；不能将 `.py` 当普通文本响应。
 | 完整 testharness 分母为 294 源/331 URL | WPT manifest version 9 | 本地确定性遍历结果 | 一致 | 高 | 直接采用 |
 | 重基础设施用例占多数 | 核心 228/276 命中直接信号 | support 中有 68 个 Python handler | 一致 | 高 | 逐案依赖闭包 |
 | 逐文件清单无遗漏 | inventory 294 唯一路径/331 URL | manifest 294 源/331 URL | 一致 | 高 | 直接采用 |
+| 首批静态 case 为 8 个 | 12 case 传递资源闭包 | 39/39 闭包对象 blob SHA 匹配 | 一致 | 高 | Tier A |
 
 ## 6. 来源与限制
 
@@ -253,4 +256,5 @@ fixture adapter；不能将 `.py` 当普通文本响应。
 - [x] 已记录网络取证限制和固定上游 commit。
 - [x] 完整 manifest 分母与 294/294 正文信号逐文件对齐。
 - [x] inventory 可反算 294 个唯一路径、331 个 URL 和 12 个候选。
+- [x] 12 个初筛候选已完成资源闭包并校准为 8/3/1。
 - [x] 未修改源码、WPT 数据或共享账本。
