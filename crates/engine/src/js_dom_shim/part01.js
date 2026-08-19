@@ -444,6 +444,10 @@
   // setAttributeNS 写入；Attr 节点字段（prefix/localName/namespaceURI）与 NS 读（按 ns+local 匹配
   // 任意 prefix 的存储名）消费。host 侧属性存储是扁平限定名（无 ns），NS 语义须 JS 端登记。
   var _attrNSMeta = {};
+  // js-dom M4 R122：per-element NamedNodeMap Proxy 缓存（elKey → attributes Proxy）——
+  // `el.attributes === el.attributes` identity + 原型方法（item/getNamedItem）闭包与原型
+  // 赋值同源（WPT attributes-namednodemap method-names 断言）。导航清空（与 _proxyCache 同期）。
+  var _zwNNMCache = {};
   // R2927 handle-children registry：容器 handle（shadow root / fragment）→ 其子节点 proxy 列表。
   // 这些容器无 selector（handle-only），既有 childNodes/children 经 `__zw_child_nodes(sel)` 读（须 sel）
   // → 恒返 []。本 registry 在 appendChild（容器父）时同步记录子节点，供 childNodes/firstChild/

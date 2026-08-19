@@ -1416,10 +1416,14 @@ fn test_namednodemap_setnameditem_main_dom_r3022() {
     register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry);
 
     // setNamedItem 新属性 → getAttribute / getNamedItem 反映；返旧 Attr=null（新属性）。
+    // R122：spec `dom-namednodemap-setnameditem` 收 Attr 类型（plain object 抛 TypeError）——
+    // 经 document.createAttribute 建真 Attr（identity 绑定路径）。
     sandbox
         .execute(
             "var d = document.getElementById('d');\
-             var old1 = d.attributes.setNamedItem({ name: 'data-x', value: 'v1' });\
+             var a1 = document.createAttribute('data-x');\
+             a1.value = 'v1';\
+             var old1 = d.attributes.setNamedItem(a1);\
              globalThis.__old1 = String(old1 === null);\
              globalThis.__gv = d.getAttribute('data-x');\
              globalThis.__nv = d.attributes.getNamedItem('data-x').value;",
@@ -1429,10 +1433,12 @@ fn test_namednodemap_setnameditem_main_dom_r3022() {
     assert_eq!(sandbox.execute("globalThis.__gv").unwrap().value, "v1", "setNamedItem 后 getAttribute='v1'（经 setAttribute host 路径）");
     assert_eq!(sandbox.execute("globalThis.__nv").unwrap().value, "v1", "setNamedItem 后 attributes.getNamedItem('data-x').value='v1'（latest-wins）");
 
-    // setNamedItem 改既有属性 → 返旧 Attr {name,value}；新值反映。
+    // setNamedItem 改既有属性 → 返旧 Attr {name,value}；新值反映（R122：createAttribute 真 Attr）。
     sandbox
         .execute(
-            "var old2 = d.attributes.setNamedItem({ name: 'class', value: 'newc' });\
+            "var a2 = document.createAttribute('class');\
+             a2.value = 'newc';\
+             var old2 = d.attributes.setNamedItem(a2);\
              globalThis.__old2Name = old2 ? old2.name : '(null)';\
              globalThis.__old2Val = old2 ? old2.value : '(null)';\
              globalThis.__newClass = d.getAttribute('class');",
@@ -1453,12 +1459,16 @@ fn test_namednodemap_setnameditem_main_dom_r3022() {
     assert_eq!(sandbox.execute("globalThis.__remName").unwrap().value, "data-x", "removeNamedItem('data-x') 返移除 Attr.name=data-x");
     assert_eq!(sandbox.execute("globalThis.__hasX").unwrap().value, "false", "removeNamedItem 后 hasAttribute('data-x')=false");
 
-    // removeNamedItem 缺失 → null（best-effort 不抛 NOT_FOUND_ERR）。
-    sandbox.execute("globalThis.__remMissing = String(d.attributes.removeNamedItem('nope') === null);").unwrap();
+    // R122：removeNamedItem 缺失 → 抛 NotFoundError（spec `dom-namednodemap-removenameditem`，
+    // 旧 best-effort 返 null 与 WPT 期望相反）。
+    sandbox.execute(
+        "globalThis.__remThrew = '';\
+         try { d.attributes.removeNamedItem('nope'); } catch (eR) { globalThis.__remThrew = eR.name; }",
+    ).unwrap();
     assert_eq!(
-        sandbox.execute("globalThis.__remMissing").unwrap().value,
-        "true",
-        "removeNamedItem 缺失属性返 null（best-effort，不抛）"
+        sandbox.execute("globalThis.__remThrew").unwrap().value,
+        "NotFoundError",
+        "removeNamedItem 缺失属性抛 NotFoundError（spec，R122 语义）"
     );
 }
 

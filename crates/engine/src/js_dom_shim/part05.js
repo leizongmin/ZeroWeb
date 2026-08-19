@@ -392,6 +392,188 @@
     try { wire(); } catch (_e) {}
   }
 
+
+  // js-dom M4 R122：Attr 节点身份绑定表——elKey → Map(限定名 → Attr 对象)。
+  // setAttributeNode 族与 getAttributeNode 族的 identity 契约（WPT attributes.html：
+  // `attrNode === el2.getAttributeNode('foo')`、`el.attributes[1] === attrNodeNS2`——
+  // 同一 Attr 对象往返；旧实现每次 _zwMakeAttr 新对象 identity 恒 false）。
+  // ownerElement 语义：绑定=元素，解绑（remove/replace）= null（值保留）。
+  var _zwAttrBindings = new Map();
+  function _zwAttrBindMap(elKey) {
+    var m = _zwAttrBindings.get(elKey);
+    if (!m) { m = new Map(); _zwAttrBindings.set(elKey, m); }
+    return m;
+  }
+  // spec dom-element-setattributenode 核心步骤：InUse 校验 → 按 (ns, local) 找现有 →
+  // 写 host + 绑定 → 返旧 Attr（解绑）/ null。NS meta 同步登记（prefix/localName/
+  // namespaceURI 从 attr 对象读）。
+  function _zwSetAttributeNodeCore(sel, handle, key, attr, isNS) {
+    if (!attr || attr.nodeType !== 2) {
+      throw new TypeError("Failed to execute 'setAttributeNode' on 'Element': parameter 1 is not of type 'Attr'.");
+    }
+    if (attr.ownerElement && attr.ownerElement !== _makeProxy(sel, handle)) {
+      throw new (globalThis.DOMException || Error)(
+        'The attribute is in use.', 'InUseAttributeError');
+    }
+    var prefix = attr.prefix != null ? String(attr.prefix) : null;
+    var local = attr.localName != null ? String(attr.localName) : String(attr.name);
+    var ns = attr.namespaceURI != null ? String(attr.namespaceURI) : null;
+    var qname = prefix ? prefix + ':' + local : local;
+    var bind = _zwAttrBindMap(key);
+    // 按 (ns, local) 找现有绑定（spec：同 ns+local 替换，非同限定名）。
+    var old = null; var oldQ = null;
+    bind.forEach(function (bAttr, bQ) {
+      if (old) return;
+      var bNs = bAttr.namespaceURI != null ? String(bAttr.namespaceURI) : null;
+      var bLocal = bAttr.localName != null ? String(bAttr.localName) : String(bAttr.name);
+      if (bNs === ns && bLocal === local) { old = bAttr; oldQ = bQ; }
+    });
+    if (old) { old.ownerElement = null; bind.delete(oldQ); }
+    // R122：绑定 miss 但 host 已有该属性（parser 快照属性未被读过——无绑定）→ 经
+    // _zwAttrObjFor 建/登记绑定 Attr 作返值（spec `dom-element-setattributenode` 返
+    // 「替换的旧 Attr」；值取写入前 host latest-wins）。
+    if (!old) {
+      try {
+        var _r122PreBind = _zwAttrBindings.get(key);
+        if (!_r122PreBind || !_r122PreBind.get(qname)) {
+          var _r122OldV = null;
+          try {
+            _r122OldV = (handle && typeof __zw_get_attr_handle === 'function')
+              ? __zw_get_attr_handle(handle, qname)
+              : (typeof __zw_get_attr_lw === 'function' ? __zw_get_attr_lw(sel, qname) : __zw_get_attr(sel, qname));
+          } catch (_eOV) {}
+          var _r122OldPresent = false;
+          try {
+            _r122OldPresent = (handle && typeof __zw_has_attr_handle === 'function')
+              ? __zw_has_attr_handle(handle, qname) === '1'
+              : (typeof __zw_has_attr_lw === 'function' ? __zw_has_attr_lw(sel, qname) === '1'
+                : (typeof __zw_has_attr === 'function' ? __zw_has_attr(sel, qname) === '1' : false));
+          } catch (_eOP) {}
+          if (_r122OldPresent && _r122OldV != null && attr._r122V !== _r122OldV) {
+            var _r122OldA = _zwAttrObjFor(sel, handle, qname);
+            if (_r122OldA && _r122OldA !== attr) { old = _r122OldA; }
+          }
+        }
+      } catch (_eOB) {}
+    }
+    // 写 host（限定名 + NS meta）+ **实例层 upsert**（R122：多实例 NS 视图权威——
+    // setAttributeNode(attrNS) 经实例层供 getAttributeNS/attributes[i] 读）。
+    var _r122Val = attr.value != null ? String(attr.value) : '';
+    if (handle && typeof __zw_set_attr_handle === 'function') __zw_set_attr_handle(handle, qname, _r122Val);
+    else if (typeof __zw_set_attr === 'function') __zw_set_attr(sel, qname, _r122Val);
+    var meta = _attrNSMeta[key] || (_attrNSMeta[key] = {});
+    meta[qname] = { ns: ns, prefix: prefix, local: local };
+    _zwAttrInstUpsert(key, qname, ns, prefix, local, _r122Val);
+    bind.set(qname, attr);
+    try { attr.ownerElement = _makeProxy(sel, handle); } catch (_eO) {}
+    _mo_notify(sel, handle, { type: 'attributes', attributeName: local, attributeNamespace: ns });
+    return old;
+  }
+  // spec dom-element-removeattributenode：按 attr 的 (ns, local) 找到 → 删 host + 解绑
+  // （返 attr）；miss → NotFoundError。
+  function _zwRemoveAttributeNodeCore(sel, handle, key, attr) {
+    if (!attr || attr.nodeType !== 2) {
+      throw new TypeError("Failed to execute 'removeAttributeNode' on 'Element': parameter 1 is not of type 'Attr'.");
+    }
+    var prefix = attr.prefix != null ? String(attr.prefix) : null;
+    var local = attr.localName != null ? String(attr.localName) : String(attr.name);
+    var qname = prefix ? prefix + ':' + local : local;
+    var present = false;
+    try {
+      present = (handle && typeof __zw_has_attr_handle === 'function')
+        ? __zw_has_attr_handle(handle, qname) === '1'
+        : (typeof __zw_has_attr_lw === 'function' ? __zw_has_attr_lw(sel, qname) === '1' : false);
+    } catch (_eP) {}
+    if (!present) {
+      // NS meta 里按 (ns, local) 反查限定名再试（限定名形态可能与 attr.name 不同）。
+      var meta = _attrNSMeta[key];
+      if (meta) {
+        for (var mq in meta) {
+          if (meta[mq] && meta[mq].local === local) { qname = mq; present = true; break; }
+        }
+      }
+    }
+    if (!present) {
+      throw new (globalThis.DOMException || Error)(
+        'The attribute was not found.', 'NotFoundError');
+    }
+    if (handle && typeof __zw_remove_attr_handle === 'function') __zw_remove_attr_handle(handle, qname);
+    else if (typeof __zw_remove_attr === 'function') __zw_remove_attr(sel, qname);
+    // R122：实例层剔除（attr 的 ns 反查——限定名形态可能与 attr.name 不同）。
+    var _rn122Ns = attr.namespaceURI != null ? String(attr.namespaceURI) : null;
+    _zwAttrInstRemoveNS(key, _rn122Ns, local);
+    var bind = _zwAttrBindings.get(key);
+    if (bind) {
+      var bAttr = bind.get(qname);
+      if (bAttr) { bAttr.ownerElement = null; bind.delete(qname); }
+    }
+    _mo_notify(sel, handle, { type: 'attributes', attributeName: local });
+    return attr;
+  }
+
+
+  // js-dom M4 R122：同名多实例属性覆盖层——elKey → 有序 [ {qname, ns, prefix, local, value} ]。
+  // host 属性存储按限定名扁平（同 local 不同 ns 的多实例无法共存），spec setAttributeNS
+  // 允许 setAttributeNS('ab','attr') + setAttributeNS('kl','attr') 两实例并存，且
+  // getAttribute（非 NS）返回**第一个** local 匹配（WPT "First set attribute..." 簇）。
+  // 本表是 JS 侧权威多实例视图：setAttributeNS 更新（同 ns+local 原位改值、prefix 不变；
+  // 新实例 push），host 只写每 local 的首实例（渲染 best-effort）。
+  var _zwAttrInstances = new Map();
+  function _zwAttrInstList(elKey) {
+    var a = _zwAttrInstances.get(elKey);
+    if (!a) { a = []; _zwAttrInstances.set(elKey, a); }
+    return a;
+  }
+  function _zwAttrInstUpsert(elKey, qname, ns, prefix, local, value) {
+    var list = _zwAttrInstList(elKey);
+    for (var i = 0; i < list.length; i++) {
+      var it = list[i];
+      var itNs = it.ns != null ? String(it.ns) : null;
+      if (itNs === (ns != null ? String(ns) : null) && it.local === local) {
+        it.value = value; // 原位更新（prefix/qname 不变——spec 步骤 9「不改 prefix」）
+        return false; // 未新增
+      }
+    }
+    list.push({ qname: qname, ns: ns != null ? String(ns) : null, prefix: prefix, local: local, value: value });
+    return true;
+  }
+  function _zwAttrInstRemoveNS(elKey, ns, local) {
+    var list = _zwAttrInstances.get(elKey);
+    if (!list) return false;
+    for (var i = 0; i < list.length; i++) {
+      var it = list[i];
+      var itNs = it.ns != null ? String(it.ns) : null;
+      if (itNs === (ns != null ? String(ns) : null) && it.local === local) { list.splice(i, 1); return true; }
+    }
+    return false;
+  }
+  // 非 NS 读的 first-match（spec getAttribute：HTML 文档限定名小写化后按 local 找第一个）。
+  function _zwAttrInstFirstByLocal(elKey, localLower) {
+    var list = _zwAttrInstances.get(elKey);
+    if (!list) return null;
+    for (var i = 0; i < list.length; i++) {
+      var l = String(list[i].local).toLowerCase();
+      if (l === localLower) return list[i];
+    }
+    return null;
+  }
+  // R122：按限定名剔实例（removeAttribute / removeNamedItem 非 NS 路径——host 扁平删除时
+  // JS 视图同步剔除**该限定名的全部实例**，防实例层残留已删属性）。
+  function _zwAttrInstRemoveByQName(elKey, qname) {
+    var list = _zwAttrInstances.get(elKey);
+    if (!list) return false;
+    var removed = false;
+    for (var i = list.length - 1; i >= 0; i--) {
+      if (list[i].qname === qname) { list.splice(i, 1); removed = true; }
+    }
+    return removed;
+  }
+  // R122：剥合成后缀（'\x00#k' 是多实例内部索引键，非 spec qualified name）。
+  function _zwAttrStripSyn(name) {
+    var m = /\x00#\d+$/.exec(String(name));
+    return m ? String(name).slice(0, m.index) : String(name);
+  }
+
   function _wrapHandle(handle) {
     return _makeProxy(null, handle);
   }

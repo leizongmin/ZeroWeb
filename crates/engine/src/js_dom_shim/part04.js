@@ -1133,16 +1133,47 @@
               "Failed to execute 'setAttribute' on 'Element': The name provided is empty.",
               'InvalidCharacterError');
           }
-          return n.replace(/[A-Z]/g, function (c) { return String.fromCharCode(c.charCodeAt(0) + 32); });
+          // R122：ASCII 小写化仅对 **HTML 命名空间元素**（spec `dom-element-setattribute`
+          // 步骤 4「If document is an HTML document and localName is in the HTML namespace」；
+          // 非 HTML ns 元素（createElementNS('http://www.example.com',...)）限定名**大小写
+          // 敏感保留**——WPT "Non-HTML element with upper-case attribute"：
+          // setAttribute('A') 后 hasAttribute('A')/getAttributeNS('','A') 命中原大写）。
+          // HTML-ns 判定与 supportedNames（part03）同源：无 _nsHandles 条目 = 隐式 HTML ns。
+          var _r122IsHtmlNs = !(handle && _nsHandles[handle]
+            && _nsHandles[handle].namespace !== 'http://www.w3.org/1999/xhtml');
+          if (_r122IsHtmlNs) {
+            return n.replace(/[A-Z]/g, function (c) { return String.fromCharCode(c.charCodeAt(0) + 32); });
+          }
+          return n;
+        };
+        // R116（R122 上移至此）：NS 读按 (ns, local) 匹配——registry 反查限定名，无登记回落
+        // _nsQualName（已知 prefix 映射）。**大小写敏感**（spec NS 查找精确匹配）。原定义在
+        // 属性族分支之后（var 执行序问题，见下方原位置注释）。
+        var _r116NsQName = function (ns, localName) {
+          var meta = _attrNSMeta[key];
+          if (meta) {
+            var nsStr = ns == null ? null : String(ns);
+            var loc = String(localName);
+            for (var qn in meta) {
+              if (Object.prototype.hasOwnProperty.call(meta, qn) && meta[qn].local === loc
+                  && (meta[qn].ns || null) === nsStr) return qn;
+            }
+          }
+          return _nsQualName(ns, localName);
         };
         if (prop === 'getAttribute') {
           return function(name) {
-            var n = _r116AttrName(name); // R116：HTML 文档小写（非 NS 读）
-            // R2995：sel-based 走 latest-wins 变体（consult 变更列表，闭合 removeAttribute 后 stale 旧值）；
-            // 回调未注册（polyfill/其它环境）→ fallback 纯快照 `__zw_get_attr`。
+            var n = _r116AttrName(name); // R116：HTML 文档小写（非 NS 读；非 HTML ns 元素原样）
+            // R122：**host 优先、实例层 local 兜底**——host 扁平限定名是渲染权威（classList/
+            // style/className 等直写路径不经过实例同步面，host-first 保证读一致）；实例层
+            // 兜底覆盖 host 无第二个同 local ns 实例的读（"First set attribute" 簇——host
+            // 首实例缺席时按实例层 local first-match）。含大写限定名的 NS 实例不可经非 NS
+            // 族命中（WPT "Only lowercase attributes are returned"）。
             var v = handle
               ? __zw_get_attr_handle(handle, n)
               : (typeof __zw_get_attr_lw === 'function' ? __zw_get_attr_lw(sel, n) : __zw_get_attr(sel, n));
+            // R2995：sel-based 走 latest-wins 变体（consult 变更列表，闭合 removeAttribute 后 stale 旧值）；
+            // 回调未注册（polyfill/其它环境）→ fallback 纯快照 `__zw_get_attr`。
             // R3190：spec getAttribute——缺省（属性不存在）须返 null，present-empty 返 ""。host `__zw_get_attr*`
             // 对缺省与空值均返 ""，仅当结果为 "" 时用 `__zw_has_attr*` 区分（常见非空值单次 host 调用，无额外
             // 开销；同 R3187 contentEditable / R3188 default_draggable has_attr 模式）。附带修复 `_matchAttrOf`
@@ -1151,7 +1182,14 @@
             var present = (handle
               ? __zw_has_attr_handle(handle, n)
               : (typeof __zw_has_attr_lw === 'function' ? __zw_has_attr_lw(sel, n) : __zw_has_attr(sel, n))) === '1';
-            return present ? '' : null;
+            if (present) return '';
+            // R122：host miss → 实例层 local first-match 兜底（同 local 多 ns 且首实例未写
+            // host 的场景；含大写 local 的实例不可命中——HTML 文档非 NS 族小写语义）。
+            try {
+              var _r122GA = _zwAttrInstFirstByLocal(key, n.toLowerCase());
+              if (_r122GA && !/[A-Z]/.test(String(_r122GA.local))) return _r122GA.value;
+            } catch (_eGA) {}
+            return null;
           };
         }
         // js-dom M4 R42：`getAttributeNode(name)`（spec `dom-element-getattributenode`）——返 Attr 节点
@@ -1160,24 +1198,111 @@
         // 与 getAttributeNS 的 _nsQualName 一致语义）。
         if (prop === 'getAttributeNode' || prop === 'getAttributeNodeNS') {
           return function(a, b) {
-            var n = prop === 'getAttributeNode' ? _r116AttrName(a) : _nsQualName(a, b); // R116：非 NS 小写
+            // js-dom M4 R122：identity 统一经 NamedNodeMap 的 attrObj（绑定表 + 实例层，
+            // `el.attributes[i] === el.getAttributeNode(name)` 往返同对象）。NS 变体按
+            // (ns, local) 定位实例的 qname 后经 attrObj；非 NS 变体按限定名（miss 按
+            // local first-match——与 getAttribute 读语义同源）。
             var self = proxy;
-            var v = handle
-              ? __zw_get_attr_handle(handle, n)
-              : (typeof __zw_get_attr_lw === 'function' ? __zw_get_attr_lw(sel, n) : __zw_get_attr(sel, n));
-            if (v === '' || v == null) {
-              var present = (handle
-                ? __zw_has_attr_handle(handle, n)
-                : (typeof __zw_has_attr_lw === 'function' ? __zw_has_attr_lw(sel, n) : __zw_has_attr(sel, n))) === '1';
-              if (!present) return null;
+            var _gn122ElKey = _elKey(sel, handle);
+            var _gn122Names;
+            try { _gn122Names = _zwAttrReadNames(sel, handle); } catch (_eN) { _gn122Names = []; }
+            if (prop === 'getAttributeNode') {
+              var _gn122n = _r116AttrName(a); // R116：非 NS 小写
+              for (var _gn122i = 0; _gn122i < _gn122Names.length; _gn122i++) {
+                var _gn122nm = _zwAttrStripSyn(_gn122Names[_gn122i]);
+                if (_gn122nm === _gn122n) return attrObjByIdx(_gn122i);
+              }
+              // local first-match 兜底（HTML 文档语义同 getAttribute）。
+              for (var _gn122l = 0; _gn122l < _gn122Names.length; _gn122l++) {
+                var _gn122lm = _zwAttrStripSyn(_gn122Names[_gn122l]);
+                if (_gn122lm.toLowerCase() === _gn122n.toLowerCase() && !/[A-Z]/.test(_gn122lm)) return attrObjByIdx(_gn122l);
+              }
+              var _gn122v = handle
+                ? __zw_get_attr_handle(handle, _gn122n)
+                : (typeof __zw_get_attr_lw === 'function' ? __zw_get_attr_lw(sel, _gn122n) : __zw_get_attr(sel, _gn122n));
+              var _gn122present = (handle
+                ? __zw_has_attr_handle(handle, _gn122n)
+                : (typeof __zw_has_attr_lw === 'function' ? __zw_has_attr_lw(sel, _gn122n) : __zw_has_attr(sel, _gn122n))) === '1';
+              if (!_gn122present && (_gn122v === '' || _gn122v == null)) return null;
+              return attrObjByIdx(-1, _gn122n, _gn122v);
             }
-            return _zwMakeAttr(n, v != null ? v : '', self);
+            // getAttributeNodeNS：按 (ns, local) 找实例 → attrObj；host meta 反查兜底。
+            var _gn122Ns = (a == null || a === '') ? null : String(a);
+            var _gn122Local = String(b == null ? '' : b);
+            var _gn122List = _zwAttrInstances.get(_gn122ElKey);
+            if (_gn122List) {
+              for (var _gn122n2 = 0; _gn122n2 < _gn122List.length; _gn122n2++) {
+                var _gn122it = _gn122List[_gn122n2];
+                var _gn122itNs = _gn122it.ns != null ? String(_gn122it.ns) : null;
+                if (_gn122itNs === _gn122Ns && _gn122it.local === _gn122Local) return attrObjByIdx(_gn122n2, _gn122it.qname, _gn122it.value, true);
+              }
+            }
+            var _gn122qn = _r116NsQName(a, b);
+            var _gn122v2 = handle
+              ? __zw_get_attr_handle(handle, _gn122qn)
+              : (typeof __zw_get_attr_lw === 'function' ? __zw_get_attr_lw(sel, _gn122qn) : __zw_get_attr(sel, _gn122qn));
+            var _gn122present2 = (handle
+              ? __zw_has_attr_handle(handle, _gn122qn)
+              : (typeof __zw_has_attr_lw === 'function' ? __zw_has_attr_lw(sel, _gn122qn) : __zw_has_attr(sel, _gn122qn))) === '1';
+            if (!_gn122present2 && (_gn122v2 === '' || _gn122v2 == null)) return null;
+            return attrObjByIdx(-1, _gn122qn, _gn122v2);
+            // attrObjByIdx：readNames 第 idx 项（idx<0 时按名建）；onlyInst 标记跳过索引映射
+            // 直接按 qname（实例位置与 readNames 展开序一致——实例段在前）。
+            function attrObjByIdx(idx, fallbackName, fallbackVal, onlyInst) {
+              var names = _gn122Names;
+              if (idx >= 0 && idx < names.length) {
+                var nm = names[idx];
+                var attrA = _zwAttrObjFor(sel, handle, nm);
+                if (attrA) return attrA;
+              }
+              if (fallbackName != null) {
+                var madeA = _zwMakeAttr(fallbackName, fallbackVal != null ? fallbackVal : '', self);
+                try { _zwAttrBindMap(_gn122ElKey).set(fallbackName, madeA); } catch (_eB2) {}
+                return madeA;
+              }
+              return null;
+            }
+          };
+        }
+        // js-dom M4 R122：`setAttributeNode(attr)` / `setAttributeNodeNS(attr)`（spec
+        // dom-element-setattributenode——InUse 校验 + (ns,local) 替换 + ownerElement 绑定 +
+        // 返旧 Attr）。`removeAttributeNode(attr)`（NotFoundError 语义）。核心在
+        // _zwSetAttributeNodeCore/_zwRemoveAttributeNodeCore（part05 绑定表）。
+        if (prop === 'setAttributeNode' || prop === 'setAttributeNodeNS') {
+          return function(attr) {
+            return _zwSetAttributeNodeCore(sel, handle, key, attr, prop === 'setAttributeNodeNS');
+          };
+        }
+        if (prop === 'removeAttributeNode') {
+          return function(attr) {
+            return _zwRemoveAttributeNodeCore(sel, handle, key, attr);
           };
         }
         if (prop === 'setAttribute') {
           return function(name, value) {
             var n = _r116AttrName(name); // R116：空名 InvalidCharacterError + HTML 文档小写
             var v = String(value);
+            // R122：实例层同步——非 NS setAttribute（spec `dom-element-setattribute`「set an
+            // attribute」按**限定名**匹配：qualified name 全等的第一实例原位改值，miss 才 push
+            // 新无 ns 实例。WPT "setAttribute should set the attribute with the given qualified
+            // name"：先 setAttributeNS('foo','foo:bar','1') 再 setAttribute('foo:bar','2')
+            // 期望更新同一实例（local 'bar' 不匹配 'foo:bar'）。
+            try {
+              var _r122SAList = _zwAttrInstances.get(key);
+              var _r122SAHit = null;
+              if (_r122SAList) {
+                for (var _r122SAi = 0; _r122SAi < _r122SAList.length; _r122SAi++) {
+                  if (String(_r122SAList[_r122SAi].qname) === n) {
+                    _r122SAHit = _r122SAList[_r122SAi]; break;
+                  }
+                }
+              }
+              var _r122SALocal = n; // 非 NS 属性的 local = 整个限定名（WPT "Attribute with
+              // prefix in local name"：setAttribute('pre:fix') 的 localName 是 'pre:fix' 非
+              // 'fix'——区别 setAttributeNS 的 prefix:local 拆分语义）。
+              if (_r122SAHit) _r122SAHit.value = v;
+              else _zwAttrInstUpsert(key, n, null, null, _r122SALocal, v);
+            } catch (_eSA) {}
             // R2992 custom element attributeChangedCallback：变更前读 old（absent → null，spec 一致）。
             var ceEntry = _ceEntryFor(key, sel, handle);
             var ceOld = ceEntry ? _ce_attrValue(sel, handle, n) : null;
@@ -1201,6 +1326,15 @@
             else if (n === 'checked' || n === 'selected') _clearBoolDefault(key, n); // R2998：setAttribute('checked'/'selected') 重同步 defaultChecked/defaultSelected
             if (handle) __zw_set_attr_handle(handle, n, v);
             else __zw_set_attr(sel, n, v);
+            // R122：绑定表值同步——已有绑定的 Attr 值跟随 setAttribute 更新（直写 _r122V
+            // 绕过原型 setter 的回传播环；textContent/data 同步）。
+            try {
+              var _r122SB = _zwAttrBindings.get(key);
+              if (_r122SB) {
+                var _r122SA2 = _r122SB.get(n);
+                if (_r122SA2) { _r122SA2._r122V = v; _r122SA2.textContent = v; _r122SA2.data = v; }
+              }
+            } catch (_eSB) {}
             // js-dom M4 R107：body/frameset 的 Window-forwarding content attribute（spec
             // HTML handler-body/frameset-attributes——`<body onload="...">` 内容属性反射为
             // window 同名 handler）。setAttribute 即触发编译转发（Forward 用例：
@@ -1224,6 +1358,38 @@
             var n = _r116AttrName(name); // R116：空名 InvalidCharacterError + HTML 文档小写
             var nLower = n;
             var targetTag = _realTag(sel, handle);
+            // R122：非 NS 移除按**限定名**剔实例（与 setAttribute 的限定名 upsert 对称），
+            // 并解绑 Attr（ownerElement=null——WPT "Attribute loses its owner when removed"：
+            // removeAttribute 后 attr.ownerElement 须 null，否则 setAttributeNode 误抛
+            // InUseAttributeError）。限定名 miss 时按 local first-match 剔（getAttribute
+            // 非 NS 读兜底语义的对称面）。
+            try {
+              var _r122RmList = _zwAttrInstances.get(key);
+              if (_r122RmList) {
+                var _r122RmIdx = -1;
+                for (var _r122RmI = 0; _r122RmI < _r122RmList.length; _r122RmI++) {
+                  if (String(_r122RmList[_r122RmI].qname).toLowerCase() === n.toLowerCase()) {
+                    _r122RmIdx = _r122RmI; break;
+                  }
+                }
+                if (_r122RmIdx < 0) {
+                  for (var _r122RmL = 0; _r122RmL < _r122RmList.length; _r122RmL++) {
+                    if (String(_r122RmList[_r122RmL].local).toLowerCase() === n.toLowerCase()) {
+                      _r122RmIdx = _r122RmL; break;
+                    }
+                  }
+                }
+                if (_r122RmIdx >= 0) {
+                  var _r122RmQ = _r122RmList[_r122RmIdx].qname;
+                  _r122RmList.splice(_r122RmIdx, 1);
+                  var _r122RmBind = _zwAttrBindings.get(key);
+                  if (_r122RmBind) {
+                    var _r122RmA = _r122RmBind.get(_r122RmQ);
+                    if (_r122RmA) { _r122RmA.ownerElement = null; _r122RmBind.delete(_r122RmQ); }
+                  }
+                }
+              }
+            } catch (_eRm122) {}
             // R2992 custom element attributeChangedCallback：移除前读 old（newVal=null）。
             var ceEntry = _ceEntryFor(key, sel, handle);
             var ceOld = ceEntry ? _ce_attrValue(sel, handle, n) : null;
@@ -1267,6 +1433,28 @@
         if (prop === 'hasAttribute') {
           return function(name) {
             var n = _r116AttrName(name); // R116：HTML 文档小写（非 NS 读）
+            // R122：实例层感知——HTML 元素上 setAttributeNS 存的大小写敏感实例（'ALIGN'）
+            // 不得被非 NS hasAttribute('align'/'ALIGN') 命中（WPT "Only lowercase attributes
+            // are returned on HTML elements"：非 NS 族对小写化后限定名匹配，NS 实例的
+            // qname 'ALIGN' 小写后是 'align' 但其 local 是 'ALIGN'——**须按 HTML-ness 双向
+            // 不匹配**：限定名小写比对 NS 实例的 local 小写比对，仅当**完全相等且该实例
+            // 本身 qname 小写等于该值**时命中。精确语义：非 NS 匹配 = 实例 qname 的
+            // 小写 === n（'ALIGN'→'align' 会命中！）。spec：HTML 元素上 attribute list 按
+            // localName 精确 + 非全小写名在 HTML 元素上**不可经非 NS 族命中**——实现为
+            // qname 全等（大小写敏感）或 qname 小写 === n 且 qname 无大写。
+            var _r122HL = _zwAttrInstances.get(key);
+            if (_r122HL) {
+              var _r122HLHit = false;
+              for (var _h122i = 0; _h122i < _r122HL.length; _h122i++) {
+                var _h122q = String(_r122HL[_h122i].qname);
+                // HTML 文档语义：含大写字符的限定名不可经非 NS 族命中（n 已小写化）。
+                if ((_h122q === n || _h122q.toLowerCase() === n) && !/[A-Z]/.test(_h122q)) {
+                  _r122HLHit = true; break;
+                }
+              }
+              if (_r122HLHit) return true;
+              // 实例层存在但无匹配 + host 名单可能含实例层未覆盖的纯小写属性 → 继续 host 查。
+            }
             if (handle && typeof __zw_has_attr_handle === 'function') {
               try { return __zw_has_attr_handle(handle, n) === '1'; } catch (_e) { return false; }
             }
@@ -1298,6 +1486,54 @@
           return function(_ns, qualifiedName, value) {
             var ns = _ns == null ? null : String(_ns);
             var qn = String(qualifiedName);
+            // js-dom M4 R122：spec validate-and-extract（dom-element-setattributens 步骤 2-3，
+            // 镜像 part06 createElementNS R80 的 QName 校验形状）——WPT attributes.html 的
+            // NS 校验簇（invalid_names/invalid_qnames 抛 INVALID_CHARACTER_ERR；prefix
+            // 存在但 ns 空 / xml·xmlns 保留绑定违规 / XMLNS ns 要求 xmlns 抛 NAMESPACE_ERR）：
+            // ① 空名 / 前置冒号 / 尾冒号 / 空白与 '>' → InvalidCharacterError
+            // ② localName 段首字符须 NameStartChar（无 prefix 时整名首字符）
+            // ③ prefix 存在 + ns 空 → NamespaceError
+            // ④ prefix 'xml' 非 XML ns / prefix 'xmlns' 非 XMLNS ns / localName 'xmlns'
+            //    非 XMLNS ns / XMLNS ns 但非 xmlns 形态 → NamespaceError
+            // ⑤ null/空 ns 的绑定存 ns=null（attributes[i].namespaceURI === null 而非 ''）。
+            var _r122Colon = qn.indexOf(':');
+            var _r122Pre = _r122Colon >= 0 ? qn.slice(0, _r122Colon) : null;
+            var _r122Loc = _r122Colon >= 0 ? qn.slice(_r122Colon + 1) : qn;
+            var _r122Throw = function (nm, msg) {
+              throw new (globalThis.DOMException || Error)(msg, nm);
+            };
+            if (qn === '' || _r122Colon === 0 || _r122Colon === qn.length - 1 || /[\s>]/.test(qn)) {
+              _r122Throw('InvalidCharacterError', 'The string contains invalid characters.');
+            }
+            if (_r122Pre === null) {
+              if (!_zwIsNameStartChar(Array.from(qn)[0])) {
+                _r122Throw('InvalidCharacterError', 'The string contains invalid characters.');
+              }
+            } else {
+              var _r122LocCh = Array.from(_r122Loc);
+              if (!_r122LocCh.length || !_zwIsNameStartChar(_r122LocCh[0])) {
+                _r122Throw('InvalidCharacterError', 'The string contains invalid characters.');
+              }
+            }
+            var _r122XmlNs = 'http://www.w3.org/2000/xmlns/';
+            var _r122Xml = 'http://www.w3.org/XML/1998/namespace';
+            var _r122NsEmpty = ns === null || ns === '';
+            if (_r122Pre !== null && _r122NsEmpty) {
+              _r122Throw('NamespaceError', 'A namespace is required to use a prefix.');
+            }
+            if (_r122Pre === 'xml' && ns !== _r122Xml) {
+              _r122Throw('NamespaceError', "The prefix 'xml' must be bound to the XML namespace.");
+            }
+            if (_r122Pre === 'xmlns' && ns !== _r122XmlNs) {
+              _r122Throw('NamespaceError', "The prefix 'xmlns' requires the XMLNS namespace.");
+            }
+            if (_r122Pre === null && _r122Loc === 'xmlns' && ns !== _r122XmlNs) {
+              _r122Throw('NamespaceError', "The local name 'xmlns' requires the XMLNS namespace.");
+            }
+            if (ns === _r122XmlNs && !((_r122Loc === 'xmlns' && _r122Pre === null) || _r122Pre === 'xmlns')) {
+              _r122Throw('NamespaceError', 'The XMLNS namespace requires xmlns as prefix or qualified name.');
+            }
+            // null/空 ns 统一 null（spec：validate-and-extract 返回 namespace 空 → null）。
             var local = qn.indexOf(':') >= 0 ? qn.slice(qn.indexOf(':') + 1) : qn;
             var _nsMoId = _mo_id(handle, sel);
             var _nsOld = (_nsMoId != null && _mo_any_wants_attr_old(_nsMoId, local))
@@ -1307,14 +1543,31 @@
             var _r116Colon = qn.indexOf(':');
             var _r116Meta = _attrNSMeta[key] || (_attrNSMeta[key] = {});
             _r116Meta[qn] = {
-              ns: ns,
+              ns: ns === '' ? null : ns,
               prefix: _r116Colon >= 0 ? qn.slice(0, _r116Colon) : null,
               local: _r116Colon >= 0 ? qn.slice(_r116Colon + 1) : qn
             };
+            // R122：JS 实例层 upsert（同 ns+local 原位改值、prefix 不变；新实例 push）
+            // + host 只写该 local 的首实例（扁平存储的渲染 best-effort）。
+            var _r122Added = _zwAttrInstUpsert(key, qn, ns === '' ? null : ns,
+              _r122Colon >= 0 ? qn.slice(0, _r122Colon) : null, local, String(value == null ? '' : value));
+            // host 只写该 local 的首实例（多实例第二起 host 不写——扁平存储无法共存；
+            // getAttribute 走实例层 first-match，host 仅渲染 best-effort）。
+            var _r122IsFirst = false;
+            try {
+              var _r122L = _zwAttrInstances.get(key) || [];
+              var _r122Cnt = 0;
+              for (var _r122k = 0; _r122k < _r122L.length; _r122k++) {
+                if (_r122L[_r122k].local === local) _r122Cnt++;
+              }
+              _r122IsFirst = _r122Cnt === 1;
+            } catch (_eC) {}
+            if (_r122Added && _r122IsFirst) {
+              if (handle && typeof __zw_set_attr_handle === 'function') __zw_set_attr_handle(handle, qn, String(value));
+              else if (typeof __zw_set_attr === 'function') __zw_set_attr(sel, qn, String(value == null ? '' : value));
+              else proxy.setAttribute(qn, value);
+            }
             // 直写 host 回调（不经 proxy.setAttribute——那条路径自带无 namespace 的 notify，会双发）。
-            if (handle && typeof __zw_set_attr_handle === 'function') __zw_set_attr_handle(handle, qn, String(value));
-            else if (typeof __zw_set_attr === 'function') __zw_set_attr(sel, qn, String(value == null ? '' : value));
-            else proxy.setAttribute(qn, value);
             _mo_notify(sel, handle, {
               type: 'attributes', attributeName: local,
               attributeNamespace: ns, oldValue: _nsOld,
@@ -1328,20 +1581,26 @@
         // R116：NS 读按 (ns, local) 匹配——registry 反查限定名（setAttributeNS 可能以任意
         // prefix 存储：ns='http://FOO' + local 'abc' 存 'abc:abc'）。无登记回落 _nsQualName
         //（已知 prefix 映射）。**大小写敏感**（spec NS 查找精确匹配）。
-        var _r116NsQName = function (ns, localName) {
-          var meta = _attrNSMeta[key];
-          if (meta) {
-            var nsStr = ns == null ? null : String(ns);
-            var loc = String(localName);
-            for (var qn in meta) {
-              if (Object.prototype.hasOwnProperty.call(meta, qn) && meta[qn].local === loc
-                  && (meta[qn].ns || null) === nsStr) return qn;
-            }
-          }
-          return _nsQualName(ns, localName);
-        };
+        // R122：定义上移至属性族分支**之前**（getAttributeNode 在分支内引用——var 函数表达式
+        // 按执行序赋值，分支先 return 时闭包捕获 undefined → 首读抛 "not a function"）。
         if (prop === 'getAttributeNS') {
           return function(ns, localName) {
+            // R122：实例层优先（同 local 多 ns 共存——host 扁平只存首实例）。
+            var _r122List = _zwAttrInstances.get(key);
+            if (_r122List) {
+              var _r122Ns = (ns == null || ns === '') ? null : String(ns); // 空串与 null 等价
+              var _r122HasLocal = false;
+              for (var _g122 = 0; _g122 < _r122List.length; _g122++) {
+                var _gi = _r122List[_g122];
+                if (_gi.local === String(localName)) {
+                  _r122HasLocal = true;
+                  if (_gi.ns === _r122Ns) return _gi.value;
+                }
+              }
+              // R122：实例层持有该 local（任意 ns）→ NS 读 miss 返 null（host 扁平首实例
+              // 不是该 ns 的权威——WPT getAttributeNS(null,'attr') === null）。
+              if (_r122HasLocal) return null;
+            }
             var n = _r116NsQName(ns, localName);
             var v = handle ? __zw_get_attr_handle(handle, n)
               : (typeof __zw_get_attr_lw === 'function' ? __zw_get_attr_lw(sel, n) : __zw_get_attr(sel, n));
@@ -1353,6 +1612,23 @@
         }
         if (prop === 'hasAttributeNS') {
           return function(ns, localName) {
+            // R122：实例层优先。**该 local 有任一实例时 host 回落对 NS 查询一律 false**——
+            // host 扁平存储的该属性即首实例（无独立 ns 视图），NS miss 不得把扁平条目误判
+            // 为任意 ns 命中（WPT "Non-HTML element with upper-case attribute"：
+            // hasAttributeNS('foo','A') 须 false）。
+            var _r122ListH = _zwAttrInstances.get(key);
+            var _r122HasLocalH = false;
+            if (_r122ListH) {
+              var _r122NsH = (ns == null || ns === '') ? null : String(ns);
+              for (var _h122 = 0; _h122 < _r122ListH.length; _h122++) {
+                var _hi = _r122ListH[_h122];
+                if (_hi.local === String(localName)) {
+                  _r122HasLocalH = true;
+                  if (_hi.ns === _r122NsH) return true;
+                }
+              }
+              if (_r122HasLocalH) return false;
+            }
             var n = _r116NsQName(ns, localName);
             if (handle && typeof __zw_has_attr_handle === 'function') {
               try { return __zw_has_attr_handle(handle, n) === '1'; } catch (_e) { return false; }
@@ -1370,7 +1646,30 @@
           return function(_ns, localName) {
             var ns = _ns == null ? null : String(_ns);
             var local = String(localName);
-            var qname = _nsQualName(ns, local);
+            // R122：实例层剔除（JS 视图权威）+ 限定名反查（_r116NsQName 的 meta 段优先）
+            // + 绑定解绑（ownerElement=null，与 removeAttribute 对称）。
+            try {
+              var _r122RNList = _zwAttrInstances.get(key);
+              if (_r122RNList) {
+                var _r122RNNs = ns === '' ? null : ns;
+                for (var _r122RNi = 0; _r122RNi < _r122RNList.length; _r122RNi++) {
+                  var _r122RNit = _r122RNList[_r122RNi];
+                  var _r122RNitNs = _r122RNit.ns != null ? String(_r122RNit.ns) : null;
+                  if (_r122RNitNs === _r122RNNs && _r122RNit.local === local) {
+                    var _r122RNq = _r122RNit.qname;
+                    _r122RNList.splice(_r122RNi, 1);
+                    var _r122RNBind = _zwAttrBindings.get(key);
+                    if (_r122RNBind) {
+                      var _r122RNa = _r122RNBind.get(_r122RNq);
+                      if (_r122RNa) { _r122RNa.ownerElement = null; _r122RNBind.delete(_r122RNq); }
+                    }
+                    break;
+                  }
+                }
+              }
+            } catch (_eRN122) {}
+            _zwAttrInstRemoveNS(key, ns === '' ? null : ns, local);
+            var qname = _r116NsQName(_ns, localName) || _nsQualName(ns, local);
             var _nsMoId2 = _mo_id(handle, sel);
             var _nsExisted = false;
             try {
@@ -1607,11 +1906,11 @@
         //（属性名仅来自 mutations），sel 经 `__zw_attr_names`（latest-wins）。旧 handle 路径恒返 []。
         if (prop === 'getAttributeNames') {
           return function() {
+            // R122：与 NamedNodeMap readNames 同源融合（实例层权威 + host 基底）+ 合成后缀
+            // 剥离（spec `dom-element-getattributenames` 返 qualified name 列表——同 qname
+            // 多实例各自占位，WPT getAttributeNames 期望 ["foo","FOO","foo","dummy:foo"]）。
             try {
-              var n = handle
-                ? (typeof __zw_attr_names_handle === 'function' ? __zw_attr_names_handle(handle) : '')
-                : (typeof __zw_attr_names === 'function' ? __zw_attr_names(sel) : '');
-              return n ? n.split('|').filter(Boolean) : [];
+              return _zwAttrReadNames(sel, handle).map(_zwAttrStripSyn);
             } catch (_e) { return []; }
           };
         }
@@ -1625,6 +1924,70 @@
             var hasForce = force !== undefined;
             // R3025：MutationObserver attributeOldValue——toggle 前捕获 old value（有 observer 请求时）。
             var moOld = _mo_any_wants_attr_old(_mo_id(handle, sel), n) ? _mo_read_attr(sel, handle, n) : null;
+            // R122：实例层感知 toggle——spec `dom-element-toggleattribute` 走「set an existing
+            // attribute」/remove 语义：presence 按**限定名**判（miss 按 local first-match——
+            // getAttribute 非 NS 读兜底同源）；remove 剔第一匹配实例（WPT "toggleAttribute
+            // should set the first attribute with the given name"：toggle('attr') 移除首个
+            // local 匹配，剩第二实例）。handle-only 或实例层持有时走 JS 侧统一路径（host
+            // 扁平 toggle 无法区分多实例）。
+            var _r122TList = _zwAttrInstances.get(key);
+            var _r122THas = false;
+            if (_r122TList) {
+              for (var _t122 = 0; _t122 < _r122TList.length; _t122++) {
+                var _t122it = _r122TList[_t122];
+                if (String(_t122it.qname).toLowerCase() === n.toLowerCase()
+                  || String(_t122it.local).toLowerCase() === n.toLowerCase()) { _r122THas = true; break; }
+              }
+            }
+            if (handle || _r122THas) {
+              var snapHasT = _r122THas;
+              if (!snapHasT) {
+                if (handle && typeof __zw_has_attr_handle === 'function') {
+                  try { snapHasT = __zw_has_attr_handle(handle, n) === '1'; } catch (_eT116) { snapHasT = false; }
+                } else if (typeof __zw_has_attr_lw === 'function') {
+                  snapHasT = __zw_has_attr_lw(sel, n) === '1';
+                } else if (typeof __zw_has_attr === 'function') {
+                  snapHasT = __zw_has_attr(sel, n) === '1';
+                }
+              }
+              var wantT = hasForce ? !!force : !snapHasT;
+              if (wantT) {
+                if (handle) __zw_set_attr_handle(handle, n, '');
+                else __zw_set_attr(sel, n, '');
+                try { _zwAttrInstUpsert(key, n, null, null,
+                  n.indexOf(':') >= 0 ? n.slice(n.indexOf(':') + 1) : n, ''); } catch (_eTU) {}
+              } else {
+                // 剔第一匹配实例（限定名优先、local 兜底）+ host 移除 + 绑定解绑。
+                try {
+                  if (_r122TList) {
+                    var _r122TIdx = -1;
+                    for (var _tr122 = 0; _tr122 < _r122TList.length; _tr122++) {
+                      if (String(_r122TList[_tr122].qname).toLowerCase() === n.toLowerCase()) { _r122TIdx = _tr122; break; }
+                    }
+                    if (_r122TIdx < 0) {
+                      for (var _tl122 = 0; _tl122 < _r122TList.length; _tl122++) {
+                        if (String(_r122TList[_tl122].local).toLowerCase() === n.toLowerCase()) { _r122TIdx = _tl122; break; }
+                      }
+                    }
+                    if (_r122TIdx >= 0) {
+                      var _r122TQ = _r122TList[_r122TIdx].qname;
+                      _r122TList.splice(_r122TIdx, 1);
+                      var _r122TBind = _zwAttrBindings.get(key);
+                      if (_r122TBind) {
+                        var _r122TA = _r122TBind.get(_r122TQ);
+                        if (_r122TA) { _r122TA.ownerElement = null; _r122TBind.delete(_r122TQ); }
+                      }
+                    }
+                  }
+                } catch (_eTR) {}
+                if (handle && typeof __zw_remove_attr_handle === 'function') __zw_remove_attr_handle(handle, n);
+                else if (handle) __zw_set_attr_handle(handle, n, '');
+                else if (typeof __zw_remove_attr === 'function') __zw_remove_attr(sel, n);
+                else __zw_set_attr(sel, n, '');
+              }
+              _mo_notify(sel, handle, { type: 'attributes', attributeName: n, oldValue: moOld });
+              return wantT;
+            }
             if (sel && typeof __zw_toggle_attribute === 'function') {
               var fArg = hasForce ? (force ? '1' : '0') : '';
               var res = __zw_toggle_attribute(sel, n, fArg); // enqueue-时解析，返 post-toggle presence。
@@ -3635,7 +3998,39 @@
           _classCache[key] = String(value);
           if (handle) __zw_set_attr_handle(handle, 'class', String(value));
           else __zw_set_attr(sel, 'class', String(value));
+          // R122：同步实例层（classList/className 直写 host，实例不更新则 getAttribute 读 stale）。
+          try {
+            var _cn122L = _zwAttrInstances.get(key);
+            if (_cn122L) {
+              var _cn122Hit = false;
+              for (var _cn122i = 0; _cn122i < _cn122L.length; _cn122i++) {
+                if (_cn122L[_cn122i].qname === 'class') { _cn122L[_cn122i].value = String(value); _cn122Hit = true; break; }
+              }
+              if (!_cn122Hit) _zwAttrInstUpsert(key, 'class', null, null, 'class', String(value));
+            }
+          } catch (_eCn122) {}
           moAttr = 'class';
+        } else if (p === 'style') {
+          // js-dom M4 R122：`el.style = cssText`（spec CSSStyleDeclaration cssText setter——
+          // 「set the cssText attribute」写 style 内容属性为串）。旧落 generic fallthrough 进
+          // expando → hasAttribute('style') 恒 false（WPT "Toggling element with inline style
+          // should make inline style disappear"：toggleAttribute('style') 应移除真属性返 false，
+          // 旧误当 absent 加属性返 true）。null → 空串（LegacyNullToEmptyString）。
+          var _styV = value === null ? '' : String(value);
+          if (handle) __zw_set_attr_handle(handle, 'style', _styV);
+          else __zw_set_attr(sel, 'style', _styV);
+          // R122：同步实例层（同 className——直写 host 的同步面）。
+          try {
+            var _st122L = _zwAttrInstances.get(key);
+            if (_st122L) {
+              var _st122Hit = false;
+              for (var _st122i = 0; _st122i < _st122L.length; _st122i++) {
+                if (_st122L[_st122i].qname === 'style') { _st122L[_st122i].value = _styV; _st122Hit = true; break; }
+              }
+              if (!_st122Hit) _zwAttrInstUpsert(key, 'style', null, null, 'style', _styV);
+            }
+          } catch (_eSt122) {}
+          moAttr = 'style';
         } else if (p === 'id') {
           // spec [LegacyNullToEmptyString]：null → 空串（非 "null"）。
           var idv = value === null ? '' : String(value);

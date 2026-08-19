@@ -2975,8 +2975,9 @@ fn test_mutation_observer_ns_and_no_mutation_r46() {
              var mo = new MutationObserver(function(rs) { recs = rs; });\n\
              var a = document.querySelector('#a');\n\
              mo.observe(a, { attributes: true, attributeOldValue: true });\n\
-             // ① setAttributeNS：localName + namespace\n\
-             a.setAttributeNS('http://example.org/', 'xml:lang', 'en');\n\
+             // ① setAttributeNS：localName + namespace（R122：validate-and-extract 后
+             // 'xml' 前缀须绑 XML ns——改用 'lang' 裸名 + ns，语义面不变）\n\
+             a.setAttributeNS('http://example.org/', 'lang', 'en');\n\
              a.setAttributeNS('http://example.org/ns2', 'title2', 'v');",
         )
         .unwrap();

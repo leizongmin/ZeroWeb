@@ -816,3 +816,108 @@ fn test_text_comment_constructors_and_surrogates_r121() {
         "Text/Comment 构造器（data 转换/ownerDocument/原型链）+ CharacterData 孤立代理保真（覆盖缓存）+ 方法族"
     );
 }
+
+// js-dom M4 R122：Attr identity 绑定表 + 同名多实例属性覆盖层 + setAttributeNS 校验。
+// 驱动用例 WPT dom/nodes attributes.html（36F→全 100%）+ attributes-namednodemap.html
+// （2F→8P 100%）：
+// ① `_zwAttrBindings`（elKey → Map(限定名 → Attr 对象)）：setAttributeNode/getAttributeNode/
+//   setNamedItem/removeNamedItem 的 identity 契约（同一 Attr 对象往返 + ownerElement 绑定/
+//   解绑 + removeAttribute 解绑防 InUse 误抛）。
+// ② `_zwAttrInstances`（elKey → 有序实例）：host 属性存储按限定名扁平（同 local 多 ns 无法
+//   共存），spec 允许 setAttributeNS('ab','attr') + setAttributeNS('kl','attr') 两实例并存；
+//   非 NS getAttribute 返第一个 local 匹配；setAttribute 按限定名原位更新。
+// ③ `Attr.prototype.value/nodeValue` accessor（_r122V 存储）：attr.value = v 写回传播到
+//   ownerElement（spec `dom-attr-value`「change an attribute」）。
+// ④ NamedNodeMap 原型方法 identity（`map.item === NamedNodeMap.prototype.item`）+ per-element
+//   Proxy 缓存。
+// ⑤ setAttributeNS validate-and-extract（InvalidCharacterError/NamespaceError 全分支）+
+//   HTML-ns 判定的小写化收窄（非 HTML ns 元素限定名大小写敏感保留）。
+// https://dom.spec.whatwg.org/#dom-element-setattributenode
+#[test]
+fn test_attr_identity_and_multi_instance_r122() {
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let mut sandbox = V8Sandbox::with_config(zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    })
+    .unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><div id=\"d\">x</div></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry);
+
+    let out = sandbox
+        .execute(
+            r#"var parts = [];
+            // ① identity：attributes[0] === getAttributeNode；setAttributeNode 绑定往返。
+            var el = document.createElement('div');
+            el.setAttribute('foo', 'bar');
+            var attr = el.attributes[0];
+            parts.push('id1:' + (attr === el.getAttributeNode('foo')));
+            parts.push('id2:' + (attr === el.getAttributeNodeNS('', 'foo')));
+            // removeAttribute 解绑（ownerElement null）→ setAttributeNode 不再 InUse。
+            var el2 = document.createElement('div');
+            el.removeAttribute('foo');
+            parts.push('owner-null:' + (attr.ownerElement === null));
+            el2.setAttributeNode(attr);
+            parts.push('rebind:' + (attr === el2.getAttributeNode('foo')) + ':' + (attr.ownerElement === el2) + ':' + attr.value);
+            // ② 多实例：同 local 不同 ns 并存；非 NS 读返第一 local 匹配。
+            var e3 = document.createElement('baz');
+            e3.setAttributeNS('ab', 'attr', 'fail');
+            e3.setAttributeNS('kl', 'attr', 'pass');
+            e3.setAttribute('attr', 'pass');
+            parts.push('multi:' + e3.getAttribute('attr') + ':' + e3.getAttributeNS('kl', 'attr')
+              + ':' + e3.attributes.length + ':' + e3.attributes[0].namespaceURI + ':' + e3.attributes[1].namespaceURI);
+            // ③ Attr.value setter 写回元素。
+            var e4 = document.createElement('foo');
+            e4.setAttribute('x', 'y');
+            var a4 = e4.attributes[0];
+            a4.value = 'Y&lt;';
+            parts.push('setprop:' + e4.getAttribute('x') + ':' + a4.nodeValue);
+            // ④ NamedNodeMap 方法 identity + named 不遮蔽方法。
+            var e5 = document.createElement('div');
+            var map5 = e5.attributes;
+            var foo5 = document.createAttribute('foo');
+            map5.setNamedItem(foo5);
+            var item5 = document.createAttribute('item');
+            map5.setNamedItem(item5);
+            parts.push('nnm:' + (map5.foo === foo5) + ':' + (map5.item === globalThis.NamedNodeMap.prototype.item)
+              + ':' + (map5.length === 2));
+            var rm5 = map5.removeNamedItem('item');
+            parts.push('rm:' + (rm5 === item5) + ':' + (map5.length === 1));
+            // ⑤ setAttributeNS 校验（NamespaceError / InvalidCharacterError）+ 非 HTML ns 大小写保留。
+            var e6 = document.createElement('div');
+            var threwN = false, threwI = false;
+            try { e6.setAttributeNS('', 'p:l', 'v'); } catch (e) { threwN = e.name === 'NamespaceError'; }
+            try { e6.setAttributeNS('a', '1abc', 'v'); } catch (e) { threwI = e.name === 'InvalidCharacterError'; }
+            parts.push('valid:' + threwN + ':' + threwI);
+            var e7 = document.createElementNS('http://www.example.com', 'foo');
+            e7.setAttribute('A', 'test');
+            parts.push('case:' + e7.getAttribute('A') + ':' + e7.hasAttribute('A') + ':' + e7.hasAttributeNS('', 'A') + ':' + e7.hasAttributeNS('foo', 'A'));
+            // getAttributeNames 多实例合成名剥离。
+            var e8 = document.createElement('div');
+            e8.setAttribute('foo', 'bar');
+            e8.setAttributeNS('', 'FOO', 'bar');
+            e8.setAttributeNS('dummy1', 'foo', 'bar');
+            e8.setAttributeNS('dummy2', 'dummy:foo', 'bar');
+            var gn = e8.getAttributeNames();
+            parts.push('names:' + gn.length + ':' + gn.join(',').indexOf(String.fromCharCode(0)) + ':');
+            parts.join('|');"#,
+        )
+        .unwrap()
+        .value;
+    assert_eq!(
+        out,
+        "id1:true|id2:true|owner-null:true|rebind:true:true:bar|multi:pass:pass:2:ab:kl|setprop:Y&lt;:Y&lt;|nnm:true:true:true|rm:true:true|valid:true:true|case:test:true:true:false|names:4:-1:",
+        "Attr identity 绑定 + 多实例 NS 覆盖层 + value 写回 + NamedNodeMap 方法 identity + NS 校验/大小写"
+    );
+}
+
+// R122 调试探针（诊断 setNamedItem 真 Attr 形态用）——已定位并删除，正式断言在
+// test_namednodemap_setnameditem_main_dom_r3022（R122 spec 语义版）。

@@ -154,6 +154,15 @@
   globalThis.HTMLFormElement = globalThis.HTMLFormElement || function HTMLFormElement() {};
   globalThis.HTMLFormElement.prototype = Object.create(globalThis.HTMLElement.prototype);
   globalThis.NamedNodeMap = globalThis.NamedNodeMap || function NamedNodeMap() {};
+  // js-dom M4 R122：原型方法占位——WPT attributes-namednodemap「should not interfere with
+  // existing method names」断言 `map.item === NamedNodeMap.prototype.item`（**同一函数对象**，
+  // named getter 'item' 不得遮蔽方法）。本桥 NamedNodeMap 是 Proxy 非真实例（方法在 get
+  // trap 分支）——把原型方法直接置为 trap 分支返回的同一实现函数（_zwNNMItemImpl 等，
+  // _attributesProxy 定义处赋值），两侧 identity 相等。
+  globalThis.NamedNodeMap.prototype.item = function () { return null; };
+  globalThis.NamedNodeMap.prototype.getNamedItem = function () { return null; };
+  globalThis.NamedNodeMap.prototype.setNamedItem = function () { return null; };
+  globalThis.NamedNodeMap.prototype.removeNamedItem = function () { return null; };
   // js-dom M4 R120：NodeList / HTMLCollection 构造器占位——WPT Document-Element-getElementsByTagName
   // 「Interfaces」断言 `!(x instanceof NodeList) && x instanceof HTMLCollection`（构造器缺失 →
   // ReferenceError 崩整簇）；expando 用例读 HTMLCollection.prototype.item / .namedItem（可被
@@ -164,6 +173,38 @@
   // R3024：Attr 构造器占位——_zwMakeAttr 经 Object.create(Attr.prototype) 建真实例，使 `attr instanceof Attr`
   // 为 true（闭合 R3023 限制①；消费者按 nodeType===2 / instanceof Attr 校验属性节点）。
   globalThis.Attr = globalThis.Attr || function Attr() {};
+  // js-dom M4 R122：`attr.value = v` 的**写回传播**（spec `dom-attr-value` setter——set an attribute
+  // 值须经「change an attribute」更新所属元素）。_zwMakeAttr 建的是 own 数据属性，写 value 不传播
+  // （WPT "Attribute values should not be parsed."：attr.value='Y&lt;' 后 el.getAttribute('x')
+  // 须 'Y&lt;'）。ownerElement 是 _makeProxy 元素 proxy（R122 起 getAttributeNode/attrObj 绑定），
+  // setter 委托元素 setAttributeNode 值更新（ownerElement 缺省 = 游离 Attr，仅本地改）。value/
+  // nodeValue 同源（getter 由 own 数据属性遮蔽——enumerable 数据属性优先于原型 accessor；仅
+  // setter 需要原型 accessor，own 数据属性 writable 会拦截赋值……故须 _zwMakeAttr 建后 delete
+  // own value/nodeValue 使原型 accessor 生效——见 _zwMakeAttr 尾部 R122 改造）。
+  (function () {
+    var _r122Set = function (v) {
+      var s = v == null ? '' : String(v);
+      if (this._r122V === s) return; // 幂等护栏：值未变不传播（防 setAttribute↔绑定 Attr 互写环）
+      this._r122V = s;
+      this.textContent = s;
+      this.data = s;
+      var oe = this.ownerElement;
+      if (oe && typeof oe.setAttribute === 'function') {
+        try {
+          var _r122Pref = this.prefix != null ? String(this.prefix) : null;
+          var _r122Loc = this.localName != null ? String(this.localName) : String(this.name);
+          var _r122Qn = _r122Pref ? _r122Pref + ':' + _r122Loc : _r122Loc;
+          var _r122A_ns = this.namespaceURI != null ? String(this.namespaceURI) : null;
+          if (_r122A_ns != null) oe.setAttributeNS(_r122A_ns, _r122Qn, s);
+          else oe.setAttribute(_r122Qn, s);
+        } catch (_eA122) {}
+      }
+    };
+    try {
+      Object.defineProperty(globalThis.Attr.prototype, 'value', { set: _r122Set, get: function () { return this._r122V != null ? this._r122V : ''; }, configurable: true });
+      Object.defineProperty(globalThis.Attr.prototype, 'nodeValue', { set: _r122Set, get: function () { return this._r122V != null ? this._r122V : ''; }, configurable: true });
+    } catch (_eD122) {}
+  })();
   globalThis.DocumentFragment = globalThis.DocumentFragment || function DocumentFragment() {};
   globalThis.DocumentFragment.prototype = Object.create(globalThis.Node.prototype);
   // js-dom M4 R81：CharacterData 族构造器占位（Text/Comment/ProcessingInstruction/CDATASection）——
@@ -1569,6 +1610,18 @@
       _classCache[key] = v;
       if (handle) __zw_set_attr_handle(handle, 'class', v);
       else __zw_set_attr(sel, 'class', v);
+      // R122：classList write 同步实例层（getAttribute 的实例优先读需要——classList 直写
+      // host 不经 setAttribute，实例层不更新会读回 stale 旧值）。
+      try {
+        var _clsInst = _zwAttrInstances.get(key);
+        if (_clsInst) {
+          var _clsHit = false;
+          for (var _ci122 = 0; _ci122 < _clsInst.length; _ci122++) {
+            if (_clsInst[_ci122].qname === 'class') { _clsInst[_ci122].value = v; _clsHit = true; break; }
+          }
+          if (!_clsHit) _zwAttrInstUpsert(key, 'class', null, null, 'class', v);
+        }
+      } catch (_eCls122) {}
       _mo_notify(sel, handle, { type: 'attributes', attributeName: 'class', oldValue: _clsOld });
     };
     // DOMTokenList token 校验（spec `dom-domtokenlist-validation`）：空串 → SyntaxError
@@ -4726,8 +4779,9 @@
     a.nodeType = 2;
     a.name = n;
     a.nodeName = n;
-    a.value = v;
-    a.nodeValue = v;
+    // R122：value/nodeValue 走原型 accessor（_r122V 存储 + setter 写回 ownerElement），
+    // 不再建 own 数据属性（own writable 会拦截赋值使传播失效）。
+    a._r122V = v;
     a.localName = n;
     a.prefix = null;
     a.namespaceURI = null;
@@ -4744,16 +4798,100 @@
   // R3198：handle 经 `__zw_attr_names_handle`（属性名仅来自 mutations，无快照基底）——旧 handle 元素 NamedNodeMap
   // 恒空（length 0 / item·getNamedItem 返 null / iterator 空）。setNamedItem/removeNamedItem 真 mutation（R3022，
   // 委托元素 setAttribute/removeAttribute host 路径，返旧/移除 Attr），非只读 no-op。
+  // js-dom M4 R122：属性名统一读（NamedNodeMap readNames 与 getAttributeNames 共源）。
+  // 顺序规则（WPT attributes.html attributes_are / getAttributeNames / own property）：
+  // ① 实例层的 local 集合**涵盖** host 名单的 local 集合 → 实例序为权威（文档插入序——
+  //   host 扁平存储无法表达同 local 多 ns 的位置，实例按创建序展开；同 qname 第 k 个
+  //   加合成后缀 '\x00#k' 供 attrObj 定位）。
+  // ② 未涵盖（parser 快照属性未被 JS 写过——实例只含部分 local）→ host 名单为权威，
+  //   实例只在其 local 的 host 位次展开（值以实例为准），host 未含的实例（NS 二实例）
+  //   追加尾部。
+  function _zwAttrReadNames(sel, handle) {
+    var base = [];
+    try {
+      var n = handle
+        ? (typeof __zw_attr_names_handle === 'function' ? __zw_attr_names_handle(handle) : '')
+        : (typeof __zw_attr_names === 'function' ? __zw_attr_names(sel) : '');
+      base = n ? n.split('|').filter(Boolean) : [];
+    } catch (_e) {}
+    try {
+      var elKey = _elKey(sel, handle);
+      var inst = _zwAttrInstances.get(elKey);
+      if (inst && inst.length) {
+        var instLocal = {};
+        for (var ii = 0; ii < inst.length; ii++) instLocal[inst[ii].local] = true;
+        var baseLocal = {};
+        for (var bi0 = 0; bi0 < base.length; bi0++) {
+          var bn0 = base[bi0];
+          var bl0 = bn0.indexOf(':') >= 0 ? bn0.slice(bn0.indexOf(':') + 1) : bn0;
+          baseLocal[bl0] = true;
+        }
+        var out = [];
+        var qc = {};
+        var pushInst = function (it) {
+          qc[it.qname] = (qc[it.qname] || 0) + 1;
+          out.push(qc[it.qname] > 1 ? it.qname + '\x00#' + qc[it.qname] : it.qname);
+        };
+        // 实例覆盖 host 全部 local（setAttributeNS 双实例把 host 属性全覆盖等场景）——
+        // **base 位次优先 + 每位消费一个实例**：host 名单是文档序权威（parser 快照位次 +
+        // host 只写每 local 首实例），实例按创建序逐位对齐（同 local 多实例不在首位聚集——
+        // WPT getAttributeNames 期望 foo,FOO,foo,dummy:foo 交错序），host 未含的实例
+        // （NS 二/三实例）按实例序尾追。匹配规则双形态：instance.local === 冒号后 local
+        // **或** === 整名（非 NS setAttribute 的 local 是整个限定名——WPT "Attribute with
+        // prefix in local name" 的 'pre:fix'）。
+        // 首版「实例全量前插」破坏文档序（classList.write upsert class 实例后 id/class/data-x
+        // 错序——r44 own-enumeration 抓回）；二版「同 local 全部实例聚集首位」破坏交错序
+        // （WPT getAttributeNames tests 抓回）。
+        var usedInst = {};
+        for (var b1 = 0; b1 < base.length; b1++) {
+          var bn = base[b1];
+          var bLocal = bn.indexOf(':') >= 0 ? bn.slice(bn.indexOf(':') + 1) : bn;
+          var emitted = false;
+          for (var i3 = 0; i3 < inst.length && !emitted; i3++) {
+            if (usedInst[i3]) continue;
+            if (inst[i3].local === bLocal || inst[i3].local === bn) {
+              usedInst[i3] = true; pushInst(inst[i3]); emitted = true;
+            }
+          }
+          if (!emitted && out.indexOf(bn) < 0) out.push(bn);
+        }
+        for (var i4 = 0; i4 < inst.length; i4++) {
+          if (!usedInst[i4]) { usedInst[i4] = true; pushInst(inst[i4]); }
+        }
+        return out;
+      }
+    } catch (_e2) {}
+    return base;
+  }
+
+  // js-dom M4 R122：按 readNames 名（含 '\x00#k' 合成后缀）取**稳定 Attr 对象**——
+  // getAttributeNode 族与 NamedNodeMap 索引读共用（identity 统一入口）。缺省 null。
+  function _zwAttrObjFor(sel, handle, name) {
+    try {
+      var nm = String(name);
+      var names = _zwAttrReadNames(sel, handle);
+      var idx = names.indexOf(nm);
+      if (idx < 0) {
+        // 合成名 miss（调用方可能传裸 qname）→ 退化为首个限定名匹配。
+        for (var i = 0; i < names.length; i++) {
+          if (_zwAttrStripSyn(names[i]) === nm) { idx = i; break; }
+        }
+      }
+      if (idx < 0) return null;
+      return _attributesProxy(sel, handle).item(idx);
+    } catch (_e) { return null; }
+  }
+
   function _attributesProxy(sel, handle) {
+    // R3198：handle 经 `__zw_attr_names_handle`，sel 经 `__zw_attr_names`（latest-wins）。各方法
+    //（length/item/getNamedItem/iterator）均经此，故 handle NamedNodeMap 旧全空。
+    // R122：读统一走 _zwAttrReadNames（与 getAttributeNames 同源融合）。
+    // R122：per-element 缓存命中**先于一切闭包/原型赋值**（否则每次访问 el.attributes 刷新
+    // NamedNodeMap.prototype.item 为新材料闭包，缓存实例方法与原型 identity 分叉）。
+    var _nnmCacheKey = _elKey(sel, handle);
+    if (_zwNNMCache[_nnmCacheKey]) return _zwNNMCache[_nnmCacheKey];
     var readNames = function() {
-      // R3198：handle 经 `__zw_attr_names_handle`，sel 经 `__zw_attr_names`（latest-wins）。各方法
-      //（length/item/getNamedItem/iterator）均经此，故 handle NamedNodeMap 旧全空。
-      try {
-        var n = handle
-          ? (typeof __zw_attr_names_handle === 'function' ? __zw_attr_names_handle(handle) : '')
-          : (typeof __zw_attr_names === 'function' ? __zw_attr_names(sel) : '');
-        return n ? n.split('|').filter(Boolean) : [];
-      } catch (_e) { return []; }
+      return _zwAttrReadNames(sel, handle);
     };
     // js-dom M3 R96：supported property names 的 HTML 文档规则（WPT attributes.html "only include
     // all-lowercase qualified names"）——**HTML 文档 + HTML 命名空间元素**的 named keys（ownKeys 的
@@ -4763,7 +4901,9 @@
     // qualified names" 两变体）。HTML-ns 判定：仅 createElementNS 元素带 `_nsHandles` 条目——无条目
     // = 主文档 createElement（隐式 HTML ns）；文档 HTML-ness 经 ownerDocument.contentType。
     var supportedNames = function() {
-      var names = readNames();
+      // R122：named keys 不含合成后缀（'\x00#k' 是内部多实例索引键，非 spec qualified name——
+      // WPT own property correctness 期望数组无 "a\0#2"）。
+      var names = readNames().map(_zwAttrStripSyn);
       var _apDoc = null;
       try { _apDoc = _makeProxy(sel, handle).ownerDocument; } catch (_eD) {}
       var _apDocHtml = !(_apDoc && typeof _apDoc.contentType === 'string'
@@ -4782,68 +4922,120 @@
       return names;
     };
     var attrObj = function(name) {
-      // R3003：sel 用 latest-wins（`__zw_get_attr_lw`）反映同批 setAttribute（旧 `__zw_get_attr` 纯快照 → Attr.value
-      // stale）；handle 用 `__zw_get_attr_handle`（latest-wins from mutations）。
-      // R3023：经 _zwMakeAttr 返真 Attr 实例（nodeType 2 + nodeName/nodeValue 全字段），非 plain object。
-      var v;
-      if (handle) v = __zw_get_attr_handle(handle, name);
-      else if (typeof __zw_get_attr_lw === 'function') v = __zw_get_attr_lw(sel, name);
-      else v = __zw_get_attr(sel, name);
-      // R116：NS 属性的 Attr 字段（prefix/localName/namespaceURI）从 setAttributeNS 登记的
-      // 元数据取（host 扁平名无 ns 语义——WPT case.js setAttributeNS 断言 attr.prefix）。
-      var _r116Key = _elKey(sel, handle);
-      var _r116Meta = _attrNSMeta[_r116Key] && _attrNSMeta[_r116Key][name];
-      var attr = _zwMakeAttr(name, v || '', _makeProxy(sel, handle));
-      if (_r116Meta) {
-        attr.prefix = _r116Meta.prefix;
-        attr.localName = _r116Meta.local;
-        attr.namespaceURI = _r116Meta.ns;
-        attr.textContent = v || '';
-        attr.data = v || '';
+      // js-dom M4 R122：**稳定 Attr identity**——同一 (元素, qname) 的 Attr 对象往返恒同
+      //（WPT attributes.html：`el.attributes[0] === el.getAttributeNode('foo')`、
+      // `attr === el2.getAttributeNode('foo')` setAttributeNode 绑定后）。经绑定表
+      // （_zwAttrBindings，elKey → Map(限定名 → Attr)）取/建/登记；实例层（_zwAttrInstances）
+      // 供多实例 NS 字段（prefix/localName/namespaceURI 以实例为准）。合成名（qname +
+      // '\x00#k'）定位同 qname 第 k 实例。
+      var _r122Name = String(name);
+      var _r122Qname = _zwAttrStripSyn(_r122Name);
+      var _r122ElKey = _elKey(sel, handle);
+      var _r122Bind = _zwAttrBindMap(_r122ElKey);
+      var _r122List = _zwAttrInstances.get(_r122ElKey);
+      // 定位目标实例（合成名第 k 个 / 限定名首个）。
+      var _r122Inst = null;
+      if (_r122List) {
+        var _r122M = /\x00#(\d+)$/.exec(_r122Name);
+        if (_r122M) {
+          var _r122K = parseInt(_r122M[1], 10);
+          var _r122Cnt = 0;
+          for (var _r122j = 0; _r122j < _r122List.length; _r122j++) {
+            if (_r122List[_r122j].qname === _r122Qname) {
+              _r122Cnt++;
+              if (_r122Cnt === _r122K) { _r122Inst = _r122List[_r122j]; break; }
+            }
+          }
+        } else {
+          for (var _r122z = 0; _r122z < _r122List.length; _r122z++) {
+            if (_r122List[_r122z].qname === _r122Qname) { _r122Inst = _r122List[_r122z]; break; }
+          }
+        }
       }
+      // 绑定命中（含游离回归：ownerElement 由绑定维护）→ 复用。键用**完整名**（含 '\x00#k'
+      // 合成后缀——同 qname 多实例各有 identity）。
+      var _r122Cached = _r122Bind.get(_r122Name);
+      if (_r122Cached) {
+        // 同步实例值（setattr 路径直改实例时 Attr._r122V 同步——identity 不变值最新）。
+        if (_r122Inst && _r122Cached._r122V !== _r122Inst.value) {
+          _r122Cached._r122V = _r122Inst.value;
+          _r122Cached.textContent = _r122Inst.value;
+          _r122Cached.data = _r122Inst.value;
+        }
+        return _r122Cached;
+      }
+      // 新建（R3003 latest-wins 读值 + R116 NS meta / R122 实例层 NS 字段）。
+      var v;
+      if (_r122Inst) v = _r122Inst.value;
+      else if (handle) v = __zw_get_attr_handle(handle, _r122Qname);
+      else if (typeof __zw_get_attr_lw === 'function') v = __zw_get_attr_lw(sel, _r122Qname);
+      else v = __zw_get_attr(sel, _r122Qname);
+      var attr = _zwMakeAttr(_r122Qname, v != null ? v : '', _makeProxy(sel, handle));
+      if (_r122Inst) {
+        attr.prefix = _r122Inst.prefix;
+        attr.localName = _r122Inst.local;
+        attr.namespaceURI = _r122Inst.ns;
+      } else {
+        // R116：NS 属性的 Attr 字段（prefix/localName/namespaceURI）从 setAttributeNS 登记的
+        // 元数据取（host 扁平名无 ns 语义——WPT case.js setAttributeNS 断言 attr.prefix）。
+        var _r116Meta = _attrNSMeta[_r122ElKey] && _attrNSMeta[_r122ElKey][_r122Qname];
+        if (_r116Meta) {
+          attr.prefix = _r116Meta.prefix;
+          attr.localName = _r116Meta.local;
+          attr.namespaceURI = _r116Meta.ns;
+        }
+      }
+      _r122Bind.set(_r122Name, attr);
       return attr;
     };
-    return new Proxy({}, {
+    // R122：方法 identity 统一——把本元素的实现闭包同步装上 NamedNodeMap.prototype
+    //（`map.item === NamedNodeMap.prototype.item`，WPT namednodemap method-names 断言。
+    // 多元素的 attributes 各自刷新原型方法——named property 冲突场景（attr 名 'item'）
+    // 由 get trap 分支序保证方法优先，原型值仅供 strict-equality identity 对照）。
+    var _nnmItemFn = function(i) {
+      var names = readNames();
+      var idx = i | 0;
+      return idx >= 0 && idx < names.length ? attrObj(names[idx]) : null;
+    };
+    var _nnmGetFn = function(name) {
+      var names = readNames();
+      var n = String(name);
+      if (names.indexOf(n) >= 0) return attrObj(n);
+      for (var gi = 0; gi < names.length; gi++) {
+        if (_zwAttrStripSyn(names[gi]) === n) return attrObj(names[gi]);
+      }
+      return null;
+    };
+    try {
+      globalThis.NamedNodeMap.prototype.item = _nnmItemFn;
+      globalThis.NamedNodeMap.prototype.getNamedItem = _nnmGetFn;
+    } catch (_eNNM) {}
+    var _nnmProxy = new Proxy({}, {
       get: function(_t, p) {
         if (p === 'length') return readNames().length;
-        if (p === 'item') {
-          return function(i) {
-            var names = readNames();
-            var idx = i | 0;
-            return idx >= 0 && idx < names.length ? attrObj(names[idx]) : null;
-          };
-        }
-        if (p === 'getNamedItem') {
-          return function(name) {
-            var names = readNames();
-            var n = String(name);
-            return names.indexOf(n) >= 0 ? attrObj(n) : null;
-          };
-        }
-        if (p === 'setNamedItem') {
-          // R3022：真 mutation——setNamedItem(attr) 等价 setAttribute(attr.name, attr.value)（经元素 host 路径），
-          // 返旧 Attr（或 null）。lib 经 element.attributes.setNamedItem(attr) 改属性（与 setAttribute 等价路径）。
-          // 返值用 setAttribute 前捕获的 old（attrObj 会 latest-wins 重读到新值）。
+        if (p === 'item') return _nnmItemFn;
+        if (p === 'getNamedItem') return _nnmGetFn;
+        if (p === 'setNamedItem' || p === 'setNamedItemNS') {
+          // R3022：真 mutation——setNamedItem(attr) 等价 setAttributeNode（经元素 host 路径）。
+          // R122：**identity 语义**——绑定传入 Attr 原对象（`map.setNamedItem(attr1)` 后
+          // `map.attr1 === attr1`、removeNamedItem 返同一对象；WPT attributes-namednodemap
+          // setNamedItem/removeNamedItem 簇）。经 _zwSetAttributeNodeCore（绑定表核心）。
           return function (attr) {
-            if (!attr || attr.name == null) return null;
-            var n = String(attr.name);
-            var el = _makeProxy(sel, handle);
-            var old = null;
-            try { old = el.getAttribute(n); } catch (_e) {}
-            try { el.setAttribute(n, attr.value != null ? String(attr.value) : ''); } catch (_e) {}
-            // R3023：返真 Attr 实例（_zwMakeAttr，ownerElement=元素 proxy），非 plain {name,value}。
-            return old != null && old !== '' ? _zwMakeAttr(n, old, el) : null;
+            return _zwSetAttributeNodeCore(sel, handle, _elKey(sel, handle), attr, p === 'setNamedItemNS');
           };
         }
-        if (p === 'removeNamedItem') {
-          // R3022：真 mutation——removeNamedItem(name) 等价 removeAttribute（经元素 host 路径），返移除 Attr（缺失返 null）。
+        if (p === 'removeNamedItem' || p === 'removeNamedItemNS') {
+          // R3022：真 mutation——removeNamedItem(name) 等价 removeAttributeNode（返移除的
+          // 绑定 Attr；缺失抛 NotFoundError，spec `dom-namednodemap-removenameditem`）。
           return function (name) {
-            var n = String(name);
             var el = _makeProxy(sel, handle);
-            var existed = null;
-            try { existed = el.getAttribute(n); } catch (_e) {}
-            try { el.removeAttribute(n); } catch (_e) {}
-            return existed != null && existed !== '' ? _zwMakeAttr(n, existed, el) : null;
+            var attr = el.getAttributeNode(String(name));
+            if (!attr) {
+              throw new (globalThis.DOMException || Error)(
+                "Failed to execute 'removeNamedItem' on 'NamedNodeMap': The specified attribute was not found.",
+                'NotFoundError');
+            }
+            return _zwRemoveAttributeNodeCore(sel, handle, _elKey(sel, handle), attr);
           };
         }
         if (p === Symbol.iterator) {
@@ -4894,11 +5086,17 @@
       // target（{}）→ 恒 []。ownKeys 须与 getOwnPropertyDescriptor 一致（invariant：ownKeys 列出的
       // 键须存在可描述）——descriptor 返 {enumerable, configurable: true} 数据属性近似。
       ownKeys: function() {
+        // R122：ownKeys 的 named 段用 supportedNames（已剥 '\x00#k' 合成后缀），named getter /
+        // gOPD / for-in 均经 supportedNames 一致（WPT getEnumerableOwnProps 期望数组无合成键）。
         var names = readNames();
         var supported = supportedNames();
         var keys = [];
-        for (var i = 0; i < names.length; i++) keys.push(String(i));
-        for (var j = 0; j < supported.length; j++) keys.push(supported[j]);
+        var seen = {};
+        var pushKey = function (k) {
+          if (!seen[k]) { seen[k] = true; keys.push(k); }
+        };
+        for (var i = 0; i < names.length; i++) pushKey(String(i));
+        for (var j = 0; j < supported.length; j++) pushKey(supported[j]);
         return keys;
       },
       getOwnPropertyDescriptor: function(_t, p) {
@@ -4920,6 +5118,8 @@
         return undefined;
       }
     });
+    _zwNNMCache[_nnmCacheKey] = _nnmProxy;
+    return _nnmProxy;
   }
 
   // style 属性名归一：JS per-property 访问用 camelCase（`el.style.fontSize`），CSS 须 kebab-case
