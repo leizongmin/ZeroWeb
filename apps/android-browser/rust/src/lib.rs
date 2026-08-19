@@ -210,6 +210,11 @@ pub extern "system" fn Java_com_leizm_zeroweb_NativeBridge_nativeRunRole(
         return JNI_FALSE;
     };
     match role.to_str().ok() {
+        #[cfg(feature = "android-renderer")]
+        Some("renderer") => std::thread::Builder::new()
+            .name("android-renderer".to_string())
+            .spawn(move || zero_renderer::run_android_role(0, fd))
+            .map_or(JNI_FALSE, |_| JNI_TRUE),
         Some("image-decoder") | Some("compositor") => {
             let Ok(mut transport) = zero_protocol::android_socket_transport_from_fd(fd) else {
                 return JNI_FALSE;

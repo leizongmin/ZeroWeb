@@ -1,0 +1,29 @@
+diff --git a/build.rs b/build.rs
+index d570790..d8c3f6f 100644
+--- a/build.rs
++++ b/build.rs
+@@ -170,6 +170,8 @@ fn build_binding() {
+         && !arg.contains("-nostdinc++")
+         && !arg.contains("-isystem")
+         && !arg.contains("libc++")
++        && !(env::var("CARGO_CFG_TARGET_OS").as_deref() == Ok("android")
++          && arg.starts_with("--target="))
+     })
+     .copied()
+     .collect();
+@@ -222,6 +224,15 @@ fn build_binding() {
+     {
+       clang_args.push(format!("--sysroot={sysroot}"));
+     }
++  } else if target_os == "android" {
++    let target_arch = env::var("CARGO_CFG_TARGET_ARCH").unwrap();
++    let target = match target_arch.as_str() {
++      "x86_64" => "x86_64-linux-android29",
++      "aarch64" => "aarch64-linux-android29",
++      other => panic!("unsupported Android bindgen architecture: {other}"),
++    };
++    clang_args.push(format!("--target={target}"));
++    clang_args.push("--sysroot=third_party/android_toolchain/ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot".to_string());
+   } else if target_os == "ios" {
+     // iOS: point bindgen at the iOS (device) or iOS-simulator SDK and set the
+     // matching clang target triple so the V8 headers parse correctly.

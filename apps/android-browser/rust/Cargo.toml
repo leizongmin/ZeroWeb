@@ -9,6 +9,9 @@ license.workspace = true
 name = "zero_android_browser"
 crate-type = ["cdylib"]
 
+[features]
+android-renderer = ["dep:zero-renderer"]
+
 [dependencies]
 jni = "0.21.1"
 zero-image-decoder = { path = "../../image-decoder" }
@@ -19,3 +22,4 @@ serde_json = { workspace = true }
 
 [target.'cfg(target_os = "android")'.dependencies]
 libc = "0.2"
+zero-renderer = { path = "../../renderer", optional = true }
