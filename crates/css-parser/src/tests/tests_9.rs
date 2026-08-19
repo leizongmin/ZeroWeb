@@ -170,6 +170,12 @@ fn test_hwb_too_few_parts() {
 }
 
 #[test]
+fn test_hwb_rejects_extra_components_and_trailing_input() {
+    assert!(parse_color("hwb(0 0% 0% 20%)").is_none());
+    assert!(parse_color("hwb(0 0% 0%) trailing").is_none());
+}
+
+#[test]
 fn test_hwb_to_rgba_all_sectors() {
     // Sector 0: h=0..60
     let (r, g, b, _a) = hwb_to_rgba(0.0, 0.0, 0.0, 1.0);

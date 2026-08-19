@@ -1145,6 +1145,9 @@ pub fn hwb_to_rgba(h: f64, w: f64, b: f64, a: f64) -> (u8, u8, u8, u8) {
 /// 格式：`hwb(H W B)` 或 `hwb(H W B / A)`，其中 H 为色相（数字），
 /// W 为白度（百分比），B 为黑度（百分比），A 为可选的透明度。
 fn parse_hwb_function(value: &str) -> Option<ColorValue> {
+    if !value.ends_with(')') {
+        return None;
+    }
     let start = value.find('(')?;
     let end = value.rfind(')')?;
     let inner = value.get(start + 1..end)?.trim();
@@ -1159,7 +1162,7 @@ fn parse_hwb_function(value: &str) -> Option<ColorValue> {
 
     // 按空格分割：H W B
     let parts: Vec<&str> = main_part.split_whitespace().collect();
-    if parts.len() < 3 {
+    if parts.len() != 3 {
         return None;
     }
 

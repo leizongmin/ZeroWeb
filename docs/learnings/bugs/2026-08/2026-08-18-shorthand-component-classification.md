@@ -115,6 +115,8 @@ Transform functions exposed the fixed-arity function variant: once function argu
 
 Timing functions exposed the function-specific numeric-constraint variant: fixed argument counts are not enough. `steps()` has step-count lower bounds, including a stricter `jump-none` lower bound, and `cubic-bezier()` only allows x coordinates in `[0,1]`; accepting the first valid-looking arguments silently widens the grammar.
 
+`hwb()` exposed the color-function trailing-token variant: modern color functions with exactly three main components must reject extra components and must consume the entire function input. `rfind(')')` body extraction is only safe after confirming the value ends at that closing parenthesis.
+
 ## Root Cause
 
 The shorthand layer used heuristic component classifiers and treated unrecognized tokens as absent optional components. That is wrong for CSS shorthands such as `border`, where every token must match one of the allowed component grammars. A shared parser can also be broader than the property grammar that consumes it: general length parsing may accept `auto`, intrinsic sizing keywords, or percentages that `border-width` must reject.
