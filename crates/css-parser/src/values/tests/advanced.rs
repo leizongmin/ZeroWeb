@@ -200,6 +200,15 @@ fn test_parse_column_rule_width_invalid() {
     assert_eq!(parse_column_rule_width("-0.5em"), None);
 }
 
+#[test]
+fn test_parse_column_width_invalid_consumer_grammar() {
+    assert_eq!(parse_column_width("-1px"), None);
+    assert_eq!(parse_column_width("-0.5em"), None);
+    assert_eq!(parse_column_width("50%"), None);
+    assert_eq!(parse_column_width("thin"), None);
+    assert_eq!(parse_column_width("min-content"), None);
+}
+
 // ── column-rule-style 测试 ──
 
 #[test]

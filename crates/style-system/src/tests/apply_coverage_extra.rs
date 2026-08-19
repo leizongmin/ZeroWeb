@@ -226,6 +226,14 @@ fn test_apply_column_width_individual() {
     assert!(ok);
     let (ok, _) = apply("column-width", "abc");
     assert!(!ok);
+
+    let mut style = ComputedStyle::default();
+    assert!(apply_property_value(&mut style, "column-width", "120px"));
+    let previous = style.column_width.clone();
+    assert!(!apply_property_value(&mut style, "column-width", "-1px"));
+    assert_eq!(style.column_width, previous);
+    assert!(!apply_property_value(&mut style, "column-width", "50%"));
+    assert_eq!(style.column_width, previous);
 }
 
 // === background-position TwoValue 分支 ===

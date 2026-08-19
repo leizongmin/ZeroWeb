@@ -945,5 +945,36 @@ pub fn parse_column_width(value: &str) -> Option<ColumnWidthValue> {
     if value.eq_ignore_ascii_case("auto") {
         return Some(ColumnWidthValue::Auto);
     }
-    parse_length(value).map(ColumnWidthValue::Length)
+    if matches!(
+        value.to_ascii_lowercase().as_str(),
+        "thin" | "medium" | "thick" | "min-content" | "max-content" | "fit-content"
+    ) {
+        return None;
+    }
+    let length = parse_length(value)?;
+    if !column_width_length_is_valid(&length) {
+        return None;
+    }
+    Some(ColumnWidthValue::Length(length))
+}
+
+fn column_width_length_is_valid(value: &LengthValue) -> bool {
+    match value {
+        LengthValue::Px(v)
+        | LengthValue::Em(v)
+        | LengthValue::Ex(v)
+        | LengthValue::Rex(v)
+        | LengthValue::Cap(v)
+        | LengthValue::Rcap(v)
+        | LengthValue::Rem(v)
+        | LengthValue::Vh(v)
+        | LengthValue::Vw(v)
+        | LengthValue::Vmin(v)
+        | LengthValue::Vmax(v)
+        | LengthValue::Ch(v)
+        | LengthValue::Rch(v)
+        | LengthValue::Ic(v)
+        | LengthValue::Ric(v) => *v >= 0.0,
+        _ => false,
+    }
 }

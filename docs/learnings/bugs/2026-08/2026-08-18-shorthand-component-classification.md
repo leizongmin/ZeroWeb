@@ -157,6 +157,8 @@ Border-image also exposed the split-branch negative-length variant: fixing numbe
 
 Column-rule-width exposed the duplicated-entry consumer-grammar variant: the same property parser existed in both `parse_basic` and `parse_layout`, and both delegated directly to shared `parse_length`. When a consumer grammar is narrower than the shared parser, audit and fix every exported entry point or the rejected value can still enter through the alternate module.
 
+Column-width exposed the longhand-vs-shorthand grammar drift variant: the `columns` shorthand had a correct local validator for `auto | <length [0,∞]>`, but the longhand parser still delegated directly to shared `parse_length`. When a shorthand contains a stricter local validator for a longhand value, mirror that consumer grammar in the longhand parser as well.
+
 ## Root Cause
 
 The shorthand layer used heuristic component classifiers and treated unrecognized tokens as absent optional components. That is wrong for CSS shorthands such as `border`, where every token must match one of the allowed component grammars. A shared parser can also be broader than the property grammar that consumes it: general length parsing may accept `auto`, intrinsic sizing keywords, or percentages that `border-width` must reject.
