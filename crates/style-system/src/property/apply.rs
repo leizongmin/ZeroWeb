@@ -763,8 +763,10 @@ pub fn apply_property_value_with_quirks(
         }
         "text-indent" => {
             if let Some(v) = parse_length_fn(value) {
-                style.text_indent = v;
-                return true;
+                if text_indent_length_is_valid(value, &v) {
+                    style.text_indent = v;
+                    return true;
+                }
             }
         }
         "table-layout" => {
@@ -1232,6 +1234,35 @@ fn letter_spacing_length_is_valid(raw: &str, value: &LengthValue) -> bool {
         | LengthValue::Rch(v)
         | LengthValue::Ic(v)
         | LengthValue::Ric(v) => v.is_finite(),
+        LengthValue::Calc(_) => true,
+        _ => false,
+    }
+}
+
+fn text_indent_length_is_valid(raw: &str, value: &LengthValue) -> bool {
+    if matches!(
+        raw.trim().to_ascii_lowercase().as_str(),
+        "thin" | "medium" | "thick" | "auto" | "min-content" | "max-content" | "fit-content"
+    ) {
+        return false;
+    }
+    match value {
+        LengthValue::Px(v)
+        | LengthValue::Em(v)
+        | LengthValue::Ex(v)
+        | LengthValue::Rex(v)
+        | LengthValue::Cap(v)
+        | LengthValue::Rcap(v)
+        | LengthValue::Rem(v)
+        | LengthValue::Vh(v)
+        | LengthValue::Vw(v)
+        | LengthValue::Vmin(v)
+        | LengthValue::Vmax(v)
+        | LengthValue::Ch(v)
+        | LengthValue::Rch(v)
+        | LengthValue::Ic(v)
+        | LengthValue::Ric(v)
+        | LengthValue::Percentage(v) => v.is_finite(),
         LengthValue::Calc(_) => true,
         _ => false,
     }

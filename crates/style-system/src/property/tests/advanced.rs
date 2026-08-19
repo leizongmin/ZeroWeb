@@ -1397,6 +1397,21 @@ fn test_apply_text_indent_percentage() {
     assert_eq!(style.text_indent, LengthValue::Percentage(10.0));
 }
 
+#[test]
+fn test_apply_text_indent_rejects_invalid_consumer_grammar() {
+    let mut style = ComputedStyle::default();
+    assert!(apply_property_value(&mut style, "text-indent", "10%"));
+    let previous = style.text_indent.clone();
+
+    for value in ["auto", "thin", "min-content", "fit-content(10px)", "infpx", "NaNpx"] {
+        assert!(!apply_property_value(&mut style, "text-indent", value));
+        assert_eq!(style.text_indent, previous, "{} should not overwrite", value);
+    }
+
+    assert!(apply_property_value(&mut style, "text-indent", "-2em"));
+    assert_eq!(style.text_indent, LengthValue::Em(-2.0));
+}
+
 // ── text-decoration-inset（R1607，CSS Text Decoration 4 §2.4）────────────
 
 #[test]

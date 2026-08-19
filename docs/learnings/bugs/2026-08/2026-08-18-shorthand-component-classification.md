@@ -183,6 +183,8 @@ Background-size exposed the dedicated-parser drift variant: having a property-sp
 
 Letter-spacing exposed the inherited-text direct-apply variant: inherited text longhands can bypass parser-level assumptions through `apply_property_value` and persist values from the shared length parser that are not in the property grammar. Validate direct writes against `normal | <length>` so percentages, sizing keywords, border-width aliases, and non-finite lengths fail without mutating the previous computed value.
 
+Text-indent exposed the duplicated text-longhand parser variant: a parser may reject one keyword such as `auto` yet still accept shared-parser aliases and non-finite numbers, while direct apply accepts even the rejected keyword. Keep duplicated parser modules and direct apply on the same consumer grammar, and preserve legitimate negative lengths and percentages when narrowing the rest.
+
 ## Root Cause
 
 The shorthand layer used heuristic component classifiers and treated unrecognized tokens as absent optional components. That is wrong for CSS shorthands such as `border`, where every token must match one of the allowed component grammars. A shared parser can also be broader than the property grammar that consumes it: general length parsing may accept `auto`, intrinsic sizing keywords, or percentages that `border-width` must reject.

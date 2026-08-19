@@ -261,8 +261,18 @@ fn test_parse_text_indent_percentage() {
 }
 
 #[test]
+fn test_parse_text_indent_negative_length() {
+    assert_eq!(parse_text_indent("-2em"), Some(LengthValue::Em(-2.0)));
+}
+
+#[test]
 fn test_parse_text_indent_invalid() {
     assert_eq!(parse_text_indent("auto"), None);
+    assert_eq!(parse_text_indent("thin"), None);
+    assert_eq!(parse_text_indent("min-content"), None);
+    assert_eq!(parse_text_indent("fit-content(10px)"), None);
+    assert_eq!(parse_text_indent("infpx"), None);
+    assert_eq!(parse_text_indent("NaNpx"), None);
 }
 
 // ═══════════════════════════════════════════════════════════════════════

@@ -329,7 +329,36 @@ pub fn parse_text_indent(value: &str) -> Option<LengthValue> {
     if v.eq_ignore_ascii_case("auto") {
         return None;
     }
-    parse_length(v)
+    let length = parse_length(v)?;
+    text_indent_length_is_valid(v, &length).then_some(length)
+}
+
+fn text_indent_length_is_valid(raw: &str, value: &LengthValue) -> bool {
+    if matches!(
+        raw.trim().to_ascii_lowercase().as_str(),
+        "thin" | "medium" | "thick" | "auto" | "min-content" | "max-content" | "fit-content"
+    ) {
+        return false;
+    }
+    match value {
+        LengthValue::Px(v)
+        | LengthValue::Em(v)
+        | LengthValue::Ex(v)
+        | LengthValue::Rex(v)
+        | LengthValue::Cap(v)
+        | LengthValue::Rcap(v)
+        | LengthValue::Rem(v)
+        | LengthValue::Vh(v)
+        | LengthValue::Vw(v)
+        | LengthValue::Vmin(v)
+        | LengthValue::Vmax(v)
+        | LengthValue::Ch(v)
+        | LengthValue::Rch(v)
+        | LengthValue::Ic(v)
+        | LengthValue::Ric(v)
+        | LengthValue::Percentage(v) => v.is_finite(),
+        _ => false,
+    }
 }
 
 /// 解析 CSS letter-spacing / word-spacing 值。
