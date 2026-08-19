@@ -438,6 +438,40 @@ fn length_is_negative(value: &LengthValue) -> bool {
     }
 }
 
+fn clip_path_length_is_valid(raw: &str, value: &LengthValue, allow_negative: bool) -> bool {
+    if matches!(
+        raw.trim().to_ascii_lowercase().as_str(),
+        "thin" | "medium" | "thick" | "auto" | "min-content" | "max-content" | "fit-content"
+    ) {
+        return false;
+    }
+    match value {
+        LengthValue::Px(v)
+        | LengthValue::Em(v)
+        | LengthValue::Ex(v)
+        | LengthValue::Rex(v)
+        | LengthValue::Cap(v)
+        | LengthValue::Rcap(v)
+        | LengthValue::Rem(v)
+        | LengthValue::Vh(v)
+        | LengthValue::Vw(v)
+        | LengthValue::Vmin(v)
+        | LengthValue::Vmax(v)
+        | LengthValue::Ch(v)
+        | LengthValue::Rch(v)
+        | LengthValue::Ic(v)
+        | LengthValue::Ric(v)
+        | LengthValue::Percentage(v) => v.is_finite() && (allow_negative || *v >= 0.0),
+        LengthValue::Calc(_) => true,
+        _ => false,
+    }
+}
+
+fn parse_clip_length(raw: &str, allow_negative: bool) -> Option<LengthValue> {
+    let length = parse_length(raw)?;
+    clip_path_length_is_valid(raw, &length, allow_negative).then_some(length)
+}
+
 /// CSS counter-set 属性值。
 #[derive(Debug, Clone, PartialEq)]
 pub enum CounterSetValue {
@@ -498,18 +532,18 @@ fn parse_clip_inset(rest: &str) -> Option<ClipPathValue> {
     if !(1..=4).contains(&values.len()) {
         return None;
     }
-    let top = parse_length(values[0])?;
+    let top = parse_clip_length(values[0], true)?;
     let right = values
         .get(1)
-        .and_then(|s| parse_length(s))
+        .and_then(|s| parse_clip_length(s, true))
         .unwrap_or_else(|| top.clone());
     let bottom = values
         .get(2)
-        .and_then(|s| parse_length(s))
+        .and_then(|s| parse_clip_length(s, true))
         .unwrap_or_else(|| top.clone());
     let left = values
         .get(3)
-        .and_then(|s| parse_length(s))
+        .and_then(|s| parse_clip_length(s, true))
         .unwrap_or_else(|| right.clone());
 
     let round_val = match round {
@@ -613,8 +647,8 @@ fn parse_clip_polygon(rest: &str) -> Option<ClipPathValue> {
         if coords.len() != 2 {
             return None;
         }
-        let x = parse_length(coords[0])?;
-        let y = parse_length(coords[1])?;
+        let x = parse_clip_length(coords[0], true)?;
+        let y = parse_clip_length(coords[1], true)?;
         points.push((x, y));
     }
 
@@ -634,7 +668,7 @@ fn parse_clip_radius(value: &str) -> Option<ClipPathRadius> {
     if v.eq_ignore_ascii_case("farthest-side") {
         return Some(ClipPathRadius::FarthestSide);
     }
-    parse_length(v).map(ClipPathRadius::Length)
+    parse_clip_length(v, false).map(ClipPathRadius::Length)
 }
 
 /// 解析单个圆角半径（用于 inset 的 round 参数）。
@@ -688,7 +722,7 @@ fn parse_position_pair(s: &str) -> Option<(LengthValue, LengthValue)> {
     } else if parts[0].eq_ignore_ascii_case("right") {
         LengthValue::Percentage(100.0)
     } else {
-        parse_length(parts[0])?
+        parse_clip_length(parts[0], true)?
     };
     let y = if parts.len() < 2 || parts[1].eq_ignore_ascii_case("center") {
         LengthValue::Percentage(50.0)
@@ -697,7 +731,7 @@ fn parse_position_pair(s: &str) -> Option<(LengthValue, LengthValue)> {
     } else if parts[1].eq_ignore_ascii_case("bottom") {
         LengthValue::Percentage(100.0)
     } else {
-        parse_length(parts[1])?
+        parse_clip_length(parts[1], true)?
     };
     Some((x, y))
 }

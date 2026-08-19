@@ -213,6 +213,8 @@ Text and box shadows exposed the per-slot length variant: a shadow uses `<length
 
 Background-position exposed the role-based `<position>` length variant: the parser must validate raw length tokens before assigning them to single, two-value, or edge-offset roles. Preserve finite positive and negative lengths plus finite percentages, but reject shared-parser aliases and non-finite values before style-system resolves them to computed coordinates.
 
+Clip-path exposed the basic-shape slot variant: one property can contain both signed coordinate slots and non-negative radius slots. Route every shared parsed length through a slot-aware validator, preserving negative inset/polygon/position values while rejecting negative radii, parser aliases, sizing keywords, and non-finite values before the computed clip-path is mutated.
+
 ## Root Cause
 
 The shorthand layer used heuristic component classifiers and treated unrecognized tokens as absent optional components. That is wrong for CSS shorthands such as `border`, where every token must match one of the allowed component grammars. A shared parser can also be broader than the property grammar that consumes it: general length parsing may accept `auto`, intrinsic sizing keywords, or percentages that `border-width` must reject.

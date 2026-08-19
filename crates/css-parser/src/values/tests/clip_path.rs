@@ -129,6 +129,14 @@ fn test_clip_path_inset_rejects_extra_values_and_invalid_round() {
     assert!(parse_clip_path("inset(10px round bogus)").is_none());
 }
 
+#[test]
+fn test_clip_path_inset_rejects_invalid_length_grammar() {
+    assert!(parse_clip_path("inset(-10px 20%)").is_some());
+    for value in ["inset(thin)", "inset(auto)", "inset(infpx)", "inset(10px round thin)"] {
+        assert!(parse_clip_path(value).is_none(), "{value} should be rejected");
+    }
+}
+
 // ── circle() ──
 
 #[test]
@@ -210,6 +218,21 @@ fn test_clip_path_circle_rejects_invalid_position() {
     assert!(parse_clip_path("circle(50px at left top extra)").is_none());
 }
 
+#[test]
+fn test_clip_path_circle_rejects_invalid_radius_grammar() {
+    for value in [
+        "circle(-1px)",
+        "circle(thin)",
+        "circle(auto)",
+        "circle(min-content)",
+        "circle(infpx)",
+        "circle(NaNpx)",
+        "circle(50px at thin 20px)",
+    ] {
+        assert!(parse_clip_path(value).is_none(), "{value} should be rejected");
+    }
+}
+
 // ── ellipse() ──
 
 #[test]
@@ -267,6 +290,19 @@ fn test_clip_path_ellipse_rejects_extra_radii_and_invalid_position() {
     assert!(parse_clip_path("ellipse(10px 20px 30px)").is_none());
     assert!(parse_clip_path("ellipse(10px 20px at bad)").is_none());
     assert!(parse_clip_path("ellipse(10px 20px at left top extra)").is_none());
+}
+
+#[test]
+fn test_clip_path_ellipse_rejects_invalid_radius_grammar() {
+    for value in [
+        "ellipse(-1px 20px)",
+        "ellipse(10px -2%)",
+        "ellipse(thin 20px)",
+        "ellipse(10px auto)",
+        "ellipse(10px infpx)",
+    ] {
+        assert!(parse_clip_path(value).is_none(), "{value} should be rejected");
+    }
 }
 
 // ── polygon() ──
@@ -331,6 +367,18 @@ fn test_clip_path_polygon_invalid_points_are_not_dropped() {
     assert!(parse_clip_path("polygon(0 0, , 100% 100%)").is_none());
     assert!(parse_clip_path("polygon(0 0, 100%)").is_none());
     assert!(parse_clip_path("polygon(0 0, 100% 100% 50%)").is_none());
+}
+
+#[test]
+fn test_clip_path_polygon_rejects_invalid_length_grammar() {
+    assert!(parse_clip_path("polygon(-10px -5%, 100% 0, 50% 100%)").is_some());
+    for value in [
+        "polygon(thin 0, 100% 0, 50% 100%)",
+        "polygon(0 infpx, 100% 0, 50% 100%)",
+        "polygon(0 auto, 100% 0, 50% 100%)",
+    ] {
+        assert!(parse_clip_path(value).is_none(), "{value} should be rejected");
+    }
 }
 
 #[test]

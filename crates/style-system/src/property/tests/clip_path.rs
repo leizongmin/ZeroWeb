@@ -71,6 +71,20 @@ fn test_clip_path_apply_invalid() {
     assert!(!apply_property_value(&mut style, "clip-path", "invalid"));
     // 应保持默认值 None
     assert!(matches!(style.clip_path, ClipPathComputedValue::None));
+
+    assert!(apply_property_value(&mut style, "clip-path", "circle(50px)"));
+    let previous = style.clip_path.clone();
+    for value in [
+        "circle(-1px)",
+        "circle(thin)",
+        "circle(infpx)",
+        "ellipse(10px auto)",
+        "inset(thin)",
+        "polygon(0 infpx, 100% 0, 50% 100%)",
+    ] {
+        assert!(!apply_property_value(&mut style, "clip-path", value));
+        assert_eq!(style.clip_path, previous, "{value} should not overwrite");
+    }
 }
 
 // ── 初始值测试 ──
