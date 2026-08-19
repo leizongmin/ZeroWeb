@@ -2607,7 +2607,33 @@
       globalThis.ServiceWorkerRegistration =
         globalThis.ServiceWorkerRegistration || ServiceWorkerRegistration;
       function makeSW(scriptURL, state) {
-        return new globalThis.ServiceWorker(scriptURL, state);
+        var worker = new globalThis.ServiceWorker(scriptURL, state);
+        worker.postMessage = function (message, transfer) {
+          if (transfer && transfer.length) {
+            throw new DOMException('Service Worker transferables are not supported', 'DataCloneError');
+          }
+          var data = structuredClone(message);
+          var dataJSON;
+          try {
+            dataJSON = JSON.stringify(data);
+          } catch (_e) {
+            throw new DOMException('Service Worker message could not be cloned', 'DataCloneError');
+          }
+          if (dataJSON === undefined) {
+            throw new DOMException('Service Worker message could not be cloned', 'DataCloneError');
+          }
+          if (typeof __zw_sw_post_message !== 'function') {
+            throw new DOMException('Service Worker host bridge unavailable', 'InvalidStateError');
+          }
+          var wire = JSON.parse(__zw_sw_post_message(String(worker._id), dataJSON));
+          if (!wire || !wire.ok) {
+            throw new DOMException(
+              wire && wire.error || 'Service Worker postMessage failed',
+              'InvalidStateError'
+            );
+          }
+        };
+        return worker;
       }
       function dispatchTargetEvent(target, type) {
         if (target && typeof target.dispatchEvent === 'function' &&
@@ -2619,6 +2645,7 @@
         var reg = new globalThis.ServiceWorkerRegistration();
         reg._id = id;
         reg._worker = makeSW(scriptURL, 'installing');
+        reg._worker._id = id;
         reg._stateSequence = 0;
         reg._pendingStates = [];
         reg._updateFoundPending = false;
@@ -2802,6 +2829,7 @@
           if (String(reg._id) !== String(snapshot.id)) {
             reg._previousActive = reg.active;
             reg._worker = makeSW(snapshot.scriptURL || '', 'installing');
+            reg._worker._id = snapshot.id;
             reg._stateSequence = 0;
             reg._pendingStates = [];
             reg._updateFoundPending = false;

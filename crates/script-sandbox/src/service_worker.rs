@@ -17,6 +17,10 @@ enum ServiceWorkerCommand {
         event_id: u64,
         phase: ServiceWorkerLifecyclePhase,
     },
+    DispatchMessage {
+        event_id: u64,
+        data_json: String,
+    },
     Shutdown,
 }
 
@@ -37,11 +41,21 @@ const SERVICE_WORKER_BOOTSTRAP: &str = r#"
     }
   }
   class InstallEvent extends ExtendableEvent {}
+  class MessageEvent {
+    constructor(type, init) {
+      this.type = type;
+      this.data = init.data;
+      this.origin = '';
+      this.source = null;
+      this.ports = [];
+    }
+  }
 
   globalThis.self = globalThis;
   globalThis.ServiceWorkerGlobalScope = function ServiceWorkerGlobalScope() {};
   globalThis.ExtendableEvent = ExtendableEvent;
   globalThis.InstallEvent = InstallEvent;
+  globalThis.MessageEvent = MessageEvent;
   globalThis.addEventListener = function(type, listener) {
     if (typeof listener !== 'function') return;
     (listeners[String(type)] || (listeners[String(type)] = [])).push(listener);
@@ -106,6 +120,15 @@ const SERVICE_WORKER_BOOTSTRAP: &str = r#"
       result.settled = true;
       result.message = String(error && error.message || error);
     });
+  };
+  globalThis.__zwDispatchMessage = function(eventId, data) {
+    const event = new MessageEvent('message', {data: data});
+    const callbacks = (listeners.message || []).slice();
+    for (let i = 0; i < callbacks.length; i++) callbacks[i].call(globalThis, event);
+    if (typeof globalThis.onmessage === 'function') {
+      globalThis.onmessage.call(globalThis, event);
+    }
+    return String(eventId);
   };
 })();
 'bootstrap-ready';
@@ -176,6 +199,18 @@ pub enum ServiceWorkerEvent {
         /// Rejection or dispatch error diagnostic.
         message: String,
     },
+    /// A page-to-worker message event was dispatched.
+    MessageDispatched {
+        /// Host-assigned event ID.
+        event_id: u64,
+    },
+    /// A page-to-worker message handler threw.
+    MessageFailed {
+        /// Host-assigned event ID.
+        event_id: u64,
+        /// Handler diagnostic.
+        message: String,
+    },
     /// The runtime thread exited.
     Closed,
 }
@@ -238,6 +273,17 @@ impl ServiceWorkerRuntime {
                             let event = dispatch_lifecycle(sandbox.as_mut(), event_id, phase, lifecycle_timeout_ms);
                             let _ = event_sender.send(event);
                         }
+                        ServiceWorkerCommand::DispatchMessage { event_id, data_json } => {
+                            let dispatch = format!("globalThis.__zwDispatchMessage({}, {});", event_id, data_json);
+                            let event = match sandbox.execute(&dispatch) {
+                                Ok(_) => ServiceWorkerEvent::MessageDispatched { event_id },
+                                Err(error) => ServiceWorkerEvent::MessageFailed {
+                                    event_id,
+                                    message: error.to_string(),
+                                },
+                            };
+                            let _ = event_sender.send(event);
+                        }
                         ServiceWorkerCommand::Shutdown => break,
                     }
                 }
@@ -292,6 +338,18 @@ impl ServiceWorkerRuntime {
     /// Dispatch an activate event.
     pub fn dispatch_activate(&mut self, event_id: u64) -> Result<(), ScriptError> {
         self.dispatch_lifecycle(event_id, ServiceWorkerLifecyclePhase::Activate)
+    }
+
+    /// Dispatch one JSON-compatible page message.
+    pub fn dispatch_message(&mut self, event_id: u64, data_json: &str) -> Result<(), ScriptError> {
+        serde_json::from_str::<serde_json::Value>(data_json)
+            .map_err(|error| ScriptError::InvalidInput(format!("invalid Service Worker message JSON: {error}")))?;
+        self.core
+            .send(ServiceWorkerCommand::DispatchMessage {
+                event_id,
+                data_json: data_json.to_string(),
+            })
+            .map_err(|_| ScriptError::RuntimeError("Service Worker runtime disconnected".into()))
     }
 
     /// Try to receive one runtime event without blocking.
@@ -763,5 +821,42 @@ mod tests {
                 message: String::new(),
             }
         );
+    }
+
+    #[test]
+    fn page_message_dispatches_message_event_with_structured_data() {
+        let mut runtime = ServiceWorkerRuntime::new(test_config()).unwrap();
+        runtime
+            .evaluate(
+                "addEventListener('message', event => {
+                    if (!(event instanceof MessageEvent)) throw new Error('wrong event');
+                    globalThis.messageValue = event.data.name + ':' + event.data.items[1];
+                });",
+                "https://example.test/sw.js",
+            )
+            .unwrap();
+        let _ = runtime.recv_timeout(Duration::from_secs(5)).unwrap();
+
+        runtime
+            .dispatch_message(16, r#"{"name":"page","items":[1,2]}"#)
+            .unwrap();
+        assert_eq!(
+            runtime.recv_timeout(Duration::from_secs(5)).unwrap(),
+            ServiceWorkerEvent::MessageDispatched { event_id: 16 }
+        );
+        runtime
+            .evaluate(
+                "if (globalThis.messageValue !== 'page:2') throw new Error('message lost');",
+                "https://example.test/check.js",
+            )
+            .unwrap();
+        assert!(matches!(
+            runtime.recv_timeout(Duration::from_secs(5)).unwrap(),
+            ServiceWorkerEvent::Evaluated { .. }
+        ));
+        assert!(matches!(
+            runtime.dispatch_message(17, "{"),
+            Err(ScriptError::InvalidInput(_))
+        ));
     }
 }

@@ -108,6 +108,22 @@ pub enum ServiceWorkerManagerEvent {
         /// Whether all activate lifetime promises fulfilled.
         succeeded: bool,
     },
+    /// A page-to-worker message event was dispatched.
+    MessageDispatched {
+        /// Registration version ID.
+        registration_id: u64,
+        /// Host-assigned message event ID.
+        event_id: u64,
+    },
+    /// A page-to-worker message handler threw.
+    MessageFailed {
+        /// Registration version ID.
+        registration_id: u64,
+        /// Host-assigned message event ID.
+        event_id: u64,
+        /// Handler diagnostic.
+        message: String,
+    },
 }
 
 /// Service Worker manager operation failure.
@@ -347,6 +363,19 @@ impl ServiceWorkerManager {
                         });
                     }
                 }
+                ServiceWorkerEvent::MessageDispatched { event_id } => {
+                    output.push(ServiceWorkerManagerEvent::MessageDispatched {
+                        registration_id,
+                        event_id,
+                    });
+                }
+                ServiceWorkerEvent::MessageFailed { event_id, message } => {
+                    output.push(ServiceWorkerManagerEvent::MessageFailed {
+                        registration_id,
+                        event_id,
+                        message,
+                    });
+                }
             }
         }
         output
@@ -546,6 +575,34 @@ impl ServiceWorkerManager {
     /// Return whether this version requested `clients.claim()` while activating.
     pub fn claims_clients(&self, registration_id: u64) -> bool {
         self.claimed_clients.contains(&registration_id)
+    }
+
+    /// Queue a page message on an active or waiting worker runtime.
+    pub fn post_message(
+        &mut self,
+        registration_id: u64,
+        event_id: u64,
+        data_json: &str,
+    ) -> Result<(), ServiceWorkerManagerError> {
+        let state = self
+            .registration(registration_id)
+            .ok_or(ServiceWorkerManagerError::UnknownRegistration(registration_id))?
+            .state;
+        if !matches!(
+            state,
+            ServiceWorkerState::Installed | ServiceWorkerState::Activating | ServiceWorkerState::Activated
+        ) {
+            return Err(ServiceWorkerManagerError::InvalidState {
+                registration_id,
+                expected: ServiceWorkerState::Activated,
+                actual: state,
+            });
+        }
+        self.runtimes
+            .get_mut(&registration_id)
+            .ok_or(ServiceWorkerManagerError::UnknownRegistration(registration_id))?
+            .dispatch_message(event_id, data_json)
+            .map_err(|error| ServiceWorkerManagerError::Runtime(error.to_string()))
     }
 
     /// Inspect version slots for one origin/scope key.
@@ -993,6 +1050,32 @@ mod tests {
             } if *registration_id == id
         )));
         assert!(manager.claims_clients(id));
+    }
+
+    #[test]
+    fn page_message_dispatches_to_active_worker() {
+        let mut manager = ServiceWorkerManager::new();
+        let id = start_active(
+            &mut manager,
+            "/",
+            "addEventListener('message', event => {
+                globalThis.message = event.data.value;
+            });",
+        );
+
+        manager.post_message(id, 91, r#"{"value":"hello"}"#).unwrap();
+        let deadline = std::time::Instant::now() + Duration::from_secs(5);
+        loop {
+            let events = manager.poll();
+            if events.contains(&ServiceWorkerManagerEvent::MessageDispatched {
+                registration_id: id,
+                event_id: 91,
+            }) {
+                break;
+            }
+            assert!(std::time::Instant::now() < deadline, "message dispatch timed out");
+            std::thread::sleep(Duration::from_millis(1));
+        }
     }
 
     #[test]

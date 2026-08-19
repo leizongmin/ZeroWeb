@@ -2511,6 +2511,29 @@ impl WebView {
             }),
         );
 
+        let post_message_manager = manager.clone();
+        sandbox.register_callback(
+            "__zw_sw_post_message",
+            Box::new(move |args| {
+                let Some(registration_id) = args.first().and_then(|value| value.parse::<u64>().ok()) else {
+                    return serde_json::json!({"ok": false, "error": "invalid registration id"}).to_string();
+                };
+                let data_json = args.get(1).map(String::as_str).unwrap_or("");
+                let result = post_message_manager
+                    .lock()
+                    .map_err(|_| "manager lock poisoned".to_string())
+                    .and_then(|mut manager| {
+                        manager
+                            .post_message(registration_id, registration_id, data_json)
+                            .map_err(|error| error.to_string())
+                    });
+                match result {
+                    Ok(()) => serde_json::json!({"ok": true}).to_string(),
+                    Err(error) => serde_json::json!({"ok": false, "error": error}).to_string(),
+                }
+            }),
+        );
+
         let controller_manager = manager.clone();
         sandbox.register_callback(
             "__zw_sw_controller",

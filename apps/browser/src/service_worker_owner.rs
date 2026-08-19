@@ -254,6 +254,20 @@ impl BrowserServiceWorkerOwner {
                     Ok(ServiceWorkerResult::OptionalSnapshot(controller)),
                 )
             }
+            ServiceWorkerOperation::PostMessage {
+                registration_id,
+                data_json,
+            } => {
+                let result = self
+                    .authorized_registration(profile, registration_id, &authority)
+                    .and_then(|_| {
+                        self.manager_mut(profile)
+                            .post_message(registration_id, request_id, &data_json)
+                            .map_err(manager_error)
+                    })
+                    .map(|()| ServiceWorkerResult::Empty);
+                self.result_disposition(tab_id, request_id, result)
+            }
         }
     }
 

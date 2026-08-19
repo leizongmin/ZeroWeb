@@ -90,6 +90,14 @@ fn service_worker_request_rejects_oversized_urls() {
         },
     };
     assert!(params.validate().is_err());
+
+    let params = ServiceWorkerRequestParams {
+        operation: ServiceWorkerOperation::PostMessage {
+            registration_id: 1,
+            data_json: "x".repeat(1024 * 1024 + 1),
+        },
+    };
+    assert!(params.validate().is_err());
 }
 
 #[test]
@@ -124,6 +132,13 @@ fn service_worker_discovery_operations_round_trip() {
         ),
         (5, ServiceWorkerOperation::GetRegistrations),
         (6, ServiceWorkerOperation::Controller),
+        (
+            7,
+            ServiceWorkerOperation::PostMessage {
+                registration_id: 9,
+                data_json: r#"{"value":"hello"}"#.into(),
+            },
+        ),
     ] {
         let decoded = roundtrip(IpcMessage {
             id,
@@ -264,6 +279,13 @@ fn service_worker_nested_enum_discriminants_remain_append_only() {
         6
     );
     assert_eq!(discriminant(&ServiceWorkerOperation::Controller), 7);
+    assert_eq!(
+        discriminant(&ServiceWorkerOperation::PostMessage {
+            registration_id: 1,
+            data_json: "null".into(),
+        }),
+        8
+    );
 
     assert_eq!(discriminant(&ServiceWorkerResult::Registered { registration_id: 1 }), 0);
     assert_eq!(

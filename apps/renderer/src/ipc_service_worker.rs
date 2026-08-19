@@ -171,6 +171,25 @@ impl ServiceWorkerIpcClient {
             }),
         );
 
+        let post_message_client = self.clone();
+        sandbox.register_callback(
+            "__zw_sw_post_message",
+            Box::new(move |args| {
+                let Some(registration_id) = parse_registration_id(args) else {
+                    return error_wire("invalid registration id");
+                };
+                let data_json = args.get(1).cloned().unwrap_or_default();
+                match post_message_client.request(ServiceWorkerOperation::PostMessage {
+                    registration_id,
+                    data_json,
+                }) {
+                    Ok(ServiceWorkerResult::Empty) => serde_json::json!({"ok": true}).to_string(),
+                    Ok(_) => error_wire("invalid postMessage response"),
+                    Err(error) => response_error_wire(error),
+                }
+            }),
+        );
+
         let get_registration_client = self.clone();
         sandbox.register_callback(
             "__zw_sw_get_registration",

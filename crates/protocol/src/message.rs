@@ -621,6 +621,13 @@ impl ServiceWorkerRequestParams {
             | ServiceWorkerOperation::GetRegistrations
             | ServiceWorkerOperation::Controller
             | ServiceWorkerOperation::StateChanges { .. } => Ok(()),
+            ServiceWorkerOperation::PostMessage { data_json, .. } => {
+                const MAX_MESSAGE_BYTES: usize = 1024 * 1024;
+                if data_json.len() > MAX_MESSAGE_BYTES {
+                    return Err("Service Worker message exceeds the size limit");
+                }
+                Ok(())
+            }
             ServiceWorkerOperation::GetRegistration { client_url } => {
                 if client_url.is_empty() {
                     return Err("Service Worker client URL is required");
@@ -677,6 +684,13 @@ pub enum ServiceWorkerOperation {
     },
     /// Read the active controller for the committed document.
     Controller,
+    /// Dispatch a JSON-compatible message to one worker version.
+    PostMessage {
+        /// Browser-assigned registration version ID.
+        registration_id: u64,
+        /// Serialized structured payload.
+        data_json: String,
+    },
 }
 
 /// Browser Service Worker owner response.

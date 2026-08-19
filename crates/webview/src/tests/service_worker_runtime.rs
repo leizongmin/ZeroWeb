@@ -593,3 +593,59 @@ fn navigator_clients_claim_controls_current_matching_document() {
         std::thread::sleep(Duration::from_millis(10));
     }
 }
+
+#[test]
+fn service_worker_post_message_dispatches_structured_page_payload() {
+    let mut webview = WebViewBuilder::new()
+        .url("https://example.test/page.html")
+        .script_source_fetcher(Arc::new(|_, _| {
+            Ok("addEventListener('message', event => {
+                    globalThis.received =
+                      event.data.kind + ':' + event.data.items[1] + ':' +
+                      String(event instanceof MessageEvent);
+                });"
+            .to_string())
+        }))
+        .build();
+
+    webview
+        .execute_script(
+            "globalThis.__messageResult = 'pending';
+             navigator.serviceWorker.register('/sw.js').then(function() {
+               return navigator.serviceWorker.ready;
+             }).then(function(reg) {
+               reg.active.postMessage({kind:'page', items:[1, 2]});
+               globalThis.__messageResult = 'sent';
+             }, function(error) {
+               globalThis.__messageResult = 'error:' + String(error);
+             });
+             'started';",
+        )
+        .unwrap();
+
+    let deadline = Instant::now() + Duration::from_secs(20);
+    loop {
+        let value = webview.execute_script("globalThis.__messageResult").unwrap();
+        if value != "pending" {
+            assert_eq!(value, "sent");
+            break;
+        }
+        assert!(Instant::now() < deadline, "ServiceWorker.postMessage timed out");
+        std::thread::sleep(Duration::from_millis(10));
+    }
+
+    let deadline = Instant::now() + Duration::from_secs(20);
+    loop {
+        let events = webview.poll_service_worker_runtime_events();
+        if events.iter().any(|event| {
+            matches!(
+                event,
+                zero_page_runtime::ServiceWorkerManagerEvent::MessageDispatched { .. }
+            )
+        }) {
+            break;
+        }
+        assert!(Instant::now() < deadline, "worker message event did not dispatch");
+        std::thread::sleep(Duration::from_millis(10));
+    }
+}

@@ -130,7 +130,8 @@ fn multiprocess_navigator_registration_uses_browser_owner() {
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     let page_url = format!("http://{}/page", listener.local_addr().unwrap());
     let worker_source = "addEventListener('install', event => event.waitUntil(Promise.resolve()));\
-         addEventListener('activate', event => event.waitUntil(clients.claim()));";
+         addEventListener('activate', event => event.waitUntil(clients.claim()));\
+         addEventListener('message', event => { globalThis.lastMessage = event.data.kind; });";
     let response = format!(
         "HTTP/1.1 200 OK\r\nContent-Type: application/javascript\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
         worker_source.len(),
@@ -158,6 +159,7 @@ fn multiprocess_navigator_registration_uses_browser_owner() {
            try {\
              var reg = await navigator.serviceWorker.register('/sw.js');\
              var ready = await navigator.serviceWorker.ready;\
+             ready.active.postMessage({kind:'page'});\
              globalThis.__swReg = reg;\
              globalThis.__swReady = ready;\
              globalThis.__swResult = 'ready';\
