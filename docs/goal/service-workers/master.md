@@ -89,6 +89,8 @@
   [Tier A baseline contract](evidence/2026-08-19-m1-tier-a-baseline-contract.md)
 - Tier A 资产恢复：`make fetch-wpt-service-workers-tier-a`；默认使用独立
   `wpt-data/.service-workers-tier-a-root`，当前环境 18/18 blob SHA 验证通过
+- Tier A 资产审计：`make audit-wpt-service-workers-tier-a`（无网络、只读）；
+  `make test-wpt-service-workers-tier-a-assets` 覆盖缺失/篡改/修复回归
 - 质量门禁：`cargo fmt` + `cargo clippy --workspace --all-targets -- -D warnings` +
   `make test`（V8/QuickJS/GPU capability）全过
 
@@ -102,6 +104,7 @@
 | 2026-08-19 | M1 候选资源闭包 | 12/12 已审计，39/39 对象 blob SHA 匹配；8 Tier A keep-first / 3 Tier B defer / 1 Tier C dynamic-server |
 | 2026-08-19 | Tier A 验收合约 | 8 case / 28 subtest / 18 asset（235,111 bytes）/ 5 驱动阶段；assets SHA-256 `c9b8089dc425873e3249d0e834176139c054f3e33845ba6c4080521f23fa6bc0` |
 | 2026-08-19 | Tier A 资产化 | 独立 WPT root + raw/jsDelivr 双源 + WPT_SOURCE；本地/网络 18/18、幂等/续传/篡改修复、非法路径 fail-closed、clippy、make test 全通过 |
+| 2026-08-19 | Tier A 可重复审计 | verify-only 18/18；缺失/篡改 fail closed；audit + shell regression Make target 已落 |
 | 2026-08-19 | 三方案对比 | 拒绝同线程 context（无调度隔离）；拒绝从零线程（复制安全基建）；推荐抽取 Worker 线程核 |
 | 2026-08-19 | owner | production browser process 单一 owner；WebView 只做同算法 in-process adapter |
 | 2026-08-19 | 首个 driving WPT | `activation-after-registration.https.html` |

@@ -10,6 +10,16 @@ ASSET_MANIFEST="${WPT_ASSET_MANIFEST:-${REPO_ROOT}/docs/goal/service-workers/evi
 DATA_ROOT="${WPT_SERVICE_WORKER_DATA:-${REPO_ROOT}/tests/wpt-runner/wpt-data/.service-workers-tier-a-root}"
 REMOTE_ROOT="${WPT_REMOTE_ROOT:-https://raw.githubusercontent.com/web-platform-tests/wpt/${WPT_REV}}"
 FALLBACK_ROOT="${WPT_FALLBACK_ROOT:-https://cdn.jsdelivr.net/gh/web-platform-tests/wpt@${WPT_REV}}"
+MODE="restore"
+
+if [[ "${1:-}" == "--verify-only" ]]; then
+  MODE="verify"
+  shift
+fi
+if [[ "$#" -ne 0 ]]; then
+  echo "Usage: $0 [--verify-only]" >&2
+  exit 2
+fi
 
 blob_sha() {
   git hash-object -- "$1"
@@ -94,13 +104,20 @@ while IFS=$'\t' read -r relative _manifest_type _roles _referenced_by expected_b
     echo "Invalid Tier A WPT manifest entry: ${relative}" >&2
     exit 1
   fi
-  restore_asset "${relative}" "${expected_bytes}" "${expected_sha}"
+  if [[ "${MODE}" == "verify" ]]; then
+    if ! matches_manifest "${DATA_ROOT}/${relative}" "${expected_bytes}" "${expected_sha}"; then
+      echo "Tier A WPT asset does not match manifest: ${relative}" >&2
+      exit 1
+    fi
+  else
+    restore_asset "${relative}" "${expected_bytes}" "${expected_sha}"
+  fi
   count=$((count + 1))
 done < "${ASSET_MANIFEST}"
 
 if [[ "${count}" -ne 18 ]]; then
-  echo "Tier A WPT asset count mismatch: expected 18, restored ${count}" >&2
+  echo "Tier A WPT asset count mismatch: expected 18, found ${count}" >&2
   exit 1
 fi
 
-echo "Service Worker Tier A corpus ready (${count} assets, WPT ${WPT_REV})"
+echo "Service Worker Tier A corpus ${MODE} complete (${count} assets, WPT ${WPT_REV})"

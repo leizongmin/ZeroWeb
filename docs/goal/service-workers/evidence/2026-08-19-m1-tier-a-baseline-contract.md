@@ -24,6 +24,8 @@
   该状态不是 Pass，也不是产品失败基线。
 - `make fetch-wpt-service-workers-tier-a` 已可将 18 个资产恢复到独立 WPT root，并逐 blob
   fail-closed 校验；不会覆盖其他 goal 的共享 testharness revision。
+- `make audit-wpt-service-workers-tier-a` 可在无网络模式下审计现有 corpus；
+  `make test-wpt-service-workers-tier-a-assets` 固化缺失、篡改、修复和 verify-only 回归。
 - M1 首个真实 driving subtest 是 `activation occurs after registration`。
 - Tier A 完成条件是 28/28 Pass、0 Timeout、0 Unsupported，且重复运行不残留 registration。
 
@@ -53,6 +55,7 @@
 4. 固定 revision，不跟随 `master`，下载后逐项计算 Git blob SHA；
 5. 8 个 case 已记入 `imported-testharness.txt`，不误用 reftest `make import-wpt`；
 6. 网络部分文件跨运行保留并续传；非法相对路径、对象缺失、字节数或 SHA 不符时 fail closed。
+7. `--verify-only` 只读现有 corpus，不下载或修复对象，适合 CI/发布前审计。
 
 > **来源说明（第 1 章）**
 >
@@ -180,5 +183,7 @@ message、claim/skipWaiting 或 update 已完成。
 - [x] 已区分 NotRun、Fail、Timeout、Unsupported、Pass。
 - [x] 未把 Tier A 扩张为完整 Service Worker Done Criteria。
 - [x] 资产恢复脚本已通过本地源、幂等、跨运行续传、篡改修复、非法 manifest 和真实网络路径验证。
+- [x] verify-only 对正常 corpus 18/18 通过，对缺失和篡改对象稳定失败且不修改现场。
+- [x] shell 回归已由 `make test-wpt-service-workers-tier-a-assets` 资产化。
 - [x] `cargo fmt --all -- --check`、workspace clippy 和 `make test` 全通过。
 - [x] 未修改 SW runtime 源码；仅落测试资产基础设施与 testharness 账本。
