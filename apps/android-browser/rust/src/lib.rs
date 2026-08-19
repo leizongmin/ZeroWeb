@@ -4,9 +4,9 @@ mod facade;
 
 use jni::JNIEnv;
 use jni::objects::{JClass, JString};
-#[cfg(target_os = "android")]
-use jni::sys::jbyteArray;
 use jni::sys::{JNI_FALSE, JNI_TRUE, jboolean, jstring};
+#[cfg(target_os = "android")]
+use jni::sys::{jbyteArray, jfloat};
 
 #[cfg(target_os = "android")]
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -19,7 +19,7 @@ use zero_protocol::IpcChannel;
 #[cfg(target_os = "android")]
 use zero_protocol::message::{
     FetchParams, FetchResponseParams, FramePublishMode, ImageDecodeParams, IpcMessage, IpcMessageKind, LoadHtmlParams,
-    NavigateParams, SetViewportParams,
+    NavigateParams, ScrollEventParams, SetViewportParams,
 };
 
 const NATIVE_VERSION: &str = "ZeroWeb Android M2";
@@ -475,6 +475,25 @@ fn navigate_renderer(url: &str) -> Result<(), String> {
         referrer: None,
         navigation_epoch: epoch,
     }))
+}
+
+#[cfg(target_os = "android")]
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_com_leizm_zeroweb_NativeBridge_nativeScroll(
+    _env: JNIEnv,
+    _class: JClass,
+    delta_y: jfloat,
+) -> jboolean {
+    if !delta_y.is_finite() || delta_y.abs() > 4_096.0 {
+        return JNI_FALSE;
+    }
+    send_renderer(IpcMessageKind::ScrollEvent(ScrollEventParams {
+        delta_x: 0.0,
+        delta_y,
+        cursor_x: ANDROID_PAGE_VIEWPORT_WIDTH as f32 / 2.0,
+        cursor_y: ANDROID_PAGE_VIEWPORT_HEIGHT as f32 / 2.0,
+    }))
+    .map_or(JNI_FALSE, |_| JNI_TRUE)
 }
 
 #[cfg(target_os = "android")]

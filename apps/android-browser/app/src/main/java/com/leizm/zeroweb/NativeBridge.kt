@@ -67,6 +67,9 @@ object NativeBridge {
     external fun nativeLatestPageFrame(): ByteArray?
 
     @JvmStatic
+    external fun nativeScroll(deltaY: Float): Boolean
+
+    @JvmStatic
     external fun nativeProbeDecoder(fd: Int): Boolean
 
     @JvmStatic

@@ -15,6 +15,7 @@ import androidx.activity.compose.setContent
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -32,6 +33,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
@@ -82,6 +84,7 @@ class MainActivity : ComponentActivity() {
                     onClearHistory = ::clearHistory,
                     compositorPreview = compositorPreview,
                     rendererPreview = rendererPreview,
+                    onPageScroll = ::scrollPage,
                 )
             }
         }
@@ -244,6 +247,10 @@ class MainActivity : ComponentActivity() {
             }, delayMillis)
         }
     }
+
+    private fun scrollPage(deltaY: Float) {
+        if (NativeBridge.nativeScroll(deltaY)) refreshRendererPreview()
+    }
 }
 
 @androidx.compose.runtime.Composable
@@ -263,6 +270,7 @@ private fun BrowserScreen(
     onClearHistory: () -> Unit,
     compositorPreview: Bitmap?,
     rendererPreview: Bitmap?,
+    onPageScroll: (Float) -> Unit,
 ) {
     var page by remember { mutableStateOf(BrowserPage.BROWSE) }
     BackHandler(enabled = page != BrowserPage.BROWSE) { page = BrowserPage.BROWSE }
@@ -317,10 +325,22 @@ private fun BrowserScreen(
         }
         Text(text = activeTab?.url ?: "新标签")
         rendererPreview?.let { preview ->
+            var totalDragY = 0f
             Image(
                 bitmap = preview.asImageBitmap(),
                 contentDescription = "来自 renderer 与 compositor 的页面帧",
-                modifier = Modifier.fillMaxWidth().testTag("rendererPreview"),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .pointerInput(Unit) {
+                        detectVerticalDragGestures(
+                            onVerticalDrag = { _, amount -> totalDragY += amount },
+                            onDragEnd = {
+                                onPageScroll(-totalDragY)
+                                totalDragY = 0f
+                            },
+                        )
+                    }
+                    .testTag("rendererPreview"),
             )
         }
         compositorPreview?.let { preview ->
