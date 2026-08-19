@@ -51,6 +51,8 @@ fn test_timing_function_cubic_bezier() {
 fn test_timing_function_cubic_bezier_invalid() {
     // 参数数量不对
     assert!(parse_timing_function("cubic-bezier(0.25, 0.1)").is_none());
+    assert!(parse_timing_function("cubic-bezier(-0.1, 0.1, 0.25, 1.0)").is_none());
+    assert!(parse_timing_function("cubic-bezier(0.25, 0.1, 1.1, 1.0)").is_none());
 }
 
 #[test]
@@ -69,6 +71,14 @@ fn test_timing_function_steps_no_position() {
 fn test_timing_function_steps_start() {
     let result = parse_timing_function("steps(4, start)");
     assert!(result.is_some());
+}
+
+#[test]
+fn test_timing_function_steps_invalid() {
+    assert!(parse_timing_function("steps(4, start, end)").is_none());
+    assert!(parse_timing_function("steps(0)").is_none());
+    assert!(parse_timing_function("steps(-1)").is_none());
+    assert!(parse_timing_function("steps(1, jump-none)").is_none());
 }
 
 // ═══════════════════════════════════════════════════════════════════════

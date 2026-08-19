@@ -254,17 +254,35 @@ pub fn parse_timing_function(value: &str) -> Option<TimingFunctionValue> {
             let y1 = parts[1].parse::<f64>().ok()?;
             let x2 = parts[2].parse::<f64>().ok()?;
             let y2 = parts[3].parse::<f64>().ok()?;
+            if !x1.is_finite()
+                || !y1.is_finite()
+                || !x2.is_finite()
+                || !y2.is_finite()
+                || !(0.0..=1.0).contains(&x1)
+                || !(0.0..=1.0).contains(&x2)
+            {
+                return None;
+            }
             Some(TimingFunctionValue::CubicBezier(x1, y1, x2, y2))
         }
         _ if value.starts_with("steps(") => {
             let inner = extract_parens_content(&value, "steps")?;
             let parts: Vec<&str> = inner.split(',').map(|s| s.trim()).collect();
+            if parts.is_empty() || parts.len() > 2 || parts.iter().any(|part| part.is_empty()) {
+                return None;
+            }
             let n: i32 = parts.first()?.parse().ok()?;
+            if n <= 0 {
+                return None;
+            }
             let position = if parts.len() > 1 {
                 Some(parse_step_position(parts[1])?)
             } else {
                 None
             };
+            if matches!(position, Some(StepPosition::None)) && n < 2 {
+                return None;
+            }
             Some(TimingFunctionValue::Steps(n, position))
         }
         _ => None,
