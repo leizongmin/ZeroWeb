@@ -1,0 +1,8 @@
+source_path	manifest_sha	subtests	decision	hidden_dependencies	rationale
+service-workers/service-worker/getregistrations.https.html	3a9b9a23317b2bb1370689b553a49c28de4cf8f8	6	skip-mixed-cross-origin-clients	iframe;controlled-client;cross-origin;MessageChannel	4 个基础断言与受控 iframe、跨源 registration 隔离同文件
+service-workers/service-worker/registration-end-to-end.https.html	1af4582d387412f47d82a94b2fe7050a5994644a	1	defer-message-lifecycle	MessageChannel;worker-postMessage;statechange	完整状态序列、双向消息确认与 unregister 后 redundant
+service-workers/service-worker/registration-events.https.html	5bcfd66846bce5b93bf09d05b65c2e352b51ffab	1	defer-message-lifecycle	MessageChannel;worker-postMessage;install;activate	worker 经消息回传实际观察到的 install/activate 顺序
+service-workers/service-worker/ServiceWorkerGlobalScope/registration-attribute.https.html	aa3c74a13bb2b1623696579b371486a40706dcf1	2	gated-fetch-update	iframe;fetch-interception;update-job;MessageChannel;worker-registration	首项经 fetch 回传状态序列，次项验证新旧 worker 的 registration 投影
+service-workers/service-worker/ServiceWorkerGlobalScope/unregister.https.html	1a124d727687ecfc62bb1443bed2313312762997	4	defer-worker-unregister-controller	worker-registration;install;activate;iframe;controller;MessageChannel	前三项从 worker 生命周期内注销，末项验证既有与新 client controller
+service-workers/service-worker/skip-waiting-installed.https.html	b604f651b3c1deb38d891c77394a8f175a19c34e	1	defer-controller-skipwaiting	iframe;controllerchange;skipWaiting;MessageChannel	等待 worker 经消息触发 skipWaiting 并验证 activate/controllerchange 时序
+service-workers/service-worker/update-not-allowed.https.html	0a54aa9350382bb082f407a1ea30b265575baae9	3	gated-dynamic-update	dynamic-server;random-script;update-job;MessageChannel;install-blocking	Python handler 每次注入随机脚本字节以制造更新并阻塞 install

@@ -2,7 +2,7 @@
 
 **入口文档**: [../service-workers.md](../service-workers.md)
 **创建日期**: 2026-08-17（goal 拆分 bootstrap）
-**最后更新**: 2026-08-19（M0 RFC + M1 iframe WPT 裁决完成，待审批）
+**最后更新**: 2026-08-19（M0 RFC + M1 message-channel WPT 裁决完成，待审批）
 
 ---
 
@@ -46,6 +46,8 @@
   corpus；5 advanced defer / 5 dynamic-server gated / 1 update defer，剩余逻辑 review 138
 - ✅ iframe 裁决：11 case / 41 subtest 分为 single-iframe/worker/controller defer、
   fetch gated、multi-client skip；剩余逻辑 review 127
+- ✅ message-channel 裁决：7 case / 18 subtest 分为 lifecycle result-channel defer、
+  controller/fetch/update gate、cross-origin client skip；剩余逻辑 review 120
 - ✅ SW 执行环境 RFC 已完成，待用户批准
 
 ## 缺口清单
@@ -56,7 +58,7 @@
 | S2 | scriptURL 不下载执行 | ⬜ M1 |
 | S3 | fetch 拦截为零 | ⬜ M2（等 js-dom fetch 改造） |
 | S4 | 事件为 setTimeout 模拟 | ⬜ M1 |
-| S5 | WPT 覆盖为零 | 🔄 11 case 已资产化；另 25 个 review 已人工裁决；runner/真实 red baseline 等 RFC 批准 |
+| S5 | WPT 覆盖为零 | 🔄 11 case 已资产化；另 32 个 review 已人工裁决；runner/真实 red baseline 等 RFC 批准 |
 
 ## 待用户决策
 
@@ -95,6 +97,8 @@
   [M1 next-wave review](evidence/2026-08-19-m1-next-wave-review.md)
 - Iframe 生命周期面：11 case / 41 subtest 的 defer/gated/skip 裁决见
   [M1 iframe review](evidence/2026-08-19-m1-iframe-review.md)
+- Message-channel 生命周期面：7 case / 18 subtest 的 result-channel/controller/update 裁决见
+  [M1 message review](evidence/2026-08-19-m1-message-review.md)
 - Tier A 资产恢复：`make fetch-wpt-service-workers-tier-a`；默认使用独立
   `wpt-data/.service-workers-tier-a-root`，当前环境 18/18 blob SHA 验证通过
 - Tier A 资产审计：`make audit-wpt-service-workers-tier-a`（无网络、只读）；
@@ -119,6 +123,7 @@
 | 2026-08-19 | M1 第二批裁决 | 14 case / 78 subtest：3 core（4 subtest）/ 5 advanced / 5 dynamic-server / 1 update；next-wave 7 assets |
 | 2026-08-19 | M1 第二批资产化 | 3 case 记入 testharness 账本；共享根 7/7，幂等/篡改修复/非法 count/Tier A 回归通过 |
 | 2026-08-19 | M1 iframe 裁决 | 11 case / 41 subtest：3 single-iframe / 1 worker / 3 controller defer，1 fetch gated，3 multi-client skip |
+| 2026-08-19 | M1 message-channel 裁决 | 7 case / 18 subtest：2 lifecycle defer，2 controller defer，2 update/fetch gated，1 cross-origin skip |
 | 2026-08-19 | 三方案对比 | 拒绝同线程 context（无调度隔离）；拒绝从零线程（复制安全基建）；推荐抽取 Worker 线程核 |
 | 2026-08-19 | owner | production browser process 单一 owner；WebView 只做同算法 in-process adapter |
 | 2026-08-19 | 首个 driving WPT | `activation-after-registration.https.html` |

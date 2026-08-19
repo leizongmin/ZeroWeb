@@ -34,6 +34,8 @@
   3 个 core case 已资产化。
 - [M1 iframe 裁决](2026-08-19-m1-iframe-review.md) 将 11 个 iframe-only 文件校准为
   single-iframe/worker/controller defer、fetch gated 和 multi-client skip。
+- [M1 message-channel 裁决](2026-08-19-m1-message-review.md) 将 7 个文件校准为
+  lifecycle result-channel defer、controller/fetch/update gate 和 cross-origin client skip。
 - 这不等于全部上游用例都超出 ZeroWeb 环境。M1 完成后，单页面、单注册、静态资源的
   生命周期用例可形成第一批真实基线；M2 完成后再加入单客户端 fetch/respondWith 用例。
 - iframe、多客户端、SharedWorker、跨 origin、动态服务端 handler、WebSocket 和
@@ -265,5 +267,6 @@ case 仍是第 2 项。
 - [x] 完整 manifest 分母与 294/294 正文信号逐文件对齐。
 - [x] inventory 可反算 294 个唯一路径、331 个 URL 和 12 个候选。
 - [x] 12 个初筛候选已完成资源闭包并校准为 8/3/1。
-- [x] 14 个 M1/no-signal + 11 个 M1/iframe-only review 已完成传递审计，剩余逻辑 review 127。
+- [x] 14 个 M1/no-signal + 11 个 M1/iframe-only + 7 个 M1/message-channel review
+      已完成传递审计，剩余逻辑 review 120。
 - [x] 未修改源码、WPT 数据或共享账本。
