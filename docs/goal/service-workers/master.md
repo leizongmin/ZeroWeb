@@ -2,7 +2,7 @@
 
 **入口文档**: [../service-workers.md](../service-workers.md)
 **创建日期**: 2026-08-17（goal 拆分 bootstrap）
-**最后更新**: 2026-08-19（M0 RFC + WPT 294-source disposition contract，待审批）
+**最后更新**: 2026-08-19（M0 RFC + M1 WorkerRuntime readiness，待审批）
 
 ---
 
@@ -69,6 +69,8 @@
   12 个 core 与 runner 导入账本、三批 case asset 及 blob SHA 精确对应
 - ✅ M0 registry 契约补强：新增 4 项 Rust 单测，固定候选版本不提前替换 active、
   非法激活不扰动 active、注销旧 redundant 不删除新映射、跨 origin 替换隔离
+- ✅ M1 WorkerRuntime readiness：V8 20/20、QuickJS 3/3，WebView 双后端各 17/17；
+  三种 feature clippy 通过，抽取边界与 QuickJS timeout/evaluate handshake 缺口已固定
 - ✅ SW 执行环境 RFC 已完成，待用户批准
 
 ## 缺口清单
@@ -152,6 +154,8 @@
   `make test`（V8/QuickJS/GPU capability）全过
 - Registry 契约测试：`cargo test -p zero-storage service_worker::tests`，40/40 通过；
   `cargo clippy -p zero-storage --all-targets -- -D warnings` 通过
+- WorkerRuntime 抽取前基线：双引擎 crate/WebView 测试、调用点、feature union 与禁止偷换见
+  [M1 WorkerRuntime readiness](evidence/2026-08-19-m1-worker-runtime-readiness.md)
 
 ## M0 证据与决策记录
 
@@ -179,6 +183,7 @@
 | 2026-08-19 | WPT runner disposition | 294 source / 331 URL：12 core / 51 defer / 189 gated / 42 skip；机器 contract 可确定性重建 |
 | 2026-08-19 | Core runner 供应链 | 12 core = 12 imported testharness = 8+3+1 case asset；revision 与 blob SHA 双向一致 |
 | 2026-08-19 | Registry 契约测试 | 4 项替换/失败/隔离中间态不变量；Service Worker 模块 40/40，zero-storage clippy 通过 |
+| 2026-08-19 | M1 WorkerRuntime readiness | V8 20/20、QuickJS 3/3、WebView 双后端各 17/17；确认 QuickJS timeout 与 evaluate handshake 缺口 |
 | 2026-08-19 | 三方案对比 | 拒绝同线程 context（无调度隔离）；拒绝从零线程（复制安全基建）；推荐抽取 Worker 线程核 |
 | 2026-08-19 | owner | production browser process 单一 owner；WebView 只做同算法 in-process adapter |
 | 2026-08-19 | 首个 driving WPT | `activation-after-registration.https.html` |
