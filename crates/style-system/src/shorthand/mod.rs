@@ -1782,6 +1782,13 @@ fn expand_list_style(value: &str, important: bool, specificity: (u32, u32, u32))
     // image 默认 none（初始值即 none；显式 url 覆盖；`none` 关键字亦 none——简写须复位 image）。
     let final_image = image.unwrap_or_else(|| "none".to_string());
 
+    if zero_css_parser::values::parse_list_style_type(&final_type).is_none()
+        || zero_css_parser::values::parse_list_style_position(&position).is_none()
+        || zero_css_parser::values::parse_list_style_image(&final_image).is_none()
+    {
+        return vec![];
+    }
+
     vec![
         mk("list-style-type", &final_type),
         mk("list-style-position", &position),

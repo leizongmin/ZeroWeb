@@ -137,6 +137,8 @@ Font-face sources exposed the token-serialization variant: `Token::Url("a b.woff
 
 Tokenizer URL parsing exposed the bad-url truncation variant: when unquoted `url()` sees raw whitespace followed by more input, or quoted `url()` sees trailing input after the closing quote, returning the prefix as `Token::Url` turns an invalid token into a valid URL. Tokenizers must return an error token and consume the bad-url remnants so consumers cannot observe a truncated "valid" URL. Resource scanners that concatenate `<style>` blocks must also preserve each block's EOF boundary, otherwise a malformed URL in one block can absorb URLs from the next block.
 
+List-style shorthand exposed the late-validation variant: expanding a shorthand into three longhands and relying on the later apply layer to reject one invalid longhand breaks CSS atomicity. Shorthand expansion must validate every produced longhand before returning any declarations, especially when a component such as `url(...)` has a stricter property-specific parser.
+
 ## Root Cause
 
 The shorthand layer used heuristic component classifiers and treated unrecognized tokens as absent optional components. That is wrong for CSS shorthands such as `border`, where every token must match one of the allowed component grammars. A shared parser can also be broader than the property grammar that consumes it: general length parsing may accept `auto`, intrinsic sizing keywords, or percentages that `border-width` must reject.

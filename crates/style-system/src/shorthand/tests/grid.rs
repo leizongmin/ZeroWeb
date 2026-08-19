@@ -605,6 +605,12 @@ fn test_list_style_image_url_with_space() {
 }
 
 #[test]
+fn test_list_style_rejects_invalid_image_atomically() {
+    assert!(expand_one("list-style", "inside url(my marker.png)", false, (0, 0, 1)).is_empty());
+    assert!(expand_one("list-style", "square url(\"marker.png\" extra)", false, (0, 0, 1)).is_empty());
+}
+
+#[test]
 /// R2487：none 双语义——`none square url(...)` → type=square, image=url, position=outside
 /// （none 不冲突显式 type/image；CSS Lists 3「other values assigned to property they fit」）
 fn test_list_style_none_with_type_and_image() {
