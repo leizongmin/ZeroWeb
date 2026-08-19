@@ -840,7 +840,14 @@ pub fn apply_property_value_with_quirks(
             }
         }
         "column-gap" => {
+            if value.eq_ignore_ascii_case("normal") {
+                style.column_gap = LengthValue::Auto;
+                return true;
+            }
             if let Some(v) = parse_length_fn(value) {
+                if !gap_length_is_valid(value, &v) {
+                    return false;
+                }
                 style.column_gap = v;
                 return true;
             }
@@ -1029,7 +1036,14 @@ pub fn apply_property_value_with_quirks(
             }
         }
         "row-gap" => {
+            if value.eq_ignore_ascii_case("normal") {
+                style.row_gap = LengthValue::Px(0.0);
+                return true;
+            }
             if let Some(v) = parse_length_fn(value) {
+                if !gap_length_is_valid(value, &v) {
+                    return false;
+                }
                 style.row_gap = v;
                 return true;
             }
@@ -1042,6 +1056,35 @@ pub fn apply_property_value_with_quirks(
         }
     }
     false
+}
+
+fn gap_length_is_valid(raw: &str, value: &LengthValue) -> bool {
+    if matches!(
+        raw.trim().to_ascii_lowercase().as_str(),
+        "thin" | "medium" | "thick" | "auto" | "min-content" | "max-content" | "fit-content"
+    ) {
+        return false;
+    }
+    match value {
+        LengthValue::Px(v)
+        | LengthValue::Em(v)
+        | LengthValue::Ex(v)
+        | LengthValue::Rex(v)
+        | LengthValue::Cap(v)
+        | LengthValue::Rcap(v)
+        | LengthValue::Rem(v)
+        | LengthValue::Vh(v)
+        | LengthValue::Vw(v)
+        | LengthValue::Vmin(v)
+        | LengthValue::Vmax(v)
+        | LengthValue::Ch(v)
+        | LengthValue::Rch(v)
+        | LengthValue::Ic(v)
+        | LengthValue::Ric(v)
+        | LengthValue::Percentage(v) => v.is_finite() && *v >= 0.0,
+        LengthValue::Calc(_) => true,
+        _ => false,
+    }
 }
 
 /// 解析 `color-scheme` 描述符为「是否暗 used-scheme」标志（CSS Color Adjust L1 §2.3）。

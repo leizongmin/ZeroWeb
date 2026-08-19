@@ -167,6 +167,8 @@ Line-height exposed the shorthand-vs-longhand negative grammar drift variant: `f
 
 Perspective exposed the apply-helper grammar drift variant: longhands implemented only in `apply_*` can bypass dedicated parser tests and inherit every value accepted by `parse_length_or_math`, including percentages and keyword aliases. Treat apply-only longhands as parser boundaries too, and filter helper output before mutating computed style.
 
+Row-gap and column-gap exposed the shorthand-only validator variant: `gap` shorthand can correctly reject negative values while its generated longhands still accept them when authored directly. Mirror shorthand component validators in the longhand apply path, including grammar keywords such as `normal` that do not pass through the shared length parser.
+
 ## Root Cause
 
 The shorthand layer used heuristic component classifiers and treated unrecognized tokens as absent optional components. That is wrong for CSS shorthands such as `border`, where every token must match one of the allowed component grammars. A shared parser can also be broader than the property grammar that consumes it: general length parsing may accept `auto`, intrinsic sizing keywords, or percentages that `border-width` must reject.

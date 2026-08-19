@@ -1033,6 +1033,13 @@ fn test_column_gap_with_percentage_value() {
     let mut style = ComputedStyle::default();
     assert!(apply_property_value(&mut style, "column-gap", "25%"));
     assert_eq!(style.column_gap, LengthValue::Percentage(25.0));
+    let previous = style.column_gap.clone();
+    assert!(!apply_property_value(&mut style, "column-gap", "-1px"));
+    assert_eq!(style.column_gap, previous);
+    assert!(!apply_property_value(&mut style, "column-gap", "thin"));
+    assert_eq!(style.column_gap, previous);
+    assert!(apply_property_value(&mut style, "column-gap", "normal"));
+    assert_eq!(style.column_gap, LengthValue::Auto);
 }
 
 /// 验证 transform 属性支持多个变换函数组合。

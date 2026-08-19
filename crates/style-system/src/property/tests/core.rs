@@ -690,6 +690,13 @@ fn test_apply_property_row_gap() {
     let mut style = ComputedStyle::default();
     assert!(apply_property_value(&mut style, "row-gap", "20px"));
     assert_eq!(style.row_gap, LengthValue::Px(20.0));
+    let previous = style.row_gap.clone();
+    assert!(!apply_property_value(&mut style, "row-gap", "-1px"));
+    assert_eq!(style.row_gap, previous);
+    assert!(!apply_property_value(&mut style, "row-gap", "thin"));
+    assert_eq!(style.row_gap, previous);
+    assert!(apply_property_value(&mut style, "row-gap", "normal"));
+    assert_eq!(style.row_gap, LengthValue::Px(0.0));
 }
 
 #[test]
