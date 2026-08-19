@@ -2,7 +2,8 @@
 
 **日期**：2026-08-19
 **上游 revision**：`04067ce9c7c2165e71ad7d0dde10a4c5cb394a83`
-**状态**：M0 assets ready（runner/runtime 等 RFC 批准）
+**状态**：M1 runner active（Tier A 18/28 Pass）
+**运行证据**：[M1 core WPT baseline](2026-08-19-m1-wpt-core-baseline.md)
 **资产清单**：[Tier A assets](2026-08-19-m1-tier-a-assets.tsv)
 **Subtest 清单**：[Tier A subtests](2026-08-19-m1-tier-a-subtests.tsv)
 
@@ -20,8 +21,8 @@
 - 18 个资产总计 **235,111 bytes**，包含 8 个 case、6 个页面脚本、3 个 worker 脚本和
   1 个 HTML fixture。
 - 18/18 资产按 Git blob 算法与 WPT manifest SHA 匹配。
-- 当前 ZeroWeb 没有 SW testharness runner，因此这些 case 仍是 `NotRun(no-runner)`；
-  该状态不是 Pass，也不是产品失败基线。
+- SW testharness runner 已执行全部 Tier A case；当前为 18 Pass / 9 Fail / 1 Timeout，
+  不是完成状态。
 - `make fetch-wpt-service-workers-tier-a` 已可将 18 个资产恢复到独立 WPT root，并逐 blob
   fail-closed 校验；不会覆盖其他 goal 的共享 testharness revision。
 - `make audit-wpt-service-workers-tier-a` 可在无网络模式下审计现有 corpus；
@@ -152,11 +153,11 @@ Tier A runner 必须提供：
 
 ### Tier A 完成判据
 
-- [ ] 8/8 case 被 runner 发现，不能静默少文件。
+- [x] 8/8 case 被 runner 发现，不能静默少文件。
 - [ ] 28/28 subtest Pass。
 - [ ] 0 Fail / 0 Timeout / 0 Unsupported。
 - [ ] 每个 case 后 registration 数回到 0。
-- [ ] 连续两轮结果逐 case/subtest 一致。
+- [x] 连续两轮结果逐 case/subtest 一致。
 - [ ] V8 与 QuickJS 生命周期核心单测一致；WPT runner 至少在 production 默认引擎通过。
 - [ ] driving case 与资产记入 testharness 账本。
 

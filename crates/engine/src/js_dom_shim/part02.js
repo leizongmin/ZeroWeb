@@ -2661,7 +2661,7 @@
           setTimeout(function () { pollRegistration(reg); }, 0);
         }
       }
-      function upsertSnapshot(snapshot) {
+      function upsertSnapshot(snapshot, deferPoll) {
         if (!snapshot) return null;
         var reg = findReg(snapshot.id, snapshot.scope);
         if (!reg) {
@@ -2670,7 +2670,13 @@
         } else {
           reg._id = snapshot.id;
         }
-        if (!applySnapshot(reg, snapshot)) pollRegistration(reg);
+        if (!applySnapshot(reg, snapshot)) {
+          if (deferPoll && typeof setTimeout === 'function') {
+            setTimeout(function () { pollRegistration(reg); }, 0);
+          } else {
+            pollRegistration(reg);
+          }
+        }
         return reg;
       }
       _container.register = function (scriptURL, options) {
@@ -2690,10 +2696,13 @@
         if (!wire || !wire.ok) {
           return Promise.reject(new TypeError(wire && wire.error || 'Service Worker registration failed'));
         }
-        var snapshot = readSnapshot(wire.id) || {
-          id: wire.id, scriptURL: scriptURL, scope: scope, state: 'installing'
-        };
-        var reg = upsertSnapshot(snapshot);
+        var snapshot = readSnapshot(wire.id);
+        var reg = upsertSnapshot({
+          id: wire.id,
+          scriptURL: snapshot && snapshot.scriptURL || scriptURL,
+          scope: snapshot && snapshot.scope || scope,
+          state: 'installing'
+        }, true);
         if (typeof reg.onupdatefound === 'function') {
           try { reg.onupdatefound({ type: 'updatefound', target: reg }); } catch (_e) {}
         }

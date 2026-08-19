@@ -2,7 +2,7 @@
 
 **入口文档**: [../service-workers.md](../service-workers.md)
 **创建日期**: 2026-08-17（goal 拆分 bootstrap）
-**最后更新**: 2026-08-19（M1-4d registration discovery 完成）
+**最后更新**: 2026-08-19（M1-5 core WPT baseline 建立）
 
 ---
 
@@ -10,7 +10,7 @@
 
 **专项定位**：存储方向三拆之三。把 `navigator.serviceWorker` 从注册表状态机近似
 （R3318）深化为真实 SW 执行环境 + fetch 拦截。用户已于 2026-08-19 明确批准方案 C，
-M0 启动门禁解除；当前进入 M1 renderer IPC bridge。
+M0 启动门禁解除；当前进入 M1 core WPT 收敛。
 
 **M0 推荐决策**：抽取 `zero-script-sandbox::WorkerRuntime` 的独立线程/引擎/看门狗核心，
 新增 typed `ServiceWorkerRuntime`；production 由 browser process 的
@@ -90,6 +90,8 @@ M0 启动门禁解除；当前进入 M1 renderer IPC bridge。
   fresh browser/renderer register→active→unregister 全链通过，normal owner 跨 renderer 存活
 - ✅ M1-4d：browser-backed `getRegistration()` / `getRegistrations()`；
   新 renderer 无需旧 registration ID 即可恢复稳定 JS 投影
+- 🔄 M1-5：12 case / 36 subtest core WPT runner 已落；稳定 baseline 为
+  23 Pass / 12 Fail / 1 Timeout / 0 Unsupported
 
 ## 缺口清单
 
@@ -99,7 +101,7 @@ M0 启动门禁解除；当前进入 M1 renderer IPC bridge。
 | S2 | scriptURL 不下载执行 | ✅ production navigator 经 browser fetch/evaluate |
 | S3 | fetch 拦截为零 | ⬜ M2（等 js-dom fetch 改造） |
 | S4 | 事件为 setTimeout 模拟 | ✅ 生命周期状态仅来自 manager；timer 只轮询 snapshot |
-| S5 | WPT 覆盖为零 | 🔄 12 case 已资产化；294-source contract 已落；runner/真实 red baseline 待 M1 bridge |
+| S5 | WPT 覆盖为零 | 🔄 12/12 case 已执行；23/36 Pass；12 Fail / 1 Timeout 待收敛 |
 
 ## 待用户决策
 
@@ -109,15 +111,16 @@ M0 启动门禁解除；当前进入 M1 renderer IPC bridge。
 
 ## 下一步计划
 
-1. **M1-5**：SW WPT runner，建立 Tier A red/green baseline
-2. **M2 继续门控**：js-dom S6 与 storage-cache-api M1 均 land 后才改 fetch 主路径
+1. **M1-5b**：lifecycle EventTarget/slot task，收敛 4 Fail + 1 Timeout
+2. **M1-5c**：scope/scriptURL/DOMException/interface brand，收敛剩余 8 Fail
+3. **M2 继续门控**：js-dom S6 与 storage-cache-api M1 均 land 后才改 fetch 主路径
 
 ## 里程碑状态
 
 | 里程碑 | 状态 |
 |--------|------|
 | M0 — 选型 RFC（门控） | ✅ 方案 C 已批准 |
-| M1 — 脚本真实执行 + 生命周期真事件 | 🔄 M1-4d registration discovery 完成 |
+| M1 — 脚本真实执行 + 生命周期真事件 | 🔄 M1-5 core WPT 23/36 Pass |
 | M2 — fetch 拦截 + Cache 集成 | ⬜ 门控：js-dom fetch 改造 land |
 | M3 — 控制语义 + 消息 + 收尾 | ⬜ |
 
@@ -189,6 +192,8 @@ M0 启动门禁解除；当前进入 M1 renderer IPC bridge。
   [M1 renderer bridge](evidence/2026-08-19-m1-renderer-bridge.md)
 - M1-4d registration discovery：scope representative、browser-backed query、跨 renderer JS identity
   恢复见 [M1 registration discovery](evidence/2026-08-19-m1-registration-discovery.md)
+- M1-5 core WPT：固定 12-case runner、两轮确定性 baseline 与 13 个红项分组见
+  [M1 core WPT baseline](evidence/2026-08-19-m1-wpt-core-baseline.md)
 
 ## M0 证据与决策记录
 
@@ -227,6 +232,7 @@ M0 启动门禁解除；当前进入 M1 renderer IPC bridge。
 | 2026-08-19 | M1-4b browser owner | normal/private manager 单一 owner；committed URL authority；browser-owned async script fetch；browser 370 tests |
 | 2026-08-19 | M1-4c renderer bridge | request ID router + register/snapshot/unregister callbacks；fresh peer production E2E；owner 跨 renderer 存活 |
 | 2026-08-19 | M1-4d registration discovery | getRegistration(s) typed IPC；active-first scope representative；fresh renderer 无旧 ID 恢复 registration |
+| 2026-08-19 | M1-5 core WPT baseline | 12/12 case；36/36 subtest 有结果；23 Pass / 12 Fail / 1 Timeout / 0 Unsupported；两轮稳定 |
 | 2026-08-19 | 三方案对比 | 拒绝同线程 context（无调度隔离）；拒绝从零线程（复制安全基建）；推荐抽取 Worker 线程核 |
 | 2026-08-19 | owner | production browser process 单一 owner；WebView 只做同算法 in-process adapter |
 | 2026-08-19 | 首个 driving WPT | `activation-after-registration.https.html` |

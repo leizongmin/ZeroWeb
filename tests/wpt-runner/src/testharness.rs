@@ -609,6 +609,22 @@ pub const INDEXEDDB_CASES: &[(&str, &[&str])] = &[
     ("IndexedDB/open-request-queue.any.js", &["resources/support.js"]),
 ];
 
+/// Fixed Service Worker M1 core corpus at the pinned WPT revision.
+pub const SERVICE_WORKER_CORE_CASES: &[&str] = &[
+    "service-workers/service-worker/activate-event-after-install-state-change.https.html",
+    "service-workers/service-worker/activation-after-registration.https.html",
+    "service-workers/service-worker/register-default-scope.https.html",
+    "service-workers/service-worker/registration-basic.https.html",
+    "service-workers/service-worker/registration-scope.https.html",
+    "service-workers/service-worker/registration-script-url.https.html",
+    "service-workers/service-worker/registration-service-worker-attributes.https.html",
+    "service-workers/service-worker/rejections.https.html",
+    "service-workers/service-worker/serviceworkerobject-scripturl.https.html",
+    "service-workers/service-worker/state.https.html",
+    "service-workers/service-worker/synced-state.https.html",
+    "service-workers/service-worker/unregister.https.html",
+];
+
 /// WPT subtest status.
 ///
 /// 映射上游 testharness subtest status 数字编码（`testharness.js` 的 `Test.status`）：
@@ -1008,6 +1024,48 @@ pub fn run_indexeddb_cases(wpt_root: &Path, filter: Option<&str>) -> Vec<(String
         .collect()
 }
 
+/// Run the fixed Service Worker M1 core testharness corpus.
+pub fn run_service_worker_cases(wpt_root: &Path, filter: Option<&str>) -> Vec<(String, Vec<HarnessSubtestResult>)> {
+    let selected: Vec<_> = SERVICE_WORKER_CORE_CASES
+        .iter()
+        .copied()
+        .filter(|path| filter.is_none_or(|filter| path.contains(filter)))
+        .collect();
+    let harness_source = match std::fs::read_to_string(wpt_root.join("resources/testharness.js")) {
+        Ok(source) => source,
+        Err(error) => {
+            return selected
+                .into_iter()
+                .map(|path| {
+                    (
+                        path.to_string(),
+                        vec![HarnessSubtestResult {
+                            name: "load testharness.js".into(),
+                            status: HarnessStatus::Fail,
+                            message: Some(error.to_string()),
+                        }],
+                    )
+                })
+                .collect();
+        }
+    };
+
+    selected
+        .into_iter()
+        .map(|path| {
+            let results = match std::fs::read_to_string(wpt_root.join(path)) {
+                Ok(source) => run_testharness_html(wpt_root, path, &source, &harness_source, CASE_TIMEOUT),
+                Err(error) => vec![HarnessSubtestResult {
+                    name: "load Service Worker WPT case".into(),
+                    status: HarnessStatus::Fail,
+                    message: Some(error.to_string()),
+                }],
+            };
+            (path.to_string(), results)
+        })
+        .collect()
+}
+
 fn indexeddb_window_wrapper(path: &str, support: &[(&str, &str)], case_source: &str) -> String {
     let mut source = String::new();
     for (name, script) in support {
@@ -1088,7 +1146,14 @@ fn wpt_data_image_fetcher(wpt_root: &std::path::Path) -> Option<zero_webview::Im
 fn wpt_data_script_fetcher(wpt_root: &std::path::Path) -> Option<zero_webview::ScriptSourceFetcher> {
     let root = wpt_root.to_path_buf();
     Some(std::sync::Arc::new(move |_page_url: &str, src: &str| {
-        let path_part = src.strip_prefix('/').unwrap_or(src);
+        let path_part = match src.strip_prefix("https://wpt.test") {
+            Some(path) => path,
+            None if src.starts_with("http://") || src.starts_with("https://") => {
+                return Err(format!("external script origin is not available in WPT runner: {src}"));
+            }
+            None => src,
+        };
+        let path_part = path_part.strip_prefix('/').unwrap_or(path_part);
         let clean = path_part.split(['?', '#']).next().unwrap_or(path_part);
         if clean.is_empty() {
             return Err("empty path".to_string());
@@ -1312,7 +1377,7 @@ fn run_testharness_html_inner(
                 }];
             }
         }
-        if probe.complete {
+        if probe.complete || terminal_harness_state(&last_state, partial_results.len()) {
             if partial_results.is_empty() {
                 return vec![HarnessSubtestResult {
                     name: case_name.to_string(),
@@ -1331,6 +1396,12 @@ fn run_testharness_html_inner(
             std::thread::sleep(Duration::from_millis(1));
         }
     }
+}
+
+fn terminal_harness_state(state: &serde_json::Value, result_count: usize) -> bool {
+    state.get("phase").and_then(serde_json::Value::as_u64) == Some(4)
+        && state.get("pending").and_then(serde_json::Value::as_u64) == Some(0)
+        && state.get("tests").and_then(serde_json::Value::as_u64) == Some(result_count as u64)
 }
 
 fn map_harness_results(results: Vec<RawHarnessResult>) -> Vec<HarnessSubtestResult> {
@@ -1629,7 +1700,9 @@ fn take_probe(webview: &mut WebView) -> Result<HarnessProbe, String> {
                if (globalThis.__zw_harness_complete) return true;\
                if (typeof globalThis.__zw_harness_state !== 'function') return false;\
                var st = globalThis.__zw_harness_state();\
-               return st && st.phase === 3;\
+               if (st && st.phase === 3) return true;\
+               return !!(st && st.phase === 4 && st.pending === 0\
+                 && (globalThis.__zw_harness_results || []).length === st.tests);\
              })(),\
              results:globalThis.__zw_harness_results||[],\
              test_function:typeof globalThis.test,\
@@ -1968,5 +2041,41 @@ async_test(function(test) {
             "status 4 → PreconditionFailed（中性，非 Fail）"
         );
         assert_eq!(mapped[5].status, HarnessStatus::Fail, "未知编码 9 → Fail（保守回落）");
+    }
+
+    #[test]
+    fn service_worker_core_manifest_has_twelve_unique_cases() {
+        let unique = SERVICE_WORKER_CORE_CASES
+            .iter()
+            .copied()
+            .collect::<std::collections::BTreeSet<_>>();
+        assert_eq!(SERVICE_WORKER_CORE_CASES.len(), 12);
+        assert_eq!(unique.len(), 12);
+        assert!(
+            SERVICE_WORKER_CORE_CASES
+                .iter()
+                .all(|path| path.starts_with("service-workers/service-worker/") && path.ends_with(".html"))
+        );
+    }
+
+    #[test]
+    fn service_worker_runner_reports_every_case_when_harness_is_missing() {
+        let cases = run_service_worker_cases(Path::new("/nonexistent-service-worker-wpt-root"), None);
+        assert_eq!(cases.len(), SERVICE_WORKER_CORE_CASES.len());
+        assert!(cases.iter().all(|(_, results)| {
+            results.len() == 1 && results[0].status == HarnessStatus::Fail && results[0].name == "load testharness.js"
+        }));
+    }
+
+    #[test]
+    fn phase_four_with_all_results_is_terminal() {
+        assert!(terminal_harness_state(
+            &serde_json::json!({"phase": 4, "pending": 0, "tests": 3}),
+            3
+        ));
+        assert!(!terminal_harness_state(
+            &serde_json::json!({"phase": 4, "pending": 0, "tests": 3}),
+            2
+        ));
     }
 }
