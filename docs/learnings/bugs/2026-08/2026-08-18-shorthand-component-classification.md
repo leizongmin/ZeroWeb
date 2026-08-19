@@ -207,6 +207,8 @@ Scroll-padding exposed the px-storage length-percentage variant: a property may 
 
 Contain-intrinsic-size exposed the optional-prefix longhand variant: `auto? none | <length [0,∞]>` needs a two-state consumer result, not just `Option<LengthValue>`. Strip optional `auto` only at token boundaries, preserve `none` as a real clearing value, and validate the length branch before writing any physical or logical intrinsic-size field.
 
+Transform and perspective origins exposed the `<position>` consumer variant: accepting only shared length tokens is both too narrow for legal keywords and too wide for parser aliases. Parse the origin as horizontal/vertical roles, reject same-axis keyword pairs, and validate length-percentage tokens from the raw source before mutating either axis.
+
 ## Root Cause
 
 The shorthand layer used heuristic component classifiers and treated unrecognized tokens as absent optional components. That is wrong for CSS shorthands such as `border`, where every token must match one of the allowed component grammars. A shared parser can also be broader than the property grammar that consumes it: general length parsing may accept `auto`, intrinsic sizing keywords, or percentages that `border-width` must reject.

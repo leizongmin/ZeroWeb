@@ -1260,6 +1260,22 @@ fn test_transform_origin_apply() {
     assert!(apply_property_value(&mut style2, "transform-origin", "0px"));
     assert_eq!(style2.transform_origin_x, LengthValue::Px(0.0));
     assert_eq!(style2.transform_origin_y, LengthValue::Percentage(50.0));
+
+    assert!(apply_property_value(&mut style, "transform-origin", "left top"));
+    assert_eq!(style.transform_origin_x, LengthValue::Percentage(0.0));
+    assert_eq!(style.transform_origin_y, LengthValue::Percentage(0.0));
+
+    assert!(apply_property_value(&mut style, "transform-origin", "bottom right"));
+    assert_eq!(style.transform_origin_x, LengthValue::Percentage(100.0));
+    assert_eq!(style.transform_origin_y, LengthValue::Percentage(100.0));
+
+    assert!(apply_property_value(&mut style, "transform-origin", "right 10px"));
+    assert_eq!(style.transform_origin_x, LengthValue::Percentage(100.0));
+    assert_eq!(style.transform_origin_y, LengthValue::Px(10.0));
+
+    assert!(apply_property_value(&mut style, "transform-origin", "top"));
+    assert_eq!(style.transform_origin_x, LengthValue::Percentage(50.0));
+    assert_eq!(style.transform_origin_y, LengthValue::Percentage(0.0));
 }
 
 #[test]
@@ -1275,6 +1291,20 @@ fn test_transform_origin_rejects_invalid_tail() {
     assert!(!apply_property_value(&mut style, "transform-origin", "30px 40px 50px"));
     assert_eq!(style.transform_origin_x, LengthValue::Px(10.0));
     assert_eq!(style.transform_origin_y, LengthValue::Px(20.0));
+
+    for value in [
+        "left right",
+        "top bottom",
+        "auto",
+        "thin",
+        "min-content",
+        "infpx",
+        "NaNpx",
+    ] {
+        assert!(!apply_property_value(&mut style, "transform-origin", value));
+        assert_eq!(style.transform_origin_x, LengthValue::Px(10.0));
+        assert_eq!(style.transform_origin_y, LengthValue::Px(20.0));
+    }
 }
 
 #[test]
@@ -1349,10 +1379,7 @@ fn test_transform_origin_not_inherited() {
 /// 测试 perspective-origin: left top 应用
 fn test_perspective_origin_apply() {
     let mut style = ComputedStyle::default();
-    // "left top" — left 解析为 0%, top 解析为 0%
-    // 当前实现通过 parse_length_or_math 解析，"left" 不是长度值
-    // 使用数值测试
-    assert!(apply_property_value(&mut style, "perspective-origin", "0% 0%"));
+    assert!(apply_property_value(&mut style, "perspective-origin", "left top"));
     assert_eq!(style.perspective_origin_x, LengthValue::Percentage(0.0));
     assert_eq!(style.perspective_origin_y, LengthValue::Percentage(0.0));
 
@@ -1366,6 +1393,14 @@ fn test_perspective_origin_apply() {
     assert!(apply_property_value(&mut style3, "perspective-origin", "100px"));
     assert_eq!(style3.perspective_origin_x, LengthValue::Px(100.0));
     assert_eq!(style3.perspective_origin_y, LengthValue::Percentage(50.0));
+
+    assert!(apply_property_value(&mut style3, "perspective-origin", "bottom right"));
+    assert_eq!(style3.perspective_origin_x, LengthValue::Percentage(100.0));
+    assert_eq!(style3.perspective_origin_y, LengthValue::Percentage(100.0));
+
+    assert!(apply_property_value(&mut style3, "perspective-origin", "top 25%"));
+    assert_eq!(style3.perspective_origin_x, LengthValue::Percentage(25.0));
+    assert_eq!(style3.perspective_origin_y, LengthValue::Percentage(0.0));
 }
 
 #[test]
@@ -1385,6 +1420,20 @@ fn test_perspective_origin_rejects_invalid_tail() {
     ));
     assert_eq!(style.perspective_origin_x, LengthValue::Px(10.0));
     assert_eq!(style.perspective_origin_y, LengthValue::Px(20.0));
+
+    for value in [
+        "left right",
+        "top bottom",
+        "auto",
+        "thin",
+        "min-content",
+        "infpx",
+        "NaNpx",
+    ] {
+        assert!(!apply_property_value(&mut style, "perspective-origin", value));
+        assert_eq!(style.perspective_origin_x, LengthValue::Px(10.0));
+        assert_eq!(style.perspective_origin_y, LengthValue::Px(20.0));
+    }
 }
 
 // ═══════════════════════════════════════════════════════════════════

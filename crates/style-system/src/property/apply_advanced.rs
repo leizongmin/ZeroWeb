@@ -208,6 +208,110 @@ fn position_value_to_computed(
     })
 }
 
+fn parse_origin_xy(value: &str) -> Option<(LengthValue, LengthValue)> {
+    let parts: Vec<&str> = value.split_whitespace().collect();
+    match parts.as_slice() {
+        [single] => parse_origin_single(single),
+        [first, second] => parse_origin_pair(first, second),
+        _ => None,
+    }
+}
+
+fn parse_origin_single(value: &str) -> Option<(LengthValue, LengthValue)> {
+    match origin_keyword(value) {
+        Some(OriginKeyword::Horizontal(v)) => Some((LengthValue::Percentage(v), LengthValue::Percentage(50.0))),
+        Some(OriginKeyword::Vertical(v)) => Some((LengthValue::Percentage(50.0), LengthValue::Percentage(v))),
+        Some(OriginKeyword::Center) => Some((LengthValue::Percentage(50.0), LengthValue::Percentage(50.0))),
+        None => Some((parse_origin_length_percentage(value)?, LengthValue::Percentage(50.0))),
+    }
+}
+
+fn parse_origin_pair(first: &str, second: &str) -> Option<(LengthValue, LengthValue)> {
+    match (origin_component(first)?, origin_component(second)?) {
+        (OriginComponent::Horizontal(x), OriginComponent::Vertical(y))
+        | (OriginComponent::Horizontal(x), OriginComponent::LengthPercentage(y))
+        | (OriginComponent::LengthPercentage(x), OriginComponent::Vertical(y)) => Some((x, y)),
+        (OriginComponent::Vertical(y), OriginComponent::Horizontal(x))
+        | (OriginComponent::Vertical(y), OriginComponent::LengthPercentage(x)) => Some((x, y)),
+        (OriginComponent::Horizontal(x), OriginComponent::Center) => Some((x, LengthValue::Percentage(50.0))),
+        (OriginComponent::Center, OriginComponent::Vertical(y)) => Some((LengthValue::Percentage(50.0), y)),
+        (OriginComponent::Center, OriginComponent::Horizontal(x)) => Some((x, LengthValue::Percentage(50.0))),
+        (OriginComponent::Vertical(y), OriginComponent::Center) => Some((LengthValue::Percentage(50.0), y)),
+        (OriginComponent::LengthPercentage(x), OriginComponent::LengthPercentage(y)) => Some((x, y)),
+        (OriginComponent::LengthPercentage(x), OriginComponent::Center) => Some((x, LengthValue::Percentage(50.0))),
+        (OriginComponent::Center, OriginComponent::LengthPercentage(y)) => Some((LengthValue::Percentage(50.0), y)),
+        (OriginComponent::Center, OriginComponent::Center) => {
+            Some((LengthValue::Percentage(50.0), LengthValue::Percentage(50.0)))
+        }
+        _ => None,
+    }
+}
+
+enum OriginKeyword {
+    Horizontal(f64),
+    Vertical(f64),
+    Center,
+}
+
+enum OriginComponent {
+    Horizontal(LengthValue),
+    Vertical(LengthValue),
+    Center,
+    LengthPercentage(LengthValue),
+}
+
+fn origin_keyword(value: &str) -> Option<OriginKeyword> {
+    match value.to_ascii_lowercase().as_str() {
+        "left" => Some(OriginKeyword::Horizontal(0.0)),
+        "right" => Some(OriginKeyword::Horizontal(100.0)),
+        "top" => Some(OriginKeyword::Vertical(0.0)),
+        "bottom" => Some(OriginKeyword::Vertical(100.0)),
+        "center" => Some(OriginKeyword::Center),
+        _ => None,
+    }
+}
+
+fn origin_component(value: &str) -> Option<OriginComponent> {
+    match origin_keyword(value) {
+        Some(OriginKeyword::Horizontal(v)) => Some(OriginComponent::Horizontal(LengthValue::Percentage(v))),
+        Some(OriginKeyword::Vertical(v)) => Some(OriginComponent::Vertical(LengthValue::Percentage(v))),
+        Some(OriginKeyword::Center) => Some(OriginComponent::Center),
+        None => Some(OriginComponent::LengthPercentage(parse_origin_length_percentage(
+            value,
+        )?)),
+    }
+}
+
+fn parse_origin_length_percentage(value: &str) -> Option<LengthValue> {
+    if matches!(
+        value.trim().to_ascii_lowercase().as_str(),
+        "thin" | "medium" | "thick" | "auto" | "min-content" | "max-content" | "fit-content"
+    ) {
+        return None;
+    }
+    let length = parse_length_or_math(value)?;
+    match &length {
+        LengthValue::Px(v)
+        | LengthValue::Em(v)
+        | LengthValue::Ex(v)
+        | LengthValue::Rex(v)
+        | LengthValue::Cap(v)
+        | LengthValue::Rcap(v)
+        | LengthValue::Rem(v)
+        | LengthValue::Vh(v)
+        | LengthValue::Vw(v)
+        | LengthValue::Vmin(v)
+        | LengthValue::Vmax(v)
+        | LengthValue::Ch(v)
+        | LengthValue::Rch(v)
+        | LengthValue::Ic(v)
+        | LengthValue::Ric(v)
+        | LengthValue::Percentage(v) => v.is_finite().then_some(length),
+        LengthValue::Calc(_) => Some(length),
+        _ => None,
+    }
+}
+
 pub fn apply_advanced_property_value(style: &mut ComputedStyle, property: &str, value: &str) -> bool {
     let value = value.trim();
     match property {
@@ -220,18 +324,10 @@ pub fn apply_advanced_property_value(style: &mut ComputedStyle, property: &str, 
         }
         "transform-origin" => {
             // https://drafts.csswg.org/css-transforms-1/#transform-origin-property
-            let parts: Vec<&str> = value.split_whitespace().collect();
-            if (1..=2).contains(&parts.len()) {
-                if let Some(x) = parse_length_or_math(parts[0]) {
-                    if let Some(y) = parts
-                        .get(1)
-                        .map_or(Some(LengthValue::Percentage(50.0)), |part| parse_length_or_math(part))
-                    {
-                        style.transform_origin_x = x;
-                        style.transform_origin_y = y;
-                        return true;
-                    }
-                }
+            if let Some((x, y)) = parse_origin_xy(value) {
+                style.transform_origin_x = x;
+                style.transform_origin_y = y;
+                return true;
             }
         }
         "perspective" => {
@@ -249,18 +345,10 @@ pub fn apply_advanced_property_value(style: &mut ComputedStyle, property: &str, 
         }
         "perspective-origin" => {
             // https://drafts.csswg.org/css-transforms-2/#perspective-origin-property
-            let parts: Vec<&str> = value.split_whitespace().collect();
-            if (1..=2).contains(&parts.len()) {
-                if let Some(x) = parse_length_or_math(parts[0]) {
-                    if let Some(y) = parts
-                        .get(1)
-                        .map_or(Some(LengthValue::Percentage(50.0)), |part| parse_length_or_math(part))
-                    {
-                        style.perspective_origin_x = x;
-                        style.perspective_origin_y = y;
-                        return true;
-                    }
-                }
+            if let Some((x, y)) = parse_origin_xy(value) {
+                style.perspective_origin_x = x;
+                style.perspective_origin_y = y;
+                return true;
             }
         }
         "transform-style" => match value.trim().to_ascii_lowercase().as_str() {
