@@ -540,6 +540,7 @@
 
 > **2026-08-08 征询记录（2026-08-09 已部分决策）**：字体栈 RFC v0.2.3 已获用户批准并进入主动实施，不再属于本清单；其余深结构点名项仍等待决策，无需重复征询。
 > **2026-08-19 goal-blockers 巡检**：本清单无变化、不重复征询；ZRG-2026-08-18-01「需要人工确认」a-d（慢性组 re-capture / raster_1500_fills_1080p 基线捕获 / product-smoke oracle re-capture / parity 阈值）已合并入飞书征询（msg `om_x100b677cc00360a0c0203581aaf8e64`，与 zero-web CI benchmarks re-capture 同批）。
+> **2026-08-19 用户批复（对话「按照你的建议来」，同日生效）**：① **product-smoke oracle 重录授权**——hmtx 时代 welcome/morning 等 oracle 重录，MAX_DIFF 阈值不放松（本流下一 doc-control/守成轮执行）；② **Chrome parity 阈值放宽授权**——generic-page 阈值改 product-smoke 同族容差（~20% + glyphMaskInsetPx 声明），本流执行；③ **benchmarks 基线 re-capture 授权**——JUSTIFICATION=runner 换代 + hmtx 时代新渲染基线，新指标 raster_1500_fills_1080p 纳入，由 ZRG/CI-guard 轮执行。**深结构点名项（R1043/R2174/Phase A IFC/margin-trim 深路径/individual transforms/@counter-style slice 2）不受本次批复影响，仍等点名。**
 
 - ~~**font-metric 生产激活+A/B**~~（**R2393 已完结 = net 负，保持 dormant**）：R2202 dormant 基础设施完整，2026-08-01 用户授权激活 + product-smoke A/B（本 session R2393 复核验证）= **welcome 17.03%→17.47%（+0.44pp 恶化）、morning 中文零变化、8/8 struct PASS** → **net 负，不 land，保持 env 默认关**。根因（R2202 两假设证伪）：① welcome `sans-serif` 已从 DejaVu 换 Liberation Sans（R1263，真值≠1.164）→ 激活后 normal 行高变；② morning 全显式 line-height（无 normal）→ 不经 font-metric provider → 零变化。证据 [`evidence/font-metric-activation-ab-2026-08-01.md`](evidence/font-metric-activation-ab-2026-08-01.md)。**后续 agent 勿再以 font-metric 激活为 lever**（已实测 net 负）；若推进须与 IFC strut/half-leading 真实化打包（深结构 R834 谱系）。
 - **vertical-mode native R1043**：深结构性方向，等用户授权

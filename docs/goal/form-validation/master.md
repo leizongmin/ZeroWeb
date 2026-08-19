@@ -98,7 +98,7 @@
 - `--bin`（无 `-p`）构建的 workspace 级 feature 统一行为（browser quickjs 默认 + 其余 v8
   默认）——本轮以双 feature 编译兼容处理；browser 流若想恢复单 feature 构建，
   可考虑把 quickjs 移出 browser 默认 features（其决策）
-  **2026-08-19 状态**：已纳入 goal-blockers 飞书征询（msg `om_x100b677cc00360a0c0203581aaf8e64`，建议保持现状销项、browser 流重构时顺带处理）
+  **2026-08-19 状态**：已征询并获用户批复——**保持现状（双 feature 编译兼容），销项**；browser 流后续重构时顺带处理（决策登记于 zero-web/master.md GB-20260819 用户决策记录）
 - 位置选择器（nth-child）的跨批身份不稳定是 shim 各 per-key 缓存的潜在碰撞源——
   `_inputValues` 已修；`_customValidity`/`_userEdited` 等同类缓存有相同 latent 风险
   （**技术备忘，非用户决策项**：保持观察，后续 shim 演进时随 L2 缓存体系一并收敛）
