@@ -15,7 +15,9 @@ use zero_protocol::CompositorUiSurfaceInfo;
 #[cfg(target_os = "android")]
 use zero_protocol::IpcChannel;
 #[cfg(target_os = "android")]
-use zero_protocol::message::{ImageDecodeParams, IpcMessage, IpcMessageKind};
+use zero_protocol::message::{
+    FramePublishMode, ImageDecodeParams, IpcMessage, IpcMessageKind, LoadHtmlParams, SetViewportParams,
+};
 
 const NATIVE_VERSION: &str = "ZeroWeb Android M2";
 
@@ -24,14 +26,35 @@ const ANDROID_COMPOSITOR_SURFACE_ID: u64 = 1;
 #[cfg(target_os = "android")]
 const MAX_COMPOSITOR_SURFACE_DIMENSION: u32 = 4_096;
 #[cfg(target_os = "android")]
+const ANDROID_PAGE_VIEWPORT_WIDTH: u32 = 320;
+#[cfg(target_os = "android")]
+const ANDROID_PAGE_VIEWPORT_HEIGHT: u32 = 180;
+#[cfg(target_os = "android")]
 type AndroidCompositorTransport =
     zero_protocol::PipeTransport<std::os::unix::net::UnixStream, std::os::unix::net::UnixStream>;
 #[cfg(target_os = "android")]
+type AndroidRendererTransport =
+    zero_protocol::PipeTransport<std::os::unix::net::UnixStream, std::os::unix::net::UnixStream>;
+#[cfg(target_os = "android")]
 static ANDROID_COMPOSITOR: OnceLock<Mutex<Option<AndroidCompositorTransport>>> = OnceLock::new();
+#[cfg(target_os = "android")]
+static ANDROID_RENDERER: OnceLock<Mutex<Option<AndroidRendererTransport>>> = OnceLock::new();
+#[cfg(target_os = "android")]
+static ANDROID_PAGE_FRAME: OnceLock<Mutex<Option<Vec<u8>>>> = OnceLock::new();
 
 #[cfg(target_os = "android")]
 fn android_compositor() -> &'static Mutex<Option<AndroidCompositorTransport>> {
     ANDROID_COMPOSITOR.get_or_init(|| Mutex::new(None))
+}
+
+#[cfg(target_os = "android")]
+fn android_renderer() -> &'static Mutex<Option<AndroidRendererTransport>> {
+    ANDROID_RENDERER.get_or_init(|| Mutex::new(None))
+}
+
+#[cfg(target_os = "android")]
+fn android_page_frame() -> &'static Mutex<Option<Vec<u8>>> {
+    ANDROID_PAGE_FRAME.get_or_init(|| Mutex::new(None))
 }
 
 /// Satisfies winit's Android native-activity link contract.
@@ -322,6 +345,172 @@ pub extern "system" fn Java_com_leizm_zeroweb_NativeBridge_nativeAttachComposito
     }
     *slot = Some(transport);
     JNI_TRUE
+}
+
+/// Attaches the browser-side renderer endpoint and starts forwarding renderer
+/// compositor frames through the already attached compositor Service channel.
+#[cfg(target_os = "android")]
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_com_leizm_zeroweb_NativeBridge_nativeAttachRenderer(
+    _env: JNIEnv,
+    _class: JClass,
+    fd: jni::sys::jint,
+) -> jboolean {
+    use std::os::unix::io::FromRawFd;
+
+    if fd < 0 {
+        return JNI_FALSE;
+    }
+    let stream = unsafe { std::os::unix::net::UnixStream::from_raw_fd(fd) };
+    let Ok(reader) = stream.try_clone() else {
+        return JNI_FALSE;
+    };
+    let Ok(writer) = stream.try_clone() else {
+        return JNI_FALSE;
+    };
+    let Ok(mut slot) = android_renderer().lock() else {
+        return JNI_FALSE;
+    };
+    if slot.is_some() {
+        return JNI_FALSE;
+    }
+    *slot = Some(zero_protocol::PipeTransport::new(stream, writer));
+    drop(slot);
+
+    if std::thread::Builder::new()
+        .name("android-renderer-frames".to_string())
+        .spawn(move || {
+            let mut inbound = zero_protocol::PipeTransport::new(reader, std::io::sink());
+            while let Ok(message) = inbound.recv() {
+                if let IpcMessageKind::CompositorFrame {
+                    surface_id,
+                    navigation_epoch,
+                    frame_id,
+                    paint,
+                } = message.kind
+                {
+                    let _ = forward_renderer_frame(surface_id, navigation_epoch, frame_id, *paint);
+                }
+            }
+        })
+        .is_err()
+    {
+        let Ok(mut slot) = android_renderer().lock() else {
+            return JNI_FALSE;
+        };
+        *slot = None;
+        return JNI_FALSE;
+    }
+
+    send_renderer(IpcMessageKind::SetViewport(SetViewportParams {
+        width: ANDROID_PAGE_VIEWPORT_WIDTH,
+        height: ANDROID_PAGE_VIEWPORT_HEIGHT,
+        device_scale_factor: 1.0,
+    }))
+    .and_then(|_| send_renderer(IpcMessageKind::SetFramePublishMode(FramePublishMode::Compositor)))
+    .and_then(|_| {
+        send_renderer(IpcMessageKind::LoadHtml(LoadHtmlParams {
+            html: "<html><body style='margin:0;background:#0c2238;color:white'><h1>ZeroWeb Android renderer</h1><p>renderer → compositor → Compose</p></body></html>".to_string(),
+            css: None,
+            url: Some("zero://android-renderer-smoke".to_string()),
+            navigation_epoch: 1,
+        }))
+    })
+    .map_or(JNI_FALSE, |_| JNI_TRUE)
+}
+
+/// Returns the latest renderer page frame after compositor rasterization.
+#[cfg(target_os = "android")]
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_com_leizm_zeroweb_NativeBridge_nativeLatestPageFrame(
+    env: JNIEnv,
+    _class: JClass,
+) -> jbyteArray {
+    let Ok(frame) = android_page_frame().lock() else {
+        return std::ptr::null_mut();
+    };
+    frame
+        .as_ref()
+        .and_then(|rgba| env.byte_array_from_slice(rgba).ok())
+        .map_or(std::ptr::null_mut(), |frame| frame.into_raw())
+}
+
+#[cfg(target_os = "android")]
+fn send_renderer(kind: IpcMessageKind) -> Result<(), String> {
+    let mut slot = android_renderer()
+        .lock()
+        .map_err(|_| "Android renderer socket lock poisoned".to_string())?;
+    slot.as_mut()
+        .ok_or_else(|| "Android renderer socket is not attached".to_string())?
+        .send(IpcMessage { id: 1, kind })
+        .map_err(|error| error.to_string())
+}
+
+#[cfg(target_os = "android")]
+fn forward_renderer_frame(
+    surface_id: u64,
+    navigation_epoch: u64,
+    frame_id: u64,
+    paint: zero_protocol::paint_snapshot::PaintSnapshotParams,
+) -> Result<(), String> {
+    let mut slot = android_compositor()
+        .lock()
+        .map_err(|_| "Android compositor socket lock poisoned".to_string())?;
+    let transport = slot
+        .as_mut()
+        .ok_or_else(|| "Android compositor socket is not attached".to_string())?;
+    transport
+        .send(IpcMessage {
+            id: 10,
+            kind: IpcMessageKind::CompositorFrame {
+                surface_id,
+                navigation_epoch,
+                frame_id,
+                paint: Box::new(paint),
+            },
+        })
+        .map_err(|error| error.to_string())?;
+    if !matches!(
+        transport.recv(),
+        Ok(IpcMessage {
+            id: 10,
+            kind: IpcMessageKind::CompositorFrameResult { .. }
+        })
+    ) {
+        return Err("Android compositor rejected renderer frame".to_string());
+    }
+    transport
+        .send(IpcMessage {
+            id: 11,
+            kind: IpcMessageKind::GetCompositorFrame {
+                surface_id,
+                navigation_epoch,
+                frame_id,
+            },
+        })
+        .map_err(|error| error.to_string())?;
+    let frame = match transport.recv().map_err(|error| error.to_string())? {
+        IpcMessage {
+            id: 11,
+            kind: IpcMessageKind::CompositorFrameData {
+                width, height, rgba, ..
+            },
+        } if width == ANDROID_PAGE_VIEWPORT_WIDTH
+            && height == ANDROID_PAGE_VIEWPORT_HEIGHT
+            && rgba.len()
+                == usize::try_from(width)
+                    .unwrap_or(usize::MAX)
+                    .saturating_mul(usize::try_from(height).unwrap_or(usize::MAX))
+                    .saturating_mul(4) =>
+        {
+            rgba
+        }
+        _ => return Err("Android compositor returned an unexpected page frame".to_string()),
+    };
+    *android_page_frame()
+        .lock()
+        .map_err(|_| "Android page frame lock poisoned".to_string())? = Some(frame);
+    Ok(())
 }
 
 /// Publishes a deterministic compositor frame and reads it back from the

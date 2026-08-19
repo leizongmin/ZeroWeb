@@ -46,6 +46,8 @@ class MainActivity : ComponentActivity() {
     private var browserState by mutableStateOf(BrowserSnapshot.empty())
     private var browserError by mutableStateOf<String?>(null)
     private var compositorPreview by mutableStateOf<Bitmap?>(null)
+    private var rendererPreview by mutableStateOf<Bitmap?>(null)
+    private var compositorAttached = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -79,6 +81,7 @@ class MainActivity : ComponentActivity() {
                     onRemoveBookmark = ::removeBookmark,
                     onClearHistory = ::clearHistory,
                     compositorPreview = compositorPreview,
+                    rendererPreview = rendererPreview,
                 )
             }
         }
@@ -186,6 +189,7 @@ class MainActivity : ComponentActivity() {
                     IRoleService.Stub.asInterface(service).start(sockets[1])
                     rendererSocket = sockets[0]
                     android.util.Log.i("ZeroWebRole", "renderer socket connected")
+                    attachRendererIfReady()
                 }
                 if (roleService == ImageDecoderService::class.java) {
                     val sockets = ParcelFileDescriptor.createSocketPair()
@@ -202,8 +206,10 @@ class MainActivity : ComponentActivity() {
                     val sockets = ParcelFileDescriptor.createSocketPair()
                     IRoleService.Stub.asInterface(service).start(sockets[1])
                     if (NativeBridge.nativeAttachCompositor(sockets[0].detachFd(), 2, 2)) {
+                        compositorAttached = true
                         compositorPreview = NativeBridge.nativeCompositorTestFrame(2, 2)?.toBitmap(2, 2)
                         android.util.Log.i("ZeroWebRole", "compositor bridge ready")
+                        attachRendererIfReady()
                     } else {
                         android.util.Log.e("ZeroWebRole", "compositor bridge rejected")
                     }
@@ -216,6 +222,17 @@ class MainActivity : ComponentActivity() {
         }
         serviceConnections += connection
         bindService(Intent(this, roleService), connection, Context.BIND_AUTO_CREATE)
+    }
+
+    private fun attachRendererIfReady() {
+        val socket = rendererSocket ?: return
+        if (!compositorAttached || !NativeBridge.nativeAttachRenderer(socket.detachFd())) return
+        rendererSocket = null
+        window.decorView.postDelayed({
+            rendererPreview = NativeBridge.nativeLatestPageFrame()?.toBitmap(320, 180)
+            if (rendererPreview == null) android.util.Log.e("ZeroWebRole", "renderer page frame unavailable")
+            else android.util.Log.i("ZeroWebRole", "renderer page frame ready")
+        }, 1_000)
     }
 }
 
@@ -235,6 +252,7 @@ private fun BrowserScreen(
     onRemoveBookmark: (String) -> Unit,
     onClearHistory: () -> Unit,
     compositorPreview: Bitmap?,
+    rendererPreview: Bitmap?,
 ) {
     var page by remember { mutableStateOf(BrowserPage.BROWSE) }
     BackHandler(enabled = page != BrowserPage.BROWSE) { page = BrowserPage.BROWSE }
@@ -288,6 +306,13 @@ private fun BrowserScreen(
             }
         }
         Text(text = activeTab?.url ?: "新标签")
+        rendererPreview?.let { preview ->
+            Image(
+                bitmap = preview.asImageBitmap(),
+                contentDescription = "来自 renderer 与 compositor 的页面帧",
+                modifier = Modifier.fillMaxWidth().testTag("rendererPreview"),
+            )
+        }
         compositorPreview?.let { preview ->
             Image(
                 bitmap = preview.asImageBitmap(),

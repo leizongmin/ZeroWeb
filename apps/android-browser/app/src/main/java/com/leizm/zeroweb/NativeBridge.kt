@@ -61,6 +61,12 @@ object NativeBridge {
     external fun nativeCompositorTestFrame(width: Int, height: Int): ByteArray?
 
     @JvmStatic
+    external fun nativeAttachRenderer(fd: Int): Boolean
+
+    @JvmStatic
+    external fun nativeLatestPageFrame(): ByteArray?
+
+    @JvmStatic
     external fun nativeProbeDecoder(fd: Int): Boolean
 
     @JvmStatic
