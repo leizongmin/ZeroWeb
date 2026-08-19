@@ -1860,6 +1860,8 @@ mod tests {
     fn test_parse_text_emphasis_style_invalid() {
         assert!(parse_text_emphasis_style("not-a-keyword").is_none());
         assert!(parse_text_emphasis_style("filled unknown").is_none());
+        assert!(parse_text_emphasis_style("filled open").is_none());
+        assert!(parse_text_emphasis_style("dot circle").is_none());
     }
 
     #[test]

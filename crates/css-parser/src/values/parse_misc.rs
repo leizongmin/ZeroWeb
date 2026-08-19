@@ -522,9 +522,9 @@ pub fn parse_text_emphasis_style(value: &str) -> Option<TextEmphasisStyleValue> 
     let mut shape: Option<&str> = None;
     for tok in v.split_whitespace() {
         match tok.to_ascii_lowercase().as_str() {
-            "filled" => filled = Some(true),
-            "open" => filled = Some(false),
-            "dot" | "circle" | "double-circle" | "triangle" | "sesame" => {
+            "filled" if filled.is_none() => filled = Some(true),
+            "open" if filled.is_none() => filled = Some(false),
+            "dot" | "circle" | "double-circle" | "triangle" | "sesame" if shape.is_none() => {
                 shape = Some(match tok {
                     "dot" => "dot",
                     "circle" => "circle",
