@@ -114,10 +114,14 @@ browser-compositor-real-site-smoke: target-disk-guard target/test-guard
 	./target/test-guard --time-limit 900 -- sh scripts/browser-compositor-real-site-smoke.sh
 
 # ── 测试防护 (test-guard) ──────────────────────────────────────────────
-# test-guard 跨平台 (macOS/Linux) 包裹测试命令：单进程 RSS>6GB 或全树>16GB
-# 或总时长>1800s 即杀掉整棵进程树（退出 124），防止内存型 bug（如无限循环
-# realloc、CSS parser 未闭合括号死循环）触发系统级 OOM 连累 tmux session /
-# rally 无人值守流程。源码 scripts/test-guard.rs，std-only，rustc 直接编译。
+# test-guard 跨平台 (macOS/Linux) 包裹测试命令，防内存型 bug（无限循环 realloc、
+# CSS parser 未闭合括号死循环）触发系统级 OOM 连累 tmux session / rally 无人值守
+# 流程。源码 scripts/test-guard.rs，std-only，rustc 直接编译。源码默认阈值 6/16GB/
+# 1800s；本 Makefile 各入口显式覆盖为单进程 RSS>4GB 或全树>8GB 即杀（退出 124）。
+# 2026-08-19 实测降至 4/8：运行阶段合法峰值单进程 0.95GB（browser 串行段）、
+# 子树 2.07GB，4/8 留 4 倍余量；双 rally 流并行时最坏叠加 16GB，远离 46GB 物理内存。
+# 历史教训：2026-06-28 曾因 browser>6GB（当时 --test-threads=2）升到 10/28，
+# 后改串行峰值已降；阈值应随实测峰值调，勿拍脑袋。
 ifeq ($(OS),Windows_NT)
 MKDIR_TARGET = if not exist target mkdir target
 else
@@ -140,7 +144,7 @@ zero-wpt-runner-release:
 	cargo build --release --bin zero-wpt-runner
 
 # 全量测试：先无内存上限编译，再由 test-guard 包裹已编译测试运行。无人值守 /
-# rally / CI 请用此 target，不要裸跑 cargo test。可调阈值：./target/test-guard --compile-first --per-proc-mem 8 --total-mem 20 -- cargo test --workspace
+# rally / CI 请用此 target，不要裸跑 cargo test。可调阈值：./target/test-guard --compile-first --per-proc-mem 6 --total-mem 12 -- cargo test --workspace
 # 2026-08-08：纳入 QuickJS 矩阵（v8/quickjs 接口一致性保证——此前 quickjs 只在 CI，
 # 本地提交门禁覆盖不到，编译/运行破坏 CI 才暴露；QuickJS_CRATES 为 CI quickjs 测试包列表）。
 QUICKJS_CLIPPY_CRATES = zero-dom zero-css-parser zero-style-system zero-layout-engine zero-engine zero-canvas zero-host-runtime zero-net zero-security zero-storage zero-protocol zero-wasm-sandbox zero-page-runtime zero-render-foundation
@@ -151,13 +155,13 @@ ifeq ($(OS),Windows_NT)
 # Windows GUI 测试共享进程级 compositor；并行执行会让测试互相关闭其子进程。
 test: target-disk-guard target/test-guard
 	cargo build -p zero-renderer -p zero-compositor -p zero-image-decoder
-	set ZERO_NOPROXY=1&& .\target\test-guard --compile-first --per-proc-mem 10 --total-mem 28 --time-limit 900 -- cargo test --workspace --exclude zero-browser --exclude zero-renderer
-	set ZERO_NOPROXY=1&& .\target\test-guard --compile-first --per-proc-mem 10 --total-mem 28 --time-limit 900 -- cargo test -p zero-renderer --bin zero-renderer -- --test-threads=1
-	set ZERO_NOPROXY=1&& .\target\test-guard --compile-first --per-proc-mem 10 --total-mem 28 --time-limit 900 -- cargo test -p zero-browser --bin zero-browser -- --test-threads=1
+	set ZERO_NOPROXY=1&& .\target\test-guard --compile-first --per-proc-mem 4 --total-mem 8 --time-limit 900 -- cargo test --workspace --exclude zero-browser --exclude zero-renderer
+	set ZERO_NOPROXY=1&& .\target\test-guard --compile-first --per-proc-mem 4 --total-mem 8 --time-limit 900 -- cargo test -p zero-renderer --bin zero-renderer -- --test-threads=1
+	set ZERO_NOPROXY=1&& .\target\test-guard --compile-first --per-proc-mem 4 --total-mem 8 --time-limit 900 -- cargo test -p zero-browser --bin zero-browser -- --test-threads=1
 	cargo clippy --no-default-features --features quickjs $(addprefix -p ,$(QUICKJS_CLIPPY_CRATES)) --all-targets -- -D warnings
-	set ZERO_NOPROXY=1&& .\target\test-guard --compile-first --per-proc-mem 10 --total-mem 28 --time-limit 900 -- cargo test --no-default-features --features quickjs $(addprefix -p ,$(QUICKJS_TEST_CRATES_WITHOUT_BROWSER_OR_RENDERER))
-	set ZERO_NOPROXY=1&& .\target\test-guard --compile-first --per-proc-mem 10 --total-mem 28 --time-limit 900 -- cargo test --no-default-features --features quickjs -p zero-renderer --bin zero-renderer -- --test-threads=1
-	set ZERO_NOPROXY=1&& .\target\test-guard --compile-first --per-proc-mem 10 --total-mem 28 --time-limit 900 -- cargo test --no-default-features --features quickjs -p zero-browser -- --test-threads=1
+	set ZERO_NOPROXY=1&& .\target\test-guard --compile-first --per-proc-mem 4 --total-mem 8 --time-limit 900 -- cargo test --no-default-features --features quickjs $(addprefix -p ,$(QUICKJS_TEST_CRATES_WITHOUT_BROWSER_OR_RENDERER))
+	set ZERO_NOPROXY=1&& .\target\test-guard --compile-first --per-proc-mem 4 --total-mem 8 --time-limit 900 -- cargo test --no-default-features --features quickjs -p zero-renderer --bin zero-renderer -- --test-threads=1
+	set ZERO_NOPROXY=1&& .\target\test-guard --compile-first --per-proc-mem 4 --total-mem 8 --time-limit 900 -- cargo test --no-default-features --features quickjs -p zero-browser -- --test-threads=1
 else
 test: target-disk-guard target/test-guard
 	# Browser 多进程单测直接 spawn target/debug/{zero-renderer,zero-compositor}；先刷新
@@ -176,25 +180,25 @@ test: target-disk-guard target/test-guard
 	#   quickjs feature 组合产物（与 v8 产物不冲突），cargo 各自持锁；v8 测试
 	#   （~50s）时长覆盖 clippy 编译，总时长省一个编译段。cargo test 先无约束编译，
 	#   再由 test-guard 仅监管运行阶段；clippy 本身不受内存阈值限制。
-	ZERO_NOPROXY=1 ./target/test-guard --compile-first --per-proc-mem 10 --total-mem 28 --time-limit 900 -- cargo test --workspace --exclude zero-renderer -- --skip gpu::renderer:: --skip surface::tests::test_gpu_cpu_rendering_consistency_solid_fill & test_pid=$$!; \
+	ZERO_NOPROXY=1 ./target/test-guard --compile-first --per-proc-mem 4 --total-mem 8 --time-limit 900 -- cargo test --workspace --exclude zero-renderer -- --skip gpu::renderer:: --skip surface::tests::test_gpu_cpu_rendering_consistency_solid_fill & test_pid=$$!; \
 	cargo clippy --no-default-features --features quickjs $(addprefix -p ,$(QUICKJS_CLIPPY_CRATES)) --all-targets -- -D warnings & clippy_pid=$$!; \
 	rc=0; wait $$test_pid || rc=$$?; wait $$clippy_pid || rc=$$?; exit $$rc
-	ZERO_NOPROXY=1 ./target/test-guard --compile-first --per-proc-mem 10 --total-mem 28 --time-limit 900 -- cargo test -p zero-renderer --bin zero-renderer -- --test-threads=1
-	@if ZERO_NOPROXY=1 ./target/test-guard --compile-first --per-proc-mem 10 --total-mem 28 --time-limit 120 -- cargo test -p zero-render-foundation gpu::renderer::tests::test_gpu_renderer_headless_creation -- --exact --test-threads=1 >/dev/null 2>&1; then \
+	ZERO_NOPROXY=1 ./target/test-guard --compile-first --per-proc-mem 4 --total-mem 8 --time-limit 900 -- cargo test -p zero-renderer --bin zero-renderer -- --test-threads=1
+	@if ZERO_NOPROXY=1 ./target/test-guard --compile-first --per-proc-mem 4 --total-mem 8 --time-limit 120 -- cargo test -p zero-render-foundation gpu::renderer::tests::test_gpu_renderer_headless_creation -- --exact --test-threads=1 >/dev/null 2>&1; then \
 		echo "wgpu adapter available; running adapter-only GPU tests"; \
-		ZERO_NOPROXY=1 ./target/test-guard --compile-first --per-proc-mem 10 --total-mem 28 --time-limit 900 -- cargo test -p zero-render-foundation gpu::renderer:: -- --test-threads=1; \
-		ZERO_NOPROXY=1 ./target/test-guard --compile-first --per-proc-mem 10 --total-mem 28 --time-limit 900 -- cargo test -p zero-render-foundation surface::tests::test_gpu_cpu_rendering_consistency_solid_fill -- --exact --test-threads=1; \
+		ZERO_NOPROXY=1 ./target/test-guard --compile-first --per-proc-mem 4 --total-mem 8 --time-limit 900 -- cargo test -p zero-render-foundation gpu::renderer:: -- --test-threads=1; \
+		ZERO_NOPROXY=1 ./target/test-guard --compile-first --per-proc-mem 4 --total-mem 8 --time-limit 900 -- cargo test -p zero-render-foundation surface::tests::test_gpu_cpu_rendering_consistency_solid_fill -- --exact --test-threads=1; \
 	else \
 		echo "wgpu adapter unavailable; adapter-only GPU tests skipped"; \
 	fi
 	# QuickJS 运行测试（v8/quickjs 接口一致性保证）
-	ZERO_NOPROXY=1 ./target/test-guard --compile-first --per-proc-mem 10 --total-mem 28 --time-limit 900 -- cargo test --no-default-features --features quickjs $(addprefix -p ,$(QUICKJS_TEST_CRATES_WITHOUT_BROWSER_OR_RENDERER))
-	ZERO_NOPROXY=1 ./target/test-guard --compile-first --per-proc-mem 10 --total-mem 28 --time-limit 900 -- cargo test --no-default-features --features quickjs -p zero-renderer --bin zero-renderer -- --test-threads=1
+	ZERO_NOPROXY=1 ./target/test-guard --compile-first --per-proc-mem 4 --total-mem 8 --time-limit 900 -- cargo test --no-default-features --features quickjs $(addprefix -p ,$(QUICKJS_TEST_CRATES_WITHOUT_BROWSER_OR_RENDERER))
+	ZERO_NOPROXY=1 ./target/test-guard --compile-first --per-proc-mem 4 --total-mem 8 --time-limit 900 -- cargo test --no-default-features --features quickjs -p zero-renderer --bin zero-renderer -- --test-threads=1
 endif
 
 # M4 HTML behavior: selected upstream forms/focus/InputEvent testharness cases.
 testharness-html: fetch-wpt-html-testharness target-disk-guard target/test-guard zero-wpt-runner-release
-	./target/test-guard --per-proc-mem 10 --total-mem 28 --time-limit 900 -- ./target/release/zero-wpt-runner testharness-html
+	./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit 900 -- ./target/release/zero-wpt-runner testharness-html
 
 # js-dom goal M4 / DC-3：上游 dom/ testharness 通过率基线（dom/nodes 首批）。
 # 用例 gitignored（fetch-dom-subset.sh 按需拉取）。filter 透传：make testharness-dom FILTER=Document-createElement。
@@ -204,12 +208,12 @@ fetch-wpt-dom:
 # js-dom R51：TIME_LIMIT 可透传（默认 900s）。dom/ranges 等 mega-case 子目录
 #（Range-mutations 族 12 用例各 30-60s）需要更长墙钟。
 testharness-dom: target-disk-guard fetch-wpt-dom target/test-guard zero-wpt-runner-release
-	./target/test-guard --per-proc-mem 10 --total-mem 28 --time-limit $(or $(TIME_LIMIT),900) -- ./target/release/zero-wpt-runner testharness-dom $(if $(FILTER),$(FILTER),)
+	./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit $(or $(TIME_LIMIT),900) -- ./target/release/zero-wpt-runner testharness-dom $(if $(FILTER),$(FILTER),)
 
 # js-dom goal DC-3 native 路径对照：ZW_NATIVE_DOM=1 走原生绑定路径（非默认 polyfill）。
 # 用于建立 native 通过率基线，对照 R2/R3/R4 native 修复（classList/createElement/node mutation）。
 testharness-dom-native: target-disk-guard fetch-wpt-dom target/test-guard zero-wpt-runner-release
-	ZW_NATIVE_DOM=1 ./target/test-guard --per-proc-mem 10 --total-mem 28 --time-limit 900 -- ./target/release/zero-wpt-runner testharness-dom $(if $(FILTER),$(FILTER),)
+	ZW_NATIVE_DOM=1 ./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit 900 -- ./target/release/zero-wpt-runner testharness-dom $(if $(FILTER),$(FILTER),)
 
 # IndexedDB goal M1：上游 IndexedDB factory/global/event 首批 testharness 基线。
 # `.any.js` 用例由 runner 包装为 window test；filter 按文件路径子串透传。
@@ -217,7 +221,7 @@ fetch-wpt-indexeddb:
 	bash tests/wpt-runner/scripts/fetch-indexeddb-subset.sh
 
 testharness-indexeddb: target-disk-guard fetch-wpt-indexeddb target/test-guard zero-wpt-runner-release
-	./target/test-guard --per-proc-mem 10 --total-mem 28 --time-limit $(or $(TIME_LIMIT),900) -- ./target/release/zero-wpt-runner testharness-indexeddb $(if $(FILTER),$(FILTER),)
+	./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit $(or $(TIME_LIMIT),900) -- ./target/release/zero-wpt-runner testharness-indexeddb $(if $(FILTER),$(FILTER),)
 
 # Service Worker WPT 分母：294 个 source 必须有唯一且可重建的执行 lane。
 audit-wpt-service-workers-disposition:
