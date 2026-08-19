@@ -85,6 +85,9 @@ pub fn parse_border_image_slice(value: &str) -> Option<BorderImageSliceValue> {
     for token in value.split_whitespace() {
         let lower = token.to_ascii_lowercase();
         if lower == "fill" {
+            if fill {
+                return None;
+            }
             fill = true;
             continue;
         }

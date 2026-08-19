@@ -103,6 +103,8 @@ Logical border axis shorthands exposed the axis variant: 1-2 start/end mapping m
 
 `scroll-snap-type` exposed the duplicated-parser variant: when the same grammar is implemented in multiple modules, strictness fixes must be applied to every implementation or re-export path. Slot occupancy checks should be mirrored across copies until the parser has a single owner.
 
+`border-image-slice` exposed the boolean-marker duplicate variant: even a marker stored as a bool has grammar cardinality. Setting a flag is not enough; a second occurrence of the marker must invalidate the declaration.
+
 ## Root Cause
 
 The shorthand layer used heuristic component classifiers and treated unrecognized tokens as absent optional components. That is wrong for CSS shorthands such as `border`, where every token must match one of the allowed component grammars. A shared parser can also be broader than the property grammar that consumes it: general length parsing may accept `auto`, intrinsic sizing keywords, or percentages that `border-width` must reject.

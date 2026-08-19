@@ -987,6 +987,7 @@ fn test_parse_border_image_slice_invalid() {
     assert_eq!(parse_border_image_slice(""), None);
     assert_eq!(parse_border_image_slice("-5"), None);
     assert_eq!(parse_border_image_slice("1 2 3 4 5"), None);
+    assert_eq!(parse_border_image_slice("fill fill 10"), None);
 }
 
 // ── border-image-width ──
