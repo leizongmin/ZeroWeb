@@ -81,13 +81,20 @@ where
 }
 
 fn join_bounded_or_detach(handle: JoinHandle<()>) {
+    // OPTIMIZATION（2026-08-19）：指数退避轮询。旧实现固定 sleep(20ms)——正常退出路径
+    //（worker 毫秒级完成）也被强制等满一个轮询周期，worker_create_terminate 每次白等
+    // ~20ms（8.8x 回归的主构成，R3399 a8d5a22d 引入）。现 1ms 起步每次翻倍封顶 20ms：
+    // 正常路径 1-2 轮即 join；卡死路径仍受 TERMINATE_JOIN_TIMEOUT 5s 上限 + detach 兜底
+    //（防 DoS 语义不变）。
     let start = std::time::Instant::now();
+    let mut wait = std::time::Duration::from_millis(1);
     while start.elapsed() < TERMINATE_JOIN_TIMEOUT {
         if handle.is_finished() {
             let _ = handle.join();
             return;
         }
-        std::thread::sleep(std::time::Duration::from_millis(20));
+        std::thread::sleep(wait);
+        wait = (wait * 2).min(std::time::Duration::from_millis(20));
     }
     drop(handle);
 }
