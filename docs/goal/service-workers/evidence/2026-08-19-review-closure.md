@@ -170,4 +170,5 @@ CSP Python handler 为每个 directive 生成不同 CSP header 和 4 个 worker 
 - [x] defer、environment gated、support-envelope skip 已分开。
 - [x] 十批路径互斥并覆盖初始 review 152/152。
 - [x] 294 source / 331 URL 已转为唯一、可重建的 runner disposition contract。
+- [x] 12 个 core source 与 runner 导入账本、三批 case asset 及 blob SHA 精确对应。
 - [x] 未修改 runtime 源码、WPT 数据或既有 inventory 初筛记录。

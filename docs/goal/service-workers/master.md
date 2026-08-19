@@ -65,7 +65,8 @@
 - ✅ Final remaining 裁决：38 source / 270 subtest 分为 14 defer /
   8 gated / 16 skip；初始 review 152/152，逻辑剩余 0
 - ✅ Runner disposition contract：294 source / 331 URL 唯一映射为
-  12 core / 51 defer / 189 gated / 42 skip，可从原始 evidence 确定性重建
+  12 core / 51 defer / 189 gated / 42 skip，可从原始 evidence 确定性重建；
+  12 个 core 与 runner 导入账本、三批 case asset 及 blob SHA 精确对应
 - ✅ SW 执行环境 RFC 已完成，待用户批准
 
 ## 缺口清单
@@ -133,7 +134,8 @@
   [Review closure](evidence/2026-08-19-review-closure.md)
 - Runner disposition：294 source / 331 URL 的唯一执行 lane 见
   [WPT disposition contract](evidence/2026-08-19-wpt-disposition.tsv)；
-  `make audit-wpt-service-workers-disposition` 从原始账本重建并逐字节校验
+  `make audit-wpt-service-workers-disposition` 从原始账本重建并逐字节校验，同时检查
+  core lane、runner 导入账本与三批 case asset 的双向闭包
 - Tier A 资产恢复：`make fetch-wpt-service-workers-tier-a`；默认使用独立
   `wpt-data/.service-workers-tier-a-root`，当前环境 18/18 blob SHA 验证通过
 - Tier A 资产审计：`make audit-wpt-service-workers-tier-a`（无网络、只读）；
@@ -171,6 +173,7 @@
 | 2026-08-19 | Request/response/timing 裁决 | 17 source / 83 subtest：7 defer / 9 gated / 1 skip；剩余 38 |
 | 2026-08-19 | WPT review 收口 | 最后 38 source / 270 subtest：14 defer / 8 gated / 16 skip；初始 review 152/152，剩余 0 |
 | 2026-08-19 | WPT runner disposition | 294 source / 331 URL：12 core / 51 defer / 189 gated / 42 skip；机器 contract 可确定性重建 |
+| 2026-08-19 | Core runner 供应链 | 12 core = 12 imported testharness = 8+3+1 case asset；revision 与 blob SHA 双向一致 |
 | 2026-08-19 | 三方案对比 | 拒绝同线程 context（无调度隔离）；拒绝从零线程（复制安全基建）；推荐抽取 Worker 线程核 |
 | 2026-08-19 | owner | production browser process 单一 owner；WebView 只做同算法 in-process adapter |
 | 2026-08-19 | 首个 driving WPT | `activation-after-registration.https.html` |

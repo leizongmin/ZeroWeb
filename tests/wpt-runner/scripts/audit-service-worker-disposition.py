@@ -21,6 +21,12 @@ CANDIDATE_REVIEW = (
 IDL_REVIEW = EVIDENCE_DIR / "2026-08-19-idlharness-review.md"
 CONTRACT = EVIDENCE_DIR / "2026-08-19-wpt-disposition.tsv"
 WPT_REVISION = "04067ce9c7c2165e71ad7d0dde10a4c5cb394a83"
+IMPORTED_LEDGER = REPO_ROOT / "tests/wpt-runner/imported-testharness.txt"
+CORE_ASSET_MANIFESTS = [
+    EVIDENCE_DIR / "2026-08-19-m1-tier-a-assets.tsv",
+    EVIDENCE_DIR / "2026-08-19-m1-next-wave-assets.tsv",
+    EVIDENCE_DIR / "2026-08-19-worker-global-static-assets.tsv",
+]
 REVIEW_FILES = [
     EVIDENCE_DIR / "2026-08-19-m1-next-wave-review.tsv",
     EVIDENCE_DIR / "2026-08-19-m1-iframe-review.tsv",
@@ -63,6 +69,45 @@ def classify_review(decision: str) -> str:
         if decision.startswith(f"{lane}-"):
             return lane
     raise ValueError(f"unrecognized review decision: {decision}")
+
+
+def audit_core_inputs(
+    core_sources: set[str], inventory: dict[str, dict[str, str]]
+) -> None:
+    imported: dict[str, str] = {}
+    with IMPORTED_LEDGER.open(encoding="utf-8") as stream:
+        for line_number, line in enumerate(stream, start=1):
+            fields = line.split()
+            if not fields or not fields[0].startswith("service-workers/"):
+                continue
+            if len(fields) != 4:
+                raise ValueError(
+                    f"malformed Service Worker import at line {line_number}"
+                )
+            source, revision, _date, _milestone = fields
+            if source in imported:
+                raise ValueError(f"duplicate Service Worker import: {source}")
+            imported[source] = revision
+    if set(imported) != core_sources:
+        raise ValueError("runner imports do not match core disposition sources")
+    for source, revision in imported.items():
+        if revision != WPT_REVISION:
+            raise ValueError(f"runner import has wrong revision: {source}")
+
+    asset_cases: dict[str, str] = {}
+    for path in CORE_ASSET_MANIFESTS:
+        for row in read_tsv(path):
+            if row["manifest_type"] != "testharness" or row["roles"] != "case":
+                continue
+            source = row["path"]
+            if source in asset_cases:
+                raise ValueError(f"duplicate core case asset: {source}")
+            asset_cases[source] = row["git_blob_sha"]
+    if set(asset_cases) != core_sources:
+        raise ValueError("core case assets do not match core disposition sources")
+    for source, blob_sha in asset_cases.items():
+        if blob_sha != inventory[source]["manifest_sha"]:
+            raise ValueError(f"core case asset SHA does not match inventory: {source}")
 
 
 def build_contract() -> tuple[str, Counter[str]]:
@@ -163,6 +208,11 @@ def build_contract() -> tuple[str, Counter[str]]:
         )
     if lanes != EXPECTED_LANES:
         raise ValueError(f"lane counts: expected {EXPECTED_LANES}, found {lanes}")
+
+    core_sources = {
+        row["source_path"] for row in output_rows if row["lane"] == "core"
+    }
+    audit_core_inputs(core_sources, inventory)
 
     output = io.StringIO(newline="")
     writer = csv.DictWriter(
