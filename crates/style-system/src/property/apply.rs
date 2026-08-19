@@ -929,7 +929,7 @@ pub fn apply_property_value_with_quirks(
                     Ok(v) => v,
                     Err(_) => return false,
                 };
-                if h == 0.0 {
+                if !w.is_finite() || !h.is_finite() || h == 0.0 {
                     return false;
                 }
                 w / h
@@ -939,6 +939,9 @@ pub fn apply_property_value_with_quirks(
                     Err(_) => return false,
                 }
             };
+            if !ratio.is_finite() {
+                return false;
+            }
             style.aspect_ratio = Some(ratio);
             style.aspect_ratio_auto = has_auto;
             return true;

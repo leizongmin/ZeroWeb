@@ -143,6 +143,8 @@ Background shorthand exposed the early-return variant: even after adding final l
 
 Opacity exposed the duplicated numeric-parser variant: Rust `f64::parse` accepts `inf` and `NaN`, but CSS number tokens do not. Any CSS numeric parser that clamps after parsing must first require finite values, and duplicated parser modules (`parse_basic` / `parse_layout`) must be fixed together to avoid re-export path drift.
 
+Aspect-ratio exposed the derived-number variant: even if a slash ratio rejects only denominator zero, `1 / inf` can silently derive `0` and `inf / inf` can derive `NaN`. Validate every parsed component and the computed ratio before storing layout-facing numeric values.
+
 ## Root Cause
 
 The shorthand layer used heuristic component classifiers and treated unrecognized tokens as absent optional components. That is wrong for CSS shorthands such as `border`, where every token must match one of the allowed component grammars. A shared parser can also be broader than the property grammar that consumes it: general length parsing may accept `auto`, intrinsic sizing keywords, or percentages that `border-width` must reject.
