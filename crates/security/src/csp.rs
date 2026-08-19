@@ -22,6 +22,140 @@ pub struct CspDirective {
 pub struct ContentSecurityPolicy {
     /// 策略指令列表。
     pub directives: Vec<CspDirective>,
+    /// OPTIMIZATION（2026-08-19）：每指令源列表特征，**首次检查时惰性派生**——
+    /// is_resource_allowed 热路径旧实现每次调用对 values 做多轮 `iter().any()`
+    /// 扫描（R3389 has_other_source / '*' / 'self' / 精确 / scheme 共 5 轮），
+    /// csp_resource_check_1000 基线 151µs → 324µs（2.1x）。预计算后热路径只查
+    /// 布尔字段 + 单轮匹配循环。派生放 parse 会使 csp_parse_1000 付出每指令
+    /// Vec 分配（562µs → 791µs 超 759µs 预算），故 OnceLock 惰性——parse 后
+    /// 从不检查的策略零派生成本。与 directives 一一对应（同 index）。
+    source_summaries: std::sync::OnceLock<Vec<SourceListSummary>>,
+}
+
+/// 单个指令源列表的预计算特征（parse 时派生，语义与逐轮扫描完全一致）。
+///
+/// 桶内存 **values 的下标**而非字符串拷贝——parse 路径零字符串分配（首次尝试用
+/// String clone 使 csp_parse_1000 从 562µs 涨到 941µs，成本只是从检查路径挪到
+/// parse 路径，总账未赢；下标方案两路径都赢）。
+#[derive(Debug, Clone, Default)]
+struct SourceListSummary {
+    /// 含 '*'（任意源放行）。
+    has_wildcard: bool,
+    /// 含 'self'（走 is_self_match）。
+    has_self: bool,
+    /// 除 'none' 外无其它源（R3389「'none' 独占 = 全阻断」短路）。
+    none_only: bool,
+    /// scheme-source 项（如 "https:"）在 values 中的下标。
+    scheme_idxs: Vec<usize>,
+    /// `*.domain` 项下标（匹配时取 values[i][2..] 作 domain）。
+    wildcard_idxs: Vec<usize>,
+    /// 源表达式项（host[:port] / scheme://host[:port]，R3342 origin_expr_matches）的
+    /// **预解析结果**——expr 侧切分（scheme://、host、port、是否纯源表达式）是
+    /// 不变量，旧实现每次匹配重复 find/rfind/contains；预解析后匹配循环只做
+    /// URL 侧解析 + 区间比较。非源表达式形式（含 /?#）标 `host=None` 语义回退整串相等。
+    /// 持值下标 + 字节区间而非 String 拷贝——parse 路径零字符串分配（String 版曾使
+    /// csp_parse_1000 562µs → 1014µs 超预算）。
+    origin_exprs: Vec<ParsedOriginExpr>,
+}
+
+/// 源表达式的预解析视图（value 下标 + 各部分字节区间，零字符串拷贝）。
+#[derive(Debug, Clone)]
+struct ParsedOriginExpr {
+    /// 该表达式在 `CspDirective::values` 中的下标（回退整串相等 + 取子串用）。
+    value_idx: usize,
+    /// scheme 区间（`://` 前），None = 未显式给出。
+    scheme: Option<(usize, usize)>,
+    /// host 区间（相对整个 value），None = 非源表达式形式或空 host（回退整串相等）。
+    host: Option<(usize, usize)>,
+    /// port 区间（相对整个 value），None = 未显式给出。
+    port: Option<(usize, usize)>,
+}
+
+impl SourceListSummary {
+    /// 从源列表派生特征。分类规则与 `check_source_list` 旧逐轮扫描严格一致：
+    /// 每个值按旧实现的判定顺序归入恰好一个桶（'none' 不入桶——仅参与 none_only）。
+    fn derive(values: &[String]) -> Self {
+        let mut s = SourceListSummary::default();
+        for (i, v) in values.iter().enumerate() {
+            match v.as_str() {
+                "'none'" => {}
+                "*" => s.has_wildcard = true,
+                "'self'" => s.has_self = true,
+                _ if v.ends_with(':') && !v.starts_with('\'') => s.scheme_idxs.push(i),
+                _ if v.starts_with("*.") => s.wildcard_idxs.push(i),
+                // 其余值在旧实现里先经精确匹配轮（v == url），未命中再进
+                // origin_expr_matches（其内部对非源表达式形式回退 expr == url 精确匹配）。
+                // 两轮的回退语义同为整串相等，故只归 origin_expr 一桶即可覆盖。
+                _ => s.origin_exprs.push(ParsedOriginExpr::parse(i, v)),
+            }
+        }
+        // R3389：除 'none' 外无其它源（含空列表已在前置判空，此处列表必非空）
+        s.none_only = values.iter().all(|v| v == "'none'");
+        s
+    }
+}
+
+impl ParsedOriginExpr {
+    /// 预解析 `[scheme://]host[:port]`（`vi` 为该值在 values 中的下标）。与旧
+    /// `origin_expr_matches` 的切分逻辑逐分支一致（含 `/?#` 或空 host →
+    /// host=None 语义回退整串相等）。
+    fn parse(vi: usize, expr: &str) -> Self {
+        let (scheme, auth_start) = match expr.find("://") {
+            Some(pos) => (Some((0, pos)), pos + 3),
+            None => (None, 0),
+        };
+        let authority = &expr[auth_start..];
+        if authority.contains('/') || authority.contains('?') || authority.contains('#') {
+            return Self {
+                value_idx: vi,
+                scheme: None,
+                host: None,
+                port: None,
+            };
+        }
+        let (host, port) = match authority.rfind(':') {
+            Some(pos) => (
+                Some((auth_start, auth_start + pos)),
+                Some((auth_start + pos + 1, expr.len())),
+            ),
+            None => (Some((auth_start, expr.len())), None),
+        };
+        // 空 host（如 ":8080"）同旧实现回退整串相等
+        let host = host.filter(|&(s, e)| e > s);
+        Self {
+            value_idx: vi,
+            scheme,
+            host,
+            port,
+        }
+    }
+
+    /// 匹配资源 URL——与旧 `origin_expr_matches` 语义逐分支一致：非源表达式形式
+    ///（host 为 None）/ URL 非 http(s) → 整串相等回退；否则 host 大小写不敏感
+    /// 精确相等 + 可选 scheme/port 约束。
+    fn matches(&self, values: &[String], url: &str) -> bool {
+        let raw = &values[self.value_idx];
+        let Some((hs, he)) = self.host else {
+            return raw == url;
+        };
+        let Some((url_scheme, url_host, url_port)) = ContentSecurityPolicy::split_url_origin(url) else {
+            return raw == url;
+        };
+        if !url_host.eq_ignore_ascii_case(&raw[hs..he]) {
+            return false;
+        }
+        if let Some((ss, se)) = self.scheme
+            && !url_scheme.eq_ignore_ascii_case(&raw[ss..se])
+        {
+            return false;
+        }
+        if let Some((ps, pe)) = self.port
+            && Some(&raw[ps..pe]) != url_port
+        {
+            return false;
+        }
+        true
+    }
 }
 
 /// CSP sandbox 标志。
@@ -108,7 +242,7 @@ impl ContentSecurityPolicy {
     ///
     /// 格式：`directive1 value1 value2; directive2 value3`
     pub fn parse(header_value: &str) -> Self {
-        let directives = header_value
+        let directives: Vec<CspDirective> = header_value
             .split(';')
             .filter_map(|part| {
                 let part = part.trim();
@@ -129,7 +263,25 @@ impl ContentSecurityPolicy {
             })
             .collect();
 
-        Self { directives }
+        // OPTIMIZATION（2026-08-19）：summary 惰性派生（OnceLock）——多数嵌入场景
+        // parse 后仅检查少数指令，parse 时无条件预派生会让 csp_parse_1000 付出每指令
+        // Vec 分配（562µs → 791µs 超 759µs 预算）。首次检查时按需派生并缓存；
+        // 派生幂等，并发首次检查最坏重复派生一次，无语义差异。
+        Self {
+            directives,
+            source_summaries: std::sync::OnceLock::new(),
+        }
+    }
+
+    /// 取（或惰性派生并缓存）第 `idx` 个指令的源列表特征。
+    fn summary_for(&self, idx: usize) -> &SourceListSummary {
+        let all = self.source_summaries.get_or_init(|| {
+            self.directives
+                .iter()
+                .map(|d| SourceListSummary::derive(&d.values))
+                .collect()
+        });
+        &all[idx]
     }
 
     /// 查找指定名称的指令。
@@ -137,9 +289,18 @@ impl ContentSecurityPolicy {
         self.directives.iter().find(|d| d.name == name)
     }
 
-    /// 查找指定名称的指令，若不存在则回退到 default-src。
-    fn find_directive_or_default(&self, name: &str) -> Option<&CspDirective> {
-        self.find_directive(name).or_else(|| self.find_directive("default-src"))
+    /// 同 `find_directive`，但返回下标（供 `source_summaries` 取预计算特征）。
+    fn find_directive_index(&self, name: &str) -> Option<usize> {
+        self.directives.iter().position(|d| d.name == name)
+    }
+
+    /// 同 `find_directive_or_default`，但返回指令在 `directives` 中的下标（供
+    /// `source_summaries` 同下标取预计算特征）。
+    fn find_directive_index_or_default(&self, name: &str) -> Option<usize> {
+        self.directives
+            .iter()
+            .position(|d| d.name == name)
+            .or_else(|| self.directives.iter().position(|d| d.name == "default-src"))
     }
 
     /// 检查资源加载是否允许。
@@ -150,18 +311,33 @@ impl ContentSecurityPolicy {
     pub fn is_resource_allowed(&self, resource_type: &str, url: &str, document_origin: Option<&Origin>) -> bool {
         let directive_name = format!("{resource_type}-src");
 
-        let directive = self.find_directive_or_default(&directive_name);
+        let idx = self.find_directive_index_or_default(&directive_name);
 
-        let Some(directive) = directive else {
+        let Some(idx) = idx else {
             // 没有 default-src 也没有对应指令，默认允许
             return true;
         };
 
-        self.check_source_list(&directive.values, url, document_origin)
+        self.check_source_list(
+            self.summary_for(idx),
+            &self.directives[idx].values,
+            url,
+            document_origin,
+        )
     }
 
     /// 检查源列表是否匹配给定 URL。
-    fn check_source_list(&self, values: &[String], url: &str, document_origin: Option<&Origin>) -> bool {
+    ///
+    /// `summary` 为该指令源列表的预计算特征（parse 时派生，见 `SourceListSummary`）——
+    /// 判定顺序与语义同逐轮扫描实现完全一致（R3389 空列表/'none' 独占语义、R3342
+    /// 源表达式精确 host 匹配均保留）。
+    fn check_source_list(
+        &self,
+        summary: &SourceListSummary,
+        values: &[String],
+        url: &str,
+        document_origin: Option<&Origin>,
+    ) -> bool {
         // R3389：CSP §6.7.2.7「Matches the source list」——空源列表等价于只含 'none'
         // 的列表，须阻断全部资源（fetch 指令无值即「全禁」）。旧实现空列表返回 true
         // （放行全部）= CSP 绕过：`script-src`（无值）应阻断所有脚本，旧实现却放行
@@ -176,34 +352,31 @@ impl ContentSecurityPolicy {
         // （CSP §6.7.2.7 注：'none' is ignored if any other source is present）。旧实现
         // `script-src 'none' 'self'` 会因 'none' 在场而阻断 self——过度阻断（安全方向但
         // 非 spec 语义）。现仅当列表除 'none' 外无其它源时才短路返 false。
-        let has_other_source = values.iter().any(|v| v != "'none'");
-        if !has_other_source {
+        if summary.none_only {
             return false;
         }
 
         // 检查 '*'
-        if values.iter().any(|v| v == "*") {
+        if summary.has_wildcard {
             return true;
         }
 
         // 检查 'self' — 与文档源匹配
-        if values.iter().any(|v| v == "'self'") && Self::is_self_match(url, document_origin) {
+        if summary.has_self && Self::is_self_match(url, document_origin) {
             return true;
         }
 
-        // 检查精确 URL 匹配
-        if values.iter().any(|v| v == url) {
+        // 检查精确 URL 匹配 + scheme-source（如 "https:"、"data:"、"blob:"）——
+        // scheme 轮等价旧 `url.starts_with(&format!("{scheme}:"))`（首个冒号前缀恰为
+        // scheme），精确轮即 origin_expr 回退前的 `v == url`（由 origin_expr_matches
+        // 内部 `expr == url` 分支覆盖，见桶注释）。
+        if let Some(pos) = url.find(':')
+            && summary
+                .scheme_idxs
+                .iter()
+                .any(|&i| values[i].len() == pos + 1 && url.as_bytes()[..pos] == values[i].as_bytes()[..pos])
+        {
             return true;
-        }
-
-        // 检查 scheme-source（如 "https:"、"data:"、"blob:"）
-        for value in values {
-            if value.ends_with(':') && !value.starts_with('\'') {
-                let scheme = &value[..value.len() - 1];
-                if url.starts_with(&format!("{scheme}:")) {
-                    return true;
-                }
-            }
         }
 
         // 检查通配符域名匹配和源表达式匹配。
@@ -211,64 +384,18 @@ impl ContentSecurityPolicy {
         // `example.com.evil.com`，`script-src https://example.com` 下其脚本
         // `https://example.com.evil.com/x.js` 因 starts_with 误判被允许（CSP 绕过）。
         // 改为按源表达式（[scheme://]host[:port]）解析后按 host 精确匹配。
-        for value in values {
-            if let Some(domain) = value.strip_prefix("*.") {
-                if Self::wildcard_domain_matches(domain, url) {
-                    return true;
-                }
-            } else if Self::origin_expr_matches(value, url) {
+        for &i in &summary.wildcard_idxs {
+            if Self::wildcard_domain_matches(&values[i][2..], url) {
+                return true;
+            }
+        }
+        for expr in &summary.origin_exprs {
+            if expr.matches(values, url) {
                 return true;
             }
         }
 
         false
-    }
-
-    /// R3342：CSP 源表达式匹配——解析 `[scheme://]host[:port]` 形式的源表达式，
-    /// 按主机名（及可选的 scheme/port）匹配资源 URL。
-    ///
-    /// 规范（CSP §8.3 source expression）：源表达式 host 部分须精确匹配资源 URL 的 host，
-    /// 绝不前缀匹配。`https://example.com` 只匹配 host 恰为 example.com 的资源；
-    /// scheme 缺省时任意 scheme 都接受（host 匹配即可）；port 缺省时任意 port 都接受。
-    /// 非 host 形式（如相对路径、含 `/` 的路径表达式）回退到精确整串匹配。
-    fn origin_expr_matches(expr: &str, url: &str) -> bool {
-        // 取 expr 的 authority 部分（去掉可选 scheme://）。
-        let (expr_scheme, authority) = match expr.find("://") {
-            Some(pos) => (Some(&expr[..pos]), &expr[pos + 3..]),
-            None => (None, expr),
-        };
-        // authority = host[:port]；若含路径分隔符则不是纯源表达式，回退精确匹配。
-        if authority.contains('/') || authority.contains('?') || authority.contains('#') {
-            return expr == url;
-        }
-        let (expr_host, expr_port) = match authority.rfind(':') {
-            Some(pos) => (&authority[..pos], Some(&authority[pos + 1..])),
-            None => (authority, None),
-        };
-        if expr_host.is_empty() {
-            return expr == url;
-        }
-        // 解析资源 URL 的 scheme/host/port。
-        let Some((url_scheme, url_host, url_port)) = Self::split_url_origin(url) else {
-            return expr == url;
-        };
-        // host 须精确相等（大小写不敏感，规范 host 不区分大小写）。
-        if !url_host.eq_ignore_ascii_case(expr_host) {
-            return false;
-        }
-        // scheme 约束（expr 显式给出时须匹配；缺省则任意 scheme 接受）。
-        if let Some(es) = expr_scheme
-            && !url_scheme.eq_ignore_ascii_case(es)
-        {
-            return false;
-        }
-        // port 约束（expr 显式给出时须匹配；缺省则任意 port 接受）。
-        if let Some(ep) = expr_port
-            && Some(ep) != url_port
-        {
-            return false;
-        }
-        true
     }
 
     /// 从 URL 提取 `(scheme, host, port)`；非 http/https URL 返回 None。
@@ -333,13 +460,14 @@ impl ContentSecurityPolicy {
     /// `nonce` 为脚本标签上的 nonce 属性值（不含 'nonce-' 前缀）。
     /// `hash` 为脚本内容的 SHA-256 哈希值（base64 编码，不含 'sha256-' 前缀）。
     pub fn is_inline_script_allowed(&self, nonce: Option<&str>, hash: Option<&str>) -> bool {
-        let directive = self.find_directive_or_default("script-src");
+        let directive = self.find_directive_index_or_default("script-src");
 
         let Some(directive) = directive else {
             return true;
         };
 
-        if directive.values.iter().any(|v| v == "'unsafe-inline'" || v == "*") {
+        let values = &self.directives[directive].values;
+        if values.iter().any(|v| v == "'unsafe-inline'" || v == "*") {
             return true;
         }
 
@@ -347,7 +475,7 @@ impl ContentSecurityPolicy {
         if let Some(n) = nonce {
             let nonce_quoted = format!("'nonce-{n}'");
             let nonce_bare = format!("nonce-{n}");
-            if directive.values.iter().any(|v| v == &nonce_quoted || v == &nonce_bare) {
+            if values.iter().any(|v| v == &nonce_quoted || v == &nonce_bare) {
                 return true;
             }
         }
@@ -356,7 +484,7 @@ impl ContentSecurityPolicy {
         if let Some(h) = hash {
             let hash_quoted = format!("'sha256-{h}'");
             let hash_bare = format!("sha256-{h}");
-            if directive.values.iter().any(|v| v == &hash_quoted || v == &hash_bare) {
+            if values.iter().any(|v| v == &hash_quoted || v == &hash_bare) {
                 return true;
             }
         }
@@ -369,13 +497,13 @@ impl ContentSecurityPolicy {
     /// `nonce` 为样式标签上的 nonce 属性值（不含 'nonce-' 前缀）。
     /// `hash` 为样式内容的 SHA-256 哈希值（base64 编码，不含 'sha256-' 前缀）。
     pub fn is_inline_style_allowed(&self, nonce: Option<&str>, hash: Option<&str>) -> bool {
-        let directive = self.find_directive_or_default("style-src");
+        let directive = self.find_directive_index_or_default("style-src");
 
         let Some(directive) = directive else {
             return true;
         };
-
-        if directive.values.iter().any(|v| v == "'unsafe-inline'" || v == "*") {
+        let values = &self.directives[directive].values;
+        if values.iter().any(|v| v == "'unsafe-inline'" || v == "*") {
             return true;
         }
 
@@ -383,7 +511,7 @@ impl ContentSecurityPolicy {
         if let Some(n) = nonce {
             let nonce_quoted = format!("'nonce-{n}'");
             let nonce_bare = format!("nonce-{n}");
-            if directive.values.iter().any(|v| v == &nonce_quoted || v == &nonce_bare) {
+            if values.iter().any(|v| v == &nonce_quoted || v == &nonce_bare) {
                 return true;
             }
         }
@@ -392,7 +520,7 @@ impl ContentSecurityPolicy {
         if let Some(h) = hash {
             let hash_quoted = format!("'sha256-{h}'");
             let hash_bare = format!("sha256-{h}");
-            if directive.values.iter().any(|v| v == &hash_quoted || v == &hash_bare) {
+            if values.iter().any(|v| v == &hash_quoted || v == &hash_bare) {
                 return true;
             }
         }
@@ -408,12 +536,17 @@ impl ContentSecurityPolicy {
     /// `url` 为候选 base URI。
     /// `document_origin` 为文档源。
     pub fn is_base_uri_allowed(&self, url: &str, document_origin: Option<&Origin>) -> bool {
-        let directive = self.find_directive("base-uri");
+        let directive = self.find_directive_index("base-uri");
         let Some(directive) = directive else {
             // base-uri 不回退到 default-src
             return true;
         };
-        self.check_source_list(&directive.values, url, document_origin)
+        self.check_source_list(
+            self.summary_for(directive),
+            &self.directives[directive].values,
+            url,
+            document_origin,
+        )
     }
 
     /// 检查表单提交目标是否允许。
@@ -422,12 +555,17 @@ impl ContentSecurityPolicy {
     /// `url` 为表单 action URL。
     /// `document_origin` 为文档源。
     pub fn is_form_action_allowed(&self, url: &str, document_origin: Option<&Origin>) -> bool {
-        let directive = self.find_directive("form-action");
+        let directive = self.find_directive_index("form-action");
         let Some(directive) = directive else {
             // form-action 不回退到 default-src
             return true;
         };
-        self.check_source_list(&directive.values, url, document_origin)
+        self.check_source_list(
+            self.summary_for(directive),
+            &self.directives[directive].values,
+            url,
+            document_origin,
+        )
     }
 
     /// 检查页面是否可以被嵌入（frame-ancestors）。
@@ -435,25 +573,26 @@ impl ContentSecurityPolicy {
     /// 对应 `frame-ancestors` 指令，限制哪些源可以把此页面嵌入 iframe/frame。
     /// `embedder_origin` 为嵌入方的源。
     pub fn is_frame_ancestor_allowed(&self, embedder_origin: &Origin) -> bool {
-        let directive = self.find_directive("frame-ancestors");
+        let directive = self.find_directive_index("frame-ancestors");
         let Some(directive) = directive else {
             // frame-ancestors 不回退到 default-src
             return true;
         };
+        let values = &self.directives[directive].values;
 
-        if directive.values.is_empty() {
+        if values.is_empty() {
             return true;
         }
 
-        if directive.values.iter().any(|v| v == "'none'") {
+        if values.iter().any(|v| v == "'none'") {
             return false;
         }
 
-        if directive.values.iter().any(|v| v == "*") {
+        if values.iter().any(|v| v == "*") {
             return true;
         }
 
-        if directive.values.iter().any(|v| v == "'self'") {
+        if values.iter().any(|v| v == "'self'") {
             // frame-ancestors 'self' — 对于自身嵌入需要文档源，此处简单允许
             return true;
         }
@@ -470,7 +609,7 @@ impl ContentSecurityPolicy {
                 format!("{}:{}", embedder_origin.host, embedder_origin.port)
             }
         );
-        directive.values.iter().any(|v| v == &origin_str)
+        values.iter().any(|v| v == &origin_str)
     }
 
     /// 检查导航目标是否允许（navigate-to）。
@@ -479,12 +618,17 @@ impl ContentSecurityPolicy {
     /// `url` 为目标 URL。
     /// `document_origin` 为文档源。
     pub fn is_navigate_to_allowed(&self, url: &str, document_origin: Option<&Origin>) -> bool {
-        let directive = self.find_directive("navigate-to");
+        let directive = self.find_directive_index("navigate-to");
         let Some(directive) = directive else {
             // navigate-to 不回退到 default-src
             return true;
         };
-        self.check_source_list(&directive.values, url, document_origin)
+        self.check_source_list(
+            self.summary_for(directive),
+            &self.directives[directive].values,
+            url,
+            document_origin,
+        )
     }
 
     /// 获取 CSP sandbox 标志列表。
@@ -510,14 +654,19 @@ impl ContentSecurityPolicy {
     /// `document_origin` 为文档源。
     pub fn is_child_allowed(&self, url: &str, document_origin: Option<&Origin>) -> bool {
         let directive = self
-            .find_directive("child-src")
-            .or_else(|| self.find_directive("frame-src"))
-            .or_else(|| self.find_directive("default-src"));
+            .find_directive_index("child-src")
+            .or_else(|| self.find_directive_index("frame-src"))
+            .or_else(|| self.find_directive_index("default-src"));
 
         let Some(directive) = directive else {
             return true;
         };
-        self.check_source_list(&directive.values, url, document_origin)
+        self.check_source_list(
+            self.summary_for(directive),
+            &self.directives[directive].values,
+            url,
+            document_origin,
+        )
     }
 
     /// 检查 Worker 加载是否允许（worker-src）。
@@ -527,15 +676,20 @@ impl ContentSecurityPolicy {
     /// `document_origin` 为文档源。
     pub fn is_worker_allowed(&self, url: &str, document_origin: Option<&Origin>) -> bool {
         let directive = self
-            .find_directive("worker-src")
-            .or_else(|| self.find_directive("child-src"))
-            .or_else(|| self.find_directive("script-src"))
-            .or_else(|| self.find_directive("default-src"));
+            .find_directive_index("worker-src")
+            .or_else(|| self.find_directive_index("child-src"))
+            .or_else(|| self.find_directive_index("script-src"))
+            .or_else(|| self.find_directive_index("default-src"));
 
         let Some(directive) = directive else {
             return true;
         };
-        self.check_source_list(&directive.values, url, document_origin)
+        self.check_source_list(
+            self.summary_for(directive),
+            &self.directives[directive].values,
+            url,
+            document_origin,
+        )
     }
 
     /// 检查 Web Manifest 加载是否允许（manifest-src）。
@@ -544,11 +698,16 @@ impl ContentSecurityPolicy {
     /// `url` 为 manifest 文件 URL。
     /// `document_origin` 为文档源。
     pub fn is_manifest_allowed(&self, url: &str, document_origin: Option<&Origin>) -> bool {
-        let directive = self.find_directive_or_default("manifest-src");
+        let directive = self.find_directive_index_or_default("manifest-src");
         let Some(directive) = directive else {
             return true;
         };
-        self.check_source_list(&directive.values, url, document_origin)
+        self.check_source_list(
+            self.summary_for(directive),
+            &self.directives[directive].values,
+            url,
+            document_origin,
+        )
     }
 
     // ---- 资源类型便捷方法 ----
@@ -557,27 +716,42 @@ impl ContentSecurityPolicy {
     ///
     /// 回退到 default-src。
     pub fn is_connect_allowed(&self, url: &str, document_origin: Option<&Origin>) -> bool {
-        let directive = self.find_directive_or_default("connect-src");
+        let directive = self.find_directive_index_or_default("connect-src");
         let Some(directive) = directive else { return true };
-        self.check_source_list(&directive.values, url, document_origin)
+        self.check_source_list(
+            self.summary_for(directive),
+            &self.directives[directive].values,
+            url,
+            document_origin,
+        )
     }
 
     /// 检查 font-src（@font-face、CSS Font Loading API）。
     ///
     /// 回退到 default-src。
     pub fn is_font_allowed(&self, url: &str, document_origin: Option<&Origin>) -> bool {
-        let directive = self.find_directive_or_default("font-src");
+        let directive = self.find_directive_index_or_default("font-src");
         let Some(directive) = directive else { return true };
-        self.check_source_list(&directive.values, url, document_origin)
+        self.check_source_list(
+            self.summary_for(directive),
+            &self.directives[directive].values,
+            url,
+            document_origin,
+        )
     }
 
     /// 检查 media-src（<audio>、<video>、<track>）。
     ///
     /// 回退到 default-src。
     pub fn is_media_allowed(&self, url: &str, document_origin: Option<&Origin>) -> bool {
-        let directive = self.find_directive_or_default("media-src");
+        let directive = self.find_directive_index_or_default("media-src");
         let Some(directive) = directive else { return true };
-        self.check_source_list(&directive.values, url, document_origin)
+        self.check_source_list(
+            self.summary_for(directive),
+            &self.directives[directive].values,
+            url,
+            document_origin,
+        )
     }
 
     /// 检查 object-src（<object>、<embed>、<applet>）。
@@ -585,9 +759,14 @@ impl ContentSecurityPolicy {
     /// 回退到 default-src。注意：object-src 不匹配 nonce/hash，
     /// 只匹配源表达式。
     pub fn is_object_allowed(&self, url: &str, document_origin: Option<&Origin>) -> bool {
-        let directive = self.find_directive_or_default("object-src");
+        let directive = self.find_directive_index_or_default("object-src");
         let Some(directive) = directive else { return true };
-        self.check_source_list(&directive.values, url, document_origin)
+        self.check_source_list(
+            self.summary_for(directive),
+            &self.directives[directive].values,
+            url,
+            document_origin,
+        )
     }
 
     /// 检查 frame-src（<frame>、<iframe>）。
@@ -595,20 +774,30 @@ impl ContentSecurityPolicy {
     /// 回退顺序：frame-src → child-src → default-src。
     pub fn is_frame_allowed(&self, url: &str, document_origin: Option<&Origin>) -> bool {
         let directive = self
-            .find_directive("frame-src")
-            .or_else(|| self.find_directive("child-src"))
-            .or_else(|| self.find_directive("default-src"));
+            .find_directive_index("frame-src")
+            .or_else(|| self.find_directive_index("child-src"))
+            .or_else(|| self.find_directive_index("default-src"));
         let Some(directive) = directive else { return true };
-        self.check_source_list(&directive.values, url, document_origin)
+        self.check_source_list(
+            self.summary_for(directive),
+            &self.directives[directive].values,
+            url,
+            document_origin,
+        )
     }
 
     /// 检查 img-src（<img>、<picture>、CSS background-image 等）。
     ///
     /// 回退到 default-src。
     pub fn is_image_allowed(&self, url: &str, document_origin: Option<&Origin>) -> bool {
-        let directive = self.find_directive_or_default("img-src");
+        let directive = self.find_directive_index_or_default("img-src");
         let Some(directive) = directive else { return true };
-        self.check_source_list(&directive.values, url, document_origin)
+        self.check_source_list(
+            self.summary_for(directive),
+            &self.directives[directive].values,
+            url,
+            document_origin,
+        )
     }
 
     /// 检查 script-src-elem（<script> 元素，不含内联事件处理器）。
@@ -616,11 +805,16 @@ impl ContentSecurityPolicy {
     /// 回退顺序：script-src-elem → script-src → default-src。
     pub fn is_script_element_allowed(&self, url: &str, document_origin: Option<&Origin>) -> bool {
         let directive = self
-            .find_directive("script-src-elem")
-            .or_else(|| self.find_directive("script-src"))
-            .or_else(|| self.find_directive("default-src"));
+            .find_directive_index("script-src-elem")
+            .or_else(|| self.find_directive_index("script-src"))
+            .or_else(|| self.find_directive_index("default-src"));
         let Some(directive) = directive else { return true };
-        self.check_source_list(&directive.values, url, document_origin)
+        self.check_source_list(
+            self.summary_for(directive),
+            &self.directives[directive].values,
+            url,
+            document_origin,
+        )
     }
 
     /// 检查 style-src-elem（<style> 元素、<link rel="stylesheet">）。
@@ -628,11 +822,16 @@ impl ContentSecurityPolicy {
     /// 回退顺序：style-src-elem → style-src → default-src。
     pub fn is_style_element_allowed(&self, url: &str, document_origin: Option<&Origin>) -> bool {
         let directive = self
-            .find_directive("style-src-elem")
-            .or_else(|| self.find_directive("style-src"))
-            .or_else(|| self.find_directive("default-src"));
+            .find_directive_index("style-src-elem")
+            .or_else(|| self.find_directive_index("style-src"))
+            .or_else(|| self.find_directive_index("default-src"));
         let Some(directive) = directive else { return true };
-        self.check_source_list(&directive.values, url, document_origin)
+        self.check_source_list(
+            self.summary_for(directive),
+            &self.directives[directive].values,
+            url,
+            document_origin,
+        )
     }
 
     /// 检查是否启用了 upgrade-insecure-requests 指令。
