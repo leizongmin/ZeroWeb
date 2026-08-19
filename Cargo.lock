@@ -6537,6 +6537,7 @@ dependencies = [
  "serde_json",
  "zero-engine",
  "zero-render-foundation",
+ "zero-script-sandbox",
  "zero-storage",
 ]
 

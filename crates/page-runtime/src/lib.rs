@@ -28,6 +28,11 @@ pub use html_actions::{
 };
 pub mod indexed_db_host;
 pub use indexed_db_host::indexed_db_handler;
+pub mod service_worker_manager;
+pub use service_worker_manager::{
+    ServiceWorkerManager, ServiceWorkerManagerError, ServiceWorkerManagerEvent, ServiceWorkerRegistrationKey,
+    ServiceWorkerVersionSlots,
+};
 
 use zero_engine::{DomMutation, HitTestCache, RenderResult};
 use zero_render_foundation::primitive::RenderPrimitives;

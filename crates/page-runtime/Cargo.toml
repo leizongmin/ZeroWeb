@@ -7,12 +7,13 @@ license.workspace = true
 
 [features]
 default = ["v8"]
-v8 = ["zero-engine/v8"]
-quickjs = ["zero-engine/quickjs"]
+v8 = ["zero-engine/v8", "zero-script-sandbox/v8"]
+quickjs = ["zero-engine/quickjs", "zero-script-sandbox/quickjs"]
 
 [dependencies]
 zero-engine = { workspace = true }
 zero-render-foundation = { workspace = true }
+zero-script-sandbox = { workspace = true }
 zero-storage = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }

@@ -2,7 +2,7 @@
 
 **入口文档**: [../service-workers.md](../service-workers.md)
 **创建日期**: 2026-08-17（goal 拆分 bootstrap）
-**最后更新**: 2026-08-19（方案 C 已批准，M1-1 typed runtime 完成）
+**最后更新**: 2026-08-19（方案 C 已批准，M1-2 manager 完成）
 
 ---
 
@@ -10,7 +10,7 @@
 
 **专项定位**：存储方向三拆之三。把 `navigator.serviceWorker` 从注册表状态机近似
 （R3318）深化为真实 SW 执行环境 + fetch 拦截。用户已于 2026-08-19 明确批准方案 C，
-M0 启动门禁解除；当前进入 M1 manager 生命周期协调。
+M0 启动门禁解除；当前进入 M1 in-process host bridge。
 
 **M0 推荐决策**：抽取 `zero-script-sandbox::WorkerRuntime` 的独立线程/引擎/看门狗核心，
 新增 typed `ServiceWorkerRuntime`；production 由 browser process 的
@@ -74,13 +74,15 @@ M0 启动门禁解除；当前进入 M1 manager 生命周期协调。
 - ✅ SW 执行环境 RFC 方案 C 已获用户明确批准
 - ✅ M1-1：共享 threaded core + 双引擎 typed `ServiceWorkerRuntime` evaluate 骨架；
   V8/QuickJS 各 7/7，Dedicated Worker 与 WebView 双后端基线保持全绿
+- ✅ M1-2：scope-keyed `ServiceWorkerManager` + installing/waiting/active version slots；
+  双引擎 10 项 conformance、page-runtime 三矩阵各 56/56
 
 ## 缺口清单
 
 | # | 缺口 | 状态 |
 |---|------|------|
-| S1 | SW 执行环境架构与独立 runtime | 🔄 方案 C 已批准；M1-1 已落，manager 待接 |
-| S2 | scriptURL 不下载执行 | 🔄 typed evaluate 已落；manager/fetch 未接 |
+| S1 | SW 执行环境架构与独立 runtime | 🔄 M1-1 runtime + M1-2 manager 已落，host bridge 待接 |
+| S2 | scriptURL 不下载执行 | 🔄 typed evaluate/manager 已落；真实 fetch 未接 |
 | S3 | fetch 拦截为零 | ⬜ M2（等 js-dom fetch 改造） |
 | S4 | 事件为 setTimeout 模拟 | ⬜ M1 |
 | S5 | WPT 覆盖为零 | 🔄 12 case 已资产化；294-source contract 已落；runner/真实 red baseline 待 M1 bridge |
@@ -93,17 +95,16 @@ M0 启动门禁解除；当前进入 M1 manager 生命周期协调。
 
 ## 下一步计划
 
-1. **M1-2**：registration version slot + manager evaluate/lifecycle 协调
-2. **M1-3**：接 in-process bridge，真实 script fetch/install/activate，萎缩 timer shim
-3. **M1-4/5**：production IPC 与 SW WPT runner
-4. **M2 继续门控**：js-dom S6 与 storage-cache-api M1 均 land 后才改 fetch 主路径
+1. **M1-3**：接 in-process bridge，真实 script fetch/install/activate，萎缩 timer shim
+2. **M1-4/5**：production IPC 与 SW WPT runner
+3. **M2 继续门控**：js-dom S6 与 storage-cache-api M1 均 land 后才改 fetch 主路径
 
 ## 里程碑状态
 
 | 里程碑 | 状态 |
 |--------|------|
 | M0 — 选型 RFC（门控） | ✅ 方案 C 已批准 |
-| M1 — 脚本真实执行 + 生命周期真事件 | 🔄 M1-1 typed runtime 完成 |
+| M1 — 脚本真实执行 + 生命周期真事件 | 🔄 M1-1 runtime + M1-2 manager 完成 |
 | M2 — fetch 拦截 + Cache 集成 | ⬜ 门控：js-dom fetch 改造 land |
 | M3 — 控制语义 + 消息 + 收尾 | ⬜ |
 
@@ -159,6 +160,8 @@ M0 启动门禁解除；当前进入 M1 manager 生命周期协调。
   [M1 WorkerRuntime readiness](evidence/2026-08-19-m1-worker-runtime-readiness.md)
 - M1-1 实现证据：共享线程核、typed SW evaluate、资源上限、双引擎与 WebView 回归见
   [M1 threaded runtime](evidence/2026-08-19-m1-threaded-runtime.md)
+- M1-2 manager 证据：scope version slot、失败保留旧 active、容量/输入门禁与双引擎矩阵见
+  [M1 manager lifecycle](evidence/2026-08-19-m1-manager-lifecycle.md)
 
 ## M0 证据与决策记录
 
@@ -189,6 +192,7 @@ M0 启动门禁解除；当前进入 M1 manager 生命周期协调。
 | 2026-08-19 | M1 WorkerRuntime readiness | V8 20/20、QuickJS 3/3、WebView 双后端各 17/17；确认 QuickJS timeout 与 evaluate handshake 缺口 |
 | 2026-08-19 | RFC 决策 | 用户明确批准方案 C；browser manager owner、WebView adapter 与 M1 实施顺序生效 |
 | 2026-08-19 | M1-1 typed runtime | 抽取共享线程核；新增双引擎 typed SW evaluate/shutdown，资源封顶与错误分类；全矩阵通过 |
+| 2026-08-19 | M1-2 manager | scope-keyed 三版本 slot + runtime owner；失败保持旧 active；容量/输入 fail closed；三矩阵各 56/56 |
 | 2026-08-19 | 三方案对比 | 拒绝同线程 context（无调度隔离）；拒绝从零线程（复制安全基建）；推荐抽取 Worker 线程核 |
 | 2026-08-19 | owner | production browser process 单一 owner；WebView 只做同算法 in-process adapter |
 | 2026-08-19 | 首个 driving WPT | `activation-after-registration.https.html` |
