@@ -475,13 +475,13 @@ fn test_input_step_up_down_r3317() {
 //
 // 生产 always-on B-gen shim 路径（part02.js navigator.serviceWorker IIFE，R3318 从 A-gen dom_bridge.rs
 // 移植——参照 R2821 Performance API 迁移模式：A-gen 为死代码无页面交互生产调用方，故补 B 代 shim）。
-// spec https://w3c.github.io/ServiceWorker/。headless 无真 SW 执行环境（无独立 worker 线程/真 fetch 拦截/真
-// install·activate 事件派发）→ 进程内注册表近似：register 返 Promise<registration>，setTimeout(0) 模拟
-// install→waiting→active 异步生命周期。getRegistration/getRegistrations/ready/unregister 完整查询面。
+// spec https://w3c.github.io/ServiceWorker/。生命周期由 host `ServiceWorkerManager` 单一推进；纯 engine
+// sandbox 没有 host bridge，register 必须 fail closed，不能恢复 timer 驱动的私有状态。
 
 #[test]
 fn test_navigator_service_worker_register_r3318() {
-    // navigator.serviceWorker.register → Promise<registration> + scope 派生 + install→active 异步生命周期。
+    // Engine-only shim has no host manager. Registration must fail closed
+    // instead of recreating the removed timer-driven lifecycle simulation.
     use std::sync::{Arc, Mutex};
     use zero_script_sandbox::{Sandbox, V8Sandbox};
     let config = zero_script_sandbox::SandboxConfig {
@@ -497,23 +497,19 @@ fn test_navigator_service_worker_register_r3318() {
         std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
     register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry);
 
-    // 存在性 + register 返 Promise<registration> + scope 默认派生 + controller 激活前为 null。
     sandbox
         .execute(
             "globalThis.__hasSW = String(navigator.serviceWorker !== undefined);\
              globalThis.__ctrlBefore = String(navigator.serviceWorker.controller === null);\
              globalThis.__readyIsPromise = String(navigator.serviceWorker.ready instanceof Promise);\
-             navigator.serviceWorker.register('/sw.js').then(function (reg) {\
-               globalThis.__scope = String(reg.scope);\
-               globalThis.__hasUnregister = String(typeof reg.unregister === 'function');\
+             navigator.serviceWorker.register('/sw.js').then(function () {\
                globalThis.__ok = 'ok';\
              }, function (err) {\
                globalThis.__ok = 'reject:' + String(err && err.message ? err.message : err);\
              });",
         )
         .unwrap();
-    // pump microtask（register Promise + setTimeout(0) 生命周期推进）——多轮 execute drain。
-    for i in 1..=10 {
+    for i in 1..=6 {
         let _ = sandbox.execute(&format!("globalThis.__p{i} = 1;"));
     }
 
@@ -524,18 +520,8 @@ fn test_navigator_service_worker_register_r3318() {
     );
     assert_eq!(
         sandbox.execute("globalThis.__ok").unwrap().value,
-        "ok",
-        "register 返 Promise 成功 resolve"
-    );
-    assert_eq!(
-        sandbox.execute("globalThis.__scope").unwrap().value,
-        "/",
-        "register('/sw.js') 默认 scope = scriptURL 所在目录 '/'"
-    );
-    assert_eq!(
-        sandbox.execute("globalThis.__hasUnregister").unwrap().value,
-        "true",
-        "registration.unregister 方法存在"
+        "reject:Service Worker host bridge unavailable",
+        "engine-only shim must reject without a browser/WebView host bridge"
     );
     assert_eq!(
         sandbox.execute("globalThis.__ctrlBefore").unwrap().value,
@@ -548,49 +534,35 @@ fn test_navigator_service_worker_register_r3318() {
         "navigator.serviceWorker.ready 是 Promise"
     );
 
-    // 生命周期推进后：active 已激活 + controller 非空。
     sandbox
         .execute(
-            "var r = null;\
-             navigator.serviceWorker.getRegistration('/').then(function (reg) { r = reg; });",
+            "navigator.serviceWorker.getRegistration('/').then(function (reg) {\
+               globalThis.__registrationMissing = String(reg === undefined);\
+             });\
+             navigator.serviceWorker.getRegistrations().then(function (regs) {\
+               globalThis.__registrationCount = String(regs.length);\
+             });",
         )
         .unwrap();
-    for i in 1..=6 {
+    for i in 1..=4 {
         let _ = sandbox.execute(&format!("globalThis.__q{i} = 1;"));
     }
-    sandbox
-        .execute(
-            "globalThis.__activeState = (r && r.active) ? String(r.active.state) : 'null';\
-             globalThis.__waitingCleared = String(r ? r.waiting === null : true);\
-             globalThis.__installingCleared = String(r ? r.installing === null : true);\
-             globalThis.__ctrlAfter = navigator.serviceWorker.controller ? String(navigator.serviceWorker.controller.state) : 'null';",
-        )
-        .unwrap();
     assert_eq!(
-        sandbox.execute("globalThis.__activeState").unwrap().value,
-        "activated",
-        "生命周期推进后 registration.active.state = 'activated'"
-    );
-    assert_eq!(
-        sandbox.execute("globalThis.__waitingCleared").unwrap().value,
+        sandbox.execute("globalThis.__registrationMissing").unwrap().value,
         "true",
-        "激活后 waiting 字段已清空（active 接管）"
+        "failed registration must not create a private shim registration"
     );
     assert_eq!(
-        sandbox.execute("globalThis.__installingCleared").unwrap().value,
-        "true",
-        "激活后 installing 字段已清空"
-    );
-    assert_eq!(
-        sandbox.execute("globalThis.__ctrlAfter").unwrap().value,
-        "activated",
-        "激活后 navigator.serviceWorker.controller.state = 'activated'"
+        sandbox.execute("globalThis.__registrationCount").unwrap().value,
+        "0",
+        "failed registration must leave the query surface empty"
     );
 }
 
 #[test]
 fn test_navigator_service_worker_query_and_unregister_r3318() {
-    // getRegistration/getRegistrations/unregister + register 缺 scriptURL reject + 显式 scope。
+    // Query shape remains available without a host; invalid input still rejects
+    // before host-bridge availability is considered.
     use std::sync::{Arc, Mutex};
     use zero_script_sandbox::{Sandbox, V8Sandbox};
     let config = zero_script_sandbox::SandboxConfig {
@@ -606,28 +578,14 @@ fn test_navigator_service_worker_query_and_unregister_r3318() {
         std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
     register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry);
 
-    // async/await 扁平化（参照 R3315 OPFS 模式）：2 个显式 scope 注册 + getRegistrations 计数 +
-    // getRegistration(scope) 命中 + unregister + 空 scriptURL reject。
     sandbox
         .execute(
             "(async function () {\
                try {\
-                 /* register 2：显式 scope */\
-                 await navigator.serviceWorker.register('/a/sw.js', { scope: '/a/' });\
-                 await navigator.serviceWorker.register('/b/sw.js', { scope: '/b/' });\
                  var all = await navigator.serviceWorker.getRegistrations();\
                  globalThis.__numRegs = String(all.length);\
-                 /* getRegistration('/a/') 命中该 scope */\
                  var ra = await navigator.serviceWorker.getRegistration('/a/');\
-                 globalThis.__aScope = ra ? String(ra.scope) : 'undef';\
-                 /* 不存在的 scope → undefined */\
-                 var rz = await navigator.serviceWorker.getRegistration('/zzz/');\
-                 globalThis.__zIsUndef = String(rz === undefined);\
-                 /* unregister '/a/' */\
-                 var ok = await ra.unregister();\
-                 globalThis.__unregOk = String(ok);\
-                 var all2 = await navigator.serviceWorker.getRegistrations();\
-                 globalThis.__numAfter = String(all2.length);\
+                 globalThis.__aIsUndef = String(ra === undefined);\
                  globalThis.__ok = 'ok';\
                } catch (err) {\
                  globalThis.__ok = 'reject:' + String(err && err.message ? err.message : err);\
@@ -635,40 +593,24 @@ fn test_navigator_service_worker_query_and_unregister_r3318() {
              })();",
         )
         .unwrap();
-    // pump microtask（async 函数每 await 让出）。
-    for i in 1..=20 {
+    for i in 1..=8 {
         let _ = sandbox.execute(&format!("globalThis.__p{i} = 1;"));
     }
 
     assert_eq!(
         sandbox.execute("globalThis.__ok").unwrap().value,
         "ok",
-        "serviceWorker 注册/查询/unregister 全链成功"
+        "serviceWorker query surface remains usable without a host bridge"
     );
     assert_eq!(
         sandbox.execute("globalThis.__numRegs").unwrap().value,
-        "2",
-        "注册 2 个 SW 后 getRegistrations().length = 2"
+        "0",
+        "engine-only shim has no registrations"
     );
     assert_eq!(
-        sandbox.execute("globalThis.__aScope").unwrap().value,
-        "/a/",
-        "getRegistration('/a/') 返回 scope='/a/' 的 registration"
-    );
-    assert_eq!(
-        sandbox.execute("globalThis.__zIsUndef").unwrap().value,
+        sandbox.execute("globalThis.__aIsUndef").unwrap().value,
         "true",
-        "getRegistration('/zzz/') 不存在 → undefined"
-    );
-    assert_eq!(
-        sandbox.execute("globalThis.__unregOk").unwrap().value,
-        "true",
-        "unregister() 返 Promise<true>（spec）"
-    );
-    assert_eq!(
-        sandbox.execute("globalThis.__numAfter").unwrap().value,
-        "1",
-        "unregister('/a/') 后 getRegistrations().length = 1"
+        "getRegistration returns undefined when the host owns no registration"
     );
 
     // register 缺 scriptURL → reject TypeError。
