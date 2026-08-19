@@ -865,8 +865,15 @@ fn test_content_url() {
         parse_content(r#"url("x/y.gif")"#),
         Some(ContentValue::Url("x/y.gif".to_string()))
     );
+    assert_eq!(
+        parse_content(r#"url("my icon.png")"#),
+        Some(ContentValue::Url("my icon.png".to_string()))
+    );
     // 空 url() → None。
     assert!(parse_content("url()").is_none());
+    assert!(parse_content("url(my icon.png)").is_none());
+    assert!(parse_content(r#"url("icon.png" extra)"#).is_none());
+    assert!(parse_content(r#"url(icon".png)"#).is_none());
     // CSS Values §4：函数名大小写不敏感（URL/Url ≡ url）；URL 内容（路径）大小写敏感，保持原样。
     assert_eq!(
         parse_content("URL('bullet.svg')"),

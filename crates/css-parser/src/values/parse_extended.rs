@@ -612,14 +612,8 @@ pub fn parse_content(input: &str) -> Option<ContentValue> {
     }
     // url(...) — generated content image（R1988）。支持引号包裹的 url："url('x.png')" / 'url("x.png")'。
     if let Some(inner) = extract_single_function_inner(input, "url(") {
-        if inner.is_empty() {
-            return None;
-        }
-        let url = inner.trim_matches('"').trim_matches('\'').trim();
-        if url.is_empty() {
-            return None;
-        }
-        return Some(ContentValue::Url(url.to_string()));
+        let url = super::parse_extended_visual::parse_css_url_payload(inner)?;
+        return Some(ContentValue::Url(url));
     }
     None
 }
