@@ -515,6 +515,18 @@ fn test_filter_brightness_percentage() {
 }
 
 #[test]
+fn test_filter_amount_functions_reject_negative_values() {
+    assert!(parse_filter("brightness(-1)").is_none());
+    assert!(parse_filter("brightness(-10%)").is_none());
+    assert!(parse_filter("contrast(-0.1)").is_none());
+    assert!(parse_filter("grayscale(-1)").is_none());
+    assert!(parse_filter("invert(-1)").is_none());
+    assert!(parse_filter("opacity(-0.5)").is_none());
+    assert!(parse_filter("saturate(-2)").is_none());
+    assert!(parse_filter("sepia(-1)").is_none());
+}
+
+#[test]
 fn test_filter_contrast() {
     let f = parse_filter("contrast(0.8)");
     assert!(f.is_some());

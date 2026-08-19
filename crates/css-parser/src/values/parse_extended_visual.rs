@@ -199,12 +199,13 @@ fn parse_filter_non_negative_length_px(s: &str) -> Option<f32> {
 /// 解析 filter 函数中的数值（0-1 范围，也接受百分比和大于 1 的值）。
 fn parse_filter_number(s: &str) -> Option<f32> {
     let s = s.trim();
-    if s.ends_with('%') {
+    let n = if s.ends_with('%') {
         let pct: f32 = s.trim_end_matches('%').parse().ok()?;
-        Some(pct / 100.0)
+        pct / 100.0
     } else {
-        s.parse::<f32>().ok()
-    }
+        s.parse::<f32>().ok()?
+    };
+    if n.is_finite() && n >= 0.0 { Some(n) } else { None }
 }
 
 /// 解析 filter 函数中的角度值（返回度数）。单位大小写不敏感（CSS Values §），

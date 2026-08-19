@@ -121,6 +121,8 @@ Timing functions exposed the function-specific numeric-constraint variant: fixed
 
 Filter functions exposed the role-specific length constraint variant: a shared `<length>` parser may be correct for offsets but too wide for blur radii. `blur()` and the third `drop-shadow()` length require non-negative values, while the first two drop-shadow offsets still allow negatives.
 
+Filter amount functions exposed the shared-number lower-bound variant: a shared number/percentage parser for `brightness`/`contrast`/`opacity`-style functions must reject negative finite values, while still allowing greater-than-one amounts where the consuming filter grammar permits them.
+
 ## Root Cause
 
 The shorthand layer used heuristic component classifiers and treated unrecognized tokens as absent optional components. That is wrong for CSS shorthands such as `border`, where every token must match one of the allowed component grammars. A shared parser can also be broader than the property grammar that consumes it: general length parsing may accept `auto`, intrinsic sizing keywords, or percentages that `border-width` must reject.
