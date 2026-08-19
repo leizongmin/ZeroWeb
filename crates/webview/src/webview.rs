@@ -309,7 +309,7 @@ pub struct WebView {
     /// Service Worker 注册表。
     sw_registry: ServiceWorkerRegistry,
     /// 真实 Service Worker runtime/registration 单一 owner。
-    sw_manager: ServiceWorkerManager,
+    sw_manager: std::sync::Arc<std::sync::Mutex<ServiceWorkerManager>>,
     /// Web Worker 实例（Dedicated Worker）。
     workers: HashMap<u64, WorkerRuntime>,
     /// Worker ID 生成器。
@@ -411,7 +411,7 @@ impl WebView {
             cached_css: String::new(),
             event_callbacks: Vec::new(),
             sw_registry: ServiceWorkerRegistry::new(),
-            sw_manager: ServiceWorkerManager::new(),
+            sw_manager: std::sync::Arc::new(std::sync::Mutex::new(ServiceWorkerManager::new())),
             workers: HashMap::new(),
             next_worker_id: 1,
             wasm_instances: HashMap::new(),
@@ -1480,6 +1480,13 @@ impl WebView {
             zero_script_sandbox::QuickJSSandbox::with_config(js_config)
                 .map_err(|e| WebViewError::Script(format!("QuickJS sandbox init: {e}")))?,
         );
+        Self::register_service_worker_host_callbacks(
+            &mut *sandbox,
+            self.sw_manager.clone(),
+            self.script_source_fetcher.clone(),
+            self.page_url_wire.clone(),
+            self.http_client.timeout_secs,
+        );
         self.indexed_db_bridge.register(&mut *sandbox, &self.page_url_wire);
         self.js_sandbox = Some(sandbox);
         Ok(())
@@ -2280,6 +2287,8 @@ impl WebView {
             None => self.fetch_text_at(script_url.as_str())?,
         };
         self.sw_manager
+            .lock()
+            .map_err(|_| WebViewError::Script("Service Worker manager lock poisoned".into()))?
             .start_evaluation(
                 script_url.as_str(),
                 scope.as_str(),
@@ -2292,15 +2301,21 @@ impl WebView {
 
     /// Drain Service Worker manager events and advance lifecycle state.
     pub fn poll_service_worker_runtime_events(&mut self) -> Vec<ServiceWorkerManagerEvent> {
-        self.sw_manager.poll()
+        self.sw_manager
+            .lock()
+            .map(|mut manager| manager.poll())
+            .unwrap_or_default()
     }
 
     /// Inspect one real Service Worker registration version.
     pub fn service_worker_runtime_registration(
         &self,
         registration_id: u64,
-    ) -> Option<&zero_storage::ServiceWorkerRegistration> {
-        self.sw_manager.registration(registration_id)
+    ) -> Option<zero_storage::ServiceWorkerRegistration> {
+        self.sw_manager
+            .lock()
+            .ok()
+            .and_then(|manager| manager.registration(registration_id).cloned())
     }
 
     /// Inspect real version slots for an origin/scope key.
@@ -2308,12 +2323,14 @@ impl WebView {
         &self,
         key: &ServiceWorkerRegistrationKey,
     ) -> Option<ServiceWorkerVersionSlots> {
-        self.sw_manager.slots(key)
+        self.sw_manager.lock().ok().and_then(|manager| manager.slots(key))
     }
 
     /// Activate a waiting real Service Worker replacement.
     pub fn activate_waiting_service_worker_runtime(&mut self, registration_id: u64) -> Result<(), WebViewError> {
         self.sw_manager
+            .lock()
+            .map_err(|_| WebViewError::Script("Service Worker manager lock poisoned".into()))?
             .activate_waiting(registration_id)
             .map_err(|error| WebViewError::Script(error.to_string()))
     }
@@ -2376,6 +2393,139 @@ impl WebView {
         }
 
         Ok((script, scope, document.origin().ascii_serialization()))
+    }
+
+    fn register_service_worker_host_callbacks(
+        sandbox: &mut dyn zero_script_sandbox::Sandbox,
+        manager: std::sync::Arc<std::sync::Mutex<ServiceWorkerManager>>,
+        source_fetcher: Option<ScriptSourceFetcher>,
+        page_url: std::sync::Arc<std::sync::Mutex<String>>,
+        timeout_secs: u64,
+    ) {
+        let register_manager = manager.clone();
+        sandbox.register_callback(
+            "__zw_sw_register",
+            Box::new(move |args| {
+                let script_input = args.first().map(String::as_str).unwrap_or("");
+                let scope_input = args.get(1).map(String::as_str).filter(|value| !value.is_empty());
+                let result = (|| -> Result<u64, String> {
+                    let document_url = page_url
+                        .lock()
+                        .map_err(|_| "page URL lock poisoned".to_string())?
+                        .clone();
+                    let (script_url, scope, origin) =
+                        Self::validate_service_worker_registration(script_input, scope_input, &document_url)
+                            .map_err(|error| error.to_string())?;
+                    let source = match &source_fetcher {
+                        Some(fetcher) => fetcher(&document_url, script_url.as_str())?,
+                        None => Self::fetch_service_worker_script(script_url.as_str(), timeout_secs)?,
+                    };
+                    let mut manager = register_manager
+                        .lock()
+                        .map_err(|_| "Service Worker manager lock poisoned".to_string())?;
+                    let registration_id = manager
+                        .start_evaluation(
+                            script_url.as_str(),
+                            scope.as_str(),
+                            &origin,
+                            &source,
+                            SandboxConfig::default(),
+                        )
+                        .map_err(|error| error.to_string())?;
+                    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+                    loop {
+                        let events = manager.poll();
+                        if events.iter().any(|event| {
+                            matches!(
+                                event,
+                                ServiceWorkerManagerEvent::ScriptEvaluated {
+                                    registration_id: id
+                                } if *id == registration_id
+                            )
+                        }) {
+                            return Ok(registration_id);
+                        }
+                        if let Some(error) = events.iter().find_map(|event| match event {
+                            ServiceWorkerManagerEvent::ScriptFailed {
+                                registration_id: id,
+                                message,
+                                ..
+                            } if *id == registration_id => Some(message.clone()),
+                            ServiceWorkerManagerEvent::CoordinationFailed {
+                                registration_id: id,
+                                message,
+                            } if *id == registration_id => Some(message.clone()),
+                            _ => None,
+                        }) {
+                            return Err(error);
+                        }
+                        if std::time::Instant::now() >= deadline {
+                            return Err("Service Worker script evaluation timed out".into());
+                        }
+                        std::thread::sleep(std::time::Duration::from_millis(1));
+                    }
+                })();
+                match result {
+                    Ok(id) => serde_json::json!({"ok": true, "id": id}).to_string(),
+                    Err(error) => serde_json::json!({"ok": false, "error": error}).to_string(),
+                }
+            }),
+        );
+
+        let snapshot_manager = manager.clone();
+        sandbox.register_callback(
+            "__zw_sw_snapshot",
+            Box::new(move |args| {
+                let Some(registration_id) = args.first().and_then(|value| value.parse::<u64>().ok()) else {
+                    return serde_json::json!({"ok": false, "error": "invalid registration id"}).to_string();
+                };
+                let Ok(mut manager) = snapshot_manager.lock() else {
+                    return serde_json::json!({"ok": false, "error": "manager lock poisoned"}).to_string();
+                };
+                let _ = manager.poll();
+                let Some(registration) = manager.registration(registration_id) else {
+                    return serde_json::json!({"ok": false, "error": "registration not found"}).to_string();
+                };
+                serde_json::json!({
+                    "ok": true,
+                    "id": registration.id,
+                    "scriptURL": registration.script_url,
+                    "scope": registration.scope,
+                    "state": registration.state.to_string(),
+                })
+                .to_string()
+            }),
+        );
+
+        sandbox.register_callback(
+            "__zw_sw_unregister",
+            Box::new(move |args| {
+                let removed = args
+                    .first()
+                    .and_then(|value| value.parse::<u64>().ok())
+                    .and_then(|registration_id| {
+                        manager
+                            .lock()
+                            .ok()
+                            .map(|mut manager| manager.unregister(registration_id))
+                    })
+                    .unwrap_or(false);
+                if removed { "true" } else { "false" }.to_string()
+            }),
+        );
+    }
+
+    fn fetch_service_worker_script(url: &str, timeout_secs: u64) -> Result<String, String> {
+        let response = ResourceLoader::shared()
+            .submit(
+                ResourceRequest::get(url, FetchPriority::HIGH)
+                    .with_destination("serviceworker")
+                    .with_timeout_secs(timeout_secs),
+            )
+            .recv()
+            .map_err(|_| "resource loader worker exited".to_string())?
+            .map_err(|error| error.to_string())?;
+        response.text().map_err(|error| error.to_string())
     }
 
     /// 处理 JS 端 WebAssembly 桥接请求。

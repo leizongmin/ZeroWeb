@@ -111,3 +111,95 @@ fn insecure_and_cross_origin_registration_fail_before_fetch() {
     );
     assert_eq!(*fetch_count.lock().unwrap(), 0);
 }
+
+#[test]
+fn navigator_register_projects_real_manager_state() {
+    let mut webview = WebViewBuilder::new()
+        .url("https://example.test/page.html")
+        .script_source_fetcher(Arc::new(|_, _| {
+            Ok("addEventListener('install', event => {
+                    event.waitUntil(Promise.resolve());
+                });
+                addEventListener('activate', event => {
+                    event.waitUntil(Promise.resolve());
+                });"
+            .to_string())
+        }))
+        .build();
+
+    webview
+        .execute_script(
+            "globalThis.__swResult = 'pending';
+             globalThis.__swReady = 'pending';
+             navigator.serviceWorker.ready.then(function() {
+               globalThis.__swReady = 'ready';
+             });
+             navigator.serviceWorker.register('/sw.js', {scope:'/app/'}).then(
+               function(reg) {
+                 globalThis.__swReg = reg;
+                 globalThis.__swResult = 'resolved';
+               },
+               function(error) {
+                 globalThis.__swResult = 'rejected:' + error;
+               }
+             );
+             'started';",
+        )
+        .unwrap();
+
+    let deadline = Instant::now() + Duration::from_secs(5);
+    loop {
+        let value = webview
+            .execute_script(
+                "[
+                   globalThis.__swResult,
+                   globalThis.__swReady,
+                   globalThis.__swReg && globalThis.__swReg.scope,
+                   globalThis.__swReg && globalThis.__swReg.active && globalThis.__swReg.active.state,
+                   navigator.serviceWorker.controller === null
+                 ].join('|')",
+            )
+            .unwrap();
+        if value == "resolved|ready|https://example.test/app/|activated|true" {
+            break;
+        }
+        assert!(Instant::now() < deadline, "page registration did not activate: {value}");
+        std::thread::sleep(Duration::from_millis(10));
+    }
+
+    assert_eq!(
+        webview
+            .execute_script(
+                "globalThis.__swReg.unregister().then(function(value) {
+                   globalThis.__swUnregistered = String(value);
+                 });
+                 'unregistering';",
+            )
+            .unwrap(),
+        "unregistering"
+    );
+    assert_eq!(webview.execute_script("globalThis.__swUnregistered").unwrap(), "true");
+}
+
+#[test]
+fn navigator_register_rejects_script_compile_failure() {
+    let mut webview = WebViewBuilder::new()
+        .url("https://example.test/page.html")
+        .script_source_fetcher(Arc::new(|_, _| Ok("function(".to_string())))
+        .build();
+
+    webview
+        .execute_script(
+            "globalThis.__swFailure = 'pending';
+             navigator.serviceWorker.register('/bad-sw.js').then(
+               function() { globalThis.__swFailure = 'unexpected success'; },
+               function(error) { globalThis.__swFailure = 'rejected:' + error.name; }
+             );
+             'started';",
+        )
+        .unwrap();
+    assert_eq!(
+        webview.execute_script("globalThis.__swFailure").unwrap(),
+        "rejected:TypeError"
+    );
+}

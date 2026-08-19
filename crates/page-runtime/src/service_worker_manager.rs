@@ -466,6 +466,36 @@ impl ServiceWorkerManager {
         Ok(())
     }
 
+    /// Remove one registration version and stop its runtime.
+    pub fn unregister(&mut self, registration_id: u64) -> bool {
+        let Some(key) = self.registration_keys.remove(&registration_id) else {
+            return false;
+        };
+        self.evaluated.remove(&registration_id);
+        if let Some(mut runtime) = self.runtimes.remove(&registration_id) {
+            runtime.shutdown();
+        }
+        let removed = self.registry.unregister(registration_id);
+        let remove_slots = if let Some(slot) = self.slots.get_mut(&key) {
+            if slot.installing == Some(registration_id) {
+                slot.installing = None;
+            }
+            if slot.waiting == Some(registration_id) {
+                slot.waiting = None;
+            }
+            if slot.active == Some(registration_id) {
+                slot.active = None;
+            }
+            slot.installing.is_none() && slot.waiting.is_none() && slot.active.is_none()
+        } else {
+            false
+        };
+        if remove_slots {
+            self.slots.remove(&key);
+        }
+        removed
+    }
+
     /// Inspect one registration version.
     pub fn registration(&self, registration_id: u64) -> Option<&ServiceWorkerRegistration> {
         self.registry.get(registration_id)
