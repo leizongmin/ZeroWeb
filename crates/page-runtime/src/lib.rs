@@ -33,6 +33,11 @@ pub use service_worker_manager::{
     ServiceWorkerManager, ServiceWorkerManagerError, ServiceWorkerManagerEvent, ServiceWorkerRegistrationKey,
     ServiceWorkerVersionSlots,
 };
+pub mod service_worker_registration;
+pub use service_worker_registration::{
+    ServiceWorkerRegistrationError, ServiceWorkerRegistrationErrorKind, validate_service_worker_registration,
+    validate_service_worker_registration_for_document,
+};
 
 use zero_engine::{DomMutation, HitTestCache, RenderResult};
 use zero_render_foundation::primitive::RenderPrimitives;

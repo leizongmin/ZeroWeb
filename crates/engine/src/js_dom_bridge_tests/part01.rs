@@ -1718,7 +1718,7 @@ fn test_crypto_get_random_values_r2775() {
 #[test]
 fn test_dom_exception_r2776() {
     // R2776：DOMException（Web IDL 异常类型，本地 Chromium 150 oracle 锚定）。众多 Web API 抛出它；
-    // name/message/legacy code + 25 legacy 常量；instance 非 Error 子类；toString="name: message"。
+    // name/message/legacy code + 25 legacy 常量；instance 同时为 Error；toString="name: message"。
     // 同时验收 R2776 升级的已 land API 错误类型（btoa→InvalidCharacterError / getRandomValues→
     // QuotaExceededError / structuredClone→DataCloneError）。
     use zero_script_sandbox::{Sandbox, V8Sandbox};
@@ -1753,7 +1753,7 @@ fn test_dom_exception_r2776() {
             .value,
         "Error|0|Error||0"
     );
-    // instance 非 Error 子类（浏览器行为一致），但 instanceof DOMException 为 true。
+    // DOMException is also exposed as an Error instance.
     assert_eq!(
         sandbox
             .execute(
@@ -1762,7 +1762,7 @@ fn test_dom_exception_r2776() {
             )
             .unwrap()
             .value,
-        "true|false"
+        "true|true"
     );
     // legacy 常量（oracle 锚定子集）。
     assert_eq!(

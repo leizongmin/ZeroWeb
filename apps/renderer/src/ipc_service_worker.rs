@@ -96,7 +96,8 @@ impl ServiceWorkerIpcClient {
             "__zw_sw_register",
             Box::new(move |args| {
                 let script_url = args.first().cloned().unwrap_or_default();
-                let scope = args.get(1).cloned().filter(|value| !value.is_empty());
+                let scope =
+                    (args.get(3).map(String::as_str) == Some("true")).then(|| args.get(1).cloned().unwrap_or_default());
                 let document_url = args.get(2).cloned().unwrap_or_default();
                 match register_client.request(ServiceWorkerOperation::Register {
                     script_url,
@@ -107,7 +108,7 @@ impl ServiceWorkerIpcClient {
                         serde_json::json!({"ok": true, "id": registration_id}).to_string()
                     }
                     Ok(_) => error_wire("invalid register response"),
-                    Err(error) => error_wire(error.message),
+                    Err(error) => response_error_wire(error),
                 }
             }),
         );
@@ -255,7 +256,19 @@ fn snapshot_wire(snapshot: zero_protocol::ServiceWorkerSnapshot) -> serde_json::
 }
 
 fn error_wire(message: impl Into<String>) -> String {
-    serde_json::json!({"ok": false, "error": message.into()}).to_string()
+    serde_json::json!({"ok": false, "error": message.into(), "errorName": "TypeError"}).to_string()
+}
+
+fn response_error_wire(error: ServiceWorkerError) -> String {
+    serde_json::json!({
+        "ok": false,
+        "error": error.message,
+        "errorName": match error.code {
+            ServiceWorkerErrorCode::Security => "SecurityError",
+            _ => "TypeError",
+        },
+    })
+    .to_string()
 }
 
 fn internal_error(message: impl Into<String>) -> ServiceWorkerError {

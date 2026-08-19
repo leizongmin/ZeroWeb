@@ -6535,6 +6535,7 @@ version = "0.1.0"
 dependencies = [
  "serde",
  "serde_json",
+ "url",
  "zero-engine",
  "zero-render-foundation",
  "zero-script-sandbox",

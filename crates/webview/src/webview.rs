@@ -21,6 +21,7 @@ use zero_render_foundation::image_cache::{ImageCache, ImageData, ImageKey, decod
 use crate::image_decoder::decode_image;
 use zero_page_runtime::{
     ServiceWorkerManager, ServiceWorkerManagerEvent, ServiceWorkerRegistrationKey, ServiceWorkerVersionSlots,
+    validate_service_worker_registration_for_document,
 };
 use zero_render_foundation::primitive::RenderPrimitives;
 use zero_script_sandbox::{SandboxConfig, WorkerEvent, WorkerRuntime};
@@ -2340,59 +2341,8 @@ impl WebView {
         scope: Option<&str>,
         document_url: &str,
     ) -> Result<(url::Url, url::Url, String), WebViewError> {
-        let document = url::Url::parse(document_url)
-            .map_err(|error| WebViewError::Script(format!("invalid document URL: {error}")))?;
-        let secure = document.scheme() == "https"
-            || (document.scheme() == "http"
-                && document.host_str().is_some_and(|host| {
-                    host == "localhost" || host.parse::<std::net::IpAddr>().is_ok_and(|ip| ip.is_loopback())
-                }));
-        if !secure {
-            return Err(WebViewError::Script(
-                "Service Worker registration requires a secure context".into(),
-            ));
-        }
-
-        let mut script = document
-            .join(script_url)
-            .map_err(|error| WebViewError::Script(format!("invalid Service Worker script URL: {error}")))?;
-        if !matches!(script.scheme(), "http" | "https") {
-            return Err(WebViewError::Script(
-                "Service Worker script URL must use http or https".into(),
-            ));
-        }
-        if script.origin() != document.origin() {
-            return Err(WebViewError::Script(
-                "Service Worker script URL must be same-origin".into(),
-            ));
-        }
-        if script.fragment().is_some() {
-            return Err(WebViewError::Script(
-                "Service Worker script URL must not contain a fragment".into(),
-            ));
-        }
-        script.set_fragment(None);
-
-        let scope = match scope {
-            Some(value) => document
-                .join(value)
-                .map_err(|error| WebViewError::Script(format!("invalid Service Worker scope: {error}")))?,
-            None => script
-                .join("./")
-                .map_err(|error| WebViewError::Script(format!("invalid default Service Worker scope: {error}")))?,
-        };
-        if !matches!(scope.scheme(), "http" | "https") || scope.origin() != document.origin() {
-            return Err(WebViewError::Script(
-                "Service Worker scope must be same-origin http(s)".into(),
-            ));
-        }
-        if scope.fragment().is_some() {
-            return Err(WebViewError::Script(
-                "Service Worker scope must not contain a fragment".into(),
-            ));
-        }
-
-        Ok((script, scope, document.origin().ascii_serialization()))
+        validate_service_worker_registration_for_document(script_url, scope, document_url)
+            .map_err(|error| WebViewError::Script(error.to_string()))
     }
 
     fn register_service_worker_host_callbacks(
@@ -2407,15 +2357,32 @@ impl WebView {
             "__zw_sw_register",
             Box::new(move |args| {
                 let script_input = args.first().map(String::as_str).unwrap_or("");
-                let scope_input = args.get(1).map(String::as_str).filter(|value| !value.is_empty());
+                let scope_input = (args.get(3).map(String::as_str) == Some("true"))
+                    .then(|| args.get(1).map(String::as_str).unwrap_or(""));
+                let document_url = match page_url.lock() {
+                    Ok(url) => url.clone(),
+                    Err(_) => {
+                        return serde_json::json!({
+                            "ok": false,
+                            "error": "page URL lock poisoned",
+                            "errorName": "TypeError",
+                        })
+                        .to_string();
+                    }
+                };
+                let (script_url, scope, origin) =
+                    match validate_service_worker_registration_for_document(script_input, scope_input, &document_url) {
+                        Ok(validated) => validated,
+                        Err(error) => {
+                            return serde_json::json!({
+                                "ok": false,
+                                "error": error.message,
+                                "errorName": error.kind.exception_name(),
+                            })
+                            .to_string();
+                        }
+                    };
                 let result = (|| -> Result<u64, String> {
-                    let document_url = page_url
-                        .lock()
-                        .map_err(|_| "page URL lock poisoned".to_string())?
-                        .clone();
-                    let (script_url, scope, origin) =
-                        Self::validate_service_worker_registration(script_input, scope_input, &document_url)
-                            .map_err(|error| error.to_string())?;
                     let source = match &source_fetcher {
                         Some(fetcher) => fetcher(&document_url, script_url.as_str())?,
                         None => Self::fetch_service_worker_script(script_url.as_str(), timeout_secs)?,
@@ -2467,7 +2434,9 @@ impl WebView {
                 })();
                 match result {
                     Ok(id) => serde_json::json!({"ok": true, "id": id}).to_string(),
-                    Err(error) => serde_json::json!({"ok": false, "error": error}).to_string(),
+                    Err(error) => {
+                        serde_json::json!({"ok": false, "error": error, "errorName": "TypeError"}).to_string()
+                    }
                 }
             }),
         );

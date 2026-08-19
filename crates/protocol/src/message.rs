@@ -768,6 +768,8 @@ pub enum ServiceWorkerErrorCode {
     Capacity,
     /// Browser owner failed internally.
     Internal,
+    /// Registration violates secure-context, origin, or scope-path policy.
+    Security,
 }
 
 /// Renderer 页面导航开始信号。

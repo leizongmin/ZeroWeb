@@ -2,7 +2,7 @@
 
 **日期**：2026-08-19
 **上游 revision**：`04067ce9c7c2165e71ad7d0dde10a4c5cb394a83`
-**状态**：runner complete；baseline red
+**状态**：complete；baseline green
 
 ## 0. Runner contract
 
@@ -26,21 +26,22 @@ Make 入口：
 
 | Wave | Case | Subtest | Pass | Fail | Timeout | Unsupported |
 |------|-----:|--------:|-----:|-----:|--------:|------------:|
-| Tier A | 8 | 28 | 23 | 5 | 0 | 0 |
+| Tier A | 8 | 28 | 28 | 0 | 0 | 0 |
 | next-wave | 3 | 4 | 4 | 0 | 0 | 0 |
-| static-wave | 1 | 4 | 3 | 1 | 0 | 0 |
-| **合计** | **12** | **36** | **30** | **6** | **0** | **0** |
+| static-wave | 1 | 4 | 4 | 0 | 0 | 0 |
+| **合计** | **12** | **36** | **36** | **0** | **0** | **0** |
 
-M1-5b 后 baseline 两轮得到相同 `(case, subtest, status)`。错误文本不作为确定性键。
+M1-5c 后 baseline 两轮得到相同 `(case, subtest, status)`。
 
-## 2. 红项分组
+## 2. 收敛结果
 
-| 缺口 | Fail | Timeout | 证据 |
-|------|-----:|--------:|------|
-| scope conversion/normalization/validation | 4 | 0 | null、fragment、encoded slash/backslash |
-| rejection DOMException shape | 1 | 0 | rejection 不是 DOMException + Error |
-| scriptURL fragment normalization | 1 | 0 | fragment 当前被拒绝而非移除 |
-| **合计** | **6** | **0** | |
+| 缺口 | 修复前 | 当前 | 证据 |
+|------|-------:|-----:|------|
+| lifecycle task 与 EventTarget/slot projection | 4 Fail + 1 Timeout | Pass | transition log + cursor + task projection |
+| ServiceWorkerRegistration interface brand | 2 Fail | Pass | EventTarget interface constructors |
+| scope conversion/normalization/validation | 4 Fail | Pass | WebIDL null + fragment + encoded separator |
+| rejection DOMException shape | 1 Fail | Pass | typed SecurityError + DOMException/Error brand |
+| scriptURL fragment normalization | 1 Fail | Pass | shared URL validator strips fragment |
 
 通过面已证明：
 
@@ -51,6 +52,9 @@ M1-5b 后 baseline 两轮得到相同 `(case, subtest, status)`。错误文本�
 - unregister success 与 unregister twice；
 - lifecycle `updatefound`、`statechange` 与 installing/waiting/active task 顺序；
 - `ServiceWorker` / `ServiceWorkerRegistration` interface brand；
+- scope absent/undefined/null conversion 与最大 scope 路径限制；
+- scriptURL/scope fragment normalization 与 encoded separator 拒绝；
+- registration rejection 的 TypeError/SecurityError 与 DOMException/Error brand；
 - 12/12 case 被发现，0 Unsupported。
 
 ## 3. Runner 修正
@@ -66,7 +70,10 @@ M1-5b 进一步由 manager 记录不可消费的 version transition log，render
 页面把 `installed → activating → activated` 逐 task 投影，并在 slot 更新后派发
 `statechange`。`updatefound` 位于 register Promise reaction 与首个状态变化之间。
 
-## 4. 未完成门禁
+M1-5c 把 browser 与 WebView URL 校验收敛为 page-runtime 共享实现，IPC 保留
+TypeError/SecurityError 分类；页面 WebIDL conversion 区分 absent/undefined/null。
+
+## 4. 完成门禁
 
 - [x] 12/12 case 被 runner 发现。
 - [x] 36/36 subtest 有明确结果。
@@ -74,10 +81,11 @@ M1-5b 进一步由 manager 记录不可消费的 version transition log，render
 - [x] 0 Timeout。
 - [x] 连续两轮 case/subtest/status 一致。
 - [x] 每个 lifecycle 中间态与事件按 task 顺序可观察。
-- [ ] 36/36 Pass。
-- [ ] 0 Fail。
+- [x] 36/36 Pass。
+- [x] 0 Fail。
 
-M1-5 尚未完成；当前 baseline 不能作为 Service Worker Done 结论。
+M1-5 core baseline 完成；这只证明 M1 lifecycle core，不代表 M2 fetch/Cache 或 M3
+controller/message 已完成。
 
 ## 5. 工程门禁
 
@@ -86,5 +94,5 @@ M1-5 尚未完成；当前 baseline 不能作为 Service Worker Done 结论。
 - `make test` 通过：fresh peers、workspace V8、94 项 adapter GPU、QuickJS WebView、
   QuickJS WPT runner 113/113、QuickJS renderer；
 - `make bench-gate`：16/16 microbenches；welcome/medium/morning total p95 分别为
-  15.17/439.00/117.49 ms；retained form p95 0.0461 ms、jank 0；绝对预算通过。
+  18.20/472.82/152.23 ms；retained form p95 0.0312 ms、jank 0；绝对预算通过。
   当前 Xeon 8260 与共享 i5-13500H baseline 硬件指纹不匹配，相对指标不作比较。

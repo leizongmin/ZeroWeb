@@ -130,11 +130,11 @@ cache-storage 用例归本目标（兄弟目标只收 window 面）。
 ### DC-1: 选型 RFC 已批准并落地
 
 - [x] SW 执行环境 RFC 完成并经用户批准（2026-08-19，方案 C）
-- [ ] 实现与 RFC 一致；偏离处记录原因
+- [x] M1 实现与 RFC 方案 C 一致；production browser owner + embedded WebView adapter
 
 ### DC-2: 真实生命周期与执行
 
-- [ ] register → scriptURL 下载 → SW 上下文执行 → install/activate 真事件全链路
+- [x] register → scriptURL 下载 → SW 上下文执行 → install/activate 真事件全链路
 - [x] setTimeout 生命周期模拟已删除；页面 timer 仅逐 task 投影 manager transition log
 - [ ] scope 匹配/controller/oncontrollerchange/skipWaiting/claim 语义与 spec 一致（WPT 为准）
 

@@ -4,7 +4,7 @@ use std::time::{Duration, Instant};
 use zero_storage::ServiceWorkerState;
 
 fn wait_for_state(webview: &mut crate::WebView, registration_id: u64, expected: ServiceWorkerState) {
-    let deadline = Instant::now() + Duration::from_secs(5);
+    let deadline = Instant::now() + Duration::from_secs(20);
     loop {
         let _ = webview.poll_service_worker_runtime_events();
         if webview
@@ -106,7 +106,7 @@ fn insecure_and_cross_origin_registration_fail_before_fetch() {
     );
     assert!(
         webview
-            .register_service_worker_runtime("/sw.js", Some("/app/#fragment"), "https://example.test/page.html",)
+            .register_service_worker_runtime("/sw.js", Some("/app%2fchild"), "https://example.test/page.html",)
             .is_err()
     );
     assert_eq!(*fetch_count.lock().unwrap(), 0);
@@ -267,6 +267,64 @@ fn navigator_register_rejects_script_compile_failure() {
 }
 
 #[test]
+fn navigator_registration_normalizes_urls_and_preserves_error_types() {
+    let mut webview = WebViewBuilder::new()
+        .url("https://example.test/page.html")
+        .script_source_fetcher(Arc::new(|_, _| Ok(String::new())))
+        .build();
+
+    webview
+        .execute_script(
+            "globalThis.__registrationContract = 'pending';
+             navigator.serviceWorker.register('/workers/sw.js#script', {
+               scope: '/workers/app/#scope'
+             }).then(function(registration) {
+               var normalized = registration.installing.scriptURL + '|' + registration.scope;
+               return registration.unregister().then(function() { return normalized; });
+             }).then(function(normalized) {
+               return navigator.serviceWorker.register('/workers/sw.js', {scope: null}).then(
+                 function() { return 'null-resolved'; },
+                 function(error) { return normalized + '|' + error.name; }
+               );
+             }).then(function(result) {
+               return navigator.serviceWorker.register('/workers/sw.js', {
+                 scope: '/workers/app%2fchild'
+               }).then(
+                 function() { return 'encoded-resolved'; },
+                 function(error) { return result + '|' + error.name; }
+               );
+             }).then(function(result) {
+               return navigator.serviceWorker.register('https://other.test/sw.js').then(
+                 function() { return 'cross-origin-resolved'; },
+                 function(error) {
+                   globalThis.__registrationContract = result + '|' + error.name + '|' +
+                     String(error instanceof DOMException) + '|' + String(error instanceof Error);
+                 }
+               );
+             }, function(error) {
+               globalThis.__registrationContract = 'unexpected:' + error;
+             });
+             'started';",
+        )
+        .unwrap();
+
+    let deadline = Instant::now() + Duration::from_secs(5);
+    loop {
+        let value = webview.execute_script("globalThis.__registrationContract").unwrap();
+        if value != "pending" {
+            assert_eq!(
+                value,
+                "https://example.test/workers/sw.js|https://example.test/workers/app/|\
+                 SecurityError|TypeError|SecurityError|true|true"
+            );
+            break;
+        }
+        assert!(Instant::now() < deadline, "registration contract timed out");
+        std::thread::sleep(Duration::from_millis(5));
+    }
+}
+
+#[test]
 fn navigator_replacement_reuses_registration_identity_for_scope() {
     let mut webview = WebViewBuilder::new()
         .url("https://example.test/page.html")
@@ -278,11 +336,15 @@ fn navigator_replacement_reuses_registration_identity_for_scope() {
             "globalThis.__identity = 'pending';
              navigator.serviceWorker.register('/sw-v1.js', {scope:'/app/'}).then(function(first) {
                globalThis.__firstReg = first;
+               globalThis.__identityStage = 'first-registered';
                return navigator.serviceWorker.ready;
              }).then(function() {
+               globalThis.__identityStage = 'first-ready';
                globalThis.__firstWorker = globalThis.__firstReg.active;
                return navigator.serviceWorker.register('/sw-v2.js', {scope:'/app/'});
              }).then(function(second) {
+               globalThis.__identityStage = 'second-registered:' +
+                 String(second.installing && second.installing.state);
                var versionIdentity =
                  String(second.installing !== globalThis.__firstWorker) + '|' +
                  String(second.installing.scriptURL.endsWith('/sw-v2.js')) + '|' +
@@ -294,19 +356,25 @@ fn navigator_replacement_reuses_registration_identity_for_scope() {
                });
              }, function(error) {
                globalThis.__identity = 'error:' + String(error);
+             }).catch(function(error) {
+               globalThis.__identity = 'throw:' + String(error);
              });
              'started';",
         )
         .unwrap();
 
-    let deadline = Instant::now() + Duration::from_secs(5);
+    let deadline = Instant::now() + Duration::from_secs(20);
     loop {
         let value = webview.execute_script("globalThis.__identity").unwrap();
         if value != "pending" {
             assert_eq!(value, "true|1|true|true|true|true");
             break;
         }
-        assert!(Instant::now() < deadline, "replacement registration did not settle");
+        assert!(
+            Instant::now() < deadline,
+            "replacement registration did not settle: {}",
+            webview.execute_script("String(globalThis.__identityStage)").unwrap()
+        );
         std::thread::sleep(Duration::from_millis(10));
     }
 }

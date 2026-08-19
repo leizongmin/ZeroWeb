@@ -198,7 +198,7 @@
   // storage / atob / crypto / structuredClone 等），各 API 用 name 子类区分语义（InvalidCharacterError
   // / DataCloneError / QuotaExceededError 等）。V8 embed 不提供，polyfill 之（本地 Chromium 150 oracle
   // 锚定 R2776）。**关键行为（oracle 锚定）**：无 name 参数时 name='Error'/code=0；name∈legacy 表时
-  // code=对应值（余 0）；instance 非 Error 子类（浏览器 DOMException 亦非 Error 子类）；toString="name: message"。
+  // code=对应值（余 0）；instance 同时是 DOMException 与 Error；toString="name: message"。
   var _ZW_DE_CODE = {
     IndexSizeError: 1, HierarchyRequestError: 3, WrongDocumentError: 4,
     InvalidCharacterError: 5, NoModificationAllowedError: 7, NotFoundError: 8,
@@ -216,7 +216,7 @@
     self.code = _ZW_DE_CODE[self.name] || 0;
     return self;
   }
-  DOMException.prototype = Object.create(Object.prototype);
+  DOMException.prototype = Object.create(Error.prototype);
   DOMException.prototype.constructor = DOMException;
   DOMException.prototype.toString = function () {
     return this.message === '' ? this.name : this.name + ': ' + this.message;

@@ -159,6 +159,64 @@ fn register_rejects_renderer_document_authority_mismatch_before_fetch() {
 }
 
 #[test]
+fn registration_normalizes_fragments_and_classifies_url_errors() {
+    let mut owner = BrowserServiceWorkerOwner::new();
+    let disposition = owner.begin_request(
+        TabId(1),
+        false,
+        66,
+        Some("https://example.test/service-worker/page"),
+        ServiceWorkerRequestParams {
+            operation: ServiceWorkerOperation::Register {
+                script_url: "resources/sw.js#script".into(),
+                scope: Some("resources/app/#scope".into()),
+                document_url: "https://example.test/service-worker/page".into(),
+            },
+        },
+    );
+    let ServiceWorkerRequestDisposition::Fetch(plan) = disposition else {
+        panic!("fragment-normalized registration must fetch");
+    };
+    assert_eq!(
+        plan.script_url.as_str(),
+        "https://example.test/service-worker/resources/sw.js"
+    );
+    assert_eq!(
+        plan.scope.as_str(),
+        "https://example.test/service-worker/resources/app/"
+    );
+
+    for (request_id, scope, code) in [
+        (67, "null", ServiceWorkerErrorCode::Security),
+        (68, "resources/app%2fchild", ServiceWorkerErrorCode::InvalidArgument),
+    ] {
+        let disposition = owner.begin_request(
+            TabId(1),
+            false,
+            request_id,
+            Some("https://example.test/service-worker/page"),
+            ServiceWorkerRequestParams {
+                operation: ServiceWorkerOperation::Register {
+                    script_url: "resources/sw.js".into(),
+                    scope: Some(scope.into()),
+                    document_url: "https://example.test/service-worker/page".into(),
+                },
+            },
+        );
+        let ServiceWorkerRequestDisposition::Respond(response) = disposition else {
+            panic!("invalid registration must not fetch");
+        };
+        assert!(matches!(
+            response.params.result,
+            Err(ServiceWorkerError {
+                code: actual,
+                ..
+            }) if actual == code
+        ));
+    }
+}
+
+#[test]
 fn navigation_disconnect_drops_stale_registration_response() {
     let mut owner = BrowserServiceWorkerOwner::new();
     let disposition = owner.begin_request(

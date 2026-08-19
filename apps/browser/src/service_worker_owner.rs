@@ -6,7 +6,10 @@ use std::sync::mpsc::{Receiver, TryRecvError};
 use url::Url;
 use zero_browser_shell::TabId;
 use zero_net::HttpResponse;
-use zero_page_runtime::{ServiceWorkerManager, ServiceWorkerManagerError, ServiceWorkerManagerEvent};
+use zero_page_runtime::{
+    ServiceWorkerManager, ServiceWorkerManagerError, ServiceWorkerManagerEvent, ServiceWorkerRegistrationErrorKind,
+    validate_service_worker_registration,
+};
 use zero_protocol::message::{
     ServiceWorkerError, ServiceWorkerErrorCode, ServiceWorkerOperation, ServiceWorkerRequestParams,
     ServiceWorkerResponseParams, ServiceWorkerResult, ServiceWorkerSnapshot, ServiceWorkerStateChanges,
@@ -133,7 +136,7 @@ impl BrowserServiceWorkerOwner {
                         "Service Worker document URL does not match the committed navigation",
                     );
                 }
-                match validate_registration(&script_url, scope.as_deref(), &authority) {
+                match validate_service_worker_registration(&script_url, scope.as_deref(), &authority) {
                     Ok((script_url, scope, origin)) => ServiceWorkerRequestDisposition::Fetch(ServiceWorkerFetchPlan {
                         tab_id,
                         request_id,
@@ -142,9 +145,15 @@ impl BrowserServiceWorkerOwner {
                         scope,
                         origin,
                     }),
-                    Err(message) => {
-                        self.error_disposition(tab_id, request_id, ServiceWorkerErrorCode::InvalidArgument, message)
-                    }
+                    Err(error) => self.error_disposition(
+                        tab_id,
+                        request_id,
+                        match error.kind {
+                            ServiceWorkerRegistrationErrorKind::Type => ServiceWorkerErrorCode::InvalidArgument,
+                            ServiceWorkerRegistrationErrorKind::Security => ServiceWorkerErrorCode::Security,
+                        },
+                        error.message,
+                    ),
                 }
             }
             ServiceWorkerOperation::Snapshot { registration_id } => {
@@ -468,43 +477,6 @@ impl Default for BrowserServiceWorkerOwner {
     fn default() -> Self {
         Self::new()
     }
-}
-
-fn validate_registration(
-    script_url: &str,
-    scope: Option<&str>,
-    document: &Url,
-) -> Result<(Url, Url, String), &'static str> {
-    let secure = document.scheme() == "https"
-        || (document.scheme() == "http"
-            && document.host_str().is_some_and(|host| {
-                host == "localhost" || host.parse::<std::net::IpAddr>().is_ok_and(|ip| ip.is_loopback())
-            }));
-    if !secure {
-        return Err("Service Worker registration requires a secure context");
-    }
-    let mut script = document
-        .join(script_url)
-        .map_err(|_| "invalid Service Worker script URL")?;
-    if !matches!(script.scheme(), "http" | "https") || script.origin() != document.origin() {
-        return Err("Service Worker script URL must be same-origin http(s)");
-    }
-    if script.fragment().is_some() {
-        return Err("Service Worker script URL must not contain a fragment");
-    }
-    script.set_fragment(None);
-
-    let scope = match scope {
-        Some(value) => document.join(value).map_err(|_| "invalid Service Worker scope")?,
-        None => script.join("./").map_err(|_| "invalid default Service Worker scope")?,
-    };
-    if !matches!(scope.scheme(), "http" | "https") || scope.origin() != document.origin() {
-        return Err("Service Worker scope must be same-origin http(s)");
-    }
-    if scope.fragment().is_some() {
-        return Err("Service Worker scope must not contain a fragment");
-    }
-    Ok((script, scope, document.origin().ascii_serialization()))
 }
 
 fn validate_client_url(client_url: &str, document: &Url) -> Result<Url, &'static str> {

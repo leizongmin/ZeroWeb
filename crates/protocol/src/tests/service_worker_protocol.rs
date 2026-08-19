@@ -283,4 +283,20 @@ fn service_worker_nested_enum_discriminants_remain_append_only() {
         })),
         6
     );
+
+    for (index, code) in [
+        ServiceWorkerErrorCode::InvalidArgument,
+        ServiceWorkerErrorCode::NotFound,
+        ServiceWorkerErrorCode::InvalidState,
+        ServiceWorkerErrorCode::Network,
+        ServiceWorkerErrorCode::Script,
+        ServiceWorkerErrorCode::Capacity,
+        ServiceWorkerErrorCode::Internal,
+        ServiceWorkerErrorCode::Security,
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        assert_eq!(discriminant(&code), index as u32);
+    }
 }

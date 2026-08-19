@@ -2773,15 +2773,21 @@
         if (typeof __zw_sw_register !== 'function') {
           return Promise.reject(new Error('Service Worker host bridge unavailable'));
         }
-        var scope = (options && options.scope) || '';
+        var scopeProvided = options != null && options.scope !== undefined;
+        var scope = scopeProvided ? String(options.scope) : '';
         var wire;
         try {
-          wire = JSON.parse(__zw_sw_register(scriptURL, scope, globalThis.location.href));
+          wire = JSON.parse(__zw_sw_register(
+            scriptURL, scope, globalThis.location.href, scopeProvided ? 'true' : 'false'));
         } catch (error) {
           return Promise.reject(error);
         }
         if (!wire || !wire.ok) {
-          return Promise.reject(new TypeError(wire && wire.error || 'Service Worker registration failed'));
+          var message = wire && wire.error || 'Service Worker registration failed';
+          if (wire && wire.errorName === 'SecurityError') {
+            return Promise.reject(new DOMException(message, 'SecurityError'));
+          }
+          return Promise.reject(new TypeError(message));
         }
         var snapshot = readSnapshot(wire.id);
         var reg = upsertSnapshot({
