@@ -4,8 +4,12 @@ mod facade;
 
 use jni::JNIEnv;
 use jni::objects::{JClass, JString};
+#[cfg(target_os = "android")]
+use jni::sys::jbyteArray;
 use jni::sys::{JNI_FALSE, JNI_TRUE, jboolean, jstring};
 
+#[cfg(target_os = "android")]
+use std::sync::{Mutex, OnceLock};
 #[cfg(target_os = "android")]
 use zero_protocol::CompositorUiSurfaceInfo;
 #[cfg(target_os = "android")]
@@ -14,6 +18,21 @@ use zero_protocol::IpcChannel;
 use zero_protocol::message::{ImageDecodeParams, IpcMessage, IpcMessageKind};
 
 const NATIVE_VERSION: &str = "ZeroWeb Android M2";
+
+#[cfg(target_os = "android")]
+const ANDROID_COMPOSITOR_SURFACE_ID: u64 = 1;
+#[cfg(target_os = "android")]
+const MAX_COMPOSITOR_SURFACE_DIMENSION: u32 = 4_096;
+#[cfg(target_os = "android")]
+type AndroidCompositorTransport =
+    zero_protocol::PipeTransport<std::os::unix::net::UnixStream, std::os::unix::net::UnixStream>;
+#[cfg(target_os = "android")]
+static ANDROID_COMPOSITOR: OnceLock<Mutex<Option<AndroidCompositorTransport>>> = OnceLock::new();
+
+#[cfg(target_os = "android")]
+fn android_compositor() -> &'static Mutex<Option<AndroidCompositorTransport>> {
+    ANDROID_COMPOSITOR.get_or_init(|| Mutex::new(None))
+}
 
 /// Satisfies winit's Android native-activity link contract.
 ///
@@ -256,6 +275,147 @@ pub extern "system" fn Java_com_leizm_zeroweb_NativeBridge_nativeRunRole(
             JNI_FALSE
         }
     }
+}
+
+/// Attaches the browser-side endpoint for the compositor Service and registers
+/// a long-lived UI surface. The compositor Service owns the peer endpoint.
+#[cfg(target_os = "android")]
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_com_leizm_zeroweb_NativeBridge_nativeAttachCompositor(
+    _env: JNIEnv,
+    _class: JClass,
+    fd: jni::sys::jint,
+    width: jni::sys::jint,
+    height: jni::sys::jint,
+) -> jboolean {
+    let Ok((width, height, _)) = compositor_pixel_len(width, height) else {
+        close_android_fd(fd);
+        return JNI_FALSE;
+    };
+    let Ok(mut transport) = zero_protocol::android_socket_transport_from_fd(fd) else {
+        return JNI_FALSE;
+    };
+    let register = IpcMessage {
+        id: 1,
+        kind: IpcMessageKind::CompositorRegisterUiSurface(CompositorUiSurfaceInfo {
+            surface_id: ANDROID_COMPOSITOR_SURFACE_ID,
+            width,
+            height,
+        }),
+    };
+    if transport.send(register).is_err()
+        || !matches!(
+            transport.recv(),
+            Ok(IpcMessage {
+                id: 1,
+                kind: IpcMessageKind::Ok
+            })
+        )
+    {
+        return JNI_FALSE;
+    }
+    let Ok(mut slot) = android_compositor().lock() else {
+        return JNI_FALSE;
+    };
+    if slot.is_some() {
+        return JNI_FALSE;
+    }
+    *slot = Some(transport);
+    JNI_TRUE
+}
+
+/// Publishes a deterministic compositor frame and reads it back from the
+/// independent compositor process for Android UI verification.
+#[cfg(target_os = "android")]
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_com_leizm_zeroweb_NativeBridge_nativeCompositorTestFrame(
+    env: JNIEnv,
+    _class: JClass,
+    width: jni::sys::jint,
+    height: jni::sys::jint,
+) -> jbyteArray {
+    let Ok(rgba) = compositor_test_frame(width, height) else {
+        return std::ptr::null_mut();
+    };
+    env.byte_array_from_slice(&rgba)
+        .map_or(std::ptr::null_mut(), |frame| frame.into_raw())
+}
+
+#[cfg(target_os = "android")]
+fn compositor_test_frame(width: jni::sys::jint, height: jni::sys::jint) -> Result<Vec<u8>, String> {
+    let (width, height, len) = compositor_pixel_len(width, height)?;
+    let mut rgba = vec![0; len];
+    for pixel in rgba.chunks_exact_mut(4) {
+        pixel.copy_from_slice(&[12, 34, 56, 255]);
+    }
+    let mut slot = android_compositor()
+        .lock()
+        .map_err(|_| "Android compositor socket lock poisoned".to_string())?;
+    let transport = slot
+        .as_mut()
+        .ok_or_else(|| "Android compositor socket is not attached".to_string())?;
+    transport
+        .send(IpcMessage {
+            id: 2,
+            kind: IpcMessageKind::CompositorUiFrame {
+                surface_id: ANDROID_COMPOSITOR_SURFACE_ID,
+                width,
+                height,
+                rgba: rgba.clone(),
+                shm_name: None,
+            },
+        })
+        .map_err(|error| error.to_string())?;
+    if !matches!(
+        transport.recv(),
+        Ok(IpcMessage {
+            id: 2,
+            kind: IpcMessageKind::Ok
+        })
+    ) {
+        return Err("Android compositor rejected UI frame".to_string());
+    }
+    transport
+        .send(IpcMessage {
+            id: 3,
+            kind: IpcMessageKind::GetCompositorUiFrame {
+                surface_id: ANDROID_COMPOSITOR_SURFACE_ID,
+            },
+        })
+        .map_err(|error| error.to_string())?;
+    match transport.recv().map_err(|error| error.to_string())? {
+        IpcMessage {
+            id: 3,
+            kind:
+                IpcMessageKind::CompositorFrameData {
+                    surface_id: ANDROID_COMPOSITOR_SURFACE_ID,
+                    width: returned_width,
+                    height: returned_height,
+                    rgba: returned_rgba,
+                    ..
+                },
+        } if returned_width == width && returned_height == height && returned_rgba == rgba => Ok(returned_rgba),
+        _ => Err("Android compositor returned an unexpected UI frame".to_string()),
+    }
+}
+
+#[cfg(target_os = "android")]
+fn compositor_pixel_len(width: jni::sys::jint, height: jni::sys::jint) -> Result<(u32, u32, usize), String> {
+    let width = u32::try_from(width).map_err(|_| "compositor width must be non-negative".to_string())?;
+    let height = u32::try_from(height).map_err(|_| "compositor height must be non-negative".to_string())?;
+    if width == 0
+        || height == 0
+        || width > MAX_COMPOSITOR_SURFACE_DIMENSION
+        || height > MAX_COMPOSITOR_SURFACE_DIMENSION
+    {
+        return Err("compositor dimensions are outside Android bounds".to_string());
+    }
+    let len = usize::try_from(width)
+        .unwrap_or(usize::MAX)
+        .checked_mul(usize::try_from(height).unwrap_or(usize::MAX))
+        .and_then(|pixels| pixels.checked_mul(4))
+        .ok_or_else(|| "compositor frame size overflow".to_string())?;
+    Ok((width, height, len))
 }
 
 #[cfg(target_os = "android")]

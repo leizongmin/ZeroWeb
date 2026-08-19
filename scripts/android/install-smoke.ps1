@@ -52,7 +52,7 @@ if ($rendererUid -eq $browserUid -or $decoderUid -eq $browserUid -or $compositor
 $processes | ForEach-Object { Write-Output $_.Line }
 
 $probes = & $adb logcat -d -t 500
-foreach ($probe in "decoder probe succeeded", "compositor probe succeeded") {
+foreach ($probe in "decoder probe succeeded", "compositor bridge ready") {
     if (-not ($probes | Select-String $probe)) {
         throw "Android socket probe did not report success: $probe"
     }

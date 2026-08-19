@@ -55,6 +55,12 @@ object NativeBridge {
     external fun nativeRunRole(role: String, fd: Int): Boolean
 
     @JvmStatic
+    external fun nativeAttachCompositor(fd: Int, width: Int, height: Int): Boolean
+
+    @JvmStatic
+    external fun nativeCompositorTestFrame(width: Int, height: Int): ByteArray?
+
+    @JvmStatic
     external fun nativeProbeDecoder(fd: Int): Boolean
 
     @JvmStatic

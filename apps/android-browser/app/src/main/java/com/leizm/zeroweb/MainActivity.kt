@@ -1,6 +1,7 @@
 package com.leizm.zeroweb
 
 import android.app.Service
+import android.graphics.Bitmap
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
@@ -13,11 +14,13 @@ import androidx.activity.OnBackPressedCallback
 import androidx.activity.compose.setContent
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.material3.Button
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.MaterialTheme
@@ -28,10 +31,12 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import org.json.JSONObject
+import java.nio.ByteBuffer
 
 /** Android launcher Activity for the ZeroWeb browser process. */
 class MainActivity : ComponentActivity() {
@@ -40,6 +45,7 @@ class MainActivity : ComponentActivity() {
     private var readyServiceCount by mutableStateOf(0)
     private var browserState by mutableStateOf(BrowserSnapshot.empty())
     private var browserError by mutableStateOf<String?>(null)
+    private var compositorPreview by mutableStateOf<Bitmap?>(null)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -72,6 +78,7 @@ class MainActivity : ComponentActivity() {
                     onGoForward = ::goForward,
                     onRemoveBookmark = ::removeBookmark,
                     onClearHistory = ::clearHistory,
+                    compositorPreview = compositorPreview,
                 )
             }
         }
@@ -194,13 +201,12 @@ class MainActivity : ComponentActivity() {
                 if (roleService == CompositorService::class.java) {
                     val sockets = ParcelFileDescriptor.createSocketPair()
                     IRoleService.Stub.asInterface(service).start(sockets[1])
-                    Thread {
-                        if (NativeBridge.nativeProbeCompositor(sockets[0].detachFd())) {
-                            android.util.Log.i("ZeroWebRole", "compositor probe succeeded")
-                        } else {
-                            android.util.Log.e("ZeroWebRole", "compositor probe failed")
-                        }
-                    }.start()
+                    if (NativeBridge.nativeAttachCompositor(sockets[0].detachFd(), 2, 2)) {
+                        compositorPreview = NativeBridge.nativeCompositorTestFrame(2, 2)?.toBitmap(2, 2)
+                        android.util.Log.i("ZeroWebRole", "compositor bridge ready")
+                    } else {
+                        android.util.Log.e("ZeroWebRole", "compositor bridge rejected")
+                    }
                 }
             }
 
@@ -228,6 +234,7 @@ private fun BrowserScreen(
     onGoForward: () -> Unit,
     onRemoveBookmark: (String) -> Unit,
     onClearHistory: () -> Unit,
+    compositorPreview: Bitmap?,
 ) {
     var page by remember { mutableStateOf(BrowserPage.BROWSE) }
     BackHandler(enabled = page != BrowserPage.BROWSE) { page = BrowserPage.BROWSE }
@@ -281,9 +288,23 @@ private fun BrowserScreen(
             }
         }
         Text(text = activeTab?.url ?: "新标签")
+        compositorPreview?.let { preview ->
+            Image(
+                bitmap = preview.asImageBitmap(),
+                contentDescription = "来自独立 compositor 的测试帧",
+                modifier = Modifier.size(96.dp).testTag("compositorPreview"),
+            )
+        }
         Text(text = "页面渲染器正在准备；当前 chrome 状态已由 Rust profile 持久化。")
         error?.let { Text(text = it, color = MaterialTheme.colorScheme.error) }
         Text(text = nativeVersion, style = MaterialTheme.typography.labelSmall)
+    }
+}
+
+private fun ByteArray.toBitmap(width: Int, height: Int): Bitmap? {
+    if (size != width * height * 4) return null
+    return Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888).also { bitmap ->
+        bitmap.copyPixelsFromBuffer(ByteBuffer.wrap(this))
     }
 }
 
