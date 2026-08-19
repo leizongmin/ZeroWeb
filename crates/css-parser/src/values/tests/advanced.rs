@@ -1426,13 +1426,11 @@ fn test_parse_border_spacing_mixed_units() {
 }
 
 /// 测试 parse_border_spacing 负值
-/// CSS 规范要求 border-spacing 不接受负值，但当前解析器不会拒绝，
-/// 验证负值确实被解析为 Px(-2.0)，记录此边界行为
+/// CSS 规范要求 border-spacing 不接受负值。
 #[test]
 fn test_parse_border_spacing_negative_value() {
-    let v = parse_border_spacing("-2px").unwrap();
-    assert_eq!(v.horizontal, LengthValue::Px(-2.0));
-    assert_eq!(v.vertical, LengthValue::Px(-2.0));
+    assert_eq!(parse_border_spacing("-2px"), None);
+    assert_eq!(parse_border_spacing("2px -4px"), None);
 }
 
 /// 测试 parse_list_style_image URL 中包含空格

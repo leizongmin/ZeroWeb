@@ -401,10 +401,35 @@ pub fn parse_border_spacing(value: &str) -> Option<BorderSpacingValue> {
     } else {
         h.clone()
     };
+    if length_is_negative(&h) || length_is_negative(&v) {
+        return None;
+    }
     Some(BorderSpacingValue {
         horizontal: h,
         vertical: v,
     })
+}
+
+fn length_is_negative(value: &LengthValue) -> bool {
+    match value {
+        LengthValue::Px(v)
+        | LengthValue::Em(v)
+        | LengthValue::Ex(v)
+        | LengthValue::Rex(v)
+        | LengthValue::Cap(v)
+        | LengthValue::Rcap(v)
+        | LengthValue::Rem(v)
+        | LengthValue::Vh(v)
+        | LengthValue::Vw(v)
+        | LengthValue::Vmin(v)
+        | LengthValue::Vmax(v)
+        | LengthValue::Ch(v)
+        | LengthValue::Rch(v)
+        | LengthValue::Ic(v)
+        | LengthValue::Ric(v)
+        | LengthValue::Percentage(v) => *v < 0.0,
+        _ => false,
+    }
 }
 
 /// CSS counter-set 属性值。
