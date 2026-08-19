@@ -117,6 +117,27 @@ fn test_apply_min_max_dimensions() {
     assert!(ok);
     let (ok, _) = apply("max-height", "400px");
     assert!(ok);
+
+    let mut style = ComputedStyle::default();
+    assert!(apply_property_value(&mut style, "min-width", "10px"));
+    let previous = style.min_width.clone();
+    assert!(!apply_property_value(&mut style, "min-width", "-1px"));
+    assert_eq!(style.min_width, previous);
+
+    assert!(apply_property_value(&mut style, "min-height", "20px"));
+    let previous = style.min_height.clone();
+    assert!(!apply_property_value(&mut style, "min-height", "-1px"));
+    assert_eq!(style.min_height, previous);
+
+    assert!(apply_property_value(&mut style, "max-width", "30px"));
+    let previous = style.max_width.clone();
+    assert!(!apply_property_value(&mut style, "max-width", "-1px"));
+    assert_eq!(style.max_width, previous);
+
+    assert!(apply_property_value(&mut style, "max-height", "40px"));
+    let previous = style.max_height.clone();
+    assert!(!apply_property_value(&mut style, "max-height", "-1px"));
+    assert_eq!(style.max_height, previous);
 }
 
 #[test]

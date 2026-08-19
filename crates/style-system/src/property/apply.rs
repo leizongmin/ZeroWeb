@@ -201,12 +201,18 @@ pub fn apply_property_value_with_quirks(
         }
         "min-width" => {
             if let Some(v) = parse_length_fn(value) {
+                if !sizing_length_is_valid(value, &v) {
+                    return false;
+                }
                 style.min_width = v;
                 return true;
             }
         }
         "min-height" => {
             if let Some(v) = parse_length_fn(value) {
+                if !sizing_length_is_valid(value, &v) {
+                    return false;
+                }
                 style.min_height = v;
                 return true;
             }
@@ -217,6 +223,9 @@ pub fn apply_property_value_with_quirks(
                 return true;
             }
             if let Some(v) = parse_length_fn(value) {
+                if !sizing_length_is_valid(value, &v) {
+                    return false;
+                }
                 style.max_width = v;
                 return true;
             }
@@ -227,6 +236,9 @@ pub fn apply_property_value_with_quirks(
                 return true;
             }
             if let Some(v) = parse_length_fn(value) {
+                if !sizing_length_is_valid(value, &v) {
+                    return false;
+                }
                 style.max_height = v;
                 return true;
             }
@@ -1084,6 +1096,36 @@ fn gap_length_is_valid(raw: &str, value: &LengthValue) -> bool {
         | LengthValue::Percentage(v) => v.is_finite() && *v >= 0.0,
         LengthValue::Calc(_) => true,
         _ => false,
+    }
+}
+
+fn sizing_length_is_valid(raw: &str, value: &LengthValue) -> bool {
+    let raw = raw.trim().to_ascii_lowercase();
+    if matches!(
+        raw.as_str(),
+        "thin" | "medium" | "thick" | "fit-content(thin)" | "fit-content(medium)" | "fit-content(thick)"
+    ) {
+        return false;
+    }
+    match value {
+        LengthValue::Px(v)
+        | LengthValue::Em(v)
+        | LengthValue::Ex(v)
+        | LengthValue::Rex(v)
+        | LengthValue::Cap(v)
+        | LengthValue::Rcap(v)
+        | LengthValue::Rem(v)
+        | LengthValue::Vh(v)
+        | LengthValue::Vw(v)
+        | LengthValue::Vmin(v)
+        | LengthValue::Vmax(v)
+        | LengthValue::Ch(v)
+        | LengthValue::Rch(v)
+        | LengthValue::Ic(v)
+        | LengthValue::Ric(v)
+        | LengthValue::Percentage(v) => v.is_finite() && *v >= 0.0,
+        LengthValue::FitContent(inner) => sizing_length_is_valid("", inner),
+        LengthValue::Auto | LengthValue::MinContent | LengthValue::MaxContent | LengthValue::Calc(_) => true,
     }
 }
 
