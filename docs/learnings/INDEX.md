@@ -103,8 +103,9 @@
 - 2026-08-05 [回调闭包 Send+Sync 约束：不能缓存 Document](patterns/2026-08/2026-08-05-callback-closure-send-sync-no-document.md) — zero-engine（js_dom_bridge.rs）, zero-script-sandbox（register_callback）, zero-dom（Document）
 - 2026-07-20 [经验：reftest 布局诊断必须用 empirical ZW-output 验证，不能只靠 code-trace](patterns/2026-07/2026-07-20-reftest-layout-diagnosis-empirical-verification.md) — tests/wpt-runner（reftest harness）, crates/layout-engine（multicol 等）
 
-## Performance — 性能优化经验（35）
+## Performance — 性能优化经验（36）
 
+- 2026-08-19 [三例「合规修复顺手引入性能回归」的定位与修复（canvas/worker/CSP）](performance/2026-08/2026-08-19-perf-regression-triage-canvas-worker-csp.md) — zero-canvas, zero-script-sandbox, zero-security, 性能门禁体系
 - 2026-08-19 [bench-report.sh 编译/测量相位分离：批量 cargo 调用消掉串行编译开销](performance/2026-08/2026-08-19-bench-report-phase-split.md) — scripts, ci
 - 2026-08-18 [Text-Only Font Overrides](performance/2026-08/2026-08-18-text-only-font-overrides.md) — crates/layout-engine/src/font_resolution.rs, crates/layout-engine/src/inline/mod.rs, crates/layout-engine/src/inline_finalization.rs
 - 2026-08-18 [Snapshot Leaf Measurement Flags](performance/2026-08/2026-08-18-snapshot-leaf-measurement-flags.md) — crates/layout-engine/src/inline_finalization.rs, crates/layout-engine/src/inline/runtime_flags.rs
