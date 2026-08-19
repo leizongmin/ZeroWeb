@@ -8,6 +8,12 @@
   // 精修目标，但纯 JS Proxy 缓存即可达成，无需 rusty_v8 对象绑定）。proxy 无状态（仅委托
   // host 回调），缓存安全；key 复用 `_elKey`（@handle / sel），与 _listenerStore 同生命周期。
   var _proxyCache = {};
+  // R128（js-dom M4）：用户原型存储（`Object.setPrototypeOf(elementProxy, proto)` ——WPT
+  // Node-cloneNode "Node with custom prototype"：setPrototypeOf 在 proxy 上默认落 target
+  // 且 getPrototypeOf trap 不读 target → 用户原型被静默丢弃。存储后 getPrototypeOf 优先
+  // 返回（isPrototypeOf/instanceof 面生效）；cloneNode 产物**不带**用户原型（spec：clone
+  // 按节点接口建新对象）。key 与 _proxyCache 同源（@handle / sel）。
+  var _zwUserProto = {};
   // P1a form input：per-element-key value 缓存（`.value` 属性）。lazy-init 自 value 属性；
   // `.value` set 更新缓存 + 记 value 属性 mutation（供 render）。跨 execute 存活（typing 多键），
   // 导航（URL 变化）经 `__zw_reset_form_state` 清空防跨页 stale value。

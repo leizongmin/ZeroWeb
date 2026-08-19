@@ -2520,6 +2520,43 @@
         }
         if (prop === 'cloneNode') {
           return function(deep) {
+            // R128：文本/注释 handle（createTextNode/createComment 产物经 _wrapHandle 到此
+            // trap——WPT Node-cloneNode "createTextNode"/"createComment" 断言 copy.nodeType
+            // 3/8 + instanceof Text/Comment；旧走元素克隆返 nodeType 1）。经
+            // createTextNode/createComment 重建（保 handle 形态 + 原型链）。
+            if (handle && _textHandles && _textHandles[handle]) {
+              var _r128Txt = '';
+              try { _r128Txt = String(this.data != null ? this.data : (this.nodeValue || '')); } catch (_e128tx) {}
+              return globalThis.document.createTextNode(_r128Txt);
+            }
+            if (handle && _commentHandles && _commentHandles[handle]) {
+              var _r128Cm = '';
+              try { _r128Cm = String(this.data != null ? this.data : (this.nodeValue || '')); } catch (_e128cm) {}
+              return globalThis.document.createComment(_r128Cm);
+            }
+            // R128：PI handle（createProcessingInstruction 产物经 _wrapHandle 到此 trap，
+            // 元素 clone 会把 PI 克成 element——WPT Node-cloneNode "createProcessingInstruction"
+            // 断言 nodeType 7）：经 document.createProcessingInstruction 重建（_piHandles
+            // 元数据表保 target/data），再补 __zwFragHostHandle 等观测字段免丢。
+            if (handle && _piHandles && _piHandles[handle]) {
+              var _r128PiMeta = _piHandles[handle];
+              var _r128Pi = globalThis.document.createProcessingInstruction(
+                String(_r128PiMeta.target), String(_r128PiMeta.data));
+              try {
+                if (n && n.__zwFragHostHandle != null) {
+                  _r128Pi.__zwFragHostHandle = n.__zwFragHostHandle;
+                  _r128Pi.__zwMoSelfKey = n.__zwMoSelfKey;
+                }
+              } catch (_e128pi) {}
+              return _r128Pi;
+            }
+            // R128：DocumentFragment handle（_fragmentHandles 标记）——克隆应保 nodeType 11
+            // （WPT Node-cloneNode "createDocumentFragment" 断言 copy.nodeType 11；旧走元素
+            // 克隆返 nodeType 1）。经 Node.prototype 泛型的 fragment 分支（建新 fragment +
+            // 递归 clone registry 子）。
+            if (handle && _fragmentHandles && _fragmentHandles[handle]) {
+              return globalThis.Node.prototype.cloneNode.call(_makeProxy(sel, handle), deep);
+            }
             // R3198：源 tag——handle 经 `__zw_get_tag_handle`，sel 经 `__zw_get_tag`（旧 handle 回落 'div'）。
             var srcTag = 'div';
             try {
@@ -2528,7 +2565,23 @@
                 : (sel && typeof __zw_get_tag === 'function' ? __zw_get_tag(sel) : '');
               if (t) srcTag = t;
             } catch (_e) {}
-            var nh = __zw_create_element(srcTag);
+            // R128：NS 源恢复（WPT Node-cloneNode "createElementNS HTML/non-HTML" 断言
+            // copy.nodeName === 'FOO:DIV'/'foo:div'——旧 __zw_create_element(tag) 丢 prefix
+            // 得 'DIV'）。_nsHandles 元数据（R80）持有 qualifiedName/namespace/htmlUpper：
+            // 经 __zw_create_element_ns 重建同 NS 形态。
+            var _r128Ns = handle && _nsHandles ? _nsHandles[handle] : null;
+            var nh;
+            if (_r128Ns && typeof __zw_create_element_ns === 'function') {
+              nh = __zw_create_element_ns(
+                _r128Ns.namespace != null ? String(_r128Ns.namespace) : '',
+                String(_r128Ns.qualifiedName || srcTag));
+              if (nh) _nsHandles[nh] = {
+                qualifiedName: String(_r128Ns.qualifiedName || srcTag),
+                namespace: _r128Ns.namespace,
+                htmlUpper: !!_r128Ns.htmlUpper,
+              };
+            }
+            if (!nh) nh = __zw_create_element(srcTag);
             // 复制属性（名 + 值）。R3198：handle 源经 `__zw_attr_names_handle`+`__zw_get_attr_handle`，
             // sel 源经 `__zw_attr_names`（latest-wins，自 R3002）+ 值。R3203：sel 源值改走 `__zw_get_attr_lw`
             //（latest-wins，与名源同 lw）——旧纯快照 `__zw_get_attr` 致 `setAttribute('x','v'); cloneNode()` 复制 stale 值

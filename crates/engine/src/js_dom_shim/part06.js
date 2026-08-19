@@ -2171,6 +2171,14 @@
           parentNode: null,
         };
           try { Object.setPrototypeOf(dt, globalThis.Node ? globalThis.Node.prototype : Object.prototype); } catch (_eR117dt2) {}
+          // R128：原型接线 DocumentType.prototype（WPT Node-cloneNode check_copy 断言
+          // `copy instanceof DocumentType`——旧 plain object 恒 false）。dt 字面量构建后
+          // 挂（对象内 IIFE 因 tdz 拿不到 dt 本体，首版失败根因）。
+          try {
+            if (globalThis.DocumentType && globalThis.DocumentType.prototype) {
+              Object.setPrototypeOf(dt, globalThis.DocumentType.prototype);
+            }
+          } catch (_e128dt2) {}
         return dt;
       },
     },

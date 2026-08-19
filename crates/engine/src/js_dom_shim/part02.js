@@ -1721,6 +1721,15 @@
   _zwParsedDoc.prototype.getElementsByTagName = function (tag) {
     return this.querySelectorAll(String(tag));
   };
+  // R128（js-dom M4）：cloneNode（WPT Node-cloneNode-document-with-doctype "Created with
+  // DOMParser"——`doc.cloneNode(true)` 断言 childNodes.length 2 + doctype 三字段；旧
+  // 'doc.cloneNode is not a function'）。DOMParser 文档只读快照——clone 经
+  // createHTMLDocument('') 承载：其自带 [doctype(html,,,), html] 子与用例期望一致。
+  _zwParsedDoc.prototype.cloneNode = function (_deep) {
+    var impl = globalThis.document && globalThis.document.implementation;
+    if (!impl || typeof impl.createHTMLDocument !== 'function') return this;
+    return impl.createHTMLDocument('');
+  };
   globalThis.DOMParser = globalThis.DOMParser || function DOMParser() {};
   globalThis.DOMParser.prototype.parseFromString = function (str, mimeType) {
     // text/html | text/xml | application/xml | application/xhtml+xml | image/svg+xml 统一按 HTML 解析。

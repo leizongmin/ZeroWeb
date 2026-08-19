@@ -173,6 +173,15 @@
   // R3024：Attr 构造器占位——_zwMakeAttr 经 Object.create(Attr.prototype) 建真实例，使 `attr instanceof Attr`
   // 为 true（闭合 R3023 限制①；消费者按 nodeType===2 / instanceof Attr 校验属性节点）。
   globalThis.Attr = globalThis.Attr || function Attr() {};
+  // R128：Attr.prototype → Node.prototype 链（spec interface-attr : Node；WPT Node-cloneNode
+  // "createAttribute" 的 attr.cloneNode() 经 Node.prototype 解析——旧 Attr.prototype 直挂
+  // Object.prototype，cloneNode 不可达）。
+  try {
+    if (globalThis.Node && globalThis.Node.prototype
+        && Object.getPrototypeOf(globalThis.Attr.prototype) === Object.prototype) {
+      Object.setPrototypeOf(globalThis.Attr.prototype, globalThis.Node.prototype);
+    }
+  } catch (_eAttr128) {}
   // js-dom M4 R122：`attr.value = v` 的**写回传播**（spec `dom-attr-value` setter——set an attribute
   // 值须经「change an attribute」更新所属元素）。_zwMakeAttr 建的是 own 数据属性，写 value 不传播
   // （WPT "Attribute values should not be parsed."：attr.value='Y&lt;' 后 el.getAttribute('x')
@@ -436,6 +445,133 @@
     }
     return deepClone(this);
   });
+  // js-dom M4 R128：`Node.prototype.cloneNode` 泛型（spec `dom-node-clone-node`——对任意
+  // node 类型克隆）。WPT Node-cloneNode 对 fragment/text/comment/PI/Attr/doctype/doc 的
+  // clone 断言：此前这些节点无 cloneNode（或落到 Element 版返 nodeType 1 的错形态）。
+  // 分派按 this 形态：③⑧文本/注释走 _zwMText/_zwMComment 工厂（保原型链）；
+  // ⑦PI 走 _piHandles 元数据重建；②Attr 走 _zwMakeAttr（namespace/prefix/value 全复制）；
+  // ⑩doctype 走本 doc 的 implementation.createDocumentType；⑪ fragment（handle 形态）
+  // 建 fragment + 递归 clone 子；⑨ Document 建 detached doc + 复制 doctype/根元素；
+  // ①元素不在此层（proxy get trap / Element.prototype 各自实现）。
+  _zwDefProtoMethod(globalThis.Node.prototype, 'cloneNode', function (deep) {
+    var n = this;
+    if (!n || typeof n !== 'object') return n;
+    var nt = 0;
+    try { nt = n.nodeType | 0; } catch (_e128a) { return n; }
+    // 有自身 cloneNode（proxy 元素 / canvas 等专形节点）→ 委托（own-property 判定——
+    // R126/R127 教训：typeof 会命中本原型方法自身致无限递归）。
+    var _r128Own = Object.prototype.hasOwnProperty.call(n, 'cloneNode')
+      ? n.cloneNode : null;
+    if (_r128Own && typeof _r128Own === 'function'
+        && _r128Own !== globalThis.Node.prototype.cloneNode) {
+      return _r128Own.call(n, deep);
+    }
+    // 文本/注释：经工厂重建（保 nodeType/原型链/CharacterData 方法面）。
+    if (nt === 3) return _zwMText(String(n.data != null ? n.data : (n.nodeValue || '')), null);
+    if (nt === 8) return _zwMComment(String(n.data != null ? n.data : (n.nodeValue || '')), null);
+    // PI：_piHandles 元数据（target/data）重建（R9 桥——handle→元数据表）。handle 形态
+    // 的 PI proxy 经 get trap 的 cloneNode 分支（part04 R128）处理；此处兜底 plain
+    // object PI 视图（_zwMPiFromBogus 派生）——经 document.createProcessingInstruction。
+    if (nt === 7 && typeof globalThis.document.createProcessingInstruction === 'function') {
+      var _r128Tgt = '', _r128Data = '';
+      try { _r128Tgt = String(n.target != null ? n.target : ''); } catch (_e128t) {}
+      try { _r128Data = String(n.data != null ? n.data : ''); } catch (_e128d) {}
+      if (_r128Tgt) return globalThis.document.createProcessingInstruction(_r128Tgt, _r128Data);
+    }
+    // Attr：_zwMakeAttr 全字段复制（namespaceURI/prefix/localName/value——WPT
+    // createAttribute(NS) 断言四字段 + clone 与源 value 独立）。
+    if (nt === 2 && typeof _zwMakeAttr === 'function') {
+      var _r128A = _zwMakeAttr(
+        n.name != null ? String(n.name) : String(n.nodeName || ''),
+        n.value != null ? String(n.value) : '', null);
+      try {
+        _r128A.namespaceURI = n.namespaceURI != null ? n.namespaceURI : null;
+        _r128A.prefix = n.prefix != null ? n.prefix : null;
+        if (n.localName != null) _r128A.localName = String(n.localName);
+      } catch (_e128b) {}
+      return _r128A;
+    }
+    // doctype：经 ownerDocument.implementation.createDocumentType 重建（name/publicId/
+    // systemId 全复制；WPT "implementation.createDocumentType" 断言 instanceof
+    // DocumentType + 三字段）。DocumentType 构造器全局占位见下方 R128。
+    if (nt === 10) {
+      var _r128Doc = n.ownerDocument || globalThis.document;
+      if (_r128Doc && _r128Doc.implementation
+          && typeof _r128Doc.implementation.createDocumentType === 'function') {
+        return _r128Doc.implementation.createDocumentType(
+          String(n.name != null ? n.name : (n.nodeName || '')),
+          String(n.publicId != null ? n.publicId : ''),
+          String(n.systemId != null ? n.systemId : ''));
+      }
+      return n;
+    }
+    // fragment：建新 fragment + 递归 clone 子（deep 语义；浅 clone 返空 fragment）。
+    if (nt === 11 && typeof globalThis.document.createDocumentFragment === 'function') {
+      var _r128F = globalThis.document.createDocumentFragment();
+      if (deep && n.childNodes && n.childNodes.length) {
+        for (var _r128i = 0; _r128i < n.childNodes.length; _r128i++) {
+          var _r128c = n.childNodes[_r128i];
+          if (!_r128c || typeof _r128c.cloneNode !== 'function') continue;
+          try { _r128F.appendChild(_r128c.cloneNode(true)); } catch (_e128c) {}
+        }
+      }
+      return _r128F;
+    }
+    // Document：detached doc 重建（WPT "implementation.createDocument" 断言
+    // charset/contentType/URL/compatMode 相等 + instanceof Document；
+    // "implementation.createHTMLDocument" 断言 copy.title === ''）。deep=true 时复制
+    // doctype / documentElement（WPT Node-cloneNode-document-with-doctype 断言
+    // clone.childNodes.length 与 doctype 三字段）。按源 contentType 分派：XML →
+    // createDocument(null,null)（contentType 'application/xml'），HTML →
+    // createHTMLDocument('')（title 空——不复制源 title）。
+    if (nt === 9 && globalThis.document && globalThis.document.implementation) {
+      var _r128Impl = globalThis.document.implementation;
+      var _r128Ct = '';
+      try { _r128Ct = String(n.contentType || ''); } catch (_e128ct) {}
+      var _r128IsHtmlDoc = _r128Ct.indexOf('html') >= 0;
+      var _r128Dc;
+      if (!_r128IsHtmlDoc && typeof _r128Impl.createDocument === 'function') {
+        _r128Dc = _r128Impl.createDocument(null, null, null);
+      } else if (typeof _r128Impl.createHTMLDocument === 'function') {
+        _r128Dc = _r128Impl.createHTMLDocument('');
+      }
+      if (_r128Dc && deep && !_r128IsHtmlDoc && n.childNodes && n.childNodes.length) {
+        for (var _r128di = 0; _r128di < n.childNodes.length; _r128di++) {
+          var _r128dn = n.childNodes[_r128di];
+          if (!_r128dn) continue;
+          var _r128dnt = _r128dn.nodeType | 0;
+          if (_r128dnt !== 10 && _r128dnt !== 1) continue; // doctype / documentElement
+          try {
+            var _r128dcc = _r128dn.cloneNode ? _r128dn.cloneNode(true) : null;
+            if (_r128dcc) _r128Dc.appendChild(_r128dcc);
+          } catch (_e128dc) {}
+        }
+      }
+      if (_r128Dc) return _r128Dc;
+    }
+    // 兜底：Element.prototype 的 deepClone（既有行为——plain 对象元素形态）。
+    var _r128Ep = globalThis.Element && globalThis.Element.prototype;
+    if (_r128Ep && typeof _r128Ep.cloneNode === 'function'
+        && _r128Ep.cloneNode !== globalThis.Node.prototype.cloneNode) {
+      return _r128Ep.cloneNode.call(n, deep);
+    }
+    return n;
+  });
+  // js-dom M4 R128：DocumentType 构造器全局占位（WPT Node-cloneNode
+  // "implementation.createDocumentType" 的 `check_copy(dt, copy, DocumentType)`——
+  // `DocumentType is not defined` ReferenceError 崩用例；instanceof 经占位为 true 的
+  // 前提是 doctype 对象原型挂 DocumentType.prototype——detached doc 的
+  // createDocumentType 产物经 setPrototypeOf 接线（见 implementation 定义处）。
+  if (!globalThis.DocumentType) {
+    globalThis.DocumentType = function DocumentType() {};
+    try { globalThis.DocumentType.prototype = Object.create(globalThis.Node.prototype); } catch (_eDt128) {}
+  }
+  // R128：XMLDocument 构造器占位（WPT Node-cloneNode-XMLDocument `doc.constructor ===
+  // XMLDocument`——spec：XMLDocument : Document，XML 文档的 constructor 是 XMLDocument）。
+  if (!globalThis.XMLDocument) {
+    globalThis.XMLDocument = function XMLDocument() {};
+    try { globalThis.XMLDocument.prototype = Object.create(globalThis.Document.prototype); } catch (_eXd128) {}
+  }
   // Node.DOCUMENT_POSITION_* 静态常量（compareDocumentPosition bitmask，R2815）——库常读 Node.DOCUMENT_POSITION_FOLLOWING 等。
   globalThis.Node.DOCUMENT_POSITION_DISCONNECTED = 1;
   globalThis.Node.DOCUMENT_POSITION_PRECEDING = 2;
@@ -4836,6 +4972,13 @@
             },
             parentNode: null,
           };
+          // R128：原型接线 DocumentType.prototype（WPT Node-cloneNode check_copy 断言
+          // instanceof DocumentType）。dt 字面量构建后挂（对象内 IIFE 因 tdz 失败）。
+          try {
+            if (globalThis.DocumentType && globalThis.DocumentType.prototype) {
+              Object.setPrototypeOf(dt, globalThis.DocumentType.prototype);
+            }
+          } catch (_e128dt) {}
           return dt;
         },
       },
@@ -5047,6 +5190,27 @@
         try { docEl.removeChild(body); } catch (_e2) {}
       };
     }
+    // R128：原型接线 Document.prototype（WPT Node-cloneNode "implementation.createDocument/
+    // createHTMLDocument" 的 `copy instanceof Document`——detached doc 旧为 plain object 恒
+    // false）。挂原型经 Document.prototype → Node.prototype 链（instanceof Document/Node 均真）。
+    try {
+      if (globalThis.Document && globalThis.Document.prototype) {
+        Object.setPrototypeOf(doc, globalThis.Document.prototype);
+      }
+    } catch (_e128doc) {}
+  // R128：constructor 读回（WPT Node-cloneNode-XMLDocument `doc.constructor ===
+    // XMLDocument`——own constructor 缺省回落 Object；按 contentType 惰性判定：XML 文档
+    //（非 'text/html'）→ XMLDocument，HTML → Document。getter 形态因 createHTMLDocument
+    // 在 _makeDetachedDocument 返回**后**才设 contentType（build 时值未定）。
+    try {
+      Object.defineProperty(doc, 'constructor', {
+        get: function () {
+          var _isHtml = typeof doc.contentType === 'string' && doc.contentType.indexOf('html') >= 0;
+          return _isHtml ? globalThis.Document : globalThis.XMLDocument;
+        },
+        configurable: true, enumerable: false,
+      });
+    } catch (_e128cx) {}
     return doc;
   }
 

@@ -1317,3 +1317,88 @@ fn test_replace_child_validation_and_semantics_r127() {
     );
 }
 
+
+// js-dom M4 R128：Node-cloneNode 全节点形态族（WPT dom/nodes/Node-cloneNode.html 14F 簇 +
+// XMLDocument/document-with-doctype 连带驱动）。断言组：
+// ① text/comment/PI/fragment clone 保 nodeType（旧全落元素克隆返 1）
+// ② Attr clone 四字段（ns/prefix/localName/value）+ 与源 value 独立
+// ③ doctype clone instanceof DocumentType + 三字段
+// ④ detached doc clone instanceof Document + XMLDocument constructor + metadata 相等
+// ⑤ deep doc clone 带 doctype 子（createDocument(ns,'',dt) 形态）
+// ⑥ createElement(unknown) clone instanceof HTMLUnknownElement
+// ⑦ createElementNS clone 保 prefix（nodeName 'FOO:DIV'）
+// ⑧ 自定义原型不传染 clone + 用户原型 setPrototypeOf 生效
+#[test]
+fn test_clone_node_all_node_kinds_r128() {
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let mut sandbox = V8Sandbox::with_config(zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    })
+    .unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><div id=\"host\"><p id=\"a\">A</p></div></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry);
+
+    let out = sandbox
+        .execute(
+            "var parts = [];\
+             var t = document.createTextNode('tx');\
+             parts.push('text:' + (t.cloneNode().nodeType === 3 && t.cloneNode().data === 'tx'));\
+             var c = document.createComment('cm');\
+             parts.push('comment:' + (c.cloneNode().nodeType === 8));\
+             var pi = document.createProcessingInstruction('tg', 'dt');\
+             var pic = pi.cloneNode();\
+             parts.push('pi:' + (pic.nodeType === 7 && pic.target === 'tg' && pic.data === 'dt'));\
+             var fr = document.createDocumentFragment();\
+             parts.push('frag:' + (fr.cloneNode().nodeType === 11));\
+             var at = document.createAttributeNS('http://www.w3.org/1999/xhtml', 'foo:class');\
+             at.value = 'v1';\
+             var atc = at.cloneNode();\
+             at.value = 'v2';\
+             parts.push('attr:' + (atc.nodeType === 2 && atc.prefix === 'foo'\
+               && atc.localName === 'class' && atc.namespaceURI === 'http://www.w3.org/1999/xhtml'\
+               && atc.value === 'v1' && at.value === 'v2'));\
+             var dt = document.implementation.createDocumentType('html', 'pub', 'sys');\
+             var dtc = dt.cloneNode();\
+             parts.push('dt:' + (dtc instanceof DocumentType\
+               && dtc.name === 'html' && dtc.publicId === 'pub' && dtc.systemId === 'sys'));\
+             var doc = document.implementation.createDocument(null, null, null);\
+             var dc = doc.cloneNode();\
+             parts.push('doc:' + (dc instanceof Document && dc.constructor === XMLDocument\
+               && dc.contentType === 'application/xml' && dc.URL === 'about:blank'\
+               && dc.compatMode === 'CSS1Compat'));\
+             var doc2 = document.implementation.createDocument('ns', '', dt);\
+             var dc2 = doc2.cloneNode(true);\
+             parts.push('doc-deep:' + (dc2.childNodes.length === 1\
+               && dc2.childNodes[0].nodeType === 10 && dc2.childNodes[0].name === 'html'));\
+             var hd = document.implementation.createHTMLDocument('T');\
+             parts.push('htmldoc:' + (hd.cloneNode().title === ''));\
+             var unk = document.createElement('zz-unknown');\
+             parts.push('unknown:' + (unk.cloneNode() instanceof HTMLUnknownElement));\
+             var nsEl = document.createElementNS('http://www.w3.org/1999/xhtml', 'foo:div');\
+             parts.push('ns:' + (nsEl.cloneNode().nodeName === 'FOO:DIV'));\
+             var proto = Object.create(HTMLElement.prototype);\
+             var node = document.createElement('hi');\
+             Object.setPrototypeOf(node, proto);\
+             var nclone = node.cloneNode();\
+             parts.push('custproto:' + (proto.isPrototypeOf(node)\
+               && !proto.isPrototypeOf(nclone)\
+               && HTMLUnknownElement.prototype.isPrototypeOf(nclone)));\
+             parts.join('|');",
+        )
+        .unwrap()
+        .value;
+    assert_eq!(
+        out,
+        "text:true|comment:true|pi:true|frag:true|attr:true|dt:true|doc:true|doc-deep:true|htmldoc:true|unknown:true|ns:true|custproto:true",
+        "cloneNode 全节点形态：text/comment/PI/fragment/Attr/doctype/doc deep/unknown/NS prefix/自定义原型不传染"
+    );
+}

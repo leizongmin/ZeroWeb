@@ -291,6 +291,10 @@
       // 仍走 get trap）。返构造器缺失时回落 Object.prototype（零回归）。
       getPrototypeOf: function(_t) {
         var _gp = globalThis;
+        // R128：用户原型优先（`Object.setPrototypeOf(el, proto)` 经 setPrototypeOf trap
+        // 存入 _zwUserProto——WPT Node-cloneNode "Node with custom prototype" 的
+        // `proto.isPrototypeOf(node)` 断言）。无用户原型走既有类型推导。
+        if (typeof _zwUserProto !== 'undefined' && _zwUserProto[key]) return _zwUserProto[key];
         // 节点类型判定：PI/fragment/comment/text 经 handle set；element 为默认（无 set 的 selector/handle 节点）。
         if (handle && _piHandles[handle] && _gp.ProcessingInstruction) return _gp.ProcessingInstruction.prototype;
         if (handle && _fragmentHandles[handle] && _gp.DocumentFragment) return _gp.DocumentFragment.prototype;
@@ -335,13 +339,25 @@
           }
           var _iface = _gp.__zwHtmlTagIface && _gp.__zwHtmlTagIface[_ifaceTag];
           if (_iface && _gp[_iface] && _gp[_iface].prototype) return _gp[_iface].prototype;
-          // 无映射：HTML ns 大写/未知 localName → HTMLUnknownElement（spec HTML 元素表外）。
-          if (handle && _nsHandles[handle] && _gp.HTMLUnknownElement && _gp.HTMLUnknownElement.prototype) {
+          // 无映射：未知 localName → HTMLUnknownElement（spec HTML 元素表外；WPT
+          // Node-cloneNode "createElement(unknown)" 断言 original/copy 均 instanceof
+          // HTMLUnknownElement——旧统一回落 HTMLElement.prototype 恒 false）。
+          if (_gp.HTMLUnknownElement && _gp.HTMLUnknownElement.prototype) {
             return _gp.HTMLUnknownElement.prototype;
           }
           return _gp.HTMLElement.prototype;
         }
         return Object.prototype;
+      },
+      // R128：`Object.setPrototypeOf(el, proto)`（用户改元素原型）——默认 trap 落 target
+      // 且 getPrototypeOf 不读 target（类型推导），用户原型被静默丢弃。存储到
+      // _zwUserProto（getPrototypeOf 优先返回）；null/undefined 清除（恢复推导）。
+      setPrototypeOf: function (_t, v) {
+        try {
+          if (v == null) delete _zwUserProto[key];
+          else _zwUserProto[key] = v;
+        } catch (_e128sp) { return false; }
+        return true;
       }
     });
     _proxyCache[key] = proxy;
@@ -2218,7 +2234,10 @@
       nodeName: 'CANVAS',
       localName: 'canvas',
       style: {},
-      _ctx: null
+      _ctx: null,
+      // R128：attributes 视图（WPT Node-cloneNode check_copy 读 copy.attributes.length——
+      // 经 host 属性表构建的 NamedNodeMap 形数组；cloneNode 复制时重建）。
+      attributes: []
     };
     // R57（M3）：createElement('canvas') 的 DOM 集成——standalone 对象原无 __zwHandle，
     // appendChild 静默跳过（mutation 未记录 → 布局无 canvas 盒 → 渲染空白，
@@ -2347,6 +2366,42 @@
       });
       if (typeof cb === 'function') p.then(function (blob) { cb(blob); });
       return undefined; // spec：toBlob 返 undefined（非 Promise）
+    };
+    // R128：原型接线 HTMLCanvasElement.prototype（WPT Node-cloneNode
+    // "createElement(canvas)" 断言 **original** instanceof HTMLCanvasElement——旧 plain
+    // object 恒 false）。构造器占位在 part03 的 HTML* 列表注册。
+    if (globalThis.HTMLCanvasElement && globalThis.HTMLCanvasElement.prototype) {
+      try { Object.setPrototypeOf(el, globalThis.HTMLCanvasElement.prototype); } catch (_e128cp) {}
+    }
+    // R128：cloneNode（WPT Node-cloneNode "createElement(canvas)" 断言 copy instanceof
+    // HTMLCanvasElement + tagName/attributes 复制——canvas 专形节点无 get trap，旧
+    // 'cloneNode is not a function'）。经 _zwMakeCanvas 重建 + 复制 width/height/属性
+    //（bitmap 不复制——spec cloneNode 浅/深均不复制 bitmap 内容）。
+    el.cloneNode = function (_deep) {
+      var c = _zwMakeCanvas();
+      try {
+        c.width = el.width;
+        c.height = el.height;
+        c.attributes = [];
+        var _r128Ids = (typeof __zw_attr_names_handle === 'function' && el.__zwHandle)
+          ? String(__zw_attr_names_handle(el.__zwHandle) || '') : '';
+        var _r128Names = _r128Ids.split('|').filter(Boolean);
+        for (var _r128k = 0; _r128k < _r128Names.length; _r128k++) {
+          var _r128N = _r128Names[_r128k];
+          var _r128V = (typeof __zw_get_attr_handle === 'function' && el.__zwHandle)
+            ? String(__zw_get_attr_handle(el.__zwHandle, _r128N) || '') : '';
+          if (c.__zwHandle && typeof __zw_set_attr_handle === 'function') {
+            __zw_set_attr_handle(c.__zwHandle, _r128N, _r128V);
+          }
+          c.attributes.push({ name: _r128N, value: _r128V });
+        }
+        // instanceOf 面：原型挂 HTMLCanvasElement.prototype（__zwHtmlTagIface 表外——
+        // canvas 构造器占位在 part03，instanceof 经原型链真）。
+        if (globalThis.HTMLCanvasElement && globalThis.HTMLCanvasElement.prototype) {
+          try { Object.setPrototypeOf(c, globalThis.HTMLCanvasElement.prototype); } catch (_e128cc) {}
+        }
+      } catch (_e128cv) {}
+      return c;
     };
     return el;
   }
