@@ -40,6 +40,9 @@
   19 个 dynamic/server gated，6 个 support-envelope skip；M1 review 57/57 已收口。
 - [Static Routing 裁决](2026-08-19-static-routing-review.md) 将 11 case / 70 subtest
   明确排除出基础 fetch 分母；连同前批 1 案，family 12/12 已裁决。
+- [Worker Global/import 裁决](2026-08-19-worker-global-import-review.md) 将 13 case /
+  53 subtest 分为 static core、runtime defer、server gated、M2 defer 与 worker-client skip；
+  其中 scriptURL 1 case / 4 subtest 已资产化。
 - 这不等于全部上游用例都超出 ZeroWeb 环境。M1 完成后，单页面、单注册、静态资源的
   生命周期用例可形成第一批真实基线；M2 完成后再加入单客户端 fetch/respondWith 用例。
 - iframe、多客户端、SharedWorker、跨 origin、动态服务端 handler、WebSocket 和
@@ -274,4 +277,5 @@ case 仍是第 2 项。
 - [x] 14 个 M1/no-signal + 11 个 M1/iframe-only + 7 个 M1/message-channel +
       25 个 M1/final review 已完成传递审计，M1 review 57/57。
 - [x] Static Routing family 12/12 已裁决，剩余逻辑 review 84。
+- [x] 剩余 no-signal review 已裁决 13/14，仅 idlharness 待专门解析；剩余逻辑 review 71。
 - [x] 未修改源码、WPT 数据或共享账本。

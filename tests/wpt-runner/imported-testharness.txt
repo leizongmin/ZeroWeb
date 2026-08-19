@@ -186,3 +186,4 @@ service-workers/service-worker/rejections.https.html 04067ce9c7c2165e71ad7d0dde1
 service-workers/service-worker/state.https.html 04067ce9c7c2165e71ad7d0dde10a4c5cb394a83 2026-08-19 SW-M1-next-wave
 service-workers/service-worker/synced-state.https.html 04067ce9c7c2165e71ad7d0dde10a4c5cb394a83 2026-08-19 SW-M1-next-wave
 service-workers/service-worker/unregister.https.html 04067ce9c7c2165e71ad7d0dde10a4c5cb394a83 2026-08-19 SW-M1-next-wave
+service-workers/service-worker/serviceworkerobject-scripturl.https.html 04067ce9c7c2165e71ad7d0dde10a4c5cb394a83 2026-08-19 SW-M1-static-wave

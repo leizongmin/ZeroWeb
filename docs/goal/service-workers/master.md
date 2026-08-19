@@ -2,7 +2,7 @@
 
 **入口文档**: [../service-workers.md](../service-workers.md)
 **创建日期**: 2026-08-17（goal 拆分 bootstrap）
-**最后更新**: 2026-08-19（M0 RFC + Static Routing WPT 12/12 裁决，待审批）
+**最后更新**: 2026-08-19（M0 RFC + worker-global/import WPT 裁决，待审批）
 
 ---
 
@@ -52,6 +52,10 @@
   skip；M1 review 57/57 已收口，全量剩余逻辑 review 95
 - ✅ Static Routing 裁决：本批 11 case / 70 subtest 全部 skip；连同前批 1 案，
   family 12/12 已裁决，全量剩余逻辑 review 84
+- ✅ Worker Global/import 裁决：13 case / 53 subtest 分为 1 static core、6 runtime defer、
+  4 server gated、1 M2 defer、1 worker-client skip；全量剩余逻辑 review 71
+- ✅ static-wave 资产化：`serviceworkerobject-scripturl` 1 case / 4 subtest / 2 assets
+  已固定并记入 testharness 账本
 - ✅ SW 执行环境 RFC 已完成，待用户批准
 
 ## 缺口清单
@@ -62,7 +66,7 @@
 | S2 | scriptURL 不下载执行 | ⬜ M1 |
 | S3 | fetch 拦截为零 | ⬜ M2（等 js-dom fetch 改造） |
 | S4 | 事件为 setTimeout 模拟 | ⬜ M1 |
-| S5 | WPT 覆盖为零 | 🔄 11 case 已资产化；M1 review 57/57、Static Routing 12/12 已裁决；runner/真实 red baseline 等 RFC 批准 |
+| S5 | WPT 覆盖为零 | 🔄 12 case 已资产化；M1 review 57/57、Static Routing 12/12、worker-global/import 13 案已裁决；runner/真实 red baseline 等 RFC 批准 |
 
 ## 待用户决策
 
@@ -107,6 +111,8 @@
   [M1 final review](evidence/2026-08-19-m1-final-review.md)
 - Static Routing 面：11 case / 70 subtest 的 out-of-scope 裁决见
   [Static Routing review](evidence/2026-08-19-static-routing-review.md)
+- Worker Global/import 面：13 case / 53 subtest 的 core/defer/gated/skip 裁决见
+  [Worker Global/import review](evidence/2026-08-19-worker-global-import-review.md)
 - Tier A 资产恢复：`make fetch-wpt-service-workers-tier-a`；默认使用独立
   `wpt-data/.service-workers-tier-a-root`，当前环境 18/18 blob SHA 验证通过
 - Tier A 资产审计：`make audit-wpt-service-workers-tier-a`（无网络、只读）；
@@ -114,6 +120,9 @@
 - Next-wave 资产恢复/审计：`make fetch-wpt-service-workers-next-wave` /
   `make audit-wpt-service-workers-next-wave`；与 Tier A 复用独立数据根，当前 7/7 通过；
   `make test-wpt-service-workers-next-wave-assets` 固化篡改/修复回归
+- Static-wave 资产恢复/审计：`make fetch-wpt-service-workers-static-wave` /
+  `make audit-wpt-service-workers-static-wave`；2 assets / 4 subtest；
+  `make test-wpt-service-workers-static-wave-assets` 固化篡改/修复回归
 - 质量门禁：`cargo fmt` + `cargo clippy --workspace --all-targets -- -D warnings` +
   `make test`（V8/QuickJS/GPU capability）全过
 
@@ -134,6 +143,8 @@
 | 2026-08-19 | M1 message-channel 裁决 | 7 case / 18 subtest：2 lifecycle defer，2 controller defer，2 update/fetch gated，1 cross-origin skip |
 | 2026-08-19 | M1 review 收口 | 最后 25 case / 99 subtest：19 gated / 6 skip；M1 review 57/57，全量逻辑 review 剩余 95 |
 | 2026-08-19 | Static Routing 裁决 | 本批 11 case / 70 subtest 全部 skip；family 12/12，全量逻辑 review 剩余 84 |
+| 2026-08-19 | Worker Global/import 裁决 | 13 case / 53 subtest：1 core / 6 runtime defer / 4 server gated / 1 M2 defer / 1 skip；剩余 71 |
+| 2026-08-19 | Static-wave 资产化 | scriptURL 1 case / 4 subtest / 2 assets；fetch/audit/regression targets 与账本已落 |
 | 2026-08-19 | 三方案对比 | 拒绝同线程 context（无调度隔离）；拒绝从零线程（复制安全基建）；推荐抽取 Worker 线程核 |
 | 2026-08-19 | owner | production browser process 单一 owner；WebView 只做同算法 in-process adapter |
 | 2026-08-19 | 首个 driving WPT | `activation-after-registration.https.html` |
