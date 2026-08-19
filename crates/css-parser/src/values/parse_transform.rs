@@ -632,15 +632,47 @@ fn split_transform_value_args(args: &str) -> Option<Vec<&str>> {
 }
 
 /// 解析 translate 分量：返回 `(数值, 是否百分比)`。`%` 保留原数（paint 期对 border-box 求值），
-/// 其余（px/em/rem/裸数）走 [`parse_css_number`]。driving: R2294 transform `translate(%)`。
+/// 其余长度走 translate 专用 length parser，避免污染 angle/scale/matrix grammar。
+/// driving: R2294 transform `translate(%)`。
 fn parse_len_or_pct(s: &str) -> Option<(f64, bool)> {
     let s = s.trim();
     if let Some(num) = s.strip_suffix('%') {
         let value = num.trim().parse::<f64>().ok()?;
         value.is_finite().then_some((value, true))
     } else {
-        Some((parse_css_number(s)?, false))
+        Some((parse_translate_length_number(s)?, false))
     }
+}
+
+fn parse_translate_length_number(s: &str) -> Option<f64> {
+    if matches!(
+        s.trim().to_ascii_lowercase().as_str(),
+        "thin" | "medium" | "thick" | "auto" | "min-content" | "max-content" | "fit-content"
+    ) {
+        return None;
+    }
+    if let Some(length) = parse_length(s) {
+        let value = match length {
+            LengthValue::Px(v)
+            | LengthValue::Em(v)
+            | LengthValue::Ex(v)
+            | LengthValue::Rex(v)
+            | LengthValue::Cap(v)
+            | LengthValue::Rcap(v)
+            | LengthValue::Rem(v)
+            | LengthValue::Vh(v)
+            | LengthValue::Vw(v)
+            | LengthValue::Vmin(v)
+            | LengthValue::Vmax(v)
+            | LengthValue::Ch(v)
+            | LengthValue::Rch(v)
+            | LengthValue::Ic(v)
+            | LengthValue::Ric(v) => v,
+            _ => return None,
+        };
+        return value.is_finite().then_some(value);
+    }
+    parse_css_number(s)
 }
 
 /// 解析 CSS 数值（可能带 px/deg/grad/rad/turn 等单位）。

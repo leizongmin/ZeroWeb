@@ -320,6 +320,14 @@ fn test_transform_mixed_units() {
     assert!(result.is_some());
 }
 
+#[test]
+fn test_transform_translate_accepts_length_units_without_polluting_angles() {
+    assert!(parse_transform("translate(1vh, 2ch)").is_some());
+    assert!(parse_transform("translateX(3vmin)").is_some());
+    assert!(parse_transform("translateY(4ic)").is_some());
+    assert!(parse_transform("rotate(1vh)").is_none());
+}
+
 // 测试无单位的数值
 #[test]
 fn test_transform_unitless_values() {

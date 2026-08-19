@@ -229,6 +229,8 @@ Text-decoration-thickness exposed the used-value text-decoration thickness varia
 
 Background-size exposed the suffix-gated image sizing variant: a helper can already call the shared length parser yet still narrow the accepted grammar by matching only `px|em|rem` afterwards. Keep the raw-token non-negative validator, but enumerate every real length unit the shared parser can return before mapping into the current computed size representation.
 
+Translate exposed the shared-number transform variant: a helper reused by angle, scale, matrix, and translate cannot be widened with extra length units without admitting invalid angles. Give translate its own length parser, then keep angle/scale/matrix on the narrower numeric parser.
+
 ## Root Cause
 
 The shorthand layer used heuristic component classifiers and treated unrecognized tokens as absent optional components. That is wrong for CSS shorthands such as `border`, where every token must match one of the allowed component grammars. A shared parser can also be broader than the property grammar that consumes it: general length parsing may accept `auto`, intrinsic sizing keywords, or percentages that `border-width` must reject.
