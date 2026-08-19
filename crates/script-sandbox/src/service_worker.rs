@@ -20,6 +20,8 @@ enum ServiceWorkerCommand {
     DispatchMessage {
         event_id: u64,
         data_json: String,
+        client_id: String,
+        client_url: String,
     },
     Shutdown,
 }
@@ -41,6 +43,24 @@ const SERVICE_WORKER_BOOTSTRAP: &str = r#"
     }
   }
   class InstallEvent extends ExtendableEvent {}
+  const outboundMessages = [];
+  const clientToken = {};
+  class Client {
+    constructor(id, url, token) {
+      if (token !== clientToken) throw new TypeError('Illegal constructor');
+      Object.defineProperties(this, {
+        id: {value: id, enumerable: true},
+        url: {value: url, enumerable: true},
+        type: {value: 'window', enumerable: true},
+        frameType: {value: 'top-level', enumerable: true}
+      });
+    }
+    postMessage(data) {
+      const dataJSON = JSON.stringify(data);
+      if (dataJSON === undefined) throw new Error('DataCloneError: message could not be cloned');
+      outboundMessages.push({dataJSON: dataJSON});
+    }
+  }
   class MessageEvent {
     constructor(type, init) {
       this.type = type;
@@ -56,6 +76,7 @@ const SERVICE_WORKER_BOOTSTRAP: &str = r#"
   globalThis.ExtendableEvent = ExtendableEvent;
   globalThis.InstallEvent = InstallEvent;
   globalThis.MessageEvent = MessageEvent;
+  globalThis.Client = Client;
   globalThis.addEventListener = function(type, listener) {
     if (typeof listener !== 'function') return;
     (listeners[String(type)] || (listeners[String(type)] = [])).push(listener);
@@ -121,14 +142,24 @@ const SERVICE_WORKER_BOOTSTRAP: &str = r#"
       result.message = String(error && error.message || error);
     });
   };
-  globalThis.__zwDispatchMessage = function(eventId, data) {
+  globalThis.__zwDispatchMessage = function(eventId, data, clientId, clientURL) {
+    outboundMessages.splice(0, outboundMessages.length);
     const event = new MessageEvent('message', {data: data});
-    const callbacks = (listeners.message || []).slice();
-    for (let i = 0; i < callbacks.length; i++) callbacks[i].call(globalThis, event);
-    if (typeof globalThis.onmessage === 'function') {
-      globalThis.onmessage.call(globalThis, event);
+    event.source = new Client(clientId, clientURL, clientToken);
+    try {
+      const callbacks = (listeners.message || []).slice();
+      for (let i = 0; i < callbacks.length; i++) callbacks[i].call(globalThis, event);
+      if (typeof globalThis.onmessage === 'function') {
+        globalThis.onmessage.call(globalThis, event);
+      }
+      return String(eventId);
+    } catch (error) {
+      outboundMessages.splice(0, outboundMessages.length);
+      throw error;
     }
-    return String(eventId);
+  };
+  globalThis.__zwTakeOutboundMessages = function() {
+    return outboundMessages.splice(0, outboundMessages.length);
   };
 })();
 'bootstrap-ready';
@@ -203,16 +234,29 @@ pub enum ServiceWorkerEvent {
     MessageDispatched {
         /// Host-assigned event ID.
         event_id: u64,
+        /// Browser-owned identity of the originating client.
+        client_id: String,
+        /// Messages posted by the worker to the originating client.
+        outbound: Vec<ServiceWorkerOutboundMessage>,
     },
     /// A page-to-worker message handler threw.
     MessageFailed {
         /// Host-assigned event ID.
         event_id: u64,
+        /// Browser-owned identity of the originating client.
+        client_id: String,
         /// Handler diagnostic.
         message: String,
     },
     /// The runtime thread exited.
     Closed,
+}
+
+/// One worker-to-client message emitted during a worker event.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ServiceWorkerOutboundMessage {
+    /// JSON-compatible structured payload.
+    pub data_json: String,
 }
 
 /// Lifecycle state of a [`ServiceWorkerRuntime`].
@@ -273,12 +317,35 @@ impl ServiceWorkerRuntime {
                             let event = dispatch_lifecycle(sandbox.as_mut(), event_id, phase, lifecycle_timeout_ms);
                             let _ = event_sender.send(event);
                         }
-                        ServiceWorkerCommand::DispatchMessage { event_id, data_json } => {
-                            let dispatch = format!("globalThis.__zwDispatchMessage({}, {});", event_id, data_json);
+                        ServiceWorkerCommand::DispatchMessage {
+                            event_id,
+                            data_json,
+                            client_id,
+                            client_url,
+                        } => {
+                            let dispatch = format!(
+                                "globalThis.__zwDispatchMessage({}, {}, {}, {});",
+                                event_id,
+                                data_json,
+                                serde_json::to_string(&client_id).unwrap(),
+                                serde_json::to_string(&client_url).unwrap()
+                            );
                             let event = match sandbox.execute(&dispatch) {
-                                Ok(_) => ServiceWorkerEvent::MessageDispatched { event_id },
+                                Ok(_) => match take_outbound_messages(sandbox.as_mut()) {
+                                    Ok(outbound) => ServiceWorkerEvent::MessageDispatched {
+                                        event_id,
+                                        client_id,
+                                        outbound,
+                                    },
+                                    Err(error) => ServiceWorkerEvent::MessageFailed {
+                                        event_id,
+                                        client_id,
+                                        message: error.to_string(),
+                                    },
+                                },
                                 Err(error) => ServiceWorkerEvent::MessageFailed {
                                     event_id,
+                                    client_id,
                                     message: error.to_string(),
                                 },
                             };
@@ -341,13 +408,21 @@ impl ServiceWorkerRuntime {
     }
 
     /// Dispatch one JSON-compatible page message.
-    pub fn dispatch_message(&mut self, event_id: u64, data_json: &str) -> Result<(), ScriptError> {
+    pub fn dispatch_message(
+        &mut self,
+        event_id: u64,
+        data_json: &str,
+        client_id: &str,
+        client_url: &str,
+    ) -> Result<(), ScriptError> {
         serde_json::from_str::<serde_json::Value>(data_json)
             .map_err(|error| ScriptError::InvalidInput(format!("invalid Service Worker message JSON: {error}")))?;
         self.core
             .send(ServiceWorkerCommand::DispatchMessage {
                 event_id,
                 data_json: data_json.to_string(),
+                client_id: client_id.to_string(),
+                client_url: client_url.to_string(),
             })
             .map_err(|_| ScriptError::RuntimeError("Service Worker runtime disconnected".into()))
     }
@@ -512,6 +587,36 @@ fn dispatch_lifecycle(
         let _ = sandbox.execute("'checkpoint'");
         std::thread::sleep(std::time::Duration::from_millis(1));
     }
+}
+
+fn take_outbound_messages(sandbox: &mut dyn Sandbox) -> Result<Vec<ServiceWorkerOutboundMessage>, ScriptError> {
+    const MAX_OUTBOUND_MESSAGES: usize = 64;
+    const MAX_MESSAGE_BYTES: usize = 1024 * 1024;
+    let result = sandbox.execute("JSON.stringify(globalThis.__zwTakeOutboundMessages())")?;
+    let values = serde_json::from_str::<Vec<serde_json::Value>>(&result.value)
+        .map_err(|error| ScriptError::RuntimeError(format!("invalid outbound message list: {error}")))?;
+    if values.len() > MAX_OUTBOUND_MESSAGES {
+        return Err(ScriptError::InvalidInput(
+            "Service Worker emitted too many messages in one event".into(),
+        ));
+    }
+    values
+        .into_iter()
+        .map(|value| {
+            let data_json = value["dataJSON"]
+                .as_str()
+                .ok_or_else(|| ScriptError::RuntimeError("outbound message data is missing".into()))?
+                .to_string();
+            serde_json::from_str::<serde_json::Value>(&data_json)
+                .map_err(|error| ScriptError::RuntimeError(format!("invalid outbound message data: {error}")))?;
+            if data_json.len() > MAX_MESSAGE_BYTES {
+                return Err(ScriptError::InvalidInput(
+                    "Service Worker outbound message exceeds the size limit".into(),
+                ));
+            }
+            Ok(ServiceWorkerOutboundMessage { data_json })
+        })
+        .collect()
 }
 
 fn normalize_config(mut config: SandboxConfig) -> SandboxConfig {
@@ -831,6 +936,12 @@ mod tests {
                 "addEventListener('message', event => {
                     if (!(event instanceof MessageEvent)) throw new Error('wrong event');
                     globalThis.messageValue = event.data.name + ':' + event.data.items[1];
+                    if (!(event.source instanceof Client)) throw new Error('wrong source');
+                    event.source.postMessage({
+                        echo: event.data.name,
+                        source: event.source.id + ':' + event.source.url
+                    });
+                    if (event.data.name === 'fail') throw new Error('message failed');
                 });",
                 "https://example.test/sw.js",
             )
@@ -838,15 +949,60 @@ mod tests {
         let _ = runtime.recv_timeout(Duration::from_secs(5)).unwrap();
 
         runtime
-            .dispatch_message(16, r#"{"name":"page","items":[1,2]}"#)
+            .dispatch_message(
+                16,
+                r#"{"name":"page","items":[1,2]}"#,
+                "client-1",
+                "https://example.test/page",
+            )
             .unwrap();
         assert_eq!(
             runtime.recv_timeout(Duration::from_secs(5)).unwrap(),
-            ServiceWorkerEvent::MessageDispatched { event_id: 16 }
+            ServiceWorkerEvent::MessageDispatched {
+                event_id: 16,
+                client_id: "client-1".into(),
+                outbound: vec![ServiceWorkerOutboundMessage {
+                    data_json: r#"{"echo":"page","source":"client-1:https://example.test/page"}"#.into(),
+                }],
+            }
+        );
+        runtime
+            .dispatch_message(
+                17,
+                r#"{"name":"fail","items":[1,2]}"#,
+                "client-1",
+                "https://example.test/page",
+            )
+            .unwrap();
+        assert!(matches!(
+            runtime.recv_timeout(Duration::from_secs(5)).unwrap(),
+            ServiceWorkerEvent::MessageFailed {
+                event_id: 17,
+                client_id,
+                message,
+            } if client_id == "client-1" && message.contains("message failed")
+        ));
+        runtime
+            .dispatch_message(
+                18,
+                r#"{"name":"next","items":[1,2]}"#,
+                "client-1",
+                "https://example.test/page",
+            )
+            .unwrap();
+        assert_eq!(
+            runtime.recv_timeout(Duration::from_secs(5)).unwrap(),
+            ServiceWorkerEvent::MessageDispatched {
+                event_id: 18,
+                client_id: "client-1".into(),
+                outbound: vec![ServiceWorkerOutboundMessage {
+                    data_json: r#"{"echo":"next","source":"client-1:https://example.test/page"}"#.into(),
+                }],
+            }
         );
         runtime
             .evaluate(
-                "if (globalThis.messageValue !== 'page:2') throw new Error('message lost');",
+                "if (globalThis.messageValue !== 'next:2') throw new Error('message lost');",
                 "https://example.test/check.js",
             )
             .unwrap();
@@ -855,7 +1011,7 @@ mod tests {
             ServiceWorkerEvent::Evaluated { .. }
         ));
         assert!(matches!(
-            runtime.dispatch_message(17, "{"),
+            runtime.dispatch_message(19, "{", "client-1", "https://example.test/page"),
             Err(ScriptError::InvalidInput(_))
         ));
     }

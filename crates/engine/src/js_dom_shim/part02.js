@@ -2608,6 +2608,9 @@
         globalThis.ServiceWorkerRegistration || ServiceWorkerRegistration;
       function makeSW(scriptURL, state) {
         var worker = new globalThis.ServiceWorker(scriptURL, state);
+        worker._messageSequence = 0;
+        worker._messagePollTarget = 0;
+        worker._messagePollPending = false;
         worker.postMessage = function (message, transfer) {
           if (transfer && transfer.length) {
             throw new DOMException('Service Worker transferables are not supported', 'DataCloneError');
@@ -2632,8 +2635,54 @@
               'InvalidStateError'
             );
           }
+          worker._messagePollTarget++;
+          scheduleClientMessagePoll(worker);
         };
         return worker;
+      }
+      function pollClientMessages(worker) {
+        if (typeof __zw_sw_client_messages !== 'function') {
+          worker._messagePollPending = false;
+          return;
+        }
+        var wire;
+        try {
+          wire = JSON.parse(__zw_sw_client_messages(
+            String(worker._id), String(worker._messageSequence)));
+        } catch (_e) {
+          wire = null;
+        }
+        if (wire && wire.ok) {
+          worker._messageSequence = Number(wire.latestSequence) || worker._messageSequence;
+          var messages = wire.messages || [];
+          for (var i = 0; i < messages.length; i++) {
+            var event = new globalThis.MessageEvent('message', {
+              data: messages[i],
+              origin: '',
+              source: worker,
+              ports: []
+            });
+            _container.dispatchEvent(event);
+          }
+          if (worker._messageSequence >= worker._messagePollTarget) {
+            worker._messagePollPending = false;
+            return;
+          }
+        }
+        if (typeof setTimeout === 'function') {
+          setTimeout(function () { pollClientMessages(worker); }, 0);
+        } else {
+          worker._messagePollPending = false;
+        }
+      }
+      function scheduleClientMessagePoll(worker) {
+        if (worker._messagePollPending) return;
+        worker._messagePollPending = true;
+        if (typeof setTimeout === 'function') {
+          setTimeout(function () { pollClientMessages(worker); }, 0);
+        } else {
+          pollClientMessages(worker);
+        }
       }
       function dispatchTargetEvent(target, type) {
         if (target && typeof target.dispatchEvent === 'function' &&

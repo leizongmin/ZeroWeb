@@ -171,6 +171,7 @@ pub struct ProcessTabBackend {
     indexed_db_origins: HashMap<u64, String>,
     pending_indexed_db_navigations: HashMap<u64, PendingIndexedDbNavigation>,
     committed_document_urls: HashMap<u64, String>,
+    committed_document_epochs: HashMap<u64, u64>,
     indexed_db_init_error: Option<String>,
     pending_loaded: Vec<(TabId, String, String)>,
     pending_errors: Vec<(TabId, String)>,
@@ -246,6 +247,7 @@ impl ProcessTabBackend {
             indexed_db_origins: HashMap::new(),
             pending_indexed_db_navigations: HashMap::new(),
             committed_document_urls: HashMap::new(),
+            committed_document_epochs: HashMap::new(),
             indexed_db_init_error: storage_error,
             pending_loaded: Vec::new(),
             pending_errors: Vec::new(),
@@ -654,11 +656,17 @@ impl ProcessTabBackend {
         params: ServiceWorkerRequestParams,
     ) {
         let authority = self.committed_document_urls.get(&renderer_id).cloned();
-        let disposition = self.service_worker_owner.begin_request(
+        let client_id = format!(
+            "{}:{}",
+            renderer_id,
+            self.committed_document_epochs.get(&renderer_id).copied().unwrap_or(0)
+        );
+        let disposition = self.service_worker_owner.begin_request_for_client(
             tab_id,
             self.private_tabs.contains(&tab_id),
             request_id,
             authority.as_deref(),
+            &client_id,
             params,
         );
         match disposition {
@@ -750,6 +758,7 @@ impl ProcessTabBackend {
         self.indexed_db_origins.remove(&renderer_id);
         self.pending_indexed_db_navigations.remove(&renderer_id);
         self.committed_document_urls.remove(&renderer_id);
+        self.committed_document_epochs.remove(&renderer_id);
     }
 
     fn stage_indexed_db_navigation(&mut self, renderer_id: u64, url: &str, navigation_epoch: u64) {
@@ -834,6 +843,8 @@ impl ProcessTabBackend {
         self.indexed_db_handlers.remove(&renderer_id);
         self.indexed_db_origins.insert(renderer_id, origin);
         self.committed_document_urls.insert(renderer_id, pending.url);
+        self.committed_document_epochs
+            .insert(renderer_id, pending.navigation_epoch);
     }
 
     fn handle_indexed_db_connection_request(

@@ -603,6 +603,12 @@ fn service_worker_post_message_dispatches_structured_page_payload() {
                     globalThis.received =
                       event.data.kind + ':' + event.data.items[1] + ':' +
                       String(event instanceof MessageEvent);
+                    if (event.data.kind !== 'silent') {
+                      event.source.postMessage({
+                        echo: event.data.kind,
+                        sourceURL: event.source.url
+                      });
+                    }
                 });"
             .to_string())
         }))
@@ -611,11 +617,22 @@ fn service_worker_post_message_dispatches_structured_page_payload() {
     webview
         .execute_script(
             "globalThis.__messageResult = 'pending';
+             globalThis.__messageReplies = [];
+             navigator.serviceWorker.addEventListener('message', function(event) {
+               globalThis.__messageReplies.push(event.data.echo);
+               globalThis.__messageResult = [
+                 event.data.echo,
+                 event.data.sourceURL,
+                 event.source === globalThis.__messageWorker,
+                 event instanceof MessageEvent,
+                 event.target === navigator.serviceWorker
+               ].join('|');
+             });
              navigator.serviceWorker.register('/sw.js').then(function() {
                return navigator.serviceWorker.ready;
              }).then(function(reg) {
+               globalThis.__messageWorker = reg.active;
                reg.active.postMessage({kind:'page', items:[1, 2]});
-               globalThis.__messageResult = 'sent';
              }, function(error) {
                globalThis.__messageResult = 'error:' + String(error);
              });
@@ -627,25 +644,56 @@ fn service_worker_post_message_dispatches_structured_page_payload() {
     loop {
         let value = webview.execute_script("globalThis.__messageResult").unwrap();
         if value != "pending" {
-            assert_eq!(value, "sent");
+            assert_eq!(value, "page|https://example.test/page.html|true|true|true");
             break;
         }
         assert!(Instant::now() < deadline, "ServiceWorker.postMessage timed out");
         std::thread::sleep(Duration::from_millis(10));
     }
 
+    webview
+        .execute_script(
+            "globalThis.__messageWorker.postMessage({kind:'one', items:[1, 2]});
+             globalThis.__messageWorker.postMessage({kind:'two', items:[1, 2]});",
+        )
+        .unwrap();
     let deadline = Instant::now() + Duration::from_secs(20);
     loop {
-        let events = webview.poll_service_worker_runtime_events();
-        if events.iter().any(|event| {
-            matches!(
-                event,
-                zero_page_runtime::ServiceWorkerManagerEvent::MessageDispatched { .. }
-            )
-        }) {
+        let replies = webview.execute_script("globalThis.__messageReplies.join('|')").unwrap();
+        if replies == "page|one|two" {
             break;
         }
-        assert!(Instant::now() < deadline, "worker message event did not dispatch");
+        if Instant::now() >= deadline {
+            let state = webview
+                .execute_script(
+                    "JSON.stringify({
+                       replies: globalThis.__messageReplies,
+                       sequence: globalThis.__messageWorker._messageSequence,
+                       target: globalThis.__messageWorker._messagePollTarget,
+                       pending: globalThis.__messageWorker._messagePollPending
+                     })",
+                )
+                .unwrap();
+            panic!("consecutive worker replies timed out: {state}");
+        }
+        std::thread::sleep(Duration::from_millis(10));
+    }
+
+    webview
+        .execute_script("globalThis.__messageWorker.postMessage({kind:'silent'});")
+        .unwrap();
+    let deadline = Instant::now() + Duration::from_secs(20);
+    loop {
+        let pending = webview
+            .execute_script("String(globalThis.__messageWorker._messagePollPending)")
+            .unwrap();
+        if pending == "false" {
+            break;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "empty worker reply batch did not complete polling"
+        );
         std::thread::sleep(Duration::from_millis(10));
     }
 }

@@ -190,6 +190,34 @@ impl ServiceWorkerIpcClient {
             }),
         );
 
+        let client_messages_client = self.clone();
+        sandbox.register_callback(
+            "__zw_sw_client_messages",
+            Box::new(move |args| {
+                let Some(registration_id) = parse_registration_id(args) else {
+                    return error_wire("invalid registration id");
+                };
+                let after_sequence = args.get(1).and_then(|value| value.parse::<u64>().ok()).unwrap_or(0);
+                match client_messages_client.request(ServiceWorkerOperation::ClientMessages {
+                    registration_id,
+                    after_sequence,
+                }) {
+                    Ok(ServiceWorkerResult::ClientMessages(messages)) => serde_json::json!({
+                        "ok": true,
+                        "latestSequence": messages.latest_sequence,
+                        "messages": messages
+                            .data_json
+                            .into_iter()
+                            .filter_map(|value| serde_json::from_str::<serde_json::Value>(&value).ok())
+                            .collect::<Vec<_>>(),
+                    })
+                    .to_string(),
+                    Ok(_) => error_wire("invalid client messages response"),
+                    Err(error) => response_error_wire(error),
+                }
+            }),
+        );
+
         let get_registration_client = self.clone();
         sandbox.register_callback(
             "__zw_sw_get_registration",

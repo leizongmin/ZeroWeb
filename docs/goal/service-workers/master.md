@@ -2,7 +2,7 @@
 
 **入口文档**: [../service-workers.md](../service-workers.md)
 **创建日期**: 2026-08-17（goal 拆分 bootstrap）
-**最后更新**: 2026-08-20（M3-4 page-to-worker message 完成）
+**最后更新**: 2026-08-20（M3-5 worker-to-page message 完成）
 
 ---
 
@@ -105,6 +105,8 @@ M0 启动门禁解除；M1 core WPT 已收敛，M2 依赖未满足，当前推�
   控制当前 matching Document 并按 task 派发 `controllerchange`
 - ✅ M3-4：`ServiceWorker.postMessage()` 经 browser authorization 和 typed runtime command
   派发 worker `MessageEvent`；JSON-compatible structured payload，handler failure 不改变 lifecycle
+- ✅ M3-5：worker `Client.postMessage()` 经 per-Document client log 和 renderer cursor，
+  向 container 派发 `MessageEvent`；导航换代隔离旧队列，browser/WebView 双路径一致
 
 ## 缺口清单
 
@@ -124,8 +126,8 @@ M0 启动门禁解除；M1 core WPT 已收敛，M2 依赖未满足，当前推�
 
 ## 下一步计划
 
-1. **M3 reverse message**：实现 worker `Client.postMessage()` 与页面 container message event
-2. **M3 update**：实现真实 update job、script byte comparison 与 updatefound
+1. **M3 update**：实现真实 update job、script byte comparison 与 updatefound
+2. **M3 persistence**：恢复注册、active version 与 controller；明确 runtime restart policy
 3. **M2 依赖复核**：js-dom S6 与 storage-cache-api M1 land 后启动 fetch pipeline
 
 ## 里程碑状态
@@ -135,7 +137,7 @@ M0 启动门禁解除；M1 core WPT 已收敛，M2 依赖未满足，当前推�
 | M0 — 选型 RFC（门控） | ✅ 方案 C 已批准 |
 | M1 — 脚本真实执行 + 生命周期真事件 | ✅ core WPT 36/36 Pass |
 | M2 — fetch 拦截 + Cache 集成 | ⬜ 门控：js-dom fetch 改造 land |
-| M3 — 控制语义 + 消息 + 收尾 | 🚧 控制语义 + page→worker message 完成 |
+| M3 — 控制语义 + 消息 + 收尾 | 🚧 控制语义 + 双向基础 message 完成 |
 
 ## 验证基线
 
@@ -219,6 +221,8 @@ M0 启动门禁解除；M1 core WPT 已收敛，M2 依赖未满足，当前推�
   controllerchange 与全量门禁见 [M3 clients.claim](evidence/2026-08-20-m3-clients-claim.md)
 - M3-4 page→worker message：structured payload、typed command、browser authorization 与失败隔离见
   [M3 page-to-worker message](evidence/2026-08-20-m3-page-to-worker-message.md)
+- M3-5 worker→page message：Client source、per-Document cursor log、container MessageEvent 与资源上限见
+  [M3 worker-to-page message](evidence/2026-08-20-m3-worker-to-page-message.md)
 
 ## M0 证据与决策记录
 
@@ -264,6 +268,7 @@ M0 启动门禁解除；M1 core WPT 已收敛，M2 依赖未满足，当前推�
 | 2026-08-20 | M3-2 controller | 新 Document active scope；首次注册保持 uncontrolled；replacement controllerchange；双引擎与生产链通过 |
 | 2026-08-20 | M3-3 clients.claim | activate typed claim；committed Document controller；双引擎/fresh renderer/全量门禁通过 |
 | 2026-08-20 | M3-4 page-to-worker message | ServiceWorker.postMessage；typed runtime MessageEvent；handler failure 隔离；全量门禁通过 |
+| 2026-08-20 | M3-5 worker-to-page message | Client.postMessage；per-Document immutable log；container MessageEvent；双引擎/生产链通过 |
 | 2026-08-19 | 三方案对比 | 拒绝同线程 context（无调度隔离）；拒绝从零线程（复制安全基建）；推荐抽取 Worker 线程核 |
 | 2026-08-19 | owner | production browser process 单一 owner；WebView 只做同算法 in-process adapter |
 | 2026-08-19 | 首个 driving WPT | `activation-after-registration.https.html` |

@@ -7,6 +7,8 @@ use zero_script_sandbox::{
 use zero_storage::{ServiceWorkerRegistration, ServiceWorkerRegistry, ServiceWorkerState};
 
 const DEFAULT_RUNTIME_LIMIT: usize = 32;
+const MAX_CLIENTS_PER_VERSION: usize = 256;
+const MAX_MESSAGES_PER_CLIENT: usize = 1024;
 const MAX_URL_BYTES: usize = 64 * 1024;
 const MAX_SCRIPT_BYTES: usize = 16 * 1024 * 1024;
 
@@ -114,6 +116,8 @@ pub enum ServiceWorkerManagerEvent {
         registration_id: u64,
         /// Host-assigned message event ID.
         event_id: u64,
+        /// Number of worker-to-client messages emitted by the handler.
+        outbound_count: usize,
     },
     /// A page-to-worker message handler threw.
     MessageFailed {
@@ -121,6 +125,8 @@ pub enum ServiceWorkerManagerEvent {
         registration_id: u64,
         /// Host-assigned message event ID.
         event_id: u64,
+        /// Browser-owned identity of the originating client.
+        client_id: String,
         /// Handler diagnostic.
         message: String,
     },
@@ -138,6 +144,16 @@ pub enum ServiceWorkerManagerError {
     /// The manager reached its live runtime budget.
     CapacityExceeded {
         /// Maximum number of live runtimes.
+        limit: usize,
+    },
+    /// One worker version reached its tracked client budget.
+    ClientCapacityExceeded {
+        /// Maximum tracked clients per version.
+        limit: usize,
+    },
+    /// One client reached its retained message-event budget.
+    ClientMessageCapacityExceeded {
+        /// Maximum retained event batches per client.
         limit: usize,
     },
     /// The requested version does not exist.
@@ -168,6 +184,12 @@ impl std::fmt::Display for ServiceWorkerManagerError {
             Self::CapacityExceeded { limit } => {
                 write!(formatter, "Service Worker runtime limit reached ({limit})")
             }
+            Self::ClientCapacityExceeded { limit } => {
+                write!(formatter, "Service Worker client limit reached ({limit})")
+            }
+            Self::ClientMessageCapacityExceeded { limit } => {
+                write!(formatter, "Service Worker client message limit reached ({limit})")
+            }
             Self::UnknownRegistration(id) => {
                 write!(formatter, "registration {id} does not exist")
             }
@@ -196,6 +218,8 @@ pub struct ServiceWorkerManager {
     registration_keys: HashMap<u64, ServiceWorkerRegistrationKey>,
     state_changes: HashMap<u64, Vec<ServiceWorkerState>>,
     claimed_clients: HashSet<u64>,
+    client_messages: HashMap<(u64, String), Vec<Vec<String>>>,
+    pending_client_messages: HashMap<(u64, String), usize>,
     runtimes: HashMap<u64, ServiceWorkerRuntime>,
     evaluated: HashSet<u64>,
     runtime_limit: usize,
@@ -210,6 +234,8 @@ impl ServiceWorkerManager {
             registration_keys: HashMap::new(),
             state_changes: HashMap::new(),
             claimed_clients: HashSet::new(),
+            client_messages: HashMap::new(),
+            pending_client_messages: HashMap::new(),
             runtimes: HashMap::new(),
             evaluated: HashSet::new(),
             runtime_limit: DEFAULT_RUNTIME_LIMIT,
@@ -354,6 +380,7 @@ impl ServiceWorkerManager {
                     }
                 }
                 ServiceWorkerEvent::Closed => {
+                    self.complete_pending_client_message_batches(registration_id);
                     if self.is_installing(registration_id) {
                         self.fail_installing_version(registration_id);
                         output.push(ServiceWorkerManagerEvent::ScriptFailed {
@@ -363,16 +390,33 @@ impl ServiceWorkerManager {
                         });
                     }
                 }
-                ServiceWorkerEvent::MessageDispatched { event_id } => {
+                ServiceWorkerEvent::MessageDispatched {
+                    event_id,
+                    client_id,
+                    outbound,
+                } => {
+                    let outbound_count = outbound.len();
+                    self.complete_client_message_batch(
+                        registration_id,
+                        &client_id,
+                        outbound.into_iter().map(|message| message.data_json).collect(),
+                    );
                     output.push(ServiceWorkerManagerEvent::MessageDispatched {
                         registration_id,
                         event_id,
+                        outbound_count,
                     });
                 }
-                ServiceWorkerEvent::MessageFailed { event_id, message } => {
+                ServiceWorkerEvent::MessageFailed {
+                    event_id,
+                    client_id,
+                    message,
+                } => {
+                    self.complete_client_message_batch(registration_id, &client_id, Vec::new());
                     output.push(ServiceWorkerManagerEvent::MessageFailed {
                         registration_id,
                         event_id,
+                        client_id,
                         message,
                     });
                 }
@@ -532,6 +576,8 @@ impl ServiceWorkerManager {
         let removed = self.registry.unregister(registration_id);
         self.state_changes.remove(&registration_id);
         self.claimed_clients.remove(&registration_id);
+        self.client_messages.retain(|(id, _), _| *id != registration_id);
+        self.pending_client_messages.retain(|(id, _), _| *id != registration_id);
         let remove_slots = if let Some(slot) = self.slots.get_mut(&key) {
             if slot.installing == Some(registration_id) {
                 slot.installing = None;
@@ -583,6 +629,8 @@ impl ServiceWorkerManager {
         registration_id: u64,
         event_id: u64,
         data_json: &str,
+        client_id: &str,
+        client_url: &str,
     ) -> Result<(), ServiceWorkerManagerError> {
         let state = self
             .registration(registration_id)
@@ -598,11 +646,104 @@ impl ServiceWorkerManager {
                 actual: state,
             });
         }
-        self.runtimes
-            .get_mut(&registration_id)
-            .ok_or(ServiceWorkerManagerError::UnknownRegistration(registration_id))?
-            .dispatch_message(event_id, data_json)
-            .map_err(|error| ServiceWorkerManagerError::Runtime(error.to_string()))
+        let key = (registration_id, client_id.to_string());
+        let pending = self.pending_client_messages.get(&key).copied().unwrap_or(0);
+        let known_client = self.client_messages.contains_key(&key) || self.pending_client_messages.contains_key(&key);
+        if let Some(batches) = self.client_messages.get(&key)
+            && batches.len().saturating_add(pending) >= MAX_MESSAGES_PER_CLIENT
+        {
+            return Err(ServiceWorkerManagerError::ClientMessageCapacityExceeded {
+                limit: MAX_MESSAGES_PER_CLIENT,
+            });
+        }
+        if !known_client
+            && self
+                .client_messages
+                .keys()
+                .chain(self.pending_client_messages.keys())
+                .filter(|(id, _)| *id == registration_id)
+                .map(|(_, client_id)| client_id)
+                .collect::<HashSet<_>>()
+                .len()
+                >= MAX_CLIENTS_PER_VERSION
+        {
+            return Err(ServiceWorkerManagerError::ClientCapacityExceeded {
+                limit: MAX_CLIENTS_PER_VERSION,
+            });
+        }
+        *self.pending_client_messages.entry(key.clone()).or_default() += 1;
+        let result = match self.runtimes.get_mut(&registration_id) {
+            Some(runtime) => runtime
+                .dispatch_message(event_id, data_json, client_id, client_url)
+                .map_err(|error| ServiceWorkerManagerError::Runtime(error.to_string())),
+            None => Err(ServiceWorkerManagerError::UnknownRegistration(registration_id)),
+        };
+        if result.is_err() {
+            self.release_client_message_reservation(&key);
+        }
+        result
+    }
+
+    /// Return worker messages for one browser-owned client after its cursor.
+    pub fn client_messages_since(
+        &self,
+        registration_id: u64,
+        client_id: &str,
+        after_sequence: u64,
+    ) -> (u64, Vec<String>) {
+        let batches = self
+            .client_messages
+            .get(&(registration_id, client_id.to_string()))
+            .map(Vec::as_slice)
+            .unwrap_or(&[]);
+        let start = usize::try_from(after_sequence).unwrap_or(usize::MAX).min(batches.len());
+        (
+            batches.len() as u64,
+            batches[start..].iter().flatten().cloned().collect(),
+        )
+    }
+
+    fn complete_client_message_batch(&mut self, registration_id: u64, client_id: &str, batch: Vec<String>) {
+        let key = (registration_id, client_id.to_string());
+        self.release_client_message_reservation(&key);
+        let known_client = self.client_messages.contains_key(&key);
+        let client_count = self
+            .client_messages
+            .keys()
+            .filter(|(id, _)| *id == registration_id)
+            .count();
+        if known_client || client_count < MAX_CLIENTS_PER_VERSION {
+            let batches = self.client_messages.entry(key).or_default();
+            if batches.len() < MAX_MESSAGES_PER_CLIENT {
+                batches.push(batch);
+            }
+        }
+    }
+
+    fn release_client_message_reservation(&mut self, key: &(u64, String)) {
+        let Some(pending) = self.pending_client_messages.get_mut(key) else {
+            return;
+        };
+        *pending = pending.saturating_sub(1);
+        if *pending == 0 {
+            self.pending_client_messages.remove(key);
+        }
+    }
+
+    fn complete_pending_client_message_batches(&mut self, registration_id: u64) {
+        let pending = self
+            .pending_client_messages
+            .iter()
+            .filter(|((id, _), _)| *id == registration_id)
+            .map(|((_, client_id), count)| (client_id.clone(), *count))
+            .collect::<Vec<_>>();
+        for (client_id, count) in pending {
+            let key = (registration_id, client_id);
+            self.pending_client_messages.remove(&key);
+            let batches = self.client_messages.entry(key).or_default();
+            let available = MAX_MESSAGES_PER_CLIENT.saturating_sub(batches.len());
+            batches.extend(std::iter::repeat_with(Vec::new).take(count.min(available)));
+        }
     }
 
     /// Inspect version slots for one origin/scope key.
@@ -721,6 +862,8 @@ impl ServiceWorkerManager {
             self.record_state_change(registration_id, ServiceWorkerState::Redundant);
         }
         self.claimed_clients.remove(&registration_id);
+        self.client_messages.retain(|(id, _), _| *id != registration_id);
+        self.pending_client_messages.retain(|(id, _), _| *id != registration_id);
         if let Some(mut runtime) = self.runtimes.remove(&registration_id) {
             runtime.shutdown();
         }
@@ -1060,22 +1203,65 @@ mod tests {
             "/",
             "addEventListener('message', event => {
                 globalThis.message = event.data.value;
+                event.source.postMessage({echo: event.data.value});
             });",
         );
 
-        manager.post_message(id, 91, r#"{"value":"hello"}"#).unwrap();
+        manager
+            .post_message(id, 91, r#"{"value":"hello"}"#, "client-1", "https://example.test/page")
+            .unwrap();
         let deadline = std::time::Instant::now() + Duration::from_secs(5);
         loop {
             let events = manager.poll();
             if events.contains(&ServiceWorkerManagerEvent::MessageDispatched {
                 registration_id: id,
                 event_id: 91,
+                outbound_count: 1,
             }) {
                 break;
             }
             assert!(std::time::Instant::now() < deadline, "message dispatch timed out");
             std::thread::sleep(Duration::from_millis(1));
         }
+        assert_eq!(
+            manager.client_messages_since(id, "client-1", 0),
+            (1, vec![r#"{"echo":"hello"}"#.to_string()])
+        );
+
+        manager.client_messages.insert(
+            (id, "near-full-client".into()),
+            vec![Vec::new(); MAX_MESSAGES_PER_CLIENT - 1],
+        );
+        manager
+            .post_message(id, 92, "null", "near-full-client", "https://example.test/page")
+            .unwrap();
+        assert_eq!(
+            manager.post_message(id, 93, "null", "near-full-client", "https://example.test/page",),
+            Err(ServiceWorkerManagerError::ClientMessageCapacityExceeded {
+                limit: MAX_MESSAGES_PER_CLIENT,
+            })
+        );
+
+        manager
+            .client_messages
+            .insert((id, "full-client".into()), vec![Vec::new(); MAX_MESSAGES_PER_CLIENT]);
+        assert_eq!(
+            manager.post_message(id, 92, "null", "full-client", "https://example.test/page"),
+            Err(ServiceWorkerManagerError::ClientMessageCapacityExceeded {
+                limit: MAX_MESSAGES_PER_CLIENT,
+            })
+        );
+
+        let closed_key = (id, "closed-client".to_string());
+        manager.pending_client_messages.insert(closed_key.clone(), 2);
+        manager.runtimes.get_mut(&id).unwrap().shutdown();
+        let deadline = std::time::Instant::now() + Duration::from_secs(5);
+        while manager.pending_client_messages.contains_key(&closed_key) {
+            let _ = manager.poll();
+            assert!(std::time::Instant::now() < deadline, "runtime close timed out");
+            std::thread::sleep(Duration::from_millis(1));
+        }
+        assert_eq!(manager.client_messages_since(id, "closed-client", 0), (2, Vec::new()));
     }
 
     #[test]

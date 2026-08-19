@@ -11,9 +11,9 @@ use zero_page_runtime::{
     validate_service_worker_registration,
 };
 use zero_protocol::message::{
-    ServiceWorkerError, ServiceWorkerErrorCode, ServiceWorkerOperation, ServiceWorkerRequestParams,
-    ServiceWorkerResponseParams, ServiceWorkerResult, ServiceWorkerSnapshot, ServiceWorkerStateChanges,
-    ServiceWorkerStateWire,
+    ServiceWorkerClientMessages, ServiceWorkerError, ServiceWorkerErrorCode, ServiceWorkerOperation,
+    ServiceWorkerRequestParams, ServiceWorkerResponseParams, ServiceWorkerResult, ServiceWorkerSnapshot,
+    ServiceWorkerStateChanges, ServiceWorkerStateWire,
 };
 use zero_script_sandbox::SandboxConfig;
 use zero_storage::{ServiceWorkerRegistration, ServiceWorkerState};
@@ -95,6 +95,25 @@ impl BrowserServiceWorkerOwner {
         private: bool,
         request_id: u64,
         authority_url: Option<&str>,
+        params: ServiceWorkerRequestParams,
+    ) -> ServiceWorkerRequestDisposition {
+        self.begin_request_for_client(
+            tab_id,
+            private,
+            request_id,
+            authority_url,
+            &tab_id.0.to_string(),
+            params,
+        )
+    }
+
+    pub(crate) fn begin_request_for_client(
+        &mut self,
+        tab_id: TabId,
+        private: bool,
+        request_id: u64,
+        authority_url: Option<&str>,
+        client_id: &str,
         params: ServiceWorkerRequestParams,
     ) -> ServiceWorkerRequestDisposition {
         if let Err(message) = params.validate() {
@@ -262,10 +281,28 @@ impl BrowserServiceWorkerOwner {
                     .authorized_registration(profile, registration_id, &authority)
                     .and_then(|_| {
                         self.manager_mut(profile)
-                            .post_message(registration_id, request_id, &data_json)
+                            .post_message(registration_id, request_id, &data_json, client_id, authority.as_str())
                             .map_err(manager_error)
                     })
                     .map(|()| ServiceWorkerResult::Empty);
+                self.result_disposition(tab_id, request_id, result)
+            }
+            ServiceWorkerOperation::ClientMessages {
+                registration_id,
+                after_sequence,
+            } => {
+                let result = self
+                    .authorized_registration(profile, registration_id, &authority)
+                    .map(|_| {
+                        let (latest_sequence, data_json) = self
+                            .manager(profile)
+                            .map(|manager| manager.client_messages_since(registration_id, client_id, after_sequence))
+                            .unwrap_or_default();
+                        ServiceWorkerResult::ClientMessages(ServiceWorkerClientMessages {
+                            latest_sequence,
+                            data_json,
+                        })
+                    });
                 self.result_disposition(tab_id, request_id, result)
             }
         }
@@ -549,7 +586,9 @@ fn manager_error(error: ServiceWorkerManagerError) -> ServiceWorkerError {
         ServiceWorkerManagerError::JobInProgress(_)
         | ServiceWorkerManagerError::EvaluationPending(_)
         | ServiceWorkerManagerError::InvalidState { .. } => ServiceWorkerErrorCode::InvalidState,
-        ServiceWorkerManagerError::CapacityExceeded { .. } => ServiceWorkerErrorCode::Capacity,
+        ServiceWorkerManagerError::CapacityExceeded { .. }
+        | ServiceWorkerManagerError::ClientCapacityExceeded { .. }
+        | ServiceWorkerManagerError::ClientMessageCapacityExceeded { .. } => ServiceWorkerErrorCode::Capacity,
         ServiceWorkerManagerError::Runtime(_) => ServiceWorkerErrorCode::Internal,
     };
     ServiceWorkerError {

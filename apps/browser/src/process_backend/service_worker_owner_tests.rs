@@ -131,7 +131,9 @@ fn multiprocess_navigator_registration_uses_browser_owner() {
     let page_url = format!("http://{}/page", listener.local_addr().unwrap());
     let worker_source = "addEventListener('install', event => event.waitUntil(Promise.resolve()));\
          addEventListener('activate', event => event.waitUntil(clients.claim()));\
-         addEventListener('message', event => { globalThis.lastMessage = event.data.kind; });";
+         addEventListener('message', event => {\
+           event.source.postMessage({echo:event.data.kind, sourceURL:event.source.url});\
+         });";
     let response = format!(
         "HTTP/1.1 200 OK\r\nContent-Type: application/javascript\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
         worker_source.len(),
@@ -157,6 +159,11 @@ fn multiprocess_navigator_registration_uses_browser_owner() {
         "globalThis.__swResult = 'pending';\
          (async function () {\
            try {\
+             globalThis.__swReply = 'pending';\
+             navigator.serviceWorker.addEventListener('message', function(event) {\
+               globalThis.__swReply = event.data.echo + '|' + event.data.sourceURL + '|' +\
+                 String(event.source === globalThis.__swReady.active);\
+             });\
              var reg = await navigator.serviceWorker.register('/sw.js');\
              var ready = await navigator.serviceWorker.ready;\
              ready.active.postMessage({kind:'page'});\
@@ -177,10 +184,12 @@ fn multiprocess_navigator_registration_uses_browser_owner() {
             &mut snapshots,
             tab_id,
             2,
-            "if (globalThis.__swResult === 'ready' && navigator.serviceWorker.controller) {\
+            "if (globalThis.__swResult === 'ready' && navigator.serviceWorker.controller &&\
+                 globalThis.__swReply !== 'pending') {\
                globalThis.__swResult = globalThis.__swReg.scope + '|' +\
                  (globalThis.__swReady.active ? globalThis.__swReady.active.state : 'none') + '|' +\
-                 String(navigator.serviceWorker.controller === globalThis.__swReady.active);\
+                 String(navigator.serviceWorker.controller === globalThis.__swReady.active) + '|' +\
+                 globalThis.__swReply;\
              }\
              return String(globalThis.__swResult);",
         )
@@ -211,7 +220,7 @@ fn multiprocess_navigator_registration_uses_browser_owner() {
     backend.remove_renderer(tab_id);
 
     let expected_scope = format!("http://{}/", page_url.split('/').nth(2).unwrap());
-    assert_eq!(result, format!("{expected_scope}|activated|true"));
+    assert_eq!(result, format!("{expected_scope}|activated|true|page|{page_url}|true"));
 }
 
 #[test]

@@ -139,6 +139,13 @@ fn service_worker_discovery_operations_round_trip() {
                 data_json: r#"{"value":"hello"}"#.into(),
             },
         ),
+        (
+            8,
+            ServiceWorkerOperation::ClientMessages {
+                registration_id: 9,
+                after_sequence: 2,
+            },
+        ),
     ] {
         let decoded = roundtrip(IpcMessage {
             id,
@@ -187,6 +194,24 @@ fn service_worker_state_changes_round_trip() {
         panic!("expected ServiceWorkerResponse");
     };
     assert_eq!(params.result, Ok(ServiceWorkerResult::StateChanges(changes)));
+}
+
+#[test]
+fn service_worker_client_messages_round_trip() {
+    let messages = ServiceWorkerClientMessages {
+        latest_sequence: 2,
+        data_json: vec![r#"{"echo":"hello"}"#.into()],
+    };
+    let decoded = roundtrip(IpcMessage {
+        id: 46,
+        kind: IpcMessageKind::ServiceWorkerResponse(ServiceWorkerResponseParams {
+            result: Ok(ServiceWorkerResult::ClientMessages(messages.clone())),
+        }),
+    });
+    let IpcMessageKind::ServiceWorkerResponse(params) = decoded.kind else {
+        panic!("expected ServiceWorkerResponse");
+    };
+    assert_eq!(params.result, Ok(ServiceWorkerResult::ClientMessages(messages)));
 }
 
 #[test]
@@ -286,6 +311,13 @@ fn service_worker_nested_enum_discriminants_remain_append_only() {
         }),
         8
     );
+    assert_eq!(
+        discriminant(&ServiceWorkerOperation::ClientMessages {
+            registration_id: 1,
+            after_sequence: 0,
+        }),
+        9
+    );
 
     assert_eq!(discriminant(&ServiceWorkerResult::Registered { registration_id: 1 }), 0);
     assert_eq!(
@@ -308,6 +340,13 @@ fn service_worker_nested_enum_discriminants_remain_append_only() {
             claim_clients: false,
         })),
         6
+    );
+    assert_eq!(
+        discriminant(&ServiceWorkerResult::ClientMessages(ServiceWorkerClientMessages {
+            latest_sequence: 0,
+            data_json: Vec::new(),
+        })),
+        7
     );
 
     for (index, code) in [

@@ -628,6 +628,7 @@ impl ServiceWorkerRequestParams {
                 }
                 Ok(())
             }
+            ServiceWorkerOperation::ClientMessages { .. } => Ok(()),
             ServiceWorkerOperation::GetRegistration { client_url } => {
                 if client_url.is_empty() {
                     return Err("Service Worker client URL is required");
@@ -691,6 +692,13 @@ pub enum ServiceWorkerOperation {
         /// Serialized structured payload.
         data_json: String,
     },
+    /// Read worker messages addressed to the committed document.
+    ClientMessages {
+        /// Browser-assigned registration version ID.
+        registration_id: u64,
+        /// Number of completed message-event batches already observed by this renderer.
+        after_sequence: u64,
+    },
 }
 
 /// Browser Service Worker owner response.
@@ -720,6 +728,17 @@ pub enum ServiceWorkerResult {
     Snapshots(Vec<ServiceWorkerSnapshot>),
     /// Ordered lifecycle states after a renderer-owned cursor.
     StateChanges(ServiceWorkerStateChanges),
+    /// Worker messages addressed to one committed document.
+    ClientMessages(ServiceWorkerClientMessages),
+}
+
+/// Immutable worker-to-client message log suffix.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ServiceWorkerClientMessages {
+    /// Total number of completed message-event batches at response time.
+    pub latest_sequence: u64,
+    /// JSON-compatible structured payloads after the request cursor.
+    pub data_json: Vec<String>,
 }
 
 /// Pure-value registration snapshot.

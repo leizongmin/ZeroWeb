@@ -3,6 +3,7 @@
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
+use std::sync::atomic::{AtomicU64, Ordering};
 
 use zero_engine::{
     BudgetAdvance, BudgetedRenderSession, DomMutation, MediaType, PipelineTimings, PrefersColorSchemeValue,
@@ -33,6 +34,8 @@ use crate::{IndexedDbOwner, WebViewError};
 
 mod user_actions;
 pub use user_actions::WebViewUserActionResult;
+
+static NEXT_WEBVIEW_ID: AtomicU64 = AtomicU64::new(1);
 
 /// 外部 JS 执行器类型（浏览器 Tab JS 线程注入；为 None 时使用进程内 V8）。
 pub type ExternalScriptExecutor = std::sync::Arc<dyn Fn(&str) -> Result<String, String> + Send + Sync>;
@@ -273,6 +276,10 @@ pub struct WebView {
     indexed_db_bridge: zero_engine::IndexedDbBridge,
     /// IndexedDB origin 的可信页面 URL 来源。
     page_url_wire: std::sync::Arc<std::sync::Mutex<String>>,
+    /// Stable in-process client identity for Service Worker message routing.
+    service_worker_client_id: String,
+    /// Current Document generation used to isolate worker message queues.
+    service_worker_client_generation: std::sync::Arc<AtomicU64>,
     /// DOM shim（generate_js_dom_shim）是否已注入沙箱（M2：幂等保护——
     /// 重复执行会重置 _nodeMap 丢失监听器，故只注入一次）。
     js_shim_initialized: bool,
@@ -379,6 +386,8 @@ impl WebView {
         let fetch_handler = config.fetch_handler.clone();
         let indexed_db_bridge = zero_engine::IndexedDbBridge::new(indexed_db_owner.handler());
         let page_url_wire = std::sync::Arc::new(std::sync::Mutex::new(String::from("about:blank")));
+        let service_worker_client_id = format!("webview-{}", NEXT_WEBVIEW_ID.fetch_add(1, Ordering::Relaxed));
+        let service_worker_client_generation = std::sync::Arc::new(AtomicU64::new(0));
         // 懒创建：js_sandbox 延后到首次实际执行脚本时初始化（见 ensure_sandbox）。
         // 无脚本页面（多数 WebView 页面）不创建 V8 isolate，显著降低常驻内存
         // （RSS ~0.2G/实例）；首次执行脚本时才有初始化成本，行为等价。
@@ -394,6 +403,8 @@ impl WebView {
             js_sandbox,
             indexed_db_bridge,
             page_url_wire,
+            service_worker_client_id,
+            service_worker_client_generation,
             js_shim_initialized: false,
             external_script,
             script_source_fetcher,
@@ -552,6 +563,8 @@ impl WebView {
     pub fn load_html(&mut self, html: &str, css: Option<&str>) -> WebViewRenderResult {
         self.reset_service_worker_document_projection();
         self.document_generation = self.document_generation.wrapping_add(1);
+        self.service_worker_client_generation
+            .store(self.document_generation, Ordering::Relaxed);
         self.focus_owner = None;
         self.pipeline.set_focused_selector(None);
         self.page_scripts_initialized = false;
@@ -1037,6 +1050,8 @@ impl WebView {
     pub fn load_url(&mut self, url: &str) {
         self.navigation_epoch = self.navigation_epoch.wrapping_add(1);
         self.document_generation = self.document_generation.wrapping_add(1);
+        self.service_worker_client_generation
+            .store(self.document_generation, Ordering::Relaxed);
         self.focus_owner = None;
         self.pipeline.set_focused_selector(None);
         self.page_scripts_initialized = false;
@@ -1117,6 +1132,8 @@ impl WebView {
     pub fn prepare_document_state(&mut self, page_url: &str) {
         self.navigation_epoch = self.navigation_epoch.wrapping_add(1);
         self.document_generation = self.document_generation.wrapping_add(1);
+        self.service_worker_client_generation
+            .store(self.document_generation, Ordering::Relaxed);
         self.focus_owner = None;
         self.pipeline.set_focused_selector(None);
         self.page_scripts_initialized = false;
@@ -1487,6 +1504,8 @@ impl WebView {
             self.sw_manager.clone(),
             self.script_source_fetcher.clone(),
             self.page_url_wire.clone(),
+            self.service_worker_client_id.clone(),
+            self.service_worker_client_generation.clone(),
             self.http_client.timeout_secs,
         );
         self.indexed_db_bridge.register(&mut *sandbox, &self.page_url_wire);
@@ -2367,6 +2386,8 @@ impl WebView {
         manager: std::sync::Arc<std::sync::Mutex<ServiceWorkerManager>>,
         source_fetcher: Option<ScriptSourceFetcher>,
         page_url: std::sync::Arc<std::sync::Mutex<String>>,
+        client_id: String,
+        client_generation: std::sync::Arc<AtomicU64>,
         timeout_secs: u64,
     ) {
         let controller_page_url = page_url.clone();
@@ -2512,6 +2533,9 @@ impl WebView {
         );
 
         let post_message_manager = manager.clone();
+        let post_message_client_id = client_id.clone();
+        let post_message_generation = client_generation.clone();
+        let post_message_page_url = controller_page_url.clone();
         sandbox.register_callback(
             "__zw_sw_post_message",
             Box::new(move |args| {
@@ -2519,18 +2543,64 @@ impl WebView {
                     return serde_json::json!({"ok": false, "error": "invalid registration id"}).to_string();
                 };
                 let data_json = args.get(1).map(String::as_str).unwrap_or("");
+                let current_client_id = format!(
+                    "{}:{}",
+                    post_message_client_id,
+                    post_message_generation.load(Ordering::Relaxed)
+                );
+                let client_url = match post_message_page_url.lock() {
+                    Ok(url) => url.clone(),
+                    Err(_) => {
+                        return serde_json::json!({"ok": false, "error": "page URL lock poisoned"}).to_string();
+                    }
+                };
                 let result = post_message_manager
                     .lock()
                     .map_err(|_| "manager lock poisoned".to_string())
                     .and_then(|mut manager| {
                         manager
-                            .post_message(registration_id, registration_id, data_json)
+                            .post_message(
+                                registration_id,
+                                registration_id,
+                                data_json,
+                                &current_client_id,
+                                &client_url,
+                            )
                             .map_err(|error| error.to_string())
                     });
                 match result {
                     Ok(()) => serde_json::json!({"ok": true}).to_string(),
                     Err(error) => serde_json::json!({"ok": false, "error": error}).to_string(),
                 }
+            }),
+        );
+
+        let client_messages_manager = manager.clone();
+        let client_messages_generation = client_generation;
+        sandbox.register_callback(
+            "__zw_sw_client_messages",
+            Box::new(move |args| {
+                let Some(registration_id) = args.first().and_then(|value| value.parse::<u64>().ok()) else {
+                    return serde_json::json!({"ok": false, "error": "invalid registration id"}).to_string();
+                };
+                let after_sequence = args.get(1).and_then(|value| value.parse::<u64>().ok()).unwrap_or(0);
+                let Ok(mut manager) = client_messages_manager.lock() else {
+                    return serde_json::json!({"ok": false, "error": "manager lock poisoned"}).to_string();
+                };
+                let _ = manager.poll();
+                let current_client_id = format!("{}:{}", client_id, client_messages_generation.load(Ordering::Relaxed));
+                let (latest_sequence, data_json) =
+                    manager.client_messages_since(registration_id, &current_client_id, after_sequence);
+                let messages = data_json
+                    .into_iter()
+                    .filter_map(|value| serde_json::from_str::<serde_json::Value>(&value).ok())
+                    .collect::<Vec<_>>();
+                serde_json::json!({
+                    "ok": true,
+                    "latestSequence": latest_sequence,
+                    "messages": messages,
+                })
+                .to_string()
             }),
         );
 
