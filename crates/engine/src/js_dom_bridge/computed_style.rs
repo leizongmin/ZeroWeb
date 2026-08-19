@@ -375,7 +375,7 @@ pub fn serialize_computed_property(style: &ComputedStyle, prop: &str) -> String 
             &style.text_decoration_color,
             element_color,
         )),
-        "text-decoration-thickness" => text_decoration_thickness_to_css(&style.text_decoration_thickness),
+        "text-decoration-thickness" => text_decoration_thickness_to_css(&style.text_decoration_thickness, font_size_px),
         // ── text-underline-offset（R2762）── CSS Text Decoration 4 §2.5，下划线偏移。Auto→auto；Length→px。
         "text-underline-offset" => text_underline_offset_to_css(&style.text_underline_offset, font_size_px),
         // ── text-emphasis 簇（R2763）── CJK 文本强调。style（char→keyword 逆映射）/ color（currentcolor→rgb）/
@@ -390,7 +390,7 @@ pub fn serialize_computed_property(style: &ComputedStyle, prop: &str) -> String 
         ),
         // ── text-decoration 简写（R2755）── 4 longhand 早覆（上方）；简写 CSSOM 重组
         // （line=none→"none"；否则 line/thickness/style/color 省初值），Chromium 150 oracle 锚定。
-        "text-decoration" => text_decoration_shorthand_to_css(style, element_color),
+        "text-decoration" => text_decoration_shorthand_to_css(style, element_color, font_size_px),
         "direction" => direction_str(&style.direction),
         "border-collapse" => border_collapse_str(&style.border_collapse),
         "table-layout" => table_layout_str(&style.table_layout),
@@ -1161,13 +1161,13 @@ fn list_style_shorthand_to_css(style: &ComputedStyle) -> String {
 /// （Chromium oracle）：line=none→整值 `"none"`；否则顺序 `"line [thickness if !auto] [style if !solid]
 /// [color if !currentcolor]"`。`text-decoration:underline overline wavy green 3px`→
 /// `"underline overline 3px wavy rgb(0, 128, 0)"`；color 仅当显式色（非 currentcolor 关键字）才显。
-fn text_decoration_shorthand_to_css(style: &ComputedStyle, element_color: &ColorValue) -> String {
+fn text_decoration_shorthand_to_css(style: &ComputedStyle, element_color: &ColorValue, font_size_px: f64) -> String {
     let line = text_decoration_line_to_css(&style.text_decoration_line);
     if line == "none" {
         return "none".to_string();
     }
     let mut parts = vec![line];
-    let thickness = text_decoration_thickness_to_css(&style.text_decoration_thickness);
+    let thickness = text_decoration_thickness_to_css(&style.text_decoration_thickness, font_size_px);
     if thickness != "auto" {
         parts.push(thickness);
     }
@@ -1543,11 +1543,11 @@ fn text_decoration_style_str(s: &TextDecorationStyleValue) -> String {
     .to_string()
 }
 
-/// `text-decoration-thickness`（CSS Text Decoration 4 §2.3）：auto/from-font 或长度（px）。
-fn text_decoration_thickness_to_css(t: &TextDecorationThicknessValue) -> String {
+/// `text-decoration-thickness`（CSS Text Decoration 4 §2.3）：auto/from-font 或长度百分比。
+fn text_decoration_thickness_to_css(t: &TextDecorationThicknessValue, font_size_px: f64) -> String {
     match t {
         TextDecorationThicknessValue::Auto => "auto".to_string(),
-        TextDecorationThicknessValue::Length(px) => format_num(*px, "px"),
+        TextDecorationThicknessValue::Length(lv) => length_to_css(lv, font_size_px),
     }
 }
 

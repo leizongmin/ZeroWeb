@@ -451,17 +451,47 @@ pub fn parse_text_decoration_style(value: &str) -> Option<TextDecorationStyleVal
 
 /// 解析 CSS text-decoration-thickness 值（CSS Text Decoration 4 §2.3）。R1402。
 ///
-/// 支持 `auto` / `from-font` 关键字与 `<length>`（如 `2px`）。em/rem/% 须 computed 层
-/// 字号上下文，指定值层仅认 Px（driver test text-decoration-thickness-length-rounding 用 px）。
+/// 支持 `auto` / `from-font` 关键字与 `<length-percentage [0,∞]>`。
 pub fn parse_text_decoration_thickness(value: &str) -> Option<TextDecorationThicknessValue> {
     let v = value.trim();
     match v.to_ascii_lowercase().as_str() {
         "auto" => Some(TextDecorationThicknessValue::Auto),
         "from-font" => Some(TextDecorationThicknessValue::FromFont),
-        _ => match parse_length(v) {
-            Some(LengthValue::Px(n)) if n >= 0.0 => Some(TextDecorationThicknessValue::Length(n)),
-            _ => None,
-        },
+        _ => {
+            let length =
+                parse_length(v).or_else(|| parse_math_function(v).map(|expr| LengthValue::Calc(Box::new(expr))))?;
+            text_decoration_thickness_length_is_valid(v, &length)
+                .then_some(TextDecorationThicknessValue::Length(length))
+        }
+    }
+}
+
+fn text_decoration_thickness_length_is_valid(raw: &str, value: &LengthValue) -> bool {
+    if matches!(
+        raw.trim().to_ascii_lowercase().as_str(),
+        "thin" | "medium" | "thick" | "auto" | "min-content" | "max-content" | "fit-content"
+    ) {
+        return false;
+    }
+    match value {
+        LengthValue::Px(v)
+        | LengthValue::Em(v)
+        | LengthValue::Ex(v)
+        | LengthValue::Rex(v)
+        | LengthValue::Cap(v)
+        | LengthValue::Rcap(v)
+        | LengthValue::Rem(v)
+        | LengthValue::Vh(v)
+        | LengthValue::Vw(v)
+        | LengthValue::Vmin(v)
+        | LengthValue::Vmax(v)
+        | LengthValue::Ch(v)
+        | LengthValue::Rch(v)
+        | LengthValue::Ic(v)
+        | LengthValue::Ric(v)
+        | LengthValue::Percentage(v) => v.is_finite() && *v >= 0.0,
+        LengthValue::Calc(_) => true,
+        _ => false,
     }
 }
 

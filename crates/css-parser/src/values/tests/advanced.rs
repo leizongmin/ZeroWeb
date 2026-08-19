@@ -50,9 +50,27 @@ fn test_parse_length_boundary_conditions() {
 fn test_parse_text_decoration_thickness_rejects_negative_length() {
     assert_eq!(
         parse_text_decoration_thickness("2px"),
-        Some(TextDecorationThicknessValue::Length(2.0))
+        Some(TextDecorationThicknessValue::Length(LengthValue::Px(2.0)))
     );
+    assert_eq!(
+        parse_text_decoration_thickness("4em"),
+        Some(TextDecorationThicknessValue::Length(LengthValue::Em(4.0)))
+    );
+    assert_eq!(
+        parse_text_decoration_thickness("100%"),
+        Some(TextDecorationThicknessValue::Length(LengthValue::Percentage(100.0)))
+    );
+    assert!(matches!(
+        parse_text_decoration_thickness("calc(1em)"),
+        Some(TextDecorationThicknessValue::Length(LengthValue::Calc(_)))
+    ));
     assert_eq!(parse_text_decoration_thickness("-1px"), None);
+    assert_eq!(parse_text_decoration_thickness("-1%"), None);
+    assert_eq!(parse_text_decoration_thickness("thin"), None);
+    assert_eq!(parse_text_decoration_thickness("min-content"), None);
+    assert_eq!(parse_text_decoration_thickness("fit-content(10px)"), None);
+    assert_eq!(parse_text_decoration_thickness("infpx"), None);
+    assert_eq!(parse_text_decoration_thickness("NaNpx"), None);
 }
 
 /// 测试 parse_color 边界条件：无效十六进制长度、超出范围的 rgb 分量、空 hwb

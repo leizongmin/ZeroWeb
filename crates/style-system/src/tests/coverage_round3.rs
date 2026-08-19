@@ -218,7 +218,7 @@ fn apply_text_decoration_thickness() {
     ));
     assert_eq!(
         style.text_decoration_thickness,
-        TextDecorationThicknessValue::Length(2.0)
+        TextDecorationThicknessValue::Length(LengthValue::Px(2.0))
     );
     // 2.3px → Length(2.3)（floor 发生在 paint 层 device-px 取整）
     assert!(crate::property::apply::apply_property_value(
@@ -228,7 +228,26 @@ fn apply_text_decoration_thickness() {
     ));
     assert_eq!(
         style.text_decoration_thickness,
-        TextDecorationThicknessValue::Length(2.3)
+        TextDecorationThicknessValue::Length(LengthValue::Px(2.3))
+    );
+    // em/% 合法，used value 阶段按字体上下文解析。
+    assert!(crate::property::apply::apply_property_value(
+        &mut style,
+        "text-decoration-thickness",
+        "4em"
+    ));
+    assert_eq!(
+        style.text_decoration_thickness,
+        TextDecorationThicknessValue::Length(LengthValue::Em(4.0))
+    );
+    assert!(crate::property::apply::apply_property_value(
+        &mut style,
+        "text-decoration-thickness",
+        "100%"
+    ));
+    assert_eq!(
+        style.text_decoration_thickness,
+        TextDecorationThicknessValue::Length(LengthValue::Percentage(100.0))
     );
     // auto 关键字
     assert!(crate::property::apply::apply_property_value(
@@ -250,6 +269,14 @@ fn apply_text_decoration_thickness() {
         "-1px"
     ));
     assert_eq!(style.text_decoration_thickness, previous);
+    for value in ["thin", "min-content", "fit-content(10px)", "infpx", "NaNpx"] {
+        assert!(!crate::property::apply::apply_property_value(
+            &mut style,
+            "text-decoration-thickness",
+            value
+        ));
+        assert_eq!(style.text_decoration_thickness, previous);
+    }
 }
 
 #[test]

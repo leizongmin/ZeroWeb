@@ -225,6 +225,8 @@ Text-underline-offset exposed the inherited text-decoration offset variant: a pr
 
 Text-decoration-inset exposed the two-value text-decoration inset variant: even when both slots allow signed offsets and percentages, each slot still needs the same raw-token validation before expansion. Validate every token before cloning or assigning the start/end pair so one invalid alias cannot partially overwrite the computed decoration inset.
 
+Text-decoration-thickness exposed the used-value text-decoration thickness variant: a parser that stores only px both rejects legal relative/percentage/calc values and can still admit shared-parser aliases such as `thin`. Store the specified `<length-percentage>` as `LengthValue`, validate the non-negative grammar at parse time, then resolve against font size only at paint/CSSOM used-value boundaries.
+
 ## Root Cause
 
 The shorthand layer used heuristic component classifiers and treated unrecognized tokens as absent optional components. That is wrong for CSS shorthands such as `border`, where every token must match one of the allowed component grammars. A shared parser can also be broader than the property grammar that consumes it: general length parsing may accept `auto`, intrinsic sizing keywords, or percentages that `border-width` must reject.

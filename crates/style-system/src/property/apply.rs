@@ -673,8 +673,8 @@ pub fn apply_property_value_with_quirks(
                     values::TextDecorationThicknessValue::Auto | values::TextDecorationThicknessValue::FromFont => {
                         super::types::TextDecorationThicknessValue::Auto
                     }
-                    values::TextDecorationThicknessValue::Length(n) => {
-                        super::types::TextDecorationThicknessValue::Length(n)
+                    values::TextDecorationThicknessValue::Length(lv) => {
+                        super::types::TextDecorationThicknessValue::Length(lv)
                     }
                 };
                 return true;

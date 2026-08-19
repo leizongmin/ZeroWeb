@@ -213,8 +213,8 @@ pub enum TextDecorationStyleValue {
 pub enum TextDecorationThicknessValue {
     /// auto（默认）/ from-font：用字体度量厚度（ZW 近似 font_size×0.06）。
     Auto,
-    /// 明确长度（px）。
-    Length(f64),
+    /// 明确长度或百分比，paint used-value 阶段按字体上下文解析。
+    Length(LengthValue),
 }
 
 /// CSS text-transform 值。

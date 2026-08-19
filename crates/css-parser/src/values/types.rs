@@ -584,8 +584,8 @@ pub enum TextDecorationThicknessValue {
     Auto,
     /// from-font：显式从字体度量取 underline 厚度（ZW 无字体度量，回退 auto）。
     FromFont,
-    /// 明确长度（px/em 等已解析为 px）。R1402：仅 length 值覆盖默认厚度。
-    Length(f64),
+    /// 明确长度或百分比。R1402/R3565：used value 阶段按字体上下文解析。
+    Length(LengthValue),
 }
 
 /// CSS text-underline-offset 值（CSS Text Decoration 4 §2.5）。
