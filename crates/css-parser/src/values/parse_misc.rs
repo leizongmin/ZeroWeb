@@ -559,12 +559,16 @@ pub fn parse_text_emphasis_style(value: &str) -> Option<TextEmphasisStyleValue> 
 pub fn parse_text_emphasis_position(value: &str) -> Option<TextEmphasisPositionValue> {
     let mut over: Option<bool> = None;
     let mut right: Option<bool> = None;
-    for tok in value.split_whitespace() {
+    let tokens: Vec<&str> = value.split_whitespace().collect();
+    if tokens.is_empty() {
+        return None;
+    }
+    for tok in tokens {
         match tok.to_ascii_lowercase().as_str() {
-            "over" => over = Some(true),
-            "under" => over = Some(false),
-            "right" => right = Some(true),
-            "left" => right = Some(false),
+            "over" if over.is_none() => over = Some(true),
+            "under" if over.is_none() => over = Some(false),
+            "right" if right.is_none() => right = Some(true),
+            "left" if right.is_none() => right = Some(false),
             _ => return None,
         }
     }

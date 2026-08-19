@@ -1872,6 +1872,10 @@ mod tests {
         // 缺省 right/left → right
         assert_eq!(parse_text_emphasis_position("over"), Some(OverRight));
         assert_eq!(parse_text_emphasis_position("under"), Some(UnderRight));
+        assert!(parse_text_emphasis_position("").is_none());
+        assert!(parse_text_emphasis_position("   ").is_none());
+        assert!(parse_text_emphasis_position("over under").is_none());
+        assert!(parse_text_emphasis_position("left right").is_none());
         assert!(parse_text_emphasis_position("beside").is_none());
     }
 
