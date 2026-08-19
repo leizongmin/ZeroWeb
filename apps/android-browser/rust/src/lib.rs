@@ -45,6 +45,8 @@ static ANDROID_RENDERER: OnceLock<Mutex<Option<AndroidRendererTransport>>> = Onc
 #[cfg(target_os = "android")]
 static ANDROID_PAGE_FRAME: OnceLock<Mutex<Option<Vec<u8>>>> = OnceLock::new();
 #[cfg(target_os = "android")]
+static ANDROID_PAGE_META: OnceLock<Mutex<Option<(u64, u64, u64, f32)>>> = OnceLock::new();
+#[cfg(target_os = "android")]
 static ANDROID_SECURITY: OnceLock<Mutex<zero_security::SecurityContext>> = OnceLock::new();
 #[cfg(target_os = "android")]
 static ANDROID_NAVIGATION_EPOCH: AtomicU64 = AtomicU64::new(1);
@@ -62,6 +64,11 @@ fn android_renderer() -> &'static Mutex<Option<AndroidRendererTransport>> {
 #[cfg(target_os = "android")]
 fn android_page_frame() -> &'static Mutex<Option<Vec<u8>>> {
     ANDROID_PAGE_FRAME.get_or_init(|| Mutex::new(None))
+}
+
+#[cfg(target_os = "android")]
+fn android_page_meta() -> &'static Mutex<Option<(u64, u64, u64, f32)>> {
+    ANDROID_PAGE_META.get_or_init(|| Mutex::new(None))
 }
 
 #[cfg(target_os = "android")]
@@ -487,13 +494,74 @@ pub extern "system" fn Java_com_leizm_zeroweb_NativeBridge_nativeScroll(
     if !delta_y.is_finite() || delta_y.abs() > 4_096.0 {
         return JNI_FALSE;
     }
-    send_renderer(IpcMessageKind::ScrollEvent(ScrollEventParams {
+    if send_renderer(IpcMessageKind::ScrollEvent(ScrollEventParams {
         delta_x: 0.0,
         delta_y,
         cursor_x: ANDROID_PAGE_VIEWPORT_WIDTH as f32 / 2.0,
         cursor_y: ANDROID_PAGE_VIEWPORT_HEIGHT as f32 / 2.0,
     }))
-    .map_or(JNI_FALSE, |_| JNI_TRUE)
+    .is_err()
+    {
+        return JNI_FALSE;
+    }
+    compositor_scroll(delta_y).map_or(JNI_FALSE, |_| JNI_TRUE)
+}
+
+#[cfg(target_os = "android")]
+fn compositor_scroll(delta_y: f32) -> Result<(), String> {
+    let mut meta = android_page_meta()
+        .lock()
+        .map_err(|_| "Android page metadata lock poisoned".to_string())?;
+    let (surface_id, navigation_epoch, frame_id, scroll_y) = meta
+        .as_mut()
+        .ok_or_else(|| "Android page frame is not ready".to_string())?;
+    *scroll_y = (*scroll_y + delta_y).max(0.0);
+    let mut slot = android_compositor()
+        .lock()
+        .map_err(|_| "Android compositor socket lock poisoned".to_string())?;
+    let transport = slot
+        .as_mut()
+        .ok_or_else(|| "Android compositor socket is not attached".to_string())?;
+    transport
+        .send(IpcMessage {
+            id: 12,
+            kind: IpcMessageKind::CompositorSetScroll {
+                surface_id: *surface_id,
+                scroll_x: 0.0,
+                scroll_y: *scroll_y,
+            },
+        })
+        .map_err(|e| e.to_string())?;
+    if !matches!(
+        transport.recv(),
+        Ok(IpcMessage {
+            id: 12,
+            kind: IpcMessageKind::Ok
+        })
+    ) {
+        return Err("Android compositor rejected scroll".to_string());
+    }
+    transport
+        .send(IpcMessage {
+            id: 13,
+            kind: IpcMessageKind::GetCompositorFrame {
+                surface_id: *surface_id,
+                navigation_epoch: *navigation_epoch,
+                frame_id: *frame_id,
+            },
+        })
+        .map_err(|e| e.to_string())?;
+    let frame = match transport.recv().map_err(|e| e.to_string())? {
+        IpcMessage {
+            id: 13,
+            kind: IpcMessageKind::CompositorFrameData { rgba, .. },
+        } if !rgba.is_empty() => rgba,
+        _ => return Err("Android compositor returned no scrolled frame".to_string()),
+    };
+    *android_page_frame()
+        .lock()
+        .map_err(|_| "Android page frame lock poisoned".to_string())? = Some(frame);
+    Ok(())
 }
 
 #[cfg(target_os = "android")]
@@ -647,6 +715,10 @@ fn forward_renderer_frame(
     *android_page_frame()
         .lock()
         .map_err(|_| "Android page frame lock poisoned".to_string())? = Some(frame);
+    *android_page_meta()
+        .lock()
+        .map_err(|_| "Android page metadata lock poisoned".to_string())? =
+        Some((surface_id, navigation_epoch, frame_id, 0.0));
     Ok(())
 }
 
