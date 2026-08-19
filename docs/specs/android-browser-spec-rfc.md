@@ -1094,3 +1094,4 @@ make test
 | v1.2 | 2026-08-19 | 完整 recursive rusty_v8 150.2.0 源树在 WSL 验证可构建 Android x86_64 renderer：须使用 Chromium clang 23、Linux NDK r30、完整子模块，并为 upstream Android bindgen 提供 versioned target/sysroot 参数。crates.io 裁剪包与 Windows 原生构建均不足；后续将此 Linux 构建链脚本化，不以 QuickJS 替代 |
 | v1.3 | 2026-08-19 | renderer-enabled native host 还依赖 NDK 的 `libc++_shared.so`；隔离 WSL 构建脚本将其与 host library 同时复制进 APK，并由 renderer install-smoke 检查 C++ runtime、renderer socket 与固定四进程拓扑 |
 | v1.4 | 2026-08-19 | WSL 使用完整 recursive `rusty_v8`、Chromium clang 23、NDK r30 以及显式注入的 GN/Ninja，已构建、安装并在 API 36 x86_64 模拟器验证 renderer-enabled APK；该证据不外推为 arm64 Release 通过，arm64 继续作为 M5 真机门禁。 |
+| v1.5 | 2026-08-19 | Android 真实长页验证显示 renderer 的 `ScrollEvent` 仅更新 JavaScript 可观察状态，不会自行发布新位图；M3 可见滚动调整为 browser host 向独立 compositor 发送 `CompositorSetScroll` 并回读其变换后的页面帧，renderer 仍接收原始事件以保持网页事件语义。 |
