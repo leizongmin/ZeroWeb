@@ -179,6 +179,8 @@ Padding exposed the logical-shorthand parity variant: a shorthand can reject inv
 
 Border-radius exposed the shared-alias variant inside a local validator: even a shorthand-specific validator can remain too broad if it accepts any `LengthValue` produced by the shared parser. Reject aliases that belong to another grammar, such as border-width `thin`/`medium`/`thick`, before accepting radius length-percentage values.
 
+Background-size exposed the dedicated-parser drift variant: having a property-specific parser is not enough if its internals still delegate to shared length parsing without checking the consuming grammar. Filter both single-value and two-value component paths for finite non-negative length/percentage values, and reject aliases that belong to other grammars before direct apply can persist them.
+
 ## Root Cause
 
 The shorthand layer used heuristic component classifiers and treated unrecognized tokens as absent optional components. That is wrong for CSS shorthands such as `border`, where every token must match one of the allowed component grammars. A shared parser can also be broader than the property grammar that consumes it: general length parsing may accept `auto`, intrinsic sizing keywords, or percentages that `border-width` must reject.

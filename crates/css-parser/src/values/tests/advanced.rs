@@ -822,6 +822,11 @@ fn test_parse_background_size_case_insensitive() {
 fn test_parse_background_size_invalid() {
     assert_eq!(parse_background_size(""), None);
     assert_eq!(parse_background_size("invalid"), None);
+    assert_eq!(parse_background_size("-1px"), None);
+    assert_eq!(parse_background_size("-50%"), None);
+    assert_eq!(parse_background_size("thin"), None);
+    assert_eq!(parse_background_size("auto -1px"), None);
+    assert_eq!(parse_background_size("100% thin"), None);
 }
 
 // ── background-attachment 解析测试 ──

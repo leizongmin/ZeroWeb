@@ -294,6 +294,18 @@ fn test_apply_background_size_variants() {
 }
 
 #[test]
+fn test_apply_background_size_rejects_invalid_consumer_grammar() {
+    let mut style = ComputedStyle::default();
+    assert!(apply_property_value(&mut style, "background-size", "cover"));
+    let previous = style.background_size.clone();
+
+    for value in ["-1px", "-50%", "thin", "auto -1px", "100% thin"] {
+        assert!(!apply_property_value(&mut style, "background-size", value));
+        assert_eq!(style.background_size, previous, "{} should not overwrite", value);
+    }
+}
+
+#[test]
 fn test_apply_background_attachment_variants() {
     for v in ["scroll", "fixed", "local"] {
         let (ok, _) = apply("background-attachment", v);

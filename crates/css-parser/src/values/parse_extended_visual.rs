@@ -1069,14 +1069,13 @@ pub fn parse_background_size(value: &str) -> Option<BackgroundSizeValue> {
         _ => {
             if v.ends_with('%') {
                 let pct: f32 = v.trim_end_matches('%').parse().ok()?;
-                Some(BackgroundSizeValue::Percent(pct))
-            } else if let Some(lv) = parse_length(&v) {
-                match lv {
-                    LengthValue::Px(n) => Some(BackgroundSizeValue::Length(n as f32)),
-                    LengthValue::Em(n) => Some(BackgroundSizeValue::Length(n as f32)),
-                    LengthValue::Rem(n) => Some(BackgroundSizeValue::Length(n as f32)),
-                    _ => None,
+                if pct.is_finite() && pct >= 0.0 {
+                    Some(BackgroundSizeValue::Percent(pct))
+                } else {
+                    None
                 }
+            } else if let Some(lv) = parse_length(&v) {
+                bg_size_length_px(&v, &lv).map(BackgroundSizeValue::Length)
             } else {
                 None
             }
@@ -1091,10 +1090,22 @@ fn parse_bg_size_component(token: &str) -> Option<BgSizeComponent> {
     }
     if token.ends_with('%') {
         let pct: f32 = token.trim_end_matches('%').parse().ok()?;
-        return Some(BgSizeComponent::Percent(pct));
+        return if pct.is_finite() && pct >= 0.0 {
+            Some(BgSizeComponent::Percent(pct))
+        } else {
+            None
+        };
     }
-    match parse_length(token)? {
-        LengthValue::Px(n) | LengthValue::Em(n) | LengthValue::Rem(n) => Some(BgSizeComponent::Length(n as f32)),
+    let lv = parse_length(token)?;
+    bg_size_length_px(token, &lv).map(BgSizeComponent::Length)
+}
+
+fn bg_size_length_px(raw: &str, value: &LengthValue) -> Option<f32> {
+    if matches!(raw.trim().to_ascii_lowercase().as_str(), "thin" | "medium" | "thick") {
+        return None;
+    }
+    match value {
+        LengthValue::Px(n) | LengthValue::Em(n) | LengthValue::Rem(n) if n.is_finite() && *n >= 0.0 => Some(*n as f32),
         _ => None,
     }
 }
