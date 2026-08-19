@@ -1,4 +1,4 @@
-.PHONY: setup-rusty-v8 fetch-wpt-data fetch-wpt-html-testharness update-wpt-data build browser-build browser browser-cpu browser-wpt-parity browser-debug browser-debug-wayland browser-debug-wayland-log browser-debug-x11 browser-compositor-smoke browser-compositor-real-site-smoke test testharness-html reftest reftest-oracle capture-oracle product-smoke-oracle product-smoke form-visual-smoke form-visual-browser-gpu-smoke product-smoke-legacy import-wpt audit-imported-font-resources reftest-trend reftest-trend-oracle reftest-smoke layout-golden layout-golden-update monthly-report bench bench-gate bench-capture bench-trend fetch-wpt-dom testharness-dom testharness-dom-native fetch-wpt-indexeddb testharness-indexeddb fetch-wpt-service-workers-tier-a audit-wpt-service-workers-tier-a test-wpt-service-workers-tier-a-assets fetch-wpt-service-workers-next-wave audit-wpt-service-workers-next-wave test-wpt-service-workers-next-wave-assets fetch-wpt-service-workers-static-wave audit-wpt-service-workers-static-wave test-wpt-service-workers-static-wave-assets target-disk-guard target/test-guard android-preflight android-apk android-release-apk android-wsl-renderer-apk android-wsl-renderer-install-smoke android-install-smoke
+.PHONY: setup-rusty-v8 fetch-wpt-data fetch-wpt-html-testharness update-wpt-data build browser-build browser browser-cpu browser-wpt-parity browser-debug browser-debug-wayland browser-debug-wayland-log browser-debug-x11 browser-compositor-smoke browser-compositor-real-site-smoke test testharness-html reftest reftest-oracle capture-oracle product-smoke-oracle product-smoke form-visual-smoke form-visual-browser-gpu-smoke product-smoke-legacy import-wpt audit-imported-font-resources reftest-trend reftest-trend-oracle reftest-smoke layout-golden layout-golden-update monthly-report bench bench-gate bench-capture bench-trend fetch-wpt-dom testharness-dom testharness-dom-native fetch-wpt-indexeddb testharness-indexeddb audit-wpt-service-workers-disposition fetch-wpt-service-workers-tier-a audit-wpt-service-workers-tier-a test-wpt-service-workers-tier-a-assets fetch-wpt-service-workers-next-wave audit-wpt-service-workers-next-wave test-wpt-service-workers-next-wave-assets fetch-wpt-service-workers-static-wave audit-wpt-service-workers-static-wave test-wpt-service-workers-static-wave-assets target-disk-guard target/test-guard android-preflight android-apk android-release-apk android-wsl-renderer-apk android-wsl-renderer-install-smoke android-install-smoke
 
 # Windows 的 make recipe 可能落到 cmd.exe（本机）或 Git Bash（GitHub Actions runner）——
 # 统一显式走 Git Bash，避免 cmd 语法在 bash 下解析失败（2026-08-16 CI 实测）。
@@ -218,6 +218,10 @@ fetch-wpt-indexeddb:
 
 testharness-indexeddb: fetch-wpt-indexeddb target/test-guard zero-wpt-runner-release
 	./target/test-guard --per-proc-mem 10 --total-mem 28 --time-limit $(or $(TIME_LIMIT),900) -- ./target/release/zero-wpt-runner testharness-indexeddb $(if $(FILTER),$(FILTER),)
+
+# Service Worker WPT 分母：294 个 source 必须有唯一且可重建的执行 lane。
+audit-wpt-service-workers-disposition:
+	python3 tests/wpt-runner/scripts/audit-service-worker-disposition.py
 
 # Service Worker M1 Tier A：仅恢复固定静态资产；runner/runtime 仍受 M0 RFC 审批门禁。
 fetch-wpt-service-workers-tier-a:

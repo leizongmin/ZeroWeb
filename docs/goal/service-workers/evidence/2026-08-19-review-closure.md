@@ -4,6 +4,7 @@
 **上游 revision**：`04067ce9c7c2165e71ad7d0dde10a4c5cb394a83`
 **状态**：M0 review complete（零 runtime 源码改动）
 **最终逐案裁决**：[final remaining review TSV](2026-08-19-final-remaining-review.tsv)
+**Runner disposition**：[294-source contract](2026-08-19-wpt-disposition.tsv)
 
 ## 来源分级
 
@@ -24,6 +25,8 @@
   review 为 **0**。
 - “review 清零”只证明 WPT 分母已分类，不代表 Service Worker runtime、fetch interception
   或 WPT 通过率完成；源码实现仍受 RFC 审批门禁。
+- runner 可直接按统一 contract 的 `core` / `defer` / `gated` / `skip` lane 选择 source；
+  `make audit-wpt-service-workers-disposition` 会从原始 inventory 和十批账本重建并逐字节校验。
 
 TSV SHA-256：
 `238904601e0c1a87b4a7a787e7ace8614d8f80f6af696bacd06154e111ef3900`。
@@ -156,10 +159,9 @@ CSP Python handler 为每个 directive 生成不同 CSP header 和 4 个 worker 
 
 ## 7. 后续输入
 
-1. RFC 批准前继续完善 skip/gated 可执行 contract，不改 runtime。
-2. RFC 批准后按 Tier A → next-wave → static-wave → defer family 顺序建立 red baseline。
-3. Dynamic WPT server adapter 落地时，从 gated 清单恢复完整上游 source。
-4. 只有 support envelope 扩大时才恢复 partition/multi-client/media/platform skip。
+1. RFC 批准后按 Tier A → next-wave → static-wave → defer family 顺序建立 red baseline。
+2. Dynamic WPT server adapter 落地时，从 gated 清单恢复完整上游 source。
+3. 只有 support envelope 扩大时才恢复 partition/multi-client/media/platform skip。
 
 ## 8. 质量审查
 
@@ -167,4 +169,5 @@ CSP Python handler 为每个 directive 生成不同 CSP header 和 4 个 worker 
 - [x] test-generating worker/helper 已读，270 个 subtest 已展开。
 - [x] defer、environment gated、support-envelope skip 已分开。
 - [x] 十批路径互斥并覆盖初始 review 152/152。
+- [x] 294 source / 331 URL 已转为唯一、可重建的 runner disposition contract。
 - [x] 未修改 runtime 源码、WPT 数据或既有 inventory 初筛记录。
