@@ -932,26 +932,34 @@ pub fn apply_property_value_with_quirks(
         }
         "top" => {
             if let Some(v) = parse_length_fn(value) {
-                style.top = v;
-                return true;
+                if positioned_offset_length_is_valid(value, &v) {
+                    style.top = v;
+                    return true;
+                }
             }
         }
         "right" => {
             if let Some(v) = parse_length_fn(value) {
-                style.right = v;
-                return true;
+                if positioned_offset_length_is_valid(value, &v) {
+                    style.right = v;
+                    return true;
+                }
             }
         }
         "bottom" => {
             if let Some(v) = parse_length_fn(value) {
-                style.bottom = v;
-                return true;
+                if positioned_offset_length_is_valid(value, &v) {
+                    style.bottom = v;
+                    return true;
+                }
             }
         }
         "left" => {
             if let Some(v) = parse_length_fn(value) {
-                style.left = v;
-                return true;
+                if positioned_offset_length_is_valid(value, &v) {
+                    style.left = v;
+                    return true;
+                }
             }
         }
         "z-index" => {
@@ -1283,6 +1291,36 @@ fn text_indent_length_is_valid(raw: &str, value: &LengthValue) -> bool {
         return false;
     }
     match value {
+        LengthValue::Px(v)
+        | LengthValue::Em(v)
+        | LengthValue::Ex(v)
+        | LengthValue::Rex(v)
+        | LengthValue::Cap(v)
+        | LengthValue::Rcap(v)
+        | LengthValue::Rem(v)
+        | LengthValue::Vh(v)
+        | LengthValue::Vw(v)
+        | LengthValue::Vmin(v)
+        | LengthValue::Vmax(v)
+        | LengthValue::Ch(v)
+        | LengthValue::Rch(v)
+        | LengthValue::Ic(v)
+        | LengthValue::Ric(v)
+        | LengthValue::Percentage(v) => v.is_finite(),
+        LengthValue::Calc(_) => true,
+        _ => false,
+    }
+}
+
+pub(crate) fn positioned_offset_length_is_valid(raw: &str, value: &LengthValue) -> bool {
+    if matches!(
+        raw.trim().to_ascii_lowercase().as_str(),
+        "thin" | "medium" | "thick" | "min-content" | "max-content" | "fit-content"
+    ) {
+        return false;
+    }
+    match value {
+        LengthValue::Auto => true,
         LengthValue::Px(v)
         | LengthValue::Em(v)
         | LengthValue::Ex(v)

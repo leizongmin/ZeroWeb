@@ -560,6 +560,17 @@ fn test_apply_property_multiple_different_properties() {
     assert!(apply_property_value(&mut style, "left", "40px"));
     assert_eq!(style.top, LengthValue::Px(10.0));
     assert_eq!(style.left, LengthValue::Px(40.0));
+    assert!(apply_property_value(&mut style, "top", "auto"));
+    assert_eq!(style.top, LengthValue::Auto);
+    assert!(apply_property_value(&mut style, "right", "-5px"));
+    assert_eq!(style.right, LengthValue::Px(-5.0));
+    assert!(apply_property_value(&mut style, "bottom", "25%"));
+    assert_eq!(style.bottom, LengthValue::Percentage(25.0));
+    let previous_left = style.left.clone();
+    for value in ["thin", "min-content", "fit-content(10px)", "infpx", "NaNpx"] {
+        assert!(!apply_property_value(&mut style, "left", value));
+        assert_eq!(style.left, previous_left, "{} should not overwrite", value);
+    }
 
     // overflow
     assert!(apply_property_value(&mut style, "overflow-x", "hidden"));
@@ -1153,6 +1164,11 @@ fn test_inset_logical_wm_aware_vertical_rl() {
     assert!(apply_property_value(&mut style, "writing-mode", "vertical-rl"));
     assert!(apply_property_value(&mut style, "inset-block-end", "30px"));
     assert_eq!(style.left, LengthValue::Px(30.0));
+    let previous = style.left.clone();
+    for value in ["thin", "min-content", "fit-content(10px)", "infpx", "NaNpx"] {
+        assert!(!apply_property_value(&mut style, "inset-block-end", value));
+        assert_eq!(style.left, previous, "{} should not overwrite", value);
+    }
 }
 
 #[test]

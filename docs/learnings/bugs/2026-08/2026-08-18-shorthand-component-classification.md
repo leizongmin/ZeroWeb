@@ -189,6 +189,8 @@ Word-spacing exposed the keyword-bypass direct-apply variant: a longhand can rej
 
 Outline-offset exposed the mutually-exclusive keyword variant: a property-specific keyword such as `inset` must remain mutually exclusive with the `<length>` branch, and invalid shared-parser values must not clear that keyword state. Validate the parsed length branch before mutating either the value slot or companion keyword flag.
 
+Positioned offsets exposed the physical/logical alias variant: fixing `top/right/bottom/left` is incomplete if `inset-block-*` and `inset-inline-*` still write through the broader shared length parser after writing-mode mapping. Put the consumer grammar in one shared validator and call it before mutating either physical or logical alias slots.
+
 ## Root Cause
 
 The shorthand layer used heuristic component classifiers and treated unrecognized tokens as absent optional components. That is wrong for CSS shorthands such as `border`, where every token must match one of the allowed component grammars. A shared parser can also be broader than the property grammar that consumes it: general length parsing may accept `auto`, intrinsic sizing keywords, or percentages that `border-width` must reject.
