@@ -5,15 +5,11 @@
 //!
 //! 提供 Dedicated Worker：独立线程 + 持久 QuickJS Context + postMessage/onmessage。
 
+use crate::threaded_runtime::ThreadedRuntimeCore;
 use crate::{SandboxConfig, ScriptError};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{self, Receiver, Sender};
-use std::thread::{self, JoinHandle};
-
-/// `terminate()` join 的墙上墙钟上限（同 [`crate::worker`] V8 实现）。超时则 detach，
-/// 确保 Drop/terminate **永不无限阻塞**主线程。R3399：QuickJS worker 对称修复。
-const TERMINATE_JOIN_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(5);
 
 /// Worker 线程接收的命令。
 enum WorkerCommand {
@@ -46,32 +42,12 @@ pub enum WorkerState {
     Terminated,
 }
 
-/// 限时 join worker 线程；超时则 detach（不阻塞调用线程）。同 [`crate::worker`] V8 实现。
-fn join_bounded_or_detach(handle: JoinHandle<()>) {
-    let start = std::time::Instant::now();
-    while start.elapsed() < TERMINATE_JOIN_TIMEOUT {
-        if handle.is_finished() {
-            let _ = handle.join();
-            return;
-        }
-        std::thread::sleep(std::time::Duration::from_millis(20));
-    }
-    drop(handle);
-}
-
 /// Dedicated Worker 运行时（QuickJS 实现）。
 ///
 /// 在独立线程中运行 QuickJS Runtime + 持久 Context，通过通道与主线程通信。
 /// Worker 的 JS 环境在所有脚本执行间保持状态一致。
 pub struct WorkerRuntime {
-    cmd_sender: Sender<WorkerCommand>,
-    event_receiver: Receiver<WorkerEvent>,
-    worker_handle: Option<JoinHandle<()>>,
-    state: WorkerState,
-    /// 终止标志（worker 线程 interrupt handler 据此返 true 中断死循环）。
-    /// R3399：QuickJS worker 对称修复——terminate() 置位 + bounded join + detach 兜底，
-    /// 防 page-supplied 死循环 worker 致 Drop/terminate 永久挂死主线程。
-    terminate_flag: Arc<AtomicBool>,
+    core: ThreadedRuntimeCore<WorkerCommand, WorkerEvent>,
 }
 
 impl WorkerRuntime {
@@ -79,69 +55,58 @@ impl WorkerRuntime {
     ///
     /// Worker 在独立线程中创建自己的 QuickJS Runtime + Context 并执行初始化脚本。
     pub fn new(script: &str, config: SandboxConfig) -> Result<Self, ScriptError> {
-        let (cmd_sender, cmd_receiver) = mpsc::channel::<WorkerCommand>();
-        let (event_sender, event_receiver) = mpsc::channel::<WorkerEvent>();
         let script = script.to_string();
 
-        // R3399：终止标志（主线程 terminate() 与 worker 线程 interrupt handler 共享）。
-        let terminate_flag = Arc::new(AtomicBool::new(false));
-        let worker_terminate_flag = terminate_flag.clone();
-
-        let handle = thread::Builder::new()
-            .name("zero-quickjs-worker".to_string())
-            .spawn(move || {
+        let core = ThreadedRuntimeCore::spawn(
+            "zero-quickjs-worker",
+            "worker",
+            move |cmd_receiver, event_sender, worker_terminate_flag| {
                 quickjs_worker_thread_fn(script, config, cmd_receiver, event_sender, worker_terminate_flag);
-            })
-            .map_err(|e| ScriptError::EngineUnavailable(format!("Failed to spawn worker thread: {e}")))?;
+            },
+        )?;
 
-        Ok(Self {
-            cmd_sender,
-            event_receiver,
-            worker_handle: Some(handle),
-            state: WorkerState::Running,
-            terminate_flag,
-        })
+        Ok(Self { core })
     }
 
     /// 向 Worker 发送消息（模拟主线程 postMessage）。
     pub fn post_message(&mut self, message: &str) -> Result<(), ScriptError> {
-        if self.state == WorkerState::Terminated {
+        if self.core.is_terminated() {
             return Err(ScriptError::InvalidInput(
                 "Cannot post message to terminated worker".into(),
             ));
         }
-        self.cmd_sender
+        self.core
             .send(WorkerCommand::PostMessage(message.to_string()))
             .map_err(|_| ScriptError::RuntimeError("Worker thread disconnected".into()))
     }
 
     /// 向 Worker 发送要执行的额外脚本。
     pub fn execute_script(&mut self, code: &str) -> Result<(), ScriptError> {
-        if self.state == WorkerState::Terminated {
+        if self.core.is_terminated() {
             return Err(ScriptError::InvalidInput(
                 "Cannot execute script on terminated worker".into(),
             ));
         }
-        self.cmd_sender
+        self.core
             .send(WorkerCommand::Execute(code.to_string()))
             .map_err(|_| ScriptError::RuntimeError("Worker thread disconnected".into()))
     }
 
     /// 尝试接收 Worker 发出的事件（非阻塞）。
     pub fn try_recv(&self) -> Option<WorkerEvent> {
-        self.event_receiver.try_recv().ok()
+        self.core.try_recv()
     }
 
     /// 阻塞等待接收 Worker 发出的事件。
     pub fn recv(&self) -> Result<WorkerEvent, ScriptError> {
-        self.event_receiver
+        self.core
             .recv()
             .map_err(|_| ScriptError::RuntimeError("Worker channel closed".into()))
     }
 
     /// 带超时地接收 Worker 事件。
     pub fn recv_timeout(&self, timeout: std::time::Duration) -> Result<WorkerEvent, ScriptError> {
-        self.event_receiver.recv_timeout(timeout).map_err(|e| match e {
+        self.core.recv_timeout(timeout).map_err(|e| match e {
             mpsc::RecvTimeoutError::Timeout => ScriptError::Timeout("Worker recv timeout".into()),
             mpsc::RecvTimeoutError::Disconnected => ScriptError::RuntimeError("Worker channel closed".into()),
         })
@@ -153,25 +118,21 @@ impl WorkerRuntime {
     /// 命令，再限时 join——确保即便 worker 卡在 page-supplied 死循环也能及时退出；超时则
     /// detach（绝不无限阻塞调用线程，Drop 也走此路径）。QuickJS 对称 V8 worker 修复。
     pub fn terminate(&mut self) {
-        if self.state == WorkerState::Terminated {
-            return;
-        }
-        self.terminate_flag.store(true, Ordering::Release);
-        let _ = self.cmd_sender.send(WorkerCommand::Terminate);
-        if let Some(handle) = self.worker_handle.take() {
-            join_bounded_or_detach(handle);
-        }
-        self.state = WorkerState::Terminated;
+        self.core.terminate(WorkerCommand::Terminate, || {});
     }
 
     /// 获取 Worker 当前状态。
     pub fn state(&self) -> WorkerState {
-        self.state
+        if self.core.is_terminated() {
+            WorkerState::Terminated
+        } else {
+            WorkerState::Running
+        }
     }
 
     /// Worker 是否仍在运行。
     pub fn is_running(&self) -> bool {
-        self.state == WorkerState::Running
+        !self.core.is_terminated()
     }
 }
 
@@ -183,7 +144,7 @@ impl Drop for WorkerRuntime {
 
 impl std::fmt::Debug for WorkerRuntime {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("WorkerRuntime").field("state", &self.state).finish()
+        f.debug_struct("WorkerRuntime").field("state", &self.state()).finish()
     }
 }
 

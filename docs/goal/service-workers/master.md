@@ -2,15 +2,15 @@
 
 **入口文档**: [../service-workers.md](../service-workers.md)
 **创建日期**: 2026-08-17（goal 拆分 bootstrap）
-**最后更新**: 2026-08-19（M0 RFC + M1 WorkerRuntime readiness，待审批）
+**最后更新**: 2026-08-19（方案 C 已批准，M1-1 typed runtime 完成）
 
 ---
 
 ## 当前状态
 
-**专项定位**：存储方向三拆之三（唯一带启动门控的）。把 `navigator.serviceWorker` 从注册表
-状态机近似（R3318）深化为真实 SW 执行环境 + fetch 拦截。**M0 选型 RFC 须用户批准后才动
-源码**；M0 WPT 可执行面分析和 RFC 已完成，当前等待用户批准方案 C。
+**专项定位**：存储方向三拆之三。把 `navigator.serviceWorker` 从注册表状态机近似
+（R3318）深化为真实 SW 执行环境 + fetch 拦截。用户已于 2026-08-19 明确批准方案 C，
+M0 启动门禁解除；当前进入 M1 manager 生命周期协调。
 
 **M0 推荐决策**：抽取 `zero-script-sandbox::WorkerRuntime` 的独立线程/引擎/看门狗核心，
 新增 typed `ServiceWorkerRuntime`；production 由 browser process 的
@@ -71,38 +71,39 @@
   非法激活不扰动 active、注销旧 redundant 不删除新映射、跨 origin 替换隔离
 - ✅ M1 WorkerRuntime readiness：V8 20/20、QuickJS 3/3，WebView 双后端各 17/17；
   三种 feature clippy 通过，抽取边界与 QuickJS timeout/evaluate handshake 缺口已固定
-- ✅ SW 执行环境 RFC 已完成，待用户批准
+- ✅ SW 执行环境 RFC 方案 C 已获用户明确批准
+- ✅ M1-1：共享 threaded core + 双引擎 typed `ServiceWorkerRuntime` evaluate 骨架；
+  V8/QuickJS 各 7/7，Dedicated Worker 与 WebView 双后端基线保持全绿
 
 ## 缺口清单
 
 | # | 缺口 | 状态 |
 |---|------|------|
-| S1 | SW 执行环境架构未选型（深结构，须 RFC + 用户批准） | ⏳ RFC 完成，待批准 |
-| S2 | scriptURL 不下载执行 | ⬜ M1 |
+| S1 | SW 执行环境架构与独立 runtime | 🔄 方案 C 已批准；M1-1 已落，manager 待接 |
+| S2 | scriptURL 不下载执行 | 🔄 typed evaluate 已落；manager/fetch 未接 |
 | S3 | fetch 拦截为零 | ⬜ M2（等 js-dom fetch 改造） |
 | S4 | 事件为 setTimeout 模拟 | ⬜ M1 |
-| S5 | WPT 覆盖为零 | 🔄 12 case 已资产化；294-source runner contract 已落；runner/真实 red baseline 等 RFC 批准 |
+| S5 | WPT 覆盖为零 | 🔄 12 case 已资产化；294-source contract 已落；runner/真实 red baseline 待 M1 bridge |
 
 ## 待用户决策
 
 | # | 事项 | 状态 |
 |---|------|------|
-| D1 | 批准方案 C：抽取 Worker 线程核 + SW typed runtime + browser manager owner | ⏳ 待用户批准——批准后解锁 M1 |
+| D1 | 批准方案 C：抽取 Worker 线程核 + SW typed runtime + browser manager owner | ✅ 2026-08-19 用户明确批准 |
 
 ## 下一步计划
 
-1. **等待 D1 审批**：审阅 [M0 RFC](m0-execution-environment-rfc.md)
-2. **批准后 M1-1**：抽取 script-sandbox threaded core，保持 Dedicated Worker 行为不变，
-   新增 SW typed runtime 骨架（双引擎测试）
-3. **M1-2**：manager 生命周期协调；随后接 in-process bridge、production IPC 和 WPT runner
+1. **M1-2**：registration version slot + manager evaluate/lifecycle 协调
+2. **M1-3**：接 in-process bridge，真实 script fetch/install/activate，萎缩 timer shim
+3. **M1-4/5**：production IPC 与 SW WPT runner
 4. **M2 继续门控**：js-dom S6 与 storage-cache-api M1 均 land 后才改 fetch 主路径
 
 ## 里程碑状态
 
 | 里程碑 | 状态 |
 |--------|------|
-| M0 — 选型 RFC（门控） | ⏳ 文档完成，待用户批准 |
-| M1 — 脚本真实执行 + 生命周期真事件 | ⬜ 门控：RFC 批准 |
+| M0 — 选型 RFC（门控） | ✅ 方案 C 已批准 |
+| M1 — 脚本真实执行 + 生命周期真事件 | 🔄 M1-1 typed runtime 完成 |
 | M2 — fetch 拦截 + Cache 集成 | ⬜ 门控：js-dom fetch 改造 land |
 | M3 — 控制语义 + 消息 + 收尾 | ⬜ |
 
@@ -156,6 +157,8 @@
   `cargo clippy -p zero-storage --all-targets -- -D warnings` 通过
 - WorkerRuntime 抽取前基线：双引擎 crate/WebView 测试、调用点、feature union 与禁止偷换见
   [M1 WorkerRuntime readiness](evidence/2026-08-19-m1-worker-runtime-readiness.md)
+- M1-1 实现证据：共享线程核、typed SW evaluate、资源上限、双引擎与 WebView 回归见
+  [M1 threaded runtime](evidence/2026-08-19-m1-threaded-runtime.md)
 
 ## M0 证据与决策记录
 
@@ -184,6 +187,8 @@
 | 2026-08-19 | Core runner 供应链 | 12 core = 12 imported testharness = 8+3+1 case asset；revision 与 blob SHA 双向一致 |
 | 2026-08-19 | Registry 契约测试 | 4 项替换/失败/隔离中间态不变量；Service Worker 模块 40/40，zero-storage clippy 通过 |
 | 2026-08-19 | M1 WorkerRuntime readiness | V8 20/20、QuickJS 3/3、WebView 双后端各 17/17；确认 QuickJS timeout 与 evaluate handshake 缺口 |
+| 2026-08-19 | RFC 决策 | 用户明确批准方案 C；browser manager owner、WebView adapter 与 M1 实施顺序生效 |
+| 2026-08-19 | M1-1 typed runtime | 抽取共享线程核；新增双引擎 typed SW evaluate/shutdown，资源封顶与错误分类；全矩阵通过 |
 | 2026-08-19 | 三方案对比 | 拒绝同线程 context（无调度隔离）；拒绝从零线程（复制安全基建）；推荐抽取 Worker 线程核 |
 | 2026-08-19 | owner | production browser process 单一 owner；WebView 只做同算法 in-process adapter |
 | 2026-08-19 | 首个 driving WPT | `activation-after-registration.https.html` |

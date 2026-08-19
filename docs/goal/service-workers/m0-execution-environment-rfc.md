@@ -1,8 +1,8 @@
 # RFC：Service Worker 独立执行环境与宿主所有权
 
-**版本**：v1.0
+**版本**：v1.1
 **日期**：2026-08-19
-**状态**：待用户批准（M0 启动门禁）
+**状态**：已批准（2026-08-19，方案 C）
 **关联目标**：[../service-workers.md](../service-workers.md)
 **WPT 证据**：[evidence/2026-08-19-m0-wpt-executable-surface.md](evidence/2026-08-19-m0-wpt-executable-surface.md)
 
@@ -19,7 +19,7 @@
   以 WPT `activation-after-registration.https.html` 驱动。
 - **M2 门禁**：等 js-dom S6 fetch 改造和 storage-cache-api M1 land 后，才把 browser
   fetch proxy 接入 `FetchEvent.respondWith()`。
-- **批准效果**：用户批准本 RFC 后解锁源码修改；批准前本文不产生任何实现行为。
+- **批准记录**：用户于 2026-08-19 明确回复“批准方案 C RFC”，M0 启动门禁解除。
 
 ## 1. 决策边界
 
@@ -451,9 +451,9 @@ RFC，停止并重新审批。
 **汇总**：14 Pass / 0 Warning / 0 Fail / 0 Skip
 **门禁判定**：允许提交用户审批；未批准前禁止实施。
 
-## 12. 待用户决策
+## 12. 用户决策
 
-**D1：是否批准方案 C 及其 owner 模型？**
+**D1：方案 C 及其 owner 模型已批准。**
 
 - 批准内容：抽取 Worker 独立线程核；SW runtime 独立线程；browser manager 为 production
   单一 owner；WebView 使用同算法的 in-process adapter；按 §8 顺序实施。
@@ -481,3 +481,4 @@ RFC，停止并重新审批。
 | 版本 | 日期 | 内容 |
 |------|------|------|
 | v1.0 | 2026-08-19 | M0 初稿：三方案对比，推荐抽取 Worker 线程核 + browser manager owner |
+| v1.1 | 2026-08-19 | 用户明确批准方案 C；解除 M0 源码实施门禁 |

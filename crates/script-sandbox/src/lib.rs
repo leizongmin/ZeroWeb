@@ -15,6 +15,15 @@ mod v8_runtime;
 #[cfg(feature = "v8")]
 mod dom_bindings;
 
+#[cfg(any(feature = "v8", feature = "quickjs"))]
+mod threaded_runtime;
+
+#[cfg(any(feature = "v8", feature = "quickjs"))]
+mod service_worker;
+
+#[cfg(any(feature = "v8", feature = "quickjs"))]
+pub use service_worker::*;
+
 #[cfg(feature = "v8")]
 mod worker;
 

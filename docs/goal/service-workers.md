@@ -2,7 +2,7 @@
 
 **版本**: v1.0
 **日期**: 2026-08-17
-**状态**: Active（**启动门控**——M0 选型 RFC 须用户批准后方可动源码；M0 本身可自主推进）
+**状态**: Active（方案 C RFC 已批准；M1 实施中）
 **执行模式**: 轻量修复优先（永不停）；遇需用户决策项或深结构方向 → 记入「待用户决策」清单 → 跳过 → 继续其他轻量修复
 **父目标**: `docs/goal/zero-web.md`（Tier 2「Service Worker（基础）」+ M12「Service Worker 基础（注册、fetch 事件拦截、缓存管理）」列项）
 
@@ -129,7 +129,7 @@ cache-storage 用例归本目标（兄弟目标只收 window 面）。
 
 ### DC-1: 选型 RFC 已批准并落地
 
-- [ ] SW 执行环境 RFC 完成并经用户批准（记录决策与理由于 master.md）
+- [x] SW 执行环境 RFC 完成并经用户批准（2026-08-19，方案 C）
 - [ ] 实现与 RFC 一致；偏离处记录原因
 
 ### DC-2: 真实生命周期与执行
@@ -159,7 +159,7 @@ cache-storage 用例归本目标（兄弟目标只收 window 面）。
 
 ## 活跃里程碑
 
-### M0 — 选型 RFC（门控，当前活跃）
+### M0 — 选型 RFC（已完成）
 
 **目标**：SW 执行环境架构选型 RFC 起草并获批。
 
@@ -171,7 +171,7 @@ cache-storage 用例归本目标（兄弟目标只收 window 面）。
 
 ### M1 — 脚本真实执行 + 生命周期真事件（RFC 批准后）
 
-**目标**：register 链路真实化（下载/执行/install/activate）。
+**目标**：register 链路真实化（下载/执行/install/activate）。**当前活跃**。
 
 ### M2 — fetch 拦截 + Cache 集成（等 js-dom fetch 改造 land）
 
