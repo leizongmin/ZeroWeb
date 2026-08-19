@@ -4,6 +4,7 @@
 **上游 revision**：`04067ce9c7c2165e71ad7d0dde10a4c5cb394a83`
 **状态**：M0 evidence（零源码改动）
 **逐案数据**：[candidate resource closure TSV](2026-08-19-m0-m1-candidate-resource-closure.tsv)
+**Tier A 合约**：[fixed assets and subtests](2026-08-19-m1-tier-a-baseline-contract.md)
 
 ## 来源分级
 
@@ -131,7 +132,7 @@ runtime 会扩大首切片；应在 Tier A 全绿后单独驱动。
 
 RFC 批准后的 M1 WPT 顺序：
 
-1. 先导入 Tier A 8 个 case 及其静态闭包，建立真实 red baseline。
+1. 按 Tier A 合约导入 8 个 case / 18 个固定资产，建立 28-subtest 真实 red baseline。
 2. 以 `activation-after-registration.https.html` 驱动 manager/runtime 最小全链。
 3. 收敛其余 Tier A scope/object/state 语义。
 4. 增加 worker test result channel 后纳入 `install-event-type`。

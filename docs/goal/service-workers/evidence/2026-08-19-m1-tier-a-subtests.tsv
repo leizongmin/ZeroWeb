@@ -1,0 +1,29 @@
+case_path	ordinal	harness	subtest	requirement_group	driving_phase
+service-workers/service-worker/activation-after-registration.https.html	1	promise_test	activation occurs after registration	lifecycle-activation	1-core-activation
+service-workers/service-worker/activate-event-after-install-state-change.https.html	1	promise_test	installed event should be fired before activating service worker	lifecycle-ordering	2-state-projection
+service-workers/service-worker/registration-service-worker-attributes.https.html	1	promise_test	installing/waiting/active after registration	registration-object-state	2-state-projection
+service-workers/service-worker/register-default-scope.https.html	1	promise_test	default scope	default-scope	3-basic-scope
+service-workers/service-worker/register-default-scope.https.html	2	promise_test	undefined scope	default-scope	3-basic-scope
+service-workers/service-worker/register-default-scope.https.html	3	promise_test	null scope	scope-security	3-basic-scope
+service-workers/service-worker/registration-basic.https.html	1	promise_test	Registering normal scope	scope-normalization	3-basic-scope
+service-workers/service-worker/registration-basic.https.html	2	promise_test	Registering scope with fragment	scope-normalization	3-basic-scope
+service-workers/service-worker/registration-basic.https.html	3	promise_test	Registering same scope as the script directory	scope-normalization	3-basic-scope
+service-workers/service-worker/registration-scope.https.html	1	promise_test	Scope including URL-encoded slash	scope-validation	4-url-validation
+service-workers/service-worker/registration-scope.https.html	2	promise_test	Scope including URL-encoded backslash	scope-validation	4-url-validation
+service-workers/service-worker/registration-scope.https.html	3	promise_test	Scope URL scheme is a data: URL	scope-scheme	4-url-validation
+service-workers/service-worker/registration-scope.https.html	4	promise_test	Scope URL scheme is an ftp: URL	scope-scheme	4-url-validation
+service-workers/service-worker/registration-scope.https.html	5	promise_test	Scope including URL-encoded multibyte characters	scope-validation	4-url-validation
+service-workers/service-worker/registration-scope.https.html	6	promise_test	Scope including non-escaped multibyte characters	scope-normalization	4-url-validation
+service-workers/service-worker/registration-scope.https.html	7	promise_test	Scope including self-reference	scope-normalization	4-url-validation
+service-workers/service-worker/registration-scope.https.html	8	promise_test	Scope including parent-reference	scope-normalization	4-url-validation
+service-workers/service-worker/registration-scope.https.html	9	promise_test	Scope including consecutive slashes	scope-normalization	4-url-validation
+service-workers/service-worker/registration-scope.https.html	10	promise_test	Scope URL is same-origin filesystem: URL	scope-scheme	4-url-validation
+service-workers/service-worker/registration-script-url.https.html	1	promise_test	Script URL including URL-encoded slash	script-url-validation	4-url-validation
+service-workers/service-worker/registration-script-url.https.html	2	promise_test	Script URL including uppercase URL-encoded slash	script-url-validation	4-url-validation
+service-workers/service-worker/registration-script-url.https.html	3	promise_test	Script URL including URL-encoded backslash	script-url-validation	4-url-validation
+service-workers/service-worker/registration-script-url.https.html	4	promise_test	Script URL including uppercase URL-encoded backslash	script-url-validation	4-url-validation
+service-workers/service-worker/registration-script-url.https.html	5	promise_test	Script URL is a data URL	script-url-scheme	4-url-validation
+service-workers/service-worker/registration-script-url.https.html	6	promise_test	Script URL is a data URL and scope URL is not relative	script-url-scheme	4-url-validation
+service-workers/service-worker/registration-script-url.https.html	7	promise_test	Script URL including self-reference	script-url-normalization	4-url-validation
+service-workers/service-worker/registration-script-url.https.html	8	promise_test	Script URL including parent-reference	script-url-normalization	4-url-validation
+service-workers/service-worker/rejections.https.html	1	async_test	Rejections are DOMExceptions	exception-shape	5-error-shape

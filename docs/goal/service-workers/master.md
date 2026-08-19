@@ -2,7 +2,7 @@
 
 **入口文档**: [../service-workers.md](../service-workers.md)
 **创建日期**: 2026-08-17（goal 拆分 bootstrap）
-**最后更新**: 2026-08-19（M0 RFC + WPT 逐文件/候选资源闭包完成，待审批）
+**最后更新**: 2026-08-19（M0 RFC + Tier A 固定资产/验收合约完成，待审批）
 
 ---
 
@@ -50,7 +50,7 @@
 | S2 | scriptURL 不下载执行 | ⬜ M1 |
 | S3 | fetch 拦截为零 | ⬜ M2（等 js-dom fetch 改造） |
 | S4 | 事件为 setTimeout 模拟 | ⬜ M1 |
-| S5 | WPT 覆盖为零 | ✅ M0 完整分母 + 294/294 正文 + 12/12 候选资源闭包完成；导入/runner 等批准后实施 |
+| S5 | WPT 覆盖为零 | ✅ M0 完整分母、逐文件/候选闭包、Tier A 8 case/28 subtest 合约完成；导入/runner 等批准后实施 |
 
 ## 待用户决策
 
@@ -82,7 +82,9 @@
   源 / 331 URL，正文覆盖 294/294；分层与依赖信号见
   [M0 WPT evidence](evidence/2026-08-19-m0-wpt-executable-surface.md)，逐文件机器清单见
   [WPT case inventory](evidence/2026-08-19-m0-wpt-case-inventory.tsv)，候选 8/3/1 裁决见
-  [M1 candidate closure](evidence/2026-08-19-m0-m1-candidate-resource-closure.md)
+  [M1 candidate closure](evidence/2026-08-19-m0-m1-candidate-resource-closure.md)，静态首批
+  8 case / 28 subtest / 18 asset 见
+  [Tier A baseline contract](evidence/2026-08-19-m1-tier-a-baseline-contract.md)
 - 质量门禁：`cargo fmt` + `cargo clippy --workspace --all-targets -- -D warnings` 全过
 
 ## M0 证据与决策记录
@@ -93,6 +95,7 @@
 | 2026-08-19 | WPT 完整分母 | manifest：801 源文件；294 testharness 源生成 331 URL；正文 294/294，核心 228/276 命中直接重依赖信号 |
 | 2026-08-19 | WPT 逐文件清单 | 294 唯一路径 / 331 URL / 12 candidate / 130 gated / 152 review，294/294 blob SHA 匹配，inventory SHA-256 `8905f3de41dd53432758461b64cf68a59ebcdecd970f3d0add724957e709a3e7` |
 | 2026-08-19 | M1 候选资源闭包 | 12/12 已审计，39/39 对象 blob SHA 匹配；8 Tier A keep-first / 3 Tier B defer / 1 Tier C dynamic-server |
+| 2026-08-19 | Tier A 验收合约 | 8 case / 28 subtest / 18 asset（235,111 bytes）/ 5 驱动阶段；assets SHA-256 `c9b8089dc425873e3249d0e834176139c054f3e33845ba6c4080521f23fa6bc0` |
 | 2026-08-19 | 三方案对比 | 拒绝同线程 context（无调度隔离）；拒绝从零线程（复制安全基建）；推荐抽取 Worker 线程核 |
 | 2026-08-19 | owner | production browser process 单一 owner；WebView 只做同算法 in-process adapter |
 | 2026-08-19 | 首个 driving WPT | `activation-after-registration.https.html` |

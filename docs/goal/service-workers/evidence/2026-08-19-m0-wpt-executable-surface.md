@@ -27,6 +27,8 @@
   manifest SHA、URL/context、里程碑、文件名聚类、直接依赖信号和候选裁决。
 - [M1 候选资源闭包](2026-08-19-m0-m1-candidate-resource-closure.md) 将初筛 12 个 case
   校准为 8 个静态首批、3 个高阶事件案和 1 个动态 server 阻塞案。
+- [Tier A 验收合约](2026-08-19-m1-tier-a-baseline-contract.md) 固定首批
+  8 case / 28 subtest / 18 asset 及五阶段验收顺序。
 - 这不等于全部上游用例都超出 ZeroWeb 环境。M1 完成后，单页面、单注册、静态资源的
   生命周期用例可形成第一批真实基线；M2 完成后再加入单客户端 fetch/respondWith 用例。
 - iframe、多客户端、SharedWorker、跨 origin、动态服务端 handler、WebSocket 和
