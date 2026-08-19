@@ -107,12 +107,17 @@ fn parse_animation_play_state_list(value: &str) -> Option<Vec<zero_css_parser::v
     Some(out)
 }
 
+enum ContainIntrinsicLonghand {
+    None,
+    Length(LengthValue),
+}
+
 /// R2468：解析 contain-intrinsic-{inline,block}-size longhand 值。
 ///
-/// 接受可选 `auto` 前缀 + 单个 `<length>`（如 `auto 100px`、`100px`）。`auto` 在静态无
-/// remembered-size 模型下按显式长度处理（与 contain-intrinsic-size 简写一致）。返回解析出
-/// 的长度或 None（无有效长度 token）。
-fn parse_cis_longhand(value: &str) -> Option<LengthValue> {
+/// 接受可选 `auto` 前缀 + `none | <length [0,∞]>`（如 `auto 100px`、`100px`、
+/// `auto none`）。`auto` 在静态无 remembered-size 模型下按显式值处理（与
+/// contain-intrinsic-size 简写一致）。
+fn parse_cis_longhand(value: &str) -> Option<ContainIntrinsicLonghand> {
     let v = value.trim();
     // 剥可选 `auto` 前缀（须独立 token）。
     let v = if v.len() >= 5 && v.as_bytes()[..4].eq_ignore_ascii_case(b"auto") && v.as_bytes()[4].is_ascii_whitespace()
@@ -121,7 +126,39 @@ fn parse_cis_longhand(value: &str) -> Option<LengthValue> {
     } else {
         v
     };
-    values::parse_length(v)
+    if v.eq_ignore_ascii_case("none") {
+        return Some(ContainIntrinsicLonghand::None);
+    }
+    let length = values::parse_length(v)?;
+    contain_intrinsic_length_is_valid(v, &length).then_some(ContainIntrinsicLonghand::Length(length))
+}
+
+fn contain_intrinsic_length_is_valid(raw: &str, value: &LengthValue) -> bool {
+    if matches!(
+        raw.trim().to_ascii_lowercase().as_str(),
+        "thin" | "medium" | "thick" | "auto" | "min-content" | "max-content" | "fit-content"
+    ) {
+        return false;
+    }
+    match value {
+        LengthValue::Px(v)
+        | LengthValue::Em(v)
+        | LengthValue::Ex(v)
+        | LengthValue::Rex(v)
+        | LengthValue::Cap(v)
+        | LengthValue::Rcap(v)
+        | LengthValue::Rem(v)
+        | LengthValue::Vh(v)
+        | LengthValue::Vw(v)
+        | LengthValue::Vmin(v)
+        | LengthValue::Vmax(v)
+        | LengthValue::Ch(v)
+        | LengthValue::Rch(v)
+        | LengthValue::Ic(v)
+        | LengthValue::Ric(v) => v.is_finite() && *v >= 0.0,
+        LengthValue::Calc(_) => true,
+        _ => false,
+    }
 }
 
 /// 将高级 CSS 属性字符串值设置到 ComputedStyle。
@@ -1153,6 +1190,9 @@ pub fn apply_advanced_property_value(style: &mut ComputedStyle, property: &str, 
                 let Some(length) = values::parse_length(token) else {
                     return false;
                 };
+                if !contain_intrinsic_length_is_valid(token, &length) {
+                    return false;
+                }
                 lens.push(length);
             }
             match lens.len() {
@@ -1170,14 +1210,20 @@ pub fn apply_advanced_property_value(style: &mut ComputedStyle, property: &str, 
             }
         }
         "contain-intrinsic-width" => {
-            if let Some(l) = values::parse_length(value.trim()) {
-                style.contain_intrinsic_width = Some(l);
+            if let Some(v) = parse_cis_longhand(value) {
+                style.contain_intrinsic_width = match v {
+                    ContainIntrinsicLonghand::None => None,
+                    ContainIntrinsicLonghand::Length(l) => Some(l),
+                };
                 return true;
             }
         }
         "contain-intrinsic-height" => {
-            if let Some(l) = values::parse_length(value.trim()) {
-                style.contain_intrinsic_height = Some(l);
+            if let Some(v) = parse_cis_longhand(value) {
+                style.contain_intrinsic_height = match v {
+                    ContainIntrinsicLonghand::None => None,
+                    ContainIntrinsicLonghand::Length(l) => Some(l),
+                };
                 return true;
             }
         }
@@ -1186,14 +1232,20 @@ pub fn apply_advanced_property_value(style: &mut ComputedStyle, property: &str, 
         // swap_writing_mode_axes 负责，同 inline-size/block-size）。接受可选 `auto` 前缀
         //（静态无 remembered size，auto 按显式长度处理，与 contain-intrinsic-size 简写一致）。
         "contain-intrinsic-inline-size" => {
-            if let Some(l) = parse_cis_longhand(value) {
-                style.contain_intrinsic_width = Some(l);
+            if let Some(v) = parse_cis_longhand(value) {
+                style.contain_intrinsic_width = match v {
+                    ContainIntrinsicLonghand::None => None,
+                    ContainIntrinsicLonghand::Length(l) => Some(l),
+                };
                 return true;
             }
         }
         "contain-intrinsic-block-size" => {
-            if let Some(l) = parse_cis_longhand(value) {
-                style.contain_intrinsic_height = Some(l);
+            if let Some(v) = parse_cis_longhand(value) {
+                style.contain_intrinsic_height = match v {
+                    ContainIntrinsicLonghand::None => None,
+                    ContainIntrinsicLonghand::Length(l) => Some(l),
+                };
                 return true;
             }
         }

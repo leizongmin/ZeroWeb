@@ -205,6 +205,8 @@ Scroll-margin exposed the `<length>`-only variant: properties stored as px can s
 
 Scroll-padding exposed the px-storage length-percentage variant: a property may store resolved px while its grammar is still `auto | <length-percentage [0,∞]>`. Validate the parsed source value before conversion so percentages remain valid, negative values fail, and shared-parser aliases or non-finite values cannot overwrite the old computed value.
 
+Contain-intrinsic-size exposed the optional-prefix longhand variant: `auto? none | <length [0,∞]>` needs a two-state consumer result, not just `Option<LengthValue>`. Strip optional `auto` only at token boundaries, preserve `none` as a real clearing value, and validate the length branch before writing any physical or logical intrinsic-size field.
+
 ## Root Cause
 
 The shorthand layer used heuristic component classifiers and treated unrecognized tokens as absent optional components. That is wrong for CSS shorthands such as `border`, where every token must match one of the allowed component grammars. A shared parser can also be broader than the property grammar that consumes it: general length parsing may accept `auto`, intrinsic sizing keywords, or percentages that `border-width` must reject.

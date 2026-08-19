@@ -95,6 +95,19 @@ fn test_contain_intrinsic_size_parse() {
     ));
     assert_eq!(style.contain_intrinsic_width, Some(LengthValue::Px(111.0)));
     assert_eq!(style.contain_intrinsic_height, Some(LengthValue::Px(222.0)));
+    for value in [
+        "-1px",
+        "10%",
+        "thin",
+        "min-content",
+        "fit-content(10px)",
+        "infpx",
+        "NaNpx",
+    ] {
+        assert!(!apply_property_value(&mut style, "contain-intrinsic-size", value));
+        assert_eq!(style.contain_intrinsic_width, Some(LengthValue::Px(111.0)));
+        assert_eq!(style.contain_intrinsic_height, Some(LengthValue::Px(222.0)));
+    }
 
     // none → 清空
     assert!(apply_property_value(&mut style, "contain-intrinsic-size", "none"));
@@ -105,6 +118,13 @@ fn test_contain_intrinsic_size_parse() {
     assert_eq!(style.contain_intrinsic_width, Some(LengthValue::Px(50.0)));
     assert!(apply_property_value(&mut style, "contain-intrinsic-height", "75px"));
     assert_eq!(style.contain_intrinsic_height, Some(LengthValue::Px(75.0)));
+    assert!(apply_property_value(&mut style, "contain-intrinsic-width", "none"));
+    assert!(style.contain_intrinsic_width.is_none());
+    assert!(apply_property_value(&mut style, "contain-intrinsic-width", "50px"));
+    for value in ["-1px", "10%", "thin", "min-content", "infpx", "NaNpx"] {
+        assert!(!apply_property_value(&mut style, "contain-intrinsic-width", value));
+        assert_eq!(style.contain_intrinsic_width, Some(LengthValue::Px(50.0)));
+    }
 }
 
 /// R2462 系统审计：`contain-intrinsic-width`/`-height` 长手属性非默认继承，但显式
@@ -164,6 +184,25 @@ fn test_contain_intrinsic_logical_longhands() {
         "auto 200px"
     ));
     assert_eq!(style.contain_intrinsic_width, Some(LengthValue::Px(200.0)));
+    assert!(apply_property_value(
+        &mut style,
+        "contain-intrinsic-inline-size",
+        "auto none"
+    ));
+    assert!(style.contain_intrinsic_width.is_none());
+    assert!(apply_property_value(
+        &mut style,
+        "contain-intrinsic-inline-size",
+        "auto 200px"
+    ));
+    for value in ["-1px", "10%", "thin", "max-content", "infpx", "NaNpx"] {
+        assert!(!apply_property_value(
+            &mut style,
+            "contain-intrinsic-inline-size",
+            value
+        ));
+        assert_eq!(style.contain_intrinsic_width, Some(LengthValue::Px(200.0)));
+    }
 
     // 显式 inherit 关键字（logical longhands 与物理同 inherit_property 分支）
     let mut parent = ComputedStyle::default();
