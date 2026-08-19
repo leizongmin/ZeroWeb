@@ -2,7 +2,7 @@
 //!
 //! 将 ComputedStyle 的高级属性匹配从 apply.rs 拆分出来，保持文件在 2000 行以内。
 
-use super::apply::parse_length_or_math;
+use super::apply::{padding_length_is_valid, parse_length_or_math};
 use super::computed_style::ComputedStyle;
 use super::parse::*;
 use super::types::*;
@@ -1872,6 +1872,9 @@ fn apply_logical_margin(style: &mut ComputedStyle, axis_inline: bool, start: boo
 /// 应用 logical padding。horizontal-tb 下与原 R143 静态映射字节一致。
 fn apply_logical_padding(style: &mut ComputedStyle, axis_inline: bool, start: bool, value: &str) -> bool {
     if let Some(v) = parse_length_or_math(value) {
+        if !padding_length_is_valid(value, &v) {
+            return false;
+        }
         let side = logical_physical_side(axis_inline, start, &style.writing_mode);
         match side {
             PhysicalSide::Top => style.padding_top = v,

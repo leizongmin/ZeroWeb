@@ -175,6 +175,8 @@ Min/max sizing exposed the cascade-vs-apply drift variant: declaration cascade m
 
 Width/height logical sizing exposed the alias-branch drift variant: fixing the physical property branch is insufficient when logical properties map to the same computed slots through separate match arms. Apply the same consumer grammar filter to alias branches such as `inline-size`, `block-size`, and min/max logical sizing before mutating the shared physical fields.
 
+Padding exposed the logical-shorthand parity variant: a shorthand can reject invalid values while both physical longhands and logical longhands still bypass that validator through direct apply arms. For non-negative box properties, route every physical and logical write through the same consumer grammar filter before mutating computed fields.
+
 ## Root Cause
 
 The shorthand layer used heuristic component classifiers and treated unrecognized tokens as absent optional components. That is wrong for CSS shorthands such as `border`, where every token must match one of the allowed component grammars. A shared parser can also be broader than the property grammar that consumes it: general length parsing may accept `auto`, intrinsic sizing keywords, or percentages that `border-width` must reject.

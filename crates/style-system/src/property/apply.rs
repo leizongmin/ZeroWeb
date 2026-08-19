@@ -293,24 +293,36 @@ pub fn apply_property_value_with_quirks(
         }
         "padding-top" => {
             if let Some(v) = parse_length_fn(value) {
+                if !padding_length_is_valid(value, &v) {
+                    return false;
+                }
                 style.padding_top = v;
                 return true;
             }
         }
         "padding-right" => {
             if let Some(v) = parse_length_fn(value) {
+                if !padding_length_is_valid(value, &v) {
+                    return false;
+                }
                 style.padding_right = v;
                 return true;
             }
         }
         "padding-bottom" => {
             if let Some(v) = parse_length_fn(value) {
+                if !padding_length_is_valid(value, &v) {
+                    return false;
+                }
                 style.padding_bottom = v;
                 return true;
             }
         }
         "padding-left" => {
             if let Some(v) = parse_length_fn(value) {
+                if !padding_length_is_valid(value, &v) {
+                    return false;
+                }
                 style.padding_left = v;
                 return true;
             }
@@ -1150,6 +1162,35 @@ fn sizing_length_is_valid(raw: &str, value: &LengthValue) -> bool {
         | LengthValue::Percentage(v) => v.is_finite() && *v >= 0.0,
         LengthValue::FitContent(inner) => sizing_length_is_valid("", inner),
         LengthValue::Auto | LengthValue::MinContent | LengthValue::MaxContent | LengthValue::Calc(_) => true,
+    }
+}
+
+pub(crate) fn padding_length_is_valid(raw: &str, value: &LengthValue) -> bool {
+    if matches!(
+        raw.trim().to_ascii_lowercase().as_str(),
+        "thin" | "medium" | "thick" | "auto" | "min-content" | "max-content" | "fit-content"
+    ) {
+        return false;
+    }
+    match value {
+        LengthValue::Px(v)
+        | LengthValue::Em(v)
+        | LengthValue::Ex(v)
+        | LengthValue::Rex(v)
+        | LengthValue::Cap(v)
+        | LengthValue::Rcap(v)
+        | LengthValue::Rem(v)
+        | LengthValue::Vh(v)
+        | LengthValue::Vw(v)
+        | LengthValue::Vmin(v)
+        | LengthValue::Vmax(v)
+        | LengthValue::Ch(v)
+        | LengthValue::Rch(v)
+        | LengthValue::Ic(v)
+        | LengthValue::Ric(v)
+        | LengthValue::Percentage(v) => v.is_finite() && *v >= 0.0,
+        LengthValue::Calc(_) => true,
+        _ => false,
     }
 }
 

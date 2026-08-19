@@ -218,6 +218,17 @@ fn test_apply_paddings() {
         let (ok, _) = apply(prop, "5px");
         assert!(ok, "{} should apply", prop);
     }
+
+    let mut style = ComputedStyle::default();
+    assert!(apply_property_value(&mut style, "padding-top", "5px"));
+    let previous = style.padding_top.clone();
+    assert!(!apply_property_value(&mut style, "padding-top", "-1px"));
+    assert_eq!(style.padding_top, previous);
+
+    assert!(apply_property_value(&mut style, "padding-right", "6px"));
+    let previous = style.padding_right.clone();
+    assert!(!apply_property_value(&mut style, "padding-right", "thin"));
+    assert_eq!(style.padding_right, previous);
 }
 
 // === Border 属性 ===
@@ -643,6 +654,17 @@ fn test_apply_logical_properties() {
         let (ok, _) = apply(prop, "5px");
         assert!(ok, "{} should apply", prop);
     }
+
+    let mut style = ComputedStyle::default();
+    assert!(apply_property_value(&mut style, "padding-inline-start", "10px"));
+    let previous = style.padding_left.clone();
+    assert!(!apply_property_value(&mut style, "padding-inline-start", "-1px"));
+    assert_eq!(style.padding_left, previous);
+
+    assert!(apply_property_value(&mut style, "padding-block-start", "12px"));
+    let previous = style.padding_top.clone();
+    assert!(!apply_property_value(&mut style, "padding-block-start", "auto"));
+    assert_eq!(style.padding_top, previous);
 }
 
 // === Animation 属性 ===
