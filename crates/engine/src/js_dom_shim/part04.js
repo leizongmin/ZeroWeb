@@ -1428,8 +1428,23 @@
             if (n === 'class') _classCache[key] = v;
             else if (n === 'value') { _inputValues[key] = v; _inputValuesSet[key] = true; _clearInputDefault(key); } // R2996：setAttribute('value') 重同步 defaultValue
             else if (n === 'checked' || n === 'selected') _clearBoolDefault(key, n); // R2998：setAttribute('checked'/'selected') 重同步 defaultChecked/defaultSelected
+            // R125：id 变更前先摘 pending-ID 索引旧键（写后再摘会摘到新键——proxy.id
+            // latest-wins 读新值，旧 id 条目残留 = getElementById 旧 id 误命中）。
+            var _r125OldPid = null;
+            if (n === 'id' && handle && typeof _zwPAIdRemove === 'function') {
+              try { _r125OldPid = proxy.id == null ? '' : String(proxy.id); } catch (_eO) { _r125OldPid = ''; }
+              _zwPAIdRemove(proxy);
+            }
             if (handle) __zw_set_attr_handle(handle, n, v);
             else __zw_set_attr(sel, n, v);
+            // R125：id 变更的同步可见性——① sel-based 元素记覆盖表（host 快照不反映
+            // 同批 id 变更，getElementById 的 querySelector 路径会命中 stale id）；
+            // ② handle 元素重挂 pending-ID 索引新键（与 .id= setter 对称——appendChild
+            // 后 setAttribute('id') 改名，WPT "update id attribute via setAttribute"）。
+            if (n === 'id') {
+              if (!handle && globalThis._zwIdOverrideSet) globalThis._zwIdOverrideSet(key, v);
+              if (handle && v && typeof _zwPAIdAdd === 'function') _zwPAIdAdd(proxy);
+            }
             // R122：绑定表值同步——已有绑定的 Attr 值跟随 setAttribute 更新（直写 _r122V
             // 绕过原型 setter 的回传播环；textContent/data 同步）。
             try {
@@ -1522,10 +1537,15 @@
               delete _zwDialogModal[key];
               delete _zwTopLayer[key];
             }
+            // R125：id 移除先摘 pending-ID 索引旧键（写后再摘同样摘到 post-state——
+            // remove 后 proxy.id 读 ''/null，_zwPAIdRemove 摘空键 no-op，旧条目残留）。
+            if (n === 'id' && handle && typeof _zwPAIdRemove === 'function') _zwPAIdRemove(proxy);
             if (handle && typeof __zw_remove_attr_handle === 'function') __zw_remove_attr_handle(handle, n);
             else if (handle) __zw_set_attr_handle(handle, n, '');
             else if (typeof __zw_remove_attr === 'function') __zw_remove_attr(sel, n);
             else __zw_set_attr(sel, n, '');
+            // R125：id 移除登记覆盖表（null = absent——sel-based 元素旧 id 查询剔除）。
+            if (n === 'id' && !handle && globalThis._zwIdOverrideSet) globalThis._zwIdOverrideSet(key, null);
             if (_rmExisted) _mo_notify(sel, handle, { type: 'attributes', attributeName: n, oldValue: moOld });
             if (ceEntry) _ce_dispatchAttrChange(ceEntry, proxy, n, ceOld, null);
           };
@@ -2740,6 +2760,21 @@
               // R2994 disconnectedCallback：移除子树断连（仅此前已连入的 custom element 分派）。
               _ceApplyConn(child, false);
             }
+            // R125：sel-based 子元素移除路径——此前静默穿透（无 Remove mutation、无本地
+            // 标记、无 childList record），同步脚本内 getElementById/childNodes/查询面全不
+            // 反映（WPT Document-getElementById "in tree order" 移除首个后下一候选 /
+            // "must not return nodes not present in document" 静态子树移除）。三件：
+            // ① host Remove mutation（渲染侧最终应用）② sel 移除标记（parentNode/查询门
+            // 同步读）③ childList record（MO/CE/live-collection 汇流）。
+            if (child && child.__zwSelector && !child.__zwIsText) {
+              if (globalThis._zwNotifyIteratorsRemove) {
+                try { globalThis._zwNotifyIteratorsRemove(child); } catch (_eR125i) {}
+              }
+              try { if (typeof __zw_remove === 'function') __zw_remove(child.__zwSelector); } catch (_eR125r) {}
+              _zwMarkRemoved(child.__zwSelector);
+              _mo_notify(sel, handle, { type: 'childList', addedNodes: [], removedNodes: [child] });
+              _ceApplyConn(child, false);
+            }
             return child;
           };
         }
@@ -3937,7 +3972,14 @@
             // handle-only 无 sel 返 []）。R3031：addedNodes 经 [`_zwFragmentAdded`] 回填——host fragment 二次
             // parse 建 _zwMEl 代理树，取 .childNodes（可读 nodeType/tagName/getAttribute/querySelector，满足
             // 框架 observe 后递归观测新子树）；host 未注册 `__zw_parse_html_child_nodes` → []（旧行为）。
+            // R125：removedNodes 基底——handle 容器的本地子视图（_handleChildren）在下方
+            // 清空前快照（_childNodeList 对 handle-only 无 sel 返 []，旧子丢失 → pending 表
+            // 不剔除 → getElementById stale 命中，WPT "remove id attribute via innerHTML"）。
             var _ihRemoved = _childNodeList(sel, handle);
+            if (handle && (!_ihRemoved || !_ihRemoved.length)) {
+              var _ihHc = _handleChildren[handle];
+              _ihRemoved = _ihHc ? _ihHc.slice() : [];
+            }
             var _ihAdded = _zwFragmentAdded(value, handle);
             // spec `LegacyNullToEmptyString`：null → 空串（清子），非写 "null" 文本；undefined 仍 ToString。
             var _ihVal = value === null ? '' : String(value);
@@ -3968,6 +4010,24 @@
               _zwUnregisterTextEl(_makeProxy(sel, handle));
             }
             _mo_notify(sel, handle, { type: 'childList', addedNodes: _ihAdded, removedNodes: _ihRemoved });
+            // R125：innerHTML 替换后旧子的 pending-ID 索引同步剔除——host 快照未换代前
+            // getElementById 的 pending 回落仍会命中已清除的旧子（WPT "remove id attribute
+            // via innerHTML"）。_mo_notify 汇流点经 _zwHCLiveInvalidate 维护 pending 表，但
+            // handle 子树的 id 索引剔除不覆盖「sel 快照父 + handle 子」形态，此处定点补。
+            if (_ihRemoved && _ihRemoved.length) {
+              for (var _ihR = 0; _ihR < _ihRemoved.length; _ihR++) {
+                var _ihN = _ihRemoved[_ihR];
+                if (_ihN && typeof _zwPAIdRemove === 'function') _zwPAIdRemove(_ihN);
+                try {
+                  var _ihKids = _ihN && _ihN.childNodes;
+                  if (_ihKids) {
+                    for (var _ihK = 0; _ihK < _ihKids.length; _ihK++) {
+                      if (_ihKids[_ihK] && typeof _zwPAIdRemove === 'function') _zwPAIdRemove(_ihKids[_ihK]);
+                    }
+                  }
+                } catch (_eIhK) {}
+              }
+            }
           } else {
             // R3027：textContent 变更 → emit characterData 记录（target=元素，pragmatic——文本节点无 selector
             // 不能直接作 target；observe(el,{characterData,subtree}) + 后代 textContent 经 ancestor 冒泡亦覆盖）。
@@ -4092,17 +4152,50 @@
             void _charMoOld;
           }
         } else if (p === 'outerHTML') {
-          // outerHTML setter：整体替换元素为解析后的片段。仅 sel-based（需父节点）；
-          // handle-only（detached）无父 → 无操作（spec 对无父元素赋 outerHTML 抛错，静默更安全）。
+          // outerHTML setter：整体替换元素为解析后的片段。sel-based 走 host SetOuterHtml；
+          // handle-based（R125：createElement+appendChild 后 outerHTML= ——WPT "add/remove id
+          // attribute via outerHTML" 用例形态）经父链解析：父 sel 时 InsertAdjacentHtml
+          // 'afterend' 插入解析片段 + RemoveHandle 摘除自身（**先插后摘**——apply 顺序保持
+          // 新节点与旧节点的位置交替语义）；无父（真 detached）→ 无操作（spec 抛错，静默更安全）。
           // R3031：addedNodes 经 [`_zwFragmentAdded`] 回填解析片段的顶层节点（target=元素 sel 为 pragmatic
           // 近似，spec target=父节点——父 selector 此处不可得，承自 R3029 既有近似）。
+          var _ohVal = value === null ? '' : String(value);
           if (sel && typeof __zw_set_outer_html === 'function') {
             try {
               var _ohAdded = _zwFragmentAdded(value);
-              // spec `LegacyNullToEmptyString`：null → 空串（移除自身），非替换为 "null" 文本。
-              __zw_set_outer_html(sel, value === null ? '' : String(value));
+              __zw_set_outer_html(sel, _ohVal);
               _mo_notify(sel, handle, { type: 'childList', addedNodes: _ohAdded, removedNodes: [] });
+              // R125：outerHTML 替换 = 自身移除——① sel 移除标记（同步脚本内 getElementById/
+              // 查询门须立即反映，host 快照未换代仍含旧元素——WPT "remove id attribute via
+              // outerHTML"）② 新 id 元素进 pending 查询面（WPT "add id attribute via
+              // outerHTML"——querySelector 读 stale 快照 miss，新元素无回落可见性）。
+              _zwMarkRemoved(sel);
+              for (var _ohI = 0; _ohI < _ohAdded.length; _ohI++) {
+                var _ohN = _ohAdded[_ohI];
+                if (_ohN && _ohN.id && typeof _zwPAIdAdd === 'function') _zwPAIdAdd(_ohN);
+              }
             } catch (_e) {}
+          } else if (handle) {
+            var _ohParentSel = null;
+            try {
+              var _ohLink = _zwNodeParent[handle];
+              if (_ohLink && _ohLink.parentSel) _ohParentSel = _ohLink.parentSel;
+            } catch (_eP125) {}
+            if (_ohParentSel && typeof __zw_insert_adjacent_html === 'function'
+                && typeof __zw_remove_handle === 'function') {
+              var _ohHAdded = _zwFragmentAdded(value);
+              // 旧 proxy 身份（removedNodes 的 record 面）。
+              var _ohSelf = _makeProxy(sel, handle);
+              __zw_insert_adjacent_html(_ohParentSel, 'afterend', _ohVal);
+              __zw_remove_handle(handle);
+              if (typeof _zwMarkRemovedHandle === 'function') _zwMarkRemovedHandle(handle);
+              _mo_notify(sel, handle, { type: 'childList', addedNodes: _ohHAdded, removedNodes: [_ohSelf] });
+              _ceApplyConn(_ohSelf, false);
+              for (var _ohJ = 0; _ohJ < _ohHAdded.length; _ohJ++) {
+                var _ohN2 = _ohHAdded[_ohJ];
+                if (_ohN2 && _ohN2.id && typeof _zwPAIdAdd === 'function') _zwPAIdAdd(_ohN2);
+              }
+            }
           }
           return true;
         } else if (p === 'classList') {

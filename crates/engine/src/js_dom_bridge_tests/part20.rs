@@ -1054,3 +1054,96 @@ fn test_ascii_whitespace_class_domain_r124() {
         "ASCII whitespace 分词：U+00A0/U+2003 是字面类名字符，gEBCN/classList/~= 三面一致"
     );
 }
+
+// js-dom M4 R125：Document.getElementById 动态 id 语义（WPT
+// dom/nodes/Document-getElementById.html 12F 簇驱动——spec
+// https://dom.specwg.org/#dom-nonelementparentnode-getelementbyid：按**tree order**
+// 首个 tree 中 in-document 的 id 命中）。断言组：
+// ① setAttribute/removeAttribute 更新 id 后新旧 id 查询即时反映
+// ② innerHTML 增删 id 元素可见性
+// ③ detached 父容器（未入 doc）内的 id 元素不可见（in-document 门）
+// ④ Attr.value 修改 id 同步（element.attributes[0].value = …）
+// ⑤ getElementById('') 返 null（tree 中无空 id 元素时）
+#[test]
+fn test_get_element_by_id_dynamic_id_r125() {
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let mut sandbox = V8Sandbox::with_config(zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    })
+    .unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><div id=\"log\"></div></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry);
+
+    let out = sandbox
+        .execute(
+            "var parts = [];\
+             parts.push('t0:' + (document.getElementById('') === null));\
+             var t3 = document.createElement('div');\
+             t3.setAttribute('id', 'test3');\
+             document.body.appendChild(t3);\
+             t3.setAttribute('id', 'test3-updated');\
+             parts.push('t3-new:' + (document.getElementById('test3-updated') === t3));\
+             parts.push('t3-old:' + (document.getElementById('test3') === null));\
+             t3.removeAttribute('id');\
+             parts.push('t3-rm:' + (document.getElementById('test3-updated') === null));\
+             var t6s = document.createElement('div');\
+             t6s.setAttribute('id', 'test6');\
+             document.createElement('div').appendChild(t6s);\
+             parts.push('t6:' + (document.getElementById('test6') === null));\
+             var t7 = document.createElement('div');\
+             t7.setAttribute('id', 'test7');\
+             document.body.appendChild(t7);\
+             parts.push('t7-before:' + (document.getElementById('test7') === t7));\
+             try {\
+               t7.attributes[0].value = 'test7-updated';\
+               parts.push('t7-old:' + (document.getElementById('test7') === null));\
+               parts.push('t7-new:' + (document.getElementById('test7-updated') === t7));\
+             } catch (e) { parts.push('t7-threw:' + e.name); }\
+             var t8 = document.createElement('div');\
+             t8.setAttribute('id', 'test8-fixture');\
+             document.body.appendChild(t8);\
+             t8.innerHTML = \"<div id='test8'></div>\";\
+             parts.push('t8:' + (document.getElementById('test8') === t8.firstChild));\
+             var t9f = document.createElement('div');\
+             t9f.setAttribute('id', 'test9-fixture');\
+             document.body.appendChild(t9f);\
+             var t9 = document.createElement('div');\
+             t9.setAttribute('id', 'test9');\
+             t9f.appendChild(t9);\
+             parts.push('t9-before:' + (document.getElementById('test9') === t9));\
+             t9f.innerHTML = '';\
+             parts.push('t9-after:' + (document.getElementById('test9') === null));\
+             var t8b = document.createElement('div');\
+             document.body.appendChild(t8b);\
+             t8b.innerHTML = '<div ' + 'id=' + String.fromCharCode(34) + 'test8b' + String.fromCharCode(34) + '></div>';\
+             parts.push('t8b:' + (document.getElementById('test8b') === t8b.firstChild));\
+             var t15o = document.getElementById('log');\
+             var t15m = document.createElement('div');\
+             t15o.appendChild(t15m);\
+             var t15i = document.createElement('span');\
+             t15i.id = 'test15i';\
+             t15m.appendChild(t15i);\
+             parts.push('t15-in:' + (document.getElementById('test15i') === t15i));\
+             t15o.removeChild(t15m);\
+             parts.push('t15-out:' + (document.getElementById('test15i') === null));\
+             parts.join('|');",
+        )
+        .unwrap()
+        .value;
+    assert_eq!(
+        out,
+        "t0:true|t3-new:true|t3-old:true|t3-rm:true|t6:true|t7-before:true|t7-old:true|t7-new:true|t8:true|t9-before:true|t9-after:true|t8b:true|t15-in:true|t15-out:true",
+        "getElementById 动态 id：setAttribute/Attr.value/innerHTML 三路更新即时反映 + detached in-doc 门"
+    );
+}
+
+

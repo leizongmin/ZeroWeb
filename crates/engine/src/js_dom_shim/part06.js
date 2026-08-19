@@ -1492,14 +1492,82 @@
     },
     getElementById: function(id) {
       var idText = String(id);
+      // R125：空串 id → null（浏览器 id 缓存只索引非空 id——静态 `<div id="">` 不入索引，
+      // WPT "Calling document.getElementById with an empty string argument" 期望 null）。
+      if (idText === '') return null;
+      // R125：同批 id 变更覆盖表（querySelector('[id=…]') 读 host 快照，set
+      // Attribute/removeAttribute/Attr.value= 改 id 后命中 stale）。
+      // ① 快照命中先验覆盖表——命中元素被改为其它 id → null（WPT "shouldn't get the
+      //    element by the old id"）；② 快照 miss 再正向查覆盖表——命中新 id 的元素拉回。
+      function _r125Overridden(hitProxy) {
+        if (!hitProxy || !globalThis._zwIdOverrideGet) return false;
+        try {
+          var k = _elKey(hitProxy.__zwSelector || null, hitProxy.__zwHandle || null);
+          var ov = globalThis._zwIdOverrideGet(k);
+          if (ov === undefined) return false;
+          return ov !== idText;
+        } catch (_e) { return false; }
+      }
       var hit = globalThis.document.querySelector('[id="' + idText.replace(/"/g, '\\"') + '"]');
+      // R125：快照命中但元素已 remove（pending-removed 表）→ 继续找下一个（spec tree
+      // order 的下一候选）——removeChild 的 Remove mutation 不入查询视图（R3029 removed
+      // proxy 属性读回落快照的约束），getElementById 侧定点消费 pending-removed。
+      if (hit && !_r125Overridden(hit) && !_zwPRSet().has(hit) && !_r125AncestorRemoved(hit)) return hit;
+      if (globalThis._zwIdOverridesEntries && idText !== '') {
+        var ents = globalThis._zwIdOverridesEntries();
+        for (var ei = 0; ei < ents.length; ei++) {
+          if (ents[ei][1] === idText) {
+            var pr = _proxyCache[ents[ei][0]];
+            if (pr) return pr;
+          }
+        }
+      }
       // https://dom.spec.whatwg.org/#dom-nonelementparentnode-getelementbyid
       // The host snapshot may lag appendChild/innerHTML within a running script.
       // Reuse the pending-ID index so synchronous document lookups see inserted
       // nodes before the queued mutation reaches the renderer DOM.
-      if (hit) return hit;
+      // R125：JS 侧「祖先已移除」判定——_zwMutationInDoc 的 sel 分支查 host 快照
+      // contains（stale：静态标记子树 removeChild 后快照未换代仍含）。沿 proxy 父链
+      //（sel 父经 __zw_parent 一跳、handle 父经 _zwNodeParent）上行，任一祖先命中
+      // pending-removed → 整棵子树 out-of-document（WPT "must not return nodes not
+      // present in document"：outer.removeChild(middle) 后 inner.appendChild(h1) 的
+      // h1 不可见）。
+      function _r125AncestorRemoved(nd) {
+        var cur = nd, guard = 0;
+        while (cur && guard++ < 32) {
+          if (_zwPRSet().has(cur)) return true;
+          var next = null;
+          try {
+            var ph = cur.__zwHandle;
+            if (ph && typeof _zwNodeParent !== 'undefined' && _zwNodeParent[ph]) {
+              var link = _zwNodeParent[ph];
+              if (link.parentSel) next = _wrapSelector(link.parentSel);
+              else if (link.parentHandle) next = _wrapHandle(link.parentHandle);
+            } else if (cur.__zwSelector && typeof __zw_parent === 'function') {
+              var psel = __zw_parent(cur.__zwSelector);
+              if (psel) next = _wrapSelector(psel);
+            }
+          } catch (_eP) { next = null; }
+          cur = next;
+        }
+        return false;
+      }
       var pending = _zwPendingAddedById.get(idText);
-      if (pending && pending.length) return pending[pending.length - 1];
+      if (pending && pending.length) {
+        // R125：in-document 门（spec：getElementById 只返**树中**节点）——pending 条目
+        // 挂 detached 容器（createElement('div').appendChild(...) 未入主文档）时不可见。
+        // 与 live collection 的 R54 门同源（_zwMutationInDoc 沿 _zwNodeParent 反链上行）。
+        // 同 id 多条目按**树序优先**（spec tree order 首个——pending 表是插入序，同父
+        // 连续 append 时序=树序，跨父时以快照命中先行、pending 兜底的合成次序近似）。
+        for (var pi = 0; pi < pending.length; pi++) {
+          var pn = pending[pi];
+          if (!pn || _zwPRSet().has(pn) || _r125AncestorRemoved(pn)) continue;
+          var pSel = pn && pn.__zwSelector ? pn.__zwSelector : null;
+          var pH = pn && pn.__zwHandle ? pn.__zwHandle : null;
+          if (pH && _zwMutationInDoc(null, pH)) return pn;
+          if (pSel && _zwMutationInDoc(pSel, null)) return pn;
+        }
+      }
       // A newly attached handle can contain a parsed innerHTML subtree whose
       // descendants have no handle of their own. Scan that small pending tree
       // until the renderer publishes its next DOM snapshot.
@@ -1516,8 +1584,21 @@
         return null;
       }
       for (var i = _zwPendingAdded.length - 1; i >= 0; i--) {
-        var found = findPendingId(_zwPendingAdded[i]);
-        if (found) return found;
+        var cand = _zwPendingAdded[i];
+        // R125：in-document 门同 pending-ID 索引路径（detached 容器子树不可见）。
+        var cSel = cand && cand.__zwSelector ? cand.__zwSelector : null;
+        var cH = cand && cand.__zwHandle ? cand.__zwHandle : null;
+        var inDoc = cH ? _zwMutationInDoc(null, cH) : (cSel ? _zwMutationInDoc(cSel, null) : false);
+        if (!inDoc || _r125AncestorRemoved(cand)) continue;
+        var found = findPendingId(cand);
+        if (found) {
+          // 命中节点可能深在 pending 子树内——对其自身再验 in-doc（子树根 in-doc 但
+          // 命中在 detached 分支的情形：R54 门在挂载点判定的对称面，此处单节点判定）。
+          var fSel = found && found.__zwSelector ? found.__zwSelector : null;
+          var fH = found && found.__zwHandle ? found.__zwHandle : null;
+          if (!_r125AncestorRemoved(found)
+              && (fH ? _zwMutationInDoc(null, fH) : (fSel ? _zwMutationInDoc(fSel, null) : true))) return found;
+        }
       }
       return null;
     },

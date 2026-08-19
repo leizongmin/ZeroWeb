@@ -826,8 +826,15 @@ pub fn apply_dom_mutations_full(
                 parent_selector,
                 child_handle,
             } => {
-                let parent = find_by_selector(doc, &parent_selector)
-                    .ok_or_else(|| format!("append_child: no parent match for {parent_selector}"))?;
+                // js-dom M4 R125：父选择器 miss（同批 Remove 摘除的子树内元素——JS 侧 proxy
+                // 仍可达，spec 对 detached 元素 appendChild 合法）→ lenient no-op（child 仍
+                // 由 handles 表登记，后续 mutation 引用不断链）。旧硬错中止整批使页面脚本
+                // 以 "apply mutations" error 失败（WPT Document-getElementById "must not
+                // return nodes not present in document"：removeChild(middle) 后
+                // inner.appendChild(h1)）。
+                let Some(parent) = find_by_selector(doc, &parent_selector) else {
+                    continue;
+                };
                 let child = handles
                     .get(&child_handle)
                     .copied()

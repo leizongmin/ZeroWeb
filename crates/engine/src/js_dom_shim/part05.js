@@ -5359,6 +5359,23 @@
   // R51c：pending added 按 id 索引（querySelector('#id') host-miss 回落 O(1)；invalidate
   // 记账时维护——added 入对桶、对冲剔除时同步删）。
   var _zwPendingAddedById = new Map();
+  // js-dom M4 R125：sel-based 元素 id 的 latest-wins 覆盖表（elKey → 新 id | null）。
+  // host 快照不反映同 execute 的 setAttribute('id')/removeAttribute('id')/Attr.value=/
+  // innerHTML 清除——querySelector('[id=…]') 命中 stale id 或漏新 id（WPT
+  // Document-getElementById "update id attribute via setAttribute/removeAttribute" 等）。
+  // 写入侧：part04 setAttribute/removeAttribute/Attr.value setter/innerHTML·outerHTML 写路径
+  // （proxy 身份键 elKey）；读取侧：part06 getElementById 双向消费（旧 id 命中查表剔除非
+  // pending、新 id 命中查表拉回）。handle 元素不进此表（host 无快照条目，pending 索引已覆盖）。
+  var _zwIdOverrides = new Map();
+  globalThis._zwIdOverrideSet = function (key, id) { _zwIdOverrides.set(key, id == null ? null : String(id)); };
+  globalThis._zwIdOverrideGet = function (key) {
+    return _zwIdOverrides.has(key) ? _zwIdOverrides.get(key) : undefined;
+  };
+  globalThis._zwIdOverridesEntries = function () {
+    var out = [];
+    _zwIdOverrides.forEach(function (v, k) { out.push([k, v]); });
+    return out;
+  };
   function _zwPAIdAdd(nd) {
     var id = '';
     try { id = nd && nd.id != null ? String(nd.id) : ''; } catch (_e) { id = ''; }

@@ -3264,10 +3264,27 @@
       localName: tag,
       id: snap.id || '',
       className: snap.cls || '',
+      // R125：spec dom-node-nodenamespace —— 元素的 namespaceURI（HTML 解析产物 = HTML ns；
+      // XML 文档经 snap.ns 覆盖，回落 HTML ns 与 R81 _zwParsedDoc._defaultNS 语义一致）。
+      // R125 原型链接后 `node instanceof Element` 为真，DOMPurify _checkValidNamespace
+      // 读 element.namespaceURI——缺省 undefined 不在 ALLOWED_NAMESPACES → 元素被误杀
+      // （sanitize 返空串，r3019 回归）。
+      namespaceURI: snap.ns !== undefined ? snap.ns : 'http://www.w3.org/1999/xhtml',
       attributes: attrs,
       childNodes: [],
       parentNode: parent || null
     };
+    // R125：解析本地元素的接口原型链接（`test instanceof HTMLDivElement`——WPT
+    // Document-getElementById "add id attribute via innerHTML"：element.firstChild /
+    // getElementById 返回的解析节点须过 instanceof 接口断言）。按 tag 查
+    // __zwHtmlTagIface（与 handle/proxy 元素同源表），miss 回落 HTMLElement.prototype。
+    try {
+      var _mIfaceTag = String(tag || '').toLowerCase();
+      var _mIface = globalThis.__zwHtmlTagIface && globalThis.__zwHtmlTagIface[_mIfaceTag];
+      var _mProto = (_mIface && globalThis[_mIface] && globalThis[_mIface].prototype)
+        || (globalThis.HTMLElement && globalThis.HTMLElement.prototype) || null;
+      if (_mProto) Object.setPrototypeOf(node, _mProto);
+    } catch (_eM125) {}
     node.getAttribute = function (n) { n = String(n); for (var i = 0; i < attrs.length; i++) if (attrs[i].name === n) return attrs[i].value; return null; };
     node.hasAttribute = function (n) { return node.getAttribute(n) !== null; };
     // js-dom M3 R97：hasAttributes/getAttributeNames（lit-html Template 解析对解析子树元素
