@@ -187,6 +187,8 @@ Text-indent exposed the duplicated text-longhand parser variant: a parser may re
 
 Word-spacing exposed the keyword-bypass direct-apply variant: a longhand can reject its own valid keyword when direct apply only calls the shared length parser, while also accepting aliases that belong to other grammars. Handle property keywords before shared parsing, then filter parsed values by the property grammar and keep failed declarations atomic.
 
+Outline-offset exposed the mutually-exclusive keyword variant: a property-specific keyword such as `inset` must remain mutually exclusive with the `<length>` branch, and invalid shared-parser values must not clear that keyword state. Validate the parsed length branch before mutating either the value slot or companion keyword flag.
+
 ## Root Cause
 
 The shorthand layer used heuristic component classifiers and treated unrecognized tokens as absent optional components. That is wrong for CSS shorthands such as `border`, where every token must match one of the allowed component grammars. A shared parser can also be broader than the property grammar that consumes it: general length parsing may accept `auto`, intrinsic sizing keywords, or percentages that `border-width` must reject.

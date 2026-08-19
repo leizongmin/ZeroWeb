@@ -1451,6 +1451,20 @@ fn test_apply_outline_offset() {
     assert_eq!(style.outline_offset, LengthValue::Px(-2.0));
 
     assert!(!apply_property_value(&mut style, "outline-offset", "invalid"));
+    let previous = style.outline_offset.clone();
+    for value in [
+        "10%",
+        "auto",
+        "thin",
+        "min-content",
+        "fit-content(10px)",
+        "infpx",
+        "NaNpx",
+    ] {
+        assert!(!apply_property_value(&mut style, "outline-offset", value));
+        assert_eq!(style.outline_offset, previous, "{} should not overwrite", value);
+        assert!(!style.outline_offset_inset);
+    }
 
     // CSS-UI-4 §4.4: `outline-offset: inset` 关键字 ≡ 负 outline-width 的偏移
     // （outline 绘制在 border-box 内侧）。driving: outline-offset-inset-001/003/004。
