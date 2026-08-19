@@ -165,6 +165,8 @@ Tab-size exposed the keyword-alias range-check variant: a property may first rej
 
 Line-height exposed the shorthand-vs-longhand negative grammar drift variant: `font` shorthand can reject negative line-height while the longhand parser still accepts negative number/length/percentage and non-finite numbers. Keep longhand consumer grammar at least as strict as shorthand prevalidation, and apply finite checks to numeric property values before writing computed style.
 
+Perspective exposed the apply-helper grammar drift variant: longhands implemented only in `apply_*` can bypass dedicated parser tests and inherit every value accepted by `parse_length_or_math`, including percentages and keyword aliases. Treat apply-only longhands as parser boundaries too, and filter helper output before mutating computed style.
+
 ## Root Cause
 
 The shorthand layer used heuristic component classifiers and treated unrecognized tokens as absent optional components. That is wrong for CSS shorthands such as `border`, where every token must match one of the allowed component grammars. A shared parser can also be broader than the property grammar that consumes it: general length parsing may accept `auto`, intrinsic sizing keywords, or percentages that `border-width` must reject.

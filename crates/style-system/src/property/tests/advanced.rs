@@ -1252,6 +1252,13 @@ fn test_perspective_apply() {
     let mut style = ComputedStyle::default();
     assert!(apply_property_value(&mut style, "perspective", "500px"));
     assert_eq!(style.perspective, LengthValue::Px(500.0));
+    let previous = style.perspective.clone();
+    assert!(!apply_property_value(&mut style, "perspective", "-1px"));
+    assert_eq!(style.perspective, previous);
+    assert!(!apply_property_value(&mut style, "perspective", "50%"));
+    assert_eq!(style.perspective, previous);
+    assert!(!apply_property_value(&mut style, "perspective", "thin"));
+    assert_eq!(style.perspective, previous);
 
     // perspective: none 重置为 0
     assert!(apply_property_value(&mut style, "perspective", "none"));

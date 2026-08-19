@@ -200,6 +200,9 @@ pub fn apply_advanced_property_value(style: &mut ComputedStyle, property: &str, 
                 return true;
             }
             if let Some(v) = parse_length_or_math(value) {
+                if !perspective_length_is_valid(value, &v) {
+                    return false;
+                }
                 style.perspective = v;
                 return true;
             }
@@ -1733,6 +1736,34 @@ pub fn apply_advanced_property_value(style: &mut ComputedStyle, property: &str, 
         _ => {}
     }
     false
+}
+
+fn perspective_length_is_valid(raw: &str, value: &LengthValue) -> bool {
+    if matches!(
+        raw.trim().to_ascii_lowercase().as_str(),
+        "thin" | "medium" | "thick" | "auto" | "min-content" | "max-content" | "fit-content"
+    ) {
+        return false;
+    }
+    match value {
+        LengthValue::Px(v)
+        | LengthValue::Em(v)
+        | LengthValue::Ex(v)
+        | LengthValue::Rex(v)
+        | LengthValue::Cap(v)
+        | LengthValue::Rcap(v)
+        | LengthValue::Rem(v)
+        | LengthValue::Vh(v)
+        | LengthValue::Vw(v)
+        | LengthValue::Vmin(v)
+        | LengthValue::Vmax(v)
+        | LengthValue::Ch(v)
+        | LengthValue::Rch(v)
+        | LengthValue::Ic(v)
+        | LengthValue::Ric(v) => v.is_finite() && *v >= 0.0,
+        LengthValue::Calc(_) => true,
+        _ => false,
+    }
 }
 
 // ── border 逻辑属性辅助（CSS Logical Properties §3 + Writing Modes §6）──
