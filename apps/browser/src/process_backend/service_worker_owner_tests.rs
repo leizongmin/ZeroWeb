@@ -1,6 +1,80 @@
+use std::collections::HashMap;
+use std::io::{Read, Write};
+use std::net::TcpListener;
 use std::path::PathBuf;
+use std::time::{Duration, Instant};
 
 use super::*;
+use zero_protocol::{AutomationOperation, AutomationResult, AutomationValue};
+
+fn lock_multiprocess_tests() -> std::sync::MutexGuard<'static, ()> {
+    crate::tests::MULTIPROCESS_TEST_LOCK
+        .lock()
+        .unwrap_or_else(|error| error.into_inner())
+}
+
+fn execute_script(
+    backend: &mut ProcessTabBackend,
+    snapshots: &mut HashMap<TabId, TabSnapshot>,
+    tab_id: TabId,
+    request_id: u64,
+    script: &str,
+) -> Result<AutomationValue, String> {
+    backend.send_automation_request(
+        tab_id,
+        request_id,
+        AutomationOperation::ExecuteScript {
+            script: script.to_string(),
+            arguments: Vec::new(),
+        },
+    )?;
+    let deadline = Instant::now() + Duration::from_secs(20);
+    loop {
+        backend.poll(snapshots, &mut HashMap::new(), Some(tab_id), true);
+        if let Some(response) = backend.take_automation_response(tab_id, request_id) {
+            return match response.result {
+                Ok(AutomationResult::Value(value)) => Ok(value),
+                Ok(other) => Err(format!("unexpected automation result: {other:?}")),
+                Err(error) => Err(format!("{:?}: {}", error.code, error.message)),
+            };
+        }
+        if Instant::now() >= deadline {
+            return Err(format!("automation request {request_id} timed out"));
+        }
+        std::thread::sleep(Duration::from_millis(2));
+    }
+}
+
+fn load_committed_page(
+    backend: &mut ProcessTabBackend,
+    snapshots: &mut HashMap<TabId, TabSnapshot>,
+    tab_id: TabId,
+    url: &str,
+) {
+    snapshots.insert(
+        tab_id,
+        TabSnapshot {
+            url: Some(url.to_string()),
+            navigation_epoch: 1,
+            ..Default::default()
+        },
+    );
+    backend.ensure_renderer(tab_id, (800, 600));
+    backend.load_html(tab_id, "<!doctype html><html><body></body></html>", None, Some(url), 1);
+    let deadline = Instant::now() + Duration::from_secs(20);
+    loop {
+        backend.poll(snapshots, &mut HashMap::new(), Some(tab_id), true);
+        if backend
+            .committed_document_urls
+            .values()
+            .any(|committed| committed == url)
+        {
+            return;
+        }
+        assert!(Instant::now() < deadline, "renderer did not commit test page");
+        std::thread::sleep(Duration::from_millis(2));
+    }
+}
 
 #[test]
 fn service_worker_authority_exists_only_for_committed_navigation() {
@@ -47,4 +121,73 @@ fn mismatched_navigation_commit_does_not_grant_service_worker_authority() {
     );
 
     assert!(!backend.committed_document_urls.contains_key(&renderer_id));
+}
+
+#[test]
+fn multiprocess_navigator_registration_uses_browser_owner() {
+    let _multiprocess_guard = lock_multiprocess_tests();
+    let renderer = resolve_renderer_binary().expect("fresh zero-renderer binary is required");
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let page_url = format!("http://{}/page", listener.local_addr().unwrap());
+    let worker_source = "addEventListener('install', event => event.waitUntil(Promise.resolve()));";
+    let response = format!(
+        "HTTP/1.1 200 OK\r\nContent-Type: application/javascript\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+        worker_source.len(),
+        worker_source
+    );
+    let server = std::thread::spawn(move || {
+        let (mut stream, _) = listener.accept().unwrap();
+        let mut request = [0_u8; 2048];
+        let size = stream.read(&mut request).unwrap();
+        assert!(String::from_utf8_lossy(&request[..size]).starts_with("GET /sw.js "));
+        stream.write_all(response.as_bytes()).unwrap();
+    });
+
+    let mut backend = ProcessTabBackend::with_renderer_bin(renderer);
+    let tab_id = TabId(803);
+    let mut snapshots = HashMap::new();
+    load_committed_page(&mut backend, &mut snapshots, tab_id, &page_url);
+    execute_script(
+        &mut backend,
+        &mut snapshots,
+        tab_id,
+        1,
+        "globalThis.__swResult = 'pending';\
+         (async function () {\
+           try {\
+             var reg = await navigator.serviceWorker.register('/sw.js');\
+             var ready = await navigator.serviceWorker.ready;\
+             var state = ready.active ? ready.active.state : 'none';\
+             var removed = await reg.unregister();\
+             globalThis.__swResult = reg.scope + '|' + state + '|' + String(removed);\
+           } catch (error) {\
+             globalThis.__swResult = 'error:' + String(error && error.message ? error.message : error);\
+           }\
+         })();",
+    )
+    .unwrap();
+
+    let deadline = Instant::now() + Duration::from_secs(20);
+    let result = loop {
+        let value = execute_script(
+            &mut backend,
+            &mut snapshots,
+            tab_id,
+            2,
+            "return String(globalThis.__swResult);",
+        )
+        .unwrap();
+        if let AutomationValue::String(value) = value
+            && value != "pending"
+        {
+            break value;
+        }
+        assert!(Instant::now() < deadline, "Service Worker registration did not settle");
+        std::thread::sleep(Duration::from_millis(5));
+    };
+    server.join().unwrap();
+    backend.remove_renderer(tab_id);
+
+    let expected_scope = format!("http://{}/", page_url.split('/').nth(2).unwrap());
+    assert_eq!(result, format!("{expected_scope}|activated|true"));
 }

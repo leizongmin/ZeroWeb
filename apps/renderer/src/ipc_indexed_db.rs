@@ -104,19 +104,22 @@ where
 pub(crate) fn route_browser_ipc_inbound(
     source: Receiver<IpcMessage>,
     indexed_db_responses: Arc<IndexedDbResponseRouter>,
+    service_worker_responses: Arc<crate::ipc_service_worker::ServiceWorkerResponseRouter>,
 ) -> (Receiver<IpcMessage>, JoinHandle<()>) {
     let (tx, rx) = mpsc::channel();
     let join = thread::Builder::new()
         .name("renderer-ipc-router".into())
         .spawn(move || {
             while let Ok(message) = source.recv() {
-                if let Some(message) = indexed_db_responses.route(message)
+                if let Some(message) = service_worker_responses.route(message)
+                    && let Some(message) = indexed_db_responses.route(message)
                     && tx.send(message).is_err()
                 {
                     break;
                 }
             }
             indexed_db_responses.fail_all("UnknownError: browser IPC disconnected".to_string());
+            service_worker_responses.fail_all("browser IPC disconnected");
         })
         .expect("spawn renderer ipc router");
     (rx, join)

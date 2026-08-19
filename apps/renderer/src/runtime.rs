@@ -8,6 +8,7 @@ use zero_webview::AsyncPageLoad;
 
 use crate::ipc_fetch::{InflightIpcFetches, IpcAsyncFetchHost, StubAsyncFetchHost};
 use crate::ipc_indexed_db::IndexedDbResponseRouter;
+use crate::ipc_service_worker::{ServiceWorkerIpcClient, ServiceWorkerResponseRouter};
 use crate::{compositor_publish_thread, error_page, ipc_indexed_db, page_scripts, paint_export, sandbox, text_metrics};
 
 use crate::js_worker::RendererJsWorker;
@@ -238,8 +239,12 @@ impl RendererRuntime {
         inbound_rx: Receiver<IpcMessage>,
     ) -> Self {
         let indexed_db_responses = IndexedDbResponseRouter::new();
-        let (inbound_rx, inbound_thread) =
-            ipc_indexed_db::route_browser_ipc_inbound(inbound_rx, Arc::clone(&indexed_db_responses));
+        let service_worker_responses = ServiceWorkerResponseRouter::new();
+        let (inbound_rx, inbound_thread) = ipc_indexed_db::route_browser_ipc_inbound(
+            inbound_rx,
+            Arc::clone(&indexed_db_responses),
+            Arc::clone(&service_worker_responses),
+        );
         let (shared_writer, writer) = compositor_publish_thread::SharedWriter::new(outbound);
         let compositor_publish = if compositor_publish_thread::compositor_publish_threading_enabled() {
             Some(compositor_publish_thread::CompositorPublishThread::spawn(Arc::clone(
@@ -250,14 +255,19 @@ impl RendererRuntime {
         };
         let outbound = PipeTransport::new(io::empty(), Box::new(shared_writer) as Box<dyn io::Write + Send>);
         let indexed_db_handler = ipc_indexed_db::indexed_db_handler(
-            compositor_publish_thread::SharedWriter::from_arc(writer),
+            compositor_publish_thread::SharedWriter::from_arc(Arc::clone(&writer)),
             indexed_db_responses,
+        );
+        let service_worker_client = ServiceWorkerIpcClient::new(
+            compositor_publish_thread::SharedWriter::from_arc(writer),
+            service_worker_responses,
         );
         let (font_loader, font_id, font_resolver) = load_system_fonts();
         set_char_measure_fn(text_metrics::measure_char);
         set_text_shape_fn(text_metrics::shape_text);
         set_hmtx_measure_fn(text_metrics::measure_text_hmtx);
-        let js_worker = RendererJsWorker::spawn_with_indexed_db_handler(renderer_id, indexed_db_handler);
+        let js_worker =
+            RendererJsWorker::spawn_with_handlers(renderer_id, indexed_db_handler, Some(service_worker_client));
         // P1b S3 / R2923（镜像 browser tab_worker）：注入生产 fetch handler（经 ResourceLoader 真实 HTTP，
         // 支持全方法/头/体）。js_worker 早于 WebView 创建；共享加载器不依赖 WebView 句柄，故可立即注入。
         // test 构建不注入（renderer runtime 单测用合成 handler）。
@@ -2326,7 +2336,7 @@ impl RendererRuntime {
                 self.run_frame_transaction(|runtime| runtime.handle_automation_request(msg.id, request))
             }
             IpcMessageKind::ServiceWorkerResponse(_) => {
-                tracing::warn!("Service Worker renderer IPC bridge is unavailable");
+                tracing::warn!("unmatched Service Worker response reached renderer dispatch");
                 Ok(())
             }
             IpcMessageKind::FetchRequest(_)

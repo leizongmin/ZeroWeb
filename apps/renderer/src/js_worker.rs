@@ -21,6 +21,8 @@ use zero_script_sandbox::{
     extract_module_import_specifiers,
 };
 
+use crate::ipc_service_worker::ServiceWorkerIpcClient;
+
 const TAB_JS_EXEC_TIMEOUT_MS: u64 = 15_000;
 const TAB_JS_CHANNEL_TIMEOUT: Duration = Duration::from_millis(TAB_JS_EXEC_TIMEOUT_MS + 5_000);
 
@@ -123,6 +125,14 @@ impl RendererJsWorker {
         renderer_id: u64,
         indexed_db_handler: zero_engine::IndexedDbHandler,
     ) -> Self {
+        Self::spawn_with_handlers(renderer_id, indexed_db_handler, None)
+    }
+
+    pub(crate) fn spawn_with_handlers(
+        renderer_id: u64,
+        indexed_db_handler: zero_engine::IndexedDbHandler,
+        service_worker_client: Option<ServiceWorkerIpcClient>,
+    ) -> Self {
         let mutations: Arc<std::sync::Mutex<Vec<DomMutation>>> = Arc::new(std::sync::Mutex::new(Vec::new()));
         let rect_snapshot = new_layout_rect_snapshot();
         let handle_selector_map = new_handle_selector_map();
@@ -162,6 +172,7 @@ impl RendererJsWorker {
                     font_bridge,
                     nav_bridge,
                     indexed_db_handler,
+                    service_worker_client,
                     async_callbacks_ready_for_worker,
                     #[cfg(test)]
                     execution_count_for_worker,
@@ -376,7 +387,7 @@ impl Drop for RendererJsWorker {
     }
 }
 
-#[allow(clippy::too_many_arguments)] // 8 参 = 通道/snapshot/map/cache + font/nav bridge，签名清晰优于打包结构体
+#[allow(clippy::too_many_arguments)] // Thread-owned bridges are explicit at the single worker bootstrap boundary.
 fn js_worker_main(
     cmd_rx: Receiver<JsWorkerCommand>,
     cmd_tx: Sender<JsWorkerCommand>,
@@ -387,6 +398,7 @@ fn js_worker_main(
     font_bridge: zero_engine::FontLoadBridge,
     nav_bridge: zero_engine::NavigationBridge,
     indexed_db_handler: zero_engine::IndexedDbHandler,
+    service_worker_client: Option<ServiceWorkerIpcClient>,
     async_callbacks_ready: Arc<AtomicBool>,
     #[cfg(test)] execution_count: Arc<AtomicU64>,
 ) {
@@ -408,6 +420,9 @@ fn js_worker_main(
     register_dom_callbacks(&mut *sandbox, &mutations, &dom_html, &page_url, &canvas_registry);
     let indexed_db_bridge = zero_engine::IndexedDbBridge::new(indexed_db_handler);
     indexed_db_bridge.register(&mut *sandbox, &page_url);
+    if let Some(client) = service_worker_client {
+        client.register_callbacks(&mut *sandbox);
+    }
     register_module_compile_callback(&mut *sandbox);
     // P1a gBCR（Slice 1）：RectBridge 注 `__zw_getBoundingClientRect(identity)` 同步回调。
     // handler 解析 identity(selector) → NodeId（fresh-parse dom_html，与渲染管线确定性一致）

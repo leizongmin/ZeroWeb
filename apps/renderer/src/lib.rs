@@ -4,6 +4,7 @@ mod compositor_publish_thread;
 mod error_page;
 mod ipc_fetch;
 mod ipc_indexed_db;
+mod ipc_service_worker;
 pub mod js_worker;
 #[cfg(target_os = "macos")]
 mod macos_app;
