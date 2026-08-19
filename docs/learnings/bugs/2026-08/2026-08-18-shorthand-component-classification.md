@@ -169,6 +169,8 @@ Perspective exposed the apply-helper grammar drift variant: longhands implemente
 
 Row-gap and column-gap exposed the shorthand-only validator variant: `gap` shorthand can correctly reject negative values while its generated longhands still accept them when authored directly. Mirror shorthand component validators in the longhand apply path, including grammar keywords such as `normal` that do not pass through the shared length parser.
 
+Flex-basis exposed the width-grammar filter variant: properties based on `<width>` may legitimately keep intrinsic sizing keywords such as `min-content`, `max-content`, and `fit-content(...)`, while still rejecting negative length/percentage values and border-width keyword aliases. Consumer grammar filters should preserve those intrinsic branches instead of reducing the property to plain lengths.
+
 ## Root Cause
 
 The shorthand layer used heuristic component classifiers and treated unrecognized tokens as absent optional components. That is wrong for CSS shorthands such as `border`, where every token must match one of the allowed component grammars. A shared parser can also be broader than the property grammar that consumes it: general length parsing may accept `auto`, intrinsic sizing keywords, or percentages that `border-width` must reject.

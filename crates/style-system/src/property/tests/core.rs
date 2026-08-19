@@ -149,6 +149,9 @@ fn test_parse_flex_basis() {
         parse_flex_basis("100px"),
         Some(FlexBasisValue::Length(LengthValue::Px(100.0)))
     );
+    assert_eq!(parse_flex_basis("-1px"), None);
+    assert_eq!(parse_flex_basis("-50%"), None);
+    assert_eq!(parse_flex_basis("thin"), None);
 }
 
 #[test]
@@ -538,6 +541,13 @@ fn test_apply_property_multiple_different_properties() {
     // flex-basis
     assert!(apply_property_value(&mut style, "flex-basis", "auto"));
     assert_eq!(style.flex_basis, FlexBasisValue::Auto);
+    assert!(apply_property_value(&mut style, "flex-basis", "200px"));
+    assert_eq!(style.flex_basis, FlexBasisValue::Length(LengthValue::Px(200.0)));
+    let previous = style.flex_basis.clone();
+    assert!(!apply_property_value(&mut style, "flex-basis", "-1px"));
+    assert_eq!(style.flex_basis, previous);
+    assert!(!apply_property_value(&mut style, "flex-basis", "thin"));
+    assert_eq!(style.flex_basis, previous);
 
     // order
     assert!(apply_property_value(&mut style, "order", "3"));
