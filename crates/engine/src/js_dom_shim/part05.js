@@ -1036,7 +1036,8 @@
   function _hIdOf(p) { return String(_hSafe(function () { return p.id; }, '')); }
   function _hClassesOf(p) {
     var c = String(_hSafe(function () { return p.className; }, ''));
-    return c ? c.split(/\s+/).filter(Boolean) : [];
+    // R124：ASCII whitespace 分词（_zwSplitClassList，part03 hoist 运行期可达）。
+    return c ? _zwSplitClassList(c) : [];
   }
   function _hAttrOf(p, name) { return _hSafe(function () { return p.getAttribute(name); }, null); }
 
@@ -1055,7 +1056,9 @@
     var v = String(av);
     switch (a.op) {
       case '=': return v === a.val;
-      case '~=': return a.val !== '' && v.split(/\s+/).indexOf(a.val) >= 0;
+      // R124：~= 的属性值分词同 class 域（ASCII whitespace——spec attribute selector
+      // whitespace-separated words；Unicode 空白是字面字符非分隔符）。
+      case '~=': return a.val !== '' && _zwSplitClassList(v).indexOf(a.val) >= 0;
       case '|=': return v === a.val || v.indexOf(a.val + '-') === 0;
       case '^=': return a.val !== '' && v.indexOf(a.val) === 0;
       case '$=': return a.val !== '' && v.length >= a.val.length &&

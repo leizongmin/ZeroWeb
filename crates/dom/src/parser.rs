@@ -396,7 +396,7 @@ impl TreeSink for DomBuilder {
                             .attributes
                             .iter()
                             .find(|a| &*a.name.local == "class")
-                            .map(|a| a.value.split_whitespace().map(String::from).collect())
+                            .map(|a| crate::node::split_ascii_whitespace(&a.value))
                             .unwrap_or_default();
                     }
                 }

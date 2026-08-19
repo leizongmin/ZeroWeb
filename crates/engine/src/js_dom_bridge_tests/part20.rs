@@ -996,3 +996,61 @@ fn test_pi_attribute_layer_r123() {
         "PI 属性层：五件套 + data 双向同步 + 校验 + 大小写敏感 + 转义 + toggle + 双 parse 派生视图"
     );
 }
+
+// js-dom M4 R124：class 域 ASCII whitespace 分词语义（spec html-infrastructure
+// 「ascii whitespace」——分隔符仅 space/\t/\n/\f/r 五字符，U+00A0/U+2000 系/U+3000 等
+// Unicode 空白是**字面类名字符**非分隔符）。WPT
+// dom/nodes/getElementsByClassName-whitespace-class-names.html 19F 簇驱动
+//（`<span class="&#x00A0;">` 的 class 是合法单字符类名）。断言组：
+// ① gEBCN 以单个 Unicode 空白字符为类名可命中（shim 侧 _zwSplitClassList）
+// ② classList.contains 对单个 Unicode 空白字符 token 返 true（旧 /\s/ 误拒）
+// ③ ~= 属性选择器以 Unicode 空白为字面字符匹配（Rust 侧 split_ascii_whitespace 同源）
+// https://html.spec.whatwg.org/multipage/infrastructure.html#ascii-whitespace
+#[test]
+fn test_ascii_whitespace_class_domain_r124() {
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let mut sandbox = V8Sandbox::with_config(zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    })
+    .unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        // data-k / data-w 的 Unicode 空白属性值直接以字面字符进入初始 parse 快照（__zw_matches
+        // 读快照——同 execute setAttribute 不入快照，与 WPT 用例的静态标记形态一致）。
+        "<html><body><span id=\"s1\" class=\"&#x00A0;\">nb</span><span id=\"s2\" class=\"a&#x2003;b c\">em</span><div id=\"d1\" data-k=\"x&#x2003;y\">y</div><div id=\"d2\" data-w=\"n&#x00A0;o\">z</div></body></html>"
+            .to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry);
+
+    let out = sandbox
+        .execute(
+            "var parts = [];\
+             var NBSP = String.fromCharCode(0xA0), EM = String.fromCharCode(0x2003), VT = String.fromCharCode(0x0B);\
+             parts.push('gEBCN-nbsp:' + document.getElementsByClassName(NBSP).length + ':' + document.getElementsByClassName(NBSP)[0].id);\
+             var s2 = document.getElementById('s2');\
+             parts.push('classList-len:' + s2.classList.length + ':' + (s2.classList.item(0) === 'a' + EM + 'b'));\
+             parts.push('contains-em-token:' + s2.classList.contains('a' + EM + 'b'));\
+             parts.push('contains-nbsp:' + document.getElementById('s1').classList.contains(NBSP));\
+             parts.push('contains-ascii-space:' + s2.classList.contains(' '));\
+             var d1 = document.getElementById('d1');\
+             parts.push('hat-em:' + d1.matches('[data-k~=x' + EM + 'y]'));\
+             var d2 = document.getElementById('d2');\
+             parts.push('hat-word:' + d2.matches('[data-w~=n' + NBSP + 'o]'));\
+             parts.push('hat-ascii-sep-miss:' + d2.matches('[data-w~=o]'));\
+             parts.push('sel-vt-class:' + (function () { try { return document.querySelector('.' + VT) === null; } catch (e) { return 'threw:' + e.name; } })());\
+             parts.join('|');",
+        )
+        .unwrap()
+        .value;
+    assert_eq!(
+        out,
+        "gEBCN-nbsp:1:s1|classList-len:2:true|contains-em-token:true|contains-nbsp:true|contains-ascii-space:false|hat-em:true|hat-word:true|hat-ascii-sep-miss:false|sel-vt-class:true",
+        "ASCII whitespace 分词：U+00A0/U+2003 是字面类名字符，gEBCN/classList/~= 三面一致"
+    );
+}

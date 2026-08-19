@@ -3406,7 +3406,9 @@
                 { matches: _zwLiveMatchesFor(q, undefined), scopeHandle: handle || null, scopeSel: sel || null });
             }
             // getElementsByClassName：空白分隔多类名 → 须同时含全部 → '.a.b'。
-            var parts = String(arg).trim().split(/\s+/).filter(Boolean);
+            // R124：分词用 ASCII whitespace（spec）——JS /\s+/ 的 Unicode 空白集会把
+            // 单个 Unicode 空白字符类名（U+00A0 等）误切空（WPT -whitespace 19F 簇）。
+            var parts = _zwSplitClassList(arg);
             if (parts.length === 0) return _zwMakeCollection([], true);
             q = '.' + parts.join('.');
             if (sel && typeof __zw_query_all_sub === 'function') {

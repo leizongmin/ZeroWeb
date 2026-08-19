@@ -402,13 +402,13 @@ pub fn utf8_byte_to_utf16_offset(text: &str, byte_offset: usize) -> usize {
 /// 在文档根下按简单选择器查找第一个匹配元素。
 pub fn find_by_selector(doc: &Document, selector: &str) -> Option<NodeId> {
     let root = doc.root();
-    doc.query_selector(root, selector.trim())
+    doc.query_selector(root, zero_dom::trim_ascii_ws(selector))
 }
 
 /// 在文档根下查找所有匹配元素并生成稳定选择器列表。
 pub fn find_all_selectors(doc: &Document, selector: &str) -> Vec<String> {
     let root = doc.root();
-    doc.query_selector_all(root, selector.trim())
+    doc.query_selector_all(root, zero_dom::trim_ascii_ws(selector))
         .into_iter()
         .filter_map(|id| stable_selector_for_node(doc, id))
         .collect()
@@ -1538,7 +1538,7 @@ pub fn query_all_selector_list(html: &str, selector: &str) -> String {
 /// 查询 doc 版本（免每次查询重新 parse——见 register_dom_callbacks 查询缓存）。
 pub fn query_all_selector_list_doc(doc: &Document, selector: &str) -> String {
     let root = doc.root();
-    doc.query_selector_all(root, selector.trim())
+    doc.query_selector_all(root, zero_dom::trim_ascii_ws(selector))
         .into_iter()
         .filter_map(|id| unique_selector_for_node(doc, id))
         .collect::<Vec<_>>()
@@ -1558,9 +1558,11 @@ pub fn parse_html_element_json(html: &str, selector: &str, all: bool) -> String 
     let doc = parse_html(html);
     let root = doc.root();
     let ids: Vec<NodeId> = if all {
-        doc.query_selector_all(root, selector.trim())
+        doc.query_selector_all(root, zero_dom::trim_ascii_ws(selector))
     } else {
-        doc.query_selector(root, selector.trim()).into_iter().collect()
+        doc.query_selector(root, zero_dom::trim_ascii_ws(selector))
+            .into_iter()
+            .collect()
     };
     let mut items: Vec<String> = Vec::new();
     for id in ids {

@@ -290,7 +290,12 @@ impl SimpleSelector {
                         Some(v) => v,
                         None => return false,
                     };
-                    if !attr_val.split_whitespace().any(|v| v == value) {
+                    // R124：~= 的词分隔符同 class 域（ASCII whitespace——Unicode 空白
+                    // 是字面字符非分隔符，spec attribute selector words）。
+                    if !crate::node::split_ascii_whitespace(&attr_val)
+                        .iter()
+                        .any(|v| v == value)
+                    {
                         return false;
                     }
                 }
@@ -448,7 +453,9 @@ pub struct SelectorChain {
 /// 忽略 `()`/`[]` 内的组合器边界（如 `:is(a > b)` 内嵌组合器、`[a>b]` 属性值、
 /// `:nth-child(2n+1)` 参数内的 `+`、`:not(.a~.b)` 内嵌 `~`）。
 pub fn parse_selector_chain(selector: &str) -> Option<SelectorChain> {
-    let trimmed = selector.trim();
+    // R124：ASCII-only trim（内部同源——`str::trim` 的 Unicode 空白集会剥掉单个
+    // Unicode 空白字符类名的字符本体，见 trim_ascii_ws 注记）。
+    let trimmed = trim_ascii_ws(selector);
     if trimmed.is_empty() {
         return None;
     }
@@ -463,7 +470,7 @@ pub fn parse_selector_chain(selector: &str) -> Option<SelectorChain> {
     let mut parts = Vec::new();
     let mut combinators = Vec::new();
     for (idx, (seg, comb)) in tokens.iter().enumerate() {
-        parts.push(parse_simple_selector(seg.trim())?);
+        parts.push(parse_simple_selector(trim_ascii_ws(seg))?);
         if idx + 1 < tokens.len() {
             combinators.push(*comb);
         }
@@ -925,6 +932,14 @@ fn find_unescaped_delim(s: &str, delims: &[char]) -> Option<usize> {
 }
 
 /// R3254-L7：去掉 CSS 转义前缀（`\x` → `x`）——与生成端 `escape_css_ident` 成对。
+/// js-dom M4 R124：选择器串首尾空白裁剪——仅 **ASCII whitespace**（CSS 语法域空白；
+/// Rust `str::trim` 是 Unicode 空白集，会把 `.\u{000B}` / `.\u{00A0}` 这类「单个
+/// Unicode 空白字符类名」选择器的类名字符本身裁掉——WPT
+/// getElementsByClassName-whitespace 19F 簇根因之一）。
+pub fn trim_ascii_ws(s: &str) -> &str {
+    s.trim_matches(|c: char| matches!(c, ' ' | '\t' | '\n' | '\u{000C}' | '\r'))
+}
+
 pub(crate) fn unescape_css_ident(s: &str) -> String {
     if !s.contains('\\') {
         return s.to_string();
@@ -955,7 +970,7 @@ pub(crate) fn unescape_css_ident(s: &str) -> String {
 /// - `":nth-child(2)"` / `":first-child"` 等 — 伪类（多伪类 AND）
 /// - `"div#id.class[attr=val]:first-child"` — 组合
 pub fn parse_simple_selector(selector: &str) -> Option<SimpleSelector> {
-    let s = selector.trim();
+    let s = trim_ascii_ws(selector);
     if s.is_empty() {
         return None;
     }
@@ -1059,6 +1074,7 @@ pub fn parse_simple_selector(selector: &str) -> Option<SimpleSelector> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::Document;
 
     #[test]
     fn test_parse_tag_selector() {
@@ -1391,4 +1407,39 @@ mod tests {
         assert_eq!(not_focus.pseudos.len(), 1);
         assert!(matches!(&not_focus.pseudos[0], PseudoClass::Not(_)));
     }
+    #[test]
+    fn test_ascii_whitespace_class_tokenization_r124() {
+        let mut doc = Document::new();
+        let span = doc.create_element("span");
+        doc.set_attribute(span, "class", "\u{00A0}");
+        let elem = doc.get(span).unwrap();
+        if let crate::NodeKind::Element(e) = &elem.kind {
+            assert_eq!(
+                e.class_list,
+                vec!["\u{00A0}".to_string()],
+                "U+00A0 是字面类名字符（非分隔符）"
+            );
+        }
+        doc.set_attribute(span, "class", "a\u{2003}b c");
+        let elem2 = doc.get(span).unwrap();
+        if let crate::NodeKind::Element(e) = &elem2.kind {
+            // U+2003（EM SPACE）在类名内部是字面字符 → 与 'a' 连成一个 token 'a\u{2003}b'；
+            // ASCII space 分隔出 'c'。
+            assert_eq!(e.class_list.len(), 2);
+            assert_eq!(e.class_list[0], "a\u{2003}b");
+            assert_eq!(e.class_list[1], "c");
+        }
+        // 选择器 trim：'.<U+000B>' 的类名字符不被剥（Rust str::trim 会剥成 '.'）。
+        assert_eq!(
+            parse_simple_selector(".\u{000B}").unwrap().classes,
+            vec!["\u{000B}".to_string()]
+        );
+        assert_eq!(trim_ascii_ws("  .a  "), ".a");
+        assert_eq!(trim_ascii_ws("\u{00A0}.a"), "\u{00A0}.a", "U+00A0 非裁剪集");
+    }
 }
+
+// js-dom M4 R124：class 域 ASCII whitespace 语义（spec html-infrastructure「ascii
+// whitespace」——分隔符仅 space/\t/\n/\f/\r，U+00A0/U+2000 系/U+3000 等是字面类名字符）。
+// WPT dom/nodes/getElementsByClassName-whitespace-class-names.html 19F 簇驱动：
+// `<span class="&#x00A0;">` 的 class 是合法单字符类名，gEBCN/NBSP) 须命中该 span。

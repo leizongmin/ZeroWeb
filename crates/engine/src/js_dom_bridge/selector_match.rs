@@ -15,7 +15,7 @@ pub fn element_matches_test_selector(html: &str, elem_sel: &str, test_sel: &str)
         return false;
     };
     let root = doc.root();
-    doc.query_selector_all(root, test_sel.trim())
+    doc.query_selector_all(root, zero_dom::trim_ascii_ws(test_sel))
         .into_iter()
         .any(|n| n == node)
 }
@@ -29,8 +29,10 @@ pub fn closest_matching_selector(html: &str, elem_sel: &str, test_sel: &str) -> 
         return String::new();
     };
     let root = doc.root();
-    let matched: std::collections::HashSet<NodeId> =
-        doc.query_selector_all(root, test_sel.trim()).into_iter().collect();
+    let matched: std::collections::HashSet<NodeId> = doc
+        .query_selector_all(root, zero_dom::trim_ascii_ws(test_sel))
+        .into_iter()
+        .collect();
     let mut cur = Some(start);
     while let Some(n) = cur {
         if n == root {
@@ -58,7 +60,7 @@ pub fn query_match_in_subtree_doc(doc: &Document, elem_sel: &str, selector: &str
     let Some(root) = find_by_selector(doc, elem_sel) else {
         return String::new();
     };
-    doc.query_selector(root, selector.trim())
+    doc.query_selector(root, zero_dom::trim_ascii_ws(selector))
         // 子树作用域：排除元素自身（dom crate query_selector 含 root，spec descendants-only）。
         .filter(|n| *n != root)
         .and_then(|n| unique_selector_for_node(doc, n))
@@ -78,7 +80,7 @@ pub fn query_all_in_subtree_doc(doc: &Document, elem_sel: &str, selector: &str) 
     let Some(root) = find_by_selector(doc, elem_sel) else {
         return String::new();
     };
-    doc.query_selector_all(root, selector.trim())
+    doc.query_selector_all(root, zero_dom::trim_ascii_ws(selector))
         .into_iter()
         // 子树作用域：排除元素自身（dom crate collect_matching 含 root，spec descendants-only）。
         .filter(|id| *id != root)

@@ -1548,6 +1548,20 @@
 
   // 读元素当前 class（缓存优先，lazy-init 自 snapshot）。className get 与 classList 共用，
   // 使同脚本内连续 class 操作看到累积状态而非各自读 stale snapshot。
+  // js-dom M4 R124：HTML class 属性分词——分隔符仅 **ASCII whitespace 5 字符**
+  //（space/\t/\n/\f/\r，spec html-infrastructure「ascii whitespace」）。JS `/\\s+/` 是
+  // Unicode 空白集（U+00A0/U+2000-200A/U+3000 等），把「单个 Unicode 空白字符作类名」
+  // 的合法形态误分词成空（WPT getElementsByClassName-whitespace 19F 簇：
+  // `<span class="&#x00A0;">` 的 class 是合法单字符类名，gEBCN(' ') 须命中）。
+  // classList/querySelector ~=/gEBCN 参数同域统一消费。
+  var _zwAsciiWsSplit = /[ \t\n\f\r]+/;
+  function _zwSplitClassList(s) {
+    var out = String(s == null ? '' : s).split(_zwAsciiWsSplit);
+    var filtered = [];
+    for (var i = 0; i < out.length; i++) if (out[i]) filtered.push(out[i]);
+    return filtered;
+  }
+
   function _readClass(key, sel, handle) {
     if (_classCache[key] != null) return _classCache[key];
     var v = (handle ? __zw_get_attr_handle(handle, 'class') : __zw_get_attr(sel, 'class')) || '';
@@ -1577,7 +1591,7 @@
     // spec DOMTokenList：token 集合为**有序去重**（首个出现位置保留，后续重复丢弃）+ 按 ASCII 空白分隔。
     // `"a a a"` → `["a"]`（length 1）；`"\t\n\f\r a\t\n\f\r b\t\n\f\r "` → `["a","b"]`（R13 classlist 去重）。
     var cur = function () {
-      var raw = _readClass(key, sel, handle).split(/\s+/).filter(Boolean);
+      var raw = _zwSplitClassList(_readClass(key, sel, handle));
       var seen = Object.create(null);
       var out = [];
       for (var i = 0; i < raw.length; i++) {
@@ -1664,7 +1678,9 @@
         // spec `dom-domtokenlist-contains`（R13）：空串或含 ASCII 空白的 token → 返 false（**不抛**，
         // 区别于 add/remove/toggle/replace 的 check 抛 SyntaxError/InvalidCharacterError）。WPT
         // Element-classlist checkContains(null,["a","","  "],false) + checkContains("a",["a\t",...],false)。
-        if (c === '' || /\s/.test(c)) return false;
+        // R124：含 ASCII whitespace 的 token 返 false（spec）——JS /\s/ 是 Unicode 空白
+        // 集，会把单个 Unicode 空白字符类名（U+00A0 等合法 token）误拒。
+        if (c === '' || /[ \t\n\f\r]/.test(c)) return false;
         return cur().indexOf(c) >= 0;
       },
       toggle: function (c, force) {

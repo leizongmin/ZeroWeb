@@ -87,6 +87,20 @@ fn local_name_eq(local: &markup5ever::LocalName, s: &str) -> bool {
     &**local == s
 }
 
+/// js-dom M4 R124：HTML class 属性分词——分隔符仅 **ASCII whitespace**（space / `\t` /
+/// `\n` / `\f` / `\r`，spec html-infrastructure「ascii whitespace」）。Rust
+/// [`str::split_whitespace`] 是 Unicode 空白集（U+00A0 / U+2000-200A / U+3000 等），
+/// 会把「单个 Unicode 空白字符作类名」的合法形态误切成空（WPT
+/// dom/nodes/getElementsByClassName-whitespace-class-names.html 19F 簇：
+/// `<span class="&#x00A0;">` 的 class 是合法单字符类名）。
+pub(crate) fn split_ascii_whitespace(value: &str) -> Vec<String> {
+    value
+        .split([' ', '\t', '\n', '\u{000C}', '\r'])
+        .filter(|s| !s.is_empty())
+        .map(String::from)
+        .collect()
+}
+
 impl ElementData {
     /// 创建新的元素数据。
     pub fn new(name: markup5ever::QualName, attributes: Vec<markup5ever::Attribute>) -> Self {
@@ -98,7 +112,7 @@ impl ElementData {
         let class_list = attributes
             .iter()
             .find(|a| local_name_eq(&a.name.local, "class"))
-            .map(|a| a.value.split_whitespace().map(String::from).collect::<Vec<_>>())
+            .map(|a| split_ascii_whitespace(&a.value))
             .unwrap_or_default();
 
         Self {
@@ -178,7 +192,7 @@ impl ElementData {
         if name == "id" {
             self.id = Some(value.to_string());
         } else if name == "class" {
-            self.class_list = value.split_whitespace().map(String::from).collect();
+            self.class_list = split_ascii_whitespace(value);
         }
     }
 

@@ -950,7 +950,7 @@ impl Document {
     ///（spec `querySelector` 接受列表——R57 FV M3：`form.querySelectorAll('input, button')`
     /// 等子树/文档级列表查询；旧实现把列表当单选择器解析失败 → 空结果）。
     pub fn query_selector(&self, root: NodeId, selector: &str) -> Option<NodeId> {
-        if let Some(parts) = crate::query::split_top_level_selector_list(selector.trim())
+        if let Some(parts) = crate::query::split_top_level_selector_list(crate::trim_ascii_ws(selector))
             && parts.len() > 1
         {
             // 列表：单次 DFS 文档序，首个命中任一段（chain 解析失败的段跳过）。
@@ -960,7 +960,7 @@ impl Document {
                 .collect();
             return self.find_first_matching_chains(root, &chains);
         }
-        let chain = crate::query::parse_selector_chain(selector.trim())?;
+        let chain = crate::query::parse_selector_chain(crate::trim_ascii_ws(selector))?;
         if chain.parts.len() == 1 {
             return self.find_first_matching(root, &chain.parts[0]);
         }
@@ -971,7 +971,7 @@ impl Document {
     ///
     /// 支持逗号分隔的选择器列表（spec 语义；文档序、去重——每个节点只判一次）。
     pub fn query_selector_all(&self, root: NodeId, selector: &str) -> Vec<NodeId> {
-        if let Some(parts) = crate::query::split_top_level_selector_list(selector.trim())
+        if let Some(parts) = crate::query::split_top_level_selector_list(crate::trim_ascii_ws(selector))
             && parts.len() > 1
         {
             let chains: Vec<crate::query::SelectorChain> = parts
@@ -982,7 +982,7 @@ impl Document {
             self.collect_matching_chains(root, &chains, &mut result);
             return result;
         }
-        let chain = match crate::query::parse_selector_chain(selector.trim()) {
+        let chain = match crate::query::parse_selector_chain(crate::trim_ascii_ws(selector)) {
             Some(c) => c,
             None => return vec![],
         };
@@ -1007,7 +1007,7 @@ impl Document {
     ///（常见用法，如 `el.matches('.btn')`/`'div.active'`）；非法/组合器选择器 → `false`（不 panic）。
     /// 非 Element 节点 → `false`。
     pub fn matches(&self, node: NodeId, selector: &str) -> bool {
-        let Some(simple) = crate::query::parse_simple_selector(selector.trim()) else {
+        let Some(simple) = crate::query::parse_simple_selector(crate::trim_ascii_ws(selector)) else {
             return false;
         };
         self.element_matches_selector(node, &simple)
@@ -1018,7 +1018,7 @@ impl Document {
     /// 从 `node` 沿 parent 链上溯（含自身），返首个匹配**复合选择器**的节点 NodeId；无匹配 → `None`。
     /// 同 [`Self::matches`]：仅 compound（无组合器）；非法选择器 → `None`。
     pub fn closest(&self, node: NodeId, selector: &str) -> Option<NodeId> {
-        let simple = crate::query::parse_simple_selector(selector.trim())?;
+        let simple = crate::query::parse_simple_selector(crate::trim_ascii_ws(selector))?;
         let mut cur = Some(node);
         while let Some(c) = cur {
             if self.element_matches_selector(c, &simple) {
