@@ -19,8 +19,9 @@
 ## 0. 执行摘要
 
 - 从 Static Routing 批次后的 84 个逻辑 `review` 中，筛出 14 个 no-signal 文件。
-- 本批审计其中 13 个 worker-global/import/interface 文件；`idlharness.https.any.js` 留给
-  专门的 WebIDL 分母解析，避免把 4 个生成 context 的 IDL 子测试误算为一个。
+- 本批审计其中 13 个 worker-global/import/interface 文件；`idlharness.https.any.js` 另由
+  [IDL harness evidence](2026-08-19-idlharness-review.md) 专门解析，避免把 4 个生成 context
+  的 IDL 子测试误算为一个。
 - 13 案实际产生 **53 个 subtest**：
   - **1 case / 4 subtest**：静态 `scriptURL` core；
   - **6 case / 16 subtest**：worker global/interface/import runtime defer；
@@ -145,7 +146,7 @@ module worker 的顶层脚本、静态 import 和动态 import。当前 Goal 的
 2. typed SW runtime/worker result channel 落地后恢复 6 个 defer case。
 3. 动态 WPT server adapter 落地后恢复 4 个 gated importScripts case。
 4. M2 scope routing 落地后恢复 uncontrolled-page。
-5. `idlharness.https.any.js` 单独解析 WebIDL 生成分母。
+5. `idlharness.https.any.js` 已固定为 4 个 generated URL / 787 个 subtest。
 
 ## 8. 质量审查
 

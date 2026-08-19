@@ -1,0 +1,788 @@
+context	generated_url	ordinal	chrome_127_status	subtest
+window	service-workers/idlharness.https.any.html	1	Pass	idl_test setup
+window	service-workers/idlharness.https.any.html	2	Pass	idl_test validation
+window	service-workers/idlharness.https.any.html	3	Pass	Partial interface Navigator: original interface defined
+window	service-workers/idlharness.https.any.html	4	Pass	Partial interface Navigator: member names are unique
+window	service-workers/idlharness.https.any.html	5	Pass	Partial interface WorkerNavigator: original interface defined
+window	service-workers/idlharness.https.any.html	6	Pass	Partial interface WorkerNavigator: member names are unique
+window	service-workers/idlharness.https.any.html	7	Pass	Partial interface mixin WindowOrWorkerGlobalScope: original interface mixin defined
+window	service-workers/idlharness.https.any.html	8	Pass	Partial interface mixin WindowOrWorkerGlobalScope: member names are unique
+window	service-workers/idlharness.https.any.html	9	Pass	Partial interface Navigator[2]: member names are unique
+window	service-workers/idlharness.https.any.html	10	Pass	Partial interface mixin NavigatorID: member names are unique
+window	service-workers/idlharness.https.any.html	11	Pass	Partial interface Window: member names are unique
+window	service-workers/idlharness.https.any.html	12	Pass	ServiceWorker includes AbstractWorker: member names are unique
+window	service-workers/idlharness.https.any.html	13	Pass	Window includes GlobalEventHandlers: member names are unique
+window	service-workers/idlharness.https.any.html	14	Pass	Window includes WindowEventHandlers: member names are unique
+window	service-workers/idlharness.https.any.html	15	Pass	Window includes WindowOrWorkerGlobalScope: member names are unique
+window	service-workers/idlharness.https.any.html	16	Pass	WorkerGlobalScope includes WindowOrWorkerGlobalScope: member names are unique
+window	service-workers/idlharness.https.any.html	17	Pass	Navigator includes NavigatorID: member names are unique
+window	service-workers/idlharness.https.any.html	18	Pass	Navigator includes NavigatorLanguage: member names are unique
+window	service-workers/idlharness.https.any.html	19	Pass	Navigator includes NavigatorOnLine: member names are unique
+window	service-workers/idlharness.https.any.html	20	Pass	Navigator includes NavigatorContentUtils: member names are unique
+window	service-workers/idlharness.https.any.html	21	Pass	Navigator includes NavigatorCookies: member names are unique
+window	service-workers/idlharness.https.any.html	22	Pass	Navigator includes NavigatorPlugins: member names are unique
+window	service-workers/idlharness.https.any.html	23	Pass	Navigator includes NavigatorConcurrentHardware: member names are unique
+window	service-workers/idlharness.https.any.html	24	Pass	Window includes AnimationFrameProvider: member names are unique
+window	service-workers/idlharness.https.any.html	25	Pass	WorkerNavigator includes NavigatorID: member names are unique
+window	service-workers/idlharness.https.any.html	26	Pass	WorkerNavigator includes NavigatorLanguage: member names are unique
+window	service-workers/idlharness.https.any.html	27	Pass	WorkerNavigator includes NavigatorOnLine: member names are unique
+window	service-workers/idlharness.https.any.html	28	Pass	WorkerNavigator includes NavigatorConcurrentHardware: member names are unique
+window	service-workers/idlharness.https.any.html	29	Pass	Window includes WindowSessionStorage: member names are unique
+window	service-workers/idlharness.https.any.html	30	Pass	Window includes WindowLocalStorage: member names are unique
+window	service-workers/idlharness.https.any.html	31	Pass	ServiceWorker interface: existence and properties of interface object
+window	service-workers/idlharness.https.any.html	32	Pass	ServiceWorker interface object length
+window	service-workers/idlharness.https.any.html	33	Pass	ServiceWorker interface object name
+window	service-workers/idlharness.https.any.html	34	Pass	ServiceWorker interface: existence and properties of interface prototype object
+window	service-workers/idlharness.https.any.html	35	Pass	ServiceWorker interface: existence and properties of interface prototype object's "constructor" property
+window	service-workers/idlharness.https.any.html	36	Pass	ServiceWorker interface: existence and properties of interface prototype object's @@unscopables property
+window	service-workers/idlharness.https.any.html	37	Pass	ServiceWorker interface: attribute scriptURL
+window	service-workers/idlharness.https.any.html	38	Pass	ServiceWorker interface: attribute state
+window	service-workers/idlharness.https.any.html	39	Pass	ServiceWorker interface: operation postMessage(any, sequence<object>)
+window	service-workers/idlharness.https.any.html	40	Pass	ServiceWorker interface: operation postMessage(any, optional StructuredSerializeOptions)
+window	service-workers/idlharness.https.any.html	41	Pass	ServiceWorker interface: attribute onstatechange
+window	service-workers/idlharness.https.any.html	42	Pass	ServiceWorker must be primary interface of registrationInstance.installing
+window	service-workers/idlharness.https.any.html	43	Pass	Stringification of registrationInstance.installing
+window	service-workers/idlharness.https.any.html	44	Pass	ServiceWorker interface: registrationInstance.installing must inherit property "scriptURL" with the proper type
+window	service-workers/idlharness.https.any.html	45	Pass	ServiceWorker interface: registrationInstance.installing must inherit property "state" with the proper type
+window	service-workers/idlharness.https.any.html	46	Pass	ServiceWorker interface: registrationInstance.installing must inherit property "postMessage(any, sequence<object>)" with the proper type
+window	service-workers/idlharness.https.any.html	47	Pass	ServiceWorker interface: calling postMessage(any, sequence<object>) on registrationInstance.installing with too few arguments must throw TypeError
+window	service-workers/idlharness.https.any.html	48	Pass	ServiceWorker interface: registrationInstance.installing must inherit property "postMessage(any, optional StructuredSerializeOptions)" with the proper type
+window	service-workers/idlharness.https.any.html	49	Pass	ServiceWorker interface: calling postMessage(any, optional StructuredSerializeOptions) on registrationInstance.installing with too few arguments must throw TypeError
+window	service-workers/idlharness.https.any.html	50	Pass	ServiceWorker interface: registrationInstance.installing must inherit property "onstatechange" with the proper type
+window	service-workers/idlharness.https.any.html	51	Pass	ServiceWorkerRegistration interface: existence and properties of interface object
+window	service-workers/idlharness.https.any.html	52	Pass	ServiceWorkerRegistration interface object length
+window	service-workers/idlharness.https.any.html	53	Pass	ServiceWorkerRegistration interface object name
+window	service-workers/idlharness.https.any.html	54	Pass	ServiceWorkerRegistration interface: existence and properties of interface prototype object
+window	service-workers/idlharness.https.any.html	55	Pass	ServiceWorkerRegistration interface: existence and properties of interface prototype object's "constructor" property
+window	service-workers/idlharness.https.any.html	56	Pass	ServiceWorkerRegistration interface: existence and properties of interface prototype object's @@unscopables property
+window	service-workers/idlharness.https.any.html	57	Pass	ServiceWorkerRegistration interface: attribute installing
+window	service-workers/idlharness.https.any.html	58	Pass	ServiceWorkerRegistration interface: attribute waiting
+window	service-workers/idlharness.https.any.html	59	Pass	ServiceWorkerRegistration interface: attribute active
+window	service-workers/idlharness.https.any.html	60	Pass	ServiceWorkerRegistration interface: attribute navigationPreload
+window	service-workers/idlharness.https.any.html	61	Pass	ServiceWorkerRegistration interface: attribute scope
+window	service-workers/idlharness.https.any.html	62	Pass	ServiceWorkerRegistration interface: attribute updateViaCache
+window	service-workers/idlharness.https.any.html	63	Pass	ServiceWorkerRegistration interface: operation update()
+window	service-workers/idlharness.https.any.html	64	Pass	ServiceWorkerRegistration interface: operation unregister()
+window	service-workers/idlharness.https.any.html	65	Pass	ServiceWorkerRegistration interface: attribute onupdatefound
+window	service-workers/idlharness.https.any.html	66	Pass	ServiceWorkerRegistration must be primary interface of registrationInstance
+window	service-workers/idlharness.https.any.html	67	Pass	Stringification of registrationInstance
+window	service-workers/idlharness.https.any.html	68	Pass	ServiceWorkerRegistration interface: registrationInstance must inherit property "installing" with the proper type
+window	service-workers/idlharness.https.any.html	69	Pass	ServiceWorkerRegistration interface: registrationInstance must inherit property "waiting" with the proper type
+window	service-workers/idlharness.https.any.html	70	Pass	ServiceWorkerRegistration interface: registrationInstance must inherit property "active" with the proper type
+window	service-workers/idlharness.https.any.html	71	Pass	ServiceWorkerRegistration interface: registrationInstance must inherit property "navigationPreload" with the proper type
+window	service-workers/idlharness.https.any.html	72	Pass	ServiceWorkerRegistration interface: registrationInstance must inherit property "scope" with the proper type
+window	service-workers/idlharness.https.any.html	73	Pass	ServiceWorkerRegistration interface: registrationInstance must inherit property "updateViaCache" with the proper type
+window	service-workers/idlharness.https.any.html	74	Pass	ServiceWorkerRegistration interface: registrationInstance must inherit property "update()" with the proper type
+window	service-workers/idlharness.https.any.html	75	Pass	ServiceWorkerRegistration interface: registrationInstance must inherit property "unregister()" with the proper type
+window	service-workers/idlharness.https.any.html	76	Pass	ServiceWorkerRegistration interface: registrationInstance must inherit property "onupdatefound" with the proper type
+window	service-workers/idlharness.https.any.html	77	Pass	ServiceWorkerContainer interface: existence and properties of interface object
+window	service-workers/idlharness.https.any.html	78	Pass	ServiceWorkerContainer interface object length
+window	service-workers/idlharness.https.any.html	79	Pass	ServiceWorkerContainer interface object name
+window	service-workers/idlharness.https.any.html	80	Pass	ServiceWorkerContainer interface: existence and properties of interface prototype object
+window	service-workers/idlharness.https.any.html	81	Pass	ServiceWorkerContainer interface: existence and properties of interface prototype object's "constructor" property
+window	service-workers/idlharness.https.any.html	82	Pass	ServiceWorkerContainer interface: existence and properties of interface prototype object's @@unscopables property
+window	service-workers/idlharness.https.any.html	83	Pass	ServiceWorkerContainer interface: attribute controller
+window	service-workers/idlharness.https.any.html	84	Pass	ServiceWorkerContainer interface: attribute ready
+window	service-workers/idlharness.https.any.html	85	Pass	ServiceWorkerContainer interface: operation register((TrustedScriptURL or USVString), optional RegistrationOptions)
+window	service-workers/idlharness.https.any.html	86	Pass	ServiceWorkerContainer interface: operation getRegistration(optional USVString)
+window	service-workers/idlharness.https.any.html	87	Pass	ServiceWorkerContainer interface: operation getRegistrations()
+window	service-workers/idlharness.https.any.html	88	Pass	ServiceWorkerContainer interface: operation startMessages()
+window	service-workers/idlharness.https.any.html	89	Pass	ServiceWorkerContainer interface: attribute oncontrollerchange
+window	service-workers/idlharness.https.any.html	90	Pass	ServiceWorkerContainer interface: attribute onmessage
+window	service-workers/idlharness.https.any.html	91	Pass	ServiceWorkerContainer interface: attribute onmessageerror
+window	service-workers/idlharness.https.any.html	92	Pass	ServiceWorkerContainer must be primary interface of navigator.serviceWorker
+window	service-workers/idlharness.https.any.html	93	Pass	Stringification of navigator.serviceWorker
+window	service-workers/idlharness.https.any.html	94	Pass	ServiceWorkerContainer interface: navigator.serviceWorker must inherit property "controller" with the proper type
+window	service-workers/idlharness.https.any.html	95	Pass	ServiceWorkerContainer interface: navigator.serviceWorker must inherit property "ready" with the proper type
+window	service-workers/idlharness.https.any.html	96	Pass	ServiceWorkerContainer interface: navigator.serviceWorker must inherit property "register((TrustedScriptURL or USVString), optional RegistrationOptions)" with the proper type
+window	service-workers/idlharness.https.any.html	97	Pass	ServiceWorkerContainer interface: calling register((TrustedScriptURL or USVString), optional RegistrationOptions) on navigator.serviceWorker with too few arguments must throw TypeError
+window	service-workers/idlharness.https.any.html	98	Pass	ServiceWorkerContainer interface: navigator.serviceWorker must inherit property "getRegistration(optional USVString)" with the proper type
+window	service-workers/idlharness.https.any.html	99	Pass	ServiceWorkerContainer interface: calling getRegistration(optional USVString) on navigator.serviceWorker with too few arguments must throw TypeError
+window	service-workers/idlharness.https.any.html	100	Pass	ServiceWorkerContainer interface: navigator.serviceWorker must inherit property "getRegistrations()" with the proper type
+window	service-workers/idlharness.https.any.html	101	Pass	ServiceWorkerContainer interface: navigator.serviceWorker must inherit property "startMessages()" with the proper type
+window	service-workers/idlharness.https.any.html	102	Pass	ServiceWorkerContainer interface: navigator.serviceWorker must inherit property "oncontrollerchange" with the proper type
+window	service-workers/idlharness.https.any.html	103	Pass	ServiceWorkerContainer interface: navigator.serviceWorker must inherit property "onmessage" with the proper type
+window	service-workers/idlharness.https.any.html	104	Pass	ServiceWorkerContainer interface: navigator.serviceWorker must inherit property "onmessageerror" with the proper type
+window	service-workers/idlharness.https.any.html	105	Pass	NavigationPreloadManager interface: existence and properties of interface object
+window	service-workers/idlharness.https.any.html	106	Pass	NavigationPreloadManager interface object length
+window	service-workers/idlharness.https.any.html	107	Pass	NavigationPreloadManager interface object name
+window	service-workers/idlharness.https.any.html	108	Pass	NavigationPreloadManager interface: existence and properties of interface prototype object
+window	service-workers/idlharness.https.any.html	109	Pass	NavigationPreloadManager interface: existence and properties of interface prototype object's "constructor" property
+window	service-workers/idlharness.https.any.html	110	Pass	NavigationPreloadManager interface: existence and properties of interface prototype object's @@unscopables property
+window	service-workers/idlharness.https.any.html	111	Pass	NavigationPreloadManager interface: operation enable()
+window	service-workers/idlharness.https.any.html	112	Pass	NavigationPreloadManager interface: operation disable()
+window	service-workers/idlharness.https.any.html	113	Pass	NavigationPreloadManager interface: operation setHeaderValue(ByteString)
+window	service-workers/idlharness.https.any.html	114	Pass	NavigationPreloadManager interface: operation getState()
+window	service-workers/idlharness.https.any.html	115	Pass	ServiceWorkerGlobalScope interface: existence and properties of interface object
+window	service-workers/idlharness.https.any.html	116	Pass	Client interface: existence and properties of interface object
+window	service-workers/idlharness.https.any.html	117	Pass	WindowClient interface: existence and properties of interface object
+window	service-workers/idlharness.https.any.html	118	Pass	Clients interface: existence and properties of interface object
+window	service-workers/idlharness.https.any.html	119	Pass	ExtendableEvent interface: existence and properties of interface object
+window	service-workers/idlharness.https.any.html	120	Pass	InstallEvent interface: existence and properties of interface object
+window	service-workers/idlharness.https.any.html	121	Pass	FetchEvent interface: existence and properties of interface object
+window	service-workers/idlharness.https.any.html	122	Pass	ExtendableMessageEvent interface: existence and properties of interface object
+window	service-workers/idlharness.https.any.html	123	Pass	Cache interface: existence and properties of interface object
+window	service-workers/idlharness.https.any.html	124	Pass	Cache interface object length
+window	service-workers/idlharness.https.any.html	125	Pass	Cache interface object name
+window	service-workers/idlharness.https.any.html	126	Pass	Cache interface: existence and properties of interface prototype object
+window	service-workers/idlharness.https.any.html	127	Pass	Cache interface: existence and properties of interface prototype object's "constructor" property
+window	service-workers/idlharness.https.any.html	128	Pass	Cache interface: existence and properties of interface prototype object's @@unscopables property
+window	service-workers/idlharness.https.any.html	129	Pass	Cache interface: operation match(RequestInfo, optional CacheQueryOptions)
+window	service-workers/idlharness.https.any.html	130	Pass	Cache interface: operation matchAll(optional RequestInfo, optional CacheQueryOptions)
+window	service-workers/idlharness.https.any.html	131	Pass	Cache interface: operation add(RequestInfo)
+window	service-workers/idlharness.https.any.html	132	Pass	Cache interface: operation addAll(sequence<RequestInfo>)
+window	service-workers/idlharness.https.any.html	133	Pass	Cache interface: operation put(RequestInfo, Response)
+window	service-workers/idlharness.https.any.html	134	Pass	Cache interface: operation delete(RequestInfo, optional CacheQueryOptions)
+window	service-workers/idlharness.https.any.html	135	Pass	Cache interface: operation keys(optional RequestInfo, optional CacheQueryOptions)
+window	service-workers/idlharness.https.any.html	136	Pass	Cache must be primary interface of self.cacheInstance
+window	service-workers/idlharness.https.any.html	137	Pass	Stringification of self.cacheInstance
+window	service-workers/idlharness.https.any.html	138	Pass	Cache interface: self.cacheInstance must inherit property "match(RequestInfo, optional CacheQueryOptions)" with the proper type
+window	service-workers/idlharness.https.any.html	139	Pass	Cache interface: calling match(RequestInfo, optional CacheQueryOptions) on self.cacheInstance with too few arguments must throw TypeError
+window	service-workers/idlharness.https.any.html	140	Pass	Cache interface: self.cacheInstance must inherit property "matchAll(optional RequestInfo, optional CacheQueryOptions)" with the proper type
+window	service-workers/idlharness.https.any.html	141	Pass	Cache interface: calling matchAll(optional RequestInfo, optional CacheQueryOptions) on self.cacheInstance with too few arguments must throw TypeError
+window	service-workers/idlharness.https.any.html	142	Pass	Cache interface: self.cacheInstance must inherit property "add(RequestInfo)" with the proper type
+window	service-workers/idlharness.https.any.html	143	Pass	Cache interface: calling add(RequestInfo) on self.cacheInstance with too few arguments must throw TypeError
+window	service-workers/idlharness.https.any.html	144	Pass	Cache interface: self.cacheInstance must inherit property "addAll(sequence<RequestInfo>)" with the proper type
+window	service-workers/idlharness.https.any.html	145	Pass	Cache interface: calling addAll(sequence<RequestInfo>) on self.cacheInstance with too few arguments must throw TypeError
+window	service-workers/idlharness.https.any.html	146	Pass	Cache interface: self.cacheInstance must inherit property "put(RequestInfo, Response)" with the proper type
+window	service-workers/idlharness.https.any.html	147	Pass	Cache interface: calling put(RequestInfo, Response) on self.cacheInstance with too few arguments must throw TypeError
+window	service-workers/idlharness.https.any.html	148	Pass	Cache interface: self.cacheInstance must inherit property "delete(RequestInfo, optional CacheQueryOptions)" with the proper type
+window	service-workers/idlharness.https.any.html	149	Pass	Cache interface: calling delete(RequestInfo, optional CacheQueryOptions) on self.cacheInstance with too few arguments must throw TypeError
+window	service-workers/idlharness.https.any.html	150	Pass	Cache interface: self.cacheInstance must inherit property "keys(optional RequestInfo, optional CacheQueryOptions)" with the proper type
+window	service-workers/idlharness.https.any.html	151	Pass	Cache interface: calling keys(optional RequestInfo, optional CacheQueryOptions) on self.cacheInstance with too few arguments must throw TypeError
+window	service-workers/idlharness.https.any.html	152	Pass	CacheStorage interface: existence and properties of interface object
+window	service-workers/idlharness.https.any.html	153	Pass	CacheStorage interface object length
+window	service-workers/idlharness.https.any.html	154	Pass	CacheStorage interface object name
+window	service-workers/idlharness.https.any.html	155	Pass	CacheStorage interface: existence and properties of interface prototype object
+window	service-workers/idlharness.https.any.html	156	Pass	CacheStorage interface: existence and properties of interface prototype object's "constructor" property
+window	service-workers/idlharness.https.any.html	157	Pass	CacheStorage interface: existence and properties of interface prototype object's @@unscopables property
+window	service-workers/idlharness.https.any.html	158	Pass	CacheStorage interface: operation match(RequestInfo, optional MultiCacheQueryOptions)
+window	service-workers/idlharness.https.any.html	159	Pass	CacheStorage interface: operation has(DOMString)
+window	service-workers/idlharness.https.any.html	160	Pass	CacheStorage interface: operation open(DOMString)
+window	service-workers/idlharness.https.any.html	161	Pass	CacheStorage interface: operation delete(DOMString)
+window	service-workers/idlharness.https.any.html	162	Pass	CacheStorage interface: operation keys()
+window	service-workers/idlharness.https.any.html	163	Pass	CacheStorage must be primary interface of caches
+window	service-workers/idlharness.https.any.html	164	Pass	Stringification of caches
+window	service-workers/idlharness.https.any.html	165	Pass	CacheStorage interface: caches must inherit property "match(RequestInfo, optional MultiCacheQueryOptions)" with the proper type
+window	service-workers/idlharness.https.any.html	166	Pass	CacheStorage interface: calling match(RequestInfo, optional MultiCacheQueryOptions) on caches with too few arguments must throw TypeError
+window	service-workers/idlharness.https.any.html	167	Pass	CacheStorage interface: caches must inherit property "has(DOMString)" with the proper type
+window	service-workers/idlharness.https.any.html	168	Pass	CacheStorage interface: calling has(DOMString) on caches with too few arguments must throw TypeError
+window	service-workers/idlharness.https.any.html	169	Pass	CacheStorage interface: caches must inherit property "open(DOMString)" with the proper type
+window	service-workers/idlharness.https.any.html	170	Pass	CacheStorage interface: calling open(DOMString) on caches with too few arguments must throw TypeError
+window	service-workers/idlharness.https.any.html	171	Pass	CacheStorage interface: caches must inherit property "delete(DOMString)" with the proper type
+window	service-workers/idlharness.https.any.html	172	Pass	CacheStorage interface: calling delete(DOMString) on caches with too few arguments must throw TypeError
+window	service-workers/idlharness.https.any.html	173	Pass	CacheStorage interface: caches must inherit property "keys()" with the proper type
+window	service-workers/idlharness.https.any.html	174	Pass	Window interface: attribute caches
+window	service-workers/idlharness.https.any.html	175	Pass	Navigator interface: attribute serviceWorker
+dedicatedworker	service-workers/idlharness.https.any.worker.html	1	Pass	idl_test setup
+dedicatedworker	service-workers/idlharness.https.any.worker.html	2	Pass	idl_test validation
+dedicatedworker	service-workers/idlharness.https.any.worker.html	3	Pass	Partial interface Navigator: original interface defined
+dedicatedworker	service-workers/idlharness.https.any.worker.html	4	Pass	Partial interface Navigator: member names are unique
+dedicatedworker	service-workers/idlharness.https.any.worker.html	5	Pass	Partial interface WorkerNavigator: original interface defined
+dedicatedworker	service-workers/idlharness.https.any.worker.html	6	Pass	Partial interface WorkerNavigator: member names are unique
+dedicatedworker	service-workers/idlharness.https.any.worker.html	7	Pass	Partial interface mixin WindowOrWorkerGlobalScope: original interface mixin defined
+dedicatedworker	service-workers/idlharness.https.any.worker.html	8	Pass	Partial interface mixin WindowOrWorkerGlobalScope: member names are unique
+dedicatedworker	service-workers/idlharness.https.any.worker.html	9	Pass	Partial interface Navigator[2]: member names are unique
+dedicatedworker	service-workers/idlharness.https.any.worker.html	10	Pass	Partial interface mixin NavigatorID: member names are unique
+dedicatedworker	service-workers/idlharness.https.any.worker.html	11	Pass	Partial interface Window: member names are unique
+dedicatedworker	service-workers/idlharness.https.any.worker.html	12	Pass	ServiceWorker includes AbstractWorker: member names are unique
+dedicatedworker	service-workers/idlharness.https.any.worker.html	13	Pass	Window includes GlobalEventHandlers: member names are unique
+dedicatedworker	service-workers/idlharness.https.any.worker.html	14	Pass	Window includes WindowEventHandlers: member names are unique
+dedicatedworker	service-workers/idlharness.https.any.worker.html	15	Pass	Window includes WindowOrWorkerGlobalScope: member names are unique
+dedicatedworker	service-workers/idlharness.https.any.worker.html	16	Pass	WorkerGlobalScope includes WindowOrWorkerGlobalScope: member names are unique
+dedicatedworker	service-workers/idlharness.https.any.worker.html	17	Pass	Navigator includes NavigatorID: member names are unique
+dedicatedworker	service-workers/idlharness.https.any.worker.html	18	Pass	Navigator includes NavigatorLanguage: member names are unique
+dedicatedworker	service-workers/idlharness.https.any.worker.html	19	Pass	Navigator includes NavigatorOnLine: member names are unique
+dedicatedworker	service-workers/idlharness.https.any.worker.html	20	Pass	Navigator includes NavigatorContentUtils: member names are unique
+dedicatedworker	service-workers/idlharness.https.any.worker.html	21	Pass	Navigator includes NavigatorCookies: member names are unique
+dedicatedworker	service-workers/idlharness.https.any.worker.html	22	Pass	Navigator includes NavigatorPlugins: member names are unique
+dedicatedworker	service-workers/idlharness.https.any.worker.html	23	Pass	Navigator includes NavigatorConcurrentHardware: member names are unique
+dedicatedworker	service-workers/idlharness.https.any.worker.html	24	Pass	Window includes AnimationFrameProvider: member names are unique
+dedicatedworker	service-workers/idlharness.https.any.worker.html	25	Pass	WorkerNavigator includes NavigatorID: member names are unique
+dedicatedworker	service-workers/idlharness.https.any.worker.html	26	Pass	WorkerNavigator includes NavigatorLanguage: member names are unique
+dedicatedworker	service-workers/idlharness.https.any.worker.html	27	Pass	WorkerNavigator includes NavigatorOnLine: member names are unique
+dedicatedworker	service-workers/idlharness.https.any.worker.html	28	Pass	WorkerNavigator includes NavigatorConcurrentHardware: member names are unique
+dedicatedworker	service-workers/idlharness.https.any.worker.html	29	Pass	Window includes WindowSessionStorage: member names are unique
+dedicatedworker	service-workers/idlharness.https.any.worker.html	30	Pass	Window includes WindowLocalStorage: member names are unique
+dedicatedworker	service-workers/idlharness.https.any.worker.html	31	Fail	ServiceWorker interface: existence and properties of interface object
+dedicatedworker	service-workers/idlharness.https.any.worker.html	32	Fail	ServiceWorker interface object length
+dedicatedworker	service-workers/idlharness.https.any.worker.html	33	Fail	ServiceWorker interface object name
+dedicatedworker	service-workers/idlharness.https.any.worker.html	34	Fail	ServiceWorker interface: existence and properties of interface prototype object
+dedicatedworker	service-workers/idlharness.https.any.worker.html	35	Fail	ServiceWorker interface: existence and properties of interface prototype object's "constructor" property
+dedicatedworker	service-workers/idlharness.https.any.worker.html	36	Fail	ServiceWorker interface: existence and properties of interface prototype object's @@unscopables property
+dedicatedworker	service-workers/idlharness.https.any.worker.html	37	Fail	ServiceWorker interface: attribute scriptURL
+dedicatedworker	service-workers/idlharness.https.any.worker.html	38	Fail	ServiceWorker interface: attribute state
+dedicatedworker	service-workers/idlharness.https.any.worker.html	39	Fail	ServiceWorker interface: operation postMessage(any, sequence<object>)
+dedicatedworker	service-workers/idlharness.https.any.worker.html	40	Fail	ServiceWorker interface: operation postMessage(any, optional StructuredSerializeOptions)
+dedicatedworker	service-workers/idlharness.https.any.worker.html	41	Fail	ServiceWorker interface: attribute onstatechange
+dedicatedworker	service-workers/idlharness.https.any.worker.html	42	Pass	ServiceWorkerRegistration interface: existence and properties of interface object
+dedicatedworker	service-workers/idlharness.https.any.worker.html	43	Pass	ServiceWorkerRegistration interface object length
+dedicatedworker	service-workers/idlharness.https.any.worker.html	44	Pass	ServiceWorkerRegistration interface object name
+dedicatedworker	service-workers/idlharness.https.any.worker.html	45	Pass	ServiceWorkerRegistration interface: existence and properties of interface prototype object
+dedicatedworker	service-workers/idlharness.https.any.worker.html	46	Pass	ServiceWorkerRegistration interface: existence and properties of interface prototype object's "constructor" property
+dedicatedworker	service-workers/idlharness.https.any.worker.html	47	Pass	ServiceWorkerRegistration interface: existence and properties of interface prototype object's @@unscopables property
+dedicatedworker	service-workers/idlharness.https.any.worker.html	48	Pass	ServiceWorkerRegistration interface: attribute installing
+dedicatedworker	service-workers/idlharness.https.any.worker.html	49	Pass	ServiceWorkerRegistration interface: attribute waiting
+dedicatedworker	service-workers/idlharness.https.any.worker.html	50	Pass	ServiceWorkerRegistration interface: attribute active
+dedicatedworker	service-workers/idlharness.https.any.worker.html	51	Pass	ServiceWorkerRegistration interface: attribute navigationPreload
+dedicatedworker	service-workers/idlharness.https.any.worker.html	52	Pass	ServiceWorkerRegistration interface: attribute scope
+dedicatedworker	service-workers/idlharness.https.any.worker.html	53	Pass	ServiceWorkerRegistration interface: attribute updateViaCache
+dedicatedworker	service-workers/idlharness.https.any.worker.html	54	Pass	ServiceWorkerRegistration interface: operation update()
+dedicatedworker	service-workers/idlharness.https.any.worker.html	55	Pass	ServiceWorkerRegistration interface: operation unregister()
+dedicatedworker	service-workers/idlharness.https.any.worker.html	56	Pass	ServiceWorkerRegistration interface: attribute onupdatefound
+dedicatedworker	service-workers/idlharness.https.any.worker.html	57	Fail	ServiceWorkerContainer interface: existence and properties of interface object
+dedicatedworker	service-workers/idlharness.https.any.worker.html	58	Fail	ServiceWorkerContainer interface object length
+dedicatedworker	service-workers/idlharness.https.any.worker.html	59	Fail	ServiceWorkerContainer interface object name
+dedicatedworker	service-workers/idlharness.https.any.worker.html	60	Fail	ServiceWorkerContainer interface: existence and properties of interface prototype object
+dedicatedworker	service-workers/idlharness.https.any.worker.html	61	Fail	ServiceWorkerContainer interface: existence and properties of interface prototype object's "constructor" property
+dedicatedworker	service-workers/idlharness.https.any.worker.html	62	Fail	ServiceWorkerContainer interface: existence and properties of interface prototype object's @@unscopables property
+dedicatedworker	service-workers/idlharness.https.any.worker.html	63	Fail	ServiceWorkerContainer interface: attribute controller
+dedicatedworker	service-workers/idlharness.https.any.worker.html	64	Fail	ServiceWorkerContainer interface: attribute ready
+dedicatedworker	service-workers/idlharness.https.any.worker.html	65	Fail	ServiceWorkerContainer interface: operation register((TrustedScriptURL or USVString), optional RegistrationOptions)
+dedicatedworker	service-workers/idlharness.https.any.worker.html	66	Fail	ServiceWorkerContainer interface: operation getRegistration(optional USVString)
+dedicatedworker	service-workers/idlharness.https.any.worker.html	67	Fail	ServiceWorkerContainer interface: operation getRegistrations()
+dedicatedworker	service-workers/idlharness.https.any.worker.html	68	Fail	ServiceWorkerContainer interface: operation startMessages()
+dedicatedworker	service-workers/idlharness.https.any.worker.html	69	Fail	ServiceWorkerContainer interface: attribute oncontrollerchange
+dedicatedworker	service-workers/idlharness.https.any.worker.html	70	Fail	ServiceWorkerContainer interface: attribute onmessage
+dedicatedworker	service-workers/idlharness.https.any.worker.html	71	Fail	ServiceWorkerContainer interface: attribute onmessageerror
+dedicatedworker	service-workers/idlharness.https.any.worker.html	72	Fail	ServiceWorkerContainer must be primary interface of navigator.serviceWorker
+dedicatedworker	service-workers/idlharness.https.any.worker.html	73	Fail	Stringification of navigator.serviceWorker
+dedicatedworker	service-workers/idlharness.https.any.worker.html	74	Fail	ServiceWorkerContainer interface: navigator.serviceWorker must inherit property "controller" with the proper type
+dedicatedworker	service-workers/idlharness.https.any.worker.html	75	Fail	ServiceWorkerContainer interface: navigator.serviceWorker must inherit property "ready" with the proper type
+dedicatedworker	service-workers/idlharness.https.any.worker.html	76	Fail	ServiceWorkerContainer interface: navigator.serviceWorker must inherit property "register((TrustedScriptURL or USVString), optional RegistrationOptions)" with the proper type
+dedicatedworker	service-workers/idlharness.https.any.worker.html	77	Fail	ServiceWorkerContainer interface: calling register((TrustedScriptURL or USVString), optional RegistrationOptions) on navigator.serviceWorker with too few arguments must throw TypeError
+dedicatedworker	service-workers/idlharness.https.any.worker.html	78	Fail	ServiceWorkerContainer interface: navigator.serviceWorker must inherit property "getRegistration(optional USVString)" with the proper type
+dedicatedworker	service-workers/idlharness.https.any.worker.html	79	Fail	ServiceWorkerContainer interface: calling getRegistration(optional USVString) on navigator.serviceWorker with too few arguments must throw TypeError
+dedicatedworker	service-workers/idlharness.https.any.worker.html	80	Fail	ServiceWorkerContainer interface: navigator.serviceWorker must inherit property "getRegistrations()" with the proper type
+dedicatedworker	service-workers/idlharness.https.any.worker.html	81	Fail	ServiceWorkerContainer interface: navigator.serviceWorker must inherit property "startMessages()" with the proper type
+dedicatedworker	service-workers/idlharness.https.any.worker.html	82	Fail	ServiceWorkerContainer interface: navigator.serviceWorker must inherit property "oncontrollerchange" with the proper type
+dedicatedworker	service-workers/idlharness.https.any.worker.html	83	Fail	ServiceWorkerContainer interface: navigator.serviceWorker must inherit property "onmessage" with the proper type
+dedicatedworker	service-workers/idlharness.https.any.worker.html	84	Fail	ServiceWorkerContainer interface: navigator.serviceWorker must inherit property "onmessageerror" with the proper type
+dedicatedworker	service-workers/idlharness.https.any.worker.html	85	Pass	NavigationPreloadManager interface: existence and properties of interface object
+dedicatedworker	service-workers/idlharness.https.any.worker.html	86	Pass	NavigationPreloadManager interface object length
+dedicatedworker	service-workers/idlharness.https.any.worker.html	87	Pass	NavigationPreloadManager interface object name
+dedicatedworker	service-workers/idlharness.https.any.worker.html	88	Pass	NavigationPreloadManager interface: existence and properties of interface prototype object
+dedicatedworker	service-workers/idlharness.https.any.worker.html	89	Pass	NavigationPreloadManager interface: existence and properties of interface prototype object's "constructor" property
+dedicatedworker	service-workers/idlharness.https.any.worker.html	90	Pass	NavigationPreloadManager interface: existence and properties of interface prototype object's @@unscopables property
+dedicatedworker	service-workers/idlharness.https.any.worker.html	91	Pass	NavigationPreloadManager interface: operation enable()
+dedicatedworker	service-workers/idlharness.https.any.worker.html	92	Pass	NavigationPreloadManager interface: operation disable()
+dedicatedworker	service-workers/idlharness.https.any.worker.html	93	Pass	NavigationPreloadManager interface: operation setHeaderValue(ByteString)
+dedicatedworker	service-workers/idlharness.https.any.worker.html	94	Pass	NavigationPreloadManager interface: operation getState()
+dedicatedworker	service-workers/idlharness.https.any.worker.html	95	Pass	ServiceWorkerGlobalScope interface: existence and properties of interface object
+dedicatedworker	service-workers/idlharness.https.any.worker.html	96	Pass	Client interface: existence and properties of interface object
+dedicatedworker	service-workers/idlharness.https.any.worker.html	97	Pass	WindowClient interface: existence and properties of interface object
+dedicatedworker	service-workers/idlharness.https.any.worker.html	98	Pass	Clients interface: existence and properties of interface object
+dedicatedworker	service-workers/idlharness.https.any.worker.html	99	Pass	ExtendableEvent interface: existence and properties of interface object
+dedicatedworker	service-workers/idlharness.https.any.worker.html	100	Pass	InstallEvent interface: existence and properties of interface object
+dedicatedworker	service-workers/idlharness.https.any.worker.html	101	Pass	FetchEvent interface: existence and properties of interface object
+dedicatedworker	service-workers/idlharness.https.any.worker.html	102	Pass	ExtendableMessageEvent interface: existence and properties of interface object
+dedicatedworker	service-workers/idlharness.https.any.worker.html	103	Pass	Cache interface: existence and properties of interface object
+dedicatedworker	service-workers/idlharness.https.any.worker.html	104	Pass	Cache interface object length
+dedicatedworker	service-workers/idlharness.https.any.worker.html	105	Pass	Cache interface object name
+dedicatedworker	service-workers/idlharness.https.any.worker.html	106	Pass	Cache interface: existence and properties of interface prototype object
+dedicatedworker	service-workers/idlharness.https.any.worker.html	107	Pass	Cache interface: existence and properties of interface prototype object's "constructor" property
+dedicatedworker	service-workers/idlharness.https.any.worker.html	108	Pass	Cache interface: existence and properties of interface prototype object's @@unscopables property
+dedicatedworker	service-workers/idlharness.https.any.worker.html	109	Pass	Cache interface: operation match(RequestInfo, optional CacheQueryOptions)
+dedicatedworker	service-workers/idlharness.https.any.worker.html	110	Pass	Cache interface: operation matchAll(optional RequestInfo, optional CacheQueryOptions)
+dedicatedworker	service-workers/idlharness.https.any.worker.html	111	Pass	Cache interface: operation add(RequestInfo)
+dedicatedworker	service-workers/idlharness.https.any.worker.html	112	Pass	Cache interface: operation addAll(sequence<RequestInfo>)
+dedicatedworker	service-workers/idlharness.https.any.worker.html	113	Pass	Cache interface: operation put(RequestInfo, Response)
+dedicatedworker	service-workers/idlharness.https.any.worker.html	114	Pass	Cache interface: operation delete(RequestInfo, optional CacheQueryOptions)
+dedicatedworker	service-workers/idlharness.https.any.worker.html	115	Pass	Cache interface: operation keys(optional RequestInfo, optional CacheQueryOptions)
+dedicatedworker	service-workers/idlharness.https.any.worker.html	116	Pass	Cache must be primary interface of self.cacheInstance
+dedicatedworker	service-workers/idlharness.https.any.worker.html	117	Pass	Stringification of self.cacheInstance
+dedicatedworker	service-workers/idlharness.https.any.worker.html	118	Pass	Cache interface: self.cacheInstance must inherit property "match(RequestInfo, optional CacheQueryOptions)" with the proper type
+dedicatedworker	service-workers/idlharness.https.any.worker.html	119	Pass	Cache interface: calling match(RequestInfo, optional CacheQueryOptions) on self.cacheInstance with too few arguments must throw TypeError
+dedicatedworker	service-workers/idlharness.https.any.worker.html	120	Pass	Cache interface: self.cacheInstance must inherit property "matchAll(optional RequestInfo, optional CacheQueryOptions)" with the proper type
+dedicatedworker	service-workers/idlharness.https.any.worker.html	121	Pass	Cache interface: calling matchAll(optional RequestInfo, optional CacheQueryOptions) on self.cacheInstance with too few arguments must throw TypeError
+dedicatedworker	service-workers/idlharness.https.any.worker.html	122	Pass	Cache interface: self.cacheInstance must inherit property "add(RequestInfo)" with the proper type
+dedicatedworker	service-workers/idlharness.https.any.worker.html	123	Pass	Cache interface: calling add(RequestInfo) on self.cacheInstance with too few arguments must throw TypeError
+dedicatedworker	service-workers/idlharness.https.any.worker.html	124	Pass	Cache interface: self.cacheInstance must inherit property "addAll(sequence<RequestInfo>)" with the proper type
+dedicatedworker	service-workers/idlharness.https.any.worker.html	125	Pass	Cache interface: calling addAll(sequence<RequestInfo>) on self.cacheInstance with too few arguments must throw TypeError
+dedicatedworker	service-workers/idlharness.https.any.worker.html	126	Pass	Cache interface: self.cacheInstance must inherit property "put(RequestInfo, Response)" with the proper type
+dedicatedworker	service-workers/idlharness.https.any.worker.html	127	Pass	Cache interface: calling put(RequestInfo, Response) on self.cacheInstance with too few arguments must throw TypeError
+dedicatedworker	service-workers/idlharness.https.any.worker.html	128	Pass	Cache interface: self.cacheInstance must inherit property "delete(RequestInfo, optional CacheQueryOptions)" with the proper type
+dedicatedworker	service-workers/idlharness.https.any.worker.html	129	Pass	Cache interface: calling delete(RequestInfo, optional CacheQueryOptions) on self.cacheInstance with too few arguments must throw TypeError
+dedicatedworker	service-workers/idlharness.https.any.worker.html	130	Pass	Cache interface: self.cacheInstance must inherit property "keys(optional RequestInfo, optional CacheQueryOptions)" with the proper type
+dedicatedworker	service-workers/idlharness.https.any.worker.html	131	Pass	Cache interface: calling keys(optional RequestInfo, optional CacheQueryOptions) on self.cacheInstance with too few arguments must throw TypeError
+dedicatedworker	service-workers/idlharness.https.any.worker.html	132	Pass	CacheStorage interface: existence and properties of interface object
+dedicatedworker	service-workers/idlharness.https.any.worker.html	133	Pass	CacheStorage interface object length
+dedicatedworker	service-workers/idlharness.https.any.worker.html	134	Pass	CacheStorage interface object name
+dedicatedworker	service-workers/idlharness.https.any.worker.html	135	Pass	CacheStorage interface: existence and properties of interface prototype object
+dedicatedworker	service-workers/idlharness.https.any.worker.html	136	Pass	CacheStorage interface: existence and properties of interface prototype object's "constructor" property
+dedicatedworker	service-workers/idlharness.https.any.worker.html	137	Pass	CacheStorage interface: existence and properties of interface prototype object's @@unscopables property
+dedicatedworker	service-workers/idlharness.https.any.worker.html	138	Pass	CacheStorage interface: operation match(RequestInfo, optional MultiCacheQueryOptions)
+dedicatedworker	service-workers/idlharness.https.any.worker.html	139	Pass	CacheStorage interface: operation has(DOMString)
+dedicatedworker	service-workers/idlharness.https.any.worker.html	140	Pass	CacheStorage interface: operation open(DOMString)
+dedicatedworker	service-workers/idlharness.https.any.worker.html	141	Pass	CacheStorage interface: operation delete(DOMString)
+dedicatedworker	service-workers/idlharness.https.any.worker.html	142	Pass	CacheStorage interface: operation keys()
+dedicatedworker	service-workers/idlharness.https.any.worker.html	143	Pass	CacheStorage must be primary interface of caches
+dedicatedworker	service-workers/idlharness.https.any.worker.html	144	Pass	Stringification of caches
+dedicatedworker	service-workers/idlharness.https.any.worker.html	145	Pass	CacheStorage interface: caches must inherit property "match(RequestInfo, optional MultiCacheQueryOptions)" with the proper type
+dedicatedworker	service-workers/idlharness.https.any.worker.html	146	Pass	CacheStorage interface: calling match(RequestInfo, optional MultiCacheQueryOptions) on caches with too few arguments must throw TypeError
+dedicatedworker	service-workers/idlharness.https.any.worker.html	147	Pass	CacheStorage interface: caches must inherit property "has(DOMString)" with the proper type
+dedicatedworker	service-workers/idlharness.https.any.worker.html	148	Pass	CacheStorage interface: calling has(DOMString) on caches with too few arguments must throw TypeError
+dedicatedworker	service-workers/idlharness.https.any.worker.html	149	Pass	CacheStorage interface: caches must inherit property "open(DOMString)" with the proper type
+dedicatedworker	service-workers/idlharness.https.any.worker.html	150	Pass	CacheStorage interface: calling open(DOMString) on caches with too few arguments must throw TypeError
+dedicatedworker	service-workers/idlharness.https.any.worker.html	151	Pass	CacheStorage interface: caches must inherit property "delete(DOMString)" with the proper type
+dedicatedworker	service-workers/idlharness.https.any.worker.html	152	Pass	CacheStorage interface: calling delete(DOMString) on caches with too few arguments must throw TypeError
+dedicatedworker	service-workers/idlharness.https.any.worker.html	153	Pass	CacheStorage interface: caches must inherit property "keys()" with the proper type
+dedicatedworker	service-workers/idlharness.https.any.worker.html	154	Pass	WorkerGlobalScope interface: attribute caches
+dedicatedworker	service-workers/idlharness.https.any.worker.html	155	Fail	WorkerNavigator interface: attribute serviceWorker
+sharedworker	service-workers/idlharness.https.any.sharedworker.html	1	Pass	idl_test setup
+sharedworker	service-workers/idlharness.https.any.sharedworker.html	2	Pass	idl_test validation
+sharedworker	service-workers/idlharness.https.any.sharedworker.html	3	Pass	Partial interface Navigator: original interface defined
+sharedworker	service-workers/idlharness.https.any.sharedworker.html	4	Pass	Partial interface Navigator: member names are unique
+sharedworker	service-workers/idlharness.https.any.sharedworker.html	5	Pass	Partial interface WorkerNavigator: original interface defined
+sharedworker	service-workers/idlharness.https.any.sharedworker.html	6	Pass	Partial interface WorkerNavigator: member names are unique
+sharedworker	service-workers/idlharness.https.any.sharedworker.html	7	Pass	Partial interface mixin WindowOrWorkerGlobalScope: original interface mixin defined
+sharedworker	service-workers/idlharness.https.any.sharedworker.html	8	Pass	Partial interface mixin WindowOrWorkerGlobalScope: member names are unique
+sharedworker	service-workers/idlharness.https.any.sharedworker.html	9	Pass	Partial interface Navigator[2]: member names are unique
+sharedworker	service-workers/idlharness.https.any.sharedworker.html	10	Pass	Partial interface mixin NavigatorID: member names are unique
+sharedworker	service-workers/idlharness.https.any.sharedworker.html	11	Pass	Partial interface Window: member names are unique
+sharedworker	service-workers/idlharness.https.any.sharedworker.html	12	Pass	ServiceWorker includes AbstractWorker: member names are unique
+sharedworker	service-workers/idlharness.https.any.sharedworker.html	13	Pass	Window includes GlobalEventHandlers: member names are unique
+sharedworker	service-workers/idlharness.https.any.sharedworker.html	14	Pass	Window includes WindowEventHandlers: member names are unique
+sharedworker	service-workers/idlharness.https.any.sharedworker.html	15	Pass	Window includes WindowOrWorkerGlobalScope: member names are unique
+sharedworker	service-workers/idlharness.https.any.sharedworker.html	16	Pass	WorkerGlobalScope includes WindowOrWorkerGlobalScope: member names are unique
+sharedworker	service-workers/idlharness.https.any.sharedworker.html	17	Pass	Navigator includes NavigatorID: member names are unique
+sharedworker	service-workers/idlharness.https.any.sharedworker.html	18	Pass	Navigator includes NavigatorLanguage: member names are unique
+sharedworker	service-workers/idlharness.https.any.sharedworker.html	19	Pass	Navigator includes NavigatorOnLine: member names are unique
+sharedworker	service-workers/idlharness.https.any.sharedworker.html	20	Pass	Navigator includes NavigatorContentUtils: member names are unique
+sharedworker	service-workers/idlharness.https.any.sharedworker.html	21	Pass	Navigator includes NavigatorCookies: member names are unique
+sharedworker	service-workers/idlharness.https.any.sharedworker.html	22	Pass	Navigator includes NavigatorPlugins: member names are unique
+sharedworker	service-workers/idlharness.https.any.sharedworker.html	23	Pass	Navigator includes NavigatorConcurrentHardware: member names are unique
+sharedworker	service-workers/idlharness.https.any.sharedworker.html	24	Pass	Window includes AnimationFrameProvider: member names are unique
+sharedworker	service-workers/idlharness.https.any.sharedworker.html	25	Pass	WorkerNavigator includes NavigatorID: member names are unique
+sharedworker	service-workers/idlharness.https.any.sharedworker.html	26	Pass	WorkerNavigator includes NavigatorLanguage: member names are unique
+sharedworker	service-workers/idlharness.https.any.sharedworker.html	27	Pass	WorkerNavigator includes NavigatorOnLine: member names are unique
+sharedworker	service-workers/idlharness.https.any.sharedworker.html	28	Pass	WorkerNavigator includes NavigatorConcurrentHardware: member names are unique
+sharedworker	service-workers/idlharness.https.any.sharedworker.html	29	Pass	Window includes WindowSessionStorage: member names are unique
+sharedworker	service-workers/idlharness.https.any.sharedworker.html	30	Pass	Window includes WindowLocalStorage: member names are unique
+sharedworker	service-workers/idlharness.https.any.sharedworker.html	31	Fail	ServiceWorker interface: existence and properties of interface object
+sharedworker	service-workers/idlharness.https.any.sharedworker.html	32	Fail	ServiceWorker interface object length
+sharedworker	service-workers/idlharness.https.any.sharedworker.html	33	Fail	ServiceWorker interface object name
+sharedworker	service-workers/idlharness.https.any.sharedworker.html	34	Fail	ServiceWorker interface: existence and properties of interface prototype object
+sharedworker	service-workers/idlharness.https.any.sharedworker.html	35	Fail	ServiceWorker interface: existence and properties of interface prototype object's "constructor" property
+sharedworker	service-workers/idlharness.https.any.sharedworker.html	36	Fail	ServiceWorker interface: existence and properties of interface prototype object's @@unscopables property
+sharedworker	service-workers/idlharness.https.any.sharedworker.html	37	Fail	ServiceWorker interface: attribute scriptURL
+sharedworker	service-workers/idlharness.https.any.sharedworker.html	38	Fail	ServiceWorker interface: attribute state
+sharedworker	service-workers/idlharness.https.any.sharedworker.html	39	Fail	ServiceWorker interface: operation postMessage(any, sequence<object>)
+sharedworker	service-workers/idlharness.https.any.sharedworker.html	40	Fail	ServiceWorker interface: operation postMessage(any, optional StructuredSerializeOptions)
+sharedworker	service-workers/idlharness.https.any.sharedworker.html	41	Fail	ServiceWorker interface: attribute onstatechange
+sharedworker	service-workers/idlharness.https.any.sharedworker.html	42	Pass	ServiceWorkerRegistration interface: existence and properties of interface object
+sharedworker	service-workers/idlharness.https.any.sharedworker.html	43	Pass	ServiceWorkerRegistration interface object length
+sharedworker	service-workers/idlharness.https.any.sharedworker.html	44	Pass	ServiceWorkerRegistration interface object name
+sharedworker	service-workers/idlharness.https.any.sharedworker.html	45	Pass	ServiceWorkerRegistration interface: existence and properties of interface prototype object
+sharedworker	service-workers/idlharness.https.any.sharedworker.html	46	Pass	ServiceWorkerRegistration interface: existence and properties of interface prototype object's "constructor" property
+sharedworker	service-workers/idlharness.https.any.sharedworker.html	47	Pass	ServiceWorkerRegistration interface: existence and properties of interface prototype object's @@unscopables property
+sharedworker	service-workers/idlharness.https.any.sharedworker.html	48	Pass	ServiceWorkerRegistration interface: attribute installing
+sharedworker	service-workers/idlharness.https.any.sharedworker.html	49	Pass	ServiceWorkerRegistration interface: attribute waiting
+sharedworker	service-workers/idlharness.https.any.sharedworker.html	50	Pass	ServiceWorkerRegistration interface: attribute active
+sharedworker	service-workers/idlharness.https.any.sharedworker.html	51	Pass	ServiceWorkerRegistration interface: attribute navigationPreload
+sharedworker	service-workers/idlharness.https.any.sharedworker.html	52	Pass	ServiceWorkerRegistration interface: attribute scope
+sharedworker	service-workers/idlharness.https.any.sharedworker.html	53	Pass	ServiceWorkerRegistration interface: attribute updateViaCache
+sharedworker	service-workers/idlharness.https.any.sharedworker.html	54	Pass	ServiceWorkerRegistration interface: operation update()
+sharedworker	service-workers/idlharness.https.any.sharedworker.html	55	Pass	ServiceWorkerRegistration interface: operation unregister()
+sharedworker	service-workers/idlharness.https.any.sharedworker.html	56	Pass	ServiceWorkerRegistration interface: attribute onupdatefound
+sharedworker	service-workers/idlharness.https.any.sharedworker.html	57	Fail	ServiceWorkerContainer interface: existence and properties of interface object
+sharedworker	service-workers/idlharness.https.any.sharedworker.html	58	Fail	ServiceWorkerContainer interface object length
+sharedworker	service-workers/idlharness.https.any.sharedworker.html	59	Fail	ServiceWorkerContainer interface object name
+sharedworker	service-workers/idlharness.https.any.sharedworker.html	60	Fail	ServiceWorkerContainer interface: existence and properties of interface prototype object
+sharedworker	service-workers/idlharness.https.any.sharedworker.html	61	Fail	ServiceWorkerContainer interface: existence and properties of interface prototype object's "constructor" property
+sharedworker	service-workers/idlharness.https.any.sharedworker.html	62	Fail	ServiceWorkerContainer interface: existence and properties of interface prototype object's @@unscopables property
+sharedworker	service-workers/idlharness.https.any.sharedworker.html	63	Fail	ServiceWorkerContainer interface: attribute controller
+sharedworker	service-workers/idlharness.https.any.sharedworker.html	64	Fail	ServiceWorkerContainer interface: attribute ready
+sharedworker	service-workers/idlharness.https.any.sharedworker.html	65	Fail	ServiceWorkerContainer interface: operation register((TrustedScriptURL or USVString), optional RegistrationOptions)
+sharedworker	service-workers/idlharness.https.any.sharedworker.html	66	Fail	ServiceWorkerContainer interface: operation getRegistration(optional USVString)
+sharedworker	service-workers/idlharness.https.any.sharedworker.html	67	Fail	ServiceWorkerContainer interface: operation getRegistrations()
+sharedworker	service-workers/idlharness.https.any.sharedworker.html	68	Fail	ServiceWorkerContainer interface: operation startMessages()
+sharedworker	service-workers/idlharness.https.any.sharedworker.html	69	Fail	ServiceWorkerContainer interface: attribute oncontrollerchange
+sharedworker	service-workers/idlharness.https.any.sharedworker.html	70	Fail	ServiceWorkerContainer interface: attribute onmessage
+sharedworker	service-workers/idlharness.https.any.sharedworker.html	71	Fail	ServiceWorkerContainer interface: attribute onmessageerror
+sharedworker	service-workers/idlharness.https.any.sharedworker.html	72	Fail	ServiceWorkerContainer must be primary interface of navigator.serviceWorker
+sharedworker	service-workers/idlharness.https.any.sharedworker.html	73	Fail	Stringification of navigator.serviceWorker
+sharedworker	service-workers/idlharness.https.any.sharedworker.html	74	Fail	ServiceWorkerContainer interface: navigator.serviceWorker must inherit property "controller" with the proper type
+sharedworker	service-workers/idlharness.https.any.sharedworker.html	75	Fail	ServiceWorkerContainer interface: navigator.serviceWorker must inherit property "ready" with the proper type
+sharedworker	service-workers/idlharness.https.any.sharedworker.html	76	Fail	ServiceWorkerContainer interface: navigator.serviceWorker must inherit property "register((TrustedScriptURL or USVString), optional RegistrationOptions)" with the proper type
+sharedworker	service-workers/idlharness.https.any.sharedworker.html	77	Fail	ServiceWorkerContainer interface: calling register((TrustedScriptURL or USVString), optional RegistrationOptions) on navigator.serviceWorker with too few arguments must throw TypeError
+sharedworker	service-workers/idlharness.https.any.sharedworker.html	78	Fail	ServiceWorkerContainer interface: navigator.serviceWorker must inherit property "getRegistration(optional USVString)" with the proper type
+sharedworker	service-workers/idlharness.https.any.sharedworker.html	79	Fail	ServiceWorkerContainer interface: calling getRegistration(optional USVString) on navigator.serviceWorker with too few arguments must throw TypeError
+sharedworker	service-workers/idlharness.https.any.sharedworker.html	80	Fail	ServiceWorkerContainer interface: navigator.serviceWorker must inherit property "getRegistrations()" with the proper type
+sharedworker	service-workers/idlharness.https.any.sharedworker.html	81	Fail	ServiceWorkerContainer interface: navigator.serviceWorker must inherit property "startMessages()" with the proper type
+sharedworker	service-workers/idlharness.https.any.sharedworker.html	82	Fail	ServiceWorkerContainer interface: navigator.serviceWorker must inherit property "oncontrollerchange" with the proper type
+sharedworker	service-workers/idlharness.https.any.sharedworker.html	83	Fail	ServiceWorkerContainer interface: navigator.serviceWorker must inherit property "onmessage" with the proper type
+sharedworker	service-workers/idlharness.https.any.sharedworker.html	84	Fail	ServiceWorkerContainer interface: navigator.serviceWorker must inherit property "onmessageerror" with the proper type
+sharedworker	service-workers/idlharness.https.any.sharedworker.html	85	Pass	NavigationPreloadManager interface: existence and properties of interface object
+sharedworker	service-workers/idlharness.https.any.sharedworker.html	86	Pass	NavigationPreloadManager interface object length
+sharedworker	service-workers/idlharness.https.any.sharedworker.html	87	Pass	NavigationPreloadManager interface object name
+sharedworker	service-workers/idlharness.https.any.sharedworker.html	88	Pass	NavigationPreloadManager interface: existence and properties of interface prototype object
+sharedworker	service-workers/idlharness.https.any.sharedworker.html	89	Pass	NavigationPreloadManager interface: existence and properties of interface prototype object's "constructor" property
+sharedworker	service-workers/idlharness.https.any.sharedworker.html	90	Pass	NavigationPreloadManager interface: existence and properties of interface prototype object's @@unscopables property
+sharedworker	service-workers/idlharness.https.any.sharedworker.html	91	Pass	NavigationPreloadManager interface: operation enable()
+sharedworker	service-workers/idlharness.https.any.sharedworker.html	92	Pass	NavigationPreloadManager interface: operation disable()
+sharedworker	service-workers/idlharness.https.any.sharedworker.html	93	Pass	NavigationPreloadManager interface: operation setHeaderValue(ByteString)
+sharedworker	service-workers/idlharness.https.any.sharedworker.html	94	Pass	NavigationPreloadManager interface: operation getState()
+sharedworker	service-workers/idlharness.https.any.sharedworker.html	95	Pass	ServiceWorkerGlobalScope interface: existence and properties of interface object
+sharedworker	service-workers/idlharness.https.any.sharedworker.html	96	Pass	Client interface: existence and properties of interface object
+sharedworker	service-workers/idlharness.https.any.sharedworker.html	97	Pass	WindowClient interface: existence and properties of interface object
+sharedworker	service-workers/idlharness.https.any.sharedworker.html	98	Pass	Clients interface: existence and properties of interface object
+sharedworker	service-workers/idlharness.https.any.sharedworker.html	99	Pass	ExtendableEvent interface: existence and properties of interface object
+sharedworker	service-workers/idlharness.https.any.sharedworker.html	100	Pass	InstallEvent interface: existence and properties of interface object
+sharedworker	service-workers/idlharness.https.any.sharedworker.html	101	Pass	FetchEvent interface: existence and properties of interface object
+sharedworker	service-workers/idlharness.https.any.sharedworker.html	102	Pass	ExtendableMessageEvent interface: existence and properties of interface object
+sharedworker	service-workers/idlharness.https.any.sharedworker.html	103	Pass	Cache interface: existence and properties of interface object
+sharedworker	service-workers/idlharness.https.any.sharedworker.html	104	Pass	Cache interface object length
+sharedworker	service-workers/idlharness.https.any.sharedworker.html	105	Pass	Cache interface object name
+sharedworker	service-workers/idlharness.https.any.sharedworker.html	106	Pass	Cache interface: existence and properties of interface prototype object
+sharedworker	service-workers/idlharness.https.any.sharedworker.html	107	Pass	Cache interface: existence and properties of interface prototype object's "constructor" property
+sharedworker	service-workers/idlharness.https.any.sharedworker.html	108	Pass	Cache interface: existence and properties of interface prototype object's @@unscopables property
+sharedworker	service-workers/idlharness.https.any.sharedworker.html	109	Pass	Cache interface: operation match(RequestInfo, optional CacheQueryOptions)
+sharedworker	service-workers/idlharness.https.any.sharedworker.html	110	Pass	Cache interface: operation matchAll(optional RequestInfo, optional CacheQueryOptions)
+sharedworker	service-workers/idlharness.https.any.sharedworker.html	111	Pass	Cache interface: operation add(RequestInfo)
+sharedworker	service-workers/idlharness.https.any.sharedworker.html	112	Pass	Cache interface: operation addAll(sequence<RequestInfo>)
+sharedworker	service-workers/idlharness.https.any.sharedworker.html	113	Pass	Cache interface: operation put(RequestInfo, Response)
+sharedworker	service-workers/idlharness.https.any.sharedworker.html	114	Pass	Cache interface: operation delete(RequestInfo, optional CacheQueryOptions)
+sharedworker	service-workers/idlharness.https.any.sharedworker.html	115	Pass	Cache interface: operation keys(optional RequestInfo, optional CacheQueryOptions)
+sharedworker	service-workers/idlharness.https.any.sharedworker.html	116	Pass	Cache must be primary interface of self.cacheInstance
+sharedworker	service-workers/idlharness.https.any.sharedworker.html	117	Pass	Stringification of self.cacheInstance
+sharedworker	service-workers/idlharness.https.any.sharedworker.html	118	Pass	Cache interface: self.cacheInstance must inherit property "match(RequestInfo, optional CacheQueryOptions)" with the proper type
+sharedworker	service-workers/idlharness.https.any.sharedworker.html	119	Pass	Cache interface: calling match(RequestInfo, optional CacheQueryOptions) on self.cacheInstance with too few arguments must throw TypeError
+sharedworker	service-workers/idlharness.https.any.sharedworker.html	120	Pass	Cache interface: self.cacheInstance must inherit property "matchAll(optional RequestInfo, optional CacheQueryOptions)" with the proper type
+sharedworker	service-workers/idlharness.https.any.sharedworker.html	121	Pass	Cache interface: calling matchAll(optional RequestInfo, optional CacheQueryOptions) on self.cacheInstance with too few arguments must throw TypeError
+sharedworker	service-workers/idlharness.https.any.sharedworker.html	122	Pass	Cache interface: self.cacheInstance must inherit property "add(RequestInfo)" with the proper type
+sharedworker	service-workers/idlharness.https.any.sharedworker.html	123	Pass	Cache interface: calling add(RequestInfo) on self.cacheInstance with too few arguments must throw TypeError
+sharedworker	service-workers/idlharness.https.any.sharedworker.html	124	Pass	Cache interface: self.cacheInstance must inherit property "addAll(sequence<RequestInfo>)" with the proper type
+sharedworker	service-workers/idlharness.https.any.sharedworker.html	125	Pass	Cache interface: calling addAll(sequence<RequestInfo>) on self.cacheInstance with too few arguments must throw TypeError
+sharedworker	service-workers/idlharness.https.any.sharedworker.html	126	Pass	Cache interface: self.cacheInstance must inherit property "put(RequestInfo, Response)" with the proper type
+sharedworker	service-workers/idlharness.https.any.sharedworker.html	127	Pass	Cache interface: calling put(RequestInfo, Response) on self.cacheInstance with too few arguments must throw TypeError
+sharedworker	service-workers/idlharness.https.any.sharedworker.html	128	Pass	Cache interface: self.cacheInstance must inherit property "delete(RequestInfo, optional CacheQueryOptions)" with the proper type
+sharedworker	service-workers/idlharness.https.any.sharedworker.html	129	Pass	Cache interface: calling delete(RequestInfo, optional CacheQueryOptions) on self.cacheInstance with too few arguments must throw TypeError
+sharedworker	service-workers/idlharness.https.any.sharedworker.html	130	Pass	Cache interface: self.cacheInstance must inherit property "keys(optional RequestInfo, optional CacheQueryOptions)" with the proper type
+sharedworker	service-workers/idlharness.https.any.sharedworker.html	131	Pass	Cache interface: calling keys(optional RequestInfo, optional CacheQueryOptions) on self.cacheInstance with too few arguments must throw TypeError
+sharedworker	service-workers/idlharness.https.any.sharedworker.html	132	Pass	CacheStorage interface: existence and properties of interface object
+sharedworker	service-workers/idlharness.https.any.sharedworker.html	133	Pass	CacheStorage interface object length
+sharedworker	service-workers/idlharness.https.any.sharedworker.html	134	Pass	CacheStorage interface object name
+sharedworker	service-workers/idlharness.https.any.sharedworker.html	135	Pass	CacheStorage interface: existence and properties of interface prototype object
+sharedworker	service-workers/idlharness.https.any.sharedworker.html	136	Pass	CacheStorage interface: existence and properties of interface prototype object's "constructor" property
+sharedworker	service-workers/idlharness.https.any.sharedworker.html	137	Pass	CacheStorage interface: existence and properties of interface prototype object's @@unscopables property
+sharedworker	service-workers/idlharness.https.any.sharedworker.html	138	Pass	CacheStorage interface: operation match(RequestInfo, optional MultiCacheQueryOptions)
+sharedworker	service-workers/idlharness.https.any.sharedworker.html	139	Pass	CacheStorage interface: operation has(DOMString)
+sharedworker	service-workers/idlharness.https.any.sharedworker.html	140	Pass	CacheStorage interface: operation open(DOMString)
+sharedworker	service-workers/idlharness.https.any.sharedworker.html	141	Pass	CacheStorage interface: operation delete(DOMString)
+sharedworker	service-workers/idlharness.https.any.sharedworker.html	142	Pass	CacheStorage interface: operation keys()
+sharedworker	service-workers/idlharness.https.any.sharedworker.html	143	Pass	CacheStorage must be primary interface of caches
+sharedworker	service-workers/idlharness.https.any.sharedworker.html	144	Pass	Stringification of caches
+sharedworker	service-workers/idlharness.https.any.sharedworker.html	145	Pass	CacheStorage interface: caches must inherit property "match(RequestInfo, optional MultiCacheQueryOptions)" with the proper type
+sharedworker	service-workers/idlharness.https.any.sharedworker.html	146	Pass	CacheStorage interface: calling match(RequestInfo, optional MultiCacheQueryOptions) on caches with too few arguments must throw TypeError
+sharedworker	service-workers/idlharness.https.any.sharedworker.html	147	Pass	CacheStorage interface: caches must inherit property "has(DOMString)" with the proper type
+sharedworker	service-workers/idlharness.https.any.sharedworker.html	148	Pass	CacheStorage interface: calling has(DOMString) on caches with too few arguments must throw TypeError
+sharedworker	service-workers/idlharness.https.any.sharedworker.html	149	Pass	CacheStorage interface: caches must inherit property "open(DOMString)" with the proper type
+sharedworker	service-workers/idlharness.https.any.sharedworker.html	150	Pass	CacheStorage interface: calling open(DOMString) on caches with too few arguments must throw TypeError
+sharedworker	service-workers/idlharness.https.any.sharedworker.html	151	Pass	CacheStorage interface: caches must inherit property "delete(DOMString)" with the proper type
+sharedworker	service-workers/idlharness.https.any.sharedworker.html	152	Pass	CacheStorage interface: calling delete(DOMString) on caches with too few arguments must throw TypeError
+sharedworker	service-workers/idlharness.https.any.sharedworker.html	153	Pass	CacheStorage interface: caches must inherit property "keys()" with the proper type
+sharedworker	service-workers/idlharness.https.any.sharedworker.html	154	Pass	WorkerGlobalScope interface: attribute caches
+sharedworker	service-workers/idlharness.https.any.sharedworker.html	155	Fail	WorkerNavigator interface: attribute serviceWorker
+serviceworker	service-workers/idlharness.https.any.serviceworker.html	1	Pass	idl_test setup
+serviceworker	service-workers/idlharness.https.any.serviceworker.html	2	Pass	idl_test validation
+serviceworker	service-workers/idlharness.https.any.serviceworker.html	3	Pass	Partial interface Navigator: original interface defined
+serviceworker	service-workers/idlharness.https.any.serviceworker.html	4	Pass	Partial interface Navigator: member names are unique
+serviceworker	service-workers/idlharness.https.any.serviceworker.html	5	Pass	Partial interface WorkerNavigator: original interface defined
+serviceworker	service-workers/idlharness.https.any.serviceworker.html	6	Pass	Partial interface WorkerNavigator: member names are unique
+serviceworker	service-workers/idlharness.https.any.serviceworker.html	7	Pass	Partial interface mixin WindowOrWorkerGlobalScope: original interface mixin defined
+serviceworker	service-workers/idlharness.https.any.serviceworker.html	8	Pass	Partial interface mixin WindowOrWorkerGlobalScope: member names are unique
+serviceworker	service-workers/idlharness.https.any.serviceworker.html	9	Pass	Partial interface Navigator[2]: member names are unique
+serviceworker	service-workers/idlharness.https.any.serviceworker.html	10	Pass	Partial interface mixin NavigatorID: member names are unique
+serviceworker	service-workers/idlharness.https.any.serviceworker.html	11	Pass	Partial interface Window: member names are unique
+serviceworker	service-workers/idlharness.https.any.serviceworker.html	12	Pass	ServiceWorker includes AbstractWorker: member names are unique
+serviceworker	service-workers/idlharness.https.any.serviceworker.html	13	Pass	Window includes GlobalEventHandlers: member names are unique
+serviceworker	service-workers/idlharness.https.any.serviceworker.html	14	Pass	Window includes WindowEventHandlers: member names are unique
+serviceworker	service-workers/idlharness.https.any.serviceworker.html	15	Pass	Window includes WindowOrWorkerGlobalScope: member names are unique
+serviceworker	service-workers/idlharness.https.any.serviceworker.html	16	Pass	WorkerGlobalScope includes WindowOrWorkerGlobalScope: member names are unique
+serviceworker	service-workers/idlharness.https.any.serviceworker.html	17	Pass	Navigator includes NavigatorID: member names are unique
+serviceworker	service-workers/idlharness.https.any.serviceworker.html	18	Pass	Navigator includes NavigatorLanguage: member names are unique
+serviceworker	service-workers/idlharness.https.any.serviceworker.html	19	Pass	Navigator includes NavigatorOnLine: member names are unique
+serviceworker	service-workers/idlharness.https.any.serviceworker.html	20	Pass	Navigator includes NavigatorContentUtils: member names are unique
+serviceworker	service-workers/idlharness.https.any.serviceworker.html	21	Pass	Navigator includes NavigatorCookies: member names are unique
+serviceworker	service-workers/idlharness.https.any.serviceworker.html	22	Pass	Navigator includes NavigatorPlugins: member names are unique
+serviceworker	service-workers/idlharness.https.any.serviceworker.html	23	Pass	Navigator includes NavigatorConcurrentHardware: member names are unique
+serviceworker	service-workers/idlharness.https.any.serviceworker.html	24	Pass	Window includes AnimationFrameProvider: member names are unique
+serviceworker	service-workers/idlharness.https.any.serviceworker.html	25	Pass	WorkerNavigator includes NavigatorID: member names are unique
+serviceworker	service-workers/idlharness.https.any.serviceworker.html	26	Pass	WorkerNavigator includes NavigatorLanguage: member names are unique
+serviceworker	service-workers/idlharness.https.any.serviceworker.html	27	Pass	WorkerNavigator includes NavigatorOnLine: member names are unique
+serviceworker	service-workers/idlharness.https.any.serviceworker.html	28	Pass	WorkerNavigator includes NavigatorConcurrentHardware: member names are unique
+serviceworker	service-workers/idlharness.https.any.serviceworker.html	29	Pass	Window includes WindowSessionStorage: member names are unique
+serviceworker	service-workers/idlharness.https.any.serviceworker.html	30	Pass	Window includes WindowLocalStorage: member names are unique
+serviceworker	service-workers/idlharness.https.any.serviceworker.html	31	Pass	ServiceWorker interface: existence and properties of interface object
+serviceworker	service-workers/idlharness.https.any.serviceworker.html	32	Pass	ServiceWorker interface object length
+serviceworker	service-workers/idlharness.https.any.serviceworker.html	33	Pass	ServiceWorker interface object name
+serviceworker	service-workers/idlharness.https.any.serviceworker.html	34	Pass	ServiceWorker interface: existence and properties of interface prototype object
+serviceworker	service-workers/idlharness.https.any.serviceworker.html	35	Pass	ServiceWorker interface: existence and properties of interface prototype object's "constructor" property
+serviceworker	service-workers/idlharness.https.any.serviceworker.html	36	Pass	ServiceWorker interface: existence and properties of interface prototype object's @@unscopables property
+serviceworker	service-workers/idlharness.https.any.serviceworker.html	37	Pass	ServiceWorker interface: attribute scriptURL
+serviceworker	service-workers/idlharness.https.any.serviceworker.html	38	Pass	ServiceWorker interface: attribute state
+serviceworker	service-workers/idlharness.https.any.serviceworker.html	39	Pass	ServiceWorker interface: operation postMessage(any, sequence<object>)
+serviceworker	service-workers/idlharness.https.any.serviceworker.html	40	Pass	ServiceWorker interface: operation postMessage(any, optional StructuredSerializeOptions)
+serviceworker	service-workers/idlharness.https.any.serviceworker.html	41	Pass	ServiceWorker interface: attribute onstatechange
+serviceworker	service-workers/idlharness.https.any.serviceworker.html	42	Pass	ServiceWorker must be primary interface of serviceWorker
+serviceworker	service-workers/idlharness.https.any.serviceworker.html	43	Pass	Stringification of serviceWorker
+serviceworker	service-workers/idlharness.https.any.serviceworker.html	44	Pass	ServiceWorker interface: serviceWorker must inherit property "scriptURL" with the proper type
+serviceworker	service-workers/idlharness.https.any.serviceworker.html	45	Pass	ServiceWorker interface: serviceWorker must inherit property "state" with the proper type
+serviceworker	service-workers/idlharness.https.any.serviceworker.html	46	Pass	ServiceWorker interface: serviceWorker must inherit property "postMessage(any, sequence<object>)" with the proper type
+serviceworker	service-workers/idlharness.https.any.serviceworker.html	47	Pass	ServiceWorker interface: calling postMessage(any, sequence<object>) on serviceWorker with too few arguments must throw TypeError
+serviceworker	service-workers/idlharness.https.any.serviceworker.html	48	Pass	ServiceWorker interface: serviceWorker must inherit property "postMessage(any, optional StructuredSerializeOptions)" with the proper type
+serviceworker	service-workers/idlharness.https.any.serviceworker.html	49	Pass	ServiceWorker interface: calling postMessage(any, optional StructuredSerializeOptions) on serviceWorker with too few arguments must throw TypeError
+serviceworker	service-workers/idlharness.https.any.serviceworker.html	50	Pass	ServiceWorker interface: serviceWorker must inherit property "onstatechange" with the proper type
+serviceworker	service-workers/idlharness.https.any.serviceworker.html	51	Pass	ServiceWorkerRegistration interface: existence and properties of interface object
+serviceworker	service-workers/idlharness.https.any.serviceworker.html	52	Pass	ServiceWorkerRegistration interface object length
+serviceworker	service-workers/idlharness.https.any.serviceworker.html	53	Pass	ServiceWorkerRegistration interface object name
+serviceworker	service-workers/idlharness.https.any.serviceworker.html	54	Pass	ServiceWorkerRegistration interface: existence and properties of interface prototype object
+serviceworker	service-workers/idlharness.https.any.serviceworker.html	55	Pass	ServiceWorkerRegistration interface: existence and properties of interface prototype object's "constructor" property
+serviceworker	service-workers/idlharness.https.any.serviceworker.html	56	Pass	ServiceWorkerRegistration interface: existence and properties of interface prototype object's @@unscopables property
+serviceworker	service-workers/idlharness.https.any.serviceworker.html	57	Pass	ServiceWorkerRegistration interface: attribute installing
+serviceworker	service-workers/idlharness.https.any.serviceworker.html	58	Pass	ServiceWorkerRegistration interface: attribute waiting
+serviceworker	service-workers/idlharness.https.any.serviceworker.html	59	Pass	ServiceWorkerRegistration interface: attribute active
+serviceworker	service-workers/idlharness.https.any.serviceworker.html	60	Pass	ServiceWorkerRegistration interface: attribute navigationPreload
+serviceworker	service-workers/idlharness.https.any.serviceworker.html	61	Pass	ServiceWorkerRegistration interface: attribute scope
+serviceworker	service-workers/idlharness.https.any.serviceworker.html	62	Pass	ServiceWorkerRegistration interface: attribute updateViaCache
+serviceworker	service-workers/idlharness.https.any.serviceworker.html	63	Pass	ServiceWorkerRegistration interface: operation update()
+serviceworker	service-workers/idlharness.https.any.serviceworker.html	64	Pass	ServiceWorkerRegistration interface: operation unregister()
+serviceworker	service-workers/idlharness.https.any.serviceworker.html	65	Pass	ServiceWorkerRegistration interface: attribute onupdatefound
+serviceworker	service-workers/idlharness.https.any.serviceworker.html	66	Pass	ServiceWorkerRegistration must be primary interface of registration
+serviceworker	service-workers/idlharness.https.any.serviceworker.html	67	Pass	Stringification of registration
+serviceworker	service-workers/idlharness.https.any.serviceworker.html	68	Pass	ServiceWorkerRegistration interface: registration must inherit property "installing" with the proper type
+serviceworker	service-workers/idlharness.https.any.serviceworker.html	69	Pass	ServiceWorkerRegistration interface: registration must inherit property "waiting" with the proper type
+serviceworker	service-workers/idlharness.https.any.serviceworker.html	70	Pass	ServiceWorkerRegistration interface: registration must inherit property "active" with the proper type
+serviceworker	service-workers/idlharness.https.any.serviceworker.html	71	Pass	ServiceWorkerRegistration interface: registration must inherit property "navigationPreload" with the proper type
+serviceworker	service-workers/idlharness.https.any.serviceworker.html	72	Pass	ServiceWorkerRegistration interface: registration must inherit property "scope" with the proper type
+serviceworker	service-workers/idlharness.https.any.serviceworker.html	73	Pass	ServiceWorkerRegistration interface: registration must inherit property "updateViaCache" with the proper type
+serviceworker	service-workers/idlharness.https.any.serviceworker.html	74	Pass	ServiceWorkerRegistration interface: registration must inherit property "update()" with the proper type
+serviceworker	service-workers/idlharness.https.any.serviceworker.html	75	Pass	ServiceWorkerRegistration interface: registration must inherit property "unregister()" with the proper type
+serviceworker	service-workers/idlharness.https.any.serviceworker.html	76	Pass	ServiceWorkerRegistration interface: registration must inherit property "onupdatefound" with the proper type
+serviceworker	service-workers/idlharness.https.any.serviceworker.html	77	Fail	ServiceWorkerContainer interface: existence and properties of interface object
+serviceworker	service-workers/idlharness.https.any.serviceworker.html	78	Fail	ServiceWorkerContainer interface object length
+serviceworker	service-workers/idlharness.https.any.serviceworker.html	79	Fail	ServiceWorkerContainer interface object name
+serviceworker	service-workers/idlharness.https.any.serviceworker.html	80	Fail	ServiceWorkerContainer interface: existence and properties of interface prototype object
+serviceworker	service-workers/idlharness.https.any.serviceworker.html	81	Fail	ServiceWorkerContainer interface: existence and properties of interface prototype object's "constructor" property
+serviceworker	service-workers/idlharness.https.any.serviceworker.html	82	Fail	ServiceWorkerContainer interface: existence and properties of interface prototype object's @@unscopables property
+serviceworker	service-workers/idlharness.https.any.serviceworker.html	83	Fail	ServiceWorkerContainer interface: attribute controller
+serviceworker	service-workers/idlharness.https.any.serviceworker.html	84	Fail	ServiceWorkerContainer interface: attribute ready
+serviceworker	service-workers/idlharness.https.any.serviceworker.html	85	Fail	ServiceWorkerContainer interface: operation register((TrustedScriptURL or USVString), optional RegistrationOptions)
+serviceworker	service-workers/idlharness.https.any.serviceworker.html	86	Fail	ServiceWorkerContainer interface: operation getRegistration(optional USVString)
+serviceworker	service-workers/idlharness.https.any.serviceworker.html	87	Fail	ServiceWorkerContainer interface: operation getRegistrations()
+serviceworker	service-workers/idlharness.https.any.serviceworker.html	88	Fail	ServiceWorkerContainer interface: operation startMessages()
+serviceworker	service-workers/idlharness.https.any.serviceworker.html	89	Fail	ServiceWorkerContainer interface: attribute oncontrollerchange
+serviceworker	service-workers/idlharness.https.any.serviceworker.html	90	Fail	ServiceWorkerContainer interface: attribute onmessage
+serviceworker	service-workers/idlharness.https.any.serviceworker.html	91	Fail	ServiceWorkerContainer interface: attribute onmessageerror
+serviceworker	service-workers/idlharness.https.any.serviceworker.html	92	Fail	ServiceWorkerContainer must be primary interface of navigator.serviceWorker
+serviceworker	service-workers/idlharness.https.any.serviceworker.html	93	Fail	Stringification of navigator.serviceWorker
+serviceworker	service-workers/idlharness.https.any.serviceworker.html	94	Fail	ServiceWorkerContainer interface: navigator.serviceWorker must inherit property "controller" with the proper type
+serviceworker	service-workers/idlharness.https.any.serviceworker.html	95	Fail	ServiceWorkerContainer interface: navigator.serviceWorker must inherit property "ready" with the proper type
+serviceworker	service-workers/idlharness.https.any.serviceworker.html	96	Fail	ServiceWorkerContainer interface: navigator.serviceWorker must inherit property "register((TrustedScriptURL or USVString), optional RegistrationOptions)" with the proper type
+serviceworker	service-workers/idlharness.https.any.serviceworker.html	97	Fail	ServiceWorkerContainer interface: calling register((TrustedScriptURL or USVString), optional RegistrationOptions) on navigator.serviceWorker with too few arguments must throw TypeError
+serviceworker	service-workers/idlharness.https.any.serviceworker.html	98	Fail	ServiceWorkerContainer interface: navigator.serviceWorker must inherit property "getRegistration(optional USVString)" with the proper type
+serviceworker	service-workers/idlharness.https.any.serviceworker.html	99	Fail	ServiceWorkerContainer interface: calling getRegistration(optional USVString) on navigator.serviceWorker with too few arguments must throw TypeError
+serviceworker	service-workers/idlharness.https.any.serviceworker.html	100	Fail	ServiceWorkerContainer interface: navigator.serviceWorker must inherit property "getRegistrations()" with the proper type
+serviceworker	service-workers/idlharness.https.any.serviceworker.html	101	Fail	ServiceWorkerContainer interface: navigator.serviceWorker must inherit property "startMessages()" with the proper type
+serviceworker	service-workers/idlharness.https.any.serviceworker.html	102	Fail	ServiceWorkerContainer interface: navigator.serviceWorker must inherit property "oncontrollerchange" with the proper type
+serviceworker	service-workers/idlharness.https.any.serviceworker.html	103	Fail	ServiceWorkerContainer interface: navigator.serviceWorker must inherit property "onmessage" with the proper type
+serviceworker	service-workers/idlharness.https.any.serviceworker.html	104	Fail	ServiceWorkerContainer interface: navigator.serviceWorker must inherit property "onmessageerror" with the proper type
+serviceworker	service-workers/idlharness.https.any.serviceworker.html	105	Pass	NavigationPreloadManager interface: existence and properties of interface object
+serviceworker	service-workers/idlharness.https.any.serviceworker.html	106	Pass	NavigationPreloadManager interface object length
+serviceworker	service-workers/idlharness.https.any.serviceworker.html	107	Pass	NavigationPreloadManager interface object name
+serviceworker	service-workers/idlharness.https.any.serviceworker.html	108	Pass	NavigationPreloadManager interface: existence and properties of interface prototype object
+serviceworker	service-workers/idlharness.https.any.serviceworker.html	109	Pass	NavigationPreloadManager interface: existence and properties of interface prototype object's "constructor" property
+serviceworker	service-workers/idlharness.https.any.serviceworker.html	110	Pass	NavigationPreloadManager interface: existence and properties of interface prototype object's @@unscopables property
+serviceworker	service-workers/idlharness.https.any.serviceworker.html	111	Pass	NavigationPreloadManager interface: operation enable()
+serviceworker	service-workers/idlharness.https.any.serviceworker.html	112	Pass	NavigationPreloadManager interface: operation disable()
+serviceworker	service-workers/idlharness.https.any.serviceworker.html	113	Pass	NavigationPreloadManager interface: operation setHeaderValue(ByteString)
+serviceworker	service-workers/idlharness.https.any.serviceworker.html	114	Pass	NavigationPreloadManager interface: operation getState()
+serviceworker	service-workers/idlharness.https.any.serviceworker.html	115	Pass	ServiceWorkerGlobalScope interface: existence and properties of interface object
+serviceworker	service-workers/idlharness.https.any.serviceworker.html	116	Pass	ServiceWorkerGlobalScope interface object length
+serviceworker	service-workers/idlharness.https.any.serviceworker.html	117	Pass	ServiceWorkerGlobalScope interface object name
+serviceworker	service-workers/idlharness.https.any.serviceworker.html	118	Pass	ServiceWorkerGlobalScope interface: existence and properties of interface prototype object
+serviceworker	service-workers/idlharness.https.any.serviceworker.html	119	Pass	ServiceWorkerGlobalScope interface: internal [[SetPrototypeOf]] method of interface prototype object - setting to a new value via Object.setPrototypeOf should throw a TypeError
+serviceworker	service-workers/idlharness.https.any.serviceworker.html	120	Pass	ServiceWorkerGlobalScope interface: internal [[SetPrototypeOf]] method of interface prototype object - setting to a new value via __proto__ should throw a TypeError
+serviceworker	service-workers/idlharness.https.any.serviceworker.html	121	Pass	ServiceWorkerGlobalScope interface: internal [[SetPrototypeOf]] method of interface prototype object - setting to a new value via Reflect.setPrototypeOf should return false
+serviceworker	service-workers/idlharness.https.any.serviceworker.html	122	Pass	ServiceWorkerGlobalScope interface: internal [[SetPrototypeOf]] method of interface prototype object - setting to its original value via Object.setPrototypeOf should not throw
+serviceworker	service-workers/idlharness.https.any.serviceworker.html	123	Pass	ServiceWorkerGlobalScope interface: internal [[SetPrototypeOf]] method of interface prototype object - setting to its original value via __proto__ should not throw
+serviceworker	service-workers/idlharness.https.any.serviceworker.html	124	Pass	ServiceWorkerGlobalScope interface: internal [[SetPrototypeOf]] method of interface prototype object - setting to its original value via Reflect.setPrototypeOf should return true
+serviceworker	service-workers/idlharness.https.any.serviceworker.html	125	Pass	ServiceWorkerGlobalScope interface: existence and properties of interface prototype object's "constructor" property
+serviceworker	service-workers/idlharness.https.any.serviceworker.html	126	Pass	ServiceWorkerGlobalScope interface: existence and properties of interface prototype object's @@unscopables property
+serviceworker	service-workers/idlharness.https.any.serviceworker.html	127	Pass	ServiceWorkerGlobalScope interface: attribute clients
+serviceworker	service-workers/idlharness.https.any.serviceworker.html	128	Pass	ServiceWorkerGlobalScope interface: attribute registration
+serviceworker	service-workers/idlharness.https.any.serviceworker.html	129	Pass	ServiceWorkerGlobalScope interface: attribute serviceWorker
+serviceworker	service-workers/idlharness.https.any.serviceworker.html	130	Pass	ServiceWorkerGlobalScope interface: operation skipWaiting()
+serviceworker	service-workers/idlharness.https.any.serviceworker.html	131	Pass	ServiceWorkerGlobalScope interface: attribute oninstall
+serviceworker	service-workers/idlharness.https.any.serviceworker.html	132	Pass	ServiceWorkerGlobalScope interface: attribute onactivate
+serviceworker	service-workers/idlharness.https.any.serviceworker.html	133	Pass	ServiceWorkerGlobalScope interface: attribute onfetch
+serviceworker	service-workers/idlharness.https.any.serviceworker.html	134	Pass	ServiceWorkerGlobalScope interface: attribute onmessage
+serviceworker	service-workers/idlharness.https.any.serviceworker.html	135	Pass	ServiceWorkerGlobalScope interface: attribute onmessageerror
+serviceworker	service-workers/idlharness.https.any.serviceworker.html	136	Pass	ServiceWorkerGlobalScope interface: internal [[SetPrototypeOf]] method of global platform object - setting to a new value via Object.setPrototypeOf should throw a TypeError
+serviceworker	service-workers/idlharness.https.any.serviceworker.html	137	Pass	ServiceWorkerGlobalScope interface: internal [[SetPrototypeOf]] method of global platform object - setting to a new value via __proto__ should throw a TypeError
+serviceworker	service-workers/idlharness.https.any.serviceworker.html	138	Pass	ServiceWorkerGlobalScope interface: internal [[SetPrototypeOf]] method of global platform object - setting to a new value via Reflect.setPrototypeOf should return false
+serviceworker	service-workers/idlharness.https.any.serviceworker.html	139	Pass	ServiceWorkerGlobalScope interface: internal [[SetPrototypeOf]] method of global platform object - setting to its original value via Object.setPrototypeOf should not throw
+serviceworker	service-workers/idlharness.https.any.serviceworker.html	140	Pass	ServiceWorkerGlobalScope interface: internal [[SetPrototypeOf]] method of global platform object - setting to its original value via __proto__ should not throw
+serviceworker	service-workers/idlharness.https.any.serviceworker.html	141	Pass	ServiceWorkerGlobalScope interface: internal [[SetPrototypeOf]] method of global platform object - setting to its original value via Reflect.setPrototypeOf should return true
+serviceworker	service-workers/idlharness.https.any.serviceworker.html	142	Pass	ServiceWorkerGlobalScope must be primary interface of self
+serviceworker	service-workers/idlharness.https.any.serviceworker.html	143	Pass	Stringification of self
+serviceworker	service-workers/idlharness.https.any.serviceworker.html	144	Pass	ServiceWorkerGlobalScope interface: self must inherit property "clients" with the proper type
+serviceworker	service-workers/idlharness.https.any.serviceworker.html	145	Pass	ServiceWorkerGlobalScope interface: self must inherit property "registration" with the proper type
+serviceworker	service-workers/idlharness.https.any.serviceworker.html	146	Pass	ServiceWorkerGlobalScope interface: self must inherit property "serviceWorker" with the proper type
+serviceworker	service-workers/idlharness.https.any.serviceworker.html	147	Pass	ServiceWorkerGlobalScope interface: self must inherit property "skipWaiting()" with the proper type
+serviceworker	service-workers/idlharness.https.any.serviceworker.html	148	Pass	ServiceWorkerGlobalScope interface: self must inherit property "oninstall" with the proper type
+serviceworker	service-workers/idlharness.https.any.serviceworker.html	149	Pass	ServiceWorkerGlobalScope interface: self must inherit property "onactivate" with the proper type
+serviceworker	service-workers/idlharness.https.any.serviceworker.html	150	Pass	ServiceWorkerGlobalScope interface: self must inherit property "onfetch" with the proper type
+serviceworker	service-workers/idlharness.https.any.serviceworker.html	151	Pass	ServiceWorkerGlobalScope interface: self must inherit property "onmessage" with the proper type
+serviceworker	service-workers/idlharness.https.any.serviceworker.html	152	Pass	ServiceWorkerGlobalScope interface: self must inherit property "onmessageerror" with the proper type
+serviceworker	service-workers/idlharness.https.any.serviceworker.html	153	Pass	WorkerGlobalScope interface: self must inherit property "caches" with the proper type
+serviceworker	service-workers/idlharness.https.any.serviceworker.html	154	Pass	Client interface: existence and properties of interface object
+serviceworker	service-workers/idlharness.https.any.serviceworker.html	155	Pass	Client interface object length
+serviceworker	service-workers/idlharness.https.any.serviceworker.html	156	Pass	Client interface object name
+serviceworker	service-workers/idlharness.https.any.serviceworker.html	157	Pass	Client interface: existence and properties of interface prototype object
+serviceworker	service-workers/idlharness.https.any.serviceworker.html	158	Pass	Client interface: existence and properties of interface prototype object's "constructor" property
+serviceworker	service-workers/idlharness.https.any.serviceworker.html	159	Pass	Client interface: existence and properties of interface prototype object's @@unscopables property
+serviceworker	service-workers/idlharness.https.any.serviceworker.html	160	Pass	Client interface: attribute url
+serviceworker	service-workers/idlharness.https.any.serviceworker.html	161	Pass	Client interface: attribute frameType
+serviceworker	service-workers/idlharness.https.any.serviceworker.html	162	Pass	Client interface: attribute id
+serviceworker	service-workers/idlharness.https.any.serviceworker.html	163	Pass	Client interface: attribute type
+serviceworker	service-workers/idlharness.https.any.serviceworker.html	164	Pass	Client interface: operation postMessage(any, sequence<object>)
+serviceworker	service-workers/idlharness.https.any.serviceworker.html	165	Pass	Client interface: operation postMessage(any, optional StructuredSerializeOptions)
+serviceworker	service-workers/idlharness.https.any.serviceworker.html	166	Pass	WindowClient interface: existence and properties of interface object
+serviceworker	service-workers/idlharness.https.any.serviceworker.html	167	Pass	WindowClient interface object length
+serviceworker	service-workers/idlharness.https.any.serviceworker.html	168	Pass	WindowClient interface object name
+serviceworker	service-workers/idlharness.https.any.serviceworker.html	169	Pass	WindowClient interface: existence and properties of interface prototype object
+serviceworker	service-workers/idlharness.https.any.serviceworker.html	170	Pass	WindowClient interface: existence and properties of interface prototype object's "constructor" property
+serviceworker	service-workers/idlharness.https.any.serviceworker.html	171	Pass	WindowClient interface: existence and properties of interface prototype object's @@unscopables property
+serviceworker	service-workers/idlharness.https.any.serviceworker.html	172	Pass	WindowClient interface: attribute visibilityState
+serviceworker	service-workers/idlharness.https.any.serviceworker.html	173	Pass	WindowClient interface: attribute focused
+serviceworker	service-workers/idlharness.https.any.serviceworker.html	174	Fail	WindowClient interface: attribute ancestorOrigins
+serviceworker	service-workers/idlharness.https.any.serviceworker.html	175	Pass	WindowClient interface: operation focus()
+serviceworker	service-workers/idlharness.https.any.serviceworker.html	176	Pass	WindowClient interface: operation navigate(USVString)
+serviceworker	service-workers/idlharness.https.any.serviceworker.html	177	Pass	Clients interface: existence and properties of interface object
+serviceworker	service-workers/idlharness.https.any.serviceworker.html	178	Pass	Clients interface object length
+serviceworker	service-workers/idlharness.https.any.serviceworker.html	179	Pass	Clients interface object name
+serviceworker	service-workers/idlharness.https.any.serviceworker.html	180	Pass	Clients interface: existence and properties of interface prototype object
+serviceworker	service-workers/idlharness.https.any.serviceworker.html	181	Pass	Clients interface: existence and properties of interface prototype object's "constructor" property
+serviceworker	service-workers/idlharness.https.any.serviceworker.html	182	Pass	Clients interface: existence and properties of interface prototype object's @@unscopables property
+serviceworker	service-workers/idlharness.https.any.serviceworker.html	183	Pass	Clients interface: operation get(DOMString)
+serviceworker	service-workers/idlharness.https.any.serviceworker.html	184	Pass	Clients interface: operation matchAll(optional ClientQueryOptions)
+serviceworker	service-workers/idlharness.https.any.serviceworker.html	185	Pass	Clients interface: operation openWindow(USVString)
+serviceworker	service-workers/idlharness.https.any.serviceworker.html	186	Pass	Clients interface: operation claim()
+serviceworker	service-workers/idlharness.https.any.serviceworker.html	187	Pass	Clients must be primary interface of clients
+serviceworker	service-workers/idlharness.https.any.serviceworker.html	188	Pass	Stringification of clients
+serviceworker	service-workers/idlharness.https.any.serviceworker.html	189	Pass	Clients interface: clients must inherit property "get(DOMString)" with the proper type
+serviceworker	service-workers/idlharness.https.any.serviceworker.html	190	Pass	Clients interface: calling get(DOMString) on clients with too few arguments must throw TypeError
+serviceworker	service-workers/idlharness.https.any.serviceworker.html	191	Pass	Clients interface: clients must inherit property "matchAll(optional ClientQueryOptions)" with the proper type
+serviceworker	service-workers/idlharness.https.any.serviceworker.html	192	Pass	Clients interface: calling matchAll(optional ClientQueryOptions) on clients with too few arguments must throw TypeError
+serviceworker	service-workers/idlharness.https.any.serviceworker.html	193	Pass	Clients interface: clients must inherit property "openWindow(USVString)" with the proper type
+serviceworker	service-workers/idlharness.https.any.serviceworker.html	194	Pass	Clients interface: calling openWindow(USVString) on clients with too few arguments must throw TypeError
+serviceworker	service-workers/idlharness.https.any.serviceworker.html	195	Pass	Clients interface: clients must inherit property "claim()" with the proper type
+serviceworker	service-workers/idlharness.https.any.serviceworker.html	196	Pass	ExtendableEvent interface: existence and properties of interface object
+serviceworker	service-workers/idlharness.https.any.serviceworker.html	197	Pass	ExtendableEvent interface object length
+serviceworker	service-workers/idlharness.https.any.serviceworker.html	198	Pass	ExtendableEvent interface object name
+serviceworker	service-workers/idlharness.https.any.serviceworker.html	199	Pass	ExtendableEvent interface: existence and properties of interface prototype object
+serviceworker	service-workers/idlharness.https.any.serviceworker.html	200	Pass	ExtendableEvent interface: existence and properties of interface prototype object's "constructor" property
+serviceworker	service-workers/idlharness.https.any.serviceworker.html	201	Pass	ExtendableEvent interface: existence and properties of interface prototype object's @@unscopables property
+serviceworker	service-workers/idlharness.https.any.serviceworker.html	202	Pass	ExtendableEvent interface: operation waitUntil(Promise<any>)
+serviceworker	service-workers/idlharness.https.any.serviceworker.html	203	Pass	ExtendableEvent must be primary interface of new ExtendableEvent("type")
+serviceworker	service-workers/idlharness.https.any.serviceworker.html	204	Pass	Stringification of new ExtendableEvent("type")
+serviceworker	service-workers/idlharness.https.any.serviceworker.html	205	Pass	ExtendableEvent interface: new ExtendableEvent("type") must inherit property "waitUntil(Promise<any>)" with the proper type
+serviceworker	service-workers/idlharness.https.any.serviceworker.html	206	Pass	ExtendableEvent interface: calling waitUntil(Promise<any>) on new ExtendableEvent("type") with too few arguments must throw TypeError
+serviceworker	service-workers/idlharness.https.any.serviceworker.html	207	Pass	InstallEvent interface: existence and properties of interface object
+serviceworker	service-workers/idlharness.https.any.serviceworker.html	208	Pass	InstallEvent interface object length
+serviceworker	service-workers/idlharness.https.any.serviceworker.html	209	Pass	InstallEvent interface object name
+serviceworker	service-workers/idlharness.https.any.serviceworker.html	210	Pass	InstallEvent interface: existence and properties of interface prototype object
+serviceworker	service-workers/idlharness.https.any.serviceworker.html	211	Pass	InstallEvent interface: existence and properties of interface prototype object's "constructor" property
+serviceworker	service-workers/idlharness.https.any.serviceworker.html	212	Pass	InstallEvent interface: existence and properties of interface prototype object's @@unscopables property
+serviceworker	service-workers/idlharness.https.any.serviceworker.html	213	Pass	InstallEvent interface: operation addRoutes((RouterRule or sequence<RouterRule>))
+serviceworker	service-workers/idlharness.https.any.serviceworker.html	214	Pass	FetchEvent interface: existence and properties of interface object
+serviceworker	service-workers/idlharness.https.any.serviceworker.html	215	Pass	FetchEvent interface object length
+serviceworker	service-workers/idlharness.https.any.serviceworker.html	216	Pass	FetchEvent interface object name
+serviceworker	service-workers/idlharness.https.any.serviceworker.html	217	Pass	FetchEvent interface: existence and properties of interface prototype object
+serviceworker	service-workers/idlharness.https.any.serviceworker.html	218	Pass	FetchEvent interface: existence and properties of interface prototype object's "constructor" property
+serviceworker	service-workers/idlharness.https.any.serviceworker.html	219	Pass	FetchEvent interface: existence and properties of interface prototype object's @@unscopables property
+serviceworker	service-workers/idlharness.https.any.serviceworker.html	220	Pass	FetchEvent interface: attribute request
+serviceworker	service-workers/idlharness.https.any.serviceworker.html	221	Pass	FetchEvent interface: attribute preloadResponse
+serviceworker	service-workers/idlharness.https.any.serviceworker.html	222	Pass	FetchEvent interface: attribute clientId
+serviceworker	service-workers/idlharness.https.any.serviceworker.html	223	Pass	FetchEvent interface: attribute resultingClientId
+serviceworker	service-workers/idlharness.https.any.serviceworker.html	224	Fail	FetchEvent interface: attribute replacesClientId
+serviceworker	service-workers/idlharness.https.any.serviceworker.html	225	Pass	FetchEvent interface: attribute handled
+serviceworker	service-workers/idlharness.https.any.serviceworker.html	226	Pass	FetchEvent interface: operation respondWith(Promise<Response>)
+serviceworker	service-workers/idlharness.https.any.serviceworker.html	227	Pass	FetchEvent must be primary interface of new FetchEvent("type", { request: new Request("") })
+serviceworker	service-workers/idlharness.https.any.serviceworker.html	228	Pass	Stringification of new FetchEvent("type", { request: new Request("") })
+serviceworker	service-workers/idlharness.https.any.serviceworker.html	229	Pass	FetchEvent interface: new FetchEvent("type", { request: new Request("") }) must inherit property "request" with the proper type
+serviceworker	service-workers/idlharness.https.any.serviceworker.html	230	Pass	FetchEvent interface: new FetchEvent("type", { request: new Request("") }) must inherit property "preloadResponse" with the proper type
+serviceworker	service-workers/idlharness.https.any.serviceworker.html	231	Pass	FetchEvent interface: new FetchEvent("type", { request: new Request("") }) must inherit property "clientId" with the proper type
+serviceworker	service-workers/idlharness.https.any.serviceworker.html	232	Pass	FetchEvent interface: new FetchEvent("type", { request: new Request("") }) must inherit property "resultingClientId" with the proper type
+serviceworker	service-workers/idlharness.https.any.serviceworker.html	233	Fail	FetchEvent interface: new FetchEvent("type", { request: new Request("") }) must inherit property "replacesClientId" with the proper type
+serviceworker	service-workers/idlharness.https.any.serviceworker.html	234	Pass	FetchEvent interface: new FetchEvent("type", { request: new Request("") }) must inherit property "handled" with the proper type
+serviceworker	service-workers/idlharness.https.any.serviceworker.html	235	Pass	FetchEvent interface: new FetchEvent("type", { request: new Request("") }) must inherit property "respondWith(Promise<Response>)" with the proper type
+serviceworker	service-workers/idlharness.https.any.serviceworker.html	236	Pass	FetchEvent interface: calling respondWith(Promise<Response>) on new FetchEvent("type", { request: new Request("") }) with too few arguments must throw TypeError
+serviceworker	service-workers/idlharness.https.any.serviceworker.html	237	Pass	ExtendableEvent interface: new FetchEvent("type", { request: new Request("") }) must inherit property "waitUntil(Promise<any>)" with the proper type
+serviceworker	service-workers/idlharness.https.any.serviceworker.html	238	Pass	ExtendableEvent interface: calling waitUntil(Promise<any>) on new FetchEvent("type", { request: new Request("") }) with too few arguments must throw TypeError
+serviceworker	service-workers/idlharness.https.any.serviceworker.html	239	Pass	ExtendableMessageEvent interface: existence and properties of interface object
+serviceworker	service-workers/idlharness.https.any.serviceworker.html	240	Pass	ExtendableMessageEvent interface object length
+serviceworker	service-workers/idlharness.https.any.serviceworker.html	241	Pass	ExtendableMessageEvent interface object name
+serviceworker	service-workers/idlharness.https.any.serviceworker.html	242	Pass	ExtendableMessageEvent interface: existence and properties of interface prototype object
+serviceworker	service-workers/idlharness.https.any.serviceworker.html	243	Pass	ExtendableMessageEvent interface: existence and properties of interface prototype object's "constructor" property
+serviceworker	service-workers/idlharness.https.any.serviceworker.html	244	Pass	ExtendableMessageEvent interface: existence and properties of interface prototype object's @@unscopables property
+serviceworker	service-workers/idlharness.https.any.serviceworker.html	245	Pass	ExtendableMessageEvent interface: attribute data
+serviceworker	service-workers/idlharness.https.any.serviceworker.html	246	Pass	ExtendableMessageEvent interface: attribute origin
+serviceworker	service-workers/idlharness.https.any.serviceworker.html	247	Pass	ExtendableMessageEvent interface: attribute lastEventId
+serviceworker	service-workers/idlharness.https.any.serviceworker.html	248	Pass	ExtendableMessageEvent interface: attribute source
+serviceworker	service-workers/idlharness.https.any.serviceworker.html	249	Pass	ExtendableMessageEvent interface: attribute ports
+serviceworker	service-workers/idlharness.https.any.serviceworker.html	250	Pass	Cache interface: existence and properties of interface object
+serviceworker	service-workers/idlharness.https.any.serviceworker.html	251	Pass	Cache interface object length
+serviceworker	service-workers/idlharness.https.any.serviceworker.html	252	Pass	Cache interface object name
+serviceworker	service-workers/idlharness.https.any.serviceworker.html	253	Pass	Cache interface: existence and properties of interface prototype object
+serviceworker	service-workers/idlharness.https.any.serviceworker.html	254	Pass	Cache interface: existence and properties of interface prototype object's "constructor" property
+serviceworker	service-workers/idlharness.https.any.serviceworker.html	255	Pass	Cache interface: existence and properties of interface prototype object's @@unscopables property
+serviceworker	service-workers/idlharness.https.any.serviceworker.html	256	Pass	Cache interface: operation match(RequestInfo, optional CacheQueryOptions)
+serviceworker	service-workers/idlharness.https.any.serviceworker.html	257	Pass	Cache interface: operation matchAll(optional RequestInfo, optional CacheQueryOptions)
+serviceworker	service-workers/idlharness.https.any.serviceworker.html	258	Pass	Cache interface: operation add(RequestInfo)
+serviceworker	service-workers/idlharness.https.any.serviceworker.html	259	Pass	Cache interface: operation addAll(sequence<RequestInfo>)
+serviceworker	service-workers/idlharness.https.any.serviceworker.html	260	Pass	Cache interface: operation put(RequestInfo, Response)
+serviceworker	service-workers/idlharness.https.any.serviceworker.html	261	Pass	Cache interface: operation delete(RequestInfo, optional CacheQueryOptions)
+serviceworker	service-workers/idlharness.https.any.serviceworker.html	262	Pass	Cache interface: operation keys(optional RequestInfo, optional CacheQueryOptions)
+serviceworker	service-workers/idlharness.https.any.serviceworker.html	263	Pass	Cache must be primary interface of self.cacheInstance
+serviceworker	service-workers/idlharness.https.any.serviceworker.html	264	Pass	Stringification of self.cacheInstance
+serviceworker	service-workers/idlharness.https.any.serviceworker.html	265	Pass	Cache interface: self.cacheInstance must inherit property "match(RequestInfo, optional CacheQueryOptions)" with the proper type
+serviceworker	service-workers/idlharness.https.any.serviceworker.html	266	Pass	Cache interface: calling match(RequestInfo, optional CacheQueryOptions) on self.cacheInstance with too few arguments must throw TypeError
+serviceworker	service-workers/idlharness.https.any.serviceworker.html	267	Pass	Cache interface: self.cacheInstance must inherit property "matchAll(optional RequestInfo, optional CacheQueryOptions)" with the proper type
+serviceworker	service-workers/idlharness.https.any.serviceworker.html	268	Pass	Cache interface: calling matchAll(optional RequestInfo, optional CacheQueryOptions) on self.cacheInstance with too few arguments must throw TypeError
+serviceworker	service-workers/idlharness.https.any.serviceworker.html	269	Pass	Cache interface: self.cacheInstance must inherit property "add(RequestInfo)" with the proper type
+serviceworker	service-workers/idlharness.https.any.serviceworker.html	270	Pass	Cache interface: calling add(RequestInfo) on self.cacheInstance with too few arguments must throw TypeError
+serviceworker	service-workers/idlharness.https.any.serviceworker.html	271	Pass	Cache interface: self.cacheInstance must inherit property "addAll(sequence<RequestInfo>)" with the proper type
+serviceworker	service-workers/idlharness.https.any.serviceworker.html	272	Pass	Cache interface: calling addAll(sequence<RequestInfo>) on self.cacheInstance with too few arguments must throw TypeError
+serviceworker	service-workers/idlharness.https.any.serviceworker.html	273	Pass	Cache interface: self.cacheInstance must inherit property "put(RequestInfo, Response)" with the proper type
+serviceworker	service-workers/idlharness.https.any.serviceworker.html	274	Pass	Cache interface: calling put(RequestInfo, Response) on self.cacheInstance with too few arguments must throw TypeError
+serviceworker	service-workers/idlharness.https.any.serviceworker.html	275	Pass	Cache interface: self.cacheInstance must inherit property "delete(RequestInfo, optional CacheQueryOptions)" with the proper type
+serviceworker	service-workers/idlharness.https.any.serviceworker.html	276	Pass	Cache interface: calling delete(RequestInfo, optional CacheQueryOptions) on self.cacheInstance with too few arguments must throw TypeError
+serviceworker	service-workers/idlharness.https.any.serviceworker.html	277	Pass	Cache interface: self.cacheInstance must inherit property "keys(optional RequestInfo, optional CacheQueryOptions)" with the proper type
+serviceworker	service-workers/idlharness.https.any.serviceworker.html	278	Pass	Cache interface: calling keys(optional RequestInfo, optional CacheQueryOptions) on self.cacheInstance with too few arguments must throw TypeError
+serviceworker	service-workers/idlharness.https.any.serviceworker.html	279	Pass	CacheStorage interface: existence and properties of interface object
+serviceworker	service-workers/idlharness.https.any.serviceworker.html	280	Pass	CacheStorage interface object length
+serviceworker	service-workers/idlharness.https.any.serviceworker.html	281	Pass	CacheStorage interface object name
+serviceworker	service-workers/idlharness.https.any.serviceworker.html	282	Pass	CacheStorage interface: existence and properties of interface prototype object
+serviceworker	service-workers/idlharness.https.any.serviceworker.html	283	Pass	CacheStorage interface: existence and properties of interface prototype object's "constructor" property
+serviceworker	service-workers/idlharness.https.any.serviceworker.html	284	Pass	CacheStorage interface: existence and properties of interface prototype object's @@unscopables property
+serviceworker	service-workers/idlharness.https.any.serviceworker.html	285	Pass	CacheStorage interface: operation match(RequestInfo, optional MultiCacheQueryOptions)
+serviceworker	service-workers/idlharness.https.any.serviceworker.html	286	Pass	CacheStorage interface: operation has(DOMString)
+serviceworker	service-workers/idlharness.https.any.serviceworker.html	287	Pass	CacheStorage interface: operation open(DOMString)
+serviceworker	service-workers/idlharness.https.any.serviceworker.html	288	Pass	CacheStorage interface: operation delete(DOMString)
+serviceworker	service-workers/idlharness.https.any.serviceworker.html	289	Pass	CacheStorage interface: operation keys()
+serviceworker	service-workers/idlharness.https.any.serviceworker.html	290	Pass	CacheStorage must be primary interface of caches
+serviceworker	service-workers/idlharness.https.any.serviceworker.html	291	Pass	Stringification of caches
+serviceworker	service-workers/idlharness.https.any.serviceworker.html	292	Pass	CacheStorage interface: caches must inherit property "match(RequestInfo, optional MultiCacheQueryOptions)" with the proper type
+serviceworker	service-workers/idlharness.https.any.serviceworker.html	293	Pass	CacheStorage interface: calling match(RequestInfo, optional MultiCacheQueryOptions) on caches with too few arguments must throw TypeError
+serviceworker	service-workers/idlharness.https.any.serviceworker.html	294	Pass	CacheStorage interface: caches must inherit property "has(DOMString)" with the proper type
+serviceworker	service-workers/idlharness.https.any.serviceworker.html	295	Pass	CacheStorage interface: calling has(DOMString) on caches with too few arguments must throw TypeError
+serviceworker	service-workers/idlharness.https.any.serviceworker.html	296	Pass	CacheStorage interface: caches must inherit property "open(DOMString)" with the proper type
+serviceworker	service-workers/idlharness.https.any.serviceworker.html	297	Pass	CacheStorage interface: calling open(DOMString) on caches with too few arguments must throw TypeError
+serviceworker	service-workers/idlharness.https.any.serviceworker.html	298	Pass	CacheStorage interface: caches must inherit property "delete(DOMString)" with the proper type
+serviceworker	service-workers/idlharness.https.any.serviceworker.html	299	Pass	CacheStorage interface: calling delete(DOMString) on caches with too few arguments must throw TypeError
+serviceworker	service-workers/idlharness.https.any.serviceworker.html	300	Pass	CacheStorage interface: caches must inherit property "keys()" with the proper type
+serviceworker	service-workers/idlharness.https.any.serviceworker.html	301	Pass	WorkerGlobalScope interface: attribute caches
+serviceworker	service-workers/idlharness.https.any.serviceworker.html	302	Fail	WorkerNavigator interface: attribute serviceWorker

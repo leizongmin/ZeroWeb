@@ -2,7 +2,7 @@
 
 **入口文档**: [../service-workers.md](../service-workers.md)
 **创建日期**: 2026-08-17（goal 拆分 bootstrap）
-**最后更新**: 2026-08-19（M0 RFC + worker-global/import WPT 裁决，待审批）
+**最后更新**: 2026-08-19（M0 RFC + IDL harness 787 项分母固定，待审批）
 
 ---
 
@@ -56,6 +56,8 @@
   4 server gated、1 M2 defer、1 worker-client skip；全量剩余逻辑 review 71
 - ✅ static-wave 资产化：`serviceworkerobject-scripturl` 1 case / 4 subtest / 2 assets
   已固定并记入 testharness 账本
+- ✅ IDL harness 裁决：4 generated URL / 787 subtest（175 window + 155 dedicated +
+  155 shared + 302 serviceworker）；全量剩余逻辑 review 70
 - ✅ SW 执行环境 RFC 已完成，待用户批准
 
 ## 缺口清单
@@ -66,7 +68,7 @@
 | S2 | scriptURL 不下载执行 | ⬜ M1 |
 | S3 | fetch 拦截为零 | ⬜ M2（等 js-dom fetch 改造） |
 | S4 | 事件为 setTimeout 模拟 | ⬜ M1 |
-| S5 | WPT 覆盖为零 | 🔄 12 case 已资产化；M1 review 57/57、Static Routing 12/12、worker-global/import 13 案已裁决；runner/真实 red baseline 等 RFC 批准 |
+| S5 | WPT 覆盖为零 | 🔄 12 case 已资产化；M1 review 57/57、Static Routing 12/12、worker-global/import 13 案及 IDL 787 项已裁决；runner/真实 red baseline 等 RFC 批准 |
 
 ## 待用户决策
 
@@ -113,6 +115,8 @@
   [Static Routing review](evidence/2026-08-19-static-routing-review.md)
 - Worker Global/import 面：13 case / 53 subtest 的 core/defer/gated/skip 裁决见
   [Worker Global/import review](evidence/2026-08-19-worker-global-import-review.md)
+- IDL harness 面：4 generated URL / 787 subtest 的逐项分母见
+  [IDL harness review](evidence/2026-08-19-idlharness-review.md)
 - Tier A 资产恢复：`make fetch-wpt-service-workers-tier-a`；默认使用独立
   `wpt-data/.service-workers-tier-a-root`，当前环境 18/18 blob SHA 验证通过
 - Tier A 资产审计：`make audit-wpt-service-workers-tier-a`（无网络、只读）；
@@ -145,6 +149,7 @@
 | 2026-08-19 | Static Routing 裁决 | 本批 11 case / 70 subtest 全部 skip；family 12/12，全量逻辑 review 剩余 84 |
 | 2026-08-19 | Worker Global/import 裁决 | 13 case / 53 subtest：1 core / 6 runtime defer / 4 server gated / 1 M2 defer / 1 skip；剩余 71 |
 | 2026-08-19 | Static-wave 资产化 | scriptURL 1 case / 4 subtest / 2 assets；fetch/audit/regression targets 与账本已落 |
+| 2026-08-19 | IDL harness 裁决 | 4 generated URL / 787 subtest：window 175、dedicated/shared 各 155、serviceworker 302；剩余 70 |
 | 2026-08-19 | 三方案对比 | 拒绝同线程 context（无调度隔离）；拒绝从零线程（复制安全基建）；推荐抽取 Worker 线程核 |
 | 2026-08-19 | owner | production browser process 单一 owner；WebView 只做同算法 in-process adapter |
 | 2026-08-19 | 首个 driving WPT | `activation-after-registration.https.html` |

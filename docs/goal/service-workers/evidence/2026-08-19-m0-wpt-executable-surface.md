@@ -43,6 +43,8 @@
 - [Worker Global/import 裁决](2026-08-19-worker-global-import-review.md) 将 13 case /
   53 subtest 分为 static core、runtime defer、server gated、M2 defer 与 worker-client skip；
   其中 scriptURL 1 case / 4 subtest 已资产化。
+- [IDL harness 裁决](2026-08-19-idlharness-review.md) 固定 4 个 generated URL /
+  787 个 subtest，并按 window、dedicated/shared、serviceworker context 分层。
 - 这不等于全部上游用例都超出 ZeroWeb 环境。M1 完成后，单页面、单注册、静态资源的
   生命周期用例可形成第一批真实基线；M2 完成后再加入单客户端 fetch/respondWith 用例。
 - iframe、多客户端、SharedWorker、跨 origin、动态服务端 handler、WebSocket 和
@@ -277,5 +279,5 @@ case 仍是第 2 项。
 - [x] 14 个 M1/no-signal + 11 个 M1/iframe-only + 7 个 M1/message-channel +
       25 个 M1/final review 已完成传递审计，M1 review 57/57。
 - [x] Static Routing family 12/12 已裁决，剩余逻辑 review 84。
-- [x] 剩余 no-signal review 已裁决 13/14，仅 idlharness 待专门解析；剩余逻辑 review 71。
+- [x] 剩余 no-signal review 14/14 已裁决；剩余逻辑 review 70。
 - [x] 未修改源码、WPT 数据或共享账本。

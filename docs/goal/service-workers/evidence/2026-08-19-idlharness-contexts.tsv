@@ -1,0 +1,5 @@
+context	generated_url	subtests	chrome_127_pass	chrome_127_fail	harness_status
+window	service-workers/idlharness.https.any.html	175	175	0	OK
+dedicatedworker	service-workers/idlharness.https.any.worker.html	155	115	40	OK
+sharedworker	service-workers/idlharness.https.any.sharedworker.html	155	115	40	OK
+serviceworker	service-workers/idlharness.https.any.serviceworker.html	302	270	32	OK
