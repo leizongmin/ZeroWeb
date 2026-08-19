@@ -1,4 +1,4 @@
-# R122 — M4 nodes：Attr identity 绑定表 + 同名多实例覆盖层（attributes.html 全 100%，+38 净）
+# R122 — M4 nodes：Attr identity 绑定表 + 同名多实例覆盖层（attributes.html 全 100%，+42 净）
 
 **日期**: 2026-08-19
 **里程碑**: M4（WPT dom 上游基线建立与扩展）
@@ -9,7 +9,7 @@
 
 | 路径 | 前（R121） | 后 | 净 |
 |------|----|----|----|
-| polyfill nodes 全量 | 7631P | 7669P | +38（attributes 36F→P + namednodemap 2F→P + Attr-prefix HTML 4F→P，零新增聚类） |
+| polyfill nodes 全量 | 7631P | 7673P | +42（attributes 36F→P + namednodemap 2F→P + Attr-prefix HTML 4F→P，零新增聚类） |
 | events / collections / traversal | 419P / 48P / 1595P | 419P / 48P / 1595P | 零回归 |
 
 ## 根因与修复（五层）
@@ -45,7 +45,7 @@
    ('style') 恒 false）。显式 set trap 分支写 style 内容属性（WPT "Toggling
    element with inline style"）。
 
-## 回归与修正（过程中三处）
+## 回归与修正（过程中六处）
 
 - **Element-classlist 550F**：instance-first getAttribute 使直写 host 的 classList
   路径读 stale → host-first + classList/className/style 直写点实例同步。
@@ -53,11 +53,26 @@
   属性族分支之后，分支先 return 时闭包捕获 undefined → 定义上移至分支前。
 - **ownKeys 泄漏合成名**（"a\0#2" 出现在 getEnumerableOwnProps）：supportedNames/
   ownKeys/getAttributeNames 统一经 `_zwAttrStripSyn` 剥离。
+- **readNames 实例全量前插破坏文档序（r44 own-enumeration 抓回）**：首版融合把实例段
+  前置，classList.write upsert class 实例后 id/class/data-x 错序成 data-x,id,class →
+  改 base 位次权威 + 实例逐位对齐 + 尾追。
+- **同 local 全部实例聚集首位破坏交错序（WPT getAttributeNames tests 抓回）**：二版
+  在首个 host 位展开该 local 的全部实例，期望 foo,FOO,foo,dummy:foo 交错序成
+  foo,foo,dummy:foo,FOO → 改**每位消费一个实例**（实例序），匹配规则双形态
+  （instance.local === 冒号后 local 或 === 整名——非 NS setAttribute 的 local 是
+  整个限定名，WPT "Attribute with prefix in local name"）。
+- **旧测试脚本与 R122 spec 语义冲突三处**：r46 的 `xml:lang` 任意 ns 现抛
+  NamespaceError（spec validate 保留绑定——改 `'lang'` 裸名驱动同一 record 语义）；
+  r3022 的 plain `{name,value}` 传入 setNamedItem 现抛 TypeError（WebIDL Attr 类型——
+  改 `document.createAttribute` 真 Attr）+ removeNamedItem 缺失现抛 NotFoundError
+  （spec——旧 best-effort 返 null 断言按 spec 纠正）；r116 的 NS meta 断言面换成
+  instance-first 元数据（meta:abc/def/http://FOO）。两个调试探针（DBG/DBGTEST
+  panic 残留）删除。
 
 ## 验证
 
 - attributes.html 67P/0F + attributes-namednodemap 8P/0F（polyfill 路径全 100%）
-- nodes 全量 7669P（+38 净，剩余 fail 聚类与 R121 相同：PI-attributes 133F +
+- nodes 全量 7673P（+42 净，剩余 fail 聚类与 R121 相同：PI-attributes 133F +
   removeChild 28F[frames 域] + getElementsByClassName-whitespace 19F 等）
 - events 419P / collections 48P / traversal 1595P 零回归
 - engine 单测 `test_attr_identity_and_multi_instance_r122`（10 断言组）
