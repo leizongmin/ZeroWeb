@@ -25,6 +25,7 @@ const SERVICE_WORKER_BOOTSTRAP: &str = r#"
   const listeners = Object.create(null);
   let currentWaitUntil = null;
   let skipWaitingRequested = false;
+  let claimClientsRequested = false;
 
   class ExtendableEvent {
     constructor(type) { this.type = type; }
@@ -57,15 +58,28 @@ const SERVICE_WORKER_BOOTSTRAP: &str = r#"
     }
     return Promise.resolve();
   };
+  class Clients {
+    claim() {
+      claimClientsRequested = true;
+      if (globalThis.__zwLifecycleResult) {
+        globalThis.__zwLifecycleResult.claimClientsRequested = true;
+      }
+      return Promise.resolve();
+    }
+  }
+  globalThis.Clients = Clients;
+  globalThis.clients = new Clients();
   globalThis.__zwDispatchLifecycle = function(type, eventId) {
     const pending = [];
+    claimClientsRequested = false;
     const result = {
       eventId: String(eventId),
       phase: String(type),
       settled: false,
       succeeded: false,
       message: '',
-      skipWaitingRequested: skipWaitingRequested
+      skipWaitingRequested: skipWaitingRequested,
+      claimClientsRequested: false
     };
     globalThis.__zwLifecycleResult = result;
     currentWaitUntil = function(value) {
@@ -157,6 +171,8 @@ pub enum ServiceWorkerEvent {
         succeeded: bool,
         /// Whether the worker called `skipWaiting()` before settlement.
         skip_waiting: bool,
+        /// Whether the worker called `clients.claim()` during this lifecycle event.
+        claim_clients: bool,
         /// Rejection or dispatch error diagnostic.
         message: String,
     },
@@ -383,6 +399,7 @@ fn dispatch_lifecycle(
             phase,
             succeeded: false,
             skip_waiting: false,
+            claim_clients: false,
             message: error.to_string(),
         };
     }
@@ -397,6 +414,7 @@ fn dispatch_lifecycle(
                         phase,
                         succeeded: value["succeeded"].as_bool() == Some(true),
                         skip_waiting: value["skipWaitingRequested"].as_bool() == Some(true),
+                        claim_clients: value["claimClientsRequested"].as_bool() == Some(true),
                         message: value["message"].as_str().unwrap_or_default().to_string(),
                     };
                 }
@@ -407,6 +425,7 @@ fn dispatch_lifecycle(
                         phase,
                         succeeded: false,
                         skip_waiting: false,
+                        claim_clients: false,
                         message: format!("invalid lifecycle result: {error}"),
                     };
                 }
@@ -417,6 +436,7 @@ fn dispatch_lifecycle(
                     phase,
                     succeeded: false,
                     skip_waiting: false,
+                    claim_clients: false,
                     message: error.to_string(),
                 };
             }
@@ -427,6 +447,7 @@ fn dispatch_lifecycle(
                 phase,
                 succeeded: false,
                 skip_waiting: false,
+                claim_clients: false,
                 message: format!("lifecycle event exceeded {timeout_ms}ms"),
             };
         }
@@ -619,6 +640,7 @@ mod tests {
                 phase: ServiceWorkerLifecyclePhase::Install,
                 succeeded: true,
                 skip_waiting: false,
+                claim_clients: false,
                 message: String::new(),
             }
         );
@@ -655,6 +677,7 @@ mod tests {
                 phase: ServiceWorkerLifecyclePhase::Install,
                 succeeded: false,
                 skip_waiting: false,
+                claim_clients: false,
                 ref message,
             } if message.contains("install rejected")
         ));
@@ -681,6 +704,34 @@ mod tests {
                 phase: ServiceWorkerLifecyclePhase::Install,
                 succeeded: true,
                 skip_waiting: true,
+                claim_clients: false,
+                message: String::new(),
+            }
+        );
+    }
+
+    #[test]
+    fn activate_event_reports_clients_claim_request() {
+        let mut runtime = ServiceWorkerRuntime::new(test_config()).unwrap();
+        runtime
+            .evaluate(
+                "addEventListener('activate', event => {
+                    event.waitUntil(clients.claim());
+                });",
+                "https://example.test/sw.js",
+            )
+            .unwrap();
+        let _ = runtime.recv_timeout(Duration::from_secs(5)).unwrap();
+
+        runtime.dispatch_activate(15).unwrap();
+        assert_eq!(
+            runtime.recv_timeout(Duration::from_secs(5)).unwrap(),
+            ServiceWorkerEvent::LifecycleSettled {
+                event_id: 15,
+                phase: ServiceWorkerLifecyclePhase::Activate,
+                succeeded: true,
+                skip_waiting: false,
+                claim_clients: true,
                 message: String::new(),
             }
         );
@@ -708,6 +759,7 @@ mod tests {
                 phase: ServiceWorkerLifecyclePhase::Activate,
                 succeeded: true,
                 skip_waiting: false,
+                claim_clients: false,
                 message: String::new(),
             }
         );

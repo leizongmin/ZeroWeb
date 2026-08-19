@@ -82,6 +82,8 @@ pub enum ServiceWorkerManagerEvent {
         succeeded: bool,
         /// Whether the worker requested immediate activation.
         skip_waiting: bool,
+        /// Whether the worker requested control of matching clients.
+        claim_clients: bool,
         /// Rejection or dispatch error diagnostic.
         message: String,
     },
@@ -177,6 +179,7 @@ pub struct ServiceWorkerManager {
     slots: HashMap<ServiceWorkerRegistrationKey, ServiceWorkerVersionSlots>,
     registration_keys: HashMap<u64, ServiceWorkerRegistrationKey>,
     state_changes: HashMap<u64, Vec<ServiceWorkerState>>,
+    claimed_clients: HashSet<u64>,
     runtimes: HashMap<u64, ServiceWorkerRuntime>,
     evaluated: HashSet<u64>,
     runtime_limit: usize,
@@ -190,6 +193,7 @@ impl ServiceWorkerManager {
             slots: HashMap::new(),
             registration_keys: HashMap::new(),
             state_changes: HashMap::new(),
+            claimed_clients: HashSet::new(),
             runtimes: HashMap::new(),
             evaluated: HashSet::new(),
             runtime_limit: DEFAULT_RUNTIME_LIMIT,
@@ -283,6 +287,7 @@ impl ServiceWorkerManager {
                     phase,
                     succeeded,
                     skip_waiting,
+                    claim_clients,
                     message,
                     ..
                 } => {
@@ -291,8 +296,12 @@ impl ServiceWorkerManager {
                         phase,
                         succeeded,
                         skip_waiting,
+                        claim_clients,
                         message,
                     });
+                    if phase == ServiceWorkerLifecyclePhase::Activate && succeeded && claim_clients {
+                        self.claimed_clients.insert(registration_id);
+                    }
                     let transition = match phase {
                         ServiceWorkerLifecyclePhase::Install => self.apply_install_result(registration_id, succeeded),
                         ServiceWorkerLifecyclePhase::Activate => {
@@ -493,6 +502,7 @@ impl ServiceWorkerManager {
         self.mark_redundant_and_stop(registration_id);
         let removed = self.registry.unregister(registration_id);
         self.state_changes.remove(&registration_id);
+        self.claimed_clients.remove(&registration_id);
         let remove_slots = if let Some(slot) = self.slots.get_mut(&key) {
             if slot.installing == Some(registration_id) {
                 slot.installing = None;
@@ -531,6 +541,11 @@ impl ServiceWorkerManager {
         let changes = self.state_changes.get(&registration_id)?;
         let start = usize::try_from(after_sequence).unwrap_or(usize::MAX).min(changes.len());
         Some((changes.len() as u64, &changes[start..]))
+    }
+
+    /// Return whether this version requested `clients.claim()` while activating.
+    pub fn claims_clients(&self, registration_id: u64) -> bool {
+        self.claimed_clients.contains(&registration_id)
     }
 
     /// Inspect version slots for one origin/scope key.
@@ -648,6 +663,7 @@ impl ServiceWorkerManager {
         if changed {
             self.record_state_change(registration_id, ServiceWorkerState::Redundant);
         }
+        self.claimed_clients.remove(&registration_id);
         if let Some(mut runtime) = self.runtimes.remove(&registration_id) {
             runtime.shutdown();
         }
@@ -811,6 +827,7 @@ mod tests {
             phase: ServiceWorkerLifecyclePhase::Install,
             succeeded: true,
             skip_waiting: false,
+            claim_clients: false,
             message: String::new(),
         }));
         assert!(matches!(
@@ -951,6 +968,31 @@ mod tests {
             manager.registration(first).unwrap().state,
             ServiceWorkerState::Redundant
         );
+    }
+
+    #[test]
+    fn clients_claim_is_recorded_for_activated_version() {
+        let mut manager = ServiceWorkerManager::new();
+        let id = start(
+            &mut manager,
+            "/app/",
+            "addEventListener('activate', event => {
+                event.waitUntil(clients.claim());
+            });",
+        );
+
+        let events = wait_for_state(&mut manager, id, ServiceWorkerState::Activated);
+        assert!(events.iter().any(|event| matches!(
+            event,
+            ServiceWorkerManagerEvent::LifecycleSettled {
+                registration_id,
+                phase: ServiceWorkerLifecyclePhase::Activate,
+                succeeded: true,
+                claim_clients: true,
+                ..
+            } if *registration_id == id
+        )));
+        assert!(manager.claims_clients(id));
     }
 
     #[test]

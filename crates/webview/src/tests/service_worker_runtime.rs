@@ -532,3 +532,64 @@ fn navigator_controller_tracks_document_and_skip_waiting_replacement() {
         std::thread::sleep(Duration::from_millis(10));
     }
 }
+
+#[test]
+fn navigator_clients_claim_controls_current_matching_document() {
+    let mut webview = WebViewBuilder::new()
+        .url("https://example.test/app/page.html")
+        .script_source_fetcher(Arc::new(|_, _| {
+            Ok("addEventListener('activate', event => {
+                    event.waitUntil(clients.claim());
+                });"
+            .to_string())
+        }))
+        .build();
+
+    webview
+        .execute_script(
+            "globalThis.__claimResult = 'pending';
+             navigator.serviceWorker.addEventListener('controllerchange', function(event) {
+               globalThis.__claimResult = [
+                 event.target === navigator.serviceWorker,
+                 event.currentTarget === navigator.serviceWorker,
+                 navigator.serviceWorker.controller === globalThis.__claimReg.active,
+                 navigator.serviceWorker.controller.scriptURL.endsWith('/app/sw.js'),
+                 navigator.serviceWorker.controller.state
+               ].join('|');
+             });
+             navigator.serviceWorker.register('/app/sw.js', {scope:'/app/'}).then(function(reg) {
+               globalThis.__claimReg = reg;
+             }, function(error) {
+               globalThis.__claimResult = 'error:' + String(error);
+             });
+             'started';",
+        )
+        .unwrap();
+
+    let deadline = Instant::now() + Duration::from_secs(20);
+    loop {
+        let value = webview.execute_script("globalThis.__claimResult").unwrap();
+        if value != "pending" {
+            assert_eq!(value, "true|true|true|true|activated");
+            break;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "clients.claim controllerchange timed out: {}",
+            webview
+                .execute_script(
+                    "[
+                       navigator.serviceWorker.controller &&
+                         navigator.serviceWorker.controller.scriptURL,
+                       navigator.serviceWorker.controller &&
+                         navigator.serviceWorker.controller.state,
+                       globalThis.__claimReg && globalThis.__claimReg.active &&
+                         globalThis.__claimReg.active.state,
+                       globalThis.__claimResult
+                     ].join('|')",
+                )
+                .unwrap()
+        );
+        std::thread::sleep(Duration::from_millis(10));
+    }
+}

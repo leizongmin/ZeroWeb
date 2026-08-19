@@ -619,6 +619,7 @@ impl ServiceWorkerRequestParams {
             | ServiceWorkerOperation::Unregister { .. }
             | ServiceWorkerOperation::ActivateWaiting { .. }
             | ServiceWorkerOperation::GetRegistrations
+            | ServiceWorkerOperation::Controller
             | ServiceWorkerOperation::StateChanges { .. } => Ok(()),
             ServiceWorkerOperation::GetRegistration { client_url } => {
                 if client_url.is_empty() {
@@ -674,6 +675,8 @@ pub enum ServiceWorkerOperation {
         /// Number of state changes already observed by this renderer.
         after_sequence: u64,
     },
+    /// Read the active controller for the committed document.
+    Controller,
 }
 
 /// Browser Service Worker owner response.
@@ -740,6 +743,8 @@ pub struct ServiceWorkerStateChanges {
     pub latest_sequence: u64,
     /// States strictly after the request cursor, in transition order.
     pub states: Vec<ServiceWorkerStateWire>,
+    /// Whether this version requested control of matching clients.
+    pub claim_clients: bool,
 }
 
 /// Service Worker owner error.

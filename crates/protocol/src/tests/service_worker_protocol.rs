@@ -123,6 +123,7 @@ fn service_worker_discovery_operations_round_trip() {
             },
         ),
         (5, ServiceWorkerOperation::GetRegistrations),
+        (6, ServiceWorkerOperation::Controller),
     ] {
         let decoded = roundtrip(IpcMessage {
             id,
@@ -159,6 +160,7 @@ fn service_worker_state_changes_round_trip() {
     let changes = ServiceWorkerStateChanges {
         latest_sequence: 3,
         states: vec![ServiceWorkerStateWire::Activating, ServiceWorkerStateWire::Activated],
+        claim_clients: true,
     };
     let decoded = roundtrip(IpcMessage {
         id: 45,
@@ -261,6 +263,7 @@ fn service_worker_nested_enum_discriminants_remain_append_only() {
         }),
         6
     );
+    assert_eq!(discriminant(&ServiceWorkerOperation::Controller), 7);
 
     assert_eq!(discriminant(&ServiceWorkerResult::Registered { registration_id: 1 }), 0);
     assert_eq!(
@@ -280,6 +283,7 @@ fn service_worker_nested_enum_discriminants_remain_append_only() {
         discriminant(&ServiceWorkerResult::StateChanges(ServiceWorkerStateChanges {
             latest_sequence: 0,
             states: Vec::new(),
+            claim_clients: false,
         })),
         6
     );

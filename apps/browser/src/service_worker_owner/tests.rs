@@ -100,6 +100,7 @@ fn lifecycle_state_changes_are_cursor_based_and_ordered() {
             Ok(ServiceWorkerResult::StateChanges(ServiceWorkerStateChanges {
                 latest_sequence: 3,
                 ref states,
+                claim_clients: false,
             })) if states == &[
                 ServiceWorkerStateWire::Installed,
                 ServiceWorkerStateWire::Activating,
@@ -132,6 +133,7 @@ fn lifecycle_state_changes_are_cursor_based_and_ordered() {
         Ok(ServiceWorkerResult::StateChanges(ServiceWorkerStateChanges {
             latest_sequence: 3,
             states: vec![ServiceWorkerStateWire::Activating, ServiceWorkerStateWire::Activated],
+            claim_clients: false,
         }))
     );
 }

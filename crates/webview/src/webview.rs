@@ -2500,10 +2500,12 @@ impl WebView {
                 else {
                     return serde_json::json!({"ok": false, "error": "registration not found"}).to_string();
                 };
+                let claim_clients = manager.claims_clients(registration_id);
                 serde_json::json!({
                     "ok": true,
                     "latestSequence": latest_sequence,
                     "states": states.iter().map(ToString::to_string).collect::<Vec<_>>(),
+                    "claimClients": claim_clients,
                 })
                 .to_string()
             }),

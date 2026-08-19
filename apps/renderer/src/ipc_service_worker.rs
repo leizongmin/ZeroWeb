@@ -148,6 +148,7 @@ impl ServiceWorkerIpcClient {
                         "ok": true,
                         "latestSequence": changes.latest_sequence,
                         "states": changes.states.into_iter().map(state_wire).collect::<Vec<_>>(),
+                        "claimClients": changes.claim_clients,
                     })
                     .to_string(),
                     Ok(_) => error_wire("invalid state changes response"),
@@ -190,9 +191,8 @@ impl ServiceWorkerIpcClient {
         let controller_client = self.clone();
         sandbox.register_callback(
             "__zw_sw_controller",
-            Box::new(move |args| {
-                let client_url = args.first().cloned().unwrap_or_default();
-                match controller_client.request(ServiceWorkerOperation::GetRegistration { client_url }) {
+            Box::new(
+                move |_args| match controller_client.request(ServiceWorkerOperation::Controller) {
                     Ok(ServiceWorkerResult::OptionalSnapshot(snapshot)) => serde_json::json!({
                         "ok": true,
                         "controller": snapshot
@@ -202,8 +202,8 @@ impl ServiceWorkerIpcClient {
                     .to_string(),
                     Ok(_) => error_wire("invalid controller response"),
                     Err(error) => error_wire(error.message),
-                }
-            }),
+                },
+            ),
         );
 
         let get_registrations_client = self.clone();

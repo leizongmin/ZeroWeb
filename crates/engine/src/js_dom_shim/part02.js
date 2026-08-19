@@ -2622,6 +2622,7 @@
         reg._stateSequence = 0;
         reg._pendingStates = [];
         reg._updateFoundPending = false;
+        reg._claimClientsPending = false;
         reg.scope = scope;
         reg.updateViaCache = 'imports';
         reg.installing = reg._worker;
@@ -2676,7 +2677,7 @@
       function readControllerSnapshot() {
         if (typeof __zw_sw_controller !== 'function') return null;
         try {
-          var wire = JSON.parse(__zw_sw_controller(globalThis.location.href));
+          var wire = JSON.parse(__zw_sw_controller());
           return wire && wire.ok ? wire.controller : null;
         } catch (_e) { return null; }
       }
@@ -2691,6 +2692,17 @@
         if (sequence === 2) return 'activating';
         if (sequence === 3) return 'activated';
         return 'installing';
+      }
+      function setController(worker) {
+        if (_controller === worker) return;
+        _controller = worker;
+        if (typeof setTimeout === 'function') {
+          setTimeout(function () {
+            dispatchTargetEvent(_container, 'controllerchange');
+          }, 0);
+        } else {
+          dispatchTargetEvent(_container, 'controllerchange');
+        }
       }
       function applyState(reg, state) {
         if (!reg || !reg._worker) return;
@@ -2711,16 +2723,17 @@
             dispatchTargetEvent(previous, 'statechange');
           }
           reg.active = worker;
-          if (replaceController) {
-            _controller = worker;
-            if (typeof setTimeout === 'function') {
-              setTimeout(function () {
-                dispatchTargetEvent(_container, 'controllerchange');
-              }, 0);
-            } else {
-              dispatchTargetEvent(_container, 'controllerchange');
-            }
+          var latestChanges = reg._claimClientsPending ? null : readStateChanges(reg);
+          var claimRequested = reg._claimClientsPending ||
+            !!(latestChanges && latestChanges.claimClients);
+          var claimController = claimRequested ?
+            readControllerSnapshot() : null;
+          if (replaceController ||
+              (claimController &&
+               String(claimController.id) === String(reg._id))) {
+            setController(worker);
           }
+          reg._claimClientsPending = false;
         } else if (state === 'redundant' && reg.active === worker) {
           reg.active = reg._previousActive;
           reg._previousActive = null;
@@ -2760,6 +2773,7 @@
           var changes = readStateChanges(reg);
           if (changes && changes.states && changes.states.length) {
             reg._pendingStates = changes.states.slice();
+            reg._claimClientsPending = changes.claimClients === true;
           } else if (applySnapshot(reg, readSnapshot(reg._id))) {
             return;
           }
@@ -2791,6 +2805,7 @@
             reg._stateSequence = 0;
             reg._pendingStates = [];
             reg._updateFoundPending = false;
+            reg._claimClientsPending = false;
             reg.installing = reg._worker;
             reg.waiting = null;
           }

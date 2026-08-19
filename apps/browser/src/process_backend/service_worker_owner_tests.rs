@@ -129,7 +129,8 @@ fn multiprocess_navigator_registration_uses_browser_owner() {
     let renderer = resolve_renderer_binary().expect("fresh zero-renderer binary is required");
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     let page_url = format!("http://{}/page", listener.local_addr().unwrap());
-    let worker_source = "addEventListener('install', event => event.waitUntil(Promise.resolve()));";
+    let worker_source = "addEventListener('install', event => event.waitUntil(Promise.resolve()));\
+         addEventListener('activate', event => event.waitUntil(clients.claim()));";
     let response = format!(
         "HTTP/1.1 200 OK\r\nContent-Type: application/javascript\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
         worker_source.len(),
@@ -157,9 +158,9 @@ fn multiprocess_navigator_registration_uses_browser_owner() {
            try {\
              var reg = await navigator.serviceWorker.register('/sw.js');\
              var ready = await navigator.serviceWorker.ready;\
-             var state = ready.active ? ready.active.state : 'none';\
-             var removed = await reg.unregister();\
-             globalThis.__swResult = reg.scope + '|' + state + '|' + String(removed);\
+             globalThis.__swReg = reg;\
+             globalThis.__swReady = ready;\
+             globalThis.__swResult = 'ready';\
            } catch (error) {\
              globalThis.__swResult = 'error:' + String(error && error.message ? error.message : error);\
            }\
@@ -174,15 +175,34 @@ fn multiprocess_navigator_registration_uses_browser_owner() {
             &mut snapshots,
             tab_id,
             2,
-            "return String(globalThis.__swResult);",
+            "if (globalThis.__swResult === 'ready' && navigator.serviceWorker.controller) {\
+               globalThis.__swResult = globalThis.__swReg.scope + '|' +\
+                 (globalThis.__swReady.active ? globalThis.__swReady.active.state : 'none') + '|' +\
+                 String(navigator.serviceWorker.controller === globalThis.__swReady.active);\
+             }\
+             return String(globalThis.__swResult);",
         )
         .unwrap();
         if let AutomationValue::String(value) = value
             && value != "pending"
+            && value != "ready"
         {
             break value;
         }
-        assert!(Instant::now() < deadline, "Service Worker registration did not settle");
+        if Instant::now() >= deadline {
+            let diagnostic = execute_script(
+                &mut backend,
+                &mut snapshots,
+                tab_id,
+                3,
+                "return [globalThis.__swResult, __zw_sw_controller(),\
+                   navigator.serviceWorker.controller && navigator.serviceWorker.controller.scriptURL,\
+                   globalThis.__swReady && globalThis.__swReady.active &&\
+                     globalThis.__swReady.active.state].join('|');",
+            )
+            .unwrap();
+            panic!("Service Worker registration did not settle: {diagnostic:?}");
+        }
         std::thread::sleep(Duration::from_millis(5));
     };
     server.join().unwrap();

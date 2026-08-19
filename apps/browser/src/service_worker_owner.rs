@@ -221,9 +221,12 @@ impl BrowserServiceWorkerOwner {
                 let result = self
                     .authorized_registration(profile, registration_id, &authority)
                     .and_then(|_| {
-                        let (latest_sequence, states) = self
-                            .manager(profile)
-                            .and_then(|manager| manager.state_changes_since(registration_id, after_sequence))
+                        let manager = self.manager(profile).ok_or_else(|| ServiceWorkerError {
+                            code: ServiceWorkerErrorCode::NotFound,
+                            message: "Service Worker registration does not exist".into(),
+                        })?;
+                        let (latest_sequence, states) = manager
+                            .state_changes_since(registration_id, after_sequence)
                             .ok_or_else(|| ServiceWorkerError {
                                 code: ServiceWorkerErrorCode::NotFound,
                                 message: "Service Worker registration does not exist".into(),
@@ -231,9 +234,25 @@ impl BrowserServiceWorkerOwner {
                         Ok(ServiceWorkerResult::StateChanges(ServiceWorkerStateChanges {
                             latest_sequence,
                             states: states.iter().copied().map(state_wire).collect(),
+                            claim_clients: manager.claims_clients(registration_id),
                         }))
                     });
                 self.result_disposition(tab_id, request_id, result)
+            }
+            ServiceWorkerOperation::Controller => {
+                let controller = self
+                    .manager(profile)
+                    .and_then(|manager| {
+                        manager
+                            .active_registration_for_url(&authority.origin().ascii_serialization(), authority.as_str())
+                    })
+                    .cloned()
+                    .map(snapshot);
+                self.result_disposition(
+                    tab_id,
+                    request_id,
+                    Ok(ServiceWorkerResult::OptionalSnapshot(controller)),
+                )
             }
         }
     }
