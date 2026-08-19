@@ -421,9 +421,21 @@ fn test_tokenizer_url_backslash_escape() {
 
 #[test]
 fn test_tokenizer_url_whitespace_then_no_close() {
-    // URL 空白后不是 `)` → 返回已收集的 URL
+    // URL 空白后不是 `)` → bad-url，不得截断成已收集的合法 URL。
     let tokens: Vec<_> = Tokenizer::new("url(test .png)").collect_tokens();
-    assert!(tokens.len() >= 1);
+    assert!(matches!(&tokens[0], Token::Error(_)));
+}
+
+#[test]
+fn test_tokenizer_url_whitespace_then_eof_closes_url() {
+    let tokens: Vec<_> = Tokenizer::new("url(test.png\n").collect_tokens();
+    assert_eq!(tokens[0], Token::Url("test.png".to_string()));
+}
+
+#[test]
+fn test_tokenizer_quoted_url_rejects_trailing_input() {
+    let tokens: Vec<_> = Tokenizer::new("url(\"test.png\" extra)").collect_tokens();
+    assert!(matches!(&tokens[0], Token::Error(_)));
 }
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -681,6 +693,12 @@ fn test_parse_import_url() {
         }
         _ => panic!("Expected Import"),
     }
+}
+
+#[test]
+fn test_parse_import_rejects_bad_url_token() {
+    let stylesheet = Parser::parse_stylesheet("@import url(my style.css); body { color: red; }");
+    assert!(stylesheet.rules.iter().all(|rule| !matches!(rule, Rule::Import(_))));
 }
 
 #[test]

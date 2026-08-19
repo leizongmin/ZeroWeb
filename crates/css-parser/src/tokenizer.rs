@@ -715,6 +715,9 @@ impl<'a> Tokenizer<'a> {
                 self.consume_whitespace();
                 if self.peek() == Some(')') {
                     self.consume();
+                } else if self.peek().is_some() {
+                    self.consume_bad_url_remnants();
+                    return Token::Error("Invalid URL trailing input".to_string());
                 }
                 return Token::Url(url);
             }
@@ -735,10 +738,15 @@ impl<'a> Tokenizer<'a> {
                         self.consume();
                         return Token::Url(url);
                     }
-                    return Token::Url(url);
+                    if self.peek().is_none() {
+                        return Token::Url(url);
+                    }
+                    self.consume_bad_url_remnants();
+                    return Token::Error("Invalid whitespace in URL".to_string());
                 }
                 Some('(') => {
                     // 嵌套括号在无引号 URL 中非法
+                    self.consume_bad_url_remnants();
                     return Token::Error("Invalid character in URL".to_string());
                 }
                 Some('\\') => {
@@ -770,6 +778,27 @@ impl<'a> Tokenizer<'a> {
                 None => {
                     return Token::Url(url);
                 }
+            }
+        }
+    }
+
+    fn consume_bad_url_remnants(&mut self) {
+        loop {
+            match self.peek() {
+                Some(')') => {
+                    self.consume();
+                    break;
+                }
+                Some('\\') => {
+                    self.consume();
+                    if self.peek().is_some() {
+                        self.consume();
+                    }
+                }
+                Some(_) => {
+                    self.consume();
+                }
+                None => break,
             }
         }
     }

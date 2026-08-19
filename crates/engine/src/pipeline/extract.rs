@@ -457,7 +457,10 @@ pub fn extract_html_style_text(html: &str) -> String {
     for style_id in doc.get_elements_by_tag_name("style") {
         if let Some(text) = doc.text_content(style_id) {
             out.push_str(&text);
-            out.push('\n');
+            // Resource extraction treats each <style> block as an independent EOF boundary.
+            // Close a possible unterminated url(...) so malformed CSS in one block cannot
+            // consume URLs from the next block after we concatenate the snippets.
+            out.push_str("\n)\n");
         }
     }
     // R1796：inline `style=` 属性值（如 `style="background-image: url(x)"`）亦是 CSS 文本，
