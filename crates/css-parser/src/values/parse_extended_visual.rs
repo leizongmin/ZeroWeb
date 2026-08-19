@@ -72,7 +72,10 @@ pub fn parse_filter(value: &str) -> Option<FilterValue> {
 
     // 解析单个 filter 函数
     if let Some(paren_pos) = value.find('(') {
-        let func_name = value[..paren_pos].trim();
+        let func_name = &value[..paren_pos];
+        if func_name.is_empty() || func_name.chars().any(char::is_whitespace) {
+            return None;
+        }
         if !value.ends_with(')') {
             return None;
         }

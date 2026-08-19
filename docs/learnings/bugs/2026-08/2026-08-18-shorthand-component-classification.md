@@ -125,6 +125,8 @@ Filter amount functions exposed the shared-number lower-bound variant: a shared 
 
 Filter length and angle functions exposed the Rust-float widening variant: `f32::parse` accepts textual `inf` and `NaN`, but CSS numeric tokens do not. Filter-specific parsers must require finite values after unit conversion, not just successful Rust parsing.
 
+Filter functions exposed the function-token-boundary variant: trimming the substring before `(` accepts `blur (5px)`, but CSS tokenization only forms a function token when the ident is immediately followed by `(`. Consumer parsers that operate on strings must preserve that boundary and reject whitespace before the opening parenthesis.
+
 ## Root Cause
 
 The shorthand layer used heuristic component classifiers and treated unrecognized tokens as absent optional components. That is wrong for CSS shorthands such as `border`, where every token must match one of the allowed component grammars. A shared parser can also be broader than the property grammar that consumes it: general length parsing may accept `auto`, intrinsic sizing keywords, or percentages that `border-width` must reject.

@@ -691,6 +691,13 @@ fn test_filter_no_paren() {
     assert!(parse_filter("blur").is_none());
 }
 
+#[test]
+fn test_filter_rejects_space_before_function_paren() {
+    assert!(parse_filter("blur (5px)").is_none());
+    assert!(parse_filter("brightness (1)").is_none());
+    assert!(parse_filter("drop-shadow (1px 2px black)").is_none());
+}
+
 // ── R2306：parse_filter_list — 多函数列表（CSS Filter Effects：none | <filter-function>+）──
 
 #[test]
