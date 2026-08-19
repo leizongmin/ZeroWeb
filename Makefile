@@ -11,9 +11,9 @@ endif
 
 # target/ 磁盘占用守卫（2026-08-18：长时间 rally 循环曾把整块磁盘跑满——target/
 # 多 feature 组合产物 + incremental 缓存只增不减，且仓库根 core.* OOM 转储无人清）。
-# 重型入口（build/test/reftest 家族/bench 家族）前置执行：每次清仓库根 core.* 转储，
-# target/ 超 100GB 自动清空并继续，阈值内零开销放行。阈值可调：
-# make test ZW_TARGET_DISK_LIMIT_GB=50；跳过：ZW_TARGET_DISK_GUARD=0。
+# 重型入口（build/test/browser/reftest/product-smoke/bench/Android 构建家族）前置执行：
+# 每次清仓库根 core.* 转储，target/ 超 50GB 自动分级清理并继续，阈值内零开销放行。阈值可调：
+# make test ZW_TARGET_DISK_LIMIT_GB=80；跳过：ZW_TARGET_DISK_GUARD=0。
 # 详见 scripts/target-disk-guard.sh 与 docs/rally/oom-guard.md。
 target-disk-guard:
 	@$(WPT_BASH) scripts/target-disk-guard.sh
@@ -61,19 +61,19 @@ BROWSER_BIN = ./target/release/zero-browser
 BROWSER_RUN = $(BROWSER_BIN)
 
 ifeq ($(OS),Windows_NT)
-browser-build:
+browser-build: target-disk-guard
 	powershell -NoProfile -ExecutionPolicy Bypass -File scripts\browser.ps1 -BuildOnly
 
-browser:
+browser: target-disk-guard
 	powershell -NoProfile -ExecutionPolicy Bypass -File scripts\browser.ps1
 
 # 与 browser-cpu 相同（保留别名）
 browser-wpt-parity: browser-cpu
 
-browser-cpu:
+browser-cpu: target-disk-guard
 	powershell -NoProfile -ExecutionPolicy Bypass -File scripts\browser-cpu.ps1
 else
-browser-build: setup-rusty-v8
+browser-build: setup-rusty-v8 target-disk-guard
 	cargo build --release -p zero-browser
 	cargo build --release -p zero-renderer -p zero-compositor -p zero-image-decoder
 
@@ -104,13 +104,13 @@ browser-debug-x11: browser-build
 # 真实产品窗口 smoke：CPU/scale=1 下串行运行 legacy 与 compositor 两种模式，
 # 由最终 softbuffer framebuffer 写 PNG，不依赖系统截图或无障碍权限。
 # 构建、两个进程链和全部断言都受 test-guard 内存门禁与 900 秒墙钟保护。
-browser-compositor-smoke: target/test-guard
+browser-compositor-smoke: target-disk-guard target/test-guard
 	./target/test-guard --time-limit 900 -- sh scripts/browser-compositor-smoke.sh
 
 # 可选真实网站 GUI 验收：打开 HTTPS 页面并依次滚动、缩放、刷新，保存四张最终
 # framebuffer 截图并断言 compositor 全程健康。默认 URL 可用 GUI_SMOKE_URL 覆盖。
 # 此 target 故意不接入 make test，避免网络和真实窗口成为常规单测前置条件。
-browser-compositor-real-site-smoke: target/test-guard
+browser-compositor-real-site-smoke: target-disk-guard target/test-guard
 	./target/test-guard --time-limit 900 -- sh scripts/browser-compositor-real-site-smoke.sh
 
 # ── 测试防护 (test-guard) ──────────────────────────────────────────────
@@ -208,7 +208,7 @@ testharness-dom: target-disk-guard fetch-wpt-dom target/test-guard zero-wpt-runn
 
 # js-dom goal DC-3 native 路径对照：ZW_NATIVE_DOM=1 走原生绑定路径（非默认 polyfill）。
 # 用于建立 native 通过率基线，对照 R2/R3/R4 native 修复（classList/createElement/node mutation）。
-testharness-dom-native: fetch-wpt-dom target/test-guard zero-wpt-runner-release
+testharness-dom-native: target-disk-guard fetch-wpt-dom target/test-guard zero-wpt-runner-release
 	ZW_NATIVE_DOM=1 ./target/test-guard --per-proc-mem 10 --total-mem 28 --time-limit 900 -- ./target/release/zero-wpt-runner testharness-dom $(if $(FILTER),$(FILTER),)
 
 # IndexedDB goal M1：上游 IndexedDB factory/global/event 首批 testharness 基线。
@@ -216,7 +216,7 @@ testharness-dom-native: fetch-wpt-dom target/test-guard zero-wpt-runner-release
 fetch-wpt-indexeddb:
 	bash tests/wpt-runner/scripts/fetch-indexeddb-subset.sh
 
-testharness-indexeddb: fetch-wpt-indexeddb target/test-guard zero-wpt-runner-release
+testharness-indexeddb: target-disk-guard fetch-wpt-indexeddb target/test-guard zero-wpt-runner-release
 	./target/test-guard --per-proc-mem 10 --total-mem 28 --time-limit $(or $(TIME_LIMIT),900) -- ./target/release/zero-wpt-runner testharness-indexeddb $(if $(FILTER),$(FILTER),)
 
 # Service Worker WPT 分母：294 个 source 必须有唯一且可重建的执行 lane。
@@ -285,7 +285,7 @@ reftest-upstream: target-disk-guard fetch-wpt-data target/test-guard zero-wpt-ru
 # 用法：make reftest-oracle                       全量（慢，~10k 案）
 #       make reftest-oracle DIR=css-grid          单目录
 #       make reftest-oracle DIR=css-grid ORACLE_PASS_RATIO=0.005   调严判定阈值
-reftest-oracle: fetch-wpt-data target/test-guard zero-wpt-runner-release
+reftest-oracle: target-disk-guard fetch-wpt-data target/test-guard zero-wpt-runner-release
 	./target/test-guard -- ./target/release/zero-wpt-runner reftest-oracle $(DIR)
 
 # DC-14 oracle-shots 抓取（R1253）：WSL2 + chromium 150 headless 渲染 SIGTRAP，用非 headless
@@ -305,7 +305,7 @@ capture-oracle: fetch-wpt-data
 WELCOME_HTML := apps/browser/assets/welcome.html
 WELCOME_ORACLE := docs/goal/rendering-compat/evidence/product-static/welcome-chromium.png
 PRODUCT_ORACLE_SCRIPT := tests/wpt-runner/scripts/product-oracle-shot.mjs
-product-smoke-oracle: target/test-guard
+product-smoke-oracle: target-disk-guard target/test-guard
 	@test -d tests/wpt-runner/scripts/node_modules/puppeteer-core || (echo "Error: puppeteer-core is missing; run 'npm ci --prefix tests/wpt-runner/scripts' first."; exit 2)
 	./target/test-guard -- node $(PRODUCT_ORACLE_SCRIPT) --root apps/browser/assets --html welcome.html --out $(WELCOME_ORACLE) --width 800 --height 600
 
@@ -314,13 +314,13 @@ FORM_VISUAL_ORACLE ?= $(FORM_VISUAL_ROOT)/screenshots/chrome-800x720-gray.png
 FORM_VISUAL_GEOMETRY ?= $(FORM_VISUAL_ROOT)/chrome-geometry-gray.json
 FORM_VISUAL_CJK_DIR ?= $(HOME)/.cache/zw-oracle-fonts/usr/share/fonts/opentype/noto
 FORM_VISUAL_GPU_DIR ?= target/form-visual-browser-gpu-smoke
-form-visual-smoke: target/test-guard zero-wpt-runner-release
+form-visual-smoke: target-disk-guard target/test-guard zero-wpt-runner-release
 	@test -f $(FORM_VISUAL_ORACLE) || (echo "Error: missing $(FORM_VISUAL_ORACLE)"; exit 2)
 	@test -f $(FORM_VISUAL_GEOMETRY) || (echo "Error: missing $(FORM_VISUAL_GEOMETRY)"; exit 2)
 	@test -f $(FORM_VISUAL_CJK_DIR)/NotoSansCJK-Regular.ttc || (echo "Error: missing Noto CJK font in $(FORM_VISUAL_CJK_DIR)"; exit 2)
 	ZW_CJK_FACE_INDEX=2 ZW_CJK_FONT_DIR=$(FORM_VISUAL_CJK_DIR) ./target/test-guard -- ./target/release/zero-wpt-runner product-smoke examples/forms/form-interaction-test.html --base-dir examples/forms --oracle $(FORM_VISUAL_ORACLE) --geometry-oracle $(FORM_VISUAL_GEOMETRY) --out $(FORM_VISUAL_ROOT)/screenshots/zeroweb-final.png --width 800 --height 720 --channel-diff 8 --pixel-radius 1 --max-diff 5 --max-geometry-diff 2 --struct-check --region name:10 --region note:10 --region subscribe:10 --region plan-basic:10 --region plan-pro:10 --region click:10 --region reset:10 --region submit:10 --region result:10
 
-form-visual-browser-gpu-smoke: target/test-guard
+form-visual-browser-gpu-smoke: target-disk-guard target/test-guard
 	@test -n "$(DISPLAY)" || (echo "Error: DISPLAY is required for the real browser GPU smoke"; exit 2)
 	@test -f $(FORM_VISUAL_ORACLE) || (echo "Error: missing $(FORM_VISUAL_ORACLE)"; exit 2)
 	@test -f $(FORM_VISUAL_CJK_DIR)/NotoSansCJK-Regular.ttc || (echo "Error: missing Noto CJK font in $(FORM_VISUAL_CJK_DIR)"; exit 2)
@@ -330,7 +330,7 @@ form-visual-browser-gpu-smoke: target/test-guard
 	ZW_BROWSER_GPU_DMABUF_IMPORT=0 ZW_CJK_FACE_INDEX=2 ZW_CJK_FONT_DIR=$(FORM_VISUAL_CJK_DIR) ./target/test-guard --time-limit 150 -- ./target/release/zero-browser --renderer=gpu --scale=1 --viewport-width=800 --viewport-height=720 --gui-smoke-url=file://$(CURDIR)/examples/forms/form-interaction-test.html --gui-smoke-dir=$(FORM_VISUAL_GPU_DIR)
 	./target/release/zero-wpt-runner compare-png $(FORM_VISUAL_GPU_DIR)/01-loaded-page.png $(FORM_VISUAL_ORACLE) --max-diff 5 --channel-diff 8 --pixel-radius 1
 
-product-smoke: target/test-guard zero-wpt-runner-release
+product-smoke: target-disk-guard target/test-guard zero-wpt-runner-release
 	# 表单流畅度门禁：固定尺寸 value-only 输入不得重新 parse/style/layout，且每次最多发布一帧。
 	./target/test-guard --time-limit 900 -- bash scripts/run-form-input-perf.sh
 	@test -f $(WELCOME_ORACLE) || (echo "Error: missing $(WELCOME_ORACLE); run 'make product-smoke-oracle' and commit the generated oracle."; exit 2)
@@ -376,16 +376,16 @@ audit-imported-font-resources:
 # oracle 变体记录 DC-14 credible pass（需先 make capture-oracle 生成 oracle-shots）。
 # 用法: make reftest-trend [NOTE="R21xx 修复后"]
 #       make reftest-trend-oracle [NOTE="..."]
-reftest-trend: fetch-wpt-data target/test-guard
+reftest-trend: target-disk-guard fetch-wpt-data target/test-guard
 	./target/test-guard -- bash scripts/record-wpt-trend.sh $(if $(NOTE),--note "$(NOTE)")
 
-reftest-trend-oracle: fetch-wpt-data target/test-guard
+reftest-trend-oracle: target-disk-guard fetch-wpt-data target/test-guard
 	./target/test-guard -- bash scripts/record-wpt-trend.sh --oracle $(if $(NOTE),--note "$(NOTE)")
 
 # Reftest smoke 分层门禁（B2）：跑 reftest-smoke.txt 清单（已知通过的
 # 代表性 case，秒级），用作 PR CI 快门禁；全量留给 reftest / reftest-trend。
 # 清单填充：从全量通过结果中挑代表性 case 写入 tests/wpt-runner/reftest-smoke.txt。
-reftest-smoke: fetch-wpt-data target/test-guard
+reftest-smoke: target-disk-guard fetch-wpt-data target/test-guard
 	./target/test-guard -- bash scripts/run-reftest-smoke.sh
 
 # 布局树 dump golden 回归（B1/P3）：渲染测试页 → dump 布局树 → 与 golden 对比。
@@ -396,7 +396,7 @@ reftest-smoke: fetch-wpt-data target/test-guard
 layout-golden: target-disk-guard fetch-wpt-data target/test-guard
 	./target/test-guard -- bash scripts/run-layout-golden.sh $(FILTER)
 
-layout-golden-update: fetch-wpt-data target/test-guard
+layout-golden-update: target-disk-guard fetch-wpt-data target/test-guard
 	./target/test-guard -- bash scripts/run-layout-golden.sh --update $(FILTER)
 
 # 月度工程报告（P6/C2）：从 git 历史 + WPT 趋势自动生成 docs/monthly/YYYY-MM.md。
@@ -431,7 +431,7 @@ bench-trend: target-disk-guard target/test-guard
 # 达标口径（goal line 318）。新增 fixture 写入 evidence/product-static/legacy-html/。
 # 用法：make product-smoke-legacy
 LEGACY_DIR := docs/goal/rendering-compat/evidence/product-static/legacy-html
-product-smoke-legacy: target/test-guard
+product-smoke-legacy: target-disk-guard target/test-guard
 	bash $(LEGACY_DIR)/run-all.sh
 
 # 从 docs/learnings/*/*.md 的 frontmatter 重建 docs/learnings/INDEX.md（生成物勿手改）
@@ -443,13 +443,13 @@ ifeq ($(OS),Windows_NT)
 android-preflight:
 	powershell -NoProfile -ExecutionPolicy Bypass -File scripts\android\preflight.ps1
 
-android-apk: android-preflight
+android-apk: android-preflight target-disk-guard
 	cd apps\android-browser && gradlew.bat --no-daemon :app:assembleEmulatorDebug
 
-android-release-apk: android-preflight
+android-release-apk: android-preflight target-disk-guard
 	cd apps\android-browser && gradlew.bat --no-daemon :app:assembleArm64Release
 
-android-wsl-renderer-apk: android-preflight
+android-wsl-renderer-apk: android-preflight target-disk-guard
 	cd apps\android-browser && gradlew.bat --no-daemon -PuseWslRenderer :app:assembleEmulatorDebug
 
 android-wsl-renderer-install-smoke: android-wsl-renderer-apk
@@ -465,10 +465,10 @@ android-preflight:
 	@rustup target list --installed | grep -qx x86_64-linux-android
 	@command -v cargo-ndk >/dev/null
 
-android-apk: android-preflight
+android-apk: android-preflight target-disk-guard
 	cd apps/android-browser && ./gradlew --no-daemon :app:assembleEmulatorDebug
 
-android-release-apk: android-preflight
+android-release-apk: android-preflight target-disk-guard
 	cd apps/android-browser && ./gradlew --no-daemon :app:assembleArm64Release
 
 android-install-smoke: android-apk
