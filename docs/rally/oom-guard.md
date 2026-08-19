@@ -54,14 +54,14 @@ cat /proc/$(pgrep -f 'rally run')/cgroup   # 应含 rally-oom-guard.scope
 
 内存之外的姊妹问题：长时间 rally 循环中 `target/` 只增不减（多 feature 组合产物 +
 incremental 缓存），曾把整块磁盘跑满。`scripts/target-disk-guard.sh` 作为重型
-make 入口（build / test / reftest 家族 / bench 家族）的前置 prerequisite：
+make 入口（build / test / browser / reftest / product-smoke / bench / Android 构建家族）的前置 prerequisite：
 
 - **每次执行**都清仓库根 `core.*` OOM 转储（git 不追踪，堆积无上限；2026-08-18
   实测积了 23 个 / 973MB）。
-- `target/` 占用超过 **100GB**（`ZW_TARGET_DISK_LIMIT_GB` 可调）时全量清空后继续。
-  选全量清而非按 mtime 部分清：partial 清理破坏 cargo 增量一致性，下次构建反而
-  产出更多中间产物。
+- `target/` 占用超过 **50GB**（`ZW_TARGET_DISK_LIMIT_GB` 可调）时先删除 incremental 缓存；
+  仍超阈值再全量清空后继续。选全量清而非按 mtime 部分清：partial 清理破坏 cargo
+  增量一致性，下次构建反而产出更多中间产物。
 - 阈值内零开销放行（一次 `du`）；守卫自身故障（权限等）放行不阻塞。
-- 跳过：`ZW_TARGET_DISK_GUARD=0`；调阈值：`make test ZW_TARGET_DISK_LIMIT_GB=50`。
+- 跳过：`ZW_TARGET_DISK_GUARD=0`；调阈值：`make test ZW_TARGET_DISK_LIMIT_GB=80`。
 - 跨平台：Linux/macOS 原生 bash；Windows 经 Git Bash（Makefile `$(WPT_BASH)`，
   与 fetch-wpt-data 同款入口，见 Makefile 顶部注释）。
