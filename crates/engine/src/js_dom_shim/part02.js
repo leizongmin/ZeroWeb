@@ -2667,6 +2667,12 @@
         if (state === 'activated') return 3;
         return 0;
       }
+      function stateForSequence(sequence) {
+        if (sequence === 1) return 'installed';
+        if (sequence === 2) return 'activating';
+        if (sequence === 3) return 'activated';
+        return 'installing';
+      }
       function applyState(reg, state) {
         if (!reg || !reg._worker) return;
         var worker = reg._worker;
@@ -2690,8 +2696,15 @@
         reg.scope = snapshot.scope || reg.scope;
         reg._worker.scriptURL = snapshot.scriptURL || reg._worker.scriptURL;
         var state = snapshot.state;
-        applyState(reg, state);
-        reg._stateSequence = Math.max(reg._stateSequence, stateSequence(state));
+        var targetSequence = stateSequence(state);
+        if (targetSequence > reg._stateSequence) {
+          for (var sequence = reg._stateSequence + 1; sequence <= targetSequence; sequence++) {
+            applyState(reg, stateForSequence(sequence));
+          }
+          reg._stateSequence = targetSequence;
+        } else {
+          applyState(reg, state);
+        }
         return state === 'activated' || state === 'redundant';
       }
       function pollRegistration(reg) {
