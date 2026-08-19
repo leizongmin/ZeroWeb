@@ -1848,6 +1848,22 @@ fn test_scroll_margin_applied() {
 
     assert!(apply_property_value(&mut style, "scroll-margin-left", "15px"));
     assert_eq!(style.scroll_margin_left, 15.0);
+
+    assert!(apply_property_value(&mut style, "scroll-margin-top", "-4px"));
+    assert_eq!(style.scroll_margin_top, -4.0);
+    let previous = style.scroll_margin_right;
+    for value in [
+        "10%",
+        "auto",
+        "thin",
+        "min-content",
+        "fit-content(10px)",
+        "infpx",
+        "NaNpx",
+    ] {
+        assert!(!apply_property_value(&mut style, "scroll-margin-right", value));
+        assert_eq!(style.scroll_margin_right, previous, "{} should not overwrite", value);
+    }
 }
 
 #[test]

@@ -431,26 +431,34 @@ pub fn apply_advanced_property_value(style: &mut ComputedStyle, property: &str, 
         }
         "scroll-margin-top" => {
             if let Some(v) = parse_length_or_math(value) {
-                style.scroll_margin_top = resolve_length_to_px(v);
-                return true;
+                if scroll_margin_length_is_valid(value, &v) {
+                    style.scroll_margin_top = resolve_length_to_px(v);
+                    return true;
+                }
             }
         }
         "scroll-margin-right" => {
             if let Some(v) = parse_length_or_math(value) {
-                style.scroll_margin_right = resolve_length_to_px(v);
-                return true;
+                if scroll_margin_length_is_valid(value, &v) {
+                    style.scroll_margin_right = resolve_length_to_px(v);
+                    return true;
+                }
             }
         }
         "scroll-margin-bottom" => {
             if let Some(v) = parse_length_or_math(value) {
-                style.scroll_margin_bottom = resolve_length_to_px(v);
-                return true;
+                if scroll_margin_length_is_valid(value, &v) {
+                    style.scroll_margin_bottom = resolve_length_to_px(v);
+                    return true;
+                }
             }
         }
         "scroll-margin-left" => {
             if let Some(v) = parse_length_or_math(value) {
-                style.scroll_margin_left = resolve_length_to_px(v);
-                return true;
+                if scroll_margin_length_is_valid(value, &v) {
+                    style.scroll_margin_left = resolve_length_to_px(v);
+                    return true;
+                }
             }
         }
         "scroll-padding-top" => {
@@ -1762,6 +1770,34 @@ fn perspective_length_is_valid(raw: &str, value: &LengthValue) -> bool {
         | LengthValue::Rch(v)
         | LengthValue::Ic(v)
         | LengthValue::Ric(v) => v.is_finite() && *v >= 0.0,
+        LengthValue::Calc(_) => true,
+        _ => false,
+    }
+}
+
+fn scroll_margin_length_is_valid(raw: &str, value: &LengthValue) -> bool {
+    if matches!(
+        raw.trim().to_ascii_lowercase().as_str(),
+        "thin" | "medium" | "thick" | "auto" | "min-content" | "max-content" | "fit-content"
+    ) {
+        return false;
+    }
+    match value {
+        LengthValue::Px(v)
+        | LengthValue::Em(v)
+        | LengthValue::Ex(v)
+        | LengthValue::Rex(v)
+        | LengthValue::Cap(v)
+        | LengthValue::Rcap(v)
+        | LengthValue::Rem(v)
+        | LengthValue::Vh(v)
+        | LengthValue::Vw(v)
+        | LengthValue::Vmin(v)
+        | LengthValue::Vmax(v)
+        | LengthValue::Ch(v)
+        | LengthValue::Rch(v)
+        | LengthValue::Ic(v)
+        | LengthValue::Ric(v) => v.is_finite(),
         LengthValue::Calc(_) => true,
         _ => false,
     }
