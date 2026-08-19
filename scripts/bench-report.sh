@@ -145,25 +145,70 @@ for bench_spec in $(printf '%s\n' "${BENCH_SPECS[@]}" | sort); do
     fi
 done
 
+# ---------- 0. 批量预编译（相位分离）----------
+# 一次 cargo 调用带全部 -p/--bench 对（交错 -p/--bench 精确选择对应目标，实测 16 个全建），
+# 让 cargo 满核并行编译链接；失败则 fail-fast（不必等测量跑完才发现编不过）。
+# 只影响墙钟，不触碰测量相位——测量时零编译，机器静默。
+batch_bench_args=()
+for bench_spec in "${BENCH_CRATES[@]}"; do
+    batch_bench_args+=(-p "${bench_spec%%:*}" --bench "${bench_spec#*:}")
+done
+
 # ---------- 1. criterion 微基准 ----------
 if [ "$QUICK_MODE" = "1" ]; then
-    # 编译检查：16 个 bench 全部 --no-run 通过才算过
-    for bench_spec in "${BENCH_CRATES[@]}"; do
-        crate="${bench_spec%%:*}"
-        bench_name="${bench_spec#*:}"
-        echo "--- $crate ($bench_name) --no-run ---" | tee -a "$REPORT_TXT"
-        if cargo bench -p "$crate" --bench "$bench_name" --no-run > "$TMP_DIR/bench.log" 2>&1; then
-            PASSED+=("$crate")
-        else
-            FAILED+=("$crate")
-            echo "[WARN] $crate compile-check failed" | tee -a "$REPORT_TXT"
-            tail -5 "$TMP_DIR/bench.log" | tee -a "$REPORT_TXT"
-        fi
-    done
+    # 编译检查：全部 bench 一次 --no-run 通过才算过（2026-08-19 相位分离：
+    # 旧逐 crate 循环暖缓存 ~297s 纯 cargo 进程/fingerprint 开销，批量化后秒级——
+    # 16 次 cargo 调用合并为 1 次，各 bench 名唯一故目标选择等价）。
+    # 批量失败时回退逐 crate 循环定位失败者（保留归因语义）。
+    if cargo bench "${batch_bench_args[@]}" --no-run > "$TMP_DIR/bench_batch.log" 2>&1; then
+        for bench_spec in "${BENCH_CRATES[@]}"; do
+            PASSED+=("${bench_spec%%:*}")
+        done
+        echo "--- all ${#BENCH_CRATES[@]} crates batch --no-run OK ---" | tee -a "$REPORT_TXT"
+    else
+        echo "[WARN] batch compile-check failed, falling back to per-crate for attribution" | tee -a "$REPORT_TXT"
+        for bench_spec in "${BENCH_CRATES[@]}"; do
+            crate="${bench_spec%%:*}"
+            bench_name="${bench_spec#*:}"
+            echo "--- $crate ($bench_name) --no-run ---" | tee -a "$REPORT_TXT"
+            if cargo bench -p "$crate" --bench "$bench_name" --no-run > "$TMP_DIR/bench.log" 2>&1; then
+                PASSED+=("$crate")
+            else
+                FAILED+=("$crate")
+                echo "[WARN] $crate compile-check failed" | tee -a "$REPORT_TXT"
+                tail -5 "$TMP_DIR/bench.log" | tee -a "$REPORT_TXT"
+            fi
+        done
+    fi
 else
+    # 相位分离（2026-08-19）：测量前一次性预编译全部目标（bench 批量 + release 二进制），
+    # 测量循环内只剩纯测量——避免「编译→测→再编译」交错，且编译可满核并行。
+    # 末相位的 cargo run 仍会做 freshness 检查，增量时秒级，非零即真失败。
+    rm -rf "$PROJECT_ROOT/target/criterion"
+    echo "--- pre-build (batched) ---" | tee -a "$REPORT_TXT"
+    PREBUILD_RC=0
+    cargo bench "${batch_bench_args[@]}" --no-run > "$TMP_DIR/bench_batch.log" 2>&1 || PREBUILD_RC=$?
+    if [ "$PREBUILD_RC" -eq 0 ]; then
+        # 裸 --bin 从 workspace 根解析（实测两二进制都建）；-p/--bin 混排会让 --bin
+        # 归属歧义（weekly.yml 同款裸 --bin 模式）
+        cargo build --release --quiet --bin zero-wpt-runner --bin form-input-perf \
+            > "$TMP_DIR/prebuild_pages.log" 2>&1 || PREBUILD_RC=$?
+    fi
+    if [ "$PREBUILD_RC" -ne 0 ]; then
+        echo "[WARN] pre-build failed (exit $PREBUILD_RC) — skipping measurement, report carries errors" | tee -a "$REPORT_TXT"
+        tail -10 "$TMP_DIR/bench_batch.log" 2>/dev/null | tee -a "$REPORT_TXT" || true
+        tail -10 "$TMP_DIR/prebuild_pages.log" 2>/dev/null | tee -a "$REPORT_TXT" || true
+        # error 条目在场 → perf-gate.sh 直接 FAIL（测量侧失败防御），语义与旧版
+        # 「bench 执行非零」一致；清空 BENCH_CRATES 跳过测量循环（否则 error 翻倍）
+        for bench_spec in "${BENCH_CRATES[@]}"; do
+            FAILED+=("${bench_spec%%:*}")
+            echo "{\"crate\":\"${bench_spec%%:*}\",\"bench\":\"${bench_spec#*:}\",\"error\":\"bench-exit-nonzero\"}" >> "$MICROBENCHES_JSONL"
+        done
+        BENCH_CRATES=()
+    fi
+
     # 真实测量：每次跑前快照 target/criterion 已有 sample.json，跑后 diff 出新文件
     #（同一 group 的旧数据在下一 crate 跑时会被 criterion 覆写，comm 只取本次新增）。
-    rm -rf "$PROJECT_ROOT/target/criterion"
     for bench_spec in "${BENCH_CRATES[@]}"; do
         crate="${bench_spec%%:*}"
         bench_name="${bench_spec#*:}"
@@ -257,6 +302,8 @@ else
     CPU_CORES="unknown"
     cargo build --release -p zero-integration-tests --bin form-input-perf
 fi
+# 注：QUICK_MODE 下 form-input-perf 的编译在上方单独执行（不走批量预编译——
+# bench 目标与 bin 目标混在一次调用会让 --no-run 语义混乱；此处保持原状）。
 
 # 测量后负载校验（2026-08-08：共享机器上另一条流的 WPT 全量可能中途叠加——
 # 报告标记 suspect=true 供 perf-gate.sh 提示「结果不可信」，不参与收紧）
