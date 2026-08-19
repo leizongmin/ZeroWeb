@@ -677,8 +677,8 @@ fn test_gradient_radial_only_shape() {
 // 行 776: parse_radial_gradient_inner — 其他 None 路径
 #[test]
 fn test_gradient_radial_invalid_shape_size() {
-    // 无效的形状/尺寸组合
-    assert!(parse_gradient("radial-gradient(ellipse xyz, red, blue)").is_some());
+    // 无效的形状/尺寸组合必须拒绝，不能降级为默认 size。
+    assert!(parse_gradient("radial-gradient(ellipse xyz, red, blue)").is_none());
 }
 
 // 行 854: parse_position_pair — parts.len() > 2

@@ -421,6 +421,12 @@ fn test_radial_gradient_shape_at_position() {
 }
 
 #[test]
+fn test_radial_gradient_invalid_shape_size_or_position() {
+    assert!(parse_gradient("radial-gradient(ellipse xyz, red, blue)").is_none());
+    assert!(parse_gradient("radial-gradient(circle at bogus, red, blue)").is_none());
+}
+
+#[test]
 fn test_radial_gradient_no_args() {
     assert!(parse_gradient("radial-gradient()").is_none());
 }
@@ -451,6 +457,12 @@ fn test_conic_gradient_at_position() {
 fn test_conic_gradient_from_angle_at_position() {
     let result = parse_gradient("conic-gradient(from 90deg at 25% 75%, red, blue)");
     assert!(result.is_some());
+}
+
+#[test]
+fn test_conic_gradient_invalid_config() {
+    assert!(parse_gradient("conic-gradient(from bogus, red, blue)").is_none());
+    assert!(parse_gradient("conic-gradient(at bogus, red, blue)").is_none());
 }
 
 #[test]

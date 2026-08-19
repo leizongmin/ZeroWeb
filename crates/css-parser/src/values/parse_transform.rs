@@ -995,12 +995,11 @@ fn parse_radial_gradient_inner(inner: &str, repeating: bool) -> Option<GradientV
             || shape_lower.contains(" at "))
     {
         // 解析 shape + size + at position
-        if let Some((s, sz, px, py)) = parse_radial_shape_and_position(shape_src) {
-            shape = s;
-            size = sz;
-            pos_x = px;
-            pos_y = py;
-        }
+        let (s, sz, px, py) = parse_radial_shape_and_position(shape_src)?;
+        shape = s;
+        size = sz;
+        pos_x = px;
+        pos_y = py;
         if let Some(i) = interp {
             interpolation = i;
         }
@@ -1045,22 +1044,21 @@ fn parse_radial_shape_and_position(s: &str) -> Option<(RadialShape, RadialSize, 
     if let Some(ap) = at_pos {
         // ap 指向 "at" 起始（首位=0；` at ` 命中时=find+1 指向其首空格后的 a）。
         let pos_str = &s[ap + 2..]; // 跳过 "at"
-        if let Some((px, py)) = parse_position_pair(pos_str.trim_start()) {
-            pos_x = px;
-            pos_y = py;
-        }
+        let (px, py) = parse_position_pair(pos_str.trim_start())?;
+        pos_x = px;
+        pos_y = py;
         // 解析 at 之前的部分为 shape/size（首位时为空 → 默认 ellipse farthest-corner）
         let shape_str = s[..ap].trim();
-        parse_radial_shape_size(shape_str, &mut shape, &mut size);
+        parse_radial_shape_size(shape_str, &mut shape, &mut size)?;
     } else {
-        parse_radial_shape_size(s, &mut shape, &mut size);
+        parse_radial_shape_size(s, &mut shape, &mut size)?;
     }
 
     Some((shape, size, pos_x, pos_y))
 }
 
 /// 解析 radial shape 和 size 关键字。
-fn parse_radial_shape_size(s: &str, shape: &mut RadialShape, size: &mut RadialSize) {
+fn parse_radial_shape_size(s: &str, shape: &mut RadialShape, size: &mut RadialSize) -> Option<()> {
     let lower = s.trim().to_ascii_lowercase();
 
     // 检查长度值（如 "50px 100px" 或 "circle 50px"）
@@ -1075,12 +1073,12 @@ fn parse_radial_shape_size(s: &str, shape: &mut RadialShape, size: &mut RadialSi
             "farthest-corner" => *size = RadialSize::FarthestCorner,
             _ => {
                 // 尝试解析为长度值
-                if let Some(lv) = parse_length(part) {
-                    *size = RadialSize::Length(lv);
-                }
+                let lv = parse_length(part)?;
+                *size = RadialSize::Length(lv);
             }
         }
     }
+    Some(())
 }
 
 /// 解析位置对（如 "center center"、"50% 50%"、"left top"）。
@@ -1090,12 +1088,12 @@ fn parse_position_pair(s: &str) -> Option<(LengthValue, LengthValue)> {
 
     match parts.len() {
         1 => {
-            let p = parse_position_keyword(parts[0]);
+            let p = parse_position_keyword(parts[0])?;
             Some((p.clone(), p))
         }
         2 => {
-            let px = parse_position_keyword(parts[0]);
-            let py = parse_position_keyword(parts[1]);
+            let px = parse_position_keyword(parts[0])?;
+            let py = parse_position_keyword(parts[1])?;
             Some((px, py))
         }
         _ => None,
@@ -1103,14 +1101,14 @@ fn parse_position_pair(s: &str) -> Option<(LengthValue, LengthValue)> {
 }
 
 /// 解析位置关键字为 LengthValue。
-fn parse_position_keyword(s: &str) -> LengthValue {
+fn parse_position_keyword(s: &str) -> Option<LengthValue> {
     match s.to_ascii_lowercase().as_str() {
-        "center" => LengthValue::Percentage(50.0),
-        "left" => LengthValue::Percentage(0.0),
-        "right" => LengthValue::Percentage(100.0),
-        "top" => LengthValue::Percentage(0.0),
-        "bottom" => LengthValue::Percentage(100.0),
-        other => parse_length(other).unwrap_or(LengthValue::Percentage(50.0)),
+        "center" => Some(LengthValue::Percentage(50.0)),
+        "left" => Some(LengthValue::Percentage(0.0)),
+        "right" => Some(LengthValue::Percentage(100.0)),
+        "top" => Some(LengthValue::Percentage(0.0)),
+        "bottom" => Some(LengthValue::Percentage(100.0)),
+        other => parse_length(other),
     }
 }
 
@@ -1135,11 +1133,10 @@ fn parse_conic_gradient_inner(inner: &str, repeating: bool) -> Option<GradientVa
     if !config_src.is_empty()
         && (config_lower.starts_with("from ") || config_lower.starts_with("at ") || config_lower.contains(" at "))
     {
-        if let Some((angle, px, py)) = parse_conic_config(config_src) {
-            from_angle = angle;
-            pos_x = px;
-            pos_y = py;
-        }
+        let (angle, px, py) = parse_conic_config(config_src)?;
+        from_angle = angle;
+        pos_x = px;
+        pos_y = py;
         if let Some(i) = interp {
             interpolation = i;
         }
@@ -1179,9 +1176,10 @@ fn parse_conic_config(s: &str) -> Option<(f64, LengthValue, LengthValue)> {
         // 找到 from 和 at 之间的部分作为角度
         let at_pos = after_from.to_ascii_lowercase().find(" at ").unwrap_or(after_from.len());
         let angle_str = after_from[..at_pos].trim();
-        if !angle_str.is_empty() {
-            angle = parse_angle(angle_str).unwrap_or(0.0);
+        if angle_str.is_empty() {
+            return None;
         }
+        angle = parse_angle(angle_str)?;
     }
 
     // 解析 "at <position>"（支持 "from X at Y" 和直接 "at Y"）
@@ -1194,10 +1192,9 @@ fn parse_conic_config(s: &str) -> Option<(f64, LengthValue, LengthValue)> {
         let pos_str = &s[at_pos + 3..];
         // 在第一个逗号处截断，避免渐变色标干扰位置解析
         let pos_str = pos_str.split(',').next().unwrap_or(pos_str).trim();
-        if let Some((px, py)) = parse_position_pair(pos_str) {
-            pos_x = px;
-            pos_y = py;
-        }
+        let (px, py) = parse_position_pair(pos_str)?;
+        pos_x = px;
+        pos_y = py;
     }
 
     Some((angle, pos_x, pos_y))
