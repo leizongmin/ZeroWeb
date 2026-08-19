@@ -2,7 +2,7 @@
 
 **入口文档**: [../service-workers.md](../service-workers.md)
 **创建日期**: 2026-08-17（goal 拆分 bootstrap）
-**最后更新**: 2026-08-19（M1-3c navigator.serviceWorker bridge 完成）
+**最后更新**: 2026-08-19（M1-4a Service Worker IPC contract 完成）
 
 ---
 
@@ -82,12 +82,14 @@ M0 启动门禁解除；当前进入 M1 in-process host bridge。
   与 in-process manager adapter，双后端端到端各 4/4
 - ✅ M1-3c：页面 register/snapshot/unregister callbacks 接 manager，R3318 生命周期模拟删除；
   双引擎页面 API 6/6，首次 controller 保持 null
+- ✅ M1-4a：renderer↔browser typed Service Worker request/response/snapshot/error contract；
+  纯值、无 script source，协议全套 298/298
 
 ## 缺口清单
 
 | # | 缺口 | 状态 |
 |---|------|------|
-| S1 | SW 执行环境架构与独立 runtime | 🔄 in-process runtime/manager/page bridge 已落；IPC 待接 |
+| S1 | SW 执行环境架构与独立 runtime | 🔄 in-process 真链路 + IPC contract 已落；browser handler 待接 |
 | S2 | scriptURL 不下载执行 | 🔄 WebView navigator 真链路已落；browser IPC 待接 |
 | S3 | fetch 拦截为零 | ⬜ M2（等 js-dom fetch 改造） |
 | S4 | 事件为 setTimeout 模拟 | ✅ 生命周期状态仅来自 manager；timer 只轮询 snapshot |
@@ -101,16 +103,17 @@ M0 启动门禁解除；当前进入 M1 in-process host bridge。
 
 ## 下一步计划
 
-1. **M1-4**：browser owner + renderer IPC callbacks，跨 renderer 保持 registration
-2. **M1-5**：SW WPT runner，建立 Tier A red/green baseline
-3. **M2 继续门控**：js-dom S6 与 storage-cache-api M1 均 land 后才改 fetch 主路径
+1. **M1-4b**：browser manager owner + script fetch/security handler
+2. **M1-4c**：renderer JS callbacks 经 IPC 调 browser，跨 renderer 保持 registration
+3. **M1-5**：SW WPT runner，建立 Tier A red/green baseline
+4. **M2 继续门控**：js-dom S6 与 storage-cache-api M1 均 land 后才改 fetch 主路径
 
 ## 里程碑状态
 
 | 里程碑 | 状态 |
 |--------|------|
 | M0 — 选型 RFC（门控） | ✅ 方案 C 已批准 |
-| M1 — 脚本真实执行 + 生命周期真事件 | 🔄 M1-3c in-process 页面真链路完成 |
+| M1 — 脚本真实执行 + 生命周期真事件 | 🔄 M1-4a IPC contract 完成 |
 | M2 — fetch 拦截 + Cache 集成 | ⬜ 门控：js-dom fetch 改造 land |
 | M3 — 控制语义 + 消息 + 收尾 | ⬜ |
 
@@ -174,6 +177,8 @@ M0 启动门禁解除；当前进入 M1 in-process host bridge。
   端到端见 [M1 WebView host bridge](evidence/2026-08-19-m1-webview-host-bridge.md)
 - M1-3c 页面 bridge：宿主 callbacks、真实 state snapshot、R3318 模拟删除与页面 API 双引擎
   验证见 [M1 page bridge](evidence/2026-08-19-m1-page-bridge.md)
+- M1-4a IPC contract：纯值 request/response/snapshot/error、追加判别值与 round-trip 门禁见
+  [M1 IPC contract](evidence/2026-08-19-m1-ipc-contract.md)
 
 ## M0 证据与决策记录
 
@@ -208,6 +213,7 @@ M0 启动门禁解除；当前进入 M1 in-process host bridge。
 | 2026-08-19 | M1-3a lifecycle runtime | 双引擎 install/activate + waitUntil typed outcome；runtime 10/10、manager 11/11 |
 | 2026-08-19 | M1-3b WebView host bridge | manager 自动推进；WebView 同源真实 fetch/install/activate；双后端 E2E 各 4/4 |
 | 2026-08-19 | M1-3c page bridge | navigator register/snapshot/unregister 接 manager；删除 timer 状态模拟；双后端 6/6 |
+| 2026-08-19 | M1-4a IPC contract | register/snapshot/unregister/activate-waiting typed wire；无 script source；protocol 298/298 |
 | 2026-08-19 | 三方案对比 | 拒绝同线程 context（无调度隔离）；拒绝从零线程（复制安全基建）；推荐抽取 Worker 线程核 |
 | 2026-08-19 | owner | production browser process 单一 owner；WebView 只做同算法 in-process adapter |
 | 2026-08-19 | 首个 driving WPT | `activation-after-registration.https.html` |

@@ -242,6 +242,10 @@ pub enum IpcMessageKind {
     IndexedDbConnectionEvent(IndexedDbConnectionEventParams),
     /// IndexedDB connection event 已在 JS owner 执行（renderer → browser）。
     IndexedDbConnectionEventAck(IndexedDbConnectionEventAckParams),
+    /// Service Worker 请求（renderer → browser owner）。
+    ServiceWorkerRequest(ServiceWorkerRequestParams),
+    /// Service Worker 响应（browser owner → renderer）。
+    ServiceWorkerResponse(ServiceWorkerResponseParams),
 }
 
 /// 焦点变更信息（渲染→浏览器）。
@@ -581,6 +585,149 @@ pub struct IndexedDbConnectionEventAckParams {
     pub connection_id: u64,
     /// Browser owner 分配的 connection request 标识。
     pub request_id: u64,
+}
+
+/// Renderer 发往 browser Service Worker owner 的请求。
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ServiceWorkerRequestParams {
+    /// 请求操作。
+    pub operation: ServiceWorkerOperation,
+}
+
+impl ServiceWorkerRequestParams {
+    /// Validate untrusted renderer strings before browser-side processing.
+    pub fn validate(&self) -> Result<(), &'static str> {
+        const MAX_URL_BYTES: usize = 64 * 1024;
+        match &self.operation {
+            ServiceWorkerOperation::Register {
+                script_url,
+                scope,
+                document_url,
+            } => {
+                if script_url.is_empty() || document_url.is_empty() {
+                    return Err("Service Worker script and document URL are required");
+                }
+                if script_url.len() > MAX_URL_BYTES
+                    || document_url.len() > MAX_URL_BYTES
+                    || scope.as_ref().is_some_and(|value| value.len() > MAX_URL_BYTES)
+                {
+                    return Err("Service Worker URL exceeds the length limit");
+                }
+                Ok(())
+            }
+            ServiceWorkerOperation::Snapshot { .. }
+            | ServiceWorkerOperation::Unregister { .. }
+            | ServiceWorkerOperation::ActivateWaiting { .. } => Ok(()),
+        }
+    }
+}
+
+/// Service Worker owner operation.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub enum ServiceWorkerOperation {
+    /// Register a fetched/evaluated worker for the current document.
+    Register {
+        /// Script URL, relative or absolute.
+        script_url: String,
+        /// Optional scope URL.
+        scope: Option<String>,
+        /// Renderer document URL; browser validates it against tab authority.
+        document_url: String,
+    },
+    /// Read one registration version snapshot.
+    Snapshot {
+        /// Browser-assigned registration version ID.
+        registration_id: u64,
+    },
+    /// Remove one registration version.
+    Unregister {
+        /// Browser-assigned registration version ID.
+        registration_id: u64,
+    },
+    /// Activate a waiting replacement.
+    ActivateWaiting {
+        /// Browser-assigned registration version ID.
+        registration_id: u64,
+    },
+}
+
+/// Browser Service Worker owner response.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ServiceWorkerResponseParams {
+    /// Typed operation result or stable error.
+    pub result: Result<ServiceWorkerResult, ServiceWorkerError>,
+}
+
+/// Successful Service Worker owner result.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub enum ServiceWorkerResult {
+    /// Registration started and script evaluation succeeded.
+    Registered {
+        /// Browser-assigned registration version ID.
+        registration_id: u64,
+    },
+    /// Current registration snapshot.
+    Snapshot(ServiceWorkerSnapshot),
+    /// Boolean operation result.
+    Boolean(bool),
+    /// Operation completed without a value.
+    Empty,
+}
+
+/// Pure-value registration snapshot.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ServiceWorkerSnapshot {
+    /// Registration version ID.
+    pub registration_id: u64,
+    /// Normalized script URL.
+    pub script_url: String,
+    /// Normalized scope URL.
+    pub scope: String,
+    /// Current worker lifecycle state.
+    pub state: ServiceWorkerStateWire,
+}
+
+/// IPC-safe Service Worker lifecycle state.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum ServiceWorkerStateWire {
+    /// Script is evaluating or install event is running.
+    Installing,
+    /// Install fulfilled; version is waiting.
+    Installed,
+    /// Activate event is running.
+    Activating,
+    /// Version is active.
+    Activated,
+    /// Version failed or was replaced/unregistered.
+    Redundant,
+}
+
+/// Service Worker owner error.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ServiceWorkerError {
+    /// Stable error category.
+    pub code: ServiceWorkerErrorCode,
+    /// Diagnostic safe for renderer exposure.
+    pub message: String,
+}
+
+/// Stable Service Worker IPC error category.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum ServiceWorkerErrorCode {
+    /// URL, scope, security context, or request shape is invalid.
+    InvalidArgument,
+    /// Requested registration does not exist.
+    NotFound,
+    /// Operation conflicts with current lifecycle state.
+    InvalidState,
+    /// Script fetch failed.
+    Network,
+    /// Script compile/evaluation or lifecycle event failed.
+    Script,
+    /// Browser owner reached a resource limit.
+    Capacity,
+    /// Browser owner failed internally.
+    Internal,
 }
 
 /// Renderer 页面导航开始信号。
