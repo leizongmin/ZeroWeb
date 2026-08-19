@@ -1014,6 +1014,19 @@ fn test_apply_letter_spacing_px() {
 }
 
 #[test]
+fn test_apply_letter_spacing_rejects_invalid_consumer_grammar() {
+    let mut style = ComputedStyle::default();
+    assert!(apply_property_value(&mut style, "letter-spacing", "3px"));
+    let previous = style.letter_spacing.clone();
+
+    for value in ["10%", "auto", "thin", "infpx", "NaNpx"] {
+        assert!(!apply_property_value(&mut style, "letter-spacing", value));
+        assert_eq!(style.letter_spacing, previous, "{} should not overwrite", value);
+        assert!(!style.letter_spacing_normal);
+    }
+}
+
+#[test]
 /// 测试 apply_property_value 对 letter-spacing: normal（解析为 0px）
 fn test_apply_letter_spacing_normal() {
     let mut style = ComputedStyle::default();

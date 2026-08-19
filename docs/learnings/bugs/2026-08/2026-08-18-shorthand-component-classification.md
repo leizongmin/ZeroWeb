@@ -181,6 +181,8 @@ Border-radius exposed the shared-alias variant inside a local validator: even a 
 
 Background-size exposed the dedicated-parser drift variant: having a property-specific parser is not enough if its internals still delegate to shared length parsing without checking the consuming grammar. Filter both single-value and two-value component paths for finite non-negative length/percentage values, and reject aliases that belong to other grammars before direct apply can persist them.
 
+Letter-spacing exposed the inherited-text direct-apply variant: inherited text longhands can bypass parser-level assumptions through `apply_property_value` and persist values from the shared length parser that are not in the property grammar. Validate direct writes against `normal | <length>` so percentages, sizing keywords, border-width aliases, and non-finite lengths fail without mutating the previous computed value.
+
 ## Root Cause
 
 The shorthand layer used heuristic component classifiers and treated unrecognized tokens as absent optional components. That is wrong for CSS shorthands such as `border`, where every token must match one of the allowed component grammars. A shared parser can also be broader than the property grammar that consumes it: general length parsing may accept `auto`, intrinsic sizing keywords, or percentages that `border-width` must reject.

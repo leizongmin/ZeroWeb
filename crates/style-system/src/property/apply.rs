@@ -718,9 +718,11 @@ pub fn apply_property_value_with_quirks(
                 return true;
             }
             if let Some(v) = parse_length_fn(value) {
-                style.letter_spacing = v;
-                style.letter_spacing_normal = false;
-                return true;
+                if letter_spacing_length_is_valid(value, &v) {
+                    style.letter_spacing = v;
+                    style.letter_spacing_normal = false;
+                    return true;
+                }
             }
         }
         "word-spacing" => {
@@ -1208,6 +1210,31 @@ pub(crate) fn padding_length_is_valid(raw: &str, value: &LengthValue) -> bool {
 
 fn border_radius_length_is_valid(raw: &str, value: &LengthValue) -> bool {
     padding_length_is_valid(raw, value)
+}
+
+fn letter_spacing_length_is_valid(raw: &str, value: &LengthValue) -> bool {
+    if matches!(raw.trim().to_ascii_lowercase().as_str(), "thin" | "medium" | "thick") {
+        return false;
+    }
+    match value {
+        LengthValue::Px(v)
+        | LengthValue::Em(v)
+        | LengthValue::Ex(v)
+        | LengthValue::Rex(v)
+        | LengthValue::Cap(v)
+        | LengthValue::Rcap(v)
+        | LengthValue::Rem(v)
+        | LengthValue::Vh(v)
+        | LengthValue::Vw(v)
+        | LengthValue::Vmin(v)
+        | LengthValue::Vmax(v)
+        | LengthValue::Ch(v)
+        | LengthValue::Rch(v)
+        | LengthValue::Ic(v)
+        | LengthValue::Ric(v) => v.is_finite(),
+        LengthValue::Calc(_) => true,
+        _ => false,
+    }
 }
 
 /// 解析 `color-scheme` 描述符为「是否暗 used-scheme」标志（CSS Color Adjust L1 §2.3）。
