@@ -10,7 +10,7 @@
 | 来源 | 覆盖 | 类型 | 置信度 |
 |------|------|------|--------|
 | WPT 官方 manifest API（version 9） | 完整文件分母、test URL 展开 | 一手事实 | 高 |
-| 固定 revision 的 jsDelivr 源文件镜像 | 221/294 个 testharness 正文 | 一手事实抽样 | 中高 |
+| 固定 revision 的 jsDelivr 源文件镜像 | 294/294 个 testharness 正文 | 一手事实 | 高 |
 | ZeroWeb 当前源码与 runner | 当前可执行能力 | 一手事实 | 高 |
 | Service Workers 规范、Chromium/MDN 文档 | 规范与架构补证 | 外部官方资料 | 高 |
 | A-E 分层、文件名聚类 | 实施排序 | 作者综合 | 待实现验证 |
@@ -23,6 +23,8 @@
 - 固定 revision 的完整 manifest 包含 **801 个源文件**：294 个 testharness 源生成
   331 个测试 URL，另有 499 个 support、2 个 crashtest、5 个 manual 和 1 个 reftest。
   核心 `service-worker/` 子树占 276 个 testharness 源 / 277 个 URL。
+- [逐文件清单](2026-08-19-m0-wpt-case-inventory.tsv) 记录全部 294 个 testharness 源的
+  manifest SHA、URL/context、里程碑、文件名聚类、直接依赖信号和候选裁决。
 - 这不等于全部上游用例都超出 ZeroWeb 环境。M1 完成后，单页面、单注册、静态资源的
   生命周期用例可形成第一批真实基线；M2 完成后再加入单客户端 fetch/respondWith 用例。
 - iframe、多客户端、SharedWorker、跨 origin、动态服务端 handler、WebSocket 和
@@ -131,28 +133,34 @@ fixture adapter；不能将 `.py` 当普通文本响应。
 或动态服务端，直接验证 M1 的核心链路，失败信号也能区分“脚本未抓取”“install 未派发”
 和“状态事件未推进”。
 
-## 3A. 正文样本依赖信号
+## 3A. 正文全量依赖信号
 
-固定 revision 的 CDN 正文成功取得 221/294 个 testharness 源（75.2%），其中核心子树
-203/276。下表按源码正文正则扫描，信号可重叠：
+固定 revision 的 CDN 正文已取得 294/294 个 testharness 源，其中核心子树 276/276。
+下表按源码正文正则扫描，信号可重叠：
+
+每个正文均按 Git blob 规则重新计算 SHA-1，并与 manifest 的对象 SHA 比较，294/294
+匹配。逐文件 inventory 的 SHA-256 为
+`8905f3de41dd53432758461b64cf68a59ebcdecd970f3d0add724957e709a3e7`。
 
 | 信号 | 命中文件 | 对首批 runner 的含义 |
 |------|---------:|----------------------|
-| iframe 创建/helper | 140 | 当前单 WebView runner 无真实子 browsing context |
-| 动态 server（`.py`/stash/pipe） | 63 | 静态文件映射不足 |
-| fetch/respondWith | 58 | M2 前不纳入 |
-| cross-origin host helper | 51 | 需要多 origin + TLS fixture |
-| MessageChannel/MessagePort | 48 | M3 或专门消息基础设施 |
-| SharedWorker | 6 | 多 worker client，当前排除 |
-| WebSocket | 0 | 本样本无直接命中，不代表全量为 0 |
-| testdriver | 0 | 本样本无直接命中 |
+| iframe 创建/helper | 174 | 当前单 WebView runner 无真实子 browsing context |
+| 动态 server（`.py`/stash/pipe） | 96 | 静态文件映射不足 |
+| fetch/respondWith | 79 | M2 前不纳入 |
+| cross-origin host helper | 62 | 需要多 origin + TLS fixture |
+| MessageChannel/MessagePort | 56 | M3 或专门消息基础设施 |
+| navigation preload | 11 | 当前 goal 排除/远期 |
+| SharedWorker | 8 | 多 worker client，当前排除 |
+| testdriver | 4 | 当前 testdriver adapter 需逐项核对 |
+| WebSocket | 2 | 需要 WSS fixture |
+| HTTP/2 | 1 | 当前静态 fixture 不提供 H2 |
 
-核心样本中 162/203 至少命中一个上述重依赖信号；其余 41 个只是“未命中已知信号”的筛选
+核心全量中 228/276 至少命中一个上述重依赖信号；其余 48 个只是“未命中已知信号”的筛选
 队列，不能直接当可执行分母，因为依赖还可能藏在外链 helper 或资源响应语义中。
 
 ### M1 首批人工复核候选
 
-从这 41 个文件中再按目标范围和资源复杂度筛出 12 个候选：
+从这 48 个文件中再按目标范围和资源复杂度筛出 12 个候选：
 
 1. `activate-event-after-install-state-change.https.html`
 2. `activation-after-registration.https.html`
@@ -173,9 +181,9 @@ fixture adapter；不能将 `.py` 当普通文本响应。
 
 > **来源说明（第 3A 章）**
 >
-> - **一手事实**：固定 revision 的 221 个已下载 testharness 正文。
+> - **一手事实**：固定 revision 的 294 个 testharness 正文。
 > - **作者综合**：依赖信号正则与 12 个候选筛选。
-> - **限制**：正文样本覆盖率 75.2%；未下载的 73 个源文件不参与信号数，故信号数是下界。
+> - **限制**：信号只扫描 testharness 主文件正文；外链 helper 的传递依赖仍需资源闭包分析。
 
 ## 4. 导入与 runner 设计约束
 
@@ -200,7 +208,8 @@ fixture adapter；不能将 `.py` 当普通文本响应。
 | fetch 用例必须等 M2 | goal 依赖约束 | 当前 FetchBridge 直达网络 handler | 一致 | 高 | M2 开启 |
 | cache-first 必须等兄弟 goal | storage-cache-api master 显示 M1 未启动 | 当前页面无 `caches` | 一致 | 高 | 联合门禁 |
 | 完整 testharness 分母为 294 源/331 URL | WPT manifest version 9 | 本地确定性遍历结果 | 一致 | 高 | 直接采用 |
-| 重基础设施用例占多数 | 样本 162/203 命中信号 | support 中有 68 个 Python handler | 一致 | 中高 | 逐案依赖闭包 |
+| 重基础设施用例占多数 | 核心 228/276 命中直接信号 | support 中有 68 个 Python handler | 一致 | 高 | 逐案依赖闭包 |
+| 逐文件清单无遗漏 | inventory 294 唯一路径/331 URL | manifest 294 源/331 URL | 一致 | 高 | 直接采用 |
 
 ## 6. 来源与限制
 
@@ -226,11 +235,15 @@ fixture adapter；不能将 `.py` 当普通文本响应。
 
 ### 限制
 
-- GitHub/Gitiles clone 在本机网络不可达。完整**文件与 URL 分母**改由 WPT 官方 manifest
-  API 获取并已完成；**正文依赖信号**只覆盖 221/294 个 testharness 源，不外推为全量。
+- GitHub/Gitiles clone 在本机网络不可达。完整**文件与 URL 分母**由 WPT 官方 manifest
+  API 获取；294 个 testharness 正文由固定 revision 的 jsDelivr 镜像补齐。
 - 因当前 runner 没有 SW 入口，未运行伪基线。这里的“0”指当前环境可由标准入口执行的
   真实 SW WPT 文件数，不是未来层级 A/B 的预估通过数。
 - 层级 A-E 是实施排序（作者综合），不是上游 WPT 自带分类。
+
+> **勘误说明**：本报告上一版仅取得 221/294 个 testharness 正文，因此把依赖信号标为
+> 75.2% 样本下界。本轮已补齐剩余 73 个文件，§3A 和逐文件清单现覆盖 294/294；旧的
+> 140/63/58 等样本计数由全量 174/96/79 等计数替代。
 
 ## 7. 质量审查
 
@@ -238,5 +251,6 @@ fixture adapter；不能将 `.py` 当普通文本响应。
 - [x] 区分“当前不可执行”和“未来可纳入”，未把 skip 当 pass。
 - [x] 未把 shim 单测计入 WPT。
 - [x] 已记录网络取证限制和固定上游 commit。
-- [x] 完整 manifest 分母与正文抽样信号分开报告，未将样本外推。
+- [x] 完整 manifest 分母与 294/294 正文信号逐文件对齐。
+- [x] inventory 可反算 294 个唯一路径、331 个 URL 和 12 个候选。
 - [x] 未修改源码、WPT 数据或共享账本。
