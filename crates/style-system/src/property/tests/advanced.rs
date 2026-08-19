@@ -1044,6 +1044,24 @@ fn test_apply_letter_spacing_normal() {
 }
 
 #[test]
+fn test_apply_word_spacing_consumer_grammar() {
+    let mut style = ComputedStyle::default();
+
+    assert!(apply_property_value(&mut style, "word-spacing", "normal"));
+    assert_eq!(style.word_spacing, LengthValue::Px(0.0));
+    assert!(apply_property_value(&mut style, "word-spacing", "-1.5px"));
+    assert_eq!(style.word_spacing, LengthValue::Px(-1.5));
+    assert!(apply_property_value(&mut style, "word-spacing", "10%"));
+    assert_eq!(style.word_spacing, LengthValue::Percentage(10.0));
+    let previous = style.word_spacing.clone();
+
+    for value in ["auto", "thin", "min-content", "fit-content(10px)", "infpx", "NaNpx"] {
+        assert!(!apply_property_value(&mut style, "word-spacing", value));
+        assert_eq!(style.word_spacing, previous, "{} should not overwrite", value);
+    }
+}
+
+#[test]
 /// 测试 letter-spacing 继承：父元素 3px，子元素继承
 fn test_letter_spacing_inherited() {
     let mut parent = ComputedStyle::default();

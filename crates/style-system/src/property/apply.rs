@@ -726,9 +726,15 @@ pub fn apply_property_value_with_quirks(
             }
         }
         "word-spacing" => {
-            if let Some(v) = parse_length_fn(value) {
-                style.word_spacing = v;
+            if value.trim().eq_ignore_ascii_case("normal") {
+                style.word_spacing = LengthValue::Px(0.0);
                 return true;
+            }
+            if let Some(v) = parse_length_fn(value) {
+                if text_indent_length_is_valid(value, &v) {
+                    style.word_spacing = v;
+                    return true;
+                }
             }
         }
         "white-space" => {
