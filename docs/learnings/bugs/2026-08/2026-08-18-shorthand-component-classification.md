@@ -127,6 +127,8 @@ Filter length and angle functions exposed the Rust-float widening variant: `f32:
 
 Filter functions exposed the function-token-boundary variant: trimming the substring before `(` accepts `blur (5px)`, but CSS tokenization only forms a function token when the ident is immediately followed by `(`. Consumer parsers that operate on strings must preserve that boundary and reject whitespace before the opening parenthesis.
 
+Background image URLs exposed the URL-payload token variant: after recognizing `url(...)`, the payload still has quoted-string vs unquoted-url-token grammar. Quoted payloads must be fully enclosed by matching quotes with no trailing token; unquoted payloads must reject raw whitespace, quotes, and parentheses instead of treating the entire slice as an opaque URL.
+
 ## Root Cause
 
 The shorthand layer used heuristic component classifiers and treated unrecognized tokens as absent optional components. That is wrong for CSS shorthands such as `border`, where every token must match one of the allowed component grammars. A shared parser can also be broader than the property grammar that consumes it: general length parsing may accept `auto`, intrinsic sizing keywords, or percentages that `border-width` must reject.

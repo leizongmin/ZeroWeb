@@ -593,6 +593,10 @@ fn test_parse_background_image_url_quoted() {
         parse_background_image("url('image.png')"),
         Some(BackgroundImageValue::Url("image.png".to_string()))
     );
+    assert_eq!(
+        parse_background_image("url(\"my image.png\")"),
+        Some(BackgroundImageValue::Url("my image.png".to_string()))
+    );
 }
 
 #[test]
@@ -614,6 +618,11 @@ fn test_parse_background_image_invalid() {
     assert_eq!(parse_background_image(""), None);
     assert_eq!(parse_background_image("invalid"), None);
     assert_eq!(parse_background_image("url()"), None);
+    assert_eq!(parse_background_image("url(my image.png)"), None);
+    assert_eq!(parse_background_image("url(\"image.png\" extra)"), None);
+    assert_eq!(parse_background_image("url('image.png' extra)"), None);
+    assert_eq!(parse_background_image("url(\"image.png)"), None);
+    assert_eq!(parse_background_image("url(image\".png)"), None);
 }
 
 // ── background-position 解析测试 ──

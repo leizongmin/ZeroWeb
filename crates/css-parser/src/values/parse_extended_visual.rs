@@ -582,17 +582,8 @@ pub fn parse_background_image(value: &str) -> Option<BackgroundImageValue> {
     // 解析 url(...) 函数
     if (value.len() >= 4 && value[..4].eq_ignore_ascii_case("url(")) && value.ends_with(')') {
         let inner = value.get(4..value.len() - 1)?;
-        let url = inner.trim();
-        // 去除可选的引号
-        let url = if (url.starts_with('"') && url.ends_with('"')) || (url.starts_with('\'') && url.ends_with('\'')) {
-            url.get(1..url.len() - 1)?
-        } else {
-            url
-        };
-        if url.is_empty() {
-            return None;
-        }
-        return Some(BackgroundImageValue::Url(url.to_string()));
+        let url = parse_background_url_payload(inner)?;
+        return Some(BackgroundImageValue::Url(url));
     }
 
     // 尝试解析渐变函数
@@ -601,6 +592,43 @@ pub fn parse_background_image(value: &str) -> Option<BackgroundImageValue> {
     }
 
     None
+}
+
+fn parse_background_url_payload(inner: &str) -> Option<String> {
+    let url = inner.trim();
+    if url.is_empty() {
+        return None;
+    }
+    if url.starts_with('"') || url.starts_with('\'') {
+        let quote = url.as_bytes()[0] as char;
+        if !url.ends_with(quote) || url.len() < 2 {
+            return None;
+        }
+        let value = url.get(1..url.len() - 1)?;
+        return (!value.is_empty()).then(|| value.to_string());
+    }
+    if url.ends_with('"') || url.ends_with('\'') || contains_unescaped_url_delim(url) {
+        return None;
+    }
+    Some(url.to_string())
+}
+
+fn contains_unescaped_url_delim(url: &str) -> bool {
+    let mut escaped = false;
+    for ch in url.chars() {
+        if escaped {
+            escaped = false;
+            continue;
+        }
+        if ch == '\\' {
+            escaped = true;
+            continue;
+        }
+        if ch.is_whitespace() || matches!(ch, '"' | '\'' | '(' | ')') {
+            return true;
+        }
+    }
+    false
 }
 
 /// 解析 CSS background-image 多图层值（逗号分隔）。
