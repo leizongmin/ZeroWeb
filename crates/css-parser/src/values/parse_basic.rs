@@ -938,7 +938,35 @@ pub fn parse_column_rule_width(value: &str) -> Option<ColumnRuleWidthValue> {
         "medium" => Some(ColumnRuleWidthValue::Medium),
         "thin" => Some(ColumnRuleWidthValue::Thin),
         "thick" => Some(ColumnRuleWidthValue::Thick),
-        _ => parse_length(&v).map(ColumnRuleWidthValue::Length),
+        _ => {
+            let length = parse_length(&v)?;
+            if length_is_negative(&length) {
+                return None;
+            }
+            Some(ColumnRuleWidthValue::Length(length))
+        }
+    }
+}
+
+fn length_is_negative(value: &LengthValue) -> bool {
+    match value {
+        LengthValue::Px(v)
+        | LengthValue::Em(v)
+        | LengthValue::Ex(v)
+        | LengthValue::Rex(v)
+        | LengthValue::Cap(v)
+        | LengthValue::Rcap(v)
+        | LengthValue::Rem(v)
+        | LengthValue::Vh(v)
+        | LengthValue::Vw(v)
+        | LengthValue::Vmin(v)
+        | LengthValue::Vmax(v)
+        | LengthValue::Ch(v)
+        | LengthValue::Rch(v)
+        | LengthValue::Ic(v)
+        | LengthValue::Ric(v)
+        | LengthValue::Percentage(v) => *v < 0.0,
+        _ => false,
     }
 }
 

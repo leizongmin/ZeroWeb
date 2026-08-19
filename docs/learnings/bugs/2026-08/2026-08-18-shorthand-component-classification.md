@@ -155,6 +155,8 @@ Border-image exposed the nonnegative-but-nonfinite variant: a guard like `value 
 
 Border-image also exposed the split-branch negative-length variant: fixing number/percentage branches is not enough when a sibling branch delegates to shared `parse_length`. For properties whose grammar says nonnegative length, run the parsed length through the same consumer-grammar negative filter before accepting it.
 
+Column-rule-width exposed the duplicated-entry consumer-grammar variant: the same property parser existed in both `parse_basic` and `parse_layout`, and both delegated directly to shared `parse_length`. When a consumer grammar is narrower than the shared parser, audit and fix every exported entry point or the rejected value can still enter through the alternate module.
+
 ## Root Cause
 
 The shorthand layer used heuristic component classifiers and treated unrecognized tokens as absent optional components. That is wrong for CSS shorthands such as `border`, where every token must match one of the allowed component grammars. A shared parser can also be broader than the property grammar that consumes it: general length parsing may accept `auto`, intrinsic sizing keywords, or percentages that `border-width` must reject.

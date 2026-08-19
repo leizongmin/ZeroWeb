@@ -196,6 +196,8 @@ fn test_parse_column_rule_width_length() {
 fn test_parse_column_rule_width_invalid() {
     assert_eq!(parse_column_rule_width("invalid"), None);
     assert_eq!(parse_column_rule_width(""), None);
+    assert_eq!(parse_column_rule_width("-1px"), None);
+    assert_eq!(parse_column_rule_width("-0.5em"), None);
 }
 
 // ── column-rule-style 测试 ──
@@ -1056,6 +1058,8 @@ fn test_parse_border_image_width_invalid() {
     assert_eq!(parse_border_image_width("inf"), None);
     assert_eq!(parse_border_image_width("NaN"), None);
     assert_eq!(parse_border_image_width("inf%"), None);
+    assert_eq!(parse_border_image_width("infpx"), None);
+    assert_eq!(parse_border_image_width("NaNpx"), None);
     assert_eq!(parse_border_image_width("1 2 3 4 5"), None);
 }
 
@@ -1135,6 +1139,8 @@ fn test_parse_border_image_outset_invalid() {
     assert_eq!(parse_border_image_outset("1px -2em"), None);
     assert_eq!(parse_border_image_outset("inf"), None);
     assert_eq!(parse_border_image_outset("NaN"), None);
+    assert_eq!(parse_border_image_outset("infpx"), None);
+    assert_eq!(parse_border_image_outset("NaNpx"), None);
     assert_eq!(parse_border_image_outset("1 2 3 4 5"), None);
 }
 

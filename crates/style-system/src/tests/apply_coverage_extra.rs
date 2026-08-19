@@ -643,6 +643,12 @@ fn test_apply_column_rule_width_variants() {
     assert!(ok);
     let (ok, _) = apply("column-rule-width", "2px");
     assert!(ok);
+
+    let mut style = ComputedStyle::default();
+    assert!(apply_property_value(&mut style, "column-rule-width", "2px"));
+    let previous = style.column_rule_width.clone();
+    assert!(!apply_property_value(&mut style, "column-rule-width", "-1px"));
+    assert_eq!(style.column_rule_width, previous);
 }
 
 // === counter-set 属性 ===
