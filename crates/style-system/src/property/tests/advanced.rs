@@ -698,6 +698,9 @@ fn test_opacity_via_css_parser_pipeline() {
     // 无效值返回 false
     assert!(!apply_property_value(&mut style, "opacity", "abc"));
     assert!(!apply_property_value(&mut style, "opacity", "half"));
+    assert!(!apply_property_value(&mut style, "opacity", "inf"));
+    assert!(!apply_property_value(&mut style, "opacity", "NaN"));
+    assert_eq!(style.opacity, 0.0);
 }
 
 #[test]

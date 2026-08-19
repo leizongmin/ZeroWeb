@@ -141,6 +141,8 @@ List-style shorthand exposed the late-validation variant: expanding a shorthand 
 
 Background shorthand exposed the early-return variant: even after adding final longhand validation to the normal path, special branches such as `rgb()/hsl()/var()` color handling can still return partially validated longhands. Build the produced longhand vector first, then run one shared validation step for every non-wide-keyword path.
 
+Opacity exposed the duplicated numeric-parser variant: Rust `f64::parse` accepts `inf` and `NaN`, but CSS number tokens do not. Any CSS numeric parser that clamps after parsing must first require finite values, and duplicated parser modules (`parse_basic` / `parse_layout`) must be fixed together to avoid re-export path drift.
+
 ## Root Cause
 
 The shorthand layer used heuristic component classifiers and treated unrecognized tokens as absent optional components. That is wrong for CSS shorthands such as `border`, where every token must match one of the allowed component grammars. A shared parser can also be broader than the property grammar that consumes it: general length parsing may accept `auto`, intrinsic sizing keywords, or percentages that `border-width` must reject.

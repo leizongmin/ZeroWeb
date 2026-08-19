@@ -629,9 +629,15 @@ pub fn parse_opacity(value: &str) -> Option<f64> {
     let value = value.trim();
     if value.ends_with('%') {
         let pct: f64 = value.trim_end_matches('%').parse().ok()?;
+        if !pct.is_finite() {
+            return None;
+        }
         Some((pct / 100.0).clamp(0.0, 1.0))
     } else {
         let num: f64 = value.parse().ok()?;
+        if !num.is_finite() {
+            return None;
+        }
         Some(num.clamp(0.0, 1.0))
     }
 }

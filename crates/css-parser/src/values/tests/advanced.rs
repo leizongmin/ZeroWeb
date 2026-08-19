@@ -86,6 +86,10 @@ fn test_parse_opacity_boundary() {
     // 非法输入
     assert_eq!(parse_opacity("abc"), None);
     assert_eq!(parse_opacity(""), None);
+    assert_eq!(parse_opacity("inf"), None);
+    assert_eq!(parse_opacity("-inf"), None);
+    assert_eq!(parse_opacity("NaN"), None);
+    assert_eq!(parse_opacity("inf%"), None);
 }
 
 /// 测试 parse_var 边界条件：空名称、回退值为空、嵌套 var
