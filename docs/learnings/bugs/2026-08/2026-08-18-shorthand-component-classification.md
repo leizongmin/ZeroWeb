@@ -191,6 +191,8 @@ Outline-offset exposed the mutually-exclusive keyword variant: a property-specif
 
 Positioned offsets exposed the physical/logical alias variant: fixing `top/right/bottom/left` is incomplete if `inset-block-*` and `inset-inline-*` still write through the broader shared length parser after writing-mode mapping. Put the consumer grammar in one shared validator and call it before mutating either physical or logical alias slots.
 
+Margins exposed the same physical/logical alias shape with a different property owner: the grammar matches `auto | <length-percentage>`, but the validator should still be named for margin so later changes do not accidentally couple box spacing to positioned-offset semantics. Reuse the invariant, keep the public helper semantically scoped, and validate logical aliases before writing the mapped physical side.
+
 ## Root Cause
 
 The shorthand layer used heuristic component classifiers and treated unrecognized tokens as absent optional components. That is wrong for CSS shorthands such as `border`, where every token must match one of the allowed component grammars. A shared parser can also be broader than the property grammar that consumes it: general length parsing may accept `auto`, intrinsic sizing keywords, or percentages that `border-width` must reject.

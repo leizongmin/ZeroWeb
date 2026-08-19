@@ -437,6 +437,21 @@ fn test_apply_property_multiple_different_properties() {
     assert!(apply_property_value(&mut style, "margin-left", "20px"));
     assert_eq!(style.margin_top, LengthValue::Px(10.0));
     assert_eq!(style.margin_right, LengthValue::Px(20.0));
+    assert!(apply_property_value(&mut style, "margin-top", "auto"));
+    assert_eq!(style.margin_top, LengthValue::Auto);
+    assert!(apply_property_value(&mut style, "margin-right", "-5px"));
+    assert_eq!(style.margin_right, LengthValue::Px(-5.0));
+    assert!(apply_property_value(&mut style, "margin-bottom", "25%"));
+    assert_eq!(style.margin_bottom, LengthValue::Percentage(25.0));
+    let previous_left_margin = style.margin_left.clone();
+    for value in ["thin", "min-content", "fit-content(10px)", "infpx", "NaNpx"] {
+        assert!(!apply_property_value(&mut style, "margin-left", value));
+        assert_eq!(
+            style.margin_left, previous_left_margin,
+            "{} should not overwrite",
+            value
+        );
+    }
 
     // padding 各边
     assert!(apply_property_value(&mut style, "padding-top", "5px"));
@@ -1144,6 +1159,11 @@ fn test_margin_logical_wm_aware_vertical_rl() {
     assert!(apply_property_value(&mut style, "margin-inline-end", "20px"));
     assert_eq!(style.margin_right, LengthValue::Px(10.0));
     assert_eq!(style.margin_bottom, LengthValue::Px(20.0));
+    let previous = style.margin_right.clone();
+    for value in ["thin", "min-content", "fit-content(10px)", "infpx", "NaNpx"] {
+        assert!(!apply_property_value(&mut style, "margin-block-start", value));
+        assert_eq!(style.margin_right, previous, "{} should not overwrite", value);
+    }
 }
 
 #[test]
