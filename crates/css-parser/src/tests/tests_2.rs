@@ -842,6 +842,8 @@ fn test_parse_scroll_snap_type_values() {
         Some((ScrollSnapTypeValue::Mandatory, None))
     );
     assert_eq!(parse_scroll_snap_type("invalid"), None);
+    assert_eq!(parse_scroll_snap_type("mandatory proximity"), None);
+    assert_eq!(parse_scroll_snap_type("x y mandatory"), None);
 }
 
 #[test]

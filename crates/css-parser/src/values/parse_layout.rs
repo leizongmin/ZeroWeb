@@ -76,11 +76,11 @@ pub fn parse_scroll_snap_type(value: &str) -> Option<(ScrollSnapTypeValue, Optio
 
     for part in parts {
         match part {
-            "mandatory" => strictness = Some(ScrollSnapTypeValue::Mandatory),
-            "proximity" => strictness = Some(ScrollSnapTypeValue::Proximity),
-            "x" => axis = Some(ScrollSnapAxis::X),
-            "y" => axis = Some(ScrollSnapAxis::Y),
-            "both" => axis = Some(ScrollSnapAxis::Both),
+            "mandatory" if strictness.is_none() => strictness = Some(ScrollSnapTypeValue::Mandatory),
+            "proximity" if strictness.is_none() => strictness = Some(ScrollSnapTypeValue::Proximity),
+            "x" if axis.is_none() => axis = Some(ScrollSnapAxis::X),
+            "y" if axis.is_none() => axis = Some(ScrollSnapAxis::Y),
+            "both" if axis.is_none() => axis = Some(ScrollSnapAxis::Both),
             _ => return None,
         }
     }
