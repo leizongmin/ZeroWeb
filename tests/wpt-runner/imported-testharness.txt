@@ -175,3 +175,11 @@ IndexedDB/transaction-scheduling-rw-scopes.any.js 315976933870b34d6ea30e3f664340
 IndexedDB/transaction-scheduling-within-database.any.js 315976933870b34d6ea30e3f6643403edae678ba 2026-08-18 IDB-M2-transaction-scheduling
 IndexedDB/idbdatabase_close.any.js 315976933870b34d6ea30e3f6643403edae678ba 2026-08-18 IDB-M2-connection-queue
 IndexedDB/open-request-queue.any.js 315976933870b34d6ea30e3f6643403edae678ba 2026-08-18 IDB-M2-connection-queue
+service-workers/service-worker/activation-after-registration.https.html 04067ce9c7c2165e71ad7d0dde10a4c5cb394a83 2026-08-19 SW-M1-tier-a
+service-workers/service-worker/activate-event-after-install-state-change.https.html 04067ce9c7c2165e71ad7d0dde10a4c5cb394a83 2026-08-19 SW-M1-tier-a
+service-workers/service-worker/registration-service-worker-attributes.https.html 04067ce9c7c2165e71ad7d0dde10a4c5cb394a83 2026-08-19 SW-M1-tier-a
+service-workers/service-worker/register-default-scope.https.html 04067ce9c7c2165e71ad7d0dde10a4c5cb394a83 2026-08-19 SW-M1-tier-a
+service-workers/service-worker/registration-basic.https.html 04067ce9c7c2165e71ad7d0dde10a4c5cb394a83 2026-08-19 SW-M1-tier-a
+service-workers/service-worker/registration-scope.https.html 04067ce9c7c2165e71ad7d0dde10a4c5cb394a83 2026-08-19 SW-M1-tier-a
+service-workers/service-worker/registration-script-url.https.html 04067ce9c7c2165e71ad7d0dde10a4c5cb394a83 2026-08-19 SW-M1-tier-a
+service-workers/service-worker/rejections.https.html 04067ce9c7c2165e71ad7d0dde10a4c5cb394a83 2026-08-19 SW-M1-tier-a

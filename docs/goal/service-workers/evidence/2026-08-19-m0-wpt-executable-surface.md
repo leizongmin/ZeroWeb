@@ -18,8 +18,8 @@
 ## 0. 结论
 
 - 当前 `zero-wpt-runner` 对 `service-workers` 的**端到端可执行文件数为 0**：本地
-  `wpt-data/` 没有该目录，CLI 没有 service-worker testharness 入口，页面注册 shim
-  不抓取或执行 worker 脚本。
+  Tier A 资产虽已恢复到独立 WPT root，但 CLI 没有 service-worker testharness 入口，页面
+  注册 shim 也不抓取或执行 worker 脚本。
 - 固定 revision 的完整 manifest 包含 **801 个源文件**：294 个 testharness 源生成
   331 个测试 URL，另有 499 个 support、2 个 crashtest、5 个 manual 和 1 个 reftest。
   核心 `service-worker/` 子树占 276 个 testharness 源 / 277 个 URL。
@@ -41,7 +41,7 @@
 
 | 能力 | 当前事实 | 证据 | 裁决 |
 |------|----------|------|------|
-| 上游语料 | `tests/wpt-runner/wpt-data/` 无 `service-workers/` | 本地目录扫描 | 不可运行 |
+| 上游语料 | Tier A 18 资产在独立 WPT root，主 runner 未接线 | fetch target + 本地校验 | 资产就绪、不可运行 |
 | CLI 入口 | 只有 DOM、Canvas、IndexedDB 等专用 testharness 入口 | `tests/wpt-runner/src/main.rs` | 不可发现 SW case |
 | 页面注册 | `register()` 只建 JS 对象并用两个 timer 推进状态 | `crates/engine/src/js_dom_shim/part02.js:2496-2591` | 仅表面近似 |
 | worker 脚本 | `register(scriptURL)` 不调用 `ScriptSourceFetcher`/网络 | 同上；`part05.js` 仅 Dedicated Worker 使用 fetcher | 不执行 |
@@ -179,9 +179,10 @@ fixture adapter；不能将 `.py` 当普通文本响应。
 11. `registration-service-worker-attributes.https.html`
 12. `rejections.https.html`
 
-这些文件是批准后 M1-5 pinned fetch script 的初始审计队列，不是通过率承诺。传递资源闭包
-审计现已完成：第 3、4、5 项归 Tier B（worker testharness/error event），第 10 项归
-Tier C（Python 动态 handler），其余 8 项归静态 Tier A。首个 driving case 仍是第 2 项。
+这些文件是 M1 资产化的初始审计队列，不是通过率承诺。传递资源闭包审计现已完成：
+第 3、4、5 项归 Tier B（worker testharness/error event），第 10 项归 Tier C（Python
+动态 handler），其余 8 项归静态 Tier A 并已由独立 fetch target 资产化。首个 driving
+case 仍是第 2 项。
 
 > **来源说明（第 3A 章）**
 >
@@ -191,14 +192,14 @@ Tier C（Python 动态 handler），其余 8 项归静态 Tier A。首个 drivin
 
 ## 4. 导入与 runner 设计约束
 
-1. 新增 pinned fetch script，只抓层级 A/B 的 case、worker 和实际引用资源；固定 WPT commit。
+1. Tier A pinned fetch script 已落，只抓 8 case 的 18 个闭包对象并固定 WPT commit。
 2. 新增 `testharness-service-workers` CLI，复用 `run_testharness_html_inner`，但由 SW fixture
    host 提供脚本 URL、origin、注册清理和事件循环 drain。
-3. `imported-testharness.txt` 记录每个 driving case；`wpt-data` 仍按现有约定不入主仓。
+3. Tier A 8 case 已记入 `imported-testharness.txt`；`wpt-data` 仍按现有约定不入主仓。
 4. runner 对未满足依赖返回 `Unsupported/NotRun` 并给出枚举原因；不得把超时算作 skip。
 5. 第一份通过率报告同时列文件数、subtest 数和 skip 原因分布，防止只报通过率百分比。
-6. 本轮不新增 fetch script 或 CLI：两者虽属测试基础设施，但会固化 M1 host 契约，必须等
-   M0 RFC 批准后与实现一起落地。
+6. fetch script 只负责资产恢复，不定义 SW host 契约；CLI/runner 继续等 M0 RFC 批准后
+   与 runtime 实现一起落地。
 
 ## 5. 证据矩阵
 

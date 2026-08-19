@@ -2,7 +2,7 @@
 
 **日期**：2026-08-19
 **上游 revision**：`04067ce9c7c2165e71ad7d0dde10a4c5cb394a83`
-**状态**：M0 implementation input（RFC 批准后执行）
+**状态**：M0 assets ready（runner/runtime 等 RFC 批准）
 **资产清单**：[Tier A assets](2026-08-19-m1-tier-a-assets.tsv)
 **Subtest 清单**：[Tier A subtests](2026-08-19-m1-tier-a-subtests.tsv)
 
@@ -22,6 +22,8 @@
 - 18/18 资产按 Git blob 算法与 WPT manifest SHA 匹配。
 - 当前 ZeroWeb 没有 SW testharness runner，因此这些 case 仍是 `NotRun(no-runner)`；
   该状态不是 Pass，也不是产品失败基线。
+- `make fetch-wpt-service-workers-tier-a` 已可将 18 个资产恢复到独立 WPT root，并逐 blob
+  fail-closed 校验；不会覆盖其他 goal 的共享 testharness revision。
 - M1 首个真实 driving subtest 是 `activation occurs after registration`。
 - Tier A 完成条件是 28/28 Pass、0 Timeout、0 Unsupported，且重复运行不残留 registration。
 
@@ -43,13 +45,14 @@
 `test-helpers.sub.js` 是唯一 `.sub.js` 资产。Tier A 使用的 helper 路径不读取其中 host/port
 模板；fetch script 仍必须保留原文件并记录其模板属性，不能静默改写上游正文。
 
-批准后的 pinned fetch 流程必须：
+已落地的 pinned fetch 流程：
 
-1. 只下载 assets TSV 中的 18 个路径；
-2. 固定 revision，不跟随 `master`；
-3. 下载后计算 Git blob SHA 并逐项匹配；
-4. testharness 用例记入 `imported-testharness.txt`，不误用 reftest `make import-wpt`；
-5. 任一对象缺失/SHA 不符时 fail closed，不运行缩水分母。
+1. `make fetch-wpt-service-workers-tier-a` 只恢复 assets TSV 中的 18 个路径；
+2. 数据写入 `wpt-data/.service-workers-tier-a-root` 独立根，不覆盖共享 `resources/`；
+3. 支持 `WPT_SOURCE=<checkout>` 离线源、raw GitHub 主源和 jsDelivr 回退；
+4. 固定 revision，不跟随 `master`，下载后逐项计算 Git blob SHA；
+5. 8 个 case 已记入 `imported-testharness.txt`，不误用 reftest `make import-wpt`；
+6. 网络部分文件跨运行保留并续传；非法相对路径、对象缺失、字节数或 SHA 不符时 fail closed。
 
 > **来源说明（第 1 章）**
 >
@@ -176,4 +179,6 @@ message、claim/skipWaiting 或 update 已完成。
 - [x] 五阶段计数可反算为 8 case / 28 subtest。
 - [x] 已区分 NotRun、Fail、Timeout、Unsupported、Pass。
 - [x] 未把 Tier A 扩张为完整 Service Worker Done Criteria。
-- [x] 未修改源码、WPT 数据或共享账本。
+- [x] 资产恢复脚本已通过本地源、幂等、跨运行续传、篡改修复、非法 manifest 和真实网络路径验证。
+- [x] `cargo fmt --all -- --check`、workspace clippy 和 `make test` 全通过。
+- [x] 未修改 SW runtime 源码；仅落测试资产基础设施与 testharness 账本。

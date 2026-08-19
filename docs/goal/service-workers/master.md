@@ -2,7 +2,7 @@
 
 **入口文档**: [../service-workers.md](../service-workers.md)
 **创建日期**: 2026-08-17（goal 拆分 bootstrap）
-**最后更新**: 2026-08-19（M0 RFC + Tier A 固定资产/验收合约完成，待审批）
+**最后更新**: 2026-08-19（M0 RFC + Tier A 资产化完成，待审批）
 
 ---
 
@@ -40,6 +40,8 @@
 - ⚠️ WPT `service-workers` 未导入；当前标准入口真实可执行文件数为 0。固定 revision
   完整 manifest 为 294 个 testharness 源 / 331 个 URL；初筛 12 个 M1 候选经资源闭包
   校准为 8 个静态首批 / 3 个高阶事件案 / 1 个动态 server 阻塞案
+- ✅ Tier A 资产化：8 case / 28 subtest / 18 asset 已固定，fetch target + blob-SHA
+  fail-closed + testharness 账本已落；SW runner 仍待 RFC 批准后实现
 - ✅ SW 执行环境 RFC 已完成，待用户批准
 
 ## 缺口清单
@@ -50,7 +52,7 @@
 | S2 | scriptURL 不下载执行 | ⬜ M1 |
 | S3 | fetch 拦截为零 | ⬜ M2（等 js-dom fetch 改造） |
 | S4 | 事件为 setTimeout 模拟 | ⬜ M1 |
-| S5 | WPT 覆盖为零 | ✅ M0 完整分母、逐文件/候选闭包、Tier A 8 case/28 subtest 合约完成；导入/runner 等批准后实施 |
+| S5 | WPT 覆盖为零 | 🔄 Tier A 8 case 已资产化；runner/真实 red baseline 等 RFC 批准 |
 
 ## 待用户决策
 
@@ -85,7 +87,10 @@
   [M1 candidate closure](evidence/2026-08-19-m0-m1-candidate-resource-closure.md)，静态首批
   8 case / 28 subtest / 18 asset 见
   [Tier A baseline contract](evidence/2026-08-19-m1-tier-a-baseline-contract.md)
-- 质量门禁：`cargo fmt` + `cargo clippy --workspace --all-targets -- -D warnings` 全过
+- Tier A 资产恢复：`make fetch-wpt-service-workers-tier-a`；默认使用独立
+  `wpt-data/.service-workers-tier-a-root`，当前环境 18/18 blob SHA 验证通过
+- 质量门禁：`cargo fmt` + `cargo clippy --workspace --all-targets -- -D warnings` +
+  `make test`（V8/QuickJS/GPU capability）全过
 
 ## M0 证据与决策记录
 
@@ -96,6 +101,7 @@
 | 2026-08-19 | WPT 逐文件清单 | 294 唯一路径 / 331 URL / 12 candidate / 130 gated / 152 review，294/294 blob SHA 匹配，inventory SHA-256 `8905f3de41dd53432758461b64cf68a59ebcdecd970f3d0add724957e709a3e7` |
 | 2026-08-19 | M1 候选资源闭包 | 12/12 已审计，39/39 对象 blob SHA 匹配；8 Tier A keep-first / 3 Tier B defer / 1 Tier C dynamic-server |
 | 2026-08-19 | Tier A 验收合约 | 8 case / 28 subtest / 18 asset（235,111 bytes）/ 5 驱动阶段；assets SHA-256 `c9b8089dc425873e3249d0e834176139c054f3e33845ba6c4080521f23fa6bc0` |
+| 2026-08-19 | Tier A 资产化 | 独立 WPT root + raw/jsDelivr 双源 + WPT_SOURCE；本地/网络 18/18、幂等/续传/篡改修复、非法路径 fail-closed、clippy、make test 全通过 |
 | 2026-08-19 | 三方案对比 | 拒绝同线程 context（无调度隔离）；拒绝从零线程（复制安全基建）；推荐抽取 Worker 线程核 |
 | 2026-08-19 | owner | production browser process 单一 owner；WebView 只做同算法 in-process adapter |
 | 2026-08-19 | 首个 driving WPT | `activation-after-registration.https.html` |
