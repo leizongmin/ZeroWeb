@@ -237,7 +237,10 @@ class MainActivity : ComponentActivity() {
             window.decorView.postDelayed({
                 rendererPreview = NativeBridge.nativeLatestPageFrame()?.toBitmap(320, 180)
                 if (rendererPreview == null) android.util.Log.e("ZeroWebRole", "renderer page frame unavailable")
-                else android.util.Log.i("ZeroWebRole", "renderer page frame ready")
+                else {
+                    refreshBrowserSnapshot()
+                    android.util.Log.i("ZeroWebRole", "renderer page frame ready")
+                }
             }, delayMillis)
         }
     }

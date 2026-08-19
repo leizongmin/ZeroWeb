@@ -123,6 +123,11 @@ pub(crate) fn clear_history() -> Result<(), String> {
     mutate(|browser| browser.shell.history_mut().clear())
 }
 
+#[cfg(target_os = "android")]
+pub(crate) fn page_loaded(title: &str) -> Result<(), String> {
+    mutate(|browser| browser.shell.on_page_loaded(title))
+}
+
 fn mutate(update: impl FnOnce(&mut AndroidBrowser)) -> Result<(), String> {
     let mut state = browser()
         .lock()

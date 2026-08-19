@@ -412,6 +412,9 @@ pub extern "system" fn Java_com_leizm_zeroweb_NativeBridge_nativeAttachRenderer(
                     IpcMessageKind::FetchRequest(params) => {
                         let _ = proxy_renderer_fetch(params);
                     }
+                    IpcMessageKind::TitleChanged(title) => {
+                        let _ = facade::page_loaded(&title);
+                    }
                     _ => {}
                 }
             }
