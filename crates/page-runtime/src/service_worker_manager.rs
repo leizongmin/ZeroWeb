@@ -174,6 +174,7 @@ pub struct ServiceWorkerManager {
     registry: ServiceWorkerRegistry,
     slots: HashMap<ServiceWorkerRegistrationKey, ServiceWorkerVersionSlots>,
     registration_keys: HashMap<u64, ServiceWorkerRegistrationKey>,
+    state_changes: HashMap<u64, Vec<ServiceWorkerState>>,
     runtimes: HashMap<u64, ServiceWorkerRuntime>,
     evaluated: HashSet<u64>,
     runtime_limit: usize,
@@ -186,6 +187,7 @@ impl ServiceWorkerManager {
             registry: ServiceWorkerRegistry::new(),
             slots: HashMap::new(),
             registration_keys: HashMap::new(),
+            state_changes: HashMap::new(),
             runtimes: HashMap::new(),
             evaluated: HashSet::new(),
             runtime_limit: DEFAULT_RUNTIME_LIMIT,
@@ -239,6 +241,7 @@ impl ServiceWorkerManager {
         self.registry.get_mut(id).expect("new registration must exist").state = ServiceWorkerState::Installing;
         self.slots.entry(key.clone()).or_default().installing = Some(id);
         self.registration_keys.insert(id, key);
+        self.state_changes.insert(id, Vec::new());
         self.runtimes.insert(id, runtime);
         Ok(id)
     }
@@ -346,20 +349,28 @@ impl ServiceWorkerManager {
             return Err(ServiceWorkerManagerError::EvaluationPending(registration_id));
         }
         let key = self.key_for(registration_id)?.clone();
-        let slot = self.slots.get_mut(&key).expect("registration key must have slots");
-        if slot.installing != Some(registration_id) {
-            return Err(ServiceWorkerManagerError::JobInProgress(
-                slot.installing.unwrap_or(registration_id),
-            ));
-        }
-        slot.installing = None;
+        let old_waiting = {
+            let slot = self.slots.get_mut(&key).expect("registration key must have slots");
+            if slot.installing != Some(registration_id) {
+                return Err(ServiceWorkerManagerError::JobInProgress(
+                    slot.installing.unwrap_or(registration_id),
+                ));
+            }
+            slot.installing = None;
+            if succeeded {
+                slot.waiting.replace(registration_id)
+            } else {
+                None
+            }
+        };
 
         if succeeded {
             self.registry
                 .get_mut(registration_id)
                 .expect("validated registration must exist")
                 .state = ServiceWorkerState::Installed;
-            if let Some(old_waiting) = slot.waiting.replace(registration_id) {
+            self.record_state_change(registration_id, ServiceWorkerState::Installed);
+            if let Some(old_waiting) = old_waiting {
                 self.mark_redundant_and_stop(old_waiting);
             }
         } else {
@@ -400,6 +411,7 @@ impl ServiceWorkerManager {
             .get_mut(registration_id)
             .expect("validated registration must exist")
             .state = ServiceWorkerState::Activating;
+        self.record_state_change(registration_id, ServiceWorkerState::Activating);
         Ok(())
     }
 
@@ -439,6 +451,7 @@ impl ServiceWorkerManager {
                 .get_mut(registration_id)
                 .expect("validated registration must exist")
                 .state = ServiceWorkerState::Activated;
+            self.record_state_change(registration_id, ServiceWorkerState::Activated);
         } else {
             self.mark_redundant_and_stop(registration_id);
         }
@@ -472,10 +485,9 @@ impl ServiceWorkerManager {
             return false;
         };
         self.evaluated.remove(&registration_id);
-        if let Some(mut runtime) = self.runtimes.remove(&registration_id) {
-            runtime.shutdown();
-        }
+        self.mark_redundant_and_stop(registration_id);
         let removed = self.registry.unregister(registration_id);
+        self.state_changes.remove(&registration_id);
         let remove_slots = if let Some(slot) = self.slots.get_mut(&key) {
             if slot.installing == Some(registration_id) {
                 slot.installing = None;
@@ -499,6 +511,21 @@ impl ServiceWorkerManager {
     /// Inspect one registration version.
     pub fn registration(&self, registration_id: u64) -> Option<&ServiceWorkerRegistration> {
         self.registry.get(registration_id)
+    }
+
+    /// Return lifecycle states recorded after a caller-owned sequence cursor.
+    ///
+    /// Sequence zero starts immediately after the initial `installing` state.
+    /// The log is immutable for the lifetime of a version so independent
+    /// renderer clients cannot consume each other's events.
+    pub fn state_changes_since(
+        &self,
+        registration_id: u64,
+        after_sequence: u64,
+    ) -> Option<(u64, &[ServiceWorkerState])> {
+        let changes = self.state_changes.get(&registration_id)?;
+        let start = usize::try_from(after_sequence).unwrap_or(usize::MAX).min(changes.len());
+        Some((changes.len() as u64, &changes[start..]))
     }
 
     /// Inspect version slots for one origin/scope key.
@@ -606,11 +633,24 @@ impl ServiceWorkerManager {
     }
 
     fn mark_redundant_and_stop(&mut self, registration_id: u64) {
-        if let Some(registration) = self.registry.get_mut(registration_id) {
+        let changed = if let Some(registration) = self.registry.get_mut(registration_id) {
+            let changed = registration.state != ServiceWorkerState::Redundant;
             registration.mark_redundant();
+            changed
+        } else {
+            false
+        };
+        if changed {
+            self.record_state_change(registration_id, ServiceWorkerState::Redundant);
         }
         if let Some(mut runtime) = self.runtimes.remove(&registration_id) {
             runtime.shutdown();
+        }
+    }
+
+    fn record_state_change(&mut self, registration_id: u64, state: ServiceWorkerState) {
+        if let Some(changes) = self.state_changes.get_mut(&registration_id) {
+            changes.push(state);
         }
     }
 }
@@ -709,6 +749,25 @@ mod tests {
         }));
         assert_eq!(manager.registration(id).unwrap().state, ServiceWorkerState::Activated);
         assert_eq!(manager.slots(&key("/app/")).unwrap().active, Some(id));
+        assert_eq!(
+            manager.state_changes_since(id, 0),
+            Some((
+                3,
+                [
+                    ServiceWorkerState::Installed,
+                    ServiceWorkerState::Activating,
+                    ServiceWorkerState::Activated,
+                ]
+                .as_slice()
+            ))
+        );
+        assert_eq!(
+            manager.state_changes_since(id, 1),
+            Some((
+                3,
+                [ServiceWorkerState::Activating, ServiceWorkerState::Activated].as_slice()
+            ))
+        );
     }
 
     #[test]

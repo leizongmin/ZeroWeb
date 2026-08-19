@@ -2,7 +2,7 @@
 
 **入口文档**: [../service-workers.md](../service-workers.md)
 **创建日期**: 2026-08-17（goal 拆分 bootstrap）
-**最后更新**: 2026-08-19（M1-5 core WPT baseline 建立）
+**最后更新**: 2026-08-19（M1-5b lifecycle task projection 完成）
 
 ---
 
@@ -90,8 +90,10 @@ M0 启动门禁解除；当前进入 M1 core WPT 收敛。
   fresh browser/renderer register→active→unregister 全链通过，normal owner 跨 renderer 存活
 - ✅ M1-4d：browser-backed `getRegistration()` / `getRegistrations()`；
   新 renderer 无需旧 registration ID 即可恢复稳定 JS 投影
+- ✅ M1-5b：manager transition log + renderer cursor；ServiceWorker/Registration EventTarget；
+  updatefound/statechange 与 slots 逐 task 投影，lifecycle 5 个红项及 interface brand 2 项转绿
 - 🔄 M1-5：12 case / 36 subtest core WPT runner 已落；稳定 baseline 为
-  23 Pass / 12 Fail / 1 Timeout / 0 Unsupported
+  30 Pass / 6 Fail / 0 Timeout / 0 Unsupported
 
 ## 缺口清单
 
@@ -100,8 +102,8 @@ M0 启动门禁解除；当前进入 M1 core WPT 收敛。
 | S1 | SW 执行环境架构与独立 runtime | ✅ production browser owner + renderer discovery 真链路 |
 | S2 | scriptURL 不下载执行 | ✅ production navigator 经 browser fetch/evaluate |
 | S3 | fetch 拦截为零 | ⬜ M2（等 js-dom fetch 改造） |
-| S4 | 事件为 setTimeout 模拟 | ✅ 生命周期状态仅来自 manager；timer 只轮询 snapshot |
-| S5 | WPT 覆盖为零 | 🔄 12/12 case 已执行；23/36 Pass；12 Fail / 1 Timeout 待收敛 |
+| S4 | 事件为 setTimeout 模拟 | ✅ manager transition log 为状态源；timer 只执行页面 task 投影 |
+| S5 | WPT 覆盖为零 | 🔄 12/12 case 已执行；30/36 Pass；6 Fail / 0 Timeout 待收敛 |
 
 ## 待用户决策
 
@@ -111,16 +113,15 @@ M0 启动门禁解除；当前进入 M1 core WPT 收敛。
 
 ## 下一步计划
 
-1. **M1-5b**：lifecycle EventTarget/slot task，收敛 4 Fail + 1 Timeout
-2. **M1-5c**：scope/scriptURL/DOMException/interface brand，收敛剩余 8 Fail
-3. **M2 继续门控**：js-dom S6 与 storage-cache-api M1 均 land 后才改 fetch 主路径
+1. **M1-5c**：scope/scriptURL/DOMException，收敛剩余 6 Fail
+2. **M2 继续门控**：js-dom S6 与 storage-cache-api M1 均 land 后才改 fetch 主路径
 
 ## 里程碑状态
 
 | 里程碑 | 状态 |
 |--------|------|
 | M0 — 选型 RFC（门控） | ✅ 方案 C 已批准 |
-| M1 — 脚本真实执行 + 生命周期真事件 | 🔄 M1-5 core WPT 23/36 Pass |
+| M1 — 脚本真实执行 + 生命周期真事件 | 🔄 M1-5 core WPT 30/36 Pass |
 | M2 — fetch 拦截 + Cache 集成 | ⬜ 门控：js-dom fetch 改造 land |
 | M3 — 控制语义 + 消息 + 收尾 | ⬜ |
 
@@ -194,6 +195,8 @@ M0 启动门禁解除；当前进入 M1 core WPT 收敛。
   恢复见 [M1 registration discovery](evidence/2026-08-19-m1-registration-discovery.md)
 - M1-5 core WPT：固定 12-case runner、两轮确定性 baseline 与 13 个红项分组见
   [M1 core WPT baseline](evidence/2026-08-19-m1-wpt-core-baseline.md)
+- M1-5b lifecycle task：manager transition log、IPC cursor、EventTarget/slot task 与 30/36
+  baseline 见 [M1 lifecycle task projection](evidence/2026-08-19-m1-lifecycle-task-projection.md)
 
 ## M0 证据与决策记录
 
@@ -233,6 +236,7 @@ M0 启动门禁解除；当前进入 M1 core WPT 收敛。
 | 2026-08-19 | M1-4c renderer bridge | request ID router + register/snapshot/unregister callbacks；fresh peer production E2E；owner 跨 renderer 存活 |
 | 2026-08-19 | M1-4d registration discovery | getRegistration(s) typed IPC；active-first scope representative；fresh renderer 无旧 ID 恢复 registration |
 | 2026-08-19 | M1-5 core WPT baseline | 12/12 case；36/36 subtest 有结果；23 Pass / 12 Fail / 1 Timeout / 0 Unsupported；两轮稳定 |
+| 2026-08-19 | M1-5b lifecycle task | transition log + cursor；EventTarget/updatefound/statechange/slot task；30 Pass / 6 Fail / 0 Timeout；两轮稳定 |
 | 2026-08-19 | 三方案对比 | 拒绝同线程 context（无调度隔离）；拒绝从零线程（复制安全基建）；推荐抽取 Worker 线程核 |
 | 2026-08-19 | owner | production browser process 单一 owner；WebView 只做同算法 in-process adapter |
 | 2026-08-19 | 首个 driving WPT | `activation-after-registration.https.html` |

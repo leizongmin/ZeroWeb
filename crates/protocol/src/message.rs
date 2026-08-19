@@ -618,7 +618,8 @@ impl ServiceWorkerRequestParams {
             ServiceWorkerOperation::Snapshot { .. }
             | ServiceWorkerOperation::Unregister { .. }
             | ServiceWorkerOperation::ActivateWaiting { .. }
-            | ServiceWorkerOperation::GetRegistrations => Ok(()),
+            | ServiceWorkerOperation::GetRegistrations
+            | ServiceWorkerOperation::StateChanges { .. } => Ok(()),
             ServiceWorkerOperation::GetRegistration { client_url } => {
                 if client_url.is_empty() {
                     return Err("Service Worker client URL is required");
@@ -666,6 +667,13 @@ pub enum ServiceWorkerOperation {
     },
     /// List the current document origin's registrations.
     GetRegistrations,
+    /// Read lifecycle states after a renderer-owned sequence cursor.
+    StateChanges {
+        /// Browser-assigned registration version ID.
+        registration_id: u64,
+        /// Number of state changes already observed by this renderer.
+        after_sequence: u64,
+    },
 }
 
 /// Browser Service Worker owner response.
@@ -693,6 +701,8 @@ pub enum ServiceWorkerResult {
     OptionalSnapshot(Option<ServiceWorkerSnapshot>),
     /// Registration snapshots for one origin.
     Snapshots(Vec<ServiceWorkerSnapshot>),
+    /// Ordered lifecycle states after a renderer-owned cursor.
+    StateChanges(ServiceWorkerStateChanges),
 }
 
 /// Pure-value registration snapshot.
@@ -721,6 +731,15 @@ pub enum ServiceWorkerStateWire {
     Activated,
     /// Version failed or was replaced/unregistered.
     Redundant,
+}
+
+/// Immutable lifecycle log suffix for one Service Worker version.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ServiceWorkerStateChanges {
+    /// Total number of recorded changes at response time.
+    pub latest_sequence: u64,
+    /// States strictly after the request cursor, in transition order.
+    pub states: Vec<ServiceWorkerStateWire>,
 }
 
 /// Service Worker owner error.

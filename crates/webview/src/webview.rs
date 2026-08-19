@@ -2497,6 +2497,31 @@ impl WebView {
             }),
         );
 
+        let state_changes_manager = manager.clone();
+        sandbox.register_callback(
+            "__zw_sw_state_changes",
+            Box::new(move |args| {
+                let Some(registration_id) = args.first().and_then(|value| value.parse::<u64>().ok()) else {
+                    return serde_json::json!({"ok": false, "error": "invalid registration id"}).to_string();
+                };
+                let after_sequence = args.get(1).and_then(|value| value.parse::<u64>().ok()).unwrap_or(0);
+                let Ok(mut manager) = state_changes_manager.lock() else {
+                    return serde_json::json!({"ok": false, "error": "manager lock poisoned"}).to_string();
+                };
+                let _ = manager.poll();
+                let Some((latest_sequence, states)) = manager.state_changes_since(registration_id, after_sequence)
+                else {
+                    return serde_json::json!({"ok": false, "error": "registration not found"}).to_string();
+                };
+                serde_json::json!({
+                    "ok": true,
+                    "latestSequence": latest_sequence,
+                    "states": states.iter().map(ToString::to_string).collect::<Vec<_>>(),
+                })
+                .to_string()
+            }),
+        );
+
         sandbox.register_callback(
             "__zw_sw_unregister",
             Box::new(move |args| {

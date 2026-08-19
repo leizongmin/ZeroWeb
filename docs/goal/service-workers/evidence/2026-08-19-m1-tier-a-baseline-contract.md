@@ -2,7 +2,7 @@
 
 **日期**：2026-08-19
 **上游 revision**：`04067ce9c7c2165e71ad7d0dde10a4c5cb394a83`
-**状态**：M1 runner active（Tier A 18/28 Pass）
+**状态**：M1 runner active（Tier A 23/28 Pass）
 **运行证据**：[M1 core WPT baseline](2026-08-19-m1-wpt-core-baseline.md)
 **资产清单**：[Tier A assets](2026-08-19-m1-tier-a-assets.tsv)
 **Subtest 清单**：[Tier A subtests](2026-08-19-m1-tier-a-subtests.tsv)
@@ -21,7 +21,7 @@
 - 18 个资产总计 **235,111 bytes**，包含 8 个 case、6 个页面脚本、3 个 worker 脚本和
   1 个 HTML fixture。
 - 18/18 资产按 Git blob 算法与 WPT manifest SHA 匹配。
-- SW testharness runner 已执行全部 Tier A case；当前为 18 Pass / 9 Fail / 1 Timeout，
+- SW testharness runner 已执行全部 Tier A case；当前为 23 Pass / 5 Fail / 0 Timeout，
   不是完成状态。
 - `make fetch-wpt-service-workers-tier-a` 已可将 18 个资产恢复到独立 WPT root，并逐 blob
   fail-closed 校验；不会覆盖其他 goal 的共享 testharness revision。

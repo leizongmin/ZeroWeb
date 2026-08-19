@@ -62,6 +62,81 @@ fn register_fetches_evaluates_and_returns_correlated_id() {
 }
 
 #[test]
+fn lifecycle_state_changes_are_cursor_based_and_ordered() {
+    let mut owner = BrowserServiceWorkerOwner::new();
+    let disposition = owner.begin_request(
+        TabId(1),
+        false,
+        63,
+        Some("https://example.test/page"),
+        register_request("https://example.test/page"),
+    );
+    attach_script(&mut owner, disposition, "void 0;");
+    let response = wait_for_response(&mut owner);
+    let Ok(ServiceWorkerResult::Registered { registration_id }) = response.params.result else {
+        panic!("registration failed");
+    };
+
+    let deadline = Instant::now() + Duration::from_secs(5);
+    loop {
+        let _ = owner.poll();
+        let disposition = owner.begin_request(
+            TabId(1),
+            false,
+            64,
+            Some("https://example.test/page"),
+            ServiceWorkerRequestParams {
+                operation: ServiceWorkerOperation::StateChanges {
+                    registration_id,
+                    after_sequence: 0,
+                },
+            },
+        );
+        let ServiceWorkerRequestDisposition::Respond(response) = disposition else {
+            panic!("state changes must complete immediately");
+        };
+        if matches!(
+            response.params.result,
+            Ok(ServiceWorkerResult::StateChanges(ServiceWorkerStateChanges {
+                latest_sequence: 3,
+                ref states,
+            })) if states == &[
+                ServiceWorkerStateWire::Installed,
+                ServiceWorkerStateWire::Activating,
+                ServiceWorkerStateWire::Activated,
+            ]
+        ) {
+            break;
+        }
+        assert!(Instant::now() < deadline, "lifecycle state changes timed out");
+        std::thread::sleep(Duration::from_millis(5));
+    }
+
+    let disposition = owner.begin_request(
+        TabId(1),
+        false,
+        65,
+        Some("https://example.test/page"),
+        ServiceWorkerRequestParams {
+            operation: ServiceWorkerOperation::StateChanges {
+                registration_id,
+                after_sequence: 1,
+            },
+        },
+    );
+    let ServiceWorkerRequestDisposition::Respond(response) = disposition else {
+        panic!("state changes must complete immediately");
+    };
+    assert_eq!(
+        response.params.result,
+        Ok(ServiceWorkerResult::StateChanges(ServiceWorkerStateChanges {
+            latest_sequence: 3,
+            states: vec![ServiceWorkerStateWire::Activating, ServiceWorkerStateWire::Activated],
+        }))
+    );
+}
+
+#[test]
 fn register_rejects_renderer_document_authority_mismatch_before_fetch() {
     let mut owner = BrowserServiceWorkerOwner::new();
     let disposition = owner.begin_request(

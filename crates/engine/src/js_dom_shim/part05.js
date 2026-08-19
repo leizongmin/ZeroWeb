@@ -6941,6 +6941,16 @@
   };
   globalThis.EventTarget = globalThis.EventTarget || EventTarget;
 
+  if (globalThis.ServiceWorker) {
+    Object.setPrototypeOf(globalThis.ServiceWorker.prototype, globalThis.EventTarget.prototype);
+  }
+  if (globalThis.ServiceWorkerRegistration) {
+    Object.setPrototypeOf(
+      globalThis.ServiceWorkerRegistration.prototype,
+      globalThis.EventTarget.prototype
+    );
+  }
+
   // js-dom M4 R114：XMLHttpRequest 补 EventTarget 面——spec XHR : XMLHttpRequestEventTarget :
   // EventTarget（`xhr.addEventListener('load')` / `xhr.dispatchEvent(new Event('load'))` 与
   // on* 属性 handler 同键派发；WPT event-global "current event … (2)" 用 XHR 验证非 DOM

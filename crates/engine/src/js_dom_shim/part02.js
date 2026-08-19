@@ -2573,7 +2573,7 @@
       clearWatch: function(_id) {},
     },
     // Service Worker 页面对象投影。生命周期状态来自宿主 ServiceWorkerManager；
-    // setTimeout 只轮询 snapshot，不自行推进 installing/waiting/active。
+    // setTimeout 只逐 task 投影 transition log，不自行推进生命周期。
     serviceWorker: (function () {
       var _registrations = [];
       var _controller = null;
@@ -2583,29 +2583,41 @@
         oncontrollerchange: null,
         onmessage: null
       };
-      function makeSW(scriptURL, state) {
-        return { scriptURL: scriptURL, state: state, onstatechange: null };
+      function ServiceWorker(scriptURL, state) {
+        this._et_listeners = {};
+        this.scriptURL = scriptURL;
+        this.state = state;
+        this.onstatechange = null;
       }
-      function updateWorker(worker, state) {
-        if (!worker) return;
-        if (worker.state !== state) {
-          worker.state = state;
-          if (typeof worker.onstatechange === 'function') {
-            try { worker.onstatechange({ type: 'statechange', target: worker }); } catch (_e) {}
-          }
+      function ServiceWorkerRegistration() {
+        this._et_listeners = {};
+      }
+      globalThis.ServiceWorker = globalThis.ServiceWorker || ServiceWorker;
+      globalThis.ServiceWorkerRegistration =
+        globalThis.ServiceWorkerRegistration || ServiceWorkerRegistration;
+      function makeSW(scriptURL, state) {
+        return new globalThis.ServiceWorker(scriptURL, state);
+      }
+      function dispatchTargetEvent(target, type) {
+        if (target && typeof target.dispatchEvent === 'function' &&
+            typeof globalThis.Event === 'function') {
+          try { target.dispatchEvent(new globalThis.Event(type)); } catch (_e) {}
         }
       }
       function makeReg(id, scriptURL, scope) {
-        var reg = {
-          _id: id,
-          _worker: makeSW(scriptURL, 'installing'),
-          scope: scope,
-          updateViaCache: 'imports',
-          installing: null,
-          waiting: null,
-          active: null,
-          onupdatefound: null,
-          unregister: function () {
+        var reg = new globalThis.ServiceWorkerRegistration();
+        reg._id = id;
+        reg._worker = makeSW(scriptURL, 'installing');
+        reg._stateSequence = 0;
+        reg._pendingStates = [];
+        reg._updateFoundPending = false;
+        reg.scope = scope;
+        reg.updateViaCache = 'imports';
+        reg.installing = reg._worker;
+        reg.waiting = null;
+        reg.active = null;
+        reg.onupdatefound = null;
+        reg.unregister = function () {
             var removed = false;
             if (typeof __zw_sw_unregister === 'function') {
               try { removed = __zw_sw_unregister(String(reg._id)) === 'true'; } catch (_e) {}
@@ -2613,13 +2625,14 @@
             for (var i = 0; i < _registrations.length; i++) {
               if (_registrations[i] === reg) { _registrations.splice(i, 1); break; }
             }
+            if (removed && typeof setTimeout === 'function') {
+              setTimeout(function () { applyState(reg, 'redundant'); }, 0);
+            }
             return Promise.resolve(removed);
-          },
-          update: function () { return Promise.resolve(); },
-          getNotifications: function () { return Promise.resolve([]); },
-          showNotification: function () { return Promise.resolve(); }
-        };
-        reg.installing = reg._worker;
+          };
+        reg.update = function () { return Promise.resolve(); };
+        reg.getNotifications = function () { return Promise.resolve([]); };
+        reg.showNotification = function () { return Promise.resolve(); };
         return reg;
       }
       function findReg(id, scope) {
@@ -2640,23 +2653,64 @@
           return wire && wire.ok ? wire : null;
         } catch (_e) { return null; }
       }
+      function readStateChanges(reg) {
+        if (typeof __zw_sw_state_changes !== 'function') return null;
+        try {
+          var wire = JSON.parse(__zw_sw_state_changes(
+            String(reg._id), String(reg._stateSequence)));
+          return wire && wire.ok ? wire : null;
+        } catch (_e) { return null; }
+      }
+      function stateSequence(state) {
+        if (state === 'installed') return 1;
+        if (state === 'activating') return 2;
+        if (state === 'activated') return 3;
+        return 0;
+      }
+      function applyState(reg, state) {
+        if (!reg || !reg._worker) return;
+        var worker = reg._worker;
+        var changed = worker.state !== state;
+        worker.state = state;
+        reg.installing = state === 'installing' ? worker : null;
+        reg.waiting = state === 'installed' ? worker : null;
+        if (state === 'activating' || state === 'activated') {
+          reg.active = worker;
+        } else if (state === 'redundant' && reg.active === worker) {
+          reg.active = null;
+        }
+        if (state === 'activated' && _readyResolve) {
+          _readyResolve(reg);
+          _readyResolve = null;
+        }
+        if (changed) dispatchTargetEvent(worker, 'statechange');
+      }
       function applySnapshot(reg, snapshot) {
         if (!snapshot) return false;
         reg.scope = snapshot.scope || reg.scope;
         reg._worker.scriptURL = snapshot.scriptURL || reg._worker.scriptURL;
         var state = snapshot.state;
-        updateWorker(reg._worker, state);
-        reg.installing = state === 'installing' ? reg._worker : null;
-        reg.waiting = state === 'installed' ? reg._worker : null;
-        reg.active = state === 'activating' || state === 'activated' ? reg._worker : null;
-        if (state === 'activated' && _readyResolve) {
-          _readyResolve(reg);
-          _readyResolve = null;
-        }
+        applyState(reg, state);
+        reg._stateSequence = Math.max(reg._stateSequence, stateSequence(state));
         return state === 'activated' || state === 'redundant';
       }
       function pollRegistration(reg) {
-        if (applySnapshot(reg, readSnapshot(reg._id))) return;
+        if (reg._updateFoundPending) {
+          reg._updateFoundPending = false;
+          dispatchTargetEvent(reg, 'updatefound');
+        } else if (reg._pendingStates.length > 0) {
+          var state = reg._pendingStates.shift();
+          reg._stateSequence++;
+          applyState(reg, state);
+          if (state === 'activated' || state === 'redundant') return;
+        } else {
+          var changes = readStateChanges(reg);
+          if (changes && changes.states && changes.states.length) {
+            reg._pendingStates = changes.states.slice();
+          } else if (applySnapshot(reg, readSnapshot(reg._id))) {
+            return;
+          }
+        }
         if (typeof setTimeout === 'function') {
           setTimeout(function () { pollRegistration(reg); }, 0);
         }
@@ -2668,11 +2722,22 @@
           reg = makeReg(snapshot.id, snapshot.scriptURL || '', snapshot.scope || '');
           _registrations.push(reg);
         } else {
+          if (String(reg._id) !== String(snapshot.id)) {
+            reg._worker = makeSW(snapshot.scriptURL || '', 'installing');
+            reg._stateSequence = 0;
+            reg._pendingStates = [];
+            reg._updateFoundPending = false;
+            reg.installing = reg._worker;
+            reg.waiting = null;
+          }
           reg._id = snapshot.id;
         }
         if (!applySnapshot(reg, snapshot)) {
           if (deferPoll && typeof setTimeout === 'function') {
-            setTimeout(function () { pollRegistration(reg); }, 0);
+            reg._updateFoundPending = true;
+            setTimeout(function () {
+              setTimeout(function () { pollRegistration(reg); }, 0);
+            }, 0);
           } else {
             pollRegistration(reg);
           }
@@ -2703,9 +2768,6 @@
           scope: snapshot && snapshot.scope || scope,
           state: 'installing'
         }, true);
-        if (typeof reg.onupdatefound === 'function') {
-          try { reg.onupdatefound({ type: 'updatefound', target: reg }); } catch (_e) {}
-        }
         return Promise.resolve(reg);
       };
       _container.getRegistration = function (scope) {

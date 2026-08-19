@@ -139,6 +139,40 @@ fn service_worker_discovery_operations_round_trip() {
 }
 
 #[test]
+fn service_worker_state_changes_round_trip() {
+    let operation = ServiceWorkerOperation::StateChanges {
+        registration_id: 12,
+        after_sequence: 1,
+    };
+    let decoded = roundtrip(IpcMessage {
+        id: 45,
+        kind: IpcMessageKind::ServiceWorkerRequest(ServiceWorkerRequestParams {
+            operation: operation.clone(),
+        }),
+    });
+    let IpcMessageKind::ServiceWorkerRequest(params) = decoded.kind else {
+        panic!("expected ServiceWorkerRequest");
+    };
+    assert_eq!(params.operation, operation);
+    assert!(params.validate().is_ok());
+
+    let changes = ServiceWorkerStateChanges {
+        latest_sequence: 3,
+        states: vec![ServiceWorkerStateWire::Activating, ServiceWorkerStateWire::Activated],
+    };
+    let decoded = roundtrip(IpcMessage {
+        id: 45,
+        kind: IpcMessageKind::ServiceWorkerResponse(ServiceWorkerResponseParams {
+            result: Ok(ServiceWorkerResult::StateChanges(changes.clone())),
+        }),
+    });
+    let IpcMessageKind::ServiceWorkerResponse(params) = decoded.kind else {
+        panic!("expected ServiceWorkerResponse");
+    };
+    assert_eq!(params.result, Ok(ServiceWorkerResult::StateChanges(changes)));
+}
+
+#[test]
 fn service_worker_snapshot_list_response_round_trips() {
     let snapshot = ServiceWorkerSnapshot {
         registration_id: 11,
@@ -220,6 +254,13 @@ fn service_worker_nested_enum_discriminants_remain_append_only() {
         4
     );
     assert_eq!(discriminant(&ServiceWorkerOperation::GetRegistrations), 5);
+    assert_eq!(
+        discriminant(&ServiceWorkerOperation::StateChanges {
+            registration_id: 1,
+            after_sequence: 0,
+        }),
+        6
+    );
 
     assert_eq!(discriminant(&ServiceWorkerResult::Registered { registration_id: 1 }), 0);
     assert_eq!(
@@ -235,4 +276,11 @@ fn service_worker_nested_enum_discriminants_remain_append_only() {
     assert_eq!(discriminant(&ServiceWorkerResult::Empty), 3);
     assert_eq!(discriminant(&ServiceWorkerResult::OptionalSnapshot(None)), 4);
     assert_eq!(discriminant(&ServiceWorkerResult::Snapshots(Vec::new())), 5);
+    assert_eq!(
+        discriminant(&ServiceWorkerResult::StateChanges(ServiceWorkerStateChanges {
+            latest_sequence: 0,
+            states: Vec::new(),
+        })),
+        6
+    );
 }

@@ -9,7 +9,8 @@ use zero_net::HttpResponse;
 use zero_page_runtime::{ServiceWorkerManager, ServiceWorkerManagerError, ServiceWorkerManagerEvent};
 use zero_protocol::message::{
     ServiceWorkerError, ServiceWorkerErrorCode, ServiceWorkerOperation, ServiceWorkerRequestParams,
-    ServiceWorkerResponseParams, ServiceWorkerResult, ServiceWorkerSnapshot, ServiceWorkerStateWire,
+    ServiceWorkerResponseParams, ServiceWorkerResult, ServiceWorkerSnapshot, ServiceWorkerStateChanges,
+    ServiceWorkerStateWire,
 };
 use zero_script_sandbox::SandboxConfig;
 use zero_storage::{ServiceWorkerRegistration, ServiceWorkerState};
@@ -203,6 +204,27 @@ impl BrowserServiceWorkerOwner {
                     })
                     .unwrap_or_default();
                 self.result_disposition(tab_id, request_id, Ok(ServiceWorkerResult::Snapshots(registrations)))
+            }
+            ServiceWorkerOperation::StateChanges {
+                registration_id,
+                after_sequence,
+            } => {
+                let result = self
+                    .authorized_registration(profile, registration_id, &authority)
+                    .and_then(|_| {
+                        let (latest_sequence, states) = self
+                            .manager(profile)
+                            .and_then(|manager| manager.state_changes_since(registration_id, after_sequence))
+                            .ok_or_else(|| ServiceWorkerError {
+                                code: ServiceWorkerErrorCode::NotFound,
+                                message: "Service Worker registration does not exist".into(),
+                            })?;
+                        Ok(ServiceWorkerResult::StateChanges(ServiceWorkerStateChanges {
+                            latest_sequence,
+                            states: states.iter().copied().map(state_wire).collect(),
+                        }))
+                    });
+                self.result_disposition(tab_id, request_id, result)
             }
         }
     }
@@ -501,13 +523,17 @@ fn snapshot(registration: ServiceWorkerRegistration) -> ServiceWorkerSnapshot {
         registration_id: registration.id,
         script_url: registration.script_url,
         scope: registration.scope,
-        state: match registration.state {
-            ServiceWorkerState::Registered | ServiceWorkerState::Installing => ServiceWorkerStateWire::Installing,
-            ServiceWorkerState::Installed => ServiceWorkerStateWire::Installed,
-            ServiceWorkerState::Activating => ServiceWorkerStateWire::Activating,
-            ServiceWorkerState::Activated => ServiceWorkerStateWire::Activated,
-            ServiceWorkerState::Redundant => ServiceWorkerStateWire::Redundant,
-        },
+        state: state_wire(registration.state),
+    }
+}
+
+fn state_wire(state: ServiceWorkerState) -> ServiceWorkerStateWire {
+    match state {
+        ServiceWorkerState::Registered | ServiceWorkerState::Installing => ServiceWorkerStateWire::Installing,
+        ServiceWorkerState::Installed => ServiceWorkerStateWire::Installed,
+        ServiceWorkerState::Activating => ServiceWorkerStateWire::Activating,
+        ServiceWorkerState::Activated => ServiceWorkerStateWire::Activated,
+        ServiceWorkerState::Redundant => ServiceWorkerStateWire::Redundant,
     }
 }
 

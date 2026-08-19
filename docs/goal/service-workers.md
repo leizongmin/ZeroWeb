@@ -135,7 +135,7 @@ cache-storage 用例归本目标（兄弟目标只收 window 面）。
 ### DC-2: 真实生命周期与执行
 
 - [ ] register → scriptURL 下载 → SW 上下文执行 → install/activate 真事件全链路
-- [x] setTimeout 生命周期模拟已删除；页面 timer 仅轮询 manager snapshot
+- [x] setTimeout 生命周期模拟已删除；页面 timer 仅逐 task 投影 manager transition log
 - [ ] scope 匹配/controller/oncontrollerchange/skipWaiting/claim 语义与 spec 一致（WPT 为准）
 
 ### DC-3: fetch 拦截

@@ -131,6 +131,30 @@ impl ServiceWorkerIpcClient {
             }),
         );
 
+        let state_changes_client = self.clone();
+        sandbox.register_callback(
+            "__zw_sw_state_changes",
+            Box::new(move |args| {
+                let Some(registration_id) = parse_registration_id(args) else {
+                    return error_wire("invalid registration id");
+                };
+                let after_sequence = args.get(1).and_then(|value| value.parse::<u64>().ok()).unwrap_or(0);
+                match state_changes_client.request(ServiceWorkerOperation::StateChanges {
+                    registration_id,
+                    after_sequence,
+                }) {
+                    Ok(ServiceWorkerResult::StateChanges(changes)) => serde_json::json!({
+                        "ok": true,
+                        "latestSequence": changes.latest_sequence,
+                        "states": changes.states.into_iter().map(state_wire).collect::<Vec<_>>(),
+                    })
+                    .to_string(),
+                    Ok(_) => error_wire("invalid state changes response"),
+                    Err(error) => error_wire(error.message),
+                }
+            }),
+        );
+
         let unregister_client = self.clone();
         sandbox.register_callback(
             "__zw_sw_unregister",

@@ -182,6 +182,68 @@ fn navigator_register_projects_real_manager_state() {
 }
 
 #[test]
+fn navigator_lifecycle_events_preserve_state_and_slot_task_order() {
+    let mut webview = WebViewBuilder::new()
+        .url("https://example.test/page.html")
+        .script_source_fetcher(Arc::new(|_, _| Ok(String::new())))
+        .build();
+
+    webview
+        .execute_script(
+            "globalThis.__swEvents = [];
+             globalThis.__swEventsDone = false;
+             navigator.serviceWorker.register('/sw.js', {scope:'/events/'}).then(function(reg) {
+               var worker = reg.installing;
+               globalThis.__swBrands =
+                 String(worker instanceof ServiceWorker) + '|' +
+                 String(reg instanceof ServiceWorkerRegistration) + '|' +
+                 String(worker instanceof EventTarget) + '|' +
+                 String(reg instanceof EventTarget);
+               function slots() {
+                 return (reg.installing === worker ? 'I' : '-') +
+                   (reg.waiting === worker ? 'W' : '-') +
+                   (reg.active === worker ? 'A' : '-');
+               }
+               reg.addEventListener('updatefound', function(event) {
+                 globalThis.__swEvents.push(
+                   'updatefound:' + worker.state + ':' + slots() + ':' +
+                   String(event.target === reg && event.currentTarget === reg &&
+                     event instanceof Event));
+               });
+               worker.addEventListener('statechange', function(event) {
+                 globalThis.__swEvents.push(
+                   worker.state + ':' + slots() + ':' +
+                   String(event.target === worker && event.currentTarget === worker &&
+                     event instanceof Event));
+                 if (worker.state === 'activated') reg.unregister();
+                 if (worker.state === 'redundant') globalThis.__swEventsDone = true;
+               });
+             });
+             'started';",
+        )
+        .unwrap();
+
+    let deadline = Instant::now() + Duration::from_secs(5);
+    loop {
+        if webview.execute_script("String(globalThis.__swEventsDone)").unwrap() == "true" {
+            break;
+        }
+        assert!(Instant::now() < deadline, "Service Worker lifecycle events timed out");
+        std::thread::sleep(Duration::from_millis(5));
+    }
+
+    assert_eq!(
+        webview.execute_script("globalThis.__swBrands").unwrap(),
+        "true|true|true|true"
+    );
+    assert_eq!(
+        webview.execute_script("globalThis.__swEvents.join('|')").unwrap(),
+        "updatefound:installing:I--:true|installed:-W-:true|activating:--A:true|\
+         activated:--A:true|redundant:---:true"
+    );
+}
+
+#[test]
 fn navigator_register_rejects_script_compile_failure() {
     let mut webview = WebViewBuilder::new()
         .url("https://example.test/page.html")
@@ -218,11 +280,17 @@ fn navigator_replacement_reuses_registration_identity_for_scope() {
                globalThis.__firstReg = first;
                return navigator.serviceWorker.ready;
              }).then(function() {
+               globalThis.__firstWorker = globalThis.__firstReg.active;
                return navigator.serviceWorker.register('/sw-v2.js', {scope:'/app/'});
              }).then(function(second) {
+               var versionIdentity =
+                 String(second.installing !== globalThis.__firstWorker) + '|' +
+                 String(second.installing.scriptURL.endsWith('/sw-v2.js')) + '|' +
+                 String(second.active === globalThis.__firstWorker);
                return navigator.serviceWorker.getRegistrations().then(function(all) {
                  globalThis.__identity = String(second === globalThis.__firstReg) + '|' +
-                   String(all.length) + '|' + String(all[0] === globalThis.__firstReg);
+                   String(all.length) + '|' + String(all[0] === globalThis.__firstReg) + '|' +
+                   versionIdentity;
                });
              }, function(error) {
                globalThis.__identity = 'error:' + String(error);
@@ -235,7 +303,7 @@ fn navigator_replacement_reuses_registration_identity_for_scope() {
     loop {
         let value = webview.execute_script("globalThis.__identity").unwrap();
         if value != "pending" {
-            assert_eq!(value, "true|1|true");
+            assert_eq!(value, "true|1|true|true|true|true");
             break;
         }
         assert!(Instant::now() < deadline, "replacement registration did not settle");
