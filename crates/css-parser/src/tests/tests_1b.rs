@@ -395,6 +395,13 @@ fn test_parse_overflow_clip_margin() {
     assert_eq!(parse_overflow_clip_margin("5px 10px"), None);
     assert_eq!(parse_overflow_clip_margin("content-box 5px 10px"), None);
     assert_eq!(parse_overflow_clip_margin("bogus"), None);
+    assert_eq!(parse_overflow_clip_margin("-1px"), None);
+    assert_eq!(parse_overflow_clip_margin("content-box -1em"), None);
+    assert_eq!(parse_overflow_clip_margin("50%"), None);
+    assert_eq!(parse_overflow_clip_margin("thin"), None);
+    assert_eq!(parse_overflow_clip_margin("auto"), None);
+    assert_eq!(parse_overflow_clip_margin("infpx"), None);
+    assert_eq!(parse_overflow_clip_margin("NaNpx"), None);
     assert_eq!(parse_overflow_clip_margin(""), None);
     assert_eq!(parse_overflow_clip_margin("   "), None);
 }

@@ -151,7 +151,11 @@ pub fn parse_overflow_clip_margin(value: &str) -> Option<OverflowClipMarginValue
                 if length.is_some() {
                     return None;
                 }
-                length = Some(parse_length(p)?);
+                let parsed = parse_length(p)?;
+                if !overflow_clip_margin_length_is_valid(p, &parsed) {
+                    return None;
+                }
+                length = Some(parsed);
             }
         }
     }
@@ -159,6 +163,34 @@ pub fn parse_overflow_clip_margin(value: &str) -> Option<OverflowClipMarginValue
         box_kind: box_kind.unwrap_or(OverflowClipMarginBox::PaddingBox),
         length: length.unwrap_or(LengthValue::Px(0.0)),
     })
+}
+
+fn overflow_clip_margin_length_is_valid(raw: &str, value: &LengthValue) -> bool {
+    if matches!(
+        raw.trim().to_ascii_lowercase().as_str(),
+        "thin" | "medium" | "thick" | "auto" | "min-content" | "max-content" | "fit-content"
+    ) {
+        return false;
+    }
+    match value {
+        LengthValue::Px(v)
+        | LengthValue::Em(v)
+        | LengthValue::Ex(v)
+        | LengthValue::Rex(v)
+        | LengthValue::Cap(v)
+        | LengthValue::Rcap(v)
+        | LengthValue::Rem(v)
+        | LengthValue::Vh(v)
+        | LengthValue::Vw(v)
+        | LengthValue::Vmin(v)
+        | LengthValue::Vmax(v)
+        | LengthValue::Ch(v)
+        | LengthValue::Rch(v)
+        | LengthValue::Ic(v)
+        | LengthValue::Ric(v) => v.is_finite() && *v >= 0.0,
+        LengthValue::Calc(_) => true,
+        _ => false,
+    }
 }
 
 /// 解析 CSS float 属性值。

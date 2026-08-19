@@ -1760,6 +1760,22 @@ fn test_overflow_xy_pipeline() {
     assert_eq!(style.overflow_y, OverflowValue::Hidden);
 }
 
+#[test]
+fn test_overflow_clip_margin_rejects_invalid_consumer_grammar() {
+    let mut style = ComputedStyle::default();
+    assert!(apply_property_value(
+        &mut style,
+        "overflow-clip-margin",
+        "content-box 2px"
+    ));
+    let old = style.overflow_clip_margin.clone();
+
+    for value in ["-1px", "content-box -1em", "50%", "thin", "auto", "infpx", "NaNpx"] {
+        assert!(!apply_property_value(&mut style, "overflow-clip-margin", value));
+        assert_eq!(style.overflow_clip_margin, old);
+    }
+}
+
 /// 测试 z-index: auto 管线。
 #[test]
 fn test_z_index_auto_pipeline() {
