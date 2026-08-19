@@ -217,6 +217,8 @@ Clip-path exposed the basic-shape slot variant: one property can contain both si
 
 Border-spacing exposed the inherited-table length-only variant: inherited table spacing still needs the parser boundary to enforce `<length [0,∞]>` before direct apply writes computed px fields. Reject percentages, parser aliases, sizing keywords, negative values, and non-finite values at the shared parser edge so invalid declarations preserve the previous spacing pair.
 
+Border-image width and outset exposed the suffix-gated length variant: checking only `px|em|rem` before shared parsing narrows a valid `<length>` grammar and rejects viewport or font-metric units. Parse candidate length tokens first, then apply a raw-token non-negative length validator before falling back to unitless number parsing.
+
 ## Root Cause
 
 The shorthand layer used heuristic component classifiers and treated unrecognized tokens as absent optional components. That is wrong for CSS shorthands such as `border`, where every token must match one of the allowed component grammars. A shared parser can also be broader than the property grammar that consumes it: general length parsing may accept `auto`, intrinsic sizing keywords, or percentages that `border-width` must reject.

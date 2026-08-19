@@ -173,9 +173,8 @@ pub fn parse_border_image_width(value: &str) -> Option<BorderImageWidthValue> {
                 return None;
             }
             components.push(BorderImageWidthComponent::Percent(pct));
-        } else if lower.ends_with("px") || lower.ends_with("em") || lower.ends_with("rem") {
-            let len = parse_length(token)?;
-            if length_is_negative(&len) {
+        } else if let Some(len) = parse_length(token) {
+            if !border_image_length_is_valid(token, &len) {
                 return None;
             }
             components.push(BorderImageWidthComponent::Length(len));
@@ -305,9 +304,8 @@ pub fn parse_border_image_outset(value: &str) -> Option<BorderImageOutsetValue> 
 
     for token in value.split_whitespace() {
         let lower = token.to_ascii_lowercase();
-        if lower.ends_with("px") || lower.ends_with("em") || lower.ends_with("rem") {
-            let len = parse_length(token)?;
-            if length_is_negative(&len) {
+        if let Some(len) = parse_length(token) {
+            if !border_image_length_is_valid(token, &len) {
                 return None;
             }
             components.push(BorderImageOutsetComponent::Length(len));
@@ -339,6 +337,34 @@ pub fn parse_border_image_outset(value: &str) -> Option<BorderImageOutsetValue> 
         bottom: components[2].clone(),
         left: components[3].clone(),
     })
+}
+
+fn border_image_length_is_valid(raw: &str, value: &LengthValue) -> bool {
+    if matches!(
+        raw.trim().to_ascii_lowercase().as_str(),
+        "thin" | "medium" | "thick" | "auto" | "min-content" | "max-content" | "fit-content"
+    ) {
+        return false;
+    }
+    match value {
+        LengthValue::Px(v)
+        | LengthValue::Em(v)
+        | LengthValue::Ex(v)
+        | LengthValue::Rex(v)
+        | LengthValue::Cap(v)
+        | LengthValue::Rcap(v)
+        | LengthValue::Rem(v)
+        | LengthValue::Vh(v)
+        | LengthValue::Vw(v)
+        | LengthValue::Vmin(v)
+        | LengthValue::Vmax(v)
+        | LengthValue::Ch(v)
+        | LengthValue::Rch(v)
+        | LengthValue::Ic(v)
+        | LengthValue::Ric(v) => v.is_finite() && *v >= 0.0,
+        LengthValue::Calc(_) => true,
+        _ => false,
+    }
 }
 
 /// CSS list-style-image 属性值。
@@ -444,28 +470,6 @@ fn border_spacing_length_is_valid(raw: &str, value: &LengthValue) -> bool {
         | LengthValue::Ic(v)
         | LengthValue::Ric(v) => v.is_finite() && *v >= 0.0,
         LengthValue::Calc(_) => true,
-        _ => false,
-    }
-}
-
-fn length_is_negative(value: &LengthValue) -> bool {
-    match value {
-        LengthValue::Px(v)
-        | LengthValue::Em(v)
-        | LengthValue::Ex(v)
-        | LengthValue::Rex(v)
-        | LengthValue::Cap(v)
-        | LengthValue::Rcap(v)
-        | LengthValue::Rem(v)
-        | LengthValue::Vh(v)
-        | LengthValue::Vw(v)
-        | LengthValue::Vmin(v)
-        | LengthValue::Vmax(v)
-        | LengthValue::Ch(v)
-        | LengthValue::Rch(v)
-        | LengthValue::Ic(v)
-        | LengthValue::Ric(v)
-        | LengthValue::Percentage(v) => *v < 0.0,
         _ => false,
     }
 }

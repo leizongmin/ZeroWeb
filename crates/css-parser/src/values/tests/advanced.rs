@@ -1085,6 +1085,13 @@ fn test_parse_border_image_width_px() {
 }
 
 #[test]
+fn test_parse_border_image_width_length_units() {
+    let v = parse_border_image_width("1vh 2ch").unwrap();
+    assert_eq!(v.top, BorderImageWidthComponent::Length(LengthValue::Vh(1.0)));
+    assert_eq!(v.right, BorderImageWidthComponent::Length(LengthValue::Ch(2.0)));
+}
+
+#[test]
 fn test_parse_border_image_width_percent() {
     let v = parse_border_image_width("25%").unwrap();
     assert_eq!(v.top, BorderImageWidthComponent::Percent(25.0));
@@ -1170,6 +1177,13 @@ fn test_parse_border_image_outset_number() {
 fn test_parse_border_image_outset_px() {
     let v = parse_border_image_outset("10px").unwrap();
     assert_eq!(v.top, BorderImageOutsetComponent::Length(LengthValue::Px(10.0)));
+}
+
+#[test]
+fn test_parse_border_image_outset_length_units() {
+    let v = parse_border_image_outset("1vh 2ch").unwrap();
+    assert_eq!(v.top, BorderImageOutsetComponent::Length(LengthValue::Vh(1.0)));
+    assert_eq!(v.right, BorderImageOutsetComponent::Length(LengthValue::Ch(2.0)));
 }
 
 #[test]
