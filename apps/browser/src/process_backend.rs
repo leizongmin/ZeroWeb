@@ -61,6 +61,14 @@ fn browser_storage_manager() -> Result<StorageManager, zero_storage::StorageErro
     }
 }
 
+fn browser_service_worker_owner() -> BrowserServiceWorkerOwner {
+    if cfg!(test) || zero_runtime_config::enabled_when_true("ZERO_PRIVATE") {
+        BrowserServiceWorkerOwner::new()
+    } else {
+        BrowserServiceWorkerOwner::with_persistence(zero_storage::default_service_worker_state_path())
+    }
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct PendingIndexedDbNavigation {
     url: String,
@@ -225,6 +233,21 @@ impl ProcessTabBackend {
     }
 
     fn with_renderer_bin(renderer_bin: PathBuf) -> Self {
+        Self::with_renderer_bin_and_service_worker_owner(renderer_bin, browser_service_worker_owner())
+    }
+
+    #[cfg(test)]
+    fn with_renderer_bin_and_service_worker_persistence(renderer_bin: PathBuf, path: PathBuf) -> Self {
+        Self::with_renderer_bin_and_service_worker_owner(
+            renderer_bin,
+            BrowserServiceWorkerOwner::with_persistence(path),
+        )
+    }
+
+    fn with_renderer_bin_and_service_worker_owner(
+        renderer_bin: PathBuf,
+        service_worker_owner: BrowserServiceWorkerOwner,
+    ) -> Self {
         let storage = browser_storage_manager();
         let (storage, storage_error) = match storage {
             Ok(storage) => (storage, None),
@@ -252,7 +275,7 @@ impl ProcessTabBackend {
             pending_loaded: Vec::new(),
             pending_errors: Vec::new(),
             fetch_proxy: TabFetchProxy::new(),
-            service_worker_owner: BrowserServiceWorkerOwner::new(),
+            service_worker_owner,
             pending_dispatch_results: Vec::new(),
             pending_focus_changes: Vec::new(),
             pending_automation_responses: HashMap::new(),

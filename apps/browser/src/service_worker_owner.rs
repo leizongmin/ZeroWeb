@@ -1,14 +1,18 @@
 //! Browser-process Service Worker registration owner.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
+use std::fs::{self, File};
+use std::io::{Read, Write};
+use std::path::{Path, PathBuf};
 use std::sync::mpsc::{Receiver, TryRecvError};
 
+use serde::{Deserialize, Serialize};
 use url::Url;
 use zero_browser_shell::TabId;
 use zero_net::HttpResponse;
 use zero_page_runtime::{
-    ServiceWorkerManager, ServiceWorkerManagerError, ServiceWorkerManagerEvent, ServiceWorkerRegistrationErrorKind,
-    ServiceWorkerUpdateOutcome, validate_service_worker_registration,
+    ServiceWorkerManager, ServiceWorkerManagerError, ServiceWorkerManagerEvent, ServiceWorkerPersistentRegistration,
+    ServiceWorkerRegistrationErrorKind, ServiceWorkerUpdateOutcome, validate_service_worker_registration,
 };
 use zero_protocol::message::{
     ServiceWorkerClientMessages, ServiceWorkerError, ServiceWorkerErrorCode, ServiceWorkerOperation,
@@ -19,6 +23,15 @@ use zero_script_sandbox::SandboxConfig;
 use zero_storage::{ServiceWorkerRegistration, ServiceWorkerState};
 
 const MAX_SCRIPT_BYTES: usize = 16 * 1024 * 1024;
+const MAX_PERSISTED_FILE_BYTES: u64 = 64 * 1024 * 1024;
+const MAX_PERSISTED_REGISTRATIONS: usize = 32;
+const PERSISTENCE_VERSION: u32 = 1;
+
+#[derive(Serialize, Deserialize)]
+struct PersistedServiceWorkers {
+    version: u32,
+    registrations: Vec<ServiceWorkerPersistentRegistration>,
+}
 
 enum ServiceWorkerFetchPurpose {
     Register,
@@ -84,15 +97,70 @@ pub(crate) struct BrowserServiceWorkerOwner {
     private: HashMap<TabId, ServiceWorkerManager>,
     pending_fetches: Vec<PendingScriptFetch>,
     pending_evaluations: HashMap<(ProfileKey, u64), PendingEvaluation>,
+    persistence_path: Option<PathBuf>,
+    restoring: HashSet<u64>,
 }
 
 impl BrowserServiceWorkerOwner {
     pub(crate) fn new() -> Self {
+        Self::empty(None)
+    }
+
+    pub(crate) fn with_persistence(path: PathBuf) -> Self {
+        let mut owner = Self::empty(Some(path.clone()));
+        match load_persisted_service_workers(&path) {
+            Ok(registrations) => {
+                let had_records = !registrations.is_empty();
+                for registration in registrations {
+                    match owner.normal.start_restored_active(
+                        &registration.script_url,
+                        &registration.scope,
+                        &registration.origin,
+                        &registration.script_source,
+                        SandboxConfig::default(),
+                    ) {
+                        Ok(registration_id) => {
+                            owner.restoring.insert(registration_id);
+                        }
+                        Err(error) => {
+                            tracing::warn!("Service Worker restore skipped: {error}");
+                        }
+                    }
+                }
+                if had_records
+                    && owner.restoring.is_empty()
+                    && let Err(error) = owner.persist_normal()
+                {
+                    tracing::warn!("Service Worker persistence cleanup failed: {error}");
+                }
+            }
+            Err(error) => {
+                tracing::warn!("Service Worker persistence load failed: {error}");
+            }
+        }
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+        while !owner.restoring.is_empty() {
+            let _ = owner.poll();
+            if std::time::Instant::now() >= deadline {
+                tracing::warn!(
+                    "Service Worker persistence restore timed out with {} registrations pending",
+                    owner.restoring.len()
+                );
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(1));
+        }
+        owner
+    }
+
+    fn empty(persistence_path: Option<PathBuf>) -> Self {
         Self {
             normal: ServiceWorkerManager::new(),
             private: HashMap::new(),
             pending_fetches: Vec::new(),
             pending_evaluations: HashMap::new(),
+            persistence_path,
+            restoring: HashSet::new(),
         }
     }
 
@@ -193,7 +261,16 @@ impl BrowserServiceWorkerOwner {
             ServiceWorkerOperation::Unregister { registration_id } => {
                 let result = self
                     .authorized_registration(profile, registration_id, &authority)
-                    .map(|_| ServiceWorkerResult::Boolean(self.manager_mut(profile).unregister(registration_id)));
+                    .map(|_| {
+                        let removed = self.manager_mut(profile).unregister(registration_id);
+                        if removed
+                            && profile == ProfileKey::Normal
+                            && let Err(error) = self.persist_normal()
+                        {
+                            tracing::warn!("Service Worker persistence after unregister failed: {error}");
+                        }
+                        ServiceWorkerResult::Boolean(removed)
+                    });
                 self.result_disposition(tab_id, request_id, result)
             }
             ServiceWorkerOperation::ActivateWaiting { registration_id } => {
@@ -516,6 +593,7 @@ impl BrowserServiceWorkerOwner {
 
     fn poll_manager(&mut self, profile: ProfileKey, completed: &mut Vec<CompletedServiceWorkerResponse>) {
         let events = self.manager_mut(profile).poll();
+        let mut persistence_dirty = false;
         for event in events {
             match event {
                 ServiceWorkerManagerEvent::ScriptEvaluated { registration_id } => {
@@ -540,6 +618,12 @@ impl BrowserServiceWorkerOwner {
                     registration_id,
                     message,
                 } => {
+                    if profile == ProfileKey::Normal
+                        && self.restoring.remove(&registration_id)
+                        && self.restoring.is_empty()
+                    {
+                        persistence_dirty = true;
+                    }
                     if let Some(pending) = self.pending_evaluations.remove(&(profile, registration_id)) {
                         completed.push(error_response(
                             pending.tab_id,
@@ -549,9 +633,54 @@ impl BrowserServiceWorkerOwner {
                         ));
                     }
                 }
+                ServiceWorkerManagerEvent::InstallCompleted {
+                    registration_id,
+                    succeeded: false,
+                } => {
+                    if profile == ProfileKey::Normal
+                        && self.restoring.remove(&registration_id)
+                        && self.restoring.is_empty()
+                    {
+                        persistence_dirty = true;
+                    }
+                }
+                ServiceWorkerManagerEvent::ActivationCompleted {
+                    registration_id,
+                    succeeded,
+                } if profile == ProfileKey::Normal => {
+                    let restored = self.restoring.remove(&registration_id);
+                    if self.restoring.is_empty() && (restored || succeeded) {
+                        persistence_dirty = true;
+                    }
+                }
+                ServiceWorkerManagerEvent::RestorationCompleted { registration_id }
+                    if profile == ProfileKey::Normal
+                        && self.restoring.remove(&registration_id)
+                        && self.restoring.is_empty() =>
+                {
+                    persistence_dirty = true;
+                }
                 _ => {}
             }
         }
+        if persistence_dirty && let Err(error) = self.persist_normal() {
+            tracing::warn!("Service Worker persistence update failed: {error}");
+        }
+    }
+
+    fn persist_normal(&self) -> Result<(), String> {
+        let Some(path) = &self.persistence_path else {
+            return Ok(());
+        };
+        let state = PersistedServiceWorkers {
+            version: PERSISTENCE_VERSION,
+            registrations: self.normal.persistent_active_registrations(),
+        };
+        let json = serde_json::to_string(&state).map_err(|error| format!("serialize state failed: {error}"))?;
+        if json.len() as u64 > MAX_PERSISTED_FILE_BYTES {
+            return Err("serialized state exceeds the size limit".into());
+        }
+        atomic_write_persistence(path, &json)
     }
 
     fn manager(&self, profile: ProfileKey) -> Option<&ServiceWorkerManager> {
@@ -618,6 +747,81 @@ impl Default for BrowserServiceWorkerOwner {
     fn default() -> Self {
         Self::new()
     }
+}
+
+fn load_persisted_service_workers(path: &Path) -> Result<Vec<ServiceWorkerPersistentRegistration>, String> {
+    let metadata = match fs::metadata(path) {
+        Ok(metadata) => metadata,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
+        Err(error) => return Err(format!("read state metadata failed: {error}")),
+    };
+    if metadata.len() > MAX_PERSISTED_FILE_BYTES {
+        return Err("state file exceeds the size limit".into());
+    }
+    let mut source = String::new();
+    File::open(path)
+        .map_err(|error| format!("open state failed: {error}"))?
+        .take(MAX_PERSISTED_FILE_BYTES + 1)
+        .read_to_string(&mut source)
+        .map_err(|error| format!("read state failed: {error}"))?;
+    if source.len() as u64 > MAX_PERSISTED_FILE_BYTES {
+        return Err("state file exceeds the size limit".into());
+    }
+    let state = serde_json::from_str::<PersistedServiceWorkers>(&source)
+        .map_err(|error| format!("parse state failed: {error}"))?;
+    if state.version != PERSISTENCE_VERSION {
+        return Err(format!("unsupported state version {}", state.version));
+    }
+    if state.registrations.len() > MAX_PERSISTED_REGISTRATIONS {
+        return Err("state has too many registrations".into());
+    }
+
+    let mut keys = HashSet::new();
+    let mut total_script_bytes = 0usize;
+    for registration in &state.registrations {
+        total_script_bytes = total_script_bytes
+            .checked_add(registration.script_source.len())
+            .ok_or_else(|| "state script size overflow".to_string())?;
+        if total_script_bytes as u64 > MAX_PERSISTED_FILE_BYTES {
+            return Err("state scripts exceed the size limit".into());
+        }
+        let document = Url::parse(&registration.origin).map_err(|_| "state origin is invalid".to_string())?;
+        if document.origin().ascii_serialization() != registration.origin {
+            return Err("state origin is not canonical".into());
+        }
+        let (script_url, scope, origin) =
+            validate_service_worker_registration(&registration.script_url, Some(&registration.scope), &document)
+                .map_err(|error| format!("state registration is invalid: {}", error.message))?;
+        if script_url.as_str() != registration.script_url
+            || scope.as_str() != registration.scope
+            || origin != registration.origin
+        {
+            return Err("state registration URLs are not canonical".into());
+        }
+        if !keys.insert((registration.origin.clone(), registration.scope.clone())) {
+            return Err("state contains duplicate registration keys".into());
+        }
+    }
+    Ok(state.registrations)
+}
+
+fn atomic_write_persistence(path: &Path, content: &str) -> Result<(), String> {
+    let parent = path
+        .parent()
+        .ok_or_else(|| format!("state path has no parent: {}", path.display()))?;
+    fs::create_dir_all(parent).map_err(|error| format!("create state directory failed: {error}"))?;
+    let temporary = path.with_extension(format!("{}.tmp", std::process::id()));
+    let mut file = File::create(&temporary).map_err(|error| format!("create temporary state failed: {error}"))?;
+    file.write_all(content.as_bytes())
+        .map_err(|error| format!("write temporary state failed: {error}"))?;
+    file.sync_all()
+        .map_err(|error| format!("sync temporary state failed: {error}"))?;
+    fs::rename(&temporary, path).map_err(|error| format!("replace state failed: {error}"))?;
+    #[cfg(unix)]
+    File::open(parent)
+        .and_then(|directory| directory.sync_all())
+        .map_err(|error| format!("sync state directory failed: {error}"))?;
+    Ok(())
 }
 
 fn validate_client_url(client_url: &str, document: &Url) -> Result<Url, &'static str> {

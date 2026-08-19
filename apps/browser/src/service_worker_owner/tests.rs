@@ -60,6 +60,12 @@ fn wait_for_registration_state(
     }
 }
 
+fn persistence_path(label: &str) -> std::path::PathBuf {
+    std::env::temp_dir()
+        .join(format!("zeroweb-sw-{label}-{}", std::process::id()))
+        .join("registrations.json")
+}
+
 #[test]
 fn register_fetches_evaluates_and_returns_correlated_id() {
     let mut owner = BrowserServiceWorkerOwner::new();
@@ -146,6 +152,186 @@ fn update_fetch_compares_bytes_before_starting_replacement() {
         .unwrap();
     assert_eq!(slots.active, Some(first));
     assert_eq!(slots.installing, Some(replacement));
+}
+
+#[test]
+fn persistent_owner_restores_active_runtime_and_unregisters_durably() {
+    let path = persistence_path("restore");
+    let _ = std::fs::remove_dir_all(path.parent().unwrap());
+    {
+        let mut owner = BrowserServiceWorkerOwner::with_persistence(path.clone());
+        let disposition = owner.begin_request(
+            TabId(1),
+            false,
+            54,
+            Some("https://example.test/app/page"),
+            register_request("https://example.test/app/page"),
+        );
+        attach_script(
+            &mut owner,
+            disposition,
+            "globalThis.restored = true; addEventListener('activate', event => event.waitUntil(Promise.resolve()));",
+        );
+        let response = wait_for_response(&mut owner);
+        let Ok(ServiceWorkerResult::Registered { registration_id }) = response.params.result else {
+            panic!("persistent registration failed");
+        };
+        wait_for_registration_state(&mut owner, registration_id, ServiceWorkerState::Activated);
+        let deadline = Instant::now() + Duration::from_secs(5);
+        while !path.is_file() {
+            let _ = owner.poll();
+            assert!(Instant::now() < deadline, "persistence file was not written");
+            std::thread::sleep(Duration::from_millis(5));
+        }
+    }
+
+    let mut restored = BrowserServiceWorkerOwner::with_persistence(path.clone());
+    let deadline = Instant::now() + Duration::from_secs(5);
+    let restored_id = loop {
+        let _ = restored.poll();
+        if let Some(registration) = restored
+            .normal
+            .active_registration_for_url("https://example.test", "https://example.test/app/page")
+        {
+            break registration.id;
+        }
+        assert!(Instant::now() < deadline, "persistent runtime restore timed out");
+        std::thread::sleep(Duration::from_millis(5));
+    };
+    let ServiceWorkerRequestDisposition::Respond(controller) = restored.begin_request(
+        TabId(2),
+        false,
+        55,
+        Some("https://example.test/app/page"),
+        ServiceWorkerRequestParams {
+            operation: ServiceWorkerOperation::Controller,
+        },
+    ) else {
+        panic!("controller query must complete immediately");
+    };
+    assert!(matches!(
+        controller.params.result,
+        Ok(ServiceWorkerResult::OptionalSnapshot(Some(ServiceWorkerSnapshot {
+            registration_id,
+            state: ServiceWorkerStateWire::Activated,
+            ..
+        }))) if registration_id == restored_id
+    ));
+
+    let ServiceWorkerRequestDisposition::Respond(unregistered) = restored.begin_request(
+        TabId(2),
+        false,
+        56,
+        Some("https://example.test/app/page"),
+        ServiceWorkerRequestParams {
+            operation: ServiceWorkerOperation::Unregister {
+                registration_id: restored_id,
+            },
+        },
+    ) else {
+        panic!("unregister must complete immediately");
+    };
+    assert_eq!(unregistered.params.result, Ok(ServiceWorkerResult::Boolean(true)));
+    drop(restored);
+
+    let empty = BrowserServiceWorkerOwner::with_persistence(path.clone());
+    assert!(empty.normal.registrations_for_origin("https://example.test").is_empty());
+    std::fs::remove_dir_all(path.parent().unwrap()).unwrap();
+}
+
+#[test]
+fn private_and_invalid_persistence_never_restore_into_normal_profile() {
+    let path = persistence_path("private");
+    let _ = std::fs::remove_dir_all(path.parent().unwrap());
+    let mut owner = BrowserServiceWorkerOwner::with_persistence(path.clone());
+    let disposition = owner.begin_request(
+        TabId(7),
+        true,
+        57,
+        Some("https://example.test/app/page"),
+        register_request("https://example.test/app/page"),
+    );
+    attach_script(&mut owner, disposition, "globalThis.privateWorker = true;");
+    let response = wait_for_response(&mut owner);
+    let Ok(ServiceWorkerResult::Registered { registration_id }) = response.params.result else {
+        panic!("private registration failed");
+    };
+    let deadline = Instant::now() + Duration::from_secs(5);
+    loop {
+        let _ = owner.poll();
+        if owner
+            .private
+            .get(&TabId(7))
+            .and_then(|manager| manager.registration(registration_id))
+            .is_some_and(|registration| registration.state == ServiceWorkerState::Activated)
+        {
+            break;
+        }
+        assert!(Instant::now() < deadline, "private registration activation timed out");
+        std::thread::sleep(Duration::from_millis(5));
+    }
+    assert!(!path.exists(), "private profile must not write normal persistence");
+    drop(owner);
+
+    std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+    std::fs::write(&path, r#"{"version":999,"registrations":[]}"#).unwrap();
+    let invalid = BrowserServiceWorkerOwner::with_persistence(path.clone());
+    assert!(
+        invalid
+            .normal
+            .registrations_for_origin("https://example.test")
+            .is_empty()
+    );
+    std::fs::remove_dir_all(path.parent().unwrap()).unwrap();
+}
+
+#[test]
+fn persistence_restore_keeps_valid_scope_when_sibling_script_fails() {
+    let path = persistence_path("partial-restore");
+    let _ = std::fs::remove_dir_all(path.parent().unwrap());
+    {
+        let mut owner = BrowserServiceWorkerOwner::with_persistence(path.clone());
+        for (request_id, script_url, scope) in [(58, "/a.js", "/a/"), (59, "/b.js", "/b/")] {
+            let disposition = owner.begin_request(
+                TabId(1),
+                false,
+                request_id,
+                Some("https://example.test/page"),
+                ServiceWorkerRequestParams {
+                    operation: ServiceWorkerOperation::Register {
+                        script_url: script_url.into(),
+                        scope: Some(scope.into()),
+                        document_url: "https://example.test/page".into(),
+                    },
+                },
+            );
+            attach_script(&mut owner, disposition, "globalThis.persistedScope = true;");
+            let response = wait_for_response(&mut owner);
+            let Ok(ServiceWorkerResult::Registered { registration_id }) = response.params.result else {
+                panic!("scope registration failed");
+            };
+            wait_for_registration_state(&mut owner, registration_id, ServiceWorkerState::Activated);
+        }
+    }
+
+    let mut state = serde_json::from_str::<PersistedServiceWorkers>(&std::fs::read_to_string(&path).unwrap()).unwrap();
+    assert_eq!(state.registrations.len(), 2);
+    state
+        .registrations
+        .iter_mut()
+        .find(|registration| registration.scope == "https://example.test/b/")
+        .unwrap()
+        .script_source = "function(".into();
+    std::fs::write(&path, serde_json::to_string(&state).unwrap()).unwrap();
+
+    let restored = BrowserServiceWorkerOwner::with_persistence(path.clone());
+    let registrations = restored.normal.registrations_for_origin("https://example.test");
+    assert_eq!(registrations.len(), 1);
+    assert_eq!(registrations[0].scope, "https://example.test/a/");
+    let rewritten = serde_json::from_str::<PersistedServiceWorkers>(&std::fs::read_to_string(&path).unwrap()).unwrap();
+    assert_eq!(rewritten.registrations.len(), 1);
+    assert_eq!(rewritten.registrations[0].scope, "https://example.test/a/");
+    std::fs::remove_dir_all(path.parent().unwrap()).unwrap();
 }
 
 #[test]

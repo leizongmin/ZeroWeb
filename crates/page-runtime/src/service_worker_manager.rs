@@ -1,5 +1,6 @@
 //! Service Worker registration and lifecycle coordination.
 
+use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 use zero_script_sandbox::{
     SandboxConfig, ServiceWorkerEvent, ServiceWorkerLifecyclePhase, ServiceWorkerRuntime, ServiceWorkerScriptErrorKind,
@@ -72,12 +73,30 @@ pub enum ServiceWorkerUpdateOutcome {
     },
 }
 
+/// Persistable active registration inputs owned by the browser process.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ServiceWorkerPersistentRegistration {
+    /// Canonical top-level script URL.
+    pub script_url: String,
+    /// Canonical registration scope.
+    pub scope: String,
+    /// Serialized origin.
+    pub origin: String,
+    /// UTF-8 top-level script source used to recreate the runtime.
+    pub script_source: String,
+}
+
 /// Typed manager event produced while polling worker runtimes.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ServiceWorkerManagerEvent {
     /// Top-level script evaluation completed.
     ScriptEvaluated {
         /// Registration version ID.
+        registration_id: u64,
+    },
+    /// A persisted active version rebuilt its runtime without lifecycle events.
+    RestorationCompleted {
+        /// Recreated registration version ID.
         registration_id: u64,
     },
     /// Evaluation or runtime execution failed.
@@ -238,6 +257,7 @@ pub struct ServiceWorkerManager {
     script_sources: HashMap<u64, Vec<u8>>,
     runtimes: HashMap<u64, ServiceWorkerRuntime>,
     evaluated: HashSet<u64>,
+    restoring_active: HashSet<u64>,
     runtime_limit: usize,
 }
 
@@ -255,6 +275,7 @@ impl ServiceWorkerManager {
             script_sources: HashMap::new(),
             runtimes: HashMap::new(),
             evaluated: HashSet::new(),
+            restoring_active: HashSet::new(),
             runtime_limit: DEFAULT_RUNTIME_LIMIT,
         }
     }
@@ -270,6 +291,30 @@ impl ServiceWorkerManager {
         origin: &str,
         script: &str,
         config: SandboxConfig,
+    ) -> Result<u64, ServiceWorkerManagerError> {
+        self.start_evaluation_internal(script_url, scope, origin, script, config, false)
+    }
+
+    /// Recreate one persisted active runtime without replaying install/activate.
+    pub fn start_restored_active(
+        &mut self,
+        script_url: &str,
+        scope: &str,
+        origin: &str,
+        script: &str,
+        config: SandboxConfig,
+    ) -> Result<u64, ServiceWorkerManagerError> {
+        self.start_evaluation_internal(script_url, scope, origin, script, config, true)
+    }
+
+    fn start_evaluation_internal(
+        &mut self,
+        script_url: &str,
+        scope: &str,
+        origin: &str,
+        script: &str,
+        config: SandboxConfig,
+        restoring_active: bool,
     ) -> Result<u64, ServiceWorkerManagerError> {
         if script_url.trim().is_empty() {
             return Err(ServiceWorkerManagerError::InvalidInput(
@@ -309,6 +354,9 @@ impl ServiceWorkerManager {
         self.state_changes.insert(id, Vec::new());
         self.script_sources.insert(id, script.as_bytes().to_vec());
         self.runtimes.insert(id, runtime);
+        if restoring_active {
+            self.restoring_active.insert(id);
+        }
         Ok(id)
     }
 
@@ -383,14 +431,29 @@ impl ServiceWorkerManager {
         for (registration_id, event) in pending {
             match event {
                 ServiceWorkerEvent::Evaluated { .. } => {
-                    self.evaluated.insert(registration_id);
                     output.push(ServiceWorkerManagerEvent::ScriptEvaluated { registration_id });
-                    if let Err(error) = self.dispatch_install(registration_id) {
-                        self.fail_installing_version(registration_id);
-                        output.push(ServiceWorkerManagerEvent::CoordinationFailed {
-                            registration_id,
-                            message: error.to_string(),
-                        });
+                    if self.restoring_active.remove(&registration_id) {
+                        match self.complete_active_restoration(registration_id) {
+                            Ok(()) => {
+                                output.push(ServiceWorkerManagerEvent::RestorationCompleted { registration_id });
+                            }
+                            Err(error) => {
+                                self.fail_installing_version(registration_id);
+                                output.push(ServiceWorkerManagerEvent::CoordinationFailed {
+                                    registration_id,
+                                    message: error.to_string(),
+                                });
+                            }
+                        }
+                    } else {
+                        self.evaluated.insert(registration_id);
+                        if let Err(error) = self.dispatch_install(registration_id) {
+                            self.fail_installing_version(registration_id);
+                            output.push(ServiceWorkerManagerEvent::CoordinationFailed {
+                                registration_id,
+                                message: error.to_string(),
+                            });
+                        }
                     }
                 }
                 ServiceWorkerEvent::ScriptError { kind, message, .. } => {
@@ -499,6 +562,30 @@ impl ServiceWorkerManager {
             }
         }
         output
+    }
+
+    /// Promote a recreated runtime directly to its persisted active slot.
+    fn complete_active_restoration(&mut self, registration_id: u64) -> Result<(), ServiceWorkerManagerError> {
+        self.require_state(registration_id, ServiceWorkerState::Installing)?;
+        let key = self.key_for(registration_id)?.clone();
+        let previous_active = {
+            let slot = self.slots.get_mut(&key).expect("registration key must have slots");
+            if slot.installing != Some(registration_id) {
+                return Err(ServiceWorkerManagerError::JobInProgress(
+                    slot.installing.unwrap_or(registration_id),
+                ));
+            }
+            slot.installing = None;
+            slot.active.replace(registration_id)
+        };
+        if let Some(previous_active) = previous_active {
+            self.mark_redundant_and_stop(previous_active);
+        }
+        self.registry
+            .get_mut(registration_id)
+            .expect("validated registration must exist")
+            .state = ServiceWorkerState::Activated;
+        Ok(())
     }
 
     /// Apply the result of the install event and its lifetime promises.
@@ -648,6 +735,7 @@ impl ServiceWorkerManager {
             return false;
         };
         self.evaluated.remove(&registration_id);
+        self.restoring_active.remove(&registration_id);
         self.mark_redundant_and_stop(registration_id);
         let removed = self.registry.unregister(registration_id);
         self.state_changes.remove(&registration_id);
@@ -874,6 +962,28 @@ impl ServiceWorkerManager {
             .collect()
     }
 
+    /// Export active registration inputs for browser-owned persistence.
+    pub fn persistent_active_registrations(&self) -> Vec<ServiceWorkerPersistentRegistration> {
+        let mut registrations = self
+            .slots
+            .iter()
+            .filter_map(|(key, slot)| {
+                let registration = self.registry.get(slot.active?)?;
+                let script_source = String::from_utf8(self.script_sources.get(&registration.id)?.clone()).ok()?;
+                Some(ServiceWorkerPersistentRegistration {
+                    script_url: registration.script_url.clone(),
+                    scope: key.scope.clone(),
+                    origin: key.origin.clone(),
+                    script_source,
+                })
+            })
+            .collect::<Vec<_>>();
+        registrations.sort_unstable_by(|left, right| {
+            (&left.origin, &left.scope, &left.script_url).cmp(&(&right.origin, &right.scope, &right.script_url))
+        });
+        registrations
+    }
+
     /// Return the number of live worker runtimes.
     pub fn runtime_count(&self) -> usize {
         self.runtimes.len()
@@ -938,6 +1048,7 @@ impl ServiceWorkerManager {
             self.record_state_change(registration_id, ServiceWorkerState::Redundant);
         }
         self.claimed_clients.remove(&registration_id);
+        self.restoring_active.remove(&registration_id);
         self.client_messages.retain(|(id, _), _| *id != registration_id);
         self.pending_client_messages.retain(|(id, _), _| *id != registration_id);
         self.script_sources.remove(&registration_id);
@@ -1163,6 +1274,47 @@ mod tests {
                 .unwrap(),
             ServiceWorkerUpdateOutcome::Unchanged { registration_id: next }
         );
+    }
+
+    #[test]
+    fn restored_active_runtime_does_not_replay_install_or_activate() {
+        let mut manager = ServiceWorkerManager::new();
+        let id = manager
+            .start_restored_active(
+                "https://example.test/sw.js",
+                "/",
+                "https://example.test",
+                "addEventListener('install', () => { throw new Error('install replayed'); });
+                 addEventListener('activate', () => { throw new Error('activate replayed'); });",
+                SandboxConfig {
+                    timeout_ms: 200,
+                    ..Default::default()
+                },
+            )
+            .unwrap();
+        let deadline = Instant::now() + Duration::from_secs(5);
+        let mut events = Vec::new();
+        loop {
+            events.extend(manager.poll());
+            if manager
+                .registration(id)
+                .is_some_and(|registration| registration.state == ServiceWorkerState::Activated)
+            {
+                break;
+            }
+            assert!(Instant::now() < deadline, "active restoration timed out");
+            std::thread::sleep(Duration::from_millis(1));
+        }
+        assert!(events.contains(&ServiceWorkerManagerEvent::RestorationCompleted { registration_id: id }));
+        assert!(!events.iter().any(|event| matches!(
+            event,
+            ServiceWorkerManagerEvent::LifecycleSettled { .. }
+                | ServiceWorkerManagerEvent::InstallCompleted { .. }
+                | ServiceWorkerManagerEvent::ActivationCompleted { .. }
+        )));
+        let (latest_sequence, states) = manager.state_changes_since(id, 0).unwrap();
+        assert_eq!(latest_sequence, 0);
+        assert!(states.is_empty());
     }
 
     #[test]

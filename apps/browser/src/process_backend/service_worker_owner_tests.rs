@@ -312,6 +312,99 @@ fn multiprocess_registration_update_compares_script_bytes() {
 }
 
 #[test]
+fn multiprocess_restart_restores_persisted_controller_without_refetch() {
+    let _multiprocess_guard = lock_multiprocess_tests();
+    let renderer = resolve_renderer_binary().expect("fresh zero-renderer binary is required");
+    let persistence = std::env::temp_dir()
+        .join(format!("zeroweb-sw-process-restart-{}", std::process::id()))
+        .join("registrations.json");
+    let _ = std::fs::remove_dir_all(persistence.parent().unwrap());
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let authority = listener.local_addr().unwrap().to_string();
+    let register_page = format!("http://{authority}/register");
+    let worker_source = "globalThis.persisted = true;";
+    let response = format!(
+        "HTTP/1.1 200 OK\r\nContent-Type: application/javascript\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+        worker_source.len(),
+        worker_source
+    );
+    let server = std::thread::spawn(move || {
+        let (mut stream, _) = listener.accept().unwrap();
+        let mut request = [0_u8; 2048];
+        let size = stream.read(&mut request).unwrap();
+        assert!(String::from_utf8_lossy(&request[..size]).starts_with("GET /sw.js "));
+        stream.write_all(response.as_bytes()).unwrap();
+    });
+
+    {
+        let mut backend =
+            ProcessTabBackend::with_renderer_bin_and_service_worker_persistence(renderer.clone(), persistence.clone());
+        let tab_id = TabId(807);
+        let mut snapshots = HashMap::new();
+        load_committed_page(&mut backend, &mut snapshots, tab_id, &register_page);
+        execute_script(
+            &mut backend,
+            &mut snapshots,
+            tab_id,
+            1,
+            "globalThis.__persistResult = 'pending';\
+             navigator.serviceWorker.register('/sw.js', {scope:'/app/'}).then(function() {\
+               return navigator.serviceWorker.ready;\
+             }).then(function(reg) {\
+               globalThis.__persistResult = reg.active && reg.active.state;\
+             }, function(error) {\
+               globalThis.__persistResult = 'error:' + String(error);\
+             });",
+        )
+        .unwrap();
+        let deadline = Instant::now() + Duration::from_secs(20);
+        loop {
+            let value = execute_script(
+                &mut backend,
+                &mut snapshots,
+                tab_id,
+                2,
+                "return String(globalThis.__persistResult);",
+            )
+            .unwrap();
+            if value == AutomationValue::String("activated".into()) {
+                break;
+            }
+            assert!(Instant::now() < deadline, "initial persistent registration timed out");
+            std::thread::sleep(Duration::from_millis(5));
+        }
+        assert!(persistence.is_file());
+        backend.remove_renderer(tab_id);
+    }
+    server.join().unwrap();
+
+    {
+        let mut backend =
+            ProcessTabBackend::with_renderer_bin_and_service_worker_persistence(renderer, persistence.clone());
+        let tab_id = TabId(808);
+        let mut snapshots = HashMap::new();
+        let controlled_page = format!("http://{authority}/app/reloaded");
+        load_committed_page(&mut backend, &mut snapshots, tab_id, &controlled_page);
+        let value = execute_script(
+            &mut backend,
+            &mut snapshots,
+            tab_id,
+            3,
+            "return navigator.serviceWorker.controller ?\
+               navigator.serviceWorker.controller.state + '|' +\
+               navigator.serviceWorker.controller.scriptURL : 'none';",
+        )
+        .unwrap();
+        assert_eq!(
+            value,
+            AutomationValue::String(format!("activated|http://{authority}/sw.js"))
+        );
+        backend.remove_renderer(tab_id);
+    }
+    std::fs::remove_dir_all(persistence.parent().unwrap()).unwrap();
+}
+
+#[test]
 fn new_renderer_discovers_browser_owned_registration() {
     let _multiprocess_guard = lock_multiprocess_tests();
     let renderer = resolve_renderer_binary().expect("fresh zero-renderer binary is required");

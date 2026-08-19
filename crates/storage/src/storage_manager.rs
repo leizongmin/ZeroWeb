@@ -25,6 +25,25 @@ pub fn default_indexed_db_dir() -> PathBuf {
         .unwrap_or_else(|| PathBuf::from(".zero-browser-storage").join("IndexedDB"))
 }
 
+/// 默认 Service Worker 注册状态文件（`ZERO_STORAGE_DIR` 或平台 data directory）。
+pub fn default_service_worker_state_path() -> PathBuf {
+    if let Some(path) = zero_runtime_config::optional_path("ZERO_STORAGE_DIR") {
+        return path.join("service-workers.json");
+    }
+    dirs::data_dir()
+        .map(|path| {
+            path.join("ZeroBrowser")
+                .join("Storage")
+                .join("ServiceWorkers")
+                .join("registrations.json")
+        })
+        .unwrap_or_else(|| {
+            PathBuf::from(".zero-browser-storage")
+                .join("ServiceWorkers")
+                .join("registrations.json")
+        })
+}
+
 /// IndexedDB 数据库摘要。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct IndexedDbInfo {

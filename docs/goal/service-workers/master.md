@@ -2,7 +2,7 @@
 
 **入口文档**: [../service-workers.md](../service-workers.md)
 **创建日期**: 2026-08-17（goal 拆分 bootstrap）
-**最后更新**: 2026-08-20（M3-6 update job 完成）
+**最后更新**: 2026-08-20（M3-7 registration persistence 完成）
 
 ---
 
@@ -109,6 +109,8 @@ M0 启动门禁解除；M1 core WPT 已收敛，M2 依赖未满足，当前推�
   向 container 派发 `MessageEvent`；导航换代隔离旧队列，browser/WebView 双路径一致
 - ✅ M3-6：`ServiceWorkerRegistration.update()` 经 browser-owned fetch 与 top-level script
   byte comparison；相同脚本 no-op，变化脚本创建 replacement 并派发 `updatefound`
+- ✅ M3-7：production normal profile 原子持久化 active registration 与 script source；
+  browser restart 重建 runtime/controller，不重放 install/activate；private profile 不落盘
 
 ## 缺口清单
 
@@ -128,9 +130,9 @@ M0 启动门禁解除；M1 core WPT 已收敛，M2 依赖未满足，当前推�
 
 ## 下一步计划
 
-1. **M3 persistence**：恢复注册、active version 与 controller；明确 runtime restart policy
-2. **M3 update follow-up**：imported script graph comparison 与 `updateViaCache` cache mode
-3. **M2 依赖复核**：js-dom S6 与 storage-cache-api M1 land 后启动 fetch pipeline
+1. **M3 update follow-up**：imported script graph comparison 与 `updateViaCache` cache mode
+2. **M2 依赖复核**：js-dom S6 与 storage-cache-api M1 land 后启动 fetch pipeline
+3. **M3 messaging follow-up**：MessagePort/MessageChannel transfer 与多 client 枚举
 
 ## 里程碑状态
 
@@ -139,7 +141,7 @@ M0 启动门禁解除；M1 core WPT 已收敛，M2 依赖未满足，当前推�
 | M0 — 选型 RFC（门控） | ✅ 方案 C 已批准 |
 | M1 — 脚本真实执行 + 生命周期真事件 | ✅ current core WPT 37/37 Pass |
 | M2 — fetch 拦截 + Cache 集成 | ⬜ 门控：js-dom fetch 改造 land |
-| M3 — 控制语义 + 消息 + 收尾 | 🚧 控制语义 + 双向 message + update job 完成 |
+| M3 — 控制语义 + 消息 + 收尾 | 🚧 控制语义 + 双向 message + update + persistence 完成 |
 
 ## 验证基线
 
@@ -230,6 +232,8 @@ M0 启动门禁解除；M1 core WPT 已收敛，M2 依赖未满足，当前推�
   [M3 worker-to-page message](evidence/2026-08-20-m3-worker-to-page-message.md)
 - M3-6 update job：browser-owned refetch、byte comparison、changed/no-op/error projection 与 13/37 WPT 见
   [M3 update job](evidence/2026-08-20-m3-update-job.md)
+- M3-7 persistence：single-writer snapshot、runtime restart、controller restore、private 隔离与损坏恢复见
+  [M3 registration persistence](evidence/2026-08-20-m3-registration-persistence.md)
 
 ## M0 证据与决策记录
 
@@ -277,6 +281,7 @@ M0 启动门禁解除；M1 core WPT 已收敛，M2 依赖未满足，当前推�
 | 2026-08-20 | M3-4 page-to-worker message | ServiceWorker.postMessage；typed runtime MessageEvent；handler failure 隔离；全量门禁通过 |
 | 2026-08-20 | M3-5 worker-to-page message | Client.postMessage；per-Document immutable log；container MessageEvent；双引擎/生产链通过 |
 | 2026-08-20 | M3-6 update job | registration.update；top-level byte comparison；changed/no-op/error；disposition 13 core / 50 defer；WPT 13/37 |
+| 2026-08-20 | M3-7 registration persistence | normal active snapshot；runtime/controller restart；no lifecycle replay；private/损坏隔离 |
 | 2026-08-19 | 三方案对比 | 拒绝同线程 context（无调度隔离）；拒绝从零线程（复制安全基建）；推荐抽取 Worker 线程核 |
 | 2026-08-19 | owner | production browser process 单一 owner；WebView 只做同算法 in-process adapter |
 | 2026-08-19 | 首个 driving WPT | `activation-after-registration.https.html` |
