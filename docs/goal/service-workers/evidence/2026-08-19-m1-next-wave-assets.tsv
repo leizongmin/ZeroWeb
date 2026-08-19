@@ -1,0 +1,8 @@
+path	manifest_type	roles	referenced_by	bytes	templated	git_blob_sha
+service-workers/service-worker/state.https.html	testharness	case	1	2731	no	7358e58ff14a74e04514eb9432151576cf62b905
+service-workers/service-worker/synced-state.https.html	testharness	case	1	3765	no	0e9f63a9a2e528e7ffb8f9913edffc8e0294ad98
+service-workers/service-worker/unregister.https.html	testharness	case	1	1372	no	492aecb21a875814e3a8fb89e64069989b9e31f5
+resources/testharness.js	support	page-script	3	198291	no	c7ce4f51e1db075809f861255417c27478b2c179
+resources/testharnessreport.js	support	page-script	3	1231	no	405a2d8b06f00fe8292e0e9d5b917e193cfd416c
+service-workers/service-worker/resources/test-helpers.sub.js	support	page-script	3	10485	yes	74301523e7355ad8d62bcb568280edbc23fdaacf
+service-workers/service-worker/resources/empty-worker.js	support	worker-script	3	15	no	49ceb2648a93410bdd5ee53ef0e114146210741b

@@ -1,0 +1,15 @@
+source_path	manifest_sha	subtests	decision	hidden_dependencies	rationale
+service-workers/service-worker/ServiceWorkerGlobalScope/close.https.html	3e3cc8b2b08973baf3293c0a533c85489f352b68	1	defer-advanced	worker-testharness	ServiceWorkerGlobalScope 内断言结果通道依赖 worker-testharness
+service-workers/service-worker/ServiceWorkerGlobalScope/service-worker-error-event.https.html	988f5466b9e16ffe716297b9ba569e668ff8f8a3	1	defer-advanced	error-event;message;client-source	验证 message handler 抛错后 error event 字段和 source 回传
+service-workers/service-worker/import-scripts-updated-flag.https.html	09b4496aa0ec1d28b9e101a6ba8a41a31b654540	5	gated-dynamic-server	dynamic-python;importScripts;message	import-scripts-echo.py 按 query 动态生成脚本并验证 updated flag
+service-workers/service-worker/register-wait-forever-in-install-worker.https.html	0920b5cb223d50e31d044a9323f55c1e77b18857	1	defer-advanced	extendable-event;message;job-scheduling	install waitUntil 永不完成时验证同/异 scope 注册调度
+service-workers/service-worker/registration-mime-types.https.html	3a21aac5c75c20c210d3fdde2a14ed063a0c8b27	39	gated-dynamic-server	dynamic-python;mime;importScripts	两个 Python handler 生成无效和 16 种有效 MIME 响应
+service-workers/service-worker/registration-schedule-job.https.html	25d758ee8f0e26459218c7359faf7d3866b313cf	3	defer-advanced	job-scheduling;module;message	验证 scriptURL/updateViaCache/type 不同的 register job 不合并
+service-workers/service-worker/registration-scope-module-static-import.https.html	5c75295aed1cd94c1349dc25010801534bd98644	3	gated-dynamic-server	module-graph;dynamic-redirect;message	静态模块跨路径及 Python redirect 模块图
+service-workers/service-worker/registration-script-module.https.html	9e39a1f75b27de492d5eb3842aaa254d2f662687	10	gated-dynamic-server	dynamic-python;module-graph;invalid-http	动态生成 parse/runtime/instantiation/TLA 错误及非法 chunked 响应
+service-workers/service-worker/registration-security-error.https.html	860c2d22ea935cd3af17f11e1f0a7b966e6fa4e7	8	gated-dynamic-server	dynamic-redirect;cross-origin	7 个 URL 安全断言外含一个 Python redirect 响应
+service-workers/service-worker/state.https.html	7358e58ff14a74e04514eb9432151576cf62b905	1	next-wave-core	statechange;redundant	核心状态迁移与 statechange target/type
+service-workers/service-worker/synced-state.https.html	0e9f63a9a2e528e7ffb8f9913edffc8e0294ad98	1	next-wave-core	state-projection	同一 worker entity 的对象投影状态同步
+service-workers/service-worker/unregister-immediately-before-installed.https.html	c56674c0fb1ba7eb4b2100695ade8b3fd5357dac	2	defer-advanced	infinite-script;extendable-event;clear-site-data	需要脚本 watchdog、永不完成 install 和 Clear-Site-Data
+service-workers/service-worker/unregister.https.html	492aecb21a875814e3a8fb89e64069989b9e31f5	2	next-wave-core	unregister-result	注册后注销返回 true，重复注销返回 false
+service-workers/service-worker/update-result.https.html	d8ed94f776650c8a40ba82df9ca5e909b460bb79	1	defer-update	update-algorithm	update() 抓取与 job 语义不属于最小生命周期切片

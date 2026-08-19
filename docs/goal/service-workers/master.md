@@ -2,7 +2,7 @@
 
 **入口文档**: [../service-workers.md](../service-workers.md)
 **创建日期**: 2026-08-17（goal 拆分 bootstrap）
-**最后更新**: 2026-08-19（M0 RFC + Tier A 资产化完成，待审批）
+**最后更新**: 2026-08-19（M0 RFC + M1 第二批 WPT 裁决完成，待审批）
 
 ---
 
@@ -42,6 +42,8 @@
   校准为 8 个静态首批 / 3 个高阶事件案 / 1 个动态 server 阻塞案
 - ✅ Tier A 资产化：8 case / 28 subtest / 18 asset 已固定，fetch target + blob-SHA
   fail-closed + testharness 账本已落；SW runner 仍待 RFC 批准后实现
+- ✅ 第二批裁决：14 个 M1/no-signal review 中仅 3 case / 4 subtest 可紧跟 Tier A；
+  5 advanced defer / 5 dynamic-server gated / 1 update defer，剩余逻辑 review 138
 - ✅ SW 执行环境 RFC 已完成，待用户批准
 
 ## 缺口清单
@@ -52,7 +54,7 @@
 | S2 | scriptURL 不下载执行 | ⬜ M1 |
 | S3 | fetch 拦截为零 | ⬜ M2（等 js-dom fetch 改造） |
 | S4 | 事件为 setTimeout 模拟 | ⬜ M1 |
-| S5 | WPT 覆盖为零 | 🔄 Tier A 8 case 已资产化；runner/真实 red baseline 等 RFC 批准 |
+| S5 | WPT 覆盖为零 | 🔄 Tier A 8 case 已资产化；next-wave 3 case 已定；runner/真实 red baseline 等 RFC 批准 |
 
 ## 待用户决策
 
@@ -62,7 +64,7 @@
 
 ## 下一步计划
 
-1. **等待 D1 审批**：审阅 [M0 RFC](m0-execution-environment-rfc.md)
+1. **等待 D1 审批**：审阅 [M0 RFC](m0-execution-environment-rfc.md)；期间可资产化 next-wave 3 case
 2. **批准后 M1-1**：抽取 script-sandbox threaded core，保持 Dedicated Worker 行为不变，
    新增 SW typed runtime 骨架（双引擎测试）
 3. **M1-2**：manager 生命周期协调；随后接 in-process bridge、production IPC 和 WPT runner
@@ -87,6 +89,8 @@
   [M1 candidate closure](evidence/2026-08-19-m0-m1-candidate-resource-closure.md)，静态首批
   8 case / 28 subtest / 18 asset 见
   [Tier A baseline contract](evidence/2026-08-19-m1-tier-a-baseline-contract.md)
+- 第二批生命周期面：14 case / 78 subtest 裁决及 next-wave 3 case / 4 subtest 见
+  [M1 next-wave review](evidence/2026-08-19-m1-next-wave-review.md)
 - Tier A 资产恢复：`make fetch-wpt-service-workers-tier-a`；默认使用独立
   `wpt-data/.service-workers-tier-a-root`，当前环境 18/18 blob SHA 验证通过
 - Tier A 资产审计：`make audit-wpt-service-workers-tier-a`（无网络、只读）；
@@ -105,6 +109,7 @@
 | 2026-08-19 | Tier A 验收合约 | 8 case / 28 subtest / 18 asset（235,111 bytes）/ 5 驱动阶段；assets SHA-256 `c9b8089dc425873e3249d0e834176139c054f3e33845ba6c4080521f23fa6bc0` |
 | 2026-08-19 | Tier A 资产化 | 独立 WPT root + raw/jsDelivr 双源 + WPT_SOURCE；本地/网络 18/18、幂等/续传/篡改修复、非法路径 fail-closed、clippy、make test 全通过 |
 | 2026-08-19 | Tier A 可重复审计 | verify-only 18/18；缺失/篡改 fail closed；audit + shell regression Make target 已落 |
+| 2026-08-19 | M1 第二批裁决 | 14 case / 78 subtest：3 core（4 subtest）/ 5 advanced / 5 dynamic-server / 1 update；next-wave 7 assets |
 | 2026-08-19 | 三方案对比 | 拒绝同线程 context（无调度隔离）；拒绝从零线程（复制安全基建）；推荐抽取 Worker 线程核 |
 | 2026-08-19 | owner | production browser process 单一 owner；WebView 只做同算法 in-process adapter |
 | 2026-08-19 | 首个 driving WPT | `activation-after-registration.https.html` |

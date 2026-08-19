@@ -1,0 +1,5 @@
+case_path	ordinal	harness	subtest	requirement_group
+service-workers/service-worker/state.https.html	1	promise_test	Service Worker state property and "statechange" event	lifecycle-state-machine
+service-workers/service-worker/synced-state.https.html	1	promise_test	worker objects for the same entity have the same state	state-projection
+service-workers/service-worker/unregister.https.html	1	async_test	Unregister twice	unregister-result
+service-workers/service-worker/unregister.https.html	2	async_test	Register then unregister	unregister-result
