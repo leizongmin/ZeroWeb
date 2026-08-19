@@ -135,6 +135,14 @@ fn test_hsl_too_few_parts() {
     assert!(parse_color("hsl(120, 50%)").is_none());
 }
 
+#[test]
+fn test_rgb_hsl_reject_modern_alpha_without_slash_and_trailing_input() {
+    assert!(parse_color("rgb(0 0 0 0.5)").is_none());
+    assert!(parse_color("hsl(0 0% 0% 0.5)").is_none());
+    assert!(parse_color("rgb(0 0 0) trailing").is_none());
+    assert!(parse_color("hsl(0 0% 0%) trailing").is_none());
+}
+
 // ═══════════════════════════════════════════════════════════════════════
 // color.rs — hwb() 和 hwb_to_rgba 边界情况
 // ═══════════════════════════════════════════════════════════════════════

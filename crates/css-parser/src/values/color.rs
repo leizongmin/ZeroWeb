@@ -235,6 +235,9 @@ fn parse_rgb_function(value: &str) -> Option<ColorValue> {
     // R34xx：缺 ')' 时按字符串尾解析（2d.fillStyle.parse.rgb-eof：'rgb(0, 255, 0'
     // 分量完整 → 有效；不完整分量由分量数检查拒绝）。
     let end = value.rfind(')').unwrap_or(value.len());
+    if end < value.len() - 1 {
+        return None;
+    }
     let inner_str = strip_css_comments(value.get(start + 1..end)?);
     let inner = inner_str.trim();
 
@@ -267,6 +270,9 @@ fn parse_rgb_function(value: &str) -> Option<ColorValue> {
         main.split_whitespace().collect()
     };
     if !(3..=4).contains(&comps.len()) {
+        return None;
+    }
+    if slash_alpha.is_none() && !main.contains(',') && comps.len() != 3 {
         return None;
     }
 
@@ -519,6 +525,9 @@ fn parse_hsl_function(value: &str) -> Option<ColorValue> {
     let start = value.find('(')?;
     // R34xx：缺 ')' 时按字符串尾解析（同 rgb-eof）。
     let end = value.rfind(')').unwrap_or(value.len());
+    if end < value.len() - 1 {
+        return None;
+    }
     let inner_str = strip_css_comments(value.get(start + 1..end)?);
     let inner = inner_str.trim();
 
@@ -546,6 +555,9 @@ fn parse_hsl_function(value: &str) -> Option<ColorValue> {
         main.split_whitespace().collect()
     };
     if !(3..=4).contains(&comps.len()) {
+        return None;
+    }
+    if slash_alpha.is_none() && !main.contains(',') && comps.len() != 3 {
         return None;
     }
 

@@ -117,6 +117,8 @@ Timing functions exposed the function-specific numeric-constraint variant: fixed
 
 `hwb()` exposed the color-function trailing-token variant: modern color functions with exactly three main components must reject extra components and must consume the entire function input. `rfind(')')` body extraction is only safe after confirming the value ends at that closing parenthesis.
 
+`rgb()` / `hsl()` exposed the modern-alpha delimiter variant: CSS Color 4 whitespace syntax does not allow a fourth bare component as alpha. Alpha in modern syntax must be slash-delimited, and parser body slicing must still reject tokens after the closing parenthesis.
+
 ## Root Cause
 
 The shorthand layer used heuristic component classifiers and treated unrecognized tokens as absent optional components. That is wrong for CSS shorthands such as `border`, where every token must match one of the allowed component grammars. A shared parser can also be broader than the property grammar that consumes it: general length parsing may accept `auto`, intrinsic sizing keywords, or percentages that `border-width` must reject.
