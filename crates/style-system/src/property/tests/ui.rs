@@ -1226,6 +1226,11 @@ fn test_apply_border_spacing_invalid() {
     assert!(!apply_property_value(&mut style, "border-spacing", "1px -2px"));
     assert_eq!(style.border_spacing.horizontal, 2.0);
     assert_eq!(style.border_spacing.vertical, 4.0);
+    for value in ["10%", "thin", "auto", "min-content", "infpx", "NaNpx"] {
+        assert!(!apply_property_value(&mut style, "border-spacing", value));
+        assert_eq!(style.border_spacing.horizontal, 2.0);
+        assert_eq!(style.border_spacing.vertical, 4.0);
+    }
 }
 
 /// 验证 empty-cells 和 border-spacing 是继承属性。

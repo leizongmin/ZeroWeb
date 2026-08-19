@@ -402,18 +402,50 @@ pub fn parse_border_spacing(value: &str) -> Option<BorderSpacingValue> {
         return None;
     }
     let h = parse_length(parts[0])?;
+    if !border_spacing_length_is_valid(parts[0], &h) {
+        return None;
+    }
     let v = if parts.len() == 2 {
-        parse_length(parts[1])?
+        let v = parse_length(parts[1])?;
+        if !border_spacing_length_is_valid(parts[1], &v) {
+            return None;
+        }
+        v
     } else {
         h.clone()
     };
-    if length_is_negative(&h) || length_is_negative(&v) {
-        return None;
-    }
     Some(BorderSpacingValue {
         horizontal: h,
         vertical: v,
     })
+}
+
+fn border_spacing_length_is_valid(raw: &str, value: &LengthValue) -> bool {
+    if matches!(
+        raw.trim().to_ascii_lowercase().as_str(),
+        "thin" | "medium" | "thick" | "auto" | "min-content" | "max-content" | "fit-content"
+    ) {
+        return false;
+    }
+    match value {
+        LengthValue::Px(v)
+        | LengthValue::Em(v)
+        | LengthValue::Ex(v)
+        | LengthValue::Rex(v)
+        | LengthValue::Cap(v)
+        | LengthValue::Rcap(v)
+        | LengthValue::Rem(v)
+        | LengthValue::Vh(v)
+        | LengthValue::Vw(v)
+        | LengthValue::Vmin(v)
+        | LengthValue::Vmax(v)
+        | LengthValue::Ch(v)
+        | LengthValue::Rch(v)
+        | LengthValue::Ic(v)
+        | LengthValue::Ric(v) => v.is_finite() && *v >= 0.0,
+        LengthValue::Calc(_) => true,
+        _ => false,
+    }
 }
 
 fn length_is_negative(value: &LengthValue) -> bool {

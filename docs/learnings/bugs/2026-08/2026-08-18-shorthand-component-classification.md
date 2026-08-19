@@ -215,6 +215,8 @@ Background-position exposed the role-based `<position>` length variant: the pars
 
 Clip-path exposed the basic-shape slot variant: one property can contain both signed coordinate slots and non-negative radius slots. Route every shared parsed length through a slot-aware validator, preserving negative inset/polygon/position values while rejecting negative radii, parser aliases, sizing keywords, and non-finite values before the computed clip-path is mutated.
 
+Border-spacing exposed the inherited-table length-only variant: inherited table spacing still needs the parser boundary to enforce `<length [0,∞]>` before direct apply writes computed px fields. Reject percentages, parser aliases, sizing keywords, negative values, and non-finite values at the shared parser edge so invalid declarations preserve the previous spacing pair.
+
 ## Root Cause
 
 The shorthand layer used heuristic component classifiers and treated unrecognized tokens as absent optional components. That is wrong for CSS shorthands such as `border`, where every token must match one of the allowed component grammars. A shared parser can also be broader than the property grammar that consumes it: general length parsing may accept `auto`, intrinsic sizing keywords, or percentages that `border-width` must reject.

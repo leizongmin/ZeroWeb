@@ -1461,6 +1461,12 @@ fn test_parse_border_spacing_invalid() {
     assert_eq!(parse_border_spacing(""), None);
     assert_eq!(parse_border_spacing("invalid"), None);
     assert_eq!(parse_border_spacing("1px 2px 3px"), None);
+    assert_eq!(parse_border_spacing("10%"), None);
+    assert_eq!(parse_border_spacing("thin"), None);
+    assert_eq!(parse_border_spacing("auto"), None);
+    assert_eq!(parse_border_spacing("min-content"), None);
+    assert_eq!(parse_border_spacing("infpx"), None);
+    assert_eq!(parse_border_spacing("NaNpx"), None);
 }
 
 // ═══════════════════════════════════════════════════════════════════
