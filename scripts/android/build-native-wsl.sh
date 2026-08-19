@@ -14,10 +14,14 @@ abi=$3
 : "${ZERO_CHROMIUM_CLANG:?ZERO_CHROMIUM_CLANG must point to Chromium clang 23}"
 : "${ZERO_ANDROID_NDK:?ZERO_ANDROID_NDK must point to Linux Android NDK r30}"
 : "${LIBCLANG_PATH:?LIBCLANG_PATH must point to libclang 19 or newer}"
+: "${ZERO_V8_GN:?ZERO_V8_GN must point to the Linux gn executable}"
+: "${ZERO_V8_NINJA:?ZERO_V8_NINJA must point to the Linux ninja executable}"
 
 v8_source=$(realpath "$ZERO_V8_SOURCE")
 clang_root=$(realpath "$ZERO_CHROMIUM_CLANG")
 ndk_root=$(realpath "$ZERO_ANDROID_NDK")
+gn=$(realpath "$ZERO_V8_GN")
+ninja=$(realpath "$ZERO_V8_NINJA")
 workspace=${ZERO_ANDROID_WSL_WORKSPACE:-"$HOME/.cache/zeroweb/android-native-workspace"}
 target_dir=${ZERO_ANDROID_WSL_TARGET_DIR:-"$HOME/.cache/zeroweb/android-native-target"}
 patch_file="$source_root/scripts/android/patches/rusty-v8-android-bindgen.patch"
@@ -30,6 +34,7 @@ tr -d '\r' < "$patch_file" > "$normalized_patch"
 grep -qx 'version = "150.2.0"' "$v8_source/Cargo.toml" || { echo "ZERO_V8_SOURCE must be rusty_v8 150.2.0" >&2; exit 2; }
 [[ -x "$clang_root/bin/clang++" ]] || { echo "invalid ZERO_CHROMIUM_CLANG: $clang_root" >&2; exit 2; }
 [[ -x "$ndk_root/toolchains/llvm/prebuilt/linux-x86_64/bin/clang" ]] || { echo "invalid ZERO_ANDROID_NDK: $ndk_root" >&2; exit 2; }
+[[ -x "$gn" && -x "$ninja" ]] || { echo "ZERO_V8_GN and ZERO_V8_NINJA must be executable" >&2; exit 2; }
 
 if ! git -C "$v8_source" apply --reverse --check "$normalized_patch" >/dev/null 2>&1; then
   git -C "$v8_source" apply "$normalized_patch"
@@ -56,6 +61,16 @@ export CARGO_TARGET_DIR="$target_dir"
 export V8_FROM_SOURCE=1
 export EXTRA_GN_ARGS="android_ndk_version=30"
 
+case "$abi" in
+  x86_64) cargo_target=x86_64-linux-android ;;
+  arm64-v8a) cargo_target=aarch64-linux-android ;;
+  *) echo "unsupported ABI: $abi" >&2; exit 2 ;;
+esac
+tool_dir="$target_dir/$cargo_target/release/ninja_gn_binaries"
+mkdir -p "$tool_dir/gn" "$tool_dir/ninja"
+cp "$gn" "$tool_dir/gn/gn"
+cp "$ninja" "$tool_dir/ninja/ninja"
+
 cd "$workspace"
 cargo ndk -P 26 -t "$abi" -o "$output_dir" build --release \
   --config "patch.crates-io.v8.path=\"$v8_source\"" \
@@ -64,7 +79,6 @@ cargo ndk -P 26 -t "$abi" -o "$output_dir" build --release \
 case "$abi" in
   x86_64) ndk_triple=x86_64-linux-android ;;
   arm64-v8a) ndk_triple=aarch64-linux-android ;;
-  *) echo "unsupported ABI: $abi" >&2; exit 2 ;;
 esac
 runtime_lib="$ndk_root/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/lib/$ndk_triple/libc++_shared.so"
 [[ -f "$runtime_lib" ]] || { echo "missing NDK C++ runtime: $runtime_lib" >&2; exit 2; }

@@ -12,7 +12,7 @@ param(
 
 $ErrorActionPreference = "Stop"
 
-foreach ($name in "ZERO_V8_SOURCE", "ZERO_CHROMIUM_CLANG", "ZERO_ANDROID_NDK", "LIBCLANG_PATH") {
+foreach ($name in "ZERO_V8_SOURCE", "ZERO_CHROMIUM_CLANG", "ZERO_ANDROID_NDK", "LIBCLANG_PATH", "ZERO_V8_GN", "ZERO_V8_NINJA") {
     if ([string]::IsNullOrWhiteSpace([Environment]::GetEnvironmentVariable($name))) {
         throw "$name must be set to the corresponding Linux WSL path."
     }
@@ -23,7 +23,7 @@ $env:ZERO_ANDROID_WSL_OUTPUT_DIRECTORY = [System.IO.Path]::GetFullPath($OutputDi
 $env:ZERO_ANDROID_WSL_SCRIPT = Join-Path $PSScriptRoot "build-native-wsl.sh"
 $env:ZERO_ANDROID_WSL_ABI = $Abi
 
-$forwarded = @("ZERO_V8_SOURCE", "ZERO_CHROMIUM_CLANG", "ZERO_ANDROID_NDK", "LIBCLANG_PATH", "ZERO_ANDROID_WSL_TARGET_DIR", "ZERO_ANDROID_WSL_ABI")
+$forwarded = @("ZERO_V8_SOURCE", "ZERO_CHROMIUM_CLANG", "ZERO_ANDROID_NDK", "LIBCLANG_PATH", "ZERO_V8_GN", "ZERO_V8_NINJA", "ZERO_ANDROID_WSL_TARGET_DIR", "ZERO_ANDROID_WSL_ABI")
 $convertedPaths = @("ZERO_ANDROID_WSL_SOURCE_ROOT/p", "ZERO_ANDROID_WSL_OUTPUT_DIRECTORY/p", "ZERO_ANDROID_WSL_SCRIPT/p")
 $managed = @($forwarded + $convertedPaths | ForEach-Object { ($_ -split "/")[0] })
 $existing = @($env:WSLENV -split ":" | Where-Object {
