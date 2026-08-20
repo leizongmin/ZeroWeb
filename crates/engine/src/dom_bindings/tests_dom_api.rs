@@ -2968,3 +2968,33 @@ fn native_remove_child_type_and_slotless_validation_r126() {
         "NotFoundError"
     );
 }
+
+// R137（js-dom M4）：native DOMException 构造器静态 `name`——WPT testharness 的
+// assert_throws_dom(type, ctor, fn) 按 `funcOrConstructor.name === "DOMException"` 分派
+// 构造器形态（非该名 → 把 ctor 当被测函数调用，"did not throw" 假失败；Document-
+// createElementNS native 叠加路径 596F 的 assert 簇根因）。V8 FunctionTemplate 构造器
+// 默认 name 为空串且 `f.set("name",..)` 被只读拦截（non-writable），须 Function::set_name。
+// 叠加路径的 instanceof Node/Element 链断言由 WPT native 入口覆盖（596P 双路径）。
+// https://webidl.spec.whatwg.org/#es-DOMException-specializations
+#[test]
+fn native_dom_exception_ctor_name_r137() {
+    let html = r#"<html><head></head><body><div id="a"></div></body></html>"#;
+    // 构造器 name 须为 "DOMException"（assert_throws_dom 分派键）。
+    assert_eq!(
+        run_script(
+            html,
+            "(typeof DOMException === 'function' ? DOMException.name : 'missing')"
+        ),
+        "DOMException"
+    );
+    // 抛出的异常 instanceof DOMException + constructor identity（"wrong global" 检查面）。
+    assert_eq!(
+        run_script(
+            html,
+            "(()=>{ try { __zw_native_get_document().createElement(''); return 'no-throw'; }\
+             catch(e){ return (e instanceof DOMException && e.constructor === DOMException\
+               && e.name === 'InvalidCharacterError') ? 'ok' : 'bad:' + e.name; } })()"
+        ),
+        "ok"
+    );
+}

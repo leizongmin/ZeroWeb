@@ -613,7 +613,62 @@
   // HTMLDivElement.prototype → native HTMLElement.prototype 链）不可达。幂等 defineProperty
   // 补挂（own 已有则不动——R130 XMLDocument 常量同款模式），polyfill 自建链路径（own 已有）
   // 零改动。
+  // R137（js-dom M4）：补挂升级为**整链重接**——native 只注册 HTMLElement（不注册
+  // Node/Element ctor），native HTMLElement.prototype 直链 Object.prototype，而 shim 自建
+  // 链被 `_zwBuiltNodeChain=false` 跳过 → `Element.prototype`（R3019 parentNode/childNodes/
+  // remove/cloneNode）与 `Node.prototype`（常量族 + getRootNode）都不在 native 链上 →
+  // native 路径 created 元素（createElement/createElementNS 产物经 getPrototypeOf trap 的
+  // HTML*Element.prototype → native HTMLElement.prototype）的 `instanceof Node/Element` 恒
+  // false、`el.ELEMENT_NODE` undefined（WPT Document-createElementNS native 叠加路径 596F
+  // 的主根因）。修复：native HTMLElement.prototype 的 proto 重接到 shim Element.prototype
+  //（→ Node.prototype → Object.prototype，R128 Attr.prototype 同款 setPrototypeOf 模式），
+  // 单一接线恢复整条链（getRootNode own 补挂随之冗余但保留——防 Element.prototype 后续
+  // 被替换的保险层）。幂等守卫：仅当当前 proto 是 Object.prototype（未被其他层重接）时执行。
   if (!_zwBuiltNodeChain && globalThis.HTMLElement && globalThis.HTMLElement.prototype) {
+    try {
+      if (globalThis.Element && globalThis.Element.prototype
+          && Object.getPrototypeOf(globalThis.HTMLElement.prototype) === Object.prototype) {
+        Object.setPrototypeOf(globalThis.HTMLElement.prototype, globalThis.Element.prototype);
+      }
+    } catch (_e137ch) {}
+    try {
+      // R137 续：Element.prototype → Node.prototype 补接（native 模式 shim Element ctor 走
+      // `if (!globalThis.Element)` 兜底创建，其 prototype 是裸对象直链 Object.prototype——
+      // 上面 R136 的 HTMLElement.prototype → Element.prototype 重接后链在 Element 断头，
+      // `instanceof Node` 仍 false。补接后整链：HTML*Element.prototype → HTMLElement.prototype
+      // (native) → Element.prototype → Node.prototype → Object.prototype）。
+      if (globalThis.Node && globalThis.Node.prototype
+          && Object.getPrototypeOf(globalThis.Element.prototype) === Object.prototype) {
+        Object.setPrototypeOf(globalThis.Element.prototype, globalThis.Node.prototype);
+      }
+    } catch (_e137en) {}
+    try {
+      // R137 续：Node 常量族在 native 模式缺位（`_zwBuiltNodeChain=false` 跳过常量挂载分支，
+      // 而上述 Element.prototype 的成员挂载在 part03 后段无条件执行）——native 链上的元素
+      // `el.ELEMENT_NODE` undefined（WPT `element.nodeType === element.ELEMENT_NODE` 断言）。
+      // 幂等补挂 Node.prototype + Node ctor 静态常量（R130 XMLDocument 常量同款字面量表）。
+      var _r137Consts = {
+        ELEMENT_NODE: 1, ATTRIBUTE_NODE: 2, TEXT_NODE: 3, CDATA_SECTION_NODE: 4,
+        ENTITY_REFERENCE_NODE: 5, ENTITY_NODE: 6, PROCESSING_INSTRUCTION_NODE: 7,
+        COMMENT_NODE: 8, DOCUMENT_NODE: 9, DOCUMENT_TYPE_NODE: 10,
+        DOCUMENT_FRAGMENT_NODE: 11, NOTATION_NODE: 12,
+        DOCUMENT_POSITION_DISCONNECTED: 1, DOCUMENT_POSITION_PRECEDING: 2,
+        DOCUMENT_POSITION_FOLLOWING: 4, DOCUMENT_POSITION_CONTAINS: 8,
+        DOCUMENT_POSITION_CONTAINED_BY: 16, DOCUMENT_POSITION_IMPLEMENTATION_SPECIFIC: 32,
+      };
+      for (var _r137cn in _r137Consts) {
+        if (Object.prototype.hasOwnProperty.call(_r137Consts, _r137cn)) {
+          if (globalThis.Node.prototype[_r137cn] === undefined) {
+            Object.defineProperty(globalThis.Node.prototype, _r137cn,
+              { value: _r137Consts[_r137cn], enumerable: false, configurable: true });
+          }
+          if (globalThis.Node[_r137cn] === undefined) {
+            Object.defineProperty(globalThis.Node, _r137cn,
+              { value: _r137Consts[_r137cn], enumerable: false, configurable: true });
+          }
+        }
+      }
+    } catch (_e137nc) {}
     try {
       if (!Object.prototype.hasOwnProperty.call(globalThis.HTMLElement.prototype, 'getRootNode')) {
         Object.defineProperty(globalThis.HTMLElement.prototype, 'getRootNode',

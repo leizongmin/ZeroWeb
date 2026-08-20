@@ -158,6 +158,14 @@ pub(super) fn build_and_register(scope: &mut v8::PinScope, global: v8::Local<v8:
         if let (Some(proto), Some(ck)) = (proto_obj, v8::String::new(scope, "constructor")) {
             let _ = proto.set(scope, ck.into(), f.into());
         }
+        // R137（js-dom M4）：构造器静态 `name = "DOMException"`——WPT testharness 的
+        // `assert_throws_dom(type, ctor, fn)` 按 `funcOrConstructor.name === "DOMException"`
+        // 分派构造器形态（非该名 → 把 ctor 当被测函数直接调用，"did not throw" 假失败；
+        // Document-createElementNS native 叠加路径 330F 的 assert 簇根因）。V8
+        // FunctionTemplate 构造器默认 name 为空串；`f.set("name", ...)` 会被 V8 的
+        // 只读 name 拦截（FunctionTemplate 产物的 name 属性 non-writable），须用
+        // `Function::set_name` C++ 侧改名。
+        f.set_name(key);
         let _ = global.set(scope, key.into(), f.into());
     }
 }
