@@ -40,10 +40,10 @@ pub(crate) fn resolve_collapsed_borders(
         return;
     }
 
-    let table_bt = length_to_px(&table_style.border_top_width);
-    let table_br = length_to_px(&table_style.border_right_width);
-    let table_bb = length_to_px(&table_style.border_bottom_width);
-    let table_bl = length_to_px(&table_style.border_left_width);
+    let table_bt = length_to_px(&table_style.border_top_width, table_style);
+    let table_br = length_to_px(&table_style.border_right_width, table_style);
+    let table_bb = length_to_px(&table_style.border_bottom_width, table_style);
+    let table_bl = length_to_px(&table_style.border_left_width, table_style);
 
     let row_count = grid.rows.len();
     if row_count == 0 {
@@ -102,13 +102,13 @@ pub(crate) fn resolve_collapsed_borders(
             };
 
             let info = CellBorderInfo {
-                top_w: length_to_px(&cell_style.border_top_width),
+                top_w: length_to_px(&cell_style.border_top_width, cell_style),
                 top_s: cell_style.border_top_style.clone(),
-                right_w: length_to_px(&cell_style.border_right_width),
+                right_w: length_to_px(&cell_style.border_right_width, cell_style),
                 right_s: cell_style.border_right_style.clone(),
-                bottom_w: length_to_px(&cell_style.border_bottom_width),
+                bottom_w: length_to_px(&cell_style.border_bottom_width, cell_style),
                 bottom_s: cell_style.border_bottom_style.clone(),
-                left_w: length_to_px(&cell_style.border_left_width),
+                left_w: length_to_px(&cell_style.border_left_width, cell_style),
                 left_s: cell_style.border_left_style.clone(),
             };
 
@@ -293,7 +293,7 @@ pub(crate) fn resolve_collapsed_borders(
                 if let Some(rb) = row_box_ref
                     && let Some(rs) = rb.node_id.and_then(|id| styles.get(&id))
                 {
-                    let row_bb = length_to_px(&rs.border_bottom_width);
+                    let row_bb = length_to_px(&rs.border_bottom_width, rs);
                     if row_bb > 0.0
                         && !matches!(
                             rs.border_bottom_style,
@@ -330,7 +330,7 @@ pub(crate) fn resolve_collapsed_borders(
                 if let Some(rb) = row_box_ref
                     && let Some(rs) = rb.node_id.and_then(|id| styles.get(&id))
                 {
-                    let row_bt = length_to_px(&rs.border_top_width);
+                    let row_bt = length_to_px(&rs.border_top_width, rs);
                     if row_bt > 0.0 && !matches!(rs.border_top_style, BorderStyleValue::None | BorderStyleValue::Hidden)
                     {
                         // 行边框与单元格顶边冲突解决
@@ -673,14 +673,21 @@ pub(crate) fn resolve_border(
     }
 }
 
-/// 将 LengthValue 转换为像素值（简化版，不处理百分比和 auto）。
-pub(crate) fn length_to_px(value: &zero_css_parser::values::LengthValue) -> f32 {
+/// 将 border width LengthValue 转换为像素值。
+///
+/// Percent/auto/intrinsic 不属于 border-width used value；direct-style 残留时按 0 处理。
+pub(crate) fn length_to_px(value: &zero_css_parser::values::LengthValue, style: &ComputedStyle) -> f32 {
     use zero_css_parser::values::LengthValue;
     match value {
-        LengthValue::Px(v) => *v as f32,
-        LengthValue::Em(v) => *v as f32 * 16.0,
-        LengthValue::Rem(v) => *v as f32 * 16.0,
-        _ => 0.0,
+        LengthValue::Auto
+        | LengthValue::Percentage(_)
+        | LengthValue::MinContent
+        | LengthValue::MaxContent
+        | LengthValue::FitContent(_) => 0.0,
+        other => {
+            let font_size_px = zero_style_system::computed::resolve_length(&style.font_size, 16.0, None, None);
+            zero_style_system::computed::resolve_length(other, font_size_px, None, None) as f32
+        }
     }
 }
 
@@ -758,22 +765,22 @@ pub(crate) fn get_row_group_border_info<'a>(
     let rg_style = rg_box.node_id.and_then(|id| styles.get(&id))?;
     let (width, style, color) = match side {
         0 => (
-            length_to_px(&rg_style.border_top_width),
+            length_to_px(&rg_style.border_top_width, rg_style),
             &rg_style.border_top_style,
             color_value_to_u32(&rg_style.border_top_color),
         ),
         1 => (
-            length_to_px(&rg_style.border_right_width),
+            length_to_px(&rg_style.border_right_width, rg_style),
             &rg_style.border_right_style,
             color_value_to_u32(&rg_style.border_right_color),
         ),
         2 => (
-            length_to_px(&rg_style.border_bottom_width),
+            length_to_px(&rg_style.border_bottom_width, rg_style),
             &rg_style.border_bottom_style,
             color_value_to_u32(&rg_style.border_bottom_color),
         ),
         3 => (
-            length_to_px(&rg_style.border_left_width),
+            length_to_px(&rg_style.border_left_width, rg_style),
             &rg_style.border_left_style,
             color_value_to_u32(&rg_style.border_left_color),
         ),
@@ -784,4 +791,27 @@ pub(crate) fn get_row_group_border_info<'a>(
         return None;
     }
     Some((width, style, color))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use zero_css_parser::values::LengthValue;
+
+    #[test]
+    fn collapsed_border_length_uses_source_font_size_for_em() {
+        let mut style = ComputedStyle::default();
+        style.font_size = LengthValue::Px(20.0);
+
+        assert_eq!(length_to_px(&LengthValue::Em(2.0), &style), 40.0);
+    }
+
+    #[test]
+    fn collapsed_border_length_resolves_non_px_real_units() {
+        let mut style = ComputedStyle::default();
+        style.font_size = LengthValue::Px(20.0);
+
+        assert_eq!(length_to_px(&LengthValue::Ch(4.0), &style), 40.0);
+        assert_eq!(length_to_px(&LengthValue::Percentage(50.0), &style), 0.0);
+    }
 }

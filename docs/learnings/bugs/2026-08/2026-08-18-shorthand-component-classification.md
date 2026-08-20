@@ -316,3 +316,5 @@ Root-CB abspos stretch exposed the sibling-consumer variant inside a single post
 Abspos max-width clamp exposed the constraint-consumer variant: after stretch is fixed, min/max constraints and auto-margin redistribution can still re-read the original inset and size values. Constraint passes must resolve residual real lengths for every operand in the equation, including `max-width`, before computing leftover margins.
 
 Vertical table sizing exposed the direct-helper variant: full DOM+style pipelines may canonicalize author lengths before layout, while table or layout unit tests can pass residual `LengthValue` directly into a helper. If a helper documents that it consumes a CSS property as a used value, give it a local resolver instead of relying on upstream canonicalization.
+
+Collapsed border conflict exposed the source-context variant: a single equation can compare lengths from table, row group, row, and cell styles. Resolve each residual real length with the font context of the style that owns that border, not a hard-coded root font size or the table's font context.
