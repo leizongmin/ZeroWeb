@@ -705,7 +705,7 @@ fn test_replaced_collapse_flags_zero_size_img() {
 fn r2016_quirks_mode_percent_height_resolves_against_viewport() {
     let count_red = |fb: &zero_render_foundation::surface::FrameBuffer| -> usize {
         let mut n = 0usize;
-        for px in fb.data.chunks_exact(4) {
+        for px in fb.data.as_chunks::<4>().0 {
             if px[0] > 240 && px[1] < 15 && px[2] < 15 {
                 n += 1;
             }
@@ -741,7 +741,7 @@ fn r2016_quirks_mode_percent_height_resolves_against_viewport() {
 fn r2016_quirks_percent_height_chains_against_resolved_parent() {
     let count_blue = |fb: &zero_render_foundation::surface::FrameBuffer| -> usize {
         let mut n = 0usize;
-        for px in fb.data.chunks_exact(4) {
+        for px in fb.data.as_chunks::<4>().0 {
             // blue 像素：B 高，R/G 低。
             if px[0] < 15 && px[1] < 15 && px[2] > 240 {
                 n += 1;

@@ -317,7 +317,9 @@ impl CanvasContext {
         // 绘制阴影（在形状之前）——stroke 足迹（同 stroke()/stroke_with_path R3356 口径）。
         if self.has_shadow() {
             let (min_x, min_y, max_x, max_y) = vertices
-                .chunks_exact(2)
+                .as_chunks::<2>()
+                .0
+                .iter()
                 .fold((f32::MAX, f32::MAX, f32::MIN, f32::MIN), |(mnx, mny, mxx, mxy), c| {
                     (mnx.min(c[0]), mny.min(c[1]), mxx.max(c[0]), mxy.max(c[1]))
                 });
@@ -832,7 +834,9 @@ impl CanvasContext {
         // 绘制阴影（在形状之前）
         if self.has_shadow() {
             let (min_x, min_y, max_x, max_y) = vertices
-                .chunks_exact(2)
+                .as_chunks::<2>()
+                .0
+                .iter()
                 .fold((f32::MAX, f32::MAX, f32::MIN, f32::MIN), |(mnx, mny, mxx, mxy), c| {
                     (mnx.min(c[0]), mny.min(c[1]), mxx.max(c[0]), mxy.max(c[1]))
                 });
@@ -867,7 +871,9 @@ impl CanvasContext {
         // 绘制阴影（在形状之前）——R3241：用 stroke 足迹（thick rect + 连接点），非 centerline。
         if self.has_shadow() {
             let (min_x, min_y, max_x, max_y) = vertices
-                .chunks_exact(2)
+                .as_chunks::<2>()
+                .0
+                .iter()
                 .fold((f32::MAX, f32::MAX, f32::MIN, f32::MIN), |(mnx, mny, mxx, mxy), c| {
                     (mnx.min(c[0]), mny.min(c[1]), mxx.max(c[0]), mxy.max(c[1]))
                 });
@@ -942,7 +948,9 @@ impl CanvasContext {
         }
         if self.has_shadow() {
             let (min_x, min_y, max_x, max_y) = vertices
-                .chunks_exact(2)
+                .as_chunks::<2>()
+                .0
+                .iter()
                 .fold((f32::MAX, f32::MAX, f32::MIN, f32::MIN), |(mnx, mny, mxx, mxy), c| {
                     (mnx.min(c[0]), mny.min(c[1]), mxx.max(c[0]), mxy.max(c[1]))
                 });
@@ -974,7 +982,9 @@ impl CanvasContext {
         // stroke_path（→stroke()）产生不同阴影（粗线 stroke_with_path 阴影过细）。
         if self.has_shadow() {
             let (min_x, min_y, max_x, max_y) = vertices
-                .chunks_exact(2)
+                .as_chunks::<2>()
+                .0
+                .iter()
                 .fold((f32::MAX, f32::MAX, f32::MIN, f32::MIN), |(mnx, mny, mxx, mxy), c| {
                     (mnx.min(c[0]), mny.min(c[1]), mxx.max(c[0]), mxy.max(c[1]))
                 });
@@ -1019,7 +1029,7 @@ impl CanvasContext {
         let mut min_y = f32::MAX;
         let mut max_x = f32::MIN;
         let mut max_y = f32::MIN;
-        for chunk in vertices.chunks_exact(2) {
+        for chunk in vertices.as_chunks::<2>().0 {
             min_x = min_x.min(chunk[0]);
             min_y = min_y.min(chunk[1]);
             max_x = max_x.max(chunk[0]);
@@ -1451,7 +1461,7 @@ impl CanvasContext {
         let mut min_y = f32::MAX;
         let mut max_x = f32::MIN;
         let mut max_y = f32::MIN;
-        for chunk in vertices.chunks_exact(2) {
+        for chunk in vertices.as_chunks::<2>().0 {
             min_x = min_x.min(chunk[0]);
             min_y = min_y.min(chunk[1]);
             max_x = max_x.max(chunk[0]);
@@ -1539,7 +1549,7 @@ impl CanvasContext {
         if vertices.is_empty() {
             return false;
         }
-        let points: Vec<(f32, f32)> = vertices.chunks_exact(2).map(|c| (c[0], c[1])).collect();
+        let points: Vec<(f32, f32)> = vertices.as_chunks::<2>().0.iter().map(|c| (c[0], c[1])).collect();
         point_in_polygon(x, y, &points)
     }
 
@@ -1700,7 +1710,7 @@ impl CanvasContext {
             inv.transform_point(x, y)
         };
         if !identity_ctm {
-            for v in vertices.chunks_exact_mut(2) {
+            for v in vertices.as_chunks_mut::<2>().0 {
                 let (ux, uy) = t.inverse().transform_point(v[0], v[1]);
                 v[0] = ux;
                 v[1] = uy;
@@ -1709,7 +1719,7 @@ impl CanvasContext {
         let half_lw = self.line_width / 2.0;
         let dashed = !self.line_dash.is_empty();
         if !dashed {
-            for chunk in vertices.chunks_exact(4) {
+            for chunk in vertices.as_chunks::<4>().0 {
                 let dist = point_to_segment_dist(qx, qy, chunk[0], chunk[1], chunk[2], chunk[3]);
                 if dist < half_lw {
                     return true;
@@ -1721,7 +1731,7 @@ impl CanvasContext {
         // 按 dash 周期判定开段（dash[偶数] = 开）。
         let period: f32 = self.line_dash.iter().sum();
         let mut walked = 0.0f32;
-        for chunk in vertices.chunks_exact(4) {
+        for chunk in vertices.as_chunks::<4>().0 {
             let (ax, ay, bx, by) = (chunk[0], chunk[1], chunk[2], chunk[3]);
             let (dx, dy) = (bx - ax, by - ay);
             let len2 = dx * dx + dy * dy;
@@ -2498,7 +2508,7 @@ impl CanvasContext {
         let mut min_y = f32::MAX;
         let mut max_x = f32::MIN;
         let mut max_y = f32::MIN;
-        for c in vertices.chunks_exact(2) {
+        for c in vertices.as_chunks::<2>().0 {
             min_x = min_x.min(c[0]);
             min_y = min_y.min(c[1]);
             max_x = max_x.max(c[0]);
@@ -2559,7 +2569,12 @@ impl CanvasContext {
         if vertices.len() < 4 {
             return;
         }
-        let segments: Vec<[f32; 4]> = vertices.chunks_exact(4).map(|c| [c[0], c[1], c[2], c[3]]).collect();
+        let segments: Vec<[f32; 4]> = vertices
+            .as_chunks::<4>()
+            .0
+            .iter()
+            .map(|c| [c[0], c[1], c[2], c[3]])
+            .collect();
         if segments.is_empty() {
             return;
         }
@@ -3008,7 +3023,7 @@ pub(crate) fn spans_hit(vertices: &[f32], x: f32, y: f32, rule: super::raster::F
 /// R56d：点恰在路径某段上（isPointInPath.edge：路径上点算 inside——扫描线恰过
 /// 角点时半开穿越计数会漏，角点在两条边的闭端；点到段距离为 0 兜底）。
 fn point_on_any_segment(vertices: &[f32], x: f32, y: f32) -> bool {
-    for seg in vertices.chunks_exact(4) {
+    for seg in vertices.as_chunks::<4>().0 {
         // 零长度退化段（非可逆 CTM 把全路径压成一点）不算路径上的有效边——
         // spec 退化路径不命中（isPointInPath.basic 的 scale(0,0) 期望 false）。
         let dx = seg[2] - seg[0];

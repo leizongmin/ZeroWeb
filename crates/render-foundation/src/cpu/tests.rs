@@ -189,7 +189,12 @@ fn missing_renderer_local_font_falls_back_to_visible_unicode_glyph() {
     );
 
     assert!(
-        frame.data.chunks_exact(4).any(|pixel| pixel[..3] != [255, 255, 255]),
+        frame
+            .data
+            .as_chunks::<4>()
+            .0
+            .iter()
+            .any(|pixel| pixel[..3] != [255, 255, 255]),
         "unknown renderer font IDs must not make page text disappear in the compositor"
     );
 }

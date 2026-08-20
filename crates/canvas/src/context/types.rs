@@ -2251,7 +2251,7 @@ impl CanvasColorSpace {
         if self == to {
             return;
         }
-        for px in data.chunks_exact_mut(4) {
+        for px in data.as_chunks_mut::<4>().0 {
             let [r, g, b] = self.convert_rgb(to, [px[0], px[1], px[2]]);
             px[0] = r;
             px[1] = g;

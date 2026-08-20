@@ -28,13 +28,13 @@ impl RenderPrimitives {
         }
 
         for path_fill in &self.path_fills {
-            for chunk in path_fill.vertices.chunks_exact(2) {
+            for chunk in path_fill.vertices.as_chunks::<2>().0 {
                 expand(chunk[0], chunk[1], chunk[0], chunk[1]);
             }
         }
 
         for path_stroke in &self.path_strokes {
-            for chunk in path_stroke.vertices.chunks_exact(2) {
+            for chunk in path_stroke.vertices.as_chunks::<2>().0 {
                 expand(chunk[0], chunk[1], chunk[0], chunk[1]);
             }
         }
@@ -447,7 +447,7 @@ impl RenderPrimitives {
                     let mut min_y = f32::MAX;
                     let mut max_x = f32::MIN;
                     let mut max_y = f32::MIN;
-                    for chunk in pf.vertices.chunks_exact(2) {
+                    for chunk in pf.vertices.as_chunks::<2>().0 {
                         min_x = min_x.min(chunk[0]);
                         min_y = min_y.min(chunk[1]);
                         max_x = max_x.max(chunk[0]);
@@ -471,7 +471,7 @@ impl RenderPrimitives {
                     let mut min_y = f32::MAX;
                     let mut max_x = f32::MIN;
                     let mut max_y = f32::MIN;
-                    for chunk in ps.vertices.chunks_exact(2) {
+                    for chunk in ps.vertices.as_chunks::<2>().0 {
                         min_x = min_x.min(chunk[0]);
                         min_y = min_y.min(chunk[1]);
                         max_x = max_x.max(chunk[0]);

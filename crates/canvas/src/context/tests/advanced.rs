@@ -1194,7 +1194,7 @@ fn test_create_image_data() {
     assert_eq!(img.height, 20);
     assert_eq!(img.data.len(), 800); // 10 * 20 * 4
     // 所有像素应为透明黑色
-    for chunk in img.data.chunks_exact(4) {
+    for chunk in img.data.as_chunks::<4>().0 {
         assert_eq!(chunk, &[0, 0, 0, 0]);
     }
 }

@@ -413,7 +413,7 @@ fn path_vertices_rect(vertices: &[f32]) -> Rect {
     let mut min_y = f32::MAX;
     let mut max_x = f32::MIN;
     let mut max_y = f32::MIN;
-    for pair in vertices.chunks_exact(2) {
+    for pair in vertices.as_chunks::<2>().0 {
         min_x = min_x.min(pair[0]);
         min_y = min_y.min(pair[1]);
         max_x = max_x.max(pair[0]);

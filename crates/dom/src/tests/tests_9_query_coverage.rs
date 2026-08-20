@@ -1,6 +1,5 @@
 //! query.rs 覆盖率补充测试：parse_simple_selector 和通过 Document API 测试匹配。
 
-use crate::query::*;
 use crate::*;
 
 // ═══════════════════════════════════════════════════════════════════════

@@ -674,7 +674,7 @@ fn test_path_flattening() {
     assert!(vertices.len() > 0);
 
     // 验证顶点的格式（应该是 x, y, x, y, ...）
-    for chunk in vertices.chunks_exact(2) {
+    for chunk in vertices.as_chunks::<2>().0 {
         // 每个 chunk 应该有两个坐标值
         assert_eq!(chunk.len(), 2);
     }

@@ -58,13 +58,13 @@ pub fn paint_for_viewport(paint: &PaintSnapshotParams, scroll_x: f32, scroll_y: 
         stroke.y2 += y;
     }
     for path in &mut out.path_fills {
-        for point in path.vertices.chunks_exact_mut(2) {
+        for point in path.vertices.as_chunks_mut::<2>().0 {
             point[0] += x;
             point[1] += y;
         }
     }
     for path in &mut out.path_strokes {
-        for point in path.vertices.chunks_exact_mut(2) {
+        for point in path.vertices.as_chunks_mut::<2>().0 {
             point[0] += x;
             point[1] += y;
         }

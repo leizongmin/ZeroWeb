@@ -686,7 +686,12 @@ fn test_fill_with_shadow_triggers_shadow_path() {
     ctx.close_path();
     ctx.fill();
     // Shadow pixels should be present around the filled area
-    let has_blue = ctx.pixel_buffer.chunks_exact(4).any(|px| px[2] > 0 && px[3] > 0);
+    let has_blue = ctx
+        .pixel_buffer
+        .as_chunks::<4>()
+        .0
+        .iter()
+        .any(|px| px[2] > 0 && px[3] > 0);
     assert!(has_blue, "Shadow path should produce blue-tinted pixels");
 }
 
@@ -704,7 +709,12 @@ fn test_stroke_with_shadow_triggers_shadow_path() {
     ctx.move_to(10.0, 10.0);
     ctx.line_to(80.0, 80.0);
     ctx.stroke();
-    let has_green = ctx.pixel_buffer.chunks_exact(4).any(|px| px[1] > 0 && px[3] > 0);
+    let has_green = ctx
+        .pixel_buffer
+        .as_chunks::<4>()
+        .0
+        .iter()
+        .any(|px| px[1] > 0 && px[3] > 0);
     assert!(has_green, "Stroke shadow should produce green-tinted pixels");
 }
 
@@ -723,7 +733,7 @@ fn test_fill_with_path_and_shadow() {
     path.close_path();
     ctx.fill_with_path(&path);
     // Verify something was drawn
-    let has_content = ctx.pixel_buffer.chunks_exact(4).any(|px| px[3] > 0);
+    let has_content = ctx.pixel_buffer.as_chunks::<4>().0.iter().any(|px| px[3] > 0);
     assert!(has_content, "fill_with_path with shadow should produce pixels");
 }
 
@@ -740,7 +750,7 @@ fn test_stroke_with_path_and_shadow() {
     path.move_to(15.0, 15.0);
     path.line_to(85.0, 85.0);
     ctx.stroke_with_path(&path);
-    let has_content = ctx.pixel_buffer.chunks_exact(4).any(|px| px[3] > 0);
+    let has_content = ctx.pixel_buffer.as_chunks::<4>().0.iter().any(|px| px[3] > 0);
     assert!(has_content, "stroke_with_path with shadow should produce pixels");
 }
 
@@ -876,7 +886,12 @@ fn test_fill_rect_shadow_zero_blur() {
     ctx.set_shadow_offset_y(5.0);
     ctx.fill_rect(10.0, 10.0, 40.0, 40.0);
     // Verify shadow pixels exist
-    let has_green = ctx.pixel_buffer.chunks_exact(4).any(|px| px[1] > 50 && px[3] > 0);
+    let has_green = ctx
+        .pixel_buffer
+        .as_chunks::<4>()
+        .0
+        .iter()
+        .any(|px| px[1] > 50 && px[3] > 0);
     assert!(has_green, "Shadow with zero blur should still be visible");
 }
 
@@ -895,7 +910,12 @@ fn test_stroke_shadow_path_with_blur() {
     ctx.line_to(90.0, 10.0);
     ctx.line_to(90.0, 90.0);
     ctx.stroke();
-    let has_blue = ctx.pixel_buffer.chunks_exact(4).any(|px| px[2] > 0 && px[3] > 0);
+    let has_blue = ctx
+        .pixel_buffer
+        .as_chunks::<4>()
+        .0
+        .iter()
+        .any(|px| px[2] > 0 && px[3] > 0);
     assert!(has_blue, "Stroke shadow path with blur should produce pixels");
 }
 
@@ -904,7 +924,7 @@ fn test_stroke_shadow_path_with_blur() {
 fn test_draw_image_data_scaled_alpha_blend() {
     let mut ctx = CanvasContext::new(20, 20);
     // Pre-fill canvas with a base color
-    for px in ctx.pixel_buffer.chunks_exact_mut(4) {
+    for px in ctx.pixel_buffer.as_chunks_mut::<4>().0 {
         px[0] = 100;
         px[1] = 100;
         px[2] = 100;
@@ -912,7 +932,7 @@ fn test_draw_image_data_scaled_alpha_blend() {
     }
     // Draw semi-transparent image
     let mut img_data = vec![0u8; 400]; // 10x10 * 4
-    for px in img_data.chunks_exact_mut(4) {
+    for px in img_data.as_chunks_mut::<4>().0 {
         px[0] = 255;
         px[1] = 0;
         px[2] = 0;
@@ -925,7 +945,7 @@ fn test_draw_image_data_scaled_alpha_blend() {
     };
     ctx.draw_image_sliced(&img, 0.0, 0.0, 10.0, 10.0, 0.0, 0.0, 10.0, 10.0);
     // Check some blending occurred
-    let has_blend = ctx.pixel_buffer.chunks_exact(4).any(|px| px[0] > 100);
+    let has_blend = ctx.pixel_buffer.as_chunks::<4>().0.iter().any(|px| px[0] > 100);
     assert!(has_blend, "Alpha blending should have occurred");
 }
 

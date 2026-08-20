@@ -399,8 +399,8 @@ fn test_render_scene_both_empty_inputs() {
 
     renderer.render_scene(&[], &font_loader, &mut glyph_cache, &[], &[]);
     let pixels = renderer.read_pixels().expect("read_pixels");
-    for chunk in pixels.chunks_exact(4) {
-        assert_eq!(chunk, [255, 255, 255, 255]);
+    for chunk in pixels.as_chunks::<4>().0 {
+        assert_eq!(chunk, &[255, 255, 255, 255]);
     }
 }
 
@@ -889,7 +889,9 @@ fn test_gpu_full_scene_preserves_draw_indices_after_unrenderable_glyph() {
     let pixels = renderer.read_pixels().expect("readback");
     assert!(
         pixels
-            .chunks_exact(4)
+            .as_chunks::<4>()
+            .0
+            .iter()
             .any(|pixel| pixel[0] < 250 || pixel[1] < 250 || pixel[2] < 250),
         "the renderable glyph after the missing glyph should still be drawn"
     );
@@ -1494,8 +1496,8 @@ fn test_gpu_full_scene_empty() {
     );
 
     let pixels = renderer.read_pixels().expect("read_pixels");
-    for chunk in pixels.chunks_exact(4) {
-        assert_eq!(chunk, [255, 255, 255, 255]);
+    for chunk in pixels.as_chunks::<4>().0 {
+        assert_eq!(chunk, &[255, 255, 255, 255]);
     }
 }
 

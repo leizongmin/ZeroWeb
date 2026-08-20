@@ -15,7 +15,7 @@ fn test_create_image_data_blank() {
     assert_eq!(img.height, 8, "height should be 8");
     assert_eq!(img.data.len(), 10 * 8 * 4, "data length should be 10*8*4 = 320");
     // 所有像素应为透明黑色
-    for chunk in img.data.chunks_exact(4) {
+    for chunk in img.data.as_chunks::<4>().0 {
         assert_eq!(chunk, &[0, 0, 0, 0], "pixel should be transparent black (rgba 0,0,0,0)");
     }
 }

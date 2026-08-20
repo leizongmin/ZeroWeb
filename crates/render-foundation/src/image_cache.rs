@@ -80,7 +80,7 @@ impl ImageData {
         // 检测纯色图片：所有像素相同时缓存颜色值
         let solid_color = if pixels.len() >= 4 {
             let first = [pixels[0], pixels[1], pixels[2], pixels[3]];
-            let all_same = pixels.chunks_exact(4).all(|chunk| {
+            let all_same = pixels.as_chunks::<4>().0.iter().all(|chunk| {
                 chunk[0] == first[0] && chunk[1] == first[1] && chunk[2] == first[2] && chunk[3] == first[3]
             });
             if all_same { Some(first) } else { None }
@@ -436,7 +436,7 @@ pub fn decode_webp_bytes(bytes: &[u8]) -> Result<ImageData, String> {
     } else {
         // RGB → RGBA（补 alpha=255）。
         let mut out = Vec::with_capacity(raw.len() / 3 * 4);
-        for px in raw.chunks_exact(3) {
+        for px in raw.as_chunks::<3>().0 {
             out.extend_from_slice(&[px[0], px[1], px[2], 255]);
         }
         out
@@ -453,7 +453,7 @@ fn convert_jpeg_pixels_to_rgba(raw: &[u8], pixel_format: jpeg_decoder::PixelForm
     match pixel_format {
         PixelFormat::RGB24 => {
             let mut out = Vec::with_capacity(raw.len() / 3 * 4);
-            for px in raw.chunks_exact(3) {
+            for px in raw.as_chunks::<3>().0 {
                 out.extend_from_slice(&[px[0], px[1], px[2], 255]);
             }
             out
@@ -468,7 +468,7 @@ fn convert_jpeg_pixels_to_rgba(raw: &[u8], pixel_format: jpeg_decoder::PixelForm
         PixelFormat::L16 => {
             // 16-bit grayscale（big-endian u16），降级为 8-bit RGBA（取高字节）。
             let mut out = Vec::with_capacity(raw.len() / 2 * 4);
-            for px in raw.chunks_exact(2) {
+            for px in raw.as_chunks::<2>().0 {
                 let hi = px[0];
                 out.extend_from_slice(&[hi, hi, hi, 255]);
             }
@@ -477,7 +477,7 @@ fn convert_jpeg_pixels_to_rgba(raw: &[u8], pixel_format: jpeg_decoder::PixelForm
         PixelFormat::CMYK32 => {
             // CMYK → RGB（Adobe JPEG 惯例：K 倒置，C/M/Y 取 255-value）
             let mut out = Vec::with_capacity(raw.len() / 4 * 4);
-            for px in raw.chunks_exact(4) {
+            for px in raw.as_chunks::<4>().0 {
                 let c = 255 - px[0];
                 let m = 255 - px[1];
                 let y = 255 - px[2];
@@ -1048,7 +1048,7 @@ fn convert_png_buffer_to_rgba(raw: &[u8], color_type: png::ColorType, bit_depth:
         Rgb => {
             let n = raw.len() / 3;
             let mut out = Vec::with_capacity(n * 4);
-            for px in raw.chunks_exact(3) {
+            for px in raw.as_chunks::<3>().0 {
                 out.extend_from_slice(&[px[0], px[1], px[2], 255]);
             }
             out
@@ -1063,7 +1063,7 @@ fn convert_png_buffer_to_rgba(raw: &[u8], color_type: png::ColorType, bit_depth:
         GrayscaleAlpha => {
             let n = raw.len() / 2;
             let mut out = Vec::with_capacity(n * 4);
-            for px in raw.chunks_exact(2) {
+            for px in raw.as_chunks::<2>().0 {
                 out.extend_from_slice(&[px[0], px[0], px[0], px[1]]);
             }
             out

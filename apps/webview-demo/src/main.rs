@@ -293,7 +293,7 @@ impl DemoState {
                 return;
             }
         };
-        for (dst, rgba) in buffer.iter_mut().zip(fb.data.chunks_exact(4)) {
+        for (dst, rgba) in buffer.iter_mut().zip(fb.data.as_chunks::<4>().0.iter()) {
             *dst = ((rgba[0] as u32) << 16) | ((rgba[1] as u32) << 8) | rgba[2] as u32;
         }
         if let Err(e) = buffer.present() {
@@ -427,7 +427,7 @@ fn main() {
         let _ = writeln!(file, "P6");
         let _ = writeln!(file, "{} {}", fb.width, fb.height);
         let _ = writeln!(file, "255");
-        for chunk in fb.data.chunks_exact(4) {
+        for chunk in fb.data.as_chunks::<4>().0 {
             let _ = file.write_all(&[chunk[0], chunk[1], chunk[2]]);
         }
         println!("已保存 CPU 渲染帧缓冲到 demo_output.ppm");

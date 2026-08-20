@@ -1027,7 +1027,7 @@ pub(crate) fn present_rgba_to_softbuffer(
         }
     };
 
-    for (dst, chunk) in buffer.iter_mut().zip(rgba.chunks_exact(4)) {
+    for (dst, chunk) in buffer.iter_mut().zip(rgba.as_chunks::<4>().0.iter()) {
         *dst = ((chunk[0] as u32) << 16) | ((chunk[1] as u32) << 8) | chunk[2] as u32;
     }
 

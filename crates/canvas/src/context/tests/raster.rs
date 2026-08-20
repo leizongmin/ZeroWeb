@@ -302,14 +302,18 @@ fn test_flatten_round_rect_negative_h_corner_mirror() {
     );
     // 左上角 (0,0) 直角：应存在顶点精确落在 (0,0)（直角边交点），且 (0,0) 附近
     // 没有内凹圆弧（最近的弧点距角 > 半径的一半——左上无圆角）。
-    let exact_corner = verts.chunks_exact(2).any(|c| c[0].abs() < 0.01 && c[1].abs() < 0.01);
+    let exact_corner = verts
+        .as_chunks::<2>()
+        .0
+        .iter()
+        .any(|c| c[0].abs() < 0.01 && c[1].abs() < 0.01);
     assert!(exact_corner, "square corner at (0,0) after mirror");
 }
 
 /// 统计扫描线 y=sy 与段序列的交点 x（段对 x1,y1,x2,y2 半开区间判定）。
 fn scanline_hits(verts: &[f32], sy: f32) -> Vec<f32> {
     let mut xs = Vec::new();
-    for seg in verts.chunks_exact(4) {
+    for seg in verts.as_chunks::<4>().0 {
         let (x1, y1, x2, y2) = (seg[0], seg[1], seg[2], seg[3]);
         if (y1 <= sy && y2 > sy) || (y2 <= sy && y1 > sy) {
             let t = (sy - y1) / (y2 - y1);
@@ -1972,7 +1976,12 @@ fn test_arcto_tangent_geometry_and_anisotropic_transform_r56f() {
     let v2 = ctx2.flatten_path();
     assert!(!v2.is_empty());
     // 弧顶点 x 不应超过 ~100 + 50*0.1 + 容差（用户空间 r=50 经 sx=0.1 压到 5）。
-    let max_x = v2.chunks_exact(4).flat_map(|s| [s[0], s[2]]).fold(f32::MIN, f32::max);
+    let max_x = v2
+        .as_chunks::<4>()
+        .0
+        .iter()
+        .flat_map(|s| [s[0], s[2]])
+        .fold(f32::MIN, f32::max);
     assert!(
         max_x < 115.0,
         "anisotropic scale clamps arc x-extent (user-space r=50 -> device 5), max_x={max_x}"

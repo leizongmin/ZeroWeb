@@ -546,8 +546,10 @@ fn browser_cpu_gpu_chrome_geometry_matches_at_hidpi() {
 
     let different_pixels = cpu
         .data
-        .chunks_exact(4)
-        .zip(gpu.data.chunks_exact(4))
+        .as_chunks::<4>()
+        .0
+        .iter()
+        .zip(gpu.data.as_chunks::<4>().0.iter())
         .filter(|(left, right)| {
             left[0].abs_diff(right[0]) as u16 + left[1].abs_diff(right[1]) as u16 + left[2].abs_diff(right[2]) as u16
                 > 48
@@ -3236,7 +3238,7 @@ fn local_composite_cpu_gpu_matrix_for_form_interactions() {
     };
     let non_white_ratio = |fb: &[u8]| -> f32 {
         let mut non_white = 0usize;
-        for px in fb.chunks_exact(4) {
+        for px in fb.as_chunks::<4>().0 {
             if px[0] < 250 || px[1] < 250 || px[2] < 250 {
                 non_white += 1;
             }
@@ -3245,7 +3247,7 @@ fn local_composite_cpu_gpu_matrix_for_form_interactions() {
     };
     let diff_ratio = |a: &[u8], b: &[u8]| -> f32 {
         let mut diff = 0usize;
-        for (pa, pb) in a.chunks_exact(4).zip(b.chunks_exact(4)) {
+        for (pa, pb) in a.as_chunks::<4>().0.iter().zip(b.as_chunks::<4>().0.iter()) {
             let da = pa[0].abs_diff(pb[0]) as u16 + pa[1].abs_diff(pb[1]) as u16 + pa[2].abs_diff(pb[2]) as u16;
             if da > 48 {
                 diff += 1;

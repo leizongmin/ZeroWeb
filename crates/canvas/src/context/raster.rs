@@ -159,7 +159,7 @@ pub enum FillRule {
 /// - EvenOdd：交点计数，奇偶切换填充区间。
 pub(crate) fn fill_rule_spans(vertices: &[f32], sy: f32, rule: FillRule) -> Vec<(f32, f32)> {
     let mut crossings: Vec<(f32, i32)> = Vec::new();
-    for seg in vertices.chunks_exact(4) {
+    for seg in vertices.as_chunks::<4>().0 {
         let (x1, y1, x2, y2) = (seg[0], seg[1], seg[2], seg[3]);
         if (y1 <= sy && y2 > sy) || (y2 <= sy && y1 > sy) {
             let t = (sy - y1) / (y2 - y1);
@@ -188,7 +188,7 @@ pub(crate) fn fill_rule_spans(vertices: &[f32], sy: f32, rule: FillRule) -> Vec<
         }
         FillRule::EvenOdd => {
             let xs: Vec<f32> = crossings.iter().map(|&(x, _)| x).collect();
-            for pair in xs.chunks_exact(2) {
+            for pair in xs.as_chunks::<2>().0 {
                 spans.push((pair[0], pair[1]));
             }
         }
@@ -353,7 +353,7 @@ pub(crate) fn fill_rect_into_mask(mask: &mut [u8], rw: usize, rh: usize, ox: i32
 /// 重复，环 A→B→C→A → [A,B,C]。
 pub(crate) fn segs_to_point_verts(segments: &[f32]) -> Vec<f32> {
     let mut out: Vec<f32> = Vec::with_capacity(segments.len() / 2 + 2);
-    for seg in segments.chunks_exact(4) {
+    for seg in segments.as_chunks::<4>().0 {
         let (x, y) = (seg[0], seg[1]);
         let n = out.len();
         if n >= 2 && (out[n - 2] - x).abs() <= f32::EPSILON && (out[n - 1] - y).abs() <= f32::EPSILON {
@@ -371,7 +371,7 @@ pub(crate) fn rasterize_path_coverage(vertices: &[f32], mask: &mut [u8], rw: usi
     if vertices.len() < 4 || rw == 0 || rh == 0 {
         return;
     }
-    let points: Vec<(f32, f32)> = vertices.chunks_exact(2).map(|c| (c[0], c[1])).collect();
+    let points: Vec<(f32, f32)> = vertices.as_chunks::<2>().0.iter().map(|c| (c[0], c[1])).collect();
     let mut min_y = f32::MAX;
     let mut max_y = f32::MIN;
     for &(_, y) in &points {
@@ -388,7 +388,7 @@ pub(crate) fn rasterize_path_coverage(vertices: &[f32], mask: &mut [u8], rw: usi
             continue;
         }
         let mut xs: Vec<f32> = Vec::new();
-        for seg in vertices.chunks_exact(4) {
+        for seg in vertices.as_chunks::<4>().0 {
             let (x1, y1, x2, y2) = (seg[0], seg[1], seg[2], seg[3]);
             if (y1 <= sy && y2 > sy) || (y2 <= sy && y1 > sy) {
                 let t = (sy - y1) / (y2 - y1);
@@ -396,7 +396,7 @@ pub(crate) fn rasterize_path_coverage(vertices: &[f32], mask: &mut [u8], rw: usi
             }
         }
         xs.sort_by(|a, b| a.total_cmp(b));
-        for pair in xs.chunks_exact(2) {
+        for pair in xs.as_chunks::<2>().0 {
             let ix_start = ((pair[0] - ox as f32).max(0.0) as i32).max(0);
             let ix_end = ((pair[1] - ox as f32).min(rw as f32) as i32).min(rwi);
             for lx in ix_start..ix_end {
@@ -1018,7 +1018,7 @@ impl CanvasContext {
                             had_subpath,
                         );
                         // 输出段逐点正变换。
-                        for seg in vertices[start..].chunks_exact_mut(4) {
+                        for seg in vertices[start..].as_chunks_mut::<4>().0 {
                             let (ax, ay) = self.transform.transform_point(seg[0], seg[1]);
                             let (bx, by) = self.transform.transform_point(seg[2], seg[3]);
                             seg[0] = ax;
@@ -1988,7 +1988,7 @@ impl CanvasContext {
         let mut min_y = f32::MAX;
         let mut max_x = f32::MIN;
         let mut max_y = f32::MIN;
-        for chunk in vertices.chunks_exact(2) {
+        for chunk in vertices.as_chunks::<2>().0 {
             min_x = min_x.min(chunk[0]);
             min_y = min_y.min(chunk[1]);
             max_x = max_x.max(chunk[0]);
@@ -1996,7 +1996,7 @@ impl CanvasContext {
         }
         // 收集所有唯一顶点用于扫描线
         let mut points: Vec<(f32, f32)> = Vec::new();
-        for chunk in vertices.chunks_exact(2) {
+        for chunk in vertices.as_chunks::<2>().0 {
             points.push((chunk[0], chunk[1]));
         }
         let canvas_w = self.width;
@@ -2126,7 +2126,7 @@ impl CanvasContext {
         let mut max_x = f32::MIN;
         let mut max_y = f32::MIN;
         let mut points: Vec<(f32, f32)> = Vec::new();
-        for chunk in vertices.chunks_exact(2) {
+        for chunk in vertices.as_chunks::<2>().0 {
             let (px, py) = (chunk[0], chunk[1]);
             min_x = min_x.min(px);
             min_y = min_y.min(py);
@@ -2216,7 +2216,9 @@ impl CanvasContext {
         //（2d.path.stroke.prune.*：moveTo(50,25)+lineTo(50,25) 的零长段不得画
         // round cap 圆盘——剪除后段列表为空则无 cap/join）。
         let segments: Vec<[f32; 4]> = vertices
-            .chunks_exact(4)
+            .as_chunks::<4>()
+            .0
+            .iter()
             .map(|c| [c[0], c[1], c[2], c[3]])
             .filter(|seg| {
                 let len = (seg[2] - seg[0]).hypot(seg[3] - seg[1]);
@@ -2462,7 +2464,9 @@ impl CanvasContext {
         //（2d.path.stroke.prune.*：moveTo(50,25)+lineTo(50,25) 的零长段不得画
         // round cap 圆盘——剪除后段列表为空则无 cap/join）。
         let segments: Vec<[f32; 4]> = vertices
-            .chunks_exact(4)
+            .as_chunks::<4>()
+            .0
+            .iter()
             .map(|c| [c[0], c[1], c[2], c[3]])
             .filter(|seg| {
                 let len = (seg[2] - seg[0]).hypot(seg[3] - seg[1]);
@@ -2636,7 +2640,9 @@ impl CanvasContext {
 
         let half_lw = self.line_width / 2.0;
         let segments: Vec<[f32; 4]> = path_vertices
-            .chunks_exact(4)
+            .as_chunks::<4>()
+            .0
+            .iter()
             .map(|c| [c[0], c[1], c[2], c[3]])
             .collect();
         let mut outline = Vec::new();

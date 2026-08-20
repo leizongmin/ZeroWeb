@@ -618,7 +618,7 @@ pub fn convert_png_buffer_to_rgba(raw: &[u8], color_type: png::ColorType, bit_de
         Rgb => {
             let n = raw.len() / 3;
             let mut out = Vec::with_capacity(n * 4);
-            for px in raw.chunks_exact(3) {
+            for px in raw.as_chunks::<3>().0 {
                 out.extend_from_slice(&[px[0], px[1], px[2], 255]);
             }
             out
@@ -633,7 +633,7 @@ pub fn convert_png_buffer_to_rgba(raw: &[u8], color_type: png::ColorType, bit_de
         GrayscaleAlpha => {
             let n = raw.len() / 2;
             let mut out = Vec::with_capacity(n * 4);
-            for px in raw.chunks_exact(2) {
+            for px in raw.as_chunks::<2>().0 {
                 out.extend_from_slice(&[px[0], px[0], px[0], px[1]]);
             }
             out

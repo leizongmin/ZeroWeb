@@ -570,7 +570,7 @@ fn test_round_rect_vertices_avoid_sharp_corners() {
     let pf = &ctx.primitives().path_fills[0];
     // 矩形的四个尖角不应出现在顶点中
     let sharp_corners = [(x, y), (x + w, y), (x + w, y + h), (x, y + h)];
-    for chunk in pf.vertices.chunks_exact(2) {
+    for chunk in pf.vertices.as_chunks::<2>().0 {
         let (vx, vy) = (chunk[0], chunk[1]);
         for &(cx, cy) in &sharp_corners {
             assert!(
@@ -640,7 +640,7 @@ fn test_round_rect_radius_clamped() {
     let mut min_y = f32::MAX;
     let mut max_x = f32::MIN;
     let mut max_y = f32::MIN;
-    for chunk in pf.vertices.chunks_exact(2) {
+    for chunk in pf.vertices.as_chunks::<2>().0 {
         min_x = min_x.min(chunk[0]);
         min_y = min_y.min(chunk[1]);
         max_x = max_x.max(chunk[0]);
@@ -688,7 +688,7 @@ fn test_round_rect_corner_vertices_offset_inward() {
     ];
     // 至少应有一些顶点在圆角区域（不在直边上）
     let mut has_corner_vertex = false;
-    for chunk in pf.vertices.chunks_exact(2) {
+    for chunk in pf.vertices.as_chunks::<2>().0 {
         let (vx, vy) = (chunk[0], chunk[1]);
         // 左上角圆角区域：x 在 [x, x+r] 且 y 在 [y, y+r] 的四分之一圆内
         if vx >= x && vx <= x + r && vy >= y && vy <= y + r {

@@ -310,7 +310,7 @@ impl Path2D {
         if vertices.is_empty() {
             return false;
         }
-        let points: Vec<(f32, f32)> = vertices.chunks_exact(2).map(|c| (c[0], c[1])).collect();
+        let points: Vec<(f32, f32)> = vertices.as_chunks::<2>().0.iter().map(|c| (c[0], c[1])).collect();
         point_in_polygon(x, y, &points)
     }
 

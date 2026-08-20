@@ -90,7 +90,7 @@ impl FrameBuffer {
 
     /// 清除为指定颜色
     pub fn clear(&mut self, r: u8, g: u8, b: u8, a: u8) {
-        for chunk in self.data.chunks_exact_mut(4) {
+        for chunk in self.data.as_chunks_mut::<4>().0 {
             chunk[0] = r;
             chunk[1] = g;
             chunk[2] = b;
