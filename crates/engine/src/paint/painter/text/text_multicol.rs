@@ -184,8 +184,18 @@ impl super::super::Painter {
             ColumnRuleWidthComputedValue::Medium => 3.0,
             ColumnRuleWidthComputedValue::Thin => 1.0,
             ColumnRuleWidthComputedValue::Thick => 5.0,
-            ColumnRuleWidthComputedValue::Length(LengthValue::Px(w)) => *w as f32,
-            _ => 1.0,
+            ColumnRuleWidthComputedValue::Length(length) => {
+                let font_size_px = match style.font_size {
+                    LengthValue::Px(s) => s as f32,
+                    _ => 16.0,
+                };
+                zero_style_system::computed::resolve_length(
+                    length,
+                    font_size_px as f64,
+                    Some(content_w as f64),
+                    Some(content_h as f64),
+                ) as f32
+            }
         };
 
         // CSS Multi-column §4.3：column-rule-color 初始 = currentColor，须按元素自身 color 解析

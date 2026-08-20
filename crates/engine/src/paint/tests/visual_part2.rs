@@ -587,6 +587,34 @@ fn test_column_rule_width_keywords_match_border_width() {
     assert_rule_width(ColumnRuleWidthComputedValue::Thick, 5.0);
 }
 
+#[test]
+fn test_column_rule_width_relative_length_resolves_in_paint() {
+    use zero_style_system::{ColumnCountComputedValue, ColumnRuleStyleComputedValue, ColumnRuleWidthComputedValue};
+
+    let mut doc = zero_dom::Document::new();
+    let nid = doc.create_element("div");
+    let layout = make_box(Some(nid), 0.0, 0.0, 600.0, 200.0);
+
+    let mut style = ComputedStyle::default();
+    style.font_size = LengthValue::Px(20.0);
+    style.column_count = ColumnCountComputedValue::Number(2);
+    style.column_gap = LengthValue::Px(20.0);
+    style.column_rule_style = ColumnRuleStyleComputedValue::Solid;
+    style.column_rule_width = ColumnRuleWidthComputedValue::Length(LengthValue::Em(0.5));
+    style.column_rule_color = ColorValue::Rgba(128, 128, 128, 255);
+    let mut styles = HashMap::new();
+    styles.insert(nid, style);
+    let mut painter = Painter::new();
+    painter.paint(&layout, &styles, None);
+
+    let has_rule = painter
+        .primitives()
+        .fills
+        .iter()
+        .any(|f| f.color.a > 0 && (f.rect.size.width - 10.0).abs() < 0.1 && f.rect.size.height > 100.0);
+    assert!(has_rule, "column-rule-width:0.5em 应按 font-size:20px 绘制为 10px");
+}
+
 /// CSS Multi-column §4.3：column-rule-color 初始 = currentColor，paint 须解析为元素自身 color。
 /// 元素 color:red + column-rule solid（无显式 column-rule-color）→ 分隔线应为红色（非黑）。
 #[test]
