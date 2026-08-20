@@ -5,8 +5,10 @@
 > 布局契约：`<分类>/<YYYY-MM>/<YYYY-MM-DD>-<topic>.md`，日期以 frontmatter 为准。
 > 方法论蒸馏层见 `.agents/skills/zeroweb-guidelines/SKILL.md`。
 
-## Bugs — 踩坑记录（根因 + 修复 + 如何避免）（81）
+## Bugs — 踩坑记录（根因 + 修复 + 如何避免）（83）
 
+- 2026-08-20 [workspace feature unification 掩盖单包构建缺 JS 引擎 feature](bugs/2026-08/2026-08-20-workspace-feature-unification-masks-single-package-build.md) — zero-script-sandbox, zero-page-runtime, zero-browser
+- 2026-08-20 [SW 求值下放 renderer 后与同步 automation 请求三方互等死锁](bugs/2026-08/2026-08-20-renderer-mainloop-sw-eval-deadlock.md) — zero-renderer, zero-browser, zero-protocol
 - 2026-08-19 [IndexedDB terminal state wait](bugs/2026-08/2026-08-19-indexeddb-terminal-state-wait.md) — apps/browser/src/process_backend/indexed_db_owner_tests.rs
 - 2026-08-19 [IndexedDB listener 异常必须结合 transaction 状态处理](bugs/2026-08/2026-08-19-indexeddb-listener-exception-transaction-state.md) — engine, wpt-runner
 - 2026-08-19 [IndexedDB key range canonical conversion](bugs/2026-08/2026-08-19-indexeddb-keyrange-canonical-conversion.md) — crates/engine/src/js_dom_shim/part02.js
