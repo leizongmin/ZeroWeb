@@ -2708,6 +2708,7 @@
         reg._stateSequence = 0;
         reg._pendingStates = [];
         reg._updateFoundPending = false;
+        reg._activationRequested = false;
         reg._claimClientsPending = false;
         reg.scope = scope;
         reg.updateViaCache = updateViaCache || 'imports';
@@ -2829,6 +2830,14 @@
         worker.state = state;
         reg.installing = state === 'installing' ? worker : null;
         reg.waiting = state === 'installed' ? worker : null;
+        if (state === 'installed' &&
+            reg._previousActive &&
+            _controller !== reg._previousActive &&
+            !reg._activationRequested &&
+            typeof __zw_sw_activate_waiting === 'function') {
+          reg._activationRequested = true;
+          try { __zw_sw_activate_waiting(String(reg._id)); } catch (_eActivate) {}
+        }
         if (state === 'activating') {
           reg.active = worker;
         } else if (state === 'activated') {
@@ -2929,6 +2938,7 @@
             reg._stateSequence = 0;
             reg._pendingStates = [];
             reg._updateFoundPending = false;
+            reg._activationRequested = false;
             reg._claimClientsPending = false;
             reg.installing = reg._worker;
             reg.waiting = null;

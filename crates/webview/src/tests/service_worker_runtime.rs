@@ -789,17 +789,22 @@ fn navigator_update_compares_script_bytes_and_dispatches_updatefound_only_when_c
                  ].join('|')",
             )
             .unwrap();
-        if value == "true|true|true|1|true|true" {
+        if value == "true|true|true|1|false|false" {
             break;
         }
         assert!(Instant::now() < deadline, "changed update timed out: {value}");
         std::thread::sleep(Duration::from_millis(10));
     }
+    assert_eq!(
+        webview.execute_script("globalThis.__updateActive.state").unwrap(),
+        "redundant"
+    );
 
     *source.lock().unwrap() = "function(".to_string();
     webview
         .execute_script(
             "globalThis.__updateFailure = 'pending';
+             globalThis.__updateActive = globalThis.__updateReg.active;
              globalThis.__updateWaiting = globalThis.__updateReg.waiting;
              globalThis.__updateReg.update().then(function() {
                globalThis.__updateFailure = 'unexpected success';
@@ -817,6 +822,62 @@ fn navigator_update_compares_script_bytes_and_dispatches_updatefound_only_when_c
         webview.execute_script("globalThis.__updateFailure").unwrap(),
         "TypeError|true|true|1"
     );
+}
+
+#[test]
+fn navigator_update_activates_replacement_without_a_controlled_client() {
+    let source = Arc::new(Mutex::new("globalThis.version = 1;".to_string()));
+    let fetch_source = Arc::clone(&source);
+    let mut webview = WebViewBuilder::new()
+        .url("https://example.test/page.html")
+        .script_source_fetcher(Arc::new(move |_, _| Ok(fetch_source.lock().unwrap().clone())))
+        .build();
+
+    webview
+        .execute_script(
+            "globalThis.__uncontrolledUpdate = 'pending';
+             navigator.serviceWorker.register('/sw.js', {scope:'/out-of-scope/'}).then(function(reg) {
+               globalThis.__uncontrolledReg = reg;
+               return navigator.serviceWorker.ready;
+             }).then(function() {
+               globalThis.__uncontrolledActive = globalThis.__uncontrolledReg.active;
+               globalThis.__uncontrolledUpdate = 'ready';
+             });",
+        )
+        .unwrap();
+    assert_eq!(
+        webview.execute_script("globalThis.__uncontrolledUpdate").unwrap(),
+        "ready"
+    );
+
+    *source.lock().unwrap() = "globalThis.version = 2;".to_string();
+    webview
+        .execute_script(
+            "globalThis.__uncontrolledReg.update().then(function() {
+               globalThis.__uncontrolledUpdate = 'updated';
+             });",
+        )
+        .unwrap();
+
+    let deadline = Instant::now() + Duration::from_secs(20);
+    loop {
+        let value = webview
+            .execute_script(
+                "[
+                   globalThis.__uncontrolledUpdate,
+                   globalThis.__uncontrolledReg.active !== globalThis.__uncontrolledActive,
+                   globalThis.__uncontrolledReg.active &&
+                     globalThis.__uncontrolledReg.active.state,
+                   globalThis.__uncontrolledActive.state
+                 ].join('|')",
+            )
+            .unwrap();
+        if value == "updated|true|activated|redundant" {
+            break;
+        }
+        assert!(Instant::now() < deadline, "uncontrolled update timed out: {value}");
+        std::thread::sleep(Duration::from_millis(10));
+    }
 }
 
 #[test]

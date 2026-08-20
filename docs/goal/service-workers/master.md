@@ -2,7 +2,7 @@
 
 **入口文档**: [../service-workers.md](../service-workers.md)
 **创建日期**: 2026-08-17（goal 拆分 bootstrap）
-**最后更新**: 2026-08-20（M3-21 updateViaCache matrix 完成）
+**最后更新**: 2026-08-21（M3-22 dynamic import update 完成）
 
 ---
 
@@ -65,8 +65,8 @@ M0 启动门禁解除；M1 core WPT 已收敛，M2 依赖未满足，当前推�
 - ✅ Final remaining 裁决：38 source / 270 subtest 分为 14 defer /
   8 gated / 16 skip；初始 review 152/152，逻辑剩余 0
 - ✅ Runner disposition contract：294 source / 331 URL 唯一映射为
-  27 core / 49 defer / 176 gated / 42 skip，可从原始 evidence 确定性重建；
-  27 个 core 与 runner 导入账本、十四批 case asset 及 blob SHA 精确对应
+  29 core / 49 defer / 174 gated / 42 skip，可从原始 evidence 确定性重建；
+  29 个 core 与 runner 导入账本、十五批 case asset 及 blob SHA 精确对应
 - ✅ M0 registry 契约补强：新增 4 项 Rust 单测，固定候选版本不提前替换 active、
   非法激活不扰动 active、注销旧 redundant 不删除新映射、跨 origin 替换隔离
 - ✅ M1 WorkerRuntime readiness：V8 20/20、QuickJS 3/3，WebView 双后端各 17/17；
@@ -140,6 +140,9 @@ M0 启动门禁解除；M1 core WPT 已收敛，M2 依赖未满足，当前推�
   ETag revalidation 收敛；core WPT 26/110
 - ✅ M3-21：`updateViaCache` main/import cache 矩阵、重复 register no-op、
   跨 iframe registration 投影和失败回滚收敛；core WPT 27/135
+- ✅ M3-22：dynamic main/import response、404 failure rollback、移除失效 import、
+  cross-origin import update 与无受控 client 的 replacement activation 收敛；
+  core WPT 29/142
 
 ## 缺口清单
 
@@ -149,7 +152,7 @@ M0 启动门禁解除；M1 core WPT 已收敛，M2 依赖未满足，当前推�
 | S2 | scriptURL 不下载执行 | ✅ production navigator 经 browser fetch/evaluate |
 | S3 | fetch 拦截为零 | ⬜ M2（等 js-dom fetch 改造） |
 | S4 | 事件为 setTimeout 模拟 | ✅ manager transition log 为状态源；timer 只执行页面 task 投影 |
-| S5 | WPT 覆盖为零 | ✅ core 27/27 case、135/135 Pass、0 Fail/Timeout/Unsupported |
+| S5 | WPT 覆盖为零 | ✅ core 29/29 case、142/142 Pass、0 Fail/Timeout/Unsupported |
 
 ## 待用户决策
 
@@ -159,7 +162,7 @@ M0 启动门禁解除；M1 core WPT 已收敛，M2 依赖未满足，当前推�
 
 ## 下一步计划
 
-1. **M3 update follow-up**：dynamic update/import failure WPT
+1. **M3 update follow-up**：`update.https.html` status/MIME/redirect/install failure matrix
 2. **M2 依赖复核**：js-dom S6 与 storage-cache-api M1 land 后启动 fetch pipeline
 3. **M3 messaging follow-up**：MessagePort/MessageChannel transfer 与多 client 枚举
 
@@ -168,7 +171,7 @@ M0 启动门禁解除；M1 core WPT 已收敛，M2 依赖未满足，当前推�
 | 里程碑 | 状态 |
 |--------|------|
 | M0 — 选型 RFC（门控） | ✅ 方案 C 已批准 |
-| M1 — 脚本真实执行 + 生命周期真事件 | ✅ current core WPT 135/135 Pass |
+| M1 — 脚本真实执行 + 生命周期真事件 | ✅ current core WPT 142/142 Pass |
 | M2 — fetch 拦截 + Cache 集成 | ⬜ 门控：js-dom fetch 改造 land |
 | M3 — 控制语义 + 消息 + 收尾 | 🚧 classic startup graph + 控制/消息/update/persistence 完成 |
 
@@ -225,6 +228,8 @@ M0 启动门禁解除；M1 core WPT 已收敛，M2 依赖未满足，当前推�
   `make test-wpt-service-workers-import-dynamic-wave-assets` 固化篡改/修复回归
 - Import-event-wave 资产恢复/审计：3 assets / 5 subtest；
   `make test-wpt-service-workers-import-event-wave-assets` 固化篡改/修复回归
+- Dynamic-import-update-wave 资产恢复/审计：17 assets / 7 subtest；
+  `make test-wpt-service-workers-dynamic-import-update-wave-assets` 固化篡改/修复回归
 - 质量门禁：`cargo fmt` + `cargo clippy --workspace --all-targets -- -D warnings` +
   `make test`（V8/QuickJS/GPU capability）全过
 - Registry 契约测试：`cargo test -p zero-storage service_worker::tests`，40/40 通过；
@@ -302,6 +307,9 @@ M0 启动门禁解除；M1 core WPT 已收敛，M2 依赖未满足，当前推�
   [M3 module request metadata](evidence/2026-08-20-m3-module-request-metadata.md)
 - M3-21 updateViaCache matrix：main/import cache、策略切换、iframe 投影与 27/135 WPT 见
   [M3 updateViaCache matrix](evidence/2026-08-20-m3-update-via-cache-matrix.md)
+- M3-22 dynamic import update：主脚本切换、import 404 回滚、失效 import 移除、
+  无受控 client 激活与 29/142 WPT 见
+  [M3 dynamic import update](evidence/2026-08-21-m3-dynamic-import-update.md)
 
 ## M0 证据与决策记录
 
@@ -364,6 +372,7 @@ M0 启动门禁解除；M1 core WPT 已收敛，M2 依赖未满足，当前推�
 | 2026-08-20 | M3-19 module type update | classic/module 切换与 unchanged registration 7/7；core 24/108 |
 | 2026-08-20 | M3-20 module request metadata | request mode/no-cache headers 2/2；core 26/110 |
 | 2026-08-20 | M3-21 updateViaCache matrix | cache policy/iframe/rollback 25/25；core 27/135 |
+| 2026-08-21 | M3-22 dynamic import update | import 404/移除/cross-origin update 7/7；core 29/142 |
 | 2026-08-19 | 三方案对比 | 拒绝同线程 context（无调度隔离）；拒绝从零线程（复制安全基建）；推荐抽取 Worker 线程核 |
 | 2026-08-19 | owner | production browser process 单一 owner；WebView 只做同算法 in-process adapter |
 | 2026-08-19 | 首个 driving WPT | `activation-after-registration.https.html` |

@@ -639,6 +639,8 @@ pub const SERVICE_WORKER_CORE_CASES: &[&str] = &[
     "service-workers/service-worker/unregister.https.html",
     "service-workers/service-worker/update-bytecheck-cors-import.https.html",
     "service-workers/service-worker/update-bytecheck.https.html",
+    "service-workers/service-worker/update-import-scripts.https.html",
+    "service-workers/service-worker/update-missing-import-scripts.https.html",
     "service-workers/service-worker/update-result.https.html",
 ];
 
@@ -1190,13 +1192,17 @@ fn wpt_data_script_fetcher(wpt_root: &std::path::Path) -> Option<zero_webview::S
 #[derive(Default)]
 struct ServiceWorkerFixtureState {
     next_version: u64,
-    update_visits: HashMap<String, u64>,
+    update_worker_visits: HashMap<String, u64>,
+    update_worker_from_file_visits: HashMap<String, u64>,
     bytecheck_visits: HashMap<String, u64>,
     type_update_visits: HashMap<String, u64>,
     request_metadata_visits: HashMap<String, u64>,
     update_via_cache_main_visits: HashMap<String, u64>,
     update_via_cache_import_visits: HashMap<String, u64>,
     update_via_cache_current: Option<(String, String)>,
+    cached_missing_import_keys: std::collections::HashSet<String>,
+    missing_import_main_visits: HashMap<String, u64>,
+    missing_import_script_visits: HashMap<String, u64>,
 }
 
 fn service_worker_fixture_path(src: &str) -> Result<(&str, &str), String> {
@@ -1492,6 +1498,99 @@ fn wpt_data_service_worker_script_fetcher(
                 url: src.to_string(),
                 redirect_count: 0,
             });
+        } else if clean.ends_with("/resources/update-worker-from-file.py") {
+            let key = params
+                .get("Key")
+                .ok_or_else(|| "update-worker-from-file.py requires Key".to_string())?;
+            let first = params
+                .get("First")
+                .ok_or_else(|| "update-worker-from-file.py requires First".to_string())?;
+            let second = params
+                .get("Second")
+                .ok_or_else(|| "update-worker-from-file.py requires Second".to_string())?;
+            if [first, second]
+                .into_iter()
+                .any(|name| name.is_empty() || name.contains('/') || name.contains('\\') || name.contains(".."))
+            {
+                return Err("update-worker-from-file.py received an invalid filename".into());
+            }
+            let mut state = state
+                .lock()
+                .map_err(|_| "Service Worker fixture state lock is poisoned".to_string())?;
+            let visit = state.update_worker_from_file_visits.entry(key.clone()).or_default();
+            *visit += 1;
+            let filename = match *visit {
+                1 => first,
+                2 => second,
+                _ => return Err("update-worker-from-file.py received too many requests".into()),
+            };
+            let directory = clean.rsplit_once('/').map_or("", |(directory, _)| directory);
+            let path = format!("{directory}/{filename}");
+            let source = std::fs::read_to_string(root.join(&path))
+                .map_err(|error| format!("Service Worker fixture fetch failed: {path} ({error})"))?;
+            return Ok(zero_net::HttpResponse {
+                status_code: 200,
+                headers: vec![
+                    ("Content-Type".into(), "application/javascript".into()),
+                    ("Cache-Control".into(), "no-cache, must-revalidate".into()),
+                    ("Pragma".into(), "no-cache".into()),
+                ],
+                body: source.into_bytes(),
+                url: src.to_string(),
+                redirect_count: 0,
+            });
+        } else if clean.ends_with("/resources/update-missing-import-scripts-main-worker.py") {
+            let key = params
+                .get("key")
+                .ok_or_else(|| "update-missing-import-scripts-main-worker.py requires key".to_string())?;
+            let mut state = state
+                .lock()
+                .map_err(|_| "Service Worker fixture state lock is poisoned".to_string())?;
+            let visit = state.missing_import_main_visits.entry(key.clone()).or_default();
+            *visit += 1;
+            let source = if *visit == 1 {
+                format!("importScripts('./update-missing-import-scripts-imported-worker.py?key={key}');")
+            } else {
+                "// removed importScripts()".into()
+            };
+            return Ok(service_worker_fixture_response(source, src.to_string(), 0));
+        } else if clean.ends_with("/resources/update-missing-import-scripts-imported-worker.py") {
+            let key = params
+                .get("key")
+                .ok_or_else(|| "update-missing-import-scripts-imported-worker.py requires key".to_string())?;
+            let mut state = state
+                .lock()
+                .map_err(|_| "Service Worker fixture state lock is poisoned".to_string())?;
+            let visit = state.missing_import_script_visits.entry(key.clone()).or_default();
+            *visit += 1;
+            if *visit > 1 {
+                return Err("Service Worker imported script returned HTTP 404".into());
+            }
+            return Ok(service_worker_fixture_response(
+                "// initial script".into(),
+                src.to_string(),
+                0,
+            ));
+        } else if clean.ends_with("/resources/404.py") {
+            return Err("Service Worker imported script returned HTTP 404".into());
+        } else if clean.ends_with("/resources/import-scripts-404-after-update-plus-update-worker.js")
+            || clean.ends_with("/resources/import-scripts-404-after-update.js")
+        {
+            if !clean.contains("-plus-update-") {
+                let key = params
+                    .get("Key")
+                    .ok_or_else(|| "import-scripts-404-after-update.js requires Key".to_string())?;
+                state
+                    .lock()
+                    .map_err(|_| "Service Worker fixture state lock is poisoned".to_string())?
+                    .cached_missing_import_keys
+                    .insert(key.clone());
+            }
+            let bytes = std::fs::read(root.join(clean))
+                .map_err(|error| format!("Service Worker fixture fetch failed: {clean} ({error})"))?;
+            String::from_utf8(bytes)
+                .map_err(|_| format!("Service Worker fixture is not UTF-8: {clean}"))?
+                .into_bytes()
         } else if clean.ends_with("/resources/import-scripts-version.py") {
             let mut state = state
                 .lock()
@@ -1560,22 +1659,29 @@ fn wpt_data_service_worker_script_fetcher(
             let mut state = state
                 .lock()
                 .map_err(|_| "Service Worker fixture state lock is poisoned".to_string())?;
-            let visited = state.update_visits.entry(key.clone()).or_default();
+            let visited = state.update_worker_visits.entry(key.clone()).or_default();
             *visited += 1;
-            if *visited == 2 && mode == "redirect" {
+            let visited = *visited;
+            if visited == 2 && mode == "not_found" {
+                if state.cached_missing_import_keys.contains(key) {
+                    return Ok(service_worker_fixture_response("/* 1 */".into(), src.to_string(), 0));
+                }
+                return Err("Service Worker imported script returned HTTP 404".into());
+            }
+            if visited == 2 && mode == "redirect" {
                 let target = params
                     .get("Redirect")
                     .ok_or_else(|| "update-worker.py redirect mode requires Redirect".to_string())?;
                 let final_url = resolve_service_worker_fixture_redirect(src, target)?;
-                *visited += 1;
+                state.update_worker_visits.insert(key.clone(), visited + 1);
                 return Ok(service_worker_fixture_response(
-                    format!("/* {} */", *visited),
+                    format!("/* {} */", visited + 1),
                     final_url,
                     1,
                 ));
             }
             return Ok(service_worker_fixture_response(
-                format!("/* {} */", *visited),
+                format!("/* {visited} */"),
                 src.to_string(),
                 0,
             ));
@@ -2511,13 +2617,13 @@ async_test(function(test) {
     }
 
     #[test]
-    fn service_worker_core_manifest_has_twenty_seven_unique_cases() {
+    fn service_worker_core_manifest_has_twenty_nine_unique_cases() {
         let unique = SERVICE_WORKER_CORE_CASES
             .iter()
             .copied()
             .collect::<std::collections::BTreeSet<_>>();
-        assert_eq!(SERVICE_WORKER_CORE_CASES.len(), 27);
-        assert_eq!(unique.len(), 27);
+        assert_eq!(SERVICE_WORKER_CORE_CASES.len(), 29);
+        assert_eq!(unique.len(), 29);
         assert!(
             SERVICE_WORKER_CORE_CASES
                 .iter()

@@ -185,6 +185,21 @@ impl ServiceWorkerIpcClient {
             }),
         );
 
+        let activate_waiting_client = self.clone();
+        sandbox.register_callback(
+            "__zw_sw_activate_waiting",
+            Box::new(move |args| {
+                let Some(registration_id) = parse_registration_id(args) else {
+                    return error_wire("invalid registration id");
+                };
+                match activate_waiting_client.request(ServiceWorkerOperation::ActivateWaiting { registration_id }) {
+                    Ok(ServiceWorkerResult::Empty) => serde_json::json!({"ok": true}).to_string(),
+                    Ok(_) => error_wire("invalid activate waiting response"),
+                    Err(error) => response_error_wire(error),
+                }
+            }),
+        );
+
         let unregister_client = self.clone();
         sandbox.register_callback(
             "__zw_sw_unregister",

@@ -297,11 +297,14 @@ fn multiprocess_registration_update_compares_script_bytes() {
             tab_id,
             2,
             "if (globalThis.__updateResult === 'waiting' &&\
-                 globalThis.__updateReg.waiting && globalThis.__updateFound === 1) {\
+                 globalThis.__updateReg.active !== globalThis.__updateActive &&\
+                 globalThis.__updateReg.active.state === 'activated' &&\
+                 globalThis.__updateActive.state === 'redundant' &&\
+                 globalThis.__updateFound === 1) {\
                globalThis.__updateResult = globalThis.__updateNoop + '|' +\
                  globalThis.__updateChanged + '|' +\
-                 String(globalThis.__updateReg.active === globalThis.__updateActive) + '|' +\
-                 String(globalThis.__updateReg.waiting !== globalThis.__updateActive) + '|1';\
+                 String(globalThis.__updateReg.active !== globalThis.__updateActive) + '|' +\
+                 String(globalThis.__updateActive.state === 'redundant') + '|1';\
              }\
              return String(globalThis.__updateResult);",
         )
