@@ -530,6 +530,19 @@ pub(crate) fn collect_col_widths(
 ) -> Vec<Option<f32>> {
     let mut col_widths = vec![None; col_count];
     let mut col_cursor = 0usize;
+    let resolve_style_width = |s: &ComputedStyle| -> Option<f32> {
+        use zero_css_parser::values::LengthValue;
+        match &s.width {
+            LengthValue::Auto | LengthValue::MinContent | LengthValue::MaxContent | LengthValue::FitContent(_) => None,
+            LengthValue::Percentage(p) => Some((*p as f32 / 100.0 * available_width).max(0.0)),
+            LengthValue::Px(v) if *v == f64::INFINITY => None,
+            other => {
+                let font_size_px = zero_style_system::computed::resolve_length(&s.font_size, 16.0, None, None);
+                let px = zero_style_system::computed::resolve_length(other, font_size_px, None, None);
+                px.is_finite().then_some((px as f32).max(0.0))
+            }
+        }
+    };
     let resolve = |w: &str| -> Option<f32> {
         let w = w.trim();
         if let Some(pct) = w.strip_suffix('%') {
@@ -551,14 +564,10 @@ pub(crate) fn collect_col_widths(
         // R2045：HTML width 属性优先（<col width="100">/"50%"），否则读 CSS width 属性
         // （ComputedStyle 已解析为 Px/%）。此前仅读 HTML attr → CSS-width col（如
         // `#test{display:table-column;width:1in}`）被当 auto 列，错误吸收剩余宽（175px 而非 96）。
-        let px = doc.get_attribute(nid, "width").and_then(|w| resolve(&w)).or_else(|| {
-            use zero_css_parser::values::LengthValue;
-            styles.get(&nid).and_then(|s| match &s.width {
-                LengthValue::Px(v) => Some(*v as f32),
-                LengthValue::Percentage(p) => Some((*p as f32 / 100.0 * available_width).max(0.0)),
-                _ => None,
-            })
-        });
+        let px = doc
+            .get_attribute(nid, "width")
+            .and_then(|w| resolve(&w))
+            .or_else(|| styles.get(&nid).and_then(resolve_style_width));
         let Some(px) = px else {
             return;
         };

@@ -415,6 +415,41 @@ fn test_collect_col_widths_resolves_percent_and_px() {
     assert_eq!(widths, vec![Some(120.0), None, Some(60.0)]);
 }
 
+#[test]
+fn test_collect_col_widths_resolves_relative_css_length() {
+    use zero_css_parser::values::LengthValue;
+
+    let mut doc = Document::new();
+    let root = doc.root();
+    let table_id = doc.create_element("div");
+    let col_id = doc.create_element("div");
+    let _ = doc.append_child(root, table_id);
+    let _ = doc.append_child(table_id, col_id);
+
+    let mut styles = HashMap::new();
+    let mut table_style = ComputedStyle::default();
+    table_style.display = DisplayValue::Table;
+    styles.insert(table_id, table_style);
+    let mut col_style = ComputedStyle::default();
+    col_style.display = DisplayValue::TableColumn;
+    col_style.font_size = LengthValue::Px(20.0);
+    col_style.width = LengthValue::Em(5.0);
+    styles.insert(col_id, col_style);
+
+    let table_box = LayoutBox {
+        node_id: Some(table_id),
+        children: vec![LayoutBox {
+            node_id: Some(col_id),
+            ..Default::default()
+        }],
+        ..Default::default()
+    };
+
+    let widths = collect_col_widths(&table_box, 1, &styles, &doc, 300.0);
+
+    assert_eq!(widths, vec![Some(100.0)], "5em at 20px should resolve to 100px");
+}
+
 /// R769：table-cell 建立 BFC（CSS §9.4.1），其首子 margin-top 不应向上穿透单元格
 /// 而丢失——BFC 的 margin 不与子元素折叠（§8.3.1）。但 taffy 把单元格按普通 Block
 /// 布局，把首子 margin-top 折叠上提到 `cell.margin_top`；自定义表格布局忽略单元格
