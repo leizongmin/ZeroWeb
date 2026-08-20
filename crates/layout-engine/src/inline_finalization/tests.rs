@@ -72,6 +72,18 @@ fn test_resolve_text_indent_px_em_percentage() {
 }
 
 #[test]
+fn test_resolve_text_indent_relative_lengths() {
+    assert_eq!(
+        resolve_text_indent(&LengthValue::Ch(4.0), &LengthValue::Px(20.0), 800.0),
+        40.0
+    );
+    assert_eq!(
+        resolve_text_indent(&LengthValue::Rem(2.0), &LengthValue::Px(20.0), 800.0),
+        32.0
+    );
+}
+
+#[test]
 fn horizontal_decoration_gate_skips_subtree_scan() {
     let scans = std::cell::Cell::new(0);
     assert!(vertical_decoration_free_with_mode(true, false, || {

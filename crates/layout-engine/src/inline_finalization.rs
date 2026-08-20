@@ -127,19 +127,16 @@ fn vertical_decoration_free_with_mode(vertical_only: bool, vertical: bool, scan:
 
 /// 解析 `text-indent` 为像素值（CSS §10.3.1）。
 ///
-/// 支持 Px / Em（× font_size）/ Percentage（× container_width）。其他单位回退 0。
-/// font_size 由 ComputedStyle.font_size（通常已 compute 到 Px）解析；Em 嵌套以父 font-size 为准。
+/// 支持 `<length-percentage>`；百分比相对 containing block 宽度，真实长度按当前 used font-size 解析。
 /// 与 paint 路径（`painter/text.rs`）的 text_indent 解析保持一致（IFC 双路径同源）。
 pub fn resolve_text_indent(text_indent: &LengthValue, font_size: &LengthValue, container_width: f32) -> f32 {
-    let font_size_px = match font_size {
-        LengthValue::Px(v) => *v as f32,
-        _ => 16.0, // computed font_size 应为 Px；防御性回退
-    };
     match text_indent {
-        LengthValue::Px(v) => *v as f32,
-        LengthValue::Em(v) => *v as f32 * font_size_px,
         LengthValue::Percentage(v) => *v as f32 / 100.0 * container_width,
-        _ => 0.0,
+        LengthValue::Auto | LengthValue::MinContent | LengthValue::MaxContent | LengthValue::FitContent(_) => 0.0,
+        other => {
+            let font_size_px = zero_style_system::computed::resolve_length(font_size, 16.0, None, None);
+            zero_style_system::computed::resolve_length(other, font_size_px, None, None) as f32
+        }
     }
 }
 

@@ -294,3 +294,5 @@ Clip rect exposed the legacy-property variant: deprecated paint paths are still 
 Radial gradients exposed the helper-context variant: a generic conversion helper may look value-only, but CSS Images length values still depend on the element font context. Keep a default-context wrapper for tests and pure callers, then route production paint through a context-aware entry point.
 
 Gradient color stops exposed the nested-helper-context variant: fixing a gradient geometry resolver does not automatically fix nested stop positions. When adding a context-aware paint entry point, audit every helper it calls for residual length conversion instead of stopping at the outer geometry fields.
+
+Text-indent exposed the shared-inline-resolver variant: even when layout and paint share one resolver, that resolver can still lag behind the accepted grammar. For `<length-percentage>` text metrics, keep the percentage basis explicit and send every real length unit through the same style-system used-value resolver.
