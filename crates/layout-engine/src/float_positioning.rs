@@ -1253,6 +1253,7 @@ pub(crate) fn adjust_float_positions_with_context(
                                 // 左浮动：将 BFC 元素推到浮动元素的 margin-box 右侧
                                 // float_x 是边框盒左边，加上边框宽度和右 margin
                                 let avoidance_x = float_x + float_border_w + float_margin_r;
+                                let declared_or_layout_width = child.declared_width_px.unwrap_or(child.width);
                                 // R1369：definite-width BFC（width 未填满容器）若 overflow 容器
                                 //（child.x + width > container_width），应推到 float 下方（CSS §9.5：
                                 // BFC border-box 不重叠 float；definite 宽度保持不 shrink）。
@@ -1260,8 +1261,6 @@ pub(crate) fn adjust_float_positions_with_context(
                                 //（child.x == avoidance_x），故本检查须在 `avoidance_x > child.x`
                                 // 之外做（否则 taffy 已推时整块 skip）。auto-width BFC（填满容器）
                                 // 仍走 shrink-to-fit（else 分支）。仅无后续 in-flow block 同胞时推下。
-                                let overflows = child.x + child.width > container_width + 0.5;
-                                let is_definite_width = child.width < container_width - 0.5;
                                 // R1728：补充「放不下 float 旁」判定。原 R1369 gate 仅查「溢出容器」，
                                 // 漏「float 占满宽致其右可用宽 < BFC 声明宽」——此时 BFC 同样无法旁置，
                                 // 须推到 float 下方（CSS §9.5：BFC border-box 不重叠 float；definite
@@ -1273,8 +1272,11 @@ pub(crate) fn adjust_float_positions_with_context(
                                 //（spec：BFC 占 float 旁可用宽），用 declared_width_auto 区分（width
                                 // 已 shrink 的 auto BFC 其 child.width < container_width 但非「definite」）。
                                 // kill-switch ZW_BFC_LEFT_FIT_PUSHBELOW=0 回退纯溢出 gate。
+                                let overflows = child.x + declared_or_layout_width > container_width + 0.5;
+                                let is_definite_width =
+                                    child.declared_width_px.is_some() || child.width < container_width - 0.5;
                                 let avail_beside = (container_width - avoidance_x).max(0.0);
-                                let fits_beside = child.width <= avail_beside + 0.5;
+                                let fits_beside = declared_or_layout_width <= avail_beside + 0.5;
                                 let left_fit_pushbelow =
                                     std::env::var("ZW_BFC_LEFT_FIT_PUSHBELOW").as_deref() != Ok("0");
                                 let must_pushdown = overflows
@@ -1285,6 +1287,10 @@ pub(crate) fn adjust_float_positions_with_context(
                                 if is_definite_width && !has_following_block_sibling[idx] && must_pushdown {
                                     if float_bottom > child.y {
                                         child.y = float_bottom;
+                                    }
+                                    if let Some(width) = child.declared_width_px {
+                                        child.width = width;
+                                        shrink_bfc_content_width(child);
                                     }
                                     // 回正常流位置（taffy float push 前）：block border-box 左 =
                                     // 父 content-box 左 + margin_left（child.x 相对父 content-box）。
@@ -1314,6 +1320,10 @@ pub(crate) fn adjust_float_positions_with_context(
                                 {
                                     if float_bottom > child.y {
                                         child.y = float_bottom;
+                                    }
+                                    if let Some(width) = child.declared_width_px {
+                                        child.width = width;
+                                        shrink_bfc_content_width(child);
                                     }
                                     child.x = child.margin_left;
                                 } else {
@@ -1354,9 +1364,14 @@ pub(crate) fn adjust_float_positions_with_context(
                             FloatValue::Right => fx - child.x,
                             _ => continue,
                         };
-                        if child.width > available + 0.5 {
+                        let declared_or_layout_width = child.declared_width_px.unwrap_or(child.width);
+                        if declared_or_layout_width > available + 0.5 {
                             if fbottom > child.y {
                                 child.y = fbottom;
+                            }
+                            if let Some(width) = child.declared_width_px {
+                                child.width = width;
+                                shrink_bfc_content_width(child);
                             }
                             // 回正常流左对齐（float 在侧，BFC 下沉后不与 float 同行）。
                             child.x = child.margin_left;

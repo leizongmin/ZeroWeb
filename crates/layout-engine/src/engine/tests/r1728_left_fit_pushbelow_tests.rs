@@ -67,6 +67,57 @@ fn r1728_declared_width_bfc_pushed_below_fullwidth_left_float() {
     );
 }
 
+/// R3609：declared-width BFC 的 fit-beside 判断也要解析 residual real length。
+/// `width:12em;font-size:20px` = 240px，float:left 300 后只剩 100px，可用宽不足时
+/// BFC 应推到 float 下方并保持声明宽，非把 `em` 当 12px 后 beside。
+#[test]
+fn r3609_declared_width_bfc_relative_length_pushed_below_left_float() {
+    let (mut doc, body) = make_doc_with_body();
+    let container = doc.create_element("div");
+    doc.append_child(body, container).unwrap();
+    let float_l = doc.create_element("div");
+    doc.append_child(container, float_l).unwrap();
+    let bfc_span = doc.create_element("span");
+    doc.append_child(container, bfc_span).unwrap();
+
+    let mut styles = HashMap::new();
+    let mut cont = ComputedStyle::default();
+    cont.display = DisplayValue::Block;
+    cont.width = LengthValue::Px(400.0);
+    styles.insert(container, cont);
+
+    let mut fl = ComputedStyle::default();
+    fl.display = DisplayValue::Block;
+    fl.float = FloatValue::Left;
+    fl.width = LengthValue::Px(300.0);
+    fl.height = LengthValue::Px(75.0);
+    styles.insert(float_l, fl);
+
+    let mut bs = ComputedStyle::default();
+    bs.display = DisplayValue::Block;
+    bs.overflow_x = OverflowValue::Hidden;
+    bs.overflow_y = OverflowValue::Hidden;
+    bs.font_size = LengthValue::Px(20.0);
+    bs.width = LengthValue::Em(12.0);
+    bs.height = LengthValue::Px(50.0);
+    styles.insert(bfc_span, bs);
+
+    let mut engine = LayoutEngine::new(800.0, 600.0);
+    let result = engine.compute(&doc, &styles);
+
+    let bfc_box = find_child_by_node_id(&result.root, bfc_span).expect("bfc span found");
+    assert!(
+        bfc_box.width >= 235.0,
+        "relative declared-width BFC 应保持 width≈240（推下非 shrink），实际 {}",
+        bfc_box.width
+    );
+    assert!(
+        bfc_box.y > 60.0,
+        "relative declared-width BFC 应推到 float 下方（y≈75）非 beside（y≈0），实际 y={}",
+        bfc_box.y
+    );
+}
+
 /// R1728 回归守卫：auto 宽 BFC（无声明 width）旁 float:left 仍 shrink-to-fit 旁置，
 /// **不**被 R1728 推下（floats-bfc-003 / new-fc-beside-float 行为）。
 #[test]

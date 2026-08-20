@@ -12,7 +12,8 @@ use std::collections::{HashMap, HashSet};
 use taffy::prelude::*;
 
 use zero_css_parser::values::{
-    ClearValue, DisplayValue, FlexDirectionValue, FloatValue, LengthValue, OverflowClipMarginBox, PositionValue,
+    BoxSizingValue, ClearValue, DisplayValue, FlexDirectionValue, FloatValue, LengthValue, OverflowClipMarginBox,
+    PositionValue,
 };
 // ComputedStyle.direction 是 style-system 自有的 DirectionValue（与 css-parser 的不同枚举）。
 use zero_style_system::DirectionValue;
@@ -65,6 +66,28 @@ fn resolve_clear_physical(clear: &ClearValue, is_rtl: bool) -> ClearValue {
         }
         other => other.clone(),
     }
+}
+
+fn resolve_definite_width_border_box(style: &ComputedStyle, padding_border_w: f32) -> Option<f32> {
+    let content_width = match &style.width {
+        LengthValue::Auto
+        | LengthValue::Percentage(_)
+        | LengthValue::MinContent
+        | LengthValue::MaxContent
+        | LengthValue::FitContent(_) => return None,
+        LengthValue::Px(v) if *v == f64::INFINITY => return None,
+        other => {
+            let font_size_px = zero_style_system::computed::resolve_length(&style.font_size, 16.0, None, None);
+            zero_style_system::computed::resolve_length(other, font_size_px, None, None) as f32
+        }
+    };
+    if !content_width.is_finite() {
+        return None;
+    }
+    Some(match style.box_sizing {
+        BoxSizingValue::BorderBox => content_width.max(0.0),
+        BoxSizingValue::ContentBox => (content_width + padding_border_w).max(0.0),
+    })
 }
 
 use crate::dirty::LayoutDirtyTracker;
@@ -1423,6 +1446,13 @@ impl LayoutEngine {
         //（仅水平书写模式）供 float 后处理收缩宽度。
         let declared_width_auto = matches!(parent_writing_mode, WritingModeValue::HorizontalTb)
             && computed.is_some_and(|c| matches!(c.width, zero_css_parser::values::LengthValue::Auto));
+        let declared_width_px = if matches!(parent_writing_mode, WritingModeValue::HorizontalTb) {
+            computed.and_then(|c| {
+                resolve_definite_width_border_box(c, padding_left + padding_right + border_left + border_right)
+            })
+        } else {
+            None
+        };
         // R1277 ④：记录 height:auto 供 float 后处理收缩守卫（显式高度容器不被收缩）。
         let declared_height_auto =
             computed.is_some_and(|c| matches!(c.height, zero_css_parser::values::LengthValue::Auto));
@@ -1508,6 +1538,7 @@ impl LayoutEngine {
             declared_margin_top,
             declared_margin_bottom,
             declared_width_auto,
+            declared_width_px,
             declared_height_auto,
             margin_left_auto,
             margin_right_auto,
