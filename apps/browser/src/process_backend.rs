@@ -21,7 +21,7 @@ use zero_protocol::message::{
 use zero_protocol::process::{ProcessManager, RendererHandle};
 use zero_storage::StorageManager;
 
-use crate::fetch_proxy::TabFetchProxy;
+use crate::fetch_proxy::{ServiceWorkerScriptRequestMode, TabFetchProxy};
 use crate::service_worker_owner::{
     BrowserServiceWorkerOwner, CompletedServiceWorkerResponse, ServiceWorkerRequestDisposition,
 };
@@ -697,9 +697,13 @@ impl ProcessTabBackend {
                 self.send_service_worker_response_now(response);
             }
             ServiceWorkerRequestDisposition::Fetch(plan) => {
-                let receiver =
-                    self.fetch_proxy
-                        .fetch_service_worker_script(plan.tab_id(), plan.script_url(), plan.bypass_cache());
+                let receiver = self.fetch_proxy.fetch_service_worker_script(
+                    plan.tab_id(),
+                    plan.script_url(),
+                    plan.bypass_cache(),
+                    ServiceWorkerScriptRequestMode::SameOrigin,
+                    true,
+                );
                 self.service_worker_owner.attach_fetch(plan, receiver);
             }
         }
@@ -712,10 +716,18 @@ impl ProcessTabBackend {
         for plan in self.service_worker_owner.take_import_fetch_plans() {
             let tab_id = plan.tab_id();
             let bypass_cache = plan.bypass_cache();
+            let request_mode = if plan.is_module() {
+                ServiceWorkerScriptRequestMode::Cors
+            } else {
+                ServiceWorkerScriptRequestMode::NoCors
+            };
             let receivers = plan
                 .urls()
                 .iter()
-                .map(|url| self.fetch_proxy.fetch_service_worker_script(tab_id, url, bypass_cache))
+                .map(|url| {
+                    self.fetch_proxy
+                        .fetch_service_worker_script(tab_id, url, bypass_cache, request_mode, false)
+                })
                 .collect();
             self.service_worker_owner.attach_import_fetches(plan, receivers);
         }

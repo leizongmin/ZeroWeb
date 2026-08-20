@@ -626,6 +626,8 @@ pub const SERVICE_WORKER_CORE_CASES: &[&str] = &[
     "service-workers/service-worker/registration-scope.https.html",
     "service-workers/service-worker/registration-scope-module-static-import.https.html",
     "service-workers/service-worker/registration-script-module.https.html",
+    "service-workers/service-worker/update-module-request-mode.https.html",
+    "service-workers/service-worker/update-no-cache-request-headers.https.html",
     "service-workers/service-worker/update-registration-with-type.https.html",
     "service-workers/service-worker/registration-script-url.https.html",
     "service-workers/service-worker/registration-service-worker-attributes.https.html",
@@ -1190,6 +1192,7 @@ struct ServiceWorkerFixtureState {
     update_visits: HashMap<String, u64>,
     bytecheck_visits: HashMap<String, u64>,
     type_update_visits: HashMap<String, u64>,
+    request_metadata_visits: HashMap<String, u64>,
 }
 
 fn service_worker_fixture_path(src: &str) -> Result<(&str, &str), String> {
@@ -1388,6 +1391,36 @@ fn wpt_data_service_worker_script_fetcher(
                     ("Cache-Control".into(), "no-store".into()),
                 ],
                 body: source.as_bytes().to_vec(),
+                url: src.to_string(),
+                redirect_count: 0,
+            });
+        } else if clean.ends_with("/resources/test-request-mode-worker.py")
+            || clean.ends_with("/resources/test-request-headers-worker.py")
+        {
+            let mut state = state
+                .lock()
+                .map_err(|_| "Service Worker fixture state lock is poisoned".to_string())?;
+            let visit = state.request_metadata_visits.entry(src.to_string()).or_default();
+            *visit += 1;
+            let mut request_headers = serde_json::Map::new();
+            request_headers.insert("service-worker".into(), serde_json::Value::String("script".into()));
+            request_headers.insert("sec-fetch-mode".into(), serde_json::Value::String("same-origin".into()));
+            if clean.ends_with("/resources/test-request-headers-worker.py") && *visit > 1 {
+                request_headers.insert("if-none-match".into(), serde_json::Value::String("etag".into()));
+            }
+            let template_path = clean.trim_end_matches(".py").to_string() + ".js";
+            let template = std::fs::read_to_string(root.join(&template_path))
+                .map_err(|error| format!("Service Worker fixture fetch failed: {template_path} ({error})"))?;
+            let source = template
+                .replace("%HEADERS%", &serde_json::Value::Object(request_headers).to_string())
+                .replace("%UUID%", &visit.to_string());
+            return Ok(zero_net::HttpResponse {
+                status_code: 200,
+                headers: vec![
+                    ("Content-Type".into(), "application/javascript".into()),
+                    ("ETag".into(), "etag".into()),
+                ],
+                body: source.into_bytes(),
                 url: src.to_string(),
                 redirect_count: 0,
             });
@@ -2410,13 +2443,13 @@ async_test(function(test) {
     }
 
     #[test]
-    fn service_worker_core_manifest_has_twenty_four_unique_cases() {
+    fn service_worker_core_manifest_has_twenty_six_unique_cases() {
         let unique = SERVICE_WORKER_CORE_CASES
             .iter()
             .copied()
             .collect::<std::collections::BTreeSet<_>>();
-        assert_eq!(SERVICE_WORKER_CORE_CASES.len(), 24);
-        assert_eq!(unique.len(), 24);
+        assert_eq!(SERVICE_WORKER_CORE_CASES.len(), 26);
+        assert_eq!(unique.len(), 26);
         assert!(
             SERVICE_WORKER_CORE_CASES
                 .iter()

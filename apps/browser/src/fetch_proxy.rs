@@ -37,6 +37,23 @@ struct PendingFetch {
 
 const MAX_IPC_STREAM_CHUNK_BYTES: usize = 64 * 1024;
 
+#[derive(Clone, Copy)]
+pub(crate) enum ServiceWorkerScriptRequestMode {
+    SameOrigin,
+    Cors,
+    NoCors,
+}
+
+impl ServiceWorkerScriptRequestMode {
+    fn header_value(self) -> &'static str {
+        match self {
+            Self::SameOrigin => "same-origin",
+            Self::Cors => "cors",
+            Self::NoCors => "no-cors",
+        }
+    }
+}
+
 /// 多进程 browser 进程的 fetch 调度状态。
 pub struct TabFetchProxy {
     /// 普通 profile 与 WebView 共用的资源加载器。
@@ -281,6 +298,8 @@ impl TabFetchProxy {
         tab_id: TabId,
         script_url: &str,
         bypass_cache: bool,
+        request_mode: ServiceWorkerScriptRequestMode,
+        is_main_script: bool,
     ) -> Receiver<Result<HttpResponse, String>> {
         self.ensure_tab(tab_id);
         let url = match self.security.get_mut(&tab_id) {
@@ -299,11 +318,13 @@ impl TabFetchProxy {
             .and_then(|context| context.page_origin())
             .map(|origin| format!("{}://{}:{}", origin.scheme, origin.host, origin.port))
             .unwrap_or_else(|| "default".to_string());
-        let headers = if bypass_cache {
-            vec![("Cache-Control".into(), "no-cache".into())]
-        } else {
-            Vec::new()
-        };
+        let mut headers = vec![("Sec-Fetch-Mode".into(), request_mode.header_value().into())];
+        if is_main_script {
+            headers.push(("Service-Worker".into(), "script".into()));
+        }
+        if bypass_cache {
+            headers.push(("Cache-Control".into(), "no-cache".into()));
+        }
         self.loader_for(tab_id).submit_http_with_context_in_partition(
             HttpRequest {
                 method: HttpMethod::Get,
@@ -644,7 +665,15 @@ mod tests {
             let (mut stream, _) = listener.accept().unwrap();
             let mut request = [0_u8; 1024];
             let size = stream.read(&mut request).unwrap();
-            assert!(String::from_utf8_lossy(&request[..size]).starts_with("GET /sw.js "));
+            let request = String::from_utf8_lossy(&request[..size]);
+            assert!(request.starts_with("GET /sw.js "));
+            assert!(request.to_ascii_lowercase().contains("\r\nservice-worker: script\r\n"));
+            assert!(
+                request
+                    .to_ascii_lowercase()
+                    .contains("\r\nsec-fetch-mode: same-origin\r\n")
+            );
+            assert!(request.to_ascii_lowercase().contains("\r\ncache-control: no-cache\r\n"));
             stream
                 .write_all(
                     b"HTTP/1.1 200 OK\r\nContent-Type: application/javascript\r\nContent-Length: 7\r\n\r\nvoid 0;",
@@ -654,7 +683,8 @@ mod tests {
 
         let mut proxy = TabFetchProxy::new();
         proxy.on_navigate(TabId(4), &url);
-        let receiver = proxy.fetch_service_worker_script(TabId(4), &url, true);
+        let receiver =
+            proxy.fetch_service_worker_script(TabId(4), &url, true, ServiceWorkerScriptRequestMode::SameOrigin, true);
         let response = receiver.recv_timeout(Duration::from_secs(10)).unwrap().unwrap();
         server.join().unwrap();
 
@@ -668,13 +698,21 @@ mod tests {
         let listener = TcpListener::bind("127.0.0.1:0").unwrap();
         let url = format!("http://{}/sw-cache.js", listener.local_addr().unwrap());
         let server = std::thread::spawn(move || {
-            for body in ["version-1", "version-2"] {
+            for (index, body) in ["version-1", "version-2"].into_iter().enumerate() {
                 let (mut stream, _) = listener.accept().unwrap();
                 let mut request = [0_u8; 1024];
                 let size = stream.read(&mut request).unwrap();
-                assert!(String::from_utf8_lossy(&request[..size]).starts_with("GET /sw-cache.js "));
+                let request = String::from_utf8_lossy(&request[..size]).to_ascii_lowercase();
+                assert!(request.starts_with("get /sw-cache.js "));
+                assert!(request.contains("\r\nservice-worker: script\r\n"));
+                assert!(request.contains("\r\nsec-fetch-mode: same-origin\r\n"));
+                assert!(request.contains("\r\ncache-control: no-cache\r\n"));
+                if index == 1 {
+                    assert!(request.contains("\r\nif-none-match: etag\r\n"));
+                }
                 let response = format!(
-                    "HTTP/1.1 200 OK\r\nCache-Control: max-age=3600\r\nContent-Length: {}\r\n\r\n{}",
+                    "HTTP/1.1 200 OK\r\nCache-Control: max-age=3600\r\nETag: etag\r\n\
+                     Content-Length: {}\r\n\r\n{}",
                     body.len(),
                     body
                 );
@@ -685,17 +723,17 @@ mod tests {
         let mut proxy = TabFetchProxy::new();
         proxy.on_navigate(TabId(14), &url);
         let first = proxy
-            .fetch_service_worker_script(TabId(14), &url, true)
+            .fetch_service_worker_script(TabId(14), &url, true, ServiceWorkerScriptRequestMode::SameOrigin, true)
             .recv_timeout(Duration::from_secs(10))
             .unwrap()
             .unwrap();
         let cached = proxy
-            .fetch_service_worker_script(TabId(14), &url, false)
+            .fetch_service_worker_script(TabId(14), &url, false, ServiceWorkerScriptRequestMode::SameOrigin, true)
             .recv_timeout(Duration::from_secs(10))
             .unwrap()
             .unwrap();
         let refreshed = proxy
-            .fetch_service_worker_script(TabId(14), &url, true)
+            .fetch_service_worker_script(TabId(14), &url, true, ServiceWorkerScriptRequestMode::SameOrigin, true)
             .recv_timeout(Duration::from_secs(10))
             .unwrap()
             .unwrap();

@@ -1,0 +1,7 @@
+path	manifest_type	roles	referenced_by	bytes	templated	git_blob_sha
+service-workers/service-worker/update-module-request-mode.https.html	testharness	case	1	1596	no	b3875d207bc252dea8e43c1b585febe6d6a10f0b
+service-workers/service-worker/update-no-cache-request-headers.https.html	testharness	case	1	1832	no	6ebad4b7b10bcdf176c1543fd711aee31d5547b7
+service-workers/service-worker/resources/test-request-mode-worker.py	support	dynamic-handler	1	666	no	8449841a9930796fdcff0307c1e2b043b2a6b7f1
+service-workers/service-worker/resources/test-request-mode-worker.js	support	worker-script	1	325	no	566e2e9984b5d6b5d3a79738542f1b2b24d1f6b2
+service-workers/service-worker/resources/test-request-headers-worker.py	support	dynamic-handler	1	668	no	78a93356b75f56e43818abafa344f21ec4201aa5
+service-workers/service-worker/resources/test-request-headers-worker.js	support	worker-script	1	325	no	566e2e9984b5d6b5d3a79738542f1b2b24d1f6b2

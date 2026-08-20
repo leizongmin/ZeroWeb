@@ -1,4 +1,6 @@
 use crate::WebViewBuilder;
+use std::io::{Read, Write};
+use std::net::TcpListener;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 use zero_storage::ServiceWorkerState;
@@ -50,6 +52,36 @@ fn fetched_script_runs_real_install_and_activate_events() {
             "https://example.test/page/sw.js".to_string(),
         )]
     );
+}
+
+#[test]
+fn embedded_main_script_request_carries_service_worker_metadata() {
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let origin = format!("http://{}", listener.local_addr().unwrap());
+    let server = std::thread::spawn(move || {
+        let (mut stream, _) = listener.accept().unwrap();
+        let mut bytes = [0_u8; 2048];
+        let size = stream.read(&mut bytes).unwrap();
+        let request = String::from_utf8_lossy(&bytes[..size]).to_ascii_lowercase();
+        assert!(request.starts_with("get /sw.js "));
+        assert!(request.contains("\r\nservice-worker: script\r\n"));
+        assert!(request.contains("\r\nsec-fetch-mode: same-origin\r\n"));
+        assert!(request.contains("\r\ncache-control: no-cache\r\n"));
+        stream
+            .write_all(
+                b"HTTP/1.1 200 OK\r\nContent-Type: application/javascript\r\n\
+                  Content-Length: 0\r\n\r\n",
+            )
+            .unwrap();
+    });
+
+    let mut webview = WebViewBuilder::new().build();
+    let document_url = format!("{origin}/page.html");
+    let script_url = format!("{origin}/sw.js");
+    webview
+        .register_service_worker_runtime(&script_url, Some("/"), &document_url)
+        .unwrap();
+    server.join().unwrap();
 }
 
 #[test]

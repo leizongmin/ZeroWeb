@@ -35,6 +35,7 @@ CORE_ASSET_MANIFESTS = [
     EVIDENCE_DIR / "2026-08-20-m3-module-cors-assets.tsv",
     EVIDENCE_DIR / "2026-08-20-m3-module-registration-assets.tsv",
     EVIDENCE_DIR / "2026-08-20-m3-module-type-update-assets.tsv",
+    EVIDENCE_DIR / "2026-08-20-m3-module-request-metadata-assets.tsv",
 ]
 REVIEW_FILES = [
     EVIDENCE_DIR / "2026-08-19-m1-next-wave-review.tsv",
@@ -50,7 +51,7 @@ REVIEW_FILES = [
 IDL_SOURCE = "service-workers/idlharness.https.any.js"
 EXPECTED_SOURCE_COUNT = 294
 EXPECTED_URL_COUNT = 331
-EXPECTED_LANES = Counter(core=24, defer=49, gated=179, skip=42)
+EXPECTED_LANES = Counter(core=26, defer=49, gated=177, skip=42)
 SHA_PATTERN = re.compile(r"^[0-9a-f]{40}$")
 
 

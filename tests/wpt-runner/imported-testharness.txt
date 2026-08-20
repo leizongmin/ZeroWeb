@@ -198,4 +198,6 @@ service-workers/service-worker/registration-scope-module-static-import.https.htm
 service-workers/service-worker/registration-script-module.https.html 04067ce9c7c2165e71ad7d0dde10a4c5cb394a83 2026-08-20 SW-M3-module-registration
 service-workers/service-worker/update-bytecheck.https.html 04067ce9c7c2165e71ad7d0dde10a4c5cb394a83 2026-08-20 SW-M3-module-bytecheck
 service-workers/service-worker/update-bytecheck-cors-import.https.html 04067ce9c7c2165e71ad7d0dde10a4c5cb394a83 2026-08-20 SW-M3-module-cors
+service-workers/service-worker/update-module-request-mode.https.html 04067ce9c7c2165e71ad7d0dde10a4c5cb394a83 2026-08-20 SW-M3-module-request-metadata
+service-workers/service-worker/update-no-cache-request-headers.https.html 04067ce9c7c2165e71ad7d0dde10a4c5cb394a83 2026-08-20 SW-M3-module-request-metadata
 service-workers/service-worker/update-registration-with-type.https.html 04067ce9c7c2165e71ad7d0dde10a4c5cb394a83 2026-08-20 SW-M3-module-type-update

@@ -2371,6 +2371,7 @@ impl WebView {
             self.service_worker_script_fetcher.as_ref(),
             self.script_source_fetcher.as_ref(),
             self.http_client.timeout_secs,
+            true,
         )
         .map_err(|error| WebViewError::Script(format!("Service Worker fetch failed: {error}")))?;
         let source_fetcher = self.script_source_fetcher.clone();
@@ -2510,6 +2511,7 @@ impl WebView {
                         register_response_fetcher.as_ref(),
                         register_source_fetcher.as_ref(),
                         timeout_secs,
+                        true,
                     )?;
                     let mut manager = register_manager
                         .lock()
@@ -2561,7 +2563,7 @@ impl WebView {
                 };
                 let result = (|| -> Result<(u64, bool), String> {
                     let document = url::Url::parse(&document_url).map_err(|_| "invalid Service Worker document URL")?;
-                    let script_url = {
+                    let (script_url, bypass_cache) = {
                         let manager = update_manager
                             .lock()
                             .map_err(|_| "Service Worker manager lock poisoned".to_string())?;
@@ -2571,7 +2573,10 @@ impl WebView {
                         if registration.origin != document.origin().ascii_serialization() {
                             return Err("Service Worker registration does not exist".into());
                         }
-                        registration.script_url.clone()
+                        (
+                            registration.script_url.clone(),
+                            registration.update_via_cache != ServiceWorkerUpdateViaCache::All,
+                        )
                     };
                     let source = Self::fetch_service_worker_main_script(
                         &script_url,
@@ -2579,6 +2584,7 @@ impl WebView {
                         response_fetcher.as_ref(),
                         source_fetcher.as_ref(),
                         timeout_secs,
+                        bypass_cache,
                     )?;
                     let mut manager = update_manager
                         .lock()
@@ -2938,6 +2944,7 @@ impl WebView {
         response_fetcher: Option<&ServiceWorkerScriptFetcher>,
         source_fetcher: Option<&ScriptSourceFetcher>,
         timeout_secs: u64,
+        bypass_cache: bool,
     ) -> Result<String, String> {
         if let Some(fetcher) = response_fetcher {
             let response = fetcher(document_url, url)?;
@@ -2966,13 +2973,21 @@ impl WebView {
         if let Some(fetcher) = source_fetcher {
             return fetcher(document_url, url);
         }
-        Self::fetch_service_worker_script(url, timeout_secs)
+        Self::fetch_service_worker_script(url, timeout_secs, bypass_cache)
     }
 
-    fn fetch_service_worker_script(url: &str, timeout_secs: u64) -> Result<String, String> {
+    fn fetch_service_worker_script(url: &str, timeout_secs: u64, bypass_cache: bool) -> Result<String, String> {
+        let mut headers = vec![
+            ("Service-Worker".into(), "script".into()),
+            ("Sec-Fetch-Mode".into(), "same-origin".into()),
+        ];
+        if bypass_cache {
+            headers.push(("Cache-Control".into(), "no-cache".into()));
+        }
         let response = ResourceLoader::shared()
             .submit(
                 ResourceRequest::get(url, FetchPriority::HIGH)
+                    .with_headers(headers)
                     .with_destination("serviceworker")
                     .with_timeout_secs(timeout_secs),
             )
