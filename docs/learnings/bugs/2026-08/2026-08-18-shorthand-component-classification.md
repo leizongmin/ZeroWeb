@@ -247,6 +247,8 @@ Border-image exposed the weak-direct-apply-test variant: an apply test that only
 
 Scroll offsets exposed the shared-helper variant: a helper named generically enough to serve multiple properties can still encode an old `Px else 0.0` shortcut. When widening it, keep context-free values such as percentages at the existing behavior unless the computed storage can represent them.
 
+Perspective paint exposed the split-consumer variant: apply can preserve a correct `LengthValue` while a later paint gate still pattern-matches only `Px`. Audit both the outer "should paint" predicate and the inner used-value computation; either one can silently drop legal relative units.
+
 ## Root Cause
 
 The shorthand layer used heuristic component classifiers and treated unrecognized tokens as absent optional components. That is wrong for CSS shorthands such as `border`, where every token must match one of the allowed component grammars. A shared parser can also be broader than the property grammar that consumes it: general length parsing may accept `auto`, intrinsic sizing keywords, or percentages that `border-width` must reject.

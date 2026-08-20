@@ -250,6 +250,28 @@ fn test_perspective_indicator_renders() {
 }
 
 #[test]
+fn test_perspective_indicator_renders_relative_length() {
+    let mut doc = zero_dom::Document::new();
+    let elem = doc.create_element("div");
+    let layout = make_box(Some(elem), 0.0, 0.0, 100.0, 50.0);
+
+    let mut styles = HashMap::new();
+    let mut style = ComputedStyle::default();
+    style.background_color = ColorValue::Named("white".into());
+    style.perspective = LengthValue::Em(2.0);
+    styles.insert(elem, style);
+
+    let mut painter = Painter::new();
+    painter.paint(&layout, &styles, None);
+
+    let prims = painter.primitives();
+    assert!(
+        prims.fills.len() > 1,
+        "relative perspective length 应生成消失点标记 fills"
+    );
+}
+
+#[test]
 fn test_perspective_zero_no_render() {
     let mut doc = zero_dom::Document::new();
     let elem = doc.create_element("div");

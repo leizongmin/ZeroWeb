@@ -1617,12 +1617,7 @@ impl Painter {
             if let Some(node_id) = box_node.node_id
                 && let Some(style) = styles.get(&node_id)
             {
-                use zero_style_system::property::types::LengthValue;
-                if let LengthValue::Px(v) = style.perspective
-                    && v > 0.0
-                {
-                    self.paint_perspective_indicator(box_node, abs_x, abs_y, style);
-                }
+                self.paint_perspective_indicator(box_node, abs_x, abs_y, style);
             }
 
             // CSS backface-visibility: hidden — 背面不可见指示器

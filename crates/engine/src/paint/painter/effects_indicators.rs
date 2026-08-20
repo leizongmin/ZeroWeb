@@ -14,6 +14,16 @@ use zero_style_system::{
 
 use super::super::helpers::length_to_f32;
 
+fn resolve_indicator_length(lv: &LengthValue, style: &ComputedStyle) -> f32 {
+    match lv {
+        LengthValue::Px(v) => *v as f32,
+        _ => {
+            let font_size = zero_style_system::computed::resolve_length(&style.font_size, 16.0, None, None);
+            zero_style_system::computed::resolve_length(lv, font_size, None, None) as f32
+        }
+    }
+}
+
 impl super::Painter {
     // ── CSS 交互/提示属性指示器 ──────────────────────────
 
@@ -350,18 +360,18 @@ impl super::Painter {
         abs_y: f32,
         style: &ComputedStyle,
     ) {
-        let perspective = match style.perspective {
-            LengthValue::Px(v) if v > 0.0 => v as f32,
-            _ => return,
-        };
+        let perspective = resolve_indicator_length(&style.perspective, style);
+        if perspective <= 0.0 {
+            return;
+        }
 
-        let origin_x = match style.perspective_origin_x {
-            LengthValue::Px(v) => abs_x + v as f32,
-            _ => abs_x + box_node.width / 2.0,
+        let origin_x = match &style.perspective_origin_x {
+            LengthValue::Percentage(p) => abs_x + box_node.width * (*p as f32 / 100.0),
+            lv => abs_x + resolve_indicator_length(lv, style),
         };
-        let origin_y = match style.perspective_origin_y {
-            LengthValue::Px(v) => abs_y + v as f32,
-            _ => abs_y + box_node.height / 2.0,
+        let origin_y = match &style.perspective_origin_y {
+            LengthValue::Percentage(p) => abs_y + box_node.height * (*p as f32 / 100.0),
+            lv => abs_y + resolve_indicator_length(lv, style),
         };
 
         let vanish_color = Color::rgba(77, 128, 230, 204);
