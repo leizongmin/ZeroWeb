@@ -632,6 +632,7 @@ pub const SERVICE_WORKER_CORE_CASES: &[&str] = &[
     "service-workers/service-worker/state.https.html",
     "service-workers/service-worker/synced-state.https.html",
     "service-workers/service-worker/unregister.https.html",
+    "service-workers/service-worker/update-bytecheck.https.html",
     "service-workers/service-worker/update-result.https.html",
 ];
 
@@ -1177,6 +1178,7 @@ fn wpt_data_script_fetcher(wpt_root: &std::path::Path) -> Option<zero_webview::S
 struct ServiceWorkerFixtureState {
     next_version: u64,
     update_visits: HashMap<String, u64>,
+    bytecheck_visits: HashMap<String, u64>,
 }
 
 fn service_worker_fixture_path(src: &str) -> Result<(&str, &str), String> {
@@ -1275,6 +1277,46 @@ fn wpt_data_service_worker_script_fetcher(
                 headers.push(("Content-Type".into(), mime.clone()));
             }
             Vec::new()
+        } else if clean.ends_with("/resources/bytecheck-worker.py") {
+            let mut state = state
+                .lock()
+                .map_err(|_| "Service Worker fixture state lock is poisoned".to_string())?;
+            let visit = state.bytecheck_visits.entry(src.to_string()).or_default();
+            *visit += 1;
+            let main_content = if params.get("main").is_some_and(|value| value == "time") {
+                visit.to_string()
+            } else {
+                "default".into()
+            };
+            let imported_path = params.get("path").map(String::as_str).unwrap_or_default();
+            let imported_query = if params.get("imported").is_some_and(|value| value == "time") {
+                "?imported=time"
+            } else {
+                ""
+            };
+            let imported_url = format!("{imported_path}bytecheck-worker-imported-script.py{imported_query}");
+            let source = if params.get("type").is_some_and(|value| value == "module") {
+                format!("// {main_content}\nimport '{}';\n", imported_url)
+            } else {
+                format!("// {main_content}\nimportScripts('{}');\n", imported_url)
+            };
+            return Ok(service_worker_fixture_response(source, src.to_string(), 0));
+        } else if clean.ends_with("/resources/bytecheck-worker-imported-script.py") {
+            let mut state = state
+                .lock()
+                .map_err(|_| "Service Worker fixture state lock is poisoned".to_string())?;
+            let visit = state.bytecheck_visits.entry(src.to_string()).or_default();
+            *visit += 1;
+            let imported_content = if params.get("imported").is_some_and(|value| value == "time") {
+                visit.to_string()
+            } else {
+                "default".into()
+            };
+            return Ok(service_worker_fixture_response(
+                format!("// {imported_content}\n"),
+                src.to_string(),
+                0,
+            ));
         } else if clean.ends_with("/resources/import-scripts-version.py") {
             let mut state = state
                 .lock()
@@ -2294,13 +2336,13 @@ async_test(function(test) {
     }
 
     #[test]
-    fn service_worker_core_manifest_has_twenty_unique_cases() {
+    fn service_worker_core_manifest_has_twenty_one_unique_cases() {
         let unique = SERVICE_WORKER_CORE_CASES
             .iter()
             .copied()
             .collect::<std::collections::BTreeSet<_>>();
-        assert_eq!(SERVICE_WORKER_CORE_CASES.len(), 20);
-        assert_eq!(unique.len(), 20);
+        assert_eq!(SERVICE_WORKER_CORE_CASES.len(), 21);
+        assert_eq!(unique.len(), 21);
         assert!(
             SERVICE_WORKER_CORE_CASES
                 .iter()

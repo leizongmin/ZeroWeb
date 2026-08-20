@@ -1,0 +1,5 @@
+path	manifest_type	roles	referenced_by	bytes	templated	git_blob_sha
+common/get-host-info.sub.js	support	page-script	1	3039	yes	e9ec61659c3927e519170bc4e5253f91b7671945
+service-workers/service-worker/update-bytecheck.https.html	testharness	case	1	3583	no	3e5a28bb67cb75624a5dd98bd15e137e55c87b0f
+service-workers/service-worker/resources/bytecheck-worker.py	support	dynamic-handler	8	1166	no	10f3bceb4fd6c1375afaa362143c5d403dec94d8
+service-workers/service-worker/resources/bytecheck-worker-imported-script.py	support	dynamic-handler	8	537	no	1931c77b6780b35c510d77a760ad4f1a9a87b28c

@@ -568,17 +568,21 @@ fn split_statements(source: &str) -> Vec<String> {
         let ch = chars[index];
         let next = chars.get(index + 1).copied();
         if line_comment {
-            current.push(ch);
             if ch == '\n' {
                 line_comment = false;
+                if braces == 0 && parens == 0 && brackets == 0 {
+                    let statement = current.trim();
+                    if !statement.is_empty() {
+                        stmts.push(statement.to_string());
+                    }
+                    current.clear();
+                }
             }
             index += 1;
             continue;
         }
         if block_comment {
-            current.push(ch);
             if ch == '*' && next == Some('/') {
-                current.push('/');
                 block_comment = false;
                 index += 2;
             } else {
@@ -599,15 +603,11 @@ fn split_statements(source: &str) -> Vec<String> {
             continue;
         }
         if ch == '/' && next == Some('/') {
-            current.push(ch);
-            current.push('/');
             line_comment = true;
             index += 2;
             continue;
         }
         if ch == '/' && next == Some('*') {
-            current.push(ch);
-            current.push('*');
             block_comment = true;
             index += 2;
             continue;
@@ -955,6 +955,19 @@ mod tests {
             )
             .unwrap();
         assert!(result.namespace_json.contains("module"));
+    }
+
+    #[test]
+    fn test_leading_comment_does_not_hide_static_import() {
+        let mut registry = ModuleRegistry::new();
+        registry.register("https://example.test/dependency.js", "export const value = 9;");
+        let compiled = compile_module_script(
+            "// changing response marker\nimport { value } from './dependency.js';\nglobalThis.value = value;",
+            "https://example.test/sw.js",
+            &registry,
+        )
+        .unwrap();
+        assert!(!compiled.contains("import {"));
     }
 
     // R3398：循环 import（a↔b）旧实现无限递归 → 栈溢出 abort（实测 `has overflowed its stack`）。
