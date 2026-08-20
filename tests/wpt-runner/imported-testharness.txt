@@ -188,3 +188,4 @@ service-workers/service-worker/synced-state.https.html 04067ce9c7c2165e71ad7d0dd
 service-workers/service-worker/unregister.https.html 04067ce9c7c2165e71ad7d0dde10a4c5cb394a83 2026-08-19 SW-M1-next-wave
 service-workers/service-worker/serviceworkerobject-scripturl.https.html 04067ce9c7c2165e71ad7d0dde10a4c5cb394a83 2026-08-19 SW-M1-static-wave
 service-workers/service-worker/update-result.https.html 04067ce9c7c2165e71ad7d0dde10a4c5cb394a83 2026-08-20 SW-M3-update
+service-workers/service-worker/import-scripts-data-url.https.html 04067ce9c7c2165e71ad7d0dde10a4c5cb394a83 2026-08-20 SW-M3-import-scripts

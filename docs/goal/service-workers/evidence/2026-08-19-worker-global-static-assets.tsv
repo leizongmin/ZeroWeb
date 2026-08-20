@@ -1,3 +1,5 @@
 path	manifest_type	roles	referenced_by	bytes	templated	git_blob_sha
 service-workers/service-worker/serviceworkerobject-scripturl.https.html	testharness	case	1	934	no	6004985a34608132825086dab0c0777f3f0fdf1e
 service-workers/service-worker/resources/empty-worker.js	support	worker-script	1	15	no	49ceb2648a93410bdd5ee53ef0e114146210741b
+service-workers/service-worker/import-scripts-data-url.https.html	testharness	case	1	692	no	f0922193dd0112b72881d05a97aafc67c5bdc3d5
+service-workers/service-worker/resources/import-scripts-data-url-worker.js	support	worker-script	1	40	no	fdabdafc63041ea816760afb6e04ee4f6b78c54d

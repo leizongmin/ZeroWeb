@@ -112,6 +112,9 @@ impl HostThread {
                 client_id,
                 client_url,
             } => self.dispatch_message(params.registration_id, event_id, &data_json, &client_id, &client_url),
+            ServiceWorkerHostCommand::CompleteImportScripts { request_id, result } => {
+                self.complete_import_scripts(params.registration_id, request_id, result);
+            }
             ServiceWorkerHostCommand::Shutdown => {
                 // 不在此处移除：tick 先 drain `Closed` 事件再按 is_running 回收槽位。
                 if let Some(runtime) = self.runtimes.get_mut(&params.registration_id) {
@@ -201,6 +204,16 @@ impl HostThread {
             tracing::warn!("Service Worker lifecycle dispatch failed: {error}");
         }
     }
+
+    fn complete_import_scripts(&mut self, registration_id: u64, request_id: u64, result: Result<Vec<String>, String>) {
+        let Some(runtime) = self.runtimes.get(&registration_id) else {
+            tracing::warn!("Service Worker import response for unknown registration {registration_id}");
+            return;
+        };
+        if let Err(error) = runtime.complete_import_scripts(request_id, result) {
+            tracing::warn!("Service Worker import response failed: {error}");
+        }
+    }
 }
 
 fn wire_phase(phase: ServiceWorkerLifecycleWire) -> ServiceWorkerLifecyclePhase {
@@ -263,6 +276,9 @@ fn host_event(event: ServiceWorkerEvent) -> ServiceWorkerHostEvent {
             client_id,
             message,
         },
+        ServiceWorkerEvent::ImportScriptsRequested { request_id, specifiers } => {
+            ServiceWorkerHostEvent::ImportScriptsRequested { request_id, specifiers }
+        }
         ServiceWorkerEvent::Closed => ServiceWorkerHostEvent::Closed,
     }
 }
@@ -381,6 +397,32 @@ mod tests {
             "unexpected event: {:?}",
             event.event
         );
+    }
+
+    #[test]
+    fn import_scripts_round_trips_through_renderer_host() {
+        let (host, mut transport) = spawn_host();
+        host.handle_command(evaluate_command(
+            12,
+            "importScripts('./dependency.js'); if (!globalThis.imported) throw new Error('missing import');",
+        ));
+        let request = wait_for_event(&mut transport);
+        let ServiceWorkerHostEvent::ImportScriptsRequested { request_id, specifiers } = request.event else {
+            panic!("expected ImportScriptsRequested");
+        };
+        assert_eq!(specifiers, ["./dependency.js"]);
+
+        host.handle_command(ServiceWorkerHostCommandParams {
+            registration_id: 12,
+            command: ServiceWorkerHostCommand::CompleteImportScripts {
+                request_id,
+                result: Ok(vec!["globalThis.imported = true;".into()]),
+            },
+        });
+        assert!(matches!(
+            wait_for_event(&mut transport).event,
+            ServiceWorkerHostEvent::Evaluated { .. }
+        ));
     }
 
     #[test]

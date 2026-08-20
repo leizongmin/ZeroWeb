@@ -888,6 +888,31 @@ impl ServiceWorkerHostCommandParams {
                 }
                 Ok(())
             }
+            ServiceWorkerHostCommand::CompleteImportScripts { request_id, result } => {
+                if *request_id == 0 {
+                    return Err("Service Worker import request id is required");
+                }
+                match result {
+                    Ok(sources) => {
+                        if sources.len() > 64 {
+                            return Err("Service Worker import response has too many scripts");
+                        }
+                        let total = sources.iter().try_fold(0usize, |total, source| {
+                            (source.len() <= MAX_SCRIPT_BYTES)
+                                .then(|| total.checked_add(source.len()))
+                                .flatten()
+                        });
+                        if total.is_none_or(|bytes| bytes > MAX_SCRIPT_BYTES) {
+                            return Err("Service Worker import response exceeds the size limit");
+                        }
+                    }
+                    Err(message) if message.len() > MAX_URL_BYTES => {
+                        return Err("Service Worker import error exceeds the size limit");
+                    }
+                    Err(_) => {}
+                }
+                Ok(())
+            }
             ServiceWorkerHostCommand::DispatchLifecycle { .. } | ServiceWorkerHostCommand::Shutdown => Ok(()),
         }
     }
@@ -921,6 +946,13 @@ pub enum ServiceWorkerHostCommand {
     },
     /// 停止并回收 runtime。
     Shutdown,
+    /// 完成一个阻塞的 `importScripts()` 请求。
+    CompleteImportScripts {
+        /// Renderer runtime 分配的 request ID。
+        request_id: u64,
+        /// 按调用顺序排列的脚本 source，或 browser fetch 错误。
+        result: Result<Vec<String>, String>,
+    },
 }
 
 /// Renderer → browser 的 Service Worker runtime 事件参数。
@@ -982,6 +1014,13 @@ pub enum ServiceWorkerHostEvent {
     },
     /// runtime 线程退出。
     Closed,
+    /// classic worker `importScripts()` 等待 browser-owned fetch。
+    ImportScriptsRequested {
+        /// Renderer runtime 分配的 request ID。
+        request_id: u64,
+        /// String-converted URL 参数，保持调用顺序。
+        specifiers: Vec<String>,
+    },
 }
 
 /// IPC-safe Service Worker 生命周期阶段。

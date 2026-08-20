@@ -23,6 +23,7 @@ pub mod private_mode;
 pub mod request;
 pub mod resource_loader;
 pub mod resource_policy;
+pub mod script_mime;
 pub mod url_parser;
 pub mod websocket;
 
@@ -43,6 +44,7 @@ pub use resource_policy::{
     DEFAULT_MAX_CONNECTIONS_PER_ORIGIN, DEFAULT_MAX_CONNECTIONS_TOTAL, ENV_MAX_CONNECTIONS_PER_ORIGIN,
     ENV_MAX_CONNECTIONS_TOTAL, max_connections_per_origin, max_connections_total, origin_from_url,
 };
+pub use script_mime::is_javascript_mime;
 pub use url_parser::*;
 pub use websocket::{WebSocket, WebSocketError, WebSocketMessage, WebSocketState};
 

@@ -709,6 +709,16 @@ impl ProcessTabBackend {
         for response in self.service_worker_owner.poll() {
             self.send_service_worker_response_now(response);
         }
+        for plan in self.service_worker_owner.take_import_fetch_plans() {
+            let tab_id = plan.tab_id();
+            let bypass_cache = plan.bypass_cache();
+            let receivers = plan
+                .urls()
+                .iter()
+                .map(|url| self.fetch_proxy.fetch_service_worker_script(tab_id, url, bypass_cache))
+                .collect();
+            self.service_worker_owner.attach_import_fetches(plan, receivers);
+        }
     }
 
     /// 下发 SW 托管命令到宿主 renderer（求值/生命周期/停止在 renderer 进程执行）。

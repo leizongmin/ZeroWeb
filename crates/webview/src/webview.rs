@@ -16,13 +16,15 @@ use zero_engine::{
 // 受 `#[cfg(feature = "v8")]` 门控——quickjs feature 下 unused import。独立 gated import 消 latent warning。
 #[cfg(feature = "v8")]
 use zero_engine::script_dispatch_native_event;
-use zero_net::{FetchPriority, HttpClient, HttpResponse, NetError, ResourceLoader, ResourceRequest, is_file_url};
+use zero_net::{
+    FetchPriority, HttpClient, HttpResponse, NetError, ResourceLoader, ResourceRequest, is_file_url, is_javascript_mime,
+};
 use zero_render_foundation::image_cache::{ImageCache, ImageData, ImageKey, decode_data_uri};
 
 use crate::image_decoder::decode_image;
 use zero_page_runtime::{
-    ServiceWorkerManager, ServiceWorkerManagerEvent, ServiceWorkerRegistrationKey, ServiceWorkerVersionSlots,
-    validate_service_worker_registration_for_document,
+    ServiceWorkerImportedScript, ServiceWorkerManager, ServiceWorkerManagerEvent, ServiceWorkerRegistrationKey,
+    ServiceWorkerVersionSlots, validate_service_worker_registration_for_document,
 };
 use zero_render_foundation::primitive::RenderPrimitives;
 use zero_script_sandbox::{SandboxConfig, WorkerEvent, WorkerRuntime};
@@ -36,6 +38,12 @@ mod user_actions;
 pub use user_actions::WebViewUserActionResult;
 
 static NEXT_WEBVIEW_ID: AtomicU64 = AtomicU64::new(1);
+const MAX_SERVICE_WORKER_SCRIPT_BYTES: usize = 16 * 1024 * 1024;
+
+enum ServiceWorkerEvaluationResult {
+    Evaluated,
+    UpdateChecked { registration_id: u64, changed: bool },
+}
 
 fn update_via_cache_name(value: ServiceWorkerUpdateViaCache) -> &'static str {
     match value {
@@ -2331,11 +2339,23 @@ impl WebView {
                 .map_err(|error| WebViewError::Script(format!("Service Worker fetch failed: {error}")))?,
             None => self.fetch_text_at(script_url.as_str())?,
         };
-        self.sw_manager
+        let source_fetcher = self.script_source_fetcher.clone();
+        let mut manager = self
+            .sw_manager
             .lock()
-            .map_err(|_| WebViewError::Script("Service Worker manager lock poisoned".into()))?
+            .map_err(|_| WebViewError::Script("Service Worker manager lock poisoned".into()))?;
+        let registration_id = manager
             .start_evaluation(script_url.as_str(), scope.as_str(), &origin, &script)
-            .map_err(|error| WebViewError::Script(error.to_string()))
+            .map_err(|error| WebViewError::Script(error.to_string()))?;
+        Self::wait_for_service_worker_evaluation(
+            &mut manager,
+            registration_id,
+            document_url,
+            source_fetcher.as_ref(),
+            30,
+        )
+        .map_err(WebViewError::Script)?;
+        Ok(registration_id)
     }
 
     /// Drain Service Worker manager events and advance lifecycle state.
@@ -2447,7 +2467,13 @@ impl WebView {
                             update_via_cache,
                         )
                         .map_err(|error| error.to_string())?;
-                    Self::wait_for_service_worker_evaluation(&mut manager, registration_id)?;
+                    Self::wait_for_service_worker_evaluation(
+                        &mut manager,
+                        registration_id,
+                        &document_url,
+                        register_source_fetcher.as_ref(),
+                        timeout_secs,
+                    )?;
                     Ok(registration_id)
                 })();
                 match result {
@@ -2502,8 +2528,21 @@ impl WebView {
                             Ok((registration_id, false))
                         }
                         zero_page_runtime::ServiceWorkerUpdateOutcome::Started { registration_id } => {
-                            Self::wait_for_service_worker_evaluation(&mut manager, registration_id)?;
-                            Ok((registration_id, true))
+                            match Self::wait_for_service_worker_evaluation(
+                                &mut manager,
+                                registration_id,
+                                &document_url,
+                                source_fetcher.as_ref(),
+                                timeout_secs,
+                            )? {
+                                ServiceWorkerEvaluationResult::UpdateChecked {
+                                    registration_id,
+                                    changed,
+                                } => Ok((registration_id, changed)),
+                                ServiceWorkerEvaluationResult::Evaluated => {
+                                    Err("Service Worker update comparison result is missing".into())
+                                }
+                            }
                         }
                     }
                 })();
@@ -2698,10 +2737,55 @@ impl WebView {
     fn wait_for_service_worker_evaluation(
         manager: &mut ServiceWorkerManager,
         registration_id: u64,
-    ) -> Result<(), String> {
+        document_url: &str,
+        source_fetcher: Option<&ScriptSourceFetcher>,
+        timeout_secs: u64,
+    ) -> Result<ServiceWorkerEvaluationResult, String> {
         let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
         loop {
             let events = manager.poll();
+            for event in &events {
+                let ServiceWorkerManagerEvent::ImportScriptsRequested {
+                    registration_id: id,
+                    request_id,
+                    urls,
+                    ..
+                } = event
+                else {
+                    continue;
+                };
+                if *id != registration_id {
+                    continue;
+                }
+                let scripts = urls
+                    .iter()
+                    .map(|url| match source_fetcher.filter(|_| !url.starts_with("data:")) {
+                        Some(fetcher) => fetcher(document_url, url).map(|source| ServiceWorkerImportedScript {
+                            url: url.clone(),
+                            source,
+                        }),
+                        None => Self::fetch_service_worker_imported_script(url, document_url, timeout_secs),
+                    })
+                    .collect::<Result<Vec<_>, _>>();
+                manager
+                    .complete_import_scripts(registration_id, *request_id, scripts)
+                    .map_err(|error| error.to_string())?;
+            }
+            if let Some(result) = events.iter().find_map(|event| match event {
+                ServiceWorkerManagerEvent::UpdateChecked {
+                    candidate_registration_id,
+                    registration_id: returned_id,
+                    changed,
+                } if *candidate_registration_id == registration_id => {
+                    Some(ServiceWorkerEvaluationResult::UpdateChecked {
+                        registration_id: *returned_id,
+                        changed: *changed,
+                    })
+                }
+                _ => None,
+            }) {
+                return Ok(result);
+            }
             if events.iter().any(|event| {
                 matches!(
                     event,
@@ -2710,7 +2794,7 @@ impl WebView {
                     } if *id == registration_id
                 )
             }) {
-                return Ok(());
+                return Ok(ServiceWorkerEvaluationResult::Evaluated);
             }
             if let Some(error) = events.iter().find_map(|event| match event {
                 ServiceWorkerManagerEvent::ScriptFailed {
@@ -2744,6 +2828,68 @@ impl WebView {
             .map_err(|_| "resource loader worker exited".to_string())?
             .map_err(|error| error.to_string())?;
         response.text().map_err(|error| error.to_string())
+    }
+
+    fn fetch_service_worker_imported_script(
+        url: &str,
+        document_url: &str,
+        timeout_secs: u64,
+    ) -> Result<ServiceWorkerImportedScript, String> {
+        let response = ResourceLoader::shared()
+            .submit(
+                ResourceRequest::get(url, FetchPriority::HIGH)
+                    .with_destination("serviceworker")
+                    .with_timeout_secs(timeout_secs),
+            )
+            .recv()
+            .map_err(|_| "resource loader worker exited".to_string())?
+            .map_err(|error| error.to_string())?;
+        if !response.is_success() {
+            return Err(format!(
+                "Service Worker import fetch returned HTTP {}",
+                response.status_code
+            ));
+        }
+        if response.body.len() > MAX_SERVICE_WORKER_SCRIPT_BYTES {
+            return Err("Service Worker imported script exceeds the size limit".into());
+        }
+        let final_url =
+            url::Url::parse(&response.url).map_err(|_| "Service Worker import fetch returned an invalid final URL")?;
+        if !matches!(final_url.scheme(), "http" | "https" | "data")
+            || !final_url.username().is_empty()
+            || final_url.password().is_some()
+        {
+            return Err("Service Worker import fetch returned a disallowed final URL".into());
+        }
+        if matches!(final_url.scheme(), "http" | "https") {
+            let document =
+                url::Url::parse(document_url).map_err(|_| "invalid Service Worker document URL".to_string())?;
+            if document.scheme() == "https" && final_url.scheme() == "http" {
+                return Err("Service Worker import redirect downgraded a secure context".into());
+            }
+            let registration_origin = document.origin().ascii_serialization();
+            if final_url.origin() != document.origin()
+                && !response
+                    .header("access-control-allow-origin")
+                    .is_some_and(|value| value == "*" || value == registration_origin)
+            {
+                return Err("Service Worker cross-origin import failed CORS validation".into());
+            }
+        }
+        let mime = response
+            .content_type_mime()
+            .ok_or_else(|| "Service Worker imported script has no JavaScript MIME type".to_string())?;
+        if !is_javascript_mime(mime) {
+            return Err(format!(
+                "Service Worker imported script has unsupported MIME type {mime}"
+            ));
+        }
+        let source =
+            String::from_utf8(response.body).map_err(|_| "Service Worker imported script is not valid UTF-8")?;
+        Ok(ServiceWorkerImportedScript {
+            url: url.to_string(),
+            source,
+        })
     }
 
     /// 处理 JS 端 WebAssembly 桥接请求。

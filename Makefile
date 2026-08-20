@@ -256,18 +256,18 @@ test-wpt-service-workers-next-wave-assets: fetch-wpt-service-workers-next-wave
 
 fetch-wpt-service-workers-static-wave:
 	WPT_ASSET_MANIFEST="$(CURDIR)/docs/goal/service-workers/evidence/2026-08-19-worker-global-static-assets.tsv" \
-		WPT_EXPECTED_ASSET_COUNT=2 WPT_CORPUS_LABEL="Service Worker static wave" \
+		WPT_EXPECTED_ASSET_COUNT=4 WPT_CORPUS_LABEL="Service Worker static wave" \
 		$(WPT_BASH) tests/wpt-runner/scripts/fetch-service-workers-tier-a.sh
 
 audit-wpt-service-workers-static-wave:
 	WPT_ASSET_MANIFEST="$(CURDIR)/docs/goal/service-workers/evidence/2026-08-19-worker-global-static-assets.tsv" \
-		WPT_EXPECTED_ASSET_COUNT=2 WPT_CORPUS_LABEL="Service Worker static wave" \
+		WPT_EXPECTED_ASSET_COUNT=4 WPT_CORPUS_LABEL="Service Worker static wave" \
 		$(WPT_BASH) tests/wpt-runner/scripts/fetch-service-workers-tier-a.sh --verify-only
 
 test-wpt-service-workers-static-wave-assets: fetch-wpt-service-workers-static-wave
 	WPT_SERVICE_WORKER_SOURCE="$(CURDIR)/tests/wpt-runner/wpt-data/.service-workers-tier-a-root" \
 		WPT_ASSET_MANIFEST="$(CURDIR)/docs/goal/service-workers/evidence/2026-08-19-worker-global-static-assets.tsv" \
-		WPT_EXPECTED_ASSET_COUNT=2 WPT_CORPUS_LABEL="Service Worker static wave" \
+		WPT_EXPECTED_ASSET_COUNT=4 WPT_CORPUS_LABEL="Service Worker static wave" \
 		$(WPT_BASH) tests/wpt-runner/scripts/test-service-workers-tier-a-assets.sh
 
 fetch-wpt-service-workers-update-wave:

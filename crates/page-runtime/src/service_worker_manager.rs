@@ -12,10 +12,13 @@ const MAX_CLIENTS_PER_VERSION: usize = 256;
 const MAX_MESSAGES_PER_CLIENT: usize = 1024;
 const MAX_URL_BYTES: usize = 64 * 1024;
 const MAX_SCRIPT_BYTES: usize = 16 * 1024 * 1024;
+const MAX_SCRIPT_GRAPH_BYTES: usize = 64 * 1024 * 1024;
+const MAX_IMPORTED_SCRIPTS_PER_VERSION: usize = 1024;
 
 struct EvaluationOptions {
     update_via_cache: ServiceWorkerUpdateViaCache,
     restoring_active: bool,
+    restored_imported_scripts: Vec<ServiceWorkerImportedScript>,
 }
 
 /// Stable registration key within one storage partition.
@@ -92,6 +95,18 @@ pub struct ServiceWorkerPersistentRegistration {
     /// Script update HTTP cache policy.
     #[serde(default)]
     pub update_via_cache: ServiceWorkerUpdateViaCache,
+    /// Canonical imported classic script URLs and source bytes.
+    #[serde(default)]
+    pub imported_scripts: Vec<ServiceWorkerImportedScript>,
+}
+
+/// One classic script loaded through `importScripts()`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ServiceWorkerImportedScript {
+    /// Canonical request URL with no fragment.
+    pub url: String,
+    /// UTF-8 script source.
+    pub source: String,
 }
 
 /// Typed manager event produced while polling worker runtimes.
@@ -171,6 +186,26 @@ pub enum ServiceWorkerManagerEvent {
         client_id: String,
         /// Handler diagnostic.
         message: String,
+    },
+    /// A runtime is blocked in `importScripts()` pending host-owned fetches.
+    ImportScriptsRequested {
+        /// Registration version ID.
+        registration_id: u64,
+        /// Runtime-local request ID.
+        request_id: u64,
+        /// Canonical script URLs in execution order.
+        urls: Vec<String>,
+        /// Whether these requests must bypass a fresh HTTP cache entry.
+        bypass_cache: bool,
+    },
+    /// A complete update candidate graph was compared with the current version.
+    UpdateChecked {
+        /// Installing candidate version ID.
+        candidate_registration_id: u64,
+        /// Version ID returned to the page API.
+        registration_id: u64,
+        /// Whether main or imported script bytes changed.
+        changed: bool,
     },
 }
 
@@ -263,6 +298,9 @@ pub struct ServiceWorkerManager {
     client_messages: HashMap<(u64, String), Vec<Vec<String>>>,
     pending_client_messages: HashMap<(u64, String), usize>,
     script_sources: HashMap<u64, Vec<u8>>,
+    imported_scripts: HashMap<u64, HashMap<String, Vec<u8>>>,
+    pending_import_requests: HashMap<(u64, u64), Vec<String>>,
+    update_predecessors: HashMap<u64, u64>,
     host: Box<dyn ServiceWorkerRuntimeHost>,
     evaluated: HashSet<u64>,
     restoring_active: HashSet<u64>,
@@ -298,6 +336,13 @@ pub trait ServiceWorkerRuntimeHost: Send {
         data_json: &str,
         client_id: &str,
         client_url: &str,
+    ) -> Result<(), ServiceWorkerManagerError>;
+    /// Complete one blocking `importScripts()` request.
+    fn complete_import_scripts(
+        &mut self,
+        registration_id: u64,
+        request_id: u64,
+        result: Result<Vec<String>, String>,
     ) -> Result<(), ServiceWorkerManagerError>;
     /// Stop one runtime and release its resources.
     fn shutdown(&mut self, registration_id: u64);
@@ -372,6 +417,19 @@ impl ServiceWorkerRuntimeHost for LocalServiceWorkerHost {
             .map_err(|error| ServiceWorkerManagerError::Runtime(error.to_string()))
     }
 
+    fn complete_import_scripts(
+        &mut self,
+        registration_id: u64,
+        request_id: u64,
+        result: Result<Vec<String>, String>,
+    ) -> Result<(), ServiceWorkerManagerError> {
+        self.runtimes
+            .get(&registration_id)
+            .ok_or(ServiceWorkerManagerError::UnknownRegistration(registration_id))?
+            .complete_import_scripts(request_id, result)
+            .map_err(|error| ServiceWorkerManagerError::Runtime(error.to_string()))
+    }
+
     fn shutdown(&mut self, registration_id: u64) {
         // 不在此处移除：poll_events 先 drain `Closed` 事件再按 is_running 回收槽位
         // （提前移除会让 Closed 成为孤儿事件，manager 无法据此推进状态机）。
@@ -422,6 +480,9 @@ impl ServiceWorkerManager {
             client_messages: HashMap::new(),
             pending_client_messages: HashMap::new(),
             script_sources: HashMap::new(),
+            imported_scripts: HashMap::new(),
+            pending_import_requests: HashMap::new(),
+            update_predecessors: HashMap::new(),
             host,
             evaluated: HashSet::new(),
             restoring_active: HashSet::new(),
@@ -471,6 +532,7 @@ impl ServiceWorkerManager {
             EvaluationOptions {
                 update_via_cache,
                 restoring_active: false,
+                restored_imported_scripts: Vec::new(),
             },
         )
     }
@@ -478,20 +540,25 @@ impl ServiceWorkerManager {
     /// Recreate one persisted active runtime without replaying install/activate.
     pub fn start_restored_active(
         &mut self,
-        script_url: &str,
-        scope: &str,
-        origin: &str,
-        script: &str,
-        update_via_cache: ServiceWorkerUpdateViaCache,
+        registration: ServiceWorkerPersistentRegistration,
     ) -> Result<u64, ServiceWorkerManagerError> {
-        self.start_evaluation_internal(
+        let ServiceWorkerPersistentRegistration {
             script_url,
             scope,
             origin,
-            script,
+            script_source,
+            update_via_cache,
+            imported_scripts,
+        } = registration;
+        self.start_evaluation_internal(
+            &script_url,
+            &scope,
+            &origin,
+            &script_source,
             EvaluationOptions {
                 update_via_cache,
                 restoring_active: true,
+                restored_imported_scripts: imported_scripts,
             },
         )
     }
@@ -519,6 +586,8 @@ impl ServiceWorkerManager {
                 "Service Worker script exceeds the size limit".into(),
             ));
         }
+        let restored_imported_scripts =
+            Self::validate_restored_imported_scripts(script, options.restored_imported_scripts)?;
         let key = ServiceWorkerRegistrationKey::new(origin, scope)?;
         if let Some(id) = self.slots.get(&key).and_then(|slot| slot.installing) {
             return Err(ServiceWorkerManagerError::JobInProgress(id));
@@ -541,10 +610,53 @@ impl ServiceWorkerManager {
         self.registration_keys.insert(id, key);
         self.state_changes.insert(id, Vec::new());
         self.script_sources.insert(id, script.as_bytes().to_vec());
+        self.imported_scripts.insert(id, restored_imported_scripts);
         if options.restoring_active {
             self.restoring_active.insert(id);
         }
         Ok(id)
+    }
+
+    fn validate_restored_imported_scripts(
+        main_script: &str,
+        scripts: Vec<ServiceWorkerImportedScript>,
+    ) -> Result<HashMap<String, Vec<u8>>, ServiceWorkerManagerError> {
+        if scripts.len() > MAX_IMPORTED_SCRIPTS_PER_VERSION {
+            return Err(ServiceWorkerManagerError::InvalidInput(
+                "Service Worker import graph has too many scripts".into(),
+            ));
+        }
+        let mut graph = HashMap::with_capacity(scripts.len());
+        let mut total_bytes = main_script.len();
+        for script in scripts {
+            if script.url.len() > MAX_URL_BYTES || script.source.len() > MAX_SCRIPT_BYTES {
+                return Err(ServiceWorkerManagerError::InvalidInput(
+                    "Service Worker imported script exceeds the size limit".into(),
+                ));
+            }
+            let url = url::Url::parse(&script.url).map_err(|_| {
+                ServiceWorkerManagerError::InvalidInput("invalid Service Worker imported script URL".into())
+            })?;
+            if url.as_str() != script.url
+                || url.fragment().is_some()
+                || !matches!(url.scheme(), "http" | "https" | "data")
+                || !url.username().is_empty()
+                || url.password().is_some()
+            {
+                return Err(ServiceWorkerManagerError::InvalidInput(
+                    "Service Worker imported script URL is not canonical".into(),
+                ));
+            }
+            total_bytes = total_bytes.checked_add(script.source.len()).ok_or_else(|| {
+                ServiceWorkerManagerError::InvalidInput("Service Worker script graph size overflow".into())
+            })?;
+            if total_bytes > MAX_SCRIPT_GRAPH_BYTES || graph.insert(script.url, script.source.into_bytes()).is_some() {
+                return Err(ServiceWorkerManagerError::InvalidInput(
+                    "Service Worker imported script graph is invalid or exceeds the size limit".into(),
+                ));
+            }
+        }
+        Ok(graph)
     }
 
     /// Resolve the current waiting or active version for a registration key.
@@ -585,15 +697,6 @@ impl ServiceWorkerManager {
         }
         let registration = self.update_target(registration_id)?.clone();
         let current_id = registration.id;
-        let source = self
-            .script_sources
-            .get(&current_id)
-            .ok_or(ServiceWorkerManagerError::UnknownRegistration(current_id))?;
-        if source.as_slice() == script.as_bytes() {
-            return Ok(ServiceWorkerUpdateOutcome::Unchanged {
-                registration_id: current_id,
-            });
-        }
         let registration_id = self.start_evaluation_with_update_via_cache(
             &registration.script_url,
             &registration.scope,
@@ -601,6 +704,7 @@ impl ServiceWorkerManager {
             script,
             registration.update_via_cache,
         )?;
+        self.update_predecessors.insert(registration_id, current_id);
         Ok(ServiceWorkerUpdateOutcome::Started { registration_id })
     }
 
@@ -610,6 +714,19 @@ impl ServiceWorkerManager {
         for (registration_id, event) in self.host.poll_events() {
             match event {
                 ServiceWorkerEvent::Evaluated { .. } => {
+                    if let Some(current_id) = self.update_predecessors.remove(&registration_id) {
+                        let changed = !self.script_graphs_equal(current_id, registration_id);
+                        let returned_id = if changed { registration_id } else { current_id };
+                        output.push(ServiceWorkerManagerEvent::UpdateChecked {
+                            candidate_registration_id: registration_id,
+                            registration_id: returned_id,
+                            changed,
+                        });
+                        if !changed {
+                            self.fail_installing_version(registration_id);
+                            continue;
+                        }
+                    }
                     output.push(ServiceWorkerManagerEvent::ScriptEvaluated { registration_id });
                     if self.restoring_active.remove(&registration_id) {
                         match self.complete_active_restoration(registration_id) {
@@ -642,6 +759,32 @@ impl ServiceWorkerManager {
                         kind,
                         message,
                     });
+                }
+                ServiceWorkerEvent::ImportScriptsRequested { request_id, specifiers } => {
+                    match self.resolve_import_script_urls(registration_id, &specifiers) {
+                        Ok(urls) if self.restoring_active.contains(&registration_id) => {
+                            let result = self.restored_import_sources(registration_id, &urls);
+                            let _ = self.host.complete_import_scripts(registration_id, request_id, result);
+                        }
+                        Ok(urls) => {
+                            self.pending_import_requests
+                                .insert((registration_id, request_id), urls.clone());
+                            let bypass_cache = self.registration(registration_id).is_some_and(|registration| {
+                                registration.update_via_cache == ServiceWorkerUpdateViaCache::None
+                            });
+                            output.push(ServiceWorkerManagerEvent::ImportScriptsRequested {
+                                registration_id,
+                                request_id,
+                                urls,
+                                bypass_cache,
+                            });
+                        }
+                        Err(error) => {
+                            let _ =
+                                self.host
+                                    .complete_import_scripts(registration_id, request_id, Err(error.to_string()));
+                        }
+                    }
                 }
                 ServiceWorkerEvent::LifecycleSettled {
                     phase,
@@ -741,6 +884,146 @@ impl ServiceWorkerManager {
             }
         }
         output
+    }
+
+    fn script_graphs_equal(&self, left: u64, right: u64) -> bool {
+        self.script_sources.get(&left) == self.script_sources.get(&right)
+            && self.imported_scripts.get(&left) == self.imported_scripts.get(&right)
+    }
+
+    /// Complete one host-owned `importScripts()` fetch batch.
+    pub fn complete_import_scripts(
+        &mut self,
+        registration_id: u64,
+        request_id: u64,
+        result: Result<Vec<ServiceWorkerImportedScript>, String>,
+    ) -> Result<(), ServiceWorkerManagerError> {
+        let expected = self
+            .pending_import_requests
+            .remove(&(registration_id, request_id))
+            .ok_or(ServiceWorkerManagerError::InvalidInput(
+                "unknown Service Worker importScripts request".into(),
+            ))?;
+        let sources = match result {
+            Ok(scripts) => match self.validate_imported_scripts(registration_id, &expected, scripts) {
+                Ok(scripts) => {
+                    let graph = self
+                        .imported_scripts
+                        .get_mut(&registration_id)
+                        .ok_or(ServiceWorkerManagerError::UnknownRegistration(registration_id))?;
+                    let mut sources = Vec::with_capacity(scripts.len());
+                    for script in scripts {
+                        sources.push(script.source.clone());
+                        graph.insert(script.url, script.source.into_bytes());
+                    }
+                    Ok(sources)
+                }
+                Err(error) => Err(error.to_string()),
+            },
+            Err(message) => Err(message),
+        };
+        self.host.complete_import_scripts(registration_id, request_id, sources)
+    }
+
+    fn resolve_import_script_urls(
+        &self,
+        registration_id: u64,
+        specifiers: &[String],
+    ) -> Result<Vec<String>, ServiceWorkerManagerError> {
+        let registration = self
+            .registration(registration_id)
+            .ok_or(ServiceWorkerManagerError::UnknownRegistration(registration_id))?;
+        let base = url::Url::parse(&registration.script_url)
+            .map_err(|_| ServiceWorkerManagerError::InvalidInput("invalid Service Worker script URL".into()))?;
+        specifiers
+            .iter()
+            .map(|specifier| {
+                if specifier.len() > MAX_URL_BYTES {
+                    return Err(ServiceWorkerManagerError::InvalidInput(
+                        "Service Worker imported script URL exceeds the length limit".into(),
+                    ));
+                }
+                let mut url = base.join(specifier).map_err(|_| {
+                    ServiceWorkerManagerError::InvalidInput("invalid Service Worker imported script URL".into())
+                })?;
+                if !matches!(url.scheme(), "http" | "https" | "data") {
+                    return Err(ServiceWorkerManagerError::InvalidInput(
+                        "Service Worker imported script URL uses an unsupported scheme".into(),
+                    ));
+                }
+                if !url.username().is_empty() || url.password().is_some() {
+                    return Err(ServiceWorkerManagerError::InvalidInput(
+                        "Service Worker imported script URL contains credentials".into(),
+                    ));
+                }
+                url.set_fragment(None);
+                Ok(url.to_string())
+            })
+            .collect()
+    }
+
+    fn restored_import_sources(&self, registration_id: u64, urls: &[String]) -> Result<Vec<String>, String> {
+        let graph = self
+            .imported_scripts
+            .get(&registration_id)
+            .ok_or_else(|| "persisted Service Worker import graph is missing".to_string())?;
+        urls.iter()
+            .map(|url| {
+                graph
+                    .get(url)
+                    .ok_or_else(|| format!("persisted Service Worker imported script is missing: {url}"))
+                    .and_then(|source| {
+                        String::from_utf8(source.clone())
+                            .map_err(|_| format!("persisted Service Worker imported script is not UTF-8: {url}"))
+                    })
+            })
+            .collect()
+    }
+
+    fn validate_imported_scripts(
+        &self,
+        registration_id: u64,
+        expected: &[String],
+        scripts: Vec<ServiceWorkerImportedScript>,
+    ) -> Result<Vec<ServiceWorkerImportedScript>, ServiceWorkerManagerError> {
+        if scripts.len() != expected.len()
+            || scripts
+                .iter()
+                .zip(expected)
+                .any(|(script, expected_url)| script.url != *expected_url)
+        {
+            return Err(ServiceWorkerManagerError::InvalidInput(
+                "Service Worker imported script response does not match the request".into(),
+            ));
+        }
+        let mut graph = self.imported_scripts.get(&registration_id).cloned().unwrap_or_default();
+        for script in &scripts {
+            if script.source.len() > MAX_SCRIPT_BYTES {
+                return Err(ServiceWorkerManagerError::InvalidInput(
+                    "Service Worker imported script exceeds the size limit".into(),
+                ));
+            }
+            graph.insert(script.url.clone(), script.source.as_bytes().to_vec());
+        }
+        if graph.len() > MAX_IMPORTED_SCRIPTS_PER_VERSION {
+            return Err(ServiceWorkerManagerError::InvalidInput(
+                "Service Worker import graph has too many scripts".into(),
+            ));
+        }
+        let imported_bytes = graph
+            .values()
+            .try_fold(0usize, |total, source| total.checked_add(source.len()));
+        let total_bytes = imported_bytes.and_then(|bytes| {
+            self.script_sources
+                .get(&registration_id)
+                .and_then(|source| bytes.checked_add(source.len()))
+        });
+        if total_bytes.is_none_or(|bytes| bytes > MAX_SCRIPT_GRAPH_BYTES) {
+            return Err(ServiceWorkerManagerError::InvalidInput(
+                "Service Worker imported script graph exceeds the size limit".into(),
+            ));
+        }
+        Ok(scripts)
     }
 
     /// Promote a recreated runtime directly to its persisted active slot.
@@ -1140,12 +1423,25 @@ impl ServiceWorkerManager {
             .filter_map(|(key, slot)| {
                 let registration = self.registry.get(slot.active?)?;
                 let script_source = String::from_utf8(self.script_sources.get(&registration.id)?.clone()).ok()?;
+                let mut imported_scripts = self
+                    .imported_scripts
+                    .get(&registration.id)?
+                    .iter()
+                    .map(|(url, source)| {
+                        Some(ServiceWorkerImportedScript {
+                            url: url.clone(),
+                            source: String::from_utf8(source.clone()).ok()?,
+                        })
+                    })
+                    .collect::<Option<Vec<_>>>()?;
+                imported_scripts.sort_unstable_by(|left, right| left.url.cmp(&right.url));
                 Some(ServiceWorkerPersistentRegistration {
                     script_url: registration.script_url.clone(),
                     scope: key.scope.clone(),
                     origin: key.origin.clone(),
                     script_source,
                     update_via_cache: registration.update_via_cache,
+                    imported_scripts,
                 })
             })
             .collect::<Vec<_>>();
@@ -1228,7 +1524,10 @@ impl ServiceWorkerManager {
         self.restoring_active.remove(&registration_id);
         self.client_messages.retain(|(id, _), _| *id != registration_id);
         self.pending_client_messages.retain(|(id, _), _| *id != registration_id);
+        self.pending_import_requests.retain(|(id, _), _| *id != registration_id);
+        self.update_predecessors.remove(&registration_id);
         self.script_sources.remove(&registration_id);
+        self.imported_scripts.remove(&registration_id);
         self.host.shutdown(registration_id);
     }
 
@@ -1304,6 +1603,45 @@ mod tests {
         id
     }
 
+    fn wait_for_import_request(manager: &mut ServiceWorkerManager, registration_id: u64) -> (u64, Vec<String>, bool) {
+        let deadline = Instant::now() + Duration::from_secs(5);
+        loop {
+            for event in manager.poll() {
+                if let ServiceWorkerManagerEvent::ImportScriptsRequested {
+                    registration_id: id,
+                    request_id,
+                    urls,
+                    bypass_cache,
+                } = event
+                    && id == registration_id
+                {
+                    return (request_id, urls, bypass_cache);
+                }
+            }
+            assert!(Instant::now() < deadline, "manager importScripts request timed out");
+            std::thread::sleep(Duration::from_millis(1));
+        }
+    }
+
+    fn wait_for_update_check(manager: &mut ServiceWorkerManager, candidate_id: u64) -> (u64, bool) {
+        let deadline = Instant::now() + Duration::from_secs(5);
+        loop {
+            for event in manager.poll() {
+                if let ServiceWorkerManagerEvent::UpdateChecked {
+                    candidate_registration_id,
+                    registration_id,
+                    changed,
+                } = event
+                    && candidate_registration_id == candidate_id
+                {
+                    return (registration_id, changed);
+                }
+            }
+            assert!(Instant::now() < deadline, "manager update comparison timed out");
+            std::thread::sleep(Duration::from_millis(1));
+        }
+    }
+
     #[test]
     fn successful_version_moves_through_slots() {
         let mut manager = manager_under_test();
@@ -1350,10 +1688,14 @@ mod tests {
         let first = start_active(&mut manager, "/", "globalThis.version = 1;");
         let runtime_count = manager.runtime_count();
 
-        assert_eq!(
-            manager.start_update(first, "globalThis.version = 1;").unwrap(),
-            ServiceWorkerUpdateOutcome::Unchanged { registration_id: first }
-        );
+        let ServiceWorkerUpdateOutcome::Started {
+            registration_id: unchanged_candidate,
+        } = manager.start_update(first, "globalThis.version = 1;").unwrap()
+        else {
+            panic!("update comparison must evaluate a candidate graph");
+        };
+        assert_eq!(wait_for_update_check(&mut manager, unchanged_candidate), (first, false));
+        let _ = manager.poll();
         assert_eq!(manager.runtime_count(), runtime_count);
         assert_eq!(manager.slots(&key("/")).unwrap().installing, None);
 
@@ -1370,14 +1712,19 @@ mod tests {
             manager.registration(replacement).unwrap().script_url,
             "https://example.test/sw.js"
         );
+        assert_eq!(wait_for_update_check(&mut manager, replacement), (replacement, true));
         wait_for_state(&mut manager, replacement, ServiceWorkerState::Installed);
         manager.activate_waiting(replacement).unwrap();
         wait_for_state(&mut manager, replacement, ServiceWorkerState::Activated);
+        let ServiceWorkerUpdateOutcome::Started {
+            registration_id: unchanged_candidate,
+        } = manager.start_update(first, "globalThis.version = 2;").unwrap()
+        else {
+            panic!("update comparison must evaluate a candidate graph");
+        };
         assert_eq!(
-            manager.start_update(first, "globalThis.version = 2;",).unwrap(),
-            ServiceWorkerUpdateOutcome::Unchanged {
-                registration_id: replacement,
-            }
+            wait_for_update_check(&mut manager, unchanged_candidate),
+            (replacement, false)
         );
 
         let next = manager
@@ -1395,24 +1742,91 @@ mod tests {
             manager.update_target(first).unwrap().script_url,
             "https://example.test/sw-v3.js"
         );
+        let ServiceWorkerUpdateOutcome::Started {
+            registration_id: unchanged_candidate,
+        } = manager.start_update(first, "globalThis.version = 3;").unwrap()
+        else {
+            panic!("update comparison must evaluate a candidate graph");
+        };
+        assert_eq!(wait_for_update_check(&mut manager, unchanged_candidate), (next, false));
+    }
+
+    #[test]
+    fn update_compares_imported_script_graph_when_main_bytes_match() {
+        let mut manager = manager_under_test();
+        let script = "importScripts('./dependency.js');";
+        let first = start(&mut manager, "/", script);
+        let (request_id, urls, bypass_cache) = wait_for_import_request(&mut manager, first);
+        assert!(!bypass_cache);
+        manager
+            .complete_import_scripts(
+                first,
+                request_id,
+                Ok(vec![ServiceWorkerImportedScript {
+                    url: urls[0].clone(),
+                    source: "globalThis.dependencyVersion = 1;".into(),
+                }]),
+            )
+            .unwrap();
+        wait_for_state(&mut manager, first, ServiceWorkerState::Activated);
+
+        let ServiceWorkerUpdateOutcome::Started {
+            registration_id: unchanged_candidate,
+        } = manager.start_update(first, script).unwrap()
+        else {
+            panic!("update comparison must evaluate imported scripts");
+        };
+        let (request_id, urls, _) = wait_for_import_request(&mut manager, unchanged_candidate);
+        manager
+            .complete_import_scripts(
+                unchanged_candidate,
+                request_id,
+                Ok(vec![ServiceWorkerImportedScript {
+                    url: urls[0].clone(),
+                    source: "globalThis.dependencyVersion = 1;".into(),
+                }]),
+            )
+            .unwrap();
+        assert_eq!(wait_for_update_check(&mut manager, unchanged_candidate), (first, false));
+
+        let ServiceWorkerUpdateOutcome::Started {
+            registration_id: changed_candidate,
+        } = manager.start_update(first, script).unwrap()
+        else {
+            panic!("update comparison must evaluate imported scripts");
+        };
+        let (request_id, urls, _) = wait_for_import_request(&mut manager, changed_candidate);
+        manager
+            .complete_import_scripts(
+                changed_candidate,
+                request_id,
+                Ok(vec![ServiceWorkerImportedScript {
+                    url: urls[0].clone(),
+                    source: "globalThis.dependencyVersion = 2;".into(),
+                }]),
+            )
+            .unwrap();
         assert_eq!(
-            manager.start_update(first, "globalThis.version = 3;",).unwrap(),
-            ServiceWorkerUpdateOutcome::Unchanged { registration_id: next }
+            wait_for_update_check(&mut manager, changed_candidate),
+            (changed_candidate, true)
         );
+        wait_for_state(&mut manager, changed_candidate, ServiceWorkerState::Installed);
     }
 
     #[test]
     fn restored_active_runtime_does_not_replay_install_or_activate() {
         let mut manager = manager_under_test();
         let id = manager
-            .start_restored_active(
-                "https://example.test/sw.js",
-                "/",
-                "https://example.test",
-                "addEventListener('install', () => { throw new Error('install replayed'); });
-                 addEventListener('activate', () => { throw new Error('activate replayed'); });",
-                ServiceWorkerUpdateViaCache::Imports,
-            )
+            .start_restored_active(ServiceWorkerPersistentRegistration {
+                script_url: "https://example.test/sw.js".into(),
+                scope: "/".into(),
+                origin: "https://example.test".into(),
+                script_source: "addEventListener('install', () => { throw new Error('install replayed'); });
+                         addEventListener('activate', () => { throw new Error('activate replayed'); });"
+                    .into(),
+                update_via_cache: ServiceWorkerUpdateViaCache::Imports,
+                imported_scripts: Vec::new(),
+            })
             .unwrap();
         let deadline = Instant::now() + Duration::from_secs(5);
         let mut events = Vec::new();

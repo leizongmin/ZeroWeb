@@ -216,6 +216,13 @@ impl ResourceLoader {
         if request.partition == "default" {
             request.partition = self.partition.clone();
         }
+        if request
+            .url
+            .get(..5)
+            .is_some_and(|prefix| prefix.eq_ignore_ascii_case("data:"))
+        {
+            return immediate(load_data_url(&request.url));
+        }
         let request_mode = request_cache_mode(&request.headers).unwrap_or(request.cache_mode);
         request.cache_mode = request_mode;
         let cache = self.cache_for_partition(&request.partition);
@@ -447,6 +454,21 @@ impl ResourceLoader {
     }
 }
 
+fn load_data_url(input: &str) -> FetchJobResult {
+    let parsed = data_url::DataUrl::process(input).map_err(|error| error.to_string())?;
+    let content_type = parsed.mime_type().to_string();
+    let (body, _) = parsed.decode_to_vec().map_err(|error| error.to_string())?;
+    let mut url = url::Url::parse(input).map_err(|error| error.to_string())?;
+    url.set_fragment(None);
+    Ok(crate::HttpResponse {
+        status_code: 200,
+        headers: vec![("Content-Type".into(), content_type)],
+        body,
+        url: url.to_string(),
+        redirect_count: 0,
+    })
+}
+
 /// 计算 unsafe 请求成功后需要失效的同源缓存 URI。
 ///
 /// https://www.rfc-editor.org/rfc/rfc9111#section-4.4
@@ -557,6 +579,24 @@ mod tests {
             url: url.into(),
             redirect_count: 0,
         }
+    }
+
+    #[test]
+    fn data_url_is_decoded_without_network_or_cache() {
+        let loader = ResourceLoader::new(Arc::new(Mutex::new(HttpCache::new())), "data-test");
+        let response = loader
+            .submit(ResourceRequest::get(
+                "data:text/javascript,globalThis.value%20%3D%207%3B#ignored",
+                FetchPriority::HIGH,
+            ))
+            .recv()
+            .unwrap()
+            .unwrap();
+        assert_eq!(response.status_code, 200);
+        assert_eq!(response.content_type_mime(), Some("text/javascript"));
+        assert_eq!(response.body, b"globalThis.value = 7;");
+        assert_eq!(response.url, "data:text/javascript,globalThis.value%20%3D%207%3B");
+        assert_eq!(loader.stats(), ResourceLoadStats::default());
     }
 
     #[test]

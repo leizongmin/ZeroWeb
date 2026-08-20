@@ -129,22 +129,28 @@ fn multiprocess_navigator_registration_uses_browser_owner() {
     let renderer = resolve_renderer_binary().expect("fresh zero-renderer binary is required");
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     let page_url = format!("http://{}/page", listener.local_addr().unwrap());
-    let worker_source = "addEventListener('install', event => event.waitUntil(Promise.resolve()));\
+    let worker_source = "importScripts('/dependency.js');\
+         addEventListener('install', event => event.waitUntil(Promise.resolve()));\
          addEventListener('activate', event => event.waitUntil(clients.claim()));\
          addEventListener('message', event => {\
-           event.source.postMessage({echo:event.data.kind, sourceURL:event.source.url});\
+           event.source.postMessage({echo:event.data.kind + ':' + globalThis.importedValue, sourceURL:event.source.url});\
          });";
-    let response = format!(
-        "HTTP/1.1 200 OK\r\nContent-Type: application/javascript\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
-        worker_source.len(),
-        worker_source
-    );
     let server = std::thread::spawn(move || {
-        let (mut stream, _) = listener.accept().unwrap();
-        let mut request = [0_u8; 2048];
-        let size = stream.read(&mut request).unwrap();
-        assert!(String::from_utf8_lossy(&request[..size]).starts_with("GET /sw.js "));
-        stream.write_all(response.as_bytes()).unwrap();
+        for (path, source) in [
+            ("/sw.js", worker_source),
+            ("/dependency.js", "globalThis.importedValue = 'dependency';"),
+        ] {
+            let (mut stream, _) = listener.accept().unwrap();
+            let mut request = [0_u8; 2048];
+            let size = stream.read(&mut request).unwrap();
+            assert!(String::from_utf8_lossy(&request[..size]).starts_with(&format!("GET {path} ")));
+            let response = format!(
+                "HTTP/1.1 200 OK\r\nContent-Type: application/javascript\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                source.len(),
+                source
+            );
+            stream.write_all(response.as_bytes()).unwrap();
+        }
     });
 
     let mut backend = ProcessTabBackend::with_renderer_bin(renderer);
@@ -223,7 +229,7 @@ fn multiprocess_navigator_registration_uses_browser_owner() {
     let expected_scope = format!("http://{}/", page_url.split('/').nth(2).unwrap());
     assert_eq!(
         result,
-        format!("{expected_scope}|all|activated|true|page|{page_url}|true")
+        format!("{expected_scope}|all|activated|true|page:dependency|{page_url}|true")
     );
 }
 
@@ -326,18 +332,24 @@ fn multiprocess_restart_restores_persisted_controller_without_refetch() {
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     let authority = listener.local_addr().unwrap().to_string();
     let register_page = format!("http://{authority}/register");
-    let worker_source = "globalThis.persisted = true;";
-    let response = format!(
-        "HTTP/1.1 200 OK\r\nContent-Type: application/javascript\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
-        worker_source.len(),
-        worker_source
-    );
+    let worker_source =
+        "importScripts('/persisted-dependency.js'); if (!globalThis.persisted) throw new Error('missing import');";
     let server = std::thread::spawn(move || {
-        let (mut stream, _) = listener.accept().unwrap();
-        let mut request = [0_u8; 2048];
-        let size = stream.read(&mut request).unwrap();
-        assert!(String::from_utf8_lossy(&request[..size]).starts_with("GET /sw.js "));
-        stream.write_all(response.as_bytes()).unwrap();
+        for (path, source) in [
+            ("/sw.js", worker_source),
+            ("/persisted-dependency.js", "globalThis.persisted = true;"),
+        ] {
+            let (mut stream, _) = listener.accept().unwrap();
+            let mut request = [0_u8; 2048];
+            let size = stream.read(&mut request).unwrap();
+            assert!(String::from_utf8_lossy(&request[..size]).starts_with(&format!("GET {path} ")));
+            let response = format!(
+                "HTTP/1.1 200 OK\r\nContent-Type: application/javascript\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                source.len(),
+                source
+            );
+            stream.write_all(response.as_bytes()).unwrap();
+        }
     });
 
     {

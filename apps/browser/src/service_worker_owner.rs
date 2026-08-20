@@ -10,11 +10,11 @@ use std::sync::{Arc, Mutex};
 use serde::{Deserialize, Serialize};
 use url::Url;
 use zero_browser_shell::TabId;
-use zero_net::HttpResponse;
+use zero_net::{HttpResponse, is_javascript_mime};
 use zero_page_runtime::{
-    ServiceWorkerManager, ServiceWorkerManagerError, ServiceWorkerManagerEvent, ServiceWorkerPersistentRegistration,
-    ServiceWorkerRegistrationErrorKind, ServiceWorkerRuntimeHost, ServiceWorkerUpdateOutcome,
-    validate_service_worker_registration,
+    ServiceWorkerImportedScript, ServiceWorkerManager, ServiceWorkerManagerError, ServiceWorkerManagerEvent,
+    ServiceWorkerPersistentRegistration, ServiceWorkerRegistrationErrorKind, ServiceWorkerRuntimeHost,
+    ServiceWorkerUpdateOutcome, validate_service_worker_registration,
 };
 use zero_protocol::message::{
     ServiceWorkerClientMessages, ServiceWorkerError, ServiceWorkerErrorCode, ServiceWorkerHostCommand,
@@ -29,6 +29,7 @@ use zero_storage::{ServiceWorkerRegistration, ServiceWorkerState, ServiceWorkerU
 const MAX_SCRIPT_BYTES: usize = 16 * 1024 * 1024;
 const MAX_PERSISTED_FILE_BYTES: u64 = 64 * 1024 * 1024;
 const MAX_PERSISTED_REGISTRATIONS: usize = 32;
+const MAX_PERSISTED_IMPORTS_PER_REGISTRATION: usize = 1024;
 const PERSISTENCE_VERSION: u32 = 1;
 
 #[derive(Serialize, Deserialize)]
@@ -228,6 +229,26 @@ impl ServiceWorkerRuntimeHost for IpcServiceWorkerHost {
         Ok(())
     }
 
+    fn complete_import_scripts(
+        &mut self,
+        registration_id: u64,
+        request_id: u64,
+        result: Result<Vec<String>, String>,
+    ) -> Result<(), ServiceWorkerManagerError> {
+        let Some(tab_id) = self.channels.take_owned_tab(registration_id) else {
+            return Err(ServiceWorkerManagerError::UnknownRegistration(registration_id));
+        };
+        self.channels.record_owned(registration_id, tab_id);
+        self.channels.push_outgoing(ServiceWorkerHostOutgoing {
+            tab_id,
+            params: ServiceWorkerHostCommandParams {
+                registration_id,
+                command: ServiceWorkerHostCommand::CompleteImportScripts { request_id, result },
+            },
+        });
+        Ok(())
+    }
+
     fn shutdown(&mut self, registration_id: u64) {
         if let Some(tab_id) = self.channels.remove_owned(registration_id) {
             self.channels.push_outgoing(ServiceWorkerHostOutgoing {
@@ -332,6 +353,9 @@ fn sandbox_event(event: ServiceWorkerHostEvent) -> ServiceWorkerEvent {
             client_id,
             message,
         },
+        ServiceWorkerHostEvent::ImportScriptsRequested { request_id, specifiers } => {
+            ServiceWorkerEvent::ImportScriptsRequested { request_id, specifiers }
+        }
         ServiceWorkerHostEvent::Closed => ServiceWorkerEvent::Closed,
     }
 }
@@ -389,7 +413,36 @@ struct PendingScriptFetch {
 struct PendingEvaluation {
     tab_id: TabId,
     request_id: u64,
-    update: bool,
+}
+
+/// A validated imported classic script batch owned by one blocked runtime.
+pub(crate) struct ServiceWorkerImportFetchPlan {
+    tab_id: TabId,
+    profile: ProfileKey,
+    registration_id: u64,
+    request_id: u64,
+    urls: Vec<String>,
+    bypass_cache: bool,
+}
+
+impl ServiceWorkerImportFetchPlan {
+    pub(crate) fn tab_id(&self) -> TabId {
+        self.tab_id
+    }
+
+    pub(crate) fn urls(&self) -> &[String] {
+        &self.urls
+    }
+
+    pub(crate) fn bypass_cache(&self) -> bool {
+        self.bypass_cache
+    }
+}
+
+struct PendingImportFetch {
+    plan: ServiceWorkerImportFetchPlan,
+    receivers: Vec<Option<Receiver<Result<HttpResponse, String>>>>,
+    scripts: Vec<Option<ServiceWorkerImportedScript>>,
 }
 
 /// Browser-process single owner for Service Worker managers and runtimes.
@@ -401,6 +454,8 @@ pub(crate) struct BrowserServiceWorkerOwner {
     host_kind: ProfileHostKind,
     pending_fetches: Vec<PendingScriptFetch>,
     pending_evaluations: HashMap<(ProfileKey, u64), PendingEvaluation>,
+    import_fetch_plans: Vec<ServiceWorkerImportFetchPlan>,
+    pending_import_fetches: Vec<PendingImportFetch>,
     persistence_path: Option<PathBuf>,
     restoring: HashSet<u64>,
     /// IPC host 启动时无 renderer：持久化记录延迟到首个 renderer 接入时恢复。
@@ -440,13 +495,7 @@ impl BrowserServiceWorkerOwner {
         let had_records = !registrations.is_empty();
         for registration in registrations {
             self.normal_channels.set_pending_tab(tab_id);
-            match self.normal.start_restored_active(
-                &registration.script_url,
-                &registration.scope,
-                &registration.origin,
-                &registration.script_source,
-                registration.update_via_cache,
-            ) {
+            match self.normal.start_restored_active(registration) {
                 Ok(registration_id) => {
                     self.restoring.insert(registration_id);
                 }
@@ -476,13 +525,7 @@ impl BrowserServiceWorkerOwner {
         let had_records = if let Ok(registrations) = load_persisted_service_workers(&path) {
             let had_records = !registrations.is_empty();
             for registration in registrations {
-                match owner.normal.start_restored_active(
-                    &registration.script_url,
-                    &registration.scope,
-                    &registration.origin,
-                    &registration.script_source,
-                    registration.update_via_cache,
-                ) {
+                match owner.normal.start_restored_active(registration) {
                     Ok(registration_id) => {
                         owner.restoring.insert(registration_id);
                     }
@@ -526,6 +569,8 @@ impl BrowserServiceWorkerOwner {
             host_kind,
             pending_fetches: Vec::new(),
             pending_evaluations: HashMap::new(),
+            import_fetch_plans: Vec::new(),
+            pending_import_fetches: Vec::new(),
             persistence_path,
             restoring: HashSet::new(),
             deferred_restores: Vec::new(),
@@ -808,9 +853,35 @@ impl BrowserServiceWorkerOwner {
         self.pending_fetches.push(PendingScriptFetch { plan, receiver });
     }
 
+    pub(crate) fn take_import_fetch_plans(&mut self) -> Vec<ServiceWorkerImportFetchPlan> {
+        std::mem::take(&mut self.import_fetch_plans)
+    }
+
+    pub(crate) fn attach_import_fetches(
+        &mut self,
+        plan: ServiceWorkerImportFetchPlan,
+        receivers: Vec<Receiver<Result<HttpResponse, String>>>,
+    ) {
+        let script_count = plan.urls.len();
+        if receivers.len() != script_count {
+            let _ = self.manager_mut(plan.profile).complete_import_scripts(
+                plan.registration_id,
+                plan.request_id,
+                Err("Service Worker import fetch count mismatch".into()),
+            );
+            return;
+        }
+        self.pending_import_fetches.push(PendingImportFetch {
+            plan,
+            receivers: receivers.into_iter().map(Some).collect(),
+            scripts: vec![None; script_count],
+        });
+    }
+
     pub(crate) fn poll(&mut self) -> Vec<CompletedServiceWorkerResponse> {
         let mut completed = Vec::new();
         self.poll_fetches(&mut completed);
+        self.poll_import_fetches();
         self.poll_manager(ProfileKey::Normal, &mut completed);
         let private_tabs: Vec<_> = self.private.keys().copied().collect();
         for tab_id in private_tabs {
@@ -828,6 +899,32 @@ impl BrowserServiceWorkerOwner {
     pub(crate) fn disconnect_tab(&mut self, tab_id: TabId) {
         self.pending_fetches.retain(|pending| pending.plan.tab_id != tab_id);
         self.pending_evaluations.retain(|_, pending| pending.tab_id != tab_id);
+        let mut retained_plans = Vec::new();
+        for plan in std::mem::take(&mut self.import_fetch_plans) {
+            if plan.tab_id == tab_id {
+                let _ = self.manager_mut(plan.profile).complete_import_scripts(
+                    plan.registration_id,
+                    plan.request_id,
+                    Err("Service Worker import fetch client disconnected".into()),
+                );
+            } else {
+                retained_plans.push(plan);
+            }
+        }
+        self.import_fetch_plans = retained_plans;
+        let mut retained = Vec::new();
+        for pending in std::mem::take(&mut self.pending_import_fetches) {
+            if pending.plan.tab_id == tab_id {
+                let _ = self.manager_mut(pending.plan.profile).complete_import_scripts(
+                    pending.plan.registration_id,
+                    pending.plan.request_id,
+                    Err("Service Worker import fetch client disconnected".into()),
+                );
+            } else {
+                retained.push(pending);
+            }
+        }
+        self.pending_import_fetches = retained;
     }
 
     pub(crate) fn remove_private_profile(&mut self, tab_id: TabId) {
@@ -836,6 +933,10 @@ impl BrowserServiceWorkerOwner {
             .retain(|pending| pending.plan.profile != ProfileKey::Private(tab_id));
         self.pending_evaluations
             .retain(|(profile, _), _| *profile != ProfileKey::Private(tab_id));
+        self.import_fetch_plans
+            .retain(|plan| plan.profile != ProfileKey::Private(tab_id));
+        self.pending_import_fetches
+            .retain(|pending| pending.plan.profile != ProfileKey::Private(tab_id));
     }
 
     fn poll_fetches(&mut self, completed: &mut Vec<CompletedServiceWorkerResponse>) {
@@ -853,6 +954,59 @@ impl BrowserServiceWorkerOwner {
             }
         }
         self.pending_fetches = pending;
+    }
+
+    fn poll_import_fetches(&mut self) {
+        let mut retained = Vec::new();
+        for mut pending in std::mem::take(&mut self.pending_import_fetches) {
+            let origin = self
+                .manager(pending.plan.profile)
+                .and_then(|manager| manager.registration(pending.plan.registration_id))
+                .map(|registration| registration.origin.clone());
+            let Some(origin) = origin else {
+                continue;
+            };
+            let mut failure = None;
+            for index in 0..pending.receivers.len() {
+                let Some(receiver) = pending.receivers[index].as_ref() else {
+                    continue;
+                };
+                match receiver.try_recv() {
+                    Ok(result) => {
+                        pending.receivers[index] = None;
+                        match validate_imported_script_response(&pending.plan.urls[index], &origin, result) {
+                            Ok(script) => pending.scripts[index] = Some(script),
+                            Err(error) => {
+                                failure = Some(error);
+                                break;
+                            }
+                        }
+                    }
+                    Err(TryRecvError::Empty) => {}
+                    Err(TryRecvError::Disconnected) => {
+                        failure = Some("Service Worker import fetch worker exited".into());
+                        break;
+                    }
+                }
+            }
+            if let Some(error) = failure {
+                let _ = self.manager_mut(pending.plan.profile).complete_import_scripts(
+                    pending.plan.registration_id,
+                    pending.plan.request_id,
+                    Err(error),
+                );
+            } else if pending.scripts.iter().all(Option::is_some) {
+                let scripts = pending.scripts.into_iter().flatten().collect();
+                let _ = self.manager_mut(pending.plan.profile).complete_import_scripts(
+                    pending.plan.registration_id,
+                    pending.plan.request_id,
+                    Ok(scripts),
+                );
+            } else {
+                retained.push(pending);
+            }
+        }
+        self.pending_import_fetches = retained;
     }
 
     fn complete_fetch(
@@ -923,16 +1077,15 @@ impl BrowserServiceWorkerOwner {
             channels.set_pending_tab(plan.tab_id);
         }
         let result = match plan.purpose {
-            ServiceWorkerFetchPurpose::Register { update_via_cache } => self
-                .manager_mut(plan.profile)
-                .start_evaluation_with_update_via_cache(
+            ServiceWorkerFetchPurpose::Register { update_via_cache } => {
+                self.manager_mut(plan.profile).start_evaluation_with_update_via_cache(
                     plan.script_url.as_str(),
                     plan.scope.as_str(),
                     &plan.origin,
                     &script,
                     update_via_cache,
                 )
-                .map(|registration_id| (registration_id, false)),
+            }
             ServiceWorkerFetchPurpose::Update { registration_id, .. } => {
                 match self.manager_mut(plan.profile).start_update(registration_id, &script) {
                     Ok(ServiceWorkerUpdateOutcome::Unchanged { registration_id }) => {
@@ -946,19 +1099,18 @@ impl BrowserServiceWorkerOwner {
                         ));
                         return;
                     }
-                    Ok(ServiceWorkerUpdateOutcome::Started { registration_id }) => Ok((registration_id, true)),
+                    Ok(ServiceWorkerUpdateOutcome::Started { registration_id }) => Ok(registration_id),
                     Err(error) => Err(error),
                 }
             }
         };
         match result {
-            Ok((registration_id, update)) => {
+            Ok(registration_id) => {
                 self.pending_evaluations.insert(
                     (plan.profile, registration_id),
                     PendingEvaluation {
                         tab_id: plan.tab_id,
                         request_id: plan.request_id,
-                        update,
                     },
                 );
             }
@@ -974,17 +1126,63 @@ impl BrowserServiceWorkerOwner {
         let mut persistence_dirty = false;
         for event in events {
             match event {
-                ServiceWorkerManagerEvent::ScriptEvaluated { registration_id } => {
-                    if let Some(pending) = self.pending_evaluations.remove(&(profile, registration_id)) {
-                        let result = if pending.update {
+                ServiceWorkerManagerEvent::ImportScriptsRequested {
+                    registration_id,
+                    request_id,
+                    urls,
+                    bypass_cache,
+                } => {
+                    let pending_tab = self
+                        .pending_evaluations
+                        .get(&(profile, registration_id))
+                        .map(|pending| pending.tab_id);
+                    let owned_tab = self
+                        .channels_for(profile)
+                        .and_then(|channels| channels.take_owned_tab(registration_id));
+                    let tab_id = pending_tab.or(owned_tab);
+                    if let Some(tab_id) = tab_id {
+                        if let Some(channels) = self.channels_for(profile) {
+                            channels.record_owned(registration_id, tab_id);
+                        }
+                        self.import_fetch_plans.push(ServiceWorkerImportFetchPlan {
+                            tab_id,
+                            profile,
+                            registration_id,
+                            request_id,
+                            urls,
+                            bypass_cache,
+                        });
+                    } else {
+                        let _ = self.manager_mut(profile).complete_import_scripts(
+                            registration_id,
+                            request_id,
+                            Err("Service Worker import fetch has no renderer host".into()),
+                        );
+                    }
+                }
+                ServiceWorkerManagerEvent::UpdateChecked {
+                    candidate_registration_id,
+                    registration_id,
+                    changed,
+                } => {
+                    if let Some(pending) = self.pending_evaluations.remove(&(profile, candidate_registration_id)) {
+                        completed.push(success_response(
+                            pending.tab_id,
+                            pending.request_id,
                             ServiceWorkerResult::Updated {
                                 registration_id,
-                                changed: true,
-                            }
-                        } else {
-                            ServiceWorkerResult::Registered { registration_id }
-                        };
-                        completed.push(success_response(pending.tab_id, pending.request_id, result));
+                                changed,
+                            },
+                        ));
+                    }
+                }
+                ServiceWorkerManagerEvent::ScriptEvaluated { registration_id } => {
+                    if let Some(pending) = self.pending_evaluations.remove(&(profile, registration_id)) {
+                        completed.push(success_response(
+                            pending.tab_id,
+                            pending.request_id,
+                            ServiceWorkerResult::Registered { registration_id },
+                        ));
                     }
                 }
                 ServiceWorkerManagerEvent::ScriptFailed {
@@ -1220,9 +1418,36 @@ fn load_persisted_service_workers(path: &Path) -> Result<Vec<ServiceWorkerPersis
     let mut keys = HashSet::new();
     let mut total_script_bytes = 0usize;
     for registration in &state.registrations {
+        if registration.script_source.len() > MAX_SCRIPT_BYTES {
+            return Err("state main script exceeds the size limit".into());
+        }
         total_script_bytes = total_script_bytes
             .checked_add(registration.script_source.len())
             .ok_or_else(|| "state script size overflow".to_string())?;
+        if registration.imported_scripts.len() > MAX_PERSISTED_IMPORTS_PER_REGISTRATION {
+            return Err("state registration has too many imported scripts".into());
+        }
+        let mut imported_urls = HashSet::new();
+        for imported in &registration.imported_scripts {
+            total_script_bytes = total_script_bytes
+                .checked_add(imported.source.len())
+                .ok_or_else(|| "state script size overflow".to_string())?;
+            if imported.source.len() > MAX_SCRIPT_BYTES {
+                return Err("state imported script exceeds the size limit".into());
+            }
+            let url = Url::parse(&imported.url).map_err(|_| "state imported script URL is invalid".to_string())?;
+            if url.as_str() != imported.url
+                || url.fragment().is_some()
+                || !matches!(url.scheme(), "http" | "https" | "data")
+                || !url.username().is_empty()
+                || url.password().is_some()
+            {
+                return Err("state imported script URL is not canonical".into());
+            }
+            if !imported_urls.insert(imported.url.as_str()) {
+                return Err("state contains duplicate imported script URLs".into());
+            }
+        }
         if total_script_bytes as u64 > MAX_PERSISTED_FILE_BYTES {
             return Err("state scripts exceed the size limit".into());
         }
@@ -1263,6 +1488,56 @@ fn atomic_write_persistence(path: &Path, content: &str) -> Result<(), String> {
         .and_then(|directory| directory.sync_all())
         .map_err(|error| format!("sync state directory failed: {error}"))?;
     Ok(())
+}
+
+fn validate_imported_script_response(
+    requested_url: &str,
+    registration_origin: &str,
+    result: Result<HttpResponse, String>,
+) -> Result<ServiceWorkerImportedScript, String> {
+    let response = result.map_err(|message| format!("Service Worker import fetch failed: {message}"))?;
+    if !response.is_success() {
+        return Err(format!(
+            "Service Worker import fetch returned HTTP {}",
+            response.status_code
+        ));
+    }
+    if response.body.len() > MAX_SCRIPT_BYTES {
+        return Err("Service Worker imported script exceeds the size limit".into());
+    }
+    let final_url =
+        Url::parse(&response.url).map_err(|_| "Service Worker import fetch returned an invalid final URL")?;
+    if !matches!(final_url.scheme(), "http" | "https" | "data")
+        || !final_url.username().is_empty()
+        || final_url.password().is_some()
+    {
+        return Err("Service Worker import fetch returned a disallowed final URL".into());
+    }
+    if Url::parse(registration_origin).is_ok_and(|origin| origin.scheme() == "https") && final_url.scheme() == "http" {
+        return Err("Service Worker import redirect downgraded a secure context".into());
+    }
+    if matches!(final_url.scheme(), "http" | "https") && final_url.origin().ascii_serialization() != registration_origin
+    {
+        let allowed_origin = response
+            .header("access-control-allow-origin")
+            .is_some_and(|value| value == "*" || value == registration_origin);
+        if !allowed_origin {
+            return Err("Service Worker cross-origin import failed CORS validation".into());
+        }
+    }
+    let mime = response
+        .content_type_mime()
+        .ok_or_else(|| "Service Worker imported script has no JavaScript MIME type".to_string())?;
+    if !is_javascript_mime(mime) {
+        return Err(format!(
+            "Service Worker imported script has unsupported MIME type {mime}"
+        ));
+    }
+    let source = String::from_utf8(response.body).map_err(|_| "Service Worker imported script is not valid UTF-8")?;
+    Ok(ServiceWorkerImportedScript {
+        url: requested_url.to_string(),
+        source,
+    })
 }
 
 fn validate_client_url(client_url: &str, document: &Url) -> Result<Url, &'static str> {

@@ -186,6 +186,57 @@ fn navigator_register_projects_real_manager_state() {
 }
 
 #[test]
+fn navigator_register_executes_imported_classic_scripts_in_order() {
+    let requests = Arc::new(Mutex::new(Vec::new()));
+    let request_log = Arc::clone(&requests);
+    let mut webview = WebViewBuilder::new()
+        .url("https://example.test/page.html")
+        .script_source_fetcher(Arc::new(move |_, script| {
+            request_log.lock().unwrap().push(script.to_string());
+            match script {
+                "https://example.test/workers/sw.js" => Ok("importScripts('./first.js#ignored', '/shared/second.js');
+                     addEventListener('install', () => {
+                       if (globalThis.importOrder !== 'first,second') throw new Error('wrong import order');
+                     });"
+                .into()),
+                "https://example.test/workers/first.js" => {
+                    Ok("globalThis.importOrder = 'first'; var importedBinding = 7;".into())
+                }
+                "https://example.test/shared/second.js" => Ok(
+                    "if (globalThis.importedBinding !== 7) throw new Error('missing first import');
+                     globalThis.importOrder += ',second';"
+                        .into(),
+                ),
+                _ => Err(format!("unexpected script URL: {script}")),
+            }
+        }))
+        .build();
+
+    webview
+        .execute_script(
+            "globalThis.__importStage = 'pending';
+             navigator.serviceWorker.register('/workers/sw.js').then(function(reg) {
+               return navigator.serviceWorker.ready.then(function() {
+                 globalThis.__importStage = reg.active.state;
+               });
+             }, function(error) {
+               globalThis.__importStage = 'error:' + String(error);
+             });
+             'started';",
+        )
+        .unwrap();
+    assert_eq!(webview.execute_script("globalThis.__importStage").unwrap(), "activated");
+    assert_eq!(
+        requests.lock().unwrap().as_slice(),
+        [
+            "https://example.test/workers/sw.js",
+            "https://example.test/workers/first.js",
+            "https://example.test/shared/second.js",
+        ]
+    );
+}
+
+#[test]
 fn navigator_lifecycle_events_preserve_state_and_slot_task_order() {
     let mut webview = WebViewBuilder::new()
         .url("https://example.test/page.html")
@@ -499,6 +550,84 @@ fn navigator_update_compares_script_bytes_and_dispatches_updatefound_only_when_c
     assert_eq!(
         webview.execute_script("globalThis.__updateFailure").unwrap(),
         "TypeError|true|true|1"
+    );
+}
+
+#[test]
+fn navigator_update_detects_imported_script_byte_changes() {
+    let dependency_version = Arc::new(Mutex::new(1u32));
+    let fetch_version = Arc::clone(&dependency_version);
+    let mut webview = WebViewBuilder::new()
+        .url("https://example.test/page.html")
+        .script_source_fetcher(Arc::new(move |_, script| {
+            if script.ends_with("/sw.js") {
+                Ok("importScripts('./dependency.js');".into())
+            } else if script.ends_with("/dependency.js") {
+                Ok(format!(
+                    "globalThis.dependencyVersion = {};",
+                    *fetch_version.lock().unwrap()
+                ))
+            } else {
+                Err(format!("unexpected script URL: {script}"))
+            }
+        }))
+        .build();
+
+    webview
+        .execute_script(
+            "globalThis.__graphStage = 'pending';
+             navigator.serviceWorker.register('/sw.js').then(function(reg) {
+               globalThis.__graphReg = reg;
+               return navigator.serviceWorker.ready;
+             }).then(function() {
+               globalThis.__graphStage = 'ready';
+             });
+             'started';",
+        )
+        .unwrap();
+    assert_eq!(webview.execute_script("globalThis.__graphStage").unwrap(), "ready");
+    webview
+        .execute_script(
+            "globalThis.__graphUpdates = 0;
+             globalThis.__graphReg.addEventListener('updatefound', function() {
+               globalThis.__graphUpdates++;
+             });",
+        )
+        .unwrap();
+
+    webview
+        .execute_script(
+            "globalThis.__graphNoop = 'pending';
+             globalThis.__graphReg.update().then(function(reg) {
+               globalThis.__graphNoop = String(reg === globalThis.__graphReg);
+             });
+             'updating';",
+        )
+        .unwrap();
+    assert_eq!(webview.execute_script("globalThis.__graphNoop").unwrap(), "true");
+    assert_eq!(
+        webview.execute_script("String(globalThis.__graphUpdates)").unwrap(),
+        "0"
+    );
+
+    *dependency_version.lock().unwrap() = 2;
+    webview
+        .execute_script(
+            "globalThis.__graphChanged = 'pending';
+             globalThis.__graphReg.update().then(function(reg) {
+               globalThis.__graphChanged =
+                 String(reg === globalThis.__graphReg) + '|' + String(!!reg.installing);
+             });
+             'updating';",
+        )
+        .unwrap();
+    assert_eq!(
+        webview.execute_script("globalThis.__graphChanged").unwrap(),
+        "true|true"
+    );
+    assert_eq!(
+        webview.execute_script("String(globalThis.__graphUpdates)").unwrap(),
+        "1"
     );
 }
 

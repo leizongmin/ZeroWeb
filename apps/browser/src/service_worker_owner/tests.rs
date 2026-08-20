@@ -45,6 +45,45 @@ fn wait_for_response(owner: &mut BrowserServiceWorkerOwner) -> CompletedServiceW
     }
 }
 
+fn wait_for_import_plan(owner: &mut BrowserServiceWorkerOwner) -> ServiceWorkerImportFetchPlan {
+    let deadline = Instant::now() + Duration::from_secs(5);
+    loop {
+        let _ = owner.poll();
+        if let Some(plan) = owner.take_import_fetch_plans().into_iter().next() {
+            return plan;
+        }
+        assert!(Instant::now() < deadline, "owner import fetch plan timed out");
+        std::thread::sleep(Duration::from_millis(1));
+    }
+}
+
+fn attach_import_scripts(
+    owner: &mut BrowserServiceWorkerOwner,
+    plan: ServiceWorkerImportFetchPlan,
+    sources: &[(&str, &str)],
+) {
+    assert_eq!(plan.urls().len(), sources.len());
+    let receivers = plan
+        .urls()
+        .iter()
+        .zip(sources)
+        .map(|(url, (source, mime))| {
+            let (sender, receiver) = mpsc::channel();
+            sender
+                .send(Ok(HttpResponse {
+                    status_code: 200,
+                    headers: vec![("Content-Type".into(), (*mime).into())],
+                    body: source.as_bytes().to_vec(),
+                    url: url.clone(),
+                    redirect_count: 0,
+                }))
+                .unwrap();
+            receiver
+        })
+        .collect();
+    owner.attach_import_fetches(plan, receivers);
+}
+
 fn wait_for_registration_state(
     owner: &mut BrowserServiceWorkerOwner,
     registration_id: u64,
@@ -119,6 +158,191 @@ fn update_via_cache_controls_main_script_fetch_policy_and_snapshot() {
 }
 
 #[test]
+fn imported_classic_scripts_use_browser_fetch_policy_and_persist_graph() {
+    let mut owner = BrowserServiceWorkerOwner::with_local_hosts();
+    let main_script = "importScripts('./first.js#ignored', '/shared/second.js');
+         if (globalThis.importOrder !== 'first,second') throw new Error('wrong order');";
+    let mut request = register_request("https://example.test/page");
+    if let ServiceWorkerOperation::Register { update_via_cache, .. } = &mut request.operation {
+        *update_via_cache = ServiceWorkerUpdateViaCacheWire::None;
+    }
+    let disposition = owner.begin_request(TabId(1), false, 48, Some("https://example.test/page"), request);
+    attach_script(&mut owner, disposition, main_script);
+
+    let plan = wait_for_import_plan(&mut owner);
+    assert!(plan.bypass_cache());
+    assert_eq!(
+        plan.urls(),
+        ["https://example.test/first.js", "https://example.test/shared/second.js",]
+    );
+    attach_import_scripts(
+        &mut owner,
+        plan,
+        &[
+            ("globalThis.importOrder = 'first';", "text/javascript"),
+            ("globalThis.importOrder += ',second';", "application/javascript"),
+        ],
+    );
+
+    let response = wait_for_response(&mut owner);
+    let Ok(ServiceWorkerResult::Registered { registration_id }) = response.params.result else {
+        panic!("registration with imports failed");
+    };
+    wait_for_registration_state(&mut owner, registration_id, ServiceWorkerState::Activated);
+    let persisted = owner.normal.persistent_active_registrations();
+    assert_eq!(persisted[0].imported_scripts.len(), 2);
+    assert_eq!(persisted[0].imported_scripts[0].url, "https://example.test/first.js");
+    assert_eq!(
+        persisted[0].imported_scripts[1].url,
+        "https://example.test/shared/second.js"
+    );
+
+    let disposition = owner.begin_request(
+        TabId(1),
+        false,
+        49,
+        Some("https://example.test/page"),
+        ServiceWorkerRequestParams {
+            operation: ServiceWorkerOperation::Update { registration_id },
+        },
+    );
+    attach_script(&mut owner, disposition, main_script);
+    let plan = wait_for_import_plan(&mut owner);
+    assert!(plan.bypass_cache());
+    attach_import_scripts(
+        &mut owner,
+        plan,
+        &[
+            ("globalThis.importOrder = 'first';", "text/javascript"),
+            ("globalThis.importOrder += ',second';", "application/javascript"),
+        ],
+    );
+    assert_eq!(
+        wait_for_response(&mut owner).params.result,
+        Ok(ServiceWorkerResult::Updated {
+            registration_id,
+            changed: false,
+        })
+    );
+
+    let disposition = owner.begin_request(
+        TabId(1),
+        false,
+        50,
+        Some("https://example.test/page"),
+        ServiceWorkerRequestParams {
+            operation: ServiceWorkerOperation::Update { registration_id },
+        },
+    );
+    attach_script(&mut owner, disposition, main_script);
+    let plan = wait_for_import_plan(&mut owner);
+    assert!(plan.bypass_cache());
+    attach_import_scripts(
+        &mut owner,
+        plan,
+        &[
+            ("globalThis.importOrder = 'first';", "text/javascript"),
+            (
+                "globalThis.importOrder += ',second'; globalThis.dependencyVersion = 2;",
+                "application/javascript",
+            ),
+        ],
+    );
+    let Ok(ServiceWorkerResult::Updated {
+        registration_id: replacement,
+        changed: true,
+    }) = wait_for_response(&mut owner).params.result
+    else {
+        panic!("changed imported graph did not start a replacement");
+    };
+    assert_ne!(replacement, registration_id);
+}
+
+#[test]
+fn imported_script_response_enforces_javascript_mime_and_cors() {
+    let response = |headers: Vec<(String, String)>| {
+        Ok(HttpResponse {
+            status_code: 200,
+            headers,
+            body: b"globalThis.loaded = true;".to_vec(),
+            url: "https://cdn.test/dependency.js".into(),
+            redirect_count: 1,
+        })
+    };
+    assert!(
+        validate_imported_script_response(
+            "https://cdn.test/dependency.js",
+            "https://example.test",
+            response(vec![("Content-Type".into(), "text/plain".into())]),
+        )
+        .is_err()
+    );
+    assert!(
+        validate_imported_script_response(
+            "https://cdn.test/dependency.js",
+            "https://example.test",
+            response(vec![("Content-Type".into(), "text/javascript".into())]),
+        )
+        .is_err()
+    );
+    assert!(
+        validate_imported_script_response(
+            "https://cdn.test/dependency.js",
+            "https://example.test",
+            response(vec![
+                ("Content-Type".into(), "text/javascript; charset=utf-8".into()),
+                ("Access-Control-Allow-Origin".into(), "https://example.test".into()),
+            ]),
+        )
+        .is_ok()
+    );
+    assert!(
+        validate_imported_script_response(
+            "https://cdn.test/dependency.js",
+            "https://example.test",
+            Ok(HttpResponse {
+                status_code: 200,
+                headers: vec![
+                    ("Content-Type".into(), "text/javascript".into()),
+                    ("Access-Control-Allow-Origin".into(), "*".into()),
+                ],
+                body: b"globalThis.loaded = true;".to_vec(),
+                url: "http://cdn.test/dependency.js".into(),
+                redirect_count: 1,
+            }),
+        )
+        .is_err()
+    );
+}
+
+#[test]
+fn disconnect_cancels_queued_import_fetch_without_leaking_runtime() {
+    let mut owner = BrowserServiceWorkerOwner::with_local_hosts();
+    let disposition = owner.begin_request(
+        TabId(1),
+        false,
+        47,
+        Some("https://example.test/page"),
+        register_request("https://example.test/page"),
+    );
+    attach_script(&mut owner, disposition, "importScripts('/dependency.js');");
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while owner.import_fetch_plans.is_empty() {
+        let _ = owner.poll();
+        assert!(Instant::now() < deadline, "import fetch plan was not queued");
+        std::thread::sleep(Duration::from_millis(1));
+    }
+
+    owner.disconnect_tab(TabId(1));
+    assert!(owner.import_fetch_plans.is_empty());
+    while owner.normal.runtime_count() != 0 {
+        let _ = owner.poll();
+        assert!(Instant::now() < deadline, "disconnected import runtime did not close");
+        std::thread::sleep(Duration::from_millis(1));
+    }
+}
+
+#[test]
 fn register_fetches_evaluates_and_returns_correlated_id() {
     let mut owner = BrowserServiceWorkerOwner::with_local_hosts();
     let disposition = owner.begin_request(
@@ -174,6 +398,7 @@ fn update_fetch_compares_bytes_before_starting_replacement() {
             changed: false,
         })
     );
+    let _ = owner.poll();
     assert_eq!(owner.normal.runtime_count(), runtime_count);
 
     let disposition = owner.begin_request(

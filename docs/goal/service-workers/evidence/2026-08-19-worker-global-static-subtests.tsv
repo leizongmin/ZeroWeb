@@ -3,3 +3,4 @@ service-workers/service-worker/serviceworkerobject-scripturl.https.html	1	promis
 service-workers/service-worker/serviceworkerobject-scripturl.https.html	2	promise_test	Verify the scriptURL property: with-fragment	script-url
 service-workers/service-worker/serviceworkerobject-scripturl.https.html	3	promise_test	Verify the scriptURL property: with-query	script-url
 service-workers/service-worker/serviceworkerobject-scripturl.https.html	4	promise_test	Verify the scriptURL property: absolute	script-url
+service-workers/service-worker/import-scripts-data-url.https.html	1	promise_test	importScripts() supports data URLs	import-scripts

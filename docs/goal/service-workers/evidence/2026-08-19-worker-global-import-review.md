@@ -2,7 +2,7 @@
 
 **日期**：2026-08-19
 **上游 revision**：`04067ce9c7c2165e71ad7d0dde10a4c5cb394a83`
-**状态**：M0 assets ready（零 runtime 源码改动）
+**状态**：M3 `importScripts(data:)` promoted to core
 **逐案裁决**：[worker global/import review TSV](2026-08-19-worker-global-import-review.tsv)
 **静态资产**：[static assets TSV](2026-08-19-worker-global-static-assets.tsv)
 **静态 subtest**：[static subtests TSV](2026-08-19-worker-global-static-subtests.tsv)
@@ -23,22 +23,22 @@
   [IDL harness evidence](2026-08-19-idlharness-review.md) 专门解析，避免把 4 个生成 context
   的 IDL 子测试误算为一个。
 - 13 案实际产生 **53 个 subtest**：
-  - **1 case / 4 subtest**：静态 `scriptURL` core；
-  - **6 case / 16 subtest**：worker global/interface/import runtime defer；
+  - **2 case / 5 subtest**：静态 `scriptURL` + `importScripts(data:)` core；
+  - **5 case / 15 subtest**：worker global/interface/import runtime defer；
   - **4 case / 29 subtest**：动态 server/cross-origin import gated；
   - **1 case / 1 subtest**：M2 uncontrolled fetch bypass defer；
   - **1 case / 3 subtest**：dedicated module worker interception skip。
 - 初始 `direct_dependency_signals=none` 漏掉了 worker script 内的动态 MIME、redirect、server
   stash、跨源 import、worker-testharness 和 module import；不能作为可执行性结论。
-- `serviceworkerobject-scripturl` 已固定为 **1 case / 4 subtest / 2 asset / 949 bytes**，
-  记入 testharness 账本并落地 fetch/audit/regression Make targets。
+- static wave 已固定为 **2 case / 5 subtest / 4 asset / 1,681 bytes**，记入
+  testharness 账本并落地 fetch/audit/regression Make targets。
 - 全量 inventory 的逻辑剩余 review 从 84 降为 **71**。
 
 TSV SHA-256：
 
-- review：`f4a6b7b60cd383db5ab54bca186e3bae1ef6001348db676e62014aa988c3fe58`
-- static assets：`15376d8a63f98d8b7eeaa473981cdcc18b4be934d2521cac5428dafe0eda58e6`
-- static subtests：`bb33130214352e1db2dd2289145e6ce0419798199fa0ccdf19dde82abc992a64`
+- review：`c5760e774913f52452ac5af0c825c12053c972ad00a4f903e5400d286b28f951`
+- static assets：`970b19b3eb95233c197ef8539d36bbb43f4adf79f001cabc581b56401c758d73`
+- static subtests：`48c028ad34572bc1f7fd25b8a708e52e272d303fcc127f170660076b8c191627`
 
 ## 1. 分母核算
 
@@ -55,11 +55,15 @@ TSV SHA-256：
 
 ## 2. M1 runtime 输入
 
-### 静态 core（1 case / 4 subtest）
+### 静态 core（2 case / 5 subtest）
 
 `serviceworkerobject-scripturl.https.html` 使用同一个静态 `empty-worker.js`，验证相对 URL、
 fragment、query 和 absolute URL 的 `ServiceWorker.scriptURL`。它不依赖 iframe、动态 server、
 fetch interception 或消息结果通道，已加入 M1 runner 的下一静态 wave。
+
+`import-scripts-data-url.https.html` 使用静态 worker 调用
+`importScripts('data:text/javascript,')`；M3 typed import fetch/evaluate graph 落地后已提升为
+core，固定 revision baseline 为 Pass。
 
 资产恢复与审计：
 
@@ -67,7 +71,7 @@ fetch interception 或消息结果通道，已加入 M1 runner 的下一静态 w
 - `make audit-wpt-service-workers-static-wave`
 - `make test-wpt-service-workers-static-wave-assets`
 
-当前环境已验证 2/2 restore 与 verify-only；篡改、缺失必须失败，restore 可修复篡改。
+当前环境已验证 4/4 restore 与 verify-only；篡改、缺失必须失败，restore 可修复篡改。
 Tier A 18/18 与 next-wave 7/7 的共享根审计同时保持通过。
 
 ### Worker global 与 interface（3 case / 9 subtest）
@@ -81,9 +85,8 @@ Tier A 18/18 与 next-wave 7/7 的共享根审计同时保持通过。
 这些用例要求 runner 原生驱动 serviceworker global 或完成 remote worker result channel，
 属于 typed SW runtime 的验收输入。
 
-### Import runtime（3 case / 7 subtest）
+### Import runtime（2 case / 6 subtest）
 
-- `import-scripts-data-url`：classic SW 的 `importScripts(data:)`。
 - 两个 no-dynamic-import 文件：classic/module SW 中三种 `import()` 都必须拒绝；module case
   还先静态 import 同一模块，验证已加载模块也不能动态导入。
 
@@ -136,14 +139,14 @@ module worker 的顶层脚本、静态 import 和动态 import。当前 Goal 的
 |------|--------|--------|--------|--------|
 | 本批为 13 case / 53 subtest | 页面/worker test 声明 | TSV 机器求和 | 一致 | 高 |
 | MIME 文件为 23 subtest | 页面 2 项 | worker 21 项 | 一致 | 高 |
-| scriptURL 是静态 M1 core | 页面四次 helper 调用 | 唯一 worker 为静态 empty-worker | 一致 | 高 |
+| static wave 为 2 case / 5 subtest | 页面显式 promise_test | 四个固定 revision asset | 一致 | 高 |
 | 四个 import 文件需动态 server | worker URL/handler | header/redirect/stash/time 语义 | 一致 | 高 |
 | 逻辑剩余 review 为 71 | 前序 84 | 84 - 13 | 一致 | 高 |
 
 ## 7. 后续输入
 
 1. RFC 批准后，在 Tier A 和 next-wave 后执行 static-wave 4 个 subtest。
-2. typed SW runtime/worker result channel 落地后恢复 6 个 defer case。
+2. typed SW runtime/worker result channel 落地后恢复剩余 5 个 defer case。
 3. 动态 WPT server adapter 落地后恢复 4 个 gated importScripts case。
 4. M2 scope routing 落地后恢复 uncontrolled-page。
 5. `idlharness.https.any.js` 已固定为 4 个 generated URL / 787 个 subtest。
@@ -154,6 +157,6 @@ module worker 的顶层脚本、静态 import 和动态 import。当前 Goal 的
 - [x] 22/22 关键 worker/handler/module 已读并记录 blob SHA。
 - [x] remote worker 和 helper 生成测试已展开，53 个 subtest 无文本计数低估。
 - [x] 静态 import runtime 与动态 server import 语义已分开。
-- [x] static-wave 2/2 资产已固定并记入 testharness 账本。
+- [x] static-wave 4/4 资产已固定并记入 testharness 账本。
 - [x] static-wave restore/verify/fail-closed 回归通过，Tier A/next-wave 审计无退化。
 - [x] 未修改 runtime 源码、WPT 数据或既有 inventory 初筛记录。

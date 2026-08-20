@@ -120,6 +120,7 @@ hashbrown = "0.17"
 compact_str = "0.9"
 slotmap = "1"
 url = "2"
+data-url = "0.3"
 parking_lot = "0.12"
 pollster = "0.4"
 

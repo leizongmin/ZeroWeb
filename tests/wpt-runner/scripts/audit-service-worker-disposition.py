@@ -42,7 +42,7 @@ REVIEW_FILES = [
 IDL_SOURCE = "service-workers/idlharness.https.any.js"
 EXPECTED_SOURCE_COUNT = 294
 EXPECTED_URL_COUNT = 331
-EXPECTED_LANES = Counter(core=13, defer=50, gated=189, skip=42)
+EXPECTED_LANES = Counter(core=14, defer=49, gated=189, skip=42)
 SHA_PATTERN = re.compile(r"^[0-9a-f]{40}$")
 
 

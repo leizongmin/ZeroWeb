@@ -558,3 +558,51 @@ fn service_worker_host_message_event_round_trips() {
         }
     );
 }
+
+#[test]
+fn service_worker_host_import_scripts_round_trips_and_validates() {
+    let command = ServiceWorkerHostCommandParams {
+        registration_id: 9,
+        command: ServiceWorkerHostCommand::CompleteImportScripts {
+            request_id: 3,
+            result: Ok(vec!["globalThis.imported = true;".into()]),
+        },
+    };
+    assert!(command.validate().is_ok());
+    let decoded = roundtrip(IpcMessage {
+        id: 56,
+        kind: IpcMessageKind::ServiceWorkerHostCommand(command.clone()),
+    });
+    let IpcMessageKind::ServiceWorkerHostCommand(decoded_command) = decoded.kind else {
+        panic!("expected ServiceWorkerHostCommand");
+    };
+    assert_eq!(decoded_command, command);
+
+    let event = ServiceWorkerHostEventParams {
+        registration_id: 9,
+        event: ServiceWorkerHostEvent::ImportScriptsRequested {
+            request_id: 3,
+            specifiers: vec!["./dependency.js".into()],
+        },
+    };
+    let decoded = roundtrip(IpcMessage {
+        id: 57,
+        kind: IpcMessageKind::ServiceWorkerHostEvent(event.clone()),
+    });
+    let IpcMessageKind::ServiceWorkerHostEvent(decoded_event) = decoded.kind else {
+        panic!("expected ServiceWorkerHostEvent");
+    };
+    assert_eq!(decoded_event, event);
+
+    assert!(
+        ServiceWorkerHostCommandParams {
+            registration_id: 9,
+            command: ServiceWorkerHostCommand::CompleteImportScripts {
+                request_id: 0,
+                result: Ok(Vec::new()),
+            },
+        }
+        .validate()
+        .is_err()
+    );
+}

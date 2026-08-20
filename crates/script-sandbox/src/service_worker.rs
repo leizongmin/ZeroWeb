@@ -2,11 +2,16 @@
 
 use crate::threaded_runtime::ThreadedRuntimeCore;
 use crate::{Sandbox, SandboxConfig, ScriptError};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::mpsc;
+use std::sync::{Arc, Mutex};
 
 const ENGINE_INIT_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(5);
 const MAX_HEAP_BYTES: usize = 64 * 1024 * 1024;
 const DEFAULT_SCRIPT_TIMEOUT_MS: u64 = 5_000;
+const MAX_IMPORT_SCRIPTS_PER_CALL: usize = 64;
+const MAX_IMPORT_SCRIPT_URL_BYTES: usize = 64 * 1024;
+const MAX_IMPORTED_SCRIPT_BYTES: usize = 16 * 1024 * 1024;
 
 enum ServiceWorkerCommand {
     Evaluate {
@@ -23,6 +28,12 @@ enum ServiceWorkerCommand {
         client_id: String,
         client_url: String,
     },
+    Shutdown,
+}
+
+enum ServiceWorkerImportResponse {
+    Completed { request_id: u64, sources: Vec<String> },
+    Failed { request_id: u64, message: String },
     Shutdown,
 }
 
@@ -104,6 +115,30 @@ const SERVICE_WORKER_BOOTSTRAP: &str = r#"
   }
   globalThis.Clients = Clients;
   globalThis.clients = new Clients();
+  function importScriptsNetworkError(message) {
+    const error = new Error(String(message));
+    error.name = 'NetworkError';
+    return error;
+  }
+  globalThis.importScripts = function() {
+    const specifiers = [];
+    for (let i = 0; i < arguments.length; i++) {
+      specifiers.push(String(arguments[i]));
+    }
+    if (specifiers.length === 0) return;
+    let response;
+    try {
+      response = JSON.parse(globalThis.__zwImportScripts.apply(globalThis, specifiers));
+    } catch (error) {
+      throw importScriptsNetworkError('invalid importScripts host response');
+    }
+    if (!response || response.ok !== true || !Array.isArray(response.sources)) {
+      throw importScriptsNetworkError(response && response.error || 'importScripts failed');
+    }
+    for (let i = 0; i < response.sources.length; i++) {
+      (0, eval)(String(response.sources[i]));
+    }
+  };
   globalThis.__zwDispatchLifecycle = function(type, eventId) {
     const pending = [];
     claimClientsRequested = false;
@@ -248,6 +283,13 @@ pub enum ServiceWorkerEvent {
         /// Handler diagnostic.
         message: String,
     },
+    /// A classic worker `importScripts()` call requires host-owned fetching.
+    ImportScriptsRequested {
+        /// Runtime-local request ID used to correlate the blocking response.
+        request_id: u64,
+        /// String-converted URL arguments in call order.
+        specifiers: Vec<String>,
+    },
     /// The runtime thread exited.
     Closed,
 }
@@ -274,6 +316,7 @@ pub enum ServiceWorkerRuntimeState {
 /// Dedicated Worker `postMessage(String)` adapter.
 pub struct ServiceWorkerRuntime {
     core: ThreadedRuntimeCore<ServiceWorkerCommand, ServiceWorkerEvent>,
+    import_response_sender: mpsc::Sender<ServiceWorkerImportResponse>,
 }
 
 impl ServiceWorkerRuntime {
@@ -282,6 +325,7 @@ impl ServiceWorkerRuntime {
         let config = normalize_config(config);
         let lifecycle_timeout_ms = config.timeout_ms;
         let (init_sender, init_receiver) = mpsc::sync_channel(1);
+        let (import_response_sender, import_response_receiver) = mpsc::channel();
         let mut core = ThreadedRuntimeCore::spawn(
             "zero-service-worker",
             "Service Worker",
@@ -293,6 +337,67 @@ impl ServiceWorkerRuntime {
                         return;
                     }
                 };
+                let import_event_sender = event_sender.clone();
+                let import_response_receiver = Arc::new(Mutex::new(import_response_receiver));
+                let next_import_request_id = Arc::new(AtomicU64::new(1));
+                sandbox.register_callback(
+                    "__zwImportScripts",
+                    Box::new(move |specifiers| {
+                        if specifiers.len() > MAX_IMPORT_SCRIPTS_PER_CALL {
+                            return import_failure_json("too many importScripts URLs");
+                        }
+                        if specifiers
+                            .iter()
+                            .any(|specifier| specifier.len() > MAX_IMPORT_SCRIPT_URL_BYTES)
+                        {
+                            return import_failure_json("importScripts URL exceeds the size limit");
+                        }
+                        let request_id = next_import_request_id.fetch_add(1, Ordering::Relaxed);
+                        if import_event_sender
+                            .send(ServiceWorkerEvent::ImportScriptsRequested {
+                                request_id,
+                                specifiers: specifiers.to_vec(),
+                            })
+                            .is_err()
+                        {
+                            return import_failure_json("Service Worker host disconnected");
+                        }
+                        let deadline =
+                            std::time::Instant::now() + std::time::Duration::from_millis(lifecycle_timeout_ms);
+                        loop {
+                            let now = std::time::Instant::now();
+                            if now >= deadline {
+                                return import_failure_json("importScripts host response timed out");
+                            }
+                            let response = import_response_receiver
+                                .lock()
+                                .expect("import response lock")
+                                .recv_timeout(deadline.saturating_duration_since(now));
+                            match response {
+                                Ok(ServiceWorkerImportResponse::Completed {
+                                    request_id: response_id,
+                                    sources,
+                                }) if response_id == request_id => {
+                                    return serde_json::json!({"ok": true, "sources": sources}).to_string();
+                                }
+                                Ok(ServiceWorkerImportResponse::Failed {
+                                    request_id: response_id,
+                                    message,
+                                }) if response_id == request_id => return import_failure_json(&message),
+                                Ok(ServiceWorkerImportResponse::Shutdown) => {
+                                    return import_failure_json("Service Worker runtime is shutting down");
+                                }
+                                Ok(_) => continue,
+                                Err(mpsc::RecvTimeoutError::Timeout) => {
+                                    return import_failure_json("importScripts host response timed out");
+                                }
+                                Err(mpsc::RecvTimeoutError::Disconnected) => {
+                                    return import_failure_json("Service Worker host disconnected");
+                                }
+                            }
+                        }
+                    }),
+                );
                 if let Err(error) = sandbox.execute(SERVICE_WORKER_BOOTSTRAP) {
                     let _ = init_sender.send(Err(error));
                     return;
@@ -359,7 +464,10 @@ impl ServiceWorkerRuntime {
         )?;
 
         match init_receiver.recv_timeout(ENGINE_INIT_TIMEOUT) {
-            Ok(Ok(())) => Ok(Self { core }),
+            Ok(Ok(())) => Ok(Self {
+                core,
+                import_response_sender,
+            }),
             Ok(Err(error)) => {
                 core.terminate(ServiceWorkerCommand::Shutdown, || {});
                 Err(error)
@@ -449,8 +557,42 @@ impl ServiceWorkerRuntime {
         })
     }
 
+    /// Complete one blocking `importScripts()` host request.
+    pub fn complete_import_scripts(
+        &self,
+        request_id: u64,
+        result: Result<Vec<String>, String>,
+    ) -> Result<(), ScriptError> {
+        let response = match result {
+            Ok(sources) => {
+                if sources.len() > MAX_IMPORT_SCRIPTS_PER_CALL {
+                    return Err(ScriptError::InvalidInput(
+                        "too many imported Service Worker scripts".into(),
+                    ));
+                }
+                let total_bytes = sources.iter().try_fold(0usize, |total, source| {
+                    if source.len() > MAX_IMPORTED_SCRIPT_BYTES {
+                        return None;
+                    }
+                    total.checked_add(source.len())
+                });
+                if total_bytes.is_none_or(|bytes| bytes > MAX_IMPORTED_SCRIPT_BYTES) {
+                    return Err(ScriptError::InvalidInput(
+                        "imported Service Worker scripts exceed the size limit".into(),
+                    ));
+                }
+                ServiceWorkerImportResponse::Completed { request_id, sources }
+            }
+            Err(message) => ServiceWorkerImportResponse::Failed { request_id, message },
+        };
+        self.import_response_sender
+            .send(response)
+            .map_err(|_| ScriptError::RuntimeError("Service Worker runtime disconnected".into()))
+    }
+
     /// Shut down the engine thread with a bounded join.
     pub fn shutdown(&mut self) {
+        let _ = self.import_response_sender.send(ServiceWorkerImportResponse::Shutdown);
         self.core.terminate(ServiceWorkerCommand::Shutdown, || {});
     }
 
@@ -522,6 +664,10 @@ fn script_error_kind(error: &ScriptError) -> ServiceWorkerScriptErrorKind {
         ScriptError::InvalidInput(_) => ServiceWorkerScriptErrorKind::InvalidInput,
         ScriptError::EngineUnavailable(_) => ServiceWorkerScriptErrorKind::EngineUnavailable,
     }
+}
+
+fn import_failure_json(message: &str) -> String {
+    serde_json::json!({"ok": false, "error": message}).to_string()
 }
 
 fn dispatch_lifecycle(
@@ -672,6 +818,89 @@ mod tests {
                 "if (globalThis.version !== 1) throw new Error('lost global');",
                 "https://example.test/check.js",
             )
+            .unwrap();
+        assert!(matches!(
+            runtime.recv_timeout(Duration::from_secs(5)).unwrap(),
+            ServiceWorkerEvent::Evaluated { .. }
+        ));
+    }
+
+    #[test]
+    fn import_scripts_requests_host_and_executes_sources_in_global_order() {
+        let mut runtime = ServiceWorkerRuntime::new(test_config()).unwrap();
+        runtime
+            .evaluate(
+                "importScripts('/first.js', '/second.js');
+                 if (globalThis.importOrder.join(',') !== 'first,second') throw new Error('wrong order');
+                 if (globalThis.importedBinding !== 7) throw new Error('binding is not global');",
+                "https://example.test/sw.js",
+            )
+            .unwrap();
+        let ServiceWorkerEvent::ImportScriptsRequested { request_id, specifiers } =
+            runtime.recv_timeout(Duration::from_secs(5)).unwrap()
+        else {
+            panic!("missing importScripts request");
+        };
+        assert_eq!(specifiers, ["/first.js", "/second.js"]);
+        runtime
+            .complete_import_scripts(
+                request_id,
+                Ok(vec![
+                    "globalThis.importOrder = ['first']; var importedBinding = 7;".into(),
+                    "globalThis.importOrder.push('second');".into(),
+                ]),
+            )
+            .unwrap();
+        assert!(matches!(
+            runtime.recv_timeout(Duration::from_secs(5)).unwrap(),
+            ServiceWorkerEvent::Evaluated { .. }
+        ));
+    }
+
+    #[test]
+    fn import_scripts_failure_rejects_top_level_evaluation() {
+        let mut runtime = ServiceWorkerRuntime::new(test_config()).unwrap();
+        runtime
+            .evaluate("importScripts('/missing.js');", "https://example.test/sw.js")
+            .unwrap();
+        let ServiceWorkerEvent::ImportScriptsRequested { request_id, .. } =
+            runtime.recv_timeout(Duration::from_secs(5)).unwrap()
+        else {
+            panic!("missing importScripts request");
+        };
+        runtime
+            .complete_import_scripts(request_id, Err("HTTP 404".into()))
+            .unwrap();
+        assert!(matches!(
+            runtime.recv_timeout(Duration::from_secs(5)).unwrap(),
+            ServiceWorkerEvent::ScriptError {
+                kind: ServiceWorkerScriptErrorKind::Runtime,
+                message,
+                ..
+            } if message.contains("HTTP 404")
+        ));
+    }
+
+    #[test]
+    fn import_scripts_fetch_failure_is_named_network_error() {
+        let mut runtime = ServiceWorkerRuntime::new(test_config()).unwrap();
+        runtime
+            .evaluate(
+                "try {
+                   importScripts('/missing.js');
+                 } catch (error) {
+                   if (error.name !== 'NetworkError') throw error;
+                 }",
+                "https://example.test/sw.js",
+            )
+            .unwrap();
+        let ServiceWorkerEvent::ImportScriptsRequested { request_id, .. } =
+            runtime.recv_timeout(Duration::from_secs(5)).unwrap()
+        else {
+            panic!("missing importScripts request");
+        };
+        runtime
+            .complete_import_scripts(request_id, Err("HTTP 404".into()))
             .unwrap();
         assert!(matches!(
             runtime.recv_timeout(Duration::from_secs(5)).unwrap(),

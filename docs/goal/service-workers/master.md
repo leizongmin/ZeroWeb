@@ -2,7 +2,7 @@
 
 **入口文档**: [../service-workers.md](../service-workers.md)
 **创建日期**: 2026-08-17（goal 拆分 bootstrap）
-**最后更新**: 2026-08-20（M3-8 updateViaCache 完成）
+**最后更新**: 2026-08-20（M3-9 importScripts graph 完成）
 
 ---
 
@@ -52,10 +52,10 @@ M0 启动门禁解除；M1 core WPT 已收敛，M2 依赖未满足，当前推�
   skip；M1 review 57/57 已收口，全量剩余逻辑 review 95
 - ✅ Static Routing 裁决：本批 11 case / 70 subtest 全部 skip；连同前批 1 案，
   family 12/12 已裁决，全量剩余逻辑 review 84
-- ✅ Worker Global/import 裁决：13 case / 53 subtest 分为 1 static core、6 runtime defer、
+- ✅ Worker Global/import 裁决：13 case / 53 subtest 当前分为 2 static core、5 runtime defer、
   4 server gated、1 M2 defer、1 worker-client skip；全量剩余逻辑 review 71
-- ✅ static-wave 资产化：`serviceworkerobject-scripturl` 1 case / 4 subtest / 2 assets
-  已固定并记入 testharness 账本
+- ✅ static-wave 资产化：`serviceworkerobject-scripturl` + `import-scripts-data-url`
+  2 case / 5 subtest / 4 assets 已固定并记入 testharness 账本
 - ✅ IDL harness 裁决：4 generated URL / 787 subtest（175 window + 155 dedicated +
   155 shared + 302 serviceworker）；全量剩余逻辑 review 70
 - ✅ Navigation/redirect 裁决：15 source / 16 URL / 224 subtest 分为 2 defer /
@@ -65,8 +65,8 @@ M0 启动门禁解除；M1 core WPT 已收敛，M2 依赖未满足，当前推�
 - ✅ Final remaining 裁决：38 source / 270 subtest 分为 14 defer /
   8 gated / 16 skip；初始 review 152/152，逻辑剩余 0
 - ✅ Runner disposition contract：294 source / 331 URL 唯一映射为
-  13 core / 50 defer / 189 gated / 42 skip，可从原始 evidence 确定性重建；
-  13 个 core 与 runner 导入账本、四批 case asset 及 blob SHA 精确对应
+  14 core / 49 defer / 189 gated / 42 skip，可从原始 evidence 确定性重建；
+  14 个 core 与 runner 导入账本、四批 case asset 及 blob SHA 精确对应
 - ✅ M0 registry 契约补强：新增 4 项 Rust 单测，固定候选版本不提前替换 active、
   非法激活不扰动 active、注销旧 redundant 不删除新映射、跨 origin 替换隔离
 - ✅ M1 WorkerRuntime readiness：V8 20/20、QuickJS 3/3，WebView 双后端各 17/17；
@@ -113,6 +113,8 @@ M0 启动门禁解除；M1 core WPT 已收敛，M2 依赖未满足，当前推�
   browser restart 重建 runtime/controller，不重放 install/activate；private profile 不落盘
 - ✅ M3-8：`updateViaCache` 作为 typed registration metadata 贯穿页面、IPC、manager 与
   persistence；browser-owned top-level update fetch 按 `imports`/`all`/`none` 选择 cache mode
+- ✅ M3-9：classic `importScripts()` 经 typed blocking bridge 和 browser-owned batch fetch
+  在同一 global 顺序执行；startup graph 持久化并参与完整 update byte comparison
 
 ## 缺口清单
 
@@ -122,7 +124,7 @@ M0 启动门禁解除；M1 core WPT 已收敛，M2 依赖未满足，当前推�
 | S2 | scriptURL 不下载执行 | ✅ production navigator 经 browser fetch/evaluate |
 | S3 | fetch 拦截为零 | ⬜ M2（等 js-dom fetch 改造） |
 | S4 | 事件为 setTimeout 模拟 | ✅ manager transition log 为状态源；timer 只执行页面 task 投影 |
-| S5 | WPT 覆盖为零 | ✅ core 13/13 case、37/37 Pass、0 Fail/Timeout/Unsupported |
+| S5 | WPT 覆盖为零 | ✅ core 14/14 case、38/38 Pass、0 Fail/Timeout/Unsupported |
 
 ## 待用户决策
 
@@ -132,7 +134,7 @@ M0 启动门禁解除；M1 core WPT 已收敛，M2 依赖未满足，当前推�
 
 ## 下一步计划
 
-1. **M3 update follow-up**：classic `importScripts()` graph 抓取、顺序执行、持久化与 byte comparison
+1. **M3 import follow-up**：动态 server MIME/redirect/CORS WPT 与 event-time import fetch context
 2. **M2 依赖复核**：js-dom S6 与 storage-cache-api M1 land 后启动 fetch pipeline
 3. **M3 messaging follow-up**：MessagePort/MessageChannel transfer 与多 client 枚举
 
@@ -141,9 +143,9 @@ M0 启动门禁解除；M1 core WPT 已收敛，M2 依赖未满足，当前推�
 | 里程碑 | 状态 |
 |--------|------|
 | M0 — 选型 RFC（门控） | ✅ 方案 C 已批准 |
-| M1 — 脚本真实执行 + 生命周期真事件 | ✅ current core WPT 37/37 Pass |
+| M1 — 脚本真实执行 + 生命周期真事件 | ✅ current core WPT 38/38 Pass |
 | M2 — fetch 拦截 + Cache 集成 | ⬜ 门控：js-dom fetch 改造 land |
-| M3 — 控制语义 + 消息 + 收尾 | 🚧 控制语义 + 双向 message + update + persistence + top-level cache policy 完成 |
+| M3 — 控制语义 + 消息 + 收尾 | 🚧 classic startup graph + 控制/消息/update/persistence 完成 |
 
 ## 验证基线
 
@@ -187,7 +189,7 @@ M0 启动门禁解除；M1 core WPT 已收敛，M2 依赖未满足，当前推�
   `make audit-wpt-service-workers-next-wave`；与 Tier A 复用独立数据根，当前 7/7 通过；
   `make test-wpt-service-workers-next-wave-assets` 固化篡改/修复回归
 - Static-wave 资产恢复/审计：`make fetch-wpt-service-workers-static-wave` /
-  `make audit-wpt-service-workers-static-wave`；2 assets / 4 subtest；
+  `make audit-wpt-service-workers-static-wave`；4 assets / 5 subtest；
   `make test-wpt-service-workers-static-wave-assets` 固化篡改/修复回归
 - Update-wave 资产恢复/审计：`make fetch-wpt-service-workers-update-wave` /
   `make audit-wpt-service-workers-update-wave`；5 assets / 1 subtest；
@@ -238,6 +240,8 @@ M0 启动门禁解除；M1 core WPT 已收敛，M2 依赖未满足，当前推�
   [M3 registration persistence](evidence/2026-08-20-m3-registration-persistence.md)
 - M3-8 `updateViaCache`：typed metadata、browser HTTP cache mode、持久化迁移与双引擎投影见
   [M3 updateViaCache](evidence/2026-08-20-m3-update-via-cache.md)
+- M3-9 `importScripts()`：typed blocking bridge、browser batch fetch、graph update comparison、
+  persistence 与 14/38 WPT 见 [M3 importScripts graph](evidence/2026-08-20-m3-import-scripts-graph.md)
 
 ## M0 证据与决策记录
 
@@ -287,6 +291,7 @@ M0 启动门禁解除；M1 core WPT 已收敛，M2 依赖未满足，当前推�
 | 2026-08-20 | M3-6 update job | registration.update；top-level byte comparison；changed/no-op/error；disposition 13 core / 50 defer；WPT 13/37 |
 | 2026-08-20 | M3-7 registration persistence | normal active snapshot；runtime/controller restart；no lifecycle replay；private/损坏隔离 |
 | 2026-08-20 | M3-8 updateViaCache | typed registration policy；top-level browser cache mode；persistence migration；双引擎/生产链通过 |
+| 2026-08-20 | M3-9 importScripts graph | browser-owned batch fetch；ordered same-global execution；graph bytecheck/persistence；WPT 14/38 |
 | 2026-08-19 | 三方案对比 | 拒绝同线程 context（无调度隔离）；拒绝从零线程（复制安全基建）；推荐抽取 Worker 线程核 |
 | 2026-08-19 | owner | production browser process 单一 owner；WebView 只做同算法 in-process adapter |
 | 2026-08-19 | 首个 driving WPT | `activation-after-registration.https.html` |

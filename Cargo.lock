@@ -6513,6 +6513,7 @@ name = "zero-net"
 version = "0.1.0"
 dependencies = [
  "criterion",
+ "data-url",
  "dirs",
  "encoding_rs",
  "hyper",

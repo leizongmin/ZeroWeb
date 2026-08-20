@@ -13,6 +13,7 @@ hyper = { workspace = true }
 reqwest = { workspace = true, features = ["blocking", "gzip", "brotli", "deflate"] }
 tokio = { workspace = true }
 url = { workspace = true }
+data-url = { workspace = true }
 encoding_rs = { workspace = true }
 thiserror = { workspace = true }
 tracing = { workspace = true }
