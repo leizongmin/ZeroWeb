@@ -8,6 +8,7 @@
 use crate::engine::LayoutEngine;
 use crate::types::LayoutBox;
 use std::collections::HashMap;
+use zero_css_parser::values::LengthValue;
 use zero_dom::NodeId;
 use zero_style_system::StyleSystem;
 
@@ -688,6 +689,41 @@ fn r1366_flex_item_aspect_ratio_main_from_stretched_cross() {
     assert!(
         (h - 100.0).abs() < 8.0,
         "R1366: img height 应 = 100（非固有 200），got {h}"
+    );
+}
+
+/// R3616：flex transferred auto-min 扣 item cross padding 时也要解析 residual real length。
+/// direct `ComputedStyle` 下 `padding-top/bottom:1em;font-size:20px` 会让 100px cross 的
+/// content cross 变成 60px；旧逻辑只扣 `Px` padding，误按 100px transferred floor。
+#[test]
+fn r3616_flex_transferred_min_subtracts_relative_cross_padding() {
+    let html = r#"<html><body style="margin:0">
+<div id="container" style="display:flex; width:50px; height:100px;">
+  <img id="img" src="200x200-green.png" style="min-width:0px;">
+</div>
+</body></html>"#;
+    let doc = zero_dom::parse_html(html);
+    let mut sys = StyleSystem::new();
+    sys.set_viewport(800.0, 600.0);
+    let mut styles = sys.compute_styles(&doc, &[]);
+    let container = doc.get_element_by_id("container").expect("container");
+    let img = doc.get_element_by_id("img").expect("img");
+    let container_style = styles.get_mut(&container).expect("container style");
+    container_style.font_size = LengthValue::Px(20.0);
+    let img_style = styles.get_mut(&img).expect("img style");
+    img_style.font_size = LengthValue::Px(20.0);
+    img_style.padding_top = LengthValue::Em(1.0);
+    img_style.padding_bottom = LengthValue::Em(1.0);
+
+    let mut sizes = HashMap::new();
+    sizes.insert(img, (200.0_f32, 200.0_f32));
+    let mut engine = LayoutEngine::new(800.0, 600.0);
+    let result = engine.compute_with_img_sizes(&doc, &styles, sizes, HashMap::new());
+    let (w, _h) = find_box(&result.root, img).expect("img box found");
+
+    assert!(
+        (w - 60.0).abs() < 8.0,
+        "R3616: img width 应按 content cross 100-2em@20px 推 = 60，got {w}"
     );
 }
 

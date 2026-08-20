@@ -348,3 +348,7 @@ Infeasible multi-float placement exposed the no-op trap: "do not move the box" m
 Replaced-element intrinsic ratio sizing exposed the pre-taffy variant: if the tree builder computes an auto side from a specified side before final layout, it must resolve the specified side's real length first and write that used size back to taffy. Otherwise both the explicit side and the ratio-derived side inherit the converter's raw residual number.
 
 Ratio-only replaced sizing exposed the containing-size variant: fallback/default object sizing may still consult a definite parent size. That parent value is another CSS used-value boundary and must be resolved with the parent style context, not treated as usable only when already stored as px.
+
+Flex transferred auto-min exposed the cross-axis-replay variant: replaced flex item minimum sizing can replay parent cross size, item cross constraints, cross padding, and specified main size after the main style conversion path. Resolve each definite real length with the style that owns that operand before feeding the transferred-size equation; otherwise residual padding can make a content-box suggestion too large.
+
+Strict classic script execution exposed the wrapper-scope trap: catching page-script throws by wrapping raw classic code in `try { ... }` changes top-level function and lexical declaration visibility. Use a sentinel plus indirect global `eval` when strict runners need exception reporting without changing classic script scope.

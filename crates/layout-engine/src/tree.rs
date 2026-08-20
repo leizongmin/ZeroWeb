@@ -763,7 +763,7 @@ fn apply_replaced_element_sizing(
 /// 例如 `<img 固有 300×150>` 在 `display:flex;height:50px` 容器内：cross(height)=50，
 /// transferred main(width) = 50 × 300/150 = 100px。
 ///
-/// 仅当父是 flex/inline-flex 容器、有明确 cross size（Px）、子有 aspect_ratio、且
+/// 仅当父是 flex/inline-flex 容器、有明确 cross size、子有 aspect_ratio、且
 /// 子在水平书写模式下、cross-margin 非 auto、align-self 为 Auto/Stretch（cross 被拉伸）
 /// 时计算并设置 `min_size.main = transferred`（再被 specified main 钳制）。
 /// 其余情况保持 taffy 默认，避免回归。
@@ -807,40 +807,22 @@ fn apply_flex_transferred_min_size(
     //      cross 须取 min/max 钳制后的 used size（flex-minimum-width-flex-items-012：
     //      height:2000 + max-height:50 → used cross=50，transferred=100，非 2000×ratio）。
     let container_cross = if is_column {
-        match &parent_style.width {
-            LengthValue::Px(v) => Some(*v as f32),
-            _ => None,
-        }
+        resolve_tree_definite_real_length(&parent_style.width, parent_style)
     } else {
-        match &parent_style.height {
-            LengthValue::Px(v) => Some(*v as f32),
-            _ => None,
-        }
+        resolve_tree_definite_real_length(&parent_style.height, parent_style)
     };
     let (cross, from_item_cross) = match container_cross {
         Some(c) if c > 0.0 => (c, false),
         _ => {
             let item_cross_specified = if is_column {
-                match &computed.width {
-                    LengthValue::Px(v) => Some(*v as f32),
-                    _ => None,
-                }
+                resolve_tree_definite_real_length(&computed.width, computed)
             } else {
-                match &computed.height {
-                    LengthValue::Px(v) => Some(*v as f32),
-                    _ => None,
-                }
+                resolve_tree_definite_real_length(&computed.height, computed)
             };
             let item_max_cross = if is_column {
-                match &computed.max_width {
-                    LengthValue::Px(v) => Some(*v as f32),
-                    _ => None,
-                }
+                resolve_tree_definite_real_length(&computed.max_width, computed)
             } else {
-                match &computed.max_height {
-                    LengthValue::Px(v) => Some(*v as f32),
-                    _ => None,
-                }
+                resolve_tree_definite_real_length(&computed.max_height, computed)
             };
             // used cross = min(specified, max)（§4.5 transferred 基于 used cross，非 specified）
             let item_cross = match (item_cross_specified, item_max_cross) {
@@ -882,10 +864,7 @@ fn apply_flex_transferred_min_size(
     // → content 200 → transferred height = 200/ratio=100，非 240/ratio=120）。无 padding 时
     // item_cross_padding=0，不影响（driving/007/022 均无 padding）。仅扣 padding 不扣 border：
     // ZW 默认 border-width=medium=3px（即使 border-style:none），扣 border 会污染无 border 项。
-    let px = |lv: &LengthValue| match lv {
-        LengthValue::Px(v) => *v as f32,
-        _ => 0.0,
-    };
+    let px = |lv: &LengthValue| resolve_tree_definite_real_length(lv, computed).unwrap_or(0.0);
     let item_cross_padding = if is_column {
         px(&computed.padding_left) + px(&computed.padding_right)
     } else {
@@ -909,15 +888,9 @@ fn apply_flex_transferred_min_size(
     // 例：img 显式 width:50（< transferred 160）时，auto-min 须 ≤50，否则会错误 floor 到 160，
     // 把本应 50px 的 img 撑大（flex-item-transferred-sizes-padding-* 回归）。
     let specified_main = if is_column {
-        match &computed.height {
-            LengthValue::Px(v) => Some(*v as f32),
-            _ => None,
-        }
+        resolve_tree_definite_real_length(&computed.height, computed)
     } else {
-        match &computed.width {
-            LengthValue::Px(v) => Some(*v as f32),
-            _ => None,
-        }
+        resolve_tree_definite_real_length(&computed.width, computed)
     };
     if let Some(spec) = specified_main {
         auto_min = auto_min.min(spec);

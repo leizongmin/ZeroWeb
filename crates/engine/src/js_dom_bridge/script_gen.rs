@@ -24,7 +24,10 @@ pub struct DomEventDetail {
 }
 
 fn escape_js_string(s: &str) -> String {
-    s.replace('\\', "\\\\").replace('\'', "\\'")
+    s.replace('\\', "\\\\")
+        .replace('\'', "\\'")
+        .replace('\n', "\\n")
+        .replace('\r', "\\r")
 }
 
 /// 生成在 V8 中派发 DOM 事件的脚本片段。
@@ -454,8 +457,9 @@ pub const PAGE_SCRIPT_ERROR_GLOBAL: &str = "__zw_pgerr__";
 /// [`page_script_error_check`] 的 `===undefined` 判别可靠区分（即便 `throw undefined` 也只产生
 /// 字符串 "undefined"，不与 undefined 值混淆）。
 pub fn script_run_classic_page(code: &str, script_index: usize) -> String {
+    let code_literal = format!("'{}'", escape_js_string(code));
     format!(
-        "globalThis.__zw_set_current_script&&globalThis.__zw_set_current_script({idx});\nglobalThis.{g}=undefined;\ntry{{\n{code}\n}}catch(__zw_e){{globalThis.{g}=(__zw_e&&__zw_e.message)?String(__zw_e.message):String(__zw_e);}}\nfinally{{globalThis.__zw_clear_current_script&&globalThis.__zw_clear_current_script();}}",
+        "globalThis.__zw_set_current_script&&globalThis.__zw_set_current_script({idx});\nglobalThis.{g}=undefined;\ntry{{(0,eval)({code_literal});}}catch(__zw_e){{globalThis.{g}=(__zw_e&&__zw_e.message)?String(__zw_e.message):String(__zw_e);}}\nfinally{{globalThis.__zw_clear_current_script&&globalThis.__zw_clear_current_script();}}",
         idx = script_index,
         g = PAGE_SCRIPT_ERROR_GLOBAL
     )

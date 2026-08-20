@@ -9,8 +9,8 @@ use zero_engine::{
     BudgetAdvance, BudgetedRenderSession, DomMutation, MediaType, PipelineTimings, PrefersColorSchemeValue,
     RenderPipeline, RenderResult, extract_css_image_urls, extract_html_style_text, extract_img_srcs,
     extract_page_scripts_indexed, extract_stylesheet_hrefs, generate_js_dom_shim, image_resource_key,
-    register_dom_callbacks, resolve_document_url, script_clear_current_script, script_dispatch_dom_event,
-    script_set_current_script,
+    page_script_error_check, register_dom_callbacks, resolve_document_url, script_clear_current_script,
+    script_dispatch_dom_event, script_run_classic_page, script_set_current_script,
 };
 // R3150（闭合 R3121 latent）：script_dispatch_native_event 唯一用法（dispatch_event native_dom 分支）
 // 受 `#[cfg(feature = "v8")]` 门控——quickjs feature 下 unused import。独立 gated import 消 latent warning。
@@ -2108,12 +2108,25 @@ impl WebView {
             } else {
                 // Classic scripts must execute in the global script scope. Wrapping them in a
                 // block changes top-level async function and lexical declaration visibility.
-                format!(
-                    "{set}\n__zw_begin_script&&__zw_begin_script();\n{code}",
-                    set = script_set_current_script(script_index),
-                )
+                if strict {
+                    script_run_classic_page(&code, script_index)
+                } else {
+                    format!(
+                        "{set}\n__zw_begin_script&&__zw_begin_script();\n{code}",
+                        set = script_set_current_script(script_index),
+                    )
+                }
             };
             let execution = sandbox.execute(&full).map(|_| ());
+            let script_error = if strict && !is_module && execution.is_ok() {
+                match sandbox.execute(&page_script_error_check()) {
+                    Ok(result) if result.value.is_empty() => None,
+                    Ok(result) => Some(result.value),
+                    Err(e) => Some(format!("{e}")),
+                }
+            } else {
+                None
+            };
             // clear 无论成败都执行（R3258 currentScript 清理的 try-finally 等价——
             // 9ef914d10 改顺序执行后用 `execution.or(clear)` 误吞 strict 错误：execution
             // Err 时 .or() 取 clear 的 Ok → 抛错脚本在 strict 路径返回 Ok（js-dom R139
@@ -2124,6 +2137,9 @@ impl WebView {
             } else {
                 sandbox.execute(script_clear_current_script()).map(|_| ()).err()
             };
+            if let Some(e) = script_error {
+                return Err(WebViewError::Script(format!("page script: {e}")));
+            }
             let combined_err: Result<(), _> = execution.err().or(clear_err).map_or_else(|| Ok(()), Err);
             if let Err(e) = combined_err {
                 if strict {
