@@ -705,23 +705,30 @@ fn test_node_relation_implementation_r2815() {
         "createHTMLDocument title 透传"
     );
 
-    // getRootNode：#a 的根为 html（documentElement）。
+    // getRootNode：#a 在文档内 → 根是 Document（spec dom-node-getrootnode：沿 parentNode
+    // 上行到 null 父为止，documentElement 的 parentNode 是 document[R79]，继续上行到 document）。
+    // R136 勘误：旧断言期望 documentElement（html）是 R2815 时 _ancestorChain 只返元素父的
+    // shim 旧语义；WPT rootNode.html "must return the document when a node is in document"
+    // 断言根 === document。
     sandbox
         .execute(
             "globalThis.__a = document.querySelector('#a');\
-             globalThis.__root = __a.getRootNode().tagName;\
-             globalThis.__rootIsDocEl = (__a.getRootNode() === document.documentElement);",
+             globalThis.__rootIsDoc = (__a.getRootNode() === document);\
+             globalThis.__detached = document.createElement('div').getRootNode();",
         )
         .unwrap();
     assert_eq!(
-        sandbox.execute("String(globalThis.__root)").unwrap().value,
-        "HTML",
-        "getRootNode 返根 html"
+        sandbox.execute("String(globalThis.__rootIsDoc)").unwrap().value,
+        "true",
+        "getRootNode() === document（文档内节点的根是 Document）"
     );
     assert_eq!(
-        sandbox.execute("String(globalThis.__rootIsDocEl)").unwrap().value,
-        "true",
-        "getRootNode() === document.documentElement"
+        sandbox
+            .execute("String(globalThis.__detached === null)")
+            .unwrap()
+            .value,
+        "false",
+        "detached 元素 getRootNode() 返自身（非 null）"
     );
 
     // isSameNode：自身 true / 他节点 false。

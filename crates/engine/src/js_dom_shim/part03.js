@@ -575,6 +575,52 @@
     if (!other || typeof other !== 'object') return false;
     return _zwIsEqualNode(this, other);
   });
+  // R136（js-dom M4）：`Node.prototype.getRootNode` 泛型（spec `dom-node-getrootnode`
+  // https://dom.spec.whatwg.org/#dom-node-getrootnode）——沿 parentNode 链上行到根。
+  // 旧实现只有 proxy 元素的 get trap 分支（part04 `_ancestorChain` sel 版——handle-only
+  // 节点[createElement/Text/PI/fragment 产物]与 document/fragment/text 均不可达 →
+  // `getRootNode is not a function`，WPT rootNode.html 5F）。泛型 receiver 分派：
+  // ① 有自身 parentNode（proxy 元素经 _parentNodeFor；plain 节点经 R84 defineProperty
+  //   反链）→ 沿链上行；② document 自身是根（返 this）；③ detached 无父 → 返 this。
+  // composed 选项（shadow-including root）：宿主链上 shadow root 的 host 节点继续上行
+  // ——本沙箱 shadow root 经 attachShadow 的 host 反向可达（_zwShadowHost），无则等价
+  // 普通 root（best-effort）。
+  _zwDefProtoMethod(globalThis.Node.prototype, 'getRootNode', function (options) {
+    var composed = !!(options && options.composed);
+    var cur = this, guard = 0;
+    while (guard < 4096) {
+      guard++;
+      var p = null;
+      try { p = cur.parentNode; } catch (_e136p) { p = null; }
+      if (p === null || p === undefined) {
+        // composed：shadow root 的根继续经 host 上行（spec shadow-including root）。
+        if (composed && cur && cur.host !== undefined) {
+          var host = null;
+          try { host = cur.host; } catch (_e136h) { host = null; }
+          if (host && host !== cur) { cur = host; continue; }
+        }
+        return cur;
+      }
+      if (p === cur) return cur; // 环守卫
+      cur = p;
+    }
+    return cur;
+  });
+  // R136（js-dom M4）：native 叠加路径的原型链补挂——`_zwBuiltNodeChain=false`（native
+  // HTMLElement 已注册）时 native HTMLElement.prototype 是 FunctionTemplate 产物，原型链
+  // 直连 Object.prototype（不经 polyfill Node.prototype——native 不注册 Node ctor），上方
+  // 定义的 getRootNode 对 native 链上的对象（shadow innerHTML 解析子 _zwMEl 经
+  // HTMLDivElement.prototype → native HTMLElement.prototype 链）不可达。幂等 defineProperty
+  // 补挂（own 已有则不动——R130 XMLDocument 常量同款模式），polyfill 自建链路径（own 已有）
+  // 零改动。
+  if (!_zwBuiltNodeChain && globalThis.HTMLElement && globalThis.HTMLElement.prototype) {
+    try {
+      if (!Object.prototype.hasOwnProperty.call(globalThis.HTMLElement.prototype, 'getRootNode')) {
+        Object.defineProperty(globalThis.HTMLElement.prototype, 'getRootNode',
+          { value: globalThis.Node.prototype.getRootNode, writable: true, configurable: true });
+      }
+    } catch (_e136n) {}
+  }
   // js-dom M4 R128：DocumentType 构造器全局占位（WPT Node-cloneNode
   // "implementation.createDocumentType" 的 `check_copy(dt, copy, DocumentType)`——
   // `DocumentType is not defined` ReferenceError 崩用例；instanceof 经占位为 true 的
@@ -4402,9 +4448,21 @@
       // R123：顶层子盖宿主 handle 印章（__zwFragHostHandle）——PI 视图等解析节点上行找
       // sel/handle 祖先时到片段根即断（_zwMEl parentNode=null），印章提供宿主回链
       //（MutationObserver.observe 回落 + piNotify 投递）。
+      // R136（js-dom M4）：顶层子 parentNode 重指宿主容器 proxy——旧值是 _zwMBuildBodyTree
+      // 的内部 body 快照（tagName=BODY 的 plain object，非任何可达节点），沿 parentNode 上行
+      // 的 API（getRootNode/compareDocumentPosition）走到假 body 后断裂（WPT rootNode
+      // shadow-including root：shadowChild.getRootNode() 应为 shadowRoot 却命中假 body）。
+      // 宿主 proxy 须在印章盖完后取（_wrapHandle 幂等缓存，identity 稳定）。
       if (hostHandle != null) {
+        var _r136HostProxy = null;
+        try { _r136HostProxy = (typeof _wrapHandle === 'function') ? _wrapHandle(hostHandle) : null; } catch (_e136wp) {}
         for (var i = 0; i < kids.length; i++) {
-          if (kids[i]) kids[i].__zwFragHostHandle = hostHandle;
+          if (kids[i]) {
+            kids[i].__zwFragHostHandle = hostHandle;
+            if (_r136HostProxy) {
+              try { kids[i].parentNode = _r136HostProxy; } catch (_e136pp) {}
+            }
+          }
         }
       }
       return kids;

@@ -1864,3 +1864,70 @@ dt:InvalidCharacterError:true",
         "R135 name-validation spec regex 族：createElement \\x0B valid/NUL·空白·slash·gt invalid；NS localName NUL/\\x01 抛（createDocument 同步）；attribute 无首字符限制禁 '='；NS prefix 禁 ':' local 禁 '='；PI target regex；doctype NUL invalid"
     );
 }
+
+// R136（js-dom M4）：`Node.prototype.getRootNode` 泛型（spec dom-node-getrootnode，
+// https://dom.spec.whatwg.org/#dom-node-getrootnode）——沿 parentNode 链上行到根 +
+// composed 选项 shadow-including root。旧实现仅 proxy 元素 get trap 的 sel 版分支
+// （handle-only 元素 / document / fragment / text / PI 均不可达 → "not a function"，
+// WPT dom/nodes/rootNode.html 5F）。配套：shadow root 的 parentNode 恒 null（composed
+// 经 host 上行）+ shadow innerHTML 解析子的 parentNode 指宿主容器 proxy（沿链上行
+// 到 shadow root 而非断裂在内部假 body 快照）。
+#[test]
+fn test_get_root_node_generic_r136() {
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let mut sandbox = V8Sandbox::with_config(zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    })
+    .unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><div id=\"host\"></div></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry);
+
+    let out = sandbox
+        .execute(
+            "var parts = [];\
+             // detached 无父 → 自身（handle-only 元素 / text / PI / fragment 四形态）。
+             var e = document.createElement('div');\
+             parts.push('el:' + (e.getRootNode() === e));\
+             var t = document.createTextNode('x');\
+             parts.push('text:' + (t.getRootNode() === t));\
+             var pi = document.createProcessingInstruction('tgt', 'd');\
+             parts.push('pi:' + (pi.getRootNode() === pi));\
+             var f = document.createDocumentFragment();\
+             parts.push('frag-self:' + (f.getRootNode() === f));\
+             // fragment 子 → fragment 根（沿 parentNode 上行）。
+             var c = document.createElement('span');\
+             f.appendChild(c);\
+             parts.push('frag-child:' + (c.getRootNode() === f));\
+             // document 自身是根。
+             parts.push('doc:' + (document.getRootNode() === document));\
+             // 挂载元素 → document（sel 形态沿链上行）。
+             var host = document.getElementById('host');\
+             parts.push('mounted:' + (host.getRootNode() === document));\
+             // composed: shadow 树内子 → 无 composed 返 shadowRoot，composed 顺 host 到 document。
+             var sr = host.attachShadow({ mode: 'open' });\
+             sr.innerHTML = '<div class=\"sc\">content</div>';\
+             var sc = sr.querySelector('.sc');\
+             parts.push('has-sc:' + !!sc);\
+             parts.push('shadow-root:' + (sc.getRootNode() === sr));\
+             parts.push('shadow-composed:' + (sc.getRootNode({ composed: true }) === document));\
+             parts.push('sr-parent-null:' + (sr.parentNode === null));\
+             parts.join('|');",
+        )
+        .unwrap()
+        .value;
+    assert_eq!(
+        out,
+        "el:true|text:true|pi:true|frag-self:true|frag-child:true|doc:true|mounted:true|\
+has-sc:true|shadow-root:true|shadow-composed:true|sr-parent-null:true",
+        "R136 getRootNode 泛型：四形态 detached 自根 + fragment 子沿链 + document 自根 + 挂载元素到 document + shadow 子无 composed 返 shadowRoot/composed 穿 host 到 document + shadow root parentNode 恒 null"
+    );
+}

@@ -520,6 +520,10 @@
           return '';
         }
         if (prop === 'parentNode') {
+          // R136（js-dom M4）：shadow root 的 parentNode 恒 null（spec ShadowRoot 不在
+          // 树——getRootNode composed 经 host 上行不依赖 parentNode；WPT rootNode
+          // shadow-including root 断言）。
+          if (handle && _shadowHandles[handle]) return null;
           return _parentNodeFor(sel, handle);
         }
         if (prop === 'parentElement') {
@@ -780,12 +784,12 @@
           };
         }
         // `el.getRootNode()`——沿 parent 链到根（通常 html），返根 proxy。sel 缺失 → 返自身。
+        // R136（js-dom M4）：改委托 Node.prototype.getRootNode 泛型（spec
+        // `dom-node-getrootnode` + composed 选项 shadow-including root——旧 sel 版
+        // 对 handle-only / detached / document / fragment 不可达且不支持 options；
+        // 泛型沿 parentNode 上行天然覆盖 sel 与 handle 双形态，part03 定义）。
         if (prop === 'getRootNode') {
-          return function() {
-            if (!sel) return _makeProxy(sel, handle);
-            var chain = _ancestorChain(sel);
-            return _wrapSelector(chain.length ? chain[chain.length - 1] : sel);
-          };
+          return globalThis.Node.prototype.getRootNode;
         }
         // `el.isConnected`（只读 boolean，spec Node.isConnected：节点是否连入 document）——框架 / 库
         // 高频判活（jQuery cleanData、React commit-phase、mutation handler `if (!node.isConnected) return`；

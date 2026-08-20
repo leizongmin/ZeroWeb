@@ -1490,6 +1490,9 @@
       for (var _r117 = 0; _r117 < _rc117.length; _r117++) { try { globalThis.document.removeChild(_rc117[_r117]); } catch (_e117c) {} }
       globalThis.document.append.apply(globalThis.document, arguments);
     },
+    // R136（js-dom M4）：`document.getRootNode()`（spec `dom-node-getrootnode`——Document
+    // 自身是 root，返回自身；WPT rootNode "document node" 断言 getRootNode() === document）。
+    getRootNode: function () { return globalThis.document; },
     getElementById: function(id) {
       var idText = String(id);
       // R125：空串 id → null（浏览器 id 缓存只索引非空 id——静态 `<div id="">` 不入索引，
