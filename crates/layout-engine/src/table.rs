@@ -1155,19 +1155,9 @@ fn position_cells(
         //（max-height-applies-to-013：height:3in + max-height:1in → 行展开到 96 而非 288，
         // 避免溢出被 apply_table_size_conditions cap 到 96 的 table box）。
         let target_content_h = table_box.node_id.and_then(|id| styles.get(&id)).and_then(|s| {
-            use zero_css_parser::values::LengthValue;
-            let h_px = match &s.height {
-                LengthValue::Px(v) => Some(*v as f32),
-                _ => None,
-            };
-            let mn_px = match &s.min_height {
-                LengthValue::Px(v) => Some(*v as f32),
-                _ => None,
-            };
-            let mx_px = match &s.max_height {
-                LengthValue::Px(v) if *v != f64::INFINITY => Some(*v as f32),
-                _ => None,
-            };
+            let h_px = resolve_table_used_length(&s.height, s);
+            let mn_px = resolve_table_used_length(&s.min_height, s);
+            let mx_px = resolve_table_used_length(&s.max_height, s);
             let target = match h_px {
                 Some(h) => {
                     let mut t = h;
@@ -1571,6 +1561,23 @@ fn table_maxsize_no_shrink() -> bool {
     !matches!(std::env::var("ZW_TABLE_MAXSIZE_NO_SHRINK").as_deref(), Ok("0"))
 }
 
+fn resolve_table_used_length(value: &zero_css_parser::values::LengthValue, style: &ComputedStyle) -> Option<f32> {
+    use zero_css_parser::values::LengthValue;
+    match value {
+        LengthValue::Auto
+        | LengthValue::Percentage(_)
+        | LengthValue::MinContent
+        | LengthValue::MaxContent
+        | LengthValue::FitContent(_) => None,
+        LengthValue::Px(v) if *v == f64::INFINITY => None,
+        other => {
+            let font_size_px = zero_style_system::computed::resolve_length(&style.font_size, 16.0, None, None);
+            let px = zero_style_system::computed::resolve_length(other, font_size_px, None, None);
+            px.is_finite().then_some(px as f32)
+        }
+    }
+}
+
 /// 应用 min-height/max-height/min-width/max-width 约束到 table 容器。
 ///
 /// 在 position_cells 之后调用，根据 CSS 尺寸约束调整表格的实际尺寸。
@@ -1582,8 +1589,6 @@ fn apply_table_size_constraints(
     _spacing_y: f32,
     styles: &HashMap<NodeId, ComputedStyle>,
 ) {
-    use zero_css_parser::values::LengthValue;
-
     // R1382：匿名 table 包装盒（merge_orphan_table_run 生成，无 node_id）无样式，
     // 旧实现在此 early-return，致其尺寸永不更新为 intrinsic（cell 已按 grid 定位到
     // col_sum 跨度，但表盒 width/height 留 inherited 值）。float-applies-to-001~004
@@ -1641,8 +1646,7 @@ fn apply_table_size_constraints(
     // 应用 min-width / max-width（根据 box-sizing）
     let mut final_width = intrinsic_width;
     if let Some(style) = style {
-        if let LengthValue::Px(v) = &style.min_width {
-            let min_w = *v as f32;
+        if let Some(min_w) = resolve_table_used_length(&style.min_width, style) {
             let min_content = if is_border_box {
                 (min_w - padding_border_w).max(0.0)
             } else {
@@ -1650,11 +1654,9 @@ fn apply_table_size_constraints(
             };
             final_width = final_width.max(min_content);
         }
-        if let LengthValue::Px(v) = &style.max_width
-            && *v != f64::INFINITY
+        if let Some(max_w) = resolve_table_used_length(&style.max_width, style)
             && !table_maxsize_no_shrink()
         {
-            let max_w = *v as f32;
             let max_content = if is_border_box {
                 (max_w - padding_border_w).max(0.0)
             } else {
@@ -1670,15 +1672,14 @@ fn apply_table_size_constraints(
     // 因为 min-height-table WPT 测试验证了这一行为。
     let mut final_height = intrinsic_height;
     if let Some(style) = style {
-        if let LengthValue::Px(v) = &style.min_height {
-            let min_content = (*v as f32 - padding_border_h).max(0.0);
+        if let Some(min_h) = resolve_table_used_length(&style.min_height, style) {
+            let min_content = (min_h - padding_border_h).max(0.0);
             final_height = final_height.max(min_content);
         }
-        if let LengthValue::Px(v) = &style.max_height
-            && *v != f64::INFINITY
+        if let Some(max_h) = resolve_table_used_length(&style.max_height, style)
             && !table_maxsize_no_shrink()
         {
-            let max_content = (*v as f32 - padding_border_h).max(0.0);
+            let max_content = (max_h - padding_border_h).max(0.0);
             final_height = final_height.min(max_content);
         }
     }

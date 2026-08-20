@@ -320,3 +320,5 @@ Vertical table sizing exposed the direct-helper variant: full DOM+style pipeline
 Collapsed border conflict exposed the source-context variant: a single equation can compare lengths from table, row group, row, and cell styles. Resolve each residual real length with the font context of the style that owns that border, not a hard-coded root font size or the table's font context.
 
 Table shrink-to-fit exposed the constraint-replay variant: post-layout shrink helpers may replay `width`, `min-width`, `max-width`, and `height` constraints after taffy. Direct helper paths need their own used-value resolver for residual real lengths while leaving percentage values in the original upstream/taffy path.
+
+Regular table sizing exposed the paired-row-and-wrapper variant: table postprocess can consume the same sizing properties both for row height distribution and for final wrapper min/max constraints. A resolver added for shrink-to-fit tables must be mirrored in the normal table constraint path, with percentages kept on the existing taffy/upstream route.

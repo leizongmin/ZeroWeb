@@ -705,6 +705,50 @@ fn test_collapse_table_size_deducts_covered_edge_cell_border() {
     );
 }
 
+#[test]
+fn test_table_min_width_relative_length_expands_content_width() {
+    use zero_css_parser::values::LengthValue;
+
+    let mut doc = Document::new();
+    let root = doc.root();
+    let table_id = doc.create_element("div");
+    let cell_id = doc.create_element("div");
+    let _ = doc.append_child(root, table_id);
+
+    let mut styles = HashMap::new();
+    let mut table_style = ComputedStyle::default();
+    table_style.display = DisplayValue::Table;
+    table_style.font_size = LengthValue::Px(20.0);
+    table_style.min_width = LengthValue::Em(10.0);
+    styles.insert(table_id, table_style);
+
+    let mut cell_style = ComputedStyle::default();
+    cell_style.display = DisplayValue::TableCell;
+    styles.insert(cell_id, cell_style);
+
+    let cell_box = LayoutBox {
+        node_id: Some(cell_id),
+        width: 50.0,
+        height: 20.0,
+        content_width: 50.0,
+        content_height: 20.0,
+        ..Default::default()
+    };
+    let mut table_box = LayoutBox {
+        node_id: Some(table_id),
+        children: vec![cell_box],
+        ..Default::default()
+    };
+
+    let grid = build_grid(&table_box, &doc, &styles);
+    apply_table_size_constraints(&mut table_box, &grid, 20.0, &[50.0], 0.0, &styles);
+
+    assert_eq!(
+        table_box.content_width, 200.0,
+        "table min-width:10em at 20px should expand content width to 200"
+    );
+}
+
 /// `<col>`/`<colgroup>` 的 background-color 应被收集为列背景（CSS Tables §17.5.3）。
 /// visibility:collapse 的列跳过，非透明背景列记录 (node_id, x, width)。
 #[test]
