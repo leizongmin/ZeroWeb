@@ -1001,6 +1001,46 @@ fn test_resolve_abspos_root_cb_relative_length_insets() {
     );
 }
 
+#[test]
+fn test_resolve_abspos_root_cb_auto_size_stretches_with_relative_insets() {
+    use std::collections::HashMap;
+    use zero_css_parser::values::LengthValue;
+    let (_doc, key_id) = make_doc_with_body();
+
+    let abs_child = LayoutBox {
+        node_id: Some(key_id),
+        x: 0.0,
+        y: 0.0,
+        width: 10.0,
+        height: 10.0,
+        is_absolute: true,
+        ..Default::default()
+    };
+    let mut root = LayoutBox {
+        width: 800.0,
+        height: 600.0,
+        children: vec![abs_child],
+        ..Default::default()
+    };
+
+    let mut style = ComputedStyle::default();
+    style.font_size = LengthValue::Px(20.0);
+    style.width = LengthValue::Auto;
+    style.height = LengthValue::Auto;
+    style.left = LengthValue::Em(1.0);
+    style.right = LengthValue::Em(2.0);
+    style.top = LengthValue::Em(0.5);
+    style.bottom = LengthValue::Em(1.0);
+    let mut styles: HashMap<NodeId, ComputedStyle> = HashMap::new();
+    styles.insert(key_id, style);
+
+    resolve_abspos_against_root_cb(&mut root, 0.0, 0.0, 30.0, 40.0, 500.0, 400.0, &styles, true);
+
+    let abs = &root.children[0];
+    assert_eq!(abs.width, 440.0, "500 - 20px - 40px");
+    assert_eq!(abs.height, 370.0, "400 - 10px - 20px");
+}
+
 /// R1227：abspos（无 positioned 祖先，CB=viewport）`width:%`/`height:%` + border 须按
 /// box-sizing 解析。content-box（默认）下 `width:50%` 指 content，border-box = content +
 /// border；旧代码把 `%` 当 border-box 丢 border 致 border-box 偏小（abspos-containing-

@@ -580,15 +580,21 @@ pub(super) fn resolve_abspos_against_root_cb(
             // auto 尺寸 + 全长度 inset → stretch（§10.3.18/§10.6.4，仅非替换）
             if matches!(style.width, LengthValue::Auto)
                 && !child.is_replaced
-                && let (LengthValue::Px(left), LengthValue::Px(right)) = (&style.left, &style.right)
+                && let (Some(left), Some(right)) = (
+                    resolve_abspos_real_length(&style.left, &style.font_size, cb_width, cb_height),
+                    resolve_abspos_real_length(&style.right, &style.font_size, cb_width, cb_height),
+                )
             {
-                child.width = (cb_width - (*left as f32) - (*right as f32)).max(0.0);
+                child.width = (cb_width - left - right).max(0.0);
             }
             if matches!(style.height, LengthValue::Auto)
                 && !child.is_replaced
-                && let (LengthValue::Px(top), LengthValue::Px(bottom)) = (&style.top, &style.bottom)
+                && let (Some(top), Some(bottom)) = (
+                    resolve_abspos_real_length(&style.top, &style.font_size, cb_width, cb_height),
+                    resolve_abspos_real_length(&style.bottom, &style.font_size, cb_width, cb_height),
+                )
             {
-                child.height = (cb_height - (*top as f32) - (*bottom as f32)).max(0.0);
+                child.height = (cb_height - top - bottom).max(0.0);
             }
             // left/top 百分比：目标视口绝对坐标 = cb_origin + p% * cb，转回父相对坐标
             if let LengthValue::Percentage(p) = &style.left {
