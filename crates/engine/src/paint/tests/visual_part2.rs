@@ -730,6 +730,41 @@ fn test_column_rule_em_gap_matches_layout_3cols() {
     );
 }
 
+/// CSS Multi-column：column-gap: 4ch 须按 layout 的 multicol length resolver 解析为 32px
+///（ch≈8px），否则 paint column-rule X 坐标与 layout 列位置分叉。
+#[test]
+fn test_column_rule_ch_gap_matches_layout_3cols() {
+    use zero_style_system::{ColumnCountComputedValue, ColumnRuleStyleComputedValue, ColumnRuleWidthComputedValue};
+
+    let mut doc = zero_dom::Document::new();
+    let nid = doc.create_element("div");
+    let layout = make_box(Some(nid), 0.0, 0.0, 600.0, 200.0);
+
+    let mut style = ComputedStyle::default();
+    style.column_count = ColumnCountComputedValue::Number(3);
+    style.column_gap = LengthValue::Ch(4.0); // 4ch → 32px（layout multicol resolver）
+    style.column_rule_style = ColumnRuleStyleComputedValue::Solid;
+    style.column_rule_width = ColumnRuleWidthComputedValue::Medium;
+    let mut styles = HashMap::new();
+    styles.insert(nid, style);
+    let mut painter = Painter::new();
+    painter.paint(&layout, &styles, None);
+
+    let has_rule_at = |expected_x: f32| {
+        painter.primitives().fills.iter().any(|f| {
+            f.color.a > 0 && (f.rect.origin.x - expected_x).abs() < 0.5 && (f.rect.size.width - 3.0).abs() < 0.1
+        })
+    };
+    assert!(
+        has_rule_at(193.167),
+        "column-gap:4ch 3 列 rule@i=1 应在 x≈193.17（修复前 ch→0 → 198.5）"
+    );
+    assert!(
+        has_rule_at(403.833),
+        "column-gap:4ch 3 列 rule@i=2 应在 x≈403.83（修复前 ch→0 → 398.5）"
+    );
+}
+
 /// CSS Multi-column：column-count:auto 时 column-width 须按 em/% 解析推列数（与 layout 一致）。
 /// column-width:10em(font16→160) + 默认 gap(16) + content_w=600 → count=3，col_w≈189.33，
 /// rule@i=1 x≈195.83、@i=2 x≈401.17。修复前 paint 只认 Px column-width → em 触发 `_=>return`

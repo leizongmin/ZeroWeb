@@ -95,15 +95,26 @@ pub(super) fn inline_multicol_used_columns(
     used
 }
 
-/// 解析通用 LengthValue 为 px，与 layout（`multicol.rs:122-137` length_to_px）一致，限于
-/// 现实单位：Px/em/%/rem（em × font-size、% × 容器宽、rem × 16）。Vw/Vh/Ch 等占位单位保持 0
-///（layout 用常数 8.0/6.0，复制意义低）。供 column-gap / column-width paint 解析共用。
+/// 解析通用 LengthValue 为 px，与 layout（`multicol.rs` length_to_px）一致。
 fn resolve_length_px(l: &LengthValue, content_width: f32, font_size_px: f32) -> f32 {
     match l {
         LengthValue::Px(v) => *v as f32,
         LengthValue::Em(v) => *v as f32 * font_size_px,
+        LengthValue::Ex(v) => *v as f32 * font_size_px * 0.8,
+        LengthValue::Rex(v) => *v as f32 * 16.0 * 0.8,
+        LengthValue::Cap(v) => *v as f32 * font_size_px * 0.8,
+        LengthValue::Rcap(v) => *v as f32 * 16.0 * 0.8,
         LengthValue::Percentage(p) => *p as f32 / 100.0 * content_width,
         LengthValue::Rem(v) => *v as f32 * 16.0,
+        LengthValue::Vw(v) => *v as f32 * 8.0,
+        LengthValue::Vh(v) => *v as f32 * 6.0,
+        LengthValue::Vmin(v) => *v as f32 * 6.0,
+        LengthValue::Vmax(v) => *v as f32 * 8.0,
+        LengthValue::Ch(v) => *v as f32 * 8.0,
+        LengthValue::Rch(v) => *v as f32 * 8.0,
+        LengthValue::Ic(v) => *v as f32 * font_size_px,
+        LengthValue::Ric(v) => *v as f32 * 16.0,
+        LengthValue::FitContent(inner) => resolve_length_px(inner, content_width, font_size_px),
         _ => 0.0,
     }
 }
