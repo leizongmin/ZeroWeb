@@ -237,6 +237,8 @@ Perspective exposed the positive-length transform variant: transform helpers oft
 
 Filter exposed the px-only helper variant: a function can be named for the computed storage unit yet still must accept every real `<length>` unit at parse time. Reuse the shared length parser, then reject percentages and shared-parser aliases at the filter boundary before collapsing into the existing numeric representation.
 
+Background-position exposed the partial-enum length variant: after switching a property to store `LengthValue`, every downstream validator must enumerate all real units the shared parser can return. A comment that says "any length unit" is not enough; add representative tests for metric-relative units such as `ex` and root-relative variants such as `rch`.
+
 ## Root Cause
 
 The shorthand layer used heuristic component classifiers and treated unrecognized tokens as absent optional components. That is wrong for CSS shorthands such as `border`, where every token must match one of the allowed component grammars. A shared parser can also be broader than the property grammar that consumes it: general length parsing may accept `auto`, intrinsic sizing keywords, or percentages that `border-width` must reject.

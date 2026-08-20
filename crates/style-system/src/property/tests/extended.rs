@@ -1690,6 +1690,19 @@ fn test_apply_property_background_position_em_resolves_to_px() {
     );
 }
 
+#[test]
+fn test_apply_property_background_position_accepts_length_units() {
+    let mut style = ComputedStyle::default();
+    assert!(apply_property_value(&mut style, "background-position", "1ex 2rch"));
+    assert_eq!(
+        style.background_position,
+        vec![BackgroundPositionComputedValue::TwoValue(
+            Box::new(BackgroundPositionComputedValue::Length(12.8)),
+            Box::new(BackgroundPositionComputedValue::Length(16.0))
+        )]
+    );
+}
+
 /// R1417：默认 background-position 应为 0% 0%（top-left，CSS initial），非单值（旧实现
 /// 经 resolve_background_position 单值规则把垂直 default 到 center）。
 #[test]

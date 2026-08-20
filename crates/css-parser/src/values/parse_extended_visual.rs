@@ -873,6 +873,8 @@ fn is_background_position_length(raw: &str, lv: &LengthValue) -> bool {
     match lv {
         LengthValue::Px(v)
         | LengthValue::Em(v)
+        | LengthValue::Ex(v)
+        | LengthValue::Rex(v)
         | LengthValue::Rem(v)
         | LengthValue::Vh(v)
         | LengthValue::Vw(v)
@@ -881,6 +883,7 @@ fn is_background_position_length(raw: &str, lv: &LengthValue) -> bool {
         | LengthValue::Cap(v)
         | LengthValue::Rcap(v)
         | LengthValue::Ch(v)
+        | LengthValue::Rch(v)
         | LengthValue::Ic(v)
         | LengthValue::Ric(v) => v.is_finite(),
         _ => false,

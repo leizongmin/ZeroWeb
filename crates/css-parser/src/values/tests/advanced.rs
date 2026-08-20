@@ -726,6 +726,14 @@ fn test_parse_background_position_length() {
         Some(BackgroundPositionValue::Length(LengthValue::Em(2.0)))
     );
     assert_eq!(
+        parse_background_position("1ex"),
+        Some(BackgroundPositionValue::Length(LengthValue::Ex(1.0)))
+    );
+    assert_eq!(
+        parse_background_position("2rch"),
+        Some(BackgroundPositionValue::Length(LengthValue::Rch(2.0)))
+    );
+    assert_eq!(
         parse_background_position("-10px"),
         Some(BackgroundPositionValue::Length(LengthValue::Px(-10.0)))
     );
