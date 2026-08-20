@@ -3027,7 +3027,15 @@ impl WebView {
                 return Err("Service Worker import redirect downgraded a secure context".into());
             }
             if is_module && final_url.origin() != document.origin() {
-                return Err("Service Worker module redirect crossed origins".into());
+                let allow_origin = response
+                    .headers
+                    .iter()
+                    .find(|(name, _)| name.eq_ignore_ascii_case("access-control-allow-origin"))
+                    .map(|(_, value)| value.trim());
+                let document_origin = document.origin().ascii_serialization();
+                if !matches!(allow_origin, Some("*")) && allow_origin != Some(document_origin.as_str()) {
+                    return Err("Service Worker module response failed CORS validation".into());
+                }
             }
         }
         let mime = response

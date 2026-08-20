@@ -196,3 +196,4 @@ service-workers/service-worker/import-scripts-resource-map.https.html 04067ce9c7
 service-workers/service-worker/import-scripts-updated-flag.https.html 04067ce9c7c2165e71ad7d0dde10a4c5cb394a83 2026-08-20 SW-M3-import-event
 service-workers/service-worker/registration-scope-module-static-import.https.html 04067ce9c7c2165e71ad7d0dde10a4c5cb394a83 2026-08-20 SW-M3-module-graph
 service-workers/service-worker/update-bytecheck.https.html 04067ce9c7c2165e71ad7d0dde10a4c5cb394a83 2026-08-20 SW-M3-module-bytecheck
+service-workers/service-worker/update-bytecheck-cors-import.https.html 04067ce9c7c2165e71ad7d0dde10a4c5cb394a83 2026-08-20 SW-M3-module-cors

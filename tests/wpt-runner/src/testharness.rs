@@ -632,6 +632,7 @@ pub const SERVICE_WORKER_CORE_CASES: &[&str] = &[
     "service-workers/service-worker/state.https.html",
     "service-workers/service-worker/synced-state.https.html",
     "service-workers/service-worker/unregister.https.html",
+    "service-workers/service-worker/update-bytecheck-cors-import.https.html",
     "service-workers/service-worker/update-bytecheck.https.html",
     "service-workers/service-worker/update-result.https.html",
 ];
@@ -1170,7 +1171,14 @@ fn wpt_data_script_fetcher(wpt_root: &std::path::Path) -> Option<zero_webview::S
             return Err("empty path".to_string());
         }
         let full = root.join(clean);
-        std::fs::read_to_string(&full).map_err(|e| format!("script fetch failed: {clean} ({e})"))
+        std::fs::read_to_string(&full)
+            .map(|source| {
+                source
+                    .replace("{{host}}", "wpt.test")
+                    .replace("{{domains[www1]}}", "www1.wpt.test")
+                    .replace("{{ports[https][0]}}", "443")
+            })
+            .map_err(|e| format!("script fetch failed: {clean} ({e})"))
     }))
 }
 
@@ -1312,11 +1320,16 @@ fn wpt_data_service_worker_script_fetcher(
             } else {
                 "default".into()
             };
-            return Ok(service_worker_fixture_response(
-                format!("// {imported_content}\n"),
-                src.to_string(),
-                0,
-            ));
+            return Ok(zero_net::HttpResponse {
+                status_code: 200,
+                headers: vec![
+                    ("Content-Type".into(), "application/javascript".into()),
+                    ("Access-Control-Allow-Origin".into(), "*".into()),
+                ],
+                body: format!("// {imported_content}\n").into_bytes(),
+                url: src.to_string(),
+                redirect_count: 0,
+            });
         } else if clean.ends_with("/resources/import-scripts-version.py") {
             let mut state = state
                 .lock()
@@ -2336,13 +2349,13 @@ async_test(function(test) {
     }
 
     #[test]
-    fn service_worker_core_manifest_has_twenty_one_unique_cases() {
+    fn service_worker_core_manifest_has_twenty_two_unique_cases() {
         let unique = SERVICE_WORKER_CORE_CASES
             .iter()
             .copied()
             .collect::<std::collections::BTreeSet<_>>();
-        assert_eq!(SERVICE_WORKER_CORE_CASES.len(), 21);
-        assert_eq!(unique.len(), 21);
+        assert_eq!(SERVICE_WORKER_CORE_CASES.len(), 22);
+        assert_eq!(unique.len(), 22);
         assert!(
             SERVICE_WORKER_CORE_CASES
                 .iter()

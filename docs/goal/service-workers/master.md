@@ -2,7 +2,7 @@
 
 **入口文档**: [../service-workers.md](../service-workers.md)
 **创建日期**: 2026-08-17（goal 拆分 bootstrap）
-**最后更新**: 2026-08-20（M3-15 module update bytecheck 完成）
+**最后更新**: 2026-08-20（M3-16 module CORS 完成）
 
 ---
 
@@ -65,8 +65,8 @@ M0 启动门禁解除；M1 core WPT 已收敛，M2 依赖未满足，当前推�
 - ✅ Final remaining 裁决：38 source / 270 subtest 分为 14 defer /
   8 gated / 16 skip；初始 review 152/152，逻辑剩余 0
 - ✅ Runner disposition contract：294 source / 331 URL 唯一映射为
-  21 core / 49 defer / 182 gated / 42 skip，可从原始 evidence 确定性重建；
-  21 个 core 与 runner 导入账本、九批 case asset 及 blob SHA 精确对应
+  22 core / 49 defer / 181 gated / 42 skip，可从原始 evidence 确定性重建；
+  22 个 core 与 runner 导入账本、十批 case asset 及 blob SHA 精确对应
 - ✅ M0 registry 契约补强：新增 4 项 Rust 单测，固定候选版本不提前替换 active、
   非法激活不扰动 active、注销旧 redundant 不删除新映射、跨 origin 替换隔离
 - ✅ M1 WorkerRuntime readiness：V8 20/20、QuickJS 3/3，WebView 双后端各 17/17；
@@ -128,6 +128,8 @@ M0 启动门禁解除；M1 core WPT 已收敛，M2 依赖未满足，当前推�
   module scope WPT 3/3，core WPT 20/75
 - ✅ M3-15：状态化 bytecheck fixture 覆盖 classic/module 的 main/imported bytes
   unchanged/changed 4×2 矩阵；`update-bytecheck.https.html` 8/8，core WPT 21/83
+- ✅ M3-16：static module 跨源依赖由 browser/WebView response adapter 执行 CORS
+  校验，classic 维持 no-cors；cross-origin bytecheck 8/8，core WPT 22/91
 
 ## 缺口清单
 
@@ -137,7 +139,7 @@ M0 启动门禁解除；M1 core WPT 已收敛，M2 依赖未满足，当前推�
 | S2 | scriptURL 不下载执行 | ✅ production navigator 经 browser fetch/evaluate |
 | S3 | fetch 拦截为零 | ⬜ M2（等 js-dom fetch 改造） |
 | S4 | 事件为 setTimeout 模拟 | ✅ manager transition log 为状态源；timer 只执行页面 task 投影 |
-| S5 | WPT 覆盖为零 | ✅ core 21/21 case、83/83 Pass、0 Fail/Timeout/Unsupported |
+| S5 | WPT 覆盖为零 | ✅ core 22/22 case、91/91 Pass、0 Fail/Timeout/Unsupported |
 
 ## 待用户决策
 
@@ -147,7 +149,7 @@ M0 启动门禁解除；M1 core WPT 已收敛，M2 依赖未满足，当前推�
 
 ## 下一步计划
 
-1. **M3 module follow-up**：module re-export graph 与 cross-origin module response policy
+1. **M3 module follow-up**：module re-export graph 与 registration error semantics
 2. **M2 依赖复核**：js-dom S6 与 storage-cache-api M1 land 后启动 fetch pipeline
 3. **M3 messaging follow-up**：MessagePort/MessageChannel transfer 与多 client 枚举
 
@@ -156,7 +158,7 @@ M0 启动门禁解除；M1 core WPT 已收敛，M2 依赖未满足，当前推�
 | 里程碑 | 状态 |
 |--------|------|
 | M0 — 选型 RFC（门控） | ✅ 方案 C 已批准 |
-| M1 — 脚本真实执行 + 生命周期真事件 | ✅ current core WPT 83/83 Pass |
+| M1 — 脚本真实执行 + 生命周期真事件 | ✅ current core WPT 91/91 Pass |
 | M2 — fetch 拦截 + Cache 集成 | ⬜ 门控：js-dom fetch 改造 land |
 | M3 — 控制语义 + 消息 + 收尾 | 🚧 classic startup graph + 控制/消息/update/persistence 完成 |
 
@@ -277,6 +279,8 @@ M0 启动门禁解除；M1 core WPT 已收敛，M2 依赖未满足，当前推�
   [M3 static module graph](evidence/2026-08-20-m3-module-static-graph.md)
 - M3-15 module update bytecheck：classic/module main/imported 4×2 更新矩阵与
   21/83 WPT 见 [M3 module bytecheck](evidence/2026-08-20-m3-module-bytecheck.md)
+- M3-16 module CORS：跨源 module ACAO 校验、classic no-cors 隔离与 22/91 WPT 见
+  [M3 module CORS](evidence/2026-08-20-m3-module-cors.md)
 
 ## M0 证据与决策记录
 
@@ -333,6 +337,7 @@ M0 启动门禁解除；M1 core WPT 已收敛，M2 依赖未满足，当前推�
 | 2026-08-20 | M3-13 module type contract | type 贯穿 JS/IPC/storage/persistence/renderer；module loader 前 fail closed |
 | 2026-08-20 | M3-14 static module graph | canonical referrer 递归 fetch/compile/execute；module WPT 3/3；core 20/75 |
 | 2026-08-20 | M3-15 module update bytecheck | classic/module main/imported 4×2 矩阵 8/8；core 21/83 |
+| 2026-08-20 | M3-16 module CORS | cross-origin module ACAO fail closed；bytecheck 8/8；core 22/91 |
 | 2026-08-19 | 三方案对比 | 拒绝同线程 context（无调度隔离）；拒绝从零线程（复制安全基建）；推荐抽取 Worker 线程核 |
 | 2026-08-19 | owner | production browser process 单一 owner；WebView 只做同算法 in-process adapter |
 | 2026-08-19 | 首个 driving WPT | `activation-after-registration.https.html` |

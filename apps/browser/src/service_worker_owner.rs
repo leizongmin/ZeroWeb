@@ -1578,11 +1578,20 @@ fn validate_imported_script_response(
     {
         return Err("Service Worker import fetch returned a disallowed final URL".into());
     }
-    if Url::parse(registration_origin).is_ok_and(|origin| origin.scheme() == "https") && final_url.scheme() == "http" {
+    let registration_url =
+        Url::parse(registration_origin).map_err(|_| "Service Worker registration origin is invalid")?;
+    if registration_url.scheme() == "https" && final_url.scheme() == "http" {
         return Err("Service Worker import redirect downgraded a secure context".into());
     }
-    if is_module && Url::parse(registration_origin).map_or(true, |origin| final_url.origin() != origin.origin()) {
-        return Err("Service Worker module redirect crossed origins".into());
+    if is_module && final_url.origin() != registration_url.origin() {
+        let allow_origin = response
+            .headers
+            .iter()
+            .find(|(name, _)| name.eq_ignore_ascii_case("access-control-allow-origin"))
+            .map(|(_, value)| value.trim());
+        if !matches!(allow_origin, Some("*")) && allow_origin != Some(registration_origin) {
+            return Err("Service Worker module response failed CORS validation".into());
+        }
     }
     let mime = response
         .content_type_mime()

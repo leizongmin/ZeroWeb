@@ -1,0 +1,2 @@
+path	manifest_type	roles	referenced_by	bytes	templated	git_blob_sha
+service-workers/service-worker/update-bytecheck-cors-import.https.html	testharness	case	1	3727	no	121a7378e358d632cee3ef56e79a19c865ea5c3d

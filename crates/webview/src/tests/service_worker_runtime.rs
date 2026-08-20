@@ -386,6 +386,51 @@ fn structured_import_response_allows_cross_origin_without_cors_headers() {
 }
 
 #[test]
+fn module_import_response_rejects_cross_origin_without_cors_headers() {
+    let mut webview = WebViewBuilder::new()
+        .url("https://example.test/page.html")
+        .service_worker_script_fetcher(Arc::new(|_, script| {
+            let body = match script {
+                "https://example.test/sw.js" => "import 'https://cdn.test/dependency.js';",
+                "https://cdn.test/dependency.js" => "export const value = 1;",
+                _ => return Err(format!("unexpected script URL: {script}")),
+            };
+            Ok(zero_net::HttpResponse {
+                status_code: 200,
+                headers: vec![("Content-Type".into(), "text/javascript".into())],
+                body: body.as_bytes().to_vec(),
+                url: script.to_string(),
+                redirect_count: 0,
+            })
+        }))
+        .build();
+
+    webview
+        .execute_script(
+            "globalThis.__moduleCorsResult = 'pending';
+             navigator.serviceWorker.register('/sw.js', {type:'module'}).then(
+               () => { globalThis.__moduleCorsResult = 'unexpected-success'; },
+               error => { globalThis.__moduleCorsResult = String(error.message); });",
+        )
+        .unwrap();
+    let deadline = Instant::now() + Duration::from_secs(20);
+    loop {
+        let _ = webview.poll_service_worker_runtime_events();
+        if webview.execute_script("globalThis.__moduleCorsResult").unwrap() != "pending" {
+            break;
+        }
+        assert!(Instant::now() < deadline, "module CORS rejection timed out");
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    assert!(
+        webview
+            .execute_script("globalThis.__moduleCorsResult")
+            .unwrap()
+            .contains("failed CORS validation")
+    );
+}
+
+#[test]
 fn structured_import_response_rejects_non_javascript_mime() {
     let mut webview = WebViewBuilder::new()
         .service_worker_script_fetcher(Arc::new(|_, script| {

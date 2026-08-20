@@ -1099,8 +1099,7 @@ impl ServiceWorkerManager {
             ));
         }
         let registration_origin = url::Url::parse(&registration.origin)
-            .map_err(|_| ServiceWorkerManagerError::InvalidInput("invalid Service Worker origin".into()))?
-            .origin();
+            .map_err(|_| ServiceWorkerManagerError::InvalidInput("invalid Service Worker origin".into()))?;
         specifiers
             .iter()
             .map(|specifier| {
@@ -1115,10 +1114,10 @@ impl ServiceWorkerManager {
                 if !matches!(url.scheme(), "http" | "https")
                     || !url.username().is_empty()
                     || url.password().is_some()
-                    || url.origin() != registration_origin
+                    || (registration_origin.scheme() == "https" && url.scheme() != "https")
                 {
                     return Err(ServiceWorkerManagerError::InvalidInput(
-                        "Service Worker module URL must be same-origin http(s)".into(),
+                        "Service Worker module URL is not fetchable".into(),
                     ));
                 }
                 url.set_fragment(None);
