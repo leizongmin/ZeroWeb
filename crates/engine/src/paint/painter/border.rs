@@ -3,7 +3,7 @@
 //! 包含 BorderEdgeSpec、paint_borders、paint_border_image、paint_border_edge、
 //! border_fill_rect、paint_3d_border、paint_outline。
 
-use zero_css_parser::values::ColorValue;
+use zero_css_parser::values::{ColorValue, LengthValue};
 use zero_layout_engine::LayoutBox;
 use zero_render_foundation::color::Color;
 use zero_render_foundation::geometry::Rect;
@@ -15,7 +15,7 @@ use zero_style_system::{
 };
 
 use super::super::color::{color_value_to_render, resolve_color_current};
-use super::super::helpers::{image_resource_key, length_to_f32};
+use super::super::helpers::image_resource_key;
 
 /// 边框边缘规格 — 描述一条边框的几何位置和方向。
 pub(super) struct BorderEdgeSpec {
@@ -738,7 +738,7 @@ impl super::Painter {
             return;
         }
 
-        let outline_width = length_to_f32(&style.outline_width);
+        let outline_width = resolve_outline_length(&style.outline_width, style);
 
         if outline_width <= 0.0 || style.outline_style == OutlineStyleValue::None {
             return;
@@ -750,7 +750,7 @@ impl super::Painter {
             // 既有外扩矩形几何退化为贴 border-box 边内侧绘制）。driving: outline-offset-inset-001/003/004。
             -outline_width
         } else {
-            length_to_f32(&style.outline_offset)
+            resolve_outline_length(&style.outline_offset, style)
         };
 
         let w = box_node.width;
@@ -929,6 +929,16 @@ impl super::Painter {
                     second,
                 );
             }
+        }
+    }
+}
+
+fn resolve_outline_length(length: &LengthValue, style: &ComputedStyle) -> f32 {
+    match length {
+        LengthValue::Px(v) => *v as f32,
+        other => {
+            let font_size = zero_style_system::computed::resolve_length(&style.font_size, 16.0, None, None);
+            zero_style_system::computed::resolve_length(other, font_size, None, None) as f32
         }
     }
 }

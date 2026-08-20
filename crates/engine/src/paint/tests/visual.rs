@@ -1040,6 +1040,30 @@ fn test_painter_outline_with_offset() {
     assert_eq!(top.rect.size.height, 2.0);
 }
 
+#[test]
+fn test_painter_outline_relative_lengths() {
+    let mut doc = zero_dom::Document::new();
+    let elem = doc.create_element("div");
+    let layout = make_box(Some(elem), 10.0, 20.0, 100.0, 50.0);
+
+    let mut styles = HashMap::new();
+    let mut style = ComputedStyle::default();
+    style.font_size = LengthValue::Px(20.0);
+    style.outline_width = LengthValue::Em(0.5);
+    style.outline_offset = LengthValue::Em(0.25);
+    style.outline_style = OutlineStyleValue::Solid;
+    style.outline_color = ColorValue::Rgba(0, 128, 0, 255);
+    styles.insert(elem, style);
+
+    let mut painter = Painter::new();
+    painter.paint(&layout, &styles, None);
+
+    assert_eq!(painter.primitives().fills.len(), 4);
+    let top = &painter.primitives().fills[0];
+    assert_eq!(top.rect.origin.y, 5.0);
+    assert_eq!(top.rect.size.height, 10.0);
+}
+
 /// 测试 HSL 黄色（60°, 100%, 50%）转换。
 #[test]
 fn test_hsla_yellow() {

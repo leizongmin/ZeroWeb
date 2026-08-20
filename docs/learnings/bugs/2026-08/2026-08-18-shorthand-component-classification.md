@@ -278,3 +278,5 @@ Line-height exposed the canonicalization fallback variant: even when the normal 
 Letter-spacing exposed the same split at paint/layout fallback boundaries: the normal cascade may canonicalize `em` to `Px`, but direct paint fallback, IFC collection, and inline-block remeasure can still see the original `LengthValue`. Spacing-like consumers should resolve legal residual lengths against the current fragment font-size instead of pattern-matching only `Px`.
 
 Column-rule-width exposed the paint-helper variant: even when style-system computed has a special canonicalization pass for an enum-wrapped length, direct paint helpers can still receive residual `LengthValue` variants. Paint should resolve the enum payload at the draw boundary instead of assuming computed storage is always `Px`.
+
+Outline exposed the naked paint-helper variant: even for plain `LengthValue` fields with computed canonicalization, direct paint and residual computed storage can still reach paint as `em`/`ch`/viewport units. Effects and borders should resolve outline-like lengths at the draw boundary instead of routing them through px-only convenience helpers.
