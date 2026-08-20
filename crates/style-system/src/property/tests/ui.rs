@@ -1116,6 +1116,18 @@ fn test_transform_translate3d_accepts_length_units() {
 }
 
 #[test]
+fn test_transform_perspective_accepts_length_units() {
+    let mut style = ComputedStyle::default();
+    assert!(apply_property_value(&mut style, "transform", "perspective(1vh)"));
+    match &style.transform {
+        zero_css_parser::values::TransformValue::List(fns) => {
+            assert_eq!(fns[0], zero_css_parser::values::TransformFunction::Perspective(1.0));
+        }
+        other => panic!("transform 应为 List 变体，实际为: {other:?}"),
+    }
+}
+
+#[test]
 fn test_transform_rejects_non_finite_numbers() {
     let mut style = ComputedStyle::default();
     assert!(apply_property_value(&mut style, "transform", "translate(10px)"));

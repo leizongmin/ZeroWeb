@@ -574,7 +574,7 @@ fn parse_transform_function(name: &str, args: &str) -> Option<TransformFunction>
             Some(TransformFunction::Rotate3d(x, y, z, angle))
         }
         "perspective" => {
-            let val = parse_css_number(args)?;
+            let val = parse_perspective_length_number(args)?;
             if val <= 0.0 {
                 return None;
             }
@@ -673,6 +673,11 @@ fn parse_translate_length_number(s: &str) -> Option<f64> {
         return value.is_finite().then_some(value);
     }
     parse_css_number(s)
+}
+
+fn parse_perspective_length_number(s: &str) -> Option<f64> {
+    let value = parse_translate_length_number(s)?;
+    (value > 0.0).then_some(value)
 }
 
 /// 解析 CSS 数值（可能带 px/deg/grad/rad/turn 等单位）。

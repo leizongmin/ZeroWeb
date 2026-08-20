@@ -233,6 +233,8 @@ Translate exposed the shared-number transform variant: a helper reused by angle,
 
 Translate3d exposed the sibling transform variant: after creating a dedicated translate length parser for 2D translate, route the 3D translate length slots through the same helper instead of leaving them on the generic number parser. Keep the model distinction explicit because z accepts length, not percentage.
 
+Perspective exposed the positive-length transform variant: transform helpers often share numeric parsing, but perspective needs a positive length grammar rather than an angle/scale/matrix number grammar. Reuse the transform length parser, then layer the strict positivity check at the perspective boundary.
+
 ## Root Cause
 
 The shorthand layer used heuristic component classifiers and treated unrecognized tokens as absent optional components. That is wrong for CSS shorthands such as `border`, where every token must match one of the allowed component grammars. A shared parser can also be broader than the property grammar that consumes it: general length parsing may accept `auto`, intrinsic sizing keywords, or percentages that `border-width` must reject.
