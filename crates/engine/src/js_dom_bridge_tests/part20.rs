@@ -1669,3 +1669,54 @@ fn test_import_node_spec_semantics_r132() {
         "R132 importNode：浅剥子/深递归 ownerDocument/源树完整/Attr prefix+ns+localName 复制/detached body setAttributeNS+getAttributeNodeNS"
     );
 }
+
+// R133（js-dom M4）：insertAdjacentElement 入口校验（spec dom-element-insertadjacentelement
+// 步骤 1-3）——非法 position 同步抛 SyntaxError DOMException（ASCII case-insensitive）；
+// 非节点参数 TypeError；documentElement 的 beforebegin/afterend 抛 HierarchyRequestError。
+#[test]
+fn test_insert_adjacent_element_validation_r133() {
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let mut sandbox = V8Sandbox::with_config(zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    })
+    .unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><div id=\"host\"><p id=\"a\">A</p></div></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry);
+
+    let out = sandbox
+        .execute(
+            "var parts = [];\
+             function threw(fn) { try { fn(); return 'none'; } catch (e) { return e.name; } }\
+             var host = document.getElementById('host');\
+             var p1 = document.createElement('p');\
+             parts.push('syntax:' + threw(function () { host.insertAdjacentElement('test', p1); })\
+               + ':case-insensitive:' + threw(function () { host.insertAdjacentElement('BeforeEnd', 'x'); }))\
+             ;\
+             parts.push('type:' + threw(function () { host.insertAdjacentElement('beforeend', 'notanode'); }))\
+             ;\
+             var docEl = document.documentElement;\
+             parts.push('hre:' + threw(function () { docEl.insertAdjacentElement('beforebegin', p1); })\
+               + ':' + threw(function () { docEl.insertAdjacentElement('afterend', p1); }))\
+             ;\
+             var ok = false;\
+             try { var r = host.insertAdjacentElement('afterbegin', p1); ok = (r === p1); } catch (e) { ok = 'err:' + e.name; }\
+             parts.push('legal:' + ok);\
+             parts.join('|');",
+        )
+        .unwrap()
+        .value;
+    assert_eq!(
+        out,
+        "syntax:SyntaxError:case-insensitive:TypeError|type:TypeError|hre:HierarchyRequestError:HierarchyRequestError|legal:true",
+        "R133 insertAdjacentElement：非法 position SyntaxError（大小写不敏感）/非节点参数 TypeError/documentElement beforebegin+afterend HRE/合法路径返插入元素"
+    );
+}

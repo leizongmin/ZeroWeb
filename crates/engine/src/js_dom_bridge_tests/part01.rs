@@ -571,11 +571,15 @@ fn test_insert_adjacent_text_and_element_e2e() {
         )
         .unwrap();
     assert_eq!(sandbox.execute("globalThis.__r === null").unwrap().value, "false");
-    // 非节点参数 → 返 null（不抛）。
+    // R133 spec 纠正：非节点参数 → TypeError（WebIDL Element 参数校验——WPT
+    // Element-insertAdjacentElement "invalid location" 族 + R133 单测同源；旧断言「返
+    // null 不抛」按 R2818 宽容行为写，与 spec 相反）。
     sandbox
-        .execute("globalThis.__r2 = document.querySelector('#t').insertAdjacentElement('beforeend', 'not-a-node');")
+        .execute(
+            "globalThis.__r2 = '';\ntry { document.querySelector('#t').insertAdjacentElement('beforeend', 'not-a-node'); } catch (e) { globalThis.__r2 = e.name; }",
+        )
         .unwrap();
-    assert_eq!(sandbox.execute("globalThis.__r2").unwrap().value, "null");
+    assert_eq!(sandbox.execute("globalThis.__r2").unwrap().value, "TypeError");
 
     let ms = mutations.lock().unwrap();
     let text_mutation = ms

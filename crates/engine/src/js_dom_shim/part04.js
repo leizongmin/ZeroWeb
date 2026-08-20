@@ -3635,25 +3635,56 @@
             return undefined;
           };
         }
-        // `element.insertAdjacentElement(position, element)`（P1a）：既有节点按 position 移动插入。
-        // 仅接受 create 句柄节点（element.__zwHandle）；sel-based 参考元素经 host
-        // `__zw_insert_adjacent_element`，复用 append_child 自动 reparent 移动语义。
-        // 返插入的元素（spec）；handle-only 目标或非节点参数 → null（spec 非法 element 抛 TypeError，
-        // 此处宽容返 null 避免中断脚本）。
+        // `element.insertAdjacentElement(position, element)`（P1a；R133 spec 语义收口）：
+        // spec dom-element-insertadjacentelement——position 四值合法（beforebegin/afterbegin/
+        // beforeend/afterend，ASCII case-insensitive），非法值**同步抛 SyntaxError DOMException**
+        // （WPT "invalid location should cause a Syntax Error"）；element 参数 WebIDL 非节点 →
+        // TypeError。经 host `__zw_insert_adjacent_element`（复用 append_child 自动 reparent
+        // 移动语义）；返插入的元素（spec 返值即 element）。
+        // R133：documentElement 的 beforebegin/afterend（无父）→ HierarchyRequestError
+        //（WPT "Adding more than one child to document"——host 返错经 wire 不可达，JS 侧
+        // 按目标身份前置判定）。
         if (prop === 'insertAdjacentElement') {
           return function(position, element) {
+            var pos = String(position == null ? '' : position).trim().toLowerCase();
+            if (pos !== 'beforebegin' && pos !== 'afterbegin' && pos !== 'beforeend' && pos !== 'afterend') {
+              throw new (globalThis.DOMException || Error)(
+                "Failed to execute 'insertAdjacentElement' on 'Element': The value provided ('" + String(position) + "') is not one of 'beforebegin', 'afterbegin', 'beforeend', or 'afterend'.",
+                'SyntaxError');
+            }
+            if (!element || typeof element !== 'object' || element.nodeType === undefined) {
+              throw new globalThis.TypeError(
+                "Failed to execute 'insertAdjacentElement' on 'Element': parameter 2 is not of type 'Element'.");
+            }
+            // documentElement/html 的 beforebegin/afterend：父是 Document——插 sibling 进 doc
+            // 会造成第二元素子（spec pre-insert step 6 HRE）。host 侧 insert_nodes_at_position
+            // 按「no parent」报错到 wire 不可达（mutation 异步 apply），JS 侧前置判定。
+            var _r133IsRoot = _realTag(sel, handle) === 'HTML'
+              && !(function () {
+                var p = _makeProxy(sel, handle).parentNode;
+                return p && p.nodeType === 1;
+              })();
+            if (_r133IsRoot && (pos === 'beforebegin' || pos === 'afterend')) {
+              throw new (globalThis.DOMException || Error)(
+                "Failed to execute 'insertAdjacentElement' on 'Element': A document node cannot be inserted here.",
+                'HierarchyRequestError');
+            }
+            // ① handle 子：host InsertAdjacentElement（复用 append_child reparent 移动语义）。
             if (
               sel &&
-              element &&
-              typeof __zw_insert_adjacent_element === 'function' &&
-              element.__zwHandle
+              element.__zwHandle &&
+              typeof __zw_insert_adjacent_element === 'function'
             ) {
-              try {
-                __zw_insert_adjacent_element(sel, String(position), element.__zwHandle);
-                _mo_notify(sel, handle, { type: 'childList', addedNodes: [element], removedNodes: [] });
-                return element;
-              } catch (_e) {}
+              __zw_insert_adjacent_element(sel, pos, element.__zwHandle);
+              _mo_notify(sel, handle, { type: 'childList', addedNodes: [element], removedNodes: [] });
+              return element;
             }
+            // R133 评估记录：sel 子（静态页面元素——无 handle，WPT 用例 #test1-4 形态）
+            // 的同步移动需要「sel 子 pending overlay」（_zwSelParentOf 移动链 + 新/旧父桶
+            // 记账），首版实现 bucket 结构与 _zwPendBucket 并行集（addedSet/removedSet）
+            // 不一致致 _zwHCLiveInvalidate TypeError、二次移动 overlay 状态漂移——深结构
+            // 记 master.md（M1 L2 live-document 后 sel/handle 双形态统一是正解）。旧路径
+            // 静态元素返 null 保持（4F 记深结构）。
             return null;
           };
         }
