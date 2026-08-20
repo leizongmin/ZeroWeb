@@ -605,6 +605,29 @@ impl ServiceWorkerManager {
         Ok(registration_id)
     }
 
+    /// Return the current version when a registration job is an exact option match.
+    pub fn matching_registration(
+        &self,
+        script_url: &str,
+        scope: &str,
+        origin: &str,
+        script_type: ServiceWorkerScriptType,
+        update_via_cache: ServiceWorkerUpdateViaCache,
+    ) -> Result<Option<u64>, ServiceWorkerManagerError> {
+        let key = ServiceWorkerRegistrationKey::new(origin, scope)?;
+        Ok(self
+            .slots
+            .get(&key)
+            .and_then(|slot| slot.waiting.or(slot.active))
+            .and_then(|registration_id| self.registration(registration_id))
+            .filter(|registration| {
+                registration.script_url == script_url
+                    && registration.script_type == script_type
+                    && registration.update_via_cache == update_via_cache
+            })
+            .map(|registration| registration.id))
+    }
+
     /// Recreate one persisted active runtime without replaying install/activate.
     pub fn start_restored_active(
         &mut self,
@@ -1865,6 +1888,30 @@ mod tests {
         let mut manager = manager_under_test();
         let script = "globalThis.version = 1;";
         let first = start_active(&mut manager, "/app/", script);
+        assert_eq!(
+            manager
+                .matching_registration(
+                    "https://example.test/sw.js",
+                    "/app/",
+                    "https://example.test",
+                    ServiceWorkerScriptType::Classic,
+                    ServiceWorkerUpdateViaCache::Imports,
+                )
+                .unwrap(),
+            Some(first)
+        );
+        assert_eq!(
+            manager
+                .matching_registration(
+                    "https://example.test/sw.js",
+                    "/app/",
+                    "https://example.test",
+                    ServiceWorkerScriptType::Classic,
+                    ServiceWorkerUpdateViaCache::None,
+                )
+                .unwrap(),
+            None
+        );
 
         let unchanged = manager
             .start_registration(

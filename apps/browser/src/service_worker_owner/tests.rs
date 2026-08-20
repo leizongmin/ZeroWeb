@@ -217,8 +217,9 @@ fn repeated_register_returns_existing_version_until_script_type_changes() {
         Some("https://example.test/page"),
         register_request("https://example.test/page"),
     );
-    attach_script(&mut owner, unchanged, script);
-    let response = wait_for_response(&mut owner);
+    let ServiceWorkerRequestDisposition::Respond(response) = unchanged else {
+        panic!("identical registration must not fetch");
+    };
     assert!(matches!(
         response.params.result,
         Ok(ServiceWorkerResult::Registered { registration_id }) if registration_id == first_id

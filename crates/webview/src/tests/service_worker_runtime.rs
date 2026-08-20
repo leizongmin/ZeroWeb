@@ -85,6 +85,21 @@ fn embedded_main_script_request_carries_service_worker_metadata() {
 }
 
 #[test]
+fn classic_page_script_async_function_is_visible_to_later_script() {
+    let mut webview = WebViewBuilder::new().build();
+    webview.load_html(
+        "<script>async function sharedHelper() { return 1; }</script>\
+         <script>globalThis.__sharedHelperType = typeof sharedHelper;</script>",
+        None,
+    );
+    webview.run_page_scripts_strict().unwrap();
+    assert_eq!(
+        webview.execute_script("globalThis.__sharedHelperType").unwrap(),
+        "function"
+    );
+}
+
+#[test]
 fn lifecycle_imports_use_persistent_worker_fetch_context() {
     let requests = Arc::new(Mutex::new(Vec::new()));
     let request_log = Arc::clone(&requests);

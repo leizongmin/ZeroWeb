@@ -879,8 +879,54 @@
   // 用例 `elt instanceof win.Element` 需要 iframe realm 的构造器与主 realm proxy 的
   // getPrototypeOf 对齐；polyfill 单 realm 近似：直接引用主 window 的构造器）。
   function _zwMakeIframeWin(doc) {
+    var registrationWrappers = [];
+    function wrapRegistration(registration) {
+      if (!registration) return registration;
+      for (var i = 0; i < registrationWrappers.length; i++) {
+        if (registrationWrappers[i]._registration === registration) {
+          return registrationWrappers[i];
+        }
+      }
+      var wrapper = Object.create(
+        globalThis.ServiceWorkerRegistration ?
+          globalThis.ServiceWorkerRegistration.prototype : Object.prototype);
+      wrapper._registration = registration;
+      ['scope', 'updateViaCache', 'installing', 'waiting', 'active'].forEach(function(name) {
+        Object.defineProperty(wrapper, name, {
+          configurable: true,
+          enumerable: true,
+          get: function() { return registration[name]; }
+        });
+      });
+      wrapper.unregister = function() { return registration.unregister(); };
+      wrapper.update = function() { return registration.update(); };
+      registrationWrappers.push(wrapper);
+      return wrapper;
+    }
+    var parentServiceWorker =
+      globalThis.navigator && globalThis.navigator.serviceWorker;
+    var serviceWorker = parentServiceWorker ? {
+      register: function(scriptURL, options) {
+        return parentServiceWorker.register(scriptURL, options).then(wrapRegistration);
+      },
+      getRegistration: function(scope) {
+        return parentServiceWorker.getRegistration(scope).then(wrapRegistration);
+      },
+      getRegistrations: function() {
+        return parentServiceWorker.getRegistrations().then(function(registrations) {
+          return registrations.map(wrapRegistration);
+        });
+      },
+      get ready() {
+        return parentServiceWorker.ready.then(wrapRegistration);
+      },
+      get controller() {
+        return parentServiceWorker.controller;
+      }
+    } : undefined;
     return {
       document: doc,
+      navigator: { serviceWorker: serviceWorker },
       Element: globalThis.Element,
       Node: globalThis.Node,
       HTMLElement: globalThis.HTMLElement,

@@ -2872,7 +2872,17 @@
               }
               // R2994 connectedCallback：子树按父连接态传播（父连入 → 子树连入；未观察/非 custom 仅传播）。
               var cePconn = _ceParentConnected(sel, handle);
-              for (var ci = 0; ci < ceAdded.length; ci++) _ceApplyConn(ceAdded[ci], cePconn);
+              for (var ci = 0; ci < ceAdded.length; ci++) {
+                _ceApplyConn(ceAdded[ci], cePconn);
+                if (cePconn && ceAdded[ci] &&
+                    String(ceAdded[ci].tagName || '').toUpperCase() === 'IFRAME') {
+                  (function(frame) {
+                    _defer(function() {
+                      try { frame.dispatchEvent(new globalThis.Event('load')); } catch (_eIframeLoad) {}
+                    });
+                  })(ceAdded[ci]);
+                }
+              }
             }
             return child;
           };

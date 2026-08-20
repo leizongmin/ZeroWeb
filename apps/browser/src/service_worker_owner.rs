@@ -666,18 +666,37 @@ impl BrowserServiceWorkerOwner {
                     );
                 }
                 match validate_service_worker_registration(&script_url, scope.as_deref(), &authority) {
-                    Ok((script_url, scope, origin)) => ServiceWorkerRequestDisposition::Fetch(ServiceWorkerFetchPlan {
-                        tab_id,
-                        request_id,
-                        profile,
-                        script_url,
-                        scope,
-                        origin,
-                        purpose: ServiceWorkerFetchPurpose::Register {
-                            update_via_cache: update_via_cache_storage(update_via_cache),
-                            script_type: script_type_storage(script_type),
-                        },
-                    }),
+                    Ok((script_url, scope, origin)) => {
+                        let update_via_cache = update_via_cache_storage(update_via_cache);
+                        let script_type = script_type_storage(script_type);
+                        if let Ok(Some(registration_id)) = self.manager(profile).map_or(Ok(None), |manager| {
+                            manager.matching_registration(
+                                script_url.as_str(),
+                                scope.as_str(),
+                                &origin,
+                                script_type,
+                                update_via_cache,
+                            )
+                        }) {
+                            return self.result_disposition(
+                                tab_id,
+                                request_id,
+                                Ok(ServiceWorkerResult::Registered { registration_id }),
+                            );
+                        }
+                        ServiceWorkerRequestDisposition::Fetch(ServiceWorkerFetchPlan {
+                            tab_id,
+                            request_id,
+                            profile,
+                            script_url,
+                            scope,
+                            origin,
+                            purpose: ServiceWorkerFetchPurpose::Register {
+                                update_via_cache,
+                                script_type,
+                            },
+                        })
+                    }
                     Err(error) => self.error_disposition(
                         tab_id,
                         request_id,

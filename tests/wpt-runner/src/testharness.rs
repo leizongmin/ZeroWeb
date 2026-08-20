@@ -626,6 +626,7 @@ pub const SERVICE_WORKER_CORE_CASES: &[&str] = &[
     "service-workers/service-worker/registration-scope.https.html",
     "service-workers/service-worker/registration-scope-module-static-import.https.html",
     "service-workers/service-worker/registration-script-module.https.html",
+    "service-workers/service-worker/registration-updateviacache.https.html",
     "service-workers/service-worker/update-module-request-mode.https.html",
     "service-workers/service-worker/update-no-cache-request-headers.https.html",
     "service-workers/service-worker/update-registration-with-type.https.html",
@@ -1193,6 +1194,9 @@ struct ServiceWorkerFixtureState {
     bytecheck_visits: HashMap<String, u64>,
     type_update_visits: HashMap<String, u64>,
     request_metadata_visits: HashMap<String, u64>,
+    update_via_cache_main_visits: HashMap<String, u64>,
+    update_via_cache_import_visits: HashMap<String, u64>,
+    update_via_cache_current: Option<(String, String)>,
 }
 
 fn service_worker_fixture_path(src: &str) -> Result<(&str, &str), String> {
@@ -1421,6 +1425,70 @@ fn wpt_data_service_worker_script_fetcher(
                     ("ETag".into(), "etag".into()),
                 ],
                 body: source.into_bytes(),
+                url: src.to_string(),
+                redirect_count: 0,
+            });
+        } else if clean.ends_with("/resources/update-max-aged-worker.py") {
+            let test_name = params
+                .get("test")
+                .ok_or_else(|| "update-max-aged-worker.py requires test".to_string())?
+                .clone();
+            let modes = test_name
+                .strip_prefix("register-with-updateViaCache-")
+                .or_else(|| test_name.strip_prefix("access-updateViaCache-after-unregister-"))
+                .ok_or_else(|| "update-max-aged-worker.py received an invalid test name".to_string())?;
+            let (first_mode, second_mode) = modes
+                .split_once("-then-")
+                .map_or((modes, None), |(first, second)| (first, Some(second)));
+            let mut state = state
+                .lock()
+                .map_err(|_| "Service Worker fixture state lock is poisoned".to_string())?;
+            let visit = state.update_via_cache_main_visits.entry(test_name.clone()).or_default();
+            *visit += 1;
+            let visit = *visit;
+            let mode = second_mode.filter(|_| visit > 1).unwrap_or(first_mode);
+            let mode = if mode == "undefined" { "imports" } else { mode };
+            state.update_via_cache_current = Some((test_name.clone(), mode.to_string()));
+            let main_time = if visit > 1 && mode == "all" { 1 } else { visit };
+            let source = format!(
+                "const mainTime = {main_time};\n\
+                 const testName = {};\n\
+                 importScripts('update-max-aged-worker-imported-script.py');\n\
+                 addEventListener('message', event => {{\n\
+                   event.source.postMessage({{mainTime, importTime, test: testName}});\n\
+                 }});\n",
+                serde_json::to_string(&test_name).unwrap()
+            );
+            return Ok(zero_net::HttpResponse {
+                status_code: 200,
+                headers: vec![
+                    ("Content-Type".into(), "application/javascript".into()),
+                    ("Cache-Control".into(), "max-age=86400".into()),
+                    ("Last-Modified".into(), "Thu, 20 Aug 2026 00:00:00 GMT".into()),
+                ],
+                body: source.into_bytes(),
+                url: src.to_string(),
+                redirect_count: 0,
+            });
+        } else if clean.ends_with("/resources/update-max-aged-worker-imported-script.py") {
+            let mut state = state
+                .lock()
+                .map_err(|_| "Service Worker fixture state lock is poisoned".to_string())?;
+            let (test_name, mode) = state
+                .update_via_cache_current
+                .clone()
+                .ok_or_else(|| "updateViaCache imported script has no main request context".to_string())?;
+            let visit = state.update_via_cache_import_visits.entry(test_name).or_default();
+            *visit += 1;
+            let import_time = if *visit > 1 && mode == "none" { *visit } else { 1 };
+            return Ok(zero_net::HttpResponse {
+                status_code: 200,
+                headers: vec![
+                    ("Content-Type".into(), "application/javascript".into()),
+                    ("Cache-Control".into(), "max-age=86400".into()),
+                    ("Last-Modified".into(), "Thu, 20 Aug 2026 00:00:00 GMT".into()),
+                ],
+                body: format!("const importTime = {import_time};\n").into_bytes(),
                 url: src.to_string(),
                 redirect_count: 0,
             });
@@ -2443,13 +2511,13 @@ async_test(function(test) {
     }
 
     #[test]
-    fn service_worker_core_manifest_has_twenty_six_unique_cases() {
+    fn service_worker_core_manifest_has_twenty_seven_unique_cases() {
         let unique = SERVICE_WORKER_CORE_CASES
             .iter()
             .copied()
             .collect::<std::collections::BTreeSet<_>>();
-        assert_eq!(SERVICE_WORKER_CORE_CASES.len(), 26);
-        assert_eq!(unique.len(), 26);
+        assert_eq!(SERVICE_WORKER_CORE_CASES.len(), 27);
+        assert_eq!(unique.len(), 27);
         assert!(
             SERVICE_WORKER_CORE_CASES
                 .iter()

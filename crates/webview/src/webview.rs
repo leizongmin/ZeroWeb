@@ -2106,15 +2106,20 @@ impl WebView {
                     }
                 }
             } else {
-                // classic 脚本：__zw_begin_script 前置（body onload 反射）+ R3258 设/清 document.currentScript
-                //（try-finally 保证即便抛错也清；spec classic 执行期 currentScript 指向自身元素）。
+                // Classic scripts must execute in the global script scope. Wrapping them in a
+                // block changes top-level async function and lexical declaration visibility.
                 format!(
-                    "{set}\ntry{{__zw_begin_script&&__zw_begin_script();\n{code}\n}}finally{{{clear}}}",
+                    "{set}\n__zw_begin_script&&__zw_begin_script();\n{code}",
                     set = script_set_current_script(script_index),
-                    clear = script_clear_current_script(),
                 )
             };
-            if let Err(e) = sandbox.execute(&full) {
+            let execution = sandbox.execute(&full).map(|_| ());
+            let clear = if is_module {
+                Ok(())
+            } else {
+                sandbox.execute(script_clear_current_script()).map(|_| ())
+            };
+            if let Err(e) = execution.or(clear) {
                 if strict {
                     return Err(WebViewError::Script(format!("page script: {e}")));
                 }
@@ -2365,6 +2370,21 @@ impl WebView {
         document_url: &str,
     ) -> Result<u64, WebViewError> {
         let (script_url, scope, origin) = Self::validate_service_worker_registration(script_url, scope, document_url)?;
+        if let Some(registration_id) = self
+            .sw_manager
+            .lock()
+            .map_err(|_| WebViewError::Script("Service Worker manager lock poisoned".into()))?
+            .matching_registration(
+                script_url.as_str(),
+                scope.as_str(),
+                &origin,
+                ServiceWorkerScriptType::Classic,
+                ServiceWorkerUpdateViaCache::Imports,
+            )
+            .map_err(|error| WebViewError::Script(error.to_string()))?
+        {
+            return Ok(registration_id);
+        }
         let script = Self::fetch_service_worker_main_script(
             script_url.as_str(),
             document_url,
@@ -2505,6 +2525,20 @@ impl WebView {
                         }
                     };
                 let result = (|| -> Result<u64, String> {
+                    if let Some(registration_id) = register_manager
+                        .lock()
+                        .map_err(|_| "Service Worker manager lock poisoned".to_string())?
+                        .matching_registration(
+                            script_url.as_str(),
+                            scope.as_str(),
+                            &origin,
+                            script_type,
+                            update_via_cache,
+                        )
+                        .map_err(|error| error.to_string())?
+                    {
+                        return Ok(registration_id);
+                    }
                     let source = Self::fetch_service_worker_main_script(
                         script_url.as_str(),
                         &document_url,

@@ -1,0 +1,9 @@
+path	manifest_type	roles	referenced_by	bytes	templated	git_blob_sha
+service-workers/service-worker/registration-updateviacache.https.html	testharness	case	1	8105	no	b2f6bbc6f849c7e8051f1aedc9f476c47d5a39a4
+service-workers/service-worker/resources/update-max-aged-worker.py	support	dynamic-handler	24	859	no	4f879069ef98ad7ff738cf144fe1fd75fdd1089e
+service-workers/service-worker/resources/update-max-aged-worker-imported-script.py	support	dynamic-handler	24	430	no	7cc5a6561e7108286cf8a35e8bc79d80ebadf128
+service-workers/service-worker/resources/testharness-helpers.js	support	page-script	1	5507	no	5f93a25438a0cbf067675d4715e695388dc6c7bc
+service-workers/service-worker/resources/test-helpers.sub.js	support	page-script	1	10485	yes	74301523e7355ad8d62bcb568280edbc23fdaacf
+service-workers/service-worker/resources/blank.html	support	iframe	16	41	no	a3c3a4689a62b45b1e429f6b7a94690e556a1259
+service-workers/service-worker/resources/empty.js	support	worker-script	1	0	no	e69de29bb2d1d6434b8b29ae775ad8c2e48c5391
+service-workers/service-worker/resources/malformed-worker.py	support	dynamic-handler	1	869	no	319b6e277baa04a9b61c1f5f764219d32028f91a
