@@ -177,6 +177,14 @@ fn resolve_bg_pos_length(lv: zero_css_parser::values::LengthValue, style: &Compu
     crate::computed::resolve_length(&lv, fs, None, None) as f32
 }
 
+fn resolve_effect_length(lv: &zero_css_parser::values::LengthValue, style: &ComputedStyle) -> f32 {
+    let fs = match &style.font_size {
+        zero_css_parser::values::LengthValue::Px(v) => *v,
+        _ => 16.0,
+    };
+    crate::computed::resolve_length(lv, fs, None, None) as f32
+}
+
 /// 将解析后的 `<position>` 值（`background-position` / `object-position` 共用同一语法）
 /// 转换为计算值。嵌套 `TwoValue`（非法）返回 `None`（调用方据此丢弃声明）。
 /// R2303 抽出：供 object-position 复用，避免 40 行转换逻辑重复。
@@ -1738,18 +1746,9 @@ pub fn apply_advanced_property_value(style: &mut ComputedStyle, property: &str, 
                 style.text_shadow = list
                     .into_iter()
                     .map(|v| TextShadowComputedValue {
-                        offset_x: match v.offset_x {
-                            zero_css_parser::values::LengthValue::Px(px) => px as f32,
-                            _ => 0.0,
-                        },
-                        offset_y: match v.offset_y {
-                            zero_css_parser::values::LengthValue::Px(px) => px as f32,
-                            _ => 0.0,
-                        },
-                        blur_radius: match v.blur_radius {
-                            zero_css_parser::values::LengthValue::Px(px) => px as f32,
-                            _ => 0.0,
-                        },
+                        offset_x: resolve_effect_length(&v.offset_x, style),
+                        offset_y: resolve_effect_length(&v.offset_y, style),
+                        blur_radius: resolve_effect_length(&v.blur_radius, style),
                         color: v.color,
                     })
                     .collect();
@@ -1762,22 +1761,10 @@ pub fn apply_advanced_property_value(style: &mut ComputedStyle, property: &str, 
                 style.box_shadow = list
                     .into_iter()
                     .map(|v| BoxShadowComputedValue {
-                        offset_x: match v.offset_x {
-                            zero_css_parser::values::LengthValue::Px(px) => px as f32,
-                            _ => 0.0,
-                        },
-                        offset_y: match v.offset_y {
-                            zero_css_parser::values::LengthValue::Px(px) => px as f32,
-                            _ => 0.0,
-                        },
-                        blur_radius: match v.blur_radius {
-                            zero_css_parser::values::LengthValue::Px(px) => px as f32,
-                            _ => 0.0,
-                        },
-                        spread_radius: match v.spread_radius {
-                            zero_css_parser::values::LengthValue::Px(px) => px as f32,
-                            _ => 0.0,
-                        },
+                        offset_x: resolve_effect_length(&v.offset_x, style),
+                        offset_y: resolve_effect_length(&v.offset_y, style),
+                        blur_radius: resolve_effect_length(&v.blur_radius, style),
+                        spread_radius: resolve_effect_length(&v.spread_radius, style),
                         color: v.color,
                         inset: v.inset,
                     })

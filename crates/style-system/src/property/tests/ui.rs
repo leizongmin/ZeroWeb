@@ -624,6 +624,16 @@ fn test_apply_text_shadow_values() {
 }
 
 #[test]
+fn test_apply_text_shadow_accepts_length_units() {
+    let mut style = ComputedStyle::default();
+    assert!(apply_property_value(&mut style, "text-shadow", "1em 2ch 3px red"));
+    let s = &style.text_shadow[0];
+    assert_eq!(s.offset_x, 16.0);
+    assert_eq!(s.offset_y, 16.0);
+    assert_eq!(s.blur_radius, 3.0);
+}
+
+#[test]
 fn test_text_shadow_is_inherited() {
     assert!(PropertyRegistry::is_inherited("text-shadow"));
 }
@@ -698,6 +708,17 @@ fn test_apply_box_shadow_values() {
     assert_eq!(s.spread_radius, 5.0);
     assert_eq!(s.color, zero_css_parser::values::ColorValue::Rgba(0, 0, 255, 255));
     assert!(!s.inset);
+}
+
+#[test]
+fn test_apply_box_shadow_accepts_length_units() {
+    let mut style = ComputedStyle::default();
+    assert!(apply_property_value(&mut style, "box-shadow", "1em 2ch 3px 0.5em blue"));
+    let s = &style.box_shadow[0];
+    assert_eq!(s.offset_x, 16.0);
+    assert_eq!(s.offset_y, 16.0);
+    assert_eq!(s.blur_radius, 3.0);
+    assert_eq!(s.spread_radius, 8.0);
 }
 
 #[test]

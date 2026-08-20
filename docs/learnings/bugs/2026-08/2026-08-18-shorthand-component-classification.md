@@ -239,6 +239,8 @@ Filter exposed the px-only helper variant: a function can be named for the compu
 
 Background-position exposed the partial-enum length variant: after switching a property to store `LengthValue`, every downstream validator must enumerate all real units the shared parser can return. A comment that says "any length unit" is not enough; add representative tests for metric-relative units such as `ex` and root-relative variants such as `rch`.
 
+Shadow apply exposed the computed-conversion variant: parser-level grammar parity is incomplete if the style-system collapses every non-px `LengthValue` to zero while building computed values. Reuse the same length resolver at the apply boundary so legal relative units survive into paint-facing numeric storage.
+
 ## Root Cause
 
 The shorthand layer used heuristic component classifiers and treated unrecognized tokens as absent optional components. That is wrong for CSS shorthands such as `border`, where every token must match one of the allowed component grammars. A shared parser can also be broader than the property grammar that consumes it: general length parsing may accept `auto`, intrinsic sizing keywords, or percentages that `border-width` must reject.
