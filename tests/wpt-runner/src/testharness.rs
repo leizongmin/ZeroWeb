@@ -625,6 +625,7 @@ pub const SERVICE_WORKER_CORE_CASES: &[&str] = &[
     "service-workers/service-worker/registration-basic.https.html",
     "service-workers/service-worker/registration-scope.https.html",
     "service-workers/service-worker/registration-scope-module-static-import.https.html",
+    "service-workers/service-worker/registration-script-module.https.html",
     "service-workers/service-worker/registration-script-url.https.html",
     "service-workers/service-worker/registration-service-worker-attributes.https.html",
     "service-workers/service-worker/rejections.https.html",
@@ -1280,7 +1281,34 @@ fn wpt_data_service_worker_script_fetcher(
         let params = service_worker_fixture_query(query)?;
 
         let mut headers = Vec::new();
-        let body = if clean.ends_with("/resources/mime-type-worker.py") {
+        let body = if clean.ends_with("/resources/invalid-chunked-encoding.py")
+            || clean.ends_with("/resources/invalid-chunked-encoding-with-flush.py")
+        {
+            return Err("Service Worker script has invalid chunked encoding".into());
+        } else if clean.ends_with("/resources/malformed-worker.py") {
+            let source = if params.contains_key("parse-error") {
+                "var foo = function() {;"
+            } else if params.contains_key("undefined-error") {
+                "foo.bar = 42;"
+            } else if params.contains_key("uncaught-exception") {
+                "throw new DOMException('AbortError');"
+            } else if params.contains_key("caught-exception") {
+                "try { throw new Error; } catch(e) {}"
+            } else if params.contains_key("import-malformed-script") {
+                "importScripts('malformed-worker.py?parse-error');"
+            } else if params.contains_key("import-no-such-script") {
+                "importScripts('no-such-script.js');"
+            } else if params.contains_key("top-level-await") {
+                "await Promise.resolve(1);"
+            } else if params.contains_key("instantiation-error") {
+                "import nonexistent from './imported-module-script.js';"
+            } else if params.contains_key("instantiation-error-and-top-level-await") {
+                "import nonexistent from './imported-module-script.js'; await Promise.resolve(1);"
+            } else {
+                return Err("malformed-worker.py requires a known mode".into());
+            };
+            return Ok(service_worker_fixture_response(source.into(), src.to_string(), 0));
+        } else if clean.ends_with("/resources/mime-type-worker.py") {
             if let Some(mime) = params.get("mime") {
                 headers.push(("Content-Type".into(), mime.clone()));
             }
@@ -2349,13 +2377,13 @@ async_test(function(test) {
     }
 
     #[test]
-    fn service_worker_core_manifest_has_twenty_two_unique_cases() {
+    fn service_worker_core_manifest_has_twenty_three_unique_cases() {
         let unique = SERVICE_WORKER_CORE_CASES
             .iter()
             .copied()
             .collect::<std::collections::BTreeSet<_>>();
-        assert_eq!(SERVICE_WORKER_CORE_CASES.len(), 22);
-        assert_eq!(unique.len(), 22);
+        assert_eq!(SERVICE_WORKER_CORE_CASES.len(), 23);
+        assert_eq!(unique.len(), 23);
         assert!(
             SERVICE_WORKER_CORE_CASES
                 .iter()

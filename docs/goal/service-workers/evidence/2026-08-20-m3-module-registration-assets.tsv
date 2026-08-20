@@ -1,0 +1,7 @@
+path	manifest_type	roles	referenced_by	bytes	templated	git_blob_sha
+service-workers/service-worker/registration-script-module.https.html	testharness	case	1	486	no	9e39a1f75b27de492d5eb3842aaa254d2f662687
+service-workers/service-worker/resources/registration-tests-script.js	support	page-script	1	5282	no	a74cab8e3ace1ff39ddf4ce3c7d4527bd0a97534
+service-workers/service-worker/resources/malformed-worker.py	support	dynamic-handler	6	869	no	319b6e277baa04a9b61c1f5f764219d32028f91a
+service-workers/service-worker/resources/invalid-chunked-encoding.py	support	dynamic-handler	1	138	no	a8edd06b8dcd435ec82cfc5d4a2e75519d647d7e
+service-workers/service-worker/resources/invalid-chunked-encoding-with-flush.py	support	dynamic-handler	1	266	no	05977c6ab0b5d977cf9490c7240f95f54f4a82d4
+service-workers/service-worker/resources/imported-module-script.js	support	worker-script	2	44	no	56d196df040f9adb999c944329e6f1569ac876fd

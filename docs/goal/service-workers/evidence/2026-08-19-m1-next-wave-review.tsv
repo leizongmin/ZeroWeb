@@ -6,7 +6,7 @@ service-workers/service-worker/register-wait-forever-in-install-worker.https.htm
 service-workers/service-worker/registration-mime-types.https.html	3a21aac5c75c20c210d3fdde2a14ed063a0c8b27	39	gated-dynamic-server	dynamic-python;mime;importScripts	两个 Python handler 生成无效和 16 种有效 MIME 响应
 service-workers/service-worker/registration-schedule-job.https.html	25d758ee8f0e26459218c7359faf7d3866b313cf	3	defer-advanced	job-scheduling;module;message	验证 scriptURL/updateViaCache/type 不同的 register job 不合并
 service-workers/service-worker/registration-scope-module-static-import.https.html	5c75295aed1cd94c1349dc25010801534bd98644	3	next-wave-module-core	module-graph;dynamic-redirect;message	静态 module graph、跨目录依赖与 redirect fixture 已由 browser-owned fetch bridge 覆盖
-service-workers/service-worker/registration-script-module.https.html	9e39a1f75b27de492d5eb3842aaa254d2f662687	10	gated-dynamic-server	dynamic-python;module-graph;invalid-http	动态生成 parse/runtime/instantiation/TLA 错误及非法 chunked 响应
+service-workers/service-worker/registration-script-module.https.html	9e39a1f75b27de492d5eb3842aaa254d2f662687	10	next-wave-module-registration-core	dynamic-python;module-graph;invalid-http	module parse/runtime/instantiation/TLA 与网络失败已由 typed runtime 和动态 fixture 覆盖
 service-workers/service-worker/registration-security-error.https.html	860c2d22ea935cd3af17f11e1f0a7b966e6fa4e7	8	gated-dynamic-server	dynamic-redirect;cross-origin	7 个 URL 安全断言外含一个 Python redirect 响应
 service-workers/service-worker/state.https.html	7358e58ff14a74e04514eb9432151576cf62b905	1	next-wave-core	statechange;redundant	核心状态迁移与 statechange target/type
 service-workers/service-worker/synced-state.https.html	0e9f63a9a2e528e7ffb8f9913edffc8e0294ad98	1	next-wave-core	state-projection	同一 worker entity 的对象投影状态同步

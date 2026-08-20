@@ -431,6 +431,16 @@ fn transform_import(
         let bindings = rest[..from_pos].trim();
         let raw_specifier = extract_import_specifier_from_rest(&rest[from_pos + 6..])?;
         let specifier = resolve_registered_specifier(&raw_specifier, importer_url, registry);
+        for item in bindings
+            .trim_start_matches('{')
+            .trim_end_matches('}')
+            .split(',')
+            .map(str::trim)
+            .filter(|item| !item.is_empty())
+        {
+            let imported = item.split_once(" as ").map_or(item, |(name, _)| name).trim();
+            ensure_module_export(&specifier, imported, registry)?;
+        }
         let safe = safe_ident(&specifier);
         let dep_code = inline_dep_once(&specifier, registry, visited)?;
         let mut result = format!("  var _mod_{safe} = {dep_code};\n");
@@ -443,12 +453,9 @@ fn transform_import(
         let name = rest[..from_pos].trim();
         let raw_specifier = extract_import_specifier_from_rest(&rest[from_pos + 6..])?;
         let specifier = resolve_registered_specifier(&raw_specifier, importer_url, registry);
+        ensure_module_export(&specifier, "default", registry)?;
         let dep_code = inline_dep_once(&specifier, registry, visited)?;
-        // R3398：旧实现把 dep_code（整段 IIFE）字符串拼接 3 次 → 模块副作用执行 3 次（正确性
-        // + 性能 + 资源放大）。改为求值一次存变量，default fallback 引用该变量。
-        return Ok(format!(
-            "  var _dep_{name} = {dep_code};\n  var {name} = _dep_{name}.default !== undefined ? _dep_{name}.default : _dep_{name};\n"
-        ));
+        return Ok(format!("  var {name} = {dep_code}.default;\n"));
     }
 
     Ok(String::new())
@@ -471,6 +478,85 @@ fn resolve_registered_specifier(specifier: &str, importer_url: &str, registry: &
     } else {
         specifier.to_string()
     }
+}
+
+fn ensure_module_export(specifier: &str, name: &str, registry: &ModuleRegistry) -> Result<(), ScriptError> {
+    if registry.get(specifier).is_none() {
+        return Err(ScriptError::RuntimeError(format!("Module not found: {specifier}")));
+    }
+    if module_provides_export(specifier, name, registry, &mut HashSet::new()) {
+        Ok(())
+    } else {
+        Err(ScriptError::CompileError(format!(
+            "Module {specifier} does not provide an export named {name}"
+        )))
+    }
+}
+
+fn module_provides_export(
+    specifier: &str,
+    name: &str,
+    registry: &ModuleRegistry,
+    visited: &mut HashSet<String>,
+) -> bool {
+    if !visited.insert(specifier.to_string()) {
+        return false;
+    }
+    let Some(source) = registry.get(specifier) else {
+        return false;
+    };
+    for statement in split_statements(source) {
+        let Some(rest) = statement.trim().strip_prefix("export ") else {
+            continue;
+        };
+        if name == "default" && rest.starts_with("default ") {
+            return true;
+        }
+        for declaration in ["const ", "let ", "var ", "function ", "class "] {
+            if let Some(value) = rest.strip_prefix(declaration)
+                && extract_binding_name(value) == name
+            {
+                return true;
+            }
+        }
+        if rest.starts_with("* as ")
+            && let Some((namespace, _)) = rest["* as ".len()..].split_once(" from ")
+            && namespace.trim() == name
+        {
+            return true;
+        }
+        if rest.starts_with('{')
+            && let Some(end) = rest.find('}')
+        {
+            let from_specifier = rest[end + 1..]
+                .trim()
+                .strip_prefix("from ")
+                .and_then(|value| extract_import_specifier_from_rest(value).ok())
+                .map(|raw| resolve_registered_specifier(&raw, specifier, registry));
+            for item in rest[1..end].split(',').map(str::trim).filter(|item| !item.is_empty()) {
+                let (imported, exported) = item
+                    .split_once(" as ")
+                    .map_or((item, item), |(imported, exported)| (imported.trim(), exported.trim()));
+                if exported == name
+                    && from_specifier
+                        .as_deref()
+                        .is_none_or(|dependency| module_provides_export(dependency, imported, registry, visited))
+                {
+                    return true;
+                }
+            }
+        }
+        if name != "default"
+            && let Some(from_rest) = rest.strip_prefix("* from ")
+            && let Ok(raw) = extract_import_specifier_from_rest(from_rest)
+        {
+            let dependency = resolve_registered_specifier(&raw, specifier, registry);
+            if module_provides_export(&dependency, name, registry, visited) {
+                return true;
+            }
+        }
+    }
+    false
 }
 
 /// 从 `from '...'` 部分提取模块标识符。
@@ -535,6 +621,10 @@ fn transform_export(
         let raw_specifier = extract_import_specifier_from_rest(&rest[from_pos + 6..])?;
         let specifier = resolve_registered_specifier(&raw_specifier, importer_url, registry);
         let safe = safe_ident(&specifier);
+        for item in rest[1..end].split(',').map(str::trim).filter(|item| !item.is_empty()) {
+            let imported = item.split_once(" as ").map_or(item, |(name, _)| name).trim();
+            ensure_module_export(&specifier, imported, registry)?;
+        }
         let dep_code = inline_dep_once(&specifier, registry, visited)?;
         let mut result = format!("  var _reexport_{safe} = {dep_code};\n");
         for item in rest[1..end].split(',').map(str::trim).filter(|item| !item.is_empty()) {
@@ -939,6 +1029,21 @@ mod tests {
         let r = sb.execute_module("import { x } from './missing.js'\nexport default x", None);
         assert!(r.is_err());
         assert!(r.unwrap_err().to_string().contains("Module not found"));
+    }
+
+    #[test]
+    fn test_import_missing_exports_fails_during_compilation() {
+        let mut registry = ModuleRegistry::new();
+        registry.register("./dependency.js", "export const present = 1;");
+        for source in [
+            "import missing from './dependency.js';",
+            "import { missing } from './dependency.js';",
+            "export { missing } from './dependency.js';",
+        ] {
+            let error = compile_module_script(source, "https://example.test/sw.js", &registry).unwrap_err();
+            assert!(matches!(error, ScriptError::CompileError(_)));
+            assert!(error.to_string().contains("does not provide an export named"));
+        }
     }
 
     #[test]
