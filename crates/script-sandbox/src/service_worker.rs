@@ -1393,6 +1393,44 @@ mod tests {
     }
 
     #[test]
+    fn module_evaluation_fetches_reexport_dependency() {
+        let mut runtime = ServiceWorkerRuntime::new(test_config()).unwrap();
+        runtime
+            .evaluate_module(
+                "import { value } from './entry.js';
+                 if (value !== 5) throw new Error('wrong re-exported value');",
+                "https://example.test/workers/sw.js",
+            )
+            .unwrap();
+        let ServiceWorkerEvent::ModuleScriptsRequested { request_id, .. } =
+            runtime.recv_timeout(Duration::from_secs(5)).unwrap()
+        else {
+            panic!("missing entry module request");
+        };
+        runtime
+            .complete_import_scripts(request_id, Ok(vec!["export { value } from './value.js';".into()]))
+            .unwrap();
+
+        let ServiceWorkerEvent::ModuleScriptsRequested {
+            request_id,
+            referrer_url,
+            specifiers,
+        } = runtime.recv_timeout(Duration::from_secs(5)).unwrap()
+        else {
+            panic!("missing re-export dependency request");
+        };
+        assert_eq!(referrer_url, "https://example.test/workers/entry.js");
+        assert_eq!(specifiers, ["./value.js"]);
+        runtime
+            .complete_import_scripts(request_id, Ok(vec!["export const value = 5;".into()]))
+            .unwrap();
+        assert!(matches!(
+            runtime.recv_timeout(Duration::from_secs(5)).unwrap(),
+            ServiceWorkerEvent::Evaluated { .. }
+        ));
+    }
+
+    #[test]
     fn import_scripts_fetch_failure_is_network_error_dom_exception() {
         let mut runtime = ServiceWorkerRuntime::new(test_config()).unwrap();
         runtime

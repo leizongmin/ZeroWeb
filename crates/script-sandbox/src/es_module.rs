@@ -214,16 +214,7 @@ fn rewrite_dynamic_imports(source: &str) -> String {
 
 /// 从模块源码中提取全部 `import` 依赖标识符（静态 `import` + 动态 `import()`）。
 pub fn extract_module_import_specifiers(source: &str) -> Vec<String> {
-    let mut specs = Vec::new();
-    for stmt in split_statements(source) {
-        let trimmed = stmt.trim();
-        if !trimmed.starts_with("import ") {
-            continue;
-        }
-        if let Ok(spec) = extract_import_specifier(trimmed) {
-            push_unique_spec(&mut specs, spec);
-        }
-    }
+    let mut specs = extract_static_module_import_specifiers(source);
     push_unique_specs(&mut specs, extract_dynamic_import_specifiers(source));
     specs
 }
@@ -236,10 +227,14 @@ pub fn extract_static_module_import_specifiers(source: &str) -> Vec<String> {
     let mut specs = Vec::new();
     for stmt in split_statements(source) {
         let trimmed = stmt.trim();
-        if !trimmed.starts_with("import ") {
+        let specifier = if trimmed.starts_with("import ") {
+            extract_import_specifier(trimmed)
+        } else if trimmed.starts_with("export ") {
+            extract_reexport_specifier(trimmed)
+        } else {
             continue;
-        }
-        if let Ok(spec) = extract_import_specifier(trimmed) {
+        };
+        if let Ok(spec) = specifier {
             push_unique_spec(&mut specs, spec);
         }
     }
@@ -286,6 +281,16 @@ fn extract_import_specifier(line: &str) -> Result<String, ScriptError> {
     Err(ScriptError::CompileError(format!("unsupported import: {line}")))
 }
 
+fn extract_reexport_specifier(line: &str) -> Result<String, ScriptError> {
+    let rest = line
+        .strip_prefix("export ")
+        .ok_or_else(|| ScriptError::CompileError(format!("unsupported re-export: {line}")))?;
+    let from_pos = rest
+        .find(" from ")
+        .ok_or_else(|| ScriptError::CompileError(format!("unsupported re-export: {line}")))?;
+    extract_import_specifier_from_rest(&rest[from_pos + 6..])
+}
+
 /// 构建完整的模块执行脚本，内联所有依赖。
 fn build_module_script(
     source: &str,
@@ -309,7 +314,7 @@ fn build_module_script(
         if trimmed.starts_with("import ") {
             output.push_str(&transform_import(trimmed, url, registry, visited)?);
         } else if trimmed.starts_with("export ") {
-            output.push_str(&transform_export(trimmed)?);
+            output.push_str(&transform_export(trimmed, url, registry, visited)?);
         } else {
             // 普通语句：替换 import.meta 与动态 import()
             let s = rewrite_dynamic_imports(&trimmed.replace("import.meta", "_importMeta"));
@@ -352,7 +357,7 @@ fn build_dep_iife(
         if trimmed.starts_with("import ") {
             output.push_str(&transform_import(trimmed, specifier, registry, visited)?);
         } else if trimmed.starts_with("export ") {
-            output.push_str(&transform_export(trimmed)?);
+            output.push_str(&transform_export(trimmed, specifier, registry, visited)?);
         } else {
             let s = rewrite_dynamic_imports(&trimmed.replace("import.meta", "_importMeta"));
             output.push_str("  ");
@@ -495,9 +500,54 @@ fn destructure_bindings(bindings: &str, safe_mod: &str) -> String {
 }
 
 /// 转换 export 声明。
-fn transform_export(line: &str) -> Result<String, ScriptError> {
+fn transform_export(
+    line: &str,
+    importer_url: &str,
+    registry: &ModuleRegistry,
+    visited: &mut HashSet<String>,
+) -> Result<String, ScriptError> {
     let rest = &line["export ".len()..];
 
+    if rest.starts_with("* as ")
+        && let Some(from_pos) = rest.find(" from ")
+    {
+        let namespace = rest["* as ".len()..from_pos].trim();
+        let raw_specifier = extract_import_specifier_from_rest(&rest[from_pos + 6..])?;
+        let specifier = resolve_registered_specifier(&raw_specifier, importer_url, registry);
+        let dep_code = inline_dep_once(&specifier, registry, visited)?;
+        return Ok(format!("  _exports.{namespace} = {dep_code};\n"));
+    }
+    if let Some(from_rest) = rest.strip_prefix("* from ") {
+        let raw_specifier = extract_import_specifier_from_rest(from_rest)?;
+        let specifier = resolve_registered_specifier(&raw_specifier, importer_url, registry);
+        let safe = safe_ident(&specifier);
+        let dep_code = inline_dep_once(&specifier, registry, visited)?;
+        return Ok(format!(
+            "  var _reexport_{safe} = {dep_code};\n  Object.keys(_reexport_{safe}).forEach(function(key) {{ if (key !== 'default') _exports[key] = _reexport_{safe}[key]; }});\n"
+        ));
+    }
+    if rest.starts_with('{')
+        && let Some(from_pos) = rest.find(" from ")
+    {
+        let end = rest[..from_pos]
+            .find('}')
+            .ok_or_else(|| ScriptError::CompileError("invalid re-export list: missing }".into()))?;
+        let raw_specifier = extract_import_specifier_from_rest(&rest[from_pos + 6..])?;
+        let specifier = resolve_registered_specifier(&raw_specifier, importer_url, registry);
+        let safe = safe_ident(&specifier);
+        let dep_code = inline_dep_once(&specifier, registry, visited)?;
+        let mut result = format!("  var _reexport_{safe} = {dep_code};\n");
+        for item in rest[1..end].split(',').map(str::trim).filter(|item| !item.is_empty()) {
+            if let Some(pos) = item.find(" as ") {
+                let imported = item[..pos].trim();
+                let exported = item[pos + 4..].trim();
+                result.push_str(&format!("  _exports.{exported} = _reexport_{safe}.{imported};\n"));
+            } else {
+                result.push_str(&format!("  _exports.{item} = _reexport_{safe}.{item};\n"));
+            }
+        }
+        return Ok(result);
+    }
     if let Some(expr) = rest.strip_prefix("default ") {
         let expr = expr.replace("import.meta", "_importMeta");
         return Ok(format!("  _exports.default = {expr};\n"));
@@ -968,6 +1018,53 @@ mod tests {
         )
         .unwrap();
         assert!(!compiled.contains("import {"));
+    }
+
+    #[test]
+    fn test_static_dependency_extraction_includes_reexports() {
+        assert_eq!(
+            extract_static_module_import_specifiers(
+                "export { value as renamed } from './named.js';\
+                 \nexport * from './star.js';\
+                 \nexport * as namespace from './namespace.js';"
+            ),
+            ["./named.js", "./star.js", "./namespace.js"]
+        );
+    }
+
+    #[test]
+    fn test_reexports_resolve_canonical_urls() {
+        let mut sandbox = EsModuleSandbox::new().unwrap();
+        sandbox.register_module(
+            "https://example.test/modules/dep.js",
+            "export const value = 11; export default 99;",
+        );
+        let named = sandbox
+            .execute_module(
+                "export { value as renamed } from './dep.js';",
+                Some("https://example.test/modules/entry.js"),
+            )
+            .unwrap();
+        assert!(named.namespace_json.contains("\"renamed\":11"));
+
+        let star = sandbox
+            .execute_module(
+                "export * from './dep.js';",
+                Some("https://example.test/modules/entry.js"),
+            )
+            .unwrap();
+        assert!(star.namespace_json.contains("\"value\":11"));
+        assert!(!star.namespace_json.contains("\"default\""));
+
+        let namespace = sandbox
+            .execute_module(
+                "export * as dependency from './dep.js';",
+                Some("https://example.test/modules/entry.js"),
+            )
+            .unwrap();
+        assert!(namespace.namespace_json.contains("\"dependency\":{"));
+        assert!(namespace.namespace_json.contains("\"value\":11"));
+        assert!(namespace.namespace_json.contains("\"default\":99"));
     }
 
     // R3398：循环 import（a↔b）旧实现无限递归 → 栈溢出 abort（实测 `has overflowed its stack`）。

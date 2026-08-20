@@ -2,7 +2,7 @@
 
 **入口文档**: [../service-workers.md](../service-workers.md)
 **创建日期**: 2026-08-17（goal 拆分 bootstrap）
-**最后更新**: 2026-08-20（M3-16 module CORS 完成）
+**最后更新**: 2026-08-20（M3-17 module re-export 完成）
 
 ---
 
@@ -130,6 +130,8 @@ M0 启动门禁解除；M1 core WPT 已收敛，M2 依赖未满足，当前推�
   unchanged/changed 4×2 矩阵；`update-bytecheck.https.html` 8/8，core WPT 21/83
 - ✅ M3-16：static module 跨源依赖由 browser/WebView response adapter 执行 CORS
   校验，classic 维持 no-cors；cross-origin bytecheck 8/8，core WPT 22/91
+- ✅ M3-17：module graph 支持 named/star/namespace re-export；依赖按 importer
+  canonical URL 递归抓取并进入 persistence/update bytecheck，V8/QuickJS 回归通过
 
 ## 缺口清单
 
@@ -149,7 +151,7 @@ M0 启动门禁解除；M1 core WPT 已收敛，M2 依赖未满足，当前推�
 
 ## 下一步计划
 
-1. **M3 module follow-up**：module re-export graph 与 registration error semantics
+1. **M3 module follow-up**：`registration-script-module.https.html` 错误语义
 2. **M2 依赖复核**：js-dom S6 与 storage-cache-api M1 land 后启动 fetch pipeline
 3. **M3 messaging follow-up**：MessagePort/MessageChannel transfer 与多 client 枚举
 
@@ -281,6 +283,8 @@ M0 启动门禁解除；M1 core WPT 已收敛，M2 依赖未满足，当前推�
   21/83 WPT 见 [M3 module bytecheck](evidence/2026-08-20-m3-module-bytecheck.md)
 - M3-16 module CORS：跨源 module ACAO 校验、classic no-cors 隔离与 22/91 WPT 见
   [M3 module CORS](evidence/2026-08-20-m3-module-cors.md)
+- M3-17 module re-export：named/star/namespace graph extraction 与 canonical transform 见
+  [M3 module re-exports](evidence/2026-08-20-m3-module-reexports.md)
 
 ## M0 证据与决策记录
 
@@ -338,6 +342,7 @@ M0 启动门禁解除；M1 core WPT 已收敛，M2 依赖未满足，当前推�
 | 2026-08-20 | M3-14 static module graph | canonical referrer 递归 fetch/compile/execute；module WPT 3/3；core 20/75 |
 | 2026-08-20 | M3-15 module update bytecheck | classic/module main/imported 4×2 矩阵 8/8；core 21/83 |
 | 2026-08-20 | M3-16 module CORS | cross-origin module ACAO fail closed；bytecheck 8/8；core 22/91 |
+| 2026-08-20 | M3-17 module re-export | named/star/namespace re-export；canonical recursive graph |
 | 2026-08-19 | 三方案对比 | 拒绝同线程 context（无调度隔离）；拒绝从零线程（复制安全基建）；推荐抽取 Worker 线程核 |
 | 2026-08-19 | owner | production browser process 单一 owner；WebView 只做同算法 in-process adapter |
 | 2026-08-19 | 首个 driving WPT | `activation-after-registration.https.html` |
