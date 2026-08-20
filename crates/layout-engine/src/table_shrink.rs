@@ -11,6 +11,22 @@ use zero_style_system::ComputedStyle;
 use crate::table::is_table_internal;
 use crate::types::LayoutBox;
 
+fn resolve_table_shrink_length(value: &LengthValue, style: &ComputedStyle) -> Option<f32> {
+    match value {
+        LengthValue::Auto
+        | LengthValue::Percentage(_)
+        | LengthValue::MinContent
+        | LengthValue::MaxContent
+        | LengthValue::FitContent(_) => None,
+        LengthValue::Px(v) if *v == f64::INFINITY => None,
+        other => {
+            let font_size_px = zero_style_system::computed::resolve_length(&style.font_size, 16.0, None, None);
+            let px = zero_style_system::computed::resolve_length(other, font_size_px, None, None);
+            px.is_finite().then_some(px as f32)
+        }
+    }
+}
+
 /// 对「无正规表格子元素」的 display:table 容器执行收缩适应。
 ///
 /// CSS Tables §2.4（匿名盒生成）：当 `display:table` 容器的子元素不是
@@ -96,33 +112,32 @@ pub(crate) fn shrink_table_to_block_content(table_box: &mut LayoutBox, styles: &
     // 默认收缩到 max-content；显式 width 时尊重显式宽度
     let mut final_content_width = max_content_width;
     if let Some(s) = table_style
-        && let LengthValue::Px(v) = &s.width
+        && let Some(v) = resolve_table_shrink_length(&s.width, s)
     {
         final_content_width = if is_border_box {
-            (*v as f32 - padding_border_w).max(0.0)
+            (v - padding_border_w).max(0.0)
         } else {
-            *v as f32
+            v
         };
     }
     // min-width / max-width 约束
     if let Some(s) = table_style
-        && let LengthValue::Px(v) = &s.min_width
+        && let Some(v) = resolve_table_shrink_length(&s.min_width, s)
     {
         let min_c = if is_border_box {
-            (*v as f32 - padding_border_w).max(0.0)
+            (v - padding_border_w).max(0.0)
         } else {
-            *v as f32
+            v
         };
         final_content_width = final_content_width.max(min_c);
     }
     if let Some(s) = table_style
-        && let LengthValue::Px(v) = &s.max_width
-        && *v != f64::INFINITY
+        && let Some(v) = resolve_table_shrink_length(&s.max_width, s)
     {
         let max_c = if is_border_box {
-            (*v as f32 - padding_border_w).max(0.0)
+            (v - padding_border_w).max(0.0)
         } else {
-            *v as f32
+            v
         };
         final_content_width = final_content_width.min(max_c);
     }
@@ -161,10 +176,7 @@ pub(crate) fn shrink_table_to_block_content(table_box: &mut LayoutBox, styles: &
     // height:100px + 0 内容子）显式 height 不应被 0 内容塌缩。
     let explicit_height = table_style
         .as_ref()
-        .and_then(|s| match &s.height {
-            LengthValue::Px(v) => Some(*v as f32),
-            _ => None,
-        })
+        .and_then(|s| resolve_table_shrink_length(&s.height, s))
         .unwrap_or(0.0);
     let final_content_height = content_height.max((explicit_height - padding_border_h).max(0.0));
     table_box.content_height = final_content_height;
@@ -220,23 +232,22 @@ fn shrink_empty_table_to_padding_border(table_box: &mut LayoutBox, styles: &Hash
     // max-content=0；min-width 下限约束
     let mut final_content_width = 0.0f32;
     if let Some(s) = table_style
-        && let LengthValue::Px(v) = &s.min_width
+        && let Some(v) = resolve_table_shrink_length(&s.min_width, s)
     {
         let min_c = if is_border_box {
-            (*v as f32 - padding_border_w).max(0.0)
+            (v - padding_border_w).max(0.0)
         } else {
-            *v as f32
+            v
         };
         final_content_width = final_content_width.max(min_c);
     }
     if let Some(s) = table_style
-        && let LengthValue::Px(v) = &s.max_width
-        && *v != f64::INFINITY
+        && let Some(v) = resolve_table_shrink_length(&s.max_width, s)
     {
         let max_c = if is_border_box {
-            (*v as f32 - padding_border_w).max(0.0)
+            (v - padding_border_w).max(0.0)
         } else {
-            *v as f32
+            v
         };
         final_content_width = final_content_width.min(max_c);
     }
@@ -307,10 +318,7 @@ fn block_max_content_width(box_node: &LayoutBox, styles: &HashMap<NodeId, Comput
     let own_explicit_w = box_node
         .node_id
         .and_then(|id| styles.get(&id))
-        .and_then(|s| match &s.width {
-            LengthValue::Px(v) => Some(*v as f32),
-            _ => None,
-        })
+        .and_then(|s| resolve_table_shrink_length(&s.width, s))
         .unwrap_or(0.0);
     let inner = inner.max(own_explicit_w);
     inner + box_node.padding_left + box_node.padding_right + box_node.border_left + box_node.border_right
@@ -546,6 +554,32 @@ mod tests {
         assert_eq!(table.width, 312.0, "empty table width = padding+border (312)");
         assert_eq!(table.content_height, 0.0);
         assert_eq!(table.height, 312.0, "empty table height = padding+border (312)");
+    }
+
+    #[test]
+    fn test_shrink_empty_table_min_width_relative_length() {
+        let mut styles = HashMap::new();
+        let ids = make_node_ids(1);
+        let table_id = ids[0];
+
+        let mut table = make_box(784.0, 0.0);
+        table.content_width = 784.0;
+        table.padding_left = 10.0;
+        table.padding_right = 10.0;
+        table.node_id = Some(table_id);
+        let mut ts = ComputedStyle::default();
+        ts.display = DisplayValue::Table;
+        ts.font_size = LengthValue::Px(20.0);
+        ts.min_width = LengthValue::Em(10.0);
+        styles.insert(table_id, ts);
+
+        shrink_table_to_block_content(&mut table, &styles);
+
+        assert_eq!(
+            table.content_width, 200.0,
+            "10em at 20px should become 200px content min-width"
+        );
+        assert_eq!(table.width, 220.0, "content 200 + horizontal padding 20");
     }
 
     /// 完全为空但 width 非默认（显式 px / percent）的 display:table 不应被
