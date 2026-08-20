@@ -509,7 +509,7 @@
    - **(g) iframe.contentDocument**（深结构 html-compat 域）。
    - **(h) dom_bindings coverage 剩余**（custom_elements 89.0%，剩 19 防御/OOM 行低 ROI）。
    - **(i) 主线里程碑推进**：M1 L2 / M6 QuickJS native——均为深结构，评估切片化可能（M1 L2 最小只读子集已有 A/B 门就绪；R51b 反链+overlay 已是 L2 方向实质推进）。
-4. **后续主线**：M1 L2（polyfill-live 合一，解 polyfill appendChild 闭环限制）→ M2 S6 → M3 SPA/WC → M4 WPT dom 持续扩 → M5 V8 default-on（待用户决策）→ M6 QuickJS native → M7 双引擎 default-on + 收尾；M8 canvas path-objects 待 canvas 流告段落接手
+4. **后续主线**：M1 L2（polyfill-live 合一，解 polyfill appendChild 闭环限制）→ M2 S6 → M3 SPA/WC → M4 WPT dom 持续扩 → M5 V8 default-on（**方向已获 2026-08-19 用户批复，启动时点按 zero-web ⚡ 块执行序**，见待用户决策清单）→ M6 QuickJS native → M7 双引擎 default-on + 收尾；M8 canvas path-objects 待 canvas 流告段落接手
 5. **R53（诊断归档未 land——负结果 + 精确方向，同 R43 模式）**：**dataChange testFn 成本归因完成**——testFn 原语（data 读写/parentNode/Range getter）全部 µs 级无辜；真凶是**「脏状态」级联**：干净 setup 1.5ms → 混入 testFn 的 data 写后 **334ms/setup（220x）**；分解定位 ce 段（createElement+appendChild）2ms/op。**根因链实证**（R53J/R53K 行为探针）：`getElementsByTagName('p')` live collection 的 els **每 setup 净 +2**（旧 detached/foreign paras 滞留）→ els 千级 → `_zwHCLiveInvalidate` 失效循环每 mutation O(els) → 全部 append 变慢。**两版修复试验均产生回归回退**：① 消零同步剔除 + `_zwPendingConnected` 并入过滤（反链上行判定）→ 快照基线 8 个 p 误清（len=0，R50 own-pts 必炸）——**sel 节点的快照基线剔除与 pending 泄漏剔除是两个独立问题，不能混在一个 remFlat 循环**；② 保守放行版仍 len=0。**已回退零残留**（part05 = R52 HEAD，engine 2140 全绿 + collections 48P 验证）。**下轮精确方向**：live collection els 的泄漏剔除应挂在「**detached/foreign 容器子树的 pending added 并入时就不该进文档级集合**」（并入点过滤而非移除点剔除），且过滤判据不能用 `_zwNodeParent` 反链（pending 树断链），应用 **`_mo_notify` 的 mutSel 链**（mutation 发生在 detached 容器上时其子树全部跳过并入——mutSel 无 host 快照即非主文档容器）
 6. **R54（已 land `ba775545`）**：**R53 方向的落地**——`_zwMutationInDoc(mutSel, mutHandle)` 挂载点判定（sel→`__zw_contains('html', sel)`；handle→`_zwNodeParent` 逐跳上行——**注：R53 说「不能用反链」指的是从 pending 子节点上行；从挂载点上行用的是 append 当时刚记账的链，不断链**），应用于失效循环 add 分支 + 构建期 pending 并入两处。**deleteData 2.0x / insertData 加速，四子目录零回归，单测 +3**。细节见 archive/m4-slice-livecollection-merge-filter.md。**遗留**：insertBefore/dataChange >420s（per-subtest testFn 成本，M1 L2）+ detached 容器强引用缓涨（TBD WeakRef）
 7. **R56（已 land `ac7240f5`）**：**M8 path-objects 接手首切片**——用例导入 205 + roundRect panic 消除（total_cmp）+ 语义/几何对齐 + 扫描线段式迭代，139→156 pass。细节见 archive/m8-slice-path-objects-roundrect.md。
@@ -532,7 +532,7 @@
 
 | 事项 | 触发条件 | 状态 |
 |------|----------|------|
-| V8 `ZW_NATIVE_DOM` default-on（改 Mission 级单向门，M5） | M1–M4 完成、V8 native 路径生产就绪 | 待 M5 启动前征询 |
+| V8 `ZW_NATIVE_DOM` default-on（改 Mission 级单向门，M5） | M1–M4 完成、V8 native 路径生产就绪 | **方向已获 2026-08-19 用户批复启动**（zero-web ⚡ 块：P1b default-on 拍板，"js-dom 侧同门 = M5 V8 default-on"）；触发条件 M1–M4 完成仍待，M5 启动时点按 zero-web ⚡ 块执行序（先 default-off 全量基线 → 翻开关 → 双流守门 A/B net≥0）执行，无需再征询方向 |
 | QuickJS `ZW_NATIVE_DOM` default-on（改 Mission 级单向门，M7） | M6 QuickJS native 移植完成 | 待 M7 启动前征询 |
 
 > 本轮 A/B 对照门骨架为纯测试新增，不触发上述门禁。
