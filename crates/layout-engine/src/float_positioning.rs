@@ -74,42 +74,53 @@ pub(crate) fn apply_inline_block_float_avoidance(box_node: &mut LayoutBox) {
                 // 计算可行 x 区间 [x_lo, x_hi]（左 float 推 x_lo 右移、右 float 推 x_hi 左移），
                 // 可行则置 x_lo；不可行（float 占满致旁无空）则**保持原位**（勿错位，如 002r-inline
                 // 原 x=[11,210] 匹配 chromium，per-float 错移到 [311,410]）。
+                let used_width = child.declared_width_px.unwrap_or(child.width);
                 let mut x_lo = 0.0_f32;
-                let mut x_hi = (container_w - child.width).max(0.0);
+                let mut x_hi = (container_w - used_width).max(0.0);
                 for (fd, fx, _fy, fw, _fh, fmr) in &overlapping {
                     match fd {
                         FloatValue::Left => x_lo = x_lo.max(*fx + *fw + *fmr),
-                        FloatValue::Right => x_hi = x_hi.min(*fx - child.width),
+                        FloatValue::Right => x_hi = x_hi.min(*fx - used_width),
                         _ => {}
                     }
                 }
                 if x_lo <= x_hi + 0.5 {
                     child.x = x_lo;
                     let max_w = (container_w - child.x).max(0.0);
-                    if child.width > max_w {
+                    if used_width > max_w {
                         child.width = max_w;
+                    } else {
+                        child.width = used_width;
                     }
+                    shrink_bfc_content_width(child);
                 }
                 // 不可行 → 不动（避免错位）
             } else if overlapping.len() == 1 {
                 // 单 float：per-float（左推右、右收缩宽）。
                 let (fd, fx, _fy, fw, _fh, fmr) = overlapping[0];
+                let used_width = child.declared_width_px.unwrap_or(child.width);
                 match fd {
                     FloatValue::Left => {
                         let avoidance_x = *fx + *fw + *fmr;
                         if avoidance_x > child.x {
                             child.x = avoidance_x;
                             let max_w = (container_w - child.x).max(0.0);
-                            if child.width > max_w {
+                            if used_width > max_w {
                                 child.width = max_w;
+                            } else {
+                                child.width = used_width;
                             }
+                            shrink_bfc_content_width(child);
                         }
                     }
-                    FloatValue::Right if *fx < child.x + child.width => {
+                    FloatValue::Right if *fx < child.x + used_width => {
                         let new_w = (*fx - child.x).max(0.0);
-                        if child.width > new_w {
+                        if used_width > new_w {
                             child.width = new_w;
+                        } else {
+                            child.width = used_width;
                         }
+                        shrink_bfc_content_width(child);
                     }
                     _ => {}
                 }

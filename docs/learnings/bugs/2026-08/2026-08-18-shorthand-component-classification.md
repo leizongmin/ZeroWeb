@@ -340,3 +340,5 @@ BFC float avoidance exposed the cached-used-declaration variant: postprocess sta
 Right-float BFC avoidance exposed the entry-guard variant: adding a used-value cache is not enough if the branch guard still asks the post-taffy fallback width whether the box overlaps the float. Every gate that decides whether avoidance runs must consume the same declared used width as the later fit/pushdown logic.
 
 Multi-float coordination exposed the feasible-region variant: candidate placement solvers must use the used border-box width when computing x intervals, not only when finally restoring geometry. A raw residual length can make an infeasible gap look feasible and lock in the wrong width.
+
+Inline-block float avoidance exposed the atomic-inline variant: terminal geometry passes that adjust an inline-block position must also restore its declared used width and content width. Fixing only the x/y coordinate can leave the atomic box visually shifted but still sized from a raw residual unit.

@@ -55,6 +55,55 @@ fn r1733_inline_block_shifted_beside_left_float() {
     );
 }
 
+/// R3612：inline-block float avoidance 也要恢复声明宽的 used-value。
+/// `width:10em;font-size:20px` = 200px；旧终末 pass 只调整 x，
+/// 但保留 taffy raw `Em(10)` 的 10px 宽。
+#[test]
+fn r3612_inline_block_relative_declared_width_preserved_beside_left_float() {
+    let (mut doc, body) = make_doc_with_body();
+    let container = doc.create_element("div");
+    doc.append_child(body, container).unwrap();
+    let float_l = doc.create_element("div");
+    doc.append_child(container, float_l).unwrap();
+    let ib = doc.create_element("span");
+    doc.append_child(container, ib).unwrap();
+
+    let mut styles = HashMap::new();
+    let mut cont = ComputedStyle::default();
+    cont.display = DisplayValue::Block;
+    cont.width = LengthValue::Px(400.0);
+    styles.insert(container, cont);
+
+    let mut fl = ComputedStyle::default();
+    fl.display = DisplayValue::Block;
+    fl.float = FloatValue::Left;
+    fl.width = LengthValue::Px(150.0);
+    fl.height = LengthValue::Px(25.0);
+    styles.insert(float_l, fl);
+
+    let mut s = ComputedStyle::default();
+    s.display = DisplayValue::InlineBlock;
+    s.font_size = LengthValue::Px(20.0);
+    s.width = LengthValue::Em(10.0);
+    s.height = LengthValue::Px(50.0);
+    styles.insert(ib, s);
+
+    let mut engine = LayoutEngine::new(800.0, 600.0);
+    let result = engine.compute(&doc, &styles);
+
+    let ib_box = find_child_by_node_id(&result.root, ib).expect("inline-block found");
+    assert!(
+        ib_box.x > 100.0,
+        "relative inline-block 应 shift 到 float:left 右缘旁，实际 x={}",
+        ib_box.x
+    );
+    assert!(
+        ib_box.width >= 195.0,
+        "relative inline-block 应保持 width≈200，实际 {}",
+        ib_box.width
+    );
+}
+
 /// R1733 续（多-float 协调）：float:left 与 float:right（占满宽，inline-block 放不下任一旁）
 /// 同容器，加 inline-block w=200。多-float 协调应判不可行→保持原位 + 宽度不变，非 per-float
 /// over-shrink 错缩到小宽（floats-wrap-top-below-inline-002r 回归实证）。load-bearing：
