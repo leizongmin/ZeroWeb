@@ -1238,5 +1238,6 @@ fn test_parse_comma_separated_timing_functions() {
 #[test]
 fn test_resolve_length_to_px() {
     assert_eq!(resolve_length_to_px(LengthValue::Px(100.0)), 100.0);
-    assert_eq!(resolve_length_to_px(LengthValue::Em(2.0)), 0.0);
+    assert_eq!(resolve_length_to_px(LengthValue::Em(2.0)), 32.0);
+    assert_eq!(resolve_length_to_px(LengthValue::Percentage(25.0)), 0.0);
 }

@@ -1851,6 +1851,10 @@ fn test_scroll_margin_applied() {
 
     assert!(apply_property_value(&mut style, "scroll-margin-top", "-4px"));
     assert_eq!(style.scroll_margin_top, -4.0);
+
+    assert!(apply_property_value(&mut style, "scroll-margin-right", "1em"));
+    assert_eq!(style.scroll_margin_right, 16.0);
+
     let previous = style.scroll_margin_right;
     for value in [
         "10%",
@@ -1883,6 +1887,9 @@ fn test_scroll_padding_applied() {
 
     assert!(apply_property_value(&mut style, "scroll-padding-top", "25%"));
     assert_eq!(style.scroll_padding_top, ScrollPadding::Length(0.0));
+
+    assert!(apply_property_value(&mut style, "scroll-padding-top", "1em"));
+    assert_eq!(style.scroll_padding_top, ScrollPadding::Length(16.0));
 
     assert!(apply_property_value(&mut style, "scroll-padding-right", "auto"));
     assert_eq!(style.scroll_padding_right, ScrollPadding::Auto);

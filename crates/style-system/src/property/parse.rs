@@ -609,10 +609,24 @@ fn scroll_padding_length_is_valid(raw: &str, value: &LengthValue) -> bool {
     }
 }
 
-/// 将 LengthValue 转换为 f32 px（简单近似，非相对单位返回 0.0）。
+/// 将 LengthValue 转换为 f32 px（无上下文值保持 0.0）。
 pub(crate) fn resolve_length_to_px(l: LengthValue) -> f32 {
     match l {
         LengthValue::Px(n) => n as f32,
+        LengthValue::Em(_)
+        | LengthValue::Ex(_)
+        | LengthValue::Rex(_)
+        | LengthValue::Cap(_)
+        | LengthValue::Rcap(_)
+        | LengthValue::Rem(_)
+        | LengthValue::Vh(_)
+        | LengthValue::Vw(_)
+        | LengthValue::Vmin(_)
+        | LengthValue::Vmax(_)
+        | LengthValue::Ch(_)
+        | LengthValue::Rch(_)
+        | LengthValue::Ic(_)
+        | LengthValue::Ric(_) => crate::computed::resolve_length(&l, 16.0, None, None) as f32,
         _ => 0.0,
     }
 }
