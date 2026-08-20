@@ -90,6 +90,22 @@ fn resolve_definite_width_border_box(style: &ComputedStyle, padding_border_w: f3
     })
 }
 
+fn resolve_definite_real_length_for_style(value: &LengthValue, style: &ComputedStyle) -> Option<f32> {
+    match value {
+        LengthValue::Auto
+        | LengthValue::Percentage(_)
+        | LengthValue::MinContent
+        | LengthValue::MaxContent
+        | LengthValue::FitContent(_) => None,
+        LengthValue::Px(v) if *v == f64::INFINITY => None,
+        other => {
+            let font_size_px = zero_style_system::computed::resolve_length(&style.font_size, 16.0, None, None);
+            let px = zero_style_system::computed::resolve_length(other, font_size_px, None, None);
+            px.is_finite().then_some(px.max(0.0) as f32)
+        }
+    }
+}
+
 use crate::dirty::LayoutDirtyTracker;
 
 use crate::tree::{R109Wiring, build_layout_tree_with_r109};
@@ -612,16 +628,15 @@ impl LayoutEngine {
         // 定位 border-box。taffy 把根节点固定在 (0,0)（根无父级提供定位上下文），根的
         // 声明 margin-top/left 不被应用，致 `<html style="margin:50px">` 的边框盒落在
         // 视口原点而非 (50,50)（abspos-containing-block-initial-009a 簇）。此处补上根
-        // 固定 margin 的位置偏移（auto 已由上方居中逻辑处理；百分比/Em 保守跳过）。
+        // 固定 margin 的位置偏移（auto 已由上方居中逻辑处理；百分比保守跳过）。
         if matches!(root_box.writing_mode, WritingModeValue::HorizontalTb) {
-            use zero_css_parser::values::LengthValue;
             let root_style = root_box.node_id.and_then(|id| styles.get(&id));
             if let Some(s) = root_style {
-                if let LengthValue::Px(v) = &s.margin_left {
-                    root_box.x += *v as f32;
+                if let Some(px) = resolve_definite_real_length_for_style(&s.margin_left, s) {
+                    root_box.x += px;
                 }
-                if let LengthValue::Px(v) = &s.margin_top {
-                    root_box.y += *v as f32;
+                if let Some(px) = resolve_definite_real_length_for_style(&s.margin_top, s) {
+                    root_box.y += px;
                 }
             }
         }

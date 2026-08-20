@@ -735,6 +735,40 @@ fn test_root_abspos_inset_positions_border_box() {
     );
 }
 
+/// R3620：根元素固定 margin 的位置偏移也要解析 residual real length。
+/// direct `ComputedStyle` 下 `margin-left:3em;margin-top:2em;font-size:20px`
+/// 应定位到 (60,40)；旧根修正只接受 `Px`，会把根继续留在 (0,0)。
+#[test]
+fn r3620_root_margin_resolves_residual_real_lengths() {
+    let html = r#"<html style="margin:50px;border:10px solid black"><body></body></html>"#;
+    let doc = zero_dom::parse_html(html);
+    let mut sys = StyleSystem::new();
+    sys.set_viewport(800.0, 600.0);
+    let mut styles = sys.compute_styles(&doc, &[]);
+    let root = doc
+        .get_elements_by_tag_name("html")
+        .into_iter()
+        .next()
+        .expect("html element");
+    let root_style = styles.get_mut(&root).expect("root style");
+    root_style.font_size = LengthValue::Px(20.0);
+    root_style.margin_left = LengthValue::Em(3.0);
+    root_style.margin_top = LengthValue::Em(2.0);
+
+    let mut engine = LayoutEngine::new(800.0, 600.0);
+    let result = engine.compute(&doc, &styles);
+    assert!(
+        (result.root.x - 60.0).abs() < 1.0,
+        "R3620: root margin-left should resolve 3em@20px to 60, got {}",
+        result.root.x
+    );
+    assert!(
+        (result.root.y - 40.0).abs() < 1.0,
+        "R3620: root margin-top should resolve 2em@20px to 40, got {}",
+        result.root.y
+    );
+}
+
 /// R1304：`width:min-content` 的 block 容器应收缩到其 min-content 宽度，而非塌缩为 0
 ///（converter MinContent→length(0)；R1018 intrinsic gate 旧仅放行 MaxContent，MinContent
 /// block 被跳过 → 塌缩）。R1304 扩 gate 经 block_max_content_width 测（固定宽/原子内容

@@ -358,3 +358,5 @@ Flex aspect-ratio post-fixup exposed the second-pass replay variant: a first-pas
 Late min/max block-size clamps exposed the sibling-flow variant: if a post-taffy pass changes an in-flow block child's outer extent, later normal-flow block siblings must be shifted by the same delta. Resolving residual `min-height` without propagating that delta leaves the box size correct but the rendered flow order stale.
 
 Relative inset postprocessing exposed the raw-delta variant: when taffy already applied a residual real length as its raw numeric value, a later used-value fix must add only `resolved_px - raw_value`. Reapplying the full resolved length would double-count the raw offset, while touching inline relative without a dedicated test risks crossing into the separate IFC offset path.
+
+Root compensation paths are also used-value boundaries. When the engine manually replays root-level behavior that taffy cannot model, such as viewport-relative fixed margins, resolve real lengths against the root style before applying the offset; do not leave those root-only fixups as `Px`-only exceptions.
