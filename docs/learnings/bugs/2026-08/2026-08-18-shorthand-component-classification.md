@@ -235,6 +235,8 @@ Translate3d exposed the sibling transform variant: after creating a dedicated tr
 
 Perspective exposed the positive-length transform variant: transform helpers often share numeric parsing, but perspective needs a positive length grammar rather than an angle/scale/matrix number grammar. Reuse the transform length parser, then layer the strict positivity check at the perspective boundary.
 
+Filter exposed the px-only helper variant: a function can be named for the computed storage unit yet still must accept every real `<length>` unit at parse time. Reuse the shared length parser, then reject percentages and shared-parser aliases at the filter boundary before collapsing into the existing numeric representation.
+
 ## Root Cause
 
 The shorthand layer used heuristic component classifiers and treated unrecognized tokens as absent optional components. That is wrong for CSS shorthands such as `border`, where every token must match one of the allowed component grammars. A shared parser can also be broader than the property grammar that consumes it: general length parsing may accept `auto`, intrinsic sizing keywords, or percentages that `border-width` must reject.

@@ -1300,6 +1300,25 @@ fn test_parse_filter_multiple_functions() {
     assert_eq!(parse_filter("hue-rotate(90deg)"), Some(FilterValue::HueRotate(90.0)));
 }
 
+#[test]
+fn test_parse_filter_accepts_length_units() {
+    assert_eq!(parse_filter("blur(1vh)"), Some(FilterValue::Blur(1.0)));
+    assert_eq!(parse_filter("blur(2ch)"), Some(FilterValue::Blur(2.0)));
+    assert!(parse_filter("blur(1%)").is_none());
+    assert!(parse_filter("blur(thin)").is_none());
+
+    match parse_filter("drop-shadow(1vh 2ch 3vmin red)") {
+        Some(FilterValue::DropShadow(x, y, blur, color)) => {
+            assert_eq!(x, 1.0);
+            assert_eq!(y, 2.0);
+            assert_eq!(blur, 3.0);
+            assert_eq!(color, ColorValue::Rgba(255, 0, 0, 255));
+        }
+        other => panic!("应为 DropShadow，实际得到 {other:?}"),
+    }
+    assert!(parse_filter("drop-shadow(1vh 2ch -3vmin red)").is_none());
+}
+
 /// 测试 parse_text_shadow 仅有颜色无模糊半径的情况
 /// 格式 "2px 3px red"：offset-x + offset-y + color，blur 默认为 0
 #[test]

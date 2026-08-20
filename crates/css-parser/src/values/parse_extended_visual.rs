@@ -184,15 +184,32 @@ fn parse_filter_length_px(s: &str) -> Option<f32> {
     if s.is_empty() {
         return Some(0.0);
     }
-    if let Some(num_str) = s.strip_suffix("px") {
-        let px = num_str.trim().parse::<f32>().ok()?;
-        return px.is_finite().then_some(px);
+    let length = parse_length(s)?;
+    if matches!(
+        s.to_ascii_lowercase().as_str(),
+        "thin" | "medium" | "thick" | "auto" | "min-content" | "max-content" | "fit-content"
+    ) {
+        return None;
     }
-    // CSS Values §5.4：裸 0 是合法 `<length>`（unitless-zero）；其他无单位值对 `<length>` 无效。
-    match s.parse::<f32>() {
-        Ok(0.0) => Some(0.0),
-        _ => None,
-    }
+    let value = match length {
+        LengthValue::Px(v)
+        | LengthValue::Em(v)
+        | LengthValue::Ex(v)
+        | LengthValue::Rex(v)
+        | LengthValue::Cap(v)
+        | LengthValue::Rcap(v)
+        | LengthValue::Rem(v)
+        | LengthValue::Vh(v)
+        | LengthValue::Vw(v)
+        | LengthValue::Vmin(v)
+        | LengthValue::Vmax(v)
+        | LengthValue::Ch(v)
+        | LengthValue::Rch(v)
+        | LengthValue::Ic(v)
+        | LengthValue::Ric(v) => v,
+        _ => return None,
+    };
+    if value.is_finite() { Some(value as f32) } else { None }
 }
 
 fn parse_filter_non_negative_length_px(s: &str) -> Option<f32> {

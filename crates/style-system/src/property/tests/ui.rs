@@ -17,6 +17,25 @@ fn test_apply_property_background_size_length() {
 }
 
 #[test]
+fn test_apply_property_filter_accepts_length_units() {
+    let mut style = ComputedStyle::default();
+    assert!(apply_property_value(
+        &mut style,
+        "filter",
+        "blur(1vh) drop-shadow(2ch 3vmin 4ic red)"
+    ));
+    assert_eq!(style.filter[0], FilterComputedValue::Blur(1.0));
+    assert_eq!(
+        style.filter[1],
+        FilterComputedValue::DropShadow(2.0, 3.0, 4.0, ColorValue::Rgba(255, 0, 0, 255))
+    );
+
+    let previous = style.filter.clone();
+    assert!(!apply_property_value(&mut style, "filter", "blur(1%)"));
+    assert_eq!(style.filter, previous);
+}
+
+#[test]
 fn test_apply_property_background_size_percent() {
     let mut style = ComputedStyle::default();
     assert!(apply_property_value(&mut style, "background-size", "50%"));
