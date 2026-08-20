@@ -16,7 +16,7 @@ use std::time::Duration;
 
 use zero_protocol::message::{
     ServiceWorkerHostCommand, ServiceWorkerHostCommandParams, ServiceWorkerHostEvent, ServiceWorkerHostEventParams,
-    ServiceWorkerLifecycleWire, ServiceWorkerScriptErrorKindWire,
+    ServiceWorkerLifecycleWire, ServiceWorkerScriptErrorKindWire, ServiceWorkerScriptTypeWire,
 };
 use zero_protocol::transport::PipeTransport;
 use zero_protocol::{IpcChannel, IpcMessage, IpcMessageKind};
@@ -100,8 +100,12 @@ impl HostThread {
             return;
         }
         match params.command {
-            ServiceWorkerHostCommand::Evaluate { script_url, script } => {
-                self.evaluate(params.registration_id, &script_url, &script);
+            ServiceWorkerHostCommand::Evaluate {
+                script_url,
+                script,
+                script_type,
+            } => {
+                self.evaluate(params.registration_id, &script_url, &script, script_type);
             }
             ServiceWorkerHostCommand::DispatchLifecycle { phase } => {
                 self.dispatch_lifecycle(params.registration_id, wire_phase(phase));
@@ -147,10 +151,27 @@ impl HostThread {
         }
     }
 
-    fn evaluate(&mut self, registration_id: u64, script_url: &str, script: &str) {
+    fn evaluate(
+        &mut self,
+        registration_id: u64,
+        script_url: &str,
+        script: &str,
+        script_type: ServiceWorkerScriptTypeWire,
+    ) {
         // 同 id 重复求值不应发生（browser 分配唯一 id）；防御性先回收旧 runtime。
         if let Some(mut runtime) = self.runtimes.remove(&registration_id) {
             runtime.shutdown();
+        }
+        if script_type == ServiceWorkerScriptTypeWire::Module {
+            self.pending_events.push(ServiceWorkerHostEventParams {
+                registration_id,
+                event: ServiceWorkerHostEvent::ScriptError {
+                    script_url: script_url.to_string(),
+                    kind: ServiceWorkerScriptErrorKindWire::InvalidInput,
+                    message: "Service Worker module graph loader is unavailable".into(),
+                },
+            });
+            return;
         }
         match ServiceWorkerRuntime::new(SandboxConfig::default()) {
             Ok(mut runtime) => {
@@ -350,6 +371,7 @@ mod tests {
             command: ServiceWorkerHostCommand::Evaluate {
                 script_url: "https://example.test/sw.js".into(),
                 script: script.into(),
+                script_type: ServiceWorkerScriptTypeWire::Classic,
             },
         }
     }
@@ -485,6 +507,7 @@ mod tests {
             command: ServiceWorkerHostCommand::Evaluate {
                 script_url: String::new(),
                 script: "void 0;".into(),
+                script_type: ServiceWorkerScriptTypeWire::Classic,
             },
         });
         // 托管线程 drain 完命令队列后不应产生任何回传字节。

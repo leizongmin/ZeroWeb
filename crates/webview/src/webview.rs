@@ -29,7 +29,9 @@ use zero_page_runtime::{
 use zero_render_foundation::primitive::RenderPrimitives;
 use zero_script_sandbox::{SandboxConfig, WorkerEvent, WorkerRuntime};
 use zero_security::{ResourceCheckResult, SecurityContext};
-use zero_storage::{CacheRequest, FetchInterceptResult, ServiceWorkerRegistry, ServiceWorkerUpdateViaCache};
+use zero_storage::{
+    CacheRequest, FetchInterceptResult, ServiceWorkerRegistry, ServiceWorkerScriptType, ServiceWorkerUpdateViaCache,
+};
 use zero_wasm_sandbox::WasmInstance;
 
 use crate::{IndexedDbOwner, WebViewError};
@@ -2474,6 +2476,10 @@ impl WebView {
                     Some("none") => ServiceWorkerUpdateViaCache::None,
                     _ => ServiceWorkerUpdateViaCache::Imports,
                 };
+                let script_type = match args.get(5).map(String::as_str) {
+                    Some("module") => ServiceWorkerScriptType::Module,
+                    _ => ServiceWorkerScriptType::Classic,
+                };
                 let document_url = match register_page_url.lock() {
                     Ok(url) => url.clone(),
                     Err(_) => {
@@ -2509,11 +2515,12 @@ impl WebView {
                         .lock()
                         .map_err(|_| "Service Worker manager lock poisoned".to_string())?;
                     let registration_id = manager
-                        .start_evaluation_with_update_via_cache(
+                        .start_evaluation_with_options(
                             script_url.as_str(),
                             scope.as_str(),
                             &origin,
                             &source,
+                            script_type,
                             update_via_cache,
                         )
                         .map_err(|error| error.to_string())?;

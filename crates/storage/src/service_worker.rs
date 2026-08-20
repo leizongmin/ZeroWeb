@@ -89,6 +89,16 @@ pub enum ServiceWorkerUpdateViaCache {
     None,
 }
 
+/// Service Worker top-level script type.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub enum ServiceWorkerScriptType {
+    /// Classic script evaluated with `importScripts()` support.
+    #[default]
+    Classic,
+    /// JavaScript module graph.
+    Module,
+}
+
 /// 单个 Service Worker 注册记录。
 #[derive(Debug, Clone)]
 pub struct ServiceWorkerRegistration {
@@ -102,6 +112,8 @@ pub struct ServiceWorkerRegistration {
     pub origin: String,
     /// Script update HTTP cache policy.
     pub update_via_cache: ServiceWorkerUpdateViaCache,
+    /// Top-level script type.
+    pub script_type: ServiceWorkerScriptType,
     /// 当前状态。
     pub state: ServiceWorkerState,
     /// SW 脚本内容（从 script_url 获取）。
@@ -119,6 +131,7 @@ impl ServiceWorkerRegistration {
             scope: scope.to_string(),
             origin: origin.to_string(),
             update_via_cache: ServiceWorkerUpdateViaCache::Imports,
+            script_type: ServiceWorkerScriptType::Classic,
             state: ServiceWorkerState::Registered,
             script_content: None,
             cache_storage: CacheStorage::new(),

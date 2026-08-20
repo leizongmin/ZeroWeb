@@ -662,6 +662,8 @@ pub enum ServiceWorkerOperation {
         document_url: String,
         /// Script update HTTP cache policy.
         update_via_cache: ServiceWorkerUpdateViaCacheWire,
+        /// Top-level script type.
+        script_type: ServiceWorkerScriptTypeWire,
     },
     /// Read one registration version snapshot.
     Snapshot {
@@ -773,6 +775,8 @@ pub struct ServiceWorkerSnapshot {
     pub scope: String,
     /// Script update HTTP cache policy.
     pub update_via_cache: ServiceWorkerUpdateViaCacheWire,
+    /// Top-level script type.
+    pub script_type: ServiceWorkerScriptTypeWire,
     /// Current worker lifecycle state.
     pub state: ServiceWorkerStateWire,
 }
@@ -786,6 +790,16 @@ pub enum ServiceWorkerUpdateViaCacheWire {
     All,
     /// Main and imported scripts bypass cache.
     None,
+}
+
+/// IPC-safe Service Worker top-level script type.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub enum ServiceWorkerScriptTypeWire {
+    /// Classic script.
+    #[default]
+    Classic,
+    /// JavaScript module graph.
+    Module,
 }
 
 /// IPC-safe Service Worker lifecycle state.
@@ -859,7 +873,7 @@ impl ServiceWorkerHostCommandParams {
         const MAX_URL_BYTES: usize = 64 * 1024;
         const MAX_SCRIPT_BYTES: usize = 16 * 1024 * 1024;
         match &self.command {
-            ServiceWorkerHostCommand::Evaluate { script_url, script } => {
+            ServiceWorkerHostCommand::Evaluate { script_url, script, .. } => {
                 if script_url.is_empty() {
                     return Err("Service Worker host script URL is required");
                 }
@@ -927,6 +941,8 @@ pub enum ServiceWorkerHostCommand {
         script_url: String,
         /// 脚本源码（browser 已完成网络抓取与安全校验）。
         script: String,
+        /// Top-level script type.
+        script_type: ServiceWorkerScriptTypeWire,
     },
     /// 派发 install / activate 生命周期事件。
     DispatchLifecycle {

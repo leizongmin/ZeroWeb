@@ -5,7 +5,10 @@ use std::collections::{HashMap, HashSet};
 use zero_script_sandbox::{
     SandboxConfig, ServiceWorkerEvent, ServiceWorkerLifecyclePhase, ServiceWorkerRuntime, ServiceWorkerScriptErrorKind,
 };
-use zero_storage::{ServiceWorkerRegistration, ServiceWorkerRegistry, ServiceWorkerState, ServiceWorkerUpdateViaCache};
+use zero_storage::{
+    ServiceWorkerRegistration, ServiceWorkerRegistry, ServiceWorkerScriptType, ServiceWorkerState,
+    ServiceWorkerUpdateViaCache,
+};
 
 const DEFAULT_RUNTIME_LIMIT: usize = 32;
 const MAX_CLIENTS_PER_VERSION: usize = 256;
@@ -17,6 +20,7 @@ const MAX_IMPORTED_SCRIPTS_PER_VERSION: usize = 1024;
 
 struct EvaluationOptions {
     update_via_cache: ServiceWorkerUpdateViaCache,
+    script_type: ServiceWorkerScriptType,
     restoring_active: bool,
     restored_imported_scripts: Vec<ServiceWorkerImportedScript>,
 }
@@ -95,6 +99,9 @@ pub struct ServiceWorkerPersistentRegistration {
     /// Script update HTTP cache policy.
     #[serde(default)]
     pub update_via_cache: ServiceWorkerUpdateViaCache,
+    /// Top-level script type.
+    #[serde(default)]
+    pub script_type: ServiceWorkerScriptType,
     /// Canonical imported classic script URLs and source bytes.
     #[serde(default)]
     pub imported_scripts: Vec<ServiceWorkerImportedScript>,
@@ -321,6 +328,7 @@ pub trait ServiceWorkerRuntimeHost: Send {
         registration_id: u64,
         script_url: &str,
         script: &str,
+        script_type: ServiceWorkerScriptType,
     ) -> Result<(), ServiceWorkerManagerError>;
     /// Dispatch the install or activate event inside one live runtime.
     fn dispatch_lifecycle(
@@ -374,7 +382,13 @@ impl ServiceWorkerRuntimeHost for LocalServiceWorkerHost {
         registration_id: u64,
         script_url: &str,
         script: &str,
+        script_type: ServiceWorkerScriptType,
     ) -> Result<(), ServiceWorkerManagerError> {
+        if script_type == ServiceWorkerScriptType::Module {
+            return Err(ServiceWorkerManagerError::Runtime(
+                "Service Worker module graph loader is unavailable".into(),
+            ));
+        }
         let mut runtime = ServiceWorkerRuntime::new(self.config.clone())
             .map_err(|error| ServiceWorkerManagerError::Runtime(error.to_string()))?;
         runtime
@@ -531,6 +545,31 @@ impl ServiceWorkerManager {
             script,
             EvaluationOptions {
                 update_via_cache,
+                script_type: ServiceWorkerScriptType::Classic,
+                restoring_active: false,
+                restored_imported_scripts: Vec::new(),
+            },
+        )
+    }
+
+    /// Start evaluation with explicit script type and update cache policy.
+    pub fn start_evaluation_with_options(
+        &mut self,
+        script_url: &str,
+        scope: &str,
+        origin: &str,
+        script: &str,
+        script_type: ServiceWorkerScriptType,
+        update_via_cache: ServiceWorkerUpdateViaCache,
+    ) -> Result<u64, ServiceWorkerManagerError> {
+        self.start_evaluation_internal(
+            script_url,
+            scope,
+            origin,
+            script,
+            EvaluationOptions {
+                update_via_cache,
+                script_type,
                 restoring_active: false,
                 restored_imported_scripts: Vec::new(),
             },
@@ -548,6 +587,7 @@ impl ServiceWorkerManager {
             origin,
             script_source,
             update_via_cache,
+            script_type,
             imported_scripts,
         } = registration;
         self.start_evaluation_internal(
@@ -557,6 +597,7 @@ impl ServiceWorkerManager {
             &script_source,
             EvaluationOptions {
                 update_via_cache,
+                script_type,
                 restoring_active: true,
                 restored_imported_scripts: imported_scripts,
             },
@@ -602,7 +643,8 @@ impl ServiceWorkerManager {
         let registration = self.registry.get_mut(id).expect("new registration must exist");
         registration.state = ServiceWorkerState::Installing;
         registration.update_via_cache = options.update_via_cache;
-        if let Err(error) = self.host.evaluate(id, script_url, script) {
+        registration.script_type = options.script_type;
+        if let Err(error) = self.host.evaluate(id, script_url, script, options.script_type) {
             self.registry.unregister(id);
             return Err(error);
         }
@@ -697,11 +739,12 @@ impl ServiceWorkerManager {
         }
         let registration = self.update_target(registration_id)?.clone();
         let current_id = registration.id;
-        let registration_id = self.start_evaluation_with_update_via_cache(
+        let registration_id = self.start_evaluation_with_options(
             &registration.script_url,
             &registration.scope,
             &registration.origin,
             script,
+            registration.script_type,
             registration.update_via_cache,
         )?;
         self.update_predecessors.insert(registration_id, current_id);
@@ -1452,6 +1495,7 @@ impl ServiceWorkerManager {
                     origin: key.origin.clone(),
                     script_source,
                     update_via_cache: registration.update_via_cache,
+                    script_type: registration.script_type,
                     imported_scripts,
                 })
             })
@@ -1928,6 +1972,7 @@ mod tests {
                          addEventListener('activate', () => { throw new Error('activate replayed'); });"
                     .into(),
                 update_via_cache: ServiceWorkerUpdateViaCache::Imports,
+                script_type: ServiceWorkerScriptType::Classic,
                 imported_scripts: Vec::new(),
             })
             .unwrap();

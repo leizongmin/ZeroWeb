@@ -10,6 +10,7 @@ fn service_worker_register_request_round_trips_without_script_source() {
                 scope: Some("/app/".into()),
                 document_url: "https://example.test/page.html".into(),
                 update_via_cache: ServiceWorkerUpdateViaCacheWire::None,
+                script_type: ServiceWorkerScriptTypeWire::Module,
             },
         }),
     };
@@ -25,6 +26,7 @@ fn service_worker_register_request_round_trips_without_script_source() {
             scope: Some("/app/".into()),
             document_url: "https://example.test/page.html".into(),
             update_via_cache: ServiceWorkerUpdateViaCacheWire::None,
+            script_type: ServiceWorkerScriptTypeWire::Module,
         }
     );
 }
@@ -39,6 +41,7 @@ fn service_worker_snapshot_response_round_trips() {
                 script_url: "https://example.test/sw.js".into(),
                 scope: "https://example.test/app/".into(),
                 update_via_cache: ServiceWorkerUpdateViaCacheWire::All,
+                script_type: ServiceWorkerScriptTypeWire::Module,
                 state: ServiceWorkerStateWire::Activated,
             })),
         }),
@@ -54,6 +57,7 @@ fn service_worker_snapshot_response_round_trips() {
             script_url: "https://example.test/sw.js".into(),
             scope: "https://example.test/app/".into(),
             update_via_cache: ServiceWorkerUpdateViaCacheWire::All,
+            script_type: ServiceWorkerScriptTypeWire::Module,
             state: ServiceWorkerStateWire::Activated,
         }))
     );
@@ -92,6 +96,7 @@ fn service_worker_request_rejects_oversized_urls() {
             scope: None,
             document_url: "https://example.test/".into(),
             update_via_cache: ServiceWorkerUpdateViaCacheWire::Imports,
+            script_type: ServiceWorkerScriptTypeWire::Classic,
         },
     };
     assert!(params.validate().is_err());
@@ -250,6 +255,7 @@ fn service_worker_snapshot_list_response_round_trips() {
         script_url: "https://example.test/sw.js".into(),
         scope: "https://example.test/app/".into(),
         update_via_cache: ServiceWorkerUpdateViaCacheWire::Imports,
+        script_type: ServiceWorkerScriptTypeWire::Classic,
         state: ServiceWorkerStateWire::Activated,
     };
     for result in [
@@ -305,6 +311,7 @@ fn service_worker_nested_enum_discriminants_remain_append_only() {
             scope: None,
             document_url: "https://example.test/".into(),
             update_via_cache: ServiceWorkerUpdateViaCacheWire::Imports,
+            script_type: ServiceWorkerScriptTypeWire::Classic,
         }),
         0
     );
@@ -358,6 +365,7 @@ fn service_worker_nested_enum_discriminants_remain_append_only() {
             script_url: "https://example.test/sw.js".into(),
             scope: "https://example.test/".into(),
             update_via_cache: ServiceWorkerUpdateViaCacheWire::Imports,
+            script_type: ServiceWorkerScriptTypeWire::Classic,
             state: ServiceWorkerStateWire::Activated,
         })),
         1
@@ -415,6 +423,7 @@ fn service_worker_host_command_round_trips_and_validates() {
             command: ServiceWorkerHostCommand::Evaluate {
                 script_url: "https://example.test/sw.js".into(),
                 script: "globalThis.ready = true;".into(),
+                script_type: ServiceWorkerScriptTypeWire::Module,
             },
         }),
     };
@@ -428,6 +437,7 @@ fn service_worker_host_command_round_trips_and_validates() {
         ServiceWorkerHostCommand::Evaluate {
             script_url: "https://example.test/sw.js".into(),
             script: "globalThis.ready = true;".into(),
+            script_type: ServiceWorkerScriptTypeWire::Module,
         }
     );
 
@@ -436,6 +446,7 @@ fn service_worker_host_command_round_trips_and_validates() {
         command: ServiceWorkerHostCommand::Evaluate {
             script_url: String::new(),
             script: "void 0;".into(),
+            script_type: ServiceWorkerScriptTypeWire::Classic,
         },
     };
     assert!(invalid.validate().is_err());

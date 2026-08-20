@@ -2984,6 +2984,11 @@
         if (updateViaCache !== 'imports' && updateViaCache !== 'all' && updateViaCache !== 'none') {
           return Promise.reject(new TypeError('Invalid updateViaCache value'));
         }
+        var scriptType =
+          options != null && options.type !== undefined ? String(options.type) : 'classic';
+        if (scriptType !== 'classic' && scriptType !== 'module') {
+          return Promise.reject(new TypeError('Invalid Service Worker script type'));
+        }
         var wire;
         try {
           wire = JSON.parse(__zw_sw_register(
@@ -2991,7 +2996,8 @@
             scope,
             globalThis.location.href,
             scopeProvided ? 'true' : 'false',
-            updateViaCache));
+            updateViaCache,
+            scriptType));
         } catch (error) {
           return Promise.reject(error);
         }

@@ -2,7 +2,7 @@
 
 **入口文档**: [../service-workers.md](../service-workers.md)
 **创建日期**: 2026-08-17（goal 拆分 bootstrap）
-**最后更新**: 2026-08-20（M3-12 event-time import context 完成）
+**最后更新**: 2026-08-20（M3-13 module type contract 完成）
 
 ---
 
@@ -121,6 +121,8 @@ M0 启动门禁解除；M1 core WPT 已收敛，M2 依赖未满足，当前推�
   WorkerLocation/URLSearchParams 与 registration-key unregister；core WPT 18/67
 - ✅ M3-12：event-time worker fetch context 与 script resource map updated flag；
   install 可 fetch、activate/message 仅 replay，late import 返回 NetworkError；core WPT 19/72
+- ✅ M3-13：registration script type 贯穿 JS/IPC/manager/storage/persistence/renderer；
+  module loader 接入前显式 fail closed，不再静默按 classic 执行
 
 ## 缺口清单
 
@@ -263,6 +265,8 @@ M0 启动门禁解除；M1 core WPT 已收敛，M2 依赖未满足，当前推�
 - M3-12 event-time import context：persistent worker fetch context、updated flag、
   install fetch、activate/message replay 与 19/72 WPT 见
   [M3 event-time import context](evidence/2026-08-20-m3-import-event-context.md)
+- M3-13 module type contract：registration type typed wire、storage/persistence 迁移与
+  classic fallback 拒绝见 [M3 module type contract](evidence/2026-08-20-m3-module-type-contract.md)
 
 ## M0 证据与决策记录
 
@@ -316,6 +320,7 @@ M0 启动门禁解除；M1 core WPT 已收敛，M2 依赖未满足，当前推�
 | 2026-08-20 | M3-10 import response policy | classic no-cors；动态 MIME；65-message worker result channel；WPT 16/62 |
 | 2026-08-20 | M3-11 dynamic import semantics | resource map；redirect/stash/update；WorkerLocation；key unregister；WPT 18/67 |
 | 2026-08-20 | M3-12 event-time import context | persistent context；updated flag；install fetch；message late-import rejection；WPT 19/72 |
+| 2026-08-20 | M3-13 module type contract | type 贯穿 JS/IPC/storage/persistence/renderer；module loader 前 fail closed |
 | 2026-08-19 | 三方案对比 | 拒绝同线程 context（无调度隔离）；拒绝从零线程（复制安全基建）；推荐抽取 Worker 线程核 |
 | 2026-08-19 | owner | production browser process 单一 owner；WebView 只做同算法 in-process adapter |
 | 2026-08-19 | 首个 driving WPT | `activation-after-registration.https.html` |

@@ -7,8 +7,8 @@ use std::time::Duration;
 
 use zero_protocol::{
     IpcChannel, IpcMessage, IpcMessageKind, PipeTransport, ServiceWorkerError, ServiceWorkerErrorCode,
-    ServiceWorkerOperation, ServiceWorkerRequestParams, ServiceWorkerResult, ServiceWorkerStateWire,
-    ServiceWorkerUpdateViaCacheWire,
+    ServiceWorkerOperation, ServiceWorkerRequestParams, ServiceWorkerResult, ServiceWorkerScriptTypeWire,
+    ServiceWorkerStateWire, ServiceWorkerUpdateViaCacheWire,
 };
 
 use crate::compositor_publish_thread::SharedWriter;
@@ -101,11 +101,13 @@ impl ServiceWorkerIpcClient {
                     (args.get(3).map(String::as_str) == Some("true")).then(|| args.get(1).cloned().unwrap_or_default());
                 let document_url = args.get(2).cloned().unwrap_or_default();
                 let update_via_cache = parse_update_via_cache(args.get(4).map(String::as_str));
+                let script_type = parse_script_type(args.get(5).map(String::as_str));
                 match register_client.request(ServiceWorkerOperation::Register {
                     script_url,
                     scope,
                     document_url,
                     update_via_cache,
+                    script_type,
                 }) {
                     Ok(ServiceWorkerResult::Registered { registration_id }) => {
                         serde_json::json!({"ok": true, "id": registration_id}).to_string()
@@ -346,6 +348,13 @@ fn parse_update_via_cache(value: Option<&str>) -> ServiceWorkerUpdateViaCacheWir
     }
 }
 
+fn parse_script_type(value: Option<&str>) -> ServiceWorkerScriptTypeWire {
+    match value {
+        Some("module") => ServiceWorkerScriptTypeWire::Module,
+        _ => ServiceWorkerScriptTypeWire::Classic,
+    }
+}
+
 fn snapshot_wire(snapshot: zero_protocol::ServiceWorkerSnapshot) -> serde_json::Value {
     serde_json::json!({
         "id": snapshot.registration_id,
@@ -355,6 +364,10 @@ fn snapshot_wire(snapshot: zero_protocol::ServiceWorkerSnapshot) -> serde_json::
             ServiceWorkerUpdateViaCacheWire::Imports => "imports",
             ServiceWorkerUpdateViaCacheWire::All => "all",
             ServiceWorkerUpdateViaCacheWire::None => "none",
+        },
+        "scriptType": match snapshot.script_type {
+            ServiceWorkerScriptTypeWire::Classic => "classic",
+            ServiceWorkerScriptTypeWire::Module => "module",
         },
         "state": state_wire(snapshot.state),
     })
@@ -457,6 +470,7 @@ mod tests {
                             script_url: "https://example.test/sw.js".into(),
                             scope: "https://example.test/".into(),
                             update_via_cache: ServiceWorkerUpdateViaCacheWire::All,
+                            script_type: ServiceWorkerScriptTypeWire::Classic,
                             state: ServiceWorkerStateWire::Activated,
                         })),
                     }),

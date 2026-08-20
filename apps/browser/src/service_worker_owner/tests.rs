@@ -9,6 +9,7 @@ fn register_request(document_url: &str) -> ServiceWorkerRequestParams {
             scope: Some("/app/".into()),
             document_url: document_url.into(),
             update_via_cache: ServiceWorkerUpdateViaCacheWire::Imports,
+            script_type: ServiceWorkerScriptTypeWire::Classic,
         },
     }
 }
@@ -124,6 +125,7 @@ fn update_via_cache_controls_main_script_fetch_policy_and_snapshot() {
                 scope: Some("/app/".into()),
                 document_url: "https://example.test/page".into(),
                 update_via_cache: ServiceWorkerUpdateViaCacheWire::All,
+                script_type: ServiceWorkerScriptTypeWire::Classic,
             },
         },
     );
@@ -155,6 +157,35 @@ fn update_via_cache_controls_main_script_fetch_policy_and_snapshot() {
         panic!("update must fetch");
     };
     assert!(!plan.bypass_cache(), "updateViaCache=all may reuse main-script cache");
+}
+
+#[test]
+fn module_registration_type_reaches_browser_manager() {
+    let mut owner = BrowserServiceWorkerOwner::with_local_hosts();
+    let mut request = register_request("https://example.test/page");
+    if let ServiceWorkerOperation::Register { script_type, .. } = &mut request.operation {
+        *script_type = ServiceWorkerScriptTypeWire::Module;
+    }
+    let disposition = owner.begin_request(TabId(1), false, 51, Some("https://example.test/page"), request);
+    let ServiceWorkerRequestDisposition::Fetch(plan) = disposition else {
+        panic!("module registration must fetch its main script");
+    };
+    assert!(matches!(
+        plan.purpose,
+        ServiceWorkerFetchPurpose::Register {
+            script_type: ServiceWorkerScriptType::Module,
+            ..
+        }
+    ));
+    attach_script_plan(&mut owner, plan, "export const value = 1;");
+    let response = wait_for_response(&mut owner);
+    assert!(matches!(
+        response.params.result,
+        Err(ServiceWorkerError {
+            code: ServiceWorkerErrorCode::Internal,
+            message,
+        }) if message.contains("module graph loader")
+    ));
 }
 
 #[test]
@@ -627,6 +658,10 @@ fn private_and_invalid_persistence_never_restore_into_normal_profile() {
         migrated.normal.registrations_for_origin("https://example.test")[0].update_via_cache,
         ServiceWorkerUpdateViaCache::Imports
     );
+    assert_eq!(
+        migrated.normal.registrations_for_origin("https://example.test")[0].script_type,
+        ServiceWorkerScriptType::Classic
+    );
     drop(migrated);
     std::fs::remove_dir_all(path.parent().unwrap()).unwrap();
 }
@@ -649,6 +684,7 @@ fn persistence_restore_keeps_valid_scope_when_sibling_script_fails() {
                         scope: Some(scope.into()),
                         document_url: "https://example.test/page".into(),
                         update_via_cache: ServiceWorkerUpdateViaCacheWire::Imports,
+                        script_type: ServiceWorkerScriptTypeWire::Classic,
                     },
                 },
             );
@@ -794,6 +830,7 @@ fn registration_normalizes_fragments_and_classifies_url_errors() {
                 scope: Some("resources/app/#scope".into()),
                 document_url: "https://example.test/service-worker/page".into(),
                 update_via_cache: ServiceWorkerUpdateViaCacheWire::Imports,
+                script_type: ServiceWorkerScriptTypeWire::Classic,
             },
         },
     );
@@ -824,6 +861,7 @@ fn registration_normalizes_fragments_and_classifies_url_errors() {
                     scope: Some(scope.into()),
                     document_url: "https://example.test/service-worker/page".into(),
                     update_via_cache: ServiceWorkerUpdateViaCacheWire::Imports,
+                    script_type: ServiceWorkerScriptTypeWire::Classic,
                 },
             },
         );

@@ -169,6 +169,29 @@ fn insecure_and_cross_origin_registration_fail_before_fetch() {
 }
 
 #[test]
+fn navigator_module_registration_is_not_silently_evaluated_as_classic() {
+    let mut webview = WebViewBuilder::new()
+        .url("https://example.test/page.html")
+        .script_source_fetcher(Arc::new(|_, _| Ok("export const value = 1;".to_string())))
+        .build();
+    webview
+        .execute_script(
+            "globalThis.__moduleRegistrationResult = 'pending';
+             navigator.serviceWorker.register('/module-sw.js', {type:'module'}).then(
+               () => { globalThis.__moduleRegistrationResult = 'unexpected-success'; },
+               error => {
+                 globalThis.__moduleRegistrationResult =
+                   error.name + ':' + String(error.message).includes('module graph loader');
+               });",
+        )
+        .unwrap();
+    assert_eq!(
+        webview.execute_script("globalThis.__moduleRegistrationResult").unwrap(),
+        "TypeError:true"
+    );
+}
+
+#[test]
 fn navigator_register_projects_real_manager_state() {
     let mut webview = WebViewBuilder::new()
         .url("https://example.test/page.html")

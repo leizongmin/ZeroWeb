@@ -20,11 +20,13 @@ use zero_protocol::message::{
     ServiceWorkerClientMessages, ServiceWorkerError, ServiceWorkerErrorCode, ServiceWorkerHostCommand,
     ServiceWorkerHostCommandParams, ServiceWorkerHostEvent, ServiceWorkerHostEventParams, ServiceWorkerLifecycleWire,
     ServiceWorkerOperation, ServiceWorkerRequestParams, ServiceWorkerResponseParams, ServiceWorkerResult,
-    ServiceWorkerScriptErrorKindWire, ServiceWorkerSnapshot, ServiceWorkerStateChanges, ServiceWorkerStateWire,
-    ServiceWorkerUpdateViaCacheWire,
+    ServiceWorkerScriptErrorKindWire, ServiceWorkerScriptTypeWire, ServiceWorkerSnapshot, ServiceWorkerStateChanges,
+    ServiceWorkerStateWire, ServiceWorkerUpdateViaCacheWire,
 };
 use zero_script_sandbox::{ServiceWorkerEvent, ServiceWorkerLifecyclePhase, ServiceWorkerScriptErrorKind};
-use zero_storage::{ServiceWorkerRegistration, ServiceWorkerState, ServiceWorkerUpdateViaCache};
+use zero_storage::{
+    ServiceWorkerRegistration, ServiceWorkerScriptType, ServiceWorkerState, ServiceWorkerUpdateViaCache,
+};
 
 const MAX_SCRIPT_BYTES: usize = 16 * 1024 * 1024;
 const MAX_PERSISTED_FILE_BYTES: u64 = 64 * 1024 * 1024;
@@ -41,6 +43,7 @@ struct PersistedServiceWorkers {
 enum ServiceWorkerFetchPurpose {
     Register {
         update_via_cache: ServiceWorkerUpdateViaCache,
+        script_type: ServiceWorkerScriptType,
     },
     Update {
         registration_id: u64,
@@ -155,6 +158,7 @@ impl ServiceWorkerRuntimeHost for IpcServiceWorkerHost {
         registration_id: u64,
         script_url: &str,
         script: &str,
+        script_type: ServiceWorkerScriptType,
     ) -> Result<(), ServiceWorkerManagerError> {
         let Some(tab_id) = self
             .channels
@@ -174,6 +178,7 @@ impl ServiceWorkerRuntimeHost for IpcServiceWorkerHost {
                 command: ServiceWorkerHostCommand::Evaluate {
                     script_url: script_url.to_string(),
                     script: script.to_string(),
+                    script_type: script_type_wire(script_type),
                 },
             },
         });
@@ -627,6 +632,7 @@ impl BrowserServiceWorkerOwner {
                 scope,
                 document_url,
                 update_via_cache,
+                script_type,
             } => {
                 let Ok(renderer_document) = Url::parse(&document_url) else {
                     return self.error_disposition(
@@ -654,6 +660,7 @@ impl BrowserServiceWorkerOwner {
                         origin,
                         purpose: ServiceWorkerFetchPurpose::Register {
                             update_via_cache: update_via_cache_storage(update_via_cache),
+                            script_type: script_type_storage(script_type),
                         },
                     }),
                     Err(error) => self.error_disposition(
@@ -1077,15 +1084,17 @@ impl BrowserServiceWorkerOwner {
             channels.set_pending_tab(plan.tab_id);
         }
         let result = match plan.purpose {
-            ServiceWorkerFetchPurpose::Register { update_via_cache } => {
-                self.manager_mut(plan.profile).start_evaluation_with_update_via_cache(
-                    plan.script_url.as_str(),
-                    plan.scope.as_str(),
-                    &plan.origin,
-                    &script,
-                    update_via_cache,
-                )
-            }
+            ServiceWorkerFetchPurpose::Register {
+                update_via_cache,
+                script_type,
+            } => self.manager_mut(plan.profile).start_evaluation_with_options(
+                plan.script_url.as_str(),
+                plan.scope.as_str(),
+                &plan.origin,
+                &script,
+                script_type,
+                update_via_cache,
+            ),
             ServiceWorkerFetchPurpose::Update { registration_id, .. } => {
                 match self.manager_mut(plan.profile).start_update(registration_id, &script) {
                     Ok(ServiceWorkerUpdateOutcome::Unchanged { registration_id }) => {
@@ -1548,6 +1557,7 @@ fn snapshot(registration: ServiceWorkerRegistration) -> ServiceWorkerSnapshot {
         script_url: registration.script_url,
         scope: registration.scope,
         update_via_cache: update_via_cache_wire(registration.update_via_cache),
+        script_type: script_type_wire(registration.script_type),
         state: state_wire(registration.state),
     }
 }
@@ -1565,6 +1575,20 @@ fn update_via_cache_wire(value: ServiceWorkerUpdateViaCache) -> ServiceWorkerUpd
         ServiceWorkerUpdateViaCache::Imports => ServiceWorkerUpdateViaCacheWire::Imports,
         ServiceWorkerUpdateViaCache::All => ServiceWorkerUpdateViaCacheWire::All,
         ServiceWorkerUpdateViaCache::None => ServiceWorkerUpdateViaCacheWire::None,
+    }
+}
+
+fn script_type_storage(value: ServiceWorkerScriptTypeWire) -> ServiceWorkerScriptType {
+    match value {
+        ServiceWorkerScriptTypeWire::Classic => ServiceWorkerScriptType::Classic,
+        ServiceWorkerScriptTypeWire::Module => ServiceWorkerScriptType::Module,
+    }
+}
+
+fn script_type_wire(value: ServiceWorkerScriptType) -> ServiceWorkerScriptTypeWire {
+    match value {
+        ServiceWorkerScriptType::Classic => ServiceWorkerScriptTypeWire::Classic,
+        ServiceWorkerScriptType::Module => ServiceWorkerScriptTypeWire::Module,
     }
 }
 
