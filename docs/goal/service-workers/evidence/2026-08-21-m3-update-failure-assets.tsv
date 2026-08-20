@@ -1,0 +1,13 @@
+path	manifest_type	roles	referenced_by	bytes	templated	git_blob_sha
+common/utils.js	support	page-script	1	2503	no	d410b0753582e061572302f3ce9118e95635c6b1
+resources/testharness.js	support	page-script	1	198291	no	c7ce4f51e1db075809f861255417c27478b2c179
+resources/testharnessreport.js	support	page-script	1	1231	no	405a2d8b06f00fe8292e0e9d5b917e193cfd416c
+service-workers/service-worker/update.https.html	testharness	case	1	6801	no	f9fded3db49f02de6ce13c3b1cec209dad0779bf
+service-workers/service-worker/resources/testharness-helpers.js	support	page-script	1	5507	no	5f93a25438a0cbf067675d4715e695388dc6c7bc
+service-workers/service-worker/resources/test-helpers.sub.js	support	page-script	1	10485	yes	74301523e7355ad8d62bcb568280edbc23fdaacf
+service-workers/service-worker/resources/update-worker.py	support	dynamic-handler	5	2257	no	5638a8849cb749471ef01413bb95386aa4857712
+service-workers/service-worker/resources/update-worker-from-file.py	support	dynamic-handler	1	983	no	ac0850f47622f3c6f16fc25424fc2c23a5a40c28
+service-workers/service-worker/resources/empty.js	support	worker-script	1	0	no	e69de29bb2d1d6434b8b29ae775ad8c2e48c5391
+service-workers/service-worker/resources/update-smaller-body-before-update-worker.js	support	worker-script	1	39	no	30c8783a70255012e5763403d15467d148b249b0
+service-workers/service-worker/resources/update-smaller-body-after-update-worker.js	support	worker-script	1	16	no	d43f6b2f5c3d64156ae68970eab3a65511c5c960
+service-workers/service-worker/resources/simple.txt	support	client-document	1	19	no	9e3cb91fb9b95d6e51de85b82e6f86e92f59ac6d

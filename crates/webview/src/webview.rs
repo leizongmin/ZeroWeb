@@ -47,6 +47,45 @@ enum ServiceWorkerEvaluationResult {
     UpdateChecked { registration_id: u64, changed: bool },
 }
 
+struct ServiceWorkerMainScriptFetchError {
+    message: String,
+    exception_name: &'static str,
+}
+
+impl ServiceWorkerMainScriptFetchError {
+    fn type_error(message: impl Into<String>) -> Self {
+        Self {
+            message: message.into(),
+            exception_name: "TypeError",
+        }
+    }
+
+    fn security_error(message: impl Into<String>) -> Self {
+        Self {
+            message: message.into(),
+            exception_name: "SecurityError",
+        }
+    }
+}
+
+impl std::fmt::Display for ServiceWorkerMainScriptFetchError {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str(&self.message)
+    }
+}
+
+impl From<String> for ServiceWorkerMainScriptFetchError {
+    fn from(message: String) -> Self {
+        Self::type_error(message)
+    }
+}
+
+impl From<&str> for ServiceWorkerMainScriptFetchError {
+    fn from(message: &str) -> Self {
+        Self::type_error(message)
+    }
+}
+
 fn update_via_cache_name(value: ServiceWorkerUpdateViaCache) -> &'static str {
     match value {
         ServiceWorkerUpdateViaCache::Imports => "imports",
@@ -2546,7 +2585,7 @@ impl WebView {
                             .to_string();
                         }
                     };
-                let result = (|| -> Result<u64, String> {
+                let result = (|| -> Result<u64, ServiceWorkerMainScriptFetchError> {
                     if let Some(registration_id) = register_manager
                         .lock()
                         .map_err(|_| "Service Worker manager lock poisoned".to_string())?
@@ -2596,9 +2635,12 @@ impl WebView {
                 })();
                 match result {
                     Ok(id) => serde_json::json!({"ok": true, "id": id}).to_string(),
-                    Err(error) => {
-                        serde_json::json!({"ok": false, "error": error, "errorName": "TypeError"}).to_string()
-                    }
+                    Err(error) => serde_json::json!({
+                        "ok": false,
+                        "error": error.message,
+                        "errorName": error.exception_name,
+                    })
+                    .to_string(),
                 }
             }),
         );
@@ -2617,7 +2659,7 @@ impl WebView {
                         return serde_json::json!({"ok": false, "error": "page URL lock poisoned"}).to_string();
                     }
                 };
-                let result = (|| -> Result<(u64, bool), String> {
+                let result = (|| -> Result<(u64, bool), ServiceWorkerMainScriptFetchError> {
                     let document = url::Url::parse(&document_url).map_err(|_| "invalid Service Worker document URL")?;
                     let (script_url, bypass_cache) = {
                         let manager = update_manager
@@ -2678,7 +2720,12 @@ impl WebView {
                         "changed": changed,
                     })
                     .to_string(),
-                    Err(error) => serde_json::json!({"ok": false, "error": error}).to_string(),
+                    Err(error) => serde_json::json!({
+                        "ok": false,
+                        "error": error.message,
+                        "errorName": error.exception_name,
+                    })
+                    .to_string(),
                 }
             }),
         );
@@ -3023,38 +3070,20 @@ impl WebView {
         source_fetcher: Option<&ScriptSourceFetcher>,
         timeout_secs: u64,
         bypass_cache: bool,
-    ) -> Result<String, String> {
+    ) -> Result<String, ServiceWorkerMainScriptFetchError> {
         if let Some(fetcher) = response_fetcher {
-            let response = fetcher(document_url, url)?;
-            if !response.is_success() {
-                return Err(format!(
-                    "Service Worker script fetch returned HTTP {}",
-                    response.status_code
-                ));
-            }
-            if response.redirect_count != 0
-                || url::Url::parse(&response.url)
-                    .ok()
-                    .zip(url::Url::parse(url).ok())
-                    .is_none_or(|(final_url, requested_url)| {
-                        final_url.origin() != requested_url.origin() || final_url.fragment().is_some()
-                    })
-            {
-                return Err("Service Worker script fetch redirected".into());
-            }
-            if response.body.len() > MAX_SERVICE_WORKER_SCRIPT_BYTES {
-                return Err("Service Worker script exceeds the size limit".into());
-            }
-            return String::from_utf8(response.body)
-                .map_err(|_| "Service Worker script is not valid UTF-8".to_string());
+            let response = fetcher(document_url, url).map_err(ServiceWorkerMainScriptFetchError::type_error)?;
+            return Self::validate_service_worker_main_script_response(url, response);
         }
         if let Some(fetcher) = source_fetcher {
-            return fetcher(document_url, url);
+            return fetcher(document_url, url).map_err(ServiceWorkerMainScriptFetchError::type_error);
         }
-        Self::fetch_service_worker_script(url, timeout_secs, bypass_cache)
+        let response = Self::fetch_service_worker_script(url, timeout_secs, bypass_cache)
+            .map_err(ServiceWorkerMainScriptFetchError::type_error)?;
+        Self::validate_service_worker_main_script_response(url, response)
     }
 
-    fn fetch_service_worker_script(url: &str, timeout_secs: u64, bypass_cache: bool) -> Result<String, String> {
+    fn fetch_service_worker_script(url: &str, timeout_secs: u64, bypass_cache: bool) -> Result<HttpResponse, String> {
         let mut headers = vec![
             ("Service-Worker".into(), "script".into()),
             ("Sec-Fetch-Mode".into(), "same-origin".into()),
@@ -3062,7 +3091,7 @@ impl WebView {
         if bypass_cache {
             headers.push(("Cache-Control".into(), "no-cache".into()));
         }
-        let response = ResourceLoader::shared()
+        ResourceLoader::shared()
             .submit(
                 ResourceRequest::get(url, FetchPriority::HIGH)
                     .with_headers(headers)
@@ -3071,8 +3100,46 @@ impl WebView {
             )
             .recv()
             .map_err(|_| "resource loader worker exited".to_string())?
-            .map_err(|error| error.to_string())?;
-        response.text().map_err(|error| error.to_string())
+            .map_err(|error| error.to_string())
+    }
+
+    fn validate_service_worker_main_script_response(
+        requested_url: &str,
+        response: HttpResponse,
+    ) -> Result<String, ServiceWorkerMainScriptFetchError> {
+        if !response.is_success() {
+            return Err(ServiceWorkerMainScriptFetchError::type_error(format!(
+                "Service Worker script fetch returned HTTP {}",
+                response.status_code
+            )));
+        }
+        if response.redirect_count != 0
+            || url::Url::parse(&response.url)
+                .ok()
+                .zip(url::Url::parse(requested_url).ok())
+                .is_none_or(|(final_url, requested_url)| {
+                    final_url.origin() != requested_url.origin() || final_url.fragment().is_some()
+                })
+        {
+            return Err(ServiceWorkerMainScriptFetchError::type_error(
+                "Service Worker script fetch redirected",
+            ));
+        }
+        let mime = response.content_type_mime().ok_or_else(|| {
+            ServiceWorkerMainScriptFetchError::security_error("Service Worker main script has no JavaScript MIME type")
+        })?;
+        if !is_javascript_mime(mime) {
+            return Err(ServiceWorkerMainScriptFetchError::security_error(format!(
+                "Service Worker main script has unsupported MIME type {mime}"
+            )));
+        }
+        if response.body.len() > MAX_SERVICE_WORKER_SCRIPT_BYTES {
+            return Err(ServiceWorkerMainScriptFetchError::type_error(
+                "Service Worker script exceeds the size limit",
+            ));
+        }
+        String::from_utf8(response.body)
+            .map_err(|_| ServiceWorkerMainScriptFetchError::type_error("Service Worker script is not valid UTF-8"))
     }
 
     fn fetch_service_worker_imported_script(

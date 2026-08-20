@@ -85,6 +85,33 @@ fn embedded_main_script_request_carries_service_worker_metadata() {
 }
 
 #[test]
+fn embedded_network_main_script_rejects_non_javascript_mime() {
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let origin = format!("http://{}", listener.local_addr().unwrap());
+    let server = std::thread::spawn(move || {
+        let (mut stream, _) = listener.accept().unwrap();
+        let mut bytes = [0_u8; 2048];
+        let size = stream.read(&mut bytes).unwrap();
+        assert!(String::from_utf8_lossy(&bytes[..size]).starts_with("GET /sw.js "));
+        stream
+            .write_all(
+                b"HTTP/1.1 200 OK\r\nContent-Type: text/html\r\n\
+                  Content-Length: 0\r\nConnection: close\r\n\r\n",
+            )
+            .unwrap();
+    });
+
+    let mut webview = WebViewBuilder::new().build();
+    let document_url = format!("{origin}/page.html");
+    let script_url = format!("{origin}/sw.js");
+    let error = webview
+        .register_service_worker_runtime(&script_url, Some("/"), &document_url)
+        .unwrap_err();
+    server.join().unwrap();
+    assert!(error.to_string().contains("unsupported MIME type text/html"));
+}
+
+#[test]
 fn classic_page_script_async_function_is_visible_to_later_script() {
     let mut webview = WebViewBuilder::new().build();
     webview.load_html(
@@ -500,6 +527,63 @@ fn structured_import_response_rejects_non_javascript_mime() {
         .register_service_worker_runtime("/sw.js", None, "https://example.test/page.html")
         .unwrap_err();
     assert!(error.to_string().contains("unsupported MIME type text/plain"));
+}
+
+#[test]
+fn navigator_update_rejects_non_javascript_main_script_as_security_error() {
+    let visits = Arc::new(Mutex::new(0usize));
+    let fetch_visits = Arc::clone(&visits);
+    let mut webview = WebViewBuilder::new()
+        .url("https://example.test/page.html")
+        .service_worker_script_fetcher(Arc::new(move |_, script| {
+            let mut visits = fetch_visits.lock().unwrap();
+            *visits += 1;
+            let mime = if *visits == 1 {
+                "application/javascript"
+            } else {
+                "text/html"
+            };
+            Ok(zero_net::HttpResponse {
+                status_code: 200,
+                headers: vec![("Content-Type".into(), mime.into())],
+                body: format!("globalThis.version = {};", *visits).into_bytes(),
+                url: script.to_string(),
+                redirect_count: 0,
+            })
+        }))
+        .build();
+
+    webview
+        .execute_script(
+            "globalThis.__mimeUpdate = 'pending';
+             navigator.serviceWorker.register('/sw.js', {scope:'/out-of-scope/'}).then(function(reg) {
+               return navigator.serviceWorker.ready.then(function() {
+                 globalThis.__mimeReg = reg;
+                 globalThis.__mimeActive = reg.active;
+                 return reg.update();
+               });
+             }).then(function() {
+               globalThis.__mimeUpdate = 'unexpected-success';
+             }, function(error) {
+               globalThis.__mimeUpdate =
+                 error.name + '|' +
+                 String(globalThis.__mimeReg.active === globalThis.__mimeActive) + '|' +
+                 String(globalThis.__mimeReg.installing === null);
+             });",
+        )
+        .unwrap();
+
+    let deadline = Instant::now() + Duration::from_secs(20);
+    loop {
+        let value = webview.execute_script("globalThis.__mimeUpdate").unwrap();
+        if value != "pending" {
+            assert_eq!(value, "SecurityError|true|true");
+            break;
+        }
+        assert!(Instant::now() < deadline, "MIME update rejection timed out");
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    assert_eq!(*visits.lock().unwrap(), 2);
 }
 
 #[test]

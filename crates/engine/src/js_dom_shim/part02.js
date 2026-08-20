@@ -2742,8 +2742,11 @@
             return Promise.reject(error);
           }
           if (!wire || !wire.ok) {
-            return Promise.reject(new TypeError(
-              wire && wire.error || 'Service Worker update failed'));
+            var message = wire && wire.error || 'Service Worker update failed';
+            if (wire && wire.errorName === 'SecurityError') {
+              return Promise.reject(new DOMException(message, 'SecurityError'));
+            }
+            return Promise.reject(new TypeError(message));
           }
           if (!wire.changed) {
             if (String(wire.id) !== String(reg._id)) {

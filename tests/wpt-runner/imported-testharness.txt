@@ -204,3 +204,4 @@ service-workers/service-worker/update-no-cache-request-headers.https.html 04067c
 service-workers/service-worker/update-registration-with-type.https.html 04067ce9c7c2165e71ad7d0dde10a4c5cb394a83 2026-08-20 SW-M3-module-type-update
 service-workers/service-worker/update-import-scripts.https.html 04067ce9c7c2165e71ad7d0dde10a4c5cb394a83 2026-08-21 SW-M3-dynamic-import-update
 service-workers/service-worker/update-missing-import-scripts.https.html 04067ce9c7c2165e71ad7d0dde10a4c5cb394a83 2026-08-21 SW-M3-dynamic-import-update
+service-workers/service-worker/update.https.html 04067ce9c7c2165e71ad7d0dde10a4c5cb394a83 2026-08-21 SW-M3-update-failure

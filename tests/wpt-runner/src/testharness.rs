@@ -642,6 +642,7 @@ pub const SERVICE_WORKER_CORE_CASES: &[&str] = &[
     "service-workers/service-worker/update-import-scripts.https.html",
     "service-workers/service-worker/update-missing-import-scripts.https.html",
     "service-workers/service-worker/update-result.https.html",
+    "service-workers/service-worker/update.https.html",
 ];
 
 /// WPT subtest status.
@@ -1586,6 +1587,7 @@ fn wpt_data_service_worker_script_fetcher(
                     .cached_missing_import_keys
                     .insert(key.clone());
             }
+            headers.push(("Content-Type".into(), "application/javascript".into()));
             let bytes = std::fs::read(root.join(clean))
                 .map_err(|error| format!("Service Worker fixture fetch failed: {clean} ({error})"))?;
             String::from_utf8(bytes)
@@ -1680,11 +1682,27 @@ fn wpt_data_service_worker_script_fetcher(
                     1,
                 ));
             }
-            return Ok(service_worker_fixture_response(
-                format!("/* {visited} */"),
-                src.to_string(),
-                0,
-            ));
+            let extra_body = match (visited, mode.as_str()) {
+                (2, "syntax_error") => " badsyntax(isbad;",
+                (2, "throw_install") => " addEventListener('install', function() { throw new Error('boom'); });",
+                _ => "",
+            };
+            let content_type = if visited == 2 && mode == "bad_mime_type" {
+                "text/html"
+            } else {
+                "application/javascript"
+            };
+            return Ok(zero_net::HttpResponse {
+                status_code: 200,
+                headers: vec![
+                    ("Content-Type".into(), content_type.into()),
+                    ("Cache-Control".into(), "no-cache, must-revalidate".into()),
+                    ("Pragma".into(), "no-cache".into()),
+                ],
+                body: format!("/* {visited} */{extra_body}").into_bytes(),
+                url: src.to_string(),
+                redirect_count: 0,
+            });
         } else {
             headers.push(("Content-Type".into(), "application/javascript".into()));
             let bytes = std::fs::read(root.join(clean))
@@ -2727,13 +2745,13 @@ async_test(function(test) {
     }
 
     #[test]
-    fn service_worker_core_manifest_has_twenty_nine_unique_cases() {
+    fn service_worker_core_manifest_has_thirty_unique_cases() {
         let unique = SERVICE_WORKER_CORE_CASES
             .iter()
             .copied()
             .collect::<std::collections::BTreeSet<_>>();
-        assert_eq!(SERVICE_WORKER_CORE_CASES.len(), 29);
-        assert_eq!(unique.len(), 29);
+        assert_eq!(SERVICE_WORKER_CORE_CASES.len(), 30);
+        assert_eq!(unique.len(), 30);
         assert!(
             SERVICE_WORKER_CORE_CASES
                 .iter()

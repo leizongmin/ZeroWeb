@@ -635,6 +635,63 @@ fn update_fetch_compares_bytes_before_starting_replacement() {
 }
 
 #[test]
+fn update_rejects_non_javascript_main_script_without_replacing_active() {
+    let mut owner = BrowserServiceWorkerOwner::with_local_hosts();
+    let disposition = owner.begin_request(
+        TabId(1),
+        false,
+        54,
+        Some("https://example.test/page"),
+        register_request("https://example.test/page"),
+    );
+    attach_script(&mut owner, disposition, "globalThis.version = 1;");
+    let response = wait_for_response(&mut owner);
+    let Ok(ServiceWorkerResult::Registered { registration_id }) = response.params.result else {
+        panic!("registration failed");
+    };
+    wait_for_registration_state(&mut owner, registration_id, ServiceWorkerState::Activated);
+
+    let disposition = owner.begin_request(
+        TabId(1),
+        false,
+        55,
+        Some("https://example.test/page"),
+        ServiceWorkerRequestParams {
+            operation: ServiceWorkerOperation::Update { registration_id },
+        },
+    );
+    let ServiceWorkerRequestDisposition::Fetch(plan) = disposition else {
+        panic!("update must fetch");
+    };
+    let (sender, receiver) = mpsc::channel();
+    sender
+        .send(Ok(HttpResponse {
+            status_code: 200,
+            headers: vec![("Content-Type".into(), "text/html".into())],
+            body: b"globalThis.version = 2;".to_vec(),
+            url: plan.script_url.to_string(),
+            redirect_count: 0,
+        }))
+        .unwrap();
+    owner.attach_fetch(plan, receiver);
+
+    let response = wait_for_response(&mut owner);
+    assert!(matches!(
+        response.params.result,
+        Err(ServiceWorkerError {
+            code: ServiceWorkerErrorCode::Security,
+            ..
+        })
+    ));
+    let active = owner
+        .normal
+        .active_registration_for_url("https://example.test", "https://example.test/app/page")
+        .unwrap();
+    assert_eq!(active.id, registration_id);
+    assert_eq!(active.state, ServiceWorkerState::Activated);
+}
+
+#[test]
 fn persistent_owner_restores_active_runtime_and_unregisters_durably() {
     let path = persistence_path("restore");
     let _ = std::fs::remove_dir_all(path.parent().unwrap());

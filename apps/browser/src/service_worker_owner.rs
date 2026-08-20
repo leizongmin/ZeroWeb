@@ -1095,6 +1095,24 @@ impl BrowserServiceWorkerOwner {
             ));
             return;
         }
+        let Some(mime) = response.content_type_mime() else {
+            completed.push(error_response(
+                plan.tab_id,
+                plan.request_id,
+                ServiceWorkerErrorCode::Security,
+                "Service Worker main script has no JavaScript MIME type",
+            ));
+            return;
+        };
+        if !is_javascript_mime(mime) {
+            completed.push(error_response(
+                plan.tab_id,
+                plan.request_id,
+                ServiceWorkerErrorCode::Security,
+                format!("Service Worker main script has unsupported MIME type {mime}"),
+            ));
+            return;
+        }
         if response.body.len() > MAX_SCRIPT_BYTES {
             completed.push(error_response(
                 plan.tab_id,
