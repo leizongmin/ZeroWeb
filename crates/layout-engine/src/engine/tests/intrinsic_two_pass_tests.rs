@@ -2,6 +2,7 @@
 
 use crate::engine::LayoutEngine;
 use crate::types::LayoutBox;
+use zero_css_parser::values::LengthValue;
 use zero_dom::Document;
 use zero_style_system::StyleSystem;
 
@@ -502,6 +503,45 @@ fn test_min_height_prevents_collapse_through() {
         (footer.y - expected_footer_y).abs() < 5.0,
         "footer should follow parent immediately (y ≈ {}, not {}+550), got footer.y={}",
         expected_footer_y,
+        expected_footer_y,
+        footer.y
+    );
+}
+
+/// R3618：min-height collapse-through 阻止逻辑也要解析 residual real length。
+/// direct `ComputedStyle` 下 `min-height:5em;font-size:20px` 应等价 100px；旧后处理只识别
+/// `Px`，会把该父块当成 `min-height:0`，导致末子 margin-bottom 继续穿透。
+#[test]
+fn r3618_relative_min_height_prevents_collapse_through() {
+    let html = r#"<html><body style="margin:0">
+        <div id="parent">
+          <div id="child" style="height:30px;margin-bottom:50px"></div>
+        </div>
+        <div id="footer" style="height:50px"></div>
+    </body></html>"#;
+    let doc = zero_dom::parse_html(html);
+    let mut sys = StyleSystem::new();
+    sys.set_viewport(800.0, 600.0);
+    let mut styles = sys.compute_styles(&doc, &[]);
+    let parent_id = doc.get_element_by_id("parent").expect("parent");
+    let parent_style = styles.get_mut(&parent_id).expect("parent style");
+    parent_style.font_size = LengthValue::Px(20.0);
+    parent_style.min_height = LengthValue::Em(5.0);
+
+    let mut engine = LayoutEngine::new(800.0, 600.0);
+    let result = engine.compute(&doc, &styles);
+    let parent = find("parent", &doc, &result.root).expect("parent box");
+    let footer = find("footer", &doc, &result.root).expect("footer box");
+
+    assert!(
+        (parent.height - 100.0).abs() < 3.0,
+        "R3618: parent should resolve min-height 5em@20px to 100px, got {}",
+        parent.height
+    );
+    let expected_footer_y = parent.y + parent.height;
+    assert!(
+        (footer.y - expected_footer_y).abs() < 5.0,
+        "R3618: footer should follow resolved min-height parent at y≈{}, got {}",
         expected_footer_y,
         footer.y
     );

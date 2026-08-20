@@ -354,3 +354,5 @@ Flex transferred auto-min exposed the cross-axis-replay variant: replaced flex i
 Strict classic script execution exposed the wrapper-scope trap: catching page-script throws by wrapping raw classic code in `try { ... }` changes top-level function and lexical declaration visibility. Use a sentinel plus indirect global `eval` when strict runners need exception reporting without changing classic script scope.
 
 Flex aspect-ratio post-fixup exposed the second-pass replay variant: a first-pass taffy result can contain raw residual-unit geometry, and later fixups may reuse parent cross size or min-size gates from CSS values. Resolve those operands again in the post-layout pass instead of trusting either the raw taffy geometry or `Px`-only style matches.
+
+Late min/max block-size clamps exposed the sibling-flow variant: if a post-taffy pass changes an in-flow block child's outer extent, later normal-flow block siblings must be shifted by the same delta. Resolving residual `min-height` without propagating that delta leaves the box size correct but the rendered flow order stale.

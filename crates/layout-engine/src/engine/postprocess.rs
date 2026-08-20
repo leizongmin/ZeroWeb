@@ -31,6 +31,26 @@ fn postprocess_env_snapshot_enabled() -> bool {
     *ENABLED.get_or_init(|| std::env::var("ZW_POSTPROCESS_ENV_SNAPSHOT").as_deref() != Ok("0"))
 }
 
+fn resolve_postprocess_real_length(value: &LengthValue, style: &ComputedStyle) -> Option<f32> {
+    match value {
+        LengthValue::Auto
+        | LengthValue::Percentage(_)
+        | LengthValue::MinContent
+        | LengthValue::MaxContent
+        | LengthValue::FitContent(_) => None,
+        LengthValue::Px(v) if *v == f64::INFINITY => None,
+        other => {
+            let font_size_px = zero_style_system::computed::resolve_length(&style.font_size, 16.0, None, None);
+            let px = zero_style_system::computed::resolve_length(other, font_size_px, None, None);
+            px.is_finite().then_some(px.max(0.0) as f32)
+        }
+    }
+}
+
+fn is_shiftable_in_flow_block(box_node: &LayoutBox) -> bool {
+    box_node.is_block_level && matches!(box_node.float, FloatValue::None) && !box_node.is_absolute && !box_node.is_fixed
+}
+
 #[derive(Clone, Copy)]
 struct PostprocessEnvFlag(Option<bool>);
 
@@ -1171,11 +1191,8 @@ pub(super) fn prevent_collapse_through_min_height(box_node: &mut LayoutBox, styl
         if child.border_bottom > 0.0 || child.padding_bottom > 0.0 {
             continue;
         }
-        // 解析 min-height（仅 Px；百分比需 definite CB，此处保守取 0 即不触发）。
-        let min_h_px = match &style.min_height {
-            LengthValue::Px(v) => *v as f32,
-            _ => 0.0,
-        };
+        // 解析 min-height（真实长度按当前 style 的 font-size；百分比需 definite CB，此处保守不触发）。
+        let min_h_px = resolve_postprocess_real_length(&style.min_height, style).unwrap_or(0.0);
         if min_h_px <= 0.0 {
             continue;
         }
@@ -1188,11 +1205,8 @@ pub(super) fn prevent_collapse_through_min_height(box_node: &mut LayoutBox, styl
         if (min_h_px - content_extent) <= 0.5 {
             continue;
         }
-        // child 的声明 margin-bottom（Px）；非 Px 视为 0（保守）。
-        let declared_mb = match &style.margin_bottom {
-            LengthValue::Px(v) => *v as f32,
-            _ => 0.0,
-        };
+        // child 的声明 margin-bottom（真实长度按当前 style 的 font-size；非 real length 视为 0）。
+        let declared_mb = resolve_postprocess_real_length(&style.margin_bottom, style).unwrap_or(0.0);
         // 穿透量 = 实际 margin_bottom（含 collapse-through 进来的末子 margin）− 声明值。
         let through = (child.margin_bottom - declared_mb).max(0.0);
         if through > 0.5 {
@@ -1548,20 +1562,23 @@ pub(super) fn clamp_percentage_max_height(
     // min-height:100% on child of definite-height parent → 解析为 cb_h 的百分比作内容高度下限。
     // min-height-094/095：div2 min-height:100%（父 div1 height:1in 明确）→ 96px。
     // 置于 max-height 之后使 min 优先于 max（§10.4）。
-    if let (Some(style), Some(cb_h)) = (style.as_ref(), cb_content_height)
-        && let LengthValue::Percentage(p) = &style.min_height
-    {
-        let pb = box_node.padding_top + box_node.padding_bottom + box_node.border_top + box_node.border_bottom;
-        let is_border_box = matches!(style.box_sizing, BoxSizingValue::BorderBox);
-        let min_box_h = *p as f32 / 100.0 * cb_h;
-        let min_content_h = if is_border_box {
-            (min_box_h - pb).max(0.0)
-        } else {
-            min_box_h
+    if let Some(style) = style.as_ref() {
+        let min_box_h = match &style.min_height {
+            LengthValue::Percentage(p) => cb_content_height.map(|cb_h| *p as f32 / 100.0 * cb_h),
+            other => resolve_postprocess_real_length(other, style),
         };
-        if box_node.content_height < min_content_h {
-            box_node.content_height = min_content_h;
-            box_node.height = min_content_h + pb;
+        if let Some(min_box_h) = min_box_h {
+            let pb = box_node.padding_top + box_node.padding_bottom + box_node.border_top + box_node.border_bottom;
+            let is_border_box = matches!(style.box_sizing, BoxSizingValue::BorderBox);
+            let min_content_h = if is_border_box {
+                (min_box_h - pb).max(0.0)
+            } else {
+                min_box_h
+            };
+            if box_node.content_height < min_content_h {
+                box_node.content_height = min_content_h;
+                box_node.height = min_content_h + pb;
+            }
         }
     }
 
@@ -1628,8 +1645,22 @@ pub(super) fn clamp_percentage_max_height(
         _ => None,
     });
 
-    for child in &mut box_node.children {
-        clamp_percentage_max_height(child, my_definite_content_height, styles);
+    for i in 0..box_node.children.len() {
+        let shiftable_child = is_shiftable_in_flow_block(&box_node.children[i]);
+        let old_extent = box_node.children[i].y + box_node.children[i].height + box_node.children[i].margin_bottom;
+        clamp_percentage_max_height(&mut box_node.children[i], my_definite_content_height, styles);
+        let new_extent = box_node.children[i].y + box_node.children[i].height + box_node.children[i].margin_bottom;
+        let delta = new_extent - old_extent;
+        if shiftable_child && delta.abs() > 0.5 {
+            for sibling in box_node.children.iter_mut().skip(i + 1) {
+                if is_shiftable_in_flow_block(sibling) {
+                    sibling.y += delta;
+                }
+            }
+            box_node.content_height = (box_node.content_height + delta).max(0.0);
+            let pb = box_node.padding_top + box_node.padding_bottom + box_node.border_top + box_node.border_bottom;
+            box_node.height = (box_node.height + delta).max(pb);
+        }
     }
 }
 
