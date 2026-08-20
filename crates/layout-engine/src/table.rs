@@ -650,12 +650,14 @@ fn compute_column_widths(
 
     // 辅助闭包：计算单元格对其所在列的宽度贡献
     let cell_used_width = |cell_box: &LayoutBox| -> (f32, bool) {
-        let cell_style_width = cell_box.node_id.and_then(|id| styles.get(&id)).map(|s| s.width.clone());
-        let css_width_auto = match &cell_style_width {
-            Some(zero_css_parser::values::LengthValue::Px(v)) => (*v as f32) < 2.0,
-            None => true,
-            Some(zero_css_parser::values::LengthValue::Auto) => true,
-            Some(_) => false,
+        let cell_style = cell_box.node_id.and_then(|id| styles.get(&id));
+        let cell_style_width = cell_style.map(|s| s.width.clone());
+        let cell_width_px = cell_style.and_then(|s| resolve_table_used_length(&s.width, s));
+        let css_width_auto = match (&cell_style_width, cell_width_px) {
+            (Some(zero_css_parser::values::LengthValue::Auto), _) | (None, _) => true,
+            (Some(zero_css_parser::values::LengthValue::Px(v)), _) => (*v as f32) < 2.0,
+            (_, Some(px)) => px < 2.0,
+            (Some(_), None) => false,
         };
         let intrinsic = compute_cell_intrinsic_width(cell_box, styles, doc, inline_fonts);
         // auto 宽度的单元格：列宽只取内容固有宽度（intrinsic）。
@@ -670,14 +672,11 @@ fn compute_column_widths(
             // （CSS2 §17.6.2：列宽从左 border 中心到右 border 中心）。
             // 这样 `<col width:50px>` 与 `<td style="width:40px>`（border 10px）产生
             // 相同的列宽 50，使 colspan 类用例 test/ref 一致。
-            let explicit = match &cell_style_width {
-                Some(zero_css_parser::values::LengthValue::Px(v)) => *v as f32,
-                _ => cell_box.width,
-            };
+            let explicit = cell_width_px.unwrap_or(cell_box.width);
             let base = if is_collapsed_border {
                 explicit + (cell_box.border_left + cell_box.border_right) / 2.0
             } else {
-                cell_box.width
+                explicit
             };
             // R364b：显式 width 不小于单元格 min-content（CSS 表格：列宽下限 = 内容
             // min-content；width:2px 但内容 "1" 需 9.6px → 列宽 9.6，内容不溢出列）。
@@ -687,15 +686,8 @@ fn compute_column_widths(
         // 单元格 min-width 贡献列 min-content 下限；§10 max-width 上限，min 优先于 max）。
         // empty cell + min-width:1in → 96px 列（min-width-applies-to-007）。
         // gated on Px（同 resolve_col_min/max）→ 仅影响显式声明 min/max-width 的单元格。
-        let cs = cell_box.node_id.and_then(|id| styles.get(&id));
-        let cell_max = cs.and_then(|s| match &s.max_width {
-            zero_css_parser::values::LengthValue::Px(v) => Some(*v as f32),
-            _ => None,
-        });
-        let cell_min = cs.and_then(|s| match &s.min_width {
-            zero_css_parser::values::LengthValue::Px(v) => Some(*v as f32),
-            _ => None,
-        });
+        let cell_max = cell_style.and_then(|s| resolve_table_used_length(&s.max_width, s));
+        let cell_min = cell_style.and_then(|s| resolve_table_used_length(&s.min_width, s));
         let w = match cell_max {
             Some(mx) => w.min(mx),
             None => w,
@@ -708,30 +700,14 @@ fn compute_column_widths(
     // 对 separated 和 collapsed border model 均生效。colgroup width 作用于其覆盖
     // 的全部列（无内部 col 时）。
     let resolve_col_width = |s: &ComputedStyle| -> Option<f32> {
-        use zero_css_parser::values::LengthValue;
-        match &s.width {
-            // 仅读取绝对像素宽度。百分比在 width:auto（shrink-to-fit）表上解析语义
-            // 不明确（参照盒不定），calc/em 等同理——跳过以保持当前同源匹配。
-            LengthValue::Px(v) => Some(*v as f32),
-            _ => None,
-        }
+        // 百分比在 width:auto（shrink-to-fit）表上解析语义不明确（参照盒不定），
+        // 继续跳过；真实 length 按 col/colgroup 自身 font-size 折算。
+        resolve_table_used_length(&s.width, s)
     };
     // col/colgroup 的 min-width/max-width 约束列宽下限/上限（CSS Tables §17.5 + CSS §10）。
     // 仅读 Px（同 width），gated on 属性设置 → 仅影响显式声明 min/max-width 的列。
-    let resolve_col_min = |s: &ComputedStyle| -> Option<f32> {
-        use zero_css_parser::values::LengthValue;
-        match &s.min_width {
-            LengthValue::Px(v) => Some(*v as f32),
-            _ => None,
-        }
-    };
-    let resolve_col_max = |s: &ComputedStyle| -> Option<f32> {
-        use zero_css_parser::values::LengthValue;
-        match &s.max_width {
-            LengthValue::Px(v) => Some(*v as f32),
-            _ => None,
-        }
-    };
+    let resolve_col_min = |s: &ComputedStyle| -> Option<f32> { resolve_table_used_length(&s.min_width, s) };
+    let resolve_col_max = |s: &ComputedStyle| -> Option<f32> { resolve_table_used_length(&s.max_width, s) };
     let mut col_cursor = 0usize;
     for child in &table_box.children {
         let child_display = get_display(child, styles);

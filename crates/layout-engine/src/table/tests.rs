@@ -953,6 +953,68 @@ fn test_r364_explicit_width_column_frozen_during_expansion() {
     );
 }
 
+#[test]
+fn test_explicit_cell_width_relative_length_freezes_column() {
+    use zero_css_parser::values::LengthValue;
+
+    let mut doc = Document::new();
+    let root = doc.root();
+    let table_id = doc.create_element("div");
+    let cell_a = doc.create_element("div");
+    let cell_b = doc.create_element("div");
+    let _ = doc.append_child(root, table_id);
+
+    let mut styles = HashMap::new();
+    let mut table_style = ComputedStyle::default();
+    table_style.display = DisplayValue::Table;
+    table_style.width = LengthValue::Px(200.0);
+    styles.insert(table_id, table_style);
+
+    let mut cell_a_style = ComputedStyle::default();
+    cell_a_style.display = DisplayValue::TableCell;
+    cell_a_style.font_size = LengthValue::Px(20.0);
+    cell_a_style.width = LengthValue::Em(5.0);
+    styles.insert(cell_a, cell_a_style);
+
+    let mut cell_b_style = ComputedStyle::default();
+    cell_b_style.display = DisplayValue::TableCell;
+    styles.insert(cell_b, cell_b_style);
+
+    let cell_a_box = LayoutBox {
+        node_id: Some(cell_a),
+        width: 10.0,
+        content_width: 10.0,
+        ..Default::default()
+    };
+    let cell_b_box = LayoutBox {
+        node_id: Some(cell_b),
+        width: 10.0,
+        content_width: 10.0,
+        ..Default::default()
+    };
+    let table_box = LayoutBox {
+        node_id: Some(table_id),
+        content_width: 200.0,
+        children: vec![cell_a_box, cell_b_box],
+        ..Default::default()
+    };
+
+    let grid = build_grid(&table_box, &doc, &styles);
+    let col_widths = compute_column_widths(&table_box, &grid, &styles, &doc, Default::default());
+
+    assert_eq!(col_widths.len(), 2);
+    assert!(
+        (col_widths[0] - 100.0).abs() < 1.0,
+        "5em at 20px explicit cell width should freeze first column at 100, got {}",
+        col_widths[0]
+    );
+    assert!(
+        (col_widths[1] - 100.0).abs() < 1.0,
+        "auto column should absorb remaining width, got {}",
+        col_widths[1]
+    );
+}
+
 /// R364b：显式 width 小于单元格 min-content 时，列宽取 max(explicit, min-content)。
 /// 显式 3px cell（min-content ~9.6px 来自 compute_cell_intrinsic_width）→ 列宽 ~9.6 而非 3
 ///（修复前 cell_used_width 显式分支直接返回 explicit，不 floor 到 min-content）。
