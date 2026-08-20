@@ -423,6 +423,16 @@
   function _zwDefProtoMethod(proto, name, fn) {
     Object.defineProperty(proto, name, { value: fn, writable: true, configurable: true, enumerable: false });
   }
+  // R134（js-dom M4）：Element.prototype 的 [Unscopable] 表（spec ChildNode 四方法
+  // before/after/replaceWith/remove + ParentNode prepend/append 均 [Unscopable]——
+  // with(element) 词法域不可见。WPT remove-unscopable 六断言 + inline handler 双向
+  // 语义：this.remove 是 function、裸 remove 解析 window）。
+  try {
+    Object.defineProperty(globalThis.Element.prototype, Symbol.unscopables, {
+      value: { before: true, after: true, replaceWith: true, remove: true, prepend: true, append: true },
+      writable: false, enumerable: false, configurable: true,
+    });
+  } catch (_e134sd) {}
   _zwDefProtoMethod(globalThis.Element.prototype, 'cloneNode', function (deep) {
     function deepClone(n) {
       if (!n || typeof n !== 'object' || n.nodeType === undefined) return null;
@@ -3118,6 +3128,41 @@
   // createElement）经 `__zw_get_tag_handle(handle)`（CreateElement 记录的 tag）。host 未注册
   // （polyfill/WebView 路径）或未命中 → fallback `_tagFromSel`（启发式，保旧行为）。
   // tag 取小写 local_name，tagName/nodeName 在 HTML 命名空间须大写 → 统一 toUpperCase。
+  // R134（js-dom M4）：type selector 的 handle-only 元素 JS 侧匹配（spec selectors-4
+  // §6.1）：`type`（默认 ns——浏览器对 API matches 的默认 ns 语义取「不比较 ns」，
+  // WPT matches-namespaced-elements 的空 ns 与 urn:ns 两形态都以裸 type 断言真）、
+  // `ns|type`（ns 全等）、`*|type`（任意 ns）、`|type`（显式无 ns）、`*`（任意元素）。
+  // ns/localName 源经 `_nsHandles`（createElementNS 登记）——miss（普通 createElement）
+  // 时 local=tag 小写、ns=null。返回 null = 非 type selector（含伪类/属性/组合器/
+  // 空白）——调用方回落 false（保守：detached 元素的复合匹配属选择器引擎深结构）。
+  function _r134MatchTypeSelector(handle, q) {
+    var s = String(q).trim();
+    if (!s) return false;
+    if (/[\s>+~\[.#:(]"'/.test(s)) return null;
+    var nsMeta = (typeof _nsHandles !== 'undefined' && _nsHandles[handle]) || null;
+    var local = nsMeta ? String(nsMeta.qualifiedName || '') : '';
+    var c = local.indexOf(':');
+    if (c >= 0) local = local.slice(c + 1);
+    if (!nsMeta) {
+      var tag = _realTag(null, handle);
+      local = tag ? String(tag).toLowerCase() : '';
+    }
+    if (!local) return false;
+    var elNs = nsMeta ? (nsMeta.namespace == null ? null : String(nsMeta.namespace)) : null;
+    if (s === '*') return true;
+    var bar = s.indexOf('|');
+    // type selector 段 ASCII 大小写不敏感（HTML 文档语义；CSS type selector 本不区分）
+    var low = s.toLowerCase();
+    if (bar === 0) return low.slice(1) === local && elNs === null;
+    if (bar > 0) {
+      var p = low.slice(0, low.indexOf('|')), t = low.slice(low.indexOf('|') + 1);
+      if (t === '*') return p === '*' || String(elNs) === p;
+      if (t !== local) return false;
+      if (p === '*') return true;
+      return String(elNs) === p;
+    }
+    return low === local;
+  }
   function _realTag(sel, handle) {
     if (sel && typeof __zw_get_tag === 'function') {
       try { var t = __zw_get_tag(sel); if (t) return _zwAsciiUpper(t); } catch (_e) {}
@@ -6283,6 +6328,21 @@
         //（createElement handle proxy 被隐式字符串化——appendChild/observer id 等——
         // 在 QuickJS 下中断脚本）。显式返回字符串化函数（有 sel 用 sel，否则 handle），
         // 保证 v8/quickjs 接口行为一致。
+        // R134（js-dom M4）：`Symbol.unscopables`（spec WebIDL §[Unscopable]——ChildNode
+        // 四方法 + prepend/append 在 with(element) 词法域不可见；WPT remove-unscopable：
+        // inline handler `with(this){ remove }` 期望裸 remove 解析到 window 变量非元素
+        // 方法）。with 语义消费本 symbol 的属性表对 has 判定做排除——proxy 的 has trap
+        // 不识别该表故白名单/方法面照常命中；返回 Element.prototype 上的表（真实
+        // 浏览器挂在 Element.prototype，六方法全 true）。
+        if (prop === Symbol.unscopables) {
+          try {
+            if (globalThis.Element && globalThis.Element.prototype
+                && globalThis.Element.prototype[Symbol.unscopables]) {
+              return globalThis.Element.prototype[Symbol.unscopables];
+            }
+          } catch (_e134u) {}
+          return undefined;
+        }
         if (prop === Symbol.toPrimitive) {
           return function() { return sel ? sel : String(handle); };
         }

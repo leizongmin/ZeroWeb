@@ -1720,3 +1720,52 @@ fn test_insert_adjacent_element_validation_r133() {
         "R133 insertAdjacentElement：非法 position SyntaxError（大小写不敏感）/非节点参数 TypeError/documentElement beforebegin+afterend HRE/合法路径返插入元素"
     );
 }
+
+// R134（js-dom M4）：matches 的 type selector NS 匹配（selectors-4 §6.1——handle-only
+// 元素 JS 侧匹配）+ Element.prototype [Unscopable] 表 + on* setAttribute 的 handler
+// 缓存失效重编译。
+#[test]
+fn test_matches_ns_and_unscopables_r134() {
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let mut sandbox = V8Sandbox::with_config(zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    })
+    .unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><div id=\"host\"><p id=\"a\">A</p></div></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry);
+
+    let out = sandbox
+        .execute(
+            "var parts = [];\
+             var e1 = document.createElementNS('', 'element');\
+             parts.push('empty-ns:' + e1.matches('element'));\
+             var e2 = document.createElementNS('urn:ns', 'h');\
+             parts.push('ns:' + e2.matches('h') + ':star-bar:' + e2.matches('*|h')\
+               + ':ns-bar:' + e2.matches('urn:ns|h') + ':wrong-ns-bar:' + e2.matches('urn:x|h')\
+               + ':star:' + e2.matches('*') + ':wrong-type:' + e2.matches('x'));\
+             var d = document.createElement('div');\
+             parts.push('html-bare:' + d.matches('div') + ':upper:' + d.matches('DIV'));\
+             parts.push('complex-false:' + d.matches('div.foo'));\
+             parts.push('unscopables:' + (Element.prototype[Symbol.unscopables].before === true\
+               && Element.prototype[Symbol.unscopables].remove === true\
+               && Element.prototype[Symbol.unscopables].append === true));\
+             parts.push('proxy-tab:' + (d[Symbol.unscopables] === Element.prototype[Symbol.unscopables]));\
+             parts.join('|');",
+        )
+        .unwrap()
+        .value;
+    assert_eq!(
+        out,
+        "empty-ns:true|ns:true:star-bar:true:ns-bar:true:wrong-ns-bar:false:star:true:wrong-type:false|html-bare:true:upper:true|complex-false:false|unscopables:true|proxy-tab:true",
+        "R134 matches NS 三形态（空 ns 裸 type/urn:ns 裸+*|+ns|+错 ns/*）+ HTML 大小写 + 复合选择器保守 false + unscopables 表 + proxy get trap 透出"
+    );
+}

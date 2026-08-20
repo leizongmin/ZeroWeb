@@ -1532,6 +1532,20 @@
             // 编译委托 _ensureInlineHandler 缓存（先清缓存强制重读新 attr），再写 window。
             var _r107n = n.toLowerCase().slice(2);
             var _r107tag = _realTag(sel, handle);
+            // R134（js-dom M4）：on* 内容属性 setAttribute 一律失效已编译 handler 缓存
+            //（旧仅 body/frameset 转发路径失效——普通元素首编译被永久缓存，后续
+            // setAttribute 换 handler 体后派发仍跑旧体；WPT remove-unscopable 逐个
+            // setAttribute('onclick', ...) 六变体只跑首个体的根因）。失效同时剔除
+            // listener store 的旧编译条目（否则 dispatch 仍先跑旧 fn），再立即按新
+            // attr 重编译入 store（setAttribute 即编译——派发路径零改动）。
+            if (_r107n.length && /^on[a-z]+$/.test(n.toLowerCase())) {
+              var _r134OldFn = _onHandlers[key] && _onHandlers[key][_r107n];
+              if (typeof _r134OldFn === 'function' && _listenerStore[key] && _listenerStore[key][_r107n]) {
+                _listenerStore[key][_r107n] = _listenerStore[key][_r107n].filter(function (l) { return l.fn !== _r134OldFn; });
+              }
+              if (_onHandlers[key]) _onHandlers[key][_r107n] = undefined;
+              _ensureInlineHandler(key, sel, handle, _r107n);
+            }
             if (_r107n.length && globalThis._ZW_BODY_FORWARD_ON[_r107n]
                 && (_r107tag === 'BODY' || _r107tag === 'FRAMESET') && globalThis.window) {
               if (_onHandlers[key]) _onHandlers[key][_r107n] = undefined;
@@ -2221,6 +2235,18 @@
             var q = String(selector);
             if (q === ':invalid') return !_validityState(key, sel, handle).valid;
             if (q === ':valid') return _validityState(key, sel, handle).valid;
+            // R134（js-dom M4）：handle-only 元素（createElement/createElementNS 的
+            // detached 节点——无 sel，host `__zw_matches` 不可用）的 type selector
+            // JS 侧匹配（spec selectors-4 §6.1 type selector：`type` 在默认命名空间
+            // 匹配、`ns|type` 按 ns、`*|type` 任意 ns、`*` 任意；WPT matches-
+            // namespaced-elements 三形态：空 ns / urn:ns / `*|h`）。非 type selector
+            //（含伪类/属性/组合器）→ false（保守——detached 元素的复合匹配属选择器
+            // 引擎深结构，R120 统一匹配器只覆盖文档内元素）。
+            if (!sel && handle) {
+              var _r134M = _r134MatchTypeSelector(handle, q);
+              if (_r134M !== null) return _r134M;
+              return false;
+            }
             if (!sel || typeof __zw_matches !== 'function') return false;
             try { return __zw_matches(sel, q) === '1'; } catch (_e) { return false; }
           };
