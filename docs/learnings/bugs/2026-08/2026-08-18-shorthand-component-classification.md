@@ -338,3 +338,5 @@ Table-float avoidance exposed the geometry-decision variant: a residual real len
 BFC float avoidance exposed the cached-used-declaration variant: postprocess stages sometimes need the original definite source width even after taffy has produced a fallback geometry. Store a local used-value cache on the layout box for the specific decision instead of globally changing converter semantics for every consumer.
 
 Right-float BFC avoidance exposed the entry-guard variant: adding a used-value cache is not enough if the branch guard still asks the post-taffy fallback width whether the box overlaps the float. Every gate that decides whether avoidance runs must consume the same declared used width as the later fit/pushdown logic.
+
+Multi-float coordination exposed the feasible-region variant: candidate placement solvers must use the used border-box width when computing x intervals, not only when finally restoring geometry. A raw residual length can make an infeasible gap look feasible and lock in the wrong width.

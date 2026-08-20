@@ -1173,7 +1173,7 @@ pub(crate) fn adjust_float_positions_with_context(
                         })
                         .collect();
                     if overlapping.len() >= 2 {
-                        let w = child.width;
+                        let w = child.declared_width_px.unwrap_or(child.width);
                         let h = child.height;
                         // 候选 y：自然 y + 各重叠 float bottom（> 自然 y），升序去重。
                         let mut y_candidates: Vec<f32> = vec![child.y];
@@ -1223,6 +1223,10 @@ pub(crate) fn adjust_float_positions_with_context(
                         if let Some((px, py)) = placed {
                             child.x = px;
                             child.y = py;
+                            if let Some(width) = child.declared_width_px {
+                                child.width = width;
+                                shrink_bfc_content_width(child);
+                            }
                         } else {
                             // 无可行 y（BFC 宽放不下任何候选处）→ 下到最晚重叠 float bottom。
                             let max_bottom = overlapping
@@ -1234,6 +1238,10 @@ pub(crate) fn adjust_float_positions_with_context(
                                 .fold(child.y, f32::max);
                             child.y = max_bottom;
                             child.x = child.margin_left;
+                            if let Some(width) = child.declared_width_px {
+                                child.width = width;
+                                shrink_bfc_content_width(child);
+                            }
                         }
                         coord_handled = true;
                     }

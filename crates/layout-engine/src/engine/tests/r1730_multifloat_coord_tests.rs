@@ -146,3 +146,63 @@ fn r1730_margin_auto_bfc_right_aligns_to_leftmost_obstructing_float() {
         span2_box.x
     );
 }
+
+/// R3611：多-float coordination 的可行区间也要使用声明宽的 used-value。
+/// 两侧 float 各 150px，中间只剩 100px；`width:6em;font-size:20px` = 120px，
+/// BFC 不应被 raw `Em(6)` 当成 6px 后放进窄缝。
+#[test]
+fn r3611_multifloat_coord_relative_declared_width_drops_below() {
+    let (mut doc, body) = make_doc_with_body();
+    let container = doc.create_element("div");
+    doc.append_child(body, container).unwrap();
+    let float_l = doc.create_element("div");
+    doc.append_child(container, float_l).unwrap();
+    let float_r = doc.create_element("div");
+    doc.append_child(container, float_r).unwrap();
+    let bfc = doc.create_element("span");
+    doc.append_child(container, bfc).unwrap();
+
+    let mut styles = HashMap::new();
+    let mut cont = ComputedStyle::default();
+    cont.display = DisplayValue::Block;
+    cont.width = LengthValue::Px(400.0);
+    styles.insert(container, cont);
+
+    let mut fl = ComputedStyle::default();
+    fl.display = DisplayValue::Block;
+    fl.float = FloatValue::Left;
+    fl.width = LengthValue::Px(150.0);
+    fl.height = LengthValue::Px(50.0);
+    styles.insert(float_l, fl);
+
+    let mut fr = ComputedStyle::default();
+    fr.display = DisplayValue::Block;
+    fr.float = FloatValue::Right;
+    fr.width = LengthValue::Px(150.0);
+    fr.height = LengthValue::Px(50.0);
+    styles.insert(float_r, fr);
+
+    let mut s = ComputedStyle::default();
+    s.display = DisplayValue::Block;
+    s.overflow_x = OverflowValue::Hidden;
+    s.overflow_y = OverflowValue::Hidden;
+    s.font_size = LengthValue::Px(20.0);
+    s.width = LengthValue::Em(6.0);
+    s.height = LengthValue::Px(25.0);
+    styles.insert(bfc, s);
+
+    let mut engine = LayoutEngine::new(800.0, 600.0);
+    let result = engine.compute(&doc, &styles);
+
+    let bfc_box = find_child_by_node_id(&result.root, bfc).expect("bfc found");
+    assert!(
+        bfc_box.width >= 115.0,
+        "multi-float relative declared-width BFC 应保持 width≈120，实际 {}",
+        bfc_box.width
+    );
+    assert!(
+        bfc_box.y > 40.0,
+        "multi-float 中间 100px 不足容纳 120px BFC，应推到 float 下方，实际 y={}",
+        bfc_box.y
+    );
+}
