@@ -15,13 +15,14 @@ mod v8_runtime;
 #[cfg(feature = "v8")]
 mod dom_bindings;
 
-#[cfg(any(feature = "v8", feature = "quickjs"))]
+// threaded_runtime / service_worker 是引擎无关的线程+通道封装，仅 create_engine
+// 按特性选择引擎。无引擎构建保留类型与协议（供 page-runtime / browser 进程引用
+// SandboxConfig、ServiceWorkerEvent 等类型），运行时创建在 service_worker.rs 的
+// no-engine create_engine 中降级为 EngineUnavailable——引擎代码不会被链接进来。
 mod threaded_runtime;
 
-#[cfg(any(feature = "v8", feature = "quickjs"))]
 mod service_worker;
 
-#[cfg(any(feature = "v8", feature = "quickjs"))]
 pub use service_worker::*;
 
 #[cfg(feature = "v8")]
@@ -199,9 +200,6 @@ pub trait Sandbox {
         false
     }
 }
-
-#[cfg(not(any(feature = "v8", feature = "quickjs")))]
-compile_error!("至少需要启用一个JS引擎feature: `v8` 或 `quickjs`");
 
 #[cfg(all(test, feature = "v8"))]
 mod tests {

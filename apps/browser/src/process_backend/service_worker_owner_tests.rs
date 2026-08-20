@@ -389,16 +389,28 @@ fn multiprocess_restart_restores_persisted_controller_without_refetch() {
         let mut snapshots = HashMap::new();
         let controlled_page = format!("http://{authority}/app/reloaded");
         load_committed_page(&mut backend, &mut snapshots, tab_id, &controlled_page);
-        let value = execute_script(
-            &mut backend,
-            &mut snapshots,
-            tab_id,
-            3,
-            "return navigator.serviceWorker.controller ?\
-               navigator.serviceWorker.controller.state + '|' +\
-               navigator.serviceWorker.controller.scriptURL : 'none';",
-        )
-        .unwrap();
+        // 延迟恢复经 IPC 异步完成（首个 renderer 接入时 flush）：轮询至 controller 出现。
+        let deadline = Instant::now() + Duration::from_secs(20);
+        let value = loop {
+            let value = execute_script(
+                &mut backend,
+                &mut snapshots,
+                tab_id,
+                3,
+                "return navigator.serviceWorker.controller ?\
+                   navigator.serviceWorker.controller.state + '|' +\
+                   navigator.serviceWorker.controller.scriptURL : 'none';",
+            )
+            .unwrap();
+            if value != AutomationValue::String("none".into()) {
+                break value;
+            }
+            assert!(
+                Instant::now() < deadline,
+                "persistent restore did not activate a controller"
+            );
+            std::thread::sleep(Duration::from_millis(5));
+        };
         assert_eq!(
             value,
             AutomationValue::String(format!("activated|http://{authority}/sw.js"))

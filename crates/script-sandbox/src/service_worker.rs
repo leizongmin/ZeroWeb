@@ -505,6 +505,15 @@ fn create_engine(config: SandboxConfig) -> Result<Box<dyn Sandbox>, ScriptError>
     Ok(Box::new(crate::QuickJSSandbox::with_config(config)?))
 }
 
+// 无引擎构建（如 zero-browser 主进程）：类型可用，运行时创建降级为
+// EngineUnavailable，调用方按 ScriptFailed { kind: EngineUnavailable } 处理。
+#[cfg(not(any(feature = "v8", feature = "quickjs")))]
+fn create_engine(_config: SandboxConfig) -> Result<Box<dyn Sandbox>, ScriptError> {
+    Err(ScriptError::EngineUnavailable(
+        "no JavaScript engine feature is enabled in this build".into(),
+    ))
+}
+
 fn script_error_kind(error: &ScriptError) -> ServiceWorkerScriptErrorKind {
     match error {
         ScriptError::CompileError(_) => ServiceWorkerScriptErrorKind::Compile,

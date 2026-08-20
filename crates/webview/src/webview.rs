@@ -2334,13 +2334,7 @@ impl WebView {
         self.sw_manager
             .lock()
             .map_err(|_| WebViewError::Script("Service Worker manager lock poisoned".into()))?
-            .start_evaluation(
-                script_url.as_str(),
-                scope.as_str(),
-                &origin,
-                &script,
-                SandboxConfig::default(),
-            )
+            .start_evaluation(script_url.as_str(), scope.as_str(), &origin, &script)
             .map_err(|error| WebViewError::Script(error.to_string()))
     }
 
@@ -2451,7 +2445,6 @@ impl WebView {
                             &origin,
                             &source,
                             update_via_cache,
-                            SandboxConfig::default(),
                         )
                         .map_err(|error| error.to_string())?;
                     Self::wait_for_service_worker_evaluation(&mut manager, registration_id)?;
@@ -2502,7 +2495,7 @@ impl WebView {
                         .lock()
                         .map_err(|_| "Service Worker manager lock poisoned".to_string())?;
                     match manager
-                        .start_update(registration_id, &source, SandboxConfig::default())
+                        .start_update(registration_id, &source)
                         .map_err(|error| error.to_string())?
                     {
                         zero_page_runtime::ServiceWorkerUpdateOutcome::Unchanged { registration_id } => {

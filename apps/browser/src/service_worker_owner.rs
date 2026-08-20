@@ -5,6 +5,7 @@ use std::fs::{self, File};
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 use std::sync::mpsc::{Receiver, TryRecvError};
+use std::sync::{Arc, Mutex};
 
 use serde::{Deserialize, Serialize};
 use url::Url;
@@ -12,14 +13,17 @@ use zero_browser_shell::TabId;
 use zero_net::HttpResponse;
 use zero_page_runtime::{
     ServiceWorkerManager, ServiceWorkerManagerError, ServiceWorkerManagerEvent, ServiceWorkerPersistentRegistration,
-    ServiceWorkerRegistrationErrorKind, ServiceWorkerUpdateOutcome, validate_service_worker_registration,
+    ServiceWorkerRegistrationErrorKind, ServiceWorkerRuntimeHost, ServiceWorkerUpdateOutcome,
+    validate_service_worker_registration,
 };
 use zero_protocol::message::{
-    ServiceWorkerClientMessages, ServiceWorkerError, ServiceWorkerErrorCode, ServiceWorkerOperation,
-    ServiceWorkerRequestParams, ServiceWorkerResponseParams, ServiceWorkerResult, ServiceWorkerSnapshot,
-    ServiceWorkerStateChanges, ServiceWorkerStateWire, ServiceWorkerUpdateViaCacheWire,
+    ServiceWorkerClientMessages, ServiceWorkerError, ServiceWorkerErrorCode, ServiceWorkerHostCommand,
+    ServiceWorkerHostCommandParams, ServiceWorkerHostEvent, ServiceWorkerHostEventParams, ServiceWorkerLifecycleWire,
+    ServiceWorkerOperation, ServiceWorkerRequestParams, ServiceWorkerResponseParams, ServiceWorkerResult,
+    ServiceWorkerScriptErrorKindWire, ServiceWorkerSnapshot, ServiceWorkerStateChanges, ServiceWorkerStateWire,
+    ServiceWorkerUpdateViaCacheWire,
 };
-use zero_script_sandbox::SandboxConfig;
+use zero_script_sandbox::{ServiceWorkerEvent, ServiceWorkerLifecyclePhase, ServiceWorkerScriptErrorKind};
 use zero_storage::{ServiceWorkerRegistration, ServiceWorkerState, ServiceWorkerUpdateViaCache};
 
 const MAX_SCRIPT_BYTES: usize = 16 * 1024 * 1024;
@@ -47,6 +51,289 @@ enum ServiceWorkerFetchPurpose {
 enum ProfileKey {
     Normal,
     Private(TabId),
+}
+
+/// 待下发 renderer 的托管命令（`tab_id` 定位宿主 renderer 连接）。
+pub(crate) struct ServiceWorkerHostOutgoing {
+    pub(crate) tab_id: TabId,
+    pub(crate) params: ServiceWorkerHostCommandParams,
+}
+
+/// 单一 profile 的 browser↔renderer host 通道（`IpcServiceWorkerHost` 与 owner 共享）。
+///
+/// `pending_tab` 是一次性的「下一次 `start_evaluation` 的宿主 tab」——owner 在
+/// `complete_fetch` 里于调用 manager 前设置，host 的 `evaluate` 消费。
+#[derive(Clone, Default)]
+struct SharedHostChannels {
+    inbox: Arc<Mutex<Vec<(u64, ServiceWorkerEvent)>>>,
+    outbox: Arc<Mutex<Vec<ServiceWorkerHostOutgoing>>>,
+    pending_tab: Arc<Mutex<Option<TabId>>>,
+    /// registration_id → 托管 renderer tab（runtime 存活集合；断连时反查注入 Closed）。
+    owned: Arc<Mutex<HashMap<u64, TabId>>>,
+}
+
+impl SharedHostChannels {
+    fn set_pending_tab(&self, tab_id: TabId) {
+        *self.pending_tab.lock().unwrap_or_else(|error| error.into_inner()) = Some(tab_id);
+    }
+
+    fn push_event(&self, registration_id: u64, event: ServiceWorkerEvent) {
+        self.inbox
+            .lock()
+            .unwrap_or_else(|error| error.into_inner())
+            .push((registration_id, event));
+    }
+
+    fn push_outgoing(&self, outgoing: ServiceWorkerHostOutgoing) {
+        self.outbox
+            .lock()
+            .unwrap_or_else(|error| error.into_inner())
+            .push(outgoing);
+    }
+
+    fn take_outgoing(&self) -> Vec<ServiceWorkerHostOutgoing> {
+        std::mem::take(&mut *self.outbox.lock().unwrap_or_else(|error| error.into_inner()))
+    }
+
+    fn take_owned_tab(&self, registration_id: u64) -> Option<TabId> {
+        self.owned
+            .lock()
+            .unwrap_or_else(|error| error.into_inner())
+            .get(&registration_id)
+            .copied()
+    }
+
+    fn record_owned(&self, registration_id: u64, tab_id: TabId) {
+        self.owned
+            .lock()
+            .unwrap_or_else(|error| error.into_inner())
+            .insert(registration_id, tab_id);
+    }
+
+    fn remove_owned(&self, registration_id: u64) -> Option<TabId> {
+        self.owned
+            .lock()
+            .unwrap_or_else(|error| error.into_inner())
+            .remove(&registration_id)
+    }
+
+    /// 移除并返回 `tab_id` 托管的全部 registration（renderer 死亡时用）。
+    fn remove_owned_by_tab(&self, tab_id: TabId) -> Vec<u64> {
+        let mut owned = self.owned.lock().unwrap_or_else(|error| error.into_inner());
+        let ids: Vec<u64> = owned
+            .iter()
+            .filter(|(_, owner)| **owner == tab_id)
+            .map(|(id, _)| *id)
+            .collect();
+        for id in &ids {
+            owned.remove(id);
+        }
+        ids
+    }
+
+    fn owned_count(&self) -> usize {
+        self.owned.lock().unwrap_or_else(|error| error.into_inner()).len()
+    }
+}
+
+/// Browser 侧 [`ServiceWorkerRuntimeHost`]：命令经 IPC 转发给宿主 renderer 进程，
+/// 事件由 process_backend 从 renderer 消息流注入 inbox。JS 引擎只存在于 renderer。
+struct IpcServiceWorkerHost {
+    channels: SharedHostChannels,
+}
+
+impl IpcServiceWorkerHost {
+    fn new(channels: SharedHostChannels) -> Self {
+        Self { channels }
+    }
+}
+
+impl ServiceWorkerRuntimeHost for IpcServiceWorkerHost {
+    fn evaluate(
+        &mut self,
+        registration_id: u64,
+        script_url: &str,
+        script: &str,
+    ) -> Result<(), ServiceWorkerManagerError> {
+        let Some(tab_id) = self
+            .channels
+            .pending_tab
+            .lock()
+            .unwrap_or_else(|error| error.into_inner())
+            .take()
+        else {
+            return Err(ServiceWorkerManagerError::Runtime(
+                "Service Worker renderer host tab is unknown".into(),
+            ));
+        };
+        self.channels.push_outgoing(ServiceWorkerHostOutgoing {
+            tab_id,
+            params: ServiceWorkerHostCommandParams {
+                registration_id,
+                command: ServiceWorkerHostCommand::Evaluate {
+                    script_url: script_url.to_string(),
+                    script: script.to_string(),
+                },
+            },
+        });
+        self.channels.record_owned(registration_id, tab_id);
+        Ok(())
+    }
+
+    fn dispatch_lifecycle(
+        &mut self,
+        registration_id: u64,
+        phase: ServiceWorkerLifecyclePhase,
+    ) -> Result<(), ServiceWorkerManagerError> {
+        let Some(tab_id) = self.channels.take_owned_tab(registration_id) else {
+            return Err(ServiceWorkerManagerError::UnknownRegistration(registration_id));
+        };
+        self.channels.record_owned(registration_id, tab_id);
+        self.channels.push_outgoing(ServiceWorkerHostOutgoing {
+            tab_id,
+            params: ServiceWorkerHostCommandParams {
+                registration_id,
+                command: ServiceWorkerHostCommand::DispatchLifecycle {
+                    phase: wire_phase(phase),
+                },
+            },
+        });
+        Ok(())
+    }
+
+    fn dispatch_client_message(
+        &mut self,
+        registration_id: u64,
+        event_id: u64,
+        data_json: &str,
+        client_id: &str,
+        client_url: &str,
+    ) -> Result<(), ServiceWorkerManagerError> {
+        let Some(tab_id) = self.channels.take_owned_tab(registration_id) else {
+            return Err(ServiceWorkerManagerError::UnknownRegistration(registration_id));
+        };
+        self.channels.record_owned(registration_id, tab_id);
+        self.channels.push_outgoing(ServiceWorkerHostOutgoing {
+            tab_id,
+            params: ServiceWorkerHostCommandParams {
+                registration_id,
+                command: ServiceWorkerHostCommand::DispatchMessage {
+                    event_id,
+                    data_json: data_json.to_string(),
+                    client_id: client_id.to_string(),
+                    client_url: client_url.to_string(),
+                },
+            },
+        });
+        Ok(())
+    }
+
+    fn shutdown(&mut self, registration_id: u64) {
+        if let Some(tab_id) = self.channels.remove_owned(registration_id) {
+            self.channels.push_outgoing(ServiceWorkerHostOutgoing {
+                tab_id,
+                params: ServiceWorkerHostCommandParams {
+                    registration_id,
+                    command: ServiceWorkerHostCommand::Shutdown,
+                },
+            });
+        }
+    }
+
+    fn poll_events(&mut self) -> Vec<(u64, ServiceWorkerEvent)> {
+        std::mem::take(&mut *self.channels.inbox.lock().unwrap_or_else(|error| error.into_inner()))
+    }
+
+    fn runtime_count(&self) -> usize {
+        self.channels.owned_count()
+    }
+}
+
+/// profile 的 manager 构造方式。
+#[derive(Clone, Copy)]
+enum ProfileHostKind {
+    /// 求值经 IPC 下放 renderer（生产；browser 主进程不链接 JS 引擎）。
+    Ipc,
+    /// runtime 在本进程求值（单测；引擎经 dev-dependency feature unification 引入）。
+    Local,
+}
+
+fn profile_manager(kind: ProfileHostKind, channels: &SharedHostChannels) -> ServiceWorkerManager {
+    match kind {
+        ProfileHostKind::Ipc => ServiceWorkerManager::with_host(Box::new(IpcServiceWorkerHost::new(channels.clone()))),
+        ProfileHostKind::Local => ServiceWorkerManager::new(),
+    }
+}
+
+fn wire_phase(phase: ServiceWorkerLifecyclePhase) -> ServiceWorkerLifecycleWire {
+    match phase {
+        ServiceWorkerLifecyclePhase::Install => ServiceWorkerLifecycleWire::Install,
+        ServiceWorkerLifecyclePhase::Activate => ServiceWorkerLifecycleWire::Activate,
+    }
+}
+
+fn sandbox_phase(phase: ServiceWorkerLifecycleWire) -> ServiceWorkerLifecyclePhase {
+    match phase {
+        ServiceWorkerLifecycleWire::Install => ServiceWorkerLifecyclePhase::Install,
+        ServiceWorkerLifecycleWire::Activate => ServiceWorkerLifecyclePhase::Activate,
+    }
+}
+
+fn sandbox_event(event: ServiceWorkerHostEvent) -> ServiceWorkerEvent {
+    match event {
+        ServiceWorkerHostEvent::Evaluated { script_url } => ServiceWorkerEvent::Evaluated { script_url },
+        ServiceWorkerHostEvent::ScriptError {
+            script_url,
+            kind,
+            message,
+        } => ServiceWorkerEvent::ScriptError {
+            script_url,
+            kind: match kind {
+                ServiceWorkerScriptErrorKindWire::Compile => ServiceWorkerScriptErrorKind::Compile,
+                ServiceWorkerScriptErrorKindWire::Runtime => ServiceWorkerScriptErrorKind::Runtime,
+                ServiceWorkerScriptErrorKindWire::Timeout => ServiceWorkerScriptErrorKind::Timeout,
+                ServiceWorkerScriptErrorKindWire::InvalidInput => ServiceWorkerScriptErrorKind::InvalidInput,
+                ServiceWorkerScriptErrorKindWire::EngineUnavailable => ServiceWorkerScriptErrorKind::EngineUnavailable,
+            },
+            message,
+        },
+        ServiceWorkerHostEvent::LifecycleSettled {
+            phase,
+            succeeded,
+            skip_waiting,
+            claim_clients,
+            message,
+        } => ServiceWorkerEvent::LifecycleSettled {
+            event_id: 0,
+            phase: sandbox_phase(phase),
+            succeeded,
+            skip_waiting,
+            claim_clients,
+            message,
+        },
+        ServiceWorkerHostEvent::MessageDispatched {
+            event_id,
+            client_id,
+            outbound,
+        } => ServiceWorkerEvent::MessageDispatched {
+            event_id,
+            client_id,
+            outbound: outbound
+                .into_iter()
+                .map(|data_json| zero_script_sandbox::ServiceWorkerOutboundMessage { data_json })
+                .collect(),
+        },
+        ServiceWorkerHostEvent::MessageFailed {
+            event_id,
+            client_id,
+            message,
+        } => ServiceWorkerEvent::MessageFailed {
+            event_id,
+            client_id,
+            message,
+        },
+        ServiceWorkerHostEvent::Closed => ServiceWorkerEvent::Closed,
+    }
 }
 
 /// A validated script fetch that must run through the browser network owner.
@@ -108,50 +395,111 @@ struct PendingEvaluation {
 /// Browser-process single owner for Service Worker managers and runtimes.
 pub(crate) struct BrowserServiceWorkerOwner {
     normal: ServiceWorkerManager,
+    normal_channels: SharedHostChannels,
     private: HashMap<TabId, ServiceWorkerManager>,
+    private_channels: HashMap<TabId, SharedHostChannels>,
+    host_kind: ProfileHostKind,
     pending_fetches: Vec<PendingScriptFetch>,
     pending_evaluations: HashMap<(ProfileKey, u64), PendingEvaluation>,
     persistence_path: Option<PathBuf>,
     restoring: HashSet<u64>,
+    /// IPC host 启动时无 renderer：持久化记录延迟到首个 renderer 接入时恢复。
+    deferred_restores: Vec<ServiceWorkerPersistentRegistration>,
 }
 
 impl BrowserServiceWorkerOwner {
+    /// 生产构造：脚本求值经 IPC 下放宿主 renderer（browser 主进程不链接 JS 引擎）。
     pub(crate) fn new() -> Self {
-        Self::empty(None)
+        Self::build(ProfileHostKind::Ipc, None)
     }
 
+    /// 生产构造 + 持久化恢复（延迟到首个 renderer 接入，见 `flush_deferred_restores`）。
     pub(crate) fn with_persistence(path: PathBuf) -> Self {
-        let mut owner = Self::empty(Some(path.clone()));
+        let mut owner = Self::build(ProfileHostKind::Ipc, Some(path.clone()));
         match load_persisted_service_workers(&path) {
             Ok(registrations) => {
-                let had_records = !registrations.is_empty();
-                for registration in registrations {
-                    match owner.normal.start_restored_active(
-                        &registration.script_url,
-                        &registration.scope,
-                        &registration.origin,
-                        &registration.script_source,
-                        registration.update_via_cache,
-                        SandboxConfig::default(),
-                    ) {
-                        Ok(registration_id) => {
-                            owner.restoring.insert(registration_id);
-                        }
-                        Err(error) => {
-                            tracing::warn!("Service Worker restore skipped: {error}");
-                        }
-                    }
-                }
-                if had_records
-                    && owner.restoring.is_empty()
-                    && let Err(error) = owner.persist_normal()
-                {
-                    tracing::warn!("Service Worker persistence cleanup failed: {error}");
-                }
+                owner.deferred_restores = registrations;
             }
             Err(error) => {
                 tracing::warn!("Service Worker persistence load failed: {error}");
             }
+        }
+        owner
+    }
+
+    /// 首个 renderer 接入时恢复持久化记录（求值下放该 renderer）。
+    ///
+    /// 由 process_backend 在 `ensure_renderer` 成功后调用；多次调用安全
+    /// （队列为空时 no-op）。全部记录恢复失败时清理持久化文件（与启动期
+    /// 恢复语义一致）。
+    pub(crate) fn flush_deferred_restores(&mut self, tab_id: TabId) {
+        if self.deferred_restores.is_empty() {
+            return;
+        }
+        let registrations = std::mem::take(&mut self.deferred_restores);
+        let had_records = !registrations.is_empty();
+        for registration in registrations {
+            self.normal_channels.set_pending_tab(tab_id);
+            match self.normal.start_restored_active(
+                &registration.script_url,
+                &registration.scope,
+                &registration.origin,
+                &registration.script_source,
+                registration.update_via_cache,
+            ) {
+                Ok(registration_id) => {
+                    self.restoring.insert(registration_id);
+                }
+                Err(error) => {
+                    tracing::warn!("Service Worker restore skipped: {error}");
+                }
+            }
+        }
+        if had_records
+            && self.restoring.is_empty()
+            && let Err(error) = self.persist_normal()
+        {
+            tracing::warn!("Service Worker persistence cleanup failed: {error}");
+        }
+    }
+
+    /// 测试构造：runtime 在本进程求值（引擎经 dev-dependency feature unification 引入）。
+    pub(crate) fn with_local_hosts() -> Self {
+        Self::build(ProfileHostKind::Local, None)
+    }
+
+    /// 测试构造 + 持久化恢复（本地 host 求值；drain 至恢复 settle——坏脚本经
+    /// 异步 ScriptError 判失败并回写持久化文件，须轮询驱动）。
+    #[cfg(test)]
+    pub(crate) fn with_local_hosts_and_persistence(path: PathBuf) -> Self {
+        let mut owner = Self::build(ProfileHostKind::Local, Some(path.clone()));
+        let had_records = if let Ok(registrations) = load_persisted_service_workers(&path) {
+            let had_records = !registrations.is_empty();
+            for registration in registrations {
+                match owner.normal.start_restored_active(
+                    &registration.script_url,
+                    &registration.scope,
+                    &registration.origin,
+                    &registration.script_source,
+                    registration.update_via_cache,
+                ) {
+                    Ok(registration_id) => {
+                        owner.restoring.insert(registration_id);
+                    }
+                    Err(error) => {
+                        tracing::warn!("Service Worker restore skipped: {error}");
+                    }
+                }
+            }
+            had_records
+        } else {
+            false
+        };
+        if had_records
+            && owner.restoring.is_empty()
+            && let Err(error) = owner.persist_normal()
+        {
+            tracing::warn!("Service Worker persistence cleanup failed: {error}");
         }
         let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
         while !owner.restoring.is_empty() {
@@ -168,14 +516,19 @@ impl BrowserServiceWorkerOwner {
         owner
     }
 
-    fn empty(persistence_path: Option<PathBuf>) -> Self {
+    fn build(host_kind: ProfileHostKind, persistence_path: Option<PathBuf>) -> Self {
+        let normal_channels = SharedHostChannels::default();
         Self {
-            normal: ServiceWorkerManager::new(),
+            normal: profile_manager(host_kind, &normal_channels),
+            normal_channels,
             private: HashMap::new(),
+            private_channels: HashMap::new(),
+            host_kind,
             pending_fetches: Vec::new(),
             pending_evaluations: HashMap::new(),
             persistence_path,
             restoring: HashSet::new(),
+            deferred_restores: Vec::new(),
         }
     }
 
@@ -469,6 +822,7 @@ impl BrowserServiceWorkerOwner {
     pub(crate) fn remove_tab(&mut self, tab_id: TabId) {
         self.private.remove(&tab_id);
         self.disconnect_tab(tab_id);
+        self.fail_tab_hosted_runtimes(tab_id);
     }
 
     pub(crate) fn disconnect_tab(&mut self, tab_id: TabId) {
@@ -562,6 +916,12 @@ impl BrowserServiceWorkerOwner {
                 return;
             }
         };
+        // IPC host 需在 manager 分配 registration 前知道宿主 renderer tab——
+        // `evaluate` 在 `start_evaluation` / `start_update` 内同步消费该一次性槽位。
+        self.ensure_profile(plan.profile);
+        if let Some(channels) = self.channels_for(plan.profile) {
+            channels.set_pending_tab(plan.tab_id);
+        }
         let result = match plan.purpose {
             ServiceWorkerFetchPurpose::Register { update_via_cache } => self
                 .manager_mut(plan.profile)
@@ -571,14 +931,10 @@ impl BrowserServiceWorkerOwner {
                     &plan.origin,
                     &script,
                     update_via_cache,
-                    SandboxConfig::default(),
                 )
                 .map(|registration_id| (registration_id, false)),
             ServiceWorkerFetchPurpose::Update { registration_id, .. } => {
-                match self
-                    .manager_mut(plan.profile)
-                    .start_update(registration_id, &script, SandboxConfig::default())
-                {
+                match self.manager_mut(plan.profile).start_update(registration_id, &script) {
                     Ok(ServiceWorkerUpdateOutcome::Unchanged { registration_id }) => {
                         completed.push(success_response(
                             plan.tab_id,
@@ -713,9 +1069,72 @@ impl BrowserServiceWorkerOwner {
     }
 
     fn manager_mut(&mut self, profile: ProfileKey) -> &mut ServiceWorkerManager {
+        self.ensure_profile(profile);
         match profile {
             ProfileKey::Normal => &mut self.normal,
-            ProfileKey::Private(tab_id) => self.private.entry(tab_id).or_default(),
+            ProfileKey::Private(tab_id) => self.private.get_mut(&tab_id).expect("private manager ensured"),
+        }
+    }
+
+    fn ensure_profile(&mut self, profile: ProfileKey) {
+        if let ProfileKey::Private(tab_id) = profile
+            && !self.private.contains_key(&tab_id)
+        {
+            let channels = SharedHostChannels::default();
+            let manager = profile_manager(self.host_kind, &channels);
+            self.private.insert(tab_id, manager);
+            self.private_channels.insert(tab_id, channels);
+        }
+    }
+
+    fn channels_for(&self, profile: ProfileKey) -> Option<&SharedHostChannels> {
+        match profile {
+            ProfileKey::Normal => Some(&self.normal_channels),
+            ProfileKey::Private(tab_id) => self.private_channels.get(&tab_id),
+        }
+    }
+
+    /// 注入 renderer 回传的 runtime 事件（process_backend 消息循环调用）。
+    pub(crate) fn inject_host_event(&mut self, tab_id: TabId, private: bool, params: ServiceWorkerHostEventParams) {
+        let profile = if private {
+            ProfileKey::Private(tab_id)
+        } else {
+            ProfileKey::Normal
+        };
+        if let Some(channels) = self.channels_for(profile) {
+            channels.push_event(params.registration_id, sandbox_event(params.event));
+        }
+    }
+
+    /// 取出待下发宿主 renderer 的托管命令（process_backend 轮询后发送）。
+    pub(crate) fn take_host_commands(&mut self) -> Vec<ServiceWorkerHostOutgoing> {
+        let mut commands = self.normal_channels.take_outgoing();
+        for channels in self.private_channels.values() {
+            commands.extend(channels.take_outgoing());
+        }
+        commands
+    }
+
+    /// renderer 进程死亡/关闭：该 tab 托管的 runtime 注入 Closed，manager 据此把
+    /// installing 版本判失败（active 版本状态保持——fetch 拦截接线为后续切片）。
+    pub(crate) fn fail_tab_hosted_runtimes(&mut self, tab_id: TabId) {
+        let mut failed: Vec<(ProfileKey, Vec<u64>)> = Vec::new();
+        let normal_ids = self.normal_channels.remove_owned_by_tab(tab_id);
+        if !normal_ids.is_empty() {
+            failed.push((ProfileKey::Normal, normal_ids));
+        }
+        if let Some(channels) = self.private_channels.get(&tab_id) {
+            let private_ids = channels.remove_owned_by_tab(tab_id);
+            if !private_ids.is_empty() {
+                failed.push((ProfileKey::Private(tab_id), private_ids));
+            }
+        }
+        for (profile, ids) in failed {
+            if let Some(channels) = self.channels_for(profile) {
+                for registration_id in ids {
+                    channels.push_event(registration_id, ServiceWorkerEvent::Closed);
+                }
+            }
         }
     }
 

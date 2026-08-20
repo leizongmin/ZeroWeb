@@ -14,6 +14,7 @@ mod paint_export;
 mod runtime;
 mod sandbox;
 mod script_prefetch;
+mod service_worker_host;
 mod text_metrics;
 
 pub use runtime::{parse_renderer_launch, run_desktop_role};

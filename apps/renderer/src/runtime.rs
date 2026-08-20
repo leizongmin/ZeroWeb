@@ -14,6 +14,7 @@ use crate::{compositor_publish_thread, error_page, ipc_indexed_db, page_scripts,
 use crate::js_worker::RendererJsWorker;
 use crate::page_scripts::{DomDispatchResult, PageScriptContext, dispatch_dom_event, run_page_scripts};
 use crate::script_prefetch::PendingScriptPrefetch;
+use crate::service_worker_host;
 
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::sync::Arc;
@@ -34,8 +35,8 @@ use zero_protocol::message::{
     FramePublishMode, HitTestElementResultParams, HitTestLinkParams, HitTestLinkResultParams, ImeEventParams,
     ImeEventType, IndexedDbConnectionEventAckParams, IndexedDbConnectionEventParams, IpcColorScheme, IpcMediaType,
     IpcMessage, IpcMessageKind, KeyboardEventParams, LoadHtmlParams, MouseEventParams, NavigateParams,
-    NavigationCommittedParams, NavigationStartedParams, ScrollEventParams, SetColorSchemeParams, SetMediaTypeParams,
-    SetViewportParams, StorageOpParams,
+    NavigationCommittedParams, NavigationStartedParams, ScrollEventParams, ServiceWorkerHostCommandParams,
+    SetColorSchemeParams, SetMediaTypeParams, SetViewportParams, StorageOpParams,
 };
 use zero_protocol::transport::PipeTransport;
 use zero_protocol::{ProcessRole, is_disconnected_channel_message};
@@ -213,6 +214,11 @@ pub(crate) struct RendererRuntime {
     /// `AsyncPageLoad.take_font_events` drain 并 stash，脚本阶段经 `finish_page_load` 派 FontFaceSet
     /// 'loadingdone'/'loadingerror' + 解析 `document.fonts.ready`。
     pending_font_events: Vec<(String, &'static str)>,
+    /// SW runtime 托管：browser 命令由 IPC reader 线程直接投递托管线程（求值/派发/
+    /// 停止在独立线程执行，事件由托管线程直接回传——不经主循环，避免与同步
+    /// automation 请求互等死锁）。本字段仅持有托管句柄的生命周期（Drop 时停线程）。
+    #[allow(dead_code)]
+    service_worker_host: Arc<service_worker_host::RendererServiceWorkerHost>,
 }
 
 impl RendererRuntime {
@@ -240,12 +246,16 @@ impl RendererRuntime {
     ) -> Self {
         let indexed_db_responses = IndexedDbResponseRouter::new();
         let service_worker_responses = ServiceWorkerResponseRouter::new();
+        let (shared_writer, writer) = compositor_publish_thread::SharedWriter::new(outbound);
+        let sw_runtime_host = Arc::new(service_worker_host::RendererServiceWorkerHost::new(
+            compositor_publish_thread::SharedWriter::from_arc(Arc::clone(&writer)),
+        ));
         let (inbound_rx, inbound_thread) = ipc_indexed_db::route_browser_ipc_inbound(
             inbound_rx,
             Arc::clone(&indexed_db_responses),
             Arc::clone(&service_worker_responses),
+            Arc::clone(&sw_runtime_host),
         );
-        let (shared_writer, writer) = compositor_publish_thread::SharedWriter::new(outbound);
         let compositor_publish = if compositor_publish_thread::compositor_publish_threading_enabled() {
             Some(compositor_publish_thread::CompositorPublishThread::spawn(Arc::clone(
                 &writer,
@@ -328,6 +338,7 @@ impl RendererRuntime {
             pending_resource_element_events: Vec::new(),
             pending_link_events: Vec::new(),
             pending_font_events: Vec::new(),
+            service_worker_host: sw_runtime_host,
         }
     }
 
@@ -2270,6 +2281,12 @@ impl RendererRuntime {
         ))
     }
 
+    /// SW runtime 托管命令已由 IPC reader 线程直接投递；到达此处即路由配置错误。
+    fn handle_service_worker_host_command(&mut self, _params: ServiceWorkerHostCommandParams) -> Result<(), String> {
+        tracing::warn!("渲染进程收到未经 reader 路由的 Service Worker 托管命令");
+        Ok(())
+    }
+
     fn dispatch_message(&mut self, msg: IpcMessage) -> Result<(), String> {
         match msg.kind {
             IpcMessageKind::Navigate(params) => self.handle_navigate(params),
@@ -2326,6 +2343,7 @@ impl RendererRuntime {
             IpcMessageKind::ScrollEvent(params) => self.handle_scroll_event(params),
             IpcMessageKind::StorageOp(params) => self.handle_storage_op(params),
             IpcMessageKind::IndexedDbConnectionEvent(params) => self.handle_indexed_db_connection_event(params),
+            IpcMessageKind::ServiceWorkerHostCommand(params) => self.handle_service_worker_host_command(params),
             IpcMessageKind::HitTestLink(params) => self.handle_hit_test_link(msg.id, params),
             IpcMessageKind::HitTestElement(params) => self.handle_hit_test_element(msg.id, params),
             IpcMessageKind::HitTestImage(params) => self.handle_hit_test_image(msg.id, params),
@@ -2369,6 +2387,7 @@ impl RendererRuntime {
             | IpcMessageKind::IndexedDbResponse(_)
             | IpcMessageKind::IndexedDbConnectionEventAck(_)
             | IpcMessageKind::ServiceWorkerRequest(_)
+            | IpcMessageKind::ServiceWorkerHostEvent(_)
             | IpcMessageKind::NavigationStarted(_)
             | IpcMessageKind::NavigationCommitted(_)
             | IpcMessageKind::CrashNotification(_) => {

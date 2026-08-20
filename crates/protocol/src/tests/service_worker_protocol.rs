@@ -405,3 +405,156 @@ fn service_worker_nested_enum_discriminants_remain_append_only() {
         assert_eq!(discriminant(&code), index as u32);
     }
 }
+
+#[test]
+fn service_worker_host_command_round_trips_and_validates() {
+    let message = IpcMessage {
+        id: 51,
+        kind: IpcMessageKind::ServiceWorkerHostCommand(ServiceWorkerHostCommandParams {
+            registration_id: 7,
+            command: ServiceWorkerHostCommand::Evaluate {
+                script_url: "https://example.test/sw.js".into(),
+                script: "globalThis.ready = true;".into(),
+            },
+        }),
+    };
+    let decoded = roundtrip(message);
+    let IpcMessageKind::ServiceWorkerHostCommand(params) = decoded.kind else {
+        panic!("expected ServiceWorkerHostCommand");
+    };
+    assert!(params.validate().is_ok());
+    assert_eq!(
+        params.command,
+        ServiceWorkerHostCommand::Evaluate {
+            script_url: "https://example.test/sw.js".into(),
+            script: "globalThis.ready = true;".into(),
+        }
+    );
+
+    let invalid = ServiceWorkerHostCommandParams {
+        registration_id: 7,
+        command: ServiceWorkerHostCommand::Evaluate {
+            script_url: String::new(),
+            script: "void 0;".into(),
+        },
+    };
+    assert!(invalid.validate().is_err());
+}
+
+#[test]
+fn service_worker_host_event_round_trips() {
+    let message = IpcMessage {
+        id: 52,
+        kind: IpcMessageKind::ServiceWorkerHostEvent(ServiceWorkerHostEventParams {
+            registration_id: 7,
+            event: ServiceWorkerHostEvent::ScriptError {
+                script_url: "https://example.test/sw.js".into(),
+                kind: ServiceWorkerScriptErrorKindWire::Compile,
+                message: "SyntaxError".into(),
+            },
+        }),
+    };
+    let decoded = roundtrip(message);
+    let IpcMessageKind::ServiceWorkerHostEvent(params) = decoded.kind else {
+        panic!("expected ServiceWorkerHostEvent");
+    };
+    assert_eq!(
+        params.event,
+        ServiceWorkerHostEvent::ScriptError {
+            script_url: "https://example.test/sw.js".into(),
+            kind: ServiceWorkerScriptErrorKindWire::Compile,
+            message: "SyntaxError".into(),
+        }
+    );
+}
+
+#[test]
+fn service_worker_host_message_command_round_trips_and_validates() {
+    let message = IpcMessage {
+        id: 53,
+        kind: IpcMessageKind::ServiceWorkerHostCommand(ServiceWorkerHostCommandParams {
+            registration_id: 4,
+            command: ServiceWorkerHostCommand::DispatchMessage {
+                event_id: 11,
+                data_json: "{\"type\":\"ping\"}".into(),
+                client_id: "tab-7".into(),
+                client_url: "https://example.test/page".into(),
+            },
+        }),
+    };
+    let decoded = roundtrip(message);
+    let IpcMessageKind::ServiceWorkerHostCommand(params) = decoded.kind else {
+        panic!("expected ServiceWorkerHostCommand");
+    };
+    assert!(params.validate().is_ok());
+    assert!(matches!(
+        params.command,
+        ServiceWorkerHostCommand::DispatchMessage { event_id: 11, ref client_id, .. } if client_id == "tab-7"
+    ));
+
+    let invalid = ServiceWorkerHostCommandParams {
+        registration_id: 4,
+        command: ServiceWorkerHostCommand::DispatchMessage {
+            event_id: 11,
+            data_json: "null".into(),
+            client_id: String::new(),
+            client_url: "https://example.test/page".into(),
+        },
+    };
+    assert!(invalid.validate().is_err());
+}
+
+#[test]
+fn service_worker_host_message_event_round_trips() {
+    let message = IpcMessage {
+        id: 54,
+        kind: IpcMessageKind::ServiceWorkerHostEvent(ServiceWorkerHostEventParams {
+            registration_id: 4,
+            event: ServiceWorkerHostEvent::MessageDispatched {
+                event_id: 11,
+                client_id: "tab-7".into(),
+                outbound: vec!["{\"type\":\"pong\"}".into()],
+            },
+        }),
+    };
+    let decoded = roundtrip(message);
+    let IpcMessageKind::ServiceWorkerHostEvent(params) = decoded.kind else {
+        panic!("expected ServiceWorkerHostEvent");
+    };
+    assert_eq!(
+        params.event,
+        ServiceWorkerHostEvent::MessageDispatched {
+            event_id: 11,
+            client_id: "tab-7".into(),
+            outbound: vec!["{\"type\":\"pong\"}".into()],
+        }
+    );
+
+    let settled = IpcMessage {
+        id: 55,
+        kind: IpcMessageKind::ServiceWorkerHostEvent(ServiceWorkerHostEventParams {
+            registration_id: 4,
+            event: ServiceWorkerHostEvent::LifecycleSettled {
+                phase: ServiceWorkerLifecycleWire::Install,
+                succeeded: true,
+                skip_waiting: true,
+                claim_clients: false,
+                message: String::new(),
+            },
+        }),
+    };
+    let decoded = roundtrip(settled);
+    let IpcMessageKind::ServiceWorkerHostEvent(params) = decoded.kind else {
+        panic!("expected ServiceWorkerHostEvent");
+    };
+    assert_eq!(
+        params.event,
+        ServiceWorkerHostEvent::LifecycleSettled {
+            phase: ServiceWorkerLifecycleWire::Install,
+            succeeded: true,
+            skip_waiting: true,
+            claim_clients: false,
+            message: String::new(),
+        }
+    );
+}

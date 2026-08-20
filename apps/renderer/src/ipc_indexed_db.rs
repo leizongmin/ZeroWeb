@@ -105,18 +105,27 @@ pub(crate) fn route_browser_ipc_inbound(
     source: Receiver<IpcMessage>,
     indexed_db_responses: Arc<IndexedDbResponseRouter>,
     service_worker_responses: Arc<crate::ipc_service_worker::ServiceWorkerResponseRouter>,
+    sw_runtime_host: Arc<crate::service_worker_host::RendererServiceWorkerHost>,
 ) -> (Receiver<IpcMessage>, JoinHandle<()>) {
     let (tx, rx) = mpsc::channel();
     let join = thread::Builder::new()
         .name("renderer-ipc-router".into())
         .spawn(move || {
             while let Ok(message) = source.recv() {
-                if let Some(message) = service_worker_responses.route(message)
-                    && let Some(message) = indexed_db_responses.route(message)
-                    && tx.send(message).is_err()
-                {
-                    break;
-                }
+                let IpcMessage { id, kind } = message;
+                // SW 托管命令在 reader 线程直接投递托管线程——经主循环会被同步
+                // automation 请求（等页面 JS 的 register 结果）与 SW 求值互等死锁。
+                let IpcMessageKind::ServiceWorkerHostCommand(params) = kind else {
+                    let message = IpcMessage { id, kind };
+                    if let Some(message) = service_worker_responses.route(message)
+                        && let Some(message) = indexed_db_responses.route(message)
+                        && tx.send(message).is_err()
+                    {
+                        break;
+                    }
+                    continue;
+                };
+                sw_runtime_host.handle_command(params);
             }
             indexed_db_responses.fail_all("UnknownError: browser IPC disconnected".to_string());
             service_worker_responses.fail_all("browser IPC disconnected");

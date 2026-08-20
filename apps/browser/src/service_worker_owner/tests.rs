@@ -73,7 +73,7 @@ fn persistence_path(label: &str) -> std::path::PathBuf {
 
 #[test]
 fn update_via_cache_controls_main_script_fetch_policy_and_snapshot() {
-    let mut owner = BrowserServiceWorkerOwner::new();
+    let mut owner = BrowserServiceWorkerOwner::with_local_hosts();
     let disposition = owner.begin_request(
         TabId(1),
         false,
@@ -120,7 +120,7 @@ fn update_via_cache_controls_main_script_fetch_policy_and_snapshot() {
 
 #[test]
 fn register_fetches_evaluates_and_returns_correlated_id() {
-    let mut owner = BrowserServiceWorkerOwner::new();
+    let mut owner = BrowserServiceWorkerOwner::with_local_hosts();
     let disposition = owner.begin_request(
         TabId(1),
         false,
@@ -141,7 +141,7 @@ fn register_fetches_evaluates_and_returns_correlated_id() {
 
 #[test]
 fn update_fetch_compares_bytes_before_starting_replacement() {
-    let mut owner = BrowserServiceWorkerOwner::new();
+    let mut owner = BrowserServiceWorkerOwner::with_local_hosts();
     let disposition = owner.begin_request(
         TabId(1),
         false,
@@ -211,7 +211,7 @@ fn persistent_owner_restores_active_runtime_and_unregisters_durably() {
     let path = persistence_path("restore");
     let _ = std::fs::remove_dir_all(path.parent().unwrap());
     {
-        let mut owner = BrowserServiceWorkerOwner::with_persistence(path.clone());
+        let mut owner = BrowserServiceWorkerOwner::with_local_hosts_and_persistence(path.clone());
         let mut request = register_request("https://example.test/app/page");
         if let ServiceWorkerOperation::Register { update_via_cache, .. } = &mut request.operation {
             *update_via_cache = ServiceWorkerUpdateViaCacheWire::None;
@@ -235,7 +235,7 @@ fn persistent_owner_restores_active_runtime_and_unregisters_durably() {
         }
     }
 
-    let mut restored = BrowserServiceWorkerOwner::with_persistence(path.clone());
+    let mut restored = BrowserServiceWorkerOwner::with_local_hosts_and_persistence(path.clone());
     let deadline = Instant::now() + Duration::from_secs(5);
     let restored_id = loop {
         let _ = restored.poll();
@@ -288,7 +288,7 @@ fn persistent_owner_restores_active_runtime_and_unregisters_durably() {
     assert_eq!(unregistered.params.result, Ok(ServiceWorkerResult::Boolean(true)));
     drop(restored);
 
-    let empty = BrowserServiceWorkerOwner::with_persistence(path.clone());
+    let empty = BrowserServiceWorkerOwner::with_local_hosts_and_persistence(path.clone());
     assert!(empty.normal.registrations_for_origin("https://example.test").is_empty());
     std::fs::remove_dir_all(path.parent().unwrap()).unwrap();
 }
@@ -297,7 +297,7 @@ fn persistent_owner_restores_active_runtime_and_unregisters_durably() {
 fn private_and_invalid_persistence_never_restore_into_normal_profile() {
     let path = persistence_path("private");
     let _ = std::fs::remove_dir_all(path.parent().unwrap());
-    let mut owner = BrowserServiceWorkerOwner::with_persistence(path.clone());
+    let mut owner = BrowserServiceWorkerOwner::with_local_hosts_and_persistence(path.clone());
     let disposition = owner.begin_request(
         TabId(7),
         true,
@@ -329,7 +329,7 @@ fn private_and_invalid_persistence_never_restore_into_normal_profile() {
 
     std::fs::create_dir_all(path.parent().unwrap()).unwrap();
     std::fs::write(&path, r#"{"version":999,"registrations":[]}"#).unwrap();
-    let invalid = BrowserServiceWorkerOwner::with_persistence(path.clone());
+    let invalid = BrowserServiceWorkerOwner::with_local_hosts_and_persistence(path.clone());
     assert!(
         invalid
             .normal
@@ -342,7 +342,7 @@ fn private_and_invalid_persistence_never_restore_into_normal_profile() {
         r#"{"version":1,"registrations":[{"script_url":"https://example.test/sw.js","scope":"https://example.test/","origin":"https://example.test","script_source":""}]}"#,
     )
     .unwrap();
-    let migrated = BrowserServiceWorkerOwner::with_persistence(path.clone());
+    let migrated = BrowserServiceWorkerOwner::with_local_hosts_and_persistence(path.clone());
     assert_eq!(
         migrated.normal.registrations_for_origin("https://example.test")[0].update_via_cache,
         ServiceWorkerUpdateViaCache::Imports
@@ -356,7 +356,7 @@ fn persistence_restore_keeps_valid_scope_when_sibling_script_fails() {
     let path = persistence_path("partial-restore");
     let _ = std::fs::remove_dir_all(path.parent().unwrap());
     {
-        let mut owner = BrowserServiceWorkerOwner::with_persistence(path.clone());
+        let mut owner = BrowserServiceWorkerOwner::with_local_hosts_and_persistence(path.clone());
         for (request_id, script_url, scope) in [(58, "/a.js", "/a/"), (59, "/b.js", "/b/")] {
             let disposition = owner.begin_request(
                 TabId(1),
@@ -391,7 +391,7 @@ fn persistence_restore_keeps_valid_scope_when_sibling_script_fails() {
         .script_source = "function(".into();
     std::fs::write(&path, serde_json::to_string(&state).unwrap()).unwrap();
 
-    let restored = BrowserServiceWorkerOwner::with_persistence(path.clone());
+    let restored = BrowserServiceWorkerOwner::with_local_hosts_and_persistence(path.clone());
     let registrations = restored.normal.registrations_for_origin("https://example.test");
     assert_eq!(registrations.len(), 1);
     assert_eq!(registrations[0].scope, "https://example.test/a/");
@@ -403,7 +403,7 @@ fn persistence_restore_keeps_valid_scope_when_sibling_script_fails() {
 
 #[test]
 fn lifecycle_state_changes_are_cursor_based_and_ordered() {
-    let mut owner = BrowserServiceWorkerOwner::new();
+    let mut owner = BrowserServiceWorkerOwner::with_local_hosts();
     let disposition = owner.begin_request(
         TabId(1),
         false,
@@ -480,7 +480,7 @@ fn lifecycle_state_changes_are_cursor_based_and_ordered() {
 
 #[test]
 fn register_rejects_renderer_document_authority_mismatch_before_fetch() {
-    let mut owner = BrowserServiceWorkerOwner::new();
+    let mut owner = BrowserServiceWorkerOwner::with_local_hosts();
     let disposition = owner.begin_request(
         TabId(1),
         false,
@@ -502,7 +502,7 @@ fn register_rejects_renderer_document_authority_mismatch_before_fetch() {
 
 #[test]
 fn registration_normalizes_fragments_and_classifies_url_errors() {
-    let mut owner = BrowserServiceWorkerOwner::new();
+    let mut owner = BrowserServiceWorkerOwner::with_local_hosts();
     let disposition = owner.begin_request(
         TabId(1),
         false,
@@ -562,7 +562,7 @@ fn registration_normalizes_fragments_and_classifies_url_errors() {
 
 #[test]
 fn navigation_disconnect_drops_stale_registration_response() {
-    let mut owner = BrowserServiceWorkerOwner::new();
+    let mut owner = BrowserServiceWorkerOwner::with_local_hosts();
     let disposition = owner.begin_request(
         TabId(1),
         false,
@@ -579,7 +579,7 @@ fn navigation_disconnect_drops_stale_registration_response() {
 
 #[test]
 fn normal_registration_survives_renderer_disconnect() {
-    let mut owner = BrowserServiceWorkerOwner::new();
+    let mut owner = BrowserServiceWorkerOwner::with_local_hosts();
     let disposition = owner.begin_request(
         TabId(1),
         false,
@@ -617,7 +617,7 @@ fn normal_registration_survives_renderer_disconnect() {
 
 #[test]
 fn new_renderer_discovers_normal_registration_without_known_id() {
-    let mut owner = BrowserServiceWorkerOwner::new();
+    let mut owner = BrowserServiceWorkerOwner::with_local_hosts();
     let disposition = owner.begin_request(
         TabId(1),
         false,
@@ -675,7 +675,7 @@ fn new_renderer_discovers_normal_registration_without_known_id() {
 
 #[test]
 fn discovery_rejects_cross_origin_client_url() {
-    let mut owner = BrowserServiceWorkerOwner::new();
+    let mut owner = BrowserServiceWorkerOwner::with_local_hosts();
     let disposition = owner.begin_request(
         TabId(1),
         false,
@@ -701,7 +701,7 @@ fn discovery_rejects_cross_origin_client_url() {
 
 #[test]
 fn private_tabs_have_isolated_registration_namespaces() {
-    let mut owner = BrowserServiceWorkerOwner::new();
+    let mut owner = BrowserServiceWorkerOwner::with_local_hosts();
     let mut registration_ids = Vec::new();
     for (tab_id, request_id) in [(TabId(1), 51), (TabId(2), 52)] {
         let disposition = owner.begin_request(
@@ -723,7 +723,7 @@ fn private_tabs_have_isolated_registration_namespaces() {
 
 #[test]
 fn registration_ids_are_hidden_from_other_origins() {
-    let mut owner = BrowserServiceWorkerOwner::new();
+    let mut owner = BrowserServiceWorkerOwner::with_local_hosts();
     let disposition = owner.begin_request(
         TabId(1),
         false,

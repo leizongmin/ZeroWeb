@@ -246,6 +246,11 @@ pub enum IpcMessageKind {
     ServiceWorkerRequest(ServiceWorkerRequestParams),
     /// Service Worker 响应（browser owner → renderer）。
     ServiceWorkerResponse(ServiceWorkerResponseParams),
+    /// Service Worker runtime 托管命令（browser owner → renderer；脚本求值在
+    /// renderer 进程执行，browser 主进程不链接 JS 引擎）。
+    ServiceWorkerHostCommand(ServiceWorkerHostCommandParams),
+    /// Service Worker runtime 事件（renderer → browser owner）。
+    ServiceWorkerHostEvent(ServiceWorkerHostEventParams),
 }
 
 /// 焦点变更信息（渲染→浏览器）。
@@ -837,6 +842,170 @@ pub enum ServiceWorkerErrorCode {
     Internal,
     /// Registration violates secure-context, origin, or scope-path policy.
     Security,
+}
+
+/// Browser → renderer 的 Service Worker runtime 托管命令参数。
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ServiceWorkerHostCommandParams {
+    /// Browser 分配的 registration version ID。
+    pub registration_id: u64,
+    /// 命令内容。
+    pub command: ServiceWorkerHostCommand,
+}
+
+impl ServiceWorkerHostCommandParams {
+    /// Validate command strings before renderer-side processing.
+    pub fn validate(&self) -> Result<(), &'static str> {
+        const MAX_URL_BYTES: usize = 64 * 1024;
+        const MAX_SCRIPT_BYTES: usize = 16 * 1024 * 1024;
+        match &self.command {
+            ServiceWorkerHostCommand::Evaluate { script_url, script } => {
+                if script_url.is_empty() {
+                    return Err("Service Worker host script URL is required");
+                }
+                if script_url.len() > MAX_URL_BYTES {
+                    return Err("Service Worker host script URL exceeds the length limit");
+                }
+                if script.len() > MAX_SCRIPT_BYTES {
+                    return Err("Service Worker host script exceeds the size limit");
+                }
+                Ok(())
+            }
+            ServiceWorkerHostCommand::DispatchMessage {
+                data_json,
+                client_id,
+                client_url,
+                ..
+            } => {
+                if client_id.is_empty() {
+                    return Err("Service Worker host message client id is required");
+                }
+                if client_id.len() > MAX_URL_BYTES || client_url.len() > MAX_URL_BYTES {
+                    return Err("Service Worker host message client fields exceed the length limit");
+                }
+                if data_json.len() > MAX_SCRIPT_BYTES {
+                    return Err("Service Worker host message payload exceeds the size limit");
+                }
+                Ok(())
+            }
+            ServiceWorkerHostCommand::DispatchLifecycle { .. } | ServiceWorkerHostCommand::Shutdown => Ok(()),
+        }
+    }
+}
+
+/// Service Worker runtime 托管命令。
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub enum ServiceWorkerHostCommand {
+    /// 创建 runtime 并求值脚本。
+    Evaluate {
+        /// 脚本 URL（事件回传关联用）。
+        script_url: String,
+        /// 脚本源码（browser 已完成网络抓取与安全校验）。
+        script: String,
+    },
+    /// 派发 install / activate 生命周期事件。
+    DispatchLifecycle {
+        /// 生命周期阶段。
+        phase: ServiceWorkerLifecycleWire,
+    },
+    /// 派发页面到 worker 的 JSON 结构化消息。
+    DispatchMessage {
+        /// 宿主分配的事件 ID。
+        event_id: u64,
+        /// JSON 结构化消息载荷。
+        data_json: String,
+        /// 发起消息的 client 标识。
+        client_id: String,
+        /// 发起消息的 client URL。
+        client_url: String,
+    },
+    /// 停止并回收 runtime。
+    Shutdown,
+}
+
+/// Renderer → browser 的 Service Worker runtime 事件参数。
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ServiceWorkerHostEventParams {
+    /// Browser 分配的 registration version ID。
+    pub registration_id: u64,
+    /// 事件内容。
+    pub event: ServiceWorkerHostEvent,
+}
+
+/// Service Worker runtime 事件 wire 形态（镜像 script-sandbox `ServiceWorkerEvent`）。
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub enum ServiceWorkerHostEvent {
+    /// 脚本求值成功。
+    Evaluated {
+        /// 求值脚本 URL。
+        script_url: String,
+    },
+    /// 脚本求值失败。
+    ScriptError {
+        /// 失败脚本 URL。
+        script_url: String,
+        /// 稳定错误类别。
+        kind: ServiceWorkerScriptErrorKindWire,
+        /// 引擎诊断信息（不含脚本源码）。
+        message: String,
+    },
+    /// 生命周期事件及全部 `waitUntil()` promise 已 settle。
+    LifecycleSettled {
+        /// 生命周期阶段。
+        phase: ServiceWorkerLifecycleWire,
+        /// 派发与全部 lifetime promise 是否成功。
+        succeeded: bool,
+        /// worker 是否在 settle 前调用了 `skipWaiting()`。
+        skip_waiting: bool,
+        /// worker 是否在本生命周期事件期间调用了 `clients.claim()`。
+        claim_clients: bool,
+        /// 拒绝或派发错误诊断。
+        message: String,
+    },
+    /// 页面到 worker 的消息事件已派发，携带 worker 回发给该 client 的消息。
+    MessageDispatched {
+        /// 宿主分配的事件 ID。
+        event_id: u64,
+        /// 目标 client 标识。
+        client_id: String,
+        /// worker 回发给该 client 的 JSON 结构化消息载荷列表。
+        outbound: Vec<String>,
+    },
+    /// 页面到 worker 的消息 handler 抛错。
+    MessageFailed {
+        /// 宿主分配的事件 ID。
+        event_id: u64,
+        /// 目标 client 标识。
+        client_id: String,
+        /// handler 诊断。
+        message: String,
+    },
+    /// runtime 线程退出。
+    Closed,
+}
+
+/// IPC-safe Service Worker 生命周期阶段。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum ServiceWorkerLifecycleWire {
+    /// install 事件。
+    Install,
+    /// activate 事件。
+    Activate,
+}
+
+/// IPC-safe Service Worker 脚本错误类别。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum ServiceWorkerScriptErrorKindWire {
+    /// JavaScript 编译失败。
+    Compile,
+    /// JavaScript 运行时抛错。
+    Runtime,
+    /// 执行超时。
+    Timeout,
+    /// 宿主输入非法。
+    InvalidInput,
+    /// 引擎不可用。
+    EngineUnavailable,
 }
 
 /// Renderer 页面导航开始信号。

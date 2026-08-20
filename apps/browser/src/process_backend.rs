@@ -711,6 +711,24 @@ impl ProcessTabBackend {
         }
     }
 
+    /// 下发 SW 托管命令到宿主 renderer（求值/生命周期/停止在 renderer 进程执行）。
+    fn drain_service_worker_host_commands(&mut self) {
+        for outgoing in self.service_worker_owner.take_host_commands() {
+            let Some(renderer) = self.renderer_mut(outgoing.tab_id) else {
+                continue;
+            };
+            if let Err(error) = renderer.send(IpcMessage {
+                id: outgoing.params.registration_id,
+                kind: IpcMessageKind::ServiceWorkerHostCommand(outgoing.params),
+            }) {
+                tracing::warn!(
+                    "ServiceWorkerHostCommand send failed tab {}: {error}",
+                    outgoing.tab_id.0
+                );
+            }
+        }
+    }
+
     fn send_service_worker_response_now(&mut self, response: CompletedServiceWorkerResponse) {
         let Some(renderer) = self.renderer_mut(response.tab_id) else {
             return;
@@ -1105,6 +1123,8 @@ impl ProcessTabBackend {
             self.tab_to_renderer.remove(&tab_id);
         }
         self.service_worker_owner.disconnect_tab(tab_id);
+        // renderer 进程死亡：其托管的 SW runtime 一并失效，注入 Closed 推进状态机。
+        self.service_worker_owner.fail_tab_hosted_runtimes(tab_id);
         self.remove_indexed_db_renderer_state(rid);
         self.fetch_proxy.remove_tab(tab_id);
         let _ = self.manager.shutdown_renderer(rid);
@@ -1187,6 +1207,8 @@ impl ProcessTabBackend {
             Ok(rid) => {
                 self.tab_to_renderer.insert(tab_id, rid);
                 tracing::info!("Spawned renderer {rid} for tab {}", tab_id.0);
+                // 首个 renderer 接入：恢复持久化 SW（求值下放该 renderer）。
+                self.service_worker_owner.flush_deferred_restores(tab_id);
                 if self.compositor_status == crate::compositor_client::CompositorStatus::Disconnected {
                     self.send_to_renderer(tab_id, IpcMessageKind::SetFramePublishMode(FramePublishMode::Legacy));
                 }
@@ -1383,6 +1405,7 @@ impl ProcessTabBackend {
     ) -> bool {
         self.drain_pending_fetches();
         self.drain_service_worker_responses();
+        self.drain_service_worker_host_commands();
         let mut changed = self.observe_compositor_status(snapshots, snapshot_seq);
         self.handle_crashes(snapshots);
         let mapping = Self::renderer_poll_order(
@@ -1437,6 +1460,10 @@ impl ProcessTabBackend {
                     }
                     IpcMessageKind::ServiceWorkerRequest(params) => {
                         self.handle_service_worker_request(tab_id, rid, msg.id, params);
+                    }
+                    IpcMessageKind::ServiceWorkerHostEvent(params) => {
+                        let private = self.private_tabs.contains(&tab_id);
+                        self.service_worker_owner.inject_host_event(tab_id, private, params);
                     }
                     IpcMessageKind::NavigationStarted(params) => {
                         let snapshot = snapshots.entry(tab_id).or_default();
@@ -1497,6 +1524,7 @@ impl ProcessTabBackend {
             changed |= Self::poll_compositor_present_frames(snapshots, snapshot_seq);
         }
         self.drain_service_worker_responses();
+        self.drain_service_worker_host_commands();
         changed
     }
 

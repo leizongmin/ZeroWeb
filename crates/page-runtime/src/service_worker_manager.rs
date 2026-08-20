@@ -263,15 +263,156 @@ pub struct ServiceWorkerManager {
     client_messages: HashMap<(u64, String), Vec<Vec<String>>>,
     pending_client_messages: HashMap<(u64, String), usize>,
     script_sources: HashMap<u64, Vec<u8>>,
-    runtimes: HashMap<u64, ServiceWorkerRuntime>,
+    host: Box<dyn ServiceWorkerRuntimeHost>,
     evaluated: HashSet<u64>,
     restoring_active: HashSet<u64>,
     runtime_limit: usize,
 }
 
+/// Engine-runtime operations delegated by [`ServiceWorkerManager`].
+///
+/// The manager owns registration state only; worker runtimes live behind this
+/// trait. [`LocalServiceWorkerHost`] runs script-sandbox engine threads
+/// in-process (webview / WPT / tests). The multi-process browser implements
+/// the trait over IPC so script evaluation happens in renderer processes and
+/// the browser binary links no JavaScript engine.
+pub trait ServiceWorkerRuntimeHost: Send {
+    /// Spawn the runtime for `registration_id` and queue `script` evaluation.
+    fn evaluate(
+        &mut self,
+        registration_id: u64,
+        script_url: &str,
+        script: &str,
+    ) -> Result<(), ServiceWorkerManagerError>;
+    /// Dispatch the install or activate event inside one live runtime.
+    fn dispatch_lifecycle(
+        &mut self,
+        registration_id: u64,
+        phase: ServiceWorkerLifecyclePhase,
+    ) -> Result<(), ServiceWorkerManagerError>;
+    /// Dispatch one JSON-compatible page message into a live runtime.
+    fn dispatch_client_message(
+        &mut self,
+        registration_id: u64,
+        event_id: u64,
+        data_json: &str,
+        client_id: &str,
+        client_url: &str,
+    ) -> Result<(), ServiceWorkerManagerError>;
+    /// Stop one runtime and release its resources.
+    fn shutdown(&mut self, registration_id: u64);
+    /// Drain all currently available runtime events.
+    fn poll_events(&mut self) -> Vec<(u64, ServiceWorkerEvent)>;
+    /// Number of live runtimes, for capacity accounting.
+    fn runtime_count(&self) -> usize;
+}
+
+/// In-process [`ServiceWorkerRuntimeHost`] backed by script-sandbox engine threads.
+pub struct LocalServiceWorkerHost {
+    config: SandboxConfig,
+    runtimes: HashMap<u64, ServiceWorkerRuntime>,
+}
+
+impl LocalServiceWorkerHost {
+    /// Create a host whose runtimes evaluate with `config`.
+    pub fn new(config: SandboxConfig) -> Self {
+        Self {
+            config,
+            runtimes: HashMap::new(),
+        }
+    }
+}
+
+impl ServiceWorkerRuntimeHost for LocalServiceWorkerHost {
+    fn evaluate(
+        &mut self,
+        registration_id: u64,
+        script_url: &str,
+        script: &str,
+    ) -> Result<(), ServiceWorkerManagerError> {
+        let mut runtime = ServiceWorkerRuntime::new(self.config.clone())
+            .map_err(|error| ServiceWorkerManagerError::Runtime(error.to_string()))?;
+        runtime
+            .evaluate(script, script_url)
+            .map_err(|error| ServiceWorkerManagerError::Runtime(error.to_string()))?;
+        self.runtimes.insert(registration_id, runtime);
+        Ok(())
+    }
+
+    fn dispatch_lifecycle(
+        &mut self,
+        registration_id: u64,
+        phase: ServiceWorkerLifecyclePhase,
+    ) -> Result<(), ServiceWorkerManagerError> {
+        let runtime = self
+            .runtimes
+            .get_mut(&registration_id)
+            .ok_or(ServiceWorkerManagerError::UnknownRegistration(registration_id))?;
+        let result = match phase {
+            ServiceWorkerLifecyclePhase::Install => runtime.dispatch_install(registration_id),
+            ServiceWorkerLifecyclePhase::Activate => runtime.dispatch_activate(registration_id),
+        };
+        result.map_err(|error| ServiceWorkerManagerError::Runtime(error.to_string()))
+    }
+
+    fn dispatch_client_message(
+        &mut self,
+        registration_id: u64,
+        event_id: u64,
+        data_json: &str,
+        client_id: &str,
+        client_url: &str,
+    ) -> Result<(), ServiceWorkerManagerError> {
+        let runtime = self
+            .runtimes
+            .get_mut(&registration_id)
+            .ok_or(ServiceWorkerManagerError::UnknownRegistration(registration_id))?;
+        runtime
+            .dispatch_message(event_id, data_json, client_id, client_url)
+            .map_err(|error| ServiceWorkerManagerError::Runtime(error.to_string()))
+    }
+
+    fn shutdown(&mut self, registration_id: u64) {
+        // 不在此处移除：poll_events 先 drain `Closed` 事件再按 is_running 回收槽位
+        // （提前移除会让 Closed 成为孤儿事件，manager 无法据此推进状态机）。
+        if let Some(runtime) = self.runtimes.get_mut(&registration_id) {
+            runtime.shutdown();
+        }
+    }
+
+    fn poll_events(&mut self) -> Vec<(u64, ServiceWorkerEvent)> {
+        let mut pending = Vec::new();
+        for (&registration_id, runtime) in &self.runtimes {
+            while let Some(event) = runtime.try_recv() {
+                pending.push((registration_id, event));
+            }
+        }
+        self.runtimes.retain(|_, runtime| runtime.is_running());
+        pending
+    }
+
+    fn runtime_count(&self) -> usize {
+        self.runtimes.len()
+    }
+}
+
+impl Drop for LocalServiceWorkerHost {
+    fn drop(&mut self) {
+        for runtime in self.runtimes.values_mut() {
+            runtime.shutdown();
+        }
+    }
+}
+
 impl ServiceWorkerManager {
-    /// Create an empty manager.
+    /// Create an empty manager with in-process runtimes and the default
+    /// sandbox configuration.
     pub fn new() -> Self {
+        Self::with_local_host(SandboxConfig::default())
+    }
+
+    /// Create an empty manager whose runtimes are delegated to `host`.
+    pub fn with_host(host: Box<dyn ServiceWorkerRuntimeHost>) -> Self {
         Self {
             registry: ServiceWorkerRegistry::new(),
             slots: HashMap::new(),
@@ -281,11 +422,16 @@ impl ServiceWorkerManager {
             client_messages: HashMap::new(),
             pending_client_messages: HashMap::new(),
             script_sources: HashMap::new(),
-            runtimes: HashMap::new(),
+            host,
             evaluated: HashSet::new(),
             restoring_active: HashSet::new(),
             runtime_limit: DEFAULT_RUNTIME_LIMIT,
         }
+    }
+
+    /// Create an empty manager with in-process runtimes using `config`.
+    pub fn with_local_host(config: SandboxConfig) -> Self {
+        Self::with_host(Box::new(LocalServiceWorkerHost::new(config)))
     }
 
     /// Start evaluating one fetched script as the installing version.
@@ -298,7 +444,6 @@ impl ServiceWorkerManager {
         scope: &str,
         origin: &str,
         script: &str,
-        config: SandboxConfig,
     ) -> Result<u64, ServiceWorkerManagerError> {
         self.start_evaluation_with_update_via_cache(
             script_url,
@@ -306,7 +451,6 @@ impl ServiceWorkerManager {
             origin,
             script,
             ServiceWorkerUpdateViaCache::Imports,
-            config,
         )
     }
 
@@ -318,14 +462,12 @@ impl ServiceWorkerManager {
         origin: &str,
         script: &str,
         update_via_cache: ServiceWorkerUpdateViaCache,
-        config: SandboxConfig,
     ) -> Result<u64, ServiceWorkerManagerError> {
         self.start_evaluation_internal(
             script_url,
             scope,
             origin,
             script,
-            config,
             EvaluationOptions {
                 update_via_cache,
                 restoring_active: false,
@@ -341,14 +483,12 @@ impl ServiceWorkerManager {
         origin: &str,
         script: &str,
         update_via_cache: ServiceWorkerUpdateViaCache,
-        config: SandboxConfig,
     ) -> Result<u64, ServiceWorkerManagerError> {
         self.start_evaluation_internal(
             script_url,
             scope,
             origin,
             script,
-            config,
             EvaluationOptions {
                 update_via_cache,
                 restoring_active: true,
@@ -362,7 +502,6 @@ impl ServiceWorkerManager {
         scope: &str,
         origin: &str,
         script: &str,
-        config: SandboxConfig,
         options: EvaluationOptions,
     ) -> Result<u64, ServiceWorkerManagerError> {
         if script_url.trim().is_empty() {
@@ -384,27 +523,24 @@ impl ServiceWorkerManager {
         if let Some(id) = self.slots.get(&key).and_then(|slot| slot.installing) {
             return Err(ServiceWorkerManagerError::JobInProgress(id));
         }
-        if self.runtimes.len() >= self.runtime_limit {
+        if self.host.runtime_count() >= self.runtime_limit {
             return Err(ServiceWorkerManagerError::CapacityExceeded {
                 limit: self.runtime_limit,
             });
         }
 
-        let mut runtime =
-            ServiceWorkerRuntime::new(config).map_err(|error| ServiceWorkerManagerError::Runtime(error.to_string()))?;
-        runtime
-            .evaluate(script, script_url)
-            .map_err(|error| ServiceWorkerManagerError::Runtime(error.to_string()))?;
-
         let id = self.registry.register(script_url, scope, origin);
         let registration = self.registry.get_mut(id).expect("new registration must exist");
         registration.state = ServiceWorkerState::Installing;
         registration.update_via_cache = options.update_via_cache;
+        if let Err(error) = self.host.evaluate(id, script_url, script) {
+            self.registry.unregister(id);
+            return Err(error);
+        }
         self.slots.entry(key.clone()).or_default().installing = Some(id);
         self.registration_keys.insert(id, key);
         self.state_changes.insert(id, Vec::new());
         self.script_sources.insert(id, script.as_bytes().to_vec());
-        self.runtimes.insert(id, runtime);
         if options.restoring_active {
             self.restoring_active.insert(id);
         }
@@ -441,7 +577,6 @@ impl ServiceWorkerManager {
         &mut self,
         registration_id: u64,
         script: &str,
-        config: SandboxConfig,
     ) -> Result<ServiceWorkerUpdateOutcome, ServiceWorkerManagerError> {
         if script.len() > MAX_SCRIPT_BYTES {
             return Err(ServiceWorkerManagerError::InvalidInput(
@@ -465,22 +600,14 @@ impl ServiceWorkerManager {
             &registration.origin,
             script,
             registration.update_via_cache,
-            config,
         )?;
         Ok(ServiceWorkerUpdateOutcome::Started { registration_id })
     }
 
     /// Drain all currently available runtime events and apply state changes.
     pub fn poll(&mut self) -> Vec<ServiceWorkerManagerEvent> {
-        let mut pending = Vec::new();
-        for (&registration_id, runtime) in &self.runtimes {
-            while let Some(event) = runtime.try_recv() {
-                pending.push((registration_id, event));
-            }
-        }
-
         let mut output = Vec::new();
-        for (registration_id, event) in pending {
+        for (registration_id, event) in self.host.poll_events() {
             match event {
                 ServiceWorkerEvent::Evaluated { .. } => {
                     output.push(ServiceWorkerManagerEvent::ScriptEvaluated { registration_id });
@@ -691,11 +818,8 @@ impl ServiceWorkerManager {
         if !self.evaluated.contains(&registration_id) {
             return Err(ServiceWorkerManagerError::EvaluationPending(registration_id));
         }
-        self.runtimes
-            .get_mut(&registration_id)
-            .ok_or(ServiceWorkerManagerError::UnknownRegistration(registration_id))?
-            .dispatch_install(registration_id)
-            .map_err(|error| ServiceWorkerManagerError::Runtime(error.to_string()))
+        self.host
+            .dispatch_lifecycle(registration_id, ServiceWorkerLifecyclePhase::Install)
     }
 
     /// Move a waiting version into the activating state.
@@ -720,11 +844,8 @@ impl ServiceWorkerManager {
     /// Dispatch the real activate event for an activating version.
     fn dispatch_activate(&mut self, registration_id: u64) -> Result<(), ServiceWorkerManagerError> {
         self.require_state(registration_id, ServiceWorkerState::Activating)?;
-        self.runtimes
-            .get_mut(&registration_id)
-            .ok_or(ServiceWorkerManagerError::UnknownRegistration(registration_id))?
-            .dispatch_activate(registration_id)
-            .map_err(|error| ServiceWorkerManagerError::Runtime(error.to_string()))
+        self.host
+            .dispatch_lifecycle(registration_id, ServiceWorkerLifecyclePhase::Activate)
     }
 
     /// Apply the result of the activate event and its lifetime promises.
@@ -888,12 +1009,9 @@ impl ServiceWorkerManager {
             });
         }
         *self.pending_client_messages.entry(key.clone()).or_default() += 1;
-        let result = match self.runtimes.get_mut(&registration_id) {
-            Some(runtime) => runtime
-                .dispatch_message(event_id, data_json, client_id, client_url)
-                .map_err(|error| ServiceWorkerManagerError::Runtime(error.to_string())),
-            None => Err(ServiceWorkerManagerError::UnknownRegistration(registration_id)),
-        };
+        let result = self
+            .host
+            .dispatch_client_message(registration_id, event_id, data_json, client_id, client_url);
         if result.is_err() {
             self.release_client_message_reservation(&key);
         }
@@ -1039,7 +1157,13 @@ impl ServiceWorkerManager {
 
     /// Return the number of live worker runtimes.
     pub fn runtime_count(&self) -> usize {
-        self.runtimes.len()
+        self.host.runtime_count()
+    }
+
+    /// 测试钩子：强制停掉一个 runtime（模拟引擎线程退出，触发 Closed 事件）。
+    #[cfg(test)]
+    fn shutdown_runtime_for_test(&mut self, registration_id: u64) {
+        self.host.shutdown(registration_id);
     }
 
     fn key_for(&self, registration_id: u64) -> Result<&ServiceWorkerRegistrationKey, ServiceWorkerManagerError> {
@@ -1105,9 +1229,7 @@ impl ServiceWorkerManager {
         self.client_messages.retain(|(id, _), _| *id != registration_id);
         self.pending_client_messages.retain(|(id, _), _| *id != registration_id);
         self.script_sources.remove(&registration_id);
-        if let Some(mut runtime) = self.runtimes.remove(&registration_id) {
-            runtime.shutdown();
-        }
+        self.host.shutdown(registration_id);
     }
 
     fn record_state_change(&mut self, registration_id: u64, state: ServiceWorkerState) {
@@ -1123,14 +1245,6 @@ impl Default for ServiceWorkerManager {
     }
 }
 
-impl Drop for ServiceWorkerManager {
-    fn drop(&mut self) {
-        for runtime in self.runtimes.values_mut() {
-            runtime.shutdown();
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1138,6 +1252,13 @@ mod tests {
 
     fn key(scope: &str) -> ServiceWorkerRegistrationKey {
         ServiceWorkerRegistrationKey::new("https://example.test", scope).unwrap()
+    }
+
+    fn manager_under_test() -> ServiceWorkerManager {
+        ServiceWorkerManager::with_local_host(SandboxConfig {
+            timeout_ms: 200,
+            ..Default::default()
+        })
     }
 
     fn wait_for_event(manager: &mut ServiceWorkerManager) -> ServiceWorkerManagerEvent {
@@ -1153,16 +1274,7 @@ mod tests {
 
     fn start(manager: &mut ServiceWorkerManager, scope: &str, script: &str) -> u64 {
         manager
-            .start_evaluation(
-                "https://example.test/sw.js",
-                scope,
-                "https://example.test",
-                script,
-                SandboxConfig {
-                    timeout_ms: 200,
-                    ..Default::default()
-                },
-            )
+            .start_evaluation("https://example.test/sw.js", scope, "https://example.test", script)
             .unwrap()
     }
 
@@ -1194,7 +1306,7 @@ mod tests {
 
     #[test]
     fn successful_version_moves_through_slots() {
-        let mut manager = ServiceWorkerManager::new();
+        let mut manager = manager_under_test();
         let id = start(&mut manager, "/app/", "globalThis.ready = true;");
         assert_eq!(manager.registration(id).unwrap().state, ServiceWorkerState::Installing);
         assert_eq!(manager.slots(&key("/app/")).unwrap().installing, Some(id));
@@ -1234,21 +1346,12 @@ mod tests {
 
     #[test]
     fn update_compares_script_bytes_before_starting_replacement() {
-        let mut manager = ServiceWorkerManager::new();
+        let mut manager = manager_under_test();
         let first = start_active(&mut manager, "/", "globalThis.version = 1;");
         let runtime_count = manager.runtime_count();
 
         assert_eq!(
-            manager
-                .start_update(
-                    first,
-                    "globalThis.version = 1;",
-                    SandboxConfig {
-                        timeout_ms: 200,
-                        ..Default::default()
-                    },
-                )
-                .unwrap(),
+            manager.start_update(first, "globalThis.version = 1;").unwrap(),
             ServiceWorkerUpdateOutcome::Unchanged { registration_id: first }
         );
         assert_eq!(manager.runtime_count(), runtime_count);
@@ -1256,16 +1359,7 @@ mod tests {
 
         let ServiceWorkerUpdateOutcome::Started {
             registration_id: replacement,
-        } = manager
-            .start_update(
-                first,
-                "globalThis.version = 2;",
-                SandboxConfig {
-                    timeout_ms: 200,
-                    ..Default::default()
-                },
-            )
-            .unwrap()
+        } = manager.start_update(first, "globalThis.version = 2;").unwrap()
         else {
             panic!("changed update must start a replacement");
         };
@@ -1280,16 +1374,7 @@ mod tests {
         manager.activate_waiting(replacement).unwrap();
         wait_for_state(&mut manager, replacement, ServiceWorkerState::Activated);
         assert_eq!(
-            manager
-                .start_update(
-                    first,
-                    "globalThis.version = 2;",
-                    SandboxConfig {
-                        timeout_ms: 200,
-                        ..Default::default()
-                    },
-                )
-                .unwrap(),
+            manager.start_update(first, "globalThis.version = 2;",).unwrap(),
             ServiceWorkerUpdateOutcome::Unchanged {
                 registration_id: replacement,
             }
@@ -1301,10 +1386,6 @@ mod tests {
                 "/",
                 "https://example.test",
                 "globalThis.version = 3;",
-                SandboxConfig {
-                    timeout_ms: 200,
-                    ..Default::default()
-                },
             )
             .unwrap();
         wait_for_state(&mut manager, next, ServiceWorkerState::Installed);
@@ -1315,23 +1396,14 @@ mod tests {
             "https://example.test/sw-v3.js"
         );
         assert_eq!(
-            manager
-                .start_update(
-                    first,
-                    "globalThis.version = 3;",
-                    SandboxConfig {
-                        timeout_ms: 200,
-                        ..Default::default()
-                    },
-                )
-                .unwrap(),
+            manager.start_update(first, "globalThis.version = 3;",).unwrap(),
             ServiceWorkerUpdateOutcome::Unchanged { registration_id: next }
         );
     }
 
     #[test]
     fn restored_active_runtime_does_not_replay_install_or_activate() {
-        let mut manager = ServiceWorkerManager::new();
+        let mut manager = manager_under_test();
         let id = manager
             .start_restored_active(
                 "https://example.test/sw.js",
@@ -1340,10 +1412,6 @@ mod tests {
                 "addEventListener('install', () => { throw new Error('install replayed'); });
                  addEventListener('activate', () => { throw new Error('activate replayed'); });",
                 ServiceWorkerUpdateViaCache::Imports,
-                SandboxConfig {
-                    timeout_ms: 200,
-                    ..Default::default()
-                },
             )
             .unwrap();
         let deadline = Instant::now() + Duration::from_secs(5);
@@ -1373,7 +1441,7 @@ mod tests {
 
     #[test]
     fn script_failure_clears_installing_slot() {
-        let mut manager = ServiceWorkerManager::new();
+        let mut manager = manager_under_test();
         let id = start(&mut manager, "/", "function(");
         assert!(matches!(
             wait_for_event(&mut manager),
@@ -1385,12 +1453,14 @@ mod tests {
         ));
         assert_eq!(manager.registration(id).unwrap().state, ServiceWorkerState::Redundant);
         assert_eq!(manager.slots(&key("/")).unwrap().installing, None);
+        // runtime 槽位随下一次事件轮询回收（Closed 先 drain 再 retain）。
+        let _ = manager.poll();
         assert_eq!(manager.runtime_count(), 0);
     }
 
     #[test]
     fn lifecycle_runtime_outcomes_are_forwarded_typed() {
-        let mut manager = ServiceWorkerManager::new();
+        let mut manager = manager_under_test();
         let id = start(
             &mut manager,
             "/",
@@ -1430,7 +1500,7 @@ mod tests {
 
     #[test]
     fn install_failure_preserves_existing_active() {
-        let mut manager = ServiceWorkerManager::new();
+        let mut manager = manager_under_test();
         let first = start_active(&mut manager, "/", "globalThis.version = 1;");
 
         let second = start(
@@ -1457,7 +1527,7 @@ mod tests {
 
     #[test]
     fn activation_failure_preserves_existing_active() {
-        let mut manager = ServiceWorkerManager::new();
+        let mut manager = manager_under_test();
         let first = start_active(&mut manager, "/", "globalThis.version = 1;");
 
         let second = start(
@@ -1486,7 +1556,7 @@ mod tests {
 
     #[test]
     fn activation_replaces_only_same_scope() {
-        let mut manager = ServiceWorkerManager::new();
+        let mut manager = manager_under_test();
         let root = start_active(&mut manager, "/", "globalThis.scope = 'root';");
         let app = start_active(&mut manager, "/app/", "globalThis.scope = 'app';");
 
@@ -1522,7 +1592,7 @@ mod tests {
 
     #[test]
     fn skip_waiting_activates_replacement_without_host_command() {
-        let mut manager = ServiceWorkerManager::new();
+        let mut manager = manager_under_test();
         let first = start_active(&mut manager, "/", "globalThis.version = 1;");
         let replacement = start(
             &mut manager,
@@ -1552,7 +1622,7 @@ mod tests {
 
     #[test]
     fn clients_claim_is_recorded_for_activated_version() {
-        let mut manager = ServiceWorkerManager::new();
+        let mut manager = manager_under_test();
         let id = start(
             &mut manager,
             "/app/",
@@ -1577,7 +1647,7 @@ mod tests {
 
     #[test]
     fn page_message_dispatches_to_active_worker() {
-        let mut manager = ServiceWorkerManager::new();
+        let mut manager = manager_under_test();
         let id = start_active(
             &mut manager,
             "/",
@@ -1634,7 +1704,7 @@ mod tests {
 
         let closed_key = (id, "closed-client".to_string());
         manager.pending_client_messages.insert(closed_key.clone(), 2);
-        manager.runtimes.get_mut(&id).unwrap().shutdown();
+        manager.shutdown_runtime_for_test(id);
         let deadline = std::time::Instant::now() + Duration::from_secs(5);
         while manager.pending_client_messages.contains_key(&closed_key) {
             let _ = manager.poll();
@@ -1646,7 +1716,7 @@ mod tests {
 
     #[test]
     fn discovery_returns_one_representative_version_per_scope() {
-        let mut manager = ServiceWorkerManager::new();
+        let mut manager = manager_under_test();
         let root = start_active(&mut manager, "/", "globalThis.scope = 'root';");
         let app = start_active(&mut manager, "/app/", "globalThis.scope = 'app';");
         let replacement = start(&mut manager, "/app/", "globalThis.scope = 'app-v2';");
@@ -1676,7 +1746,7 @@ mod tests {
 
     #[test]
     fn discovery_exposes_first_installing_version() {
-        let mut manager = ServiceWorkerManager::new();
+        let mut manager = manager_under_test();
         let installing = start(&mut manager, "/app/", "void 0;");
 
         assert_eq!(
@@ -1690,21 +1760,15 @@ mod tests {
 
     #[test]
     fn overlapping_job_for_same_key_is_rejected() {
-        let mut manager = ServiceWorkerManager::new();
+        let mut manager = manager_under_test();
         let first = start(&mut manager, "/", "void 0;");
-        let result = manager.start_evaluation(
-            "https://example.test/sw-v2.js",
-            "/",
-            "https://example.test",
-            "void 0;",
-            SandboxConfig::default(),
-        );
+        let result = manager.start_evaluation("https://example.test/sw-v2.js", "/", "https://example.test", "void 0;");
         assert_eq!(result, Err(ServiceWorkerManagerError::JobInProgress(first)));
     }
 
     #[test]
     fn different_scope_jobs_can_evaluate_concurrently() {
-        let mut manager = ServiceWorkerManager::new();
+        let mut manager = manager_under_test();
         let root = start(&mut manager, "/", "globalThis.scope = 'root';");
         let app = start(&mut manager, "/app/", "globalThis.scope = 'app';");
         assert_ne!(root, app);
@@ -1728,7 +1792,7 @@ mod tests {
 
     #[test]
     fn waiting_activation_rejects_installing_version() {
-        let mut manager = ServiceWorkerManager::new();
+        let mut manager = manager_under_test();
         let id = start(&mut manager, "/", "void 0;");
         assert!(matches!(
             manager.activate_waiting(id),
@@ -1743,7 +1807,7 @@ mod tests {
 
     #[test]
     fn capacity_rejection_does_not_create_registration() {
-        let mut manager = ServiceWorkerManager::new();
+        let mut manager = manager_under_test();
         manager.runtime_limit = 1;
         let first = start(&mut manager, "/", "void 0;");
         let result = manager.start_evaluation(
@@ -1751,7 +1815,6 @@ mod tests {
             "/app/",
             "https://example.test",
             "void 0;",
-            SandboxConfig::default(),
         );
         assert_eq!(result, Err(ServiceWorkerManagerError::CapacityExceeded { limit: 1 }));
         assert_eq!(manager.runtime_count(), 1);
@@ -1761,16 +1824,10 @@ mod tests {
 
     #[test]
     fn oversized_input_is_rejected_before_runtime_creation() {
-        let mut manager = ServiceWorkerManager::new();
+        let mut manager = manager_under_test();
         let oversized_url = "x".repeat(MAX_URL_BYTES + 1);
         assert!(matches!(
-            manager.start_evaluation(
-                &oversized_url,
-                "/",
-                "https://example.test",
-                "void 0;",
-                SandboxConfig::default(),
-            ),
+            manager.start_evaluation(&oversized_url, "/", "https://example.test", "void 0;"),
             Err(ServiceWorkerManagerError::InvalidInput(_))
         ));
 
@@ -1780,8 +1837,7 @@ mod tests {
                 "https://example.test/sw.js",
                 "/",
                 "https://example.test",
-                &oversized_script,
-                SandboxConfig::default(),
+                &oversized_script
             ),
             Err(ServiceWorkerManagerError::InvalidInput(_))
         ));
