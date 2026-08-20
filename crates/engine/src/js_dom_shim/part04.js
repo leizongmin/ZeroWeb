@@ -661,38 +661,90 @@
         // lastChild（子列表，经 __zw_child_nodes JSON）/ previousSibling / nextSibling（兄弟，经
         // __zw_sibling_nodes JSON）。文本/注释节点返静态对象（_wrapNodeEntry）。仅 sel-based 目标。
         if (prop === 'childNodes') {
-          // R2927：容器 handle（shadow/fragment）从 registry 读子节点（无 selector，须 registry）。
-          if (_isContainerHandle(handle)) return _handleChildNodes(handle);
-          // R34xx/R51：注册的纯文本元素（textContent=/innerHTML= 建的本地文本视图）与 R2927
-          // registry 子（appendChild 建的元素/节点子）**融合**——WPT dom/common.js indexOf 等
-          // identity 循环要求「append 的子出现在 childNodes」：paras[0].textContent=... 后
-          // 再 appendChild(paras[1])，旧短路（_zwLocalChildNodes 命中即 return）使 append 的
-          // 子不可见 → indexOf 死循环（R51 修复）。文本子在前（textContent 视图建在先）。
-          if (!sel && handle) {
-            var _r51Local = (typeof _zwLocalChildNodes === 'function')
-              ? _zwLocalChildNodes(sel, handle)
-              : null;
-            var _r51Kids = (_handleChildren[handle] || []).slice();
-            if (_r51Local && _r51Local.length) return _r51Local.concat(_r51Kids);
-            if (_r51Kids.length) return _r51Kids;
-            if (_r51Local) return _r51Local;
-            // R86：注册表 miss + registry 空 → 移除物化缓存（detached 子树保留其子；
-            // WPT NodeIterator-removal：remove 后 paras[0].firstChild 期望 #text）。
-            var _r86det = (typeof _zwDetachedChildrenOf === 'function')
-              ? _zwDetachedChildrenOf(handle)
-              : null;
-            if (_r86det && _r86det.length) return _r86det.slice();
-            return _childNodeList(sel, handle);
+          // R140（js-dom M4）：**live NodeList** 承载（spec `dom-node-childnodes` 返
+          // NodeList 是 live collection——同节点重复读返同一对象、append/remove 后旧
+          // 引用反映、item()、迭代器断言 `list[Symbol.iterator] === Array.prototype
+          // [Symbol.iterator]`（WPT Node-childNodes 六断言族）。设计：**真数组承载**
+          //（Array 原生 keys/values/entries/forEach/Symbol.iterator 天然满足 identity
+          // 断言）+ length 经 defineProperty accessor 惰性 refresh（读时重查融合视图
+          // 并同步数组内容：splice 到当前长度——append/remove 后旧引用的 length/索引
+          // 读反映新状态）。identity 经 `_zwLiveNLCache`（elKey → 数组）稳定。sel 路径
+          // 同样纳入（live collection 用例是 getElementById 元素——refresh 用
+          // _childNodeList 快照 + overlay）；容器 handle 走 registry。spread
+          //（[...list]）经数组原生 iterator 读 length + 索引 → refresh 生效。
+          var _r140Key = key;
+          var _r140Cache = globalThis._zwLiveNLCache || (globalThis._zwLiveNLCache = {});
+          if (_r140Cache[_r140Key]) {
+            // R140 修正：命中缓存也须 refresh（live 语义 = 任意读反映当前状态）。refresh
+            // 闭包挂在承载数组自身（__zwRefresh）——本分支在 var 声明前引用同名变量是
+            // undefined（hoisting），旧写法 TypeError 被 catch 吞 → 命中路径永不刷新
+            //（prepend 等无 sync 钩子的 mutation 入口读回 stale——R119 回归根因）。
+            try {
+              if (typeof _r140Cache[_r140Key].__zwRefresh === 'function') {
+                _r140Cache[_r140Key].__zwRefresh();
+              }
+            } catch (_e140rf) {}
+            return _r140Cache[_r140Key];
           }
-          // R50：普通 handle 元素（createElement 后 append 子——mutation pending、无 selector）
-          // 从 R2927 registry 读子（appendChild 对所有 handle 父都 _recordHandleChild）。
-          // WPT case.js：`container.childNodes`（detached handle 容器）此前恒 [] → expected
-          // 伪空（双缺陷与查询侧抵消）；live 集合修复后查询侧正确暴露 expected 侧缺陷。
-          if (typeof _zwLocalChildNodes === 'function') {
-            var _zwLocal = _zwLocalChildNodes(sel, handle);
-            if (_zwLocal) return _zwLocal;
-          }
-          return _childNodeList(sel, handle);
+          var _r140IsContainer = _isContainerHandle(handle);
+          var _r140Sel = sel, _r140Handle = handle;
+          var _r140Refresh = function (arr) {
+            var view;
+            if (_r140IsContainer) {
+              view = _handleChildren[_r140Handle] || [];
+            } else if (_r140Sel) {
+              // R140 修正：sel 父的 overlay 路径须以 **无 handle** 形态调
+              // `_childNodeList`（带 handle 时走无缓存的快照分支，`_zwChildBaseCache`
+              // 不参与——但 overlay 的 pending 并入在两分支都在；真正差异：带 handle
+              // 分支的 parent 包装用 _wrapHandle(handle)（与 sel 形态 identity 不同，
+              // pending added 的 identity 剔除「seen」判定 miss → 双计/漏计）。null
+              // handle 走 base-cache + overlay 主路径（与原 getter sel 路径一致）。
+              view = _childNodeList(_r140Sel, null);
+            } else {
+              var _l = (typeof _zwLocalChildNodes === 'function')
+                ? _zwLocalChildNodes(null, _r140Handle)
+                : null;
+              var _k = (_handleChildren[_r140Handle] || []).slice();
+              if (_l && _l.length) view = _l.concat(_k);
+              else if (_k.length) view = _k;
+              else if (_l) view = _l;
+              else {
+                var _d = (typeof _zwDetachedChildrenOf === 'function')
+                  ? _zwDetachedChildrenOf(_r140Handle)
+                  : null;
+                view = (_d && _d.length) ? _d.slice() : [];
+              }
+            }
+            // 同步到承载数组（length + 索引内容）。splice 保持数组非索引属性（item 等）。
+            var n = view.length;
+            if (arr.length !== n) arr.length = n;
+            for (var _r140i = 0; _r140i < n; _r140i++) {
+              if (arr[_r140i] !== view[_r140i]) arr[_r140i] = view[_r140i];
+            }
+            return n;
+          };
+          var _r140Arr = [];
+          _r140Arr.item = function (i) {
+            _r140Refresh(_r140Arr);
+            i = Number(i) >>> 0;
+            return i < _r140Arr.length ? _r140Arr[i] : null;
+          };
+          // 数组 length 是 non-configurable data 属性（无法换 accessor）——live 语义经
+          // 全局 `_zwLiveNLSync`：mutation 入口（_recordHandleChild/_zwUnrecordHandleChild）
+          // 调用，对本元素 key 的 live 数组执行 refresh（同步 length + 索引）。refresh
+          // 自身也在每次 get trap 命中缓存时执行（读时兜底）。
+          var _r140Sync = globalThis._zwLiveNLSync || (globalThis._zwLiveNLSync = {});
+          _r140Sync[_r140Key] = function () { _r140Refresh(_r140Arr); };
+          // 不换原型（Array 原生 keys/values/entries/forEach/Symbol.iterator 的 identity
+          // 断言需要 Array 原型链）；`instanceof NodeList` 经 NodeList 构造器的
+          // Symbol.hasInstance 认 live 承载数组（part03 NodeList 占位处注册，标记
+          // __zwLiveNL）。
+          _r140Arr.__zwLiveNL = true;
+          // R140：refresh 挂数组自身（缓存命中分支经 __zwRefresh 调——见上）。
+          _r140Arr.__zwRefresh = function () { _r140Refresh(_r140Arr); };
+          _r140Refresh(_r140Arr);
+          _r140Cache[_r140Key] = _r140Arr;
+          return _r140Arr;
         }
         if (prop === 'firstChild' || prop === 'lastChild') {
           // R49：firstChild/lastChild 同步消费 _zwLocalChildNodes（textContent=/innerHTML= 的本地
@@ -2880,6 +2932,14 @@
                 ceAdded = [child];
                 __zw_append_child(sel, child.__zwHandle);
               }
+              // R140（js-dom M4）：sel 路径 append/remove 后同步本元素 live childNodes
+              //（sel 父的 pending overlay 在 refresh 重查 `_childNodeList` 时展开——同步
+              // 即时可见；WPT "should be a live collection" append/remove 断言）。
+              try {
+                if (globalThis._zwLiveNLSync && globalThis._zwLiveNLSync[sel]) {
+                  globalThis._zwLiveNLSync[sel]();
+                }
+              } catch (_e140sa) {}
               // R2927/R2928：handle 父（任意 handle 元素，非仅容器）同步记录子节点到 registry。
               // 容器（shadow/fragment）的 childNodes 读 registry；R2928 querySelector 亦遍历完整
               // handle 子树（须递归普通 created 元素的 handle 子），故所有 handle 父都记录。
@@ -2889,6 +2949,12 @@
                 // sel-based 父接 fragment → fragment 清空（spec：fragment append 后空；handle 父已在
                 // _recordHandleChild 内 flatten 清空）。
                 _handleChildren[child.__zwHandle] = [];
+                // R140：fragment 清空同步其 live childNodes（旧引用读到 0）。
+                try {
+                  if (globalThis._zwLiveNLSync && globalThis._zwLiveNLSync['@' + child.__zwHandle]) {
+                    globalThis._zwLiveNLSync['@' + child.__zwHandle]();
+                  }
+                } catch (_e140fc) {}
               }
               // js-dom M4 R47：spec appendChild(fragment) 的 childList record——addedNodes 为
               // fragment 的**子节点**（flatten 前快照，即 ceAdded；fragment 自身不入树不出现在
@@ -2901,6 +2967,13 @@
                 if (_kidsBefore.length) _apPrev = _kidsBefore[_kidsBefore.length - 1];
               } catch (_e) {}
               _mo_notify(sel, handle, { type: 'childList', addedNodes: ceAdded, removedNodes: [], previousSibling: _apPrev, nextSibling: null });
+              // R140 续：notify 后同步 live childNodes（pending added 桶记账后 refresh 生效）。
+              try {
+                if (globalThis._zwLiveNLSync) {
+                  if (sel && globalThis._zwLiveNLSync[sel]) globalThis._zwLiveNLSync[sel]();
+                  if (handle && globalThis._zwLiveNLSync['@' + handle]) globalThis._zwLiveNLSync['@' + handle]();
+                }
+              } catch (_e140an) {}
               // R86：append 即入树——清除移除标记（re-append 移动语义；迭代器重新命中）。
               if (typeof _zwUnmarkRemovedHandle === 'function') {
                 for (var ci86 = 0; ci86 < ceAdded.length; ci86++) {
@@ -3043,6 +3116,13 @@
               // R2927/R2928：handle 父同步从 registry 移除子节点（保持 querySelector 子树一致）。
               if (handle) _unrecordHandleChild(handle, child);
               _mo_notify(sel, handle, { type: 'childList', addedNodes: [], removedNodes: [child] });
+              // R140：live childNodes 同步（handle 子 removeChild——sel 父的 pending
+              // overlay 经 notify 记账后 refresh 生效）。
+              try {
+                if (globalThis._zwLiveNLSync && sel && globalThis._zwLiveNLSync[sel]) {
+                  globalThis._zwLiveNLSync[sel]();
+                }
+              } catch (_e140hr) {}
               // R2994 disconnectedCallback：移除子树断连（仅此前已连入的 custom element 分派）。
               _ceApplyConn(child, false);
             }
@@ -3060,6 +3140,15 @@
               _zwMarkRemoved(child.__zwSelector);
               _mo_notify(sel, handle, { type: 'childList', addedNodes: [], removedNodes: [child] });
               _ceApplyConn(child, false);
+              // R140：live childNodes 同步（sel 路径 remove）。
+              try {
+                if (globalThis._zwLiveNLSync && sel && globalThis._zwLiveNLSync[sel]) {
+                  globalThis._zwLiveNLSync[sel]();
+                }
+                if (globalThis._zwLiveNLSync && handle && globalThis._zwLiveNLSync['@' + handle]) {
+                  globalThis._zwLiveNLSync['@' + handle]();
+                }
+              } catch (_e140sr) {}
             }
             return child;
           };
@@ -3182,6 +3271,13 @@
                 if (refNode && refNode.previousSibling) _ibPrev = refNode.previousSibling;
               } catch (_e) {}
               _mo_notify(sel, handle, { type: 'childList', addedNodes: ceAdded || [newNode], removedNodes: [], previousSibling: _ibPrev, nextSibling: refNode || null });
+              // R140：live childNodes 同步（insertBefore 记账后）。
+              try {
+                if (globalThis._zwLiveNLSync) {
+                  if (sel && globalThis._zwLiveNLSync[sel]) globalThis._zwLiveNLSync[sel]();
+                  if (handle && globalThis._zwLiveNLSync['@' + handle]) globalThis._zwLiveNLSync['@' + handle]();
+                }
+              } catch (_e140in) {}
               // R87：insertBefore 即入树——清除移除标记（恢复段 oldParent.insertBefore；
               // 只 appendChild 清除会使恢复后的节点仍被迭代器当移除跳过——WPT
               // NodeIterator-removal 跨子测试树序分叉根因）。
@@ -3359,6 +3455,12 @@
               try { _r127Prev = oldChild.previousSibling || null; _r127Next = oldChild.nextSibling || null; } catch (_e127n) {}
               __zw_remove(oldChild.__zwSelector);
               _zwMarkRemoved(oldChild.__zwSelector);
+              // R140：live childNodes 同步（replaceChild 的 remove 段）。
+              try {
+                if (globalThis._zwLiveNLSync && sel && globalThis._zwLiveNLSync[sel]) {
+                  globalThis._zwLiveNLSync[sel]();
+                }
+              } catch (_e140rr) {}
               if (globalThis._zwNotifyIteratorsRemove) {
                 try { globalThis._zwNotifyIteratorsRemove(oldChild); } catch (_e127o) {}
               }
@@ -3370,6 +3472,13 @@
                 type: 'childList', addedNodes: [newChild], removedNodes: [oldChild],
                 previousSibling: _r127Prev, nextSibling: _r127Next,
               });
+              // R140：live childNodes 同步（replaceChild 记账后）。
+              try {
+                if (globalThis._zwLiveNLSync) {
+                  if (sel && globalThis._zwLiveNLSync[sel]) globalThis._zwLiveNLSync[sel]();
+                  if (handle && globalThis._zwLiveNLSync['@' + handle]) globalThis._zwLiveNLSync['@' + handle]();
+                }
+              } catch (_e140rp) {}
               return oldChild;
             }
             return oldChild;
@@ -3421,6 +3530,17 @@
             } catch (_e) {}
             if (handle) __zw_remove_handle(handle);
             else { __zw_remove(sel); _zwMarkRemoved(sel); }
+            // R140：live childNodes 同步（remove() 后父的旧引用反映）。
+            try {
+              if (globalThis._zwLiveNLSync) {
+                if (_rmParent) {
+                  var _r140pKey = _rmParent.__zwSelector
+                    || (_rmParent.__zwHandle ? '@' + _rmParent.__zwHandle : null);
+                  if (_r140pKey && globalThis._zwLiveNLSync[_r140pKey]) globalThis._zwLiveNLSync[_r140pKey]();
+                }
+                if (sel && globalThis._zwLiveNLSync[sel]) globalThis._zwLiveNLSync[sel]();
+              }
+            } catch (_e140rm) {}
             // R86：handle 移除标记（迭代器 order 扫描跳过）+ 迭代器 retarget 通知。
             if (handle && typeof _zwMarkRemovedHandle === 'function') _zwMarkRemovedHandle(handle);
             if (globalThis._zwNotifyIteratorsRemove) {
@@ -3441,6 +3561,17 @@
                 previousSibling: _rmPrev, nextSibling: _rmNext,
               });
             }
+            // R140 续：notify 后再同步一次（pending removed 桶在 notify 记账后 refresh
+            // 才能看到移除——先前的同步在 notify 前执行为空转）。
+            try {
+              if (globalThis._zwLiveNLSync) {
+                if (_rmParent) {
+                  var _r140pKey2 = _rmParent.__zwSelector
+                    || (_rmParent.__zwHandle ? '@' + _rmParent.__zwHandle : null);
+                  if (_r140pKey2 && globalThis._zwLiveNLSync[_r140pKey2]) globalThis._zwLiveNLSync[_r140pKey2]();
+                }
+              }
+            } catch (_e140rm2) {}
           };
         }
         // `element.replaceWith(...nodesOrStrings)`：用新节点序列替换自身（self 级，区别于
@@ -3513,6 +3644,22 @@
               _rwRemovedSelf = [_rwSelf];
             }
             _mo_notify(null, _rwParent.parentHandle, { type: 'childList', addedNodes: _rwAdded, removedNodes: _rwRemovedSelf });
+            // R140 续：replaceWith 直接 splice `_handleChildren`（绕过 _recordHandleChild/
+            // _unrecordHandleChild 入口）——须手动同步父 live childNodes（splice 的索引级
+            // 更新 length 不会自动触发；WPT Node-childNodes live 用例的 replaceWith 形态）。
+            // 双路：① _zwLiveNLSync 刷新回调（mutation 入口约定路径）② 承载数组 __zwRefresh
+            //（R140 修正后主路径——sync 表可能被 _zwChildBaseInvalidateAll 换代清空）。
+            try {
+              if (globalThis._zwLiveNLSync) {
+                var _r140rw = globalThis._zwLiveNLSync['@' + _rwParent.parentHandle];
+                if (_r140rw) _r140rw();
+              }
+              var _r140rwC = globalThis._zwLiveNLCache;
+              if (_r140rwC && _r140rwC['@' + _rwParent.parentHandle]
+                  && typeof _r140rwC['@' + _rwParent.parentHandle].__zwRefresh === 'function') {
+                _r140rwC['@' + _rwParent.parentHandle].__zwRefresh();
+              }
+            } catch (_e140rw) {}
             return undefined;
           };
         }

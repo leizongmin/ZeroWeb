@@ -944,6 +944,9 @@
       Error: globalThis.Error,
       TypeError: globalThis.TypeError,
       Proxy: globalThis.Proxy,
+      // R140（js-dom M4）：EventTarget 构造器（WPT Event-dispatch-throwing-multiple-globals
+      // 的 `new w2.EventTarget()`——iframe win 的跨 realm 事件目标面）。
+      EventTarget: globalThis.EventTarget,
     };
     win.addEventListener = function (type, fn) {
       try { globalThis.addEventListener(type, fn); } catch (_e139a) {}
@@ -1039,6 +1042,18 @@
     } else {
       arr.push(child);
     }
+    // R140（js-dom M4）：live childNodes 同步——记录后刷新父与被 flatten fragment 的
+    // live 数组（WPT Node-childNodes live collection：append 后旧引用 length 反映）。
+    try {
+      if (globalThis._zwLiveNLSync) {
+        var _r140f1 = globalThis._zwLiveNLSync['@' + parentHandle];
+        if (_r140f1) _r140f1();
+        if (_fragmentHandles[child.__zwHandle]) {
+          var _r140f2 = globalThis._zwLiveNLSync['@' + child.__zwHandle];
+          if (_r140f2) _r140f2();
+        }
+      }
+    } catch (_e140s1) {}
     // js-dom M3 R91：handle 容器 append 同步记父反链（_zwNodeParent）——shadow root /
     // fragment / handle 宿主三种容器的子此前不记反链，isConnected 的反链上行到容器
     // 即断（WPT Node-isConnected-shadow-dom open/closed：shadow 树随 host 连入文档
@@ -1105,6 +1120,13 @@
     if (!arr) return;
     var ch = child.__zwHandle;
     _handleChildren[parentHandle] = arr.filter(function(k) { return !k || k.__zwHandle !== ch; });
+    // R140（js-dom M4）：live childNodes 同步（remove 后旧引用 length 反映）。
+    try {
+      if (globalThis._zwLiveNLSync) {
+        var _r140f = globalThis._zwLiveNLSync['@' + parentHandle];
+        if (_r140f) _r140f();
+      }
+    } catch (_e140s2) {}
     // R91：对称清反链（removeChild 后 isConnected 反链上行正确断开）。
     try {
       if (typeof _zwNodeParent !== 'undefined' && _zwNodeParent
@@ -5143,7 +5165,14 @@
   function _zwChildBaseInvalidateAll() { _zwChildBaseCache.clear(); }
   // R55：暴露到 globalThis——host `register_dom_callbacks` 开头注入失效脚本（注册即 dom_html
   // 换代），IIFE 内函数 host 侧不可达。
-  globalThis._zwChildBaseInvalidateAll = _zwChildBaseInvalidateAll;
+  globalThis._zwChildBaseInvalidateAll = function () {
+    _zwChildBaseCache.clear();
+    // R140：live childNodes 承载数组同批失效（其 refresh 闭包捕获 sel/handle，跨换代
+    // 重查正确——但缓存 identity 跨换代保留会使同 turn 内旧数组被复用且 __zwTreeRef
+    // 等本地失效逻辑失真；统一清空最稳，WPT r55 重注册换代用例）。
+    if (globalThis._zwLiveNLCache) globalThis._zwLiveNLCache = {};
+    if (globalThis._zwLiveNLSync) globalThis._zwLiveNLSync = {};
+  };
   function _childNodeList(sel, handle) {
     if (!sel || typeof __zw_child_nodes !== 'function') return [];
     if (!handle) {
@@ -7136,9 +7165,11 @@
           try {
             _r139He.call(_r139Cb, event);
           } catch (_e139h) {
-            if (typeof globalThis._zwReportListenerError === 'function') {
-              globalThis._zwReportListenerError(_e139h);
-            }
+            try {
+              if (typeof globalThis._zwReportListenerError === 'function') {
+                globalThis._zwReportListenerError(_e139h);
+              }
+            } catch (_e140rp3) {}
           }
           continue;
         }
@@ -7148,9 +7179,13 @@
         try {
           _r139Cb.call(target, event);
         } catch (_e139c) {
-          if (typeof globalThis._zwReportListenerError === 'function') {
-            globalThis._zwReportListenerError(_e139c);
-          }
+          // R140：fn-call 抛按 spec report——经 `_zwReportListenerError`（revoked-callable
+          // 同款；R140 实测 dispatch 流内调用不挂——直调挂是顶层上下文差异，记 R141）。
+          try {
+            if (typeof globalThis._zwReportListenerError === 'function') {
+              globalThis._zwReportListenerError(_e139c);
+            }
+          } catch (_e140rp2) {}
         }
       }
     }

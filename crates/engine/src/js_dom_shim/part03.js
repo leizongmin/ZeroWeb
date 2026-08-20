@@ -169,6 +169,17 @@
   // own property 覆盖——集合 Proxy 的 set trap 存 expando）。集合实例的 prototype 由
   // _zwHCPrototype / _zwMakeCollection 接线到这两个 prototype（instanceof 真值）。
   globalThis.NodeList = globalThis.NodeList || function NodeList() {};
+  // R140（js-dom M4）：live childNodes 承载数组的 instanceof NodeList——Array 原型链
+  // 保持不动（迭代器 identity 断言），经 Symbol.hasInstance 认 __zwLiveNL 标记数组
+  //（WPT Node-childNodes "should be a live collection" 的 instanceof 断言）。
+  try {
+    Object.defineProperty(globalThis.NodeList, Symbol.hasInstance, {
+      configurable: true,
+      value: function (v) {
+        return Array.isArray(v) && v.__zwLiveNL === true;
+      },
+    });
+  } catch (_e140hi) {}
   globalThis.HTMLCollection = globalThis.HTMLCollection || function HTMLCollection() {};
   // R3024：Attr 构造器占位——_zwMakeAttr 经 Object.create(Attr.prototype) 建真实例，使 `attr instanceof Attr`
   // 为 true（闭合 R3023 限制①；消费者按 nodeType===2 / instanceof Attr 校验属性节点）。
@@ -4741,7 +4752,21 @@
       getElementsByTagName: function (tag) { return queryAll(String(tag)); },
       getElementsByClassName: function (cls) { return queryAll('.' + String(cls)); },
       // R3016/R3017：body.childNodes 递归遍历（cached mutable tree）。DOMPurify.sanitize walk 入口。
-      get childNodes() { ensureTree(); return _tree.childNodes; },
+      get childNodes() {
+        // R140（js-dom M4）：NodeList.item 补挂（spec `dom-nodelist`——WPT Node-childNodes
+        // "on a Document." 的 `children.item(0)` 断言；_tree.childNodes 是内部 plain 数组，
+        // 每读新数组 → 就地挂 item 不稳定。缓存首个实例（doc 级单例 _tree 不换代）。
+        ensureTree();
+        if (!globalThis._zwLiveNLCache) globalThis._zwLiveNLCache = {};
+        var _r140k = globalThis._zwLiveNLCache;
+        var cached = _r140k.__zwDetDoc;
+        if (cached && cached.__zwTreeRef === _tree) return cached;
+        var arr = _tree.childNodes;
+        arr.item = function (i) { i = Number(i) >>> 0; return i < this.length ? this[i] : null; };
+        arr.__zwTreeRef = _tree;
+        _r140k.__zwDetDoc = arr;
+        return arr;
+      },
       get children() { ensureTree(); return _tree.childNodes.filter(function (c) { return c.nodeType === 1; }); },
       get firstChild() { ensureTree(); return _tree.childNodes.length ? _tree.childNodes[0] : null; },
       // R81：appendChild 后子的 parentNode 重指 body 自身（_tree 是内部代理树，子挂上去
@@ -4984,8 +5009,19 @@
       },
       // R51：detached doc 的文档级子列表（common.js setupRangeTests `xmlDoc.appendChild(...)`
       // 建元素/PI/comment——detached 文档无渲染，纯本地列表即可支撑 testNodes 组装/遍历）。
-      childNodes: [],
-      children: [],
+      // R140（js-dom M4）：childNodes 挂 NodeList.item（spec `dom-nodelist`——WPT
+      // Node-childNodes "on a Document." 的 children.item(0) 断言；append push 本数组，
+      // item 读实时长度）。
+      childNodes: (function () {
+        var _a = [];
+        _a.item = function (i) { i = Number(i) >>> 0; return i < this.length ? this[i] : null; };
+        return _a;
+      })(),
+      children: (function () {
+        var _c = [];
+        _c.item = function (i) { i = Number(i) >>> 0; return i < this.length ? this[i] : null; };
+        return _c;
+      })(),
       get firstChild() { return this.childNodes.length ? this.childNodes[0] : null; },
       get lastChild() { return this.childNodes.length ? this.childNodes[this.childNodes.length - 1] : null; },
       hasChildNodes: function () { return this.childNodes.length > 0; },

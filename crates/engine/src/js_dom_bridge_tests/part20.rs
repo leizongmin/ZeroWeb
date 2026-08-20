@@ -2066,3 +2066,89 @@ fn test_eventtarget_object_listener_r139() {
         "R139 EventTarget 对象 listener + handleEvent TypeError 上报 + revoked Proxy 上报 + Text 非 bubbling 不触发父 activation"
     );
 }
+
+// R140（js-dom M4）：live childNodes（spec `dom-node-childnodes` 返 live NodeList）——
+// ① 同节点重复读同一对象（caching）② append/insert/remove 后旧引用反映（live）③
+// item()/迭代器（真数组承载——Array 原生 keys/values/entries/forEach/Symbol.iterator
+// 的 identity 断言）④ instanceof NodeList（Symbol.hasInstance 认 __zwLiveNL 数组，不换
+// 原型保迭代器）⑤ mutation 入口（_recordHandleChild/_unrecordHandleChild/appendChild/
+// insertBefore/removeChild/replaceChild/remove）记账后经 _zwLiveNLSync 同步。
+// WPT dom/nodes/Node-childNodes{,-cache,-cache-2}.html 8 subtest 0F 双路径。
+#[test]
+fn test_live_childnodes_r140() {
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let mut sandbox = V8Sandbox::with_config(zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    })
+    .unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><ul id=\"list\"><li>1</li><li>2</li></ul></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry);
+
+    let out = sandbox
+        .execute(
+            "var parts = [];\
+             // ① handle 元素 caching。
+             var el = document.createElement('div');\
+             parts.push('cache:' + (el.childNodes === el.childNodes));\
+             // ② live：append 后旧引用反映 + item。
+             var ch = el.childNodes;\
+             var c1 = document.createElement('p');\
+             el.appendChild(c1);\
+             parts.push('liveAppend:' + (ch.length === 1 && ch[0] === c1 && ch.item(0) === c1));\
+             // ③ fragment 容器同款。
+             var f = document.createDocumentFragment();\
+             var fc = document.createElement('span');\
+             f.appendChild(fc);\
+             parts.push('frag:' + (f.childNodes.length === 1 && f.childNodes.item(0) === fc));\
+             // ④ sel 元素（挂载）：caching + append/remove live + instanceof NodeList。
+             var ul = document.getElementById('list');\
+             var lc = ul.childNodes;\
+             parts.push('selCache:' + (ul.childNodes === lc) + ':pre:' + lc.length);\
+             var li3 = document.createElement('li');\
+             ul.appendChild(li3);\
+             parts.push('selAppend:' + lc.length);\
+             ul.removeChild(li3);\
+             parts.push('selRemove:' + lc.length);\
+             parts.push('instanceNL:' + (lc instanceof NodeList));\
+             // ⑤ 迭代器 identity（真数组承载）。
+             parts.push('iter:' + (lc[Symbol.iterator] === Array.prototype[Symbol.iterator]));\
+             // ⑥ detached doc childNodes 的 item。
+             var d = new Document();\
+             var dp = document.createElement('p');\
+             d.appendChild(dp);\
+             parts.push('docItem:' + (d.childNodes.item(0) === dp));\
+             // ⑦ live 数组经 splice 同步不破坏 data 访问（R117/R119 回归：prepend('text')
+             // 后 prepend(null) 的 [null 文本, text 文本] 双子——splice 写索引须保 data 面）。
+             var pr = document.createElement('div');\
+             pr.prepend('text');\
+             pr.prepend(null);\
+             parts.push('prependText:' + pr.childNodes[0].data + ',' + pr.childNodes[1].data + ':' + pr.childNodes.length);\
+             // ⑧ replaceWith handle 路径在 live 承载下的末子读取（R117 回归）。
+             var rw = document.createElement('div');\
+             var cx = document.createElement('x'); var cc = document.createElement('y');\
+             rw.appendChild(cx); rw.appendChild(cc);\
+             var rwc = rw.childNodes;\
+             cx.replaceWith('r');\
+             parts.push('rwLive:' + rwc.length + ':' + (rwc[0] && rwc[0].nodeName === '#text' && rwc[0].data === 'r') + ':' + (rwc[1] === cc));\
+             var rwT1 = rw.childNodes[0];\
+             var rwFreshOk = (rwT1 && rwT1.nodeName === '#text' && rwT1.data === 'r' && rw.childNodes[1] === cc);\
+             parts.push('rwFresh:' + (rw.childNodes === rwc) + ':' + rw.childNodes.length + ':' + rwFreshOk);\
+             parts.join('|');",
+        )
+        .unwrap()
+        .value;
+    assert_eq!(
+        out,
+        "cache:true|liveAppend:true|frag:true|selCache:true:pre:2|selAppend:3|selRemove:2|instanceNL:true|iter:true|docItem:true|prependText:null,text:2|rwLive:2:true:true|rwFresh:true:2:true",
+        "R140 live childNodes：caching/live/item/instanceof/迭代器/doc item 全链 + prepend/replaceWith live 回归"
+    );
+}
