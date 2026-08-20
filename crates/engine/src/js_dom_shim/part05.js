@@ -718,6 +718,25 @@
     var doc = _makeDetachedDocument('');
     var _r115WinRef = null; // defaultView 槽（_zwMakeIframeWin 建后回填）
     doc.__r115SetWin = function (w) { _r115WinRef = w; };
+    // R141（js-dom M4）：`<meta charset>` → 文档编码归一化（WPT
+    // Document-characterSet-normalization-1/2 654 subtest——iframe 子文档的
+    // characterSet/inputEncoding/charset 期望 WHATWG encoding label 表归一化后的
+    // 编码名）。`_zwEncodingFromLabel`：ASCII 大小写不敏感 + 首尾空白剥离 + label
+    // 表映射；HTML meta 场景特例（spec HTML「documentEncoding」）：utf-16/utf-16be/
+    // utf-16le → UTF-8、x-user-defined → windows-1252。
+    // https://encoding.spec.whatwg.org/#names-and-labels
+    // https://html.spec.whatwg.org/multipage/#documentEncoding
+    try {
+      var _r141M = /<meta[^>]+charset\s*=\s*["']?\s*([^"'>\s]+)\s*["']?/i.exec(String(markup || ''));
+      if (_r141M) {
+        var _r141Name = _zwEncodingFromLabel(_r141M[1], true);
+        if (_r141Name) {
+          Object.defineProperty(doc, 'characterSet', { configurable: true, get: function () { return _r141Name; } });
+          Object.defineProperty(doc, 'charset', { configurable: true, get: function () { return _r141Name; } });
+          Object.defineProperty(doc, 'inputEncoding', { configurable: true, get: function () { return _r141Name; } });
+        }
+      }
+    } catch (_e141m) {}
     if (kind === 'xml') {
       doc.contentType = 'application/xml';
       doc._docNS = null;
@@ -878,6 +897,74 @@
   // iframe contentWindow：最小 window 面（document + Element/Node 构造器转发主 window——
   // 用例 `elt instanceof win.Element` 需要 iframe realm 的构造器与主 realm proxy 的
   // getPrototypeOf 对齐；polyfill 单 realm 近似：直接引用主 window 的构造器）。
+  // R141（js-dom M4）：WHATWG encoding label → 编码名归一化（WPT
+  // Document-characterSet-normalization 的 encodingMap 全集——两文件 ~654 subtest 的
+  // 期望值来源）。表驱动：label 全部 ASCII 大小写不敏感（spec「get an encoding」步骤 2-3：
+  // ASCII lowercase + 去首尾 ASCII 空白）。htmlMeta=true 时应用 HTML meta 特例
+  //（utf-16 系 → UTF-8 / x-user-defined → windows-1252，spec HTML documentEncoding——
+  // 真浏览器对 meta 声明的这两族做替换）。未知 label 返 null（浏览器回落文档编码，
+  // 用例不覆盖未知 label）。
+  // https://encoding.spec.whatwg.org/#names-and-labels
+  var _ZW_ENC_LABELS = (function () {
+    var t = {};
+    function reg(name, labels) {
+      // 每个编码名本身也是自己的 label（spec 表 Bodies 列含 name）。
+      t[name.toLowerCase()] = name;
+      for (var i = 0; i < labels.length; i++) t[labels[i].toLowerCase()] = name;
+    }
+    reg('UTF-8', ['unicode-1-1-utf-8', 'unicode11utf8', 'unicode20utf8', 'utf-8', 'utf8', 'x-unicode20utf8']);
+    reg('IBM866', ['866', 'cp866', 'csibm866', 'ibm866']);
+    reg('ISO-8859-2', ['csisolatin2', 'iso-8859-2', 'iso-ir-101', 'iso8859-2', 'iso88592', 'iso_8859-2', 'iso_8859-2:1987', 'l2', 'latin2']);
+    reg('ISO-8859-3', ['csisolatin3', 'iso-8859-3', 'iso-ir-109', 'iso8859-3', 'iso88593', 'iso_8859-3', 'iso_8859-3:1988', 'l3', 'latin3']);
+    reg('ISO-8859-4', ['csisolatin4', 'iso-8859-4', 'iso-ir-110', 'iso8859-4', 'iso88594', 'iso_8859-4', 'iso_8859-4:1988', 'l4', 'latin4']);
+    reg('ISO-8859-5', ['csisolatincyrillic', 'cyrillic', 'iso-8859-5', 'iso-ir-144', 'iso8859-5', 'iso88595', 'iso_8859-5', 'iso_8859-5:1988']);
+    reg('ISO-8859-6', ['arabic', 'asmo-708', 'csiso88596e', 'csiso88596i', 'csisolatinarabic', 'ecma-114', 'iso-8859-6', 'iso-8859-6-e', 'iso-8859-6-i', 'iso-ir-127', 'iso8859-6', 'iso88596', 'iso_8859-6', 'iso_8859-6:1987']);
+    reg('ISO-8859-7', ['csisolatingreek', 'ecma-118', 'elot_928', 'greek', 'greek8', 'iso-8859-7', 'iso-ir-126', 'iso8859-7', 'iso88597', 'iso_8859-7', 'iso_8859-7:1987', 'sun_eu_greek']);
+    reg('ISO-8859-8', ['csiso88598e', 'csisolatinhebrew', 'hebrew', 'iso-8859-8', 'iso-8859-8-e', 'iso-ir-138', 'iso8859-8', 'iso88598', 'iso_8859-8', 'iso_8859-8:1988', 'visual']);
+    reg('ISO-8859-8-I', ['csiso88598i', 'iso-8859-8-i', 'logical']);
+    reg('ISO-8859-10', ['csisolatin6', 'iso-8859-10', 'iso-ir-157', 'iso8859-10', 'iso885910', 'l6', 'latin6']);
+    reg('ISO-8859-13', ['iso-8859-13', 'iso8859-13', 'iso885913']);
+    reg('ISO-8859-14', ['iso-8859-14', 'iso8859-14', 'iso885914']);
+    reg('ISO-8859-15', ['csisolatin9', 'iso-8859-15', 'iso8859-15', 'iso885915', 'iso_8859-15', 'l9']);
+    reg('ISO-8859-16', ['iso-8859-16']);
+    reg('KOI8-R', ['cskoi8r', 'koi', 'koi8', 'koi8-r', 'koi8_r']);
+    reg('KOI8-U', ['koi8-ru', 'koi8-u']);
+    reg('macintosh', ['csmacintosh', 'mac', 'macintosh', 'x-mac-roman']);
+    reg('windows-874', ['dos-874', 'iso-8859-11', 'iso8859-11', 'iso885911', 'tis-620', 'windows-874']);
+    reg('windows-1250', ['cp1250', 'windows-1250', 'x-cp1250']);
+    reg('windows-1251', ['cp1251', 'windows-1251', 'x-cp1251']);
+    reg('windows-1252', ['ansi_x3.4-1968', 'ascii', 'cp1252', 'cp819', 'csisolatin1', 'ibm819', 'iso-8859-1', 'iso-ir-100', 'iso8859-1', 'iso88591', 'iso_8859-1', 'iso_8859-1:1987', 'l1', 'latin1', 'us-ascii', 'windows-1252', 'x-cp1252']);
+    reg('windows-1253', ['cp1253', 'windows-1253', 'x-cp1253']);
+    reg('windows-1254', ['cp1254', 'csisolatin5', 'iso-8859-9', 'iso-ir-148', 'iso8859-9', 'iso88599', 'iso_8859-9', 'iso_8859-9:1989', 'l5', 'latin5', 'windows-1254', 'x-cp1254']);
+    reg('windows-1255', ['cp1255', 'windows-1255', 'x-cp1255']);
+    reg('windows-1256', ['cp1256', 'windows-1256', 'x-cp1256']);
+    reg('windows-1257', ['cp1257', 'windows-1257', 'x-cp1257']);
+    reg('windows-1258', ['cp1258', 'windows-1258', 'x-cp1258']);
+    reg('x-mac-cyrillic', ['x-mac-cyrillic', 'x-mac-ukrainian']);
+    reg('GBK', ['chinese', 'csgb2312', 'csiso58gb231280', 'gb2312', 'gbk', 'gb_2312', 'gb_2312-80', 'iso-ir-58', 'x-gbk']);
+    reg('gb18030', ['gb18030']);
+    reg('Big5', ['big5', 'big5-hkscs', 'cn-big5', 'csbig5', 'x-x-big5']);
+    reg('EUC-JP', ['cseucpkdfmtjapanese', 'euc-jp', 'x-euc-jp']);
+    reg('ISO-2022-JP', ['csiso2022jp', 'iso-2022-jp']);
+    reg('Shift_JIS', ['csshiftjis', 'ms932', 'ms_kanji', 'shift-jis', 'shift_jis', 'sjis', 'windows-31j', 'x-sjis']);
+    reg('EUC-KR', ['cseuckr', 'csksc56011987', 'euc-kr', 'iso-ir-149', 'korean', 'ks_c_5601-1987', 'ks_c_5601-1989', 'ksc5601', 'ksc_5601', 'windows-949']);
+    reg('replacement', ['csiso2022kr', 'hz-gb-2312', 'iso-2022-cn', 'iso-2022-cn-ext', 'iso-2022-kr']);
+    // HTML meta 特例的 utf-16 系与 x-user-defined：label 本身不在表（spec 不给 name 槽）——
+    // htmlMeta 分支显式判定，避免污染通用 label 表。
+    return t;
+  })();
+  function _zwEncodingFromLabel(label, htmlMeta) {
+    var k = String(label == null ? '' : label).replace(/^[\t\n\f\r ]+|[\t\n\f\r ]+$/g, '').toLowerCase();
+    if (!k) return null;
+    // spec HTML「documentEncoding」：meta 声明 utf-16/utf-16be/utf-16le → UTF-8（用例
+    // 注释「As we use <meta>, utf-16 will map to utf-8」）、x-user-defined → windows-1252。
+    if (htmlMeta) {
+      if (k === 'utf-16' || k === 'utf-16le' || k === 'utf-16be') return 'UTF-8';
+      if (k === 'x-user-defined') return 'windows-1252';
+    }
+    return _ZW_ENC_LABELS[k] || null;
+  }
+
   function _zwMakeIframeWin(doc) {
     var registrationWrappers = [];
     function wrapRegistration(registration) {

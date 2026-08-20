@@ -1801,6 +1801,35 @@ fn wpt_data_fetch_handler(wpt_root: &std::path::Path) -> Option<zero_engine::fet
             if clean.is_empty() {
                 return Err("empty path".to_string());
             }
+            // js-dom R141：dom/nodes/encoding.py（Document-characterSet-normalization 两文件
+            // 654 subtest 经 `<iframe src="encoding.py?label=X">` 取子文档）——上游是
+            // wptserve Python 脚本，wpt-data 无静态文件。此处内置等价生成器：读 ?label=
+            // 参数，返回 `<!doctype html><meta charset="X">`（上游脚本逐字等价——
+            // https://github.com/web-platform-tests/wpt/blob/3159769/dom/nodes/encoding.py）。
+            if clean == "dom/nodes/encoding.py" {
+                let label = percent_encoding::percent_decode_str(
+                    path_part
+                        .split_once('?')
+                        .map(|(_, q)| q)
+                        .unwrap_or("")
+                        .split('#')
+                        .next()
+                        .unwrap_or(""),
+                )
+                .decode_utf8_lossy()
+                .split('&')
+                .find_map(|kv| kv.strip_prefix("label="))
+                .unwrap_or("")
+                .to_string();
+                let body = format!("<!doctype html><meta charset=\"{label}\">");
+                return Ok(zero_engine::fetch_bridge::FetchResponse {
+                    status: 200,
+                    status_text: "OK".to_string(),
+                    headers: Vec::new(),
+                    body: body.clone(),
+                    body_bytes: Some(body.into_bytes()),
+                });
+            }
             match std::fs::read(root.join(clean)) {
                 Ok(bytes) => Ok(zero_engine::fetch_bridge::FetchResponse {
                     status: 200,
@@ -2704,6 +2733,38 @@ async_test(function(test) {
             second.url,
             "https://wpt.test/service-workers/service-worker/resources/update-worker.py?Key=fixture-key&Mode=normal"
         );
+    }
+
+    #[test]
+    fn encoding_py_handler_generates_meta_charset_from_label_query() {
+        // js-dom R141：dom/nodes/encoding.py 内置生成器（Document-characterSet-normalization
+        // 654 subtest 的子文档源）——`?label=X`（含 percent-encoding）→ `<!doctype html><meta
+        // charset="X">`（与上游 wptserve 脚本逐字等价）；无 label 参数 → 空 charset。
+        let handler = wpt_data_fetch_handler(Path::new("/nonexistent-wpt-root")).unwrap();
+        let make_req = |url: &str| zero_engine::fetch_bridge::FetchRequest {
+            url: url.to_string(),
+            method: "GET".to_string(),
+            headers: Vec::new(),
+            body: None,
+            body_bytes: None,
+        };
+        let resp = handler(&make_req(
+            "https://wpt.test/dom/nodes/encoding.py?label=unicode-1-1-utf-8",
+        ))
+        .unwrap();
+        assert_eq!(resp.status, 200);
+        assert_eq!(resp.body, "<!doctype html><meta charset=\"unicode-1-1-utf-8\">");
+        // percent-encoded label（helper 直接拼 label 原值，URL 里空格等会 encode）。
+        let resp_enc = handler(&make_req(
+            "https://wpt.test/dom/nodes/encoding.py?label=iso-8859-1%3A1987",
+        ))
+        .unwrap();
+        assert_eq!(resp_enc.body, "<!doctype html><meta charset=\"iso-8859-1:1987\">");
+        // 缺 label → 空 charset（上游 escape(None) 同型）。
+        let resp_none = handler(&make_req("https://wpt.test/dom/nodes/encoding.py")).unwrap();
+        assert_eq!(resp_none.body, "<!doctype html><meta charset=\"\">");
+        // 非 .py 路径仍走静态文件（root 不存在 → 错误）。
+        assert!(handler(&make_req("https://wpt.test/dom/nodes/encoding.py.bak")).is_err());
     }
 
     #[test]

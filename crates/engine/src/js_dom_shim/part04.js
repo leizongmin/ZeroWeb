@@ -348,7 +348,27 @@
               // 落 error，iframe 保持 null，浏览器路径 iframe defer）。dummy 本地文件即时，
               // 消除 async fetch 与 window load 的竞态（用例 load 后 getWin 读 documentElement）。
               var _r115Url = _r115Src;
-              if (_r115Url.indexOf('/') === 0) _r115Url = 'https://wpt.test' + _r115Url;
+              // R141：相对 src（如 encoding.py?label=X）按页面 URL 解析（spec HTML iframe
+              // src「resolve a URL」）——取 location.href 的目录段拼接。根相对（/x）保持
+              // origin 前缀；绝对 URL 原样。
+              if (/^https?:\/\//i.test(_r115Url) || _r115Url.indexOf('data:') === 0 || _r115Url.indexOf('about:') === 0) {
+                // absolute — unchanged
+              } else if (_r115Url.indexOf('/') === 0) {
+                _r115Url = 'https://wpt.test' + _r115Url;
+              } else if (_r115Url.indexOf('./') === 0 || _r115Url.indexOf('../') === 0 || /^[?#]/.test(_r115Url) || !/^[\w+.-]*:/.test(_r115Url)) {
+                var _r141Base = '';
+                try { _r141Base = String(globalThis.location && globalThis.location.href || ''); } catch (_e141l) {}
+                _r141Base = _r141Base.replace(/[?#].*$/, '');
+                var _r141Dir = _r141Base.slice(0, _r141Base.lastIndexOf('/') + 1);
+                // 简易 ../ 与 ./ 归一（../ 弹一层）。
+                for (;;) {
+                  var m141 = /^(\.\.\/)(.*)$/.exec(_r115Url);
+                  if (!m141) break;
+                  _r141Dir = _r141Dir.replace(/[^/]*\/$/, '');
+                  _r115Url = m141[2];
+                }
+                _r115Url = _r141Dir + _r115Url.replace(/^\.\//, '');
+              }
               try {
                 var _r115Wire = String(__zw_fetch('r115iframe', 'GET', _r115Url, '', '') || '');
                 if (_r115Wire && _r115Wire.indexOf('__zw_fetch_error:') !== 0) {
