@@ -109,6 +109,66 @@ fn r1723_right_float_defwidth_table_pushed_below() {
     );
 }
 
+/// R3608：definite-width table 的声明宽也可能是 residual real length。
+/// `width:6em;font-size:20px` = 120px，旁 200px float 在 300px 容器内只有 100px 可用，
+/// 应推到 float 下方并保声明宽，非把 `em` 当 auto 后 beside shrink/fill 到 100px。
+#[test]
+fn r3608_table_float_defwidth_relative_length_pushed_below() {
+    let (mut doc, body) = make_doc_with_body();
+    let container = doc.create_element("div");
+    doc.append_child(body, container).unwrap();
+    let float_l = doc.create_element("div");
+    doc.append_child(container, float_l).unwrap();
+    let table = doc.create_element("div");
+    doc.append_child(container, table).unwrap();
+    let tr = doc.create_element("div");
+    doc.append_child(table, tr).unwrap();
+    let td = doc.create_element("div");
+    doc.append_child(tr, td).unwrap();
+
+    let mut styles = HashMap::new();
+    let mut cont = ComputedStyle::default();
+    cont.display = DisplayValue::Block;
+    cont.width = LengthValue::Px(300.0);
+    styles.insert(container, cont);
+
+    let mut fl = ComputedStyle::default();
+    fl.display = DisplayValue::Block;
+    fl.float = FloatValue::Left;
+    fl.width = LengthValue::Px(200.0);
+    fl.height = LengthValue::Px(20.0);
+    styles.insert(float_l, fl);
+
+    let mut t = ComputedStyle::default();
+    t.display = DisplayValue::Table;
+    t.font_size = LengthValue::Px(20.0);
+    t.width = LengthValue::Em(6.0);
+    styles.insert(table, t);
+
+    let mut tr_s = ComputedStyle::default();
+    tr_s.display = DisplayValue::TableRow;
+    styles.insert(tr, tr_s);
+    let mut td_s = ComputedStyle::default();
+    td_s.display = DisplayValue::TableCell;
+    td_s.height = LengthValue::Px(20.0);
+    styles.insert(td, td_s);
+
+    let mut engine = LayoutEngine::new(800.0, 600.0);
+    let result = engine.compute(&doc, &styles);
+
+    let table_box = find_child_by_node_id_root(&result.root, table).expect("table found");
+    assert!(
+        table_box.width >= 115.0 && table_box.width <= 125.0,
+        "relative definite-width table 应保持 width≈120，实际 {}",
+        table_box.width
+    );
+    assert!(
+        table_box.y > 10.0,
+        "relative definite-width table 应推到 float 下方（y≈20）非 beside（y≈0），实际 y={}",
+        table_box.y
+    );
+}
+
 /// R1723 回归守卫：auto-width table 旁 float 仍 beside 填满（R1613/R1721 行为不变）。
 /// auto-width table（无 width）旁 float:left 100，容器 300 → table beside 填 200，y≈0。
 #[test]

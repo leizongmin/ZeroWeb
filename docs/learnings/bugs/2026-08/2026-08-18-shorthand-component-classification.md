@@ -332,3 +332,5 @@ Table min-width redistribution exposed the post-constraint-sync variant: expandi
 Intrinsic sizing exposed the shared-measurement variant: leaf max-content fallbacks are consumed by flex, grid, table-cell, and shrink-to-fit callers. These helpers must resolve residual real lengths locally rather than assuming direct `ComputedStyle` callers always pass canonical `Px` widths.
 
 Flex intrinsic sizing exposed the priority-preservation variant: `flex-basis` can override `width`, so adding residual length support only to the width fallback is insufficient. Each higher-priority sizing source needs the same resolver or direct callers silently fall through to lower-priority values.
+
+Table-float avoidance exposed the geometry-decision variant: a residual real length may not directly paint, but it can decide whether a BFC/table fits beside a float. Definite-size fit tests must resolve the declared source value before comparing against available float-side space, or the element is silently treated like auto-size.

@@ -77,6 +77,20 @@ fn is_in_flow(b: &LayoutBox) -> bool {
     !is_float(b) && !b.is_absolute && !b.is_fixed
 }
 
+fn resolve_declared_table_width(style: &ComputedStyle, content_width: f32) -> Option<f32> {
+    match &style.width {
+        LengthValue::Auto | LengthValue::MinContent | LengthValue::MaxContent | LengthValue::FitContent(_) => None,
+        LengthValue::Percentage(p) => Some((*p as f32 / 100.0) * content_width),
+        LengthValue::Px(v) if *v == f64::INFINITY => None,
+        LengthValue::Px(v) => Some(*v as f32),
+        other => {
+            let font_size_px = zero_style_system::computed::resolve_length(&style.font_size, 16.0, None, None);
+            let px = zero_style_system::computed::resolve_length(other, font_size_px, None, None);
+            px.is_finite().then_some(px as f32)
+        }
+    }
+}
+
 fn fix_inner(
     root: &mut LayoutBox,
     doc: &Document,
@@ -118,11 +132,7 @@ fn fix_inner(
     let declared_w: Option<f32> = root.children[tidx]
         .node_id
         .and_then(|id| styles.get(&id))
-        .and_then(|s| match &s.width {
-            LengthValue::Px(v) => Some(*v as f32),
-            LengthValue::Percentage(p) => Some((*p as f32 / 100.0) * content_width),
-            _ => None,
-        });
+        .and_then(|s| resolve_declared_table_width(s, content_width));
     let effective_w = declared_w.unwrap_or(table_w);
     // clear != None 的 table 应由 clear 逻辑定位（推到 float 下方），不做 §9.5 推开
     //（clear-applies-to-013：display:table + clear:both 应清到 float 下，非推到 float 右）。
