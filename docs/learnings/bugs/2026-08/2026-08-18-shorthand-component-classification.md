@@ -286,3 +286,5 @@ Border-radius exposed the box-dependent variant: a paint helper can correctly ha
 Multicol exposed the duplicate-resolver variant: layout and paint both had a `length_to_px` helper for column geometry, but paint supported fewer real length units. When paint consumes geometry-sensitive CSS values for adornments such as column rules, keep its resolver unit set byte-aligned with layout or route through the layout helper directly.
 
 Clip-path exposed the context-length variant: a shape resolver may handle `em` correctly only if the font-size context itself was resolved correctly. Audit both the value being resolved and every contextual basis such as font-size, viewport, or box dimension.
+
+Transform-origin exposed the geometry transform variant: helpers that already have the border-box size can still lose residual font-relative origins if they special-case only `%` and `px`. Resolve the origin length at the matrix construction boundary, using the current `font-size` as context and keeping invalid residual keywords on the existing center fallback.

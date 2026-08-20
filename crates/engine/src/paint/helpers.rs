@@ -70,18 +70,11 @@ pub fn compute_transform_matrix(style: &ComputedStyle, rect: &Rect) -> Option<Tr
     }
 
     // 计算 transform-origin（相对于视口绝对坐标）
-    let origin_x = rect.origin.x
-        + match &style.transform_origin_x {
-            LengthValue::Percentage(p) => rect.size.width * (*p as f32 / 100.0),
-            LengthValue::Px(p) => *p as f32,
-            _ => rect.size.width / 2.0,
-        };
-    let origin_y = rect.origin.y
-        + match &style.transform_origin_y {
-            LengthValue::Percentage(p) => rect.size.height * (*p as f32 / 100.0),
-            LengthValue::Px(p) => *p as f32,
-            _ => rect.size.height / 2.0,
-        };
+    let font_size_px = zero_style_system::computed::resolve_length(&style.font_size, 16.0, None, None);
+    let origin_x =
+        rect.origin.x + resolve_transform_origin_length(&style.transform_origin_x, rect.size.width, font_size_px);
+    let origin_y =
+        rect.origin.y + resolve_transform_origin_length(&style.transform_origin_y, rect.size.height, font_size_px);
 
     // 构建累积变换矩阵（3x3 仿射，存储为 [a, b, c, d, tx, ty]）
     // | a  c  tx |
@@ -199,6 +192,16 @@ pub fn compute_transform_matrix(style: &ComputedStyle, rect: &Rect) -> Option<Tr
         tx: final_tx,
         ty: final_ty,
     })
+}
+
+fn resolve_transform_origin_length(value: &LengthValue, box_size: f32, font_size_px: f64) -> f32 {
+    match value {
+        LengthValue::Percentage(p) => box_size * (*p as f32 / 100.0),
+        LengthValue::Auto | LengthValue::MinContent | LengthValue::MaxContent | LengthValue::FitContent(_) => {
+            box_size / 2.0
+        }
+        other => zero_style_system::computed::resolve_length(other, font_size_px, None, None) as f32,
+    }
 }
 
 /// 如果样式包含非平移变换，将 TransformPrimitive 添加到图元列表。
@@ -1073,6 +1076,20 @@ mod tests {
         // origin at top-left corner (10, 20)
         assert!((tp.origin_x - 10.0).abs() < 0.1);
         assert!((tp.origin_y - 20.0).abs() < 0.1);
+    }
+
+    #[test]
+    fn test_compute_transform_origin_relative_lengths() {
+        let mut style = ComputedStyle::default();
+        style.font_size = LengthValue::Px(20.0);
+        style.transform = TransformValue::List(vec![TransformFunction::Rotate(90.0)]);
+        style.transform_origin_x = LengthValue::Em(1.0);
+        style.transform_origin_y = LengthValue::Em(2.0);
+        let rect = Rect::new(0.0, 0.0, 100.0, 100.0);
+        let tp = compute_transform_matrix(&style, &rect).expect("should have transform");
+
+        assert!((tp.origin_x - 20.0).abs() < 0.1);
+        assert!((tp.origin_y - 40.0).abs() < 0.1);
     }
 
     #[test]
