@@ -905,6 +905,53 @@ fn test_adjust_absolute_relative_length_top_to_viewport() {
 }
 
 #[test]
+fn test_adjust_absolute_auto_size_stretches_with_relative_insets() {
+    use std::collections::HashMap;
+    use zero_css_parser::values::LengthValue;
+    let (_doc, key_id) = make_doc_with_body();
+
+    let abs_child = LayoutBox {
+        node_id: Some(key_id),
+        x: 0.0,
+        y: 0.0,
+        width: 10.0,
+        height: 10.0,
+        is_absolute: true,
+        ..Default::default()
+    };
+    let body = LayoutBox {
+        node_id: None,
+        x: 0.0,
+        y: 0.0,
+        width: 320.0,
+        height: 240.0,
+        children: vec![abs_child],
+        ..Default::default()
+    };
+    let mut root = LayoutBox {
+        children: vec![body],
+        ..Default::default()
+    };
+
+    let mut style = ComputedStyle::default();
+    style.font_size = LengthValue::Px(20.0);
+    style.width = LengthValue::Auto;
+    style.height = LengthValue::Auto;
+    style.left = LengthValue::Em(1.0);
+    style.right = LengthValue::Em(2.0);
+    style.top = LengthValue::Em(0.5);
+    style.bottom = LengthValue::Em(1.0);
+    let mut styles: HashMap<NodeId, ComputedStyle> = HashMap::new();
+    styles.insert(key_id, style);
+
+    adjust_absolute_pct_to_viewport(&mut root, 0.0, 0.0, 800.0, 600.0, &styles, false);
+
+    let abs = &root.children[0].children[0];
+    assert_eq!(abs.width, 740.0, "800 - 20px - 40px");
+    assert_eq!(abs.height, 570.0, "600 - 10px - 20px");
+}
+
+#[test]
 fn test_resolve_abspos_root_cb_relative_length_insets() {
     use std::collections::HashMap;
     use zero_css_parser::values::LengthValue;

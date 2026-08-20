@@ -256,15 +256,21 @@ pub(super) fn adjust_absolute_pct_to_viewport(
             // （避免误关 R98 位置/百分比尺寸解析，致替换 abspos 定位回退）。
             if matches!(style.width, LengthValue::Auto)
                 && !child.is_replaced
-                && let (LengthValue::Px(left), LengthValue::Px(right)) = (&style.left, &style.right)
+                && let (Some(left), Some(right)) = (
+                    resolve_abspos_real_length(&style.left, &style.font_size, viewport_width, viewport_height),
+                    resolve_abspos_real_length(&style.right, &style.font_size, viewport_width, viewport_height),
+                )
             {
-                child.width = (viewport_width - (*left as f32) - (*right as f32)).max(0.0);
+                child.width = (viewport_width - left - right).max(0.0);
             }
             if matches!(style.height, LengthValue::Auto)
                 && !child.is_replaced
-                && let (LengthValue::Px(top), LengthValue::Px(bottom)) = (&style.top, &style.bottom)
+                && let (Some(top), Some(bottom)) = (
+                    resolve_abspos_real_length(&style.top, &style.font_size, viewport_width, viewport_height),
+                    resolve_abspos_real_length(&style.bottom, &style.font_size, viewport_width, viewport_height),
+                )
             {
-                child.height = (viewport_height - (*top as f32) - (*bottom as f32)).max(0.0);
+                child.height = (viewport_height - top - bottom).max(0.0);
             }
             // left/top 百分比：目标视口绝对坐标 = p/100 * viewport，转回父 content 相对坐标
             if let LengthValue::Percentage(p) = &style.left {

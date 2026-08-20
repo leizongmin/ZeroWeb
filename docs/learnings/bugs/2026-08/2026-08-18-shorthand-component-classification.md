@@ -304,3 +304,5 @@ Absolute positioning exposed the postprocess-CB variant: fixes that correct Taff
 Root abspos exposed the parallel-postprocess variant: a viewport-CB fix can leave a root-CB sibling path behind. When two postprocess functions reinterpret the same CSS inset semantics against different containing blocks, share the real-length resolver and add one direct test per CB path.
 
 Fixed positioning exposed the stretch-postprocess variant: position correction and size stretch can live in separate postprocess functions for the same CSS inset semantics. After adding a real-length resolver for fixed or absolute coordinates, audit opposing-inset auto-size stretch paths before considering the CB family covered.
+
+Viewport abspos exposed the coordinate-vs-stretch split: resolving `left` and `top` used values does not cover `width:auto` or `height:auto` stretch from opposing insets. For positioned layout, audit coordinates and auto-size equations as separate consumers even when they share the same containing block.
