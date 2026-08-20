@@ -6,7 +6,7 @@
 
 use std::collections::HashMap;
 
-use zero_css_parser::values::{ColorValue, LengthValue, TransformFunction, TransformValue};
+use zero_css_parser::values::{ClipRectValue, ColorValue, LengthValue, TransformFunction, TransformValue};
 use zero_render_foundation::color::Color;
 use zero_style_system::{
     BackgroundImageComputedValue, BoxShadowComputedValue, ClipPathComputedValue, ClipPathRadius, ComputedStyle,
@@ -724,6 +724,37 @@ fn test_paint_clip_path_inset_residual_font_size_length() {
         fills[0].rect.size.height, 36.0,
         "font-size:2em 下 inset(1em) 应按 32px 裁剪上下"
     );
+}
+
+#[test]
+fn test_paint_clip_rect_relative_lengths() {
+    let mut doc = zero_dom::Document::new();
+    let elem = doc.create_element("div");
+    let mut layout = make_box(Some(elem), 0.0, 0.0, 100.0, 100.0);
+    layout.is_absolute = true;
+
+    let mut styles = HashMap::new();
+    let mut style = ComputedStyle::default();
+    style.font_size = LengthValue::Px(20.0);
+    style.background_color = ColorValue::Rgba(0, 0, 255, 255);
+    style.color = ColorValue::CurrentColor;
+    style.clip = ClipRectValue::Rect(
+        LengthValue::Em(1.0),
+        LengthValue::Em(4.0),
+        LengthValue::Em(4.0),
+        LengthValue::Em(1.0),
+    );
+    styles.insert(elem, style);
+
+    let mut painter = Painter::new();
+    painter.paint(&layout, &styles, None);
+
+    let fills = &painter.primitives().fills;
+    assert!(!fills.is_empty(), "应有背景 fill");
+    assert_eq!(fills[0].rect.origin.x, 20.0);
+    assert_eq!(fills[0].rect.origin.y, 20.0);
+    assert_eq!(fills[0].rect.size.width, 60.0);
+    assert_eq!(fills[0].rect.size.height, 60.0);
 }
 
 /// 测试 clip-path: circle(<percentage>) 半径按 sqrt(w²+h²)/√2 解析（CSS basic-shape circle）。

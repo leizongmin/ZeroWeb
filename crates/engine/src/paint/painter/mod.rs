@@ -248,6 +248,17 @@ fn resolve_paint_font_size(font_size: &LengthValue) -> f32 {
     zero_style_system::computed::resolve_length(font_size, 16.0, None, None) as f32
 }
 
+fn resolve_clip_rect_length(value: &LengthValue, font_size_px: f32) -> f32 {
+    match value {
+        LengthValue::Auto
+        | LengthValue::Percentage(_)
+        | LengthValue::MinContent
+        | LengthValue::MaxContent
+        | LengthValue::FitContent(_) => 0.0,
+        other => zero_style_system::computed::resolve_length(other, font_size_px as f64, None, None) as f32,
+    }
+}
+
 /// 判断节点是否需要对子内容裁剪（overflow 或 contain:paint/strict/content 触发）。
 ///
 /// 从 paint_node 抽出，供 collect_positioned_auto_descendants 镜像 defer_abspos 条件，
@@ -1423,10 +1434,11 @@ impl Painter {
             && let Some(style) = styles.get(&node_id)
             && let zero_css_parser::values::ClipRectValue::Rect(top, right, bottom, left) = &style.clip
         {
-            let t = super::helpers::length_to_f32(top);
-            let r = super::helpers::length_to_f32(right);
-            let b = super::helpers::length_to_f32(bottom);
-            let l = super::helpers::length_to_f32(left);
+            let fs = resolve_paint_font_size(&style.font_size);
+            let t = resolve_clip_rect_length(top, fs);
+            let r = resolve_clip_rect_length(right, fs);
+            let b = resolve_clip_rect_length(bottom, fs);
+            let l = resolve_clip_rect_length(left, fs);
             // clip: rect() 坐标相对于元素的边框盒
             let clip_rect = Rect::new(abs_x + l, abs_y + t, r - l, b - t);
             super::helpers::clip_all_primitives_to_rect(&mut self.primitives, &counts_before, &clip_rect);

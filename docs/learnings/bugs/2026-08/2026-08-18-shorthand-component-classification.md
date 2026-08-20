@@ -288,3 +288,5 @@ Multicol exposed the duplicate-resolver variant: layout and paint both had a `le
 Clip-path exposed the context-length variant: a shape resolver may handle `em` correctly only if the font-size context itself was resolved correctly. Audit both the value being resolved and every contextual basis such as font-size, viewport, or box dimension.
 
 Transform-origin exposed the geometry transform variant: helpers that already have the border-box size can still lose residual font-relative origins if they special-case only `%` and `px`. Resolve the origin length at the matrix construction boundary, using the current `font-size` as context and keeping invalid residual keywords on the existing center fallback.
+
+Clip rect exposed the legacy-property variant: deprecated paint paths are still real consumers of computed CSS values. When a legacy property accepts `<length>`, its paint boundary needs the same residual length resolution as modern properties; keep unsupported grammar residues on the historical fallback instead of broadening the property.
