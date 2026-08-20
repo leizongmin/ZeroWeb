@@ -62,3 +62,54 @@ fn r1722_right_bfc_definite_width_pushed_below_float() {
         bfc_box.y
     );
 }
+
+/// R3610：right-float BFC avoidance 进入条件也要使用声明宽的 used-value。
+/// `width:8em;font-size:20px` = 160px，float:right 200 后左侧只剩 100px；
+/// 旧实现用 taffy 残留 `Em(8)` 的 raw width=8 做重叠判断，直接跳过 avoidance。
+#[test]
+fn r3610_right_bfc_relative_declared_width_pushed_below_float() {
+    let (mut doc, body) = make_doc_with_body();
+    let container = doc.create_element("div");
+    doc.append_child(body, container).unwrap();
+    let float_r = doc.create_element("div");
+    doc.append_child(container, float_r).unwrap();
+    let bfc_div = doc.create_element("div");
+    doc.append_child(container, bfc_div).unwrap();
+
+    let mut styles = HashMap::new();
+    let mut cont = ComputedStyle::default();
+    cont.display = DisplayValue::Block;
+    cont.width = LengthValue::Px(300.0);
+    styles.insert(container, cont);
+
+    let mut fl = ComputedStyle::default();
+    fl.display = DisplayValue::Block;
+    fl.float = FloatValue::Right;
+    fl.width = LengthValue::Px(200.0);
+    fl.height = LengthValue::Px(20.0);
+    styles.insert(float_r, fl);
+
+    let mut bd = ComputedStyle::default();
+    bd.display = DisplayValue::Block;
+    bd.overflow_x = OverflowValue::Hidden;
+    bd.overflow_y = OverflowValue::Hidden;
+    bd.font_size = LengthValue::Px(20.0);
+    bd.width = LengthValue::Em(8.0);
+    bd.height = LengthValue::Px(20.0);
+    styles.insert(bfc_div, bd);
+
+    let mut engine = LayoutEngine::new(800.0, 600.0);
+    let result = engine.compute(&doc, &styles);
+
+    let bfc_box = find_child_by_node_id(&result.root, bfc_div).expect("bfc div found");
+    assert!(
+        bfc_box.width >= 155.0,
+        "float:right relative declared-width BFC 应保持 width≈160（推下非 shrink），实际 {}",
+        bfc_box.width
+    );
+    assert!(
+        bfc_box.y > 10.0,
+        "relative declared-width BFC 应推到 right float 下方（y≈20）非 beside（y≈0），实际 y={}",
+        bfc_box.y
+    );
+}

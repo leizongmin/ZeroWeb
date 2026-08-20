@@ -1306,13 +1306,18 @@ pub(crate) fn adjust_float_positions_with_context(
                                     }
                                 }
                             }
-                            FloatValue::Right if child.x + child.width > *float_x => {
+                            FloatValue::Right => {
+                                let declared_or_layout_width = child.declared_width_px.unwrap_or(child.width);
+                                if child.x + declared_or_layout_width <= *float_x {
+                                    continue;
+                                }
                                 // R1722：float:right definite-width BFC 放不下 float 左侧可用宽
                                 //（child.x + width > float_x）→ 推到 float 下方（mirror of R1369 左
                                 // float overflows 推下，CSS §9.5：BFC border-box 不重叠 float；definite
                                 // 宽度保持不 shrink）。仅 definite-width + 无后续 in-flow block 同胞时推下，
                                 // 否则保持 shrink-to-fit（原行为）。kill-switch ZW_BFC_RIGHT_PUSHBELOW=0。
-                                let is_definite_width = child.width < container_width - 0.5;
+                                let is_definite_width =
+                                    child.declared_width_px.is_some() || child.width < container_width - 0.5;
                                 if std::env::var("ZW_BFC_RIGHT_PUSHBELOW").as_deref() != Ok("0")
                                     && is_definite_width
                                     && !has_following_block_sibling[idx]

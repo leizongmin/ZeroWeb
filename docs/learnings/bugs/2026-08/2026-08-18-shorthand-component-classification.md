@@ -336,3 +336,5 @@ Flex intrinsic sizing exposed the priority-preservation variant: `flex-basis` ca
 Table-float avoidance exposed the geometry-decision variant: a residual real length may not directly paint, but it can decide whether a BFC/table fits beside a float. Definite-size fit tests must resolve the declared source value before comparing against available float-side space, or the element is silently treated like auto-size.
 
 BFC float avoidance exposed the cached-used-declaration variant: postprocess stages sometimes need the original definite source width even after taffy has produced a fallback geometry. Store a local used-value cache on the layout box for the specific decision instead of globally changing converter semantics for every consumer.
+
+Right-float BFC avoidance exposed the entry-guard variant: adding a used-value cache is not enough if the branch guard still asks the post-taffy fallback width whether the box overlaps the float. Every gate that decides whether avoidance runs must consume the same declared used width as the later fit/pushdown logic.
