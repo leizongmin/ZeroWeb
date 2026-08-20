@@ -292,3 +292,5 @@ Transform-origin exposed the geometry transform variant: helpers that already ha
 Clip rect exposed the legacy-property variant: deprecated paint paths are still real consumers of computed CSS values. When a legacy property accepts `<length>`, its paint boundary needs the same residual length resolution as modern properties; keep unsupported grammar residues on the historical fallback instead of broadening the property.
 
 Radial gradients exposed the helper-context variant: a generic conversion helper may look value-only, but CSS Images length values still depend on the element font context. Keep a default-context wrapper for tests and pure callers, then route production paint through a context-aware entry point.
+
+Gradient color stops exposed the nested-helper-context variant: fixing a gradient geometry resolver does not automatically fix nested stop positions. When adding a context-aware paint entry point, audit every helper it calls for residual length conversion instead of stopping at the outer geometry fields.

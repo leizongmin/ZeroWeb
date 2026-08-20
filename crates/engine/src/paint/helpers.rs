@@ -744,7 +744,7 @@ pub fn gradient_to_primitive_with_font_size(
     match gradient {
         GradientValue::Linear(lg) => {
             let kind = linear_direction_to_kind(&lg.direction, rect);
-            let stops = convert_color_stops(&lg.stops, element_color);
+            let stops = convert_color_stops_with_font_size(&lg.stops, element_color, font_size_px);
             Some(GradientPrimitive {
                 interpolation: map_interpolation(lg.interpolation),
                 rect: *rect,
@@ -781,7 +781,7 @@ pub fn gradient_to_primitive_with_font_size(
                 }
                 RadialSize::Length(lv) => resolve_gradient_length(lv, font_size_px),
             };
-            let stops = convert_color_stops(&rg.stops, element_color);
+            let stops = convert_color_stops_with_font_size(&rg.stops, element_color, font_size_px);
             Some(GradientPrimitive {
                 interpolation: map_interpolation(rg.interpolation),
                 rect: *rect,
@@ -799,7 +799,7 @@ pub fn gradient_to_primitive_with_font_size(
             let cx = rect.left() + resolve_position_with_font_size(&cg.position_x, w, font_size_px);
             let cy = rect.top() + resolve_position_with_font_size(&cg.position_y, h, font_size_px);
             let start_angle = cg.from_angle.to_radians() as f32;
-            let stops = convert_color_stops(&cg.stops, element_color);
+            let stops = convert_color_stops_with_font_size(&cg.stops, element_color, font_size_px);
             Some(GradientPrimitive {
                 interpolation: map_interpolation(cg.interpolation),
                 rect: *rect,
@@ -918,23 +918,46 @@ pub fn linear_direction_to_kind(dir: &GradientDirection, rect: &Rect) -> Gradien
 
 /// 将 CSS 渐变色标转换为渲染层 GradientStop。
 pub fn convert_color_stops(stops: &[GradientColorStop], element_color: &ColorValue) -> Vec<GradientStop> {
+    convert_color_stops_with_resolver(stops, element_color, |lv| match lv {
+        LengthValue::Percentage(p) => *p as f32 / 100.0,
+        LengthValue::Px(px) => *px as f32,
+        // calc/min/max/clamp 求值为 px（无 parent_length：百分比不可解→None→回退 0.0）。
+        // driving: css-images gradient-infinity（calc(1px/0) / calc(Infinity*1px)）。
+        LengthValue::Calc(expr) => eval_calc(expr, None).unwrap_or(0.0) as f32,
+        _ => 0.0,
+    })
+}
+
+fn convert_color_stops_with_font_size(
+    stops: &[GradientColorStop],
+    element_color: &ColorValue,
+    font_size_px: f32,
+) -> Vec<GradientStop> {
+    convert_color_stops_with_resolver(stops, element_color, |lv| match lv {
+        LengthValue::Percentage(p) => *p as f32 / 100.0,
+        LengthValue::Auto | LengthValue::MinContent | LengthValue::MaxContent | LengthValue::FitContent(_) => 0.0,
+        other => resolve_gradient_length(other, font_size_px),
+    })
+}
+
+fn convert_color_stops_with_resolver<F>(
+    stops: &[GradientColorStop],
+    element_color: &ColorValue,
+    mut resolve_position: F,
+) -> Vec<GradientStop>
+where
+    F: FnMut(&LengthValue) -> f32,
+{
     let n = stops.len();
     stops
         .iter()
         .enumerate()
         .map(|(i, s)| {
-            let offset = s
-                .position
-                .as_ref()
-                .map(|lv| match lv {
-                    LengthValue::Percentage(p) => *p as f32 / 100.0,
-                    LengthValue::Px(px) => *px as f32,
-                    // calc/min/max/clamp 求值为 px（无 parent_length：百分比不可解→None→回退 0.0）。
-                    // driving: css-images gradient-infinity（calc(1px/0) / calc(Infinity*1px)）。
-                    LengthValue::Calc(expr) => eval_calc(expr, None).unwrap_or(0.0) as f32,
-                    _ => 0.0,
-                })
-                .unwrap_or(if n <= 1 { 0.0 } else { i as f32 / (n - 1) as f32 });
+            let offset = s.position.as_ref().map(&mut resolve_position).unwrap_or(if n <= 1 {
+                0.0
+            } else {
+                i as f32 / (n - 1) as f32
+            });
             GradientStop {
                 offset,
                 // R2370：currentColor 按**使用该渐变的元素**自身 color 解析（CSS Color §resolving）。

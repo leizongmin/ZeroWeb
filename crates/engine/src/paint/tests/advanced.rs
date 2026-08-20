@@ -476,6 +476,42 @@ fn test_paint_linear_gradient_with_position() {
     assert_eq!(grad.stops[0].offset, 0.25, "带百分比位置的色标 offset 应为 0.25");
 }
 
+#[test]
+fn test_paint_linear_gradient_relative_length_stop_position() {
+    let mut doc = zero_dom::Document::new();
+    let elem = doc.create_element("div");
+    let layout = make_box(Some(elem), 0.0, 0.0, 100.0, 100.0);
+
+    let mut styles = HashMap::new();
+    let mut style = ComputedStyle::default();
+    style.font_size = LengthValue::Px(20.0);
+    style.background_image = vec![BackgroundImageComputedValue::Gradient(GradientValue::Linear(
+        LinearGradient {
+            interpolation: Default::default(),
+            direction: GradientDirection::ToBottom,
+            stops: vec![
+                GradientColorStop {
+                    color: ColorValue::Rgba(255, 0, 0, 255),
+                    position: Some(LengthValue::Em(2.0)),
+                },
+                GradientColorStop {
+                    color: ColorValue::Rgba(0, 0, 255, 255),
+                    position: None,
+                },
+            ],
+            repeating: false,
+        },
+    ))];
+    style.color = ColorValue::CurrentColor;
+    styles.insert(elem, style);
+
+    let mut painter = Painter::new();
+    painter.paint(&layout, &styles, None);
+
+    let grad = &painter.primitives().gradients[0];
+    assert_eq!(grad.stops[0].offset, 40.0, "2em at font-size:20px 应解析为 40px");
+}
+
 /// 测试 radial-gradient 生成 GradientPrimitive。
 #[test]
 fn test_paint_radial_gradient_basic() {
