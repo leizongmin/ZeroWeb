@@ -1547,6 +1547,7 @@ impl LayoutEngine {
             text_node_font_sizes: Default::default(),
             text_node_is_ahem: Default::default(),
             text_node_letter_spacing: Default::default(),
+            text_node_word_spacing: Default::default(),
             text_node_line_heights: Default::default(),
             text_node_text_transform: Default::default(),
             plaintext_bidi_nodes: Default::default(),

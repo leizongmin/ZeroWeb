@@ -9,6 +9,14 @@ use zero_style_system::ComputedStyle;
 use crate::inline::{InlineFormattingContext, TextFragment};
 use crate::types::LayoutBox;
 
+fn resolve_word_spacing_for_paint(value: &zero_style_system::property::types::LengthValue, font_size: f32) -> f32 {
+    match value {
+        zero_style_system::property::types::LengthValue::Px(v) => *v as f32,
+        zero_style_system::property::types::LengthValue::Percentage(p) => font_size * (*p as f32 / 100.0),
+        other => zero_style_system::computed::resolve_length(other, font_size as f64, None, None) as f32,
+    }
+}
+
 fn metric_dedup_enabled() -> bool {
     static ENABLED: OnceLock<bool> = OnceLock::new();
     *ENABLED.get_or_init(|| std::env::var("ZW_IFC_METRIC_DEDUP").as_deref() != Ok("0"))
@@ -62,6 +70,12 @@ fn store_font_sizes_from_ifc_mode(
         box_node
             .text_node_letter_spacing
             .insert(frag.node_id, frag.letter_spacing);
+        if let Some(style) = font_style {
+            box_node.text_node_word_spacing.insert(
+                frag.node_id,
+                resolve_word_spacing_for_paint(&style.word_spacing, frag.font_size),
+            );
+        }
         box_node.text_node_line_heights.insert(frag.node_id, frag.height);
         // R1012: text-transform belongs to the text node's parent style but is
         // restored by fragment NodeId when paint reruns IFC with empty styles.
@@ -187,6 +201,7 @@ mod tests {
         assert_eq!(optimized.text_node_font_sizes, legacy.text_node_font_sizes);
         assert_eq!(optimized.text_node_is_ahem, legacy.text_node_is_ahem);
         assert_eq!(optimized.text_node_letter_spacing, legacy.text_node_letter_spacing);
+        assert_eq!(optimized.text_node_word_spacing, legacy.text_node_word_spacing);
         assert_eq!(optimized.text_node_line_heights, legacy.text_node_line_heights);
         assert_eq!(optimized.text_node_text_transform, legacy.text_node_text_transform);
         assert_eq!(optimized.plaintext_bidi_nodes, legacy.plaintext_bidi_nodes);

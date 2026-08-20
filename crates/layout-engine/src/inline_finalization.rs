@@ -919,6 +919,7 @@ pub(crate) fn compute_final_inline_layouts(
     let parent_font_sizes: NodeIdMap<f32> = build_text_parent_override_map(doc, &root.text_node_font_sizes);
     let parent_is_ahem: NodeIdMap<bool> = build_text_parent_override_map(doc, &root.text_node_is_ahem);
     let parent_letter_spacing: NodeIdMap<f32> = build_text_parent_override_map(doc, &root.text_node_letter_spacing);
+    let parent_word_spacing: NodeIdMap<f32> = build_text_parent_override_map(doc, &root.text_node_word_spacing);
     let parent_line_heights: NodeIdMap<f32> = build_text_parent_override_map(doc, &root.text_node_line_heights);
 
     // 收集浮动排除区域 = 本容器直接 float 子 + 祖先传播下来的 float（均已在 root box 坐标系）
@@ -957,6 +958,7 @@ pub(crate) fn compute_final_inline_layouts(
         .with_font_size_overrides(parent_font_sizes)
         .with_is_ahem_overrides(parent_is_ahem)
         .with_letter_spacing_overrides(parent_letter_spacing)
+        .with_word_spacing_overrides(parent_word_spacing)
         .with_line_height_overrides(parent_line_heights)
         .with_inline_element_metrics(root.inline_element_metrics.clone())
         .with_margin_overrides(root.inline_element_margins.clone())

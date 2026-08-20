@@ -515,6 +515,16 @@ fn store_abspos_child_font_metrics(
             child.text_node_is_ahem.insert(tn, fragment.is_ahem);
             child.text_node_letter_spacing.insert(tn, fragment.letter_spacing);
             if let Some(cs) = styles.get(&child_node_id) {
+                let word_spacing = match &cs.word_spacing {
+                    zero_style_system::property::types::LengthValue::Px(v) => *v as f32,
+                    zero_style_system::property::types::LengthValue::Percentage(p) => {
+                        fragment.font_size * (*p as f32 / 100.0)
+                    }
+                    other => {
+                        zero_style_system::computed::resolve_length(other, fragment.font_size as f64, None, None) as f32
+                    }
+                };
+                child.text_node_word_spacing.insert(tn, word_spacing);
                 child.text_node_font_families.insert(tn, cs.font_family.clone());
                 child.text_node_font_size_adjust.insert(tn, cs.font_size_adjust);
             }

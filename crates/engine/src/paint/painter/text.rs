@@ -553,7 +553,8 @@ impl super::Painter {
         };
         let word_spacing: f32 = match style.word_spacing {
             LengthValue::Px(s) => s as f32,
-            _ => 0.0,
+            LengthValue::Percentage(p) => font_size * (p as f32 / 100.0),
+            ref lv => zero_style_system::computed::resolve_length(lv, font_size as f64, None, None) as f32,
         };
 
         // R2305：text-shadow 多阴影列表（CSS Text Decoration §3：`none | <shadow>#`）。
@@ -843,6 +844,9 @@ impl super::Painter {
                 let parent_letter_spacing: NodeIdMap<f32> =
                     build_text_parent_override_map(doc, &box_node.text_node_letter_spacing);
 
+                let parent_word_spacing: NodeIdMap<f32> =
+                    build_text_parent_override_map(doc, &box_node.text_node_word_spacing);
+
                 let parent_line_heights: NodeIdMap<f32> =
                     build_text_parent_override_map(doc, &box_node.text_node_line_heights);
 
@@ -907,6 +911,7 @@ impl super::Painter {
                     .with_font_size_overrides(parent_font_sizes)
                     .with_is_ahem_overrides(parent_is_ahem)
                     .with_letter_spacing_overrides(parent_letter_spacing)
+                    .with_word_spacing_overrides(parent_word_spacing)
                     .with_line_height_overrides(parent_line_heights)
                     .with_text_transform_overrides(parent_text_transforms)
                     .with_inline_element_metrics(inline_metrics)

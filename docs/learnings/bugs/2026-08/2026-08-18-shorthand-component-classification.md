@@ -249,6 +249,8 @@ Scroll offsets exposed the shared-helper variant: a helper named generically eno
 
 Perspective paint exposed the split-consumer variant: apply can preserve a correct `LengthValue` while a later paint gate still pattern-matches only `Px`. Audit both the outer "should paint" predicate and the inner used-value computation; either one can silently drop legal relative units.
 
+Word-spacing exposed the metric-override variant: layout can compute the right run metric while paint Path B loses it when rerunning IFC with empty styles. Any spacing-like metric used by IFC must have both a layout-side resolved value and a paint-side override map, not just a style-system field.
+
 ## Root Cause
 
 The shorthand layer used heuristic component classifiers and treated unrecognized tokens as absent optional components. That is wrong for CSS shorthands such as `border`, where every token must match one of the allowed component grammars. A shared parser can also be broader than the property grammar that consumes it: general length parsing may accept `auto`, intrinsic sizing keywords, or percentages that `border-width` must reject.

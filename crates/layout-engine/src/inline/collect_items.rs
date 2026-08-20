@@ -80,11 +80,12 @@ impl InlineFormattingContext {
                                         .unwrap_or(0.0)
                                 });
                             let word_spacing = style
-                                .map(|s| match &s.word_spacing {
-                                    LengthValue::Px(v) => *v as f32,
-                                    _ => 0.0,
-                                })
-                                .unwrap_or(0.0);
+                                .map(|s| Self::resolve_word_spacing(&s.word_spacing, font_size))
+                                .unwrap_or_else(|| {
+                                    parent_id
+                                        .and_then(|pid| self.word_spacing_overrides.get(&pid).copied())
+                                        .unwrap_or(0.0)
+                                });
                             // R1012：text-transform 须在行断前应用，使 layout 用转换后
                             // 文本宽度行断（与 chromium 一致）。layout IFC（有 styles）读
                             // 父元素 computed text-transform；paint Path B（空 styles）走
@@ -467,11 +468,8 @@ impl InlineFormattingContext {
                             })
                             .unwrap_or(0.0);
                         let word_spacing = style
-                            .map(|s| match &s.word_spacing {
-                                LengthValue::Px(v) => *v as f32,
-                                _ => 0.0,
-                            })
-                            .unwrap_or(0.0);
+                            .map(|s| Self::resolve_word_spacing(&s.word_spacing, font_size))
+                            .unwrap_or_else(|| self.word_spacing_overrides.get(&child_id).copied().unwrap_or(0.0));
                         // 提取 inline 元素的水平 margin
                         // 优先从 style 获取；若无 style（paint IFC），使用 margin_overrides。
                         let margin_left = style
@@ -567,5 +565,13 @@ impl InlineFormattingContext {
         }
 
         items
+    }
+
+    fn resolve_word_spacing(value: &LengthValue, font_size: f32) -> f32 {
+        match value {
+            LengthValue::Px(v) => *v as f32,
+            LengthValue::Percentage(p) => font_size * (*p as f32 / 100.0),
+            other => zero_style_system::computed::resolve_length(other, font_size as f64, None, None) as f32,
+        }
     }
 }

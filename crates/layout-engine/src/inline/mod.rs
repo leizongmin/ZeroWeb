@@ -184,6 +184,11 @@ pub struct InlineFormattingContext {
     /// 导致所有字符使用 0 的默认间距。此覆盖确保 paint IFC 使用正确的
     /// letter-spacing 值进行字符宽度和行断计算。
     pub letter_spacing_overrides: NodeIdMap<f32>,
+    /// 逐文本节点的 word-spacing 覆盖（key = 文本节点的父元素 NodeId）。
+    ///
+    /// paint IFC 传入空的 styles HashMap，无法获取 word-spacing，
+    /// 导致词间距回退为 0。此覆盖确保 paint IFC 使用正确的词间距。
+    pub word_spacing_overrides: NodeIdMap<f32>,
     /// 逐文本节点的 line-height 覆盖（key = 文本节点的父元素 NodeId）。
     ///
     /// paint IFC 传入空的 styles HashMap，无法获取 line-height，
@@ -302,6 +307,7 @@ impl InlineFormattingContext {
             font_variation_overrides: std::rc::Rc::new(HashMap::new()),
             is_ahem_overrides: NodeIdMap::default(),
             letter_spacing_overrides: NodeIdMap::default(),
+            word_spacing_overrides: NodeIdMap::default(),
             line_height_overrides: NodeIdMap::default(),
             inline_element_metrics: NodeIdMap::default(),
             baseline_overrides: HashMap::new(),
@@ -663,6 +669,12 @@ impl InlineFormattingContext {
     /// 设置 letter-spacing 覆盖（paint IFC 使用）。
     pub fn with_letter_spacing_overrides(mut self, overrides: NodeIdMap<f32>) -> Self {
         self.letter_spacing_overrides = overrides;
+        self
+    }
+
+    /// 设置 word-spacing 覆盖（paint IFC 使用）。
+    pub fn with_word_spacing_overrides(mut self, overrides: NodeIdMap<f32>) -> Self {
+        self.word_spacing_overrides = overrides;
         self
     }
 

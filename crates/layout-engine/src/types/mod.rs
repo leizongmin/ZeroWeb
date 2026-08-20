@@ -299,6 +299,11 @@ pub struct LayoutBox {
     /// paint 系统在运行空 styles IFC 时无法获取 letter-spacing（无 style 信息），
     /// 使用此映射正确设置字符间间距。
     pub text_node_letter_spacing: NodeIdMap<f32>,
+    /// 文本节点的 word-spacing 映射（来自 layout engine 的 IFC 运行）。
+    ///
+    /// paint 系统在运行空 styles IFC 时无法获取 word-spacing（无 style 信息），
+    /// 使用此映射正确设置词间间距。
+    pub text_node_word_spacing: NodeIdMap<f32>,
     /// 文本节点的 line-height 映射（来自 layout engine 的 IFC 运行）。
     ///
     /// paint 系统在运行空 styles IFC 时无法获取 line-height（无 style 信息），
@@ -485,6 +490,7 @@ impl Default for LayoutBox {
             text_node_font_sizes: NodeIdMap::default(),
             text_node_is_ahem: NodeIdMap::default(),
             text_node_letter_spacing: NodeIdMap::default(),
+            text_node_word_spacing: NodeIdMap::default(),
             text_node_line_heights: NodeIdMap::default(),
             text_node_text_transform: NodeIdMap::default(),
             plaintext_bidi_nodes: NodeIdSet::default(),

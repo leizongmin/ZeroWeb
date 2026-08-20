@@ -688,10 +688,10 @@ fn test_letter_spacing_increases_glyph_gap() {
         .iter()
         .filter(|g| g.glyph_id != 0)
         .collect();
-    if glyphs_base.len() < 2 {
+    if glyphs_base.len() < 3 {
         return;
     }
-    let gap_base = (glyphs_base[1].x - glyphs_base[0].x).abs();
+    let gap_base = (glyphs_base[2].x - glyphs_base[0].x).abs();
 
     pipeline = RenderPipeline::new(800.0, 600.0);
     let css_spaced = "p { color: black; font-size: 16px; letter-spacing: 5px; }";
@@ -702,10 +702,10 @@ fn test_letter_spacing_increases_glyph_gap() {
         .iter()
         .filter(|g| g.glyph_id != 0)
         .collect();
-    if glyphs_spaced.len() < 2 {
+    if glyphs_spaced.len() < 3 {
         return;
     }
-    let gap_spaced = (glyphs_spaced[1].x - glyphs_spaced[0].x).abs();
+    let gap_spaced = (glyphs_spaced[2].x - glyphs_spaced[0].x).abs();
 
     assert!(
         gap_spaced > gap_base,
@@ -739,6 +739,65 @@ fn test_word_spacing_applied_in_style() {
         styles2
             .values()
             .any(|s| matches!(s.letter_spacing, LengthValue::Px(v) if v > 0.0))
+    );
+}
+
+#[test]
+fn test_word_spacing_percentage_affects_paint_gap() {
+    use crate::pipeline::RenderPipeline;
+    use zero_css_parser::Parser as CssParser;
+    use zero_dom::parse_html;
+
+    let html = "<html><body><p>a b</p></body></html>";
+    let doc = parse_html(html);
+    let stylesheets = vec![CssParser::parse_stylesheet(
+        "p { color: black; font-size: 20px; word-spacing: 50%; }",
+    )];
+    let mut style_sys = zero_style_system::StyleSystem::new();
+    style_sys.set_viewport(800.0, 600.0);
+    let styles = style_sys.compute_styles(&doc, &stylesheets);
+    assert!(
+        styles
+            .values()
+            .any(|s| matches!(s.word_spacing, LengthValue::Percentage(v) if (v - 50.0).abs() < f64::EPSILON)),
+        "computed styles 应保留 word-spacing 百分比供 used-value 阶段解析"
+    );
+
+    let mut pipeline = RenderPipeline::new(800.0, 600.0);
+    let result_base = pipeline.render_html(html, "p { color: black; font-size: 20px; }");
+    let glyphs_base: Vec<_> = result_base
+        .primitives()
+        .glyphs
+        .iter()
+        .filter(|g| g.glyph_id != 0)
+        .collect();
+    let Some(a_base) = glyphs_base.iter().find(|g| g.glyph_id == 'a' as u32) else {
+        return;
+    };
+    let Some(b_base) = glyphs_base.iter().find(|g| g.glyph_id == 'b' as u32) else {
+        return;
+    };
+    let gap_base = (b_base.x - a_base.x).abs();
+
+    pipeline = RenderPipeline::new(800.0, 600.0);
+    let result_spaced = pipeline.render_html(html, "p { color: black; font-size: 20px; word-spacing: 50%; }");
+    let glyphs_spaced: Vec<_> = result_spaced
+        .primitives()
+        .glyphs
+        .iter()
+        .filter(|g| g.glyph_id != 0)
+        .collect();
+    let Some(a_spaced) = glyphs_spaced.iter().find(|g| g.glyph_id == 'a' as u32) else {
+        return;
+    };
+    let Some(b_spaced) = glyphs_spaced.iter().find(|g| g.glyph_id == 'b' as u32) else {
+        return;
+    };
+    let gap_spaced = (b_spaced.x - a_spaced.x).abs();
+
+    assert!(
+        gap_spaced > gap_base + 8.0,
+        "word-spacing:50% 应按 font-size 增大词间距: {gap_spaced} vs {gap_base}"
     );
 }
 
