@@ -29,7 +29,6 @@ pub use service_worker::*;
 mod worker;
 
 // js-dom R84：模块声明移至下方 not(v8) 门控区（union 态 dead-code）。
-#[cfg(any(feature = "v8", feature = "quickjs"))]
 mod es_module;
 
 #[cfg(feature = "v8")]
@@ -49,7 +48,6 @@ mod quickjs_worker;
 #[cfg(all(feature = "quickjs", not(feature = "v8")))]
 pub use quickjs_worker::*;
 
-#[cfg(any(feature = "v8", feature = "quickjs"))]
 pub use es_module::*;
 
 #[cfg(feature = "quickjs")]

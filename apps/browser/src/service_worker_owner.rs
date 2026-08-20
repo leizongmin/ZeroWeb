@@ -427,6 +427,7 @@ struct PendingScriptFetch {
 struct PendingEvaluation {
     tab_id: TabId,
     request_id: u64,
+    is_registration: bool,
 }
 
 /// A validated imported classic script batch owned by one blocked runtime.
@@ -1102,11 +1103,12 @@ impl BrowserServiceWorkerOwner {
         if let Some(channels) = self.channels_for(plan.profile) {
             channels.set_pending_tab(plan.tab_id);
         }
+        let is_registration = matches!(&plan.purpose, ServiceWorkerFetchPurpose::Register { .. });
         let result = match plan.purpose {
             ServiceWorkerFetchPurpose::Register {
                 update_via_cache,
                 script_type,
-            } => self.manager_mut(plan.profile).start_evaluation_with_options(
+            } => self.manager_mut(plan.profile).start_registration(
                 plan.script_url.as_str(),
                 plan.scope.as_str(),
                 &plan.origin,
@@ -1139,6 +1141,7 @@ impl BrowserServiceWorkerOwner {
                     PendingEvaluation {
                         tab_id: plan.tab_id,
                         request_id: plan.request_id,
+                        is_registration,
                     },
                 );
             }
@@ -1230,14 +1233,15 @@ impl BrowserServiceWorkerOwner {
                     changed,
                 } => {
                     if let Some(pending) = self.pending_evaluations.remove(&(profile, candidate_registration_id)) {
-                        completed.push(success_response(
-                            pending.tab_id,
-                            pending.request_id,
+                        let result = if pending.is_registration {
+                            ServiceWorkerResult::Registered { registration_id }
+                        } else {
                             ServiceWorkerResult::Updated {
                                 registration_id,
                                 changed,
-                            },
-                        ));
+                            }
+                        };
+                        completed.push(success_response(pending.tab_id, pending.request_id, result));
                     }
                 }
                 ServiceWorkerManagerEvent::ScriptEvaluated { registration_id } => {

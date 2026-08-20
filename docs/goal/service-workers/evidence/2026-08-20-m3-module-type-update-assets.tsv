@@ -1,0 +1,9 @@
+path	manifest_type	roles	referenced_by	bytes	templated	git_blob_sha
+service-workers/service-worker/update-registration-with-type.https.html	testharness	case	1	8450	no	269e61b390bdb1b96c151e214f8a58109a7db3b4
+service-workers/service-worker/resources/update-registration-with-type.py	support	dynamic-handler	2	1077	no	3cabc0fb46d38a3e8c83f9480343887eaa730871
+service-workers/service-worker/resources/classic-worker.js	support	worker-script	1	47	no	36a32b1a1f84daaac25032261c80d173ce7ba899
+service-workers/service-worker/resources/module-worker.js	support	worker-script	1	55	no	385fe7101503cb4c7ca77e95e023459b29267741
+service-workers/service-worker/resources/imported-classic-script.js	support	worker-script	2	38	no	5fc520405135e215290ebfee008f9f71960955a8
+service-workers/service-worker/resources/imported-module-script.js	support	worker-script	2	44	no	56d196df040f9adb999c944329e6f1569ac876fd
+service-workers/service-worker/resources/empty-worker.js	support	worker-script	3	15	no	49ceb2648a93410bdd5ee53ef0e114146210741b
+common/security-features/resources/common.sub.js	support	page-script	1	48947	yes	23f23afbce5766d73f0c36260275540d56f32344

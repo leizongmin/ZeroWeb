@@ -2,8 +2,8 @@
 
 use crate::threaded_runtime::ThreadedRuntimeCore;
 use crate::{
-    ModuleRegistry, Sandbox, SandboxConfig, ScriptError, compile_module_script, extract_dynamic_import_specifiers,
-    extract_static_module_import_specifiers,
+    ModuleRegistry, Sandbox, SandboxConfig, ScriptError, compile_module_script, expose_classic_script_lexicals,
+    extract_dynamic_import_specifiers, extract_static_module_import_specifiers,
 };
 use std::collections::HashSet;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -277,7 +277,11 @@ const SERVICE_WORKER_BOOTSTRAP: &str = r#"
   function importScriptsNetworkError(message) {
     return new globalThis.DOMException(String(message), 'NetworkError');
   }
+  globalThis.__zwModuleScriptMode = false;
   globalThis.importScripts = function() {
+    if (globalThis.__zwModuleScriptMode) {
+      throw new TypeError('importScripts is unavailable in module workers');
+    }
     const specifiers = [];
     for (let i = 0; i < arguments.length; i++) {
       specifiers.push(String(arguments[i]));
@@ -546,6 +550,10 @@ impl ServiceWorkerRuntime {
                                     request_id: response_id,
                                     sources,
                                 }) if response_id == request_id => {
+                                    let sources: Vec<_> = sources
+                                        .iter()
+                                        .map(|source| expose_classic_script_lexicals(source))
+                                        .collect();
                                     return serde_json::json!({"ok": true, "sources": sources}).to_string();
                                 }
                                 Ok(ServiceWorkerImportResponse::Failed {
@@ -908,6 +916,7 @@ fn evaluate_module_graph(
         timeout_ms,
     )?;
     let compiled = compile_module_script(source, &main_url, &registry)?;
+    sandbox.execute("globalThis.__zwModuleScriptMode = true;")?;
     sandbox.execute(&compiled).map(|_| ())
 }
 
@@ -1389,6 +1398,22 @@ mod tests {
                 message,
                 ..
             } if message.contains("dynamic import")
+        ));
+    }
+
+    #[test]
+    fn module_evaluation_rejects_import_scripts() {
+        let mut runtime = ServiceWorkerRuntime::new(test_config()).unwrap();
+        runtime
+            .evaluate_module("importScripts('./classic.js');", "https://example.test/workers/sw.js")
+            .unwrap();
+        assert!(matches!(
+            runtime.recv_timeout(Duration::from_secs(5)).unwrap(),
+            ServiceWorkerEvent::ScriptError {
+                kind: ServiceWorkerScriptErrorKind::Runtime,
+                message,
+                ..
+            } if message.contains("importScripts")
         ));
     }
 

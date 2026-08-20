@@ -626,6 +626,7 @@ pub const SERVICE_WORKER_CORE_CASES: &[&str] = &[
     "service-workers/service-worker/registration-scope.https.html",
     "service-workers/service-worker/registration-scope-module-static-import.https.html",
     "service-workers/service-worker/registration-script-module.https.html",
+    "service-workers/service-worker/update-registration-with-type.https.html",
     "service-workers/service-worker/registration-script-url.https.html",
     "service-workers/service-worker/registration-service-worker-attributes.https.html",
     "service-workers/service-worker/rejections.https.html",
@@ -1188,6 +1189,7 @@ struct ServiceWorkerFixtureState {
     next_version: u64,
     update_visits: HashMap<String, u64>,
     bytecheck_visits: HashMap<String, u64>,
+    type_update_visits: HashMap<String, u64>,
 }
 
 fn service_worker_fixture_path(src: &str) -> Result<(&str, &str), String> {
@@ -1355,6 +1357,37 @@ fn wpt_data_service_worker_script_fetcher(
                     ("Access-Control-Allow-Origin".into(), "*".into()),
                 ],
                 body: format!("// {imported_content}\n").into_bytes(),
+                url: src.to_string(),
+                redirect_count: 0,
+            });
+        } else if clean.ends_with("/resources/update-registration-with-type.py") {
+            let key = params
+                .get("key")
+                .ok_or_else(|| "update-registration-with-type.py requires key".to_string())?;
+            let classic_first = params
+                .get("classic_first")
+                .ok_or_else(|| "update-registration-with-type.py requires classic_first".to_string())?;
+            let mut state = state
+                .lock()
+                .map_err(|_| "Service Worker fixture state lock is poisoned".to_string())?;
+            let visit = state.type_update_visits.entry(key.clone()).or_default();
+            *visit += 1;
+            let classic = (*visit == 1) == (classic_first == "1");
+            let source = if classic {
+                "importScripts('./imported-classic-script.js');\n\
+                 self.onmessage = e => { e.source.postMessage(imported); };\n"
+            } else {
+                "import * as module from './imported-module-script.js';\n\
+                 self.onmessage = e => { e.source.postMessage(module.imported); };\n"
+            };
+            return Ok(zero_net::HttpResponse {
+                status_code: 200,
+                headers: vec![
+                    ("Content-Type".into(), "application/javascript".into()),
+                    ("Pragma".into(), "no-store".into()),
+                    ("Cache-Control".into(), "no-store".into()),
+                ],
+                body: source.as_bytes().to_vec(),
                 url: src.to_string(),
                 redirect_count: 0,
             });
@@ -2377,13 +2410,13 @@ async_test(function(test) {
     }
 
     #[test]
-    fn service_worker_core_manifest_has_twenty_three_unique_cases() {
+    fn service_worker_core_manifest_has_twenty_four_unique_cases() {
         let unique = SERVICE_WORKER_CORE_CASES
             .iter()
             .copied()
             .collect::<std::collections::BTreeSet<_>>();
-        assert_eq!(SERVICE_WORKER_CORE_CASES.len(), 23);
-        assert_eq!(unique.len(), 23);
+        assert_eq!(SERVICE_WORKER_CORE_CASES.len(), 24);
+        assert_eq!(unique.len(), 24);
         assert!(
             SERVICE_WORKER_CORE_CASES
                 .iter()

@@ -1,0 +1,670 @@
+{
+  "cases": 24,
+  "subtests": 108,
+  "status": {
+    "Pass": 108
+  },
+  "deterministic": true,
+  "results": [
+    [
+      "service-workers/service-worker/activate-event-after-install-state-change.https.html",
+      [
+        {
+          "name": "installed event should be fired before activating service worker",
+          "status": "Pass",
+          "message": null
+        }
+      ]
+    ],
+    [
+      "service-workers/service-worker/activation-after-registration.https.html",
+      [
+        {
+          "name": "activation occurs after registration",
+          "status": "Pass",
+          "message": null
+        }
+      ]
+    ],
+    [
+      "service-workers/service-worker/import-scripts-cross-origin.https.html",
+      [
+        {
+          "name": "importScripts() supports cross-origin requests",
+          "status": "Pass",
+          "message": null
+        }
+      ]
+    ],
+    [
+      "service-workers/service-worker/import-scripts-data-url.https.html",
+      [
+        {
+          "name": "importScripts() supports data URLs",
+          "status": "Pass",
+          "message": null
+        }
+      ]
+    ],
+    [
+      "service-workers/service-worker/import-scripts-mime-types.https.html",
+      [
+        {
+          "name": "Global setup",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "Importing script with no MIME type ",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "Importing script with bad MIME type text/plain",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "Importing script with bad MIME type application/json",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "Importing script with bad MIME type text/json",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "Importing script with bad MIME type application/manifest+json",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "Importing script with valid JavaScript MIME type application/ecmascript",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "Importing script with valid JavaScript MIME type application/javascript",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "Importing script with valid JavaScript MIME type application/x-ecmascript",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "Importing script with valid JavaScript MIME type application/x-javascript",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "Importing script with valid JavaScript MIME type text/ecmascript",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "Importing script with valid JavaScript MIME type text/javascript",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "Importing script with valid JavaScript MIME type text/javascript1.0",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "Importing script with valid JavaScript MIME type text/javascript1.1",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "Importing script with valid JavaScript MIME type text/javascript1.2",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "Importing script with valid JavaScript MIME type text/javascript1.3",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "Importing script with valid JavaScript MIME type text/javascript1.4",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "Importing script with valid JavaScript MIME type text/javascript1.5",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "Importing script with valid JavaScript MIME type text/jscript",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "Importing script with valid JavaScript MIME type text/livescript",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "Importing script with valid JavaScript MIME type text/x-ecmascript",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "Importing script with valid JavaScript MIME type text/x-javascript",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "Fetch importScripts tests from service worker",
+          "status": "Pass",
+          "message": null
+        }
+      ]
+    ],
+    [
+      "service-workers/service-worker/import-scripts-redirect.https.html",
+      [
+        {
+          "name": "importScripts() supports redirects",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "an imported script redirects, and the body changes during the update check",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "an imported script doesn't redirect initially, then redirects during the update check and the body changes",
+          "status": "Pass",
+          "message": null
+        }
+      ]
+    ],
+    [
+      "service-workers/service-worker/import-scripts-resource-map.https.html",
+      [
+        {
+          "name": "import the same script URL multiple times",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "call importScripts() with multiple arguments",
+          "status": "Pass",
+          "message": null
+        }
+      ]
+    ],
+    [
+      "service-workers/service-worker/import-scripts-updated-flag.https.html",
+      [
+        {
+          "name": "initialize global state",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "import script previously imported at worker evaluation time",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "import script previously imported at worker install time",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "import script not previously imported",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "Tests for importScripts: import scripts updated flag",
+          "status": "Pass",
+          "message": null
+        }
+      ]
+    ],
+    [
+      "service-workers/service-worker/register-default-scope.https.html",
+      [
+        {
+          "name": "default scope",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "undefined scope",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "null scope",
+          "status": "Pass",
+          "message": null
+        }
+      ]
+    ],
+    [
+      "service-workers/service-worker/registration-basic.https.html",
+      [
+        {
+          "name": "Registering normal scope",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "Registering scope with fragment",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "Registering same scope as the script directory",
+          "status": "Pass",
+          "message": null
+        }
+      ]
+    ],
+    [
+      "service-workers/service-worker/registration-scope.https.html",
+      [
+        {
+          "name": "Scope including URL-encoded slash",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "Scope including URL-encoded backslash",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "Scope URL scheme is a data: URL",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "Scope URL scheme is an ftp: URL",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "Scope including URL-encoded multibyte characters",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "Scope including non-escaped multibyte characters",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "Scope including self-reference",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "Scope including parent-reference",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "Scope including consecutive slashes",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "Scope URL is same-origin filesystem: URL",
+          "status": "Pass",
+          "message": null
+        }
+      ]
+    ],
+    [
+      "service-workers/service-worker/registration-scope-module-static-import.https.html",
+      [
+        {
+          "name": "imported-module-script.js works when used as top-level",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "static imports to outside path restriction should be allowed",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "static imports redirecting to outside path restriction should be allowed",
+          "status": "Pass",
+          "message": null
+        }
+      ]
+    ],
+    [
+      "service-workers/service-worker/registration-script-module.https.html",
+      [
+        {
+          "name": "Registering invalid chunked encoding script",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "Registering invalid chunked encoding script with flush",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "Registering script including parse error",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "Registering script including undefined error: module",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "Registering script including uncaught exception: module",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "Registering script with top-level await",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "Registering script with module instantiation error",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "Registering script with module instantiation error and top-level await",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "Registering non-existent script",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "Registering script including caught exception",
+          "status": "Pass",
+          "message": null
+        }
+      ]
+    ],
+    [
+      "service-workers/service-worker/update-registration-with-type.https.html",
+      [
+        {
+          "name": "Update the registration with a different script type (classic => module).",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "Update the registration with a different script type (module => classic).",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "Update the registration with a different script type (classic => module) and with a same main script.",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "Update the registration with a different script type (module => classic) and with a same main script.",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "Does not update the registration with the same script type and the same main script.",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "Update the registration with a different script type (classic => module) and with a same main script. Expect evaluation failed.",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "Update the registration with a different script type (module => classic) and with a same main script. Expect evaluation failed.",
+          "status": "Pass",
+          "message": null
+        }
+      ]
+    ],
+    [
+      "service-workers/service-worker/registration-script-url.https.html",
+      [
+        {
+          "name": "Script URL including URL-encoded slash",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "Script URL including uppercase URL-encoded slash",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "Script URL including URL-encoded backslash",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "Script URL including uppercase URL-encoded backslash",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "Script URL is a data URL",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "Script URL is a data URL and scope URL is not relative",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "Script URL including self-reference",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "Script URL including parent-reference",
+          "status": "Pass",
+          "message": null
+        }
+      ]
+    ],
+    [
+      "service-workers/service-worker/registration-service-worker-attributes.https.html",
+      [
+        {
+          "name": "installing/waiting/active after registration",
+          "status": "Pass",
+          "message": null
+        }
+      ]
+    ],
+    [
+      "service-workers/service-worker/rejections.https.html",
+      [
+        {
+          "name": "Rejections are DOMExceptions",
+          "status": "Pass",
+          "message": null
+        }
+      ]
+    ],
+    [
+      "service-workers/service-worker/serviceworkerobject-scripturl.https.html",
+      [
+        {
+          "name": "Verify the scriptURL property: relative",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "Verify the scriptURL property: with-fragment",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "Verify the scriptURL property: with-query",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "Verify the scriptURL property: absolute",
+          "status": "Pass",
+          "message": null
+        }
+      ]
+    ],
+    [
+      "service-workers/service-worker/state.https.html",
+      [
+        {
+          "name": "Service Worker state property and \"statechange\" event",
+          "status": "Pass",
+          "message": null
+        }
+      ]
+    ],
+    [
+      "service-workers/service-worker/synced-state.https.html",
+      [
+        {
+          "name": "worker objects for the same entity have the same state",
+          "status": "Pass",
+          "message": null
+        }
+      ]
+    ],
+    [
+      "service-workers/service-worker/unregister.https.html",
+      [
+        {
+          "name": "Register then unregister",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "Unregister twice",
+          "status": "Pass",
+          "message": null
+        }
+      ]
+    ],
+    [
+      "service-workers/service-worker/update-bytecheck-cors-import.https.html",
+      [
+        {
+          "name": "Test(main: default, imported: default)",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "Test(main: default, imported: time)",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "Test(main: time, imported: default)",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "Test(main: time, imported: time)",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "Test module script(main: default, imported: default)",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "Test module script(main: default, imported: time)",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "Test module script(main: time, imported: default)",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "Test module script(main: time, imported: time)",
+          "status": "Pass",
+          "message": null
+        }
+      ]
+    ],
+    [
+      "service-workers/service-worker/update-bytecheck.https.html",
+      [
+        {
+          "name": "Test(main: default, imported: default)",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "Test(main: default, imported: time)",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "Test(main: time, imported: default)",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "Test(main: time, imported: time)",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "Test module script(main: default, imported: default)",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "Test module script(main: default, imported: time)",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "Test module script(main: time, imported: default)",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "Test module script(main: time, imported: time)",
+          "status": "Pass",
+          "message": null
+        }
+      ]
+    ],
+    [
+      "service-workers/service-worker/update-result.https.html",
+      [
+        {
+          "name": "ServiceWorkerRegistration.update() should resolve a registration object",
+          "status": "Pass",
+          "message": null
+        }
+      ]
+    ]
+  ]
+}

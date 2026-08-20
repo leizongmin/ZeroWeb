@@ -2515,7 +2515,7 @@ impl WebView {
                         .lock()
                         .map_err(|_| "Service Worker manager lock poisoned".to_string())?;
                     let registration_id = manager
-                        .start_evaluation_with_options(
+                        .start_registration(
                             script_url.as_str(),
                             scope.as_str(),
                             &origin,
@@ -2524,14 +2524,17 @@ impl WebView {
                             update_via_cache,
                         )
                         .map_err(|error| error.to_string())?;
-                    Self::wait_for_service_worker_evaluation(
+                    let completed = Self::wait_for_service_worker_evaluation(
                         &mut manager,
                         registration_id,
                         register_source_fetcher.as_ref(),
                         register_response_fetcher.as_ref(),
                         timeout_secs,
                     )?;
-                    Ok(registration_id)
+                    Ok(match completed {
+                        ServiceWorkerEvaluationResult::UpdateChecked { registration_id, .. } => registration_id,
+                        ServiceWorkerEvaluationResult::Evaluated => registration_id,
+                    })
                 })();
                 match result {
                     Ok(id) => serde_json::json!({"ok": true, "id": id}).to_string(),

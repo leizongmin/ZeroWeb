@@ -3014,7 +3014,7 @@
           scriptURL: snapshot && snapshot.scriptURL || scriptURL,
           scope: snapshot && snapshot.scope || scope,
           updateViaCache: snapshot && snapshot.updateViaCache || updateViaCache,
-          state: 'installing'
+          state: snapshot && snapshot.state || 'installing'
         }, 'manual');
         return Promise.resolve(reg).then(function (registration) {
           scheduleRegistrationPoll(registration);

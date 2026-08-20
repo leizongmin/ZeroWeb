@@ -1168,6 +1168,94 @@ fn service_worker_post_message_dispatches_structured_page_payload() {
 }
 
 #[test]
+fn repeated_registration_changes_script_type_and_worker_message() {
+    let visits = Arc::new(Mutex::new(0usize));
+    let fetch_visits = Arc::clone(&visits);
+    let mut webview = WebViewBuilder::new()
+        .url("https://example.test/page.html")
+        .script_source_fetcher(Arc::new(move |_, script| {
+            if script.contains("update-registration-with-type.py") {
+                let mut visits = fetch_visits.lock().unwrap();
+                *visits += 1;
+                return if *visits == 1 {
+                    Ok("importScripts('./imported-classic-script.js');
+                        self.onmessage = event => event.source.postMessage(imported);"
+                        .into())
+                } else {
+                    Ok("import * as module from './imported-module-script.js';
+                        self.onmessage = event => event.source.postMessage(module.imported);"
+                        .into())
+                };
+            }
+            if script.ends_with("/imported-classic-script.js") {
+                return Ok("const imported = 'A classic script.';".into());
+            }
+            if script.ends_with("/imported-module-script.js") {
+                return Ok("export const imported = 'A module script.';".into());
+            }
+            Err(format!("unexpected Service Worker script: {script}"))
+        }))
+        .build();
+
+    webview
+        .execute_script(
+            "globalThis.__typeUpdate = 'registering-classic';
+             navigator.serviceWorker.onmessage = function(event) {
+               if (event.data === 'A classic script.') {
+                 globalThis.__typeUpdate = 'registering-module';
+                 navigator.serviceWorker.register(
+                   '/resources/update-registration-with-type.py?key=test',
+                   {scope:'/resources/type-update', type:'module'}
+                 ).then(function(registration) {
+                   globalThis.__secondRegistration = registration;
+                   registration.installing.postMessage(' ');
+                 }, function(error) {
+                   globalThis.__typeUpdate = 'module-error:' + error;
+                 });
+               } else {
+                 globalThis.__typeUpdate =
+                   event.data + '|' +
+                   String(globalThis.__firstRegistration === globalThis.__secondRegistration) + '|' +
+                   String(globalThis.__firstWorker !== globalThis.__secondRegistration.installing);
+               }
+             };
+             navigator.serviceWorker.register(
+               '/resources/update-registration-with-type.py?key=test',
+               {scope:'/resources/type-update', type:'classic'}
+             ).then(function(registration) {
+               globalThis.__firstRegistration = registration;
+               globalThis.__firstWorker = registration.installing;
+               function sendWhenActive() {
+                 if (globalThis.__firstWorker.state === 'activated') {
+                   globalThis.__firstWorker.postMessage(' ');
+                 } else {
+                   setTimeout(sendWhenActive, 0);
+                 }
+               }
+               sendWhenActive();
+             }, function(error) {
+               globalThis.__typeUpdate = 'classic-error:' + error;
+             });
+             'started';",
+        )
+        .unwrap();
+
+    let deadline = Instant::now() + Duration::from_secs(20);
+    loop {
+        let value = webview.execute_script("globalThis.__typeUpdate").unwrap();
+        if value.contains('|') || value.contains("error:") {
+            assert_eq!(value, "A module script.|true|true");
+            break;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "script type update message timed out: {value}"
+        );
+        std::thread::sleep(Duration::from_millis(10));
+    }
+}
+
+#[test]
 fn message_import_replays_persistent_worker_resource_map() {
     let requests = Arc::new(Mutex::new(Vec::new()));
     let request_log = Arc::clone(&requests);

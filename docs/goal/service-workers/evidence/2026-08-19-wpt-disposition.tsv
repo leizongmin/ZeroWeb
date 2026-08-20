@@ -277,7 +277,7 @@ service-workers/service-worker/update-no-cache-request-headers.https.html	04067c
 service-workers/service-worker/update-not-allowed.https.html	04067ce9c7c2165e71ad7d0dde10a4c5cb394a83	0a54aa9350382bb082f407a1ea30b265575baae9	1	gated	gated-dynamic-update	2026-08-19-m1-message-review.tsv
 service-workers/service-worker/update-on-navigation.https.html	04067ce9c7c2165e71ad7d0dde10a4c5cb394a83	5273420b90fc97fcd441ac057a99ee5b31c84a30	1	gated	gated-streaming-navigation-update	2026-08-19-m1-final-review.tsv
 service-workers/service-worker/update-recovery.https.html	04067ce9c7c2165e71ad7d0dde10a4c5cb394a83	17608d2ef790e2ea97a43f56b86a28ef0e647604	1	gated	gated-cookie-fetch-recovery	2026-08-19-m1-final-review.tsv
-service-workers/service-worker/update-registration-with-type.https.html	04067ce9c7c2165e71ad7d0dde10a4c5cb394a83	269e61b390bdb1b96c151e214f8a58109a7db3b4	1	gated	gated-server-module-update	2026-08-19-m1-final-review.tsv
+service-workers/service-worker/update-registration-with-type.https.html	04067ce9c7c2165e71ad7d0dde10a4c5cb394a83	269e61b390bdb1b96c151e214f8a58109a7db3b4	1	core	next-wave-module-type-update-core	2026-08-19-m1-final-review.tsv
 service-workers/service-worker/update-result.https.html	04067ce9c7c2165e71ad7d0dde10a4c5cb394a83	d8ed94f776650c8a40ba82df9ca5e909b460bb79	1	core	next-wave-update-core	2026-08-19-m1-next-wave-review.tsv
 service-workers/service-worker/update.https.html	04067ce9c7c2165e71ad7d0dde10a4c5cb394a83	f9fded3db49f02de6ce13c3b1cec209dad0779bf	1	gated	gated-server-update	2026-08-19-m1-final-review.tsv
 service-workers/service-worker/waiting.https.html	04067ce9c7c2165e71ad7d0dde10a4c5cb394a83	499e581eb353a2e433580e413a730bea2a9b7ad9	1	defer	defer-lifecycle-waiting	2026-08-19-final-remaining-review.tsv

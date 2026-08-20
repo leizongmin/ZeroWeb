@@ -189,6 +189,55 @@ fn module_registration_type_reaches_browser_manager() {
 }
 
 #[test]
+fn repeated_register_returns_existing_version_until_script_type_changes() {
+    let mut owner = BrowserServiceWorkerOwner::with_local_hosts();
+    let script = "globalThis.version = 1;";
+
+    let first = owner.begin_request(
+        TabId(1),
+        false,
+        52,
+        Some("https://example.test/page"),
+        register_request("https://example.test/page"),
+    );
+    attach_script(&mut owner, first, script);
+    let response = wait_for_response(&mut owner);
+    let Ok(ServiceWorkerResult::Registered {
+        registration_id: first_id,
+    }) = response.params.result
+    else {
+        panic!("initial registration failed");
+    };
+    wait_for_registration_state(&mut owner, first_id, ServiceWorkerState::Activated);
+
+    let unchanged = owner.begin_request(
+        TabId(1),
+        false,
+        53,
+        Some("https://example.test/page"),
+        register_request("https://example.test/page"),
+    );
+    attach_script(&mut owner, unchanged, script);
+    let response = wait_for_response(&mut owner);
+    assert!(matches!(
+        response.params.result,
+        Ok(ServiceWorkerResult::Registered { registration_id }) if registration_id == first_id
+    ));
+
+    let mut module_request = register_request("https://example.test/page");
+    if let ServiceWorkerOperation::Register { script_type, .. } = &mut module_request.operation {
+        *script_type = ServiceWorkerScriptTypeWire::Module;
+    }
+    let changed = owner.begin_request(TabId(1), false, 54, Some("https://example.test/page"), module_request);
+    attach_script(&mut owner, changed, script);
+    let response = wait_for_response(&mut owner);
+    assert!(matches!(
+        response.params.result,
+        Ok(ServiceWorkerResult::Registered { registration_id }) if registration_id != first_id
+    ));
+}
+
+#[test]
 fn imported_classic_scripts_use_browser_fetch_policy_and_persist_graph() {
     let mut owner = BrowserServiceWorkerOwner::with_local_hosts();
     let main_script = "importScripts('./first.js#ignored', '/shared/second.js');

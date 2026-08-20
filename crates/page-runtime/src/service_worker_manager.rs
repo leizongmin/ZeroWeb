@@ -584,6 +584,27 @@ impl ServiceWorkerManager {
         )
     }
 
+    /// Start a registration job, comparing it with the existing version for
+    /// the same origin and scope when one exists.
+    pub fn start_registration(
+        &mut self,
+        script_url: &str,
+        scope: &str,
+        origin: &str,
+        script: &str,
+        script_type: ServiceWorkerScriptType,
+        update_via_cache: ServiceWorkerUpdateViaCache,
+    ) -> Result<u64, ServiceWorkerManagerError> {
+        let key = ServiceWorkerRegistrationKey::new(origin, scope)?;
+        let predecessor = self.slots.get(&key).and_then(|slot| slot.waiting.or(slot.active));
+        let registration_id =
+            self.start_evaluation_with_options(script_url, scope, origin, script, script_type, update_via_cache)?;
+        if let Some(predecessor) = predecessor {
+            self.update_predecessors.insert(registration_id, predecessor);
+        }
+        Ok(registration_id)
+    }
+
     /// Recreate one persisted active runtime without replaying install/activate.
     pub fn start_restored_active(
         &mut self,
@@ -774,6 +795,14 @@ impl ServiceWorkerManager {
                             changed,
                         });
                         if !changed {
+                            let update_via_cache = self
+                                .registration(registration_id)
+                                .map(|registration| registration.update_via_cache);
+                            if let (Some(update_via_cache), Some(current)) =
+                                (update_via_cache, self.registry.get_mut(current_id))
+                            {
+                                current.update_via_cache = update_via_cache;
+                            }
                             self.fail_installing_version(registration_id);
                             continue;
                         }
@@ -996,6 +1025,12 @@ impl ServiceWorkerManager {
     fn script_graphs_equal(&self, left: u64, right: u64) -> bool {
         self.script_sources.get(&left) == self.script_sources.get(&right)
             && self.imported_scripts.get(&left) == self.imported_scripts.get(&right)
+            && self
+                .registration(left)
+                .map(|registration| registration.script_url.as_str())
+                == self
+                    .registration(right)
+                    .map(|registration| registration.script_url.as_str())
             && self.registration(left).map(|registration| registration.script_type)
                 == self.registration(right).map(|registration| registration.script_type)
     }
@@ -1823,6 +1858,41 @@ mod tests {
             assert!(Instant::now() < deadline, "manager update comparison timed out");
             std::thread::sleep(Duration::from_millis(1));
         }
+    }
+
+    #[test]
+    fn repeated_registration_compares_script_type_and_graph() {
+        let mut manager = manager_under_test();
+        let script = "globalThis.version = 1;";
+        let first = start_active(&mut manager, "/app/", script);
+
+        let unchanged = manager
+            .start_registration(
+                "https://example.test/sw.js",
+                "/app/",
+                "https://example.test",
+                script,
+                ServiceWorkerScriptType::Classic,
+                ServiceWorkerUpdateViaCache::None,
+            )
+            .unwrap();
+        assert_eq!(wait_for_update_check(&mut manager, unchanged), (first, false));
+        assert_eq!(
+            manager.registration(first).unwrap().update_via_cache,
+            ServiceWorkerUpdateViaCache::None
+        );
+
+        let changed = manager
+            .start_registration(
+                "https://example.test/sw.js",
+                "/app/",
+                "https://example.test",
+                script,
+                ServiceWorkerScriptType::Module,
+                ServiceWorkerUpdateViaCache::None,
+            )
+            .unwrap();
+        assert_eq!(wait_for_update_check(&mut manager, changed), (changed, true));
     }
 
     #[test]

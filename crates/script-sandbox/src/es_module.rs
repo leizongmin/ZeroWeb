@@ -12,7 +12,9 @@
 //! - `export` 声明转为 `_exports` 对象属性赋值
 //! - `import` 声明转为对内联依赖模块导出对象的引用
 
-use crate::{SandboxConfig, ScriptError};
+#[cfg(any(feature = "v8", feature = "quickjs"))]
+use crate::SandboxConfig;
+use crate::ScriptError;
 use std::collections::{HashMap, HashSet};
 
 /// 模块注册表 — 存储已注册的 ES Module 源代码。
@@ -71,6 +73,7 @@ pub struct ModuleResult {
 ///
 /// 通过源代码转换将 ES Module 语法的代码在 V8 中执行。
 /// 依赖模块以 IIFE 形式内联，导出通过共享的 `_exports` 对象传递。
+#[cfg(any(feature = "v8", feature = "quickjs"))]
 pub struct EsModuleSandbox {
     /// 模块注册表。
     registry: ModuleRegistry,
@@ -78,6 +81,7 @@ pub struct EsModuleSandbox {
     sandbox: Box<dyn crate::Sandbox>,
 }
 
+#[cfg(any(feature = "v8", feature = "quickjs"))]
 impl EsModuleSandbox {
     /// 创建新的 ES Module 沙箱。
     pub fn new() -> Result<Self, ScriptError> {
@@ -147,6 +151,7 @@ impl EsModuleSandbox {
     }
 }
 
+#[cfg(any(feature = "v8", feature = "quickjs"))]
 impl std::fmt::Debug for EsModuleSandbox {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("EsModuleSandbox")
@@ -836,6 +841,34 @@ fn extract_binding_name(decl: &str) -> &str {
     }
 }
 
+pub(crate) fn expose_classic_script_lexicals(source: &str) -> String {
+    let mut names = Vec::new();
+    for statement in split_statements(source) {
+        let statement = statement.trim_start();
+        for prefix in ["const ", "let ", "class "] {
+            if let Some(declaration) = statement.strip_prefix(prefix) {
+                let name = extract_binding_name(declaration);
+                if name != "unknown" {
+                    names.push(name.to_string());
+                }
+                break;
+            }
+        }
+    }
+    if names.is_empty() {
+        return source.to_string();
+    }
+    let mut output = source.to_string();
+    for name in names {
+        output.push_str("\nglobalThis.");
+        output.push_str(&name);
+        output.push_str(" = ");
+        output.push_str(&name);
+        output.push(';');
+    }
+    output
+}
+
 /// JSON 字符串转义。
 fn json_stringify(s: &str) -> String {
     let escaped = s
@@ -1044,6 +1077,18 @@ mod tests {
             assert!(matches!(error, ScriptError::CompileError(_)));
             assert!(error.to_string().contains("does not provide an export named"));
         }
+    }
+
+    #[test]
+    fn imported_classic_script_exposes_top_level_lexical_binding() {
+        assert_eq!(
+            expose_classic_script_lexicals("const imported = 'value';"),
+            "const imported = 'value';\nglobalThis.imported = imported;"
+        );
+        assert_eq!(
+            expose_classic_script_lexicals("function load() { const nested = 1; }"),
+            "function load() { const nested = 1; }"
+        );
     }
 
     #[test]
