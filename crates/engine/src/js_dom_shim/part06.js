@@ -2652,6 +2652,16 @@
   globalThis.dispatchEvent = function(event) {
     // R106：spec 入口守卫（同 document.dispatchEvent）。
     globalThis._zwDispatchGuard(event);
+    // R139（js-dom M4）：window 'load' 派发前物化全部 named iframe 的
+    // contentWindow 全局注册（HTML「window named access」——`<iframe name="x">` 使
+    // 全局 `x` 解析到其 contentWindow）。lazy 注册（R139 part04 首读 contentWindow
+    // 时注册）对「load listener 内直接读全局名」形态来不及（listener 先于任何
+    // contentWindow 读触发）——WPT EventListener-handleEvent-cross-realm 的
+    // `eventListenerGlobalObject.Object` 引用是 5F 直接根因。load 前一次性物化，
+    // 后续读走已注册值（幂等，重复派发 no-op）。
+    if (event && event.type === 'load' && typeof globalThis.__zwRegisterNamedIframes === 'function') {
+      try { globalThis.__zwRegisterNamedIframes(); } catch (_e139r) {}
+    }
     return _dispatchWithBubble(_elKey('html', null), 'html', null, event, 'win');
   };
   // R2983 `window.postMessage(message, targetOrigin [, transfer])`——canonical 跨窗口消息 API。

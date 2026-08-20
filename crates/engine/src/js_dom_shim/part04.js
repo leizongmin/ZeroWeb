@@ -318,6 +318,22 @@
         // 取子文档）。仅 IFRAME 元素暴露；src 缺失/javascript: → null（spec：无嵌套浏览上下文）。
         // 加载：同步标记 + fetch 异步填充（首读触发 fetch，dummy 本地文件在 load 时序前完成；
         // 用例 getWin 的 documentElement.textContent 断言在读时已就绪）。kind 判定按扩展名。
+        // R139（js-dom M4）：`__zwRegisterNamedIframes`——window 'load' 派发前一次性物化全部
+        // named iframe 的 contentWindow 全局注册（`<iframe name="x">` → 全局 `x`；part06
+        // dispatchEvent load 分支调用）。lazy 注册对「load listener 内直接读全局名」来不及。
+        globalThis.__zwRegisterNamedIframes = globalThis.__zwRegisterNamedIframes || function () {
+          try {
+            var frames = document.querySelectorAll('iframe');
+            for (var i = 0; i < frames.length; i++) {
+              var f = frames[i];
+              var nm = '';
+              try { nm = String(f.getAttribute('name') || ''); } catch (_eA) {}
+              if (!nm) continue;
+              var w = f.contentWindow; // 触发 contentWindow 分支内的 lazy 注册（幂等）
+              void w;
+            }
+          } catch (_e139i) {}
+        };
         if ((prop === 'contentDocument' || prop === 'contentWindow') && _realTag(sel, handle) === 'IFRAME') {
           var _r115Entry = _iframeDocCache[key];
           if (!_r115Entry) {
@@ -363,10 +379,33 @@
             }
           }
           if (prop === 'contentWindow') {
-            if (_r115Entry.win) return _r115Entry.win;
+            if (_r115Entry.win) {
+              // R139（js-dom M4）：named iframe 的 window 全局注册（HTML「window named
+              // access」——`<iframe name="x">` 使全局 `x` 解析到其 contentWindow；WPT
+              // EventListener-handleEvent-cross-realm 的 `eventListenerGlobalObject.Object`
+              // 全局引用是全部 5F 的直接根因）。首次取 contentWindow 时按 iframe 的
+              // name 属性幂等注册（空/已占用名跳过）。
+              try {
+                var _r139Name = handle ? __zw_get_attr_handle(handle, 'name') : (sel ? __zw_get_attr(sel, 'name') : '');
+                _r139Name = String(_r139Name || '');
+                if (_r139Name && !(globalThis[_r139Name] !== undefined && globalThis[_r139Name] !== _r115Entry.win)) {
+                  globalThis[_r139Name] = _r115Entry.win;
+                }
+              } catch (_e139n) {}
+              return _r115Entry.win;
+            }
             var _r115FbDoc = _r115Entry.doc || _zwMakeIframeDoc('html', '');
             var _r115FbWin = _zwMakeIframeWin(_r115FbDoc);
             try { if (_r115FbDoc.__r115SetWin) _r115FbDoc.__r115SetWin(_r115FbWin); } catch (_eW2) {}
+            _r115Entry.win = _r115FbWin; // R139：fallback win 记账（后续读同 identity）
+            // R139：named iframe 全局注册（同上 win 分支——no-src fallback 路径）。
+            try {
+              var _r139FbName = handle ? __zw_get_attr_handle(handle, 'name') : (sel ? __zw_get_attr(sel, 'name') : '');
+              _r139FbName = String(_r139FbName || '');
+              if (_r139FbName && !(globalThis[_r139FbName] !== undefined && globalThis[_r139FbName] !== _r115FbWin)) {
+                globalThis[_r139FbName] = _r115FbWin;
+              }
+            } catch (_e139f) {}
             return _r115FbWin;
           }
           return _r115Entry.doc; // loading 期 null（spec：未加载完成 contentDocument 可为 null）

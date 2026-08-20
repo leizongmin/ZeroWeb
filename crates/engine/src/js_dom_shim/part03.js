@@ -245,7 +245,17 @@
       globalThis.Text.prototype.dispatchEvent = function (event) {
         globalThis._zwDispatchGuard(event);
         var p = this.parentNode;
-        if (p && typeof p.dispatchEvent === 'function') return p.dispatchEvent(event);
+        // R139（js-dom M4）：仅 bubbles 事件冒泡到父派发——旧版无条件转父
+        // `p.dispatchEvent(event)` 使父成为**新 target**，pre-click activation
+        // 从父 INPUT 起找（命中父自身）→ 非 bubbling 的 Text click 也翻转父
+        // checked（WPT Event-dispatch-click "look at parents only when event
+        // bubbles"：`new MouseEvent('click')`（bubbles=false）断言父 checked
+        // 不变）。spec：非冒泡事件 path = [target]，不达祖先。Text 自身无
+        // activation/listener 面 → 直接返回；bubbles 事件维持转父（R108 冒泡
+        // 触发父链 pre-click activation 语义不变）。
+        if (event && event.bubbles && p && typeof p.dispatchEvent === 'function') {
+          return p.dispatchEvent(event);
+        }
         return !event._defaultPrevented;
       };
     }
@@ -2345,6 +2355,10 @@
       _zwInReportError = false;
     }
   }
+
+  // R139（js-dom M4）：导出 listener 错误上报到 globalThis——EventTarget.prototype.dispatchEvent
+  //（part05，独立 listener 循环）的 handleEvent 非 callable TypeError 上报复用（跨 IIFE 段可达）。
+  globalThis._zwReportListenerError = _zwReportListenerError;
 
   // 派发某元素 key 上的事件 listener。`phase`：`'all'`（target 阶段，capture+非 capture，默认）、
   // `'capture'`（仅 capture listener，捕获期祖先用）、`'bubble'`（仅非 capture，冒泡期祖先用）。

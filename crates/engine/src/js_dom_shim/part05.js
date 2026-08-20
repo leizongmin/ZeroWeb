@@ -924,7 +924,7 @@
         return parentServiceWorker.controller;
       }
     } : undefined;
-    return {
+    var win = {
       document: doc,
       navigator: { serviceWorker: serviceWorker },
       Element: globalThis.Element,
@@ -937,8 +937,21 @@
       Comment: globalThis.Comment,
       CharacterData: globalThis.CharacterData,
       Event: globalThis.Event,
-      DOMException: globalThis.DOMException
+      DOMException: globalThis.DOMException,
+      Object: globalThis.Object,
+      Function: globalThis.Function,
+      Array: globalThis.Array,
+      Error: globalThis.Error,
+      TypeError: globalThis.TypeError,
+      Proxy: globalThis.Proxy,
     };
+    win.addEventListener = function (type, fn) {
+      try { globalThis.addEventListener(type, fn); } catch (_e139a) {}
+    };
+    win.removeEventListener = function (type, fn) {
+      try { globalThis.removeEventListener(type, fn); } catch (_e139r2) {}
+    };
+    return win;
   }
 
   // R2926 Shadow DOM：抛 DOMException（无 DOMException 环境回落 Error + name）。
@@ -7051,7 +7064,13 @@
     this._et_listeners = {};
   }
   EventTarget.prototype.addEventListener = function (type, cb, opts) {
-    if (typeof cb !== 'function' || typeof type !== 'string') return;
+    if (typeof type !== 'string') return;
+    // R139（js-dom M4）：对象 listener 接受（WebIDL EventListener callback——对象经
+    // handleEvent 成员调用；null/undefined 忽略）。旧版 `typeof cb !== 'function'`
+    // 直接 return 使对象 listener 根本不注册（WPT EventListener-handleEvent-cross-realm
+    // 全簇——对象 listener 派发时 handleEvent 非 callable 须抛 TypeError 上报，注册
+    // 是前提）。callable 判定移到派发点（dispatchEvent 的 R139 分支）。
+    if (cb == null) return;
     var capture = opts === true || (opts && opts.capture) ? '|cap' : '';
     var key = type + capture;
     (this._et_listeners[key] = this._et_listeners[key] || []).push(cb);
@@ -7084,7 +7103,55 @@
       arr = arr.slice();
       for (var i = 0; i < arr.length; i++) {
         if (event._immediateStopped) break;
-        try { arr[i].call(target, event); } catch (_) {}
+        // R139（js-dom M4）：对象 listener 的 handleEvent 分派 + 非 callable TypeError
+        // 上报（spec `inner invoke` 步骤 1-2——与 part03 `_dispatchToListeners` 的
+        // R113 语义对齐；WPT EventListener-handleEvent-cross-realm 全簇：对象
+        // listener 无/非函数 handleEvent → TypeError 经 window 'error' 事件上报，
+        // `error.constructor === TypeError` 断言）。旧版直接 `arr[i].call`——对象
+        // listener 调用抛 "not a function" 且被吞（无上报）。
+        var _r139Cb = arr[i];
+        if (typeof _r139Cb !== 'function') {
+          // 对象 listener：Get handleEvent（spec inner invoke 步骤 1）。Get 本身可抛
+          //（revoked Proxy——WPT "non-callable revoked Proxy"），抛同样按 TypeError 上报
+          //（WebIDL 转换失败语义）。
+          var _r139He = null;
+          try {
+            _r139He = _r139Cb ? _r139Cb.handleEvent : _r139Cb;
+          } catch (_e139g) {
+            if (typeof globalThis._zwReportListenerError === 'function') {
+              globalThis._zwReportListenerError(new globalThis.TypeError(
+                "Failed to execute 'addEventListener' on 'EventTarget': parameter 2's 'handleEvent' property is not a function."));
+            }
+            continue;
+          }
+          if (typeof _r139He !== 'function') {
+            if (typeof globalThis._zwReportListenerError === 'function') {
+              globalThis._zwReportListenerError(new globalThis.TypeError(
+                "Failed to execute 'addEventListener' on 'EventTarget': parameter 2's 'handleEvent' property is not a function."));
+            }
+            continue;
+          }
+          // handleEvent call 抛（revoked callable Proxy 等）按 spec report the exception
+          //（WPT "revoked Proxy as 'handleEvent' property" 期望 error 事件 + TypeError）。
+          try {
+            _r139He.call(_r139Cb, event);
+          } catch (_e139h) {
+            if (typeof globalThis._zwReportListenerError === 'function') {
+              globalThis._zwReportListenerError(_e139h);
+            }
+          }
+          continue;
+        }
+        // 函数 listener（含 callable revoked Proxy——typeof 仍 'function'）：call 抛
+        //（revoked）按 spec report the exception（WPT "callable revoked Proxy" 期望
+        // error 事件）。
+        try {
+          _r139Cb.call(target, event);
+        } catch (_e139c) {
+          if (typeof globalThis._zwReportListenerError === 'function') {
+            globalThis._zwReportListenerError(_e139c);
+          }
+        }
       }
     }
     // R114：on* 属性 handler（IDL event handler）同 fire——spec 派发到 EventTarget 时先跑

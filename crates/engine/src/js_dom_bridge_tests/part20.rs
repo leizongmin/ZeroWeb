@@ -1993,3 +1993,76 @@ bubble-stopped:true|src-is-target:true|rv-true:true|phase-0:true|ct-null:true"
         "R138 事件方法族原型补挂 + dispatch srcElement/returnValue"
     );
 }
+
+
+// R139（js-dom M4）：EventTarget 对象 listener（WebIDL EventListener callback）+
+// Text dispatchEvent 非 bubbling 不冒泡——① EventTarget.addEventListener 旧版对非函数
+// listener 直接 return（对象 listener 根本不注册，WPT EventListener-handleEvent-cross-realm
+// 5F 前置根因）；② dispatch 循环补 handleEvent 分派 + 非 callable TypeError 上报 +
+// revoked Proxy Get/call 抛上报（spec inner invoke 步骤 1-2 + report the exception）；
+// ③ Text.dispatchEvent 无条件转父使父成新 target——非 bubbling 的 Text click 也触发父
+// pre-click activation 翻 checked（WPT Event-dispatch-click "look at parents only when
+// event bubbles"：bubbles=false 断言父 checked 不变）。
+#[test]
+fn test_eventtarget_object_listener_r139() {
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let mut sandbox = V8Sandbox::with_config(zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    })
+    .unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><div id=\"host\"><input id=\"cb\" type=\"checkbox\"></div></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry);
+
+    let out = sandbox
+        .execute(
+            "var parts = [];\
+             // ① 对象 listener 注册 + handleEvent 分派（this = 对象本身）。
+             var et = new EventTarget;\
+             var gotEvt = null, gotThis = null;\
+             var objL = { handleEvent: function (e) { gotEvt = e; gotThis = this; } };\
+             et.addEventListener('foo', objL);\
+             et.dispatchEvent(new Event('foo'));\
+             parts.push('obj-listener:' + (gotEvt && gotEvt.type === 'foo' && gotThis === objL));\
+             // ② handleEvent 缺失 → TypeError 经 window 'error' 事件上报。
+             var errObj = null;\
+             window.addEventListener('error', function (e) { errObj = e; });\
+             var et2 = new EventTarget;\
+             et2.addEventListener('foo', {});\
+             et2.dispatchEvent(new Event('foo'));\
+             parts.push('report:' + (errObj && errObj.error && errObj.error.name === 'TypeError'));\
+             // ③ revoked callable Proxy listener：call 抛 → 上报。
+             var rp = Proxy.revocable(function () {}, {}); rp.revoke();\
+             var errObj2 = null;\
+             window.addEventListener('error', function (e) { if (!errObj2) errObj2 = e; });\
+             var et3 = new EventTarget;\
+             et3.addEventListener('bar', rp.proxy);\
+             et3.dispatchEvent(new Event('bar'));\
+             parts.push('revoked:' + (errObj2 && errObj2.error && errObj2.error.name === 'TypeError'));\
+             // ④ Text dispatchEvent 非 bubbling：不触发父 pre-click activation（checked 不变）。
+             var input = document.createElement('input'); input.type = 'checkbox'; document.getElementById('host').appendChild(input);\
+             var textChild = new Text('x');\
+             input.appendChild(textChild);\
+             // （bubbling=true 时父 activation 触发——对照组）
+             parts.push('before:' + input.checked);\
+             textChild.dispatchEvent(new MouseEvent('click'));\
+             parts.push('nonbubbling:' + input.checked);\
+             textChild.dispatchEvent(new MouseEvent('click', { bubbles: true }));\
+             parts.push('bubbling:' + input.checked);\
+             parts.join('|');",
+        )
+        .unwrap()
+        .value;
+    assert_eq!(
+        out, "obj-listener:true|report:true|revoked:true|before:false|nonbubbling:false|bubbling:true",
+        "R139 EventTarget 对象 listener + handleEvent TypeError 上报 + revoked Proxy 上报 + Text 非 bubbling 不触发父 activation"
+    );
+}
