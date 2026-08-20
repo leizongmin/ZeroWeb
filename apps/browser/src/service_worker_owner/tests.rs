@@ -259,7 +259,7 @@ fn imported_classic_scripts_use_browser_fetch_policy_and_persist_graph() {
 }
 
 #[test]
-fn imported_script_response_enforces_javascript_mime_and_cors() {
+fn imported_script_response_enforces_mime_and_allows_cross_origin_no_cors() {
     let response = |headers: Vec<(String, String)>| {
         Ok(HttpResponse {
             status_code: 200,
@@ -283,7 +283,7 @@ fn imported_script_response_enforces_javascript_mime_and_cors() {
             "https://example.test",
             response(vec![("Content-Type".into(), "text/javascript".into())]),
         )
-        .is_err()
+        .is_ok()
     );
     assert!(
         validate_imported_script_response(

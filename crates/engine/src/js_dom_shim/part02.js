@@ -2603,6 +2603,16 @@
       function ServiceWorkerRegistration() {
         this._et_listeners = {};
       }
+      if (typeof Symbol === 'function' && Symbol.toStringTag) {
+        Object.defineProperty(ServiceWorker.prototype, Symbol.toStringTag, {
+          configurable: true,
+          value: 'ServiceWorker'
+        });
+        Object.defineProperty(ServiceWorkerRegistration.prototype, Symbol.toStringTag, {
+          configurable: true,
+          value: 'ServiceWorkerRegistration'
+        });
+      }
       globalThis.ServiceWorker = globalThis.ServiceWorker || ServiceWorker;
       globalThis.ServiceWorkerRegistration =
         globalThis.ServiceWorkerRegistration || ServiceWorkerRegistration;

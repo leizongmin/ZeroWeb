@@ -81,12 +81,33 @@ const SERVICE_WORKER_BOOTSTRAP: &str = r#"
       this.ports = [];
     }
   }
+  class DOMException extends Error {
+    constructor(message, name) {
+      super(String(message));
+      this.name = name === undefined ? 'Error' : String(name);
+      this.code = this.name === 'NetworkError' ? 19 : 0;
+    }
+  }
+  Object.defineProperty(DOMException, 'NETWORK_ERR', {value: 19});
+  Object.defineProperty(DOMException.prototype, 'NETWORK_ERR', {value: 19});
 
+  function WorkerGlobalScope() {}
+  WorkerGlobalScope.prototype = Object.create(Object.getPrototypeOf(globalThis));
+  function ServiceWorkerGlobalScope() {}
+  ServiceWorkerGlobalScope.prototype = Object.create(WorkerGlobalScope.prototype);
+  Object.defineProperty(ServiceWorkerGlobalScope.prototype, 'constructor', {
+    value: ServiceWorkerGlobalScope,
+    configurable: true,
+    writable: true
+  });
+  Object.setPrototypeOf(globalThis, ServiceWorkerGlobalScope.prototype);
   globalThis.self = globalThis;
-  globalThis.ServiceWorkerGlobalScope = function ServiceWorkerGlobalScope() {};
+  globalThis.WorkerGlobalScope = WorkerGlobalScope;
+  globalThis.ServiceWorkerGlobalScope = ServiceWorkerGlobalScope;
   globalThis.ExtendableEvent = ExtendableEvent;
   globalThis.InstallEvent = InstallEvent;
   globalThis.MessageEvent = MessageEvent;
+  globalThis.DOMException = globalThis.DOMException || DOMException;
   globalThis.Client = Client;
   globalThis.addEventListener = function(type, listener) {
     if (typeof listener !== 'function') return;
@@ -116,9 +137,7 @@ const SERVICE_WORKER_BOOTSTRAP: &str = r#"
   globalThis.Clients = Clients;
   globalThis.clients = new Clients();
   function importScriptsNetworkError(message) {
-    const error = new Error(String(message));
-    error.name = 'NetworkError';
-    return error;
+    return new globalThis.DOMException(String(message), 'NetworkError');
   }
   globalThis.importScripts = function() {
     const specifiers = [];
@@ -745,8 +764,9 @@ fn dispatch_lifecycle(
 }
 
 fn take_outbound_messages(sandbox: &mut dyn Sandbox) -> Result<Vec<ServiceWorkerOutboundMessage>, ScriptError> {
-    const MAX_OUTBOUND_MESSAGES: usize = 64;
+    const MAX_OUTBOUND_MESSAGES: usize = 1024;
     const MAX_MESSAGE_BYTES: usize = 1024 * 1024;
+    const MAX_OUTBOUND_BATCH_BYTES: usize = 16 * 1024 * 1024;
     let result = sandbox.execute("JSON.stringify(globalThis.__zwTakeOutboundMessages())")?;
     let values = serde_json::from_str::<Vec<serde_json::Value>>(&result.value)
         .map_err(|error| ScriptError::RuntimeError(format!("invalid outbound message list: {error}")))?;
@@ -755,6 +775,7 @@ fn take_outbound_messages(sandbox: &mut dyn Sandbox) -> Result<Vec<ServiceWorker
             "Service Worker emitted too many messages in one event".into(),
         ));
     }
+    let mut total_bytes = 0usize;
     values
         .into_iter()
         .map(|value| {
@@ -767,6 +788,12 @@ fn take_outbound_messages(sandbox: &mut dyn Sandbox) -> Result<Vec<ServiceWorker
             if data_json.len() > MAX_MESSAGE_BYTES {
                 return Err(ScriptError::InvalidInput(
                     "Service Worker outbound message exceeds the size limit".into(),
+                ));
+            }
+            total_bytes = total_bytes.saturating_add(data_json.len());
+            if total_bytes > MAX_OUTBOUND_BATCH_BYTES {
+                return Err(ScriptError::InvalidInput(
+                    "Service Worker outbound message batch exceeds the size limit".into(),
                 ));
             }
             Ok(ServiceWorkerOutboundMessage { data_json })
@@ -817,6 +844,22 @@ mod tests {
             .evaluate(
                 "if (globalThis.version !== 1) throw new Error('lost global');",
                 "https://example.test/check.js",
+            )
+            .unwrap();
+        assert!(matches!(
+            runtime.recv_timeout(Duration::from_secs(5)).unwrap(),
+            ServiceWorkerEvent::Evaluated { .. }
+        ));
+    }
+
+    #[test]
+    fn global_has_service_worker_scope_brand() {
+        let mut runtime = ServiceWorkerRuntime::new(test_config()).unwrap();
+        runtime
+            .evaluate(
+                "if (!(self instanceof ServiceWorkerGlobalScope)) throw new Error('missing service worker brand');
+                 if (!(self instanceof WorkerGlobalScope)) throw new Error('missing worker brand');",
+                "https://example.test/sw.js",
             )
             .unwrap();
         assert!(matches!(
@@ -882,7 +925,7 @@ mod tests {
     }
 
     #[test]
-    fn import_scripts_fetch_failure_is_named_network_error() {
+    fn import_scripts_fetch_failure_is_network_error_dom_exception() {
         let mut runtime = ServiceWorkerRuntime::new(test_config()).unwrap();
         runtime
             .evaluate(
@@ -890,6 +933,10 @@ mod tests {
                    importScripts('/missing.js');
                  } catch (error) {
                    if (error.name !== 'NetworkError') throw error;
+                   if (!(error instanceof DOMException)) throw new Error('not a DOMException');
+                   if (error.code !== 19 || DOMException.NETWORK_ERR !== 19) {
+                     throw new Error('wrong NetworkError code');
+                   }
                  }",
                 "https://example.test/sw.js",
             )
@@ -1251,6 +1298,54 @@ mod tests {
         assert!(matches!(
             runtime.dispatch_message(19, "{", "client-1", "https://example.test/page"),
             Err(ScriptError::InvalidInput(_))
+        ));
+    }
+
+    #[test]
+    fn page_message_allows_large_bounded_outbound_batch() {
+        let mut runtime = ServiceWorkerRuntime::new(test_config()).unwrap();
+        runtime
+            .evaluate(
+                "addEventListener('message', event => {
+                   for (let i = 0; i < 65; i++) event.source.postMessage({index: i});
+                 });",
+                "https://example.test/sw.js",
+            )
+            .unwrap();
+        let _ = runtime.recv_timeout(Duration::from_secs(5)).unwrap();
+
+        runtime
+            .dispatch_message(20, "{}", "client-1", "https://example.test/page")
+            .unwrap();
+        assert!(matches!(
+            runtime.recv_timeout(Duration::from_secs(5)).unwrap(),
+            ServiceWorkerEvent::MessageDispatched { outbound, .. }
+                if outbound.len() == 65
+                    && outbound[0].data_json == r#"{"index":0}"#
+                    && outbound[64].data_json == r#"{"index":64}"#
+        ));
+    }
+
+    #[test]
+    fn page_message_rejects_outbound_batch_above_count_limit() {
+        let mut runtime = ServiceWorkerRuntime::new(test_config()).unwrap();
+        runtime
+            .evaluate(
+                "addEventListener('message', event => {
+                   for (let i = 0; i < 1025; i++) event.source.postMessage(i);
+                 });",
+                "https://example.test/sw.js",
+            )
+            .unwrap();
+        let _ = runtime.recv_timeout(Duration::from_secs(5)).unwrap();
+
+        runtime
+            .dispatch_message(21, "{}", "client-1", "https://example.test/page")
+            .unwrap();
+        assert!(matches!(
+            runtime.recv_timeout(Duration::from_secs(5)).unwrap(),
+            ServiceWorkerEvent::MessageFailed { message, .. }
+                if message.contains("too many messages")
         ));
     }
 }

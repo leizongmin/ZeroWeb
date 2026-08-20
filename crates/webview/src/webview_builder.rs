@@ -74,6 +74,12 @@ impl WebViewBuilder {
         self
     }
 
+    /// Provide structured Service Worker script responses for embedded/headless hosts.
+    pub fn service_worker_script_fetcher(mut self, fetcher: crate::ServiceWorkerScriptFetcher) -> Self {
+        self.config.service_worker_script_fetcher = Some(fetcher);
+        self
+    }
+
     /// P1b S2：启用原生 DOM 绑定（`engine::dom_bindings`，read-only 快照）。
     ///
     /// 开启时 `run_page_scripts` 在 polyfill 桥之上额外安装原生 `nodeType`/`tagName` 等

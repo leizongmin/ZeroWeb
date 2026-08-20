@@ -613,7 +613,9 @@ pub const INDEXEDDB_CASES: &[(&str, &[&str])] = &[
 pub const SERVICE_WORKER_CORE_CASES: &[&str] = &[
     "service-workers/service-worker/activate-event-after-install-state-change.https.html",
     "service-workers/service-worker/activation-after-registration.https.html",
+    "service-workers/service-worker/import-scripts-cross-origin.https.html",
     "service-workers/service-worker/import-scripts-data-url.https.html",
+    "service-workers/service-worker/import-scripts-mime-types.https.html",
     "service-workers/service-worker/register-default-scope.https.html",
     "service-workers/service-worker/registration-basic.https.html",
     "service-workers/service-worker/registration-scope.https.html",
@@ -1165,6 +1167,66 @@ fn wpt_data_script_fetcher(wpt_root: &std::path::Path) -> Option<zero_webview::S
     }))
 }
 
+/// Structured Service Worker responses for the pinned WPT corpus.
+///
+/// Static scripts are read from `wpt_root`; the MIME handler retains its query-driven
+/// `Content-Type` behavior, and the cross-origin version handler returns JavaScript without CORS
+/// headers. Redirect/stash handlers are added by the next dynamic fixture wave.
+fn wpt_data_service_worker_script_fetcher(
+    wpt_root: &std::path::Path,
+) -> Option<zero_webview::ServiceWorkerScriptFetcher> {
+    let root = wpt_root.to_path_buf();
+    Some(std::sync::Arc::new(move |_page_url: &str, src: &str| {
+        let path_and_query = if let Some((scheme, after_scheme)) = src.split_once("://") {
+            let path_index = after_scheme
+                .find('/')
+                .ok_or_else(|| format!("Service Worker script URL has no path: {src}"))?;
+            let authority = &after_scheme[..path_index];
+            if scheme != "https" || !matches!(authority, "wpt.test" | "www1.wpt.test:443") {
+                return Err(format!(
+                    "external Service Worker fixture origin is not available: {src}"
+                ));
+            }
+            &after_scheme[path_index + 1..]
+        } else {
+            src.trim_start_matches('/')
+        };
+        let (clean, query) = path_and_query
+            .split_once('?')
+            .map_or((path_and_query, ""), |(path, query)| (path, query));
+        if clean.is_empty() || clean.split('/').any(|segment| segment == "..") {
+            return Err(format!("invalid Service Worker fixture path: {clean}"));
+        }
+
+        let mut headers = Vec::new();
+        let body = if clean.ends_with("/resources/mime-type-worker.py") {
+            if let Some(mime) = query.strip_prefix("mime=") {
+                headers.push(("Content-Type".into(), mime.to_string()));
+            }
+            Vec::new()
+        } else if clean.ends_with("/resources/import-scripts-version.py") {
+            headers.push(("Content-Type".into(), "application/javascript".into()));
+            b"version = \"pinned\";\n".to_vec()
+        } else {
+            headers.push(("Content-Type".into(), "application/javascript".into()));
+            let bytes = std::fs::read(root.join(clean))
+                .map_err(|error| format!("Service Worker fixture fetch failed: {clean} ({error})"))?;
+            let source = String::from_utf8(bytes)
+                .map_err(|_| format!("Service Worker fixture is not UTF-8: {clean}"))?
+                .replace("{{domains[www1]}}", "www1.wpt.test")
+                .replace("{{ports[https][0]}}", "443");
+            source.into_bytes()
+        };
+        Ok(zero_net::HttpResponse {
+            status_code: 200,
+            headers,
+            body,
+            url: src.to_string(),
+            redirect_count: 0,
+        })
+    }))
+}
+
 /// R34xx（G6）：运行导入的 `html/canvas` `.worker.js` OffscreenCanvas worker 变体——每个
 /// 文件包一个 `fetch_tests_from_worker(new Worker(...))` 主页面（testharness.js 的 worker
 /// 聚合协议），经 run_testharness_html_inner 同款轮询执行。返回与主线程用例同构结果。
@@ -1320,6 +1382,7 @@ fn run_testharness_html_inner(
         fetch_handler: wpt_data_fetch_handler(wpt_root),
         // R34xx（G6）：.worker.js 变体 + worker importScripts 的脚本源。
         script_source_fetcher: wpt_data_script_fetcher(wpt_root),
+        service_worker_script_fetcher: wpt_data_service_worker_script_fetcher(wpt_root),
         ..WebViewConfig::default()
     });
     webview.prepare_document_state(&format!("https://wpt.test/{case_name}"));
@@ -1381,7 +1444,7 @@ fn run_testharness_html_inner(
                 }];
             }
         }
-        if probe.complete || terminal_harness_state(&last_state, partial_results.len()) {
+        if harness_probe_is_terminal(probe.complete, &last_state, partial_results.len()) {
             if partial_results.is_empty() {
                 // R130（js-dom M4）：crash 类用例（无 testharness 引用，见 prepare_harness_html
                 // 注入分支）语义 = 页面脚本执行不崩溃。harness 走到 terminal（phase=4 /
@@ -1417,6 +1480,10 @@ fn terminal_harness_state(state: &serde_json::Value, result_count: usize) -> boo
     state.get("phase").and_then(serde_json::Value::as_u64) == Some(4)
         && state.get("pending").and_then(serde_json::Value::as_u64) == Some(0)
         && state.get("tests").and_then(serde_json::Value::as_u64) == Some(result_count as u64)
+}
+
+fn harness_probe_is_terminal(complete: bool, state: &serde_json::Value, result_count: usize) -> bool {
+    terminal_harness_state(state, result_count) || (state.is_null() && complete)
 }
 
 fn map_harness_results(results: Vec<RawHarnessResult>) -> Vec<HarnessSubtestResult> {
@@ -2072,13 +2139,13 @@ async_test(function(test) {
     }
 
     #[test]
-    fn service_worker_core_manifest_has_fourteen_unique_cases() {
+    fn service_worker_core_manifest_has_sixteen_unique_cases() {
         let unique = SERVICE_WORKER_CORE_CASES
             .iter()
             .copied()
             .collect::<std::collections::BTreeSet<_>>();
-        assert_eq!(SERVICE_WORKER_CORE_CASES.len(), 14);
-        assert_eq!(unique.len(), 14);
+        assert_eq!(SERVICE_WORKER_CORE_CASES.len(), 16);
+        assert_eq!(unique.len(), 16);
         assert!(
             SERVICE_WORKER_CORE_CASES
                 .iter()
@@ -2096,6 +2163,20 @@ async_test(function(test) {
     }
 
     #[test]
+    fn service_worker_fixture_fetcher_rejects_unknown_external_origins() {
+        let fetcher =
+            wpt_data_service_worker_script_fetcher(Path::new("/nonexistent-service-worker-wpt-root")).unwrap();
+        assert!(
+            fetcher(
+                "https://wpt.test/page",
+                "https://other.test/service-workers/service-worker/resources/worker.js",
+            )
+            .unwrap_err()
+            .contains("external Service Worker fixture origin")
+        );
+    }
+
+    #[test]
     fn phase_four_with_all_results_is_terminal() {
         assert!(terminal_harness_state(
             &serde_json::json!({"phase": 4, "pending": 0, "tests": 3}),
@@ -2105,5 +2186,15 @@ async_test(function(test) {
             &serde_json::json!({"phase": 4, "pending": 0, "tests": 3}),
             2
         ));
+        assert!(!terminal_harness_state(
+            &serde_json::json!({"phase": 3, "pending": 1, "tests": 2}),
+            1
+        ));
+        assert!(!harness_probe_is_terminal(
+            true,
+            &serde_json::json!({"phase": 3, "pending": 1, "tests": 2}),
+            1
+        ));
+        assert!(harness_probe_is_terminal(true, &serde_json::Value::Null, 2));
     }
 }

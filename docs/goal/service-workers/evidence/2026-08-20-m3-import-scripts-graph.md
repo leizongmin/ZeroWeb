@@ -15,7 +15,7 @@
   `http`、`https` 和 `data` URL。每个 version 保存 URL→原始 UTF-8 bytes 的 imported
   script graph。
 - production browser owner 通过 `TabFetchProxy` 和 `ResourceLoader` 并发抓取同一次调用的
-  全部 URL。全部响应完成并通过 status、final URL、secure-context downgrade、CORS、
+  全部 URL。全部响应完成并通过 status、final URL、secure-context downgrade、
   JavaScript MIME、UTF-8 和 size 校验后才恢复 runtime；任一失败时不执行该批任何 source。
 - imported fetch cache mode 使用 registration 的 `updateViaCache`：`none` bypass，
   `imports`/`all` 允许正常 cache reuse。初次 main script 仍无条件 bypass。
@@ -41,7 +41,7 @@
   cancellation 通过。
 - page-runtime：relative/absolute/data URL canonicalization、policy projection、graph
   persistence/restart、main 相同的 imported-byte no-op/changed comparison 通过。
-- browser owner：三轮 register/update graph、`none` bypass、MIME/CORS/downgrade 拒绝、
+- browser owner：三轮 register/update graph、`none` bypass、MIME/downgrade 拒绝、
   queued-plan disconnect cleanup 通过。
 - WebView V8/QuickJS：真实页面 `register()` 顺序执行 imports；仅 dependency bytes 改变时
   `update()` 产生一次 `updatefound`。
@@ -63,8 +63,8 @@
 - 本阶段 graph 是 classic worker startup evaluation 中实际调用的 `importScripts()`。
   install/activate/message handler 执行期间首次出现的新 import 尚未绑定长期 browser fetch
   context。
-- dynamic MIME/redirect/stash/cross-origin WPT 仍依赖动态 WPT server adapter；本阶段已实现
-  production response validation，但未提升这些 gated case。
+- dynamic MIME/redirect/stash/cross-origin WPT 仍依赖动态 WPT server adapter；本阶段未提升
+  这些 gated case。classic script 的跨源 no-cors 语义由后续 M3-10 校正。
 - module Service Worker、静态 module import graph、dynamic `import()`、周期性 soft update
   和 M2 FetchEvent/Cache pipeline 不在本阶段。
 

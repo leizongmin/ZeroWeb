@@ -1,0 +1,6 @@
+path	manifest_type	roles	referenced_by	bytes	templated	git_blob_sha
+service-workers/service-worker/import-scripts-cross-origin.https.html	testharness	case	1	719	no	773708a9fbce32a6b17f22d88b9fb6ebc3553710
+service-workers/service-worker/resources/import-scripts-cross-origin-worker.sub.js	support	worker-script	1	131	yes	b432854db8bc7f8292c43434d8c24a3ffe97dec0
+service-workers/service-worker/import-scripts-mime-types.https.html	testharness	case	1	929	no	1679831d0f2b98aee22898d820373e80079fbe00
+service-workers/service-worker/resources/import-scripts-mime-types-worker.js	support	worker-script	1	1494	no	7658eeace695e3debd361b1f0c05282ffc420b28
+service-workers/service-worker/resources/mime-type-worker.py	support	dynamic-handler	1	141	no	92a602e634cbf8b66d28f36eb0d1616f06ba239c

@@ -2,7 +2,7 @@
 
 **日期**：2026-08-19
 **上游 revision**：`04067ce9c7c2165e71ad7d0dde10a4c5cb394a83`
-**状态**：M3 `importScripts(data:)` promoted to core
+**状态**：M3 `importScripts(data:)`、cross-origin 与 dynamic MIME promoted to core
 **逐案裁决**：[worker global/import review TSV](2026-08-19-worker-global-import-review.tsv)
 **静态资产**：[static assets TSV](2026-08-19-worker-global-static-assets.tsv)
 **静态 subtest**：[static subtests TSV](2026-08-19-worker-global-static-subtests.tsv)
@@ -23,9 +23,10 @@
   [IDL harness evidence](2026-08-19-idlharness-review.md) 专门解析，避免把 4 个生成 context
   的 IDL 子测试误算为一个。
 - 13 案实际产生 **53 个 subtest**：
-  - **2 case / 5 subtest**：静态 `scriptURL` + `importScripts(data:)` core；
+  - **4 case / 29 subtest**：静态 `scriptURL`、`importScripts(data:)`、cross-origin 与
+    dynamic MIME core；
   - **5 case / 15 subtest**：worker global/interface/import runtime defer；
-  - **4 case / 29 subtest**：动态 server/cross-origin import gated；
+  - **2 case / 5 subtest**：redirect/stash/resource-map import gated；
   - **1 case / 1 subtest**：M2 uncontrolled fetch bypass defer；
   - **1 case / 3 subtest**：dedicated module worker interception skip。
 - 初始 `direct_dependency_signals=none` 漏掉了 worker script 内的动态 MIME、redirect、server
@@ -36,7 +37,7 @@
 
 TSV SHA-256：
 
-- review：`c5760e774913f52452ac5af0c825c12053c972ad00a4f903e5400d286b28f951`
+- review：`1d2ece30ecdc63ffe7190261a538f58716b7c5c95342fcc2be730da835538128`
 - static assets：`970b19b3eb95233c197ef8539d36bbb43f4adf79f001cabc581b56401c758d73`
 - static subtests：`48c028ad34572bc1f7fd25b8a708e52e272d303fcc127f170660076b8c191627`
 
@@ -92,17 +93,18 @@ Tier A 18/18 与 next-wave 7/7 的共享根审计同时保持通过。
 
 这些不需要动态 server，但依赖 classic/module worker loader 与 import policy。
 
-## 3. 动态 importScripts 门控
+## 3. 动态 importScripts 裁决
 
-| Case | Subtest | 动态语义 |
-|------|--------:|----------|
-| `import-scripts-cross-origin` | 1 | 远端 HTTPS origin + 动态版本脚本 |
-| `import-scripts-mime-types` | 23 | handler 按 query 设置或省略 Content-Type |
-| `import-scripts-redirect` | 3 | redirect、stash 请求次数和 update body 变化 |
-| `import-scripts-resource-map` | 2 | 时间版本脚本与 query 生成不同变量 |
+| Case | Subtest | Lane | 动态语义 |
+|------|--------:|------|----------|
+| `import-scripts-cross-origin` | 1 | core | 远端 HTTPS origin + classic no-cors |
+| `import-scripts-mime-types` | 23 | core | handler 按 query 设置或省略 Content-Type |
+| `import-scripts-redirect` | 3 | gated | redirect、stash 请求次数和 update body 变化 |
+| `import-scripts-resource-map` | 2 | gated | 时间版本脚本与 query 生成不同变量 |
 
-这些测试不能用 Python 文件字节替代响应，也不能固定成单一 JavaScript；被测行为正是响应头、
-重定向、请求次数或每次返回值。
+M3-10 的结构化 fixture adapter 已执行 cross-origin 与 MIME 响应语义。redirect 和
+resource-map 仍不能用 Python 文件字节或单一固定 JavaScript 替代；被测行为是重定向、
+请求次数和每次返回值。
 
 ## 4. Fetch 与 scope 边界
 
@@ -140,14 +142,14 @@ module worker 的顶层脚本、静态 import 和动态 import。当前 Goal 的
 | 本批为 13 case / 53 subtest | 页面/worker test 声明 | TSV 机器求和 | 一致 | 高 |
 | MIME 文件为 23 subtest | 页面 2 项 | worker 21 项 | 一致 | 高 |
 | static wave 为 2 case / 5 subtest | 页面显式 promise_test | 四个固定 revision asset | 一致 | 高 |
-| 四个 import 文件需动态 server | worker URL/handler | header/redirect/stash/time 语义 | 一致 | 高 |
+| 两个剩余 import 文件需有状态 server | worker URL/handler | redirect/stash/time 语义 | 一致 | 高 |
 | 逻辑剩余 review 为 71 | 前序 84 | 84 - 13 | 一致 | 高 |
 
 ## 7. 后续输入
 
 1. RFC 批准后，在 Tier A 和 next-wave 后执行 static-wave 4 个 subtest。
 2. typed SW runtime/worker result channel 落地后恢复剩余 5 个 defer case。
-3. 动态 WPT server adapter 落地后恢复 4 个 gated importScripts case。
+3. 扩展有状态 WPT server adapter，恢复 redirect 与 resource-map 两个 gated case。
 4. M2 scope routing 落地后恢复 uncontrolled-page。
 5. `idlharness.https.any.js` 已固定为 4 个 generated URL / 787 个 subtest。
 

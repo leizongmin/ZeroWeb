@@ -1516,15 +1516,6 @@ fn validate_imported_script_response(
     if Url::parse(registration_origin).is_ok_and(|origin| origin.scheme() == "https") && final_url.scheme() == "http" {
         return Err("Service Worker import redirect downgraded a secure context".into());
     }
-    if matches!(final_url.scheme(), "http" | "https") && final_url.origin().ascii_serialization() != registration_origin
-    {
-        let allowed_origin = response
-            .header("access-control-allow-origin")
-            .is_some_and(|value| value == "*" || value == registration_origin);
-        if !allowed_origin {
-            return Err("Service Worker cross-origin import failed CORS validation".into());
-        }
-    }
     let mime = response
         .content_type_mime()
         .ok_or_else(|| "Service Worker imported script has no JavaScript MIME type".to_string())?;

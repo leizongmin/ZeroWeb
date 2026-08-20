@@ -61,6 +61,18 @@ pub type ExternalScriptExecutor = std::sync::Arc<dyn Fn(&str) -> Result<String, 
 /// 与 reftest 一致）。与 `external_script`（多进程执行委托，互斥）独立——本获取器仅进程内 sandbox 路径消费。
 pub type ScriptSourceFetcher = std::sync::Arc<dyn Fn(&str, &str) -> Result<String, String> + Send + Sync>;
 
+/// Service Worker script response fetcher for embedded/headless hosts.
+///
+/// Unlike [`ScriptSourceFetcher`], this preserves status, headers, final URL, and redirect metadata
+/// so imported classic scripts pass through the same response validation as network responses.
+pub type ServiceWorkerScriptFetcher = std::sync::Arc<dyn Fn(&str, &str) -> Result<HttpResponse, String> + Send + Sync>;
+
+#[derive(Clone)]
+struct ServiceWorkerFetchers {
+    source: Option<ScriptSourceFetcher>,
+    response: Option<ServiceWorkerScriptFetcher>,
+}
+
 /// R34xx：图片源获取器（headless/testharness 路径 fetch `<img src>` / CSS `url()` 图片；
 /// None → 走 HTTP 网络）。返回图片字节；返回 None 表示该 URL 无法本地提供（回退网络）。
 pub type ImageSourceFetcher = std::sync::Arc<dyn Fn(&str) -> Option<Vec<u8>> + Send + Sync>;
@@ -90,6 +102,11 @@ pub struct WebViewConfig {
     pub external_script: Option<ExternalScriptExecutor>,
     /// 外链脚本源获取器（进程内/headless 路径 fetch 外链脚本源；None → 外链脚本跳过，离线语义）。
     pub script_source_fetcher: Option<ScriptSourceFetcher>,
+    /// Structured Service Worker script responses for embedded/headless hosts.
+    ///
+    /// When set, Service Worker main and imported script fetches use this callback before
+    /// [`Self::script_source_fetcher`].
+    pub service_worker_script_fetcher: Option<ServiceWorkerScriptFetcher>,
     /// R34xx：图片源获取器（headless/testharness 路径；None → HTTP 网络）。
     pub image_source_fetcher: Option<ImageSourceFetcher>,
     /// R34xx：fetch 处理器（headless/testharness 路径；None → 不注册 `__zw_fetch`，shim 落
@@ -117,6 +134,7 @@ impl Default for WebViewConfig {
             http_timeout_secs: None,
             external_script: None,
             script_source_fetcher: None,
+            service_worker_script_fetcher: None,
             image_source_fetcher: None,
             fetch_handler: None,
             native_dom: false,
@@ -136,6 +154,10 @@ impl std::fmt::Debug for WebViewConfig {
             .field("http_timeout_secs", &self.http_timeout_secs)
             .field("external_script", &self.external_script.is_some())
             .field("script_source_fetcher", &self.script_source_fetcher.is_some())
+            .field(
+                "service_worker_script_fetcher",
+                &self.service_worker_script_fetcher.is_some(),
+            )
             .field("image_source_fetcher", &self.image_source_fetcher.is_some())
             .field("fetch_handler", &self.fetch_handler.is_some())
             .field("native_dom", &self.native_dom)
@@ -303,6 +325,8 @@ pub struct WebView {
     external_script: Option<ExternalScriptExecutor>,
     /// 外链脚本源获取器（进程内/headless 路径 fetch 外链脚本源）。
     script_source_fetcher: Option<ScriptSourceFetcher>,
+    /// Structured Service Worker script response fetcher.
+    service_worker_script_fetcher: Option<ServiceWorkerScriptFetcher>,
     image_source_fetcher: Option<ImageSourceFetcher>,
     /// R34xx：同步 `__zw_fetch` 处理器（headless/testharness 本地资源路径）。
     fetch_handler: Option<zero_engine::fetch_bridge::FetchHandler>,
@@ -398,6 +422,7 @@ impl WebView {
         };
         let external_script = config.external_script.clone();
         let script_source_fetcher = config.script_source_fetcher.clone();
+        let service_worker_script_fetcher = config.service_worker_script_fetcher.clone();
         let image_source_fetcher = config.image_source_fetcher.clone();
         let fetch_handler = config.fetch_handler.clone();
         let indexed_db_bridge = zero_engine::IndexedDbBridge::new(indexed_db_owner.handler());
@@ -424,6 +449,7 @@ impl WebView {
             js_shim_initialized: false,
             external_script,
             script_source_fetcher,
+            service_worker_script_fetcher,
             image_source_fetcher,
             fetch_handler,
             current_url: None,
@@ -1518,7 +1544,10 @@ impl WebView {
         Self::register_service_worker_host_callbacks(
             &mut *sandbox,
             self.sw_manager.clone(),
-            self.script_source_fetcher.clone(),
+            ServiceWorkerFetchers {
+                source: self.script_source_fetcher.clone(),
+                response: self.service_worker_script_fetcher.clone(),
+            },
             self.page_url_wire.clone(),
             self.service_worker_client_id.clone(),
             self.service_worker_client_generation.clone(),
@@ -2334,12 +2363,16 @@ impl WebView {
         document_url: &str,
     ) -> Result<u64, WebViewError> {
         let (script_url, scope, origin) = Self::validate_service_worker_registration(script_url, scope, document_url)?;
-        let script = match &self.script_source_fetcher {
-            Some(fetcher) => fetcher(document_url, script_url.as_str())
-                .map_err(|error| WebViewError::Script(format!("Service Worker fetch failed: {error}")))?,
-            None => self.fetch_text_at(script_url.as_str())?,
-        };
+        let script = Self::fetch_service_worker_main_script(
+            script_url.as_str(),
+            document_url,
+            self.service_worker_script_fetcher.as_ref(),
+            self.script_source_fetcher.as_ref(),
+            self.http_client.timeout_secs,
+        )
+        .map_err(|error| WebViewError::Script(format!("Service Worker fetch failed: {error}")))?;
         let source_fetcher = self.script_source_fetcher.clone();
+        let response_fetcher = self.service_worker_script_fetcher.clone();
         let mut manager = self
             .sw_manager
             .lock()
@@ -2352,6 +2385,7 @@ impl WebView {
             registration_id,
             document_url,
             source_fetcher.as_ref(),
+            response_fetcher.as_ref(),
             30,
         )
         .map_err(WebViewError::Script)?;
@@ -2406,16 +2440,19 @@ impl WebView {
     fn register_service_worker_host_callbacks(
         sandbox: &mut dyn zero_script_sandbox::Sandbox,
         manager: std::sync::Arc<std::sync::Mutex<ServiceWorkerManager>>,
-        source_fetcher: Option<ScriptSourceFetcher>,
+        fetchers: ServiceWorkerFetchers,
         page_url: std::sync::Arc<std::sync::Mutex<String>>,
         client_id: String,
         client_generation: std::sync::Arc<AtomicU64>,
         timeout_secs: u64,
     ) {
+        let source_fetcher = fetchers.source;
+        let response_fetcher = fetchers.response;
         let controller_page_url = page_url.clone();
         let register_manager = manager.clone();
         let register_page_url = page_url.clone();
         let register_source_fetcher = source_fetcher.clone();
+        let register_response_fetcher = response_fetcher.clone();
         sandbox.register_callback(
             "__zw_sw_register",
             Box::new(move |args| {
@@ -2451,10 +2488,13 @@ impl WebView {
                         }
                     };
                 let result = (|| -> Result<u64, String> {
-                    let source = match &register_source_fetcher {
-                        Some(fetcher) => fetcher(&document_url, script_url.as_str())?,
-                        None => Self::fetch_service_worker_script(script_url.as_str(), timeout_secs)?,
-                    };
+                    let source = Self::fetch_service_worker_main_script(
+                        script_url.as_str(),
+                        &document_url,
+                        register_response_fetcher.as_ref(),
+                        register_source_fetcher.as_ref(),
+                        timeout_secs,
+                    )?;
                     let mut manager = register_manager
                         .lock()
                         .map_err(|_| "Service Worker manager lock poisoned".to_string())?;
@@ -2472,6 +2512,7 @@ impl WebView {
                         registration_id,
                         &document_url,
                         register_source_fetcher.as_ref(),
+                        register_response_fetcher.as_ref(),
                         timeout_secs,
                     )?;
                     Ok(registration_id)
@@ -2513,10 +2554,13 @@ impl WebView {
                         }
                         registration.script_url.clone()
                     };
-                    let source = match &source_fetcher {
-                        Some(fetcher) => fetcher(&document_url, &script_url)?,
-                        None => Self::fetch_service_worker_script(&script_url, timeout_secs)?,
-                    };
+                    let source = Self::fetch_service_worker_main_script(
+                        &script_url,
+                        &document_url,
+                        response_fetcher.as_ref(),
+                        source_fetcher.as_ref(),
+                        timeout_secs,
+                    )?;
                     let mut manager = update_manager
                         .lock()
                         .map_err(|_| "Service Worker manager lock poisoned".to_string())?;
@@ -2533,6 +2577,7 @@ impl WebView {
                                 registration_id,
                                 &document_url,
                                 source_fetcher.as_ref(),
+                                response_fetcher.as_ref(),
                                 timeout_secs,
                             )? {
                                 ServiceWorkerEvaluationResult::UpdateChecked {
@@ -2739,6 +2784,7 @@ impl WebView {
         registration_id: u64,
         document_url: &str,
         source_fetcher: Option<&ScriptSourceFetcher>,
+        response_fetcher: Option<&ServiceWorkerScriptFetcher>,
         timeout_secs: u64,
     ) -> Result<ServiceWorkerEvaluationResult, String> {
         let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
@@ -2759,12 +2805,17 @@ impl WebView {
                 }
                 let scripts = urls
                     .iter()
-                    .map(|url| match source_fetcher.filter(|_| !url.starts_with("data:")) {
-                        Some(fetcher) => fetcher(document_url, url).map(|source| ServiceWorkerImportedScript {
-                            url: url.clone(),
-                            source,
+                    .map(|url| match response_fetcher.filter(|_| !url.starts_with("data:")) {
+                        Some(fetcher) => fetcher(document_url, url).and_then(|response| {
+                            Self::validate_service_worker_imported_script_response(url, document_url, response)
                         }),
-                        None => Self::fetch_service_worker_imported_script(url, document_url, timeout_secs),
+                        None => match source_fetcher.filter(|_| !url.starts_with("data:")) {
+                            Some(fetcher) => fetcher(document_url, url).map(|source| ServiceWorkerImportedScript {
+                                url: url.clone(),
+                                source,
+                            }),
+                            None => Self::fetch_service_worker_imported_script(url, document_url, timeout_secs),
+                        },
                     })
                     .collect::<Result<Vec<_>, _>>();
                 manager
@@ -2817,6 +2868,43 @@ impl WebView {
         }
     }
 
+    fn fetch_service_worker_main_script(
+        url: &str,
+        document_url: &str,
+        response_fetcher: Option<&ServiceWorkerScriptFetcher>,
+        source_fetcher: Option<&ScriptSourceFetcher>,
+        timeout_secs: u64,
+    ) -> Result<String, String> {
+        if let Some(fetcher) = response_fetcher {
+            let response = fetcher(document_url, url)?;
+            if !response.is_success() {
+                return Err(format!(
+                    "Service Worker script fetch returned HTTP {}",
+                    response.status_code
+                ));
+            }
+            if response.redirect_count != 0
+                || url::Url::parse(&response.url)
+                    .ok()
+                    .zip(url::Url::parse(url).ok())
+                    .is_none_or(|(final_url, requested_url)| {
+                        final_url.origin() != requested_url.origin() || final_url.fragment().is_some()
+                    })
+            {
+                return Err("Service Worker script fetch redirected".into());
+            }
+            if response.body.len() > MAX_SERVICE_WORKER_SCRIPT_BYTES {
+                return Err("Service Worker script exceeds the size limit".into());
+            }
+            return String::from_utf8(response.body)
+                .map_err(|_| "Service Worker script is not valid UTF-8".to_string());
+        }
+        if let Some(fetcher) = source_fetcher {
+            return fetcher(document_url, url);
+        }
+        Self::fetch_service_worker_script(url, timeout_secs)
+    }
+
     fn fetch_service_worker_script(url: &str, timeout_secs: u64) -> Result<String, String> {
         let response = ResourceLoader::shared()
             .submit(
@@ -2844,6 +2932,14 @@ impl WebView {
             .recv()
             .map_err(|_| "resource loader worker exited".to_string())?
             .map_err(|error| error.to_string())?;
+        Self::validate_service_worker_imported_script_response(url, document_url, response)
+    }
+
+    fn validate_service_worker_imported_script_response(
+        url: &str,
+        document_url: &str,
+        response: HttpResponse,
+    ) -> Result<ServiceWorkerImportedScript, String> {
         if !response.is_success() {
             return Err(format!(
                 "Service Worker import fetch returned HTTP {}",
@@ -2866,14 +2962,6 @@ impl WebView {
                 url::Url::parse(document_url).map_err(|_| "invalid Service Worker document URL".to_string())?;
             if document.scheme() == "https" && final_url.scheme() == "http" {
                 return Err("Service Worker import redirect downgraded a secure context".into());
-            }
-            let registration_origin = document.origin().ascii_serialization();
-            if final_url.origin() != document.origin()
-                && !response
-                    .header("access-control-allow-origin")
-                    .is_some_and(|value| value == "*" || value == registration_origin)
-            {
-                return Err("Service Worker cross-origin import failed CORS validation".into());
             }
         }
         let mime = response

@@ -160,11 +160,17 @@ fn navigator_register_projects_real_manager_state() {
                    globalThis.__swReg && globalThis.__swReg.scope,
                    globalThis.__swReg && globalThis.__swReg.updateViaCache,
                    globalThis.__swReg && globalThis.__swReg.active && globalThis.__swReg.active.state,
+                   globalThis.__swReg && Object.prototype.toString.call(globalThis.__swReg),
+                   globalThis.__swReg && globalThis.__swReg.active &&
+                     Object.prototype.toString.call(globalThis.__swReg.active),
                    navigator.serviceWorker.controller === null
                  ].join('|')",
             )
             .unwrap();
-        if value == "resolved|ready|https://example.test/app/|none|activated|true" {
+        if value
+            == "resolved|ready|https://example.test/app/|none|activated|\
+                     [object ServiceWorkerRegistration]|[object ServiceWorker]|true"
+        {
             break;
         }
         assert!(Instant::now() < deadline, "page registration did not activate: {value}");
@@ -234,6 +240,58 @@ fn navigator_register_executes_imported_classic_scripts_in_order() {
             "https://example.test/shared/second.js",
         ]
     );
+}
+
+#[test]
+fn structured_import_response_allows_cross_origin_without_cors_headers() {
+    let mut webview = WebViewBuilder::new()
+        .service_worker_script_fetcher(Arc::new(|_, script| {
+            let body = match script {
+                "https://example.test/sw.js" => {
+                    "importScripts('https://cdn.test/dependency.js'); globalThis.loaded = imported;"
+                }
+                "https://cdn.test/dependency.js" => "globalThis.imported = true;",
+                _ => return Err(format!("unexpected script URL: {script}")),
+            };
+            Ok(zero_net::HttpResponse {
+                status_code: 200,
+                headers: vec![("Content-Type".into(), "text/javascript".into())],
+                body: body.as_bytes().to_vec(),
+                url: script.to_string(),
+                redirect_count: 0,
+            })
+        }))
+        .build();
+
+    let id = webview
+        .register_service_worker_runtime("/sw.js", None, "https://example.test/page.html")
+        .unwrap();
+    wait_for_state(&mut webview, id, ServiceWorkerState::Activated);
+}
+
+#[test]
+fn structured_import_response_rejects_non_javascript_mime() {
+    let mut webview = WebViewBuilder::new()
+        .service_worker_script_fetcher(Arc::new(|_, script| {
+            let (body, mime) = if script == "https://example.test/sw.js" {
+                ("importScripts('/dependency.js');", "text/javascript")
+            } else {
+                ("globalThis.loaded = true;", "text/plain")
+            };
+            Ok(zero_net::HttpResponse {
+                status_code: 200,
+                headers: vec![("Content-Type".into(), mime.into())],
+                body: body.as_bytes().to_vec(),
+                url: script.to_string(),
+                redirect_count: 0,
+            })
+        }))
+        .build();
+
+    let error = webview
+        .register_service_worker_runtime("/sw.js", None, "https://example.test/page.html")
+        .unwrap_err();
+    assert!(error.to_string().contains("unsupported MIME type text/plain"));
 }
 
 #[test]
