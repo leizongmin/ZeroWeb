@@ -360,3 +360,5 @@ Late min/max block-size clamps exposed the sibling-flow variant: if a post-taffy
 Relative inset postprocessing exposed the raw-delta variant: when taffy already applied a residual real length as its raw numeric value, a later used-value fix must add only `resolved_px - raw_value`. Reapplying the full resolved length would double-count the raw offset, while touching inline relative without a dedicated test risks crossing into the separate IFC offset path.
 
 Root compensation paths are also used-value boundaries. When the engine manually replays root-level behavior that taffy cannot model, such as viewport-relative fixed margins, resolve real lengths against the root style before applying the offset; do not leave those root-only fixups as `Px`-only exceptions.
+
+Form-control layout fixups can hide font-size used-value boundaries. If a postprocess pass estimates native-control ascent/descent from `font-size`, resolve residual real lengths first; otherwise direct `ComputedStyle` callers get the fallback constant even though the same style would be definite after normal cascade.

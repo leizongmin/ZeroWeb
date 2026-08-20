@@ -8,6 +8,11 @@ use zero_style_system::ComputedStyle;
 
 use crate::types::LayoutBox;
 
+fn resolve_form_font_size_px(style: &ComputedStyle) -> Option<f32> {
+    let px = zero_style_system::computed::resolve_length(&style.font_size, 16.0, None, None);
+    px.is_finite().then_some(px.max(0.0) as f32)
+}
+
 /// Taffy 把 inline-block 控件作为 block 子参与 form 初始测高；IFC 随后把这些控件
 /// 重排到同一行，但旧的过大 form 高度仍会推开后续内容。仅在普通 auto-height form
 /// 含 block 子和原生 inline 控件、且无复杂定位/float 时按最终子盒底边收紧。
@@ -143,10 +148,7 @@ fn layout_direct_fieldsets(form: &mut LayoutBox, doc: &Document, styles: &HashMa
                 let descent = fieldset.children[child_index]
                     .node_id
                     .and_then(|id| styles.get(&id))
-                    .and_then(|style| match style.font_size {
-                        LengthValue::Px(value) => Some((value as f32 * 0.32).round()),
-                        _ => None,
-                    })
+                    .and_then(|style| resolve_form_font_size_px(style).map(|value| (value * 0.32).round()))
                     .unwrap_or(5.0);
                 fieldset.children[child_index].height += descent;
                 fieldset.children[child_index].content_height += descent;
@@ -327,5 +329,74 @@ mod tests {
         assert_eq!(root.children[0].height, 160.0);
         assert_eq!(root.children[1].y, 176.0);
         assert_eq!(root.height, 216.0);
+    }
+
+    /// R3621：fieldset 内 textarea descent 估算也要解析 residual font-size。
+    /// direct `ComputedStyle` 下 `font-size:2em` 应按 32px 估算 descent≈10px；旧逻辑只接受
+    /// `Px`，会回退 5px，导致 fieldset 内容高度偏小。
+    #[test]
+    fn r3621_textarea_descent_resolves_relative_font_size() {
+        let doc = zero_dom::parse_html(
+            "<form><fieldset><legend>Title</legend><div><textarea></textarea></div></fieldset></form>",
+        );
+        let form = doc.get_elements_by_tag_name("form")[0];
+        let fieldset = doc.get_elements_by_tag_name("fieldset")[0];
+        let legend = doc.get_elements_by_tag_name("legend")[0];
+        let wrapper = doc.get_elements_by_tag_name("div")[0];
+
+        let mut styles = HashMap::new();
+        let mut form_style = ComputedStyle::default();
+        form_style.display = DisplayValue::Block;
+        styles.insert(form, form_style);
+        let mut wrapper_style = ComputedStyle::default();
+        wrapper_style.font_size = LengthValue::Em(2.0);
+        styles.insert(wrapper, wrapper_style);
+
+        let mut form_box = LayoutBox {
+            node_id: Some(form),
+            content_height: 100.0,
+            height: 100.0,
+            ..LayoutBox::default()
+        };
+        let mut fieldset_box = LayoutBox {
+            node_id: Some(fieldset),
+            is_block_level: true,
+            border_top: 2.0,
+            padding_top: 4.0,
+            padding_bottom: 3.0,
+            border_bottom: 1.0,
+            height: 80.0,
+            content_height: 70.0,
+            ..LayoutBox::default()
+        };
+        fieldset_box.children = vec![
+            LayoutBox {
+                node_id: Some(legend),
+                height: 12.0,
+                content_height: 12.0,
+                ..LayoutBox::default()
+            },
+            LayoutBox {
+                node_id: Some(wrapper),
+                is_block_level: true,
+                height: 20.0,
+                content_height: 20.0,
+                ..LayoutBox::default()
+            },
+        ];
+        form_box.children = vec![fieldset_box];
+
+        shrink_mixed_control_form(&mut form_box, &doc, &styles);
+        let wrapper_box = &form_box.children[0].children[1];
+        assert!(
+            (wrapper_box.height - 30.0).abs() < 0.5,
+            "R3621: textarea wrapper should add descent round(2em@16px * .32)=10px, got {}",
+            wrapper_box.height
+        );
+        assert!(
+            (form_box.children[0].content_height - 40.0).abs() < 0.5,
+            "R3621: fieldset content height should include wrapper y 10px + 30px textarea flow, got {}",
+            form_box.children[0].content_height
+        );
     }
 }
