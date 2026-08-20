@@ -1548,3 +1548,71 @@ fn test_dom_implementation_doc_family_r130() {
         "R130 createHTMLDocument title 子树/原型接线/location null + createDocument XMLDocument/docElement 惰性/必参校验/root 创建 + createDocumentType 校验 + A.href percent-encode"
     );
 }
+
+// R131（js-dom M4）：isEqualNode spec 逐类型字段比较（dom-node-isequalnode）——
+// 元素 ns/prefix/localName/属性集（prefix 参与、属性 prefix 不参与、属性序无关）+
+// PI target/data + doctype 三字段 + 子节点递归 + 合成 docEl/head/body 的 ns 标注。
+#[test]
+fn test_is_equal_node_spec_fields_r131() {
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let mut sandbox = V8Sandbox::with_config(zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    })
+    .unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><div id=\"host\"><p id=\"a\">A</p></div></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry);
+
+    let out = sandbox
+        .execute(
+            "var parts = [];\
+             var e1 = document.createElementNS('namespace', 'prefix:localName');\
+             var e2 = document.createElementNS('namespace', 'prefix:localName');\
+             var e3 = document.createElementNS('namespace2', 'prefix:localName');\
+             var e4 = document.createElementNS('namespace', 'prefix2:localName');\
+             parts.push('el-ns:' + e1.isEqualNode(e2) + ':' + e1.isEqualNode(e3) + ':' + e1.isEqualNode(e4));\
+             var a1 = document.createElement('element');\
+             a1.setAttributeNS('namespace', 'prefix:localName', 'value');\
+             var a2 = document.createElement('element');\
+             a2.setAttributeNS('namespace', 'prefix2:localName', 'value');\
+             var a3 = document.createElement('element');\
+             a3.setAttributeNS('namespace2', 'prefix:localName', 'value');\
+             parts.push('attr:' + a1.isEqualNode(a2) + ':' + a1.isEqualNode(a3));\
+             var p1 = document.createProcessingInstruction('target', 'data');\
+             var p2 = document.createProcessingInstruction('target2', 'data');\
+             var p3 = document.createProcessingInstruction('target', 'data2');\
+             parts.push('pi:' + p1.isEqualNode(p1) + ':' + p1.isEqualNode(p2) + ':' + p1.isEqualNode(p3));\
+             var d1 = document.implementation.createDocumentType('n', 'p', 's');\
+             var d2 = document.implementation.createDocumentType('n', 'p', 's');\
+             var d3 = document.implementation.createDocumentType('n2', 'p', 's');\
+             var d4 = document.implementation.createDocumentType('n', 'p2', 's');\
+             parts.push('dt:' + d1.isEqualNode(d2) + ':' + d1.isEqualNode(d3) + ':' + d1.isEqualNode(d4));\
+             var hd = document.implementation.createHTMLDocument();\
+             var d5 = document.implementation.createDocument('http://www.w3.org/1999/xhtml', 'html', document.implementation.createDocumentType('html', '', ''));\
+             d5.documentElement.appendChild(d5.createElement('head'));\
+             d5.documentElement.appendChild(d5.createElement('body'));\
+             parts.push('docs:' + hd.isEqualNode(d5));\
+             var frag1 = document.createDocumentFragment();\
+             var frag2 = document.createDocumentFragment();\
+             frag1.appendChild(document.createComment('data'));\
+             parts.push('frag:' + frag1.isEqualNode(frag2));\
+             frag2.appendChild(document.createComment('data'));\
+             parts.push('frag-eq:' + frag1.isEqualNode(frag2));\
+             parts.join('|');",
+        )
+        .unwrap()
+        .value;
+    assert_eq!(
+        out,
+        "el-ns:true:false:false|attr:true:false|pi:true:false:false|dt:true:false:false|docs:true|frag:false|frag-eq:true",
+        "R131 isEqualNode：ns/prefix/localName/属性集（属性 prefix 不参与）/PI target/doctype 三字段/文档结构/子节点递归"
+    );
+}

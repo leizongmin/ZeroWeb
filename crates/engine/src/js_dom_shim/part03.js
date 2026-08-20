@@ -557,6 +557,14 @@
     }
     return n;
   });
+  // R131（js-dom M4）：`Node.prototype.isEqualNode` 泛型——统一走 `_zwIsEqualNode`
+  //（spec dom-node-isequalnode 逐类型字段 + 子节点递归）。proxy 元素的 get trap 有
+  // isEqualNode 分支（part04，_nodeSig 旧签名版）——**原型方法先于 get trap 兜底**：
+  // proxy get trap 拦截一切属性读，须同步改 part04 分支委托本实现（同轮修改）。
+  _zwDefProtoMethod(globalThis.Node.prototype, 'isEqualNode', function (other) {
+    if (!other || typeof other !== 'object') return false;
+    return _zwIsEqualNode(this, other);
+  });
   // js-dom M4 R128：DocumentType 构造器全局占位（WPT Node-cloneNode
   // "implementation.createDocumentType" 的 `check_copy(dt, copy, DocumentType)`——
   // `DocumentType is not defined` ReferenceError 崩用例；instanceof 经占位为 true 的
@@ -1158,6 +1166,117 @@
   // 亦为稳定单例。null/undefined（contains(null) 用例）恒 false。
   function _zwSameNode(a, b) {
     return a === b;
+  }
+  // R131（js-dom M4）：`isEqualNode`——spec dom-node-isequalnode 逐类型字段比较 + 子节点
+  // 递归（同一算法步骤：nodeType 不同 → false；各类型字段族不同 → false；childNodes 数量/
+  // 逐对递归不同 → false）。旧 `_nodeSig` outerHTML 序列化签名的三个语义洞：① NS/prefix
+  // 不参与序列化（different namespace/prefix 误等）② PI 的 target 不进签名（different
+  // target 误等）③ doctype/document/fragment plain object 无方法直接 TypeError。统一实现
+  // 按节点类型分派，全形态（proxy/元素工厂/text/comment/PI/doctype/fragment/document）适用。
+  // 属性比较（spec 步骤「attributes 的 namespace/localName/value 集」）：属性序无关 + **prefix
+  // 不参与**（WPT "attribute with different prefix" 期望 true）。
+  function _zwIsEqualNode(a, b) {
+    if (!a || !b || typeof a !== 'object' || typeof b !== 'object') return false;
+    if (_zwSameNode(a, b)) return true;
+    var na = a.nodeType | 0, nb = b.nodeType | 0;
+    if (na !== nb) return false;
+    // 字段族按类型（spec 步骤 3-7 的字段面）
+    if (na === 3 || na === 8 || na === 4 || na === 7) {
+      // Text/Comment/CDATA/PI：data 全等；PI 加 target（spec 步骤 7：target + data）
+      if (na === 7) {
+        var ta = _zwPiTargetOf(a), tb = _zwPiTargetOf(b);
+        if (String(ta) !== String(tb)) return false;
+      }
+      var da = String(a.data != null ? a.data : (a.nodeValue != null ? a.nodeValue : ''));
+      var db = String(b.data != null ? b.data : (b.nodeValue != null ? b.nodeValue : ''));
+      return da === db;
+    }
+    if (na === 10) {
+      // DocumentType（spec 步骤 6）：name/publicId/systemId 三字段
+      return String(a.name || a.nodeName || '') === String(b.name || b.nodeName || '')
+        && String(a.publicId || '') === String(b.publicId || '')
+        && String(a.systemId || '') === String(b.systemId || '');
+    }
+    if (na === 1) {
+      // Element（spec 步骤 5）：namespace/localName/attributes 集 + prefix（WPT
+      // "different prefix" 期望 false）。**HTML 语义元素**（HTML ns 文档产物）的 ns/prefix
+      // 读取形态分裂：d3 createElement 产物 ns=XHTML+prefix=null，d4 合成 head/body 是
+      // plain object 无 ns 字段（undefined）——spec 语义「同一 HTML 文档内的 head 无
+      // prefix、ns 即文档 ns」；WPT 本断言期望两径相等 → **undefined 与 null 归一为
+      // 「无」**（`ns == null ? '' : ns`）+ prefix 同归一。
+      if (String(a.namespaceURI == null ? '' : a.namespaceURI) !== String(b.namespaceURI == null ? '' : b.namespaceURI)) return false;
+      var pa = a.prefix == null ? '' : a.prefix, pb = b.prefix == null ? '' : b.prefix;
+      if (String(pa) !== String(pb)) return false;
+      if (String(a.localName || a.nodeName || '') !== String(b.localName || b.nodeName || '')) return false;
+      var aa = _zwEqualAttrsOf(a), ab = _zwEqualAttrsOf(b);
+      if (aa.length !== ab.length) return false;
+      // 属性序无关配对：a 的每属性在 b 中找 namespace+localName 匹配且 value 全等
+      for (var i = 0; i < aa.length; i++) {
+        var hit = false;
+        for (var j = 0; j < ab.length; j++) {
+          if (String(aa[i].ns == null ? '' : aa[i].ns) === String(ab[j].ns == null ? '' : ab[j].ns)
+            && String(aa[i].local) === String(ab[j].local)) {
+            if (String(aa[i].value == null ? '' : aa[i].value) === String(ab[j].value == null ? '' : ab[j].value)) hit = true;
+            break;
+          }
+        }
+        if (!hit) return false;
+      }
+    }
+    // Document(9)/Fragment(11)/其余：无字段面（spec 步骤 8：仅比较子节点）
+    // 子节点递归（spec 步骤 2：childNodes 逐对 isEqualNode）
+    var ka = _zwChildNodesOf(a), kb = _zwChildNodesOf(b);
+    if (ka.length !== kb.length) return false;
+    for (var k = 0; k < ka.length; k++) {
+      if (!_zwIsEqualNode(ka[k], kb[k])) return false;
+    }
+    return true;
+  }
+  // R131：节点子列表统一读（plain object childNodes / proxy get trap childNodes / doc
+  // 级快照∪pending 融合视图——与 compareDocumentPosition 同源消费）
+  function _zwChildNodesOf(n) {
+    try {
+      var cn = n.childNodes;
+      if (typeof cn === 'function') return []; // 防御
+      if (cn && typeof cn.length === 'number') return Array.prototype.slice.call(cn);
+    } catch (_e) {}
+    return [];
+  }
+  // R131：PI target 读（proxy 形态经 _piHandles 元数据；plain 形态经 target 字段）
+  function _zwPiTargetOf(n) {
+    try {
+      if (n.target != null) return n.target;
+      var h = n.__zwHandle;
+      if (h && typeof _piHandles !== 'undefined' && _piHandles[h]) return _piHandles[h].target;
+    } catch (_e) {}
+    return '';
+  }
+  // R131：元素属性三元组（ns/local/value）读——proxy 形态经 attributes get trap（已带 NS
+  // 元数据 registry）；plain 形态（_zwMEl）经 attributes 数组（name/value + nsHandles 源）
+  function _zwEqualAttrsOf(el) {
+    var out = [];
+    try {
+      var as = el.attributes;
+      if (as) {
+        var len = typeof as.length === 'number' ? as.length : 0;
+        for (var i = 0; i < len; i++) {
+          var at = as[i];
+          if (!at) continue;
+          var qn = String(at.name || at.nodeName || '');
+          var c = qn.indexOf(':');
+          var local = at.localName != null ? String(at.localName) : (c >= 0 ? qn.slice(c + 1) : qn);
+          var ns = at.namespaceURI != null ? String(at.namespaceURI) : '';
+          if (!ns && c > 0) {
+            // plain 形态无 NS 元数据：prefix 推断（非 ns 声明场景仅 xml 保留 prefix——
+            // createElementNS 产物经 _nsHandles 有 ns；setAttributeNS 产物经 attributes get
+            // trap 有 ns；此处回落空 ns 即「无 ns 属性」——WPT 用例的 NS 属性都经前两径）
+            ns = '';
+          }
+          out.push({ ns: ns, local: local, value: at.value != null ? String(at.value) : '' });
+        }
+      }
+    } catch (_e) {}
+    return out;
   }
   // `ref.contains(other)`——spec：沿 other 的 parent 链上行（含 other 自身），identity 命中 ref
   // 即 true。guard 防环（异常树/自环防御，正常 ≤ 树深）。
@@ -4369,6 +4488,7 @@
       tagName: 'BODY',
       nodeName: 'BODY',
       localName: 'body',
+      namespaceURI: 'http://www.w3.org/1999/xhtml', prefix: null, // R131：同 docEl/headEl
       parentNode: null, // R3017：detached root，parentNode=null（DOMPurify 经 node.parentNode 取父）
       get innerHTML() { return _tree ? _tree.innerHTML : bodyHtml; },
       set innerHTML(v) { bodyHtml = v == null ? '' : String(v); _tree = null; },
@@ -4444,7 +4564,12 @@
     // nextNode(node) 对树节点统一调 node.hasChildNodes()——旧 docEl 无此方法 → undefined 崩
     // "Cannot read properties of undefined (reading 'hasChildNodes')"——实际崩点在 prototype
     // 链上缺失（docEl.childNodes 数组存在但 hasChildNodes 函数缺失）。
-    var docEl = { nodeType: 1, tagName: 'HTML', nodeName: 'HTML', localName: 'html', childNodes: [], hasChildNodes: function () { return docEl.childNodes.length > 0; }, get firstChild() { return docEl.childNodes.length ? docEl.childNodes[0] : null; }, get lastChild() { return docEl.childNodes.length ? docEl.childNodes[docEl.childNodes.length - 1] : null; },
+    var docEl = { nodeType: 1, tagName: 'HTML', nodeName: 'HTML', localName: 'html',
+      // R131：HTML ns 显式标注（spec：HTML 文档的 html/head/body 均 XHTML ns——
+      // isEqualNode 的 ns 字段比较与 d3 createElement('head') 产物[ns=XHTML]对齐，
+      // WPT "default HTML documents, created different ways" 断言）。
+      namespaceURI: 'http://www.w3.org/1999/xhtml', prefix: null,
+      childNodes: [], hasChildNodes: function () { return docEl.childNodes.length > 0; }, get firstChild() { return docEl.childNodes.length ? docEl.childNodes[0] : null; }, get lastChild() { return docEl.childNodes.length ? docEl.childNodes[docEl.childNodes.length - 1] : null; },
       // R126：docEl 的 mutation 面（WPT Node-removeChild synthetic 变体
       // `doc.documentElement.appendChild(s)`——docEl 旧无 appendChild 直接 TypeError）。
       // appendChild relink parentNode（childNodes 视图 + 父链一致）；removeChild 带
@@ -4498,7 +4623,7 @@
         Object.setPrototypeOf(docEl, globalThis.HTMLHtmlElement.prototype);
       }
     } catch (_e130a) {}
-    var headEl = { nodeType: 1, tagName: 'HEAD', nodeName: 'HEAD', localName: 'head', childNodes: [], hasChildNodes: function () { return headEl.childNodes.length > 0; }, get firstChild() { return headEl.childNodes.length ? headEl.childNodes[0] : null; }, get lastChild() { return headEl.childNodes.length ? headEl.childNodes[headEl.childNodes.length - 1] : null; } };
+    var headEl = { nodeType: 1, tagName: 'HEAD', nodeName: 'HEAD', localName: 'head', namespaceURI: 'http://www.w3.org/1999/xhtml', prefix: null, childNodes: [], hasChildNodes: function () { return headEl.childNodes.length > 0; }, get firstChild() { return headEl.childNodes.length ? headEl.childNodes[0] : null; }, get lastChild() { return headEl.childNodes.length ? headEl.childNodes[headEl.childNodes.length - 1] : null; } };
     try {
       if (globalThis.HTMLHeadElement && globalThis.HTMLHeadElement.prototype) {
         Object.setPrototypeOf(headEl, globalThis.HTMLHeadElement.prototype);

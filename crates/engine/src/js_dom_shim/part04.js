@@ -881,14 +881,13 @@
           };
         }
         // `el.isEqualNode(other)`——节点结构相等（node-equality 三件套：isSameNode 身份 / compareDocumentPosition
-        // 位置 / isEqualNode 结构）。testing/diff 库高频。经 `_nodeSig` 序列化签名比对（元素 outerHTML / text·comment
-        // nodeValue）。**已知限制**：属性序敏感（spec 序无关）；handle/detached 元素 outerHTML 仅 innerHTML 回落。
+        // 位置 / isEqualNode 结构）。R131：改委托 `_zwIsEqualNode`（spec dom-node-isequalnode
+        // 逐类型字段 + 子节点递归——旧 `_nodeSig` outerHTML 签名不比较 NS/prefix/PI-target，
+        // WPT Node-isEqualNode 的 different-namespace/prefix/target 全误等）。
         if (prop === 'isEqualNode') {
           return function(other) {
             if (!other || typeof other !== 'object') return false;
-            var oSel = other.__zwSelector || '';
-            var oHandle = other.__zwHandle || null;
-            return _nodeSig(sel, handle) === _nodeSig(oSel, oHandle);
+            return _zwIsEqualNode(_makeProxy(sel, handle), other);
           };
         }
         // `el.compareDocumentPosition(other)`——bitmask 描述 other 相对 el 的文档位置（树算法 / 库排序高频）。
