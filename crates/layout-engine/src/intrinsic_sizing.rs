@@ -17,6 +17,22 @@ use zero_style_system::property::types::{ColumnSpanComputedValue, FlexBasisValue
 
 use crate::types::LayoutBox;
 
+fn resolve_intrinsic_real_length(value: &LengthValue, style: &ComputedStyle) -> Option<f32> {
+    match value {
+        LengthValue::Auto
+        | LengthValue::Percentage(_)
+        | LengthValue::MinContent
+        | LengthValue::MaxContent
+        | LengthValue::FitContent(_) => None,
+        LengthValue::Px(v) if *v == f64::INFINITY => None,
+        other => {
+            let font_size_px = zero_style_system::computed::resolve_length(&style.font_size, 16.0, None, None);
+            let px = zero_style_system::computed::resolve_length(other, font_size_px, None, None);
+            px.is_finite().then_some((px as f32).max(0.0))
+        }
+    }
+}
+
 /// 计算一个盒的「内容最大宽度」（max-content）。
 ///
 /// 递归规则（CSS intrinsic sizing）：
@@ -122,10 +138,7 @@ pub(crate) fn box_content_max_width(
     let own_explicit = box_node
         .node_id
         .and_then(|id| styles.get(&id))
-        .and_then(|s| match &s.width {
-            LengthValue::Px(v) => Some(*v as f32),
-            _ => None,
-        })
+        .and_then(|s| resolve_intrinsic_real_length(&s.width, s))
         .unwrap_or(0.0);
     let inner = if !has_in_flow_child {
         // 叶盒：显式宽或文本内容宽（Round C）。纯文本 item（无 LayoutBox 子元素）
@@ -226,10 +239,7 @@ pub(crate) fn block_max_content_width(
     let own_explicit = box_node
         .node_id
         .and_then(|id| styles.get(&id))
-        .and_then(|s| match &s.width {
-            LengthValue::Px(v) => Some(*v as f32),
-            _ => None,
-        })
+        .and_then(|s| resolve_intrinsic_real_length(&s.width, s))
         .unwrap_or(0.0);
     let inner = if !has_in_flow_child {
         let text_w = box_node
@@ -1036,6 +1046,27 @@ mod tests {
         let w = compute_intrinsic(html, "c").expect("flex row intrinsic");
         // 单 item width:50 → 50（无 padding/border）
         assert!((w - 50.0).abs() < 1.0, "expected ~50px, got {}", w);
+    }
+
+    #[test]
+    fn test_leaf_explicit_width_relative_length_fallback() {
+        let mut doc = zero_dom::Document::new();
+        let node = doc.create_element("div");
+
+        let mut styles = HashMap::new();
+        let mut style = ComputedStyle::default();
+        style.font_size = LengthValue::Px(20.0);
+        style.width = LengthValue::Em(5.0);
+        styles.insert(node, style);
+
+        let box_node = LayoutBox {
+            node_id: Some(node),
+            ..Default::default()
+        };
+
+        let w = box_content_max_width(&box_node, &doc, &styles);
+
+        assert_eq!(w, 100.0, "5em at 20px should contribute a 100px max-content width");
     }
 
     #[test]

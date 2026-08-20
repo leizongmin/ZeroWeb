@@ -328,3 +328,5 @@ Table column sizing exposed the explicit-column variant: column width calculatio
 Table col prepasses exposed the sibling-prepass variant: a later column sizing helper can have an earlier collection pass that consumes the same CSS width semantics. When fixing a main table width resolver, audit pre-pass collectors for independent `Px/%` branches so col/colgroup declarations do not diverge from cell declarations.
 
 Table min-width redistribution exposed the post-constraint-sync variant: expanding the table wrapper to `min-width` does not automatically expand the column vector consumed by cell positioning and painting. When a layout object has both wrapper constraints and internal track/column arrays, resolve residual real lengths at both consumers.
+
+Intrinsic sizing exposed the shared-measurement variant: leaf max-content fallbacks are consumed by flex, grid, table-cell, and shrink-to-fit callers. These helpers must resolve residual real lengths locally rather than assuming direct `ComputedStyle` callers always pass canonical `Px` widths.
