@@ -356,3 +356,5 @@ Strict classic script execution exposed the wrapper-scope trap: catching page-sc
 Flex aspect-ratio post-fixup exposed the second-pass replay variant: a first-pass taffy result can contain raw residual-unit geometry, and later fixups may reuse parent cross size or min-size gates from CSS values. Resolve those operands again in the post-layout pass instead of trusting either the raw taffy geometry or `Px`-only style matches.
 
 Late min/max block-size clamps exposed the sibling-flow variant: if a post-taffy pass changes an in-flow block child's outer extent, later normal-flow block siblings must be shifted by the same delta. Resolving residual `min-height` without propagating that delta leaves the box size correct but the rendered flow order stale.
+
+Relative inset postprocessing exposed the raw-delta variant: when taffy already applied a residual real length as its raw numeric value, a later used-value fix must add only `resolved_px - raw_value`. Reapplying the full resolved length would double-count the raw offset, while touching inline relative without a dedicated test risks crossing into the separate IFC offset path.

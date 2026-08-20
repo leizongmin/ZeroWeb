@@ -47,6 +47,33 @@ fn resolve_postprocess_real_length(value: &LengthValue, style: &ComputedStyle) -
     }
 }
 
+fn postprocess_raw_real_length_value(value: &LengthValue) -> Option<f32> {
+    match value {
+        LengthValue::Px(_) | LengthValue::Auto | LengthValue::Percentage(_) => None,
+        LengthValue::Em(v)
+        | LengthValue::Ex(v)
+        | LengthValue::Rex(v)
+        | LengthValue::Cap(v)
+        | LengthValue::Rcap(v)
+        | LengthValue::Rem(v)
+        | LengthValue::Vh(v)
+        | LengthValue::Vw(v)
+        | LengthValue::Vmin(v)
+        | LengthValue::Vmax(v)
+        | LengthValue::Ch(v)
+        | LengthValue::Rch(v)
+        | LengthValue::Ic(v)
+        | LengthValue::Ric(v) => v.is_finite().then_some((*v).max(0.0) as f32),
+        LengthValue::Calc(_) | LengthValue::FitContent(_) | LengthValue::MinContent | LengthValue::MaxContent => None,
+    }
+}
+
+fn relative_real_length_delta(value: &LengthValue, style: &ComputedStyle) -> Option<f32> {
+    let raw = postprocess_raw_real_length_value(value)?;
+    let resolved = resolve_postprocess_real_length(value, style)?;
+    Some(resolved - raw)
+}
+
 fn is_shiftable_in_flow_block(box_node: &LayoutBox) -> bool {
     box_node.is_block_level && matches!(box_node.float, FloatValue::None) && !box_node.is_absolute && !box_node.is_fixed
 }
@@ -1822,7 +1849,9 @@ pub(super) fn apply_block_relative_percent_insets(
         // 本盒是否 grid 容器（传给子代作 parent_is_grid）。
         let my_is_grid = style.is_some_and(|s| matches!(s.display, DisplayValue::Grid | DisplayValue::InlineGrid));
 
-        // 应用本盒 Percent inset（relative，非 abspos/fixed；block-level **和** inline）。
+        // 应用本盒 relative inset 修正（relative，非 abspos/fixed）。
+        // Block-level residual real length 已被 converter 以 raw number 交给 taffy，因此此处只补
+        // resolved_px - raw 的差值；Px 不动，Percent 仍遵守下面的专项规则。
         // ★ 仅 top/bottom%（垂直轴）——R850 实证 taffy 0.7 已应用 left/right%（水平轴），
         // 此处再应用会 double-count 致 left-103/104/113、right-103/104、relpos-calcs-003/004/005
         // 回归（0.46%→4.28%）。taffy 仅丢弃 top/bottom%（R715 实证），故本 pass 只补垂直轴。
@@ -1833,14 +1862,27 @@ pub(super) fn apply_block_relative_percent_insets(
             && !b.is_fixed
             && let Some(style) = style
         {
+            let dx = if b.is_block_level {
+                relative_real_length_delta(&style.left, style)
+                    .or_else(|| relative_real_length_delta(&style.right, style).map(|v| -v))
+            } else {
+                None
+            };
+            if let Some(dx) = dx {
+                b.x += dx;
+            }
+
             // CSS §9.4.3：top 优先（否则 bottom，正值向上）。
             let dy = match &style.top {
                 LengthValue::Percentage(p) => cb_h.map(|h| *p as f32 / 100.0 * h),
-                _ => match &style.bottom {
-                    LengthValue::Percentage(p) => cb_h.map(|h| -(*p as f32 / 100.0 * h)),
-                    _ => None,
-                },
-            };
+                lv if b.is_block_level => relative_real_length_delta(lv, style),
+                _ => None,
+            }
+            .or_else(|| match &style.bottom {
+                LengthValue::Percentage(p) => cb_h.map(|h| -(*p as f32 / 100.0 * h)),
+                lv if b.is_block_level => relative_real_length_delta(lv, style).map(|v| -v),
+                _ => None,
+            });
             if let Some(dy) = dy {
                 b.y += dy;
             }

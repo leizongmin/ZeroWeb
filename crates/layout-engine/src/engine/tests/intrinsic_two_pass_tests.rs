@@ -364,6 +364,48 @@ fn test_r1044_inline_passes_through_cb_height_for_relative_percent() {
     );
 }
 
+/// R3619：block-level relative inset 的真实长度残留值也要按当前 font-size 解析。
+/// direct `ComputedStyle` 下 `top:2em;left:3em;font-size:20px` 应相对静态位置偏移
+/// (60, 40)；旧 taffy 转换把 em raw-number 当 px，只产生约 (3, 2) 的偏移。
+#[test]
+fn r3619_block_relative_inset_resolves_residual_real_lengths() {
+    let html = r#"<html><body style="margin:0">
+        <div style="height:40px"></div>
+        <div id="target" style="position:relative;width:50px;height:20px"></div>
+        <div id="after" style="width:50px;height:20px"></div>
+    </body></html>"#;
+    let doc = zero_dom::parse_html(html);
+    let mut sys = StyleSystem::new();
+    sys.set_viewport(800.0, 600.0);
+    let mut styles = sys.compute_styles(&doc, &[]);
+    let target_id = doc.get_element_by_id("target").expect("target");
+    let target_style = styles.get_mut(&target_id).expect("target style");
+    target_style.font_size = LengthValue::Px(20.0);
+    target_style.top = LengthValue::Em(2.0);
+    target_style.left = LengthValue::Em(3.0);
+
+    let mut engine = LayoutEngine::new(800.0, 600.0);
+    let result = engine.compute(&doc, &styles);
+    let target = find("target", &doc, &result.root).expect("target box");
+    let after = find("after", &doc, &result.root).expect("after box");
+
+    assert!(
+        (target.x - 60.0).abs() < 3.0,
+        "R3619: relative left should resolve 3em@20px to 60px, got {}",
+        target.x
+    );
+    assert!(
+        (target.y - 80.0).abs() < 3.0,
+        "R3619: relative top should resolve static y 40 + 2em@20px to 80px, got {}",
+        target.y
+    );
+    assert!(
+        (after.y - 60.0).abs() < 3.0,
+        "R3619: relative offset must not affect following normal-flow sibling, got after.y={}",
+        after.y
+    );
+}
+
 /// R1293：grid/flex item（style.height==Auto）经 stretch 拉伸到定值 track 后，其
 /// relative 后代的 top/bottom % 应解析到该 **post-layout content_height**（非 None）。
 /// 复刻 relative-grandchild：`grid(h:100) > div(auto-h grid item) > div(relative;top:-100%;h:100)`。
