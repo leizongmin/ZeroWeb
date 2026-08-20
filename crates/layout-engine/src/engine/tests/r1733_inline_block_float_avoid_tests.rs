@@ -158,3 +158,61 @@ fn r1733_multifloat_inline_block_not_misplaced_when_infeasible() {
         ib_box.width
     );
 }
+
+/// R3613：multi-float 不可行分支虽然保持原位，也必须恢复声明宽的 used-value。
+/// `width:10em;font-size:20px` = 200px；旧逻辑在不可行时直接 no-op，
+/// 因而把 taffy raw `Em(10)` 的 10px 宽留到最终布局。
+#[test]
+fn r3613_multifloat_infeasible_relative_inline_block_preserves_declared_width() {
+    let (mut doc, body) = make_doc_with_body();
+    let container = doc.create_element("div");
+    doc.append_child(body, container).unwrap();
+    let float_l = doc.create_element("div");
+    doc.append_child(container, float_l).unwrap();
+    let float_r = doc.create_element("div");
+    doc.append_child(container, float_r).unwrap();
+    let ib = doc.create_element("span");
+    doc.append_child(container, ib).unwrap();
+
+    let mut styles = HashMap::new();
+    let mut cont = ComputedStyle::default();
+    cont.display = DisplayValue::Block;
+    cont.width = LengthValue::Px(400.0);
+    styles.insert(container, cont);
+
+    let mut fl = ComputedStyle::default();
+    fl.display = DisplayValue::Block;
+    fl.float = FloatValue::Left;
+    fl.width = LengthValue::Px(250.0);
+    fl.height = LengthValue::Px(75.0);
+    styles.insert(float_l, fl);
+
+    let mut fr = ComputedStyle::default();
+    fr.display = DisplayValue::Block;
+    fr.float = FloatValue::Right;
+    fr.width = LengthValue::Px(250.0);
+    fr.height = LengthValue::Px(75.0);
+    styles.insert(float_r, fr);
+
+    let mut s = ComputedStyle::default();
+    s.display = DisplayValue::InlineBlock;
+    s.font_size = LengthValue::Px(20.0);
+    s.width = LengthValue::Em(10.0);
+    s.height = LengthValue::Px(50.0);
+    styles.insert(ib, s);
+
+    let mut engine = LayoutEngine::new(800.0, 600.0);
+    let result = engine.compute(&doc, &styles);
+
+    let ib_box = find_child_by_node_id(&result.root, ib).expect("inline-block found");
+    assert!(
+        ib_box.x < 50.0,
+        "multi-float 不可行时 inline-block 应保持原位，实际 x={}",
+        ib_box.x
+    );
+    assert!(
+        ib_box.width >= 195.0,
+        "multi-float 不可行时 relative inline-block 应保持 width≈200，实际 {}",
+        ib_box.width
+    );
+}

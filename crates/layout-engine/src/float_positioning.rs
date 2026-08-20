@@ -93,6 +93,9 @@ pub(crate) fn apply_inline_block_float_avoidance(box_node: &mut LayoutBox) {
                         child.width = used_width;
                     }
                     shrink_bfc_content_width(child);
+                } else if let Some(width) = child.declared_width_px {
+                    child.width = width;
+                    shrink_bfc_content_width(child);
                 }
                 // 不可行 → 不动（避免错位）
             } else if overlapping.len() == 1 {

@@ -342,3 +342,5 @@ Right-float BFC avoidance exposed the entry-guard variant: adding a used-value c
 Multi-float coordination exposed the feasible-region variant: candidate placement solvers must use the used border-box width when computing x intervals, not only when finally restoring geometry. A raw residual length can make an infeasible gap look feasible and lock in the wrong width.
 
 Inline-block float avoidance exposed the atomic-inline variant: terminal geometry passes that adjust an inline-block position must also restore its declared used width and content width. Fixing only the x/y coordinate can leave the atomic box visually shifted but still sized from a raw residual unit.
+
+Infeasible multi-float placement exposed the no-op trap: "do not move the box" must not mean "leave every fallback geometry untouched." If a branch intentionally preserves position, it still needs to restore cached used dimensions before paint and hit-test consumers read the final layout tree.
