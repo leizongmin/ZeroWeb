@@ -1051,3 +1051,44 @@ fn test_img_ratio_only_all_auto_default_object_size() {
         img_box.height
     );
 }
+
+/// R3615：ratio-only 替换元素 auto+auto 从父宽收束时，也要解析父级 residual real length。
+/// direct `ComputedStyle` 下父 `width:10em;font-size:20px` = 200px；旧逻辑只识别父
+/// `LengthValue::Px`，因此回退到默认对象宽 300。
+#[test]
+fn r3615_ratio_only_auto_img_uses_relative_parent_width() {
+    let (mut doc, body) = make_doc_with_body();
+    let container = doc.create_element("div");
+    doc.append_child(body, container).unwrap();
+    let img = doc.create_element("img");
+    doc.append_child(container, img).unwrap();
+
+    let mut styles = HashMap::new();
+    let mut c = ComputedStyle::default();
+    c.display = DisplayValue::Block;
+    c.font_size = LengthValue::Px(20.0);
+    c.width = LengthValue::Em(10.0);
+    styles.insert(container, c);
+
+    let mut s = ComputedStyle::default();
+    s.display = DisplayValue::Block;
+    styles.insert(img, s);
+
+    let mut ratios = HashMap::new();
+    ratios.insert(img, 2.0_f32);
+
+    let mut engine = LayoutEngine::new(800.0, 600.0);
+    let result = engine.compute_with_img_intrinsic(&doc, &styles, HashMap::new(), ratios, HashMap::new());
+
+    let img_box = find_child_by_node_id(&result.root, img).expect("img found");
+    assert!(
+        (img_box.width - 200.0).abs() < 2.0,
+        "ratio-only auto img should use resolved parent width 200, got {}",
+        img_box.width
+    );
+    assert!(
+        (img_box.height - 100.0).abs() < 2.0,
+        "ratio-only auto img height should be parent width / ratio = 100, got {}",
+        img_box.height
+    );
+}

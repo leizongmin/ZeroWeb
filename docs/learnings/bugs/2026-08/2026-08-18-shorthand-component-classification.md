@@ -346,3 +346,5 @@ Inline-block float avoidance exposed the atomic-inline variant: terminal geometr
 Infeasible multi-float placement exposed the no-op trap: "do not move the box" must not mean "leave every fallback geometry untouched." If a branch intentionally preserves position, it still needs to restore cached used dimensions before paint and hit-test consumers read the final layout tree.
 
 Replaced-element intrinsic ratio sizing exposed the pre-taffy variant: if the tree builder computes an auto side from a specified side before final layout, it must resolve the specified side's real length first and write that used size back to taffy. Otherwise both the explicit side and the ratio-derived side inherit the converter's raw residual number.
+
+Ratio-only replaced sizing exposed the containing-size variant: fallback/default object sizing may still consult a definite parent size. That parent value is another CSS used-value boundary and must be resolved with the parent style context, not treated as usable only when already stored as px.

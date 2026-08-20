@@ -712,13 +712,10 @@ fn apply_replaced_element_sizing(
                         // ratio**（§10.3.2 "should" undefined 的 chromium 非标准行为；default object
                         // size 300×150 会溢出父盒，chromium 收束到父宽）。仅父有 Px 宽时用之
                         //（限 blast radius——auto 父或无父回落 default 300，避免普遍撑满父宽）。
-                        let container_w =
-                            doc.parent_node(dom_id)
-                                .and_then(|p| styles.get(&p))
-                                .and_then(|s| match &s.width {
-                                    zero_css_parser::values::LengthValue::Px(w) => Some(*w as f32),
-                                    _ => None,
-                                });
+                        let container_w = doc
+                            .parent_node(dom_id)
+                            .and_then(|p| styles.get(&p))
+                            .and_then(|s| resolve_tree_definite_real_length(&s.width, s));
                         let w = container_w.unwrap_or(300.0);
                         taffy_style.size.width = taffy::style::Dimension::length(w);
                         taffy_style.size.height = taffy::style::Dimension::length((w / ratio).max(0.5));
