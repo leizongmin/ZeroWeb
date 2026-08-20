@@ -472,25 +472,31 @@ pub(super) fn stretch_root_abspos_to_viewport(
     let Some(style) = root.node_id.and_then(|nid| styles.get(&nid)) else {
         return;
     };
-    // 位置：root CB 原点 = 视口 (0,0)，left/top Px → 绝对坐标。
-    if let LengthValue::Px(left) = &style.left {
-        root.x = *left as f32;
+    // 位置：root CB 原点 = 视口 (0,0)，left/top real length → 绝对坐标。
+    if let Some(left) = resolve_abspos_real_length(&style.left, &style.font_size, viewport_width, viewport_height) {
+        root.x = left;
     }
-    if let LengthValue::Px(top) = &style.top {
-        root.y = *top as f32;
+    if let Some(top) = resolve_abspos_real_length(&style.top, &style.font_size, viewport_width, viewport_height) {
+        root.y = top;
     }
     // 尺寸 stretch：auto + 全长度对边 inset → viewport - inset（§10.3.18/§10.6.4）。
     if matches!(style.width, LengthValue::Auto)
-        && let (LengthValue::Px(left), LengthValue::Px(right)) = (&style.left, &style.right)
+        && let (Some(left), Some(right)) = (
+            resolve_abspos_real_length(&style.left, &style.font_size, viewport_width, viewport_height),
+            resolve_abspos_real_length(&style.right, &style.font_size, viewport_width, viewport_height),
+        )
     {
-        root.width = (viewport_width - (*left as f32) - (*right as f32)).max(0.0);
+        root.width = (viewport_width - left - right).max(0.0);
         let pb = root.padding_left + root.padding_right + root.border_left + root.border_right;
         root.content_width = (root.width - pb).max(0.0);
     }
     if matches!(style.height, LengthValue::Auto)
-        && let (LengthValue::Px(top), LengthValue::Px(bottom)) = (&style.top, &style.bottom)
+        && let (Some(top), Some(bottom)) = (
+            resolve_abspos_real_length(&style.top, &style.font_size, viewport_width, viewport_height),
+            resolve_abspos_real_length(&style.bottom, &style.font_size, viewport_width, viewport_height),
+        )
     {
-        root.height = (viewport_height - (*top as f32) - (*bottom as f32)).max(0.0);
+        root.height = (viewport_height - top - bottom).max(0.0);
         let pb = root.padding_top + root.padding_bottom + root.border_top + root.border_bottom;
         root.content_height = (root.height - pb).max(0.0);
     }

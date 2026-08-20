@@ -1108,6 +1108,43 @@ fn test_root_absolute_all_insets_stretch_to_viewport() {
     );
 }
 
+#[test]
+fn test_root_absolute_relative_length_insets_stretch_to_viewport() {
+    let (doc, body) = make_doc_with_body();
+    let html = doc.parent_node(body).expect("body 应有 html 父节点");
+
+    let mut styles = std::collections::HashMap::new();
+    let mut html_style = zero_style_system::ComputedStyle::default();
+    html_style.position = PositionValue::Absolute;
+    html_style.font_size = LengthValue::Px(20.0);
+    html_style.top = LengthValue::Em(1.0);
+    html_style.bottom = LengthValue::Em(2.0);
+    html_style.left = LengthValue::Em(0.5);
+    html_style.right = LengthValue::Em(1.0);
+    styles.insert(html, html_style);
+
+    let mut engine = LayoutEngine::new(800.0, 600.0);
+    let result = engine.compute(&doc, &styles);
+
+    assert!(result.root.is_absolute, "root html 应标记为 abspos");
+    assert!(
+        (result.root.height - 540.0).abs() < 1.0,
+        "root height 应 stretch 到 540（viewport 600 - inset 20/40），实际 {}",
+        result.root.height
+    );
+    assert!(
+        (result.root.width - 770.0).abs() < 1.0,
+        "root width 应 stretch 到 770（viewport 800 - inset 10/20），实际 {}",
+        result.root.width
+    );
+    assert!(
+        (result.root.x - 10.0).abs() < 1.0 && (result.root.y - 20.0).abs() < 1.0,
+        "root position 应解析 em inset 到 (10,20)，实际 ({},{})",
+        result.root.x,
+        result.root.y
+    );
+}
+
 /// Grid 使用 repeat(auto-fill, ...) 模板 — 验证 grid template 解析不 panic，
 /// 且 auto-fill 降级为单列时子元素布局正确。
 #[test]

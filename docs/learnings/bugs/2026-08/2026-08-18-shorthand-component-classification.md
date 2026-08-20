@@ -306,3 +306,5 @@ Root abspos exposed the parallel-postprocess variant: a viewport-CB fix can leav
 Fixed positioning exposed the stretch-postprocess variant: position correction and size stretch can live in separate postprocess functions for the same CSS inset semantics. After adding a real-length resolver for fixed or absolute coordinates, audit opposing-inset auto-size stretch paths before considering the CB family covered.
 
 Viewport abspos exposed the coordinate-vs-stretch split: resolving `left` and `top` used values does not cover `width:auto` or `height:auto` stretch from opposing insets. For positioned layout, audit coordinates and auto-size equations as separate consumers even when they share the same containing block.
+
+Root self positioning exposed the top-level-special-case variant: root elements often bypass child traversal helpers. When a child-positioning bug is fixed in viewport or root-CB postprocess code, audit root self helpers separately for both position and auto-size equations.
