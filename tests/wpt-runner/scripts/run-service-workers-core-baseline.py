@@ -60,6 +60,18 @@ def validate_shape(cases: list) -> None:
         raise RuntimeError("runner emitted duplicate case paths")
 
 
+def validate_all_pass(entries: list[tuple[str, str, str]]) -> None:
+    failures = [entry for entry in entries if entry[2] != "Pass"]
+    if failures:
+        sample = "; ".join(
+            f"{case}: {name}={status}" for case, name, status in failures[:5]
+        )
+        raise RuntimeError(
+            f"expected all {len(entries)} subtests to Pass, "
+            f"found {len(failures)} non-Pass: {sample}"
+        )
+
+
 def main() -> int:
     args = parse_args()
     if not args.runner.is_file():
@@ -75,6 +87,7 @@ def main() -> int:
     second_normalized = normalized(second)
     if first_normalized != second_normalized:
         raise RuntimeError("case/subtest/status baseline changed between consecutive runs")
+    validate_all_pass(first_normalized)
 
     counts = collections.Counter(status for _, _, status in first_normalized)
     summary = {

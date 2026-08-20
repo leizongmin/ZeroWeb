@@ -22,6 +22,8 @@
   65 条协议消息。
 - WPT runner 仅在 harness `phase=4`、`pending=0` 且结果数等于注册 test 数时结束，不再由
   可陈旧的 completion callback 提前返回。
+- core baseline verifier 除 shape 与两轮 determinism 外，任何非 Pass subtest 都会
+  fail closed。
 
 ## WPT
 

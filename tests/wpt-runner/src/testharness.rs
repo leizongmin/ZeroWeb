@@ -1182,7 +1182,7 @@ fn wpt_data_service_worker_script_fetcher(
                 .find('/')
                 .ok_or_else(|| format!("Service Worker script URL has no path: {src}"))?;
             let authority = &after_scheme[..path_index];
-            if scheme != "https" || !matches!(authority, "wpt.test" | "www1.wpt.test:443") {
+            if scheme != "https" || !matches!(authority, "wpt.test" | "www1.wpt.test" | "www1.wpt.test:443") {
                 return Err(format!(
                     "external Service Worker fixture origin is not available: {src}"
                 ));
@@ -2174,6 +2174,19 @@ async_test(function(test) {
             .unwrap_err()
             .contains("external Service Worker fixture origin")
         );
+    }
+
+    #[test]
+    fn service_worker_fixture_fetcher_accepts_canonical_cross_origin() {
+        let fetcher =
+            wpt_data_service_worker_script_fetcher(Path::new("/nonexistent-service-worker-wpt-root")).unwrap();
+        let response = fetcher(
+            "https://wpt.test/page",
+            "https://www1.wpt.test/service-workers/service-worker/resources/import-scripts-version.py",
+        )
+        .unwrap();
+        assert_eq!(response.content_type_mime(), Some("application/javascript"));
+        assert!(response.header("access-control-allow-origin").is_none());
     }
 
     #[test]
