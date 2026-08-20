@@ -1308,6 +1308,14 @@
               "Failed to execute 'setAttribute' on 'Element': The name provided is empty.",
               'InvalidCharacterError');
           }
+          // R135（js-dom M4）：attribute 名单语义校验（比 element 名宽——无首字符限制；
+          // invalid = NUL/ASCII 空白五字符/'/'/'>'/'='；':' 合法。WPT name-validation
+          // attribute 列表：'\x01' 合法）。toggleAttribute 经同函数路径。
+          if (typeof _r135IsValidAttrName === 'function' && !_r135IsValidAttrName(n)) {
+            throw new (globalThis.DOMException || Error)(
+              "Failed to execute 'setAttribute' on 'Element': The name provided is not a valid name.",
+              'InvalidCharacterError');
+          }
           // R122：ASCII 小写化仅对 **HTML 命名空间元素**（spec `dom-element-setattribute`
           // 步骤 4「If document is an HTML document and localName is in the HTML namespace」；
           // 非 HTML ns 元素（createElementNS('http://www.example.com',...)）限定名**大小写
@@ -1711,7 +1719,10 @@
             var _r122Throw = function (nm, msg) {
               throw new (globalThis.DOMException || Error)(msg, nm);
             };
-            if (qn === '' || _r122Colon === 0 || _r122Colon === qn.length - 1 || /[\s>]/.test(qn)) {
+            // R135：显式 invalid 字符集（NUL + ASCII 空白五字符 + '/' + '>'——JS /\s/
+            // 含 \x0B 等非 XML 空白误拒；NUL 漏校验使 'null\0' local 不抛）。
+            if (qn === '' || _r122Colon === 0 || _r122Colon === qn.length - 1
+                || /[\u0000\u0009\u000A\u000C\u000D\u0020/>]/.test(qn)) {
               _r122Throw('InvalidCharacterError', 'The string contains invalid characters.');
             }
             if (_r122Pre === null) {
@@ -1723,6 +1734,12 @@
               if (!_r122LocCh.length || !_zwIsNameStartChar(_r122LocCh[0])) {
                 _r122Throw('InvalidCharacterError', 'The string contains invalid characters.');
               }
+            }
+            // R135：NS attribute 段语义（镜像 createAttributeNS 的 _r135IsValidAttrQNameSpec——
+            // prefix 段禁 ':'、local 段禁 '='，两段无首字符限制；WPT name-validation NS
+            // attribute 名单：'p=a:attr' 合法 / 'p:a=b' 抛）。
+            if (typeof _r135IsValidAttrQNameSpec === 'function' && !_r135IsValidAttrQNameSpec(qn)) {
+              _r122Throw('InvalidCharacterError', 'The string contains invalid characters.');
             }
             var _r122XmlNs = 'http://www.w3.org/2000/xmlns/';
             var _r122Xml = 'http://www.w3.org/XML/1998/namespace';

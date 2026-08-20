@@ -1829,16 +1829,27 @@
       //    'namespaceURI:a ' 尾空白 Invalid）；prefix 段不校验（'0:a' Valid）
       // ③ ns = XMLNS ns：localName 恰为 'xmlns' 或 prefix 'xmlns' → 合法；其余 → NamespaceError
       //    （spec：XMLNS ns 仅允许 xmlns 元素）
-      if (/[\s>]/.test(_q)) {
+      // R135（js-dom M4）：按 spec regex 逐段校验（WPT name-validation NS 名单）——
+      // localName 段 = valid element local name 名单（首字符限制 + NUL/ASCII 空白五字符/
+      // '/'/'>' 禁止——**JS /\s/ 含 \x0B/\x85 等非 XML 空白字符误拒**，用显式字符集）；
+      // prefix 段 = valid namespace prefix 名单（同集合 + '=' 允许 + 禁 ':'）。旧整名
+      // /[\s>]/ 对 'null\0' local 不抛（\0 非 \s）→ NUL 漏校验根因。
+      var _r135NsInvalid = /[\u0000\u0009\u000A\u000C\u000D\u0020/>]/;
+      if (_r135NsInvalid.test(_q) || _q.indexOf('\u0000') >= 0) {
         _throwDom('InvalidCharacterError', 'The string contains invalid characters.');
       }
+      // R135：段校验走 spec regex（_r135IsValidName——首字符 ASCII 字母→后续任意合法集 /
+      // ':'/'_'/>=0x80 → 后续 NameChar 集。'\x01' 在 local 中非法[非 NameChar]，':soh\x01'
+      // local 首字符 ':' 合法但 '\x01' 违段集 → 抛，WPT name-validation）。
+      // **prefix 段从宽**（不校验——WPT name-validation 的 validNamespacePrefixes 含 \x01
+      // 等全码点 × valid local 组合都须不抛；regex 对 ≥0x80 首 prefix 的 NameChar 限制
+      // 与浏览器实证宽松冲突，实证优先），只校验 local 段（spec regex）。
       if (_pre === null) {
-        if (!_zwIsNameStartChar(Array.from(_q)[0])) {
+        if (!_r135IsValidName(_q)) {
           _throwDom('InvalidCharacterError', 'The string contains invalid characters.');
         }
       } else {
-        var _locChars = Array.from(_loc);
-        if (!_locChars.length || !_zwIsNameStartChar(_locChars[0])) {
+        if (!_r135IsValidName(_loc)) {
           _throwDom('InvalidCharacterError', 'The string contains invalid characters.');
         }
       }
@@ -1889,6 +1900,13 @@
           "Failed to execute 'createAttribute' on 'Document': The name provided is empty.",
           'InvalidCharacterError');
       }
+      // R135（js-dom M4）：attribute 名单语义校验（无首字符限制；invalid = NUL/
+      // ASCII 空白五字符/'/'/'>'/'='）。
+      if (typeof _r135IsValidAttrName === 'function' && !_r135IsValidAttrName(t)) {
+        throw new (globalThis.DOMException || Error)(
+          "Failed to execute 'createAttribute' on 'Document': The name provided is not a valid name.",
+          'InvalidCharacterError');
+      }
       var isHtmlDoc = !(typeof this.contentType === 'string' && this.contentType.indexOf('html') < 0);
       var n = isHtmlDoc ? t.replace(/[A-Z]/g, function (c) { return String.fromCharCode(c.charCodeAt(0) + 32); }) : t;
       return _zwMakeAttr(n, '', null);
@@ -1898,6 +1916,13 @@
     // 值 ''，ownerElement=null（游离）。返 Attr instanceof Attr（经 _zwMakeAttr 的 Object.create(Attr.prototype)）。
     createAttributeNS: function(ns, qualifiedName) {
       var q = String(qualifiedName);
+      // R135：NS attribute 名单语义校验（prefix 段禁 ':'、local 段禁 '='——两段都无
+      // 首字符限制，比 element QName 宽：'\x01:attr' 合法；'null\0' local 抛）。
+      if (typeof _r135IsValidAttrQNameSpec === 'function' && !_r135IsValidAttrQNameSpec(q)) {
+        throw new (globalThis.DOMException || Error)(
+          "Failed to execute 'createAttributeNS' on 'Document': The name provided is not a valid qualified name.",
+          'InvalidCharacterError');
+      }
       var a = _zwMakeAttr(q, '', null);
       a.namespaceURI = ns != null ? String(ns) : null;
       var colon = q.indexOf(':');
@@ -1931,7 +1956,9 @@
       var t = String(target == null ? '' : target);
       var d = String(data == null ? '' : data);
       // spec 步骤 2：target 须合法 Name（复用 R3 createElement 校验 helper）。
-      if (!_zwIsValidQualifiedName(t)) {
+      // R135：spec regex 直判（旧 NameStartChar/NameChar 链对 \x0B 等 ASCII 空白外
+      // 字符误拒/对部分 valid 序列误收——spec regex 是唯一仲裁）。
+      if (typeof _r135IsValidName === 'function' ? !_r135IsValidName(t) : !_zwIsValidQualifiedName(t)) {
         // globalThis.DOMException（R6 identity：叠加路径下 = 原生 DOMException，避免 wrong global）。
         throw new (globalThis.DOMException)('The target provided is not a valid name.', 'InvalidCharacterError');
       }
@@ -2263,10 +2290,12 @@
       // nodeType 10、ownerDocument。ownerDocument 经 `this` 上下文取所属 document（主 document vs detached doc）。
       createDocumentType: function(qualifiedName, publicId, systemId) {
         // R130（js-dom M4）：qualifiedName 校验（WPT DOMImplementation-createDocumentType
-        // 期望表实证宽松——''/'1foo'/'edi:`'/'edi:<'/{/} 全 pass；仅含空白或 '>' throw
+        // 期望表实证宽松——''/'1foo'/'edi:`'/'edi:<'/{/} 全 pass；仅含 ASCII 空白或 '>' throw
         // INVALID_CHARACTER_ERR——与元素 Name 产线不同，doctype 名仅禁此二类）。
+        // R135：/\s/ → 显式 ASCII 空白五字符（\x0B 非 XML 空白，WPT name-validation
+        // doctype 名单 '\x0B' 合法）+ NUL（名单 invalid）。
         var _r130Dq = String(qualifiedName == null ? '' : qualifiedName);
-        if (/[\s>]/.test(_r130Dq)) {
+        if (/[\u0000\u0009\u000A\u000C\u000D\u0020>]/.test(_r130Dq)) {
           throw new (globalThis.DOMException || Error)('The string contains invalid characters.', 'InvalidCharacterError');
         }
         var owner = globalThis.document;

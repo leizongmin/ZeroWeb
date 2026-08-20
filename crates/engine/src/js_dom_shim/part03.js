@@ -5174,7 +5174,9 @@
         // '}'/'<' 非 NameStart 字符在非首位置合法；'0:a' prefix 段从宽；'f:o:o'/'f::oo'
         // 有 ns 合法（local 含冒号非 malformed）；XMLNS ns 仅 xmlns 元素）。旧
         // `_zwIsValidQualifiedName` + 冒号禁令把 'f}oo'/'f:o:o' 误判 Invalid。
-        if (/[\s>]/.test(_qn) || _qn === '' || _c1 === 0 || _c1 === _qn.length - 1) {
+        // R135：显式 invalid 字符集（NUL + ASCII 空白五字符 + '/' + '>'——JS /\s/ 含
+        // \x0B 等非 XML 空白误拒；NUL 漏校验使 'null\0' local 不抛，WPT name-validation）。
+        if (/[\u0000\u0009\u000A\u000C\u000D\u0020/>]/.test(_qn) || _qn === '' || _c1 === 0 || _c1 === _qn.length - 1) {
           throw new (globalThis.DOMException || Error)('The string contains invalid characters.', 'InvalidCharacterError');
         }
         if (_pre === null) {
@@ -5184,6 +5186,18 @@
         } else {
           var _locChars = Array.from(_loc);
           if (!_locChars.length || !_zwIsNameStartChar(_locChars[0])) {
+            throw new (globalThis.DOMException || Error)('The string contains invalid characters.', 'InvalidCharacterError');
+          }
+        }
+        // R135：段校验走 spec regex（_r135IsValidName——首字符 ASCII 字母→后续任意合法集 /
+        // ':'/'_'/>=0x80 → 后续 NameChar 集；镜像 part06 主文档 createElementNS。':soh\x01'
+        // local 首字符 ':' 合法但 '\x01' 违 NameChar → 抛，WPT name-validation）。
+        // **regex 语义放大**：prefix 段 ≥0x80 首（emoji 等）→ 后续限 NameChar，而 WPT
+        // name-validation 的 validNamespacePrefixes 全码点（含 \x01 等）× valid local 组合
+        // 都须不抛——对含 prefix 的名，prefix 段**从宽**（无字符集校验，仅禁空/NUL/ASCII
+        // 空白/'/'/'>'——上方整名字符集已覆盖），只校验 local 段（spec regex）。
+        if (typeof _r135IsValidName === 'function') {
+          if (_pre === null ? !_r135IsValidName(_qn) : !_r135IsValidName(_loc)) {
             throw new (globalThis.DOMException || Error)('The string contains invalid characters.', 'InvalidCharacterError');
           }
         }

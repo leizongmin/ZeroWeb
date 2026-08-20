@@ -1769,3 +1769,98 @@ fn test_matches_ns_and_unscopables_r134() {
         "R134 matches NS 三形态（空 ns 裸 type/urn:ns 裸+*|+ns|+错 ns/*）+ HTML 大小写 + 复合选择器保守 false + unscopables 表 + proxy get trap 透出"
     );
 }
+
+// R135（js-dom M4）：name-validation spec regex 族——createElement/createElementNS/
+// createDocument/createAttribute(NS)/setAttribute(NS)/createProcessingInstruction/
+// createDocumentType 的 valid/invalid 名单语义（WPT dom/nodes/name-validation.html）。
+// 关键差异点：\x0B 非 ASCII 空白（valid）；NUL invalid；attribute 名无首字符限制但禁 '='；
+// NS prefix 段允许 '='；localName 段走 spec valid-name regex（':soh\x01' 的 '\x01' 非 NameChar → 抛）。
+// https://dom.spec.whatwg.org/#valid-name
+#[test]
+fn test_name_validation_spec_regex_r135() {
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let mut sandbox = V8Sandbox::with_config(zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    })
+    .unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><div id=\"host\"><p id=\"a\">A</p></div></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry);
+
+    let out = sandbox
+        .execute(
+            // createElement：字母首字符后 \x0B（垂直制表，非 ASCII 空白五字符）valid；
+            // NUL / ASCII 空白 / '/' / '>' invalid；'_x' / ':x' / 非 ASCII 首 valid。
+            "var parts = [];\
+             var vt = false, vf1 = false, vf2 = false, vf3 = false, vf4 = false;\
+             try { document.createElement('A\\x0B'); vt = true; } catch (e) { vt = e.name; }\
+             try { document.createElement('null\\0'); } catch (e) { vf1 = e.name; }\
+             try { document.createElement('fo o'); } catch (e) { vf2 = e.name; }\
+             try { document.createElement('fo/o'); } catch (e) { vf3 = e.name; }\
+             try { document.createElement('fo>o'); } catch (e) { vf4 = e.name; }\
+             parts.push('ce:' + vt + ':' + vf1 + ':' + vf2 + ':' + vf3 + ':' + vf4);\
+             var vu1 = false, vu2 = false;\
+             try { document.createElement('_x'); vu1 = true; } catch (e) {}\
+             try { document.createElement(':x'); vu2 = true; } catch (e) {}\
+             parts.push('ce-valid:' + vu1 + ':' + vu2);\
+             // createElementNS / createDocument：localName 'null\\0' 抛 InvalidCharacterError；
+             // ':soh\\x01' local 含非 NameChar 抛（spec regex 逐段校验）；
+             // 空前缀 ':div' 抛；合法 'smallEmoji🆖:div' 不抛。
+             var ns1 = false, ns2 = false, ns3 = false, ns4 = true, ns5 = true;\
+             try { document.createElementNS('urn:x', 'p:null\\0'); } catch (e) { ns1 = e.name; }\
+             try { document.implementation.createDocument('urn:x', 'p:null\\0'); } catch (e) { ns2 = e.name; }\
+             try { document.createElementNS('urn:x', ':soh\\u0001'); } catch (e) { ns3 = e.name; }\
+             try { document.implementation.createDocument('urn:x', 'smallEmoji🆖:div'); } catch (e) { ns4 = 'THROW:' + e.name; }\
+             try { document.createElementNS('urn:x', 'smallEmoji🆖:div'); } catch (e) { ns5 = 'THROW:' + e.name; }\
+             parts.push('ns:' + ns1 + ':' + ns2 + ':' + ns3 + ':' + ns4 + ':' + ns5);\
+             // createAttribute：'\\x01foo' 无首字符限制 valid；'a=b' 的 '=' invalid；
+             // 'null\\0' / 空白 invalid；createAttributeNS prefix 段 '=' 合法、local 段 '=' 抛。
+             var a1 = false, a2 = false, a3 = false;\
+             try { document.createAttribute('\\x01foo'); a1 = true; } catch (e) { a1 = e.name; }\
+             try { document.createAttribute('a=b'); } catch (e) { a2 = e.name; }\
+             try { document.createAttribute('null\\0'); } catch (e) { a3 = e.name; }\
+             parts.push('attr:' + a1 + ':' + a2 + ':' + a3);\
+             var an1 = true, an2 = false;\
+             try { document.createAttributeNS('urn:x', 'p=a:attr'); } catch (e) { an1 = 'THROW:' + e.name; }\
+             try { document.createAttributeNS('urn:x', 'p:a=b'); } catch (e) { an2 = e.name; }\
+             parts.push('attrns:' + an1 + ':' + an2);\
+             // setAttribute / setAttributeNS 同语义（attribute 名单）。
+             var d = document.createElement('div');\
+             var s1 = false, s2 = false, s3 = false;\
+             try { d.setAttribute('\\x01foo', 'v'); s1 = true; } catch (e) { s1 = e.name; }\
+             try { d.setAttribute('a=b', 'v'); } catch (e) { s2 = e.name; }\
+             try { d.setAttributeNS('urn:x', 'p:a=b', 'v'); } catch (e) { s3 = e.name; }\
+             parts.push('set:' + s1 + ':' + s2 + ':' + s3);\
+             // createProcessingInstruction：target spec regex（'\\x01t' 非 NameStart 抛；'A\\x0B' valid）。
+             var p1 = false, p2 = true;\
+             try { document.createProcessingInstruction('\\x01t', 'd'); } catch (e) { p1 = e.name; }\
+             try { document.createProcessingInstruction('A\\x0B', 'd'); } catch (e) { p2 = 'THROW:' + e.name; }\
+             parts.push('pi:' + p1 + ':' + p2);\
+             // createDocumentType：NUL invalid（R130 旧 /\\s/ 漏）；'\\x0B' valid。
+             var dt1 = false, dt2 = true;\
+             try { document.implementation.createDocumentType('null\\0', '', ''); } catch (e) { dt1 = e.name; }\
+             try { document.implementation.createDocumentType('A\\x0B', '', ''); } catch (e) { dt2 = 'THROW:' + e.name; }\
+             parts.push('dt:' + dt1 + ':' + dt2);\
+             parts.join('|');",
+        )
+        .unwrap()
+        .value;
+    assert_eq!(
+        out,
+        "ce:true:InvalidCharacterError:InvalidCharacterError:InvalidCharacterError:InvalidCharacterError|ce-valid:true:true|\
+ns:InvalidCharacterError:InvalidCharacterError:InvalidCharacterError:true:true|\
+attr:true:InvalidCharacterError:InvalidCharacterError|attrns:true:InvalidCharacterError|\
+set:true:InvalidCharacterError:InvalidCharacterError|\
+pi:InvalidCharacterError:true|\
+dt:InvalidCharacterError:true",
+        "R135 name-validation spec regex 族：createElement \\x0B valid/NUL·空白·slash·gt invalid；NS localName NUL/\\x01 抛（createDocument 同步）；attribute 无首字符限制禁 '='；NS prefix 禁 ':' local 禁 '='；PI target regex；doctype NUL invalid"
+    );
+}

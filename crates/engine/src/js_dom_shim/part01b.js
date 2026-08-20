@@ -253,11 +253,21 @@
   // 是否合法 createElement 标签名。与 native dom_bindings is_valid_qualified_name 逻辑对齐（A/B 等价）：
   // 空串 → 非法；首字符须 name-start（ASCII 字母 / `_` / `:` / 非 ASCII）；后续须 name-char（name-start
   // 或数字 / `-` / `.`）。createElement(undefined)→"undefined" 合法通过（WPT valid 列表）。
+  // R135（js-dom M4）：name 校验族按 WPT name-validation.html 的 **spec regex** 重写
+  //（dom spec valid local-name regex：
+  //   /^(?:[A-Za-z][^\0\t\n\f\r\u0020/>]*|[:_\u0080-\u{10FFFF}][A-Za-z0-9-.:_\u0080-\u{10FFFF}]*)$/u）
+  // 关键语义：首字符 ASCII 字母 → 后续**任意**（NUL/ASCII 空白/TAB/LF/FF/CR/'/'/'>' 除外——
+  // 注意 \x0B 垂直制表不在 ASCII whitespace 五字符内故合法）；首字符 ':'/'_'/>=0x80 →
+  // 后续限 NameChar 集。旧实现的偏差：① JS /\s/ 含 \x0B/\x85/\u2028（非 XML 空白）误拒
+  // ② >=0x80 的 emoji 在首字符位合法（spec regex 含）——旧 NameStartChar 语义恰好同
+  // ③ qualified name（NS 族）= 本 regex 首段约束 prefix + ':' + 后段约束 local。
+  var _r135NameRegex = /^(?:[A-Za-z][^\0\t\n\f\r\u0020/>]*|[:_\u0080-\u{10FFFF}][A-Za-z0-9-.:_\u0080-\u{10FFFF}]*)$/u;
+  var _r135NameCharRegex = /^[A-Za-z0-9\-.:_\u0080-\u{10FFFF}]$/u;
   function _zwIsNameStartChar(c) {
-    return /[A-Za-z_:]/.test(c) || c.charCodeAt(0) >= 0x80;
+    return /^[A-Za-z:_]/.test(c) || c.charCodeAt(0) >= 0x80;
   }
   function _zwIsNameChar(c) {
-    return _zwIsNameStartChar(c) || /[0-9.\-]/.test(c);
+    return _zwIsNameStartChar(c) || /^[0-9.\-]$/.test(c);
   }
   function _zwIsValidQualifiedName(name) {
     if (name === '') return false;
@@ -268,20 +278,55 @@
     }
     return true;
   }
+  // R135：spec regex 直判（HTML createElement / local-name / attribute name 通用）。
+  function _r135IsValidName(name) {
+    return _r135NameRegex.test(String(name));
+  }
+  // R135：NS 族 qualified name = prefix 段 + ':' + local 段，两段各自过 spec regex
+  //（WPT name-validation：invalid prefix/local 集与 createElement 同源 + '='/'/'/'>'
+  // 的 per-part 差异）。无冒号 = 单段名过 regex。
+  function _r135IsValidQualifiedNameSpec(qname) {
+    var s0 = String(qname);
+    if (s0 === '') return false;
+    var c = s0.indexOf(':');
+    if (c < 0) return _r135IsValidName(s0);
+    var pre = s0.slice(0, c), local = s0.slice(c + 1);
+    if (local.indexOf(':') >= 0) return false; // 多冒号 malformed（前缀段不含冒号）
+    return _r135IsValidName(pre) && local !== '' && _r135IsValidName(local);
+  }
   // js-dom M4 R81：HTML createElement 的校验面（WPT Document-createElement valid 列表）——
   // 比 QName 宽：Name production（HTML any-name——`'}'`、`'<'`、`'\uffff'` 等在**非首字符**
   // 合法；首字符限制同 NameStartChar）。区别：QName 校验（createElementNS）拒绝这些；HTML
   // createElement 只要求整体是 Name（浏览器 HTML parser 的宽容性）。首字符仍须 NameStartChar
   // （"1foo"/"}foo"/"<foo" invalid）。
-  function _zwIsValidHtmlElementName(name) {
-    if (name === '') return false;
-    // R81 修正：空白（"fo o"）与 '>'（"foo>"——invalid 列表）拒绝；'}'/'<'/'\uffff' 在非首
-    // 字符合法（valid 列表实测）。首字符 NameStartChar。
-    if (/[\s>]/.test(name)) return false;
-    var chars = Array.from(name);
-    if (!_zwIsNameStartChar(chars[0])) return false;
-    return true;
+  // R135：attribute 名校验（WPT name-validation attribute 名单语义）——比 element 名宽：
+  // **无首字符限制**（'\x01'/数字/控制字符开头都合法）；invalid 集 = NUL + ASCII 空白五字符
+  // （0x9/0xA/0xC/0xD/0x20）+ '/'(0x2F) + '>'(0x3E) + '='(0x3D)。':' 合法（非 NS 限定名）。
+  var _r135AttrNameRegex = /^[^\0\t\n\f\r\u0020/>=]+$/u;
+  function _r135IsValidAttrName(name) {
+    return _r135AttrNameRegex.test(String(name));
   }
+  // R135：NS attribute 的 qualified name 校验（WPT name-validation NS attribute 名单）——
+  // prefix 段：NUL/ASCII 空白/'/'/'>'/':' invalid（'=' 合法）；local 段：NUL/ASCII 空白/
+  // '/'/'>'/'=' invalid（':' 合法）。两段都无首字符限制（比 element 宽——'\x01:attr' 合法）。
+  function _r135IsValidAttrQNameSpec(qname) {
+    var s0 = String(qname);
+    if (s0 === '') return false;
+    var c = s0.indexOf(':');
+    var pre = c >= 0 ? s0.slice(0, c) : null;
+    var local = c >= 0 ? s0.slice(c + 1) : s0;
+    var bad = /[\u0000\u0009\u000A\u000C\u000D\u0020/>]/;
+    if (pre !== null) {
+      if (pre === '' || bad.test(pre) || pre.indexOf(':') >= 0) return false;
+    }
+    return local !== '' && !bad.test(local) && local.indexOf('=') < 0;
+  }
+  function _zwIsValidHtmlElementName(name) {
+    // R135：改走 spec regex（_r135IsValidName）——旧 /[\s>]/ 拒绝把 \x0B（非 XML
+    // 空白）误判 invalid（WPT name-validation "A\x0B" valid）。
+    return _r135IsValidName(name);
+  }
+
 
   // atob/btoa——Base64 编解码（Web 平台高频：data: URL / JWT / 二进制载荷）。纯 JS（ZW 无 base64
   // crate 在 engine，复用 fetch _b64decode 同款算法）。btoa 对 >255（非 Latin-1）抛 InvalidCharacterError
