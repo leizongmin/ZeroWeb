@@ -14,6 +14,38 @@ use crate::table_types::*;
 use crate::types::LayoutBox;
 
 use super::{get_row_box_mut, update_row_group_positions};
+
+fn resolve_vertical_table_extent_length(
+    value: &zero_css_parser::values::LengthValue,
+    font_size: &zero_css_parser::values::LengthValue,
+    table_width: f32,
+    table_height: f32,
+) -> Option<f32> {
+    use zero_css_parser::values::LengthValue;
+    match value {
+        LengthValue::Auto
+        | LengthValue::Percentage(_)
+        | LengthValue::MinContent
+        | LengthValue::MaxContent
+        | LengthValue::FitContent(_) => None,
+        other => {
+            let font_size_px = zero_style_system::computed::resolve_length(
+                font_size,
+                16.0,
+                Some(table_width as f64),
+                Some(table_height as f64),
+            );
+            let px = zero_style_system::computed::resolve_length(
+                other,
+                font_size_px,
+                Some(table_width as f64),
+                Some(table_height as f64),
+            );
+            px.is_finite().then_some(px as f32)
+        }
+    }
+}
+
 pub(super) fn position_cells_vertical(
     table_box: &mut LayoutBox,
     grid: &TableGrid,
@@ -60,17 +92,12 @@ pub(super) fn position_cells_vertical(
         .and_then(|id| styles.get(&id))
         .and_then(|s| {
             use zero_css_parser::values::LengthValue;
-            let h_px = match &s.height {
-                LengthValue::Px(v) => Some(*v as f32),
-                _ => None,
-            };
-            let mn_px = match &s.min_height {
-                LengthValue::Px(v) => Some(*v as f32),
-                _ => None,
-            };
+            let h_px = resolve_vertical_table_extent_length(&s.height, &s.font_size, table_box.width, table_box.height);
+            let mn_px =
+                resolve_vertical_table_extent_length(&s.min_height, &s.font_size, table_box.width, table_box.height);
             let mx_px = match &s.max_height {
-                LengthValue::Px(v) if *v != f64::INFINITY => Some(*v as f32),
-                _ => None,
+                LengthValue::Px(v) if *v == f64::INFINITY => None,
+                other => resolve_vertical_table_extent_length(other, &s.font_size, table_box.width, table_box.height),
             };
             let mut t = h_px;
             if let Some(mx) = mx_px {

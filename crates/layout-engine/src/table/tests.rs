@@ -1175,6 +1175,61 @@ fn test_r1131_grow_vrl_cell_block_extent() {
 }
 
 #[test]
+fn test_vertical_table_height_relative_length_distributes_to_cells() {
+    use zero_css_parser::values::LengthValue;
+    use zero_style_system::WritingModeValue;
+
+    let mut doc = Document::new();
+    let root = doc.root();
+    let table_id = doc.create_element("table");
+    let cell_a = doc.create_element("td");
+    let cell_b = doc.create_element("td");
+    let cell_c = doc.create_element("td");
+    let _ = doc.append_child(root, table_id);
+    let _ = doc.append_child(table_id, cell_a);
+    let _ = doc.append_child(table_id, cell_b);
+    let _ = doc.append_child(table_id, cell_c);
+
+    let mut styles = HashMap::new();
+    let mut table_style = ComputedStyle::default();
+    table_style.display = DisplayValue::Table;
+    table_style.writing_mode = WritingModeValue::VerticalRl;
+    table_style.font_size = LengthValue::Px(20.0);
+    table_style.height = LengthValue::Em(7.0);
+    styles.insert(table_id, table_style);
+
+    for cell_id in [cell_a, cell_b, cell_c] {
+        let mut cell_style = ComputedStyle::default();
+        cell_style.display = DisplayValue::TableCell;
+        cell_style.font_size = LengthValue::Px(20.0);
+        styles.insert(cell_id, cell_style);
+    }
+
+    let cell_box = |node_id| LayoutBox {
+        node_id: Some(node_id),
+        width: 20.0,
+        height: 20.0,
+        content_width: 20.0,
+        content_height: 20.0,
+        ..Default::default()
+    };
+    let mut table_box = LayoutBox {
+        node_id: Some(table_id),
+        writing_mode: WritingModeValue::VerticalRl,
+        children: vec![cell_box(cell_a), cell_box(cell_b), cell_box(cell_c)],
+        ..Default::default()
+    };
+
+    layout_table(&mut table_box, &doc, &styles, Default::default());
+
+    assert!(
+        (table_box.content_height - 140.0).abs() < 1.0,
+        "vertical table height:7em at 20px should distribute to ~140px content_height, got {}",
+        table_box.content_height
+    );
+}
+
+#[test]
 fn test_col_min_content_does_not_match_ahem_substring() {
     use zero_css_parser::values::LengthValue;
 

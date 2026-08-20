@@ -314,3 +314,5 @@ Abspos auto-margin centering exposed the equation-consumer variant: positioned l
 Root-CB abspos stretch exposed the sibling-consumer variant inside a single postprocess function: fixing coordinates in a containing-block correction pass does not fix auto-size stretch in that same pass. Audit every branch that consumes the same inset pair, not just every function.
 
 Abspos max-width clamp exposed the constraint-consumer variant: after stretch is fixed, min/max constraints and auto-margin redistribution can still re-read the original inset and size values. Constraint passes must resolve residual real lengths for every operand in the equation, including `max-width`, before computing leftover margins.
+
+Vertical table sizing exposed the direct-helper variant: full DOM+style pipelines may canonicalize author lengths before layout, while table or layout unit tests can pass residual `LengthValue` directly into a helper. If a helper documents that it consumes a CSS property as a used value, give it a local resolver instead of relying on upstream canonicalization.
