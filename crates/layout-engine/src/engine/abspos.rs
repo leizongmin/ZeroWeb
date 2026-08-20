@@ -567,26 +567,24 @@ pub(super) fn resolve_abspos_against_root_cb(
                 let target_y = cb_origin_y + *p as f32 / 100.0 * cb_height;
                 child.y = target_y - current_box_origin_y - box_node.border_top - box_node.padding_top;
             }
-            // left/top Px：目标视口绝对坐标 = cb_origin + px
-            if let LengthValue::Px(px) = &style.left {
-                child.x =
-                    cb_origin_x + (*px as f32) - current_box_origin_x - box_node.border_left - box_node.padding_left;
+            // left/top real length：目标视口绝对坐标 = cb_origin + used length
+            if let Some(px) = resolve_abspos_real_length(&style.left, &style.font_size, cb_width, cb_height) {
+                child.x = cb_origin_x + px - current_box_origin_x - box_node.border_left - box_node.padding_left;
             }
-            if let LengthValue::Px(px) = &style.top {
-                child.y =
-                    cb_origin_y + (*px as f32) - current_box_origin_y - box_node.border_top - box_node.padding_top;
+            if let Some(px) = resolve_abspos_real_length(&style.top, &style.font_size, cb_width, cb_height) {
+                child.y = cb_origin_y + px - current_box_origin_y - box_node.border_top - box_node.padding_top;
             }
-            // right/bottom Px 且 left/top 为 auto：右/下边对齐 CB 右/下缘（§10.3.18 rule 2）
+            // right/bottom real length 且 left/top 为 auto：右/下边对齐 CB 右/下缘（§10.3.18 rule 2）
             if matches!(style.left, LengthValue::Auto)
-                && let LengthValue::Px(right) = &style.right
+                && let Some(right) = resolve_abspos_real_length(&style.right, &style.font_size, cb_width, cb_height)
             {
-                let target_x = cb_origin_x + cb_width - (*right as f32) - child.width;
+                let target_x = cb_origin_x + cb_width - right - child.width;
                 child.x = target_x - current_box_origin_x - box_node.border_left - box_node.padding_left;
             }
             if matches!(style.top, LengthValue::Auto)
-                && let LengthValue::Px(bottom) = &style.bottom
+                && let Some(bottom) = resolve_abspos_real_length(&style.bottom, &style.font_size, cb_width, cb_height)
             {
-                let target_y = cb_origin_y + cb_height - (*bottom as f32) - child.height;
+                let target_y = cb_origin_y + cb_height - bottom - child.height;
                 child.y = target_y - current_box_origin_y - box_node.border_top - box_node.padding_top;
             }
         }

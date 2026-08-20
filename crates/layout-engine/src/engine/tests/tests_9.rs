@@ -904,6 +904,56 @@ fn test_adjust_absolute_relative_length_top_to_viewport() {
     );
 }
 
+#[test]
+fn test_resolve_abspos_root_cb_relative_length_insets() {
+    use std::collections::HashMap;
+    use zero_css_parser::values::LengthValue;
+    let (_doc, key_id) = make_doc_with_body();
+
+    let abs_child = LayoutBox {
+        node_id: Some(key_id),
+        x: 0.0,
+        y: 0.0,
+        width: 100.0,
+        height: 50.0,
+        is_absolute: true,
+        ..Default::default()
+    };
+    let mut root = LayoutBox {
+        x: 10.0,
+        y: 20.0,
+        border_left: 5.0,
+        border_top: 3.0,
+        padding_left: 6.0,
+        padding_top: 4.0,
+        width: 800.0,
+        height: 600.0,
+        children: vec![abs_child],
+        ..Default::default()
+    };
+
+    let mut style = ComputedStyle::default();
+    style.font_size = LengthValue::Px(20.0);
+    style.top = LengthValue::Em(1.0);
+    style.left = LengthValue::Em(2.0);
+    let mut styles: HashMap<NodeId, ComputedStyle> = HashMap::new();
+    styles.insert(key_id, style);
+
+    resolve_abspos_against_root_cb(&mut root, 10.0, 20.0, 30.0, 40.0, 500.0, 400.0, &styles, true);
+
+    let abs = &root.children[0];
+    assert!(
+        (abs.y - 33.0).abs() < 0.001,
+        "root-CB top:1em should resolve to 40 + 20 - 20 - 3 - 4 = 33, got {}",
+        abs.y
+    );
+    assert!(
+        (abs.x - 49.0).abs() < 0.001,
+        "root-CB left:2em should resolve to 30 + 40 - 10 - 5 - 6 = 49, got {}",
+        abs.x
+    );
+}
+
 /// R1227：abspos（无 positioned 祖先，CB=viewport）`width:%`/`height:%` + border 须按
 /// box-sizing 解析。content-box（默认）下 `width:50%` 指 content，border-box = content +
 /// border；旧代码把 `%` 当 border-box 丢 border 致 border-box 偏小（abspos-containing-
