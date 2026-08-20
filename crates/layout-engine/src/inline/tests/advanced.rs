@@ -257,24 +257,32 @@ fn test_vertical_align_text_bottom_same_as_bottom() {
     );
 }
 
-/// 测试 resolve_font_metrics 中 LineHeightValue::Length(LengthValue::Em(1.5)) 回退到 font_size × 1.2。
-///
-/// 非 Px 长度在 resolve 阶段未转换时做防御性回退。
+/// 测试 resolve_font_metrics 中 LineHeightValue::Length(LengthValue::Em(1.5)) 按 font-size 折算。
 #[test]
-fn test_resolve_font_metrics_line_height_em_fallback() {
+fn test_resolve_font_metrics_line_height_em_length() {
     let mut style = ComputedStyle::default();
     style.font_size = LengthValue::Px(20.0);
     style.line_height = LineHeightValue::Length(LengthValue::Em(1.5));
 
     let (font_size, line_height) = resolve_font_metrics(Some(&style));
     assert!((font_size - 20.0).abs() < 0.01, "font_size 应为 20.0，实际 {font_size}");
-    // Em 长度回退到 font_size * 1.164 = 23.28
-    let expected = 20.0 * 1.164;
     assert!(
-        (line_height - expected).abs() < 0.01,
-        "line_height 应回退到 {}，实际 {}",
-        expected,
-        line_height
+        (line_height - 30.0).abs() < 0.01,
+        "line-height:1.5em 应解析为 30px，实际 {line_height}"
+    );
+}
+
+#[test]
+fn test_resolve_font_metrics_line_height_percentage_length() {
+    let mut style = ComputedStyle::default();
+    style.font_size = LengthValue::Px(20.0);
+    style.line_height = LineHeightValue::Length(LengthValue::Percentage(150.0));
+
+    let (font_size, line_height) = resolve_font_metrics(Some(&style));
+    assert!((font_size - 20.0).abs() < 0.01, "font_size 应为 20.0，实际 {font_size}");
+    assert!(
+        (line_height - 30.0).abs() < 0.01,
+        "line-height:150% 应解析为 30px，实际 {line_height}"
     );
 }
 

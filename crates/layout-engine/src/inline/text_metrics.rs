@@ -486,15 +486,23 @@ pub fn resolve_font_metrics_with_provider(
                 )
             }
             LineHeightValue::Number(n) => font_size * (*n as f32),
-            LineHeightValue::Length(LengthValue::Px(v)) => *v as f32,
-            // 其他长度类型（em/rem 等）在 resolve 阶段应已转换为 Px，
-            // 这里做防御性回退（用字体度量比率，Ahem 时为 1.0）
-            LineHeightValue::Length(_) => font_size * normal_ratio,
+            LineHeightValue::Length(length) => resolve_line_height_length(length, font_size, normal_ratio),
         },
         None => DEFAULT_FONT_SIZE * normal_ratio,
     };
 
     (font_size, line_height)
+}
+
+fn resolve_line_height_length(length: &LengthValue, font_size: f32, fallback_ratio: f32) -> f32 {
+    match length {
+        LengthValue::Px(v) => *v as f32,
+        LengthValue::Percentage(v) => font_size * (*v as f32 / 100.0),
+        LengthValue::Auto | LengthValue::MinContent | LengthValue::MaxContent | LengthValue::FitContent(_) => {
+            font_size * fallback_ratio
+        }
+        other => zero_style_system::computed::resolve_length(other, font_size as f64, None, None) as f32,
+    }
 }
 
 /// `line-height:normal` 的 per-font 解析（U1b）。

@@ -272,3 +272,5 @@ Use the shared value parsers for token boundaries, then filter by the specific p
 + for shorthands that route values to different longhand grammars, validate against each target longhand before emitting any declaration.
 
 Keep adjacent shorthand users covered with regression tests when a shared classifier changes. `columns: auto 100px` is a good guard because it depends on `auto` not being mistaken for a length.
+
+Line-height exposed the canonicalization fallback variant: even when the normal cascade computed pass usually converts relative `<length-percentage>` values to `Px`, layout used-value helpers must still handle legal residual `LengthValue` variants. Direct apply, tests, and alternate style entry points can bypass early canonicalization; falling back to `normal` silently loses valid `em` and percentage line-height values.
