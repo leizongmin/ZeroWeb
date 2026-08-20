@@ -2383,7 +2383,6 @@ impl WebView {
         Self::wait_for_service_worker_evaluation(
             &mut manager,
             registration_id,
-            document_url,
             source_fetcher.as_ref(),
             response_fetcher.as_ref(),
             30,
@@ -2394,9 +2393,16 @@ impl WebView {
 
     /// Drain Service Worker manager events and advance lifecycle state.
     pub fn poll_service_worker_runtime_events(&mut self) -> Vec<ServiceWorkerManagerEvent> {
+        let fetchers = ServiceWorkerFetchers {
+            source: self.script_source_fetcher.clone(),
+            response: self.service_worker_script_fetcher.clone(),
+        };
         self.sw_manager
             .lock()
-            .map(|mut manager| manager.poll())
+            .ok()
+            .and_then(|mut manager| {
+                Self::poll_service_worker_manager(&mut manager, &fetchers, self.http_client.timeout_secs).ok()
+            })
             .unwrap_or_default()
     }
 
@@ -2448,6 +2454,10 @@ impl WebView {
     ) {
         let source_fetcher = fetchers.source;
         let response_fetcher = fetchers.response;
+        let poll_fetchers = ServiceWorkerFetchers {
+            source: source_fetcher.clone(),
+            response: response_fetcher.clone(),
+        };
         let controller_page_url = page_url.clone();
         let register_manager = manager.clone();
         let register_page_url = page_url.clone();
@@ -2510,7 +2520,6 @@ impl WebView {
                     Self::wait_for_service_worker_evaluation(
                         &mut manager,
                         registration_id,
-                        &document_url,
                         register_source_fetcher.as_ref(),
                         register_response_fetcher.as_ref(),
                         timeout_secs,
@@ -2575,7 +2584,6 @@ impl WebView {
                             match Self::wait_for_service_worker_evaluation(
                                 &mut manager,
                                 registration_id,
-                                &document_url,
                                 source_fetcher.as_ref(),
                                 response_fetcher.as_ref(),
                                 timeout_secs,
@@ -2604,6 +2612,7 @@ impl WebView {
         );
 
         let snapshot_manager = manager.clone();
+        let snapshot_fetchers = poll_fetchers.clone();
         sandbox.register_callback(
             "__zw_sw_snapshot",
             Box::new(move |args| {
@@ -2613,7 +2622,9 @@ impl WebView {
                 let Ok(mut manager) = snapshot_manager.lock() else {
                     return serde_json::json!({"ok": false, "error": "manager lock poisoned"}).to_string();
                 };
-                let _ = manager.poll();
+                if let Err(error) = Self::poll_service_worker_manager(&mut manager, &snapshot_fetchers, timeout_secs) {
+                    return serde_json::json!({"ok": false, "error": error}).to_string();
+                }
                 let Some(registration) = manager.registration(registration_id) else {
                     return serde_json::json!({"ok": false, "error": "registration not found"}).to_string();
                 };
@@ -2630,6 +2641,7 @@ impl WebView {
         );
 
         let state_changes_manager = manager.clone();
+        let state_changes_fetchers = poll_fetchers.clone();
         sandbox.register_callback(
             "__zw_sw_state_changes",
             Box::new(move |args| {
@@ -2640,7 +2652,11 @@ impl WebView {
                 let Ok(mut manager) = state_changes_manager.lock() else {
                     return serde_json::json!({"ok": false, "error": "manager lock poisoned"}).to_string();
                 };
-                let _ = manager.poll();
+                if let Err(error) =
+                    Self::poll_service_worker_manager(&mut manager, &state_changes_fetchers, timeout_secs)
+                {
+                    return serde_json::json!({"ok": false, "error": error}).to_string();
+                }
                 let Some((latest_sequence, states)) = manager.state_changes_since(registration_id, after_sequence)
                 else {
                     return serde_json::json!({"ok": false, "error": "registration not found"}).to_string();
@@ -2700,6 +2716,7 @@ impl WebView {
         );
 
         let client_messages_manager = manager.clone();
+        let client_messages_fetchers = poll_fetchers.clone();
         let client_messages_generation = client_generation;
         sandbox.register_callback(
             "__zw_sw_client_messages",
@@ -2711,7 +2728,11 @@ impl WebView {
                 let Ok(mut manager) = client_messages_manager.lock() else {
                     return serde_json::json!({"ok": false, "error": "manager lock poisoned"}).to_string();
                 };
-                let _ = manager.poll();
+                if let Err(error) =
+                    Self::poll_service_worker_manager(&mut manager, &client_messages_fetchers, timeout_secs)
+                {
+                    return serde_json::json!({"ok": false, "error": error}).to_string();
+                }
                 let current_client_id = format!("{}:{}", client_id, client_messages_generation.load(Ordering::Relaxed));
                 let (latest_sequence, data_json) =
                     manager.client_messages_since(registration_id, &current_client_id, after_sequence);
@@ -2729,6 +2750,7 @@ impl WebView {
         );
 
         let controller_manager = manager.clone();
+        let controller_fetchers = poll_fetchers;
         sandbox.register_callback(
             "__zw_sw_controller",
             Box::new(move |_args| {
@@ -2744,7 +2766,10 @@ impl WebView {
                 let Ok(mut manager) = controller_manager.lock() else {
                     return serde_json::json!({"ok": false, "error": "manager lock poisoned"}).to_string();
                 };
-                let _ = manager.poll();
+                if let Err(error) = Self::poll_service_worker_manager(&mut manager, &controller_fetchers, timeout_secs)
+                {
+                    return serde_json::json!({"ok": false, "error": error}).to_string();
+                }
                 let controller =
                     manager.active_registration_for_url(&document.origin().ascii_serialization(), document.as_str());
                 serde_json::json!({
@@ -2782,46 +2807,17 @@ impl WebView {
     fn wait_for_service_worker_evaluation(
         manager: &mut ServiceWorkerManager,
         registration_id: u64,
-        document_url: &str,
         source_fetcher: Option<&ScriptSourceFetcher>,
         response_fetcher: Option<&ServiceWorkerScriptFetcher>,
         timeout_secs: u64,
     ) -> Result<ServiceWorkerEvaluationResult, String> {
+        let fetchers = ServiceWorkerFetchers {
+            source: source_fetcher.cloned(),
+            response: response_fetcher.cloned(),
+        };
         let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
         loop {
-            let events = manager.poll();
-            for event in &events {
-                let ServiceWorkerManagerEvent::ImportScriptsRequested {
-                    registration_id: id,
-                    request_id,
-                    urls,
-                    ..
-                } = event
-                else {
-                    continue;
-                };
-                if *id != registration_id {
-                    continue;
-                }
-                let scripts = urls
-                    .iter()
-                    .map(|url| match response_fetcher.filter(|_| !url.starts_with("data:")) {
-                        Some(fetcher) => fetcher(document_url, url).and_then(|response| {
-                            Self::validate_service_worker_imported_script_response(url, document_url, response)
-                        }),
-                        None => match source_fetcher.filter(|_| !url.starts_with("data:")) {
-                            Some(fetcher) => fetcher(document_url, url).map(|source| ServiceWorkerImportedScript {
-                                url: url.clone(),
-                                source,
-                            }),
-                            None => Self::fetch_service_worker_imported_script(url, document_url, timeout_secs),
-                        },
-                    })
-                    .collect::<Result<Vec<_>, _>>();
-                manager
-                    .complete_import_scripts(registration_id, *request_id, scripts)
-                    .map_err(|error| error.to_string())?;
-            }
+            let events = Self::poll_service_worker_manager(manager, &fetchers, timeout_secs)?;
             if let Some(result) = events.iter().find_map(|event| match event {
                 ServiceWorkerManagerEvent::UpdateChecked {
                     candidate_registration_id,
@@ -2866,6 +2862,51 @@ impl WebView {
             }
             std::thread::sleep(std::time::Duration::from_millis(1));
         }
+    }
+
+    fn poll_service_worker_manager(
+        manager: &mut ServiceWorkerManager,
+        fetchers: &ServiceWorkerFetchers,
+        timeout_secs: u64,
+    ) -> Result<Vec<ServiceWorkerManagerEvent>, String> {
+        let events = manager.poll();
+        for event in &events {
+            let ServiceWorkerManagerEvent::ImportScriptsRequested {
+                registration_id,
+                request_id,
+                urls,
+                ..
+            } = event
+            else {
+                continue;
+            };
+            let context_url = manager
+                .registration(*registration_id)
+                .ok_or_else(|| "Service Worker import registration is missing".to_string())?
+                .script_url
+                .clone();
+            let scripts = urls
+                .iter()
+                .map(
+                    |url| match fetchers.response.as_ref().filter(|_| !url.starts_with("data:")) {
+                        Some(fetcher) => fetcher(&context_url, url).and_then(|response| {
+                            Self::validate_service_worker_imported_script_response(url, &context_url, response)
+                        }),
+                        None => match fetchers.source.as_ref().filter(|_| !url.starts_with("data:")) {
+                            Some(fetcher) => fetcher(&context_url, url).map(|source| ServiceWorkerImportedScript {
+                                url: url.clone(),
+                                source,
+                            }),
+                            None => Self::fetch_service_worker_imported_script(url, &context_url, timeout_secs),
+                        },
+                    },
+                )
+                .collect::<Result<Vec<_>, _>>();
+            manager
+                .complete_import_scripts(*registration_id, *request_id, scripts)
+                .map_err(|error| error.to_string())?;
+        }
+        Ok(events)
     }
 
     fn fetch_service_worker_main_script(

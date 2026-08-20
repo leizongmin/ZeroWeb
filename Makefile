@@ -321,12 +321,29 @@ test-wpt-service-workers-import-dynamic-wave-assets: fetch-wpt-service-workers-i
 		WPT_TAMPER_ASSET="service-workers/service-worker/resources/update-worker.py" \
 		$(WPT_BASH) tests/wpt-runner/scripts/test-service-workers-tier-a-assets.sh
 
-testharness-service-workers-core: target-disk-guard fetch-wpt-service-workers-tier-a fetch-wpt-service-workers-next-wave fetch-wpt-service-workers-static-wave fetch-wpt-service-workers-update-wave fetch-wpt-service-workers-import-response-wave fetch-wpt-service-workers-import-dynamic-wave target/test-guard zero-wpt-runner-release
+fetch-wpt-service-workers-import-event-wave:
+	WPT_ASSET_MANIFEST="$(CURDIR)/docs/goal/service-workers/evidence/2026-08-20-m3-import-event-assets.tsv" \
+		WPT_EXPECTED_ASSET_COUNT=3 WPT_CORPUS_LABEL="Service Worker import event wave" \
+		$(WPT_BASH) tests/wpt-runner/scripts/fetch-service-workers-tier-a.sh
+
+audit-wpt-service-workers-import-event-wave:
+	WPT_ASSET_MANIFEST="$(CURDIR)/docs/goal/service-workers/evidence/2026-08-20-m3-import-event-assets.tsv" \
+		WPT_EXPECTED_ASSET_COUNT=3 WPT_CORPUS_LABEL="Service Worker import event wave" \
+		$(WPT_BASH) tests/wpt-runner/scripts/fetch-service-workers-tier-a.sh --verify-only
+
+test-wpt-service-workers-import-event-wave-assets: fetch-wpt-service-workers-import-event-wave
+	WPT_SERVICE_WORKER_SOURCE="$(CURDIR)/tests/wpt-runner/wpt-data/.service-workers-tier-a-root" \
+		WPT_ASSET_MANIFEST="$(CURDIR)/docs/goal/service-workers/evidence/2026-08-20-m3-import-event-assets.tsv" \
+		WPT_EXPECTED_ASSET_COUNT=3 WPT_CORPUS_LABEL="Service Worker import event wave" \
+		WPT_TAMPER_ASSET="service-workers/service-worker/resources/import-scripts-echo.py" \
+		$(WPT_BASH) tests/wpt-runner/scripts/test-service-workers-tier-a-assets.sh
+
+testharness-service-workers-core: target-disk-guard fetch-wpt-service-workers-tier-a fetch-wpt-service-workers-next-wave fetch-wpt-service-workers-static-wave fetch-wpt-service-workers-update-wave fetch-wpt-service-workers-import-response-wave fetch-wpt-service-workers-import-dynamic-wave fetch-wpt-service-workers-import-event-wave target/test-guard zero-wpt-runner-release
 	./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit $(or $(TIME_LIMIT),900) -- \
 		./target/release/zero-wpt-runner testharness-service-workers \
 		--wpt-data tests/wpt-runner/wpt-data/.service-workers-tier-a-root $(if $(FILTER),$(FILTER),)
 
-baseline-wpt-service-workers-core: target-disk-guard fetch-wpt-service-workers-tier-a fetch-wpt-service-workers-next-wave fetch-wpt-service-workers-static-wave fetch-wpt-service-workers-update-wave fetch-wpt-service-workers-import-response-wave fetch-wpt-service-workers-import-dynamic-wave target/test-guard zero-wpt-runner-release
+baseline-wpt-service-workers-core: target-disk-guard fetch-wpt-service-workers-tier-a fetch-wpt-service-workers-next-wave fetch-wpt-service-workers-static-wave fetch-wpt-service-workers-update-wave fetch-wpt-service-workers-import-response-wave fetch-wpt-service-workers-import-dynamic-wave fetch-wpt-service-workers-import-event-wave target/test-guard zero-wpt-runner-release
 	./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit $(or $(TIME_LIMIT),900) -- \
 		python3 tests/wpt-runner/scripts/run-service-workers-core-baseline.py \
 		--runner ./target/release/zero-wpt-runner \

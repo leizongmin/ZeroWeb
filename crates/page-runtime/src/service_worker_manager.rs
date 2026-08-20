@@ -770,6 +770,15 @@ impl ServiceWorkerManager {
                                 let _ = self
                                     .host
                                     .complete_import_scripts(registration_id, request_id, Ok(sources));
+                            } else if self
+                                .registration(registration_id)
+                                .is_none_or(|registration| registration.state != ServiceWorkerState::Installing)
+                            {
+                                let _ = self.host.complete_import_scripts(
+                                    registration_id,
+                                    request_id,
+                                    Err("importScripts cannot fetch a new script after installation".into()),
+                                );
                             } else {
                                 self.pending_import_requests
                                     .insert((registration_id, request_id), urls.clone());
@@ -1882,6 +1891,32 @@ mod tests {
     }
 
     #[test]
+    fn install_event_can_fetch_new_import_before_updated_flag() {
+        let mut manager = manager_under_test();
+        let id = start(
+            &mut manager,
+            "/",
+            "addEventListener('install', () => {
+               importScripts('/install-import.js');
+               if (globalThis.installImported !== true) throw new Error('install import missing');
+             });",
+        );
+        let (request_id, urls, _) = wait_for_import_request(&mut manager, id);
+        assert_eq!(urls, ["https://example.test/install-import.js"]);
+        manager
+            .complete_import_scripts(
+                id,
+                request_id,
+                Ok(vec![ServiceWorkerImportedScript {
+                    url: urls[0].clone(),
+                    source: "globalThis.installImported = true;".into(),
+                }]),
+            )
+            .unwrap();
+        wait_for_state(&mut manager, id, ServiceWorkerState::Activated);
+    }
+
+    #[test]
     fn restored_active_runtime_does_not_replay_install_or_activate() {
         let mut manager = manager_under_test();
         let id = manager
@@ -2194,6 +2229,55 @@ mod tests {
             std::thread::sleep(Duration::from_millis(1));
         }
         assert_eq!(manager.client_messages_since(id, "closed-client", 0), (2, Vec::new()));
+    }
+
+    #[test]
+    fn active_message_rejects_new_import_after_updated_flag() {
+        let mut manager = manager_under_test();
+        let id = start_active(
+            &mut manager,
+            "/",
+            "addEventListener('message', event => {
+               let errorName = null;
+               try {
+                 importScripts('/late-import.js');
+               } catch (error) {
+                 errorName = error && error.name;
+               }
+               event.source.postMessage({errorName: errorName});
+             });",
+        );
+
+        manager
+            .post_message(id, 94, "null", "client-late", "https://example.test/page")
+            .unwrap();
+        let deadline = std::time::Instant::now() + Duration::from_secs(5);
+        loop {
+            let events = manager.poll();
+            assert!(
+                !events.iter().any(|event| matches!(
+                    event,
+                    ServiceWorkerManagerEvent::ImportScriptsRequested {
+                        registration_id,
+                        ..
+                    } if *registration_id == id
+                )),
+                "late import must not reach the host fetch layer"
+            );
+            if events.contains(&ServiceWorkerManagerEvent::MessageDispatched {
+                registration_id: id,
+                event_id: 94,
+                outbound_count: 1,
+            }) {
+                break;
+            }
+            assert!(std::time::Instant::now() < deadline, "late import rejection timed out");
+            std::thread::sleep(Duration::from_millis(1));
+        }
+        assert_eq!(
+            manager.client_messages_since(id, "client-late", 0),
+            (1, vec![r#"{"errorName":"NetworkError"}"#.to_string()])
+        );
     }
 
     #[test]

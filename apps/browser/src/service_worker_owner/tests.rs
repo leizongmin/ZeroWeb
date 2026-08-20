@@ -343,6 +343,61 @@ fn disconnect_cancels_queued_import_fetch_without_leaking_runtime() {
 }
 
 #[test]
+fn ipc_event_time_import_uses_owned_renderer_after_evaluation_response() {
+    let mut owner = BrowserServiceWorkerOwner::new();
+    let disposition = owner.begin_request(
+        TabId(7),
+        false,
+        48,
+        Some("https://example.test/page"),
+        register_request("https://example.test/page"),
+    );
+    attach_script(&mut owner, disposition, "addEventListener('install', () => {});");
+    let _ = owner.poll();
+
+    let evaluate = owner
+        .take_host_commands()
+        .into_iter()
+        .find(|outgoing| matches!(outgoing.params.command, ServiceWorkerHostCommand::Evaluate { .. }))
+        .expect("missing renderer evaluation command");
+    let registration_id = evaluate.params.registration_id;
+    owner.inject_host_event(
+        TabId(7),
+        false,
+        ServiceWorkerHostEventParams {
+            registration_id,
+            event: ServiceWorkerHostEvent::Evaluated {
+                script_url: "https://example.test/sw.js".into(),
+            },
+        },
+    );
+    let response = wait_for_response(&mut owner);
+    assert_eq!(response.tab_id, TabId(7));
+    assert!(owner.pending_evaluations.is_empty());
+    assert!(owner.take_host_commands().into_iter().any(|outgoing| matches!(
+        outgoing.params.command,
+        ServiceWorkerHostCommand::DispatchLifecycle {
+            phase: ServiceWorkerLifecycleWire::Install
+        }
+    )));
+
+    owner.inject_host_event(
+        TabId(7),
+        false,
+        ServiceWorkerHostEventParams {
+            registration_id,
+            event: ServiceWorkerHostEvent::ImportScriptsRequested {
+                request_id: 9,
+                specifiers: vec!["/event-import.js".into()],
+            },
+        },
+    );
+    let plan = wait_for_import_plan(&mut owner);
+    assert_eq!(plan.tab_id(), TabId(7));
+    assert_eq!(plan.urls(), ["https://example.test/event-import.js"]);
+}
+
+#[test]
 fn register_fetches_evaluates_and_returns_correlated_id() {
     let mut owner = BrowserServiceWorkerOwner::with_local_hosts();
     let disposition = owner.begin_request(

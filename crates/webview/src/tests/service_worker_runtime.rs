@@ -53,6 +53,62 @@ fn fetched_script_runs_real_install_and_activate_events() {
 }
 
 #[test]
+fn lifecycle_imports_use_persistent_worker_fetch_context() {
+    let requests = Arc::new(Mutex::new(Vec::new()));
+    let request_log = Arc::clone(&requests);
+    let mut webview = WebViewBuilder::new()
+        .script_source_fetcher(Arc::new(move |context, script| {
+            request_log
+                .lock()
+                .unwrap()
+                .push((context.to_string(), script.to_string()));
+            match script {
+                "https://example.test/sw.js" => Ok("importScripts('/shared-import.js');
+                     addEventListener('install', () => {
+                       importScripts('/install-import.js');
+                       if (globalThis.installImported !== true) throw new Error('install import missing');
+                     });
+                     addEventListener('activate', () => {
+                       globalThis.sharedImported = null;
+                       globalThis.installImported = null;
+                       importScripts('/shared-import.js', '/install-import.js');
+                       if (globalThis.sharedImported !== true || globalThis.installImported !== true) {
+                         throw new Error('activate import replay missing');
+                       }
+                     });"
+                .to_string()),
+                "https://example.test/shared-import.js" => Ok("globalThis.sharedImported = true;".to_string()),
+                "https://example.test/install-import.js" => Ok("globalThis.installImported = true;".to_string()),
+                _ => Err(format!("unexpected script: {script}")),
+            }
+        }))
+        .build();
+
+    let id = webview
+        .register_service_worker_runtime("/sw.js", Some("/"), "https://example.test/page.html")
+        .unwrap();
+    wait_for_state(&mut webview, id, ServiceWorkerState::Activated);
+
+    assert_eq!(
+        requests.lock().unwrap().as_slice(),
+        &[
+            (
+                "https://example.test/page.html".to_string(),
+                "https://example.test/sw.js".to_string(),
+            ),
+            (
+                "https://example.test/sw.js".to_string(),
+                "https://example.test/shared-import.js".to_string(),
+            ),
+            (
+                "https://example.test/sw.js".to_string(),
+                "https://example.test/install-import.js".to_string(),
+            ),
+        ]
+    );
+}
+
+#[test]
 fn default_scope_uses_script_directory() {
     let mut webview = WebViewBuilder::new()
         .script_source_fetcher(Arc::new(|_, _| Ok(String::new())))
@@ -1004,4 +1060,68 @@ fn service_worker_post_message_dispatches_structured_page_payload() {
         );
         std::thread::sleep(Duration::from_millis(10));
     }
+}
+
+#[test]
+fn message_import_replays_persistent_worker_resource_map() {
+    let requests = Arc::new(Mutex::new(Vec::new()));
+    let request_log = Arc::clone(&requests);
+    let mut webview = WebViewBuilder::new()
+        .url("https://example.test/page.html")
+        .script_source_fetcher(Arc::new(move |context, script| {
+            request_log
+                .lock()
+                .unwrap()
+                .push((context.to_string(), script.to_string()));
+            match script {
+                "https://example.test/sw.js" => Ok("importScripts('/message-import.js');
+                     addEventListener('message', event => {
+                       globalThis.messageImported = null;
+                       importScripts('/message-import.js');
+                       event.source.postMessage({value: globalThis.messageImported});
+                     });"
+                .to_string()),
+                "https://example.test/message-import.js" => {
+                    Ok("globalThis.messageImported = 'event-import-ok';".to_string())
+                }
+                _ => Err(format!("unexpected script: {script}")),
+            }
+        }))
+        .build();
+
+    webview
+        .execute_script(
+            "globalThis.__eventImportResult = 'pending';
+             navigator.serviceWorker.addEventListener('message', event => {
+               globalThis.__eventImportResult = event.data.value;
+             });
+             navigator.serviceWorker.register('/sw.js').then(() => navigator.serviceWorker.ready)
+               .then(reg => reg.active.postMessage({type:'load'}));",
+        )
+        .unwrap();
+
+    let deadline = Instant::now() + Duration::from_secs(20);
+    loop {
+        let value = webview.execute_script("globalThis.__eventImportResult").unwrap();
+        if value != "pending" {
+            assert_eq!(value, "event-import-ok");
+            break;
+        }
+        assert!(Instant::now() < deadline, "event-time message import timed out");
+        std::thread::sleep(Duration::from_millis(10));
+    }
+
+    assert_eq!(
+        requests.lock().unwrap().as_slice(),
+        &[
+            (
+                "https://example.test/page.html".to_string(),
+                "https://example.test/sw.js".to_string(),
+            ),
+            (
+                "https://example.test/sw.js".to_string(),
+                "https://example.test/message-import.js".to_string(),
+            ),
+        ]
+    );
 }

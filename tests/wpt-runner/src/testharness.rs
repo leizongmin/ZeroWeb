@@ -620,6 +620,7 @@ pub const SERVICE_WORKER_CORE_CASES: &[&str] = &[
     "service-workers/service-worker/import-scripts-mime-types.https.html",
     "service-workers/service-worker/import-scripts-redirect.https.html",
     "service-workers/service-worker/import-scripts-resource-map.https.html",
+    "service-workers/service-worker/import-scripts-updated-flag.https.html",
     "service-workers/service-worker/register-default-scope.https.html",
     "service-workers/service-worker/registration-basic.https.html",
     "service-workers/service-worker/registration-scope.https.html",
@@ -1297,6 +1298,15 @@ fn wpt_data_service_worker_script_fetcher(
                 .ok_or_else(|| "import-scripts-get.py requires msg".to_string())?;
             return Ok(service_worker_fixture_response(
                 format!("{output} = {};\n", serde_json::to_string(message).unwrap()),
+                src.to_string(),
+                0,
+            ));
+        } else if clean.ends_with("/resources/import-scripts-echo.py") {
+            let message = params
+                .get("msg")
+                .ok_or_else(|| "import-scripts-echo.py requires msg".to_string())?;
+            return Ok(service_worker_fixture_response(
+                format!("echo_output = {};\n", serde_json::to_string(message).unwrap()),
                 src.to_string(),
                 0,
             ));
@@ -2279,13 +2289,13 @@ async_test(function(test) {
     }
 
     #[test]
-    fn service_worker_core_manifest_has_eighteen_unique_cases() {
+    fn service_worker_core_manifest_has_nineteen_unique_cases() {
         let unique = SERVICE_WORKER_CORE_CASES
             .iter()
             .copied()
             .collect::<std::collections::BTreeSet<_>>();
-        assert_eq!(SERVICE_WORKER_CORE_CASES.len(), 18);
-        assert_eq!(unique.len(), 18);
+        assert_eq!(SERVICE_WORKER_CORE_CASES.len(), 19);
+        assert_eq!(unique.len(), 19);
         assert!(
             SERVICE_WORKER_CORE_CASES
                 .iter()

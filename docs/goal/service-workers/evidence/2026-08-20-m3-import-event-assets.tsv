@@ -1,0 +1,4 @@
+path	manifest_type	roles	referenced_by	bytes	templated	git_blob_sha
+service-workers/service-worker/import-scripts-updated-flag.https.html	testharness	case	1	2863	no	09b4496aa0ec1d28b9e101a6ba8a41a31b654540
+service-workers/service-worker/resources/import-scripts-updated-flag-worker.js	support	worker-script	1	736	no	e01664662ef178a1dfe51c5970392d0fb66c7234
+service-workers/service-worker/resources/import-scripts-echo.py	support	dynamic-handler	1	231	no	d38d660e65935d49255a3879e38bbfb9be4cd5a2

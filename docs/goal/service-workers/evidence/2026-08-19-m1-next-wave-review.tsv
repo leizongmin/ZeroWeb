@@ -1,7 +1,7 @@
 source_path	manifest_sha	subtests	decision	hidden_dependencies	rationale
 service-workers/service-worker/ServiceWorkerGlobalScope/close.https.html	3e3cc8b2b08973baf3293c0a533c85489f352b68	1	defer-advanced	worker-testharness	ServiceWorkerGlobalScope 内断言结果通道依赖 worker-testharness
 service-workers/service-worker/ServiceWorkerGlobalScope/service-worker-error-event.https.html	988f5466b9e16ffe716297b9ba569e668ff8f8a3	1	defer-advanced	error-event;message;client-source	验证 message handler 抛错后 error event 字段和 source 回传
-service-workers/service-worker/import-scripts-updated-flag.https.html	09b4496aa0ec1d28b9e101a6ba8a41a31b654540	5	gated-dynamic-server	dynamic-python;importScripts;message	import-scripts-echo.py 按 query 动态生成脚本并验证 updated flag
+service-workers/service-worker/import-scripts-updated-flag.https.html	09b4496aa0ec1d28b9e101a6ba8a41a31b654540	5	next-wave-event-importScripts-core	dynamic-python;importScripts;message	import-scripts-echo.py 验证 install fetch、message resource-map replay 与 updated flag
 service-workers/service-worker/register-wait-forever-in-install-worker.https.html	0920b5cb223d50e31d044a9323f55c1e77b18857	1	defer-advanced	extendable-event;message;job-scheduling	install waitUntil 永不完成时验证同/异 scope 注册调度
 service-workers/service-worker/registration-mime-types.https.html	3a21aac5c75c20c210d3fdde2a14ed063a0c8b27	39	gated-dynamic-server	dynamic-python;mime;importScripts	两个 Python handler 生成无效和 16 种有效 MIME 响应
 service-workers/service-worker/registration-schedule-job.https.html	25d758ee8f0e26459218c7359faf7d3866b313cf	3	defer-advanced	job-scheduling;module;message	验证 scriptURL/updateViaCache/type 不同的 register job 不合并
