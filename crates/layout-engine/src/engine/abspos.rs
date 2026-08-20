@@ -390,15 +390,21 @@ pub(super) fn stretch_fixed_to_viewport_size(
         {
             // height: auto + 全长度 top+bottom → stretch
             if matches!(style.height, LengthValue::Auto)
-                && let (LengthValue::Px(top), LengthValue::Px(bottom)) = (&style.top, &style.bottom)
+                && let (Some(top), Some(bottom)) = (
+                    resolve_abspos_real_length(&style.top, &style.font_size, viewport_width, viewport_height),
+                    resolve_abspos_real_length(&style.bottom, &style.font_size, viewport_width, viewport_height),
+                )
             {
-                child.height = (viewport_height - (*top as f32) - (*bottom as f32)).max(0.0);
+                child.height = (viewport_height - top - bottom).max(0.0);
             }
             // width: auto + 全长度 left+right → stretch
             if matches!(style.width, LengthValue::Auto)
-                && let (LengthValue::Px(left), LengthValue::Px(right)) = (&style.left, &style.right)
+                && let (Some(left), Some(right)) = (
+                    resolve_abspos_real_length(&style.left, &style.font_size, viewport_width, viewport_height),
+                    resolve_abspos_real_length(&style.right, &style.font_size, viewport_width, viewport_height),
+                )
             {
-                child.width = (viewport_width - (*left as f32) - (*right as f32)).max(0.0);
+                child.width = (viewport_width - left - right).max(0.0);
             }
             // 百分比尺寸：fixed 的 CB 恒为视口（CSS §10.1），百分比相对视口解析。
             // taffy 按 positioned 祖先解析（如 body CB），此处按视口重算。R1227：box-sizing
@@ -920,6 +926,50 @@ mod r2062_tests {
         );
         assert_eq!(img.margin_top, 250.0);
         assert_eq!(img.margin_bottom, 250.0);
+    }
+
+    /// R3593：position:fixed + auto size + real-length opposing insets stretch against viewport.
+    /// The fixed stretch pass previously only accepted Px, so residual `em` insets left the
+    /// Taffy-sized fallback box unchanged.
+    #[test]
+    fn r3593_fixed_auto_size_stretches_with_relative_insets() {
+        let mut doc = zero_dom::Document::new();
+        let root = doc.root();
+        let parent = doc.create_element("div");
+        let div = doc.create_element("div");
+        let _ = doc.append_child(root, parent);
+        let _ = doc.append_child(parent, div);
+
+        let mut styles = HashMap::new();
+        let mut style = ComputedStyle::default();
+        style.position = zero_style_system::property::types::PositionValue::Fixed;
+        style.font_size = LengthValue::Px(20.0);
+        style.width = LengthValue::Auto;
+        style.height = LengthValue::Auto;
+        style.left = LengthValue::Em(1.0);
+        style.right = LengthValue::Em(2.0);
+        style.top = LengthValue::Em(0.5);
+        style.bottom = LengthValue::Em(1.0);
+        styles.insert(div, style);
+
+        let div_box = LayoutBox {
+            node_id: Some(div),
+            is_fixed: true,
+            width: 10.0,
+            height: 10.0,
+            ..Default::default()
+        };
+        let mut parent_box = LayoutBox {
+            node_id: Some(parent),
+            children: vec![div_box],
+            ..Default::default()
+        };
+
+        stretch_fixed_to_viewport_size(&mut parent_box, 800.0, 600.0, &styles);
+
+        let div = &parent_box.children[0];
+        assert_eq!(div.width, 740.0, "800 - 20px - 40px");
+        assert_eq!(div.height, 570.0, "600 - 10px - 20px");
     }
 
     /// R2085：Percentage top/bottom inset 被接受并参与居中（相对 effective_cb_height 解析）。

@@ -302,3 +302,5 @@ Inline visual metrics exposed the box-expansion variant: geometry sync code for 
 Absolute positioning exposed the postprocess-CB variant: fixes that correct Taffy containing-block coordinates must not assume the inset is already `Px`. When a postprocess path reinterprets CSS offsets against a viewport or root CB, resolve residual real lengths with the element font context at that same boundary while leaving existing percentage and auto branches explicit.
 
 Root abspos exposed the parallel-postprocess variant: a viewport-CB fix can leave a root-CB sibling path behind. When two postprocess functions reinterpret the same CSS inset semantics against different containing blocks, share the real-length resolver and add one direct test per CB path.
+
+Fixed positioning exposed the stretch-postprocess variant: position correction and size stretch can live in separate postprocess functions for the same CSS inset semantics. After adding a real-length resolver for fixed or absolute coordinates, audit opposing-inset auto-size stretch paths before considering the CB family covered.
