@@ -284,3 +284,5 @@ Outline exposed the naked paint-helper variant: even for plain `LengthValue` fie
 Border-radius exposed the box-dependent variant: a paint helper can correctly handle percentages because it has box geometry, yet still drop residual real lengths by falling back to a px-only convenience helper. Geometry-aware resolvers should combine box-relative percentage handling with font-relative length resolution at the same paint boundary.
 
 Multicol exposed the duplicate-resolver variant: layout and paint both had a `length_to_px` helper for column geometry, but paint supported fewer real length units. When paint consumes geometry-sensitive CSS values for adornments such as column rules, keep its resolver unit set byte-aligned with layout or route through the layout helper directly.
+
+Clip-path exposed the context-length variant: a shape resolver may handle `em` correctly only if the font-size context itself was resolved correctly. Audit both the value being resolved and every contextual basis such as font-size, viewport, or box dimension.

@@ -691,6 +691,41 @@ fn test_paint_clip_path_inset_em_clips() {
     );
 }
 
+#[test]
+fn test_paint_clip_path_inset_residual_font_size_length() {
+    let mut doc = zero_dom::Document::new();
+    let elem = doc.create_element("div");
+    let layout = make_box(Some(elem), 0.0, 0.0, 100.0, 100.0);
+
+    let mut styles = HashMap::new();
+    let mut style = ComputedStyle::default();
+    style.font_size = LengthValue::Em(2.0);
+    style.background_color = ColorValue::Rgba(0, 0, 255, 255);
+    style.color = ColorValue::CurrentColor;
+    style.clip_path = ClipPathComputedValue::Inset {
+        top: LengthValue::Em(1.0),
+        right: LengthValue::Em(1.0),
+        bottom: LengthValue::Em(1.0),
+        left: LengthValue::Em(1.0),
+        round: None,
+    };
+    styles.insert(elem, style);
+
+    let mut painter = Painter::new();
+    painter.paint(&layout, &styles, None);
+
+    let fills = &painter.primitives().fills;
+    assert!(!fills.is_empty(), "应有背景 fill");
+    assert_eq!(
+        fills[0].rect.size.width, 36.0,
+        "font-size:2em 下 inset(1em) 应按 32px 裁剪左右"
+    );
+    assert_eq!(
+        fills[0].rect.size.height, 36.0,
+        "font-size:2em 下 inset(1em) 应按 32px 裁剪上下"
+    );
+}
+
 /// 测试 clip-path: circle(<percentage>) 半径按 sqrt(w²+h²)/√2 解析（CSS basic-shape circle）。
 /// driving: R2366 — `circle(50%)` 此前 paint 用 length_to_f32 把百分比丢为 0 → 退化半径 0
 /// → 裁剪区域为零（元素被完全裁掉）；应 radius = 50%×sqrt(w²+h²)/√2。

@@ -244,6 +244,10 @@ fn paint_containment_clips(contain: ContainComputedValue, display: DisplayValue)
         )
 }
 
+fn resolve_paint_font_size(font_size: &LengthValue) -> f32 {
+    zero_style_system::computed::resolve_length(font_size, 16.0, None, None) as f32
+}
+
 /// 判断节点是否需要对子内容裁剪（overflow 或 contain:paint/strict/content 触发）。
 ///
 /// 从 paint_node 抽出，供 collect_positioned_auto_descendants 镜像 defer_abspos 条件，
@@ -1333,7 +1337,7 @@ impl Painter {
                     let w = box_node.width;
                     let h = box_node.height;
                     // R2365：em/rem/百分比按 border-box 解析（top/bottom→height、left/right→width）。
-                    let fs = super::helpers::length_to_f32(&style.font_size);
+                    let fs = resolve_paint_font_size(&style.font_size);
                     let t = super::helpers::resolve_inset_length(top, h, fs);
                     let r = super::helpers::resolve_inset_length(right, w, fs);
                     let b = super::helpers::resolve_inset_length(bottom, h, fs);
@@ -1346,7 +1350,7 @@ impl Painter {
                     let h = box_node.height;
                     // R2366：em/rem/百分比按 border-box 解析。
                     // 圆心 position：x%→width、y%→height（CSS basic-shape <position>）。
-                    let fs = super::helpers::length_to_f32(&style.font_size);
+                    let fs = resolve_paint_font_size(&style.font_size);
                     let cx = position
                         .as_ref()
                         .map(|(x, _)| super::helpers::resolve_inset_length(x, w, fs))
@@ -1371,7 +1375,7 @@ impl Painter {
                     let w = box_node.width;
                     let h = box_node.height;
                     // R2366：rx%→width、ry%→height；position x%→width、y%→height。
-                    let fs = super::helpers::length_to_f32(&style.font_size);
+                    let fs = resolve_paint_font_size(&style.font_size);
                     let rx_v = match rx {
                         zero_style_system::ClipPathRadius::Length(l) => super::helpers::resolve_inset_length(l, w, fs),
                         _ => w / 2.0,
@@ -1395,7 +1399,7 @@ impl Painter {
                     // R2366：顶点 x%→width、y%→height（CSS basic-shape polygon）。
                     let w = box_node.width;
                     let h = box_node.height;
-                    let fs = super::helpers::length_to_f32(&style.font_size);
+                    let fs = resolve_paint_font_size(&style.font_size);
                     let polygon: Vec<(f32, f32)> = points
                         .iter()
                         .map(|(x, y)| {
