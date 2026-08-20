@@ -1194,6 +1194,62 @@ fn test_adjust_absolute_maxwidth_clamp_center() {
     assert!((abs.margin_right - 342.0).abs() < 0.001, "margin_right 应为 342");
 }
 
+#[test]
+fn test_adjust_absolute_maxwidth_clamp_center_with_relative_lengths() {
+    use std::collections::HashMap;
+    use zero_css_parser::values::LengthValue;
+    let (_doc, key_id) = make_doc_with_body();
+
+    let abs_child = LayoutBox {
+        node_id: Some(key_id),
+        x: 8.0,
+        y: 0.0,
+        width: 100.0,
+        height: 100.0,
+        is_absolute: true,
+        ..Default::default()
+    };
+    let body = LayoutBox {
+        node_id: None,
+        x: 0.0,
+        y: 0.0,
+        width: 800.0,
+        height: 600.0,
+        children: vec![abs_child],
+        ..Default::default()
+    };
+    let mut root = LayoutBox {
+        children: vec![body],
+        ..Default::default()
+    };
+
+    let mut style = ComputedStyle::default();
+    style.font_size = LengthValue::Px(20.0);
+    style.width = LengthValue::Auto;
+    style.left = LengthValue::Em(0.4);
+    style.right = LengthValue::Em(0.4);
+    style.max_width = LengthValue::Em(5.0);
+    style.margin_left = LengthValue::Auto;
+    style.margin_right = LengthValue::Auto;
+    let mut styles: HashMap<NodeId, ComputedStyle> = HashMap::new();
+    styles.insert(key_id, style);
+
+    adjust_absolute_pct_to_viewport(&mut root, 0.0, 0.0, 800.0, 600.0, &styles, false);
+
+    let abs = &root.children[0].children[0];
+    assert!(
+        (abs.width - 100.0).abs() < 0.001,
+        "5em at 20px should clamp width to 100"
+    );
+    assert!(
+        (abs.x - 350.0).abs() < 0.001,
+        "relative inset clamp should center at x=350, got {}",
+        abs.x
+    );
+    assert!((abs.margin_left - 342.0).abs() < 0.001);
+    assert!((abs.margin_right - 342.0).abs() < 0.001);
+}
+
 /// 测试 §10.3.7：max-width 钳制后，仅 margin-left auto 时吸收 leftover（右对齐，
 /// 对应 WPT absolute-non-replaced-width-026）。
 #[test]

@@ -335,11 +335,13 @@ pub(super) fn adjust_absolute_pct_to_viewport(
             // stretch + left/right 定位之后执行（覆盖上方 x 定位）。target_viewport_x
             // 转回父 content 相对坐标（与上方各块同机制）。
             if matches!(style.width, LengthValue::Auto)
-                && let (LengthValue::Px(left_v), LengthValue::Px(right_v)) = (&style.left, &style.right)
-                && let LengthValue::Px(mw_v) = &style.max_width
-                && child.width > *mw_v as f32 + 0.5
+                && let (Some(left), Some(right), Some(mw)) = (
+                    resolve_abspos_real_length(&style.left, &style.font_size, viewport_width, viewport_height),
+                    resolve_abspos_real_length(&style.right, &style.font_size, viewport_width, viewport_height),
+                    resolve_abspos_real_length(&style.max_width, &style.font_size, viewport_width, viewport_height),
+                )
+                && child.width > mw + 0.5
             {
-                let (left, right, mw) = (*left_v as f32, *right_v as f32, *mw_v as f32);
                 let leftover = (viewport_width - left - right - mw).max(0.0);
                 let ml_auto = matches!(style.margin_left, LengthValue::Auto);
                 let mr_auto = matches!(style.margin_right, LengthValue::Auto);
