@@ -344,3 +344,5 @@ Multi-float coordination exposed the feasible-region variant: candidate placemen
 Inline-block float avoidance exposed the atomic-inline variant: terminal geometry passes that adjust an inline-block position must also restore its declared used width and content width. Fixing only the x/y coordinate can leave the atomic box visually shifted but still sized from a raw residual unit.
 
 Infeasible multi-float placement exposed the no-op trap: "do not move the box" must not mean "leave every fallback geometry untouched." If a branch intentionally preserves position, it still needs to restore cached used dimensions before paint and hit-test consumers read the final layout tree.
+
+Replaced-element intrinsic ratio sizing exposed the pre-taffy variant: if the tree builder computes an auto side from a specified side before final layout, it must resolve the specified side's real length first and write that used size back to taffy. Otherwise both the explicit side and the ratio-derived side inherit the converter's raw residual number.

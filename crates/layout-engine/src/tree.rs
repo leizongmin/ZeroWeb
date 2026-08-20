@@ -93,6 +93,22 @@ fn br_parent_has_following_inflow_sibling(
     false
 }
 
+fn resolve_tree_definite_real_length(value: &LengthValue, style: &ComputedStyle) -> Option<f32> {
+    match value {
+        LengthValue::Auto
+        | LengthValue::Percentage(_)
+        | LengthValue::MinContent
+        | LengthValue::MaxContent
+        | LengthValue::FitContent(_) => None,
+        LengthValue::Px(v) if *v == f64::INFINITY => None,
+        other => {
+            let font_size_px = zero_style_system::computed::resolve_length(&style.font_size, 16.0, None, None);
+            let px = zero_style_system::computed::resolve_length(other, font_size_px, None, None);
+            px.is_finite().then_some(px.max(0.0) as f32)
+        }
+    }
+}
+
 /// R109 §9.2.1.1 生产端接线（匿名块生成 + fragment border）默认**启用**——经全量
 /// reftest（+2 零回归：inline-box-001 / block-in-inline-align-001）+ 全量 make test
 /// 验证。设 `R109_WIRE=0` 可关闭（回退到旧 inline→block 行为，仅用于对比/调试）。
@@ -612,7 +628,7 @@ fn apply_replaced_element_sizing(
                     taffy_style.size.height = taffy::style::Dimension::length(h);
                 } else if !width_auto
                     && height_auto
-                    && let LengthValue::Px(cw) = &computed.width
+                    && let Some(cw) = resolve_tree_definite_real_length(&computed.width, computed)
                 {
                     // width 显式，height auto：height = cw / eff_ratio
                     // R1363：flex row item 的 main(width) 可能被 min-size:auto 钳制（如
@@ -620,20 +636,22 @@ fn apply_replaced_element_sizing(
                     // 的 cw(999) 预推 height=500 会设为 definite，致 taffy 不再按钳制后 main 重推，
                     // 且不 stretch 到容器 cross。跳过（留 height auto + aspect_ratio），让 taffy 按
                     // 最终（钳制后）main 推 cross（100/2=50）。仅 flex row + 有 aspect_ratio 时跳过。
+                    taffy_style.size.width = taffy::style::Dimension::length(cw);
                     let skip_for_flex_row = is_flex_row_item && taffy_style.aspect_ratio.is_some();
                     if !skip_for_flex_row {
-                        taffy_style.size.height = taffy::style::Dimension::length(((*cw as f32) / eff_ratio).max(0.5));
+                        taffy_style.size.height = taffy::style::Dimension::length((cw / eff_ratio).max(0.5));
                     }
                 } else if width_auto
                     && !height_auto
-                    && let LengthValue::Px(ch) = &computed.height
+                    && let Some(ch) = resolve_tree_definite_real_length(&computed.height, computed)
                 {
                     // height 显式，width auto：width = ch * eff_ratio
                     // R1363 对称：flex column item 的 main(height) 可能被 min-size:auto 钳制，
                     // 跳过预推 width（留 auto + aspect_ratio），让 taffy 按钳制后 main 推 cross。
+                    taffy_style.size.height = taffy::style::Dimension::length(ch);
                     let skip_for_flex_col = is_flex_col_item && taffy_style.aspect_ratio.is_some();
                     if !skip_for_flex_col {
-                        taffy_style.size.width = taffy::style::Dimension::length(((*ch as f32) * eff_ratio).max(0.5));
+                        taffy_style.size.width = taffy::style::Dimension::length((ch * eff_ratio).max(0.5));
                     }
                 }
                 // 两侧都显式：由 converter 从 CSS 处理，不干预
@@ -665,14 +683,16 @@ fn apply_replaced_element_sizing(
                     let eff_ratio = computed.aspect_ratio.unwrap_or(ratio);
                     if !width_auto
                         && height_auto
-                        && let LengthValue::Px(cw) = &computed.width
+                        && let Some(cw) = resolve_tree_definite_real_length(&computed.width, computed)
                     {
-                        taffy_style.size.height = taffy::style::Dimension::length(((*cw as f32) / eff_ratio).max(0.5));
+                        taffy_style.size.width = taffy::style::Dimension::length(cw);
+                        taffy_style.size.height = taffy::style::Dimension::length((cw / eff_ratio).max(0.5));
                     } else if width_auto
                         && !height_auto
-                        && let LengthValue::Px(ch) = &computed.height
+                        && let Some(ch) = resolve_tree_definite_real_length(&computed.height, computed)
                     {
-                        taffy_style.size.width = taffy::style::Dimension::length(((*ch as f32) * eff_ratio).max(0.5));
+                        taffy_style.size.height = taffy::style::Dimension::length(ch);
+                        taffy_style.size.width = taffy::style::Dimension::length((ch * eff_ratio).max(0.5));
                     }
                     // both-auto flex：不设确定 size，仅 aspect_ratio（transferred-size 由 taffy 推）。
                 } else {
@@ -702,16 +722,22 @@ fn apply_replaced_element_sizing(
                         let w = container_w.unwrap_or(300.0);
                         taffy_style.size.width = taffy::style::Dimension::length(w);
                         taffy_style.size.height = taffy::style::Dimension::length((w / ratio).max(0.5));
-                    } else if height_content_kw && let LengthValue::Px(cw) = &computed.width {
+                    } else if height_content_kw
+                        && let Some(cw) = resolve_tree_definite_real_length(&computed.width, computed)
+                    {
                         // R2062：height:max-content/min-content + 定宽 + 比 → height = width/ratio
                         //（converter 把 max-content→length(0)，此处显式覆写定高，使 abspos
                         // margin:auto 居中等下游用 definite 高度）。对称分支见下。
                         let r = computed.aspect_ratio.unwrap_or(ratio);
-                        taffy_style.size.height = taffy::style::Dimension::length(((*cw as f32) / r).max(0.5));
-                    } else if width_content_kw && let LengthValue::Px(ch) = &computed.height {
+                        taffy_style.size.width = taffy::style::Dimension::length(cw);
+                        taffy_style.size.height = taffy::style::Dimension::length((cw / r).max(0.5));
+                    } else if width_content_kw
+                        && let Some(ch) = resolve_tree_definite_real_length(&computed.height, computed)
+                    {
                         // R2062 对称：width:max-content/min-content + 定高 + 比 → width = height*ratio
                         let r = computed.aspect_ratio.unwrap_or(ratio);
-                        taffy_style.size.width = taffy::style::Dimension::length(((*ch as f32) * r).max(0.5));
+                        taffy_style.size.height = taffy::style::Dimension::length(ch);
+                        taffy_style.size.width = taffy::style::Dimension::length((ch * r).max(0.5));
                     }
                     // 显式 width + auto height / 显式 height + auto width：不设 auto 侧 default，
                     // taffy 按 aspect_ratio 从显式侧推导（与 image_sizes BothAbs 路径一致）。

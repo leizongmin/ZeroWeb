@@ -3,7 +3,7 @@
 use crate::engine::LayoutEngine;
 use crate::types::LayoutBox;
 use std::collections::HashMap;
-use zero_css_parser::values::DisplayValue;
+use zero_css_parser::values::{DisplayValue, LengthValue};
 use zero_style_system::StyleSystem;
 
 #[test]
@@ -258,6 +258,46 @@ fn test_img_width_set_height_auto_preserves_aspect() {
     assert!(
         (h - 80.0).abs() < 1.5,
         "img height should be aspect-preserved ~80 (square @ width 80), got {h}"
+    );
+}
+
+/// R3614：替换元素一侧显式、一侧 auto 的 intrinsic-ratio 推导也要解析 residual real length。
+/// direct `ComputedStyle` 下 `width:8em;font-size:20px;height:auto` 应按 160px 宽推导高度，
+/// 不能让 converter raw `Em(8)` 留成 8×8。
+#[test]
+fn r3614_img_relative_width_height_auto_preserves_aspect() {
+    let html = r#"<html><body style="margin:0"><img src="logo.svg"></body></html>"#;
+    let doc = zero_dom::parse_html(html);
+    let mut sys = StyleSystem::new();
+    sys.set_viewport(800.0, 600.0);
+    let mut styles = sys.compute_styles(&doc, &[]);
+    let img_id = doc.get_elements_by_tag_name("img").into_iter().next().expect("img");
+    let img_style = styles.get_mut(&img_id).expect("img style");
+    img_style.font_size = LengthValue::Px(20.0);
+    img_style.width = LengthValue::Em(8.0);
+    img_style.height = LengthValue::Auto;
+
+    let mut img_sizes = HashMap::new();
+    img_sizes.insert(img_id, (100.0, 100.0));
+    let mut engine = LayoutEngine::new(800.0, 600.0);
+    let result = engine.compute_with_img_sizes(&doc, &styles, img_sizes, std::collections::HashMap::new());
+    let mut found = None;
+    let mut stack: Vec<&LayoutBox> = vec![&result.root];
+    while let Some(b) = stack.pop() {
+        if b.node_id == Some(img_id) {
+            found = Some((b.width, b.height));
+            break;
+        }
+        stack.extend(b.children.iter());
+    }
+    let (w, h) = found.expect("img box found");
+    assert!(
+        (w - 160.0).abs() < 1.0,
+        "img width should resolve 8em@20px to 160, got {w}"
+    );
+    assert!(
+        (h - 160.0).abs() < 1.5,
+        "square img height should derive from resolved width 160, got {h}"
     );
 }
 
