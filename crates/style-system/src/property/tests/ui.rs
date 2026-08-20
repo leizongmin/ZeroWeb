@@ -382,7 +382,15 @@ fn test_apply_property_border_image_width_px() {
 #[test]
 fn test_apply_property_border_image_width_length_units() {
     let mut style = ComputedStyle::default();
-    assert!(apply_property_value(&mut style, "border-image-width", "1vh 2ch"));
+    assert!(apply_property_value(&mut style, "border-image-width", "1em 2ch"));
+    assert_eq!(
+        style.border_image_width.top,
+        BorderImageWidthComputedComponent::Length(16.0)
+    );
+    assert_eq!(
+        style.border_image_width.right,
+        BorderImageWidthComputedComponent::Length(16.0)
+    );
 }
 
 #[test]
@@ -545,7 +553,15 @@ fn test_apply_property_border_image_outset_px() {
 #[test]
 fn test_apply_property_border_image_outset_length_units() {
     let mut style = ComputedStyle::default();
-    assert!(apply_property_value(&mut style, "border-image-outset", "1vh 2ch"));
+    assert!(apply_property_value(&mut style, "border-image-outset", "1em 2ch"));
+    assert_eq!(
+        style.border_image_outset.top,
+        BorderImageOutsetComputedComponent::Length(16.0)
+    );
+    assert_eq!(
+        style.border_image_outset.right,
+        BorderImageOutsetComputedComponent::Length(16.0)
+    );
 }
 
 #[test]

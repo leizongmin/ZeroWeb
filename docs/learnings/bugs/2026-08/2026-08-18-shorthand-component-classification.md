@@ -243,6 +243,8 @@ Shadow apply exposed the computed-conversion variant: parser-level grammar parit
 
 Border-spacing exposed the inherited table-spacing instance of the same computed-conversion variant: once a converter exists for effect lengths, route other paint-facing numeric storages through it instead of repeating `Px else 0.0` matches.
 
+Border-image exposed the weak-direct-apply-test variant: an apply test that only checks `true` can miss lossy conversion from a parsed `LengthValue` into a default computed number. For properties with tagged computed components, assert the exact computed variant as well as the success boolean.
+
 ## Root Cause
 
 The shorthand layer used heuristic component classifiers and treated unrecognized tokens as absent optional components. That is wrong for CSS shorthands such as `border`, where every token must match one of the allowed component grammars. A shared parser can also be broader than the property grammar that consumes it: general length parsing may accept `auto`, intrinsic sizing keywords, or percentages that `border-width` must reject.

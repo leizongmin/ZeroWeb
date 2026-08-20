@@ -1670,25 +1670,18 @@ pub fn apply_advanced_property_value(style: &mut ComputedStyle, property: &str, 
         }
         "border-image-width" => {
             if let Some(v) = values::parse_border_image_width(value) {
-                fn convert_comp(
-                    c: &zero_css_parser::values::BorderImageWidthComponent,
-                ) -> BorderImageWidthComputedComponent {
-                    match c {
-                        zero_css_parser::values::BorderImageWidthComponent::Auto => {
-                            BorderImageWidthComputedComponent::Auto
-                        }
-                        zero_css_parser::values::BorderImageWidthComponent::Number(n) => {
-                            BorderImageWidthComputedComponent::Number(*n)
-                        }
-                        zero_css_parser::values::BorderImageWidthComponent::Length(
-                            zero_css_parser::values::LengthValue::Px(px),
-                        ) => BorderImageWidthComputedComponent::Length(*px as f32),
-                        zero_css_parser::values::BorderImageWidthComponent::Percent(p) => {
-                            BorderImageWidthComputedComponent::Percent(*p)
-                        }
-                        _ => BorderImageWidthComputedComponent::Number(1.0),
+                let convert_comp = |c: &zero_css_parser::values::BorderImageWidthComponent| match c {
+                    zero_css_parser::values::BorderImageWidthComponent::Auto => BorderImageWidthComputedComponent::Auto,
+                    zero_css_parser::values::BorderImageWidthComponent::Number(n) => {
+                        BorderImageWidthComputedComponent::Number(*n)
                     }
-                }
+                    zero_css_parser::values::BorderImageWidthComponent::Length(lv) => {
+                        BorderImageWidthComputedComponent::Length(resolve_effect_length(lv, style))
+                    }
+                    zero_css_parser::values::BorderImageWidthComponent::Percent(p) => {
+                        BorderImageWidthComputedComponent::Percent(*p)
+                    }
+                };
                 style.border_image_width = BorderImageWidthComputedValue {
                     top: convert_comp(&v.top),
                     right: convert_comp(&v.right),
@@ -1719,19 +1712,14 @@ pub fn apply_advanced_property_value(style: &mut ComputedStyle, property: &str, 
         }
         "border-image-outset" => {
             if let Some(v) = values::parse_border_image_outset(value) {
-                fn convert_comp(
-                    c: &zero_css_parser::values::BorderImageOutsetComponent,
-                ) -> BorderImageOutsetComputedComponent {
-                    match c {
-                        zero_css_parser::values::BorderImageOutsetComponent::Number(n) => {
-                            BorderImageOutsetComputedComponent::Number(*n)
-                        }
-                        zero_css_parser::values::BorderImageOutsetComponent::Length(
-                            zero_css_parser::values::LengthValue::Px(px),
-                        ) => BorderImageOutsetComputedComponent::Length(*px as f32),
-                        _ => BorderImageOutsetComputedComponent::Number(0.0),
+                let convert_comp = |c: &zero_css_parser::values::BorderImageOutsetComponent| match c {
+                    zero_css_parser::values::BorderImageOutsetComponent::Number(n) => {
+                        BorderImageOutsetComputedComponent::Number(*n)
                     }
-                }
+                    zero_css_parser::values::BorderImageOutsetComponent::Length(lv) => {
+                        BorderImageOutsetComputedComponent::Length(resolve_effect_length(lv, style))
+                    }
+                };
                 style.border_image_outset = BorderImageOutsetComputedValue {
                     top: convert_comp(&v.top),
                     right: convert_comp(&v.right),
