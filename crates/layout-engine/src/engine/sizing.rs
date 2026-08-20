@@ -9,6 +9,22 @@
 
 use super::*;
 
+fn resolve_sizing_definite_real_length(value: &LengthValue, style: &ComputedStyle) -> Option<f32> {
+    match value {
+        LengthValue::Auto
+        | LengthValue::Percentage(_)
+        | LengthValue::MinContent
+        | LengthValue::MaxContent
+        | LengthValue::FitContent(_) => None,
+        LengthValue::Px(v) if *v == f64::INFINITY => None,
+        other => {
+            let font_size_px = zero_style_system::computed::resolve_length(&style.font_size, 16.0, None, None);
+            let px = zero_style_system::computed::resolve_length(other, font_size_px, None, None);
+            px.is_finite().then_some(px.max(0.0) as f32)
+        }
+    }
+}
+
 impl LayoutEngine {
     /// 两趟固有宽度布局的第一趟修正：对 `width:max-content`/`min-content` 的
     /// flex/grid 容器提升宽度到测得的 intrinsic。
@@ -208,9 +224,9 @@ impl LayoutEngine {
                 // R993 driving case（aspect-ratio-intrinsic-size-007 SVG img）+ R994 +2（CSS aspect-ratio
                 // leaf 无 min-size）均不受影响。
                 let main_has_definite_min = if is_column {
-                    matches!(item_style.min_height, LengthValue::Px(_))
+                    resolve_sizing_definite_real_length(&item_style.min_height, item_style).is_some()
                 } else {
-                    matches!(item_style.min_width, LengthValue::Px(_))
+                    resolve_sizing_definite_real_length(&item_style.min_width, item_style).is_some()
                 };
                 if main_is_auto && (!main_has_definite_min || b.is_replaced) {
                     // column: main=height, cross=width；row: main=width, cross=height。
@@ -223,22 +239,16 @@ impl LayoutEngine {
                     // cross（将被 align-items:stretch 拉伸到的值）推 main，而非 b 的固有/预算 cross。
                     // 驱动 flex-aspect-ratio-img-row-006：img 固有 200x200 + width/height auto +
                     // 容器 height:100 → main(width) 应 = 100×ratio(1)=100，非固有 200×1=200。
-                    // 仅 item cross CSS-auto（未显式指定，将被 stretch）+ 容器 cross Px 时覆盖。
+                    // 仅 item cross CSS-auto（未显式指定，将被 stretch）+ 容器 definite cross 时覆盖。
                     let item_cross_is_auto = if is_column {
                         matches!(item_style.width, LengthValue::Auto)
                     } else {
                         matches!(item_style.height, LengthValue::Auto)
                     };
                     let parent_cross_definite = if is_column {
-                        matches!(ps.width, LengthValue::Px(_)).then(|| match ps.width {
-                            LengthValue::Px(v) => v as f32,
-                            _ => 0.0,
-                        })
+                        resolve_sizing_definite_real_length(&ps.width, ps)
                     } else {
-                        matches!(ps.height, LengthValue::Px(_)).then(|| match ps.height {
-                            LengthValue::Px(v) => v as f32,
-                            _ => 0.0,
-                        })
+                        resolve_sizing_definite_real_length(&ps.height, ps)
                     };
                     let cross_resolved = if item_cross_is_auto {
                         parent_cross_definite.unwrap_or(cross_resolved)

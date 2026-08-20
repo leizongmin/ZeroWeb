@@ -91,6 +91,40 @@ fn r717_flex_row_ratio_only_img_derives_width() {
     );
 }
 
+/// R3617：post-layout flex aspect-ratio fixup 的 parent cross 也要解析 residual real length。
+/// direct `ComputedStyle` 下 `height:5em;font-size:20px` 应提供 100px cross；旧逻辑只认 Px，
+/// 用 taffy raw 5px cross 推导 main，item 宽度错误停在约 10px。
+#[test]
+fn r3617_flex_aspect_ratio_fixup_resolves_relative_parent_cross() {
+    let html = r#"<html><body style="margin:0">
+<div id="container" style="display:flex; height:100px;">
+  <div id="item" style="aspect-ratio:2/1;"></div>
+</div>
+</body></html>"#;
+    let doc = zero_dom::parse_html(html);
+    let mut sys = StyleSystem::new();
+    sys.set_viewport(800.0, 600.0);
+    let mut styles = sys.compute_styles(&doc, &[]);
+    let container = doc.get_element_by_id("container").expect("container");
+    let item = doc.get_element_by_id("item").expect("item");
+    let container_style = styles.get_mut(&container).expect("container style");
+    container_style.font_size = LengthValue::Px(20.0);
+    container_style.height = LengthValue::Em(5.0);
+
+    let mut engine = LayoutEngine::new(800.0, 600.0);
+    let result = engine.compute_with_img_sizes(&doc, &styles, HashMap::new(), HashMap::new());
+    let (w, h) = find_box(&result.root, item).expect("item box found");
+
+    assert!(
+        (h - 100.0).abs() < 3.0,
+        "R3617: item cross height should stretch to 5em@20px = 100, got {h}"
+    );
+    assert!(
+        (w - 200.0).abs() < 5.0,
+        "R3617: item width should derive from resolved cross 100×2 = 200, got {w}"
+    );
+}
+
 /// R717 非 flex 父（block）不应触发 ratio-derivation——img 保持无确定尺寸（不 collapse 也不强推）。
 /// 此前该 img 同样无 size（ratio-only SVG 从不在 image_sizes 中），故不构成回归。
 #[test]
