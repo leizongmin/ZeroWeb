@@ -296,3 +296,5 @@ Radial gradients exposed the helper-context variant: a generic conversion helper
 Gradient color stops exposed the nested-helper-context variant: fixing a gradient geometry resolver does not automatically fix nested stop positions. When adding a context-aware paint entry point, audit every helper it calls for residual length conversion instead of stopping at the outer geometry fields.
 
 Text-indent exposed the shared-inline-resolver variant: even when layout and paint share one resolver, that resolver can still lag behind the accepted grammar. For `<length-percentage>` text metrics, keep the percentage basis explicit and send every real length unit through the same style-system used-value resolver.
+
+Inline visual metrics exposed the box-expansion variant: geometry sync code for inline backgrounds and borders may consume padding/border widths outside the normal Taffy conversion path. Resolve residual real lengths at that sync boundary with the element font context, and leave percentages unresolved when the helper has no containing-block basis.

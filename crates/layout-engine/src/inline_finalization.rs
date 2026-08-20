@@ -524,23 +524,28 @@ pub(crate) struct InlineVisualMetrics {
     border_left: f32,
 }
 
-pub(crate) fn resolve_px_length(value: &LengthValue) -> f32 {
+pub(crate) fn resolve_inline_visual_length(value: &LengthValue, font_size_px: f64) -> f32 {
     match value {
-        LengthValue::Px(v) => *v as f32,
-        _ => 0.0,
+        LengthValue::Auto
+        | LengthValue::Percentage(_)
+        | LengthValue::MinContent
+        | LengthValue::MaxContent
+        | LengthValue::FitContent(_) => 0.0,
+        other => zero_style_system::computed::resolve_length(other, font_size_px, None, None) as f32,
     }
 }
 
 pub(crate) fn extract_inline_visual_metrics(style: &ComputedStyle) -> InlineVisualMetrics {
+    let font_size_px = zero_style_system::computed::resolve_length(&style.font_size, 16.0, None, None);
     InlineVisualMetrics {
-        padding_top: resolve_px_length(&style.padding_top),
-        padding_right: resolve_px_length(&style.padding_right),
-        padding_bottom: resolve_px_length(&style.padding_bottom),
-        padding_left: resolve_px_length(&style.padding_left),
-        border_top: resolve_px_length(&style.border_top_width),
-        border_right: resolve_px_length(&style.border_right_width),
-        border_bottom: resolve_px_length(&style.border_bottom_width),
-        border_left: resolve_px_length(&style.border_left_width),
+        padding_top: resolve_inline_visual_length(&style.padding_top, font_size_px),
+        padding_right: resolve_inline_visual_length(&style.padding_right, font_size_px),
+        padding_bottom: resolve_inline_visual_length(&style.padding_bottom, font_size_px),
+        padding_left: resolve_inline_visual_length(&style.padding_left, font_size_px),
+        border_top: resolve_inline_visual_length(&style.border_top_width, font_size_px),
+        border_right: resolve_inline_visual_length(&style.border_right_width, font_size_px),
+        border_bottom: resolve_inline_visual_length(&style.border_bottom_width, font_size_px),
+        border_left: resolve_inline_visual_length(&style.border_left_width, font_size_px),
     }
 }
 

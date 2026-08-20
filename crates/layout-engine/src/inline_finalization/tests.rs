@@ -1,6 +1,7 @@
 use super::{
-    ComputedStyle, InlineFormattingContext, LayoutBox, TextAlign, resolve_text_align, resolve_text_align_last,
-    resolve_text_indent, sync_inline_block_positions_from_ifc, vertical_decoration_free_with_mode,
+    ComputedStyle, InlineFormattingContext, LayoutBox, TextAlign, extract_inline_visual_metrics, resolve_text_align,
+    resolve_text_align_last, resolve_text_indent, sync_inline_block_positions_from_ifc,
+    vertical_decoration_free_with_mode,
 };
 use std::collections::HashMap;
 use zero_css_parser::values::{DisplayValue, LengthValue};
@@ -81,6 +82,21 @@ fn test_resolve_text_indent_relative_lengths() {
         resolve_text_indent(&LengthValue::Rem(2.0), &LengthValue::Px(20.0), 800.0),
         32.0
     );
+}
+
+#[test]
+fn test_extract_inline_visual_metrics_relative_lengths() {
+    let mut style = ComputedStyle::default();
+    style.font_size = LengthValue::Px(20.0);
+    style.padding_left = LengthValue::Em(1.0);
+    style.padding_right = LengthValue::Ch(2.0);
+    style.border_right_width = LengthValue::Em(0.5);
+
+    let metrics = extract_inline_visual_metrics(&style);
+
+    assert_eq!(metrics.padding_left, 20.0);
+    assert_eq!(metrics.padding_right, 20.0);
+    assert_eq!(metrics.border_right, 10.0);
 }
 
 #[test]
