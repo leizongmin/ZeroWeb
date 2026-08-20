@@ -1479,3 +1479,72 @@ fn test_character_data_method_family_r129() {
         "CharacterData 方法族：叶子节点 HRE/缺参 TypeError/offset IndexSizeError/count 回绕 clamp/LegacyNullToEmptyString/remove 真移除/方法存在性"
     );
 }
+
+// R130（js-dom M4）：DOMImplementation.createHTMLDocument/createDocument detached doc
+// 语义族——title 子树（spec 步骤 4「create a title element」）/ documentElement 惰性 getter
+//（首个元素子，XML omit root 时 null）/ XMLDocument.prototype 接线 / createDocument
+// WebIDL 必参 + qualifiedName root 创建 / createDocumentType 宽松校验 / A.href IDL
+// percent-encode / doc.location null。
+#[test]
+fn test_dom_implementation_doc_family_r130() {
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let mut sandbox = V8Sandbox::with_config(zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    })
+    .unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><div id=\"host\"><p id=\"a\">A</p></div></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry);
+
+    let out = sandbox
+        .execute(
+            "var parts = [];\
+             function threw(fn) { try { fn(); return 'none'; } catch (e) { return e.name; } }\
+             var hd = document.implementation.createHTMLDocument('foo');\
+             parts.push('htmltitle:' + hd.head.childNodes.length\
+               + ':' + hd.head.firstChild.localName\
+               + ':' + hd.head.firstChild.firstChild.data\
+               + ':inst:' + (hd.documentElement instanceof HTMLHtmlElement\
+                 && hd.head instanceof HTMLHeadElement && hd.body instanceof HTMLBodyElement\
+                 && hd.head.firstChild instanceof HTMLTitleElement)\
+               + ':loc:' + hd.location\
+               + ':kids:' + hd.childNodes.length);\
+             var nd = document.implementation.createHTMLDocument();\
+             parts.push('notitle:' + nd.head.childNodes.length);\
+             var xd = document.implementation.createDocument('', '');\
+             parts.push('xmldoc:' + (Object.getPrototypeOf(xd) === XMLDocument.prototype)\
+               + ':docel:' + xd.documentElement\
+               + ':ct:' + xd.contentType);\
+             var x2 = document.implementation.createDocument('http://www.w3.org/1999/xhtml', 'html');\
+             parts.push('xmlroot:' + x2.documentElement.localName\
+               + ':' + x2.documentElement.childNodes.length\
+               + ':xhtml-ct:' + x2.contentType\
+               + ':create-div:' + x2.createElement('DIV').localName);\
+             parts.push('missing:' + threw(function () { document.implementation.createDocument(); })\
+               + ':' + threw(function () { document.implementation.createDocument(''); })\
+               + ':bad-dt:' + threw(function () { document.implementation.createDocument('', '', false); }));\
+             var dt = document.implementation.createDocumentType('{', '', '');\
+             parts.push('dt-ok:' + dt.name\
+               + ':dt-throw:' + threw(function () { document.implementation.createDocumentType('edi:>', '', ''); })\
+               + ':' + threw(function () { document.implementation.createDocumentType('edi:a ', '', ''); }));\
+             var ad = hd.createElement('a');\
+             ad.setAttribute('href', 'http://example.org/?\\u00E4');\
+             parts.push('href:' + ad.href + ':raw:' + ad.getAttribute('href'));\
+             parts.join('|');",
+        )
+        .unwrap()
+        .value;
+    assert_eq!(
+        out,
+        "htmltitle:1:title:foo:inst:true:loc:null:kids:2|notitle:0|xmldoc:true:docel:null:ct:application/xml|xmlroot:html:0:xhtml-ct:application/xhtml+xml:create-div:DIV|missing:TypeError:TypeError:bad-dt:TypeError|dt-ok:{:dt-throw:InvalidCharacterError:InvalidCharacterError|href:http://example.org/?%C3%A4:raw:http://example.org/?ä",
+        "R130 createHTMLDocument title 子树/原型接线/location null + createDocument XMLDocument/docElement 惰性/必参校验/root 创建 + createDocumentType 校验 + A.href percent-encode"
+    );
+}

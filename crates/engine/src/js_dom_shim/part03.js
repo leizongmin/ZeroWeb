@@ -579,6 +579,23 @@
   globalThis.Node.DOCUMENT_POSITION_CONTAINS = 8;
   globalThis.Node.DOCUMENT_POSITION_CONTAINED_BY = 16;
   globalThis.Node.DOCUMENT_POSITION_IMPLEMENTATION_SPECIFIC = 32;
+  // R130（js-dom M4）：NodeType 常量补齐到静态 Node + Node.prototype（无 polyfill-chain
+  // 守卫——native 叠加路径下 globalThis.Node 是 native 构造器，常量族全缺，WPT
+  // DOMImplementation-createDocument `assert_equals(doc.nodeType, Node.DOCUMENT_NODE)`
+  // native 111F 主因；DOCUMENT_POSITION 族在上方同为无守卫静态定义，此处同款。幂等：
+  // 已有值不覆盖（polyfill 自建链路径已定义同值）。
+  (function () {
+    var _r130Nc = { ELEMENT_NODE: 1, ATTRIBUTE_NODE: 2, TEXT_NODE: 3, CDATA_SECTION_NODE: 4,
+      COMMENT_NODE: 8, DOCUMENT_NODE: 9, DOCUMENT_TYPE_NODE: 10, DOCUMENT_FRAGMENT_NODE: 11,
+      NOTATION_NODE: 12 };
+    for (var _r130K in _r130Nc) {
+      if (!Object.prototype.hasOwnProperty.call(_r130Nc, _r130K)) continue;
+      if (globalThis.Node[_r130K] === undefined) globalThis.Node[_r130K] = _r130Nc[_r130K];
+      try {
+        if (globalThis.Node.prototype[_r130K] === undefined) globalThis.Node.prototype[_r130K] = _r130Nc[_r130K];
+      } catch (_e130np) {}
+    }
+  })();
   // js-dom M4 R117：Node.prototype 变异族泛型方法（WPT pre-insertion-validation-notfound 经
   // `Node.prototype.replaceChild` .call 到任意 parent——doctype/text/PI/comment/CDATA 作 parent
   // 须 HierarchyRequestError）。实现按 receiver 分派：有自身方法（proxy）直调；纯对象走
@@ -3536,6 +3553,28 @@
       if (_mProto) Object.setPrototypeOf(node, _mProto);
     } catch (_eM125) {}
     node.getAttribute = function (n) { n = String(n); for (var i = 0; i < attrs.length; i++) if (attrs[i].name === n) return attrs[i].value; return null; };
+    // R130（js-dom M4）：A/AREA 的 `href` IDL 属性（WPT createHTMLDocument "URL parsing"
+    // ——`a.href = 'http://example.org/?ä'` 后 getter 期望 `?%C3%A4`：spec URL 序列化
+    // 对特殊 scheme 的 query 段非 ASCII 字节做 percent-encode（UTF-8）。detached _zwMEl
+    // 无 get trap——补 IDL accessor：setter 存原始值，getter 读回时按 WHATWG 规则编码
+    // query/hash 的非 ASCII（encodeURI 不动 ASCII 保留字，等价于 query 百分比编码集的
+    // 超集近似——非 ASCII 全编码正是 special-scheme query 的要求）。
+    if (tag === 'a' || tag === 'area') {
+      Object.defineProperty(node, 'href', {
+        get: function () {
+          var raw = node.getAttribute('href');
+          if (raw == null) return '';
+          try {
+            var m = String(raw).match(/^([a-zA-Z][a-zA-Z0-9+.-]*:\/\/[^?#]*)(\?[^#]*)?(#.*)?$/);
+            if (!m) return String(raw);
+            var enc = m[2] ? '?' + encodeURI(m[2].slice(1)).replace(/#/g, '%23') : '';
+            return m[1] + enc + (m[3] || '');
+          } catch (_e130e) { return String(raw); }
+        },
+        set: function (v) { node.setAttribute('href', v === null ? '' : String(v)); },
+        configurable: true, enumerable: true,
+      });
+    }
     node.hasAttribute = function (n) { return node.getAttribute(n) !== null; };
     // js-dom M3 R97：hasAttributes/getAttributeNames（lit-html Template 解析对解析子树元素
     // 调 `r.hasAttributes()` + `r.getAttributeNames()` 提取属性 parts——缺方法抛 TypeError
@@ -4306,6 +4345,25 @@
     }
     function queryOne(sel) { var a = queryBody(sel, false); return a.length ? new _zwParseEl(a[0]) : null; }
     function queryAll(sel) { var a = queryBody(sel, true); var out = []; for (var i = 0; i < a.length; i++) out.push(new _zwParseEl(a[i])); return out; }
+    // R130（js-dom M4）：兄弟链接线（doc 级 appendChild/insertBefore/removeChild 后调）——
+    // 对 childNodes 数组每项 defineProperty next/previousSibling getter（position 感知，
+    // 后续 splice 后再 wire 即正确）。树遍历 oracle（WPT dom/common.js nextNode）依赖。
+    function _r130WireSiblings(kids) {
+      for (var i = 0; i < kids.length; i++) {
+        (function (node, idx) {
+          try {
+            Object.defineProperty(node, 'nextSibling', {
+              get: function () { return idx < kids.length - 1 ? kids[idx + 1] : null; },
+              configurable: true,
+            });
+            Object.defineProperty(node, 'previousSibling', {
+              get: function () { return idx > 0 ? kids[idx - 1] : null; },
+              configurable: true,
+            });
+          } catch (_e) {}
+        })(kids[i], i);
+      }
+    }
     var body = {
       nodeType: 1,
       tagName: 'BODY',
@@ -4430,11 +4488,126 @@
         else { c.parentNode = docEl; this.childNodes.splice(i, 0, c); }
         return c;
       } };
+    // R130（js-dom M4）：docEl/headEl/body 原型接线对应 HTML 接口（WPT
+    // DOMImplementation-createHTMLDocument test 0-8 断言 `documentElement instanceof
+    // HTMLHtmlElement` / head instanceof HTMLHeadElement——detached doc 旧 plain object
+    // 恒 false）。链到 HTMLElement.prototype（含 Element→Node 链，instanceof
+    // Element/Node 同真）；HTMLHeadElement 等子类构造器占位已注册（R11 列表）。
+    try {
+      if (globalThis.HTMLHtmlElement && globalThis.HTMLHtmlElement.prototype) {
+        Object.setPrototypeOf(docEl, globalThis.HTMLHtmlElement.prototype);
+      }
+    } catch (_e130a) {}
     var headEl = { nodeType: 1, tagName: 'HEAD', nodeName: 'HEAD', localName: 'head', childNodes: [], hasChildNodes: function () { return headEl.childNodes.length > 0; }, get firstChild() { return headEl.childNodes.length ? headEl.childNodes[0] : null; }, get lastChild() { return headEl.childNodes.length ? headEl.childNodes[headEl.childNodes.length - 1] : null; } };
+    try {
+      if (globalThis.HTMLHeadElement && globalThis.HTMLHeadElement.prototype) {
+        Object.setPrototypeOf(headEl, globalThis.HTMLHeadElement.prototype);
+      }
+    } catch (_e130b) {}
+    // R130：body 同款接线（HTMLBodyElement）。
+    try {
+      if (globalThis.HTMLBodyElement && globalThis.HTMLBodyElement.prototype) {
+        Object.setPrototypeOf(body, globalThis.HTMLBodyElement.prototype);
+      }
+    } catch (_e130c) {}
+    // R130：docEl 子树兄弟导航（WPT dom/common.js nextNode oracle 遍历依赖
+    // head/body/title 的 nextSibling/previousSibling/parentNode 链——title 子加入 head 后
+    // oracle 从 title-text 回溯经 head.nextSibling 须到 body；旧 headEl/body 无 sibling
+    // getter 遍历在 head 断链）。
+    try {
+      Object.defineProperty(headEl, 'nextSibling', { get: function () { return body; }, configurable: true });
+      Object.defineProperty(headEl, 'previousSibling', { get: function () { return null; }, configurable: true });
+      Object.defineProperty(headEl, 'parentNode', { get: function () { return docEl; }, configurable: true });
+      Object.defineProperty(body, 'nextSibling', { get: function () { return null; }, configurable: true });
+      Object.defineProperty(body, 'previousSibling', { get: function () { return headEl; }, configurable: true });
+      Object.defineProperty(body, 'parentNode', { get: function () { return docEl; }, configurable: true });
+      docEl.childNodes.push(headEl, body);
+      headEl.parentNode = docEl;
+      body.parentNode = docEl;
+      var _r130Kids = [headEl, body];
+      for (var _r130si = 0; _r130si < _r130Kids.length; _r130si++) {
+        (function (idx) {
+          var k = _r130Kids[idx];
+          Object.defineProperty(k, 'nextSibling', {
+            get: function () { return idx < _r130Kids.length - 1 ? _r130Kids[idx + 1] : null; },
+            configurable: true,
+          });
+          Object.defineProperty(k, 'previousSibling', {
+            get: function () { return idx > 0 ? _r130Kids[idx - 1] : null; },
+            configurable: true,
+          });
+        })(_r130si);
+      }
+    } catch (_e130s) {}
+    // R130：head 的 title 子（WPT createHTMLDocument test 0-8 断言
+    // `head.childNodes.length === 1` + `title.firstChild.data === expectedtitle`——
+    // spec createHTMLDocument 步骤 4「create a title element, append to head」；title
+    // 参数 undefined 时**不建** title（test 2 走 else 分支期望 head.childNodes.length
+    // === 0）。title 元素原型 HTMLTitleElement + 文本子 data 经 String 转换（null→
+    // 'null'——test 1 期望 "null"）。
+    if (title !== undefined) {
+      var _r130TitleText = {
+        nodeType: 3, nodeName: '#text',
+        data: String(title), nodeValue: String(title),
+        get textContent() { return this.data; },
+        childNodes: [], parentNode: null,
+        // R130：叶子导航面（oracle nextNode(node) 统一调 node.hasChildNodes()——缺方法
+        // 崩 "node.hasChildNodes is not a function"，native traversal foreignDoc 20F 回归）。
+        hasChildNodes: function () { return false; },
+        get firstChild() { return null; },
+        get lastChild() { return null; },
+      };
+      var _r130TitleEl = {
+        nodeType: 1, tagName: 'TITLE', nodeName: 'TITLE', localName: 'title',
+        childNodes: [_r130TitleText], parentNode: headEl,
+        get firstChild() { return this.childNodes.length ? this.childNodes[0] : null; },
+        get lastChild() { return this.childNodes.length ? this.childNodes[this.childNodes.length - 1] : null; },
+        hasChildNodes: function () { return this.childNodes.length > 0; },
+      };
+      _r130TitleText.parentNode = _r130TitleEl;
+      try {
+        if (globalThis.HTMLTitleElement && globalThis.HTMLTitleElement.prototype) {
+          Object.setPrototypeOf(_r130TitleEl, globalThis.HTMLTitleElement.prototype);
+        }
+      } catch (_e130d) {}
+      headEl.childNodes.push(_r130TitleEl);
+    }
     var doc = {
       nodeType: 9,
       nodeName: '#document',
-      documentElement: docEl,
+      // R130（js-dom M4）：documentElement 惰性 getter（WPT DOMImplementation-createDocument
+      // 的 doc.documentElement 断言族——spec：首个元素子，无元素子时 null。旧静态 docEl 使
+      // createDocument 建的 root 元素不可见 + 空 doc 恒返伪 docEl 非 null）。createHTMLDocument
+      // 路径 appendChild(docEl) 后首个元素子即 docEl，行为不变。
+      get documentElement() {
+        var kids = this.childNodes || [];
+        for (var i = 0; i < kids.length; i++) {
+          var k = kids[i];
+          // R130 回归修正：proxy 形态的元素子（主文档克隆/移动的 html——`new Document()
+          // .appendChild(document.documentElement.cloneNode(true))` R112 派发形态）保持
+          // 返内部 docEl——R112 事件面/查询树以 docEl 为站点（tag registry / bodyHtml
+          // 并入），换返克隆 proxy 会使 addEventListener 站点与派发链脱钩（Event-
+          // dispatch-bubbles "In new Document()" 4 站丢失回归）。plain-object 子
+          // （createDocument 经本 doc createElementNS 自建 root——_zwMEl 产物）走首
+          // 元素子（spec documentElement 断言族）。
+          if (k && k.nodeType === 1) {
+            // handle 形态是 string（_elKey '@'+handle）；sel 形态是 string。两者都非
+            // string（null/undefined）= plain-object 子（_zwMEl 自建 root）。
+            if (typeof k.__zwSelector === 'string' || typeof k.__zwHandle === 'string') return docEl;
+            return k;
+          }
+        }
+        // R130：HTML/未定型文档未挂载时返内部 docEl（createHTMLDocument 的
+        // appendChild(documentElement) 自引用读——首个元素子未挂载前须拿到 docEl 本体；
+        // cloneNode/new Document 等未设 contentType 的消费方同源）。XML 文档
+        //（createDocument 已设 'application/xml' 等）omit root 时 spec 期望 null。
+        if (typeof this.contentType !== 'string'
+            || (this.contentType.indexOf('html') >= 0
+                && this.contentType !== 'application/xhtml+xml')) {
+          return docEl;
+        }
+        return null;
+      },
       head: headEl,
       body: body,
       title: title != null ? String(title) : '',
@@ -4466,6 +4639,9 @@
       // characterSet/inputEncoding/documentURI/charset——detached doc 旧全 undefined）。
       // spec：createHTMLDocument 的 URL = about:blank + CSS1Compat + UTF-8；XML doc 无 compatMode。
       get URL() { return 'about:blank'; },
+      // R130（js-dom M4）：`doc.location`（WPT createHTMLDocument "document location getter
+      // is null"——spec：非浏览上下文文档的 location getter 返 null；旧 undefined ≠ null）。
+      get location() { return null; },
       get documentURI() { return 'about:blank'; },
       // R81 spec 纠正：XML/HTML 文档 compatMode 恒 CSS1Compat（spec dom-document-compatmode：
       // 没有 quirks 触发条件（backwards-compatible 解析）时恒 "CSS1Compat"；XML 文档无 quirks
@@ -4495,6 +4671,10 @@
         c.parentNode = this;
         this.childNodes.push(c);
         if (c.nodeType === 1) this.children.push(c);
+        // R130：doc 级子的 sibling 链维护（WPT dom/common.js nextNode oracle 遍历依赖
+        // doctype/comment/元素子在 doc.childNodes 内的 next/previousSibling——旧 append
+        // 只 push，兄弟导航断链使 oracle 与 iterator 分歧）。
+        _r130WireSiblings(this.childNodes);
         // js-dom M4 R112：append HTML 元素（documentElement 克隆）→ 其子树并入可查询树
         //（WPT Event-dispatch-bubbles "In new Document()"：`new Document().appendChild(
         // document.documentElement.cloneNode(true))` 后 getElementById/getElementsByTagName
@@ -4528,6 +4708,8 @@
             var ci = this.children.indexOf(c);
             if (ci >= 0) this.children.splice(ci, 1);
             c.parentNode = null;
+            // R130：sibling 链重连（移除后剩余子的 position 偏移）。
+            _r130WireSiblings(this.childNodes);
             return c;
           }
         }
@@ -4698,13 +4880,14 @@
         if (refNode) {
           var kids2 = doc.childNodes || [];
           for (var k = 0; k < kids2.length; k++) {
-            if (kids2[k] === refNode) { doc.childNodes.splice(k, 0, newNode); return newNode; }
+            if (kids2[k] === refNode) { doc.childNodes.splice(k, 0, newNode); _r130WireSiblings(doc.childNodes); return newNode; }
           }
           throw new (globalThis.DOMException || Error)(
             "Failed to execute 'insertBefore' on 'Node': The node before which the new node is to be inserted is not a child of this node.",
             'NotFoundError');
         }
         doc.childNodes.push(newNode);
+        _r130WireSiblings(doc.childNodes);
         return newNode;
       },
       createAttributeNS: function (ns, qualifiedName) {
@@ -4733,7 +4916,12 @@
         // R81 spec 纠正：XML 文档（_docNS null/undefined 且非 HTML doc）createElement 不小写
         // 不大写（WPT Node-properties xmlElement.tagName 期望原样 "igiveuponcreativenames"）。
         // HTML 文档（_docNS = HTML ns）保持小写输入 + tagName 大写（HTML 语义）。
-        var _isHtmlDoc = doc._docNS === 'http://www.w3.org/1999/xhtml';
+        // R130：HTML-ness 按 contentType（spec dom-document-createelement「If document
+        // is an HTML document」= contentType 'text/html'——XHTML createDocument 产物是
+        // XML 语义文档，createElement 不小写；WPT createDocument metadata for XHTML
+        // `createElement('DIV').localName === 'DIV'`。旧按 _docNS 判把 XHTML 当 HTML）。
+        var _isHtmlDoc = !(typeof doc.contentType === 'string' && doc.contentType.indexOf('html') < 0)
+          && doc.contentType !== 'application/xhtml+xml';
         var _tagIn = String(t);
         var e = _zwMEl({ tag: _isHtmlDoc ? _tagIn.toLowerCase() : _tagIn, preserveCase: !_isHtmlDoc }, null);
         e.ownerDocument = doc;
@@ -4753,16 +4941,35 @@
         var _c1 = _qn.indexOf(':');
         var _pre = _c1 >= 0 ? _qn.slice(0, _c1) : null;
         var _loc = _c1 >= 0 ? _qn.slice(_c1 + 1) : _qn;
-        if (!_zwIsValidQualifiedName(_qn) || _c1 === 0 || _c1 === _qn.length - 1) {
+        // R130（js-dom M4）：校验对齐主文档 createElementNS（part06 R81 的 WPT 期望表——
+        // '}'/'<' 非 NameStart 字符在非首位置合法；'0:a' prefix 段从宽；'f:o:o'/'f::oo'
+        // 有 ns 合法（local 含冒号非 malformed）；XMLNS ns 仅 xmlns 元素）。旧
+        // `_zwIsValidQualifiedName` + 冒号禁令把 'f}oo'/'f:o:o' 误判 Invalid。
+        if (/[\s>]/.test(_qn) || _qn === '' || _c1 === 0 || _c1 === _qn.length - 1) {
           throw new (globalThis.DOMException || Error)('The string contains invalid characters.', 'InvalidCharacterError');
         }
+        if (_pre === null) {
+          if (!_zwIsNameStartChar(Array.from(_qn)[0])) {
+            throw new (globalThis.DOMException || Error)('The string contains invalid characters.', 'InvalidCharacterError');
+          }
+        } else {
+          var _locChars = Array.from(_loc);
+          if (!_locChars.length || !_zwIsNameStartChar(_locChars[0])) {
+            throw new (globalThis.DOMException || Error)('The string contains invalid characters.', 'InvalidCharacterError');
+          }
+        }
+        if (_nsStr === _XMLNS_NS) {
+          var _xmlnsOk = (_loc === 'xmlns' && _pre === null) || (_pre === 'xmlns');
+          if (!_xmlnsOk) {
+            throw new (globalThis.DOMException || Error)('The xmlns namespace is not allowed for elements.', 'NamespaceError');
+          }
+        }
         if (_pre !== null) {
-          if (_nsStr === '') throw new (globalThis.DOMException || Error)('no namespace', 'NamespaceError');
-          if (_pre.indexOf(':') >= 0 || _loc.indexOf(':') >= 0) throw new (globalThis.DOMException || Error)('malformed', 'NamespaceError');
-          if (_pre === 'xml' && _nsStr !== _XML_NS) throw new (globalThis.DOMException || Error)('xml', 'NamespaceError');
-          if (_pre === 'xmlns') throw new (globalThis.DOMException || Error)('xmlns', 'NamespaceError');
+          if (_nsStr === '') throw new (globalThis.DOMException || Error)('Namespace prefix provided but no namespace.', 'NamespaceError');
+          if (_pre === 'xml' && _nsStr !== _XML_NS) throw new (globalThis.DOMException || Error)("Prefix 'xml' must be bound to the XML namespace.", 'NamespaceError');
+          if (_pre === 'xmlns' && _nsStr !== _XMLNS_NS) throw new (globalThis.DOMException || Error)("Prefix 'xmlns' requires the XMLNS namespace.", 'NamespaceError');
         } else if (_loc === 'xmlns' && _nsStr !== _XMLNS_NS) {
-          throw new (globalThis.DOMException || Error)('xmlns-local', 'NamespaceError');
+          throw new (globalThis.DOMException || Error)("Local name 'xmlns' requires the XMLNS namespace.", 'NamespaceError');
         }
         var e2 = _zwMEl({ tag: _loc, preserveCase: true }, null);
         e2.ownerDocument = doc;
@@ -4929,6 +5136,16 @@
       // ownerDocument 指向此 detached doc（spec：doctype.ownerDocument === 创建它的 document）。
       implementation: {
         hasFeature: function () { return true; },
+        // R130（js-dom M4）：createHTMLDocument/createDocument 委托主文档 implementation
+        //（WPT createHTMLDocument-with-saved-implementation——无 src iframe 的
+        // contentDocument.implementation.createHTMLDocument() 旧 'not a function' 崩。
+        // 产物归主文档（spec：implementation 方法与 browsing context 无关）。
+        createHTMLDocument: function (t) {
+          return globalThis.document.implementation.createHTMLDocument(t);
+        },
+        createDocument: function (ns, qn, dt) {
+          return globalThis.document.implementation.createDocument(ns, qn, dt);
+        },
         createDocumentType: function (qualifiedName, publicId, systemId) {
           var dt = {
             nodeType: 10,
@@ -5330,6 +5547,15 @@
     a.textContent = v;
     a.data = v;
     a.ownerElement = ownerEl || null;
+    // R130（js-dom M4）：Attr 的 baseURI（WPT Node-baseURI "attributes ..." 三形态——
+    // 与元素同源读 document URL；spec dom-node-baseuri：非文档节点回落 node document）。
+    Object.defineProperty(a, 'baseURI', {
+      get: function () {
+        try { return globalThis.location ? String(globalThis.location.href) : 'about:blank'; }
+        catch (_e130au) { return 'about:blank'; }
+      },
+      configurable: true, enumerable: true,
+    });
     return a;
   }
   // `el.attributes`（NamedNodeMap）：length / item(i) / getNamedItem(name) / 数值索引 /

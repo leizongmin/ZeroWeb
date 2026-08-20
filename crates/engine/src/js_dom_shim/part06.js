@@ -2090,6 +2090,19 @@
       // null）+ `xmlDoc = createDocument(null, null, xmlDoctype)`（第三参 doctype 须 append 进
       // xmlDoc 树）。spec：createDocument(namespace, qualifiedName, doctype) 步骤 8 附 doctype。
       createDocument: function(_ns, _qn, doctype) {
+        // R130（js-dom M4）：WebIDL 必参缺省 TypeError（namespace/qualifiedName 必选，
+        // doctype 第三可选 nullable——WPT "with missing arguments"：`createDocument()`/
+        // `createDocument('')` throw，`createDocument(ns, qn)` 2 参合法）。
+        if (arguments.length < 2) {
+          throw new globalThis.TypeError(
+            "Failed to execute 'createDocument' on 'DOMImplementation': 2 arguments required, but only " + arguments.length + " present.");
+        }
+        // R130：doctype 参数非 null/undefined 且非 DocumentType（nodeType 10）→ TypeError
+        //（WebIDL nullable DocumentType 校验——WPT null,null,false 期望 TypeError）。
+        if (doctype != null && !(typeof doctype === 'object' && (doctype.nodeType | 0) === 10)) {
+          throw new globalThis.TypeError(
+            "Failed to execute 'createDocument' on 'DOMImplementation': parameter 3 is not of type 'DocumentType'.");
+        }
         var d = _makeDetachedDocument('');
         // js-dom M4 R81：spec DOMImplementation.createDocument —— 返回 XML Document（contentType
         // 'application/xml'，createElement 的 ns 恒 null——除非 XHTML/SVG ns 调用）。ns 参数为
@@ -2101,6 +2114,38 @@
           ? 'application/xhtml+xml'
           : (nsStr === 'http://www.w3.org/2000/svg' ? 'image/svg+xml' : 'application/xml');
         d._docNS = nsStr === 'http://www.w3.org/1999/xhtml' ? 'http://www.w3.org/1999/xhtml' : null;
+        // R130（js-dom M4）：XML 文档原型接线 XMLDocument.prototype（WPT
+        // DOMImplementation-createDocument `Object.getPrototypeOf(doc) ===
+        // XMLDocument.prototype` 全非 throw 用例——spec：createDocument 返 XMLDocument）。
+        try {
+          if (globalThis.XMLDocument && globalThis.XMLDocument.prototype) {
+            Object.setPrototypeOf(d, globalThis.XMLDocument.prototype);
+            // R130：Node 常量挂 XMLDocument.prototype（native 路径下 XMLDocument.prototype
+            // 是 native ObjectTemplate 产物，无 polyfill Node 常量链——WPT createDocument
+            // `doc.nodeType === doc.DOCUMENT_NODE` 断言 native 叠加路径 111F 的主因之一；
+            // polyfill 路径 prototype 经 Object.create(Document.prototype) 已含，幂等）。
+            // 注：常量值用字面量（native 路径 globalThis.Node 上常量同样缺失——R130 diag7
+            // 实证 native Node.DOCUMENT_NODE undefined，不能从 Node 读值）。
+            if (d.DOCUMENT_NODE === undefined) {
+              var _r130XdcConsts = {
+                ELEMENT_NODE: 1, ATTRIBUTE_NODE: 2, TEXT_NODE: 3, CDATA_SECTION_NODE: 4,
+                COMMENT_NODE: 8, DOCUMENT_NODE: 9, DOCUMENT_TYPE_NODE: 10,
+                DOCUMENT_FRAGMENT_NODE: 11, NOTATION_NODE: 12,
+                DOCUMENT_POSITION_DISCONNECTED: 1, DOCUMENT_POSITION_PRECEDING: 2,
+                DOCUMENT_POSITION_FOLLOWING: 4, DOCUMENT_POSITION_CONTAINS: 8,
+                DOCUMENT_POSITION_CONTAINED_BY: 16, DOCUMENT_POSITION_IMPLEMENTATION_SPECIFIC: 32,
+              };
+              for (var _r130Xn in _r130XdcConsts) {
+                if (Object.prototype.hasOwnProperty.call(_r130XdcConsts, _r130Xn)) {
+                  try {
+                    Object.defineProperty(globalThis.XMLDocument.prototype, _r130Xn,
+                      { value: _r130XdcConsts[_r130Xn], enumerable: false });
+                  } catch (_e130xc) {}
+                }
+              }
+            }
+          }
+        } catch (_e130x) {}
         if (doctype && doctype.nodeType === 10) {
           // R81：doctype 归属重指（spec：append 时 adopt——createDocumentType 的 ownerDocument
           // 在主文档创建，append 进 xmlDoc 后属 xmlDoc；WPT Node-properties
@@ -2109,18 +2154,43 @@
           Object.defineProperty(doctype, 'ownerDocument', { get: function () { return d; }, configurable: true });
           d.appendChild(doctype);
         }
+        // R130（js-dom M4）：qualifiedName 非空 → 创建 documentElement（spec
+        // `dom-domimplementation-createdocument` 步骤 5「If qualifiedName is not empty:
+        // append its element」——WPT createDocument 全非 throw 用例的
+        // doc.documentElement/prefix/localName 断言族；旧不创建 → documentElement null）。
+        // 元素经本 doc createElementNS（ns/大小写/prefix 语义同源）；append 进 childNodes。
+        var _r130Qn = (_qn === null) ? '' : String(_qn);
+        if (_r130Qn !== '') {
+          try {
+            var _r130Root = d.createElementNS(
+              nsStr === '' ? null : nsStr, _r130Qn);
+            // createElementNS 的 QName 校验对非法名抛 NamespaceError/InvalidCharacterError
+            //（spec 步骤同——WPT throw 用例主路径，此处自然传播）。
+            d.appendChild(_r130Root);
+          } catch (_e130r) { throw _e130r; }
+        }
         return d;
       },
       createHTMLDocument: function(title) {
         var d = _makeDetachedDocument(title);
         d.appendChild(d.implementation.createDocumentType('html', '', ''));
+        // R81：spec —— HTML Document：contentType 'text/html'，createElement ns = HTML ns。
+        // R130：contentType **先于** documentElement append 设置（documentElement getter 的
+        // HTML 回落按 contentType 判——未设时 getter 返 null 使 appendChild(null) no-op，
+        // doc.childNodes 缺 html 子）。
+        d.contentType = 'text/html';
+        d._docNS = 'http://www.w3.org/1999/xhtml';
         // R81：spec —— createHTMLDocument 的树 = [doctype, html(含 head+body)]。documentElement
         // 须入 doc.childNodes（WPT Node-properties foreignDoc.childNodes.length 期望 3 =
         // [doctype, html, foreignComment]；旧只有 doctype + 后续 append 的节点）。
         d.appendChild(d.documentElement);
-        // R81：spec —— HTML Document：contentType 'text/html'，createElement ns = HTML ns。
-        d.contentType = 'text/html';
-        d._docNS = 'http://www.w3.org/1999/xhtml';
+        // R130：HTML 文档原型保持 Document.prototype（XML 默认接线在此改回——spec
+        // createHTMLDocument 返 HTML Document 非 XMLDocument）。
+        try {
+          if (globalThis.Document && globalThis.Document.prototype) {
+            Object.setPrototypeOf(d, globalThis.Document.prototype);
+          }
+        } catch (_e130h) {}
         return d;
       },
       // `createDocumentType(qualifiedName, publicId, systemId)`（spec `dom-domimplementation-createdocumenttype`，
@@ -2128,6 +2198,13 @@
       // 在 createDocument 而非此处）。返 DocumentType：name=nodeName=qualifiedName、publicId、systemId、
       // nodeType 10、ownerDocument。ownerDocument 经 `this` 上下文取所属 document（主 document vs detached doc）。
       createDocumentType: function(qualifiedName, publicId, systemId) {
+        // R130（js-dom M4）：qualifiedName 校验（WPT DOMImplementation-createDocumentType
+        // 期望表实证宽松——''/'1foo'/'edi:`'/'edi:<'/{/} 全 pass；仅含空白或 '>' throw
+        // INVALID_CHARACTER_ERR——与元素 Name 产线不同，doctype 名仅禁此二类）。
+        var _r130Dq = String(qualifiedName == null ? '' : qualifiedName);
+        if (/[\s>]/.test(_r130Dq)) {
+          throw new (globalThis.DOMException || Error)('The string contains invalid characters.', 'InvalidCharacterError');
+        }
         var owner = globalThis.document;
         var dt = {
           nodeType: 10,

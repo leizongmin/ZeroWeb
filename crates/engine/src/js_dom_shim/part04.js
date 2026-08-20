@@ -353,6 +353,13 @@
               }
             } else {
               _r115Entry.state = 'no-src';
+              // R130（js-dom M4）：无 src iframe 的 contentDocument —— spec：iframe 初始导航
+              // 到 about:blank，contentDocument 是空 Document（非 null）。WPT
+              // createHTMLDocument-with-saved-implementation / -with-null-browsing-context-crash
+              // 都对无 src iframe 取 .implementation（旧 null → TypeError 崩用例）。
+              // 「无嵌套浏览上下文 → null」仅适用已移除 iframe（本框架 detached doc 同样
+              // 可用——统一返空文档，与 contentWindow 的 fallback doc 同源）。
+              _r115Entry.doc = _zwMakeIframeDoc('html', '');
             }
           }
           if (prop === 'contentWindow') {
@@ -1278,6 +1285,14 @@
             if (handle) __zw_set_text_handle(handle, cur.slice(0, o));
             return globalThis.document.createTextNode(tail);
           };
+        }
+        // R130（js-dom M4）：`baseURI`（spec dom-node-baseuri——node 文档的 URL；WPT
+        // Node-baseURI 全簇 9F 旧 undefined）。页面 location.href 为权威源（含 <base>
+        // 时 spec 按 base 元素解析——本沙箱暂无 <base> 处理，href 即近似）。
+        if (prop === 'baseURI') {
+          try {
+            return globalThis.location ? String(globalThis.location.href) : 'about:blank';
+          } catch (_e130bu) { return 'about:blank'; }
         }
         if (prop === 'ownerDocument') {
           return globalThis.document;

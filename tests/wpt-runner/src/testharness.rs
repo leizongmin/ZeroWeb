@@ -1292,6 +1292,8 @@ fn run_testharness_html_inner(
     }
 
     let html = prepare_harness_html(source, harness_source, inline_extras, wpt_root, case_name);
+    // R130：crash 用例判定（prepare_harness_html 同款判定——无 testharness 引用的纯脚本页）。
+    let has_harness_ref = source.contains("/resources/testharness.js") || source.contains("testharnessreport.js");
     let scripts = zero_engine::extract_page_scripts(&html);
     let script_lengths = scripts
         .iter()
@@ -1380,6 +1382,17 @@ fn run_testharness_html_inner(
         }
         if probe.complete || terminal_harness_state(&last_state, partial_results.len()) {
             if partial_results.is_empty() {
+                // R130（js-dom M4）：crash 类用例（无 testharness 引用，见 prepare_harness_html
+                // 注入分支）语义 = 页面脚本执行不崩溃。harness 走到 terminal（phase=4 /
+                // completion 回调已调）且 run_page_scripts_strict 未报脚本抛错（报错早在
+                // 上方 return Fail）→ 按上游浏览器语义记 PASS（伪 subtest「did not crash」）。
+                if !has_harness_ref {
+                    return vec![HarnessSubtestResult {
+                        name: case_name.to_string(),
+                        status: HarnessStatus::Pass,
+                        message: None,
+                    }];
+                }
                 return vec![HarnessSubtestResult {
                     name: case_name.to_string(),
                     status: HarnessStatus::Timeout,
@@ -1482,7 +1495,20 @@ add_completion_callback(function() {
         if (fn) { delete globalThis.__zw_pending[due.id]; try { fn(); } catch (_e) {} }\n\
       };\n";
     let harness = format!("<script>\n{timer_stub}{harness_source}\n{reporter}\n</script>");
-    let mut html = replace_script_source(source, "/resources/testharness.js", &harness);
+    // R130（js-dom M4）：crash 类用例（*-crash.html）不引 testharness.js——纯脚本页
+    // 断言「不崩溃」。上游跑法是浏览器不崩即 PASS；本 runner 的 completion 探针依赖
+    // harness 全局（test/completion callback），无 harness 时永远 Timeout 伪失败。
+    // 对无 testharness 引用的用例：预置 harness 内联（插首部——先于用例脚本执行），
+    // 用例脚本跑完 0 注册测试 + all_done 后 phase=4，下方 run 路径对「completed
+    // without reporting registered tests」按页面脚本未抛错 = PASS 计（crash 语义）。
+    let has_harness_ref = source.contains("/resources/testharness.js") || source.contains("testharnessreport.js");
+    let mut html = if has_harness_ref {
+        replace_script_source(source, "/resources/testharness.js", &harness)
+    } else {
+        let mut injected = harness.clone();
+        injected.push_str(source);
+        injected
+    };
     html = replace_script_source(&html, "/resources/testharnessreport.js", "");
     html = replace_script_source(&html, "/resources/testdriver.js", TESTDRIVER_STUB);
     html = replace_script_source(&html, "/resources/testdriver-vendor.js", "");
