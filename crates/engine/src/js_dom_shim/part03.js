@@ -75,9 +75,18 @@
     var t = String(type);
     if (!_listenerStore[key]) _listenerStore[key] = {};
     if (!_listenerStore[key][t]) _listenerStore[key][t] = [];
+    // R143（js-dom M4）：spec「add an event listener」步骤 4——重复 listener（同 type +
+    // 同 callback + 同 capture，同 target 槽位）**静默丢弃**（WPT handler-count "Duplicate
+    // listener is discarded"：addEventListener 三次同 fn 同 capture 只计一次派发）。
+    var _r143Cap = _optCapture(opts);
+    var _r143List0 = _listenerStore[key][t];
+    for (var _r143i = 0; _r143i < _r143List0.length; _r143i++) {
+      if (_r143List0[_r143i].fn === fn && _r143List0[_r143i].capture === _r143Cap
+          && _r143List0[_r143i].tgt === 'win') return;
+    }
     // R40：window 注册打 tgt='win' 标（document/window/html 三合一 key 内槽位区分）。
     // R105：passive 字段——window target 的 touch/wheel 族默认 passive（spec default-passive-value）。
-    _listenerStore[key][t].push({ fn: fn, capture: _optCapture(opts), once: _optOnce(opts), tgt: 'win',
+    _listenerStore[key][t].push({ fn: fn, capture: _r143Cap, once: _optOnce(opts), tgt: 'win',
       passive: _listenerPassiveDefault(t, opts, true) });
     if (t === 'pageshow') _maybeFirePageShow(); // R2931：首次 pageshow listener → _defer 派发一次
   }
@@ -5671,6 +5680,11 @@
         if (!node._zwEvLs[t]) node._zwEvLs[t] = [];
         var cap = opts != null && typeof opts === 'object' ? !!opts.capture : !!opts;
         var once = opts != null && typeof opts === 'object' ? !!opts.once : false;
+        // R143：spec「add an event listener」步骤 4——重复 listener 静默丢弃。
+        var _r143n = node._zwEvLs[t];
+        for (var _r143j = 0; _r143j < _r143n.length; _r143j++) {
+          if (_r143n[_r143j].fn === fn && _r143n[_r143j].capture === cap) return;
+        }
         node._zwEvLs[t].push({ fn: fn, capture: cap, once: once });
         try { globalThis._zwEvTagRegistry['tag:' + tag] = node; } catch (_eR) {}
       };

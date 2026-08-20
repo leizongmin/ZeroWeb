@@ -2433,12 +2433,20 @@
           return function(type, fn, opts) {
             if (!_listenerStore[key]) _listenerStore[key] = {};
             if (!_listenerStore[key][type]) _listenerStore[key][type] = [];
+            // R143（js-dom M4）：spec「add an event listener」步骤 4——重复 listener（同
+            // type/callback/capture）静默丢弃（WPT handler-count element 变体）。
+            var _r143Cap = _optCapture(opts);
+            var _r143Lst = _listenerStore[key][type];
+            for (var _r143e = 0; _r143e < _r143Lst.length; _r143e++) {
+              if (_r143Lst[_r143e].fn === fn && _r143Lst[_r143e].capture === _r143Cap
+                  && _r143Lst[_r143e].tgt === undefined) return;
+            }
             // js-dom M4 R105：body 与 documentElement(html) 是 passive-by-default
             // target（spec default-passive-value 对 window/document/documentElement/
             // body 四类）——`body`/`html` 的 touch/wheel 族未显式 passive 时默认
             // true；其他元素默认 false。
             var _p105 = _listenerPassiveDefault(type, opts, sel === 'body' || sel === 'html');
-            _listenerStore[key][type].push({ fn: fn, capture: _optCapture(opts), once: _optOnce(opts), passive: _p105 });
+            _listenerStore[key][type].push({ fn: fn, capture: _r143Cap, once: _optOnce(opts), passive: _p105 });
           };
         }
         if (prop === 'removeEventListener') {

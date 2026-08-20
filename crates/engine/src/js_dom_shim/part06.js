@@ -2611,8 +2611,16 @@
       var t = String(type);
       if (!_listenerStore[key]) _listenerStore[key] = {};
       if (!_listenerStore[key][t]) _listenerStore[key][t] = [];
+      // R143（js-dom M4）：spec「add an event listener」步骤 4——重复 listener（同 type/callback/
+      // capture/槽位）静默丢弃（WPT handler-count document 变体）。
+      var _r143Cap = _optCapture(opts);
+      var _r143List = _listenerStore[key][t];
+      for (var _r143d = 0; _r143d < _r143List.length; _r143d++) {
+        if (_r143List[_r143d].fn === fn && _r143List[_r143d].capture === _r143Cap
+            && _r143List[_r143d].tgt === 'doc') return;
+      }
       // R105：document target 的 touch/wheel 族默认 passive（spec default-passive-value）。
-      _listenerStore[key][t].push({ fn: fn, capture: _optCapture(opts), once: _optOnce(opts), tgt: 'doc',
+      _listenerStore[key][t].push({ fn: fn, capture: _r143Cap, once: _optOnce(opts), tgt: 'doc',
         passive: _listenerPassiveDefault(t, opts, true) });
       if (t === 'pageshow') _maybeFirePageShow(); // R2931：首次 pageshow listener → _defer 派发一次
     },
@@ -2720,10 +2728,24 @@
     });
   }
   // WindowEventHandlers + GlobalEventHandlers（window 级常用）：页面生命周期 / 路由 / 消息 / 输入 / 可见性。
+  // R143（js-dom M4）：补 GlobalEventHandlers 的鼠标/键盘/输入/拖拽/剪贴板/触Pointer 全族
+  //（spec HTML GlobalEventHandlers——`window.onclick = fn` 是合法 IDL handler 属性，旧缺
+  // 定义时赋值落 plain 属性、派发不触发；WPT handler-count onclick 计数族）。
   [
     'afterprint', 'beforeprint', 'beforeunload', 'hashchange', 'languagechange', 'message', 'messageerror',
     'offline', 'online', 'pagehide', 'pageshow', 'popstate', 'rejectionhandled', 'storage', 'unhandledrejection',
     'unload', 'load', 'error', 'resize', 'scroll', 'focus', 'blur',
+    'click', 'dblclick', 'auxclick', 'contextmenu', 'mousedown', 'mouseup', 'mousemove', 'mouseover', 'mouseout',
+    'mouseenter', 'mouseleave', 'pointerdown', 'pointerup', 'pointermove', 'pointerover', 'pointerout',
+    'pointerenter', 'pointerleave', 'pointercancel', 'gotpointercapture', 'lostpointercapture',
+    'keydown', 'keyup', 'input', 'beforeinput', 'change', 'submit', 'reset', 'invalid', 'select',
+    'wheel', 'drag', 'dragstart', 'dragend', 'dragenter', 'dragleave', 'dragover', 'drop',
+    'copy', 'cut', 'paste', 'abort', 'canplay', 'canplaythrough', 'durationchange', 'emptied', 'ended',
+    'loadeddata', 'loadedmetadata', 'loadstart', 'pause', 'play', 'playing', 'progress', 'ratechange',
+    'seeked', 'seeking', 'stalled', 'suspend', 'timeupdate', 'volumechange', 'waiting', 'toggle',
+    'animationstart', 'animationend', 'animationiteration', 'animationcancel',
+    'transitionstart', 'transitionend', 'transitionrun', 'transitioncancel',
+    'afterscriptexecute', 'beforescriptexecute', 'securitypolicyviolation', 'slotchange',
   ].forEach(_defineWinOnHandler);
   Object.defineProperty(globalThis.document, 'defaultView', {
     get: function() { return globalThis.window; }

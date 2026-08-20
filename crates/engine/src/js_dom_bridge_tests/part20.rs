@@ -2003,6 +2003,69 @@ bubble-stopped:true|src-is-target:true|rv-true:true|phase-0:true|ct-null:true"
 // ③ Text.dispatchEvent 无条件转父使父成新 target——非 bubbling 的 Text click 也触发父
 // pre-click activation 翻 checked（WPT Event-dispatch-click "look at parents only when
 // event bubbles"：bubbles=false 断言父 checked 不变）。
+// R143（js-dom M4）：spec「add an event listener」步骤 4——重复 listener（同 type/callback/
+// capture/槽位）静默丢弃 + window GlobalEventHandlers on* 全族 IDL 属性（onclick 等——
+// setter 移旧注册新，getter 返存储 fn）。WPT dom/events/handler-count（window 变体）双 subtest。
+#[test]
+fn test_listener_dedup_and_window_on_family_r143() {
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let mut sandbox = V8Sandbox::with_config(zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    })
+    .unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><div id=\"d\">x</div></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry);
+
+    let out = sandbox
+        .execute(
+            "var parts = [];\
+             var tally = 0; var listener = function() { tally++; };\
+             addEventListener('click', listener, true);\
+             addEventListener('click', listener, true);\
+             dispatchEvent(new Event('click'));\
+             parts.push('winDedup:' + tally);\
+             addEventListener('ping', listener, false);\
+             dispatchEvent(new Event('ping'));\
+             parts.push('winCapSplit:' + tally);\
+             var dt = 0; var dl = function() { dt++; };\
+             document.addEventListener('info', dl);\
+             document.addEventListener('info', dl);\
+             document.dispatchEvent(new Event('info'));\
+             parts.push('docDedup:' + dt);\
+             var et = 0; var el = function() { et++; };\
+             var d = document.getElementById('d');\
+             d.addEventListener('go', el);\
+             d.addEventListener('go', el);\
+             d.dispatchEvent(new Event('go'));\
+             parts.push('elDedup:' + et);\
+             var c1 = 0, c2 = 0;\
+             onclick = function() { c1++; };\
+             onclick = function() { c2++; };\
+             dispatchEvent(new Event('click'));\
+             parts.push('onclickReplace:' + c1 + ':' + c2 + ':' + (typeof onclick === 'function'));\
+             onclick = null;\
+             dispatchEvent(new Event('click'));\
+             parts.push('onclickRemoved:' + c2);\
+             parts.join('|');",
+        )
+        .unwrap()
+        .value;
+    assert_eq!(
+        out,
+        "winDedup:1|winCapSplit:2|docDedup:1|elDedup:1|onclickReplace:0:1:true|onclickRemoved:1",
+        "R143 重复 listener 丢弃（window/document/element 三面）+ window onclick 替换/移除语义"
+    );
+}
+
 #[test]
 fn test_eventtarget_object_listener_r139() {
     use std::sync::{Arc, Mutex};
