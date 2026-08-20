@@ -1185,36 +1185,26 @@ impl ServiceWorkerManager {
         Ok(())
     }
 
-    /// Remove one registration version and stop its runtime.
+    /// Remove a registration and stop every version associated with its key.
     pub fn unregister(&mut self, registration_id: u64) -> bool {
-        let Some(key) = self.registration_keys.remove(&registration_id) else {
+        let Some(key) = self.registration_keys.get(&registration_id).cloned() else {
             return false;
         };
-        self.evaluated.remove(&registration_id);
-        self.restoring_active.remove(&registration_id);
-        self.mark_redundant_and_stop(registration_id);
-        let removed = self.registry.unregister(registration_id);
-        self.state_changes.remove(&registration_id);
-        self.claimed_clients.remove(&registration_id);
-        self.client_messages.retain(|(id, _), _| *id != registration_id);
-        self.pending_client_messages.retain(|(id, _), _| *id != registration_id);
-        let remove_slots = if let Some(slot) = self.slots.get_mut(&key) {
-            if slot.installing == Some(registration_id) {
-                slot.installing = None;
-            }
-            if slot.waiting == Some(registration_id) {
-                slot.waiting = None;
-            }
-            if slot.active == Some(registration_id) {
-                slot.active = None;
-            }
-            slot.installing.is_none() && slot.waiting.is_none() && slot.active.is_none()
-        } else {
-            false
-        };
-        if remove_slots {
-            self.slots.remove(&key);
+        let version_ids = self
+            .registration_keys
+            .iter()
+            .filter_map(|(&id, version_key)| (version_key == &key).then_some(id))
+            .collect::<Vec<_>>();
+        let mut removed = false;
+        for id in version_ids {
+            self.evaluated.remove(&id);
+            self.restoring_active.remove(&id);
+            self.mark_redundant_and_stop(id);
+            removed |= self.registry.unregister(id);
+            self.registration_keys.remove(&id);
+            self.state_changes.remove(&id);
         }
+        self.slots.remove(&key);
         removed
     }
 
@@ -1811,6 +1801,36 @@ mod tests {
             (changed_candidate, true)
         );
         wait_for_state(&mut manager, changed_candidate, ServiceWorkerState::Installed);
+    }
+
+    #[test]
+    fn unregister_removes_active_and_waiting_versions_for_registration_key() {
+        let mut manager = manager_under_test();
+        let active = start_active(&mut manager, "/", "globalThis.version = 1;");
+        let ServiceWorkerUpdateOutcome::Started {
+            registration_id: waiting,
+        } = manager.start_update(active, "globalThis.version = 2;").unwrap()
+        else {
+            panic!("changed update must start a replacement");
+        };
+        assert_eq!(wait_for_update_check(&mut manager, waiting), (waiting, true));
+        wait_for_state(&mut manager, waiting, ServiceWorkerState::Installed);
+        assert_eq!(
+            manager.slots(&key("/")),
+            Some(ServiceWorkerVersionSlots {
+                installing: None,
+                waiting: Some(waiting),
+                active: Some(active),
+            })
+        );
+
+        assert!(manager.unregister(active));
+        assert!(manager.slots(&key("/")).is_none());
+        assert!(manager.registration(active).is_none());
+        assert!(manager.registration(waiting).is_none());
+
+        let next = start_active(&mut manager, "/", "globalThis.version = 3;");
+        assert_eq!(manager.slots(&key("/")).unwrap().active, Some(next));
     }
 
     #[test]
