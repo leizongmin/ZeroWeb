@@ -2114,12 +2114,18 @@ impl WebView {
                 )
             };
             let execution = sandbox.execute(&full).map(|_| ());
-            let clear = if is_module {
-                Ok(())
+            // clear 无论成败都执行（R3258 currentScript 清理的 try-finally 等价——
+            // 9ef914d10 改顺序执行后用 `execution.or(clear)` 误吞 strict 错误：execution
+            // Err 时 .or() 取 clear 的 Ok → 抛错脚本在 strict 路径返回 Ok（js-dom R139
+            // 归因：js_executes_ok_detects_throw_r3076 红灯根因）。改为独立执行 + 以
+            // execution 的错误为准（clear 失败仅在 execution 成功时才有观测面）。
+            let clear_err = if is_module {
+                None
             } else {
-                sandbox.execute(script_clear_current_script()).map(|_| ())
+                sandbox.execute(script_clear_current_script()).map(|_| ()).err()
             };
-            if let Err(e) = execution.or(clear) {
+            let combined_err: Result<(), _> = execution.err().or(clear_err).map_or_else(|| Ok(()), Err);
+            if let Err(e) = combined_err {
                 if strict {
                     return Err(WebViewError::Script(format!("page script: {e}")));
                 }
