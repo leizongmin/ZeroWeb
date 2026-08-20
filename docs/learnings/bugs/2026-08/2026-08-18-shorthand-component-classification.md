@@ -241,6 +241,8 @@ Background-position exposed the partial-enum length variant: after switching a p
 
 Shadow apply exposed the computed-conversion variant: parser-level grammar parity is incomplete if the style-system collapses every non-px `LengthValue` to zero while building computed values. Reuse the same length resolver at the apply boundary so legal relative units survive into paint-facing numeric storage.
 
+Border-spacing exposed the inherited table-spacing instance of the same computed-conversion variant: once a converter exists for effect lengths, route other paint-facing numeric storages through it instead of repeating `Px else 0.0` matches.
+
 ## Root Cause
 
 The shorthand layer used heuristic component classifiers and treated unrecognized tokens as absent optional components. That is wrong for CSS shorthands such as `border`, where every token must match one of the allowed component grammars. A shared parser can also be broader than the property grammar that consumes it: general length parsing may accept `auto`, intrinsic sizing keywords, or percentages that `border-width` must reject.

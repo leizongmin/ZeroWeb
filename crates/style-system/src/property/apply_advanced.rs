@@ -1857,14 +1857,8 @@ pub fn apply_advanced_property_value(style: &mut ComputedStyle, property: &str, 
         "border-spacing" => {
             if let Some(v) = zero_css_parser::values::parse_border_spacing(value) {
                 style.border_spacing = BorderSpacingComputedValue {
-                    horizontal: match v.horizontal {
-                        zero_css_parser::values::LengthValue::Px(px) => px as f32,
-                        _ => 0.0,
-                    },
-                    vertical: match v.vertical {
-                        zero_css_parser::values::LengthValue::Px(px) => px as f32,
-                        _ => 0.0,
-                    },
+                    horizontal: resolve_effect_length(&v.horizontal, style),
+                    vertical: resolve_effect_length(&v.vertical, style),
                 };
                 return true;
             }

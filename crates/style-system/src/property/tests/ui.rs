@@ -1302,6 +1302,14 @@ fn test_apply_border_spacing() {
     assert_eq!(style.border_spacing.vertical, 4.0);
 }
 
+#[test]
+fn test_apply_border_spacing_accepts_length_units() {
+    let mut style = ComputedStyle::default();
+    assert!(apply_property_value(&mut style, "border-spacing", "1em 2ch"));
+    assert_eq!(style.border_spacing.horizontal, 16.0);
+    assert_eq!(style.border_spacing.vertical, 16.0);
+}
+
 /// 验证 border-spacing 对无效值返回 false。
 #[test]
 fn test_apply_border_spacing_invalid() {
