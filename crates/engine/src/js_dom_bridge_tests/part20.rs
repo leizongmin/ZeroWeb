@@ -1616,3 +1616,56 @@ fn test_is_equal_node_spec_fields_r131() {
         "R131 isEqualNode：ns/prefix/localName/属性集（属性 prefix 不参与）/PI target/doctype 三字段/文档结构/子节点递归"
     );
 }
+
+// R132（js-dom M4）：importNode spec 语义（dom-document-importnode = clone + adopt）
+// ——浅/深变体 childNodes 语义 + ownerDocument 递归归属 + Attr 全字段复制 + detached
+// body 的 setAttributeNS/getAttributeNodeNS。
+#[test]
+fn test_import_node_spec_semantics_r132() {
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let mut sandbox = V8Sandbox::with_config(zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    })
+    .unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><div id=\"host\"><p id=\"a\">A</p></div></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry);
+
+    let out = sandbox
+        .execute(
+            "var parts = [];\
+             var doc = document.implementation.createHTMLDocument('Title');\
+             var div = doc.body.appendChild(doc.createElement('div'));\
+             div.appendChild(doc.createElement('span'));\
+             var s1 = document.importNode(div);\
+             parts.push('shallow:' + (s1.firstChild === null)\
+               + ':' + (s1.ownerDocument === document)\
+               + ':src-intact:' + (div.ownerDocument === doc) + ':' + (div.firstChild ? 'kept' : 'lost'));\
+             var s2 = document.importNode(div, true);\
+             parts.push('deep:' + (s2.firstChild ? s2.firstChild.ownerDocument === document : false)\
+               + ':' + (s2.firstChild ? String(s2.firstChild.nodeName) : 'null'));\
+             doc.body.setAttributeNS('http://example.com/', 'p:name', 'value');\
+             var attr = doc.body.getAttributeNodeNS('http://example.com/', 'name');\
+             parts.push('attr-found:' + (attr !== null && attr !== undefined));\
+             if (attr) {\
+               var imp = document.importNode(attr, true);\
+               parts.push('attr:' + String(imp.prefix) + ':' + String(imp.namespaceURI) + ':' + String(imp.localName));\
+             }\
+             parts.join('|');",
+        )
+        .unwrap()
+        .value;
+    assert_eq!(
+        out,
+        "shallow:true:true:src-intact:true:kept|deep:true:SPAN|attr-found:true|attr:p:http://example.com/:name",
+        "R132 importNode：浅剥子/深递归 ownerDocument/源树完整/Attr prefix+ns+localName 复制/detached body setAttributeNS+getAttributeNodeNS"
+    );
+}

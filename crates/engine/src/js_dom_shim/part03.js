@@ -4483,6 +4483,9 @@
         })(kids[i], i);
       }
     }
+    // R132：body 属性 NS 元数据（限定名→{ns,prefix,local}）——setAttributeNS 登记，
+    // getAttributeNS/getAttributeNodeNS 反查（_zwMEl 树无 __zwHandle，本地表）。
+    var _r132BodyAttrNS = {};
     var body = {
       nodeType: 1,
       tagName: 'BODY',
@@ -4494,7 +4497,63 @@
       set innerHTML(v) { bodyHtml = v == null ? '' : String(v); _tree = null; },
       querySelector: function (sel) { return queryOne(sel); },
       querySelectorAll: function (sel) { return queryAll(sel); },
-      // R51：detached doc 的 Range 工厂（common.js extractContents 模拟 `ownerDoc.createRange()`
+      // R132（js-dom M4）：body 的 set/has/get/removeAttribute 族（WPT Document-importNode
+      // "Import an Attr node" 经 `doc.body.setAttributeNS(ns,'p:name','value')`——旧 plain
+      // object 无方法直接 TypeError）。存入解析树（ensureTree 后 setAttribute）；NS 元数据
+      // 落本地 `_r132BodyAttrNS`（限定名→{ns,prefix,local}）供 getAttributeNS/
+      // getAttributeNodeNS 的 (ns,local) 反查（_tree 是 _zwMEl plain object 无
+      // __zwHandle，不能复用 _attrNSMeta 键）。
+      setAttribute: function (n, v) { ensureTree(); _tree.setAttribute(String(n), String(v == null ? '' : v)); },
+      setAttributeNS: function (ns, qn, v) {
+        ensureTree();
+        var q = String(qn), c = q.indexOf(':');
+        _tree.setAttribute(q, String(v == null ? '' : v));
+        _r132BodyAttrNS[q] = { ns: ns === '' ? null : String(ns == null ? '' : ns), prefix: c >= 0 ? q.slice(0, c) : null, local: c >= 0 ? q.slice(c + 1) : q };
+      },
+      getAttribute: function (n) { ensureTree(); return _tree.getAttribute(String(n)); },
+      getAttributeNS: function (ns, local) {
+        ensureTree();
+        for (var gk in _r132BodyAttrNS) {
+          if (Object.prototype.hasOwnProperty.call(_r132BodyAttrNS, gk)
+            && _r132BodyAttrNS[gk].local === String(local)
+            && String(_r132BodyAttrNS[gk].ns == null ? '' : _r132BodyAttrNS[gk].ns) === String(ns == null ? '' : ns)) {
+            return _tree.getAttribute(gk);
+          }
+        }
+        return _tree.getAttribute(String(local));
+      },
+      hasAttribute: function (n) { ensureTree(); return _tree.hasAttribute(String(n)); },
+      removeAttribute: function (n) { ensureTree(); _tree.removeAttribute(String(n)); },
+      // R132：getAttributeNode/getAttributeNodeNS——Attr 对象（instanceof Attr 经
+      // _zwMakeAttr；NS 变体按本地元数据反查 qname 后补 prefix/ns/localName 字段）。
+      getAttributeNode: function (n) {
+        ensureTree();
+        var v = _tree.getAttribute(String(n));
+        return v === null || v === undefined ? null : _zwMakeAttr(String(n), v, body);
+      },
+      getAttributeNodeNS: function (ns, local) {
+        ensureTree();
+        var qn = null;
+        for (var mk in _r132BodyAttrNS) {
+          if (Object.prototype.hasOwnProperty.call(_r132BodyAttrNS, mk)
+            && _r132BodyAttrNS[mk].local === String(local)
+            && String(_r132BodyAttrNS[mk].ns == null ? '' : _r132BodyAttrNS[mk].ns) === String(ns == null ? '' : ns)) {
+            qn = mk; break;
+          }
+        }
+        if (qn === null) {
+          // NS miss 再按 local 直查限定名（与 proxy NS 读同源的 first-match 近似）
+          var v0 = _tree.getAttribute(String(local));
+          return v0 === null || v0 === undefined ? null : _zwMakeAttr(String(local), v0, body);
+        }
+        var v = _tree.getAttribute(qn);
+        if (v === null || v === undefined) return null;
+        var a = _zwMakeAttr(qn, v, body);
+        a.prefix = _r132BodyAttrNS[qn].prefix;
+        a.namespaceURI = _r132BodyAttrNS[qn].ns;
+        a.localName = _r132BodyAttrNS[qn].local;
+        return a;
+      },
       //——detached/foreign document 此前缺 → Range-isPointInRange 等 mega-case 5700+ subtest
       // "undefined.createRange" 崩）。_makeRange 在 part06（同一 IIFE，运行期调用时已定义）。
       createRange: function () { return _makeRange(); },

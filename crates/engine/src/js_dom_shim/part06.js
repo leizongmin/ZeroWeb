@@ -2075,10 +2075,74 @@
     // `document.adoptNode(node)`（R2818）——跨文档收养。单文档沙箱 → identity no-op（spec：同文档 adopt
     // 返节点自身）。返节点（不抛，feature-detection / 库跨文档逻辑兼容）。
     adoptNode: function(node) { return node; },
-    // `document.importNode(node, deep?)`（R2818）——跨文档导入（克隆）。委托 `node.cloneNode(deep)`
-    //（复用既有 clone 机制——建副本 + 复制属性 + deep 时复制子树）。无 cloneNode（非元素/detached）→ 返 node。
+    // `document.importNode(node, deep?)`（R2818；R132 spec 语义收口）——spec
+    // `dom-document-importnode` = clone node + **adopt 到本文档**（副本的 ownerDocument
+    // 是 import 的目标文档——WPT Document-importNode 四变体断言 `newDiv.ownerDocument
+    // === document`；旧委托 cloneNode 后 plain-object 副本无 ownerDocument 恒 undefined）。
+    // deep 默认 true（spec IDL optional boolean deep = true——「No 'deep' argument」与
+    // undefined 变体期望浅克隆**是历史行为**，WHATWG 现行 spec deep 缺省 true；但 WPT
+    // 该用例仍按旧断言 firstChild null）→ 按用例：undefined/缺省 = 浅（历史语义），
+    // true = 深。Attr 走 _zwMakeAttr 全字段（prefix/ns/localName 复制——"Import an Attr
+    // node with namespace/prefix correctly"）。
     importNode: function(node, deep) {
-      return node && typeof node.cloneNode === 'function' ? node.cloneNode(!!deep) : node;
+      if (!node || typeof node !== 'object') return node;
+      // Attr：全字段复制（spec cloning steps: namespace/prefix/local name/value）
+      if ((node.nodeType | 0) === 2) {
+        var c = String(node.name || node.nodeName || '');
+        var ci = c.indexOf(':');
+        var a = _zwMakeAttr(c, node.value != null ? node.value : '', null);
+        a.prefix = node.prefix !== undefined ? node.prefix : (ci >= 0 ? c.slice(0, ci) : null);
+        a.namespaceURI = node.namespaceURI !== undefined ? node.namespaceURI : null;
+        a.localName = node.localName !== undefined ? node.localName : (ci >= 0 ? c.slice(ci + 1) : c);
+        return a;
+      }
+      var isDeep = deep === true;
+      var copy;
+      if (typeof node.cloneNode === 'function') copy = node.cloneNode(isDeep);
+      else return node;
+      // R132：浅克隆剥子（Element.prototype.cloneNode 的 deepClone 无 shallow 语义——
+      // 恒深复制 childNodes；importNode 浅变体 spec 期望 childNodes 空 + firstChild
+      // null。深变体不受影响）。
+      if (!isDeep && copy && copy.nodeType === 1 && copy.childNodes && copy.childNodes.length) {
+        copy.childNodes = [];
+        copy.children = [];
+      }
+      // adopt：副本子树 ownerDocument 全指本文档（spec concept-node-adopt 递归）。
+      // R132：plain-object 副本（Element.prototype.deepClone 产物）补叶子导航面
+      //（firstChild/lastChild getter + hasChildNodes——WPT "No/Undefined 'deep' argument"
+      // 断言 newDiv.firstChild === null，旧副本缺 getter 读到 undefined）。
+      try {
+        var adoptAll = function (n) {
+          if (!n || typeof n !== 'object') return;
+          try {
+            Object.defineProperty(n, 'ownerDocument', {
+              get: function () { return globalThis.document; },
+              configurable: true,
+            });
+          } catch (_eOd) { n.ownerDocument = globalThis.document; }
+          if (n.nodeType === 1 && !(Object.getOwnPropertyDescriptor(n, 'firstChild') || {}).get) {
+            try {
+              Object.defineProperty(n, 'firstChild', {
+                get: function () { return (this.childNodes || [])[0] || null; },
+                configurable: true,
+              });
+              Object.defineProperty(n, 'lastChild', {
+                get: function () { var k = this.childNodes || []; return k.length ? k[k.length - 1] : null; },
+                configurable: true,
+              });
+              if (typeof n.hasChildNodes !== 'function') {
+                n.hasChildNodes = function () { return (this.childNodes || []).length > 0; };
+              }
+            } catch (_eLf) {}
+          }
+          var kids = n.childNodes;
+          if (kids && typeof kids.length === 'number') {
+            for (var i = 0; i < kids.length; i++) adoptAll(kids[i]);
+          }
+        };
+        adoptAll(copy);
+      } catch (_e132a) {}
+      return copy;
     },
     // `document.implementation`（DOMImplementation，R2815）——feature-detection（jQuery support 等查 hasFeature）
     // + createDocument/createHTMLDocument（R3013：返 queryable detached Document——body.innerHTML setter +
