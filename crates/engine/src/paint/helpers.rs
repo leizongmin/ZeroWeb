@@ -592,11 +592,12 @@ impl BorderRadiusSpec {
     /// driving：R2314 border-radius 百分比（`border-radius: 50%` 圆形）与含百分比 calc。
     pub fn from_style_with_box(style: &ComputedStyle, box_w: f32, box_h: f32) -> Self {
         let max_r = (box_w.min(box_h) / 2.0).max(0.0);
+        let font_size_px = zero_style_system::computed::resolve_length(&style.font_size, 16.0, None, None);
         Self {
-            top_left: resolve_radius_length(&style.border_top_left_radius, box_w, max_r),
-            top_right: resolve_radius_length(&style.border_top_right_radius, box_w, max_r),
-            bottom_right: resolve_radius_length(&style.border_bottom_right_radius, box_w, max_r),
-            bottom_left: resolve_radius_length(&style.border_bottom_left_radius, box_w, max_r),
+            top_left: resolve_radius_length(&style.border_top_left_radius, box_w, max_r, font_size_px),
+            top_right: resolve_radius_length(&style.border_top_right_radius, box_w, max_r, font_size_px),
+            bottom_right: resolve_radius_length(&style.border_bottom_right_radius, box_w, max_r, font_size_px),
+            bottom_left: resolve_radius_length(&style.border_bottom_left_radius, box_w, max_r, font_size_px),
         }
     }
 
@@ -616,7 +617,7 @@ impl BorderRadiusSpec {
 ///
 /// 百分比与 calc 结果钳制到 `max_r`（= min(box_w, box_h) / 2）：CSS 规定单角半径不超过
 /// 边长一半，避免圆角超出边框盒致视觉溢出。Px 值不钳制（既有行为不变）。
-fn resolve_radius_length(v: &LengthValue, box_w: f32, max_r: f32) -> f32 {
+fn resolve_radius_length(v: &LengthValue, box_w: f32, max_r: f32, font_size_px: f64) -> f32 {
     match v {
         LengthValue::Px(p) => *p as f32,
         LengthValue::Percentage(pct) => {
@@ -626,8 +627,8 @@ fn resolve_radius_length(v: &LengthValue, box_w: f32, max_r: f32) -> f32 {
         LengthValue::Calc(expr) => eval_calc(expr, Some(box_w as f64))
             .map(|r| r.min(max_r as f64) as f32)
             .unwrap_or(0.0),
-        // computed 阶段未解析的其余变体（理论不达；安全回退到 Px-only 语义）
-        _ => length_to_f32(v),
+        // computed 阶段未解析的其余真实长度单位：按当前 font-size 在 paint 边界解析。
+        _ => zero_style_system::computed::resolve_length(v, font_size_px, None, None) as f32,
     }
 }
 

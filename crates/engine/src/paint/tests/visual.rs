@@ -321,6 +321,26 @@ fn test_painter_background_with_border_radius() {
     assert_eq!(painter.primitives().rounded_rects[0].color, Color::rgb(255, 0, 0));
 }
 
+#[test]
+fn test_painter_background_with_border_radius_relative_length() {
+    let mut doc = zero_dom::Document::new();
+    let elem = doc.create_element("div");
+    let layout = make_box(Some(elem), 0.0, 0.0, 100.0, 50.0);
+
+    let mut styles = HashMap::new();
+    let mut style = ComputedStyle::default();
+    style.font_size = LengthValue::Px(20.0);
+    style.background_color = ColorValue::Rgba(255, 0, 0, 255);
+    style.border_top_left_radius = LengthValue::Em(0.5);
+    styles.insert(elem, style);
+
+    let mut painter = Painter::new();
+    painter.paint(&layout, &styles, None);
+
+    assert_eq!(painter.primitives().rounded_rects.len(), 1);
+    assert_eq!(painter.primitives().rounded_rects[0].top_left_radius, 10.0);
+}
+
 // ── 新增测试：CSS transform ──────────────────────────────
 
 /// 测试 translate transform 偏移文本位置。
