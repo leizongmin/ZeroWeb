@@ -25,7 +25,7 @@ use zero_style_system::{
 };
 
 use super::super::color::color_value_to_render;
-use super::super::helpers::{PrimitiveCounts, gradient_to_primitive, image_resource_key};
+use super::super::helpers::{PrimitiveCounts, gradient_to_primitive_with_font_size, image_resource_key};
 use super::effects_indicators::clip_tile_to_origin;
 
 impl super::Painter {
@@ -310,7 +310,10 @@ impl super::Painter {
                 }
                 BackgroundImageComputedValue::Gradient(gradient) => {
                     let rect = Rect::new(positioned_x, positioned_y, sized_w, sized_h);
-                    if let Some(prim) = gradient_to_primitive(gradient, &rect, &style.color) {
+                    let font_size = zero_style_system::computed::resolve_length(&style.font_size, 16.0, None, None);
+                    if let Some(prim) =
+                        gradient_to_primitive_with_font_size(gradient, &rect, &style.color, font_size as f32)
+                    {
                         self.primitives.add_gradient(prim);
                     }
                 }
@@ -1086,9 +1089,13 @@ impl super::Painter {
         for layer in &style.mask_image {
             match layer {
                 BackgroundImageComputedValue::Gradient(gradient) => {
-                    if let Some(gradient_prim) =
-                        super::super::helpers::gradient_to_primitive(gradient, &mask_rect, &style.color)
-                    {
+                    let font_size = zero_style_system::computed::resolve_length(&style.font_size, 16.0, None, None);
+                    if let Some(gradient_prim) = super::super::helpers::gradient_to_primitive_with_font_size(
+                        gradient,
+                        &mask_rect,
+                        &style.color,
+                        font_size as f32,
+                    ) {
                         // 渐变蒙版：将元素裁剪到渐变边界矩形
                         super::super::helpers::clip_all_primitives_to_rect(
                             &mut self.primitives,

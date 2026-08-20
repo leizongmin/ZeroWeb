@@ -290,3 +290,5 @@ Clip-path exposed the context-length variant: a shape resolver may handle `em` c
 Transform-origin exposed the geometry transform variant: helpers that already have the border-box size can still lose residual font-relative origins if they special-case only `%` and `px`. Resolve the origin length at the matrix construction boundary, using the current `font-size` as context and keeping invalid residual keywords on the existing center fallback.
 
 Clip rect exposed the legacy-property variant: deprecated paint paths are still real consumers of computed CSS values. When a legacy property accepts `<length>`, its paint boundary needs the same residual length resolution as modern properties; keep unsupported grammar residues on the historical fallback instead of broadening the property.
+
+Radial gradients exposed the helper-context variant: a generic conversion helper may look value-only, but CSS Images length values still depend on the element font context. Keep a default-context wrapper for tests and pure callers, then route production paint through a context-aware entry point.

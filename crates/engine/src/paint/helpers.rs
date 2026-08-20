@@ -663,16 +663,6 @@ pub fn resolve_inset_length(v: &LengthValue, box_dim: f32, font_size_px: f32) ->
     }
 }
 
-/// 将位置 LengthValue 解析为相对于容器尺寸的像素偏移。
-/// 支持百分比和绝对长度值。
-fn resolve_position(v: &LengthValue, container_size: f32) -> f32 {
-    match v {
-        LengthValue::Percentage(p) => *p as f32 / 100.0 * container_size,
-        LengthValue::Px(p) => *p as f32,
-        _ => container_size / 2.0, // 默认居中
-    }
-}
-
 /// 简单的字符串哈希函数（用于从 URL 字符串生成 ImageKey）。
 pub fn simple_hash(s: &str) -> u64 {
     let mut hash: u64 = 5381;
@@ -739,6 +729,16 @@ pub fn gradient_to_primitive(
     rect: &Rect,
     element_color: &ColorValue,
 ) -> Option<GradientPrimitive> {
+    gradient_to_primitive_with_font_size(gradient, rect, element_color, 16.0)
+}
+
+/// 将 CSS GradientValue 转换为 GradientPrimitive，并用当前 font-size 解析残余相对长度。
+pub fn gradient_to_primitive_with_font_size(
+    gradient: &GradientValue,
+    rect: &Rect,
+    element_color: &ColorValue,
+    font_size_px: f32,
+) -> Option<GradientPrimitive> {
     let w = rect.size.width;
     let h = rect.size.height;
     match gradient {
@@ -754,8 +754,8 @@ pub fn gradient_to_primitive(
             })
         }
         GradientValue::Radial(rg) => {
-            let cx = rect.left() + resolve_position(&rg.position_x, w);
-            let cy = rect.top() + resolve_position(&rg.position_y, h);
+            let cx = rect.left() + resolve_position_with_font_size(&rg.position_x, w, font_size_px);
+            let cy = rect.top() + resolve_position_with_font_size(&rg.position_y, h, font_size_px);
             let outer = match &rg.size {
                 RadialSize::ClosestSide => (cx - rect.left())
                     .min(rect.right() - cx)
@@ -779,7 +779,7 @@ pub fn gradient_to_primitive(
                     let br = (rect.right() - cx).hypot(rect.bottom() - cy);
                     tl.max(tr).max(bl).max(br)
                 }
-                RadialSize::Length(lv) => length_to_f32(lv),
+                RadialSize::Length(lv) => resolve_gradient_length(lv, font_size_px),
             };
             let stops = convert_color_stops(&rg.stops, element_color);
             Some(GradientPrimitive {
@@ -796,8 +796,8 @@ pub fn gradient_to_primitive(
             })
         }
         GradientValue::Conic(cg) => {
-            let cx = rect.left() + resolve_position(&cg.position_x, w);
-            let cy = rect.top() + resolve_position(&cg.position_y, h);
+            let cx = rect.left() + resolve_position_with_font_size(&cg.position_x, w, font_size_px);
+            let cy = rect.top() + resolve_position_with_font_size(&cg.position_y, h, font_size_px);
             let start_angle = cg.from_angle.to_radians() as f32;
             let stops = convert_color_stops(&cg.stops, element_color);
             Some(GradientPrimitive {
@@ -809,6 +809,20 @@ pub fn gradient_to_primitive(
             })
         }
     }
+}
+
+fn resolve_position_with_font_size(v: &LengthValue, container_size: f32, font_size_px: f32) -> f32 {
+    match v {
+        LengthValue::Percentage(p) => *p as f32 / 100.0 * container_size,
+        LengthValue::Auto | LengthValue::MinContent | LengthValue::MaxContent | LengthValue::FitContent(_) => {
+            container_size / 2.0
+        }
+        other => resolve_gradient_length(other, font_size_px),
+    }
+}
+
+fn resolve_gradient_length(v: &LengthValue, font_size_px: f32) -> f32 {
+    zero_style_system::computed::resolve_length(v, font_size_px as f64, None, None) as f32
 }
 
 /// 将 css-parser `ColorInterpolation` 映射为 render-foundation `GradientInterpolation`

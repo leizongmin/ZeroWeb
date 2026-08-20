@@ -850,6 +850,49 @@ fn test_paint_radial_gradient_length_size() {
     }
 }
 
+#[test]
+fn test_paint_radial_gradient_relative_length_size() {
+    let mut doc = zero_dom::Document::new();
+    let elem = doc.create_element("div");
+    let layout = make_box(Some(elem), 0.0, 0.0, 200.0, 200.0);
+
+    let mut styles = HashMap::new();
+    let mut style = ComputedStyle::default();
+    style.font_size = LengthValue::Px(20.0);
+    style.background_image = vec![BackgroundImageComputedValue::Gradient(GradientValue::Radial(
+        RadialGradient {
+            interpolation: Default::default(),
+            shape: RadialShape::Circle,
+            size: RadialSize::Length(LengthValue::Em(2.0)),
+            position_x: LengthValue::Percentage(50.0),
+            position_y: LengthValue::Percentage(50.0),
+            stops: vec![
+                GradientColorStop {
+                    color: ColorValue::Rgba(255, 0, 0, 255),
+                    position: None,
+                },
+                GradientColorStop {
+                    color: ColorValue::Rgba(0, 0, 255, 255),
+                    position: None,
+                },
+            ],
+            repeating: false,
+        },
+    ))];
+    style.color = ColorValue::CurrentColor;
+    styles.insert(elem, style);
+
+    let mut painter = Painter::new();
+    painter.paint(&layout, &styles, None);
+
+    let grad = &painter.primitives().gradients[0];
+    if let GradientKind::Radial { outer_radius, .. } = &grad.kind {
+        assert_eq!(*outer_radius, 40.0, "2em at font-size:20px 应解析为 40px");
+    } else {
+        panic!("期望 Radial 类型");
+    }
+}
+
 /// 测试单个色标的 linear-gradient。
 #[test]
 fn test_paint_linear_gradient_single_stop() {
