@@ -2,7 +2,7 @@
 
 **入口文档**: [../service-workers.md](../service-workers.md)
 **创建日期**: 2026-08-17（goal 拆分 bootstrap）
-**最后更新**: 2026-08-20（M3-10 import response policy 完成）
+**最后更新**: 2026-08-20（M3-11 dynamic import semantics 完成）
 
 ---
 
@@ -65,8 +65,8 @@ M0 启动门禁解除；M1 core WPT 已收敛，M2 依赖未满足，当前推�
 - ✅ Final remaining 裁决：38 source / 270 subtest 分为 14 defer /
   8 gated / 16 skip；初始 review 152/152，逻辑剩余 0
 - ✅ Runner disposition contract：294 source / 331 URL 唯一映射为
-  16 core / 49 defer / 187 gated / 42 skip，可从原始 evidence 确定性重建；
-  16 个 core 与 runner 导入账本、五批 case asset 及 blob SHA 精确对应
+  18 core / 49 defer / 185 gated / 42 skip，可从原始 evidence 确定性重建；
+  18 个 core 与 runner 导入账本、六批 case asset 及 blob SHA 精确对应
 - ✅ M0 registry 契约补强：新增 4 项 Rust 单测，固定候选版本不提前替换 active、
   非法激活不扰动 active、注销旧 redundant 不删除新映射、跨 origin 替换隔离
 - ✅ M1 WorkerRuntime readiness：V8 20/20、QuickJS 3/3，WebView 双后端各 17/17；
@@ -117,6 +117,8 @@ M0 启动门禁解除；M1 core WPT 已收敛，M2 依赖未满足，当前推�
   在同一 global 顺序执行；startup graph 持久化并参与完整 update byte comparison
 - ✅ M3-10：classic import 跨源 no-cors 与动态 MIME response policy；结构化 WebView fixture、
   NetworkError DOMException、remote worker 65-message result channel；core WPT 16/62
+- ✅ M3-11：version-local script resource map、有状态 redirect/stash/update fixture、
+  WorkerLocation/URLSearchParams 与 registration-key unregister；core WPT 18/67
 
 ## 缺口清单
 
@@ -126,7 +128,7 @@ M0 启动门禁解除；M1 core WPT 已收敛，M2 依赖未满足，当前推�
 | S2 | scriptURL 不下载执行 | ✅ production navigator 经 browser fetch/evaluate |
 | S3 | fetch 拦截为零 | ⬜ M2（等 js-dom fetch 改造） |
 | S4 | 事件为 setTimeout 模拟 | ✅ manager transition log 为状态源；timer 只执行页面 task 投影 |
-| S5 | WPT 覆盖为零 | ✅ core 16/16 case、62/62 Pass、0 Fail/Timeout/Unsupported |
+| S5 | WPT 覆盖为零 | ✅ core 18/18 case、67/67 Pass、0 Fail/Timeout/Unsupported |
 
 ## 待用户决策
 
@@ -136,7 +138,7 @@ M0 启动门禁解除；M1 core WPT 已收敛，M2 依赖未满足，当前推�
 
 ## 下一步计划
 
-1. **M3 import follow-up**：redirect/stash/resource-map WPT 与 event-time import fetch context
+1. **M3 import follow-up**：event-time import fetch context
 2. **M2 依赖复核**：js-dom S6 与 storage-cache-api M1 land 后启动 fetch pipeline
 3. **M3 messaging follow-up**：MessagePort/MessageChannel transfer 与多 client 枚举
 
@@ -145,7 +147,7 @@ M0 启动门禁解除；M1 core WPT 已收敛，M2 依赖未满足，当前推�
 | 里程碑 | 状态 |
 |--------|------|
 | M0 — 选型 RFC（门控） | ✅ 方案 C 已批准 |
-| M1 — 脚本真实执行 + 生命周期真事件 | ✅ current core WPT 62/62 Pass |
+| M1 — 脚本真实执行 + 生命周期真事件 | ✅ current core WPT 67/67 Pass |
 | M2 — fetch 拦截 + Cache 集成 | ⬜ 门控：js-dom fetch 改造 land |
 | M3 — 控制语义 + 消息 + 收尾 | 🚧 classic startup graph + 控制/消息/update/persistence 完成 |
 
@@ -182,7 +184,7 @@ M0 启动门禁解除；M1 core WPT 已收敛，M2 依赖未满足，当前推�
 - Runner disposition：294 source / 331 URL 的唯一执行 lane 见
   [WPT disposition contract](evidence/2026-08-19-wpt-disposition.tsv)；
   `make audit-wpt-service-workers-disposition` 从原始账本重建并逐字节校验，同时检查
-  core lane、runner 导入账本与四批 case asset 的双向闭包
+  core lane、runner 导入账本与六批 case asset 的双向闭包
 - Tier A 资产恢复：`make fetch-wpt-service-workers-tier-a`；默认使用独立
   `wpt-data/.service-workers-tier-a-root`，当前环境 18/18 blob SHA 验证通过
 - Tier A 资产审计：`make audit-wpt-service-workers-tier-a`（无网络、只读）；
@@ -196,6 +198,10 @@ M0 启动门禁解除；M1 core WPT 已收敛，M2 依赖未满足，当前推�
 - Update-wave 资产恢复/审计：`make fetch-wpt-service-workers-update-wave` /
   `make audit-wpt-service-workers-update-wave`；5 assets / 1 subtest；
   `make test-wpt-service-workers-update-wave-assets` 固化篡改/修复回归
+- Import-response-wave 资产恢复/审计：5 assets / 24 subtest；
+  `make test-wpt-service-workers-import-response-wave-assets` 固化篡改/修复回归
+- Import-dynamic-wave 资产恢复/审计：11 assets / 5 subtest；
+  `make test-wpt-service-workers-import-dynamic-wave-assets` 固化篡改/修复回归
 - 质量门禁：`cargo fmt` + `cargo clippy --workspace --all-targets -- -D warnings` +
   `make test`（V8/QuickJS/GPU capability）全过
 - Registry 契约测试：`cargo test -p zero-storage service_worker::tests`，40/40 通过；
@@ -247,6 +253,9 @@ M0 启动门禁解除；M1 core WPT 已收敛，M2 依赖未满足，当前推�
 - M3-10 import response policy：classic no-cors、动态 MIME、NetworkError DOMException、
   remote worker result channel 与 16/62 WPT 见
   [M3 import response policy](evidence/2026-08-20-m3-import-response-policy.md)
+- M3-11 dynamic import semantics：version-local resource map、redirect/stash/update、
+  WorkerLocation/URLSearchParams、registration-key unregister 与 18/67 WPT 见
+  [M3 dynamic import semantics](evidence/2026-08-20-m3-import-dynamic.md)
 
 ## M0 证据与决策记录
 
@@ -298,6 +307,7 @@ M0 启动门禁解除；M1 core WPT 已收敛，M2 依赖未满足，当前推�
 | 2026-08-20 | M3-8 updateViaCache | typed registration policy；top-level browser cache mode；persistence migration；双引擎/生产链通过 |
 | 2026-08-20 | M3-9 importScripts graph | browser-owned batch fetch；ordered same-global execution；graph bytecheck/persistence；WPT 14/38 |
 | 2026-08-20 | M3-10 import response policy | classic no-cors；动态 MIME；65-message worker result channel；WPT 16/62 |
+| 2026-08-20 | M3-11 dynamic import semantics | resource map；redirect/stash/update；WorkerLocation；key unregister；WPT 18/67 |
 | 2026-08-19 | 三方案对比 | 拒绝同线程 context（无调度隔离）；拒绝从零线程（复制安全基建）；推荐抽取 Worker 线程核 |
 | 2026-08-19 | owner | production browser process 单一 owner；WebView 只做同算法 in-process adapter |
 | 2026-08-19 | 首个 driving WPT | `activation-after-registration.https.html` |

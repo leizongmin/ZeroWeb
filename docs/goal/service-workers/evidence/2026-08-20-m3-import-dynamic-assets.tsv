@@ -1,0 +1,12 @@
+path	manifest_type	roles	referenced_by	bytes	templated	git_blob_sha
+common/utils.js	support	page-script	1	2503	no	d410b0753582e061572302f3ce9118e95635c6b1
+service-workers/service-worker/import-scripts-redirect.https.html	testharness	case	1	2087	no	07ea49439eba8f9762b2bc17b5ae2346d9d15397
+service-workers/service-worker/import-scripts-resource-map.https.html	testharness	case	1	1430	no	4742bd01268360477bf6061f8505fe9a3b7cadb7
+service-workers/service-worker/resources/import-scripts-diff-resource-map-worker.js	support	worker-script	1	289	no	0fdcb0fcf80ad7f0dffa284c5b77178bdad95ef6
+service-workers/service-worker/resources/import-scripts-get.py	support	dynamic-handler	1	246	no	ab7b84e3e34e3f6ccff48a497d10f9bdc356fda3
+service-workers/service-worker/resources/import-scripts-redirect-on-second-time-worker.js	support	worker-script	1	387	no	f612ab8e6aa4272083abf573978d1932d18f6535
+service-workers/service-worker/resources/import-scripts-redirect-worker.js	support	worker-script	1	65	no	d02a45349c24298542ea4fca64971a888ae883a6
+service-workers/service-worker/resources/import-scripts-resource-map-worker.js	support	worker-script	1	531	no	b3b9bc46a02429e0afdb6c5f44b26feec898c928
+service-workers/service-worker/resources/import-scripts-version.py	support	dynamic-handler	2	459	no	cde28544e60a0613debe98bfe6c44bdfb610317b
+service-workers/service-worker/resources/redirect.py	support	dynamic-handler	1	855	no	bd559d5d1e252e33863fe2ae369370556cfd4477
+service-workers/service-worker/resources/update-worker.py	support	dynamic-handler	1	2257	no	5638a8849cb749471ef01413bb95386aa4857712

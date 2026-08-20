@@ -1,6 +1,8 @@
 //! WPT testharness runner and minimal testdriver adapter for HTML interactions.
 
+use std::collections::HashMap;
 use std::path::Path;
+use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
 use serde::{Deserialize, Serialize};
@@ -616,6 +618,8 @@ pub const SERVICE_WORKER_CORE_CASES: &[&str] = &[
     "service-workers/service-worker/import-scripts-cross-origin.https.html",
     "service-workers/service-worker/import-scripts-data-url.https.html",
     "service-workers/service-worker/import-scripts-mime-types.https.html",
+    "service-workers/service-worker/import-scripts-redirect.https.html",
+    "service-workers/service-worker/import-scripts-resource-map.https.html",
     "service-workers/service-worker/register-default-scope.https.html",
     "service-workers/service-worker/registration-basic.https.html",
     "service-workers/service-worker/registration-scope.https.html",
@@ -1167,46 +1171,182 @@ fn wpt_data_script_fetcher(wpt_root: &std::path::Path) -> Option<zero_webview::S
     }))
 }
 
+#[derive(Default)]
+struct ServiceWorkerFixtureState {
+    next_version: u64,
+    update_visits: HashMap<String, u64>,
+}
+
+fn service_worker_fixture_path(src: &str) -> Result<(&str, &str), String> {
+    let path_and_query = if let Some((scheme, after_scheme)) = src.split_once("://") {
+        let path_index = after_scheme
+            .find('/')
+            .ok_or_else(|| format!("Service Worker script URL has no path: {src}"))?;
+        let authority = &after_scheme[..path_index];
+        if scheme != "https" || !matches!(authority, "wpt.test" | "www1.wpt.test" | "www1.wpt.test:443") {
+            return Err(format!(
+                "external Service Worker fixture origin is not available: {src}"
+            ));
+        }
+        &after_scheme[path_index + 1..]
+    } else {
+        src.trim_start_matches('/')
+    };
+    let (clean, query) = path_and_query
+        .split_once('?')
+        .map_or((path_and_query, ""), |(path, query)| (path, query));
+    if clean.is_empty() || clean.split('/').any(|segment| segment == "..") {
+        return Err(format!("invalid Service Worker fixture path: {clean}"));
+    }
+    Ok((clean, query))
+}
+
+fn service_worker_fixture_query(query: &str) -> Result<HashMap<String, String>, String> {
+    query
+        .split('&')
+        .filter(|pair| !pair.is_empty())
+        .map(|pair| {
+            let (name, value) = pair.split_once('=').unwrap_or((pair, ""));
+            let decode = |input: &str| {
+                let form_value = input.replace('+', " ");
+                percent_encoding::percent_decode_str(&form_value)
+                    .decode_utf8()
+                    .map(|value| value.into_owned())
+                    .map_err(|_| "Service Worker fixture query is not UTF-8".to_string())
+            };
+            Ok((decode(name)?, decode(value)?))
+        })
+        .collect()
+}
+
+fn resolve_service_worker_fixture_redirect(src: &str, target: &str) -> Result<String, String> {
+    let source_without_query = src.split('?').next().unwrap_or(src);
+    let resolved = if target.starts_with("https://") {
+        target.to_string()
+    } else {
+        let (scheme, after_scheme) = source_without_query
+            .split_once("://")
+            .ok_or_else(|| format!("Service Worker redirect base is not absolute: {src}"))?;
+        let authority_end = after_scheme
+            .find('/')
+            .ok_or_else(|| format!("Service Worker redirect base has no path: {src}"))?;
+        let origin = format!("{scheme}://{}", &after_scheme[..authority_end]);
+        if target.starts_with('/') {
+            format!("{origin}{target}")
+        } else {
+            let directory = source_without_query
+                .rsplit_once('/')
+                .map_or(source_without_query, |(directory, _)| directory);
+            format!("{directory}/{target}")
+        }
+    };
+    service_worker_fixture_path(&resolved)?;
+    Ok(resolved)
+}
+
+fn service_worker_fixture_response(body: String, url: String, redirect_count: usize) -> zero_net::HttpResponse {
+    zero_net::HttpResponse {
+        status_code: 200,
+        headers: vec![("Content-Type".into(), "application/javascript".into())],
+        body: body.into_bytes(),
+        url,
+        redirect_count,
+    }
+}
+
 /// Structured Service Worker responses for the pinned WPT corpus.
 ///
-/// Static scripts are read from `wpt_root`; the MIME handler retains its query-driven
-/// `Content-Type` behavior, and the cross-origin version handler returns JavaScript without CORS
-/// headers. Redirect/stash handlers are added by the next dynamic fixture wave.
+/// Static scripts are read from `wpt_root`; dynamic Python fixtures preserve MIME, changing-body,
+/// redirect, and per-key stash behavior within one WebView test instance.
 fn wpt_data_service_worker_script_fetcher(
     wpt_root: &std::path::Path,
 ) -> Option<zero_webview::ServiceWorkerScriptFetcher> {
     let root = wpt_root.to_path_buf();
+    let state = Mutex::new(ServiceWorkerFixtureState::default());
     Some(std::sync::Arc::new(move |_page_url: &str, src: &str| {
-        let path_and_query = if let Some((scheme, after_scheme)) = src.split_once("://") {
-            let path_index = after_scheme
-                .find('/')
-                .ok_or_else(|| format!("Service Worker script URL has no path: {src}"))?;
-            let authority = &after_scheme[..path_index];
-            if scheme != "https" || !matches!(authority, "wpt.test" | "www1.wpt.test" | "www1.wpt.test:443") {
-                return Err(format!(
-                    "external Service Worker fixture origin is not available: {src}"
-                ));
-            }
-            &after_scheme[path_index + 1..]
-        } else {
-            src.trim_start_matches('/')
-        };
-        let (clean, query) = path_and_query
-            .split_once('?')
-            .map_or((path_and_query, ""), |(path, query)| (path, query));
-        if clean.is_empty() || clean.split('/').any(|segment| segment == "..") {
-            return Err(format!("invalid Service Worker fixture path: {clean}"));
-        }
+        let (clean, query) = service_worker_fixture_path(src)?;
+        let params = service_worker_fixture_query(query)?;
 
         let mut headers = Vec::new();
         let body = if clean.ends_with("/resources/mime-type-worker.py") {
-            if let Some(mime) = query.strip_prefix("mime=") {
-                headers.push(("Content-Type".into(), mime.to_string()));
+            if let Some(mime) = params.get("mime") {
+                headers.push(("Content-Type".into(), mime.clone()));
             }
             Vec::new()
         } else if clean.ends_with("/resources/import-scripts-version.py") {
-            headers.push(("Content-Type".into(), "application/javascript".into()));
-            b"version = \"pinned\";\n".to_vec()
+            let mut state = state
+                .lock()
+                .map_err(|_| "Service Worker fixture state lock is poisoned".to_string())?;
+            state.next_version += 1;
+            return Ok(service_worker_fixture_response(
+                format!("version = \"{}\";\n", state.next_version),
+                src.to_string(),
+                0,
+            ));
+        } else if clean.ends_with("/resources/import-scripts-get.py") {
+            let output = params
+                .get("output")
+                .ok_or_else(|| "import-scripts-get.py requires output".to_string())?;
+            if !output.bytes().enumerate().all(|(index, byte)| {
+                byte == b'_' || byte == b'$' || byte.is_ascii_alphabetic() || (index != 0 && byte.is_ascii_digit())
+            }) {
+                return Err("import-scripts-get.py output is not a JavaScript identifier".into());
+            }
+            let message = params
+                .get("msg")
+                .ok_or_else(|| "import-scripts-get.py requires msg".to_string())?;
+            return Ok(service_worker_fixture_response(
+                format!("{output} = {};\n", serde_json::to_string(message).unwrap()),
+                src.to_string(),
+                0,
+            ));
+        } else if clean.ends_with("/resources/redirect.py") {
+            let target = params
+                .get("Redirect")
+                .ok_or_else(|| "redirect.py requires Redirect".to_string())?;
+            let final_url = resolve_service_worker_fixture_redirect(src, target)?;
+            let (final_path, _) = service_worker_fixture_path(&final_url)?;
+            if !final_path.ends_with("/resources/import-scripts-version.py") {
+                return Err(format!("unsupported Service Worker fixture redirect target: {target}"));
+            }
+            let mut state = state
+                .lock()
+                .map_err(|_| "Service Worker fixture state lock is poisoned".to_string())?;
+            state.next_version += 1;
+            return Ok(service_worker_fixture_response(
+                format!("version = \"{}\";\n", state.next_version),
+                final_url,
+                1,
+            ));
+        } else if clean.ends_with("/resources/update-worker.py") {
+            let key = params
+                .get("Key")
+                .ok_or_else(|| "update-worker.py requires Key".to_string())?;
+            let mode = params
+                .get("Mode")
+                .ok_or_else(|| "update-worker.py requires Mode".to_string())?;
+            let mut state = state
+                .lock()
+                .map_err(|_| "Service Worker fixture state lock is poisoned".to_string())?;
+            let visited = state.update_visits.entry(key.clone()).or_default();
+            *visited += 1;
+            if *visited == 2 && mode == "redirect" {
+                let target = params
+                    .get("Redirect")
+                    .ok_or_else(|| "update-worker.py redirect mode requires Redirect".to_string())?;
+                let final_url = resolve_service_worker_fixture_redirect(src, target)?;
+                *visited += 1;
+                return Ok(service_worker_fixture_response(
+                    format!("/* {} */", *visited),
+                    final_url,
+                    1,
+                ));
+            }
+            return Ok(service_worker_fixture_response(
+                format!("/* {} */", *visited),
+                src.to_string(),
+                0,
+            ));
         } else {
             headers.push(("Content-Type".into(), "application/javascript".into()));
             let bytes = std::fs::read(root.join(clean))
@@ -2139,13 +2279,13 @@ async_test(function(test) {
     }
 
     #[test]
-    fn service_worker_core_manifest_has_sixteen_unique_cases() {
+    fn service_worker_core_manifest_has_eighteen_unique_cases() {
         let unique = SERVICE_WORKER_CORE_CASES
             .iter()
             .copied()
             .collect::<std::collections::BTreeSet<_>>();
-        assert_eq!(SERVICE_WORKER_CORE_CASES.len(), 16);
-        assert_eq!(unique.len(), 16);
+        assert_eq!(SERVICE_WORKER_CORE_CASES.len(), 18);
+        assert_eq!(unique.len(), 18);
         assert!(
             SERVICE_WORKER_CORE_CASES
                 .iter()
@@ -2180,13 +2320,52 @@ async_test(function(test) {
     fn service_worker_fixture_fetcher_accepts_canonical_cross_origin() {
         let fetcher =
             wpt_data_service_worker_script_fetcher(Path::new("/nonexistent-service-worker-wpt-root")).unwrap();
-        let response = fetcher(
+        let first = fetcher(
             "https://wpt.test/page",
             "https://www1.wpt.test/service-workers/service-worker/resources/import-scripts-version.py",
         )
         .unwrap();
-        assert_eq!(response.content_type_mime(), Some("application/javascript"));
-        assert!(response.header("access-control-allow-origin").is_none());
+        let second = fetcher(
+            "https://wpt.test/page",
+            "https://www1.wpt.test/service-workers/service-worker/resources/import-scripts-version.py",
+        )
+        .unwrap();
+        assert_eq!(first.content_type_mime(), Some("application/javascript"));
+        assert!(first.header("access-control-allow-origin").is_none());
+        assert_ne!(first.body, second.body);
+    }
+
+    #[test]
+    fn service_worker_fixture_fetcher_generates_import_script_from_query() {
+        let fetcher =
+            wpt_data_service_worker_script_fetcher(Path::new("/nonexistent-service-worker-wpt-root")).unwrap();
+        let response = fetcher(
+            "https://wpt.test/page",
+            "https://wpt.test/service-workers/service-worker/resources/import-scripts-get.py?output=echo1&msg=a%20value",
+        )
+        .unwrap();
+        assert_eq!(
+            response.body,
+            br#"echo1 = "a value";
+"#
+        );
+    }
+
+    #[test]
+    fn service_worker_fixture_fetcher_redirects_second_update_request() {
+        let fetcher =
+            wpt_data_service_worker_script_fetcher(Path::new("/nonexistent-service-worker-wpt-root")).unwrap();
+        let url = "https://wpt.test/service-workers/service-worker/resources/update-worker.py?Key=fixture-key&Mode=redirect&Redirect=update-worker.py?Key=fixture-key%26Mode=normal";
+        let first = fetcher("https://wpt.test/page", url).unwrap();
+        let second = fetcher("https://wpt.test/page", url).unwrap();
+        assert_eq!(first.redirect_count, 0);
+        assert_eq!(first.body, b"/* 1 */");
+        assert_eq!(second.redirect_count, 1);
+        assert_eq!(second.body, b"/* 3 */");
+        assert_eq!(
+            second.url,
+            "https://wpt.test/service-workers/service-worker/resources/update-worker.py?Key=fixture-key&Mode=normal"
+        );
     }
 
     #[test]

@@ -91,6 +91,134 @@ const SERVICE_WORKER_BOOTSTRAP: &str = r#"
   Object.defineProperty(DOMException, 'NETWORK_ERR', {value: 19});
   Object.defineProperty(DOMException.prototype, 'NETWORK_ERR', {value: 19});
 
+  function parseURLSearchParams(input) {
+    const pairs = [];
+    let source = String(input);
+    if (source.startsWith('?')) source = source.slice(1);
+    if (source === '') return pairs;
+    for (const entry of source.split('&')) {
+      if (entry === '') continue;
+      const separator = entry.indexOf('=');
+      const name = separator < 0 ? entry : entry.slice(0, separator);
+      const value = separator < 0 ? '' : entry.slice(separator + 1);
+      pairs.push([
+        decodeURIComponent(name.replace(/\+/g, ' ')),
+        decodeURIComponent(value.replace(/\+/g, ' '))
+      ]);
+    }
+    return pairs;
+  }
+  function encodeURLSearchParam(value) {
+    return encodeURIComponent(value).replace(/%20/g, '+');
+  }
+  class URLSearchParams {
+    constructor(init) {
+      this._pairs = [];
+      if (init === undefined || init === null) return;
+      if (typeof init === 'string') {
+        this._pairs = parseURLSearchParams(init);
+      } else if (typeof init[Symbol.iterator] === 'function') {
+        for (const pair of init) {
+          if (!pair || typeof pair[Symbol.iterator] !== 'function') {
+            throw new TypeError('URLSearchParams sequence entry is not iterable');
+          }
+          const values = Array.from(pair);
+          if (values.length !== 2) {
+            throw new TypeError('URLSearchParams sequence entry must contain two items');
+          }
+          this._pairs.push([String(values[0]), String(values[1])]);
+        }
+      } else {
+        for (const name of Object.keys(init)) {
+          this._pairs.push([String(name), String(init[name])]);
+        }
+      }
+    }
+    append(name, value) {
+      this._pairs.push([String(name), String(value)]);
+    }
+    delete(name, value) {
+      name = String(name);
+      const hasValue = arguments.length > 1;
+      if (hasValue) value = String(value);
+      this._pairs = this._pairs.filter(pair => pair[0] !== name || (hasValue && pair[1] !== value));
+    }
+    get(name) {
+      name = String(name);
+      const pair = this._pairs.find(pair => pair[0] === name);
+      return pair ? pair[1] : null;
+    }
+    getAll(name) {
+      name = String(name);
+      return this._pairs.filter(pair => pair[0] === name).map(pair => pair[1]);
+    }
+    has(name, value) {
+      name = String(name);
+      const hasValue = arguments.length > 1;
+      if (hasValue) value = String(value);
+      return this._pairs.some(pair => pair[0] === name && (!hasValue || pair[1] === value));
+    }
+    set(name, value) {
+      name = String(name);
+      value = String(value);
+      const first = this._pairs.findIndex(pair => pair[0] === name);
+      if (first < 0) {
+        this._pairs.push([name, value]);
+        return;
+      }
+      this._pairs[first][1] = value;
+      this._pairs = this._pairs.filter((pair, index) => pair[0] !== name || index === first);
+    }
+    sort() {
+      this._pairs = this._pairs
+        .map((pair, index) => ({pair, index}))
+        .sort((left, right) => left.pair[0] < right.pair[0] ? -1 : left.pair[0] > right.pair[0] ? 1 : left.index - right.index)
+        .map(entry => entry.pair);
+    }
+    entries() {
+      return this._pairs.map(pair => [pair[0], pair[1]])[Symbol.iterator]();
+    }
+    keys() {
+      return this._pairs.map(pair => pair[0])[Symbol.iterator]();
+    }
+    values() {
+      return this._pairs.map(pair => pair[1])[Symbol.iterator]();
+    }
+    forEach(callback, thisArg) {
+      for (const pair of this._pairs) callback.call(thisArg, pair[1], pair[0], this);
+    }
+    toString() {
+      return this._pairs
+        .map(pair => encodeURLSearchParam(pair[0]) + '=' + encodeURLSearchParam(pair[1]))
+        .join('&');
+    }
+    [Symbol.iterator]() {
+      return this.entries();
+    }
+  }
+  Object.defineProperty(URLSearchParams.prototype, Symbol.toStringTag, {value: 'URLSearchParams'});
+
+  const workerLocationToken = {};
+  class WorkerLocation {
+    constructor(parts, token) {
+      if (token !== workerLocationToken) throw new TypeError('Illegal constructor');
+      for (const name of Object.keys(parts)) {
+        Object.defineProperty(this, name, {value: parts[name], enumerable: true});
+      }
+    }
+    toString() {
+      return this.href;
+    }
+  }
+  Object.defineProperty(WorkerLocation.prototype, Symbol.toStringTag, {value: 'WorkerLocation'});
+  globalThis.__zwSetLocation = function(parts) {
+    Object.defineProperty(globalThis, 'location', {
+      value: new WorkerLocation(parts, workerLocationToken),
+      enumerable: true,
+      configurable: true
+    });
+  };
+
   function WorkerGlobalScope() {}
   WorkerGlobalScope.prototype = Object.create(Object.getPrototypeOf(globalThis));
   function ServiceWorkerGlobalScope() {}
@@ -108,6 +236,8 @@ const SERVICE_WORKER_BOOTSTRAP: &str = r#"
   globalThis.InstallEvent = InstallEvent;
   globalThis.MessageEvent = MessageEvent;
   globalThis.DOMException = globalThis.DOMException || DOMException;
+  globalThis.URLSearchParams = globalThis.URLSearchParams || URLSearchParams;
+  globalThis.WorkerLocation = WorkerLocation;
   globalThis.Client = Client;
   globalThis.addEventListener = function(type, listener) {
     if (typeof listener !== 'function') return;
@@ -427,8 +557,10 @@ impl ServiceWorkerRuntime {
                     match command {
                         ServiceWorkerCommand::Evaluate { script, script_url } => {
                             let source = if script.trim().is_empty() { ";" } else { script.as_str() };
-                            let event = match sandbox.execute(source) {
-                                Ok(_) => ServiceWorkerEvent::Evaluated { script_url },
+                            let evaluation = set_worker_location(sandbox.as_mut(), &script_url)
+                                .and_then(|()| sandbox.execute(source).map(|_| ()));
+                            let event = match evaluation {
+                                Ok(()) => ServiceWorkerEvent::Evaluated { script_url },
                                 Err(error) => ServiceWorkerEvent::ScriptError {
                                     script_url,
                                     kind: script_error_kind(&error),
@@ -689,6 +821,28 @@ fn import_failure_json(message: &str) -> String {
     serde_json::json!({"ok": false, "error": message}).to_string()
 }
 
+fn set_worker_location(sandbox: &mut dyn Sandbox, script_url: &str) -> Result<(), ScriptError> {
+    let url = url::Url::parse(script_url)
+        .map_err(|error| ScriptError::InvalidInput(format!("invalid Service Worker script URL: {error}")))?;
+    let location = serde_json::json!({
+        "href": url.as_str(),
+        "origin": url.origin().ascii_serialization(),
+        "protocol": format!("{}:", url.scheme()),
+        "host": match url.port() {
+            Some(port) => format!("{}:{port}", url.host_str().unwrap_or_default()),
+            None => url.host_str().unwrap_or_default().to_string(),
+        },
+        "hostname": url.host_str().unwrap_or_default(),
+        "port": url.port().map_or_else(String::new, |port| port.to_string()),
+        "pathname": url.path(),
+        "search": url.query().map_or_else(String::new, |query| format!("?{query}")),
+        "hash": url.fragment().map_or_else(String::new, |fragment| format!("#{fragment}")),
+    });
+    sandbox
+        .execute(&format!("globalThis.__zwSetLocation({location});"))
+        .map(|_| ())
+}
+
 fn dispatch_lifecycle(
     sandbox: &mut dyn Sandbox,
     event_id: u64,
@@ -860,6 +1014,51 @@ mod tests {
                 "if (!(self instanceof ServiceWorkerGlobalScope)) throw new Error('missing service worker brand');
                  if (!(self instanceof WorkerGlobalScope)) throw new Error('missing worker brand');",
                 "https://example.test/sw.js",
+            )
+            .unwrap();
+        assert!(matches!(
+            runtime.recv_timeout(Duration::from_secs(5)).unwrap(),
+            ServiceWorkerEvent::Evaluated { .. }
+        ));
+    }
+
+    #[test]
+    fn global_has_url_search_params() {
+        let mut runtime = ServiceWorkerRuntime::new(test_config()).unwrap();
+        runtime
+            .evaluate(
+                "const params = new URLSearchParams('?key=first+value&key=second');
+                 if (params.get('key') !== 'first value') throw new Error('wrong get');
+                 if (params.getAll('key').join(',') !== 'first value,second') throw new Error('wrong getAll');
+                 params.set('key', 'updated');
+                 params.append('next', 'a value');
+                 if (String(params) !== 'key=updated&next=a+value') throw new Error('wrong serialization');
+                 if (Object.prototype.toString.call(params) !== '[object URLSearchParams]') {
+                   throw new Error('wrong brand');
+                 }",
+                "https://example.test/sw.js",
+            )
+            .unwrap();
+        assert!(matches!(
+            runtime.recv_timeout(Duration::from_secs(5)).unwrap(),
+            ServiceWorkerEvent::Evaluated { .. }
+        ));
+    }
+
+    #[test]
+    fn global_location_reflects_main_script_url() {
+        let mut runtime = ServiceWorkerRuntime::new(test_config()).unwrap();
+        runtime
+            .evaluate(
+                "if (!(location instanceof WorkerLocation)) throw new Error('wrong location brand');
+                 if (location.href !== 'https://example.test:8443/workers/sw.js?key=value') {
+                   throw new Error('wrong href');
+                 }
+                 if (location.origin !== 'https://example.test:8443') throw new Error('wrong origin');
+                 if (location.pathname !== '/workers/sw.js') throw new Error('wrong pathname');
+                 if (location.search !== '?key=value') throw new Error('wrong search');
+                 if (String(location) !== location.href) throw new Error('wrong string conversion');",
+                "https://example.test:8443/workers/sw.js?key=value",
             )
             .unwrap();
         assert!(matches!(

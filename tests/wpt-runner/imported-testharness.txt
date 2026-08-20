@@ -191,3 +191,5 @@ service-workers/service-worker/update-result.https.html 04067ce9c7c2165e71ad7d0d
 service-workers/service-worker/import-scripts-data-url.https.html 04067ce9c7c2165e71ad7d0dde10a4c5cb394a83 2026-08-20 SW-M3-import-scripts
 service-workers/service-worker/import-scripts-cross-origin.https.html 04067ce9c7c2165e71ad7d0dde10a4c5cb394a83 2026-08-20 SW-M3-import-response
 service-workers/service-worker/import-scripts-mime-types.https.html 04067ce9c7c2165e71ad7d0dde10a4c5cb394a83 2026-08-20 SW-M3-import-response
+service-workers/service-worker/import-scripts-redirect.https.html 04067ce9c7c2165e71ad7d0dde10a4c5cb394a83 2026-08-20 SW-M3-import-dynamic
+service-workers/service-worker/import-scripts-resource-map.https.html 04067ce9c7c2165e71ad7d0dde10a4c5cb394a83 2026-08-20 SW-M3-import-dynamic

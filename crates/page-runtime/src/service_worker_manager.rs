@@ -762,22 +762,27 @@ impl ServiceWorkerManager {
                 }
                 ServiceWorkerEvent::ImportScriptsRequested { request_id, specifiers } => {
                     match self.resolve_import_script_urls(registration_id, &specifiers) {
-                        Ok(urls) if self.restoring_active.contains(&registration_id) => {
-                            let result = self.restored_import_sources(registration_id, &urls);
-                            let _ = self.host.complete_import_scripts(registration_id, request_id, result);
-                        }
                         Ok(urls) => {
-                            self.pending_import_requests
-                                .insert((registration_id, request_id), urls.clone());
-                            let bypass_cache = self.registration(registration_id).is_some_and(|registration| {
-                                registration.update_via_cache == ServiceWorkerUpdateViaCache::None
-                            });
-                            output.push(ServiceWorkerManagerEvent::ImportScriptsRequested {
-                                registration_id,
-                                request_id,
-                                urls,
-                                bypass_cache,
-                            });
+                            if self.restoring_active.contains(&registration_id) {
+                                let result = self.restored_import_sources(registration_id, &urls);
+                                let _ = self.host.complete_import_scripts(registration_id, request_id, result);
+                            } else if let Some(sources) = self.cached_import_sources(registration_id, &urls) {
+                                let _ = self
+                                    .host
+                                    .complete_import_scripts(registration_id, request_id, Ok(sources));
+                            } else {
+                                self.pending_import_requests
+                                    .insert((registration_id, request_id), urls.clone());
+                                let bypass_cache = self.registration(registration_id).is_some_and(|registration| {
+                                    registration.update_via_cache == ServiceWorkerUpdateViaCache::None
+                                });
+                                output.push(ServiceWorkerManagerEvent::ImportScriptsRequested {
+                                    registration_id,
+                                    request_id,
+                                    urls,
+                                    bypass_cache,
+                                });
+                            }
                         }
                         Err(error) => {
                             let _ =
@@ -977,6 +982,13 @@ impl ServiceWorkerManager {
                             .map_err(|_| format!("persisted Service Worker imported script is not UTF-8: {url}"))
                     })
             })
+            .collect()
+    }
+
+    fn cached_import_sources(&self, registration_id: u64, urls: &[String]) -> Option<Vec<String>> {
+        let graph = self.imported_scripts.get(&registration_id)?;
+        urls.iter()
+            .map(|url| String::from_utf8(graph.get(url)?.clone()).ok())
             .collect()
     }
 
@@ -1831,6 +1843,42 @@ mod tests {
 
         let next = start_active(&mut manager, "/", "globalThis.version = 3;");
         assert_eq!(manager.slots(&key("/")).unwrap().active, Some(next));
+    }
+
+    #[test]
+    fn repeated_import_uses_version_resource_map_without_refetch() {
+        let mut manager = manager_under_test();
+        let id = start(
+            &mut manager,
+            "/",
+            "importScripts('./dependency.js');
+             const first = globalThis.version;
+             globalThis.version = null;
+             importScripts('./dependency.js');
+             if (globalThis.version !== first) throw new Error('resource map was not reused');",
+        );
+        let (request_id, urls, _) = wait_for_import_request(&mut manager, id);
+        assert_eq!(urls, ["https://example.test/dependency.js"]);
+        manager
+            .complete_import_scripts(
+                id,
+                request_id,
+                Ok(vec![ServiceWorkerImportedScript {
+                    url: urls[0].clone(),
+                    source: "globalThis.version = 'first-response';".into(),
+                }]),
+            )
+            .unwrap();
+
+        wait_for_state(&mut manager, id, ServiceWorkerState::Activated);
+        assert_eq!(
+            manager
+                .imported_scripts
+                .get(&id)
+                .and_then(|graph| graph.get("https://example.test/dependency.js"))
+                .map(Vec::as_slice),
+            Some(b"globalThis.version = 'first-response';".as_slice())
+        );
     }
 
     #[test]
