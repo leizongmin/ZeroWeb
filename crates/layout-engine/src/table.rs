@@ -975,9 +975,7 @@ fn compute_column_widths(
     // （box-sizing 一致于 apply_table_size_conditions）。仅当所有非折叠列均为 auto（无显式
     // width）时整体放大，避免触碰有显式 width 列的 auto-column 分布语义（须单独按 auto 列分配）。
     let table_min_content = table_style.as_ref().and_then(|s| {
-        use zero_css_parser::values::LengthValue;
-        if let LengthValue::Px(v) = &s.min_width {
-            let mw = *v as f32;
+        if let Some(mw) = resolve_table_used_length(&s.min_width, s) {
             if matches!(s.box_sizing, zero_css_parser::values::BoxSizingValue::BorderBox) {
                 let pb =
                     table_box.padding_left + table_box.padding_right + table_box.border_left + table_box.border_right;

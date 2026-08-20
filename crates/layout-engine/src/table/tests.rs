@@ -784,6 +784,53 @@ fn test_table_min_width_relative_length_expands_content_width() {
     );
 }
 
+#[test]
+fn test_table_min_width_relative_length_expands_auto_columns() {
+    use zero_css_parser::values::LengthValue;
+
+    let mut doc = Document::new();
+    let root = doc.root();
+    let table_id = doc.create_element("div");
+    let cell_id = doc.create_element("div");
+    let _ = doc.append_child(root, table_id);
+
+    let mut styles = HashMap::new();
+    let mut table_style = ComputedStyle::default();
+    table_style.display = DisplayValue::Table;
+    table_style.font_size = LengthValue::Px(20.0);
+    table_style.min_width = LengthValue::Em(10.0);
+    styles.insert(table_id, table_style);
+
+    let mut cell_style = ComputedStyle::default();
+    cell_style.display = DisplayValue::TableCell;
+    styles.insert(cell_id, cell_style);
+
+    let content = LayoutBox {
+        width: 50.0,
+        ..Default::default()
+    };
+    let cell_box = LayoutBox {
+        node_id: Some(cell_id),
+        children: vec![content],
+        ..Default::default()
+    };
+    let table_box = LayoutBox {
+        node_id: Some(table_id),
+        children: vec![cell_box],
+        ..Default::default()
+    };
+
+    let grid = build_grid(&table_box, &doc, &styles);
+    let col_widths = compute_column_widths(&table_box, &grid, &styles, &doc, Default::default());
+
+    assert_eq!(col_widths.len(), 1);
+    assert!(
+        (col_widths[0] - 200.0).abs() < 2.0,
+        "table min-width:10em at 20px should expand auto column to 200, got {}",
+        col_widths[0]
+    );
+}
+
 /// `<col>`/`<colgroup>` 的 background-color 应被收集为列背景（CSS Tables §17.5.3）。
 /// visibility:collapse 的列跳过，非透明背景列记录 (node_id, x, width)。
 #[test]

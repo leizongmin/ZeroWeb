@@ -326,3 +326,5 @@ Regular table sizing exposed the paired-row-and-wrapper variant: table postproce
 Table column sizing exposed the explicit-column variant: column width calculation replays `width`, `min-width`, and `max-width` from cells, cols, and colgroups before final table constraints run. Fixing wrapper min/max is not enough; explicit column freezing and auto-column redistribution need the same residual real-length resolver.
 
 Table col prepasses exposed the sibling-prepass variant: a later column sizing helper can have an earlier collection pass that consumes the same CSS width semantics. When fixing a main table width resolver, audit pre-pass collectors for independent `Px/%` branches so col/colgroup declarations do not diverge from cell declarations.
+
+Table min-width redistribution exposed the post-constraint-sync variant: expanding the table wrapper to `min-width` does not automatically expand the column vector consumed by cell positioning and painting. When a layout object has both wrapper constraints and internal track/column arrays, resolve residual real lengths at both consumers.
