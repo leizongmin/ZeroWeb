@@ -1285,7 +1285,7 @@ pub(crate) fn measure_text_content(
         let letter_spacing: f32 = parent_style
             .map(|s| match &s.letter_spacing {
                 zero_style_system::property::types::LengthValue::Px(v) => *v as f32,
-                _ => 0.0,
+                other => zero_style_system::computed::resolve_length(other, font_size as f64, None, None) as f32,
             })
             .unwrap_or(0.0);
         let measure_shaped = |value: &str| {

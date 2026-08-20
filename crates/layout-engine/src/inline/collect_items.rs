@@ -69,10 +69,7 @@ impl InlineFormattingContext {
                                 .map(|s| s.vertical_align.clone())
                                 .unwrap_or(VerticalAlignValue::Baseline);
                             let letter_spacing = style
-                                .map(|s| match &s.letter_spacing {
-                                    LengthValue::Px(v) => *v as f32,
-                                    _ => 0.0,
-                                })
+                                .map(|s| Self::resolve_letter_spacing(&s.letter_spacing, font_size))
                                 .unwrap_or_else(|| {
                                     // paint IFC（空 styles）：使用覆盖映射获取 letter-spacing
                                     parent_id
@@ -462,11 +459,8 @@ impl InlineFormattingContext {
                             .map(|s| s.vertical_align.clone())
                             .unwrap_or(VerticalAlignValue::Baseline);
                         let letter_spacing = style
-                            .map(|s| match &s.letter_spacing {
-                                LengthValue::Px(v) => *v as f32,
-                                _ => 0.0,
-                            })
-                            .unwrap_or(0.0);
+                            .map(|s| Self::resolve_letter_spacing(&s.letter_spacing, font_size))
+                            .unwrap_or_else(|| self.letter_spacing_overrides.get(&child_id).copied().unwrap_or(0.0));
                         let word_spacing = style
                             .map(|s| Self::resolve_word_spacing(&s.word_spacing, font_size))
                             .unwrap_or_else(|| self.word_spacing_overrides.get(&child_id).copied().unwrap_or(0.0));
@@ -571,6 +565,13 @@ impl InlineFormattingContext {
         match value {
             LengthValue::Px(v) => *v as f32,
             LengthValue::Percentage(p) => font_size * (*p as f32 / 100.0),
+            other => zero_style_system::computed::resolve_length(other, font_size as f64, None, None) as f32,
+        }
+    }
+
+    fn resolve_letter_spacing(value: &LengthValue, font_size: f32) -> f32 {
+        match value {
+            LengthValue::Px(v) => *v as f32,
             other => zero_style_system::computed::resolve_length(other, font_size as f64, None, None) as f32,
         }
     }

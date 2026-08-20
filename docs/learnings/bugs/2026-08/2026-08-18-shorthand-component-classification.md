@@ -274,3 +274,5 @@ Use the shared value parsers for token boundaries, then filter by the specific p
 Keep adjacent shorthand users covered with regression tests when a shared classifier changes. `columns: auto 100px` is a good guard because it depends on `auto` not being mistaken for a length.
 
 Line-height exposed the canonicalization fallback variant: even when the normal cascade computed pass usually converts relative `<length-percentage>` values to `Px`, layout used-value helpers must still handle legal residual `LengthValue` variants. Direct apply, tests, and alternate style entry points can bypass early canonicalization; falling back to `normal` silently loses valid `em` and percentage line-height values.
+
+Letter-spacing exposed the same split at paint/layout fallback boundaries: the normal cascade may canonicalize `em` to `Px`, but direct paint fallback, IFC collection, and inline-block remeasure can still see the original `LengthValue`. Spacing-like consumers should resolve legal residual lengths against the current fragment font-size instead of pattern-matching only `Px`.

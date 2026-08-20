@@ -396,6 +396,58 @@ fn test_paint_text_generates_glyph() {
     assert_eq!(glyph.y, 36.0); // text_y + font_size = 20 + 16
 }
 
+#[test]
+fn test_paint_text_letter_spacing_relative_length() {
+    let mut doc = zero_dom::Document::new();
+    let elem = doc.create_element("div");
+    let text = doc.create_text_node("AB");
+    doc.append_child(elem, text).unwrap();
+    let layout = make_box(Some(elem), 0.0, 0.0, 200.0, 50.0);
+
+    let mut style = ComputedStyle::default();
+    style.font_size = LengthValue::Px(20.0);
+    style.color = ColorValue::Rgba(0, 0, 0, 255);
+
+    let mut base = Painter::new();
+    base.paint_text(&layout, 0.0, 0.0, &style, Some(&doc), None);
+    let base_glyphs: Vec<_> = base
+        .primitives()
+        .glyphs
+        .iter()
+        .filter(|glyph| glyph.glyph_id != 0)
+        .collect();
+    let Some(a_base) = base_glyphs.iter().find(|glyph| glyph.glyph_id == 'A' as u32) else {
+        return;
+    };
+    let Some(b_base) = base_glyphs.iter().find(|glyph| glyph.glyph_id == 'B' as u32) else {
+        return;
+    };
+    let base_gap = (b_base.x - a_base.x).abs();
+
+    style.letter_spacing = LengthValue::Em(0.5);
+    style.letter_spacing_normal = false;
+    let mut spaced = Painter::new();
+    spaced.paint_text(&layout, 0.0, 0.0, &style, Some(&doc), None);
+    let spaced_glyphs: Vec<_> = spaced
+        .primitives()
+        .glyphs
+        .iter()
+        .filter(|glyph| glyph.glyph_id != 0)
+        .collect();
+    let Some(a_spaced) = spaced_glyphs.iter().find(|glyph| glyph.glyph_id == 'A' as u32) else {
+        return;
+    };
+    let Some(b_spaced) = spaced_glyphs.iter().find(|glyph| glyph.glyph_id == 'B' as u32) else {
+        return;
+    };
+    let spaced_gap = (b_spaced.x - a_spaced.x).abs();
+
+    assert!(
+        spaced_gap > base_gap + 8.0,
+        "letter-spacing:0.5em 应按 font-size 增大间距: {spaced_gap} vs {base_gap}"
+    );
+}
+
 /// 测试 paint_text 在 font_size <= 0 时不生成 glyph。
 #[test]
 fn test_paint_text_zero_font_size() {

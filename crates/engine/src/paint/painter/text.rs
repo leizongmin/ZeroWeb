@@ -549,7 +549,7 @@ impl super::Painter {
 
         let letter_spacing: f32 = match style.letter_spacing {
             LengthValue::Px(s) => s as f32,
-            _ => 0.0,
+            ref lv => zero_style_system::computed::resolve_length(lv, font_size as f64, None, None) as f32,
         };
         let word_spacing: f32 = match style.word_spacing {
             LengthValue::Px(s) => s as f32,
