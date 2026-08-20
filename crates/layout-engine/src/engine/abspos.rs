@@ -72,6 +72,20 @@ fn resolve_abspos_real_length(
     }
 }
 
+fn resolve_abspos_vcenter_inset(
+    value: &zero_css_parser::values::LengthValue,
+    font_size: &zero_css_parser::values::LengthValue,
+    percentage_basis: f32,
+    viewport_width: f32,
+    viewport_height: f32,
+) -> Option<f32> {
+    use zero_css_parser::values::LengthValue;
+    match value {
+        LengthValue::Percentage(p) => Some(*p as f32 / 100.0 * percentage_basis),
+        other => resolve_abspos_real_length(other, font_size, viewport_width, viewport_height),
+    }
+}
+
 /// 递归调整 fixed 定位元素的坐标为视口相对。
 ///
 /// taffy 将 `position: fixed` 当作 `absolute` 处理，坐标是相对于包含块的。
@@ -647,18 +661,20 @@ pub(super) fn resolve_abspos_against_root_cb(
 pub(super) fn recenter_abspos_margin_auto_vertically(
     box_node: &mut LayoutBox,
     cb_height: f32,
+    viewport_width: f32,
     viewport_height: f32,
     styles: &HashMap<NodeId, ComputedStyle>,
 ) {
     if std::env::var("ZW_ABSPOS_VCENTER").as_deref() == Ok("0") {
         return;
     }
-    recenter_abspos_vcenter_inner(box_node, cb_height, viewport_height, styles);
+    recenter_abspos_vcenter_inner(box_node, cb_height, viewport_width, viewport_height, styles);
 }
 
 fn recenter_abspos_vcenter_inner(
     box_node: &mut LayoutBox,
     cb_height: f32,
+    viewport_width: f32,
     viewport_height: f32,
     styles: &HashMap<NodeId, ComputedStyle>,
 ) {
@@ -667,10 +683,6 @@ fn recenter_abspos_vcenter_inner(
         if (child.is_absolute || child.is_fixed)
             && let Some(s) = child.node_id.and_then(|id| styles.get(&id))
         {
-            // R2085：inset 接受 Px 或 Percentage（Percentage 相对 effective_cb_height 解析，
-            // 见下方；与 Px 等价参与 §10.6.4 方程）。
-            let both_v_inset = matches!(s.top, LengthValue::Px(_) | LengthValue::Percentage(_))
-                && matches!(s.bottom, LengthValue::Px(_) | LengthValue::Percentage(_));
             let mt_auto = matches!(s.margin_top, LengthValue::Auto);
             let mb_auto = matches!(s.margin_bottom, LengthValue::Auto);
             // R2068：仅处理「两侧 margin 均 auto」的垂直居中（taffy 不解此场景，absolute-tables-016
@@ -692,18 +704,28 @@ fn recenter_abspos_vcenter_inner(
             // R2085：扩到 Percentage inset——CSS2.1 §10.6.4 百分比 top/bottom 相对 CB height 解析后
             // 与 Px 等价参与方程（absolute-non-replaced-height-013：top/bottom:50%+height:100+
             // margin:auto in 100px CB）。旧 both_v_inset 仅 Px 漏 Percentage → 013 recenter no-op。
-            if both_v_inset && mt_auto && mb_auto {
-                let effective_cb_height = if child.is_fixed { viewport_height } else { cb_height };
-                let top_px = match &s.top {
-                    LengthValue::Px(v) => *v as f32,
-                    LengthValue::Percentage(p) => *p as f32 / 100.0 * effective_cb_height,
-                    _ => 0.0,
-                };
-                let bottom_px = match &s.bottom {
-                    LengthValue::Px(v) => *v as f32,
-                    LengthValue::Percentage(p) => *p as f32 / 100.0 * effective_cb_height,
-                    _ => 0.0,
-                };
+            // R3596：扩到 residual real length（em/ch/rem/vw/...），但仍显式拒绝 auto 和 intrinsic；
+            // Percentage 继续按 effective_cb_height，而非 resolve_length 的 viewport basis。
+            let effective_cb_height = if child.is_fixed { viewport_height } else { cb_height };
+            if mt_auto
+                && mb_auto
+                && let (Some(top_px), Some(bottom_px)) = (
+                    resolve_abspos_vcenter_inset(
+                        &s.top,
+                        &s.font_size,
+                        effective_cb_height,
+                        viewport_width,
+                        viewport_height,
+                    ),
+                    resolve_abspos_vcenter_inset(
+                        &s.bottom,
+                        &s.font_size,
+                        effective_cb_height,
+                        viewport_width,
+                        viewport_height,
+                    ),
+                )
+            {
                 // §10.6.4：leftover = CB_height − top − bottom − element border-box height
                 //（child.height 是 border-box，已含 border/padding，对 box-sizing 均正确）。
                 // 两侧 margin 均 auto → 各取 leftover/2。R2085：leftover **不钳零**——CSS2.1
@@ -729,7 +751,7 @@ fn recenter_abspos_vcenter_inner(
         } else {
             cb_height
         };
-        recenter_abspos_vcenter_inner(child, child_cb_height, viewport_height, styles);
+        recenter_abspos_vcenter_inner(child, child_cb_height, viewport_width, viewport_height, styles);
     }
 }
 
@@ -786,7 +808,7 @@ mod r2062_tests {
         let (mut parent, styles) =
             make_parent_with_abspos_img(LengthValue::Auto, LengthValue::Auto, LengthValue::Px(100.0));
         // 顶层 cb_height = 父 padding-box = 200（父 positioned，其子的 CB）。
-        recenter_abspos_margin_auto_vertically(&mut parent, 200.0, 600.0, &styles);
+        recenter_abspos_margin_auto_vertically(&mut parent, 200.0, 800.0, 600.0, &styles);
         let img = &parent.children[0];
         // leftover = 200 − 100 = 100；mt=mb 均 auto → 各 50；img 下移 50。
         assert_eq!(img.y, 50.0, "img should shift down by leftover/2 = 50");
@@ -802,7 +824,7 @@ mod r2062_tests {
     fn r2068_abspos_single_auto_margin_left_to_taffy_top() {
         let (mut parent, styles) =
             make_parent_with_abspos_img(LengthValue::Auto, LengthValue::Px(0.0), LengthValue::Px(100.0));
-        recenter_abspos_margin_auto_vertically(&mut parent, 200.0, 600.0, &styles);
+        recenter_abspos_margin_auto_vertically(&mut parent, 200.0, 800.0, 600.0, &styles);
         let img = &parent.children[0];
         assert_eq!(
             img.y, 0.0,
@@ -817,7 +839,7 @@ mod r2062_tests {
     fn r2068_abspos_single_auto_margin_left_to_taffy_bottom() {
         let (mut parent, styles) =
             make_parent_with_abspos_img(LengthValue::Px(0.0), LengthValue::Auto, LengthValue::Px(100.0));
-        recenter_abspos_margin_auto_vertically(&mut parent, 200.0, 600.0, &styles);
+        recenter_abspos_margin_auto_vertically(&mut parent, 200.0, 800.0, 600.0, &styles);
         let img = &parent.children[0];
         assert_eq!(
             img.y, 0.0,
@@ -834,7 +856,7 @@ mod r2062_tests {
     #[test]
     fn r2072_abspos_height_auto_now_processed() {
         let (mut parent, styles) = make_parent_with_abspos_img(LengthValue::Auto, LengthValue::Auto, LengthValue::Auto);
-        recenter_abspos_margin_auto_vertically(&mut parent, 200.0, 600.0, &styles);
+        recenter_abspos_margin_auto_vertically(&mut parent, 200.0, 800.0, 600.0, &styles);
         let img = &parent.children[0];
         // top=0, bottom=0, child.height=100, cb=200 → leftover=100, half=50, SET y=0+50=50.
         assert_eq!(img.y, 50.0, "height:auto both-auto now centered via SET (R2072)");
@@ -885,7 +907,7 @@ mod r2062_tests {
             children: vec![container_box],
             ..Default::default()
         };
-        recenter_abspos_margin_auto_vertically(&mut root_box, 999.0, 600.0, &styles);
+        recenter_abspos_margin_auto_vertically(&mut root_box, 999.0, 800.0, 600.0, &styles);
         let img = &root_box.children[0].children[0];
         assert_eq!(
             img.y, 50.0,
@@ -930,7 +952,7 @@ mod r2062_tests {
             children: vec![img_box],
             ..Default::default()
         };
-        recenter_abspos_margin_auto_vertically(&mut parent_box, 300.0, 600.0, &styles);
+        recenter_abspos_margin_auto_vertically(&mut parent_box, 300.0, 800.0, 600.0, &styles);
         let img = &parent_box.children[0];
         assert_eq!(
             img.y, 250.0,
@@ -1022,7 +1044,7 @@ mod r2062_tests {
             ..Default::default()
         };
         // cb_height=200：top=bottom=50（25% of 200），leftover=200-50-50-50=50，half=25，y=75。
-        recenter_abspos_margin_auto_vertically(&mut parent_box, 200.0, 600.0, &styles);
+        recenter_abspos_margin_auto_vertically(&mut parent_box, 200.0, 800.0, 600.0, &styles);
         let img = &parent_box.children[0];
         assert_eq!(
             img.y, 75.0,
@@ -1030,6 +1052,92 @@ mod r2062_tests {
         );
         assert_eq!(img.margin_top, 25.0);
         assert_eq!(img.margin_bottom, 25.0);
+    }
+
+    /// R3596：real-length top/bottom inset should participate in abspos vertical
+    /// both-auto margin centering after resolving against the element font context.
+    #[test]
+    fn r3596_abspos_relative_length_inset_centers() {
+        let mut doc = zero_dom::Document::new();
+        let root = doc.root();
+        let parent = doc.create_element("div");
+        let img = doc.create_element("img");
+        let _ = doc.append_child(root, parent);
+        let _ = doc.append_child(parent, img);
+        let mut styles = HashMap::new();
+        let mut sp = ComputedStyle::default();
+        sp.position = zero_style_system::property::types::PositionValue::Relative;
+        styles.insert(parent, sp);
+        let mut si = ComputedStyle::default();
+        si.font_size = LengthValue::Px(20.0);
+        si.top = LengthValue::Em(1.0);
+        si.bottom = LengthValue::Em(2.0);
+        si.height = LengthValue::Px(50.0);
+        si.margin_top = LengthValue::Auto;
+        si.margin_bottom = LengthValue::Auto;
+        si.position = zero_style_system::property::types::PositionValue::Absolute;
+        styles.insert(img, si);
+        let img_box = LayoutBox {
+            node_id: Some(img),
+            is_absolute: true,
+            width: 100.0,
+            height: 50.0,
+            ..Default::default()
+        };
+        let mut parent_box = LayoutBox {
+            node_id: Some(parent),
+            is_relative: true,
+            height: 200.0,
+            children: vec![img_box],
+            ..Default::default()
+        };
+        // top=20, bottom=40, leftover=200-20-40-50=90, half=45, y=65.
+        recenter_abspos_margin_auto_vertically(&mut parent_box, 200.0, 800.0, 600.0, &styles);
+        let img = &parent_box.children[0];
+        assert_eq!(img.y, 65.0);
+        assert_eq!(img.margin_top, 45.0);
+        assert_eq!(img.margin_bottom, 45.0);
+    }
+
+    /// R3596：fixed uses the viewport as its vertical centering CB while resolving
+    /// residual real-length insets with the element font context.
+    #[test]
+    fn r3596_fixed_relative_length_inset_centers_against_viewport() {
+        let mut doc = zero_dom::Document::new();
+        let root = doc.root();
+        let parent = doc.create_element("div");
+        let img = doc.create_element("img");
+        let _ = doc.append_child(root, parent);
+        let _ = doc.append_child(parent, img);
+        let mut styles = HashMap::new();
+        let mut si = ComputedStyle::default();
+        si.font_size = LengthValue::Px(20.0);
+        si.top = LengthValue::Em(0.5);
+        si.bottom = LengthValue::Em(1.0);
+        si.height = LengthValue::Px(100.0);
+        si.margin_top = LengthValue::Auto;
+        si.margin_bottom = LengthValue::Auto;
+        si.position = zero_style_system::property::types::PositionValue::Fixed;
+        styles.insert(img, si);
+        let img_box = LayoutBox {
+            node_id: Some(img),
+            is_fixed: true,
+            width: 100.0,
+            height: 100.0,
+            ..Default::default()
+        };
+        let mut parent_box = LayoutBox {
+            node_id: Some(parent),
+            height: 300.0,
+            children: vec![img_box],
+            ..Default::default()
+        };
+        // viewport=600: top=10, bottom=20, leftover=470, half=235, y=245.
+        recenter_abspos_margin_auto_vertically(&mut parent_box, 300.0, 800.0, 600.0, &styles);
+        let img = &parent_box.children[0];
+        assert_eq!(img.y, 245.0);
+        assert_eq!(img.margin_top, 235.0);
+        assert_eq!(img.margin_bottom, 235.0);
     }
 
     /// R2085：over-constrained（显式 height > CB−insets）both-auto 居中——CSS2.1 §10.6.4
@@ -1073,7 +1181,7 @@ mod r2062_tests {
         // cb_height=100：top=bottom=50（50%），height=100，leftover=100-50-50-100=−100，
         // half=−50，y=50+(−50)=0（green 填满 100×100 red CB 顶部，no red 可见）。旧 .max(0.0)
         // 钳零 → half=0 → y=50（仅覆盖下半，上半红可见 → 013 FAIL）。
-        recenter_abspos_margin_auto_vertically(&mut parent_box, 100.0, 600.0, &styles);
+        recenter_abspos_margin_auto_vertically(&mut parent_box, 100.0, 800.0, 600.0, &styles);
         let child = &parent_box.children[0];
         assert_eq!(
             child.y, 0.0,

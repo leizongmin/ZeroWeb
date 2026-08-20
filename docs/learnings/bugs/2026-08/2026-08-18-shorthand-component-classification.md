@@ -308,3 +308,5 @@ Fixed positioning exposed the stretch-postprocess variant: position correction a
 Viewport abspos exposed the coordinate-vs-stretch split: resolving `left` and `top` used values does not cover `width:auto` or `height:auto` stretch from opposing insets. For positioned layout, audit coordinates and auto-size equations as separate consumers even when they share the same containing block.
 
 Root self positioning exposed the top-level-special-case variant: root elements often bypass child traversal helpers. When a child-positioning bug is fixed in viewport or root-CB postprocess code, audit root self helpers separately for both position and auto-size equations.
+
+Abspos auto-margin centering exposed the equation-consumer variant: positioned layout does not only consume inset values for coordinates and stretch. Any pass that re-solves a CSS positioning equation, such as vertical `margin:auto` centering, must resolve residual real lengths with the same font and viewport context while keeping percentage basis explicit.
