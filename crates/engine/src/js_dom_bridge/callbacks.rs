@@ -132,7 +132,12 @@ pub fn register_dom_callbacks(
     // `performance.now()`——DOMHighResTimeStamp（ms，单调时钟，自 time origin 起，子毫秒精度）。
     // analytics / 动画计时 / rAF timestamp 高频查询。time origin = 回调注册时刻（页面/脚本启动近似），
     // 回调返 elapsed ms（f64 串）。Instant 单调且 Send+Sync，闭包仅借 &origin 故为 Fn。
-    let perf_origin = std::time::Instant::now();
+    // js-dom M4 R138：origin 提为线程本地共享（`shared_perf_origin`）——native Event.timeStamp
+    //（dom_bindings event.rs `perf_now_ms`）此前用**自有 origin**（首次构造 Event 时 Instant::now），
+    // 与 performance.now() 的 origin 独立 → WPT Event-timestamp-high-resolution 断言
+    // `ev.timeStamp >= before = performance.now()` 恒 false（native timeStamp 从更晚的 origin
+    // 起算，数值远小）。共享 origin 后两钟同源（spec「same time origin as performance.now()」）。
+    let perf_origin = shared_perf_origin();
     sandbox.register_callback(
         "__zw_performance_now",
         Box::new(move |_args| format!("{}", perf_origin.elapsed().as_secs_f64() * 1000.0)),
@@ -1747,6 +1752,11 @@ pub fn register_dom_callbacks(
 }
 
 thread_local! {
+    /// js-dom M4 R138：performance.now() 与 native Event.timeStamp 的**共享 time origin**
+    ///（spec DOM：Event timeStamp 与 performance.now() 同 time origin——WPT
+    /// Event-timestamp-high-resolution 断言 `ev.timeStamp >= performance.now()` 取自
+    /// 创建前）。`shared_perf_origin()` 懒初始化（进程级近似：两消费者 whichever first）。
+    static SHARED_PERF_ORIGIN: std::cell::OnceCell<std::time::Instant> = const { std::cell::OnceCell::new() };
     /// js-dom M3 R100：已应用 mutation 的线程本地历史（read 回调跨注册回落源）。
     ///
     /// 旧架构下 `run_page_scripts` 注册的回调闭包持有**未清空**的 mutations Vec，后续
@@ -1784,6 +1794,15 @@ thread_local! {
     /// `RefCell<Option<..>>` 承载（thread_local 值语义不可变，需换柄发布）。
     static FORWARD_HANDLE_MAP: std::cell::RefCell<Option<Arc<Mutex<HashMap<String, String>>>>> =
         const { std::cell::RefCell::new(None) };
+}
+
+/// js-dom M4 R138：performance.now() 回调与 native Event.timeStamp 的共享 time origin
+///（懒初始化，两消费者 whichever first 锁定）。spec DOM 要求 Event timeStamp 与
+/// performance.now() **同 time origin**（WPT Event-timestamp-high-resolution 断言
+/// `ev.timeStamp >= performance.now()` 取自创建前——独立 origin 时 native timeStamp
+/// 从更晚起点算，数值恒小于 performance.now() 而断言失败）。
+pub fn shared_perf_origin() -> std::time::Instant {
+    SHARED_PERF_ORIGIN.with(|slot| *slot.get_or_init(std::time::Instant::now))
 }
 
 /// js-dom M3 R100：发布正置 handle→selector 表（webview 在 mutation 应用后调用；传

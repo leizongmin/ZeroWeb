@@ -6452,6 +6452,62 @@
     }
     return true;
   };
+  // R138（js-dom M4）：事件方法族上 Event.prototype——native 叠加路径下 native
+  // MouseEvent/KeyboardEvent（V8 FunctionTemplate，R109 已把 prototype 重接到 shim
+  // UIEvent.prototype）实例化的对象**没有** shim `_makeEvent` 的 own 方法
+  //（stopPropagation/preventDefault/stopImmediatePropagation 等 own 挂在工厂普通对象上），
+  // listener 内 `event.stopPropagation()` 报 "not a function"（WPT
+  // Event-stopPropagation-cancel-bubbling native 1F 根因）。幂等补挂到
+  // Event.prototype（shim 工厂产物 own 已有同名方法遮蔽原型——语义零变化；native
+  // 子类实例经 R109 重接链可达）。语义与 _makeEvent own 版逐字相同（同一 flag 后端：
+  // _propagationStopped/_immediateStopped/_defaultPrevented/_zwInPassive/_composedPath）。
+  (function () {
+    var _r138EP = globalThis.Event && globalThis.Event.prototype;
+    if (!_r138EP) return;
+    var _r138Defs = {
+      composedPath: function() { return this._composedPath ? this._composedPath.slice() : []; },
+      preventDefault: function() {
+        if (this._zwInPassive) return;
+        if (this.cancelable) { this.defaultPrevented = true; this._defaultPrevented = true; }
+      },
+      stopPropagation: function() { this._propagationStopped = true; },
+      stopImmediatePropagation: function() {
+        this._immediateStopped = true;
+        this._propagationStopped = true;
+      },
+    };
+    // R138 续：returnValue / srcElement accessor 上原型（native 实例无 own 版——
+    // shim 工厂 own accessor 在先，原型版对 shim 产物冗余、对 native 实例补位）。
+    // returnValue（R28）：getter = !canceled；srcElement（R32）：getter 读 target。
+    if (!Object.prototype.hasOwnProperty.call(_r138EP, 'returnValue')) {
+      try {
+        Object.defineProperty(_r138EP, 'returnValue', {
+          get: function() { return !this._defaultPrevented && this.defaultPrevented !== true; },
+          set: function(v) {
+            if (!v && this.cancelable && !this._zwInPassive) { this.defaultPrevented = true; this._defaultPrevented = true; }
+          },
+          configurable: true, enumerable: false,
+        });
+      } catch (_e138rv) {}
+    }
+    if (!Object.prototype.hasOwnProperty.call(_r138EP, 'srcElement')) {
+      try {
+        Object.defineProperty(_r138EP, 'srcElement', {
+          get: function() { return this.target; },
+          configurable: true, enumerable: false,
+        });
+      } catch (_e138se) {}
+    }
+    for (var _r138k in _r138Defs) {
+      if (Object.prototype.hasOwnProperty.call(_r138Defs, _r138k)
+          && !_r138EP.hasOwnProperty(_r138k)) {
+        try {
+          Object.defineProperty(_r138EP, _r138k,
+            { value: _r138Defs[_r138k], writable: true, configurable: true, enumerable: false });
+        } catch (_e138d) {}
+      }
+    }
+  })();
   // R23：`Event` eventPhase 常量（spec `Event` 接口的静态 + 原型属性，WPT Event-constants.html testConstants）。
   // 挂在**接口对象**（Event 构造器，静态常量）+ **Event.prototype**（实例经原型链继承）。spec DOM：
   // NONE=0、CAPTURING_PHASE=1、AT_TARGET=2、BUBBLING_PHASE=3。createEvent('Event')/createEvent('CustomEvent')

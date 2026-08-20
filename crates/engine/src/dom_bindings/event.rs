@@ -33,9 +33,12 @@ use super::event_target::{native_stop_immediate_invoke, native_stop_propagation_
 /// 复用 polyfill `__zw_performance_now` 同款 `Instant` 语义：进程级 origin（`OnceLock`，首次构造 Event 时
 /// 懒初始化）+ `elapsed()` ms。**不要求与 polyfill perf_origin 完全一致**——spec 仅要求单调 + 连续创建非零差
 ///（解锁死循环 + spec 合规）。`OnceLock<Instant>` lazy init 线程安全；`Instant::elapsed` 无锁纯读。
+// R138（js-dom M4）：改用**共享 origin**（`js_dom_bridge::callbacks::shared_perf_origin`——
+// performance.now() 回调与 Event.timeStamp 同一 Instant）。spec DOM 要求两者同 time origin
+//（WPT Event-timestamp-high-resolution 断言 `ev.timeStamp >= before = performance.now()`）；
+// 自有 origin 起点晚于回调注册 → timeStamp 数值恒小于 performance.now() 断言失败。
 fn perf_time_origin() -> std::time::Instant {
-    static ORIGIN: std::sync::OnceLock<std::time::Instant> = std::sync::OnceLock::new();
-    *ORIGIN.get_or_init(std::time::Instant::now)
+    crate::js_dom_bridge::shared_perf_origin()
 }
 
 /// 当前 DOMHighResTimeStamp（ms，自 [`perf_time_origin`] 起的单调 elapsed）。供 `Event.timeStamp` 用。

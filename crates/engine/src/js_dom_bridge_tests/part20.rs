@@ -1931,3 +1931,65 @@ has-sc:true|shadow-root:true|shadow-composed:true|sr-parent-null:true",
         "R136 getRootNode 泛型：四形态 detached 自根 + fragment 子沿链 + document 自根 + 挂载元素到 document + shadow 子无 composed 返 shadowRoot/composed 穿 host 到 document + shadow root parentNode 恒 null"
     );
 }
+
+// R138（js-dom M4）：native 叠加路径的事件方法族可达性 + srcElement/returnValue——
+// native MouseEvent 实例（V8 FunctionTemplate 产物）没有 shim `_makeEvent` 的 own
+// stopPropagation/preventDefault（own 挂工厂普通对象上），listener 内
+// `event.stopPropagation()` 报 "not a function"；own data srcElement=null 遮蔽原型
+// accessor；无 returnValue。修：事件方法族 + returnValue/srcElement accessor 幂等上
+// Event.prototype（shim 产物 own 遮蔽零变化，native 实例经 R109 重接链可达）+
+// _dispatchWithBubble 设 target 时同步 own-set srcElement。
+#[test]
+fn test_event_proto_methods_native_overlay_r138() {
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let mut sandbox = V8Sandbox::with_config(zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    })
+    .unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><div id=\"a\">A</div></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry);
+
+    let out = sandbox
+        .execute(
+            "var parts = [];\
+             // Event.prototype 方法族（R138 幂等补挂——shim 产物 own 遮蔽，原型版对
+             // native 实例补位；此处验证 shim 路径语义不变）。
+             parts.push('proto-stop:' + (typeof Event.prototype.stopPropagation === 'function'));\
+             parts.push('proto-prevent:' + (typeof Event.prototype.preventDefault === 'function'));\
+             parts.push('proto-imm:' + (typeof Event.prototype.stopImmediatePropagation === 'function'));\
+             parts.push('proto-rv:' + (typeof Event.prototype.returnValue));\
+             parts.push('proto-src:' + (typeof Event.prototype.srcElement));\
+             // dispatch：capture stopPropagation 止同元素 bubble listener（WPT
+             // Event-stopPropagation-cancel-bubbling 语义）+ srcElement own-set。
+             var el = document.createElement('div');\
+             var bubbleRan = false;\
+             el.addEventListener('click', function () { event.stopPropagation(); }, { capture: true });\
+             el.addEventListener('click', function () { bubbleRan = true; });\
+             var ce = new MouseEvent('click', { bubbles: true, cancelable: true });\
+             el.dispatchEvent(ce);\
+             parts.push('bubble-stopped:' + !bubbleRan);\
+             parts.push('src-is-target:' + (ce.srcElement === el));\
+             parts.push('rv-true:' + (ce.returnValue === true));\
+             parts.push('phase-0:' + (ce.eventPhase === 0));\
+             parts.push('ct-null:' + (ce.currentTarget === null));\
+             parts.join('|');",
+        )
+        .unwrap()
+        .value;
+    assert_eq!(
+        out,
+        "proto-stop:true|proto-prevent:true|proto-imm:true|proto-rv:boolean|proto-src:undefined|\
+bubble-stopped:true|src-is-target:true|rv-true:true|phase-0:true|ct-null:true"
+            ,
+        "R138 事件方法族原型补挂 + dispatch srcElement/returnValue"
+    );
+}

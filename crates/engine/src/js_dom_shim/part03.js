@@ -2735,6 +2735,12 @@
   function _dispatchWithBubble(targetKey, targetSel, targetHandle, event, targetSlot) {
     var target = _makeProxy(targetSel, targetHandle);
     event.target = target;
+    // R138（js-dom M4）：srcElement 同步设——shim 工厂事件的 srcElement 是 accessor
+    // getter（读 this.target 自动跟随），但 native 叠加路径的 native MouseEvent 实例
+    // own data 属性 srcElement=null（构造器 set_event_init 设）遮蔽原型 getter →
+    // dispatch 后读仍 null（WPT Event-dispatch-click "event state during post-click
+    // handling" native 1F 根因）。own-set 覆盖 data 属性，两种形态统一。
+    try { event.srcElement = target; } catch (_e138s) {}
     // js-dom M4 R106：spec dispatch flag——派发进行中的 event 再 dispatchEvent 抛
     // InvalidStateError（WPT EventTarget-dispatchEvent "If the event's dispatch flag
     // is set"）。嵌套安全计数（listener 内派发其他 event 合法；finally 复位）。
