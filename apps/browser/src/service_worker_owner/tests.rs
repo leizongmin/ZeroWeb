@@ -179,13 +179,13 @@ fn module_registration_type_reaches_browser_manager() {
     ));
     attach_script_plan(&mut owner, plan, "export const value = 1;");
     let response = wait_for_response(&mut owner);
-    assert!(matches!(
-        response.params.result,
-        Err(ServiceWorkerError {
-            code: ServiceWorkerErrorCode::Internal,
-            message,
-        }) if message.contains("module graph loader")
-    ));
+    let Ok(ServiceWorkerResult::Registered { registration_id }) = response.params.result else {
+        panic!("module registration failed");
+    };
+    assert_eq!(
+        owner.normal.registration(registration_id).unwrap().script_type,
+        ServiceWorkerScriptType::Module
+    );
 }
 
 #[test]
@@ -304,6 +304,7 @@ fn imported_script_response_enforces_mime_and_allows_cross_origin_no_cors() {
         validate_imported_script_response(
             "https://cdn.test/dependency.js",
             "https://example.test",
+            false,
             response(vec![("Content-Type".into(), "text/plain".into())]),
         )
         .is_err()
@@ -312,6 +313,7 @@ fn imported_script_response_enforces_mime_and_allows_cross_origin_no_cors() {
         validate_imported_script_response(
             "https://cdn.test/dependency.js",
             "https://example.test",
+            false,
             response(vec![("Content-Type".into(), "text/javascript".into())]),
         )
         .is_ok()
@@ -320,6 +322,7 @@ fn imported_script_response_enforces_mime_and_allows_cross_origin_no_cors() {
         validate_imported_script_response(
             "https://cdn.test/dependency.js",
             "https://example.test",
+            false,
             response(vec![
                 ("Content-Type".into(), "text/javascript; charset=utf-8".into()),
                 ("Access-Control-Allow-Origin".into(), "https://example.test".into()),
@@ -331,6 +334,7 @@ fn imported_script_response_enforces_mime_and_allows_cross_origin_no_cors() {
         validate_imported_script_response(
             "https://cdn.test/dependency.js",
             "https://example.test",
+            false,
             Ok(HttpResponse {
                 status_code: 200,
                 headers: vec![
@@ -341,6 +345,15 @@ fn imported_script_response_enforces_mime_and_allows_cross_origin_no_cors() {
                 url: "http://cdn.test/dependency.js".into(),
                 redirect_count: 1,
             }),
+        )
+        .is_err()
+    );
+    assert!(
+        validate_imported_script_response(
+            "https://cdn.test/dependency.js",
+            "https://example.test",
+            true,
+            response(vec![("Content-Type".into(), "text/javascript".into())]),
         )
         .is_err()
     );
@@ -426,6 +439,48 @@ fn ipc_event_time_import_uses_owned_renderer_after_evaluation_response() {
     let plan = wait_for_import_plan(&mut owner);
     assert_eq!(plan.tab_id(), TabId(7));
     assert_eq!(plan.urls(), ["https://example.test/event-import.js"]);
+}
+
+#[test]
+fn ipc_module_request_preserves_referrer_and_fetch_policy() {
+    let mut owner = BrowserServiceWorkerOwner::new();
+    let mut request = register_request("https://example.test/page");
+    if let ServiceWorkerOperation::Register {
+        script_type,
+        update_via_cache,
+        ..
+    } = &mut request.operation
+    {
+        *script_type = ServiceWorkerScriptTypeWire::Module;
+        *update_via_cache = ServiceWorkerUpdateViaCacheWire::None;
+    }
+    let disposition = owner.begin_request(TabId(8), false, 49, Some("https://example.test/page"), request);
+    attach_script(&mut owner, disposition, "import './lib/entry.js';");
+    let _ = owner.poll();
+    let evaluate = owner
+        .take_host_commands()
+        .into_iter()
+        .find(|outgoing| matches!(outgoing.params.command, ServiceWorkerHostCommand::Evaluate { .. }))
+        .expect("missing renderer evaluation command");
+    let registration_id = evaluate.params.registration_id;
+
+    owner.inject_host_event(
+        TabId(8),
+        false,
+        ServiceWorkerHostEventParams {
+            registration_id,
+            event: ServiceWorkerHostEvent::ModuleScriptsRequested {
+                request_id: 10,
+                referrer_url: "https://example.test/sw.js".into(),
+                specifiers: vec!["./lib/entry.js".into()],
+            },
+        },
+    );
+    let plan = wait_for_import_plan(&mut owner);
+    assert_eq!(plan.tab_id(), TabId(8));
+    assert_eq!(plan.urls(), ["https://example.test/lib/entry.js"]);
+    assert!(plan.bypass_cache());
+    assert!(plan.is_module());
 }
 
 #[test]

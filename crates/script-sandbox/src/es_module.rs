@@ -307,7 +307,7 @@ fn build_module_script(
             continue;
         }
         if trimmed.starts_with("import ") {
-            output.push_str(&transform_import(trimmed, registry, visited)?);
+            output.push_str(&transform_import(trimmed, url, registry, visited)?);
         } else if trimmed.starts_with("export ") {
             output.push_str(&transform_export(trimmed)?);
         } else {
@@ -350,7 +350,7 @@ fn build_dep_iife(
             continue;
         }
         if trimmed.starts_with("import ") {
-            output.push_str(&transform_import(trimmed, registry, visited)?);
+            output.push_str(&transform_import(trimmed, specifier, registry, visited)?);
         } else if trimmed.starts_with("export ") {
             output.push_str(&transform_export(trimmed)?);
         } else {
@@ -387,6 +387,7 @@ fn inline_dep_once(
 /// 转换 import 声明。
 fn transform_import(
     line: &str,
+    importer_url: &str,
     registry: &ModuleRegistry,
     visited: &mut HashSet<String>,
 ) -> Result<String, ScriptError> {
@@ -394,7 +395,8 @@ fn transform_import(
 
     // import 'module' — 副作用导入
     if rest.starts_with('\'') || rest.starts_with('"') || rest.starts_with('`') {
-        let specifier = extract_string_literal(rest.split(';').next().unwrap_or(rest).trim())?;
+        let raw_specifier = extract_string_literal(rest.split(';').next().unwrap_or(rest).trim())?;
+        let specifier = resolve_registered_specifier(&raw_specifier, importer_url, registry);
         // 执行副作用（内联执行模块体但不使用返回值）
         if !visited.contains(&specifier) {
             visited.insert(specifier.clone());
@@ -409,7 +411,8 @@ fn transform_import(
         && let Some(from_pos) = rest.find(" from ")
     {
         let ns_name = rest[as_pos + 5..from_pos].trim();
-        let specifier = extract_import_specifier_from_rest(&rest[from_pos + 6..])?;
+        let raw_specifier = extract_import_specifier_from_rest(&rest[from_pos + 6..])?;
+        let specifier = resolve_registered_specifier(&raw_specifier, importer_url, registry);
         // R3398：防循环/菱形 import 无限递归（仅首次访问时内联依赖 IIFE；已访问 → 空对象占位，
         // 避免 a↔b 循环致栈溢出 abort）。镜像 import 'm' 副作用导入的 visited 守卫（line 378）。
         let dep_code = inline_dep_once(&specifier, registry, visited)?;
@@ -421,7 +424,8 @@ fn transform_import(
         && let Some(from_pos) = rest.find(" from ")
     {
         let bindings = rest[..from_pos].trim();
-        let specifier = extract_import_specifier_from_rest(&rest[from_pos + 6..])?;
+        let raw_specifier = extract_import_specifier_from_rest(&rest[from_pos + 6..])?;
+        let specifier = resolve_registered_specifier(&raw_specifier, importer_url, registry);
         let safe = safe_ident(&specifier);
         let dep_code = inline_dep_once(&specifier, registry, visited)?;
         let mut result = format!("  var _mod_{safe} = {dep_code};\n");
@@ -432,7 +436,8 @@ fn transform_import(
     // import X from 'module' — 默认导入
     if let Some(from_pos) = rest.find(" from ") {
         let name = rest[..from_pos].trim();
-        let specifier = extract_import_specifier_from_rest(&rest[from_pos + 6..])?;
+        let raw_specifier = extract_import_specifier_from_rest(&rest[from_pos + 6..])?;
+        let specifier = resolve_registered_specifier(&raw_specifier, importer_url, registry);
         let dep_code = inline_dep_once(&specifier, registry, visited)?;
         // R3398：旧实现把 dep_code（整段 IIFE）字符串拼接 3 次 → 模块副作用执行 3 次（正确性
         // + 性能 + 资源放大）。改为求值一次存变量，default fallback 引用该变量。
@@ -442,6 +447,25 @@ fn transform_import(
     }
 
     Ok(String::new())
+}
+
+fn resolve_registered_specifier(specifier: &str, importer_url: &str, registry: &ModuleRegistry) -> String {
+    if registry.get(specifier).is_some() {
+        return specifier.to_string();
+    }
+    let Ok(base) = url::Url::parse(importer_url) else {
+        return specifier.to_string();
+    };
+    let Ok(mut resolved) = base.join(specifier) else {
+        return specifier.to_string();
+    };
+    resolved.set_fragment(None);
+    let resolved = resolved.to_string();
+    if registry.get(&resolved).is_some() {
+        resolved
+    } else {
+        specifier.to_string()
+    }
 }
 
 /// 从 `from '...'` 部分提取模块标识符。
@@ -527,20 +551,92 @@ fn transform_export(line: &str) -> Result<String, ScriptError> {
 
 // ── 辅助函数 ──
 
-/// 按分号拆分语句。
+/// Split top-level module statements without breaking multiline function or arrow bodies.
 fn split_statements(source: &str) -> Vec<String> {
     let mut stmts = Vec::new();
-    for line in source.lines() {
-        let line = line.trim();
-        if line.is_empty() {
+    let mut current = String::new();
+    let mut braces = 0usize;
+    let mut parens = 0usize;
+    let mut brackets = 0usize;
+    let mut quote = None;
+    let mut escaped = false;
+    let mut line_comment = false;
+    let mut block_comment = false;
+    let chars = source.chars().collect::<Vec<_>>();
+    let mut index = 0usize;
+    while index < chars.len() {
+        let ch = chars[index];
+        let next = chars.get(index + 1).copied();
+        if line_comment {
+            current.push(ch);
+            if ch == '\n' {
+                line_comment = false;
+            }
+            index += 1;
             continue;
         }
-        for part in line.split(';') {
-            let part = part.trim();
-            if !part.is_empty() {
-                stmts.push(part.to_string());
+        if block_comment {
+            current.push(ch);
+            if ch == '*' && next == Some('/') {
+                current.push('/');
+                block_comment = false;
+                index += 2;
+            } else {
+                index += 1;
             }
+            continue;
         }
+        if let Some(delimiter) = quote {
+            current.push(ch);
+            if escaped {
+                escaped = false;
+            } else if ch == '\\' {
+                escaped = true;
+            } else if ch == delimiter {
+                quote = None;
+            }
+            index += 1;
+            continue;
+        }
+        if ch == '/' && next == Some('/') {
+            current.push(ch);
+            current.push('/');
+            line_comment = true;
+            index += 2;
+            continue;
+        }
+        if ch == '/' && next == Some('*') {
+            current.push(ch);
+            current.push('*');
+            block_comment = true;
+            index += 2;
+            continue;
+        }
+        match ch {
+            '\'' | '"' | '`' => quote = Some(ch),
+            '{' => braces += 1,
+            '}' => braces = braces.saturating_sub(1),
+            '(' => parens += 1,
+            ')' => parens = parens.saturating_sub(1),
+            '[' => brackets += 1,
+            ']' => brackets = brackets.saturating_sub(1),
+            _ => {}
+        }
+        let top_level = braces == 0 && parens == 0 && brackets == 0;
+        if (ch == ';' || ch == '\n') && top_level {
+            let statement = current.trim();
+            if !statement.is_empty() {
+                stmts.push(statement.to_string());
+            }
+            current.clear();
+        } else {
+            current.push(ch);
+        }
+        index += 1;
+    }
+    let statement = current.trim();
+    if !statement.is_empty() {
+        stmts.push(statement.to_string());
     }
     stmts
 }
@@ -827,6 +923,38 @@ mod tests {
             .execute_module("import { doubled } from './b.js'\nexport default doubled", None)
             .unwrap();
         assert!(r.namespace_json.contains("10"));
+    }
+
+    #[test]
+    fn test_chain_imports_resolve_canonical_urls_per_importer() {
+        let mut sb = EsModuleSandbox::new().unwrap();
+        sb.register_module(
+            "https://example.test/workers/lib/entry.js",
+            "import { val } from './value.js'; export const doubled = val * 2",
+        );
+        sb.register_module("https://example.test/workers/lib/value.js", "export const val = 6");
+        let result = sb
+            .execute_module(
+                "import { doubled } from './lib/entry.js'; export default doubled",
+                Some("https://example.test/workers/sw.js"),
+            )
+            .unwrap();
+        assert!(result.namespace_json.contains("12"));
+    }
+
+    #[test]
+    fn test_multiline_arrow_function_is_not_split() {
+        let mut sandbox = EsModuleSandbox::new().unwrap();
+        let result = sandbox
+            .execute_module(
+                "export const imported = 'module';
+                 globalThis.onmessage = msg => {
+                   globalThis.received = msg;
+                 };",
+                Some("https://example.test/module.js"),
+            )
+            .unwrap();
+        assert!(result.namespace_json.contains("module"));
     }
 
     // R3398：循环 import（a↔b）旧实现无限递归 → 栈溢出 abort（实测 `has overflowed its stack`）。

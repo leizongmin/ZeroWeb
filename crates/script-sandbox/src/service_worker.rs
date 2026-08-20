@@ -1,7 +1,11 @@
 //! Typed Service Worker script runtime.
 
 use crate::threaded_runtime::ThreadedRuntimeCore;
-use crate::{Sandbox, SandboxConfig, ScriptError};
+use crate::{
+    ModuleRegistry, Sandbox, SandboxConfig, ScriptError, compile_module_script, extract_dynamic_import_specifiers,
+    extract_static_module_import_specifiers,
+};
+use std::collections::HashSet;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::mpsc;
 use std::sync::{Arc, Mutex};
@@ -17,6 +21,7 @@ enum ServiceWorkerCommand {
     Evaluate {
         script: String,
         script_url: String,
+        is_module: bool,
     },
     DispatchLifecycle {
         event_id: u64,
@@ -239,6 +244,9 @@ const SERVICE_WORKER_BOOTSTRAP: &str = r#"
   globalThis.URLSearchParams = globalThis.URLSearchParams || URLSearchParams;
   globalThis.WorkerLocation = WorkerLocation;
   globalThis.Client = Client;
+  globalThis.oninstall = null;
+  globalThis.onactivate = null;
+  globalThis.onmessage = null;
   globalThis.addEventListener = function(type, listener) {
     if (typeof listener !== 'function') return;
     (listeners[String(type)] || (listeners[String(type)] = [])).push(listener);
@@ -441,6 +449,15 @@ pub enum ServiceWorkerEvent {
     },
     /// The runtime thread exited.
     Closed,
+    /// A module worker static dependency batch requires host-owned fetching.
+    ModuleScriptsRequested {
+        /// Runtime-local request ID used to correlate the blocking response.
+        request_id: u64,
+        /// Canonical URL of the module containing these import specifiers.
+        referrer_url: String,
+        /// Static import specifiers in source order.
+        specifiers: Vec<String>,
+    },
 }
 
 /// One worker-to-client message emitted during a worker event.
@@ -489,6 +506,8 @@ impl ServiceWorkerRuntime {
                 let import_event_sender = event_sender.clone();
                 let import_response_receiver = Arc::new(Mutex::new(import_response_receiver));
                 let next_import_request_id = Arc::new(AtomicU64::new(1));
+                let callback_response_receiver = Arc::clone(&import_response_receiver);
+                let callback_next_request_id = Arc::clone(&next_import_request_id);
                 sandbox.register_callback(
                     "__zwImportScripts",
                     Box::new(move |specifiers| {
@@ -501,7 +520,7 @@ impl ServiceWorkerRuntime {
                         {
                             return import_failure_json("importScripts URL exceeds the size limit");
                         }
-                        let request_id = next_import_request_id.fetch_add(1, Ordering::Relaxed);
+                        let request_id = callback_next_request_id.fetch_add(1, Ordering::Relaxed);
                         if import_event_sender
                             .send(ServiceWorkerEvent::ImportScriptsRequested {
                                 request_id,
@@ -518,7 +537,7 @@ impl ServiceWorkerRuntime {
                             if now >= deadline {
                                 return import_failure_json("importScripts host response timed out");
                             }
-                            let response = import_response_receiver
+                            let response = callback_response_receiver
                                 .lock()
                                 .expect("import response lock")
                                 .recv_timeout(deadline.saturating_duration_since(now));
@@ -555,10 +574,27 @@ impl ServiceWorkerRuntime {
 
                 while let Ok(command) = command_receiver.recv() {
                     match command {
-                        ServiceWorkerCommand::Evaluate { script, script_url } => {
+                        ServiceWorkerCommand::Evaluate {
+                            script,
+                            script_url,
+                            is_module,
+                        } => {
                             let source = if script.trim().is_empty() { ";" } else { script.as_str() };
-                            let evaluation = set_worker_location(sandbox.as_mut(), &script_url)
-                                .and_then(|()| sandbox.execute(source).map(|_| ()));
+                            let evaluation = set_worker_location(sandbox.as_mut(), &script_url).and_then(|()| {
+                                if is_module {
+                                    evaluate_module_graph(
+                                        sandbox.as_mut(),
+                                        source,
+                                        &script_url,
+                                        &event_sender,
+                                        &import_response_receiver,
+                                        &next_import_request_id,
+                                        lifecycle_timeout_ms,
+                                    )
+                                } else {
+                                    sandbox.execute(source).map(|_| ())
+                                }
+                            });
                             let event = match evaluation {
                                 Ok(()) => ServiceWorkerEvent::Evaluated { script_url },
                                 Err(error) => ServiceWorkerEvent::ScriptError {
@@ -652,6 +688,26 @@ impl ServiceWorkerRuntime {
             .send(ServiceWorkerCommand::Evaluate {
                 script: script.to_string(),
                 script_url: script_url.to_string(),
+                is_module: false,
+            })
+            .map_err(|_| ScriptError::RuntimeError("Service Worker runtime disconnected".into()))
+    }
+
+    /// Queue a JavaScript module graph for evaluation in the persistent Service Worker global.
+    pub fn evaluate_module(&mut self, script: &str, script_url: &str) -> Result<(), ScriptError> {
+        if self.core.is_terminated() {
+            return Err(ScriptError::InvalidInput(
+                "Cannot evaluate script on terminated Service Worker runtime".into(),
+            ));
+        }
+        if script_url.trim().is_empty() {
+            return Err(ScriptError::InvalidInput("Service Worker script URL is empty".into()));
+        }
+        self.core
+            .send(ServiceWorkerCommand::Evaluate {
+                script: script.to_string(),
+                script_url: script_url.to_string(),
+                is_module: true,
             })
             .map_err(|_| ScriptError::RuntimeError("Service Worker runtime disconnected".into()))
     }
@@ -819,6 +875,154 @@ fn script_error_kind(error: &ScriptError) -> ServiceWorkerScriptErrorKind {
 
 fn import_failure_json(message: &str) -> String {
     serde_json::json!({"ok": false, "error": message}).to_string()
+}
+
+fn evaluate_module_graph(
+    sandbox: &mut dyn Sandbox,
+    source: &str,
+    script_url: &str,
+    event_sender: &mpsc::Sender<ServiceWorkerEvent>,
+    response_receiver: &Arc<Mutex<mpsc::Receiver<ServiceWorkerImportResponse>>>,
+    next_request_id: &AtomicU64,
+    timeout_ms: u64,
+) -> Result<(), ScriptError> {
+    if !extract_dynamic_import_specifiers(source).is_empty() {
+        return Err(ScriptError::CompileError(
+            "dynamic import is unavailable in Service Worker modules".into(),
+        ));
+    }
+    let mut main_url = url::Url::parse(script_url)
+        .map_err(|error| ScriptError::InvalidInput(format!("invalid Service Worker module URL: {error}")))?;
+    main_url.set_fragment(None);
+    let main_url = main_url.to_string();
+    let mut registry = ModuleRegistry::new();
+    let mut visited = HashSet::from([main_url.clone()]);
+    collect_module_graph(
+        source,
+        &main_url,
+        &mut registry,
+        &mut visited,
+        event_sender,
+        response_receiver,
+        next_request_id,
+        timeout_ms,
+    )?;
+    let compiled = compile_module_script(source, &main_url, &registry)?;
+    sandbox.execute(&compiled).map(|_| ())
+}
+
+#[allow(clippy::too_many_arguments)]
+fn collect_module_graph(
+    source: &str,
+    referrer_url: &str,
+    registry: &mut ModuleRegistry,
+    visited: &mut HashSet<String>,
+    event_sender: &mpsc::Sender<ServiceWorkerEvent>,
+    response_receiver: &Arc<Mutex<mpsc::Receiver<ServiceWorkerImportResponse>>>,
+    next_request_id: &AtomicU64,
+    timeout_ms: u64,
+) -> Result<(), ScriptError> {
+    let specifiers = extract_static_module_import_specifiers(source);
+    if specifiers.is_empty() {
+        return Ok(());
+    }
+    let base = url::Url::parse(referrer_url)
+        .map_err(|error| ScriptError::InvalidInput(format!("invalid Service Worker module referrer: {error}")))?;
+    let mut pending = Vec::new();
+    for specifier in specifiers {
+        let mut resolved = base.join(&specifier).map_err(|error| {
+            ScriptError::CompileError(format!("invalid Service Worker module specifier {specifier}: {error}"))
+        })?;
+        if !matches!(resolved.scheme(), "http" | "https" | "data")
+            || !resolved.username().is_empty()
+            || resolved.password().is_some()
+        {
+            return Err(ScriptError::CompileError(format!(
+                "disallowed Service Worker module URL: {resolved}"
+            )));
+        }
+        resolved.set_fragment(None);
+        let resolved = resolved.to_string();
+        if visited.insert(resolved.clone()) {
+            pending.push((specifier, resolved));
+        }
+    }
+    if pending.is_empty() {
+        return Ok(());
+    }
+    let request_id = next_request_id.fetch_add(1, Ordering::Relaxed);
+    event_sender
+        .send(ServiceWorkerEvent::ModuleScriptsRequested {
+            request_id,
+            referrer_url: referrer_url.to_string(),
+            specifiers: pending.iter().map(|(specifier, _)| specifier.clone()).collect(),
+        })
+        .map_err(|_| ScriptError::RuntimeError("Service Worker host disconnected".into()))?;
+    let sources = wait_for_import_response(request_id, response_receiver, timeout_ms)?;
+    if sources.len() != pending.len() {
+        return Err(ScriptError::RuntimeError(
+            "Service Worker module response count mismatch".into(),
+        ));
+    }
+    for ((_, url), dependency_source) in pending.into_iter().zip(sources) {
+        if !extract_dynamic_import_specifiers(&dependency_source).is_empty() {
+            return Err(ScriptError::CompileError(
+                "dynamic import is unavailable in Service Worker modules".into(),
+            ));
+        }
+        registry.register(&url, &dependency_source);
+        collect_module_graph(
+            &dependency_source,
+            &url,
+            registry,
+            visited,
+            event_sender,
+            response_receiver,
+            next_request_id,
+            timeout_ms,
+        )?;
+    }
+    Ok(())
+}
+
+fn wait_for_import_response(
+    request_id: u64,
+    response_receiver: &Arc<Mutex<mpsc::Receiver<ServiceWorkerImportResponse>>>,
+    timeout_ms: u64,
+) -> Result<Vec<String>, ScriptError> {
+    let deadline = std::time::Instant::now() + std::time::Duration::from_millis(timeout_ms);
+    loop {
+        let now = std::time::Instant::now();
+        if now >= deadline {
+            return Err(ScriptError::Timeout("Service Worker module fetch timed out".into()));
+        }
+        let response = response_receiver
+            .lock()
+            .expect("import response lock")
+            .recv_timeout(deadline.saturating_duration_since(now));
+        match response {
+            Ok(ServiceWorkerImportResponse::Completed {
+                request_id: response_id,
+                sources,
+            }) if response_id == request_id => return Ok(sources),
+            Ok(ServiceWorkerImportResponse::Failed {
+                request_id: response_id,
+                message,
+            }) if response_id == request_id => return Err(ScriptError::RuntimeError(message)),
+            Ok(ServiceWorkerImportResponse::Shutdown) => {
+                return Err(ScriptError::RuntimeError(
+                    "Service Worker runtime is shutting down".into(),
+                ));
+            }
+            Ok(_) => {}
+            Err(mpsc::RecvTimeoutError::Timeout) => {
+                return Err(ScriptError::Timeout("Service Worker module fetch timed out".into()));
+            }
+            Err(mpsc::RecvTimeoutError::Disconnected) => {
+                return Err(ScriptError::RuntimeError("Service Worker host disconnected".into()));
+            }
+        }
+    }
 }
 
 fn set_worker_location(sandbox: &mut dyn Sandbox, script_url: &str) -> Result<(), ScriptError> {
@@ -1120,6 +1324,71 @@ mod tests {
                 message,
                 ..
             } if message.contains("HTTP 404")
+        ));
+    }
+
+    #[test]
+    fn module_evaluation_fetches_transitive_static_graph() {
+        let mut runtime = ServiceWorkerRuntime::new(test_config()).unwrap();
+        runtime
+            .evaluate_module(
+                "import { doubled } from './lib/entry.js';
+                 if (doubled !== 14) throw new Error('wrong module value');",
+                "https://example.test/workers/sw.js",
+            )
+            .unwrap();
+        let ServiceWorkerEvent::ModuleScriptsRequested {
+            request_id,
+            referrer_url,
+            specifiers,
+        } = runtime.recv_timeout(Duration::from_secs(5)).unwrap()
+        else {
+            panic!("missing root module request");
+        };
+        assert_eq!(referrer_url, "https://example.test/workers/sw.js");
+        assert_eq!(specifiers, ["./lib/entry.js"]);
+        runtime
+            .complete_import_scripts(
+                request_id,
+                Ok(vec![
+                    "import { value } from './value.js'; export const doubled = value * 2;".into(),
+                ]),
+            )
+            .unwrap();
+
+        let ServiceWorkerEvent::ModuleScriptsRequested {
+            request_id,
+            referrer_url,
+            specifiers,
+        } = runtime.recv_timeout(Duration::from_secs(5)).unwrap()
+        else {
+            panic!("missing transitive module request");
+        };
+        assert_eq!(referrer_url, "https://example.test/workers/lib/entry.js");
+        assert_eq!(specifiers, ["./value.js"]);
+        runtime
+            .complete_import_scripts(request_id, Ok(vec!["export const value = 7;".into()]))
+            .unwrap();
+
+        assert!(matches!(
+            runtime.recv_timeout(Duration::from_secs(5)).unwrap(),
+            ServiceWorkerEvent::Evaluated { .. }
+        ));
+    }
+
+    #[test]
+    fn module_evaluation_rejects_dynamic_import() {
+        let mut runtime = ServiceWorkerRuntime::new(test_config()).unwrap();
+        runtime
+            .evaluate_module("import('./late.js');", "https://example.test/workers/sw.js")
+            .unwrap();
+        assert!(matches!(
+            runtime.recv_timeout(Duration::from_secs(5)).unwrap(),
+            ServiceWorkerEvent::ScriptError {
+                kind: ServiceWorkerScriptErrorKind::Compile,
+                message,
+                ..
+            } if message.contains("dynamic import")
         ));
     }
 

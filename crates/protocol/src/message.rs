@@ -1037,6 +1037,15 @@ pub enum ServiceWorkerHostEvent {
         /// String-converted URL 参数，保持调用顺序。
         specifiers: Vec<String>,
     },
+    /// Module worker 静态依赖等待 browser-owned fetch。
+    ModuleScriptsRequested {
+        /// Renderer runtime 分配的 request ID。
+        request_id: u64,
+        /// 包含这些 import specifier 的 canonical module URL。
+        referrer_url: String,
+        /// Static import specifier，保持源码顺序。
+        specifiers: Vec<String>,
+    },
 }
 
 /// IPC-safe Service Worker 生命周期阶段。

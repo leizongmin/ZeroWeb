@@ -2878,14 +2878,20 @@ impl WebView {
     ) -> Result<Vec<ServiceWorkerManagerEvent>, String> {
         let events = manager.poll();
         for event in &events {
-            let ServiceWorkerManagerEvent::ImportScriptsRequested {
-                registration_id,
-                request_id,
-                urls,
-                ..
-            } = event
-            else {
-                continue;
+            let (registration_id, request_id, urls, is_module) = match event {
+                ServiceWorkerManagerEvent::ImportScriptsRequested {
+                    registration_id,
+                    request_id,
+                    urls,
+                    ..
+                } => (registration_id, request_id, urls, false),
+                ServiceWorkerManagerEvent::ModuleScriptsRequested {
+                    registration_id,
+                    request_id,
+                    urls,
+                    ..
+                } => (registration_id, request_id, urls, true),
+                _ => continue,
             };
             let context_url = manager
                 .registration(*registration_id)
@@ -2897,14 +2903,21 @@ impl WebView {
                 .map(
                     |url| match fetchers.response.as_ref().filter(|_| !url.starts_with("data:")) {
                         Some(fetcher) => fetcher(&context_url, url).and_then(|response| {
-                            Self::validate_service_worker_imported_script_response(url, &context_url, response)
+                            Self::validate_service_worker_imported_script_response(
+                                url,
+                                &context_url,
+                                is_module,
+                                response,
+                            )
                         }),
                         None => match fetchers.source.as_ref().filter(|_| !url.starts_with("data:")) {
                             Some(fetcher) => fetcher(&context_url, url).map(|source| ServiceWorkerImportedScript {
                                 url: url.clone(),
                                 source,
                             }),
-                            None => Self::fetch_service_worker_imported_script(url, &context_url, timeout_secs),
+                            None => {
+                                Self::fetch_service_worker_imported_script(url, &context_url, is_module, timeout_secs)
+                            }
                         },
                     },
                 )
@@ -2969,6 +2982,7 @@ impl WebView {
     fn fetch_service_worker_imported_script(
         url: &str,
         document_url: &str,
+        is_module: bool,
         timeout_secs: u64,
     ) -> Result<ServiceWorkerImportedScript, String> {
         let response = ResourceLoader::shared()
@@ -2980,12 +2994,13 @@ impl WebView {
             .recv()
             .map_err(|_| "resource loader worker exited".to_string())?
             .map_err(|error| error.to_string())?;
-        Self::validate_service_worker_imported_script_response(url, document_url, response)
+        Self::validate_service_worker_imported_script_response(url, document_url, is_module, response)
     }
 
     fn validate_service_worker_imported_script_response(
         url: &str,
         document_url: &str,
+        is_module: bool,
         response: HttpResponse,
     ) -> Result<ServiceWorkerImportedScript, String> {
         if !response.is_success() {
@@ -3010,6 +3025,9 @@ impl WebView {
                 url::Url::parse(document_url).map_err(|_| "invalid Service Worker document URL".to_string())?;
             if document.scheme() == "https" && final_url.scheme() == "http" {
                 return Err("Service Worker import redirect downgraded a secure context".into());
+            }
+            if is_module && final_url.origin() != document.origin() {
+                return Err("Service Worker module redirect crossed origins".into());
             }
         }
         let mime = response

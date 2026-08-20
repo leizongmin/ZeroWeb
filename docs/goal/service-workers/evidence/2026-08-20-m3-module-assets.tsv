@@ -1,0 +1,6 @@
+path	manifest_type	roles	referenced_by	bytes	templated	git_blob_sha
+service-workers/service-worker/registration-scope-module-static-import.https.html	testharness	case	1	1658	no	5c75295aed1cd94c1349dc25010801534bd98644
+service-workers/service-worker/resources/scope1/module-worker-importing-redirect-to-scope2.js	support	worker-script	1	125	no	ae681ba30e0b01f1ec6c642ad4dac19f0cc9dc69
+service-workers/service-worker/resources/scope1/module-worker-importing-scope2.js	support	worker-script	1	63	no	e28505249c281735441830319a9468beba8bb547
+service-workers/service-worker/resources/scope1/redirect.py	support	dynamic-handler	1	271	no	025ea671c503f7816f634f23cfc80c78a815aa25
+service-workers/service-worker/resources/scope2/imported-module-script.js	support	worker-script	3	104	no	a18e704a3c58fbde39928d2acbfc0950f56c45ec

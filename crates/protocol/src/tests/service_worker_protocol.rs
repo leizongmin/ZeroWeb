@@ -605,6 +605,23 @@ fn service_worker_host_import_scripts_round_trips_and_validates() {
     };
     assert_eq!(decoded_event, event);
 
+    let module_event = ServiceWorkerHostEventParams {
+        registration_id: 9,
+        event: ServiceWorkerHostEvent::ModuleScriptsRequested {
+            request_id: 4,
+            referrer_url: "https://example.test/workers/sw.js".into(),
+            specifiers: vec!["./dependency.js".into()],
+        },
+    };
+    let decoded = roundtrip(IpcMessage {
+        id: 58,
+        kind: IpcMessageKind::ServiceWorkerHostEvent(module_event.clone()),
+    });
+    let IpcMessageKind::ServiceWorkerHostEvent(decoded_event) = decoded.kind else {
+        panic!("expected ServiceWorkerHostEvent");
+    };
+    assert_eq!(decoded_event, module_event);
+
     assert!(
         ServiceWorkerHostCommandParams {
             registration_id: 9,

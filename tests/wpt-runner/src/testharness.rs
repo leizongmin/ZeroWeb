@@ -624,6 +624,7 @@ pub const SERVICE_WORKER_CORE_CASES: &[&str] = &[
     "service-workers/service-worker/register-default-scope.https.html",
     "service-workers/service-worker/registration-basic.https.html",
     "service-workers/service-worker/registration-scope.https.html",
+    "service-workers/service-worker/registration-scope-module-static-import.https.html",
     "service-workers/service-worker/registration-script-url.https.html",
     "service-workers/service-worker/registration-service-worker-attributes.https.html",
     "service-workers/service-worker/rejections.https.html",
@@ -1310,24 +1311,28 @@ fn wpt_data_service_worker_script_fetcher(
                 src.to_string(),
                 0,
             ));
-        } else if clean.ends_with("/resources/redirect.py") {
+        } else if clean.ends_with("/redirect.py") {
             let target = params
                 .get("Redirect")
                 .ok_or_else(|| "redirect.py requires Redirect".to_string())?;
             let final_url = resolve_service_worker_fixture_redirect(src, target)?;
             let (final_path, _) = service_worker_fixture_path(&final_url)?;
-            if !final_path.ends_with("/resources/import-scripts-version.py") {
-                return Err(format!("unsupported Service Worker fixture redirect target: {target}"));
+            if final_path.ends_with("/resources/import-scripts-version.py") {
+                let mut state = state
+                    .lock()
+                    .map_err(|_| "Service Worker fixture state lock is poisoned".to_string())?;
+                state.next_version += 1;
+                return Ok(service_worker_fixture_response(
+                    format!("version = \"{}\";\n", state.next_version),
+                    final_url,
+                    1,
+                ));
             }
-            let mut state = state
-                .lock()
-                .map_err(|_| "Service Worker fixture state lock is poisoned".to_string())?;
-            state.next_version += 1;
-            return Ok(service_worker_fixture_response(
-                format!("version = \"{}\";\n", state.next_version),
-                final_url,
-                1,
-            ));
+            let bytes = std::fs::read(root.join(final_path))
+                .map_err(|error| format!("Service Worker redirect target fetch failed: {final_path} ({error})"))?;
+            let source = String::from_utf8(bytes)
+                .map_err(|_| format!("Service Worker redirect target is not UTF-8: {final_path}"))?;
+            return Ok(service_worker_fixture_response(source, final_url, 1));
         } else if clean.ends_with("/resources/update-worker.py") {
             let key = params
                 .get("Key")
@@ -2289,13 +2294,13 @@ async_test(function(test) {
     }
 
     #[test]
-    fn service_worker_core_manifest_has_nineteen_unique_cases() {
+    fn service_worker_core_manifest_has_twenty_unique_cases() {
         let unique = SERVICE_WORKER_CORE_CASES
             .iter()
             .copied()
             .collect::<std::collections::BTreeSet<_>>();
-        assert_eq!(SERVICE_WORKER_CORE_CASES.len(), 19);
-        assert_eq!(unique.len(), 19);
+        assert_eq!(SERVICE_WORKER_CORE_CASES.len(), 20);
+        assert_eq!(unique.len(), 20);
         assert!(
             SERVICE_WORKER_CORE_CASES
                 .iter()

@@ -361,6 +361,15 @@ fn sandbox_event(event: ServiceWorkerHostEvent) -> ServiceWorkerEvent {
         ServiceWorkerHostEvent::ImportScriptsRequested { request_id, specifiers } => {
             ServiceWorkerEvent::ImportScriptsRequested { request_id, specifiers }
         }
+        ServiceWorkerHostEvent::ModuleScriptsRequested {
+            request_id,
+            referrer_url,
+            specifiers,
+        } => ServiceWorkerEvent::ModuleScriptsRequested {
+            request_id,
+            referrer_url,
+            specifiers,
+        },
         ServiceWorkerHostEvent::Closed => ServiceWorkerEvent::Closed,
     }
 }
@@ -428,6 +437,7 @@ pub(crate) struct ServiceWorkerImportFetchPlan {
     request_id: u64,
     urls: Vec<String>,
     bypass_cache: bool,
+    is_module: bool,
 }
 
 impl ServiceWorkerImportFetchPlan {
@@ -441,6 +451,10 @@ impl ServiceWorkerImportFetchPlan {
 
     pub(crate) fn bypass_cache(&self) -> bool {
         self.bypass_cache
+    }
+
+    pub(crate) fn is_module(&self) -> bool {
+        self.is_module
     }
 }
 
@@ -981,7 +995,12 @@ impl BrowserServiceWorkerOwner {
                 match receiver.try_recv() {
                     Ok(result) => {
                         pending.receivers[index] = None;
-                        match validate_imported_script_response(&pending.plan.urls[index], &origin, result) {
+                        match validate_imported_script_response(
+                            &pending.plan.urls[index],
+                            &origin,
+                            pending.plan.is_module,
+                            result,
+                        ) {
                             Ok(script) => pending.scripts[index] = Some(script),
                             Err(error) => {
                                 failure = Some(error);
@@ -1160,6 +1179,42 @@ impl BrowserServiceWorkerOwner {
                             request_id,
                             urls,
                             bypass_cache,
+                            is_module: false,
+                        });
+                    } else {
+                        let _ = self.manager_mut(profile).complete_import_scripts(
+                            registration_id,
+                            request_id,
+                            Err("Service Worker import fetch has no renderer host".into()),
+                        );
+                    }
+                }
+                ServiceWorkerManagerEvent::ModuleScriptsRequested {
+                    registration_id,
+                    request_id,
+                    urls,
+                    bypass_cache,
+                } => {
+                    let pending_tab = self
+                        .pending_evaluations
+                        .get(&(profile, registration_id))
+                        .map(|pending| pending.tab_id);
+                    let owned_tab = self
+                        .channels_for(profile)
+                        .and_then(|channels| channels.take_owned_tab(registration_id));
+                    let tab_id = pending_tab.or(owned_tab);
+                    if let Some(tab_id) = tab_id {
+                        if let Some(channels) = self.channels_for(profile) {
+                            channels.record_owned(registration_id, tab_id);
+                        }
+                        self.import_fetch_plans.push(ServiceWorkerImportFetchPlan {
+                            tab_id,
+                            profile,
+                            registration_id,
+                            request_id,
+                            urls,
+                            bypass_cache,
+                            is_module: true,
                         });
                     } else {
                         let _ = self.manager_mut(profile).complete_import_scripts(
@@ -1502,6 +1557,7 @@ fn atomic_write_persistence(path: &Path, content: &str) -> Result<(), String> {
 fn validate_imported_script_response(
     requested_url: &str,
     registration_origin: &str,
+    is_module: bool,
     result: Result<HttpResponse, String>,
 ) -> Result<ServiceWorkerImportedScript, String> {
     let response = result.map_err(|message| format!("Service Worker import fetch failed: {message}"))?;
@@ -1524,6 +1580,9 @@ fn validate_imported_script_response(
     }
     if Url::parse(registration_origin).is_ok_and(|origin| origin.scheme() == "https") && final_url.scheme() == "http" {
         return Err("Service Worker import redirect downgraded a secure context".into());
+    }
+    if is_module && Url::parse(registration_origin).map_or(true, |origin| final_url.origin() != origin.origin()) {
+        return Err("Service Worker module redirect crossed origins".into());
     }
     let mime = response
         .content_type_mime()

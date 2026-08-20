@@ -107,7 +107,7 @@ pub struct ServiceWorkerPersistentRegistration {
     pub imported_scripts: Vec<ServiceWorkerImportedScript>,
 }
 
-/// One classic script loaded through `importScripts()`.
+/// One imported classic script or static module dependency.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ServiceWorkerImportedScript {
     /// Canonical request URL with no fragment.
@@ -201,6 +201,17 @@ pub enum ServiceWorkerManagerEvent {
         /// Runtime-local request ID.
         request_id: u64,
         /// Canonical script URLs in execution order.
+        urls: Vec<String>,
+        /// Whether these requests must bypass a fresh HTTP cache entry.
+        bypass_cache: bool,
+    },
+    /// A module worker is blocked while its static dependency graph is fetched.
+    ModuleScriptsRequested {
+        /// Registration version ID.
+        registration_id: u64,
+        /// Runtime-local request ID.
+        request_id: u64,
+        /// Canonical module URLs in source order.
         urls: Vec<String>,
         /// Whether these requests must bypass a fresh HTTP cache entry.
         bypass_cache: bool,
@@ -384,16 +395,13 @@ impl ServiceWorkerRuntimeHost for LocalServiceWorkerHost {
         script: &str,
         script_type: ServiceWorkerScriptType,
     ) -> Result<(), ServiceWorkerManagerError> {
-        if script_type == ServiceWorkerScriptType::Module {
-            return Err(ServiceWorkerManagerError::Runtime(
-                "Service Worker module graph loader is unavailable".into(),
-            ));
-        }
         let mut runtime = ServiceWorkerRuntime::new(self.config.clone())
             .map_err(|error| ServiceWorkerManagerError::Runtime(error.to_string()))?;
-        runtime
-            .evaluate(script, script_url)
-            .map_err(|error| ServiceWorkerManagerError::Runtime(error.to_string()))?;
+        match script_type {
+            ServiceWorkerScriptType::Classic => runtime.evaluate(script, script_url),
+            ServiceWorkerScriptType::Module => runtime.evaluate_module(script, script_url),
+        }
+        .map_err(|error| ServiceWorkerManagerError::Runtime(error.to_string()))?;
         self.runtimes.insert(registration_id, runtime);
         Ok(())
     }
@@ -843,6 +851,48 @@ impl ServiceWorkerManager {
                         }
                     }
                 }
+                ServiceWorkerEvent::ModuleScriptsRequested {
+                    request_id,
+                    referrer_url,
+                    specifiers,
+                } => match self.resolve_module_script_urls(registration_id, &referrer_url, &specifiers) {
+                    Ok(urls) => {
+                        if self.restoring_active.contains(&registration_id) {
+                            let result = self.restored_import_sources(registration_id, &urls);
+                            let _ = self.host.complete_import_scripts(registration_id, request_id, result);
+                        } else if let Some(sources) = self.cached_import_sources(registration_id, &urls) {
+                            let _ = self
+                                .host
+                                .complete_import_scripts(registration_id, request_id, Ok(sources));
+                        } else if self
+                            .registration(registration_id)
+                            .is_none_or(|registration| registration.state != ServiceWorkerState::Installing)
+                        {
+                            let _ = self.host.complete_import_scripts(
+                                registration_id,
+                                request_id,
+                                Err("Service Worker module graph cannot fetch after installation".into()),
+                            );
+                        } else {
+                            self.pending_import_requests
+                                .insert((registration_id, request_id), urls.clone());
+                            let bypass_cache = self.registration(registration_id).is_some_and(|registration| {
+                                registration.update_via_cache == ServiceWorkerUpdateViaCache::None
+                            });
+                            output.push(ServiceWorkerManagerEvent::ModuleScriptsRequested {
+                                registration_id,
+                                request_id,
+                                urls,
+                                bypass_cache,
+                            });
+                        }
+                    }
+                    Err(error) => {
+                        let _ = self
+                            .host
+                            .complete_import_scripts(registration_id, request_id, Err(error.to_string()));
+                    }
+                },
                 ServiceWorkerEvent::LifecycleSettled {
                     phase,
                     succeeded,
@@ -946,6 +996,8 @@ impl ServiceWorkerManager {
     fn script_graphs_equal(&self, left: u64, right: u64) -> bool {
         self.script_sources.get(&left) == self.script_sources.get(&right)
             && self.imported_scripts.get(&left) == self.imported_scripts.get(&right)
+            && self.registration(left).map(|registration| registration.script_type)
+                == self.registration(right).map(|registration| registration.script_type)
     }
 
     /// Complete one host-owned `importScripts()` fetch batch.
@@ -1011,6 +1063,62 @@ impl ServiceWorkerManager {
                 if !url.username().is_empty() || url.password().is_some() {
                     return Err(ServiceWorkerManagerError::InvalidInput(
                         "Service Worker imported script URL contains credentials".into(),
+                    ));
+                }
+                url.set_fragment(None);
+                Ok(url.to_string())
+            })
+            .collect()
+    }
+
+    fn resolve_module_script_urls(
+        &self,
+        registration_id: u64,
+        referrer_url: &str,
+        specifiers: &[String],
+    ) -> Result<Vec<String>, ServiceWorkerManagerError> {
+        let registration = self
+            .registration(registration_id)
+            .ok_or(ServiceWorkerManagerError::UnknownRegistration(registration_id))?;
+        if registration.script_type != ServiceWorkerScriptType::Module {
+            return Err(ServiceWorkerManagerError::InvalidInput(
+                "static module fetch requested by a classic Service Worker".into(),
+            ));
+        }
+        let referrer = url::Url::parse(referrer_url)
+            .map_err(|_| ServiceWorkerManagerError::InvalidInput("invalid Service Worker module referrer".into()))?;
+        let referrer_url = referrer.to_string();
+        if referrer_url != registration.script_url
+            && !self
+                .imported_scripts
+                .get(&registration_id)
+                .is_some_and(|graph| graph.contains_key(&referrer_url))
+        {
+            return Err(ServiceWorkerManagerError::InvalidInput(
+                "Service Worker module referrer is not in the script graph".into(),
+            ));
+        }
+        let registration_origin = url::Url::parse(&registration.origin)
+            .map_err(|_| ServiceWorkerManagerError::InvalidInput("invalid Service Worker origin".into()))?
+            .origin();
+        specifiers
+            .iter()
+            .map(|specifier| {
+                if specifier.len() > MAX_URL_BYTES {
+                    return Err(ServiceWorkerManagerError::InvalidInput(
+                        "Service Worker module URL exceeds the length limit".into(),
+                    ));
+                }
+                let mut url = referrer
+                    .join(specifier)
+                    .map_err(|_| ServiceWorkerManagerError::InvalidInput("invalid Service Worker module URL".into()))?;
+                if !matches!(url.scheme(), "http" | "https")
+                    || !url.username().is_empty()
+                    || url.password().is_some()
+                    || url.origin() != registration_origin
+                {
+                    return Err(ServiceWorkerManagerError::InvalidInput(
+                        "Service Worker module URL must be same-origin http(s)".into(),
                     ));
                 }
                 url.set_fragment(None);
@@ -1297,7 +1405,7 @@ impl ServiceWorkerManager {
         self.claimed_clients.contains(&registration_id)
     }
 
-    /// Queue a page message on an active or waiting worker runtime.
+    /// Queue a page message on an evaluated installing, waiting, or active worker runtime.
     pub fn post_message(
         &mut self,
         registration_id: u64,
@@ -1310,10 +1418,11 @@ impl ServiceWorkerManager {
             .registration(registration_id)
             .ok_or(ServiceWorkerManagerError::UnknownRegistration(registration_id))?
             .state;
-        if !matches!(
+        let can_receive = matches!(
             state,
             ServiceWorkerState::Installed | ServiceWorkerState::Activating | ServiceWorkerState::Activated
-        ) {
+        ) || (state == ServiceWorkerState::Installing && self.evaluated.contains(&registration_id));
+        if !can_receive {
             return Err(ServiceWorkerManagerError::InvalidState {
                 registration_id,
                 expected: ServiceWorkerState::Activated,
@@ -1678,6 +1787,26 @@ mod tests {
         }
     }
 
+    fn wait_for_module_request(manager: &mut ServiceWorkerManager, registration_id: u64) -> (u64, Vec<String>, bool) {
+        let deadline = Instant::now() + Duration::from_secs(5);
+        loop {
+            for event in manager.poll() {
+                if let ServiceWorkerManagerEvent::ModuleScriptsRequested {
+                    registration_id: id,
+                    request_id,
+                    urls,
+                    bypass_cache,
+                } = event
+                    && id == registration_id
+                {
+                    return (request_id, urls, bypass_cache);
+                }
+            }
+            assert!(Instant::now() < deadline, "manager module request timed out");
+            std::thread::sleep(Duration::from_millis(1));
+        }
+    }
+
     fn wait_for_update_check(manager: &mut ServiceWorkerManager, candidate_id: u64) -> (u64, bool) {
         let deadline = Instant::now() + Duration::from_secs(5);
         loop {
@@ -1866,6 +1995,107 @@ mod tests {
             (changed_candidate, true)
         );
         wait_for_state(&mut manager, changed_candidate, ServiceWorkerState::Installed);
+    }
+
+    #[test]
+    fn module_graph_resolves_transitive_urls_and_persists_sources() {
+        let mut manager = manager_under_test();
+        let id = manager
+            .start_evaluation_with_options(
+                "https://example.test/workers/sw.js",
+                "/",
+                "https://example.test",
+                "import { doubled } from './lib/entry.js'; if (doubled !== 14) throw new Error('wrong value');",
+                ServiceWorkerScriptType::Module,
+                ServiceWorkerUpdateViaCache::Imports,
+            )
+            .unwrap();
+
+        let (request_id, urls, bypass_cache) = wait_for_module_request(&mut manager, id);
+        assert!(!bypass_cache);
+        assert_eq!(urls, ["https://example.test/workers/lib/entry.js"]);
+        manager
+            .complete_import_scripts(
+                id,
+                request_id,
+                Ok(vec![ServiceWorkerImportedScript {
+                    url: urls[0].clone(),
+                    source: "import { value } from './value.js'; export const doubled = value * 2;".into(),
+                }]),
+            )
+            .unwrap();
+
+        let (request_id, urls, _) = wait_for_module_request(&mut manager, id);
+        assert_eq!(urls, ["https://example.test/workers/lib/value.js"]);
+        manager
+            .complete_import_scripts(
+                id,
+                request_id,
+                Ok(vec![ServiceWorkerImportedScript {
+                    url: urls[0].clone(),
+                    source: "export const value = 7;".into(),
+                }]),
+            )
+            .unwrap();
+        wait_for_state(&mut manager, id, ServiceWorkerState::Activated);
+
+        let persisted = manager.persistent_active_registrations();
+        assert_eq!(persisted.len(), 1);
+        assert_eq!(persisted[0].script_type, ServiceWorkerScriptType::Module);
+        assert_eq!(persisted[0].imported_scripts.len(), 2);
+    }
+
+    #[test]
+    fn module_update_compares_static_dependency_bytes() {
+        fn complete_module_graph(manager: &mut ServiceWorkerManager, registration_id: u64, dependency_source: &str) {
+            let (request_id, urls, _) = wait_for_module_request(manager, registration_id);
+            manager
+                .complete_import_scripts(
+                    registration_id,
+                    request_id,
+                    Ok(vec![ServiceWorkerImportedScript {
+                        url: urls[0].clone(),
+                        source: dependency_source.into(),
+                    }]),
+                )
+                .unwrap();
+        }
+
+        let mut manager = manager_under_test();
+        let main = "import { value } from './dependency.js'; globalThis.value = value;";
+        let first = manager
+            .start_evaluation_with_options(
+                "https://example.test/sw.js",
+                "/",
+                "https://example.test",
+                main,
+                ServiceWorkerScriptType::Module,
+                ServiceWorkerUpdateViaCache::Imports,
+            )
+            .unwrap();
+        complete_module_graph(&mut manager, first, "export const value = 1;");
+        wait_for_state(&mut manager, first, ServiceWorkerState::Activated);
+
+        let ServiceWorkerUpdateOutcome::Started {
+            registration_id: unchanged_candidate,
+        } = manager.start_update(first, main).unwrap()
+        else {
+            panic!("module update must evaluate a candidate graph");
+        };
+        complete_module_graph(&mut manager, unchanged_candidate, "export const value = 1;");
+        assert_eq!(wait_for_update_check(&mut manager, unchanged_candidate), (first, false));
+
+        let ServiceWorkerUpdateOutcome::Started {
+            registration_id: changed_candidate,
+        } = manager.start_update(first, main).unwrap()
+        else {
+            panic!("module update must evaluate a candidate graph");
+        };
+        complete_module_graph(&mut manager, changed_candidate, "export const value = 2;");
+        assert_eq!(
+            wait_for_update_check(&mut manager, changed_candidate),
+            (changed_candidate, true)
+        );
     }
 
     #[test]

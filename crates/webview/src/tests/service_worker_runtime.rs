@@ -169,25 +169,62 @@ fn insecure_and_cross_origin_registration_fail_before_fetch() {
 }
 
 #[test]
-fn navigator_module_registration_is_not_silently_evaluated_as_classic() {
+fn navigator_module_registration_fetches_static_graph_and_activates() {
+    let requests = Arc::new(Mutex::new(Vec::new()));
+    let request_log = Arc::clone(&requests);
     let mut webview = WebViewBuilder::new()
         .url("https://example.test/page.html")
-        .script_source_fetcher(Arc::new(|_, _| Ok("export const value = 1;".to_string())))
+        .script_source_fetcher(Arc::new(move |context, script| {
+            request_log
+                .lock()
+                .unwrap()
+                .push((context.to_string(), script.to_string()));
+            match script {
+                "https://example.test/module-sw.js" => Ok("import { value } from './lib/value.js';
+                     if (value !== 7) throw new Error('wrong module value');"
+                    .to_string()),
+                "https://example.test/lib/value.js" => Ok("export const value = 7;".to_string()),
+                _ => Err(format!("unexpected script: {script}")),
+            }
+        }))
         .build();
     webview
         .execute_script(
             "globalThis.__moduleRegistrationResult = 'pending';
              navigator.serviceWorker.register('/module-sw.js', {type:'module'}).then(
-               () => { globalThis.__moduleRegistrationResult = 'unexpected-success'; },
-               error => {
-                 globalThis.__moduleRegistrationResult =
-                   error.name + ':' + String(error.message).includes('module graph loader');
-               });",
+               registration => {
+                 globalThis.__moduleRegistrationResult = 'ok:' + registration._id + ':' + registration.scope;
+               },
+               error => { globalThis.__moduleRegistrationResult = error.name + ':' + error.message; });",
         )
         .unwrap();
+    let deadline = Instant::now() + Duration::from_secs(20);
+    loop {
+        let _ = webview.poll_service_worker_runtime_events();
+        if webview.execute_script("globalThis.__moduleRegistrationResult").unwrap() != "pending" {
+            break;
+        }
+        assert!(Instant::now() < deadline, "module registration promise timed out");
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    let result = webview.execute_script("globalThis.__moduleRegistrationResult").unwrap();
+    let parts = result.splitn(3, ':').collect::<Vec<_>>();
+    assert_eq!(parts[0], "ok", "{result}");
+    assert_eq!(parts[2], "https://example.test/", "{result}");
+    let registration_id = parts[1].parse::<u64>().expect("registration id");
+    wait_for_state(&mut webview, registration_id, ServiceWorkerState::Activated);
     assert_eq!(
-        webview.execute_script("globalThis.__moduleRegistrationResult").unwrap(),
-        "TypeError:true"
+        requests.lock().unwrap().as_slice(),
+        &[
+            (
+                "https://example.test/page.html".to_string(),
+                "https://example.test/module-sw.js".to_string(),
+            ),
+            (
+                "https://example.test/module-sw.js".to_string(),
+                "https://example.test/lib/value.js".to_string(),
+            ),
+        ]
     );
 }
 

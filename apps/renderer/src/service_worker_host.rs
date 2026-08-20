@@ -162,20 +162,13 @@ impl HostThread {
         if let Some(mut runtime) = self.runtimes.remove(&registration_id) {
             runtime.shutdown();
         }
-        if script_type == ServiceWorkerScriptTypeWire::Module {
-            self.pending_events.push(ServiceWorkerHostEventParams {
-                registration_id,
-                event: ServiceWorkerHostEvent::ScriptError {
-                    script_url: script_url.to_string(),
-                    kind: ServiceWorkerScriptErrorKindWire::InvalidInput,
-                    message: "Service Worker module graph loader is unavailable".into(),
-                },
-            });
-            return;
-        }
         match ServiceWorkerRuntime::new(SandboxConfig::default()) {
             Ok(mut runtime) => {
-                if let Err(error) = runtime.evaluate(script, script_url) {
+                let evaluation = match script_type {
+                    ServiceWorkerScriptTypeWire::Classic => runtime.evaluate(script, script_url),
+                    ServiceWorkerScriptTypeWire::Module => runtime.evaluate_module(script, script_url),
+                };
+                if let Err(error) = evaluation {
                     tracing::warn!("Service Worker evaluate queue failed: {error}");
                 }
                 self.runtimes.insert(registration_id, runtime);
@@ -301,6 +294,15 @@ fn host_event(event: ServiceWorkerEvent) -> ServiceWorkerHostEvent {
             ServiceWorkerHostEvent::ImportScriptsRequested { request_id, specifiers }
         }
         ServiceWorkerEvent::Closed => ServiceWorkerHostEvent::Closed,
+        ServiceWorkerEvent::ModuleScriptsRequested {
+            request_id,
+            referrer_url,
+            specifiers,
+        } => ServiceWorkerHostEvent::ModuleScriptsRequested {
+            request_id,
+            referrer_url,
+            specifiers,
+        },
     }
 }
 
@@ -439,6 +441,42 @@ mod tests {
             command: ServiceWorkerHostCommand::CompleteImportScripts {
                 request_id,
                 result: Ok(vec!["globalThis.imported = true;".into()]),
+            },
+        });
+        assert!(matches!(
+            wait_for_event(&mut transport).event,
+            ServiceWorkerHostEvent::Evaluated { .. }
+        ));
+    }
+
+    #[test]
+    fn module_graph_fetch_round_trips_through_renderer_host() {
+        let (host, mut transport) = spawn_host();
+        host.handle_command(ServiceWorkerHostCommandParams {
+            registration_id: 13,
+            command: ServiceWorkerHostCommand::Evaluate {
+                script_url: "https://example.test/workers/sw.js".into(),
+                script: "import { value } from './dependency.js'; if (value !== 3) throw new Error('wrong');".into(),
+                script_type: ServiceWorkerScriptTypeWire::Module,
+            },
+        });
+        let request = wait_for_event(&mut transport);
+        let ServiceWorkerHostEvent::ModuleScriptsRequested {
+            request_id,
+            referrer_url,
+            specifiers,
+        } = request.event
+        else {
+            panic!("expected ModuleScriptsRequested");
+        };
+        assert_eq!(referrer_url, "https://example.test/workers/sw.js");
+        assert_eq!(specifiers, ["./dependency.js"]);
+
+        host.handle_command(ServiceWorkerHostCommandParams {
+            registration_id: 13,
+            command: ServiceWorkerHostCommand::CompleteImportScripts {
+                request_id,
+                result: Ok(vec!["export const value = 3;".into()]),
             },
         });
         assert!(matches!(
