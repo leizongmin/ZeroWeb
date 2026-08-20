@@ -138,6 +138,11 @@ pub enum ActionTargetState {
         /// 触发提交的 submitter；隐式提交为 `None`。
         submitter: Option<PageNodeRef>,
     },
+    /// 无特定激活语义的普通元素（contenteditable 宿主、通用可点击元素）——激活仅派发
+    /// click 事件，无默认动作（js-dom R142：WPT no-focus-events 的 span[contenteditable]
+    /// 点击；旧分类对非表单/非链接/非 summary/非 option 一律 NotApplicable 使合成指针
+    /// 点击整簇挂）。
+    Generic,
 }
 
 /// identity-based 状态变更；宿主负责把 node ref 解析到 live DOM。
@@ -357,6 +362,18 @@ pub fn plan_html_action(
         }
         (HtmlUserAction::Activate, ActionTargetState::Summary(state)) => Ok(plan_summary(request.target, state)),
         (HtmlUserAction::MoveFocus { .. }, ActionTargetState::Focus { next }) => Ok(plan_focus(request.target, *next)),
+        // js-dom R142：普通元素激活 = 纯 click 事件（无默认动作——cancelable_event 的
+        // default_allowed 不产生 mutation/effect）。
+        (HtmlUserAction::Activate, ActionTargetState::Generic) => Ok(HtmlActionPlan {
+            target: request.target,
+            prepare: vec![],
+            cancelable_event: Some(PlannedEvent::simple(request.target, "click", true)),
+            rollback: vec![],
+            commit: vec![],
+            followup_events: vec![],
+            effects: vec![],
+            invalidation: InvalidationKind::None,
+        }),
         (HtmlUserAction::Reset, ActionTargetState::Reset { form }) => Ok(plan_reset(request.target, *form)),
         (HtmlUserAction::Submit, ActionTargetState::Submit { form, submitter }) => {
             Ok(plan_submit(request.target, *form, *submitter))
@@ -1089,6 +1106,35 @@ mod tests {
             }]
         );
         assert_eq!(multiple.followup_events[0].target, node(11));
+    }
+
+    #[test]
+    fn generic_activation_dispatches_click_without_default() {
+        // js-dom R142：普通元素（contenteditable 宿主等）激活 = 纯 click 事件派发，无
+        // 默认动作（mutation/effect 全空；preventDefault 只影响 default_allowed 语义，
+        // 不产生 rollback）。
+        let plan = plan_html_action(
+            &request(node(1), HtmlUserAction::Activate),
+            4,
+            9,
+            &ActionTargetState::Generic,
+        )
+        .unwrap();
+        assert!(plan.prepare.is_empty());
+        assert!(plan.commit.is_empty());
+        assert!(plan.effects.is_empty());
+        let event = plan.cancelable_event.as_ref().unwrap();
+        assert_eq!(event.target, node(1));
+        assert_eq!(event.event_type, "click");
+        let outcome = resolve_html_action(
+            plan,
+            EventDispatchResult {
+                default_allowed: false,
+                html_changed: false,
+            },
+        );
+        assert!(outcome.mutations.is_empty());
+        assert!(outcome.effects.is_empty());
     }
 
     #[test]

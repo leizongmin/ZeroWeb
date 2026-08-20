@@ -232,10 +232,7 @@ impl WebView {
                         details,
                         open: summary.open,
                     })
-                } else {
-                    let Some(option) = zero_engine::option_activation_snapshot(&html, &selector) else {
-                        return Ok(WebViewUserActionResult::noop(ActionNoopReason::NotApplicable));
-                    };
+                } else if let Some(option) = zero_engine::option_activation_snapshot(&html, &selector) {
                     let Some(select) = self.page_node_ref_for_selector(&option.select_selector) else {
                         return Ok(WebViewUserActionResult::noop(ActionNoopReason::NotApplicable));
                     };
@@ -247,6 +244,11 @@ impl WebView {
                             .previous_selected_selector
                             .and_then(|previous| self.page_node_ref_for_selector(&previous)),
                     })
+                } else {
+                    // js-dom R142：非表单/非链接/非 summary/非 option 的普通元素（contenteditable
+                    // 宿主等）——激活仍须派发 click 事件（真实浏览器对任意元素点击都有 click）；
+                    // 旧 NotApplicable 使合成指针点击整簇哑火（WPT no-focus-events）。
+                    ActionTargetState::Generic
                 }
             }
             HtmlUserAction::MoveFocus { forward } => {

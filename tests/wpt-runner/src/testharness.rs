@@ -2249,7 +2249,14 @@ fn unsupported_testdriver_dependencies(source: &str) -> Vec<String> {
             .take_while(|character| character.is_ascii_alphanumeric() || *character == '_')
             .collect();
         let name_len = name.len();
-        if !name.is_empty() && name != "click" && name != "send_keys" && !dependencies.contains(&name) {
+        // R142：Actions（指针链 pointerMove/pointerDown/pointerUp/send）白名单——stub 已提供
+        // 链式构造器（pointer 系列合成点击），不再整体 Unsupported。
+        if !name.is_empty()
+            && name != "click"
+            && name != "send_keys"
+            && name != "Actions"
+            && !dependencies.contains(&name)
+        {
             dependencies.push(name);
         }
         remaining = after.get(name_len..).unwrap_or_default();
@@ -2326,7 +2333,19 @@ fn apply_testdriver_command(webview: &mut WebView, command: &TestdriverCommand) 
         None => return Some(format!("testdriver target not found: {selector}")),
     };
     match command.operation.as_str() {
-        "click" => dispatch_action(webview, target, HtmlUserAction::Activate),
+        "click" => {
+            // R142：合成指针点击的 focus 步骤（spec UI Events 指针激活序列——可聚焦目标
+            // 先获得焦点再派发 click；WPT no-focus-events 期望 focus/focusin 恰好一次、
+            // target 为点击元素）。element.focus() 经 shim 的 R3247 focus 派发
+            //（focusout(旧) → focus(新) → focusin(新)），click 随后由 Activate 计划派发。
+            // focus 失败不阻断 click（不可聚焦目标真实浏览器也派发 click）。
+            let focus_script = format!(
+                "(function(){{var el=document.querySelector({sel});try{{if(el&&el.focus)el.focus();}}catch(_e){{}}}})();",
+                sel = serde_json::to_string(selector).unwrap_or_else(|_| "null".into())
+            );
+            let _ = webview.execute_script(&focus_script);
+            dispatch_action(webview, target, HtmlUserAction::Activate)
+        }
         "send_keys" => {
             let text = command.text.as_deref().unwrap_or_default();
             for character in text.chars() {
@@ -2386,7 +2405,43 @@ const TESTDRIVER_STUB: &str = r#"<script>
     var tag = String(element.tagName || '').toLowerCase();
     if (!tag) return null;
     var matches = document.querySelectorAll(tag);
-    return matches.length === 1 ? tag : null;
+    if (matches.length === 1) return tag;
+    // R142：同 tag 多实例时的唯一化——属性筛选器（contenteditable 等）命中唯一实例即用；
+    // 仍不唯一时 nth-of-type 兜底（host 侧 query_selector 消费任意合法选择器）。
+    var attrs = [];
+    var names = (element.getAttributeNames && element.getAttributeNames()) || [];
+    for (var i = 0; i < names.length; i++) {
+      var v = element.getAttribute(names[i]);
+      if (v === '' || v == null) attrs.push('[' + names[i] + ']');
+      else attrs.push('[' + names[i] + '="' + String(v).replace(/"/g, '\\"') + '"]');
+    }
+    for (var a = 0; a < attrs.length; a++) {
+      var withAttr = tag + attrs[a];
+      try {
+        var m2 = document.querySelectorAll(withAttr);
+        if (m2.length === 1) return withAttr;
+      } catch (_e) {}
+    }
+    try {
+      var parent = element.parentNode;
+      if (parent && parent.querySelectorAll) {
+        var idx = 1;
+        var sibs = parent.querySelectorAll(':scope > ' + tag);
+        for (var si = 0; si < sibs.length; si++) {
+          if (sibs[si] === element) break;
+          idx++;
+        }
+        if (sibs.length > 0) {
+          var viaNth = selectorFor(parent) ;
+          if (viaNth) {
+            var sel = viaNth + ' > ' + tag + ':nth-of-type(' + idx + ')';
+            var m3 = document.querySelectorAll(sel);
+            if (m3.length === 1) return sel;
+          }
+        }
+      }
+    } catch (_e2) {}
+    return null;
   }
   function enqueue(operation, element, text) {
     return new Promise(function(resolve, reject) {
@@ -2409,6 +2464,32 @@ const TESTDRIVER_STUB: &str = r#"<script>
     click: function(element) { return enqueue('click', element, null); },
     send_keys: function(element, keys) { return enqueue('send_keys', element, keys); }
   };
+  // R142：test_driver.Actions（指针动作链）——上游用 no-focus-events 等 case 经
+  // pointerMove/pointerDown/pointerUp 合成一次指针点击。headless 无真指针，语义映射：
+  // 链上记录 origin 元素（pointerMove 的 options.origin / 链首隐式），send() 时对
+  // origin 元素入队与 click 同形的 'click' 命令（宿主走既有 Activate 派发管线派发
+  // click 事件）。pointerDown/pointerUp 间无移动语义（单一 target），key 系列不支持
+  // （抛错——本 runner 未覆盖）。链式 API：每个方法返 this。
+  function Actions() { this._origin = null; this._keys = false; }
+  Actions.prototype.pointerMove = function(x, y, options) {
+    if (options && options.origin) this._origin = options.origin;
+    return this;
+  };
+  Actions.prototype.pointerDown = function() { return this; };
+  Actions.prototype.pointerUp = function() { return this; };
+  Actions.prototype.keyDown = function() { this._keys = true; return this; };
+  Actions.prototype.keyUp = function() { return this; };
+  Actions.prototype.send = function() {
+    var element = this._origin || document.activeElement;
+    if (this._keys) {
+      return Promise.reject(new Error('testdriver Actions key sequence unsupported'));
+    }
+    if (!element) {
+      return Promise.reject(new Error('testdriver Actions has no pointer origin'));
+    }
+    return enqueue('click', element, null);
+  };
+  globalThis.test_driver.Actions = Actions;
 })();
 </script>"#;
 

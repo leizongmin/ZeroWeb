@@ -870,10 +870,10 @@ details.addEventListener('toggle',function(){
     assert_eq!(renderer_result.0, "true|click:false,toggle:true,click:true");
     assert!(!renderer_result.1);
     assert!(renderer_result.2);
-    assert_eq!(
-        renderer_result.3,
-        Some(zero_page_runtime::ActionNoopReason::NotApplicable)
-    );
+    // js-dom R142：非首个 summary 激活语义对齐真实浏览器——click 事件照常派发（Generic
+    // 激活态，noop_reason=None = 动作生效），仅无 toggle 默认动作（观察串不含第 4 事件）。
+    // 旧断言 NotApplicable 是「非分类目标整体哑火」的旧语义（连 click 都不派发）。
+    assert_eq!(renderer_result.3, None);
 }
 
 #[test]
