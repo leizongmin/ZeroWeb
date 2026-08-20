@@ -414,11 +414,10 @@ fn flex_item_base_size(
     // 1. flex-basis 显式长度优先
     if let Some(s) = style
         && let FlexBasisValue::Length(len) = &s.flex_basis
+        && let Some(v) = resolve_intrinsic_real_length(len, s)
     {
-        if let LengthValue::Px(v) = len {
-            let frame = box_node.padding_left + box_node.padding_right + box_node.border_left + box_node.border_right;
-            return (*v as f32) + frame;
-        }
+        let frame = box_node.padding_left + box_node.padding_right + box_node.border_left + box_node.border_right;
+        return v + frame;
     }
     // 2. width 显式长度
     if let Some(s) = style
@@ -1096,6 +1095,28 @@ mod tests {
             "flex-basis should win (expected ~40), got {}",
             w
         );
+    }
+
+    #[test]
+    fn test_flex_basis_relative_length_overrides_width() {
+        let mut doc = zero_dom::Document::new();
+        let node = doc.create_element("div");
+
+        let mut styles = HashMap::new();
+        let mut style = ComputedStyle::default();
+        style.font_size = LengthValue::Px(20.0);
+        style.flex_basis = FlexBasisValue::Length(LengthValue::Em(5.0));
+        style.width = LengthValue::Px(50.0);
+        styles.insert(node, style);
+
+        let box_node = LayoutBox {
+            node_id: Some(node),
+            ..Default::default()
+        };
+
+        let w = flex_item_base_size(&box_node, &doc, &styles, None);
+
+        assert_eq!(w, 100.0, "flex-basis:5em at 20px should override width:50px");
     }
 
     #[test]

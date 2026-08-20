@@ -330,3 +330,5 @@ Table col prepasses exposed the sibling-prepass variant: a later column sizing h
 Table min-width redistribution exposed the post-constraint-sync variant: expanding the table wrapper to `min-width` does not automatically expand the column vector consumed by cell positioning and painting. When a layout object has both wrapper constraints and internal track/column arrays, resolve residual real lengths at both consumers.
 
 Intrinsic sizing exposed the shared-measurement variant: leaf max-content fallbacks are consumed by flex, grid, table-cell, and shrink-to-fit callers. These helpers must resolve residual real lengths locally rather than assuming direct `ComputedStyle` callers always pass canonical `Px` widths.
+
+Flex intrinsic sizing exposed the priority-preservation variant: `flex-basis` can override `width`, so adding residual length support only to the width fallback is insufficient. Each higher-priority sizing source needs the same resolver or direct callers silently fall through to lower-priority values.
