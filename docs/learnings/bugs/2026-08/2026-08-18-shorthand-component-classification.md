@@ -298,3 +298,5 @@ Gradient color stops exposed the nested-helper-context variant: fixing a gradien
 Text-indent exposed the shared-inline-resolver variant: even when layout and paint share one resolver, that resolver can still lag behind the accepted grammar. For `<length-percentage>` text metrics, keep the percentage basis explicit and send every real length unit through the same style-system used-value resolver.
 
 Inline visual metrics exposed the box-expansion variant: geometry sync code for inline backgrounds and borders may consume padding/border widths outside the normal Taffy conversion path. Resolve residual real lengths at that sync boundary with the element font context, and leave percentages unresolved when the helper has no containing-block basis.
+
+Absolute positioning exposed the postprocess-CB variant: fixes that correct Taffy containing-block coordinates must not assume the inset is already `Px`. When a postprocess path reinterprets CSS offsets against a viewport or root CB, resolve residual real lengths with the element font context at that same boundary while leaving existing percentage and auto branches explicit.

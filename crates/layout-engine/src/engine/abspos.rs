@@ -42,6 +42,36 @@ fn resolve_abspos_pct(
     (border_box, content)
 }
 
+fn resolve_abspos_real_length(
+    value: &zero_css_parser::values::LengthValue,
+    font_size: &zero_css_parser::values::LengthValue,
+    viewport_width: f32,
+    viewport_height: f32,
+) -> Option<f32> {
+    use zero_css_parser::values::LengthValue;
+    match value {
+        LengthValue::Auto
+        | LengthValue::Percentage(_)
+        | LengthValue::MinContent
+        | LengthValue::MaxContent
+        | LengthValue::FitContent(_) => None,
+        other => {
+            let font_size_px = zero_style_system::computed::resolve_length(
+                font_size,
+                16.0,
+                Some(viewport_width as f64),
+                Some(viewport_height as f64),
+            );
+            Some(zero_style_system::computed::resolve_length(
+                other,
+                font_size_px,
+                Some(viewport_width as f64),
+                Some(viewport_height as f64),
+            ) as f32)
+        }
+    }
+}
+
 /// 递归调整 fixed 定位元素的坐标为视口相对。
 ///
 /// taffy 将 `position: fixed` 当作 `absolute` 处理，坐标是相对于包含块的。
@@ -245,16 +275,18 @@ pub(super) fn adjust_absolute_pct_to_viewport(
                 let target_viewport_y = *p as f32 / 100.0 * viewport_height;
                 child.y = target_viewport_y - parent_content_origin_y;
             }
-            // left/top 为长度（Px）时：CSS 2.1 §10.1 规定无 positioned ancestor 的
+            // left/top 为真实长度时：CSS 2.1 §10.1 规定无 positioned ancestor 的
             // absolute 元素以初始包含块（视口）为 containing block。taffy 用静态父
             // 作 containing block，导致 top:118px 解析为静态父相对坐标。此处把目标
-            // 视口坐标（= px 值）转回父 content 相对坐标，与百分比路径同机制（不调整
+            // 视口坐标（= used length）转回父 content 相对坐标，与百分比路径同机制（不调整
             // auto 宽高，避免历史上 auto 宽高扩张导致的回归）。
-            if let LengthValue::Px(px) = &style.left {
-                child.x = (*px as f32) - parent_content_origin_x;
+            if let Some(px) = resolve_abspos_real_length(&style.left, &style.font_size, viewport_width, viewport_height)
+            {
+                child.x = px - parent_content_origin_x;
             }
-            if let LengthValue::Px(px) = &style.top {
-                child.y = (*px as f32) - parent_content_origin_y;
+            if let Some(px) = resolve_abspos_real_length(&style.top, &style.font_size, viewport_width, viewport_height)
+            {
+                child.y = px - parent_content_origin_y;
             }
             // right/bottom 为长度且 left/top 为 auto 时：CSS 2.1 §10.1 无 positioned
             // ancestor 的 absolute 元素 CB=视口。left:auto + right:Px → 右边对齐视口
@@ -264,15 +296,17 @@ pub(super) fn adjust_absolute_pct_to_viewport(
             // Px 时由上方块处理；双 inset 全 Px 的 over-constrained（LTR）忽略 right。
             // right/bottom 百分比仅当对应尺寸为 auto 时才影响位置，当前不处理。
             if matches!(style.left, LengthValue::Auto)
-                && let LengthValue::Px(right) = &style.right
+                && let Some(right) =
+                    resolve_abspos_real_length(&style.right, &style.font_size, viewport_width, viewport_height)
             {
-                let target_viewport_x = viewport_width - (*right as f32) - child.width;
+                let target_viewport_x = viewport_width - right - child.width;
                 child.x = target_viewport_x - parent_content_origin_x;
             }
             if matches!(style.top, LengthValue::Auto)
-                && let LengthValue::Px(bottom) = &style.bottom
+                && let Some(bottom) =
+                    resolve_abspos_real_length(&style.bottom, &style.font_size, viewport_width, viewport_height)
             {
-                let target_viewport_y = viewport_height - (*bottom as f32) - child.height;
+                let target_viewport_y = viewport_height - bottom - child.height;
                 child.y = target_viewport_y - parent_content_origin_y;
             }
             // §10.3.7：width:auto + 全长度 left+right 填满后，max-width 钳制，再把
