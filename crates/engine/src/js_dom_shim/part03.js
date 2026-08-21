@@ -3999,11 +3999,148 @@
     // 节点，旧缺方法抛 TypeError）。合成 click 事件经本地 dispatchEvent 派发
     // （listener/bubbling 到 parentNode 链由 dispatchEvent 内处理——本实现仅
     // target 级，与 _zwMEl 本地派发语义一致）。
+    // R152（js-dom M4）：升级为「派发 + inline on* handler + activation behavior」
+    // 三段（spec html.spec.whatwg.org/#event-activation-behavior 与 proxy 侧
+    // `_dispatchWithBubble` 的 R108/R112 序列对齐——pre-activation 在 listener 前、
+    // 默认动作在 dispatch 未取消后）：
+    // ① inline handler：本节点 attrs 的 on* 串编译派发（`with(this)` 词法域，与
+    //    `_ensureInlineHandler` 同语义——_zwMEl 无 sel/handle 不能走 host 查询，
+    //    直接 getAttribute('onclick')）
+    // ② activation behavior（spec 各元素激活定义，对 detached 克隆子树的 headless
+    //    近似）：
+    //    - INPUT[checkbox/radio]：checked 翻转 + input + change 派发（本节点）
+    //    - INPUT[submit/image] / BUTTON[submit]：宿主 form 的 submit 事件（onsubmit）
+    //    - INPUT[reset] / BUTTON[reset]：form reset（headless 无状态可复位 → 仅派发
+    //      reset 事件到宿主 form）
+    //    - LABEL：转发到内部第一个 labelable 控件（checkbox/radio 翻转，spec
+    //      html.spec.whatwg.org/#the-label-element:activation-behavior——「label 的
+    //      激活 = 转发给关联控件」；无控件 no-op）
+    //    - DETAILS：open 属性翻转 + toggle 事件（spec
+    //      html.spec.whatwg.org/#the-details-element:activation-behavior）
+    //    - A/AREA[href]：location.hash 导航（href 以 # 开头的同文档片段——hashchange
+    //      由 `location.hash =` setter 的既有链路派发；非 # href headless 无导航 no-op）
     node.click = function () {
       var ev = (typeof _makeEvent === 'function')
         ? _makeEvent('click', { bubbles: true, cancelable: true })
         : { type: 'click', bubbles: true, cancelable: true, defaultPrevented: false };
-      node.dispatchEvent(ev);
+      // inline onclick handler（attrs 本地有才编译；spec 派发模型 = listener 之一）。
+      var inlineCode = node.getAttribute && node.getAttribute('onclick');
+      if (inlineCode) {
+        try {
+          var fn152 = new Function('event', 'with(document) { with(this) { ' + inlineCode + ' } }');
+          try { fn152.call(node, ev); } catch (_e152i) {}
+        } catch (_e152c) {}
+      }
+      // pre-click activation（checkbox/radio 翻转在 listener 前执行——与 proxy 侧
+      // R108 同序）：本节点或祖先（LABEL 内控件经 ② LABEL 分支处理，此处仅本节点）。
+      var tag152 = String(node.tagName || '').toLowerCase();
+      var _r152Flip = null; // { node, wasChecked } 翻转账（preventDefault 回滚）
+      if (tag152 === 'input') {
+        var ty152 = String(node.getAttribute && node.getAttribute('type') || '').toLowerCase();
+        if (ty152 === 'checkbox' || ty152 === 'radio') {
+          var dis152 = node.hasAttribute && node.hasAttribute('disabled');
+          if (!dis152) {
+            var was152 = !!(node.hasAttribute && node.hasAttribute('checked'));
+            if (was152) node.removeAttribute('checked');
+            else node.setAttribute('checked', '');
+            if (ty152 === 'radio') {
+              // radio 组语义：同名兄弟 checked 清除（spec 4.10.5.2.4 radio group——
+              // 同 form owner + 同 name 互斥；detached 树按同根 parentNode 子树近似）。
+              var nm152 = String(node.getAttribute && node.getAttribute('name') || '');
+              if (nm152 && node.parentNode && node.parentNode.childNodes) {
+                for (var ri152 = 0; ri152 < node.parentNode.childNodes.length; ri152++) {
+                  var rs152 = node.parentNode.childNodes[ri152];
+                  if (rs152 && rs152 !== node && rs152.tagName
+                      && String(rs152.tagName).toLowerCase() === 'input'
+                      && String(rs152.getAttribute && rs152.getAttribute('type') || '').toLowerCase() === 'radio'
+                      && String(rs152.getAttribute && rs152.getAttribute('name') || '') === nm152
+                      && rs152.hasAttribute && rs152.hasAttribute('checked')) {
+                    try { rs152.removeAttribute('checked'); } catch (_e152r) {}
+                  }
+                }
+              }
+            }
+            _r152Flip = { node: node, wasChecked: was152, type: ty152 };
+          }
+        }
+      }
+      // click 派发（本地 listener + 上行 parentNode 链由 dispatchEvent 处理）。
+      var notPrevented = node.dispatchEvent(ev);
+      if (!notPrevented && _r152Flip) {
+        // preventDefault：legacy-canceled-activation 回滚（与 proxy 侧 R108 回滚账同义）。
+        if (_r152Flip.wasChecked) _r152Flip.node.setAttribute('checked', '');
+        else _r152Flip.node.removeAttribute('checked');
+        return false;
+      }
+      // post-activation：input + change（INPUT[checkbox/radio]，spec input/change 在
+      // 激活末段派发，bubbles）。
+      if (_r152Flip) {
+        node.dispatchEvent(_makeEvent('input', { bubbles: true }));
+        node.dispatchEvent(_makeEvent('change', { bubbles: true }));
+      }
+      // 宿主 form 的 submit / reset（INPUT[submit/image/reset] + BUTTON[submit/reset]——
+      // spec 激活 = 「form owner 的提交/复位」；detached 树按最近 form 祖先近似）。
+      if ((tag152 === 'input' || tag152 === 'button') && node.parentNode) {
+        var bty152 = String(node.getAttribute && node.getAttribute('type') || '').toLowerCase();
+        var want152 = (tag152 === 'input' && (bty152 === 'submit' || bty152 === 'image' || bty152 === 'reset'))
+          || (tag152 === 'button' && (bty152 === 'submit' || bty152 === 'reset' || bty152 === ''));
+        if (want152) {
+          var form152 = null, anc152 = node.parentNode;
+          for (var hi152 = 0; hi152 < 32 && anc152; hi152++) {
+            if (anc152.tagName && String(anc152.tagName).toLowerCase() === 'form') { form152 = anc152; break; }
+            anc152 = anc152.parentNode;
+          }
+          if (form152) {
+            if (bty152 === 'reset') form152.dispatchEvent(_makeEvent('reset', { bubbles: true, cancelable: true }));
+            else form152.dispatchEvent(_makeEvent('submit', { bubbles: true, cancelable: true }));
+          }
+        }
+      }
+      // LABEL：激活 = 转发到内部第一个 labelable 控件（spec the-label-element
+      // activation-behavior；headless 近似——同子树 input[checkbox/radio] 翻转 +
+      // input/change，控件自身 click() 全语义递归一次）。
+      if (tag152 === 'label') {
+        var fwd152 = null;
+        (function findLabelable(n) {
+          if (fwd152) return;
+          if (n && n.tagName && n !== node) {
+            var ft152 = String(n.tagName).toLowerCase();
+            if (ft152 === 'input') {
+              var fty152 = String(n.getAttribute && n.getAttribute('type') || '').toLowerCase();
+              if (fty152 === 'checkbox' || fty152 === 'radio') { fwd152 = n; return; }
+            }
+          }
+          var kids152 = (n && n.childNodes) || [];
+          for (var fi152 = 0; fi152 < kids152.length; fi152++) findLabelable(kids152[fi152]);
+        })(node);
+        if (fwd152 && typeof fwd152.click === 'function') {
+          try { fwd152.click(); } catch (_e152f) {}
+        }
+      }
+      // DETAILS：open 翻转 + toggle（spec the-details-element activation-behavior；
+      // click 在 summary 上或 details 自身——WPT 用例 click 目标是 summary）。
+      var det152 = null;
+      if (tag152 === 'details') det152 = node;
+      else if (tag152 === 'summary' && node.parentNode
+               && node.parentNode.tagName && String(node.parentNode.tagName).toLowerCase() === 'details') {
+        det152 = node.parentNode;
+      }
+      if (det152) {
+        var open152 = !!(det152.hasAttribute && det152.hasAttribute('open'));
+        if (open152) det152.removeAttribute('open');
+        else det152.setAttribute('open', '');
+        det152.dispatchEvent(_makeEvent('toggle', { bubbles: false }));
+      }
+      // A/AREA[href^="#"]：同文档片段导航（spec the-a-element activation-behavior——
+      // fragment 导航 = location.hash 更新 + hashchange；test 的 window.onhashchange
+      // 读 e.newURL 断言导航达成）。
+      if ((tag152 === 'a' || tag152 === 'area')) {
+        var href152 = node.getAttribute && node.getAttribute('href');
+        if (href152 && String(href152).charAt(0) === '#' && globalThis.location) {
+          try { globalThis.location.hash = String(href152).slice(1); } catch (_e152h) {}
+        }
+      }
+      return notPrevented;
     };
     // R151（js-dom M4）：`classList`（DOMTokenList，spec `dom-domtokenlist`）——proxy 元素
     // 经 get trap `_classListProxy(sel, handle)`，_zwMEl 解析节点（template.content 克隆

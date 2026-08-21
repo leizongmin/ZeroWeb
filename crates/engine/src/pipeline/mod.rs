@@ -830,23 +830,6 @@ impl RenderPipeline {
         Some(hit_test::HitTestCache::from_document(&doc, &layout.root))
     }
 
-    /// js-dom R150（M4）：按 selector 查元素的布局 rect（绝对坐标）。
-    ///
-    /// 进程内 `__zw_getBoundingClientRect` 回调的解析源（多进程路径走
-    /// `rect_bridge::RectBridge` + 共享 layout snapshot；进程内 webview 无该桥——
-    /// gBCR 恒零 rect。本方法按需遍历布局树（O(n) per call，gBCR 低频可接受），
-    /// 使 testharness 用例的 `getBoundingClientRect`/MouseEvent offsetX 计算可用。
-    pub fn layout_rect_for_selector(&self, selector: &str) -> Option<(f32, f32, f32, f32)> {
-        let doc = self.cached_doc.as_ref()?.borrow();
-        let layout = self.cached_layout.as_ref()?;
-        let node = crate::js_dom_bridge::find_by_selector(&doc, selector)?;
-        let target = crate::hit_test::node_id_to_u64(node);
-        let mut map = std::collections::HashMap::new();
-        crate::hit_test::fill_rect_from_layout_box_pub(&layout.root, 0.0, 0.0, &mut map);
-        let (x, y, w, h) = map.get(&target).copied()?;
-        Some((x, y, w, h))
-    }
-
     /// 取缓存 live Document 的共享句柄（`Rc<RefCell<Document>>` 克隆）。
     ///
     /// P1b L1a（R3106）：原生 DOM 绑定（engine::dom_bindings）经此取**同一** live Document，

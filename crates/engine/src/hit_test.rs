@@ -166,17 +166,6 @@ fn fill_rect_from_layout_box(
     }
 }
 
-/// js-dom R150：[`fill_rect_from_layout_box`] 的公开入口（进程内 webview 的按需
-/// `layout_rect_for_selector` 消费——单次查询建临时 map，避免常驻 snapshot 状态）。
-pub(crate) fn fill_rect_from_layout_box_pub(
-    box_node: &LayoutBox,
-    abs_x: f32,
-    abs_y: f32,
-    map: &mut HashMap<u64, crate::rect_bridge::Rect4>,
-) {
-    fill_rect_from_layout_box(box_node, abs_x, abs_y, map);
-}
-
 /// IPC / 快照可传输的命中测试布局节点（仅几何 + node id）。
 #[derive(Debug, Clone)]
 pub struct HitTestLayoutSnapshot {
