@@ -20,3 +20,4 @@ include!("js_dom_bridge_tests/part17.rs");
 include!("js_dom_bridge_tests/part18.rs");
 include!("js_dom_bridge_tests/part19.rs");
 include!("js_dom_bridge_tests/part20.rs");
+include!("js_dom_bridge_tests/part21.rs");

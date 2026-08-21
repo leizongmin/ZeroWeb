@@ -42,7 +42,14 @@
   // 注册不上（capture 阶段 R2693 因此对布尔形式失效）。removeEventListener 第三参同语义（useCapture
   // 须匹配才移除，spec）。
   function _optCapture(opts) {
-    return !!(opts === true || (opts && opts.capture));
+    // R146（js-dom M4）：WebIDL boolean 转换——primitive 真值（2.3/-1000.3/"AAAA"）经
+    // Boolean() 归 true（WPT EventListenerOptions-capture "Capture boolean should be
+    // honored correctly"：capture=2.3 期望 CAPTURING_PHASE。旧 `opts === true` 仅认
+    // 字面 true，数字真值落到 `opts.capture`（number 无 .capture → undefined）误判
+    // false）。对象形态仍读 .capture 字段（其值再经同一转换）。
+    if (opts == null) return false;
+    if (typeof opts !== 'object') return Boolean(opts);
+    return Boolean(opts.capture);
   }
 
   // addEventListener `opts.once` 提取（仅对象形式 `{ once: true }`；布尔形式无 once 语义）。
@@ -3099,15 +3106,20 @@
       // js-dom M4 R33：dispatch 结束 restore 外层 event（嵌套 dispatch 正确）；顶层 dispatch 后回 undefined
       //（WPT event-global "undefined after dispatch"）。须先于 _propagationStopped 重置，保证 restore 与 set 配对。
       globalThis.event = prevEvent;
-      // js-dom M4 R29：spec `concept-event-dispatch` 步骤14——dispatch 结束 unset stop propagation flag
+      // js-dom M4 R29：spec `concept-event-dispatch` 末步——dispatch 结束 unset stop propagation flag
       //（+ 步骤清其他 dispatch flags）。reset 后 cancelBubble getter（后端 _propagationStopped）返 false
       //（WPT Event-cancelBubble "cancelBubble must be false after an event has been dispatched"）。
-      // 仅清 dispatch 内设的 flag；监听器外显式 stopPropagation（未 dispatch）的 flag 保留至 initEvent 重置。
+      // R146（js-dom M4）：**无条件**清（含 dispatch 前外部设的 flag）——spec 该步无「仅 dispatch 内」
+      // 限定，外设 flag 也随 dispatch 结束清除，同 event 二次 dispatch 恢复触发（WPT
+      // Event-propagation "After stopImmediatePropagation()"：一次 dispatch 零触发后**第二次**
+      // dispatch 应正常触发——旧「外设保留」语义使第二次仍零触发。dispatch 前的零触发由
+      // 上方 dispatch 开始时的 flag 检查保证，不受影响）。
       event._propagationStopped = false;
+      event._immediateStopped = false;
       // js-dom M4 R34：同步清 native Event 的 stop flag（叠加路径下 `new MouseEvent` 是 native 对象，dispatch
       // 走此 polyfill 但 native dispatch_event_impl 未跑故不自清；同 event 重派发需 fresh，与 _propagationStopped 同语义）。
-      if (event.__zw_stop === true) event.__zw_stop = false;
-      if (event.__zw_stop_immediate === true) event.__zw_stop_immediate = false;
+      event.__zw_stop = false;
+      event.__zw_stop_immediate = false;
       // R106：dispatch flag 复位（嵌套计数——内层 finally 减一，外层结束归零）。
       event._zwDispatching = Math.max(0, (event._zwDispatching || 1) - 1);
       // R108：legacy-canceled-activation behavior（spec inner invoke 步骤——listener
@@ -3911,6 +3923,15 @@
     node.dispatchEvent = function (ev) {
       // js-dom M4 R106：spec 入口守卫（与主派发路径一致——TypeError/InvalidStateError）。
       globalThis._zwDispatchGuard(ev);
+      // R146（js-dom M4）：spec `dom-event-dispatch` 步骤——派发前设 target/srcElement
+      // 为本节点（listener 读 ev.target 断言自身；WPT Event-dispatch-other-document
+      // "Custom event on an element in another document"：detached doc 的 element
+      // dispatchEvent 后 ev.target === element / ev.srcElement === element，旧未设
+      // 均为 null）。own-set 覆盖构造器 data 属性（native 形态同 R138 srcElement 手法）。
+      try {
+        ev.target = node;
+        ev.srcElement = node;
+      } catch (_e146t) {}
       var t = String(ev && ev.type);
       var idx = [];
       for (var i = 0; i < _mEvListeners.length; i++) if (_mEvListeners[i].type === t) idx.push(i);
