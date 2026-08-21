@@ -97,6 +97,17 @@ pub(super) fn extended_visual_or_layout_property_supported(property: &str, value
         "border-top-style" | "border-right-style" | "border-bottom-style" | "border-left-style" => {
             crate::property::parse_border_style(value).is_some()
         }
+        // https://drafts.csswg.org/css-logical-1/#border-shorthands
+        "border-inline-style" | "border-block-style" => border_axis_style_supported(value),
+        "border-inline-start-style"
+        | "border-inline-end-style"
+        | "border-block-start-style"
+        | "border-block-end-style" => crate::property::parse_border_style(value).is_some(),
+        "border-inline-color" | "border-block-color" => border_axis_color_supported(value),
+        "border-inline-start-color"
+        | "border-inline-end-color"
+        | "border-block-start-color"
+        | "border-block-end-color" => values::parse_color(value).is_some(),
         // https://drafts.csswg.org/css-backgrounds-3/#border-images
         "border-image" => crate::shorthand::border_image_shorthand_supported(value),
         "border-image-source" => values::parse_border_image_source(value).is_some(),
@@ -201,6 +212,25 @@ fn justify_items_supported(value: &str) -> bool {
         value.trim().to_ascii_lowercase().as_str(),
         "auto" | "normal" | "start" | "end" | "center" | "stretch" | "baseline" | "left" | "right"
     )
+}
+
+fn border_axis_style_supported(value: &str) -> bool {
+    axis_pair_supported(value, crate::property::parse_border_style)
+}
+
+fn border_axis_color_supported(value: &str) -> bool {
+    axis_pair_supported(value, values::parse_color)
+}
+
+fn axis_pair_supported<T>(value: &str, parse_component: fn(&str) -> Option<T>) -> bool {
+    let mut count = 0;
+    for part in value.split_whitespace() {
+        count += 1;
+        if count > 2 || parse_component(part).is_none() {
+            return false;
+        }
+    }
+    count > 0
 }
 
 fn origin_pair_supported(value: &str) -> bool {

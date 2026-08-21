@@ -422,6 +422,10 @@ fn test_property_supported_length_properties() {
     assert!(is_property_supported("border-left-style", "double"));
     assert!(is_property_supported("border-inline-width", "thin 2px"));
     assert!(is_property_supported("border-block-start-width", "medium"));
+    assert!(is_property_supported("border-inline-start-style", "solid"));
+    assert!(is_property_supported("border-block-end-color", "red"));
+    assert!(is_property_supported("border-inline-style", "solid dashed"));
+    assert!(is_property_supported("border-block-color", "red blue"));
     assert!(is_property_supported("border-top-left-radius", "5px"));
     assert!(is_property_supported("border-top-right-radius", "5px"));
     assert!(is_property_supported("border-bottom-right-radius", "5px"));
@@ -442,6 +446,10 @@ fn test_property_supported_length_properties() {
     assert!(!is_property_supported("border-right-style", "solid dashed"));
     assert!(!is_property_supported("border-bottom-style", "sparkle"));
     assert!(!is_property_supported("border-inline-width", "thin 2px 3px"));
+    assert!(!is_property_supported("border-inline-start-style", "auto"));
+    assert!(!is_property_supported("border-block-style", "1px"));
+    assert!(!is_property_supported("border-inline-style", "solid dashed dotted"));
+    assert!(!is_property_supported("border-block-color", "solid"));
     assert!(!is_property_supported("border-radius", "-1px"));
     assert!(!is_property_supported("gap", "-1px"));
     assert!(!is_property_supported("column-gap", "-1px"));
