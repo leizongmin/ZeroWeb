@@ -475,6 +475,8 @@ fn test_apply_flex_properties() {
 fn test_apply_grid_properties() {
     let (ok, _) = apply("grid-template-columns", "1fr 1fr");
     assert!(ok);
+    let (ok, _) = apply("grid-template-columns", "repeat(3, 100px)");
+    assert!(ok);
     let (ok, _) = apply("grid-template-rows", "auto");
     assert!(ok);
     let (ok, _) = apply("grid-auto-flow", "dense");
@@ -501,6 +503,34 @@ fn test_apply_grid_properties() {
     assert!(ok);
     let (ok, _) = apply("row-gap", "8px");
     assert!(ok);
+
+    let mut style = ComputedStyle::default();
+    assert!(apply_property_value(&mut style, "grid-template-columns", "100px\n1fr"));
+    assert_eq!(style.grid_template_columns, Some("100px 1fr".to_string()));
+    let previous = style.grid_template_columns.clone();
+    assert!(!apply_property_value(
+        &mut style,
+        "grid-template-columns",
+        "100px bogus"
+    ));
+    assert_eq!(style.grid_template_columns, previous);
+    assert!(!apply_property_value(&mut style, "grid-template-columns", "10"));
+    assert_eq!(style.grid_template_columns, previous);
+
+    assert!(apply_property_value(&mut style, "grid-auto-rows", "minmax(50px, 1fr)"));
+    let previous = style.grid_auto_rows.clone();
+    assert!(!apply_property_value(&mut style, "grid-auto-rows", "repeat(2, 50px)"));
+    assert_eq!(style.grid_auto_rows, previous);
+
+    assert!(apply_property_value(&mut style, "grid-template-areas", "'a ...' 'c d'"));
+    assert_eq!(style.grid_template_areas, Some("\"a .\" \"c d\"".to_string()));
+    let previous = style.grid_template_areas.clone();
+    assert!(!apply_property_value(
+        &mut style,
+        "grid-template-areas",
+        "\"a a\" \"b a\""
+    ));
+    assert_eq!(style.grid_template_areas, previous);
 }
 
 // === 定位 ===

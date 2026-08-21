@@ -114,6 +114,346 @@ pub fn parse_grid_line_shorthand(value: &str) -> Option<(GridLineValue, GridLine
     }
 }
 
+/// Parse `grid-template-columns` / `grid-template-rows` values.
+///
+/// https://drafts.csswg.org/css-grid-2/#track-sizing
+pub fn parse_grid_template_track_list(value: &str) -> Option<Option<String>> {
+    let value = value.trim();
+    if value.eq_ignore_ascii_case("none") {
+        return Some(None);
+    }
+    parse_grid_track_list(value, true).map(Some)
+}
+
+/// Parse `grid-auto-rows` / `grid-auto-columns` values.
+///
+/// https://drafts.csswg.org/css-grid-2/#auto-tracks
+pub fn parse_grid_auto_track_list(value: &str) -> Option<Option<String>> {
+    let value = value.trim();
+    parse_grid_track_list(value, false).map(Some)
+}
+
+/// Parse `grid-template-areas` values.
+///
+/// https://drafts.csswg.org/css-grid-2/#grid-template-areas-property
+pub fn parse_grid_template_areas_value(value: &str) -> Option<Option<String>> {
+    let value = value.trim();
+    if value.eq_ignore_ascii_case("none") {
+        return Some(None);
+    }
+
+    let rows = parse_grid_template_area_rows(value)?;
+    Some(Some(
+        rows.iter()
+            .map(|row| format!("\"{}\"", row.join(" ")))
+            .collect::<Vec<_>>()
+            .join(" "),
+    ))
+}
+
+fn parse_grid_track_list(value: &str, allow_repeat: bool) -> Option<String> {
+    let tokens = tokenize_grid_track_list(value)?;
+    if tokens.is_empty() {
+        return None;
+    }
+
+    let mut explicit_track_count = 0usize;
+    for token in &tokens {
+        let count = if allow_repeat && grid_track_function_inner(token, "repeat").is_some() {
+            parse_grid_repeat_track_count(token)?
+        } else if grid_single_track_supported(token, allow_repeat) {
+            1
+        } else {
+            return None;
+        };
+        explicit_track_count = explicit_track_count.saturating_add(count);
+        if explicit_track_count > i16::MAX as usize {
+            return None;
+        }
+    }
+    Some(tokens.join(" "))
+}
+
+fn parse_grid_repeat_track_count(token: &str) -> Option<usize> {
+    let inner = grid_track_function_inner(token, "repeat")?;
+    let comma = find_top_level_comma(inner)?;
+    let count = inner[..comma].trim();
+    let track_list = inner[comma + 1..].trim();
+    let tracks = tokenize_grid_track_list(track_list)?;
+    if tracks.is_empty() || tracks.iter().any(|track| !grid_single_track_supported(track, true)) {
+        return None;
+    }
+    if count.eq_ignore_ascii_case("auto-fill") || count.eq_ignore_ascii_case("auto-fit") {
+        return Some(tracks.len());
+    }
+    let count = count.parse::<usize>().ok()?;
+    if count == 0 {
+        return None;
+    }
+    count
+        .checked_mul(tracks.len())
+        .filter(|total| *total <= i16::MAX as usize)
+}
+
+fn grid_single_track_supported(token: &str, allow_fit_content: bool) -> bool {
+    let token = token.trim();
+    if token.eq_ignore_ascii_case("auto") {
+        return true;
+    }
+    if grid_non_negative_number_with_suffix(token, "fr").is_some()
+        || grid_non_negative_number_with_suffix(token, "px").is_some()
+        || grid_non_negative_number_with_suffix(token, "%").is_some()
+        || grid_zero_number(token)
+    {
+        return true;
+    }
+
+    if let Some(inner) = grid_track_function_inner(token, "minmax") {
+        let Some(comma) = find_top_level_comma(inner) else {
+            return false;
+        };
+        return find_top_level_comma(inner[comma + 1..].trim()).is_none()
+            && grid_min_track_supported(inner[..comma].trim())
+            && grid_max_track_supported(inner[comma + 1..].trim());
+    }
+
+    if allow_fit_content && let Some(inner) = grid_track_function_inner(token, "fit-content") {
+        return grid_length_percentage_supported(inner.trim());
+    }
+
+    false
+}
+
+fn grid_min_track_supported(value: &str) -> bool {
+    value.eq_ignore_ascii_case("auto") || grid_length_percentage_supported(value)
+}
+
+fn grid_max_track_supported(value: &str) -> bool {
+    value.eq_ignore_ascii_case("auto")
+        || grid_length_percentage_supported(value)
+        || grid_non_negative_number_with_suffix(value, "fr").is_some()
+}
+
+fn grid_length_percentage_supported(value: &str) -> bool {
+    grid_non_negative_number_with_suffix(value, "px").is_some()
+        || grid_non_negative_number_with_suffix(value, "%").is_some()
+        || grid_zero_number(value)
+}
+
+fn grid_non_negative_number_with_suffix<'a>(value: &'a str, suffix: &str) -> Option<&'a str> {
+    if !value.ends_with(suffix) {
+        return None;
+    }
+    let number = value[..value.len() - suffix.len()].trim();
+    let parsed = number.parse::<f32>().ok()?;
+    (parsed.is_finite() && parsed >= 0.0).then_some(number)
+}
+
+fn grid_zero_number(value: &str) -> bool {
+    value
+        .parse::<f32>()
+        .is_ok_and(|number| number.is_finite() && number == 0.0)
+}
+
+fn grid_track_function_inner<'a>(token: &'a str, name: &str) -> Option<&'a str> {
+    let prefix_len = name.len();
+    let prefix = token.get(..prefix_len)?;
+    if token.len() <= prefix_len + 1
+        || !prefix.eq_ignore_ascii_case(name)
+        || token.as_bytes().get(prefix_len) != Some(&b'(')
+        || !token.ends_with(')')
+    {
+        return None;
+    }
+    let inner = &token[prefix_len + 1..token.len() - 1];
+    grid_parentheses_balanced(inner).then_some(inner)
+}
+
+fn tokenize_grid_track_list(value: &str) -> Option<Vec<String>> {
+    let mut tokens = Vec::new();
+    let mut current = String::new();
+    let mut depth = 0u32;
+
+    for ch in value.chars() {
+        match ch {
+            '(' => {
+                depth += 1;
+                current.push(ch);
+            }
+            ')' => {
+                if depth == 0 {
+                    return None;
+                }
+                depth -= 1;
+                current.push(ch);
+            }
+            c if c.is_whitespace() && depth == 0 => {
+                if !current.is_empty() {
+                    tokens.push(std::mem::take(&mut current));
+                }
+            }
+            _ => current.push(ch),
+        }
+    }
+
+    if depth != 0 {
+        return None;
+    }
+    if !current.is_empty() {
+        tokens.push(current);
+    }
+    Some(tokens)
+}
+
+fn grid_parentheses_balanced(value: &str) -> bool {
+    let mut depth = 0u32;
+    for ch in value.chars() {
+        match ch {
+            '(' => depth += 1,
+            ')' => {
+                if depth == 0 {
+                    return false;
+                }
+                depth -= 1;
+            }
+            _ => {}
+        }
+    }
+    depth == 0
+}
+
+fn find_top_level_comma(value: &str) -> Option<usize> {
+    let mut depth = 0u32;
+    for (idx, ch) in value.char_indices() {
+        match ch {
+            '(' => depth += 1,
+            ')' => {
+                if depth == 0 {
+                    return None;
+                }
+                depth -= 1;
+            }
+            ',' if depth == 0 => return Some(idx),
+            _ => {}
+        }
+    }
+    None
+}
+
+fn parse_grid_template_area_rows(value: &str) -> Option<Vec<Vec<String>>> {
+    let mut rows = Vec::new();
+    let mut chars = value.char_indices().peekable();
+
+    while let Some((_, ch)) = chars.peek().copied() {
+        if ch.is_whitespace() {
+            chars.next();
+            continue;
+        }
+        if ch != '"' && ch != '\'' {
+            return None;
+        }
+        chars.next();
+
+        let quote = ch;
+        let mut row = String::new();
+        let mut closed = false;
+        for (_, ch) in chars.by_ref() {
+            if ch == quote {
+                closed = true;
+                break;
+            }
+            row.push(ch);
+        }
+        if !closed {
+            return None;
+        }
+
+        let tokens: Vec<String> = row
+            .split_whitespace()
+            .map(|token| {
+                if token.chars().all(|ch| ch == '.') {
+                    ".".to_string()
+                } else {
+                    token.to_string()
+                }
+            })
+            .collect();
+        if tokens.is_empty() || tokens.iter().any(|token| !grid_area_token_supported(token)) {
+            return None;
+        }
+        rows.push(tokens);
+    }
+
+    if rows.is_empty() || rows.len() >= i16::MAX as usize {
+        return None;
+    }
+
+    let columns = rows[0].len();
+    if columns == 0 || columns >= i16::MAX as usize || rows.iter().any(|row| row.len() != columns) {
+        return None;
+    }
+
+    grid_area_names_are_rectangular(&rows).then_some(rows)
+}
+
+fn grid_area_token_supported(token: &str) -> bool {
+    token.chars().all(|ch| ch == '.') || grid_css_ident_supported(token)
+}
+
+fn grid_css_ident_supported(value: &str) -> bool {
+    let mut chars = value.chars();
+    let Some(first) = chars.next() else {
+        return false;
+    };
+    if first.is_ascii_digit() {
+        return false;
+    }
+    if first == '-' {
+        let Some(second) = chars.next() else {
+            return false;
+        };
+        if second != '-' && !grid_css_name_start(second) {
+            return false;
+        }
+    } else if !grid_css_name_start(first) {
+        return false;
+    }
+    chars.all(grid_css_name_char)
+}
+
+fn grid_css_name_start(c: char) -> bool {
+    c.is_ascii_alphabetic() || c == '_' || c == '-' || !c.is_ascii()
+}
+
+fn grid_css_name_char(c: char) -> bool {
+    grid_css_name_start(c) || c.is_ascii_digit()
+}
+
+fn grid_area_names_are_rectangular(rows: &[Vec<String>]) -> bool {
+    let mut areas = std::collections::HashMap::<&str, (usize, usize, usize, usize, usize)>::new();
+    for (row_idx, row) in rows.iter().enumerate() {
+        for (col_idx, token) in row.iter().enumerate() {
+            if token == "." {
+                continue;
+            }
+            areas
+                .entry(token.as_str())
+                .and_modify(|(min_row, max_row, min_col, max_col, count)| {
+                    *min_row = (*min_row).min(row_idx);
+                    *max_row = (*max_row).max(row_idx);
+                    *min_col = (*min_col).min(col_idx);
+                    *max_col = (*max_col).max(col_idx);
+                    *count += 1;
+                })
+                .or_insert((row_idx, row_idx, col_idx, col_idx, 1));
+        }
+    }
+
+    areas
+        .values()
+        .all(|(min_row, max_row, min_col, max_col, count)| (max_row - min_row + 1) * (max_col - min_col + 1) == *count)
+}
+
 /// 解析逗号分隔的 transition-timing-function 列表。
 ///
 /// 需要处理 cubic-bezier() 和 steps() 内部的逗号。

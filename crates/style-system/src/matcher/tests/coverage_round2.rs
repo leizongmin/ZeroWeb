@@ -135,6 +135,11 @@ fn test_property_supported_grid_placement() {
     assert!(is_property_supported("grid-area", "1 / 2 / 3 / 4"));
     assert!(is_property_supported("grid-auto-flow", "dense"));
     assert!(is_property_supported("grid-auto-flow", "column dense"));
+    assert!(is_property_supported("grid-template-columns", "repeat(3, 100px) 1fr"));
+    assert!(is_property_supported("grid-template-rows", "none"));
+    assert!(is_property_supported("grid-auto-rows", "minmax(50px, 1fr)"));
+    assert!(is_property_supported("grid-auto-columns", "100px auto"));
+    assert!(is_property_supported("grid-template-areas", "'a b' 'c d'"));
 
     assert!(!is_property_supported("grid-column-start", "0"));
     assert!(!is_property_supported("grid-column-end", "1 / 2"));
@@ -143,6 +148,11 @@ fn test_property_supported_grid_placement() {
     assert!(!is_property_supported("grid-area", "1 / / 3"));
     assert!(!is_property_supported("grid-auto-flow", "row column"));
     assert!(!is_property_supported("grid-auto-flow", "dense dense"));
+    assert!(!is_property_supported("grid-template-columns", "100px bogus"));
+    assert!(!is_property_supported("grid-template-columns", "repeat(0, 1fr)"));
+    assert!(!is_property_supported("grid-auto-rows", "repeat(2, 50px)"));
+    assert!(!is_property_supported("grid-template-areas", "\"a a\" \"b a\""));
+    assert!(!is_property_supported("grid-template-areas", "\"a b\" tail"));
 }
 
 #[test]

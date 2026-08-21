@@ -66,6 +66,12 @@ pub(super) fn extended_visual_or_layout_property_supported(property: &str, value
         | "contain-intrinsic-height"
         | "contain-intrinsic-inline-size"
         | "contain-intrinsic-block-size" => contain_intrinsic_longhand_supported(value),
+        // https://drafts.csswg.org/css-grid-2/#track-sizing
+        "grid-template-columns" | "grid-template-rows" => {
+            crate::property::parse_grid_template_track_list(value).is_some()
+        }
+        "grid-auto-rows" | "grid-auto-columns" => crate::property::parse_grid_auto_track_list(value).is_some(),
+        "grid-template-areas" => crate::property::parse_grid_template_areas_value(value).is_some(),
         // https://drafts.csswg.org/css-align-3/#justify-items-property
         // https://drafts.csswg.org/css-align-3/#justify-self-property
         "justify-items" | "justify-self" => justify_items_supported(value),

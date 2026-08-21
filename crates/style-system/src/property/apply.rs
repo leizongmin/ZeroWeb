@@ -1054,12 +1054,16 @@ pub fn apply_property_value_with_quirks(
         }
         // ── Grid 属性 ──
         "grid-template-columns" => {
-            style.grid_template_columns = Some(value.to_string());
-            return true;
+            if let Some(v) = parse_grid_template_track_list(value) {
+                style.grid_template_columns = v;
+                return true;
+            }
         }
         "grid-template-rows" => {
-            style.grid_template_rows = Some(value.to_string());
-            return true;
+            if let Some(v) = parse_grid_template_track_list(value) {
+                style.grid_template_rows = v;
+                return true;
+            }
         }
         "grid-auto-flow" => {
             if let Some(v) = parse_grid_auto_flow(value) {
@@ -1092,16 +1096,22 @@ pub fn apply_property_value_with_quirks(
             }
         }
         "grid-auto-rows" => {
-            style.grid_auto_rows = Some(value.to_string());
-            return true;
+            if let Some(v) = parse_grid_auto_track_list(value) {
+                style.grid_auto_rows = v;
+                return true;
+            }
         }
         "grid-auto-columns" => {
-            style.grid_auto_columns = Some(value.to_string());
-            return true;
+            if let Some(v) = parse_grid_auto_track_list(value) {
+                style.grid_auto_columns = v;
+                return true;
+            }
         }
         "grid-template-areas" => {
-            style.grid_template_areas = Some(value.to_string());
-            return true;
+            if let Some(v) = parse_grid_template_areas_value(value) {
+                style.grid_template_areas = v;
+                return true;
+            }
         }
         // ── Grid 简写属性 ──
         "grid-area" => {
