@@ -136,6 +136,18 @@ fn wait_for_registration_state(
     }
 }
 
+fn wait_for_page_fetch(owner: &mut BrowserServiceWorkerOwner) -> CompletedServiceWorkerPageFetch {
+    let deadline = Instant::now() + Duration::from_secs(5);
+    loop {
+        let _ = owner.poll();
+        if let Some(response) = owner.take_completed_page_fetches().into_iter().next() {
+            return response;
+        }
+        assert!(Instant::now() < deadline, "owner page fetch timed out");
+        std::thread::sleep(Duration::from_millis(5));
+    }
+}
+
 fn persistence_path(label: &str) -> std::path::PathBuf {
     std::env::temp_dir()
         .join(format!("zeroweb-sw-{label}-{}", std::process::id()))
@@ -1008,6 +1020,221 @@ fn register_fetches_evaluates_and_returns_correlated_id() {
         response.params.result,
         Ok(ServiceWorkerResult::Registered { .. })
     ));
+}
+
+#[test]
+fn page_fetch_respond_with_returns_renderer_fetch_response() {
+    let mut owner = BrowserServiceWorkerOwner::with_local_hosts();
+    let disposition = owner.begin_request(
+        TabId(1),
+        false,
+        41,
+        Some("https://example.test/app/page"),
+        register_request("https://example.test/app/page"),
+    );
+    attach_script(
+        &mut owner,
+        disposition,
+        "addEventListener('fetch', event => {
+           event.respondWith(new Response('from-sw:' + event.clientId, {
+             status: 203,
+             statusText: 'SW',
+             headers: {
+               'X-SW': 'hit',
+               'X-Zero-Final-URL': 'https://attacker.test/',
+               'X-Zero-Resource-Type': 'image'
+             }
+           }));
+         });",
+    );
+    let response = wait_for_response(&mut owner);
+    let Ok(ServiceWorkerResult::Registered { registration_id }) = response.params.result else {
+        panic!("registration failed");
+    };
+    wait_for_registration_state(&mut owner, registration_id, ServiceWorkerState::Activated);
+
+    let disposition = owner.begin_page_fetch(
+        TabId(1),
+        false,
+        Some("https://example.test/app/page"),
+        "client-1",
+        FetchParams {
+            request_id: 99,
+            url: "https://example.test/app/data".into(),
+            method: "GET".into(),
+            headers: vec![("X-Zero-Resource-Type".into(), "document".into())],
+            body: None,
+        },
+    );
+    assert!(matches!(disposition, ServiceWorkerPageFetchDisposition::Dispatched));
+
+    let CompletedServiceWorkerPageFetch::Respond {
+        tab_id,
+        request_id,
+        status,
+        headers,
+        body,
+    } = wait_for_page_fetch(&mut owner)
+    else {
+        panic!("respondWith must complete with a renderer response");
+    };
+    assert_eq!(tab_id, TabId(1));
+    assert_eq!(request_id, 99);
+    assert_eq!(status, 203);
+    assert_eq!(body, b"from-sw:client-1");
+    assert!(headers.iter().any(|(name, value)| name == "x-sw" && value == "hit"));
+    assert!(
+        headers
+            .iter()
+            .any(|(name, value)| name == "X-Zero-Final-URL" && value == "https://example.test/app/data")
+    );
+    assert!(
+        headers
+            .iter()
+            .any(|(name, value)| name == "X-Zero-Resource-Type" && value == "document")
+    );
+    assert!(!headers.iter().any(|(_, value)| value == "https://attacker.test/"));
+    assert!(
+        !headers
+            .iter()
+            .any(|(name, value)| { name.eq_ignore_ascii_case("x-zero-resource-type") && value == "image" })
+    );
+}
+
+#[test]
+fn page_fetch_without_respond_with_preserves_network_fallback_params() {
+    let mut owner = BrowserServiceWorkerOwner::with_local_hosts();
+    let disposition = owner.begin_request(
+        TabId(1),
+        false,
+        42,
+        Some("https://example.test/app/page"),
+        register_request("https://example.test/app/page"),
+    );
+    attach_script(
+        &mut owner,
+        disposition,
+        "addEventListener('fetch', event => { globalThis.seen = event.request.url; });",
+    );
+    let response = wait_for_response(&mut owner);
+    let Ok(ServiceWorkerResult::Registered { registration_id }) = response.params.result else {
+        panic!("registration failed");
+    };
+    wait_for_registration_state(&mut owner, registration_id, ServiceWorkerState::Activated);
+
+    let original = FetchParams {
+        request_id: 100,
+        url: "https://example.test/app/pass".into(),
+        method: "POST".into(),
+        headers: vec![("Content-Type".into(), "text/plain".into())],
+        body: Some(b"payload".to_vec()),
+    };
+    assert!(matches!(
+        owner.begin_page_fetch(
+            TabId(1),
+            false,
+            Some("https://example.test/app/page"),
+            "client-1",
+            original.clone(),
+        ),
+        ServiceWorkerPageFetchDisposition::Dispatched
+    ));
+
+    let CompletedServiceWorkerPageFetch::PassThrough { tab_id, params } = wait_for_page_fetch(&mut owner) else {
+        panic!("missing respondWith must fall through to network");
+    };
+    assert_eq!(tab_id, TabId(1));
+    assert_eq!(params.request_id, original.request_id);
+    assert_eq!(params.url, original.url);
+    assert_eq!(params.method, original.method);
+    assert_eq!(params.headers, original.headers);
+    assert_eq!(params.body, original.body);
+}
+
+#[test]
+fn page_fetch_outside_active_scope_passes_through_immediately() {
+    let mut owner = BrowserServiceWorkerOwner::with_local_hosts();
+    let disposition = owner.begin_request(
+        TabId(1),
+        false,
+        43,
+        Some("https://example.test/app/page"),
+        register_request("https://example.test/app/page"),
+    );
+    attach_script(
+        &mut owner,
+        disposition,
+        "addEventListener('fetch', event => {
+           event.respondWith(new Response('from-sw'));
+         });",
+    );
+    let response = wait_for_response(&mut owner);
+    let Ok(ServiceWorkerResult::Registered { registration_id }) = response.params.result else {
+        panic!("registration failed");
+    };
+    wait_for_registration_state(&mut owner, registration_id, ServiceWorkerState::Activated);
+
+    let original = FetchParams {
+        request_id: 101,
+        url: "https://example.test/outside".into(),
+        method: "GET".into(),
+        headers: Vec::new(),
+        body: None,
+    };
+    let ServiceWorkerPageFetchDisposition::PassThrough(params) = owner.begin_page_fetch(
+        TabId(1),
+        false,
+        Some("https://example.test/app/page"),
+        "client-1",
+        original.clone(),
+    ) else {
+        panic!("out-of-scope fetch must pass through");
+    };
+    assert_eq!(params.request_id, original.request_id);
+    assert!(owner.take_completed_page_fetches().is_empty());
+}
+
+#[test]
+fn page_fetch_from_uncontrolled_document_passes_through_immediately() {
+    let mut owner = BrowserServiceWorkerOwner::with_local_hosts();
+    let disposition = owner.begin_request(
+        TabId(1),
+        false,
+        44,
+        Some("https://example.test/app/page"),
+        register_request("https://example.test/app/page"),
+    );
+    attach_script(
+        &mut owner,
+        disposition,
+        "addEventListener('fetch', event => {
+           event.respondWith(new Response('from-sw'));
+         });",
+    );
+    let response = wait_for_response(&mut owner);
+    let Ok(ServiceWorkerResult::Registered { registration_id }) = response.params.result else {
+        panic!("registration failed");
+    };
+    wait_for_registration_state(&mut owner, registration_id, ServiceWorkerState::Activated);
+
+    let original = FetchParams {
+        request_id: 102,
+        url: "https://example.test/app/data".into(),
+        method: "GET".into(),
+        headers: Vec::new(),
+        body: None,
+    };
+    let ServiceWorkerPageFetchDisposition::PassThrough(params) = owner.begin_page_fetch(
+        TabId(1),
+        false,
+        Some("https://example.test/outside-page"),
+        "client-1",
+        original.clone(),
+    ) else {
+        panic!("fetch from an uncontrolled document must pass through");
+    };
+    assert_eq!(params.request_id, original.request_id);
+    assert!(owner.take_completed_page_fetches().is_empty());
 }
 
 #[test]

@@ -24,7 +24,8 @@ use zero_storage::StorageManager;
 
 use crate::fetch_proxy::{ServiceWorkerScriptRequestMode, TabFetchProxy};
 use crate::service_worker_owner::{
-    BrowserServiceWorkerOwner, CompletedServiceWorkerResponse, ServiceWorkerRequestDisposition,
+    BrowserServiceWorkerOwner, CompletedServiceWorkerPageFetch, CompletedServiceWorkerResponse,
+    ServiceWorkerPageFetchDisposition, ServiceWorkerRequestDisposition,
 };
 use crate::tab_snapshot::{CompositorSubmission, TabSnapshot};
 use indexed_db_connections::{
@@ -645,7 +646,45 @@ impl ProcessTabBackend {
     }
 
     fn handle_fetch_request(&mut self, tab_id: TabId, params: FetchParams) {
-        self.fetch_proxy.enqueue(tab_id, &params);
+        if !Self::may_dispatch_service_worker_fetch(&params) {
+            self.fetch_proxy.enqueue(tab_id, &params);
+            return;
+        }
+        let Some(renderer_id) = self.tab_to_renderer.get(&tab_id).copied() else {
+            self.fetch_proxy.enqueue(tab_id, &params);
+            return;
+        };
+        let authority = self.committed_document_urls.get(&renderer_id).cloned();
+        let client_id = self.service_worker_client_id(renderer_id);
+        match self.service_worker_owner.begin_page_fetch(
+            tab_id,
+            self.private_tabs.contains(&tab_id),
+            authority.as_deref(),
+            &client_id,
+            params,
+        ) {
+            ServiceWorkerPageFetchDisposition::Dispatched => {}
+            ServiceWorkerPageFetchDisposition::PassThrough(params) => {
+                self.fetch_proxy.enqueue(tab_id, &params);
+            }
+        }
+    }
+
+    fn may_dispatch_service_worker_fetch(params: &FetchParams) -> bool {
+        if params.method.eq_ignore_ascii_case("DNS-PREFETCH") {
+            return false;
+        }
+        if params
+            .headers
+            .iter()
+            .any(|(name, value)| name.eq_ignore_ascii_case("x-zero-stream-image") && value == "1")
+        {
+            return false;
+        }
+        matches!(
+            params.method.to_ascii_uppercase().as_str(),
+            "GET" | "POST" | "PUT" | "DELETE" | "PATCH" | "HEAD" | "OPTIONS"
+        )
     }
 
     fn update_pending_indexed_db_navigation_from_fetch(&mut self, tab_id: TabId, headers: &[(String, String)]) {
@@ -736,6 +775,7 @@ impl ProcessTabBackend {
         for response in self.service_worker_owner.poll() {
             self.send_service_worker_response_now(response);
         }
+        self.drain_service_worker_page_fetches();
         for plan in self.service_worker_owner.take_update_fetch_plans() {
             let receiver = self.fetch_proxy.fetch_service_worker_script(
                 plan.tab_id(),
@@ -763,6 +803,26 @@ impl ProcessTabBackend {
                 })
                 .collect();
             self.service_worker_owner.attach_import_fetches(plan, receivers);
+        }
+    }
+
+    fn drain_service_worker_page_fetches(&mut self) {
+        for completed in self.service_worker_owner.take_completed_page_fetches() {
+            match completed {
+                CompletedServiceWorkerPageFetch::Respond {
+                    tab_id,
+                    request_id,
+                    status,
+                    headers,
+                    body,
+                } => {
+                    self.update_pending_indexed_db_navigation_from_fetch(tab_id, &headers);
+                    self.send_fetch_response_now(tab_id, request_id, status, headers, body);
+                }
+                CompletedServiceWorkerPageFetch::PassThrough { tab_id, params } => {
+                    self.fetch_proxy.enqueue(tab_id, &params);
+                }
+            }
         }
     }
 
@@ -1331,6 +1391,11 @@ impl ProcessTabBackend {
     /// 当前 live 渲染进程数量。
     pub fn live_renderer_count(&self) -> usize {
         self.tab_to_renderer.len()
+    }
+
+    #[cfg(test)]
+    fn pending_fetch_count_for_test(&self) -> usize {
+        self.fetch_proxy.pending_count()
     }
 
     /// 导航。

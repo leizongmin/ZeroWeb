@@ -12,12 +12,12 @@ use url::Url;
 use zero_browser_shell::TabId;
 use zero_net::{HttpResponse, is_javascript_mime};
 use zero_page_runtime::{
-    ServiceWorkerImportedScript, ServiceWorkerManager, ServiceWorkerManagerError, ServiceWorkerManagerEvent,
-    ServiceWorkerPersistentRegistration, ServiceWorkerRegistrationErrorKind, ServiceWorkerRuntimeHost,
-    ServiceWorkerUpdateOutcome, validate_service_worker_registration,
+    ServiceWorkerFetchDispatch, ServiceWorkerImportedScript, ServiceWorkerManager, ServiceWorkerManagerError,
+    ServiceWorkerManagerEvent, ServiceWorkerPersistentRegistration, ServiceWorkerRegistrationErrorKind,
+    ServiceWorkerRuntimeHost, ServiceWorkerUpdateOutcome, validate_service_worker_registration,
 };
 use zero_protocol::message::{
-    ServiceWorkerClientInfoWire, ServiceWorkerClientMessages, ServiceWorkerError, ServiceWorkerErrorCode,
+    FetchParams, ServiceWorkerClientInfoWire, ServiceWorkerClientMessages, ServiceWorkerError, ServiceWorkerErrorCode,
     ServiceWorkerFetchRequestWire, ServiceWorkerHostCommand, ServiceWorkerHostCommandParams, ServiceWorkerHostEvent,
     ServiceWorkerHostEventParams, ServiceWorkerLifecycleWire, ServiceWorkerOperation, ServiceWorkerRequestParams,
     ServiceWorkerResponseParams, ServiceWorkerResult, ServiceWorkerScriptErrorKindWire, ServiceWorkerScriptTypeWire,
@@ -598,6 +598,14 @@ pub(crate) enum ServiceWorkerRequestDisposition {
     Fetch(ServiceWorkerFetchPlan),
 }
 
+/// Result of routing a renderer page fetch through the browser-owned SW manager.
+pub(crate) enum ServiceWorkerPageFetchDisposition {
+    /// A matching active worker accepted the fetch event.
+    Dispatched,
+    /// No matching worker/path exists; caller should continue with the network fetch.
+    PassThrough(FetchParams),
+}
+
 /// Response ready to send to one renderer with the original IPC ID.
 pub(crate) struct CompletedServiceWorkerResponse {
     pub(crate) tab_id: TabId,
@@ -605,9 +613,29 @@ pub(crate) struct CompletedServiceWorkerResponse {
     pub(crate) params: ServiceWorkerResponseParams,
 }
 
+/// Completed page fetch interception ready for `ProcessTabBackend`.
+pub(crate) enum CompletedServiceWorkerPageFetch {
+    Respond {
+        tab_id: TabId,
+        request_id: u64,
+        status: u16,
+        headers: Vec<(String, String)>,
+        body: Vec<u8>,
+    },
+    PassThrough {
+        tab_id: TabId,
+        params: FetchParams,
+    },
+}
+
 struct PendingScriptFetch {
     plan: ServiceWorkerFetchPlan,
     receiver: Receiver<Result<HttpResponse, String>>,
+}
+
+struct PendingPageFetch {
+    tab_id: TabId,
+    params: FetchParams,
 }
 
 struct PendingEvaluation {
@@ -670,6 +698,9 @@ pub(crate) struct BrowserServiceWorkerOwner {
     update_fetch_plans: Vec<ServiceWorkerFetchPlan>,
     import_fetch_plans: Vec<ServiceWorkerImportFetchPlan>,
     pending_import_fetches: Vec<PendingImportFetch>,
+    next_page_fetch_event_id: u64,
+    pending_page_fetches: HashMap<(ProfileKey, u64, u64), PendingPageFetch>,
+    completed_page_fetches: Vec<CompletedServiceWorkerPageFetch>,
     clients_by_tab: HashMap<TabId, Vec<BrowserServiceWorkerClientReference>>,
     persistence_path: Option<PathBuf>,
     restoring: HashSet<u64>,
@@ -787,6 +818,9 @@ impl BrowserServiceWorkerOwner {
             update_fetch_plans: Vec::new(),
             import_fetch_plans: Vec::new(),
             pending_import_fetches: Vec::new(),
+            next_page_fetch_event_id: 1,
+            pending_page_fetches: HashMap::new(),
+            completed_page_fetches: Vec::new(),
             clients_by_tab: HashMap::new(),
             persistence_path,
             restoring: HashSet::new(),
@@ -1164,6 +1198,77 @@ impl BrowserServiceWorkerOwner {
         std::mem::take(&mut self.import_fetch_plans)
     }
 
+    pub(crate) fn begin_page_fetch(
+        &mut self,
+        tab_id: TabId,
+        private: bool,
+        authority_url: Option<&str>,
+        client_id: &str,
+        params: FetchParams,
+    ) -> ServiceWorkerPageFetchDisposition {
+        let profile = if private {
+            ProfileKey::Private(tab_id)
+        } else {
+            ProfileKey::Normal
+        };
+        let Some(authority) = authority_url.and_then(|value| Url::parse(value).ok()) else {
+            return ServiceWorkerPageFetchDisposition::PassThrough(params);
+        };
+        if !matches!(authority.scheme(), "http" | "https") {
+            return ServiceWorkerPageFetchDisposition::PassThrough(params);
+        }
+        let origin = authority.origin().ascii_serialization();
+        if self
+            .manager(profile)
+            .and_then(|manager| manager.active_registration_for_url(&origin, authority.as_str()))
+            .is_none()
+        {
+            return ServiceWorkerPageFetchDisposition::PassThrough(params);
+        }
+        let Ok(request_url) = Url::parse(&params.url) else {
+            return ServiceWorkerPageFetchDisposition::PassThrough(params);
+        };
+        if !matches!(request_url.scheme(), "http" | "https") {
+            return ServiceWorkerPageFetchDisposition::PassThrough(params);
+        }
+        let body = match params.body.clone().map(String::from_utf8).transpose() {
+            Ok(body) => body,
+            Err(_) => return ServiceWorkerPageFetchDisposition::PassThrough(params),
+        };
+        let event_id = self.next_page_fetch_event_id;
+        self.next_page_fetch_event_id = self.next_page_fetch_event_id.wrapping_add(1).max(1);
+        let request = ServiceWorkerFetchRequest {
+            url: request_url.as_str().to_string(),
+            method: params.method.clone(),
+            headers: params.headers.clone(),
+            body,
+            client_id: Some(client_id.to_string()),
+            resulting_client_id: None,
+        };
+        let dispatch = self.manager_mut(profile).dispatch_fetch(&origin, event_id, request);
+        match dispatch {
+            Ok(ServiceWorkerFetchDispatch::Dispatched {
+                registration_id,
+                event_id,
+            }) => {
+                self.pending_page_fetches.insert(
+                    (profile, registration_id, event_id),
+                    PendingPageFetch { tab_id, params },
+                );
+                ServiceWorkerPageFetchDisposition::Dispatched
+            }
+            Ok(ServiceWorkerFetchDispatch::PassThrough) => ServiceWorkerPageFetchDisposition::PassThrough(params),
+            Err(error) => {
+                tracing::warn!("Service Worker fetch dispatch failed: {error}");
+                ServiceWorkerPageFetchDisposition::PassThrough(params)
+            }
+        }
+    }
+
+    pub(crate) fn take_completed_page_fetches(&mut self) -> Vec<CompletedServiceWorkerPageFetch> {
+        std::mem::take(&mut self.completed_page_fetches)
+    }
+
     pub(crate) fn attach_import_fetches(
         &mut self,
         plan: ServiceWorkerImportFetchPlan,
@@ -1212,6 +1317,15 @@ impl BrowserServiceWorkerOwner {
         self.pending_fetches.retain(|pending| pending.plan.tab_id != tab_id);
         self.pending_evaluations.retain(|_, pending| pending.tab_id != tab_id);
         self.update_fetch_plans.retain(|plan| plan.tab_id != tab_id);
+        self.pending_page_fetches.retain(|_, pending| pending.tab_id != tab_id);
+        self.completed_page_fetches.retain(|completed| match completed {
+            CompletedServiceWorkerPageFetch::Respond {
+                tab_id: pending_tab, ..
+            }
+            | CompletedServiceWorkerPageFetch::PassThrough {
+                tab_id: pending_tab, ..
+            } => *pending_tab != tab_id,
+        });
         let mut retained_plans = Vec::new();
         for plan in std::mem::take(&mut self.import_fetch_plans) {
             if plan.tab_id == tab_id {
@@ -1306,6 +1420,16 @@ impl BrowserServiceWorkerOwner {
             .retain(|plan| plan.profile != ProfileKey::Private(tab_id));
         self.pending_import_fetches
             .retain(|pending| pending.plan.profile != ProfileKey::Private(tab_id));
+        self.pending_page_fetches
+            .retain(|(profile, _, _), _| *profile != ProfileKey::Private(tab_id));
+        self.completed_page_fetches.retain(|completed| match completed {
+            CompletedServiceWorkerPageFetch::Respond {
+                tab_id: pending_tab, ..
+            }
+            | CompletedServiceWorkerPageFetch::PassThrough {
+                tab_id: pending_tab, ..
+            } => *pending_tab != tab_id,
+        });
     }
 
     pub(crate) fn set_focused_tab(&mut self, tab_id: Option<TabId>) {
@@ -1856,6 +1980,16 @@ impl BrowserServiceWorkerOwner {
                         ));
                     }
                 }
+                ServiceWorkerManagerEvent::FetchSettled {
+                    registration_id,
+                    event_id,
+                    request_url,
+                    response,
+                    message,
+                    ..
+                } => {
+                    self.complete_page_fetch_event(profile, registration_id, event_id, request_url, response, message);
+                }
                 ServiceWorkerManagerEvent::InstallCompleted {
                     registration_id,
                     succeeded: false,
@@ -1889,6 +2023,52 @@ impl BrowserServiceWorkerOwner {
         if persistence_dirty && let Err(error) = self.persist_normal() {
             tracing::warn!("Service Worker persistence update failed: {error}");
         }
+    }
+
+    fn complete_page_fetch_event(
+        &mut self,
+        profile: ProfileKey,
+        registration_id: u64,
+        event_id: u64,
+        request_url: String,
+        response: Option<ServiceWorkerFetchResponse>,
+        message: String,
+    ) {
+        let Some(pending) = self.pending_page_fetches.remove(&(profile, registration_id, event_id)) else {
+            return;
+        };
+        let Some(response) = response else {
+            if !message.is_empty() {
+                tracing::warn!("Service Worker fetch fell back to network: {message}");
+            }
+            self.completed_page_fetches
+                .push(CompletedServiceWorkerPageFetch::PassThrough {
+                    tab_id: pending.tab_id,
+                    params: pending.params,
+                });
+            return;
+        };
+        let mut headers = response.headers;
+        headers.retain(|(name, _)| {
+            !name.eq_ignore_ascii_case("x-zero-final-url") && !name.eq_ignore_ascii_case("x-zero-resource-type")
+        });
+        headers.push(("X-Zero-Final-URL".into(), request_url));
+        if let Some((_, resource_type)) = pending
+            .params
+            .headers
+            .iter()
+            .find(|(name, _)| name.eq_ignore_ascii_case("x-zero-resource-type"))
+        {
+            headers.push(("X-Zero-Resource-Type".into(), resource_type.clone()));
+        }
+        self.completed_page_fetches
+            .push(CompletedServiceWorkerPageFetch::Respond {
+                tab_id: pending.tab_id,
+                request_id: pending.params.request_id,
+                status: response.status,
+                headers,
+                body: response.body.into_bytes(),
+            });
     }
 
     fn persist_normal(&self) -> Result<(), String> {

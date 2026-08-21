@@ -2,7 +2,7 @@
 
 **入口文档**: [../service-workers.md](../service-workers.md)
 **创建日期**: 2026-08-17（goal 拆分 bootstrap）
-**最后更新**: 2026-08-21（M2-1 fetch runtime/manager/IPC foundation 完成）
+**最后更新**: 2026-08-21（M2-2 production page fetch routing 完成）
 
 ---
 
@@ -10,8 +10,8 @@
 
 **专项定位**：存储方向三拆之三。把 `navigator.serviceWorker` 从注册表状态机近似
 （R3318）深化为真实 SW 执行环境 + fetch 拦截。用户已于 2026-08-19 明确批准方案 C，
-M0 启动门禁解除；M1 core WPT 已收敛，M2 已完成 fetch runtime/manager/IPC foundation，
-生产页面 fetch 管线与 Cache API 端到端接入仍待后续切片，M3 控制语义继续推进。
+M0 启动门禁解除；M1 core WPT 已收敛，M2 已完成 fetch runtime/manager/IPC foundation
+和 browser-process 页面 fetch 路由，Cache API 端到端接入仍待后续切片，M3 控制语义继续推进。
 
 **M0 推荐决策**：抽取 `zero-script-sandbox::WorkerRuntime` 的独立线程/引擎/看门狗核心，
 新增 typed `ServiceWorkerRuntime`；production 由 browser process 的
@@ -183,6 +183,11 @@ M0 启动门禁解除；M1 core WPT 已收敛，M2 已完成 fetch runtime/manag
   与 renderer/browser IPC command/event 已接通；`respondWith(new Response(...))`、未调用
   `respondWith` pass-through、重复 `respondWith` failure、跨 origin/out-of-scope pass-through
   均有定向测试；生产页面 `FetchRequest` 路由与 Cache API 集成仍未接入
+- ✅ M2-2：production `ProcessTabBackend::handle_fetch_request()` 接入 browser-owned
+  `ServiceWorkerManager::dispatch_fetch()`；已提交 document authority + same-origin + longest-scope
+  active worker 命中时先派发 SW `fetch` 事件，`respondWith(Response)` 转原 `FetchResponse`
+  返回 renderer，未响应/无匹配/派发失败/内部 DNS prefetch/stream image/非 UTF-8 body 保持原网络
+  fallback；browser 重写内部 `X-Zero-Final-URL` / `X-Zero-Resource-Type` 元数据避免 worker 伪造
 
 ## 缺口清单
 
@@ -190,7 +195,7 @@ M0 启动门禁解除；M1 core WPT 已收敛，M2 已完成 fetch runtime/manag
 |---|------|------|
 | S1 | SW 执行环境架构与独立 runtime | ✅ production browser owner + renderer discovery 真链路 |
 | S2 | scriptURL 不下载执行 | ✅ production navigator 经 browser fetch/evaluate |
-| S3 | fetch 拦截为零 | 🚧 M2-1 runtime/manager/IPC foundation；生产页面 fetch 与 Cache API 未接入 |
+| S3 | fetch 拦截为零 | 🚧 M2-2 production 页面 fetch respondWith/pass-through 已接入；Cache API 未接入 |
 | S4 | 事件为 setTimeout 模拟 | ✅ manager transition log 为状态源；timer 只执行页面 task 投影 |
 | S5 | WPT 覆盖为零 | ✅ core 34/34 case、156/156 Pass、0 Fail/Timeout/Unsupported |
 
@@ -214,7 +219,7 @@ M0 启动门禁解除；M1 core WPT 已收敛，M2 已完成 fetch runtime/manag
 |--------|------|
 | M0 — 选型 RFC（门控） | ✅ 方案 C 已批准 |
 | M1 — 脚本真实执行 + 生命周期真事件 | ✅ current core WPT 156/156 Pass |
-| M2 — fetch 拦截 + Cache 集成 | 🚧 M2-1 foundation 完成；生产 fetch/Cache 集成待接入 |
+| M2 — fetch 拦截 + Cache 集成 | 🚧 M2-2 production fetch respondWith/pass-through 完成；Cache API 待接入 |
 | M3 — 控制语义 + 消息 + 收尾 | 🚧 classic startup graph + 控制/消息/update/persistence 完成 |
 
 ## 验证基线

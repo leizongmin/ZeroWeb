@@ -5,6 +5,10 @@ use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
 use super::*;
+use zero_protocol::message::{
+    ServiceWorkerResult, ServiceWorkerScriptTypeWire, ServiceWorkerSnapshot, ServiceWorkerStateWire,
+    ServiceWorkerUpdateViaCacheWire,
+};
 use zero_protocol::{AutomationOperation, AutomationResult, AutomationValue};
 
 fn lock_multiprocess_tests() -> std::sync::MutexGuard<'static, ()> {
@@ -667,4 +671,139 @@ fn new_renderer_discovers_browser_owned_registration() {
     backend.remove_renderer(second_tab);
 
     assert_eq!(result, format!("http://{authority}/app/|activated|1|true|true|true"));
+}
+
+#[test]
+fn committed_page_fetch_is_routed_through_active_service_worker() {
+    let mut owner = BrowserServiceWorkerOwner::with_local_hosts();
+    let document_url = "https://example.test/app/page";
+    let ServiceWorkerRequestDisposition::Fetch(plan) = owner.begin_request(
+        TabId(812),
+        false,
+        1,
+        Some(document_url),
+        ServiceWorkerRequestParams {
+            operation: ServiceWorkerOperation::Register {
+                script_url: "/sw.js".into(),
+                scope: Some("/app/".into()),
+                document_url: document_url.into(),
+                update_via_cache: ServiceWorkerUpdateViaCacheWire::Imports,
+                script_type: ServiceWorkerScriptTypeWire::Classic,
+            },
+        },
+    ) else {
+        panic!("registration must fetch script");
+    };
+    let (sender, receiver) = std::sync::mpsc::channel();
+    sender
+        .send(Ok(zero_net::HttpResponse {
+            status_code: 200,
+            headers: vec![("Content-Type".into(), "application/javascript".into())],
+            body: b"addEventListener('fetch', event => { event.respondWith(new Response('backend-sw', {status: 207})); });".to_vec(),
+            url: plan.script_url().to_string(),
+            redirect_count: 0,
+        }))
+        .unwrap();
+    owner.attach_fetch(plan, receiver);
+    let deadline = Instant::now() + Duration::from_secs(5);
+    loop {
+        let responses = owner.poll();
+        if responses
+            .iter()
+            .any(|response| matches!(response.params.result, Ok(ServiceWorkerResult::Registered { .. })))
+        {
+            break;
+        }
+        assert!(Instant::now() < deadline, "local registration did not complete");
+        std::thread::sleep(Duration::from_millis(1));
+    }
+    loop {
+        let _ = owner.poll();
+        let ServiceWorkerRequestDisposition::Respond(controller) = owner.begin_request(
+            TabId(812),
+            false,
+            2,
+            Some(document_url),
+            ServiceWorkerRequestParams {
+                operation: ServiceWorkerOperation::Controller,
+            },
+        ) else {
+            panic!("controller query must not fetch");
+        };
+        if matches!(
+            controller.params.result,
+            Ok(ServiceWorkerResult::OptionalSnapshot(Some(ServiceWorkerSnapshot {
+                state: ServiceWorkerStateWire::Activated,
+                ..
+            })))
+        ) {
+            break;
+        }
+        assert!(Instant::now() < deadline, "local registration did not activate");
+        std::thread::sleep(Duration::from_millis(1));
+    }
+
+    let mut backend =
+        ProcessTabBackend::with_renderer_bin_and_service_worker_owner(PathBuf::from("unused-renderer"), owner);
+    let tab_id = TabId(812);
+    let renderer_id = 112;
+    backend.tab_to_renderer.insert(tab_id, renderer_id);
+    backend.committed_document_urls.insert(renderer_id, document_url.into());
+    backend.committed_document_epochs.insert(renderer_id, 7);
+
+    backend.handle_fetch_request(
+        tab_id,
+        FetchParams {
+            request_id: 77,
+            url: "https://example.test/app/data".into(),
+            method: "GET".into(),
+            headers: vec![("X-Zero-Resource-Type".into(), "script".into())],
+            body: None,
+        },
+    );
+    assert_eq!(backend.pending_fetch_count_for_test(), 0);
+
+    let completed = loop {
+        let _ = backend.service_worker_owner.poll();
+        let completed = backend.service_worker_owner.take_completed_page_fetches();
+        if !completed.is_empty() {
+            break completed;
+        }
+        assert!(Instant::now() < deadline, "page fetch did not settle");
+        std::thread::sleep(Duration::from_millis(1));
+    };
+    assert!(matches!(
+        &completed[0],
+        CompletedServiceWorkerPageFetch::Respond {
+            tab_id: completed_tab,
+            request_id: 77,
+            status: 207,
+            body,
+            ..
+        } if *completed_tab == tab_id && body == b"backend-sw"
+    ));
+}
+
+#[test]
+fn internal_dns_prefetch_is_not_routed_through_service_worker() {
+    let mut backend = ProcessTabBackend::with_renderer_bin(PathBuf::from("unused-renderer"));
+    let tab_id = TabId(813);
+    backend.tab_to_renderer.insert(tab_id, 113);
+    backend
+        .committed_document_urls
+        .insert(113, "https://example.test/app/page".into());
+    backend.committed_document_epochs.insert(113, 1);
+
+    backend.handle_fetch_request(
+        tab_id,
+        FetchParams {
+            request_id: 78,
+            url: "https://example.test".into(),
+            method: "DNS-PREFETCH".into(),
+            headers: Vec::new(),
+            body: None,
+        },
+    );
+
+    assert_eq!(backend.pending_fetch_count_for_test(), 1);
 }
