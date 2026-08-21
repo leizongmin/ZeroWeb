@@ -628,6 +628,7 @@ pub const SERVICE_WORKER_CORE_CASES: &[&str] = &[
     "service-workers/service-worker/registration-scope-module-static-import.https.html",
     "service-workers/service-worker/registration-script-module.https.html",
     "service-workers/service-worker/registration-updateviacache.https.html",
+    "service-workers/service-worker/skip-waiting-without-client.https.html",
     "service-workers/service-worker/update-module-request-mode.https.html",
     "service-workers/service-worker/update-no-cache-request-headers.https.html",
     "service-workers/service-worker/update-not-allowed.https.html",
@@ -2824,13 +2825,13 @@ async_test(function(test) {
     }
 
     #[test]
-    fn service_worker_core_manifest_has_thirty_two_unique_cases() {
+    fn service_worker_core_manifest_has_thirty_three_unique_cases() {
         let unique = SERVICE_WORKER_CORE_CASES
             .iter()
             .copied()
             .collect::<std::collections::BTreeSet<_>>();
-        assert_eq!(SERVICE_WORKER_CORE_CASES.len(), 32);
-        assert_eq!(unique.len(), 32);
+        assert_eq!(SERVICE_WORKER_CORE_CASES.len(), 33);
+        assert_eq!(unique.len(), 33);
         assert!(
             SERVICE_WORKER_CORE_CASES
                 .iter()

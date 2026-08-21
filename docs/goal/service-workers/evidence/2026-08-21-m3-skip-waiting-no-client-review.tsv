@@ -1,0 +1,2 @@
+source_path	manifest_sha	subtests	decision	hidden_dependencies	rationale
+service-workers/service-worker/skip-waiting-without-client.https.html	62060a82472ff4426f543e91036115cd13a4329a	2	next-wave-skip-waiting-no-client-core	worker-testharness;MessageChannel	worker global 单次及并发 skipWaiting Promise 均 resolve undefined；无需受控 client 或 iframe

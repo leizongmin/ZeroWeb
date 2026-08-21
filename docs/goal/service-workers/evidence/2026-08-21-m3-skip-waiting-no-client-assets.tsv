@@ -1,0 +1,7 @@
+path	manifest_type	roles	referenced_by	bytes	templated	git_blob_sha
+resources/testharness.js	support	page-script	1	198291	no	c7ce4f51e1db075809f861255417c27478b2c179
+resources/testharnessreport.js	support	page-script	1	1231	no	405a2d8b06f00fe8292e0e9d5b917e193cfd416c
+service-workers/service-worker/skip-waiting-without-client.https.html	testharness	case	1	375	no	62060a82472ff4426f543e91036115cd13a4329a
+service-workers/service-worker/resources/test-helpers.sub.js	support	page-script	1	10485	yes	74301523e7355ad8d62bcb568280edbc23fdaacf
+service-workers/service-worker/resources/skip-waiting-worker.js	support	worker-script	1	675	no	3fc1d1e237aacfb86aa1e3e36287db9f45ebf756
+service-workers/service-worker/resources/worker-testharness.js	support	worker-script	1	1768	no	73e97be1eaa44bbe96f8801e0c76c37772ac7d1f

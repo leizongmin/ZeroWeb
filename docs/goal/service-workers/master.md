@@ -2,7 +2,7 @@
 
 **入口文档**: [../service-workers.md](../service-workers.md)
 **创建日期**: 2026-08-17（goal 拆分 bootstrap）
-**最后更新**: 2026-08-21（M3-25 update permissions + MessagePort transfer 完成）
+**最后更新**: 2026-08-21（M3-26 skipWaiting no-client WPT 完成）
 
 ---
 
@@ -65,8 +65,8 @@ M0 启动门禁解除；M1 core WPT 已收敛，M2 依赖未满足，当前推�
 - ✅ Final remaining 裁决：38 source / 270 subtest 分为 14 defer /
   8 gated / 16 skip；初始 review 152/152，逻辑剩余 0
 - ✅ Runner disposition contract：294 source / 331 URL 唯一映射为
-  32 core / 49 defer / 171 gated / 42 skip，可从原始 evidence 确定性重建；
-  32 个 core 与 runner 导入账本、十八批 case asset 及 blob SHA 精确对应
+  33 core / 49 defer / 170 gated / 42 skip，可从原始 evidence 确定性重建；
+  33 个 core 与 runner 导入账本、十九批 case asset 及 blob SHA 精确对应
 - ✅ M0 registry 契约补强：新增 4 项 Rust 单测，固定候选版本不提前替换 active、
   非法激活不扰动 active、注销旧 redundant 不删除新映射、跨 origin 替换隔离
 - ✅ M1 WorkerRuntime readiness：V8 20/20、QuickJS 3/3，WebView 双后端各 17/17；
@@ -152,6 +152,8 @@ M0 启动门禁解除；M1 core WPT 已收敛，M2 依赖未满足，当前推�
 - ✅ M3-25：lifecycle wait 可穿插 message dispatch；MessagePort endpoint 经
   page/IPC/manager/runtime 双向 transfer；worker global `registration.update()` 按 calling
   worker 状态拒绝 installing、允许 active 合并 replacement；core WPT 32/153
+- ✅ M3-26：worker global 在无受控 client 时单次及并发调用 `skipWaiting()` 均 resolve
+  `undefined`；真实 worker-testharness 结果通道通过；core WPT 33/155
 
 ## 缺口清单
 
@@ -161,7 +163,7 @@ M0 启动门禁解除；M1 core WPT 已收敛，M2 依赖未满足，当前推�
 | S2 | scriptURL 不下载执行 | ✅ production navigator 经 browser fetch/evaluate |
 | S3 | fetch 拦截为零 | ⬜ M2（等 js-dom fetch 改造） |
 | S4 | 事件为 setTimeout 模拟 | ✅ manager transition log 为状态源；timer 只执行页面 task 投影 |
-| S5 | WPT 覆盖为零 | ✅ core 32/32 case、153/153 Pass、0 Fail/Timeout/Unsupported |
+| S5 | WPT 覆盖为零 | ✅ core 33/33 case、155/155 Pass、0 Fail/Timeout/Unsupported |
 
 ## 待用户决策
 
@@ -171,15 +173,15 @@ M0 启动门禁解除；M1 core WPT 已收敛，M2 依赖未满足，当前推�
 
 ## 下一步计划
 
-1. **M2 依赖复核**：js-dom S6 与 storage-cache-api M1 land 后启动 fetch pipeline
-2. **M3 clients follow-up**：多 client enumeration 与控制语义
+1. **M3 clients follow-up**：browser-owned client registry、`clients.matchAll()` 与主动消息路由
+2. **M2 门控保持**：js-dom S6 与 storage-cache-api M1 land 后启动 fetch pipeline
 
 ## 里程碑状态
 
 | 里程碑 | 状态 |
 |--------|------|
 | M0 — 选型 RFC（门控） | ✅ 方案 C 已批准 |
-| M1 — 脚本真实执行 + 生命周期真事件 | ✅ current core WPT 153/153 Pass |
+| M1 — 脚本真实执行 + 生命周期真事件 | ✅ current core WPT 155/155 Pass |
 | M2 — fetch 拦截 + Cache 集成 | ⬜ 门控：js-dom fetch 改造 land |
 | M3 — 控制语义 + 消息 + 收尾 | 🚧 classic startup graph + 控制/消息/update/persistence 完成 |
 
@@ -244,6 +246,8 @@ M0 启动门禁解除；M1 core WPT 已收敛，M2 依赖未满足，当前推�
   `make test-wpt-service-workers-multiple-update-wave-assets` 固化篡改/修复回归
 - Update-not-allowed-wave 资产恢复/审计：6 assets / 3 subtest；
   `make test-wpt-service-workers-update-not-allowed-wave-assets` 固化篡改/修复回归
+- Skip-waiting-no-client-wave 资产恢复/审计：6 assets / 2 subtest；
+  `make test-wpt-service-workers-skip-waiting-no-client-wave-assets` 固化篡改/修复回归
 - 质量门禁：`cargo fmt` + `cargo clippy --workspace --all-targets -- -D warnings` +
   `make test`（V8/QuickJS/GPU capability）全过
 - Registry 契约测试：`cargo test -p zero-storage service_worker::tests`，40/40 通过；
@@ -329,6 +333,12 @@ M0 启动门禁解除；M1 core WPT 已收敛，M2 依赖未满足，当前推�
   [M3 update failure matrix](evidence/2026-08-21-m3-update-failure.md)
 - M3-24 multiple update：并发 job coalescing、单一 candidate/runtime 与 31/150 WPT 见
   [M3 multiple update](evidence/2026-08-21-m3-multiple-update.md)
+- M3-25 update permissions + MessagePort：worker update 状态矩阵、browser-owned fetch、
+  双向 port transfer 与 32/153 WPT 见
+  [M3 update permissions](evidence/2026-08-21-m3-update-not-allowed.md)
+- M3-26 skipWaiting without client：worker-testharness 结果通道、并发 Promise 语义与
+  33/155 WPT 见
+  [M3 skipWaiting no client](evidence/2026-08-21-m3-skip-waiting-no-client.md)
 
 ## M0 证据与决策记录
 
@@ -394,6 +404,8 @@ M0 启动门禁解除；M1 core WPT 已收敛，M2 依赖未满足，当前推�
 | 2026-08-21 | M3-22 dynamic import update | import 404/移除/cross-origin update 7/7；core 29/142 |
 | 2026-08-21 | M3-23 update failure matrix | MIME/redirect/syntax/install/uninstall/shrink 7/7；core 30/149 |
 | 2026-08-21 | M3-24 multiple update | 10 路 burst 共享 update candidate；core 31/150 |
+| 2026-08-21 | M3-25 update permissions + MessagePort | worker update 权限矩阵；双向 port transfer；core 32/153 |
+| 2026-08-21 | M3-26 skipWaiting no client | 单次/8 路并发均 resolve undefined；core 33/155 |
 | 2026-08-19 | 三方案对比 | 拒绝同线程 context（无调度隔离）；拒绝从零线程（复制安全基建）；推荐抽取 Worker 线程核 |
 | 2026-08-19 | owner | production browser process 单一 owner；WebView 只做同算法 in-process adapter |
 | 2026-08-19 | 首个 driving WPT | `activation-after-registration.https.html` |

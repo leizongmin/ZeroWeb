@@ -234,7 +234,7 @@ service-workers/service-worker/serviceworker-message-event-historical.https.html
 service-workers/service-worker/serviceworkerobject-scripturl.https.html	6004985a34608132825086dab0c0777f3f0fdf1e	1	default	review	other-api/security	none	no	review
 service-workers/service-worker/skip-waiting-installed.https.html	b604f651b3c1deb38d891c77394a8f175a19c34e	1	default	M1	registration/lifecycle	iframe;message-channel	no	review
 service-workers/service-worker/skip-waiting-using-registration.https.html	412ee2a4438e2328f69337893465c4a66c671ce6	1	default	M1	registration/lifecycle	iframe	no	review
-service-workers/service-worker/skip-waiting-without-client.https.html	62060a82472ff4426f543e91036115cd13a4329a	1	default	M3	clients/control	none	no	gated
+service-workers/service-worker/skip-waiting-without-client.https.html	62060a82472ff4426f543e91036115cd13a4329a	1	default	M3	clients/control	worker-testharness;message-channel	no	review
 service-workers/service-worker/skip-waiting-without-using-registration.https.html	ced64e5f67fb667e5c233055ad920dbda0336336	1	default	M1	registration/lifecycle	iframe	no	review
 service-workers/service-worker/skip-waiting.https.html	f8392fc955b46cdd9f1deb5a7319b8f3f35d91dd	1	default	review	other-api/security	iframe	no	review
 service-workers/service-worker/soft-update-fetch-metadata.https.html	45bf61701c38ab523a7462b81e8f66a368079123	1	default	M1	registration/lifecycle	dynamic-server;fetch;iframe	no	review
