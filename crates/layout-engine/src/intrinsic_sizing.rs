@@ -434,13 +434,9 @@ fn flex_item_base_size(
         && matches!(s.width, LengthValue::Auto)
         && let Some(ratio) = s.aspect_ratio.filter(|&r| r > 0.0)
     {
-        let main = match &s.height {
-            LengthValue::Px(v) => Some(*v as f32),
-            _ => match &s.min_height {
-                LengthValue::Px(v) => Some(*v as f32),
-                _ => container_cross,
-            },
-        };
+        let main = resolve_intrinsic_real_length(&s.height, s)
+            .or_else(|| resolve_intrinsic_real_length(&s.min_height, s))
+            .or(container_cross);
         if let Some(main) = main {
             return aspect_ratio_transferred_width(s, box_node, main, ratio);
         }
@@ -1154,6 +1150,34 @@ mod tests {
         let w = flex_item_base_size(&box_node, &doc, &styles, None);
 
         assert_eq!(w, 100.0, "flex-basis:5em at 20px should override width:50px");
+    }
+
+    #[test]
+    fn r3630_flex_item_aspect_ratio_transfers_residual_height() {
+        let mut doc = zero_dom::Document::new();
+        let node = doc.create_element("div");
+
+        let mut styles = HashMap::new();
+        let mut style = ComputedStyle::default();
+        style.display = DisplayValue::Block;
+        style.font_size = LengthValue::Px(20.0);
+        style.width = LengthValue::Auto;
+        style.height = LengthValue::Em(5.0);
+        style.aspect_ratio = Some(2.0);
+        styles.insert(node, style);
+
+        let box_node = LayoutBox {
+            node_id: Some(node),
+            is_block_level: true,
+            ..Default::default()
+        };
+
+        let w = flex_item_base_size(&box_node, &doc, &styles, None);
+
+        assert_eq!(
+            w, 200.0,
+            "width:auto + aspect-ratio:2 + height:5em at 20px should transfer to 200px base width"
+        );
     }
 
     #[test]

@@ -378,3 +378,5 @@ Inline multicol auto-fill height budgets are another post-IFC used-value boundar
 Table intrinsic helpers can duplicate font-size used-value logic outside the IFC path. Column min-content floors and vertical table growth that estimate text width must resolve residual `font-size` values through the style-system resolver; otherwise direct styles with `em`/`ch` silently fall back to 16px and under-size table tracks.
 
 Flex intrinsic sizing has its own container-level spacing boundary. When summing flex row max-content widths, resolve the container `gap` with the same definite real-length helper used for item bases; otherwise direct residual `gap` values disappear even though item sizes are correct.
+
+Flex intrinsic aspect-ratio transfer has a separate item-level size boundary. When `width:auto` items derive base width from `height` or `min-height`, resolve those definite real lengths before applying the ratio; otherwise residual cross sizes fall back to content max-content and erase the transferred base.
