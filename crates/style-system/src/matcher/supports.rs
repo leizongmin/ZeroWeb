@@ -32,6 +32,9 @@ pub(super) fn extended_visual_or_layout_property_supported(property: &str, value
         "mask-mode" => values::parse_mask_mode(value).is_some(),
         // https://drafts.fxtf.org/filter-effects-1/
         "filter" | "backdrop-filter" => values::parse_filter_list(value).is_some(),
+        // https://drafts.csswg.org/css-backgrounds-3/#shadow-layers
+        "text-shadow" => values::parse_text_shadow_list(value).is_some(),
+        "box-shadow" => values::parse_box_shadow_list(value).is_some(),
         // https://drafts.csswg.org/css-contain-2/#contain-property
         "contain" => values::parse_contain(value).is_some(),
         // https://drafts.csswg.org/css2/#page-break-props

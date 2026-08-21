@@ -446,6 +446,22 @@ fn test_property_supported_transform() {
 }
 
 #[test]
+fn test_property_supported_shadow_properties() {
+    assert!(is_property_supported("text-shadow", "1px 2px 3px red"));
+    assert!(is_property_supported("text-shadow", "black 0 0"));
+    assert!(is_property_supported(
+        "box-shadow",
+        "inset 1px 2px 3px 4px rgb(0, 0, 0)"
+    ));
+    assert!(is_property_supported("box-shadow", "none"));
+
+    assert!(!is_property_supported("text-shadow", "1px"));
+    assert!(!is_property_supported("text-shadow", "1px 2px -3px red"));
+    assert!(!is_property_supported("box-shadow", "inset inset 1px 2px red"));
+    assert!(!is_property_supported("box-shadow", "1px 2px -3px red"));
+}
+
+#[test]
 fn test_property_supported_background() {
     assert!(is_property_supported("background", "red"));
     assert!(is_property_supported(
