@@ -140,6 +140,8 @@ fn test_property_supported_grid_placement() {
     assert!(is_property_supported("grid-auto-rows", "minmax(50px, 1fr)"));
     assert!(is_property_supported("grid-auto-columns", "100px auto"));
     assert!(is_property_supported("grid-template-areas", "'a b' 'c d'"));
+    assert!(is_property_supported("grid-template", "100px / 1fr"));
+    assert!(is_property_supported("grid-template", "'a ...' 50px / 1fr 1fr"));
 
     assert!(!is_property_supported("grid-column-start", "0"));
     assert!(!is_property_supported("grid-column-end", "1 / 2"));
@@ -153,6 +155,8 @@ fn test_property_supported_grid_placement() {
     assert!(!is_property_supported("grid-auto-rows", "repeat(2, 50px)"));
     assert!(!is_property_supported("grid-template-areas", "\"a a\" \"b a\""));
     assert!(!is_property_supported("grid-template-areas", "\"a b\" tail"));
+    assert!(!is_property_supported("grid-template", "100px bogus / 1fr"));
+    assert!(!is_property_supported("grid-template", "\"a a\" \"b a\" / 1fr 1fr"));
 }
 
 #[test]

@@ -72,6 +72,7 @@ pub(super) fn extended_visual_or_layout_property_supported(property: &str, value
         }
         "grid-auto-rows" | "grid-auto-columns" => crate::property::parse_grid_auto_track_list(value).is_some(),
         "grid-template-areas" => crate::property::parse_grid_template_areas_value(value).is_some(),
+        "grid-template" => shorthand_supported(property, value),
         // https://drafts.csswg.org/css-align-3/#justify-items-property
         // https://drafts.csswg.org/css-align-3/#justify-self-property
         "justify-items" | "justify-self" => justify_items_supported(value),

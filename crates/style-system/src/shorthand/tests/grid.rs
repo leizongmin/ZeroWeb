@@ -446,6 +446,25 @@ fn test_grid_template_rejects_invalid_slash_forms() {
 }
 
 #[test]
+fn test_grid_template_rejects_invalid_track_or_area_values() {
+    assert!(expand_one("grid-template", "100px bogus / 1fr", false, (0, 0, 1)).is_empty());
+    assert!(expand_one("grid-template", "100px / repeat(0, 1fr)", false, (0, 0, 1)).is_empty());
+    assert!(expand_one("grid-template", "\"a a\" \"b a\" / 1fr 1fr", false, (0, 0, 1)).is_empty());
+}
+
+#[test]
+fn test_grid_template_normalizes_single_quoted_areas() {
+    let result = expand_one("grid-template", "'a ...' 50px / 1fr 1fr", false, (0, 0, 1));
+    assert_eq!(result.len(), 3);
+    assert_eq!(result[0].0, "grid-template-areas");
+    assert_eq!(result[0].1, "\"a .\"");
+    assert_eq!(result[1].0, "grid-template-rows");
+    assert_eq!(result[1].1, "50px");
+    assert_eq!(result[2].0, "grid-template-columns");
+    assert_eq!(result[2].1, "1fr 1fr");
+}
+
+#[test]
 fn test_grid_template_wide_keyword_expands_all_longhands() {
     let result = expand_one("grid-template", "inherit", false, (0, 0, 1));
     assert_eq!(result.len(), 3);

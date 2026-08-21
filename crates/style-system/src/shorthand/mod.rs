@@ -168,6 +168,7 @@ fn pending_shorthand_longhands(property: &str) -> Option<&'static [&'static str]
         "place-self" => &["align-self", "justify-self"],
         "grid-column" => &["grid-column-start", "grid-column-end"],
         "grid-row" => &["grid-row-start", "grid-row-end"],
+        "grid-template" => &["grid-template-areas", "grid-template-rows", "grid-template-columns"],
         "margin-block" => &["margin-block-start", "margin-block-end"],
         "margin-inline" => &["margin-inline-start", "margin-inline-end"],
         "padding-block" => &["padding-block-start", "padding-block-end"],
@@ -1681,6 +1682,9 @@ fn expand_grid_template(value: &str, important: bool, specificity: (u32, u32, u3
     let mk = |prop: &str, val: &str| -> MatchingDecl { (prop.to_string(), val.to_string(), important, specificity) };
     let value = value.trim();
 
+    // https://drafts.csswg.org/css-grid-2/#explicit-grid-shorthand
+    // Validate expanded longhands atomically so unsupported track/area grammar cannot partially
+    // survive cascade via the shorthand path.
     if matches_css_wide_keyword(value) {
         return wide_keyword_to_longhands(
             value,
@@ -1688,6 +1692,13 @@ fn expand_grid_template(value: &str, important: bool, specificity: (u32, u32, u3
             important,
             specificity,
         );
+    }
+    if value.eq_ignore_ascii_case("none") {
+        return vec![
+            mk("grid-template-areas", "none"),
+            mk("grid-template-rows", "none"),
+            mk("grid-template-columns", "none"),
+        ];
     }
 
     // 按 `/` 分割为 rows 部分和 columns 部分
@@ -1699,26 +1710,62 @@ fn expand_grid_template(value: &str, important: bool, specificity: (u32, u32, u3
         }
 
         // 从 rows 部分提取引号字符串作为 grid-template-areas
-        let (areas_str, rows_only) = extract_quoted_areas(rows_part);
+        let Some((areas_str, rows_only)) = extract_quoted_areas(rows_part) else {
+            return vec![];
+        };
+        let areas = if areas_str.is_empty() {
+            None
+        } else if let Some(Some(areas)) = crate::property::parse_grid_template_areas_value(&areas_str) {
+            Some(areas)
+        } else {
+            return vec![];
+        };
+        let rows = if rows_only.is_empty() {
+            None
+        } else if let Some(Some(rows)) = crate::property::parse_grid_template_track_list(rows_only.trim()) {
+            Some(rows)
+        } else {
+            return vec![];
+        };
+        let Some(Some(columns)) = crate::property::parse_grid_template_track_list(cols_part) else {
+            return vec![];
+        };
 
         let mut result = Vec::with_capacity(3);
-        if !areas_str.is_empty() {
-            result.push(mk("grid-template-areas", &areas_str));
+        if let Some(areas) = areas {
+            result.push(mk("grid-template-areas", &areas));
         }
-        if !rows_only.is_empty() {
-            result.push(mk("grid-template-rows", rows_only.trim()));
+        if let Some(rows) = rows {
+            result.push(mk("grid-template-rows", &rows));
         }
-        result.push(mk("grid-template-columns", cols_part));
+        result.push(mk("grid-template-columns", &columns));
         result
     } else {
         // 无 `/`：整个值作为 rows
-        let (areas_str, rows_only) = extract_quoted_areas(value);
+        let Some((areas_str, rows_only)) = extract_quoted_areas(value) else {
+            return vec![];
+        };
+        let areas = if areas_str.is_empty() {
+            None
+        } else if let Some(Some(areas)) = crate::property::parse_grid_template_areas_value(&areas_str) {
+            Some(areas)
+        } else {
+            return vec![];
+        };
+        let rows = if rows_only.is_empty() {
+            None
+        } else if let Some(Some(rows)) = crate::property::parse_grid_template_track_list(rows_only.trim()) {
+            Some(rows)
+        } else {
+            return vec![];
+        };
+
         let mut result = Vec::with_capacity(2);
-        if !areas_str.is_empty() {
-            result.push(mk("grid-template-areas", &areas_str));
+        if let Some(areas) = areas {
+            result.push(mk("grid-template-areas", &areas));
         }
-        if !rows_only.is_empty() {
-            result.push(mk("grid-template-rows", rows_only.trim()));
+        if let Some(rows) = rows {
+            result.push(mk("grid-template-rows", &rows));
         }
         result
     }
@@ -1728,10 +1775,10 @@ fn expand_grid_template(value: &str, important: bool, specificity: (u32, u32, u3
 ///
 /// `"header header" 50px "main main" 1fr` →
 ///   areas: `"header header" "main main"`, rows_only: `50px 1fr`
-fn extract_quoted_areas(rows_part: &str) -> (String, String) {
+fn extract_quoted_areas(rows_part: &str) -> Option<(String, String)> {
     let mut areas = String::new();
     let mut rows_tokens: Vec<String> = Vec::new();
-    let mut in_quotes = false;
+    let mut quote: Option<char> = None;
     let mut current_area = String::new();
     let mut current_row_token = String::new();
 
@@ -1744,8 +1791,8 @@ fn extract_quoted_areas(rows_part: &str) -> (String, String) {
     };
 
     for ch in rows_part.chars() {
-        if ch == '"' {
-            if in_quotes {
+        if ch == '"' || ch == '\'' {
+            if quote == Some(ch) {
                 // 闭引号
                 current_area.push(ch);
                 if !areas.is_empty() {
@@ -1753,15 +1800,17 @@ fn extract_quoted_areas(rows_part: &str) -> (String, String) {
                 }
                 areas.push_str(&current_area);
                 current_area.clear();
-                in_quotes = false;
-            } else {
+                quote = None;
+            } else if quote.is_none() {
                 // 开引号 — 先 flush 任何正在累积的 row token
                 flush_row_token(&mut current_row_token, &mut rows_tokens);
                 current_area.clear();
                 current_area.push(ch);
-                in_quotes = true;
+                quote = Some(ch);
+            } else {
+                current_area.push(ch);
             }
-        } else if in_quotes {
+        } else if quote.is_some() {
             current_area.push(ch);
         } else {
             // 不在引号内，属于行尺寸
@@ -1769,10 +1818,14 @@ fn extract_quoted_areas(rows_part: &str) -> (String, String) {
         }
     }
 
+    if quote.is_some() {
+        return None;
+    }
+
     // flush 最后一个 row token
     flush_row_token(&mut current_row_token, &mut rows_tokens);
 
-    (areas, rows_tokens.join(" "))
+    Some((areas, rows_tokens.join(" ")))
 }
 
 /// 展开 list-style 简写。
