@@ -265,6 +265,7 @@ impl ServiceWorkerIpcClient {
                                     "portId": message.port_id,
                                     "transferredPortIds": message.transferred_port_ids,
                                     "dataPortIndex": message.data_port_index,
+                                    "targetClientId": message.target_client_id,
                                 }))
                             })
                             .collect::<Vec<_>>(),

@@ -1,0 +1,2 @@
+source_path	manifest_sha	subtests	decision	hidden_dependencies	rationale
+service-workers/service-worker/clients-matchall-on-evaluation.https.html	8705f85b56840976e5bedf3ea780efb8830747f5	1	next-wave-clients-matchall-evaluation-core	worker-top-level;includeUncontrolled;client-postMessage	worker 求值期间枚举同源未受控注册页面，并通过 browser-owned client identity 主动回传结果

@@ -208,3 +208,4 @@ service-workers/service-worker/update.https.html 04067ce9c7c2165e71ad7d0dde10a4c
 service-workers/service-worker/multiple-update.https.html 04067ce9c7c2165e71ad7d0dde10a4c5cb394a83 2026-08-21 SW-M3-multiple-update
 service-workers/service-worker/update-not-allowed.https.html 04067ce9c7c2165e71ad7d0dde10a4c5cb394a83 2026-08-21 SW-M3-update-not-allowed
 service-workers/service-worker/skip-waiting-without-client.https.html 04067ce9c7c2165e71ad7d0dde10a4c5cb394a83 2026-08-21 SW-M3-skip-waiting-no-client
+service-workers/service-worker/clients-matchall-on-evaluation.https.html 04067ce9c7c2165e71ad7d0dde10a4c5cb394a83 2026-08-21 SW-M3-clients-matchall-evaluation

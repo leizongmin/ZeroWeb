@@ -21,8 +21,8 @@ use zero_protocol::message::{
 use zero_protocol::transport::PipeTransport;
 use zero_protocol::{IpcChannel, IpcMessage, IpcMessageKind};
 use zero_script_sandbox::{
-    SandboxConfig, ServiceWorkerEvent, ServiceWorkerLifecyclePhase, ServiceWorkerMessagePorts, ServiceWorkerRuntime,
-    ServiceWorkerScriptErrorKind,
+    SandboxConfig, ServiceWorkerClientInfo, ServiceWorkerEvent, ServiceWorkerLifecyclePhase, ServiceWorkerMessagePorts,
+    ServiceWorkerRuntime, ServiceWorkerScriptErrorKind,
 };
 
 use crate::compositor_publish_thread::SharedWriter;
@@ -139,6 +139,25 @@ impl HostThread {
                     params.registration_id,
                     request_id,
                     result.map_err(|error| (error.exception_name, error.message)),
+                );
+            }
+            ServiceWorkerHostCommand::CompleteClientsMatchAll { request_id, result } => {
+                self.complete_clients_match_all(
+                    params.registration_id,
+                    request_id,
+                    result.map(|clients| {
+                        clients
+                            .into_iter()
+                            .map(|client| ServiceWorkerClientInfo {
+                                id: client.id,
+                                url: client.url,
+                                client_type: client.client_type,
+                                frame_type: client.frame_type,
+                                visibility_state: client.visibility_state,
+                                focused: client.focused,
+                            })
+                            .collect()
+                    }),
                 );
             }
             ServiceWorkerHostCommand::Shutdown => {
@@ -261,6 +280,21 @@ impl HostThread {
             tracing::warn!("Service Worker update response failed: {error}");
         }
     }
+
+    fn complete_clients_match_all(
+        &mut self,
+        registration_id: u64,
+        request_id: u64,
+        result: Result<Vec<ServiceWorkerClientInfo>, String>,
+    ) {
+        let Some(runtime) = self.runtimes.get(&registration_id) else {
+            tracing::warn!("Service Worker clients response for unknown registration {registration_id}");
+            return;
+        };
+        if let Err(error) = runtime.complete_clients_match_all(request_id, result) {
+            tracing::warn!("Service Worker clients response failed: {error}");
+        }
+    }
 }
 
 fn wire_phase(phase: ServiceWorkerLifecycleWire) -> ServiceWorkerLifecyclePhase {
@@ -319,6 +353,7 @@ fn host_event(event: ServiceWorkerEvent) -> ServiceWorkerHostEvent {
                     port_id: message.port_id,
                     transferred_port_ids: message.transferred_port_ids,
                     data_port_index: message.data_port_index,
+                    target_client_id: message.target_client_id,
                 })
                 .collect(),
         },
@@ -335,6 +370,27 @@ fn host_event(event: ServiceWorkerEvent) -> ServiceWorkerHostEvent {
             ServiceWorkerHostEvent::ImportScriptsRequested { request_id, specifiers }
         }
         ServiceWorkerEvent::UpdateRequested { request_id } => ServiceWorkerHostEvent::UpdateRequested { request_id },
+        ServiceWorkerEvent::ClientsMatchAllRequested {
+            request_id,
+            include_uncontrolled,
+            client_type,
+        } => ServiceWorkerHostEvent::ClientsMatchAllRequested {
+            request_id,
+            include_uncontrolled,
+            client_type,
+        },
+        ServiceWorkerEvent::ClientMessagesEmitted { outbound } => ServiceWorkerHostEvent::ClientMessagesEmitted {
+            outbound: outbound
+                .into_iter()
+                .map(|message| zero_protocol::message::ServiceWorkerMessage {
+                    data_json: message.data_json,
+                    port_id: message.port_id,
+                    transferred_port_ids: message.transferred_port_ids,
+                    data_port_index: message.data_port_index,
+                    target_client_id: message.target_client_id,
+                })
+                .collect(),
+        },
         ServiceWorkerEvent::Closed => ServiceWorkerHostEvent::Closed,
         ServiceWorkerEvent::ModuleScriptsRequested {
             request_id,

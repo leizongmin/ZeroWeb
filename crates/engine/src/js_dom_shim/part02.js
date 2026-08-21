@@ -3095,6 +3095,7 @@
           updateViaCache: snapshot && snapshot.updateViaCache || updateViaCache,
           state: snapshot && snapshot.state || 'installing'
         }, 'manual');
+        scheduleClientMessagePoll(reg._worker);
         return Promise.resolve(reg).then(function (registration) {
           scheduleRegistrationPoll(registration);
           return registration;

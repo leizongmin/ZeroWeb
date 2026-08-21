@@ -17,14 +17,15 @@ use zero_page_runtime::{
     ServiceWorkerUpdateOutcome, validate_service_worker_registration,
 };
 use zero_protocol::message::{
-    ServiceWorkerClientMessages, ServiceWorkerError, ServiceWorkerErrorCode, ServiceWorkerHostCommand,
-    ServiceWorkerHostCommandParams, ServiceWorkerHostEvent, ServiceWorkerHostEventParams, ServiceWorkerLifecycleWire,
-    ServiceWorkerOperation, ServiceWorkerRequestParams, ServiceWorkerResponseParams, ServiceWorkerResult,
-    ServiceWorkerScriptErrorKindWire, ServiceWorkerScriptTypeWire, ServiceWorkerSnapshot, ServiceWorkerStateChanges,
-    ServiceWorkerStateWire, ServiceWorkerUpdateError, ServiceWorkerUpdateViaCacheWire,
+    ServiceWorkerClientInfoWire, ServiceWorkerClientMessages, ServiceWorkerError, ServiceWorkerErrorCode,
+    ServiceWorkerHostCommand, ServiceWorkerHostCommandParams, ServiceWorkerHostEvent, ServiceWorkerHostEventParams,
+    ServiceWorkerLifecycleWire, ServiceWorkerOperation, ServiceWorkerRequestParams, ServiceWorkerResponseParams,
+    ServiceWorkerResult, ServiceWorkerScriptErrorKindWire, ServiceWorkerScriptTypeWire, ServiceWorkerSnapshot,
+    ServiceWorkerStateChanges, ServiceWorkerStateWire, ServiceWorkerUpdateError, ServiceWorkerUpdateViaCacheWire,
 };
 use zero_script_sandbox::{
-    ServiceWorkerEvent, ServiceWorkerLifecyclePhase, ServiceWorkerMessagePorts, ServiceWorkerScriptErrorKind,
+    ServiceWorkerClientInfo, ServiceWorkerEvent, ServiceWorkerLifecyclePhase, ServiceWorkerMessagePorts,
+    ServiceWorkerScriptErrorKind,
 };
 use zero_storage::{
     ServiceWorkerRegistration, ServiceWorkerScriptType, ServiceWorkerState, ServiceWorkerUpdateViaCache,
@@ -291,6 +292,41 @@ impl ServiceWorkerRuntimeHost for IpcServiceWorkerHost {
         Ok(())
     }
 
+    fn complete_clients_match_all(
+        &mut self,
+        registration_id: u64,
+        request_id: u64,
+        result: Result<Vec<ServiceWorkerClientInfo>, String>,
+    ) -> Result<(), ServiceWorkerManagerError> {
+        let Some(tab_id) = self.channels.take_owned_tab(registration_id) else {
+            return Err(ServiceWorkerManagerError::UnknownRegistration(registration_id));
+        };
+        self.channels.record_owned(registration_id, tab_id);
+        self.channels.push_outgoing(ServiceWorkerHostOutgoing {
+            tab_id,
+            params: ServiceWorkerHostCommandParams {
+                registration_id,
+                command: ServiceWorkerHostCommand::CompleteClientsMatchAll {
+                    request_id,
+                    result: result.map(|clients| {
+                        clients
+                            .into_iter()
+                            .map(|client| ServiceWorkerClientInfoWire {
+                                id: client.id,
+                                url: client.url,
+                                client_type: client.client_type,
+                                frame_type: client.frame_type,
+                                visibility_state: client.visibility_state,
+                                focused: client.focused,
+                            })
+                            .collect()
+                    }),
+                },
+            },
+        });
+        Ok(())
+    }
+
     fn shutdown(&mut self, registration_id: u64) {
         if let Some(tab_id) = self.channels.remove_owned(registration_id) {
             self.channels.push_outgoing(ServiceWorkerHostOutgoing {
@@ -388,6 +424,7 @@ fn sandbox_event(event: ServiceWorkerHostEvent) -> ServiceWorkerEvent {
                     port_id: message.port_id,
                     transferred_port_ids: message.transferred_port_ids,
                     data_port_index: message.data_port_index,
+                    target_client_id: message.target_client_id,
                 })
                 .collect(),
         },
@@ -404,6 +441,27 @@ fn sandbox_event(event: ServiceWorkerHostEvent) -> ServiceWorkerEvent {
             ServiceWorkerEvent::ImportScriptsRequested { request_id, specifiers }
         }
         ServiceWorkerHostEvent::UpdateRequested { request_id } => ServiceWorkerEvent::UpdateRequested { request_id },
+        ServiceWorkerHostEvent::ClientsMatchAllRequested {
+            request_id,
+            include_uncontrolled,
+            client_type,
+        } => ServiceWorkerEvent::ClientsMatchAllRequested {
+            request_id,
+            include_uncontrolled,
+            client_type,
+        },
+        ServiceWorkerHostEvent::ClientMessagesEmitted { outbound } => ServiceWorkerEvent::ClientMessagesEmitted {
+            outbound: outbound
+                .into_iter()
+                .map(|message| zero_script_sandbox::ServiceWorkerOutboundMessage {
+                    data_json: message.data_json,
+                    port_id: message.port_id,
+                    transferred_port_ids: message.transferred_port_ids,
+                    data_port_index: message.data_port_index,
+                    target_client_id: message.target_client_id,
+                })
+                .collect(),
+        },
         ServiceWorkerHostEvent::ModuleScriptsRequested {
             request_id,
             referrer_url,
@@ -523,6 +581,7 @@ pub(crate) struct BrowserServiceWorkerOwner {
     update_fetch_plans: Vec<ServiceWorkerFetchPlan>,
     import_fetch_plans: Vec<ServiceWorkerImportFetchPlan>,
     pending_import_fetches: Vec<PendingImportFetch>,
+    clients_by_tab: HashMap<TabId, (ProfileKey, String)>,
     persistence_path: Option<PathBuf>,
     restoring: HashSet<u64>,
     /// IPC host 启动时无 renderer：持久化记录延迟到首个 renderer 接入时恢复。
@@ -639,6 +698,7 @@ impl BrowserServiceWorkerOwner {
             update_fetch_plans: Vec::new(),
             import_fetch_plans: Vec::new(),
             pending_import_fetches: Vec::new(),
+            clients_by_tab: HashMap::new(),
             persistence_path,
             restoring: HashSet::new(),
             deferred_restores: Vec::new(),
@@ -688,6 +748,9 @@ impl BrowserServiceWorkerOwner {
         } else {
             ProfileKey::Normal
         };
+        if let Err(error) = self.observe_client(tab_id, profile, client_id, authority.as_str()) {
+            return self.error_disposition(tab_id, request_id, ServiceWorkerErrorCode::InvalidArgument, error);
+        }
 
         match params.operation {
             ServiceWorkerOperation::Register {
@@ -911,6 +974,7 @@ impl BrowserServiceWorkerOwner {
                                     port_id: message.port_id,
                                     transferred_port_ids: message.transferred_port_ids,
                                     data_port_index: message.data_port_index,
+                                    target_client_id: message.target_client_id,
                                 })
                                 .collect(),
                         })
@@ -1021,12 +1085,17 @@ impl BrowserServiceWorkerOwner {
     }
 
     pub(crate) fn remove_tab(&mut self, tab_id: TabId) {
-        self.private.remove(&tab_id);
         self.disconnect_tab(tab_id);
+        self.private.remove(&tab_id);
         self.fail_tab_hosted_runtimes(tab_id);
     }
 
     pub(crate) fn disconnect_tab(&mut self, tab_id: TabId) {
+        if let Some((profile, client_id)) = self.clients_by_tab.remove(&tab_id)
+            && let Some(manager) = self.manager_mut_if_present(profile)
+        {
+            manager.remove_client(&client_id);
+        }
         self.pending_fetches.retain(|pending| pending.plan.tab_id != tab_id);
         self.pending_evaluations.retain(|_, pending| pending.tab_id != tab_id);
         self.update_fetch_plans.retain(|plan| plan.tab_id != tab_id);
@@ -1059,6 +1128,7 @@ impl BrowserServiceWorkerOwner {
     }
 
     pub(crate) fn remove_private_profile(&mut self, tab_id: TabId) {
+        self.clients_by_tab.remove(&tab_id);
         self.private.remove(&tab_id);
         self.pending_fetches
             .retain(|pending| pending.plan.profile != ProfileKey::Private(tab_id));
@@ -1070,6 +1140,26 @@ impl BrowserServiceWorkerOwner {
             .retain(|plan| plan.profile != ProfileKey::Private(tab_id));
         self.pending_import_fetches
             .retain(|pending| pending.plan.profile != ProfileKey::Private(tab_id));
+    }
+
+    fn observe_client(
+        &mut self,
+        tab_id: TabId,
+        profile: ProfileKey,
+        client_id: &str,
+        client_url: &str,
+    ) -> Result<(), String> {
+        self.manager_mut(profile)
+            .observe_window_client(client_id, client_url)
+            .map_err(|error| error.to_string())?;
+        if let Some((previous_profile, previous_id)) =
+            self.clients_by_tab.insert(tab_id, (profile, client_id.to_string()))
+            && (previous_profile != profile || previous_id != client_id)
+            && let Some(manager) = self.manager_mut_if_present(previous_profile)
+        {
+            manager.remove_client(&previous_id);
+        }
+        Ok(())
     }
 
     fn poll_fetches(&mut self, completed: &mut Vec<CompletedServiceWorkerResponse>) {
@@ -1572,6 +1662,13 @@ impl BrowserServiceWorkerOwner {
         }
     }
 
+    fn manager_mut_if_present(&mut self, profile: ProfileKey) -> Option<&mut ServiceWorkerManager> {
+        match profile {
+            ProfileKey::Normal => Some(&mut self.normal),
+            ProfileKey::Private(tab_id) => self.private.get_mut(&tab_id),
+        }
+    }
+
     fn ensure_profile(&mut self, profile: ProfileKey) {
         if let ProfileKey::Private(tab_id) = profile
             && !self.private.contains_key(&tab_id)
@@ -1592,6 +1689,10 @@ impl BrowserServiceWorkerOwner {
 
     /// 注入 renderer 回传的 runtime 事件（process_backend 消息循环调用）。
     pub(crate) fn inject_host_event(&mut self, tab_id: TabId, private: bool, params: ServiceWorkerHostEventParams) {
+        if let Err(message) = params.validate() {
+            tracing::warn!("Rejected invalid Service Worker host event: {message}");
+            return;
+        }
         let profile = if private {
             ProfileKey::Private(tab_id)
         } else {

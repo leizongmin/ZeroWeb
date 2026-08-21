@@ -1443,6 +1443,64 @@ fn service_worker_message_port_transfers_bidirectionally() {
 }
 
 #[test]
+fn clients_match_all_during_evaluation_reaches_registering_page() {
+    let mut webview = WebViewBuilder::new()
+        .url("https://example.test/clients-matchall-on-evaluation.https.html")
+        .script_source_fetcher(Arc::new(|_, script| match script {
+            "https://example.test/sw.js" => Ok("importScripts('test-helpers.sub.js');
+                     var page_url = normalizeURL('clients-matchall-on-evaluation.https.html');
+                     clients.matchAll({includeUncontrolled: true}).then(clientList => {
+                       for (const client of clientList) {
+                         if (client.url === page_url) client.postMessage({matched: client.url});
+                       }
+                     });"
+            .into()),
+            "https://example.test/test-helpers.sub.js" => Ok(
+                "function normalizeURL(url) { return new URL(url, self.location).toString().replace(/#.*$/, ''); }"
+                    .into(),
+            ),
+            _ => Err(format!("unexpected script: {script}")),
+        }))
+        .build();
+
+    webview
+        .execute_script(
+            "globalThis.__matchAllResult = 'pending';
+             navigator.serviceWorker.onmessage = function(event) {
+               globalThis.__matchAllResult = event.data.matched;
+             };
+             navigator.serviceWorker.register('/sw.js', {scope:'/scope/'}).then(function(registration) {
+               globalThis.__matchAllRegistration = registration && registration.scope;
+             }, function(error) {
+               globalThis.__matchAllResult = 'register-error:' + error.name + ':' + error.message;
+             });
+             'started';",
+        )
+        .unwrap();
+
+    let deadline = Instant::now() + Duration::from_secs(5);
+    loop {
+        let result = webview
+            .execute_script(
+                "JSON.stringify({
+               message: globalThis.__matchAllResult,
+               registration: globalThis.__matchAllRegistration || null
+             })",
+            )
+            .unwrap();
+        if result.contains("https://example.test/clients-matchall-on-evaluation.https.html") {
+            assert!(result.contains(r#""registration":"https://example.test/scope/""#));
+            break;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "clients.matchAll page message timed out: {result}"
+        );
+        std::thread::sleep(Duration::from_millis(5));
+    }
+}
+
+#[test]
 fn update_permissions_follow_calling_worker_state_during_installation() {
     let version = Arc::new(Mutex::new(0usize));
     let fetch_version = Arc::clone(&version);

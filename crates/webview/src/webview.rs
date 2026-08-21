@@ -656,6 +656,7 @@ impl WebView {
     /// 加载 HTML 内容。
     pub fn load_html(&mut self, html: &str, css: Option<&str>) -> WebViewRenderResult {
         self.reset_service_worker_document_projection();
+        self.remove_current_service_worker_client();
         self.document_generation = self.document_generation.wrapping_add(1);
         self.service_worker_client_generation
             .store(self.document_generation, Ordering::Relaxed);
@@ -1161,6 +1162,7 @@ impl WebView {
     /// 调用方应随后调用 `fetch_url` 或 `complete_load` 来完成加载。
     pub fn load_url(&mut self, url: &str) {
         self.navigation_epoch = self.navigation_epoch.wrapping_add(1);
+        self.remove_current_service_worker_client();
         self.document_generation = self.document_generation.wrapping_add(1);
         self.service_worker_client_generation
             .store(self.document_generation, Ordering::Relaxed);
@@ -1243,6 +1245,7 @@ impl WebView {
     /// 必须丢弃上一文档的 `last_render` / 缓存，否则多进程增量 publish 会把旧帧 IPC 到浏览器。
     pub fn prepare_document_state(&mut self, page_url: &str) {
         self.navigation_epoch = self.navigation_epoch.wrapping_add(1);
+        self.remove_current_service_worker_client();
         self.document_generation = self.document_generation.wrapping_add(1);
         self.service_worker_client_generation
             .store(self.document_generation, Ordering::Relaxed);
@@ -1631,6 +1634,17 @@ impl WebView {
     fn set_page_url_wire(&self, page_url: &str) {
         if let Ok(mut current) = self.page_url_wire.lock() {
             *current = page_url.to_string();
+        }
+    }
+
+    fn remove_current_service_worker_client(&self) {
+        let client_id = format!(
+            "{}:{}",
+            self.service_worker_client_id,
+            self.service_worker_client_generation.load(Ordering::Relaxed)
+        );
+        if let Ok(mut manager) = self.sw_manager.lock() {
+            manager.remove_client(&client_id);
         }
     }
 
@@ -2516,20 +2530,31 @@ impl WebView {
         document_url: &str,
     ) -> Result<u64, WebViewError> {
         let (script_url, scope, origin) = Self::validate_service_worker_registration(script_url, scope, document_url)?;
-        if let Some(registration_id) = self
-            .sw_manager
-            .lock()
-            .map_err(|_| WebViewError::Script("Service Worker manager lock poisoned".into()))?
-            .matching_registration(
-                script_url.as_str(),
-                scope.as_str(),
-                &origin,
-                ServiceWorkerScriptType::Classic,
-                ServiceWorkerUpdateViaCache::Imports,
-            )
-            .map_err(|error| WebViewError::Script(error.to_string()))?
+        let client_id = format!(
+            "{}:{}",
+            self.service_worker_client_id,
+            self.service_worker_client_generation.load(Ordering::Relaxed)
+        );
         {
-            return Ok(registration_id);
+            let mut manager = self
+                .sw_manager
+                .lock()
+                .map_err(|_| WebViewError::Script("Service Worker manager lock poisoned".into()))?;
+            manager
+                .observe_window_client(&client_id, document_url)
+                .map_err(|error| WebViewError::Script(error.to_string()))?;
+            if let Some(registration_id) = manager
+                .matching_registration(
+                    script_url.as_str(),
+                    scope.as_str(),
+                    &origin,
+                    ServiceWorkerScriptType::Classic,
+                    ServiceWorkerUpdateViaCache::Imports,
+                )
+                .map_err(|error| WebViewError::Script(error.to_string()))?
+            {
+                return Ok(registration_id);
+            }
         }
         let script = Self::fetch_service_worker_main_script(
             script_url.as_str(),
@@ -2630,6 +2655,8 @@ impl WebView {
         let controller_page_url = page_url.clone();
         let register_manager = manager.clone();
         let register_page_url = page_url.clone();
+        let register_client_id = client_id.clone();
+        let register_client_generation = client_generation.clone();
         let register_source_fetcher = source_fetcher.clone();
         let register_response_fetcher = response_fetcher.clone();
         sandbox.register_callback(
@@ -2671,19 +2698,30 @@ impl WebView {
                         }
                     };
                 let result = (|| -> Result<u64, ServiceWorkerMainScriptFetchError> {
-                    if let Some(registration_id) = register_manager
-                        .lock()
-                        .map_err(|_| "Service Worker manager lock poisoned".to_string())?
-                        .matching_registration(
-                            script_url.as_str(),
-                            scope.as_str(),
-                            &origin,
-                            script_type,
-                            update_via_cache,
-                        )
-                        .map_err(|error| error.to_string())?
+                    let current_client_id = format!(
+                        "{}:{}",
+                        register_client_id,
+                        register_client_generation.load(Ordering::Relaxed)
+                    );
                     {
-                        return Ok(registration_id);
+                        let mut manager = register_manager
+                            .lock()
+                            .map_err(|_| "Service Worker manager lock poisoned".to_string())?;
+                        manager
+                            .observe_window_client(&current_client_id, &document_url)
+                            .map_err(|error| error.to_string())?;
+                        if let Some(registration_id) = manager
+                            .matching_registration(
+                                script_url.as_str(),
+                                scope.as_str(),
+                                &origin,
+                                script_type,
+                                update_via_cache,
+                            )
+                            .map_err(|error| error.to_string())?
+                        {
+                            return Ok(registration_id);
+                        }
                     }
                     let source = Self::fetch_service_worker_main_script(
                         script_url.as_str(),
@@ -2987,6 +3025,7 @@ impl WebView {
                             "portId": message.port_id,
                             "transferredPortIds": message.transferred_port_ids,
                             "dataPortIndex": message.data_port_index,
+                            "targetClientId": message.target_client_id,
                         }))
                     })
                     .collect::<Vec<_>>();

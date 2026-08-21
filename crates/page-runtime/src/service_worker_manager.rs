@@ -3,7 +3,7 @@
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 use zero_script_sandbox::{
-    SandboxConfig, ServiceWorkerEvent, ServiceWorkerLifecyclePhase, ServiceWorkerMessagePorts,
+    SandboxConfig, ServiceWorkerClientInfo, ServiceWorkerEvent, ServiceWorkerLifecyclePhase, ServiceWorkerMessagePorts,
     ServiceWorkerOutboundMessage, ServiceWorkerRuntime, ServiceWorkerScriptErrorKind,
 };
 use zero_storage::{
@@ -12,6 +12,7 @@ use zero_storage::{
 };
 
 const DEFAULT_RUNTIME_LIMIT: usize = 32;
+const MAX_SERVICE_WORKER_CLIENTS: usize = 128;
 const MAX_CLIENTS_PER_VERSION: usize = 256;
 const MAX_MESSAGES_PER_CLIENT: usize = 1024;
 const MAX_URL_BYTES: usize = 64 * 1024;
@@ -326,6 +327,8 @@ pub struct ServiceWorkerManager {
     client_messages: HashMap<(u64, String), Vec<Vec<ServiceWorkerOutboundMessage>>>,
     pending_client_messages: HashMap<(u64, String), usize>,
     message_ports: HashSet<(u64, String, u64)>,
+    clients: HashMap<String, (ServiceWorkerClientInfo, u64)>,
+    next_client_sequence: u64,
     script_sources: HashMap<u64, Vec<u8>>,
     imported_scripts: HashMap<u64, HashMap<String, Vec<u8>>>,
     pending_import_requests: HashMap<(u64, u64), Vec<String>>,
@@ -382,6 +385,13 @@ pub trait ServiceWorkerRuntimeHost: Send {
         registration_id: u64,
         request_id: u64,
         result: Result<(), (String, String)>,
+    ) -> Result<(), ServiceWorkerManagerError>;
+    /// Complete one worker-global `clients.matchAll()` request.
+    fn complete_clients_match_all(
+        &mut self,
+        registration_id: u64,
+        request_id: u64,
+        result: Result<Vec<ServiceWorkerClientInfo>, String>,
     ) -> Result<(), ServiceWorkerManagerError>;
     /// Stop one runtime and release its resources.
     fn shutdown(&mut self, registration_id: u64);
@@ -486,6 +496,19 @@ impl ServiceWorkerRuntimeHost for LocalServiceWorkerHost {
             .map_err(|error| ServiceWorkerManagerError::Runtime(error.to_string()))
     }
 
+    fn complete_clients_match_all(
+        &mut self,
+        registration_id: u64,
+        request_id: u64,
+        result: Result<Vec<ServiceWorkerClientInfo>, String>,
+    ) -> Result<(), ServiceWorkerManagerError> {
+        self.runtimes
+            .get(&registration_id)
+            .ok_or(ServiceWorkerManagerError::UnknownRegistration(registration_id))?
+            .complete_clients_match_all(request_id, result)
+            .map_err(|error| ServiceWorkerManagerError::Runtime(error.to_string()))
+    }
+
     fn shutdown(&mut self, registration_id: u64) {
         // 不在此处移除：poll_events 先 drain `Closed` 事件再按 is_running 回收槽位
         // （提前移除会让 Closed 成为孤儿事件，manager 无法据此推进状态机）。
@@ -536,6 +559,8 @@ impl ServiceWorkerManager {
             client_messages: HashMap::new(),
             pending_client_messages: HashMap::new(),
             message_ports: HashSet::new(),
+            clients: HashMap::new(),
+            next_client_sequence: 1,
             script_sources: HashMap::new(),
             imported_scripts: HashMap::new(),
             pending_import_requests: HashMap::new(),
@@ -1148,7 +1173,7 @@ impl ServiceWorkerManager {
                         });
                         continue;
                     }
-                    self.complete_client_message_batch(registration_id, &client_id, outbound);
+                    self.complete_routed_client_messages(registration_id, Some(&client_id), outbound);
                     output.push(ServiceWorkerManagerEvent::MessageDispatched {
                         registration_id,
                         event_id,
@@ -1167,6 +1192,26 @@ impl ServiceWorkerManager {
                         client_id,
                         message,
                     });
+                }
+                ServiceWorkerEvent::ClientsMatchAllRequested {
+                    request_id,
+                    include_uncontrolled,
+                    client_type,
+                } => {
+                    let result = self.clients_for_worker(registration_id, include_uncontrolled, &client_type);
+                    let _ = self.host.complete_clients_match_all(
+                        registration_id,
+                        request_id,
+                        result.map_err(|error| error.to_string()),
+                    );
+                }
+                ServiceWorkerEvent::ClientMessagesEmitted { outbound } => {
+                    if self
+                        .record_outbound_message_ports(registration_id, "", &outbound)
+                        .is_ok()
+                    {
+                        self.complete_routed_client_messages(registration_id, None, outbound);
+                    }
                 }
             }
         }
@@ -1619,6 +1664,7 @@ impl ServiceWorkerManager {
         client_url: &str,
         ports: &ServiceWorkerMessagePorts,
     ) -> Result<(), ServiceWorkerManagerError> {
+        self.observe_window_client(client_id, client_url)?;
         let state = self
             .registration(registration_id)
             .ok_or(ServiceWorkerManagerError::UnknownRegistration(registration_id))?
@@ -1733,8 +1779,22 @@ impl ServiceWorkerManager {
         client_id: &str,
         messages: &[ServiceWorkerOutboundMessage],
     ) -> Result<(), ServiceWorkerManagerError> {
+        let registration_origin = self
+            .registration(registration_id)
+            .ok_or(ServiceWorkerManagerError::UnknownRegistration(registration_id))?
+            .origin
+            .clone();
         let mut transferred = HashSet::new();
         for message in messages {
+            let target_client_id = message.target_client_id.as_deref().unwrap_or(client_id);
+            let valid_target = self.clients.get(target_client_id).is_some_and(|(client, _)| {
+                url::Url::parse(&client.url).is_ok_and(|url| url.origin().ascii_serialization() == registration_origin)
+            });
+            if target_client_id.is_empty() || !valid_target {
+                return Err(ServiceWorkerManagerError::InvalidInput(
+                    "outbound Service Worker target client does not exist".into(),
+                ));
+            }
             if message.transferred_port_ids.len() > 16
                 || message.transferred_port_ids.contains(&0)
                 || message
@@ -1749,8 +1809,8 @@ impl ServiceWorkerManager {
             if let Some(port_id) = message.port_id
                 && !self
                     .message_ports
-                    .contains(&(registration_id, client_id.to_string(), port_id))
-                && !transferred.contains(&port_id)
+                    .contains(&(registration_id, target_client_id.to_string(), port_id))
+                && !transferred.contains(&(target_client_id.to_string(), port_id))
             {
                 return Err(ServiceWorkerManagerError::InvalidInput(
                     "outbound Service Worker MessagePort endpoint does not exist".into(),
@@ -1759,8 +1819,8 @@ impl ServiceWorkerManager {
             for &port_id in &message.transferred_port_ids {
                 if self
                     .message_ports
-                    .contains(&(registration_id, client_id.to_string(), port_id))
-                    || !transferred.insert(port_id)
+                    .contains(&(registration_id, target_client_id.to_string(), port_id))
+                    || !transferred.insert((target_client_id.to_string(), port_id))
                 {
                     return Err(ServiceWorkerManagerError::InvalidInput(
                         "outbound Service Worker MessagePort endpoint was already transferred".into(),
@@ -1771,9 +1831,38 @@ impl ServiceWorkerManager {
         self.message_ports.extend(
             transferred
                 .into_iter()
-                .map(|port_id| (registration_id, client_id.to_string(), port_id)),
+                .map(|(client_id, port_id)| (registration_id, client_id, port_id)),
         );
         Ok(())
+    }
+
+    fn complete_routed_client_messages(
+        &mut self,
+        registration_id: u64,
+        source_client_id: Option<&str>,
+        messages: Vec<ServiceWorkerOutboundMessage>,
+    ) {
+        if let Some(client_id) = source_client_id {
+            self.release_client_message_reservation(&(registration_id, client_id.to_string()));
+        }
+        let mut batches: Vec<(String, Vec<ServiceWorkerOutboundMessage>)> = Vec::new();
+        for message in messages {
+            let client_id = message
+                .target_client_id
+                .clone()
+                .or_else(|| source_client_id.map(str::to_string));
+            let Some(client_id) = client_id else {
+                continue;
+            };
+            if let Some((_, batch)) = batches.iter_mut().find(|(id, _)| id == &client_id) {
+                batch.push(message);
+            } else {
+                batches.push((client_id, vec![message]));
+            }
+        }
+        for (client_id, batch) in batches {
+            self.append_client_message_batch(registration_id, &client_id, batch);
+        }
     }
 
     fn complete_client_message_batch(
@@ -1784,6 +1873,16 @@ impl ServiceWorkerManager {
     ) {
         let key = (registration_id, client_id.to_string());
         self.release_client_message_reservation(&key);
+        self.append_client_message_batch(registration_id, client_id, batch);
+    }
+
+    fn append_client_message_batch(
+        &mut self,
+        registration_id: u64,
+        client_id: &str,
+        batch: Vec<ServiceWorkerOutboundMessage>,
+    ) {
+        let key = (registration_id, client_id.to_string());
         let known_client = self.client_messages.contains_key(&key);
         let client_count = self
             .client_messages
@@ -1796,6 +1895,95 @@ impl ServiceWorkerManager {
                 batches.push(batch);
             }
         }
+    }
+
+    /// Record one committed top-level window as a Service Worker client.
+    pub fn observe_window_client(
+        &mut self,
+        client_id: &str,
+        client_url: &str,
+    ) -> Result<(), ServiceWorkerManagerError> {
+        if client_id.is_empty() || client_id.len() > MAX_URL_BYTES || client_url.len() > MAX_URL_BYTES {
+            return Err(ServiceWorkerManagerError::InvalidInput(
+                "Service Worker client fields are invalid".into(),
+            ));
+        }
+        let url = url::Url::parse(client_url)
+            .map_err(|_| ServiceWorkerManagerError::InvalidInput("Service Worker client URL is invalid".into()))?;
+        if !matches!(url.scheme(), "http" | "https") || !url.username().is_empty() || url.password().is_some() {
+            return Err(ServiceWorkerManagerError::InvalidInput(
+                "Service Worker client URL is not eligible".into(),
+            ));
+        }
+        if !self.clients.contains_key(client_id) && self.clients.len() >= MAX_SERVICE_WORKER_CLIENTS {
+            return Err(ServiceWorkerManagerError::InvalidInput(
+                "Service Worker client limit exceeded".into(),
+            ));
+        }
+        let sequence = self
+            .clients
+            .get(client_id)
+            .map(|(_, sequence)| *sequence)
+            .unwrap_or_else(|| {
+                let sequence = self.next_client_sequence;
+                self.next_client_sequence = self.next_client_sequence.saturating_add(1);
+                sequence
+            });
+        self.clients.insert(
+            client_id.to_string(),
+            (
+                ServiceWorkerClientInfo {
+                    id: client_id.to_string(),
+                    url: url.to_string(),
+                    client_type: "window".into(),
+                    frame_type: "top-level".into(),
+                    visibility_state: "visible".into(),
+                    focused: false,
+                },
+                sequence,
+            ),
+        );
+        Ok(())
+    }
+
+    /// Remove a Document client after navigation replacement or disconnect.
+    pub fn remove_client(&mut self, client_id: &str) {
+        self.clients.remove(client_id);
+        self.client_messages.retain(|(_, id), _| id != client_id);
+        self.pending_client_messages.retain(|(_, id), _| id != client_id);
+        self.message_ports.retain(|(_, id, _)| id != client_id);
+    }
+
+    fn clients_for_worker(
+        &self,
+        registration_id: u64,
+        include_uncontrolled: bool,
+        client_type: &str,
+    ) -> Result<Vec<ServiceWorkerClientInfo>, ServiceWorkerManagerError> {
+        if !matches!(client_type, "window" | "worker" | "sharedworker" | "all") {
+            return Err(ServiceWorkerManagerError::InvalidInput(
+                "Service Worker client type is invalid".into(),
+            ));
+        }
+        let registration = self
+            .registration(registration_id)
+            .ok_or(ServiceWorkerManagerError::UnknownRegistration(registration_id))?;
+        let mut clients = self
+            .clients
+            .values()
+            .filter(|(client, _)| {
+                (client_type == "all" || client.client_type == client_type)
+                    && url::Url::parse(&client.url)
+                        .is_ok_and(|url| url.origin().ascii_serialization() == registration.origin)
+                    && (include_uncontrolled
+                        || self
+                            .active_registration_for_url(&registration.origin, &client.url)
+                            .is_some_and(|active| active.id == registration_id))
+            })
+            .cloned()
+            .collect::<Vec<_>>();
+        clients.sort_by_key(|(_, sequence)| *sequence);
+        Ok(clients.into_iter().map(|(client, _)| client).collect())
     }
 
     fn release_client_message_reservation(&mut self, key: &(u64, String)) {
@@ -2396,7 +2584,8 @@ mod tests {
                         data_json: r#"{"success":false,"exception":"InvalidStateError"}"#.into(),
                         port_id: None,
                         transferred_port_ids: Vec::new(),
-                        data_port_index: None
+                        data_port_index: None,
+                        target_client_id: Some("client-1".into()),
                     }]
                 );
                 break;
@@ -2494,6 +2683,72 @@ mod tests {
             assert!(Instant::now() < deadline, "worker update completion timed out");
             std::thread::sleep(Duration::from_millis(1));
         }
+    }
+
+    #[test]
+    fn evaluation_match_all_lists_same_origin_uncontrolled_client() {
+        let mut manager = manager_under_test();
+        manager
+            .observe_window_client("client-1", "https://example.test/page")
+            .unwrap();
+        manager
+            .observe_window_client("cross-origin", "https://other.test/page")
+            .unwrap();
+        let id = start(
+            &mut manager,
+            "/scope/",
+            "clients.matchAll({includeUncontrolled: true}).then(clientList => {
+               for (const client of clientList) {
+                 client.postMessage({id: client.id, url: client.url});
+               }
+             });",
+        );
+
+        let deadline = Instant::now() + Duration::from_secs(5);
+        loop {
+            let _ = manager.poll();
+            let (_, messages) = manager.client_messages_since(id, "client-1", 0);
+            if !messages.is_empty() {
+                assert_eq!(messages.len(), 1);
+                assert_eq!(
+                    messages[0].data_json,
+                    r#"{"id":"client-1","url":"https://example.test/page"}"#
+                );
+                assert_eq!(messages[0].target_client_id.as_deref(), Some("client-1"));
+                assert_eq!(manager.client_messages_since(id, "cross-origin", 0).1, Vec::new());
+                assert!(matches!(
+                    manager.record_outbound_message_ports(
+                        id,
+                        "",
+                        &[ServiceWorkerOutboundMessage {
+                            data_json: "\"blocked\"".into(),
+                            port_id: None,
+                            transferred_port_ids: Vec::new(),
+                            data_port_index: None,
+                            target_client_id: Some("cross-origin".into()),
+                        }],
+                    ),
+                    Err(ServiceWorkerManagerError::InvalidInput(_))
+                ));
+                break;
+            }
+            assert!(Instant::now() < deadline, "clients.matchAll message timed out");
+            std::thread::sleep(Duration::from_millis(1));
+        }
+        manager
+            .observe_window_client("controlled", "https://example.test/scope/page")
+            .unwrap();
+        wait_for_state(&mut manager, id, ServiceWorkerState::Activated);
+        assert_eq!(
+            manager
+                .clients_for_worker(id, false, "window")
+                .unwrap()
+                .into_iter()
+                .map(|client| client.id)
+                .collect::<Vec<_>>(),
+            ["controlled"]
+        );
+        assert!(manager.clients_for_worker(id, true, "worker").unwrap().is_empty());
     }
 
     #[test]
@@ -3104,6 +3359,7 @@ mod tests {
                     port_id: Some(6),
                     transferred_port_ids: vec![8],
                     data_port_index: None,
+                    target_client_id: None,
                 }],
             ),
             Err(ServiceWorkerManagerError::InvalidInput(

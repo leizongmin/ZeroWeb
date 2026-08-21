@@ -1,0 +1,6 @@
+path	manifest_type	roles	referenced_by	bytes	templated	git_blob_sha
+resources/testharness.js	support	page-script	1	198291	no	c7ce4f51e1db075809f861255417c27478b2c179
+resources/testharnessreport.js	support	page-script	1	1231	no	405a2d8b06f00fe8292e0e9d5b917e193cfd416c
+service-workers/service-worker/clients-matchall-on-evaluation.https.html	testharness	case	1	918	no	8705f85b56840976e5bedf3ea780efb8830747f5
+service-workers/service-worker/resources/test-helpers.sub.js	support	page-script,worker-script	2	10485	yes	74301523e7355ad8d62bcb568280edbc23fdaacf
+service-workers/service-worker/resources/clients-matchall-on-evaluation-worker.js	support	worker-script	1	338	no	f1559aca39b6d4ff079cff9f41bae3409062ff09

@@ -615,6 +615,7 @@ pub const INDEXEDDB_CASES: &[(&str, &[&str])] = &[
 pub const SERVICE_WORKER_CORE_CASES: &[&str] = &[
     "service-workers/service-worker/activate-event-after-install-state-change.https.html",
     "service-workers/service-worker/activation-after-registration.https.html",
+    "service-workers/service-worker/clients-matchall-on-evaluation.https.html",
     "service-workers/service-worker/import-scripts-cross-origin.https.html",
     "service-workers/service-worker/import-scripts-data-url.https.html",
     "service-workers/service-worker/import-scripts-mime-types.https.html",
@@ -2825,13 +2826,13 @@ async_test(function(test) {
     }
 
     #[test]
-    fn service_worker_core_manifest_has_thirty_three_unique_cases() {
+    fn service_worker_core_manifest_has_thirty_four_unique_cases() {
         let unique = SERVICE_WORKER_CORE_CASES
             .iter()
             .copied()
             .collect::<std::collections::BTreeSet<_>>();
-        assert_eq!(SERVICE_WORKER_CORE_CASES.len(), 33);
-        assert_eq!(unique.len(), 33);
+        assert_eq!(SERVICE_WORKER_CORE_CASES.len(), 34);
+        assert_eq!(unique.len(), 34);
         assert!(
             SERVICE_WORKER_CORE_CASES
                 .iter()

@@ -17,6 +17,7 @@ const MAX_IMPORT_SCRIPTS_PER_CALL: usize = 64;
 const MAX_IMPORT_SCRIPT_URL_BYTES: usize = 64 * 1024;
 const MAX_IMPORTED_SCRIPT_BYTES: usize = 16 * 1024 * 1024;
 const MAX_MESSAGE_PORTS: usize = 16;
+const MAX_SERVICE_WORKER_CLIENTS: usize = 128;
 
 enum ServiceWorkerCommand {
     Evaluate {
@@ -51,6 +52,18 @@ enum ServiceWorkerUpdateResponse {
     Failed {
         request_id: u64,
         exception_name: String,
+        message: String,
+    },
+    Shutdown,
+}
+
+enum ServiceWorkerClientsResponse {
+    Completed {
+        request_id: u64,
+        clients: Vec<ServiceWorkerClientInfo>,
+    },
+    Failed {
+        request_id: u64,
         message: String,
     },
     Shutdown,
@@ -120,24 +133,27 @@ const SERVICE_WORKER_BOOTSTRAP: &str = r#"
       dataPortIndex: dataPortIndex
     };
   }
-  function queueOutbound(data, transfer, portId) {
+  function queueOutbound(data, transfer, portId, targetClientId) {
     const wire = preparePortTransfer(data, transfer);
     wire.portId = portId;
+    wire.targetClientId = targetClientId;
     outboundMessages.push(wire);
   }
   const clientToken = {};
   class Client {
-    constructor(id, url, token) {
+    constructor(info, token) {
       if (token !== clientToken) throw new TypeError('Illegal constructor');
       Object.defineProperties(this, {
-        id: {value: id, enumerable: true},
-        url: {value: url, enumerable: true},
-        type: {value: 'window', enumerable: true},
-        frameType: {value: 'top-level', enumerable: true}
+        id: {value: info.id, enumerable: true},
+        url: {value: info.url, enumerable: true},
+        type: {value: info.type, enumerable: true},
+        frameType: {value: info.frameType, enumerable: true},
+        visibilityState: {value: info.visibilityState, enumerable: true},
+        focused: {value: info.focused === true, enumerable: true}
       });
     }
     postMessage(data, transfer) {
-      queueOutbound(data, transfer, null);
+      queueOutbound(data, transfer, null, this.id);
     }
   }
   class MessagePort {
@@ -165,7 +181,7 @@ const SERVICE_WORKER_BOOTSTRAP: &str = r#"
     postMessage(data, transfer) {
       if (this._closed || this._detached) return;
       if (this._remote) {
-        queueOutbound(data, transfer, this._hostPortId);
+        queueOutbound(data, transfer, this._hostPortId, null);
         return;
       }
       if (!this._other) return;
@@ -341,6 +357,27 @@ const SERVICE_WORKER_BOOTSTRAP: &str = r#"
     }
   }
   Object.defineProperty(WorkerLocation.prototype, Symbol.toStringTag, {value: 'WorkerLocation'});
+  class URL {
+    constructor(input, base) {
+      const response = JSON.parse(globalThis.__zwResolveURL(
+        String(input), base === undefined ? '' : String(base)));
+      if (!response || response.ok !== true) {
+        throw new TypeError(response && response.error || 'Invalid URL');
+      }
+      for (const name of ['href', 'origin', 'protocol', 'host', 'hostname', 'port', 'pathname', 'search', 'hash']) {
+        Object.defineProperty(this, name, {
+          value: response[name],
+          enumerable: true,
+          configurable: true,
+          writable: true
+        });
+      }
+    }
+    toString() {
+      return this.href;
+    }
+  }
+  Object.defineProperty(URL.prototype, Symbol.toStringTag, {value: 'URL'});
   globalThis.__zwSetLocation = function(parts) {
     Object.defineProperty(globalThis, 'location', {
       value: new WorkerLocation(parts, workerLocationToken),
@@ -369,6 +406,7 @@ const SERVICE_WORKER_BOOTSTRAP: &str = r#"
   globalThis.MessageChannel = MessageChannel;
   globalThis.DOMException = globalThis.DOMException || DOMException;
   globalThis.URLSearchParams = globalThis.URLSearchParams || URLSearchParams;
+  globalThis.URL = globalThis.URL || URL;
   globalThis.WorkerLocation = WorkerLocation;
   globalThis.Client = Client;
   globalThis.oninstall = null;
@@ -391,6 +429,27 @@ const SERVICE_WORKER_BOOTSTRAP: &str = r#"
     return Promise.resolve();
   };
   class Clients {
+    matchAll(options) {
+      options = options === undefined ? {} : Object(options);
+      const includeUncontrolled = options.includeUncontrolled === true;
+      const type = options.type === undefined ? 'window' : String(options.type);
+      if (type !== 'window' && type !== 'worker' && type !== 'sharedworker' && type !== 'all') {
+        return Promise.reject(new TypeError('invalid ClientQueryOptions type'));
+      }
+      let response;
+      try {
+        response = JSON.parse(globalThis.__zwClientsMatchAll(
+          includeUncontrolled ? 'true' : 'false', type));
+      } catch (_error) {
+        response = {ok: false, error: 'invalid Clients.matchAll response'};
+      }
+      if (!response || response.ok !== true || !Array.isArray(response.clients)) {
+        return Promise.reject(new TypeError(response && response.error || 'Clients.matchAll failed'));
+      }
+      return Promise.resolve(response.clients.map(function(info) {
+        return new Client(info, clientToken);
+      }));
+    }
     claim() {
       claimClientsRequested = true;
       if (globalThis.__zwLifecycleResult) {
@@ -510,7 +569,14 @@ const SERVICE_WORKER_BOOTSTRAP: &str = r#"
         }
         port.dispatchEvent(event);
       } else {
-        event.source = new Client(clientId, clientURL, clientToken);
+        event.source = new Client({
+          id: clientId,
+          url: clientURL,
+          type: 'window',
+          frameType: 'top-level',
+          visibilityState: 'visible',
+          focused: false
+        }, clientToken);
         const callbacks = (listeners.message || []).slice();
         for (let i = 0; i < callbacks.length; i++) callbacks[i].call(globalThis, event);
         if (typeof globalThis.onmessage === 'function') {
@@ -628,6 +694,20 @@ pub enum ServiceWorkerEvent {
         /// Runtime-local request ID used to correlate the blocking response.
         request_id: u64,
     },
+    /// The worker global requested a browser-owned client snapshot.
+    ClientsMatchAllRequested {
+        /// Runtime-local request ID used to correlate the blocking response.
+        request_id: u64,
+        /// Whether uncontrolled same-origin clients are included.
+        include_uncontrolled: bool,
+        /// Requested client type.
+        client_type: String,
+    },
+    /// A worker posted messages outside a page-originated message event.
+    ClientMessagesEmitted {
+        /// Messages with explicit target client identities.
+        outbound: Vec<ServiceWorkerOutboundMessage>,
+    },
     /// The runtime thread exited.
     Closed,
     /// A module worker static dependency batch requires host-owned fetching.
@@ -652,6 +732,25 @@ pub struct ServiceWorkerOutboundMessage {
     pub transferred_port_ids: Vec<u64>,
     /// Index into `transferred_port_ids` when the message payload is that port.
     pub data_port_index: Option<usize>,
+    /// Browser-owned target client identity for `Client.postMessage()`.
+    pub target_client_id: Option<String>,
+}
+
+/// Pure-value Service Worker client projection.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ServiceWorkerClientInfo {
+    /// Browser-owned stable identity for the current Document.
+    pub id: String,
+    /// Current committed client URL.
+    pub url: String,
+    /// Client type exposed to the worker.
+    pub client_type: String,
+    /// Frame type exposed to the worker.
+    pub frame_type: String,
+    /// Visibility state exposed to the worker.
+    pub visibility_state: String,
+    /// Whether the client currently has focus.
+    pub focused: bool,
 }
 
 /// MessagePort endpoint metadata for one page/worker message.
@@ -682,6 +781,7 @@ pub struct ServiceWorkerRuntime {
     core: ThreadedRuntimeCore<ServiceWorkerCommand, ServiceWorkerEvent>,
     import_response_sender: mpsc::Sender<ServiceWorkerImportResponse>,
     update_response_sender: mpsc::Sender<ServiceWorkerUpdateResponse>,
+    clients_response_sender: mpsc::Sender<ServiceWorkerClientsResponse>,
 }
 
 impl ServiceWorkerRuntime {
@@ -692,6 +792,7 @@ impl ServiceWorkerRuntime {
         let (init_sender, init_receiver) = mpsc::sync_channel(1);
         let (import_response_sender, import_response_receiver) = mpsc::channel();
         let (update_response_sender, update_response_receiver) = mpsc::channel();
+        let (clients_response_sender, clients_response_receiver) = mpsc::channel();
         let mut core = ThreadedRuntimeCore::spawn(
             "zero-service-worker",
             "Service Worker",
@@ -703,6 +804,44 @@ impl ServiceWorkerRuntime {
                         return;
                     }
                 };
+                sandbox.register_callback(
+                    "__zwResolveURL",
+                    Box::new(|args| {
+                        let Some(input) = args.first().filter(|value| value.len() <= MAX_IMPORT_SCRIPT_URL_BYTES)
+                        else {
+                            return serde_json::json!({"ok": false, "error": "URL input is invalid"}).to_string();
+                        };
+                        let base = args.get(1).filter(|value| !value.is_empty());
+                        let parsed = match base {
+                            Some(base) if base.len() <= MAX_IMPORT_SCRIPT_URL_BYTES => {
+                                url::Url::parse(base).and_then(|base| base.join(input))
+                            }
+                            Some(_) => {
+                                return serde_json::json!({"ok": false, "error": "URL base is too long"}).to_string();
+                            }
+                            None => url::Url::parse(input),
+                        };
+                        match parsed {
+                            Ok(url) => serde_json::json!({
+                                "ok": true,
+                                "href": url.as_str(),
+                                "origin": url.origin().ascii_serialization(),
+                                "protocol": format!("{}:", url.scheme()),
+                                "host": match url.port() {
+                                    Some(port) => format!("{}:{port}", url.host_str().unwrap_or_default()),
+                                    None => url.host_str().unwrap_or_default().to_string(),
+                                },
+                                "hostname": url.host_str().unwrap_or_default(),
+                                "port": url.port().map(|port| port.to_string()).unwrap_or_default(),
+                                "pathname": url.path(),
+                                "search": url.query().map(|query| format!("?{query}")).unwrap_or_default(),
+                                "hash": url.fragment().map(|fragment| format!("#{fragment}")).unwrap_or_default(),
+                            })
+                            .to_string(),
+                            Err(_) => serde_json::json!({"ok": false, "error": "Invalid URL"}).to_string(),
+                        }
+                    }),
+                );
                 let import_event_sender = event_sender.clone();
                 let import_response_receiver = Arc::new(Mutex::new(import_response_receiver));
                 let next_import_request_id = Arc::new(AtomicU64::new(1));
@@ -827,6 +966,74 @@ impl ServiceWorkerRuntime {
                         }
                     }),
                 );
+                let clients_event_sender = event_sender.clone();
+                let clients_response_receiver = Arc::new(Mutex::new(clients_response_receiver));
+                let next_clients_request_id = Arc::new(AtomicU64::new(1));
+                sandbox.register_callback(
+                    "__zwClientsMatchAll",
+                    Box::new(move |args| {
+                        let include_uncontrolled = args.first().map(String::as_str) == Some("true");
+                        let client_type = args.get(1).cloned().unwrap_or_else(|| "window".into());
+                        let request_id = next_clients_request_id.fetch_add(1, Ordering::Relaxed);
+                        if clients_event_sender
+                            .send(ServiceWorkerEvent::ClientsMatchAllRequested {
+                                request_id,
+                                include_uncontrolled,
+                                client_type,
+                            })
+                            .is_err()
+                        {
+                            return clients_failure_json("Service Worker host disconnected");
+                        }
+                        let deadline =
+                            std::time::Instant::now() + std::time::Duration::from_millis(lifecycle_timeout_ms);
+                        loop {
+                            let now = std::time::Instant::now();
+                            if now >= deadline {
+                                return clients_failure_json("Clients.matchAll host response timed out");
+                            }
+                            let response = clients_response_receiver
+                                .lock()
+                                .expect("clients response lock")
+                                .recv_timeout(deadline.saturating_duration_since(now));
+                            match response {
+                                Ok(ServiceWorkerClientsResponse::Completed {
+                                    request_id: response_id,
+                                    clients,
+                                }) if response_id == request_id => {
+                                    let clients = clients
+                                        .into_iter()
+                                        .map(|client| {
+                                            serde_json::json!({
+                                                "id": client.id,
+                                                "url": client.url,
+                                                "type": client.client_type,
+                                                "frameType": client.frame_type,
+                                                "visibilityState": client.visibility_state,
+                                                "focused": client.focused,
+                                            })
+                                        })
+                                        .collect::<Vec<_>>();
+                                    return serde_json::json!({"ok": true, "clients": clients}).to_string();
+                                }
+                                Ok(ServiceWorkerClientsResponse::Failed {
+                                    request_id: response_id,
+                                    message,
+                                }) if response_id == request_id => return clients_failure_json(&message),
+                                Ok(ServiceWorkerClientsResponse::Shutdown) => {
+                                    return clients_failure_json("Service Worker runtime is shutting down");
+                                }
+                                Ok(_) => continue,
+                                Err(mpsc::RecvTimeoutError::Timeout) => {
+                                    return clients_failure_json("Clients.matchAll host response timed out");
+                                }
+                                Err(mpsc::RecvTimeoutError::Disconnected) => {
+                                    return clients_failure_json("Service Worker host disconnected");
+                                }
+                            }
+                        }
+                    }),
+                );
                 if let Err(error) = sandbox.execute(SERVICE_WORKER_BOOTSTRAP) {
                     let _ = init_sender.send(Err(error));
                     return;
@@ -877,7 +1084,15 @@ impl ServiceWorkerRuntime {
                                 }
                             });
                             let event = match evaluation {
-                                Ok(()) => ServiceWorkerEvent::Evaluated { script_url },
+                                Ok(()) => {
+                                    if let Ok(outbound) = take_outbound_messages(sandbox.as_mut())
+                                        && !outbound.is_empty()
+                                    {
+                                        let _ =
+                                            event_sender.send(ServiceWorkerEvent::ClientMessagesEmitted { outbound });
+                                    }
+                                    ServiceWorkerEvent::Evaluated { script_url }
+                                }
                                 Err(error) => ServiceWorkerEvent::ScriptError {
                                     script_url,
                                     kind: script_error_kind(&error),
@@ -959,6 +1174,7 @@ impl ServiceWorkerRuntime {
                 core,
                 import_response_sender,
                 update_response_sender,
+                clients_response_sender,
             }),
             Ok(Err(error)) => {
                 core.terminate(ServiceWorkerCommand::Shutdown, || {});
@@ -1153,10 +1369,34 @@ impl ServiceWorkerRuntime {
             .map_err(|_| ScriptError::RuntimeError("Service Worker runtime disconnected".into()))
     }
 
+    /// Complete one blocking worker-global `clients.matchAll()` request.
+    pub fn complete_clients_match_all(
+        &self,
+        request_id: u64,
+        result: Result<Vec<ServiceWorkerClientInfo>, String>,
+    ) -> Result<(), ScriptError> {
+        let response = match result {
+            Ok(clients) if clients.len() <= MAX_SERVICE_WORKER_CLIENTS => {
+                ServiceWorkerClientsResponse::Completed { request_id, clients }
+            }
+            Ok(_) => ServiceWorkerClientsResponse::Failed {
+                request_id,
+                message: "Service Worker client result exceeds the size limit".into(),
+            },
+            Err(message) => ServiceWorkerClientsResponse::Failed { request_id, message },
+        };
+        self.clients_response_sender
+            .send(response)
+            .map_err(|_| ScriptError::RuntimeError("Service Worker runtime disconnected".into()))
+    }
+
     /// Shut down the engine thread with a bounded join.
     pub fn shutdown(&mut self) {
         let _ = self.import_response_sender.send(ServiceWorkerImportResponse::Shutdown);
         let _ = self.update_response_sender.send(ServiceWorkerUpdateResponse::Shutdown);
+        let _ = self
+            .clients_response_sender
+            .send(ServiceWorkerClientsResponse::Shutdown);
         self.core.terminate(ServiceWorkerCommand::Shutdown, || {});
     }
 
@@ -1236,6 +1476,10 @@ fn import_failure_json(message: &str) -> String {
 
 fn update_failure_json(exception_name: &str, message: &str) -> String {
     serde_json::json!({"ok": false, "name": exception_name, "message": message}).to_string()
+}
+
+fn clients_failure_json(message: &str) -> String {
+    serde_json::json!({"ok": false, "error": message}).to_string()
 }
 
 fn evaluate_module_graph(
@@ -1519,11 +1763,15 @@ fn take_outbound_messages(sandbox: &mut dyn Sandbox) -> Result<Vec<ServiceWorker
             let data_port_index = value["dataPortIndex"]
                 .as_u64()
                 .and_then(|index| usize::try_from(index).ok());
+            let target_client_id = value["targetClientId"].as_str().map(str::to_string);
             if port_id == Some(0)
                 || transferred_port_ids.len() > MAX_MESSAGE_PORTS
                 || transferred_port_ids.contains(&0)
                 || transferred_port_ids.iter().collect::<HashSet<_>>().len() != transferred_port_ids.len()
                 || data_port_index.is_some_and(|index| index >= transferred_port_ids.len())
+                || target_client_id
+                    .as_ref()
+                    .is_some_and(|id| id.is_empty() || id.len() > MAX_IMPORT_SCRIPT_URL_BYTES)
             {
                 return Err(ScriptError::InvalidInput(
                     "invalid outbound Service Worker MessagePort metadata".into(),
@@ -1534,6 +1782,7 @@ fn take_outbound_messages(sandbox: &mut dyn Sandbox) -> Result<Vec<ServiceWorker
                 port_id,
                 transferred_port_ids,
                 data_port_index,
+                target_client_id,
             })
         })
         .collect()
@@ -2153,6 +2402,7 @@ mod tests {
                     port_id: None,
                     transferred_port_ids: Vec::new(),
                     data_port_index: None,
+                    target_client_id: Some("client-1".into()),
                 }],
             }
         );
@@ -2190,6 +2440,7 @@ mod tests {
                     port_id: None,
                     transferred_port_ids: Vec::new(),
                     data_port_index: None,
+                    target_client_id: Some("client-1".into()),
                 }],
             }
         );
@@ -2243,6 +2494,7 @@ mod tests {
                     port_id: None,
                     transferred_port_ids: Vec::new(),
                     data_port_index: None,
+                    target_client_id: Some("client-1".into()),
                 }],
             }
         );
@@ -2270,9 +2522,62 @@ mod tests {
                     port_id: None,
                     transferred_port_ids: Vec::new(),
                     data_port_index: None,
+                    target_client_id: Some("client-1".into()),
                 }],
             }
         );
+    }
+
+    #[test]
+    fn clients_match_all_during_evaluation_emits_targeted_message() {
+        let mut runtime = ServiceWorkerRuntime::new(test_config()).unwrap();
+        runtime
+            .evaluate(
+                "clients.matchAll({includeUncontrolled: true}).then(clientList => {
+                   clientList[0].postMessage({matched: clientList[0].url});
+                 });",
+                "https://example.test/sw.js",
+            )
+            .unwrap();
+        let ServiceWorkerEvent::ClientsMatchAllRequested {
+            request_id,
+            include_uncontrolled,
+            client_type,
+        } = runtime.recv_timeout(Duration::from_secs(5)).unwrap()
+        else {
+            panic!("missing clients.matchAll request");
+        };
+        assert!(include_uncontrolled);
+        assert_eq!(client_type, "window");
+        runtime
+            .complete_clients_match_all(
+                request_id,
+                Ok(vec![ServiceWorkerClientInfo {
+                    id: "client-1".into(),
+                    url: "https://example.test/page".into(),
+                    client_type: "window".into(),
+                    frame_type: "top-level".into(),
+                    visibility_state: "visible".into(),
+                    focused: false,
+                }]),
+            )
+            .unwrap();
+        assert_eq!(
+            runtime.recv_timeout(Duration::from_secs(5)).unwrap(),
+            ServiceWorkerEvent::ClientMessagesEmitted {
+                outbound: vec![ServiceWorkerOutboundMessage {
+                    data_json: r#"{"matched":"https://example.test/page"}"#.into(),
+                    port_id: None,
+                    transferred_port_ids: Vec::new(),
+                    data_port_index: None,
+                    target_client_id: Some("client-1".into()),
+                }],
+            }
+        );
+        assert!(matches!(
+            runtime.recv_timeout(Duration::from_secs(5)).unwrap(),
+            ServiceWorkerEvent::Evaluated { .. }
+        ));
     }
 
     #[test]
@@ -2379,6 +2684,7 @@ mod tests {
                             port_id: None,
                             transferred_port_ids: Vec::new(),
                             data_port_index: None,
+                            target_client_id: Some("client-1".into()),
                         }]
                     );
                     message_dispatched = true;

@@ -800,6 +800,8 @@ pub struct ServiceWorkerMessage {
     pub transferred_port_ids: Vec<u64>,
     /// Index of the transferred port used as the payload itself.
     pub data_port_index: Option<usize>,
+    /// Browser-owned target client identity for `Client.postMessage()`.
+    pub target_client_id: Option<String>,
 }
 
 impl From<&str> for ServiceWorkerMessage {
@@ -809,8 +811,26 @@ impl From<&str> for ServiceWorkerMessage {
             port_id: None,
             transferred_port_ids: Vec::new(),
             data_port_index: None,
+            target_client_id: None,
         }
     }
+}
+
+/// IPC-safe projection of a Service Worker client.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ServiceWorkerClientInfoWire {
+    /// Browser-owned stable identity for the current Document.
+    pub id: String,
+    /// Current committed client URL.
+    pub url: String,
+    /// Client type (`window`, `worker`, or `sharedworker`).
+    pub client_type: String,
+    /// Window frame type.
+    pub frame_type: String,
+    /// Window visibility state.
+    pub visibility_state: String,
+    /// Whether the client currently has focus.
+    pub focused: bool,
 }
 
 /// Pure-value registration snapshot.
@@ -1003,6 +1023,32 @@ impl ServiceWorkerHostCommandParams {
                 }
                 Ok(())
             }
+            ServiceWorkerHostCommand::CompleteClientsMatchAll { request_id, result } => {
+                if *request_id == 0 {
+                    return Err("Service Worker clients request id is required");
+                }
+                match result {
+                    Ok(clients) => {
+                        if clients.len() > 128
+                            || clients.iter().any(|client| {
+                                client.id.is_empty()
+                                    || client.id.len() > MAX_URL_BYTES
+                                    || client.url.len() > MAX_URL_BYTES
+                                    || !matches!(client.client_type.as_str(), "window" | "worker" | "sharedworker")
+                                    || !matches!(client.frame_type.as_str(), "top-level" | "nested" | "none")
+                                    || !matches!(client.visibility_state.as_str(), "visible" | "hidden")
+                            })
+                        {
+                            return Err("Service Worker clients response is invalid");
+                        }
+                    }
+                    Err(message) if message.len() > MAX_URL_BYTES => {
+                        return Err("Service Worker clients error exceeds the size limit");
+                    }
+                    Err(_) => {}
+                }
+                Ok(())
+            }
             ServiceWorkerHostCommand::DispatchLifecycle { .. } | ServiceWorkerHostCommand::Shutdown => Ok(()),
         }
     }
@@ -1058,6 +1104,13 @@ pub enum ServiceWorkerHostCommand {
         /// Success or DOMException-shaped failure.
         result: Result<(), ServiceWorkerUpdateError>,
     },
+    /// Complete a blocking worker-global `clients.matchAll()` request.
+    CompleteClientsMatchAll {
+        /// Renderer runtime assigned request ID.
+        request_id: u64,
+        /// Browser-owned client snapshot or a safe diagnostic.
+        result: Result<Vec<ServiceWorkerClientInfoWire>, String>,
+    },
 }
 
 /// Worker-global update failure projected into the Service Worker realm.
@@ -1076,6 +1129,60 @@ pub struct ServiceWorkerHostEventParams {
     pub registration_id: u64,
     /// 事件内容。
     pub event: ServiceWorkerHostEvent,
+}
+
+impl ServiceWorkerHostEventParams {
+    /// Validate renderer-owned event payloads before browser processing.
+    pub fn validate(&self) -> Result<(), &'static str> {
+        const MAX_FIELD_BYTES: usize = 64 * 1024;
+        const MAX_OUTBOUND_MESSAGES: usize = 1024;
+        const MAX_OUTBOUND_BYTES: usize = 16 * 1024 * 1024;
+        match &self.event {
+            ServiceWorkerHostEvent::ClientsMatchAllRequested {
+                request_id,
+                client_type,
+                ..
+            } => {
+                if *request_id == 0 || !matches!(client_type.as_str(), "window" | "worker" | "sharedworker" | "all") {
+                    return Err("Service Worker clients request is invalid");
+                }
+            }
+            ServiceWorkerHostEvent::ClientMessagesEmitted { outbound }
+            | ServiceWorkerHostEvent::MessageDispatched { outbound, .. } => {
+                if outbound.len() > MAX_OUTBOUND_MESSAGES {
+                    return Err("Service Worker outbound message count exceeds the size limit");
+                }
+                let total = outbound.iter().try_fold(0usize, |total, message| {
+                    if message.data_json.len() > MAX_OUTBOUND_BYTES
+                        || message.transferred_port_ids.len() > 16
+                        || message.transferred_port_ids.contains(&0)
+                        || message
+                            .transferred_port_ids
+                            .iter()
+                            .collect::<std::collections::HashSet<_>>()
+                            .len()
+                            != message.transferred_port_ids.len()
+                        || message
+                            .data_port_index
+                            .is_some_and(|index| index >= message.transferred_port_ids.len())
+                        || message.port_id == Some(0)
+                        || message
+                            .target_client_id
+                            .as_ref()
+                            .is_some_and(|id| id.is_empty() || id.len() > MAX_FIELD_BYTES)
+                    {
+                        return None;
+                    }
+                    total.checked_add(message.data_json.len())
+                });
+                if total.is_none_or(|bytes| bytes > MAX_OUTBOUND_BYTES) {
+                    return Err("Service Worker outbound message payload is invalid");
+                }
+            }
+            _ => {}
+        }
+        Ok(())
+    }
 }
 
 /// Service Worker runtime 事件 wire 形态（镜像 script-sandbox `ServiceWorkerEvent`）。
@@ -1148,6 +1255,20 @@ pub enum ServiceWorkerHostEvent {
     UpdateRequested {
         /// Renderer runtime assigned request ID.
         request_id: u64,
+    },
+    /// Worker global called `clients.matchAll()`.
+    ClientsMatchAllRequested {
+        /// Renderer runtime assigned request ID.
+        request_id: u64,
+        /// Whether uncontrolled clients are included.
+        include_uncontrolled: bool,
+        /// Requested client type.
+        client_type: String,
+    },
+    /// Worker emitted messages outside a page-originated message event.
+    ClientMessagesEmitted {
+        /// Messages carrying explicit target client identities.
+        outbound: Vec<ServiceWorkerMessage>,
     },
 }
 

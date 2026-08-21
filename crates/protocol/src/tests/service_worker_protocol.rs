@@ -638,6 +638,81 @@ fn service_worker_message_port_and_update_wires_round_trip() {
         panic!("expected ServiceWorkerHostCommand");
     };
     assert_eq!(decoded_command, command);
+
+    let event = ServiceWorkerHostEventParams {
+        registration_id: 7,
+        event: ServiceWorkerHostEvent::ClientsMatchAllRequested {
+            request_id: 12,
+            include_uncontrolled: true,
+            client_type: "window".into(),
+        },
+    };
+    let decoded = roundtrip(IpcMessage {
+        id: 73,
+        kind: IpcMessageKind::ServiceWorkerHostEvent(event.clone()),
+    });
+    let IpcMessageKind::ServiceWorkerHostEvent(decoded_event) = decoded.kind else {
+        panic!("expected ServiceWorkerHostEvent");
+    };
+    assert_eq!(decoded_event, event);
+
+    let command = ServiceWorkerHostCommandParams {
+        registration_id: 7,
+        command: ServiceWorkerHostCommand::CompleteClientsMatchAll {
+            request_id: 12,
+            result: Ok(vec![ServiceWorkerClientInfoWire {
+                id: "client-1".into(),
+                url: "https://example.test/page".into(),
+                client_type: "window".into(),
+                frame_type: "top-level".into(),
+                visibility_state: "visible".into(),
+                focused: false,
+            }]),
+        },
+    };
+    assert!(command.validate().is_ok());
+    let decoded = roundtrip(IpcMessage {
+        id: 74,
+        kind: IpcMessageKind::ServiceWorkerHostCommand(command.clone()),
+    });
+    let IpcMessageKind::ServiceWorkerHostCommand(decoded_command) = decoded.kind else {
+        panic!("expected ServiceWorkerHostCommand");
+    };
+    assert_eq!(decoded_command, command);
+
+    let emitted = ServiceWorkerHostEventParams {
+        registration_id: 0,
+        event: ServiceWorkerHostEvent::ClientMessagesEmitted {
+            outbound: vec![ServiceWorkerMessage {
+                data_json: "\"matched\"".into(),
+                port_id: None,
+                transferred_port_ids: Vec::new(),
+                data_port_index: None,
+                target_client_id: Some("client-1".into()),
+            }],
+        },
+    };
+    assert!(emitted.validate().is_ok(), "registration zero is a valid registry id");
+    let decoded = roundtrip(IpcMessage {
+        id: 75,
+        kind: IpcMessageKind::ServiceWorkerHostEvent(emitted.clone()),
+    });
+    let IpcMessageKind::ServiceWorkerHostEvent(decoded_event) = decoded.kind else {
+        panic!("expected ServiceWorkerHostEvent");
+    };
+    assert_eq!(decoded_event, emitted);
+    assert!(
+        ServiceWorkerHostEventParams {
+            registration_id: 7,
+            event: ServiceWorkerHostEvent::ClientsMatchAllRequested {
+                request_id: 12,
+                include_uncontrolled: true,
+                client_type: "invalid".into(),
+            },
+        }
+        .validate()
+        .is_err()
+    );
 }
 
 #[test]

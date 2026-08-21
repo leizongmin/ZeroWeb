@@ -56,7 +56,7 @@ service-workers/service-worker/clients-matchall-client-types.https.html	54f182b6
 service-workers/service-worker/clients-matchall-exact-controller.https.html	a61c8af70196ac230c4b7085862e1bff8433fe38	1	default	M3	clients/control	iframe;message-channel	no	gated
 service-workers/service-worker/clients-matchall-frozen.https.html	479c28a60f2e4a2e32ea765a7480301360c34505	1	default	M3	clients/control	message-channel	no	gated
 service-workers/service-worker/clients-matchall-include-uncontrolled.https.html	9f34e5709eb3cb607dcd1b91ec80b51c3706dca6	1	default	M3	clients/control	iframe;message-channel;shared-worker	no	gated
-service-workers/service-worker/clients-matchall-on-evaluation.https.html	8705f85b56840976e5bedf3ea780efb8830747f5	1	default	M3	clients/control	none	no	gated
+service-workers/service-worker/clients-matchall-on-evaluation.https.html	8705f85b56840976e5bedf3ea780efb8830747f5	1	default	M3	clients/control	worker-top-level;includeUncontrolled;client-postMessage	no	review
 service-workers/service-worker/clients-matchall-order.https.html	ec650f2264df530bd34b11737c4b1d9ed87f4b56	1	default	M3	clients/control	iframe;message-channel	no	gated
 service-workers/service-worker/clients-matchall.https.html	ce44f1924d54952afe442b19bd0b46c5f92951d5	1	default	M3	clients/control	iframe;message-channel	no	gated
 service-workers/service-worker/controlled-dedicatedworker-postMessage.https.html	5ef91dd1b11c0c263f8489e3d3b74cb608b702d8	1	default	M3	message	none	no	gated

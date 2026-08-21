@@ -504,6 +504,83 @@ fn ipc_event_time_import_uses_owned_renderer_after_evaluation_response() {
 }
 
 #[test]
+fn ipc_clients_match_all_uses_browser_owned_client_registry() {
+    let mut owner = BrowserServiceWorkerOwner::new();
+    let disposition = owner.begin_request_for_client(
+        TabId(7),
+        false,
+        70,
+        Some("https://example.test/page"),
+        "renderer-7:1",
+        register_request("https://example.test/page"),
+    );
+    attach_script(&mut owner, disposition, "clients.matchAll({includeUncontrolled:true});");
+    let _ = owner.poll();
+    let evaluate = owner
+        .take_host_commands()
+        .into_iter()
+        .find(|outgoing| matches!(outgoing.params.command, ServiceWorkerHostCommand::Evaluate { .. }))
+        .expect("missing renderer evaluation command");
+    let registration_id = evaluate.params.registration_id;
+
+    owner.inject_host_event(
+        TabId(7),
+        false,
+        ServiceWorkerHostEventParams {
+            registration_id,
+            event: ServiceWorkerHostEvent::ClientsMatchAllRequested {
+                request_id: 12,
+                include_uncontrolled: true,
+                client_type: "window".into(),
+            },
+        },
+    );
+    let _ = owner.poll();
+    let clients = owner
+        .take_host_commands()
+        .into_iter()
+        .find_map(|outgoing| match outgoing.params.command {
+            ServiceWorkerHostCommand::CompleteClientsMatchAll {
+                request_id: 12,
+                result: Ok(clients),
+            } => Some(clients),
+            _ => None,
+        })
+        .expect("missing clients.matchAll completion");
+    assert_eq!(clients.len(), 1);
+    assert_eq!(clients[0].id, "renderer-7:1");
+    assert_eq!(clients[0].url, "https://example.test/page");
+
+    owner.inject_host_event(
+        TabId(7),
+        false,
+        ServiceWorkerHostEventParams {
+            registration_id,
+            event: ServiceWorkerHostEvent::ClientMessagesEmitted {
+                outbound: vec![zero_protocol::message::ServiceWorkerMessage {
+                    data_json: "\"matched\"".into(),
+                    port_id: None,
+                    transferred_port_ids: Vec::new(),
+                    data_port_index: None,
+                    target_client_id: Some("renderer-7:1".into()),
+                }],
+            },
+        },
+    );
+    let _ = owner.poll();
+    assert_eq!(
+        owner.normal.client_messages_since(registration_id, "renderer-7:1", 0).1[0].data_json,
+        "\"matched\""
+    );
+
+    owner.disconnect_tab(TabId(7));
+    assert_eq!(
+        owner.normal.client_messages_since(registration_id, "renderer-7:1", 0).1,
+        Vec::new()
+    );
+}
+
+#[test]
 fn ipc_module_request_preserves_referrer_and_fetch_policy() {
     let mut owner = BrowserServiceWorkerOwner::new();
     let mut request = register_request("https://example.test/page");
