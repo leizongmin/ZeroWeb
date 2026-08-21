@@ -1351,7 +1351,7 @@ pub(super) fn restretch_abspos_flex_replaced_items(
         && resolve_postprocess_real_length(&style.bottom, style).is_some();
     let aspect_ratio_stretch = std::env::var("ZW_ASPECT_RATIO_FLEX_STRETCH").as_deref() != Ok("0")
         && style.aspect_ratio.is_some()
-        && matches!(style.width, LengthValue::Px(_));
+        && resolve_postprocess_real_length(&style.width, style).is_some();
     if !abspos_stretch && !aspect_ratio_stretch {
         return;
     }
@@ -1987,6 +1987,59 @@ mod runtime_flag_tests {
         assert_eq!(
             item.width, 120.0,
             "replaced item width should transfer from stretched cross-size"
+        );
+    }
+
+    #[test]
+    fn r3639_aspect_ratio_flex_stretch_accepts_residual_real_width() {
+        let mut doc = Document::new();
+        let root = doc.root();
+        let flex_id = doc.create_element("div");
+        let img_id = doc.create_element("img");
+        doc.append_child(root, flex_id).unwrap();
+        doc.append_child(flex_id, img_id).unwrap();
+
+        let mut styles = HashMap::new();
+        let mut flex_style = ComputedStyle::default();
+        flex_style.display = DisplayValue::Flex;
+        flex_style.flex_direction = FlexDirectionValue::Row;
+        flex_style.align_items = AlignmentValue::Stretch;
+        flex_style.font_size = LengthValue::Px(20.0);
+        flex_style.width = LengthValue::Em(20.0);
+        flex_style.height = LengthValue::Auto;
+        flex_style.aspect_ratio = Some(2.0);
+        styles.insert(flex_id, flex_style);
+
+        let mut img_style = ComputedStyle::default();
+        img_style.width = LengthValue::Auto;
+        img_style.height = LengthValue::Auto;
+        styles.insert(img_id, img_style);
+
+        let mut root_box = LayoutBox {
+            node_id: Some(flex_id),
+            width: 400.0,
+            height: 200.0,
+            children: vec![LayoutBox {
+                node_id: Some(img_id),
+                is_replaced: true,
+                width: 1.0,
+                height: 1.0,
+                ..Default::default()
+            }],
+            ..Default::default()
+        };
+        let img_sizes = HashMap::from([(img_id, (1.0_f32, 1.0_f32))]);
+
+        restretch_abspos_flex_replaced_items(&mut root_box, &styles, &img_sizes);
+
+        let item = &root_box.children[0];
+        assert_eq!(
+            item.height, 200.0,
+            "residual real width with aspect-ratio should mark flex cross-size definite"
+        );
+        assert_eq!(
+            item.width, 200.0,
+            "replaced item width should transfer from aspect-ratio-derived cross-size"
         );
     }
 }

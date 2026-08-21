@@ -396,3 +396,5 @@ Inline-block metric reuse can re-enter margin math after the initial IFC item co
 Flex base sizing has a width-before-content used-value boundary. In the `flex-basis:auto` path, a definite `width` must be resolved before falling back to max-content; otherwise residual real widths can be skipped and wide text content incorrectly becomes the flex base.
 
 Postprocess stretch gates are used-value consumers too. When a later pass decides whether an abspos flex container has definite opposing insets, checking only `Px` silently disables replaced-item stretch for residual `em/ch/rem`; use the same definite real-length resolver as the size math.
+
+Aspect-ratio derived cross-size gates have the same residual-length requirement. If `width + aspect-ratio + height:auto` has already produced a definite flex container height, the gate should accept residual real widths; otherwise replaced flex items skip the post-taffy stretch/transfer fix even though the container geometry is definite.
