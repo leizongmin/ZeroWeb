@@ -1005,6 +1005,7 @@ pub fn apply_property_value_with_quirks(
                 style.aspect_ratio_auto = true;
                 return true;
             }
+            // https://drafts.csswg.org/css-sizing-4/#aspect-ratio
             // CSS Aspect Ratio §3：`auto <ratio>` 组合语法。R2440：建模 auto flag——
             // `auto` 优先 replaced 元素固有比，`<ratio>` 仅 fallback（apply_replaced_element_sizing
             // 据 auto + img_intrinsic_sizes 覆盖为固有比）。剥 auto 前缀（须为独立 token）。
@@ -1026,7 +1027,7 @@ pub fn apply_property_value_with_quirks(
                     Ok(v) => v,
                     Err(_) => return false,
                 };
-                if !w.is_finite() || !h.is_finite() || h == 0.0 {
+                if !w.is_finite() || !h.is_finite() || w < 0.0 || h <= 0.0 {
                     return false;
                 }
                 w / h
@@ -1036,7 +1037,7 @@ pub fn apply_property_value_with_quirks(
                     Err(_) => return false,
                 }
             };
-            if !ratio.is_finite() {
+            if !ratio.is_finite() || ratio < 0.0 {
                 return false;
             }
             style.aspect_ratio = Some(ratio);

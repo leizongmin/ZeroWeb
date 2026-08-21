@@ -512,14 +512,14 @@ fn parse_aspect_ratio_value(value: &str) -> Option<f32> {
     if let Some(slash_pos) = value.find('/') {
         let width: f32 = value[..slash_pos].trim().parse().ok()?;
         let height: f32 = value[slash_pos + 1..].trim().parse().ok()?;
-        if !width.is_finite() || !height.is_finite() || height == 0.0 {
+        if !width.is_finite() || !height.is_finite() || width < 0.0 || height <= 0.0 {
             return None;
         }
         Some(width / height)
     } else {
         value.parse().ok()
     }
-    .filter(|ratio: &f32| ratio.is_finite())
+    .filter(|ratio: &f32| ratio.is_finite() && *ratio >= 0.0)
 }
 
 fn comma_list_supported(value: &str, mut is_valid: impl FnMut(&str) -> bool) -> bool {

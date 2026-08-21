@@ -72,6 +72,9 @@ fn test_property_supported_aspect_ratio() {
 
     assert!(!is_property_supported("aspect-ratio", "1 / 0"));
     assert!(!is_property_supported("aspect-ratio", "inf"));
+    assert!(!is_property_supported("aspect-ratio", "-1"));
+    assert!(!is_property_supported("aspect-ratio", "-1 / 2"));
+    assert!(!is_property_supported("aspect-ratio", "1 / -2"));
     assert!(!is_property_supported("aspect-ratio", "auto auto"));
 }
 

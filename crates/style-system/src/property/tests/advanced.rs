@@ -377,6 +377,19 @@ fn test_apply_property_aspect_ratio_rejects_non_finite_numbers() {
 }
 
 #[test]
+fn test_apply_property_aspect_ratio_rejects_negative_numbers() {
+    let mut style = ComputedStyle::default();
+    style.aspect_ratio = Some(1.5);
+
+    assert!(!apply_property_value(&mut style, "aspect-ratio", "-1"));
+    assert_eq!(style.aspect_ratio, Some(1.5));
+    assert!(!apply_property_value(&mut style, "aspect-ratio", "-1 / 2"));
+    assert_eq!(style.aspect_ratio, Some(1.5));
+    assert!(!apply_property_value(&mut style, "aspect-ratio", "1 / -2"));
+    assert_eq!(style.aspect_ratio, Some(1.5));
+}
+
+#[test]
 /// R2380：CSS Aspect Ratio §3 组合语法 `auto <ratio>`。修复前 "auto 16/9" 落 find('/') 把
 /// "auto 16" 当 w 解析失败 → 整条声明被丢（false）。修复后剥 auto 前缀取 ratio（ZW 无「偏好
 /// 固有比」建模，取 ratio 近似，严格优于被丢）。大小写不敏感 + 空格变体。
