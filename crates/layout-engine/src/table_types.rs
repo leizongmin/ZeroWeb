@@ -21,6 +21,11 @@ fn font_family_is_ahem(family: &[String]) -> bool {
     family.iter().any(|f| f.trim_matches('"').eq_ignore_ascii_case("Ahem"))
 }
 
+fn resolve_table_font_size_px(style: &ComputedStyle) -> f32 {
+    let px = zero_style_system::computed::resolve_length(&style.font_size, 16.0, None, None);
+    if px.is_finite() && px > 0.0 { px as f32 } else { 16.0 }
+}
+
 /// 一个表格单元格的信息。
 #[derive(Debug, Clone)]
 pub(crate) struct TableCell {
@@ -337,13 +342,7 @@ pub(crate) fn compute_cell_intrinsic_width(
         .node_id
         .and_then(|id| styles.get(&id))
         .map(|s| {
-            use zero_css_parser::values::LengthValue;
-            let fs = match &s.font_size {
-                LengthValue::Px(v) => *v as f32,
-                LengthValue::Em(v) => *v as f32,
-                LengthValue::Rem(v) => *v as f32,
-                _ => 16.0,
-            };
+            let fs = resolve_table_font_size_px(s);
             let ahem = font_family_is_ahem(&s.font_family);
             (fs, ahem)
         })
@@ -537,13 +536,7 @@ pub(crate) fn compute_col_min_content(
             let Some(text) = doc.text_content(nid) else { continue };
             let (fs, ahem) = styles
                 .get(&nid)
-                .map(|s| {
-                    let fs = match &s.font_size {
-                        zero_css_parser::values::LengthValue::Px(v) => *v as f32,
-                        _ => 16.0,
-                    };
-                    (fs, font_family_is_ahem(&s.font_family))
-                })
+                .map(|s| (resolve_table_font_size_px(s), font_family_is_ahem(&s.font_family)))
                 .unwrap_or((16.0, false));
             let cw = if ahem { fs } else { fs * 0.6 };
             if cw <= 0.0 {
@@ -609,10 +602,7 @@ pub(crate) fn grow_vrl_cell_block_extent(
     let fs = cb
         .node_id
         .and_then(|id| styles.get(&id))
-        .map(|s| match s.font_size {
-            zero_css_parser::values::LengthValue::Px(v) => v as f32,
-            _ => 16.0,
-        })
+        .map(resolve_table_font_size_px)
         .unwrap_or(16.0);
     if fs <= 0.0 {
         return cb.width;

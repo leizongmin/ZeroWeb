@@ -374,3 +374,5 @@ Empty leaf measurement fallback is another residual length consumer. When `measu
 Inline multicol auto-fill height budgets are another post-IFC used-value boundary. When stored column fragmentation replays `height`/`max-height` to decide the per-column fill budget, resolve definite real lengths against the container font size; otherwise residual units fall back to full-width content height and prevent expected column breaks.
 
 `tab-size` has two unit domains: numeric values are space-count multipliers, while length values are already tab-stop distances. Keep that distinction in the IFC configuration; passing a resolved length through a field interpreted as a multiplier silently applies the space advance a second time, and Path A/Path B must share the same conversion.
+
+Table intrinsic helpers can duplicate font-size used-value logic outside the IFC path. Column min-content floors and vertical table growth that estimate text width must resolve residual `font-size` values through the style-system resolver; otherwise direct styles with `em`/`ch` silently fall back to 16px and under-size table tracks.
