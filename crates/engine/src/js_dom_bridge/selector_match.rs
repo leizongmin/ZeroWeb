@@ -28,9 +28,25 @@ pub fn closest_matching_selector(html: &str, elem_sel: &str, test_sel: &str) -> 
     let Some(start) = find_by_selector(&doc, elem_sel) else {
         return String::new();
     };
+    // R153（js-dom M4）：`:scope` 伪类的 closest 作用域语义——spec selectors-4 §6.4
+    // 「:scope = the element itself when evaluated against a scoping root; closest 的
+    // scoping root = 调用元素」。全匹配集经文档级 querySelectorAll（`:scope` 由 dom crate
+    // `is_scope_element` 判为文档根元素 html）→ `test4.closest(':scope')` 命中 html 而非
+    // 自身。此处把 test_sel 中的独立 `:scope` token 文本替换为 start 的唯一选择器（WPT
+    // Element-closest 四形态：`:scope`/`select > :scope`/`div > :scope`/`:has(> :scope)`）。
+    // https://dom.spec.whatwg.org/#dom-element-closest
+    let sel_raw = zero_dom::trim_ascii_ws(test_sel);
+    let resolved_sel = if sel_raw.contains(":scope") {
+        match unique_selector_for_node(&doc, start) {
+            Some(unique) => replace_scope_tokens(sel_raw, &unique),
+            None => sel_raw.to_string(),
+        }
+    } else {
+        sel_raw.to_string()
+    };
     let root = doc.root();
     let matched: std::collections::HashSet<NodeId> = doc
-        .query_selector_all(root, zero_dom::trim_ascii_ws(test_sel))
+        .query_selector_all(root, zero_dom::trim_ascii_ws(&resolved_sel))
         .into_iter()
         .collect();
     let mut cur = Some(start);
@@ -44,6 +60,36 @@ pub fn closest_matching_selector(html: &str, elem_sel: &str, test_sel: &str) -> 
         cur = doc.parent_node(n);
     }
     String::new()
+}
+
+/// 把选择器串中的独立 `:scope` 伪类 token 替换为 `scope_sel`（closest 调用元素的唯一
+/// 选择器）。只匹配 `:scope` 后随空白/组合器/`,`)`/串尾 的独立 token（`:scope` 是合法
+/// 伪类名，无参数形态；`:scope()` 非法保持原样由引擎拒配）——不做裸子串替换，避免误伤
+/// 未来的 `:scope-x` 类名伪类（当前引擎无此伪类，防御性）。
+fn replace_scope_tokens(selector: &str, scope_sel: &str) -> String {
+    let bytes = selector.as_bytes();
+    let mut out = String::with_capacity(selector.len() + scope_sel.len());
+    let mut i = 0usize;
+    while i < bytes.len() {
+        if bytes[i] == b':' && selector[i..].starts_with(":scope") {
+            let after = i + ":scope".len();
+            let boundary = after >= bytes.len()
+                || matches!(
+                    bytes[after],
+                    b' ' | b'\t' | b'\n' | b'\r' | b'>' | b'+' | b'~' | b',' | b')'
+                );
+            if boundary {
+                out.push_str(scope_sel);
+                i = after;
+                continue;
+            }
+        }
+        // 非 token 起点：逐字符拷贝（保留原选择器文本）。
+        let ch = selector[i..].chars().next().unwrap();
+        out.push(ch);
+        i += ch.len_utf8();
+    }
+    out
 }
 
 /// `element.querySelector(selector)`——元素**子树**内首个匹配元素（spec：仅后代，不含元素自身），

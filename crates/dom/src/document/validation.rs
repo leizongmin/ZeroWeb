@@ -20,30 +20,65 @@ use crate::node::NodeId;
 use super::Document;
 
 impl Document {
-    /// `:invalid` 的权威判定（CSS Selectors L4 + HTML §4.10.20）。
+    /// `:invalid` 的权威判定（HTML spec `selector-invalid` / §4.10.20）。
     ///
-    /// 候选校验元素（input/select/textarea，非 disabled，非 barred by readonly）存在**任一**
-    /// 静态可判定约束失败即匹配。当前静态范围：`valueMissing`（required + 空值）+ `rangeUnderflow`
-    /// /`rangeOverflow`（range-applicable type 的 value < min / > max）。patternMismatch/typeMismatch
-    /// 不在静态范围（不引入 regex 依赖；URL/email 格式校验不在静态范围），故不贡献 invalid。
+    /// spec 三类匹配（https://html.spec.whatwg.org/multipage/semantics-other.html#selector-invalid）：
+    /// ① 候选校验元素自身不满足约束；② **form 元素**是 ≥1 个无效候选的 form owner；
+    /// ③ **fieldset 元素**拥有 ≥1 个无效候选**后代**（R153：WPT Element-closest
+    /// `test11.closest(':invalid')` 期望 fieldset#test2——其内 input#test9 required 空 value）。
+    /// 候选/静态范围同旧：`valueMissing`（required + 空值）+ `rangeUnderflow`/`rangeOverflow`
+    ///（range-applicable type）。patternMismatch/typeMismatch 不在静态范围。
     ///
     /// 供 DOM `:invalid` 选择器（`element_matches_selector`）与 style-system `:invalid` CSS 匹配共享。
     pub fn is_invalid_element(&self, node: NodeId) -> bool {
-        if !self.is_validation_candidate(node) {
-            return false;
+        if self.is_validation_candidate(node) {
+            return self.value_missing(node) || self.range_underflow(node) || self.range_overflow(node);
         }
-        self.value_missing(node) || self.range_underflow(node) || self.range_overflow(node)
+        // ② form：form owner 关系（祖先链最近 form）。③ fieldset：任意后代。
+        let tag = self.element_local_name(node);
+        if tag == Some("form") {
+            return self.has_invalid_candidate_in(node, false);
+        }
+        if tag == Some("fieldset") {
+            return self.has_invalid_candidate_in(node, true);
+        }
+        false
+    }
+
+    /// node 子树内是否存在无效候选校验元素。`descendant_any`：form 只认 form owner 为本
+    /// form 的候选（祖先链上行到本 form 之前无其他 form 嵌套），fieldset 认任意后代
+    ///（spec 措辞即 descendant，不要求 owner 关系）。
+    fn has_invalid_candidate_in(&self, root: NodeId, descendant_any: bool) -> bool {
+        let mut stack = vec![root];
+        while let Some(n) = stack.pop() {
+            for &c in &self.child_nodes(n) {
+                if self.element_local_name(c).is_none() {
+                    continue;
+                }
+                if self.is_validation_candidate(c)
+                    && (self.value_missing(c) || self.range_underflow(c) || self.range_overflow(c))
+                {
+                    // form 变体：候选的 form owner 须是 root 本身（嵌套 form 的候选不算）。
+                    if descendant_any || self.form_owner(c) == Some(root) {
+                        return true;
+                    }
+                }
+                stack.push(c);
+            }
+        }
+        false
     }
 
     /// `:valid` 的权威判定（CSS Selectors L4 + HTML §4.10.20）。
     ///
-    /// 候选校验元素且无静态约束失败。`:valid` 的范围与 `:invalid` 对称——非候选元素不匹配
-    /// （HTML：button/output 等 barred 元素既不 :valid 也不 :invalid）。
+    /// 候选校验元素且无静态约束失败。`:valid` 的范围与 `:invalid` 的**候选元素**判定对称——
+    /// 非候选元素不匹配（HTML：button/output 等 barred 元素、form/fieldset 的 :invalid 祖先
+    /// 形态在 :valid 无对应形态——spec `selector-valid` 仅「candidates that satisfy」）。
     pub fn is_valid_element(&self, node: NodeId) -> bool {
         if !self.is_validation_candidate(node) {
             return false;
         }
-        !self.is_invalid_element(node)
+        !(self.value_missing(node) || self.range_underflow(node) || self.range_overflow(node))
     }
 
     /// `:in-range` 的权威判定（CSS Selectors L4 + HTML §4.10.20「Suffering from being out of range」）。

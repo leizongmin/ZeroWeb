@@ -785,6 +785,24 @@ fn test_closest_matching_selector() {
     assert_eq!(closest_matching_selector(html, "#nope", "div"), "");
 }
 
+// R153（js-dom M4）：`:scope` 的 closest 作用域语义（spec selectors-4 §6.4 + dom
+// `dom-element-closest`——:scope = 调用元素自身）。实现经 `:scope` token 文本替换为
+// start 唯一选择器（WPT Element-closest 四形态）。
+#[test]
+fn test_closest_scope_pseudo_class_r153() {
+    let html = "<html><body>\
+                    <div id='div1' class='lvl1'><select id='sel'><option id='opt'>x</option></select></div>\
+                    </body></html>";
+    // `:scope` → 自身。
+    assert_eq!(closest_matching_selector(html, "#opt", ":scope"), "#opt");
+    // `select > :scope` → 自身（父 select 匹配组合器左段）。
+    assert_eq!(closest_matching_selector(html, "#opt", "select > :scope"), "#opt");
+    // `div > :scope` → 空（父是 select 非 div）。
+    assert_eq!(closest_matching_selector(html, "#opt", "div > :scope"), "");
+    // `:has(> :scope)` → 拥有 scope 为直接子的祖先（select）。
+    assert_eq!(closest_matching_selector(html, "#opt", ":has(> :scope)"), "#sel");
+}
+
 #[test]
 fn test_query_in_subtree_scoping() {
     // 两个容器各含 .item；container 之外也有 .item。元素子树作用域须仅返该容器后代。

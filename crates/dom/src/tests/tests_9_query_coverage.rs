@@ -376,3 +376,57 @@ fn test_query_skips_nested_template_contents_r145() {
     // div（只存在于 template 内）light-DOM 查询不可见。
     assert!(doc.query_selector(root, "div").is_none());
 }
+
+// R153（js-dom M4）：`:invalid` 的 spec 三类匹配（HTML `selector-invalid`）——② form 是
+// ≥1 无效候选的 form owner；③ fieldset 拥有 ≥1 无效候选后代（祖先形态；候选自身形态
+// 既有测试已覆盖）。WPT Element-closest `test11.closest(':invalid')` 期望 fieldset。
+#[test]
+fn test_invalid_selector_form_fieldset_ancestors_r153() {
+    let mut doc = crate::Document::new();
+    let root = doc.root();
+
+    // form > fieldset > input[required]（空 value = 无效候选）。
+    let form = doc.create_element("form");
+    let fieldset = doc.create_element("fieldset");
+    let req_empty = doc.create_element("input");
+    doc.set_attribute(req_empty, "required", "");
+    doc.append_child(fieldset, req_empty).unwrap();
+    doc.append_child(form, fieldset).unwrap();
+    doc.append_child(root, form).unwrap();
+
+    // ① 候选自身。
+    assert!(doc.matches(req_empty, ":invalid"), "required 空 input 应匹配 :invalid");
+    // ③ fieldset 祖先形态（任意后代）。
+    assert!(
+        doc.matches(fieldset, ":invalid"),
+        "含无效候选后代的 fieldset 应匹配 :invalid"
+    );
+    // ② form 祖先形态（form owner 关系——候选的最近 form 祖先是它）。
+    assert!(doc.matches(form, ":invalid"), "无效候选的 form owner 应匹配 :invalid");
+
+    // 无效候选移除后 fieldset/form 失效（无无效后代）。
+    let valid_input = doc.create_element("input");
+    doc.set_attribute(valid_input, "required", "");
+    doc.set_attribute(valid_input, "value", "x");
+    doc.replace_child(fieldset, valid_input, req_empty).unwrap();
+    assert!(
+        !doc.matches(fieldset, ":invalid"),
+        "后代全部有效后 fieldset 不匹配 :invalid"
+    );
+    assert!(!doc.matches(form, ":invalid"), "后代全部有效后 form 不匹配 :invalid");
+
+    // 非 form/fieldset 祖先（div 内无效候选）不匹配 :invalid（spec 仅两类祖先形态）。
+    let div = doc.create_element("div");
+    let req_empty2 = doc.create_element("input");
+    doc.set_attribute(req_empty2, "required", "");
+    doc.append_child(div, req_empty2).unwrap();
+    doc.append_child(root, div).unwrap();
+    assert!(
+        !doc.matches(div, ":invalid"),
+        "div 不匹配 :invalid（spec 仅 form/fieldset 祖先形态）"
+    );
+
+    // :valid 不含祖先形态（spec selector-valid 仅「candidates that satisfy」）。
+    assert!(!doc.matches(fieldset, ":valid"), "fieldset 不匹配 :valid（无祖先形态）");
+    assert!(!doc.matches(form, ":valid"), "form 不匹配 :valid（无祖先形态）");
+}
