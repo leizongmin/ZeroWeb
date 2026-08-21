@@ -1435,6 +1435,7 @@ impl ProcessTabBackend {
         active_tab: Option<TabId>,
         poll_background: bool,
     ) -> bool {
+        self.service_worker_owner.set_focused_tab(active_tab);
         self.drain_pending_fetches();
         self.drain_service_worker_responses();
         self.drain_service_worker_host_commands();

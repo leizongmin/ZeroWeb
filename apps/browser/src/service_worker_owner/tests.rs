@@ -85,6 +85,37 @@ fn attach_import_scripts(
     owner.attach_import_fetches(plan, receivers);
 }
 
+fn complete_clients_match_all(
+    owner: &mut BrowserServiceWorkerOwner,
+    registration_id: u64,
+    request_id: u64,
+) -> Vec<ServiceWorkerClientInfoWire> {
+    owner.inject_host_event(
+        TabId(1),
+        false,
+        ServiceWorkerHostEventParams {
+            registration_id,
+            event: ServiceWorkerHostEvent::ClientsMatchAllRequested {
+                request_id,
+                include_uncontrolled: true,
+                client_type: "window".into(),
+            },
+        },
+    );
+    let _ = owner.poll();
+    owner
+        .take_host_commands()
+        .into_iter()
+        .find_map(|outgoing| match outgoing.params.command {
+            ServiceWorkerHostCommand::CompleteClientsMatchAll {
+                request_id: response_id,
+                result: Ok(clients),
+            } if response_id == request_id => Some(clients),
+            _ => None,
+        })
+        .expect("missing clients.matchAll completion")
+}
+
 fn wait_for_registration_state(
     owner: &mut BrowserServiceWorkerOwner,
     registration_id: u64,
@@ -647,6 +678,58 @@ fn ipc_clients_get_uses_browser_owned_client_registry() {
             }
         )),
         "unknown clients.get id resolves with no client"
+    );
+}
+
+#[test]
+fn focused_tab_changes_clients_match_all_order() {
+    let mut owner = BrowserServiceWorkerOwner::new();
+    let first = owner.begin_request_for_client(
+        TabId(1),
+        false,
+        80,
+        Some("https://example.test/first"),
+        "renderer-1:1",
+        register_request("https://example.test/first"),
+    );
+    attach_script(&mut owner, first, "globalThis.ready = true;");
+    let _ = owner.poll();
+    let evaluate = owner
+        .take_host_commands()
+        .into_iter()
+        .find(|outgoing| matches!(outgoing.params.command, ServiceWorkerHostCommand::Evaluate { .. }))
+        .expect("missing renderer evaluation command");
+    let registration_id = evaluate.params.registration_id;
+
+    let second = owner.begin_request_for_client(
+        TabId(2),
+        false,
+        81,
+        Some("https://example.test/second"),
+        "renderer-2:1",
+        ServiceWorkerRequestParams {
+            operation: ServiceWorkerOperation::GetRegistrations,
+        },
+    );
+    assert!(matches!(second, ServiceWorkerRequestDisposition::Respond(_)));
+
+    owner.set_focused_tab(Some(TabId(1)));
+    owner.set_focused_tab(Some(TabId(2)));
+    assert_eq!(
+        complete_clients_match_all(&mut owner, registration_id, 13)
+            .into_iter()
+            .map(|client| (client.id, client.focused))
+            .collect::<Vec<_>>(),
+        [("renderer-2:1".to_string(), true), ("renderer-1:1".to_string(), false),]
+    );
+
+    owner.set_focused_tab(None);
+    assert_eq!(
+        complete_clients_match_all(&mut owner, registration_id, 14)
+            .into_iter()
+            .map(|client| (client.id, client.focused))
+            .collect::<Vec<_>>(),
+        [("renderer-2:1".to_string(), false), ("renderer-1:1".to_string(), false),]
     );
 }
 

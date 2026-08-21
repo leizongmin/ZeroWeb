@@ -1177,6 +1177,32 @@ impl BrowserServiceWorkerOwner {
             .retain(|pending| pending.plan.profile != ProfileKey::Private(tab_id));
     }
 
+    pub(crate) fn set_focused_tab(&mut self, tab_id: Option<TabId>) {
+        let active_client = tab_id.and_then(|tab_id| self.clients_by_tab.get(&tab_id).cloned());
+        if let Some((profile, client_id)) = active_client {
+            if let Some(manager) = self.manager_mut_if_present(profile) {
+                let _ = manager.set_window_client_focused(&client_id, true);
+            }
+            if profile == ProfileKey::Normal {
+                for manager in self.private.values_mut() {
+                    manager.clear_window_client_focus();
+                }
+            } else {
+                self.normal.clear_window_client_focus();
+                for (&private_tab, manager) in &mut self.private {
+                    if ProfileKey::Private(private_tab) != profile {
+                        manager.clear_window_client_focus();
+                    }
+                }
+            }
+        } else {
+            self.normal.clear_window_client_focus();
+            for manager in self.private.values_mut() {
+                manager.clear_window_client_focus();
+            }
+        }
+    }
+
     fn observe_client(
         &mut self,
         tab_id: TabId,

@@ -27,6 +27,13 @@ struct EvaluationOptions {
     restored_imported_scripts: Vec<ServiceWorkerImportedScript>,
 }
 
+#[derive(Debug, Clone)]
+struct ClientRecord {
+    info: ServiceWorkerClientInfo,
+    creation_sequence: u64,
+    last_focus_sequence: Option<u64>,
+}
+
 /// Stable registration key within one storage partition.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct ServiceWorkerRegistrationKey {
@@ -327,8 +334,9 @@ pub struct ServiceWorkerManager {
     client_messages: HashMap<(u64, String), Vec<Vec<ServiceWorkerOutboundMessage>>>,
     pending_client_messages: HashMap<(u64, String), usize>,
     message_ports: HashSet<(u64, String, u64)>,
-    clients: HashMap<String, (ServiceWorkerClientInfo, u64)>,
+    clients: HashMap<String, ClientRecord>,
     next_client_sequence: u64,
+    next_client_focus_sequence: u64,
     script_sources: HashMap<u64, Vec<u8>>,
     imported_scripts: HashMap<u64, HashMap<String, Vec<u8>>>,
     pending_import_requests: HashMap<(u64, u64), Vec<String>>,
@@ -581,6 +589,7 @@ impl ServiceWorkerManager {
             message_ports: HashSet::new(),
             clients: HashMap::new(),
             next_client_sequence: 1,
+            next_client_focus_sequence: 1,
             script_sources: HashMap::new(),
             imported_scripts: HashMap::new(),
             pending_import_requests: HashMap::new(),
@@ -1815,8 +1824,9 @@ impl ServiceWorkerManager {
         let mut transferred = HashSet::new();
         for message in messages {
             let target_client_id = message.target_client_id.as_deref().unwrap_or(client_id);
-            let valid_target = self.clients.get(target_client_id).is_some_and(|(client, _)| {
-                url::Url::parse(&client.url).is_ok_and(|url| url.origin().ascii_serialization() == registration_origin)
+            let valid_target = self.clients.get(target_client_id).is_some_and(|record| {
+                url::Url::parse(&record.info.url)
+                    .is_ok_and(|url| url.origin().ascii_serialization() == registration_origin)
             });
             if target_client_id.is_empty() || !valid_target {
                 return Err(ServiceWorkerManagerError::InvalidInput(
@@ -1948,30 +1958,80 @@ impl ServiceWorkerManager {
                 "Service Worker client limit exceeded".into(),
             ));
         }
-        let sequence = self
-            .clients
-            .get(client_id)
-            .map(|(_, sequence)| *sequence)
-            .unwrap_or_else(|| {
-                let sequence = self.next_client_sequence;
-                self.next_client_sequence = self.next_client_sequence.saturating_add(1);
-                sequence
-            });
+        let existing = self.clients.get(client_id);
+        let sequence = existing.map(|record| record.creation_sequence).unwrap_or_else(|| {
+            let sequence = self.next_client_sequence;
+            self.next_client_sequence = self.next_client_sequence.saturating_add(1);
+            sequence
+        });
+        let focused = existing.is_some_and(|record| record.info.focused);
+        let last_focus_sequence = existing.and_then(|record| record.last_focus_sequence);
         self.clients.insert(
             client_id.to_string(),
-            (
-                ServiceWorkerClientInfo {
+            ClientRecord {
+                info: ServiceWorkerClientInfo {
                     id: client_id.to_string(),
                     url: url.to_string(),
                     client_type: "window".into(),
                     frame_type: "top-level".into(),
                     visibility_state: "visible".into(),
-                    focused: false,
+                    focused,
                 },
-                sequence,
-            ),
+                creation_sequence: sequence,
+                last_focus_sequence,
+            },
         );
         Ok(())
+    }
+
+    /// Update the current focus state for one known window client.
+    pub fn set_window_client_focused(
+        &mut self,
+        client_id: &str,
+        focused: bool,
+    ) -> Result<(), ServiceWorkerManagerError> {
+        if client_id.is_empty() || client_id.len() > MAX_URL_BYTES {
+            return Err(ServiceWorkerManagerError::InvalidInput(
+                "Service Worker client id is invalid".into(),
+            ));
+        }
+        if focused {
+            if !self
+                .clients
+                .get(client_id)
+                .is_some_and(|record| record.info.client_type == "window")
+            {
+                return Ok(());
+            }
+            if self.clients.get(client_id).is_some_and(|record| record.info.focused) {
+                return Ok(());
+            }
+            let focus_sequence = self.next_client_focus_sequence;
+            self.next_client_focus_sequence = self.next_client_focus_sequence.saturating_add(1);
+            for record in self.clients.values_mut() {
+                if record.info.client_type == "window" {
+                    let is_target = record.info.id == client_id;
+                    record.info.focused = is_target;
+                    if is_target {
+                        record.last_focus_sequence = Some(focus_sequence);
+                    }
+                }
+            }
+        } else if let Some(record) = self.clients.get_mut(client_id)
+            && record.info.client_type == "window"
+        {
+            record.info.focused = focused;
+        }
+        Ok(())
+    }
+
+    /// Clear the current focus state without forgetting historical focus order.
+    pub fn clear_window_client_focus(&mut self) {
+        for record in self.clients.values_mut() {
+            if record.info.client_type == "window" {
+                record.info.focused = false;
+            }
+        }
     }
 
     /// Remove a Document client after navigation replacement or disconnect.
@@ -1999,7 +2059,8 @@ impl ServiceWorkerManager {
         let mut clients = self
             .clients
             .values()
-            .filter(|(client, _)| {
+            .filter(|record| {
+                let client = &record.info;
                 (client_type == "all" || client.client_type == client_type)
                     && url::Url::parse(&client.url)
                         .is_ok_and(|url| url.origin().ascii_serialization() == registration.origin)
@@ -2010,8 +2071,25 @@ impl ServiceWorkerManager {
             })
             .cloned()
             .collect::<Vec<_>>();
-        clients.sort_by_key(|(_, sequence)| *sequence);
-        Ok(clients.into_iter().map(|(client, _)| client).collect())
+        // https://w3c.github.io/ServiceWorker/#clients-matchall
+        clients.sort_by(|left, right| {
+            let left_window = left.info.client_type == "window";
+            let right_window = right.info.client_type == "window";
+            match (left_window, right_window) {
+                (true, true) => match (left.last_focus_sequence, right.last_focus_sequence) {
+                    (Some(left_focus), Some(right_focus)) => right_focus
+                        .cmp(&left_focus)
+                        .then_with(|| left.creation_sequence.cmp(&right.creation_sequence)),
+                    (Some(_), None) => std::cmp::Ordering::Less,
+                    (None, Some(_)) => std::cmp::Ordering::Greater,
+                    (None, None) => left.creation_sequence.cmp(&right.creation_sequence),
+                },
+                (true, false) => std::cmp::Ordering::Less,
+                (false, true) => std::cmp::Ordering::Greater,
+                (false, false) => left.creation_sequence.cmp(&right.creation_sequence),
+            }
+        });
+        Ok(clients.into_iter().map(|record| record.info).collect())
     }
 
     fn client_for_worker(
@@ -2028,13 +2106,13 @@ impl ServiceWorkerManager {
         let registration = self
             .registration(registration_id)
             .ok_or(ServiceWorkerManagerError::UnknownRegistration(registration_id))?;
-        let Some((client, _)) = self.clients.get(client_id) else {
+        let Some(record) = self.clients.get(client_id) else {
             return Ok(None);
         };
-        let same_origin =
-            url::Url::parse(&client.url).is_ok_and(|url| url.origin().ascii_serialization() == registration.origin);
+        let same_origin = url::Url::parse(&record.info.url)
+            .is_ok_and(|url| url.origin().ascii_serialization() == registration.origin);
         if same_origin {
-            Ok(Some(client.clone()))
+            Ok(Some(record.info.clone()))
         } else {
             Ok(None)
         }
@@ -2847,6 +2925,68 @@ mod tests {
             assert!(Instant::now() < deadline, "clients.get message timed out");
             std::thread::sleep(Duration::from_millis(1));
         }
+    }
+
+    #[test]
+    fn match_all_orders_focused_windows_before_creation_order() {
+        let mut manager = manager_under_test();
+        let id = start_active(&mut manager, "/", "globalThis.ready = true;");
+        manager
+            .observe_window_client("client-1", "https://example.test/app/1")
+            .unwrap();
+        manager
+            .observe_window_client("client-2", "https://example.test/app/2")
+            .unwrap();
+        manager
+            .observe_window_client("client-3", "https://example.test/app/3")
+            .unwrap();
+
+        assert_eq!(
+            manager
+                .clients_for_worker(id, true, "window")
+                .unwrap()
+                .into_iter()
+                .map(|client| (client.id, client.focused))
+                .collect::<Vec<_>>(),
+            [
+                ("client-1".to_string(), false),
+                ("client-2".to_string(), false),
+                ("client-3".to_string(), false),
+            ]
+        );
+
+        manager.set_window_client_focused("client-1", true).unwrap();
+        manager.set_window_client_focused("client-3", true).unwrap();
+        manager.set_window_client_focused("client-2", true).unwrap();
+        manager.set_window_client_focused("client-2", true).unwrap();
+        assert_eq!(
+            manager
+                .clients_for_worker(id, true, "window")
+                .unwrap()
+                .into_iter()
+                .map(|client| (client.id, client.focused))
+                .collect::<Vec<_>>(),
+            [
+                ("client-2".to_string(), true),
+                ("client-3".to_string(), false),
+                ("client-1".to_string(), false),
+            ]
+        );
+
+        manager.clear_window_client_focus();
+        assert_eq!(
+            manager
+                .clients_for_worker(id, true, "window")
+                .unwrap()
+                .into_iter()
+                .map(|client| (client.id, client.focused))
+                .collect::<Vec<_>>(),
+            [
+                ("client-2".to_string(), false),
+                ("client-3".to_string(), false),
+                ("client-1".to_string(), false),
+            ]
+        );
     }
 
     #[test]
