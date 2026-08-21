@@ -885,20 +885,18 @@ pub fn apply_property_value_with_quirks(
         "flex-grow" => {
             if let Ok(v) = value.parse::<f64>()
                 && v.is_finite()
+                && v >= 0.0
             {
-                if v >= 0.0 {
-                    style.flex_grow = v;
-                }
+                style.flex_grow = v;
                 return true;
             }
         }
         "flex-shrink" => {
             if let Ok(v) = value.parse::<f64>()
                 && v.is_finite()
+                && v >= 0.0
             {
-                if v >= 0.0 {
-                    style.flex_shrink = v;
-                }
+                style.flex_shrink = v;
                 return true;
             }
         }

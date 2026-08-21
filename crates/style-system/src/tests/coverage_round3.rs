@@ -791,7 +791,7 @@ fn apply_flex_shrink() {
 fn apply_flex_shrink_negative_rejected() {
     let mut style = ComputedStyle::default();
     assert_eq!(style.flex_shrink, 1.0, "初始值应为 1.0");
-    assert!(crate::property::apply::apply_property_value(
+    assert!(!crate::property::apply::apply_property_value(
         &mut style,
         "flex-shrink",
         "-3"
@@ -804,7 +804,7 @@ fn apply_flex_shrink_negative_rejected() {
 fn apply_flex_grow_negative_rejected() {
     let mut style = ComputedStyle::default();
     assert_eq!(style.flex_grow, 0.0);
-    assert!(crate::property::apply::apply_property_value(
+    assert!(!crate::property::apply::apply_property_value(
         &mut style,
         "flex-grow",
         "-2"
