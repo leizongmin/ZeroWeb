@@ -140,7 +140,7 @@ pub fn resolve_text_indent(text_indent: &LengthValue, font_size: &LengthValue, c
     }
 }
 
-fn resolve_leaf_explicit_size(value: &LengthValue, style: &ComputedStyle) -> Option<f32> {
+fn resolve_definite_real_length(value: &LengthValue, style: &ComputedStyle) -> Option<f32> {
     match value {
         LengthValue::Auto
         | LengthValue::Percentage(_)
@@ -438,10 +438,12 @@ fn store_inline_multicol_columns(
     // R905：max-height 容器（height:auto）的 content_height 来自全宽 IFC（偏小，列更窄→更多行），
     // 须用 max-height 作 budget；分布后再修正容器高度。columnfill-auto-max-height-001：
     // max-height:100px 但 content_height=50（全宽 2 行），列宽（100px）下应为 4 行=100px。
-    let (available_height, from_max_height) = match (&style.height, &style.max_height) {
-        (LengthValue::Px(h), _) => (*h as f32, false),
-        (_, LengthValue::Px(m)) => (*m as f32, true),
-        _ => (root.content_height, false),
+    let height_budget = resolve_definite_real_length(&style.height, style);
+    let max_height_budget = resolve_definite_real_length(&style.max_height, style);
+    let (available_height, from_max_height) = match (height_budget, max_height_budget) {
+        (Some(h), _) => (h, false),
+        (None, Some(m)) => (m, true),
+        (None, None) => (root.content_height, false),
     };
     if available_height <= 0.0 {
         return false;
@@ -1378,13 +1380,13 @@ pub(crate) fn measure_text_content(
             if measuring_content_w {
                 return None;
             }
-            style.and_then(|s| resolve_leaf_explicit_size(&s.width, s))
+            style.and_then(|s| resolve_definite_real_length(&s.width, s))
         });
         let explicit_h = known_dimensions.height.or_else(|| {
             if measuring_content_h {
                 return None;
             }
-            style.and_then(|s| resolve_leaf_explicit_size(&s.height, s))
+            style.and_then(|s| resolve_definite_real_length(&s.height, s))
         });
         return Size {
             width: explicit_w.unwrap_or(0.0),

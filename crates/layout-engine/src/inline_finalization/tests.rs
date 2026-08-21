@@ -1,12 +1,15 @@
 use super::{
-    ComputedStyle, InlineFormattingContext, LayoutBox, TextAlign, extract_inline_visual_metrics, measure_text_content,
-    resolve_text_align, resolve_text_align_last, resolve_text_indent, sync_inline_block_positions_from_ifc,
+    ComputedStyle, FinalInlineContext, InlineFontContext, InlineFormattingContext, LayoutBox, TextAlign,
+    compute_final_inline_layouts, extract_inline_visual_metrics, measure_text_content, resolve_text_align,
+    resolve_text_align_last, resolve_text_indent, sync_inline_block_positions_from_ifc,
     vertical_decoration_free_with_mode,
 };
 use std::collections::HashMap;
 use zero_css_parser::values::{DisplayValue, LengthValue};
 use zero_dom::Document;
-use zero_style_system::property::{DirectionValue, TextAlignLastValue, TextAlignValue};
+use zero_style_system::property::{
+    ColumnCountComputedValue, ColumnFillComputedValue, DirectionValue, TextAlignLastValue, TextAlignValue,
+};
 
 #[test]
 fn test_resolve_text_align_start_end_direction_aware() {
@@ -142,6 +145,56 @@ fn r3625_empty_leaf_measure_resolves_residual_explicit_size() {
         (size.height - 40.0).abs() < 0.01,
         "empty leaf height:4ch should resolve against font-size:20px, got {}",
         size.height
+    );
+}
+
+/// R3626：inline-only multicol column-fill:auto 的列高预算也要解析 residual real length。
+#[test]
+fn r3626_multicol_auto_fill_resolves_residual_height_budget() {
+    use zero_dom::parse_html;
+
+    let doc = parse_html("<div>aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa</div>");
+    let html = doc.first_child(doc.root()).unwrap();
+    let body = doc.last_child(html).unwrap();
+    let div = doc.first_child(body).unwrap();
+
+    let mut styles = HashMap::new();
+    let mut style = ComputedStyle::default();
+    style.column_count = ColumnCountComputedValue::Number(2);
+    style.column_fill = ColumnFillComputedValue::Auto;
+    style.column_gap = LengthValue::Px(0.0);
+    style.font_size = LengthValue::Px(20.0);
+    style.height = LengthValue::Em(5.0);
+    styles.insert(div, style);
+
+    let mut layout_box = LayoutBox {
+        node_id: Some(div),
+        width: 200.0,
+        height: 1000.0,
+        content_width: 200.0,
+        content_height: 1000.0,
+        is_multicol: true,
+        is_block_level: true,
+        ..Default::default()
+    };
+    let mut paint_skip = std::collections::HashSet::new();
+    let finalized_inline_blocks = Default::default();
+    let mut context = FinalInlineContext::new(&mut paint_skip, InlineFontContext::default(), &finalized_inline_blocks);
+
+    compute_final_inline_layouts(&mut layout_box, &doc, &styles, &[], &HashMap::new(), &mut context);
+
+    let lines = layout_box
+        .inline_layout
+        .as_ref()
+        .expect("multicol auto-fill should store fragmented inline layout");
+    let column_two_x = lines
+        .iter()
+        .flat_map(|line| line.fragments.iter().map(|fragment| fragment.x))
+        .fold(0.0_f32, f32::max);
+    assert!(
+        column_two_x >= 100.0,
+        "height:5em at 20px should use a 100px column budget and move overflow lines to column 2, max x={}",
+        column_two_x
     );
 }
 

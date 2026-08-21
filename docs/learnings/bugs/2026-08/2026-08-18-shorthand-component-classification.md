@@ -370,3 +370,5 @@ IFC container struts are a separate font-size used-value boundary from text run 
 IFC atomic inline-block dimensions are another independent used-value boundary. When layout sizes are not pre-seeded, `collect_inline_items` consumes CSS `width`/`height` directly; its `em` base must be the resolved element font-size, and intrinsic or percentage values must keep the old fallback until a containing-block basis is available.
 
 Empty leaf measurement fallback is another residual length consumer. When `measure_text_content` has no inline content and falls back to CSS `width`/`height`, it must resolve real lengths against the element font size; otherwise flex/grid measurement callbacks lose explicit non-`px` sizes even though the normal taffy style path can represent them.
+
+Inline multicol auto-fill height budgets are another post-IFC used-value boundary. When stored column fragmentation replays `height`/`max-height` to decide the per-column fill budget, resolve definite real lengths against the container font size; otherwise residual units fall back to full-width content height and prevent expected column breaks.
