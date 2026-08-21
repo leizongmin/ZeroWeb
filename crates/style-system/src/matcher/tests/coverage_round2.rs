@@ -736,6 +736,8 @@ fn test_property_supported_scroll_snap() {
     assert!(is_property_supported("scroll-snap-type", "mandatory"));
     assert!(is_property_supported("scroll-snap-align", "center"));
     assert!(is_property_supported("scroll-snap-stop", "always"));
+    assert!(is_property_supported("overscroll-behavior", "contain"));
+    assert!(is_property_supported("overscroll-behavior", "auto none"));
     assert!(is_property_supported("scroll-margin", "1px -2px 3em 4px"));
     assert!(!is_property_supported("scroll-margin", "1px 2%"));
     assert!(!is_property_supported("scroll-margin-top", "auto"));
@@ -758,6 +760,8 @@ fn test_property_supported_scroll_snap() {
     assert!(is_property_supported("scroll-padding-bottom", "10px"));
     assert!(is_property_supported("scroll-padding-left", "10px"));
     assert!(!is_property_supported("scroll-snap-type", "invalid"));
+    assert!(!is_property_supported("overscroll-behavior", "auto contain none"));
+    assert!(!is_property_supported("overscroll-behavior", "scroll"));
 }
 
 #[test]

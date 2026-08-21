@@ -143,6 +143,7 @@ pub(super) fn extended_visual_or_layout_property_supported(property: &str, value
         "transform-style" => matches!(value.trim().to_ascii_lowercase().as_str(), "flat" | "preserve-3d"),
         "backface-visibility" => matches!(value.trim().to_ascii_lowercase().as_str(), "visible" | "hidden"),
         // https://drafts.csswg.org/css-overscroll-1/#overscroll-behavior-properties
+        "overscroll-behavior" => shorthand_supported(property, value),
         "overscroll-behavior-x" | "overscroll-behavior-y" => values::parse_overscroll_behavior(value).is_some(),
         // https://w3c.github.io/pointerevents/#the-touch-action-css-property
         "touch-action" => values::parse_touch_action(value).is_some(),
