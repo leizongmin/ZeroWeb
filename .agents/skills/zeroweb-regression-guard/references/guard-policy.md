@@ -22,7 +22,7 @@ Chrome parity 默认使用仓库已有的最小代表场景；若变更触及表
 - `page/*` parse/style/layout/paint/total 与首屏墙钟；
 - `resource/peak_rss_mb`，预算沿用 `baseline × 1.20 + 128 MB`。
 
-巡检必须直接采用该脚本的指标、平台选择、配置哈希、阈值和退出码，不复制公式到新脚本，不自动执行 baseline capture/relax。`NEW/PASS`、无匹配平台基线或硬件不匹配只能说明缺少可比基线；报告中必须标明，不能宣称“相对基线无劣化”。busy/suspect 导致的 exit 3 为 `INCONCLUSIVE`，按性能预算文档等待空闲后重测。
+巡检必须直接采用该脚本的指标、平台选择、配置哈希、阈值和退出码，不复制公式到新脚本，不自动执行 baseline capture/relax。**唯一例外**：goal master 控制面已记录用户明确放行的一次性 re-capture（如 zero-web master GB-20260821 用户放行块，2026-08-19 批复 + 2026-08-21 放行 bench 基线重建）——按批复 JUSTIFICATION 执行 `make bench-capture` 并在完成后记入控制面，不属违规 relax/覆盖。`NEW/PASS`、无匹配平台基线或硬件不匹配只能说明缺少可比基线；报告中必须标明，不能宣称“相对基线无劣化”。busy/suspect 导致的 exit 3 为 `INCONCLUSIVE`，按性能预算文档等待空闲后重测。
 
 ## 3. 生产分进程内存补充门禁
 
