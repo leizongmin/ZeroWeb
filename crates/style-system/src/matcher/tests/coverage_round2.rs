@@ -491,6 +491,47 @@ fn test_property_supported_transform() {
 }
 
 #[test]
+fn test_property_supported_animation_and_transition() {
+    assert!(is_property_supported("transition-property", "opacity, transform"));
+    assert!(is_property_supported("transition-duration", "0.2s, 150ms"));
+    assert!(is_property_supported(
+        "transition-timing-function",
+        "ease, steps(2, jump-none)"
+    ));
+    assert!(is_property_supported("transition-delay", "-0.1s, 50ms"));
+    assert!(is_property_supported("animation-name", "fade, slide"));
+    assert!(is_property_supported("animation-duration", "1s, 200ms"));
+    assert!(is_property_supported(
+        "animation-timing-function",
+        "linear, cubic-bezier(0, 0, 1, 1)"
+    ));
+    assert!(is_property_supported("animation-delay", "-1s"));
+    assert!(is_property_supported("animation-iteration-count", "2, infinite"));
+    assert!(is_property_supported("animation-direction", "alternate, reverse"));
+    assert!(is_property_supported("animation-fill-mode", "forwards, both"));
+    assert!(is_property_supported("animation-play-state", "running, paused"));
+
+    assert!(!is_property_supported("transition-property", "opacity, 123"));
+    assert!(!is_property_supported("transition-duration", "-1s"));
+    assert!(!is_property_supported(
+        "transition-timing-function",
+        "steps(1, jump-none)"
+    ));
+    assert!(!is_property_supported("transition-delay", "0.1s, bogus"));
+    assert!(!is_property_supported("animation-name", "123"));
+    assert!(!is_property_supported("animation-duration", "infs"));
+    assert!(!is_property_supported(
+        "animation-timing-function",
+        "cubic-bezier(2, 0, 1, 1)"
+    ));
+    assert!(!is_property_supported("animation-delay", "0.2s, bogus"));
+    assert!(!is_property_supported("animation-iteration-count", "-1"));
+    assert!(!is_property_supported("animation-direction", "normal, bogus"));
+    assert!(!is_property_supported("animation-fill-mode", "both, bogus"));
+    assert!(!is_property_supported("animation-play-state", "running, bogus"));
+}
+
+#[test]
 fn test_property_supported_shadow_properties() {
     assert!(is_property_supported("text-shadow", "1px 2px 3px red"));
     assert!(is_property_supported("text-shadow", "black 0 0"));

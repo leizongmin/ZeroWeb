@@ -37,6 +37,20 @@ pub(super) fn extended_visual_or_layout_property_supported(property: &str, value
         // https://drafts.csswg.org/css-backgrounds-3/#shadow-layers
         "text-shadow" => values::parse_text_shadow_list(value).is_some(),
         "box-shadow" => values::parse_box_shadow_list(value).is_some(),
+        // https://drafts.csswg.org/css-transitions-1/
+        "transition-property" => transition_property_list_supported(value),
+        "transition-duration" => non_negative_time_list_supported(value),
+        "transition-timing-function" => timing_function_list_supported(value),
+        "transition-delay" => time_list_supported(value),
+        // https://drafts.csswg.org/css-animations-1/
+        "animation-name" => animation_name_list_supported(value),
+        "animation-duration" => non_negative_time_list_supported(value),
+        "animation-timing-function" => timing_function_list_supported(value),
+        "animation-delay" => time_list_supported(value),
+        "animation-iteration-count" => animation_iteration_count_list_supported(value),
+        "animation-direction" => animation_direction_list_supported(value),
+        "animation-fill-mode" => animation_fill_mode_list_supported(value),
+        "animation-play-state" => animation_play_state_list_supported(value),
         // https://drafts.csswg.org/css-contain-2/#contain-property
         "contain" => values::parse_contain(value).is_some(),
         // https://www.w3.org/TR/css-position-3/#propdef-z-index
@@ -261,4 +275,116 @@ fn parse_aspect_ratio_value(value: &str) -> Option<f32> {
         value.parse().ok()
     }
     .filter(|ratio: &f32| ratio.is_finite())
+}
+
+fn comma_list_supported(value: &str, mut is_valid: impl FnMut(&str) -> bool) -> bool {
+    let Some(items) = split_top_level_commas(value) else {
+        return false;
+    };
+    !items.is_empty() && items.into_iter().all(|item| is_valid(item.trim()))
+}
+
+fn split_top_level_commas(value: &str) -> Option<Vec<&str>> {
+    let mut start = 0;
+    let mut depth = 0i32;
+    let mut items = Vec::new();
+    for (index, ch) in value.char_indices() {
+        match ch {
+            '(' => depth += 1,
+            ')' => {
+                if depth == 0 {
+                    return None;
+                }
+                depth -= 1;
+            }
+            ',' if depth == 0 => {
+                let item = value[start..index].trim();
+                if item.is_empty() {
+                    return None;
+                }
+                items.push(item);
+                start = index + ch.len_utf8();
+            }
+            _ => {}
+        }
+    }
+    if depth != 0 {
+        return None;
+    }
+    let item = value[start..].trim();
+    if item.is_empty() {
+        return None;
+    }
+    items.push(item);
+    Some(items)
+}
+
+fn non_negative_time_list_supported(value: &str) -> bool {
+    comma_list_supported(value, |item| {
+        values::parse_animation_duration(item)
+            .is_some_and(|time| matches!(time, values::AnimationDurationValue::Time(_, _)))
+    })
+}
+
+fn time_list_supported(value: &str) -> bool {
+    comma_list_supported(value, |item| values::parse_time(item).is_some())
+}
+
+fn timing_function_list_supported(value: &str) -> bool {
+    comma_list_supported(value, |item| values::parse_timing_function(item).is_some())
+}
+
+fn animation_iteration_count_list_supported(value: &str) -> bool {
+    comma_list_supported(value, |item| values::parse_animation_iteration_count(item).is_some())
+}
+
+fn animation_direction_list_supported(value: &str) -> bool {
+    comma_list_supported(value, |item| values::parse_animation_direction(item).is_some())
+}
+
+fn animation_fill_mode_list_supported(value: &str) -> bool {
+    comma_list_supported(value, |item| values::parse_animation_fill_mode(item).is_some())
+}
+
+fn animation_play_state_list_supported(value: &str) -> bool {
+    comma_list_supported(value, |item| values::parse_animation_play_state(item).is_some())
+}
+
+fn animation_name_list_supported(value: &str) -> bool {
+    comma_list_supported(value, |item| values::parse_animation_name(item).is_some())
+}
+
+fn transition_property_list_supported(value: &str) -> bool {
+    comma_list_supported(value, transition_property_ident_supported)
+}
+
+fn transition_property_ident_supported(value: &str) -> bool {
+    let value = value.trim();
+    value.eq_ignore_ascii_case("all") || value.eq_ignore_ascii_case("none") || css_ident_supported(value)
+}
+
+fn css_ident_supported(value: &str) -> bool {
+    let mut chars = value.chars();
+    let Some(first) = chars.next() else {
+        return false;
+    };
+    if first == '-' {
+        let Some(second) = chars.next() else {
+            return false;
+        };
+        if second != '-' && !css_name_start_supported(second) {
+            return false;
+        }
+    } else if !css_name_start_supported(first) {
+        return false;
+    }
+    chars.all(css_name_char_supported)
+}
+
+fn css_name_start_supported(c: char) -> bool {
+    c == '_' || c.is_ascii_alphabetic() || !c.is_ascii()
+}
+
+fn css_name_char_supported(c: char) -> bool {
+    css_name_start_supported(c) || c.is_ascii_digit() || c == '-'
 }
