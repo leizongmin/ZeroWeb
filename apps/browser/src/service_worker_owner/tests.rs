@@ -581,6 +581,76 @@ fn ipc_clients_match_all_uses_browser_owned_client_registry() {
 }
 
 #[test]
+fn ipc_clients_get_uses_browser_owned_client_registry() {
+    let mut owner = BrowserServiceWorkerOwner::new();
+    let disposition = owner.begin_request_for_client(
+        TabId(7),
+        false,
+        76,
+        Some("https://example.test/page"),
+        "renderer-7:1",
+        register_request("https://example.test/page"),
+    );
+    attach_script(&mut owner, disposition, "clients.get('renderer-7:1');");
+    let _ = owner.poll();
+    let evaluate = owner
+        .take_host_commands()
+        .into_iter()
+        .find(|outgoing| matches!(outgoing.params.command, ServiceWorkerHostCommand::Evaluate { .. }))
+        .expect("missing renderer evaluation command");
+    let registration_id = evaluate.params.registration_id;
+
+    owner.inject_host_event(
+        TabId(7),
+        false,
+        ServiceWorkerHostEventParams {
+            registration_id,
+            event: ServiceWorkerHostEvent::ClientsGetRequested {
+                request_id: 13,
+                client_id: "renderer-7:1".into(),
+            },
+        },
+    );
+    let _ = owner.poll();
+    let client = owner
+        .take_host_commands()
+        .into_iter()
+        .find_map(|outgoing| match outgoing.params.command {
+            ServiceWorkerHostCommand::CompleteClientsGet {
+                request_id: 13,
+                result: Ok(client),
+            } => client,
+            _ => None,
+        })
+        .expect("missing clients.get completion");
+    assert_eq!(client.id, "renderer-7:1");
+    assert_eq!(client.url, "https://example.test/page");
+
+    owner.inject_host_event(
+        TabId(7),
+        false,
+        ServiceWorkerHostEventParams {
+            registration_id,
+            event: ServiceWorkerHostEvent::ClientsGetRequested {
+                request_id: 14,
+                client_id: "missing".into(),
+            },
+        },
+    );
+    let _ = owner.poll();
+    assert!(
+        owner.take_host_commands().into_iter().any(|outgoing| matches!(
+            outgoing.params.command,
+            ServiceWorkerHostCommand::CompleteClientsGet {
+                request_id: 14,
+                result: Ok(None),
+            }
+        )),
+        "unknown clients.get id resolves with no client"
+    );
+}
+
+#[test]
 fn ipc_module_request_preserves_referrer_and_fetch_policy() {
     let mut owner = BrowserServiceWorkerOwner::new();
     let mut request = register_request("https://example.test/page");

@@ -1049,6 +1049,30 @@ impl ServiceWorkerHostCommandParams {
                 }
                 Ok(())
             }
+            ServiceWorkerHostCommand::CompleteClientsGet { request_id, result } => {
+                if *request_id == 0 {
+                    return Err("Service Worker clients request id is required");
+                }
+                match result {
+                    Ok(Some(client)) => {
+                        if client.id.is_empty()
+                            || client.id.len() > MAX_URL_BYTES
+                            || client.url.len() > MAX_URL_BYTES
+                            || !matches!(client.client_type.as_str(), "window" | "worker" | "sharedworker")
+                            || !matches!(client.frame_type.as_str(), "top-level" | "nested" | "none")
+                            || !matches!(client.visibility_state.as_str(), "visible" | "hidden")
+                        {
+                            return Err("Service Worker clients response is invalid");
+                        }
+                    }
+                    Ok(None) => {}
+                    Err(message) if message.len() > MAX_URL_BYTES => {
+                        return Err("Service Worker clients error exceeds the size limit");
+                    }
+                    Err(_) => {}
+                }
+                Ok(())
+            }
             ServiceWorkerHostCommand::DispatchLifecycle { .. } | ServiceWorkerHostCommand::Shutdown => Ok(()),
         }
     }
@@ -1111,6 +1135,13 @@ pub enum ServiceWorkerHostCommand {
         /// Browser-owned client snapshot or a safe diagnostic.
         result: Result<Vec<ServiceWorkerClientInfoWire>, String>,
     },
+    /// Complete a blocking worker-global `clients.get()` request.
+    CompleteClientsGet {
+        /// Renderer runtime assigned request ID.
+        request_id: u64,
+        /// Optional browser-owned client snapshot or a safe diagnostic.
+        result: Result<Option<ServiceWorkerClientInfoWire>, String>,
+    },
 }
 
 /// Worker-global update failure projected into the Service Worker realm.
@@ -1145,6 +1176,11 @@ impl ServiceWorkerHostEventParams {
             } => {
                 if *request_id == 0 || !matches!(client_type.as_str(), "window" | "worker" | "sharedworker" | "all") {
                     return Err("Service Worker clients request is invalid");
+                }
+            }
+            ServiceWorkerHostEvent::ClientsGetRequested { request_id, client_id } => {
+                if *request_id == 0 || client_id.is_empty() || client_id.len() > MAX_FIELD_BYTES {
+                    return Err("Service Worker clients.get request is invalid");
                 }
             }
             ServiceWorkerHostEvent::ClientMessagesEmitted { outbound }
@@ -1264,6 +1300,13 @@ pub enum ServiceWorkerHostEvent {
         include_uncontrolled: bool,
         /// Requested client type.
         client_type: String,
+    },
+    /// Worker global called `clients.get()`.
+    ClientsGetRequested {
+        /// Renderer runtime assigned request ID.
+        request_id: u64,
+        /// Browser-owned client identity.
+        client_id: String,
     },
     /// Worker emitted messages outside a page-originated message event.
     ClientMessagesEmitted {

@@ -17,6 +17,7 @@ const MAX_IMPORT_SCRIPTS_PER_CALL: usize = 64;
 const MAX_IMPORT_SCRIPT_URL_BYTES: usize = 64 * 1024;
 const MAX_IMPORTED_SCRIPT_BYTES: usize = 16 * 1024 * 1024;
 const MAX_MESSAGE_PORTS: usize = 16;
+const MAX_CLIENT_ID_BYTES: usize = 64 * 1024;
 const MAX_SERVICE_WORKER_CLIENTS: usize = 128;
 
 enum ServiceWorkerCommand {
@@ -429,6 +430,24 @@ const SERVICE_WORKER_BOOTSTRAP: &str = r#"
     return Promise.resolve();
   };
   class Clients {
+    // https://w3c.github.io/ServiceWorker/#clients-get
+    get(id) {
+      if (arguments.length < 1) {
+        throw new TypeError('Clients.get requires a client id');
+      }
+      id = String(id);
+      if (id === '') return Promise.resolve(undefined);
+      let response;
+      try {
+        response = JSON.parse(globalThis.__zwClientsGet(id));
+      } catch (_error) {
+        response = {ok: false, error: 'invalid Clients.get response'};
+      }
+      if (!response || response.ok !== true) {
+        return Promise.reject(new TypeError(response && response.error || 'Clients.get failed'));
+      }
+      return Promise.resolve(response.client === null ? undefined : new Client(response.client, clientToken));
+    }
     matchAll(options) {
       options = options === undefined ? {} : Object(options);
       const includeUncontrolled = options.includeUncontrolled === true;
@@ -703,6 +722,13 @@ pub enum ServiceWorkerEvent {
         /// Requested client type.
         client_type: String,
     },
+    /// The worker global requested one browser-owned client by id.
+    ClientsGetRequested {
+        /// Runtime-local request ID used to correlate the blocking response.
+        request_id: u64,
+        /// Browser-owned client identity.
+        client_id: String,
+    },
     /// A worker posted messages outside a page-originated message event.
     ClientMessagesEmitted {
         /// Messages with explicit target client identities.
@@ -969,6 +995,74 @@ impl ServiceWorkerRuntime {
                 let clients_event_sender = event_sender.clone();
                 let clients_response_receiver = Arc::new(Mutex::new(clients_response_receiver));
                 let next_clients_request_id = Arc::new(AtomicU64::new(1));
+                let clients_get_event_sender = event_sender.clone();
+                let clients_get_response_receiver = Arc::clone(&clients_response_receiver);
+                let clients_get_request_id = Arc::clone(&next_clients_request_id);
+                sandbox.register_callback(
+                    "__zwClientsGet",
+                    Box::new(move |args| {
+                        let Some(client_id) = args.first().filter(|value| !value.is_empty()) else {
+                            return clients_failure_json("Clients.get client id is invalid");
+                        };
+                        if client_id.len() > MAX_CLIENT_ID_BYTES {
+                            return clients_failure_json("Clients.get client id exceeds the length limit");
+                        }
+                        let request_id = clients_get_request_id.fetch_add(1, Ordering::Relaxed);
+                        if clients_get_event_sender
+                            .send(ServiceWorkerEvent::ClientsGetRequested {
+                                request_id,
+                                client_id: client_id.clone(),
+                            })
+                            .is_err()
+                        {
+                            return clients_failure_json("Service Worker host disconnected");
+                        }
+                        let deadline =
+                            std::time::Instant::now() + std::time::Duration::from_millis(lifecycle_timeout_ms);
+                        loop {
+                            let now = std::time::Instant::now();
+                            if now >= deadline {
+                                return clients_failure_json("Clients.get host response timed out");
+                            }
+                            let response = clients_get_response_receiver
+                                .lock()
+                                .expect("clients response lock")
+                                .recv_timeout(deadline.saturating_duration_since(now));
+                            match response {
+                                Ok(ServiceWorkerClientsResponse::Completed {
+                                    request_id: response_id,
+                                    clients,
+                                }) if response_id == request_id => {
+                                    let client = clients.into_iter().next().map(|client| {
+                                        serde_json::json!({
+                                            "id": client.id,
+                                            "url": client.url,
+                                            "type": client.client_type,
+                                            "frameType": client.frame_type,
+                                            "visibilityState": client.visibility_state,
+                                            "focused": client.focused,
+                                        })
+                                    });
+                                    return serde_json::json!({"ok": true, "client": client}).to_string();
+                                }
+                                Ok(ServiceWorkerClientsResponse::Failed {
+                                    request_id: response_id,
+                                    message,
+                                }) if response_id == request_id => return clients_failure_json(&message),
+                                Ok(ServiceWorkerClientsResponse::Shutdown) => {
+                                    return clients_failure_json("Service Worker runtime is shutting down");
+                                }
+                                Ok(_) => continue,
+                                Err(mpsc::RecvTimeoutError::Timeout) => {
+                                    return clients_failure_json("Clients.get host response timed out");
+                                }
+                                Err(mpsc::RecvTimeoutError::Disconnected) => {
+                                    return clients_failure_json("Service Worker host disconnected");
+                                }
+                            }
+                        }
+                    }),
+                );
                 sandbox.register_callback(
                     "__zwClientsMatchAll",
                     Box::new(move |args| {
@@ -1382,6 +1476,28 @@ impl ServiceWorkerRuntime {
             Ok(_) => ServiceWorkerClientsResponse::Failed {
                 request_id,
                 message: "Service Worker client result exceeds the size limit".into(),
+            },
+            Err(message) => ServiceWorkerClientsResponse::Failed { request_id, message },
+        };
+        self.clients_response_sender
+            .send(response)
+            .map_err(|_| ScriptError::RuntimeError("Service Worker runtime disconnected".into()))
+    }
+
+    /// Complete one blocking worker-global `clients.get()` request.
+    pub fn complete_clients_get(
+        &self,
+        request_id: u64,
+        result: Result<Option<ServiceWorkerClientInfo>, String>,
+    ) -> Result<(), ScriptError> {
+        let response = match result {
+            Ok(Some(client)) => ServiceWorkerClientsResponse::Completed {
+                request_id,
+                clients: vec![client],
+            },
+            Ok(None) => ServiceWorkerClientsResponse::Completed {
+                request_id,
+                clients: Vec::new(),
             },
             Err(message) => ServiceWorkerClientsResponse::Failed { request_id, message },
         };
@@ -2574,6 +2690,81 @@ mod tests {
                 }],
             }
         );
+        assert!(matches!(
+            runtime.recv_timeout(Duration::from_secs(5)).unwrap(),
+            ServiceWorkerEvent::Evaluated { .. }
+        ));
+    }
+
+    #[test]
+    fn clients_get_during_evaluation_emits_targeted_message() {
+        let mut runtime = ServiceWorkerRuntime::new(test_config()).unwrap();
+        runtime
+            .evaluate(
+                "clients.get('client-1').then(client => {
+                   client.postMessage({matched: client.url});
+                 });",
+                "https://example.test/sw.js",
+            )
+            .unwrap();
+        let ServiceWorkerEvent::ClientsGetRequested { request_id, client_id } =
+            runtime.recv_timeout(Duration::from_secs(5)).unwrap()
+        else {
+            panic!("missing clients.get request");
+        };
+        assert_eq!(client_id, "client-1");
+        runtime
+            .complete_clients_get(
+                request_id,
+                Ok(Some(ServiceWorkerClientInfo {
+                    id: "client-1".into(),
+                    url: "https://example.test/page".into(),
+                    client_type: "window".into(),
+                    frame_type: "top-level".into(),
+                    visibility_state: "visible".into(),
+                    focused: false,
+                })),
+            )
+            .unwrap();
+        assert_eq!(
+            runtime.recv_timeout(Duration::from_secs(5)).unwrap(),
+            ServiceWorkerEvent::ClientMessagesEmitted {
+                outbound: vec![ServiceWorkerOutboundMessage {
+                    data_json: r#"{"matched":"https://example.test/page"}"#.into(),
+                    port_id: None,
+                    transferred_port_ids: Vec::new(),
+                    data_port_index: None,
+                    target_client_id: Some("client-1".into()),
+                }],
+            }
+        );
+        assert!(matches!(
+            runtime.recv_timeout(Duration::from_secs(5)).unwrap(),
+            ServiceWorkerEvent::Evaluated { .. }
+        ));
+    }
+
+    #[test]
+    fn clients_get_unknown_client_resolves_undefined() {
+        let mut runtime = ServiceWorkerRuntime::new(test_config()).unwrap();
+        runtime
+            .evaluate(
+                "clients.get('').then(empty => {
+                   if (empty !== undefined) throw new Error('expected empty id undefined');
+                   return clients.get('missing');
+                 }).then(client => {
+                   if (client !== undefined) throw new Error('expected missing id undefined');
+                 });",
+                "https://example.test/sw.js",
+            )
+            .unwrap();
+        let ServiceWorkerEvent::ClientsGetRequested { request_id, client_id } =
+            runtime.recv_timeout(Duration::from_secs(5)).unwrap()
+        else {
+            panic!("missing clients.get request");
+        };
+        assert_eq!(client_id, "missing");
+        runtime.complete_clients_get(request_id, Ok(None)).unwrap();
         assert!(matches!(
             runtime.recv_timeout(Duration::from_secs(5)).unwrap(),
             ServiceWorkerEvent::Evaluated { .. }

@@ -327,6 +327,38 @@ impl ServiceWorkerRuntimeHost for IpcServiceWorkerHost {
         Ok(())
     }
 
+    fn complete_clients_get(
+        &mut self,
+        registration_id: u64,
+        request_id: u64,
+        result: Result<Option<ServiceWorkerClientInfo>, String>,
+    ) -> Result<(), ServiceWorkerManagerError> {
+        let Some(tab_id) = self.channels.take_owned_tab(registration_id) else {
+            return Err(ServiceWorkerManagerError::UnknownRegistration(registration_id));
+        };
+        self.channels.record_owned(registration_id, tab_id);
+        self.channels.push_outgoing(ServiceWorkerHostOutgoing {
+            tab_id,
+            params: ServiceWorkerHostCommandParams {
+                registration_id,
+                command: ServiceWorkerHostCommand::CompleteClientsGet {
+                    request_id,
+                    result: result.map(|client| {
+                        client.map(|client| ServiceWorkerClientInfoWire {
+                            id: client.id,
+                            url: client.url,
+                            client_type: client.client_type,
+                            frame_type: client.frame_type,
+                            visibility_state: client.visibility_state,
+                            focused: client.focused,
+                        })
+                    }),
+                },
+            },
+        });
+        Ok(())
+    }
+
     fn shutdown(&mut self, registration_id: u64) {
         if let Some(tab_id) = self.channels.remove_owned(registration_id) {
             self.channels.push_outgoing(ServiceWorkerHostOutgoing {
@@ -450,6 +482,9 @@ fn sandbox_event(event: ServiceWorkerHostEvent) -> ServiceWorkerEvent {
             include_uncontrolled,
             client_type,
         },
+        ServiceWorkerHostEvent::ClientsGetRequested { request_id, client_id } => {
+            ServiceWorkerEvent::ClientsGetRequested { request_id, client_id }
+        }
         ServiceWorkerHostEvent::ClientMessagesEmitted { outbound } => ServiceWorkerEvent::ClientMessagesEmitted {
             outbound: outbound
                 .into_iter()

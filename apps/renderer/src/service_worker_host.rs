@@ -160,6 +160,22 @@ impl HostThread {
                     }),
                 );
             }
+            ServiceWorkerHostCommand::CompleteClientsGet { request_id, result } => {
+                self.complete_clients_get(
+                    params.registration_id,
+                    request_id,
+                    result.map(|client| {
+                        client.map(|client| ServiceWorkerClientInfo {
+                            id: client.id,
+                            url: client.url,
+                            client_type: client.client_type,
+                            frame_type: client.frame_type,
+                            visibility_state: client.visibility_state,
+                            focused: client.focused,
+                        })
+                    }),
+                );
+            }
             ServiceWorkerHostCommand::Shutdown => {
                 // 不在此处移除：tick 先 drain `Closed` 事件再按 is_running 回收槽位。
                 if let Some(runtime) = self.runtimes.get_mut(&params.registration_id) {
@@ -295,6 +311,21 @@ impl HostThread {
             tracing::warn!("Service Worker clients response failed: {error}");
         }
     }
+
+    fn complete_clients_get(
+        &mut self,
+        registration_id: u64,
+        request_id: u64,
+        result: Result<Option<ServiceWorkerClientInfo>, String>,
+    ) {
+        let Some(runtime) = self.runtimes.get(&registration_id) else {
+            tracing::warn!("Service Worker clients response for unknown registration {registration_id}");
+            return;
+        };
+        if let Err(error) = runtime.complete_clients_get(request_id, result) {
+            tracing::warn!("Service Worker clients response failed: {error}");
+        }
+    }
 }
 
 fn wire_phase(phase: ServiceWorkerLifecycleWire) -> ServiceWorkerLifecyclePhase {
@@ -379,6 +410,9 @@ fn host_event(event: ServiceWorkerEvent) -> ServiceWorkerHostEvent {
             include_uncontrolled,
             client_type,
         },
+        ServiceWorkerEvent::ClientsGetRequested { request_id, client_id } => {
+            ServiceWorkerHostEvent::ClientsGetRequested { request_id, client_id }
+        }
         ServiceWorkerEvent::ClientMessagesEmitted { outbound } => ServiceWorkerHostEvent::ClientMessagesEmitted {
             outbound: outbound
                 .into_iter()

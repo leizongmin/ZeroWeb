@@ -393,6 +393,13 @@ pub trait ServiceWorkerRuntimeHost: Send {
         request_id: u64,
         result: Result<Vec<ServiceWorkerClientInfo>, String>,
     ) -> Result<(), ServiceWorkerManagerError>;
+    /// Complete one worker-global `clients.get()` request.
+    fn complete_clients_get(
+        &mut self,
+        registration_id: u64,
+        request_id: u64,
+        result: Result<Option<ServiceWorkerClientInfo>, String>,
+    ) -> Result<(), ServiceWorkerManagerError>;
     /// Stop one runtime and release its resources.
     fn shutdown(&mut self, registration_id: u64);
     /// Drain all currently available runtime events.
@@ -506,6 +513,19 @@ impl ServiceWorkerRuntimeHost for LocalServiceWorkerHost {
             .get(&registration_id)
             .ok_or(ServiceWorkerManagerError::UnknownRegistration(registration_id))?
             .complete_clients_match_all(request_id, result)
+            .map_err(|error| ServiceWorkerManagerError::Runtime(error.to_string()))
+    }
+
+    fn complete_clients_get(
+        &mut self,
+        registration_id: u64,
+        request_id: u64,
+        result: Result<Option<ServiceWorkerClientInfo>, String>,
+    ) -> Result<(), ServiceWorkerManagerError> {
+        self.runtimes
+            .get(&registration_id)
+            .ok_or(ServiceWorkerManagerError::UnknownRegistration(registration_id))?
+            .complete_clients_get(request_id, result)
             .map_err(|error| ServiceWorkerManagerError::Runtime(error.to_string()))
     }
 
@@ -1200,6 +1220,14 @@ impl ServiceWorkerManager {
                 } => {
                     let result = self.clients_for_worker(registration_id, include_uncontrolled, &client_type);
                     let _ = self.host.complete_clients_match_all(
+                        registration_id,
+                        request_id,
+                        result.map_err(|error| error.to_string()),
+                    );
+                }
+                ServiceWorkerEvent::ClientsGetRequested { request_id, client_id } => {
+                    let result = self.client_for_worker(registration_id, &client_id);
+                    let _ = self.host.complete_clients_get(
                         registration_id,
                         request_id,
                         result.map_err(|error| error.to_string()),
@@ -1986,6 +2014,32 @@ impl ServiceWorkerManager {
         Ok(clients.into_iter().map(|(client, _)| client).collect())
     }
 
+    fn client_for_worker(
+        &self,
+        registration_id: u64,
+        client_id: &str,
+    ) -> Result<Option<ServiceWorkerClientInfo>, ServiceWorkerManagerError> {
+        // https://w3c.github.io/ServiceWorker/#clients-get
+        if client_id.is_empty() || client_id.len() > MAX_URL_BYTES {
+            return Err(ServiceWorkerManagerError::InvalidInput(
+                "Service Worker client id is invalid".into(),
+            ));
+        }
+        let registration = self
+            .registration(registration_id)
+            .ok_or(ServiceWorkerManagerError::UnknownRegistration(registration_id))?;
+        let Some((client, _)) = self.clients.get(client_id) else {
+            return Ok(None);
+        };
+        let same_origin =
+            url::Url::parse(&client.url).is_ok_and(|url| url.origin().ascii_serialization() == registration.origin);
+        if same_origin {
+            Ok(Some(client.clone()))
+        } else {
+            Ok(None)
+        }
+    }
+
     fn release_client_message_reservation(&mut self, key: &(u64, String)) {
         let Some(pending) = self.pending_client_messages.get_mut(key) else {
             return;
@@ -2749,6 +2803,50 @@ mod tests {
             ["controlled"]
         );
         assert!(manager.clients_for_worker(id, true, "worker").unwrap().is_empty());
+    }
+
+    #[test]
+    fn evaluation_clients_get_returns_same_origin_client_only() {
+        let mut manager = manager_under_test();
+        manager
+            .observe_window_client("client-1", "https://example.test/page")
+            .unwrap();
+        manager
+            .observe_window_client("cross-origin", "https://other.test/page")
+            .unwrap();
+        let id = start(
+            &mut manager,
+            "/scope/",
+            "Promise.all([
+               clients.get('client-1'),
+               clients.get('cross-origin'),
+               clients.get('missing')
+             ]).then(results => {
+               results[0].postMessage({
+                 hit: results[0].url,
+                 hidden: results[1] === undefined,
+                 missing: results[2] === undefined
+               });
+             });",
+        );
+
+        let deadline = Instant::now() + Duration::from_secs(5);
+        loop {
+            let _ = manager.poll();
+            let (_, messages) = manager.client_messages_since(id, "client-1", 0);
+            if !messages.is_empty() {
+                assert_eq!(messages.len(), 1);
+                assert_eq!(
+                    messages[0].data_json,
+                    r#"{"hit":"https://example.test/page","hidden":true,"missing":true}"#
+                );
+                assert_eq!(messages[0].target_client_id.as_deref(), Some("client-1"));
+                assert_eq!(manager.client_messages_since(id, "cross-origin", 0).1, Vec::new());
+                break;
+            }
+            assert!(Instant::now() < deadline, "clients.get message timed out");
+            std::thread::sleep(Duration::from_millis(1));
+        }
     }
 
     #[test]

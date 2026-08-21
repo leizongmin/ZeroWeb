@@ -2,7 +2,7 @@
 
 **入口文档**: [../service-workers.md](../service-workers.md)
 **创建日期**: 2026-08-17（goal 拆分 bootstrap）
-**最后更新**: 2026-08-21（M3-27 clients.matchAll evaluation 完成）
+**最后更新**: 2026-08-21（M3-28 clients.get 完成）
 
 ---
 
@@ -157,6 +157,9 @@ M0 启动门禁解除；M1 core WPT 已收敛，M2 依赖未满足，当前推�
 - ✅ M3-27：browser-owned committed client registry 经 typed host-thread query 投影
   `clients.matchAll({includeUncontrolled:true})`；worker evaluation 主动 `Client.postMessage()`
   按目标 client ID 路由；core WPT 34/156
+- ✅ M3-28：worker global `clients.get(id)` 经 browser-owned client registry 返回同 origin
+  `Client` 或 `undefined`；协议/browser owner/renderer/WebView 双路径接线，完整上游
+  `clients-get.https.html` 仍因 resultingClientId/fetch 子项留在 M2 门控
 
 ## 缺口清单
 
@@ -176,7 +179,7 @@ M0 启动门禁解除；M1 core WPT 已收敛，M2 依赖未满足，当前推�
 
 ## 下一步计划
 
-1. **M3 clients follow-up**：`clients.get()` 与多 client ordering/control 语义
+1. **M3 clients follow-up**：多 client ordering/control 语义
 2. **M2 门控保持**：js-dom S6 与 storage-cache-api M1 land 后启动 fetch pipeline
 
 ## 里程碑状态
@@ -347,6 +350,8 @@ M0 启动门禁解除；M1 core WPT 已收敛，M2 依赖未满足，当前推�
 - M3-27 clients.matchAll evaluation：browser-owned client registry、typed query、
   主动消息路由与 34/156 WPT 见
   [M3 clients.matchAll evaluation](evidence/2026-08-21-m3-clients-matchall-evaluation.md)
+- M3-28 clients.get：typed 单 client 查询、同 origin 过滤、unknown `undefined` 与
+  browser/WebView 双路径见 [M3 clients.get](evidence/2026-08-21-m3-clients-get.md)
 
 ## M0 证据与决策记录
 
@@ -415,6 +420,7 @@ M0 启动门禁解除；M1 core WPT 已收敛，M2 依赖未满足，当前推�
 | 2026-08-21 | M3-25 update permissions + MessagePort | worker update 权限矩阵；双向 port transfer；core 32/153 |
 | 2026-08-21 | M3-26 skipWaiting no client | 单次/8 路并发均 resolve undefined；core 33/155 |
 | 2026-08-21 | M3-27 clients.matchAll evaluation | 同源 uncontrolled client 顶层枚举与主动消息；core 34/156 |
+| 2026-08-21 | M3-28 clients.get | 同源 client id 查询与 unknown/cross-origin 隔离；上游完整文件仍因 resultingClientId/fetch 门控 |
 | 2026-08-19 | 三方案对比 | 拒绝同线程 context（无调度隔离）；拒绝从零线程（复制安全基建）；推荐抽取 Worker 线程核 |
 | 2026-08-19 | owner | production browser process 单一 owner；WebView 只做同算法 in-process adapter |
 | 2026-08-19 | 首个 driving WPT | `activation-after-registration.https.html` |

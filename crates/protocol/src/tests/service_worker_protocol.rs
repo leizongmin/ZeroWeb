@@ -680,6 +680,47 @@ fn service_worker_message_port_and_update_wires_round_trip() {
     };
     assert_eq!(decoded_command, command);
 
+    let event = ServiceWorkerHostEventParams {
+        registration_id: 7,
+        event: ServiceWorkerHostEvent::ClientsGetRequested {
+            request_id: 13,
+            client_id: "client-1".into(),
+        },
+    };
+    assert!(event.validate().is_ok());
+    let decoded = roundtrip(IpcMessage {
+        id: 76,
+        kind: IpcMessageKind::ServiceWorkerHostEvent(event.clone()),
+    });
+    let IpcMessageKind::ServiceWorkerHostEvent(decoded_event) = decoded.kind else {
+        panic!("expected ServiceWorkerHostEvent");
+    };
+    assert_eq!(decoded_event, event);
+
+    let command = ServiceWorkerHostCommandParams {
+        registration_id: 7,
+        command: ServiceWorkerHostCommand::CompleteClientsGet {
+            request_id: 13,
+            result: Ok(Some(ServiceWorkerClientInfoWire {
+                id: "client-1".into(),
+                url: "https://example.test/page".into(),
+                client_type: "window".into(),
+                frame_type: "top-level".into(),
+                visibility_state: "visible".into(),
+                focused: false,
+            })),
+        },
+    };
+    assert!(command.validate().is_ok());
+    let decoded = roundtrip(IpcMessage {
+        id: 77,
+        kind: IpcMessageKind::ServiceWorkerHostCommand(command.clone()),
+    });
+    let IpcMessageKind::ServiceWorkerHostCommand(decoded_command) = decoded.kind else {
+        panic!("expected ServiceWorkerHostCommand");
+    };
+    assert_eq!(decoded_command, command);
+
     let emitted = ServiceWorkerHostEventParams {
         registration_id: 0,
         event: ServiceWorkerHostEvent::ClientMessagesEmitted {
@@ -708,6 +749,17 @@ fn service_worker_message_port_and_update_wires_round_trip() {
                 request_id: 12,
                 include_uncontrolled: true,
                 client_type: "invalid".into(),
+            },
+        }
+        .validate()
+        .is_err()
+    );
+    assert!(
+        ServiceWorkerHostEventParams {
+            registration_id: 7,
+            event: ServiceWorkerHostEvent::ClientsGetRequested {
+                request_id: 13,
+                client_id: String::new(),
             },
         }
         .validate()

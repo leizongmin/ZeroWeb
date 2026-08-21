@@ -1501,6 +1501,61 @@ fn clients_match_all_during_evaluation_reaches_registering_page() {
 }
 
 #[test]
+fn clients_get_during_evaluation_reaches_registering_page() {
+    let mut webview = WebViewBuilder::new()
+        .url("https://example.test/clients-get-on-evaluation.https.html")
+        .script_source_fetcher(Arc::new(|_, script| match script {
+            "https://example.test/sw.js" => Ok("clients.matchAll({includeUncontrolled: true}).then(clientList => {
+                     const id = clientList[0].id;
+                     return Promise.all([clients.get(id), clients.get('missing')]);
+                   }).then(results => {
+                     results[0].postMessage({
+                       matched: results[0].url,
+                       missing: results[1] === undefined
+                     });
+                   });"
+            .into()),
+            _ => Err(format!("unexpected script: {script}")),
+        }))
+        .build();
+
+    webview
+        .execute_script(
+            "globalThis.__clientsGetResult = 'pending';
+             navigator.serviceWorker.onmessage = function(event) {
+               globalThis.__clientsGetResult = event.data.matched + ':' + event.data.missing;
+             };
+             navigator.serviceWorker.register('/sw.js', {scope:'/scope/'}).then(function(registration) {
+               globalThis.__clientsGetRegistration = registration && registration.scope;
+             }, function(error) {
+               globalThis.__clientsGetResult = 'register-error:' + error.name + ':' + error.message;
+             });",
+        )
+        .unwrap();
+
+    let deadline = Instant::now() + Duration::from_secs(5);
+    loop {
+        let result = webview
+            .execute_script(
+                "JSON.stringify({
+               message: globalThis.__clientsGetResult,
+               registration: globalThis.__clientsGetRegistration || null
+             })",
+            )
+            .unwrap();
+        if result.contains("https://example.test/clients-get-on-evaluation.https.html:true") {
+            assert!(result.contains(r#""registration":"https://example.test/scope/""#));
+            break;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "clients.get page message timed out: {result}"
+        );
+        std::thread::sleep(Duration::from_millis(5));
+    }
+}
+
+#[test]
 fn update_permissions_follow_calling_worker_state_during_installation() {
     let version = Arc::new(Mutex::new(0usize));
     let fetch_version = Arc::clone(&version);
