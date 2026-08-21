@@ -198,3 +198,54 @@ fn test_classic_script_strict_function_globals_r147() {
         .value;
     assert_eq!(err, "", "R147 两段脚本均无抛错（sentinel 干净）");
 }
+
+/// R148：焦点所有权统一（proxy `_activeElKey` 与解析节点 `_zwMElFocused` 互斥）+
+/// focus 事件 relatedTarget 的 shadow retargeting（旧焦点在 shadow 树内 → 泄露边界外
+/// 以 shadow host 为 relatedTarget；WPT shadow-relatedTarget 两 subtest）。
+#[test]
+fn test_focus_ownership_and_related_target_r148() {
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let mut sandbox = V8Sandbox::with_config(zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    })
+    .unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> =
+        Arc::new(Mutex::new("<html><body><div id=\"host\"></div><input id=\"lightInput\"></body></html>".to_string()));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry);
+
+    let out = sandbox
+        .execute(
+            "var parts = [];\
+             var host = document.getElementById('host');\
+             var root = host.attachShadow({ mode: 'closed' });\
+             root.innerHTML = \"<input id='shadowInput'>\";\
+             var shadowInput = root.getElementById('shadowInput');\
+             parts.push('shadowInput:' + (shadowInput ? 'y' : 'n'));\
+             shadowInput.focus();\
+             parts.push('activeIsShadow:' + (document.activeElement === shadowInput));\
+             var lightInput = document.getElementById('lightInput');\
+             var related = 'unset';\
+             lightInput.addEventListener('focus', function(e) {\
+               related = (e.relatedTarget === host) ? 'host' : (e.relatedTarget == null ? 'null' : 'other');\
+             });\
+             lightInput.focus();\
+             parts.push('related:' + related);\
+             parts.push('activeIsLight:' + (document.activeElement === lightInput));\
+             parts.push('mElCleared:' + (globalThis._zwMElFocused == null));\
+             parts.join('|')",
+        )
+        .unwrap()
+        .value;
+    assert_eq!(
+        out,
+        "shadowInput:y|activeIsShadow:true|related:host|activeIsLight:true|mElCleared:true",
+        "R148 焦点所有权互斥 + relatedTarget shadow retargeting（host 泄露边界）"
+    );
+}

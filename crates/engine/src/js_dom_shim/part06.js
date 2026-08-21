@@ -2552,7 +2552,10 @@
     get documentURI() { return globalThis.location ? globalThis.location.href : ''; },
     get referrer() { return ''; },
     // document.activeElement——当前焦点元素（focus()/blur() 操作 _activeElKey）；无焦点回落 body（spec）。
+    // R148：解析节点焦点（_zwMElFocused——R114 focus() 设置）优先于 proxy 态（所有权互斥，
+    // _zwMEl focus 已清 _activeElKey，双态并存时解析节点为准是防御性回落）。
     get activeElement() {
+      if (globalThis._zwMElFocused) return globalThis._zwMElFocused;
       if (_activeElKey && _proxyCache[_activeElKey]) return _proxyCache[_activeElKey];
       return globalThis.document.body;
     },

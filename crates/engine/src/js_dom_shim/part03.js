@@ -3969,8 +3969,22 @@
     // 简化为「最近 focus 的解析节点」；spec activeElement 需布局可聚焦性，headless 近似）。
     // https://html.spec.whatwg.org/#dom-focus
     node.focus = function () {
+      // R148（js-dom M4）：焦点所有权统一——解析节点获焦时取代 proxy 焦点态
+      //（`_activeElKey` 清空 + 旧 proxy 派 focusout/blur，spec 焦点迁移序），使后续
+      // proxy `.focus()` 能识别焦点变化（旧实现只设 `_zwMElFocused`，proxy 视角
+      // 焦点未变 → focus no-op，WPT shadow-relatedTarget 第二 subtest pending 悬死）。
+      var _r148OldKey = (typeof _activeElKey !== 'undefined') ? _activeElKey : null;
+      var _r148OldProxy = (_r148OldKey && _proxyCache[_r148OldKey]) ? _proxyCache[_r148OldKey] : null;
+      if (_r148OldKey) _activeElKey = null;
+      if (globalThis._zwMElFocused === node) return; // 已聚焦 → no-op（spec 不重派）
       globalThis._zwMElFocused = node;
+      if (_r148OldProxy) {
+        try { _r148OldProxy.dispatchEvent(_makeEvent('focusout', { bubbles: true, cancelable: false })); } catch (_e148o) {}
+      }
       try { node.dispatchEvent(_makeEvent('focus', { bubbles: false, cancelable: false })); } catch (_e114f) {}
+      if (_r148OldProxy) {
+        try { _r148OldProxy.dispatchEvent(_makeEvent('blur', { bubbles: false, cancelable: false })); } catch (_e148b) {}
+      }
     };
     node.blur = function () {
       if (globalThis._zwMElFocused === node) globalThis._zwMElFocused = null;

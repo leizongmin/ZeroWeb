@@ -2076,17 +2076,47 @@
           return function() {
             var oldKey = _activeElKey;
             if (oldKey === key) return; // 已聚焦 → no-op（spec：不重派 focus）
+            // R148（js-dom M4）：旧焦点为解析节点（_zwMElFocused——shadow innerHTML 解析
+            // 子等无 sel/handle 形态）时的焦点迁移——relatedTarget 计算 + retargeting：
+            // 旧焦点在 shadow 树内（__zwFragHostHandle 命中 _shadowHandleMeta）→ 泄露
+            // 边界外以 **shadow host** 为 relatedTarget（spec UI Events Focus
+            // relatedTarget + shadow DOM retargeting；WPT shadow-relatedTarget 两
+            // subtest：light DOM listener 读 e.relatedTarget === host）。非 shadow 的
+            // 解析节点原样（如 detached doc 元素）。
+            var r148OldMEl = globalThis._zwMElFocused || null;
             var oldProxy = (oldKey && _proxyCache[oldKey]) ? _proxyCache[oldKey] : null;
+            var r148Related = null;
+            if (r148OldMEl) {
+              globalThis._zwMElFocused = null; // proxy 接管焦点（所有权互斥）
+              var r148HostH = r148OldMEl.__zwFragHostHandle;
+              var r148Meta = (r148HostH != null && typeof _shadowHandleMeta !== 'undefined')
+                ? _shadowHandleMeta[r148HostH] : null;
+              if (r148Meta) {
+                r148Related = _makeProxy(r148Meta.hostSel, r148Meta.hostHandle);
+              } else {
+                r148Related = r148OldMEl;
+              }
+            }
             _activeElKey = key; // 先更状态防 handler 重入（focus handler 再 focus 其它元素时序自洽）
             if (oldProxy) {
               try { oldProxy.dispatchEvent(_makeEvent('focusout', { bubbles: true, cancelable: false })); } catch (_e) {}
+            } else if (r148OldMEl) {
+              try { r148OldMEl.dispatchEvent(_makeEvent('focusout', { bubbles: true, cancelable: false })); } catch (_e148m) {}
             }
             try {
-              _dispatchWithBubble(key, sel, handle, _makeEvent('focus', { bubbles: false, cancelable: false }));
-              _dispatchWithBubble(key, sel, handle, _makeEvent('focusin', { bubbles: true, cancelable: false }));
+              // R148：focus/focusin 携带 relatedTarget（FocusEvent 语义——retargeting 后
+              // 的旧焦点；非解析节点旧焦点时无 host 语义面，保持原事件形态）。
+              var r148FE = _makeEvent('focus', { bubbles: false, cancelable: false });
+              if (r148Related) { try { r148FE.relatedTarget = r148Related; } catch (_e148r) {} }
+              _dispatchWithBubble(key, sel, handle, r148FE);
+              var r148FI = _makeEvent('focusin', { bubbles: true, cancelable: false });
+              if (r148Related) { try { r148FI.relatedTarget = r148Related; } catch (_e148r2) {} }
+              _dispatchWithBubble(key, sel, handle, r148FI);
             } catch (_e) {}
             if (oldProxy) {
               try { oldProxy.dispatchEvent(_makeEvent('blur', { bubbles: false, cancelable: false })); } catch (_e) {}
+            } else if (r148OldMEl) {
+              try { r148OldMEl.dispatchEvent(_makeEvent('blur', { bubbles: false, cancelable: false })); } catch (_e148m2) {}
             }
             // R3254-M7'：通知宿主同步 retained 焦点状态（键盘路由 + 滚动守卫）。空串 → host 不采纳
             //（selector 缺失的 focus 无稳定目标）；宿主侧另有 is_focusable_selector 校验兜底。
