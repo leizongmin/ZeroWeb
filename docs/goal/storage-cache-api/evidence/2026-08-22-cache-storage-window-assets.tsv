@@ -1,0 +1,9 @@
+path	manifest_type	roles	referenced_by	bytes	templated	git_blob_sha
+resources/testharness.js	support	page-script	4	198291	no	c7ce4f51e1db075809f861255417c27478b2c179
+resources/testharnessreport.js	support	page-script	4	1231	no	405a2d8b06f00fe8292e0e9d5b917e193cfd416c
+service-workers/cache-storage/resources/test-helpers.js	support	page-script	4	9266	no	050ac0b542455ceb53ed36038af5b9b0810977cf
+service-workers/cache-storage/resources/simple.txt	support	fetch-body	2	19	no	9e3cb91fb9b95d6e51de85b82e6f86e92f59ac6d
+service-workers/cache-storage/cache-storage.https.any.js	testharness	case	1	8265	no	b7d5af7b532036351ab842de451002ca36f7b4af
+service-workers/cache-storage/cache-storage-keys.https.any.js	testharness	case	1	1156	no	f19522be1b437d619b356b5b0290679a8f391866
+service-workers/cache-storage/cache-delete.https.any.js	testharness	case	1	5978	no	3eae2b6a08b7954a6a5e644b8248f6ebab562a83
+service-workers/cache-storage/cache-keys.https.any.js	testharness	case	1	7568	no	232fb760d4080a02051ba5cf5e8d2964771fda9a

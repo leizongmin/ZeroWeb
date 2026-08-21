@@ -697,6 +697,39 @@
   function _zwAddHeader(wire, name, value) {
     return (wire ? wire + '\x1e' : '') + String(name) + '\x1e' + String(value);
   }
+  function _zwCurrentHref() {
+    if (globalThis.location && globalThis.location.href) return String(globalThis.location.href);
+    if (typeof __zw_get_page_url === 'function') {
+      try { return String(__zw_get_page_url() || 'about:blank'); } catch (_e) {}
+    }
+    return 'about:blank';
+  }
+  function _zwResolveFetchUrl(inputUrl) {
+    var url = String(inputUrl == null ? '' : inputUrl);
+    if (/^[A-Za-z][A-Za-z0-9+.-]*:/.test(url)) return url;
+    var base = _zwCurrentHref();
+    if (typeof URL === 'function') {
+      try { return new URL(url, base).href; } catch (_eUrl) {}
+    }
+    var m = String(base).match(/^([A-Za-z][A-Za-z0-9+.-]*:\/\/[^\/?#]*)([^?#]*)(\?[^#]*)?(#.*)?$/);
+    if (!m) return url;
+    var origin = m[1];
+    var path = m[2] || '/';
+    if (url.charAt(0) === '#') return origin + path + (m[3] || '') + url;
+    if (url.charAt(0) === '?') return origin + path + url;
+    var combined = url.charAt(0) === '/'
+      ? url
+      : path.replace(/\/[^\/]*$/, '/') + url;
+    var parts = combined.split('/');
+    var out = [];
+    for (var i = 0; i < parts.length; i++) {
+      var part = parts[i];
+      if (!part || part === '.') continue;
+      if (part === '..') out.pop();
+      else out.push(part);
+    }
+    return origin + '/' + out.join('/');
+  }
 
   // R2923 fetch 完整化：`fetch(input, init)` 透传 method/headers/body → host 返 status/headers/body。
   // input = URL 字符串或 Request-like（.url/.method/.headers/.body）；init = { method, headers, body }。
@@ -726,7 +759,7 @@
     globalThis.fetch = function(input, init) {
       init = init || {};
       var isObj = input && typeof input === 'object';
-      var url = isObj ? String(input.url || '') : String(input);
+      var url = _zwResolveFetchUrl(isObj ? String(input.url || '') : String(input));
       var method = String(init.method || (isObj ? input.method : '') || 'GET').toUpperCase();
       var headersWire = _headersToWire(init.headers) || (isObj ? _headersToWire(input.headers) : '');
       var body = '';
@@ -881,6 +914,12 @@
       return new Response(bodyArg, { status: self.status, statusText: self.statusText, headers: self.headers });
     };
   };
+  globalThis.Response.error = function() {
+    var r = new Response(null, { status: 0, statusText: '' });
+    r.ok = false;
+    r.type = 'error';
+    return r;
+  };
   // R2968 Request：`new Request(url|request, init)`。fetch(input) 既接受 string 也接受 Request-like
   //（读 .url/.method/.headers/.body），故 Request 字段对齐 fetch 消费路径（body 为 string|null，非 stream；
   // R2977 headers 为 Headers 实例，同 Response）。clone() 复制自身。R2982 补 body 消费表面
@@ -889,7 +928,8 @@
     if (!(this instanceof Request)) return new Request(input, init);
     init = init || {};
     var isObj = input && typeof input === 'object';
-    this.url = isObj ? String(input.url || '') : String(input);
+    var requestUrl = _zwResolveFetchUrl(isObj ? String(input.url || '') : String(input));
+    this.url = requestUrl;
     this.method = String(init.method || (isObj ? input.method : '') || 'GET').toUpperCase();
     // R3223：request guard（Fetch §6.3 step 31-32）——guard 先于 fill 设，append 过滤禁止请求头
     //（Host/Content-Length/Cookie/Sec-*/Proxy-* 等不在 request.headers 暴露；闭合 R3222 已知限①）。

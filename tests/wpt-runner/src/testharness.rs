@@ -611,6 +611,30 @@ pub const INDEXEDDB_CASES: &[(&str, &[&str])] = &[
     ("IndexedDB/open-request-queue.any.js", &["resources/support.js"]),
 ];
 
+/// CacheStorage goal pinned upstream `.any.js` window subset.
+///
+/// Each case has `// META: global=window,worker`; this runner only executes the
+/// window variant for `docs/goal/storage-cache-api.md`. Service Worker variants
+/// remain under the Service Worker goal.
+pub const CACHE_STORAGE_WINDOW_CASES: &[(&str, &[&str])] = &[
+    (
+        "service-workers/cache-storage/cache-storage.https.any.js",
+        &["resources/test-helpers.js"],
+    ),
+    (
+        "service-workers/cache-storage/cache-storage-keys.https.any.js",
+        &["resources/test-helpers.js"],
+    ),
+    (
+        "service-workers/cache-storage/cache-delete.https.any.js",
+        &["resources/test-helpers.js"],
+    ),
+    (
+        "service-workers/cache-storage/cache-keys.https.any.js",
+        &["resources/test-helpers.js"],
+    ),
+];
+
 /// Fixed Service Worker M1 core corpus at the pinned WPT revision.
 pub const SERVICE_WORKER_CORE_CASES: &[&str] = &[
     "service-workers/service-worker/activate-event-after-install-state-change.https.html",
@@ -1048,6 +1072,73 @@ pub fn run_indexeddb_cases(wpt_root: &Path, filter: Option<&str>) -> Vec<(String
         .collect()
 }
 
+/// Run the pinned upstream CacheStorage `.any.js` window subset.
+pub fn run_cache_storage_cases(wpt_root: &Path, filter: Option<&str>) -> Vec<(String, Vec<HarnessSubtestResult>)> {
+    let harness_source = match std::fs::read_to_string(wpt_root.join("resources/testharness.js")) {
+        Ok(source) => source,
+        Err(error) => {
+            return CACHE_STORAGE_WINDOW_CASES
+                .iter()
+                .filter(|(path, _)| filter.is_none_or(|filter| path.contains(filter)))
+                .map(|(path, _)| {
+                    (
+                        (*path).to_string(),
+                        vec![HarnessSubtestResult {
+                            name: "load testharness.js".into(),
+                            status: HarnessStatus::Fail,
+                            message: Some(error.to_string()),
+                        }],
+                    )
+                })
+                .collect();
+        }
+    };
+
+    CACHE_STORAGE_WINDOW_CASES
+        .iter()
+        .filter(|(path, _)| filter.is_none_or(|filter| path.contains(filter)))
+        .map(|(path, support)| {
+            let case_source = match std::fs::read_to_string(wpt_root.join(path)) {
+                Ok(source) => source,
+                Err(error) => {
+                    return (
+                        (*path).to_string(),
+                        vec![HarnessSubtestResult {
+                            name: "load CacheStorage case".into(),
+                            status: HarnessStatus::Fail,
+                            message: Some(error.to_string()),
+                        }],
+                    );
+                }
+            };
+            let case_dir = Path::new(path).parent().unwrap_or_else(|| Path::new(""));
+            let mut support_sources = Vec::with_capacity(support.len());
+            for script in *support {
+                match std::fs::read_to_string(wpt_root.join(case_dir).join(script)) {
+                    Ok(source) => support_sources.push((*script, source)),
+                    Err(error) => {
+                        return (
+                            (*path).to_string(),
+                            vec![HarnessSubtestResult {
+                                name: format!("load CacheStorage support {script}"),
+                                status: HarnessStatus::Fail,
+                                message: Some(error.to_string()),
+                            }],
+                        );
+                    }
+                }
+            }
+            let support_refs = support_sources
+                .iter()
+                .map(|(name, source)| (*name, source.as_str()))
+                .collect::<Vec<_>>();
+            let html = any_js_window_wrapper(path, &support_refs, &case_source);
+            let results = run_testharness_html(wpt_root, path, &html, &harness_source, CASE_TIMEOUT);
+            ((*path).to_string(), results)
+        })
+        .collect()
+}
+
 /// Run the fixed Service Worker M1 core testharness corpus.
 pub fn run_service_worker_cases(wpt_root: &Path, filter: Option<&str>) -> Vec<(String, Vec<HarnessSubtestResult>)> {
     let selected: Vec<_> = SERVICE_WORKER_CORE_CASES
@@ -1091,6 +1182,10 @@ pub fn run_service_worker_cases(wpt_root: &Path, filter: Option<&str>) -> Vec<(S
 }
 
 fn indexeddb_window_wrapper(path: &str, support: &[(&str, &str)], case_source: &str) -> String {
+    any_js_window_wrapper(path, support, case_source)
+}
+
+fn any_js_window_wrapper(path: &str, support: &[(&str, &str)], case_source: &str) -> String {
     let mut source = String::new();
     for (name, script) in support {
         source.push_str(&format!("// source: {name}\n{script}\n"));
@@ -1972,7 +2067,7 @@ fn run_testharness_html_inner(
             .ok()
             .and_then(|v| v.trim().parse::<usize>().ok())
             .unwrap_or(0);
-        let status = if declared == 0 {
+        let status = if !has_harness_ref && declared == 0 {
             HarnessStatus::Pass
         } else {
             HarnessStatus::Fail
@@ -2857,6 +2952,30 @@ async_test(function(test) {
                 .iter()
                 .all(|path| path.starts_with("service-workers/service-worker/") && path.ends_with(".html"))
         );
+    }
+
+    #[test]
+    fn cache_storage_window_manifest_has_four_unique_any_cases() {
+        let unique = CACHE_STORAGE_WINDOW_CASES
+            .iter()
+            .map(|(path, _)| *path)
+            .collect::<std::collections::BTreeSet<_>>();
+        assert_eq!(CACHE_STORAGE_WINDOW_CASES.len(), 4);
+        assert_eq!(unique.len(), 4);
+        assert!(CACHE_STORAGE_WINDOW_CASES.iter().all(|(path, support)| {
+            path.starts_with("service-workers/cache-storage/")
+                && path.ends_with(".https.any.js")
+                && *support == ["resources/test-helpers.js"]
+        }));
+    }
+
+    #[test]
+    fn cache_storage_runner_reports_every_case_when_harness_is_missing() {
+        let cases = run_cache_storage_cases(Path::new("/nonexistent-cache-storage-wpt-root"), None);
+        assert_eq!(cases.len(), CACHE_STORAGE_WINDOW_CASES.len());
+        assert!(cases.iter().all(|(_, results)| {
+            results.len() == 1 && results[0].status == HarnessStatus::Fail && results[0].name == "load testharness.js"
+        }));
     }
 
     #[test]

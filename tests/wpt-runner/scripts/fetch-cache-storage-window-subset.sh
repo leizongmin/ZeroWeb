@@ -1,0 +1,129 @@
+#!/usr/bin/env bash
+# Restore the pinned CacheStorage window testharness subset.
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd "${SCRIPT_DIR}/../../.." && pwd)"
+WPT_REV="04067ce9c7c2165e71ad7d0dde10a4c5cb394a83"
+ASSET_MANIFEST="${WPT_ASSET_MANIFEST:-${REPO_ROOT}/docs/goal/storage-cache-api/evidence/2026-08-22-cache-storage-window-assets.tsv}"
+DATA_ROOT="${WPT_CACHE_STORAGE_DATA:-${REPO_ROOT}/tests/wpt-runner/wpt-data/.cache-storage-window-root}"
+REMOTE_ROOT="${WPT_REMOTE_ROOT:-https://raw.githubusercontent.com/web-platform-tests/wpt/${WPT_REV}}"
+FALLBACK_ROOT="${WPT_FALLBACK_ROOT:-https://cdn.jsdelivr.net/gh/web-platform-tests/wpt@${WPT_REV}}"
+CORPUS_LABEL="${WPT_CORPUS_LABEL:-CacheStorage window}"
+EXPECTED_ASSET_COUNT="${WPT_EXPECTED_ASSET_COUNT:-8}"
+MODE="restore"
+
+if [[ "${1:-}" == "--verify-only" ]]; then
+  MODE="verify"
+  shift
+fi
+if [[ "$#" -ne 0 ]]; then
+  echo "Usage: $0 [--verify-only]" >&2
+  exit 2
+fi
+if [[ ! "${EXPECTED_ASSET_COUNT}" =~ ^[1-9][0-9]*$ ]]; then
+  echo "Invalid expected CacheStorage WPT asset count: ${EXPECTED_ASSET_COUNT}" >&2
+  exit 2
+fi
+
+blob_sha() {
+  git hash-object -- "$1"
+}
+
+validate_entry() {
+  local relative="$1"
+  local expected_bytes="$2"
+  local expected_sha="$3"
+
+  case "${relative}" in
+    "" | /* | ../* | */../* | */..) return 1 ;;
+  esac
+  [[ "${expected_bytes}" =~ ^[0-9]+$ ]]
+  [[ "${expected_sha}" =~ ^[0-9a-f]{40}$ ]]
+}
+
+matches_manifest() {
+  local file="$1"
+  local expected_bytes="$2"
+  local expected_sha="$3"
+
+  [[ -f "${file}" ]] || return 1
+  [[ "$(wc -c < "${file}")" -eq "${expected_bytes}" ]] || return 1
+  [[ "$(blob_sha "${file}")" == "${expected_sha}" ]]
+}
+
+fetch_remote() {
+  local root="$1"
+  local relative="$2"
+  local output="$3"
+
+  curl --fail --location --silent --show-error --retry 2 --retry-all-errors \
+    --continue-at - \
+    --connect-timeout 10 --max-time 30 \
+    "${root}/${relative}" -o "${output}"
+}
+
+restore_asset() {
+  local relative="$1"
+  local expected_bytes="$2"
+  local expected_sha="$3"
+  local target="${DATA_ROOT}/${relative}"
+  local temporary="${target}.tmp"
+
+  if matches_manifest "${target}" "${expected_bytes}" "${expected_sha}"; then
+    return 0
+  fi
+
+  mkdir -p "$(dirname "${target}")"
+  if [[ -n "${WPT_SOURCE:-}" ]]; then
+    cp "${WPT_SOURCE}/${relative}" "${temporary}"
+  else
+    if ! fetch_remote "${REMOTE_ROOT}" "${relative}" "${temporary}"; then
+      if [[ -z "${FALLBACK_ROOT}" || "${FALLBACK_ROOT}" == "${REMOTE_ROOT}" ]] ||
+        ! fetch_remote "${FALLBACK_ROOT}" "${relative}" "${temporary}"; then
+        echo "${CORPUS_LABEL} download incomplete; resumable file kept: ${relative}" >&2
+        return 1
+      fi
+    fi
+  fi
+
+  if ! matches_manifest "${temporary}" "${expected_bytes}" "${expected_sha}"; then
+    echo "${CORPUS_LABEL} asset failed manifest verification: ${relative}" >&2
+    rm -f "${temporary}"
+    return 1
+  fi
+  mv "${temporary}" "${target}"
+}
+
+[[ -f "${ASSET_MANIFEST}" ]] || {
+  echo "${CORPUS_LABEL} asset manifest not found: ${ASSET_MANIFEST}" >&2
+  exit 1
+}
+
+count=0
+while IFS=$'\t' read -r relative _manifest_type _roles _referenced_by expected_bytes _templated expected_sha; do
+  if [[ "${relative}" == "path" ]]; then
+    continue
+  fi
+  if ! validate_entry "${relative}" "${expected_bytes}" "${expected_sha}"; then
+    echo "Invalid ${CORPUS_LABEL} manifest entry: ${relative}" >&2
+    exit 1
+  fi
+  if [[ "${MODE}" == "verify" ]]; then
+    if ! matches_manifest "${DATA_ROOT}/${relative}" "${expected_bytes}" "${expected_sha}"; then
+      echo "${CORPUS_LABEL} asset does not match manifest: ${relative}" >&2
+      exit 1
+    fi
+  else
+    restore_asset "${relative}" "${expected_bytes}" "${expected_sha}"
+  fi
+  count=$((count + 1))
+done < "${ASSET_MANIFEST}"
+
+if [[ "${count}" -ne "${EXPECTED_ASSET_COUNT}" ]]; then
+  echo "${CORPUS_LABEL} asset count mismatch: expected ${EXPECTED_ASSET_COUNT}, found ${count}" >&2
+  exit 1
+fi
+
+echo "${CORPUS_LABEL} corpus ${MODE} complete (${count} assets, WPT ${WPT_REV})"

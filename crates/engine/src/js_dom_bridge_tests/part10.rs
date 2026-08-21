@@ -1013,7 +1013,7 @@ fn test_response_request_constructors_r2968() {
     sandbox.execute(generate_js_dom_shim()).unwrap();
     let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
     let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new("<html><body></body></html>".to_string()));
-    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("http://test.local/".to_string()));
     let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
         std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
     register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
@@ -1054,6 +1054,17 @@ fn test_response_request_constructors_r2968() {
     assert_eq!(sandbox.execute("String(globalThis.__text)").unwrap().value, "{\"a\":1}", "text() 返 body");
     assert_eq!(sandbox.execute("String(globalThis.__json)").unwrap().value, "1", "json() 解析 body");
     assert_eq!(sandbox.execute("String(globalThis.__cloneOk)").unwrap().value, "true", "clone() 返 Response + 保留 status");
+    sandbox
+        .execute(
+            "var er = Response.error();\
+             globalThis.__errType = er.type;\
+             globalThis.__errStatus = er.status;\
+             globalThis.__errOk = er.ok;",
+        )
+        .unwrap();
+    assert_eq!(sandbox.execute("String(globalThis.__errType)").unwrap().value, "error", "Response.error().type");
+    assert_eq!(sandbox.execute("String(globalThis.__errStatus)").unwrap().value, "0", "Response.error().status");
+    assert_eq!(sandbox.execute("String(globalThis.__errOk)").unwrap().value, "false", "Response.error().ok");
 
     // 默认 new Response() → status 200 ok=true，statusText=''。
     sandbox.execute("var d = new Response('x'); globalThis.__dStatus = d.status; globalThis.__dOk = d.ok; globalThis.__dST = d.statusText;").unwrap();
@@ -1079,6 +1090,14 @@ fn test_response_request_constructors_r2968() {
     assert_eq!(sandbox.execute("String(globalThis.__qBody)").unwrap().value, "hello", "Request.body");
     assert_eq!(sandbox.execute("String(globalThis.__qCloneUrl)").unwrap().value, "http://test.local/api", "Request.clone().url");
     assert_eq!(sandbox.execute("String(globalThis.__qCloneMethod)").unwrap().value, "POST", "Request.clone().method");
+    sandbox
+        .execute("globalThis.__relUrl = new Request('./assets/data.txt').url;")
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__relUrl)").unwrap().value,
+        "http://test.local/assets/data.txt",
+        "Request 构造器按当前 location.href 解析相对 URL"
+    );
 
     // fetch 结果 instanceof Response + fetch(new Request(...)) 消费：mock __zw_fetch 捕获 method/url。
     let captured: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(vec![]));

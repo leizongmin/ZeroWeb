@@ -26,10 +26,11 @@
 > - **Rust 层**：`crates/storage/src/cache_api.rs`（976 行 / 67 函数）——CacheStorage
 >   （open/has/delete/keys）、Cache（match/matchAll/add/addAll/put/delete/keys）、
 >   CacheQueryOptions（ignoreSearch/ignoreMethod/ignoreVary）已实现并有单测。
-> - **JS 页面层**：`js_dom_shim` part01-06.js **无任何 `caches`/`CacheStorage` 定义**——
->   页面 `caches.open()` 抛 ReferenceError，PWA 缓存脚本全挂。
+> - **JS 页面层**：`js_dom_shim` 已暴露 `CacheStorage` / `Cache` / `caches` 页面 API，
+>   WebView/in-process 页面可走 host callback 进入 zero-storage。
 > - **持久化**：cache_api.rs 为内存结构，无落盘路径。
-> - **WPT 面**：`tests/wpt-runner/wpt-data/` 无 cache-storage 目录，无基线。
+> - **WPT 面**：已接入首批上游 `cache-storage` window 面基线（4 case / 35 subtest，
+>   15 Pass / 20 Fail），剩余语义修复以该基线为回归锚点。
 
 ---
 
@@ -40,7 +41,7 @@ zero-storage 真实实现并补持久化，对齐 Chromium 水平。分阶段里
 
 | 阶段 | 目标 | 说明 |
 |---|---|---|
-| 第一阶段 | **基线建立** | 导入 `cache-storage` 范围内用例 + 通过率基线（当前无基线） |
+| 第一阶段 | **基线建立** | 导入 `cache-storage` 范围内用例 + 通过率基线（首批 window 面已完成） |
 | 中期 | **核心通路 60%+** | caches.open/has/delete/keys + Cache.put/match/matchAll/delete/keys 走 Rust |
 | 长期 | **80%+** | add/addAll（Request 构造 + fetch 集成）、CacheQueryOptions 全语义、Vary 头、持久化 |
 
@@ -105,11 +106,11 @@ form-validation——不允许手写 inline 用例替代或充数）。通过率
 
 - ✅ **Rust 层全 API 面**：cache_api.rs（976 行）——CacheStorage/Cache/CacheQueryOptions
   已实现并有单测
-- ⚠️ **缺口 1 — 页面零接线**：shim 无 `caches` 全局，页面 ReferenceError
+- ✅ **缺口 1 — 页面接线**：shim 已有 `caches` 全局与 Cache API 初始 host bridge
 - ⚠️ **缺口 2 — 无持久化**：cache_api 为内存结构，重启即失
-- ⚠️ **缺口 3 — WPT 覆盖为零**：上游 `cache-storage` 未导入，无基线
-- ⚠️ **缺口 4 — Request/Response 集成缺失**：add/addAll 的 fetch 链路、Response 可缓存性
-  判定未实现
+- ✅ **缺口 3 — WPT 基线**：上游 `cache-storage` 首批 window 面已导入并记录基线；扩大覆盖与提升通过率继续推进
+- 🚧 **缺口 4 — Request/Response 集成**：add/addAll 的 fetch→put 链路已接通，Response
+  可缓存性完整判定与返回对象 brand 仍待补齐
 
 ---
 
@@ -119,11 +120,11 @@ form-validation——不允许手写 inline 用例替代或充数）。通过率
 
 ### DC-1: WPT cache-storage 用例导入与通过率基线
 
-- [ ] 从上游 WPT 仓库 `cache-storage` 目录导入范围内真实用例（window 环境可执行面；
+- [x] 从上游 WPT 仓库 `cache-storage` 目录导入范围内真实用例（window 环境可执行面；
       SW 环境子目录入 skip list 并注明归 service-workers 目标）
-- [ ] 建立分类通过率报告（文本 + JSON），记录基线
+- [x] 建立分类通过率报告（文本 + JSON），记录基线
 - [ ] 每项修复的 driving WPT 用例经 `make import-wpt` 常驻断言集并记入 `imported-tests.txt`
-- [ ] 通过率报告持久化到 `docs/goal/storage-cache-api/evidence/`，历史可追溯
+- [x] 通过率报告持久化到 `docs/goal/storage-cache-api/evidence/`，历史可追溯
 
 ### DC-2: 页面走真实引擎
 

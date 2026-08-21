@@ -39,6 +39,7 @@ Commands:
   testharness-canvas  Run imported html/canvas testharness cases (Canvas 2D goal M1)
   testharness-dom  Run imported dom/ testharness cases (js-dom goal M4 / DC-3)
   testharness-indexeddb  Run imported IndexedDB testharness cases (storage-indexeddb goal M1)
+  testharness-cache-storage  Run pinned CacheStorage window testharness cases
   testharness-service-workers  Run pinned Service Worker M1 core testharness cases
   layout-dump [filter]  B1: dump layout tree for upstream test pages (golden compare,
                        see scripts/run-layout-golden.sh)
@@ -227,6 +228,7 @@ fn main() {
         "testharness-canvas-worker" => cmd_testharness_canvas_worker(&options, filter.as_deref()),
         "testharness-dom" => cmd_testharness_dom(&options, filter.as_deref()),
         "testharness-indexeddb" => cmd_testharness_indexeddb(&options, filter.as_deref()),
+        "testharness-cache-storage" => cmd_testharness_cache_storage(&options, filter.as_deref()),
         "testharness-service-workers" => cmd_testharness_service_workers(&options, filter.as_deref()),
         "layout-dump" => cmd_layout_dump(&options, filter.as_deref()),
         "reftest-oracle" => cmd_reftest_oracle(&options, filter.as_deref()),
@@ -534,6 +536,42 @@ fn cmd_testharness_indexeddb(options: &CliOptions, filter: Option<&str>) {
         .map(std::path::PathBuf::from)
         .unwrap_or_else(|| std::path::PathBuf::from("tests/wpt-runner/wpt-data"));
     let cases = testharness::run_indexeddb_cases(&wpt_root, filter);
+    let failed = cases.iter().any(|(_, results)| {
+        results
+            .iter()
+            .any(|result| result.status != testharness::HarnessStatus::Pass)
+    });
+
+    match options.format {
+        OutputFormat::Json => {
+            println!(
+                "{}",
+                serde_json::to_string_pretty(&cases).unwrap_or_else(|_| "[]".into())
+            );
+        }
+        OutputFormat::Text | OutputFormat::Tap => {
+            for (case, results) in &cases {
+                for result in results {
+                    println!("{:?} {case} :: {}", result.status, result.name);
+                    if let Some(message) = &result.message {
+                        println!("  {message}");
+                    }
+                }
+            }
+        }
+    }
+    if failed || cases.is_empty() {
+        std::process::exit(1);
+    }
+}
+
+fn cmd_testharness_cache_storage(options: &CliOptions, filter: Option<&str>) {
+    let wpt_root = options
+        .wpt_data
+        .as_deref()
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(|| std::path::PathBuf::from("tests/wpt-runner/wpt-data/.cache-storage-window-root"));
+    let cases = testharness::run_cache_storage_cases(&wpt_root, filter);
     let failed = cases.iter().any(|(_, results)| {
         results
             .iter()
