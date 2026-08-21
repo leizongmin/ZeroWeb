@@ -2,8 +2,8 @@
   "cases": 4,
   "subtests": 35,
   "status": {
-    "Fail": 20,
-    "Pass": 15
+    "Fail": 6,
+    "Pass": 29
   },
   "deterministic": true,
   "results": [
@@ -27,8 +27,8 @@
         },
         {
           "name": "CacheStorage.open with no arguments",
-          "status": "Fail",
-          "message": "assert_unreached: Should have rejected: CacheStorage.open should throw TypeError if called with no arguments. Reached unreachable code"
+          "status": "Pass",
+          "message": null
         },
         {
           "name": "CacheStorage.has with existing cache",
@@ -77,8 +77,8 @@
       [
         {
           "name": "Cache.delete with no arguments",
-          "status": "Fail",
-          "message": "assert_unreached: Should have rejected: Cache.delete should reject with a TypeError when called with no arguments. Reached unreachable code"
+          "status": "Pass",
+          "message": null
         },
         {
           "name": "Cache.delete called with a string URL",
@@ -92,8 +92,8 @@
         },
         {
           "name": "Cache.delete called with a HEAD request",
-          "status": "Fail",
-          "message": "assert_class_string: Cache.delete should leave non-matching response in the cache. expected \"[object Response]\" but got \"[object Object]\""
+          "status": "Pass",
+          "message": null
         },
         {
           "name": "Cache.delete supports ignoreVary",
@@ -107,13 +107,13 @@
         },
         {
           "name": "Cache.delete with ignoreSearch option (request with search parameters)",
-          "status": "Fail",
-          "message": "assert_class_string: undefined : object[0] expected \"[object Response]\" but got \"[object Object]\""
+          "status": "Pass",
+          "message": null
         },
         {
           "name": "Cache.delete with ignoreSearch option (when it is specified as false)",
-          "status": "Fail",
-          "message": "assert_class_string: undefined : object[0] expected \"[object Response]\" but got \"[object Object]\""
+          "status": "Pass",
+          "message": null
         }
       ]
     ],
@@ -132,33 +132,33 @@
         },
         {
           "name": "Cache.keys with URL",
-          "status": "Fail",
-          "message": "assert_class_string: Cache.keys should match by URL. : object[0] expected \"[object Request]\" but got \"[object Object]\""
+          "status": "Pass",
+          "message": null
         },
         {
           "name": "Cache.keys with Request",
-          "status": "Fail",
-          "message": "assert_class_string: Cache.keys should match by Request. : object[0] expected \"[object Request]\" but got \"[object Object]\""
+          "status": "Pass",
+          "message": null
         },
         {
           "name": "Cache.keys with new Request",
-          "status": "Fail",
-          "message": "assert_class_string: Cache.keys should match by Request. : object[0] expected \"[object Request]\" but got \"[object Object]\""
+          "status": "Pass",
+          "message": null
         },
         {
           "name": "Cache.keys with ignoreSearch option (request with no search parameters)",
-          "status": "Fail",
-          "message": "assert_class_string: Cache.keys with ignoreSearch should ignore the search parameters of cached request. : object[0] expected \"[object Request]\" but got \"[object Object]\""
+          "status": "Pass",
+          "message": null
         },
         {
           "name": "Cache.keys with ignoreSearch option (request with search parameters)",
-          "status": "Fail",
-          "message": "assert_class_string: Cache.keys with ignoreSearch should ignore the search parameters of request. : object[0] expected \"[object Request]\" but got \"[object Object]\""
+          "status": "Pass",
+          "message": null
         },
         {
           "name": "Cache.keys supports ignoreMethod",
-          "status": "Fail",
-          "message": "assert_class_string: Cache.keys with ignoreMethod should ignore the method of request. : object[0] expected \"[object Request]\" but got \"[object Object]\""
+          "status": "Pass",
+          "message": null
         },
         {
           "name": "Cache.keys supports ignoreVary",
@@ -167,8 +167,8 @@
         },
         {
           "name": "Cache.keys with URL containing fragment",
-          "status": "Fail",
-          "message": "assert_class_string: Cache.keys should ignore URL fragment. : object[0] expected \"[object Request]\" but got \"[object Object]\""
+          "status": "Pass",
+          "message": null
         },
         {
           "name": "Cache.keys with string fragment \"http\" as query",
@@ -177,13 +177,13 @@
         },
         {
           "name": "Cache.keys without parameters",
-          "status": "Fail",
-          "message": "assert_class_string: Cache.keys without parameters should match all entries. : object[0] expected \"[object Request]\" but got \"[object Object]\""
+          "status": "Pass",
+          "message": null
         },
         {
           "name": "Cache.keys with explicitly undefined request",
-          "status": "Fail",
-          "message": "assert_class_string: Cache.keys with undefined request should match all entries. : object[0] expected \"[object Request]\" but got \"[object Object]\""
+          "status": "Pass",
+          "message": null
         },
         {
           "name": "Cache.keys with explicitly undefined request and empty options",

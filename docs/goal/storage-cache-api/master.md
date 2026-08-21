@@ -2,7 +2,7 @@
 
 **入口文档**: [../storage-cache-api.md](../storage-cache-api.md)
 **创建日期**: 2026-08-17（goal 拆分 bootstrap）
-**最后更新**: 2026-08-22（M1 CacheStorage window WPT 基线接入）
+**最后更新**: 2026-08-22（M2 Cache API WebIDL brand + required arguments）
 
 ---
 
@@ -16,9 +16,10 @@ callback 进入共享 `StorageManager`，origin 由宿主页面 URL 推导；`Ca
 `Cache.addAll()` 已复用页面 `fetch()` 与 `Cache.put()` 完成 GET 成功响应的 fetch→store
 链路。`ignoreSearch`/`ignoreMethod` 查询选项已在页面 Cache API 与 Service Worker runtime
 Cache API 中接入；`ignoreVary` 当前只保留 wire 字段，等待请求头快照/Vary 匹配语义落地。
-2026-08-22 已接入首批 4 个上游 CacheStorage `.any.js` window 面 WPT 基线，双跑稳定为
-35 subtest / 15 Pass / 20 Fail；剩余失败集中在返回对象 brand、Vary、参数 TypeError、key
-顺序等语义缺口。持久化和完整 Response 可缓存性矩阵仍待后续切片。
+2026-08-22 已接入首批 4 个上游 CacheStorage `.any.js` window 面 WPT 基线，WebIDL
+brand 与缺参 TypeError 修复后双跑稳定为 35 subtest / 29 Pass / 6 Fail；剩余失败集中在
+Vary、cache name 生命周期/顺序和 DOMString 转义等语义缺口。持久化和完整 Response 可缓存性
+矩阵仍待后续切片。
 
 **与兄弟 goal 的边界**：
 - [storage-indexeddb](../archive/storage-indexeddb.md)（已归档）— IDB 归其管
@@ -35,8 +36,9 @@ Cache API 中接入；`ignoreVary` 当前只保留 wire 字段，等待请求头
 - ✅ JS 页面层初始表面：`part07.js` 暴露 `CacheStorage`/`Cache`/`caches`，WebView 页面可
   `open` 后 `put/match/matchAll/delete/keys`，并可 `has/keys/match`
 - ⚠️ 无持久化：内存结构
-- ✅ WPT `cache-storage` window 首批已导入：4 case / 35 subtest，15 Pass / 20 Fail
-- 🚧 add/addAll 的页面 fetch 链路已完成；Response 可缓存性完整判定未实现
+- ✅ WPT `cache-storage` window 首批已导入：4 case / 35 subtest，29 Pass / 6 Fail
+- 🚧 add/addAll 的页面 fetch 链路、Cache API 返回对象 brand、缺参 TypeError 已完成；
+  Response 可缓存性完整判定未实现
 
 ## 缺口清单
 
@@ -45,15 +47,14 @@ Cache API 中接入；`ignoreVary` 当前只保留 wire 字段，等待请求头
 | C1 | WPT cache-storage 用例覆盖为零 | ✅ M1 window 首批基线已接入 |
 | C2 | 页面 `caches` 全局缺失（零接线） | ✅ M1 初始桥接完成；全 API 语义继续归 C4 |
 | C3 | 无持久化 | ⬜ M3 |
-| C4 | Request/Response 集成（add/addAll/可缓存性） | 🚧 M2 页面 `add/addAll` GET + `Response.ok` 路径完成；Vary 与完整可缓存性矩阵待补 |
+| C4 | Request/Response 集成（add/addAll/可缓存性） | 🚧 M2 页面 `add/addAll` GET + `Response.ok` 路径、返回对象 brand、缺参 TypeError 完成；Vary 与完整可缓存性矩阵待补 |
 | C5 | Cache.matchAll/Cache.keys 页面桥接 | ✅ M2；`ignoreSearch`/`ignoreMethod` 已接线，Vary 仍归 C4 |
 
 ## 下一步计划
 
-1. **M2 切片 2**：补 Cache API 返回对象 brand（`Cache.keys()` → `Request`、
-   `Cache.match()`/`matchAll()` → `Response`）
-2. **M2 切片 3**：补 `ignoreVary`/Vary 匹配语义（需保存请求头快照）
-3. **M2 切片 4**：补 `add/addAll` 的完整 Response 可缓存性判定并对齐 WPT
+1. **M2 切片 3**：补 `ignoreVary`/Vary 匹配语义（需保存请求头快照）
+2. **M2 切片 4**：补 cache name 生命周期/顺序语义
+3. **M2 切片 5**：补 DOMString vs USVString 转换与 `add/addAll` 完整 Response 可缓存性判定
 4. **M3**：per-origin 持久化与跨会话 e2e
 
 **碰撞管理**：开工前先 `git log --since="14 days ago" -- crates/engine/src/js_dom_shim/`
@@ -64,7 +65,7 @@ Cache API 中接入；`ignoreVary` 当前只保留 wire 字段，等待请求头
 | 里程碑 | 状态 |
 |--------|------|
 | M1 — WPT cache-storage 基线 + caches 骨架 | ✅ 页面骨架 + 首批 window WPT 基线已接入 |
-| M2 — Cache 全 API + 查询语义 | 🚧 `Cache.matchAll()` / `Cache.keys()`、`ignoreSearch`/`ignoreMethod`、页面 `add/addAll` GET fetch→store 已接入；Vary 与完整可缓存性待完成 |
+| M2 — Cache 全 API + 查询语义 | 🚧 `Cache.matchAll()` / `Cache.keys()`、`ignoreSearch`/`ignoreMethod`、页面 `add/addAll` GET fetch→store、返回对象 brand、缺参 TypeError 已接入；Vary 与完整可缓存性待完成 |
 | M3 — 持久化 + 剩余语义收尾 | ⬜ |
 
 ## 验证基线
@@ -94,7 +95,11 @@ Cache API 中接入；`ignoreVary` 当前只保留 wire 字段，等待请求头
   - `cargo test -p zero-engine test_response_request_constructors_r2968 -- --nocapture`：1 passed
   - `cargo test -p zero-wpt-runner cache_storage -- --nocapture`：2 passed
   - `bash tests/wpt-runner/scripts/fetch-cache-storage-window-subset.sh --verify-only`：8 assets matched pinned manifest
-  - `./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit 900 -- python3 tests/wpt-runner/scripts/run-cache-storage-window-baseline.py --runner ./target/release/zero-wpt-runner --wpt-data tests/wpt-runner/wpt-data/.cache-storage-window-root --output docs/goal/storage-cache-api/evidence/2026-08-22-cache-storage-window-baseline.json --summary docs/goal/storage-cache-api/evidence/2026-08-22-cache-storage-window-baseline.md`：4 cases / 35 subtests / 15 Pass / 20 Fail，double-run deterministic
+  - `./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit 900 -- python3 tests/wpt-runner/scripts/run-cache-storage-window-baseline.py --runner ./target/release/zero-wpt-runner --wpt-data tests/wpt-runner/wpt-data/.cache-storage-window-root --output docs/goal/storage-cache-api/evidence/2026-08-22-cache-storage-window-baseline.json --summary docs/goal/storage-cache-api/evidence/2026-08-22-cache-storage-window-baseline.md`：4 cases / 35 subtests / 29 Pass / 6 Fail，double-run deterministic
   - 资产 manifest：[CacheStorage window assets](evidence/2026-08-22-cache-storage-window-assets.tsv)
   - 通过率 evidence：[CacheStorage window WPT baseline](evidence/2026-08-22-cache-storage-window-baseline.md)
+- 2026-08-22 M2 Cache API WebIDL brand + required arguments：
+  - `cargo test -p zero-engine test_cache_api_page_shim_host_roundtrip -- --nocapture`：1 passed
+  - `cargo test -p zero-engine test_cache_api_page_shim_required_arguments_reject -- --nocapture`：1 passed
+  - `make baseline-wpt-cache-storage OUTPUT=docs/goal/storage-cache-api/evidence/2026-08-22-cache-storage-window-baseline.json SUMMARY=docs/goal/storage-cache-api/evidence/2026-08-22-cache-storage-window-baseline.md`：4 cases / 35 subtests / 29 Pass / 6 Fail，double-run deterministic
 - 质量门禁：`cargo fmt` + `cargo clippy --workspace --all-targets -- -D warnings` 全过

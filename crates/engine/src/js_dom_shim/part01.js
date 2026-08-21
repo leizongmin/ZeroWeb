@@ -920,6 +920,12 @@
     r.type = 'error';
     return r;
   };
+  if (typeof Symbol === 'function' && Symbol.toStringTag) {
+    Object.defineProperty(globalThis.Response.prototype, Symbol.toStringTag, {
+      value: 'Response',
+      configurable: true
+    });
+  }
   // R2968 Request：`new Request(url|request, init)`。fetch(input) 既接受 string 也接受 Request-like
   //（读 .url/.method/.headers/.body），故 Request 字段对齐 fetch 消费路径（body 为 string|null，非 stream；
   // R2977 headers 为 Headers 实例，同 Response）。clone() 复制自身。R2982 补 body 消费表面
@@ -969,6 +975,12 @@
   globalThis.Request.prototype.clone = function () {
     return new Request(this.url, { method: this.method, headers: this.headers, body: this.body });
   };
+  if (typeof Symbol === 'function' && Symbol.toStringTag) {
+    Object.defineProperty(globalThis.Request.prototype, Symbol.toStringTag, {
+      value: 'Request',
+      configurable: true
+    });
+  }
 
   // P1b S5：setTimeout/setInterval 真实延迟。host（browser/renderer js_worker）注册
   // `__zw_setTimeout(id, delayMs)` 时，回调存 `__zw_pending[id]` + 调本回调；host 子线程

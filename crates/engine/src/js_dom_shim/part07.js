@@ -134,8 +134,10 @@
 
   Cache.prototype.match = function (request, options) {
     var cache = this;
+    var hasRequest = arguments.length >= 1;
     return new Promise(function (resolve, reject) {
       try {
+        if (!hasRequest) throw new TypeError('Cache.match requires a request');
         var result = _zwCacheHostCall({
           op: 'match',
           cache_name: cache._name,
@@ -170,8 +172,10 @@
 
   Cache.prototype.put = function (request, response) {
     var cache = this;
+    var hasArguments = arguments.length >= 2;
     return new Promise(function (resolve, reject) {
       try {
+        if (!hasArguments) throw new TypeError('Cache.put requires a request and response');
         _zwCacheHostCall({
           op: 'put',
           cache_name: cache._name,
@@ -188,6 +192,7 @@
   Cache.prototype.add = function (request) {
     var cache = this;
     try {
+      if (arguments.length < 1) throw new TypeError('Cache.add requires a request');
       var cacheRequest = request instanceof Request ? request : new Request(request);
       if (cacheRequest.method !== 'GET') {
         return Promise.reject(new TypeError('Cache.add only supports GET requests'));
@@ -219,8 +224,10 @@
 
   Cache.prototype.delete = function (request, options) {
     var cache = this;
+    var hasRequest = arguments.length >= 1;
     return new Promise(function (resolve, reject) {
       try {
+        if (!hasRequest) throw new TypeError('Cache.delete requires a request');
         var result = _zwCacheHostCall({
           op: 'delete',
           name: cache._name,
@@ -258,8 +265,10 @@
   }
 
   CacheStorage.prototype.open = function (name) {
+    var hasName = arguments.length >= 1;
     return new Promise(function (resolve, reject) {
       try {
+        if (!hasName) throw new TypeError('CacheStorage.open requires a name');
         var result = _zwCacheHostCall({ op: 'open', name: String(name) });
         resolve(new Cache(result.name));
       } catch (error) {
@@ -269,8 +278,10 @@
   };
 
   CacheStorage.prototype.has = function (name) {
+    var hasName = arguments.length >= 1;
     return new Promise(function (resolve, reject) {
       try {
+        if (!hasName) throw new TypeError('CacheStorage.has requires a name');
         var result = _zwCacheHostCall({ op: 'has', name: String(name) });
         resolve(!!result.has);
       } catch (error) {
@@ -280,8 +291,10 @@
   };
 
   CacheStorage.prototype.delete = function (name) {
+    var hasName = arguments.length >= 1;
     return new Promise(function (resolve, reject) {
       try {
+        if (!hasName) throw new TypeError('CacheStorage.delete requires a name');
         var result = _zwCacheHostCall({ op: 'delete', name: String(name) });
         resolve(!!result.deleted);
       } catch (error) {
@@ -302,8 +315,10 @@
   };
 
   CacheStorage.prototype.match = function (request, options) {
+    var hasRequest = arguments.length >= 1;
     return new Promise(function (resolve, reject) {
       try {
+        if (!hasRequest) throw new TypeError('CacheStorage.match requires a request');
         var hostRequest = {
           op: 'match',
           request: _zwCacheRequestWire(request),

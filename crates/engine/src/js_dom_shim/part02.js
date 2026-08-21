@@ -1239,6 +1239,12 @@
   // 自身可迭代（for (const [k,v] of headers)）：[Symbol.iterator] → entries。
   if (typeof Symbol !== 'undefined') {
     globalThis.Headers.prototype[Symbol.iterator] = globalThis.Headers.prototype.entries;
+    if (Symbol.toStringTag) {
+      Object.defineProperty(globalThis.Headers.prototype, Symbol.toStringTag, {
+        value: 'Headers',
+        configurable: true
+      });
+    }
   }
 
   // Blob——不可变二进制数据容器（文件上传 / 下载 / object URL 高频）。纯 JS：parts 为

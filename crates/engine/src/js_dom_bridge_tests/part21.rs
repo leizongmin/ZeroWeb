@@ -274,10 +274,16 @@ fn test_cache_api_page_shim_host_roundtrip() {
                return response.text().then(function (body) {\
                  globalThis.__cacheDone = [\
                    String(response instanceof Response),\
+                   Object.prototype.toString.call(response),\
+                   Object.prototype.toString.call(response.headers),\
                    String(responses.length),\
                    String(responses[0] instanceof Response),\
+                   Object.prototype.toString.call(responses[0]),\
+                   Object.prototype.toString.call(responses[0].headers),\
                    String(requests.length),\
                    String(requests[0] instanceof Request),\
+                   Object.prototype.toString.call(requests[0]),\
+                   Object.prototype.toString.call(requests[0].headers),\
                    requests[0].method,\
                    String(filteredRequests.length),\
                    String(response.status),\
@@ -296,7 +302,7 @@ fn test_cache_api_page_shim_host_roundtrip() {
     }
     assert_eq!(
         sandbox.execute("globalThis.__cacheDone").unwrap().value,
-        "true|1|true|1|true|GET|0|201|Created|text/plain|cached text",
+        "true|[object Response]|[object Headers]|1|true|[object Response]|[object Headers]|1|true|[object Request]|[object Headers]|GET|0|201|Created|text/plain|cached text",
         "Cache API page shim should round-trip Response through host bridge"
     );
 }
@@ -391,6 +397,64 @@ fn test_cache_api_page_shim_query_options_wire() {
             && request.contains(r#""cache_name":"v1""#)
             && request.contains(r#""ignoreSearch":true"#)
     }));
+}
+
+/// Required Cache API arguments should reject before the host bridge is called.
+#[test]
+fn test_cache_api_page_shim_required_arguments_reject() {
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let mut sandbox = V8Sandbox::with_config(zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    })
+    .unwrap();
+    let calls: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
+    let calls_for_callback = calls.clone();
+    sandbox.register_callback(
+        "__zw_cache_storage",
+        Box::new(move |args| {
+            let request = args.first().cloned().unwrap_or_default();
+            calls_for_callback.lock().unwrap().push(request.clone());
+            if request.contains(r#""op":"open""#) {
+                return r#"__zw_cache_ok:{"name":"v1"}"#.to_string();
+            }
+            "__zw_cache_ok:{\"deleted\":true}".to_string()
+        }),
+    );
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+
+    sandbox
+        .execute(
+            "globalThis.__cacheRequiredArgs = 'pending';\
+             var misses = [];\
+             caches.open().then(function () { misses.push('open-resolved'); }, function (error) {\
+               misses.push(String(error instanceof TypeError) + ':open');\
+             }).then(function () {\
+               return caches.open('v1');\
+             }).then(function (cache) {\
+               return cache.delete().then(function () { misses.push('delete-resolved'); }, function (error) {\
+                 misses.push(String(error instanceof TypeError) + ':delete');\
+               });\
+             }).then(function () {\
+               globalThis.__cacheRequiredArgs = misses.join('|');\
+             }, function (error) {\
+               globalThis.__cacheRequiredArgs = 'error:' + String(error && error.message ? error.message : error);\
+             });",
+        )
+        .unwrap();
+    for i in 0..8 {
+        sandbox.execute(&format!("globalThis.__cacheRequiredArgsPump = {i};")).unwrap();
+    }
+
+    assert_eq!(
+        sandbox.execute("globalThis.__cacheRequiredArgs").unwrap().value,
+        "true:open|true:delete"
+    );
+    let calls = calls.lock().unwrap();
+    assert_eq!(calls.len(), 1);
+    assert!(calls[0].contains(r#""op":"open""#));
+    assert!(calls[0].contains(r#""name":"v1""#));
 }
 
 /// Cache.add/addAll should fetch GET requests and store the fetched responses
