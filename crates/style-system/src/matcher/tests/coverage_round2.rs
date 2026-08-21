@@ -116,12 +116,16 @@ fn test_property_supported_grid_placement() {
     assert!(is_property_supported("grid-column", "span 2 / 5"));
     assert!(is_property_supported("grid-row", "1 / footer"));
     assert!(is_property_supported("grid-area", "1 / 2 / 3 / 4"));
+    assert!(is_property_supported("grid-auto-flow", "dense"));
+    assert!(is_property_supported("grid-auto-flow", "column dense"));
 
     assert!(!is_property_supported("grid-column-start", "0"));
     assert!(!is_property_supported("grid-column-end", "1 / 2"));
     assert!(!is_property_supported("grid-column", "1 / 2 / 3"));
     assert!(!is_property_supported("grid-row", "/ 2"));
     assert!(!is_property_supported("grid-area", "1 / / 3"));
+    assert!(!is_property_supported("grid-auto-flow", "row column"));
+    assert!(!is_property_supported("grid-auto-flow", "dense dense"));
 }
 
 #[test]
