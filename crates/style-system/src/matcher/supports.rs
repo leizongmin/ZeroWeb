@@ -91,6 +91,7 @@ pub(super) fn extended_visual_or_layout_property_supported(property: &str, value
         "column-rule-width" => values::parse_column_rule_width(value).is_some(),
         "column-rule-style" => values::parse_column_rule_style(value).is_some(),
         "column-rule-color" => values::parse_color(value).is_some(),
+        "column-rule" => shorthand_supported(property, value),
         // https://drafts.csswg.org/css-box-4/#margin-trim
         "margin-trim" => values::parse_margin_trim(value).is_some(),
         // https://drafts.csswg.org/css-backgrounds-3/#border-style
@@ -132,8 +133,18 @@ pub(super) fn extended_visual_or_layout_property_supported(property: &str, value
         "clip-path" => values::parse_clip_path(value).is_some(),
         // https://www.w3.org/TR/CSS22/visufx.html#clipping
         "clip" => values::parse_clip(value).is_some(),
+        // https://drafts.csswg.org/css-ui-4/#outline-props
+        "outline" => shorthand_supported(property, value),
         _ => return None,
     })
+}
+
+fn shorthand_supported(property: &str, value: &str) -> bool {
+    if value.trim().is_empty() {
+        return false;
+    }
+    let decl = vec![(property.to_string(), value.to_string(), false, (0, 0, 0))];
+    !crate::shorthand::expand_shorthands(&decl).is_empty()
 }
 
 fn columns_supported(value: &str) -> bool {

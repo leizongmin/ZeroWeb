@@ -204,6 +204,8 @@ fn test_property_supported_table_and_ui_text_properties() {
 
 #[test]
 fn test_property_supported_ui_and_text_decoration_properties() {
+    assert!(is_property_supported("outline", "2px solid red"));
+    assert!(is_property_supported("outline", "#ff0000 1px"));
     assert!(is_property_supported("outline-width", "medium"));
     assert!(is_property_supported("outline-style", "auto"));
     assert!(is_property_supported("outline-color", "currentColor"));
@@ -232,6 +234,10 @@ fn test_property_supported_ui_and_text_decoration_properties() {
     assert!(is_property_supported("writing-mode", "sideways-rl"));
     assert!(is_property_supported("text-overflow", "\"...\""));
 
+    assert!(!is_property_supported("outline", "solid dashed red"));
+    assert!(!is_property_supported("outline", "1px 2px solid red"));
+    assert!(!is_property_supported("outline", "begin solid red"));
+    assert!(!is_property_supported("outline", ""));
     assert!(!is_property_supported("outline-width", "10%"));
     assert!(!is_property_supported("outline-style", "hidden"));
     assert!(!is_property_supported("outline-offset", "auto"));
@@ -281,6 +287,8 @@ fn test_property_supported_extended_visual_and_layout_properties() {
     assert!(is_property_supported("break-inside", "avoid-column"));
     assert!(is_property_supported("break-before", "page"));
     assert!(is_property_supported("break-after", "avoid-page"));
+    assert!(is_property_supported("column-rule", "2px solid blue"));
+    assert!(is_property_supported("column-rule", "red"));
     assert!(is_property_supported("column-rule-width", "thin"));
     assert!(is_property_supported("column-rule-style", "dashed"));
     assert!(is_property_supported("column-rule-color", "red"));
@@ -324,6 +332,10 @@ fn test_property_supported_extended_visual_and_layout_properties() {
     assert!(!is_property_supported("image-rendering", "nearest"));
     assert!(!is_property_supported("isolation", "none"));
     assert!(!is_property_supported("break-before", "always"));
+    assert!(!is_property_supported("column-rule", "solid dashed red"));
+    assert!(!is_property_supported("column-rule", "1px 2px solid red"));
+    assert!(!is_property_supported("column-rule", "begin solid red"));
+    assert!(!is_property_supported("column-rule", ""));
     assert!(!is_property_supported("column-rule-width", "-1px"));
     assert!(!is_property_supported("column-rule-style", "auto"));
     assert!(!is_property_supported("overscroll-behavior-x", "scroll"));
