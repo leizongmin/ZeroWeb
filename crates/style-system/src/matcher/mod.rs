@@ -1270,6 +1270,30 @@ fn supports_gap_value(value: &str) -> bool {
     supports_padding_value(value)
 }
 
+fn supports_letter_spacing_value(value: &str) -> bool {
+    let value = value.trim();
+    if value.eq_ignore_ascii_case("normal") {
+        return true;
+    }
+    supports_length_or_math(value)
+        .as_ref()
+        .is_some_and(|v| crate::property::apply::letter_spacing_length_is_valid(value, v))
+}
+
+fn supports_text_length_percentage_value(value: &str) -> bool {
+    supports_length_or_math(value)
+        .as_ref()
+        .is_some_and(|v| crate::property::apply::text_indent_length_is_valid(value, v))
+}
+
+fn supports_word_spacing_value(value: &str) -> bool {
+    let value = value.trim();
+    if value.eq_ignore_ascii_case("normal") {
+        return true;
+    }
+    supports_text_length_percentage_value(value)
+}
+
 fn supports_scroll_margin_value(value: &str) -> bool {
     let value = value.trim();
     if matches!(
@@ -1463,6 +1487,16 @@ fn is_property_supported(property: &str, value: &str) -> bool {
             let v = trimmed.to_ascii_lowercase();
             v == "auto" || v == "none"
         }
+        // https://drafts.csswg.org/css-conditional-3/#at-supports
+        // CSS Text/Text Decoration declarations must parse using their property grammar, not the
+        // narrower generic supports allow-list above.
+        "line-height" => crate::property::parse_line_height(trimmed).is_some(),
+        "letter-spacing" => supports_letter_spacing_value(trimmed),
+        "word-spacing" => supports_word_spacing_value(trimmed),
+        "text-indent" => supports_text_length_percentage_value(trimmed),
+        "text-decoration-thickness" => parse_text_decoration_thickness(trimmed).is_some(),
+        "text-decoration-inset" => parse_text_decoration_inset(trimmed).is_some(),
+        "text-underline-offset" => parse_text_underline_offset(trimmed).is_some(),
         // font 简写：复用 expand_font 严格校验（须含 font-size + font-family 或系统字体关键字）。
         // driving: WPT css-supports-024 `(font: 16px serif)`。
         "font" => crate::shorthand::font_shorthand_supported(trimmed),

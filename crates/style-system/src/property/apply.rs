@@ -1270,7 +1270,7 @@ pub(crate) fn border_width_length_is_valid(raw: &str, value: &LengthValue) -> bo
     }
 }
 
-fn letter_spacing_length_is_valid(raw: &str, value: &LengthValue) -> bool {
+pub(crate) fn letter_spacing_length_is_valid(raw: &str, value: &LengthValue) -> bool {
     if matches!(raw.trim().to_ascii_lowercase().as_str(), "thin" | "medium" | "thick") {
         return false;
     }
@@ -1323,7 +1323,7 @@ fn outline_offset_length_is_valid(raw: &str, value: &LengthValue) -> bool {
     }
 }
 
-fn text_indent_length_is_valid(raw: &str, value: &LengthValue) -> bool {
+pub(crate) fn text_indent_length_is_valid(raw: &str, value: &LengthValue) -> bool {
     if matches!(
         raw.trim().to_ascii_lowercase().as_str(),
         "thin" | "medium" | "thick" | "auto" | "min-content" | "max-content" | "fit-content"

@@ -153,6 +153,39 @@ fn test_property_supported_length_properties() {
 }
 
 #[test]
+fn test_property_supported_css_text_length_properties() {
+    assert!(is_property_supported("line-height", "normal"));
+    assert!(is_property_supported("line-height", "1.5"));
+    assert!(is_property_supported("line-height", "24px"));
+    assert!(is_property_supported("line-height", "120%"));
+    assert!(is_property_supported("letter-spacing", "normal"));
+    assert!(is_property_supported("letter-spacing", "-0.5em"));
+    assert!(is_property_supported("word-spacing", "normal"));
+    assert!(is_property_supported("word-spacing", "10%"));
+    assert!(is_property_supported("text-indent", "-2em"));
+    assert!(is_property_supported("text-decoration-thickness", "from-font"));
+    assert!(is_property_supported("text-decoration-thickness", "2px"));
+    assert!(is_property_supported("text-decoration-inset", "0.25em -0.5em"));
+    assert!(is_property_supported("text-underline-offset", "auto"));
+    assert!(is_property_supported("text-underline-offset", "-3px"));
+
+    assert!(!is_property_supported("line-height", "-1"));
+    assert!(!is_property_supported("line-height", "-2px"));
+    assert!(!is_property_supported("line-height", "thin"));
+    assert!(!is_property_supported("letter-spacing", "10%"));
+    assert!(!is_property_supported("letter-spacing", "thin"));
+    assert!(!is_property_supported("word-spacing", "auto"));
+    assert!(!is_property_supported("word-spacing", "thin"));
+    assert!(!is_property_supported("text-indent", "auto"));
+    assert!(!is_property_supported("text-indent", "thin"));
+    assert!(!is_property_supported("text-decoration-thickness", "-1px"));
+    assert!(!is_property_supported("text-decoration-thickness", "thin"));
+    assert!(!is_property_supported("text-decoration-inset", "auto"));
+    assert!(!is_property_supported("text-decoration-inset", "thin"));
+    assert!(!is_property_supported("text-underline-offset", "thin"));
+}
+
+#[test]
 fn test_property_supported_transform() {
     assert!(is_property_supported("transform", "translate(10px, 20px)"));
     assert!(!is_property_supported("transform", "invalid-transform"));
