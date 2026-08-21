@@ -155,3 +155,46 @@ fn test_opt_capture_webidl_boolean_r146() {
         "R146 WebIDL boolean 转换（primitive 真值 → capture；NaN/0/'' → bubble）"
     );
 }
+
+/// R147：classic 脚本经间接 `(0,eval)` 执行时，源内 `'use strict'` 指令使 eval 建独立
+/// 变量环境——顶层 `function` 声明不落 globalThis（真实浏览器 classic 脚本即便 strict
+/// 也创建全局绑定）。`script_run_classic_page` 的全局发布：行首零缩进 `function NAME(`
+/// 声明在 eval 源尾拼接 `;globalThis.NAME=NAME;`（WPT 外链测试库如
+/// prefixed-animation-event-tests.js 跨 `<script>` 可见性；webkit-animation 簇）。
+#[test]
+fn test_classic_script_strict_function_globals_r147() {
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let mut sandbox = V8Sandbox::with_config(zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    })
+    .unwrap();
+    // 两段「页面脚本」按 run_page_scripts 的 strict 形态执行：第一段声明（'use strict'
+    // 单引号 + 双引号两形态 + IIFE 内缩进函数不误发布），第二段跨脚本消费。
+    let first = crate::js_dom_bridge::script_run_classic_page(
+        "'use strict';\nfunction topFnA() { return 1; }\n\"use strict\";\nfunction topFnB() { return 2; }\n(function(){\n  function innerFn() { return 3; }\n  globalThis.__innerRef = typeof innerFn;\n})();\n",
+        0,
+    );
+    let second = crate::js_dom_bridge::script_run_classic_page(
+        "globalThis.__probe = [typeof topFnA, typeof topFnB, String(topFnA() + topFnB()), globalThis.__innerRef].join(',');",
+        1,
+    );
+    sandbox.execute(&first).unwrap();
+    sandbox.execute(&second).unwrap();
+    let out = sandbox
+        .execute("globalThis.__probe")
+        .unwrap()
+        .value;
+    assert_eq!(
+        out,
+        "function,function,3,function",
+        "R147 strict classic 脚本顶层函数声明经全局发布跨脚本可见（IIFE 内函数不受影响）"
+    );
+    // sentinel 干净（无抛错）。
+    let err = sandbox
+        .execute(&crate::js_dom_bridge::page_script_error_check())
+        .unwrap()
+        .value;
+    assert_eq!(err, "", "R147 两段脚本均无抛错（sentinel 干净）");
+}

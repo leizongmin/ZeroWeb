@@ -458,8 +458,42 @@ pub const PAGE_SCRIPT_ERROR_GLOBAL: &str = "__zw_pgerr__";
 /// 字符串 "undefined"，不与 undefined 值混淆）。
 pub fn script_run_classic_page(code: &str, script_index: usize) -> String {
     let code_literal = format!("'{}'", escape_js_string(code));
+    // R147（js-dom M4）：顶层函数声明的**全局发布**。间接 eval `(0,eval)` 中源内
+    // 'use strict'/"use strict" 指令使 eval 建独立变量环境——顶层 `function` 声明
+    // **不落 globalThis**（真实浏览器 classic 脚本即便 strict 也创建全局绑定，spec
+    // Script Is A Global Code；WPT 外链测试库如 prefixed-animation-event-tests.js
+    // 的 `function runAnimationEventTests` 跨 `<script>` 不可见 → "is not defined"）。
+    // 修复：扫描行首 `function NAME(` 形态（启发式——行首锚定，字符串/注释内换行后
+    // 的伪匹配最坏多发布一个无害 globalThis 赋值），eval 源后拼接
+    // `;globalThis.NAME=NAME;`（strict 局部声明经此导出；non-strict 本已全局，恒等）。
+    let exports = code
+        .lines()
+        .filter_map(|line| {
+            // 仅**行首零缩进**的 `function NAME(`（真顶层声明——WPT 测试库无缩进顶层
+            // 函数 + IIFE 内部缩进函数不误匹配。testharness.js 等全 IIFE 包裹源零导出）。
+            let rest = line.strip_prefix("function ")?;
+            let name: String = rest
+                .chars()
+                .take_while(|c| c.is_ascii_alphanumeric() || *c == '_' || *c == '$')
+                .collect();
+            let after = rest.get(name.len()..).unwrap_or_default();
+            if name.is_empty() || !after.trim_start().starts_with('(') {
+                return None;
+            }
+            Some(format!("globalThis.{name}={name};"))
+        })
+        .collect::<Vec<_>>()
+        .join("");
+    // R147：eval 源拼接形态 `(0,eval)('<源>'+';globalThis.x=x;')`——后缀是**带引号的
+    // 字符串字面量**（与源同串相接），在 eval 的同一变量环境内执行（strict 局部声明
+    // 可见），且不改 'use strict' 必须为源首语句的语义（拼接发生在两侧而非插入）。
+    let export_suffix = if exports.is_empty() {
+        String::new()
+    } else {
+        format!("+'{}'", escape_js_string(&format!(";{exports}")))
+    };
     format!(
-        "globalThis.__zw_set_current_script&&globalThis.__zw_set_current_script({idx});\nglobalThis.{g}=undefined;\ntry{{(0,eval)({code_literal});}}catch(__zw_e){{globalThis.{g}=(__zw_e&&__zw_e.message)?String(__zw_e.message):String(__zw_e);}}\nfinally{{globalThis.__zw_clear_current_script&&globalThis.__zw_clear_current_script();}}",
+        "globalThis.__zw_set_current_script&&globalThis.__zw_set_current_script({idx});\nglobalThis.{g}=undefined;\ntry{{(0,eval)({code_literal}{export_suffix});}}catch(__zw_e){{globalThis.{g}=(__zw_e&&__zw_e.message)?String(__zw_e.message):String(__zw_e);}}\nfinally{{globalThis.__zw_clear_current_script&&globalThis.__zw_clear_current_script();}}",
         idx = script_index,
         g = PAGE_SCRIPT_ERROR_GLOBAL
     )
