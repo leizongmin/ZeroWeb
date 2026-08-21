@@ -1049,6 +1049,24 @@ fn test_resolve_font_metrics_with_font_size() {
     );
 }
 
+/// R3622：IFC font metrics 的 font-size used value 也要解析 residual real length。
+/// direct `ComputedStyle` 下 `font-size:2em` 应等价 32px；旧逻辑只接受 `Px`，会回退 16px。
+#[test]
+fn r3622_resolve_font_metrics_resolves_relative_font_size() {
+    let mut style = ComputedStyle::default();
+    style.font_size = LengthValue::Em(2.0);
+
+    let (font_size, line_height) = resolve_font_metrics(Some(&style));
+    assert!(
+        (font_size - 32.0).abs() < 0.01,
+        "font_size 应解析 2em@16px 为 32，实际 {font_size}"
+    );
+    assert!(
+        (line_height - 37.248).abs() < 0.01,
+        "line_height 应使用 resolved font_size 32 * 1.164 = 37.248，实际 {line_height}"
+    );
+}
+
 /// 测试 resolve_font_metrics 中 line-height: Number 使用倍数。
 #[test]
 fn test_resolve_font_metrics_line_height_number() {

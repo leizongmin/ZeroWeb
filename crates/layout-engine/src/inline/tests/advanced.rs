@@ -286,7 +286,7 @@ fn test_resolve_font_metrics_line_height_percentage_length() {
     );
 }
 
-/// 测试 resolve_font_metrics 中非 Px font_size 回退到 DEFAULT_FONT_SIZE (16.0)。
+/// 测试 resolve_font_metrics 中 relative font-size 会先解析为 used value。
 #[test]
 fn test_resolve_font_metrics_non_px_font_size() {
     let mut style = ComputedStyle::default();
@@ -294,15 +294,13 @@ fn test_resolve_font_metrics_non_px_font_size() {
     // line-height 默认 Normal
 
     let (font_size, line_height) = resolve_font_metrics(Some(&style));
-    // 非 Px font_size 回退到 16.0
     assert!(
-        (font_size - 16.0).abs() < 0.01,
-        "非 Px font_size 应回退到 16.0，实际 {font_size}"
+        (font_size - 32.0).abs() < 0.01,
+        "font-size:2em 应解析为 32.0，实际 {font_size}"
     );
-    // line_height = 16.0 * 1.164 = 18.624
     assert!(
-        (line_height - 18.624).abs() < 0.01,
-        "line_height 应为 18.624，实际 {line_height}"
+        (line_height - 37.248).abs() < 0.01,
+        "line_height 应为 37.248，实际 {line_height}"
     );
 }
 
