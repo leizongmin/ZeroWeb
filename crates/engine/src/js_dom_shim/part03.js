@@ -1057,6 +1057,18 @@
       // requestUpdate）。Get 本身还驱动 polyfill 组件（非 lit）的静态初始化面。
       // getter 抛错吞（spec 是 rethrow，但 polyfill best-effort 与注册解耦）。
       try { void ctor.observedAttributes; } catch (_eObs) {}
+      // R149（js-dom M4）：spec `custom-element-registration` define 末步——升级文档中
+      // 已存在的同名元素（parser 先建 `<my-el>` 后 define 的序：define 时元素已在树中，
+      // 升级 = ctor 体 + connectedCallback 立即触发）。旧 define 只注册不升级——
+      // WPT EventTarget-add-listener-platform-object：`customElements.define` 后
+      // 既有 `<my-custom-click>` 的 connectedCallback 永不跑（addEventListener 未注册）。
+      // 同步执行（spec 是 upgrade queue 微任务；headless 同步等价——whenDefined waiter
+      // 在 resolve 前，时序无依赖冲突）。
+      try {
+        if (globalThis.document && globalThis.document.documentElement) {
+          _ceUpgradeSubtree(globalThis.document);
+        }
+      } catch (_e149u) {}
       var waiters = _ce_pending[name];
       if (waiters) {
         delete _ce_pending[name];
@@ -1149,12 +1161,17 @@
     for (var i = 0; i < observed.length; i++) {
       var name = String(observed[i]);
       var value = null;
+      var has = false;
       try {
         if (typeof el.getAttribute === 'function') {
           var v = el.getAttribute(name);
-          value = (v === null || v === undefined) ? null : String(v);
+          if (v !== null && v !== undefined) { value = String(v); has = true; }
         }
       } catch (_e) { value = null; }
+      // R149（js-dom M4）：属性缺失（getAttribute null）不派发——spec upgrade enqueue
+      // 仅对**存在**的 observed 属性（真实浏览器 null→null 回调不触发；R3205 测试：
+      // define 时 foo 未设，首次回调来自后续 setAttribute 的 null->a）。
+      if (!has) continue;
       try { acb.call(el, name, null, value); } catch (_e) {}
     }
   }

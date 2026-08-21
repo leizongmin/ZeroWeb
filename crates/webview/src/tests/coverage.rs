@@ -1448,13 +1448,15 @@ fn test_native_custom_element_upgrade_attr_change_r3274() {
     );
 }
 
-// R3274 配套：upgrade 时 observedAttributes 为多项 → 每项都派发初始 attr change（spec per-attribute enqueue）。
+// R3274 配套：upgrade 时 observedAttributes 为多项 → 仅**存在的**属性派发初始 attr change
+// （R149 spec 修正：upgrade enqueue 对缺失属性不派发——custom-elements spec「if its value is
+// not null」；旧 best-effort 对未设项派发 null 回调与真实浏览器不符，R3205/WPT 语义对齐）。
 #[cfg(feature = "v8")]
 #[test]
 fn test_native_custom_element_upgrade_attr_change_multi_r3274() {
     let mut wv = crate::WebViewBuilder::new().native_dom(true).build();
-    // 单 pre-set 属性 'a=1'，observedAttributes=['a','b','c'] → upgrade 派发 3 次（a=1 / b=null 未设 / c=null 未设），
-    // 验证 observed 列表每项都派发（非仅 pre-set 项），未设项 value=null。
+    // 单 pre-set 属性 'a=1'，observedAttributes=['a','b','c'] → upgrade 仅对 'a' 派发
+    // （b/c 未设——真实浏览器无回调；null 回调是不存在的属性变更，无初始化语义）。
     wv.load_html(
         "<html><body>\
          <script>\
@@ -1479,7 +1481,7 @@ fn test_native_custom_element_upgrade_attr_change_multi_r3274() {
     );
     assert_eq!(
         wv.execute_script("String(globalThis.__log.join(','))").unwrap(),
-        "a=1,b=null,c=null",
-        "R3274: upgrade 对 observedAttributes 每项派发初始 attr change（a=1 pre-set / b,c=null 未设）"
+        "a=1",
+        "R3274/R149: upgrade 仅对存在的 observed 属性派发初始 attr change（a=1 pre-set；b/c 未设无回调）"
     );
 }

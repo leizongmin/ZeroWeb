@@ -249,3 +249,57 @@ fn test_focus_ownership_and_related_target_r148() {
         "R148 焦点所有权互斥 + relatedTarget shadow retargeting（host 泄露边界）"
     );
 }
+
+/// R149：`customElements.define` 的既有元素自动升级（spec `custom-element-registration`
+/// define 末步——文档中已存在的同名元素升级：ctor 体 + connectedCallback 立即触发；
+/// WPT EventTarget-add-listener-platform-object：parser 先建 `<my-custom-click>` 后
+/// define，connectedCallback 须跑使 addEventListener 注册）+ upgrade 初始 attr change
+/// 仅对**存在**的 observed 属性派发（缺失不派发——真实浏览器一致，R3205 语义）。
+#[test]
+fn test_define_auto_upgrade_existing_elements_r149() {
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let mut sandbox = V8Sandbox::with_config(zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    })
+    .unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    // 既有元素带一个 pre-set observed 属性 'greet=hi'（升级初始 attr change 须派发一次）
+    // + 'foo' 未设（无回调——后续 setAttribute 的 null->a 是首个 foo 回调）。
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><auto-ce id=\"ace\" greet=\"hi\"></auto-ce></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry);
+
+    let out = sandbox
+        .execute(
+            "var parts = [];\
+             globalThis.__log = [];\
+             class AutoCE extends HTMLElement {\
+               constructor() { super(); globalThis.__ctorRan = true; }\
+               connectedCallback() { globalThis.__connectedRan = true; }\
+               static get observedAttributes() { return ['greet', 'foo']; }\
+               attributeChangedCallback(n, o, v) { globalThis.__log.push(n + ':' + o + '->' + v); }\
+             }\
+             customElements.define('auto-ce', AutoCE);\
+             parts.push('ctor:' + (globalThis.__ctorRan || false));\
+             parts.push('connected:' + (globalThis.__connectedRan || false));\
+             var el = document.querySelector('#ace');\
+             el.setAttribute('foo', 'a');\
+             parts.push('log:' + globalThis.__log.join('|'));\
+             parts.push('instance:' + (el instanceof AutoCE));\
+             parts.join('~')",
+        )
+        .unwrap()
+        .value;
+    assert_eq!(
+        out,
+        "ctor:true~connected:true~log:greet:null->hi|foo:null->a~instance:true",
+        "R149 define 自动升级既有元素（ctor + connectedCallback + 存在属性的初始 attr change；缺失属性无回调）"
+    );
+}
