@@ -2694,6 +2694,19 @@
               // R3072：popovertarget 声明式触发——click default action（未 preventDefault 时）。找最近含 popovertarget
               // 祖先 → 按 popovertargetaction 触发目标 popover show/hide/toggle。无 popovertarget 时 no-op（零回归）。
               _zwPopoverTargetActivate(key, sel, handle);
+              // R154（js-dom M4）：A/AREA[href^="#"] 的 click default action——同文档片段
+              // 导航（spec the-a-element activation behavior：fragment 导航 = location.hash
+              // 更新 + 异步 hashchange；与 node.click() 本地版 A/AREA 分支同源）。WPT
+              // single-activation 的 A/AREA click 期望 window.onhashchange(e.newURL) 收
+              // href 字符串——旧 proxy 侧 click 无此分支（activation 缺失 → 空数组）。
+              var _r154Tag = _realTag(sel, handle);
+              if (_r154Tag === 'A' || _r154Tag === 'AREA') {
+                var _r154Href = '';
+                try { _r154Href = handle ? __zw_get_attr_handle(handle, 'href') : (sel ? __zw_get_attr(sel, 'href') : ''); } catch (_e154h) { _r154Href = ''; }
+                if (_r154Href && String(_r154Href).charAt(0) === '#' && globalThis.location) {
+                  try { globalThis.location.hash = String(_r154Href).slice(1); } catch (_e154s) {}
+                }
+              }
             }
             return notPrevented;
           };

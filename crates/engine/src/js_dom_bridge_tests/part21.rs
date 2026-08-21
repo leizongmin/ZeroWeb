@@ -739,3 +739,136 @@ fn test_lookup_namespace_uri_family_r152() {
         "R152 lookupNamespaceURI/isDefaultNamespace 全族（fragment/元素预绑定+自身映射/声明属性/子继承/document HTML ns/Attr ownerElement/doctype/new Document）"
     );
 }
+
+// R154（js-dom M4）：single-activation 的 A/AREA hash 导航诊断复现——A[click] 在
+// INPUT[checkbox] 父内 click() 后，activation 应只经 window.onhashchange(newURL 字符串)
+// 上报；旧版 got 元素对象（某个 activated(e) 收到元素）。
+#[test]
+fn test_a_click_hash_activation_in_checkbox_parent_r154() {
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let mut sandbox = V8Sandbox::with_config(zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    })
+    .unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><div id=\"test_container\"></div></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "https://wpt.test/dom/events/x.html".to_string(),
+    ));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+
+    let out = sandbox
+        .execute(
+            "var parts = [];\
+             var activations = [];\
+             globalThis.activated = function (e) { activations.push(typeof e === 'string' ? e : ('EL:' + (e && e.tagName))); };\
+             window.onhashchange = function (e) {\
+               if (String(e.newURL).endsWith('link')) activated(e.newURL);\
+               window.location.hash = '';\
+             };\
+             var container = document.getElementById('test_container');\
+             var parent = document.createElement('input'); parent.type = 'checkbox';\
+             var a = document.createElement('a'); a.href = '#t1_link';\
+             container.appendChild(parent);\
+             parent.appendChild(a);\
+             a.click();\
+             parts.push('sync-activations:' + activations.length);\
+             parts.push('parent-checked:' + parent.checked);\
+             parts.join('|');",
+        )
+        .unwrap()
+        .value;
+    assert_eq!(
+        out,
+        "sync-activations:0|parent-checked:false",
+        "R154：A 在 INPUT[checkbox] 内 click——nearest activation 是 A（hash 导航），父 INPUT 不翻（single-activation a-in-input 根因）"
+    );
+}
+
+// R154（js-dom M4）：single-activation 的 checkbox@FORM 簇——checkbox click 在
+// detached clone 子树上须翻 checked + 派发 input 事件（oninput=activated 的链路）。
+#[test]
+fn test_checkbox_click_in_form_clone_r154() {
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let mut sandbox = V8Sandbox::with_config(zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    })
+    .unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><div id=\"tc\"></div></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+
+    // ① createElement 路径：checkbox click → checked 翻转 + input 事件触发 inline
+    // oninput handler（WPT single-activation 的 activation 判定链）。
+    let out = sandbox
+        .execute(
+            "var parts = [];\
+             var acts = [];\
+             globalThis.__r154Act = function (e) { acts.push(e); };\
+             var tc = document.getElementById('tc');\
+             var form = document.createElement('form');\
+             var sub = document.createElement('input'); sub.type = 'submit';\
+             form.appendChild(sub);\
+             var cb = document.createElement('input'); cb.type = 'checkbox';\
+             cb.setAttribute('oninput', 'this.checked ? __r154Act(this) : null');\
+             form.appendChild(cb);\
+             tc.appendChild(form);\
+             cb.click();\
+             parts.push('checked:' + cb.checked);\
+             parts.push('acts:' + acts.length);\
+             parts.join('|');",
+        )
+        .unwrap()
+        .value;
+    assert_eq!(
+        out,
+        "checked:true|acts:1",
+        "R154：checkbox click——checked 翻转 + input 事件触发 inline oninput activated"
+    );
+
+    // ② WPT 真形态：template.content 解析产物 cloneNode(true) 的 checkbox——click 须
+    // 翻 checked + 派发 input 事件触发其 inline oninput（activation 判定链在 clone
+    // 子树完整闭合）。源未勾选 → 翻为 true。
+    let out2 = sandbox
+        .execute(
+            "var parts = [];\
+             var acts2 = [];\
+             globalThis.__r154Act2 = function (e) { acts2.push(e); };\
+             var tc = document.getElementById('tc');\
+             var srcForm = document.createElement('form');\
+             var srcSub = document.createElement('input'); srcSub.type = 'submit'; srcForm.appendChild(srcSub);\
+             var srcCb = document.createElement('input'); srcCb.type = 'checkbox';\
+             srcCb.setAttribute('oninput', 'this.checked ? __r154Act2(this) : null');\
+             srcForm.appendChild(srcCb);\
+             var form2 = srcForm.cloneNode(true);\
+             tc.appendChild(form2);\
+             var cb2 = form2.childNodes[form2.childNodes.length - 1];\
+             parts.push('pre:' + cb2.checked);\
+             cb2.click();\
+             parts.push('post:' + cb2.checked);\
+             parts.push('acts2:' + acts2.length);\
+             parts.join('|');",
+        )
+        .unwrap()
+        .value;
+    assert_eq!(
+        out2,
+        "pre:false|post:true|acts2:1",
+        "R154：clone checkbox click——翻 checked + input 事件触发 inline oninput（WPT 真形态闭合）"
+    );
+}

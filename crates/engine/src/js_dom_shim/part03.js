@@ -2653,6 +2653,15 @@
           return null; // disabled + click()：无 activation（dispatch 早退路径同判定）。
         }
       }
+      // R154（js-dom M4）：**最近激活元素**止步——途中站是有自身 activation behavior 的
+      // 其他元素（spec concept-event-dispatch legacy-pre-activation 的「nearest ancestor
+      // (or self) with activation behavior」是**任意**激活元素，非仅 checkbox/radio）时，
+      // INPUT 翻转定位不得穿透（WPT single-activation：A[href] 在 INPUT[checkbox] 内
+      // click → 只激活 A 的 hash 导航，父 INPUT 不翻——旧版穿透翻父是 47F 中
+      // a-in-checkbox/radio 4F + label-in-input 6F 的根因之一）。激活元素分类枚举同
+      // node.click() 的 post-activation 段（INPUT/BUTTON submit 族 / LABEL / DETAILS·
+      // SUMMARY / A·AREA[href]）。
+      if (_zwHasOwnActivationBehavior(tag, sel, handle)) return null;
       if (sel && typeof __zw_parent === 'function') {
         var ps = '';
         try { ps = __zw_parent(sel); } catch (_e4) {}
@@ -2668,6 +2677,27 @@
       break;
     }
     return null;
+  }
+
+  // R154（js-dom M4）：元素是否有自身 activation behavior（HTML 各元素激活定义的静态
+  // 近似——供 nearest-activation 止步判定）。checkbox/radio INPUT 由调用方先行处理
+  // （其 disabled/click() 语义特殊），此处枚举其余五类。
+  function _zwHasOwnActivationBehavior(tag, sel, handle) {
+    if (!tag) return false;
+    if (tag === 'A' || tag === 'AREA') {
+      var href = '';
+      try { href = handle ? __zw_get_attr_handle(handle, 'href') : (sel ? __zw_get_attr(sel, 'href') : ''); } catch (_e) { href = ''; }
+      return !!href;
+    }
+    if (tag === 'LABEL' || tag === 'DETAILS' || tag === 'SUMMARY') return true;
+    if (tag === 'INPUT' || tag === 'BUTTON') {
+      var ty = '';
+      try { ty = handle ? __zw_get_attr_handle(handle, 'type') : (sel ? __zw_get_attr(sel, 'type') : null); } catch (_e2) { ty = ''; }
+      ty = String(ty || '').toLowerCase();
+      if (tag === 'BUTTON') return ty === 'submit' || ty === 'reset' || ty === '';
+      return ty === 'submit' || ty === 'reset' || ty === 'image';
+    }
+    return false;
   }
 
   function _zwPreClickActivation(targetSel, targetHandle, isClickApi) {
@@ -2729,6 +2759,9 @@
           return; // 找到第一个 activation 元素——不再上行（spec nearest）。
         }
       }
+      // R154：nearest-activation 止步（同 _zwFindClickActivation——途中站是有自身
+      // activation behavior 的其他元素时不得穿透上行翻更远 INPUT）。
+      if (_zwHasOwnActivationBehavior(tag, sel, handle)) return;
       // 上行一跳：sel 经 __zw_parent；handle 经 _zwNodeParent 反链。
       if (sel && typeof __zw_parent === 'function') {
         var ps = '';
@@ -4062,6 +4095,7 @@
       });
     }
     node.hasAttribute = function (n) { return node.getAttribute(n) !== null; };
+    _zwMDefineBooleanReflected(node);
     // js-dom M3 R97：hasAttributes/getAttributeNames（lit-html Template 解析对解析子树元素
     // 调 `r.hasAttributes()` + `r.getAttributeNames()` 提取属性 parts——缺方法抛 TypeError
     // 使整条 update 链 reject）。与元素 proxy R3197 语义一致（attrs 数组本地维护）。
@@ -4775,6 +4809,27 @@
   function _zwMReflectIdl(node, attrName) {
     if (attrName === 'id') node.id = node.getAttribute('id') || '';
     else if (attrName === 'class') node.className = node.getAttribute('class') || '';
+  }
+
+  // R154（js-dom M4）：_zwMEl 的 boolean reflected 属性 accessor（checked/disabled/
+  // selected/hidden/required/open/multiple/readonly/autofocus/readonly 族——spec HTML
+  // boolean attribute 的 IDL 反射 = 属性存在性）。plain object 无 get trap——缺 accessor
+  // 时 `cb.checked` 读 undefined（click 翻转了属性但读不到）。与 proxy 侧
+  // part03:7197 boolean reflected 分支同源语义（属性存在 → true）。
+  function _zwMDefineBooleanReflected(node) {
+    ['checked', 'disabled', 'selected', 'hidden', 'required', 'open',
+     'multiple', 'readonly', 'autofocus', 'novalidate', 'defaultChecked'].forEach(function (p) {
+      try {
+        Object.defineProperty(node, p, {
+          configurable: true,
+          get: function () { return node.hasAttribute(p); },
+          set: function (v) {
+            if (v) { if (!node.hasAttribute(p)) node.setAttribute(p, ''); }
+            else if (node.hasAttribute(p)) node.removeAttribute(p);
+          },
+        });
+      } catch (_e154b) {}
+    });
   }
   // js-dom M4 R81：firstChild/lastChild getter 补齐（文本/注释节点恒 null——WPT Node-textContent
   // 期望 `emptyText.firstChild === null`；undefined ≠ null 断言失败）。
