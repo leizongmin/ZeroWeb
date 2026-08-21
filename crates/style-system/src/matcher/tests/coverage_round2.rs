@@ -443,6 +443,8 @@ fn test_property_supported_background() {
     assert!(is_property_supported("background-attachment", "fixed"));
     assert!(is_property_supported("background-clip", "text"));
     assert!(is_property_supported("background-origin", "content-box"));
+    assert!(is_property_supported("mask-image", "url(mask.png), none"));
+    assert!(is_property_supported("mask-mode", "luminance"));
 
     assert!(!is_property_supported("background", "red url(my image.png)"));
     assert!(!is_property_supported("background", "center url(\"image.png\" extra)"));
@@ -454,6 +456,8 @@ fn test_property_supported_background() {
     assert!(!is_property_supported("background-attachment", "sticky"));
     assert!(!is_property_supported("background-clip", "sparkle"));
     assert!(!is_property_supported("background-origin", "text"));
+    assert!(!is_property_supported("mask-image", "url(mask.png) sparkle"));
+    assert!(!is_property_supported("mask-mode", "alpha luminance"));
 }
 
 #[test]

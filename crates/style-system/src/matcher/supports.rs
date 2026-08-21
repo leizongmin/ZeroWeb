@@ -27,6 +27,9 @@ pub(super) fn extended_visual_or_layout_property_supported(property: &str, value
         // https://drafts.csswg.org/css-images-4/#the-object-fit
         "object-fit" => values::parse_object_fit(value).is_some(),
         "object-position" => values::parse_background_position(value).is_some(),
+        // https://drafts.fxtf.org/css-masking-1/#the-mask-image
+        "mask-image" => values::parse_mask_image_layers(value).is_some(),
+        "mask-mode" => values::parse_mask_mode(value).is_some(),
         // https://drafts.fxtf.org/filter-effects-1/
         "filter" | "backdrop-filter" => values::parse_filter_list(value).is_some(),
         // https://drafts.csswg.org/css-contain-2/#contain-property
