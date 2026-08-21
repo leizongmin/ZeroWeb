@@ -27,7 +27,11 @@ fn test_property_supported_display() {
 fn test_property_supported_position() {
     assert!(is_property_supported("position", "relative"));
     assert!(is_property_supported("position", "absolute"));
+    assert!(is_property_supported("z-index", "auto"));
+    assert!(is_property_supported("z-index", "-2147483649"));
+
     assert!(!is_property_supported("position", "invalid"));
+    assert!(!is_property_supported("z-index", "1.5"));
 }
 
 #[test]
@@ -59,6 +63,17 @@ fn test_property_supported_box_sizing() {
 }
 
 #[test]
+fn test_property_supported_aspect_ratio() {
+    assert!(is_property_supported("aspect-ratio", "auto"));
+    assert!(is_property_supported("aspect-ratio", "16 / 9"));
+    assert!(is_property_supported("aspect-ratio", "auto 2"));
+
+    assert!(!is_property_supported("aspect-ratio", "1 / 0"));
+    assert!(!is_property_supported("aspect-ratio", "inf"));
+    assert!(!is_property_supported("aspect-ratio", "auto auto"));
+}
+
+#[test]
 fn test_property_supported_flex() {
     assert!(is_property_supported("flex-direction", "row"));
     assert!(is_property_supported("flex-wrap", "wrap"));
@@ -72,6 +87,7 @@ fn test_property_supported_flex() {
     assert!(!is_property_supported("flex-shrink", "NaN"));
     assert!(!is_property_supported("flex-basis", "-1px"));
     assert!(!is_property_supported("order", "1.5"));
+    assert!(!is_property_supported("order", "auto"));
 }
 
 #[test]

@@ -39,6 +39,10 @@ pub(super) fn extended_visual_or_layout_property_supported(property: &str, value
         "box-shadow" => values::parse_box_shadow_list(value).is_some(),
         // https://drafts.csswg.org/css-contain-2/#contain-property
         "contain" => values::parse_contain(value).is_some(),
+        // https://www.w3.org/TR/css-position-3/#propdef-z-index
+        "z-index" => crate::property::parse_z_index(value).is_some(),
+        // https://drafts.csswg.org/css-sizing-4/#aspect-ratio
+        "aspect-ratio" => aspect_ratio_supported(value),
         // https://drafts.csswg.org/css2/#page-break-props
         "page-break-before" | "page-break-after" => values::parse_page_break(value).is_some(),
         "page-break-inside" => matches!(
@@ -227,4 +231,34 @@ fn parse_length_or_math(value: &str) -> Option<values::LengthValue> {
             .map(Box::new)
             .map(values::LengthValue::Calc)
     })
+}
+
+fn aspect_ratio_supported(value: &str) -> bool {
+    let value = value.trim();
+    if value.eq_ignore_ascii_case("auto") {
+        return true;
+    }
+    let ratio = if value.len() >= 5
+        && value.as_bytes()[..4].eq_ignore_ascii_case(b"auto")
+        && value.as_bytes()[4].is_ascii_whitespace()
+    {
+        value[4..].trim()
+    } else {
+        value
+    };
+    parse_aspect_ratio_value(ratio).is_some()
+}
+
+fn parse_aspect_ratio_value(value: &str) -> Option<f32> {
+    if let Some(slash_pos) = value.find('/') {
+        let width: f32 = value[..slash_pos].trim().parse().ok()?;
+        let height: f32 = value[slash_pos + 1..].trim().parse().ok()?;
+        if !width.is_finite() || !height.is_finite() || height == 0.0 {
+            return None;
+        }
+        Some(width / height)
+    } else {
+        value.parse().ok()
+    }
+    .filter(|ratio: &f32| ratio.is_finite())
 }
