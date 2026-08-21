@@ -605,6 +605,14 @@ fn test_list_style_image_url_with_space() {
 }
 
 #[test]
+fn test_list_style_image_function_case_insensitive() {
+    let result = expand_one("list-style", "URL(\"support/green 15.png\") inside", false, (0, 0, 1));
+    assert_eq!(ls_get(&result, "list-style-position"), "inside");
+    assert_eq!(ls_get(&result, "list-style-image"), "URL(\"support/green 15.png\")");
+    assert_eq!(ls_get(&result, "list-style-type"), "disc");
+}
+
+#[test]
 fn test_list_style_rejects_invalid_image_atomically() {
     assert!(expand_one("list-style", "inside url(my marker.png)", false, (0, 0, 1)).is_empty());
     assert!(expand_one("list-style", "square url(\"marker.png\" extra)", false, (0, 0, 1)).is_empty());

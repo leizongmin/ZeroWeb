@@ -73,6 +73,26 @@ fn test_property_supported_font() {
 }
 
 #[test]
+fn test_property_supported_flow_and_list_style() {
+    assert!(is_property_supported("float", "inline-start"));
+    assert!(is_property_supported("clear", "both"));
+    assert!(is_property_supported("list-style-type", "\"Step\""));
+    assert!(is_property_supported("list-style-type", "Custom-Style"));
+    assert!(is_property_supported("list-style-position", "inside"));
+    assert!(is_property_supported("list-style-image", "url(\"my marker.png\")"));
+    assert!(is_property_supported("list-style", "square inside url(marker.png)"));
+    assert!(is_property_supported("list-style", "URL(\"my marker.png\") inside"));
+
+    assert!(!is_property_supported("float", "both"));
+    assert!(!is_property_supported("clear", "inline"));
+    assert!(!is_property_supported("list-style-type", "123bad"));
+    assert!(!is_property_supported("list-style-position", "center"));
+    assert!(!is_property_supported("list-style-image", "url(my marker.png)"));
+    assert!(!is_property_supported("list-style", "inside outside"));
+    assert!(!is_property_supported("list-style", "disc url(\"marker.png\" extra)"));
+}
+
+#[test]
 fn test_property_supported_color() {
     assert!(is_property_supported("color", "red"));
     assert!(is_property_supported("background-color", "#fff"));

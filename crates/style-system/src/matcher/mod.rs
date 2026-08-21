@@ -1380,6 +1380,13 @@ fn is_property_supported(property: &str, value: &str) -> bool {
         // 布尔特性：有值即为支持
         "display" => parse_display(trimmed).is_some(),
         "position" => parse_position(trimmed).is_some(),
+        "float" => parse_float(trimmed).is_some(),
+        "clear" => parse_clear(trimmed).is_some(),
+        // https://drafts.csswg.org/css-lists-3/#list-style-property
+        "list-style" => crate::shorthand::list_style_shorthand_supported(trimmed),
+        "list-style-type" => parse_list_style_type(trimmed).is_some(),
+        "list-style-position" => parse_list_style_position(trimmed).is_some(),
+        "list-style-image" => parse_list_style_image(trimmed).is_some(),
         "overflow" | "overflow-x" | "overflow-y" => parse_overflow(trimmed).is_some(),
         "visibility" => parse_visibility(trimmed).is_some(),
         "box-sizing" => parse_box_sizing(trimmed).is_some(),

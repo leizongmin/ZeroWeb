@@ -1813,13 +1813,14 @@ fn expand_list_style(value: &str, important: bool, specificity: (u32, u32, u32))
         if t.is_empty() {
             continue;
         }
+        let lower = t.to_ascii_lowercase();
         if t.eq_ignore_ascii_case("inside") || t.eq_ignore_ascii_case("outside") {
             if seen_position {
                 return vec![];
             }
             seen_position = true;
             position = t.to_ascii_lowercase();
-        } else if t.starts_with("url(") || t.starts_with("image(") || t.starts_with("image-set(") {
+        } else if lower.starts_with("url(") || lower.starts_with("image(") || lower.starts_with("image-set(") {
             if seen_image {
                 return vec![];
             }
@@ -2111,6 +2112,12 @@ pub(crate) fn font_variant_shorthand_supported(value: &str) -> bool {
 /// https://drafts.csswg.org/css-backgrounds-3/#the-background
 pub(crate) fn background_shorthand_supported(value: &str) -> bool {
     !expand_background(value, false, (0, 0, 0)).is_empty()
+}
+
+/// @supports 求值用：`list-style` 简写值是否合法可解析。
+/// https://drafts.csswg.org/css-lists-3/#list-style-property
+pub(crate) fn list_style_shorthand_supported(value: &str) -> bool {
+    !expand_list_style(value, false, (0, 0, 0)).is_empty()
 }
 
 /// 展开 font 简写。
