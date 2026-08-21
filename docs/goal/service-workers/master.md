@@ -19,7 +19,7 @@ SW runtime `Cache.add()` / `Cache.addAll()` 可用同一 fetch→put 链路写�
 `storage-cache-api` 已完成 WebView/in-process 页面 `caches.open()` + `Cache.put()/match()` /
 `Cache.matchAll()` / `Cache.keys()` 与页面 `Cache.add()` / `Cache.addAll()` GET fetch→store
 链路，并已接入首批上游 CacheStorage `.any.js` window 面 WPT baseline
-（4 case / 35 subtest / 29 Pass / 6 Fail）。该 sibling 与当前 SW runtime 链路共用 Cache
+（4 case / 35 subtest / 30 Pass / 5 Fail）。该 sibling 与当前 SW runtime 链路共用 Cache
 API 语义，但 SW fetch/cache 专属 WPT baseline、Vary 语义和完整 cacheability 矩阵仍归后续切片。
 
 **M0 推荐决策**：抽取 `zero-script-sandbox::WorkerRuntime` 的独立线程/引擎/看门狗核心，

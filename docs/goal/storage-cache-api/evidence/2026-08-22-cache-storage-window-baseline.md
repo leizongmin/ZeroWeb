@@ -10,8 +10,8 @@
 
 | Status | Count |
 |---|---:|
-| Fail | 6 |
-| Pass | 29 |
+| Fail | 5 |
+| Pass | 30 |
 
 ## Notes
 
@@ -21,9 +21,8 @@ This is the first pinned window-environment CacheStorage baseline. Failures are 
 
 | Case | Subtest | Status | Message |
 |---|---|---|---|
-| `service-workers/cache-storage/cache-storage.https.any.js` | CacheStorage.delete dooms, but does not delete immediately | Fail | assert_equals: expected -1 but got 0 |
+| `service-workers/cache-storage/cache-storage.https.any.js` | CacheStorage.delete dooms, but does not delete immediately | Fail | assert_equals: expected -1 but got 1 |
 | `service-workers/cache-storage/cache-storage.https.any.js` | CacheStorage names are DOMStrings not USVStrings | Fail | promise_test: Unhandled rejection with value: object "TypeError: TypeError: invalid CacheStorage request: unexpected end of hex escape at line 1 column 36" |
-| `service-workers/cache-storage/cache-storage-keys.https.any.js` | CacheStorage keys | Fail | assert_array_equals: CacheStorage.keys should only return existing caches. expected property 1 to be "example" but got "A" (expected array ["", "example", "Another cache name", "A", "a", "ex ample"] got ["", "A", "Another cache name", "a", "ex ample", "example"]) |
 | `service-workers/cache-storage/cache-delete.https.any.js` | Cache.delete supports ignoreVary | Fail | assert_false: Cache.delete should not delete if vary does not match unless ignoreVary is true expected false got true |
 | `service-workers/cache-storage/cache-keys.https.any.js` | Cache.keys supports ignoreVary | Fail | assert_equals: Cache.keys should resolve with an empty array with a mismatched vary. expected 0 but got 1 |
 | `service-workers/cache-storage/cache-keys.https.any.js` | Cache.keys without parameters and VARY entries | Fail | assert_equals: Cache.keys without parameters should match all entries. expected 3 but got 1 |

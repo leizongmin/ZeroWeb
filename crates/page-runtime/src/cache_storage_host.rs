@@ -152,11 +152,10 @@ fn dispatch_request(
             Ok(json!({"deleted": deleted}))
         }
         CacheStorageRequest::Keys => {
-            let mut keys: Vec<String> = storage
+            let keys: Vec<String> = storage
                 .cache_storage_ref(origin)
                 .map(|cache_storage| cache_storage.keys().into_iter().map(str::to_string).collect())
                 .unwrap_or_default();
-            keys.sort_unstable();
             Ok(json!({"keys": keys}))
         }
         CacheStorageRequest::Match {
@@ -458,7 +457,7 @@ mod tests {
         call(&handler, "https://example.com", json!({"op": "open", "name": "b"}));
         call(&handler, "https://example.com", json!({"op": "open", "name": "a"}));
         let listed = call(&handler, "https://example.com", json!({"op": "keys"}));
-        assert_eq!(listed["keys"], json!(["a", "b"]));
+        assert_eq!(listed["keys"], json!(["b", "a"]));
         let has_a = call(&handler, "https://example.com", json!({"op": "has", "name": "a"}));
         assert_eq!(has_a["has"], true);
 

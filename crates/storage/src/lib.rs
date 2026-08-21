@@ -794,7 +794,7 @@ mod tests {
         assert_eq!(record.value, serde_json::json!("new"));
     }
 
-    /// 测试 CacheStorage 在三个缓存中存储相同 URL 的不同响应，match_request 返回其中一个。
+    /// 测试 CacheStorage 在三个缓存中存储相同 URL 的不同响应，match_request 返回最早创建缓存。
     #[test]
     fn test_cache_storage_match_across_multiple_caches() {
         let mut cs = CacheStorage::new();
@@ -812,23 +812,15 @@ mod tests {
             .put(req.clone(), CacheResponse::new(200, b"v3".to_vec()))
             .unwrap();
 
-        // match_request 应找到其中一个
+        // match_request 应按创建顺序返回第一个匹配
         let matched = cs.match_request(&req).unwrap();
         assert_eq!(matched.status, 200);
-        let body = matched.body.clone();
-        assert!(
-            body == b"v1".to_vec() || body == b"v2".to_vec() || body == b"v3".to_vec(),
-            "应匹配三个缓存中的某个响应"
-        );
+        assert_eq!(matched.body, b"v1".to_vec());
 
         // 删除一个后仍能匹配
         cs.delete("v2");
         let matched2 = cs.match_request(&req).unwrap();
-        let body2 = matched2.body.clone();
-        assert!(
-            body2 == b"v1".to_vec() || body2 == b"v3".to_vec(),
-            "删除 v2 后应从剩余缓存中匹配"
-        );
+        assert_eq!(matched2.body, b"v1".to_vec());
 
         // 删除全部后无法匹配
         cs.delete("v1");

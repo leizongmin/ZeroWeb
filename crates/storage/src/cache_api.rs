@@ -2,6 +2,8 @@
 
 use std::collections::HashMap;
 
+use indexmap::IndexMap;
+
 use crate::StorageError;
 
 /// 缓存请求的简化表示。
@@ -209,13 +211,15 @@ impl Cache {
 #[derive(Debug, Clone)]
 pub struct CacheStorage {
     /// 按名称组织的缓存实例。
-    caches: HashMap<String, Cache>,
+    caches: IndexMap<String, Cache>,
 }
 
 impl CacheStorage {
     /// 创建新的 CacheStorage。
     pub fn new() -> Self {
-        Self { caches: HashMap::new() }
+        Self {
+            caches: IndexMap::new(),
+        }
     }
 
     /// 查找匹配请求的响应（在所有缓存中搜索第一个匹配）。
@@ -259,11 +263,12 @@ impl CacheStorage {
 
     /// 删除指定名称的缓存，返回是否成功。
     pub fn delete(&mut self, name: &str) -> bool {
-        self.caches.remove(name).is_some()
+        self.caches.shift_remove(name).is_some()
     }
 
     /// 获取所有缓存名称。
     pub fn keys(&self) -> Vec<&str> {
+        // https://w3c.github.io/ServiceWorker/#cache-storage-keys
         self.caches.keys().map(|s| s.as_str()).collect()
     }
 }
@@ -576,9 +581,7 @@ mod tests {
         cs.open("v1");
         cs.open("v2");
         let keys = cs.keys();
-        assert_eq!(keys.len(), 2);
-        assert!(keys.contains(&"v1"));
-        assert!(keys.contains(&"v2"));
+        assert_eq!(keys, vec!["v1", "v2"]);
     }
 
     #[test]
@@ -612,8 +615,8 @@ mod tests {
             .unwrap();
 
         let matched = cs.match_request(&req).unwrap();
-        // First cache that matches wins (HashMap iteration order)
-        assert!(matched.body == b"first".to_vec() || matched.body == b"second".to_vec());
+        // First-created cache that matches wins.
+        assert_eq!(matched.body, b"first".to_vec());
     }
 
     // ── 新增测试 ──
@@ -837,15 +840,43 @@ mod tests {
         cs.open("cache-beta");
         cs.open("cache-gamma");
 
-        let mut keys = cs.keys();
-        keys.sort();
-        assert_eq!(keys, vec!["cache-alpha", "cache-beta", "cache-gamma"]);
+        assert_eq!(cs.keys(), vec!["cache-alpha", "cache-beta", "cache-gamma"]);
 
         // 删除一个后 keys 更新
         cs.delete("cache-beta");
-        let mut keys_after = cs.keys();
-        keys_after.sort();
-        assert_eq!(keys_after, vec!["cache-alpha", "cache-gamma"]);
+        assert_eq!(cs.keys(), vec!["cache-alpha", "cache-gamma"]);
+    }
+
+    /// 测试 CacheStorage::keys 保留创建顺序，同名 open 不重排，删除后重建追加到末尾。
+    #[test]
+    fn test_cache_storage_keys_preserve_creation_order() {
+        let mut cs = CacheStorage::new();
+        cs.open("");
+        cs.open("example");
+        cs.open("Another cache name");
+        cs.open("A");
+        cs.open("a");
+        cs.open("ex ample");
+
+        assert_eq!(
+            cs.keys(),
+            vec!["", "example", "Another cache name", "A", "a", "ex ample"]
+        );
+
+        cs.open("example");
+        assert_eq!(
+            cs.keys(),
+            vec!["", "example", "Another cache name", "A", "a", "ex ample"],
+            "opening an existing cache must not move it"
+        );
+
+        assert!(cs.delete("example"));
+        cs.open("example");
+        assert_eq!(
+            cs.keys(),
+            vec!["", "Another cache name", "A", "a", "ex ample", "example"],
+            "recreating a deleted cache appends it to the end"
+        );
     }
 
     /// 测试 Cache::match_request 方法不匹配 — 缓存 GET 请求后用 POST 匹配应返回 None

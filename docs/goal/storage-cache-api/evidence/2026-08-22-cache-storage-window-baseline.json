@@ -2,8 +2,8 @@
   "cases": 4,
   "subtests": 35,
   "status": {
-    "Fail": 6,
-    "Pass": 29
+    "Fail": 5,
+    "Pass": 30
   },
   "deterministic": true,
   "results": [
@@ -18,7 +18,7 @@
         {
           "name": "CacheStorage.delete dooms, but does not delete immediately",
           "status": "Fail",
-          "message": "assert_equals: expected -1 but got 0"
+          "message": "assert_equals: expected -1 but got 1"
         },
         {
           "name": "CacheStorage.open with an empty name",
@@ -67,8 +67,8 @@
       [
         {
           "name": "CacheStorage keys",
-          "status": "Fail",
-          "message": "assert_array_equals: CacheStorage.keys should only return existing caches. expected property 1 to be \"example\" but got \"A\" (expected array [\"\", \"example\", \"Another cache name\", \"A\", \"a\", \"ex ample\"] got [\"\", \"A\", \"Another cache name\", \"a\", \"ex ample\", \"example\"])"
+          "status": "Pass",
+          "message": null
         }
       ]
     ],
