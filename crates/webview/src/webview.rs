@@ -351,6 +351,11 @@ pub struct WebView {
     shared_mutations: std::sync::Arc<std::sync::Mutex<Vec<DomMutation>>>,
     /// [`Self::shared_mutations`] 的已应用游标（apply 尾部的起点）。
     applied_mutations: usize,
+    /// js-dom R150（M4）：布局 rect 快照（NodeId→rect，render 后刷新）——进程内
+    /// `__zw_getBoundingClientRect` 回调的读取源。多进程路径由 renderer 的共享
+    /// `rect_bridge::LayoutRectSnapshot` 承担；进程内 webview 此前无该桥（gBCR 恒零
+    /// rect），testharness 用例的 `getBoundingClientRect`/MouseEvent offsetX 计算不可用。
+    layout_rect_snapshot: zero_engine::rect_bridge::LayoutRectSnapshot,
     /// HTTP 客户端。
     http_client: HttpClient,
     /// 进程内 JavaScript 沙箱（`external_script` 为 None 时使用）。
@@ -486,6 +491,7 @@ impl WebView {
             handle_selector_forward: std::sync::Arc::new(std::sync::Mutex::new(std::collections::HashMap::new())),
             shared_mutations: std::sync::Arc::new(std::sync::Mutex::new(Vec::new())),
             applied_mutations: 0,
+            layout_rect_snapshot: zero_engine::rect_bridge::new_layout_rect_snapshot(),
             http_client,
             js_sandbox,
             indexed_db_bridge,
@@ -687,7 +693,20 @@ impl WebView {
         let result = self.pipeline.render_html(html, css_str);
         let render_result = render_result_to_webview(&result);
         self.last_render = Some(render_result.clone());
+        // R150：render 后刷新布局 rect 快照（gBCR 回调读取源）。
+        self.refresh_layout_rect_snapshot();
         render_result
+    }
+
+    /// js-dom R150：从当前布局树刷新 `layout_rect_snapshot`（render/apply 后调用——
+    /// gBCR 回调读到最新几何）。无缓存布局时清空（快照与布局一致性优先）。
+    fn refresh_layout_rect_snapshot(&mut self) {
+        let snapshot = self.layout_rect_snapshot.clone();
+        if let Some(cache) = self.pipeline.build_hit_test_cache() {
+            cache.fill_layout_rect_snapshot(&snapshot);
+        } else if let Ok(mut map) = snapshot.lock() {
+            map.clear();
+        }
     }
 
     /// 脚本修改 DOM 后重新加载 HTML（保留已缓存 CSS，并刷新图片子资源）。
@@ -1743,6 +1762,8 @@ impl WebView {
             // repaint 只读不改 Document，live_html（repaint 前序列化）仍等于当前 DOM。
             self.cached_html = live_html;
             self.last_render = Some(render_result_to_webview(&result));
+            // R150：native 写后 repaint——刷新 gBCR 快照（布局可能已变）。
+            self.refresh_layout_rect_snapshot();
         }
     }
 
@@ -1784,7 +1805,14 @@ impl WebView {
             // js-dom M1 L2 R102：发布 live 查询源（pipeline cached_doc 共享句柄——查询回调
             // 无 pending structural mutations 时直读 live，消 re-parse；None 回落快照路径）。
             zero_engine::js_dom_bridge::publish_live_query_doc(self.pipeline.cached_doc_shared());
-            register_dom_callbacks(&mut **sandbox, &mutations, &dom_html, &page_url, &self.canvas_registry);
+            register_dom_callbacks(
+                &mut **sandbox,
+                &mutations,
+                &dom_html,
+                &page_url,
+                &self.canvas_registry,
+                Some(&self.layout_rect_snapshot),
+            );
             // js-dom M3 R100：selector→handle 反查回调——JS 侧 query 命中后按唯一选择器
             // 反查「本元素是否是 createElement 建立的 handle 节点」，命中则包装回原
             // handle proxy（identity 统一，见 WebView.selector_handle_map 文档）。
@@ -1852,7 +1880,14 @@ impl WebView {
         // js-dom M1 L2 R102：发布 live 查询源（pipeline cached_doc 共享句柄——查询回调
         // 无 pending structural mutations 时直读 live，消 re-parse；None 回落快照路径）。
         zero_engine::js_dom_bridge::publish_live_query_doc(self.pipeline.cached_doc_shared());
-        register_dom_callbacks(&mut **sandbox, &mutations, &dom_html, &page_url, &self.canvas_registry);
+        register_dom_callbacks(
+            &mut **sandbox,
+            &mutations,
+            &dom_html,
+            &page_url,
+            &self.canvas_registry,
+            Some(&self.layout_rect_snapshot),
+        );
         Self::register_identity_bridge_callback(&self.selector_handle_map, &mut **sandbox);
         Self::register_forward_identity_bridge_callback(&self.handle_selector_forward, &mut **sandbox);
 
@@ -2246,7 +2281,14 @@ impl WebView {
         // js-dom M1 L2 R102：发布 live 查询源（pipeline cached_doc 共享句柄——查询回调
         // 无 pending structural mutations 时直读 live，消 re-parse；None 回落快照路径）。
         zero_engine::js_dom_bridge::publish_live_query_doc(self.pipeline.cached_doc_shared());
-        register_dom_callbacks(&mut **sandbox, &mutations, &dom_html, &page_url, &self.canvas_registry);
+        register_dom_callbacks(
+            &mut **sandbox,
+            &mutations,
+            &dom_html,
+            &page_url,
+            &self.canvas_registry,
+            Some(&self.layout_rect_snapshot),
+        );
         Self::register_identity_bridge_callback(&self.selector_handle_map, &mut **sandbox);
         Self::register_forward_identity_bridge_callback(&self.handle_selector_forward, &mut **sandbox);
 
@@ -2375,6 +2417,8 @@ impl WebView {
         self.applied_mutations += tail.len();
         self.merge_handle_selectors(&handles);
         self.last_render = Some(render_result_to_webview(&render_result));
+        // R150：apply 后重渲染，布局已变——刷新 gBCR 快照。
+        self.refresh_layout_rect_snapshot();
         Ok(())
     }
 

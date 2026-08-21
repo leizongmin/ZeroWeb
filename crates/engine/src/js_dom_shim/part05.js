@@ -6786,6 +6786,8 @@
           var pS = chainS[iS];
           this[pS[0]] = o[pS[1]] != null ? o[pS[1]] : pS[2];
         }
+        // R150：显式 offset init 印章（dispatch 期 offsetX 计算的跳过条件）。
+        if (o.offsetX != null || o.offsetY != null) this._zwOffsetInit = true;
         return this;
       }
       var ev = _makeEvent(type, options);
@@ -6805,6 +6807,8 @@
         // != null：null/undefined 用默认（spec init dict 缺省 → 默认值；显式 null → 默认，spec LegacyNull 不适用事件 init）。
         ev[p[0]] = o[p[1]] != null ? o[p[1]] : p[2];
       }
+      // R150：显式 offset init 印章（dispatch 期 offsetX 计算的跳过条件）。
+      if (o.offsetX != null || o.offsetY != null) ev._zwOffsetInit = true;
       return ev;
     };
     Ctor.prototype = Object.create(Parent.prototype);
@@ -7016,6 +7020,12 @@
   ]);
   _defineEventSubclass('AnimationEvent', 'Event', [
     ['animationName', 'animationName', ''], ['elapsedTime', 'elapsedTime', 0], ['pseudoElement', 'pseudoElement', ''],
+  ]);
+  // R150（js-dom M4）：GamepadEvent（spec Gamepad §gamepadevent——Gamepad API 的连接/
+  // 断开/按键事件）。构造面 + gamepad 属性（init dict 近似，headless 无真 gamepad
+  // 数据——WPT Event-timestamp-high-resolution.https 只断言构造 + timeStamp 单调）。
+  _defineEventSubclass('GamepadEvent', 'Event', [
+    ['gamepad', 'gamepad', null],
   ]);
   // R2931 PageTransitionEvent——pageshow/pagehide 生命周期事件（persisted 标 bfcache 恢复）。pageshow 经
   // _maybeFirePageShow 首次注册派发；pagehide 仅支持构造 + addEventListener（headless 无 unload 不自动派发）。

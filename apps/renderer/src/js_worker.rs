@@ -417,7 +417,7 @@ fn js_worker_main(
     let page_url: Arc<std::sync::Mutex<String>> = Arc::new(std::sync::Mutex::new(String::from("about:blank")));
     let canvas_registry: std::sync::Arc<std::sync::Mutex<zero_engine::js_dom_bridge::CanvasRegistry>> =
         std::sync::Arc::new(std::sync::Mutex::new(zero_engine::js_dom_bridge::CanvasRegistry::new()));
-    register_dom_callbacks(&mut *sandbox, &mutations, &dom_html, &page_url, &canvas_registry);
+    register_dom_callbacks(&mut *sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
     let indexed_db_bridge = zero_engine::IndexedDbBridge::new(indexed_db_handler);
     indexed_db_bridge.register(&mut *sandbox, &page_url);
     if let Some(client) = service_worker_client {

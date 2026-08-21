@@ -42,8 +42,14 @@ fn perf_time_origin() -> std::time::Instant {
 }
 
 /// 当前 DOMHighResTimeStamp（ms，自 [`perf_time_origin`] 起的单调 elapsed）。供 `Event.timeStamp` 用。
+/// R150（js-dom M4）：量化到 5µs（0.005ms）——定时侧信道缓解（WPT
+/// Event-timestamp-safe-resolution 千样本 GCD ≥ 5µs；真实浏览器对 Event timeStamp
+/// 施加 coarse 粒度。与 shim `_makeEvent` 的 JS 侧量化同语义，两路径一致）。
 fn perf_now_ms() -> f64 {
-    perf_time_origin().elapsed().as_secs_f64() * 1000.0
+    let t = perf_time_origin().elapsed().as_secs_f64() * 1000.0;
+    // ceil 向上取整：任意正 elapsed 量化后恒 ≥ 0.005ms（round 会把 <2.5µs 的早期
+    // 值归 0——R22 断言 timeStamp > 0 回归）。ceil 保持 5µs 步进粒度（GCD 性质不变）。
+    (t * 200.0).ceil() / 200.0
 }
 use super::string_arg;
 

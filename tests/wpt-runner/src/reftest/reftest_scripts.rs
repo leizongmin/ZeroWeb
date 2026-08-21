@@ -48,7 +48,7 @@ pub(super) fn apply_scripted_dom_mutations(
     let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(Vec::new()));
     let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(html.to_string()));
     let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new(String::from("about:blank")));
-    register_dom_callbacks(&mut *sandbox, &mutations, &dom_html, &page_url, canvas_registry);
+    register_dom_callbacks(&mut *sandbox, &mutations, &dom_html, &page_url, canvas_registry, None);
 
     if let Err(e) = sandbox.execute(generate_js_dom_shim()) {
         eprintln!("  [reftest JS] DOM shim init warning: {e}");

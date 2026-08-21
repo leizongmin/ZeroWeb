@@ -19,7 +19,7 @@ fn tabindex_defaults_follow_native_focusability() {
     ));
     let page_url = Arc::new(Mutex::new("https://zero.test/tabindex".to_string()));
     let canvas_registry = Arc::new(Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
-    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry);
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
 
     assert_eq!(
         sandbox
@@ -56,7 +56,7 @@ fn form_owner_attribute_does_not_fall_back_to_ancestor() {
     ));
     let page_url = Arc::new(Mutex::new("https://zero.test/form-owner".to_string()));
     let canvas_registry = Arc::new(Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
-    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry);
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
 
     assert_eq!(
         sandbox

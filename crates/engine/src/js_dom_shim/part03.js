@@ -2793,6 +2793,25 @@
   function _dispatchWithBubble(targetKey, targetSel, targetHandle, event, targetSlot) {
     var target = _makeProxy(targetSel, targetHandle);
     event.target = target;
+    // R150（js-dom M4）：MouseEvent offsetX/offsetY 的 dispatch 期计算——spec CSSOM
+    // View §dom-mouseevent-offsetx：offset = client 坐标 - target 的 padding 边缘
+    //（本实现近似为 gBCR 左/上）。构造时**未显式给** offset init（真实浏览器 MouseEvent
+    // initDict 无 offsetX 字段，恒为派发期计算；shim 旧恒 0——WPT mouse-event-
+    // retarget：clientX 50 派发到 body margin 8px 下的 target，offsetX 期望 42）。
+    // 显式 init（构造给了 offsetX）保持构造值；target 无 gBCR（detached/文档节点）保持现值。
+    if (event && typeof event.clientX === 'number' && typeof event.clientY === 'number'
+        && event._zwOffsetInit !== true && !event._zwOffsetComputed) {
+      try {
+        if (typeof target.getBoundingClientRect === 'function') {
+          var r150r = target.getBoundingClientRect();
+          if (r150r && typeof r150r.left === 'number') {
+            event.offsetX = event.clientX - r150r.left;
+            event.offsetY = event.clientY - r150r.top;
+            event._zwOffsetComputed = true;
+          }
+        }
+      } catch (_e150o) {}
+    }
     // R138（js-dom M4）：srcElement 同步设——shim 工厂事件的 srcElement 是 accessor
     // getter（读 this.target 自动跟随），但 native 叠加路径的 native MouseEvent 实例
     // own data 属性 srcElement=null（构造器 set_event_init 设）遮蔽原型 getter →
@@ -3199,9 +3218,18 @@
       // 与 defaultPrevented/cancelBubble 同款「公开镜像」——此处占位 null，真正的 getter 经下方
       // defineProperty 定义（读 this.target，dispatch 时 target 更新即反映）。
       srcElement: null,
-      timeStamp: typeof __zw_performance_now === 'function'
-        ? Number(__zw_performance_now())
-        : (typeof Date.now === 'function' ? Date.now() : 0),
+      // R150（js-dom M4）：timeStamp 量化到 5µs（0.005ms）——定时侧信道缓解（WPT
+      // Event-timestamp-safe-resolution：千样本 GCD ≥ 5µs——真实浏览器对 Event
+      // timeStamp 施加 coarse 粒度防 timing attack；高分辨率原值使相邻构造事件的
+      // µs 差 GCD 跌到 1）。high-resolution 用例（FocusEvent vs performance.now
+      // 单调性）不受影响（同源粗化后仍 ≥ 构造前时刻）。
+      timeStamp: (function () {
+        var t = typeof __zw_performance_now === 'function'
+          ? Number(__zw_performance_now())
+          : (typeof Date.now === 'function' ? Date.now() : 0);
+        // ceil 向上取整：任意正 elapsed 量化后恒 ≥ 0.005ms（round 会把 <2.5µs 的早期值归 0）。
+        return Math.ceil(t * 200) / 200;
+      })(),
       detail: options.detail, // CustomEvent 用；Event 读得 undefined（spec 一致）
       defaultPrevented: false, // 公开镜像（dispatch 读 _defaultPrevented，勿删私字段）
       _defaultPrevented: false,

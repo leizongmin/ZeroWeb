@@ -490,7 +490,14 @@ impl WebView {
                 .js_sandbox
                 .as_mut()
                 .ok_or_else(|| WebViewError::Script("no js sandbox".to_string()))?;
-            register_dom_callbacks(&mut **sandbox, &mutations, &dom_html, &page_url, &self.canvas_registry);
+            register_dom_callbacks(
+                &mut **sandbox,
+                &mutations,
+                &dom_html,
+                &page_url,
+                &self.canvas_registry,
+                Some(&self.layout_rect_snapshot),
+            );
         }
         self.ensure_js_shim()?;
         let value = self

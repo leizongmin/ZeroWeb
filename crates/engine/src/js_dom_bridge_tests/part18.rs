@@ -16,7 +16,7 @@ fn html5test_inner_html_is_synchronously_observable_on_created_element() {
     let dom_html = Arc::new(Mutex::new("<html><body></body></html>".to_string()));
     let page_url = Arc::new(Mutex::new("https://zero.test/html5test".to_string()));
     let canvas_registry = Arc::new(Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
-    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry);
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
 
     // https://html.spec.whatwg.org/multipage/dynamic-markup-insertion.html#dom-innerhtml
     // html5test performs this probe before queued host mutations are applied.
@@ -54,7 +54,7 @@ fn r51_handle_child_parent_node_reflects_real_parent() {
     ));
     let page_url = Arc::new(Mutex::new("https://zero.test/r51".to_string()));
     let canvas_registry = Arc::new(Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
-    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry);
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
 
     // 反向链：handle 子（createElement 产物）appendChild 后 parentNode 必须返回真实父
     //（旧 fallback 恒猜 body——WPT dom indexOf 的 `while (node != parentNode.childNodes[i])`
@@ -97,7 +97,7 @@ fn r51_detached_handle_node_parent_node_is_null() {
     ));
     let page_url = Arc::new(Mutex::new("https://zero.test/r51b".to_string()));
     let canvas_registry = Arc::new(Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
-    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry);
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
 
     // spec：detached 节点（createElement 后未 append）parentNode === null。旧 fallback 猜
     // body 是 WPT indexOf 死循环根因的另一形态（假父快照永不含该节点）。
@@ -131,7 +131,7 @@ fn r51_text_view_children_merge_with_appended_children() {
     ));
     let page_url = Arc::new(Mutex::new("https://zero.test/r51c".to_string()));
     let canvas_registry = Arc::new(Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
-    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry);
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
 
     // 融合视图：textContent 建的本地文本子（前）+ appendChild 建的元素子（后）必须在同一
     // childNodes 里可见（旧短路：_zwLocalChildNodes 命中即 return，append 的子不可见）。
@@ -182,7 +182,7 @@ fn r51_self_append_throws_hierarchy_request_error() {
     ));
     let page_url = Arc::new(Mutex::new("https://zero.test/r51d".to_string()));
     let canvas_registry = Arc::new(Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
-    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry);
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
 
     // spec `dom-node-pre-insert`：child 即 parent 自身 → HierarchyRequestError（WPT
     // Range-mutations 非法用例段；旧 shim 不抛真执行 → JS registry 自环 →
@@ -226,7 +226,7 @@ fn r51_ancestor_append_throws_hierarchy_request_error() {
     ));
     let page_url = Arc::new(Mutex::new("https://zero.test/r51e".to_string()));
     let canvas_registry = Arc::new(Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
-    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry);
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
 
     // spec `dom-node-pre-insert`：child 是 parent 的祖先 → HierarchyRequestError（WPT
     // Range-mutations "paras[0].appendChild(testDiv)"——旧 shim 真执行 → host apply mutations
@@ -272,7 +272,7 @@ fn r51_moved_node_leaves_old_parent_childnodes() {
     ));
     let page_url = Arc::new(Mutex::new("https://zero.test/r51f".to_string()));
     let canvas_registry = Arc::new(Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
-    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry);
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
 
     // spec appendChild 移动语义：child 从旧父移到新父后，旧父 childNodes 不得双份残留
     //（R51：JS 侧旧父 overlay 剔除 + registry 剔除）。
@@ -312,7 +312,7 @@ fn r51c_query_selector_falls_back_to_pending_added_by_id() {
     ));
     let page_url = Arc::new(Mutex::new("https://zero.test/r51c".to_string()));
     let canvas_registry = Arc::new(Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
-    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry);
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
 
     // R51c：host 快照未命中（同步 turn 内 append 的节点）→ pending added 按 id 回落。
     // WPT dom/common.js setupRangeTests 每次开头 querySelector('#test') 取旧树 removeChild——
@@ -361,7 +361,7 @@ fn r51c_remove_after_append_zeroes_out_pending() {
     ));
     let page_url = Arc::new(Mutex::new("https://zero.test/r51c2".to_string()));
     let canvas_registry = Arc::new(Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
-    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry);
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
 
     // R51c：add→remove 对冲消零——remove 后同 id 查询不应回落到已移除节点（WPT setup 重建
     // 模式的核心语义：remove 的旧树不得再被 querySelector 捞回）。
@@ -408,7 +408,7 @@ fn r54_detached_container_subtree_not_in_document_collection() {
     ));
     let page_url = Arc::new(Mutex::new("https://zero.test/r54".to_string()));
     let canvas_registry = Arc::new(Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
-    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry);
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
 
     // spec：getElementsByTagName 只返主文档节点。append 到 detached 容器（未挂主文档）的
     // 元素不得出现在文档级集合里；同批 append 到主文档的元素正常进。
@@ -463,7 +463,7 @@ fn r54_invalidate_add_branch_filters_detached_growth() {
     ));
     let page_url = Arc::new(Mutex::new("https://zero.test/r54b".to_string()));
     let canvas_registry = Arc::new(Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
-    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry);
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
 
     // 集合先建（els=[#base] 快照基线），再向 detached 容器 append 多轮 <p>——集合长度
     // 必须保持 1（旧实现每 append 并入 → els 净增长 → O(els) 失效级联）。
@@ -512,7 +512,7 @@ fn r54_build_time_pending_merge_skips_detached() {
     ));
     let page_url = Arc::new(Mutex::new("https://zero.test/r54c".to_string()));
     let canvas_registry = Arc::new(Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
-    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry);
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
 
     // 先 append 到 detached 容器（入 pending 表），再取集合——pending 并入须按挂载点过滤。
     // 对照：同 tag 的主文档 append 正常并入。
@@ -568,7 +568,7 @@ fn r55_childnodes_base_cache_identity_and_freshness() {
     ));
     let page_url = Arc::new(Mutex::new("https://zero.test/r55".to_string()));
     let canvas_registry = Arc::new(Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
-    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry);
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
 
     // ① 缓存命中：两次读同 sel childNodes，文本子 identity 稳定（缓存数组复用基底）。
     // ② 缓存内文本节点可编辑（R48 方法仍可用——缓存不冻结行为）。
@@ -627,7 +627,7 @@ fn r55_reregister_invalidates_base_cache() {
     ));
     let page_url = Arc::new(Mutex::new("https://zero.test/r55b".to_string()));
     let canvas_registry = Arc::new(Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
-    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry);
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
 
     sandbox
         .execute(
@@ -645,7 +645,7 @@ fn r55_reregister_invalidates_base_cache() {
     let dom_html2 = Arc::new(Mutex::new(
         "<html><body><p id='t'>new</p></body></html>".to_string(),
     ));
-    register_dom_callbacks(&mut sandbox, &mutations, &dom_html2, &page_url, &canvas_registry);
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html2, &page_url, &canvas_registry, None);
     sandbox
         .execute(
             "var p2 = document.getElementById('t');\n\
@@ -679,7 +679,7 @@ fn test_fill_rule_passthrough_r56c() {
     ));
     let page_url = Arc::new(Mutex::new("https://zero.test/r56c".to_string()));
     let canvas_registry = Arc::new(Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
-    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry);
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
 
     // evenodd.1 场景：绿底 + 同一矩形两遍 + fill("evenodd") → 中心保持绿（不填红）。
     sandbox.execute(
@@ -784,7 +784,7 @@ fn test_ensuresubpath_clip_ellipse_r56e() {
     ));
     let page_url = Arc::new(Mutex::new("https://zero.test/r56e".to_string()));
     let canvas_registry = Arc::new(Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
-    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry);
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
 
     // ① lineTo 无子路径 = moveTo（stroke 不画，画布保持底色）。
     sandbox.execute(
@@ -862,7 +862,7 @@ fn r79_sandbox() -> (zero_script_sandbox::V8Sandbox, std::sync::Arc<std::sync::M
     ));
     let page_url = Arc::new(Mutex::new("https://zero.test/r79".to_string()));
     let canvas_registry = Arc::new(Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
-    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry);
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
     (sandbox, mutations)
 }
 
@@ -1642,7 +1642,7 @@ fn r79_parent_element_of_document_element_is_null_but_parent_node_is_document() 
     ));
     let page_url = Arc::new(Mutex::new("https://zero.test/r79-parentelement".to_string()));
     let canvas_registry = Arc::new(Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
-    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry);
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
 
     // ZRG-2026-08-17（zeroweb-regression-guard）：R79 把 html 的 parentNode 设为 document 后，
     // parentNode/parentElement 共用 _parentNodeFor 使 documentElement.parentElement 错误返回
@@ -1707,7 +1707,7 @@ fn test_object_prototype_methods_reachable_on_element_r96() {
     let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
     let canvas_registry: Arc<Mutex<crate::js_dom_bridge::CanvasRegistry>> =
         Arc::new(Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
-    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry);
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
 
     sandbox
         .execute(
@@ -1777,7 +1777,7 @@ fn test_live_query_doc_read_path_r102() {
     let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
     let canvas_registry: Arc<Mutex<crate::js_dom_bridge::CanvasRegistry>> =
         Arc::new(Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
-    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry);
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
 
     // 基线：未 publish live——快照路径查询可见快照元素。
     let out = sandbox
@@ -1851,7 +1851,7 @@ fn test_passive_by_default_r105() {
     let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
     let canvas_registry: Arc<Mutex<crate::js_dom_bridge::CanvasRegistry>> =
         Arc::new(Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
-    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry);
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
 
     let out = sandbox
         .execute(
@@ -1918,7 +1918,7 @@ fn test_dispatch_event_entry_semantics_r106() {
     let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
     let canvas_registry: Arc<Mutex<crate::js_dom_bridge::CanvasRegistry>> =
         Arc::new(Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
-    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry);
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
 
     let out = sandbox
         .execute(
@@ -1991,7 +1991,7 @@ fn test_body_frameset_window_forwarding_handlers_r107() {
     let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
     let canvas_registry: Arc<Mutex<crate::js_dom_bridge::CanvasRegistry>> =
         Arc::new(Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
-    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry);
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
 
     let out = sandbox
         .execute(
@@ -2056,7 +2056,7 @@ fn test_synthetic_click_pre_activation_r108() {
     let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
     let canvas_registry: Arc<Mutex<crate::js_dom_bridge::CanvasRegistry>> =
         Arc::new(Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
-    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry);
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
 
     let out = sandbox
         .execute(

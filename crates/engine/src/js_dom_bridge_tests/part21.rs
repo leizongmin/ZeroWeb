@@ -21,7 +21,7 @@ fn test_mel_dispatch_event_target_r146() {
     let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
     let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
         std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
-    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry);
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
 
     let out = sandbox
         .execute(
@@ -67,7 +67,7 @@ fn test_dispatch_clears_stop_flags_for_redispatch_r146() {
     let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
     let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
         std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
-    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry);
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
 
     let out = sandbox
         .execute(
@@ -123,7 +123,7 @@ fn test_opt_capture_webidl_boolean_r146() {
     let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
     let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
         std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
-    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry);
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
 
     let out = sandbox
         .execute(
@@ -218,7 +218,7 @@ fn test_focus_ownership_and_related_target_r148() {
     let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
     let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
         std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
-    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry);
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
 
     let out = sandbox
         .execute(
@@ -274,7 +274,7 @@ fn test_define_auto_upgrade_existing_elements_r149() {
     let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
     let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
         std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
-    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry);
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
 
     let out = sandbox
         .execute(
@@ -301,5 +301,134 @@ fn test_define_auto_upgrade_existing_elements_r149() {
         out,
         "ctor:true~connected:true~log:greet:null->hi|foo:null->a~instance:true",
         "R149 define 自动升级既有元素（ctor + connectedCallback + 存在属性的初始 attr change；缺失属性无回调）"
+    );
+}
+
+/// R150①：MouseEvent offsetX/offsetY 派发期计算——spec CSSOM View §dom-mouseevent-offsetx
+///（offset = client − target padding 边缘，近似 gBCR 左/上）。构造未显式给 offset init 时
+/// 派发到 target 后计算；显式 init 保持构造值（WPT mouse-event-retarget：clientX 50 派发到
+/// margin 8px 下的 target，offsetX 期望 42——本测试经 mock rect bridge 左缘 8 验证同语义）。
+#[test]
+fn test_mouse_event_offset_xy_dispatch_computed_r150() {
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let mut sandbox = V8Sandbox::with_config(zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    })
+    .unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> =
+        Arc::new(Mutex::new("<html><body><div id=\"t\">x</div></body></html>".to_string()));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+    // mock rect bridge：#t → "8,8,100,50"（padding 边缘近似 gBCR 左/上 = 8）。
+    sandbox.register_callback(
+        "__zw_getBoundingClientRect",
+        Box::new(|_args: &[String]| -> String { "8,8,100,50".to_string() }),
+    );
+
+    let out = sandbox
+        .execute(
+            "var log = [];\
+             var t = document.querySelector('#t');\
+             t.addEventListener('click', function (e) {\
+               log.push('computed:' + e.offsetX + ',' + e.offsetY);\
+             });\
+             t.dispatchEvent(new MouseEvent('click', { clientX: 50, clientY: 30 }));\
+             var ev2 = new MouseEvent('click', { clientX: 50, clientY: 30, offsetX: 7, offsetY: 9 });\
+             log.push('explicit:' + ev2.offsetX + ',' + ev2.offsetY);\
+             log.join('|')",
+        )
+        .unwrap()
+        .value;
+    assert_eq!(
+        out,
+        "computed:42,22|explicit:7,9",
+        "R150 offsetX/offsetY：派发期 = client − gBCR 左/上（50−8=42 / 30−8=22）；显式 init 保持构造值"
+    );
+}
+
+/// R150②：Event timeStamp 量化到 5µs（0.005ms）——定时侧信道缓解（WPT
+/// Event-timestamp-safe-resolution 千样本 GCD ≥ 5µs）。断言两点：① 相邻构造事件差值
+/// 的量化粒度（任意两值之差 × 200 恒整数）② 量化不破坏单调非递减（后构造 ≥ 先构造）。
+#[test]
+fn test_event_timestamp_quantized_5us_r150() {
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let mut sandbox = V8Sandbox::with_config(zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    })
+    .unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> =
+        Arc::new(Mutex::new("<html><body></body></html>".to_string()));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+
+    let out = sandbox
+        .execute(
+            "var ts = [];\
+             for (var i = 0; i < 200; i++) {\
+               ts.push(new Event('x').timeStamp);\
+               for (var j = 0; j < 50; j++) { /* 忙等扰动，制造未量化差值 */ }\
+             }\
+             var mono = true, quant = true;\
+             for (var i = 1; i < ts.length; i++) {\
+               if (ts[i] < ts[i - 1]) mono = false;\
+               var d = (ts[i] - ts[i - 1]) * 200;\
+               if (Math.abs(d - Math.round(d)) > 1e-9) quant = false;\
+             }\
+             'mono:' + mono + '~quant:' + quant + '~first:' + (ts[0] > 0)",
+        )
+        .unwrap()
+        .value;
+    assert_eq!(
+        out, "mono:true~quant:true~first:true",
+        "R150 timeStamp 5µs 量化：单调保持 + 差值粒度 0.005ms 整数倍 + 首值 > 0（ceil 不归零）"
+    );
+}
+
+/// R150③：GamepadEvent 构造器（spec Gamepad §gamepadevent）——WPT
+/// Event-timestamp-high-resolution.https 断言 `new GamepadEvent('gamepadconnected')`
+/// 可构造 + timeStamp 与 performance.now 同源单调。断言构造面 + gamepad 属性默认 null。
+#[test]
+fn test_gamepad_event_constructor_r150() {
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let mut sandbox = V8Sandbox::with_config(zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    })
+    .unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> =
+        Arc::new(Mutex::new("<html><body></body></html>".to_string()));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+
+    let out = sandbox
+        .execute(
+            "var ev = new GamepadEvent('gamepadconnected');\
+             var ev2 = new GamepadEvent('gamepaddisconnected', { gamepad: { id: 'x' } });\
+             (ev instanceof GamepadEvent) + '~' + (ev instanceof Event) + '~'\
+               + (ev.gamepad === null) + '~' + (ev2.gamepad && ev2.gamepad.id)\
+               + '~' + (ev.timeStamp > 0)",
+        )
+        .unwrap()
+        .value;
+    assert_eq!(
+        out, "true~true~true~x~true",
+        "R150 GamepadEvent：instanceof 链 + gamepad 默认 null / init 透传 + timeStamp 单调正值"
     );
 }

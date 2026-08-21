@@ -19,6 +19,7 @@ fn appended_node_id_is_visible_before_renderer_commit() {
         &dom_html,
         &page_url,
         &canvas_registry,
+        None,
     );
 
     sandbox
@@ -67,7 +68,7 @@ fn test_document_collections_r2833() {
     let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
     let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
         std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
-    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry);
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
 
     sandbox
         .execute(
@@ -153,7 +154,7 @@ fn test_image_constructor_r2834() {
     let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
     let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
         std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
-    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry);
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
 
     // new Image() → tagName=IMG（真 DOM 元素，非旧 plain object）。
     sandbox
@@ -248,7 +249,7 @@ fn test_audio_constructor_and_media_methods_r2835() {
     let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
     let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
         std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
-    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry);
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
 
     // new Audio(src) → tagName=AUDIO + src 反射。
     sandbox
@@ -360,7 +361,7 @@ fn test_input_value_as_number_r2836() {
     let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
     let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
         std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
-    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry);
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
 
     // getter：整数 / 浮点 / 空→NaN / 无效→NaN / 非 number type→NaN / range 亦可。
     sandbox
@@ -464,7 +465,7 @@ fn test_anchor_url_decomposition_r2838() {
     let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("http://test.local/base/".to_string()));
     let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
         std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
-    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry);
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
 
     // 绝对 href 全组件解析。
     sandbox
@@ -614,7 +615,7 @@ fn test_anchor_url_component_setters_r3070() {
     let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("http://test.local/base/".to_string()));
     let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
         std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
-    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry);
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
 
     // 各组件 set（每元素独立，从同一 base href 重算）+ 无 href 元素 lenient 路径。
     sandbox
@@ -716,7 +717,7 @@ fn test_popover_api_r3071() {
     let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
     let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
         std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
-    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry);
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
 
     // ① popover enumerated getter：auto→auto / manual→manual / ""→manual / invalid→manual / 无→null。
     sandbox
@@ -869,7 +870,7 @@ fn test_popover_target_activation_r3072() {
     let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
     let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
         std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
-    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry);
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
 
     // ① popovertargetaction=toggle（默认）：click 按钮 → 目标 popover toggle（closed→open）。toggle 事件派发。
     sandbox
@@ -1027,7 +1028,7 @@ fn test_popover_target_idl_r3073() {
     let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
     let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
         std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
-    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry);
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
 
     // ① popoverTargetElement getter：无编程式目标 → 回落 popovertarget 内容属性（getElementById）。
     sandbox
@@ -1186,7 +1187,7 @@ fn test_form_reflected_idl_attrs_r2839() {
     let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("http://test.local/".to_string()));
     let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
         std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
-    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry);
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
 
     // f1：显式 action/method(POST→post 小写)/enctype/target 全反射。
     sandbox
@@ -1301,7 +1302,7 @@ fn test_reflected_idl_htmlfor_defaultvalue_r2840() {
     let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("http://test.local/".to_string()));
     let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
         std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
-    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry);
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
 
     // label.htmlFor 反射 for 属性。
     sandbox
@@ -1411,7 +1412,7 @@ fn test_input_form_owner_r2841() {
     let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("http://test.local/".to_string()));
     let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
         std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
-    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry);
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
 
     // ancestor-based：nested input.form → fA（最近 ancestor form）。
     sandbox
@@ -1507,7 +1508,7 @@ fn test_table_row_cell_index_r2842() {
     let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("http://test.local/".to_string()));
     let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
         std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
-    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry);
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
 
     // rowIndex：跨 thead+tbody document order——hr=0, r0=1, r1=2。
     sandbox
@@ -1610,7 +1611,7 @@ fn test_table_section_index_and_collections_r2843() {
     let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("http://test.local/".to_string()));
     let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
         std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
-    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry);
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
 
     // sectionRowIndex：行在所属 section 内位置——thead 的 h1=0/h2=1；tbody1 的 b1=0；tbody2 的 b2=0/b3=1。
     sandbox
@@ -1717,7 +1718,7 @@ fn test_text_control_selection_r2844() {
     let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("http://test.local/".to_string()));
     let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
         std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
-    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry);
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
 
     // 默认选区 = {0, 0, 'forward'}（text control 未设/未聚焦）；非选区 type（number/checkbox）→ null。
     sandbox
@@ -1890,7 +1891,7 @@ fn test_table_caption_thead_tfoot_section_rows_r2845() {
     let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("http://test.local/".to_string()));
     let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
         std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
-    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry);
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
 
     // table.caption：t1 首 caption（id=cap）；t2 无 → null。
     sandbox
@@ -2004,7 +2005,7 @@ fn test_output_value_default_value_r2846() {
     let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("http://test.local/".to_string()));
     let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
         std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
-    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry);
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
 
     // value getter = textContent；defaultValue getter = 初始 textContent（同 value，未变更时相等）。
     // 每 execute 内声明局部元素 var（_proxyCache identity-stable）。
@@ -2123,7 +2124,7 @@ fn test_mutation_record_instanceof_spec_fields_r2847() {
     let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("http://test.local/".to_string()));
     let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
         std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
-    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry);
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
 
     // execute 1：observe handle-based parent，appendChild child（childList mutation）。
     // 回调经 execute 末 microtask checkpoint 派发 → globalThis.__recs 在本 execute 末就绪。
@@ -2239,7 +2240,7 @@ fn test_reflected_global_attrs_autofocus_draggable_spellcheck_translate_r2848() 
     let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("http://test.local/".to_string()));
     let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
         std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
-    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry);
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
 
     // 读：autofocus(a, present)→true；draggable(d,"true")→true；spellcheck(s,"false")→false；
     // translate(t,"no")→false；plain 全缺省：autofocus=false / draggable=false / spellcheck=true / translate=true。
@@ -2374,7 +2375,7 @@ fn test_option_index_r2849() {
     let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("http://test.local/".to_string()));
     let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
         std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
-    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry);
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
 
     // 读 option.index：a=0 / b=1 / c=2（optgroup 内仍 document order）/ x=0（另一 select）。
     sandbox
@@ -2439,7 +2440,7 @@ fn test_intersection_observer_root_margin_r2966() {
     let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
     let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
         std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
-    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry);
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
 
     // mock gBCR：id="out" 元素返视口左外侧 rect（x=-15..-5，w/h=10，不与视口重叠）。
     sandbox.register_callback(
@@ -2534,7 +2535,7 @@ fn test_pointer_capture_api_r3068() {
     let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
     let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
         std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
-    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry);
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
 
     // ① hasPointerCapture 默认 false。
     assert_eq!(

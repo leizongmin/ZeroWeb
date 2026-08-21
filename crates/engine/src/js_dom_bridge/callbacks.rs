@@ -101,6 +101,7 @@ pub fn register_dom_callbacks(
     dom_html: &Arc<std::sync::Mutex<String>>,
     page_url: &Arc<std::sync::Mutex<String>>,
     canvas_registry: &Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>>,
+    rect_snapshot_opt: Option<&crate::rect_bridge::LayoutRectSnapshot>,
 ) {
     // js-dom M3 R100：handle 计数器改 thread-local 单调持久——旧版每次
     // `register_dom_callbacks`（run_page_scripts / execute_script_with_dom / dispatch_event
@@ -212,6 +213,55 @@ pub fn register_dom_callbacks(
                 "1".into()
             } else {
                 "0".into()
+            }
+        }),
+    );
+
+    // js-dom R150（M4）：`__zw_getBoundingClientRect(selector)`——进程内 gBCR。rect 从
+    // 共享 layout snapshot（webview render 后刷新的 `LayoutRectSnapshot`，注册方传入）
+    // 读取；selector→NodeId 经 LIVE_QUERY_DOC（live doc 优先，回落查询快照 re-parse）。
+    // 多进程路径的 renderer js_worker 自带 rect_bridge 版注册（同回调名，先注册者生效
+    // ——进程内 webview 不走 renderer，无冲突）。返 "x,y,w,h"；miss → 空串（shim 回落零 rect）。
+    let rect_snapshot = rect_snapshot_opt
+        .cloned()
+        .unwrap_or_else(|| std::sync::Arc::new(std::sync::Mutex::new(std::collections::HashMap::new())));
+    let rs_html = Arc::clone(dom_html);
+    let rs_qv = Arc::clone(&view_cache);
+    let rs_mut = Arc::clone(mutations);
+    sandbox.register_callback(
+        "__zw_getBoundingClientRect",
+        Box::new(move |args: &[String]| -> String {
+            let sel = args.first().map(String::as_str).unwrap_or("");
+            if sel.is_empty() {
+                return String::new();
+            }
+            // selector → NodeId：live doc 优先（进程内 webview 常驻发布），
+            // miss 回落查询快照 re-parse（与 __zw_query_match 同源逻辑）。
+            let node_id = LIVE_QUERY_DOC.with(|slot| {
+                slot.borrow()
+                    .as_ref()
+                    .and_then(|rc| rc.try_borrow().ok())
+                    .and_then(|doc| {
+                        crate::js_dom_bridge::find_by_selector(&doc, sel).map(crate::hit_test::node_id_to_u64)
+                    })
+            });
+            let node_id = match node_id {
+                Some(id) => id,
+                None => {
+                    let (snap, live_ok) = apply_pending_query_html(&rs_html, &rs_mut, &rs_qv);
+                    let hit = with_query_doc_live_aware(&snap, live_ok, |doc| {
+                        crate::js_dom_bridge::find_by_selector(doc, sel).map(crate::hit_test::node_id_to_u64)
+                    });
+                    match hit {
+                        Some(id) => id,
+                        None => return String::new(),
+                    }
+                }
+            };
+            let map = rect_snapshot.lock().unwrap_or_else(|e| e.into_inner());
+            match map.get(&node_id) {
+                Some((x, y, w, h)) => format!("{x},{y},{w},{h}"),
+                None => String::new(),
             }
         }),
     );

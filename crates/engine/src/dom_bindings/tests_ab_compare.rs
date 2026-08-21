@@ -60,7 +60,7 @@ fn run_polyfill(html: &str, expr: &str) -> String {
     let dom_html = Arc::new(Mutex::new(html.to_string()));
     let page_url = Arc::new(Mutex::new("https://zero.test/ab-compare".to_string()));
     let canvas_registry = Arc::new(Mutex::new(CanvasRegistry::new()));
-    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry);
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
     let r = sandbox.execute(&format!("String({expr})")).expect("polyfill execute");
     r.value
 }
@@ -275,7 +275,7 @@ fn run_polyfill_applied_html(html: &str, script: &str) -> String {
     let dom_html = Arc::new(Mutex::new(html.to_string()));
     let page_url = Arc::new(Mutex::new("https://zero.test/ab-compare".to_string()));
     let canvas_registry = Arc::new(Mutex::new(CanvasRegistry::new()));
-    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry);
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
     let r = sandbox.execute(script).expect("polyfill execute");
     // apply 收集到的 mutations 到独立 doc（C 侧读数）。
     let mut doc = parse_html(html);
