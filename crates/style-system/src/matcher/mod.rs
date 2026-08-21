@@ -1419,6 +1419,12 @@ fn is_property_supported(property: &str, value: &str) -> bool {
         "justify-content" | "align-items" | "align-content" | "align-self" | "justify-self" => {
             parse_alignment(trimmed).is_some()
         }
+        // https://drafts.csswg.org/css-grid-2/#line-placement
+        "grid-column-start" | "grid-column-end" | "grid-row-start" | "grid-row-end" => {
+            crate::property::parse_grid_line(trimmed).is_some()
+        }
+        "grid-column" | "grid-row" => crate::property::parse_grid_line_shorthand(trimmed).is_some(),
+        "grid-area" => crate::property::parse_grid_area_shorthand(trimmed).is_some(),
         "font-weight" => parse_font_weight(trimmed).is_some(),
         "font-style" => parse_font_style(trimmed).is_some(),
         "color"

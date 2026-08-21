@@ -100,6 +100,23 @@ fn test_property_supported_alignment() {
 }
 
 #[test]
+fn test_property_supported_grid_placement() {
+    assert!(is_property_supported("grid-column-start", "span 2"));
+    assert!(is_property_supported("grid-column-end", "header"));
+    assert!(is_property_supported("grid-row-start", "-1"));
+    assert!(is_property_supported("grid-row-end", "auto"));
+    assert!(is_property_supported("grid-column", "span 2 / 5"));
+    assert!(is_property_supported("grid-row", "1 / footer"));
+    assert!(is_property_supported("grid-area", "1 / 2 / 3 / 4"));
+
+    assert!(!is_property_supported("grid-column-start", "0"));
+    assert!(!is_property_supported("grid-column-end", "1 / 2"));
+    assert!(!is_property_supported("grid-column", "1 / 2 / 3"));
+    assert!(!is_property_supported("grid-row", "/ 2"));
+    assert!(!is_property_supported("grid-area", "1 / / 3"));
+}
+
+#[test]
 fn test_property_supported_font() {
     assert!(is_property_supported("font-weight", "bold"));
     assert!(is_property_supported("font-style", "italic"));
