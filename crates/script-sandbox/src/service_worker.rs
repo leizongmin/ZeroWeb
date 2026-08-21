@@ -19,6 +19,11 @@ const MAX_IMPORTED_SCRIPT_BYTES: usize = 16 * 1024 * 1024;
 const MAX_MESSAGE_PORTS: usize = 16;
 const MAX_CLIENT_ID_BYTES: usize = 64 * 1024;
 const MAX_SERVICE_WORKER_CLIENTS: usize = 128;
+const MAX_FETCH_METHOD_BYTES: usize = 128;
+const MAX_FETCH_HEADERS: usize = 128;
+const MAX_FETCH_HEADER_BYTES: usize = 64 * 1024;
+const MAX_FETCH_STATUS_TEXT_BYTES: usize = 1024;
+const MAX_FETCH_BODY_BYTES: usize = 16 * 1024 * 1024;
 
 enum ServiceWorkerCommand {
     Evaluate {
@@ -36,6 +41,10 @@ enum ServiceWorkerCommand {
         client_id: String,
         client_url: String,
         ports: ServiceWorkerMessagePorts,
+    },
+    DispatchFetch {
+        event_id: u64,
+        request: ServiceWorkerFetchRequest,
     },
     Shutdown,
 }
@@ -73,6 +82,12 @@ enum ServiceWorkerClientsResponse {
 struct PendingLifecycle {
     event_id: u64,
     phase: ServiceWorkerLifecyclePhase,
+    deadline: std::time::Instant,
+}
+
+struct PendingFetch {
+    event_id: u64,
+    request_url: String,
     deadline: std::time::Instant,
 }
 
@@ -237,6 +252,128 @@ const SERVICE_WORKER_BOOTSTRAP: &str = r#"
   }
   Object.defineProperty(DOMException, 'NETWORK_ERR', {value: 19});
   Object.defineProperty(DOMException.prototype, 'NETWORK_ERR', {value: 19});
+
+  // https://fetch.spec.whatwg.org/#headers-class
+  class Headers {
+    constructor(init) {
+      this._pairs = [];
+      if (init === undefined || init === null) return;
+      if (init instanceof Headers) {
+        for (const pair of init._pairs) this.append(pair[0], pair[1]);
+      } else if (typeof init[Symbol.iterator] === 'function') {
+        for (const pair of init) {
+          const values = Array.from(pair);
+          if (values.length !== 2) throw new TypeError('header entry must contain two items');
+          this.append(values[0], values[1]);
+        }
+      } else {
+        for (const name of Object.keys(init)) this.append(name, init[name]);
+      }
+    }
+    append(name, value) {
+      this._pairs.push([String(name).toLowerCase(), String(value)]);
+    }
+    get(name) {
+      name = String(name).toLowerCase();
+      const values = this._pairs.filter(pair => pair[0] === name).map(pair => pair[1]);
+      return values.length === 0 ? null : values.join(', ');
+    }
+    has(name) {
+      name = String(name).toLowerCase();
+      return this._pairs.some(pair => pair[0] === name);
+    }
+    entries() {
+      return this._pairs.map(pair => [pair[0], pair[1]])[Symbol.iterator]();
+    }
+    [Symbol.iterator]() {
+      return this.entries();
+    }
+  }
+  Object.defineProperty(Headers.prototype, Symbol.toStringTag, {value: 'Headers'});
+
+  function normalizeBody(body) {
+    if (body === undefined || body === null) return '';
+    return String(body);
+  }
+
+  // https://fetch.spec.whatwg.org/#request-class
+  class Request {
+    constructor(input, init) {
+      init = init === undefined ? {} : Object(init);
+      if (input instanceof Request) {
+        this.url = init.url === undefined ? input.url : String(init.url);
+        this.method = init.method === undefined ? input.method : String(init.method).toUpperCase();
+        this.headers = new Headers(init.headers === undefined ? input.headers : init.headers);
+        this._body = init.body === undefined ? input._body : normalizeBody(init.body);
+      } else if (typeof input === 'object' && input !== null && input.url !== undefined) {
+        this.url = String(input.url);
+        this.method = init.method === undefined
+          ? String(input.method || 'GET').toUpperCase()
+          : String(init.method).toUpperCase();
+        this.headers = new Headers(init.headers === undefined ? input.headers : init.headers);
+        this._body = init.body === undefined ? normalizeBody(input.body) : normalizeBody(init.body);
+      } else {
+        this.url = String(input);
+        this.method = init.method === undefined ? 'GET' : String(init.method).toUpperCase();
+        this.headers = new Headers(init.headers);
+        this._body = normalizeBody(init.body);
+      }
+    }
+    text() {
+      return Promise.resolve(this._body);
+    }
+  }
+  Object.defineProperty(Request.prototype, Symbol.toStringTag, {value: 'Request'});
+
+  // https://fetch.spec.whatwg.org/#response-class
+  class Response {
+    constructor(body, init) {
+      init = init === undefined ? {} : Object(init);
+      const status = init.status === undefined ? 200 : Number(init.status);
+      if (!Number.isInteger(status) || status < 200 || status > 599) {
+        throw new RangeError('Response status is outside the supported range');
+      }
+      this.status = status;
+      this.statusText = init.statusText === undefined ? '' : String(init.statusText);
+      this.headers = new Headers(init.headers);
+      this._body = normalizeBody(body);
+      this.ok = status >= 200 && status <= 299;
+    }
+    text() {
+      return Promise.resolve(this._body);
+    }
+    static _from(value) {
+      if (value instanceof Response) return value;
+      throw new TypeError('FetchEvent.respondWith must resolve with a Response');
+    }
+    static _serialize(response) {
+      return {
+        status: response.status,
+        statusText: response.statusText,
+        headers: Array.from(response.headers),
+        body: response._body
+      };
+    }
+  }
+  Object.defineProperty(Response.prototype, Symbol.toStringTag, {value: 'Response'});
+
+  // https://w3c.github.io/ServiceWorker/#fetch-event-interface
+  class FetchEvent extends ExtendableEvent {
+    constructor(type, init) {
+      super(type);
+      this.request = init.request;
+      this.clientId = init.clientId || '';
+      this.resultingClientId = init.resultingClientId || '';
+      this._respondWith = null;
+    }
+    respondWith(value) {
+      if (typeof this._respondWith !== 'function') {
+        throw new DOMException('respondWith called outside dispatch', 'InvalidStateError');
+      }
+      this._respondWith(value);
+    }
+  }
+  Object.defineProperty(FetchEvent.prototype, Symbol.toStringTag, {value: 'FetchEvent'});
 
   function parseURLSearchParams(input) {
     const pairs = [];
@@ -405,6 +542,10 @@ const SERVICE_WORKER_BOOTSTRAP: &str = r#"
   globalThis.MessageEvent = MessageEvent;
   globalThis.MessagePort = MessagePort;
   globalThis.MessageChannel = MessageChannel;
+  globalThis.Headers = globalThis.Headers || Headers;
+  globalThis.Request = globalThis.Request || Request;
+  globalThis.Response = globalThis.Response || Response;
+  globalThis.FetchEvent = FetchEvent;
   globalThis.DOMException = globalThis.DOMException || DOMException;
   globalThis.URLSearchParams = globalThis.URLSearchParams || URLSearchParams;
   globalThis.URL = globalThis.URL || URL;
@@ -413,6 +554,7 @@ const SERVICE_WORKER_BOOTSTRAP: &str = r#"
   globalThis.oninstall = null;
   globalThis.onactivate = null;
   globalThis.onmessage = null;
+  globalThis.onfetch = null;
   globalThis.addEventListener = function(type, listener) {
     if (typeof listener !== 'function') return;
     (listeners[String(type)] || (listeners[String(type)] = [])).push(listener);
@@ -614,6 +756,72 @@ const SERVICE_WORKER_BOOTSTRAP: &str = r#"
   globalThis.__zwTakeOutboundMessages = function() {
     return outboundMessages.splice(0, outboundMessages.length);
   };
+  globalThis.__zwDispatchFetch = function(eventId, requestInfo) {
+    const pending = [];
+    let respondWithCalled = false;
+    let respondWithAllowed = true;
+    const result = {
+      eventId: String(eventId),
+      settled: false,
+      responded: false,
+      response: null,
+      message: '',
+      failed: false
+    };
+    globalThis.__zwFetchResult = result;
+    currentWaitUntil = function(value) {
+      pending.push(Promise.resolve(value));
+    };
+    try {
+      const event = new FetchEvent('fetch', {
+        request: new Request(requestInfo),
+        clientId: requestInfo.clientId || '',
+        resultingClientId: requestInfo.resultingClientId || ''
+      });
+      event._respondWith = function(value) {
+        if (!respondWithAllowed) {
+          throw new DOMException('respondWith called after dispatch', 'InvalidStateError');
+        }
+        if (respondWithCalled) {
+          throw new DOMException('respondWith already called', 'InvalidStateError');
+        }
+        respondWithCalled = true;
+        pending.push(Promise.resolve(value).then(function(response) {
+          if (result.failed) return;
+          response = Response._from(response);
+          result.responded = true;
+          result.response = Response._serialize(response);
+        }));
+      };
+      const callbacks = (listeners.fetch || []).slice();
+      for (let i = 0; i < callbacks.length; i++) callbacks[i].call(globalThis, event);
+      if (typeof globalThis.onfetch === 'function') {
+        globalThis.onfetch.call(globalThis, event);
+      }
+      respondWithAllowed = false;
+      event._respondWith = null;
+    } catch (error) {
+      respondWithAllowed = false;
+      currentWaitUntil = null;
+      result.failed = true;
+      result.responded = false;
+      result.response = null;
+      result.settled = true;
+      result.message = String(error && error.message || error);
+      return;
+    }
+    currentWaitUntil = null;
+    Promise.all(pending).then(function() {
+      if (result.failed) return;
+      result.settled = true;
+    }, function(error) {
+      result.failed = true;
+      result.response = null;
+      result.responded = false;
+      result.settled = true;
+      result.message = String(error && error.message || error);
+    });
+  };
 })();
 'bootstrap-ready';
 "#;
@@ -701,6 +909,17 @@ pub enum ServiceWorkerEvent {
         /// Handler diagnostic.
         message: String,
     },
+    /// A fetch event settled after optional `respondWith()` handling.
+    FetchSettled {
+        /// Host-assigned event ID.
+        event_id: u64,
+        /// Request URL associated with this fetch event.
+        request_url: String,
+        /// Response supplied through `respondWith()`, or `None` for pass-through/failure.
+        response: Option<ServiceWorkerFetchResponse>,
+        /// Handler or response-conversion diagnostic. Empty means success or pass-through.
+        message: String,
+    },
     /// A classic worker `importScripts()` call requires host-owned fetching.
     ImportScriptsRequested {
         /// Runtime-local request ID used to correlate the blocking response.
@@ -777,6 +996,36 @@ pub struct ServiceWorkerClientInfo {
     pub visibility_state: String,
     /// Whether the client currently has focus.
     pub focused: bool,
+}
+
+/// Pure-value fetch request projected into a Service Worker `FetchEvent`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ServiceWorkerFetchRequest {
+    /// Absolute request URL.
+    pub url: String,
+    /// HTTP method.
+    pub method: String,
+    /// Request headers in wire order.
+    pub headers: Vec<(String, String)>,
+    /// UTF-8 request body for the current runtime-level MVP.
+    pub body: Option<String>,
+    /// Browser-owned source client identity, when the request has one.
+    pub client_id: Option<String>,
+    /// Browser-owned resulting client identity for navigation requests, when known.
+    pub resulting_client_id: Option<String>,
+}
+
+/// Pure-value fetch response produced by `FetchEvent.respondWith()`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ServiceWorkerFetchResponse {
+    /// HTTP status code.
+    pub status: u16,
+    /// HTTP status text.
+    pub status_text: String,
+    /// Response headers in worker-created order.
+    pub headers: Vec<(String, String)>,
+    /// UTF-8 response body for the current runtime-level MVP.
+    pub body: String,
 }
 
 /// MessagePort endpoint metadata for one page/worker message.
@@ -1135,6 +1384,7 @@ impl ServiceWorkerRuntime {
                 let _ = init_sender.send(Ok(()));
 
                 let mut pending_lifecycle: Option<PendingLifecycle> = None;
+                let mut pending_fetch: Option<PendingFetch> = None;
                 loop {
                     if let Some(pending) = pending_lifecycle.as_ref()
                         && let Some(event) = poll_lifecycle(sandbox.as_mut(), pending, lifecycle_timeout_ms)
@@ -1142,8 +1392,14 @@ impl ServiceWorkerRuntime {
                         let _ = event_sender.send(event);
                         pending_lifecycle = None;
                     }
+                    if let Some(pending) = pending_fetch.as_ref()
+                        && let Some(event) = poll_fetch(sandbox.as_mut(), pending, lifecycle_timeout_ms)
+                    {
+                        let _ = event_sender.send(event);
+                        pending_fetch = None;
+                    }
 
-                    let command = if pending_lifecycle.is_some() {
+                    let command = if pending_lifecycle.is_some() || pending_fetch.is_some() {
                         match command_receiver.recv_timeout(std::time::Duration::from_millis(1)) {
                             Ok(command) => command,
                             Err(mpsc::RecvTimeoutError::Timeout) => continue,
@@ -1255,6 +1511,30 @@ impl ServiceWorkerRuntime {
                                 },
                             };
                             let _ = event_sender.send(event);
+                        }
+                        ServiceWorkerCommand::DispatchFetch { event_id, request } => {
+                            let request_url = request.url.clone();
+                            let result = if pending_fetch.is_some() {
+                                Err(ScriptError::RuntimeError(
+                                    "Service Worker fetch event is already pending".into(),
+                                ))
+                            } else {
+                                begin_fetch(sandbox.as_mut(), event_id, &request)
+                            };
+                            match result {
+                                Ok(()) => {
+                                    pending_fetch = Some(PendingFetch {
+                                        event_id,
+                                        request_url,
+                                        deadline: std::time::Instant::now()
+                                            + std::time::Duration::from_millis(lifecycle_timeout_ms),
+                                    });
+                                }
+                                Err(error) => {
+                                    let _ =
+                                        event_sender.send(failed_fetch_event(event_id, request_url, error.to_string()));
+                                }
+                            }
                         }
                         ServiceWorkerCommand::Shutdown => break,
                     }
@@ -1390,6 +1670,19 @@ impl ServiceWorkerRuntime {
                 client_url: client_url.to_string(),
                 ports: ports.clone(),
             })
+            .map_err(|_| ScriptError::RuntimeError("Service Worker runtime disconnected".into()))
+    }
+
+    /// Dispatch one fetch event into the persistent Service Worker global.
+    pub fn dispatch_fetch(&mut self, event_id: u64, request: ServiceWorkerFetchRequest) -> Result<(), ScriptError> {
+        validate_fetch_request(&request)?;
+        if self.core.is_terminated() {
+            return Err(ScriptError::InvalidInput(
+                "Cannot dispatch fetch on terminated Service Worker runtime".into(),
+            ));
+        }
+        self.core
+            .send(ServiceWorkerCommand::DispatchFetch { event_id, request })
             .map_err(|_| ScriptError::RuntimeError("Service Worker runtime disconnected".into()))
     }
 
@@ -1596,6 +1889,188 @@ fn update_failure_json(exception_name: &str, message: &str) -> String {
 
 fn clients_failure_json(message: &str) -> String {
     serde_json::json!({"ok": false, "error": message}).to_string()
+}
+
+fn validate_fetch_request(request: &ServiceWorkerFetchRequest) -> Result<(), ScriptError> {
+    if request.url.is_empty() || request.url.len() > MAX_IMPORT_SCRIPT_URL_BYTES {
+        return Err(ScriptError::InvalidInput(
+            "Service Worker fetch request URL is invalid".into(),
+        ));
+    }
+    if request.method.is_empty() || request.method.len() > MAX_FETCH_METHOD_BYTES {
+        return Err(ScriptError::InvalidInput(
+            "Service Worker fetch request method is invalid".into(),
+        ));
+    }
+    if request.headers.len() > MAX_FETCH_HEADERS {
+        return Err(ScriptError::InvalidInput(
+            "Service Worker fetch request has too many headers".into(),
+        ));
+    }
+    for (name, value) in &request.headers {
+        if name.len().saturating_add(value.len()) > MAX_FETCH_HEADER_BYTES {
+            return Err(ScriptError::InvalidInput(
+                "Service Worker fetch request header exceeds the size limit".into(),
+            ));
+        }
+    }
+    if request
+        .body
+        .as_ref()
+        .is_some_and(|body| body.len() > MAX_FETCH_BODY_BYTES)
+    {
+        return Err(ScriptError::InvalidInput(
+            "Service Worker fetch request body exceeds the size limit".into(),
+        ));
+    }
+    if request
+        .client_id
+        .as_ref()
+        .is_some_and(|client_id| client_id.len() > MAX_CLIENT_ID_BYTES)
+        || request
+            .resulting_client_id
+            .as_ref()
+            .is_some_and(|client_id| client_id.len() > MAX_CLIENT_ID_BYTES)
+    {
+        return Err(ScriptError::InvalidInput(
+            "Service Worker fetch client id exceeds the size limit".into(),
+        ));
+    }
+    Ok(())
+}
+
+fn fetch_request_json(request: &ServiceWorkerFetchRequest) -> serde_json::Value {
+    serde_json::json!({
+        "url": &request.url,
+        "method": &request.method,
+        "headers": &request.headers,
+        "body": &request.body,
+        "clientId": &request.client_id,
+        "resultingClientId": &request.resulting_client_id,
+    })
+}
+
+fn begin_fetch(
+    sandbox: &mut dyn Sandbox,
+    event_id: u64,
+    request: &ServiceWorkerFetchRequest,
+) -> Result<(), ScriptError> {
+    let request_json = fetch_request_json(request);
+    let dispatch = format!(
+        "globalThis.__zwDispatchFetch({}, {request_json}); 'dispatched';",
+        event_id
+    );
+    sandbox.execute(&dispatch).map(|_| ())
+}
+
+fn poll_fetch(sandbox: &mut dyn Sandbox, pending: &PendingFetch, timeout_ms: u64) -> Option<ServiceWorkerEvent> {
+    match sandbox.execute("JSON.stringify(globalThis.__zwFetchResult)") {
+        Ok(result) => match serde_json::from_str::<serde_json::Value>(&result.value) {
+            Ok(value) if value["settled"].as_bool() == Some(true) => {
+                return Some(match parse_fetch_result(&value) {
+                    Ok(response) => ServiceWorkerEvent::FetchSettled {
+                        event_id: pending.event_id,
+                        request_url: pending.request_url.clone(),
+                        response,
+                        message: value["message"].as_str().unwrap_or_default().to_string(),
+                    },
+                    Err(error) => failed_fetch_event(pending.event_id, pending.request_url.clone(), error.to_string()),
+                });
+            }
+            Ok(_) => {}
+            Err(error) => {
+                return Some(failed_fetch_event(
+                    pending.event_id,
+                    pending.request_url.clone(),
+                    format!("invalid fetch result: {error}"),
+                ));
+            }
+        },
+        Err(error) => {
+            return Some(failed_fetch_event(
+                pending.event_id,
+                pending.request_url.clone(),
+                error.to_string(),
+            ));
+        }
+    }
+    if std::time::Instant::now() >= pending.deadline {
+        return Some(failed_fetch_event(
+            pending.event_id,
+            pending.request_url.clone(),
+            format!("fetch event exceeded {timeout_ms}ms"),
+        ));
+    }
+    let _ = sandbox.execute("'checkpoint'");
+    None
+}
+
+fn parse_fetch_result(value: &serde_json::Value) -> Result<Option<ServiceWorkerFetchResponse>, ScriptError> {
+    if value["responded"].as_bool() != Some(true) {
+        return Ok(None);
+    }
+    let response = &value["response"];
+    if !response.is_object() {
+        return Err(ScriptError::RuntimeError(
+            "Service Worker fetch response is missing".into(),
+        ));
+    }
+    let status = response["status"]
+        .as_u64()
+        .and_then(|status| u16::try_from(status).ok())
+        .filter(|status| (200..=599).contains(status))
+        .ok_or_else(|| ScriptError::RuntimeError("Service Worker fetch response status is invalid".into()))?;
+    let status_text = response["statusText"].as_str().unwrap_or_default().to_string();
+    if status_text.len() > MAX_FETCH_STATUS_TEXT_BYTES {
+        return Err(ScriptError::InvalidInput(
+            "Service Worker fetch response status text exceeds the size limit".into(),
+        ));
+    }
+    let body = response["body"].as_str().unwrap_or_default().to_string();
+    if body.len() > MAX_FETCH_BODY_BYTES {
+        return Err(ScriptError::InvalidInput(
+            "Service Worker fetch response body exceeds the size limit".into(),
+        ));
+    }
+    let headers_value = response["headers"]
+        .as_array()
+        .ok_or_else(|| ScriptError::RuntimeError("Service Worker fetch response headers are invalid".into()))?;
+    if headers_value.len() > MAX_FETCH_HEADERS {
+        return Err(ScriptError::InvalidInput(
+            "Service Worker fetch response has too many headers".into(),
+        ));
+    }
+    let mut total_header_bytes = 0usize;
+    let mut headers = Vec::with_capacity(headers_value.len());
+    for header in headers_value {
+        let pair = header
+            .as_array()
+            .filter(|pair| pair.len() == 2)
+            .ok_or_else(|| ScriptError::RuntimeError("Service Worker fetch response header is invalid".into()))?;
+        let name = pair[0]
+            .as_str()
+            .ok_or_else(|| ScriptError::RuntimeError("Service Worker fetch response header name is invalid".into()))?
+            .to_string();
+        let value = pair[1]
+            .as_str()
+            .ok_or_else(|| ScriptError::RuntimeError("Service Worker fetch response header value is invalid".into()))?
+            .to_string();
+        total_header_bytes = total_header_bytes
+            .saturating_add(name.len())
+            .saturating_add(value.len());
+        if total_header_bytes > MAX_FETCH_HEADER_BYTES {
+            return Err(ScriptError::InvalidInput(
+                "Service Worker fetch response headers exceed the size limit".into(),
+            ));
+        }
+        headers.push((name, value));
+    }
+    Ok(Some(ServiceWorkerFetchResponse {
+        status,
+        status_text,
+        headers,
+        body,
+    }))
 }
 
 fn evaluate_module_graph(
@@ -1834,6 +2309,15 @@ fn failed_lifecycle_event(event_id: u64, phase: ServiceWorkerLifecyclePhase, mes
         succeeded: false,
         skip_waiting: false,
         claim_clients: false,
+        message,
+    }
+}
+
+fn failed_fetch_event(event_id: u64, request_url: String, message: String) -> ServiceWorkerEvent {
+    ServiceWorkerEvent::FetchSettled {
+        event_id,
+        request_url,
+        response: None,
         message,
     }
 }
@@ -2937,6 +3421,144 @@ mod tests {
             runtime.recv_timeout(Duration::from_secs(5)).unwrap(),
             ServiceWorkerEvent::MessageFailed { message, .. }
                 if message.contains("too many messages")
+        ));
+    }
+
+    #[test]
+    fn fetch_event_respond_with_serializes_response() {
+        let mut runtime = ServiceWorkerRuntime::new(test_config()).unwrap();
+        runtime
+            .evaluate(
+                "addEventListener('fetch', event => {
+                   if (!(event instanceof FetchEvent)) throw new Error('wrong event');
+                   if (!(event.request instanceof Request)) throw new Error('wrong request');
+                   if (event.request.url !== 'https://example.test/app/data.json') {
+                     throw new Error('wrong url');
+                   }
+                   if (event.request.method !== 'POST') throw new Error('wrong method');
+                   if (event.request.headers.get('x-test') !== 'yes') throw new Error('wrong header');
+                   event.respondWith(new Response('intercepted:' + event.clientId, {
+                     status: 202,
+                     statusText: 'Accepted',
+                     headers: {'X-SW': 'hit'}
+                   }));
+                 });",
+                "https://example.test/sw.js",
+            )
+            .unwrap();
+        let _ = runtime.recv_timeout(Duration::from_secs(5)).unwrap();
+
+        runtime
+            .dispatch_fetch(
+                40,
+                ServiceWorkerFetchRequest {
+                    url: "https://example.test/app/data.json".into(),
+                    method: "POST".into(),
+                    headers: vec![("X-Test".into(), "yes".into())],
+                    body: Some("request-body".into()),
+                    client_id: Some("client-1".into()),
+                    resulting_client_id: None,
+                },
+            )
+            .unwrap();
+        assert_eq!(
+            runtime.recv_timeout(Duration::from_secs(5)).unwrap(),
+            ServiceWorkerEvent::FetchSettled {
+                event_id: 40,
+                request_url: "https://example.test/app/data.json".into(),
+                response: Some(ServiceWorkerFetchResponse {
+                    status: 202,
+                    status_text: "Accepted".into(),
+                    headers: vec![("x-sw".into(), "hit".into())],
+                    body: "intercepted:client-1".into(),
+                }),
+                message: String::new(),
+            }
+        );
+    }
+
+    #[test]
+    fn fetch_event_without_respond_with_passes_through() {
+        let mut runtime = ServiceWorkerRuntime::new(test_config()).unwrap();
+        runtime
+            .evaluate(
+                "addEventListener('fetch', event => {
+                   globalThis.lastFetchURL = event.request.url;
+                 });",
+                "https://example.test/sw.js",
+            )
+            .unwrap();
+        let _ = runtime.recv_timeout(Duration::from_secs(5)).unwrap();
+
+        runtime
+            .dispatch_fetch(
+                41,
+                ServiceWorkerFetchRequest {
+                    url: "https://example.test/app/pass".into(),
+                    method: "GET".into(),
+                    headers: Vec::new(),
+                    body: None,
+                    client_id: None,
+                    resulting_client_id: None,
+                },
+            )
+            .unwrap();
+        assert_eq!(
+            runtime.recv_timeout(Duration::from_secs(5)).unwrap(),
+            ServiceWorkerEvent::FetchSettled {
+                event_id: 41,
+                request_url: "https://example.test/app/pass".into(),
+                response: None,
+                message: String::new(),
+            }
+        );
+        runtime
+            .evaluate(
+                "if (globalThis.lastFetchURL !== 'https://example.test/app/pass') throw new Error('fetch not seen');",
+                "https://example.test/check.js",
+            )
+            .unwrap();
+        assert!(matches!(
+            runtime.recv_timeout(Duration::from_secs(5)).unwrap(),
+            ServiceWorkerEvent::Evaluated { .. }
+        ));
+    }
+
+    #[test]
+    fn fetch_event_rejects_duplicate_respond_with() {
+        let mut runtime = ServiceWorkerRuntime::new(test_config()).unwrap();
+        runtime
+            .evaluate(
+                "addEventListener('fetch', event => {
+                   event.respondWith(new Response('first'));
+                   event.respondWith(new Response('second'));
+                 });",
+                "https://example.test/sw.js",
+            )
+            .unwrap();
+        let _ = runtime.recv_timeout(Duration::from_secs(5)).unwrap();
+
+        runtime
+            .dispatch_fetch(
+                42,
+                ServiceWorkerFetchRequest {
+                    url: "https://example.test/app/dup".into(),
+                    method: "GET".into(),
+                    headers: Vec::new(),
+                    body: None,
+                    client_id: None,
+                    resulting_client_id: None,
+                },
+            )
+            .unwrap();
+        assert!(matches!(
+            runtime.recv_timeout(Duration::from_secs(5)).unwrap(),
+            ServiceWorkerEvent::FetchSettled {
+                event_id: 42,
+                response: None,
+                message,
+                ..
+            } if message.contains("respondWith already called")
         ));
     }
 }

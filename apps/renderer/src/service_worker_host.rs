@@ -15,14 +15,15 @@ use std::sync::mpsc::{self, Sender, TryRecvError};
 use std::time::Duration;
 
 use zero_protocol::message::{
-    ServiceWorkerHostCommand, ServiceWorkerHostCommandParams, ServiceWorkerHostEvent, ServiceWorkerHostEventParams,
-    ServiceWorkerLifecycleWire, ServiceWorkerScriptErrorKindWire, ServiceWorkerScriptTypeWire,
+    ServiceWorkerFetchResponseWire, ServiceWorkerHostCommand, ServiceWorkerHostCommandParams, ServiceWorkerHostEvent,
+    ServiceWorkerHostEventParams, ServiceWorkerLifecycleWire, ServiceWorkerScriptErrorKindWire,
+    ServiceWorkerScriptTypeWire,
 };
 use zero_protocol::transport::PipeTransport;
 use zero_protocol::{IpcChannel, IpcMessage, IpcMessageKind};
 use zero_script_sandbox::{
-    SandboxConfig, ServiceWorkerClientInfo, ServiceWorkerEvent, ServiceWorkerLifecyclePhase, ServiceWorkerMessagePorts,
-    ServiceWorkerRuntime, ServiceWorkerScriptErrorKind,
+    SandboxConfig, ServiceWorkerClientInfo, ServiceWorkerEvent, ServiceWorkerFetchRequest, ServiceWorkerLifecyclePhase,
+    ServiceWorkerMessagePorts, ServiceWorkerRuntime, ServiceWorkerScriptErrorKind,
 };
 
 use crate::compositor_publish_thread::SharedWriter;
@@ -129,6 +130,18 @@ impl HostThread {
                     transferred_port_ids,
                     data_port_index,
                     target_port_id,
+                },
+            ),
+            ServiceWorkerHostCommand::DispatchFetch { event_id, request } => self.dispatch_fetch(
+                params.registration_id,
+                event_id,
+                ServiceWorkerFetchRequest {
+                    url: request.url,
+                    method: request.method,
+                    headers: request.headers,
+                    body: request.body,
+                    client_id: request.client_id,
+                    resulting_client_id: request.resulting_client_id,
                 },
             ),
             ServiceWorkerHostCommand::CompleteImportScripts { request_id, result } => {
@@ -260,6 +273,16 @@ impl HostThread {
         };
         if let Err(error) = runtime.dispatch_message_with_ports(event_id, data_json, client_id, client_url, ports) {
             tracing::warn!("Service Worker message dispatch failed: {error}");
+        }
+    }
+
+    fn dispatch_fetch(&mut self, registration_id: u64, event_id: u64, request: ServiceWorkerFetchRequest) {
+        let Some(runtime) = self.runtimes.get_mut(&registration_id) else {
+            tracing::warn!("Service Worker fetch for unknown registration {registration_id}");
+            return;
+        };
+        if let Err(error) = runtime.dispatch_fetch(event_id, request) {
+            tracing::warn!("Service Worker fetch dispatch failed: {error}");
         }
     }
 
@@ -395,6 +418,22 @@ fn host_event(event: ServiceWorkerEvent) -> ServiceWorkerHostEvent {
         } => ServiceWorkerHostEvent::MessageFailed {
             event_id,
             client_id,
+            message,
+        },
+        ServiceWorkerEvent::FetchSettled {
+            event_id,
+            request_url,
+            response,
+            message,
+        } => ServiceWorkerHostEvent::FetchSettled {
+            event_id,
+            request_url,
+            response: response.map(|response| ServiceWorkerFetchResponseWire {
+                status: response.status,
+                status_text: response.status_text,
+                headers: response.headers,
+                body: response.body,
+            }),
             message,
         },
         ServiceWorkerEvent::ImportScriptsRequested { request_id, specifiers } => {
@@ -673,6 +712,58 @@ mod tests {
                 );
             }
             other => panic!("expected MessageDispatched, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn fetch_command_dispatches_and_returns_response_event() {
+        let (host, mut transport) = spawn_host();
+        host.handle_command(evaluate_command(
+            14,
+            "addEventListener('fetch', event => {
+               event.respondWith(new Response('from-sw', {
+                 status: 202,
+                 headers: {'X-Test': event.request.headers.get('x-test')}
+               }));
+             });",
+        ));
+        let evaluated = wait_for_event(&mut transport);
+        assert!(
+            matches!(evaluated.event, ServiceWorkerHostEvent::Evaluated { .. }),
+            "{:?}",
+            evaluated.event
+        );
+
+        host.handle_command(ServiceWorkerHostCommandParams {
+            registration_id: 14,
+            command: ServiceWorkerHostCommand::DispatchFetch {
+                event_id: 22,
+                request: zero_protocol::message::ServiceWorkerFetchRequestWire {
+                    url: "https://example.test/app/data".into(),
+                    method: "GET".into(),
+                    headers: vec![("x-test".into(), "yes".into())],
+                    body: None,
+                    client_id: Some("client-1".into()),
+                    resulting_client_id: None,
+                },
+            },
+        });
+        let dispatched = wait_for_event(&mut transport);
+        match dispatched.event {
+            ServiceWorkerHostEvent::FetchSettled {
+                event_id,
+                request_url,
+                response: Some(response),
+                message,
+            } => {
+                assert_eq!(event_id, 22);
+                assert_eq!(request_url, "https://example.test/app/data");
+                assert_eq!(response.status, 202);
+                assert_eq!(response.headers, [("x-test".into(), "yes".into())]);
+                assert_eq!(response.body, "from-sw");
+                assert!(message.is_empty());
+            }
+            other => panic!("expected FetchSettled response, got {other:?}"),
         }
     }
 

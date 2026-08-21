@@ -1026,6 +1026,42 @@ impl ServiceWorkerHostCommandParams {
                 }
                 Ok(())
             }
+            ServiceWorkerHostCommand::DispatchFetch { request, .. } => {
+                const MAX_FETCH_METHOD_BYTES: usize = 128;
+                const MAX_FETCH_HEADERS: usize = 128;
+                const MAX_FETCH_HEADER_BYTES: usize = 64 * 1024;
+                const MAX_FETCH_BODY_BYTES: usize = 16 * 1024 * 1024;
+                if request.url.is_empty() || request.url.len() > MAX_URL_BYTES {
+                    return Err("Service Worker fetch request URL is invalid");
+                }
+                if request.method.is_empty() || request.method.len() > MAX_FETCH_METHOD_BYTES {
+                    return Err("Service Worker fetch request method is invalid");
+                }
+                if request.headers.len() > MAX_FETCH_HEADERS
+                    || request
+                        .headers
+                        .iter()
+                        .any(|(name, value)| name.len().saturating_add(value.len()) > MAX_FETCH_HEADER_BYTES)
+                {
+                    return Err("Service Worker fetch request headers are invalid");
+                }
+                if request
+                    .body
+                    .as_ref()
+                    .is_some_and(|body| body.len() > MAX_FETCH_BODY_BYTES)
+                    || request
+                        .client_id
+                        .as_ref()
+                        .is_some_and(|client_id| client_id.len() > MAX_URL_BYTES)
+                    || request
+                        .resulting_client_id
+                        .as_ref()
+                        .is_some_and(|client_id| client_id.len() > MAX_URL_BYTES)
+                {
+                    return Err("Service Worker fetch request fields exceed the size limit");
+                }
+                Ok(())
+            }
             ServiceWorkerHostCommand::CompleteImportScripts { request_id, result } => {
                 if *request_id == 0 {
                     return Err("Service Worker import request id is required");
@@ -1157,6 +1193,13 @@ pub enum ServiceWorkerHostCommand {
         /// Existing worker-side port endpoint addressed by this message.
         target_port_id: Option<u64>,
     },
+    /// Dispatch a fetch event into the worker global.
+    DispatchFetch {
+        /// Host-assigned event ID.
+        event_id: u64,
+        /// Pure-value fetch request.
+        request: ServiceWorkerFetchRequestWire,
+    },
     /// 停止并回收 runtime。
     Shutdown,
     /// 完成一个阻塞的 `importScripts()` 请求。
@@ -1196,6 +1239,36 @@ pub struct ServiceWorkerUpdateError {
     pub exception_name: String,
     /// Safe diagnostic message.
     pub message: String,
+}
+
+/// IPC-safe Service Worker fetch request.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ServiceWorkerFetchRequestWire {
+    /// Absolute request URL.
+    pub url: String,
+    /// HTTP method.
+    pub method: String,
+    /// Request headers in wire order.
+    pub headers: Vec<(String, String)>,
+    /// UTF-8 request body for the current Service Worker fetch MVP.
+    pub body: Option<String>,
+    /// Browser-owned source client identity, when known.
+    pub client_id: Option<String>,
+    /// Browser-owned resulting client identity for navigation requests, when known.
+    pub resulting_client_id: Option<String>,
+}
+
+/// IPC-safe Service Worker fetch response.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ServiceWorkerFetchResponseWire {
+    /// HTTP status code.
+    pub status: u16,
+    /// HTTP status text.
+    pub status_text: String,
+    /// Response headers in worker-created order.
+    pub headers: Vec<(String, String)>,
+    /// UTF-8 response body for the current Service Worker fetch MVP.
+    pub body: String,
 }
 
 /// Renderer → browser 的 Service Worker runtime 事件参数。
@@ -1260,6 +1333,35 @@ impl ServiceWorkerHostEventParams {
                     return Err("Service Worker outbound message payload is invalid");
                 }
             }
+            ServiceWorkerHostEvent::FetchSettled {
+                event_id,
+                request_url,
+                response,
+                message,
+            } => {
+                const MAX_FETCH_HEADERS: usize = 128;
+                const MAX_FETCH_HEADER_BYTES: usize = 64 * 1024;
+                const MAX_FETCH_BODY_BYTES: usize = 16 * 1024 * 1024;
+                if *event_id == 0 || request_url.is_empty() || request_url.len() > MAX_FIELD_BYTES {
+                    return Err("Service Worker fetch event is invalid");
+                }
+                if message.len() > MAX_FIELD_BYTES {
+                    return Err("Service Worker fetch diagnostic exceeds the size limit");
+                }
+                if let Some(response) = response
+                    && (response.status < 200
+                        || response.status > 599
+                        || response.status_text.len() > MAX_FIELD_BYTES
+                        || response.body.len() > MAX_FETCH_BODY_BYTES
+                        || response.headers.len() > MAX_FETCH_HEADERS
+                        || response
+                            .headers
+                            .iter()
+                            .any(|(name, value)| name.len().saturating_add(value.len()) > MAX_FETCH_HEADER_BYTES))
+                {
+                    return Err("Service Worker fetch response is invalid");
+                }
+            }
             _ => {}
         }
         Ok(())
@@ -1312,6 +1414,17 @@ pub enum ServiceWorkerHostEvent {
         /// 目标 client 标识。
         client_id: String,
         /// handler 诊断。
+        message: String,
+    },
+    /// Fetch event settled after optional `respondWith()` handling.
+    FetchSettled {
+        /// Host-assigned event ID.
+        event_id: u64,
+        /// Request URL associated with this fetch event.
+        request_url: String,
+        /// Response supplied through `respondWith()`, or `None` for pass-through/failure.
+        response: Option<ServiceWorkerFetchResponseWire>,
+        /// Handler or response-conversion diagnostic. Empty means success or pass-through.
         message: String,
     },
     /// runtime 线程退出。

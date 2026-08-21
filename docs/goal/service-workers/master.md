@@ -2,7 +2,7 @@
 
 **入口文档**: [../service-workers.md](../service-workers.md)
 **创建日期**: 2026-08-17（goal 拆分 bootstrap）
-**最后更新**: 2026-08-21（M3-34 renderer iframe client lifecycle 完成）
+**最后更新**: 2026-08-21（M2-1 fetch runtime/manager/IPC foundation 完成）
 
 ---
 
@@ -10,7 +10,8 @@
 
 **专项定位**：存储方向三拆之三。把 `navigator.serviceWorker` 从注册表状态机近似
 （R3318）深化为真实 SW 执行环境 + fetch 拦截。用户已于 2026-08-19 明确批准方案 C，
-M0 启动门禁解除；M1 core WPT 已收敛，M2 依赖未满足，当前推进独立的 M3 控制语义。
+M0 启动门禁解除；M1 core WPT 已收敛，M2 已完成 fetch runtime/manager/IPC foundation，
+生产页面 fetch 管线与 Cache API 端到端接入仍待后续切片，M3 控制语义继续推进。
 
 **M0 推荐决策**：抽取 `zero-script-sandbox::WorkerRuntime` 的独立线程/引擎/看门狗核心，
 新增 typed `ServiceWorkerRuntime`；production 由 browser process 的
@@ -21,8 +22,9 @@ M0 启动门禁解除；M1 core WPT 已收敛，M2 依赖未满足，当前推�
 - [storage-indexeddb](../archive/storage-indexeddb.md)（已归档）/ storage-cache-api —
   IDB 与 Cache API 自身语义归其管；本目标只消费
   `indexedDB`/`caches` 接口做 SW 模式集成验收
-- js-dom — fetch 拦截段**等其 fetch 改造（L2/S6）land 后再开**；生命周期段碰 part02.js
-  R3318 段前先 `git log` 核对（run-rules §9）
+- js-dom — fetch 拦截的生产页面 `FetchRequest` 插入点**等其 fetch 改造（L2/S6）land 后再开**；
+  runtime/manager/IPC foundation 可独立推进；生命周期段碰 part02.js R3318 段前先 `git log`
+  核对（run-rules §9）
 
 ## 实测基线（2026-08-17 立项时）
 
@@ -177,6 +179,10 @@ M0 启动门禁解除；M1 core WPT 已收敛，M2 依赖未满足，当前推�
 - ✅ M3-34：renderer iframe `contentDocument` / `contentWindow` 物化经 typed IPC
   观察为 browser-owned `nested` window client；iframe 删除、替换和清空子树路径注销已登记
   iframe client，client id 由 browser 归一到 committed top-level Document 命名空间下
+- ✅ M2-1：Service Worker `FetchEvent` runtime foundation、manager longest-scope dispatch
+  与 renderer/browser IPC command/event 已接通；`respondWith(new Response(...))`、未调用
+  `respondWith` pass-through、重复 `respondWith` failure、跨 origin/out-of-scope pass-through
+  均有定向测试；生产页面 `FetchRequest` 路由与 Cache API 集成仍未接入
 
 ## 缺口清单
 
@@ -184,7 +190,7 @@ M0 启动门禁解除；M1 core WPT 已收敛，M2 依赖未满足，当前推�
 |---|------|------|
 | S1 | SW 执行环境架构与独立 runtime | ✅ production browser owner + renderer discovery 真链路 |
 | S2 | scriptURL 不下载执行 | ✅ production navigator 经 browser fetch/evaluate |
-| S3 | fetch 拦截为零 | ⬜ M2（等 js-dom fetch 改造） |
+| S3 | fetch 拦截为零 | 🚧 M2-1 runtime/manager/IPC foundation；生产页面 fetch 与 Cache API 未接入 |
 | S4 | 事件为 setTimeout 模拟 | ✅ manager transition log 为状态源；timer 只执行页面 task 投影 |
 | S5 | WPT 覆盖为零 | ✅ core 34/34 case、156/156 Pass、0 Fail/Timeout/Unsupported |
 
@@ -196,8 +202,11 @@ M0 启动门禁解除；M1 core WPT 已收敛，M2 依赖未满足，当前推�
 
 ## 下一步计划
 
-1. **M3 clients follow-up**：popup/auxiliary 真实 browsing context 创建后接入 browser owner
-2. **M2 门控保持**：js-dom S6 与 storage-cache-api M1 land 后启动 fetch pipeline
+1. **M2 production fetch pipeline**：js-dom S6 land 后，把页面 `FetchRequest` 路由接入
+   `ServiceWorkerManager::dispatch_fetch()`，实现 `respondWith` 响应回填与 pass-through 网络回退
+2. **M2 Cache API 集成**：storage-cache-api M1 land 后，让 SW runtime 的 fetch handler 可消费
+   `caches.match()` 端到端模式
+3. **M3 clients follow-up**：popup/auxiliary 真实 browsing context 创建后接入 browser owner
 
 ## 里程碑状态
 
@@ -205,7 +214,7 @@ M0 启动门禁解除；M1 core WPT 已收敛，M2 依赖未满足，当前推�
 |--------|------|
 | M0 — 选型 RFC（门控） | ✅ 方案 C 已批准 |
 | M1 — 脚本真实执行 + 生命周期真事件 | ✅ current core WPT 156/156 Pass |
-| M2 — fetch 拦截 + Cache 集成 | ⬜ 门控：js-dom fetch 改造 land |
+| M2 — fetch 拦截 + Cache 集成 | 🚧 M2-1 foundation 完成；生产 fetch/Cache 集成待接入 |
 | M3 — 控制语义 + 消息 + 收尾 | 🚧 classic startup graph + 控制/消息/update/persistence 完成 |
 
 ## 验证基线
@@ -387,6 +396,9 @@ M0 启动门禁解除；M1 core WPT 已收敛，M2 依赖未满足，当前推�
 - M3-34 renderer iframe client lifecycle：iframe 物化/销毁经 renderer IPC 接入 browser-owned
   nested window client registry 见
   [M3 renderer iframe client lifecycle](evidence/2026-08-21-m3-renderer-iframe-client-lifecycle.md)
+- M2-1 fetch runtime foundation：runtime `FetchEvent`/`Request`/`Response` MVP、
+  manager longest-scope dispatch、IPC command/event 与定向验证见
+  [M2 fetch runtime foundation](evidence/2026-08-21-m2-fetch-runtime-foundation.md)
 
 ## M0 证据与决策记录
 
@@ -462,6 +474,7 @@ M0 启动门禁解除；M1 core WPT 已收敛，M2 依赖未满足，当前推�
 | 2026-08-21 | M3-32 committed top-level client | production navigation commit 登记 top-level SW client；replacement start 清旧 epoch client |
 | 2026-08-21 | M3-33 window client lifecycle | browser owner 暴露 window client 创建/销毁入口；移除 nested 不影响同 tab top-level/auxiliary |
 | 2026-08-21 | M3-34 renderer iframe lifecycle | iframe contentWindow 物化触发 nested client observe；删除/替换/清空子树触发 remove；browser 归一 child client id |
+| 2026-08-21 | M2-1 fetch runtime foundation | `FetchEvent`/`Request`/`Response` MVP；manager longest-scope dispatch；browser/renderer IPC command/event；生产页面 fetch/Cache 集成仍待后续 |
 | 2026-08-19 | 三方案对比 | 拒绝同线程 context（无调度隔离）；拒绝从零线程（复制安全基建）；推荐抽取 Worker 线程核 |
 | 2026-08-19 | owner | production browser process 单一 owner；WebView 只做同算法 in-process adapter |
 | 2026-08-19 | 首个 driving WPT | `activation-after-registration.https.html` |

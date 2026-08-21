@@ -3,8 +3,9 @@
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 use zero_script_sandbox::{
-    SandboxConfig, ServiceWorkerClientInfo, ServiceWorkerEvent, ServiceWorkerLifecyclePhase, ServiceWorkerMessagePorts,
-    ServiceWorkerOutboundMessage, ServiceWorkerRuntime, ServiceWorkerScriptErrorKind,
+    SandboxConfig, ServiceWorkerClientInfo, ServiceWorkerEvent, ServiceWorkerFetchRequest, ServiceWorkerFetchResponse,
+    ServiceWorkerLifecyclePhase, ServiceWorkerMessagePorts, ServiceWorkerOutboundMessage, ServiceWorkerRuntime,
+    ServiceWorkerScriptErrorKind,
 };
 use zero_storage::{
     ServiceWorkerRegistration, ServiceWorkerRegistry, ServiceWorkerScriptType, ServiceWorkerState,
@@ -19,6 +20,7 @@ const MAX_URL_BYTES: usize = 64 * 1024;
 const MAX_SCRIPT_BYTES: usize = 16 * 1024 * 1024;
 const MAX_SCRIPT_GRAPH_BYTES: usize = 64 * 1024 * 1024;
 const MAX_IMPORTED_SCRIPTS_PER_VERSION: usize = 1024;
+const MAX_PENDING_FETCH_EVENTS: usize = 1024;
 
 fn is_service_worker_window_frame_type(frame_type: &str) -> bool {
     matches!(frame_type, "top-level" | "auxiliary" | "nested")
@@ -36,6 +38,13 @@ struct ClientRecord {
     info: ServiceWorkerClientInfo,
     creation_sequence: u64,
     last_focus_sequence: Option<u64>,
+}
+
+#[derive(Debug, Clone)]
+struct PendingFetchRecord {
+    registration_id: u64,
+    request_url: String,
+    client_id: Option<String>,
 }
 
 /// Stable registration key within one storage partition.
@@ -96,6 +105,20 @@ pub enum ServiceWorkerUpdateOutcome {
         /// New registration version ID.
         registration_id: u64,
     },
+}
+
+/// Result of queuing a fetch through an active Service Worker.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ServiceWorkerFetchDispatch {
+    /// A matching active worker accepted the fetch event.
+    Dispatched {
+        /// Active registration version that owns the fetch event.
+        registration_id: u64,
+        /// Host-assigned fetch event ID.
+        event_id: u64,
+    },
+    /// No same-origin active worker controls this request.
+    PassThrough,
 }
 
 /// Persistable active registration inputs owned by the browser process.
@@ -247,6 +270,21 @@ pub enum ServiceWorkerManagerEvent {
         /// Whether main or imported script bytes changed.
         changed: bool,
     },
+    /// A fetch event settled after optional `respondWith()` handling.
+    FetchSettled {
+        /// Active registration version that handled the fetch event.
+        registration_id: u64,
+        /// Host-assigned fetch event ID.
+        event_id: u64,
+        /// Request URL associated with this fetch event.
+        request_url: String,
+        /// Source client identity, when known.
+        client_id: Option<String>,
+        /// Response supplied through `respondWith()`, or `None` for pass-through/failure.
+        response: Option<ServiceWorkerFetchResponse>,
+        /// Handler or response-conversion diagnostic. Empty means success or pass-through.
+        message: String,
+    },
 }
 
 /// Service Worker manager operation failure.
@@ -346,6 +384,7 @@ pub struct ServiceWorkerManager {
     pending_import_requests: HashMap<(u64, u64), Vec<String>>,
     update_predecessors: HashMap<u64, u64>,
     pending_worker_updates: HashMap<u64, (u64, u64)>,
+    pending_fetch_events: HashMap<(u64, u64), PendingFetchRecord>,
     host: Box<dyn ServiceWorkerRuntimeHost>,
     evaluated: HashSet<u64>,
     restoring_active: HashSet<u64>,
@@ -383,6 +422,13 @@ pub trait ServiceWorkerRuntimeHost: Send {
         client_id: &str,
         client_url: &str,
         ports: &ServiceWorkerMessagePorts,
+    ) -> Result<(), ServiceWorkerManagerError>;
+    /// Dispatch one fetch event into a live runtime.
+    fn dispatch_fetch(
+        &mut self,
+        registration_id: u64,
+        event_id: u64,
+        request: ServiceWorkerFetchRequest,
     ) -> Result<(), ServiceWorkerManagerError>;
     /// Complete one blocking `importScripts()` request.
     fn complete_import_scripts(
@@ -486,6 +532,21 @@ impl ServiceWorkerRuntimeHost for LocalServiceWorkerHost {
             .ok_or(ServiceWorkerManagerError::UnknownRegistration(registration_id))?;
         runtime
             .dispatch_message_with_ports(event_id, data_json, client_id, client_url, ports)
+            .map_err(|error| ServiceWorkerManagerError::Runtime(error.to_string()))
+    }
+
+    fn dispatch_fetch(
+        &mut self,
+        registration_id: u64,
+        event_id: u64,
+        request: ServiceWorkerFetchRequest,
+    ) -> Result<(), ServiceWorkerManagerError> {
+        let runtime = self
+            .runtimes
+            .get_mut(&registration_id)
+            .ok_or(ServiceWorkerManagerError::UnknownRegistration(registration_id))?;
+        runtime
+            .dispatch_fetch(event_id, request)
             .map_err(|error| ServiceWorkerManagerError::Runtime(error.to_string()))
     }
 
@@ -599,6 +660,7 @@ impl ServiceWorkerManager {
             pending_import_requests: HashMap::new(),
             update_predecessors: HashMap::new(),
             pending_worker_updates: HashMap::new(),
+            pending_fetch_events: HashMap::new(),
             host,
             evaluated: HashSet::new(),
             restoring_active: HashSet::new(),
@@ -1226,6 +1288,29 @@ impl ServiceWorkerManager {
                         message,
                     });
                 }
+                ServiceWorkerEvent::FetchSettled {
+                    event_id,
+                    request_url,
+                    response,
+                    message,
+                } => {
+                    let pending = self.pending_fetch_events.remove(&(registration_id, event_id));
+                    output.push(ServiceWorkerManagerEvent::FetchSettled {
+                        registration_id,
+                        event_id,
+                        request_url: pending
+                            .as_ref()
+                            .map(|record| record.request_url.clone())
+                            .unwrap_or(request_url),
+                        client_id: pending.and_then(|record| {
+                            (record.registration_id == registration_id)
+                                .then_some(record.client_id)
+                                .flatten()
+                        }),
+                        response,
+                        message,
+                    });
+                }
                 ServiceWorkerEvent::ClientsMatchAllRequested {
                     request_id,
                     include_uncontrolled,
@@ -1795,6 +1880,53 @@ impl ServiceWorkerManager {
         result
     }
 
+    /// Queue a controlled fetch event on the active worker with the longest matching scope.
+    pub fn dispatch_fetch(
+        &mut self,
+        origin: &str,
+        event_id: u64,
+        request: ServiceWorkerFetchRequest,
+    ) -> Result<ServiceWorkerFetchDispatch, ServiceWorkerManagerError> {
+        if origin.trim().is_empty() || origin.len() > MAX_URL_BYTES {
+            return Err(ServiceWorkerManagerError::InvalidInput(
+                "Service Worker fetch origin is invalid".into(),
+            ));
+        }
+        if self.pending_fetch_events.len() >= MAX_PENDING_FETCH_EVENTS {
+            return Err(ServiceWorkerManagerError::InvalidInput(
+                "too many pending Service Worker fetch events".into(),
+            ));
+        }
+        let request_url = request.url.clone();
+        let request_origin = url::Url::parse(&request_url)
+            .map_err(|_| ServiceWorkerManagerError::InvalidInput("Service Worker fetch URL is invalid".into()))?
+            .origin()
+            .ascii_serialization();
+        if request_origin != origin {
+            return Ok(ServiceWorkerFetchDispatch::PassThrough);
+        }
+        let Some(registration_id) = self
+            .active_registration_for_url(origin, &request_url)
+            .map(|registration| registration.id)
+        else {
+            return Ok(ServiceWorkerFetchDispatch::PassThrough);
+        };
+        let client_id = request.client_id.clone();
+        self.host.dispatch_fetch(registration_id, event_id, request)?;
+        self.pending_fetch_events.insert(
+            (registration_id, event_id),
+            PendingFetchRecord {
+                registration_id,
+                request_url,
+                client_id,
+            },
+        );
+        Ok(ServiceWorkerFetchDispatch::Dispatched {
+            registration_id,
+            event_id,
+        })
+    }
+
     /// Return worker messages for one browser-owned client after its cursor.
     pub fn client_messages_since(
         &self,
@@ -2362,6 +2494,8 @@ impl ServiceWorkerManager {
         self.update_predecessors.remove(&registration_id);
         self.pending_worker_updates
             .retain(|candidate_id, (caller_id, _)| *candidate_id != registration_id && *caller_id != registration_id);
+        self.pending_fetch_events
+            .retain(|_, pending| pending.registration_id != registration_id);
         self.script_sources.remove(&registration_id);
         self.imported_scripts.remove(&registration_id);
         self.host.shutdown(registration_id);
@@ -2494,6 +2628,23 @@ mod tests {
                 }
             }
             assert!(Instant::now() < deadline, "manager update comparison timed out");
+            std::thread::sleep(Duration::from_millis(1));
+        }
+    }
+
+    fn wait_for_fetch(manager: &mut ServiceWorkerManager, event_id: u64) -> ServiceWorkerManagerEvent {
+        let deadline = Instant::now() + Duration::from_secs(5);
+        loop {
+            for event in manager.poll() {
+                if let ServiceWorkerManagerEvent::FetchSettled {
+                    event_id: returned_id, ..
+                } = &event
+                    && *returned_id == event_id
+                {
+                    return event;
+                }
+            }
+            assert!(Instant::now() < deadline, "manager fetch event timed out");
             std::thread::sleep(Duration::from_millis(1));
         }
     }
@@ -3629,6 +3780,150 @@ mod tests {
             std::thread::sleep(Duration::from_millis(1));
         }
         assert_eq!(manager.client_messages_since(id, "closed-client", 0), (2, Vec::new()));
+    }
+
+    #[test]
+    fn fetch_dispatch_uses_active_longest_scope_worker() {
+        let mut manager = manager_under_test();
+        let root = start_active(
+            &mut manager,
+            "/",
+            "addEventListener('fetch', event => {
+               event.respondWith(new Response('root', {status: 201}));
+             });",
+        );
+        let app = start_active(
+            &mut manager,
+            "/app/",
+            "addEventListener('fetch', event => {
+               event.respondWith(new Response('app:' + event.request.url, {
+                 status: 203,
+                 statusText: 'Scoped',
+                 headers: {'X-Scope': 'app'}
+               }));
+             });",
+        );
+
+        assert_eq!(
+            manager
+                .dispatch_fetch(
+                    "https://example.test",
+                    120,
+                    ServiceWorkerFetchRequest {
+                        url: "https://example.test/app/data".into(),
+                        method: "GET".into(),
+                        headers: Vec::new(),
+                        body: None,
+                        client_id: Some("client-1".into()),
+                        resulting_client_id: None,
+                    },
+                )
+                .unwrap(),
+            ServiceWorkerFetchDispatch::Dispatched {
+                registration_id: app,
+                event_id: 120,
+            }
+        );
+        assert_eq!(
+            wait_for_fetch(&mut manager, 120),
+            ServiceWorkerManagerEvent::FetchSettled {
+                registration_id: app,
+                event_id: 120,
+                request_url: "https://example.test/app/data".into(),
+                client_id: Some("client-1".into()),
+                response: Some(ServiceWorkerFetchResponse {
+                    status: 203,
+                    status_text: "Scoped".into(),
+                    headers: vec![("x-scope".into(), "app".into())],
+                    body: "app:https://example.test/app/data".into(),
+                }),
+                message: String::new(),
+            }
+        );
+
+        assert_eq!(
+            manager
+                .dispatch_fetch(
+                    "https://example.test",
+                    121,
+                    ServiceWorkerFetchRequest {
+                        url: "https://example.test/other".into(),
+                        method: "GET".into(),
+                        headers: Vec::new(),
+                        body: None,
+                        client_id: None,
+                        resulting_client_id: None,
+                    },
+                )
+                .unwrap(),
+            ServiceWorkerFetchDispatch::Dispatched {
+                registration_id: root,
+                event_id: 121,
+            }
+        );
+        assert_eq!(
+            wait_for_fetch(&mut manager, 121),
+            ServiceWorkerManagerEvent::FetchSettled {
+                registration_id: root,
+                event_id: 121,
+                request_url: "https://example.test/other".into(),
+                client_id: None,
+                response: Some(ServiceWorkerFetchResponse {
+                    status: 201,
+                    status_text: String::new(),
+                    headers: Vec::new(),
+                    body: "root".into(),
+                }),
+                message: String::new(),
+            }
+        );
+    }
+
+    #[test]
+    fn fetch_dispatch_passes_through_without_same_origin_active_worker() {
+        let mut manager = manager_under_test();
+        start_active(
+            &mut manager,
+            "/app/",
+            "addEventListener('fetch', event => {
+               event.respondWith(new Response('app'));
+             });",
+        );
+
+        assert_eq!(
+            manager
+                .dispatch_fetch(
+                    "https://example.test",
+                    122,
+                    ServiceWorkerFetchRequest {
+                        url: "https://other.test/app/data".into(),
+                        method: "GET".into(),
+                        headers: Vec::new(),
+                        body: None,
+                        client_id: None,
+                        resulting_client_id: None,
+                    },
+                )
+                .unwrap(),
+            ServiceWorkerFetchDispatch::PassThrough
+        );
+        assert_eq!(
+            manager
+                .dispatch_fetch(
+                    "https://example.test",
+                    123,
+                    ServiceWorkerFetchRequest {
+                        url: "https://example.test/outside".into(),
+                        method: "GET".into(),
+                        headers: Vec::new(),
+                        body: None,
+                        client_id: None,
+                        resulting_client_id: None,
+                    },
+                )
+                .unwrap(),
+            ServiceWorkerFetchDispatch::PassThrough
+        );
     }
 
     #[test]

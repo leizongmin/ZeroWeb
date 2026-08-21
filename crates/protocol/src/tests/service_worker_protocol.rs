@@ -521,6 +521,94 @@ fn service_worker_host_command_round_trips_and_validates() {
 }
 
 #[test]
+fn service_worker_host_fetch_command_and_event_round_trip() {
+    let command = ServiceWorkerHostCommandParams {
+        registration_id: 8,
+        command: ServiceWorkerHostCommand::DispatchFetch {
+            event_id: 21,
+            request: ServiceWorkerFetchRequestWire {
+                url: "https://example.test/app/data".into(),
+                method: "POST".into(),
+                headers: vec![("x-test".into(), "yes".into())],
+                body: Some("payload".into()),
+                client_id: Some("client-1".into()),
+                resulting_client_id: None,
+            },
+        },
+    };
+    assert!(command.validate().is_ok());
+    let decoded = roundtrip(IpcMessage {
+        id: 53,
+        kind: IpcMessageKind::ServiceWorkerHostCommand(command.clone()),
+    });
+    let IpcMessageKind::ServiceWorkerHostCommand(decoded_command) = decoded.kind else {
+        panic!("expected ServiceWorkerHostCommand");
+    };
+    assert_eq!(decoded_command, command);
+
+    let event = ServiceWorkerHostEventParams {
+        registration_id: 8,
+        event: ServiceWorkerHostEvent::FetchSettled {
+            event_id: 21,
+            request_url: "https://example.test/app/data".into(),
+            response: Some(ServiceWorkerFetchResponseWire {
+                status: 202,
+                status_text: "Accepted".into(),
+                headers: vec![("x-sw".into(), "hit".into())],
+                body: "intercepted".into(),
+            }),
+            message: String::new(),
+        },
+    };
+    assert!(event.validate().is_ok());
+    let decoded = roundtrip(IpcMessage {
+        id: 54,
+        kind: IpcMessageKind::ServiceWorkerHostEvent(event.clone()),
+    });
+    let IpcMessageKind::ServiceWorkerHostEvent(decoded_event) = decoded.kind else {
+        panic!("expected ServiceWorkerHostEvent");
+    };
+    assert_eq!(decoded_event, event);
+
+    assert!(
+        ServiceWorkerHostCommandParams {
+            registration_id: 8,
+            command: ServiceWorkerHostCommand::DispatchFetch {
+                event_id: 22,
+                request: ServiceWorkerFetchRequestWire {
+                    url: String::new(),
+                    method: "GET".into(),
+                    headers: Vec::new(),
+                    body: None,
+                    client_id: None,
+                    resulting_client_id: None,
+                },
+            },
+        }
+        .validate()
+        .is_err()
+    );
+    assert!(
+        ServiceWorkerHostEventParams {
+            registration_id: 8,
+            event: ServiceWorkerHostEvent::FetchSettled {
+                event_id: 21,
+                request_url: "https://example.test/app/data".into(),
+                response: Some(ServiceWorkerFetchResponseWire {
+                    status: 199,
+                    status_text: String::new(),
+                    headers: Vec::new(),
+                    body: String::new(),
+                }),
+                message: String::new(),
+            },
+        }
+        .validate()
+        .is_err()
+    );
+}
+
+#[test]
 fn service_worker_host_event_round_trips() {
     let message = IpcMessage {
         id: 52,

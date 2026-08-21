@@ -18,14 +18,15 @@ use zero_page_runtime::{
 };
 use zero_protocol::message::{
     ServiceWorkerClientInfoWire, ServiceWorkerClientMessages, ServiceWorkerError, ServiceWorkerErrorCode,
-    ServiceWorkerHostCommand, ServiceWorkerHostCommandParams, ServiceWorkerHostEvent, ServiceWorkerHostEventParams,
-    ServiceWorkerLifecycleWire, ServiceWorkerOperation, ServiceWorkerRequestParams, ServiceWorkerResponseParams,
-    ServiceWorkerResult, ServiceWorkerScriptErrorKindWire, ServiceWorkerScriptTypeWire, ServiceWorkerSnapshot,
-    ServiceWorkerStateChanges, ServiceWorkerStateWire, ServiceWorkerUpdateError, ServiceWorkerUpdateViaCacheWire,
+    ServiceWorkerFetchRequestWire, ServiceWorkerHostCommand, ServiceWorkerHostCommandParams, ServiceWorkerHostEvent,
+    ServiceWorkerHostEventParams, ServiceWorkerLifecycleWire, ServiceWorkerOperation, ServiceWorkerRequestParams,
+    ServiceWorkerResponseParams, ServiceWorkerResult, ServiceWorkerScriptErrorKindWire, ServiceWorkerScriptTypeWire,
+    ServiceWorkerSnapshot, ServiceWorkerStateChanges, ServiceWorkerStateWire, ServiceWorkerUpdateError,
+    ServiceWorkerUpdateViaCacheWire,
 };
 use zero_script_sandbox::{
-    ServiceWorkerClientInfo, ServiceWorkerEvent, ServiceWorkerLifecyclePhase, ServiceWorkerMessagePorts,
-    ServiceWorkerScriptErrorKind,
+    ServiceWorkerClientInfo, ServiceWorkerEvent, ServiceWorkerFetchRequest, ServiceWorkerFetchResponse,
+    ServiceWorkerLifecyclePhase, ServiceWorkerMessagePorts, ServiceWorkerScriptErrorKind,
 };
 use zero_storage::{
     ServiceWorkerRegistration, ServiceWorkerScriptType, ServiceWorkerState, ServiceWorkerUpdateViaCache,
@@ -240,6 +241,36 @@ impl ServiceWorkerRuntimeHost for IpcServiceWorkerHost {
                     transferred_port_ids: ports.transferred_port_ids.clone(),
                     data_port_index: ports.data_port_index,
                     target_port_id: ports.target_port_id,
+                },
+            },
+        });
+        Ok(())
+    }
+
+    fn dispatch_fetch(
+        &mut self,
+        registration_id: u64,
+        event_id: u64,
+        request: ServiceWorkerFetchRequest,
+    ) -> Result<(), ServiceWorkerManagerError> {
+        let Some(tab_id) = self.channels.take_owned_tab(registration_id) else {
+            return Err(ServiceWorkerManagerError::UnknownRegistration(registration_id));
+        };
+        self.channels.record_owned(registration_id, tab_id);
+        self.channels.push_outgoing(ServiceWorkerHostOutgoing {
+            tab_id,
+            params: ServiceWorkerHostCommandParams {
+                registration_id,
+                command: ServiceWorkerHostCommand::DispatchFetch {
+                    event_id,
+                    request: ServiceWorkerFetchRequestWire {
+                        url: request.url,
+                        method: request.method,
+                        headers: request.headers,
+                        body: request.body,
+                        client_id: request.client_id,
+                        resulting_client_id: request.resulting_client_id,
+                    },
                 },
             },
         });
@@ -467,6 +498,22 @@ fn sandbox_event(event: ServiceWorkerHostEvent) -> ServiceWorkerEvent {
         } => ServiceWorkerEvent::MessageFailed {
             event_id,
             client_id,
+            message,
+        },
+        ServiceWorkerHostEvent::FetchSettled {
+            event_id,
+            request_url,
+            response,
+            message,
+        } => ServiceWorkerEvent::FetchSettled {
+            event_id,
+            request_url,
+            response: response.map(|response| ServiceWorkerFetchResponse {
+                status: response.status,
+                status_text: response.status_text,
+                headers: response.headers,
+                body: response.body,
+            }),
             message,
         },
         ServiceWorkerHostEvent::ImportScriptsRequested { request_id, specifiers } => {
