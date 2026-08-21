@@ -597,7 +597,19 @@ fn animation_name_list_supported(value: &str) -> bool {
 }
 
 fn transition_property_list_supported(value: &str) -> bool {
-    comma_list_supported(value, transition_property_ident_supported)
+    let Some(items) = split_top_level_commas(value) else {
+        return false;
+    };
+    if items.is_empty()
+        || !items
+            .iter()
+            .all(|item| transition_property_ident_supported(item.trim()))
+    {
+        return false;
+    }
+    // https://drafts.csswg.org/css-transitions-1/#transition-property-property
+    // Grammar is `none | <single-transition-property>#`; `none` is only valid alone.
+    items.len() == 1 || !items.iter().any(|item| item.trim().eq_ignore_ascii_case("none"))
 }
 
 fn transition_property_ident_supported(value: &str) -> bool {

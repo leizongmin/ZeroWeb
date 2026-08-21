@@ -670,6 +670,13 @@ fn test_apply_transition_property_invalid_list_keeps_old_values() {
     ));
     assert_eq!(style.transition_property, vec!["opacity".to_string()]);
 
+    assert!(!apply_property_value(
+        &mut style,
+        "transition-property",
+        "none, opacity"
+    ));
+    assert_eq!(style.transition_property, vec!["opacity".to_string()]);
+
     assert!(!apply_property_value(&mut style, "transition-property", "opacity,"));
     assert_eq!(style.transition_property, vec!["opacity".to_string()]);
 }

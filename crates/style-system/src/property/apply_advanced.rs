@@ -47,6 +47,12 @@ fn parse_transition_property_list(value: &str) -> Option<Vec<String>> {
         }
         out.push(name.to_string());
     }
+    // https://drafts.csswg.org/css-transitions-1/#transition-property-property
+    // Grammar is `none | <single-transition-property>#`; `none` cannot be mixed
+    // with a property list.
+    if out.len() > 1 && out.iter().any(|name| name.eq_ignore_ascii_case("none")) {
+        return None;
+    }
     Some(out)
 }
 

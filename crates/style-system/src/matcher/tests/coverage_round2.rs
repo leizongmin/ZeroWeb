@@ -663,6 +663,7 @@ fn test_property_supported_animation_and_transition() {
     assert!(is_property_supported("animation-play-state", "running, paused"));
 
     assert!(!is_property_supported("transition-property", "opacity, 123"));
+    assert!(!is_property_supported("transition-property", "none, opacity"));
     assert!(!is_property_supported("transition-duration", "-1s"));
     assert!(!is_property_supported(
         "transition-timing-function",
