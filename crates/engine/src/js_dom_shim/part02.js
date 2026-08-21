@@ -1489,6 +1489,25 @@
   //   （strip 首/尾 tag，void 元素正确返 ''）；④ getElementById 用 `#id` 选择器（id 含特殊字符未转义，
   //   best-effort）；⑤ textContent/getAttribute 只读快照值（无 live 更新）。
   // host 未注册（reftest/纯 sandbox）→ DOMParser 仍可构造，querySelector 返 null（no-throw，零回归）。
+  // R158（js-dom M4）：查询入口的非法选择器守卫——spec `dom-parentnode-
+  // queryselector` 对 parse 失败的选择器抛 SyntaxError DOMException（WPT
+  // runInvalidSelectorTest 断言 root.querySelector/All 双入口；`__zw_selector_valid`
+  // 探针 R156 已建）。全查询入口（_zwParseEl / detached doc / Element.prototype /
+  // fragment / 主 document）统一消费。
+  globalThis._zwQueryGuard = function (sel, nArgs) {
+    // R158：无参 TypeError（spec WebIDL 2 必参——WPT "no parameter" 断言；
+    // `querySelector(undefined)` 是 1 参 undefined → String 形态 "undefined" 合法
+    // type selector 查询，与浏览器一致不抛——仅真无参才 TypeError）。
+    if (nArgs === 0) {
+      throw new globalThis.TypeError(
+        "Failed to execute 'querySelector' on 'ParentNode': 1 argument required, but only 0 present.");
+    }
+    if (typeof __zw_selector_valid === 'function' && __zw_selector_valid(String(sel)) !== '1') {
+      throw new (globalThis.DOMException || Error)(
+        "'" + String(sel) + "' is not a valid selector.", 'SyntaxError');
+    }
+  };
+
   function _zwParseEl(info) {
     info = info || {};
     var tag = info.tag || '';
@@ -1594,16 +1613,38 @@
   };
   _zwParseEl.prototype.matchesSelector = _zwParseEl.prototype.matches;
   _zwParseEl.prototype.webkitMatchesSelector = _zwParseEl.prototype.matches;
+  // R158（js-dom M4）：per-element wrapper 缓存——`el.querySelector(x) ===
+  // el.querySelectorAll(x)[0]` 的 identity 断言（WPT runFinderTest 的
+  // assert_equals(found, foundall[0])；旧版每次 new 全新对象全 fail）。缓存挂
+  // 元素自身（_zwQWrapMap），键含 outer（子树变更自然 miss），上限 512 防爆。
+  _zwParseEl.prototype._zwWrapQ = function (info) {
+    if (!this._zwQWrapMap || !(this._zwQWrapMap instanceof Map)) {
+      try { this._zwQWrapMap = new Map(); } catch (_e158w) {
+        return new _zwParseEl(info);
+      }
+    }
+    var map = this._zwQWrapMap;
+    var key = String(info && info.tag || '') + '\x1f' + String(info && info.id || '') + '\x1f' + String(info && info.outer || '');
+    var cached = map.get(key);
+    if (cached) return cached;
+    if (map.size > 512) map.clear();
+    var e = new _zwParseEl(info);
+    e._zwRootHtml = this._zwRootHtml || this.outerHTML;
+    map.set(key, e);
+    return e;
+  };
   _zwParseEl.prototype.querySelector = function (sel) {
+    if (globalThis._zwQueryGuard) globalThis._zwQueryGuard(sel, arguments.length);
     if (typeof __zw_parse_html_query !== 'function') return null;
     var arr = JSON.parse(__zw_parse_html_query(this.outerHTML, String(sel), '0'));
-    return arr.length ? new _zwParseEl(arr[0]) : null;
+    return arr.length ? this._zwWrapQ(arr[0]) : null;
   };
   _zwParseEl.prototype.querySelectorAll = function (sel) {
+    if (globalThis._zwQueryGuard) globalThis._zwQueryGuard(sel, arguments.length);
     if (typeof __zw_parse_html_query !== 'function') return [];
     var arr = JSON.parse(__zw_parse_html_query(this.outerHTML, String(sel), '1'));
     var out = [];
-    for (var i = 0; i < arr.length; i++) out.push(new _zwParseEl(arr[i]));
+    for (var i = 0; i < arr.length; i++) out.push(this._zwWrapQ(arr[i]));
     return out;
   };
   // R3019：lazy 可变子树桥——DOMPurify / sanitizer / 树遍历库经 DOMParser.parseFromString 拿到 body 后，

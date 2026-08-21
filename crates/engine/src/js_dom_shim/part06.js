@@ -1394,6 +1394,9 @@
       } catch (_e) { return null; }
     },
     querySelector: function(sel) {
+      // R158：非法选择器守卫（spec SyntaxError——WPT runInvalidSelectorTest 的
+      // document.querySelector 入口）。置于 pending 回落之前（非法即抛，不查）。
+      if (globalThis._zwQueryGuard) globalThis._zwQueryGuard(sel, arguments.length);
       var hit = __zw_query_match(sel);
       if (hit) return _zwQueryWrapIdentity(hit);
       // js-dom M4 R51c：host 快照未命中 → 回落 pending added 扫描（同步 turn 内 append/insert 的
@@ -1679,6 +1682,7 @@
       return wire.split('|').filter(Boolean).map(_wrapSelector);
     },
     querySelectorAll: function(sel) {
+      if (globalThis._zwQueryGuard) globalThis._zwQueryGuard(sel, arguments.length);
       var q = String(sel);
       if (q === ':invalid' || q === ':valid') {
         // R57（FV M1）：:invalid/:valid 伪类查询（约束校验联动——host CSS 引擎

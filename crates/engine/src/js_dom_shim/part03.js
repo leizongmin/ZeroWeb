@@ -602,21 +602,41 @@
   _zwDefProtoMethod(globalThis.Element.prototype, 'webkitMatchesSelector', function (sel) {
     return globalThis.Element.prototype.matches.apply(this, arguments);
   });
+  // R158：per-root wrapper 缓存（与 detached doc 的 _zwWrapCached 同理——
+  // querySelector(x) === querySelectorAll(x)[0] identity 断言）。挂在 root 对象
+  // 自身（_zwQWrapMap 槽），树变更经 setAttribute/appendChild 等方法面惰性失效
+  //（key 含 outer——树变更后 outer 变化自然 miss；map 代际由 root 的 mutation
+  // 方法不直接 hook，靠 outer-key 差异近似 + Map 上限防爆增长：>512 清空）。
+  function _zwMWrapCached(root, info) {
+    if (!root || typeof root !== 'object') return new _zwParseEl(info);
+    var map = root._zwQWrapMap;
+    if (!map || !(map instanceof Map)) {
+      map = new Map();
+      try { root._zwQWrapMap = map; } catch (_e158m) {}
+    }
+    var key = String(info && info.tag || '') + '\x1f' + String(info && info.id || '') + '\x1f' + String(info && info.outer || '');
+    var cached = map.get(key);
+    if (cached) {
+      try { cached._zwRootHtml = _zwMOuterHtml(root); } catch (_e158r2) {}
+      return cached;
+    }
+    if (map.size > 512) map.clear();
+    var e158 = new _zwParseEl(info);
+    e158._zwRootHtml = _zwMOuterHtml(root);
+    map.set(key, e158);
+    return e158;
+  }
   _zwDefProtoMethod(globalThis.Element.prototype, 'querySelector', function (sel) {
+    if (globalThis._zwQueryGuard) globalThis._zwQueryGuard(sel, arguments.length);
     var arr = _zwMQueryAll(this, sel);
     if (!arr.length) return null;
-    var e156 = new _zwParseEl(arr[0]);
-    e156._zwRootHtml = _zwMOuterHtml(this);
-    return e156;
+    return _zwMWrapCached(this, arr[0]);
   });
   _zwDefProtoMethod(globalThis.Element.prototype, 'querySelectorAll', function (sel) {
+    if (globalThis._zwQueryGuard) globalThis._zwQueryGuard(sel, arguments.length);
     var arr = _zwMQueryAll(this, sel);
     var out = [];
-    for (var i = 0; i < arr.length; i++) {
-      var e156 = new _zwParseEl(arr[i]);
-      e156._zwRootHtml = _zwMOuterHtml(this);
-      out.push(e156);
-    }
+    for (var i = 0; i < arr.length; i++) out.push(_zwMWrapCached(this, arr[i]));
     return out;
   });
   // js-dom M4 R128：`Node.prototype.cloneNode` 泛型（spec `dom-node-clone-node`——对任意
@@ -5373,25 +5393,48 @@
         return JSON.parse(__zw_parse_html_query(detHtml(), String(sel), all ? '1' : '0'));
       } catch (_e) { return []; }
     }
-    function queryOne(sel) {
-      var a = queryBody(sel, false);
-      if (!a.length) return null;
-      var e = new _zwParseEl(a[0]);
-      // R156：根源串挂产物（matches 的文档上下文——sibling 组合器在整棵树内解析）
-      //+ ownerDocument 精确指向本 detached doc（WPT Element-matches 的
-      // `element.ownerDocument.defaultView.TypeError` 断言）。
+    // R158（js-dom M4）：per-element wrapper 缓存——同一元素的 querySelector 与
+    // querySelectorAll[0] 产物须**同对象 identity**（WPT runFinderTest 的
+    // `assert_equals(found, foundall[0])`；旧版每次 new _zwParseEl 全新对象）。
+    // 键 = tag + '\x1f' + id + '\x1f' + outer（detached doc 内唯一）；树代际
+    //（bodyHtml/_tree 变更）经代计数失效。
+    var _zwQWrapCache = new Map();
+    var _zwQWrapGen = 0;
+    (function () {
+      // hook bodyHtml/innerHTML 写点：detached doc 的 body innerHTML setter 与
+      // mutation 路径在 part03 内多点——以 gen 标记 + 惰性比对 detHtml 代。
+      try {
+        Object.defineProperty(doc, '_zwQWrapBump', {
+          configurable: true,
+          get: function () { return _zwQWrapGen; },
+          set: function () { _zwQWrapGen++; _zwQWrapCache.clear(); },
+        });
+      } catch (_e158g) {}
+    })();
+    function _zwWrapCached(info) {
+      var key = String(info && info.tag || '') + '\x1f' + String(info && info.id || '') + '\x1f' + String(info && info.outer || '');
+      var cached = _zwQWrapCache.get(key);
+      if (cached) {
+        // R156 attachments refresh（树可能已变更——rootHtml 重挂保 matches 语义）
+        try { cached._zwRootHtml = detHtml(); } catch (_e158r) {}
+        return cached;
+      }
+      var e = new _zwParseEl(info);
       e._zwRootHtml = detHtml();
       e._zwOwnerDoc = doc;
+      _zwQWrapCache.set(key, e);
       return e;
     }
+    function queryOne(sel) {
+      if (globalThis._zwQueryGuard) globalThis._zwQueryGuard(sel);
+      var a = queryBody(sel, false);
+      if (!a.length) return null;
+      return _zwWrapCached(a[0]);
+    }
     function queryAll(sel) {
+      if (globalThis._zwQueryGuard) globalThis._zwQueryGuard(sel);
       var a = queryBody(sel, true); var out = [];
-      for (var i = 0; i < a.length; i++) {
-        var e = new _zwParseEl(a[i]);
-        e._zwRootHtml = detHtml();
-        e._zwOwnerDoc = doc;
-        out.push(e);
-      }
+      for (var i = 0; i < a.length; i++) out.push(_zwWrapCached(a[i]));
       return out;
     }
     // R130（js-dom M4）：兄弟链接线（doc 级 appendChild/insertBefore/removeChild 后调）——
@@ -5424,9 +5467,9 @@
       namespaceURI: 'http://www.w3.org/1999/xhtml', prefix: null, // R131：同 docEl/headEl
       parentNode: null, // R3017：detached root，parentNode=null（DOMPurify 经 node.parentNode 取父）
       get innerHTML() { return _tree ? _tree.innerHTML : bodyHtml; },
-      set innerHTML(v) { bodyHtml = v == null ? '' : String(v); _tree = null; },
-      querySelector: function (sel) { return queryOne(sel); },
-      querySelectorAll: function (sel) { return queryAll(sel); },
+      set innerHTML(v) { bodyHtml = v == null ? '' : String(v); _tree = null; _zwQWrapGen++; _zwQWrapCache.clear(); },
+      querySelector: function (sel) { if (globalThis._zwQueryGuard) globalThis._zwQueryGuard(sel, arguments.length); return queryOne(sel); },
+      querySelectorAll: function (sel) { if (globalThis._zwQueryGuard) globalThis._zwQueryGuard(sel, arguments.length); return queryAll(sel); },
       // R132（js-dom M4）：body 的 set/has/get/removeAttribute 族（WPT Document-importNode
       // "Import an Attr node" 经 `doc.body.setAttributeNS(ns,'p:name','value')`——旧 plain
       // object 无方法直接 TypeError）。存入解析树（ensureTree 后 setAttribute）；NS 元数据
@@ -5537,7 +5580,7 @@
               }
             } catch (_eA2) {}
             var frag = '<' + oTag + oattrs + '>' + oih + '</' + oTag + '>';
-            bodyHtml = (_tree ? _tree.innerHTML : bodyHtml) + frag;
+            bodyHtml = (_tree ? _tree.innerHTML : bodyHtml) + frag; _zwQWrapGen++; _zwQWrapCache.clear();
             _tree = null;
             return c;
           } catch (_e112d) { /* 回落通用路径 */ }
@@ -5842,6 +5885,7 @@
               var chtml = mBody ? mBody[1] : cih;
               if (chtml && chtml.trim()) {
                 bodyHtml = chtml; // 查询树源更新（_tree 惰性重建）
+                _zwQWrapGen++; _zwQWrapCache.clear();
                 _tree = null;
               }
             }
@@ -5894,8 +5938,8 @@
         }
         return c;
       },
-      querySelector: function (sel) { return queryOne(sel); },
-      querySelectorAll: function (sel) { return queryAll(sel); },
+      querySelector: function (sel) { if (globalThis._zwQueryGuard) globalThis._zwQueryGuard(sel, arguments.length); return queryOne(sel); },
+      querySelectorAll: function (sel) { if (globalThis._zwQueryGuard) globalThis._zwQueryGuard(sel, arguments.length); return queryAll(sel); },
       // js-dom M4 R112：doc 级 getElementsByTagName/ClassName（WPT Event-dispatch-bubbles
       // targetsForDocumentChain `document.getElementsByTagName("body")[0]`——doc 旧只有
       // querySelector 族，此二方法只在 body 上）。语义同 body：查 detHtml 树。
@@ -6248,10 +6292,12 @@
           // `root.querySelector(...)`——旧 'root.querySelector is not a function' 132F）。
           // 子树序列化（body 包裹保留结构）+ host 二次 parse 查询。
           querySelector: function (sel) {
+            if (globalThis._zwQueryGuard) globalThis._zwQueryGuard(sel, arguments.length);
             var arr = frag.querySelectorAll(sel);
             return arr.length ? arr[0] : null;
           },
           querySelectorAll: function (sel) {
+            if (globalThis._zwQueryGuard) globalThis._zwQueryGuard(sel, arguments.length);
             if (typeof __zw_parse_html_query !== 'function') return [];
             try {
               var h = '<body>';
@@ -6262,9 +6308,21 @@
               h += '</body>';
               var r = JSON.parse(__zw_parse_html_query(h, String(sel), '1')) || [];
               var out = [];
+              // R158：per-fragment wrapper 缓存（同 _zwMWrapCached——querySelector
+              // 与 querySelectorAll[0] 的 identity 断言；key 含 outer，子树变更自然 miss）。
+              if (!frag._zwQWrapMap || !(frag._zwQWrapMap instanceof Map)) frag._zwQWrapMap = new Map();
+              var fmap = frag._zwQWrapMap;
+              if (fmap.size > 512) fmap.clear();
               for (var k = 0; k < r.length; k++) {
-                var fe156 = new _zwParseEl(r[k]);
-                fe156._zwRootHtml = h;
+                var fk = String(r[k] && r[k].tag || '') + '\x1f' + String(r[k] && r[k].id || '') + '\x1f' + String(r[k] && r[k].outer || '');
+                var fe156 = fmap.get(fk);
+                if (!fe156) {
+                  fe156 = new _zwParseEl(r[k]);
+                  fe156._zwRootHtml = h;
+                  fmap.set(fk, fe156);
+                } else {
+                  try { fe156._zwRootHtml = h; } catch (_e158r3) {}
+                }
                 out.push(fe156);
               }
               return out;

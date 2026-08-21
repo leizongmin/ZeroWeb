@@ -303,6 +303,11 @@ impl SimpleSelector {
                     }
                 }
                 AttributeMatcher::Prefix(value) => {
+                    // R158：空值 ^= 恒不匹配（WPT `[class^=""]` expect 0——
+                    // spec 属性和参数均为空串时不匹配；旧版 starts_with("") 恒真）。
+                    if value.is_empty() {
+                        return false;
+                    }
                     let attr_val = match elem.get_attribute(&attr_sel.name) {
                         Some(v) => v,
                         None => return false,
@@ -312,6 +317,10 @@ impl SimpleSelector {
                     }
                 }
                 AttributeMatcher::Suffix(value) => {
+                    // R158：空值 $= 恒不匹配（同 ^=——WPT `[class$=""]` expect 0）。
+                    if value.is_empty() {
+                        return false;
+                    }
                     let attr_val = match elem.get_attribute(&attr_sel.name) {
                         Some(v) => v,
                         None => return false,
@@ -321,6 +330,10 @@ impl SimpleSelector {
                     }
                 }
                 AttributeMatcher::Substring(value) => {
+                    // R158：空值 *= 恒不匹配（同 ^=/$=——contains("") 恒真）。
+                    if value.is_empty() {
+                        return false;
+                    }
                     let attr_val = match elem.get_attribute(&attr_sel.name) {
                         Some(v) => v,
                         None => return false,
@@ -686,8 +699,14 @@ fn selector_lexically_valid(s: &str) -> bool {
             // `#` 全非法；括号内（`:not(.5cm)` 等）同规）。`-` 开头 ident 允许。
             b'.' | b'#' if !in_attr => {
                 let nxt = bytes.get(idx + 1).copied().unwrap_or(0);
-                let ident_start =
-                    nxt == b'-' || nxt == b'_' || nxt == b'\\' || nxt.is_ascii_alphabetic() || nxt >= 0x80;
+                // R158：U+000B（VT）按 R124 语义算**字面类名字符**（ASCII 空白分词
+                // 域不含 VT；`querySelector('.'+VT)` 查询合法返 null 不抛）。
+                let ident_start = nxt == b'-'
+                    || nxt == b'_'
+                    || nxt == b'\\'
+                    || nxt == 0x0B
+                    || nxt.is_ascii_alphabetic()
+                    || nxt >= 0x80;
                 if !ident_start {
                     return false;
                 }
@@ -761,7 +780,15 @@ pub(crate) fn split_top_level_selector_list(s: &str) -> Option<Vec<&str>> {
     let mut depth = 0i32;
     let mut found = false;
     let bytes = s.as_bytes();
-    for (idx, &b) in bytes.iter().enumerate() {
+    let mut idx = 0usize;
+    while idx < bytes.len() {
+        let b = bytes[idx];
+        // R158：转义对整对跳过（`\,` 是字面逗号——WPT escapes `#\.\,\:\!` 的
+        // 逐字符转义 id；旧版在此切列表 → 残段以 `\` 开头 parse None → 整链误判非法）。
+        if b == b'\\' {
+            idx += 2;
+            continue;
+        }
         match b {
             b'(' | b'[' => depth += 1,
             b')' | b']' => {
@@ -776,6 +803,7 @@ pub(crate) fn split_top_level_selector_list(s: &str) -> Option<Vec<&str>> {
             }
             _ => {}
         }
+        idx += 1;
     }
     if !found {
         return None;
@@ -1874,6 +1902,33 @@ mod zz_r156_tests {
         assert_eq!(doc.query_selector_all(root, "[href^=\"https:\"]").len(), 1);
         assert_eq!(doc.query_selector_all(root, "[href$=z]").len(), 1);
         assert_eq!(doc.query_selector_all(root, "[data-x=\"té\"]").len(), 1);
+    }
+
+    // R158：转义 id 形态不误杀——`#,\,\:\!`（逐字符转义）合法。
+    #[test]
+    fn zz_r158_escaped_id_valid() {
+        // R158：转义 id 形态不误杀（engine r118 / WPT escapes 族——`#\.comma`、
+        // `#\30 nextIsWhiteSpace`（hex+空白终结符）、逐字符转义混合形态）。
+        for s in [
+            "#\\.comma",
+            "#\\.\\,\\:\\!",
+            "#\\30 nextIsWhiteSpace",
+            "#\\000030 spaceMoreThan6Hex",
+            "#\\61 BMPRegular",
+            "#spac\\65\r\ns",
+            "#hel\\6C o",
+        ] {
+            assert!(crate::query::selector_is_valid(s), "valid: {s:?}");
+        }
+    }
+
+    // R158：invalid 形态在词法层的再验证——`[` 裸括号（自动补 `]` 后空名）须拒。
+    #[test]
+    fn zz_r158_bare_bracket_rejected() {
+        for s in ["[", "]", "(", ")"] {
+            assert!(!crate::query::selector_is_valid(s), "invalid: {s:?}");
+        }
+        assert!(crate::query::selector_is_valid("#a [align=\"center\""));
     }
 
     // R157：`*` universal 回归——`<body>` 片段 querySelectorAll("*") 全命中。

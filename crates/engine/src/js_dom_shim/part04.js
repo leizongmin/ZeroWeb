@@ -4180,6 +4180,9 @@
           //   （host 不持可查询 handle 子树；registry 记 handle 父→子，DFS + 客户端选择器匹配）。querySelector
           //   不穿透 shadow 边界：host.querySelector 查 light-DOM 子树，host.shadowRoot.querySelector 查 shadow 树。
           return function(q) {
+            // R158：非法选择器守卫（spec SyntaxError——WPT runInvalidSelectorTest
+            // 对 Empty Element（handle div）入口同抛）。
+            if (globalThis._zwQueryGuard) globalThis._zwQueryGuard(q, arguments.length);
             if (sel && typeof __zw_query_match_sub === 'function') {
               // js-dom M3 R100：query 返回点 identity 反查（同 document.querySelector
               // ——命中 createElement 建立的 handle 节点时返回原 handle proxy，事件
@@ -4209,6 +4212,8 @@
           // 元素**子树**作用域（spec：仅后代）。同 querySelector：sel-based → host；handle-based → R2928 registry。
           // R3033：返 NodeList（item），包 _zwMakeCollection(arr, false)。
           return function(q) {
+            // R158：非法选择器守卫（同 querySelector 分支）。
+            if (globalThis._zwQueryGuard) globalThis._zwQueryGuard(q, arguments.length);
             if (sel && typeof __zw_query_all_sub === 'function') {
               try {
                 var all = __zw_query_all_sub(sel, String(q));
