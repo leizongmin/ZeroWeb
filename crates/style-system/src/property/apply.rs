@@ -536,8 +536,11 @@ pub fn apply_property_value_with_quirks(
             }
         }
         "font-family" => {
-            style.font_family = parse_font_family(value);
-            return true;
+            let families = parse_font_family(value);
+            if !families.is_empty() {
+                style.font_family = families;
+                return true;
+            }
         }
         "font-size" => {
             // https://drafts.csswg.org/css-fonts-4/#absolute-size-mapping

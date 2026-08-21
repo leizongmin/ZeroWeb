@@ -1237,6 +1237,11 @@ fn test_apply_font_family_generic() {
     assert!(ok);
     let (ok, _) = apply("font-family", "monospace");
     assert!(ok);
+
+    let (ok, _) = apply("font-family", ",");
+    assert!(!ok);
+    let (ok, _) = apply("font-family", "Bad@Family");
+    assert!(!ok);
 }
 
 // === opacity 边界 ===

@@ -1425,6 +1425,7 @@ fn is_property_supported(property: &str, value: &str) -> bool {
         "grid-area" => crate::property::parse_grid_area_shorthand(trimmed).is_some(),
         // https://drafts.csswg.org/css-grid-2/#propdef-grid-auto-flow
         "grid-auto-flow" => crate::property::parse_grid_auto_flow(trimmed).is_some(),
+        "font-family" => !crate::property::parse_font_family(trimmed).is_empty(),
         "font-weight" => parse_font_weight(trimmed).is_some(),
         "font-style" => parse_font_style(trimmed).is_some(),
         "font-size" => supports::font_size_supported(trimmed),
