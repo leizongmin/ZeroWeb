@@ -1445,13 +1445,17 @@ fn is_property_supported(property: &str, value: &str) -> bool {
         | "border-bottom-right-radius"
         | "border-bottom-left-radius" => supports_padding_value(trimmed),
         "transform" => parse_transform(trimmed).is_some(),
-        "background" | "background-image" => {
-            // background 接受 image（gradient / url()）或 color。`url()` 图（含 `<img>` 子资源
-            // 路径）ZW 支持（R318 图片贯通 + M7 image 图元），须判支持。driving: WPT at-supports-017。
-            parse_gradient(trimmed).is_some()
-                || parse_color(trimmed).is_some()
-                || trimmed.to_ascii_lowercase().starts_with("url(")
-        }
+        // https://drafts.csswg.org/css-backgrounds-3/#the-background
+        // `@supports` declaration conditions follow each property's parser; keep the shorthand
+        // path aligned with expand_background so invalid URL payloads stay atomic rejections.
+        "background" => crate::shorthand::background_shorthand_supported(trimmed),
+        "background-image" => parse_background_image_layers(trimmed).is_some(),
+        "background-repeat" => parse_background_repeat_list(trimmed).is_some(),
+        "background-position" => parse_background_position_list(trimmed).is_some(),
+        "background-size" => parse_background_size_list(trimmed).is_some(),
+        "background-attachment" => parse_background_attachment(trimmed).is_some(),
+        "background-clip" => parse_background_clip(trimmed).is_some(),
+        "background-origin" => parse_background_origin(trimmed).is_some(),
         "scroll-snap-type" => parse_scroll_snap_type(trimmed).is_some(),
         "scroll-snap-align" => parse_scroll_snap_align(trimmed).is_some(),
         "scroll-snap-stop" => parse_scroll_snap_stop(trimmed).is_some(),

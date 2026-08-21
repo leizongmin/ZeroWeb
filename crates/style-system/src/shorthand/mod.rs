@@ -2107,6 +2107,12 @@ pub(crate) fn font_variant_shorthand_supported(value: &str) -> bool {
     !expand_font_variant(value, false, (0, 0, 0)).is_empty()
 }
 
+/// @supports 求值用：`background` 简写值是否合法可解析。
+/// https://drafts.csswg.org/css-backgrounds-3/#the-background
+pub(crate) fn background_shorthand_supported(value: &str) -> bool {
+    !expand_background(value, false, (0, 0, 0)).is_empty()
+}
+
 /// 展开 font 简写。
 ///
 /// 简化实现：`font: [style] [weight] <size>[/<line-height>] <family>`

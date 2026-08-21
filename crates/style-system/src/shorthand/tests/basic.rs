@@ -711,6 +711,15 @@ fn test_background_shorthand_bare_gradient_alone() {
 }
 
 #[test]
+fn test_background_shorthand_image_function_case_insensitive() {
+    let result = expand_one("background", "red URL(\"x.jpg\")", false, (0, 0, 1));
+    let map: std::collections::HashMap<&str, &str> =
+        result.iter().map(|(p, v, _, _)| (p.as_str(), v.as_str())).collect();
+    assert_eq!(map.get("background-color"), Some(&"red"));
+    assert_eq!(map.get("background-image"), Some(&"URL(\"x.jpg\")"));
+}
+
+#[test]
 fn test_background_rejects_unknown_or_duplicate_color_components() {
     assert!(expand_one("background", "sparkle", false, (0, 0, 1)).is_empty());
     assert!(expand_one("background", "red blue", false, (0, 0, 1)).is_empty());

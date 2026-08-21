@@ -64,7 +64,9 @@ pub(super) fn expand_background(value: &str, important: bool, specificity: (u32,
         "repeating-conic-gradient(",
         "image-set(",
     ];
-    let earliest: Option<usize> = image_funcs.iter().filter_map(|f| value.find(f)).min();
+    // CSS function names are ASCII case-insensitive.
+    let lower_value = value.to_ascii_lowercase();
+    let earliest: Option<usize> = image_funcs.iter().filter_map(|f| lower_value.find(f)).min();
     // working = 移除 image 函数后的剩余值（供后续 color/position/size 分类）。
     let working_owned: String = match earliest {
         Some(start) => {

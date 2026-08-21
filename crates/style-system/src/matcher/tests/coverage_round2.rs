@@ -232,7 +232,29 @@ fn test_property_supported_transform() {
 #[test]
 fn test_property_supported_background() {
     assert!(is_property_supported("background", "red"));
+    assert!(is_property_supported(
+        "background",
+        "red url(img.png) no-repeat center / auto 10px"
+    ));
     assert!(is_property_supported("background-image", "linear-gradient(red, blue)"));
+    assert!(is_property_supported("background-image", "url(\"my image.png\"), none"));
+    assert!(is_property_supported("background-repeat", "repeat-x, no-repeat"));
+    assert!(is_property_supported("background-position", "left top, 10px 20px"));
+    assert!(is_property_supported("background-size", "cover, auto 10px"));
+    assert!(is_property_supported("background-attachment", "fixed"));
+    assert!(is_property_supported("background-clip", "text"));
+    assert!(is_property_supported("background-origin", "content-box"));
+
+    assert!(!is_property_supported("background", "red url(my image.png)"));
+    assert!(!is_property_supported("background", "center url(\"image.png\" extra)"));
+    assert!(!is_property_supported("background-image", "url(my image.png)"));
+    assert!(!is_property_supported("background-image", "url(\"image.png\" extra)"));
+    assert!(!is_property_supported("background-repeat", "repeat, sparkle"));
+    assert!(!is_property_supported("background-position", "left right"));
+    assert!(!is_property_supported("background-size", "cover contain"));
+    assert!(!is_property_supported("background-attachment", "sticky"));
+    assert!(!is_property_supported("background-clip", "sparkle"));
+    assert!(!is_property_supported("background-origin", "text"));
 }
 
 #[test]
