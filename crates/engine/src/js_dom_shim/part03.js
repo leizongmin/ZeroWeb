@@ -470,27 +470,154 @@
       writable: false, enumerable: false, configurable: true,
     });
   } catch (_e134sd) {}
-  _zwDefProtoMethod(globalThis.Element.prototype, 'cloneNode', function (deep) {
-    function deepClone(n) {
+  // R156（js-dom M4）：plain 元素树（_zwMEl / deepClone 产物）的查询基建——模块级
+  //（Element.prototype 的 matches/querySelector 族与 cloneNode 的 deepClone 共用；
+  // 旧定义在 cloneNode 回调闭包内，原型方法引用不到 → ReferenceError）。
+  // WPT Element-matches 对 clone 产物调 root.querySelector/element.matches。
+  // 经序列化 + host 二次 parse 查询；matches 判自身（outerHTML 包裹后命中首元素）。
+  function _zwMOuterHtml(n) {
+      if (!n || n.nodeType !== 1) return '';
+      var h = '<' + String(n.nodeName).toLowerCase();
+      var as = n.attributes;
+      if (as && as.length) {
+        for (var _qi = 0; _qi < as.length; _qi++) {
+          h += ' ' + as[_qi].name + '="' + String(as[_qi].value == null ? '' : as[_qi].value).replace(/&/g, '&amp;').replace(/"/g, '&quot;') + '"';
+        }
+      }
+      h += '>';
+      var cs = n.childNodes;
+      if (cs) for (var _qj = 0; _qj < cs.length; _qj++) {
+        var c = cs[_qj];
+        if (!c) continue;
+        if (c.nodeType === 3) h += String(c.nodeValue == null ? '' : c.nodeValue).replace(/&/g, '&amp;').replace(/</g, '&lt;');
+        else if (c.nodeType === 8) h += '<!--' + c.nodeValue + '-->';
+        else if (c.nodeType === 1) h += _zwMOuterHtml(c);
+      }
+      h += '</' + String(n.nodeName).toLowerCase() + '>';
+      return h;
+    }
+    function _zwMQueryAll(n, sel) {
+      if (typeof __zw_parse_html_query !== 'function') return [];
+      try {
+        var arr = JSON.parse(__zw_parse_html_query(_zwMOuterHtml(n), String(sel), '1'));
+        return arr || [];
+      } catch (_e) { return []; }
+    }
+    function _zwMAttachQueryMethods(o) {
+      // R156：只挂 outerHTML accessor（查询面方法在 Element.prototype——
+      // WPT assert_idl_attribute 要求 matches/querySelector 在**原型链**上，
+      // own property 直接 "found on object" 断言失败）。_zwMEl 经 setPrototypeOf
+      // 已继承 Element.prototype（deepClone 的 _zwMEl 工厂路径）。
+      try {
+        Object.defineProperty(o, 'outerHTML', {
+          configurable: true,
+          get: function () { return _zwMOuterHtml(o); },
+        });
+      } catch (_e156oh) {}
+    }
+
+  // R156：deepClone 提出 cloneNode 回调外（与查询基建同因——_zwParseEl.cloneNode 等
+  // 跨点复用；保持与 _zwMOuterHtml 同模块作用域）。
+  var _zwDeepCloneEl = function (n, deepKids) {
       if (!n || typeof n !== 'object' || n.nodeType === undefined) return null;
       var o;
       if (n.nodeType === 3 || n.nodeType === 8) {
         o = { nodeType: n.nodeType, nodeName: n.nodeName, nodeValue: n.nodeValue, data: n.nodeValue, textContent: n.nodeValue, childNodes: [], children: [] };
       } else if (n.nodeType === 1) {
-        o = { nodeType: 1, nodeName: n.nodeName, tagName: n.tagName, localName: n.localName, attributes: [], childNodes: [], children: [] };
+        // R156：经 `_zwMEl` 工厂重建（原型链 + setAttribute/mutation/事件面全配——
+        // WPT Element-matches 的 traverse(clone) 调 elem.setAttribute，旧 plain 对象
+        // 直接 TypeError 整页 error）。attrs 快照从 NamedNodeMap（Proxy）或数组读。
+        var attrs = [];
         var as = n.attributes;
-        if (as) for (var i = 0; i < as.length; i++) o.attributes.push({ name: as[i].name, value: as[i].value });
-        var cs = n.childNodes;
-        if (cs) for (var j = 0; j < cs.length; j++) {
-          var cc = deepClone(cs[j]);
-          if (cc) { cc.parentNode = o; o.childNodes.push(cc); }
+        if (as) {
+          if (typeof as.length === 'number' && typeof as.item === 'function') {
+            for (var ai = 0; ai < as.length; ai++) {
+              var at = as.item(ai);
+              if (at) attrs.push({ name: String(at.name), value: at.value == null ? '' : String(at.value) });
+            }
+          } else {
+            for (var aj = 0; aj < as.length; aj++) attrs.push({ name: as[aj].name, value: as[aj].value == null ? '' : String(as[aj].value) });
+          }
         }
+        // nodeName 已大写（HTML 元素）→ tag 小写 + 缺省大写化；nodeName 非全大写
+        //（XML 保大小写）→ preserveCase 保原。
+        var _r156Loc = String(n.localName || n.nodeName || 'div');
+        var _r156Up = String(n.nodeName || _r156Loc);
+        var _r156Keep = _r156Up !== _r156Up.toUpperCase();
+        var snap = { tag: _r156Keep ? _r156Loc : _r156Loc.toLowerCase(), preserveCase: _r156Keep };
+        var o2 = _zwMEl(snap, null);
+        for (var ak = 0; ak < attrs.length; ak++) o2.setAttribute(attrs[ak].name, attrs[ak].value);
+        if (n.namespaceURI !== undefined) o2.namespaceURI = n.namespaceURI;
+        // R156：ownerDocument 继承源元素（WPT runInvalidSelectorTestMatches 的
+        // `root.ownerDocument.defaultView.DOMException`——clone 产物缺此字段直接
+        // 'reading defaultView' TypeError 整簇 subtest 崩）。
+        if (n.ownerDocument !== undefined) {
+          try { o2.ownerDocument = n.ownerDocument; } catch (_e156od) {}
+        }
+        var _r156OD = n.ownerDocument;
+        if (deepKids) {
+          var cs = n.childNodes;
+          if (cs) for (var j = 0; j < cs.length; j++) {
+            var cc = _zwDeepCloneEl(cs[j], true);
+            if (cc) {
+              if (_r156OD !== undefined && cc.ownerDocument === undefined) {
+                try { cc.ownerDocument = _r156OD; } catch (_e156od3) {}
+              }
+              o2.appendChild(cc);
+            }
+          }
+        }
+        o = o2;
       } else {
         return null;
       }
-      return o;
+    if (o && o.nodeType === 1) { try { _zwMAttachQueryMethods(o); } catch (_e156q) {} }
+    return o;
+  };
+  _zwDefProtoMethod(globalThis.Element.prototype, 'cloneNode', function (deep) {
+    return _zwDeepCloneEl(this, !!deep);
+  });
+  // R156（js-dom M4）：Element.prototype 的查询面（spec `dom-element-matches` /
+  // `dom-parentnode-queryselector`——WPT assert_idl_attribute 要求方法在原型链上，
+  // own property 形态直接断言失败）。对 plain 元素对象（_zwMEl / deepClone 产物——
+  // 经 setPrototypeOf 继承本原型）以 this.outerHTML（accessor 由 _zwMAttachQueryMethods
+  // 挂）+ host 二次 parse 实现。proxy 元素不经此路径（get trap 自有分支优先）。
+  _zwDefProtoMethod(globalThis.Element.prototype, 'matches', function (sel) {
+    if (arguments.length === 0) {
+      throw new globalThis.TypeError(
+        "Failed to execute 'matches' on 'Element': 1 argument required, but only 0 present.");
     }
-    return deepClone(this);
+    if (typeof __zw_selector_valid === 'function' && __zw_selector_valid(String(sel)) !== '1') {
+      throw new (globalThis.DOMException || Error)(
+        "'" + String(sel) + "' is not a valid selector.", 'SyntaxError');
+    }
+    var arr = _zwMQueryAll(this, sel);
+    return arr.length > 0
+      && String(arr[0].id || '') === String(this.id || '')
+      && String(arr[0].tag || '').toLowerCase() === String(this.nodeName || '').toLowerCase();
+  });
+  _zwDefProtoMethod(globalThis.Element.prototype, 'matchesSelector', function (sel) {
+    return globalThis.Element.prototype.matches.apply(this, arguments);
+  });
+  _zwDefProtoMethod(globalThis.Element.prototype, 'webkitMatchesSelector', function (sel) {
+    return globalThis.Element.prototype.matches.apply(this, arguments);
+  });
+  _zwDefProtoMethod(globalThis.Element.prototype, 'querySelector', function (sel) {
+    var arr = _zwMQueryAll(this, sel);
+    if (!arr.length) return null;
+    var e156 = new _zwParseEl(arr[0]);
+    e156._zwRootHtml = _zwMOuterHtml(this);
+    return e156;
+  });
+  _zwDefProtoMethod(globalThis.Element.prototype, 'querySelectorAll', function (sel) {
+    var arr = _zwMQueryAll(this, sel);
+    var out = [];
+    for (var i = 0; i < arr.length; i++) {
+      var e156 = new _zwParseEl(arr[i]);
+      e156._zwRootHtml = _zwMOuterHtml(this);
+      out.push(e156);
+    }
+    return out;
   });
   // js-dom M4 R128：`Node.prototype.cloneNode` 泛型（spec `dom-node-clone-node`——对任意
   // node 类型克隆）。WPT Node-cloneNode 对 fragment/text/comment/PI/Attr/doctype/doc 的
@@ -5246,8 +5373,27 @@
         return JSON.parse(__zw_parse_html_query(detHtml(), String(sel), all ? '1' : '0'));
       } catch (_e) { return []; }
     }
-    function queryOne(sel) { var a = queryBody(sel, false); return a.length ? new _zwParseEl(a[0]) : null; }
-    function queryAll(sel) { var a = queryBody(sel, true); var out = []; for (var i = 0; i < a.length; i++) out.push(new _zwParseEl(a[i])); return out; }
+    function queryOne(sel) {
+      var a = queryBody(sel, false);
+      if (!a.length) return null;
+      var e = new _zwParseEl(a[0]);
+      // R156：根源串挂产物（matches 的文档上下文——sibling 组合器在整棵树内解析）
+      //+ ownerDocument 精确指向本 detached doc（WPT Element-matches 的
+      // `element.ownerDocument.defaultView.TypeError` 断言）。
+      e._zwRootHtml = detHtml();
+      e._zwOwnerDoc = doc;
+      return e;
+    }
+    function queryAll(sel) {
+      var a = queryBody(sel, true); var out = [];
+      for (var i = 0; i < a.length; i++) {
+        var e = new _zwParseEl(a[i]);
+        e._zwRootHtml = detHtml();
+        e._zwOwnerDoc = doc;
+        out.push(e);
+      }
+      return out;
+    }
     // R130（js-dom M4）：兄弟链接线（doc 级 appendChild/insertBefore/removeChild 后调）——
     // 对 childNodes 数组每项 defineProperty next/previousSibling getter（position 感知，
     // 后续 splice 后再 wire 即正确）。树遍历 oracle（WPT dom/common.js nextNode）依赖。
@@ -6098,6 +6244,32 @@
           children: [],
           parentNode: null,
           ownerDocument: doc,
+          // R156（js-dom M4）：fragment 的查询面（WPT Element-matches 的 Fragment root
+          // `root.querySelector(...)`——旧 'root.querySelector is not a function' 132F）。
+          // 子树序列化（body 包裹保留结构）+ host 二次 parse 查询。
+          querySelector: function (sel) {
+            var arr = frag.querySelectorAll(sel);
+            return arr.length ? arr[0] : null;
+          },
+          querySelectorAll: function (sel) {
+            if (typeof __zw_parse_html_query !== 'function') return [];
+            try {
+              var h = '<body>';
+              for (var i = 0; i < frag.childNodes.length; i++) {
+                var c = frag.childNodes[i];
+                if (c.nodeType === 1 && typeof c.outerHTML === 'string') h += c.outerHTML;
+              }
+              h += '</body>';
+              var r = JSON.parse(__zw_parse_html_query(h, String(sel), '1')) || [];
+              var out = [];
+              for (var k = 0; k < r.length; k++) {
+                var fe156 = new _zwParseEl(r[k]);
+                fe156._zwRootHtml = h;
+                out.push(fe156);
+              }
+              return out;
+            } catch (_e156f) { return []; }
+          },
           // js-dom M4 R79：Node.contains / compareDocumentPosition（WPT testNodes 的
           // docfrag/foreignDocfrag/xmlDocfrag 族——旧缺方法）。
           contains: function (other) { return _zwNodeContains(frag, other); },

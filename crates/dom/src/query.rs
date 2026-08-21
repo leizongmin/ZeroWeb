@@ -486,6 +486,244 @@ pub fn parse_selector_chain(selector: &str) -> Option<SelectorChain> {
 /// 顶层逗号拆分选择器列表（spec `querySelector(All)` 接受逗号分隔列表——
 /// `input, button`；旧实现把整串当单选择器解析失败 → 空结果）。忽略 `[]`/`()`
 /// 内逗号（属性值 / `:not(a,b)`）。返回 `None` 表示无顶层逗号（单选择器）。
+/// R156（js-dom M4）：选择器**有效性**判定（spec `dom-element-matches` /
+/// `querySelector` 对非法选择器抛 SyntaxError DOMException——WPT Element-matches
+/// invalidSelectors 簇）。与 `Document::matches`（best-effort 返 false）不同，
+/// 本函数区分「解析失败」与「无匹配」。词法预检（裸括号/花括号/`<`、`[...]`/`(...)`
+/// 配对、`ns|` 命名空间前缀、`::` 伪元素、逗号列表边界、组合器首尾）+ 结构
+/// parse 双层：预检拒词法非法形态（parse 对 `]` 等裸符号容错不判非法），
+/// parse 拒组合器/伪类结构错误。
+pub fn selector_is_valid(selector: &str) -> bool {
+    let trimmed = trim_ascii_ws(selector);
+    if trimmed.is_empty() {
+        return false;
+    }
+    if !selector_lexically_valid(trimmed) {
+        return false;
+    }
+    match split_top_level_selector_list(trimmed) {
+        Some(parts) => parts.iter().all(|p| parse_selector_chain(p).is_some()),
+        None => parse_selector_chain(trimmed).is_some(),
+    }
+}
+
+/// R156：词法层预检——裸 `(`/`)`/`{`/`}`/`<`、未配对 `[`/`]`/`(`/`)`、
+/// `ns|` 命名空间前缀（未声明 ns 的选择器在本引擎一律非法——WPT Undeclared
+/// namespace 簇）、`::` 伪元素（选择器匹配语义不支持）、空段逗号列表
+///（`div,` / `,div`）、顶层组合器开头（`>*`）。
+/// R156：`[` 后的属性名段字节（到首个关系符号 `=` 族或 `]` 止，去除首尾空白）。
+fn attr_name_segment(bytes: &[u8], open: usize) -> &[u8] {
+    let mut j = open + 1;
+    let end = bytes.len();
+    while j < end {
+        match bytes[j] {
+            b'=' => break,
+            b'~' | b'|' | b'^' | b'$' | b'*' if bytes.get(j + 1) == Some(&b'=') => break,
+            b']' => break,
+            _ => j += 1,
+        }
+    }
+    let mut seg = &bytes[open + 1..j];
+    while let Some((&f, rest)) = seg.split_first() {
+        if f == b' ' || f == b'\t' || f == b'\n' || f == b'\r' {
+            seg = rest;
+        } else {
+            break;
+        }
+    }
+    while let Some((&l, rest)) = seg.split_last() {
+        if l == b' ' || l == b'\t' || l == b'\n' || l == b'\r' {
+            seg = rest;
+        } else {
+            break;
+        }
+    }
+    seg
+}
+
+/// R156：`[...]` 内 `=`/`~=`/`|=`/`^=`/`$=`/`*=` 之后的未引用值不得含空白。
+fn attr_values_wellformed(s: &str) -> bool {
+    let b = s.as_bytes();
+    let mut i = 0usize;
+    while i < b.len() {
+        if b[i] == b'[' {
+            // 找匹配的 ]
+            let mut j = i + 1;
+            let mut depth = 1;
+            while j < b.len() && depth > 0 {
+                if b[j] == b'[' {
+                    depth += 1;
+                } else if b[j] == b']' {
+                    depth -= 1;
+                }
+                j += 1;
+            }
+            let seg = &b[i + 1..j.saturating_sub(1)];
+            // 段内找首个关系符号
+            let mut k = 0usize;
+            while k < seg.len() {
+                let c = seg[k];
+                if c == b'=' || (matches!(c, b'~' | b'|' | b'^' | b'$' | b'*') && seg.get(k + 1) == Some(&b'=')) {
+                    // 值起点（跳过符号）
+                    let vs = if c == b'=' { k + 1 } else { k + 2 };
+                    let mut m = vs;
+                    while m < seg.len() && (seg[m] == b' ' || seg[m] == b'\t') {
+                        m += 1;
+                    }
+                    if m >= seg.len() {
+                        return false; // `[a=]` 空值
+                    }
+                    if seg[m] != b'"' && seg[m] != b'\'' {
+                        // 未引用值：到段尾/空白止，含内部空白非法
+                        let mut e = m;
+                        while e < seg.len() && seg[e] != b']' {
+                            if seg[e] == b' ' || seg[e] == b'\t' {
+                                return false;
+                            }
+                            e += 1;
+                        }
+                    }
+                    break;
+                }
+                k += 1;
+            }
+            i = j;
+        } else {
+            i += 1;
+        }
+    }
+    true
+}
+
+fn selector_lexically_valid(s: &str) -> bool {
+    let bytes = s.as_bytes();
+    let mut bracket = 0i32;
+    let mut paren = 0i32;
+    for (idx, &b) in bytes.iter().enumerate() {
+        match b {
+            b'[' => {
+                bracket += 1;
+                // R156：属性名段校验（`[*=test]` 裸 `*=`、`[*|*=test]` 的 `*|*` 局部
+                // 名 `*` 全非法）。名段（`[` 到首个关系符号）形态：`name` / `*|name` /
+                // `ns|name`（ns 本引擎无声明，仅 `*|` 与空前缀合法——由 `|` 分支判）。
+                // 局部 name 不得为 `*` 且须 ident 首字符（字母/_/-/转义/非 ASCII）。
+                let name = attr_name_segment(bytes, idx);
+                if name.is_empty() {
+                    return false;
+                }
+                let nb = name;
+                let local = match nb.iter().position(|&c| c == b'|') {
+                    Some(pos) => &nb[pos + 1..],
+                    None => nb,
+                };
+                let first = local.first().copied().unwrap_or(0);
+                if local.is_empty()
+                    || first == b'*'
+                    || !(first == b'-'
+                        || first == b'_'
+                        || first == b'\\'
+                        || first.is_ascii_alphabetic()
+                        || first >= 0x80)
+                {
+                    return false;
+                }
+            }
+            b']' => {
+                bracket -= 1;
+                if bracket < 0 {
+                    return false;
+                }
+            }
+            b'(' => paren += 1,
+            b')' => {
+                paren -= 1;
+                if paren < 0 {
+                    return false;
+                }
+            }
+            // `{`/`}`/`<` 在选择器语法中无位置（块级语法 / legacy `>` 裸形态）
+            b'{' | b'}' | b'<' => return false,
+            // R156：`%` 非法组合器（WPT Invalid combinator `div % address`）。
+            b'%' => return false,
+            b'>' | b'+' | b'~' => {
+                // R156：连续显式组合器（`div ++ address` / `div ~~ address`——两符号
+                // 间无段字符）非法。跳过其间空白看前一字节是否同类符号。
+                let mut j = idx;
+                while j > 0 {
+                    match bytes[j - 1] {
+                        b' ' | b'\t' | b'\n' | b'\r' => j -= 1,
+                        b'>' | b'+' | b'~' => return false,
+                        _ => break,
+                    }
+                }
+            }
+            // R156：`.`/`#` 后必须跟 ident 首字符（字母/下划线/转义/非 ASCII——
+            // `.5cm` 数字开头、`..test`/`.foo..quux` 连点、`.bar.` 尾点、裸 `.`/
+            // `#` 全非法；括号内（`:not(.5cm)` 等）同规）。`-` 开头 ident 允许。
+            b'.' | b'#' => {
+                let nxt = bytes.get(idx + 1).copied().unwrap_or(0);
+                let ident_start =
+                    nxt == b'-' || nxt == b'_' || nxt == b'\\' || nxt.is_ascii_alphabetic() || nxt >= 0x80;
+                if !ident_start {
+                    return false;
+                }
+            }
+            // `ns|type` 前缀 / `::` 伪元素（idx>0 防 `||` 误判——本引擎无 column 组合器）
+            b'|' => {
+                if idx == 0 || bytes[idx - 1] == b'|' {
+                    return false;
+                }
+                // R156：ns 前缀选择器（`ns|div` / `^|div` / `$|div`）——本引擎未实现
+                // namespace 声明（@namespace / Parses NS 变量），任何「| 前有内容」的
+                // 形态一律非法（`*|div` 的任意 ns 与 `|div` 的显式空 ns 除外——
+                // 前缀位是 `*` 或段首）。WPT Undeclared namespace / Invalid namespace 簇。
+                let p = bytes[idx - 1];
+                if p != b'*' {
+                    // 段首判定：向前跳空白到段边界（组合器/段首）
+                    let mut j = idx;
+                    while j > 0 {
+                        match bytes[j - 1] {
+                            b' ' | b'\t' | b'\n' | b'\r' | b'>' | b'+' | b'~' | b',' => j -= 1,
+                            _ => break,
+                        }
+                    }
+                    if j > 0 {
+                        return false;
+                    }
+                }
+            }
+            // `::` 伪元素（idx+1 是第二冒号）——选择器匹配语义不支持
+            b':' if idx + 1 < bytes.len() && bytes[idx + 1] == b':' => {
+                return false;
+            }
+            _ => {}
+        }
+    }
+    if bracket != 0 || paren != 0 {
+        return false;
+    }
+    // R156：`[attr= unquoted value ]` 未引用属性值含内部空白非法（spec 属性值
+    // 未引用形态不允许空白；引用形态 `"a b"` 合法）。逐 `[...]` 段扫：`=` 后
+    //（无引号包裹）遇空白即非法。
+    if !attr_values_wellformed(s) {
+        return false;
+    }
+    // 顶层逗号列表：空段非法（`div,` / `,a` / `a,,b`）。
+    if let Some(parts) = split_top_level_selector_list(s) {
+        for p in parts {
+            if trim_ascii_ws(p).is_empty() {
+                return false;
+            }
+        }
+    }
+    // 顶层以组合器符号开头（`>*` / `+a` / `~a`）——相对选择器形态，matches 不接受。
+    let first = s.bytes().next().unwrap();
+    if matches!(first, b'>' | b'+' | b'~' | b',') {
+        return false;
+    }
+    true
+}
+
 pub(crate) fn split_top_level_selector_list(s: &str) -> Option<Vec<&str>> {
     let mut out: Vec<&str> = Vec::new();
     let mut start = 0usize;
@@ -518,6 +756,19 @@ pub(crate) fn split_top_level_selector_list(s: &str) -> Option<Vec<&str>> {
 /// 扫描选择器，按组合器边界（`>`/`+`/`~`/空白，忽略 `()`/`[]` 内）切分为
 /// `(段文本, 指向下一段的组合器)` 序列。末段的组合器无意义（填占位 `Descendant`，调用方不读）。
 /// 多个连续边界压缩为显式符号优先（`>`/`+`/`~` 优先于空白后代）。
+/// R156：符号串起点——从符号字节向前跳过紧邻空白（` +` 的起点是空白字节）。
+/// 切分左段时用（左段 = 段首..符号串起点，不含空白与符号）。
+fn seg_char_run_start(bytes: &[u8], sym_idx: usize) -> usize {
+    let mut j = sym_idx;
+    while j > 0 {
+        match bytes[j - 1] {
+            b' ' | b'\t' | b'\n' | b'\r' => j -= 1,
+            _ => break,
+        }
+    }
+    j
+}
+
 fn tokenize_combinators(s: &str) -> Vec<(&str, Combinator)> {
     let bytes = s.as_bytes();
     let len = bytes.len();
@@ -530,6 +781,11 @@ fn tokenize_combinators(s: &str) -> Vec<(&str, Combinator)> {
     // 跟踪「自上一非空白字符以来是否已有待定组合器」，用于空白边界仅在词际触发。
     let mut last_was_segment_char = false; // 上一字节是否为段内普通字符（非边界、非边界后空白）
     let mut pending_explicit: Option<Combinator> = None;
+    // R156（js-dom M4）：待定显式符号的**起始字节 idx**（符号可能带前导空白——
+    // `#a1 +div` 的符号串是 " +"，起点是空白）。边界推送用符号起点切分，
+    // 保证左段不含符号本体（旧版用段首 idx 切分，`#a1+div` 的左段切出 "#a1+"——
+    // id 标识吞 `+`，无空格组合器全形态 miss，WPT Element-matches sibling 簇根源）。
+    let mut pending_explicit_idx: usize = 0;
 
     while i < len {
         match bytes[i] {
@@ -562,6 +818,7 @@ fn tokenize_combinators(s: &str) -> Vec<(&str, Combinator)> {
                 }
                 if !upgraded {
                     pending_explicit = Some(comb);
+                    pending_explicit_idx = seg_char_run_start(bytes, i);
                 } else {
                     pending_explicit = None;
                 }
@@ -580,7 +837,7 @@ fn tokenize_combinators(s: &str) -> Vec<(&str, Combinator)> {
                 // 段内普通字符：若此前有 pending 显式符号（符号分隔了两段），在此记录边界
                 //（位置 = 当前 i，组合器 = pending 显式符号），随后开启新段。
                 if pending_explicit.is_some() {
-                    boundaries.push((i, pending_explicit.unwrap()));
+                    boundaries.push((pending_explicit_idx, pending_explicit.unwrap()));
                     pending_explicit = None;
                 }
                 last_was_segment_char = true;
@@ -595,20 +852,28 @@ fn tokenize_combinators(s: &str) -> Vec<(&str, Combinator)> {
     // 丢弃尾部任何 pending（选择器不应以组合器结尾；若如此，下一段为空，调用方 parse 返回 None）。
 
     // 按 boundaries 切分字符串为段序列，每段附「指向下一段的组合器」。
+    // R156：边界 idx = 符号串（含前导空白）起点；段起点 = 从边界向后跳过符号/空白，
+    // 用 max 保证单调（连续符号 `a > > b` 等病态形态下边界序可追上段起点——
+    // 旧版 slice [seg_start..b_idx] 可 start>end panic；现空段以 "" 占位 →
+    // parse_simple_selector 返 None → 整链拒绝（非法选择器语义，不 panic）。
     let mut out = Vec::new();
     let mut seg_start = 0usize;
     for (b_idx, comb) in &boundaries {
-        out.push((&s[seg_start..*b_idx], *comb));
-        seg_start = *b_idx;
-        // 跳过当前段与下一段之间的边界字符（空白/符号及其后空白），将 seg_start 推到下一段首个非边界字符。
-        while seg_start < len {
-            match bytes[seg_start] {
-                b' ' | b'\t' | b'\n' | b'\r' | b'>' | b'+' | b'~' => seg_start += 1,
+        if *b_idx >= len {
+            break;
+        }
+        let end = (*b_idx).max(seg_start);
+        out.push((trim_ascii_ws(&s[seg_start..end]), *comb));
+        let mut j = *b_idx;
+        while j < len {
+            match bytes[j] {
+                b' ' | b'\t' | b'\n' | b'\r' | b'>' | b'+' | b'~' => j += 1,
                 _ => break,
             }
         }
+        seg_start = seg_start.max(j);
     }
-    out.push((&s[seg_start..], Combinator::Descendant));
+    out.push((trim_ascii_ws(&s[seg_start..]), Combinator::Descendant));
     out
 }
 
@@ -1443,3 +1708,133 @@ mod tests {
 // whitespace」——分隔符仅 space/\t/\n/\f/\r，U+00A0/U+2000 系/U+3000 等是字面类名字符）。
 // WPT dom/nodes/getElementsByClassName-whitespace-class-names.html 19F 簇驱动：
 // `<span class="&#x00A0;">` 的 class 是合法单字符类名，gEBCN/NBSP) 须命中该 span。
+
+#[cfg(test)]
+mod zz_r156_tests {
+    use crate::parser::parse_html;
+
+    // R156（js-dom M4）：无空格组合器回归（`#a1+div` 旧把左段切成 "#a1+" —— id 标识
+    // 吞符号，全形态 miss；WPT Element-matches sibling 簇 + no-refNodes 大簇根源）。
+    #[test]
+    fn zz_r156_invalid_forms_rejected() {
+        let invalid = [
+            "",
+            "[",
+            "]",
+            "(",
+            ")",
+            "{",
+            "}",
+            "<",
+            ">",
+            "#",
+            "div,",
+            ".",
+            ".5cm",
+            "..test",
+            ".foo..quux",
+            ".bar.",
+            "div % address, p",
+            "div ++ address, p",
+            "div ~~ address, p",
+            "[*=test]",
+            "[*|*=test]",
+            "[class= space unquoted ]",
+            "div:example",
+            ":example",
+            "div:linkexample",
+            "div::example",
+            "::example",
+            ":::before",
+            ":: before",
+            "ns|div",
+            ":not(ns|div)",
+            "^|div",
+            "$|div",
+            ">*",
+        ];
+        for s in invalid {
+            assert!(!crate::query::selector_is_valid(s), "should be INVALID: {s:?}");
+        }
+        let valid = ["div", "#a1+div", ".x.y", "[a=b]", "* ", "a , b", "div:not(.x)"];
+        for s in valid {
+            assert!(crate::query::selector_is_valid(s), "should be VALID: {s:?}");
+        }
+    }
+
+    #[test]
+    fn zz_r156_fuzz_no_panic() {
+        // R156：符号切分不 panic 回归（旧 pending 符号起点可早于段起点 → slice 越界）。
+        let sels = [
+            "a+b",
+            "a+ b",
+            "a +b",
+            "a + b",
+            "a~b",
+            "a>b",
+            "a > b",
+            "a> b",
+            "a >b",
+            ".x+.y",
+            "#i+p",
+            "*+*",
+            "a+b>c",
+            "a>b~c+d",
+            ":not(a)+b",
+            ":not(a+invalid)>b",
+            "[x=a b]+c",
+            "[x=+]+c",
+            "a,, +b",
+            "+a",
+            "a+",
+            "a >",
+            " ~ ",
+            "a~ ~b",
+            "a+ +b",
+            "a > > b",
+            "p:not(#a1)+div",
+            "div:not(.x)~p",
+        ];
+        let doc = parse_html(
+            "<body><div id=\"adjacent\"><div id=\"a1\" class=\"x\"></div><div id=\"a2\" class=\"x\"></div><p id=\"p3\"></p></div></body>",
+        );
+        let root = doc.root();
+        for s in sels {
+            let _ = doc.query_selector_all(root, s);
+            let _ = doc.query_selector(root, s);
+        }
+    }
+
+    #[test]
+    fn zz_r156_sibling_combinators_no_space() {
+        let html = "<body><div id=\"adjacent\"><div id=\"a1\" class=\"x\"></div><div id=\"a2\" class=\"x\"></div><p id=\"p3\"></p></div></body>";
+        let doc = parse_html(html);
+        let root = doc.root();
+        assert_eq!(doc.query_selector_all(root, "#a1+div").len(), 1, "v1 id+tag nospace");
+        assert_eq!(doc.query_selector_all(root, "#a2+p").len(), 1, "v1b cross-tag");
+        assert_eq!(doc.query_selector_all(root, ".x+p").len(), 1, "v2 class+tag nospace");
+        assert_eq!(doc.query_selector_all(root, "div+p").len(), 1, "v3 tag+tag nospace");
+        assert_eq!(doc.query_selector_all(root, "#a1~p").len(), 1, "v4 tilde id");
+        assert_eq!(doc.query_selector_all(root, "div~p").len(), 1, "v5 tilde tag");
+        assert_eq!(
+            doc.query_selector_all(root, "#a1 + div").len(),
+            1,
+            "v6 spaced still works"
+        );
+        assert_eq!(
+            doc.query_selector_all(root, "#adjacent>div").len(),
+            2,
+            "v7 child nospace"
+        );
+        assert_eq!(
+            doc.query_selector_all(root, "#a1+div, #nope").len(),
+            1,
+            "v8 selector list"
+        );
+        assert_eq!(
+            doc.query_selector_all(root, "#a1:not(#nope)+div").len(),
+            1,
+            "v9 pseudo then combinator"
+        );
+    }
+}

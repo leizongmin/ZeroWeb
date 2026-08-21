@@ -1506,6 +1506,20 @@
     // 反查注册视图（WPT Event-dispatch-bubbles）。
     this._zwPath = info.path ? String(info.path).split('\x1f') : [];
   }
+  // R156（js-dom M4）：Node 接口常量挂解析元素原型（WPT interfaceCheckMatches 的
+  // `obj.nodeType === obj.ELEMENT_NODE` 分支判定——解析元素缺常量走错 "should not
+  // support" 分支）。与 part03 Node.prototype 常量表同源。
+  (function () {
+    var _nc = { ELEMENT_NODE: 1, ATTRIBUTE_NODE: 2, TEXT_NODE: 3, CDATA_SECTION_NODE: 4,
+      ENTITY_REFERENCE_NODE: 5, ENTITY_NODE: 6, PROCESSING_INSTRUCTION_NODE: 7,
+      COMMENT_NODE: 8, DOCUMENT_NODE: 9, DOCUMENT_TYPE_NODE: 10, DOCUMENT_FRAGMENT_NODE: 11,
+      NOTATION_NODE: 12 };
+    for (var _k in _nc) {
+      if (Object.prototype.hasOwnProperty.call(_nc, _k)) {
+        Object.defineProperty(_zwParseEl.prototype, _k, { value: _nc[_k], enumerable: false });
+      }
+    }
+  })();
   // innerHTML 从 outerHTML 派生：strip 首 `<tag ...>` + 尾 `</tag>`；void/自闭合无尾标签 → strip 首标签后剩 ''。
   function _zwInnerFromOuter(outer, tag) {
     if (!outer || !tag) return '';
@@ -1516,10 +1530,70 @@
     name = String(name);
     return Object.prototype.hasOwnProperty.call(this._attrs, name) ? this._attrs[name] : null;
   };
+  // R156（js-dom M4）：ownerDocument 缺省回落（WPT Element-matches 的
+  // runSpecialMatchesTests 断言 `element.ownerDocument.defaultView.TypeError`——
+  // 解析元素缺 ownerDocument 直接 'reading defaultView' TypeError 整 subtest 崩）。
+  // 查询工厂（detached doc 的 queryOne/queryAll）在产物上设 `_zwOwnerDoc` 精确指向
+  // 源文档；未设时回落主 document。
+  try {
+    Object.defineProperty(_zwParseEl.prototype, 'ownerDocument', {
+      configurable: true,
+      get: function () {
+        if (this._zwOwnerDoc) return this._zwOwnerDoc;
+        return globalThis.document;
+      },
+    });
+  } catch (_e156od) {}
   _zwParseEl.prototype.hasAttribute = function (name) {
     return Object.prototype.hasOwnProperty.call(this._attrs, String(name));
   };
   // 子树 query：重解析本元素 outerHTML（host 二次 parse + select），返只读 element-proxy。
+  // R156（js-dom M4）：matches（WPT Element-matches 的 `element[method](q, refNode)`
+  // 对 root.querySelector 产物——旧 'element.matches is not a function'）。**文档上下文**
+  // 优先：元素带 `_zwRootHtml`（来自查询根——root.querySelector 把根源串挂到产物）时，
+  // 对整棵根树跑 selector，自身 id 命中匹配集 → true（sibling/descendant 组合器正确——
+  // `#a+#b` 等在元素自身 outerHTML 内永远不命中）。无根上下文回落自身包裹（root 化近似）。
+  // 无参 → TypeError（spec WebIDL 必参；WPT runSpecialMatchesTests #3）。
+  // 第二 refNode 参数忽略（:scope 相对匹配近似——selectors.js 的 ctx 用例族按文档序近似）。
+  _zwParseEl.prototype.matches = function (sel) {
+    if (arguments.length === 0) {
+      throw new globalThis.TypeError(
+        "Failed to execute 'matches' on 'Element': 1 argument required, but only 0 present.");
+    }
+    if (typeof __zw_parse_html_query !== 'function') return false;
+    // R156：非法选择器抛 SyntaxError（spec `dom-element-matches`——WPT
+    // invalidSelectors 簇；`matches(null)`/`matches(undefined)` 的 String 形态
+    // "null"/"undefined" 是合法 type selector → 走正常查询返 false）。
+    if (typeof __zw_selector_valid === 'function' && __zw_selector_valid(String(sel)) !== '1') {
+      throw new (globalThis.DOMException || Error)(
+        "'" + String(sel) + "' is not a valid selector.", 'SyntaxError');
+    }
+    try {
+      var rootHtml = this._zwRootHtml;
+      if (rootHtml) {
+        var rarr = JSON.parse(__zw_parse_html_query(rootHtml, String(sel), '1')) || [];
+        var myId = this.id == null ? '' : String(this.id);
+        var myOuter = String(this.outerHTML || '');
+        for (var ri = 0; ri < rarr.length; ri++) {
+          if (!rarr[ri]) continue;
+          if (myId !== '' && rarr[ri].id === myId) return true;
+          // R156：无 id 元素回落 outerHTML 相等（`matches('*')` 等全元素场景——
+          // 同树同序列化的元素唯一，足够近似 identity）。
+          if (myId === '' && myOuter !== '' && rarr[ri].outer === myOuter) return true;
+        }
+        return false;
+      }
+      var outer = this.outerHTML;
+      if (!outer) outer = '<' + String(this.tagName || this.localName || 'div').toLowerCase() + '></' + String(this.tagName || this.localName || 'div').toLowerCase() + '>';
+      var arr = JSON.parse(__zw_parse_html_query(outer, String(sel), '0'));
+      if (!arr || !arr.length) return false;
+      var first = arr[0];
+      return (this.id != null && String(this.id) !== '' && first.id === String(this.id))
+        || String(this.tagName || '').toLowerCase() === String(first.tag || '').toLowerCase();
+    } catch (_e156m) { return false; }
+  };
+  _zwParseEl.prototype.matchesSelector = _zwParseEl.prototype.matches;
+  _zwParseEl.prototype.webkitMatchesSelector = _zwParseEl.prototype.matches;
   _zwParseEl.prototype.querySelector = function (sel) {
     if (typeof __zw_parse_html_query !== 'function') return null;
     var arr = JSON.parse(__zw_parse_html_query(this.outerHTML, String(sel), '0'));
@@ -1568,7 +1642,53 @@
   _zwParseEl.prototype.appendChild = function (n) { return this._ensureMutTree().appendChild(n); };
   _zwParseEl.prototype.removeChild = function (n) { return this._ensureMutTree().removeChild(n); };
   _zwParseEl.prototype.setAttribute = function (n, v) { this._ensureMutTree().setAttribute(n, v); };
+  // R156（js-dom M4）：cloneNode（WPT Element-matches init 的 `element.cloneNode(true)`
+  // 对 getElementById 产物——旧 'element.cloneNode is not a function' 整页中断）。经
+  // _ensureMutTree 转 _zwMEl 后用 Element.prototype 的 deepClone（属性 + 子树全复制，
+  // 返独立可变树）。
+  _zwParseEl.prototype.cloneNode = function (deep) {
+    var tree = this._ensureMutTree();
+    if (globalThis.Element && globalThis.Element.prototype
+        && typeof globalThis.Element.prototype.cloneNode === 'function') {
+      var cloned = globalThis.Element.prototype.cloneNode.call(tree, deep);
+      // R156：ownerDocument 继承源（_zwMEl 无 ownerDocument 字段——WPT
+      // runInvalidSelectorTestMatches 的 `root.ownerDocument.defaultView.DOMException`
+      // 对 clone 产物读，缺字段 'reading defaultView' TypeError 整簇崩）。
+      if (cloned && this._zwOwnerDoc) {
+        try { cloned.ownerDocument = this._zwOwnerDoc; } catch (_e156od2) {}
+      }
+      return cloned;
+    }
+    return tree;
+  };
   _zwParseEl.prototype.removeAttribute = function (n) { this._ensureMutTree().removeAttribute(n); };
+  // R156（js-dom M4）：NS 属性族（WPT Element-matches 的 setupSpecialElements 对
+  // getElementById 产物调 setAttributeNS——解析元素经 _ensureMutTree 变 _zwMEl 后无
+  // NS 方法直接 TypeError 整页中断）。限定名存本地 NS 表（qname→{ns,prefix,local}），
+  // getAttributeNS 按 (ns,local) 反查——与 detached body 的 _r132BodyAttrNS 同款模式。
+  _zwParseEl.prototype._nsAttrMeta = null;
+  _zwParseEl.prototype.setAttributeNS = function (ns, qname, v) {
+    var q = String(qname);
+    this._ensureMutTree().setAttribute(q, v);
+    if (!this._nsAttrMeta) this._nsAttrMeta = {};
+    var ci = q.indexOf(':');
+    this._nsAttrMeta[q] = { ns: ns == null || ns === '' ? null : String(ns),
+      prefix: ci > 0 ? q.slice(0, ci) : null, local: ci > 0 ? q.slice(ci + 1) : q };
+  };
+  _zwParseEl.prototype.getAttributeNS = function (ns, local) {
+    if (this._nsAttrMeta) {
+      var want = (ns == null || ns === '') ? null : String(ns);
+      for (var q in this._nsAttrMeta) {
+        if (!Object.prototype.hasOwnProperty.call(this._nsAttrMeta, q)) continue;
+        var m = this._nsAttrMeta[q];
+        if (m.local === String(local) && m.ns === want) return this.getAttribute(q);
+      }
+    }
+    return null;
+  };
+  _zwParseEl.prototype.hasAttributeNS = function (ns, local) {
+    return this.getAttributeNS(ns, local) !== null;
+  };
   _zwParseEl.prototype.hasChildNodes = function () { return this._ensureMutTree().hasChildNodes(); };
   // js-dom M4 R112：detached 解析元素的事件面（WPT Event-dispatch-bubbles "In new Document()"
   // 等——targets 链 [doc, docEl, body, #table, #table-body, #parent] 逐一 addEventListener，

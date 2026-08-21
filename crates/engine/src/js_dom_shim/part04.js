@@ -376,7 +376,12 @@
                   // \x1f headers \x1f body——FIELD_SEP=\x1f，body 是末字段（原样保真）。
                   var _r115Parts = _r115Wire.split('\x1f');
                   var _r115Body = _r115Parts.length > 3 ? _r115Parts.slice(3).join('\x1f') : '';
-                  var kind = /\.xhtml?(\?|#|$)/i.test(_r115Url) ? 'xhtml' : 'xml';
+                  // R156（js-dom M4）：kind 判定补 `.html`——正则 \.xhtml? 只匹配
+                  // .xhtml（漏 .html 大类）→ HTML 子文档被判 'xml'，_zwMakeIframeDoc 的
+                  // XML 分支 bodyInner 不赋值 → body 空、querySelector 全 miss（WPT
+                  // Element-matches/ParentNode-querySelector-All 的 iframe contentDocument
+                  // 整页 error 根因）。.html/.xhtml 均走 html 变体（XHTML ns）。
+                  var kind = /\.x?html?(\?|#|$)/i.test(_r115Url) ? 'xhtml' : 'xml';
                   _r115Entry.doc = _zwMakeIframeDoc(kind, _r115Body);
                   _r115Entry.win = _zwMakeIframeWin(_r115Entry.doc);
                   try { if (_r115Entry.doc.__r115SetWin) _r115Entry.doc.__r115SetWin(_r115Entry.win); } catch (_eW) {}
@@ -2477,23 +2482,41 @@
         // `__zw_matches` 全匹配集判定）。handle（未挂载 DOM 的 createElement）无 sel → false。
         if (prop === 'matches' || prop === 'matchesSelector' || prop === 'webkitMatchesSelector') {
           return function(selector) {
+            // R156（js-dom M4）：无参 TypeError（spec WebIDL 1 必参——WPT
+            // runSpecialMatchesTests #3 的 `element[method]()` 断言抛）。
+            if (arguments.length === 0) {
+              throw new globalThis.TypeError(
+                "Failed to execute 'matches' on 'Element': 1 argument required, but only 0 present.");
+            }
             // R57（FV M1）：:invalid/:valid 伪类——约束校验联动（host 样式引擎
             // 未实现——pattern-dynamic/number-validity-dynamic 用例）。
             var q = String(selector);
             if (q === ':invalid') return !_validityState(key, sel, handle).valid;
             if (q === ':valid') return _validityState(key, sel, handle).valid;
             // R134（js-dom M4）：handle-only 元素（createElement/createElementNS 的
-            // detached 节点——无 sel，host `__zw_matches` 不可用）的 type selector
-            // JS 侧匹配（spec selectors-4 §6.1 type selector：`type` 在默认命名空间
-            // 匹配、`ns|type` 按 ns、`*|type` 任意 ns、`*` 任意；WPT matches-
-            // namespaced-elements 三形态：空 ns / urn:ns / `*|h`）。非 type selector
-            //（含伪类/属性/组合器）→ false（保守——detached 元素的复合匹配属选择器
-            // 引擎深结构，R120 统一匹配器只覆盖文档内元素）。
+            // detached 节点，ns 元数据在 JS 侧——`urn:ns|h` 的 ns|type 匹配由
+            // _r134MatchTypeSelector 承担）**先于** R156 语法校验：`ns|type` 形态
+            // 对 detached 元素是合法匹配面（host 的 ns 无声明表只影响文档内元素）。
             if (!sel && handle) {
               var _r134M = _r134MatchTypeSelector(handle, q);
               if (_r134M !== null) return _r134M;
+              // handle-only 非 type selector（伪类/属性/组合器）→ 不走文档校验抛
+              //（detached 元素的选择器面有限，保守 false）。
               return false;
             }
+            // R156：非法选择器抛 SyntaxError（spec `dom-element-matches`——WPT
+            // Element-matches invalidSelectors 簇；host 查询对非法静默返 false 不可区分）。
+            if (typeof __zw_selector_valid === 'function' && __zw_selector_valid(String(selector)) !== '1') {
+              throw new (globalThis.DOMException || Error)(
+                "'" + String(selector) + "' is not a valid selector.", 'SyntaxError');
+            }
+            // R134（js-dom M4）：handle-only 元素（createElement/createElementNS 的
+            // detached 节点——无 sel，host `__zw_matches` 不可用）的 type selector
+            // JS 侧匹配（spec selectors-4 §6.1 type selector：`type` 在默认命名空间
+            // 匹配、`ns|type` 按 ns、`*|type` 任意 ns、`*` 任意；WPT matches-
+            // namespaced-elements 三形态：空 ns / urn:ns / `*|h`——已前移至 R156
+            // 语法校验之前）。非 type selector（含伪类/属性/组合器）→ false（保守
+            // ——detached 元素的复合匹配属选择器引擎深结构，R120 只覆盖文档内元素）。
             if (!sel || typeof __zw_matches !== 'function') return false;
             try { return __zw_matches(sel, q) === '1'; } catch (_e) { return false; }
           };

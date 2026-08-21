@@ -304,6 +304,23 @@ pub fn register_dom_callbacks(
         }),
     );
 
+    // R156（js-dom M4）：选择器有效性判定——`element.matches(selector)` /
+    // `querySelector` 的 spec 语义是非法选择器抛 SyntaxError DOMException（WPT
+    // Element-matches invalidSelectors 簇：Unknown pseudo-class / Undeclared
+    // namespace / Invalid combinator 等 33 形态）。查询回调对非法输入静默返空，
+    // 无法区分「无匹配」与「非法」——本探针返 "1"/"0" 供 shim matches 先验后抛。
+    sandbox.register_callback(
+        "__zw_selector_valid",
+        Box::new(|args: &[String]| -> String {
+            let sel = args.first().map(String::as_str).unwrap_or("");
+            if zero_dom::selector_is_valid(sel) {
+                "1".into()
+            } else {
+                "0".into()
+            }
+        }),
+    );
+
     // `document.implementation.createHTMLDocument().body.childNodes`（R3016）——DOMPurify.sanitize 递归 walk
     // 的核心阻塞。与 `__zw_parse_html_query` 对称：html 从 arg[0]（detached 串，非 dom_html 快照），
     // elem_sel 从 arg[1]。返 child_nodes_json（element→{k:E,s:selector} / text→{k:T,v} / comment→{k:C,v}）。
