@@ -1461,8 +1461,8 @@ fn fix_column_flex_nonstretch_replaced_main_inner(
     ) {
         return;
     }
-    // 容器须有 definite cross（width Px）。
-    if !matches!(style.width, LengthValue::Px(_)) {
+    // 容器须有 definite cross（width）。
+    if resolve_postprocess_real_length(&style.width, style).is_none() {
         return;
     }
 
@@ -2040,6 +2040,52 @@ mod runtime_flag_tests {
         assert_eq!(
             item.width, 200.0,
             "replaced item width should transfer from aspect-ratio-derived cross-size"
+        );
+    }
+
+    #[test]
+    fn r3640_column_flex_nonstretch_accepts_residual_real_width_gate() {
+        let mut doc = Document::new();
+        let root = doc.root();
+        let flex_id = doc.create_element("div");
+        let img_id = doc.create_element("img");
+        doc.append_child(root, flex_id).unwrap();
+        doc.append_child(flex_id, img_id).unwrap();
+
+        let mut styles = HashMap::new();
+        let mut flex_style = ComputedStyle::default();
+        flex_style.display = DisplayValue::Flex;
+        flex_style.flex_direction = FlexDirectionValue::Column;
+        flex_style.align_items = AlignmentValue::FlexStart;
+        flex_style.font_size = LengthValue::Px(20.0);
+        flex_style.width = LengthValue::Em(10.0);
+        styles.insert(flex_id, flex_style);
+
+        let mut img_style = ComputedStyle::default();
+        img_style.width = LengthValue::Auto;
+        img_style.height = LengthValue::Auto;
+        styles.insert(img_id, img_style);
+
+        let mut root_box = LayoutBox {
+            node_id: Some(flex_id),
+            width: 200.0,
+            children: vec![LayoutBox {
+                node_id: Some(img_id),
+                is_replaced: true,
+                width: 40.0,
+                height: 500.0,
+                ..Default::default()
+            }],
+            ..Default::default()
+        };
+        let img_sizes = HashMap::from([(img_id, (20.0_f32, 50.0_f32))]);
+
+        fix_column_flex_nonstretch_replaced_main(&mut root_box, &styles, &img_sizes);
+
+        let item = &root_box.children[0];
+        assert_eq!(
+            item.height, 100.0,
+            "residual real container width should allow column flex aspect main correction"
         );
     }
 }
