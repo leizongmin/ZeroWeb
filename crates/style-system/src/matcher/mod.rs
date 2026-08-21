@@ -1141,6 +1141,135 @@ fn supports_rect_values(value: &str, is_valid: fn(&str) -> bool) -> bool {
     count > 0
 }
 
+fn supports_axis_values(value: &str, is_valid: fn(&str) -> bool) -> bool {
+    let mut count = 0;
+    for part in value.split_whitespace() {
+        count += 1;
+        if count > 2 || !is_valid(part) {
+            return false;
+        }
+    }
+    count > 0
+}
+
+fn supports_length_or_math(value: &str) -> Option<zero_css_parser::values::LengthValue> {
+    zero_css_parser::values::parse_length(value).or_else(|| {
+        zero_css_parser::values::parse_math_function(value)
+            .map(Box::new)
+            .map(zero_css_parser::values::LengthValue::Calc)
+    })
+}
+
+fn finite_length_percentage_number(value: &zero_css_parser::values::LengthValue) -> Option<f64> {
+    match value {
+        zero_css_parser::values::LengthValue::Px(v)
+        | zero_css_parser::values::LengthValue::Em(v)
+        | zero_css_parser::values::LengthValue::Ex(v)
+        | zero_css_parser::values::LengthValue::Rex(v)
+        | zero_css_parser::values::LengthValue::Cap(v)
+        | zero_css_parser::values::LengthValue::Rcap(v)
+        | zero_css_parser::values::LengthValue::Rem(v)
+        | zero_css_parser::values::LengthValue::Vh(v)
+        | zero_css_parser::values::LengthValue::Vw(v)
+        | zero_css_parser::values::LengthValue::Vmin(v)
+        | zero_css_parser::values::LengthValue::Vmax(v)
+        | zero_css_parser::values::LengthValue::Ch(v)
+        | zero_css_parser::values::LengthValue::Rch(v)
+        | zero_css_parser::values::LengthValue::Ic(v)
+        | zero_css_parser::values::LengthValue::Ric(v)
+        | zero_css_parser::values::LengthValue::Percentage(v)
+            if v.is_finite() =>
+        {
+            Some(*v)
+        }
+        _ => None,
+    }
+}
+
+fn supports_sizing_value(value: &str) -> bool {
+    let value = value.trim();
+    if matches!(
+        value.to_ascii_lowercase().as_str(),
+        "thin" | "medium" | "thick" | "fit-content(thin)" | "fit-content(medium)" | "fit-content(thick)"
+    ) {
+        return false;
+    }
+    match supports_length_or_math(value).as_ref() {
+        Some(v) if finite_length_percentage_number(v).is_some_and(|n| n >= 0.0) => true,
+        Some(zero_css_parser::values::LengthValue::FitContent(inner)) => supports_sizing_length_value(value, inner),
+        Some(zero_css_parser::values::LengthValue::Auto)
+        | Some(zero_css_parser::values::LengthValue::MinContent)
+        | Some(zero_css_parser::values::LengthValue::MaxContent)
+        | Some(zero_css_parser::values::LengthValue::Calc(_)) => true,
+        _ => false,
+    }
+}
+
+fn supports_max_sizing_value(value: &str) -> bool {
+    value.trim().eq_ignore_ascii_case("none") || supports_sizing_value(value)
+}
+
+fn supports_sizing_length_value(raw: &str, value: &zero_css_parser::values::LengthValue) -> bool {
+    if matches!(
+        raw.trim().to_ascii_lowercase().as_str(),
+        "thin" | "medium" | "thick" | "fit-content(thin)" | "fit-content(medium)" | "fit-content(thick)"
+    ) {
+        return false;
+    }
+    match value {
+        v if finite_length_percentage_number(v).is_some_and(|n| n >= 0.0) => true,
+        zero_css_parser::values::LengthValue::FitContent(inner) => supports_sizing_length_value("", inner),
+        zero_css_parser::values::LengthValue::Auto
+        | zero_css_parser::values::LengthValue::MinContent
+        | zero_css_parser::values::LengthValue::MaxContent
+        | zero_css_parser::values::LengthValue::Calc(_) => true,
+        _ => false,
+    }
+}
+
+fn supports_margin_value(value: &str) -> bool {
+    supports_length_or_math(value)
+        .as_ref()
+        .is_some_and(|v| crate::property::margin_length_is_valid(value, v))
+}
+
+fn supports_positioned_offset_value(value: &str) -> bool {
+    supports_length_or_math(value)
+        .as_ref()
+        .is_some_and(|v| crate::property::positioned_offset_length_is_valid(value, v))
+}
+
+fn supports_padding_value(value: &str) -> bool {
+    supports_length_or_math(value)
+        .as_ref()
+        .is_some_and(|v| crate::property::padding_length_is_valid(value, v))
+}
+
+fn supports_border_width_value(value: &str) -> bool {
+    supports_length_or_math(value)
+        .as_ref()
+        .is_some_and(|v| crate::property::border_width_length_is_valid(value, v))
+}
+
+fn supports_gap_values(value: &str) -> bool {
+    let mut count = 0;
+    for part in value.split_whitespace() {
+        count += 1;
+        if count > 2 || !supports_gap_value(part) {
+            return false;
+        }
+    }
+    count > 0
+}
+
+fn supports_gap_value(value: &str) -> bool {
+    let value = value.trim();
+    if value.eq_ignore_ascii_case("normal") {
+        return true;
+    }
+    supports_padding_value(value)
+}
+
 fn supports_scroll_margin_value(value: &str) -> bool {
     let value = value.trim();
     if matches!(
@@ -1244,35 +1373,53 @@ fn is_property_supported(property: &str, value: &str) -> bool {
         | "border-right-color"
         | "border-bottom-color"
         | "border-left-color" => parse_color(trimmed).is_some(),
-        "width"
-        | "height"
-        | "min-width"
-        | "max-width"
-        | "min-height"
-        | "max-height"
-        | "margin"
-        | "margin-top"
+        // https://www.w3.org/TR/css-conditional-3/#at-supports
+        // A declaration condition is true only when the declaration would parse as supported for
+        // that property, so shared length parsing must be narrowed by each property grammar here.
+        "width" | "height" | "inline-size" | "block-size" | "min-width" | "min-height" | "min-inline-size"
+        | "min-block-size" => supports_sizing_value(trimmed),
+        "max-width" | "max-height" | "max-inline-size" | "max-block-size" => supports_max_sizing_value(trimmed),
+        "margin" => supports_rect_values(trimmed, supports_margin_value),
+        "margin-block" | "margin-inline" => supports_axis_values(trimmed, supports_margin_value),
+        "margin-top"
         | "margin-right"
         | "margin-bottom"
         | "margin-left"
-        | "padding"
-        | "padding-top"
+        | "margin-block-start"
+        | "margin-block-end"
+        | "margin-inline-start"
+        | "margin-inline-end" => supports_margin_value(trimmed),
+        "padding" => supports_rect_values(trimmed, supports_padding_value),
+        "padding-block" | "padding-inline" => supports_axis_values(trimmed, supports_padding_value),
+        "padding-top"
         | "padding-right"
         | "padding-bottom"
         | "padding-left"
-        | "gap"
-        | "top"
-        | "right"
-        | "bottom"
-        | "left"
-        | "border-top-width"
+        | "padding-block-start"
+        | "padding-block-end"
+        | "padding-inline-start"
+        | "padding-inline-end" => supports_padding_value(trimmed),
+        "gap" => supports_gap_values(trimmed),
+        "row-gap" | "column-gap" => supports_gap_value(trimmed),
+        "inset" => supports_rect_values(trimmed, supports_positioned_offset_value),
+        "inset-block" | "inset-inline" => supports_axis_values(trimmed, supports_positioned_offset_value),
+        "top" | "right" | "bottom" | "left" | "inset-block-start" | "inset-block-end" | "inset-inline-start"
+        | "inset-inline-end" => supports_positioned_offset_value(trimmed),
+        "border-width" => supports_rect_values(trimmed, supports_border_width_value),
+        "border-inline-width" | "border-block-width" => supports_axis_values(trimmed, supports_border_width_value),
+        "border-top-width"
         | "border-right-width"
         | "border-bottom-width"
         | "border-left-width"
-        | "border-top-left-radius"
+        | "border-inline-start-width"
+        | "border-inline-end-width"
+        | "border-block-start-width"
+        | "border-block-end-width" => supports_border_width_value(trimmed),
+        "border-radius" => supports_rect_values(trimmed, supports_padding_value),
+        "border-top-left-radius"
         | "border-top-right-radius"
         | "border-bottom-right-radius"
-        | "border-bottom-left-radius" => parse_length(trimmed).is_some(),
+        | "border-bottom-left-radius" => supports_padding_value(trimmed),
         "transform" => parse_transform(trimmed).is_some(),
         "background" | "background-image" => {
             // background 接受 image（gradient / url()）或 color。`url()` 图（含 `<img>` 子资源
