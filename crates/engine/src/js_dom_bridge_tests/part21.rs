@@ -979,3 +979,105 @@ fn test_checkbox_click_in_form_clone_r154() {
         "R154：clone checkbox click——翻 checked + input 事件触发 inline oninput（WPT 真形态闭合）"
     );
 }
+
+// R155（js-dom M4）：single-activation 剩余 25F 的 clone 子树链——WPT 真形态是
+// `template.content.children` 的 `cloneNode(true)` 产物。沙箱 createElement 单测全过
+// → 差异定向：template 解析 + content.children + cloneNode 的 click 链。
+#[test]
+fn test_template_clone_checkbox_activation_r155() {
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let mut sandbox = V8Sandbox::with_config(zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    })
+    .unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![
+        DomMutation::SetInnerHtml {
+            selector: "body".into(),
+            html: "<template id=\"tpl\"><form onsubmit=\"0\"><input class=\"click\" type=\"submit\"></form><input class=\"click\" type=\"checkbox\" oninput=\"0\"></template><div id=\"tc\"></div>".into(),
+        },
+    ]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><template id=\"tpl\"><form onsubmit=\"0\"><input class=\"click\" type=\"submit\"></form><input class=\"click\" type=\"checkbox\" oninput=\"0\"></template><div id=\"tc\"></div></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+
+    let out = sandbox
+        .execute(
+            "var parts = [];\
+             var acts = [];\
+             globalThis.__r155Act = function (e) { acts.push(e); };\
+             var tpl = document.getElementById('tpl');\
+             parts.push('tpl:' + (tpl ? 'yes' : 'null'));\
+             var elems = tpl && tpl.content ? Array.from(tpl.content.children) : [];\
+             parts.push('elems:' + elems.length);\
+             if (elems.length >= 2) {\
+               var form = elems[0].cloneNode(true);\
+               var cb = elems[1].cloneNode(true);\
+               cb.setAttribute('oninput', 'this.checked ? __r155Act(this) : null');\
+               var tc = document.getElementById('tc');\
+               tc.appendChild(form);\
+               form.appendChild(cb);\
+               parts.push('cb-pre:' + cb.checked);\
+               try { cb.click(); } catch (e155c) { parts.push('threw:' + e155c.message); }\
+               parts.push('cb-post:' + cb.checked);\
+               parts.push('acts:' + acts.length);\
+             }\
+             parts.join('|');",
+        )
+        .unwrap()
+        .value;
+    assert_eq!(
+        out,
+        "tpl:yes|elems:2|cb-pre:false|cb-post:true|acts:1",
+        "R155：template.content clone 的 checkbox 在 form 内 click——翻 checked + inline oninput activated"
+    );
+}
+
+// R155（js-dom M4）：LABEL activation 转发诊断——span（LABEL 内）click 后 LABEL 的
+// nearest 激活定位 + 转发链是否执行（WPT single-activation LABEL 簇 11F 定向）。
+#[test]
+fn test_label_span_click_forward_r155() {
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let mut sandbox = V8Sandbox::with_config(zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    })
+    .unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><div id=\"tc\"><label id=\"lb\"><input id=\"ic\" type=\"checkbox\"><span id=\"sp\">label</span></label></div></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+
+    let out = sandbox
+        .execute(
+            "var parts = [];\
+             var acts = [];\
+             globalThis.__r155bAct = function (e) { acts.push(e); };\
+             var ic = document.getElementById('ic');\
+             ic.setAttribute('onclick', 'this.checked ? __r155bAct(this) : null');\
+             var sp = document.getElementById('sp');\
+             sp.click();\
+             parts.push('checked:' + ic.checked);\
+             parts.push('acts:' + acts.length);\
+             parts.join('|');",
+        )
+        .unwrap()
+        .value;
+    assert_eq!(
+        out,
+        "checked:true|acts:1",
+        "R155：LABEL 内 span click——LABEL 转发激活到内部 checkbox（onclick activated 链）"
+    );
+}

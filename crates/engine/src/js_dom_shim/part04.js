@@ -2593,6 +2593,7 @@
         }
         if (prop === 'click') {
           return function() {
+            if (globalThis.__zwR155InlGen != null) globalThis.__zwR155InlGen++;
             var ev = _makeEvent('click', { bubbles: true, cancelable: true });
             // R108：合成 click 打标——pre-click activation 认它（非 MouseEvent 实例）。
             ev._zwSyntheticClick = true;
@@ -2705,6 +2706,41 @@
                 try { _r154Href = handle ? __zw_get_attr_handle(handle, 'href') : (sel ? __zw_get_attr(sel, 'href') : ''); } catch (_e154h) { _r154Href = ''; }
                 if (_r154Href && String(_r154Href).charAt(0) === '#' && globalThis.location) {
                   try { globalThis.location.hash = String(_r154Href).slice(1); } catch (_e154s) {}
+                }
+              }
+              // R155（js-dom M4）：LABEL 的 click default action——转发激活到内部第一个
+              // labelable 控件（spec the-label-element activation behavior；与
+              // node.click() 本地版 ② LABEL 分支同源）。WPT single-activation 的
+              // LABEL 簇：click 落在 `<span class=click>` 上，LABEL 是 nearest 激活元素
+              // → 转发使内部 checkbox 的 onclick/oninput activated 链闭合。**注意转发
+              // 条件**：target 本身是 interactive content（button/input 等可交互后代）
+              // 时 spec 规定 label 激活 no-op——本分支只在 LABEL **自身或其非交互后代**
+              // 为 click 目标时执行（interactive 判定：INPUT/BUTTON/SELECT/TEXTAREA/
+              // A/AREA/DETAILS/SUMMARY/IFRAME/EMBED）。
+              if (_r154Tag === 'LABEL' && sel) {
+                var _r155Interactive = false;
+                if (_realTag(sel, handle) === 'INPUT' || _realTag(sel, handle) === 'BUTTON'
+                    || _realTag(sel, handle) === 'SELECT' || _realTag(sel, handle) === 'TEXTAREA'
+                    || _realTag(sel, handle) === 'A' || _realTag(sel, handle) === 'AREA'
+                    || _realTag(sel, handle) === 'DETAILS' || _realTag(sel, handle) === 'SUMMARY'
+                    || _realTag(sel, handle) === 'IFRAME' || _realTag(sel, handle) === 'EMBED') {
+                  _r155Interactive = true;
+                }
+                if (!_r155Interactive) {
+                  var _r155Ctl = null;
+                  try {
+                    var _r155All = globalThis.document.querySelectorAll('input, button, select, textarea, output, meter, progress');
+                    for (var _r155i = 0; _r155i < _r155All.length; _r155i++) {
+                      var _r155c = _r155All.item ? _r155All.item(_r155i) : _r155All[_r155i];
+                      if (!_r155c) continue;
+                      // 候选控件须在该 LABEL 子树内（sel 前缀判定——容器唯一选择器前缀）。
+                      var _r155cs = _r155c.__zwSelector || '';
+                      if (_r155cs && _r155cs.indexOf(sel) === 0) { _r155Ctl = _r155c; break; }
+                    }
+                  } catch (_e155q) { _r155Ctl = null; }
+                  if (_r155Ctl && typeof _r155Ctl.click === 'function') {
+                    try { _r155Ctl.click(); } catch (_e155f) {}
+                  }
                 }
               }
             }

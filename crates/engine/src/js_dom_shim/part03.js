@@ -2653,15 +2653,16 @@
           return null; // disabled + click()：无 activation（dispatch 早退路径同判定）。
         }
       }
-      // R154（js-dom M4）：**最近激活元素**止步——途中站是有自身 activation behavior 的
-      // 其他元素（spec concept-event-dispatch legacy-pre-activation 的「nearest ancestor
-      // (or self) with activation behavior」是**任意**激活元素，非仅 checkbox/radio）时，
-      // INPUT 翻转定位不得穿透（WPT single-activation：A[href] 在 INPUT[checkbox] 内
-      // click → 只激活 A 的 hash 导航，父 INPUT 不翻——旧版穿透翻父是 47F 中
-      // a-in-checkbox/radio 4F + label-in-input 6F 的根因之一）。激活元素分类枚举同
-      // node.click() 的 post-activation 段（INPUT/BUTTON submit 族 / LABEL / DETAILS·
-      // SUMMARY / A·AREA[href]）。
-      if (_zwHasOwnActivationBehavior(tag, sel, handle)) return null;
+      // R154/R155（js-dom M4）：**最近激活元素**定位——途中站是有自身 activation
+      // behavior 的其他元素（spec concept-event-dispatch legacy-pre-activation 的
+      // 「nearest ancestor (or self) with activation behavior」是**任意**激活元素，非仅
+      // checkbox/radio）时：INPUT 翻转定位不穿透（R154 语义），但返回该站的激活类型供
+      // dispatch post 段执行其激活（R155：LABEL 转发等——WPT single-activation 的
+      // span.click() 落 LABEL 内期望转发到内部 checkbox）。
+      if (_zwHasOwnActivationBehavior(tag, sel, handle)) {
+        var _r155Ty = String(tag).toLowerCase();
+        return { sel: sel, handle: handle, type: 'act:' + _r155Ty };
+      }
       if (sel && typeof __zw_parent === 'function') {
         var ps = '';
         try { ps = __zw_parent(sel); } catch (_e4) {}
@@ -2790,6 +2791,13 @@
   // cancelable:false（spec input/change 事件定义），input 走 InputEvent 构造器（可用时）。
   function _zwFireInputChange(sel, handle) {
     var el = _makeProxy(sel, handle);
+    // R155（js-dom M4）：inline oninput/onchange handler 显式编译执行（listener 派发
+    // 不覆盖 inline 属性 handler——与 node.click() 本地版 R155 同语义；WPT
+    // single-activation 的 `oninput="this.checked ? activated(this) : null"` 链）。
+    // R155：proxy 路径的 inline oninput/onchange **不**在此执行——proxy 的 on* 属性
+    // 已由 R2934 泛型编译注册为 input/change listener（dispatch 时触发）；此处再执行
+    // 一次会双触发（acts:2）。inline 执行只在本地 node.click 链（_zwMEl 无 listener
+    // 链，见 R155 _r155Inl）。
     var inputEv;
     try {
       inputEv = globalThis.InputEvent
@@ -2812,6 +2820,33 @@
         try { return __zw_contains('html', sel) === '1'; } catch (_e) { return true; }
       }
       return true;
+    }
+    // R155（js-dom M4）：clone 产物（proxy appendChild 重建的 handle 元素）可能无
+    // `_zwNodeParent` 反链记账——`document.contains(el)` 兜底（host 快照已 apply 的
+    // clone 子树经 sel 查询可达；WPT single-activation 的 input/change 派发前提是
+    // connected，此兜底比 false 更接近真实浏览器行为）。
+    if (handle && globalThis.document && typeof globalThis.document.contains === 'function') {
+      try {
+        var _r155DcEl = _makeProxy(null, handle);
+        if (_r155DcEl && globalThis.document.contains(_r155DcEl)) return true;
+      } catch (_e155dc) {}
+    }
+    if (handle && typeof _makeProxy === 'function') {
+      try {
+        var _r155Self = _makeProxy(null, handle);
+        var _r155P = _r155Self && _r155Self.parentNode;
+        var _r155Hops = 0;
+        while (_r155P && _r155Hops < 64) {
+          _r155Hops++;
+          if (_r155P.__zwSelector) return true; // sel 节点 = html 子树内
+          if (!_r155P.__zwHandle) break; // plain object（_zwMEl）——印章上行
+          if (_r155P.__zwFragHostHandle != null) {
+            var _r155FH = _wrapHandle ? _wrapHandle(_r155P.__zwFragHostHandle) : null;
+            if (_r155FH && _r155FH.__zwSelector) return true;
+          }
+          _r155P = _r155P.parentNode;
+        }
+      } catch (_e155cp) {}
     }
     if (handle && typeof _zwNodeParent !== 'undefined' && _zwNodeParent) {
       var hops = 0, link = _zwNodeParent[handle];
@@ -3230,12 +3265,36 @@
       // rollback 块已把 ledger 置 null，此处按 canceled flag 判不能读 ledger）；④ 激活元素
       // connected（detached 不派发，WPT Event-dispatch-detached-input-and-change）。两个事件
       // 递归走 _dispatchWithBubble（各自完整的 capture/target/bubble），异常吞（不中断外层）。
+      try { globalThis.__r155cond = {
+        act: _r112Act ? String(_r112Act.type) : 'null', sel: _r112Act ? String(_r112Act.sel) : 'n/a', hasH: _r112Act ? !!_r112Act.handle : 'n/a',
+        disp: event._zwDispatching, typ: event.type,
+        cancel: !!(event.cancelable && event._defaultPrevented),
+        conn: _r112Act ? _zwClickActivationConnected(_r112Act.sel, _r112Act.handle) : 'n/a',
+      }; } catch (_e155c) {}
       if (_r112Act && event._zwDispatching === 0 && event.type === 'click'
           && !(event.cancelable && event._defaultPrevented)
           && _zwClickActivationConnected(_r112Act.sel, _r112Act.handle)) {
-        try {
-          _zwFireInputChange(_r112Act.sel, _r112Act.handle);
-        } catch (_e112) {}
+        if (_r112Act.type === 'act:label') {
+          // R155（js-dom M4）：LABEL 的 activation behavior——转发 click 到内部第一个
+          // labelable 控件（spec the-label-element；click 落 LABEL 自身或其非交互后代时，
+          // target 已是 interactive 的场景 nearest 判定不会到 LABEL——checkbox/input 自身
+          // 激活优先，天然满足「interactive content 后代为 target 时 no-op」）。
+          try {
+            var _r155Ctl = null;
+            if (_r112Act.sel && typeof __zw_query_all_sub === 'function') {
+              var _r155List = __zw_query_all_sub(_r112Act.sel, 'input, button, select, textarea');
+              if (_r155List) {
+                var _r155Sels = String(_r155List).split('|').filter(function (x) { return x; });
+                if (_r155Sels.length) _r155Ctl = _wrapSelector(_r155Sels[0]);
+              }
+            }
+            if (_r155Ctl && typeof _r155Ctl.click === 'function') _r155Ctl.click();
+          } catch (_e155a) {}
+        } else {
+          try {
+            _zwFireInputChange(_r112Act.sel, _r112Act.handle);
+          } catch (_e112) {}
+        }
       }
     }
   }
@@ -3827,6 +3886,27 @@
           return _wrapHandle(_npl.parentHandle);
         }
       }
+      // R155（js-dom M4）：clone 产物（cloneNode deep 分支 innerHTML 重建的子 proxy）
+      // 无 _zwNodeParent 反链——经 `_handleChildren` 反查宿主容器（children 数组含本
+      // handle 的 proxy → 返该容器）。WPT single-activation 的 clone checkbox
+      // connected 判定（parentNode 上行）依赖此链。
+      if (typeof _handleChildren !== 'undefined' && _handleChildren) {
+        for (var _r155ph in _handleChildren) {
+          if (!Object.prototype.hasOwnProperty.call(_handleChildren, _r155ph)) continue;
+          var _r155pk = _handleChildren[_r155ph];
+          if (!_r155pk) continue;
+          for (var _r155pi = 0; _r155pi < _r155pk.length; _r155pi++) {
+            var _r155pc = _r155pk[_r155pi];
+            if (_r155pc && _r155pc.__zwHandle === handle) {
+              var _r155pp = _wrapHandle(_r155ph);
+              if (_r155pp) {
+                if (_r155pp.__zwSelector) return _wrapSelector(_r155pp.__zwSelector);
+                return _r155pp;
+              }
+            }
+          }
+        }
+      }
       // R51：无链的纯 detached handle 节点（createElement 后未 append）→ null（spec：
       // detached 节点 parentNode 为 null）。旧 fallback 猜 body 是 WPT dom/common.js
       // indexOf 死循环根因（假父快照永不含该节点）。
@@ -4178,19 +4258,15 @@
     //    - A/AREA[href]：location.hash 导航（href 以 # 开头的同文档片段——hashchange
     //      由 `location.hash =` setter 的既有链路派发；非 # href headless 无导航 no-op）
     node.click = function () {
+      if (globalThis.__zwR155InlGen != null) globalThis.__zwR155InlGen++;
       var ev = (typeof _makeEvent === 'function')
         ? _makeEvent('click', { bubbles: true, cancelable: true })
         : { type: 'click', bubbles: true, cancelable: true, defaultPrevented: false };
-      // inline onclick handler（attrs 本地有才编译；spec 派发模型 = listener 之一）。
-      var inlineCode = node.getAttribute && node.getAttribute('onclick');
-      if (inlineCode) {
-        try {
-          var fn152 = new Function('event', 'with(document) { with(this) { ' + inlineCode + ' } }');
-          try { fn152.call(node, ev); } catch (_e152i) {}
-        } catch (_e152c) {}
-      }
-      // pre-click activation（checkbox/radio 翻转在 listener 前执行——与 proxy 侧
-      // R108 同序）：本节点或祖先（LABEL 内控件经 ② LABEL 分支处理，此处仅本节点）。
+      // R155（js-dom M4）：inline onclick handler 的执行移到 INPUT 翻转**之后**——
+      // spec 派发模型 = listener 之一，listener 在 pre-click activation（checked 翻转）
+      // 之后触发（与 proxy 侧 R108 同序；WPT single-activation 的
+      // `onclick="this.checked ? activated(this) : null"` 须读到翻转后 true）。旧版
+      // 编译执行在最前 → this.checked 恒 false → activated 永不调（LABEL 簇 11F 根因）。
       var tag152 = String(node.tagName || '').toLowerCase();
       var _r152Flip = null; // { node, wasChecked } 翻转账（preventDefault 回滚）
       if (tag152 === 'input') {
@@ -4222,6 +4298,14 @@
           }
         }
       }
+      // R155：inline onclick 在 pre-click activation 后执行（spec listener 序）。
+      var inlineCode = node.getAttribute && node.getAttribute('onclick');
+      if (inlineCode) {
+        try {
+          var fn152 = new Function('event', 'with(document) { with(this) { ' + inlineCode + ' } }');
+          try { fn152.call(node, ev); } catch (_e152i) {}
+        } catch (_e152c) {}
+      }
       // click 派发（本地 listener + 上行 parentNode 链由 dispatchEvent 处理）。
       var notPrevented = node.dispatchEvent(ev);
       if (!notPrevented && _r152Flip) {
@@ -4231,9 +4315,29 @@
         return false;
       }
       // post-activation：input + change（INPUT[checkbox/radio]，spec input/change 在
-      // 激活末段派发，bubbles）。
+      // 激活末段派发，bubbles）。R155：inline oninput/onchange handler 显式编译执行
+      // （_zwDispatchLocalDoc 只派 doc/docEl/body 三站 listener，inline handler 非
+      // listener 不会触发——WPT single-activation 的
+      // `oninput="this.checked ? activated(this) : null"` 依赖此链；与 R152b 的
+      // codeOverride 同语义：直接用 attrs 本值）。
       if (_r152Flip) {
+        var _r155Inl = function (attrName, evType) {
+          var _r155Nk = (node.__zwHandle ? node.__zwHandle : String(node)) + '\u0001' + evType;
+          if (!globalThis.__zwR155InlGen) globalThis.__zwR155InlGen = 0;
+          if (!globalThis.__zwR155InlTab) globalThis.__zwR155InlTab = {};
+          if (globalThis.__zwR155InlTab[_r155Nk] === globalThis.__zwR155InlGen) return;
+          globalThis.__zwR155InlTab[_r155Nk] = globalThis.__zwR155InlGen;
+          var code = node.getAttribute && node.getAttribute(attrName);
+          if (code) {
+            try {
+              var f = new Function('event', 'with(document) { with(this) { ' + code + ' } }');
+              try { f.call(node, _makeEvent(evType, { bubbles: true })); } catch (_ei) {}
+            } catch (_ec) {}
+          }
+        };
+        _r155Inl('oninput', 'input');
         node.dispatchEvent(_makeEvent('input', { bubbles: true }));
+        _r155Inl('onchange', 'change');
         node.dispatchEvent(_makeEvent('change', { bubbles: true }));
       }
       // 宿主 form 的 submit / reset（INPUT[submit/image/reset] + BUTTON[submit/reset]——
@@ -4288,6 +4392,38 @@
         if (open152) det152.removeAttribute('open');
         else det152.setAttribute('open', '');
         det152.dispatchEvent(_makeEvent('toggle', { bubbles: false }));
+      }
+      // R155（js-dom M4）：非激活 target 的**上行最近激活元素**——_zwMEl click() 旧只
+      // 处理本节点 tag，span（LABEL 内）等非激活 target 的 click 无任何激活（WPT
+      // single-activation LABEL 簇：span.click() 期望 LABEL 转发内部 checkbox）。上行
+      // parentNode 链找首个有自身 activation behavior 的祖先：LABEL → 转发其内部第一个
+      // labelable 控件（local childNodes 找 input/button/select/textarea）；其余激活
+      // 类型（A/AREA/DETAILS/SUMMARY/submit）由 spec nearest 语义落在该祖先自身——
+      // 本地版只补 LABEL（WPT 用例面），其他类型 no-op（proxy 侧 dispatch 路径已覆盖）。
+      if (tag152 !== 'input' && tag152 !== 'button' && tag152 !== 'a'
+          && tag152 !== 'area' && tag152 !== 'label' && tag152 !== 'details'
+          && tag152 !== 'summary') {
+        var _r155Anc = node.parentNode, _r155Hops = 0, _r155Lbl = null;
+        while (_r155Anc && _r155Hops < 16) {
+          _r155Hops++;
+          var _r155At = String(_r155Anc.tagName || '').toLowerCase();
+          if (_r155At === 'label') { _r155Lbl = _r155Anc; break; }
+          if (_r155At === 'input' || _r155At === 'button' || _r155At === 'a'
+              || _r155At === 'area' || _r155At === 'details' || _r155At === 'summary') break;
+          _r155Anc = _r155Anc.parentNode;
+        }
+        if (_r155Lbl && _r155Lbl.childNodes) {
+          for (var _r155k = 0; _r155k < _r155Lbl.childNodes.length; _r155k++) {
+            var _r155cc = _r155Lbl.childNodes[_r155k];
+            if (_r155cc && _r155cc.nodeType === 1) {
+              var _r155ct = String(_r155cc.tagName || '').toLowerCase();
+              if (_r155ct === 'input' || _r155ct === 'button' || _r155ct === 'select' || _r155ct === 'textarea') {
+                if (typeof _r155cc.click === 'function') { try { _r155cc.click(); } catch (_e155l) {} }
+                break;
+              }
+            }
+          }
+        }
       }
       // A/AREA[href^="#"]：同文档片段导航（spec the-a-element activation-behavior——
       // fragment 导航 = location.hash 更新 + hashchange；test 的 window.onhashchange
