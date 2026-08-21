@@ -123,6 +123,55 @@ fn test_property_supported_table_and_ui_text_properties() {
 }
 
 #[test]
+fn test_property_supported_ui_and_text_decoration_properties() {
+    assert!(is_property_supported("outline-width", "medium"));
+    assert!(is_property_supported("outline-style", "auto"));
+    assert!(is_property_supported("outline-color", "currentColor"));
+    assert!(is_property_supported("outline-offset", "inset"));
+    assert!(is_property_supported("outline-offset", "-0.25em"));
+    assert!(is_property_supported("content-visibility", "auto"));
+    assert!(is_property_supported("opacity", "50%"));
+    assert!(is_property_supported("cursor", "zoom-in"));
+    assert!(is_property_supported("text-decoration", "underline"));
+    assert!(is_property_supported("text-decoration-line", "underline overline"));
+    assert!(is_property_supported(
+        "text-decoration-color",
+        "light-dark(black, white)"
+    ));
+    assert!(is_property_supported("text-decoration-style", "wavy"));
+    assert!(is_property_supported("text-emphasis-style", "open sesame"));
+    assert!(is_property_supported("text-emphasis-position", "under left"));
+    assert!(is_property_supported("text-emphasis-color", "blue"));
+    assert!(is_property_supported("text-transform", "full-width"));
+    assert!(is_property_supported("word-break", "keep-all"));
+    assert!(is_property_supported(
+        "text-autospace",
+        "ideograph-alpha ideograph-numeric"
+    ));
+    assert!(is_property_supported("line-break", "anywhere"));
+    assert!(is_property_supported("writing-mode", "sideways-rl"));
+    assert!(is_property_supported("text-overflow", "\"...\""));
+
+    assert!(!is_property_supported("outline-width", "10%"));
+    assert!(!is_property_supported("outline-style", "hidden"));
+    assert!(!is_property_supported("outline-offset", "auto"));
+    assert!(!is_property_supported("content-visibility", "collapse"));
+    assert!(!is_property_supported("opacity", "sparkle"));
+    assert!(!is_property_supported("cursor", "diagonal"));
+    assert!(!is_property_supported("text-decoration", "underline overline"));
+    assert!(!is_property_supported("text-decoration-line", "underline sparkle"));
+    assert!(!is_property_supported("text-decoration-style", "groove"));
+    assert!(!is_property_supported("text-emphasis-style", "filled open"));
+    assert!(!is_property_supported("text-emphasis-position", "over under"));
+    assert!(!is_property_supported("text-transform", "small-caps"));
+    assert!(!is_property_supported("word-break", "break-word break-all"));
+    assert!(!is_property_supported("text-autospace", "ideograph-alpha sparkle"));
+    assert!(!is_property_supported("line-break", "soft"));
+    assert!(!is_property_supported("writing-mode", "vertical"));
+    assert!(!is_property_supported("text-overflow", "fade"));
+}
+
+#[test]
 fn test_property_supported_color() {
     assert!(is_property_supported("color", "red"));
     assert!(is_property_supported("background-color", "#fff"));

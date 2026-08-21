@@ -140,6 +140,13 @@ fn parse_word_break_invalid() {
 }
 
 #[test]
+/// 解析无效的 CSS text-autospace 值
+fn parse_text_autospace_invalid_extra_tokens() {
+    assert!(crate::property::parse::parse_text_autospace("ideograph-alpha sparkle").is_none());
+    assert!(crate::property::parse::parse_text_autospace("normal ideograph-alpha").is_none());
+}
+
+#[test]
 /// 解析无效的 CSS writing-mode 值
 fn parse_writing_mode_invalid() {
     assert!(crate::property::parse::parse_writing_mode("invalid").is_none());

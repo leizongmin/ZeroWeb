@@ -1294,6 +1294,26 @@ fn supports_word_spacing_value(value: &str) -> bool {
     supports_text_length_percentage_value(value)
 }
 
+fn supports_outline_offset_value(value: &str) -> bool {
+    let value = value.trim();
+    if value.eq_ignore_ascii_case("inset") {
+        return true;
+    }
+    if matches!(
+        value.to_ascii_lowercase().as_str(),
+        "thin" | "medium" | "thick" | "auto" | "min-content" | "max-content" | "fit-content"
+    ) {
+        return false;
+    }
+    match supports_length_or_math(value).as_ref() {
+        Some(v) if finite_length_percentage_number(v).is_some_and(|n| n.is_finite()) => {
+            !matches!(v, zero_css_parser::values::LengthValue::Percentage(_))
+        }
+        Some(zero_css_parser::values::LengthValue::Calc(_)) => true,
+        _ => false,
+    }
+}
+
 fn supports_scroll_margin_value(value: &str) -> bool {
     let value = value.trim();
     if matches!(
@@ -1514,6 +1534,28 @@ fn is_property_supported(property: &str, value: &str) -> bool {
         "resize" => parse_resize(trimmed).is_some(),
         "direction" => parse_direction(trimmed).is_some(),
         "unicode-bidi" => parse_unicode_bidi(trimmed).is_some(),
+        // https://www.w3.org/TR/css-conditional-3/#at-supports
+        // Keep CSS UI and text decoration support checks aligned with the direct declaration parsers.
+        "outline-width" => supports_border_width_value(trimmed),
+        "outline-style" => crate::property::parse_outline_style(trimmed).is_some(),
+        "outline-color" => parse_color(trimmed).is_some(),
+        "outline-offset" => supports_outline_offset_value(trimmed),
+        "content-visibility" => parse_content_visibility(trimmed).is_some(),
+        "opacity" => parse_opacity(trimmed).is_some(),
+        "cursor" => parse_cursor(trimmed).is_some(),
+        "text-decoration" => crate::property::parse_text_decoration(trimmed).is_some(),
+        "text-decoration-line" => crate::property::parse_text_decoration_line(trimmed).is_some(),
+        "text-decoration-color" => parse_color(trimmed).is_some(),
+        "text-decoration-style" => parse_text_decoration_style(trimmed).is_some(),
+        "text-emphasis-style" => parse_text_emphasis_style(trimmed).is_some(),
+        "text-emphasis-position" => parse_text_emphasis_position(trimmed).is_some(),
+        "text-emphasis-color" => parse_color(trimmed).is_some(),
+        "text-transform" => crate::property::parse_text_transform(trimmed).is_some(),
+        "word-break" => crate::property::parse_word_break(trimmed).is_some(),
+        "text-autospace" => crate::property::parse_text_autospace(trimmed).is_some(),
+        "line-break" => crate::property::parse_line_break(trimmed).is_some(),
+        "writing-mode" => crate::property::parse_writing_mode(trimmed).is_some(),
+        "text-overflow" => crate::property::parse_text_overflow(trimmed).is_some(),
         // https://drafts.csswg.org/css-conditional-3/#at-supports
         // CSS Text/Text Decoration declarations must parse using their property grammar, not the
         // narrower generic supports allow-list above.

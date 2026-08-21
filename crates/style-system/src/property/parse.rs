@@ -349,18 +349,19 @@ pub fn parse_text_autospace(value: &str) -> Option<TextAutospaceValue> {
         "ideograph-alpha" => Some(TextAutospaceValue::IdeographAlpha),
         "ideograph-numeric" => Some(TextAutospaceValue::IdeographNumeric),
         _ => {
-            // 组合：同时含 ideograph-alpha 与 ideograph-numeric → normal
-            let has_alpha = lower.contains("ideograph-alpha");
-            let has_numeric = lower.contains("ideograph-numeric");
-            if has_alpha && has_numeric {
-                Some(TextAutospaceValue::Normal)
-            } else if has_alpha {
-                Some(TextAutospaceValue::IdeographAlpha)
-            } else if has_numeric {
-                Some(TextAutospaceValue::IdeographNumeric)
-            } else {
-                None
+            // https://drafts.csswg.org/css-text-4/#propdef-text-autospace
+            // Current computed storage can represent the implemented alpha/numeric subset only;
+            // reject unknown or extra tokens instead of substring-matching through them.
+            let mut has_alpha = false;
+            let mut has_numeric = false;
+            for token in lower.split_whitespace() {
+                match token {
+                    "ideograph-alpha" if !has_alpha => has_alpha = true,
+                    "ideograph-numeric" if !has_numeric => has_numeric = true,
+                    _ => return None,
+                }
             }
+            (has_alpha && has_numeric).then_some(TextAutospaceValue::Normal)
         }
     }
 }
