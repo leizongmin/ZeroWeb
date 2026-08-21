@@ -62,7 +62,16 @@ fn test_property_supported_box_sizing() {
 fn test_property_supported_flex() {
     assert!(is_property_supported("flex-direction", "row"));
     assert!(is_property_supported("flex-wrap", "wrap"));
+    assert!(is_property_supported("flex-grow", "2"));
+    assert!(is_property_supported("flex-shrink", "0.5"));
+    assert!(is_property_supported("flex-basis", "content"));
+    assert!(is_property_supported("order", "-1"));
+
     assert!(!is_property_supported("flex-direction", "invalid"));
+    assert!(!is_property_supported("flex-grow", "-1"));
+    assert!(!is_property_supported("flex-shrink", "NaN"));
+    assert!(!is_property_supported("flex-basis", "-1px"));
+    assert!(!is_property_supported("order", "1.5"));
 }
 
 #[test]

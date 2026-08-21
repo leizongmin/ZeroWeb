@@ -1412,6 +1412,10 @@ fn is_property_supported(property: &str, value: &str) -> bool {
         "box-sizing" => parse_box_sizing(trimmed).is_some(),
         "flex-direction" => parse_flex_direction(trimmed).is_some(),
         "flex-wrap" => parse_flex_wrap(trimmed).is_some(),
+        // https://www.w3.org/TR/css-flexbox-1/#flex-grow-property
+        "flex-grow" | "flex-shrink" => trimmed.parse::<f64>().is_ok_and(|v| v.is_finite() && v >= 0.0),
+        "flex-basis" => crate::property::parse_flex_basis(trimmed).is_some(),
+        "order" => crate::property::parse_z_index(trimmed).is_some(),
         "justify-content" | "align-items" | "align-content" | "align-self" | "justify-self" => {
             parse_alignment(trimmed).is_some()
         }
