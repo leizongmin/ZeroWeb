@@ -637,10 +637,18 @@ fn test_property_supported_edge_cases() {
     assert!(!is_property_supported("display", ""));
     assert!(!is_property_supported("color", "   "));
 
-    // container-name 任何非空字符串都有效
+    // container-name: none | <custom-ident>+
     assert!(is_property_supported("container-name", "sidebar"));
     assert!(is_property_supported("container-name", "main content"));
-    assert!(is_property_supported("container-name", "123"));
+    assert!(is_property_supported("container-name", "--named"));
+    assert!(is_property_supported("container-name", r"\!escaped"));
+    assert!(is_property_supported("container-name", "auto normal"));
+    assert!(!is_property_supported("container-name", ""));
+    assert!(!is_property_supported("container-name", "123"));
+    assert!(!is_property_supported("container-name", "foo, bar"));
+    assert!(!is_property_supported("container-name", "default"));
+    assert!(!is_property_supported("container-name", "\"foo\""));
+    assert!(!is_property_supported("container-name", "not"));
 
     // R2856：CSS 全局关键字对所有属性合法（at-supports-012 `(padding:inherit)` 须支持）。
     assert!(is_property_supported("padding", "inherit"));

@@ -763,8 +763,19 @@ fn test_property_supported_scroll_snap() {
 fn test_property_supported_container() {
     assert!(is_property_supported("container-type", "inline-size"));
     assert!(is_property_supported("container-name", "sidebar"));
-    assert!(is_property_supported("container-name", "anything"));
+    assert!(is_property_supported("container-name", "foo bar"));
+    assert!(is_property_supported("container-name", "--named"));
+    assert!(is_property_supported("container-name", r"\!escaped"));
+    assert!(is_property_supported("container-name", "auto normal"));
     assert!(!is_property_supported("container-type", "invalid"));
+    assert!(!is_property_supported("container-name", ""));
+    assert!(!is_property_supported("container-name", "1px"));
+    assert!(!is_property_supported("container-name", "foo, bar"));
+    assert!(!is_property_supported("container-name", "default"));
+    assert!(!is_property_supported("container-name", "\"foo\""));
+    assert!(!is_property_supported("container-name", "not"));
+    assert!(!is_property_supported("container-name", "and"));
+    assert!(!is_property_supported("container-name", "or"));
 }
 
 #[test]

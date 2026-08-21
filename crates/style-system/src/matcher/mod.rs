@@ -1512,7 +1512,7 @@ fn is_property_supported(property: &str, value: &str) -> bool {
             supports_scroll_padding_value(trimmed)
         }
         "container-type" => parse_container_type(trimmed).is_some(),
-        "container-name" => true, // 任何非空字符串都有效
+        "container-name" => crate::property::parse_container_name(trimmed).is_some(),
         // https://drafts.csswg.org/css-content-3/#content-property
         // Keep generated content support checks aligned with the direct declaration parsers.
         "counter-reset" | "counter-increment" => parse_counter_list(trimmed).is_some(),

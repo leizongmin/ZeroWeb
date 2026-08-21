@@ -1,7 +1,7 @@
 //! CSS 属性解析函数。
 
 use super::types::*;
-use zero_css_parser::values;
+use zero_css_parser::{Token, Tokenizer, values};
 
 /// 解析 CSS border-style 值。
 pub fn parse_border_style(value: &str) -> Option<BorderStyleValue> {
@@ -979,6 +979,40 @@ pub fn parse_container_type_computed(value: &str) -> Option<ContainerType> {
         ContainerTypeValue::Size => Some(ContainerType::Size),
         ContainerTypeValue::InlineSize => Some(ContainerType::InlineSize),
     }
+}
+
+/// Parse CSS `container-name`.
+///
+/// https://drafts.csswg.org/css-conditional-5/#container-name
+pub fn parse_container_name(value: &str) -> Option<Option<String>> {
+    let value = value.trim();
+    if value.eq_ignore_ascii_case("none") {
+        return Some(None);
+    }
+    if value.is_empty() {
+        return None;
+    }
+
+    let mut names = Vec::new();
+    for token in Tokenizer::new(value).collect_tokens() {
+        match token {
+            Token::Whitespace | Token::Comment(_) => {}
+            Token::Ident(name) if container_name_ident_supported(&name) => names.push(name),
+            Token::Eof => break,
+            _ => return None,
+        }
+    }
+    (!names.is_empty()).then(|| Some(names.join(" ")))
+}
+
+fn container_name_ident_supported(value: &str) -> bool {
+    if matches!(
+        value.to_ascii_lowercase().as_str(),
+        "none" | "default" | "not" | "and" | "or" | "inherit" | "initial" | "unset" | "revert" | "revert-layer"
+    ) {
+        return false;
+    }
+    true
 }
 
 /// 解析 font-family 值。

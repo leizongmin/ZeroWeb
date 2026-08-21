@@ -626,13 +626,10 @@ pub fn apply_advanced_property_value(style: &mut ComputedStyle, property: &str, 
             }
         }
         "container-name" => {
-            let trimmed = value.trim();
-            if trimmed.eq_ignore_ascii_case("none") {
-                style.container_name = None;
-            } else {
-                style.container_name = Some(trimmed.to_string());
+            if let Some(name) = parse_container_name(value) {
+                style.container_name = name;
+                return true;
             }
-            return true;
         }
         // ── Counters 属性 ──
         "counter-reset" => {

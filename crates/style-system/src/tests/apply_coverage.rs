@@ -809,9 +809,28 @@ fn test_apply_container_properties() {
     let (ok, s) = apply("container-name", "sidebar");
     assert!(ok);
     assert_eq!(s.container_name, Some("sidebar".to_string()));
+    let (ok, s) = apply("container-name", "foo bar");
+    assert!(ok);
+    assert_eq!(s.container_name, Some("foo bar".to_string()));
+    let (ok, s) = apply("container-name", r"\!escaped");
+    assert!(ok);
+    assert_eq!(s.container_name, Some("!escaped".to_string()));
     let (ok, s) = apply("container-name", "none");
     assert!(ok);
     assert!(s.container_name.is_none());
+}
+
+#[test]
+fn test_apply_container_name_rejects_invalid_values() {
+    let mut style = ComputedStyle::default();
+    assert!(apply_property_value(&mut style, "container-name", "sidebar"));
+
+    for value in [
+        "", "1px", "foo, bar", "default", "\"foo\"", "not", "and", "or", "inherit",
+    ] {
+        assert!(!apply_property_value(&mut style, "container-name", value));
+        assert_eq!(style.container_name, Some("sidebar".to_string()));
+    }
 }
 
 // === Counter 属性 ===
