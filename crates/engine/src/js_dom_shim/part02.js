@@ -1651,6 +1651,7 @@
     var arr = JSON.parse(__zw_parse_html_query(this.outerHTML, String(sel), '1'));
     var out = [];
     for (var i = 0; i < arr.length; i++) out.push(this._zwWrapQ(arr[i]));
+    out.__zwQSA = true;
     return out;
   };
   // R3019：lazy 可变子树桥——DOMPurify / sanitizer / 树遍历库经 DOMParser.parseFromString 拿到 body 后，

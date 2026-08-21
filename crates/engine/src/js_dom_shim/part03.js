@@ -192,7 +192,10 @@
     Object.defineProperty(globalThis.NodeList, Symbol.hasInstance, {
       configurable: true,
       value: function (v) {
-        return Array.isArray(v) && v.__zwLiveNL === true;
+        // R159：querySelectorAll 产物数组（__zwQSA 标记）同认 instanceof NodeList
+        //（WPT ParentNode-querySelector-All "returns NodeList instance" 断言——
+        // spec 返 NodeList 对象；shim 数组形态经标记近似）。
+        return Array.isArray(v) && (v.__zwLiveNL === true || v.__zwQSA === true);
       },
     });
   } catch (_e140hi) {}
@@ -637,6 +640,7 @@
     var arr = _zwMQueryAll(this, sel);
     var out = [];
     for (var i = 0; i < arr.length; i++) out.push(_zwMWrapCached(this, arr[i]));
+    out.__zwQSA = true; // R159：instanceof NodeList 标记
     return out;
   });
   // js-dom M4 R128：`Node.prototype.cloneNode` 泛型（spec `dom-node-clone-node`——对任意
@@ -5386,7 +5390,24 @@
     var _tree = null; // R3017：cached mutable body 树（首次 childNodes 访问建，innerHTML setter 失效）
     function ensureTree() { if (!_tree) _tree = _zwMBuildBodyTree(bodyHtml); }
     // detHtml 反映 live 树（_tree 已建则序列化，否则原始 bodyHtml）→ querySelector 与 mutation 一致。
-    function detHtml() { return '<body>' + (_tree ? _tree.innerHTML : bodyHtml) + '</body>'; }
+    // R159：detHtml 包装层——html 属性恢复（iframe 文档的 `<html id="html" lang>`
+    // 经 doc._r159HtmlAttrs 传入；查询树对 querySelectorAll('html') / `:root` /
+    // 属性命中。普通 detached doc 无该槽——缺省行为不变）。
+    function detHtml() {
+      var inner = _tree ? _tree.innerHTML : bodyHtml;
+      var ha = '';
+      var ba = '';
+      try { ha = String(doc._r159HtmlAttrs || '') || ''; } catch (_e159h) {}
+      try { ba = String(doc._r159BodyAttrs || '') || ''; } catch (_e159b) {}
+      // R159：html/body 属性恢复到包装层（`<html id="html"><body id="body">`——
+      // 查询树保真；普通 detached doc 无槽零变化）。
+      if (ha || ba) {
+        return '<html' + (ha && ha.charAt(0) !== ' ' ? ' ' + ha : ha)
+          + '><body' + (ba && ba.charAt(0) !== ' ' ? ' ' + ba : ba)
+          + '>' + inner + '</body></html>';
+      }
+      return '<body>' + inner + '</body>';
+    }
     function queryBody(sel, all) {
       if (typeof __zw_parse_html_query !== 'function') return [];
       try {
@@ -5435,6 +5456,7 @@
       if (globalThis._zwQueryGuard) globalThis._zwQueryGuard(sel);
       var a = queryBody(sel, true); var out = [];
       for (var i = 0; i < a.length; i++) out.push(_zwWrapCached(a[i]));
+      out.__zwQSA = true; // R159：instanceof NodeList 标记
       return out;
     }
     // R130（js-dom M4）：兄弟链接线（doc 级 appendChild/insertBefore/removeChild 后调）——
@@ -6325,6 +6347,7 @@
                 }
                 out.push(fe156);
               }
+              out.__zwQSA = true; // R159：instanceof NodeList 标记
               return out;
             } catch (_e156f) { return []; }
           },

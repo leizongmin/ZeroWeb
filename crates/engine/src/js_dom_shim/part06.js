@@ -1712,7 +1712,9 @@
       }
       var all = __zw_query_all(q);
       if (!all) return _zwMakeCollection([], false);
-      return _zwMakeCollection(all.split('|').filter(Boolean).map(_wrapSelector), false);
+      var r159 = _zwMakeCollection(all.split('|').filter(Boolean).map(_wrapSelector), false);
+      try { r159.__zwQSA = true; } catch (_e159q) {} // R159：instanceof NodeList 标记
+      return r159;
     },
     getElementsByClassName: function(cls) {
       // R3019：honor `this` for cross-document use（DOMPurify 等库 getElementsByClassName.call(parsedDoc, cls)

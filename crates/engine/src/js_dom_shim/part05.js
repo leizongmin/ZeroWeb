@@ -766,7 +766,18 @@
           textContent: elText,
           getBoundingClientRect: function () { return _makeDomRect(0, 0, 0, 0); }
         };
-        if (kind !== 'xml') bodyInner = mEl[3];
+        if (kind !== 'xml') {
+        // R159：html/body 属性经 doc 槽传递——detHtml 包装层恢复 `<html ...><body ...>`
+        //（查询树对 querySelectorAll('html'/'body'/':root') 命中且保属性；WPT
+        // Type selector html/body 簇——expected id "html"/"body"）。bodyInner 仍是
+        // html 内部全文（含 head）。
+        bodyInner = mEl[3];
+        try { doc._r159HtmlAttrs = String(mEl[2] || '').trim() || null; } catch (_eA3) {}
+        try {
+          var _r159Bm = /<body\b([^>]*)>/i.exec(String(mEl[3] || ''));
+          doc._r159BodyAttrs = _r159Bm ? String(_r159Bm[1] || '').trim() || null : null;
+        } catch (_eA4) {}
+      }
       }
     } catch (_e115) {}
     try { doc.body.innerHTML = bodyInner; } catch (_eB) {}

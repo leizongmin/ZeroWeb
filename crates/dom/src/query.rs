@@ -8,11 +8,29 @@
 
 use crate::node::ElementData;
 
+/// R159：type selector 命名空间限定形态。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum NsKind {
+    /// 缺省（无 ns 限定——任意 ns 的同名 localName，与既有引擎行为一致）。
+    #[default]
+    Default,
+    /// `*|div`——任意 ns。
+    AnyNs,
+    /// `|div`——仅显式空 ns（namespace 为空串）。
+    EmptyNs,
+}
+
 /// 简单选择器（仅支持单层选择器，不支持组合器）。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SimpleSelector {
     /// 标签名匹配（大小写不敏感）。
     pub tag: Option<String>,
+    /// R159：type selector 的命名空间限定（WPT Namespace selector 簇）：
+    /// `div` 缺省（HTML 文档默认 ns 语义——本引擎按「任意 ns 中的同名 localName」
+    /// 近似，与既有行为一致）、`*|div` AnyNs（任意 ns）、`|div` EmptyNs（仅
+    /// namespace 为空串的元素——WPT `#no-namespace |div` expect 仅 createElementNS
+    /// ("", div) 产物）。
+    pub ns_kind: NsKind,
     /// ID 匹配。
     pub id: Option<String>,
     /// 类名匹配列表（支持多个类选择器，如 `.a.b`）。
@@ -57,6 +75,10 @@ pub enum PseudoClass {
     OnlyOfType,
     /// `:root`——文档根元素（`<html>`）。
     Root,
+    /// R159：伪元素（`:before`/`:after`/`:first-line`/`:first-letter` 一冒号 legacy
+    /// 与 `::before` 等二冒号 modern，及 `::slotted(...)`）——**合法但恒不匹配**
+    /// （spec DOM querySelector 不匹配伪元素；WPT 期望 expect: [] 不抛）。
+    PseudoElement,
     /// `:empty`——无子节点（含文本；spec：无 element/text 子，注释允许，本实现简化为无任何子）。
     Empty,
     /// `:not(simple)`——否定伪类，匹配**不**满足内嵌简单选择器的元素（CSS3 语义：内嵌仅简单选择器，
@@ -260,6 +282,13 @@ impl SimpleSelector {
         {
             return false;
         }
+        // R159：`|div` 显式空 ns——元素 namespace 须为空串（WPT `#no-namespace |div`
+        // expect 仅 createElementNS("", div) 产物；HTML 解析产物 namespace 是
+        // HTMLNS 非空 → 不命中）。`*|div` AnyNs 对 namespace 无约束（localName 已
+        // 比对）——无需额外判定。
+        if self.ns_kind == NsKind::EmptyNs && !elem.namespace().is_empty() {
+            return false;
+        }
 
         // ID 匹配
         if let Some(id) = &self.id
@@ -383,6 +412,8 @@ impl SimpleSelector {
             PseudoClass::OnlyOfType => pos.type_count == 1,
             PseudoClass::Root => pos.is_root,
             PseudoClass::Empty => pos.is_empty,
+            // R159：伪元素——DOM querySelector **恒不匹配**（spec 伪元素不是元素）。
+            PseudoClass::PseudoElement => false,
             // :not(inner)——否定（内嵌经 matches_full 递归评估，可含伪类）。
             PseudoClass::Not(inner) => !inner.matches_full(elem, pos),
             // :is/:where(list)——任一内嵌匹配则真。
@@ -738,9 +769,11 @@ fn selector_lexically_valid(s: &str) -> bool {
                 }
             }
             // `::` 伪元素（idx+1 是第二冒号）——选择器匹配语义不支持
-            b':' if idx + 1 < bytes.len() && bytes[idx + 1] == b':' => {
-                return false;
-            }
+            // R159：`::` 伪元素不再词法拒绝——WPT 期望 `#x::before` 等**合法但
+            // 匹配零元素**（DOM querySelector 不匹配伪元素——spec selectors-
+            // matching 伪元素永不命中）。match 侧 PseudoElement 匹配恒 false；
+            // `::` 后必须跟合法伪元素名（空名在 parse 层拒）。
+            b':' => {}
             _ => {}
         }
     }
@@ -749,8 +782,19 @@ fn selector_lexically_valid(s: &str) -> bool {
     // 已在循环内拒）或 `(` 不配对仍非法。`[` 尾余 = 段尾截断，parse 端 find(']')
     // 返 None → 整链 None……须同步在 parse 端补 `]`（见 parse_simple_selector 的
     // R157 补尾），此处只做词法放行。
-    if bracket < 0 || paren != 0 {
+    // R159：**伪类参数内**的尾部未闭合 `(` 宽容（`::slotted(foo`——WPT 期望合法
+    // 零匹配；`(` 后有 `:name(` 形态即伪参上下文）。顶层裸 `(` / `)` 仍非法
+    //（WPT invalidSelectors）。parse 端 find(')') miss 时 args 取到串尾。
+    if bracket < 0 || paren < 0 {
         return false;
+    }
+    if paren > 0 {
+        // `:name(` 伪参上下文判定：最后一个 `:` 之后存在 `(`。无 `:`（顶层裸括号
+        // 形态）→ 不合法（WPT invalidSelectors 的 `(`）。
+        let paren_ctx_ok = s.rfind(':').map(|c| s[c..].contains('(')).unwrap_or(false);
+        if !paren_ctx_ok {
+            return false;
+        }
     }
     // R156：`[attr= unquoted value ]` 未引用属性值含内部空白非法（spec 属性值
     // 未引用形态不允许空白；引用形态 `"a b"` 合法）。逐 `[...]` 段扫：`=` 后
@@ -1200,6 +1244,12 @@ fn parse_pseudo(name: &str, args: Option<&str>) -> Option<PseudoClass> {
         "last-of-type" => Some(PseudoClass::LastOfType),
         "only-of-type" => Some(PseudoClass::OnlyOfType),
         "root" => Some(PseudoClass::Root),
+        // R159：伪元素族——合法解析 + 恒不匹配（matches 侧 false；WPT
+        // `#pseudo-element:before` expect [] 不抛）。`::slotted(foo`（未闭合括号）
+        // `::slotted(foo`（未闭合括号）同为合法形态——args 原样吞（匹配恒 false
+        // 无需解析）。
+        "before" | "after" | "first-line" | "first-letter" | "slotted" | "selection" | "marker" | "placeholder"
+        | "backdrop" => Some(PseudoClass::PseudoElement),
         "empty" => Some(PseudoClass::Empty),
         // :not(simple)——CSS3 否定伪类，内嵌经 parse_simple_selector（可含伪类，如 :not(:first-child)）。
         "not" => Some(PseudoClass::Not(parse_simple_selector(args?)?)),
@@ -1339,6 +1389,7 @@ pub fn parse_simple_selector(selector: &str) -> Option<SimpleSelector> {
 
     let mut result = SimpleSelector {
         tag: None,
+        ns_kind: NsKind::Default,
         id: None,
         classes: Vec::new(),
         attribute: None,
@@ -1348,13 +1399,36 @@ pub fn parse_simple_selector(selector: &str) -> Option<SimpleSelector> {
     let mut rest = s;
 
     // 解析标签名（开头的连续非特殊字符）
+    // R59：`*|name`（任意 ns）/ `|name`（显式空 ns）前缀剥离 + NsKind 记账
+    //（WPT Namespace selector 簇；`ns|name` 有名前缀已在词法层拒）。
+    fn strip_ns(rest: &str) -> (&str, NsKind) {
+        if let Some(r) = rest.strip_prefix("*|") {
+            (r, NsKind::AnyNs)
+        } else if let Some(r) = rest.strip_prefix('|') {
+            (r, NsKind::EmptyNs)
+        } else {
+            (rest, NsKind::Default)
+        }
+    }
     if let Some(pos) = rest.find(['#', '.', '[', ':']) {
         if pos > 0 {
-            result.tag = Some(rest[..pos].to_string());
+            let (raw, kind) = strip_ns(&rest[..pos]);
+            result.ns_kind = kind;
+            if !raw.is_empty() {
+                result.tag = Some(raw.to_string());
+            }
+        } else {
+            // 段首即特殊字符——ns 前缀可能在 `*|` 后（`*|div` 的 find 命中 0 因 `*` 非
+            // 特殊字符——实际此分支只进 `|div` 形态：`|` 非特殊字符集，段首特殊字符
+            // 只有 #.[: —— `|div` 走 else 分支。此处保空 tag + Default。
         }
         rest = &rest[pos..];
     } else {
-        result.tag = Some(rest.to_string());
+        let (raw, kind) = strip_ns(rest);
+        result.ns_kind = kind;
+        if !raw.is_empty() {
+            result.tag = Some(raw.to_string());
+        }
         return Some(result);
     }
 
@@ -1378,14 +1452,23 @@ pub fn parse_simple_selector(selector: &str) -> Option<SimpleSelector> {
             rest = &r[end..];
         } else if let Some(r) = rest.strip_prefix(':') {
             // 伪类：名字直到 `(` 或下一个分隔符；`:nth-child(...)` 含括号参数。
+            // R159：`::` 双冒号伪元素语法（`::before`/`::slotted(foo)`——WPT 期望
+            // 合法但零匹配）——剥前导第二冒号后按伪元素名解析。
+            let r = r.strip_prefix(':').unwrap_or(r);
             let (name, args, next_rest): (&str, Option<&str>, &str) = match r.find('(') {
                 Some(open) => {
                     // `)` 相对 r[open..] 的偏移 → 换算到 r 的绝对位置。
-                    let close = r[open..].find(')')?;
-                    let arg_end = open + close;
-                    let name = &r[..open];
-                    let args = &r[open + 1..arg_end];
-                    (name, Some(args), &r[arg_end + 1..])
+                    // R159：未闭合 `)` 宽容——args 取到串尾（`::slotted(foo` WPT
+                    // 期望合法零匹配；伪元素匹配恒 false 无需完整 args）。
+                    match r[open..].find(')') {
+                        Some(close) => {
+                            let arg_end = open + close;
+                            let name = &r[..open];
+                            let args = &r[open + 1..arg_end];
+                            (name, Some(args), &r[arg_end + 1..])
+                        }
+                        None => (&r[..open], Some(&r[open + 1..]), ""),
+                    }
                 }
                 None => {
                     let end = r.find(['#', '.', '[', ':']).unwrap_or(r.len());
@@ -1929,6 +2012,28 @@ mod zz_r156_tests {
             assert!(!crate::query::selector_is_valid(s), "invalid: {s:?}");
         }
         assert!(crate::query::selector_is_valid("#a [align=\"center\""));
+    }
+
+    // R159：伪元素（合法但零匹配）+ ns type selector（`*|div` 任意 / `|div` 空 ns）回归。
+    #[test]
+    fn zz_r159_pseudo_element_and_ns() {
+        let html = "<body><div id=\"a\" class=\"x\"><p id=\"p1\">t</p></div></body>";
+        let doc = parse_html(html);
+        let root = doc.root();
+        // 伪元素：合法解析 + 恒零匹配（一/二冒号 + slotted 未闭合括号）
+        assert!(crate::query::selector_is_valid("#a::before"));
+        assert!(crate::query::selector_is_valid("#a:before"));
+        assert!(crate::query::selector_is_valid("::slotted(foo"));
+        assert_eq!(doc.query_selector_all(root, "#a::before").len(), 0);
+        assert_eq!(doc.query_selector_all(root, "#a:before").len(), 0);
+        assert_eq!(doc.query_selector_all(root, "::slotted(foo").len(), 0);
+        // `*|div` 任意 ns：HTML 元素命中（HTMLNS 非空亦任意）
+        assert_eq!(doc.query_selector_all(root, "*|div").len(), 1);
+        assert_eq!(doc.query_selector_all(root, "*|p").len(), 1);
+        // `|div` 显式空 ns：HTML 解析产物 namespace 是 HTMLNS → 不命中
+        assert_eq!(doc.query_selector_all(root, "|div").len(), 0);
+        // `ns|div` 有名前缀仍非法（无 @namespace 声明表）
+        assert!(!crate::query::selector_is_valid("ns|div"));
     }
 
     // R157：`*` universal 回归——`<body>` 片段 querySelectorAll("*") 全命中。
