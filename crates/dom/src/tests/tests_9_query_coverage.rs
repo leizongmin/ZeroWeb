@@ -18,7 +18,12 @@ fn test_parse_empty_class_selector() {
 
 #[test]
 fn test_parse_unclosed_bracket() {
-    assert!(parse_simple_selector("[attr").is_none());
+    // R157（js-dom M4）：改为 WPT Selectors-API 宽容语义——浏览器对截断属性段
+    // 自动补 `]`（`#a [align="center"` 在 WPT validSelectors expect 命中），
+    // 故 `[attr` 解析为 Exists 而非 None。严格 CSS 的非法判定在
+    // selector_is_valid 词法层（`selector_lexically_valid`）保留（裸 `]` / `(` 不配对仍拒）。
+    let sel = parse_simple_selector("[attr");
+    assert!(sel.is_some(), "truncated attr auto-closes per Selectors-API leniency");
 }
 
 #[test]

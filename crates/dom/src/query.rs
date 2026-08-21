@@ -251,8 +251,11 @@ impl SimpleSelector {
     /// 由 [`Self::matches_full`] 配合 `Document` 计算的位置评估。仅当无伪类时 `matches` 与
     /// `matches_full` 等价；有伪类时调用方须用 `matches_full`（经 `Document::element_matches_selector`）。
     pub fn matches(&self, elem: &ElementData) -> bool {
-        // 标签名匹配
+        // 标签名匹配（R157：`*` universal——任意 tag 命中，spec selectors-4 §6.2
+        // universal selector；旧版把 "*" 当字面 tag 比对恒 miss，
+        // querySelectorAll("*") 全空——WPT Universal selector 簇根源）。
         if let Some(tag) = &self.tag
+            && tag != "*"
             && !elem.local_name().eq_ignore_ascii_case(tag)
         {
             return false;
@@ -573,8 +576,12 @@ fn attr_values_wellformed(s: &str) -> bool {
                     if m >= seg.len() {
                         return false; // `[a=]` 空值
                     }
-                    if seg[m] != b'"' && seg[m] != b'\'' {
-                        // 未引用值：到段尾/空白止，含内部空白非法
+                    // R157：**substring 族运算符**（~= ^= $= *= |=）的 unquoted 值
+                    // 内部空白不拒绝——WPT Selectors-API 用例（`[class*= banana ]`，
+                    // expect 命中）对 op/value 两端空白宽容，匹配端 trim 后语义等价。
+                    // 精确 `=`（Exact）保持严格（`[class= space unquoted ]` 在
+                    // invalidSelectors 列表——unquoted 精确值含空白非法）。
+                    if c == b'=' && seg[m] != b'"' && seg[m] != b'\'' {
                         let mut e = m;
                         while e < seg.len() && seg[e] != b']' {
                             if seg[e] == b' ' || seg[e] == b'\t' {
@@ -599,7 +606,24 @@ fn selector_lexically_valid(s: &str) -> bool {
     let bytes = s.as_bytes();
     let mut bracket = 0i32;
     let mut paren = 0i32;
-    for (idx, &b) in bytes.iter().enumerate() {
+    let mut i = 0usize;
+    while i < bytes.len() {
+        let b = bytes[i];
+        let idx = i;
+        // R157：CSS 转义对（`\x`——结构字符的转义形态 `\[`, `\]`, `\ `, `\.`）
+        // 整对跳过，不参与结构判定（`.test\.foo\[5\]bar` 的 `\[` 不是 attr 括号；
+        // hex 长转义 `\e9 ` 的空白终结符不构成词边界误判——按 `\`+1char 保守近似，
+        // hex 尾随空白仅理论歧义，WPT 形态全覆盖）。
+        if b == b'\\' {
+            i += 2;
+            continue;
+        }
+        i += 1;
+        // R157：`[...]` 属性上下文内的 `|`（`|=` 运算符）与 `.`/`#`（unquoted 值
+        // 字符，如 `.example.`）是合法形态——ns 前缀/class ident 校验只对元素
+        // 选择器段生效（bracket > 0 跳过这三类；`:` 伪类段保持全域校验——
+        // `[a=b]:not(.x)` 的 `::` 判定不受 attr 影响）。
+        let in_attr = bracket > 0;
         match b {
             b'[' => {
                 bracket += 1;
@@ -660,7 +684,7 @@ fn selector_lexically_valid(s: &str) -> bool {
             // R156：`.`/`#` 后必须跟 ident 首字符（字母/下划线/转义/非 ASCII——
             // `.5cm` 数字开头、`..test`/`.foo..quux` 连点、`.bar.` 尾点、裸 `.`/
             // `#` 全非法；括号内（`:not(.5cm)` 等）同规）。`-` 开头 ident 允许。
-            b'.' | b'#' => {
+            b'.' | b'#' if !in_attr => {
                 let nxt = bytes.get(idx + 1).copied().unwrap_or(0);
                 let ident_start =
                     nxt == b'-' || nxt == b'_' || nxt == b'\\' || nxt.is_ascii_alphabetic() || nxt >= 0x80;
@@ -669,10 +693,12 @@ fn selector_lexically_valid(s: &str) -> bool {
                 }
             }
             // `ns|type` 前缀 / `::` 伪元素（idx>0 防 `||` 误判——本引擎无 column 组合器）
-            b'|' => {
+            b'|' if !in_attr => {
                 if idx == 0 || bytes[idx - 1] == b'|' {
                     return false;
                 }
+                // `|=` / `~=` 等运算符形态由 attr 分支处理；此分支只管元素段的
+                // ns 前缀（`ns|div`）。
                 // R156：ns 前缀选择器（`ns|div` / `^|div` / `$|div`）——本引擎未实现
                 // namespace 声明（@namespace / Parses NS 变量），任何「| 前有内容」的
                 // 形态一律非法（`*|div` 的任意 ns 与 `|div` 的显式空 ns 除外——
@@ -699,7 +725,12 @@ fn selector_lexically_valid(s: &str) -> bool {
             _ => {}
         }
     }
-    if bracket != 0 || paren != 0 {
+    // R157：**尾部未闭合 `[` 宽容**（WPT validSelectors 的 `#a [align="center"`
+    // expect 命中——Selectors-API 层浏览器自动补 `]`；只有 `]` 多余（负 bracket，
+    // 已在循环内拒）或 `(` 不配对仍非法。`[` 尾余 = 段尾截断，parse 端 find(']')
+    // 返 None → 整链 None……须同步在 parse 端补 `]`（见 parse_simple_selector 的
+    // R157 补尾），此处只做词法放行。
+    if bracket < 0 || paren != 0 {
         return false;
     }
     // R156：`[attr= unquoted value ]` 未引用属性值含内部空白非法（spec 属性值
@@ -1069,6 +1100,54 @@ fn parse_attr_operator(content: &str) -> Option<(AttrOp, &str, &str)> {
         .map(|pos| (AttrOp::Exact, &content[..pos], &content[pos + 1..]))
 }
 
+/// R157（js-dom M4）：CSS 字符串/标识符**规范转义反解**（CSS Syntax §4.3.2
+/// "consume an escaped code point"）：`\` + 1–6 个十六进制数字 + 可选单个空白
+/// = 码点（`\e9`→`é`、`\0000e9 `→`é`）；`\` + 非十六进制字符 = 字面字符
+///（`\.`→`.`）。无效十六进制 → U+FFFD。供属性值反解（WPT Element-matches /
+/// ParentNode-querySelector 的 `[data-attr-value="\e9"]` 簇——旧版无反解，
+/// 转义值按原串比对全 miss）。
+pub(crate) fn unescape_css_string(s: &str) -> String {
+    if !s.contains('\\') {
+        return s.to_string();
+    }
+    let mut out = String::with_capacity(s.len());
+    let mut chars = s.chars().peekable();
+    while let Some(ch) = chars.next() {
+        if ch != '\\' {
+            out.push(ch);
+            continue;
+        }
+        // \ + 十六进制序列（最多 6 位）
+        let mut hex = String::new();
+        while hex.len() < 6 {
+            match chars.peek() {
+                Some(&c) if c.is_ascii_hexdigit() => {
+                    hex.push(c);
+                    chars.next();
+                }
+                _ => break,
+            }
+        }
+        if !hex.is_empty() {
+            let cp = u32::from_str_radix(&hex, 16).unwrap_or(0xFFFD);
+            out.push(char::from_u32(cp).unwrap_or('\u{FFFD}'));
+            // 可选单个消费空白（码点转义终结符——`\e9 x` 的空格被吃掉，`\e9  x` 留一个）
+            if matches!(
+                chars.peek(),
+                Some(' ') | Some('\t') | Some('\n') | Some('\r') | Some('\u{c}')
+            ) {
+                chars.next();
+            }
+        } else if let Some(&c) = chars.peek() {
+            // \ + 非十六进制字符 = 字面字符（\n 不换行——CSS 转义的 n 是字面 'n'）
+            out.push(c);
+            chars.next();
+        }
+        // 行尾裸 \ 由 CSS 字符串层处理（选择器值内不出现），此处忽略
+    }
+    out
+}
+
 /// 去除属性值两端一对匹配引号（`"` 或 `'`）。无引号或不成对则原样返回。
 /// 让 `[attr="value"]` / `[attr^='https']` 的带引号形式与裸 `[attr=value]` 等价。
 fn strip_attr_quotes(s: &str) -> String {
@@ -1206,21 +1285,11 @@ pub fn trim_ascii_ws(s: &str) -> &str {
 }
 
 pub(crate) fn unescape_css_ident(s: &str) -> String {
-    if !s.contains('\\') {
-        return s.to_string();
-    }
-    let mut out = String::with_capacity(s.len());
-    let mut chars = s.chars();
-    while let Some(ch) = chars.next() {
-        if ch == '\\' {
-            if let Some(next) = chars.next() {
-                out.push(next);
-            }
-        } else {
-            out.push(ch);
-        }
-    }
-    out
+    // R157：与字符串值同源的规范反解（十六进制码点转义）——`#t\\e9` 命中 id "té"
+    //（spec CSS Syntax escaped code point；旧逐字符版把 `\\e9` 反解成 "e9"）。
+    // wire 侧 escape_css_ident 只转义非 [a-zA-Z0-9_-] 字符（均非 ASCII 十六进制
+    // 数字），hex 升级对既有 wire 对（`\.`→`.`）向后兼容。
+    unescape_css_string(s)
 }
 
 /// 解析单个简单选择器。
@@ -1303,15 +1372,27 @@ pub fn parse_simple_selector(selector: &str) -> Option<SimpleSelector> {
         } else {
             let r = rest.strip_prefix('[')?;
             // 属性选择器
-            let end_bracket = r.find(']')?;
+            // R157：尾部未闭合 `[` 宽容（WPT validSelectors `#a [align="center"`
+            // expect 命中——Selectors-API 浏览器自动补 `]`；词法层已放行尾余）。
+            let end_bracket = match r.find(']') {
+                Some(pos) => pos,
+                // R157：截断段（前导 `[` 已 strip，`r` 内无 `]`）宽容到串尾——
+                // Selectors-API 浏览器自动补 `]` 语义。
+                None => r.len(),
+            };
             let attr_content = &r[..end_bracket];
 
             // 属性运算符检测：两字符运算符（~= ^= $= *= |=）须先于单字符 `=` 检测，
             // 否则 `[attr^=v]` 的 `=` 会先命中单字符分支。值去引号（`[a="v"]`→`v`）。
             // 返回 (运算符, name, value)——运算符为 None 表示 `[attr]` 仅存在。
             let attr_sel = if let Some((op, name, value)) = parse_attr_operator(attr_content) {
-                let name = name.trim().to_string();
-                let value = strip_attr_quotes(value.trim());
+                // R157：`*|` any-ns 前缀剥离（WPT `[TiTlE]` case-insensitive / `[*|TiTlE]`
+                // 形态——本引擎属性无 ns 域，`*|name` 等价 name；ns|name 前缀已在
+                // 词法层拒）。
+                let name = name.trim().strip_prefix("*|").unwrap_or(name.trim());
+                let name = unescape_css_string(name);
+                // R157：值反解 CSS 转义（先去引号——转义在引号内层）
+                let value = unescape_css_string(&strip_attr_quotes(value.trim()));
                 let matcher = match op {
                     AttrOp::Includes => AttributeMatcher::Includes(value),
                     AttrOp::Exact => AttributeMatcher::Exact(value),
@@ -1323,13 +1404,18 @@ pub fn parse_simple_selector(selector: &str) -> Option<SimpleSelector> {
                 AttributeSelector { name, matcher }
             } else {
                 AttributeSelector {
-                    name: attr_content.trim().to_string(),
+                    name: unescape_css_string(attr_content.trim().strip_prefix("*|").unwrap_or(attr_content.trim())),
                     matcher: AttributeMatcher::Exists,
                 }
             };
 
             result.attribute = Some(attr_sel);
-            rest = &r[end_bracket + 1..];
+            // R157：截断段（end_bracket = r.len()）rest 归空；正常路径跳过 `]`。
+            rest = if end_bracket < r.len() {
+                &r[end_bracket + 1..]
+            } else {
+                ""
+            };
         }
     }
 
@@ -1757,6 +1843,79 @@ mod zz_r156_tests {
             assert!(!crate::query::selector_is_valid(s), "should be INVALID: {s:?}");
         }
         let valid = ["div", "#a1+div", ".x.y", "[a=b]", "* ", "a , b", "div:not(.x)"];
+        for s in valid {
+            assert!(crate::query::selector_is_valid(s), "should be VALID: {s:?}");
+        }
+    }
+
+    // R157（js-dom M4）：属性值 CSS 转义反解回归（`[data-x="t\\e9"]`——`\\e9` 是
+    // 十六进制码点转义 = "é"；旧版无反解按原串比对全 miss，WPT Element-matches /
+    // ParentNode-querySelector 的 escaped value 簇根源）。运算符形态（~=/|=/^=/$=/*=
+    // /quoted/unquoted）同步覆盖。
+    #[test]
+    fn zz_r157_attr_escaped_values() {
+        let html = "<body><div id=\"d1\" title=\"a b c\" lang=\"en-US\" data-x=\"té\" data-y=\"é x\"></div><a id=\"a1\" href=\"https://example.com/x?y=z\"></a></body>";
+        let doc = parse_html(html);
+        let root = doc.root();
+        // 转义值（引号内）：\e9 → é
+        assert_eq!(doc.query_selector_all(root, "[data-x=\"t\\e9\"]").len(), 1);
+        // 码点转义 + 空白终结符（\0000e9 后第一个空格被吃掉；"é x" 需双空格）
+        assert_eq!(doc.query_selector_all(root, "[data-y=\"\\0000e9  x\"]").len(), 1);
+        // \ + 非十六进制 = 字面字符（\e9 之外的形态：\\2e = '.'）
+        assert_eq!(
+            doc.query_selector_all(root, "[data-x=\"t\\e9\"],[href*=example]").len(),
+            2
+        );
+        // 运算符族形态回归
+        assert_eq!(doc.query_selector_all(root, "[title~=b]").len(), 1);
+        assert_eq!(doc.query_selector_all(root, "[title~=\"b\"]").len(), 1);
+        assert_eq!(doc.query_selector_all(root, "[lang|=en]").len(), 1);
+        assert_eq!(doc.query_selector_all(root, "[href*=example]").len(), 1);
+        assert_eq!(doc.query_selector_all(root, "[href^=\"https:\"]").len(), 1);
+        assert_eq!(doc.query_selector_all(root, "[href$=z]").len(), 1);
+        assert_eq!(doc.query_selector_all(root, "[data-x=\"té\"]").len(), 1);
+    }
+
+    // R157：`*` universal 回归——`<body>` 片段 querySelectorAll("*") 全命中。
+    #[test]
+    fn zz_r157_universal_star() {
+        let html = "<body><div id=\"universal\"><p id=\"p1\">x</p></div></body>";
+        let doc = parse_html(html);
+        let root = doc.root();
+        // `<body>` 片段解析补全 html/body 等（html5ever 容错）——计数用包含式断言
+        let star_hits = doc.query_selector_all(root, "*").len();
+        assert!(star_hits >= 4, "universal star hits {} >= 4", star_hits);
+        assert_eq!(doc.query_selector_all(root, "div *").len(), 1, "descendant star");
+        assert_eq!(doc.query_selector_all(root, "#universal *").len(), 1, "scoped star");
+    }
+
+    #[test]
+    fn zz_r157_unclosed_and_star_pipe() {
+        let html = "<body><div id=\"a\" title=\"t\"><div id=\"a1\" align=\"center\"></div></div></body>";
+        let doc = parse_html(html);
+        let root = doc.root();
+        assert!(crate::query::selector_is_valid("#a [align=\"center\""));
+        assert_eq!(
+            doc.query_selector_all(root, "#a [align=\"center\"").len(),
+            1,
+            "unclosed auto-close"
+        );
+        assert_eq!(doc.query_selector_all(root, "[*|TiTlE]").len(), 1, "star-pipe");
+        assert_eq!(doc.query_selector_all(root, "[TiTlE]").len(), 1, "case-insensitive");
+    }
+
+    #[test]
+    fn zz_r157_lexical_false_positives() {
+        // R157：词法校验误杀回归——`|=` 运算符（attr 内 `|` 非命名空间前缀）与
+        // attr 值内的 `.`（`.example.` 是合法 unquoted 值）。
+        let valid = [
+            "[lang|=\"fr\"]",
+            "#a[lang|=en]",
+            "#attr-contains a[href*=\".example.\"]",
+            "[href*=example]",
+            "[class~=foo]",
+            "[lang|=en-US]",
+        ];
         for s in valid {
             assert!(crate::query::selector_is_valid(s), "should be VALID: {s:?}");
         }
