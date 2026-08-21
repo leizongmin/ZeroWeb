@@ -442,7 +442,18 @@ fn test_property_supported_font_feature_properties() {
 #[test]
 fn test_property_supported_transform() {
     assert!(is_property_supported("transform", "translate(10px, 20px)"));
+    assert!(is_property_supported("transform-origin", "left 10px"));
+    assert!(is_property_supported("perspective", "500px"));
+    assert!(is_property_supported("perspective-origin", "top 25%"));
+    assert!(is_property_supported("transform-style", "preserve-3d"));
+    assert!(is_property_supported("backface-visibility", "hidden"));
+
     assert!(!is_property_supported("transform", "invalid-transform"));
+    assert!(!is_property_supported("transform-origin", "left right"));
+    assert!(!is_property_supported("perspective", "50%"));
+    assert!(!is_property_supported("perspective-origin", "30px bogus"));
+    assert!(!is_property_supported("transform-style", "preserve-3d flat"));
+    assert!(!is_property_supported("backface-visibility", "collapse"));
 }
 
 #[test]

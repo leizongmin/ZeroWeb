@@ -69,6 +69,11 @@ pub(super) fn extended_visual_or_layout_property_supported(property: &str, value
         "border-image-width" => values::parse_border_image_width(value).is_some(),
         "border-image-repeat" => values::parse_border_image_repeat(value).is_some(),
         "border-image-outset" => values::parse_border_image_outset(value).is_some(),
+        // https://drafts.csswg.org/css-transforms-1/#transform-origin-property
+        "transform-origin" | "perspective-origin" => origin_pair_supported(value),
+        "perspective" => perspective_supported(value),
+        "transform-style" => matches!(value.trim().to_ascii_lowercase().as_str(), "flat" | "preserve-3d"),
+        "backface-visibility" => matches!(value.trim().to_ascii_lowercase().as_str(), "visible" | "hidden"),
         // https://drafts.csswg.org/css-overscroll-1/#overscroll-behavior-properties
         "overscroll-behavior-x" | "overscroll-behavior-y" => values::parse_overscroll_behavior(value).is_some(),
         // https://w3c.github.io/pointerevents/#the-touch-action-css-property
@@ -95,4 +100,129 @@ fn columns_supported(value: &str) -> bool {
         }
         _ => false,
     }
+}
+
+fn origin_pair_supported(value: &str) -> bool {
+    let parts: Vec<&str> = value.split_whitespace().collect();
+    match parts.as_slice() {
+        [single] => origin_component_kind(single).is_some(),
+        [first, second] => {
+            let first = origin_component_kind(first);
+            let second = origin_component_kind(second);
+            matches!(
+                (first, second),
+                (
+                    Some(OriginComponentKind::Horizontal),
+                    Some(OriginComponentKind::Vertical)
+                ) | (
+                    Some(OriginComponentKind::Horizontal),
+                    Some(OriginComponentKind::LengthPercentage)
+                ) | (
+                    Some(OriginComponentKind::LengthPercentage),
+                    Some(OriginComponentKind::Vertical)
+                ) | (
+                    Some(OriginComponentKind::Vertical),
+                    Some(OriginComponentKind::Horizontal)
+                ) | (
+                    Some(OriginComponentKind::Vertical),
+                    Some(OriginComponentKind::LengthPercentage)
+                ) | (Some(OriginComponentKind::Horizontal), Some(OriginComponentKind::Center))
+                    | (Some(OriginComponentKind::Center), Some(OriginComponentKind::Vertical))
+                    | (Some(OriginComponentKind::Center), Some(OriginComponentKind::Horizontal))
+                    | (Some(OriginComponentKind::Vertical), Some(OriginComponentKind::Center))
+                    | (
+                        Some(OriginComponentKind::LengthPercentage),
+                        Some(OriginComponentKind::LengthPercentage)
+                    )
+                    | (
+                        Some(OriginComponentKind::LengthPercentage),
+                        Some(OriginComponentKind::Center)
+                    )
+                    | (
+                        Some(OriginComponentKind::Center),
+                        Some(OriginComponentKind::LengthPercentage)
+                    )
+                    | (Some(OriginComponentKind::Center), Some(OriginComponentKind::Center))
+            )
+        }
+        _ => false,
+    }
+}
+
+fn perspective_supported(value: &str) -> bool {
+    let value = value.trim();
+    if value.eq_ignore_ascii_case("none") {
+        return true;
+    }
+    let Some(length) = parse_length_or_math(value) else {
+        return false;
+    };
+    match length {
+        values::LengthValue::Px(v)
+        | values::LengthValue::Em(v)
+        | values::LengthValue::Ex(v)
+        | values::LengthValue::Rex(v)
+        | values::LengthValue::Cap(v)
+        | values::LengthValue::Rcap(v)
+        | values::LengthValue::Rem(v)
+        | values::LengthValue::Vh(v)
+        | values::LengthValue::Vw(v)
+        | values::LengthValue::Vmin(v)
+        | values::LengthValue::Vmax(v)
+        | values::LengthValue::Ch(v)
+        | values::LengthValue::Rch(v)
+        | values::LengthValue::Ic(v)
+        | values::LengthValue::Ric(v) => v.is_finite() && v >= 0.0,
+        values::LengthValue::Calc(_) => true,
+        _ => false,
+    }
+}
+
+#[derive(Clone, Copy)]
+enum OriginComponentKind {
+    Horizontal,
+    Vertical,
+    Center,
+    LengthPercentage,
+}
+
+fn origin_component_kind(value: &str) -> Option<OriginComponentKind> {
+    match value.trim().to_ascii_lowercase().as_str() {
+        "left" | "right" => Some(OriginComponentKind::Horizontal),
+        "top" | "bottom" => Some(OriginComponentKind::Vertical),
+        "center" => Some(OriginComponentKind::Center),
+        "thin" | "medium" | "thick" | "auto" | "min-content" | "max-content" | "fit-content" => None,
+        _ => match parse_length_or_math(value)? {
+            values::LengthValue::Px(v)
+            | values::LengthValue::Em(v)
+            | values::LengthValue::Ex(v)
+            | values::LengthValue::Rex(v)
+            | values::LengthValue::Cap(v)
+            | values::LengthValue::Rcap(v)
+            | values::LengthValue::Rem(v)
+            | values::LengthValue::Vh(v)
+            | values::LengthValue::Vw(v)
+            | values::LengthValue::Vmin(v)
+            | values::LengthValue::Vmax(v)
+            | values::LengthValue::Ch(v)
+            | values::LengthValue::Rch(v)
+            | values::LengthValue::Ic(v)
+            | values::LengthValue::Ric(v)
+            | values::LengthValue::Percentage(v)
+                if v.is_finite() =>
+            {
+                Some(OriginComponentKind::LengthPercentage)
+            }
+            values::LengthValue::Calc(_) => Some(OriginComponentKind::LengthPercentage),
+            _ => None,
+        },
+    }
+}
+
+fn parse_length_or_math(value: &str) -> Option<values::LengthValue> {
+    values::parse_length(value).or_else(|| {
+        values::parse_math_function(value)
+            .map(Box::new)
+            .map(values::LengthValue::Calc)
+    })
 }
