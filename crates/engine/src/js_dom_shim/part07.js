@@ -185,6 +185,38 @@
     });
   };
 
+  Cache.prototype.add = function (request) {
+    var cache = this;
+    try {
+      var cacheRequest = request instanceof Request ? request : new Request(request);
+      if (cacheRequest.method !== 'GET') {
+        return Promise.reject(new TypeError('Cache.add only supports GET requests'));
+      }
+      return fetch(cacheRequest.clone()).then(function (response) {
+        if (!response || !response.ok) {
+          throw new TypeError('Cache.add fetch response is not ok');
+        }
+        return cache.put(cacheRequest, response);
+      });
+    } catch (error) {
+      return Promise.reject(error);
+    }
+  };
+
+  Cache.prototype.addAll = function (requests) {
+    var cache = this;
+    try {
+      var list = Array.prototype.slice.call(requests);
+      return Promise.all(list.map(function (request) {
+        return cache.add(request);
+      })).then(function () {
+        return undefined;
+      });
+    } catch (error) {
+      return Promise.reject(error);
+    }
+  };
+
   Cache.prototype.delete = function (request, options) {
     var cache = this;
     return new Promise(function (resolve, reject) {

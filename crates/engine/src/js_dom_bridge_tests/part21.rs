@@ -393,6 +393,105 @@ fn test_cache_api_page_shim_query_options_wire() {
     }));
 }
 
+/// Cache.add/addAll should fetch GET requests and store the fetched responses
+/// through the existing Cache.put host bridge.
+#[test]
+fn test_cache_api_page_shim_add_and_add_all_wire() {
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let mut sandbox = V8Sandbox::with_config(zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    })
+    .unwrap();
+    let fetches: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
+    let fetches_for_callback = fetches.clone();
+    sandbox.register_callback(
+        "__zw_fetch",
+        Box::new(move |args| {
+            let method = args.get(1).cloned().unwrap_or_default();
+            let url = args.get(2).cloned().unwrap_or_default();
+            fetches_for_callback.lock().unwrap().push(format!("{method}:{url}"));
+            match url.as_str() {
+                "https://example.com/a.txt" => "__zwfr:200\x1fOK\x1fcontent-type\x1etext/plain\x1falpha".to_string(),
+                "https://example.com/b.txt" => "__zwfr:200\x1fOK\x1fcontent-type\x1etext/plain\x1fbeta".to_string(),
+                "https://example.com/missing.txt" => "__zwfr:404\x1fNot Found\x1f\x1fmissing".to_string(),
+                _ => "__zw_fetch_error:not-found".to_string(),
+            }
+        }),
+    );
+
+    let puts: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
+    let puts_for_callback = puts.clone();
+    sandbox.register_callback(
+        "__zw_cache_storage",
+        Box::new(move |args| {
+            let request = args.first().cloned().unwrap_or_default();
+            puts_for_callback.lock().unwrap().push(request.clone());
+            if request.contains(r#""op":"open""#) {
+                return r#"__zw_cache_ok:{"name":"assets"}"#.to_string();
+            }
+            if request.contains(r#""op":"put""#) {
+                return r#"__zw_cache_ok:{"ok":true}"#.to_string();
+            }
+            "__zw_cache_error:unexpected request".to_string()
+        }),
+    );
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new("<html><body></body></html>".to_string()));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("https://example.com/page.html".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+
+    sandbox
+        .execute(
+            "globalThis.__cacheAddDone = 'pending';\
+             caches.open('assets').then(function (cache) {\
+               return cache.add('https://example.com/a.txt').then(function () {\
+                 return cache.addAll(['https://example.com/b.txt']);\
+               }).then(function () {\
+                 return cache.add(new Request('https://example.com/post.txt', {method: 'POST'}));\
+               }).then(function () {\
+                 globalThis.__cacheAddDone = 'post-resolved';\
+               }, function (error) {\
+                 globalThis.__cacheAddDone = String(error instanceof TypeError) + ':' + String(error.message);\
+               });\
+             }, function (error) {\
+               globalThis.__cacheAddDone = 'open-error:' + String(error && error.message ? error.message : error);\
+             });",
+        )
+        .unwrap();
+    for i in 0..8 {
+        sandbox.execute(&format!("globalThis.__cacheAddPump = {i};")).unwrap();
+    }
+    assert_eq!(
+        sandbox.execute("globalThis.__cacheAddDone").unwrap().value,
+        "true:Cache.add only supports GET requests"
+    );
+
+    assert_eq!(
+        *fetches.lock().unwrap(),
+        vec![
+            "GET:https://example.com/a.txt".to_string(),
+            "GET:https://example.com/b.txt".to_string(),
+        ]
+    );
+    let puts = puts.lock().unwrap();
+    assert!(puts.iter().any(|request| {
+        request.contains(r#""op":"put""#)
+            && request.contains(r#""url":"https://example.com/a.txt""#)
+            && request.contains(r#""body":"alpha""#)
+    }));
+    assert!(puts.iter().any(|request| {
+        request.contains(r#""op":"put""#)
+            && request.contains(r#""url":"https://example.com/b.txt""#)
+            && request.contains(r#""body":"beta""#)
+    }));
+    assert!(!puts.iter().any(|request| request.contains("post.txt")));
+}
+
 /// Cache API shim 在没有宿主 bridge 时应 reject，而不是悬挂 Promise。
 #[test]
 fn test_cache_api_page_shim_rejects_without_host_bridge() {

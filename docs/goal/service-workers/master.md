@@ -2,7 +2,7 @@
 
 **入口文档**: [../service-workers.md](../service-workers.md)
 **创建日期**: 2026-08-17（goal 拆分 bootstrap）
-**最后更新**: 2026-08-22（SW runtime CacheQueryOptions ignoreSearch/ignoreMethod 接线完成；WPT fetch/cache 基线待接入）
+**最后更新**: 2026-08-22（页面 Cache.add/addAll sibling 支撑落地；SW fetch/cache WPT 基线待接入）
 
 ---
 
@@ -14,9 +14,11 @@ M0 启动门禁解除；M1 core WPT 已收敛，M2 已完成 fetch runtime/manag
 browser-process 页面 fetch 路由和 Service Worker `caches.match()` / `caches.open()` /
 `Cache.put()` / `Cache.matchAll()` / `Cache.keys()` 桥接，并已透传 `ignoreSearch` /
 `ignoreMethod` 查询选项；WPT fetch/cache 基线仍待后续切片，M3 控制语义继续推进。兄弟目标
-`storage-cache-api` 已完成 WebView/in-process 页面 `caches.open()` + `Cache.put()/match()`
-初始桥接；Service Worker runtime 自身的写入面已通过 browser-owned registration
-`CacheStorage` 接入。
+`storage-cache-api` 已完成 WebView/in-process 页面 `caches.open()` + `Cache.put()/match()` /
+`Cache.matchAll()` / `Cache.keys()` 与页面 `Cache.add()` / `Cache.addAll()` GET fetch→store
+链路。该 sibling 进展不等同于 worker-global `fetch()` 或 SW runtime `Cache.add/addAll`
+完成；Service Worker runtime 自身的写入面目前仍是 browser-owned registration
+`CacheStorage` 的 `open/put/match/matchAll/keys`。
 
 **M0 推荐决策**：抽取 `zero-script-sandbox::WorkerRuntime` 的独立线程/引擎/看门狗核心，
 新增 typed `ServiceWorkerRuntime`；production 由 browser process 的
@@ -219,7 +221,7 @@ browser-process 页面 fetch 路由和 Service Worker `caches.match()` / `caches
 |---|------|------|
 | S1 | SW 执行环境架构与独立 runtime | ✅ production browser owner + renderer discovery 真链路 |
 | S2 | scriptURL 不下载执行 | ✅ production navigator 经 browser fetch/evaluate |
-| S3 | fetch 拦截为零 | 🚧 M2-2 production 页面 fetch respondWith/pass-through 已接入；M2-3/4/5/6 `caches.match()`、`caches.open()`、`Cache.put()`、`Cache.matchAll()`、`Cache.keys()` 与 `ignoreSearch`/`ignoreMethod` 桥接已接入；WPT fetch/cache 基线未完成 |
+| S3 | fetch 拦截为零 | 🚧 M2-2 production 页面 fetch respondWith/pass-through 已接入；M2-3/4/5/6 `caches.match()`、`caches.open()`、`Cache.put()`、`Cache.matchAll()`、`Cache.keys()` 与 `ignoreSearch`/`ignoreMethod` 桥接已接入；worker-global `fetch()`、SW runtime `Cache.add/addAll` 与 WPT fetch/cache 基线未完成 |
 | S4 | 事件为 setTimeout 模拟 | ✅ manager transition log 为状态源；timer 只执行页面 task 投影 |
 | S5 | WPT 覆盖为零 | ✅ core 34/34 case、156/156 Pass、0 Fail/Timeout/Unsupported |
 

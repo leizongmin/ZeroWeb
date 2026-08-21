@@ -1,3 +1,7 @@
+use std::sync::Arc;
+
+use zero_engine::fetch_bridge::FetchResponse;
+
 use crate::{IndexedDbOwner, WebView, WebViewConfig};
 
 fn webview_with_owner(owner: IndexedDbOwner, page_url: &str) -> WebView {
@@ -126,6 +130,84 @@ fn page_cache_api_query_options_match_delete_and_keys() {
     assert_eq!(
         webview.execute_script("globalThis.__cacheOptionsResult").unwrap(),
         "true|true|true|1|https://cache.example/app/data?version=1|true|1|https://cache.example/app/other?version=1|cached text"
+    );
+}
+
+#[test]
+fn page_cache_api_add_and_add_all_fetch_then_store() {
+    let config = WebViewConfig {
+        fetch_handler: Some(Arc::new(|request| match request.url.as_str() {
+            "https://cache.example/app/add-a.txt" => Ok(FetchResponse {
+                status: 200,
+                status_text: "OK".to_string(),
+                headers: vec![("content-type".to_string(), "text/plain".to_string())],
+                body: "alpha".to_string(),
+                body_bytes: None,
+            }),
+            "https://cache.example/app/add-b.txt" => Ok(FetchResponse {
+                status: 200,
+                status_text: "OK".to_string(),
+                headers: vec![("content-type".to_string(), "text/plain".to_string())],
+                body: "beta".to_string(),
+                body_bytes: None,
+            }),
+            "https://cache.example/app/missing.txt" => Ok(FetchResponse {
+                status: 404,
+                status_text: "Not Found".to_string(),
+                headers: Vec::new(),
+                body: "missing".to_string(),
+                body_bytes: None,
+            }),
+            other => Err(format!("unexpected fetch URL: {other}")),
+        })),
+        ..Default::default()
+    };
+    let mut webview = WebView::new_with_indexed_db_owner(config, IndexedDbOwner::in_memory());
+    webview.prepare_document_state("https://cache.example/app/page.html");
+    webview.load_html(
+        r#"
+        <html><body><script>
+            (async function () {
+              try {
+                const cache = await caches.open('assets');
+                await cache.add('https://cache.example/app/add-a.txt');
+                await cache.addAll(['https://cache.example/app/add-b.txt']);
+                const one = await cache.match('https://cache.example/app/add-a.txt');
+                const two = await cache.match('https://cache.example/app/add-b.txt');
+                let postRejected = 'no';
+                try {
+                  await cache.add(new Request('https://cache.example/app/post.txt', {method: 'POST'}));
+                } catch (error) {
+                  postRejected = String(error instanceof TypeError) + ':' + String(error.message);
+                }
+                let missingRejected = 'no';
+                try {
+                  await cache.add('https://cache.example/app/missing.txt');
+                } catch (error) {
+                  missingRejected = String(error instanceof TypeError) + ':' + String(error.message);
+                }
+                const missing = await cache.match('https://cache.example/app/missing.txt');
+                globalThis.__cacheAddResult = [
+                  await one.text(),
+                  one.headers.get('content-type'),
+                  await two.text(),
+                  postRejected,
+                  missingRejected,
+                  String(missing === undefined)
+                ].join('|');
+              } catch (error) {
+                globalThis.__cacheAddResult = 'error:' + String(error && error.message ? error.message : error);
+              }
+            })();
+        </script></body></html>
+        "#,
+        None,
+    );
+    webview.run_page_scripts_strict().unwrap();
+
+    assert_eq!(
+        webview.execute_script("globalThis.__cacheAddResult").unwrap(),
+        "alpha|text/plain|beta|true:Cache.add only supports GET requests|true:Cache.add fetch response is not ok|true"
     );
 }
 
