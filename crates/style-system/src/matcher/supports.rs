@@ -60,7 +60,8 @@ pub(super) fn extended_visual_or_layout_property_supported(property: &str, value
         | "contain-intrinsic-inline-size"
         | "contain-intrinsic-block-size" => contain_intrinsic_longhand_supported(value),
         // https://drafts.csswg.org/css-align-3/#justify-items-property
-        "justify-items" => justify_items_supported(value),
+        // https://drafts.csswg.org/css-align-3/#justify-self-property
+        "justify-items" | "justify-self" => justify_items_supported(value),
         // https://www.w3.org/TR/css-position-3/#propdef-z-index
         "z-index" => crate::property::parse_z_index(value).is_some(),
         // https://drafts.csswg.org/css-sizing-4/#aspect-ratio

@@ -1416,9 +1416,7 @@ fn is_property_supported(property: &str, value: &str) -> bool {
         "flex-grow" | "flex-shrink" => trimmed.parse::<f64>().is_ok_and(|v| v.is_finite() && v >= 0.0),
         "flex-basis" => crate::property::parse_flex_basis(trimmed).is_some(),
         "order" => trimmed.parse::<i32>().is_ok(),
-        "justify-content" | "align-items" | "align-content" | "align-self" | "justify-self" => {
-            parse_alignment(trimmed).is_some()
-        }
+        "justify-content" | "align-items" | "align-content" | "align-self" => parse_alignment(trimmed).is_some(),
         // https://drafts.csswg.org/css-grid-2/#line-placement
         "grid-column-start" | "grid-column-end" | "grid-row-start" | "grid-row-end" => {
             crate::property::parse_grid_line(trimmed).is_some()
