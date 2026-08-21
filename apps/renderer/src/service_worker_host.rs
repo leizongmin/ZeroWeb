@@ -15,9 +15,9 @@ use std::sync::mpsc::{self, Sender, TryRecvError};
 use std::time::Duration;
 
 use zero_protocol::message::{
-    ServiceWorkerFetchResponseWire, ServiceWorkerHostCommand, ServiceWorkerHostCommandParams, ServiceWorkerHostEvent,
-    ServiceWorkerHostEventParams, ServiceWorkerLifecycleWire, ServiceWorkerScriptErrorKindWire,
-    ServiceWorkerScriptTypeWire,
+    ServiceWorkerFetchRequestWire, ServiceWorkerFetchResponseWire, ServiceWorkerHostCommand,
+    ServiceWorkerHostCommandParams, ServiceWorkerHostEvent, ServiceWorkerHostEventParams, ServiceWorkerLifecycleWire,
+    ServiceWorkerScriptErrorKindWire, ServiceWorkerScriptTypeWire,
 };
 use zero_protocol::transport::PipeTransport;
 use zero_protocol::{IpcChannel, IpcMessage, IpcMessageKind};
@@ -132,18 +132,9 @@ impl HostThread {
                     target_port_id,
                 },
             ),
-            ServiceWorkerHostCommand::DispatchFetch { event_id, request } => self.dispatch_fetch(
-                params.registration_id,
-                event_id,
-                ServiceWorkerFetchRequest {
-                    url: request.url,
-                    method: request.method,
-                    headers: request.headers,
-                    body: request.body,
-                    client_id: request.client_id,
-                    resulting_client_id: request.resulting_client_id,
-                },
-            ),
+            ServiceWorkerHostCommand::DispatchFetch { event_id, request } => {
+                self.dispatch_fetch(params.registration_id, event_id, fetch_request_from_wire(request));
+            }
             ServiceWorkerHostCommand::CompleteImportScripts { request_id, result } => {
                 self.complete_import_scripts(params.registration_id, request_id, result);
             }
@@ -187,6 +178,13 @@ impl HostThread {
                             focused: client.focused,
                         })
                     }),
+                );
+            }
+            ServiceWorkerHostCommand::CompleteCacheMatch { request_id, result } => {
+                self.complete_cache_match(
+                    params.registration_id,
+                    request_id,
+                    result.map(|response| response.map(fetch_response_from_wire)),
                 );
             }
             ServiceWorkerHostCommand::Shutdown => {
@@ -349,12 +347,49 @@ impl HostThread {
             tracing::warn!("Service Worker clients response failed: {error}");
         }
     }
+
+    fn complete_cache_match(
+        &mut self,
+        registration_id: u64,
+        request_id: u64,
+        result: Result<Option<zero_script_sandbox::ServiceWorkerFetchResponse>, String>,
+    ) {
+        let Some(runtime) = self.runtimes.get(&registration_id) else {
+            tracing::warn!("Service Worker cache response for unknown registration {registration_id}");
+            return;
+        };
+        if let Err(error) = runtime.complete_cache_match(request_id, result) {
+            tracing::warn!("Service Worker cache response failed: {error}");
+        }
+    }
 }
 
 fn wire_phase(phase: ServiceWorkerLifecycleWire) -> ServiceWorkerLifecyclePhase {
     match phase {
         ServiceWorkerLifecycleWire::Install => ServiceWorkerLifecyclePhase::Install,
         ServiceWorkerLifecycleWire::Activate => ServiceWorkerLifecyclePhase::Activate,
+    }
+}
+
+fn fetch_request_from_wire(request: ServiceWorkerFetchRequestWire) -> ServiceWorkerFetchRequest {
+    ServiceWorkerFetchRequest {
+        url: request.url,
+        method: request.method,
+        headers: request.headers,
+        body: request.body,
+        client_id: request.client_id,
+        resulting_client_id: request.resulting_client_id,
+    }
+}
+
+fn fetch_response_from_wire(
+    response: ServiceWorkerFetchResponseWire,
+) -> zero_script_sandbox::ServiceWorkerFetchResponse {
+    zero_script_sandbox::ServiceWorkerFetchResponse {
+        status: response.status,
+        status_text: response.status_text,
+        headers: response.headers,
+        body: response.body,
     }
 }
 
@@ -436,6 +471,19 @@ fn host_event(event: ServiceWorkerEvent) -> ServiceWorkerHostEvent {
             }),
             message,
         },
+        ServiceWorkerEvent::CacheMatchRequested { request_id, request } => {
+            ServiceWorkerHostEvent::CacheMatchRequested {
+                request_id,
+                request: ServiceWorkerFetchRequestWire {
+                    url: request.url,
+                    method: request.method,
+                    headers: request.headers,
+                    body: request.body,
+                    client_id: request.client_id,
+                    resulting_client_id: request.resulting_client_id,
+                },
+            }
+        }
         ServiceWorkerEvent::ImportScriptsRequested { request_id, specifiers } => {
             ServiceWorkerHostEvent::ImportScriptsRequested { request_id, specifiers }
         }
@@ -761,6 +809,74 @@ mod tests {
                 assert_eq!(response.status, 202);
                 assert_eq!(response.headers, [("x-test".into(), "yes".into())]);
                 assert_eq!(response.body, "from-sw");
+                assert!(message.is_empty());
+            }
+            other => panic!("expected FetchSettled response, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn cache_match_round_trips_through_renderer_host() {
+        let (host, mut transport) = spawn_host();
+        host.handle_command(evaluate_command(
+            15,
+            "addEventListener('fetch', event => {
+               event.respondWith(caches.match(event.request));
+             });",
+        ));
+        let evaluated = wait_for_event(&mut transport);
+        assert!(
+            matches!(evaluated.event, ServiceWorkerHostEvent::Evaluated { .. }),
+            "{:?}",
+            evaluated.event
+        );
+
+        host.handle_command(ServiceWorkerHostCommandParams {
+            registration_id: 15,
+            command: ServiceWorkerHostCommand::DispatchFetch {
+                event_id: 23,
+                request: zero_protocol::message::ServiceWorkerFetchRequestWire {
+                    url: "https://example.test/app/cached".into(),
+                    method: "GET".into(),
+                    headers: vec![("accept".into(), "text/plain".into())],
+                    body: None,
+                    client_id: Some("client-1".into()),
+                    resulting_client_id: None,
+                },
+            },
+        });
+        let cache_request = wait_for_event(&mut transport);
+        let ServiceWorkerHostEvent::CacheMatchRequested { request_id, request } = cache_request.event else {
+            panic!("expected CacheMatchRequested, got {:?}", cache_request.event);
+        };
+        assert_eq!(request.url, "https://example.test/app/cached");
+        assert_eq!(request.method, "GET");
+
+        host.handle_command(ServiceWorkerHostCommandParams {
+            registration_id: 15,
+            command: ServiceWorkerHostCommand::CompleteCacheMatch {
+                request_id,
+                result: Ok(Some(ServiceWorkerFetchResponseWire {
+                    status: 200,
+                    status_text: "OK".into(),
+                    headers: vec![("x-cache".into(), "hit".into())],
+                    body: "cached-body".into(),
+                })),
+            },
+        });
+        let settled = wait_for_event(&mut transport);
+        match settled.event {
+            ServiceWorkerHostEvent::FetchSettled {
+                event_id,
+                request_url,
+                response: Some(response),
+                message,
+            } => {
+                assert_eq!(event_id, 23);
+                assert_eq!(request_url, "https://example.test/app/cached");
+                assert_eq!(response.status, 200);
+                assert_eq!(response.headers, [("x-cache".into(), "hit".into())]);
+                assert_eq!(response.body, "cached-body");
                 assert!(message.is_empty());
             }
             other => panic!("expected FetchSettled response, got {other:?}"),

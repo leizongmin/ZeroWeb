@@ -2,7 +2,7 @@
 
 **入口文档**: [../service-workers.md](../service-workers.md)
 **创建日期**: 2026-08-17（goal 拆分 bootstrap）
-**最后更新**: 2026-08-21（M2-2 production page fetch routing 完成）
+**最后更新**: 2026-08-22（M2-3 Service Worker caches.match 读取桥完成）
 
 ---
 
@@ -10,8 +10,9 @@
 
 **专项定位**：存储方向三拆之三。把 `navigator.serviceWorker` 从注册表状态机近似
 （R3318）深化为真实 SW 执行环境 + fetch 拦截。用户已于 2026-08-19 明确批准方案 C，
-M0 启动门禁解除；M1 core WPT 已收敛，M2 已完成 fetch runtime/manager/IPC foundation
-和 browser-process 页面 fetch 路由，Cache API 端到端接入仍待后续切片，M3 控制语义继续推进。
+M0 启动门禁解除；M1 core WPT 已收敛，M2 已完成 fetch runtime/manager/IPC foundation、
+browser-process 页面 fetch 路由和 Service Worker `caches.match()` 读取桥；Cache API 写入面
+与 WPT fetch/cache 基线仍待后续切片，M3 控制语义继续推进。
 
 **M0 推荐决策**：抽取 `zero-script-sandbox::WorkerRuntime` 的独立线程/引擎/看门狗核心，
 新增 typed `ServiceWorkerRuntime`；production 由 browser process 的
@@ -188,6 +189,11 @@ M0 启动门禁解除；M1 core WPT 已收敛，M2 已完成 fetch runtime/manag
   active worker 命中时先派发 SW `fetch` 事件，`respondWith(Response)` 转原 `FetchResponse`
   返回 renderer，未响应/无匹配/派发失败/内部 DNS prefetch/stream image/非 UTF-8 body 保持原网络
   fallback；browser 重写内部 `X-Zero-Final-URL` / `X-Zero-Resource-Type` 元数据避免 worker 伪造
+- ✅ M2-3：Service Worker runtime 暴露 `globalThis.caches.match(input)`；通过 typed
+  `CacheMatchRequested` / `CompleteCacheMatch` host bridge 查询 browser-owned active registration
+  `CacheStorage`，命中时物化为 `Response` 并可直接用于
+  `event.respondWith(caches.match(event.request))`；未实现 `caches.open()` / `Cache.put()` 写入面
+  和完整 WPT fetch/cache baseline
 
 ## 缺口清单
 
@@ -195,7 +201,7 @@ M0 启动门禁解除；M1 core WPT 已收敛，M2 已完成 fetch runtime/manag
 |---|------|------|
 | S1 | SW 执行环境架构与独立 runtime | ✅ production browser owner + renderer discovery 真链路 |
 | S2 | scriptURL 不下载执行 | ✅ production navigator 经 browser fetch/evaluate |
-| S3 | fetch 拦截为零 | 🚧 M2-2 production 页面 fetch respondWith/pass-through 已接入；Cache API 未接入 |
+| S3 | fetch 拦截为零 | 🚧 M2-2 production 页面 fetch respondWith/pass-through 已接入；M2-3 `caches.match()` 读取桥已接入；Cache API 写入面/WPT fetch-cache 基线未完成 |
 | S4 | 事件为 setTimeout 模拟 | ✅ manager transition log 为状态源；timer 只执行页面 task 投影 |
 | S5 | WPT 覆盖为零 | ✅ core 34/34 case、156/156 Pass、0 Fail/Timeout/Unsupported |
 
@@ -207,10 +213,10 @@ M0 启动门禁解除；M1 core WPT 已收敛，M2 已完成 fetch runtime/manag
 
 ## 下一步计划
 
-1. **M2 production fetch pipeline**：js-dom S6 land 后，把页面 `FetchRequest` 路由接入
-   `ServiceWorkerManager::dispatch_fetch()`，实现 `respondWith` 响应回填与 pass-through 网络回退
-2. **M2 Cache API 集成**：storage-cache-api M1 land 后，让 SW runtime 的 fetch handler 可消费
-   `caches.match()` 端到端模式
+1. **M2 Cache API 写入面**：让 Service Worker runtime 可通过 browser-owned CacheStorage 完成
+   `caches.open()` / `Cache.put()` 等最小写入链路，避免只能由测试 helper 预置缓存
+2. **M2 fetch/cache WPT 基线**：挑选当前可执行的 Service Worker fetch/cache 上游用例，
+   导入账本并生成 pass-rate evidence
 3. **M3 clients follow-up**：popup/auxiliary 真实 browsing context 创建后接入 browser owner
 
 ## 里程碑状态
@@ -219,7 +225,7 @@ M0 启动门禁解除；M1 core WPT 已收敛，M2 已完成 fetch runtime/manag
 |--------|------|
 | M0 — 选型 RFC（门控） | ✅ 方案 C 已批准 |
 | M1 — 脚本真实执行 + 生命周期真事件 | ✅ current core WPT 156/156 Pass |
-| M2 — fetch 拦截 + Cache 集成 | 🚧 M2-2 production fetch respondWith/pass-through 完成；Cache API 待接入 |
+| M2 — fetch 拦截 + Cache 集成 | 🚧 M2-2 production fetch respondWith/pass-through 完成；M2-3 `caches.match()` 读取桥完成；Cache API 写入面/WPT 基线待接入 |
 | M3 — 控制语义 + 消息 + 收尾 | 🚧 classic startup graph + 控制/消息/update/persistence 完成 |
 
 ## 验证基线
@@ -311,6 +317,9 @@ M0 启动门禁解除；M1 core WPT 已收敛，M2 已完成 fetch runtime/manag
   [M1 renderer bridge](evidence/2026-08-19-m1-renderer-bridge.md)
 - M1-4d registration discovery：scope representative、browser-backed query、跨 renderer JS identity
   恢复见 [M1 registration discovery](evidence/2026-08-19-m1-registration-discovery.md)
+- M2-3 `caches.match()`：runtime/manager/protocol/browser/renderer typed bridge 与
+  `respondWith(caches.match(event.request))` 命中路径见
+  [M2 cache match](evidence/2026-08-22-m2-cache-match.md)
 - M1-5 core WPT：固定 12-case runner、两轮确定性 baseline 与 13 个红项分组见
   [M1 core WPT baseline](evidence/2026-08-19-m1-wpt-core-baseline.md)
 - M1-5b lifecycle task：manager transition log、IPC cursor、EventTarget/slot task 与 30/36

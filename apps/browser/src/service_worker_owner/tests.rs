@@ -624,6 +624,80 @@ fn ipc_clients_match_all_uses_browser_owned_client_registry() {
 }
 
 #[test]
+fn ipc_cache_match_uses_browser_owned_registration_cache() {
+    let mut owner = BrowserServiceWorkerOwner::new();
+    let disposition = owner.begin_request_for_client(
+        TabId(7),
+        false,
+        74,
+        Some("https://example.test/app/page"),
+        "renderer-7:1",
+        register_request("https://example.test/app/page"),
+    );
+    attach_script(&mut owner, disposition, "addEventListener('install', () => {});");
+    let _ = owner.poll();
+    let evaluate = owner
+        .take_host_commands()
+        .into_iter()
+        .find(|outgoing| matches!(outgoing.params.command, ServiceWorkerHostCommand::Evaluate { .. }))
+        .expect("missing renderer evaluation command");
+    let registration_id = evaluate.params.registration_id;
+    owner
+        .normal
+        .put_cached_response(
+            registration_id,
+            "runtime",
+            zero_storage::CacheRequest::new("https://example.test/app/cached"),
+            zero_storage::CacheResponse::ok(b"cached-body".to_vec()).with_header("X-Cache", "hit"),
+        )
+        .unwrap();
+
+    owner.inject_host_event(
+        TabId(7),
+        false,
+        ServiceWorkerHostEventParams {
+            registration_id,
+            event: ServiceWorkerHostEvent::CacheMatchRequested {
+                request_id: 8,
+                request: ServiceWorkerFetchRequestWire {
+                    url: "https://example.test/app/cached".into(),
+                    method: "GET".into(),
+                    headers: Vec::new(),
+                    body: None,
+                    client_id: None,
+                    resulting_client_id: None,
+                },
+            },
+        },
+    );
+    let _ = owner.poll();
+    let completion = owner
+        .take_host_commands()
+        .into_iter()
+        .find(|outgoing| {
+            matches!(
+                outgoing.params.command,
+                ServiceWorkerHostCommand::CompleteCacheMatch { .. }
+            )
+        })
+        .expect("missing CacheStorage.match completion");
+    assert_eq!(completion.tab_id, TabId(7));
+    match completion.params.command {
+        ServiceWorkerHostCommand::CompleteCacheMatch {
+            request_id,
+            result: Ok(Some(response)),
+        } => {
+            assert_eq!(request_id, 8);
+            assert_eq!(response.status, 200);
+            assert_eq!(response.status_text, "OK");
+            assert_eq!(response.headers, [("X-Cache".into(), "hit".into())]);
+            assert_eq!(response.body, "cached-body");
+        }
+        other => panic!("expected successful cache match completion, got {other:?}"),
+    }
+}
+
+#[test]
 fn ipc_clients_get_uses_browser_owned_client_registry() {
     let mut owner = BrowserServiceWorkerOwner::new();
     let disposition = owner.begin_request_for_client(

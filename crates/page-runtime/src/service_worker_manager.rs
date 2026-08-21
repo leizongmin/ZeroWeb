@@ -8,8 +8,8 @@ use zero_script_sandbox::{
     ServiceWorkerScriptErrorKind,
 };
 use zero_storage::{
-    ServiceWorkerRegistration, ServiceWorkerRegistry, ServiceWorkerScriptType, ServiceWorkerState,
-    ServiceWorkerUpdateViaCache,
+    CacheRequest, CacheResponse, ServiceWorkerRegistration, ServiceWorkerRegistry, ServiceWorkerScriptType,
+    ServiceWorkerState, ServiceWorkerUpdateViaCache,
 };
 
 const DEFAULT_RUNTIME_LIMIT: usize = 32;
@@ -458,6 +458,13 @@ pub trait ServiceWorkerRuntimeHost: Send {
         request_id: u64,
         result: Result<Option<ServiceWorkerClientInfo>, String>,
     ) -> Result<(), ServiceWorkerManagerError>;
+    /// Complete one worker-global `caches.match()` request.
+    fn complete_cache_match(
+        &mut self,
+        registration_id: u64,
+        request_id: u64,
+        result: Result<Option<ServiceWorkerFetchResponse>, String>,
+    ) -> Result<(), ServiceWorkerManagerError>;
     /// Stop one runtime and release its resources.
     fn shutdown(&mut self, registration_id: u64);
     /// Drain all currently available runtime events.
@@ -599,6 +606,19 @@ impl ServiceWorkerRuntimeHost for LocalServiceWorkerHost {
             .get(&registration_id)
             .ok_or(ServiceWorkerManagerError::UnknownRegistration(registration_id))?
             .complete_clients_get(request_id, result)
+            .map_err(|error| ServiceWorkerManagerError::Runtime(error.to_string()))
+    }
+
+    fn complete_cache_match(
+        &mut self,
+        registration_id: u64,
+        request_id: u64,
+        result: Result<Option<ServiceWorkerFetchResponse>, String>,
+    ) -> Result<(), ServiceWorkerManagerError> {
+        self.runtimes
+            .get(&registration_id)
+            .ok_or(ServiceWorkerManagerError::UnknownRegistration(registration_id))?
+            .complete_cache_match(request_id, result)
             .map_err(|error| ServiceWorkerManagerError::Runtime(error.to_string()))
     }
 
@@ -1331,6 +1351,14 @@ impl ServiceWorkerManager {
                         result.map_err(|error| error.to_string()),
                     );
                 }
+                ServiceWorkerEvent::CacheMatchRequested { request_id, request } => {
+                    let result = self.cache_match_for_worker(registration_id, &request);
+                    let _ = self.host.complete_cache_match(
+                        registration_id,
+                        request_id,
+                        result.map_err(|error| error.to_string()),
+                    );
+                }
                 ServiceWorkerEvent::ClientMessagesEmitted { outbound } => {
                     if self
                         .record_outbound_message_ports(registration_id, "", &outbound)
@@ -1739,6 +1767,23 @@ impl ServiceWorkerManager {
     /// Inspect one registration version.
     pub fn registration(&self, registration_id: u64) -> Option<&ServiceWorkerRegistration> {
         self.registry.get(registration_id)
+    }
+
+    /// Insert one response into a registration's browser-owned CacheStorage.
+    pub fn put_cached_response(
+        &mut self,
+        registration_id: u64,
+        cache_name: &str,
+        request: CacheRequest,
+        response: CacheResponse,
+    ) -> Result<(), ServiceWorkerManagerError> {
+        self.registry
+            .get_mut(registration_id)
+            .ok_or(ServiceWorkerManagerError::UnknownRegistration(registration_id))?
+            .cache_storage
+            .open(cache_name)
+            .put(request, response)
+            .map_err(|error| ServiceWorkerManagerError::Runtime(error.to_string()))
     }
 
     /// Return lifecycle states recorded after a caller-owned sequence cursor.
@@ -2268,6 +2313,38 @@ impl ServiceWorkerManager {
         } else {
             Ok(None)
         }
+    }
+
+    fn cache_match_for_worker(
+        &self,
+        registration_id: u64,
+        request: &ServiceWorkerFetchRequest,
+    ) -> Result<Option<ServiceWorkerFetchResponse>, ServiceWorkerManagerError> {
+        // https://w3c.github.io/ServiceWorker/#cache-storage-match
+        let registration = self
+            .registration(registration_id)
+            .ok_or(ServiceWorkerManagerError::UnknownRegistration(registration_id))?;
+        let request = CacheRequest::with_method(&request.url, &request.method);
+        registration
+            .cache_storage
+            .match_request(&request)
+            .map(|response| {
+                Ok(ServiceWorkerFetchResponse {
+                    status: response.status,
+                    status_text: response.status_text.clone(),
+                    headers: response
+                        .headers
+                        .iter()
+                        .map(|(name, value)| (name.clone(), value.clone()))
+                        .collect(),
+                    body: String::from_utf8(response.body.clone()).map_err(|_| {
+                        ServiceWorkerManagerError::InvalidInput(
+                            "cached Service Worker response body is not UTF-8".into(),
+                        )
+                    })?,
+                })
+            })
+            .transpose()
     }
 
     fn release_client_message_reservation(&mut self, key: &(u64, String)) {
@@ -3873,6 +3950,63 @@ mod tests {
                     status_text: String::new(),
                     headers: Vec::new(),
                     body: "root".into(),
+                }),
+                message: String::new(),
+            }
+        );
+    }
+
+    #[test]
+    fn fetch_handler_can_respond_with_cache_storage_match() {
+        let mut manager = manager_under_test();
+        let registration_id = start_active(
+            &mut manager,
+            "/app/",
+            "addEventListener('fetch', event => {
+               event.respondWith(caches.match(event.request));
+             });",
+        );
+        manager
+            .put_cached_response(
+                registration_id,
+                "runtime",
+                CacheRequest::new("https://example.test/app/cached"),
+                zero_storage::CacheResponse::ok(b"cached-body".to_vec()).with_header("X-Cache", "hit"),
+            )
+            .unwrap();
+
+        assert_eq!(
+            manager
+                .dispatch_fetch(
+                    "https://example.test",
+                    124,
+                    ServiceWorkerFetchRequest {
+                        url: "https://example.test/app/cached".into(),
+                        method: "GET".into(),
+                        headers: Vec::new(),
+                        body: None,
+                        client_id: Some("client-1".into()),
+                        resulting_client_id: None,
+                    },
+                )
+                .unwrap(),
+            ServiceWorkerFetchDispatch::Dispatched {
+                registration_id,
+                event_id: 124,
+            }
+        );
+        assert_eq!(
+            wait_for_fetch(&mut manager, 124),
+            ServiceWorkerManagerEvent::FetchSettled {
+                registration_id,
+                event_id: 124,
+                request_url: "https://example.test/app/cached".into(),
+                client_id: Some("client-1".into()),
+                response: Some(ServiceWorkerFetchResponse {
+                    status: 200,
+                    status_text: "OK".into(),
+                    headers: vec![("x-cache".into(), "hit".into())],
+                    body: "cached-body".into(),
                 }),
                 message: String::new(),
             }

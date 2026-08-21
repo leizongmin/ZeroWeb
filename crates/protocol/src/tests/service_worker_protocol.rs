@@ -570,6 +570,52 @@ fn service_worker_host_fetch_command_and_event_round_trip() {
     };
     assert_eq!(decoded_event, event);
 
+    let cache_event = ServiceWorkerHostEventParams {
+        registration_id: 8,
+        event: ServiceWorkerHostEvent::CacheMatchRequested {
+            request_id: 5,
+            request: ServiceWorkerFetchRequestWire {
+                url: "https://example.test/app/cached".into(),
+                method: "GET".into(),
+                headers: vec![("accept".into(), "text/plain".into())],
+                body: None,
+                client_id: None,
+                resulting_client_id: None,
+            },
+        },
+    };
+    assert!(cache_event.validate().is_ok());
+    let decoded = roundtrip(IpcMessage {
+        id: 55,
+        kind: IpcMessageKind::ServiceWorkerHostEvent(cache_event.clone()),
+    });
+    let IpcMessageKind::ServiceWorkerHostEvent(decoded_event) = decoded.kind else {
+        panic!("expected ServiceWorkerHostEvent");
+    };
+    assert_eq!(decoded_event, cache_event);
+
+    let cache_command = ServiceWorkerHostCommandParams {
+        registration_id: 8,
+        command: ServiceWorkerHostCommand::CompleteCacheMatch {
+            request_id: 5,
+            result: Ok(Some(ServiceWorkerFetchResponseWire {
+                status: 200,
+                status_text: "OK".into(),
+                headers: vec![("x-cache".into(), "hit".into())],
+                body: "cached".into(),
+            })),
+        },
+    };
+    assert!(cache_command.validate().is_ok());
+    let decoded = roundtrip(IpcMessage {
+        id: 56,
+        kind: IpcMessageKind::ServiceWorkerHostCommand(cache_command.clone()),
+    });
+    let IpcMessageKind::ServiceWorkerHostCommand(decoded_command) = decoded.kind else {
+        panic!("expected ServiceWorkerHostCommand");
+    };
+    assert_eq!(decoded_command, cache_command);
+
     assert!(
         ServiceWorkerHostCommandParams {
             registration_id: 8,
@@ -601,6 +647,40 @@ fn service_worker_host_fetch_command_and_event_round_trip() {
                     body: String::new(),
                 }),
                 message: String::new(),
+            },
+        }
+        .validate()
+        .is_err()
+    );
+    assert!(
+        ServiceWorkerHostEventParams {
+            registration_id: 8,
+            event: ServiceWorkerHostEvent::CacheMatchRequested {
+                request_id: 0,
+                request: ServiceWorkerFetchRequestWire {
+                    url: "https://example.test/app/cached".into(),
+                    method: "GET".into(),
+                    headers: Vec::new(),
+                    body: None,
+                    client_id: None,
+                    resulting_client_id: None,
+                },
+            },
+        }
+        .validate()
+        .is_err()
+    );
+    assert!(
+        ServiceWorkerHostCommandParams {
+            registration_id: 8,
+            command: ServiceWorkerHostCommand::CompleteCacheMatch {
+                request_id: 5,
+                result: Ok(Some(ServiceWorkerFetchResponseWire {
+                    status: 600,
+                    status_text: String::new(),
+                    headers: Vec::new(),
+                    body: String::new(),
+                })),
             },
         }
         .validate()

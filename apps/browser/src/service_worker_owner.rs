@@ -18,11 +18,11 @@ use zero_page_runtime::{
 };
 use zero_protocol::message::{
     FetchParams, ServiceWorkerClientInfoWire, ServiceWorkerClientMessages, ServiceWorkerError, ServiceWorkerErrorCode,
-    ServiceWorkerFetchRequestWire, ServiceWorkerHostCommand, ServiceWorkerHostCommandParams, ServiceWorkerHostEvent,
-    ServiceWorkerHostEventParams, ServiceWorkerLifecycleWire, ServiceWorkerOperation, ServiceWorkerRequestParams,
-    ServiceWorkerResponseParams, ServiceWorkerResult, ServiceWorkerScriptErrorKindWire, ServiceWorkerScriptTypeWire,
-    ServiceWorkerSnapshot, ServiceWorkerStateChanges, ServiceWorkerStateWire, ServiceWorkerUpdateError,
-    ServiceWorkerUpdateViaCacheWire,
+    ServiceWorkerFetchRequestWire, ServiceWorkerFetchResponseWire, ServiceWorkerHostCommand,
+    ServiceWorkerHostCommandParams, ServiceWorkerHostEvent, ServiceWorkerHostEventParams, ServiceWorkerLifecycleWire,
+    ServiceWorkerOperation, ServiceWorkerRequestParams, ServiceWorkerResponseParams, ServiceWorkerResult,
+    ServiceWorkerScriptErrorKindWire, ServiceWorkerScriptTypeWire, ServiceWorkerSnapshot, ServiceWorkerStateChanges,
+    ServiceWorkerStateWire, ServiceWorkerUpdateError, ServiceWorkerUpdateViaCacheWire,
 };
 use zero_script_sandbox::{
     ServiceWorkerClientInfo, ServiceWorkerEvent, ServiceWorkerFetchRequest, ServiceWorkerFetchResponse,
@@ -390,6 +390,36 @@ impl ServiceWorkerRuntimeHost for IpcServiceWorkerHost {
         Ok(())
     }
 
+    fn complete_cache_match(
+        &mut self,
+        registration_id: u64,
+        request_id: u64,
+        result: Result<Option<ServiceWorkerFetchResponse>, String>,
+    ) -> Result<(), ServiceWorkerManagerError> {
+        let Some(tab_id) = self.channels.take_owned_tab(registration_id) else {
+            return Err(ServiceWorkerManagerError::UnknownRegistration(registration_id));
+        };
+        self.channels.record_owned(registration_id, tab_id);
+        self.channels.push_outgoing(ServiceWorkerHostOutgoing {
+            tab_id,
+            params: ServiceWorkerHostCommandParams {
+                registration_id,
+                command: ServiceWorkerHostCommand::CompleteCacheMatch {
+                    request_id,
+                    result: result.map(|response| {
+                        response.map(|response| ServiceWorkerFetchResponseWire {
+                            status: response.status,
+                            status_text: response.status_text,
+                            headers: response.headers,
+                            body: response.body,
+                        })
+                    }),
+                },
+            },
+        });
+        Ok(())
+    }
+
     fn shutdown(&mut self, registration_id: u64) {
         if let Some(tab_id) = self.channels.remove_owned(registration_id) {
             self.channels.push_outgoing(ServiceWorkerHostOutgoing {
@@ -531,6 +561,19 @@ fn sandbox_event(event: ServiceWorkerHostEvent) -> ServiceWorkerEvent {
         },
         ServiceWorkerHostEvent::ClientsGetRequested { request_id, client_id } => {
             ServiceWorkerEvent::ClientsGetRequested { request_id, client_id }
+        }
+        ServiceWorkerHostEvent::CacheMatchRequested { request_id, request } => {
+            ServiceWorkerEvent::CacheMatchRequested {
+                request_id,
+                request: ServiceWorkerFetchRequest {
+                    url: request.url,
+                    method: request.method,
+                    headers: request.headers,
+                    body: request.body,
+                    client_id: request.client_id,
+                    resulting_client_id: request.resulting_client_id,
+                },
+            }
         }
         ServiceWorkerHostEvent::ClientMessagesEmitted { outbound } => ServiceWorkerEvent::ClientMessagesEmitted {
             outbound: outbound
