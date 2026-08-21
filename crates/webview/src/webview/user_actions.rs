@@ -288,6 +288,13 @@ impl WebView {
                 .changed;
         }
         let dispatch = if javascript_enabled {
+            // js-dom R144：指针激活序列的 pre_events（mousedown/mouseup）先于 cancelable
+            // click 派发（listener 内的 DOM 变更——伪元素移除/节点移动——发生在 click 前，
+            // click 在新状态上照常派发）。pre_event 的 canceled 分支忽略（mousedown 取消
+            // 不抑制后续 click——简化：不可取消路径的 html_changed 仍并入）。
+            for event in &plan.pre_events {
+                changed |= self.dispatch_planned_event(executor, event)?.1;
+            }
             if let Some(event) = plan.cancelable_event.as_ref() {
                 self.dispatch_planned_event(executor, event)?
             } else {

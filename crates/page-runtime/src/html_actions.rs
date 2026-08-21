@@ -286,6 +286,10 @@ pub enum ActionNoopReason {
 pub struct HtmlActionPlan {
     /// 稳定目标。
     pub target: PageNodeRef,
+    /// cancelable event **前**派发的不可取消事件（js-dom R144：指针激活序列的
+    /// mousedown/mouseup 先于 click——listener 内的 DOM 变更[伪元素移除/节点移动]
+    /// 须发生在 click 派发前，click 在新状态上派发）。
+    pub pre_events: Vec<PlannedEvent>,
     /// cancelable event 前应用的临时状态。
     pub prepare: Vec<PlannedMutation>,
     /// 宿主应派发的 cancelable event。
@@ -363,8 +367,16 @@ pub fn plan_html_action(
         (HtmlUserAction::Activate, ActionTargetState::Summary(state)) => Ok(plan_summary(request.target, state)),
         (HtmlUserAction::MoveFocus { .. }, ActionTargetState::Focus { next }) => Ok(plan_focus(request.target, *next)),
         // js-dom R142：普通元素激活 = 纯 click 事件（无默认动作——cancelable_event 的
-        // default_allowed 不产生 mutation/effect）。
+        // default_allowed 不产生 mutation/effect）。R144：pre_events 补指针激活序列
+        // mousedown/mouseup（spec UI Events 指针事件序——真实浏览器 click 前有
+        // mousedown/mouseup；listener 内 DOM 变更[伪元素移除/节点移入他文档]发生在
+        // click 派发前，click 仍照常派发。WPT click-on-absolute-pseudo /
+        // focus-event-document-move）。
         (HtmlUserAction::Activate, ActionTargetState::Generic) => Ok(HtmlActionPlan {
+            pre_events: vec![
+                PlannedEvent::simple(request.target, "mousedown", true),
+                PlannedEvent::simple(request.target, "mouseup", true),
+            ],
             target: request.target,
             prepare: vec![],
             cancelable_event: Some(PlannedEvent::simple(request.target, "click", true)),
@@ -410,6 +422,7 @@ pub fn resolve_html_action(plan: HtmlActionPlan, dispatch: EventDispatchResult) 
 
 fn plan_checkbox(target: PageNodeRef, checked: bool) -> HtmlActionPlan {
     HtmlActionPlan {
+        pre_events: vec![],
         target,
         prepare: vec![PlannedMutation::SetChecked {
             target,
@@ -441,6 +454,7 @@ fn plan_radio(target: PageNodeRef, state: &RadioActionState) -> Result<HtmlActio
         });
     }
     Ok(HtmlActionPlan {
+        pre_events: vec![],
         target,
         prepare,
         cancelable_event: Some(PlannedEvent::simple(target, "click", true)),
@@ -480,6 +494,7 @@ fn plan_option(target: PageNodeRef, state: &OptionActionState) -> Result<HtmlAct
         }]
     };
     Ok(HtmlActionPlan {
+        pre_events: vec![],
         target,
         prepare: vec![PlannedMutation::SetOptionSelected {
             target,
@@ -498,6 +513,7 @@ fn plan_option(target: PageNodeRef, state: &OptionActionState) -> Result<HtmlAct
 
 fn plan_navigation(target: PageNodeRef, intent: FormNavigationIntent) -> HtmlActionPlan {
     HtmlActionPlan {
+        pre_events: vec![],
         target,
         prepare: vec![],
         cancelable_event: Some(PlannedEvent::simple(target, "click", true)),
@@ -511,6 +527,7 @@ fn plan_navigation(target: PageNodeRef, intent: FormNavigationIntent) -> HtmlAct
 
 fn plan_fragment(target: PageNodeRef, hash: String) -> HtmlActionPlan {
     HtmlActionPlan {
+        pre_events: vec![],
         target,
         prepare: vec![],
         cancelable_event: Some(PlannedEvent::simple(target, "click", true)),
@@ -524,6 +541,7 @@ fn plan_fragment(target: PageNodeRef, hash: String) -> HtmlActionPlan {
 
 fn plan_summary(target: PageNodeRef, state: &SummaryActionState) -> HtmlActionPlan {
     HtmlActionPlan {
+        pre_events: vec![],
         target,
         prepare: vec![],
         cancelable_event: Some(PlannedEvent::simple(target, "click", true)),
@@ -609,6 +627,7 @@ fn text_plan(
     data: Option<String>,
 ) -> HtmlActionPlan {
     HtmlActionPlan {
+        pre_events: vec![],
         target,
         prepare: vec![],
         cancelable_event: Some(PlannedEvent::input(
@@ -633,6 +652,7 @@ fn text_plan(
 
 fn plan_focus(target: PageNodeRef, next: Option<PageNodeRef>) -> HtmlActionPlan {
     HtmlActionPlan {
+        pre_events: vec![],
         target,
         prepare: vec![],
         cancelable_event: None,
@@ -646,6 +666,7 @@ fn plan_focus(target: PageNodeRef, next: Option<PageNodeRef>) -> HtmlActionPlan 
 
 fn plan_reset(target: PageNodeRef, form: PageNodeRef) -> HtmlActionPlan {
     HtmlActionPlan {
+        pre_events: vec![],
         target,
         prepare: vec![],
         cancelable_event: Some(PlannedEvent::simple(form, "reset", true)),
@@ -659,6 +680,7 @@ fn plan_reset(target: PageNodeRef, form: PageNodeRef) -> HtmlActionPlan {
 
 fn plan_submit(target: PageNodeRef, form: PageNodeRef, submitter: Option<PageNodeRef>) -> HtmlActionPlan {
     HtmlActionPlan {
+        pre_events: vec![],
         target,
         prepare: vec![],
         cancelable_event: Some(PlannedEvent::simple(form, "submit", true)),
@@ -1123,6 +1145,10 @@ mod tests {
         assert!(plan.prepare.is_empty());
         assert!(plan.commit.is_empty());
         assert!(plan.effects.is_empty());
+        // R144：指针激活序列——pre_events 的 mousedown/mouseup 先于 click。
+        assert_eq!(plan.pre_events.len(), 2);
+        assert_eq!(plan.pre_events[0].event_type, "mousedown");
+        assert_eq!(plan.pre_events[1].event_type, "mouseup");
         let event = plan.cancelable_event.as_ref().unwrap();
         assert_eq!(event.target, node(1));
         assert_eq!(event.event_type, "click");
