@@ -858,13 +858,13 @@ impl BrowserServiceWorkerOwner {
                     .coalesced_update_candidate(registration_id)
                     .map_err(manager_error)
                 {
-                    Ok(Some(candidate_id)) => {
+                    Ok(Some((candidate_id, changed))) => {
                         return self.result_disposition(
                             tab_id,
                             request_id,
                             Ok(ServiceWorkerResult::Updated {
                                 registration_id: candidate_id,
-                                changed: true,
+                                changed,
                             }),
                         );
                     }

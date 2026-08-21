@@ -567,6 +567,56 @@ fn register_fetches_evaluates_and_returns_correlated_id() {
 }
 
 #[test]
+fn client_update_during_initial_installation_reuses_candidate() {
+    let mut owner = BrowserServiceWorkerOwner::with_local_hosts();
+    let disposition = owner.begin_request(
+        TabId(1),
+        false,
+        50,
+        Some("https://example.test/page"),
+        register_request("https://example.test/page"),
+    );
+    attach_script(&mut owner, disposition, "globalThis.version = 1;");
+    let response = wait_for_response(&mut owner);
+    let Ok(ServiceWorkerResult::Registered {
+        registration_id: installing,
+    }) = response.params.result
+    else {
+        panic!("registration failed");
+    };
+    assert_eq!(
+        owner
+            .normal
+            .registration(installing)
+            .map(|registration| registration.state),
+        Some(ServiceWorkerState::Installing)
+    );
+    let runtime_count = owner.normal.runtime_count();
+
+    let ServiceWorkerRequestDisposition::Respond(response) = owner.begin_request(
+        TabId(1),
+        false,
+        51,
+        Some("https://example.test/page"),
+        ServiceWorkerRequestParams {
+            operation: ServiceWorkerOperation::Update {
+                registration_id: installing,
+            },
+        },
+    ) else {
+        panic!("client update during initial installation must not fetch");
+    };
+    assert_eq!(
+        response.params.result,
+        Ok(ServiceWorkerResult::Updated {
+            registration_id: installing,
+            changed: false,
+        })
+    );
+    assert_eq!(owner.normal.runtime_count(), runtime_count);
+}
+
+#[test]
 fn update_fetch_compares_bytes_before_starting_replacement() {
     let mut owner = BrowserServiceWorkerOwner::with_local_hosts();
     let disposition = owner.begin_request(

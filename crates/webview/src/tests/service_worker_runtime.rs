@@ -909,6 +909,45 @@ fn navigator_update_compares_script_bytes_and_dispatches_updatefound_only_when_c
 }
 
 #[test]
+fn navigator_update_succeeds_while_initial_worker_is_installing() {
+    let mut webview = WebViewBuilder::new()
+        .url("https://example.test/page.html")
+        .script_source_fetcher(Arc::new(|_, _| {
+            Ok("addEventListener('install', event => event.waitUntil(Promise.resolve()));".into())
+        }))
+        .build();
+
+    webview
+        .execute_script(
+            "globalThis.__installingUpdate = 'pending';
+             navigator.serviceWorker.register('/sw.js', {scope:'/installing/'}).then(function(reg) {
+               var worker = reg.installing;
+               return reg.update().then(function(updated) {
+                 globalThis.__installingUpdate =
+                   String(updated === reg) + '|' +
+                   String(updated.installing === worker) + '|' +
+                   String(worker.state);
+               });
+             }, function(error) {
+               globalThis.__installingUpdate = 'error:' + error.name;
+             });
+             'started';",
+        )
+        .unwrap();
+
+    let deadline = Instant::now() + Duration::from_secs(5);
+    loop {
+        let value = webview.execute_script("globalThis.__installingUpdate").unwrap();
+        if value != "pending" {
+            assert_eq!(value, "true|true|installing");
+            break;
+        }
+        assert!(Instant::now() < deadline, "installing update timed out");
+        std::thread::sleep(Duration::from_millis(5));
+    }
+}
+
+#[test]
 fn navigator_update_activates_replacement_without_a_controlled_client() {
     let source = Arc::new(Mutex::new("globalThis.version = 1;".to_string()));
     let fetch_source = Arc::clone(&source);

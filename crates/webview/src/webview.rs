@@ -2706,11 +2706,11 @@ impl WebView {
                         let manager = update_manager
                             .lock()
                             .map_err(|_| "Service Worker manager lock poisoned".to_string())?;
-                        if let Some(candidate_id) = manager
+                        if let Some((candidate_id, changed)) = manager
                             .coalesced_update_candidate(registration_id)
                             .map_err(|error| error.to_string())?
                         {
-                            return Ok((candidate_id, true));
+                            return Ok((candidate_id, changed));
                         }
                         let registration = manager
                             .update_target(registration_id)

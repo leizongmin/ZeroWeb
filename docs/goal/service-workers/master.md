@@ -2,7 +2,7 @@
 
 **入口文档**: [../service-workers.md](../service-workers.md)
 **创建日期**: 2026-08-17（goal 拆分 bootstrap）
-**最后更新**: 2026-08-21（M3-24 multiple update coalescing 完成）
+**最后更新**: 2026-08-21（M3-25a client update during initial installation 完成）
 
 ---
 
@@ -147,6 +147,9 @@ M0 启动门禁解除；M1 core WPT 已收敛，M2 依赖未满足，当前推�
   uninstall 与 shrinking script update 收敛；core WPT 30/149
 - ✅ M3-24：同 registration key 的并发 update job 复用单一 fetch/runtime/installing
   candidate，burst 后 update 继续可用；core WPT 31/150
+- ✅ M3-25a：client 在首次 worker installing 期间调用 `registration.update()` 复用当前
+  candidate 并成功，不重复 fetch/runtime 或派发 `updatefound`；`update-not-allowed`
+  首项语义就绪，完整 case 仍等待 worker update + MessagePort transfer；core WPT 31/150
 
 ## 缺口清单
 
@@ -166,7 +169,8 @@ M0 启动门禁解除；M1 core WPT 已收敛，M2 依赖未满足，当前推�
 
 ## 下一步计划
 
-1. **M3 update follow-up**：`update-not-allowed.https.html` installing/waiting update restrictions
+1. **M3 update follow-up**：补 worker global `registration.update()` 与跨上下文
+   MessagePort transfer，完成 `update-not-allowed.https.html` 后两项
 2. **M2 依赖复核**：js-dom S6 与 storage-cache-api M1 land 后启动 fetch pipeline
 3. **M3 messaging follow-up**：MessagePort/MessageChannel transfer 与多 client 枚举
 

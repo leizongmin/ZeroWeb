@@ -778,17 +778,23 @@ impl ServiceWorkerManager {
             .ok_or(ServiceWorkerManagerError::UnknownRegistration(current_id))
     }
 
-    /// Return the installing candidate for an update job on the same registration key.
-    pub fn coalesced_update_candidate(&self, registration_id: u64) -> Result<Option<u64>, ServiceWorkerManagerError> {
+    /// Return an installing candidate that an explicit client update can reuse.
+    ///
+    /// The boolean reports whether the candidate is a changed replacement.
+    /// Updating during the initial installation succeeds without creating a
+    /// second job, but must not report another updatefound transition.
+    pub fn coalesced_update_candidate(
+        &self,
+        registration_id: u64,
+    ) -> Result<Option<(u64, bool)>, ServiceWorkerManagerError> {
         let key = self.key_for(registration_id)?;
         let slot = self
             .slots
             .get(key)
             .ok_or(ServiceWorkerManagerError::UnknownRegistration(registration_id))?;
-        if slot.active.is_none() && slot.waiting.is_none() {
-            return Ok(None);
-        }
-        Ok(slot.installing)
+        Ok(slot
+            .installing
+            .map(|candidate_id| (candidate_id, slot.active.is_some() || slot.waiting.is_some())))
     }
 
     /// Compare a fetched script and start an installing replacement when changed.
@@ -2076,12 +2082,27 @@ mod tests {
         else {
             panic!("changed update must start a replacement");
         };
-        assert_eq!(manager.coalesced_update_candidate(active), Ok(Some(candidate)));
-        assert_eq!(manager.coalesced_update_candidate(candidate), Ok(Some(candidate)));
+        assert_eq!(manager.coalesced_update_candidate(active), Ok(Some((candidate, true))));
+        assert_eq!(
+            manager.coalesced_update_candidate(candidate),
+            Ok(Some((candidate, true)))
+        );
 
         assert_eq!(wait_for_update_check(&mut manager, candidate), (candidate, true));
         wait_for_state(&mut manager, candidate, ServiceWorkerState::Installed);
         assert_eq!(manager.coalesced_update_candidate(candidate), Ok(None));
+    }
+
+    #[test]
+    fn client_update_reuses_initial_installing_candidate_without_reporting_change() {
+        let mut manager = manager_under_test();
+        let installing = start(&mut manager, "/", "new Promise(() => {});");
+
+        assert_eq!(
+            manager.coalesced_update_candidate(installing),
+            Ok(Some((installing, false)))
+        );
+        assert_eq!(manager.runtime_count(), 1);
     }
 
     #[test]
