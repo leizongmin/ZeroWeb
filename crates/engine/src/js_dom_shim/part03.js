@@ -3993,6 +3993,60 @@
       }
       return !(ev && ev.cancelable && ev.defaultPrevented);
     };
+    // R151（js-dom M4）：`click()`（HTMLElement 合成激活入口，spec
+    // html.spec.whatwg.org/#dom-click）——WPT Event-dispatch-single-activation 对
+    // template.content 克隆子树的 click 目标调 `.click()`（克隆子树是 _zwMEl 解析
+    // 节点，旧缺方法抛 TypeError）。合成 click 事件经本地 dispatchEvent 派发
+    // （listener/bubbling 到 parentNode 链由 dispatchEvent 内处理——本实现仅
+    // target 级，与 _zwMEl 本地派发语义一致）。
+    node.click = function () {
+      var ev = (typeof _makeEvent === 'function')
+        ? _makeEvent('click', { bubbles: true, cancelable: true })
+        : { type: 'click', bubbles: true, cancelable: true, defaultPrevented: false };
+      node.dispatchEvent(ev);
+    };
+    // R151（js-dom M4）：`classList`（DOMTokenList，spec `dom-domtokenlist`）——proxy 元素
+    // 经 get trap `_classListProxy(sel, handle)`，_zwMEl 解析节点（template.content 克隆
+    // 子树）无 trap 也没原型 accessor → undefined（WPT Event-dispatch-single-activation
+    // 的 `e.classList.add('test'+i)` TypeError）。本地实现：读 attrs 'class'，写经
+    // setAttribute（与 proxy 侧 token 校验语义的最小子集——add/contains/remove够用）。
+    node.classList = (function () {
+      var read = function () {
+        var v = node.getAttribute('class');
+        return v == null ? '' : String(v);
+      };
+      var tokens = function () {
+        return read().split(/[\t\n\f\r ]+/).filter(function (t) { return t.length > 0; });
+      };
+      var write = function (list) { node.setAttribute('class', list.join(' ')); };
+      return {
+        contains: function (t) { return tokens().indexOf(String(t)) >= 0; },
+        add: function () {
+          var cur = tokens();
+          for (var i = 0; i < arguments.length; i++) {
+            var t = String(arguments[i]);
+            if (cur.indexOf(t) < 0) cur.push(t);
+          }
+          write(cur);
+        },
+        remove: function () {
+          var rm = Array.prototype.slice.call(arguments).map(String);
+          write(tokens().filter(function (t) { return rm.indexOf(t) < 0; }));
+        },
+        toggle: function (t, force) {
+          var cur = tokens();
+          var has = cur.indexOf(String(t)) >= 0;
+          var want = force === undefined ? !has : !!force;
+          if (want && !has) cur.push(String(t));
+          else if (!want && has) cur = cur.filter(function (x) { return x !== String(t); });
+          write(cur);
+          return want;
+        },
+        item: function (i) { var cur = tokens(); return i < cur.length ? cur[i] : null; },
+        get length() { return tokens().length; },
+        toString: function () { return read(); },
+      };
+    })();
     // Parsed local fragments must expose the same geometry API as live element
     // proxies. They have no layout identity until inserted, so the spec fallback
     // is a zero DOMRect rather than a missing method.

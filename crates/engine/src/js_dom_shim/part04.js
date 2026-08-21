@@ -521,7 +521,38 @@
             get childNodes() { return _r145SelKids(); },
             get firstChild() { var k = _r145SelKids(); return k.length ? k[0] : null; },
             get lastChild() { var k = _r145SelKids(); return k.length ? k[k.length - 1] : null; },
+            // R151（js-dom M4）：元素子视图——WPT Event-dispatch-single-activation 的
+            // `Array.from(template.content.children)`（fragment 是 ParentNode，spec
+            // `dom-parentnode-children`）。从同一 `_r145SelKids` 过滤 nodeType 1。
+            get children() {
+              return _r145SelKids().filter(function (k) { return k && k.nodeType === 1; });
+            },
+            get firstElementChild() { var ek = this.children; return ek.length ? ek[0] : null; },
+            get lastElementChild() { var ek = this.children; return ek.length ? ek[ek.length - 1] : null; },
+            get childElementCount() { return this.children.length; },
             hasChildNodes: function () { return _r145SelKids().length > 0; },
+            // R151：子树类名查询（ParentNode.getElementsByClassName 语义——spec
+            // `dom-parentnode-getelementsbyclassname`，token 全含匹配）。用例对
+            // template.content 直调（WPT single-activation getElementsByClassNameInclusive）。
+            getElementsByClassName: function (names) {
+              var wanted = String(names == null ? '' : names).trim().split(/\s+/).filter(Boolean);
+              var out = [];
+              function walk(node) {
+                var kids = node.children || [];
+                for (var i = 0; i < kids.length; i++) {
+                  var k = kids[i];
+                  if (k && k.classList) {
+                    try {
+                      var has = wanted.every(function (w) { return k.classList.contains(w); });
+                      if (has) out.push(k);
+                    } catch (_e151c) {}
+                  }
+                  walk(k);
+                }
+              }
+              walk(this);
+              return out;
+            }
           };
           if (!handle) {
             _tplContent.cloneNode = function (deep) {
@@ -2908,7 +2939,24 @@
                 var ih = handle
                   ? __zw_get_inner_html_handle(handle)
                   : (sel ? __zw_get_inner_html(sel) : null);
-                if (ih) { __zw_set_inner_html_handle(nh, ih); _cnd = true; }
+                if (ih) {
+                  __zw_set_inner_html_handle(nh, ih);
+                  _cnd = true;
+                  // R151（js-dom M4）：同步填充 JS 侧 registry（_handleChildren[nh]）——
+                  // 裸回调只写 host mutation（异步 apply），克隆元素的 childNodes/children/
+                  // getElementsByClassName 在本 turn 内读 registry 全空（WPT
+                  // Event-dispatch-single-activation：template.content 子克隆后
+                  // `getContainer(parent).appendChild(target)` 的 container 查询空 →
+                  // undefined.appendChild 崩）。与 set trap innerHTML 分支同源
+                  // （_zwFragmentAdded 解析 + 宿主印章），此处仅对含 markup 的值填充。
+                  try {
+                    if (typeof _zwFragmentAdded === 'function' && ih.indexOf('<') >= 0) {
+                      _handleChildren[nh] = _zwFragmentAdded(ih, nh);
+                    } else if (_handleChildren[nh]) {
+                      _handleChildren[nh] = [];
+                    }
+                  } catch (_e151r) {}
+                }
               } catch (_e) {}
               // js-dom M3 R100：handle 容器（detached createElement）——host innerHTML 空，
               // 后代在 JS registry（_handleChildren）。递归 cloneNode 复制子树（spec deep

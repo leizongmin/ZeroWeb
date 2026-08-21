@@ -432,3 +432,182 @@ fn test_gamepad_event_constructor_r150() {
         "R150 GamepadEvent：instanceof 链 + gamepad 默认 null / init 透传 + timeStamp 单调正值"
     );
 }
+
+/// R151①：`cloneNode(true)` 对含 markup 的源同步填充 JS 侧 registry（`_handleChildren[nh]`）
+/// ——旧版只写 host mutation（异步 apply），克隆元素的 childNodes/children/
+/// getElementsByClassName 在本 turn 内读 registry 全空（WPT Event-dispatch-single-activation
+/// 的 `getContainer(parent)` 查询空 → undefined.appendChild 崩）。
+#[test]
+fn test_clone_node_deep_fills_child_registry_r151() {
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let mut sandbox = V8Sandbox::with_config(zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    })
+    .unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    // sel 源元素带子（querySelector 路径——host 快照有 innerHTML）。
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><div id=\"src\"><span class=\"kid\">a</span><b class=\"kid\">c</b></div></body></html>"
+            .to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+
+    let out = sandbox
+        .execute(
+            "var src = document.querySelector('#src');\
+             var c = src.cloneNode(true);\
+             var parts = [];\
+             parts.push('kids:' + c.childNodes.length);\
+             parts.push('children:' + c.children.length);\
+             parts.push('gbc:' + c.getElementsByClassName('kid').length);\
+             parts.join('~')",
+        )
+        .unwrap()
+        .value;
+    assert_eq!(
+        out, "kids:2~children:2~gbc:2",
+        "R151 cloneNode deep：克隆元素本 turn 内 childNodes/children/getElementsByClassName 可见"
+    );
+}
+
+/// R151②：`template.content` fragment 视图的 ParentNode API（children/firstElementChild/
+/// childElementCount/getElementsByClassName）——WPT Event-dispatch-single-activation 的
+/// `Array.from(template.content.children)` + `getElementsByClassNameInclusive`。
+#[test]
+fn test_template_content_parent_node_apis_r151() {
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let mut sandbox = V8Sandbox::with_config(zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    })
+    .unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><template id=\"t\"><form class=\"a\"><input class=\"b\"></form>x</template></body></html>"
+            .to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+
+    let out = sandbox
+        .execute(
+            "var t = document.querySelector('#t');\
+             var c = t.content;\
+             var parts = [];\
+             parts.push('children:' + c.children.length);\
+             parts.push('firstEl:' + (c.firstElementChild && c.firstElementChild.tagName));\
+             parts.push('count:' + c.childElementCount);\
+             parts.push('gbc:' + c.getElementsByClassName('b').length);\
+             parts.push('deepgbc:' + c.getElementsByClassName('a').length);\
+             parts.push('childNodes:' + c.childNodes.length);\
+             parts.join('~')",
+        )
+        .unwrap()
+        .value;
+    assert_eq!(
+        out, "children:1~firstEl:FORM~count:1~gbc:1~deepgbc:1~childNodes:2",
+        "R151 template.content ParentNode API（children/元素子导航/类名子树查询）"
+    );
+}
+
+/// R151③：`createEvent('KeyboardEvents')` 保持 spec 别名表语义（**抛** NotSupportedError
+/// ——spec `dom-document-createevent` 复数别名仅 Events/HTMLEvents/SVGEvents/MouseEvents/
+/// UIEvents；WPT Document-createEvent.https 断言）。keypress-dispatch-crash 的 vacuous
+/// pass 由 runner 侧「零 test() 声明 + 脚本中断 = no-crash 达成」处理，不在 shim 加别名。
+#[test]
+fn test_create_event_keyboard_events_plural_throws_r151() {
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let mut sandbox = V8Sandbox::with_config(zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    })
+    .unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> =
+        Arc::new(Mutex::new("<html><body></body></html>".to_string()));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+
+    let out = sandbox
+        .execute(
+            "var r = '';\
+             try { document.createEvent('KeyboardEvents'); r = 'no-throw'; }\
+             catch (e) { r = e.name; }\
+             var ok2 = '';\
+             try { var ev = document.createEvent('KeyboardEvent'); ev.initKeyboardEvent('keypress');\
+                   r += '|singular-ok:' + (ev.type === 'keypress'); }\
+             catch (e2) { r += '|singular-throw'; }\
+             r",
+        )
+        .unwrap()
+        .value;
+    assert_eq!(
+        out, "NotSupportedError|singular-ok:true",
+        "R151 createEvent：KeyboardEvents 复数抛（spec 别名表）/ 单数正常 + initKeyboardEvent"
+    );
+}
+
+/// R151④：_zwMEl 解析节点（template.content 克隆子树）的 `click()` + `classList`——
+/// WPT Event-dispatch-single-activation 对克隆子树 click 目标调 `.click()`、对激活元素
+/// 调 `e.classList.add('test'+i)`（旧缺方法 TypeError）。
+#[test]
+fn test_zw_mel_click_and_classlist_r151() {
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let mut sandbox = V8Sandbox::with_config(zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    })
+    .unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><template id=\"t\"><input class=\"c1\" type=\"checkbox\"></template></body></html>"
+            .to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+
+    let out = sandbox
+        .execute(
+            "var t = document.querySelector('#t');\
+             var input = t.content.children[0].cloneNode(true);\
+             var parts = [];\
+             parts.push('classList:' + (typeof input.classList.add));\
+             input.classList.add('x1');\
+             parts.push('cls:' + input.getAttribute('class'));\
+             parts.push('contains:' + input.classList.contains('x1'));\
+             input.classList.remove('x1');\
+             parts.push('removed:' + input.classList.contains('x1'));\
+             parts.push('toggle:' + input.classList.toggle('x2'));\
+             var clicked = 0;\
+             input.addEventListener('click', function () { clicked++; });\
+             parts.push('click:' + (typeof input.click));\
+             input.click();\
+             parts.push('fired:' + clicked);\
+             parts.join('~')",
+        )
+        .unwrap()
+        .value;
+    assert_eq!(
+        out,
+        "classList:function~cls:c1 x1~contains:true~removed:false~toggle:true~click:function~fired:1",
+        "R151 _zwMEl classList（add/remove/toggle/contains 写回属性）+ click()（本地派发触发 listener）"
+    );
+}

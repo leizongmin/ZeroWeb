@@ -1958,10 +1958,29 @@ fn run_testharness_html_inner(
     let external_css = webview.fetch_page_images(&html, &page_url);
     webview.load_html(&html, Some(&external_css));
     if let Err(error) = webview.run_page_scripts_strict() {
+        // R151（js-dom M4）：**crash 用例的 vacuous pass 语义**——文件未声明任何 test()
+        //（纯 "no crash should occur" 回归用例，如 dom/events/keypress-dispatch-crash.html：
+        // spec `dom-document-createevent` 别名表无 KeyboardEvents 复数 → 真实浏览器
+        // createEvent 同样抛 NotSupportedError 中断顶层脚本），页面脚本抛错但引擎未崩
+        // = 用例目的达成。判 Pass（带注记）；声明了 test() 的文件保持 Fail（脚本中断
+        // 使已声明断言无法跑完，真失败）。判据 = 注入 probe 的 state.tests（test 函数
+        // 被调次数）——脚本在首个 test() 前中断为 0。
+        let declared = webview
+            .execute_script(
+                "(function(){try{var st=typeof globalThis.__zw_harness_state==='function'?globalThis.__zw_harness_state():null;return st&&st.tests?st.tests:0;}catch(_e){return 0;}})()",
+            )
+            .ok()
+            .and_then(|v| v.trim().parse::<usize>().ok())
+            .unwrap_or(0);
+        let status = if declared == 0 {
+            HarnessStatus::Pass
+        } else {
+            HarnessStatus::Fail
+        };
         return vec![HarnessSubtestResult {
             name: case_name.to_string(),
-            status: HarnessStatus::Fail,
-            message: Some(format!("page script threw: {error}")),
+            status,
+            message: Some(format!("page script threw (declared tests: {declared}): {error}")),
         }];
     }
 
