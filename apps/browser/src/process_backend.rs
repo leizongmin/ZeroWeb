@@ -679,11 +679,7 @@ impl ProcessTabBackend {
         params: ServiceWorkerRequestParams,
     ) {
         let authority = self.committed_document_urls.get(&renderer_id).cloned();
-        let client_id = format!(
-            "{}:{}",
-            renderer_id,
-            self.committed_document_epochs.get(&renderer_id).copied().unwrap_or(0)
-        );
+        let client_id = self.service_worker_client_id(renderer_id);
         let disposition = self.service_worker_owner.begin_request_for_client(
             tab_id,
             self.private_tabs.contains(&tab_id),
@@ -707,6 +703,14 @@ impl ProcessTabBackend {
                 self.service_worker_owner.attach_fetch(plan, receiver);
             }
         }
+    }
+
+    fn service_worker_client_id(&self, renderer_id: u64) -> String {
+        format!(
+            "{}:{}",
+            renderer_id,
+            self.committed_document_epochs.get(&renderer_id).copied().unwrap_or(0)
+        )
     }
 
     fn drain_service_worker_responses(&mut self) {
@@ -918,6 +922,17 @@ impl ProcessTabBackend {
         self.committed_document_urls.insert(renderer_id, pending.url);
         self.committed_document_epochs
             .insert(renderer_id, pending.navigation_epoch);
+        let client_id = self.service_worker_client_id(renderer_id);
+        if let Some(committed_url) = self.committed_document_urls.get(&renderer_id).cloned()
+            && let Err(error) = self.service_worker_owner.observe_committed_top_level_client(
+                tab_id,
+                self.private_tabs.contains(&tab_id),
+                &client_id,
+                &committed_url,
+            )
+        {
+            tracing::warn!("Rejected committed Service Worker client: {error}");
+        }
     }
 
     fn handle_indexed_db_connection_request(

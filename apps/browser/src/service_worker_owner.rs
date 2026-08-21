@@ -1171,6 +1171,26 @@ impl BrowserServiceWorkerOwner {
         self.pending_import_fetches = retained;
     }
 
+    pub(crate) fn observe_committed_top_level_client(
+        &mut self,
+        tab_id: TabId,
+        private: bool,
+        client_id: &str,
+        client_url: &str,
+    ) -> Result<(), String> {
+        // https://w3c.github.io/ServiceWorker/#service-worker-client
+        let url = Url::parse(client_url).map_err(|_| "Service Worker committed client URL is invalid".to_string())?;
+        if !matches!(url.scheme(), "http" | "https") {
+            return Ok(());
+        }
+        let profile = if private {
+            ProfileKey::Private(tab_id)
+        } else {
+            ProfileKey::Normal
+        };
+        self.observe_client(tab_id, profile, client_id, url.as_str())
+    }
+
     pub(crate) fn remove_private_profile(&mut self, tab_id: TabId) {
         self.clients_by_tab.remove(&tab_id);
         self.private.remove(&tab_id);
@@ -1278,6 +1298,19 @@ impl BrowserServiceWorkerOwner {
             });
         }
         Ok(())
+    }
+
+    #[cfg(test)]
+    pub(crate) fn client_references_for_test(&self, tab_id: TabId) -> Vec<(String, String)> {
+        self.clients_by_tab
+            .get(&tab_id)
+            .map(|clients| {
+                clients
+                    .iter()
+                    .map(|client| (client.client_id.clone(), client.frame_type.clone()))
+                    .collect()
+            })
+            .unwrap_or_default()
     }
 
     fn poll_fetches(&mut self, completed: &mut Vec<CompletedServiceWorkerResponse>) {

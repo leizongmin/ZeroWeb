@@ -2,7 +2,7 @@
 
 **入口文档**: [../service-workers.md](../service-workers.md)
 **创建日期**: 2026-08-17（goal 拆分 bootstrap）
-**最后更新**: 2026-08-21（M3-31 同 tab 多 client 索引完成）
+**最后更新**: 2026-08-21（M3-32 导航 commit 顶层 client 接线完成）
 
 ---
 
@@ -168,6 +168,9 @@ M0 启动门禁解除；M1 core WPT 已收敛，M2 依赖未满足，当前推�
 - ✅ M3-31：browser owner 的 tab→client registry 从单 client 扩展为一 tab 多 window
   client；同 tab top-level + nested client 可同时进入 `clients.matchAll()`，tab 断开时整组
   client 与消息队列清理，tab focus 投影继续优先 top-level/auxiliary client
+- ✅ M3-32：production navigation commit 主动把当前 Document 观测为 top-level
+  Service Worker window client；导航 replacement 在 start 阶段移除旧 client，commit 后以
+  新 navigation epoch 生成稳定 client id，不再依赖页面先调用 `navigator.serviceWorker.*`
 
 ## 缺口清单
 
@@ -187,7 +190,7 @@ M0 启动门禁解除；M1 core WPT 已收敛，M2 依赖未满足，当前推�
 
 ## 下一步计划
 
-1. **M3 clients follow-up**：真实 iframe/popup 创建、导航替换与销毁事件接入 browser owner
+1. **M3 clients follow-up**：真实 iframe/popup 创建与销毁事件接入 browser owner
 2. **M2 门控保持**：js-dom S6 与 storage-cache-api M1 land 后启动 fetch pipeline
 
 ## 里程碑状态
@@ -441,6 +444,7 @@ M0 启动门禁解除；M1 core WPT 已收敛，M2 依赖未满足，当前推�
 | 2026-08-21 | M3-29 clients focus order | `clients.matchAll()` 按最近 focus window 优先排序；active tab 投影到 SW client registry |
 | 2026-08-21 | M3-30 client frameType | manager 显式 `frameType` 观测入口；IPC 允许 `auxiliary`；nested 透传定向测试 |
 | 2026-08-21 | M3-31 same-tab clients | browser owner 保留同 tab 多个 client；disconnect tab 成组移除；focus 仍选择 top-level/auxiliary |
+| 2026-08-21 | M3-32 committed top-level client | production navigation commit 登记 top-level SW client；replacement start 清旧 epoch client |
 | 2026-08-19 | 三方案对比 | 拒绝同线程 context（无调度隔离）；拒绝从零线程（复制安全基建）；推荐抽取 Worker 线程核 |
 | 2026-08-19 | owner | production browser process 单一 owner；WebView 只做同算法 in-process adapter |
 | 2026-08-19 | 首个 driving WPT | `activation-after-registration.https.html` |

@@ -124,6 +124,69 @@ fn mismatched_navigation_commit_does_not_grant_service_worker_authority() {
 }
 
 #[test]
+fn committed_navigation_observes_top_level_service_worker_client() {
+    let mut backend = ProcessTabBackend::with_renderer_bin(PathBuf::from("unused-renderer"));
+    let tab_id = TabId(809);
+    let renderer_id = 99;
+    let url = "https://example.test/app/page";
+    backend.tab_to_renderer.insert(tab_id, renderer_id);
+
+    backend.stage_indexed_db_navigation(renderer_id, url, 4);
+    backend.handle_navigation_committed(
+        tab_id,
+        renderer_id,
+        NavigationCommittedParams {
+            url: url.to_string(),
+            navigation_epoch: 4,
+        },
+    );
+
+    assert_eq!(
+        backend.service_worker_owner.client_references_for_test(tab_id),
+        [("99:4".to_string(), "top-level".to_string())]
+    );
+}
+
+#[test]
+fn navigation_replacement_removes_stale_service_worker_client() {
+    let mut backend = ProcessTabBackend::with_renderer_bin(PathBuf::from("unused-renderer"));
+    let tab_id = TabId(810);
+    let renderer_id = 100;
+    backend.tab_to_renderer.insert(tab_id, renderer_id);
+
+    backend.stage_indexed_db_navigation(renderer_id, "https://example.test/app/old", 4);
+    backend.handle_navigation_committed(
+        tab_id,
+        renderer_id,
+        NavigationCommittedParams {
+            url: "https://example.test/app/old".into(),
+            navigation_epoch: 4,
+        },
+    );
+    backend.stage_indexed_db_navigation(renderer_id, "https://example.test/app/new", 5);
+    assert!(
+        backend
+            .service_worker_owner
+            .client_references_for_test(tab_id)
+            .is_empty()
+    );
+
+    backend.handle_navigation_committed(
+        tab_id,
+        renderer_id,
+        NavigationCommittedParams {
+            url: "https://example.test/app/new".into(),
+            navigation_epoch: 5,
+        },
+    );
+
+    assert_eq!(
+        backend.service_worker_owner.client_references_for_test(tab_id),
+        [("100:5".to_string(), "top-level".to_string())]
+    );
+}
+
+#[test]
 fn multiprocess_navigator_registration_uses_browser_owner() {
     let _multiprocess_guard = lock_multiprocess_tests();
     let renderer = resolve_renderer_binary().expect("fresh zero-renderer binary is required");
