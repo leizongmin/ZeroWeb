@@ -17,6 +17,8 @@ pub(super) fn extended_visual_or_layout_property_supported(property: &str, value
         // https://drafts.csswg.org/css-overflow-4/
         "scrollbar-width" => values::parse_scrollbar_width(value).is_some(),
         "scrollbar-gutter" => values::parse_scrollbar_gutter(value).is_some(),
+        // https://drafts.csswg.org/css-overflow-3/#overflow-clip-margin
+        "overflow-clip-margin" => values::parse_overflow_clip_margin(value).is_some(),
         // https://drafts.csswg.org/css-text-4/
         "text-wrap" => values::parse_text_wrap(value).is_some(),
         "hyphens" => values::parse_hyphens(value).is_some(),
