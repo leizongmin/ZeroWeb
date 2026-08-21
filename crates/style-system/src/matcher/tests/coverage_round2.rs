@@ -645,6 +645,7 @@ fn test_property_supported_transform() {
 
 #[test]
 fn test_property_supported_animation_and_transition() {
+    assert!(is_property_supported("transition", "opacity 0.3s ease-in"));
     assert!(is_property_supported("transition-property", "opacity, transform"));
     assert!(is_property_supported("transition-duration", "0.2s, 150ms"));
     assert!(is_property_supported(
@@ -652,6 +653,7 @@ fn test_property_supported_animation_and_transition() {
         "ease, steps(2, jump-none)"
     ));
     assert!(is_property_supported("transition-delay", "-0.1s, 50ms"));
+    assert!(is_property_supported("animation", "fade 1s linear infinite"));
     assert!(is_property_supported("animation-name", "fade, slide"));
     assert!(is_property_supported("animation-duration", "1s, 200ms"));
     assert!(is_property_supported(
@@ -666,12 +668,14 @@ fn test_property_supported_animation_and_transition() {
 
     assert!(!is_property_supported("transition-property", "opacity, 123"));
     assert!(!is_property_supported("transition-property", "none, opacity"));
+    assert!(!is_property_supported("transition", "opacity transform 0.3s"));
     assert!(!is_property_supported("transition-duration", "-1s"));
     assert!(!is_property_supported(
         "transition-timing-function",
         "steps(1, jump-none)"
     ));
     assert!(!is_property_supported("transition-delay", "0.1s, bogus"));
+    assert!(!is_property_supported("animation", "fade slide 1s"));
     assert!(!is_property_supported("animation-name", "123"));
     assert!(!is_property_supported("animation-duration", "infs"));
     assert!(!is_property_supported(

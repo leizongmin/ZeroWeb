@@ -49,6 +49,7 @@ pub(super) fn extended_visual_or_layout_property_supported(property: &str, value
         "transition-duration" => non_negative_time_list_supported(value),
         "transition-timing-function" => timing_function_list_supported(value),
         "transition-delay" => time_list_supported(value),
+        "transition" => shorthand_supported(property, value),
         // https://drafts.csswg.org/css-animations-1/
         "animation-name" => animation_name_list_supported(value),
         "animation-duration" => non_negative_time_list_supported(value),
@@ -58,6 +59,7 @@ pub(super) fn extended_visual_or_layout_property_supported(property: &str, value
         "animation-direction" => animation_direction_list_supported(value),
         "animation-fill-mode" => animation_fill_mode_list_supported(value),
         "animation-play-state" => animation_play_state_list_supported(value),
+        "animation" => shorthand_supported(property, value),
         // https://drafts.csswg.org/css-contain-2/#contain-property
         "contain" => values::parse_contain(value).is_some(),
         // https://drafts.csswg.org/css-sizing-4/#intrinsic-size-override
