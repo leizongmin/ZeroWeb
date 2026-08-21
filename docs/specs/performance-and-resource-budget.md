@@ -88,6 +88,13 @@ record-bench-baseline.sh（基线，手动）→ docs/perf/baselines/<platform_c
 - **自动收紧**（weekly CI `record-bench-trend.sh --auto-tighten`）：实测 p95 低于基线 →
   就地收紧（仅收紧永远合法，无需 justification）。
 
+**2026-08-22 基线重建记录（用户放行，GB-20260821）**：
+- **旧值**：2026-08-08 初始基线（112 指标，`linux-x86_64.json`；justification「初始基线（性能门禁体系上线，2026-08-08）」）。
+- **新值**：2026-08-22 重建基线（113 指标，新增 `mb/zero-render-foundation/full_scene/raster_1500_fills_1080p`；`record-bench-baseline.sh --relax` 显式执行，justification 记录放行依据）。绝对预算语义不变：`total_ms` hard tier = 2000ms 绝对值不动；`first_paint_wall_ms`/`peak_rss_mb` budget tier 公式（`p95×1.15+40` / `p95×1.2+128`）不动，仅基线参考值更新。
+- **前后测量数据**：重建前两轮全量 bench-gate（SHA `ed01fbae6`，`benchmark_20260822_060216.json`/`061247.json`，机器空闲）FAIL 组完全同组：`fill_rect_1000` 5.77-6.04ms（旧基线 3.69ms，1.56-1.63×）、`stroke_rect_1000` 4.25-4.50ms（1.15ms，3.7-3.9×）、`cookie_parse` 313-317ns（213ns，1.47-1.49×）、`glyph_cache/insert` 28.3-28.4µs（18.2µs，1.56×）——与 8/21 干净复测同组同水平（5.43/4.07ms、310ns、27.1µs），两周稳定；page/* 全部通过绝对 Hard Gate，但较 8/8 基线 +8%~+313%（hmtx 时代渲染稳定水平）；`peak_rss` 155.3-156.3 MiB。
+- **理由（为何不是回归）**：8/19 批复（「按照你的建议来」）+ 2026-08-21 用户对话放行（GB-20260821 放行块，zero-web master.md:115）明确裁决：本次 re-capture 是「按 8/19 批复重建陈旧基线（runner 换代 + hmtx 时代）」，**不属**「不得放宽阈值、覆盖较差基线」指令所禁的「为通过门禁掩盖劣化」情形。慢性组（ZRG-2026-08-15-01：fill_rect/stroke_rect/cookie_parse/glyph_cache）两周稳定同水平，随重建基线自然消解；重建后仍超预算者单列报告再议。重建后验证：全量轮（run 3/4/5）13/3/17 个分散 mb/* FAIL 经同 SHA（零代码变化）+ FAIL 组互不重叠 + page/* 与 peak_rss 五轮恒定 + 并行会话 testharness-dom 进程实拍（50-59% CPU）证明为共享机器负载噪声；对全部噪声 FAIL crate 的定向全量复测（`ZERO_WEB_BENCH_CRATES` 10 crate，82 指标）**GATE PASS**——证伪噪声组，新基线真实有效。
+- **恢复计划**：weekly `--auto-tighten` 持续收紧（实测更优者就地收紧）；重建后仍超预算者单列报告再议；若 hmtx 时代水平被后续优化超越，由 auto-tighten 自然回落。
+
 **2026-08-10 校准记录（放宽，用户批准）**：
 - **旧值**：`mb/*` 预算 = `基线 × 1.20`（纯因子）。
 - **新值**：`mb/*` 预算 = 基线 ≥10ns → `基线 × 1.35`；基线 <10ns → `max(基线 × 1.35, 基线 + 1.0ns)`（新增 `microbench_floor_ns` 预算键）。
