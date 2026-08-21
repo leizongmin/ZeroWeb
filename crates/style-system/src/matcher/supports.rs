@@ -40,6 +40,8 @@ pub(super) fn extended_visual_or_layout_property_supported(property: &str, value
         // https://www.w3.org/TR/css-flexbox-1/#flex-property
         "flex" => flex_shorthand_supported(value),
         "flex-flow" => shorthand_supported(property, value),
+        // https://drafts.csswg.org/css-color-adjust-1/#color-scheme-prop
+        "color-scheme" => color_scheme_supported(value),
         // https://drafts.csswg.org/css-transitions-1/
         "transition-property" => transition_property_list_supported(value),
         "transition-duration" => non_negative_time_list_supported(value),
@@ -179,6 +181,40 @@ fn flex_number_supported(value: &str) -> bool {
     value
         .parse::<f64>()
         .is_ok_and(|number| number.is_finite() && number >= 0.0)
+}
+
+fn color_scheme_supported(value: &str) -> bool {
+    let parts: Vec<&str> = value.split_whitespace().collect();
+    if parts.is_empty() {
+        return false;
+    }
+    if parts.len() == 1 && parts[0].eq_ignore_ascii_case("normal") {
+        return true;
+    }
+
+    let mut has_scheme = false;
+    let mut has_only = false;
+    for part in parts {
+        let lower = part.to_ascii_lowercase();
+        match lower.as_str() {
+            "normal" => return false,
+            "only" => {
+                if has_only {
+                    return false;
+                }
+                has_only = true;
+            }
+            "inherit" | "initial" | "unset" | "revert" | "revert-layer" => return false,
+            "light" | "dark" => has_scheme = true,
+            _ => {
+                if !css_ident_supported(part) {
+                    return false;
+                }
+                has_scheme = true;
+            }
+        }
+    }
+    has_scheme
 }
 
 fn columns_supported(value: &str) -> bool {

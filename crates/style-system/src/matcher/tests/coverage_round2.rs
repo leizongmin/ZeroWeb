@@ -389,12 +389,21 @@ fn test_property_supported_border_image_properties() {
 fn test_property_supported_color() {
     assert!(is_property_supported("color", "red"));
     assert!(is_property_supported("background-color", "#fff"));
+    assert!(is_property_supported("color-scheme", "dark"));
+    assert!(is_property_supported("color-scheme", "light dark"));
+    assert!(is_property_supported("color-scheme", "only light"));
+    assert!(is_property_supported("color-scheme", "light custom"));
     assert!(is_property_supported("border-color", "rgb(0,0,0)"));
     assert!(is_property_supported("border-top-color", "blue"));
     assert!(is_property_supported("border-right-color", "green"));
     assert!(is_property_supported("border-bottom-color", "yellow"));
     assert!(is_property_supported("border-left-color", "purple"));
     assert!(!is_property_supported("color", "invalid-color-xyz"));
+    assert!(!is_property_supported("color-scheme", ""));
+    assert!(!is_property_supported("color-scheme", "normal dark"));
+    assert!(!is_property_supported("color-scheme", "only"));
+    assert!(!is_property_supported("color-scheme", "1dark"));
+    assert!(!is_property_supported("color-scheme", "light, dark"));
 }
 
 #[test]
