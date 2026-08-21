@@ -172,6 +172,86 @@ fn test_property_supported_ui_and_text_decoration_properties() {
 }
 
 #[test]
+fn test_property_supported_extended_visual_and_layout_properties() {
+    assert!(is_property_supported("appearance", "textfield"));
+    assert!(is_property_supported("accent-color", "auto"));
+    assert!(is_property_supported("caret-color", "currentColor"));
+    assert!(is_property_supported("mix-blend-mode", "multiply"));
+    assert!(is_property_supported("scrollbar-width", "thin"));
+    assert!(is_property_supported("scrollbar-gutter", "stable both-edges"));
+    assert!(is_property_supported("text-wrap", "balance"));
+    assert!(is_property_supported("hyphens", "manual"));
+    assert!(is_property_supported("line-clamp", "3"));
+    assert!(is_property_supported("-webkit-line-clamp", "none"));
+    assert!(is_property_supported("object-fit", "scale-down"));
+    assert!(is_property_supported("object-position", "left 20%"));
+    assert!(is_property_supported("filter", "blur(2px) brightness(120%)"));
+    assert!(is_property_supported("backdrop-filter", "none"));
+    assert!(is_property_supported("contain", "layout paint"));
+    assert!(is_property_supported("page-break-before", "left"));
+    assert!(is_property_supported("page-break-inside", "avoid"));
+    assert!(is_property_supported("box-decoration-break", "clone"));
+    assert!(is_property_supported("image-rendering", "pixelated"));
+    assert!(is_property_supported("isolation", "isolate"));
+    assert!(is_property_supported("break-inside", "avoid-column"));
+    assert!(is_property_supported("break-before", "page"));
+    assert!(is_property_supported("break-after", "avoid-page"));
+    assert!(is_property_supported("column-rule-width", "thin"));
+    assert!(is_property_supported("column-rule-style", "dashed"));
+    assert!(is_property_supported("column-rule-color", "red"));
+    assert!(is_property_supported("overscroll-behavior-x", "contain"));
+    assert!(is_property_supported("overscroll-behavior-y", "none"));
+    assert!(is_property_supported("touch-action", "pan-x pan-y"));
+    assert!(is_property_supported("user-select", "all"));
+    assert!(is_property_supported("will-change", "opacity, transform"));
+    assert!(is_property_supported("pointer-events", "visiblePainted"));
+    assert!(is_property_supported("overflow-wrap", "anywhere"));
+    assert!(is_property_supported("tab-size", "4"));
+    assert!(is_property_supported("columns", "12em 3"));
+    assert!(is_property_supported("column-count", "2"));
+    assert!(is_property_supported("column-width", "12em"));
+    assert!(is_property_supported("column-fill", "auto"));
+    assert!(is_property_supported("column-span", "all"));
+    assert!(is_property_supported("clip-path", "inset(10px 20%)"));
+    assert!(is_property_supported("clip", "rect(0px, auto, 10px, 0px)"));
+
+    assert!(!is_property_supported("appearance", "sparkle"));
+    assert!(!is_property_supported("accent-color", "sparkle"));
+    assert!(!is_property_supported("caret-color", "sparkle"));
+    assert!(!is_property_supported("mix-blend-mode", "plus-lighter"));
+    assert!(!is_property_supported("scrollbar-width", "wide"));
+    assert!(!is_property_supported("scrollbar-gutter", "both-edges"));
+    assert!(!is_property_supported("text-wrap", "auto"));
+    assert!(!is_property_supported("hyphens", "all"));
+    assert!(!is_property_supported("line-clamp", "0"));
+    assert!(!is_property_supported("object-fit", "stretch"));
+    assert!(!is_property_supported("object-position", "left top extra"));
+    assert!(!is_property_supported("filter", "blur(-1px)"));
+    assert!(!is_property_supported("contain", "layout sparkle"));
+    assert!(!is_property_supported("page-break-inside", "left"));
+    assert!(!is_property_supported("box-decoration-break", "split"));
+    assert!(!is_property_supported("image-rendering", "nearest"));
+    assert!(!is_property_supported("isolation", "none"));
+    assert!(!is_property_supported("break-before", "always"));
+    assert!(!is_property_supported("column-rule-width", "-1px"));
+    assert!(!is_property_supported("column-rule-style", "auto"));
+    assert!(!is_property_supported("overscroll-behavior-x", "scroll"));
+    assert!(!is_property_supported("touch-action", "pinch-zoom"));
+    assert!(!is_property_supported("user-select", "visible"));
+    assert!(!is_property_supported("will-change", "auto, opacity"));
+    assert!(!is_property_supported("pointer-events", "paint"));
+    assert!(!is_property_supported("overflow-wrap", "wrap"));
+    assert!(!is_property_supported("tab-size", "auto"));
+    assert!(!is_property_supported("columns", "2 3"));
+    assert!(!is_property_supported("column-count", "0"));
+    assert!(!is_property_supported("column-width", "50%"));
+    assert!(!is_property_supported("column-fill", "balance-all auto"));
+    assert!(!is_property_supported("column-span", "none all"));
+    assert!(!is_property_supported("clip-path", "polygon(0 0, , 100% 100%)"));
+    assert!(!is_property_supported("clip", "rect(10px, 20px)"));
+}
+
+#[test]
 fn test_property_supported_color() {
     assert!(is_property_supported("color", "red"));
     assert!(is_property_supported("background-color", "#fff"));

@@ -1570,7 +1570,7 @@ fn is_property_supported(property: &str, value: &str) -> bool {
         // driving: WPT css-supports-024 `(font: 16px serif)`。
         "font" => crate::shorthand::font_shorthand_supported(trimmed),
         // 未知属性：默认不支持（安全保守策略）
-        _ => false,
+        _ => supports::extended_visual_or_layout_property_supported(lower.as_str(), trimmed).unwrap_or(false),
     }
 }
 
@@ -1972,5 +1972,6 @@ fn collect_from_rules(
     }
 }
 
+mod supports;
 #[cfg(test)]
 mod tests;
