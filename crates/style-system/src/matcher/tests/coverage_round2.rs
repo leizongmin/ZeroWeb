@@ -420,6 +420,17 @@ fn test_property_supported_length_properties() {
 }
 
 #[test]
+fn test_property_supported_margin_trim() {
+    assert!(is_property_supported("margin-trim", "none"));
+    assert!(is_property_supported("margin-trim", "block-start inline-end"));
+    assert!(is_property_supported("margin-trim", "both"));
+
+    assert!(!is_property_supported("margin-trim", ""));
+    assert!(!is_property_supported("margin-trim", "none block"));
+    assert!(!is_property_supported("margin-trim", "block sparkle"));
+}
+
+#[test]
 fn test_property_supported_css_text_length_properties() {
     assert!(is_property_supported("line-height", "normal"));
     assert!(is_property_supported("line-height", "1.5"));
