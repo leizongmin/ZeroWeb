@@ -94,6 +94,42 @@ fn pending_shorthand_longhands(property: &str) -> Option<&'static [&'static str]
         "border-right" => &["border-right-width", "border-right-style", "border-right-color"],
         "border-bottom" => &["border-bottom-width", "border-bottom-style", "border-bottom-color"],
         "border-left" => &["border-left-width", "border-left-style", "border-left-color"],
+        "border-inline-start" => &[
+            "border-inline-start-width",
+            "border-inline-start-style",
+            "border-inline-start-color",
+        ],
+        "border-inline-end" => &[
+            "border-inline-end-width",
+            "border-inline-end-style",
+            "border-inline-end-color",
+        ],
+        "border-block-start" => &[
+            "border-block-start-width",
+            "border-block-start-style",
+            "border-block-start-color",
+        ],
+        "border-block-end" => &[
+            "border-block-end-width",
+            "border-block-end-style",
+            "border-block-end-color",
+        ],
+        "border-inline" => &[
+            "border-inline-start-width",
+            "border-inline-start-style",
+            "border-inline-start-color",
+            "border-inline-end-width",
+            "border-inline-end-style",
+            "border-inline-end-color",
+        ],
+        "border-block" => &[
+            "border-block-start-width",
+            "border-block-start-style",
+            "border-block-start-color",
+            "border-block-end-width",
+            "border-block-end-style",
+            "border-block-end-color",
+        ],
         "border-radius" => &[
             "border-top-left-radius",
             "border-top-right-radius",

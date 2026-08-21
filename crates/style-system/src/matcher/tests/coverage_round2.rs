@@ -492,6 +492,13 @@ fn test_property_supported_length_properties() {
     assert!(is_property_supported("border-block-end-color", "red"));
     assert!(is_property_supported("border-inline-style", "solid dashed"));
     assert!(is_property_supported("border-block-color", "red blue"));
+    assert!(is_property_supported("border-inline", "2px solid red"));
+    assert!(is_property_supported("border-block", "dotted"));
+    assert!(is_property_supported(
+        "border-inline-start",
+        "medium dashed currentColor"
+    ));
+    assert!(is_property_supported("border-block-end", "1px solid rgb(0,0,0)"));
     assert!(is_property_supported("border-style", "solid dashed dotted double"));
     assert!(is_property_supported("border-color", "red rgb(0,0,0) currentColor"));
     assert!(is_property_supported("border-top", "2px solid red"));
@@ -520,6 +527,10 @@ fn test_property_supported_length_properties() {
     assert!(!is_property_supported("border-block-style", "1px"));
     assert!(!is_property_supported("border-inline-style", "solid dashed dotted"));
     assert!(!is_property_supported("border-block-color", "solid"));
+    assert!(!is_property_supported("border-inline", "solid dashed red"));
+    assert!(!is_property_supported("border-block", "1px 2px solid red"));
+    assert!(!is_property_supported("border-inline-start", "solid dashed red"));
+    assert!(!is_property_supported("border-block-end", "1px 2px solid red"));
     assert!(!is_property_supported("border-style", "solid sparkle"));
     assert!(!is_property_supported("border-color", "red solid"));
     assert!(!is_property_supported("border-top", "solid dashed red"));

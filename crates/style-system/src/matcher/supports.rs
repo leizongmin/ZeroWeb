@@ -124,6 +124,12 @@ pub(super) fn extended_visual_or_layout_property_supported(property: &str, value
         | "border-inline-end-color"
         | "border-block-start-color"
         | "border-block-end-color" => values::parse_color(value).is_some(),
+        "border-inline"
+        | "border-block"
+        | "border-inline-start"
+        | "border-inline-end"
+        | "border-block-start"
+        | "border-block-end" => shorthand_supported(property, value),
         // https://drafts.csswg.org/css-backgrounds-3/#border-images
         "border-image" => crate::shorthand::border_image_shorthand_supported(value),
         "border-image-source" => values::parse_border_image_source(value).is_some(),

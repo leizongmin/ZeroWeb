@@ -64,6 +64,33 @@ fn test_border_style_with_var_emits_pending_sentinels() {
 }
 
 #[test]
+fn test_logical_border_shorthand_with_var_emits_pending_sentinels() {
+    let _g = VarGuard::new();
+    let out = expand_shorthands(&[(
+        "border-inline".to_string(),
+        "var(--logical-border)".to_string(),
+        false,
+        (0, 0, 0),
+    )]);
+    let props: Vec<&str> = out.iter().map(|(p, _, _, _)| p.as_str()).collect();
+    assert_eq!(
+        props,
+        [
+            "border-inline-start-width",
+            "border-inline-start-style",
+            "border-inline-start-color",
+            "border-inline-end-width",
+            "border-inline-end-style",
+            "border-inline-end-color"
+        ]
+    );
+    for (_, v, _, _) in &out {
+        assert!(v.starts_with(ZWSP_SENTINEL_PREFIX));
+        assert!(v.contains("\x01border-inline\x01"));
+    }
+}
+
+#[test]
 fn test_background_with_var_emits_pending_sentinels() {
     let _g = VarGuard::new();
     let out = expand_shorthands(&[("background".to_string(), "var(--foo)".to_string(), false, (0, 0, 0))]);
