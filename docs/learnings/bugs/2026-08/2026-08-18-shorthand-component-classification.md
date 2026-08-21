@@ -372,3 +372,5 @@ IFC atomic inline-block dimensions are another independent used-value boundary. 
 Empty leaf measurement fallback is another residual length consumer. When `measure_text_content` has no inline content and falls back to CSS `width`/`height`, it must resolve real lengths against the element font size; otherwise flex/grid measurement callbacks lose explicit non-`px` sizes even though the normal taffy style path can represent them.
 
 Inline multicol auto-fill height budgets are another post-IFC used-value boundary. When stored column fragmentation replays `height`/`max-height` to decide the per-column fill budget, resolve definite real lengths against the container font size; otherwise residual units fall back to full-width content height and prevent expected column breaks.
+
+`tab-size` has two unit domains: numeric values are space-count multipliers, while length values are already tab-stop distances. Keep that distinction in the IFC configuration; passing a resolved length through a field interpreted as a multiplier silently applies the space advance a second time, and Path A/Path B must share the same conversion.

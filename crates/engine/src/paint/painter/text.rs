@@ -6,8 +6,8 @@ use zero_css_parser::values::types::FontStyleValue;
 use zero_css_parser::values::{ColorValue, FloatValue, LengthValue};
 use zero_dom::{Document, NodeId, NodeKind};
 use zero_layout_engine::inline_finalization::{
-    build_text_parent_override_map, resolve_text_align, resolve_text_align_last, resolve_text_indent,
-    resolve_word_break_mode, subtree_has_text_decoration,
+    build_text_parent_override_map, resolve_tab_size_length_px, resolve_text_align, resolve_text_align_last,
+    resolve_text_indent, resolve_word_break_mode, subtree_has_text_decoration,
 };
 use zero_layout_engine::{FloatExclusion, InlineFormattingContext, LayoutBox, NodeIdMap};
 use zero_render_foundation::color::Color;
@@ -718,16 +718,13 @@ impl super::Painter {
             // font_size_px（同取 style.font_size Px，16.0 防御回退在此不可达）等价。
             let text_indent_px = resolve_text_indent(&style.text_indent, &style.font_size, container_width);
 
-            // CSS tab-size — 制表符展开宽度
-            // Number(n) 表示 n 个空格宽度，Length 表示具体像素值
-            let tab_size_px: f32 = match &style.tab_size {
-                TabSizeValue::Number(n) => {
-                    // 空格宽度约 font_size * 0.25，乘以空格数
-                    *n as f32 * font_size * 0.25
-                }
-                TabSizeValue::Length(LengthValue::Px(v)) => *v as f32,
-                TabSizeValue::Length(LengthValue::Em(v)) => *v as f32 * font_size,
-                _ => font_size * 0.25 * 8.0, // 默认 8 个空格宽度
+            // CSS tab-size: Number(n) 是空格倍数，Length 是实际长度。
+            let tab_size = match &style.tab_size {
+                TabSizeValue::Number(n) => (*n as f32, false),
+                TabSizeValue::Length(length) => (
+                    resolve_tab_size_length_px(length, &style.font_size).unwrap_or(8.0),
+                    true,
+                ),
             };
 
             // 收集浮动子元素的排除区域
@@ -890,7 +887,8 @@ impl super::Painter {
                     .with_text_autospace(style.text_autospace)
                     .with_text_indent(text_indent_px)
                     .with_float_exclusions(float_exclusions)
-                    .with_tab_size(tab_size_px)
+                    .with_tab_size(tab_size.0)
+                    .with_tab_size_is_length(tab_size.1)
                     .with_vertical(is_vertical)
                     .with_vertical_rtl(is_vertical_rtl)
                     .with_block_extent(

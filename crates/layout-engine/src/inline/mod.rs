@@ -92,8 +92,13 @@ pub struct InlineFormattingContext {
     pub text_autospace: TextAutospaceValue,
     /// 首行文本缩进（CSS text-indent，px）。仅影响第一行的起始 x 坐标。
     pub text_indent: f32,
-    /// CSS tab-size（px）— 制表符展开宽度。默认 8 个空格宽度。
+    /// CSS tab-size 数值。
+    ///
+    /// 默认表示空格倍数（`tab-size:<number>`）；当 `tab_size_is_length` 为 true 时
+    /// 表示已解析的 px 长度（`tab-size:<length>`）。
     pub tab_size: f32,
+    /// `tab_size` 是否为已解析 px 长度。
+    pub tab_size_is_length: bool,
     /// 浮动排除区域 — 浮动元素占据的空间，文本需环绕排列。
     pub float_exclusions: Vec<FloatExclusion>,
     /// 生成的行盒列表。
@@ -289,6 +294,7 @@ impl InlineFormattingContext {
             text_autospace: TextAutospaceValue::NoAutospace,
             text_indent: 0.0,
             tab_size: DEFAULT_TAB_SIZE,
+            tab_size_is_length: false,
             float_exclusions: Vec::new(),
             lines: Vec::new(),
             line_clamp: None,
@@ -762,11 +768,27 @@ impl InlineFormattingContext {
         self
     }
 
-    /// 设置 CSS tab-size（制表符展开宽度，px）。
+    /// 设置 CSS tab-size 数字值（空格倍数）。
     ///
-    /// 制表符 `\t` 在 pre/pre-wrap 模式下会展开为此宽度的空格。
+    /// 制表符 `\t` 在 pre/pre-wrap 模式下推进到此空格倍数的下一个 tab stop。
     pub fn with_tab_size(mut self, tab_size: f32) -> Self {
         self.tab_size = tab_size;
+        self.tab_size_is_length = false;
+        self
+    }
+
+    /// 设置 CSS tab-size 长度值（px）。
+    ///
+    /// CSS `tab-size:<length>` 的 tab stop 是实际长度，不再乘以空格 advance。
+    pub fn with_tab_size_length_px(mut self, tab_size_px: f32) -> Self {
+        self.tab_size = tab_size_px;
+        self.tab_size_is_length = true;
+        self
+    }
+
+    /// 设置 `tab_size` 的单位语义。
+    pub fn with_tab_size_is_length(mut self, is_length: bool) -> Self {
+        self.tab_size_is_length = is_length;
         self
     }
 

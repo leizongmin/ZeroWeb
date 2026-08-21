@@ -9,6 +9,7 @@ use zero_css_parser::values::{DisplayValue, LengthValue};
 use zero_dom::Document;
 use zero_style_system::property::{
     ColumnCountComputedValue, ColumnFillComputedValue, DirectionValue, TextAlignLastValue, TextAlignValue,
+    WhiteSpaceValue,
 };
 
 #[test]
@@ -195,6 +196,54 @@ fn r3626_multicol_auto_fill_resolves_residual_height_budget() {
         column_two_x >= 100.0,
         "height:5em at 20px should use a 100px column budget and move overflow lines to column 2, max x={}",
         column_two_x
+    );
+}
+
+/// R3627：CSS `tab-size:<length>` 是实际 tab stop 长度，不是空格倍数。
+#[test]
+fn r3627_tab_size_length_resolves_to_px_stop_width() {
+    use zero_dom::parse_html;
+
+    let doc = parse_html("<div>a\tx</div>");
+    let html = doc.first_child(doc.root()).unwrap();
+    let body = doc.last_child(html).unwrap();
+    let div = doc.first_child(body).unwrap();
+
+    let mut styles = HashMap::new();
+    let mut style = ComputedStyle::default();
+    style.font_family = vec!["Ahem".to_string()];
+    style.font_size = LengthValue::Px(20.0);
+    style.white_space = WhiteSpaceValue::PreWrap;
+    style.tab_size = zero_style_system::TabSizeValue::Length(LengthValue::Em(2.0));
+    styles.insert(div, style);
+
+    let mut layout_box = LayoutBox {
+        node_id: Some(div),
+        width: 800.0,
+        content_width: 800.0,
+        is_block_level: true,
+        ..Default::default()
+    };
+    let mut paint_skip = std::collections::HashSet::new();
+    let finalized_inline_blocks = Default::default();
+    let mut context = FinalInlineContext::new(&mut paint_skip, InlineFontContext::default(), &finalized_inline_blocks);
+
+    compute_final_inline_layouts(&mut layout_box, &doc, &styles, &[], &HashMap::new(), &mut context);
+
+    let lines = layout_box
+        .inline_layout
+        .as_ref()
+        .expect("pre-wrap text should store inline layout");
+    let x_pos = lines[0]
+        .fragments
+        .iter()
+        .find(|fragment| fragment.text.contains('x'))
+        .map(|fragment| fragment.x)
+        .expect("line should contain x fragment");
+    assert!(
+        (x_pos - 40.0).abs() < 0.01,
+        "tab-size:2em at font-size:20px should create 40px tab stops, got x={}",
+        x_pos
     );
 }
 

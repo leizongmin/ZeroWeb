@@ -175,7 +175,11 @@ impl InlineFormattingContext {
                         // 贡献行高，渲染为不可见（空文本片段，宽度由 current_x 序列消费）。
                         if self.preserve_whitespace && content_word == "\t" {
                             let space_advance = self.advance_of(' ', run.font_id, run.font_size, run.is_ahem_font);
-                            let tab_unit = self.tab_size.max(1.0) * space_advance;
+                            let tab_unit = if self.tab_size_is_length {
+                                self.tab_size.max(space_advance)
+                            } else {
+                                self.tab_size.max(1.0) * space_advance
+                            };
                             let pos = current_x;
                             let next_stop = ((pos / tab_unit).floor() + 1.0) * tab_unit;
                             let tab_advance = (next_stop - pos).max(space_advance);

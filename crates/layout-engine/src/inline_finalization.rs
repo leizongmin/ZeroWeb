@@ -140,6 +140,13 @@ pub fn resolve_text_indent(text_indent: &LengthValue, font_size: &LengthValue, c
     }
 }
 
+/// Resolve a CSS `tab-size:<length>` value to a finite pixel tab stop width.
+pub fn resolve_tab_size_length_px(value: &LengthValue, font_size: &LengthValue) -> Option<f32> {
+    let font_size_px = zero_style_system::computed::resolve_length(font_size, 16.0, None, None);
+    let px = zero_style_system::computed::resolve_length(value, font_size_px, None, None);
+    px.is_finite().then_some(px.max(0.0) as f32)
+}
+
 fn resolve_definite_real_length(value: &LengthValue, style: &ComputedStyle) -> Option<f32> {
     match value {
         LengthValue::Auto
@@ -865,7 +872,6 @@ pub(crate) fn compute_final_inline_layouts(
     use crate::inline::InlineFormattingContext;
     use crate::types::InlineLayoutFragment;
     use crate::types::InlineLayoutLine;
-    use zero_css_parser::values::LengthValue;
     use zero_style_system::property::types::{OverflowWrapValue, WhiteSpaceValue};
 
     // R1099 Slice α-1（vertical-mode IFC 四层协调）：container_width WM-aware。
@@ -922,10 +928,12 @@ pub(crate) fn compute_final_inline_layouts(
     let text_align = resolve_text_align(Some(style));
     let text_align_last = resolve_text_align_last(Some(style));
     let text_indent_px = resolve_text_indent(&style.text_indent, &style.font_size, container_width);
-    let tab_size_px = match &style.tab_size {
-        zero_style_system::TabSizeValue::Number(n) => *n as f32 * 8.0,
-        zero_style_system::TabSizeValue::Length(LengthValue::Px(v)) => *v as f32,
-        _ => 8.0,
+    let tab_size = match &style.tab_size {
+        zero_style_system::TabSizeValue::Number(n) => (*n as f32, false),
+        zero_style_system::TabSizeValue::Length(length) => (
+            resolve_tab_size_length_px(length, &style.font_size).unwrap_or(8.0),
+            true,
+        ),
     };
     let is_vertical = matches!(
         root.writing_mode,
@@ -959,7 +967,8 @@ pub(crate) fn compute_final_inline_layouts(
         .with_word_break(word_break_mode)
         .with_text_autospace(style.text_autospace)
         .with_text_indent(text_indent_px)
-        .with_tab_size(tab_size_px)
+        .with_tab_size(tab_size.0)
+        .with_tab_size_is_length(tab_size.1)
         .with_vertical(is_vertical)
         .with_vertical_rtl(is_vertical_rtl)
         .with_block_extent(
