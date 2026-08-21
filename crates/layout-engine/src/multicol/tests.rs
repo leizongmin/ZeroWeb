@@ -20,6 +20,27 @@ fn test_length_to_px_em_uses_element_font_size() {
 }
 
 #[test]
+fn r3633_compute_column_info_resolves_residual_font_size_for_gap() {
+    let mut style = ComputedStyle::default();
+    style.font_size = LengthValue::Em(2.0);
+    style.column_count = ColumnCountComputedValue::Number(2);
+    style.column_gap = LengthValue::Em(1.0);
+
+    let info = compute_column_info(&style, 300.0).expect("column info");
+
+    assert!(
+        (info.gap - 32.0).abs() < 0.01,
+        "column-gap:1em should resolve against font-size:2em=32px, got {}",
+        info.gap
+    );
+    assert!(
+        (info.column_width - 134.0).abs() < 0.01,
+        "two columns in 300px with 32px gap should be 134px each, got {}",
+        info.column_width
+    );
+}
+
+#[test]
 fn test_compute_column_count_basic() {
     // 800px 容器, 200px 最小列宽, 0 gap → 4 列
     assert_eq!(compute_column_count(800.0, 200.0, 0.0), 4);

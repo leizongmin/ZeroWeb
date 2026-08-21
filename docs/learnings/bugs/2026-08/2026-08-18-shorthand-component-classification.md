@@ -384,3 +384,5 @@ Flex intrinsic aspect-ratio transfer has a separate item-level size boundary. Wh
 Grid intrinsic sizing has the same container spacing used-value boundary as flex, but through `column_gap`. Keep grid/flex intrinsic gap resolution on the shared definite real-length helper so direct residual gaps do not disappear in max-content calculations.
 
 Multicol intrinsic sizing also consumes author lengths outside the normal multicol layout pass. Resolve `column-width` and `column-gap` through the shared definite real-length helper before computing column-driven max-content, or direct residual units will either disappear or be replaced by child content widths.
+
+Multicol column-info parsing has a font-size used-value boundary separate from its length conversion helper. Even when `length_to_px` supports `em`, the font-size basis itself must be resolved first; otherwise residual `font-size` units make `column-gap:normal/1em` and `column-width:<length>` use the root fallback.

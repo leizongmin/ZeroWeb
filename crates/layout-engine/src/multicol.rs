@@ -158,10 +158,7 @@ pub(crate) fn balance_column_geometry(style: &ComputedStyle, container_width: f3
 /// 返回 `None` 表示不需要多列布局（column-count: auto 且 column-width: auto）。
 pub fn compute_column_info(style: &ComputedStyle, container_width: f32) -> Option<ColumnInfo> {
     // em 单位按 element font-size 解析（R904：column-width/column-gap apply 不解析 em）。
-    let font_size_px = match &style.font_size {
-        LengthValue::Px(v) => *v as f32,
-        _ => 16.0, // computed font_size 应为 Px；防御性回退
-    };
+    let font_size_px = zero_style_system::computed::resolve_length(&style.font_size, 16.0, None, None) as f32;
     // R1040：column-gap 初始值 = normal（CSS Multicol §4.1），对 multicol 解析为 1em。
     // default_impl 用 LengthValue::Auto 作 normal sentinel（gap 不接受 auto，无冲突）。
     // 显式 column-gap:<length> 或 column-gap:0 尊重原值。
