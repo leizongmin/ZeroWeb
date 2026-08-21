@@ -1622,6 +1622,40 @@ fn r3623_container_strut_resolves_ch_font_size() {
     );
 }
 
+/// R3624：无预存 layout 尺寸时，IFC 收集 inline-block 的 CSS width/height 也要
+/// 解析 residual real length，并且 `em` 基准要使用自身 resolved font-size。
+#[test]
+fn r3624_inline_block_dimension_resolves_residual_font_size() {
+    use std::collections::HashMap;
+    use zero_dom::parse_html;
+    use zero_style_system::property::types::DisplayValue;
+
+    let doc = parse_html("<p><span></span></p>");
+    let html = doc.first_child(doc.root()).unwrap();
+    let body = doc.last_child(html).unwrap();
+    let p = doc.first_child(body).unwrap();
+    let span = doc.first_child(p).unwrap();
+
+    let mut styles = HashMap::new();
+    let mut span_style = ComputedStyle::default();
+    span_style.display = DisplayValue::InlineBlock;
+    span_style.font_size = LengthValue::Ch(4.0); // 4ch @ 16px = 32px
+    span_style.width = LengthValue::Em(2.0); // 2em should use resolved 32px font-size
+    span_style.height = LengthValue::Px(20.0);
+    styles.insert(span, span_style);
+
+    let mut ctx = InlineFormattingContext::new(800.0);
+    ctx.layout(&doc, p, &styles);
+
+    assert_eq!(ctx.lines.len(), 1, "inline-block 应生成一行");
+    let run = &ctx.lines[0].runs[0];
+    assert!(
+        (run.width - 64.0).abs() < 0.01,
+        "inline-block width:2em 应使用 resolved font-size:4ch=32px，实际 width={:.2}",
+        run.width
+    );
+}
+
 // ── AdvanceSource 抽象 seam（R223 plumbing R1）──
 
 /// EstimateAdvance 默认实现必须与 estimate_char_width 完全等价（零行为变更），

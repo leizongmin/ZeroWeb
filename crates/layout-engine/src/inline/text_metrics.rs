@@ -537,20 +537,25 @@ fn resolve_normal_line_height(
 
 /// 从 CSS LengthValue 解析 inline-block 元素的尺寸（宽度或高度）。
 ///
-/// 支持 Px、Em、Rem 等绝对长度单位。Auto、Percentage、MinContent 等返回 0.0
+/// 支持真实长度单位。Auto、Percentage、MinContent 等返回 0.0
 /// （inline-block 在行内格式化上下文测量阶段无法确定这些值，需要 taffy 布局后回填）。
 pub fn resolve_inline_block_dimension(value: &LengthValue, style: &ComputedStyle, _is_width: bool) -> f32 {
     match value {
-        LengthValue::Px(v) => *v as f32,
-        LengthValue::Em(v) => {
-            let base = match &style.font_size {
-                LengthValue::Px(fs) => *fs as f32,
-                _ => 16.0,
-            };
-            *v as f32 * base
+        LengthValue::Auto
+        | LengthValue::Percentage(_)
+        | LengthValue::MinContent
+        | LengthValue::MaxContent
+        | LengthValue::FitContent(_) => 0.0,
+        LengthValue::Px(v) if *v == f64::INFINITY => 0.0,
+        other => {
+            let px = zero_style_system::computed::resolve_length(
+                other,
+                resolve_inline_font_size_px(style) as f64,
+                None,
+                None,
+            );
+            if px.is_finite() { px.max(0.0) as f32 } else { 0.0 }
         }
-        LengthValue::Rem(v) => *v as f32 * 16.0, // 假设 root em = 16px
-        _ => 0.0,                                // Auto、Percentage、MinContent 等暂不支持
     }
 }
 

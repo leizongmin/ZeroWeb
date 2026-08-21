@@ -366,3 +366,5 @@ Form-control layout fixups can hide font-size used-value boundaries. If a postpr
 IFC font metrics are also a used-value boundary. Helpers that derive both the run font size and normal line height from `ComputedStyle::font_size` must resolve residual real lengths before computing metrics; otherwise direct style callers silently fall back to the default 16px and every dependent line box becomes too small.
 
 IFC container struts are a separate font-size used-value boundary from text run metrics. Even after run font-size resolution is fixed, the block container font-size used for atomic-only line baselines must reuse the same resolver; otherwise residual units such as `ch` leave the strut at 16px and make baseline alignment too shallow.
+
+IFC atomic inline-block dimensions are another independent used-value boundary. When layout sizes are not pre-seeded, `collect_inline_items` consumes CSS `width`/`height` directly; its `em` base must be the resolved element font-size, and intrinsic or percentage values must keep the old fallback until a containing-block basis is available.
