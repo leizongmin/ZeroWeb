@@ -122,6 +122,14 @@ body {
   text-shadow: 0 8px 32px #155eef55;
 }
 
+.summary-primary strong small {
+  margin-left: 14px;
+  font: 600 clamp(15px, 2vw, 22px)/1 var(--body);
+  letter-spacing: 0;
+  color: #bcd1e9;
+  text-shadow: none;
+}
+
 .summary-primary span {
   display: block;
   max-width: 285px;
