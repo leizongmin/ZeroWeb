@@ -1427,6 +1427,7 @@ fn is_property_supported(property: &str, value: &str) -> bool {
         "grid-auto-flow" => crate::property::parse_grid_auto_flow(trimmed).is_some(),
         "font-weight" => parse_font_weight(trimmed).is_some(),
         "font-style" => parse_font_style(trimmed).is_some(),
+        "font-size" => supports::font_size_supported(trimmed),
         "color"
         | "background-color"
         | "border-top-color"

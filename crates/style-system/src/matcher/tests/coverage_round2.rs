@@ -149,7 +149,13 @@ fn test_property_supported_grid_placement() {
 fn test_property_supported_font() {
     assert!(is_property_supported("font-weight", "bold"));
     assert!(is_property_supported("font-style", "italic"));
+    assert!(is_property_supported("font-size", "16px"));
+    assert!(is_property_supported("font-size", "larger"));
+    assert!(is_property_supported("font-size", "125%"));
     assert!(!is_property_supported("font-weight", "invalid"));
+    assert!(!is_property_supported("font-size", "auto"));
+    assert!(!is_property_supported("font-size", "-1px"));
+    assert!(!is_property_supported("font-size", "infpx"));
 }
 
 #[test]

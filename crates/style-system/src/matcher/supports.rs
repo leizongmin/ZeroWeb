@@ -155,6 +155,40 @@ pub(super) fn shorthand_supported(property: &str, value: &str) -> bool {
     !crate::shorthand::expand_shorthands(&decl).is_empty()
 }
 
+pub(super) fn font_size_supported(value: &str) -> bool {
+    let value = value.trim();
+    // https://drafts.csswg.org/css-fonts-4/#font-size-prop
+    if matches!(
+        value.to_ascii_lowercase().as_str(),
+        "xx-small"
+            | "x-small"
+            | "small"
+            | "medium"
+            | "large"
+            | "x-large"
+            | "xx-large"
+            | "xxx-large"
+            | "smaller"
+            | "larger"
+    ) {
+        return true;
+    }
+    if matches!(
+        value.to_ascii_lowercase().as_str(),
+        "auto" | "thin" | "thick" | "min-content" | "max-content" | "fit-content"
+    ) {
+        return false;
+    }
+    values::parse_length(value)
+        .or_else(|| {
+            values::parse_math_function(value)
+                .map(Box::new)
+                .map(values::LengthValue::Calc)
+        })
+        .as_ref()
+        .is_some_and(|length| crate::property::padding_length_is_valid(value, length))
+}
+
 fn flex_shorthand_supported(value: &str) -> bool {
     let value = value.trim();
     if value.is_empty() {
