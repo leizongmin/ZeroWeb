@@ -396,8 +396,11 @@ pub fn resolve_font_metrics(style: Option<&ComputedStyle>) -> (f32, f32) {
     resolve_font_metrics_with_provider(style, None)
 }
 
-fn resolve_inline_font_size_px(style: &ComputedStyle) -> f32 {
-    let px = zero_style_system::computed::resolve_length(&style.font_size, DEFAULT_FONT_SIZE as f64, None, None);
+pub(crate) fn resolve_inline_font_size_px(style: &ComputedStyle) -> f32 {
+    let px = match &style.font_size {
+        LengthValue::Percentage(pct) => DEFAULT_FONT_SIZE as f64 * (*pct / 100.0),
+        other => zero_style_system::computed::resolve_length(other, DEFAULT_FONT_SIZE as f64, None, None),
+    };
     if px.is_finite() {
         px.max(0.0) as f32
     } else {

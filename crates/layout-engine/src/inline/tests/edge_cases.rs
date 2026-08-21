@@ -1577,6 +1577,51 @@ fn test_strut_still_applies_when_baseline_below_container_strut() {
     );
 }
 
+/// R3623：layout() 入口读取容器 font-size 时也要解析 residual real length。
+/// `font-size:4ch` 在默认 16px 上下文中应为 32px；旧逻辑只手写 Px/Em/Rem/%，
+/// 会把 ch 回退 16px，导致仅含原子 inline 盒的行 strut ascent 偏小。
+#[test]
+fn r3623_container_strut_resolves_ch_font_size() {
+    use std::collections::HashMap;
+    use zero_dom::parse_html;
+    use zero_style_system::property::types::DisplayValue;
+
+    let doc = parse_html("<p><span></span></p>");
+    let html = doc.first_child(doc.root()).unwrap();
+    let body = doc.last_child(html).unwrap();
+    let p = doc.first_child(body).unwrap();
+    let span = doc.first_child(p).unwrap();
+
+    let mut styles = HashMap::new();
+    let mut p_style = ComputedStyle::default();
+    p_style.font_size = LengthValue::Ch(4.0);
+    styles.insert(p, p_style);
+
+    let mut span_style = ComputedStyle::default();
+    span_style.display = DisplayValue::InlineBlock;
+    span_style.width = LengthValue::Px(100.0);
+    span_style.height = LengthValue::Px(35.0);
+    styles.insert(span, span_style);
+
+    let mut baseline_overrides = HashMap::new();
+    baseline_overrides.insert(span, 20.0);
+    let mut ctx = InlineFormattingContext::new(800.0).with_baseline_overrides(baseline_overrides);
+    ctx.layout(&doc, p, &styles);
+
+    assert_eq!(ctx.lines.len(), 1, "inline-block 应生成一行");
+    let run = &ctx.lines[0].runs[0];
+    assert!(
+        (ctx.container_font_size - 32.0).abs() < 0.01,
+        "容器 font-size:4ch 应解析为 32px，实际 {}",
+        ctx.container_font_size
+    );
+    assert!(
+        (run.y - 5.6).abs() < 0.5,
+        "strut ascent 应使用 4ch@16px=32px，把 baseline=20 的 inline-block 下压到约 5.6px，实际 y={:.2}",
+        run.y
+    );
+}
+
 // ── AdvanceSource 抽象 seam（R223 plumbing R1）──
 
 /// EstimateAdvance 默认实现必须与 estimate_char_width 完全等价（零行为变更），

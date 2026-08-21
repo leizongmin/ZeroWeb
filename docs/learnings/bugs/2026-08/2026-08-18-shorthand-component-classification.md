@@ -364,3 +364,5 @@ Root compensation paths are also used-value boundaries. When the engine manually
 Form-control layout fixups can hide font-size used-value boundaries. If a postprocess pass estimates native-control ascent/descent from `font-size`, resolve residual real lengths first; otherwise direct `ComputedStyle` callers get the fallback constant even though the same style would be definite after normal cascade.
 
 IFC font metrics are also a used-value boundary. Helpers that derive both the run font size and normal line height from `ComputedStyle::font_size` must resolve residual real lengths before computing metrics; otherwise direct style callers silently fall back to the default 16px and every dependent line box becomes too small.
+
+IFC container struts are a separate font-size used-value boundary from text run metrics. Even after run font-size resolution is fixed, the block container font-size used for atomic-only line baselines must reuse the same resolver; otherwise residual units such as `ch` leave the strut at 16px and make baseline alignment too shallow.

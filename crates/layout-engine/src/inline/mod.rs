@@ -844,13 +844,7 @@ impl InlineFormattingContext {
         // CSS 2.1 §10.8.1：strut 由块容器自身的字体度量决定。paint IFC 传入空 styles
         // 时保持默认 16（仅影响行内文本片段的垂直定位，文本 font_size 通常主导 ascent）。
         if let Some(style) = styles.get(&container) {
-            self.container_font_size = match &style.font_size {
-                LengthValue::Px(px) => *px as f32,
-                LengthValue::Em(em) => *em as f32 * 16.0,
-                LengthValue::Rem(rem) => *rem as f32 * 16.0,
-                LengthValue::Percentage(p) => *p as f32 * 16.0 / 100.0,
-                _ => DEFAULT_FONT_SIZE,
-            };
+            self.container_font_size = resolve_inline_font_size_px(style);
             self.plaintext_auto_align = matches!(style.unicode_bidi, zero_style_system::UnicodeBidiValue::Plaintext)
                 && matches!(
                     style.text_align,
