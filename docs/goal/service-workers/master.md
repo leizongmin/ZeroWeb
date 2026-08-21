@@ -2,7 +2,7 @@
 
 **入口文档**: [../service-workers.md](../service-workers.md)
 **创建日期**: 2026-08-17（goal 拆分 bootstrap）
-**最后更新**: 2026-08-22（worker-global fetch + SW Cache.add/addAll 落地；SW fetch/cache WPT 基线待接入）
+**最后更新**: 2026-08-22（SW Cache API Vary 匹配共享语义落地；SW fetch/cache WPT 基线待接入）
 
 ---
 
@@ -15,12 +15,12 @@ browser-process 页面 fetch 路由和 Service Worker `caches.match()` / `caches
 `Cache.put()` / `Cache.matchAll()` / `Cache.keys()` 桥接，并已透传 `ignoreSearch` /
 `ignoreMethod` 查询选项；worker-global `fetch()` 已通过 browser-owned network bridge 接入，
 SW runtime `Cache.add()` / `Cache.addAll()` 可用同一 fetch→put 链路写入 active registration
-`CacheStorage`；WPT fetch/cache 基线仍待后续切片，M3 控制语义继续推进。兄弟目标
+`CacheStorage`，并复用 `zero-storage` 的请求头快照与 Vary/`ignoreVary` 匹配语义；WPT fetch/cache 基线仍待后续切片，M3 控制语义继续推进。兄弟目标
 `storage-cache-api` 已完成 WebView/in-process 页面 `caches.open()` + `Cache.put()/match()` /
 `Cache.matchAll()` / `Cache.keys()` 与页面 `Cache.add()` / `Cache.addAll()` GET fetch→store
 链路，并已接入首批上游 CacheStorage `.any.js` window 面 WPT baseline
-（4 case / 35 subtest / 30 Pass / 5 Fail）。该 sibling 与当前 SW runtime 链路共用 Cache
-API 语义，但 SW fetch/cache 专属 WPT baseline、Vary 语义和完整 cacheability 矩阵仍归后续切片。
+（4 case / 35 subtest / 33 Pass / 2 Fail）。该 sibling 与当前 SW runtime 链路共用 Cache
+API 语义，但 SW fetch/cache 专属 WPT baseline、delete-dooming 生命周期和完整 cacheability 矩阵仍归后续切片。
 
 **M0 推荐决策**：抽取 `zero-script-sandbox::WorkerRuntime` 的独立线程/引擎/看门狗核心，
 新增 typed `ServiceWorkerRuntime`；production 由 browser process 的

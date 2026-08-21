@@ -95,13 +95,17 @@
     }
     return {
       url: url,
-      method: String(request.method || 'GET').toUpperCase()
+      method: String(request.method || 'GET').toUpperCase(),
+      headers: _zwCacheHeadersToWire(request.headers)
     };
   }
 
   function _zwCacheRequestFromWire(raw) {
     if (!raw || typeof raw.url !== 'string') throw new TypeError('malformed Cache request');
-    return new Request(raw.url, { method: String(raw.method || 'GET').toUpperCase() });
+    return new Request(raw.url, {
+      method: String(raw.method || 'GET').toUpperCase(),
+      headers: _zwCacheParseHeadersWire(raw.headers)
+    });
   }
 
   function _zwCacheQueryOptionsWire(options) {

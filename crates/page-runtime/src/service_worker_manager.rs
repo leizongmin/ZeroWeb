@@ -66,11 +66,15 @@ fn service_worker_request_from_cache(request: &CacheRequest) -> ServiceWorkerFet
     ServiceWorkerFetchRequest {
         url: request.url.clone(),
         method: request.method.clone(),
-        headers: Vec::new(),
+        headers: request.headers.clone(),
         body: None,
         client_id: None,
         resulting_client_id: None,
     }
+}
+
+fn cache_request_from_service_worker(request: ServiceWorkerFetchRequest) -> CacheRequest {
+    CacheRequest::with_method_and_headers(&request.url, &request.method, request.headers)
 }
 
 struct EvaluationOptions {
@@ -2428,7 +2432,7 @@ impl ServiceWorkerManager {
                 request,
                 options,
             } => {
-                let request = CacheRequest::with_method(&request.url, &request.method);
+                let request = cache_request_from_service_worker(request);
                 let options = cache_query_options_from_service_worker(options);
                 let response = match cache_name {
                     Some(cache_name) => registration
@@ -2446,7 +2450,7 @@ impl ServiceWorkerManager {
                 request,
                 options,
             } => {
-                let request = request.map(|request| CacheRequest::with_method(&request.url, &request.method));
+                let request = request.map(cache_request_from_service_worker);
                 let options = cache_query_options_from_service_worker(options);
                 let responses = registration
                     .cache_storage
@@ -2470,7 +2474,7 @@ impl ServiceWorkerManager {
                 request,
                 options,
             } => {
-                let request = request.map(|request| CacheRequest::with_method(&request.url, &request.method));
+                let request = request.map(cache_request_from_service_worker);
                 let options = cache_query_options_from_service_worker(options);
                 let requests = match registration.cache_storage.get(&cache_name) {
                     Some(cache) => match &request {
@@ -2493,7 +2497,7 @@ impl ServiceWorkerManager {
                     .cache_storage
                     .open(&cache_name)
                     .put(
-                        CacheRequest::with_method(&request.url, &request.method),
+                        cache_request_from_service_worker(request),
                         cache_response_from_service_worker(response),
                     )
                     .map_err(|error| ServiceWorkerManagerError::Runtime(error.to_string()))?;
@@ -4237,6 +4241,67 @@ mod tests {
         assert_eq!(cached.status_text, "Created");
         assert_eq!(cached.headers.get("x-cache").map(String::as_str), Some("put"));
         assert_eq!(cached.body, b"stored-body");
+    }
+
+    #[test]
+    fn fetch_handler_cache_storage_respects_vary_request_headers() {
+        let mut manager = manager_under_test();
+        let registration_id = start_active(
+            &mut manager,
+            "/app/",
+            "addEventListener('fetch', event => {
+               event.respondWith((async () => {
+                 const cache = await caches.open('runtime');
+                 await cache.put(event.request, new Response('cookie-body', {
+                   headers: [['vary', 'cookies']]
+                 }));
+                 const strict = await cache.match(new Request(event.request.url));
+                 const ignored = await cache.match(new Request(event.request.url), {ignoreVary: true});
+                 const keys = await cache.keys(new Request(event.request.url));
+                 if (strict !== undefined) throw new Error('strict vary matched');
+                 if (!ignored) throw new Error('ignoreVary did not match');
+                 if (keys.length !== 0) throw new Error('keys vary matched');
+                 return ignored;
+               })());
+             });",
+        );
+
+        assert_eq!(
+            manager
+                .dispatch_fetch(
+                    "https://example.test",
+                    126,
+                    ServiceWorkerFetchRequest {
+                        url: "https://example.test/app/vary".into(),
+                        method: "GET".into(),
+                        headers: vec![("cookies".into(), "is-for-cookie".into())],
+                        body: None,
+                        client_id: Some("client-1".into()),
+                        resulting_client_id: None,
+                    },
+                )
+                .unwrap(),
+            ServiceWorkerFetchDispatch::Dispatched {
+                registration_id,
+                event_id: 126,
+            }
+        );
+        assert_eq!(
+            wait_for_fetch(&mut manager, 126),
+            ServiceWorkerManagerEvent::FetchSettled {
+                registration_id,
+                event_id: 126,
+                request_url: "https://example.test/app/vary".into(),
+                client_id: Some("client-1".into()),
+                response: Some(ServiceWorkerFetchResponse {
+                    status: 200,
+                    status_text: String::new(),
+                    headers: vec![("vary".into(), "cookies".into())],
+                    body: "cookie-body".into(),
+                }),
+                message: String::new(),
+            }
+        );
     }
 
     #[test]

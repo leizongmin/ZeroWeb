@@ -66,6 +66,8 @@ struct CacheRequestWire {
     url: String,
     #[serde(default)]
     method: Option<String>,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    headers: String,
 }
 
 #[derive(Debug, Default, Deserialize)]
@@ -224,6 +226,7 @@ fn dispatch_request(
                 .map(|request| CacheRequestWire {
                     url: request.url.clone(),
                     method: Some(request.method.clone()),
+                    headers: encode_headers(&request.headers),
                 })
                 .collect(),
                 None => Vec::new(),
@@ -264,7 +267,11 @@ impl CacheRequestWire {
             return Err("TypeError: Cache request URL is required".to_string());
         }
         let method = self.method.unwrap_or_else(|| "GET".to_string()).to_ascii_uppercase();
-        Ok(CacheRequest::with_method(&self.url, &method))
+        Ok(CacheRequest::with_method_and_headers(
+            &self.url,
+            &method,
+            decode_headers(&self.headers),
+        ))
     }
 }
 
@@ -648,6 +655,83 @@ mod tests {
             all["requests"],
             json!([{"url": "https://example.com/other?version=1", "method": "GET"}])
         );
+    }
+
+    #[test]
+    fn cache_storage_handler_applies_vary_query_options() {
+        let handler = cache_storage_handler(Arc::new(Mutex::new(StorageManager::new())));
+        call(
+            &handler,
+            "https://example.com",
+            json!({
+                "op": "put",
+                "cache_name": "runtime",
+                "request": {
+                    "url": "https://example.com/c",
+                    "method": "GET",
+                    "headers": "Cookies\u{1e}is-for-cookie"
+                },
+                "response": {
+                    "status": 200,
+                    "statusText": "OK",
+                    "headers": "Vary\u{1e}Cookies",
+                    "body": "cookie"
+                }
+            }),
+        );
+
+        let mismatched = call(
+            &handler,
+            "https://example.com",
+            json!({
+                "op": "cache_keys",
+                "cache_name": "runtime",
+                "request": {"url": "https://example.com/c", "method": "GET"}
+            }),
+        );
+        assert_eq!(mismatched["requests"], json!([]));
+
+        let ignored = call(
+            &handler,
+            "https://example.com",
+            json!({
+                "op": "cache_keys",
+                "cache_name": "runtime",
+                "request": {"url": "https://example.com/c", "method": "GET"},
+                "options": {"ignoreVary": true}
+            }),
+        );
+        assert_eq!(
+            ignored["requests"],
+            json!([{
+                "url": "https://example.com/c",
+                "method": "GET",
+                "headers": "Cookies\u{1e}is-for-cookie"
+            }])
+        );
+
+        let not_deleted = call(
+            &handler,
+            "https://example.com",
+            json!({
+                "op": "delete",
+                "name": "runtime",
+                "request": {"url": "https://example.com/c", "method": "GET"}
+            }),
+        );
+        assert_eq!(not_deleted["deleted"], false);
+
+        let deleted = call(
+            &handler,
+            "https://example.com",
+            json!({
+                "op": "delete",
+                "name": "runtime",
+                "request": {"url": "https://example.com/c", "method": "GET"},
+                "options": {"ignoreVary": true}
+            }),
+        );
+        assert_eq!(deleted["deleted"], true);
     }
 
     #[test]

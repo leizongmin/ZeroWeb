@@ -13,6 +13,8 @@ pub struct CacheRequest {
     pub url: String,
     /// 请求方法（GET、POST 等）。
     pub method: String,
+    /// 请求头快照（按创建时顺序保存）。
+    pub headers: Vec<(String, String)>,
 }
 
 impl CacheRequest {
@@ -21,6 +23,7 @@ impl CacheRequest {
         Self {
             url: url.to_string(),
             method: "GET".to_string(),
+            headers: Vec::new(),
         }
     }
 
@@ -29,6 +32,16 @@ impl CacheRequest {
         Self {
             url: url.to_string(),
             method: method.to_string(),
+            headers: Vec::new(),
+        }
+    }
+
+    /// 创建指定方法和请求头的请求。
+    pub fn with_method_and_headers(url: &str, method: &str, headers: Vec<(String, String)>) -> Self {
+        Self {
+            url: url.to_string(),
+            method: method.to_string(),
+            headers,
         }
     }
 }
@@ -132,7 +145,7 @@ impl Cache {
     ) -> Option<&CacheResponse> {
         self.entries
             .iter()
-            .find(|entry| cache_requests_match(&entry.request, request, options))
+            .find(|entry| cache_entry_matches(entry, request, options))
             .map(|entry| &entry.response)
     }
 
@@ -145,7 +158,7 @@ impl Cache {
     pub fn match_all_with_options(&self, request: &CacheRequest, options: CacheQueryOptions) -> Vec<&CacheResponse> {
         self.entries
             .iter()
-            .filter(|entry| cache_requests_match(&entry.request, request, options))
+            .filter(|entry| cache_entry_matches(entry, request, options))
             .map(|entry| &entry.response)
             .collect()
     }
@@ -155,8 +168,9 @@ impl Cache {
         if let Some(entry) = self
             .entries
             .iter_mut()
-            .find(|e| e.request.url == request.url && e.request.method == request.method)
+            .find(|entry| cache_entry_matches(entry, &request, CacheQueryOptions::default()))
         {
+            entry.request = request;
             entry.response = response;
         } else {
             self.entries.push(CacheEntry { request, response });
@@ -173,7 +187,7 @@ impl Cache {
     pub fn delete_with_options(&mut self, request: &CacheRequest, options: CacheQueryOptions) -> bool {
         let before = self.entries.len();
         self.entries
-            .retain(|entry| !cache_requests_match(&entry.request, request, options));
+            .retain(|entry| !cache_entry_matches(entry, request, options));
         self.entries.len() < before
     }
 
@@ -191,7 +205,7 @@ impl Cache {
     pub fn request_keys_with_options(&self, request: &CacheRequest, options: CacheQueryOptions) -> Vec<&CacheRequest> {
         self.entries
             .iter()
-            .filter(|entry| cache_requests_match(&entry.request, request, options))
+            .filter(|entry| cache_entry_matches(entry, request, options))
             .map(|entry| &entry.request)
             .collect()
     }
@@ -276,6 +290,58 @@ impl CacheStorage {
 fn cache_requests_match(cached: &CacheRequest, query: &CacheRequest, options: CacheQueryOptions) -> bool {
     (options.ignore_method || cached.method == query.method)
         && cache_urls_match(&cached.url, &query.url, options.ignore_search)
+}
+
+fn cache_entry_matches(entry: &CacheEntry, query: &CacheRequest, options: CacheQueryOptions) -> bool {
+    cache_requests_match(&entry.request, query, options)
+        && cache_vary_matches(&entry.response, &entry.request, query, options)
+}
+
+fn cache_vary_matches(
+    response: &CacheResponse,
+    cached_request: &CacheRequest,
+    query: &CacheRequest,
+    options: CacheQueryOptions,
+) -> bool {
+    if options.ignore_vary {
+        return true;
+    }
+    let Some(vary) = header_value(&response.headers, "vary") else {
+        return true;
+    };
+    // https://w3c.github.io/ServiceWorker/#query-cache
+    let mut has_field = false;
+    for field in vary.split(',').map(str::trim).filter(|field| !field.is_empty()) {
+        if field == "*" {
+            return false;
+        }
+        has_field = true;
+        if request_header_value(&cached_request.headers, field) != request_header_value(&query.headers, field) {
+            return false;
+        }
+    }
+    has_field || vary.trim().is_empty()
+}
+
+fn header_value<'a>(headers: &'a HashMap<String, String>, name: &str) -> Option<&'a str> {
+    headers
+        .iter()
+        .find(|(header_name, _)| header_name.eq_ignore_ascii_case(name))
+        .map(|(_, value)| value.as_str())
+}
+
+fn request_header_value(headers: &[(String, String)], name: &str) -> Option<String> {
+    let mut values = headers
+        .iter()
+        .filter(|(header_name, _)| header_name.eq_ignore_ascii_case(name))
+        .map(|(_, value)| value.as_str());
+    let first = values.next()?;
+    let mut combined = first.to_string();
+    for value in values {
+        combined.push_str(", ");
+        combined.push_str(value);
+    }
+    Some(combined)
 }
 
 fn cache_urls_match(cached: &str, query: &str, ignore_search: bool) -> bool {
@@ -481,6 +547,103 @@ mod tests {
                 .match_request(&CacheRequest::new("https://example.com/other?one"))
                 .is_some()
         );
+    }
+
+    #[test]
+    fn test_cache_vary_matches_request_header_snapshot() {
+        let mut cache = Cache::new("v1");
+        let stored = CacheRequest::with_method_and_headers(
+            "https://example.com/c",
+            "GET",
+            vec![("Cookies".into(), "is-for-cookie".into())],
+        );
+        cache
+            .put(
+                stored.clone(),
+                CacheResponse::ok(Vec::new()).with_header("Vary", "Cookies"),
+            )
+            .unwrap();
+
+        assert!(cache.match_request(&stored).is_some());
+        assert!(
+            cache
+                .match_request(&CacheRequest::new("https://example.com/c"))
+                .is_none()
+        );
+        assert!(
+            cache
+                .match_request_with_options(
+                    &CacheRequest::new("https://example.com/c"),
+                    CacheQueryOptions {
+                        ignore_vary: true,
+                        ..CacheQueryOptions::default()
+                    },
+                )
+                .is_some()
+        );
+    }
+
+    #[test]
+    fn test_cache_put_keeps_distinct_vary_variants() {
+        let mut cache = Cache::new("v1");
+        let url = "https://example.com/c";
+        cache
+            .put(
+                CacheRequest::with_method_and_headers(url, "GET", vec![("Cookies".into(), "is-for-cookie".into())]),
+                CacheResponse::ok(b"cookie".to_vec()).with_header("Vary", "Cookies"),
+            )
+            .unwrap();
+        cache
+            .put(
+                CacheRequest::with_method_and_headers(
+                    url,
+                    "GET",
+                    vec![("Cookies".into(), "is-good-enough-for-me".into())],
+                ),
+                CacheResponse::ok(b"good".to_vec()).with_header("Vary", "Cookies"),
+            )
+            .unwrap();
+        cache
+            .put(
+                CacheRequest::new(url),
+                CacheResponse::ok(b"absent".to_vec()).with_header("Vary", "Cookies"),
+            )
+            .unwrap();
+
+        assert_eq!(cache.len(), 3);
+        assert_eq!(cache.keys(), vec![url, url, url]);
+
+        let matched = cache.match_request(&CacheRequest::with_method_and_headers(
+            url,
+            "GET",
+            vec![("cookies".into(), "is-good-enough-for-me".into())],
+        ));
+        assert_eq!(matched.unwrap().body, b"good".to_vec());
+    }
+
+    #[test]
+    fn test_cache_delete_respects_ignore_vary() {
+        let mut cache = Cache::new("v1");
+        let stored = CacheRequest::with_method_and_headers(
+            "https://example.com/c",
+            "GET",
+            vec![("Cookies".into(), "is-for-cookie".into())],
+        );
+        cache
+            .put(stored, CacheResponse::ok(Vec::new()).with_header("Vary", "Cookies"))
+            .unwrap();
+
+        let query = CacheRequest::new("https://example.com/c");
+        assert!(!cache.delete(&query));
+        assert_eq!(cache.len(), 1);
+        assert!(cache.delete_with_options(
+            &query,
+            CacheQueryOptions {
+                ignore_vary: true,
+                ..CacheQueryOptions::default()
+            },
+        ));
+        assert!(cache.is_empty());
     }
 
     #[test]

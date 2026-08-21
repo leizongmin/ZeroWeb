@@ -2,8 +2,8 @@
   "cases": 4,
   "subtests": 35,
   "status": {
-    "Fail": 5,
-    "Pass": 30
+    "Fail": 2,
+    "Pass": 33
   },
   "deterministic": true,
   "results": [
@@ -97,8 +97,8 @@
         },
         {
           "name": "Cache.delete supports ignoreVary",
-          "status": "Fail",
-          "message": "assert_false: Cache.delete should not delete if vary does not match unless ignoreVary is true expected false got true"
+          "status": "Pass",
+          "message": null
         },
         {
           "name": "Cache.delete with a non-existent entry",
@@ -162,8 +162,8 @@
         },
         {
           "name": "Cache.keys supports ignoreVary",
-          "status": "Fail",
-          "message": "assert_equals: Cache.keys should resolve with an empty array with a mismatched vary. expected 0 but got 1"
+          "status": "Pass",
+          "message": null
         },
         {
           "name": "Cache.keys with URL containing fragment",
@@ -192,8 +192,8 @@
         },
         {
           "name": "Cache.keys without parameters and VARY entries",
-          "status": "Fail",
-          "message": "assert_equals: Cache.keys without parameters should match all entries. expected 3 but got 1"
+          "status": "Pass",
+          "message": null
         },
         {
           "name": "Cache.keys with a HEAD Request",
