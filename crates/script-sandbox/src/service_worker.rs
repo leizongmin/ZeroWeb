@@ -16,6 +16,7 @@ const DEFAULT_SCRIPT_TIMEOUT_MS: u64 = 5_000;
 const MAX_IMPORT_SCRIPTS_PER_CALL: usize = 64;
 const MAX_IMPORT_SCRIPT_URL_BYTES: usize = 64 * 1024;
 const MAX_IMPORTED_SCRIPT_BYTES: usize = 16 * 1024 * 1024;
+const MAX_MESSAGE_PORTS: usize = 16;
 
 enum ServiceWorkerCommand {
     Evaluate {
@@ -32,6 +33,7 @@ enum ServiceWorkerCommand {
         data_json: String,
         client_id: String,
         client_url: String,
+        ports: ServiceWorkerMessagePorts,
     },
     Shutdown,
 }
@@ -40,6 +42,24 @@ enum ServiceWorkerImportResponse {
     Completed { request_id: u64, sources: Vec<String> },
     Failed { request_id: u64, message: String },
     Shutdown,
+}
+
+enum ServiceWorkerUpdateResponse {
+    Completed {
+        request_id: u64,
+    },
+    Failed {
+        request_id: u64,
+        exception_name: String,
+        message: String,
+    },
+    Shutdown,
+}
+
+struct PendingLifecycle {
+    event_id: u64,
+    phase: ServiceWorkerLifecyclePhase,
+    deadline: std::time::Instant,
 }
 
 const SERVICE_WORKER_BOOTSTRAP: &str = r#"
@@ -60,6 +80,51 @@ const SERVICE_WORKER_BOOTSTRAP: &str = r#"
   }
   class InstallEvent extends ExtendableEvent {}
   const outboundMessages = [];
+  const portEndpoints = Object.create(null);
+  let nextWorkerPortId = 1;
+  function cloneMessage(data) {
+    const dataJSON = JSON.stringify(data);
+    if (dataJSON === undefined) throw new DOMException('message could not be cloned', 'DataCloneError');
+    return dataJSON;
+  }
+  function preparePortTransfer(data, transfer) {
+    const ids = [];
+    let dataPortIndex = null;
+    if (transfer !== undefined && transfer !== null) {
+      for (const item of Array.from(transfer)) {
+        if (!(item instanceof MessagePort) || item._closed || item._detached) {
+          throw new DOMException('invalid MessagePort transfer', 'DataCloneError');
+        }
+        if (ids.indexOf(item._hostPortId) >= 0) {
+          throw new DOMException('duplicate MessagePort transfer', 'DataCloneError');
+        }
+        let portId = item._hostPortId;
+        if (portId === null) {
+          portId = nextWorkerPortId;
+          nextWorkerPortId += 2;
+          if (!item._other) throw new DOMException('MessagePort is not entangled', 'DataCloneError');
+          item._other._other = null;
+          item._other._hostPortId = portId;
+          item._other._remote = true;
+          portEndpoints[String(portId)] = item._other;
+        }
+        if (data === item) dataPortIndex = ids.length;
+        ids.push(portId);
+        item._other = null;
+        item._detached = true;
+      }
+    }
+    return {
+      dataJSON: dataPortIndex === null ? cloneMessage(data) : 'null',
+      transferredPortIds: ids,
+      dataPortIndex: dataPortIndex
+    };
+  }
+  function queueOutbound(data, transfer, portId) {
+    const wire = preparePortTransfer(data, transfer);
+    wire.portId = portId;
+    outboundMessages.push(wire);
+  }
   const clientToken = {};
   class Client {
     constructor(id, url, token) {
@@ -71,19 +136,79 @@ const SERVICE_WORKER_BOOTSTRAP: &str = r#"
         frameType: {value: 'top-level', enumerable: true}
       });
     }
-    postMessage(data) {
-      const dataJSON = JSON.stringify(data);
-      if (dataJSON === undefined) throw new Error('DataCloneError: message could not be cloned');
-      outboundMessages.push({dataJSON: dataJSON});
+    postMessage(data, transfer) {
+      queueOutbound(data, transfer, null);
     }
   }
-  class MessageEvent {
+  class MessagePort {
+    constructor() {
+      this._listeners = [];
+      this._onmessage = null;
+      this._other = null;
+      this._hostPortId = null;
+      this._remote = false;
+      this._closed = false;
+      this._detached = false;
+    }
+    addEventListener(type, listener) {
+      if (type === 'message' && typeof listener === 'function') this._listeners.push(listener);
+    }
+    removeEventListener(type, listener) {
+      if (type !== 'message') return;
+      const index = this._listeners.indexOf(listener);
+      if (index >= 0) this._listeners.splice(index, 1);
+    }
+    dispatchEvent(event) {
+      for (const listener of this._listeners.slice()) listener.call(this, event);
+      return true;
+    }
+    postMessage(data, transfer) {
+      if (this._closed || this._detached) return;
+      if (this._remote) {
+        queueOutbound(data, transfer, this._hostPortId);
+        return;
+      }
+      if (!this._other) return;
+      const wire = preparePortTransfer(data, transfer);
+      const other = this._other;
+      queueMicrotask(function() {
+        if (!other._closed && !other._detached) {
+          other.dispatchEvent(new MessageEvent('message', {
+            data: wire.dataPortIndex === null ? JSON.parse(wire.dataJSON) : null,
+            ports: []
+          }));
+        }
+      });
+    }
+    start() {}
+    close() {
+      this._closed = true;
+      if (this._hostPortId !== null) delete portEndpoints[String(this._hostPortId)];
+      if (this._other) this._other._other = null;
+      this._other = null;
+    }
+    get onmessage() { return this._onmessage; }
+    set onmessage(listener) {
+      if (this._onmessage) this.removeEventListener('message', this._onmessage);
+      this._onmessage = typeof listener === 'function' ? listener : null;
+      if (this._onmessage) this.addEventListener('message', this._onmessage);
+    }
+  }
+  class MessageChannel {
+    constructor() {
+      this.port1 = new MessagePort();
+      this.port2 = new MessagePort();
+      this.port1._other = this.port2;
+      this.port2._other = this.port1;
+    }
+  }
+  class MessageEvent extends ExtendableEvent {
     constructor(type, init) {
-      this.type = type;
+      super(type);
       this.data = init.data;
       this.origin = '';
       this.source = null;
-      this.ports = [];
+      this.ports = init.ports || [];
     }
   }
   class DOMException extends Error {
@@ -240,6 +365,8 @@ const SERVICE_WORKER_BOOTSTRAP: &str = r#"
   globalThis.ExtendableEvent = ExtendableEvent;
   globalThis.InstallEvent = InstallEvent;
   globalThis.MessageEvent = MessageEvent;
+  globalThis.MessagePort = MessagePort;
+  globalThis.MessageChannel = MessageChannel;
   globalThis.DOMException = globalThis.DOMException || DOMException;
   globalThis.URLSearchParams = globalThis.URLSearchParams || URLSearchParams;
   globalThis.WorkerLocation = WorkerLocation;
@@ -274,6 +401,22 @@ const SERVICE_WORKER_BOOTSTRAP: &str = r#"
   }
   globalThis.Clients = Clients;
   globalThis.clients = new Clients();
+  const registration = {
+    update: function() {
+      let response;
+      try {
+        response = JSON.parse(globalThis.__zwRequestUpdate());
+      } catch (_error) {
+        response = {ok: false, name: 'TypeError', message: 'invalid Service Worker update response'};
+      }
+      if (response && response.ok === true) return Promise.resolve(registration);
+      return Promise.reject(new globalThis.DOMException(
+        response && response.message || 'Service Worker update failed',
+        response && response.name || 'TypeError'
+      ));
+    }
+  };
+  globalThis.registration = registration;
   function importScriptsNetworkError(message) {
     return new globalThis.DOMException(String(message), 'NetworkError');
   }
@@ -338,18 +481,47 @@ const SERVICE_WORKER_BOOTSTRAP: &str = r#"
       result.message = String(error && error.message || error);
     });
   };
-  globalThis.__zwDispatchMessage = function(eventId, data, clientId, clientURL) {
+  function materializeTransferredPorts(portIds) {
+    return portIds.map(function(portId) {
+      const key = String(portId);
+      if (portEndpoints[key]) throw new DOMException('MessagePort already exists', 'DataCloneError');
+      const port = new MessagePort();
+      port._hostPortId = portId;
+      port._remote = true;
+      portEndpoints[key] = port;
+      return port;
+    });
+  }
+  globalThis.__zwDispatchMessage = function(
+      eventId, data, clientId, clientURL, portIds, dataPortIndex, targetPortId) {
     outboundMessages.splice(0, outboundMessages.length);
-    const event = new MessageEvent('message', {data: data});
-    event.source = new Client(clientId, clientURL, clientToken);
+    const ports = materializeTransferredPorts(portIds || []);
+    const eventData = dataPortIndex === null ? data : ports[dataPortIndex];
+    const event = new MessageEvent('message', {data: eventData, ports: ports});
+    const pending = [];
+    currentWaitUntil = function(value) {
+      pending.push(Promise.resolve(value));
+    };
     try {
-      const callbacks = (listeners.message || []).slice();
-      for (let i = 0; i < callbacks.length; i++) callbacks[i].call(globalThis, event);
-      if (typeof globalThis.onmessage === 'function') {
-        globalThis.onmessage.call(globalThis, event);
+      if (targetPortId !== null) {
+        const port = portEndpoints[String(targetPortId)];
+        if (!port || port._closed || port._detached) {
+          throw new DOMException('MessagePort endpoint does not exist', 'InvalidStateError');
+        }
+        port.dispatchEvent(event);
+      } else {
+        event.source = new Client(clientId, clientURL, clientToken);
+        const callbacks = (listeners.message || []).slice();
+        for (let i = 0; i < callbacks.length; i++) callbacks[i].call(globalThis, event);
+        if (typeof globalThis.onmessage === 'function') {
+          globalThis.onmessage.call(globalThis, event);
+        }
       }
+      Promise.all(pending).catch(function() {});
+      currentWaitUntil = null;
       return String(eventId);
     } catch (error) {
+      currentWaitUntil = null;
       outboundMessages.splice(0, outboundMessages.length);
       throw error;
     }
@@ -451,6 +623,11 @@ pub enum ServiceWorkerEvent {
         /// String-converted URL arguments in call order.
         specifiers: Vec<String>,
     },
+    /// The worker global called `registration.update()`.
+    UpdateRequested {
+        /// Runtime-local request ID used to correlate the blocking response.
+        request_id: u64,
+    },
     /// The runtime thread exited.
     Closed,
     /// A module worker static dependency batch requires host-owned fetching.
@@ -469,6 +646,23 @@ pub enum ServiceWorkerEvent {
 pub struct ServiceWorkerOutboundMessage {
     /// JSON-compatible structured payload.
     pub data_json: String,
+    /// Port endpoint that emitted this message, or `None` for `Client.postMessage`.
+    pub port_id: Option<u64>,
+    /// Port endpoints transferred with this message.
+    pub transferred_port_ids: Vec<u64>,
+    /// Index into `transferred_port_ids` when the message payload is that port.
+    pub data_port_index: Option<usize>,
+}
+
+/// MessagePort endpoint metadata for one page/worker message.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct ServiceWorkerMessagePorts {
+    /// Endpoint IDs transferred with this message.
+    pub transferred_port_ids: Vec<u64>,
+    /// Index of the transferred endpoint used as the payload.
+    pub data_port_index: Option<usize>,
+    /// Existing endpoint addressed by this message.
+    pub target_port_id: Option<u64>,
 }
 
 /// Lifecycle state of a [`ServiceWorkerRuntime`].
@@ -487,6 +681,7 @@ pub enum ServiceWorkerRuntimeState {
 pub struct ServiceWorkerRuntime {
     core: ThreadedRuntimeCore<ServiceWorkerCommand, ServiceWorkerEvent>,
     import_response_sender: mpsc::Sender<ServiceWorkerImportResponse>,
+    update_response_sender: mpsc::Sender<ServiceWorkerUpdateResponse>,
 }
 
 impl ServiceWorkerRuntime {
@@ -496,6 +691,7 @@ impl ServiceWorkerRuntime {
         let lifecycle_timeout_ms = config.timeout_ms;
         let (init_sender, init_receiver) = mpsc::sync_channel(1);
         let (import_response_sender, import_response_receiver) = mpsc::channel();
+        let (update_response_sender, update_response_receiver) = mpsc::channel();
         let mut core = ThreadedRuntimeCore::spawn(
             "zero-service-worker",
             "Service Worker",
@@ -574,13 +770,90 @@ impl ServiceWorkerRuntime {
                         }
                     }),
                 );
+                let update_event_sender = event_sender.clone();
+                let update_response_receiver = Arc::new(Mutex::new(update_response_receiver));
+                let next_update_request_id = Arc::new(AtomicU64::new(1));
+                sandbox.register_callback(
+                    "__zwRequestUpdate",
+                    Box::new(move |_args| {
+                        let request_id = next_update_request_id.fetch_add(1, Ordering::Relaxed);
+                        if update_event_sender
+                            .send(ServiceWorkerEvent::UpdateRequested { request_id })
+                            .is_err()
+                        {
+                            return update_failure_json("InvalidStateError", "Service Worker host disconnected");
+                        }
+                        let deadline =
+                            std::time::Instant::now() + std::time::Duration::from_millis(lifecycle_timeout_ms);
+                        loop {
+                            let now = std::time::Instant::now();
+                            if now >= deadline {
+                                return update_failure_json("TimeoutError", "Service Worker update timed out");
+                            }
+                            let response = update_response_receiver
+                                .lock()
+                                .expect("update response lock")
+                                .recv_timeout(deadline.saturating_duration_since(now));
+                            match response {
+                                Ok(ServiceWorkerUpdateResponse::Completed {
+                                    request_id: response_id,
+                                }) if response_id == request_id => {
+                                    return serde_json::json!({"ok": true}).to_string();
+                                }
+                                Ok(ServiceWorkerUpdateResponse::Failed {
+                                    request_id: response_id,
+                                    exception_name,
+                                    message,
+                                }) if response_id == request_id => {
+                                    return update_failure_json(&exception_name, &message);
+                                }
+                                Ok(ServiceWorkerUpdateResponse::Shutdown) => {
+                                    return update_failure_json(
+                                        "InvalidStateError",
+                                        "Service Worker runtime is shutting down",
+                                    );
+                                }
+                                Ok(_) => continue,
+                                Err(mpsc::RecvTimeoutError::Timeout) => {
+                                    return update_failure_json("TimeoutError", "Service Worker update timed out");
+                                }
+                                Err(mpsc::RecvTimeoutError::Disconnected) => {
+                                    return update_failure_json(
+                                        "InvalidStateError",
+                                        "Service Worker host disconnected",
+                                    );
+                                }
+                            }
+                        }
+                    }),
+                );
                 if let Err(error) = sandbox.execute(SERVICE_WORKER_BOOTSTRAP) {
                     let _ = init_sender.send(Err(error));
                     return;
                 }
                 let _ = init_sender.send(Ok(()));
 
-                while let Ok(command) = command_receiver.recv() {
+                let mut pending_lifecycle: Option<PendingLifecycle> = None;
+                loop {
+                    if let Some(pending) = pending_lifecycle.as_ref()
+                        && let Some(event) = poll_lifecycle(sandbox.as_mut(), pending, lifecycle_timeout_ms)
+                    {
+                        let _ = event_sender.send(event);
+                        pending_lifecycle = None;
+                    }
+
+                    let command = if pending_lifecycle.is_some() {
+                        match command_receiver.recv_timeout(std::time::Duration::from_millis(1)) {
+                            Ok(command) => command,
+                            Err(mpsc::RecvTimeoutError::Timeout) => continue,
+                            Err(mpsc::RecvTimeoutError::Disconnected) => break,
+                        }
+                    } else {
+                        match command_receiver.recv() {
+                            Ok(command) => command,
+                            Err(_) => break,
+                        }
+                    };
                     match command {
                         ServiceWorkerCommand::Evaluate {
                             script,
@@ -614,21 +887,44 @@ impl ServiceWorkerRuntime {
                             let _ = event_sender.send(event);
                         }
                         ServiceWorkerCommand::DispatchLifecycle { event_id, phase } => {
-                            let event = dispatch_lifecycle(sandbox.as_mut(), event_id, phase, lifecycle_timeout_ms);
-                            let _ = event_sender.send(event);
+                            let result = if pending_lifecycle.is_some() {
+                                Err(ScriptError::RuntimeError(
+                                    "Service Worker lifecycle event is already pending".into(),
+                                ))
+                            } else {
+                                begin_lifecycle(sandbox.as_mut(), event_id, phase)
+                            };
+                            match result {
+                                Ok(()) => {
+                                    pending_lifecycle = Some(PendingLifecycle {
+                                        event_id,
+                                        phase,
+                                        deadline: std::time::Instant::now()
+                                            + std::time::Duration::from_millis(lifecycle_timeout_ms),
+                                    });
+                                }
+                                Err(error) => {
+                                    let _ =
+                                        event_sender.send(failed_lifecycle_event(event_id, phase, error.to_string()));
+                                }
+                            }
                         }
                         ServiceWorkerCommand::DispatchMessage {
                             event_id,
                             data_json,
                             client_id,
                             client_url,
+                            ports,
                         } => {
                             let dispatch = format!(
-                                "globalThis.__zwDispatchMessage({}, {}, {}, {});",
+                                "globalThis.__zwDispatchMessage({}, {}, {}, {}, {}, {}, {});",
                                 event_id,
                                 data_json,
                                 serde_json::to_string(&client_id).unwrap(),
-                                serde_json::to_string(&client_url).unwrap()
+                                serde_json::to_string(&client_url).unwrap(),
+                                serde_json::to_string(&ports.transferred_port_ids).unwrap(),
+                                serde_json::to_string(&ports.data_port_index).unwrap(),
+                                serde_json::to_string(&ports.target_port_id).unwrap(),
                             );
                             let event = match sandbox.execute(&dispatch) {
                                 Ok(_) => match take_outbound_messages(sandbox.as_mut()) {
@@ -662,6 +958,7 @@ impl ServiceWorkerRuntime {
             Ok(Ok(())) => Ok(Self {
                 core,
                 import_response_sender,
+                update_response_sender,
             }),
             Ok(Err(error)) => {
                 core.terminate(ServiceWorkerCommand::Shutdown, || {});
@@ -738,14 +1035,50 @@ impl ServiceWorkerRuntime {
         client_id: &str,
         client_url: &str,
     ) -> Result<(), ScriptError> {
+        self.dispatch_message_with_ports(
+            event_id,
+            data_json,
+            client_id,
+            client_url,
+            &ServiceWorkerMessagePorts::default(),
+        )
+    }
+
+    /// Dispatch a page message with transferred or addressed MessagePort endpoints.
+    pub fn dispatch_message_with_ports(
+        &mut self,
+        event_id: u64,
+        data_json: &str,
+        client_id: &str,
+        client_url: &str,
+        ports: &ServiceWorkerMessagePorts,
+    ) -> Result<(), ScriptError> {
         serde_json::from_str::<serde_json::Value>(data_json)
             .map_err(|error| ScriptError::InvalidInput(format!("invalid Service Worker message JSON: {error}")))?;
+        if ports.transferred_port_ids.len() > MAX_MESSAGE_PORTS
+            || ports.transferred_port_ids.contains(&0)
+            || ports.transferred_port_ids.iter().collect::<HashSet<_>>().len() != ports.transferred_port_ids.len()
+        {
+            return Err(ScriptError::InvalidInput(
+                "invalid Service Worker transferred MessagePort list".into(),
+            ));
+        }
+        if ports
+            .data_port_index
+            .is_some_and(|index| index >= ports.transferred_port_ids.len())
+            || ports.target_port_id == Some(0)
+        {
+            return Err(ScriptError::InvalidInput(
+                "invalid Service Worker MessagePort routing metadata".into(),
+            ));
+        }
         self.core
             .send(ServiceWorkerCommand::DispatchMessage {
                 event_id,
                 data_json: data_json.to_string(),
                 client_id: client_id.to_string(),
                 client_url: client_url.to_string(),
+                ports: ports.clone(),
             })
             .map_err(|_| ScriptError::RuntimeError("Service Worker runtime disconnected".into()))
     }
@@ -805,9 +1138,25 @@ impl ServiceWorkerRuntime {
             .map_err(|_| ScriptError::RuntimeError("Service Worker runtime disconnected".into()))
     }
 
+    /// Complete one blocking worker-global `registration.update()` request.
+    pub fn complete_update(&self, request_id: u64, result: Result<(), (String, String)>) -> Result<(), ScriptError> {
+        let response = match result {
+            Ok(()) => ServiceWorkerUpdateResponse::Completed { request_id },
+            Err((exception_name, message)) => ServiceWorkerUpdateResponse::Failed {
+                request_id,
+                exception_name,
+                message,
+            },
+        };
+        self.update_response_sender
+            .send(response)
+            .map_err(|_| ScriptError::RuntimeError("Service Worker runtime disconnected".into()))
+    }
+
     /// Shut down the engine thread with a bounded join.
     pub fn shutdown(&mut self) {
         let _ = self.import_response_sender.send(ServiceWorkerImportResponse::Shutdown);
+        let _ = self.update_response_sender.send(ServiceWorkerUpdateResponse::Shutdown);
         self.core.terminate(ServiceWorkerCommand::Shutdown, || {});
     }
 
@@ -883,6 +1232,10 @@ fn script_error_kind(error: &ScriptError) -> ServiceWorkerScriptErrorKind {
 
 fn import_failure_json(message: &str) -> String {
     serde_json::json!({"ok": false, "error": message}).to_string()
+}
+
+fn update_failure_json(exception_name: &str, message: &str) -> String {
+    serde_json::json!({"ok": false, "name": exception_name, "message": message}).to_string()
 }
 
 fn evaluate_module_graph(
@@ -1056,77 +1409,72 @@ fn set_worker_location(sandbox: &mut dyn Sandbox, script_url: &str) -> Result<()
         .map(|_| ())
 }
 
-fn dispatch_lifecycle(
+fn begin_lifecycle(
     sandbox: &mut dyn Sandbox,
     event_id: u64,
     phase: ServiceWorkerLifecyclePhase,
-    timeout_ms: u64,
-) -> ServiceWorkerEvent {
+) -> Result<(), ScriptError> {
     let dispatch = format!(
         "globalThis.__zwDispatchLifecycle({}, {}); 'dispatched';",
         serde_json::to_string(phase.as_str()).expect("static phase is serializable"),
         event_id
     );
-    if let Err(error) = sandbox.execute(&dispatch) {
-        return ServiceWorkerEvent::LifecycleSettled {
-            event_id,
-            phase,
-            succeeded: false,
-            skip_waiting: false,
-            claim_clients: false,
-            message: error.to_string(),
-        };
-    }
+    sandbox.execute(&dispatch).map(|_| ())
+}
 
-    let deadline = std::time::Instant::now() + std::time::Duration::from_millis(timeout_ms);
-    loop {
-        match sandbox.execute("JSON.stringify(globalThis.__zwLifecycleResult)") {
-            Ok(result) => match serde_json::from_str::<serde_json::Value>(&result.value) {
-                Ok(value) if value["settled"].as_bool() == Some(true) => {
-                    return ServiceWorkerEvent::LifecycleSettled {
-                        event_id,
-                        phase,
-                        succeeded: value["succeeded"].as_bool() == Some(true),
-                        skip_waiting: value["skipWaitingRequested"].as_bool() == Some(true),
-                        claim_clients: value["claimClientsRequested"].as_bool() == Some(true),
-                        message: value["message"].as_str().unwrap_or_default().to_string(),
-                    };
-                }
-                Ok(_) => {}
-                Err(error) => {
-                    return ServiceWorkerEvent::LifecycleSettled {
-                        event_id,
-                        phase,
-                        succeeded: false,
-                        skip_waiting: false,
-                        claim_clients: false,
-                        message: format!("invalid lifecycle result: {error}"),
-                    };
-                }
-            },
-            Err(error) => {
-                return ServiceWorkerEvent::LifecycleSettled {
-                    event_id,
-                    phase,
-                    succeeded: false,
-                    skip_waiting: false,
-                    claim_clients: false,
-                    message: error.to_string(),
-                };
+fn poll_lifecycle(
+    sandbox: &mut dyn Sandbox,
+    pending: &PendingLifecycle,
+    timeout_ms: u64,
+) -> Option<ServiceWorkerEvent> {
+    match sandbox.execute("JSON.stringify(globalThis.__zwLifecycleResult)") {
+        Ok(result) => match serde_json::from_str::<serde_json::Value>(&result.value) {
+            Ok(value) if value["settled"].as_bool() == Some(true) => {
+                return Some(ServiceWorkerEvent::LifecycleSettled {
+                    event_id: pending.event_id,
+                    phase: pending.phase,
+                    succeeded: value["succeeded"].as_bool() == Some(true),
+                    skip_waiting: value["skipWaitingRequested"].as_bool() == Some(true),
+                    claim_clients: value["claimClientsRequested"].as_bool() == Some(true),
+                    message: value["message"].as_str().unwrap_or_default().to_string(),
+                });
             }
+            Ok(_) => {}
+            Err(error) => {
+                return Some(failed_lifecycle_event(
+                    pending.event_id,
+                    pending.phase,
+                    format!("invalid lifecycle result: {error}"),
+                ));
+            }
+        },
+        Err(error) => {
+            return Some(failed_lifecycle_event(
+                pending.event_id,
+                pending.phase,
+                error.to_string(),
+            ));
         }
-        if std::time::Instant::now() >= deadline {
-            return ServiceWorkerEvent::LifecycleSettled {
-                event_id,
-                phase,
-                succeeded: false,
-                skip_waiting: false,
-                claim_clients: false,
-                message: format!("lifecycle event exceeded {timeout_ms}ms"),
-            };
-        }
-        let _ = sandbox.execute("'checkpoint'");
-        std::thread::sleep(std::time::Duration::from_millis(1));
+    }
+    if std::time::Instant::now() >= pending.deadline {
+        return Some(failed_lifecycle_event(
+            pending.event_id,
+            pending.phase,
+            format!("lifecycle event exceeded {timeout_ms}ms"),
+        ));
+    }
+    let _ = sandbox.execute("'checkpoint'");
+    None
+}
+
+fn failed_lifecycle_event(event_id: u64, phase: ServiceWorkerLifecyclePhase, message: String) -> ServiceWorkerEvent {
+    ServiceWorkerEvent::LifecycleSettled {
+        event_id,
+        phase,
+        succeeded: false,
+        skip_waiting: false,
+        claim_clients: false,
+        message,
     }
 }
 
@@ -1163,7 +1511,30 @@ fn take_outbound_messages(sandbox: &mut dyn Sandbox) -> Result<Vec<ServiceWorker
                     "Service Worker outbound message batch exceeds the size limit".into(),
                 ));
             }
-            Ok(ServiceWorkerOutboundMessage { data_json })
+            let port_id = value["portId"].as_u64();
+            let transferred_port_ids = value["transferredPortIds"]
+                .as_array()
+                .map(|values| values.iter().filter_map(serde_json::Value::as_u64).collect::<Vec<_>>())
+                .unwrap_or_default();
+            let data_port_index = value["dataPortIndex"]
+                .as_u64()
+                .and_then(|index| usize::try_from(index).ok());
+            if port_id == Some(0)
+                || transferred_port_ids.len() > MAX_MESSAGE_PORTS
+                || transferred_port_ids.contains(&0)
+                || transferred_port_ids.iter().collect::<HashSet<_>>().len() != transferred_port_ids.len()
+                || data_port_index.is_some_and(|index| index >= transferred_port_ids.len())
+            {
+                return Err(ScriptError::InvalidInput(
+                    "invalid outbound Service Worker MessagePort metadata".into(),
+                ));
+            }
+            Ok(ServiceWorkerOutboundMessage {
+                data_json,
+                port_id,
+                transferred_port_ids,
+                data_port_index,
+            })
         })
         .collect()
 }
@@ -1779,6 +2150,9 @@ mod tests {
                 client_id: "client-1".into(),
                 outbound: vec![ServiceWorkerOutboundMessage {
                     data_json: r#"{"echo":"page","source":"client-1:https://example.test/page"}"#.into(),
+                    port_id: None,
+                    transferred_port_ids: Vec::new(),
+                    data_port_index: None,
                 }],
             }
         );
@@ -1813,6 +2187,9 @@ mod tests {
                 client_id: "client-1".into(),
                 outbound: vec![ServiceWorkerOutboundMessage {
                     data_json: r#"{"echo":"next","source":"client-1:https://example.test/page"}"#.into(),
+                    port_id: None,
+                    transferred_port_ids: Vec::new(),
+                    data_port_index: None,
                 }],
             }
         );
@@ -1830,6 +2207,192 @@ mod tests {
             runtime.dispatch_message(19, "{", "client-1", "https://example.test/page"),
             Err(ScriptError::InvalidInput(_))
         ));
+    }
+
+    #[test]
+    fn worker_registration_update_round_trips_through_host() {
+        let mut runtime = ServiceWorkerRuntime::new(test_config()).unwrap();
+        runtime
+            .evaluate(
+                "addEventListener('message', event => {
+                   registration.update().then(
+                     () => event.source.postMessage({success: true}),
+                     error => event.source.postMessage({success: false, exception: error.name})
+                   );
+                 });",
+                "https://example.test/sw.js",
+            )
+            .unwrap();
+        let _ = runtime.recv_timeout(Duration::from_secs(5)).unwrap();
+
+        runtime
+            .dispatch_message(19, "null", "client-1", "https://example.test/page")
+            .unwrap();
+        let ServiceWorkerEvent::UpdateRequested { request_id } = runtime.recv_timeout(Duration::from_secs(5)).unwrap()
+        else {
+            panic!("missing worker update request");
+        };
+        runtime.complete_update(request_id, Ok(())).unwrap();
+        assert_eq!(
+            runtime.recv_timeout(Duration::from_secs(5)).unwrap(),
+            ServiceWorkerEvent::MessageDispatched {
+                event_id: 19,
+                client_id: "client-1".into(),
+                outbound: vec![ServiceWorkerOutboundMessage {
+                    data_json: r#"{"success":true}"#.into(),
+                    port_id: None,
+                    transferred_port_ids: Vec::new(),
+                    data_port_index: None,
+                }],
+            }
+        );
+
+        runtime
+            .dispatch_message(20, "null", "client-1", "https://example.test/page")
+            .unwrap();
+        let ServiceWorkerEvent::UpdateRequested { request_id } = runtime.recv_timeout(Duration::from_secs(5)).unwrap()
+        else {
+            panic!("missing worker update request");
+        };
+        runtime
+            .complete_update(
+                request_id,
+                Err(("InvalidStateError".into(), "installing worker cannot update".into())),
+            )
+            .unwrap();
+        assert_eq!(
+            runtime.recv_timeout(Duration::from_secs(5)).unwrap(),
+            ServiceWorkerEvent::MessageDispatched {
+                event_id: 20,
+                client_id: "client-1".into(),
+                outbound: vec![ServiceWorkerOutboundMessage {
+                    data_json: r#"{"success":false,"exception":"InvalidStateError"}"#.into(),
+                    port_id: None,
+                    transferred_port_ids: Vec::new(),
+                    data_port_index: None,
+                }],
+            }
+        );
+    }
+
+    #[test]
+    fn message_ports_transfer_bidirectionally() {
+        let mut runtime = ServiceWorkerRuntime::new(test_config()).unwrap();
+        runtime
+            .evaluate(
+                "addEventListener('message', event => {
+                   const requestPort = event.data;
+                   requestPort.onmessage = command => {
+                     const response = new MessageChannel();
+                     requestPort.postMessage(response.port1, [response.port1]);
+                     response.port2.postMessage({echo: command.data});
+                   };
+                 });",
+                "https://example.test/sw.js",
+            )
+            .unwrap();
+        let _ = runtime.recv_timeout(Duration::from_secs(5)).unwrap();
+
+        runtime
+            .dispatch_message_with_ports(
+                30,
+                "null",
+                "client-1",
+                "https://example.test/page",
+                &ServiceWorkerMessagePorts {
+                    transferred_port_ids: vec![2],
+                    data_port_index: Some(0),
+                    target_port_id: None,
+                },
+            )
+            .unwrap();
+        assert!(matches!(
+            runtime.recv_timeout(Duration::from_secs(5)).unwrap(),
+            ServiceWorkerEvent::MessageDispatched {
+                event_id: 30,
+                outbound,
+                ..
+            } if outbound.is_empty()
+        ));
+
+        runtime
+            .dispatch_message_with_ports(
+                31,
+                "\"ping\"",
+                "client-1",
+                "https://example.test/page",
+                &ServiceWorkerMessagePorts {
+                    target_port_id: Some(2),
+                    ..Default::default()
+                },
+            )
+            .unwrap();
+        let ServiceWorkerEvent::MessageDispatched {
+            event_id: 31, outbound, ..
+        } = runtime.recv_timeout(Duration::from_secs(5)).unwrap()
+        else {
+            panic!("missing MessagePort dispatch");
+        };
+        assert_eq!(outbound.len(), 2);
+        assert_eq!(outbound[0].port_id, Some(2));
+        assert_eq!(outbound[0].transferred_port_ids.len(), 1);
+        assert_eq!(outbound[0].data_port_index, Some(0));
+        assert_eq!(outbound[1].port_id, Some(outbound[0].transferred_port_ids[0]));
+        assert_eq!(outbound[1].data_json, r#"{"echo":"ping"}"#);
+    }
+
+    #[test]
+    fn message_dispatch_can_settle_pending_install() {
+        let mut runtime = ServiceWorkerRuntime::new(test_config()).unwrap();
+        runtime
+            .evaluate(
+                "let finishInstall;
+                 addEventListener('install', event => {
+                   event.waitUntil(new Promise(resolve => { finishInstall = resolve; }));
+                 });
+                 addEventListener('message', event => {
+                   finishInstall();
+                   event.source.postMessage('install-finished');
+                 });",
+                "https://example.test/sw.js",
+            )
+            .unwrap();
+        let _ = runtime.recv_timeout(Duration::from_secs(5)).unwrap();
+
+        runtime.dispatch_install(20).unwrap();
+        runtime
+            .dispatch_message(21, "null", "client-1", "https://example.test/page")
+            .unwrap();
+
+        let mut message_dispatched = false;
+        let mut install_settled = false;
+        let deadline = std::time::Instant::now() + Duration::from_secs(5);
+        while !message_dispatched || !install_settled {
+            match runtime.recv_timeout(deadline.saturating_duration_since(std::time::Instant::now())) {
+                Ok(ServiceWorkerEvent::MessageDispatched {
+                    event_id: 21, outbound, ..
+                }) => {
+                    assert_eq!(
+                        outbound,
+                        vec![ServiceWorkerOutboundMessage {
+                            data_json: "\"install-finished\"".into(),
+                            port_id: None,
+                            transferred_port_ids: Vec::new(),
+                            data_port_index: None,
+                        }]
+                    );
+                    message_dispatched = true;
+                }
+                Ok(ServiceWorkerEvent::LifecycleSettled {
+                    event_id: 20,
+                    phase: ServiceWorkerLifecyclePhase::Install,
+                    succeeded: true,
+                    ..
+                }) => install_settled = true,
+                Ok(other) => panic!("unexpected runtime event: {other:?}"),
+                Err(error) => panic!("runtime event timed out: {error}"),
+            }
+        }
     }
 
     #[test]

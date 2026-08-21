@@ -2,7 +2,7 @@
 
 **入口文档**: [../service-workers.md](../service-workers.md)
 **创建日期**: 2026-08-17（goal 拆分 bootstrap）
-**最后更新**: 2026-08-21（M3-25a client update during initial installation 完成）
+**最后更新**: 2026-08-21（M3-25 update permissions + MessagePort transfer 完成）
 
 ---
 
@@ -65,8 +65,8 @@ M0 启动门禁解除；M1 core WPT 已收敛，M2 依赖未满足，当前推�
 - ✅ Final remaining 裁决：38 source / 270 subtest 分为 14 defer /
   8 gated / 16 skip；初始 review 152/152，逻辑剩余 0
 - ✅ Runner disposition contract：294 source / 331 URL 唯一映射为
-  31 core / 49 defer / 172 gated / 42 skip，可从原始 evidence 确定性重建；
-  31 个 core 与 runner 导入账本、十七批 case asset 及 blob SHA 精确对应
+  32 core / 49 defer / 171 gated / 42 skip，可从原始 evidence 确定性重建；
+  32 个 core 与 runner 导入账本、十八批 case asset 及 blob SHA 精确对应
 - ✅ M0 registry 契约补强：新增 4 项 Rust 单测，固定候选版本不提前替换 active、
   非法激活不扰动 active、注销旧 redundant 不删除新映射、跨 origin 替换隔离
 - ✅ M1 WorkerRuntime readiness：V8 20/20、QuickJS 3/3，WebView 双后端各 17/17；
@@ -148,8 +148,10 @@ M0 启动门禁解除；M1 core WPT 已收敛，M2 依赖未满足，当前推�
 - ✅ M3-24：同 registration key 的并发 update job 复用单一 fetch/runtime/installing
   candidate，burst 后 update 继续可用；core WPT 31/150
 - ✅ M3-25a：client 在首次 worker installing 期间调用 `registration.update()` 复用当前
-  candidate 并成功，不重复 fetch/runtime 或派发 `updatefound`；`update-not-allowed`
-  首项语义就绪，完整 case 仍等待 worker update + MessagePort transfer；core WPT 31/150
+  candidate 并成功，不重复 fetch/runtime 或派发 `updatefound`；core WPT 31/150
+- ✅ M3-25：lifecycle wait 可穿插 message dispatch；MessagePort endpoint 经
+  page/IPC/manager/runtime 双向 transfer；worker global `registration.update()` 按 calling
+  worker 状态拒绝 installing、允许 active 合并 replacement；core WPT 32/153
 
 ## 缺口清单
 
@@ -159,7 +161,7 @@ M0 启动门禁解除；M1 core WPT 已收敛，M2 依赖未满足，当前推�
 | S2 | scriptURL 不下载执行 | ✅ production navigator 经 browser fetch/evaluate |
 | S3 | fetch 拦截为零 | ⬜ M2（等 js-dom fetch 改造） |
 | S4 | 事件为 setTimeout 模拟 | ✅ manager transition log 为状态源；timer 只执行页面 task 投影 |
-| S5 | WPT 覆盖为零 | ✅ core 31/31 case、150/150 Pass、0 Fail/Timeout/Unsupported |
+| S5 | WPT 覆盖为零 | ✅ core 32/32 case、153/153 Pass、0 Fail/Timeout/Unsupported |
 
 ## 待用户决策
 
@@ -169,17 +171,15 @@ M0 启动门禁解除；M1 core WPT 已收敛，M2 依赖未满足，当前推�
 
 ## 下一步计划
 
-1. **M3 update follow-up**：补 worker global `registration.update()` 与跨上下文
-   MessagePort transfer，完成 `update-not-allowed.https.html` 后两项
-2. **M2 依赖复核**：js-dom S6 与 storage-cache-api M1 land 后启动 fetch pipeline
-3. **M3 messaging follow-up**：MessagePort/MessageChannel transfer 与多 client 枚举
+1. **M2 依赖复核**：js-dom S6 与 storage-cache-api M1 land 后启动 fetch pipeline
+2. **M3 clients follow-up**：多 client enumeration 与控制语义
 
 ## 里程碑状态
 
 | 里程碑 | 状态 |
 |--------|------|
 | M0 — 选型 RFC（门控） | ✅ 方案 C 已批准 |
-| M1 — 脚本真实执行 + 生命周期真事件 | ✅ current core WPT 150/150 Pass |
+| M1 — 脚本真实执行 + 生命周期真事件 | ✅ current core WPT 153/153 Pass |
 | M2 — fetch 拦截 + Cache 集成 | ⬜ 门控：js-dom fetch 改造 land |
 | M3 — 控制语义 + 消息 + 收尾 | 🚧 classic startup graph + 控制/消息/update/persistence 完成 |
 
@@ -242,6 +242,8 @@ M0 启动门禁解除；M1 core WPT 已收敛，M2 依赖未满足，当前推�
   `make test-wpt-service-workers-update-failure-wave-assets` 固化篡改/修复回归
 - Multiple-update-wave 资产恢复/审计：5 assets / 1 subtest；
   `make test-wpt-service-workers-multiple-update-wave-assets` 固化篡改/修复回归
+- Update-not-allowed-wave 资产恢复/审计：6 assets / 3 subtest；
+  `make test-wpt-service-workers-update-not-allowed-wave-assets` 固化篡改/修复回归
 - 质量门禁：`cargo fmt` + `cargo clippy --workspace --all-targets -- -D warnings` +
   `make test`（V8/QuickJS/GPU capability）全过
 - Registry 契约测试：`cargo test -p zero-storage service_worker::tests`，40/40 通过；

@@ -21,9 +21,11 @@ use zero_protocol::message::{
     ServiceWorkerHostCommandParams, ServiceWorkerHostEvent, ServiceWorkerHostEventParams, ServiceWorkerLifecycleWire,
     ServiceWorkerOperation, ServiceWorkerRequestParams, ServiceWorkerResponseParams, ServiceWorkerResult,
     ServiceWorkerScriptErrorKindWire, ServiceWorkerScriptTypeWire, ServiceWorkerSnapshot, ServiceWorkerStateChanges,
-    ServiceWorkerStateWire, ServiceWorkerUpdateViaCacheWire,
+    ServiceWorkerStateWire, ServiceWorkerUpdateError, ServiceWorkerUpdateViaCacheWire,
 };
-use zero_script_sandbox::{ServiceWorkerEvent, ServiceWorkerLifecyclePhase, ServiceWorkerScriptErrorKind};
+use zero_script_sandbox::{
+    ServiceWorkerEvent, ServiceWorkerLifecyclePhase, ServiceWorkerMessagePorts, ServiceWorkerScriptErrorKind,
+};
 use zero_storage::{
     ServiceWorkerRegistration, ServiceWorkerScriptType, ServiceWorkerState, ServiceWorkerUpdateViaCache,
 };
@@ -47,6 +49,11 @@ enum ServiceWorkerFetchPurpose {
     },
     Update {
         registration_id: u64,
+        update_via_cache: ServiceWorkerUpdateViaCache,
+    },
+    WorkerUpdate {
+        caller_registration_id: u64,
+        update_request_id: u64,
         update_via_cache: ServiceWorkerUpdateViaCache,
     },
 }
@@ -214,6 +221,7 @@ impl ServiceWorkerRuntimeHost for IpcServiceWorkerHost {
         data_json: &str,
         client_id: &str,
         client_url: &str,
+        ports: &ServiceWorkerMessagePorts,
     ) -> Result<(), ServiceWorkerManagerError> {
         let Some(tab_id) = self.channels.take_owned_tab(registration_id) else {
             return Err(ServiceWorkerManagerError::UnknownRegistration(registration_id));
@@ -228,6 +236,9 @@ impl ServiceWorkerRuntimeHost for IpcServiceWorkerHost {
                     data_json: data_json.to_string(),
                     client_id: client_id.to_string(),
                     client_url: client_url.to_string(),
+                    transferred_port_ids: ports.transferred_port_ids.clone(),
+                    data_port_index: ports.data_port_index,
+                    target_port_id: ports.target_port_id,
                 },
             },
         });
@@ -249,6 +260,32 @@ impl ServiceWorkerRuntimeHost for IpcServiceWorkerHost {
             params: ServiceWorkerHostCommandParams {
                 registration_id,
                 command: ServiceWorkerHostCommand::CompleteImportScripts { request_id, result },
+            },
+        });
+        Ok(())
+    }
+
+    fn complete_update(
+        &mut self,
+        registration_id: u64,
+        request_id: u64,
+        result: Result<(), (String, String)>,
+    ) -> Result<(), ServiceWorkerManagerError> {
+        let Some(tab_id) = self.channels.take_owned_tab(registration_id) else {
+            return Err(ServiceWorkerManagerError::UnknownRegistration(registration_id));
+        };
+        self.channels.record_owned(registration_id, tab_id);
+        self.channels.push_outgoing(ServiceWorkerHostOutgoing {
+            tab_id,
+            params: ServiceWorkerHostCommandParams {
+                registration_id,
+                command: ServiceWorkerHostCommand::CompleteUpdate {
+                    request_id,
+                    result: result.map_err(|(exception_name, message)| ServiceWorkerUpdateError {
+                        exception_name,
+                        message,
+                    }),
+                },
             },
         });
         Ok(())
@@ -346,7 +383,12 @@ fn sandbox_event(event: ServiceWorkerHostEvent) -> ServiceWorkerEvent {
             client_id,
             outbound: outbound
                 .into_iter()
-                .map(|data_json| zero_script_sandbox::ServiceWorkerOutboundMessage { data_json })
+                .map(|message| zero_script_sandbox::ServiceWorkerOutboundMessage {
+                    data_json: message.data_json,
+                    port_id: message.port_id,
+                    transferred_port_ids: message.transferred_port_ids,
+                    data_port_index: message.data_port_index,
+                })
                 .collect(),
         },
         ServiceWorkerHostEvent::MessageFailed {
@@ -361,6 +403,7 @@ fn sandbox_event(event: ServiceWorkerHostEvent) -> ServiceWorkerEvent {
         ServiceWorkerHostEvent::ImportScriptsRequested { request_id, specifiers } => {
             ServiceWorkerEvent::ImportScriptsRequested { request_id, specifiers }
         }
+        ServiceWorkerHostEvent::UpdateRequested { request_id } => ServiceWorkerEvent::UpdateRequested { request_id },
         ServiceWorkerHostEvent::ModuleScriptsRequested {
             request_id,
             referrer_url,
@@ -398,6 +441,9 @@ impl ServiceWorkerFetchPlan {
         match self.purpose {
             ServiceWorkerFetchPurpose::Register { .. } => true,
             ServiceWorkerFetchPurpose::Update { update_via_cache, .. } => {
+                update_via_cache != ServiceWorkerUpdateViaCache::All
+            }
+            ServiceWorkerFetchPurpose::WorkerUpdate { update_via_cache, .. } => {
                 update_via_cache != ServiceWorkerUpdateViaCache::All
             }
         }
@@ -474,6 +520,7 @@ pub(crate) struct BrowserServiceWorkerOwner {
     host_kind: ProfileHostKind,
     pending_fetches: Vec<PendingScriptFetch>,
     pending_evaluations: HashMap<(ProfileKey, u64), PendingEvaluation>,
+    update_fetch_plans: Vec<ServiceWorkerFetchPlan>,
     import_fetch_plans: Vec<ServiceWorkerImportFetchPlan>,
     pending_import_fetches: Vec<PendingImportFetch>,
     persistence_path: Option<PathBuf>,
@@ -589,6 +636,7 @@ impl BrowserServiceWorkerOwner {
             host_kind,
             pending_fetches: Vec::new(),
             pending_evaluations: HashMap::new(),
+            update_fetch_plans: Vec::new(),
             import_fetch_plans: Vec::new(),
             pending_import_fetches: Vec::new(),
             persistence_path,
@@ -818,12 +866,26 @@ impl BrowserServiceWorkerOwner {
             ServiceWorkerOperation::PostMessage {
                 registration_id,
                 data_json,
+                transferred_port_ids,
+                data_port_index,
+                target_port_id,
             } => {
                 let result = self
                     .authorized_registration(profile, registration_id, &authority)
                     .and_then(|_| {
                         self.manager_mut(profile)
-                            .post_message(registration_id, request_id, &data_json, client_id, authority.as_str())
+                            .post_message_with_ports(
+                                registration_id,
+                                request_id,
+                                &data_json,
+                                client_id,
+                                authority.as_str(),
+                                &ServiceWorkerMessagePorts {
+                                    transferred_port_ids,
+                                    data_port_index,
+                                    target_port_id,
+                                },
+                            )
                             .map_err(manager_error)
                     })
                     .map(|()| ServiceWorkerResult::Empty);
@@ -836,13 +898,21 @@ impl BrowserServiceWorkerOwner {
                 let result = self
                     .authorized_registration(profile, registration_id, &authority)
                     .map(|_| {
-                        let (latest_sequence, data_json) = self
+                        let (latest_sequence, messages) = self
                             .manager(profile)
                             .map(|manager| manager.client_messages_since(registration_id, client_id, after_sequence))
                             .unwrap_or_default();
                         ServiceWorkerResult::ClientMessages(ServiceWorkerClientMessages {
                             latest_sequence,
-                            data_json,
+                            messages: messages
+                                .into_iter()
+                                .map(|message| zero_protocol::ServiceWorkerMessage {
+                                    data_json: message.data_json,
+                                    port_id: message.port_id,
+                                    transferred_port_ids: message.transferred_port_ids,
+                                    data_port_index: message.data_port_index,
+                                })
+                                .collect(),
                         })
                     });
                 self.result_disposition(tab_id, request_id, result)
@@ -909,6 +979,10 @@ impl BrowserServiceWorkerOwner {
         self.pending_fetches.push(PendingScriptFetch { plan, receiver });
     }
 
+    pub(crate) fn take_update_fetch_plans(&mut self) -> Vec<ServiceWorkerFetchPlan> {
+        std::mem::take(&mut self.update_fetch_plans)
+    }
+
     pub(crate) fn take_import_fetch_plans(&mut self) -> Vec<ServiceWorkerImportFetchPlan> {
         std::mem::take(&mut self.import_fetch_plans)
     }
@@ -955,6 +1029,7 @@ impl BrowserServiceWorkerOwner {
     pub(crate) fn disconnect_tab(&mut self, tab_id: TabId) {
         self.pending_fetches.retain(|pending| pending.plan.tab_id != tab_id);
         self.pending_evaluations.retain(|_, pending| pending.tab_id != tab_id);
+        self.update_fetch_plans.retain(|plan| plan.tab_id != tab_id);
         let mut retained_plans = Vec::new();
         for plan in std::mem::take(&mut self.import_fetch_plans) {
             if plan.tab_id == tab_id {
@@ -989,6 +1064,8 @@ impl BrowserServiceWorkerOwner {
             .retain(|pending| pending.plan.profile != ProfileKey::Private(tab_id));
         self.pending_evaluations
             .retain(|(profile, _), _| *profile != ProfileKey::Private(tab_id));
+        self.update_fetch_plans
+            .retain(|plan| plan.profile != ProfileKey::Private(tab_id));
         self.import_fetch_plans
             .retain(|plan| plan.profile != ProfileKey::Private(tab_id));
         self.pending_import_fetches
@@ -1070,6 +1147,35 @@ impl BrowserServiceWorkerOwner {
         self.pending_import_fetches = retained;
     }
 
+    fn fail_script_fetch(
+        &mut self,
+        plan: &ServiceWorkerFetchPlan,
+        code: ServiceWorkerErrorCode,
+        message: impl Into<String>,
+        completed: &mut Vec<CompletedServiceWorkerResponse>,
+    ) {
+        let message = message.into();
+        if let ServiceWorkerFetchPurpose::WorkerUpdate {
+            caller_registration_id,
+            update_request_id,
+            ..
+        } = plan.purpose
+        {
+            let exception_name = if code == ServiceWorkerErrorCode::Security {
+                "SecurityError"
+            } else {
+                "TypeError"
+            };
+            let _ = self.manager_mut(plan.profile).complete_worker_update_fetch(
+                caller_registration_id,
+                update_request_id,
+                Err((exception_name.into(), message)),
+            );
+        } else {
+            completed.push(error_response(plan.tab_id, plan.request_id, code, message));
+        }
+    }
+
     fn complete_fetch(
         &mut self,
         plan: ServiceWorkerFetchPlan,
@@ -1079,22 +1185,22 @@ impl BrowserServiceWorkerOwner {
         let response = match result {
             Ok(response) => response,
             Err(message) => {
-                completed.push(error_response(
-                    plan.tab_id,
-                    plan.request_id,
+                self.fail_script_fetch(
+                    &plan,
                     ServiceWorkerErrorCode::Network,
                     format!("Service Worker script fetch failed: {message}"),
-                ));
+                    completed,
+                );
                 return;
             }
         };
         if !response.is_success() {
-            completed.push(error_response(
-                plan.tab_id,
-                plan.request_id,
+            self.fail_script_fetch(
+                &plan,
                 ServiceWorkerErrorCode::Network,
                 format!("Service Worker script fetch returned HTTP {}", response.status_code),
-            ));
+                completed,
+            );
             return;
         }
         if response.redirect_count != 0
@@ -1102,50 +1208,50 @@ impl BrowserServiceWorkerOwner {
                 final_url.origin() != plan.script_url.origin() || final_url.fragment().is_some()
             })
         {
-            completed.push(error_response(
-                plan.tab_id,
-                plan.request_id,
+            self.fail_script_fetch(
+                &plan,
                 ServiceWorkerErrorCode::Network,
                 "Service Worker script fetch redirected",
-            ));
+                completed,
+            );
             return;
         }
         let Some(mime) = response.content_type_mime() else {
-            completed.push(error_response(
-                plan.tab_id,
-                plan.request_id,
+            self.fail_script_fetch(
+                &plan,
                 ServiceWorkerErrorCode::Security,
                 "Service Worker main script has no JavaScript MIME type",
-            ));
+                completed,
+            );
             return;
         };
         if !is_javascript_mime(mime) {
-            completed.push(error_response(
-                plan.tab_id,
-                plan.request_id,
+            self.fail_script_fetch(
+                &plan,
                 ServiceWorkerErrorCode::Security,
                 format!("Service Worker main script has unsupported MIME type {mime}"),
-            ));
+                completed,
+            );
             return;
         }
         if response.body.len() > MAX_SCRIPT_BYTES {
-            completed.push(error_response(
-                plan.tab_id,
-                plan.request_id,
+            self.fail_script_fetch(
+                &plan,
                 ServiceWorkerErrorCode::Capacity,
                 "Service Worker script exceeds the size limit",
-            ));
+                completed,
+            );
             return;
         }
         let script = match String::from_utf8(response.body) {
             Ok(script) => script,
             Err(_) => {
-                completed.push(error_response(
-                    plan.tab_id,
-                    plan.request_id,
+                self.fail_script_fetch(
+                    &plan,
                     ServiceWorkerErrorCode::Script,
                     "Service Worker script is not valid UTF-8",
-                ));
+                    completed,
+                );
                 return;
             }
         };
@@ -1184,6 +1290,21 @@ impl BrowserServiceWorkerOwner {
                     Ok(ServiceWorkerUpdateOutcome::Started { registration_id }) => Ok(registration_id),
                     Err(error) => Err(error),
                 }
+            }
+            ServiceWorkerFetchPurpose::WorkerUpdate {
+                caller_registration_id,
+                update_request_id,
+                ..
+            } => {
+                let result = self.manager_mut(plan.profile).complete_worker_update_fetch(
+                    caller_registration_id,
+                    update_request_id,
+                    Ok(script),
+                );
+                if let Err(error) = result {
+                    tracing::warn!("Service Worker runtime update completion failed: {error}");
+                }
+                return;
             }
         };
         match result {
@@ -1277,6 +1398,63 @@ impl BrowserServiceWorkerOwner {
                             request_id,
                             Err("Service Worker import fetch has no renderer host".into()),
                         );
+                    }
+                }
+                ServiceWorkerManagerEvent::WorkerUpdateRequested {
+                    caller_registration_id,
+                    request_id,
+                    target_registration_id,
+                } => {
+                    let registration = self
+                        .manager(profile)
+                        .and_then(|manager| manager.registration(target_registration_id))
+                        .cloned();
+                    let tab_id = self
+                        .channels_for(profile)
+                        .and_then(|channels| channels.take_owned_tab(caller_registration_id));
+                    match (registration, tab_id) {
+                        (Some(registration), Some(tab_id)) => {
+                            if let Some(channels) = self.channels_for(profile) {
+                                channels.record_owned(caller_registration_id, tab_id);
+                            }
+                            match (Url::parse(&registration.script_url), Url::parse(&registration.scope)) {
+                                (Ok(script_url), Ok(scope)) => {
+                                    self.update_fetch_plans.push(ServiceWorkerFetchPlan {
+                                        tab_id,
+                                        request_id,
+                                        profile,
+                                        script_url,
+                                        scope,
+                                        origin: registration.origin,
+                                        purpose: ServiceWorkerFetchPurpose::WorkerUpdate {
+                                            caller_registration_id,
+                                            update_request_id: request_id,
+                                            update_via_cache: registration.update_via_cache,
+                                        },
+                                    });
+                                }
+                                _ => {
+                                    let _ = self.manager_mut(profile).complete_worker_update_fetch(
+                                        caller_registration_id,
+                                        request_id,
+                                        Err((
+                                            "TypeError".into(),
+                                            "Service Worker registration URLs are invalid".into(),
+                                        )),
+                                    );
+                                }
+                            }
+                        }
+                        _ => {
+                            let _ = self.manager_mut(profile).complete_worker_update_fetch(
+                                caller_registration_id,
+                                request_id,
+                                Err((
+                                    "InvalidStateError".into(),
+                                    "Service Worker update has no renderer host".into(),
+                                )),
+                            );
+                        }
                     }
                 }
                 ServiceWorkerManagerEvent::UpdateChecked {

@@ -713,6 +713,16 @@ impl ProcessTabBackend {
         for response in self.service_worker_owner.poll() {
             self.send_service_worker_response_now(response);
         }
+        for plan in self.service_worker_owner.take_update_fetch_plans() {
+            let receiver = self.fetch_proxy.fetch_service_worker_script(
+                plan.tab_id(),
+                plan.script_url(),
+                plan.bypass_cache(),
+                ServiceWorkerScriptRequestMode::SameOrigin,
+                true,
+            );
+            self.service_worker_owner.attach_fetch(plan, receiver);
+        }
         for plan in self.service_worker_owner.take_import_fetch_plans() {
             let tab_id = plan.tab_id();
             let bypass_cache = plan.bypass_cache();

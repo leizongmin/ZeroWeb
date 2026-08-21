@@ -21,7 +21,8 @@ use zero_protocol::message::{
 use zero_protocol::transport::PipeTransport;
 use zero_protocol::{IpcChannel, IpcMessage, IpcMessageKind};
 use zero_script_sandbox::{
-    SandboxConfig, ServiceWorkerEvent, ServiceWorkerLifecyclePhase, ServiceWorkerRuntime, ServiceWorkerScriptErrorKind,
+    SandboxConfig, ServiceWorkerEvent, ServiceWorkerLifecyclePhase, ServiceWorkerMessagePorts, ServiceWorkerRuntime,
+    ServiceWorkerScriptErrorKind,
 };
 
 use crate::compositor_publish_thread::SharedWriter;
@@ -115,9 +116,30 @@ impl HostThread {
                 data_json,
                 client_id,
                 client_url,
-            } => self.dispatch_message(params.registration_id, event_id, &data_json, &client_id, &client_url),
+                transferred_port_ids,
+                data_port_index,
+                target_port_id,
+            } => self.dispatch_message(
+                params.registration_id,
+                event_id,
+                &data_json,
+                &client_id,
+                &client_url,
+                &ServiceWorkerMessagePorts {
+                    transferred_port_ids,
+                    data_port_index,
+                    target_port_id,
+                },
+            ),
             ServiceWorkerHostCommand::CompleteImportScripts { request_id, result } => {
                 self.complete_import_scripts(params.registration_id, request_id, result);
+            }
+            ServiceWorkerHostCommand::CompleteUpdate { request_id, result } => {
+                self.complete_update(
+                    params.registration_id,
+                    request_id,
+                    result.map_err(|error| (error.exception_name, error.message)),
+                );
             }
             ServiceWorkerHostCommand::Shutdown => {
                 // 不在此处移除：tick 先 drain `Closed` 事件再按 is_running 回收槽位。
@@ -195,12 +217,13 @@ impl HostThread {
         data_json: &str,
         client_id: &str,
         client_url: &str,
+        ports: &ServiceWorkerMessagePorts,
     ) {
         let Some(runtime) = self.runtimes.get_mut(&registration_id) else {
             tracing::warn!("Service Worker message for unknown registration {registration_id}");
             return;
         };
-        if let Err(error) = runtime.dispatch_message(event_id, data_json, client_id, client_url) {
+        if let Err(error) = runtime.dispatch_message_with_ports(event_id, data_json, client_id, client_url, ports) {
             tracing::warn!("Service Worker message dispatch failed: {error}");
         }
     }
@@ -226,6 +249,16 @@ impl HostThread {
         };
         if let Err(error) = runtime.complete_import_scripts(request_id, result) {
             tracing::warn!("Service Worker import response failed: {error}");
+        }
+    }
+
+    fn complete_update(&mut self, registration_id: u64, request_id: u64, result: Result<(), (String, String)>) {
+        let Some(runtime) = self.runtimes.get(&registration_id) else {
+            tracing::warn!("Service Worker update response for unknown registration {registration_id}");
+            return;
+        };
+        if let Err(error) = runtime.complete_update(request_id, result) {
+            tracing::warn!("Service Worker update response failed: {error}");
         }
     }
 }
@@ -279,7 +312,15 @@ fn host_event(event: ServiceWorkerEvent) -> ServiceWorkerHostEvent {
         } => ServiceWorkerHostEvent::MessageDispatched {
             event_id,
             client_id,
-            outbound: outbound.into_iter().map(|message| message.data_json).collect(),
+            outbound: outbound
+                .into_iter()
+                .map(|message| zero_protocol::ServiceWorkerMessage {
+                    data_json: message.data_json,
+                    port_id: message.port_id,
+                    transferred_port_ids: message.transferred_port_ids,
+                    data_port_index: message.data_port_index,
+                })
+                .collect(),
         },
         ServiceWorkerEvent::MessageFailed {
             event_id,
@@ -293,6 +334,7 @@ fn host_event(event: ServiceWorkerEvent) -> ServiceWorkerHostEvent {
         ServiceWorkerEvent::ImportScriptsRequested { request_id, specifiers } => {
             ServiceWorkerHostEvent::ImportScriptsRequested { request_id, specifiers }
         }
+        ServiceWorkerEvent::UpdateRequested { request_id } => ServiceWorkerHostEvent::UpdateRequested { request_id },
         ServiceWorkerEvent::Closed => ServiceWorkerHostEvent::Closed,
         ServiceWorkerEvent::ModuleScriptsRequested {
             request_id,
@@ -520,6 +562,9 @@ mod tests {
                 data_json: "\"ping\"".into(),
                 client_id: "tab-1".into(),
                 client_url: "https://example.test/page".into(),
+                transferred_port_ids: Vec::new(),
+                data_port_index: None,
+                target_port_id: None,
             },
         });
         let dispatched = wait_for_event(&mut transport);
@@ -531,7 +576,11 @@ mod tests {
             } => {
                 assert_eq!((event_id, client_id.as_str()), (21, "tab-1"));
                 assert_eq!(outbound.len(), 1, "worker must echo one message: {outbound:?}");
-                assert!(outbound[0].contains("ping"), "unexpected payload: {}", outbound[0]);
+                assert!(
+                    outbound[0].data_json.contains("ping"),
+                    "unexpected payload: {:?}",
+                    outbound[0]
+                );
             }
             other => panic!("expected MessageDispatched, got {other:?}"),
         }

@@ -105,6 +105,9 @@ fn service_worker_request_rejects_oversized_urls() {
         operation: ServiceWorkerOperation::PostMessage {
             registration_id: 1,
             data_json: "x".repeat(1024 * 1024 + 1),
+            transferred_port_ids: Vec::new(),
+            data_port_index: None,
+            target_port_id: None,
         },
     };
     assert!(params.validate().is_err());
@@ -147,6 +150,9 @@ fn service_worker_discovery_operations_round_trip() {
             ServiceWorkerOperation::PostMessage {
                 registration_id: 9,
                 data_json: r#"{"value":"hello"}"#.into(),
+                transferred_port_ids: Vec::new(),
+                data_port_index: None,
+                target_port_id: None,
             },
         ),
         (
@@ -211,7 +217,7 @@ fn service_worker_state_changes_round_trip() {
 fn service_worker_client_messages_round_trip() {
     let messages = ServiceWorkerClientMessages {
         latest_sequence: 2,
-        data_json: vec![r#"{"echo":"hello"}"#.into()],
+        messages: vec![r#"{"echo":"hello"}"#.into()],
     };
     let decoded = roundtrip(IpcMessage {
         id: 46,
@@ -346,6 +352,9 @@ fn service_worker_nested_enum_discriminants_remain_append_only() {
         discriminant(&ServiceWorkerOperation::PostMessage {
             registration_id: 1,
             data_json: "null".into(),
+            transferred_port_ids: Vec::new(),
+            data_port_index: None,
+            target_port_id: None,
         }),
         8
     );
@@ -385,7 +394,7 @@ fn service_worker_nested_enum_discriminants_remain_append_only() {
     assert_eq!(
         discriminant(&ServiceWorkerResult::ClientMessages(ServiceWorkerClientMessages {
             latest_sequence: 0,
-            data_json: Vec::new(),
+            messages: Vec::new(),
         })),
         7
     );
@@ -490,6 +499,9 @@ fn service_worker_host_message_command_round_trips_and_validates() {
                 data_json: "{\"type\":\"ping\"}".into(),
                 client_id: "tab-7".into(),
                 client_url: "https://example.test/page".into(),
+                transferred_port_ids: Vec::new(),
+                data_port_index: None,
+                target_port_id: None,
             },
         }),
     };
@@ -510,6 +522,9 @@ fn service_worker_host_message_command_round_trips_and_validates() {
             data_json: "null".into(),
             client_id: String::new(),
             client_url: "https://example.test/page".into(),
+            transferred_port_ids: Vec::new(),
+            data_port_index: None,
+            target_port_id: None,
         },
     };
     assert!(invalid.validate().is_err());
@@ -568,6 +583,61 @@ fn service_worker_host_message_event_round_trips() {
             message: String::new(),
         }
     );
+}
+
+#[test]
+fn service_worker_message_port_and_update_wires_round_trip() {
+    let request = ServiceWorkerRequestParams {
+        operation: ServiceWorkerOperation::PostMessage {
+            registration_id: 7,
+            data_json: "null".into(),
+            transferred_port_ids: vec![2],
+            data_port_index: Some(0),
+            target_port_id: None,
+        },
+    };
+    assert!(request.validate().is_ok());
+    let decoded = roundtrip(IpcMessage {
+        id: 70,
+        kind: IpcMessageKind::ServiceWorkerRequest(request.clone()),
+    });
+    let IpcMessageKind::ServiceWorkerRequest(decoded_request) = decoded.kind else {
+        panic!("expected ServiceWorkerRequest");
+    };
+    assert_eq!(decoded_request, request);
+
+    let event = ServiceWorkerHostEventParams {
+        registration_id: 7,
+        event: ServiceWorkerHostEvent::UpdateRequested { request_id: 11 },
+    };
+    let decoded = roundtrip(IpcMessage {
+        id: 71,
+        kind: IpcMessageKind::ServiceWorkerHostEvent(event.clone()),
+    });
+    let IpcMessageKind::ServiceWorkerHostEvent(decoded_event) = decoded.kind else {
+        panic!("expected ServiceWorkerHostEvent");
+    };
+    assert_eq!(decoded_event, event);
+
+    let command = ServiceWorkerHostCommandParams {
+        registration_id: 7,
+        command: ServiceWorkerHostCommand::CompleteUpdate {
+            request_id: 11,
+            result: Err(ServiceWorkerUpdateError {
+                exception_name: "InvalidStateError".into(),
+                message: "installing worker cannot update".into(),
+            }),
+        },
+    };
+    assert!(command.validate().is_ok());
+    let decoded = roundtrip(IpcMessage {
+        id: 72,
+        kind: IpcMessageKind::ServiceWorkerHostCommand(command.clone()),
+    });
+    let IpcMessageKind::ServiceWorkerHostCommand(decoded_command) = decoded.kind else {
+        panic!("expected ServiceWorkerHostCommand");
+    };
+    assert_eq!(decoded_command, command);
 }
 
 #[test]

@@ -1399,6 +1399,189 @@ fn service_worker_post_message_dispatches_structured_page_payload() {
 }
 
 #[test]
+fn service_worker_message_port_transfers_bidirectionally() {
+    let mut webview = WebViewBuilder::new()
+        .url("https://example.test/page.html")
+        .script_source_fetcher(Arc::new(|_, _| {
+            Ok("addEventListener('message', event => {
+                  const port = event.data;
+                  port.onmessage = command => port.postMessage({echo: command.data});
+                });"
+            .into())
+        }))
+        .build();
+
+    webview
+        .execute_script(
+            "globalThis.__portResult = 'pending';
+             navigator.serviceWorker.register('/sw.js', {scope:'/'}).then(function() {
+               return navigator.serviceWorker.ready;
+             }).then(function(reg) {
+               var channel = new MessageChannel();
+               channel.port2.onmessage = function(event) {
+                 globalThis.__portResult = event.data.echo;
+               };
+               reg.active.postMessage(channel.port1, [channel.port1]);
+               channel.port2.postMessage('ping');
+             }, function(error) {
+               globalThis.__portResult = 'error:' + error.name;
+             });
+             'started';",
+        )
+        .unwrap();
+
+    let deadline = Instant::now() + Duration::from_secs(5);
+    loop {
+        let value = webview.execute_script("globalThis.__portResult").unwrap();
+        if value != "pending" {
+            assert_eq!(value, "ping");
+            break;
+        }
+        assert!(Instant::now() < deadline, "Service Worker MessagePort timed out");
+        std::thread::sleep(Duration::from_millis(5));
+    }
+}
+
+#[test]
+fn update_permissions_follow_calling_worker_state_during_installation() {
+    let version = Arc::new(Mutex::new(0usize));
+    let fetch_version = Arc::clone(&version);
+    let mut webview = WebViewBuilder::new()
+        .url("https://example.test/page.html")
+        .script_source_fetcher(Arc::new(move |_, _| {
+            let mut version = fetch_version.lock().unwrap();
+            *version += 1;
+            Ok(format!(
+                "// version {}\n\
+                 const installEventFired = new Promise(resolve => {{ self.fireInstallEvent = resolve; }});\n\
+                 const installFinished = new Promise(resolve => {{ self.finishInstall = resolve; }});\n\
+                 addEventListener('install', event => {{ fireInstallEvent(); event.waitUntil(installFinished); }});\n\
+                 addEventListener('message', event => {{\n\
+                   const port = event.data;\n\
+                   port.onmessage = command => {{\n\
+                     if (command.data === 'awaitInstallEvent') {{\n\
+                       installEventFired.then(() => port.postMessage('installEventFired'));\n\
+                     }} else if (command.data === 'finishInstall') {{\n\
+                       finishInstall();\n\
+                       installFinished.then(() => port.postMessage('installFinished'));\n\
+                     }} else if (command.data === 'callUpdate') {{\n\
+                       const response = new MessageChannel();\n\
+                       registration.update().then(\n\
+                         () => response.port2.postMessage({{success:true}}),\n\
+                         error => response.port2.postMessage({{success:false, exception:error.name}})\n\
+                       );\n\
+                       port.postMessage(response.port1, [response.port1]);\n\
+                     }}\n\
+                   }};\n\
+                 }});",
+                *version
+            ))
+        }))
+        .build();
+
+    webview
+        .execute_script(
+            "globalThis.__updatePermissions = 'pending';
+             globalThis.__updatePermissionStage = 'starting';
+             function send(worker, message) {
+               return new Promise(function(resolve) {
+                 var channel = new MessageChannel();
+                 channel.port2.onmessage = function(event) { resolve(event.data); };
+                 worker.postMessage(channel.port1, [channel.port1]);
+                 channel.port2.postMessage(message);
+               });
+             }
+             function nextMessage(port) {
+               return new Promise(function(resolve) {
+                 port.onmessage = function(event) { resolve(event.data); };
+               });
+             }
+             function waitState(worker, state) {
+               if (worker.state === state) return Promise.resolve();
+               return new Promise(function(resolve) {
+                 worker.addEventListener('statechange', function listener() {
+                   if (worker.state === state) {
+                     worker.removeEventListener('statechange', listener);
+                     resolve();
+                   }
+                 });
+               });
+             }
+             (async function() {
+               var reg = await navigator.serviceWorker.register('/sw.js', {scope:'/'});
+               globalThis.__updatePermissionReg = reg;
+               var first = reg.installing;
+               globalThis.__updatePermissionFirst = first;
+               globalThis.__updatePermissionStage = 'await-first-install';
+               await send(first, 'awaitInstallEvent');
+               globalThis.__updatePermissionStage = 'client-update';
+               var clientUpdate = reg.update();
+               globalThis.__updatePermissionStage = 'installing-update';
+               var installingPort = await send(first, 'callUpdate');
+               var installingResult = await nextMessage(installingPort);
+               globalThis.__updatePermissionStage = 'finish-first';
+               await send(first, 'finishInstall');
+               await waitState(first, 'activated');
+               await clientUpdate;
+
+               globalThis.__updatePermissionStage = 'replacement-update';
+               var updateFound = new Promise(function(resolve) {
+                 reg.addEventListener('updatefound', resolve, {once:true});
+               });
+               reg.update();
+               await updateFound;
+               var second = reg.installing;
+               globalThis.__updatePermissionSecond = second;
+               globalThis.__updatePermissionStage = 'await-second-install';
+               await send(second, 'awaitInstallEvent');
+               globalThis.__updatePermissionStage = 'active-update';
+               var activePort = await send(first, 'callUpdate');
+               var activeResult = await nextMessage(activePort);
+               globalThis.__updatePermissionStage = 'finish-second';
+               await send(second, 'finishInstall');
+
+               globalThis.__updatePermissions = [
+                 installingResult.success,
+                 installingResult.exception,
+                 activeResult.success
+               ].join('|');
+             })().catch(function(error) {
+               globalThis.__updatePermissions = 'error:' + error.name + ':' + error.message;
+             });
+             'started';",
+        )
+        .unwrap();
+
+    let deadline = Instant::now() + Duration::from_secs(20);
+    loop {
+        let value = webview.execute_script("globalThis.__updatePermissions").unwrap();
+        if value != "pending" {
+            assert_eq!(value, "false|InvalidStateError|true");
+            break;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "update permission matrix timed out: {}",
+            webview
+                .execute_script(
+                    "[
+                       globalThis.__updatePermissionStage,
+                       globalThis.__updatePermissionFirst && globalThis.__updatePermissionFirst.state,
+                       globalThis.__updatePermissionSecond && globalThis.__updatePermissionSecond.state,
+                       globalThis.__updatePermissionReg && !!globalThis.__updatePermissionReg.installing,
+                       globalThis.__updatePermissionReg && !!globalThis.__updatePermissionReg.active,
+                       globalThis.__updatePermissionFirst && globalThis.__updatePermissionFirst._messageSequence,
+                       globalThis.__updatePermissionFirst && globalThis.__updatePermissionFirst._messagePollTarget,
+                       globalThis.__updatePermissionFirst && globalThis.__updatePermissionFirst._messagePollPending
+                     ].join('|')",
+                )
+                .unwrap()
+        );
+        std::thread::sleep(Duration::from_millis(10));
+    }
+}
+
+#[test]
 fn repeated_registration_changes_script_type_and_worker_message() {
     let visits = Arc::new(Mutex::new(0usize));
     let fetch_visits = Arc::clone(&visits);

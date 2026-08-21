@@ -3,7 +3,8 @@
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 use zero_script_sandbox::{
-    SandboxConfig, ServiceWorkerEvent, ServiceWorkerLifecyclePhase, ServiceWorkerRuntime, ServiceWorkerScriptErrorKind,
+    SandboxConfig, ServiceWorkerEvent, ServiceWorkerLifecyclePhase, ServiceWorkerMessagePorts,
+    ServiceWorkerOutboundMessage, ServiceWorkerRuntime, ServiceWorkerScriptErrorKind,
 };
 use zero_storage::{
     ServiceWorkerRegistration, ServiceWorkerRegistry, ServiceWorkerScriptType, ServiceWorkerState,
@@ -216,6 +217,15 @@ pub enum ServiceWorkerManagerEvent {
         /// Whether these requests must bypass a fresh HTTP cache entry.
         bypass_cache: bool,
     },
+    /// An active worker requested a new browser-owned update fetch.
+    WorkerUpdateRequested {
+        /// Worker version that called `registration.update()`.
+        caller_registration_id: u64,
+        /// Runtime-local request ID.
+        request_id: u64,
+        /// Current registration version whose script must be fetched.
+        target_registration_id: u64,
+    },
     /// A complete update candidate graph was compared with the current version.
     UpdateChecked {
         /// Installing candidate version ID.
@@ -313,12 +323,14 @@ pub struct ServiceWorkerManager {
     registration_keys: HashMap<u64, ServiceWorkerRegistrationKey>,
     state_changes: HashMap<u64, Vec<ServiceWorkerState>>,
     claimed_clients: HashSet<u64>,
-    client_messages: HashMap<(u64, String), Vec<Vec<String>>>,
+    client_messages: HashMap<(u64, String), Vec<Vec<ServiceWorkerOutboundMessage>>>,
     pending_client_messages: HashMap<(u64, String), usize>,
+    message_ports: HashSet<(u64, String, u64)>,
     script_sources: HashMap<u64, Vec<u8>>,
     imported_scripts: HashMap<u64, HashMap<String, Vec<u8>>>,
     pending_import_requests: HashMap<(u64, u64), Vec<String>>,
     update_predecessors: HashMap<u64, u64>,
+    pending_worker_updates: HashMap<u64, (u64, u64)>,
     host: Box<dyn ServiceWorkerRuntimeHost>,
     evaluated: HashSet<u64>,
     restoring_active: HashSet<u64>,
@@ -355,6 +367,7 @@ pub trait ServiceWorkerRuntimeHost: Send {
         data_json: &str,
         client_id: &str,
         client_url: &str,
+        ports: &ServiceWorkerMessagePorts,
     ) -> Result<(), ServiceWorkerManagerError>;
     /// Complete one blocking `importScripts()` request.
     fn complete_import_scripts(
@@ -362,6 +375,13 @@ pub trait ServiceWorkerRuntimeHost: Send {
         registration_id: u64,
         request_id: u64,
         result: Result<Vec<String>, String>,
+    ) -> Result<(), ServiceWorkerManagerError>;
+    /// Complete one worker-global `registration.update()` request.
+    fn complete_update(
+        &mut self,
+        registration_id: u64,
+        request_id: u64,
+        result: Result<(), (String, String)>,
     ) -> Result<(), ServiceWorkerManagerError>;
     /// Stop one runtime and release its resources.
     fn shutdown(&mut self, registration_id: u64);
@@ -429,13 +449,14 @@ impl ServiceWorkerRuntimeHost for LocalServiceWorkerHost {
         data_json: &str,
         client_id: &str,
         client_url: &str,
+        ports: &ServiceWorkerMessagePorts,
     ) -> Result<(), ServiceWorkerManagerError> {
         let runtime = self
             .runtimes
             .get_mut(&registration_id)
             .ok_or(ServiceWorkerManagerError::UnknownRegistration(registration_id))?;
         runtime
-            .dispatch_message(event_id, data_json, client_id, client_url)
+            .dispatch_message_with_ports(event_id, data_json, client_id, client_url, ports)
             .map_err(|error| ServiceWorkerManagerError::Runtime(error.to_string()))
     }
 
@@ -449,6 +470,19 @@ impl ServiceWorkerRuntimeHost for LocalServiceWorkerHost {
             .get(&registration_id)
             .ok_or(ServiceWorkerManagerError::UnknownRegistration(registration_id))?
             .complete_import_scripts(request_id, result)
+            .map_err(|error| ServiceWorkerManagerError::Runtime(error.to_string()))
+    }
+
+    fn complete_update(
+        &mut self,
+        registration_id: u64,
+        request_id: u64,
+        result: Result<(), (String, String)>,
+    ) -> Result<(), ServiceWorkerManagerError> {
+        self.runtimes
+            .get(&registration_id)
+            .ok_or(ServiceWorkerManagerError::UnknownRegistration(registration_id))?
+            .complete_update(request_id, result)
             .map_err(|error| ServiceWorkerManagerError::Runtime(error.to_string()))
     }
 
@@ -501,10 +535,12 @@ impl ServiceWorkerManager {
             claimed_clients: HashSet::new(),
             client_messages: HashMap::new(),
             pending_client_messages: HashMap::new(),
+            message_ports: HashSet::new(),
             script_sources: HashMap::new(),
             imported_scripts: HashMap::new(),
             pending_import_requests: HashMap::new(),
             update_predecessors: HashMap::new(),
+            pending_worker_updates: HashMap::new(),
             host,
             evaluated: HashSet::new(),
             restoring_active: HashSet::new(),
@@ -797,6 +833,38 @@ impl ServiceWorkerManager {
             .map(|candidate_id| (candidate_id, slot.active.is_some() || slot.waiting.is_some())))
     }
 
+    /// Complete the browser-owned fetch for a worker-global update request.
+    pub fn complete_worker_update_fetch(
+        &mut self,
+        caller_registration_id: u64,
+        request_id: u64,
+        result: Result<String, (String, String)>,
+    ) -> Result<(), ServiceWorkerManagerError> {
+        let script = match result {
+            Ok(script) => script,
+            Err(error) => {
+                return self
+                    .host
+                    .complete_update(caller_registration_id, request_id, Err(error));
+            }
+        };
+        match self.start_update(caller_registration_id, &script) {
+            Ok(ServiceWorkerUpdateOutcome::Unchanged { .. }) | Err(ServiceWorkerManagerError::JobInProgress(_)) => {
+                self.host.complete_update(caller_registration_id, request_id, Ok(()))
+            }
+            Ok(ServiceWorkerUpdateOutcome::Started { registration_id }) => {
+                self.pending_worker_updates
+                    .insert(registration_id, (caller_registration_id, request_id));
+                Ok(())
+            }
+            Err(error) => self.host.complete_update(
+                caller_registration_id,
+                request_id,
+                Err(("TypeError".into(), error.to_string())),
+            ),
+        }
+    }
+
     /// Compare a fetched script and start an installing replacement when changed.
     pub fn start_update(
         &mut self,
@@ -836,6 +904,11 @@ impl ServiceWorkerManager {
                             registration_id: returned_id,
                             changed,
                         });
+                        if let Some((caller_registration_id, request_id)) =
+                            self.pending_worker_updates.remove(&registration_id)
+                        {
+                            let _ = self.host.complete_update(caller_registration_id, request_id, Ok(()));
+                        }
                         if !changed {
                             let update_via_cache = self
                                 .registration(registration_id)
@@ -875,6 +948,15 @@ impl ServiceWorkerManager {
                     }
                 }
                 ServiceWorkerEvent::ScriptError { kind, message, .. } => {
+                    if let Some((caller_registration_id, request_id)) =
+                        self.pending_worker_updates.remove(&registration_id)
+                    {
+                        let _ = self.host.complete_update(
+                            caller_registration_id,
+                            request_id,
+                            Err(("TypeError".into(), message.clone())),
+                        );
+                    }
                     self.fail_installing_version(registration_id);
                     output.push(ServiceWorkerManagerEvent::ScriptFailed {
                         registration_id,
@@ -964,6 +1046,27 @@ impl ServiceWorkerManager {
                             .complete_import_scripts(registration_id, request_id, Err(error.to_string()));
                     }
                 },
+                ServiceWorkerEvent::UpdateRequested { request_id } => {
+                    match self.worker_update_target(registration_id) {
+                        Ok(Some(target_registration_id)) => {
+                            output.push(ServiceWorkerManagerEvent::WorkerUpdateRequested {
+                                caller_registration_id: registration_id,
+                                request_id,
+                                target_registration_id,
+                            });
+                        }
+                        Ok(None) => {
+                            let _ = self.host.complete_update(registration_id, request_id, Ok(()));
+                        }
+                        Err(error) => {
+                            let _ = self.host.complete_update(
+                                registration_id,
+                                request_id,
+                                Err(("InvalidStateError".into(), error.to_string())),
+                            );
+                        }
+                    }
+                }
                 ServiceWorkerEvent::LifecycleSettled {
                     phase,
                     succeeded,
@@ -1035,11 +1138,17 @@ impl ServiceWorkerManager {
                     outbound,
                 } => {
                     let outbound_count = outbound.len();
-                    self.complete_client_message_batch(
-                        registration_id,
-                        &client_id,
-                        outbound.into_iter().map(|message| message.data_json).collect(),
-                    );
+                    if let Err(error) = self.record_outbound_message_ports(registration_id, &client_id, &outbound) {
+                        self.complete_client_message_batch(registration_id, &client_id, Vec::new());
+                        output.push(ServiceWorkerManagerEvent::MessageFailed {
+                            registration_id,
+                            event_id,
+                            client_id,
+                            message: error.to_string(),
+                        });
+                        continue;
+                    }
+                    self.complete_client_message_batch(registration_id, &client_id, outbound);
                     output.push(ServiceWorkerManagerEvent::MessageDispatched {
                         registration_id,
                         event_id,
@@ -1490,6 +1599,26 @@ impl ServiceWorkerManager {
         client_id: &str,
         client_url: &str,
     ) -> Result<(), ServiceWorkerManagerError> {
+        self.post_message_with_ports(
+            registration_id,
+            event_id,
+            data_json,
+            client_id,
+            client_url,
+            &ServiceWorkerMessagePorts::default(),
+        )
+    }
+
+    /// Queue a page or MessagePort message with transferred endpoint metadata.
+    pub fn post_message_with_ports(
+        &mut self,
+        registration_id: u64,
+        event_id: u64,
+        data_json: &str,
+        client_id: &str,
+        client_url: &str,
+        ports: &ServiceWorkerMessagePorts,
+    ) -> Result<(), ServiceWorkerManagerError> {
         let state = self
             .registration(registration_id)
             .ok_or(ServiceWorkerManagerError::UnknownRegistration(registration_id))?
@@ -1504,6 +1633,35 @@ impl ServiceWorkerManager {
                 expected: ServiceWorkerState::Activated,
                 actual: state,
             });
+        }
+        if ports.transferred_port_ids.len() > 16
+            || ports.transferred_port_ids.contains(&0)
+            || ports.transferred_port_ids.iter().collect::<HashSet<_>>().len() != ports.transferred_port_ids.len()
+            || ports
+                .data_port_index
+                .is_some_and(|index| index >= ports.transferred_port_ids.len())
+            || ports.target_port_id == Some(0)
+        {
+            return Err(ServiceWorkerManagerError::InvalidInput(
+                "invalid Service Worker MessagePort metadata".into(),
+            ));
+        }
+        if let Some(port_id) = ports.target_port_id
+            && !self
+                .message_ports
+                .contains(&(registration_id, client_id.to_string(), port_id))
+        {
+            return Err(ServiceWorkerManagerError::InvalidInput(
+                "Service Worker MessagePort endpoint does not exist".into(),
+            ));
+        }
+        if ports.transferred_port_ids.iter().any(|&port_id| {
+            self.message_ports
+                .contains(&(registration_id, client_id.to_string(), port_id))
+        }) {
+            return Err(ServiceWorkerManagerError::InvalidInput(
+                "Service Worker MessagePort endpoint was already transferred".into(),
+            ));
         }
         let key = (registration_id, client_id.to_string());
         let pending = self.pending_client_messages.get(&key).copied().unwrap_or(0);
@@ -1530,12 +1688,22 @@ impl ServiceWorkerManager {
                 limit: MAX_CLIENTS_PER_VERSION,
             });
         }
+        self.message_ports.extend(
+            ports
+                .transferred_port_ids
+                .iter()
+                .map(|&port_id| (registration_id, client_id.to_string(), port_id)),
+        );
         *self.pending_client_messages.entry(key.clone()).or_default() += 1;
-        let result = self
-            .host
-            .dispatch_client_message(registration_id, event_id, data_json, client_id, client_url);
+        let result =
+            self.host
+                .dispatch_client_message(registration_id, event_id, data_json, client_id, client_url, ports);
         if result.is_err() {
             self.release_client_message_reservation(&key);
+            for port_id in &ports.transferred_port_ids {
+                self.message_ports
+                    .remove(&(registration_id, client_id.to_string(), *port_id));
+            }
         }
         result
     }
@@ -1546,7 +1714,7 @@ impl ServiceWorkerManager {
         registration_id: u64,
         client_id: &str,
         after_sequence: u64,
-    ) -> (u64, Vec<String>) {
+    ) -> (u64, Vec<ServiceWorkerOutboundMessage>) {
         let batches = self
             .client_messages
             .get(&(registration_id, client_id.to_string()))
@@ -1559,7 +1727,61 @@ impl ServiceWorkerManager {
         )
     }
 
-    fn complete_client_message_batch(&mut self, registration_id: u64, client_id: &str, batch: Vec<String>) {
+    fn record_outbound_message_ports(
+        &mut self,
+        registration_id: u64,
+        client_id: &str,
+        messages: &[ServiceWorkerOutboundMessage],
+    ) -> Result<(), ServiceWorkerManagerError> {
+        let mut transferred = HashSet::new();
+        for message in messages {
+            if message.transferred_port_ids.len() > 16
+                || message.transferred_port_ids.contains(&0)
+                || message
+                    .data_port_index
+                    .is_some_and(|index| index >= message.transferred_port_ids.len())
+                || message.port_id == Some(0)
+            {
+                return Err(ServiceWorkerManagerError::InvalidInput(
+                    "invalid outbound Service Worker MessagePort metadata".into(),
+                ));
+            }
+            if let Some(port_id) = message.port_id
+                && !self
+                    .message_ports
+                    .contains(&(registration_id, client_id.to_string(), port_id))
+                && !transferred.contains(&port_id)
+            {
+                return Err(ServiceWorkerManagerError::InvalidInput(
+                    "outbound Service Worker MessagePort endpoint does not exist".into(),
+                ));
+            }
+            for &port_id in &message.transferred_port_ids {
+                if self
+                    .message_ports
+                    .contains(&(registration_id, client_id.to_string(), port_id))
+                    || !transferred.insert(port_id)
+                {
+                    return Err(ServiceWorkerManagerError::InvalidInput(
+                        "outbound Service Worker MessagePort endpoint was already transferred".into(),
+                    ));
+                }
+            }
+        }
+        self.message_ports.extend(
+            transferred
+                .into_iter()
+                .map(|port_id| (registration_id, client_id.to_string(), port_id)),
+        );
+        Ok(())
+    }
+
+    fn complete_client_message_batch(
+        &mut self,
+        registration_id: u64,
+        client_id: &str,
+        batch: Vec<ServiceWorkerOutboundMessage>,
+    ) {
         let key = (registration_id, client_id.to_string());
         self.release_client_message_reservation(&key);
         let known_client = self.client_messages.contains_key(&key);
@@ -1702,6 +1924,38 @@ impl ServiceWorkerManager {
         self.host.shutdown(registration_id);
     }
 
+    fn worker_update_target(&self, registration_id: u64) -> Result<Option<u64>, ServiceWorkerManagerError> {
+        let registration = self
+            .registration(registration_id)
+            .ok_or(ServiceWorkerManagerError::UnknownRegistration(registration_id))?;
+        if registration.state == ServiceWorkerState::Installing {
+            return Err(ServiceWorkerManagerError::InvalidState {
+                registration_id,
+                expected: ServiceWorkerState::Activated,
+                actual: registration.state,
+            });
+        }
+        let key = self.key_for(registration_id)?;
+        let slot = self
+            .slots
+            .get(key)
+            .ok_or(ServiceWorkerManagerError::UnknownRegistration(registration_id))?;
+        if slot
+            .installing
+            .is_some_and(|candidate_id| candidate_id != registration_id)
+        {
+            return Ok(None);
+        }
+        slot.waiting
+            .or(slot.active)
+            .map(Some)
+            .ok_or(ServiceWorkerManagerError::InvalidState {
+                registration_id,
+                expected: ServiceWorkerState::Activated,
+                actual: registration.state,
+            })
+    }
+
     fn key_for(&self, registration_id: u64) -> Result<&ServiceWorkerRegistrationKey, ServiceWorkerManagerError> {
         self.registration_keys
             .get(&registration_id)
@@ -1766,6 +2020,8 @@ impl ServiceWorkerManager {
         self.pending_client_messages.retain(|(id, _), _| *id != registration_id);
         self.pending_import_requests.retain(|(id, _), _| *id != registration_id);
         self.update_predecessors.remove(&registration_id);
+        self.pending_worker_updates
+            .retain(|candidate_id, (caller_id, _)| *candidate_id != registration_id && *caller_id != registration_id);
         self.script_sources.remove(&registration_id);
         self.imported_scripts.remove(&registration_id);
         self.host.shutdown(registration_id);
@@ -2103,6 +2359,141 @@ mod tests {
             Ok(Some((installing, false)))
         );
         assert_eq!(manager.runtime_count(), 1);
+    }
+
+    #[test]
+    fn installing_worker_update_rejects_with_invalid_state() {
+        let mut manager = manager_under_test();
+        let installing = start(
+            &mut manager,
+            "/",
+            "let finishInstall;
+             addEventListener('install', event => {
+               event.waitUntil(new Promise(resolve => { finishInstall = resolve; }));
+             });
+             addEventListener('message', event => {
+               registration.update().then(
+                 () => event.source.postMessage({success: true}),
+                 error => event.source.postMessage({success: false, exception: error.name})
+               );
+             });",
+        );
+        while !manager.evaluated.contains(&installing) {
+            let _ = manager.poll();
+        }
+
+        manager
+            .post_message(installing, 80, "null", "client-1", "https://example.test/page")
+            .unwrap();
+        let deadline = Instant::now() + Duration::from_secs(5);
+        loop {
+            let _ = manager.poll();
+            let (_, messages) = manager.client_messages_since(installing, "client-1", 0);
+            if !messages.is_empty() {
+                assert_eq!(
+                    messages,
+                    [ServiceWorkerOutboundMessage {
+                        data_json: r#"{"success":false,"exception":"InvalidStateError"}"#.into(),
+                        port_id: None,
+                        transferred_port_ids: Vec::new(),
+                        data_port_index: None
+                    }]
+                );
+                break;
+            }
+            assert!(Instant::now() < deadline, "worker update rejection timed out");
+            std::thread::sleep(Duration::from_millis(1));
+        }
+    }
+
+    #[test]
+    fn active_worker_update_reuses_installing_replacement() {
+        let mut manager = manager_under_test();
+        let active = start_active(
+            &mut manager,
+            "/",
+            "addEventListener('message', event => {
+               registration.update().then(
+                 () => event.source.postMessage({success: true}),
+                 error => event.source.postMessage({success: false, exception: error.name})
+               );
+             });",
+        );
+        let ServiceWorkerUpdateOutcome::Started {
+            registration_id: candidate,
+        } = manager
+            .start_update(
+                active,
+                "addEventListener('install', event => event.waitUntil(new Promise(() => {})));",
+            )
+            .unwrap()
+        else {
+            panic!("changed update must start a candidate");
+        };
+        assert_eq!(wait_for_update_check(&mut manager, candidate), (candidate, true));
+
+        manager
+            .post_message(active, 81, "null", "client-1", "https://example.test/page")
+            .unwrap();
+        let deadline = Instant::now() + Duration::from_secs(5);
+        loop {
+            let _ = manager.poll();
+            let (_, messages) = manager.client_messages_since(active, "client-1", 0);
+            if !messages.is_empty() {
+                assert_eq!(messages[0].data_json, r#"{"success":true}"#);
+                break;
+            }
+            assert!(Instant::now() < deadline, "worker update coalescing timed out");
+            std::thread::sleep(Duration::from_millis(1));
+        }
+    }
+
+    #[test]
+    fn active_worker_update_requests_and_completes_host_fetch() {
+        let mut manager = manager_under_test();
+        let active = start_active(
+            &mut manager,
+            "/",
+            "addEventListener('message', event => {
+               registration.update().then(
+                 () => event.source.postMessage({success: true}),
+                 error => event.source.postMessage({success: false, exception: error.name})
+               );
+             });",
+        );
+        manager
+            .post_message(active, 82, "null", "client-1", "https://example.test/page")
+            .unwrap();
+
+        let deadline = Instant::now() + Duration::from_secs(5);
+        let request_id = loop {
+            if let Some(request_id) = manager.poll().into_iter().find_map(|event| match event {
+                ServiceWorkerManagerEvent::WorkerUpdateRequested {
+                    caller_registration_id,
+                    request_id,
+                    target_registration_id,
+                } if caller_registration_id == active && target_registration_id == active => Some(request_id),
+                _ => None,
+            }) {
+                break request_id;
+            }
+            assert!(Instant::now() < deadline, "worker update fetch request timed out");
+            std::thread::sleep(Duration::from_millis(1));
+        };
+        manager
+            .complete_worker_update_fetch(active, request_id, Ok("globalThis.version = 2;".into()))
+            .unwrap();
+
+        loop {
+            let _ = manager.poll();
+            let (_, messages) = manager.client_messages_since(active, "client-1", 0);
+            if !messages.is_empty() {
+                assert_eq!(messages[0].data_json, r#"{"success":true}"#);
+                break;
+            }
+            assert!(Instant::now() < deadline, "worker update completion timed out");
+            std::thread::sleep(Duration::from_millis(1));
+        }
     }
 
     #[test]
@@ -2636,8 +3027,8 @@ mod tests {
             std::thread::sleep(Duration::from_millis(1));
         }
         assert_eq!(
-            manager.client_messages_since(id, "client-1", 0),
-            (1, vec![r#"{"echo":"hello"}"#.to_string()])
+            manager.client_messages_since(id, "client-1", 0).1[0].data_json,
+            r#"{"echo":"hello"}"#
         );
 
         manager.client_messages.insert(
@@ -2674,6 +3065,55 @@ mod tests {
             std::thread::sleep(Duration::from_millis(1));
         }
         assert_eq!(manager.client_messages_since(id, "closed-client", 0), (2, Vec::new()));
+    }
+
+    #[test]
+    fn message_port_batch_validation_is_transactional() {
+        let mut manager = manager_under_test();
+        let id = start_active(&mut manager, "/", "globalThis.version = 1;");
+        manager.message_ports.insert((id, "client-1".into(), 4));
+
+        assert_eq!(
+            manager.post_message_with_ports(
+                id,
+                95,
+                "null",
+                "client-1",
+                "https://example.test/page",
+                &ServiceWorkerMessagePorts {
+                    transferred_port_ids: vec![2, 4],
+                    data_port_index: None,
+                    target_port_id: None,
+                },
+            ),
+            Err(ServiceWorkerManagerError::InvalidInput(
+                "Service Worker MessagePort endpoint was already transferred".into()
+            ))
+        );
+        assert!(
+            !manager.message_ports.contains(&(id, "client-1".into(), 2)),
+            "a rejected transfer batch must not partially register endpoints"
+        );
+
+        assert_eq!(
+            manager.record_outbound_message_ports(
+                id,
+                "client-1",
+                &[ServiceWorkerOutboundMessage {
+                    data_json: "\"invalid\"".into(),
+                    port_id: Some(6),
+                    transferred_port_ids: vec![8],
+                    data_port_index: None,
+                }],
+            ),
+            Err(ServiceWorkerManagerError::InvalidInput(
+                "outbound Service Worker MessagePort endpoint does not exist".into()
+            ))
+        );
+        assert!(
+            !manager.message_ports.contains(&(id, "client-1".into(), 8)),
+            "a rejected outbound batch must not register transferred endpoints"
+        );
     }
 
     #[test]
@@ -2720,8 +3160,8 @@ mod tests {
             std::thread::sleep(Duration::from_millis(1));
         }
         assert_eq!(
-            manager.client_messages_since(id, "client-late", 0),
-            (1, vec![r#"{"errorName":"NetworkError"}"#.to_string()])
+            manager.client_messages_since(id, "client-late", 0).1[0].data_json,
+            r#"{"errorName":"NetworkError"}"#
         );
     }
 

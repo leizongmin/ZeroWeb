@@ -628,10 +628,29 @@ impl ServiceWorkerRequestParams {
             | ServiceWorkerOperation::Controller
             | ServiceWorkerOperation::StateChanges { .. }
             | ServiceWorkerOperation::Update { .. } => Ok(()),
-            ServiceWorkerOperation::PostMessage { data_json, .. } => {
+            ServiceWorkerOperation::PostMessage {
+                data_json,
+                transferred_port_ids,
+                data_port_index,
+                target_port_id,
+                ..
+            } => {
                 const MAX_MESSAGE_BYTES: usize = 1024 * 1024;
+                const MAX_MESSAGE_PORTS: usize = 16;
                 if data_json.len() > MAX_MESSAGE_BYTES {
                     return Err("Service Worker message exceeds the size limit");
+                }
+                if transferred_port_ids.len() > MAX_MESSAGE_PORTS
+                    || transferred_port_ids.contains(&0)
+                    || transferred_port_ids
+                        .iter()
+                        .collect::<std::collections::HashSet<_>>()
+                        .len()
+                        != transferred_port_ids.len()
+                    || data_port_index.is_some_and(|index| index >= transferred_port_ids.len())
+                    || *target_port_id == Some(0)
+                {
+                    return Err("Service Worker message has invalid MessagePort metadata");
                 }
                 Ok(())
             }
@@ -702,6 +721,12 @@ pub enum ServiceWorkerOperation {
         registration_id: u64,
         /// Serialized structured payload.
         data_json: String,
+        /// MessagePort endpoint IDs transferred into the worker.
+        transferred_port_ids: Vec<u64>,
+        /// Index of the transferred port used as the payload itself.
+        data_port_index: Option<usize>,
+        /// Existing worker-side port endpoint addressed by this message.
+        target_port_id: Option<u64>,
     },
     /// Read worker messages addressed to the committed document.
     ClientMessages {
@@ -760,8 +785,32 @@ pub enum ServiceWorkerResult {
 pub struct ServiceWorkerClientMessages {
     /// Total number of completed message-event batches at response time.
     pub latest_sequence: u64,
-    /// JSON-compatible structured payloads after the request cursor.
-    pub data_json: Vec<String>,
+    /// Structured messages after the request cursor.
+    pub messages: Vec<ServiceWorkerMessage>,
+}
+
+/// One typed Service Worker message crossing the page/worker boundary.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ServiceWorkerMessage {
+    /// JSON-compatible structured payload.
+    pub data_json: String,
+    /// Existing MessagePort endpoint addressed by this message.
+    pub port_id: Option<u64>,
+    /// MessagePort endpoint IDs transferred with this message.
+    pub transferred_port_ids: Vec<u64>,
+    /// Index of the transferred port used as the payload itself.
+    pub data_port_index: Option<usize>,
+}
+
+impl From<&str> for ServiceWorkerMessage {
+    fn from(data_json: &str) -> Self {
+        Self {
+            data_json: data_json.to_string(),
+            port_id: None,
+            transferred_port_ids: Vec::new(),
+            data_port_index: None,
+        }
+    }
 }
 
 /// Pure-value registration snapshot.
@@ -889,8 +938,12 @@ impl ServiceWorkerHostCommandParams {
                 data_json,
                 client_id,
                 client_url,
+                transferred_port_ids,
+                data_port_index,
+                target_port_id,
                 ..
             } => {
+                const MAX_MESSAGE_PORTS: usize = 16;
                 if client_id.is_empty() {
                     return Err("Service Worker host message client id is required");
                 }
@@ -899,6 +952,18 @@ impl ServiceWorkerHostCommandParams {
                 }
                 if data_json.len() > MAX_SCRIPT_BYTES {
                     return Err("Service Worker host message payload exceeds the size limit");
+                }
+                if transferred_port_ids.len() > MAX_MESSAGE_PORTS
+                    || transferred_port_ids.contains(&0)
+                    || transferred_port_ids
+                        .iter()
+                        .collect::<std::collections::HashSet<_>>()
+                        .len()
+                        != transferred_port_ids.len()
+                    || data_port_index.is_some_and(|index| index >= transferred_port_ids.len())
+                    || *target_port_id == Some(0)
+                {
+                    return Err("Service Worker host message has invalid MessagePort metadata");
                 }
                 Ok(())
             }
@@ -924,6 +989,17 @@ impl ServiceWorkerHostCommandParams {
                         return Err("Service Worker import error exceeds the size limit");
                     }
                     Err(_) => {}
+                }
+                Ok(())
+            }
+            ServiceWorkerHostCommand::CompleteUpdate { request_id, result } => {
+                if *request_id == 0 {
+                    return Err("Service Worker update request id is required");
+                }
+                if let Err(error) = result
+                    && (error.exception_name.len() > 64 || error.message.len() > MAX_URL_BYTES)
+                {
+                    return Err("Service Worker update error exceeds the length limit");
                 }
                 Ok(())
             }
@@ -959,6 +1035,12 @@ pub enum ServiceWorkerHostCommand {
         client_id: String,
         /// 发起消息的 client URL。
         client_url: String,
+        /// MessagePort endpoint IDs transferred into the worker.
+        transferred_port_ids: Vec<u64>,
+        /// Index of the transferred port used as the payload itself.
+        data_port_index: Option<usize>,
+        /// Existing worker-side port endpoint addressed by this message.
+        target_port_id: Option<u64>,
     },
     /// 停止并回收 runtime。
     Shutdown,
@@ -969,6 +1051,22 @@ pub enum ServiceWorkerHostCommand {
         /// 按调用顺序排列的脚本 source，或 browser fetch 错误。
         result: Result<Vec<String>, String>,
     },
+    /// Complete a blocking worker-global `registration.update()` request.
+    CompleteUpdate {
+        /// Renderer runtime assigned request ID.
+        request_id: u64,
+        /// Success or DOMException-shaped failure.
+        result: Result<(), ServiceWorkerUpdateError>,
+    },
+}
+
+/// Worker-global update failure projected into the Service Worker realm.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ServiceWorkerUpdateError {
+    /// DOMException name.
+    pub exception_name: String,
+    /// Safe diagnostic message.
+    pub message: String,
 }
 
 /// Renderer → browser 的 Service Worker runtime 事件参数。
@@ -1016,8 +1114,8 @@ pub enum ServiceWorkerHostEvent {
         event_id: u64,
         /// 目标 client 标识。
         client_id: String,
-        /// worker 回发给该 client 的 JSON 结构化消息载荷列表。
-        outbound: Vec<String>,
+        /// worker 回发给该 client 的结构化消息列表。
+        outbound: Vec<ServiceWorkerMessage>,
     },
     /// 页面到 worker 的消息 handler 抛错。
     MessageFailed {
@@ -1045,6 +1143,11 @@ pub enum ServiceWorkerHostEvent {
         referrer_url: String,
         /// Static import specifier，保持源码顺序。
         specifiers: Vec<String>,
+    },
+    /// Worker global called `registration.update()`.
+    UpdateRequested {
+        /// Renderer runtime assigned request ID.
+        request_id: u64,
     },
 }
 

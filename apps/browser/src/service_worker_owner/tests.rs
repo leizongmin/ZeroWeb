@@ -752,6 +752,80 @@ fn concurrent_updates_share_one_fetch_and_candidate() {
 }
 
 #[test]
+fn active_worker_update_uses_browser_owned_fetch() {
+    let mut owner = BrowserServiceWorkerOwner::with_local_hosts();
+    let disposition = owner.begin_request(
+        TabId(1),
+        false,
+        65,
+        Some("https://example.test/page"),
+        register_request("https://example.test/page"),
+    );
+    attach_script(
+        &mut owner,
+        disposition,
+        "addEventListener('message', event => {
+           registration.update().then(
+             () => event.source.postMessage({success:true}),
+             error => event.source.postMessage({success:false, exception:error.name})
+           );
+         });",
+    );
+    let response = wait_for_response(&mut owner);
+    let Ok(ServiceWorkerResult::Registered {
+        registration_id: active,
+    }) = response.params.result
+    else {
+        panic!("registration failed");
+    };
+    wait_for_registration_state(&mut owner, active, ServiceWorkerState::Activated);
+    owner.normal_channels.record_owned(active, TabId(1));
+
+    let ServiceWorkerRequestDisposition::Respond(response) = owner.begin_request_for_client(
+        TabId(1),
+        false,
+        66,
+        Some("https://example.test/page"),
+        "tab-1:1",
+        ServiceWorkerRequestParams {
+            operation: ServiceWorkerOperation::PostMessage {
+                registration_id: active,
+                data_json: "null".into(),
+                transferred_port_ids: Vec::new(),
+                data_port_index: None,
+                target_port_id: None,
+            },
+        },
+    ) else {
+        panic!("postMessage must respond without network work");
+    };
+    assert_eq!(response.params.result, Ok(ServiceWorkerResult::Empty));
+
+    let deadline = Instant::now() + Duration::from_secs(5);
+    let plan = loop {
+        let _ = owner.poll();
+        if let Some(plan) = owner.take_update_fetch_plans().into_iter().next() {
+            break plan;
+        }
+        assert!(Instant::now() < deadline, "worker update fetch plan timed out");
+        std::thread::sleep(Duration::from_millis(1));
+    };
+    assert_eq!(plan.script_url(), "https://example.test/sw.js");
+    attach_script_plan(&mut owner, plan, "globalThis.version = 2;");
+
+    loop {
+        let _ = owner.poll();
+        let (_, messages) = owner.normal.client_messages_since(active, "tab-1:1", 0);
+        if !messages.is_empty() {
+            assert_eq!(messages[0].data_json, r#"{"success":true}"#);
+            break;
+        }
+        assert!(Instant::now() < deadline, "worker update response timed out");
+        std::thread::sleep(Duration::from_millis(1));
+    }
+}
+
+#[test]
 fn update_rejects_non_javascript_main_script_without_replacing_active() {
     let mut owner = BrowserServiceWorkerOwner::with_local_hosts();
     let disposition = owner.begin_request(

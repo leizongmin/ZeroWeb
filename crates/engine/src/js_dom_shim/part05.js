@@ -7634,10 +7634,19 @@
     this._other = null; // 配对端口（MessageChannel 构造时互连）
     this._closed = false;
     this._onmessage = null;
+    this._zwSwPortId = null;
+    this._zwSwWorker = null;
+    this._zwSwDetached = false;
+    this._zwSwQueue = [];
   }
   MessagePort.prototype = Object.create(EventTarget.prototype);
   MessagePort.prototype.constructor = MessagePort;
   MessagePort.prototype.postMessage = function (message, transfer) {
+    if (this._zwSwPortId !== null) {
+      if (this._closed || this._zwSwDetached || !this._zwSwWorker) return;
+      this._zwSwWorker._postPortMessage(this, message, transfer);
+      return;
+    }
     if (this._closed || !this._other) return;
     // R56h：transferable 语义——transfer 列表中的 OffscreenCanvas 位图被转移
     //（detached），后续 drawImage 抛 InvalidStateError（2d.drawImage.detachedcanvas）。
@@ -7661,9 +7670,17 @@
       });
     }
   };
-  MessagePort.prototype.start = function () {}; // 始终 active（polyfill 简化）
+  MessagePort.prototype.start = function () {
+    if (!this._zwSwQueue || this._zwSwQueue.length === 0) return;
+    var port = this;
+    var queued = this._zwSwQueue.splice(0, this._zwSwQueue.length);
+    queueMicrotask(function() {
+      for (var i = 0; i < queued.length; i++) port.dispatchEvent(queued[i]);
+    });
+  };
   MessagePort.prototype.close = function () {
     this._closed = true;
+    this._zwSwWorker = null;
     if (this._other) this._other._other = null; // 断开配对
     this._other = null;
   };
@@ -7676,6 +7693,7 @@
       if (typeof cb === 'function') {
         this._onmessage = cb;
         this.addEventListener('message', cb);
+        this.start();
       } else {
         this._onmessage = null;
       }

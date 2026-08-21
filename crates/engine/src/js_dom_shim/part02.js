@@ -2616,37 +2616,79 @@
       globalThis.ServiceWorker = globalThis.ServiceWorker || ServiceWorker;
       globalThis.ServiceWorkerRegistration =
         globalThis.ServiceWorkerRegistration || ServiceWorkerRegistration;
+      var _nextSWPortId = 2;
+      var _swPorts = Object.create(null);
+      function transferSWPorts(worker, message, transfer) {
+        var ids = [];
+        var dataPortIndex = null;
+        if (transfer !== undefined && transfer !== null) {
+          var ports = Array.from(transfer);
+          for (var i = 0; i < ports.length; i++) {
+            var port = ports[i];
+            if (!(port instanceof globalThis.MessagePort) ||
+                port._closed || port._zwSwDetached || !port._other) {
+              throw new DOMException('Invalid MessagePort transfer', 'DataCloneError');
+            }
+            if (ids.indexOf(port._zwSwPortId) >= 0) {
+              throw new DOMException('Duplicate MessagePort transfer', 'DataCloneError');
+            }
+            var remote = port._other;
+            var portId = _nextSWPortId;
+            _nextSWPortId += 2;
+            remote._other = null;
+            remote._zwSwPortId = portId;
+            remote._zwSwWorker = worker;
+            _swPorts[String(portId)] = remote;
+            port._other = null;
+            port._zwSwDetached = true;
+            if (message === port) dataPortIndex = ids.length;
+            ids.push(portId);
+          }
+        }
+        return {
+          ids: ids,
+          dataPortIndex: dataPortIndex
+        };
+      }
+      function postSWMessage(worker, message, transfer, targetPortId) {
+        var ports = transferSWPorts(worker, message, transfer);
+        var dataJSON;
+        try {
+          dataJSON = ports.dataPortIndex === null ? JSON.stringify(structuredClone(message)) : 'null';
+        } catch (_e) {
+          throw new DOMException('Service Worker message could not be cloned', 'DataCloneError');
+        }
+        if (dataJSON === undefined) {
+          throw new DOMException('Service Worker message could not be cloned', 'DataCloneError');
+        }
+        if (typeof __zw_sw_post_message !== 'function') {
+          throw new DOMException('Service Worker host bridge unavailable', 'InvalidStateError');
+        }
+        var wire = JSON.parse(__zw_sw_post_message(
+          String(worker._id),
+          dataJSON,
+          JSON.stringify(ports.ids),
+          ports.dataPortIndex === null ? '' : String(ports.dataPortIndex),
+          targetPortId === null ? '' : String(targetPortId)));
+        if (!wire || !wire.ok) {
+          throw new DOMException(
+            wire && wire.error || 'Service Worker postMessage failed',
+            'InvalidStateError'
+          );
+        }
+        worker._messagePollTarget++;
+        scheduleClientMessagePoll(worker);
+      }
       function makeSW(scriptURL, state) {
         var worker = new globalThis.ServiceWorker(scriptURL, state);
         worker._messageSequence = 0;
         worker._messagePollTarget = 0;
         worker._messagePollPending = false;
         worker.postMessage = function (message, transfer) {
-          if (transfer && transfer.length) {
-            throw new DOMException('Service Worker transferables are not supported', 'DataCloneError');
-          }
-          var data = structuredClone(message);
-          var dataJSON;
-          try {
-            dataJSON = JSON.stringify(data);
-          } catch (_e) {
-            throw new DOMException('Service Worker message could not be cloned', 'DataCloneError');
-          }
-          if (dataJSON === undefined) {
-            throw new DOMException('Service Worker message could not be cloned', 'DataCloneError');
-          }
-          if (typeof __zw_sw_post_message !== 'function') {
-            throw new DOMException('Service Worker host bridge unavailable', 'InvalidStateError');
-          }
-          var wire = JSON.parse(__zw_sw_post_message(String(worker._id), dataJSON));
-          if (!wire || !wire.ok) {
-            throw new DOMException(
-              wire && wire.error || 'Service Worker postMessage failed',
-              'InvalidStateError'
-            );
-          }
-          worker._messagePollTarget++;
-          scheduleClientMessagePoll(worker);
+          postSWMessage(worker, message, transfer, null);
+        };
+        worker._postPortMessage = function(port, message, transfer) {
+          postSWMessage(worker, message, transfer, port._zwSwPortId);
         };
         return worker;
       }
@@ -2666,13 +2708,37 @@
           worker._messageSequence = Number(wire.latestSequence) || worker._messageSequence;
           var messages = wire.messages || [];
           for (var i = 0; i < messages.length; i++) {
+            var messageWire = messages[i];
+            var transferred = [];
+            var portIds = messageWire.transferredPortIds || [];
+            for (var p = 0; p < portIds.length; p++) {
+              var port = new globalThis.MessagePort();
+              port._zwSwPortId = Number(portIds[p]);
+              port._zwSwWorker = worker;
+              _swPorts[String(port._zwSwPortId)] = port;
+              transferred.push(port);
+            }
+            var data = messageWire.dataPortIndex === null ?
+              messageWire.data : transferred[Number(messageWire.dataPortIndex)];
             var event = new globalThis.MessageEvent('message', {
-              data: messages[i],
+              data: data,
               origin: '',
               source: worker,
-              ports: []
+              ports: transferred
             });
-            _container.dispatchEvent(event);
+            if (messageWire.portId === null) {
+              _container.dispatchEvent(event);
+            } else {
+              var target = _swPorts[String(messageWire.portId)] || null;
+              if (target) {
+                var listeners = target._et_listeners && target._et_listeners.message;
+                if (!target._onmessage && (!listeners || listeners.length === 0)) {
+                  target._zwSwQueue.push(event);
+                } else {
+                  target.dispatchEvent(event);
+                }
+              }
+            }
           }
           if (worker._messageSequence >= worker._messagePollTarget) {
             worker._messagePollPending = false;

@@ -27,7 +27,7 @@ use zero_page_runtime::{
     ServiceWorkerVersionSlots, validate_service_worker_registration_for_document,
 };
 use zero_render_foundation::primitive::RenderPrimitives;
-use zero_script_sandbox::{SandboxConfig, WorkerEvent, WorkerRuntime};
+use zero_script_sandbox::{SandboxConfig, ServiceWorkerMessagePorts, WorkerEvent, WorkerRuntime};
 use zero_security::{ResourceCheckResult, SecurityContext};
 use zero_storage::{
     CacheRequest, FetchInterceptResult, ServiceWorkerRegistry, ServiceWorkerScriptType, ServiceWorkerUpdateViaCache,
@@ -2871,6 +2871,12 @@ impl WebView {
                     return serde_json::json!({"ok": false, "error": "invalid registration id"}).to_string();
                 };
                 let data_json = args.get(1).map(String::as_str).unwrap_or("");
+                let transferred_port_ids = args
+                    .get(2)
+                    .and_then(|value| serde_json::from_str::<Vec<u64>>(value).ok())
+                    .unwrap_or_default();
+                let data_port_index = args.get(3).and_then(|value| value.parse::<usize>().ok());
+                let target_port_id = args.get(4).and_then(|value| value.parse::<u64>().ok());
                 let current_client_id = format!(
                     "{}:{}",
                     post_message_client_id,
@@ -2887,12 +2893,17 @@ impl WebView {
                     .map_err(|_| "manager lock poisoned".to_string())
                     .and_then(|mut manager| {
                         manager
-                            .post_message(
+                            .post_message_with_ports(
                                 registration_id,
                                 registration_id,
                                 data_json,
                                 &current_client_id,
                                 &client_url,
+                                &ServiceWorkerMessagePorts {
+                                    transferred_port_ids,
+                                    data_port_index,
+                                    target_port_id,
+                                },
                             )
                             .map_err(|error| error.to_string())
                     });
@@ -2922,11 +2933,18 @@ impl WebView {
                     return serde_json::json!({"ok": false, "error": error}).to_string();
                 }
                 let current_client_id = format!("{}:{}", client_id, client_messages_generation.load(Ordering::Relaxed));
-                let (latest_sequence, data_json) =
+                let (latest_sequence, message_wires) =
                     manager.client_messages_since(registration_id, &current_client_id, after_sequence);
-                let messages = data_json
+                let messages = message_wires
                     .into_iter()
-                    .filter_map(|value| serde_json::from_str::<serde_json::Value>(&value).ok())
+                    .filter_map(|message| {
+                        Some(serde_json::json!({
+                            "data": serde_json::from_str::<serde_json::Value>(&message.data_json).ok()?,
+                            "portId": message.port_id,
+                            "transferredPortIds": message.transferred_port_ids,
+                            "dataPortIndex": message.data_port_index,
+                        }))
+                    })
                     .collect::<Vec<_>>();
                 serde_json::json!({
                     "ok": true,
@@ -3059,6 +3077,30 @@ impl WebView {
     ) -> Result<Vec<ServiceWorkerManagerEvent>, String> {
         let events = manager.poll();
         for event in &events {
+            if let ServiceWorkerManagerEvent::WorkerUpdateRequested {
+                caller_registration_id,
+                request_id,
+                target_registration_id,
+            } = event
+            {
+                let registration = manager
+                    .registration(*target_registration_id)
+                    .ok_or_else(|| "Service Worker update registration is missing".to_string())?
+                    .clone();
+                let result = Self::fetch_service_worker_main_script(
+                    &registration.script_url,
+                    &registration.script_url,
+                    fetchers.response.as_ref(),
+                    fetchers.source.as_ref(),
+                    timeout_secs,
+                    registration.update_via_cache != ServiceWorkerUpdateViaCache::All,
+                )
+                .map_err(|error| (error.exception_name.to_string(), error.message));
+                manager
+                    .complete_worker_update_fetch(*caller_registration_id, *request_id, result)
+                    .map_err(|error| error.to_string())?;
+                continue;
+            }
             let (registration_id, request_id, urls, is_module) = match event {
                 ServiceWorkerManagerEvent::ImportScriptsRequested {
                     registration_id,

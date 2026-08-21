@@ -222,9 +222,18 @@ impl ServiceWorkerIpcClient {
                     return error_wire("invalid registration id");
                 };
                 let data_json = args.get(1).cloned().unwrap_or_default();
+                let transferred_port_ids = args
+                    .get(2)
+                    .and_then(|value| serde_json::from_str::<Vec<u64>>(value).ok())
+                    .unwrap_or_default();
+                let data_port_index = args.get(3).and_then(|value| value.parse::<usize>().ok());
+                let target_port_id = args.get(4).and_then(|value| value.parse::<u64>().ok());
                 match post_message_client.request(ServiceWorkerOperation::PostMessage {
                     registration_id,
                     data_json,
+                    transferred_port_ids,
+                    data_port_index,
+                    target_port_id,
                 }) {
                     Ok(ServiceWorkerResult::Empty) => serde_json::json!({"ok": true}).to_string(),
                     Ok(_) => error_wire("invalid postMessage response"),
@@ -248,10 +257,16 @@ impl ServiceWorkerIpcClient {
                     Ok(ServiceWorkerResult::ClientMessages(messages)) => serde_json::json!({
                         "ok": true,
                         "latestSequence": messages.latest_sequence,
-                        "messages": messages
-                            .data_json
+                        "messages": messages.messages
                             .into_iter()
-                            .filter_map(|value| serde_json::from_str::<serde_json::Value>(&value).ok())
+                            .filter_map(|message| {
+                                Some(serde_json::json!({
+                                    "data": serde_json::from_str::<serde_json::Value>(&message.data_json).ok()?,
+                                    "portId": message.port_id,
+                                    "transferredPortIds": message.transferred_port_ids,
+                                    "dataPortIndex": message.data_port_index,
+                                }))
+                            })
                             .collect::<Vec<_>>(),
                     })
                     .to_string(),
