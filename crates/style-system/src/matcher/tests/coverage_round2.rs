@@ -95,8 +95,12 @@ fn test_property_supported_alignment() {
     assert!(is_property_supported("justify-content", "center"));
     assert!(is_property_supported("align-items", "flex-start"));
     assert!(is_property_supported("align-self", "stretch"));
+    assert!(is_property_supported("justify-items", "normal"));
+    assert!(is_property_supported("justify-items", "left"));
     assert!(is_property_supported("justify-self", "start"));
     assert!(!is_property_supported("justify-content", "invalid"));
+    assert!(!is_property_supported("justify-items", "safe center"));
+    assert!(!is_property_supported("justify-items", "left right"));
 }
 
 #[test]
