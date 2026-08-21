@@ -20,6 +20,10 @@ const MAX_SCRIPT_BYTES: usize = 16 * 1024 * 1024;
 const MAX_SCRIPT_GRAPH_BYTES: usize = 64 * 1024 * 1024;
 const MAX_IMPORTED_SCRIPTS_PER_VERSION: usize = 1024;
 
+fn is_service_worker_window_frame_type(frame_type: &str) -> bool {
+    matches!(frame_type, "top-level" | "auxiliary" | "nested")
+}
+
 struct EvaluationOptions {
     update_via_cache: ServiceWorkerUpdateViaCache,
     script_type: ServiceWorkerScriptType,
@@ -1941,9 +1945,25 @@ impl ServiceWorkerManager {
         client_id: &str,
         client_url: &str,
     ) -> Result<(), ServiceWorkerManagerError> {
+        self.observe_window_client_with_frame_type(client_id, client_url, "top-level")
+    }
+
+    /// Record one committed window as a Service Worker client.
+    pub fn observe_window_client_with_frame_type(
+        &mut self,
+        client_id: &str,
+        client_url: &str,
+        frame_type: &str,
+    ) -> Result<(), ServiceWorkerManagerError> {
         if client_id.is_empty() || client_id.len() > MAX_URL_BYTES || client_url.len() > MAX_URL_BYTES {
             return Err(ServiceWorkerManagerError::InvalidInput(
                 "Service Worker client fields are invalid".into(),
+            ));
+        }
+        // https://w3c.github.io/ServiceWorker/#client-frametype
+        if !is_service_worker_window_frame_type(frame_type) {
+            return Err(ServiceWorkerManagerError::InvalidInput(
+                "Service Worker window client frame type is invalid".into(),
             ));
         }
         let url = url::Url::parse(client_url)
@@ -1973,7 +1993,7 @@ impl ServiceWorkerManager {
                     id: client_id.to_string(),
                     url: url.to_string(),
                     client_type: "window".into(),
-                    frame_type: "top-level".into(),
+                    frame_type: frame_type.to_string(),
                     visibility_state: "visible".into(),
                     focused,
                 },
@@ -2881,6 +2901,57 @@ mod tests {
             ["controlled"]
         );
         assert!(manager.clients_for_worker(id, true, "worker").unwrap().is_empty());
+    }
+
+    #[test]
+    fn observed_window_clients_preserve_valid_frame_types() {
+        let mut manager = manager_under_test();
+        let id = start_active(&mut manager, "/", "globalThis.ready = true;");
+        manager
+            .observe_window_client("top", "https://example.test/top")
+            .unwrap();
+        manager
+            .observe_window_client_with_frame_type("popup", "https://example.test/popup", "auxiliary")
+            .unwrap();
+        manager
+            .observe_window_client_with_frame_type("frame", "https://example.test/frame", "nested")
+            .unwrap();
+
+        assert_eq!(
+            manager
+                .clients_for_worker(id, true, "window")
+                .unwrap()
+                .into_iter()
+                .map(|client| (client.id, client.frame_type))
+                .collect::<Vec<_>>(),
+            [
+                ("top".to_string(), "top-level".to_string()),
+                ("popup".to_string(), "auxiliary".to_string()),
+                ("frame".to_string(), "nested".to_string()),
+            ]
+        );
+        assert_eq!(
+            manager.client_for_worker(id, "frame").unwrap().unwrap().frame_type,
+            "nested"
+        );
+    }
+
+    #[test]
+    fn observed_window_client_rejects_invalid_frame_type() {
+        let mut manager = manager_under_test();
+
+        assert_eq!(
+            manager.observe_window_client_with_frame_type("client-1", "https://example.test/page", "none"),
+            Err(ServiceWorkerManagerError::InvalidInput(
+                "Service Worker window client frame type is invalid".into()
+            ))
+        );
+        assert_eq!(
+            manager.observe_window_client_with_frame_type("client-1", "https://example.test/page", "detached"),
+            Err(ServiceWorkerManagerError::InvalidInput(
+                "Service Worker window client frame type is invalid".into()
+            ))
+        );
     }
 
     #[test]

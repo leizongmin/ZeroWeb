@@ -1210,8 +1210,19 @@ impl BrowserServiceWorkerOwner {
         client_id: &str,
         client_url: &str,
     ) -> Result<(), String> {
+        self.observe_client_with_frame_type(tab_id, profile, client_id, client_url, "top-level")
+    }
+
+    fn observe_client_with_frame_type(
+        &mut self,
+        tab_id: TabId,
+        profile: ProfileKey,
+        client_id: &str,
+        client_url: &str,
+        frame_type: &str,
+    ) -> Result<(), String> {
         self.manager_mut(profile)
-            .observe_window_client(client_id, client_url)
+            .observe_window_client_with_frame_type(client_id, client_url, frame_type)
             .map_err(|error| error.to_string())?;
         if let Some((previous_profile, previous_id)) =
             self.clients_by_tab.insert(tab_id, (profile, client_id.to_string()))

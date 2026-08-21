@@ -664,7 +664,7 @@ fn service_worker_message_port_and_update_wires_round_trip() {
                 id: "client-1".into(),
                 url: "https://example.test/page".into(),
                 client_type: "window".into(),
-                frame_type: "top-level".into(),
+                frame_type: "auxiliary".into(),
                 visibility_state: "visible".into(),
                 focused: false,
             }]),
@@ -705,7 +705,7 @@ fn service_worker_message_port_and_update_wires_round_trip() {
                 id: "client-1".into(),
                 url: "https://example.test/page".into(),
                 client_type: "window".into(),
-                frame_type: "top-level".into(),
+                frame_type: "auxiliary".into(),
                 visibility_state: "visible".into(),
                 focused: false,
             })),
@@ -760,6 +760,24 @@ fn service_worker_message_port_and_update_wires_round_trip() {
             event: ServiceWorkerHostEvent::ClientsGetRequested {
                 request_id: 13,
                 client_id: String::new(),
+            },
+        }
+        .validate()
+        .is_err()
+    );
+    assert!(
+        ServiceWorkerHostCommandParams {
+            registration_id: 7,
+            command: ServiceWorkerHostCommand::CompleteClientsGet {
+                request_id: 13,
+                result: Ok(Some(ServiceWorkerClientInfoWire {
+                    id: "client-1".into(),
+                    url: "https://example.test/page".into(),
+                    client_type: "window".into(),
+                    frame_type: "detached".into(),
+                    visibility_state: "visible".into(),
+                    focused: false,
+                })),
             },
         }
         .validate()

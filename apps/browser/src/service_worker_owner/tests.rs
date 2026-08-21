@@ -682,6 +682,72 @@ fn ipc_clients_get_uses_browser_owned_client_registry() {
 }
 
 #[test]
+fn ipc_clients_match_all_preserves_nested_frame_type() {
+    let mut owner = BrowserServiceWorkerOwner::new();
+    owner
+        .observe_client_with_frame_type(
+            TabId(8),
+            ProfileKey::Normal,
+            "renderer-8:frame-1",
+            "https://example.test/app/frame.html",
+            "nested",
+        )
+        .unwrap();
+    let disposition = owner.begin_request_for_client(
+        TabId(7),
+        false,
+        77,
+        Some("https://example.test/page"),
+        "renderer-7:1",
+        register_request("https://example.test/page"),
+    );
+    attach_script(&mut owner, disposition, "clients.matchAll({includeUncontrolled:true});");
+    let _ = owner.poll();
+    let evaluate = owner
+        .take_host_commands()
+        .into_iter()
+        .find(|outgoing| matches!(outgoing.params.command, ServiceWorkerHostCommand::Evaluate { .. }))
+        .expect("missing renderer evaluation command");
+    let registration_id = evaluate.params.registration_id;
+
+    owner.inject_host_event(
+        TabId(7),
+        false,
+        ServiceWorkerHostEventParams {
+            registration_id,
+            event: ServiceWorkerHostEvent::ClientsMatchAllRequested {
+                request_id: 15,
+                include_uncontrolled: true,
+                client_type: "window".into(),
+            },
+        },
+    );
+    let _ = owner.poll();
+    let clients = owner
+        .take_host_commands()
+        .into_iter()
+        .find_map(|outgoing| match outgoing.params.command {
+            ServiceWorkerHostCommand::CompleteClientsMatchAll {
+                request_id: 15,
+                result: Ok(clients),
+            } => Some(clients),
+            _ => None,
+        })
+        .expect("missing clients.matchAll completion");
+
+    assert_eq!(
+        clients
+            .into_iter()
+            .map(|client| (client.id, client.frame_type))
+            .collect::<Vec<_>>(),
+        [
+            ("renderer-8:frame-1".to_string(), "nested".to_string()),
+            ("renderer-7:1".to_string(), "top-level".to_string()),
+        ]
+    );
+}
+
+#[test]
 fn focused_tab_changes_clients_match_all_order() {
     let mut owner = BrowserServiceWorkerOwner::new();
     let first = owner.begin_request_for_client(

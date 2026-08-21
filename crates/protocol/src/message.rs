@@ -1035,7 +1035,10 @@ impl ServiceWorkerHostCommandParams {
                                     || client.id.len() > MAX_URL_BYTES
                                     || client.url.len() > MAX_URL_BYTES
                                     || !matches!(client.client_type.as_str(), "window" | "worker" | "sharedworker")
-                                    || !matches!(client.frame_type.as_str(), "top-level" | "nested" | "none")
+                                    || !matches!(
+                                        client.frame_type.as_str(),
+                                        "top-level" | "auxiliary" | "nested" | "none"
+                                    )
                                     || !matches!(client.visibility_state.as_str(), "visible" | "hidden")
                             })
                         {
@@ -1059,7 +1062,10 @@ impl ServiceWorkerHostCommandParams {
                             || client.id.len() > MAX_URL_BYTES
                             || client.url.len() > MAX_URL_BYTES
                             || !matches!(client.client_type.as_str(), "window" | "worker" | "sharedworker")
-                            || !matches!(client.frame_type.as_str(), "top-level" | "nested" | "none")
+                            || !matches!(
+                                client.frame_type.as_str(),
+                                "top-level" | "auxiliary" | "nested" | "none"
+                            )
                             || !matches!(client.visibility_state.as_str(), "visible" | "hidden")
                         {
                             return Err("Service Worker clients response is invalid");
