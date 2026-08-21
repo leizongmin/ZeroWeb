@@ -2,7 +2,7 @@
 
 **入口文档**: [../service-workers.md](../service-workers.md)
 **创建日期**: 2026-08-17（goal 拆分 bootstrap）
-**最后更新**: 2026-08-21（M3-23 update failure matrix 完成）
+**最后更新**: 2026-08-21（M3-24 multiple update coalescing 完成）
 
 ---
 
@@ -65,8 +65,8 @@ M0 启动门禁解除；M1 core WPT 已收敛，M2 依赖未满足，当前推�
 - ✅ Final remaining 裁决：38 source / 270 subtest 分为 14 defer /
   8 gated / 16 skip；初始 review 152/152，逻辑剩余 0
 - ✅ Runner disposition contract：294 source / 331 URL 唯一映射为
-  30 core / 49 defer / 173 gated / 42 skip，可从原始 evidence 确定性重建；
-  30 个 core 与 runner 导入账本、十六批 case asset 及 blob SHA 精确对应
+  31 core / 49 defer / 172 gated / 42 skip，可从原始 evidence 确定性重建；
+  31 个 core 与 runner 导入账本、十七批 case asset 及 blob SHA 精确对应
 - ✅ M0 registry 契约补强：新增 4 项 Rust 单测，固定候选版本不提前替换 active、
   非法激活不扰动 active、注销旧 redundant 不删除新映射、跨 origin 替换隔离
 - ✅ M1 WorkerRuntime readiness：V8 20/20、QuickJS 3/3，WebView 双后端各 17/17；
@@ -145,6 +145,8 @@ M0 启动门禁解除；M1 core WPT 已收敛，M2 依赖未满足，当前推�
   core WPT 29/142
 - ✅ M3-23：main script MIME/redirect/syntax validation、install failure、pending
   uninstall 与 shrinking script update 收敛；core WPT 30/149
+- ✅ M3-24：同 registration key 的并发 update job 复用单一 fetch/runtime/installing
+  candidate，burst 后 update 继续可用；core WPT 31/150
 
 ## 缺口清单
 
@@ -154,7 +156,7 @@ M0 启动门禁解除；M1 core WPT 已收敛，M2 依赖未满足，当前推�
 | S2 | scriptURL 不下载执行 | ✅ production navigator 经 browser fetch/evaluate |
 | S3 | fetch 拦截为零 | ⬜ M2（等 js-dom fetch 改造） |
 | S4 | 事件为 setTimeout 模拟 | ✅ manager transition log 为状态源；timer 只执行页面 task 投影 |
-| S5 | WPT 覆盖为零 | ✅ core 30/30 case、149/149 Pass、0 Fail/Timeout/Unsupported |
+| S5 | WPT 覆盖为零 | ✅ core 31/31 case、150/150 Pass、0 Fail/Timeout/Unsupported |
 
 ## 待用户决策
 
@@ -164,7 +166,7 @@ M0 启动门禁解除；M1 core WPT 已收敛，M2 依赖未满足，当前推�
 
 ## 下一步计划
 
-1. **M3 update follow-up**：`multiple-update.https.html` concurrent update job coalescing
+1. **M3 update follow-up**：`update-not-allowed.https.html` installing/waiting update restrictions
 2. **M2 依赖复核**：js-dom S6 与 storage-cache-api M1 land 后启动 fetch pipeline
 3. **M3 messaging follow-up**：MessagePort/MessageChannel transfer 与多 client 枚举
 
@@ -173,7 +175,7 @@ M0 启动门禁解除；M1 core WPT 已收敛，M2 依赖未满足，当前推�
 | 里程碑 | 状态 |
 |--------|------|
 | M0 — 选型 RFC（门控） | ✅ 方案 C 已批准 |
-| M1 — 脚本真实执行 + 生命周期真事件 | ✅ current core WPT 149/149 Pass |
+| M1 — 脚本真实执行 + 生命周期真事件 | ✅ current core WPT 150/150 Pass |
 | M2 — fetch 拦截 + Cache 集成 | ⬜ 门控：js-dom fetch 改造 land |
 | M3 — 控制语义 + 消息 + 收尾 | 🚧 classic startup graph + 控制/消息/update/persistence 完成 |
 
@@ -234,6 +236,8 @@ M0 启动门禁解除；M1 core WPT 已收敛，M2 依赖未满足，当前推�
   `make test-wpt-service-workers-dynamic-import-update-wave-assets` 固化篡改/修复回归
 - Update-failure-wave 资产恢复/审计：12 assets / 7 subtest；
   `make test-wpt-service-workers-update-failure-wave-assets` 固化篡改/修复回归
+- Multiple-update-wave 资产恢复/审计：5 assets / 1 subtest；
+  `make test-wpt-service-workers-multiple-update-wave-assets` 固化篡改/修复回归
 - 质量门禁：`cargo fmt` + `cargo clippy --workspace --all-targets -- -D warnings` +
   `make test`（V8/QuickJS/GPU capability）全过
 - Registry 契约测试：`cargo test -p zero-storage service_worker::tests`，40/40 通过；
@@ -317,6 +321,8 @@ M0 启动门禁解除；M1 core WPT 已收敛，M2 依赖未满足，当前推�
 - M3-23 update failure matrix：main script MIME/redirect/syntax、install throw、
   pending uninstall、shrinking update 与 30/149 WPT 见
   [M3 update failure matrix](evidence/2026-08-21-m3-update-failure.md)
+- M3-24 multiple update：并发 job coalescing、单一 candidate/runtime 与 31/150 WPT 见
+  [M3 multiple update](evidence/2026-08-21-m3-multiple-update.md)
 
 ## M0 证据与决策记录
 
@@ -381,6 +387,7 @@ M0 启动门禁解除；M1 core WPT 已收敛，M2 依赖未满足，当前推�
 | 2026-08-20 | M3-21 updateViaCache matrix | cache policy/iframe/rollback 25/25；core 27/135 |
 | 2026-08-21 | M3-22 dynamic import update | import 404/移除/cross-origin update 7/7；core 29/142 |
 | 2026-08-21 | M3-23 update failure matrix | MIME/redirect/syntax/install/uninstall/shrink 7/7；core 30/149 |
+| 2026-08-21 | M3-24 multiple update | 10 路 burst 共享 update candidate；core 31/150 |
 | 2026-08-19 | 三方案对比 | 拒绝同线程 context（无调度隔离）；拒绝从零线程（复制安全基建）；推荐抽取 Worker 线程核 |
 | 2026-08-19 | owner | production browser process 单一 owner；WebView 只做同算法 in-process adapter |
 | 2026-08-19 | 首个 driving WPT | `activation-after-registration.https.html` |

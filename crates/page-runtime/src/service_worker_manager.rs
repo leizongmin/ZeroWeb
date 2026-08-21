@@ -778,6 +778,19 @@ impl ServiceWorkerManager {
             .ok_or(ServiceWorkerManagerError::UnknownRegistration(current_id))
     }
 
+    /// Return the installing candidate for an update job on the same registration key.
+    pub fn coalesced_update_candidate(&self, registration_id: u64) -> Result<Option<u64>, ServiceWorkerManagerError> {
+        let key = self.key_for(registration_id)?;
+        let slot = self
+            .slots
+            .get(key)
+            .ok_or(ServiceWorkerManagerError::UnknownRegistration(registration_id))?;
+        if slot.active.is_none() && slot.waiting.is_none() {
+            return Ok(None);
+        }
+        Ok(slot.installing)
+    }
+
     /// Compare a fetched script and start an installing replacement when changed.
     pub fn start_update(
         &mut self,
@@ -2049,6 +2062,26 @@ mod tests {
             panic!("update comparison must evaluate a candidate graph");
         };
         assert_eq!(wait_for_update_check(&mut manager, unchanged_candidate), (next, false));
+    }
+
+    #[test]
+    fn concurrent_updates_share_the_installing_candidate() {
+        let mut manager = manager_under_test();
+        let active = start_active(&mut manager, "/", "globalThis.version = 1;");
+        assert_eq!(manager.coalesced_update_candidate(active), Ok(None));
+
+        let ServiceWorkerUpdateOutcome::Started {
+            registration_id: candidate,
+        } = manager.start_update(active, "globalThis.version = 2;").unwrap()
+        else {
+            panic!("changed update must start a replacement");
+        };
+        assert_eq!(manager.coalesced_update_candidate(active), Ok(Some(candidate)));
+        assert_eq!(manager.coalesced_update_candidate(candidate), Ok(Some(candidate)));
+
+        assert_eq!(wait_for_update_check(&mut manager, candidate), (candidate, true));
+        wait_for_state(&mut manager, candidate, ServiceWorkerState::Installed);
+        assert_eq!(manager.coalesced_update_candidate(candidate), Ok(None));
     }
 
     #[test]

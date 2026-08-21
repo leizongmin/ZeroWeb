@@ -635,6 +635,73 @@ fn update_fetch_compares_bytes_before_starting_replacement() {
 }
 
 #[test]
+fn concurrent_updates_share_one_fetch_and_candidate() {
+    let mut owner = BrowserServiceWorkerOwner::with_local_hosts();
+    let disposition = owner.begin_request(
+        TabId(1),
+        false,
+        54,
+        Some("https://example.test/page"),
+        register_request("https://example.test/page"),
+    );
+    attach_script(&mut owner, disposition, "globalThis.version = 1;");
+    let response = wait_for_response(&mut owner);
+    let Ok(ServiceWorkerResult::Registered {
+        registration_id: active,
+    }) = response.params.result
+    else {
+        panic!("registration failed");
+    };
+    wait_for_registration_state(&mut owner, active, ServiceWorkerState::Activated);
+
+    let disposition = owner.begin_request(
+        TabId(1),
+        false,
+        55,
+        Some("https://example.test/page"),
+        ServiceWorkerRequestParams {
+            operation: ServiceWorkerOperation::Update {
+                registration_id: active,
+            },
+        },
+    );
+    attach_script(&mut owner, disposition, "globalThis.version = 2;");
+    let response = wait_for_response(&mut owner);
+    let Ok(ServiceWorkerResult::Updated {
+        registration_id: candidate,
+        changed: true,
+    }) = response.params.result
+    else {
+        panic!("changed update failed");
+    };
+    let runtime_count = owner.normal.runtime_count();
+
+    for request_id in 56..65 {
+        let ServiceWorkerRequestDisposition::Respond(response) = owner.begin_request(
+            TabId(1),
+            false,
+            request_id,
+            Some("https://example.test/page"),
+            ServiceWorkerRequestParams {
+                operation: ServiceWorkerOperation::Update {
+                    registration_id: candidate,
+                },
+            },
+        ) else {
+            panic!("concurrent update must not fetch");
+        };
+        assert_eq!(
+            response.params.result,
+            Ok(ServiceWorkerResult::Updated {
+                registration_id: candidate,
+                changed: true,
+            })
+        );
+    }
+    assert_eq!(owner.normal.runtime_count(), runtime_count);
+}
+
+#[test]
 fn update_rejects_non_javascript_main_script_without_replacing_active() {
     let mut owner = BrowserServiceWorkerOwner::with_local_hosts();
     let disposition = owner.begin_request(

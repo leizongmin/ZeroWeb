@@ -851,12 +851,27 @@ impl BrowserServiceWorkerOwner {
                 if let Err(error) = self.authorized_registration(profile, registration_id, &authority) {
                     return self.result_disposition(tab_id, request_id, Err(error));
                 }
-                let registration = match self
+                let manager = self
                     .manager(profile)
-                    .expect("authorized registration requires a manager")
-                    .update_target(registration_id)
+                    .expect("authorized registration requires a manager");
+                match manager
+                    .coalesced_update_candidate(registration_id)
                     .map_err(manager_error)
                 {
+                    Ok(Some(candidate_id)) => {
+                        return self.result_disposition(
+                            tab_id,
+                            request_id,
+                            Ok(ServiceWorkerResult::Updated {
+                                registration_id: candidate_id,
+                                changed: true,
+                            }),
+                        );
+                    }
+                    Ok(None) => {}
+                    Err(error) => return self.result_disposition(tab_id, request_id, Err(error)),
+                }
+                let registration = match manager.update_target(registration_id).map_err(manager_error) {
                     Ok(registration) => registration.clone(),
                     Err(error) => return self.result_disposition(tab_id, request_id, Err(error)),
                 };

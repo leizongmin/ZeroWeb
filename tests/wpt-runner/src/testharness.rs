@@ -621,6 +621,7 @@ pub const SERVICE_WORKER_CORE_CASES: &[&str] = &[
     "service-workers/service-worker/import-scripts-redirect.https.html",
     "service-workers/service-worker/import-scripts-resource-map.https.html",
     "service-workers/service-worker/import-scripts-updated-flag.https.html",
+    "service-workers/service-worker/multiple-update.https.html",
     "service-workers/service-worker/register-default-scope.https.html",
     "service-workers/service-worker/registration-basic.https.html",
     "service-workers/service-worker/registration-scope.https.html",
@@ -1537,6 +1538,22 @@ fn wpt_data_service_worker_script_fetcher(
                     ("Pragma".into(), "no-cache".into()),
                 ],
                 body: source.into_bytes(),
+                url: src.to_string(),
+                redirect_count: 0,
+            });
+        } else if clean.ends_with("/resources/update-nocookie-worker.py") {
+            let mut state = state
+                .lock()
+                .map_err(|_| "Service Worker fixture state lock is poisoned".to_string())?;
+            state.next_version += 1;
+            return Ok(zero_net::HttpResponse {
+                status_code: 200,
+                headers: vec![
+                    ("Content-Type".into(), "application/javascript".into()),
+                    ("Cache-Control".into(), "no-cache, must-revalidate".into()),
+                    ("Pragma".into(), "no-cache".into()),
+                ],
+                body: format!("// {}", state.next_version).into_bytes(),
                 url: src.to_string(),
                 redirect_count: 0,
             });
@@ -2787,13 +2804,13 @@ async_test(function(test) {
     }
 
     #[test]
-    fn service_worker_core_manifest_has_thirty_unique_cases() {
+    fn service_worker_core_manifest_has_thirty_one_unique_cases() {
         let unique = SERVICE_WORKER_CORE_CASES
             .iter()
             .copied()
             .collect::<std::collections::BTreeSet<_>>();
-        assert_eq!(SERVICE_WORKER_CORE_CASES.len(), 30);
-        assert_eq!(unique.len(), 30);
+        assert_eq!(SERVICE_WORKER_CORE_CASES.len(), 31);
+        assert_eq!(unique.len(), 31);
         assert!(
             SERVICE_WORKER_CORE_CASES
                 .iter()
