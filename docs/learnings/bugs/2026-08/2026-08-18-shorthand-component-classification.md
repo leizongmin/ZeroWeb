@@ -380,3 +380,5 @@ Table intrinsic helpers can duplicate font-size used-value logic outside the IFC
 Flex intrinsic sizing has its own container-level spacing boundary. When summing flex row max-content widths, resolve the container `gap` with the same definite real-length helper used for item bases; otherwise direct residual `gap` values disappear even though item sizes are correct.
 
 Flex intrinsic aspect-ratio transfer has a separate item-level size boundary. When `width:auto` items derive base width from `height` or `min-height`, resolve those definite real lengths before applying the ratio; otherwise residual cross sizes fall back to content max-content and erase the transferred base.
+
+Grid intrinsic sizing has the same container spacing used-value boundary as flex, but through `column_gap`. Keep grid/flex intrinsic gap resolution on the shared definite real-length helper so direct residual gaps do not disappear in max-content calculations.

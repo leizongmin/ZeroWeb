@@ -588,10 +588,7 @@ pub(crate) fn grid_intrinsic_width(
         })
         .unwrap_or(false);
     let gap = style
-        .and_then(|s| match &s.column_gap {
-            LengthValue::Px(v) => Some(*v as f32),
-            _ => None,
-        })
+        .and_then(|s| resolve_intrinsic_real_length(&s.column_gap, s))
         .unwrap_or(0.0);
     let mut sum = 0.0f32;
     let mut max_w = 0.0f32;
@@ -974,6 +971,47 @@ mod tests {
         </body></html>"#;
         let w = compute_grid_intrinsic(html, "g").expect("grid intrinsic");
         assert!((w - 180.0).abs() < 2.0, "expected ~180px (2×(50+40)), got {}", w);
+    }
+
+    #[test]
+    fn r3631_grid_intrinsic_gap_resolves_residual_real_length() {
+        let mut doc = zero_dom::Document::new();
+        let grid_id = doc.create_element("div");
+        let child_a_id = doc.create_element("div");
+        let child_b_id = doc.create_element("div");
+
+        let mut styles = HashMap::new();
+        let mut grid_style = ComputedStyle::default();
+        grid_style.display = DisplayValue::Grid;
+        grid_style.grid_auto_flow = zero_style_system::property::types::GridAutoFlowValue::Column;
+        grid_style.font_size = LengthValue::Px(20.0);
+        grid_style.column_gap = LengthValue::Em(2.0);
+        styles.insert(grid_id, grid_style);
+
+        for child_id in [child_a_id, child_b_id] {
+            let mut child_style = ComputedStyle::default();
+            child_style.display = DisplayValue::Block;
+            child_style.width = LengthValue::Px(50.0);
+            styles.insert(child_id, child_style);
+        }
+
+        let child_box = |node_id| LayoutBox {
+            node_id: Some(node_id),
+            width: 50.0,
+            is_block_level: true,
+            ..Default::default()
+        };
+        let grid = LayoutBox {
+            node_id: Some(grid_id),
+            children: vec![child_box(child_a_id), child_box(child_b_id)],
+            ..Default::default()
+        };
+
+        let width = grid_intrinsic_width(&grid, &doc, &styles).expect("grid intrinsic");
+        assert_eq!(
+            width, 140.0,
+            "two 50px grid items plus column-gap:2em at 20px should produce 140px intrinsic width"
+        );
     }
 
     #[test]
