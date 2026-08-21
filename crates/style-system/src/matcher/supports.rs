@@ -56,6 +56,13 @@ pub(super) fn extended_visual_or_layout_property_supported(property: &str, value
         "column-rule-width" => values::parse_column_rule_width(value).is_some(),
         "column-rule-style" => values::parse_column_rule_style(value).is_some(),
         "column-rule-color" => values::parse_color(value).is_some(),
+        // https://drafts.csswg.org/css-backgrounds-3/#border-images
+        "border-image" => crate::shorthand::border_image_shorthand_supported(value),
+        "border-image-source" => values::parse_border_image_source(value).is_some(),
+        "border-image-slice" => values::parse_border_image_slice(value).is_some(),
+        "border-image-width" => values::parse_border_image_width(value).is_some(),
+        "border-image-repeat" => values::parse_border_image_repeat(value).is_some(),
+        "border-image-outset" => values::parse_border_image_outset(value).is_some(),
         // https://drafts.csswg.org/css-overscroll-1/#overscroll-behavior-properties
         "overscroll-behavior-x" | "overscroll-behavior-y" => values::parse_overscroll_behavior(value).is_some(),
         // https://w3c.github.io/pointerevents/#the-touch-action-css-property

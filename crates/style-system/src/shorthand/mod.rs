@@ -936,6 +936,10 @@ fn expand_border_image(value: &str, important: bool, specificity: (u32, u32, u32
     result
 }
 
+pub(crate) fn border_image_shorthand_supported(value: &str) -> bool {
+    !expand_border_image(value, false, (0, 0, 0)).is_empty()
+}
+
 /// 解析 4 边简写的值部分。
 ///
 /// 返回 (top, right, bottom, left) 值字符串。

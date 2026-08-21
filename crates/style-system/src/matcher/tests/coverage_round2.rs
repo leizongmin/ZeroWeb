@@ -252,6 +252,26 @@ fn test_property_supported_extended_visual_and_layout_properties() {
 }
 
 #[test]
+fn test_property_supported_border_image_properties() {
+    assert!(is_property_supported(
+        "border-image",
+        "url(border.png) 25 / 2 / 3 repeat"
+    ));
+    assert!(is_property_supported("border-image-source", "url(border.png)"));
+    assert!(is_property_supported("border-image-slice", "25 fill"));
+    assert!(is_property_supported("border-image-width", "auto"));
+    assert!(is_property_supported("border-image-repeat", "repeat round"));
+    assert!(is_property_supported("border-image-outset", "2"));
+
+    assert!(!is_property_supported("border-image", "url(border.png) 25 / 2 / 3 / 4"));
+    assert!(!is_property_supported("border-image-source", "invalid"));
+    assert!(!is_property_supported("border-image-slice", "-1"));
+    assert!(!is_property_supported("border-image-width", "-1px"));
+    assert!(!is_property_supported("border-image-repeat", "repeat round stretch"));
+    assert!(!is_property_supported("border-image-outset", "-1px"));
+}
+
+#[test]
 fn test_property_supported_color() {
     assert!(is_property_supported("color", "red"));
     assert!(is_property_supported("background-color", "#fff"));
