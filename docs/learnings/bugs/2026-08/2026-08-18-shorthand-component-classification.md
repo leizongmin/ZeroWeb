@@ -394,3 +394,5 @@ Abspos table recenter has a separate definite-inset gate after table layout. Tre
 Inline-block metric reuse can re-enter margin math after the initial IFC item collection. When refreshing reused atomic inline boxes, resolve vertical margins through the same IFC used-value helper as collection; otherwise the second pass can erase residual `em/ch/rem` margin contribution to baseline and line height.
 
 Flex base sizing has a width-before-content used-value boundary. In the `flex-basis:auto` path, a definite `width` must be resolved before falling back to max-content; otherwise residual real widths can be skipped and wide text content incorrectly becomes the flex base.
+
+Postprocess stretch gates are used-value consumers too. When a later pass decides whether an abspos flex container has definite opposing insets, checking only `Px` silently disables replaced-item stretch for residual `em/ch/rem`; use the same definite real-length resolver as the size math.
