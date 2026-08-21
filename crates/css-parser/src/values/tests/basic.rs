@@ -992,6 +992,9 @@ fn test_parse_counter_list_multiple() {
 #[test]
 fn test_parse_counter_list_invalid() {
     assert_eq!(parse_counter_list(""), None);
+    assert_eq!(parse_counter_list("section 1.5"), None);
+    assert_eq!(parse_counter_list("1section"), None);
+    assert_eq!(parse_counter_list("section +"), None);
 }
 
 #[test]
@@ -1056,6 +1059,10 @@ fn test_parse_content_counter_with_style() {
 fn test_parse_content_invalid() {
     assert_eq!(parse_content("unknown-value"), None);
     assert_eq!(parse_content(""), None);
+    assert_eq!(parse_content("counter(1section)"), None);
+    assert_eq!(parse_content("counter(section, upper-roman, extra)"), None);
+    assert_eq!(parse_content("counter(section,)"), None);
+    assert_eq!(parse_content("counters(1section, \".\")"), None);
 }
 
 #[test]

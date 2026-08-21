@@ -1498,6 +1498,12 @@ fn is_property_supported(property: &str, value: &str) -> bool {
         }
         "container-type" => parse_container_type(trimmed).is_some(),
         "container-name" => true, // 任何非空字符串都有效
+        // https://drafts.csswg.org/css-content-3/#content-property
+        // Keep generated content support checks aligned with the direct declaration parsers.
+        "counter-reset" | "counter-increment" => parse_counter_list(trimmed).is_some(),
+        "counter-set" => parse_counter_set(trimmed).is_some(),
+        "content" => parse_content(trimmed).is_some(),
+        "quotes" => parse_quotes(trimmed).is_some(),
         // 字体属性：auto/normal/none 为合法值
         "font-kerning" => {
             let v = trimmed.to_ascii_lowercase();

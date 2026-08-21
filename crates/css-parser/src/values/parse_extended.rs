@@ -420,16 +420,38 @@ pub fn parse_counter_action(input: &str) -> Option<CounterActionValue> {
     }
     let parts: Vec<&str> = input.split_whitespace().collect();
     let name = parts.first()?.to_string();
-    // 计数器名称不能是 none
-    if name.eq_ignore_ascii_case("none") {
+    // https://drafts.csswg.org/css-lists-3/#propdef-counter-reset
+    // Counter names are custom identifiers; extra numeric-looking tokens must not be reclassified
+    // as counter names after an invalid integer.
+    if !is_counter_name(&name) {
         return None;
     }
     let value = if parts.len() > 1 {
+        if parts.len() != 2 {
+            return None;
+        }
         Some(parts[1].parse::<i64>().ok()?)
     } else {
         None
     };
     Some(CounterActionValue { name, value })
+}
+
+fn is_counter_name(name: &str) -> bool {
+    if matches!(
+        name.to_ascii_lowercase().as_str(),
+        "none" | "initial" | "inherit" | "unset" | "revert" | "revert-layer"
+    ) {
+        return false;
+    }
+    let mut chars = name.chars();
+    let Some(first) = chars.next() else {
+        return false;
+    };
+    if !(first.is_ascii_alphabetic() || first == '-' || first == '_') {
+        return false;
+    }
+    chars.all(|ch| ch.is_ascii_alphanumeric() || ch == '-' || ch == '_')
 }
 
 /// 解析计数器操作列表。
@@ -444,7 +466,7 @@ pub fn parse_counter_list(input: &str) -> Option<Vec<CounterActionValue>> {
     let mut result = Vec::new();
     let mut tokens = input.split_whitespace().peekable();
     while let Some(name) = tokens.next() {
-        if name.eq_ignore_ascii_case("none") {
+        if !is_counter_name(name) {
             return None;
         }
         // 检查下一个 token 是否为整数
@@ -592,16 +614,7 @@ pub fn parse_content(input: &str) -> Option<ContentValue> {
     // counter(name) 或 counter(name, style)
     // counter(name[, style]) — CSS Values §4：函数名大小写不敏感（COUNTER ≡ counter）；计数器名/样式保持原样。
     if let Some(inner) = extract_single_function_inner(input, "counter(") {
-        if inner.is_empty() {
-            return None;
-        }
-        let parts: Vec<&str> = inner.split(',').map(|s| s.trim()).collect();
-        let name = parts.first()?.to_string();
-        let style = if parts.len() > 1 {
-            Some(parts[1].to_string())
-        } else {
-            None
-        };
+        let (name, style) = parse_counter_call_args(inner)?;
         return Some(ContentValue::Counter { name, style });
     }
     // counters(name, sep[, style]) — CSS Lists 3 §counter-functions：嵌套计数器，函数名大小写不敏感。
@@ -696,8 +709,17 @@ fn parse_counter_call_args(inner: &str) -> Option<(String, Option<String>)> {
         return None;
     }
     let parts: Vec<&str> = inner.split(',').map(|s| s.trim()).collect();
+    if parts.len() > 2 {
+        return None;
+    }
     let name = parts.first()?.to_string();
+    if !is_counter_name(&name) {
+        return None;
+    }
     let style = if parts.len() > 1 {
+        if parts[1].is_empty() {
+            return None;
+        }
         Some(parts[1].to_string())
     } else {
         None
@@ -715,7 +737,7 @@ fn parse_counters_call_args(inner: &str) -> Option<(String, String, Option<Strin
     // name = 首个逗号前的 ident（计数器名不含逗号）。
     let comma1 = inner.find(',')?;
     let name = inner[..comma1].trim().to_string();
-    if name.is_empty() {
+    if !is_counter_name(&name) {
         return None;
     }
     let rest = inner[comma1 + 1..].trim();

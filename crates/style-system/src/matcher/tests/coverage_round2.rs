@@ -73,6 +73,23 @@ fn test_property_supported_font() {
 }
 
 #[test]
+fn test_property_supported_generated_content() {
+    assert!(is_property_supported("counter-reset", "section 1 subsection"));
+    assert!(is_property_supported("counter-increment", "section 2"));
+    assert!(is_property_supported("counter-set", "section 3"));
+    assert!(is_property_supported("content", "\"Chapter \" counter(section)"));
+    assert!(is_property_supported("content", "url(icon.png)"));
+    assert!(is_property_supported("quotes", r#""«" "»" "‹" "›""#));
+
+    assert!(!is_property_supported("counter-reset", "none 1"));
+    assert!(!is_property_supported("counter-increment", "section 1.5"));
+    assert!(!is_property_supported("counter-set", ""));
+    assert!(!is_property_supported("content", "url(icon image.png)"));
+    assert!(!is_property_supported("content", "attr()"));
+    assert!(!is_property_supported("quotes", r#""open" "close" "dangling""#));
+}
+
+#[test]
 fn test_property_supported_flow_and_list_style() {
     assert!(is_property_supported("float", "inline-start"));
     assert!(is_property_supported("clear", "both"));
