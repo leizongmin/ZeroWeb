@@ -1129,6 +1129,24 @@ impl ServiceWorkerHostCommandParams {
                         validate_service_worker_fetch_response(response)
                     }
                     Ok(ServiceWorkerCacheStorageResultWire::Match(None)) => Ok(()),
+                    Ok(ServiceWorkerCacheStorageResultWire::MatchAll(responses)) => {
+                        if responses.len() > MAX_SERVICE_WORKER_CACHE_RESULTS {
+                            return Err("Service Worker cache response list exceeds the size limit");
+                        }
+                        for response in responses {
+                            validate_service_worker_fetch_response(response)?;
+                        }
+                        Ok(())
+                    }
+                    Ok(ServiceWorkerCacheStorageResultWire::Keys(requests)) => {
+                        if requests.len() > MAX_SERVICE_WORKER_CACHE_RESULTS {
+                            return Err("Service Worker cache request list exceeds the size limit");
+                        }
+                        for request in requests {
+                            validate_service_worker_fetch_request(request)?;
+                        }
+                        Ok(())
+                    }
                     Err(message) if message.len() > MAX_URL_BYTES => {
                         Err("Service Worker cache error exceeds the size limit")
                     }
@@ -1206,6 +1224,8 @@ fn validate_service_worker_cache_name(name: &str) -> Result<(), &'static str> {
     Ok(())
 }
 
+const MAX_SERVICE_WORKER_CACHE_RESULTS: usize = 1024;
+
 fn validate_service_worker_cache_storage_request(
     request: &ServiceWorkerCacheStorageRequestWire,
 ) -> Result<(), &'static str> {
@@ -1216,6 +1236,20 @@ fn validate_service_worker_cache_storage_request(
                 validate_service_worker_cache_name(cache_name)?;
             }
             validate_service_worker_fetch_request(request)
+        }
+        ServiceWorkerCacheStorageRequestWire::MatchAll { cache_name, request } => {
+            validate_service_worker_cache_name(cache_name)?;
+            if let Some(request) = request {
+                validate_service_worker_fetch_request(request)?;
+            }
+            Ok(())
+        }
+        ServiceWorkerCacheStorageRequestWire::Keys { cache_name, request } => {
+            validate_service_worker_cache_name(cache_name)?;
+            if let Some(request) = request {
+                validate_service_worker_fetch_request(request)?;
+            }
+            Ok(())
         }
         ServiceWorkerCacheStorageRequestWire::Put {
             cache_name,
@@ -1363,6 +1397,20 @@ pub enum ServiceWorkerCacheStorageRequestWire {
         /// Request to match.
         request: ServiceWorkerFetchRequestWire,
     },
+    /// Match all responses in one named cache, optionally filtering by request.
+    MatchAll {
+        /// Cache name.
+        cache_name: String,
+        /// Optional request filter.
+        request: Option<ServiceWorkerFetchRequestWire>,
+    },
+    /// List all request keys in one named cache.
+    Keys {
+        /// Cache name.
+        cache_name: String,
+        /// Optional request filter.
+        request: Option<ServiceWorkerFetchRequestWire>,
+    },
     /// Store one response in one named cache.
     Put {
         /// Cache name.
@@ -1381,6 +1429,10 @@ pub enum ServiceWorkerCacheStorageResultWire {
     Done,
     /// Cache match result.
     Match(Option<ServiceWorkerFetchResponseWire>),
+    /// Cache matchAll result.
+    MatchAll(Vec<ServiceWorkerFetchResponseWire>),
+    /// Cache keys result.
+    Keys(Vec<ServiceWorkerFetchRequestWire>),
 }
 
 /// Renderer → browser 的 Service Worker runtime 事件参数。

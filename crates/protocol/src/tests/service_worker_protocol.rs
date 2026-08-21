@@ -674,6 +674,79 @@ fn service_worker_host_fetch_command_and_event_round_trip() {
     };
     assert!(cache_open_event.validate().is_ok());
 
+    let cache_match_all_event = ServiceWorkerHostEventParams {
+        registration_id: 8,
+        event: ServiceWorkerHostEvent::CacheStorageRequested {
+            request_id: 8,
+            request: ServiceWorkerCacheStorageRequestWire::MatchAll {
+                cache_name: "runtime".into(),
+                request: Some(ServiceWorkerFetchRequestWire {
+                    url: "https://example.test/app/cached".into(),
+                    method: "GET".into(),
+                    headers: Vec::new(),
+                    body: None,
+                    client_id: None,
+                    resulting_client_id: None,
+                }),
+            },
+        },
+    };
+    assert!(cache_match_all_event.validate().is_ok());
+    let decoded = roundtrip(IpcMessage {
+        id: 58,
+        kind: IpcMessageKind::ServiceWorkerHostEvent(cache_match_all_event.clone()),
+    });
+    let IpcMessageKind::ServiceWorkerHostEvent(decoded_event) = decoded.kind else {
+        panic!("expected ServiceWorkerHostEvent");
+    };
+    assert_eq!(decoded_event, cache_match_all_event);
+
+    let cache_keys_event = ServiceWorkerHostEventParams {
+        registration_id: 8,
+        event: ServiceWorkerHostEvent::CacheStorageRequested {
+            request_id: 9,
+            request: ServiceWorkerCacheStorageRequestWire::Keys {
+                cache_name: "runtime".into(),
+                request: None,
+            },
+        },
+    };
+    assert!(cache_keys_event.validate().is_ok());
+
+    let cache_lists_command = ServiceWorkerHostCommandParams {
+        registration_id: 8,
+        command: ServiceWorkerHostCommand::CompleteCacheStorage {
+            request_id: 8,
+            result: Ok(ServiceWorkerCacheStorageResultWire::MatchAll(vec![
+                ServiceWorkerFetchResponseWire {
+                    status: 200,
+                    status_text: "OK".into(),
+                    headers: vec![("x-cache".into(), "hit".into())],
+                    body: "cached".into(),
+                },
+            ])),
+        },
+    };
+    assert!(cache_lists_command.validate().is_ok());
+
+    let cache_keys_command = ServiceWorkerHostCommandParams {
+        registration_id: 8,
+        command: ServiceWorkerHostCommand::CompleteCacheStorage {
+            request_id: 9,
+            result: Ok(ServiceWorkerCacheStorageResultWire::Keys(vec![
+                ServiceWorkerFetchRequestWire {
+                    url: "https://example.test/app/cached".into(),
+                    method: "GET".into(),
+                    headers: Vec::new(),
+                    body: None,
+                    client_id: None,
+                    resulting_client_id: None,
+                },
+            ])),
+        },
+    };
+    assert!(cache_keys_command.validate().is_ok());
+
     assert!(
         ServiceWorkerHostCommandParams {
             registration_id: 8,
@@ -833,6 +906,44 @@ fn service_worker_host_fetch_command_and_event_round_trip() {
                         body: String::new(),
                     },
                 ))),
+            },
+        }
+        .validate()
+        .is_err()
+    );
+    assert!(
+        ServiceWorkerHostCommandParams {
+            registration_id: 8,
+            command: ServiceWorkerHostCommand::CompleteCacheStorage {
+                request_id: 5,
+                result: Ok(ServiceWorkerCacheStorageResultWire::MatchAll(vec![
+                    ServiceWorkerFetchResponseWire {
+                        status: 600,
+                        status_text: String::new(),
+                        headers: Vec::new(),
+                        body: String::new(),
+                    },
+                ])),
+            },
+        }
+        .validate()
+        .is_err()
+    );
+    assert!(
+        ServiceWorkerHostCommandParams {
+            registration_id: 8,
+            command: ServiceWorkerHostCommand::CompleteCacheStorage {
+                request_id: 5,
+                result: Ok(ServiceWorkerCacheStorageResultWire::Keys(vec![
+                    ServiceWorkerFetchRequestWire {
+                        url: String::new(),
+                        method: "GET".into(),
+                        headers: Vec::new(),
+                        body: None,
+                        client_id: None,
+                        resulting_client_id: None,
+                    },
+                ])),
             },
         }
         .validate()

@@ -36,6 +36,16 @@ enum CacheStorageRequest {
         #[serde(default)]
         cache_name: Option<String>,
     },
+    MatchAll {
+        cache_name: String,
+        #[serde(default)]
+        request: Option<CacheRequestWire>,
+    },
+    CacheKeys {
+        cache_name: String,
+        #[serde(default)]
+        request: Option<CacheRequestWire>,
+    },
     Put {
         cache_name: String,
         request: CacheRequestWire,
@@ -43,7 +53,7 @@ enum CacheStorageRequest {
     },
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 struct CacheRequestWire {
     url: String,
     #[serde(default)]
@@ -66,6 +76,16 @@ struct CacheResponseWire {
 #[derive(Debug, Serialize)]
 struct CacheMatchResponse {
     response: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+struct CacheMatchAllResponse {
+    responses: Vec<String>,
+}
+
+#[derive(Debug, Serialize)]
+struct CacheKeysResponse {
+    requests: Vec<CacheRequestWire>,
 }
 
 /// 构造由页面运行路径共享的 CacheStorage handler。
@@ -133,6 +153,48 @@ fn dispatch_request(
             };
             let wire = response.map(cache_response_wire);
             serde_json::to_value(CacheMatchResponse { response: wire })
+                .map_err(|error| format!("UnknownError: failed to serialize response: {error}"))
+        }
+        CacheStorageRequest::MatchAll { cache_name, request } => {
+            let request = request.map(CacheRequestWire::into_storage_request).transpose()?;
+            let responses = storage
+                .cache_storage_ref(origin)
+                .and_then(|cache_storage| cache_storage.get(&cache_name))
+                .map(|cache| match &request {
+                    Some(request) => cache.match_all(request).into_iter().map(cache_response_wire).collect(),
+                    None => cache
+                        .request_keys()
+                        .into_iter()
+                        .filter_map(|request| cache.match_request(request))
+                        .map(cache_response_wire)
+                        .collect(),
+                })
+                .unwrap_or_default();
+            serde_json::to_value(CacheMatchAllResponse { responses })
+                .map_err(|error| format!("UnknownError: failed to serialize response: {error}"))
+        }
+        CacheStorageRequest::CacheKeys { cache_name, request } => {
+            let request = request.map(CacheRequestWire::into_storage_request).transpose()?;
+            let requests = match storage
+                .cache_storage_ref(origin)
+                .and_then(|cache_storage| cache_storage.get(&cache_name))
+            {
+                Some(cache) => cache
+                    .request_keys()
+                    .into_iter()
+                    .filter(|key| {
+                        request
+                            .as_ref()
+                            .is_none_or(|request| key.url == request.url && key.method == request.method)
+                    })
+                    .map(|request| CacheRequestWire {
+                        url: request.url.clone(),
+                        method: Some(request.method.clone()),
+                    })
+                    .collect(),
+                None => Vec::new(),
+            };
+            serde_json::to_value(CacheKeysResponse { requests })
                 .map_err(|error| format!("UnknownError: failed to serialize response: {error}"))
         }
         CacheStorageRequest::Put {
@@ -386,6 +448,78 @@ mod tests {
         assert_eq!(cache_deleted["deleted"], true);
         let has_a = call(&handler, "https://example.com", json!({"op": "has", "name": "a"}));
         assert_eq!(has_a["has"], false);
+    }
+
+    #[test]
+    fn cache_storage_handler_lists_cache_requests_and_matches_all() {
+        let handler = cache_storage_handler(Arc::new(Mutex::new(StorageManager::new())));
+        call(
+            &handler,
+            "https://example.com",
+            json!({
+                "op": "put",
+                "cache_name": "runtime",
+                "request": {"url": "https://example.com/data", "method": "GET"},
+                "response": {"status": 200, "statusText": "OK", "headers": "", "body": "get"}
+            }),
+        );
+        call(
+            &handler,
+            "https://example.com",
+            json!({
+                "op": "put",
+                "cache_name": "runtime",
+                "request": {"url": "https://example.com/data", "method": "POST"},
+                "response": {"status": 201, "statusText": "Created", "headers": "", "body": "post"}
+            }),
+        );
+
+        let listed = call(
+            &handler,
+            "https://example.com",
+            json!({"op": "cache_keys", "cache_name": "runtime"}),
+        );
+        assert_eq!(
+            listed["requests"],
+            json!([
+                {"url": "https://example.com/data", "method": "GET"},
+                {"url": "https://example.com/data", "method": "POST"}
+            ])
+        );
+
+        let filtered_keys = call(
+            &handler,
+            "https://example.com",
+            json!({
+                "op": "cache_keys",
+                "cache_name": "runtime",
+                "request": {"url": "https://example.com/data", "method": "POST"}
+            }),
+        );
+        assert_eq!(
+            filtered_keys["requests"],
+            json!([{"url": "https://example.com/data", "method": "POST"}])
+        );
+
+        let matched = call(
+            &handler,
+            "https://example.com",
+            json!({
+                "op": "match_all",
+                "cache_name": "runtime",
+                "request": {"url": "https://example.com/data", "method": "POST"}
+            }),
+        );
+        let responses = matched["responses"].as_array().unwrap();
+        assert_eq!(responses.len(), 1);
+        assert!(responses[0].as_str().unwrap().ends_with("post"));
+
+        let all = call(
+            &handler,
+            "https://example.com",
+            json!({"op": "match_all", "cache_name": "runtime"}),
+        );
+        assert_eq!(all["responses"].as_array().unwrap().len(), 2);
     }
 
     #[test]

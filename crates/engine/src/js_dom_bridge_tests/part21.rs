@@ -228,6 +228,16 @@ fn test_cache_api_page_shim_host_roundtrip() {
             if request.contains(r#""op":"match""#) && request.contains(r#""cache_name":"v1""#) {
                 return "__zw_cache_ok:{\"response\":\"__zwfr:201\\u001fCreated\\u001fcontent-type\\u001etext/plain\\u001fcached text\"}".to_string();
             }
+            if request.contains(r#""op":"match_all""#) && request.contains(r#""cache_name":"v1""#) {
+                return "__zw_cache_ok:{\"responses\":[\"__zwfr:201\\u001fCreated\\u001fcontent-type\\u001etext/plain\\u001fcached text\"]}".to_string();
+            }
+            if request.contains(r#""op":"cache_keys""#) && request.contains(r#""cache_name":"v1""#) {
+                if request.contains(r#""method":"POST""#) {
+                    return r#"__zw_cache_ok:{"requests":[]}"#.to_string();
+                }
+                return r#"__zw_cache_ok:{"requests":[{"url":"https://example.com/data.txt","method":"GET"}]}"#
+                    .to_string();
+            }
             if request.contains(r#""op":"match""#) {
                 return r#"__zw_cache_ok:{"response":null}"#.to_string();
             }
@@ -250,11 +260,26 @@ fn test_cache_api_page_shim_host_roundtrip() {
                  status: 201,\
                  statusText: 'Created',\
                  headers: {'content-type': 'text/plain'}\
-               })).then(function () { return cache.match('https://example.com/data.txt'); });\
-             }).then(function (response) {\
+               })).then(function () { return Promise.all([\
+                 cache.match('https://example.com/data.txt'),\
+                 cache.matchAll('https://example.com/data.txt'),\
+                 cache.keys(),\
+                 cache.keys(new Request('https://example.com/data.txt', {method: 'POST'}))\
+               ]); });\
+             }).then(function (values) {\
+               var response = values[0];\
+               var responses = values[1];\
+               var requests = values[2];\
+               var filteredRequests = values[3];\
                return response.text().then(function (body) {\
                  globalThis.__cacheDone = [\
                    String(response instanceof Response),\
+                   String(responses.length),\
+                   String(responses[0] instanceof Response),\
+                   String(requests.length),\
+                   String(requests[0] instanceof Request),\
+                   requests[0].method,\
+                   String(filteredRequests.length),\
                    String(response.status),\
                    response.statusText,\
                    response.headers.get('content-type'),\
@@ -271,7 +296,7 @@ fn test_cache_api_page_shim_host_roundtrip() {
     }
     assert_eq!(
         sandbox.execute("globalThis.__cacheDone").unwrap().value,
-        "true|201|Created|text/plain|cached text",
+        "true|1|true|1|true|GET|0|201|Created|text/plain|cached text",
         "Cache API page shim should round-trip Response through host bridge"
     );
 }

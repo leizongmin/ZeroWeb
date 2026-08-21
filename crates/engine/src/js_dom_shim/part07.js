@@ -99,6 +99,11 @@
     };
   }
 
+  function _zwCacheRequestFromWire(raw) {
+    if (!raw || typeof raw.url !== 'string') throw new TypeError('malformed Cache request');
+    return new Request(raw.url, { method: String(raw.method || 'GET').toUpperCase() });
+  }
+
   function _zwCacheResponseWire(response) {
     if (!(response instanceof Response)) {
       response = new Response(response);
@@ -134,6 +139,24 @@
     });
   };
 
+  Cache.prototype.matchAll = function (request) {
+    var cache = this;
+    return new Promise(function (resolve, reject) {
+      try {
+        var hostRequest = {
+          op: 'match_all',
+          cache_name: cache._name
+        };
+        if (request !== undefined) hostRequest.request = _zwCacheRequestWire(request);
+        var result = _zwCacheHostCall(hostRequest);
+        var responses = Array.isArray(result.responses) ? result.responses : [];
+        resolve(responses.map(_zwCacheResponseFromWire));
+      } catch (error) {
+        reject(error);
+      }
+    });
+  };
+
   Cache.prototype.put = function (request, response) {
     var cache = this;
     return new Promise(function (resolve, reject) {
@@ -161,6 +184,24 @@
           request: _zwCacheRequestWire(request)
         });
         resolve(!!result.deleted);
+      } catch (error) {
+        reject(error);
+      }
+    });
+  };
+
+  Cache.prototype.keys = function (request) {
+    var cache = this;
+    return new Promise(function (resolve, reject) {
+      try {
+        var hostRequest = {
+          op: 'cache_keys',
+          cache_name: cache._name
+        };
+        if (request !== undefined) hostRequest.request = _zwCacheRequestWire(request);
+        var result = _zwCacheHostCall(hostRequest);
+        var requests = Array.isArray(result.requests) ? result.requests : [];
+        resolve(requests.map(_zwCacheRequestFromWire));
       } catch (error) {
         reject(error);
       }

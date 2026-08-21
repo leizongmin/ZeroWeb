@@ -119,6 +119,20 @@ impl Cache {
         })
     }
 
+    /// 查找匹配请求的所有缓存响应。
+    pub fn match_all(&self, request: &CacheRequest) -> Vec<&CacheResponse> {
+        self.entries
+            .iter()
+            .filter_map(|entry| {
+                if entry.request.url == request.url && entry.request.method == request.method {
+                    Some(&entry.response)
+                } else {
+                    None
+                }
+            })
+            .collect()
+    }
+
     /// 缓存一对 Request/Response（如已存在则覆盖）。
     pub fn put(&mut self, request: CacheRequest, response: CacheResponse) -> Result<(), StorageError> {
         if let Some(entry) = self
@@ -144,6 +158,11 @@ impl Cache {
     /// 获取缓存中所有请求的 URL 列表。
     pub fn keys(&self) -> Vec<&str> {
         self.entries.iter().map(|e| e.request.url.as_str()).collect()
+    }
+
+    /// 获取缓存中所有请求列表。
+    pub fn request_keys(&self) -> Vec<&CacheRequest> {
+        self.entries.iter().map(|e| &e.request).collect()
     }
 
     /// 获取缓存条目数量。
@@ -264,6 +283,26 @@ mod tests {
         let cache = Cache::new("v1");
         let req = CacheRequest::new("https://example.com/missing");
         assert!(cache.match_request(&req).is_none());
+    }
+
+    #[test]
+    fn test_cache_match_all_and_request_keys_preserve_method() {
+        let mut cache = Cache::new("v1");
+        let get_req = CacheRequest::new("https://example.com/api");
+        let post_req = CacheRequest::with_method("https://example.com/api", "POST");
+        cache.put(get_req.clone(), CacheResponse::ok(b"get".to_vec())).unwrap();
+        cache
+            .put(post_req.clone(), CacheResponse::ok(b"post".to_vec()))
+            .unwrap();
+
+        let matched = cache.match_all(&post_req);
+        assert_eq!(matched.len(), 1);
+        assert_eq!(matched[0].body, b"post".to_vec());
+
+        let keys = cache.request_keys();
+        assert_eq!(keys.len(), 2);
+        assert!(keys.iter().any(|key| key.url == get_req.url && key.method == "GET"));
+        assert!(keys.iter().any(|key| key.url == post_req.url && key.method == "POST"));
     }
 
     #[test]

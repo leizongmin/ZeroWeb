@@ -517,6 +517,16 @@ fn cache_storage_request_from_wire(request: ServiceWorkerCacheStorageRequestWire
                 request: fetch_request_from_wire(request),
             }
         }
+        ServiceWorkerCacheStorageRequestWire::MatchAll { cache_name, request } => {
+            ServiceWorkerCacheStorageRequest::MatchAll {
+                cache_name,
+                request: request.map(fetch_request_from_wire),
+            }
+        }
+        ServiceWorkerCacheStorageRequestWire::Keys { cache_name, request } => ServiceWorkerCacheStorageRequest::Keys {
+            cache_name,
+            request: request.map(fetch_request_from_wire),
+        },
         ServiceWorkerCacheStorageRequestWire::Put {
             cache_name,
             request,
@@ -534,6 +544,12 @@ fn cache_storage_result_to_wire(result: ServiceWorkerCacheStorageResult) -> Serv
         ServiceWorkerCacheStorageResult::Done => ServiceWorkerCacheStorageResultWire::Done,
         ServiceWorkerCacheStorageResult::Match(response) => {
             ServiceWorkerCacheStorageResultWire::Match(response.map(fetch_response_to_wire))
+        }
+        ServiceWorkerCacheStorageResult::MatchAll(responses) => {
+            ServiceWorkerCacheStorageResultWire::MatchAll(responses.into_iter().map(fetch_response_to_wire).collect())
+        }
+        ServiceWorkerCacheStorageResult::Keys(requests) => {
+            ServiceWorkerCacheStorageResultWire::Keys(requests.into_iter().map(fetch_request_to_wire).collect())
         }
     }
 }

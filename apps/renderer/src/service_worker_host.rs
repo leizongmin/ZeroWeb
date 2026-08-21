@@ -411,6 +411,30 @@ fn cache_storage_request_to_wire(request: ServiceWorkerCacheStorageRequest) -> S
                 },
             }
         }
+        ServiceWorkerCacheStorageRequest::MatchAll { cache_name, request } => {
+            ServiceWorkerCacheStorageRequestWire::MatchAll {
+                cache_name,
+                request: request.map(|request| ServiceWorkerFetchRequestWire {
+                    url: request.url,
+                    method: request.method,
+                    headers: request.headers,
+                    body: request.body,
+                    client_id: request.client_id,
+                    resulting_client_id: request.resulting_client_id,
+                }),
+            }
+        }
+        ServiceWorkerCacheStorageRequest::Keys { cache_name, request } => ServiceWorkerCacheStorageRequestWire::Keys {
+            cache_name,
+            request: request.map(|request| ServiceWorkerFetchRequestWire {
+                url: request.url,
+                method: request.method,
+                headers: request.headers,
+                body: request.body,
+                client_id: request.client_id,
+                resulting_client_id: request.resulting_client_id,
+            }),
+        },
         ServiceWorkerCacheStorageRequest::Put {
             cache_name,
             request,
@@ -440,6 +464,12 @@ fn cache_storage_result_from_wire(result: ServiceWorkerCacheStorageResultWire) -
         ServiceWorkerCacheStorageResultWire::Done => ServiceWorkerCacheStorageResult::Done,
         ServiceWorkerCacheStorageResultWire::Match(response) => {
             ServiceWorkerCacheStorageResult::Match(response.map(fetch_response_from_wire))
+        }
+        ServiceWorkerCacheStorageResultWire::MatchAll(responses) => {
+            ServiceWorkerCacheStorageResult::MatchAll(responses.into_iter().map(fetch_response_from_wire).collect())
+        }
+        ServiceWorkerCacheStorageResultWire::Keys(requests) => {
+            ServiceWorkerCacheStorageResult::Keys(requests.into_iter().map(fetch_request_from_wire).collect())
         }
     }
 }
@@ -937,7 +967,7 @@ mod tests {
     }
 
     #[test]
-    fn cache_storage_open_put_match_round_trips_through_renderer_host() {
+    fn cache_storage_open_put_match_all_keys_round_trips_through_renderer_host() {
         let (host, mut transport) = spawn_host();
         host.handle_command(evaluate_command(
             16,
@@ -949,7 +979,11 @@ mod tests {
                    statusText: 'Created',
                    headers: [['x-cache', 'put']]
                  }));
-                 return await cache.match(event.request);
+                 const responses = await cache.matchAll(event.request);
+                 const requests = await cache.keys();
+                 if (responses.length !== 1) throw new Error('matchAll length');
+                 if (requests.length !== 1 || requests[0].method !== 'GET') throw new Error('keys length');
+                 return responses[0];
                })());
              });",
         ));
@@ -1019,16 +1053,16 @@ mod tests {
             },
         });
 
-        let match_request = wait_for_event(&mut transport);
-        let ServiceWorkerHostEvent::CacheStorageRequested { request_id, request } = match_request.event else {
-            panic!("expected Cache.match request");
+        let match_all_request = wait_for_event(&mut transport);
+        let ServiceWorkerHostEvent::CacheStorageRequested { request_id, request } = match_all_request.event else {
+            panic!("expected Cache.matchAll request");
         };
-        let ServiceWorkerCacheStorageRequestWire::Match {
-            cache_name: Some(cache_name),
-            request,
+        let ServiceWorkerCacheStorageRequestWire::MatchAll {
+            cache_name,
+            request: Some(request),
         } = request
         else {
-            panic!("expected named Cache.match payload");
+            panic!("expected named Cache.matchAll payload");
         };
         assert_eq!(cache_name, "runtime");
         assert_eq!(request.url, "https://example.test/app/stored");
@@ -1036,14 +1070,42 @@ mod tests {
             registration_id: 16,
             command: ServiceWorkerHostCommand::CompleteCacheStorage {
                 request_id,
-                result: Ok(ServiceWorkerCacheStorageResultWire::Match(Some(
+                result: Ok(ServiceWorkerCacheStorageResultWire::MatchAll(vec![
                     ServiceWorkerFetchResponseWire {
                         status: 201,
                         status_text: "Created".into(),
                         headers: vec![("x-cache".into(), "put".into())],
                         body: "stored-body".into(),
                     },
-                ))),
+                ])),
+            },
+        });
+
+        let keys_request = wait_for_event(&mut transport);
+        let ServiceWorkerHostEvent::CacheStorageRequested { request_id, request } = keys_request.event else {
+            panic!("expected Cache.keys request");
+        };
+        assert_eq!(
+            request,
+            ServiceWorkerCacheStorageRequestWire::Keys {
+                cache_name: "runtime".into(),
+                request: None,
+            }
+        );
+        host.handle_command(ServiceWorkerHostCommandParams {
+            registration_id: 16,
+            command: ServiceWorkerHostCommand::CompleteCacheStorage {
+                request_id,
+                result: Ok(ServiceWorkerCacheStorageResultWire::Keys(vec![
+                    ServiceWorkerFetchRequestWire {
+                        url: "https://example.test/app/stored".into(),
+                        method: "GET".into(),
+                        headers: Vec::new(),
+                        body: None,
+                        client_id: None,
+                        resulting_client_id: None,
+                    },
+                ])),
             },
         });
 

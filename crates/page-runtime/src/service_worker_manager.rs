@@ -52,6 +52,17 @@ fn cache_response_from_service_worker(response: ServiceWorkerFetchResponse) -> C
     }
 }
 
+fn service_worker_request_from_cache(request: &CacheRequest) -> ServiceWorkerFetchRequest {
+    ServiceWorkerFetchRequest {
+        url: request.url.clone(),
+        method: request.method.clone(),
+        headers: Vec::new(),
+        body: None,
+        client_id: None,
+        resulting_client_id: None,
+    }
+}
+
 struct EvaluationOptions {
     update_via_cache: ServiceWorkerUpdateViaCache,
     script_type: ServiceWorkerScriptType,
@@ -2369,6 +2380,42 @@ impl ServiceWorkerManager {
                 .transpose()?;
                 Ok(ServiceWorkerCacheStorageResult::Match(response))
             }
+            ServiceWorkerCacheStorageRequest::MatchAll { cache_name, request } => {
+                let request = request.map(|request| CacheRequest::with_method(&request.url, &request.method));
+                let responses = registration
+                    .cache_storage
+                    .get(&cache_name)
+                    .map(|cache| match &request {
+                        Some(request) => cache.match_all(request),
+                        None => cache
+                            .request_keys()
+                            .into_iter()
+                            .filter_map(|request| cache.match_request(request))
+                            .collect(),
+                    })
+                    .unwrap_or_default()
+                    .into_iter()
+                    .map(service_worker_response_from_cache)
+                    .collect::<Result<Vec<_>, _>>()?;
+                Ok(ServiceWorkerCacheStorageResult::MatchAll(responses))
+            }
+            ServiceWorkerCacheStorageRequest::Keys { cache_name, request } => {
+                let request = request.map(|request| CacheRequest::with_method(&request.url, &request.method));
+                let requests = match registration.cache_storage.get(&cache_name) {
+                    Some(cache) => cache
+                        .request_keys()
+                        .into_iter()
+                        .filter(|key| {
+                            request
+                                .as_ref()
+                                .is_none_or(|request| key.url == request.url && key.method == request.method)
+                        })
+                        .map(service_worker_request_from_cache)
+                        .collect(),
+                    None => Vec::new(),
+                };
+                Ok(ServiceWorkerCacheStorageResult::Keys(requests))
+            }
             ServiceWorkerCacheStorageRequest::Put {
                 cache_name,
                 request,
@@ -4067,7 +4114,11 @@ mod tests {
                    statusText: 'Created',
                    headers: [['x-cache', 'put']]
                  }));
-                 return await cache.match(event.request);
+                 const responses = await cache.matchAll(event.request);
+                 const requests = await cache.keys();
+                 if (responses.length !== 1) throw new Error('matchAll length');
+                 if (requests.length !== 1 || requests[0].method !== 'GET') throw new Error('keys length');
+                 return responses[0];
                })());
              });",
         );

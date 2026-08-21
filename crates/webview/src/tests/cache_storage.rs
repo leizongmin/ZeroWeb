@@ -34,9 +34,16 @@ fn page_cache_api_put_and_match_roundtrip() {
                   })
                 );
                 const matched = await cache.match(new Request('https://cache.example/app/data.txt'));
+                const matchedAll = await cache.matchAll('https://cache.example/app/data.txt');
+                const requests = await cache.keys();
                 const keys = await caches.keys();
                 globalThis.__cacheResult = [
                   String(matched instanceof Response),
+                  String(matchedAll.length),
+                  String(matchedAll[0] instanceof Response),
+                  String(requests.length),
+                  String(requests[0] instanceof Request),
+                  requests[0].method,
                   String(matched.status),
                   String(matched.statusText),
                   String(matched.headers.get('content-type')),
@@ -54,7 +61,7 @@ fn page_cache_api_put_and_match_roundtrip() {
 
     assert_eq!(
         webview.execute_script("globalThis.__cacheResult").unwrap(),
-        "true|201|Created|text/plain|v1|cached text"
+        "true|1|true|1|true|GET|201|Created|text/plain|v1|cached text"
     );
 }
 

@@ -797,6 +797,102 @@ fn ipc_cache_storage_open_and_put_update_browser_owned_registration_cache() {
 }
 
 #[test]
+fn ipc_cache_match_all_and_keys_use_browser_owned_registration_cache() {
+    let mut owner = BrowserServiceWorkerOwner::new();
+    let disposition = owner.begin_request_for_client(
+        TabId(7),
+        false,
+        76,
+        Some("https://example.test/app/page"),
+        "renderer-7:1",
+        register_request("https://example.test/app/page"),
+    );
+    attach_script(&mut owner, disposition, "addEventListener('install', () => {});");
+    let _ = owner.poll();
+    let evaluate = owner
+        .take_host_commands()
+        .into_iter()
+        .find(|outgoing| matches!(outgoing.params.command, ServiceWorkerHostCommand::Evaluate { .. }))
+        .expect("missing renderer evaluation command");
+    let registration_id = evaluate.params.registration_id;
+    owner
+        .normal
+        .put_cached_response(
+            registration_id,
+            "runtime",
+            zero_storage::CacheRequest::new("https://example.test/app/cached"),
+            zero_storage::CacheResponse::ok(b"cached-body".to_vec()).with_header("X-Cache", "hit"),
+        )
+        .unwrap();
+
+    owner.inject_host_event(
+        TabId(7),
+        false,
+        ServiceWorkerHostEventParams {
+            registration_id,
+            event: ServiceWorkerHostEvent::CacheStorageRequested {
+                request_id: 11,
+                request: ServiceWorkerCacheStorageRequestWire::MatchAll {
+                    cache_name: "runtime".into(),
+                    request: Some(ServiceWorkerFetchRequestWire {
+                        url: "https://example.test/app/cached".into(),
+                        method: "GET".into(),
+                        headers: Vec::new(),
+                        body: None,
+                        client_id: None,
+                        resulting_client_id: None,
+                    }),
+                },
+            },
+        },
+    );
+    let _ = owner.poll();
+    let match_all_completion = owner
+        .take_host_commands()
+        .into_iter()
+        .find_map(|outgoing| match outgoing.params.command {
+            ServiceWorkerHostCommand::CompleteCacheStorage {
+                request_id: 11,
+                result: Ok(ServiceWorkerCacheStorageResultWire::MatchAll(responses)),
+            } => Some(responses),
+            _ => None,
+        })
+        .expect("missing Cache.matchAll completion");
+    assert_eq!(match_all_completion.len(), 1);
+    assert_eq!(match_all_completion[0].body, "cached-body");
+
+    owner.inject_host_event(
+        TabId(7),
+        false,
+        ServiceWorkerHostEventParams {
+            registration_id,
+            event: ServiceWorkerHostEvent::CacheStorageRequested {
+                request_id: 12,
+                request: ServiceWorkerCacheStorageRequestWire::Keys {
+                    cache_name: "runtime".into(),
+                    request: None,
+                },
+            },
+        },
+    );
+    let _ = owner.poll();
+    let keys_completion = owner
+        .take_host_commands()
+        .into_iter()
+        .find_map(|outgoing| match outgoing.params.command {
+            ServiceWorkerHostCommand::CompleteCacheStorage {
+                request_id: 12,
+                result: Ok(ServiceWorkerCacheStorageResultWire::Keys(requests)),
+            } => Some(requests),
+            _ => None,
+        })
+        .expect("missing Cache.keys completion");
+    assert_eq!(keys_completion.len(), 1);
+    assert_eq!(keys_completion[0].url, "https://example.test/app/cached");
+    assert_eq!(keys_completion[0].method, "GET");
+}
+
+#[test]
 fn ipc_clients_get_uses_browser_owned_client_registry() {
     let mut owner = BrowserServiceWorkerOwner::new();
     let disposition = owner.begin_request_for_client(
