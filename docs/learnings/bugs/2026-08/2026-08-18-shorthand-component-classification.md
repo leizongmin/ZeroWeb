@@ -392,3 +392,5 @@ Inline item collection must resolve inline margins at the IFC boundary. Text run
 Abspos table recenter has a separate definite-inset gate after table layout. Treating only `Px` offsets as definite skips the CSS auto-margin centering equation for residual real lengths; reuse the table used-length resolver for the gate while keeping `auto`, percentages, and intrinsic sizing as non-definite there.
 
 Inline-block metric reuse can re-enter margin math after the initial IFC item collection. When refreshing reused atomic inline boxes, resolve vertical margins through the same IFC used-value helper as collection; otherwise the second pass can erase residual `em/ch/rem` margin contribution to baseline and line height.
+
+Flex base sizing has a width-before-content used-value boundary. In the `flex-basis:auto` path, a definite `width` must be resolved before falling back to max-content; otherwise residual real widths can be skipped and wide text content incorrectly becomes the flex base.

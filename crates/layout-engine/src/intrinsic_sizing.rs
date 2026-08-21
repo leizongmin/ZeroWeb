@@ -418,10 +418,10 @@ fn flex_item_base_size(
     }
     // 2. width 显式长度
     if let Some(s) = style
-        && let LengthValue::Px(v) = &s.width
+        && let Some(v) = resolve_intrinsic_real_length(&s.width, s)
     {
         let frame = box_node.padding_left + box_node.padding_right + box_node.border_left + box_node.border_right;
-        return (*v as f32) + frame;
+        return v + frame;
     }
     // 2.5 R1015/R1017：aspect-ratio transferred-size——width:auto + aspect_ratio + definite main。
     // main 来源优先级：(a) item 自身 height Px；(b) item min-height Px 地板；(c) R1017 container-
@@ -1221,6 +1221,35 @@ mod tests {
         let w = flex_item_base_size(&box_node, &doc, &styles, None);
 
         assert_eq!(w, 100.0, "flex-basis:5em at 20px should override width:50px");
+    }
+
+    #[test]
+    fn r3637_flex_base_width_resolves_residual_real_length_before_content() {
+        let mut doc = zero_dom::Document::new();
+        let node = doc.create_element("div");
+        let text = doc.create_text_node("XXXXXXXXXX");
+        doc.append_child(node, text).unwrap();
+
+        let mut styles = HashMap::new();
+        let mut style = ComputedStyle::default();
+        style.display = DisplayValue::Block;
+        style.font_family = vec!["Ahem".to_string()];
+        style.font_size = LengthValue::Px(20.0);
+        style.width = LengthValue::Em(5.0);
+        styles.insert(node, style);
+
+        let box_node = LayoutBox {
+            node_id: Some(node),
+            is_block_level: true,
+            ..Default::default()
+        };
+
+        let w = flex_item_base_size(&box_node, &doc, &styles, None);
+
+        assert_eq!(
+            w, 100.0,
+            "flex-basis:auto should use width:5em at 20px before 200px Ahem max-content"
+        );
     }
 
     #[test]
