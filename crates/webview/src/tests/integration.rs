@@ -1683,3 +1683,60 @@ fn test_extract_origin() {
     );
     assert_eq!(WebView::extract_origin("not-a-url"), None);
 }
+
+// ── R145：handle→selector 正置反查 + template clone append 的 identity 链 ──
+
+/// R145：`__zw_selector_for_handle` 回调在 apply 后可解析（testdriver stub 的
+/// selector 延迟解析依赖）。
+#[test]
+fn test_selector_for_handle_callback_r145() {
+    let mut wv = WebView::new(WebViewConfig::default());
+    wv.load_html(
+        "<html><body><script>\
+         var d = document.createElement('div');\
+         document.body.appendChild(d);\
+         </script></body></html>",
+        None,
+    );
+    assert!(wv.run_page_scripts_strict().is_ok());
+    let fwd = wv
+        .execute_script_with_dom(
+            "(function(){var h = __zw_handle_for_selector('div'); return h ? __zw_selector_for_handle(h) : 'no-handle';})()",
+        )
+        .unwrap();
+    assert_eq!(fwd, "div", "handle→selector round-trip resolves");
+}
+
+/// R145：template 内容对 light-DOM 查询不可见（dom crate 遍历排除）+ append clone 后
+/// querySelector 返回 handle-identity 元素（监听器可达）。
+#[test]
+fn test_template_clone_identity_chain_r145() {
+    let mut wv = WebView::new(WebViewConfig::default());
+    wv.load_html(
+        "<html><body><template><p>TEST</p></template><script>\
+         var clone = document.querySelector('template').content.cloneNode(true);\
+         var p = clone.querySelector('p');\
+         globalThis.__gotPointerup = false;\
+         p.addEventListener('pointerup', function() { globalThis.__gotPointerup = true; });\
+         document.body.append(clone);\
+         globalThis.__qSameTurn = (function(){var q = document.querySelector('p'); return q === p;})();\
+         </script></body></html>",
+        None,
+    );
+    assert!(wv.run_page_scripts_strict().is_ok());
+    // 同 turn：pending 回落使 querySelector 返回 handle proxy（identity 相等）。
+    let same = wv.execute_script("String(globalThis.__qSameTurn)").unwrap();
+    assert_eq!(same, "true", "same-turn querySelector identity holds");
+    // 跨 turn（apply 后）：identity 反查保持 + sel 派发经 handle 桥触发监听器。
+    let out = wv
+        .execute_script_with_dom(
+            "(function(){\
+               var q = document.querySelector('p');\
+               if (!q) return 'no-p';\
+               __zw_dispatch_event('p', 'pointerup', null);\
+               return String(globalThis.__gotPointerup);\
+             })()",
+        )
+        .unwrap();
+    assert_eq!(out, "true", "sel-keyed dispatch reaches handle-registered listener");
+}

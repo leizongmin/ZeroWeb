@@ -371,10 +371,15 @@ pub fn plan_html_action(
         // mousedown/mouseup（spec UI Events 指针事件序——真实浏览器 click 前有
         // mousedown/mouseup；listener 内 DOM 变更[伪元素移除/节点移入他文档]发生在
         // click 派发前，click 仍照常派发。WPT click-on-absolute-pseudo /
-        // focus-event-document-move）。
+        // focus-event-document-move）。R145：补 Pointer Events 对偶（spec Pointer
+        // Events 指针事件序 pointerdown → mousedown → pointerup → mouseup → click——
+        // 真实指针同时派发 pointer 与 mouse 事件族；WPT pointer-event-document-move 的
+        // pointerup listener 依赖）。
         (HtmlUserAction::Activate, ActionTargetState::Generic) => Ok(HtmlActionPlan {
             pre_events: vec![
+                PlannedEvent::simple(request.target, "pointerdown", true),
                 PlannedEvent::simple(request.target, "mousedown", true),
+                PlannedEvent::simple(request.target, "pointerup", true),
                 PlannedEvent::simple(request.target, "mouseup", true),
             ],
             target: request.target,
@@ -1145,10 +1150,12 @@ mod tests {
         assert!(plan.prepare.is_empty());
         assert!(plan.commit.is_empty());
         assert!(plan.effects.is_empty());
-        // R144：指针激活序列——pre_events 的 mousedown/mouseup 先于 click。
-        assert_eq!(plan.pre_events.len(), 2);
-        assert_eq!(plan.pre_events[0].event_type, "mousedown");
-        assert_eq!(plan.pre_events[1].event_type, "mouseup");
+        // R144/R145：指针激活序列——pointerdown→mousedown→pointerup→mouseup 先于 click。
+        assert_eq!(plan.pre_events.len(), 4);
+        assert_eq!(plan.pre_events[0].event_type, "pointerdown");
+        assert_eq!(plan.pre_events[1].event_type, "mousedown");
+        assert_eq!(plan.pre_events[2].event_type, "pointerup");
+        assert_eq!(plan.pre_events[3].event_type, "mouseup");
         let event = plan.cancelable_event.as_ref().unwrap();
         assert_eq!(event.target, node(1));
         assert_eq!(event.event_type, "click");

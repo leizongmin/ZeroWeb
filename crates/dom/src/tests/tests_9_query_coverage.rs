@@ -329,3 +329,50 @@ fn test_query_selector_invalid_selector() {
     assert_eq!(doc.query_selector(doc.root(), ""), None);
     assert_eq!(doc.query_selector(doc.root(), "div#"), None);
 }
+
+// ═══════════════════════════════════════════════════════════════════════
+// R145：template contents 对 light-DOM 查询不可见（spec HTML §4.7.4——contents 在
+// inert DocumentFragment，非 template 元素的文档树后代；ZW 解析器暂内联为 template
+// 子，查询遍历等效排除）。
+// https://html.spec.whatwg.org/multipage/scripting.html#the-template-element
+// ═══════════════════════════════════════════════════════════════════════
+
+#[test]
+fn test_query_skips_template_contents_r145() {
+    let doc = parse_html("<html><body><template><p>IN</p></template><p>OUT</p></body></html>");
+    let root = doc.root();
+    // 纯 tag 查询命中 template 外的 p（template 内解析产物不可见）。
+    let hit = doc.query_selector(root, "p").expect("p outside template found");
+    let html = doc.outer_html(hit);
+    assert_eq!(html, "<p>OUT</p>");
+    // querySelectorAll 同语义：仅 1 个（不含 template 内）。
+    assert_eq!(doc.query_selector_all(root, "p").len(), 1);
+    // template 元素自身可命中（opacity 只挡子树）。
+    assert!(doc.query_selector(root, "template").is_some());
+}
+
+#[test]
+fn test_query_explicit_template_addressing_r145() {
+    let doc = parse_html("<html><body><template><p>IN</p></template></body></html>");
+    let root = doc.root();
+    // 显式含 template 段的组合链 → direct-address 例外（shim 的 template.content
+    // 子代理依赖结构路径可解析），template 内 p 可达。
+    let hit = doc
+        .query_selector(root, "body > template > p")
+        .expect("explicit template addressing resolves");
+    assert_eq!(doc.text_content(hit).as_deref(), Some("IN"));
+    // 列表形态同理。
+    let hits = doc.query_selector_all(root, "template p");
+    assert_eq!(hits.len(), 1);
+}
+
+#[test]
+fn test_query_skips_nested_template_contents_r145() {
+    let doc = parse_html("<html><body><template><div><span>X</span></div></template><span>Y</span></body></html>");
+    let root = doc.root();
+    // 嵌套 template 子树整体不可见。
+    let hit = doc.query_selector(root, "span").expect("span outside template");
+    assert_eq!(doc.text_content(hit).as_deref(), Some("Y"));
+    // div（只存在于 template 内）light-DOM 查询不可见。
+    assert!(doc.query_selector(root, "div").is_none());
+}

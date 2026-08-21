@@ -958,13 +958,18 @@ impl Document {
                 .iter()
                 .filter_map(|p| crate::query::parse_selector_chain(p))
                 .collect();
-            return self.find_first_matching_chains(root, &chains);
+            // R145：任一段显式寻址 template → direct-address 例外（不跳过 template 子树）。
+            let skip = !chains.iter().any(Self::chain_addresses_template);
+            return self.find_first_matching_chains_opt(root, &chains, skip);
         }
         let chain = crate::query::parse_selector_chain(crate::trim_ascii_ws(selector))?;
         if chain.parts.len() == 1 {
-            return self.find_first_matching(root, &chain.parts[0]);
+            return self.find_first_matching_opt(root, &chain.parts[0], true);
         }
-        self.find_first_matching_chain(root, &chain)
+        // R145：单 compound 不可能是 template 直下寻址（无组合器），恒跳过；组合链按
+        // 是否显式含 template 段决定。
+        let skip = !Self::chain_addresses_template(&chain);
+        self.find_first_matching_chain_opt(root, &chain, skip)
     }
 
     /// 在指定节点的子树中查找所有匹配选择器的元素。
@@ -979,7 +984,9 @@ impl Document {
                 .filter_map(|p| crate::query::parse_selector_chain(p))
                 .collect();
             let mut result = Vec::new();
-            self.collect_matching_chains(root, &chains, &mut result);
+            // R145：同 query_selector 的 template direct-address 例外。
+            let skip = !chains.iter().any(Self::chain_addresses_template);
+            self.collect_matching_chains_opt(root, &chains, &mut result, skip);
             return result;
         }
         let chain = match crate::query::parse_selector_chain(crate::trim_ascii_ws(selector)) {
@@ -988,11 +995,14 @@ impl Document {
         };
         if chain.parts.len() == 1 {
             let mut result = Vec::new();
-            self.collect_matching(root, &chain.parts[0], &mut result);
+            self.collect_matching_opt(root, &chain.parts[0], &mut result, true);
             return result;
         }
+        // R145：组合链候选收集按是否显式含 template 段决定跳过策略（chain 过滤本体
+        // 逐候选判定，无需跳过语义）。
+        let skip = !Self::chain_addresses_template(&chain);
         let mut candidates = Vec::new();
-        self.collect_matching(root, &chain.parts[chain.parts.len() - 1], &mut candidates);
+        self.collect_matching_opt(root, &chain.parts[chain.parts.len() - 1], &mut candidates, skip);
         candidates
             .into_iter()
             .filter(|id| self.node_matches_selector_chain(*id, &chain))
@@ -1557,24 +1567,67 @@ impl Document {
         self.pending_mutations.push(record);
     }
 
+    /// js-dom M4 R145：节点子树是否对 light-DOM 查询**不可见**。
+    ///
+    /// `<template>` 的子按 spec（HTML §4.7.4 the-template-element）放 inert
+    /// DocumentFragment（template contents），**不是 template 元素的文档树后代**——
+    /// `querySelector(All)` 不进入 template 子树（template 元素自身可命中）。ZW 解析器
+    /// 暂把 contents 内联为 template 子（`get_template_contents` 返目标自身，见
+    /// parser.rs），故在查询遍历处等效排除。WPT dom/events/pointer-event-document-move：
+    /// `document.querySelector('p')` 误命中 template 内解析产物 `<p>` 而非 body 上
+    /// append 的真 `<p>`（文档序 template 在前），click 打到错误节点。
+    ///
+    /// **例外**：`enter_templates` 路径（选择器显式含 `template` 段——结构路径
+    /// `body > template > p:nth-child(1)` 等 direct-address 语义）不跳过——shim 的
+    /// `template.content` 子代理（`__zw_child_nodes` 生成的 sel）依赖该路径可解析。
+    /// https://html.spec.whatwg.org/multipage/scripting.html#the-template-element
+    fn is_query_opaque(&self, id: NodeId) -> bool {
+        matches!(
+            self.nodes.get(id),
+            Some(NodeData { kind: NodeKind::Element(e), .. }) if e.local_name() == "template"
+        )
+    }
+
+    /// 选择器链是否显式寻址 `template` 段（任一部分 tag 为 template）——direct-address
+    /// 例外开关（见 [`Self::is_query_opaque`] 文档）。
+    fn chain_addresses_template(chain: &crate::query::SelectorChain) -> bool {
+        chain
+            .parts
+            .iter()
+            .any(|p| p.tag.as_deref().is_some_and(|t| t.eq_ignore_ascii_case("template")))
+    }
+
     /// 查找第一个匹配的节点。
-    fn find_first_matching(&self, id: NodeId, selector: &crate::query::SimpleSelector) -> Option<NodeId> {
+    fn find_first_matching_opt(
+        &self,
+        id: NodeId,
+        selector: &crate::query::SimpleSelector,
+        skip_templates: bool,
+    ) -> Option<NodeId> {
         let node_data = self.nodes.get(id)?;
         if let NodeKind::Element(_) = &node_data.kind
             && self.element_matches_selector(id, selector)
         {
             return Some(id);
         }
+        if skip_templates && self.is_query_opaque(id) {
+            return None;
+        }
         let children: Vec<NodeId> = node_data.children.to_vec();
         for child in children {
-            if let Some(found) = self.find_first_matching(child, selector) {
+            if let Some(found) = self.find_first_matching_opt(child, selector, skip_templates) {
                 return Some(found);
             }
         }
         None
     }
 
-    fn find_first_matching_chain(&self, id: NodeId, chain: &crate::query::SelectorChain) -> Option<NodeId> {
+    fn find_first_matching_chain_opt(
+        &self,
+        id: NodeId,
+        chain: &crate::query::SelectorChain,
+        skip_templates: bool,
+    ) -> Option<NodeId> {
         let node_data = self.nodes.get(id)?;
         if let NodeKind::Element(_) = &node_data.kind
             && chain.parts.last().is_some_and(|s| self.element_matches_selector(id, s))
@@ -1582,9 +1635,12 @@ impl Document {
         {
             return Some(id);
         }
+        if skip_templates && self.is_query_opaque(id) {
+            return None;
+        }
         let children: Vec<NodeId> = node_data.children.to_vec();
         for child in children {
-            if let Some(found) = self.find_first_matching_chain(child, chain) {
+            if let Some(found) = self.find_first_matching_chain_opt(child, chain, skip_templates) {
                 return Some(found);
             }
         }
@@ -1592,16 +1648,24 @@ impl Document {
     }
 
     /// 选择器列表：单次 DFS 文档序，首个命中任一段（R57 FV M3——逗号列表支持）。
-    fn find_first_matching_chains(&self, id: NodeId, chains: &[crate::query::SelectorChain]) -> Option<NodeId> {
+    fn find_first_matching_chains_opt(
+        &self,
+        id: NodeId,
+        chains: &[crate::query::SelectorChain],
+        skip_templates: bool,
+    ) -> Option<NodeId> {
         let node_data = self.nodes.get(id)?;
         if let NodeKind::Element(_) = &node_data.kind
             && chains.iter().any(|c| self.node_matches_selector_chain(id, c))
         {
             return Some(id);
         }
+        if skip_templates && self.is_query_opaque(id) {
+            return None;
+        }
         let children: Vec<NodeId> = node_data.children.to_vec();
         for child in children {
-            if let Some(found) = self.find_first_matching_chains(child, chains) {
+            if let Some(found) = self.find_first_matching_chains_opt(child, chains, skip_templates) {
                 return Some(found);
             }
         }
@@ -1928,7 +1992,13 @@ impl Document {
     }
 
     /// 收集所有匹配的节点。
-    fn collect_matching(&self, id: NodeId, selector: &crate::query::SimpleSelector, result: &mut Vec<NodeId>) {
+    fn collect_matching_opt(
+        &self,
+        id: NodeId,
+        selector: &crate::query::SimpleSelector,
+        result: &mut Vec<NodeId>,
+        skip_templates: bool,
+    ) {
         let node_data = match self.nodes.get(id) {
             Some(n) => n,
             None => return,
@@ -1939,15 +2009,24 @@ impl Document {
         {
             result.push(id);
         }
+        if skip_templates && self.is_query_opaque(id) {
+            return;
+        }
 
         let children: Vec<NodeId> = node_data.children.to_vec();
         for child in children {
-            self.collect_matching(child, selector, result);
+            self.collect_matching_opt(child, selector, result, skip_templates);
         }
     }
 
     /// 选择器列表：单次 DFS 文档序收集命中任一段的节点（天然去重，R57 FV M3）。
-    fn collect_matching_chains(&self, id: NodeId, chains: &[crate::query::SelectorChain], result: &mut Vec<NodeId>) {
+    fn collect_matching_chains_opt(
+        &self,
+        id: NodeId,
+        chains: &[crate::query::SelectorChain],
+        result: &mut Vec<NodeId>,
+        skip_templates: bool,
+    ) {
         let node_data = match self.nodes.get(id) {
             Some(n) => n,
             None => return,
@@ -1958,10 +2037,13 @@ impl Document {
         {
             result.push(id);
         }
+        if skip_templates && self.is_query_opaque(id) {
+            return;
+        }
 
         let children: Vec<NodeId> = node_data.children.to_vec();
         for child in children {
-            self.collect_matching_chains(child, chains, result);
+            self.collect_matching_chains_opt(child, chains, result, skip_templates);
         }
     }
 

@@ -496,15 +496,50 @@
         // fragment 视图——childNodes 直读 `_handleChildren[handle]`（innerHTML= setter 已存
         // `_zwFragmentAdded` 解析树，与 R83 childNodes 融合视图同源）；firstChild/lastChild
         // 派生；nodeType=11。
-        if (prop === 'content' && handle && _realTag(sel, handle) === 'TEMPLATE') {
+        if (prop === 'content' && _realTag(sel, handle) === 'TEMPLATE') {
+          // R145（js-dom M4）：sel-based 模板（静态 HTML 解析产物）content 同样可读——
+          // 子经 `_childNodeList(sel)`（host `__zw_child_nodes` JSON 的 parsed 子树，
+          // 与 R83 融合视图同源）。WPT pointer-event-document-move：
+          // `document.querySelector('template').content.cloneNode(true)`（sel 模板旧
+          // 返 undefined → "Cannot read properties of undefined"）。
+          var _r145SelKids = function () {
+            if (handle) return _handleChildren[handle] || [];
+            return _childNodeList(sel, null);
+          };
+          // R145：fragment 视图补 cloneNode（deep）——Node.prototype 泛型的 fragment 分支
+          // 递归 clone 子（每子 proxy/视图自带 cloneNode）。WPT 同用例的
+          // `.content.cloneNode(true).querySelector('p')`。
+          // R145：sel-based 视图补 cloneNode（deep）——Node.prototype 泛型的 fragment 分支
+          // 递归 clone 子（每子 proxy/视图自带 cloneNode）。WPT 同用例的
+          // `.content.cloneNode(true).querySelector('p')`。**仅 sel 形态**——handle 形态
+          // （lit-html：createElement('template') + innerHTML=）保持 R95 原样（无 own
+          // cloneNode），走 Node.prototype 泛型克隆（registry 子全 mutation 语义；own
+          // 版本曾遮蔽泛型致 lit 首渲染链断，e2e_lit_library 回归）。
           var _tplContent = {
             nodeType: 11,
             nodeName: '#document-fragment',
-            get childNodes() { return _handleChildren[handle] || []; },
-            get firstChild() { var k = _handleChildren[handle] || []; return k.length ? k[0] : null; },
-            get lastChild() { var k = _handleChildren[handle] || []; return k.length ? k[k.length - 1] : null; },
-            hasChildNodes: function () { return (_handleChildren[handle] || []).length > 0; },
+            get childNodes() { return _r145SelKids(); },
+            get firstChild() { var k = _r145SelKids(); return k.length ? k[0] : null; },
+            get lastChild() { var k = _r145SelKids(); return k.length ? k[k.length - 1] : null; },
+            hasChildNodes: function () { return _r145SelKids().length > 0; },
           };
+          if (!handle) {
+            _tplContent.cloneNode = function (deep) {
+              // R145：内联 fragment 克隆（不经 Node.prototype 泛型——泛型的 own-property
+              // 委托守卫会命中本 own cloneNode 再委托回来 → 无限递归）。建真 fragment
+              // handle + 递归 clone 子。
+              var _r145F = globalThis.document.createDocumentFragment();
+              if (deep) {
+                var _r145K = _r145SelKids();
+                for (var _r145i = 0; _r145i < _r145K.length; _r145i++) {
+                  var _r145c = _r145K[_r145i];
+                  if (!_r145c || typeof _r145c.cloneNode !== 'function') continue;
+                  try { _r145F.appendChild(_r145c.cloneNode(true)); } catch (_e145c) {}
+                }
+              }
+              return _r145F;
+            };
+          }
           return _tplContent;
         }
         if (prop === 'innerHTML') {

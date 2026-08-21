@@ -1404,6 +1404,21 @@
         var arr = _zwPendingAddedById.get(want);
         if (arr && arr.length) return arr[arr.length - 1];
       }
+      // R145（js-dom M4）：纯 tag 形式的 pending 回落——`document.querySelector('p')` 在
+      // 同 turn append 后（host 快照未含）返回真节点而非 null。spec 查询同步反映 DOM 变更；
+      // WPT pointer-event-document-move 的 `test_driver.click(document.querySelector('p'))`
+      // 在 await 前求值（append 同 turn），null → "no stable selector"。
+      var tagM = /^[A-Za-z][\w-]*$/.exec(String(sel || ''));
+      if (tagM && typeof _zwPendingAdded !== 'undefined' && _zwPendingAdded.length) {
+        var wantTag = String(sel).toUpperCase();
+        for (var _r145p = 0; _r145p < _zwPendingAdded.length; _r145p++) {
+          var _r145n = _zwPendingAdded[_r145p];
+          if (!_r145n || _r145n.nodeType !== 1) continue;
+          try {
+            if (String(_r145n.tagName) === wantTag) return _r145n;
+          } catch (_e145p) {}
+        }
+      }
       return null;
     },
     // R34xx：id 含特殊字符（点号等——canvas WPT 的 id="green.png"）时 '#'+id 选择器
@@ -3517,7 +3532,17 @@
     } else {
       ev = _makeEvent(type, { bubbles: true, cancelable: true });
     }
-    var ok = _dispatchWithBubble(_elKey(sel, null), sel, null, ev);
+    // R145（js-dom M4）：sel→handle identity 桥——listener 注册在 handle proxy 的
+    // `_listenerStore['@'+handle]`（createElement/cloneNode 产物经 addEventListener），
+    // sel-key 派发查不到（WPT pointer-event-document-move：模板 clone 的 p 上
+    // pointerup listener，host 经 'p' 派发 miss）。正置反查命中 → 以 handle 形态派发
+    // （`_elKey(handle)` 锚定 listener store；未命中 → 原 sel 路径，零回归）。
+    var r145Handle = '';
+    try {
+      if (typeof __zw_handle_for_selector === 'function') r145Handle = __zw_handle_for_selector(sel) || '';
+    } catch (_e145h) {}
+    var r145Key = r145Handle ? _elKey(null, r145Handle) : _elKey(sel, null);
+    var ok = _dispatchWithBubble(r145Key, r145Handle ? null : sel, r145Handle || null, ev);
     return ok ? 'ok' : 'prevented';
   };
 })();

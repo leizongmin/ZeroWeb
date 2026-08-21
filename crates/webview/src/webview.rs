@@ -337,6 +337,10 @@ pub struct WebView {
     /// `HandleSelectorMap` 语义）。R77 验证的反查三件套形态，反查限定在 query
     /// 返回点（不做全局 `_wrapSelector` 前置——R77 教训 #7）。
     selector_handle_map: std::sync::Arc<std::sync::Mutex<std::collections::HashMap<String, String>>>,
+    /// js-dom M4 R145：[`Self::selector_handle_map`] 的**正置镜像**（handle→selector）。
+    /// merge/清空与倒置表同步维护——`__zw_selector_for_handle` 回调（testdriver stub
+    /// 对 handle-identity 元素解析稳定选择器）读取。
+    handle_selector_forward: std::sync::Arc<std::sync::Mutex<std::collections::HashMap<String, String>>>,
     /// js-dom M3 R100：**共享 append-only** mutations 队列（页面生命周期内单实例）。
     ///
     /// 所有 `register_dom_callbacks` 调用（run_page_scripts / execute_script_with_dom /
@@ -479,6 +483,7 @@ impl WebView {
             pipeline,
             canvas_registry,
             selector_handle_map: std::sync::Arc::new(std::sync::Mutex::new(std::collections::HashMap::new())),
+            handle_selector_forward: std::sync::Arc::new(std::sync::Mutex::new(std::collections::HashMap::new())),
             shared_mutations: std::sync::Arc::new(std::sync::Mutex::new(Vec::new())),
             applied_mutations: 0,
             http_client,
@@ -655,6 +660,11 @@ impl WebView {
         //（镜像 rect_bridge HandleSelectorMap 的导航清理语义）+ engine 正置表 +
         // 共享 mutations 队列/游标/历史。
         self.selector_handle_map
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .clear();
+        // R145：正置镜像同批清空。
+        self.handle_selector_forward
             .lock()
             .unwrap_or_else(|e| e.into_inner())
             .clear();
@@ -1779,6 +1789,7 @@ impl WebView {
             // 反查「本元素是否是 createElement 建立的 handle 节点」，命中则包装回原
             // handle proxy（identity 统一，见 WebView.selector_handle_map 文档）。
             Self::register_identity_bridge_callback(&self.selector_handle_map, &mut **sandbox);
+            Self::register_forward_identity_bridge_callback(&self.handle_selector_forward, &mut **sandbox);
         }
 
         let result = self.execute_script(&full_script)?;
@@ -1843,6 +1854,7 @@ impl WebView {
         zero_engine::js_dom_bridge::publish_live_query_doc(self.pipeline.cached_doc_shared());
         register_dom_callbacks(&mut **sandbox, &mutations, &dom_html, &page_url, &self.canvas_registry);
         Self::register_identity_bridge_callback(&self.selector_handle_map, &mut **sandbox);
+        Self::register_forward_identity_bridge_callback(&self.handle_selector_forward, &mut **sandbox);
 
         // 原生 DOM 绑定已在 ensure_sandbox 后经 `install_native_dom_bindings` 安装（见上）。
 
@@ -2236,6 +2248,7 @@ impl WebView {
         zero_engine::js_dom_bridge::publish_live_query_doc(self.pipeline.cached_doc_shared());
         register_dom_callbacks(&mut **sandbox, &mutations, &dom_html, &page_url, &self.canvas_registry);
         Self::register_identity_bridge_callback(&self.selector_handle_map, &mut **sandbox);
+        Self::register_forward_identity_bridge_callback(&self.handle_selector_forward, &mut **sandbox);
 
         // 确保 shim 已注入（无页面脚本时 run_page_scripts 提前返回，shim 未初始化）
         // R3295：改用共享 `ensure_js_shim` helper（与 `execute_script` 同款幂等语义）。
@@ -2276,6 +2289,8 @@ impl WebView {
     /// 见 `selector_handle_map` 文档）。三个注册路径（run_page_scripts /
     /// execute_script_with_dom / dispatch_event）统一调用。收 map Arc（调用方先 clone，
     /// 避免与 js_sandbox 可变借用冲突）。
+    /// js-dom M4 R145：追加正置（handle→selector）回调 `__zw_selector_for_handle`——
+    /// testdriver stub 对 handle-identity 元素解析稳定选择器。
     fn register_identity_bridge_callback(
         sel_map: &std::sync::Arc<std::sync::Mutex<std::collections::HashMap<String, String>>>,
         sandbox: &mut dyn zero_script_sandbox::Sandbox,
@@ -2289,6 +2304,29 @@ impl WebView {
                     .lock()
                     .unwrap_or_else(|e| e.into_inner())
                     .get(sel)
+                    .cloned()
+                    .unwrap_or_default()
+            }),
+        );
+    }
+
+    /// js-dom M4 R145：注册正置 handle→selector 反查回调（与
+    /// [`Self::register_identity_bridge_callback`] 的倒置方向互补——同一 map 的镜像）。
+    /// testdriver stub 的 `selectorFor(element)` 对 handle-identity 元素
+    /// （`__zwHandle` 有值——createElement/cloneNode 产物）优先经此解析稳定选择器。
+    fn register_forward_identity_bridge_callback(
+        fwd_map: &std::sync::Arc<std::sync::Mutex<std::collections::HashMap<String, String>>>,
+        sandbox: &mut dyn zero_script_sandbox::Sandbox,
+    ) {
+        let fwd_map = fwd_map.clone();
+        sandbox.register_callback(
+            "__zw_selector_for_handle",
+            Box::new(move |args: &[String]| -> String {
+                let handle = args.first().map(String::as_str).unwrap_or("");
+                fwd_map
+                    .lock()
+                    .unwrap_or_else(|e| e.into_inner())
+                    .get(handle)
                     .cloned()
                     .unwrap_or_default()
             }),
@@ -2345,15 +2383,18 @@ impl WebView {
     /// （`publish_forward_handle_map`——host 回调如 `__zw_get_tag_handle` 的跨
     /// execute 回落查询源）。三个 apply 路径（run_page_scripts / dispatch_event /
     /// execute_script_with_dom）统一走此 helper，保证任一路径建立的 handle 后续
-    /// 可锚定。
+    /// 可锚定。R145：正置镜像（`handle_selector_forward`）同批 merge——
+    /// `__zw_selector_for_handle` 回调的读取源。
     fn merge_handle_selectors(&mut self, handles: &std::collections::HashMap<String, String>) {
         if handles.is_empty() {
             return;
         }
+        let mut fwd = self.handle_selector_forward.lock().unwrap_or_else(|e| e.into_inner());
         let forward = {
             let mut sel_map = self.selector_handle_map.lock().unwrap_or_else(|e| e.into_inner());
             for (handle, sel) in handles {
                 sel_map.insert(sel.clone(), handle.clone());
+                fwd.insert(handle.clone(), sel.clone());
             }
             sel_map
                 .iter()

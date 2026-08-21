@@ -2343,10 +2343,28 @@ fn take_probe(webview: &mut WebView) -> Result<HarnessProbe, String> {
 }
 
 fn apply_testdriver_command(webview: &mut WebView, command: &TestdriverCommand) -> Option<String> {
-    let Some(selector) = command.selector.as_deref() else {
+    // R145：selector 延迟解析——enqueue 时 mutation 未 apply（正置表空），出队时
+    //（跨 turn）经 stub 的 `__zw_td_selector` 现场解析（apply 已 merge handle→selector）。
+    // 返回值为裸串（"p"）或字面 "null"/空（无稳定选择器）。
+    let selector = match command.selector.as_deref() {
+        Some(sel) if !sel.is_empty() => Some(sel.to_string()),
+        _ => webview
+            .execute_script(&format!(
+                "globalThis.__zw_td_selector ? globalThis.__zw_td_selector({}) : null",
+                command.id
+            ))
+            .ok()
+            .map(|value| value.trim().to_string())
+            .filter(|value| !value.is_empty() && value != "null" && value != "undefined"),
+    };
+    let Some(selector) = selector else {
         return Some("testdriver target has no stable selector".into());
     };
-    let target = match webview.page_node_ref_for_selector(selector) {
+    let selector = selector.trim().to_string();
+    if selector.is_empty() || selector == "null" {
+        return Some("testdriver target has no stable selector".into());
+    }
+    let target = match webview.page_node_ref_for_selector(&selector) {
         Some(target) => target,
         None => return Some(format!("testdriver target not found: {selector}")),
     };
@@ -2359,7 +2377,7 @@ fn apply_testdriver_command(webview: &mut WebView, command: &TestdriverCommand) 
             // focus 失败不阻断 click（不可聚焦目标真实浏览器也派发 click）。
             let focus_script = format!(
                 "(function(){{var el=document.querySelector({sel});try{{if(el&&el.focus)el.focus();}}catch(_e){{}}}})();",
-                sel = serde_json::to_string(selector).unwrap_or_else(|_| "null".into())
+                sel = serde_json::to_string(&selector).unwrap_or_else(|_| "null".into())
             );
             let _ = webview.execute_script(&focus_script);
             dispatch_action(webview, target, HtmlUserAction::Activate)
@@ -2415,9 +2433,21 @@ const TESTDRIVER_STUB: &str = r#"<script>
 (function() {
   var nextId = 1;
   var pending = {};
+  var queuedElements = {};
   globalThis.__zw_td_queue = [];
   function selectorFor(element) {
     if (!element) return null;
+    // R145：handle-identity 元素（createElement/cloneNode 产物，如 WPT
+    // pointer-event-document-move 的 `template.content.cloneNode` append 后的节点）
+    // ——经正置反查表直接解析稳定选择器（tag/attr/nth 启发式对 handle proxy
+    // querySelectorAll 命中的是文档内同 tag 的**其他**元素，锚错节点）。
+    var handle = element.__zwHandle;
+    if (handle && typeof __zw_selector_for_handle === 'function') {
+      try {
+        var byHandle = __zw_selector_for_handle(String(handle));
+        if (byHandle) return byHandle;
+      } catch (_eH) {}
+    }
     var id = element.getAttribute && element.getAttribute('id');
     if (id) return '#' + id;
     var tag = String(element.tagName || '').toLowerCase();
@@ -2465,16 +2495,28 @@ const TESTDRIVER_STUB: &str = r#"<script>
     return new Promise(function(resolve, reject) {
       var id = nextId++;
       pending[id] = { resolve: resolve, reject: reject };
+      // R145：selector 延迟解析——enqueue 时（同步 turn）mutation 尚未 apply，
+      // handle→selector 正置表空（createElement/cloneNode 产物的 append 在 turn 末才
+      // 落 host）。存元素引用，宿主出队时（跨 turn，apply 已完成）经
+      // `__zw_td_selector(id)` 现场解析（正置表已 merge）。
+      queuedElements[id] = element;
       globalThis.__zw_td_queue.push({
-        id: id, operation: operation, selector: selectorFor(element),
+        id: id, operation: operation, selector: null,
         text: text == null ? null : String(text)
       });
     });
   }
+  globalThis.__zw_td_selector = function(id) {
+    var element = queuedElements[id];
+    if (!element) return null;
+    return selectorFor(element);
+  };
+  globalThis.__zw_td_forget = function(id) { delete queuedElements[id]; };
   globalThis.__zw_td_resolve = function(id, error) {
     var entry = pending[id];
     if (!entry) return;
     delete pending[id];
+    delete queuedElements[id];
     if (error == null) entry.resolve();
     else entry.reject(new Error(String(error)));
   };
