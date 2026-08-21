@@ -256,6 +256,11 @@ fn test_property_supported_extended_visual_and_layout_properties() {
     assert!(is_property_supported("filter", "blur(2px) brightness(120%)"));
     assert!(is_property_supported("backdrop-filter", "none"));
     assert!(is_property_supported("contain", "layout paint"));
+    assert!(is_property_supported("contain-intrinsic-size", "auto 100px 50px"));
+    assert!(is_property_supported("contain-intrinsic-width", "none"));
+    assert!(is_property_supported("contain-intrinsic-height", "80px"));
+    assert!(is_property_supported("contain-intrinsic-inline-size", "auto 10em"));
+    assert!(is_property_supported("contain-intrinsic-block-size", "auto none"));
     assert!(is_property_supported("page-break-before", "left"));
     assert!(is_property_supported("page-break-inside", "avoid"));
     assert!(is_property_supported("box-decoration-break", "clone"));
@@ -296,6 +301,12 @@ fn test_property_supported_extended_visual_and_layout_properties() {
     assert!(!is_property_supported("object-position", "left top extra"));
     assert!(!is_property_supported("filter", "blur(-1px)"));
     assert!(!is_property_supported("contain", "layout sparkle"));
+    assert!(!is_property_supported("contain-intrinsic-size", "100px bogus"));
+    assert!(!is_property_supported("contain-intrinsic-size", "auto"));
+    assert!(!is_property_supported("contain-intrinsic-width", "-1px"));
+    assert!(!is_property_supported("contain-intrinsic-height", "10%"));
+    assert!(!is_property_supported("contain-intrinsic-inline-size", "auto auto"));
+    assert!(!is_property_supported("contain-intrinsic-block-size", "infpx"));
     assert!(!is_property_supported("page-break-inside", "left"));
     assert!(!is_property_supported("box-decoration-break", "split"));
     assert!(!is_property_supported("image-rendering", "nearest"));

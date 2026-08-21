@@ -53,6 +53,12 @@ pub(super) fn extended_visual_or_layout_property_supported(property: &str, value
         "animation-play-state" => animation_play_state_list_supported(value),
         // https://drafts.csswg.org/css-contain-2/#contain-property
         "contain" => values::parse_contain(value).is_some(),
+        // https://drafts.csswg.org/css-sizing-4/#intrinsic-size-override
+        "contain-intrinsic-size" => contain_intrinsic_size_supported(value),
+        "contain-intrinsic-width"
+        | "contain-intrinsic-height"
+        | "contain-intrinsic-inline-size"
+        | "contain-intrinsic-block-size" => contain_intrinsic_longhand_supported(value),
         // https://www.w3.org/TR/css-position-3/#propdef-z-index
         "z-index" => crate::property::parse_z_index(value).is_some(),
         // https://drafts.csswg.org/css-sizing-4/#aspect-ratio
@@ -122,6 +128,65 @@ fn columns_supported(value: &str) -> bool {
         }
         _ => false,
     }
+}
+
+fn contain_intrinsic_size_supported(value: &str) -> bool {
+    let value = value.trim();
+    if value.eq_ignore_ascii_case("none") {
+        return true;
+    }
+    let mut lengths = 0;
+    for token in value.split_whitespace() {
+        if token.eq_ignore_ascii_case("auto") {
+            continue;
+        }
+        if !contain_intrinsic_length_supported(token) {
+            return false;
+        }
+        lengths += 1;
+    }
+    matches!(lengths, 1 | 2)
+}
+
+fn contain_intrinsic_longhand_supported(value: &str) -> bool {
+    let value = value.trim();
+    let value = if value.len() >= 5
+        && value.as_bytes()[..4].eq_ignore_ascii_case(b"auto")
+        && value.as_bytes()[4].is_ascii_whitespace()
+    {
+        value[4..].trim()
+    } else {
+        value
+    };
+    value.eq_ignore_ascii_case("none") || contain_intrinsic_length_supported(value)
+}
+
+fn contain_intrinsic_length_supported(value: &str) -> bool {
+    if matches!(
+        value.trim().to_ascii_lowercase().as_str(),
+        "thin" | "medium" | "thick" | "auto" | "min-content" | "max-content" | "fit-content"
+    ) {
+        return false;
+    }
+    matches!(
+        values::parse_length(value),
+        Some(values::LengthValue::Px(v))
+            | Some(values::LengthValue::Em(v))
+            | Some(values::LengthValue::Ex(v))
+            | Some(values::LengthValue::Rex(v))
+            | Some(values::LengthValue::Cap(v))
+            | Some(values::LengthValue::Rcap(v))
+            | Some(values::LengthValue::Rem(v))
+            | Some(values::LengthValue::Vh(v))
+            | Some(values::LengthValue::Vw(v))
+            | Some(values::LengthValue::Vmin(v))
+            | Some(values::LengthValue::Vmax(v))
+            | Some(values::LengthValue::Ch(v))
+            | Some(values::LengthValue::Rch(v))
+            | Some(values::LengthValue::Ic(v))
+            | Some(values::LengthValue::Ric(v))
+            if v.is_finite() && v >= 0.0
+    )
 }
 
 fn origin_pair_supported(value: &str) -> bool {
