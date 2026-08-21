@@ -1,9 +1,10 @@
-//! 存储管理器 — 管理多个源的 localStorage、sessionStorage 与 IndexedDB。
+//! 存储管理器 — 管理多个源的 localStorage、sessionStorage、IndexedDB 与 Cache API。
 
 use std::collections::HashMap;
 use std::path::PathBuf;
 
 use crate::StorageError;
+use crate::cache_api::CacheStorage;
 use crate::indexed_db::persistence::IndexedDbPersistence;
 use crate::indexed_db::{IdbDatabase, IdbTransaction};
 use crate::local_storage::{StorageType, WebStorage};
@@ -53,7 +54,7 @@ pub struct IndexedDbInfo {
     pub version: u64,
 }
 
-/// 存储管理器 — 管理多个源的 localStorage、sessionStorage 与 IndexedDB。
+/// 存储管理器 — 管理多个源的 localStorage、sessionStorage、IndexedDB 与 Cache API。
 pub struct StorageManager {
     /// localStorage 实例（按 origin 分组）。
     local_stores: HashMap<String, WebStorage>,
@@ -61,6 +62,8 @@ pub struct StorageManager {
     session_stores: HashMap<String, WebStorage>,
     /// IndexedDB 数据库（按 origin、数据库名分组）。
     indexed_databases: HashMap<String, HashMap<String, IdbDatabase>>,
+    /// CacheStorage 实例（按 origin 分组）。
+    cache_storages: HashMap<String, CacheStorage>,
     /// IndexedDB 持久化 owner；`None` 表示纯内存 manager。
     indexed_db_persistence: Option<IndexedDbPersistence>,
     /// 每个源的最大容量。
@@ -79,6 +82,7 @@ impl StorageManager {
             local_stores: HashMap::new(),
             session_stores: HashMap::new(),
             indexed_databases: HashMap::new(),
+            cache_storages: HashMap::new(),
             indexed_db_persistence: None,
             default_max_size,
         }
@@ -91,6 +95,7 @@ impl StorageManager {
             local_stores: HashMap::new(),
             session_stores: HashMap::new(),
             indexed_databases,
+            cache_storages: HashMap::new(),
             indexed_db_persistence: Some(persistence),
             default_max_size: DEFAULT_MAX_SIZE,
         })
@@ -153,6 +158,18 @@ impl StorageManager {
     /// 获取已存在的指定源 IndexedDB 数据库的可变引用。
     pub fn indexed_db_mut(&mut self, origin: &str, name: &str) -> Option<&mut IdbDatabase> {
         self.indexed_databases.get_mut(origin)?.get_mut(name)
+    }
+
+    /// 获取指定源的 CacheStorage（如不存在则创建）。
+    ///
+    /// https://w3c.github.io/ServiceWorker/#cache-storage
+    pub fn cache_storage(&mut self, origin: &str) -> &mut CacheStorage {
+        self.cache_storages.entry(origin.to_string()).or_default()
+    }
+
+    /// 获取已存在的指定源 CacheStorage。
+    pub fn cache_storage_ref(&self, origin: &str) -> Option<&CacheStorage> {
+        self.cache_storages.get(origin)
     }
 
     /// 在候选副本上修改数据库；持久化成功后才替换 live state。
@@ -265,6 +282,7 @@ impl StorageManager {
             store.clear();
         }
         self.indexed_databases.remove(origin);
+        self.cache_storages.remove(origin);
     }
 
     /// 清除所有 localStorage。
@@ -284,6 +302,11 @@ impl StorageManager {
     /// 删除所有源的 IndexedDB 数据库。
     pub fn clear_all_indexed_db(&mut self) {
         self.indexed_databases.clear();
+    }
+
+    /// 删除所有源的 CacheStorage 数据。
+    pub fn clear_all_cache_storage(&mut self) {
+        self.cache_storages.clear();
     }
 }
 
@@ -329,13 +352,31 @@ mod tests {
         let mut manager = StorageManager::new();
         manager.local_storage("https://a.com").set("key", "value").unwrap();
         manager.session_storage("https://a.com").set("sk", "sv").unwrap();
+        manager
+            .cache_storage("https://a.com")
+            .open("v1")
+            .put(
+                crate::cache_api::CacheRequest::new("https://a.com/app.js"),
+                crate::cache_api::CacheResponse::ok(b"a".to_vec()),
+            )
+            .unwrap();
         manager.local_storage("https://b.com").set("key", "value").unwrap();
+        manager
+            .cache_storage("https://b.com")
+            .open("v1")
+            .put(
+                crate::cache_api::CacheRequest::new("https://b.com/app.js"),
+                crate::cache_api::CacheResponse::ok(b"b".to_vec()),
+            )
+            .unwrap();
 
         manager.clear_origin("https://a.com");
 
         assert!(manager.local_storage("https://a.com").is_empty());
         assert!(manager.session_storage("https://a.com").is_empty());
+        assert!(manager.cache_storage_ref("https://a.com").is_none());
         assert!(!manager.local_storage("https://b.com").is_empty());
+        assert!(manager.cache_storage_ref("https://b.com").unwrap().has("v1"));
     }
 
     #[test]
@@ -344,6 +385,7 @@ mod tests {
         manager.local_storage("https://a.com").set("key", "value").unwrap();
         manager.local_storage("https://b.com").set("key", "value").unwrap();
         manager.session_storage("https://a.com").set("sk", "sv").unwrap();
+        manager.cache_storage("https://a.com").open("v1");
 
         manager.clear_all_local();
         assert!(manager.local_storage("https://a.com").is_empty());
@@ -351,9 +393,13 @@ mod tests {
 
         // sessionStorage unaffected
         assert!(!manager.session_storage("https://a.com").is_empty());
+        assert!(manager.cache_storage_ref("https://a.com").unwrap().has("v1"));
 
         manager.clear_all_session();
         assert!(manager.session_storage("https://a.com").is_empty());
+
+        manager.clear_all_cache_storage();
+        assert!(manager.cache_storage_ref("https://a.com").is_none());
     }
 
     // ── 新增测试 ──

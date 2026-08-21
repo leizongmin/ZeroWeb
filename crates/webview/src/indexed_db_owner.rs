@@ -36,6 +36,10 @@ impl IndexedDbOwner {
     pub(crate) fn handler(&self) -> zero_engine::IndexedDbHandler {
         zero_page_runtime::indexed_db_handler(Arc::clone(&self.storage))
     }
+
+    pub(crate) fn cache_storage_handler(&self) -> zero_engine::CacheStorageHandler {
+        zero_page_runtime::cache_storage_handler(Arc::clone(&self.storage))
+    }
 }
 
 impl Default for IndexedDbOwner {

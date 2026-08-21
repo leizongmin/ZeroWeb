@@ -2,7 +2,7 @@
 
 **入口文档**: [../service-workers.md](../service-workers.md)
 **创建日期**: 2026-08-17（goal 拆分 bootstrap）
-**最后更新**: 2026-08-22（M2-3 Service Worker caches.match 读取桥完成）
+**最后更新**: 2026-08-22（页面 CacheStorage 初始桥接完成；SW 写入面仍待接入）
 
 ---
 
@@ -12,7 +12,10 @@
 （R3318）深化为真实 SW 执行环境 + fetch 拦截。用户已于 2026-08-19 明确批准方案 C，
 M0 启动门禁解除；M1 core WPT 已收敛，M2 已完成 fetch runtime/manager/IPC foundation、
 browser-process 页面 fetch 路由和 Service Worker `caches.match()` 读取桥；Cache API 写入面
-与 WPT fetch/cache 基线仍待后续切片，M3 控制语义继续推进。
+与 WPT fetch/cache 基线仍待后续切片，M3 控制语义继续推进。兄弟目标
+`storage-cache-api` 已完成 WebView/in-process 页面 `caches.open()` + `Cache.put()/match()`
+初始桥接，可供后续 SW Cache 写入链路复用；但 Service Worker runtime 自身
+`caches.open()` / `Cache.put()` 写入面尚未接入。
 
 **M0 推荐决策**：抽取 `zero-script-sandbox::WorkerRuntime` 的独立线程/引擎/看门狗核心，
 新增 typed `ServiceWorkerRuntime`；production 由 browser process 的
@@ -194,6 +197,10 @@ browser-process 页面 fetch 路由和 Service Worker `caches.match()` 读取桥
   `CacheStorage`，命中时物化为 `Response` 并可直接用于
   `event.respondWith(caches.match(event.request))`；未实现 `caches.open()` / `Cache.put()` 写入面
   和完整 WPT fetch/cache baseline
+- ✅ storage-cache-api 侧支撑：WebView/in-process 页面 `CacheStorage` 初始桥接已可通过共享
+  `StorageManager` 执行 `caches.open/has/delete/keys/match` 与 `Cache.put/match/delete`；
+  origin 由宿主页面 URL 推导，保持与 IndexedDB 相同单一 storage owner。该进展不等同于 SW
+  runtime 写入面完成。
 
 ## 缺口清单
 
@@ -201,7 +208,7 @@ browser-process 页面 fetch 路由和 Service Worker `caches.match()` 读取桥
 |---|------|------|
 | S1 | SW 执行环境架构与独立 runtime | ✅ production browser owner + renderer discovery 真链路 |
 | S2 | scriptURL 不下载执行 | ✅ production navigator 经 browser fetch/evaluate |
-| S3 | fetch 拦截为零 | 🚧 M2-2 production 页面 fetch respondWith/pass-through 已接入；M2-3 `caches.match()` 读取桥已接入；Cache API 写入面/WPT fetch-cache 基线未完成 |
+| S3 | fetch 拦截为零 | 🚧 M2-2 production 页面 fetch respondWith/pass-through 已接入；M2-3 `caches.match()` 读取桥已接入；页面 CacheStorage 初始桥接可供复用；SW runtime 写入面/WPT fetch-cache 基线未完成 |
 | S4 | 事件为 setTimeout 模拟 | ✅ manager transition log 为状态源；timer 只执行页面 task 投影 |
 | S5 | WPT 覆盖为零 | ✅ core 34/34 case、156/156 Pass、0 Fail/Timeout/Unsupported |
 

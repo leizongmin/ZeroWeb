@@ -3,6 +3,7 @@
 mod advanced;
 mod basic;
 mod builder_nav;
+mod cache_storage;
 mod coverage;
 mod coverage_improvements;
 mod edge;

@@ -2,15 +2,18 @@
 
 **入口文档**: [../storage-cache-api.md](../storage-cache-api.md)
 **创建日期**: 2026-08-17（goal 拆分 bootstrap）
-**最后更新**: 2026-08-17（立项——M1 待启动）
+**最后更新**: 2026-08-22（M1 页面 CacheStorage 初始桥接完成）
 
 ---
 
 ## 当前状态
 
-**专项定位**：存储方向三拆之二。把页面 `caches`（CacheStorage/Cache）从**零接线**（shim 无
-定义，页面 ReferenceError）接到 zero-storage `cache_api.rs`（976 行）并补持久化，WPT
-`cache-storage`（window 面）真实用例驱动。
+**专项定位**：存储方向三拆之二。把页面 `caches`（CacheStorage/Cache）从**零接线**
+接到 zero-storage `cache_api.rs` 并补持久化，WPT `cache-storage`（window 面）真实用例驱动。
+2026-08-22 已完成 WebView/in-process 页面侧初始桥接：
+`caches.open/has/delete/keys/match` 与 `Cache.put/match/delete` 经 host callback 进入共享
+`StorageManager`，origin 由宿主页面 URL 推导；WPT 基线、持久化、`add/addAll`、`matchAll/keys`
+与 CacheQueryOptions/Vary 仍待后续切片。
 
 **与兄弟 goal 的边界**：
 - [storage-indexeddb](../archive/storage-indexeddb.md)（已归档）— IDB 归其管
@@ -24,8 +27,8 @@
 
 - ✅ Rust 层：`crates/storage/src/cache_api.rs`（976 行 / 67 函数）——CacheStorage/Cache/
   CacheQueryOptions 全 API 面 + 单测
-- ⚠️ JS 页面层：shim（part01-06.js）无任何 `caches`/`CacheStorage` 定义——页面
-  `caches.open()` 抛 ReferenceError
+- ✅ JS 页面层初始表面：`part07.js` 暴露 `CacheStorage`/`Cache`/`caches`，WebView 页面可
+  `open` 后 `put/match/delete`，并可 `has/keys/match`
 - ⚠️ 无持久化：内存结构
 - ⚠️ WPT `cache-storage` 未导入，无基线
 - ⚠️ add/addAll 的 fetch 链路与 Response 可缓存性判定未实现
@@ -35,16 +38,17 @@
 | # | 缺口 | 状态 |
 |---|------|------|
 | C1 | WPT cache-storage 用例覆盖为零 | ⬜ M1 |
-| C2 | 页面 `caches` 全局缺失（零接线） | ⬜ M1 |
+| C2 | 页面 `caches` 全局缺失（零接线） | ✅ M1 初始桥接完成；全 API 语义继续归 C4 |
 | C3 | 无持久化 | ⬜ M3 |
 | C4 | Request/Response 集成（add/addAll/可缓存性） | ⬜ M2 |
 
 ## 下一步计划
 
-1. **M1 切片 1**：WPT `cache-storage` window 面用例导入 + 基线（`caches` 未接线前基线即
-   「全 ReferenceError」——这正是验收清单）
-2. **M1 切片 2**：shim `caches` 全局骨架（open/has/delete/keys 直通 Rust）
-3. **M1 切片 3**：Cache 核心 API（put/match/matchAll/delete/keys）
+1. **M1 剩余**：WPT `cache-storage` window 面用例导入 + 基线（当前还只有定向单元/
+   WebView e2e 覆盖）
+2. **M2 切片 1**：补 `Cache.matchAll()` / `Cache.keys()` 与 CacheQueryOptions 基础 wire
+3. **M2 切片 2**：`add/addAll` 复用 fetch 管线，补 Response 可缓存性判定
+4. **M3**：per-origin 持久化与跨会话 e2e
 
 **碰撞管理**：开工前先 `git log --since="14 days ago" -- crates/engine/src/js_dom_shim/`
 核对 js-dom 流活跃面。
@@ -53,12 +57,16 @@
 
 | 里程碑 | 状态 |
 |--------|------|
-| M1 — WPT cache-storage 基线 + caches 骨架 | ⬜ 待启动 |
+| M1 — WPT cache-storage 基线 + caches 骨架 | 🚧 页面骨架已接入；WPT 基线待导入 |
 | M2 — Cache 全 API + 查询语义 | ⬜ |
 | M3 — 持久化 + 剩余语义收尾 | ⬜ |
 
 ## 验证基线
 
-- 测试基线：storage crate 既有单测全绿（立项时点）；clippy 零警告
+- 2026-08-22 定向验证：
+  - `cargo test -p zero-storage cache_storage --no-default-features`：23 passed
+  - `cargo test -p zero-page-runtime cache_storage`：6 passed
+  - `cargo test -p zero-engine cache_api_page_shim`：2 passed
+  - `cargo test -p zero-webview cache_storage`：2 passed
 - WPT cache-storage 面：无基线（未导入）
 - 质量门禁：`cargo fmt` + `cargo clippy --workspace --all-targets -- -D warnings` 全过

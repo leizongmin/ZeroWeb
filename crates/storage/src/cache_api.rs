@@ -185,6 +185,16 @@ impl CacheStorage {
         self.caches.entry(name.to_string()).or_insert_with(|| Cache::new(name))
     }
 
+    /// 获取已存在的指定名称缓存。
+    pub fn get(&self, name: &str) -> Option<&Cache> {
+        self.caches.get(name)
+    }
+
+    /// 获取已存在的指定名称缓存的可变引用。
+    pub fn get_mut(&mut self, name: &str) -> Option<&mut Cache> {
+        self.caches.get_mut(name)
+    }
+
     /// 是否包含指定名称的缓存。
     pub fn has(&self, name: &str) -> bool {
         self.caches.contains_key(name)

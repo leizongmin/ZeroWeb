@@ -26,7 +26,9 @@ pub use html_actions::{
     HtmlActionRequest, HtmlUserAction, InvalidationKind, OptionActionState, PageEffect, PlannedEvent, PlannedMutation,
     RadioActionState, SummaryActionState, TextActionState, plan_html_action, resolve_html_action,
 };
+pub mod cache_storage_host;
 pub mod indexed_db_host;
+pub use cache_storage_host::cache_storage_handler;
 pub use indexed_db_host::indexed_db_handler;
 pub mod service_worker_manager;
 pub use service_worker_manager::{

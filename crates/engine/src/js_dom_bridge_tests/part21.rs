@@ -199,6 +199,113 @@ fn test_classic_script_strict_function_globals_r147() {
     assert_eq!(err, "", "R147 两段脚本均无抛错（sentinel 干净）");
 }
 
+/// Cache API 初始页面表面：`caches.open()` / `Cache.put()` / `Cache.match()` 经 host bridge
+/// 往返，match miss 解析为 undefined。
+#[test]
+fn test_cache_api_page_shim_host_roundtrip() {
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let mut sandbox = V8Sandbox::with_config(zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    })
+    .unwrap();
+    sandbox.register_callback(
+        "__zw_cache_storage",
+        Box::new(|args| {
+            let request = args.first().map(String::as_str).unwrap_or("");
+            if request.contains(r#""op":"open""#) {
+                return r#"__zw_cache_ok:{"name":"v1"}"#.to_string();
+            }
+            if request.contains(r#""op":"put""#)
+                && request.contains(r#""cache_name":"v1""#)
+                && request.contains(r#""url":"https://example.com/data.txt""#)
+                && request.contains(r#""status":201"#)
+                && request.contains(r#""body":"cached text""#)
+            {
+                return r#"__zw_cache_ok:{"ok":true}"#.to_string();
+            }
+            if request.contains(r#""op":"match""#) && request.contains(r#""cache_name":"v1""#) {
+                return "__zw_cache_ok:{\"response\":\"__zwfr:201\\u001fCreated\\u001fcontent-type\\u001etext/plain\\u001fcached text\"}".to_string();
+            }
+            if request.contains(r#""op":"match""#) {
+                return r#"__zw_cache_ok:{"response":null}"#.to_string();
+            }
+            "__zw_cache_error:unexpected request".to_string()
+        }),
+    );
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new("<html><body></body></html>".to_string()));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("https://example.com/page.html".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+
+    sandbox
+        .execute(
+            "globalThis.__cacheDone = 'pending';\
+             caches.open('v1').then(function (cache) {\
+               return cache.put('https://example.com/data.txt', new Response('cached text', {\
+                 status: 201,\
+                 statusText: 'Created',\
+                 headers: {'content-type': 'text/plain'}\
+               })).then(function () { return cache.match('https://example.com/data.txt'); });\
+             }).then(function (response) {\
+               return response.text().then(function (body) {\
+                 globalThis.__cacheDone = [\
+                   String(response instanceof Response),\
+                   String(response.status),\
+                   response.statusText,\
+                   response.headers.get('content-type'),\
+                   body\
+                 ].join('|');\
+               });\
+             }, function (error) {\
+               globalThis.__cacheDone = 'error:' + String(error && error.message ? error.message : error);\
+             });",
+        )
+        .unwrap();
+    for i in 0..8 {
+        sandbox.execute(&format!("globalThis.__cachePump = {i};")).unwrap();
+    }
+    assert_eq!(
+        sandbox.execute("globalThis.__cacheDone").unwrap().value,
+        "true|201|Created|text/plain|cached text",
+        "Cache API page shim should round-trip Response through host bridge"
+    );
+}
+
+/// Cache API shim 在没有宿主 bridge 时应 reject，而不是悬挂 Promise。
+#[test]
+fn test_cache_api_page_shim_rejects_without_host_bridge() {
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let mut sandbox = V8Sandbox::with_config(zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    })
+    .unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+
+    sandbox
+        .execute(
+            "globalThis.__cacheNoHost = 'pending';\
+             caches.open('v1').then(function () {\
+               globalThis.__cacheNoHost = 'resolved';\
+             }, function (error) {\
+               globalThis.__cacheNoHost = String(error instanceof TypeError) + ':' + String(error.message);\
+             });",
+        )
+        .unwrap();
+    sandbox.execute("globalThis.__cachePump = 1;").unwrap();
+
+    assert_eq!(
+        sandbox.execute("globalThis.__cacheNoHost").unwrap().value,
+        "true:CacheStorage host bridge is unavailable",
+        "missing CacheStorage host bridge should reject predictably"
+    );
+}
+
 /// R148：焦点所有权统一（proxy `_activeElKey` 与解析节点 `_zwMElFocused` 互斥）+
 /// focus 事件 relatedTarget 的 shadow retargeting（旧焦点在 shadow 树内 → 泄露边界外
 /// 以 shadow host 为 relatedTarget；WPT shadow-relatedTarget 两 subtest）。

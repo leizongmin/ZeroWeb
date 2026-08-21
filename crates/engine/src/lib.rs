@@ -29,6 +29,7 @@
 pub mod animation;
 #[cfg(feature = "script-runtime")]
 pub mod async_resolver;
+pub mod cache_storage_bridge;
 pub mod composite;
 pub mod dirty;
 pub mod dom_bridge;
@@ -61,6 +62,7 @@ pub mod transition;
 pub use animation::*;
 #[cfg(feature = "script-runtime")]
 pub use async_resolver::*;
+pub use cache_storage_bridge::*;
 pub use composite::*;
 pub use dirty::*;
 pub use dom_bridge::*;

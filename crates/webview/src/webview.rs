@@ -362,6 +362,8 @@ pub struct WebView {
     js_sandbox: Option<Box<dyn zero_script_sandbox::Sandbox>>,
     /// IndexedDB 同步宿主桥（进程内 sandbox 路径）。
     indexed_db_bridge: zero_engine::IndexedDbBridge,
+    /// CacheStorage 同步宿主桥（进程内 sandbox 路径）。
+    cache_storage_bridge: zero_engine::CacheStorageBridge,
     /// IndexedDB origin 的可信页面 URL 来源。
     page_url_wire: std::sync::Arc<std::sync::Mutex<String>>,
     /// Stable in-process client identity for Service Worker message routing.
@@ -475,7 +477,10 @@ impl WebView {
         let service_worker_script_fetcher = config.service_worker_script_fetcher.clone();
         let image_source_fetcher = config.image_source_fetcher.clone();
         let fetch_handler = config.fetch_handler.clone();
-        let indexed_db_bridge = zero_engine::IndexedDbBridge::new(indexed_db_owner.handler());
+        let indexed_db_handler = indexed_db_owner.handler();
+        let cache_storage_handler = indexed_db_owner.cache_storage_handler();
+        let indexed_db_bridge = zero_engine::IndexedDbBridge::new(indexed_db_handler);
+        let cache_storage_bridge = zero_engine::CacheStorageBridge::new(cache_storage_handler);
         let page_url_wire = std::sync::Arc::new(std::sync::Mutex::new(String::from("about:blank")));
         let service_worker_client_id = format!("webview-{}", NEXT_WEBVIEW_ID.fetch_add(1, Ordering::Relaxed));
         let service_worker_client_generation = std::sync::Arc::new(AtomicU64::new(0));
@@ -495,6 +500,7 @@ impl WebView {
             http_client,
             js_sandbox,
             indexed_db_bridge,
+            cache_storage_bridge,
             page_url_wire,
             service_worker_client_id,
             service_worker_client_generation,
@@ -1627,6 +1633,7 @@ impl WebView {
             self.http_client.timeout_secs,
         );
         self.indexed_db_bridge.register(&mut *sandbox, &self.page_url_wire);
+        self.cache_storage_bridge.register(&mut *sandbox, &self.page_url_wire);
         self.js_sandbox = Some(sandbox);
         Ok(())
     }

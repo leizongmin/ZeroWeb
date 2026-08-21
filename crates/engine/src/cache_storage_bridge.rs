@@ -1,0 +1,125 @@
+//! CacheStorage 同步宿主桥。
+//!
+//! `zero-engine` 只定义可信 origin 推导与 wire 契约，不依赖具体存储实现。
+//! `zero-page-runtime` 提供基于 `zero-storage` 的 handler。
+
+use std::sync::Arc;
+#[cfg(feature = "script-runtime")]
+use std::sync::Mutex;
+
+#[cfg(feature = "script-runtime")]
+use zero_script_sandbox::Sandbox;
+
+/// CacheStorage handler。
+///
+/// 参数依次为宿主从当前页面 URL 推导的 origin、页面请求 JSON；返回响应 JSON 或错误。
+pub type CacheStorageHandler = Arc<dyn Fn(&str, &str) -> Result<String, String> + Send + Sync>;
+
+#[cfg(feature = "script-runtime")]
+const OK_PREFIX: &str = "__zw_cache_ok:";
+#[cfg(feature = "script-runtime")]
+const ERROR_PREFIX: &str = "__zw_cache_error:";
+#[cfg(feature = "script-runtime")]
+const MAX_REQUEST_BYTES: usize = 8 * 1024 * 1024;
+
+/// CacheStorage 同步 callback bridge。
+#[cfg(feature = "script-runtime")]
+pub struct CacheStorageBridge {
+    handler: CacheStorageHandler,
+}
+
+#[cfg(feature = "script-runtime")]
+impl CacheStorageBridge {
+    /// 使用业务 handler 构造 bridge。
+    pub fn new(handler: CacheStorageHandler) -> Self {
+        Self { handler }
+    }
+
+    /// 注册 `__zw_cache_storage(requestJson)`。
+    ///
+    /// origin 始终由宿主维护的 `page_url` 推导，页面不能通过 request JSON 伪造。
+    pub fn register(&self, sandbox: &mut dyn Sandbox, page_url: &Arc<Mutex<String>>) {
+        let handler = Arc::clone(&self.handler);
+        let page_url = Arc::clone(page_url);
+        sandbox.register_callback(
+            "__zw_cache_storage",
+            Box::new(move |args: &[String]| -> String {
+                let request = args.first().map(String::as_str).unwrap_or("");
+                invoke_handler(&handler, &page_url, request)
+            }),
+        );
+    }
+}
+
+#[cfg(feature = "script-runtime")]
+fn invoke_handler(handler: &CacheStorageHandler, page_url: &Mutex<String>, request: &str) -> String {
+    if request.len() > MAX_REQUEST_BYTES {
+        return format!("{ERROR_PREFIX}request exceeds 8 MiB");
+    }
+    let origin = page_url
+        .lock()
+        .map(|url| cache_storage_origin(&url))
+        .unwrap_or_else(|_| "null".to_string());
+    serialize_result(handler(&origin, request))
+}
+
+/// 从宿主管理的页面 URL 推导 CacheStorage origin。
+pub fn cache_storage_origin(page_url: &str) -> String {
+    url::Url::parse(page_url)
+        .map(|url| url.origin().ascii_serialization())
+        .unwrap_or_else(|_| "null".to_string())
+}
+
+#[cfg(feature = "script-runtime")]
+fn serialize_result(result: Result<String, String>) -> String {
+    match result {
+        Ok(response) => format!("{OK_PREFIX}{response}"),
+        Err(error) => format!("{ERROR_PREFIX}{error}"),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn origin_is_derived_from_page_url() {
+        assert_eq!(cache_storage_origin("https://example.com/path"), "https://example.com");
+        assert_eq!(
+            cache_storage_origin("https://example.com:8443/path"),
+            "https://example.com:8443"
+        );
+        assert_eq!(cache_storage_origin("about:blank"), "null");
+        assert_eq!(cache_storage_origin("not a url"), "null");
+    }
+
+    #[cfg(feature = "script-runtime")]
+    #[test]
+    fn result_wire_distinguishes_success_and_error() {
+        assert_eq!(
+            serialize_result(Ok("{\"ok\":true}".to_string())),
+            "__zw_cache_ok:{\"ok\":true}"
+        );
+        assert_eq!(
+            serialize_result(Err("SecurityError".to_string())),
+            "__zw_cache_error:SecurityError"
+        );
+    }
+
+    #[cfg(feature = "script-runtime")]
+    #[test]
+    fn callback_uses_host_origin_and_rejects_oversized_requests() {
+        let handler: CacheStorageHandler = Arc::new(|origin, request| Ok(format!("{origin}|{request}")));
+        let page_url = Mutex::new("https://trusted.example/path".to_string());
+        assert_eq!(
+            invoke_handler(&handler, &page_url, r#"{"origin":"https://attacker.example"}"#),
+            r#"__zw_cache_ok:https://trusted.example|{"origin":"https://attacker.example"}"#
+        );
+
+        let oversized = "x".repeat(MAX_REQUEST_BYTES + 1);
+        assert_eq!(
+            invoke_handler(&handler, &page_url, &oversized),
+            "__zw_cache_error:request exceeds 8 MiB"
+        );
+    }
+}
