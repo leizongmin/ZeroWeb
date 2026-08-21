@@ -24,6 +24,7 @@ const MAX_FETCH_HEADERS: usize = 128;
 const MAX_FETCH_HEADER_BYTES: usize = 64 * 1024;
 const MAX_FETCH_STATUS_TEXT_BYTES: usize = 1024;
 const MAX_FETCH_BODY_BYTES: usize = 16 * 1024 * 1024;
+const MAX_CACHE_NAME_BYTES: usize = 1024;
 
 enum ServiceWorkerCommand {
     Evaluate {
@@ -79,10 +80,10 @@ enum ServiceWorkerClientsResponse {
     Shutdown,
 }
 
-enum ServiceWorkerCacheMatchResponse {
+enum ServiceWorkerCacheStorageResponse {
     Completed {
         request_id: u64,
-        response: Option<ServiceWorkerFetchResponse>,
+        response: ServiceWorkerCacheStorageResult,
     },
     Failed {
         request_id: u64,
@@ -369,16 +370,16 @@ const SERVICE_WORKER_BOOTSTRAP: &str = r#"
   }
   Object.defineProperty(Response.prototype, Symbol.toStringTag, {value: 'Response'});
 
-  function cacheMatchRequest(input) {
+  function cacheRequestWire(input) {
     const request = input instanceof Request ? input : new Request(input);
-    return JSON.stringify({
+    return {
       url: request.url,
       method: request.method,
       headers: Array.from(request.headers),
       body: request._body,
       clientId: null,
       resultingClientId: null
-    });
+    };
   }
   function cachedResponseFromWire(response) {
     return new Response(response.body || '', {
@@ -387,19 +388,67 @@ const SERVICE_WORKER_BOOTSTRAP: &str = r#"
       headers: response.headers || []
     });
   }
-  // https://w3c.github.io/ServiceWorker/#cache-storage-match
-  class CacheStorage {
+  function cacheStorageHost(request) {
+    let response;
+    try {
+      response = JSON.parse(globalThis.__zwCacheStorage(JSON.stringify(request)));
+    } catch (_error) {
+      response = {ok: false, error: 'invalid CacheStorage host response'};
+    }
+    if (!response || response.ok !== true) {
+      return Promise.reject(new TypeError(response && response.error || 'CacheStorage operation failed'));
+    }
+    return Promise.resolve(response);
+  }
+  function cacheMatchRequest(input, cacheName) {
+    const request = {
+      op: 'match',
+      request: cacheRequestWire(input)
+    };
+    if (cacheName !== undefined) request.cacheName = cacheName;
+    return request;
+  }
+  function cachePutRequest(cacheName, input, response) {
+    return {
+      op: 'put',
+      cacheName,
+      request: cacheRequestWire(input),
+      response: Response._serialize(Response._from(response))
+    };
+  }
+  // https://w3c.github.io/ServiceWorker/#cache-interface
+  class Cache {
+    constructor(name) {
+      this._name = String(name);
+    }
     match(input) {
-      let response;
-      try {
-        response = JSON.parse(globalThis.__zwCacheStorageMatch(cacheMatchRequest(input)));
-      } catch (_error) {
-        response = {ok: false, error: 'invalid CacheStorage.match response'};
-      }
-      if (!response || response.ok !== true) {
-        return Promise.reject(new TypeError(response && response.error || 'CacheStorage.match failed'));
-      }
-      return Promise.resolve(response.response === null ? undefined : cachedResponseFromWire(response.response));
+      return cacheStorageHost(cacheMatchRequest(input, this._name)).then(function(response) {
+        return response.response === null ? undefined : cachedResponseFromWire(response.response);
+      });
+    }
+    put(input, response) {
+      return cacheStorageHost(cachePutRequest(this._name, input, response)).then(function() {
+        return undefined;
+      });
+    }
+  }
+  Object.defineProperty(Cache.prototype, Symbol.toStringTag, {value: 'Cache'});
+
+  // https://w3c.github.io/ServiceWorker/#cache-storage-interface
+  class CacheStorage {
+    open(name) {
+      name = String(name);
+      return cacheStorageHost({
+        op: 'open',
+        name
+      }).then(function() {
+        return new Cache(name);
+      });
+    }
+    match(input) {
+      return cacheStorageHost(cacheMatchRequest(input)).then(function(response) {
+        return response.response === null ? undefined : cachedResponseFromWire(response.response);
+      });
     }
   }
   Object.defineProperty(CacheStorage.prototype, Symbol.toStringTag, {value: 'CacheStorage'});
@@ -997,12 +1046,12 @@ pub enum ServiceWorkerEvent {
         /// Browser-owned client identity.
         client_id: String,
     },
-    /// The worker global requested a browser-owned CacheStorage match.
-    CacheMatchRequested {
+    /// The worker global requested a browser-owned CacheStorage operation.
+    CacheStorageRequested {
         /// Runtime-local request ID used to correlate the blocking response.
         request_id: u64,
-        /// Pure-value request to match in the active registration CacheStorage.
-        request: ServiceWorkerFetchRequest,
+        /// Pure-value CacheStorage operation for the active registration.
+        request: ServiceWorkerCacheStorageRequest,
     },
     /// A worker posted messages outside a page-originated message event.
     ClientMessagesEmitted {
@@ -1084,6 +1133,41 @@ pub struct ServiceWorkerFetchResponse {
     pub body: String,
 }
 
+/// Worker-global CacheStorage operation requested from the browser-owned registration store.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ServiceWorkerCacheStorageRequest {
+    /// Open or create one named cache.
+    Open {
+        /// Cache name.
+        cache_name: String,
+    },
+    /// Match a request across all caches or within one named cache.
+    Match {
+        /// Optional cache name for `Cache.match()`.
+        cache_name: Option<String>,
+        /// Request to match.
+        request: ServiceWorkerFetchRequest,
+    },
+    /// Store one response in one named cache.
+    Put {
+        /// Cache name.
+        cache_name: String,
+        /// Request key.
+        request: ServiceWorkerFetchRequest,
+        /// Response value.
+        response: ServiceWorkerFetchResponse,
+    },
+}
+
+/// Result of a worker-global CacheStorage operation.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ServiceWorkerCacheStorageResult {
+    /// Operation completed without a payload.
+    Done,
+    /// Cache match result.
+    Match(Option<ServiceWorkerFetchResponse>),
+}
+
 /// MessagePort endpoint metadata for one page/worker message.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct ServiceWorkerMessagePorts {
@@ -1113,7 +1197,7 @@ pub struct ServiceWorkerRuntime {
     import_response_sender: mpsc::Sender<ServiceWorkerImportResponse>,
     update_response_sender: mpsc::Sender<ServiceWorkerUpdateResponse>,
     clients_response_sender: mpsc::Sender<ServiceWorkerClientsResponse>,
-    cache_match_response_sender: mpsc::Sender<ServiceWorkerCacheMatchResponse>,
+    cache_storage_response_sender: mpsc::Sender<ServiceWorkerCacheStorageResponse>,
 }
 
 impl ServiceWorkerRuntime {
@@ -1125,7 +1209,7 @@ impl ServiceWorkerRuntime {
         let (import_response_sender, import_response_receiver) = mpsc::channel();
         let (update_response_sender, update_response_receiver) = mpsc::channel();
         let (clients_response_sender, clients_response_receiver) = mpsc::channel();
-        let (cache_match_response_sender, cache_match_response_receiver) = mpsc::channel();
+        let (cache_storage_response_sender, cache_storage_response_receiver) = mpsc::channel();
         let mut core = ThreadedRuntimeCore::spawn(
             "zero-service-worker",
             "Service Worker",
@@ -1435,67 +1519,63 @@ impl ServiceWorkerRuntime {
                         }
                     }),
                 );
-                let cache_match_event_sender = event_sender.clone();
-                let cache_match_response_receiver = Arc::new(Mutex::new(cache_match_response_receiver));
-                let next_cache_match_request_id = Arc::new(AtomicU64::new(1));
+                let cache_storage_event_sender = event_sender.clone();
+                let cache_storage_response_receiver = Arc::new(Mutex::new(cache_storage_response_receiver));
+                let next_cache_storage_request_id = Arc::new(AtomicU64::new(1));
                 sandbox.register_callback(
-                    "__zwCacheStorageMatch",
+                    "__zwCacheStorage",
                     Box::new(move |args| {
                         let Some(request_json) = args.first() else {
-                            return cache_match_failure_json("CacheStorage.match request is missing");
+                            return cache_storage_failure_json("CacheStorage request is missing");
                         };
                         let request = match serde_json::from_str::<serde_json::Value>(request_json)
                             .ok()
-                            .and_then(cache_match_request_from_json)
+                            .and_then(cache_storage_request_from_json)
                         {
                             Some(request) => request,
-                            None => return cache_match_failure_json("CacheStorage.match request is invalid"),
+                            None => return cache_storage_failure_json("CacheStorage request is invalid"),
                         };
-                        if let Err(error) = validate_fetch_request(&request) {
-                            return cache_match_failure_json(&error.to_string());
+                        if let Err(error) = validate_cache_storage_request(&request) {
+                            return cache_storage_failure_json(&error.to_string());
                         }
-                        let request_id = next_cache_match_request_id.fetch_add(1, Ordering::Relaxed);
-                        if cache_match_event_sender
-                            .send(ServiceWorkerEvent::CacheMatchRequested { request_id, request })
+                        let request_id = next_cache_storage_request_id.fetch_add(1, Ordering::Relaxed);
+                        if cache_storage_event_sender
+                            .send(ServiceWorkerEvent::CacheStorageRequested { request_id, request })
                             .is_err()
                         {
-                            return cache_match_failure_json("Service Worker host disconnected");
+                            return cache_storage_failure_json("Service Worker host disconnected");
                         }
                         let deadline =
                             std::time::Instant::now() + std::time::Duration::from_millis(lifecycle_timeout_ms);
                         loop {
                             let now = std::time::Instant::now();
                             if now >= deadline {
-                                return cache_match_failure_json("CacheStorage.match host response timed out");
+                                return cache_storage_failure_json("CacheStorage host response timed out");
                             }
-                            let response = cache_match_response_receiver
+                            let response = cache_storage_response_receiver
                                 .lock()
-                                .expect("cache match response lock")
+                                .expect("cache storage response lock")
                                 .recv_timeout(deadline.saturating_duration_since(now));
                             match response {
-                                Ok(ServiceWorkerCacheMatchResponse::Completed {
+                                Ok(ServiceWorkerCacheStorageResponse::Completed {
                                     request_id: response_id,
                                     response,
                                 }) if response_id == request_id => {
-                                    return serde_json::json!({
-                                        "ok": true,
-                                        "response": response.map(fetch_response_json),
-                                    })
-                                    .to_string();
+                                    return cache_storage_response_json(response);
                                 }
-                                Ok(ServiceWorkerCacheMatchResponse::Failed {
+                                Ok(ServiceWorkerCacheStorageResponse::Failed {
                                     request_id: response_id,
                                     message,
-                                }) if response_id == request_id => return cache_match_failure_json(&message),
-                                Ok(ServiceWorkerCacheMatchResponse::Shutdown) => {
-                                    return cache_match_failure_json("Service Worker runtime is shutting down");
+                                }) if response_id == request_id => return cache_storage_failure_json(&message),
+                                Ok(ServiceWorkerCacheStorageResponse::Shutdown) => {
+                                    return cache_storage_failure_json("Service Worker runtime is shutting down");
                                 }
                                 Ok(_) => continue,
                                 Err(mpsc::RecvTimeoutError::Timeout) => {
-                                    return cache_match_failure_json("CacheStorage.match host response timed out");
+                                    return cache_storage_failure_json("CacheStorage host response timed out");
                                 }
                                 Err(mpsc::RecvTimeoutError::Disconnected) => {
-                                    return cache_match_failure_json("Service Worker host disconnected");
+                                    return cache_storage_failure_json("Service Worker host disconnected");
                                 }
                             }
                         }
@@ -1673,7 +1753,7 @@ impl ServiceWorkerRuntime {
                 import_response_sender,
                 update_response_sender,
                 clients_response_sender,
-                cache_match_response_sender,
+                cache_storage_response_sender,
             }),
             Ok(Err(error)) => {
                 core.terminate(ServiceWorkerCommand::Shutdown, || {});
@@ -1924,29 +2004,37 @@ impl ServiceWorkerRuntime {
             .map_err(|_| ScriptError::RuntimeError("Service Worker runtime disconnected".into()))
     }
 
+    /// Complete one blocking worker-global CacheStorage request.
+    pub fn complete_cache_storage(
+        &self,
+        request_id: u64,
+        result: Result<ServiceWorkerCacheStorageResult, String>,
+    ) -> Result<(), ScriptError> {
+        let response = match result {
+            Ok(ServiceWorkerCacheStorageResult::Match(Some(response))) => {
+                validate_fetch_response(&response)?;
+                ServiceWorkerCacheStorageResponse::Completed {
+                    request_id,
+                    response: ServiceWorkerCacheStorageResult::Match(Some(response)),
+                }
+            }
+            Ok(response @ (ServiceWorkerCacheStorageResult::Done | ServiceWorkerCacheStorageResult::Match(None))) => {
+                ServiceWorkerCacheStorageResponse::Completed { request_id, response }
+            }
+            Err(message) => ServiceWorkerCacheStorageResponse::Failed { request_id, message },
+        };
+        self.cache_storage_response_sender
+            .send(response)
+            .map_err(|_| ScriptError::RuntimeError("Service Worker runtime disconnected".into()))
+    }
+
     /// Complete one blocking worker-global `caches.match()` request.
     pub fn complete_cache_match(
         &self,
         request_id: u64,
         result: Result<Option<ServiceWorkerFetchResponse>, String>,
     ) -> Result<(), ScriptError> {
-        let response = match result {
-            Ok(Some(response)) => {
-                validate_fetch_response(&response)?;
-                ServiceWorkerCacheMatchResponse::Completed {
-                    request_id,
-                    response: Some(response),
-                }
-            }
-            Ok(None) => ServiceWorkerCacheMatchResponse::Completed {
-                request_id,
-                response: None,
-            },
-            Err(message) => ServiceWorkerCacheMatchResponse::Failed { request_id, message },
-        };
-        self.cache_match_response_sender
-            .send(response)
-            .map_err(|_| ScriptError::RuntimeError("Service Worker runtime disconnected".into()))
+        self.complete_cache_storage(request_id, result.map(ServiceWorkerCacheStorageResult::Match))
     }
 
     /// Shut down the engine thread with a bounded join.
@@ -1957,8 +2045,8 @@ impl ServiceWorkerRuntime {
             .clients_response_sender
             .send(ServiceWorkerClientsResponse::Shutdown);
         let _ = self
-            .cache_match_response_sender
-            .send(ServiceWorkerCacheMatchResponse::Shutdown);
+            .cache_storage_response_sender
+            .send(ServiceWorkerCacheStorageResponse::Shutdown);
         self.core.terminate(ServiceWorkerCommand::Shutdown, || {});
     }
 
@@ -1994,44 +2082,6 @@ impl Drop for ServiceWorkerRuntime {
     }
 }
 
-impl std::fmt::Debug for ServiceWorkerRuntime {
-    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        formatter
-            .debug_struct("ServiceWorkerRuntime")
-            .field("state", &self.state())
-            .finish()
-    }
-}
-
-#[cfg(feature = "v8")]
-fn create_engine(config: SandboxConfig) -> Result<Box<dyn Sandbox>, ScriptError> {
-    Ok(Box::new(crate::V8Sandbox::with_config(config)?))
-}
-
-#[cfg(all(feature = "quickjs", not(feature = "v8")))]
-fn create_engine(config: SandboxConfig) -> Result<Box<dyn Sandbox>, ScriptError> {
-    Ok(Box::new(crate::QuickJSSandbox::with_config(config)?))
-}
-
-// 无引擎构建（如 zero-browser 主进程）：类型可用，运行时创建降级为
-// EngineUnavailable，调用方按 ScriptFailed { kind: EngineUnavailable } 处理。
-#[cfg(not(any(feature = "v8", feature = "quickjs")))]
-fn create_engine(_config: SandboxConfig) -> Result<Box<dyn Sandbox>, ScriptError> {
-    Err(ScriptError::EngineUnavailable(
-        "no JavaScript engine feature is enabled in this build".into(),
-    ))
-}
-
-fn script_error_kind(error: &ScriptError) -> ServiceWorkerScriptErrorKind {
-    match error {
-        ScriptError::CompileError(_) => ServiceWorkerScriptErrorKind::Compile,
-        ScriptError::RuntimeError(_) | ScriptError::NotInitialized => ServiceWorkerScriptErrorKind::Runtime,
-        ScriptError::Timeout(_) => ServiceWorkerScriptErrorKind::Timeout,
-        ScriptError::InvalidInput(_) => ServiceWorkerScriptErrorKind::InvalidInput,
-        ScriptError::EngineUnavailable(_) => ServiceWorkerScriptErrorKind::EngineUnavailable,
-    }
-}
-
 fn import_failure_json(message: &str) -> String {
     serde_json::json!({"ok": false, "error": message}).to_string()
 }
@@ -2044,11 +2094,29 @@ fn clients_failure_json(message: &str) -> String {
     serde_json::json!({"ok": false, "error": message}).to_string()
 }
 
-fn cache_match_failure_json(message: &str) -> String {
+fn cache_storage_failure_json(message: &str) -> String {
     serde_json::json!({"ok": false, "error": message}).to_string()
 }
 
-fn cache_match_request_from_json(value: serde_json::Value) -> Option<ServiceWorkerFetchRequest> {
+fn cache_storage_request_from_json(value: serde_json::Value) -> Option<ServiceWorkerCacheStorageRequest> {
+    match value["op"].as_str()? {
+        "open" => Some(ServiceWorkerCacheStorageRequest::Open {
+            cache_name: value["name"].as_str()?.to_string(),
+        }),
+        "match" => Some(ServiceWorkerCacheStorageRequest::Match {
+            cache_name: value["cacheName"].as_str().map(str::to_string),
+            request: fetch_request_from_json(&value["request"])?,
+        }),
+        "put" => Some(ServiceWorkerCacheStorageRequest::Put {
+            cache_name: value["cacheName"].as_str()?.to_string(),
+            request: fetch_request_from_json(&value["request"])?,
+            response: fetch_response_from_json(&value["response"])?,
+        }),
+        _ => None,
+    }
+}
+
+fn fetch_request_from_json(value: &serde_json::Value) -> Option<ServiceWorkerFetchRequest> {
     let headers = value["headers"]
         .as_array()?
         .iter()
@@ -2070,6 +2138,27 @@ fn cache_match_request_from_json(value: serde_json::Value) -> Option<ServiceWork
     })
 }
 
+fn fetch_response_from_json(value: &serde_json::Value) -> Option<ServiceWorkerFetchResponse> {
+    let headers = value["headers"]
+        .as_array()?
+        .iter()
+        .map(|entry| {
+            let pair = entry.as_array()?;
+            if pair.len() != 2 {
+                return None;
+            }
+            Some((pair[0].as_str()?.to_string(), pair[1].as_str()?.to_string()))
+        })
+        .collect::<Option<Vec<_>>>()?;
+    let status = value["status"].as_u64().and_then(|status| u16::try_from(status).ok())?;
+    Some(ServiceWorkerFetchResponse {
+        status,
+        status_text: value["statusText"].as_str().unwrap_or_default().to_string(),
+        headers,
+        body: value["body"].as_str().unwrap_or_default().to_string(),
+    })
+}
+
 fn fetch_response_json(response: ServiceWorkerFetchResponse) -> serde_json::Value {
     serde_json::json!({
         "status": response.status,
@@ -2077,6 +2166,47 @@ fn fetch_response_json(response: ServiceWorkerFetchResponse) -> serde_json::Valu
         "headers": response.headers,
         "body": response.body,
     })
+}
+
+fn cache_storage_response_json(response: ServiceWorkerCacheStorageResult) -> String {
+    match response {
+        ServiceWorkerCacheStorageResult::Done => serde_json::json!({"ok": true}).to_string(),
+        ServiceWorkerCacheStorageResult::Match(response) => serde_json::json!({
+            "ok": true,
+            "response": response.map(fetch_response_json),
+        })
+        .to_string(),
+    }
+}
+
+fn validate_cache_name(name: &str) -> Result<(), ScriptError> {
+    if name.len() > MAX_CACHE_NAME_BYTES {
+        return Err(ScriptError::InvalidInput(
+            "Service Worker cache name exceeds the size limit".into(),
+        ));
+    }
+    Ok(())
+}
+
+fn validate_cache_storage_request(request: &ServiceWorkerCacheStorageRequest) -> Result<(), ScriptError> {
+    match request {
+        ServiceWorkerCacheStorageRequest::Open { cache_name } => validate_cache_name(cache_name),
+        ServiceWorkerCacheStorageRequest::Match { cache_name, request } => {
+            if let Some(cache_name) = cache_name {
+                validate_cache_name(cache_name)?;
+            }
+            validate_fetch_request(request)
+        }
+        ServiceWorkerCacheStorageRequest::Put {
+            cache_name,
+            request,
+            response,
+        } => {
+            validate_cache_name(cache_name)?;
+            validate_fetch_request(request)?;
+            validate_fetch_response(response)
+        }
+    }
 }
 
 fn validate_fetch_request(request: &ServiceWorkerFetchRequest) -> Result<(), ScriptError> {
@@ -2180,6 +2310,44 @@ fn begin_fetch(
         event_id
     );
     sandbox.execute(&dispatch).map(|_| ())
+}
+
+impl std::fmt::Debug for ServiceWorkerRuntime {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("ServiceWorkerRuntime")
+            .field("state", &self.state())
+            .finish()
+    }
+}
+
+#[cfg(feature = "v8")]
+fn create_engine(config: SandboxConfig) -> Result<Box<dyn Sandbox>, ScriptError> {
+    Ok(Box::new(crate::V8Sandbox::with_config(config)?))
+}
+
+#[cfg(all(feature = "quickjs", not(feature = "v8")))]
+fn create_engine(config: SandboxConfig) -> Result<Box<dyn Sandbox>, ScriptError> {
+    Ok(Box::new(crate::QuickJSSandbox::with_config(config)?))
+}
+
+// 无引擎构建（如 zero-browser 主进程）：类型可用，运行时创建降级为
+// EngineUnavailable，调用方按 ScriptFailed { kind: EngineUnavailable } 处理。
+#[cfg(not(any(feature = "v8", feature = "quickjs")))]
+fn create_engine(_config: SandboxConfig) -> Result<Box<dyn Sandbox>, ScriptError> {
+    Err(ScriptError::EngineUnavailable(
+        "no JavaScript engine feature is enabled in this build".into(),
+    ))
+}
+
+fn script_error_kind(error: &ScriptError) -> ServiceWorkerScriptErrorKind {
+    match error {
+        ScriptError::CompileError(_) => ServiceWorkerScriptErrorKind::Compile,
+        ScriptError::RuntimeError(_) | ScriptError::NotInitialized => ServiceWorkerScriptErrorKind::Runtime,
+        ScriptError::Timeout(_) => ServiceWorkerScriptErrorKind::Timeout,
+        ScriptError::InvalidInput(_) => ServiceWorkerScriptErrorKind::InvalidInput,
+        ScriptError::EngineUnavailable(_) => ServiceWorkerScriptErrorKind::EngineUnavailable,
+    }
 }
 
 fn poll_fetch(sandbox: &mut dyn Sandbox, pending: &PendingFetch, timeout_ms: u64) -> Option<ServiceWorkerEvent> {
@@ -3769,10 +3937,17 @@ mod tests {
                 },
             )
             .unwrap();
-        let ServiceWorkerEvent::CacheMatchRequested { request_id, request } =
+        let ServiceWorkerEvent::CacheStorageRequested { request_id, request } =
             runtime.recv_timeout(Duration::from_secs(5)).unwrap()
         else {
             panic!("missing CacheStorage.match request");
+        };
+        let ServiceWorkerCacheStorageRequest::Match {
+            cache_name: None,
+            request,
+        } = request
+        else {
+            panic!("expected CacheStorage match request");
         };
         assert_eq!(request.url, "https://example.test/app/cached");
         assert_eq!(request.method, "GET");
@@ -3798,6 +3973,123 @@ mod tests {
                     status_text: "OK".into(),
                     headers: vec![("x-cache".into(), "hit".into())],
                     body: "cached-body".into(),
+                }),
+                message: String::new(),
+            }
+        );
+    }
+
+    #[test]
+    fn caches_open_put_match_roundtrips_cache_operations() {
+        let mut runtime = ServiceWorkerRuntime::new(test_config()).unwrap();
+        runtime
+            .evaluate(
+                "addEventListener('fetch', event => {
+                   event.respondWith((async () => {
+                     const cache = await caches.open('runtime');
+                     await cache.put(event.request, new Response('stored', {
+                       status: 201,
+                       statusText: 'Created',
+                       headers: [['x-cache', 'put']]
+                     }));
+                     return await cache.match(event.request);
+                   })());
+                 });",
+                "https://example.test/sw.js",
+            )
+            .unwrap();
+        let _ = runtime.recv_timeout(Duration::from_secs(5)).unwrap();
+
+        runtime
+            .dispatch_fetch(
+                43,
+                ServiceWorkerFetchRequest {
+                    url: "https://example.test/app/store".into(),
+                    method: "GET".into(),
+                    headers: Vec::new(),
+                    body: None,
+                    client_id: Some("client-1".into()),
+                    resulting_client_id: None,
+                },
+            )
+            .unwrap();
+
+        let ServiceWorkerEvent::CacheStorageRequested { request_id, request } =
+            runtime.recv_timeout(Duration::from_secs(5)).unwrap()
+        else {
+            panic!("missing CacheStorage.open request");
+        };
+        assert_eq!(
+            request,
+            ServiceWorkerCacheStorageRequest::Open {
+                cache_name: "runtime".into()
+            }
+        );
+        runtime
+            .complete_cache_storage(request_id, Ok(ServiceWorkerCacheStorageResult::Done))
+            .unwrap();
+
+        let ServiceWorkerEvent::CacheStorageRequested { request_id, request } =
+            runtime.recv_timeout(Duration::from_secs(5)).unwrap()
+        else {
+            panic!("missing Cache.put request");
+        };
+        let ServiceWorkerCacheStorageRequest::Put {
+            cache_name,
+            request,
+            response,
+        } = request
+        else {
+            panic!("expected Cache.put request");
+        };
+        assert_eq!(cache_name, "runtime");
+        assert_eq!(request.url, "https://example.test/app/store");
+        assert_eq!(response.status, 201);
+        assert_eq!(response.status_text, "Created");
+        assert_eq!(response.headers, [("x-cache".into(), "put".into())]);
+        assert_eq!(response.body, "stored");
+        runtime
+            .complete_cache_storage(request_id, Ok(ServiceWorkerCacheStorageResult::Done))
+            .unwrap();
+
+        let ServiceWorkerEvent::CacheStorageRequested { request_id, request } =
+            runtime.recv_timeout(Duration::from_secs(5)).unwrap()
+        else {
+            panic!("missing Cache.match request");
+        };
+        let ServiceWorkerCacheStorageRequest::Match {
+            cache_name: Some(cache_name),
+            request,
+        } = request
+        else {
+            panic!("expected named Cache.match request");
+        };
+        assert_eq!(cache_name, "runtime");
+        assert_eq!(request.url, "https://example.test/app/store");
+        runtime
+            .complete_cache_storage(
+                request_id,
+                Ok(ServiceWorkerCacheStorageResult::Match(Some(
+                    ServiceWorkerFetchResponse {
+                        status: 201,
+                        status_text: "Created".into(),
+                        headers: vec![("x-cache".into(), "put".into())],
+                        body: "stored".into(),
+                    },
+                ))),
+            )
+            .unwrap();
+
+        assert_eq!(
+            runtime.recv_timeout(Duration::from_secs(5)).unwrap(),
+            ServiceWorkerEvent::FetchSettled {
+                event_id: 43,
+                request_url: "https://example.test/app/store".into(),
+                response: Some(ServiceWorkerFetchResponse {
+                    status: 201,
+                    status_text: "Created".into(),
+                    headers: vec![("x-cache".into(), "put".into())],
+                    body: "stored".into(),
                 }),
                 message: String::new(),
             }

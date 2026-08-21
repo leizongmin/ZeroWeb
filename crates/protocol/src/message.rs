@@ -1119,13 +1119,16 @@ impl ServiceWorkerHostCommandParams {
                 }
                 Ok(())
             }
-            ServiceWorkerHostCommand::CompleteCacheMatch { request_id, result } => {
+            ServiceWorkerHostCommand::CompleteCacheStorage { request_id, result } => {
                 if *request_id == 0 {
                     return Err("Service Worker cache request id is required");
                 }
                 match result {
-                    Ok(Some(response)) => validate_service_worker_fetch_response(response),
-                    Ok(None) => Ok(()),
+                    Ok(ServiceWorkerCacheStorageResultWire::Done) => Ok(()),
+                    Ok(ServiceWorkerCacheStorageResultWire::Match(Some(response))) => {
+                        validate_service_worker_fetch_response(response)
+                    }
+                    Ok(ServiceWorkerCacheStorageResultWire::Match(None)) => Ok(()),
                     Err(message) if message.len() > MAX_URL_BYTES => {
                         Err("Service Worker cache error exceeds the size limit")
                     }
@@ -1193,6 +1196,37 @@ fn validate_service_worker_fetch_response(response: &ServiceWorkerFetchResponseW
         return Err("Service Worker fetch response is invalid");
     }
     Ok(())
+}
+
+fn validate_service_worker_cache_name(name: &str) -> Result<(), &'static str> {
+    const MAX_CACHE_NAME_BYTES: usize = 1024;
+    if name.len() > MAX_CACHE_NAME_BYTES {
+        return Err("Service Worker cache name exceeds the size limit");
+    }
+    Ok(())
+}
+
+fn validate_service_worker_cache_storage_request(
+    request: &ServiceWorkerCacheStorageRequestWire,
+) -> Result<(), &'static str> {
+    match request {
+        ServiceWorkerCacheStorageRequestWire::Open { cache_name } => validate_service_worker_cache_name(cache_name),
+        ServiceWorkerCacheStorageRequestWire::Match { cache_name, request } => {
+            if let Some(cache_name) = cache_name {
+                validate_service_worker_cache_name(cache_name)?;
+            }
+            validate_service_worker_fetch_request(request)
+        }
+        ServiceWorkerCacheStorageRequestWire::Put {
+            cache_name,
+            request,
+            response,
+        } => {
+            validate_service_worker_cache_name(cache_name)?;
+            validate_service_worker_fetch_request(request)?;
+            validate_service_worker_fetch_response(response)
+        }
+    }
 }
 
 /// Service Worker runtime 托管命令。
@@ -1266,12 +1300,12 @@ pub enum ServiceWorkerHostCommand {
         /// Optional browser-owned client snapshot or a safe diagnostic.
         result: Result<Option<ServiceWorkerClientInfoWire>, String>,
     },
-    /// Complete a blocking worker-global `caches.match()` request.
-    CompleteCacheMatch {
+    /// Complete a blocking worker-global CacheStorage request.
+    CompleteCacheStorage {
         /// Renderer runtime assigned request ID.
         request_id: u64,
-        /// Optional browser-owned cache response or a safe diagnostic.
-        result: Result<Option<ServiceWorkerFetchResponseWire>, String>,
+        /// Browser-owned cache operation result or a safe diagnostic.
+        result: Result<ServiceWorkerCacheStorageResultWire, String>,
     },
 }
 
@@ -1314,6 +1348,41 @@ pub struct ServiceWorkerFetchResponseWire {
     pub body: String,
 }
 
+/// IPC-safe Service Worker CacheStorage operation.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub enum ServiceWorkerCacheStorageRequestWire {
+    /// Open or create one named cache.
+    Open {
+        /// Cache name.
+        cache_name: String,
+    },
+    /// Match a request across all caches or within one named cache.
+    Match {
+        /// Optional cache name for `Cache.match()`.
+        cache_name: Option<String>,
+        /// Request to match.
+        request: ServiceWorkerFetchRequestWire,
+    },
+    /// Store one response in one named cache.
+    Put {
+        /// Cache name.
+        cache_name: String,
+        /// Request key.
+        request: ServiceWorkerFetchRequestWire,
+        /// Response value.
+        response: ServiceWorkerFetchResponseWire,
+    },
+}
+
+/// IPC-safe Service Worker CacheStorage operation result.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub enum ServiceWorkerCacheStorageResultWire {
+    /// Operation completed without a payload.
+    Done,
+    /// Cache match result.
+    Match(Option<ServiceWorkerFetchResponseWire>),
+}
+
 /// Renderer → browser 的 Service Worker runtime 事件参数。
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ServiceWorkerHostEventParams {
@@ -1344,11 +1413,11 @@ impl ServiceWorkerHostEventParams {
                     return Err("Service Worker clients.get request is invalid");
                 }
             }
-            ServiceWorkerHostEvent::CacheMatchRequested { request_id, request } => {
+            ServiceWorkerHostEvent::CacheStorageRequested { request_id, request } => {
                 if *request_id == 0 {
                     return Err("Service Worker cache request id is required");
                 }
-                validate_service_worker_fetch_request(request)?;
+                validate_service_worker_cache_storage_request(request)?;
             }
             ServiceWorkerHostEvent::ClientMessagesEmitted { outbound }
             | ServiceWorkerHostEvent::MessageDispatched { outbound, .. } => {
@@ -1502,12 +1571,12 @@ pub enum ServiceWorkerHostEvent {
         /// Browser-owned client identity.
         client_id: String,
     },
-    /// Worker global called `caches.match()`.
-    CacheMatchRequested {
+    /// Worker global called a CacheStorage operation.
+    CacheStorageRequested {
         /// Renderer runtime assigned request ID.
         request_id: u64,
-        /// Pure-value fetch request.
-        request: ServiceWorkerFetchRequestWire,
+        /// Pure-value CacheStorage operation.
+        request: ServiceWorkerCacheStorageRequestWire,
     },
     /// Worker emitted messages outside a page-originated message event.
     ClientMessagesEmitted {

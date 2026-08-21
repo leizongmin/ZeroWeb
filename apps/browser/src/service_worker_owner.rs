@@ -17,7 +17,8 @@ use zero_page_runtime::{
     ServiceWorkerRuntimeHost, ServiceWorkerUpdateOutcome, validate_service_worker_registration,
 };
 use zero_protocol::message::{
-    FetchParams, ServiceWorkerClientInfoWire, ServiceWorkerClientMessages, ServiceWorkerError, ServiceWorkerErrorCode,
+    FetchParams, ServiceWorkerCacheStorageRequestWire, ServiceWorkerCacheStorageResultWire,
+    ServiceWorkerClientInfoWire, ServiceWorkerClientMessages, ServiceWorkerError, ServiceWorkerErrorCode,
     ServiceWorkerFetchRequestWire, ServiceWorkerFetchResponseWire, ServiceWorkerHostCommand,
     ServiceWorkerHostCommandParams, ServiceWorkerHostEvent, ServiceWorkerHostEventParams, ServiceWorkerLifecycleWire,
     ServiceWorkerOperation, ServiceWorkerRequestParams, ServiceWorkerResponseParams, ServiceWorkerResult,
@@ -25,8 +26,9 @@ use zero_protocol::message::{
     ServiceWorkerStateWire, ServiceWorkerUpdateError, ServiceWorkerUpdateViaCacheWire,
 };
 use zero_script_sandbox::{
-    ServiceWorkerClientInfo, ServiceWorkerEvent, ServiceWorkerFetchRequest, ServiceWorkerFetchResponse,
-    ServiceWorkerLifecyclePhase, ServiceWorkerMessagePorts, ServiceWorkerScriptErrorKind,
+    ServiceWorkerCacheStorageRequest, ServiceWorkerCacheStorageResult, ServiceWorkerClientInfo, ServiceWorkerEvent,
+    ServiceWorkerFetchRequest, ServiceWorkerFetchResponse, ServiceWorkerLifecyclePhase, ServiceWorkerMessagePorts,
+    ServiceWorkerScriptErrorKind,
 };
 use zero_storage::{
     ServiceWorkerRegistration, ServiceWorkerScriptType, ServiceWorkerState, ServiceWorkerUpdateViaCache,
@@ -390,11 +392,11 @@ impl ServiceWorkerRuntimeHost for IpcServiceWorkerHost {
         Ok(())
     }
 
-    fn complete_cache_match(
+    fn complete_cache_storage(
         &mut self,
         registration_id: u64,
         request_id: u64,
-        result: Result<Option<ServiceWorkerFetchResponse>, String>,
+        result: Result<ServiceWorkerCacheStorageResult, String>,
     ) -> Result<(), ServiceWorkerManagerError> {
         let Some(tab_id) = self.channels.take_owned_tab(registration_id) else {
             return Err(ServiceWorkerManagerError::UnknownRegistration(registration_id));
@@ -404,16 +406,9 @@ impl ServiceWorkerRuntimeHost for IpcServiceWorkerHost {
             tab_id,
             params: ServiceWorkerHostCommandParams {
                 registration_id,
-                command: ServiceWorkerHostCommand::CompleteCacheMatch {
+                command: ServiceWorkerHostCommand::CompleteCacheStorage {
                     request_id,
-                    result: result.map(|response| {
-                        response.map(|response| ServiceWorkerFetchResponseWire {
-                            status: response.status,
-                            status_text: response.status_text,
-                            headers: response.headers,
-                            body: response.body,
-                        })
-                    }),
+                    result: result.map(cache_storage_result_to_wire),
                 },
             },
         });
@@ -468,6 +463,78 @@ fn sandbox_phase(phase: ServiceWorkerLifecycleWire) -> ServiceWorkerLifecyclePha
     match phase {
         ServiceWorkerLifecycleWire::Install => ServiceWorkerLifecyclePhase::Install,
         ServiceWorkerLifecycleWire::Activate => ServiceWorkerLifecyclePhase::Activate,
+    }
+}
+
+fn fetch_request_from_wire(request: ServiceWorkerFetchRequestWire) -> ServiceWorkerFetchRequest {
+    ServiceWorkerFetchRequest {
+        url: request.url,
+        method: request.method,
+        headers: request.headers,
+        body: request.body,
+        client_id: request.client_id,
+        resulting_client_id: request.resulting_client_id,
+    }
+}
+
+fn fetch_request_to_wire(request: ServiceWorkerFetchRequest) -> ServiceWorkerFetchRequestWire {
+    ServiceWorkerFetchRequestWire {
+        url: request.url,
+        method: request.method,
+        headers: request.headers,
+        body: request.body,
+        client_id: request.client_id,
+        resulting_client_id: request.resulting_client_id,
+    }
+}
+
+fn fetch_response_to_wire(response: ServiceWorkerFetchResponse) -> ServiceWorkerFetchResponseWire {
+    ServiceWorkerFetchResponseWire {
+        status: response.status,
+        status_text: response.status_text,
+        headers: response.headers,
+        body: response.body,
+    }
+}
+
+fn fetch_response_from_wire(response: ServiceWorkerFetchResponseWire) -> ServiceWorkerFetchResponse {
+    ServiceWorkerFetchResponse {
+        status: response.status,
+        status_text: response.status_text,
+        headers: response.headers,
+        body: response.body,
+    }
+}
+
+fn cache_storage_request_from_wire(request: ServiceWorkerCacheStorageRequestWire) -> ServiceWorkerCacheStorageRequest {
+    match request {
+        ServiceWorkerCacheStorageRequestWire::Open { cache_name } => {
+            ServiceWorkerCacheStorageRequest::Open { cache_name }
+        }
+        ServiceWorkerCacheStorageRequestWire::Match { cache_name, request } => {
+            ServiceWorkerCacheStorageRequest::Match {
+                cache_name,
+                request: fetch_request_from_wire(request),
+            }
+        }
+        ServiceWorkerCacheStorageRequestWire::Put {
+            cache_name,
+            request,
+            response,
+        } => ServiceWorkerCacheStorageRequest::Put {
+            cache_name,
+            request: fetch_request_from_wire(request),
+            response: fetch_response_from_wire(response),
+        },
+    }
+}
+
+fn cache_storage_result_to_wire(result: ServiceWorkerCacheStorageResult) -> ServiceWorkerCacheStorageResultWire {
+    match result {
+        ServiceWorkerCacheStorageResult::Done => ServiceWorkerCacheStorageResultWire::Done,
+        ServiceWorkerCacheStorageResult::Match(response) => {
+            ServiceWorkerCacheStorageResultWire::Match(response.map(fetch_response_to_wire))
+        }
     }
 }
 
@@ -562,17 +629,10 @@ fn sandbox_event(event: ServiceWorkerHostEvent) -> ServiceWorkerEvent {
         ServiceWorkerHostEvent::ClientsGetRequested { request_id, client_id } => {
             ServiceWorkerEvent::ClientsGetRequested { request_id, client_id }
         }
-        ServiceWorkerHostEvent::CacheMatchRequested { request_id, request } => {
-            ServiceWorkerEvent::CacheMatchRequested {
+        ServiceWorkerHostEvent::CacheStorageRequested { request_id, request } => {
+            ServiceWorkerEvent::CacheStorageRequested {
                 request_id,
-                request: ServiceWorkerFetchRequest {
-                    url: request.url,
-                    method: request.method,
-                    headers: request.headers,
-                    body: request.body,
-                    client_id: request.client_id,
-                    resulting_client_id: request.resulting_client_id,
-                },
+                request: cache_storage_request_from_wire(request),
             }
         }
         ServiceWorkerHostEvent::ClientMessagesEmitted { outbound } => ServiceWorkerEvent::ClientMessagesEmitted {

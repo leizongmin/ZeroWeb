@@ -572,15 +572,18 @@ fn service_worker_host_fetch_command_and_event_round_trip() {
 
     let cache_event = ServiceWorkerHostEventParams {
         registration_id: 8,
-        event: ServiceWorkerHostEvent::CacheMatchRequested {
+        event: ServiceWorkerHostEvent::CacheStorageRequested {
             request_id: 5,
-            request: ServiceWorkerFetchRequestWire {
-                url: "https://example.test/app/cached".into(),
-                method: "GET".into(),
-                headers: vec![("accept".into(), "text/plain".into())],
-                body: None,
-                client_id: None,
-                resulting_client_id: None,
+            request: ServiceWorkerCacheStorageRequestWire::Match {
+                cache_name: None,
+                request: ServiceWorkerFetchRequestWire {
+                    url: "https://example.test/app/cached".into(),
+                    method: "GET".into(),
+                    headers: vec![("accept".into(), "text/plain".into())],
+                    body: None,
+                    client_id: None,
+                    resulting_client_id: None,
+                },
             },
         },
     };
@@ -596,14 +599,16 @@ fn service_worker_host_fetch_command_and_event_round_trip() {
 
     let cache_command = ServiceWorkerHostCommandParams {
         registration_id: 8,
-        command: ServiceWorkerHostCommand::CompleteCacheMatch {
+        command: ServiceWorkerHostCommand::CompleteCacheStorage {
             request_id: 5,
-            result: Ok(Some(ServiceWorkerFetchResponseWire {
-                status: 200,
-                status_text: "OK".into(),
-                headers: vec![("x-cache".into(), "hit".into())],
-                body: "cached".into(),
-            })),
+            result: Ok(ServiceWorkerCacheStorageResultWire::Match(Some(
+                ServiceWorkerFetchResponseWire {
+                    status: 200,
+                    status_text: "OK".into(),
+                    headers: vec![("x-cache".into(), "hit".into())],
+                    body: "cached".into(),
+                },
+            ))),
         },
     };
     assert!(cache_command.validate().is_ok());
@@ -615,6 +620,148 @@ fn service_worker_host_fetch_command_and_event_round_trip() {
         panic!("expected ServiceWorkerHostCommand");
     };
     assert_eq!(decoded_command, cache_command);
+
+    let cache_put_event = ServiceWorkerHostEventParams {
+        registration_id: 8,
+        event: ServiceWorkerHostEvent::CacheStorageRequested {
+            request_id: 6,
+            request: ServiceWorkerCacheStorageRequestWire::Put {
+                cache_name: "runtime".into(),
+                request: ServiceWorkerFetchRequestWire {
+                    url: "https://example.test/app/cached".into(),
+                    method: "GET".into(),
+                    headers: Vec::new(),
+                    body: None,
+                    client_id: None,
+                    resulting_client_id: None,
+                },
+                response: ServiceWorkerFetchResponseWire {
+                    status: 200,
+                    status_text: "OK".into(),
+                    headers: vec![("x-cache".into(), "put".into())],
+                    body: "cached".into(),
+                },
+            },
+        },
+    };
+    assert!(cache_put_event.validate().is_ok());
+
+    let cache_done_command = ServiceWorkerHostCommandParams {
+        registration_id: 8,
+        command: ServiceWorkerHostCommand::CompleteCacheStorage {
+            request_id: 6,
+            result: Ok(ServiceWorkerCacheStorageResultWire::Done),
+        },
+    };
+    assert!(cache_done_command.validate().is_ok());
+    let decoded = roundtrip(IpcMessage {
+        id: 57,
+        kind: IpcMessageKind::ServiceWorkerHostCommand(cache_done_command.clone()),
+    });
+    let IpcMessageKind::ServiceWorkerHostCommand(decoded_command) = decoded.kind else {
+        panic!("expected ServiceWorkerHostCommand");
+    };
+    assert_eq!(decoded_command, cache_done_command);
+
+    let cache_open_event = ServiceWorkerHostEventParams {
+        registration_id: 8,
+        event: ServiceWorkerHostEvent::CacheStorageRequested {
+            request_id: 7,
+            request: ServiceWorkerCacheStorageRequestWire::Open {
+                cache_name: "runtime".into(),
+            },
+        },
+    };
+    assert!(cache_open_event.validate().is_ok());
+
+    assert!(
+        ServiceWorkerHostCommandParams {
+            registration_id: 8,
+            command: ServiceWorkerHostCommand::CompleteCacheStorage {
+                request_id: 0,
+                result: Ok(ServiceWorkerCacheStorageResultWire::Done),
+            },
+        }
+        .validate()
+        .is_err()
+    );
+
+    assert!(
+        ServiceWorkerHostEventParams {
+            registration_id: 8,
+            event: ServiceWorkerHostEvent::CacheStorageRequested {
+                request_id: 6,
+                request: ServiceWorkerCacheStorageRequestWire::Put {
+                    cache_name: "runtime".into(),
+                    request: ServiceWorkerFetchRequestWire {
+                        url: "https://example.test/app/cached".into(),
+                        method: "GET".into(),
+                        headers: Vec::new(),
+                        body: None,
+                        client_id: None,
+                        resulting_client_id: None,
+                    },
+                    response: ServiceWorkerFetchResponseWire {
+                        status: 600,
+                        status_text: String::new(),
+                        headers: Vec::new(),
+                        body: String::new(),
+                    },
+                },
+            },
+        }
+        .validate()
+        .is_err()
+    );
+
+    assert!(
+        ServiceWorkerHostEventParams {
+            registration_id: 8,
+            event: ServiceWorkerHostEvent::CacheStorageRequested {
+                request_id: 6,
+                request: ServiceWorkerCacheStorageRequestWire::Open {
+                    cache_name: "x".repeat(1025),
+                },
+            },
+        }
+        .validate()
+        .is_err()
+    );
+
+    let legacy_fetch_error = ServiceWorkerHostCommandParams {
+        registration_id: 8,
+        command: ServiceWorkerHostCommand::CompleteCacheStorage {
+            request_id: 5,
+            result: Ok(ServiceWorkerCacheStorageResultWire::Match(Some(
+                ServiceWorkerFetchResponseWire {
+                    status: 600,
+                    status_text: String::new(),
+                    headers: Vec::new(),
+                    body: String::new(),
+                },
+            ))),
+        },
+    };
+    assert!(legacy_fetch_error.validate().is_err());
+
+    let legacy_event_error = ServiceWorkerHostEventParams {
+        registration_id: 8,
+        event: ServiceWorkerHostEvent::CacheStorageRequested {
+            request_id: 0,
+            request: ServiceWorkerCacheStorageRequestWire::Match {
+                cache_name: None,
+                request: ServiceWorkerFetchRequestWire {
+                    url: "https://example.test/app/cached".into(),
+                    method: "GET".into(),
+                    headers: Vec::new(),
+                    body: None,
+                    client_id: None,
+                    resulting_client_id: None,
+                },
+            },
+        },
+    };
+    assert!(legacy_event_error.validate().is_err());
 
     assert!(
         ServiceWorkerHostCommandParams {
@@ -655,15 +802,18 @@ fn service_worker_host_fetch_command_and_event_round_trip() {
     assert!(
         ServiceWorkerHostEventParams {
             registration_id: 8,
-            event: ServiceWorkerHostEvent::CacheMatchRequested {
+            event: ServiceWorkerHostEvent::CacheStorageRequested {
                 request_id: 0,
-                request: ServiceWorkerFetchRequestWire {
-                    url: "https://example.test/app/cached".into(),
-                    method: "GET".into(),
-                    headers: Vec::new(),
-                    body: None,
-                    client_id: None,
-                    resulting_client_id: None,
+                request: ServiceWorkerCacheStorageRequestWire::Match {
+                    cache_name: None,
+                    request: ServiceWorkerFetchRequestWire {
+                        url: "https://example.test/app/cached".into(),
+                        method: "GET".into(),
+                        headers: Vec::new(),
+                        body: None,
+                        client_id: None,
+                        resulting_client_id: None,
+                    },
                 },
             },
         }
@@ -673,14 +823,16 @@ fn service_worker_host_fetch_command_and_event_round_trip() {
     assert!(
         ServiceWorkerHostCommandParams {
             registration_id: 8,
-            command: ServiceWorkerHostCommand::CompleteCacheMatch {
+            command: ServiceWorkerHostCommand::CompleteCacheStorage {
                 request_id: 5,
-                result: Ok(Some(ServiceWorkerFetchResponseWire {
-                    status: 600,
-                    status_text: String::new(),
-                    headers: Vec::new(),
-                    body: String::new(),
-                })),
+                result: Ok(ServiceWorkerCacheStorageResultWire::Match(Some(
+                    ServiceWorkerFetchResponseWire {
+                        status: 600,
+                        status_text: String::new(),
+                        headers: Vec::new(),
+                        body: String::new(),
+                    },
+                ))),
             },
         }
         .validate()

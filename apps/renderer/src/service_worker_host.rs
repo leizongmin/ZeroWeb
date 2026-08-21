@@ -15,14 +15,16 @@ use std::sync::mpsc::{self, Sender, TryRecvError};
 use std::time::Duration;
 
 use zero_protocol::message::{
-    ServiceWorkerFetchRequestWire, ServiceWorkerFetchResponseWire, ServiceWorkerHostCommand,
-    ServiceWorkerHostCommandParams, ServiceWorkerHostEvent, ServiceWorkerHostEventParams, ServiceWorkerLifecycleWire,
-    ServiceWorkerScriptErrorKindWire, ServiceWorkerScriptTypeWire,
+    ServiceWorkerCacheStorageRequestWire, ServiceWorkerCacheStorageResultWire, ServiceWorkerFetchRequestWire,
+    ServiceWorkerFetchResponseWire, ServiceWorkerHostCommand, ServiceWorkerHostCommandParams, ServiceWorkerHostEvent,
+    ServiceWorkerHostEventParams, ServiceWorkerLifecycleWire, ServiceWorkerScriptErrorKindWire,
+    ServiceWorkerScriptTypeWire,
 };
 use zero_protocol::transport::PipeTransport;
 use zero_protocol::{IpcChannel, IpcMessage, IpcMessageKind};
 use zero_script_sandbox::{
-    SandboxConfig, ServiceWorkerClientInfo, ServiceWorkerEvent, ServiceWorkerFetchRequest, ServiceWorkerLifecyclePhase,
+    SandboxConfig, ServiceWorkerCacheStorageRequest, ServiceWorkerCacheStorageResult, ServiceWorkerClientInfo,
+    ServiceWorkerEvent, ServiceWorkerFetchRequest, ServiceWorkerFetchResponse, ServiceWorkerLifecyclePhase,
     ServiceWorkerMessagePorts, ServiceWorkerRuntime, ServiceWorkerScriptErrorKind,
 };
 
@@ -180,11 +182,11 @@ impl HostThread {
                     }),
                 );
             }
-            ServiceWorkerHostCommand::CompleteCacheMatch { request_id, result } => {
-                self.complete_cache_match(
+            ServiceWorkerHostCommand::CompleteCacheStorage { request_id, result } => {
+                self.complete_cache_storage(
                     params.registration_id,
                     request_id,
-                    result.map(|response| response.map(fetch_response_from_wire)),
+                    result.map(cache_storage_result_from_wire),
                 );
             }
             ServiceWorkerHostCommand::Shutdown => {
@@ -348,17 +350,17 @@ impl HostThread {
         }
     }
 
-    fn complete_cache_match(
+    fn complete_cache_storage(
         &mut self,
         registration_id: u64,
         request_id: u64,
-        result: Result<Option<zero_script_sandbox::ServiceWorkerFetchResponse>, String>,
+        result: Result<ServiceWorkerCacheStorageResult, String>,
     ) {
         let Some(runtime) = self.runtimes.get(&registration_id) else {
             tracing::warn!("Service Worker cache response for unknown registration {registration_id}");
             return;
         };
-        if let Err(error) = runtime.complete_cache_match(request_id, result) {
+        if let Err(error) = runtime.complete_cache_storage(request_id, result) {
             tracing::warn!("Service Worker cache response failed: {error}");
         }
     }
@@ -382,14 +384,63 @@ fn fetch_request_from_wire(request: ServiceWorkerFetchRequestWire) -> ServiceWor
     }
 }
 
-fn fetch_response_from_wire(
-    response: ServiceWorkerFetchResponseWire,
-) -> zero_script_sandbox::ServiceWorkerFetchResponse {
-    zero_script_sandbox::ServiceWorkerFetchResponse {
+fn fetch_response_from_wire(response: ServiceWorkerFetchResponseWire) -> ServiceWorkerFetchResponse {
+    ServiceWorkerFetchResponse {
         status: response.status,
         status_text: response.status_text,
         headers: response.headers,
         body: response.body,
+    }
+}
+
+fn cache_storage_request_to_wire(request: ServiceWorkerCacheStorageRequest) -> ServiceWorkerCacheStorageRequestWire {
+    match request {
+        ServiceWorkerCacheStorageRequest::Open { cache_name } => {
+            ServiceWorkerCacheStorageRequestWire::Open { cache_name }
+        }
+        ServiceWorkerCacheStorageRequest::Match { cache_name, request } => {
+            ServiceWorkerCacheStorageRequestWire::Match {
+                cache_name,
+                request: ServiceWorkerFetchRequestWire {
+                    url: request.url,
+                    method: request.method,
+                    headers: request.headers,
+                    body: request.body,
+                    client_id: request.client_id,
+                    resulting_client_id: request.resulting_client_id,
+                },
+            }
+        }
+        ServiceWorkerCacheStorageRequest::Put {
+            cache_name,
+            request,
+            response,
+        } => ServiceWorkerCacheStorageRequestWire::Put {
+            cache_name,
+            request: ServiceWorkerFetchRequestWire {
+                url: request.url,
+                method: request.method,
+                headers: request.headers,
+                body: request.body,
+                client_id: request.client_id,
+                resulting_client_id: request.resulting_client_id,
+            },
+            response: ServiceWorkerFetchResponseWire {
+                status: response.status,
+                status_text: response.status_text,
+                headers: response.headers,
+                body: response.body,
+            },
+        },
+    }
+}
+
+fn cache_storage_result_from_wire(result: ServiceWorkerCacheStorageResultWire) -> ServiceWorkerCacheStorageResult {
+    match result {
+        ServiceWorkerCacheStorageResultWire::Done => ServiceWorkerCacheStorageResult::Done,
+        ServiceWorkerCacheStorageResultWire::Match(response) => {
+            ServiceWorkerCacheStorageResult::Match(response.map(fetch_response_from_wire))
+        }
     }
 }
 
@@ -471,17 +522,10 @@ fn host_event(event: ServiceWorkerEvent) -> ServiceWorkerHostEvent {
             }),
             message,
         },
-        ServiceWorkerEvent::CacheMatchRequested { request_id, request } => {
-            ServiceWorkerHostEvent::CacheMatchRequested {
+        ServiceWorkerEvent::CacheStorageRequested { request_id, request } => {
+            ServiceWorkerHostEvent::CacheStorageRequested {
                 request_id,
-                request: ServiceWorkerFetchRequestWire {
-                    url: request.url,
-                    method: request.method,
-                    headers: request.headers,
-                    body: request.body,
-                    client_id: request.client_id,
-                    resulting_client_id: request.resulting_client_id,
-                },
+                request: cache_storage_request_to_wire(request),
             }
         }
         ServiceWorkerEvent::ImportScriptsRequested { request_id, specifiers } => {
@@ -846,22 +890,31 @@ mod tests {
             },
         });
         let cache_request = wait_for_event(&mut transport);
-        let ServiceWorkerHostEvent::CacheMatchRequested { request_id, request } = cache_request.event else {
-            panic!("expected CacheMatchRequested, got {:?}", cache_request.event);
+        let ServiceWorkerHostEvent::CacheStorageRequested { request_id, request } = cache_request.event else {
+            panic!("expected CacheStorageRequested, got {:?}", cache_request.event);
+        };
+        let ServiceWorkerCacheStorageRequestWire::Match {
+            cache_name: None,
+            request,
+        } = request
+        else {
+            panic!("expected CacheStorage.match request");
         };
         assert_eq!(request.url, "https://example.test/app/cached");
         assert_eq!(request.method, "GET");
 
         host.handle_command(ServiceWorkerHostCommandParams {
             registration_id: 15,
-            command: ServiceWorkerHostCommand::CompleteCacheMatch {
+            command: ServiceWorkerHostCommand::CompleteCacheStorage {
                 request_id,
-                result: Ok(Some(ServiceWorkerFetchResponseWire {
-                    status: 200,
-                    status_text: "OK".into(),
-                    headers: vec![("x-cache".into(), "hit".into())],
-                    body: "cached-body".into(),
-                })),
+                result: Ok(ServiceWorkerCacheStorageResultWire::Match(Some(
+                    ServiceWorkerFetchResponseWire {
+                        status: 200,
+                        status_text: "OK".into(),
+                        headers: vec![("x-cache".into(), "hit".into())],
+                        body: "cached-body".into(),
+                    },
+                ))),
             },
         });
         let settled = wait_for_event(&mut transport);
@@ -877,6 +930,137 @@ mod tests {
                 assert_eq!(response.status, 200);
                 assert_eq!(response.headers, [("x-cache".into(), "hit".into())]);
                 assert_eq!(response.body, "cached-body");
+                assert!(message.is_empty());
+            }
+            other => panic!("expected FetchSettled response, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn cache_storage_open_put_match_round_trips_through_renderer_host() {
+        let (host, mut transport) = spawn_host();
+        host.handle_command(evaluate_command(
+            16,
+            "addEventListener('fetch', event => {
+               event.respondWith((async () => {
+                 const cache = await caches.open('runtime');
+                 await cache.put(event.request, new Response('stored-body', {
+                   status: 201,
+                   statusText: 'Created',
+                   headers: [['x-cache', 'put']]
+                 }));
+                 return await cache.match(event.request);
+               })());
+             });",
+        ));
+        let evaluated = wait_for_event(&mut transport);
+        assert!(
+            matches!(evaluated.event, ServiceWorkerHostEvent::Evaluated { .. }),
+            "{:?}",
+            evaluated.event
+        );
+
+        host.handle_command(ServiceWorkerHostCommandParams {
+            registration_id: 16,
+            command: ServiceWorkerHostCommand::DispatchFetch {
+                event_id: 24,
+                request: zero_protocol::message::ServiceWorkerFetchRequestWire {
+                    url: "https://example.test/app/stored".into(),
+                    method: "GET".into(),
+                    headers: Vec::new(),
+                    body: None,
+                    client_id: Some("client-1".into()),
+                    resulting_client_id: None,
+                },
+            },
+        });
+
+        let open_request = wait_for_event(&mut transport);
+        let ServiceWorkerHostEvent::CacheStorageRequested { request_id, request } = open_request.event else {
+            panic!("expected CacheStorage.open request");
+        };
+        assert_eq!(
+            request,
+            ServiceWorkerCacheStorageRequestWire::Open {
+                cache_name: "runtime".into()
+            }
+        );
+        host.handle_command(ServiceWorkerHostCommandParams {
+            registration_id: 16,
+            command: ServiceWorkerHostCommand::CompleteCacheStorage {
+                request_id,
+                result: Ok(ServiceWorkerCacheStorageResultWire::Done),
+            },
+        });
+
+        let put_request = wait_for_event(&mut transport);
+        let ServiceWorkerHostEvent::CacheStorageRequested { request_id, request } = put_request.event else {
+            panic!("expected Cache.put request");
+        };
+        let ServiceWorkerCacheStorageRequestWire::Put {
+            cache_name,
+            request,
+            response,
+        } = request
+        else {
+            panic!("expected Cache.put payload");
+        };
+        assert_eq!(cache_name, "runtime");
+        assert_eq!(request.url, "https://example.test/app/stored");
+        assert_eq!(response.status, 201);
+        assert_eq!(response.status_text, "Created");
+        assert_eq!(response.headers, [("x-cache".into(), "put".into())]);
+        assert_eq!(response.body, "stored-body");
+        host.handle_command(ServiceWorkerHostCommandParams {
+            registration_id: 16,
+            command: ServiceWorkerHostCommand::CompleteCacheStorage {
+                request_id,
+                result: Ok(ServiceWorkerCacheStorageResultWire::Done),
+            },
+        });
+
+        let match_request = wait_for_event(&mut transport);
+        let ServiceWorkerHostEvent::CacheStorageRequested { request_id, request } = match_request.event else {
+            panic!("expected Cache.match request");
+        };
+        let ServiceWorkerCacheStorageRequestWire::Match {
+            cache_name: Some(cache_name),
+            request,
+        } = request
+        else {
+            panic!("expected named Cache.match payload");
+        };
+        assert_eq!(cache_name, "runtime");
+        assert_eq!(request.url, "https://example.test/app/stored");
+        host.handle_command(ServiceWorkerHostCommandParams {
+            registration_id: 16,
+            command: ServiceWorkerHostCommand::CompleteCacheStorage {
+                request_id,
+                result: Ok(ServiceWorkerCacheStorageResultWire::Match(Some(
+                    ServiceWorkerFetchResponseWire {
+                        status: 201,
+                        status_text: "Created".into(),
+                        headers: vec![("x-cache".into(), "put".into())],
+                        body: "stored-body".into(),
+                    },
+                ))),
+            },
+        });
+
+        let settled = wait_for_event(&mut transport);
+        match settled.event {
+            ServiceWorkerHostEvent::FetchSettled {
+                event_id,
+                request_url,
+                response: Some(response),
+                message,
+            } => {
+                assert_eq!(event_id, 24);
+                assert_eq!(request_url, "https://example.test/app/stored");
+                assert_eq!(response.status, 201);
+                assert_eq!(response.status_text, "Created");
+                assert_eq!(response.headers, [("x-cache".into(), "put".into())]);
+                assert_eq!(response.body, "stored-body");
                 assert!(message.is_empty());
             }
             other => panic!("expected FetchSettled response, got {other:?}"),

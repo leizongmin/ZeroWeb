@@ -3,9 +3,9 @@
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 use zero_script_sandbox::{
-    SandboxConfig, ServiceWorkerClientInfo, ServiceWorkerEvent, ServiceWorkerFetchRequest, ServiceWorkerFetchResponse,
-    ServiceWorkerLifecyclePhase, ServiceWorkerMessagePorts, ServiceWorkerOutboundMessage, ServiceWorkerRuntime,
-    ServiceWorkerScriptErrorKind,
+    SandboxConfig, ServiceWorkerCacheStorageRequest, ServiceWorkerCacheStorageResult, ServiceWorkerClientInfo,
+    ServiceWorkerEvent, ServiceWorkerFetchRequest, ServiceWorkerFetchResponse, ServiceWorkerLifecyclePhase,
+    ServiceWorkerMessagePorts, ServiceWorkerOutboundMessage, ServiceWorkerRuntime, ServiceWorkerScriptErrorKind,
 };
 use zero_storage::{
     CacheRequest, CacheResponse, ServiceWorkerRegistration, ServiceWorkerRegistry, ServiceWorkerScriptType,
@@ -24,6 +24,32 @@ const MAX_PENDING_FETCH_EVENTS: usize = 1024;
 
 fn is_service_worker_window_frame_type(frame_type: &str) -> bool {
     matches!(frame_type, "top-level" | "auxiliary" | "nested")
+}
+
+fn service_worker_response_from_cache(
+    response: &CacheResponse,
+) -> Result<ServiceWorkerFetchResponse, ServiceWorkerManagerError> {
+    Ok(ServiceWorkerFetchResponse {
+        status: response.status,
+        status_text: response.status_text.clone(),
+        headers: response
+            .headers
+            .iter()
+            .map(|(name, value)| (name.clone(), value.clone()))
+            .collect(),
+        body: String::from_utf8(response.body.clone()).map_err(|_| {
+            ServiceWorkerManagerError::InvalidInput("cached Service Worker response body is not UTF-8".into())
+        })?,
+    })
+}
+
+fn cache_response_from_service_worker(response: ServiceWorkerFetchResponse) -> CacheResponse {
+    CacheResponse {
+        status: response.status,
+        status_text: response.status_text,
+        headers: response.headers.into_iter().collect(),
+        body: response.body.into_bytes(),
+    }
 }
 
 struct EvaluationOptions {
@@ -458,12 +484,12 @@ pub trait ServiceWorkerRuntimeHost: Send {
         request_id: u64,
         result: Result<Option<ServiceWorkerClientInfo>, String>,
     ) -> Result<(), ServiceWorkerManagerError>;
-    /// Complete one worker-global `caches.match()` request.
-    fn complete_cache_match(
+    /// Complete one worker-global CacheStorage request.
+    fn complete_cache_storage(
         &mut self,
         registration_id: u64,
         request_id: u64,
-        result: Result<Option<ServiceWorkerFetchResponse>, String>,
+        result: Result<ServiceWorkerCacheStorageResult, String>,
     ) -> Result<(), ServiceWorkerManagerError>;
     /// Stop one runtime and release its resources.
     fn shutdown(&mut self, registration_id: u64);
@@ -609,16 +635,16 @@ impl ServiceWorkerRuntimeHost for LocalServiceWorkerHost {
             .map_err(|error| ServiceWorkerManagerError::Runtime(error.to_string()))
     }
 
-    fn complete_cache_match(
+    fn complete_cache_storage(
         &mut self,
         registration_id: u64,
         request_id: u64,
-        result: Result<Option<ServiceWorkerFetchResponse>, String>,
+        result: Result<ServiceWorkerCacheStorageResult, String>,
     ) -> Result<(), ServiceWorkerManagerError> {
         self.runtimes
             .get(&registration_id)
             .ok_or(ServiceWorkerManagerError::UnknownRegistration(registration_id))?
-            .complete_cache_match(request_id, result)
+            .complete_cache_storage(request_id, result)
             .map_err(|error| ServiceWorkerManagerError::Runtime(error.to_string()))
     }
 
@@ -1351,9 +1377,9 @@ impl ServiceWorkerManager {
                         result.map_err(|error| error.to_string()),
                     );
                 }
-                ServiceWorkerEvent::CacheMatchRequested { request_id, request } => {
-                    let result = self.cache_match_for_worker(registration_id, &request);
-                    let _ = self.host.complete_cache_match(
+                ServiceWorkerEvent::CacheStorageRequested { request_id, request } => {
+                    let result = self.cache_storage_for_worker(registration_id, request);
+                    let _ = self.host.complete_cache_storage(
                         registration_id,
                         request_id,
                         result.map_err(|error| error.to_string()),
@@ -2315,36 +2341,50 @@ impl ServiceWorkerManager {
         }
     }
 
-    fn cache_match_for_worker(
-        &self,
+    fn cache_storage_for_worker(
+        &mut self,
         registration_id: u64,
-        request: &ServiceWorkerFetchRequest,
-    ) -> Result<Option<ServiceWorkerFetchResponse>, ServiceWorkerManagerError> {
-        // https://w3c.github.io/ServiceWorker/#cache-storage-match
+        request: ServiceWorkerCacheStorageRequest,
+    ) -> Result<ServiceWorkerCacheStorageResult, ServiceWorkerManagerError> {
+        // https://w3c.github.io/ServiceWorker/#cache-storage-interface
         let registration = self
-            .registration(registration_id)
+            .registry
+            .get_mut(registration_id)
             .ok_or(ServiceWorkerManagerError::UnknownRegistration(registration_id))?;
-        let request = CacheRequest::with_method(&request.url, &request.method);
-        registration
-            .cache_storage
-            .match_request(&request)
-            .map(|response| {
-                Ok(ServiceWorkerFetchResponse {
-                    status: response.status,
-                    status_text: response.status_text.clone(),
-                    headers: response
-                        .headers
-                        .iter()
-                        .map(|(name, value)| (name.clone(), value.clone()))
-                        .collect(),
-                    body: String::from_utf8(response.body.clone()).map_err(|_| {
-                        ServiceWorkerManagerError::InvalidInput(
-                            "cached Service Worker response body is not UTF-8".into(),
-                        )
-                    })?,
-                })
-            })
-            .transpose()
+        match request {
+            ServiceWorkerCacheStorageRequest::Open { cache_name } => {
+                registration.cache_storage.open(&cache_name);
+                Ok(ServiceWorkerCacheStorageResult::Done)
+            }
+            ServiceWorkerCacheStorageRequest::Match { cache_name, request } => {
+                let request = CacheRequest::with_method(&request.url, &request.method);
+                let response = match cache_name {
+                    Some(cache_name) => registration
+                        .cache_storage
+                        .get(&cache_name)
+                        .and_then(|cache| cache.match_request(&request)),
+                    None => registration.cache_storage.match_request(&request),
+                }
+                .map(service_worker_response_from_cache)
+                .transpose()?;
+                Ok(ServiceWorkerCacheStorageResult::Match(response))
+            }
+            ServiceWorkerCacheStorageRequest::Put {
+                cache_name,
+                request,
+                response,
+            } => {
+                registration
+                    .cache_storage
+                    .open(&cache_name)
+                    .put(
+                        CacheRequest::with_method(&request.url, &request.method),
+                        cache_response_from_service_worker(response),
+                    )
+                    .map_err(|error| ServiceWorkerManagerError::Runtime(error.to_string()))?;
+                Ok(ServiceWorkerCacheStorageResult::Done)
+            }
+        }
     }
 
     fn release_client_message_reservation(&mut self, key: &(u64, String)) {
@@ -4011,6 +4051,73 @@ mod tests {
                 message: String::new(),
             }
         );
+    }
+
+    #[test]
+    fn fetch_handler_can_write_and_read_named_cache_storage() {
+        let mut manager = manager_under_test();
+        let registration_id = start_active(
+            &mut manager,
+            "/app/",
+            "addEventListener('fetch', event => {
+               event.respondWith((async () => {
+                 const cache = await caches.open('runtime');
+                 await cache.put(event.request, new Response('stored-body', {
+                   status: 201,
+                   statusText: 'Created',
+                   headers: [['x-cache', 'put']]
+                 }));
+                 return await cache.match(event.request);
+               })());
+             });",
+        );
+
+        assert_eq!(
+            manager
+                .dispatch_fetch(
+                    "https://example.test",
+                    125,
+                    ServiceWorkerFetchRequest {
+                        url: "https://example.test/app/stored".into(),
+                        method: "GET".into(),
+                        headers: Vec::new(),
+                        body: None,
+                        client_id: Some("client-1".into()),
+                        resulting_client_id: None,
+                    },
+                )
+                .unwrap(),
+            ServiceWorkerFetchDispatch::Dispatched {
+                registration_id,
+                event_id: 125,
+            }
+        );
+        assert_eq!(
+            wait_for_fetch(&mut manager, 125),
+            ServiceWorkerManagerEvent::FetchSettled {
+                registration_id,
+                event_id: 125,
+                request_url: "https://example.test/app/stored".into(),
+                client_id: Some("client-1".into()),
+                response: Some(ServiceWorkerFetchResponse {
+                    status: 201,
+                    status_text: "Created".into(),
+                    headers: vec![("x-cache".into(), "put".into())],
+                    body: "stored-body".into(),
+                }),
+                message: String::new(),
+            }
+        );
+
+        let cached = manager
+            .registration(registration_id)
+            .and_then(|registration| registration.cache_storage.get("runtime"))
+            .and_then(|cache| cache.match_request(&CacheRequest::new("https://example.test/app/stored")))
+            .expect("Cache.put should store into the registration CacheStorage");
+        assert_eq!(cached.status, 201);
+        assert_eq!(cached.status_text, "Created");
+        assert_eq!(cached.headers.get("x-cache").map(String::as_str), Some("put"));
+        assert_eq!(cached.body, b"stored-body");
     }
 
     #[test]
