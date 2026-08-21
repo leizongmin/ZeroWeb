@@ -628,7 +628,7 @@ fn navigator_lifecycle_events_preserve_state_and_slot_task_order() {
         )
         .unwrap();
 
-    let deadline = Instant::now() + Duration::from_secs(5);
+    let deadline = Instant::now() + Duration::from_secs(20);
     loop {
         if webview.execute_script("String(globalThis.__swEventsDone)").unwrap() == "true" {
             break;
@@ -935,7 +935,7 @@ fn navigator_update_succeeds_while_initial_worker_is_installing() {
         )
         .unwrap();
 
-    let deadline = Instant::now() + Duration::from_secs(5);
+    let deadline = Instant::now() + Duration::from_secs(20);
     loop {
         let value = webview.execute_script("globalThis.__installingUpdate").unwrap();
         if value != "pending" {

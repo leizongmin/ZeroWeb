@@ -31,6 +31,17 @@ impl CacheRequest {
     }
 }
 
+/// Cache API 查询选项。
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct CacheQueryOptions {
+    /// 忽略 URL 查询参数。
+    pub ignore_search: bool,
+    /// 忽略请求方法。
+    pub ignore_method: bool,
+    /// 忽略 Vary 头。
+    pub ignore_vary: bool,
+}
+
 /// 缓存响应的简化表示。
 #[derive(Debug, Clone, PartialEq)]
 pub struct CacheResponse {
@@ -106,30 +117,34 @@ impl Cache {
 
     /// 查找匹配请求的第一个缓存响应。
     ///
-    /// 匹配规则：URL 完全相等，方法默认只匹配 GET（除非 vary_method 为 true）。
+    /// 匹配规则：URL 完全相等，方法完全匹配。
     pub fn match_request(&self, request: &CacheRequest) -> Option<&CacheResponse> {
-        self.entries.iter().find_map(|entry| {
-            if entry.request.url != request.url {
-                return None;
-            }
-            if entry.request.method != request.method {
-                return None;
-            }
-            Some(&entry.response)
-        })
+        self.match_request_with_options(request, CacheQueryOptions::default())
+    }
+
+    /// 查找匹配请求的第一个缓存响应，并应用查询选项。
+    pub fn match_request_with_options(
+        &self,
+        request: &CacheRequest,
+        options: CacheQueryOptions,
+    ) -> Option<&CacheResponse> {
+        self.entries
+            .iter()
+            .find(|entry| cache_requests_match(&entry.request, request, options))
+            .map(|entry| &entry.response)
     }
 
     /// 查找匹配请求的所有缓存响应。
     pub fn match_all(&self, request: &CacheRequest) -> Vec<&CacheResponse> {
+        self.match_all_with_options(request, CacheQueryOptions::default())
+    }
+
+    /// 查找匹配请求的所有缓存响应，并应用查询选项。
+    pub fn match_all_with_options(&self, request: &CacheRequest, options: CacheQueryOptions) -> Vec<&CacheResponse> {
         self.entries
             .iter()
-            .filter_map(|entry| {
-                if entry.request.url == request.url && entry.request.method == request.method {
-                    Some(&entry.response)
-                } else {
-                    None
-                }
-            })
+            .filter(|entry| cache_requests_match(&entry.request, request, options))
+            .map(|entry| &entry.response)
             .collect()
     }
 
@@ -149,9 +164,14 @@ impl Cache {
 
     /// 删除匹配请求的缓存条目，返回是否删除成功。
     pub fn delete(&mut self, request: &CacheRequest) -> bool {
+        self.delete_with_options(request, CacheQueryOptions::default())
+    }
+
+    /// 删除匹配请求的缓存条目，并应用查询选项。
+    pub fn delete_with_options(&mut self, request: &CacheRequest, options: CacheQueryOptions) -> bool {
         let before = self.entries.len();
         self.entries
-            .retain(|e| !(e.request.url == request.url && e.request.method == request.method));
+            .retain(|entry| !cache_requests_match(&entry.request, request, options));
         self.entries.len() < before
     }
 
@@ -163,6 +183,15 @@ impl Cache {
     /// 获取缓存中所有请求列表。
     pub fn request_keys(&self) -> Vec<&CacheRequest> {
         self.entries.iter().map(|e| &e.request).collect()
+    }
+
+    /// 获取匹配请求的缓存请求列表，并应用查询选项。
+    pub fn request_keys_with_options(&self, request: &CacheRequest, options: CacheQueryOptions) -> Vec<&CacheRequest> {
+        self.entries
+            .iter()
+            .filter(|entry| cache_requests_match(&entry.request, request, options))
+            .map(|entry| &entry.request)
+            .collect()
     }
 
     /// 获取缓存条目数量。
@@ -191,8 +220,17 @@ impl CacheStorage {
 
     /// 查找匹配请求的响应（在所有缓存中搜索第一个匹配）。
     pub fn match_request(&self, request: &CacheRequest) -> Option<&CacheResponse> {
+        self.match_request_with_options(request, CacheQueryOptions::default())
+    }
+
+    /// 查找匹配请求的响应（在所有缓存中搜索第一个匹配），并应用查询选项。
+    pub fn match_request_with_options(
+        &self,
+        request: &CacheRequest,
+        options: CacheQueryOptions,
+    ) -> Option<&CacheResponse> {
         for cache in self.caches.values() {
-            if let Some(response) = cache.match_request(request) {
+            if let Some(response) = cache.match_request_with_options(request, options) {
                 return Some(response);
             }
         }
@@ -228,6 +266,35 @@ impl CacheStorage {
     pub fn keys(&self) -> Vec<&str> {
         self.caches.keys().map(|s| s.as_str()).collect()
     }
+}
+
+fn cache_requests_match(cached: &CacheRequest, query: &CacheRequest, options: CacheQueryOptions) -> bool {
+    (options.ignore_method || cached.method == query.method)
+        && cache_urls_match(&cached.url, &query.url, options.ignore_search)
+}
+
+fn cache_urls_match(cached: &str, query: &str, ignore_search: bool) -> bool {
+    match (url::Url::parse(cached), url::Url::parse(query)) {
+        (Ok(mut cached_url), Ok(mut query_url)) => {
+            cached_url.set_fragment(None);
+            query_url.set_fragment(None);
+            if ignore_search {
+                cached_url.set_query(None);
+                query_url.set_query(None);
+            }
+            cached_url == query_url
+        }
+        _ if ignore_search => strip_url_query_and_fragment(cached) == strip_url_query_and_fragment(query),
+        _ => strip_url_fragment(cached) == strip_url_fragment(query),
+    }
+}
+
+fn strip_url_query_and_fragment(url: &str) -> &str {
+    url.split(['?', '#']).next().unwrap_or(url)
+}
+
+fn strip_url_fragment(url: &str) -> &str {
+    url.split('#').next().unwrap_or(url)
 }
 
 impl Default for CacheStorage {
@@ -313,6 +380,102 @@ mod tests {
 
         let post_req = CacheRequest::with_method("https://example.com/api", "POST");
         assert!(cache.match_request(&post_req).is_none());
+    }
+
+    #[test]
+    fn test_cache_query_options_ignore_search_and_method() {
+        let mut cache = Cache::new("v1");
+        let cached = CacheRequest::new("https://example.com/api?version=1#old");
+        cache.put(cached, CacheResponse::ok(b"cached".to_vec())).unwrap();
+
+        let query = CacheRequest::with_method("https://example.com/api?version=2#new", "HEAD");
+        assert!(cache.match_request(&query).is_none());
+        assert!(
+            cache
+                .match_request_with_options(
+                    &query,
+                    CacheQueryOptions {
+                        ignore_search: true,
+                        ignore_method: true,
+                        ignore_vary: false,
+                    },
+                )
+                .is_some()
+        );
+    }
+
+    #[test]
+    fn test_cache_query_options_ignore_fragment_for_relative_fallback() {
+        let mut cache = Cache::new("v1");
+        cache
+            .put(
+                CacheRequest::new("/api?version=1#old"),
+                CacheResponse::ok(b"cached".to_vec()),
+            )
+            .unwrap();
+
+        assert!(cache.match_request(&CacheRequest::new("/api?version=1#new")).is_some());
+        assert!(
+            cache
+                .match_request_with_options(
+                    &CacheRequest::new("/api?version=2#new"),
+                    CacheQueryOptions {
+                        ignore_search: true,
+                        ignore_method: false,
+                        ignore_vary: false,
+                    },
+                )
+                .is_some()
+        );
+    }
+
+    #[test]
+    fn test_cache_query_options_filter_keys_and_delete() {
+        let mut cache = Cache::new("v1");
+        cache
+            .put(
+                CacheRequest::new("https://example.com/api?one"),
+                CacheResponse::ok(b"one".to_vec()),
+            )
+            .unwrap();
+        cache
+            .put(
+                CacheRequest::with_method("https://example.com/api?two", "POST"),
+                CacheResponse::ok(b"two".to_vec()),
+            )
+            .unwrap();
+        cache
+            .put(
+                CacheRequest::new("https://example.com/other?one"),
+                CacheResponse::ok(b"other".to_vec()),
+            )
+            .unwrap();
+
+        let query = CacheRequest::with_method("https://example.com/api?three", "HEAD");
+        let keys = cache.request_keys_with_options(
+            &query,
+            CacheQueryOptions {
+                ignore_search: true,
+                ignore_method: true,
+                ignore_vary: false,
+            },
+        );
+        assert_eq!(keys.len(), 2);
+
+        assert!(cache.delete_with_options(
+            &query,
+            CacheQueryOptions {
+                ignore_search: true,
+                ignore_method: true,
+                ignore_vary: false,
+            },
+        ));
+        assert_eq!(cache.len(), 1);
+        assert!(
+            cache
+                .match_request(&CacheRequest::new("https://example.com/other?one"))
+                .is_some()
+        );
     }
 
     #[test]

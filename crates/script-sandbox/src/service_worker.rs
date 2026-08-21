@@ -382,6 +382,14 @@ const SERVICE_WORKER_BOOTSTRAP: &str = r#"
       resultingClientId: null
     };
   }
+  function cacheQueryOptionsWire(options) {
+    options = options === undefined || options === null ? {} : Object(options);
+    return {
+      ignoreSearch: !!options.ignoreSearch,
+      ignoreMethod: !!options.ignoreMethod,
+      ignoreVary: !!options.ignoreVary
+    };
+  }
   function cachedResponseFromWire(response) {
     return new Response(response.body || '', {
       status: response.status,
@@ -408,26 +416,29 @@ const SERVICE_WORKER_BOOTSTRAP: &str = r#"
     }
     return Promise.resolve(response);
   }
-  function cacheMatchRequest(input, cacheName) {
+  function cacheMatchRequest(input, cacheName, options) {
     const request = {
       op: 'match',
-      request: cacheRequestWire(input)
+      request: cacheRequestWire(input),
+      options: cacheQueryOptionsWire(options)
     };
     if (cacheName !== undefined) request.cacheName = cacheName;
     return request;
   }
-  function cacheMatchAllRequest(cacheName, input) {
+  function cacheMatchAllRequest(cacheName, input, options) {
     const request = {
       op: 'matchAll',
-      cacheName
+      cacheName,
+      options: cacheQueryOptionsWire(options)
     };
     if (input !== undefined) request.request = cacheRequestWire(input);
     return request;
   }
-  function cacheKeysRequest(cacheName, input) {
+  function cacheKeysRequest(cacheName, input, options) {
     const request = {
       op: 'keys',
-      cacheName
+      cacheName,
+      options: cacheQueryOptionsWire(options)
     };
     if (input !== undefined) request.request = cacheRequestWire(input);
     return request;
@@ -445,13 +456,13 @@ const SERVICE_WORKER_BOOTSTRAP: &str = r#"
     constructor(name) {
       this._name = String(name);
     }
-    match(input) {
-      return cacheStorageHost(cacheMatchRequest(input, this._name)).then(function(response) {
+    match(input, options) {
+      return cacheStorageHost(cacheMatchRequest(input, this._name, options)).then(function(response) {
         return response.response === null ? undefined : cachedResponseFromWire(response.response);
       });
     }
-    matchAll(input) {
-      return cacheStorageHost(cacheMatchAllRequest(this._name, input)).then(function(response) {
+    matchAll(input, options) {
+      return cacheStorageHost(cacheMatchAllRequest(this._name, input, options)).then(function(response) {
         const responses = Array.isArray(response.responses) ? response.responses : [];
         return responses.map(cachedResponseFromWire);
       });
@@ -461,8 +472,8 @@ const SERVICE_WORKER_BOOTSTRAP: &str = r#"
         return undefined;
       });
     }
-    keys(input) {
-      return cacheStorageHost(cacheKeysRequest(this._name, input)).then(function(response) {
+    keys(input, options) {
+      return cacheStorageHost(cacheKeysRequest(this._name, input, options)).then(function(response) {
         const requests = Array.isArray(response.requests) ? response.requests : [];
         return requests.map(cachedRequestFromWire);
       });
@@ -481,8 +492,9 @@ const SERVICE_WORKER_BOOTSTRAP: &str = r#"
         return new Cache(name);
       });
     }
-    match(input) {
-      return cacheStorageHost(cacheMatchRequest(input)).then(function(response) {
+    match(input, options) {
+      const cacheName = options === undefined || options === null ? undefined : Object(options).cacheName;
+      return cacheStorageHost(cacheMatchRequest(input, cacheName === undefined ? undefined : String(cacheName), options)).then(function(response) {
         return response.response === null ? undefined : cachedResponseFromWire(response.response);
       });
     }
@@ -1169,6 +1181,17 @@ pub struct ServiceWorkerFetchResponse {
     pub body: String,
 }
 
+/// Pure-value Cache API query options requested by a Service Worker.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct ServiceWorkerCacheQueryOptions {
+    /// Ignore URL query parameters while matching requests.
+    pub ignore_search: bool,
+    /// Ignore request method while matching requests.
+    pub ignore_method: bool,
+    /// Ignore Vary headers while matching requests.
+    pub ignore_vary: bool,
+}
+
 /// Worker-global CacheStorage operation requested from the browser-owned registration store.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ServiceWorkerCacheStorageRequest {
@@ -1183,6 +1206,8 @@ pub enum ServiceWorkerCacheStorageRequest {
         cache_name: Option<String>,
         /// Request to match.
         request: ServiceWorkerFetchRequest,
+        /// Query matching options.
+        options: ServiceWorkerCacheQueryOptions,
     },
     /// Match all responses in one named cache, optionally filtering by request.
     MatchAll {
@@ -1190,6 +1215,8 @@ pub enum ServiceWorkerCacheStorageRequest {
         cache_name: String,
         /// Optional request filter.
         request: Option<ServiceWorkerFetchRequest>,
+        /// Query matching options.
+        options: ServiceWorkerCacheQueryOptions,
     },
     /// List all request keys in one named cache.
     Keys {
@@ -1197,6 +1224,8 @@ pub enum ServiceWorkerCacheStorageRequest {
         cache_name: String,
         /// Optional request filter.
         request: Option<ServiceWorkerFetchRequest>,
+        /// Query matching options.
+        options: ServiceWorkerCacheQueryOptions,
     },
     /// Store one response in one named cache.
     Put {
@@ -2188,6 +2217,7 @@ fn cache_storage_request_from_json(value: serde_json::Value) -> Option<ServiceWo
         "match" => Some(ServiceWorkerCacheStorageRequest::Match {
             cache_name: value["cacheName"].as_str().map(str::to_string),
             request: fetch_request_from_json(&value["request"])?,
+            options: cache_query_options_from_json(value.get("options")),
         }),
         "matchAll" => Some(ServiceWorkerCacheStorageRequest::MatchAll {
             cache_name: value["cacheName"].as_str()?.to_string(),
@@ -2196,6 +2226,7 @@ fn cache_storage_request_from_json(value: serde_json::Value) -> Option<ServiceWo
             } else {
                 None
             },
+            options: cache_query_options_from_json(value.get("options")),
         }),
         "keys" => Some(ServiceWorkerCacheStorageRequest::Keys {
             cache_name: value["cacheName"].as_str()?.to_string(),
@@ -2204,6 +2235,7 @@ fn cache_storage_request_from_json(value: serde_json::Value) -> Option<ServiceWo
             } else {
                 None
             },
+            options: cache_query_options_from_json(value.get("options")),
         }),
         "put" => Some(ServiceWorkerCacheStorageRequest::Put {
             cache_name: value["cacheName"].as_str()?.to_string(),
@@ -2211,6 +2243,17 @@ fn cache_storage_request_from_json(value: serde_json::Value) -> Option<ServiceWo
             response: fetch_response_from_json(&value["response"])?,
         }),
         _ => None,
+    }
+}
+
+fn cache_query_options_from_json(value: Option<&serde_json::Value>) -> ServiceWorkerCacheQueryOptions {
+    let Some(value) = value else {
+        return ServiceWorkerCacheQueryOptions::default();
+    };
+    ServiceWorkerCacheQueryOptions {
+        ignore_search: value["ignoreSearch"].as_bool().unwrap_or(false),
+        ignore_method: value["ignoreMethod"].as_bool().unwrap_or(false),
+        ignore_vary: value["ignoreVary"].as_bool().unwrap_or(false),
     }
 }
 
@@ -2299,20 +2342,26 @@ fn validate_cache_name(name: &str) -> Result<(), ScriptError> {
 fn validate_cache_storage_request(request: &ServiceWorkerCacheStorageRequest) -> Result<(), ScriptError> {
     match request {
         ServiceWorkerCacheStorageRequest::Open { cache_name } => validate_cache_name(cache_name),
-        ServiceWorkerCacheStorageRequest::Match { cache_name, request } => {
+        ServiceWorkerCacheStorageRequest::Match {
+            cache_name, request, ..
+        } => {
             if let Some(cache_name) = cache_name {
                 validate_cache_name(cache_name)?;
             }
             validate_fetch_request(request)
         }
-        ServiceWorkerCacheStorageRequest::MatchAll { cache_name, request } => {
+        ServiceWorkerCacheStorageRequest::MatchAll {
+            cache_name, request, ..
+        } => {
             validate_cache_name(cache_name)?;
             if let Some(request) = request {
                 validate_fetch_request(request)?;
             }
             Ok(())
         }
-        ServiceWorkerCacheStorageRequest::Keys { cache_name, request } => {
+        ServiceWorkerCacheStorageRequest::Keys {
+            cache_name, request, ..
+        } => {
             validate_cache_name(cache_name)?;
             if let Some(request) = request {
                 validate_fetch_request(request)?;
@@ -4067,6 +4116,7 @@ mod tests {
         let ServiceWorkerCacheStorageRequest::Match {
             cache_name: None,
             request,
+            options,
         } = request
         else {
             panic!("expected CacheStorage match request");
@@ -4074,6 +4124,7 @@ mod tests {
         assert_eq!(request.url, "https://example.test/app/cached");
         assert_eq!(request.method, "GET");
         assert_eq!(request.headers, [("accept".into(), "text/plain".into())]);
+        assert_eq!(options, ServiceWorkerCacheQueryOptions::default());
         runtime
             .complete_cache_match(
                 request_id,
@@ -4186,12 +4237,14 @@ mod tests {
         let ServiceWorkerCacheStorageRequest::MatchAll {
             cache_name,
             request: Some(request),
+            options,
         } = request
         else {
             panic!("expected named Cache.matchAll request");
         };
         assert_eq!(cache_name, "runtime");
         assert_eq!(request.url, "https://example.test/app/store");
+        assert_eq!(options, ServiceWorkerCacheQueryOptions::default());
         runtime
             .complete_cache_storage(
                 request_id,
@@ -4216,6 +4269,7 @@ mod tests {
             ServiceWorkerCacheStorageRequest::Keys {
                 cache_name: "runtime".into(),
                 request: None,
+                options: ServiceWorkerCacheQueryOptions::default(),
             }
         );
         runtime
@@ -4242,6 +4296,188 @@ mod tests {
                     status_text: "Created".into(),
                     headers: vec![("x-cache".into(), "put".into())],
                     body: "stored".into(),
+                }),
+                message: String::new(),
+            }
+        );
+    }
+
+    #[test]
+    fn cache_query_options_roundtrip_from_worker_script() {
+        let mut runtime = ServiceWorkerRuntime::new(test_config()).unwrap();
+        runtime
+            .evaluate(
+                "addEventListener('fetch', event => {
+                   event.respondWith((async () => {
+                     const cache = await caches.open('runtime');
+                     await cache.match(event.request, {
+                       ignoreSearch: true,
+                       ignoreMethod: true,
+                       ignoreVary: true
+                     });
+                     await caches.match(event.request, {
+                       cacheName: 'runtime',
+                       ignoreSearch: true,
+                       ignoreMethod: true
+                     });
+                     await cache.matchAll(event.request, {ignoreSearch: true});
+                     await cache.keys(event.request, {ignoreMethod: true});
+                     return new Response('done');
+                   })());
+                 });",
+                "https://example.test/sw.js",
+            )
+            .unwrap();
+        let _ = runtime.recv_timeout(Duration::from_secs(5)).unwrap();
+
+        runtime
+            .dispatch_fetch(
+                44,
+                ServiceWorkerFetchRequest {
+                    url: "https://example.test/app/store?query=1".into(),
+                    method: "POST".into(),
+                    headers: Vec::new(),
+                    body: None,
+                    client_id: Some("client-1".into()),
+                    resulting_client_id: None,
+                },
+            )
+            .unwrap();
+
+        let ServiceWorkerEvent::CacheStorageRequested { request_id, request } =
+            runtime.recv_timeout(Duration::from_secs(5)).unwrap()
+        else {
+            panic!("missing CacheStorage.open request");
+        };
+        assert_eq!(
+            request,
+            ServiceWorkerCacheStorageRequest::Open {
+                cache_name: "runtime".into()
+            }
+        );
+        runtime
+            .complete_cache_storage(request_id, Ok(ServiceWorkerCacheStorageResult::Done))
+            .unwrap();
+
+        let ServiceWorkerEvent::CacheStorageRequested { request_id, request } =
+            runtime.recv_timeout(Duration::from_secs(5)).unwrap()
+        else {
+            panic!("missing Cache.match request");
+        };
+        let ServiceWorkerCacheStorageRequest::Match {
+            cache_name,
+            request,
+            options,
+        } = request
+        else {
+            panic!("expected Cache.match request");
+        };
+        assert_eq!(cache_name, Some("runtime".into()));
+        assert_eq!(request.url, "https://example.test/app/store?query=1");
+        assert_eq!(request.method, "POST");
+        assert_eq!(
+            options,
+            ServiceWorkerCacheQueryOptions {
+                ignore_search: true,
+                ignore_method: true,
+                ignore_vary: true,
+            }
+        );
+        runtime
+            .complete_cache_storage(request_id, Ok(ServiceWorkerCacheStorageResult::Match(None)))
+            .unwrap();
+
+        let ServiceWorkerEvent::CacheStorageRequested { request_id, request } =
+            runtime.recv_timeout(Duration::from_secs(5)).unwrap()
+        else {
+            panic!("missing CacheStorage.match request");
+        };
+        let ServiceWorkerCacheStorageRequest::Match {
+            cache_name,
+            request,
+            options,
+        } = request
+        else {
+            panic!("expected CacheStorage.match request");
+        };
+        assert_eq!(cache_name, Some("runtime".into()));
+        assert_eq!(request.url, "https://example.test/app/store?query=1");
+        assert_eq!(
+            options,
+            ServiceWorkerCacheQueryOptions {
+                ignore_search: true,
+                ignore_method: true,
+                ignore_vary: false,
+            }
+        );
+        runtime
+            .complete_cache_storage(request_id, Ok(ServiceWorkerCacheStorageResult::Match(None)))
+            .unwrap();
+
+        let ServiceWorkerEvent::CacheStorageRequested { request_id, request } =
+            runtime.recv_timeout(Duration::from_secs(5)).unwrap()
+        else {
+            panic!("missing Cache.matchAll request");
+        };
+        let ServiceWorkerCacheStorageRequest::MatchAll {
+            cache_name,
+            request: Some(request),
+            options,
+        } = request
+        else {
+            panic!("expected Cache.matchAll request");
+        };
+        assert_eq!(cache_name, "runtime");
+        assert_eq!(request.url, "https://example.test/app/store?query=1");
+        assert_eq!(
+            options,
+            ServiceWorkerCacheQueryOptions {
+                ignore_search: true,
+                ignore_method: false,
+                ignore_vary: false,
+            }
+        );
+        runtime
+            .complete_cache_storage(request_id, Ok(ServiceWorkerCacheStorageResult::MatchAll(Vec::new())))
+            .unwrap();
+
+        let ServiceWorkerEvent::CacheStorageRequested { request_id, request } =
+            runtime.recv_timeout(Duration::from_secs(5)).unwrap()
+        else {
+            panic!("missing Cache.keys request");
+        };
+        let ServiceWorkerCacheStorageRequest::Keys {
+            cache_name,
+            request: Some(request),
+            options,
+        } = request
+        else {
+            panic!("expected Cache.keys request");
+        };
+        assert_eq!(cache_name, "runtime");
+        assert_eq!(request.url, "https://example.test/app/store?query=1");
+        assert_eq!(
+            options,
+            ServiceWorkerCacheQueryOptions {
+                ignore_search: false,
+                ignore_method: true,
+                ignore_vary: false,
+            }
+        );
+        runtime
+            .complete_cache_storage(request_id, Ok(ServiceWorkerCacheStorageResult::Keys(Vec::new())))
+            .unwrap();
+
+        assert_eq!(
+            runtime.recv_timeout(Duration::from_secs(5)).unwrap(),
+            ServiceWorkerEvent::FetchSettled {
+                event_id: 44,
+                request_url: "https://example.test/app/store?query=1".into(),
+                response: Some(ServiceWorkerFetchResponse {
+                    status: 200,
+                    status_text: String::new(),
+                    headers: Vec::new(),
+                    body: "done".into(),
                 }),
                 message: String::new(),
             }

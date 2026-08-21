@@ -301,6 +301,98 @@ fn test_cache_api_page_shim_host_roundtrip() {
     );
 }
 
+/// Cache API query options must be projected into the host bridge for the
+/// storage owner to apply matching semantics.
+#[test]
+fn test_cache_api_page_shim_query_options_wire() {
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let mut sandbox = V8Sandbox::with_config(zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    })
+    .unwrap();
+    let seen: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
+    let seen_for_callback = seen.clone();
+    sandbox.register_callback(
+        "__zw_cache_storage",
+        Box::new(move |args| {
+            let request = args.first().cloned().unwrap_or_default();
+            seen_for_callback.lock().unwrap().push(request.clone());
+            if request.contains(r#""op":"open""#) {
+                return r#"__zw_cache_ok:{"name":"v1"}"#.to_string();
+            }
+            if request.contains(r#""op":"match_all""#) {
+                return r#"__zw_cache_ok:{"responses":[]}"#.to_string();
+            }
+            if request.contains(r#""op":"cache_keys""#) {
+                return r#"__zw_cache_ok:{"requests":[]}"#.to_string();
+            }
+            if request.contains(r#""op":"match""#) {
+                return r#"__zw_cache_ok:{"response":null}"#.to_string();
+            }
+            "__zw_cache_ok:{\"deleted\":true}".to_string()
+        }),
+    );
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new("<html><body></body></html>".to_string()));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("https://example.com/page.html".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+
+    sandbox
+        .execute(
+            "globalThis.__cacheOptionsDone = 'pending';\
+             caches.open('v1').then(function (cache) {\
+               return Promise.all([\
+                 cache.match('https://example.com/data?one', {ignoreSearch: true, ignoreMethod: true}),\
+                 cache.matchAll('https://example.com/data?two', {ignoreSearch: true}),\
+                 cache.keys('https://example.com/data?three', {ignoreMethod: true}),\
+                 cache.delete('https://example.com/data?four', {ignoreSearch: true, ignoreMethod: true}),\
+                 caches.match('https://example.com/data?five', {cacheName: 'v1', ignoreSearch: true, ignoreMethod: true})\
+               ]);\
+             }).then(function () {\
+               globalThis.__cacheOptionsDone = 'done';\
+             }, function (error) {\
+               globalThis.__cacheOptionsDone = 'error:' + String(error && error.message ? error.message : error);\
+             });",
+        )
+        .unwrap();
+    for i in 0..8 {
+        sandbox.execute(&format!("globalThis.__cacheOptionsPump = {i};")).unwrap();
+    }
+    assert_eq!(sandbox.execute("globalThis.__cacheOptionsDone").unwrap().value, "done");
+
+    let seen = seen.lock().unwrap();
+    assert!(seen.iter().any(|request| {
+        request.contains(r#""op":"match""#)
+            && request.contains(r#""ignoreSearch":true"#)
+            && request.contains(r#""ignoreMethod":true"#)
+    }));
+    assert!(seen.iter().any(|request| {
+        request.contains(r#""op":"match_all""#)
+            && request.contains(r#""ignoreSearch":true"#)
+            && request.contains(r#""ignoreMethod":false"#)
+    }));
+    assert!(seen.iter().any(|request| {
+        request.contains(r#""op":"cache_keys""#)
+            && request.contains(r#""ignoreSearch":false"#)
+            && request.contains(r#""ignoreMethod":true"#)
+    }));
+    assert!(seen.iter().any(|request| {
+        request.contains(r#""op":"delete""#)
+            && request.contains(r#""ignoreSearch":true"#)
+            && request.contains(r#""ignoreMethod":true"#)
+    }));
+    assert!(seen.iter().any(|request| {
+        request.contains(r#""op":"match""#)
+            && request.contains(r#""cache_name":"v1""#)
+            && request.contains(r#""ignoreSearch":true"#)
+    }));
+}
+
 /// Cache API shim 在没有宿主 bridge 时应 reject，而不是悬挂 Promise。
 #[test]
 fn test_cache_api_page_shim_rejects_without_host_bridge() {

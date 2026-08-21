@@ -584,6 +584,11 @@ fn service_worker_host_fetch_command_and_event_round_trip() {
                     client_id: None,
                     resulting_client_id: None,
                 },
+                options: ServiceWorkerCacheQueryOptionsWire {
+                    ignore_search: true,
+                    ignore_method: true,
+                    ignore_vary: true,
+                },
             },
         },
     };
@@ -688,6 +693,7 @@ fn service_worker_host_fetch_command_and_event_round_trip() {
                     client_id: None,
                     resulting_client_id: None,
                 }),
+                options: ServiceWorkerCacheQueryOptionsWire::default(),
             },
         },
     };
@@ -708,6 +714,7 @@ fn service_worker_host_fetch_command_and_event_round_trip() {
             request: ServiceWorkerCacheStorageRequestWire::Keys {
                 cache_name: "runtime".into(),
                 request: None,
+                options: ServiceWorkerCacheQueryOptionsWire::default(),
             },
         },
     };
@@ -831,6 +838,7 @@ fn service_worker_host_fetch_command_and_event_round_trip() {
                     client_id: None,
                     resulting_client_id: None,
                 },
+                options: ServiceWorkerCacheQueryOptionsWire::default(),
             },
         },
     };
@@ -887,6 +895,7 @@ fn service_worker_host_fetch_command_and_event_round_trip() {
                         client_id: None,
                         resulting_client_id: None,
                     },
+                    options: ServiceWorkerCacheQueryOptionsWire::default(),
                 },
             },
         }

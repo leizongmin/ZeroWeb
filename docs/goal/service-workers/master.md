@@ -2,7 +2,7 @@
 
 **入口文档**: [../service-workers.md](../service-workers.md)
 **创建日期**: 2026-08-17（goal 拆分 bootstrap）
-**最后更新**: 2026-08-22（SW runtime Cache.matchAll/keys 桥接完成；WPT fetch/cache 基线待接入）
+**最后更新**: 2026-08-22（SW runtime CacheQueryOptions ignoreSearch/ignoreMethod 接线完成；WPT fetch/cache 基线待接入）
 
 ---
 
@@ -12,7 +12,8 @@
 （R3318）深化为真实 SW 执行环境 + fetch 拦截。用户已于 2026-08-19 明确批准方案 C，
 M0 启动门禁解除；M1 core WPT 已收敛，M2 已完成 fetch runtime/manager/IPC foundation、
 browser-process 页面 fetch 路由和 Service Worker `caches.match()` / `caches.open()` /
-`Cache.put()` / `Cache.matchAll()` / `Cache.keys()` 桥接；WPT fetch/cache 基线仍待后续切片，M3 控制语义继续推进。兄弟目标
+`Cache.put()` / `Cache.matchAll()` / `Cache.keys()` 桥接，并已透传 `ignoreSearch` /
+`ignoreMethod` 查询选项；WPT fetch/cache 基线仍待后续切片，M3 控制语义继续推进。兄弟目标
 `storage-cache-api` 已完成 WebView/in-process 页面 `caches.open()` + `Cache.put()/match()`
 初始桥接；Service Worker runtime 自身的写入面已通过 browser-owned registration
 `CacheStorage` 接入。
@@ -203,6 +204,10 @@ browser-process 页面 fetch 路由和 Service Worker `caches.match()` / `caches
 - ✅ M2-5：Service Worker runtime 暴露 `Cache.matchAll(input?)` 与 `Cache.keys(input?)`；
   runtime/renderer/browser/manager/protocol 延续 typed CacheStorage operation，结果数组有上限并逐项
   校验，optional request filter 保留 method-sensitive 匹配；完整 WPT fetch/cache baseline 仍待接入
+- ✅ M2-6：Service Worker runtime 的 `Cache.match()`、`Cache.matchAll()`、`Cache.keys()` 与
+  `CacheStorage.match()` 透传 `ignoreSearch`/`ignoreMethod`/`ignoreVary` 查询选项；browser-owned
+  registration `CacheStorage` 已应用 `ignoreSearch`/`ignoreMethod`，`ignoreVary` 等待 sibling
+  storage-cache-api 的 Vary 语义补齐；完整 WPT fetch/cache baseline 仍待接入
 - ✅ storage-cache-api 侧支撑：WebView/in-process 页面 `CacheStorage` 初始桥接已可通过共享
   `StorageManager` 执行 `caches.open/has/delete/keys/match` 与 `Cache.put/match/delete`；
   origin 由宿主页面 URL 推导，保持与 IndexedDB 相同单一 storage owner。该进展不等同于 SW
@@ -214,7 +219,7 @@ browser-process 页面 fetch 路由和 Service Worker `caches.match()` / `caches
 |---|------|------|
 | S1 | SW 执行环境架构与独立 runtime | ✅ production browser owner + renderer discovery 真链路 |
 | S2 | scriptURL 不下载执行 | ✅ production navigator 经 browser fetch/evaluate |
-| S3 | fetch 拦截为零 | 🚧 M2-2 production 页面 fetch respondWith/pass-through 已接入；M2-3/4/5 `caches.match()`、`caches.open()`、`Cache.put()`、`Cache.matchAll()` 与 `Cache.keys()` 桥接已接入；WPT fetch/cache 基线未完成 |
+| S3 | fetch 拦截为零 | 🚧 M2-2 production 页面 fetch respondWith/pass-through 已接入；M2-3/4/5/6 `caches.match()`、`caches.open()`、`Cache.put()`、`Cache.matchAll()`、`Cache.keys()` 与 `ignoreSearch`/`ignoreMethod` 桥接已接入；WPT fetch/cache 基线未完成 |
 | S4 | 事件为 setTimeout 模拟 | ✅ manager transition log 为状态源；timer 只执行页面 task 投影 |
 | S5 | WPT 覆盖为零 | ✅ core 34/34 case、156/156 Pass、0 Fail/Timeout/Unsupported |
 
@@ -236,7 +241,7 @@ browser-process 页面 fetch 路由和 Service Worker `caches.match()` / `caches
 |--------|------|
 | M0 — 选型 RFC（门控） | ✅ 方案 C 已批准 |
 | M1 — 脚本真实执行 + 生命周期真事件 | ✅ current core WPT 156/156 Pass |
-| M2 — fetch 拦截 + Cache 集成 | 🚧 M2-2 production fetch respondWith/pass-through 完成；M2-3/4/5 `caches.match()`、`caches.open()`、`Cache.put()`、`Cache.matchAll()`、`Cache.keys()` 桥接完成；WPT fetch/cache 基线待接入 |
+| M2 — fetch 拦截 + Cache 集成 | 🚧 M2-2 production fetch respondWith/pass-through 完成；M2-3/4/5/6 `caches.match()`、`caches.open()`、`Cache.put()`、`Cache.matchAll()`、`Cache.keys()`、`ignoreSearch`/`ignoreMethod` 桥接完成；WPT fetch/cache 基线待接入 |
 | M3 — 控制语义 + 消息 + 收尾 | 🚧 classic startup graph + 控制/消息/update/persistence 完成 |
 
 ## 验证基线
@@ -337,6 +342,9 @@ browser-process 页面 fetch 路由和 Service Worker `caches.match()` / `caches
 - M2-5 Cache list operations：Service Worker runtime/IPC/manager/browser owner 的
   `Cache.matchAll()` + `Cache.keys()` 数组结果链见
   [M2 Service Worker Cache.matchAll and Cache.keys](evidence/2026-08-22-m2-cache-matchall-keys.md)
+- M2-6 CacheQueryOptions：Service Worker runtime/IPC/manager/browser owner 的
+  `ignoreSearch`/`ignoreMethod` 查询选项接线见
+  [M2 Service Worker CacheQueryOptions](evidence/2026-08-22-m2-cache-query-options.md)
 - M1-5 core WPT：固定 12-case runner、两轮确定性 baseline 与 13 个红项分组见
   [M1 core WPT baseline](evidence/2026-08-19-m1-wpt-core-baseline.md)
 - M1-5b lifecycle task：manager transition log、IPC cursor、EventTarget/slot task 与 30/36

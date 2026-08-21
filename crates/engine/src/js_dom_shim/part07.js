@@ -104,6 +104,15 @@
     return new Request(raw.url, { method: String(raw.method || 'GET').toUpperCase() });
   }
 
+  function _zwCacheQueryOptionsWire(options) {
+    options = options === undefined || options === null ? {} : Object(options);
+    return {
+      ignoreSearch: !!options.ignoreSearch,
+      ignoreMethod: !!options.ignoreMethod,
+      ignoreVary: !!options.ignoreVary
+    };
+  }
+
   function _zwCacheResponseWire(response) {
     if (!(response instanceof Response)) {
       response = new Response(response);
@@ -123,14 +132,15 @@
     this._name = String(name);
   }
 
-  Cache.prototype.match = function (request) {
+  Cache.prototype.match = function (request, options) {
     var cache = this;
     return new Promise(function (resolve, reject) {
       try {
         var result = _zwCacheHostCall({
           op: 'match',
           cache_name: cache._name,
-          request: _zwCacheRequestWire(request)
+          request: _zwCacheRequestWire(request),
+          options: _zwCacheQueryOptionsWire(options)
         });
         resolve(result.response === null ? undefined : _zwCacheResponseFromWire(result.response));
       } catch (error) {
@@ -139,13 +149,14 @@
     });
   };
 
-  Cache.prototype.matchAll = function (request) {
+  Cache.prototype.matchAll = function (request, options) {
     var cache = this;
     return new Promise(function (resolve, reject) {
       try {
         var hostRequest = {
           op: 'match_all',
-          cache_name: cache._name
+          cache_name: cache._name,
+          options: _zwCacheQueryOptionsWire(options)
         };
         if (request !== undefined) hostRequest.request = _zwCacheRequestWire(request);
         var result = _zwCacheHostCall(hostRequest);
@@ -174,14 +185,15 @@
     });
   };
 
-  Cache.prototype.delete = function (request) {
+  Cache.prototype.delete = function (request, options) {
     var cache = this;
     return new Promise(function (resolve, reject) {
       try {
         var result = _zwCacheHostCall({
           op: 'delete',
           name: cache._name,
-          request: _zwCacheRequestWire(request)
+          request: _zwCacheRequestWire(request),
+          options: _zwCacheQueryOptionsWire(options)
         });
         resolve(!!result.deleted);
       } catch (error) {
@@ -190,13 +202,14 @@
     });
   };
 
-  Cache.prototype.keys = function (request) {
+  Cache.prototype.keys = function (request, options) {
     var cache = this;
     return new Promise(function (resolve, reject) {
       try {
         var hostRequest = {
           op: 'cache_keys',
-          cache_name: cache._name
+          cache_name: cache._name,
+          options: _zwCacheQueryOptionsWire(options)
         };
         if (request !== undefined) hostRequest.request = _zwCacheRequestWire(request);
         var result = _zwCacheHostCall(hostRequest);
@@ -256,10 +269,18 @@
     });
   };
 
-  CacheStorage.prototype.match = function (request) {
+  CacheStorage.prototype.match = function (request, options) {
     return new Promise(function (resolve, reject) {
       try {
-        var result = _zwCacheHostCall({ op: 'match', request: _zwCacheRequestWire(request) });
+        var hostRequest = {
+          op: 'match',
+          request: _zwCacheRequestWire(request),
+          options: _zwCacheQueryOptionsWire(options)
+        };
+        if (options !== undefined && options !== null && Object(options).cacheName !== undefined) {
+          hostRequest.cache_name = String(Object(options).cacheName);
+        }
+        var result = _zwCacheHostCall(hostRequest);
         resolve(result.response === null ? undefined : _zwCacheResponseFromWire(result.response));
       } catch (error) {
         reject(error);

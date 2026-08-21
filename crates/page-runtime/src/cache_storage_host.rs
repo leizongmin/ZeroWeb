@@ -9,7 +9,7 @@ use std::sync::{Arc, Mutex};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use zero_engine::CacheStorageHandler;
-use zero_storage::{CacheRequest, CacheResponse, StorageManager};
+use zero_storage::{CacheQueryOptions, CacheRequest, CacheResponse, StorageManager};
 
 const FIELD_SEP: char = '\x1f';
 const HEADER_SEP: char = '\x1e';
@@ -29,22 +29,30 @@ enum CacheStorageRequest {
         name: String,
         #[serde(default)]
         request: Option<CacheRequestWire>,
+        #[serde(default)]
+        options: CacheQueryOptionsWire,
     },
     Keys,
     Match {
         request: CacheRequestWire,
         #[serde(default)]
         cache_name: Option<String>,
+        #[serde(default)]
+        options: CacheQueryOptionsWire,
     },
     MatchAll {
         cache_name: String,
         #[serde(default)]
         request: Option<CacheRequestWire>,
+        #[serde(default)]
+        options: CacheQueryOptionsWire,
     },
     CacheKeys {
         cache_name: String,
         #[serde(default)]
         request: Option<CacheRequestWire>,
+        #[serde(default)]
+        options: CacheQueryOptionsWire,
     },
     Put {
         cache_name: String,
@@ -58,6 +66,16 @@ struct CacheRequestWire {
     url: String,
     #[serde(default)]
     method: Option<String>,
+}
+
+#[derive(Debug, Default, Deserialize)]
+struct CacheQueryOptionsWire {
+    #[serde(default, rename = "ignoreSearch")]
+    ignore_search: bool,
+    #[serde(default, rename = "ignoreMethod")]
+    ignore_method: bool,
+    #[serde(default, rename = "ignoreVary")]
+    ignore_vary: bool,
 }
 
 #[derive(Debug, Deserialize)]
@@ -120,13 +138,14 @@ fn dispatch_request(
         CacheStorageRequest::Has { name } => {
             Ok(json!({"has": storage.cache_storage_ref(origin).is_some_and(|caches| caches.has(&name))}))
         }
-        CacheStorageRequest::Delete { name, request } => {
+        CacheStorageRequest::Delete { name, request, options } => {
             let deleted = if let Some(request) = request {
                 let request = request.into_storage_request()?;
+                let options = options.into_storage_options();
                 storage
                     .cache_storage(origin)
                     .get_mut(&name)
-                    .is_some_and(|cache| cache.delete(&request))
+                    .is_some_and(|cache| cache.delete_with_options(&request, options))
             } else {
                 storage.cache_storage(origin).delete(&name)
             };
@@ -140,28 +159,42 @@ fn dispatch_request(
             keys.sort_unstable();
             Ok(json!({"keys": keys}))
         }
-        CacheStorageRequest::Match { request, cache_name } => {
+        CacheStorageRequest::Match {
+            request,
+            cache_name,
+            options,
+        } => {
             let request = request.into_storage_request()?;
+            let options = options.into_storage_options();
             let response = match cache_name {
                 Some(name) => storage
                     .cache_storage_ref(origin)
                     .and_then(|cache_storage| cache_storage.get(&name))
-                    .and_then(|cache| cache.match_request(&request)),
+                    .and_then(|cache| cache.match_request_with_options(&request, options)),
                 None => storage
                     .cache_storage_ref(origin)
-                    .and_then(|cache_storage| cache_storage.match_request(&request)),
+                    .and_then(|cache_storage| cache_storage.match_request_with_options(&request, options)),
             };
             let wire = response.map(cache_response_wire);
             serde_json::to_value(CacheMatchResponse { response: wire })
                 .map_err(|error| format!("UnknownError: failed to serialize response: {error}"))
         }
-        CacheStorageRequest::MatchAll { cache_name, request } => {
+        CacheStorageRequest::MatchAll {
+            cache_name,
+            request,
+            options,
+        } => {
             let request = request.map(CacheRequestWire::into_storage_request).transpose()?;
+            let options = options.into_storage_options();
             let responses = storage
                 .cache_storage_ref(origin)
                 .and_then(|cache_storage| cache_storage.get(&cache_name))
                 .map(|cache| match &request {
-                    Some(request) => cache.match_all(request).into_iter().map(cache_response_wire).collect(),
+                    Some(request) => cache
+                        .match_all_with_options(request, options)
+                        .into_iter()
+                        .map(cache_response_wire)
+                        .collect(),
                     None => cache
                         .request_keys()
                         .into_iter()
@@ -173,25 +206,27 @@ fn dispatch_request(
             serde_json::to_value(CacheMatchAllResponse { responses })
                 .map_err(|error| format!("UnknownError: failed to serialize response: {error}"))
         }
-        CacheStorageRequest::CacheKeys { cache_name, request } => {
+        CacheStorageRequest::CacheKeys {
+            cache_name,
+            request,
+            options,
+        } => {
             let request = request.map(CacheRequestWire::into_storage_request).transpose()?;
+            let options = options.into_storage_options();
             let requests = match storage
                 .cache_storage_ref(origin)
                 .and_then(|cache_storage| cache_storage.get(&cache_name))
             {
-                Some(cache) => cache
-                    .request_keys()
-                    .into_iter()
-                    .filter(|key| {
-                        request
-                            .as_ref()
-                            .is_none_or(|request| key.url == request.url && key.method == request.method)
-                    })
-                    .map(|request| CacheRequestWire {
-                        url: request.url.clone(),
-                        method: Some(request.method.clone()),
-                    })
-                    .collect(),
+                Some(cache) => match &request {
+                    Some(request) => cache.request_keys_with_options(request, options),
+                    None => cache.request_keys(),
+                }
+                .into_iter()
+                .map(|request| CacheRequestWire {
+                    url: request.url.clone(),
+                    method: Some(request.method.clone()),
+                })
+                .collect(),
                 None => Vec::new(),
             };
             serde_json::to_value(CacheKeysResponse { requests })
@@ -210,6 +245,16 @@ fn dispatch_request(
                 .put(request, response)
                 .map_err(storage_error)?;
             Ok(json!({"ok": true}))
+        }
+    }
+}
+
+impl CacheQueryOptionsWire {
+    fn into_storage_options(self) -> CacheQueryOptions {
+        CacheQueryOptions {
+            ignore_search: self.ignore_search,
+            ignore_method: self.ignore_method,
+            ignore_vary: self.ignore_vary,
         }
     }
 }
@@ -520,6 +565,90 @@ mod tests {
             json!({"op": "match_all", "cache_name": "runtime"}),
         );
         assert_eq!(all["responses"].as_array().unwrap().len(), 2);
+    }
+
+    #[test]
+    fn cache_storage_handler_applies_query_options() {
+        let handler = cache_storage_handler(Arc::new(Mutex::new(StorageManager::new())));
+        call(
+            &handler,
+            "https://example.com",
+            json!({
+                "op": "put",
+                "cache_name": "runtime",
+                "request": {"url": "https://example.com/data?version=1", "method": "GET"},
+                "response": {"status": 200, "statusText": "OK", "headers": "", "body": "get"}
+            }),
+        );
+        call(
+            &handler,
+            "https://example.com",
+            json!({
+                "op": "put",
+                "cache_name": "runtime",
+                "request": {"url": "https://example.com/other?version=1", "method": "GET"},
+                "response": {"status": 200, "statusText": "OK", "headers": "", "body": "other"}
+            }),
+        );
+
+        let strict = call(
+            &handler,
+            "https://example.com",
+            json!({
+                "op": "match",
+                "cache_name": "runtime",
+                "request": {"url": "https://example.com/data?version=2", "method": "HEAD"}
+            }),
+        );
+        assert!(strict["response"].is_null());
+
+        let matched = call(
+            &handler,
+            "https://example.com",
+            json!({
+                "op": "match",
+                "cache_name": "runtime",
+                "request": {"url": "https://example.com/data?version=2", "method": "HEAD"},
+                "options": {"ignoreSearch": true, "ignoreMethod": true}
+            }),
+        );
+        assert!(matched["response"].as_str().unwrap().ends_with("get"));
+
+        let filtered_keys = call(
+            &handler,
+            "https://example.com",
+            json!({
+                "op": "cache_keys",
+                "cache_name": "runtime",
+                "request": {"url": "https://example.com/data?version=3", "method": "POST"},
+                "options": {"ignoreSearch": true, "ignoreMethod": true}
+            }),
+        );
+        assert_eq!(
+            filtered_keys["requests"],
+            json!([{"url": "https://example.com/data?version=1", "method": "GET"}])
+        );
+
+        let deleted = call(
+            &handler,
+            "https://example.com",
+            json!({
+                "op": "delete",
+                "name": "runtime",
+                "request": {"url": "https://example.com/data?version=4", "method": "POST"},
+                "options": {"ignoreSearch": true, "ignoreMethod": true}
+            }),
+        );
+        assert_eq!(deleted["deleted"], true);
+        let all = call(
+            &handler,
+            "https://example.com",
+            json!({"op": "cache_keys", "cache_name": "runtime"}),
+        );
+        assert_eq!(
+            all["requests"],
+            json!([{"url": "https://example.com/other?version=1", "method": "GET"}])
+        );
     }
 
     #[test]

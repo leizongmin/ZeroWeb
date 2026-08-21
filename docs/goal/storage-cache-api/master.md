@@ -2,7 +2,7 @@
 
 **入口文档**: [../storage-cache-api.md](../storage-cache-api.md)
 **创建日期**: 2026-08-17（goal 拆分 bootstrap）
-**最后更新**: 2026-08-22（M2 Cache.matchAll/keys 页面桥接完成）
+**最后更新**: 2026-08-22（M2 CacheQueryOptions ignoreSearch/ignoreMethod 页面与 SW 接线完成）
 
 ---
 
@@ -13,7 +13,9 @@
 2026-08-22 已完成 WebView/in-process 页面侧初始桥接：
 `caches.open/has/delete/keys/match` 与 `Cache.put/match/matchAll/delete/keys` 经 host
 callback 进入共享 `StorageManager`，origin 由宿主页面 URL 推导；WPT 基线、持久化、
-`add/addAll` 与 CacheQueryOptions/Vary 仍待后续切片。
+`add/addAll` 与 Vary 完整语义仍待后续切片。`ignoreSearch`/`ignoreMethod` 查询选项已在
+页面 Cache API 与 Service Worker runtime Cache API 中接入；`ignoreVary` 当前只保留 wire
+字段，等待请求头快照/Vary 匹配语义落地。
 
 **与兄弟 goal 的边界**：
 - [storage-indexeddb](../archive/storage-indexeddb.md)（已归档）— IDB 归其管
@@ -41,13 +43,13 @@ callback 进入共享 `StorageManager`，origin 由宿主页面 URL 推导；WPT
 | C2 | 页面 `caches` 全局缺失（零接线） | ✅ M1 初始桥接完成；全 API 语义继续归 C4 |
 | C3 | 无持久化 | ⬜ M3 |
 | C4 | Request/Response 集成（add/addAll/可缓存性） | ⬜ M2 |
-| C5 | Cache.matchAll/Cache.keys 页面桥接 | ✅ M2；QueryOptions/Vary 仍归 C4 |
+| C5 | Cache.matchAll/Cache.keys 页面桥接 | ✅ M2；`ignoreSearch`/`ignoreMethod` 已接线，Vary 仍归 C4 |
 
 ## 下一步计划
 
 1. **M1 剩余**：WPT `cache-storage` window 面用例导入 + 基线（当前还只有定向单元/
    WebView e2e 覆盖）
-2. **M2 切片 2**：补 CacheQueryOptions/Vary 基础 wire 与 URL 归一化差距
+2. **M2 切片 2**：补 `ignoreVary`/Vary 匹配语义（需保存请求头快照）
 3. **M2 切片 3**：`add/addAll` 复用 fetch 管线，补 Response 可缓存性判定
 4. **M3**：per-origin 持久化与跨会话 e2e
 
@@ -59,7 +61,7 @@ callback 进入共享 `StorageManager`，origin 由宿主页面 URL 推导；WPT
 | 里程碑 | 状态 |
 |--------|------|
 | M1 — WPT cache-storage 基线 + caches 骨架 | 🚧 页面骨架已接入；WPT 基线待导入 |
-| M2 — Cache 全 API + 查询语义 | 🚧 `Cache.matchAll()` / `Cache.keys()` 已接入；QueryOptions/Vary/add/addAll 待完成 |
+| M2 — Cache 全 API + 查询语义 | 🚧 `Cache.matchAll()` / `Cache.keys()` 与 `ignoreSearch`/`ignoreMethod` 已接入；Vary/add/addAll 待完成 |
 | M3 — 持久化 + 剩余语义收尾 | ⬜ |
 
 ## 验证基线
@@ -75,5 +77,11 @@ callback 进入共享 `StorageManager`，origin 由宿主页面 URL 推导；WPT
   - `cargo test -p zero-webview cache_storage --no-default-features --features quickjs -- --nocapture`：2 passed
   - `cargo test -p zero-engine test_cache_api_page_shim_host_roundtrip -- --nocapture`：1 passed
   - 证据：[M2 Cache.matchAll and Cache.keys](evidence/2026-08-22-m2-cache-matchall-keys.md)
+- 2026-08-22 M2 `ignoreSearch` / `ignoreMethod` 定向验证：
+  - `cargo test -p zero-storage cache_query_options -- --nocapture`：3 passed
+  - `cargo test -p zero-page-runtime cache_storage_handler_applies_query_options --no-default-features --features quickjs -- --nocapture`：1 passed
+  - `cargo test -p zero-engine test_cache_api_page_shim_query_options_wire -- --nocapture`：1 passed
+  - `cargo test -p zero-webview page_cache_api_query_options_match_delete_and_keys -- --nocapture`：1 passed
+  - 证据：[M2 CacheQueryOptions ignoreSearch and ignoreMethod](evidence/2026-08-22-m2-cache-query-options.md)
 - WPT cache-storage 面：无基线（未导入）
 - 质量门禁：`cargo fmt` + `cargo clippy --workspace --all-targets -- -D warnings` 全过

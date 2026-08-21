@@ -66,6 +66,70 @@ fn page_cache_api_put_and_match_roundtrip() {
 }
 
 #[test]
+fn page_cache_api_query_options_match_delete_and_keys() {
+    let mut webview = webview_with_owner(IndexedDbOwner::in_memory(), "https://cache.example/app/page.html");
+
+    webview
+        .execute_script(
+            r#"
+            (async function () {
+              try {
+                const cache = await caches.open('v1');
+                await cache.put(
+                  new Request('https://cache.example/app/data?version=1', {method: 'GET'}),
+                  new Response('cached text')
+                );
+                await cache.put(
+                  new Request('https://cache.example/app/other?version=1', {method: 'GET'}),
+                  new Response('other text')
+                );
+                const strict = await cache.match(
+                  new Request('https://cache.example/app/data?version=2', {method: 'HEAD'})
+                );
+                const matched = await cache.match(
+                  new Request('https://cache.example/app/data?version=2', {method: 'HEAD'}),
+                  {ignoreSearch: true, ignoreMethod: true}
+                );
+                const storageMatched = await caches.match(
+                  new Request('https://cache.example/app/data?version=3', {method: 'POST'}),
+                  {cacheName: 'v1', ignoreSearch: true, ignoreMethod: true}
+                );
+                const keys = await cache.keys(
+                  new Request('https://cache.example/app/data?version=4', {method: 'POST'}),
+                  {ignoreSearch: true, ignoreMethod: true}
+                );
+                const deleted = await cache.delete(
+                  new Request('https://cache.example/app/data?version=5', {method: 'POST'}),
+                  {ignoreSearch: true, ignoreMethod: true}
+                );
+                const remaining = await cache.keys();
+                globalThis.__cacheOptionsResult = [
+                  String(strict === undefined),
+                  String(matched instanceof Response),
+                  String(storageMatched instanceof Response),
+                  String(keys.length),
+                  keys[0].url,
+                  String(deleted),
+                  String(remaining.length),
+                  remaining[0].url,
+                  await matched.text()
+                ].join('|');
+              } catch (error) {
+                globalThis.__cacheOptionsResult = 'error:' + String(error && error.message ? error.message : error);
+              }
+            })();
+            "#,
+        )
+        .unwrap();
+    pump_microtasks(&mut webview);
+
+    assert_eq!(
+        webview.execute_script("globalThis.__cacheOptionsResult").unwrap(),
+        "true|true|true|1|https://cache.example/app/data?version=1|true|1|https://cache.example/app/other?version=1|cached text"
+    );
+}
+
+#[test]
 fn page_cache_api_uses_shared_owner_and_origin_isolation() {
     let origin = "https://shared-cache.example/app/page.html";
     let owner = IndexedDbOwner::in_memory();

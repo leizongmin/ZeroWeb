@@ -1231,20 +1231,26 @@ fn validate_service_worker_cache_storage_request(
 ) -> Result<(), &'static str> {
     match request {
         ServiceWorkerCacheStorageRequestWire::Open { cache_name } => validate_service_worker_cache_name(cache_name),
-        ServiceWorkerCacheStorageRequestWire::Match { cache_name, request } => {
+        ServiceWorkerCacheStorageRequestWire::Match {
+            cache_name, request, ..
+        } => {
             if let Some(cache_name) = cache_name {
                 validate_service_worker_cache_name(cache_name)?;
             }
             validate_service_worker_fetch_request(request)
         }
-        ServiceWorkerCacheStorageRequestWire::MatchAll { cache_name, request } => {
+        ServiceWorkerCacheStorageRequestWire::MatchAll {
+            cache_name, request, ..
+        } => {
             validate_service_worker_cache_name(cache_name)?;
             if let Some(request) = request {
                 validate_service_worker_fetch_request(request)?;
             }
             Ok(())
         }
-        ServiceWorkerCacheStorageRequestWire::Keys { cache_name, request } => {
+        ServiceWorkerCacheStorageRequestWire::Keys {
+            cache_name, request, ..
+        } => {
             validate_service_worker_cache_name(cache_name)?;
             if let Some(request) = request {
                 validate_service_worker_fetch_request(request)?;
@@ -1382,6 +1388,17 @@ pub struct ServiceWorkerFetchResponseWire {
     pub body: String,
 }
 
+/// IPC-safe Service Worker Cache API query options.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ServiceWorkerCacheQueryOptionsWire {
+    /// Ignore URL query parameters while matching requests.
+    pub ignore_search: bool,
+    /// Ignore request method while matching requests.
+    pub ignore_method: bool,
+    /// Ignore Vary headers while matching requests.
+    pub ignore_vary: bool,
+}
+
 /// IPC-safe Service Worker CacheStorage operation.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ServiceWorkerCacheStorageRequestWire {
@@ -1396,6 +1413,8 @@ pub enum ServiceWorkerCacheStorageRequestWire {
         cache_name: Option<String>,
         /// Request to match.
         request: ServiceWorkerFetchRequestWire,
+        /// Query matching options.
+        options: ServiceWorkerCacheQueryOptionsWire,
     },
     /// Match all responses in one named cache, optionally filtering by request.
     MatchAll {
@@ -1403,6 +1422,8 @@ pub enum ServiceWorkerCacheStorageRequestWire {
         cache_name: String,
         /// Optional request filter.
         request: Option<ServiceWorkerFetchRequestWire>,
+        /// Query matching options.
+        options: ServiceWorkerCacheQueryOptionsWire,
     },
     /// List all request keys in one named cache.
     Keys {
@@ -1410,6 +1431,8 @@ pub enum ServiceWorkerCacheStorageRequestWire {
         cache_name: String,
         /// Optional request filter.
         request: Option<ServiceWorkerFetchRequestWire>,
+        /// Query matching options.
+        options: ServiceWorkerCacheQueryOptionsWire,
     },
     /// Store one response in one named cache.
     Put {

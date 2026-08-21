@@ -17,18 +17,18 @@ use zero_page_runtime::{
     ServiceWorkerRuntimeHost, ServiceWorkerUpdateOutcome, validate_service_worker_registration,
 };
 use zero_protocol::message::{
-    FetchParams, ServiceWorkerCacheStorageRequestWire, ServiceWorkerCacheStorageResultWire,
-    ServiceWorkerClientInfoWire, ServiceWorkerClientMessages, ServiceWorkerError, ServiceWorkerErrorCode,
-    ServiceWorkerFetchRequestWire, ServiceWorkerFetchResponseWire, ServiceWorkerHostCommand,
+    FetchParams, ServiceWorkerCacheQueryOptionsWire, ServiceWorkerCacheStorageRequestWire,
+    ServiceWorkerCacheStorageResultWire, ServiceWorkerClientInfoWire, ServiceWorkerClientMessages, ServiceWorkerError,
+    ServiceWorkerErrorCode, ServiceWorkerFetchRequestWire, ServiceWorkerFetchResponseWire, ServiceWorkerHostCommand,
     ServiceWorkerHostCommandParams, ServiceWorkerHostEvent, ServiceWorkerHostEventParams, ServiceWorkerLifecycleWire,
     ServiceWorkerOperation, ServiceWorkerRequestParams, ServiceWorkerResponseParams, ServiceWorkerResult,
     ServiceWorkerScriptErrorKindWire, ServiceWorkerScriptTypeWire, ServiceWorkerSnapshot, ServiceWorkerStateChanges,
     ServiceWorkerStateWire, ServiceWorkerUpdateError, ServiceWorkerUpdateViaCacheWire,
 };
 use zero_script_sandbox::{
-    ServiceWorkerCacheStorageRequest, ServiceWorkerCacheStorageResult, ServiceWorkerClientInfo, ServiceWorkerEvent,
-    ServiceWorkerFetchRequest, ServiceWorkerFetchResponse, ServiceWorkerLifecyclePhase, ServiceWorkerMessagePorts,
-    ServiceWorkerScriptErrorKind,
+    ServiceWorkerCacheQueryOptions, ServiceWorkerCacheStorageRequest, ServiceWorkerCacheStorageResult,
+    ServiceWorkerClientInfo, ServiceWorkerEvent, ServiceWorkerFetchRequest, ServiceWorkerFetchResponse,
+    ServiceWorkerLifecyclePhase, ServiceWorkerMessagePorts, ServiceWorkerScriptErrorKind,
 };
 use zero_storage::{
     ServiceWorkerRegistration, ServiceWorkerScriptType, ServiceWorkerState, ServiceWorkerUpdateViaCache,
@@ -511,21 +511,32 @@ fn cache_storage_request_from_wire(request: ServiceWorkerCacheStorageRequestWire
         ServiceWorkerCacheStorageRequestWire::Open { cache_name } => {
             ServiceWorkerCacheStorageRequest::Open { cache_name }
         }
-        ServiceWorkerCacheStorageRequestWire::Match { cache_name, request } => {
-            ServiceWorkerCacheStorageRequest::Match {
-                cache_name,
-                request: fetch_request_from_wire(request),
-            }
-        }
-        ServiceWorkerCacheStorageRequestWire::MatchAll { cache_name, request } => {
-            ServiceWorkerCacheStorageRequest::MatchAll {
-                cache_name,
-                request: request.map(fetch_request_from_wire),
-            }
-        }
-        ServiceWorkerCacheStorageRequestWire::Keys { cache_name, request } => ServiceWorkerCacheStorageRequest::Keys {
+        ServiceWorkerCacheStorageRequestWire::Match {
+            cache_name,
+            request,
+            options,
+        } => ServiceWorkerCacheStorageRequest::Match {
+            cache_name,
+            request: fetch_request_from_wire(request),
+            options: cache_query_options_from_wire(options),
+        },
+        ServiceWorkerCacheStorageRequestWire::MatchAll {
+            cache_name,
+            request,
+            options,
+        } => ServiceWorkerCacheStorageRequest::MatchAll {
             cache_name,
             request: request.map(fetch_request_from_wire),
+            options: cache_query_options_from_wire(options),
+        },
+        ServiceWorkerCacheStorageRequestWire::Keys {
+            cache_name,
+            request,
+            options,
+        } => ServiceWorkerCacheStorageRequest::Keys {
+            cache_name,
+            request: request.map(fetch_request_from_wire),
+            options: cache_query_options_from_wire(options),
         },
         ServiceWorkerCacheStorageRequestWire::Put {
             cache_name,
@@ -536,6 +547,14 @@ fn cache_storage_request_from_wire(request: ServiceWorkerCacheStorageRequestWire
             request: fetch_request_from_wire(request),
             response: fetch_response_from_wire(response),
         },
+    }
+}
+
+fn cache_query_options_from_wire(options: ServiceWorkerCacheQueryOptionsWire) -> ServiceWorkerCacheQueryOptions {
+    ServiceWorkerCacheQueryOptions {
+        ignore_search: options.ignore_search,
+        ignore_method: options.ignore_method,
+        ignore_vary: options.ignore_vary,
     }
 }
 

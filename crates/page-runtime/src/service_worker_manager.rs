@@ -8,8 +8,8 @@ use zero_script_sandbox::{
     ServiceWorkerMessagePorts, ServiceWorkerOutboundMessage, ServiceWorkerRuntime, ServiceWorkerScriptErrorKind,
 };
 use zero_storage::{
-    CacheRequest, CacheResponse, ServiceWorkerRegistration, ServiceWorkerRegistry, ServiceWorkerScriptType,
-    ServiceWorkerState, ServiceWorkerUpdateViaCache,
+    CacheQueryOptions, CacheRequest, CacheResponse, ServiceWorkerRegistration, ServiceWorkerRegistry,
+    ServiceWorkerScriptType, ServiceWorkerState, ServiceWorkerUpdateViaCache,
 };
 
 const DEFAULT_RUNTIME_LIMIT: usize = 32;
@@ -49,6 +49,16 @@ fn cache_response_from_service_worker(response: ServiceWorkerFetchResponse) -> C
         status_text: response.status_text,
         headers: response.headers.into_iter().collect(),
         body: response.body.into_bytes(),
+    }
+}
+
+fn cache_query_options_from_service_worker(
+    options: zero_script_sandbox::ServiceWorkerCacheQueryOptions,
+) -> CacheQueryOptions {
+    CacheQueryOptions {
+        ignore_search: options.ignore_search,
+        ignore_method: options.ignore_method,
+        ignore_vary: options.ignore_vary,
     }
 }
 
@@ -2367,26 +2377,36 @@ impl ServiceWorkerManager {
                 registration.cache_storage.open(&cache_name);
                 Ok(ServiceWorkerCacheStorageResult::Done)
             }
-            ServiceWorkerCacheStorageRequest::Match { cache_name, request } => {
+            ServiceWorkerCacheStorageRequest::Match {
+                cache_name,
+                request,
+                options,
+            } => {
                 let request = CacheRequest::with_method(&request.url, &request.method);
+                let options = cache_query_options_from_service_worker(options);
                 let response = match cache_name {
                     Some(cache_name) => registration
                         .cache_storage
                         .get(&cache_name)
-                        .and_then(|cache| cache.match_request(&request)),
-                    None => registration.cache_storage.match_request(&request),
+                        .and_then(|cache| cache.match_request_with_options(&request, options)),
+                    None => registration.cache_storage.match_request_with_options(&request, options),
                 }
                 .map(service_worker_response_from_cache)
                 .transpose()?;
                 Ok(ServiceWorkerCacheStorageResult::Match(response))
             }
-            ServiceWorkerCacheStorageRequest::MatchAll { cache_name, request } => {
+            ServiceWorkerCacheStorageRequest::MatchAll {
+                cache_name,
+                request,
+                options,
+            } => {
                 let request = request.map(|request| CacheRequest::with_method(&request.url, &request.method));
+                let options = cache_query_options_from_service_worker(options);
                 let responses = registration
                     .cache_storage
                     .get(&cache_name)
                     .map(|cache| match &request {
-                        Some(request) => cache.match_all(request),
+                        Some(request) => cache.match_all_with_options(request, options),
                         None => cache
                             .request_keys()
                             .into_iter()
@@ -2399,19 +2419,21 @@ impl ServiceWorkerManager {
                     .collect::<Result<Vec<_>, _>>()?;
                 Ok(ServiceWorkerCacheStorageResult::MatchAll(responses))
             }
-            ServiceWorkerCacheStorageRequest::Keys { cache_name, request } => {
+            ServiceWorkerCacheStorageRequest::Keys {
+                cache_name,
+                request,
+                options,
+            } => {
                 let request = request.map(|request| CacheRequest::with_method(&request.url, &request.method));
+                let options = cache_query_options_from_service_worker(options);
                 let requests = match registration.cache_storage.get(&cache_name) {
-                    Some(cache) => cache
-                        .request_keys()
-                        .into_iter()
-                        .filter(|key| {
-                            request
-                                .as_ref()
-                                .is_none_or(|request| key.url == request.url && key.method == request.method)
-                        })
-                        .map(service_worker_request_from_cache)
-                        .collect(),
+                    Some(cache) => match &request {
+                        Some(request) => cache.request_keys_with_options(request, options),
+                        None => cache.request_keys(),
+                    }
+                    .into_iter()
+                    .map(service_worker_request_from_cache)
+                    .collect(),
                     None => Vec::new(),
                 };
                 Ok(ServiceWorkerCacheStorageResult::Keys(requests))
