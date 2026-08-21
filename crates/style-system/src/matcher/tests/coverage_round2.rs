@@ -235,6 +235,8 @@ fn test_property_supported_ui_and_text_decoration_properties() {
     assert!(is_property_supported("text-emphasis-style", "open sesame"));
     assert!(is_property_supported("text-emphasis-position", "under left"));
     assert!(is_property_supported("text-emphasis-color", "blue"));
+    assert!(is_property_supported("text-emphasis", "filled circle red"));
+    assert!(is_property_supported("text-emphasis", "\"x\" blue"));
     assert!(is_property_supported("text-transform", "full-width"));
     assert!(is_property_supported("word-break", "keep-all"));
     assert!(is_property_supported(
@@ -260,6 +262,8 @@ fn test_property_supported_ui_and_text_decoration_properties() {
     assert!(!is_property_supported("text-decoration-style", "groove"));
     assert!(!is_property_supported("text-emphasis-style", "filled open"));
     assert!(!is_property_supported("text-emphasis-position", "over under"));
+    assert!(!is_property_supported("text-emphasis", "filled open red"));
+    assert!(!is_property_supported("text-emphasis", "red blue circle"));
     assert!(!is_property_supported("text-transform", "small-caps"));
     assert!(!is_property_supported("word-break", "break-word break-all"));
     assert!(!is_property_supported("text-autospace", "ideograph-alpha sparkle"));

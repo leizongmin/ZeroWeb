@@ -37,6 +37,8 @@ pub(super) fn extended_visual_or_layout_property_supported(property: &str, value
         // https://drafts.csswg.org/css-backgrounds-3/#shadow-layers
         "text-shadow" => values::parse_text_shadow_list(value).is_some(),
         "box-shadow" => values::parse_box_shadow_list(value).is_some(),
+        // https://drafts.csswg.org/css-text-decor-3/#text-emphasis-property
+        "text-emphasis" => shorthand_supported(property, value),
         // https://www.w3.org/TR/css-flexbox-1/#flex-property
         "flex" => flex_shorthand_supported(value),
         "flex-flow" => shorthand_supported(property, value),
