@@ -146,7 +146,7 @@ pub(super) fn extended_visual_or_layout_property_supported(property: &str, value
     })
 }
 
-fn shorthand_supported(property: &str, value: &str) -> bool {
+pub(super) fn shorthand_supported(property: &str, value: &str) -> bool {
     if value.trim().is_empty() {
         return false;
     }

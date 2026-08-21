@@ -1429,7 +1429,6 @@ fn is_property_supported(property: &str, value: &str) -> bool {
         "font-style" => parse_font_style(trimmed).is_some(),
         "color"
         | "background-color"
-        | "border-color"
         | "border-top-color"
         | "border-right-color"
         | "border-bottom-color"
@@ -1467,6 +1466,10 @@ fn is_property_supported(property: &str, value: &str) -> bool {
         "top" | "right" | "bottom" | "left" | "inset-block-start" | "inset-block-end" | "inset-inline-start"
         | "inset-inline-end" => supports_positioned_offset_value(trimmed),
         "border-width" => supports_rect_values(trimmed, supports_border_width_value),
+        "border-style" | "border-color" => supports::shorthand_supported(lower.as_str(), trimmed),
+        "border" | "border-top" | "border-right" | "border-bottom" | "border-left" => {
+            supports::shorthand_supported(lower.as_str(), trimmed)
+        }
         "border-inline-width" | "border-block-width" => supports_axis_values(trimmed, supports_border_width_value),
         "border-top-width"
         | "border-right-width"
