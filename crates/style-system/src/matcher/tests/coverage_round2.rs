@@ -93,6 +93,36 @@ fn test_property_supported_flow_and_list_style() {
 }
 
 #[test]
+fn test_property_supported_table_and_ui_text_properties() {
+    assert!(is_property_supported("text-align", "match-parent"));
+    assert!(is_property_supported("text-align-last", "justify"));
+    assert!(is_property_supported("white-space", "break-spaces"));
+    assert!(is_property_supported("vertical-align", "middle"));
+    assert!(is_property_supported("table-layout", "fixed"));
+    assert!(is_property_supported("caption-side", "bottom"));
+    assert!(is_property_supported("border-collapse", "collapse"));
+    assert!(is_property_supported("empty-cells", "hide"));
+    assert!(is_property_supported("border-spacing", "1em 2ch"));
+    assert!(is_property_supported("resize", "inline"));
+    assert!(is_property_supported("direction", "rtl"));
+    assert!(is_property_supported("unicode-bidi", "plaintext"));
+
+    assert!(!is_property_supported("text-align", "sparkle"));
+    assert!(!is_property_supported("text-align-last", "sparkle"));
+    assert!(!is_property_supported("white-space", "wrap"));
+    assert!(!is_property_supported("vertical-align", "center"));
+    assert!(!is_property_supported("table-layout", "grid"));
+    assert!(!is_property_supported("caption-side", "left"));
+    assert!(!is_property_supported("border-collapse", "hidden"));
+    assert!(!is_property_supported("empty-cells", "visible"));
+    assert!(!is_property_supported("border-spacing", "10%"));
+    assert!(!is_property_supported("border-spacing", "-1px"));
+    assert!(!is_property_supported("resize", "diagonal"));
+    assert!(!is_property_supported("direction", "auto"));
+    assert!(!is_property_supported("unicode-bidi", "isolate isolate"));
+}
+
+#[test]
 fn test_property_supported_color() {
     assert!(is_property_supported("color", "red"));
     assert!(is_property_supported("background-color", "#fff"));

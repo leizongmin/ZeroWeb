@@ -1500,6 +1500,20 @@ fn is_property_supported(property: &str, value: &str) -> bool {
             let v = trimmed.to_ascii_lowercase();
             v == "auto" || v == "none"
         }
+        // https://www.w3.org/TR/css-conditional-3/#at-supports
+        // Reuse the direct apply parsers for table, UI, writing-mode and text alignment values.
+        "text-align" => crate::property::parse_text_align(trimmed).is_some(),
+        "text-align-last" => parse_text_align_last(trimmed).is_some(),
+        "white-space" => crate::property::parse_white_space(trimmed).is_some(),
+        "vertical-align" => parse_vertical_align(trimmed).is_some(),
+        "table-layout" => parse_table_layout(trimmed).is_some(),
+        "caption-side" => parse_caption_side(trimmed).is_some(),
+        "border-collapse" => parse_border_collapse(trimmed).is_some(),
+        "empty-cells" => parse_empty_cells(trimmed).is_some(),
+        "border-spacing" => parse_border_spacing(trimmed).is_some(),
+        "resize" => parse_resize(trimmed).is_some(),
+        "direction" => parse_direction(trimmed).is_some(),
+        "unicode-bidi" => parse_unicode_bidi(trimmed).is_some(),
         // https://drafts.csswg.org/css-conditional-3/#at-supports
         // CSS Text/Text Decoration declarations must parse using their property grammar, not the
         // narrower generic supports allow-list above.
