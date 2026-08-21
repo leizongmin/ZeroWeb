@@ -2,7 +2,7 @@
 
 **入口文档**: [../service-workers.md](../service-workers.md)
 **创建日期**: 2026-08-17（goal 拆分 bootstrap）
-**最后更新**: 2026-08-21（M3-30 client frameType 投影完成）
+**最后更新**: 2026-08-21（M3-31 同 tab 多 client 索引完成）
 
 ---
 
@@ -165,6 +165,9 @@ M0 启动门禁解除；M1 core WPT 已收敛，M2 依赖未满足，当前推�
 - ✅ M3-30：manager/browser owner 增加 window client `frameType` 显式投影入口，IPC
   `ServiceWorkerClientInfoWire` 补齐 `auxiliary` 合法枚举；当前生产路径仍默认 top-level，
   同 tab 多 browsing-context client 生命周期留待下一切片
+- ✅ M3-31：browser owner 的 tab→client registry 从单 client 扩展为一 tab 多 window
+  client；同 tab top-level + nested client 可同时进入 `clients.matchAll()`，tab 断开时整组
+  client 与消息队列清理，tab focus 投影继续优先 top-level/auxiliary client
 
 ## 缺口清单
 
@@ -184,7 +187,7 @@ M0 启动门禁解除；M1 core WPT 已收敛，M2 依赖未满足，当前推�
 
 ## 下一步计划
 
-1. **M3 clients follow-up**：一 tab 多 client 索引与 iframe/popup 生命周期接线
+1. **M3 clients follow-up**：真实 iframe/popup 创建、导航替换与销毁事件接入 browser owner
 2. **M2 门控保持**：js-dom S6 与 storage-cache-api M1 land 后启动 fetch pipeline
 
 ## 里程碑状态
@@ -363,6 +366,9 @@ M0 启动门禁解除；M1 core WPT 已收敛，M2 依赖未满足，当前推�
 - M3-30 client frameType：`top-level`/`auxiliary`/`nested` 投影、invalid frameType
   fail-closed 与 browser→renderer IPC 透传见
   [M3 client frameType](evidence/2026-08-21-m3-client-frametype.md)
+- M3-31 same-tab clients：browser owner 一 tab 多 client 索引、同 tab nested 枚举、
+  disconnect 成组清理与 focus target 选择见
+  [M3 same-tab clients](evidence/2026-08-21-m3-same-tab-clients.md)
 
 ## M0 证据与决策记录
 
@@ -434,6 +440,7 @@ M0 启动门禁解除；M1 core WPT 已收敛，M2 依赖未满足，当前推�
 | 2026-08-21 | M3-28 clients.get | 同源 client id 查询与 unknown/cross-origin 隔离；上游完整文件仍因 resultingClientId/fetch 门控 |
 | 2026-08-21 | M3-29 clients focus order | `clients.matchAll()` 按最近 focus window 优先排序；active tab 投影到 SW client registry |
 | 2026-08-21 | M3-30 client frameType | manager 显式 `frameType` 观测入口；IPC 允许 `auxiliary`；nested 透传定向测试 |
+| 2026-08-21 | M3-31 same-tab clients | browser owner 保留同 tab 多个 client；disconnect tab 成组移除；focus 仍选择 top-level/auxiliary |
 | 2026-08-19 | 三方案对比 | 拒绝同线程 context（无调度隔离）；拒绝从零线程（复制安全基建）；推荐抽取 Worker 线程核 |
 | 2026-08-19 | owner | production browser process 单一 owner；WebView 只做同算法 in-process adapter |
 | 2026-08-19 | 首个 driving WPT | `activation-after-registration.https.html` |

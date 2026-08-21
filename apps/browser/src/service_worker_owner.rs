@@ -569,6 +569,13 @@ struct PendingEvaluation {
     is_registration: bool,
 }
 
+#[derive(Clone)]
+struct BrowserServiceWorkerClientReference {
+    profile: ProfileKey,
+    client_id: String,
+    frame_type: String,
+}
+
 /// A validated imported classic script batch owned by one blocked runtime.
 pub(crate) struct ServiceWorkerImportFetchPlan {
     tab_id: TabId,
@@ -616,7 +623,7 @@ pub(crate) struct BrowserServiceWorkerOwner {
     update_fetch_plans: Vec<ServiceWorkerFetchPlan>,
     import_fetch_plans: Vec<ServiceWorkerImportFetchPlan>,
     pending_import_fetches: Vec<PendingImportFetch>,
-    clients_by_tab: HashMap<TabId, (ProfileKey, String)>,
+    clients_by_tab: HashMap<TabId, Vec<BrowserServiceWorkerClientReference>>,
     persistence_path: Option<PathBuf>,
     restoring: HashSet<u64>,
     /// IPC host 启动时无 renderer：持久化记录延迟到首个 renderer 接入时恢复。
@@ -1126,10 +1133,12 @@ impl BrowserServiceWorkerOwner {
     }
 
     pub(crate) fn disconnect_tab(&mut self, tab_id: TabId) {
-        if let Some((profile, client_id)) = self.clients_by_tab.remove(&tab_id)
-            && let Some(manager) = self.manager_mut_if_present(profile)
-        {
-            manager.remove_client(&client_id);
+        if let Some(clients) = self.clients_by_tab.remove(&tab_id) {
+            for client in clients {
+                if let Some(manager) = self.manager_mut_if_present(client.profile) {
+                    manager.remove_client(&client.client_id);
+                }
+            }
         }
         self.pending_fetches.retain(|pending| pending.plan.tab_id != tab_id);
         self.pending_evaluations.retain(|_, pending| pending.tab_id != tab_id);
@@ -1178,19 +1187,19 @@ impl BrowserServiceWorkerOwner {
     }
 
     pub(crate) fn set_focused_tab(&mut self, tab_id: Option<TabId>) {
-        let active_client = tab_id.and_then(|tab_id| self.clients_by_tab.get(&tab_id).cloned());
-        if let Some((profile, client_id)) = active_client {
-            if let Some(manager) = self.manager_mut_if_present(profile) {
-                let _ = manager.set_window_client_focused(&client_id, true);
+        let active_client = tab_id.and_then(|tab_id| self.focus_client_for_tab(tab_id));
+        if let Some(client) = active_client {
+            if let Some(manager) = self.manager_mut_if_present(client.profile) {
+                let _ = manager.set_window_client_focused(&client.client_id, true);
             }
-            if profile == ProfileKey::Normal {
+            if client.profile == ProfileKey::Normal {
                 for manager in self.private.values_mut() {
                     manager.clear_window_client_focus();
                 }
             } else {
                 self.normal.clear_window_client_focus();
                 for (&private_tab, manager) in &mut self.private {
-                    if ProfileKey::Private(private_tab) != profile {
+                    if ProfileKey::Private(private_tab) != client.profile {
                         manager.clear_window_client_focus();
                     }
                 }
@@ -1201,6 +1210,16 @@ impl BrowserServiceWorkerOwner {
                 manager.clear_window_client_focus();
             }
         }
+    }
+
+    fn focus_client_for_tab(&self, tab_id: TabId) -> Option<BrowserServiceWorkerClientReference> {
+        let clients = self.clients_by_tab.get(&tab_id)?;
+        clients
+            .iter()
+            .find(|client| client.frame_type == "top-level")
+            .or_else(|| clients.iter().find(|client| client.frame_type == "auxiliary"))
+            .or_else(|| clients.first())
+            .cloned()
     }
 
     fn observe_client(
@@ -1224,12 +1243,39 @@ impl BrowserServiceWorkerOwner {
         self.manager_mut(profile)
             .observe_window_client_with_frame_type(client_id, client_url, frame_type)
             .map_err(|error| error.to_string())?;
-        if let Some((previous_profile, previous_id)) =
-            self.clients_by_tab.insert(tab_id, (profile, client_id.to_string()))
-            && (previous_profile != profile || previous_id != client_id)
-            && let Some(manager) = self.manager_mut_if_present(previous_profile)
+        let mut removed = Vec::new();
+        self.clients_by_tab.retain(|known_tab, clients| {
+            clients.retain(|known_client| {
+                let tab_profile_changed = *known_tab == tab_id && known_client.profile != profile;
+                let same_client_elsewhere =
+                    known_client.client_id == client_id && (*known_tab != tab_id || known_client.profile != profile);
+                let should_remove = tab_profile_changed || same_client_elsewhere;
+                if should_remove {
+                    removed.push((known_client.profile, known_client.client_id.clone()));
+                }
+                !should_remove
+            });
+            !clients.is_empty()
+        });
+        for (previous_profile, previous_id) in removed {
+            if previous_profile != profile
+                && let Some(manager) = self.manager_mut_if_present(previous_profile)
+            {
+                manager.remove_client(&previous_id);
+            }
+        }
+        let clients = self.clients_by_tab.entry(tab_id).or_default();
+        if let Some(existing) = clients
+            .iter_mut()
+            .find(|known_client| known_client.profile == profile && known_client.client_id == client_id)
         {
-            manager.remove_client(&previous_id);
+            existing.frame_type = frame_type.to_string();
+        } else {
+            clients.push(BrowserServiceWorkerClientReference {
+                profile,
+                client_id: client_id.to_string(),
+                frame_type: frame_type.to_string(),
+            });
         }
         Ok(())
     }

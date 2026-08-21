@@ -748,6 +748,59 @@ fn ipc_clients_match_all_preserves_nested_frame_type() {
 }
 
 #[test]
+fn same_tab_keeps_multiple_service_worker_clients_until_disconnect() {
+    let mut owner = BrowserServiceWorkerOwner::new();
+    let disposition = owner.begin_request_for_client(
+        TabId(7),
+        false,
+        78,
+        Some("https://example.test/app/page.html"),
+        "renderer-7:top",
+        register_request("https://example.test/app/page.html"),
+    );
+    attach_script(&mut owner, disposition, "clients.matchAll({includeUncontrolled:true});");
+    let _ = owner.poll();
+    let evaluate = owner
+        .take_host_commands()
+        .into_iter()
+        .find(|outgoing| matches!(outgoing.params.command, ServiceWorkerHostCommand::Evaluate { .. }))
+        .expect("missing renderer evaluation command");
+    let registration_id = evaluate.params.registration_id;
+
+    owner
+        .observe_client_with_frame_type(
+            TabId(7),
+            ProfileKey::Normal,
+            "renderer-7:frame",
+            "https://example.test/app/frame.html",
+            "nested",
+        )
+        .unwrap();
+
+    let clients = complete_clients_match_all(&mut owner, registration_id, 16);
+    assert_eq!(
+        clients
+            .iter()
+            .map(|client| (client.id.as_str(), client.frame_type.as_str()))
+            .collect::<Vec<_>>(),
+        [("renderer-7:top", "top-level"), ("renderer-7:frame", "nested"),]
+    );
+
+    owner.set_focused_tab(Some(TabId(7)));
+    let clients = complete_clients_match_all(&mut owner, registration_id, 17);
+    assert_eq!(
+        clients
+            .iter()
+            .map(|client| (client.id.as_str(), client.focused))
+            .collect::<Vec<_>>(),
+        [("renderer-7:top", true), ("renderer-7:frame", false),]
+    );
+
+    owner.disconnect_tab(TabId(7));
+    assert!(complete_clients_match_all(&mut owner, registration_id, 18).is_empty());
+}
+
+#[test]
 fn focused_tab_changes_clients_match_all_order() {
     let mut owner = BrowserServiceWorkerOwner::new();
     let first = owner.begin_request_for_client(
