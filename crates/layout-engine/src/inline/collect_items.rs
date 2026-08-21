@@ -281,7 +281,9 @@ impl InlineFormattingContext {
                                                     || !matches!(s.overflow_y, OverflowValue::Visible)
                                             });
                                             if no_line_boxes || clips {
-                                                h + style.map(|s| length_px(&s.margin_bottom)).unwrap_or(0.0)
+                                                h + style
+                                                    .map(|s| Self::resolve_inline_margin(&s.margin_bottom, s))
+                                                    .unwrap_or(0.0)
                                             } else {
                                                 h
                                             }
@@ -295,14 +297,18 @@ impl InlineFormattingContext {
                                     node_id: child_id,
                                     vertical_align,
                                     baseline,
-                                    margin_top: style.map(|s| length_px(&s.margin_top)).unwrap_or(0.0),
+                                    margin_top: style
+                                        .map(|s| Self::resolve_inline_margin(&s.margin_top, s))
+                                        .unwrap_or(0.0),
                                     margin_right: style
-                                        .map(|s| length_px(&s.margin_right))
+                                        .map(|s| Self::resolve_inline_margin(&s.margin_right, s))
                                         .or_else(|| self.margin_overrides.get(&child_id).map(|(_, right)| *right))
                                         .unwrap_or(0.0),
-                                    margin_bottom: style.map(|s| length_px(&s.margin_bottom)).unwrap_or(0.0),
+                                    margin_bottom: style
+                                        .map(|s| Self::resolve_inline_margin(&s.margin_bottom, s))
+                                        .unwrap_or(0.0),
                                     margin_left: style
-                                        .map(|s| length_px(&s.margin_left))
+                                        .map(|s| Self::resolve_inline_margin(&s.margin_left, s))
                                         .or_else(|| self.margin_overrides.get(&child_id).map(|(left, _)| *left))
                                         .unwrap_or(0.0),
                                 }));
@@ -408,10 +414,18 @@ impl InlineFormattingContext {
                                     node_id: child_id,
                                     vertical_align,
                                     baseline: h,
-                                    margin_top: img_style.map(|s| length_px(&s.margin_top)).unwrap_or(0.0),
-                                    margin_right: img_style.map(|s| length_px(&s.margin_right)).unwrap_or(0.0),
-                                    margin_bottom: img_style.map(|s| length_px(&s.margin_bottom)).unwrap_or(0.0),
-                                    margin_left: img_style.map(|s| length_px(&s.margin_left)).unwrap_or(0.0),
+                                    margin_top: img_style
+                                        .map(|s| Self::resolve_inline_margin(&s.margin_top, s))
+                                        .unwrap_or(0.0),
+                                    margin_right: img_style
+                                        .map(|s| Self::resolve_inline_margin(&s.margin_right, s))
+                                        .unwrap_or(0.0),
+                                    margin_bottom: img_style
+                                        .map(|s| Self::resolve_inline_margin(&s.margin_bottom, s))
+                                        .unwrap_or(0.0),
+                                    margin_left: img_style
+                                        .map(|s| Self::resolve_inline_margin(&s.margin_left, s))
+                                        .unwrap_or(0.0),
                                 }));
                                 continue;
                             }
@@ -467,16 +481,10 @@ impl InlineFormattingContext {
                         // 提取 inline 元素的水平 margin
                         // 优先从 style 获取；若无 style（paint IFC），使用 margin_overrides。
                         let margin_left = style
-                            .map(|s| match &s.margin_left {
-                                LengthValue::Px(v) => *v as f32,
-                                _ => 0.0,
-                            })
+                            .map(|s| Self::resolve_inline_margin(&s.margin_left, s))
                             .unwrap_or_else(|| self.margin_overrides.get(&child_id).map(|(ml, _)| *ml).unwrap_or(0.0));
                         let margin_right = style
-                            .map(|s| match &s.margin_right {
-                                LengthValue::Px(v) => *v as f32,
-                                _ => 0.0,
-                            })
+                            .map(|s| Self::resolve_inline_margin(&s.margin_right, s))
                             .unwrap_or_else(|| self.margin_overrides.get(&child_id).map(|(_, mr)| *mr).unwrap_or(0.0));
                         let is_ahem_font = style
                             .map(|s| s.font_family.iter().any(|f| f.trim_matches('"').eq_ignore_ascii_case("Ahem")))
@@ -573,6 +581,22 @@ impl InlineFormattingContext {
         match value {
             LengthValue::Px(v) => *v as f32,
             other => zero_style_system::computed::resolve_length(other, font_size as f64, None, None) as f32,
+        }
+    }
+
+    fn resolve_inline_margin(value: &LengthValue, style: &ComputedStyle) -> f32 {
+        match value {
+            LengthValue::Auto
+            | LengthValue::Percentage(_)
+            | LengthValue::MinContent
+            | LengthValue::MaxContent
+            | LengthValue::FitContent(_) => 0.0,
+            other => {
+                let font_size_px =
+                    zero_style_system::computed::resolve_length(&style.font_size, 16.0, None, None);
+                let px = zero_style_system::computed::resolve_length(other, font_size_px, None, None);
+                if px.is_finite() { px as f32 } else { 0.0 }
+            }
         }
     }
 }

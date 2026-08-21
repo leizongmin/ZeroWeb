@@ -1632,6 +1632,83 @@ fn test_fragment_node_ids_restricts_inline_collection() {
     assert!(!frag_items.is_empty(), "fragment should collect its text item");
 }
 
+#[test]
+fn r3634_inline_text_margin_resolves_residual_real_length() {
+    use zero_css_parser::values::{DisplayValue, LengthValue};
+    use zero_style_system::ComputedStyle;
+
+    let mut doc = zero_dom::Document::new();
+    let root = doc.root();
+    let span = doc.create_element("span");
+    let text = doc.create_text_node("x");
+    doc.append_child(root, span).unwrap();
+    doc.append_child(span, text).unwrap();
+
+    let mut styles = std::collections::HashMap::new();
+    let mut style = ComputedStyle::default();
+    style.display = DisplayValue::Inline;
+    style.font_size = LengthValue::Px(20.0);
+    style.margin_left = LengthValue::Em(2.0);
+    style.margin_right = LengthValue::Ch(3.0);
+    styles.insert(span, style);
+
+    let ctx = InlineFormattingContext::new(800.0);
+    let items = ctx.collect_inline_items(&doc, root, &styles);
+
+    let Some(InlineItem::Text(run)) = items.first() else {
+        panic!("expected inline text item, got {items:?}");
+    };
+    assert!(
+        (run.margin_left - 40.0).abs() < 0.01,
+        "margin-left:2em at 20px should resolve to 40px, got {}",
+        run.margin_left
+    );
+    assert!(
+        (run.margin_right - 30.0).abs() < 0.01,
+        "margin-right:3ch at 20px should resolve to 30px, got {}",
+        run.margin_right
+    );
+}
+
+#[test]
+fn r3634_inline_block_margin_resolves_residual_real_length() {
+    use zero_css_parser::values::{DisplayValue, LengthValue};
+    use zero_style_system::ComputedStyle;
+
+    let mut doc = zero_dom::Document::new();
+    let root = doc.root();
+    let span = doc.create_element("span");
+    doc.append_child(root, span).unwrap();
+
+    let mut styles = std::collections::HashMap::new();
+    let mut style = ComputedStyle::default();
+    style.display = DisplayValue::InlineBlock;
+    style.font_size = LengthValue::Px(20.0);
+    style.width = LengthValue::Px(10.0);
+    style.height = LengthValue::Px(5.0);
+    style.margin_top = LengthValue::Em(1.0);
+    style.margin_right = LengthValue::Ch(2.0);
+    style.margin_bottom = LengthValue::Em(0.5);
+    style.margin_left = LengthValue::Em(1.5);
+    styles.insert(span, style);
+
+    let ctx = InlineFormattingContext::new(800.0);
+    let items = ctx.collect_inline_items(&doc, root, &styles);
+
+    let Some(InlineItem::InlineBlock(block)) = items.first() else {
+        panic!("expected inline-block item, got {items:?}");
+    };
+    assert!((block.margin_top - 20.0).abs() < 0.01);
+    assert!((block.margin_right - 20.0).abs() < 0.01);
+    assert!((block.margin_bottom - 10.0).abs() < 0.01);
+    assert!((block.margin_left - 30.0).abs() < 0.01);
+    assert!(
+        (block.baseline - 15.0).abs() < 0.01,
+        "empty inline-block baseline should include resolved margin-bottom, got {}",
+        block.baseline
+    );
+}
+
 /// R816 linebox 度量统一 Phase 1：`break_into_lines` 后行盒的 baseline_y/ascent/descent
 /// 必须被 `apply_vertical_alignment` 填充（非默认 0）。验证字段存储正确，供后续 Phase
 /// paint 复用。

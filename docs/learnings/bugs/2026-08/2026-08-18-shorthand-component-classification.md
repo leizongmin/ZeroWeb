@@ -386,3 +386,5 @@ Grid intrinsic sizing has the same container spacing used-value boundary as flex
 Multicol intrinsic sizing also consumes author lengths outside the normal multicol layout pass. Resolve `column-width` and `column-gap` through the shared definite real-length helper before computing column-driven max-content, or direct residual units will either disappear or be replaced by child content widths.
 
 Multicol column-info parsing has a font-size used-value boundary separate from its length conversion helper. Even when `length_to_px` supports `em`, the font-size basis itself must be resolved first; otherwise residual `font-size` units make `column-gap:normal/1em` and `column-width:<length>` use the root fallback.
+
+Inline item collection must resolve inline margins at the IFC boundary. Text runs, inline-blocks, and inline replaced elements can still carry residual real lengths in direct `ComputedStyle`; assuming margins are already `Px` drops `em/ch/rem` spacing before line breaking and paint overrides are stored.
