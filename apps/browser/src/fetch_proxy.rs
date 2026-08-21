@@ -11,6 +11,7 @@ use zero_net::{
     read_file_url,
 };
 use zero_protocol::message::FetchParams;
+use zero_script_sandbox::ServiceWorkerFetchRequest;
 use zero_security::{ResourceCheckResult, SecurityContext};
 
 /// 已完成、待回传 renderer 的 fetch 结果。
@@ -336,6 +337,62 @@ impl TabFetchProxy {
             partition,
             self.tab_epochs.get(&tab_id).copied(),
             "serviceworker",
+        )
+    }
+
+    /// Submit an ordinary worker-global `fetch()` through the browser-owned loader.
+    ///
+    /// This is intentionally separate from Service Worker script fetches: ordinary fetches are
+    /// request/response traffic and must not inherit script MIME or redirect checks.
+    pub fn fetch_service_worker_request(
+        &mut self,
+        tab_id: TabId,
+        request: &ServiceWorkerFetchRequest,
+    ) -> Receiver<Result<HttpResponse, String>> {
+        self.ensure_tab(tab_id);
+        let mut url = request.url.clone();
+        if let Some(context) = self.security.get_mut(&tab_id) {
+            match context.check_resource_url(&url, "connect") {
+                ResourceCheckResult::Allow => {}
+                ResourceCheckResult::Upgraded(upgraded) => url = upgraded,
+                ResourceCheckResult::Blocked(reason) => {
+                    return immediate_err(format!("resource blocked by security policy: {reason}"));
+                }
+            }
+        }
+        if is_file_url(&url) {
+            let (tx, rx) = channel();
+            let _ = tx.send(read_file_url(&url).map_err(|error| error.to_string()));
+            return rx;
+        }
+        let method = match request.method.to_ascii_uppercase().as_str() {
+            "GET" => HttpMethod::Get,
+            "POST" => HttpMethod::Post,
+            "PUT" => HttpMethod::Put,
+            "DELETE" => HttpMethod::Delete,
+            "PATCH" => HttpMethod::Patch,
+            "HEAD" => HttpMethod::Head,
+            "OPTIONS" => HttpMethod::Options,
+            _ => return immediate_err(format!("unsupported HTTP method: {}", request.method)),
+        };
+        let priority = FetchPriority::from_fetch_headers(&request.headers, &url).0;
+        let partition = self
+            .security
+            .get(&tab_id)
+            .and_then(|context| context.page_origin())
+            .map(|origin| format!("{}://{}:{}", origin.scheme, origin.host, origin.port))
+            .unwrap_or_else(|| "default".to_string());
+        self.loader_for(tab_id).submit_http_with_context_in_partition(
+            HttpRequest {
+                method,
+                url,
+                headers: request.headers.clone(),
+                body: request.body.as_ref().map(|body| body.as_bytes().to_vec()),
+            },
+            priority,
+            partition,
+            self.tab_epochs.get(&tab_id).copied(),
+            "connect",
         )
     }
 

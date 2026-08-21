@@ -93,6 +93,18 @@ enum ServiceWorkerCacheStorageResponse {
     Shutdown,
 }
 
+enum ServiceWorkerFetchHostResponse {
+    Completed {
+        request_id: u64,
+        response: ServiceWorkerFetchResponse,
+    },
+    Failed {
+        request_id: u64,
+        message: String,
+    },
+    Shutdown,
+}
+
 struct PendingLifecycle {
     event_id: u64,
     phase: ServiceWorkerLifecyclePhase,
@@ -309,25 +321,34 @@ const SERVICE_WORKER_BOOTSTRAP: &str = r#"
     if (body === undefined || body === null) return '';
     return String(body);
   }
+  function normalizeRequestURL(input) {
+    const source = String(input);
+    try {
+      const base = globalThis.location && globalThis.location.href ? String(globalThis.location.href) : '';
+      const response = JSON.parse(globalThis.__zwResolveURL(source, base));
+      if (response && response.ok === true && response.href) return response.href;
+    } catch (_error) {}
+    return source;
+  }
 
   // https://fetch.spec.whatwg.org/#request-class
   class Request {
     constructor(input, init) {
       init = init === undefined ? {} : Object(init);
       if (input instanceof Request) {
-        this.url = init.url === undefined ? input.url : String(init.url);
+        this.url = init.url === undefined ? input.url : normalizeRequestURL(init.url);
         this.method = init.method === undefined ? input.method : String(init.method).toUpperCase();
         this.headers = new Headers(init.headers === undefined ? input.headers : init.headers);
         this._body = init.body === undefined ? input._body : normalizeBody(init.body);
       } else if (typeof input === 'object' && input !== null && input.url !== undefined) {
-        this.url = String(input.url);
+        this.url = normalizeRequestURL(input.url);
         this.method = init.method === undefined
           ? String(input.method || 'GET').toUpperCase()
           : String(init.method).toUpperCase();
         this.headers = new Headers(init.headers === undefined ? input.headers : init.headers);
         this._body = init.body === undefined ? normalizeBody(input.body) : normalizeBody(init.body);
       } else {
-        this.url = String(input);
+        this.url = normalizeRequestURL(input);
         this.method = init.method === undefined ? 'GET' : String(init.method).toUpperCase();
         this.headers = new Headers(init.headers);
         this._body = normalizeBody(init.body);
@@ -335,6 +356,9 @@ const SERVICE_WORKER_BOOTSTRAP: &str = r#"
     }
     text() {
       return Promise.resolve(this._body);
+    }
+    clone() {
+      return new Request(this);
     }
   }
   Object.defineProperty(Request.prototype, Symbol.toStringTag, {value: 'Request'});
@@ -355,6 +379,13 @@ const SERVICE_WORKER_BOOTSTRAP: &str = r#"
     }
     text() {
       return Promise.resolve(this._body);
+    }
+    clone() {
+      return new Response(this._body, {
+        status: this.status,
+        statusText: this.statusText,
+        headers: this.headers
+      });
     }
     static _from(value) {
       if (value instanceof Response) return value;
@@ -471,6 +502,36 @@ const SERVICE_WORKER_BOOTSTRAP: &str = r#"
       return cacheStorageHost(cachePutRequest(this._name, input, response)).then(function() {
         return undefined;
       });
+    }
+    add(input) {
+      const cache = this;
+      let request;
+      try {
+        request = input instanceof Request ? input : new Request(input);
+      } catch (error) {
+        return Promise.reject(error);
+      }
+      if (request.method !== 'GET') {
+        return Promise.reject(new TypeError('Cache.add only supports GET requests'));
+      }
+      return fetch(request.clone()).then(function(response) {
+        if (!response || !response.ok) {
+          throw new TypeError('Cache.add fetch response is not ok');
+        }
+        return cache.put(request, response);
+      });
+    }
+    addAll(inputs) {
+      const cache = this;
+      try {
+        return Promise.all(Array.from(inputs).map(function(input) {
+          return cache.add(input);
+        })).then(function() {
+          return undefined;
+        });
+      } catch (error) {
+        return Promise.reject(error);
+      }
     }
     keys(input, options) {
       return cacheStorageHost(cacheKeysRequest(this._name, input, options)).then(function(response) {
@@ -716,6 +777,23 @@ const SERVICE_WORKER_BOOTSTRAP: &str = r#"
       globalThis.__zwLifecycleResult.skipWaitingRequested = true;
     }
     return Promise.resolve();
+  };
+  globalThis.fetch = function(input, init) {
+    let request;
+    try {
+      request = new Request(input, init);
+    } catch (error) {
+      return Promise.reject(error);
+    }
+    try {
+      const response = JSON.parse(globalThis.__zwFetch(JSON.stringify(cacheRequestWire(request))));
+      if (!response || response.ok !== true) {
+        return Promise.reject(new TypeError(response && response.error || 'Service Worker fetch failed'));
+      }
+      return Promise.resolve(cachedResponseFromWire(response.response));
+    } catch (_error) {
+      return Promise.reject(new TypeError('invalid Service Worker fetch response'));
+    }
   };
   class Clients {
     // https://w3c.github.io/ServiceWorker/#clients-get
@@ -1101,6 +1179,13 @@ pub enum ServiceWorkerEvent {
         /// Pure-value CacheStorage operation for the active registration.
         request: ServiceWorkerCacheStorageRequest,
     },
+    /// The worker global requested a browser-owned ordinary fetch.
+    FetchRequested {
+        /// Runtime-local request ID used to correlate the blocking response.
+        request_id: u64,
+        /// Pure-value fetch request.
+        request: ServiceWorkerFetchRequest,
+    },
     /// A worker posted messages outside a page-originated message event.
     ClientMessagesEmitted {
         /// Messages with explicit target client identities.
@@ -1281,6 +1366,7 @@ pub struct ServiceWorkerRuntime {
     update_response_sender: mpsc::Sender<ServiceWorkerUpdateResponse>,
     clients_response_sender: mpsc::Sender<ServiceWorkerClientsResponse>,
     cache_storage_response_sender: mpsc::Sender<ServiceWorkerCacheStorageResponse>,
+    fetch_response_sender: mpsc::Sender<ServiceWorkerFetchHostResponse>,
 }
 
 impl ServiceWorkerRuntime {
@@ -1293,6 +1379,7 @@ impl ServiceWorkerRuntime {
         let (update_response_sender, update_response_receiver) = mpsc::channel();
         let (clients_response_sender, clients_response_receiver) = mpsc::channel();
         let (cache_storage_response_sender, cache_storage_response_receiver) = mpsc::channel();
+        let (fetch_response_sender, fetch_response_receiver) = mpsc::channel();
         let mut core = ThreadedRuntimeCore::spawn(
             "zero-service-worker",
             "Service Worker",
@@ -1664,6 +1751,72 @@ impl ServiceWorkerRuntime {
                         }
                     }),
                 );
+                let fetch_event_sender = event_sender.clone();
+                let fetch_response_receiver = Arc::new(Mutex::new(fetch_response_receiver));
+                let next_fetch_request_id = Arc::new(AtomicU64::new(1));
+                sandbox.register_callback(
+                    "__zwFetch",
+                    Box::new(move |args| {
+                        let Some(request_json) = args.first() else {
+                            return fetch_failure_json("Service Worker fetch request is missing");
+                        };
+                        let request = match serde_json::from_str::<serde_json::Value>(request_json)
+                            .ok()
+                            .and_then(|value| fetch_request_from_json(&value))
+                        {
+                            Some(request) => request,
+                            None => return fetch_failure_json("Service Worker fetch request is invalid"),
+                        };
+                        if let Err(error) = validate_fetch_request(&request) {
+                            return fetch_failure_json(&error.to_string());
+                        }
+                        let request_id = next_fetch_request_id.fetch_add(1, Ordering::Relaxed);
+                        if fetch_event_sender
+                            .send(ServiceWorkerEvent::FetchRequested { request_id, request })
+                            .is_err()
+                        {
+                            return fetch_failure_json("Service Worker host disconnected");
+                        }
+                        let deadline =
+                            std::time::Instant::now() + std::time::Duration::from_millis(lifecycle_timeout_ms);
+                        loop {
+                            let now = std::time::Instant::now();
+                            if now >= deadline {
+                                return fetch_failure_json("Service Worker fetch host response timed out");
+                            }
+                            let response = fetch_response_receiver
+                                .lock()
+                                .expect("fetch response lock")
+                                .recv_timeout(deadline.saturating_duration_since(now));
+                            match response {
+                                Ok(ServiceWorkerFetchHostResponse::Completed {
+                                    request_id: response_id,
+                                    response,
+                                }) if response_id == request_id => {
+                                    return serde_json::json!({
+                                        "ok": true,
+                                        "response": fetch_response_json(response),
+                                    })
+                                    .to_string();
+                                }
+                                Ok(ServiceWorkerFetchHostResponse::Failed {
+                                    request_id: response_id,
+                                    message,
+                                }) if response_id == request_id => return fetch_failure_json(&message),
+                                Ok(ServiceWorkerFetchHostResponse::Shutdown) => {
+                                    return fetch_failure_json("Service Worker runtime is shutting down");
+                                }
+                                Ok(_) => continue,
+                                Err(mpsc::RecvTimeoutError::Timeout) => {
+                                    return fetch_failure_json("Service Worker fetch host response timed out");
+                                }
+                                Err(mpsc::RecvTimeoutError::Disconnected) => {
+                                    return fetch_failure_json("Service Worker host disconnected");
+                                }
+                            }
+                        }
+                    }),
+                );
                 if let Err(error) = sandbox.execute(SERVICE_WORKER_BOOTSTRAP) {
                     let _ = init_sender.send(Err(error));
                     return;
@@ -1837,6 +1990,7 @@ impl ServiceWorkerRuntime {
                 update_response_sender,
                 clients_response_sender,
                 cache_storage_response_sender,
+                fetch_response_sender,
             }),
             Ok(Err(error)) => {
                 core.terminate(ServiceWorkerCommand::Shutdown, || {});
@@ -2148,6 +2302,24 @@ impl ServiceWorkerRuntime {
         self.complete_cache_storage(request_id, result.map(ServiceWorkerCacheStorageResult::Match))
     }
 
+    /// Complete one blocking worker-global `fetch()` request.
+    pub fn complete_fetch(
+        &self,
+        request_id: u64,
+        result: Result<ServiceWorkerFetchResponse, String>,
+    ) -> Result<(), ScriptError> {
+        let response = match result {
+            Ok(response) => {
+                validate_fetch_response(&response)?;
+                ServiceWorkerFetchHostResponse::Completed { request_id, response }
+            }
+            Err(message) => ServiceWorkerFetchHostResponse::Failed { request_id, message },
+        };
+        self.fetch_response_sender
+            .send(response)
+            .map_err(|_| ScriptError::RuntimeError("Service Worker runtime disconnected".into()))
+    }
+
     /// Shut down the engine thread with a bounded join.
     pub fn shutdown(&mut self) {
         let _ = self.import_response_sender.send(ServiceWorkerImportResponse::Shutdown);
@@ -2158,6 +2330,9 @@ impl ServiceWorkerRuntime {
         let _ = self
             .cache_storage_response_sender
             .send(ServiceWorkerCacheStorageResponse::Shutdown);
+        let _ = self
+            .fetch_response_sender
+            .send(ServiceWorkerFetchHostResponse::Shutdown);
         self.core.terminate(ServiceWorkerCommand::Shutdown, || {});
     }
 
@@ -2206,6 +2381,10 @@ fn clients_failure_json(message: &str) -> String {
 }
 
 fn cache_storage_failure_json(message: &str) -> String {
+    serde_json::json!({"ok": false, "error": message}).to_string()
+}
+
+fn fetch_failure_json(message: &str) -> String {
     serde_json::json!({"ok": false, "error": message}).to_string()
 }
 
@@ -4478,6 +4657,166 @@ mod tests {
                     status_text: String::new(),
                     headers: Vec::new(),
                     body: "done".into(),
+                }),
+                message: String::new(),
+            }
+        );
+    }
+
+    #[test]
+    fn worker_global_fetch_and_cache_add_roundtrip() {
+        let mut runtime = ServiceWorkerRuntime::new(test_config()).unwrap();
+        runtime
+            .evaluate(
+                "addEventListener('fetch', event => {
+                   event.respondWith((async () => {
+                     const direct = await fetch('./direct.txt', {headers: {'X-Test': 'yes'}});
+                     if ((await direct.text()) !== 'direct-body') throw new Error('direct fetch body');
+                     const cache = await caches.open('runtime');
+                     await cache.add('./add-a.txt');
+                     await cache.addAll(['./add-b.txt']);
+                     const one = await cache.match('https://example.test/app/add-a.txt');
+                     const two = await cache.match('https://example.test/app/add-b.txt');
+                     return new Response([one.headers.get('content-type'), await one.text(), await two.text()].join('|'));
+                   })());
+                 });",
+                "https://example.test/app/sw.js",
+            )
+            .unwrap();
+        let _ = runtime.recv_timeout(Duration::from_secs(5)).unwrap();
+
+        runtime
+            .dispatch_fetch(
+                45,
+                ServiceWorkerFetchRequest {
+                    url: "https://example.test/app/page".into(),
+                    method: "GET".into(),
+                    headers: Vec::new(),
+                    body: None,
+                    client_id: Some("client-1".into()),
+                    resulting_client_id: None,
+                },
+            )
+            .unwrap();
+
+        let ServiceWorkerEvent::FetchRequested { request_id, request } =
+            runtime.recv_timeout(Duration::from_secs(5)).unwrap()
+        else {
+            panic!("missing worker global fetch request");
+        };
+        assert_eq!(request.url, "https://example.test/app/direct.txt");
+        assert_eq!(request.method, "GET");
+        assert_eq!(request.headers, [("x-test".into(), "yes".into())]);
+        runtime
+            .complete_fetch(
+                request_id,
+                Ok(ServiceWorkerFetchResponse {
+                    status: 200,
+                    status_text: "OK".into(),
+                    headers: Vec::new(),
+                    body: "direct-body".into(),
+                }),
+            )
+            .unwrap();
+
+        let ServiceWorkerEvent::CacheStorageRequested { request_id, request } =
+            runtime.recv_timeout(Duration::from_secs(5)).unwrap()
+        else {
+            panic!("missing CacheStorage.open request");
+        };
+        assert_eq!(
+            request,
+            ServiceWorkerCacheStorageRequest::Open {
+                cache_name: "runtime".into()
+            }
+        );
+        runtime
+            .complete_cache_storage(request_id, Ok(ServiceWorkerCacheStorageResult::Done))
+            .unwrap();
+
+        for (expected_url, expected_body) in [
+            ("https://example.test/app/add-a.txt", "alpha"),
+            ("https://example.test/app/add-b.txt", "beta"),
+        ] {
+            let ServiceWorkerEvent::FetchRequested { request_id, request } =
+                runtime.recv_timeout(Duration::from_secs(5)).unwrap()
+            else {
+                panic!("missing Cache.add fetch request");
+            };
+            assert_eq!(request.url, expected_url);
+            assert_eq!(request.method, "GET");
+            runtime
+                .complete_fetch(
+                    request_id,
+                    Ok(ServiceWorkerFetchResponse {
+                        status: 200,
+                        status_text: "OK".into(),
+                        headers: vec![("content-type".into(), "text/plain".into())],
+                        body: expected_body.into(),
+                    }),
+                )
+                .unwrap();
+
+            let ServiceWorkerEvent::CacheStorageRequested { request_id, request } =
+                runtime.recv_timeout(Duration::from_secs(5)).unwrap()
+            else {
+                panic!("missing Cache.add put request");
+            };
+            let ServiceWorkerCacheStorageRequest::Put {
+                cache_name,
+                request,
+                response,
+            } = request
+            else {
+                panic!("expected Cache.put request");
+            };
+            assert_eq!(cache_name, "runtime");
+            assert_eq!(request.url, expected_url);
+            assert_eq!(response.status, 200);
+            assert_eq!(response.body, expected_body);
+            runtime
+                .complete_cache_storage(request_id, Ok(ServiceWorkerCacheStorageResult::Done))
+                .unwrap();
+        }
+
+        for expected_body in ["alpha", "beta"] {
+            let ServiceWorkerEvent::CacheStorageRequested { request_id, request } =
+                runtime.recv_timeout(Duration::from_secs(5)).unwrap()
+            else {
+                panic!("missing Cache.match request");
+            };
+            assert!(matches!(
+                request,
+                ServiceWorkerCacheStorageRequest::Match {
+                    cache_name: Some(_),
+                    ..
+                }
+            ));
+            runtime
+                .complete_cache_storage(
+                    request_id,
+                    Ok(ServiceWorkerCacheStorageResult::Match(Some(
+                        ServiceWorkerFetchResponse {
+                            status: 200,
+                            status_text: "OK".into(),
+                            headers: vec![("content-type".into(), "text/plain".into())],
+                            body: expected_body.into(),
+                        },
+                    ))),
+                )
+                .unwrap();
+        }
+
+        assert_eq!(
+            runtime.recv_timeout(Duration::from_secs(5)).unwrap(),
+            ServiceWorkerEvent::FetchSettled {
+                event_id: 45,
+                request_url: "https://example.test/app/page".into(),
+                response: Some(ServiceWorkerFetchResponse {
+                    status: 200,
+                    status_text: String::new(),
+                    headers: Vec::new(),
+                    body: "text/plain|alpha|beta".into(),
                 }),
                 message: String::new(),
             }

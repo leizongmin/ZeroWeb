@@ -415,6 +415,29 @@ impl ServiceWorkerRuntimeHost for IpcServiceWorkerHost {
         Ok(())
     }
 
+    fn complete_fetch(
+        &mut self,
+        registration_id: u64,
+        request_id: u64,
+        result: Result<ServiceWorkerFetchResponse, String>,
+    ) -> Result<(), ServiceWorkerManagerError> {
+        let Some(tab_id) = self.channels.take_owned_tab(registration_id) else {
+            return Err(ServiceWorkerManagerError::UnknownRegistration(registration_id));
+        };
+        self.channels.record_owned(registration_id, tab_id);
+        self.channels.push_outgoing(ServiceWorkerHostOutgoing {
+            tab_id,
+            params: ServiceWorkerHostCommandParams {
+                registration_id,
+                command: ServiceWorkerHostCommand::CompleteFetch {
+                    request_id,
+                    result: result.map(fetch_response_to_wire),
+                },
+            },
+        });
+        Ok(())
+    }
+
     fn shutdown(&mut self, registration_id: u64) {
         if let Some(tab_id) = self.channels.remove_owned(registration_id) {
             self.channels.push_outgoing(ServiceWorkerHostOutgoing {
@@ -670,6 +693,10 @@ fn sandbox_event(event: ServiceWorkerHostEvent) -> ServiceWorkerEvent {
                 request: cache_storage_request_from_wire(request),
             }
         }
+        ServiceWorkerHostEvent::FetchRequested { request_id, request } => ServiceWorkerEvent::FetchRequested {
+            request_id,
+            request: fetch_request_from_wire(request),
+        },
         ServiceWorkerHostEvent::ClientMessagesEmitted { outbound } => ServiceWorkerEvent::ClientMessagesEmitted {
             outbound: outbound
                 .into_iter()
@@ -824,6 +851,30 @@ struct PendingImportFetch {
     scripts: Vec<Option<ServiceWorkerImportedScript>>,
 }
 
+/// A worker-global fetch request that must be executed by the browser network owner.
+pub(crate) struct ServiceWorkerWorkerFetchPlan {
+    tab_id: TabId,
+    profile: ProfileKey,
+    registration_id: u64,
+    request_id: u64,
+    request: ServiceWorkerFetchRequest,
+}
+
+impl ServiceWorkerWorkerFetchPlan {
+    pub(crate) fn tab_id(&self) -> TabId {
+        self.tab_id
+    }
+
+    pub(crate) fn request(&self) -> &ServiceWorkerFetchRequest {
+        &self.request
+    }
+}
+
+struct PendingWorkerFetch {
+    plan: ServiceWorkerWorkerFetchPlan,
+    receiver: Receiver<Result<HttpResponse, String>>,
+}
+
 /// Browser-process single owner for Service Worker managers and runtimes.
 pub(crate) struct BrowserServiceWorkerOwner {
     normal: ServiceWorkerManager,
@@ -836,6 +887,8 @@ pub(crate) struct BrowserServiceWorkerOwner {
     update_fetch_plans: Vec<ServiceWorkerFetchPlan>,
     import_fetch_plans: Vec<ServiceWorkerImportFetchPlan>,
     pending_import_fetches: Vec<PendingImportFetch>,
+    worker_fetch_plans: Vec<ServiceWorkerWorkerFetchPlan>,
+    pending_worker_fetches: Vec<PendingWorkerFetch>,
     next_page_fetch_event_id: u64,
     pending_page_fetches: HashMap<(ProfileKey, u64, u64), PendingPageFetch>,
     completed_page_fetches: Vec<CompletedServiceWorkerPageFetch>,
@@ -956,6 +1009,8 @@ impl BrowserServiceWorkerOwner {
             update_fetch_plans: Vec::new(),
             import_fetch_plans: Vec::new(),
             pending_import_fetches: Vec::new(),
+            worker_fetch_plans: Vec::new(),
+            pending_worker_fetches: Vec::new(),
             next_page_fetch_event_id: 1,
             pending_page_fetches: HashMap::new(),
             completed_page_fetches: Vec::new(),
@@ -1336,6 +1391,10 @@ impl BrowserServiceWorkerOwner {
         std::mem::take(&mut self.import_fetch_plans)
     }
 
+    pub(crate) fn take_worker_fetch_plans(&mut self) -> Vec<ServiceWorkerWorkerFetchPlan> {
+        std::mem::take(&mut self.worker_fetch_plans)
+    }
+
     pub(crate) fn begin_page_fetch(
         &mut self,
         tab_id: TabId,
@@ -1428,10 +1487,19 @@ impl BrowserServiceWorkerOwner {
         });
     }
 
+    pub(crate) fn attach_worker_fetch(
+        &mut self,
+        plan: ServiceWorkerWorkerFetchPlan,
+        receiver: Receiver<Result<HttpResponse, String>>,
+    ) {
+        self.pending_worker_fetches.push(PendingWorkerFetch { plan, receiver });
+    }
+
     pub(crate) fn poll(&mut self) -> Vec<CompletedServiceWorkerResponse> {
         let mut completed = Vec::new();
         self.poll_fetches(&mut completed);
         self.poll_import_fetches();
+        self.poll_worker_fetches();
         self.poll_manager(ProfileKey::Normal, &mut completed);
         let private_tabs: Vec<_> = self.private.keys().copied().collect();
         for tab_id in private_tabs {
@@ -1456,6 +1524,19 @@ impl BrowserServiceWorkerOwner {
         self.pending_evaluations.retain(|_, pending| pending.tab_id != tab_id);
         self.update_fetch_plans.retain(|plan| plan.tab_id != tab_id);
         self.pending_page_fetches.retain(|_, pending| pending.tab_id != tab_id);
+        let mut retained_worker_plans = Vec::new();
+        for plan in std::mem::take(&mut self.worker_fetch_plans) {
+            if plan.tab_id == tab_id {
+                let _ = self.manager_mut(plan.profile).complete_worker_fetch(
+                    plan.registration_id,
+                    plan.request_id,
+                    Err("Service Worker fetch client disconnected".into()),
+                );
+            } else {
+                retained_worker_plans.push(plan);
+            }
+        }
+        self.worker_fetch_plans = retained_worker_plans;
         self.completed_page_fetches.retain(|completed| match completed {
             CompletedServiceWorkerPageFetch::Respond {
                 tab_id: pending_tab, ..
@@ -1490,6 +1571,19 @@ impl BrowserServiceWorkerOwner {
             }
         }
         self.pending_import_fetches = retained;
+        let mut retained_worker_fetches = Vec::new();
+        for pending in std::mem::take(&mut self.pending_worker_fetches) {
+            if pending.plan.tab_id == tab_id {
+                let _ = self.manager_mut(pending.plan.profile).complete_worker_fetch(
+                    pending.plan.registration_id,
+                    pending.plan.request_id,
+                    Err("Service Worker fetch client disconnected".into()),
+                );
+            } else {
+                retained_worker_fetches.push(pending);
+            }
+        }
+        self.pending_worker_fetches = retained_worker_fetches;
     }
 
     pub(crate) fn observe_committed_top_level_client(
@@ -1557,6 +1651,10 @@ impl BrowserServiceWorkerOwner {
         self.import_fetch_plans
             .retain(|plan| plan.profile != ProfileKey::Private(tab_id));
         self.pending_import_fetches
+            .retain(|pending| pending.plan.profile != ProfileKey::Private(tab_id));
+        self.worker_fetch_plans
+            .retain(|plan| plan.profile != ProfileKey::Private(tab_id));
+        self.pending_worker_fetches
             .retain(|pending| pending.plan.profile != ProfileKey::Private(tab_id));
         self.pending_page_fetches
             .retain(|(profile, _, _), _| *profile != ProfileKey::Private(tab_id));
@@ -1756,6 +1854,31 @@ impl BrowserServiceWorkerOwner {
             }
         }
         self.pending_import_fetches = retained;
+    }
+
+    fn poll_worker_fetches(&mut self) {
+        let mut retained = Vec::new();
+        for pending in std::mem::take(&mut self.pending_worker_fetches) {
+            match pending.receiver.try_recv() {
+                Ok(result) => {
+                    let result = worker_fetch_response(result);
+                    let _ = self.manager_mut(pending.plan.profile).complete_worker_fetch(
+                        pending.plan.registration_id,
+                        pending.plan.request_id,
+                        result,
+                    );
+                }
+                Err(TryRecvError::Empty) => retained.push(pending),
+                Err(TryRecvError::Disconnected) => {
+                    let _ = self.manager_mut(pending.plan.profile).complete_worker_fetch(
+                        pending.plan.registration_id,
+                        pending.plan.request_id,
+                        Err("Service Worker fetch worker exited".into()),
+                    );
+                }
+            }
+        }
+        self.pending_worker_fetches = retained;
     }
 
     fn fail_script_fetch(
@@ -2068,6 +2191,38 @@ impl BrowserServiceWorkerOwner {
                         }
                     }
                 }
+                ServiceWorkerManagerEvent::WorkerFetchRequested {
+                    registration_id,
+                    request_id,
+                    request,
+                } => {
+                    let pending_tab = self
+                        .pending_evaluations
+                        .get(&(profile, registration_id))
+                        .map(|pending| pending.tab_id);
+                    let owned_tab = self
+                        .channels_for(profile)
+                        .and_then(|channels| channels.take_owned_tab(registration_id));
+                    let tab_id = pending_tab.or(owned_tab);
+                    if let Some(tab_id) = tab_id {
+                        if let Some(channels) = self.channels_for(profile) {
+                            channels.record_owned(registration_id, tab_id);
+                        }
+                        self.worker_fetch_plans.push(ServiceWorkerWorkerFetchPlan {
+                            tab_id,
+                            profile,
+                            registration_id,
+                            request_id,
+                            request,
+                        });
+                    } else {
+                        let _ = self.manager_mut(profile).complete_worker_fetch(
+                            registration_id,
+                            request_id,
+                            Err("Service Worker fetch has no renderer host".into()),
+                        );
+                    }
+                }
                 ServiceWorkerManagerEvent::UpdateChecked {
                     candidate_registration_id,
                     registration_id,
@@ -2361,6 +2516,44 @@ impl BrowserServiceWorkerOwner {
 impl Default for BrowserServiceWorkerOwner {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+fn worker_fetch_response(result: Result<HttpResponse, String>) -> Result<ServiceWorkerFetchResponse, String> {
+    let response = result.map_err(|message| format!("Service Worker fetch failed: {message}"))?;
+    let body = String::from_utf8(response.body)
+        .map_err(|_| "Service Worker fetch response body is not valid UTF-8".to_string())?;
+    Ok(ServiceWorkerFetchResponse {
+        status: response.status_code,
+        status_text: status_reason(response.status_code).to_string(),
+        headers: response.headers,
+        body,
+    })
+}
+
+fn status_reason(code: u16) -> &'static str {
+    match code {
+        200 => "OK",
+        201 => "Created",
+        202 => "Accepted",
+        204 => "No Content",
+        301 => "Moved Permanently",
+        302 => "Found",
+        303 => "See Other",
+        304 => "Not Modified",
+        307 => "Temporary Redirect",
+        308 => "Permanent Redirect",
+        400 => "Bad Request",
+        401 => "Unauthorized",
+        403 => "Forbidden",
+        404 => "Not Found",
+        405 => "Method Not Allowed",
+        409 => "Conflict",
+        429 => "Too Many Requests",
+        500 => "Internal Server Error",
+        502 => "Bad Gateway",
+        503 => "Service Unavailable",
+        _ => "OK",
     }
 }
 

@@ -189,6 +189,9 @@ impl HostThread {
                     result.map(cache_storage_result_from_wire),
                 );
             }
+            ServiceWorkerHostCommand::CompleteFetch { request_id, result } => {
+                self.complete_fetch(params.registration_id, request_id, result.map(fetch_response_from_wire));
+            }
             ServiceWorkerHostCommand::Shutdown => {
                 // 不在此处移除：tick 先 drain `Closed` 事件再按 is_running 回收槽位。
                 if let Some(runtime) = self.runtimes.get_mut(&params.registration_id) {
@@ -362,6 +365,21 @@ impl HostThread {
         };
         if let Err(error) = runtime.complete_cache_storage(request_id, result) {
             tracing::warn!("Service Worker cache response failed: {error}");
+        }
+    }
+
+    fn complete_fetch(
+        &mut self,
+        registration_id: u64,
+        request_id: u64,
+        result: Result<ServiceWorkerFetchResponse, String>,
+    ) {
+        let Some(runtime) = self.runtimes.get(&registration_id) else {
+            tracing::warn!("Service Worker fetch response for unknown registration {registration_id}");
+            return;
+        };
+        if let Err(error) = runtime.complete_fetch(request_id, result) {
+            tracing::warn!("Service Worker fetch response failed: {error}");
         }
     }
 }
@@ -577,6 +595,17 @@ fn host_event(event: ServiceWorkerEvent) -> ServiceWorkerHostEvent {
                 request: cache_storage_request_to_wire(request),
             }
         }
+        ServiceWorkerEvent::FetchRequested { request_id, request } => ServiceWorkerHostEvent::FetchRequested {
+            request_id,
+            request: ServiceWorkerFetchRequestWire {
+                url: request.url,
+                method: request.method,
+                headers: request.headers,
+                body: request.body,
+                client_id: request.client_id,
+                resulting_client_id: request.resulting_client_id,
+            },
+        },
         ServiceWorkerEvent::ImportScriptsRequested { request_id, specifiers } => {
             ServiceWorkerHostEvent::ImportScriptsRequested { request_id, specifiers }
         }
@@ -1233,6 +1262,71 @@ mod tests {
                 ..
             }
         ));
+    }
+
+    #[test]
+    fn worker_global_fetch_round_trips_through_renderer_host() {
+        let (host, mut transport) = spawn_host();
+        host.handle_command(evaluate_command(
+            18,
+            "addEventListener('fetch', event => {
+               event.respondWith(fetch('./asset.txt', {headers: {'X-Test': 'yes'}}));
+             });",
+        ));
+        let evaluated = wait_for_event(&mut transport);
+        assert!(
+            matches!(evaluated.event, ServiceWorkerHostEvent::Evaluated { .. }),
+            "{:?}",
+            evaluated.event
+        );
+
+        host.handle_command(ServiceWorkerHostCommandParams {
+            registration_id: 18,
+            command: ServiceWorkerHostCommand::DispatchFetch {
+                event_id: 26,
+                request: zero_protocol::message::ServiceWorkerFetchRequestWire {
+                    url: "https://example.test/app/page".into(),
+                    method: "GET".into(),
+                    headers: Vec::new(),
+                    body: None,
+                    client_id: Some("client-1".into()),
+                    resulting_client_id: None,
+                },
+            },
+        });
+        let fetch_request = wait_for_event(&mut transport);
+        let ServiceWorkerHostEvent::FetchRequested { request_id, request } = fetch_request.event else {
+            panic!("expected FetchRequested");
+        };
+        assert_eq!(request.url, "https://example.test/asset.txt");
+        assert_eq!(request.method, "GET");
+        assert_eq!(request.headers, [("x-test".into(), "yes".into())]);
+
+        host.handle_command(ServiceWorkerHostCommandParams {
+            registration_id: 18,
+            command: ServiceWorkerHostCommand::CompleteFetch {
+                request_id,
+                result: Ok(ServiceWorkerFetchResponseWire {
+                    status: 200,
+                    status_text: "OK".into(),
+                    headers: vec![("content-type".into(), "text/plain".into())],
+                    body: "from-network".into(),
+                }),
+            },
+        });
+        let settled = wait_for_event(&mut transport);
+        match settled.event {
+            ServiceWorkerHostEvent::FetchSettled {
+                event_id,
+                response: Some(response),
+                ..
+            } => {
+                assert_eq!(event_id, 26);
+                assert_eq!(response.status, 200);
+                assert_eq!(response.body, "from-network");
+            }
+            other => panic!("expected FetchSettled response, got {other:?}"),
+        }
     }
 
     #[test]

@@ -1,8 +1,9 @@
-use crate::WebViewBuilder;
+use crate::{WebViewBuilder, WebViewConfig};
 use std::io::{Read, Write};
 use std::net::TcpListener;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
+use zero_engine::fetch_bridge::FetchResponse;
 use zero_storage::ServiceWorkerState;
 
 fn wait_for_state(webview: &mut crate::WebView, registration_id: u64, expected: ServiceWorkerState) {
@@ -1843,5 +1844,75 @@ fn message_import_replays_persistent_worker_resource_map() {
                 "https://example.test/message-import.js".to_string(),
             ),
         ]
+    );
+}
+
+#[test]
+fn worker_global_fetch_powers_cache_add_in_service_worker_runtime() {
+    let config = WebViewConfig {
+        service_worker_script_fetcher: Some(Arc::new(|_, script| {
+            if script != "https://example.test/sw.js" {
+                return Err(format!("unexpected script URL: {script}"));
+            }
+            Ok(zero_net::HttpResponse {
+                status_code: 200,
+                headers: vec![("Content-Type".into(), "application/javascript".into())],
+                body: "addEventListener('install', event => {
+                         event.waitUntil((async () => {
+                           const cache = await caches.open('runtime');
+                           await cache.add('/app/a.txt');
+                           await cache.addAll(['/app/b.txt']);
+                           const one = await cache.match('/app/a.txt');
+                           const two = await cache.match('/app/b.txt');
+                           if ((await one.text()) !== 'alpha') throw new Error('wrong a');
+                           if ((await two.text()) !== 'beta') throw new Error('wrong b');
+                         })());
+                       });"
+                .as_bytes()
+                .to_vec(),
+                url: script.to_string(),
+                redirect_count: 0,
+            })
+        })),
+        fetch_handler: Some(Arc::new(|request| match request.url.as_str() {
+            "https://example.test/app/a.txt" => Ok(FetchResponse {
+                status: 200,
+                status_text: "OK".into(),
+                headers: vec![("content-type".into(), "text/plain".into())],
+                body: "alpha".into(),
+                body_bytes: None,
+            }),
+            "https://example.test/app/b.txt" => Ok(FetchResponse {
+                status: 200,
+                status_text: "OK".into(),
+                headers: vec![("content-type".into(), "text/plain".into())],
+                body: "beta".into(),
+                body_bytes: None,
+            }),
+            other => Err(format!("unexpected fetch URL: {other}")),
+        })),
+        ..Default::default()
+    };
+    let mut webview = crate::WebView::new(config);
+    let registration_id = webview
+        .register_service_worker_runtime("/sw.js", Some("/app/"), "https://example.test/page.html")
+        .unwrap();
+    wait_for_state(&mut webview, registration_id, ServiceWorkerState::Activated);
+
+    let registration = webview.service_worker_runtime_registration(registration_id).unwrap();
+    let cache = registration.cache_storage.get("runtime").unwrap();
+    assert_eq!(
+        cache
+            .match_request(&zero_storage::CacheRequest::new("https://example.test/app/a.txt"))
+            .unwrap()
+            .body,
+        b"alpha"
+    );
+    assert_eq!(
+        cache
+            .match_request(&zero_storage::CacheRequest::new("https://example.test/app/b.txt"))
+            .unwrap()
+            .body,
+        b"beta"
     );
 }

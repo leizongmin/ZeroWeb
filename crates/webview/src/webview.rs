@@ -27,7 +27,10 @@ use zero_page_runtime::{
     ServiceWorkerVersionSlots, validate_service_worker_registration_for_document,
 };
 use zero_render_foundation::primitive::RenderPrimitives;
-use zero_script_sandbox::{SandboxConfig, ServiceWorkerMessagePorts, WorkerEvent, WorkerRuntime};
+use zero_script_sandbox::{
+    SandboxConfig, ServiceWorkerFetchRequest, ServiceWorkerFetchResponse, ServiceWorkerMessagePorts, WorkerEvent,
+    WorkerRuntime,
+};
 use zero_security::{ResourceCheckResult, SecurityContext};
 use zero_storage::{
     CacheRequest, FetchInterceptResult, ServiceWorkerRegistry, ServiceWorkerScriptType, ServiceWorkerUpdateViaCache,
@@ -74,6 +77,32 @@ impl std::fmt::Display for ServiceWorkerMainScriptFetchError {
     }
 }
 
+fn status_reason(code: u16) -> &'static str {
+    match code {
+        200 => "OK",
+        201 => "Created",
+        202 => "Accepted",
+        204 => "No Content",
+        301 => "Moved Permanently",
+        302 => "Found",
+        303 => "See Other",
+        304 => "Not Modified",
+        307 => "Temporary Redirect",
+        308 => "Permanent Redirect",
+        400 => "Bad Request",
+        401 => "Unauthorized",
+        403 => "Forbidden",
+        404 => "Not Found",
+        405 => "Method Not Allowed",
+        409 => "Conflict",
+        429 => "Too Many Requests",
+        500 => "Internal Server Error",
+        502 => "Bad Gateway",
+        503 => "Service Unavailable",
+        _ => "OK",
+    }
+}
+
 impl From<String> for ServiceWorkerMainScriptFetchError {
     fn from(message: String) -> Self {
         Self::type_error(message)
@@ -112,6 +141,7 @@ pub type ServiceWorkerScriptFetcher = std::sync::Arc<dyn Fn(&str, &str) -> Resul
 struct ServiceWorkerFetchers {
     source: Option<ScriptSourceFetcher>,
     response: Option<ServiceWorkerScriptFetcher>,
+    worker: Option<zero_engine::fetch_bridge::FetchHandler>,
 }
 
 /// R34xx：图片源获取器（headless/testharness 路径 fetch `<img src>` / CSS `url()` 图片；
@@ -1626,6 +1656,7 @@ impl WebView {
             ServiceWorkerFetchers {
                 source: self.script_source_fetcher.clone(),
                 response: self.service_worker_script_fetcher.clone(),
+                worker: self.fetch_handler.clone(),
             },
             self.page_url_wire.clone(),
             self.service_worker_client_id.clone(),
@@ -2586,6 +2617,7 @@ impl WebView {
             registration_id,
             source_fetcher.as_ref(),
             response_fetcher.as_ref(),
+            self.fetch_handler.as_ref(),
             30,
         )
         .map_err(WebViewError::Script)?;
@@ -2597,6 +2629,7 @@ impl WebView {
         let fetchers = ServiceWorkerFetchers {
             source: self.script_source_fetcher.clone(),
             response: self.service_worker_script_fetcher.clone(),
+            worker: self.fetch_handler.clone(),
         };
         self.sw_manager
             .lock()
@@ -2655,9 +2688,11 @@ impl WebView {
     ) {
         let source_fetcher = fetchers.source;
         let response_fetcher = fetchers.response;
+        let worker_fetcher = fetchers.worker;
         let poll_fetchers = ServiceWorkerFetchers {
             source: source_fetcher.clone(),
             response: response_fetcher.clone(),
+            worker: worker_fetcher.clone(),
         };
         let controller_page_url = page_url.clone();
         let register_manager = manager.clone();
@@ -2666,6 +2701,7 @@ impl WebView {
         let register_client_generation = client_generation.clone();
         let register_source_fetcher = source_fetcher.clone();
         let register_response_fetcher = response_fetcher.clone();
+        let register_worker_fetcher = worker_fetcher.clone();
         sandbox.register_callback(
             "__zw_sw_register",
             Box::new(move |args| {
@@ -2756,6 +2792,7 @@ impl WebView {
                         registration_id,
                         register_source_fetcher.as_ref(),
                         register_response_fetcher.as_ref(),
+                        register_worker_fetcher.as_ref(),
                         timeout_secs,
                     )?;
                     Ok(match completed {
@@ -2777,6 +2814,7 @@ impl WebView {
 
         let update_manager = manager.clone();
         let update_page_url = page_url.clone();
+        let update_worker_fetcher = worker_fetcher.clone();
         sandbox.register_callback(
             "__zw_sw_update",
             Box::new(move |args| {
@@ -2836,6 +2874,7 @@ impl WebView {
                                 registration_id,
                                 source_fetcher.as_ref(),
                                 response_fetcher.as_ref(),
+                                update_worker_fetcher.as_ref(),
                                 timeout_secs,
                             )? {
                                 ServiceWorkerEvaluationResult::UpdateChecked {
@@ -3105,11 +3144,13 @@ impl WebView {
         registration_id: u64,
         source_fetcher: Option<&ScriptSourceFetcher>,
         response_fetcher: Option<&ServiceWorkerScriptFetcher>,
+        worker_fetcher: Option<&zero_engine::fetch_bridge::FetchHandler>,
         timeout_secs: u64,
     ) -> Result<ServiceWorkerEvaluationResult, String> {
         let fetchers = ServiceWorkerFetchers {
             source: source_fetcher.cloned(),
             response: response_fetcher.cloned(),
+            worker: worker_fetcher.cloned(),
         };
         let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
         loop {
@@ -3191,6 +3232,18 @@ impl WebView {
                     .map_err(|error| error.to_string())?;
                 continue;
             }
+            if let ServiceWorkerManagerEvent::WorkerFetchRequested {
+                registration_id,
+                request_id,
+                request,
+            } = event
+            {
+                let result = Self::fetch_service_worker_request(request, fetchers.worker.as_ref(), timeout_secs);
+                manager
+                    .complete_worker_fetch(*registration_id, *request_id, result)
+                    .map_err(|error| error.to_string())?;
+                continue;
+            }
             let (registration_id, request_id, urls, is_module) = match event {
                 ServiceWorkerManagerEvent::ImportScriptsRequested {
                     registration_id,
@@ -3240,6 +3293,69 @@ impl WebView {
                 .map_err(|error| error.to_string())?;
         }
         Ok(events)
+    }
+
+    fn fetch_service_worker_request(
+        request: &ServiceWorkerFetchRequest,
+        fetcher: Option<&zero_engine::fetch_bridge::FetchHandler>,
+        timeout_secs: u64,
+    ) -> Result<ServiceWorkerFetchResponse, String> {
+        if let Some(fetcher) = fetcher {
+            let response = fetcher(&zero_engine::fetch_bridge::FetchRequest {
+                url: request.url.clone(),
+                method: request.method.clone(),
+                headers: request.headers.clone(),
+                body: request.body.clone(),
+                body_bytes: request.body.as_ref().map(|body| body.as_bytes().to_vec()),
+            })?;
+            return Ok(ServiceWorkerFetchResponse {
+                status: response.status,
+                status_text: response.status_text,
+                headers: response.headers,
+                body: response.body,
+            });
+        }
+        let method = match request.method.to_ascii_uppercase().as_str() {
+            "GET" => zero_net::HttpMethod::Get,
+            "POST" => zero_net::HttpMethod::Post,
+            "PUT" => zero_net::HttpMethod::Put,
+            "DELETE" => zero_net::HttpMethod::Delete,
+            "PATCH" => zero_net::HttpMethod::Patch,
+            "HEAD" => zero_net::HttpMethod::Head,
+            "OPTIONS" => zero_net::HttpMethod::Options,
+            _ => return Err(format!("unsupported HTTP method: {}", request.method)),
+        };
+        let (priority, _) = FetchPriority::from_fetch_headers(&request.headers, &request.url);
+        let request_body = request.body.as_ref().map(|body| body.as_bytes().to_vec());
+        let response = if method == zero_net::HttpMethod::Get && request_body.is_none() {
+            ResourceLoader::shared()
+                .submit(
+                    ResourceRequest::get(&request.url, priority)
+                        .with_headers(request.headers.clone())
+                        .with_destination("connect")
+                        .with_timeout_secs(timeout_secs),
+                )
+                .recv()
+                .map_err(|_| "resource loader worker exited".to_string())?
+                .map_err(|error| error.to_string())?
+        } else {
+            HttpClient::with_timeout(timeout_secs)
+                .send(zero_net::HttpRequest {
+                    method,
+                    url: request.url.clone(),
+                    headers: request.headers.clone(),
+                    body: request_body,
+                })
+                .map_err(|error| error.to_string())?
+        };
+        let body = String::from_utf8(response.body)
+            .map_err(|_| "Service Worker fetch response body is not valid UTF-8".to_string())?;
+        Ok(ServiceWorkerFetchResponse {
+            status: response.status_code,
+            status_text: status_reason(response.status_code).to_string(),
+            headers: response.headers,
+            body,
+        })
     }
 
     fn fetch_service_worker_main_script(

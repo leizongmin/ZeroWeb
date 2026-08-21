@@ -1007,6 +1007,87 @@ fn ipc_cache_query_options_match_browser_owned_registration_cache() {
 }
 
 #[test]
+fn ipc_worker_fetch_event_creates_plan_and_completes_renderer_runtime() {
+    let mut owner = BrowserServiceWorkerOwner::new();
+    let disposition = owner.begin_request_for_client(
+        TabId(7),
+        false,
+        78,
+        Some("https://example.test/app/page"),
+        "renderer-7:1",
+        register_request("https://example.test/app/page"),
+    );
+    attach_script(&mut owner, disposition, "addEventListener('install', () => {});");
+    let _ = owner.poll();
+    let evaluate = owner
+        .take_host_commands()
+        .into_iter()
+        .find(|outgoing| matches!(outgoing.params.command, ServiceWorkerHostCommand::Evaluate { .. }))
+        .expect("missing renderer evaluation command");
+    let registration_id = evaluate.params.registration_id;
+
+    owner.inject_host_event(
+        TabId(7),
+        false,
+        ServiceWorkerHostEventParams {
+            registration_id,
+            event: ServiceWorkerHostEvent::FetchRequested {
+                request_id: 16,
+                request: ServiceWorkerFetchRequestWire {
+                    url: "https://example.test/app/data.txt".into(),
+                    method: "GET".into(),
+                    headers: vec![("accept".into(), "text/plain".into())],
+                    body: None,
+                    client_id: Some("renderer-7:1".into()),
+                    resulting_client_id: None,
+                },
+            },
+        },
+    );
+    let _ = owner.poll();
+    let plan = owner
+        .take_worker_fetch_plans()
+        .into_iter()
+        .next()
+        .expect("missing worker fetch plan");
+    assert_eq!(plan.tab_id(), TabId(7));
+    assert_eq!(plan.request().url, "https://example.test/app/data.txt");
+    assert_eq!(plan.request().headers, [("accept".into(), "text/plain".into())]);
+
+    let (sender, receiver) = mpsc::channel();
+    sender
+        .send(Ok(HttpResponse {
+            status_code: 200,
+            headers: vec![("content-type".into(), "text/plain".into())],
+            body: b"network-body".to_vec(),
+            url: "https://example.test/app/data.txt".into(),
+            redirect_count: 0,
+        }))
+        .unwrap();
+    owner.attach_worker_fetch(plan, receiver);
+    let _ = owner.poll();
+    let completion = owner
+        .take_host_commands()
+        .into_iter()
+        .find(|outgoing| matches!(outgoing.params.command, ServiceWorkerHostCommand::CompleteFetch { .. }))
+        .expect("missing worker fetch completion command");
+    assert_eq!(completion.tab_id, TabId(7));
+    match completion.params.command {
+        ServiceWorkerHostCommand::CompleteFetch {
+            request_id,
+            result: Ok(response),
+        } => {
+            assert_eq!(request_id, 16);
+            assert_eq!(response.status, 200);
+            assert_eq!(response.status_text, "OK");
+            assert_eq!(response.headers, [("content-type".into(), "text/plain".into())]);
+            assert_eq!(response.body, "network-body");
+        }
+        other => panic!("expected successful fetch completion, got {other:?}"),
+    }
+}
+
+#[test]
 fn ipc_clients_get_uses_browser_owned_client_registry() {
     let mut owner = BrowserServiceWorkerOwner::new();
     let disposition = owner.begin_request_for_client(

@@ -804,6 +804,12 @@ impl ProcessTabBackend {
                 .collect();
             self.service_worker_owner.attach_import_fetches(plan, receivers);
         }
+        for plan in self.service_worker_owner.take_worker_fetch_plans() {
+            let receiver = self
+                .fetch_proxy
+                .fetch_service_worker_request(plan.tab_id(), plan.request());
+            self.service_worker_owner.attach_worker_fetch(plan, receiver);
+        }
     }
 
     fn drain_service_worker_page_fetches(&mut self) {

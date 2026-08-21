@@ -754,6 +754,52 @@ fn service_worker_host_fetch_command_and_event_round_trip() {
     };
     assert!(cache_keys_command.validate().is_ok());
 
+    let worker_fetch_event = ServiceWorkerHostEventParams {
+        registration_id: 8,
+        event: ServiceWorkerHostEvent::FetchRequested {
+            request_id: 10,
+            request: ServiceWorkerFetchRequestWire {
+                url: "https://example.test/app/network.txt".into(),
+                method: "GET".into(),
+                headers: vec![("accept".into(), "text/plain".into())],
+                body: None,
+                client_id: Some("client-1".into()),
+                resulting_client_id: None,
+            },
+        },
+    };
+    assert!(worker_fetch_event.validate().is_ok());
+    let decoded = roundtrip(IpcMessage {
+        id: 60,
+        kind: IpcMessageKind::ServiceWorkerHostEvent(worker_fetch_event.clone()),
+    });
+    let IpcMessageKind::ServiceWorkerHostEvent(decoded_event) = decoded.kind else {
+        panic!("expected ServiceWorkerHostEvent");
+    };
+    assert_eq!(decoded_event, worker_fetch_event);
+
+    let worker_fetch_command = ServiceWorkerHostCommandParams {
+        registration_id: 8,
+        command: ServiceWorkerHostCommand::CompleteFetch {
+            request_id: 10,
+            result: Ok(ServiceWorkerFetchResponseWire {
+                status: 200,
+                status_text: "OK".into(),
+                headers: vec![("content-type".into(), "text/plain".into())],
+                body: "network".into(),
+            }),
+        },
+    };
+    assert!(worker_fetch_command.validate().is_ok());
+    let decoded = roundtrip(IpcMessage {
+        id: 61,
+        kind: IpcMessageKind::ServiceWorkerHostCommand(worker_fetch_command.clone()),
+    });
+    let IpcMessageKind::ServiceWorkerHostCommand(decoded_command) = decoded.kind else {
+        panic!("expected ServiceWorkerHostCommand");
+    };
+    assert_eq!(decoded_command, worker_fetch_command);
+
     assert!(
         ServiceWorkerHostCommandParams {
             registration_id: 8,
@@ -843,6 +889,42 @@ fn service_worker_host_fetch_command_and_event_round_trip() {
         },
     };
     assert!(legacy_event_error.validate().is_err());
+
+    assert!(
+        ServiceWorkerHostEventParams {
+            registration_id: 8,
+            event: ServiceWorkerHostEvent::FetchRequested {
+                request_id: 0,
+                request: ServiceWorkerFetchRequestWire {
+                    url: "https://example.test/app/network.txt".into(),
+                    method: "GET".into(),
+                    headers: Vec::new(),
+                    body: None,
+                    client_id: None,
+                    resulting_client_id: None,
+                },
+            },
+        }
+        .validate()
+        .is_err()
+    );
+
+    assert!(
+        ServiceWorkerHostCommandParams {
+            registration_id: 8,
+            command: ServiceWorkerHostCommand::CompleteFetch {
+                request_id: 10,
+                result: Ok(ServiceWorkerFetchResponseWire {
+                    status: 600,
+                    status_text: String::new(),
+                    headers: Vec::new(),
+                    body: String::new(),
+                }),
+            },
+        }
+        .validate()
+        .is_err()
+    );
 
     assert!(
         ServiceWorkerHostCommandParams {

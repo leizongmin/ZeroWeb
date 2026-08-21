@@ -2,7 +2,7 @@
 
 **入口文档**: [../service-workers.md](../service-workers.md)
 **创建日期**: 2026-08-17（goal 拆分 bootstrap）
-**最后更新**: 2026-08-22（页面 Cache.add/addAll sibling 支撑落地；SW fetch/cache WPT 基线待接入）
+**最后更新**: 2026-08-22（worker-global fetch + SW Cache.add/addAll 落地；SW fetch/cache WPT 基线待接入）
 
 ---
 
@@ -13,12 +13,13 @@
 M0 启动门禁解除；M1 core WPT 已收敛，M2 已完成 fetch runtime/manager/IPC foundation、
 browser-process 页面 fetch 路由和 Service Worker `caches.match()` / `caches.open()` /
 `Cache.put()` / `Cache.matchAll()` / `Cache.keys()` 桥接，并已透传 `ignoreSearch` /
-`ignoreMethod` 查询选项；WPT fetch/cache 基线仍待后续切片，M3 控制语义继续推进。兄弟目标
+`ignoreMethod` 查询选项；worker-global `fetch()` 已通过 browser-owned network bridge 接入，
+SW runtime `Cache.add()` / `Cache.addAll()` 可用同一 fetch→put 链路写入 active registration
+`CacheStorage`；WPT fetch/cache 基线仍待后续切片，M3 控制语义继续推进。兄弟目标
 `storage-cache-api` 已完成 WebView/in-process 页面 `caches.open()` + `Cache.put()/match()` /
 `Cache.matchAll()` / `Cache.keys()` 与页面 `Cache.add()` / `Cache.addAll()` GET fetch→store
-链路。该 sibling 进展不等同于 worker-global `fetch()` 或 SW runtime `Cache.add/addAll`
-完成；Service Worker runtime 自身的写入面目前仍是 browser-owned registration
-`CacheStorage` 的 `open/put/match/matchAll/keys`。
+链路。该 sibling 与当前 SW runtime 链路共用 Cache API 语义，但 WPT baseline、Vary 语义和
+完整 cacheability 矩阵仍归后续切片。
 
 **M0 推荐决策**：抽取 `zero-script-sandbox::WorkerRuntime` 的独立线程/引擎/看门狗核心，
 新增 typed `ServiceWorkerRuntime`；production 由 browser process 的
@@ -210,6 +211,11 @@ browser-process 页面 fetch 路由和 Service Worker `caches.match()` / `caches
   `CacheStorage.match()` 透传 `ignoreSearch`/`ignoreMethod`/`ignoreVary` 查询选项；browser-owned
   registration `CacheStorage` 已应用 `ignoreSearch`/`ignoreMethod`，`ignoreVary` 等待 sibling
   storage-cache-api 的 Vary 语义补齐；完整 WPT fetch/cache baseline 仍待接入
+- ✅ M2-7：Service Worker runtime 暴露 worker-global `fetch()`；runtime 通过 typed
+  `FetchRequested` / `CompleteFetch` host bridge 发起 browser-owned ordinary fetch，renderer/browser
+  IPC、browser fetch proxy、WebView in-process fetch handler 均已接线；`Cache.add()` /
+  `Cache.addAll()` 基于该 fetch→put 链路写入 active registration `CacheStorage`。完整 WPT
+  fetch/cache baseline 仍待接入
 - ✅ storage-cache-api 侧支撑：WebView/in-process 页面 `CacheStorage` 初始桥接已可通过共享
   `StorageManager` 执行 `caches.open/has/delete/keys/match` 与 `Cache.put/match/delete`；
   origin 由宿主页面 URL 推导，保持与 IndexedDB 相同单一 storage owner。该进展不等同于 SW
@@ -221,7 +227,7 @@ browser-process 页面 fetch 路由和 Service Worker `caches.match()` / `caches
 |---|------|------|
 | S1 | SW 执行环境架构与独立 runtime | ✅ production browser owner + renderer discovery 真链路 |
 | S2 | scriptURL 不下载执行 | ✅ production navigator 经 browser fetch/evaluate |
-| S3 | fetch 拦截为零 | 🚧 M2-2 production 页面 fetch respondWith/pass-through 已接入；M2-3/4/5/6 `caches.match()`、`caches.open()`、`Cache.put()`、`Cache.matchAll()`、`Cache.keys()` 与 `ignoreSearch`/`ignoreMethod` 桥接已接入；worker-global `fetch()`、SW runtime `Cache.add/addAll` 与 WPT fetch/cache 基线未完成 |
+| S3 | fetch 拦截为零 | 🚧 M2-2 production 页面 fetch respondWith/pass-through 已接入；M2-3/4/5/6 `caches.match()`、`caches.open()`、`Cache.put()`、`Cache.matchAll()`、`Cache.keys()` 与 `ignoreSearch`/`ignoreMethod` 桥接已接入；M2-7 worker-global `fetch()` 与 SW runtime `Cache.add/addAll` 已接入；WPT fetch/cache 基线未完成 |
 | S4 | 事件为 setTimeout 模拟 | ✅ manager transition log 为状态源；timer 只执行页面 task 投影 |
 | S5 | WPT 覆盖为零 | ✅ core 34/34 case、156/156 Pass、0 Fail/Timeout/Unsupported |
 
@@ -243,7 +249,7 @@ browser-process 页面 fetch 路由和 Service Worker `caches.match()` / `caches
 |--------|------|
 | M0 — 选型 RFC（门控） | ✅ 方案 C 已批准 |
 | M1 — 脚本真实执行 + 生命周期真事件 | ✅ current core WPT 156/156 Pass |
-| M2 — fetch 拦截 + Cache 集成 | 🚧 M2-2 production fetch respondWith/pass-through 完成；M2-3/4/5/6 `caches.match()`、`caches.open()`、`Cache.put()`、`Cache.matchAll()`、`Cache.keys()`、`ignoreSearch`/`ignoreMethod` 桥接完成；WPT fetch/cache 基线待接入 |
+| M2 — fetch 拦截 + Cache 集成 | 🚧 M2-2 production fetch respondWith/pass-through 完成；M2-3/4/5/6 `caches.match()`、`caches.open()`、`Cache.put()`、`Cache.matchAll()`、`Cache.keys()`、`ignoreSearch`/`ignoreMethod` 桥接完成；M2-7 worker-global `fetch()` 与 `Cache.add/addAll` 完成；WPT fetch/cache 基线待接入 |
 | M3 — 控制语义 + 消息 + 收尾 | 🚧 classic startup graph + 控制/消息/update/persistence 完成 |
 
 ## 验证基线
@@ -347,6 +353,9 @@ browser-process 页面 fetch 路由和 Service Worker `caches.match()` / `caches
 - M2-6 CacheQueryOptions：Service Worker runtime/IPC/manager/browser owner 的
   `ignoreSearch`/`ignoreMethod` 查询选项接线见
   [M2 Service Worker CacheQueryOptions](evidence/2026-08-22-m2-cache-query-options.md)
+- M2-7 worker fetch + Cache.add/addAll：worker-global `fetch()`、typed host bridge、
+  browser/WebView 网络接线与 SW runtime add/addAll 链路见
+  [M2 Service Worker worker fetch and cache add](evidence/2026-08-22-m2-worker-fetch-cache-add.md)
 - M1-5 core WPT：固定 12-case runner、两轮确定性 baseline 与 13 个红项分组见
   [M1 core WPT baseline](evidence/2026-08-19-m1-wpt-core-baseline.md)
 - M1-5b lifecycle task：manager transition log、IPC cursor、EventTarget/slot task 与 30/36

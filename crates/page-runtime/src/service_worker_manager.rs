@@ -308,6 +308,15 @@ pub enum ServiceWorkerManagerEvent {
         /// Current registration version whose script must be fetched.
         target_registration_id: u64,
     },
+    /// A worker-global `fetch()` call is blocked on a browser-owned network request.
+    WorkerFetchRequested {
+        /// Active registration version that called `fetch()`.
+        registration_id: u64,
+        /// Runtime-local request ID.
+        request_id: u64,
+        /// Pure-value network request.
+        request: ServiceWorkerFetchRequest,
+    },
     /// A complete update candidate graph was compared with the current version.
     UpdateChecked {
         /// Installing candidate version ID.
@@ -512,6 +521,13 @@ pub trait ServiceWorkerRuntimeHost: Send {
         request_id: u64,
         result: Result<ServiceWorkerCacheStorageResult, String>,
     ) -> Result<(), ServiceWorkerManagerError>;
+    /// Complete one worker-global ordinary fetch request.
+    fn complete_fetch(
+        &mut self,
+        registration_id: u64,
+        request_id: u64,
+        result: Result<ServiceWorkerFetchResponse, String>,
+    ) -> Result<(), ServiceWorkerManagerError>;
     /// Stop one runtime and release its resources.
     fn shutdown(&mut self, registration_id: u64);
     /// Drain all currently available runtime events.
@@ -666,6 +682,19 @@ impl ServiceWorkerRuntimeHost for LocalServiceWorkerHost {
             .get(&registration_id)
             .ok_or(ServiceWorkerManagerError::UnknownRegistration(registration_id))?
             .complete_cache_storage(request_id, result)
+            .map_err(|error| ServiceWorkerManagerError::Runtime(error.to_string()))
+    }
+
+    fn complete_fetch(
+        &mut self,
+        registration_id: u64,
+        request_id: u64,
+        result: Result<ServiceWorkerFetchResponse, String>,
+    ) -> Result<(), ServiceWorkerManagerError> {
+        self.runtimes
+            .get(&registration_id)
+            .ok_or(ServiceWorkerManagerError::UnknownRegistration(registration_id))?
+            .complete_fetch(request_id, result)
             .map_err(|error| ServiceWorkerManagerError::Runtime(error.to_string()))
     }
 
@@ -1406,6 +1435,13 @@ impl ServiceWorkerManager {
                         result.map_err(|error| error.to_string()),
                     );
                 }
+                ServiceWorkerEvent::FetchRequested { request_id, request } => {
+                    output.push(ServiceWorkerManagerEvent::WorkerFetchRequested {
+                        registration_id,
+                        request_id,
+                        request,
+                    });
+                }
                 ServiceWorkerEvent::ClientMessagesEmitted { outbound } => {
                     if self
                         .record_outbound_message_ports(registration_id, "", &outbound)
@@ -1464,6 +1500,16 @@ impl ServiceWorkerManager {
             Err(message) => Err(message),
         };
         self.host.complete_import_scripts(registration_id, request_id, sources)
+    }
+
+    /// Complete one browser-owned network request initiated by worker-global `fetch()`.
+    pub fn complete_worker_fetch(
+        &mut self,
+        registration_id: u64,
+        request_id: u64,
+        result: Result<ServiceWorkerFetchResponse, String>,
+    ) -> Result<(), ServiceWorkerManagerError> {
+        self.host.complete_fetch(registration_id, request_id, result)
     }
 
     fn resolve_import_script_urls(
@@ -4191,6 +4237,57 @@ mod tests {
         assert_eq!(cached.status_text, "Created");
         assert_eq!(cached.headers.get("x-cache").map(String::as_str), Some("put"));
         assert_eq!(cached.body, b"stored-body");
+    }
+
+    #[test]
+    fn install_worker_fetch_request_completes_through_manager() {
+        let mut manager = manager_under_test();
+        let registration_id = start(
+            &mut manager,
+            "/app/",
+            "addEventListener('install', event => {
+               event.waitUntil((async () => {
+                 const response = await fetch('/app/install.txt', {headers: {'X-Test': 'yes'}});
+                 if ((await response.text()) !== 'install-body') throw new Error('wrong body');
+               })());
+             });",
+        );
+
+        let deadline = Instant::now() + Duration::from_secs(5);
+        let request_id = loop {
+            if let Some(request_id) = manager.poll().into_iter().find_map(|event| {
+                if let ServiceWorkerManagerEvent::WorkerFetchRequested {
+                    registration_id: id,
+                    request_id,
+                    request,
+                } = event
+                    && id == registration_id
+                {
+                    assert_eq!(request.url, "https://example.test/app/install.txt");
+                    assert_eq!(request.method, "GET");
+                    assert_eq!(request.headers, [("x-test".into(), "yes".into())]);
+                    return Some(request_id);
+                }
+                None
+            }) {
+                break request_id;
+            }
+            assert!(Instant::now() < deadline, "worker fetch request timed out");
+            std::thread::sleep(Duration::from_millis(1));
+        };
+        manager
+            .complete_worker_fetch(
+                registration_id,
+                request_id,
+                Ok(ServiceWorkerFetchResponse {
+                    status: 200,
+                    status_text: "OK".into(),
+                    headers: Vec::new(),
+                    body: "install-body".into(),
+                }),
+            )
+            .unwrap();
+        wait_for_state(&mut manager, registration_id, ServiceWorkerState::Activated);
     }
 
     #[test]

@@ -1153,6 +1153,18 @@ impl ServiceWorkerHostCommandParams {
                     Err(_) => Ok(()),
                 }
             }
+            ServiceWorkerHostCommand::CompleteFetch { request_id, result } => {
+                if *request_id == 0 {
+                    return Err("Service Worker fetch request id is required");
+                }
+                match result {
+                    Ok(response) => validate_service_worker_fetch_response(response),
+                    Err(message) if message.len() > MAX_URL_BYTES => {
+                        Err("Service Worker fetch error exceeds the size limit")
+                    }
+                    Err(_) => Ok(()),
+                }
+            }
             ServiceWorkerHostCommand::DispatchLifecycle { .. } | ServiceWorkerHostCommand::Shutdown => Ok(()),
         }
     }
@@ -1347,6 +1359,13 @@ pub enum ServiceWorkerHostCommand {
         /// Browser-owned cache operation result or a safe diagnostic.
         result: Result<ServiceWorkerCacheStorageResultWire, String>,
     },
+    /// Complete a blocking worker-global `fetch()` request.
+    CompleteFetch {
+        /// Renderer runtime assigned request ID.
+        request_id: u64,
+        /// Browser-owned fetch response or a safe diagnostic.
+        result: Result<ServiceWorkerFetchResponseWire, String>,
+    },
 }
 
 /// Worker-global update failure projected into the Service Worker realm.
@@ -1493,6 +1512,12 @@ impl ServiceWorkerHostEventParams {
                     return Err("Service Worker cache request id is required");
                 }
                 validate_service_worker_cache_storage_request(request)?;
+            }
+            ServiceWorkerHostEvent::FetchRequested { request_id, request } => {
+                if *request_id == 0 {
+                    return Err("Service Worker fetch request id is required");
+                }
+                validate_service_worker_fetch_request(request)?;
             }
             ServiceWorkerHostEvent::ClientMessagesEmitted { outbound }
             | ServiceWorkerHostEvent::MessageDispatched { outbound, .. } => {
@@ -1652,6 +1677,13 @@ pub enum ServiceWorkerHostEvent {
         request_id: u64,
         /// Pure-value CacheStorage operation.
         request: ServiceWorkerCacheStorageRequestWire,
+    },
+    /// Worker global called ordinary `fetch()`.
+    FetchRequested {
+        /// Renderer runtime assigned request ID.
+        request_id: u64,
+        /// Pure-value network request.
+        request: ServiceWorkerFetchRequestWire,
     },
     /// Worker emitted messages outside a page-originated message event.
     ClientMessagesEmitted {
