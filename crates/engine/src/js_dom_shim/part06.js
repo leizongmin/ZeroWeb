@@ -1373,6 +1373,9 @@
     FIRST_ORDERED_NODE_TYPE: 9
   };
 
+  // R152（js-dom M4）：Document 侧 [Unscopable] 表（与 Element 侧 R134 表同源语义）。
+  var DocumentUnscopables = { prepend: true, append: true, replaceChildren: true };
+
   globalThis.document = {
     // js-dom M3 R100：shim document 标记——generate_dom_api_polyfill（execute_script_with_dom
     // 每次前置的最小虚拟 DOM stub）据此跳过覆写（幂等安装，保 execute 路径上的真 document 桥）。
@@ -1504,6 +1507,16 @@
       var _rc117 = globalThis.document.childNodes || [];
       for (var _r117 = 0; _r117 < _rc117.length; _r117++) { try { globalThis.document.removeChild(_rc117[_r117]); } catch (_e117c) {} }
       globalThis.document.append.apply(globalThis.document, arguments);
+    },
+    // R152（js-dom M4）：Document 的 ParentNode mixin 方法挂 [Unscopable] 表（spec
+    // WebIDL §[Unscopable] 与 Element 侧 R134 同源——Document 同样实现 ParentNode）。
+    // inline handler 编译为 with(document){with(this){…}}，bare `prepend`/`append`/
+    // `replaceChildren` 经本表豁免后解析到 window 全局（WPT remove-unscopable 的
+    // prepend/append 两断言：元素层豁免后外层 document 层命中 document.prepend 会
+    // 再次吞掉裸名——真实浏览器两层都有表）。
+    // https://dom.spec.whatwg.org/#interface-parentnode
+    get [Symbol.unscopables]() {
+      return DocumentUnscopables;
     },
     // R136（js-dom M4）：`document.getRootNode()`（spec `dom-node-getrootnode`——Document
     // 自身是 root，返回自身；WPT rootNode "document node" 断言 getRootNode() === document）。
@@ -2410,6 +2423,13 @@
         get parentElement() { return null; },
         get previousSibling() { return null; },
         get nextSibling() { return (globalThis.document && globalThis.document.documentElement) || null; },
+        // R152（js-dom M4）：DocumentType 的 namespace 查找恒 null / default ns 恒空
+        //（spec `dom-node-lookupnamespaceuri`——doctype 无 prefix 映射、其父 Document
+        // 的 default ns 由 documentElement 决定但 doctype 查找返回的是「doctype 自身
+        // 上下文」……WPT 期望：lookupNamespaceURI 任何 prefix 均 null、isDefaultNamespace
+        // 仅 null/'' true）。非元素分支无 xml/xmlns 预绑定。
+        lookupNamespaceURI: function (_prefix) { return null; },
+        isDefaultNamespace: function (ns) { return ns == null || ns === ''; },
       };
       return dt;
     })(),
@@ -2434,6 +2454,26 @@
     get nextSibling() { return null; },
     get previousSibling() { return null; },
     get ownerDocument() { return null; },
+    // R152（js-dom M4）：document 的 namespace 查找——spec「locate a namespace」的
+    // Document 分支：**default（无 prefix）查找返 document 自身 namespace**（HTML
+    // document 恒 HTML ns——WPT "Document should have xhtml namespace"：即使
+    // documentElement 声明 xmlns="bazURI"，document.lookupNamespaceURI(null) 仍是
+    // xhtml；区别于元素作用域的 default 声明继承）；**有 prefix 查找**经
+    // documentElement 的 xmlns:p 声明（"Document has bar namespace" 期望 barURI）
+    // + xml/xmlns 预绑定。
+    lookupNamespaceURI: function (prefix) {
+      var p = (prefix == null) ? null : String(prefix);
+      if (p === 'xml') return _ZW_XML_NS_R152;
+      if (p === 'xmlns') return _ZW_XMLNS_NS_R152;
+      if (p == null || p === '') return 'http://www.w3.org/1999/xhtml';
+      var de = this.documentElement;
+      if (!de || typeof de.lookupNamespaceURI !== 'function') return null;
+      return de.lookupNamespaceURI(p);
+    },
+    isDefaultNamespace: function (ns) {
+      var mine = this.lookupNamespaceURI(null);
+      return (ns == null || ns === '') ? (mine == null || mine === '') : mine === String(ns);
+    },
     // js-dom M4 R79：Node.contains / compareDocumentPosition 在 document 上（WPT testNodes 含
     // "document"——`paras[0].compareDocumentPosition(document)` 等）。spec：document.contains(x)
     // = x 在 document 子树（一切 connected 节点）；document.compareDocumentPosition 是 LCA 判定
@@ -2478,6 +2518,52 @@
         _zwRemoveIframeWindowClientForNode(c);
         try { __zw_remove(c.__zwSelector); } catch (_e2) {}
         if (typeof _zwMarkRemoved === 'function') _zwMarkRemoved(c.__zwSelector);
+      }
+      return c;
+    },
+    // R152（js-dom M4）：`document.appendChild(node)`（spec `dom-node-appendchild` =
+    // pre-insert + child ops）。旧 document 无 appendChild（R117 的 append/prepend/
+    // replaceChildren 内部调 document.appendChild 是 no-op 吞异常路径）。校验沿用 R117
+    // Document 收点规则（Text/Comment→可、Document 节点→HRE；单 Element 约束对
+    // Element 收点）——WPT Node-parentElement "(comment)" 用 document.appendChild(
+    // createComment) 挂注释读 parentElement null。
+    appendChild: function (c) {
+      if (c && typeof c === 'object') {
+        var _nt152 = c.nodeType | 0;
+        if (_nt152 === 9) {
+          throw new (globalThis.DOMException || Error)(
+            'A Document node cannot be inserted into a Document.', 'HierarchyRequestError');
+        }
+        if (_nt152 === 3 || _nt152 === 4) {
+          throw new (globalThis.DOMException || Error)(
+            'Nodes of type ' + _nt152 + ' cannot be inserted into a Document.', 'HierarchyRequestError');
+        }
+        // Comment（8）/DocumentType（10）/ProcessingInstruction（7）→ 本记账插入
+        //（host 快照无 sel-based comment API，走 _zwNodeParent 反链 + doc 子视图近似）。
+        if (_nt152 === 8 || _nt152 === 7 || _nt152 === 10) {
+          try {
+            var _dc152 = this.childNodes || (this.childNodes = []);
+            if (_dc152.indexOf(c) < 0) _dc152.push(c);
+            if (typeof c.__zwHandle === 'string' && typeof _zwNodeParent !== 'undefined' && _zwNodeParent) {
+              _zwNodeParent[c.__zwHandle] = { parentHandle: null, parentSel: null, nextSibling: null };
+            }
+          } catch (_e152a) {}
+          return c;
+        }
+        // Element：委托 append 的收点校验 + childNodes 记账（best-effort）。
+        if (_nt152 === 1) {
+          var _hasEl152 = false;
+          var _dk152 = this.childNodes || [];
+          for (var _dq152 = 0; _dq152 < _dk152.length; _dq152++) if (_dk152[_dq152].nodeType === 1) { _hasEl152 = true; break; }
+          if (_hasEl152) {
+            throw new (globalThis.DOMException || Error)(
+              'A Document cannot contain more than one Element.', 'HierarchyRequestError');
+          }
+          try {
+            if (!(this.childNodes)) this.childNodes = [];
+            this.childNodes.push(c);
+          } catch (_e152b) {}
+        }
       }
       return c;
     },

@@ -611,3 +611,131 @@ fn test_zw_mel_click_and_classlist_r151() {
         "R151 _zwMEl classList（add/remove/toggle/contains 写回属性）+ click()（本地派发触发 listener）"
     );
 }
+
+// R152（js-dom M4）：inline handler `with(this)` 的 unscopables 豁免面（spec WebIDL
+// §[Unscopable]——WPT remove-unscopable 六断言：bare `remove` 解析 window 全局、
+// `this.remove` 是 function）。根因：R134 的 setAttribute('on*') 重编译**回读 host 快照**
+// （`__zw_get_attr`），而 `__zw_set_attr` 是异步 mutation 批处理不立即落快照 → 重编译出
+// 旧 fn → 六变体 dispatch 永远只跑首个 handler 体（remove/prepend/append 三 Pass 是因为
+// 首个体恰好是 remove；before/after/replaceWith 的 result1 undefined = 首体未豁免这些名）。
+// 修复：`_ensureInlineHandler` 加 codeOverride 参数，R134 调用点传刚写入的值 v。
+#[test]
+fn test_inline_handler_unscopable_full_family_r152() {
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let mut sandbox = V8Sandbox::with_config(zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    })
+    .unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><div id=\"testDiv\" onclick=\"result1 = remove; result2 = this.remove;\"></div></body></html>"
+            .to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+
+    let out = sandbox
+        .execute(
+            "var parts = [];\
+             var result1 = undefined, result2 = undefined;\
+             var unscopables = ['before', 'after', 'replaceWith', 'remove', 'prepend', 'append'];\
+             for (var i in unscopables) {\
+               var name = unscopables[i];\
+               window[name] = 'Hello there';\
+               result1 = result2 = undefined;\
+               var div = document.querySelector('#testDiv');\
+               div.setAttribute('onclick', 'result1 = ' + name + '; result2 = this.' + name + ';');\
+               div.dispatchEvent(new Event('click'));\
+               parts.push(name + ':' + (typeof result1) + '/' + (typeof result2));\
+             }\
+             parts.join('|');",
+        )
+        .unwrap()
+        .value;
+    assert_eq!(
+        out,
+        "before:string/function|after:string/function|replaceWith:string/function|remove:string/function|prepend:string/function|append:string/function",
+        "R152 inline handler with(this) unscopables 六方法全豁免（bare 名解析 window，this.<name> 是 function）"
+    );
+}
+
+// R152（js-dom M4）：`lookupNamespaceURI`/`isDefaultNamespace`（spec
+// `dom-node-lookupnamespaceuri`——沿祖先链扫 xmlns 声明 + 元素自身 prefix→ns 映射 +
+// xml/xmlns 预绑定仅元素/文档分支生效）。WPT Node-lookupNamespaceURI 75 断言 0F 双路径。
+#[test]
+fn test_lookup_namespace_uri_family_r152() {
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let mut sandbox = V8Sandbox::with_config(zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    })
+    .unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> =
+        Arc::new(Mutex::new("<html><body><div id=\"d\">x</div></body></html>".to_string()));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+
+    let out = sandbox
+        .execute(
+            "var parts = [];\
+             try {\
+             var XML_NS = 'http://www.w3.org/XML/1998/namespace';\
+             var XMLNS_NS = 'http://www.w3.org/2000/xmlns/';\
+             // ① detached fragment：非元素起点无预绑定、链空 → 恒 null；default ns 空 → isDefault(null) true
+             var frag = document.createDocumentFragment();\
+             parts.push('frag-xml:' + (frag.lookupNamespaceURI('xml') === null));\
+             parts.push('frag-default:' + (frag.lookupNamespaceURI(null) === null));\
+             parts.push('frag-isdef:' + frag.isDefaultNamespace(null));\
+             // ② 元素预绑定 + 自身 prefix→ns 映射（有 prefix 元素的 ns 非 default）
+             var el = document.createElementNS('fooNS', 'prefix:elem');\
+             parts.push('el-xml:' + (el.lookupNamespaceURI('xml') === XML_NS));\
+             parts.push('el-xmlns:' + (el.lookupNamespaceURI('xmlns') === XMLNS_NS));\
+             parts.push('el-prefix:' + (el.lookupNamespaceURI('prefix') === 'fooNS'));\
+             parts.push('el-default-null:' + (el.lookupNamespaceURI(null) === null));\
+             // ③ xmlns 声明属性：default + 前缀
+             el.setAttributeNS(XMLNS_NS, 'xmlns:bar', 'barURI');\
+             el.setAttributeNS(XMLNS_NS, 'xmlns', 'bazURI');\
+             parts.push('el-decl-default:' + (el.lookupNamespaceURI(null) === 'bazURI'));\
+             parts.push('el-decl-bar:' + (el.lookupNamespaceURI('bar') === 'barURI'));\
+             parts.push('el-isdef-baz:' + el.isDefaultNamespace('bazURI'));\
+             // ④ 子元素继承 + 无 prefix 自身 ns 即 default
+             var child = document.createElementNS('childNS', 'childElem');\
+             el.appendChild(child);\
+             parts.push('child-default:' + (child.lookupNamespaceURI(null) === 'childNS'));\
+             parts.push('child-bar:' + (child.lookupNamespaceURI('bar') === 'barURI'));\
+             parts.push('child-isdef-child:' + child.isDefaultNamespace('childNS'));\
+             // ⑤ document：default 恒 HTML ns（不读 documentElement 声明）+ 前缀经声明 + 预绑定
+             parts.push('doc-default:' + (document.lookupNamespaceURI(null) === 'http://www.w3.org/1999/xhtml'));\
+             parts.push('doc-xml:' + (document.lookupNamespaceURI('xml') === XML_NS));\
+             // ⑥ Attr 经 ownerElement；disconnected 恒 null
+             var attr = document.createAttribute('foo');\
+             parts.push('attr-disc:' + (attr.lookupNamespaceURI('xml') === null));\
+             document.getElementById('d').setAttributeNode(attr);\
+             parts.push('attr-conn-xml:' + (attr.lookupNamespaceURI('xml') === XML_NS));\
+             // ⑦ doctype 恒 null / default 空
+             parts.push('dt-null:' + (document.doctype.lookupNamespaceURI('foo') === null));\
+             parts.push('dt-isdef:' + document.doctype.isDefaultNamespace(null));\
+             // ⑧ new Document() 无 documentElement → xml/xmlns 无预绑定
+             var d2 = new Document();\
+             parts.push('newdoc-xml:' + (d2.lookupNamespaceURI('xml') === null));\
+             } catch (e) { parts.push('THREW:' + e.message); }\
+             parts.join('|');",
+        )
+        .unwrap()
+        .value;
+    assert_eq!(
+        out,
+        "frag-xml:true|frag-default:true|frag-isdef:true|el-xml:true|el-xmlns:true|el-prefix:true|el-default-null:true|el-decl-default:true|el-decl-bar:true|el-isdef-baz:true|child-default:true|child-bar:true|child-isdef-child:true|doc-default:true|doc-xml:true|attr-disc:true|attr-conn-xml:true|dt-null:true|dt-isdef:true|newdoc-xml:true",
+        "R152 lookupNamespaceURI/isDefaultNamespace 全族（fragment/元素预绑定+自身映射/声明属性/子继承/document HTML ns/Attr ownerElement/doctype/new Document）"
+    );
+}

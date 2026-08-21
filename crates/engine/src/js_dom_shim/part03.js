@@ -2555,13 +2555,21 @@
   // this=元素），缓存 + 注册进 _listenerStore[key]（使 dispatchEvent/click 触发）。JS 设值优先（set trap 覆盖），
   // =null 移除（不再回落重编译，spec onclick=null 清除）。缓存 false 标记「已查无 inline」避重复 host 查询。
   // 由 on* getter（返回编译 fn）+ _dispatchWithBubble target 阶段（点击触发）调用。
-  function _ensureInlineHandler(key, sel, handle, type) {
+  function _ensureInlineHandler(key, sel, handle, type, codeOverride) {
     if (_onHandlers[key] && _onHandlers[key][type] !== undefined) return; // 已编译 fn / 已查无 false / JS 设值
     var attr = 'on' + type;
     var code = null;
-    try {
-      code = handle ? __zw_get_attr_handle(handle, attr) : (sel ? __zw_get_attr(sel, attr) : null);
-    } catch (_e) {}
+    if (codeOverride !== undefined && codeOverride !== null) {
+      // R152（js-dom M4）：调用方显式提供的属性体——setAttribute('on*', v) 的 R134 重编译
+      // 路径专用。host `__zw_set_attr` 是**异步 mutation 批处理**（不立即落快照），回读
+      // `__zw_get_attr` 会拿到旧体 → 重编译出旧 fn → 派发永远跑首个 handler 体
+      //（WPT remove-unscopable 六变体只跑首个体的真根因；R134 当年误判为「缓存未失效」）。
+      code = String(codeOverride);
+    } else {
+      try {
+        code = handle ? __zw_get_attr_handle(handle, attr) : (sel ? __zw_get_attr(sel, attr) : null);
+      } catch (_e) {}
+    }
     if (!_onHandlers[key]) _onHandlers[key] = {};
     if (!code) { _onHandlers[key][type] = false; return; } // 查无 → 缓存 false（getter 返 null）
     var fn = null;
@@ -3775,8 +3783,16 @@
     if (handle) {
       var _npl = _zwNodeParent[handle];
       if (_npl) {
+        // R152（js-dom M4）：parentElement（elementOnly）只返元素父——父是 DocumentFragment
+        //（nodeType 11）/Document/DocumentType 时 null（spec `dom-node-parentelement`：
+        // parentElement = parentNode 若其为 Element 否则 null；WPT Node-parentElement
+        // "children of DocumentFragments" element/text 两断言）。sel 父都在元素树内（元素
+        // 祖先链无 fragment），只需判 handle 父。
         if (_npl.parentSel) return _wrapSelector(_npl.parentSel);
-        if (_npl.parentHandle) return _wrapHandle(_npl.parentHandle);
+        if (_npl.parentHandle) {
+          if (elementOnly && _fragmentHandles && _fragmentHandles[_npl.parentHandle]) return null;
+          return _wrapHandle(_npl.parentHandle);
+        }
       }
       // R51：无链的纯 detached handle 节点（createElement 后未 append）→ null（spec：
       // detached 节点 parentNode 为 null）。旧 fallback 猜 body 是 WPT dom/common.js
@@ -3809,6 +3825,114 @@
       guard++;
     }
     return chain;
+  }
+
+  // R152（js-dom M4）：spec `dom-node-lookupnamespaceuri` 的 namespace 查找算法——
+  // 从 context 节点沿祖先链（含自身到 root），对每个**元素**站扫其 xmlns 声明属性
+  //（`xmlns`/`xmlns:<prefix>`，ns = XMLNS_NS）。命中即返（最近声明胜出——spec
+  // 「locate a namespace prefix」逐站 while）。非元素站（fragment/document/doctype/
+  // text/comment）自身无声明、仅作链路中继。`xml`/`xmlns` 前缀是 XML 预绑定（spec
+  // DOM §2.8「xml prefix is bound to XML ns」）——无声明也命中。
+  // 声明读取优先 `_zwAttrInstances`（JS 侧权威，含 NS 实例），回退 host 属性查询。
+  // https://dom.spec.whatwg.org/#dom-node-lookupnamespaceuri
+  var _ZW_XML_NS_R152 = 'http://www.w3.org/XML/1998/namespace';
+  var _ZW_XMLNS_NS_R152 = 'http://www.w3.org/2000/xmlns/';
+  function _zwScanXmlnsOnElement(key, prefix) {
+    var want = (prefix == null || prefix === '') ? 'xmlns' : ('xmlns:' + prefix);
+    var list = _zwAttrInstances.get(key);
+    if (list) {
+      for (var i = 0; i < list.length; i++) {
+        var a = list[i];
+        // qname 匹配（xmlns 声明的 qname 恒为 'xmlns' 或 'xmlns:p'，local 段被拆出）。
+        if (String(a.qname) === want) return a.value;
+      }
+      return undefined; // 实例层有属性但无该声明 → 本站未声明（继续上行由调用方定）
+    }
+    return undefined;
+  }
+  function _zwLookupNamespaceURI(sel, handle, prefix) {
+    var p = (prefix == null) ? null : String(prefix);
+    // 站迭代：自身 + 祖先链（sel 域 + handle 反链域），每元素站扫 xmlns。
+    // `xml`/`xmlns` 预绑定（spec DOM §2.8）按 spec「locate a namespace」算法：
+    // ① 查找起点（或途经站）是**元素**时硬规则命中（元素分支首步）；② Document 站
+    // 亦预绑定。非元素起点（detached DocumentFragment/DocumentType）链止于自身、
+    // 无元素分支 → null（WPT "DocumentFragment should have null namespace, prefix
+    // xml/xmlns"；对照 "Element should have XML namespace" 的 detached 元素命中）。
+    var hops = 0, curSel = sel, curHandle = handle;
+    var isFirstStation = true;
+    while (hops < 64) {
+      hops++;
+      var key = curHandle ? ('@' + curHandle) : curSel;
+      // 本站是否元素：sel 域恒元素（选择器指向元素节点）；handle 域查容器标记表
+      //（fragment/comment/text/PI 非元素）。
+      var isElementStation = !!(curSel) || !!(curHandle
+        && !_fragmentHandles[curHandle] && !_commentHandles[curHandle]
+        && !_textHandles[curHandle] && !_piHandles[curHandle]);
+      if (isElementStation && isFirstStation && (p === 'xml' || p === 'xmlns')) {
+        return p === 'xml' ? _ZW_XML_NS_R152 : _ZW_XMLNS_NS_R152;
+      }
+      // R152：元素站自身的 prefix→namespaceURI 映射也是声明源（spec「locate a
+      // namespace」元素分支步骤 3-4——`createElementNS('fooNamespace','prefix:elem')`
+      // 查 'prefix' 命中自身 ns；**无 prefix 元素**（'childElem'）的自身 ns 即 default
+      // 声明（查 null/'' 命中）；有 prefix 元素的 ns 非 default（fooElem 查 null 期望
+      // null 的根因）。经 `_nsHandles`（createElementNS R18/R80 记录的 ns/prefix）。
+      if (isElementStation && curHandle && _nsHandles[curHandle]) {
+        var _r152Nsh = _nsHandles[curHandle];
+        var _r152Q = String(_r152Nsh.qualifiedName || '');
+        var _r152Ci = _r152Q.indexOf(':');
+        var _r152Pre = _r152Ci >= 0 ? _r152Q.slice(0, _r152Ci) : null;
+        if (p != null && p !== '' && _r152Pre === p) return _r152Nsh.namespace;
+        if ((p == null || p === '') && !_r152Pre && _r152Nsh.namespace) {
+          return _r152Nsh.namespace;
+        }
+      }
+      if (key) {
+        var found = _zwScanXmlnsOnElement(key, p);
+        if (found !== undefined) {
+          // 无 prefix 的查找：`xmlns=""` 空串 = 显式默认无 ns → spec 返 null。
+          if (p == null || p === '') return found === '' ? null : found;
+          return found;
+        }
+      }
+      isFirstStation = false;
+      // 上行：sel 域经 __zw_parent；handle 域经 _zwNodeParent 反链（到 sel 域切换）。
+      if (curSel && typeof __zw_parent === 'function') {
+        var ps = '';
+        try { ps = __zw_parent(curSel) || ''; } catch (_e152p) { ps = ''; }
+        if (ps) { curSel = ps; curHandle = null; continue; }
+        if (curSel === 'html') {
+          // html 之上是 Document——Document 站：① documentElement 的 xmlns 声明
+          //（WPT "Document should have xhtml namespace"：查 document 时经其
+          // documentElement）；② xml/xmlns 预绑定在此生效。
+          reachedDoc = true;
+          var de = globalThis.document && globalThis.document.documentElement;
+          if (de) {
+            var dKey = de.__zwSelector ? de.__zwSelector : (de.__zwHandle ? ('@' + de.__zwHandle) : null);
+            if (dKey) {
+              var dFound = _zwScanXmlnsOnElement(dKey, p);
+              if (dFound !== undefined) {
+                if (p == null || p === '') return dFound === '' ? null : dFound;
+                return dFound;
+              }
+            }
+          }
+          if (p === 'xml') return _ZW_XML_NS_R152;
+          if (p === 'xmlns') return _ZW_XMLNS_NS_R152;
+          // 无声明且非预绑定前缀：document 查找的 default ns 由 documentElement 的
+          // xmlns 决定（上面已扫）——无 → null。
+          if (p == null || p === '') return null;
+          return null;
+        }
+        break; // 到 root 无更多祖先（detached 子树的 top）
+      }
+      if (curHandle && typeof _zwNodeParent !== 'undefined' && _zwNodeParent[curHandle]) {
+        var link = _zwNodeParent[curHandle];
+        if (link.parentSel) { curSel = link.parentSel; curHandle = null; continue; }
+        if (link.parentHandle) { curHandle = link.parentHandle; continue; }
+      }
+      break;
+    }
+    return null;
   }
 
   // R3243：表格修改 API（insertRow/deleteRow/insertCell/deleteCell）内部用的行/单元格集合读取助函数。
@@ -5242,6 +5366,19 @@
     var doc = {
       nodeType: 9,
       nodeName: '#document',
+      // R152（js-dom M4）：namespace 查找（spec `dom-node-lookupnamespaceuri`）——
+      // detached doc 经 documentElement（惰性，无元素子 → null 恒返 null；WPT
+      // "Document without documentElement" xml/xmlns 均 null——**无预绑定**，与主
+      // document 不同：new Document() 是 XML 文档，documentElement 缺失时链空）。
+      lookupNamespaceURI: function (prefix) {
+        var de = this.documentElement;
+        if (!de || typeof de.lookupNamespaceURI !== 'function') return null;
+        return de.lookupNamespaceURI(prefix);
+      },
+      isDefaultNamespace: function (ns) {
+        var mine = this.lookupNamespaceURI(null);
+        return (ns == null || ns === '') ? (mine == null || mine === '') : mine === String(ns);
+      },
       // R130（js-dom M4）：documentElement 惰性 getter（WPT DOMImplementation-createDocument
       // 的 doc.documentElement 断言族——spec：首个元素子，无元素子时 null。旧静态 docEl 使
       // createDocument 建的 root 元素不可见 + 空 doc 恒返伪 docEl 非 null）。createHTMLDocument
@@ -6253,6 +6390,19 @@
       },
       configurable: true, enumerable: true,
     });
+    // R152（js-dom M4）：Attr 的 namespace 查找经 **ownerElement**（spec
+    // `dom-node-lookupnamespaceuri`——Attr 沿其 owner 元素的上下文查找；disconnected
+    // （ownerElement null）恒 null——WPT "Disconnected Attr"；挂接后命中宿主声明
+    // "Connected Attr has namespace URI matching xml"）。
+    a.lookupNamespaceURI = function (prefix) {
+      var oe = a.ownerElement;
+      if (!oe || typeof oe.lookupNamespaceURI !== 'function') return null;
+      return oe.lookupNamespaceURI(prefix);
+    };
+    a.isDefaultNamespace = function (ns) {
+      var mine = a.lookupNamespaceURI(null);
+      return (ns == null || ns === '') ? (mine == null || mine === '') : mine === String(ns);
+    };
     return a;
   }
   // `el.attributes`（NamedNodeMap）：length / item(i) / getNamedItem(name) / 数值索引 /

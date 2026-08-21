@@ -276,9 +276,15 @@
         // 共有的 ChildNode/Node 面都在 get trap 分支）。**注**：part03 同 handler 字面量
         // 早期还定义过一个 has 键（FV 属性分支）——JS 对象字面量重复键后者胜，本定义是
         // 生效版（R129 定位实证）。
+        // R152（js-dom M4）：白名单补 prepend/append——inline handler 的 with(this) 层
+        // HasBinding 须命中本 proxy 才会消费元素 @@unscopables 表（六 [Unscopable] 方法
+        // 全在表内）；has=false 直接跳过本层 → 外层 with(document) 命中 document.prepend
+        //（ParentNode API，无豁免表）→ bare 名解析到 function（WPT remove-unscopable
+        // prepend/append 两断言）。
         if (prop === 'remove' || prop === 'appendData' || prop === 'insertData'
             || prop === 'deleteData' || prop === 'replaceData' || prop === 'substringData'
             || prop === 'before' || prop === 'after' || prop === 'replaceWith'
+            || prop === 'prepend' || prop === 'append'
             || prop === 'data' || prop === 'length' || prop === 'cloneNode'
             || prop === 'childNodes' || prop === 'parentNode' || prop === 'nodeValue'
             || prop === 'textContent' || prop === 'ownerDocument' || prop === 'dispatchEvent'

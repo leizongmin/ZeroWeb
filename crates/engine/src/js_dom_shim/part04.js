@@ -1082,6 +1082,22 @@
             return _zwCompareDocumentPosition(_makeProxy(sel, handle), other);
           };
         }
+        // R152（js-dom M4）：`lookupNamespaceURI(prefix)` / `isDefaultNamespace(ns)`
+        //（spec `dom-node-lookupnamespaceuri` / `dom-node-isdefaultnamespace`——沿自身
+        // 与祖先元素链扫 xmlns 声明属性：无 prefix 查 `xmlns`/默认 ns，有 prefix 查
+        // `xmlns:<prefix>`；`xml` 前缀恒返 XML ns、`xmlns` 前缀恒返 XMLNS ns（预绑定）。
+        // WPT Node-lookupNamespaceURI 全 75 断言（fragment/doctype 继承链 null、元素
+        // 自声明、子元素覆盖、comment 经父链继承、document 经 documentElement）。祖先链
+        // 经 _parentNodeFor 上行 + 每站 `_zwAttrInstances` 扫 ns 声明。
+        if (prop === 'lookupNamespaceURI') {
+          return function(prefix) { return _zwLookupNamespaceURI(sel, handle, prefix); };
+        }
+        if (prop === 'isDefaultNamespace') {
+          return function(ns) {
+            var mine = _zwLookupNamespaceURI(sel, handle, null);
+            return (ns == null || ns === '') ? (mine == null || mine === '') : mine === String(ns);
+          };
+        }
         // DocumentFragment handle（nodeType 11 / '#document-fragment'）/ Comment（nodeType 8 / '#comment'）/
         // Text（nodeType 3 / '#text'）——均为 create 句柄无 selector，经 handle set 区别于普通元素句柄。
         var isFrag = handle && _fragmentHandles[handle];
@@ -1734,7 +1750,9 @@
                 _listenerStore[key][_r107n] = _listenerStore[key][_r107n].filter(function (l) { return l.fn !== _r134OldFn; });
               }
               if (_onHandlers[key]) _onHandlers[key][_r107n] = undefined;
-              _ensureInlineHandler(key, sel, handle, _r107n);
+              // R152：重编译用**刚写入的值 v**——host set_attr 异步批处理，回读快照会拿到
+              // 旧体重新编译出旧 fn（remove-unscopable 六变体只跑首个体根因）。
+              _ensureInlineHandler(key, sel, handle, _r107n, v);
             }
             if (_r107n.length && globalThis._ZW_BODY_FORWARD_ON[_r107n]
                 && (_r107tag === 'BODY' || _r107tag === 'FRAMESET') && globalThis.window) {
