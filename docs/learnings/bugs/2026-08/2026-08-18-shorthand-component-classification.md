@@ -382,3 +382,5 @@ Flex intrinsic sizing has its own container-level spacing boundary. When summing
 Flex intrinsic aspect-ratio transfer has a separate item-level size boundary. When `width:auto` items derive base width from `height` or `min-height`, resolve those definite real lengths before applying the ratio; otherwise residual cross sizes fall back to content max-content and erase the transferred base.
 
 Grid intrinsic sizing has the same container spacing used-value boundary as flex, but through `column_gap`. Keep grid/flex intrinsic gap resolution on the shared definite real-length helper so direct residual gaps do not disappear in max-content calculations.
+
+Multicol intrinsic sizing also consumes author lengths outside the normal multicol layout pass. Resolve `column-width` and `column-gap` through the shared definite real-length helper before computing column-driven max-content, or direct residual units will either disappear or be replaced by child content widths.

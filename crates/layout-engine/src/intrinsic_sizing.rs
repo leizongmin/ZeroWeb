@@ -269,7 +269,7 @@ pub(crate) fn block_max_content_width(
         _ => None,
     });
     let col_width_set = mc_style.and_then(|s| match &s.column_width {
-        zero_style_system::ColumnWidthComputedValue::Length(LengthValue::Px(w)) => Some(*w as f32),
+        zero_style_system::ColumnWidthComputedValue::Length(width) => resolve_intrinsic_real_length(width, s),
         _ => None,
     });
     if col_count_n.is_some() || col_width_set.is_some() {
@@ -285,10 +285,7 @@ pub(crate) fn block_max_content_width(
         if no_nested_spanner {
             let n = col_count_n.unwrap_or(1).max(1);
             let gap_px = mc_style
-                .and_then(|s| match &s.column_gap {
-                    LengthValue::Px(g) => Some(*g as f32),
-                    _ => None,
-                })
+                .and_then(|s| resolve_intrinsic_real_length(&s.column_gap, s))
                 .unwrap_or(0.0);
             // col_content：col-width 设定则用之（子溢出，不撑宽 multicol），否则取最宽非 spanner 子 intrinsic。
             let col_content = col_width_set.unwrap_or(nonspanner_block_max);
@@ -935,6 +932,42 @@ mod tests {
         </body></html>"#;
         let w = compute_block_max_content(html, "m").expect("multicol intrinsic");
         assert!((w - 230.0).abs() < 2.0, "case5: 2×110+10=230, got {}", w);
+    }
+
+    #[test]
+    fn r3632_multicol_intrinsic_resolves_residual_column_width_and_gap() {
+        let mut doc = zero_dom::Document::new();
+        let article_id = doc.create_element("article");
+        let child_id = doc.create_element("div");
+
+        let mut styles = HashMap::new();
+        let mut article_style = ComputedStyle::default();
+        article_style.font_size = LengthValue::Px(20.0);
+        article_style.column_count = zero_style_system::ColumnCountComputedValue::Number(2);
+        article_style.column_width = zero_style_system::ColumnWidthComputedValue::Length(LengthValue::Em(6.0));
+        article_style.column_gap = LengthValue::Em(2.0);
+        styles.insert(article_id, article_style);
+
+        let mut child_style = ComputedStyle::default();
+        child_style.display = DisplayValue::Block;
+        child_style.width = LengthValue::Px(100.0);
+        styles.insert(child_id, child_style);
+
+        let article = LayoutBox {
+            node_id: Some(article_id),
+            children: vec![LayoutBox {
+                node_id: Some(child_id),
+                is_block_level: true,
+                ..Default::default()
+            }],
+            ..Default::default()
+        };
+
+        let w = block_max_content_width(&article, &doc, &styles);
+        assert_eq!(
+            w, 280.0,
+            "column-count:2 with column-width:6em and gap:2em at 20px should produce 2*120+40"
+        );
     }
 
     /// 嵌套 spanner（intrinsic-size-003：div>div>div>column-span:all）leaf 守卫拦截：
