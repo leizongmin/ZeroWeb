@@ -368,3 +368,5 @@ IFC font metrics are also a used-value boundary. Helpers that derive both the ru
 IFC container struts are a separate font-size used-value boundary from text run metrics. Even after run font-size resolution is fixed, the block container font-size used for atomic-only line baselines must reuse the same resolver; otherwise residual units such as `ch` leave the strut at 16px and make baseline alignment too shallow.
 
 IFC atomic inline-block dimensions are another independent used-value boundary. When layout sizes are not pre-seeded, `collect_inline_items` consumes CSS `width`/`height` directly; its `em` base must be the resolved element font-size, and intrinsic or percentage values must keep the old fallback until a containing-block basis is available.
+
+Empty leaf measurement fallback is another residual length consumer. When `measure_text_content` has no inline content and falls back to CSS `width`/`height`, it must resolve real lengths against the element font size; otherwise flex/grid measurement callbacks lose explicit non-`px` sizes even though the normal taffy style path can represent them.

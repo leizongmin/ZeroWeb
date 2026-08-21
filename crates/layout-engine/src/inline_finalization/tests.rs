@@ -1,6 +1,6 @@
 use super::{
-    ComputedStyle, InlineFormattingContext, LayoutBox, TextAlign, extract_inline_visual_metrics, resolve_text_align,
-    resolve_text_align_last, resolve_text_indent, sync_inline_block_positions_from_ifc,
+    ComputedStyle, InlineFormattingContext, LayoutBox, TextAlign, extract_inline_visual_metrics, measure_text_content,
+    resolve_text_align, resolve_text_align_last, resolve_text_indent, sync_inline_block_positions_from_ifc,
     vertical_decoration_free_with_mode,
 };
 use std::collections::HashMap;
@@ -97,6 +97,52 @@ fn test_extract_inline_visual_metrics_relative_lengths() {
     assert_eq!(metrics.padding_left, 20.0);
     assert_eq!(metrics.padding_right, 20.0);
     assert_eq!(metrics.border_right, 10.0);
+}
+
+/// R3625：空叶节点测量回退到 CSS width/height 时，也要解析 residual real length。
+#[test]
+fn r3625_empty_leaf_measure_resolves_residual_explicit_size() {
+    use taffy::geometry::Size;
+    use taffy::style::AvailableSpace;
+
+    let mut doc = Document::new();
+    let root = doc.root();
+    let div = doc.create_element("div");
+    doc.append_child(root, div).unwrap();
+
+    let mut styles = HashMap::new();
+    let mut style = ComputedStyle::default();
+    style.font_size = LengthValue::Px(20.0);
+    style.width = LengthValue::Em(5.0);
+    style.height = LengthValue::Ch(4.0);
+    styles.insert(div, style);
+
+    let size = measure_text_content(
+        &doc,
+        &styles,
+        div,
+        Size {
+            width: None,
+            height: None,
+        },
+        Size {
+            width: AvailableSpace::Definite(800.0),
+            height: AvailableSpace::Definite(600.0),
+        },
+        &HashMap::new(),
+        Default::default(),
+    );
+
+    assert!(
+        (size.width - 100.0).abs() < 0.01,
+        "empty leaf width:5em should resolve against font-size:20px, got {}",
+        size.width
+    );
+    assert!(
+        (size.height - 40.0).abs() < 0.01,
+        "empty leaf height:4ch should resolve against font-size:20px, got {}",
+        size.height
+    );
 }
 
 #[test]

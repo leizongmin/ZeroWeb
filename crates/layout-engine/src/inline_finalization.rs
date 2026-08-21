@@ -140,6 +140,22 @@ pub fn resolve_text_indent(text_indent: &LengthValue, font_size: &LengthValue, c
     }
 }
 
+fn resolve_leaf_explicit_size(value: &LengthValue, style: &ComputedStyle) -> Option<f32> {
+    match value {
+        LengthValue::Auto
+        | LengthValue::Percentage(_)
+        | LengthValue::MinContent
+        | LengthValue::MaxContent
+        | LengthValue::FitContent(_) => None,
+        LengthValue::Px(v) if *v == f64::INFINITY => None,
+        other => {
+            let font_size_px = zero_style_system::computed::resolve_length(&style.font_size, 16.0, None, None);
+            let px = zero_style_system::computed::resolve_length(other, font_size_px, None, None);
+            px.is_finite().then_some(px.max(0.0) as f32)
+        }
+    }
+}
+
 /// 从 ComputedStyle 读取 text-align 并转换为 IFC 的 TextAlign 枚举。
 ///
 /// `start`/`end` 是**方向感知**值（CSS Text 3 §6.1）：`start` = inline-start 边
@@ -1362,19 +1378,13 @@ pub(crate) fn measure_text_content(
             if measuring_content_w {
                 return None;
             }
-            style.and_then(|s| match &s.width {
-                LengthValue::Px(v) => Some(*v as f32),
-                _ => None,
-            })
+            style.and_then(|s| resolve_leaf_explicit_size(&s.width, s))
         });
         let explicit_h = known_dimensions.height.or_else(|| {
             if measuring_content_h {
                 return None;
             }
-            style.and_then(|s| match &s.height {
-                LengthValue::Px(v) => Some(*v as f32),
-                _ => None,
-            })
+            style.and_then(|s| resolve_leaf_explicit_size(&s.height, s))
         });
         return Size {
             width: explicit_w.unwrap_or(0.0),
