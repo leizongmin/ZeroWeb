@@ -75,6 +75,11 @@ fn test_property_supported_aspect_ratio() {
 
 #[test]
 fn test_property_supported_flex() {
+    assert!(is_property_supported("flex", "none"));
+    assert!(is_property_supported("flex", "1"));
+    assert!(is_property_supported("flex", "1 0 auto"));
+    assert!(is_property_supported("flex", "2 10em"));
+    assert!(is_property_supported("flex-flow", "wrap row-reverse"));
     assert!(is_property_supported("flex-direction", "row"));
     assert!(is_property_supported("flex-wrap", "wrap"));
     assert!(is_property_supported("flex-grow", "2"));
@@ -83,6 +88,12 @@ fn test_property_supported_flex() {
     assert!(is_property_supported("order", "-1"));
 
     assert!(!is_property_supported("flex-direction", "invalid"));
+    assert!(!is_property_supported("flex", "-1"));
+    assert!(!is_property_supported("flex", "1 -1 auto"));
+    assert!(!is_property_supported("flex", "1 1 -10px"));
+    assert!(!is_property_supported("flex", "NaN"));
+    assert!(!is_property_supported("flex-flow", "row column"));
+    assert!(!is_property_supported("flex-flow", "wrap nowrap"));
     assert!(!is_property_supported("flex-grow", "-1"));
     assert!(!is_property_supported("flex-shrink", "NaN"));
     assert!(!is_property_supported("flex-basis", "-1px"));

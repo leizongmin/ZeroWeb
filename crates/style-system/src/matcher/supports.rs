@@ -37,6 +37,9 @@ pub(super) fn extended_visual_or_layout_property_supported(property: &str, value
         // https://drafts.csswg.org/css-backgrounds-3/#shadow-layers
         "text-shadow" => values::parse_text_shadow_list(value).is_some(),
         "box-shadow" => values::parse_box_shadow_list(value).is_some(),
+        // https://www.w3.org/TR/css-flexbox-1/#flex-property
+        "flex" => flex_shorthand_supported(value),
+        "flex-flow" => shorthand_supported(property, value),
         // https://drafts.csswg.org/css-transitions-1/
         "transition-property" => transition_property_list_supported(value),
         "transition-duration" => non_negative_time_list_supported(value),
@@ -145,6 +148,37 @@ fn shorthand_supported(property: &str, value: &str) -> bool {
     }
     let decl = vec![(property.to_string(), value.to_string(), false, (0, 0, 0))];
     !crate::shorthand::expand_shorthands(&decl).is_empty()
+}
+
+fn flex_shorthand_supported(value: &str) -> bool {
+    let value = value.trim();
+    if value.is_empty() {
+        return false;
+    }
+    if value.eq_ignore_ascii_case("none") || value.eq_ignore_ascii_case("auto") {
+        return true;
+    }
+
+    let parts: Vec<&str> = value.split_whitespace().collect();
+    match parts.as_slice() {
+        [single] => flex_number_supported(single) || crate::property::parse_flex_basis(single).is_some(),
+        [grow, second] => {
+            flex_number_supported(grow)
+                && (flex_number_supported(second) || crate::property::parse_flex_basis(second).is_some())
+        }
+        [grow, shrink, basis] => {
+            flex_number_supported(grow)
+                && flex_number_supported(shrink)
+                && crate::property::parse_flex_basis(basis).is_some()
+        }
+        _ => false,
+    }
+}
+
+fn flex_number_supported(value: &str) -> bool {
+    value
+        .parse::<f64>()
+        .is_ok_and(|number| number.is_finite() && number >= 0.0)
 }
 
 fn columns_supported(value: &str) -> bool {
