@@ -801,6 +801,101 @@ fn same_tab_keeps_multiple_service_worker_clients_until_disconnect() {
 }
 
 #[test]
+fn window_client_lifecycle_removes_only_destroyed_client() {
+    let mut owner = BrowserServiceWorkerOwner::new();
+    let disposition = owner.begin_request_for_client(
+        TabId(7),
+        false,
+        79,
+        Some("https://example.test/app/page.html"),
+        "renderer-7:top",
+        register_request("https://example.test/app/page.html"),
+    );
+    attach_script(&mut owner, disposition, "clients.matchAll({includeUncontrolled:true});");
+    let _ = owner.poll();
+    let evaluate = owner
+        .take_host_commands()
+        .into_iter()
+        .find(|outgoing| matches!(outgoing.params.command, ServiceWorkerHostCommand::Evaluate { .. }))
+        .expect("missing renderer evaluation command");
+    let registration_id = evaluate.params.registration_id;
+
+    owner
+        .observe_window_client(
+            TabId(7),
+            false,
+            "renderer-7:popup",
+            "https://example.test/app/popup.html",
+            "auxiliary",
+        )
+        .unwrap();
+    owner
+        .observe_window_client(
+            TabId(7),
+            false,
+            "renderer-7:frame",
+            "https://example.test/app/frame.html",
+            "nested",
+        )
+        .unwrap();
+
+    owner.inject_host_event(
+        TabId(7),
+        false,
+        ServiceWorkerHostEventParams {
+            registration_id,
+            event: ServiceWorkerHostEvent::ClientMessagesEmitted {
+                outbound: vec![
+                    zero_protocol::message::ServiceWorkerMessage {
+                        data_json: "\"popup\"".into(),
+                        port_id: None,
+                        transferred_port_ids: Vec::new(),
+                        data_port_index: None,
+                        target_client_id: Some("renderer-7:popup".into()),
+                    },
+                    zero_protocol::message::ServiceWorkerMessage {
+                        data_json: "\"frame\"".into(),
+                        port_id: None,
+                        transferred_port_ids: Vec::new(),
+                        data_port_index: None,
+                        target_client_id: Some("renderer-7:frame".into()),
+                    },
+                ],
+            },
+        },
+    );
+    let _ = owner.poll();
+
+    owner.remove_window_client(TabId(7), false, "renderer-7:frame");
+    let clients = complete_clients_match_all(&mut owner, registration_id, 19);
+    assert_eq!(
+        clients
+            .iter()
+            .map(|client| (client.id.as_str(), client.frame_type.as_str()))
+            .collect::<Vec<_>>(),
+        [("renderer-7:top", "top-level"), ("renderer-7:popup", "auxiliary"),]
+    );
+    assert_eq!(
+        owner
+            .normal
+            .client_messages_since(registration_id, "renderer-7:popup", 0)
+            .1[0]
+            .data_json,
+        "\"popup\""
+    );
+    assert_eq!(
+        owner
+            .normal
+            .client_messages_since(registration_id, "renderer-7:frame", 0)
+            .1,
+        Vec::new()
+    );
+
+    owner.remove_window_client(TabId(7), false, "missing");
+    assert_eq!(complete_clients_match_all(&mut owner, registration_id, 20).len(), 2);
+}
+
+#[test]
 fn focused_tab_changes_clients_match_all_order() {
     let mut owner = BrowserServiceWorkerOwner::new();
     let first = owner.begin_request_for_client(

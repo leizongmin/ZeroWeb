@@ -1135,9 +1135,7 @@ impl BrowserServiceWorkerOwner {
     pub(crate) fn disconnect_tab(&mut self, tab_id: TabId) {
         if let Some(clients) = self.clients_by_tab.remove(&tab_id) {
             for client in clients {
-                if let Some(manager) = self.manager_mut_if_present(client.profile) {
-                    manager.remove_client(&client.client_id);
-                }
+                self.remove_client_from_manager(client.profile, &client.client_id);
             }
         }
         self.pending_fetches.retain(|pending| pending.plan.tab_id != tab_id);
@@ -1178,8 +1176,19 @@ impl BrowserServiceWorkerOwner {
         client_id: &str,
         client_url: &str,
     ) -> Result<(), String> {
+        self.observe_window_client(tab_id, private, client_id, client_url, "top-level")
+    }
+
+    pub(crate) fn observe_window_client(
+        &mut self,
+        tab_id: TabId,
+        private: bool,
+        client_id: &str,
+        client_url: &str,
+        frame_type: &str,
+    ) -> Result<(), String> {
         // https://w3c.github.io/ServiceWorker/#service-worker-client
-        let url = Url::parse(client_url).map_err(|_| "Service Worker committed client URL is invalid".to_string())?;
+        let url = Url::parse(client_url).map_err(|_| "Service Worker window client URL is invalid".to_string())?;
         if !matches!(url.scheme(), "http" | "https") {
             return Ok(());
         }
@@ -1188,7 +1197,29 @@ impl BrowserServiceWorkerOwner {
         } else {
             ProfileKey::Normal
         };
-        self.observe_client(tab_id, profile, client_id, url.as_str())
+        self.observe_client_with_frame_type(tab_id, profile, client_id, url.as_str(), frame_type)
+    }
+
+    pub(crate) fn remove_window_client(&mut self, tab_id: TabId, private: bool, client_id: &str) {
+        let profile = if private {
+            ProfileKey::Private(tab_id)
+        } else {
+            ProfileKey::Normal
+        };
+        let mut removed = false;
+        if let Some(clients) = self.clients_by_tab.get_mut(&tab_id) {
+            clients.retain(|client| {
+                let keep = client.profile != profile || client.client_id != client_id;
+                removed |= !keep;
+                keep
+            });
+            if clients.is_empty() {
+                self.clients_by_tab.remove(&tab_id);
+            }
+        }
+        if removed {
+            self.remove_client_from_manager(profile, client_id);
+        }
     }
 
     pub(crate) fn remove_private_profile(&mut self, tab_id: TabId) {
@@ -1298,6 +1329,12 @@ impl BrowserServiceWorkerOwner {
             });
         }
         Ok(())
+    }
+
+    fn remove_client_from_manager(&mut self, profile: ProfileKey, client_id: &str) {
+        if let Some(manager) = self.manager_mut_if_present(profile) {
+            manager.remove_client(client_id);
+        }
     }
 
     #[cfg(test)]
