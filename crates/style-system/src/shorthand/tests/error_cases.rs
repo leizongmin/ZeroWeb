@@ -53,8 +53,10 @@ fn test_scroll_edge_shorthands_expand_and_validate_tokens() {
     assert!(expand_one("scroll-margin", "red", false, (0, 0, 1)).is_empty());
     assert!(expand_one("scroll-margin", "auto", false, (0, 0, 1)).is_empty());
     assert!(expand_one("scroll-margin", "thin", false, (0, 0, 1)).is_empty());
+    assert!(expand_one("scroll-margin", "1px 2%", false, (0, 0, 1)).is_empty());
+    assert!(expand_one("scroll-margin", "infpx", false, (0, 0, 1)).is_empty());
 
-    let margin = expand_one("scroll-margin", "1px -2px 3% 4px", false, (0, 0, 1));
+    let margin = expand_one("scroll-margin", "1px -2px 3em 4px", false, (0, 0, 1));
     assert_eq!(margin.len(), 4);
     assert_eq!(margin[0].0, "scroll-margin-top");
     assert_eq!(margin[1].0, "scroll-margin-right");
@@ -64,6 +66,8 @@ fn test_scroll_edge_shorthands_expand_and_validate_tokens() {
 
     assert!(expand_one("scroll-padding", "red", false, (0, 0, 1)).is_empty());
     assert!(expand_one("scroll-padding", "-1px", false, (0, 0, 1)).is_empty());
+    assert!(expand_one("scroll-padding", "thin", false, (0, 0, 1)).is_empty());
+    assert!(expand_one("scroll-padding", "infpx", false, (0, 0, 1)).is_empty());
 
     let padding = expand_one("scroll-padding", "auto 2px 3% 4px", false, (0, 0, 1));
     assert_eq!(padding.len(), 4);

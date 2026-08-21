@@ -1130,6 +1130,78 @@ fn strip_important(value: &str) -> &str {
     value
 }
 
+fn supports_rect_values(value: &str, is_valid: fn(&str) -> bool) -> bool {
+    let mut count = 0;
+    for part in value.split_whitespace() {
+        count += 1;
+        if count > 4 || !is_valid(part) {
+            return false;
+        }
+    }
+    count > 0
+}
+
+fn supports_scroll_margin_value(value: &str) -> bool {
+    let value = value.trim();
+    if matches!(
+        value.to_ascii_lowercase().as_str(),
+        "auto" | "thin" | "medium" | "thick" | "min-content" | "max-content" | "fit-content"
+    ) {
+        return false;
+    }
+    match zero_css_parser::values::parse_length(value) {
+        Some(zero_css_parser::values::LengthValue::Px(v))
+        | Some(zero_css_parser::values::LengthValue::Em(v))
+        | Some(zero_css_parser::values::LengthValue::Ex(v))
+        | Some(zero_css_parser::values::LengthValue::Rex(v))
+        | Some(zero_css_parser::values::LengthValue::Cap(v))
+        | Some(zero_css_parser::values::LengthValue::Rcap(v))
+        | Some(zero_css_parser::values::LengthValue::Rem(v))
+        | Some(zero_css_parser::values::LengthValue::Vh(v))
+        | Some(zero_css_parser::values::LengthValue::Vw(v))
+        | Some(zero_css_parser::values::LengthValue::Vmin(v))
+        | Some(zero_css_parser::values::LengthValue::Vmax(v))
+        | Some(zero_css_parser::values::LengthValue::Ch(v))
+        | Some(zero_css_parser::values::LengthValue::Rch(v))
+        | Some(zero_css_parser::values::LengthValue::Ic(v))
+        | Some(zero_css_parser::values::LengthValue::Ric(v)) => v.is_finite(),
+        Some(zero_css_parser::values::LengthValue::Calc(_)) => true,
+        _ => zero_css_parser::values::parse_math_function(value).is_some(),
+    }
+}
+
+fn supports_scroll_padding_value(value: &str) -> bool {
+    let value = value.trim();
+    if value.eq_ignore_ascii_case("auto") {
+        return true;
+    }
+    if matches!(
+        value.to_ascii_lowercase().as_str(),
+        "thin" | "medium" | "thick" | "min-content" | "max-content" | "fit-content"
+    ) {
+        return false;
+    }
+    match zero_css_parser::values::parse_length(value) {
+        Some(zero_css_parser::values::LengthValue::Px(v))
+        | Some(zero_css_parser::values::LengthValue::Em(v))
+        | Some(zero_css_parser::values::LengthValue::Ex(v))
+        | Some(zero_css_parser::values::LengthValue::Rex(v))
+        | Some(zero_css_parser::values::LengthValue::Cap(v))
+        | Some(zero_css_parser::values::LengthValue::Rcap(v))
+        | Some(zero_css_parser::values::LengthValue::Rem(v))
+        | Some(zero_css_parser::values::LengthValue::Vh(v))
+        | Some(zero_css_parser::values::LengthValue::Vw(v))
+        | Some(zero_css_parser::values::LengthValue::Vmin(v))
+        | Some(zero_css_parser::values::LengthValue::Vmax(v))
+        | Some(zero_css_parser::values::LengthValue::Ch(v))
+        | Some(zero_css_parser::values::LengthValue::Rch(v))
+        | Some(zero_css_parser::values::LengthValue::Ic(v))
+        | Some(zero_css_parser::values::LengthValue::Ric(v))
+        | Some(zero_css_parser::values::LengthValue::Percentage(v)) => v.is_finite() && v >= 0.0,
+        _ => false,
+    }
+}
+
 /// 检查 CSS 属性值对是否受支持。
 ///
 /// 已知属性且值能被解析即为"支持"。
@@ -1212,11 +1284,15 @@ fn is_property_supported(property: &str, value: &str) -> bool {
         "scroll-snap-type" => parse_scroll_snap_type(trimmed).is_some(),
         "scroll-snap-align" => parse_scroll_snap_align(trimmed).is_some(),
         "scroll-snap-stop" => parse_scroll_snap_stop(trimmed).is_some(),
+        // https://drafts.csswg.org/css-scroll-snap-1/#margin-longhands-physical
+        "scroll-margin" => supports_rect_values(trimmed, supports_scroll_margin_value),
         "scroll-margin-top" | "scroll-margin-right" | "scroll-margin-bottom" | "scroll-margin-left" => {
-            parse_length(trimmed).is_some()
+            supports_scroll_margin_value(trimmed)
         }
+        // https://drafts.csswg.org/css-scroll-snap-1/#padding-longhands-physical
+        "scroll-padding" => supports_rect_values(trimmed, supports_scroll_padding_value),
         "scroll-padding-top" | "scroll-padding-right" | "scroll-padding-bottom" | "scroll-padding-left" => {
-            trimmed.eq_ignore_ascii_case("auto") || parse_length(trimmed).is_some()
+            supports_scroll_padding_value(trimmed)
         }
         "container-type" => parse_container_type(trimmed).is_some(),
         "container-name" => true, // 任何非空字符串都有效

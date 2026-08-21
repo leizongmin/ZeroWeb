@@ -89,6 +89,7 @@ fn test_padding_shorthand_rejects_invalid_tokens() {
     assert!(expand_one("padding", "red", false, (0, 0, 1)).is_empty());
     assert!(expand_one("padding", "auto", false, (0, 0, 1)).is_empty());
     assert!(expand_one("padding", "-1px", false, (0, 0, 1)).is_empty());
+    assert!(expand_one("padding", "thin", false, (0, 0, 1)).is_empty());
 
     let result = expand_one("padding", "10% 2px", false, (0, 0, 1));
     assert_eq!(result.len(), 4);

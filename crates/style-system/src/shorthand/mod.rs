@@ -1020,6 +1020,12 @@ fn is_border_radius_rect_value(value: &str) -> bool {
 }
 
 fn is_padding_rect_value(value: &str) -> bool {
+    if matches!(
+        value.trim().to_ascii_lowercase().as_str(),
+        "thin" | "medium" | "thick" | "auto" | "min-content" | "max-content" | "fit-content"
+    ) {
+        return false;
+    }
     match zero_css_parser::values::parse_length(value) {
         Some(zero_css_parser::values::LengthValue::Px(v))
         | Some(zero_css_parser::values::LengthValue::Em(v))
@@ -1036,7 +1042,7 @@ fn is_padding_rect_value(value: &str) -> bool {
         | Some(zero_css_parser::values::LengthValue::Rch(v))
         | Some(zero_css_parser::values::LengthValue::Ic(v))
         | Some(zero_css_parser::values::LengthValue::Ric(v))
-        | Some(zero_css_parser::values::LengthValue::Percentage(v)) => v >= 0.0,
+        | Some(zero_css_parser::values::LengthValue::Percentage(v)) => v.is_finite() && v >= 0.0,
         Some(zero_css_parser::values::LengthValue::Calc(_)) => true,
         _ => zero_css_parser::values::parse_math_function(value).is_some(),
     }
@@ -1077,11 +1083,63 @@ fn is_inset_rect_value(value: &str) -> bool {
 }
 
 fn is_scroll_margin_rect_value(value: &str) -> bool {
-    !value.eq_ignore_ascii_case("auto") && is_margin_rect_value(value)
+    if matches!(
+        value.trim().to_ascii_lowercase().as_str(),
+        "auto" | "thin" | "medium" | "thick" | "min-content" | "max-content" | "fit-content"
+    ) {
+        return false;
+    }
+    match zero_css_parser::values::parse_length(value) {
+        Some(zero_css_parser::values::LengthValue::Px(v))
+        | Some(zero_css_parser::values::LengthValue::Em(v))
+        | Some(zero_css_parser::values::LengthValue::Ex(v))
+        | Some(zero_css_parser::values::LengthValue::Rex(v))
+        | Some(zero_css_parser::values::LengthValue::Cap(v))
+        | Some(zero_css_parser::values::LengthValue::Rcap(v))
+        | Some(zero_css_parser::values::LengthValue::Rem(v))
+        | Some(zero_css_parser::values::LengthValue::Vh(v))
+        | Some(zero_css_parser::values::LengthValue::Vw(v))
+        | Some(zero_css_parser::values::LengthValue::Vmin(v))
+        | Some(zero_css_parser::values::LengthValue::Vmax(v))
+        | Some(zero_css_parser::values::LengthValue::Ch(v))
+        | Some(zero_css_parser::values::LengthValue::Rch(v))
+        | Some(zero_css_parser::values::LengthValue::Ic(v))
+        | Some(zero_css_parser::values::LengthValue::Ric(v)) => v.is_finite(),
+        Some(zero_css_parser::values::LengthValue::Calc(_)) => true,
+        _ => zero_css_parser::values::parse_math_function(value).is_some(),
+    }
 }
 
 fn is_scroll_padding_rect_value(value: &str) -> bool {
-    value.eq_ignore_ascii_case("auto") || is_padding_rect_value(value)
+    let value = value.trim();
+    if value.eq_ignore_ascii_case("auto") {
+        return true;
+    }
+    if matches!(
+        value.to_ascii_lowercase().as_str(),
+        "thin" | "medium" | "thick" | "min-content" | "max-content" | "fit-content"
+    ) {
+        return false;
+    }
+    match zero_css_parser::values::parse_length(value) {
+        Some(zero_css_parser::values::LengthValue::Px(v))
+        | Some(zero_css_parser::values::LengthValue::Em(v))
+        | Some(zero_css_parser::values::LengthValue::Ex(v))
+        | Some(zero_css_parser::values::LengthValue::Rex(v))
+        | Some(zero_css_parser::values::LengthValue::Cap(v))
+        | Some(zero_css_parser::values::LengthValue::Rcap(v))
+        | Some(zero_css_parser::values::LengthValue::Rem(v))
+        | Some(zero_css_parser::values::LengthValue::Vh(v))
+        | Some(zero_css_parser::values::LengthValue::Vw(v))
+        | Some(zero_css_parser::values::LengthValue::Vmin(v))
+        | Some(zero_css_parser::values::LengthValue::Vmax(v))
+        | Some(zero_css_parser::values::LengthValue::Ch(v))
+        | Some(zero_css_parser::values::LengthValue::Rch(v))
+        | Some(zero_css_parser::values::LengthValue::Ic(v))
+        | Some(zero_css_parser::values::LengthValue::Ric(v))
+        | Some(zero_css_parser::values::LengthValue::Percentage(v)) => v.is_finite() && v >= 0.0,
+        _ => false,
+    }
 }
 
 fn is_gap_value_token(value: &str) -> bool {
