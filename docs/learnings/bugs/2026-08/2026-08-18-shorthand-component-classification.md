@@ -376,3 +376,5 @@ Inline multicol auto-fill height budgets are another post-IFC used-value boundar
 `tab-size` has two unit domains: numeric values are space-count multipliers, while length values are already tab-stop distances. Keep that distinction in the IFC configuration; passing a resolved length through a field interpreted as a multiplier silently applies the space advance a second time, and Path A/Path B must share the same conversion.
 
 Table intrinsic helpers can duplicate font-size used-value logic outside the IFC path. Column min-content floors and vertical table growth that estimate text width must resolve residual `font-size` values through the style-system resolver; otherwise direct styles with `em`/`ch` silently fall back to 16px and under-size table tracks.
+
+Flex intrinsic sizing has its own container-level spacing boundary. When summing flex row max-content widths, resolve the container `gap` with the same definite real-length helper used for item bases; otherwise direct residual `gap` values disappear even though item sizes are correct.

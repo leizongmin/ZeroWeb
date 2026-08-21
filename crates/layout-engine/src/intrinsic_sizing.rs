@@ -523,10 +523,7 @@ pub(crate) fn flex_row_intrinsic_width(
     let gap = box_node
         .node_id
         .and_then(|id| styles.get(&id))
-        .and_then(|s| match &s.gap {
-            LengthValue::Px(v) => Some(*v as f32),
-            _ => None,
-        })
+        .and_then(|s| resolve_intrinsic_real_length(&s.gap, s))
         .unwrap_or(0.0);
     let frame = box_node.padding_left + box_node.padding_right + box_node.border_left + box_node.border_right;
     Some(sum + gap * (count - 1) as f32 + frame)
@@ -1079,6 +1076,46 @@ mod tests {
         </body></html>"#;
         let w = compute_intrinsic(html, "c").expect("flex row intrinsic");
         assert!((w - 80.0).abs() < 1.0, "expected ~80px (30+50), got {}", w);
+    }
+
+    #[test]
+    fn r3629_flex_row_intrinsic_gap_resolves_residual_real_length() {
+        let mut doc = zero_dom::Document::new();
+        let container_id = doc.create_element("div");
+        let child_a_id = doc.create_element("div");
+        let child_b_id = doc.create_element("div");
+
+        let mut styles = HashMap::new();
+        let mut container_style = ComputedStyle::default();
+        container_style.display = DisplayValue::Flex;
+        container_style.font_size = LengthValue::Px(20.0);
+        container_style.gap = LengthValue::Em(2.0);
+        styles.insert(container_id, container_style);
+
+        for child_id in [child_a_id, child_b_id] {
+            let mut child_style = ComputedStyle::default();
+            child_style.display = DisplayValue::Block;
+            child_style.width = LengthValue::Px(50.0);
+            styles.insert(child_id, child_style);
+        }
+
+        let child_box = |node_id| LayoutBox {
+            node_id: Some(node_id),
+            width: 50.0,
+            is_block_level: true,
+            ..Default::default()
+        };
+        let container = LayoutBox {
+            node_id: Some(container_id),
+            children: vec![child_box(child_a_id), child_box(child_b_id)],
+            ..Default::default()
+        };
+
+        let width = flex_row_intrinsic_width(&container, &doc, &styles).expect("flex row intrinsic");
+        assert_eq!(
+            width, 140.0,
+            "two 50px flex items plus gap:2em at 20px should produce 140px intrinsic width"
+        );
     }
 
     #[test]
