@@ -90,6 +90,10 @@ pub(super) fn extended_visual_or_layout_property_supported(property: &str, value
         "column-rule-color" => values::parse_color(value).is_some(),
         // https://drafts.csswg.org/css-box-4/#margin-trim
         "margin-trim" => values::parse_margin_trim(value).is_some(),
+        // https://drafts.csswg.org/css-backgrounds-3/#border-style
+        "border-top-style" | "border-right-style" | "border-bottom-style" | "border-left-style" => {
+            crate::property::parse_border_style(value).is_some()
+        }
         // https://drafts.csswg.org/css-backgrounds-3/#border-images
         "border-image" => crate::shorthand::border_image_shorthand_supported(value),
         "border-image-source" => values::parse_border_image_source(value).is_some(),
