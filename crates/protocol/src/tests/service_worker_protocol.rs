@@ -163,6 +163,20 @@ fn service_worker_discovery_operations_round_trip() {
             },
         ),
         (9, ServiceWorkerOperation::Update { registration_id: 9 }),
+        (
+            10,
+            ServiceWorkerOperation::ObserveWindowClient {
+                client_id: "iframe:#frame".into(),
+                client_url: "/frame.html".into(),
+                frame_type: "nested".into(),
+            },
+        ),
+        (
+            11,
+            ServiceWorkerOperation::RemoveWindowClient {
+                client_id: "iframe:#frame".into(),
+            },
+        ),
     ] {
         let decoded = roundtrip(IpcMessage {
             id,
@@ -302,6 +316,37 @@ fn service_worker_discovery_rejects_invalid_client_url() {
         .validate()
         .is_err()
     );
+    assert!(
+        ServiceWorkerRequestParams {
+            operation: ServiceWorkerOperation::ObserveWindowClient {
+                client_id: String::new(),
+                client_url: "https://example.test/frame.html".into(),
+                frame_type: "nested".into(),
+            },
+        }
+        .validate()
+        .is_err()
+    );
+    assert!(
+        ServiceWorkerRequestParams {
+            operation: ServiceWorkerOperation::ObserveWindowClient {
+                client_id: "iframe:#frame".into(),
+                client_url: "https://example.test/frame.html".into(),
+                frame_type: "none".into(),
+            },
+        }
+        .validate()
+        .is_err()
+    );
+    assert!(
+        ServiceWorkerRequestParams {
+            operation: ServiceWorkerOperation::RemoveWindowClient {
+                client_id: String::new(),
+            },
+        }
+        .validate()
+        .is_err()
+    );
 }
 
 #[test]
@@ -366,6 +411,20 @@ fn service_worker_nested_enum_discriminants_remain_append_only() {
         9
     );
     assert_eq!(discriminant(&ServiceWorkerOperation::Update { registration_id: 1 }), 10);
+    assert_eq!(
+        discriminant(&ServiceWorkerOperation::ObserveWindowClient {
+            client_id: "iframe:#frame".into(),
+            client_url: "https://example.test/frame.html".into(),
+            frame_type: "nested".into(),
+        }),
+        11
+    );
+    assert_eq!(
+        discriminant(&ServiceWorkerOperation::RemoveWindowClient {
+            client_id: "iframe:#frame".into(),
+        }),
+        12
+    );
 
     assert_eq!(discriminant(&ServiceWorkerResult::Registered { registration_id: 1 }), 0);
     assert_eq!(

@@ -2,7 +2,7 @@
 
 **入口文档**: [../service-workers.md](../service-workers.md)
 **创建日期**: 2026-08-17（goal 拆分 bootstrap）
-**最后更新**: 2026-08-21（M3-33 window client lifecycle owner API 完成）
+**最后更新**: 2026-08-21（M3-34 renderer iframe client lifecycle 完成）
 
 ---
 
@@ -174,6 +174,9 @@ M0 启动门禁解除；M1 core WPT 已收敛，M2 依赖未满足，当前推�
 - ✅ M3-33：browser owner 暴露 window client 创建/销毁生命周期入口；`auxiliary`/`nested`
   client 可按显式 `frameType` 登记，单 client 销毁只清理对应 registry 记录和消息队列，
   不误删同 tab 的 top-level/popup client
+- ✅ M3-34：renderer iframe `contentDocument` / `contentWindow` 物化经 typed IPC
+  观察为 browser-owned `nested` window client；iframe 删除、替换和清空子树路径注销已登记
+  iframe client，client id 由 browser 归一到 committed top-level Document 命名空间下
 
 ## 缺口清单
 
@@ -193,7 +196,7 @@ M0 启动门禁解除；M1 core WPT 已收敛，M2 依赖未满足，当前推�
 
 ## 下一步计划
 
-1. **M3 clients follow-up**：renderer 侧真实 iframe/popup 创建与销毁事件接入 browser owner
+1. **M3 clients follow-up**：popup/auxiliary 真实 browsing context 创建后接入 browser owner
 2. **M2 门控保持**：js-dom S6 与 storage-cache-api M1 land 后启动 fetch pipeline
 
 ## 里程碑状态
@@ -381,6 +384,9 @@ M0 启动门禁解除；M1 core WPT 已收敛，M2 依赖未满足，当前推�
 - M3-33 window client lifecycle：browser owner 显式 `auxiliary`/`nested` 创建与单 client
   销毁入口、消息队列清理见
   [M3 window client lifecycle](evidence/2026-08-21-m3-window-client-lifecycle.md)
+- M3-34 renderer iframe client lifecycle：iframe 物化/销毁经 renderer IPC 接入 browser-owned
+  nested window client registry 见
+  [M3 renderer iframe client lifecycle](evidence/2026-08-21-m3-renderer-iframe-client-lifecycle.md)
 
 ## M0 证据与决策记录
 
@@ -455,6 +461,7 @@ M0 启动门禁解除；M1 core WPT 已收敛，M2 依赖未满足，当前推�
 | 2026-08-21 | M3-31 same-tab clients | browser owner 保留同 tab 多个 client；disconnect tab 成组移除；focus 仍选择 top-level/auxiliary |
 | 2026-08-21 | M3-32 committed top-level client | production navigation commit 登记 top-level SW client；replacement start 清旧 epoch client |
 | 2026-08-21 | M3-33 window client lifecycle | browser owner 暴露 window client 创建/销毁入口；移除 nested 不影响同 tab top-level/auxiliary |
+| 2026-08-21 | M3-34 renderer iframe lifecycle | iframe contentWindow 物化触发 nested client observe；删除/替换/清空子树触发 remove；browser 归一 child client id |
 | 2026-08-19 | 三方案对比 | 拒绝同线程 context（无调度隔离）；拒绝从零线程（复制安全基建）；推荐抽取 Worker 线程核 |
 | 2026-08-19 | owner | production browser process 单一 owner；WebView 只做同算法 in-process adapter |
 | 2026-08-19 | 首个 driving WPT | `activation-after-registration.https.html` |

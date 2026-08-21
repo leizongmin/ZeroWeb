@@ -459,6 +459,31 @@ fn test_iframe_content_document_r115() {
             "__zwfr:200\u{1f}OK\u{1f}\u{1f}<foo>Dummy XML document</foo>".to_string()
         }),
     );
+    let sw_events: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(vec![]));
+    let observe_events = Arc::clone(&sw_events);
+    _ZwSandbox::register_callback(
+        &mut sandbox,
+        "__zw_sw_observe_window_client",
+        Box::new(move |args: &[String]| -> String {
+            observe_events
+                .lock()
+                .unwrap()
+                .push(format!("observe:{}", args.join("|")));
+            r#"{"ok":true}"#.to_string()
+        }),
+    );
+    let remove_events = Arc::clone(&sw_events);
+    _ZwSandbox::register_callback(
+        &mut sandbox,
+        "__zw_sw_remove_window_client",
+        Box::new(move |args: &[String]| -> String {
+            remove_events
+                .lock()
+                .unwrap()
+                .push(format!("remove:{}", args.join("|")));
+            r#"{"ok":true}"#.to_string()
+        }),
+    );
 
     // 静态 `<iframe src>` 的 contentDocument/contentWindow：doc 加载（documentElement.textContent）、
     // XML createElement 保大小写 + namespaceURI null + instanceof win.Element、createElementNS 的
@@ -474,6 +499,15 @@ fn test_iframe_content_document_r115() {
         out,
         "de:Dummy XML document|dv:true|ce:Abc/Abc/null|inst:true|ns:p/l/http://example.com/|nserr:NamespaceError|xmlnserr:NamespaceError|invalid:InvalidCharacterError",
         "iframe contentDocument：XML doc 语义（保大小写/ns null/instanceof/validate-and-extract/defaultView）"
+    );
+    sandbox.execute("document.querySelector('iframe').remove();").unwrap();
+    assert_eq!(
+        sw_events.lock().unwrap().as_slice(),
+        &[
+            "observe:iframe:iframe|https://wpt.test/common/dummy.xml|nested",
+            "remove:iframe:iframe",
+        ],
+        "iframe contentWindow/client 生命周期应映射到 Service Worker window client observe/remove"
     );
 }
 

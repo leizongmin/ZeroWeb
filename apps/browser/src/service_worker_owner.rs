@@ -1074,6 +1074,30 @@ impl BrowserServiceWorkerOwner {
                     },
                 })
             }
+            ServiceWorkerOperation::ObserveWindowClient {
+                client_id,
+                client_url,
+                frame_type,
+            } => {
+                let result = validate_client_url(&client_url, &authority)
+                    .map_err(|message| ServiceWorkerError {
+                        code: ServiceWorkerErrorCode::InvalidArgument,
+                        message: message.into(),
+                    })
+                    .and_then(|client_url| {
+                        self.observe_window_client(tab_id, private, &client_id, client_url.as_str(), &frame_type)
+                            .map_err(|message| ServiceWorkerError {
+                                code: ServiceWorkerErrorCode::InvalidArgument,
+                                message,
+                            })
+                    })
+                    .map(|()| ServiceWorkerResult::Empty);
+                self.result_disposition(tab_id, request_id, result)
+            }
+            ServiceWorkerOperation::RemoveWindowClient { client_id } => {
+                self.remove_window_client(tab_id, private, &client_id);
+                self.result_disposition(tab_id, request_id, Ok(ServiceWorkerResult::Empty))
+            }
         }
     }
 

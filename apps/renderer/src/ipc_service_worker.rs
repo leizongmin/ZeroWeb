@@ -327,6 +327,38 @@ impl ServiceWorkerIpcClient {
                 },
             ),
         );
+
+        let observe_window_client = self.clone();
+        sandbox.register_callback(
+            "__zw_sw_observe_window_client",
+            Box::new(move |args| {
+                let client_id = args.first().cloned().unwrap_or_default();
+                let client_url = args.get(1).cloned().unwrap_or_default();
+                let frame_type = args.get(2).cloned().unwrap_or_default();
+                match observe_window_client.request(ServiceWorkerOperation::ObserveWindowClient {
+                    client_id,
+                    client_url,
+                    frame_type,
+                }) {
+                    Ok(ServiceWorkerResult::Empty) => serde_json::json!({"ok": true}).to_string(),
+                    Ok(_) => error_wire("invalid window client observe response"),
+                    Err(error) => response_error_wire(error),
+                }
+            }),
+        );
+
+        let remove_window_client = self.clone();
+        sandbox.register_callback(
+            "__zw_sw_remove_window_client",
+            Box::new(move |args| {
+                let client_id = args.first().cloned().unwrap_or_default();
+                match remove_window_client.request(ServiceWorkerOperation::RemoveWindowClient { client_id }) {
+                    Ok(ServiceWorkerResult::Empty) => serde_json::json!({"ok": true}).to_string(),
+                    Ok(_) => error_wire("invalid window client remove response"),
+                    Err(error) => response_error_wire(error),
+                }
+            }),
+        );
     }
 
     fn request(&self, operation: ServiceWorkerOperation) -> ServiceWorkerResponse {
@@ -435,6 +467,9 @@ mod tests {
 
     use super::*;
     use zero_protocol::{ServiceWorkerResponseParams, ServiceWorkerSnapshot};
+    use zero_script_sandbox::{Sandbox, SandboxConfig, ScriptError, ScriptResult};
+
+    type HostCallback = Box<dyn Fn(&[String]) -> String + Send + Sync>;
 
     struct CapturedWriter(Arc<Mutex<Vec<u8>>>);
 
@@ -458,6 +493,44 @@ mod tests {
 
         fn flush(&mut self) -> io::Result<()> {
             Ok(())
+        }
+    }
+
+    #[derive(Default)]
+    struct CapturingSandbox {
+        callbacks: HashMap<String, HostCallback>,
+        config: SandboxConfig,
+    }
+
+    impl CapturingSandbox {
+        fn take_callback(&mut self, name: &str) -> HostCallback {
+            self.callbacks.remove(name).expect("callback should be registered")
+        }
+    }
+
+    impl Sandbox for CapturingSandbox {
+        fn execute(&mut self, _code: &str) -> Result<ScriptResult, ScriptError> {
+            Err(ScriptError::RuntimeError("not implemented by test sandbox".into()))
+        }
+
+        fn execute_json(&mut self, _code: &str) -> Result<ScriptResult, ScriptError> {
+            Err(ScriptError::RuntimeError("not implemented by test sandbox".into()))
+        }
+
+        fn register_callback(&mut self, name: &str, callback: HostCallback) {
+            self.callbacks.insert(name.to_string(), callback);
+        }
+
+        fn set_timeout_ms(&mut self, timeout_ms: u64) {
+            self.config.timeout_ms = timeout_ms;
+        }
+
+        fn reset_context(&mut self) {
+            self.callbacks.clear();
+        }
+
+        fn config(&self) -> &SandboxConfig {
+            &self.config
         }
     }
 
@@ -547,5 +620,67 @@ mod tests {
             })
         ));
         assert!(router.pending.lock().unwrap().is_empty());
+    }
+
+    #[test]
+    fn window_client_callbacks_send_lifecycle_requests() {
+        let bytes = Arc::new(Mutex::new(Vec::new()));
+        let (writer, _) = SharedWriter::new(Box::new(CapturedWriter(Arc::clone(&bytes))));
+        let router = ServiceWorkerResponseRouter::new();
+        let client = ServiceWorkerIpcClient::new(writer, Arc::clone(&router));
+        let mut sandbox = CapturingSandbox::default();
+        client.register_callbacks(&mut sandbox);
+        let observe_callback = sandbox.take_callback("__zw_sw_observe_window_client");
+
+        let observe =
+            thread::spawn(move || observe_callback(&["iframe:#child".into(), "/child.html".into(), "nested".into()]));
+        let request = wait_for_request(&bytes);
+        assert!(matches!(
+            request.kind,
+            IpcMessageKind::ServiceWorkerRequest(ServiceWorkerRequestParams {
+                operation: ServiceWorkerOperation::ObserveWindowClient {
+                    ref client_id,
+                    ref client_url,
+                    ref frame_type,
+                }
+            }) if client_id == "iframe:#child" && client_url == "/child.html" && frame_type == "nested"
+        ));
+        assert!(
+            router
+                .route(IpcMessage {
+                    id: request.id,
+                    kind: IpcMessageKind::ServiceWorkerResponse(ServiceWorkerResponseParams {
+                        result: Ok(ServiceWorkerResult::Empty),
+                    }),
+                })
+                .is_none()
+        );
+        assert_eq!(observe.join().unwrap(), r#"{"ok":true}"#);
+
+        let (writer, _) = SharedWriter::new(Box::new(CapturedWriter(Arc::clone(&bytes))));
+        let client = ServiceWorkerIpcClient::new(writer, Arc::clone(&router));
+        let mut sandbox = CapturingSandbox::default();
+        client.register_callbacks(&mut sandbox);
+        let remove_callback = sandbox.take_callback("__zw_sw_remove_window_client");
+        bytes.lock().unwrap().clear();
+        let remove = thread::spawn(move || remove_callback(&["iframe:#child".into()]));
+        let request = wait_for_request(&bytes);
+        assert!(matches!(
+            request.kind,
+            IpcMessageKind::ServiceWorkerRequest(ServiceWorkerRequestParams {
+                operation: ServiceWorkerOperation::RemoveWindowClient { ref client_id }
+            }) if client_id == "iframe:#child"
+        ));
+        assert!(
+            router
+                .route(IpcMessage {
+                    id: request.id,
+                    kind: IpcMessageKind::ServiceWorkerResponse(ServiceWorkerResponseParams {
+                        result: Ok(ServiceWorkerResult::Empty),
+                    }),
+                })
+                .is_none()
+        );
+        assert_eq!(remove.join().unwrap(), r#"{"ok":true}"#);
     }
 }

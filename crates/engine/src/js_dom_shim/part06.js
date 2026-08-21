@@ -2475,6 +2475,7 @@
         if (globalThis._zwNotifyIteratorsRemove) {
           try { globalThis._zwNotifyIteratorsRemove(c); } catch (_e87e) {}
         }
+        _zwRemoveIframeWindowClientForNode(c);
         try { __zw_remove(c.__zwSelector); } catch (_e2) {}
         if (typeof _zwMarkRemoved === 'function') _zwMarkRemoved(c.__zwSelector);
       }

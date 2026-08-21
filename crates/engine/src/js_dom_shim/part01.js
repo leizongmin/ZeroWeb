@@ -446,6 +446,51 @@
   // win }）——静态 `<iframe src="/common/dummy.xml|.xhtml">` 用例族（Document-createElement /
   // case / createElementNS 等 ~750 subtest）经此取子文档。导航清空（页级）。
   var _iframeDocCache = {};
+  function _zwObserveIframeWindowClient(entry, key, url) {
+    if (!entry || entry._zwSwClientId || entry._zwSwDestroyed || !key || !url ||
+        typeof __zw_sw_observe_window_client !== 'function') return;
+    // https://w3c.github.io/ServiceWorker/#client-frametype
+    var clientId = 'iframe:' + String(key);
+    try {
+      var wire = JSON.parse(String(__zw_sw_observe_window_client(clientId, String(url), 'nested') || ''));
+      if (wire && wire.ok) entry._zwSwClientId = clientId;
+    } catch (_e) {}
+  }
+  function _zwRemoveIframeWindowClient(key) {
+    if (!key || typeof __zw_sw_remove_window_client !== 'function') return;
+    var entry = _iframeDocCache[key];
+    if (!entry || !entry._zwSwClientId) return;
+    try { __zw_sw_remove_window_client(String(entry._zwSwClientId)); } catch (_e) {}
+    entry._zwSwClientId = null;
+    entry._zwSwDestroyed = true;
+  }
+  function _zwRemoveIframeWindowClientForNode(node) {
+    if (!node || node.__zwIsText || typeof _realTag !== 'function') return;
+    var seen = {};
+    function walk(current) {
+      if (!current || current.__zwIsText) return;
+      var nodeSel = current.__zwSelector || null;
+      var nodeHandle = current.__zwHandle || null;
+      var nodeKey = _elKey(nodeSel, nodeHandle);
+      if (nodeKey && seen[nodeKey]) return;
+      if (nodeKey) seen[nodeKey] = true;
+      try {
+        if ((nodeSel || nodeHandle) && _realTag(nodeSel, nodeHandle) === 'IFRAME') {
+          _zwRemoveIframeWindowClient(nodeKey);
+        }
+      } catch (_eTag) {}
+      try {
+        var kids = current.childNodes;
+        if (!kids) return;
+        for (var i = 0; i < kids.length; i++) walk(kids[i]);
+      } catch (_eKids) {}
+    }
+    walk(node);
+  }
+  function _zwRemoveIframeWindowClientsForNodes(nodes) {
+    if (!nodes || typeof _zwRemoveIframeWindowClientForNode !== 'function') return;
+    for (var i = 0; i < nodes.length; i++) _zwRemoveIframeWindowClientForNode(nodes[i]);
+  }
   // js-dom M4 R116：per-attribute NS 元数据（elKey → { qualifiedName → {ns, prefix, local} }）——
   // setAttributeNS 写入；Attr 节点字段（prefix/localName/namespaceURI）与 NS 读（按 ns+local 匹配
   // 任意 prefix 的存储名）消费。host 侧属性存储是扁平限定名（无 ns），NS 语义须 JS 端登记。

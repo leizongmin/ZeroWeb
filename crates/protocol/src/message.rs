@@ -628,6 +628,31 @@ impl ServiceWorkerRequestParams {
             | ServiceWorkerOperation::Controller
             | ServiceWorkerOperation::StateChanges { .. }
             | ServiceWorkerOperation::Update { .. } => Ok(()),
+            ServiceWorkerOperation::ObserveWindowClient {
+                client_id,
+                client_url,
+                frame_type,
+            } => {
+                if client_id.is_empty() || client_url.is_empty() {
+                    return Err("Service Worker window client id and URL are required");
+                }
+                if client_id.len() > MAX_URL_BYTES || client_url.len() > MAX_URL_BYTES {
+                    return Err("Service Worker window client fields exceed the length limit");
+                }
+                if !matches!(frame_type.as_str(), "top-level" | "auxiliary" | "nested") {
+                    return Err("Service Worker window client frame type is invalid");
+                }
+                Ok(())
+            }
+            ServiceWorkerOperation::RemoveWindowClient { client_id } => {
+                if client_id.is_empty() {
+                    return Err("Service Worker window client id is required");
+                }
+                if client_id.len() > MAX_URL_BYTES {
+                    return Err("Service Worker window client id exceeds the length limit");
+                }
+                Ok(())
+            }
             ServiceWorkerOperation::PostMessage {
                 data_json,
                 transferred_port_ids,
@@ -739,6 +764,20 @@ pub enum ServiceWorkerOperation {
     Update {
         /// Browser-assigned current registration version ID.
         registration_id: u64,
+    },
+    /// Observe one renderer-owned window client for worker `clients.*`.
+    ObserveWindowClient {
+        /// Renderer-local stable client identity.
+        client_id: String,
+        /// Absolute or document-relative client URL.
+        client_url: String,
+        /// Window frame type (`top-level`, `auxiliary`, or `nested`).
+        frame_type: String,
+    },
+    /// Remove one renderer-owned window client after its browsing context is destroyed.
+    RemoveWindowClient {
+        /// Renderer-local stable client identity.
+        client_id: String,
     },
 }
 

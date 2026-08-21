@@ -187,6 +187,61 @@ fn navigation_replacement_removes_stale_service_worker_client() {
 }
 
 #[test]
+fn renderer_window_client_lifecycle_reaches_browser_owner() {
+    let mut backend = ProcessTabBackend::with_renderer_bin(PathBuf::from("unused-renderer"));
+    let tab_id = TabId(811);
+    let renderer_id = 101;
+    let url = "https://example.test/app/page";
+    backend.tab_to_renderer.insert(tab_id, renderer_id);
+    backend.stage_indexed_db_navigation(renderer_id, url, 6);
+    backend.handle_navigation_committed(
+        tab_id,
+        renderer_id,
+        NavigationCommittedParams {
+            url: url.to_string(),
+            navigation_epoch: 6,
+        },
+    );
+
+    backend.handle_service_worker_request(
+        tab_id,
+        renderer_id,
+        1,
+        ServiceWorkerRequestParams {
+            operation: ServiceWorkerOperation::ObserveWindowClient {
+                client_id: "iframe:#child".into(),
+                client_url: "child.html".into(),
+                frame_type: "nested".into(),
+            },
+        },
+    );
+
+    assert_eq!(
+        backend.service_worker_owner.client_references_for_test(tab_id),
+        [
+            ("101:6".to_string(), "top-level".to_string()),
+            ("101:6:iframe:#child".to_string(), "nested".to_string()),
+        ]
+    );
+
+    backend.handle_service_worker_request(
+        tab_id,
+        renderer_id,
+        2,
+        ServiceWorkerRequestParams {
+            operation: ServiceWorkerOperation::RemoveWindowClient {
+                client_id: "iframe:#child".into(),
+            },
+        },
+    );
+
+    assert_eq!(
+        backend.service_worker_owner.client_references_for_test(tab_id),
+        [("101:6".to_string(), "top-level".to_string())]
+    );
+}
+
+#[test]
 fn multiprocess_navigator_registration_uses_browser_owner() {
     let _multiprocess_guard = lock_multiprocess_tests();
     let renderer = resolve_renderer_binary().expect("fresh zero-renderer binary is required");

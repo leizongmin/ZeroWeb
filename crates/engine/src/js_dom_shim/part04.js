@@ -381,6 +381,7 @@
                   _r115Entry.win = _zwMakeIframeWin(_r115Entry.doc);
                   try { if (_r115Entry.doc.__r115SetWin) _r115Entry.doc.__r115SetWin(_r115Entry.win); } catch (_eW) {}
                   _r115Entry.state = 'done';
+                  _zwObserveIframeWindowClient(_r115Entry, key, _r115Url);
                 } else {
                   _r115Entry.state = 'error';
                 }
@@ -3241,6 +3242,7 @@
               // R34xx：注销注册的文本元素（DOM 对照侧几何——removeChild 后 caret 不再命中）。
               // R51c：子树注销（child 内元素 textContent= 建的注册文本随整树摘除——防泄漏）。
               // R86：注销前物化子视图（detached 子树保留其子——WPT NodeIterator-removal）。
+              _zwRemoveIframeWindowClientForNode(child);
               if (typeof _zwMaterializeDetachedChildren === 'function') {
                 _zwMaterializeDetachedChildren(child);
               }
@@ -3277,6 +3279,7 @@
               if (globalThis._zwNotifyIteratorsRemove) {
                 try { globalThis._zwNotifyIteratorsRemove(child); } catch (_eR125i) {}
               }
+              _zwRemoveIframeWindowClientForNode(child);
               try { if (typeof __zw_remove === 'function') __zw_remove(child.__zwSelector); } catch (_eR125r) {}
               _zwMarkRemoved(child.__zwSelector);
               _mo_notify(sel, handle, { type: 'childList', addedNodes: [], removedNodes: [child] });
@@ -3529,6 +3532,7 @@
                     }
                   }
                 } catch (_e100r) {}
+                _zwRemoveIframeWindowClientForNode(oldChild);
                 _mo_notify(sel, handle, { type: 'childList', addedNodes: _r100Added100, removedNodes: [oldChild] });
                 var _r100Pc = _ceParentConnected(sel, handle);
                 for (var _r100c = 0; _r100c < _r100Added100.length; _r100c++) _ceApplyConn(_r100Added100[_r100c], _r100Pc);
@@ -3552,6 +3556,7 @@
               } else {
                 __zw_insert_before(sel, newChild.__zwHandle, oldChild.__zwSelector);
               }
+              _zwRemoveIframeWindowClientForNode(oldChild);
               __zw_remove(oldChild.__zwSelector);
               // js-dom M4 R47：fragment flatten record（同 insertBefore——addedNodes 用 ceAdded）。
               _mo_notify(sel, handle, {
@@ -3594,6 +3599,7 @@
               // old 快照上下文（remove 前取）。
               var _r127Prev = null, _r127Next = null;
               try { _r127Prev = oldChild.previousSibling || null; _r127Next = oldChild.nextSibling || null; } catch (_e127n) {}
+              _zwRemoveIframeWindowClientForNode(oldChild);
               __zw_remove(oldChild.__zwSelector);
               _zwMarkRemoved(oldChild.__zwSelector);
               // R140：live childNodes 同步（replaceChild 的 remove 段）。
@@ -3669,6 +3675,7 @@
               _rmPrev = ceSelf.previousSibling || null;
               _rmNext = ceSelf.nextSibling || null;
             } catch (_e) {}
+            _zwRemoveIframeWindowClientForNode(ceSelf);
             if (handle) __zw_remove_handle(handle);
             else { __zw_remove(sel); _zwMarkRemoved(sel); }
             // R140：live childNodes 同步（remove() 后父的旧引用反映）。
@@ -3722,6 +3729,7 @@
           return function() {
             if (sel) {
               _insertAdjacentVariadic(sel, 'beforebegin', arguments, false);
+              _zwRemoveIframeWindowClientForNode(_makeProxy(sel, handle));
               if (handle) __zw_remove_handle(handle);
               else __zw_remove(sel);
               return undefined;
@@ -3781,6 +3789,7 @@
                 if (_rwKids[_rxi] && _rwKids[_rxi].__zwHandle === handle) { _rwKids.splice(_rxi, 1); break; }
               }
               var _rwSelf = _makeProxy(null, handle);
+              _zwRemoveIframeWindowClientForNode(_rwSelf);
               delete _zwNodeParent[handle];
               _rwRemovedSelf = [_rwSelf];
             }
@@ -3836,6 +3845,7 @@
             // 逐子 remove（_zwRemoveHandleNode 复用 removeChild 的 handle 分支语义）。
             if (!sel && handle) {
               var rKids = (_handleChildren[handle] || []).slice();
+              _zwRemoveIframeWindowClientsForNodes(rKids);
               for (var rKi = 0; rKi < rKids.length; rKi++) {
                 // 旧父的每子 removed record 是**旧父 observer** 的记账（见下移动段）；
                 // 本容器（parent）的 replace-all 是**单条**合成 record（spec：string
@@ -3866,6 +3876,7 @@
               return undefined;
             }
             var removed = _childNodeList(sel, handle);
+            _zwRemoveIframeWindowClientsForNodes(removed);
             if (handle && typeof __zw_set_inner_html_handle === 'function') __zw_set_inner_html_handle(handle, '');
             else if (typeof __zw_set_inner_html === 'function') __zw_set_inner_html(sel, '');
             var added = _appendVariadic(sel, handle, arguments);
@@ -4686,6 +4697,7 @@
               var _ihHc = _handleChildren[handle];
               _ihRemoved = _ihHc ? _ihHc.slice() : [];
             }
+            _zwRemoveIframeWindowClientsForNodes(_ihRemoved);
             var _ihAdded = _zwFragmentAdded(value, handle);
             // spec `LegacyNullToEmptyString`：null → 空串（清子），非写 "null" 文本；undefined 仍 ToString。
             var _ihVal = value === null ? '' : String(value);
@@ -4779,6 +4791,7 @@
             //（WPT "Element with empty text node as child set to null/undefined"：旧子残留
             // childNodes 非空 + parentNode 仍指父）。同值不写 host、不发 record（R49 语义保持）。
             if (_tcSame && handle && _handleChildren[handle] && _handleChildren[handle].length) {
+              _zwRemoveIframeWindowClientsForNodes(_handleChildren[handle]);
               for (var _tcs = 0; _tcs < _handleChildren[handle].length; _tcs++) {
                 var _tcsn = _handleChildren[handle][_tcs];
                 if (_tcsn && _tcsn.__zwHandle && _zwNodeParent) delete _zwNodeParent[_tcsn.__zwHandle];
@@ -4817,6 +4830,7 @@
               // added=[新文本节点]；R3027 的 characterData-only 记录不完整——characterData record 仅由
               // 文本节点自身编辑发）。
               var _tcRemoved = _childNodeList(sel, handle);
+              _zwRemoveIframeWindowClientsForNodes(_tcRemoved);
               // R81：空值（null/''）不注册空文本节点——spec string replace 对空串「移除全部旧子且不插入
               // 新子」→ firstChild 应为 null（WPT "Element with empty text node as child set to null"
               // 期望 el.firstChild === null；旧注册空文本节点残留 __n28）。

@@ -15,8 +15,9 @@ use zero_protocol::message::{
     AutomationOperation, AutomationRequest, AutomationResponse, DispatchDomEventParams, FetchParams, FocusChangeInfo,
     FramePublishMode, ImeEventParams, IndexedDbConnectionEventAckParams, IndexedDbConnectionEventParams,
     IndexedDbRequestParams, IndexedDbResponseParams, IpcColorScheme, IpcMediaType, IpcMessage, IpcMessageKind,
-    LoadHtmlParams, NavigationCommittedParams, NavigationStartedParams, ScrollEventParams, ServiceWorkerRequestParams,
-    SetColorSchemeParams, SetMediaTypeParams, SetViewportParams, StorageOpParams, StorageOperation, StorageType,
+    LoadHtmlParams, NavigationCommittedParams, NavigationStartedParams, ScrollEventParams, ServiceWorkerOperation,
+    ServiceWorkerRequestParams, SetColorSchemeParams, SetMediaTypeParams, SetViewportParams, StorageOpParams,
+    StorageOperation, StorageType,
 };
 use zero_protocol::process::{ProcessManager, RendererHandle};
 use zero_storage::StorageManager;
@@ -676,10 +677,11 @@ impl ProcessTabBackend {
         tab_id: TabId,
         renderer_id: u64,
         request_id: u64,
-        params: ServiceWorkerRequestParams,
+        mut params: ServiceWorkerRequestParams,
     ) {
         let authority = self.committed_document_urls.get(&renderer_id).cloned();
         let client_id = self.service_worker_client_id(renderer_id);
+        self.normalize_service_worker_window_client_ids(renderer_id, &mut params);
         let disposition = self.service_worker_owner.begin_request_for_client(
             tab_id,
             self.private_tabs.contains(&tab_id),
@@ -711,6 +713,23 @@ impl ProcessTabBackend {
             renderer_id,
             self.committed_document_epochs.get(&renderer_id).copied().unwrap_or(0)
         )
+    }
+
+    fn service_worker_child_client_id(&self, renderer_id: u64, client_id: &str) -> String {
+        if client_id.is_empty() {
+            return String::new();
+        }
+        format!("{}:{client_id}", self.service_worker_client_id(renderer_id))
+    }
+
+    fn normalize_service_worker_window_client_ids(&self, renderer_id: u64, params: &mut ServiceWorkerRequestParams) {
+        match &mut params.operation {
+            ServiceWorkerOperation::ObserveWindowClient { client_id, .. }
+            | ServiceWorkerOperation::RemoveWindowClient { client_id } => {
+                *client_id = self.service_worker_child_client_id(renderer_id, client_id);
+            }
+            _ => {}
+        }
     }
 
     fn drain_service_worker_responses(&mut self) {
