@@ -1737,3 +1737,37 @@ fn test_r2061_recenter_noop_for_inflow_table() {
     assert_eq!(table_box.y, 0.0, "in-flow table must not be recentered");
     assert_eq!(table_box.margin_top, 0.0, "in-flow table margin untouched");
 }
+
+#[test]
+fn r3635_abspos_table_recenter_accepts_residual_real_insets() {
+    use zero_css_parser::values::LengthValue;
+    let mut doc = Document::new();
+    let root = doc.root();
+    let table_id = doc.create_element("div");
+    let _ = doc.append_child(root, table_id);
+
+    let mut styles = HashMap::new();
+    let mut s = ComputedStyle::default();
+    s.display = DisplayValue::Table;
+    s.font_size = LengthValue::Px(20.0);
+    s.top = LengthValue::Em(1.0);
+    s.bottom = LengthValue::Ch(2.0);
+    s.height = LengthValue::Auto;
+    s.margin_top = LengthValue::Auto;
+    s.margin_bottom = LengthValue::Auto;
+    styles.insert(table_id, s);
+
+    let mut table_box = LayoutBox {
+        node_id: Some(table_id),
+        is_absolute: true,
+        y: 0.0,
+        height: 80.0,
+        ..Default::default()
+    };
+
+    recenter_abspos_table_vertically(&mut table_box, 200.0, &styles);
+
+    assert_eq!(table_box.y, 60.0, "residual real insets should trigger recenter");
+    assert_eq!(table_box.margin_top, 60.0);
+    assert_eq!(table_box.margin_bottom, 60.0);
+}

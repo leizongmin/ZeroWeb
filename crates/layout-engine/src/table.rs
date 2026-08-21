@@ -1491,7 +1491,6 @@ fn recenter_abspos_table_vertically(
     entry_height: f32,
     styles: &HashMap<NodeId, ComputedStyle>,
 ) {
-    use zero_css_parser::values::LengthValue;
     if std::env::var("ZW_ABSPOS_TABLE_VCENTER").as_deref() == Ok("0") {
         return;
     }
@@ -1502,10 +1501,11 @@ fn recenter_abspos_table_vertically(
         Some(s) => s,
         None => return,
     };
-    let both_v_inset = matches!(s.top, LengthValue::Px(_)) && matches!(s.bottom, LengthValue::Px(_));
-    let height_auto = matches!(s.height, LengthValue::Auto);
-    let mt_auto = matches!(s.margin_top, LengthValue::Auto);
-    let mb_auto = matches!(s.margin_bottom, LengthValue::Auto);
+    let both_v_inset =
+        resolve_table_used_length(&s.top, s).is_some() && resolve_table_used_length(&s.bottom, s).is_some();
+    let height_auto = matches!(s.height, zero_css_parser::values::LengthValue::Auto);
+    let mt_auto = matches!(s.margin_top, zero_css_parser::values::LengthValue::Auto);
+    let mb_auto = matches!(s.margin_bottom, zero_css_parser::values::LengthValue::Auto);
     if !(both_v_inset && height_auto && (mt_auto || mb_auto)) {
         return;
     }

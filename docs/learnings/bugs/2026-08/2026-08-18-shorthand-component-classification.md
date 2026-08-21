@@ -388,3 +388,5 @@ Multicol intrinsic sizing also consumes author lengths outside the normal multic
 Multicol column-info parsing has a font-size used-value boundary separate from its length conversion helper. Even when `length_to_px` supports `em`, the font-size basis itself must be resolved first; otherwise residual `font-size` units make `column-gap:normal/1em` and `column-width:<length>` use the root fallback.
 
 Inline item collection must resolve inline margins at the IFC boundary. Text runs, inline-blocks, and inline replaced elements can still carry residual real lengths in direct `ComputedStyle`; assuming margins are already `Px` drops `em/ch/rem` spacing before line breaking and paint overrides are stored.
+
+Abspos table recenter has a separate definite-inset gate after table layout. Treating only `Px` offsets as definite skips the CSS auto-margin centering equation for residual real lengths; reuse the table used-length resolver for the gate while keeping `auto`, percentages, and intrinsic sizing as non-definite there.
