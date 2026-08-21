@@ -400,3 +400,5 @@ Postprocess stretch gates are used-value consumers too. When a later pass decide
 Aspect-ratio derived cross-size gates have the same residual-length requirement. If `width + aspect-ratio + height:auto` has already produced a definite flex container height, the gate should accept residual real widths; otherwise replaced flex items skip the post-taffy stretch/transfer fix even though the container geometry is definite.
 
 Column flex replaced-item aspect fixups also gate on container cross definiteness. For `flex-direction:column`, resolve the container `width` through the postprocess definite real-length helper before deciding whether to correct the replaced item main size; otherwise residual widths leave taffy's overlarge ratio-derived height untouched.
+
+Percentage-height postprocessing must keep two values in sync: the containing-block definiteness propagated to descendants and the taffy used height of the element that supplies that containing block. Resolving residual `height` for the gate without writing the used height back can still leave children resolving percentages against taffy's raw numeric length.

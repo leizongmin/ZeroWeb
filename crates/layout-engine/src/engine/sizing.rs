@@ -550,18 +550,27 @@ impl LayoutEngine {
                                 }
                             }
                         },
-                        LengthValue::Px(v) => {
+                        other => {
                             // 明确高度：按 box-sizing 折算内容高度供子元素百分比解析。
-                            let pb = b.padding_top + b.padding_bottom + b.border_top + b.border_bottom;
-                            my_definite = Some(if matches!(s.box_sizing, BoxSizingValue::BorderBox) {
-                                (*v as f32 - pb).max(0.0)
-                            } else {
-                                *v as f32
+                            my_definite = resolve_sizing_definite_real_length(other, s).map(|v| {
+                                let pb = b.padding_top + b.padding_bottom + b.border_top + b.border_bottom;
+                                if !matches!(other, LengthValue::Px(_))
+                                    && (b.height - v).abs() > 0.5
+                                    && let Some(id) = b.node_id
+                                    && let Some(&tid) = dom_to_taffy.get(&id)
+                                    && let Ok(mut st) = taffy_tree.style(tid).cloned()
+                                {
+                                    st.size.height = taffy::style::Dimension::length(v);
+                                    let _ = taffy_tree.set_style(tid, st);
+                                    let _ = taffy_tree.mark_dirty(tid);
+                                    changed = true;
+                                }
+                                if matches!(s.box_sizing, BoxSizingValue::BorderBox) {
+                                    (v - pb).max(0.0)
+                                } else {
+                                    v
+                                }
                             });
-                        }
-                        _ => {
-                            // Auto / Em / Rem 等内容决定型 → 子元素 CB 不明确。
-                            my_definite = None;
                         }
                     }
                 }

@@ -242,6 +242,36 @@ fn test_r695_percent_height_definite_cb_still_resolves() {
     );
 }
 
+/// R3641：百分比高度的 definite containing block 判定也要解析 residual real
+/// length。direct `ComputedStyle` 下 `parent{height:10em;font-size:20px}` 应为
+/// definite 200px，`child{height:50%}` 应解析为 100px；旧后处理只接受 `Px`，
+/// 会把 child 的百分比高度按 indefinite CB 改成 auto。
+#[test]
+fn r3641_percent_height_cb_resolves_residual_parent_height() {
+    let html = r#"<!DOCTYPE html><html><body style="margin:0">
+        <div id="parent" style="height:200px">
+          <div id="child" style="height:50%"></div>
+        </div>
+    </body></html>"#;
+    let doc = zero_dom::parse_html(html);
+    let mut sys = StyleSystem::new();
+    sys.set_viewport(800.0, 600.0);
+    let mut styles = sys.compute_styles(&doc, &[]);
+    let parent = doc.get_element_by_id("parent").expect("parent");
+    let parent_style = styles.get_mut(&parent).expect("parent style");
+    parent_style.font_size = LengthValue::Px(20.0);
+    parent_style.height = LengthValue::Em(10.0);
+
+    let mut engine = LayoutEngine::new(800.0, 600.0);
+    let result = engine.compute(&doc, &styles);
+    let child_box = find("child", &doc, &result.root).expect("child box");
+    assert!(
+        (child_box.height - 100.0).abs() < 2.0,
+        "R3641: height:50% of residual definite-CB(10em@20px) must resolve to 100px, got {}",
+        child_box.height
+    );
+}
+
 /// R699：CSS §10.5.1 — 非 BFC 块级元素 `height:auto` 且 `overflow` 计算为 `visible`
 /// 时，高度只计入 in-flow 子元素，浮动子元素被显式忽略。
 ///
