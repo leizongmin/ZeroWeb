@@ -390,3 +390,5 @@ Multicol column-info parsing has a font-size used-value boundary separate from i
 Inline item collection must resolve inline margins at the IFC boundary. Text runs, inline-blocks, and inline replaced elements can still carry residual real lengths in direct `ComputedStyle`; assuming margins are already `Px` drops `em/ch/rem` spacing before line breaking and paint overrides are stored.
 
 Abspos table recenter has a separate definite-inset gate after table layout. Treating only `Px` offsets as definite skips the CSS auto-margin centering equation for residual real lengths; reuse the table used-length resolver for the gate while keeping `auto`, percentages, and intrinsic sizing as non-definite there.
+
+Inline-block metric reuse can re-enter margin math after the initial IFC item collection. When refreshing reused atomic inline boxes, resolve vertical margins through the same IFC used-value helper as collection; otherwise the second pass can erase residual `em/ch/rem` margin contribution to baseline and line height.

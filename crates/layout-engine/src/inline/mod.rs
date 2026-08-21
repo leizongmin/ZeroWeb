@@ -49,15 +49,6 @@ use zero_style_system::{ComputedStyle, TextAutospaceValue, TextTransformValue};
 
 use crate::{NodeIdMap, NodeIdSet};
 
-/// 读取已解析的 LengthValue（Px）为 f32，非 Px（Auto/Percentage/Calc…）返回 0。
-/// 用于 inline-block margin 读取（margin 已在 compute_style 解析为 Px）。
-fn length_px(lv: &LengthValue) -> f32 {
-    match lv {
-        LengthValue::Px(v) => *v as f32,
-        _ => 0.0,
-    }
-}
-
 /// 行内格式化上下文 — 负责将行内内容排列成行盒。
 #[derive(Debug, Clone)]
 pub struct InlineFormattingContext {
@@ -1531,13 +1522,15 @@ impl InlineFormattingContext {
                     || !matches!(style.overflow_y, OverflowValue::Visible);
                 run.height = height;
                 run.baseline = if no_line_boxes || clips {
-                    height + length_px(&style.margin_bottom)
+                    height + Self::resolve_inline_margin(&style.margin_bottom, style)
                 } else {
                     height
                 };
-                line.height = line
-                    .height
-                    .max(height + length_px(&style.margin_top) + length_px(&style.margin_bottom));
+                line.height = line.height.max(
+                    height
+                        + Self::resolve_inline_margin(&style.margin_top, style)
+                        + Self::resolve_inline_margin(&style.margin_bottom, style),
+                );
             }
         }
         let mut line_y = 0.0;

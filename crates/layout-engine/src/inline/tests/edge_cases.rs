@@ -360,6 +360,65 @@ fn test_inline_block_margin_top_offsets_box_y() {
     );
 }
 
+#[test]
+fn r3636_refresh_reused_inline_block_metrics_resolves_residual_vertical_margins() {
+    use zero_css_parser::values::{DisplayValue, LengthValue};
+    use zero_style_system::ComputedStyle;
+
+    let mut doc = zero_dom::Document::new();
+    let root = doc.root();
+    let span = doc.create_element("span");
+    doc.append_child(root, span).unwrap();
+
+    let mut styles = HashMap::new();
+    let mut style = ComputedStyle::default();
+    style.display = DisplayValue::InlineBlock;
+    style.font_size = LengthValue::Px(20.0);
+    style.margin_top = LengthValue::Em(1.0);
+    style.margin_bottom = LengthValue::Ch(2.0);
+    styles.insert(span, style);
+
+    let mut ctx = InlineFormattingContext::new(800.0);
+    ctx.lines = vec![LineBox {
+        y: 0.0,
+        height: 10.0,
+        runs: vec![TextFragment {
+            x: 0.0,
+            y: 0.0,
+            width: 40.0,
+            height: 10.0,
+            text: String::new(),
+            source: None,
+            node_id: span,
+            font_size: 0.0,
+            vertical_align: VerticalAlignValue::Baseline,
+            is_ahem: false,
+            letter_spacing: 0.0,
+            margin_left: 0.0,
+            margin_right: 0.0,
+            margin_top: 0.0,
+            baseline: 10.0,
+        }],
+        baseline_y: 10.0,
+        ascent: 10.0,
+        descent: 0.0,
+    }];
+
+    let refreshed = ctx.refresh_reused_inline_block_metrics(&doc, &styles, &HashMap::from([(span, (40.0, 10.0))]));
+
+    assert!(refreshed);
+    assert!(
+        (ctx.lines[0].runs[0].baseline - 30.0).abs() < 0.01,
+        "empty inline-block baseline should include margin-bottom:2ch at 20px, got {}",
+        ctx.lines[0].runs[0].baseline
+    );
+    assert!(
+        (ctx.lines[0].height - 50.0).abs() < 0.01,
+        "line height should include resolved top+bottom margins, got {}",
+        ctx.lines[0].height
+    );
+}
+
 /// 辅助：构造一个仅含单个空格（collapse_whitespace 折叠后）的 TextRun。
 fn space_run() -> TextRun {
     TextRun {
