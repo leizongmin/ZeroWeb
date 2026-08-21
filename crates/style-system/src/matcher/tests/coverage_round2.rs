@@ -37,11 +37,13 @@ fn test_property_supported_position() {
 #[test]
 fn test_property_supported_overflow() {
     assert!(is_property_supported("overflow", "hidden"));
+    assert!(is_property_supported("overflow", "hidden scroll"));
     assert!(is_property_supported("overflow-x", "scroll"));
     assert!(is_property_supported("overflow-clip-margin", "content-box 2px"));
     assert!(is_property_supported("overflow-clip-margin", "0"));
 
     assert!(!is_property_supported("overflow", "invalid"));
+    assert!(!is_property_supported("overflow", "hidden scroll visible"));
     assert!(!is_property_supported("overflow-clip-margin", "content-box -1px"));
     assert!(!is_property_supported(
         "overflow-clip-margin",
