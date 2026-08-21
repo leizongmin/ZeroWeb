@@ -1472,13 +1472,15 @@ fn is_property_supported(property: &str, value: &str) -> bool {
             let v = trimmed.to_ascii_lowercase();
             v == "auto" || v == "normal" || v == "none"
         }
-        "font-variant-numeric"
-        | "font-variant-caps"
-        | "font-variant-east-asian"
-        | "font-variant-position"
-        | "font-variant"
-        | "font-feature-settings"
-        | "font-variation-settings" => true,
+        "font-size-adjust" => crate::property::parse_font_size_adjust(trimmed).is_some(),
+        "font-feature-settings" => parse_font_feature_settings(trimmed).is_some(),
+        "font-variation-settings" => parse_font_variation_settings(trimmed).is_some(),
+        "font-variant-ligatures" => parse_font_variant_ligatures(trimmed).is_some(),
+        "font-variant-numeric" => parse_font_variant_numeric(trimmed).is_some(),
+        "font-variant-caps" => parse_font_variant_caps(trimmed).is_some(),
+        "font-variant-east-asian" => parse_font_variant_east_asian(trimmed).is_some(),
+        "font-variant-position" => parse_font_variant_position(trimmed).is_some(),
+        "font-variant" => crate::shorthand::font_variant_shorthand_supported(trimmed),
         "font-variant-alternates" => parse_font_variant_alternates(trimmed).is_some(),
         "font-stretch" | "font-width" => parse_font_stretch(trimmed).is_some(),
         // https://drafts.csswg.org/css-fonts-4/#font-synthesis

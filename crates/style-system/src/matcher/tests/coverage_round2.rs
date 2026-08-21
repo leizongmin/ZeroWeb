@@ -186,6 +186,44 @@ fn test_property_supported_css_text_length_properties() {
 }
 
 #[test]
+fn test_property_supported_font_feature_properties() {
+    assert!(is_property_supported("font-size-adjust", "none"));
+    assert!(is_property_supported("font-size-adjust", "0.5"));
+    assert!(is_property_supported("font-size-adjust", "cap-height from-font"));
+    assert!(is_property_supported("font-feature-settings", "normal"));
+    assert!(is_property_supported("font-feature-settings", "\"liga\" off, 'kern' 2"));
+    assert!(is_property_supported("font-variation-settings", "normal"));
+    assert!(is_property_supported(
+        "font-variation-settings",
+        "\"wght\" 600.7, 'slnt' -12"
+    ));
+    assert!(is_property_supported(
+        "font-variant-ligatures",
+        "common-ligatures no-discretionary-ligatures"
+    ));
+    assert!(is_property_supported("font-variant-numeric", "tabular-nums"));
+    assert!(is_property_supported("font-variant-caps", "small-caps"));
+    assert!(is_property_supported("font-variant-east-asian", "jis78"));
+    assert!(is_property_supported("font-variant-position", "sub"));
+    assert!(is_property_supported("font-variant", "small-caps tabular-nums"));
+
+    assert!(!is_property_supported("font-size-adjust", "auto"));
+    assert!(!is_property_supported("font-size-adjust", "-0.5"));
+    assert!(!is_property_supported("font-feature-settings", "sparkle"));
+    assert!(!is_property_supported("font-feature-settings", "\"toolong\" 1"));
+    assert!(!is_property_supported("font-variation-settings", "\"wght\" nan"));
+    assert!(!is_property_supported(
+        "font-variant-ligatures",
+        "common-ligatures common-ligatures"
+    ));
+    assert!(!is_property_supported("font-variant-numeric", "sparkle"));
+    assert!(!is_property_supported("font-variant-caps", "small-caps all-small-caps"));
+    assert!(!is_property_supported("font-variant-east-asian", "sparkle"));
+    assert!(!is_property_supported("font-variant-position", "baseline"));
+    assert!(!is_property_supported("font-variant", "small-caps sparkle"));
+}
+
+#[test]
 fn test_property_supported_transform() {
     assert!(is_property_supported("transform", "translate(10px, 20px)"));
     assert!(!is_property_supported("transform", "invalid-transform"));

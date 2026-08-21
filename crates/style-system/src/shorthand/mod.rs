@@ -2101,6 +2101,12 @@ pub(crate) fn font_shorthand_supported(value: &str) -> bool {
     !expand_font(value, false, (0, 0, 0)).is_empty()
 }
 
+/// @supports 求值用：`font-variant` 简写值是否合法可解析。
+/// https://drafts.csswg.org/css-fonts-4/#font-variant-prop
+pub(crate) fn font_variant_shorthand_supported(value: &str) -> bool {
+    !expand_font_variant(value, false, (0, 0, 0)).is_empty()
+}
+
 /// 展开 font 简写。
 ///
 /// 简化实现：`font: [style] [weight] <size>[/<line-height>] <family>`
