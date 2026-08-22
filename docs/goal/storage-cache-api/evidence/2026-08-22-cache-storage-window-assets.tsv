@@ -7,3 +7,5 @@ service-workers/cache-storage/cache-storage.https.any.js	testharness	case	1	8265
 service-workers/cache-storage/cache-storage-keys.https.any.js	testharness	case	1	1156	no	f19522be1b437d619b356b5b0290679a8f391866
 service-workers/cache-storage/cache-delete.https.any.js	testharness	case	1	5978	no	3eae2b6a08b7954a6a5e644b8248f6ebab562a83
 service-workers/cache-storage/cache-keys.https.any.js	testharness	case	1	7568	no	232fb760d4080a02051ba5cf5e8d2964771fda9a
+service-workers/cache-storage/cache-matchAll.https.any.js	testharness	case	1	9173	no	93c55178918c333df25104e69ca74af5dbf04be9
+service-workers/cache-storage/cache-storage-match.https.any.js	testharness	case	1	9077	no	0c31b726294b14b1b849ecbeb369d23a59d126d8

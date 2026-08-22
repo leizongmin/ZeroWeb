@@ -325,9 +325,11 @@ fn page_cache_api_rejects_uncacheable_put_and_atomic_add_all() {
                   'https://cache.example/app/missing.txt'
                 ]));
                 const ok = await cache.match('https://cache.example/app/ok.txt');
+                const error = await cache.match('https://cache.example/app/error.txt');
                 const keys = await cache.keys();
                 globalThis.__cacheRejectResult = results.concat([
                   'okMissing:' + String(ok === undefined),
+                  'errorType:' + String(error && error.type),
                   'keys:' + String(keys.length)
                 ]).join('|');
               } catch (error) {
@@ -341,7 +343,7 @@ fn page_cache_api_rejects_uncacheable_put_and_atomic_add_all() {
 
     assert_eq!(
         webview.execute_script("globalThis.__cacheRejectResult").unwrap(),
-        "post:true:Cache.put request method must be GET|ftp:true:Cache.put request URL must be an HTTP(S) URL|partial:true:Cache.put cannot store a 206 Partial Content response|vary:true:Cache.put cannot store a response with Vary: *|error:true:Cache.put cannot store an error response|addAll:true:Cache.addAll fetch response is not ok|okMissing:true|keys:0"
+        "post:true:Cache.put request method must be GET|ftp:true:Cache.put request URL must be an HTTP(S) URL|partial:true:Cache.put cannot store a 206 Partial Content response|vary:true:Cache.put cannot store a response with Vary: *|error:resolved|addAll:true:Cache.addAll fetch response is not ok|okMissing:true|errorType:error|keys:1"
     );
 }
 

@@ -474,14 +474,14 @@ const SERVICE_WORKER_BOOTSTRAP: &str = r#"
     if (response.status === 206) {
       throw new TypeError('Cache.put cannot store a 206 Partial Content response');
     }
-    if (String(response.type || 'default').toLowerCase() === 'error') {
-      throw new TypeError('Cache.put cannot store an error response');
-    }
     if (cacheResponseVaryHasStar(response)) {
       throw new TypeError('Cache.put cannot store a response with Vary: *');
     }
   }
   function cachedResponseFromWire(response) {
+    if (String(response.type || 'default').toLowerCase() === 'error') {
+      return Response.error();
+    }
     return new Response(response.body || '', {
       status: response.status,
       statusText: response.statusText || '',
@@ -2350,7 +2350,7 @@ impl ServiceWorkerRuntime {
     ) -> Result<(), ScriptError> {
         let response = match result {
             Ok(ServiceWorkerCacheStorageResult::Match(Some(response))) => {
-                validate_fetch_response(&response)?;
+                validate_cache_response(&response)?;
                 ServiceWorkerCacheStorageResponse::Completed {
                     request_id,
                     response: ServiceWorkerCacheStorageResult::Match(Some(response)),
@@ -2363,7 +2363,7 @@ impl ServiceWorkerRuntime {
                     ));
                 }
                 for response in &responses {
-                    validate_fetch_response(response)?;
+                    validate_cache_response(response)?;
                 }
                 ServiceWorkerCacheStorageResponse::Completed {
                     request_id,
@@ -2658,7 +2658,7 @@ fn validate_cache_storage_request(request: &ServiceWorkerCacheStorageRequest) ->
         } => {
             validate_cache_name(cache_name)?;
             validate_fetch_request(request)?;
-            validate_fetch_response(response)
+            validate_cache_response(response)
         }
     }
 }
@@ -2721,6 +2721,19 @@ fn validate_fetch_response(response: &ServiceWorkerFetchResponse) -> Result<(), 
             "Service Worker fetch response status is invalid".into(),
         ));
     }
+    validate_fetch_response_fields(response)
+}
+
+fn validate_cache_response(response: &ServiceWorkerFetchResponse) -> Result<(), ScriptError> {
+    if !(response.status == 0 || (200..=599).contains(&response.status)) {
+        return Err(ScriptError::InvalidInput(
+            "Service Worker cache response status is invalid".into(),
+        ));
+    }
+    validate_fetch_response_fields(response)
+}
+
+fn validate_fetch_response_fields(response: &ServiceWorkerFetchResponse) -> Result<(), ScriptError> {
     if response.status_text.len() > MAX_FETCH_STATUS_TEXT_BYTES {
         return Err(ScriptError::InvalidInput(
             "Service Worker fetch response status text exceeds the size limit".into(),
@@ -4607,14 +4620,16 @@ mod tests {
     }
 
     #[test]
-    fn cache_put_rejects_error_response_before_host_write() {
+    fn cache_put_sends_error_response_to_host_storage() {
         let mut runtime = ServiceWorkerRuntime::new(test_config()).unwrap();
         runtime
             .evaluate(
                 "addEventListener('fetch', event => {
                    event.respondWith(caches.open('runtime').then(function(cache) {
                      return cache.put(event.request, Response.error()).then(function() {
-                       return new Response('resolved');
+                       return cache.match(event.request).then(function(response) {
+                         return new Response(String(response && response.type));
+                       });
                      }, function(error) {
                        return new Response(String(error instanceof TypeError) + ':' + String(error.message));
                      });
@@ -4655,6 +4670,60 @@ mod tests {
             .complete_cache_storage(request_id, Ok(ServiceWorkerCacheStorageResult::Done))
             .unwrap();
 
+        let ServiceWorkerEvent::CacheStorageRequested { request_id, request } =
+            runtime.recv_timeout(Duration::from_secs(5)).unwrap()
+        else {
+            panic!("missing CacheStorage.put request");
+        };
+        let ServiceWorkerCacheStorageRequest::Put {
+            cache_name, response, ..
+        } = request
+        else {
+            panic!("unexpected CacheStorage request");
+        };
+        assert_eq!(cache_name, "runtime");
+        assert_eq!(response.status, 0);
+        assert_eq!(response.response_type, "error");
+        runtime
+            .complete_cache_storage(request_id, Ok(ServiceWorkerCacheStorageResult::Done))
+            .unwrap();
+
+        let ServiceWorkerEvent::CacheStorageRequested { request_id, request } =
+            runtime.recv_timeout(Duration::from_secs(5)).unwrap()
+        else {
+            panic!("missing CacheStorage.match request");
+        };
+        assert_eq!(
+            request,
+            ServiceWorkerCacheStorageRequest::Match {
+                cache_name: Some("runtime".into()),
+                request: ServiceWorkerFetchRequest {
+                    url: "https://example.test/app/error".into(),
+                    method: "GET".into(),
+                    headers: Vec::new(),
+                    body: Some(String::new()),
+                    client_id: None,
+                    resulting_client_id: None,
+                    referrer: None,
+                },
+                options: Default::default(),
+            }
+        );
+        runtime
+            .complete_cache_storage(
+                request_id,
+                Ok(ServiceWorkerCacheStorageResult::Match(Some(
+                    ServiceWorkerFetchResponse {
+                        status: 0,
+                        status_text: String::new(),
+                        response_type: "error".into(),
+                        headers: Vec::new(),
+                        body: String::new(),
+                    },
+                ))),
+            )
+            .unwrap();
+
         assert_eq!(
             runtime.recv_timeout(Duration::from_secs(5)).unwrap(),
             ServiceWorkerEvent::FetchSettled {
@@ -4665,7 +4734,7 @@ mod tests {
                     status_text: String::new(),
                     response_type: "default".into(),
                     headers: Vec::new(),
-                    body: "true:Cache.put cannot store an error response".into(),
+                    body: "error".into(),
                 }),
                 message: String::new(),
             }

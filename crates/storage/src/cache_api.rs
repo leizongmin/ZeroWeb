@@ -325,11 +325,6 @@ fn validate_cache_put(request: &CacheRequest, response: &CacheResponse) -> Resul
             "Cache.put cannot store a 206 Partial Content response".to_string(),
         ));
     }
-    if response.response_type.eq_ignore_ascii_case("error") {
-        return Err(StorageError::Type(
-            "Cache.put cannot store an error response".to_string(),
-        ));
-    }
     if response_vary_has_star(response) {
         return Err(StorageError::Type(
             "Cache.put cannot store a response with Vary: *".to_string(),
@@ -489,11 +484,6 @@ mod tests {
                 CacheResponse::ok(Vec::new()).with_header("Vary", "Accept-Encoding, *"),
                 "Vary: *",
             ),
-            (
-                CacheRequest::new("https://example.com/error"),
-                CacheResponse::new(0, Vec::new()).with_response_type("error"),
-                "error response",
-            ),
         ];
 
         for (request, response, expected) in cases {
@@ -515,6 +505,18 @@ mod tests {
             )
             .unwrap();
         assert_eq!(cache.len(), 2);
+    }
+
+    #[test]
+    fn test_cache_put_preserves_error_response_type() {
+        let mut cache = Cache::new("v1");
+        let request = CacheRequest::new("https://example.com/error");
+        let response = CacheResponse::new(0, Vec::new()).with_response_type("error");
+
+        cache.put(request.clone(), response).unwrap();
+        let matched = cache.match_request(&request).unwrap();
+        assert_eq!(matched.status, 0);
+        assert_eq!(matched.response_type, "error");
     }
 
     #[test]

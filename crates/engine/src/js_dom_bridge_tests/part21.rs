@@ -781,10 +781,9 @@ fn test_cache_api_page_shim_add_all_rejects_fragment_duplicates() {
     assert!(calls[0].contains(r#""op":"open""#));
 }
 
-/// Cache.put must reject an error filtered response before the host bridge sees
-/// a write request.
+/// Cache.put should pass an error filtered response through to CacheStorage.
 #[test]
-fn test_cache_api_page_shim_rejects_error_response_put() {
+fn test_cache_api_page_shim_puts_error_response() {
     use std::sync::{Arc, Mutex};
     use zero_script_sandbox::{Sandbox, V8Sandbox};
     let mut sandbox = V8Sandbox::with_config(zero_script_sandbox::SandboxConfig {
@@ -801,6 +800,9 @@ fn test_cache_api_page_shim_rejects_error_response_put() {
             calls_for_callback.lock().unwrap().push(request.clone());
             if request.contains(r#""op":"open""#) {
                 return r#"__zw_cache_ok:{"name":"assets"}"#.to_string();
+            }
+            if request.contains(r#""op":"put""#) && request.contains(r#""type":"error""#) {
+                return "__zw_cache_ok:{}".to_string();
             }
             "__zw_cache_error:unexpected request".to_string()
         }),
@@ -837,11 +839,13 @@ fn test_cache_api_page_shim_rejects_error_response_put() {
 
     assert_eq!(
         sandbox.execute("globalThis.__cacheErrorPut").unwrap().value,
-        "true|Cache.put cannot store an error response"
+        "resolved"
     );
     let calls = calls.lock().unwrap();
-    assert_eq!(calls.len(), 1);
+    assert_eq!(calls.len(), 2);
     assert!(calls[0].contains(r#""op":"open""#));
+    assert!(calls[1].contains(r#""op":"put""#));
+    assert!(calls[1].contains(r#""type":"error""#));
 }
 
 /// Cache API shim 在没有宿主 bridge 时应 reject，而不是悬挂 Promise。

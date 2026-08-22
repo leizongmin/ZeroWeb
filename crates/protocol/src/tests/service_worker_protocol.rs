@@ -1060,7 +1060,7 @@ fn service_worker_host_fetch_command_and_event_round_trip() {
             },
         }
         .validate()
-        .is_err()
+        .is_ok()
     );
     assert!(
         ServiceWorkerHostCommandParams {

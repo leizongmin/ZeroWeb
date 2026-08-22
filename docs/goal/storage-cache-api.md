@@ -29,8 +29,8 @@
 > - **JS 页面层**：`js_dom_shim` 已暴露 `CacheStorage` / `Cache` / `caches` 页面 API，
 >   WebView/in-process 页面可走 host callback 进入 zero-storage。
 > - **持久化**：cache_api.rs 为内存结构，无落盘路径。
-> - **WPT 面**：已接入首批上游 `cache-storage` window 面基线（4 case / 35 subtest，
->   35 Pass / 0 Fail），扩大覆盖与剩余语义修复继续以该基线为回归锚点。
+> - **WPT 面**：已接入上游 `cache-storage` window 面基线（6 case / 62 subtest，
+>   62 Pass / 0 Fail），扩大覆盖与剩余语义修复继续以该基线为回归锚点。
 
 ---
 
@@ -108,9 +108,9 @@ form-validation——不允许手写 inline 用例替代或充数）。通过率
   已实现并有单测
 - ✅ **缺口 1 — 页面接线**：shim 已有 `caches` 全局与 Cache API 初始 host bridge
 - ⚠️ **缺口 2 — 无持久化**：cache_api 为内存结构，重启即失
-- ✅ **缺口 3 — WPT 基线**：上游 `cache-storage` 首批 window 面已导入并记录基线；扩大覆盖与提升通过率继续推进
+- ✅ **缺口 3 — WPT 基线**：上游 `cache-storage` window 面已导入 6 case / 62 subtest 绿线；扩大覆盖与提升通过率继续推进
 - 🚧 **缺口 4 — Request/Response 集成**：add/addAll 的 fetch→put 链路已接通，Response
-  可缓存性完整判定与返回对象 brand 仍待补齐
+  可缓存性剩余 filtered response 矩阵与持久化仍待补齐
 
 ---
 

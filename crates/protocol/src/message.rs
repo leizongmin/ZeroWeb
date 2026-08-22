@@ -1222,9 +1222,7 @@ fn validate_service_worker_fetch_response(response: &ServiceWorkerFetchResponseW
 
 fn validate_service_worker_cache_response(response: &ServiceWorkerFetchResponseWire) -> Result<(), &'static str> {
     validate_service_worker_response_fields(response)?;
-    if !(response.status == 0 || (200..=599).contains(&response.status))
-        || response.response_type.eq_ignore_ascii_case("error")
-    {
+    if !(response.status == 0 || (200..=599).contains(&response.status)) {
         return Err("Service Worker cache response is invalid");
     }
     Ok(())

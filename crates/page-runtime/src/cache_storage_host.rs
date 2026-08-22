@@ -933,30 +933,46 @@ mod tests {
     #[test]
     fn cache_storage_handler_maps_cacheability_errors_to_type_error() {
         let handler = cache_storage_handler(Arc::new(Mutex::new(StorageManager::new())));
-        for (response, expected) in [
-            (
-                json!({"status": 206, "statusText": "Partial Content", "headers": "", "body": "partial"}),
-                "206 Partial Content",
-            ),
-            (
-                json!({"status": 0, "type": "error", "headers": "", "body": ""}),
-                "error response",
-            ),
-        ] {
-            let response = handler(
-                "https://example.com",
-                &request(json!({
-                    "op": "put",
-                    "cache_name": "runtime",
-                    "request": {"url": "https://example.com/data", "method": "GET"},
-                    "response": response
-                })),
-            )
-            .unwrap_err();
+        let response = handler(
+            "https://example.com",
+            &request(json!({
+                "op": "put",
+                "cache_name": "runtime",
+                "request": {"url": "https://example.com/data", "method": "GET"},
+                "response": {"status": 206, "statusText": "Partial Content", "headers": "", "body": "partial"}
+            })),
+        )
+        .unwrap_err();
 
-            assert!(response.starts_with("TypeError: "));
-            assert!(response.contains(expected));
-        }
+        assert!(response.starts_with("TypeError: "));
+        assert!(response.contains("206 Partial Content"));
+    }
+
+    #[test]
+    fn cache_storage_handler_preserves_error_response_type() {
+        let handler = cache_storage_handler(Arc::new(Mutex::new(StorageManager::new())));
+        call(
+            &handler,
+            "https://example.com",
+            json!({
+                "op": "put",
+                "cache_name": "runtime",
+                "request": {"url": "https://example.com/error", "method": "GET"},
+                "response": {"status": 0, "type": "error", "headers": "", "body": ""}
+            }),
+        );
+
+        let matched = call(
+            &handler,
+            "https://example.com",
+            json!({
+                "op": "match",
+                "cache_name": "runtime",
+                "request": {"url": "https://example.com/error", "method": "GET"}
+            }),
+        );
+
+        assert!(matched["response"].as_str().unwrap().contains("\u{1f}error\u{1f}"));
     }
 
     #[test]
