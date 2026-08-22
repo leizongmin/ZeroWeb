@@ -1097,6 +1097,7 @@
     _fillHeaders(this.headers, init.headers != null ? init.headers : (isRequestLike ? input.headers : null));
     this.body = init.body != null ? String(init.body) : (isRequestLike && input.body != null ? String(input.body) : null);
     this._bodyUsed = false;
+    this._bodyNull = this.body == null;
     this.cache = init.cache || (isRequestLike ? input.cache : '') || 'default';
     this.mode = init.mode || (isRequestLike ? input.mode : '') || 'cors';
     this.redirect = init.redirect || (isRequestLike ? input.redirect : '') || 'follow';

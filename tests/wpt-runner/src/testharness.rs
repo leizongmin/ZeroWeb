@@ -630,6 +630,10 @@ pub const CACHE_STORAGE_WINDOW_CASES: &[(&str, &[&str])] = &[
         &["resources/test-helpers.js", "/common/get-host-info.sub.js"],
     ),
     (
+        "service-workers/cache-storage/cache-add.https.any.js",
+        &["resources/test-helpers.js", "/common/get-host-info.sub.js"],
+    ),
+    (
         "service-workers/cache-storage/cache-storage-keys.https.any.js",
         &["resources/test-helpers.js"],
     ),
@@ -3137,20 +3141,21 @@ async_test(function(test) {
     }
 
     #[test]
-    fn cache_storage_window_manifest_has_eight_unique_any_cases() {
+    fn cache_storage_window_manifest_has_nine_unique_any_cases() {
         let unique = CACHE_STORAGE_WINDOW_CASES
             .iter()
             .map(|(path, _)| *path)
             .collect::<std::collections::BTreeSet<_>>();
-        assert_eq!(CACHE_STORAGE_WINDOW_CASES.len(), 8);
-        assert_eq!(unique.len(), 8);
+        assert_eq!(CACHE_STORAGE_WINDOW_CASES.len(), 9);
+        assert_eq!(unique.len(), 9);
         assert!(CACHE_STORAGE_WINDOW_CASES.iter().all(|(path, support)| {
             if !path.starts_with("service-workers/cache-storage/") || !path.ends_with(".https.any.js") {
                 return false;
             }
             match *path {
                 "service-workers/cache-storage/cache-match.https.any.js"
-                | "service-workers/cache-storage/cache-put.https.any.js" => {
+                | "service-workers/cache-storage/cache-put.https.any.js"
+                | "service-workers/cache-storage/cache-add.https.any.js" => {
                     *support == ["resources/test-helpers.js", "/common/get-host-info.sub.js"]
                 }
                 _ => *support == ["resources/test-helpers.js"],

@@ -1,8 +1,8 @@
 {
-  "cases": 8,
-  "subtests": 114,
+  "cases": 9,
+  "subtests": 136,
   "status": {
-    "Pass": 114
+    "Pass": 136
   },
   "deterministic": true,
   "results": [
@@ -326,6 +326,121 @@
         },
         {
           "name": "Cache.put called with simple Request and form data Response",
+          "status": "Pass",
+          "message": null
+        }
+      ]
+    ],
+    [
+      "service-workers/cache-storage/cache-add.https.any.js",
+      [
+        {
+          "name": "Cache.add called with no arguments",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "Cache.add called with relative URL specified as a string",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "Cache.add called with non-HTTP/HTTPS URL",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "Cache.add called with Request object",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "Cache.add called with POST request",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "Cache.add called twice with the same Request object",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "Cache.add with request with null body (not consumed)",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "Cache.add with 206 response",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "Cache.addAll with 206 response",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "Cache.addAll with opaque-filtered 206 response",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "Cache.add with request that results in a status of 404",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "Cache.add with request that results in a status of 500",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "Cache.addAll with no arguments",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "Cache.addAll with a mix of valid and undefined arguments",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "Cache.addAll with an empty array",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "Cache.addAll with string URL arguments",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "Cache.addAll with Request arguments",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "Cache.addAll with a mix of succeeding and failing requests",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "Cache.addAll called with the same Request object specified twice",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "Cache.addAll should succeed when entries differ by vary header",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "Cache.addAll should reject when entries are duplicate by vary header",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "Cache.addAll should reject when one entry has a vary header matching another entry",
           "status": "Pass",
           "message": null
         }

@@ -2573,3 +2573,33 @@ fn test_response_body_used_redirect_and_blob_formdata_cache_put_support() {
         "null|false|true|abc|blob-body|true|301|https://example.com/next"
     );
 }
+
+#[test]
+fn test_request_null_body_text_does_not_mark_body_used() {
+    // https://fetch.spec.whatwg.org/#body-mixin
+    // WPT Cache.add reads a body-less GET Request; null body consumption must
+    // not flip bodyUsed, matching Response's null-body behavior.
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let mut sandbox = V8Sandbox::with_config(zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    })
+    .unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+
+    sandbox
+        .execute(
+            "globalThis.__requestNullBody = 'pending';\
+             var request = new Request('https://example.com/simple.txt');\
+             request.text().then(function (body) {\
+               globalThis.__requestNullBody = [body, String(request.bodyUsed)].join('|');\
+             });",
+        )
+        .unwrap();
+    sandbox.execute("globalThis.__requestNullBodyPump = 1;").unwrap();
+
+    assert_eq!(
+        sandbox.execute("globalThis.__requestNullBody").unwrap().value,
+        "|false"
+    );
+}

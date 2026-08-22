@@ -139,6 +139,10 @@
     return String(request.method || 'GET').toUpperCase() + ' ' + url;
   }
 
+  function _zwCacheRequestHeaderKey(request) {
+    return _zwCacheRequestCacheKey(request) + ' ' + _zwCacheHeadersToWire(request && request.headers);
+  }
+
   function _zwCacheRequestIsHttp(request) {
     var url = String(request.url || '');
     return /^https?:/i.test(url);
@@ -151,6 +155,44 @@
     var fields = String(vary).split(',');
     for (var i = 0; i < fields.length; i++) {
       if (fields[i].trim().toLowerCase() === '*') return true;
+    }
+    return false;
+  }
+
+  function _zwCacheRequestHeader(request, name) {
+    if (!request || !request.headers || typeof request.headers.get !== 'function') return null;
+    var value = request.headers.get(name);
+    return value == null ? null : String(value);
+  }
+
+  function _zwCacheRequestsMatchByResponseVary(cachedRequest, queryRequest, response) {
+    if (_zwCacheRequestCacheKey(cachedRequest) !== _zwCacheRequestCacheKey(queryRequest)) return false;
+    if (!response || String(response.type || 'default') === 'opaque') return true;
+    var vary = response.headers && typeof response.headers.get === 'function' ? response.headers.get('vary') : null;
+    if (vary == null) return true;
+    var fields = String(vary).split(',');
+    var hasField = false;
+    for (var i = 0; i < fields.length; i++) {
+      var field = fields[i].trim();
+      if (!field) continue;
+      if (field === '*') return false;
+      hasField = true;
+      if (_zwCacheRequestHeader(cachedRequest, field) !== _zwCacheRequestHeader(queryRequest, field)) {
+        return false;
+      }
+    }
+    return hasField || String(vary).trim() === '';
+  }
+
+  function _zwCacheAddAllHasDuplicate(entries) {
+    // https://w3c.github.io/ServiceWorker/#batch-cache-operations
+    for (var i = 0; i < entries.length; i++) {
+      for (var j = 0; j < i; j++) {
+        if (_zwCacheRequestsMatchByResponseVary(entries[j].request, entries[i].request, entries[i].response) ||
+            _zwCacheRequestsMatchByResponseVary(entries[i].request, entries[j].request, entries[j].response)) {
+          return true;
+        }
+      }
     }
     return false;
   }
@@ -369,6 +411,7 @@
       if (arguments.length < 1) throw new TypeError('Cache.addAll requires requests');
       var list = Array.prototype.slice.call(requests);
       var cacheRequests = list.map(function (request) {
+        if (request === undefined) throw new TypeError('Cache.addAll request is required');
         var cacheRequest = request instanceof Request ? request : new Request(request);
         if (cacheRequest.method !== 'GET') {
           throw new TypeError('Cache.addAll only supports GET requests');
@@ -380,7 +423,7 @@
       });
       var seen = {};
       for (var i = 0; i < cacheRequests.length; i++) {
-        var key = _zwCacheRequestCacheKey(cacheRequests[i]);
+        var key = _zwCacheRequestHeaderKey(cacheRequests[i]);
         if (seen[key]) {
           throw new (globalThis.DOMException || Error)('Cache.addAll duplicate requests', 'InvalidStateError');
         }
@@ -395,6 +438,9 @@
           return { request: cacheRequest, response: response };
         });
       })).then(function (entries) {
+        if (_zwCacheAddAllHasDuplicate(entries)) {
+          throw new (globalThis.DOMException || Error)('Cache.addAll duplicate requests', 'InvalidStateError');
+        }
         var chain = Promise.resolve();
         entries.forEach(function (entry) {
           chain = chain.then(function () { return cache.put(entry.request, entry.response); });

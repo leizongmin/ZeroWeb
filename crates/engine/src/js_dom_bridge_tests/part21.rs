@@ -784,6 +784,99 @@ fn test_cache_api_page_shim_add_all_rejects_fragment_duplicates() {
     assert!(calls[0].contains(r#""op":"open""#));
 }
 
+/// Cache.addAll duplicate checks must account for the fetched response Vary
+/// headers, and invalid request list entries must reject before fetch.
+#[test]
+fn test_cache_api_page_shim_add_all_validates_entries_and_vary_duplicates() {
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let mut sandbox = V8Sandbox::with_config(zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    })
+    .unwrap();
+    let fetches: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
+    let fetches_for_callback = fetches.clone();
+    sandbox.register_callback(
+        "__zw_fetch",
+        Box::new(move |args| {
+            let url = args.get(2).cloned().unwrap_or_default();
+            let headers = args.get(3).cloned().unwrap_or_default();
+            fetches_for_callback
+                .lock()
+                .unwrap()
+                .push(format!("{url}|{headers}"));
+            let vary = if url.contains("size-dup.txt") {
+                "x-size"
+            } else {
+                "x-shape"
+            };
+            format!("__zwfr:200\x1fOK\x1fvary\x1e{vary}\x1fbody")
+        }),
+    );
+
+    let calls: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
+    let calls_for_callback = calls.clone();
+    sandbox.register_callback(
+        "__zw_cache_storage",
+        Box::new(move |args| {
+            let request = args.first().cloned().unwrap_or_default();
+            calls_for_callback.lock().unwrap().push(request.clone());
+            if request.contains(r#""op":"open""#) {
+                return r#"__zw_cache_ok:{"name":"assets"}"#.to_string();
+            }
+            if request.contains(r#""op":"put""#) {
+                return r#"__zw_cache_ok:{"ok":true}"#.to_string();
+            }
+            "__zw_cache_error:unexpected request".to_string()
+        }),
+    );
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new("<html><body></body></html>".to_string()));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("https://example.com/page.html".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+
+    sandbox
+        .execute(
+            "globalThis.__cacheAddAllVary = 'pending';\
+             caches.open('assets').then(function (cache) {\
+               return Promise.all([\
+                 cache.addAll(['https://example.com/a.txt', undefined]).then(function () { return 'undefined-resolved'; }, function (e) { return e instanceof TypeError ? 'undefined-rejected' : 'undefined-other'; }),\
+                 cache.addAll([\
+                   new Request('https://example.com/vary.txt', {headers: {'x-shape': 'circle'}}),\
+                   new Request('https://example.com/vary.txt', {headers: {'x-shape': 'square'}})\
+                 ]).then(function () { return 'vary-distinct-resolved'; }, function (e) { return 'vary-distinct-rejected:' + e.name; }),\
+                 cache.addAll([\
+                   new Request('https://example.com/size-dup.txt', {headers: {'x-shape': 'circle', 'x-size': 'big'}}),\
+                   new Request('https://example.com/size-dup.txt', {headers: {'x-shape': 'square', 'x-size': 'big'}})\
+                 ]).then(function () { return 'vary-dup-resolved'; }, function (e) { return 'vary-dup-rejected:' + e.name; })\
+               ]);\
+             }).then(function (values) {\
+               globalThis.__cacheAddAllVary = values.join('|');\
+             }, function (error) {\
+               globalThis.__cacheAddAllVary = 'outer-error:' + String(error && error.message ? error.message : error);\
+             });",
+        )
+        .unwrap();
+    for i in 0..8 {
+        sandbox.execute(&format!("globalThis.__cacheAddAllVaryPump = {i};")).unwrap();
+    }
+
+    assert_eq!(
+        sandbox.execute("globalThis.__cacheAddAllVary").unwrap().value,
+        "undefined-rejected|vary-distinct-resolved|vary-dup-rejected:InvalidStateError"
+    );
+    let fetches = fetches.lock().unwrap();
+    assert_eq!(fetches.len(), 4);
+    assert!(fetches.iter().any(|request| request.contains("x-shape\u{1e}circle")));
+    assert!(fetches.iter().any(|request| request.contains("x-shape\u{1e}square")));
+    let calls = calls.lock().unwrap();
+    assert_eq!(calls.iter().filter(|request| request.contains(r#""op":"put""#)).count(), 2);
+}
+
 /// Cache.put should pass an error filtered response through to CacheStorage.
 #[test]
 fn test_cache_api_page_shim_puts_error_response() {
