@@ -296,7 +296,13 @@ fn parse_single_media_query(input: &str) -> Option<MediaQuery> {
         let end = find_matching_paren(remaining)?;
         let inner = remaining[1..end].trim();
         // 组合范围可能产生两个条件，所以用 extend
-        conditions.extend(parse_conditions_from_inner(inner));
+        let parsed_conditions = parse_conditions_from_inner(inner);
+        // https://drafts.csswg.org/mediaqueries-4/#error-handling
+        // 带值/比较的 media feature 解析失败时，该 query 必须不匹配，不能退化为空条件 all。
+        if parsed_conditions.is_empty() && (inner.contains(':') || contains_range_op(inner)) {
+            return None;
+        }
+        conditions.extend(parsed_conditions);
 
         remaining = remaining[end + 1..].trim_start();
 
@@ -582,7 +588,7 @@ fn parse_leading_value(s: &str) -> Option<(f64, &str)> {
     let s = s.trim();
     let end = s.as_bytes().iter().position(|&b| !b.is_ascii_digit() && b != b'.')?;
     let num_str = &s[..end];
-    let num = num_str.parse::<f64>().ok()?;
+    let num = parse_finite_css_number(num_str)?;
     let rest = s[end..].trim_start();
     let rest = rest.strip_prefix("px").unwrap_or(rest).trim_start();
     Some((num, rest))
@@ -654,11 +660,21 @@ fn find_range_op_pos(s: &str) -> Option<usize> {
 
 /// 从 CSS 值字符串解析像素数值。
 ///
-/// 支持 `"600px"`、`"600"`、`"50.5px"` 等格式。
+/// 支持 `"600px"`、`"1in"`、`"50.5px"` 等格式；裸数字按历史行为解析为 px。
 fn parse_px_value(s: &str) -> Option<f64> {
     let s = s.trim();
-    let s = s.strip_suffix("px").unwrap_or(s);
-    s.parse::<f64>().ok()
+    let lower = s.to_ascii_lowercase();
+    if ["px", "in", "pt", "pc", "cm", "mm", "q"]
+        .iter()
+        .any(|unit| lower.ends_with(unit))
+    {
+        return match crate::values::parse_length(s)? {
+            crate::values::LengthValue::Px(px) => px.is_finite().then_some(px),
+            _ => None,
+        };
+    }
+
+    parse_finite_css_number(s)
 }
 
 /// 从 CSS 值字符串解析分辨率（dpi）数值。
@@ -685,7 +701,16 @@ fn parse_dpi_value(s: &str) -> Option<f64> {
     } else {
         (s.trim(), 1.0)
     };
-    num_str.trim().parse::<f64>().ok().map(|v| v * factor)
+    let dpi = parse_finite_css_number(num_str.trim())? * factor;
+    dpi.is_finite().then_some(dpi)
+}
+
+/// 解析 CSS 数字，拒绝 Rust 浮点语法额外接受的 NaN/Inf。
+///
+/// https://drafts.csswg.org/css-values-4/#numbers
+fn parse_finite_css_number(s: &str) -> Option<f64> {
+    let value = s.parse::<f64>().ok()?;
+    value.is_finite().then_some(value)
 }
 
 /// 找到第一个 `(` 对应的 `)` 的位置。
@@ -1089,8 +1114,17 @@ mod tests {
     fn test_parse_px_value() {
         assert_eq!(parse_px_value("600px"), Some(600.0));
         assert_eq!(parse_px_value("600"), Some(600.0));
+        assert_eq!(parse_px_value("1in"), Some(96.0));
         assert_eq!(parse_px_value("50.5px"), Some(50.5));
         assert_eq!(parse_px_value("invalid"), None);
+    }
+
+    #[test]
+    fn r3688_media_query_rejects_non_finite_feature_values() {
+        assert!(parse_media_query("(min-width: 1e999px)").is_none());
+        assert!(parse_media_query("(width < 1e999px)").is_none());
+        assert!(parse_media_query("(height: NaNpx)").is_none());
+        assert!(parse_media_query("(resolution: 1e999dppx)").is_none());
     }
 
     #[test]
