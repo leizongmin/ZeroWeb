@@ -31,6 +31,15 @@ service-workers/cache-storage/worker/cache-storage-match.https.html	testharness	
 service-workers/cache-storage/worker/cache-match.https.html	testharness	case	1	350	no	479a29d1eec5f49416a075aae9306bcd5b5cc3e6	24197a11e8c5bd29a5cb7bdf18135a82be8a8546
 service-workers/cache-storage/worker/cache-put.https.html	testharness	case	1	344	no	20aeb2351efb70ceedbd7c5c46dc7d500def71f8	24197a11e8c5bd29a5cb7bdf18135a82be8a8546
 service-workers/cache-storage/worker/cache-add.https.html	testharness	case	1	361	no	2658e1e50f9ebfe8ac5971a16af9e26b02d140a8	24197a11e8c5bd29a5cb7bdf18135a82be8a8546
+service-workers/cache-storage/window/cache-storage.https.html	testharness	case	1	388	no	b2f5c385983a7b4a0fe56f2a2756e3a5fb345e24	24197a11e8c5bd29a5cb7bdf18135a82be8a8546
+service-workers/cache-storage/window/cache-storage-keys.https.html	testharness	case	1	398	no	669ab9105e24219ce16f50b59555e85c9ce36a18	24197a11e8c5bd29a5cb7bdf18135a82be8a8546
+service-workers/cache-storage/window/cache-delete.https.html	testharness	case	1	386	no	077e6a3fdc1b2a02dae333007ae9603e62217d43	24197a11e8c5bd29a5cb7bdf18135a82be8a8546
+service-workers/cache-storage/window/cache-keys.https.html	testharness	case	1	380	no	8398c33e146c5983c10922457b7f8591b49f5ed8	24197a11e8c5bd29a5cb7bdf18135a82be8a8546
+service-workers/cache-storage/window/cache-matchAll.https.html	testharness	case	1	377	no	1288b2c034335759364ad6ddc8f44d22ab2eeeae	24197a11e8c5bd29a5cb7bdf18135a82be8a8546
+service-workers/cache-storage/window/cache-storage-match.https.html	testharness	case	1	406	no	f16c45d001e7f2eac0ef6cf2a17c85338b47b179	24197a11e8c5bd29a5cb7bdf18135a82be8a8546
+service-workers/cache-storage/window/cache-match.https.html	testharness	case	1	436	no	f28efad0b76b341171ad230e18d243e229153687	24197a11e8c5bd29a5cb7bdf18135a82be8a8546
+service-workers/cache-storage/window/cache-put.https.html	testharness	case	1	939	no	9641c3470518636f1d2afbbc692f721f20790739	24197a11e8c5bd29a5cb7bdf18135a82be8a8546
+service-workers/cache-storage/window/cache-add.https.html	testharness	case	1	447	no	b5a64c6c369b5028b4aba1396738dc892bc62d3b	24197a11e8c5bd29a5cb7bdf18135a82be8a8546
 service-workers/cache-storage/window/cache-abort.https.html	testharness	case	1	415	no	405d34d665c27cee93a03f7013f087cfc0a61af7	24197a11e8c5bd29a5cb7bdf18135a82be8a8546
 service-workers/cache-storage/worker/cache-abort.https.html	testharness	case	1	357	no	68bbade07d3862c883bf0f95b02a5cb6181d8e79	24197a11e8c5bd29a5cb7bdf18135a82be8a8546
 service-workers/cache-storage/script-tests/cache-storage.js	support	worker-script	1	8270	no	0de2dbb05e96dd6756f94af769ab2417f3902a95	24197a11e8c5bd29a5cb7bdf18135a82be8a8546

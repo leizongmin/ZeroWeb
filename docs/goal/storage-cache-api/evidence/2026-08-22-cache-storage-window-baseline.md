@@ -1,16 +1,17 @@
 # CacheStorage Window WPT Baseline
 
 - Date: 2026-08-22
-- WPT revision: `04067ce9c7c2165e71ad7d0dde10a4c5cb394a83`
-- Cases: 23
-- Subtests: 293
+- Default WPT revision: `04067ce9c7c2165e71ad7d0dde10a4c5cb394a83`
+- Asset revisions: see `2026-08-22-cache-storage-window-assets.tsv`
+- Cases: 32
+- Subtests: 429
 - Deterministic double run: true
 
 ## Status Counts
 
 | Status | Count |
 |---|---:|
-| Pass | 293 |
+| Pass | 429 |
 
 ## Notes
 

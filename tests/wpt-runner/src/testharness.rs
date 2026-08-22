@@ -664,6 +664,54 @@ pub const CACHE_STORAGE_WINDOW_CASES: &[(&str, &[&str])] = &[
     ("service-workers/cache-storage/common.https.window.js", &[]),
     ("service-workers/cache-storage/cache-api-nested-worker.https.html", &[]),
     (
+        "service-workers/cache-storage/window/cache-storage.https.html",
+        &["../resources/test-helpers.js", "../script-tests/cache-storage.js"],
+    ),
+    (
+        "service-workers/cache-storage/window/cache-storage-keys.https.html",
+        &["../resources/test-helpers.js", "../script-tests/cache-storage-keys.js"],
+    ),
+    (
+        "service-workers/cache-storage/window/cache-delete.https.html",
+        &["../resources/test-helpers.js", "../script-tests/cache-delete.js"],
+    ),
+    (
+        "service-workers/cache-storage/window/cache-keys.https.html",
+        &["../resources/test-helpers.js", "../script-tests/cache-keys.js"],
+    ),
+    (
+        "service-workers/cache-storage/window/cache-matchAll.https.html",
+        &["../resources/test-helpers.js", "../script-tests/cache-matchAll.js"],
+    ),
+    (
+        "service-workers/cache-storage/window/cache-storage-match.https.html",
+        &["../resources/test-helpers.js", "../script-tests/cache-storage-match.js"],
+    ),
+    (
+        "service-workers/cache-storage/window/cache-match.https.html",
+        &[
+            "/common/get-host-info.sub.js",
+            "../resources/test-helpers.js",
+            "../script-tests/cache-match.js",
+        ],
+    ),
+    (
+        "service-workers/cache-storage/window/cache-put.https.html",
+        &[
+            "/common/get-host-info.sub.js",
+            "../resources/test-helpers.js",
+            "../script-tests/cache-put.js",
+        ],
+    ),
+    (
+        "service-workers/cache-storage/window/cache-add.https.html",
+        &[
+            "/common/get-host-info.sub.js",
+            "../resources/test-helpers.js",
+            "../script-tests/cache-add.js",
+        ],
+    ),
+    (
         "service-workers/cache-storage/window/cache-abort.https.html",
         &[
             "../resources/test-helpers.js",
@@ -3299,8 +3347,8 @@ async_test(function(test) {
             .iter()
             .map(|(path, _)| *path)
             .collect::<std::collections::BTreeSet<_>>();
-        assert_eq!(CACHE_STORAGE_WINDOW_CASES.len(), 23);
-        assert_eq!(unique.len(), 23);
+        assert_eq!(CACHE_STORAGE_WINDOW_CASES.len(), 32);
+        assert_eq!(unique.len(), 32);
         assert!(CACHE_STORAGE_WINDOW_CASES.iter().all(|(path, support)| {
             if !path.starts_with("service-workers/cache-storage/")
                 || !(path.ends_with(".https.any.js")
@@ -3332,6 +3380,39 @@ async_test(function(test) {
                             "/common/utils.js",
                             "../script-tests/cache-abort.js",
                         ]
+                }
+                "service-workers/cache-storage/window/cache-match.https.html" => {
+                    *support
+                        == [
+                            "/common/get-host-info.sub.js",
+                            "../resources/test-helpers.js",
+                            "../script-tests/cache-match.js",
+                        ]
+                }
+                "service-workers/cache-storage/window/cache-put.https.html" => {
+                    *support
+                        == [
+                            "/common/get-host-info.sub.js",
+                            "../resources/test-helpers.js",
+                            "../script-tests/cache-put.js",
+                        ]
+                }
+                "service-workers/cache-storage/window/cache-add.https.html" => {
+                    *support
+                        == [
+                            "/common/get-host-info.sub.js",
+                            "../resources/test-helpers.js",
+                            "../script-tests/cache-add.js",
+                        ]
+                }
+                path if path.starts_with("service-workers/cache-storage/window/") => {
+                    let script = path
+                        .strip_prefix("service-workers/cache-storage/window/")
+                        .unwrap()
+                        .replace(".https.html", ".js");
+                    support.len() == 2
+                        && support[0] == "../resources/test-helpers.js"
+                        && support[1] == format!("../script-tests/{script}")
                 }
                 path if path.starts_with("service-workers/cache-storage/worker/") => support.is_empty(),
                 _ => *support == ["resources/test-helpers.js"],
