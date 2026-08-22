@@ -414,29 +414,34 @@ fn split_color_components(inner: &str) -> Option<(Vec<&str>, Option<f64>)> {
         comps.extend(main.split_whitespace());
     }
     let alpha = match slash_alpha {
-        Some(ap) => Some(parse_alpha_value(ap)?),
+        Some(ap) => Some(parse_finite_alpha_value(ap)?),
         None => Some(1.0),
     };
     Some((comps, alpha))
 }
 
 /// 解析带可选百分比的分量：`<number>` 或 `<number>%`（按 `percent_scale` 缩放）；`none`→0。
-/// 合法性同 [`parse_color_component`]（NaN 拒绝、溢出钳制由调用方 clamp、尾点拒绝）。
+/// 合法性同 [`parse_color_component`]（NaN/Infinity 拒绝、尾点拒绝）。
 fn parse_scaled_component(s: &str, percent_scale: f64) -> Option<f64> {
     let s = s.trim();
     if s.eq_ignore_ascii_case("none") {
         return Some(0.0);
     }
-    if let Some(num_str) = s.strip_suffix('%') {
-        let v = parse_color_number_value(num_str)?;
-        return Some(v * percent_scale / 100.0);
-    }
-    parse_color_number_value(s)
+    // https://drafts.csswg.org/css-color-4/#specifying-lab-lch
+    // https://drafts.csswg.org/css-color-4/#specifying-oklab-oklch
+    // CSS numeric tokens do not admit NaN/Infinity; reject non-finite values before conversion.
+    let v = if let Some(num_str) = s.strip_suffix('%') {
+        parse_color_number_value(num_str)? * percent_scale / 100.0
+    } else {
+        parse_color_number_value(s)?
+    };
+    v.is_finite().then_some(v)
 }
 
 /// alpha f64 → u8。
-fn alpha_to_u8(a: Option<f64>) -> u8 {
-    ((a.unwrap_or(1.0)) * 255.0).round().clamp(0.0, 255.0) as u8
+fn alpha_to_u8(a: Option<f64>) -> Option<u8> {
+    let a = a.unwrap_or(1.0);
+    a.is_finite().then_some((a * 255.0).round().clamp(0.0, 255.0) as u8)
 }
 
 /// `lab(L a b [/ alpha])`：L∈[0,100]（% of 100），a/b（% of 125 或数字）。
@@ -450,7 +455,7 @@ fn parse_lab(value: &str) -> Option<ColorValue> {
     let a = parse_scaled_component(comps[1], 125.0)?;
     let b = parse_scaled_component(comps[2], 125.0)?;
     let (r, g, b) = lab_to_srgb_u8(l, a, b);
-    Some(ColorValue::Rgba(r, g, b, alpha_to_u8(alpha)))
+    Some(ColorValue::Rgba(r, g, b, alpha_to_u8(alpha)?))
 }
 
 /// `lch(L C h [/ alpha])`：L∈[0,100]（% of 100），C（% of 150 或数字），h 为角度。
@@ -462,9 +467,9 @@ fn parse_lch(value: &str) -> Option<ColorValue> {
     }
     let l = parse_scaled_component(comps[0], 100.0)?.clamp(0.0, 100.0);
     let c = parse_scaled_component(comps[1], 150.0)?;
-    let h_deg = parse_hue_angle(comps[2])?;
+    let h_deg = parse_finite_hue_angle(comps[2])?;
     let (r, g, b) = lch_to_srgb_u8(l, c, h_deg);
-    Some(ColorValue::Rgba(r, g, b, alpha_to_u8(alpha)))
+    Some(ColorValue::Rgba(r, g, b, alpha_to_u8(alpha)?))
 }
 
 /// `oklab(L a b [/ alpha])`：L∈[0,1]（% of 1），a/b（% of 0.4 或数字）。
@@ -478,7 +483,7 @@ fn parse_oklab(value: &str) -> Option<ColorValue> {
     let a = parse_scaled_component(comps[1], 0.4)?;
     let b = parse_scaled_component(comps[2], 0.4)?;
     let (r, g, b) = oklab_to_srgb_u8(l, a, b);
-    Some(ColorValue::Rgba(r, g, b, alpha_to_u8(alpha)))
+    Some(ColorValue::Rgba(r, g, b, alpha_to_u8(alpha)?))
 }
 
 /// `oklch(L C h [/ alpha])`：L∈[0,1]（% of 1），C（% of 0.4 或数字），h 为角度。
@@ -490,9 +495,9 @@ fn parse_oklch(value: &str) -> Option<ColorValue> {
     }
     let l = parse_scaled_component(comps[0], 1.0)?.clamp(0.0, 1.0);
     let c = parse_scaled_component(comps[1], 0.4)?;
-    let h_deg = parse_hue_angle(comps[2])?;
+    let h_deg = parse_finite_hue_angle(comps[2])?;
     let (r, g, b) = oklch_to_srgb_u8(l, c, h_deg);
-    Some(ColorValue::Rgba(r, g, b, alpha_to_u8(alpha)))
+    Some(ColorValue::Rgba(r, g, b, alpha_to_u8(alpha)?))
 }
 
 /// 解析 color() 分量数字（0-1 浮点，可负/越界）；`none` → 0。
@@ -1073,6 +1078,11 @@ fn parse_hue_angle(s: &str) -> Option<f64> {
     Some(v * scale)
 }
 
+fn parse_finite_hue_angle(s: &str) -> Option<f64> {
+    let angle = parse_hue_angle(s)?;
+    angle.is_finite().then_some(angle)
+}
+
 /// 解析百分比分量（S/L）：去掉 `%` 返回数值（0-100+）。`none` → 0。合法性同
 /// [`parse_color_component`]（NaN/尾点拒绝——2d.fillStyle.parse.invalid.hsl-5 的 '100.%'）。
 fn parse_percent_component(s: &str) -> Option<f64> {
@@ -1096,6 +1106,19 @@ fn parse_alpha_value(s: &str) -> Option<f64> {
         let v = parse_color_number_value(s)?;
         Some(v.clamp(0.0, 1.0))
     }
+}
+
+fn parse_finite_alpha_value(s: &str) -> Option<f64> {
+    let s = s.trim();
+    if s.eq_ignore_ascii_case("none") {
+        return Some(0.0);
+    }
+    let alpha = if let Some(pct) = s.strip_suffix('%') {
+        parse_color_number_value(pct)? / 100.0
+    } else {
+        parse_color_number_value(s)?
+    };
+    alpha.is_finite().then_some(alpha.clamp(0.0, 1.0))
 }
 
 /// 将 HWB 颜色转换为 RGBA。

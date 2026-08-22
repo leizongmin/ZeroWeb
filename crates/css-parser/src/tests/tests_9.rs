@@ -199,6 +199,19 @@ fn r3689_hwb_rejects_non_finite_components() {
 }
 
 #[test]
+fn r3690_perceptual_colors_reject_non_finite_components() {
+    assert!(parse_color("lab(1e999 0 0)").is_none());
+    assert!(parse_color("lab(50% 1e999 0)").is_none());
+    assert!(parse_color("lab(50% 0 0 / 1e999)").is_none());
+    assert!(parse_color("lch(50% 0 1e999deg)").is_none());
+    assert!(parse_color("oklab(1e999 0 0)").is_none());
+    assert!(parse_color("oklch(50% 0 1e999turn)").is_none());
+    assert!(parse_color("oklch(50% 0 180deg / 1e999)").is_none());
+    assert!(parse_color("lab(50% 0 0)").is_some());
+    assert!(parse_color("oklch(50% 0 0.5turn / 50%)").is_some());
+}
+
+#[test]
 fn test_hwb_to_rgba_all_sectors() {
     // Sector 0: h=0..60
     let (r, g, b, _a) = hwb_to_rgba(0.0, 0.0, 0.0, 1.0);
