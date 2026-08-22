@@ -231,12 +231,14 @@ fn parse_font_size_with_current(s: &str, current_size: f32) -> Option<f32> {
     if !n.is_finite() || n <= 0.0 {
         return None;
     }
-    Some(n * mul)
+    let px = n * mul;
+    (px.is_finite() && px > 0.0).then_some(px)
 }
 
 /// R34xx：解析 CSS 长度到 px（letterSpacing/wordSpacing——spec CanvasTextDrawingStyles）。
+/// https://html.spec.whatwg.org/multipage/canvas.html#text-styles
 /// 支持 px/em/rem/ex/pt/pc/cm/mm/in（em/rem/ex 按字号近似；% 按字号百分比；无单位 → px）。
-/// 非有限/负值 → None（调用方保持旧值，spec 非法忽略）。
+/// 非有限 → None（调用方保持旧值，spec 非法忽略）。
 pub fn parse_length_px(s: &str, font_size: f32) -> Option<f32> {
     let lower = s.trim().to_ascii_lowercase();
     let (num_str, mul) = lower
@@ -259,7 +261,8 @@ pub fn parse_length_px(s: &str, font_size: f32) -> Option<f32> {
     if !n.is_finite() {
         return None;
     }
-    Some(n * mul)
+    let px = n * mul;
+    px.is_finite().then_some(px)
 }
 
 /// 从 CSS font 串中提取第 `token_index` 个空白分隔 token 起的子串作为 family（保留逗号/引号）。
@@ -1474,6 +1477,14 @@ mod tests {
         assert!((FontDescriptor::parse_css("12pt serif").unwrap().size - 16.0).abs() < 0.01); // 12pt * 96/72 = 16
         assert!((FontDescriptor::parse_css("2em serif").unwrap().size - 20.0).abs() < f32::EPSILON); // 2 * 默认 10px
         assert!((FontDescriptor::parse_css("1rem serif").unwrap().size - 16.0).abs() < f32::EPSILON);
+    }
+
+    #[test]
+    fn test_canvas_text_lengths_reject_unit_conversion_overflow() {
+        assert!(FontDescriptor::parse_css("3e38pt serif").is_none());
+        assert_eq!(parse_length_px("12pt", 10.0), Some(16.0));
+        assert!(parse_length_px("3e38in", 10.0).is_none());
+        assert!(parse_length_px("3e38rem", 16.0).is_none());
     }
 
     #[test]
