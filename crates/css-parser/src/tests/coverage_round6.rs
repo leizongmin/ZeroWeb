@@ -706,10 +706,10 @@ fn test_gradient_conic_only_config() {
 
 // 行 977: parse_color_stops — 空 arg continue
 #[test]
-fn test_gradient_linear_with_extra_commas() {
-    // 多余逗号产生空 arg
-    let result = parse_gradient("linear-gradient(red,,blue)");
-    assert!(result.is_some());
+fn test_gradient_rejects_empty_color_stop() {
+    assert!(parse_gradient("linear-gradient(red,,blue)").is_none());
+    assert!(parse_gradient("linear-gradient(red, blue,)").is_none());
+    assert!(parse_gradient("linear-gradient(, red, blue)").is_none());
 }
 
 // 行 1033-1037: parse_grid_area 单值带斜杠（"/" split 后只有1部分）

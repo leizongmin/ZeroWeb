@@ -1312,17 +1312,31 @@ fn split_gradient_args(inner: &str) -> Option<Vec<&str>> {
     for (i, &b) in bytes.iter().enumerate() {
         match b {
             b'(' => depth += 1,
-            b')' => depth -= 1,
+            b')' => {
+                depth -= 1;
+                if depth < 0 {
+                    return None;
+                }
+            }
             b',' if depth == 0 => {
+                // https://drafts.csswg.org/css-images-4/#color-stop-syntax
+                // Empty color stops make the comma-separated gradient stop list invalid.
+                if inner[start..i].trim().is_empty() {
+                    return None;
+                }
                 args.push(&inner[start..i]);
                 start = i + 1;
             }
             _ => {}
         }
     }
-    if start < inner.len() {
-        args.push(&inner[start..]);
+    if depth != 0 {
+        return None;
     }
+    if inner[start..].trim().is_empty() {
+        return None;
+    }
+    args.push(&inner[start..]);
 
     Some(args)
 }

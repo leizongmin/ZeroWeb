@@ -1747,6 +1747,24 @@ fn test_edge_background_image_gradient() {
     ));
 }
 
+#[test]
+fn test_background_image_gradient_rejects_empty_color_stop() {
+    let mut style = ComputedStyle::default();
+    assert!(apply_property_value(
+        &mut style,
+        "background-image",
+        "linear-gradient(red, blue)"
+    ));
+    let old = style.background_image.clone();
+
+    assert!(!apply_property_value(
+        &mut style,
+        "background-image",
+        "linear-gradient(red,,blue)"
+    ));
+    assert_eq!(style.background_image, old);
+}
+
 /// 测试 background-image radial-gradient 解析。
 #[test]
 fn test_edge_background_image_radial_gradient() {
