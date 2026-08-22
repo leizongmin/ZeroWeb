@@ -542,7 +542,38 @@
       // element 消费面对产物形态的敏感度高于 doc 上下文。
       if (typeof __zw_parse_html_query !== 'function') return [];
       try {
-        var arr = JSON.parse(__zw_parse_html_query(_zwMOuterHtml(n), String(sel), '1', '', '1')); // R161: filter_synthetic
+        // R173（js-dom M4）：`:lang(` 形态的序列化源拼 **owner doc 的 html 属性
+        // 包装层**——元素子树序列化丢 `<html lang="en">` 祖先，重解析后 :lang
+        // 继承链断（WPT In-document `#pseudo-lang-div1:lang(en)`——div1 自身无
+        // lang，继承 html 的 en）。filter_synthetic=1 剔合成 html 的**自身命中**
+        // 而保留其 lang 继承（与 R161 语义正交）。lang 取 owner 的
+        // `_r159HtmlAttrs` 槽（R159 提取）或其 documentElement 的 lang 属性。
+        var s173 = String(sel);
+        var src173 = _zwMOuterHtml(n);
+        // R173：`:target` 须 fragment URL（owner doc 的 `_zwFragmentUrl` 槽——
+        // R160 doc 级同源；element 查询旧传空串恒 miss）。
+        var url173 = '';
+        if (s173.indexOf(':target') >= 0 && n._zwOwnerTree) {
+          try { url173 = String(n.ownerDocument._zwFragmentUrl || ''); } catch (_e173u) { url173 = ''; }
+        }
+        if (s173.indexOf(':lang(') >= 0 && n._zwOwnerTree) { // R173：限真树成员（detached clone 的 owner 是显式赋值回源 doc——spec 上脱离文档无祖先 lang 继承）
+          var langAttr173 = '';
+          try {
+            var od173 = n.ownerDocument;
+            if (od173) {
+              var ha173 = String(od173._r159HtmlAttrs || '');
+              var m173 = /lang\s*=\s*(?:"([^"]*)"|'([^']*)')/i.exec(ha173);
+              if (m173) langAttr173 = m173[1] != null ? m173[1] : m173[2];
+              else if (od173.documentElement) {
+                langAttr173 = String(od173.documentElement.getAttribute && od173.documentElement.getAttribute('lang') || '');
+              }
+            }
+          } catch (_e173o) { langAttr173 = ''; }
+          if (langAttr173) {
+            src173 = '<html lang="' + langAttr173.replace(/"/g, '&quot;') + '"><body>' + src173 + '</body></html>';
+          }
+        }
+        var arr = JSON.parse(__zw_parse_html_query(src173, String(sel), '1', url173, '1')); // R161: filter_synthetic（R173：url173 = :target 的 fragment 上下文）
         return arr || [];
       } catch (_e) { return []; }
     }
@@ -4450,6 +4481,8 @@
         get: function () {
           if (_odWritten167) return node._zwOdOwn;
           if (node._zwOwnerDetDoc) return node._zwOwnerDetDoc;
+          // R173（M4）：owner 溯源槽（全树盖）——树内任意元素的源 doc。
+          if (node._zwOwnerTree) return node._zwOwnerTree;
           return globalThis.document;
         },
         set: function (v) {
@@ -5767,6 +5800,18 @@
         //（`el.querySelector`——spec descendants-only 不含自身）印章命中会
         // 返 root 自身（首版全树 stamp 致 ParentNode "got root" 139F 实证）。
         try { _tree._zwOwnerDetDoc = doc; } catch (_e167st) {}
+        // R173（M4）：**owner 溯源槽**（`_zwOwnerTree`）**全树盖**——与
+        // `_zwOwnerDetDoc`（root-hit 特判专用，只根）解耦：ownerDocument accessor
+        // 与 :lang 祖先上下文沿此槽读源 doc（iframe doc 树内任意元素的 owner
+        // 溯源；中间节点无槽时 accessor 回落主 document 致 :lang 包装取错源）。
+        try {
+          (function stampTree173(node) {
+            if (!node || node.nodeType !== 1) return;
+            try { node._zwOwnerTree = doc; } catch (_e173s) {}
+            var cs173 = node.childNodes || [];
+            for (var si173 = 0; si173 < cs173.length; si173++) stampTree173(cs173[si173]);
+          })(_tree);
+        } catch (_e173st2) {}
         // R168（d3b2）：iframe 文档的 body 属性（`_r159BodyAttrs` 槽——R159 提取
         // 的原始 attrs 串）落到树根——root-hit 归一后 `querySelector('body')`
         // 产物是树根（C 域），id/class IDL 反射须与包装容器一致（WPT
