@@ -462,16 +462,17 @@ fn apply_replaced_element_sizing(
     {
         taffy_style.aspect_ratio = Some(iw / ih);
     }
-    // R1683：embed/object/applet 仅消费 HTML width/height 属性（无 decoded intrinsic / SVG data URI
-    // 回退，那是 <img> 专属）。无属性时直接返回保持原行为。
     let is_attr_only_replaced = tag == "embed" || tag == "object" || tag == "applet";
 
-    // 读取 HTML width/height 属性
-    let attr_w = elem.get_attribute("width").and_then(|v| v.parse::<f32>().ok());
-    let attr_h = elem.get_attribute("height").and_then(|v| v.parse::<f32>().ok());
+    // https://html.spec.whatwg.org/multipage/embedded-content.html#dimension-attributes
+    let attr_w = elem
+        .get_attribute("width")
+        .and_then(|v| v.parse::<f32>().ok().filter(|n| n.is_finite()));
+    let attr_h = elem
+        .get_attribute("height")
+        .and_then(|v| v.parse::<f32>().ok().filter(|n| n.is_finite()));
 
-    // R1683：embed/object/applet 仅消费 HTML width/height 属性（无 decoded intrinsic / SVG data
-    // URI，那是 <img> 专属）。无属性时直接返回保持原行为（避免默认 300×150 改动 ripple）。
+    // R1683：embed/object/applet 仅消费 HTML width/height 属性；无属性时保持原行为。
     // img/canvas 走 SVG data URI 回退填补缺失侧。
     let (attr_w, attr_h) = if is_attr_only_replaced {
         match (attr_w, attr_h) {
@@ -978,7 +979,10 @@ fn extract_attr_float(tag: &str, attr: &str) -> Option<f32> {
 
     let value_str = &rest[content_start..];
     let end = value_str.find(quote)?;
-    value_str[..end].parse::<f32>().ok().filter(|&v| v > 0.0)
+    value_str[..end]
+        .parse::<f32>()
+        .ok()
+        .filter(|&v| v.is_finite() && v > 0.0)
 }
 
 /// R1684：`<details>` 是否处于闭合态（无 `open` 属性）。

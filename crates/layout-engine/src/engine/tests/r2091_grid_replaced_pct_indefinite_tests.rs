@@ -69,7 +69,9 @@ fn r2091_gather_replaced_html_attr_intrinsic_collects_canvas_only() {
     let html = r#"<div style="display:grid">
   <canvas width=10 height=20></canvas>
   <canvas width=30></canvas>
+  <canvas width=Infinity height=90></canvas>
   <embed src="x" width=40 height=50>
+  <embed src="x" width=Infinity height=90>
   <img src="x.png" width=60 height=70>
   <div width=80 height=90></div>
 </div>"#;
@@ -88,6 +90,10 @@ fn r2091_gather_replaced_html_attr_intrinsic_collects_canvas_only() {
     assert!(
         map.values().any(|v| *v == (40.0, 50.0)),
         "embed 40x50 should be gathered"
+    );
+    assert!(
+        !map.values().any(|v| v.0.is_infinite() || v.1.is_infinite()),
+        "non-finite HTML width/height attrs should not be gathered: {map:?}"
     );
     assert!(
         !map.values().any(|v| *v == (60.0, 70.0)),

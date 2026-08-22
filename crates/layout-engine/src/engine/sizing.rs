@@ -653,8 +653,13 @@ impl LayoutEngine {
                 && let NodeKind::Element(elem) = &node.kind
                 && matches!(elem.local_name(), "canvas" | "embed" | "object" | "applet")
             {
-                let attr_w = elem.get_attribute("width").and_then(|v| v.parse::<f32>().ok());
-                let attr_h = elem.get_attribute("height").and_then(|v| v.parse::<f32>().ok());
+                // https://html.spec.whatwg.org/multipage/embedded-content.html#dimension-attributes
+                let attr_w = elem
+                    .get_attribute("width")
+                    .and_then(|v| v.parse::<f32>().ok().filter(|n| n.is_finite()));
+                let attr_h = elem
+                    .get_attribute("height")
+                    .and_then(|v| v.parse::<f32>().ok().filter(|n| n.is_finite()));
                 if let (Some(w), Some(h)) = (attr_w, attr_h)
                     && w > 0.0
                     && h > 0.0

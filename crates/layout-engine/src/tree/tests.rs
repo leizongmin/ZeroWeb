@@ -1638,6 +1638,51 @@ fn test_canvas_attr_intrinsic_size() {
     assert_eq!(style.aspect_ratio, Some(1.0), "canvas aspect 应 1:1");
 }
 
+/// R3700：HTML replaced width/height 属性来自不可信输入，非有限值不能进入 taffy intrinsic size。
+#[test]
+fn r3700_replaced_html_attr_intrinsic_rejects_non_finite_size() {
+    for (tag, width, height) in [
+        ("canvas", "Infinity", "100"),
+        ("canvas", "100", "Infinity"),
+        ("embed", "Infinity", "100"),
+    ] {
+        let mut doc = Document::new();
+        let root = doc.root();
+        let html = doc.create_element("html");
+        doc.append_child(root, html).unwrap();
+        let body = doc.create_element("body");
+        doc.append_child(html, body).unwrap();
+        let el = doc.create_element(tag);
+        doc.set_attribute(el, "width", width);
+        doc.set_attribute(el, "height", height);
+        doc.append_child(body, el).unwrap();
+
+        let styles = HashMap::new();
+        let (tree, _root_id, taffy_to_dom) = build_layout_tree(
+            &doc,
+            &styles,
+            800.0,
+            600.0,
+            std::collections::HashMap::new(),
+            std::collections::HashMap::new(),
+        );
+        let taffy_id = find_taffy_for_dom(&taffy_to_dom, el);
+        let style = tree.style(taffy_id).unwrap();
+        let width = style.size.width;
+        let height = style.size.height;
+        assert!(
+            width.tag() != taffy::style::CompactLength::LENGTH_TAG || width.value().is_finite(),
+            "<{tag}> non-finite width attr should not become a taffy length: {:?}",
+            width
+        );
+        assert!(
+            height.tag() != taffy::style::CompactLength::LENGTH_TAG || height.value().is_finite(),
+            "<{tag}> non-finite height attr should not become a taffy length: {:?}",
+            height
+        );
+    }
+}
+
 /// R57（M3）：span > div + canvas（canvas-grid reftest 结构）——span 含 block 子时
 /// 不被 R2156 门跳过（曾整棵丢出 taffy → canvas 无盒 → 格子空白），R109 拆分后
 /// canvas 须有独立 taffy 节点（2d.gradient.colorInterpolationMethod oracle A/B）。
