@@ -10,8 +10,8 @@ import subprocess
 import sys
 from pathlib import Path
 
-EXPECTED_CASES = 5
-EXPECTED_SUBTESTS = 8
+EXPECTED_CASES = 6
+EXPECTED_SUBTESTS = 10
 
 
 def parse_args() -> argparse.Namespace:
@@ -91,10 +91,12 @@ def render_markdown(summary: dict) -> str:
             "",
             "## Scope",
             "",
-            "This pinned Service Worker M2 fetch/interception baseline covers five cases. "
+            "This pinned Service Worker M2 fetch/interception baseline covers six cases. "
             "`request-end-to-end.https.html` registers a real service worker, loads a "
             "controlled iframe, dispatches a FetchEvent, and validates the Request "
             "projection returned via `respondWith(new Response(...))`. "
+            "`fetch-event-add-async.https.html` verifies that adding a fetch listener "
+            "from a later Service Worker task is accepted. "
             "`fetch-event-async-respond-with.https.html` fixes the FetchEvent "
             "`respondWith()` timing boundary: calls from the dispatch microtask "
             "checkpoint are accepted, while later task calls throw `InvalidStateError`. "

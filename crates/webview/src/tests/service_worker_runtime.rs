@@ -685,7 +685,8 @@ fn navigator_registration_normalizes_urls_and_preserves_error_types() {
              navigator.serviceWorker.register('/workers/sw.js#script', {
                scope: '/workers/app/#scope'
              }).then(function(registration) {
-               var normalized = registration.installing.scriptURL + '|' + registration.scope;
+               var worker = registration.installing || registration.waiting || registration.active;
+               var normalized = worker.scriptURL + '|' + registration.scope;
                return registration.unregister().then(function() { return normalized; });
              }).then(function(normalized) {
                return navigator.serviceWorker.register('/workers/sw.js', {scope: null}).then(

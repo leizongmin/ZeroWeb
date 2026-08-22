@@ -2070,13 +2070,18 @@ impl ServiceWorkerRuntime {
                         let _ = event_sender.send(event);
                         pending_fetch = None;
                     }
+                    let ran_idle_task = if pending_lifecycle.is_none() && pending_fetch.is_none() {
+                        run_one_queued_task(sandbox.as_mut())
+                    } else {
+                        false
+                    };
                     if let Ok(outbound) = take_outbound_messages(sandbox.as_mut())
                         && !outbound.is_empty()
                     {
                         let _ = event_sender.send(ServiceWorkerEvent::ClientMessagesEmitted { outbound });
                     }
 
-                    let command = if pending_lifecycle.is_some() || pending_fetch.is_some() {
+                    let command = if pending_lifecycle.is_some() || pending_fetch.is_some() || ran_idle_task {
                         match command_receiver.recv_timeout(std::time::Duration::from_millis(1)) {
                             Ok(command) => command,
                             Err(mpsc::RecvTimeoutError::Timeout) => continue,
@@ -3051,6 +3056,13 @@ fn poll_fetch(sandbox: &mut dyn Sandbox, pending: &PendingFetch, timeout_ms: u64
         ));
     }
     None
+}
+
+fn run_one_queued_task(sandbox: &mut dyn Sandbox) -> bool {
+    sandbox
+        .execute("globalThis.__zwRunOneTask && globalThis.__zwRunOneTask() ? 'true' : 'false';")
+        .map(|result| result.value == "true")
+        .unwrap_or(false)
 }
 
 fn parse_fetch_result(value: &serde_json::Value) -> Result<Option<ServiceWorkerFetchResponse>, ScriptError> {
@@ -4424,6 +4436,43 @@ mod tests {
                 Err(error) => panic!("runtime event timed out: {error}"),
             }
         }
+    }
+
+    #[test]
+    fn idle_timer_task_can_emit_client_message_without_pending_event() {
+        let mut runtime = ServiceWorkerRuntime::new(test_config()).unwrap();
+        runtime
+            .evaluate(
+                "let reply = null;
+                 addEventListener('message', event => {
+                   reply = value => event.source.postMessage(value);
+                   setTimeout(function() {
+                     reply({type: 'complete', tests: [{name: 'delayed', status: 0}]});
+                   }, 0);
+                 });",
+                "https://example.test/sw.js",
+            )
+            .unwrap();
+        let _ = runtime.recv_timeout(Duration::from_secs(5)).unwrap();
+
+        runtime
+            .dispatch_message(22, "{}", "client-1", "https://example.test/page")
+            .unwrap();
+        assert!(matches!(
+            runtime.recv_timeout(Duration::from_secs(5)).unwrap(),
+            ServiceWorkerEvent::MessageDispatched { event_id: 22, .. }
+        ));
+        assert!(matches!(
+            runtime.recv_timeout(Duration::from_secs(5)).unwrap(),
+            ServiceWorkerEvent::ClientMessagesEmitted { outbound }
+                if outbound == vec![ServiceWorkerOutboundMessage {
+                    data_json: r#"{"type":"complete","tests":[{"name":"delayed","status":0}]}"#.into(),
+                    port_id: None,
+                    transferred_port_ids: Vec::new(),
+                    data_port_index: None,
+                    target_client_id: Some("client-1".into()),
+                }]
+        ));
     }
 
     #[test]
