@@ -499,7 +499,47 @@
       h += '</' + String(n.nodeName).toLowerCase() + '>';
       return h;
     }
+    // R171（js-dom M1 L2-d3d）：compound 选择器解析（共用）——严格形态
+    // tag? (#id)? (.class)* ([attr("op")?="v"])*，顺序任意；不含空白/组合器/
+    // 伪类/转义（R170 教训：token 抽取吞空白把 `#descendant div` 误判同
+    // compound）。解析 miss → undefined（调用方走 JSON 往返，host 权威）。
+    function _zwParseCompoundSel(s) {
+      var s164 = String(s == null ? '' : s);
+      if (/^[A-Za-z][\w-]*$/.test(s164) || s164 === '*') {
+        return { tag: s164, id: null, classes: [], attrs: [] };
+      }
+      if (/[\s>+~:]/.test(s164)) return undefined;
+      var comp = undefined;
+      var mId = /#[A-Za-z_][\w-]*/.exec(s164);
+      var mCls = /\.[A-Za-z_][\w-]*/g;
+      var mAttr = /\[([A-Za-z_][\w-]*)(?:=("[^"]*"|'[^']*'))?\]/g;
+      var rest = s164;
+      if (mId) { comp = comp || { tag: null, id: null, classes: [], attrs: [] }; comp.id = mId[0].slice(1); rest = rest.replace(mId[0], ''); }
+      var c165;
+      while ((c165 = mCls.exec(s164))) { comp = comp || { tag: null, id: null, classes: [], attrs: [] }; comp.classes.push(c165[0].slice(1)); rest = rest.replace(c165[0], ''); }
+      var a165;
+      while ((a165 = mAttr.exec(s164))) {
+        comp = comp || { tag: null, id: null, classes: [], attrs: [] };
+        comp.attrs.push({ name: a165[1], op: a165[2] ? '=' : null, value: a165[2] ? a165[2].slice(1, -1) : null });
+        rest = rest.replace(a165[0], '');
+      }
+      if (comp) {
+        rest = rest.trim();
+        if (rest) {
+          if (/^[A-Za-z][\w-]*$/.test(rest) || rest === '*') comp.tag = rest;
+          else comp = undefined; // 残段非纯 tag（无法识别形态）→ JSON
+        }
+      }
+      return comp;
+    }
     function _zwMQueryAll(n, sel) {
+      // R171（L2-d3d 评估，回退记录）：element 上下文本树前置实测 0 subtest
+      // 改善 + identity 边缘回归（querySelector 本树直出真节点 vs QSA JSON
+      // wrapper 的归一分歧——`:enabled` 形态 qS≠QSA[0] +2F；纯 tag 收缩版
+      // 同样边缘）。**element 上下文维持 JSON 往返**（host 权威）；d3d 若重启
+      // 须先统一 querySelector/QSA 的产物归一路径（R171 evidence 记档）。
+      // R165 的 902F「wrapper 依赖」结论在 R170 key 修复后依然部分成立——
+      // element 消费面对产物形态的敏感度高于 doc 上下文。
       if (typeof __zw_parse_html_query !== 'function') return [];
       try {
         var arr = JSON.parse(__zw_parse_html_query(_zwMOuterHtml(n), String(sel), '1', '', '1')); // R161: filter_synthetic
@@ -5838,49 +5878,10 @@
       // L2-d1/d2：纯 tag（含 `*`）与 **compound**（tag/#id/.class/[attr=v] 组合，
       // 无组合器无伪类）走本树
       var s164 = String(sel == null ? '' : sel);
-      // R165：compound 解析（严格形态：tag? (#id)? (.class)* ([attr("op")?="v"])*
-      // ——顺序任意但不含空白/组合器/伪类/转义；解析 miss → undefined 走 JSON）
-      var comp165 = undefined;
-      if (/^[A-Za-z][\w-]*$/.test(s164) || s164 === '*') {
-        comp165 = { tag: s164, id: null, classes: [], attrs: [] };
-      } else {
-        // R170 单变量实验（gate 开）：compound gate 启用实测 runner 环境大回归
-        //（ParentNode 33→908F）——根因 probe 定位：**iframe doc 双工厂**。WPT
-        // Document 上下文 = iframe contentDocument，其树/查询走 part05 iframe
-        // 工厂（host 快照含 iframe 内容）；`_makeDetachedDocument` 的 bodyHtml
-        // 对 iframe 场景恒空（probe 实证 bodyHtml:0）。gate 拦截后 `_tree`
-        // 空 + detHtml 空 → 零命中（沙箱 createHTMLDocument 全命中、runner
-        // iframe 全灭的对照实证）。**d3c 须先统一 iframe doc 与 detached doc
-        // 的树源**（d3 前置项，记 master.md）。
-        // R170（d3c）：含空白/组合器（` `/`>`/`+`/`~`）/伪类（`:`）的形态**整体
-        // 拒绝**走 JSON（host 组合器语义权威）——解析器的 token 抽取会把
-        // `#descendant div` 的空白吞掉误判为同 compound（WPT "Descendant
-        // combinator" 返自身实证）。
-        if (/[\s>+~:]/.test(s164)) {
-          var mId = null;
-        } else {
-        var mId = /#[A-Za-z_][\w-]*/.exec(s164);
-        var mCls = /\.[A-Za-z_][\w-]*/g;
-        var mAttr = /\[([A-Za-z_][\w-]*)(?:=("[^"]*"|'[^']*'))?\]/g;
-        var rest = s164;
-        if (mId) { comp165 = comp165 || { tag: null, id: null, classes: [], attrs: [] }; comp165.id = mId[0].slice(1); rest = rest.replace(mId[0], ''); }
-        var c165;
-        while ((c165 = mCls.exec(s164))) { comp165 = comp165 || { tag: null, id: null, classes: [], attrs: [] }; comp165.classes.push(c165[0].slice(1)); rest = rest.replace(c165[0], ''); }
-        var a165;
-        while ((a165 = mAttr.exec(s164))) {
-          comp165 = comp165 || { tag: null, id: null, classes: [], attrs: [] };
-          comp165.attrs.push({ name: a165[1], op: a165[2] ? '=' : null, value: a165[2] ? a165[2].slice(1, -1) : null });
-          rest = rest.replace(a165[0], '');
-        }
-        if (comp165) {
-          rest = rest.trim();
-          if (rest) {
-            if (/^[A-Za-z][\w-]*$/.test(rest) || rest === '*') comp165.tag = rest;
-            else comp165 = undefined; // 残段非纯 tag（无法识别形态）→ JSON
-          }
-        }
-        } // R170：else 分支闭合（空白/组合器形态拒绝）
-      }
+      // R171（d3d）：解析提取为共用 `_zwParseCompoundSel`（element 上下文
+      // `_zwMQueryAll` 复用）。含空白/组合器/伪类形态整体拒绝走 JSON（R170
+      // 教训——token 抽取吞空白把 `#descendant div` 误判同 compound）。
+      var comp165 = _zwParseCompoundSel(s164);
       // html/body 例外：_tree 源是 body 内容（无 html/body 容器——它们只存在于
       // detHtml 的 R159 属性保真包装层），须走 JSON 往返命中包装容器。
       var compTag = comp165 && comp165.tag ? String(comp165.tag).toLowerCase() : '';
