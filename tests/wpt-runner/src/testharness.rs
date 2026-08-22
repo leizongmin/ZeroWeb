@@ -673,6 +673,9 @@ pub const SERVICE_WORKER_CORE_CASES: &[&str] = &[
     "service-workers/service-worker/update.https.html",
 ];
 
+/// Fixed Service Worker M2 fetch/interception corpus at the pinned WPT revision.
+pub const SERVICE_WORKER_FETCH_CASES: &[&str] = &["service-workers/service-worker/request-end-to-end.https.html"];
+
 /// WPT subtest status.
 ///
 /// 映射上游 testharness subtest status 数字编码（`testharness.js` 的 `Test.status`）：
@@ -1141,7 +1144,23 @@ pub fn run_cache_storage_cases(wpt_root: &Path, filter: Option<&str>) -> Vec<(St
 
 /// Run the fixed Service Worker M1 core testharness corpus.
 pub fn run_service_worker_cases(wpt_root: &Path, filter: Option<&str>) -> Vec<(String, Vec<HarnessSubtestResult>)> {
-    let selected: Vec<_> = SERVICE_WORKER_CORE_CASES
+    run_service_worker_case_set(wpt_root, filter, SERVICE_WORKER_CORE_CASES)
+}
+
+/// Run the fixed Service Worker M2 fetch/interception testharness corpus.
+pub fn run_service_worker_fetch_cases(
+    wpt_root: &Path,
+    filter: Option<&str>,
+) -> Vec<(String, Vec<HarnessSubtestResult>)> {
+    run_service_worker_case_set(wpt_root, filter, SERVICE_WORKER_FETCH_CASES)
+}
+
+fn run_service_worker_case_set(
+    wpt_root: &Path,
+    filter: Option<&str>,
+    manifest: &[&str],
+) -> Vec<(String, Vec<HarnessSubtestResult>)> {
+    let selected: Vec<_> = manifest
         .iter()
         .copied()
         .filter(|path| filter.is_none_or(|filter| path.contains(filter)))
@@ -2955,6 +2974,20 @@ async_test(function(test) {
     }
 
     #[test]
+    fn service_worker_fetch_manifest_has_request_end_to_end_case() {
+        let unique = SERVICE_WORKER_FETCH_CASES
+            .iter()
+            .copied()
+            .collect::<std::collections::BTreeSet<_>>();
+        assert_eq!(SERVICE_WORKER_FETCH_CASES.len(), 1);
+        assert_eq!(unique.len(), 1);
+        assert_eq!(
+            SERVICE_WORKER_FETCH_CASES[0],
+            "service-workers/service-worker/request-end-to-end.https.html"
+        );
+    }
+
+    #[test]
     fn cache_storage_window_manifest_has_four_unique_any_cases() {
         let unique = CACHE_STORAGE_WINDOW_CASES
             .iter()
@@ -2982,6 +3015,15 @@ async_test(function(test) {
     fn service_worker_runner_reports_every_case_when_harness_is_missing() {
         let cases = run_service_worker_cases(Path::new("/nonexistent-service-worker-wpt-root"), None);
         assert_eq!(cases.len(), SERVICE_WORKER_CORE_CASES.len());
+        assert!(cases.iter().all(|(_, results)| {
+            results.len() == 1 && results[0].status == HarnessStatus::Fail && results[0].name == "load testharness.js"
+        }));
+    }
+
+    #[test]
+    fn service_worker_fetch_runner_reports_every_case_when_harness_is_missing() {
+        let cases = run_service_worker_fetch_cases(Path::new("/nonexistent-service-worker-wpt-root"), None);
+        assert_eq!(cases.len(), SERVICE_WORKER_FETCH_CASES.len());
         assert!(cases.iter().all(|(_, results)| {
             results.len() == 1 && results[0].status == HarnessStatus::Fail && results[0].name == "load testharness.js"
         }));

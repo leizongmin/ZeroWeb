@@ -533,6 +533,7 @@ fn service_worker_host_fetch_command_and_event_round_trip() {
                 body: Some("payload".into()),
                 client_id: Some("client-1".into()),
                 resulting_client_id: None,
+                referrer: Some("https://example.test/app/page".into()),
             },
         },
     };
@@ -584,6 +585,7 @@ fn service_worker_host_fetch_command_and_event_round_trip() {
                     body: None,
                     client_id: None,
                     resulting_client_id: None,
+                    referrer: None,
                 },
                 options: ServiceWorkerCacheQueryOptionsWire {
                     ignore_search: true,
@@ -641,6 +643,7 @@ fn service_worker_host_fetch_command_and_event_round_trip() {
                     body: None,
                     client_id: None,
                     resulting_client_id: None,
+                    referrer: None,
                 },
                 response: ServiceWorkerFetchResponseWire {
                     status: 200,
@@ -695,6 +698,7 @@ fn service_worker_host_fetch_command_and_event_round_trip() {
                     body: None,
                     client_id: None,
                     resulting_client_id: None,
+                    referrer: None,
                 }),
                 options: ServiceWorkerCacheQueryOptionsWire::default(),
             },
@@ -752,6 +756,7 @@ fn service_worker_host_fetch_command_and_event_round_trip() {
                     body: None,
                     client_id: None,
                     resulting_client_id: None,
+                    referrer: None,
                 },
             ])),
         },
@@ -769,6 +774,7 @@ fn service_worker_host_fetch_command_and_event_round_trip() {
                 body: None,
                 client_id: Some("client-1".into()),
                 resulting_client_id: None,
+                referrer: None,
             },
         },
     };
@@ -831,6 +837,7 @@ fn service_worker_host_fetch_command_and_event_round_trip() {
                         body: None,
                         client_id: None,
                         resulting_client_id: None,
+                        referrer: None,
                     },
                     response: ServiceWorkerFetchResponseWire {
                         status: 600,
@@ -890,6 +897,7 @@ fn service_worker_host_fetch_command_and_event_round_trip() {
                     body: None,
                     client_id: None,
                     resulting_client_id: None,
+                    referrer: None,
                 },
                 options: ServiceWorkerCacheQueryOptionsWire::default(),
             },
@@ -909,6 +917,7 @@ fn service_worker_host_fetch_command_and_event_round_trip() {
                     body: None,
                     client_id: None,
                     resulting_client_id: None,
+                    referrer: None,
                 },
             },
         }
@@ -946,6 +955,7 @@ fn service_worker_host_fetch_command_and_event_round_trip() {
                     body: None,
                     client_id: None,
                     resulting_client_id: None,
+                    referrer: None,
                 },
             },
         }
@@ -985,6 +995,7 @@ fn service_worker_host_fetch_command_and_event_round_trip() {
                         body: None,
                         client_id: None,
                         resulting_client_id: None,
+                        referrer: None,
                     },
                     options: ServiceWorkerCacheQueryOptionsWire::default(),
                 },
@@ -1007,6 +1018,7 @@ fn service_worker_host_fetch_command_and_event_round_trip() {
                         body: None,
                         client_id: None,
                         resulting_client_id: None,
+                        referrer: None,
                     },
                     response: ServiceWorkerFetchResponseWire {
                         status: 0,
@@ -1035,6 +1047,7 @@ fn service_worker_host_fetch_command_and_event_round_trip() {
                         body: None,
                         client_id: None,
                         resulting_client_id: None,
+                        referrer: None,
                     },
                     response: ServiceWorkerFetchResponseWire {
                         status: 0,
@@ -1100,6 +1113,7 @@ fn service_worker_host_fetch_command_and_event_round_trip() {
                         body: None,
                         client_id: None,
                         resulting_client_id: None,
+                        referrer: None,
                     },
                 ])),
             },

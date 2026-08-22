@@ -1,0 +1,20 @@
+{
+  "cases": 1,
+  "subtests": 1,
+  "status": {
+    "Pass": 1
+  },
+  "deterministic": true,
+  "results": [
+    [
+      "service-workers/service-worker/request-end-to-end.https.html",
+      [
+        {
+          "name": "Test FetchEvent.request passed to onfetch",
+          "status": "Pass",
+          "message": null
+        }
+      ]
+    ]
+  ]
+}

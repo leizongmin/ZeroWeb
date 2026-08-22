@@ -399,6 +399,7 @@ fn fetch_request_from_wire(request: ServiceWorkerFetchRequestWire) -> ServiceWor
         body: request.body,
         client_id: request.client_id,
         resulting_client_id: request.resulting_client_id,
+        referrer: request.referrer,
     }
 }
 
@@ -430,6 +431,7 @@ fn cache_storage_request_to_wire(request: ServiceWorkerCacheStorageRequest) -> S
                 body: request.body,
                 client_id: request.client_id,
                 resulting_client_id: request.resulting_client_id,
+                referrer: request.referrer,
             },
             options: cache_query_options_to_wire(options),
         },
@@ -446,6 +448,7 @@ fn cache_storage_request_to_wire(request: ServiceWorkerCacheStorageRequest) -> S
                 body: request.body,
                 client_id: request.client_id,
                 resulting_client_id: request.resulting_client_id,
+                referrer: request.referrer,
             }),
             options: cache_query_options_to_wire(options),
         },
@@ -462,6 +465,7 @@ fn cache_storage_request_to_wire(request: ServiceWorkerCacheStorageRequest) -> S
                 body: request.body,
                 client_id: request.client_id,
                 resulting_client_id: request.resulting_client_id,
+                referrer: request.referrer,
             }),
             options: cache_query_options_to_wire(options),
         },
@@ -478,6 +482,7 @@ fn cache_storage_request_to_wire(request: ServiceWorkerCacheStorageRequest) -> S
                 body: request.body,
                 client_id: request.client_id,
                 resulting_client_id: request.resulting_client_id,
+                referrer: request.referrer,
             },
             response: ServiceWorkerFetchResponseWire {
                 status: response.status,
@@ -607,6 +612,7 @@ fn host_event(event: ServiceWorkerEvent) -> ServiceWorkerHostEvent {
                 body: request.body,
                 client_id: request.client_id,
                 resulting_client_id: request.resulting_client_id,
+                referrer: request.referrer,
             },
         },
         ServiceWorkerEvent::ImportScriptsRequested { request_id, specifiers } => {
@@ -918,6 +924,7 @@ mod tests {
                     body: None,
                     client_id: Some("client-1".into()),
                     resulting_client_id: None,
+                    referrer: None,
                 },
             },
         });
@@ -967,6 +974,7 @@ mod tests {
                     body: None,
                     client_id: Some("client-1".into()),
                     resulting_client_id: None,
+                    referrer: None,
                 },
             },
         });
@@ -1059,6 +1067,7 @@ mod tests {
                     body: None,
                     client_id: Some("client-1".into()),
                     resulting_client_id: None,
+                    referrer: None,
                 },
             },
         });
@@ -1163,6 +1172,7 @@ mod tests {
                         body: None,
                         client_id: None,
                         resulting_client_id: None,
+                        referrer: None,
                     },
                 ])),
             },
@@ -1219,6 +1229,7 @@ mod tests {
                     body: None,
                     client_id: Some("client-1".into()),
                     resulting_client_id: None,
+                    referrer: None,
                 },
             },
         });
@@ -1298,6 +1309,7 @@ mod tests {
                     body: None,
                     client_id: Some("client-1".into()),
                     resulting_client_id: None,
+                    referrer: None,
                 },
             },
         });

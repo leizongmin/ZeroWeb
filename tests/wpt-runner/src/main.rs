@@ -41,6 +41,7 @@ Commands:
   testharness-indexeddb  Run imported IndexedDB testharness cases (storage-indexeddb goal M1)
   testharness-cache-storage  Run pinned CacheStorage window testharness cases
   testharness-service-workers  Run pinned Service Worker M1 core testharness cases
+  testharness-service-workers-fetch  Run pinned Service Worker M2 fetch testharness cases
   layout-dump [filter]  B1: dump layout tree for upstream test pages (golden compare,
                        see scripts/run-layout-golden.sh)
   reftest-oracle [filter]  DC-14: render upstream test pages vs chromium oracle-shots (true pass-rate)
@@ -230,6 +231,7 @@ fn main() {
         "testharness-indexeddb" => cmd_testharness_indexeddb(&options, filter.as_deref()),
         "testharness-cache-storage" => cmd_testharness_cache_storage(&options, filter.as_deref()),
         "testharness-service-workers" => cmd_testharness_service_workers(&options, filter.as_deref()),
+        "testharness-service-workers-fetch" => cmd_testharness_service_workers_fetch(&options, filter.as_deref()),
         "layout-dump" => cmd_layout_dump(&options, filter.as_deref()),
         "reftest-oracle" => cmd_reftest_oracle(&options, filter.as_deref()),
         "struct-sweep" => cmd_struct_sweep(&options, filter.as_deref()),
@@ -608,6 +610,20 @@ fn cmd_testharness_service_workers(options: &CliOptions, filter: Option<&str>) {
         .map(std::path::PathBuf::from)
         .unwrap_or_else(|| std::path::PathBuf::from("tests/wpt-runner/wpt-data/.service-workers-tier-a-root"));
     let cases = testharness::run_service_worker_cases(&wpt_root, filter);
+    print_testharness_cases(options, &cases);
+}
+
+fn cmd_testharness_service_workers_fetch(options: &CliOptions, filter: Option<&str>) {
+    let wpt_root = options
+        .wpt_data
+        .as_deref()
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(|| std::path::PathBuf::from("tests/wpt-runner/wpt-data/.service-workers-tier-a-root"));
+    let cases = testharness::run_service_worker_fetch_cases(&wpt_root, filter);
+    print_testharness_cases(options, &cases);
+}
+
+fn print_testharness_cases(options: &CliOptions, cases: &[(String, Vec<testharness::HarnessSubtestResult>)]) {
     let failed = cases.iter().any(|(_, results)| {
         results
             .iter()
@@ -622,7 +638,7 @@ fn cmd_testharness_service_workers(options: &CliOptions, filter: Option<&str>) {
             );
         }
         OutputFormat::Text | OutputFormat::Tap => {
-            for (case, results) in &cases {
+            for (case, results) in cases {
                 for result in results {
                     println!("{:?} {case} :: {}", result.status, result.name);
                     if let Some(message) = &result.message {

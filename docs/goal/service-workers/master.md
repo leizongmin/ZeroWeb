@@ -2,7 +2,7 @@
 
 **入口文档**: [../service-workers.md](../service-workers.md)
 **创建日期**: 2026-08-17（goal 拆分 bootstrap）
-**最后更新**: 2026-08-22（CacheStorage Response.type readback 支撑；fetch/cache WPT 基线待接入）
+**最后更新**: 2026-08-22（首个 M2 fetch/interception WPT baseline 接入；broader fetch/cache baseline 继续）
 
 ---
 
@@ -16,7 +16,9 @@ browser-process 页面 fetch 路由和 Service Worker `caches.match()` / `caches
 `ignoreMethod` 查询选项；worker-global `fetch()` 已通过 browser-owned network bridge 接入，
 SW runtime `Cache.add()` / `Cache.addAll()` 可用同一 fetch→put 链路写入 active registration
 `CacheStorage`，并复用 `zero-storage` 的请求头快照、Vary/`ignoreVary` 匹配语义与
-`Response.type == "error"` 拒存 guard；WPT fetch/cache 基线仍待后续切片，M3 控制语义继续推进。兄弟目标
+`Response.type == "error"` 拒存 guard；首个 M2 fetch/interception 上游 WPT
+`request-end-to-end.https.html` 已形成独立 runner 与 1 case / 1 subtest / 1 Pass
+确定性 baseline，broader fetch/cache 基线仍待后续切片，M3 控制语义继续推进。兄弟目标
 `storage-cache-api` 已完成 WebView/in-process 页面 `caches.open()` + `Cache.put()/match()` /
 `Cache.matchAll()` / `Cache.keys()` 与页面 `Cache.add()` / `Cache.addAll()` GET fetch→store
 链路；共享 `zero-storage::Cache::put()` 已拒绝非 GET、非 HTTP(S)、206、`Vary: *` 与
@@ -224,7 +226,16 @@ code-unit name wire、Vary/`ignoreVary` 与 cached `Response.type` 读回保真�
   `zero-storage::Cache::put()` 已拒绝非 GET、非 HTTP(S)、206、`Vary: *` 与
   `Response.type == "error"` 不可缓存写入；runtime/IPC/manager/browser/WebView 显式透传
   `response_type`，且 FetchEvent response settlement 仍保持 200..599 限制。
-  完整 WPT fetch/cache baseline 仍待接入
+  broader fetch/cache baseline 仍待接入
+- ✅ M2-8：首个 Service Worker fetch/interception WPT baseline 接入：
+  `service-workers/service-worker/request-end-to-end.https.html` 固定 revision
+  `04067ce9c7c2165e71ad7d0dde10a4c5cb394a83`，`testharness-service-workers-fetch`
+  独立 runner 双跑 1 case / 1 subtest / 1 Pass / 0 Fail / 0 Timeout / deterministic true。
+  该用例覆盖真实 worker `onfetch`、受控 iframe navigation FetchEvent、`FetchEvent.request`
+  的 absolute URL / `GET` / referrer / `navigate` / `include` / `manual` 投影、
+  immutable request headers 与 `new Request(event.request)`；同时新增 WebView in-process
+  回归测试固定 iframe plain-text response body 与 iframe `src` absolute getter 行为。
+  CacheStorage 方向的更宽 fetch/cache WPT baseline 仍待后续切片。
 - ✅ storage-cache-api 侧支撑：WebView/in-process 页面 `CacheStorage` 初始桥接已可通过共享
   `StorageManager` 执行 `caches.open/has/delete/keys/match` 与 `Cache.put/match/delete`；
   origin 由宿主页面 URL 推导，保持与 IndexedDB 相同单一 storage owner。该进展不等同于 SW
@@ -239,7 +250,7 @@ code-unit name wire、Vary/`ignoreVary` 与 cached `Response.type` 读回保真�
 |---|------|------|
 | S1 | SW 执行环境架构与独立 runtime | ✅ production browser owner + renderer discovery 真链路 |
 | S2 | scriptURL 不下载执行 | ✅ production navigator 经 browser fetch/evaluate |
-| S3 | fetch 拦截为零 | 🚧 M2-2 production 页面 fetch respondWith/pass-through 已接入；M2-3/4/5/6 `caches.match()`、`caches.open()`、`Cache.put()`、`Cache.matchAll()`、`Cache.keys()` 与 `ignoreSearch`/`ignoreMethod` 桥接已接入；M2-7 worker-global `fetch()`、SW runtime `Cache.add/addAll` 与 `Response.type == "error"` 拒存已接入；shared CacheStorage `Response.type` 读回保真已由 storage-cache-api 支撑；WPT fetch/cache 基线未完成 |
+| S3 | fetch 拦截为零 | 🚧 M2-2 production 页面 fetch respondWith/pass-through 已接入；M2-3/4/5/6 `caches.match()`、`caches.open()`、`Cache.put()`、`Cache.matchAll()`、`Cache.keys()` 与 `ignoreSearch`/`ignoreMethod` 桥接已接入；M2-7 worker-global `fetch()`、SW runtime `Cache.add/addAll` 与 `Response.type == "error"` 拒存已接入；shared CacheStorage `Response.type` 读回保真已由 storage-cache-api 支撑；首个 SW fetch/interception WPT baseline 1/1 Pass 已接入，broader fetch/cache 基线未完成 |
 | S4 | 事件为 setTimeout 模拟 | ✅ manager transition log 为状态源；timer 只执行页面 task 投影 |
 | S5 | WPT 覆盖为零 | ✅ core 34/34 case、156/156 Pass、0 Fail/Timeout/Unsupported |
 
@@ -251,8 +262,8 @@ code-unit name wire、Vary/`ignoreVary` 与 cached `Response.type` 读回保真�
 
 ## 下一步计划
 
-1. **M2 fetch/cache WPT 基线**：挑选当前可执行的 Service Worker fetch/cache 上游用例，
-   导入账本并生成 pass-rate evidence
+1. **M2 fetch/cache WPT 扩面**：在首个 fetch/interception baseline 之后，继续挑选当前可执行的
+   Service Worker fetch/cache 上游用例，扩展 pass-rate evidence
 2. **M3 clients follow-up**：popup/auxiliary 真实 browsing context 创建后接入 browser owner
 
 ## 里程碑状态
@@ -261,14 +272,15 @@ code-unit name wire、Vary/`ignoreVary` 与 cached `Response.type` 读回保真�
 |--------|------|
 | M0 — 选型 RFC（门控） | ✅ 方案 C 已批准 |
 | M1 — 脚本真实执行 + 生命周期真事件 | ✅ current core WPT 156/156 Pass |
-| M2 — fetch 拦截 + Cache 集成 | 🚧 M2-2 production fetch respondWith/pass-through 完成；M2-3/4/5/6 `caches.match()`、`caches.open()`、`Cache.put()`、`Cache.matchAll()`、`Cache.keys()`、`ignoreSearch`/`ignoreMethod` 桥接完成；M2-7 worker-global `fetch()`、`Cache.add/addAll` 与 `Response.type == "error"` 拒存完成；shared CacheStorage `Response.type` 读回保真已由 storage-cache-api 支撑；WPT fetch/cache 基线待接入 |
+| M2 — fetch 拦截 + Cache 集成 | 🚧 M2-2 production fetch respondWith/pass-through 完成；M2-3/4/5/6 `caches.match()`、`caches.open()`、`Cache.put()`、`Cache.matchAll()`、`Cache.keys()`、`ignoreSearch`/`ignoreMethod` 桥接完成；M2-7 worker-global `fetch()`、`Cache.add/addAll` 与 `Response.type == "error"` 拒存完成；shared CacheStorage `Response.type` 读回保真已由 storage-cache-api 支撑；首个 SW fetch/interception WPT baseline 1/1 Pass 已接入，broader fetch/cache 基线继续 |
 | M3 — 控制语义 + 消息 + 收尾 | 🚧 classic startup graph + 控制/消息/update/persistence 完成 |
 
 ## 验证基线
 
 - 测试基线：storage crate 既有单测全绿（立项时点）；clippy 零警告
-- WPT service-workers 面：当前标准入口可执行 0 文件；上游完整分母 294 个 testharness
-  源 / 331 URL，正文覆盖 294/294；分层与依赖信号见
+- WPT service-workers 面：当前 core runner 34 case / 156 subtest 全绿，fetch runner
+  首批 1 case / 1 subtest 全绿；上游完整分母 294 个 testharness 源 / 331 URL，
+  正文覆盖 294/294；分层与依赖信号见
   [M0 WPT evidence](evidence/2026-08-19-m0-wpt-executable-surface.md)，逐文件机器清单见
   [WPT case inventory](evidence/2026-08-19-m0-wpt-case-inventory.tsv)，候选 8/3/1 裁决见
   [M1 candidate closure](evidence/2026-08-19-m0-m1-candidate-resource-closure.md)，静态首批
@@ -317,6 +329,8 @@ code-unit name wire、Vary/`ignoreVary` 与 cached `Response.type` 读回保真�
   `make test-wpt-service-workers-import-dynamic-wave-assets` 固化篡改/修复回归
 - Import-event-wave 资产恢复/审计：3 assets / 5 subtest；
   `make test-wpt-service-workers-import-event-wave-assets` 固化篡改/修复回归
+- Fetch-wave 资产恢复/审计：5 assets / 1 subtest；
+  `make test-wpt-service-workers-fetch-wave-assets` 固化篡改/修复回归
 - Dynamic-import-update-wave 资产恢复/审计：17 assets / 7 subtest；
   `make test-wpt-service-workers-dynamic-import-update-wave-assets` 固化篡改/修复回归
 - Update-failure-wave 资产恢复/审计：12 assets / 7 subtest；
@@ -371,6 +385,9 @@ code-unit name wire、Vary/`ignoreVary` 与 cached `Response.type` 读回保真�
 - M2 Cache response type guard：`Response.error()`、runtime/IPC response type 透传、
   CacheStorage 与 FetchEvent 分离校验见
   [M2 Service Worker Cache Response Type Guard](evidence/2026-08-22-m2-cache-response-type-error.md)
+- M2 fetch/interception WPT baseline：`request-end-to-end.https.html` 独立 runner、
+  资产清单与 1/1 deterministic baseline 见
+  [Service Worker Fetch WPT Baseline](evidence/2026-08-22-m2-fetch-request-end-to-end-baseline.md)
 - storage-cache-api shared Cache response type readback：CacheStorage 专属 `__zwcr:` wire、
   page `Response.type` / `clone().type` 保真与 host type validation 见
   [M2 Cache Response Type Readback](../storage-cache-api/evidence/2026-08-22-m2-cache-response-type-readback.md)

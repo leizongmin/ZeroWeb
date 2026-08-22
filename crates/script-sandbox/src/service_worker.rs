@@ -283,6 +283,7 @@ const SERVICE_WORKER_BOOTSTRAP: &str = r#"
   class Headers {
     constructor(init) {
       this._pairs = [];
+      this._guard = 'none';
       if (init === undefined || init === null) return;
       if (init instanceof Headers) {
         for (const pair of init._pairs) this.append(pair[0], pair[1]);
@@ -297,6 +298,9 @@ const SERVICE_WORKER_BOOTSTRAP: &str = r#"
       }
     }
     append(name, value) {
+      if (this._guard === 'immutable') {
+        throw new TypeError('Headers are immutable');
+      }
       this._pairs.push([String(name).toLowerCase(), String(value)]);
     }
     get(name) {
@@ -340,6 +344,10 @@ const SERVICE_WORKER_BOOTSTRAP: &str = r#"
         this.method = init.method === undefined ? input.method : String(init.method).toUpperCase();
         this.headers = new Headers(init.headers === undefined ? input.headers : init.headers);
         this._body = init.body === undefined ? input._body : normalizeBody(init.body);
+        this.mode = init.mode === undefined ? input.mode : String(init.mode);
+        this.credentials = init.credentials === undefined ? input.credentials : String(init.credentials);
+        this.redirect = init.redirect === undefined ? input.redirect : String(init.redirect);
+        this.referrer = init.referrer === undefined ? input.referrer : String(init.referrer);
       } else if (typeof input === 'object' && input !== null && input.url !== undefined) {
         this.url = normalizeRequestURL(input.url);
         this.method = init.method === undefined
@@ -347,11 +355,22 @@ const SERVICE_WORKER_BOOTSTRAP: &str = r#"
           : String(init.method).toUpperCase();
         this.headers = new Headers(init.headers === undefined ? input.headers : init.headers);
         this._body = init.body === undefined ? normalizeBody(input.body) : normalizeBody(init.body);
+        this.mode = init.mode === undefined ? String(input.mode || 'cors') : String(init.mode);
+        this.credentials = init.credentials === undefined ? String(input.credentials || 'same-origin') : String(init.credentials);
+        this.redirect = init.redirect === undefined ? String(input.redirect || 'follow') : String(init.redirect);
+        this.referrer = init.referrer === undefined ? String(input.referrer || '') : String(init.referrer);
+        if (input.headerGuard === 'immutable' && init.headers === undefined) {
+          this.headers._guard = 'immutable';
+        }
       } else {
         this.url = normalizeRequestURL(input);
         this.method = init.method === undefined ? 'GET' : String(init.method).toUpperCase();
         this.headers = new Headers(init.headers);
         this._body = normalizeBody(init.body);
+        this.mode = init.mode === undefined ? 'cors' : String(init.mode);
+        this.credentials = init.credentials === undefined ? 'same-origin' : String(init.credentials);
+        this.redirect = init.redirect === undefined ? 'follow' : String(init.redirect);
+        this.referrer = init.referrer === undefined ? '' : String(init.referrer);
       }
     }
     text() {
@@ -1329,6 +1348,8 @@ pub struct ServiceWorkerFetchRequest {
     pub client_id: Option<String>,
     /// Browser-owned resulting client identity for navigation requests, when known.
     pub resulting_client_id: Option<String>,
+    /// Fetch request referrer exposed to `FetchEvent.request`.
+    pub referrer: Option<String>,
 }
 
 /// Pure-value fetch response produced by `FetchEvent.respondWith()`.
@@ -2535,6 +2556,7 @@ fn fetch_request_from_json(value: &serde_json::Value) -> Option<ServiceWorkerFet
         body: value["body"].as_str().map(str::to_string),
         client_id: value["clientId"].as_str().map(str::to_string),
         resulting_client_id: value["resultingClientId"].as_str().map(str::to_string),
+        referrer: value["referrer"].as_str().map(str::to_string),
     })
 }
 
@@ -2681,6 +2703,10 @@ fn validate_fetch_request(request: &ServiceWorkerFetchRequest) -> Result<(), Scr
             .resulting_client_id
             .as_ref()
             .is_some_and(|client_id| client_id.len() > MAX_CLIENT_ID_BYTES)
+        || request
+            .referrer
+            .as_ref()
+            .is_some_and(|referrer| referrer.len() > MAX_IMPORT_SCRIPT_URL_BYTES)
     {
         return Err(ScriptError::InvalidInput(
             "Service Worker fetch client id exceeds the size limit".into(),
@@ -2721,6 +2747,7 @@ fn validate_fetch_response(response: &ServiceWorkerFetchResponse) -> Result<(), 
 }
 
 fn fetch_request_json(request: &ServiceWorkerFetchRequest) -> serde_json::Value {
+    let is_navigation = request.resulting_client_id.is_some();
     serde_json::json!({
         "url": &request.url,
         "method": &request.method,
@@ -2728,6 +2755,11 @@ fn fetch_request_json(request: &ServiceWorkerFetchRequest) -> serde_json::Value 
         "body": &request.body,
         "clientId": &request.client_id,
         "resultingClientId": &request.resulting_client_id,
+        "mode": if is_navigation { "navigate" } else { "cors" },
+        "credentials": if is_navigation { "include" } else { "same-origin" },
+        "redirect": if is_navigation { "manual" } else { "follow" },
+        "referrer": &request.referrer,
+        "headerGuard": "immutable",
     })
 }
 
@@ -4278,6 +4310,7 @@ mod tests {
                     body: Some("request-body".into()),
                     client_id: Some("client-1".into()),
                     resulting_client_id: None,
+                    referrer: None,
                 },
             )
             .unwrap();
@@ -4321,6 +4354,7 @@ mod tests {
                     body: None,
                     client_id: None,
                     resulting_client_id: None,
+                    referrer: None,
                 },
             )
             .unwrap();
@@ -4368,6 +4402,7 @@ mod tests {
                     body: None,
                     client_id: Some("client-1".into()),
                     resulting_client_id: None,
+                    referrer: None,
                 },
             )
             .unwrap();
@@ -4452,6 +4487,7 @@ mod tests {
                     body: None,
                     client_id: Some("client-1".into()),
                     resulting_client_id: None,
+                    referrer: None,
                 },
             )
             .unwrap();
@@ -4548,6 +4584,7 @@ mod tests {
                     body: None,
                     client_id: None,
                     resulting_client_id: None,
+                    referrer: None,
                 }])),
             )
             .unwrap();
@@ -4598,6 +4635,7 @@ mod tests {
                     body: None,
                     client_id: Some("client-1".into()),
                     resulting_client_id: None,
+                    referrer: None,
                 },
             )
             .unwrap();
@@ -4672,6 +4710,7 @@ mod tests {
                     body: None,
                     client_id: Some("client-1".into()),
                     resulting_client_id: None,
+                    referrer: None,
                 },
             )
             .unwrap();
@@ -4849,6 +4888,7 @@ mod tests {
                     body: None,
                     client_id: Some("client-1".into()),
                     resulting_client_id: None,
+                    referrer: None,
                 },
             )
             .unwrap();
@@ -5005,6 +5045,7 @@ mod tests {
                     body: None,
                     client_id: None,
                     resulting_client_id: None,
+                    referrer: None,
                 },
             )
             .unwrap();

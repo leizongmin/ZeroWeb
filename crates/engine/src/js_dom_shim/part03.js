@@ -5653,6 +5653,8 @@
       parentNode: null, // R3017：detached root，parentNode=null（DOMPurify 经 node.parentNode 取父）
       get innerHTML() { return _tree ? _tree.innerHTML : bodyHtml; },
       set innerHTML(v) { bodyHtml = v == null ? '' : String(v); _tree = null; _zwQWrapGen++; _zwQWrapCache.clear(); _zwNodeBridgeMap.clear(); },
+      get textContent() { ensureTree(); return _tree.textContent || ''; },
+      set textContent(v) { bodyHtml = v == null ? '' : String(v); _tree = null; _zwQWrapGen++; _zwQWrapCache.clear(); _zwNodeBridgeMap.clear(); },
       querySelector: function (sel) { if (globalThis._zwQueryGuard) globalThis._zwQueryGuard(sel, arguments.length); return queryOne(sel); },
       querySelectorAll: function (sel) { if (globalThis._zwQueryGuard) globalThis._zwQueryGuard(sel, arguments.length); return queryAll(sel); },
       // R132（js-dom M4）：body 的 set/has/get/removeAttribute 族（WPT Document-importNode

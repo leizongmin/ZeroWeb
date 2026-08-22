@@ -4511,6 +4511,10 @@
           var _sg = _scrollOffsets[key];
           return _sg ? (prop === 'scrollTop' ? _sg.top : _sg.left) : 0;
         }
+        if (prop === 'src' && _realTag(sel, handle) === 'IFRAME') {
+          var _iframeSrc = handle ? __zw_get_attr_handle(handle, 'src') : (typeof __zw_get_attr_lw === 'function' ? __zw_get_attr_lw(sel, 'src') : __zw_get_attr(sel, 'src'));
+          return _iframeSrc ? _zwResolveFetchUrl(_iframeSrc) : '';
+        }
         // offsetParent：最近 positioned 祖先（position != static）或 body，detached/hidden → null。
         // 布局 rect 无 style 信息，无法精确算 positioned 祖先；近似：有 rect（已渲染）→ body proxy，
         // 无 rect（detached/display:none）→ null。dominant 用法 `el.offsetParent === null` 可见性判定

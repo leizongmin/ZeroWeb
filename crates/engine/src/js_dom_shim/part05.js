@@ -778,6 +778,8 @@
           doc._r159BodyAttrs = _r159Bm ? String(_r159Bm[1] || '').trim() || null : null;
         } catch (_eA4) {}
       }
+      } else {
+        bodyInner = String(markup || '');
       }
     } catch (_e115) {}
     try { doc.body.innerHTML = bodyInner; } catch (_eB) {}

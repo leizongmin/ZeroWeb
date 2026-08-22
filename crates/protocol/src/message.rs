@@ -1202,6 +1202,10 @@ fn validate_service_worker_fetch_request(request: &ServiceWorkerFetchRequestWire
             .resulting_client_id
             .as_ref()
             .is_some_and(|client_id| client_id.len() > MAX_URL_BYTES)
+        || request
+            .referrer
+            .as_ref()
+            .is_some_and(|referrer| referrer.len() > MAX_URL_BYTES)
     {
         return Err("Service Worker fetch request fields exceed the size limit");
     }
@@ -1409,6 +1413,8 @@ pub struct ServiceWorkerFetchRequestWire {
     pub client_id: Option<String>,
     /// Browser-owned resulting client identity for navigation requests, when known.
     pub resulting_client_id: Option<String>,
+    /// Fetch request referrer exposed to `FetchEvent.request`, when known.
+    pub referrer: Option<String>,
 }
 
 /// IPC-safe Service Worker fetch response.

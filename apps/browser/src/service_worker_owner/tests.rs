@@ -668,6 +668,7 @@ fn ipc_cache_match_uses_browser_owned_registration_cache() {
                         body: None,
                         client_id: None,
                         resulting_client_id: None,
+                        referrer: None,
                     },
                     options: ServiceWorkerCacheQueryOptionsWire::default(),
                 },
@@ -762,6 +763,7 @@ fn ipc_cache_storage_open_and_put_update_browser_owned_registration_cache() {
                         body: None,
                         client_id: None,
                         resulting_client_id: None,
+                        referrer: None,
                     },
                     response: ServiceWorkerFetchResponseWire {
                         status: 201,
@@ -843,6 +845,7 @@ fn ipc_cache_match_all_and_keys_use_browser_owned_registration_cache() {
                         body: None,
                         client_id: None,
                         resulting_client_id: None,
+                        referrer: None,
                     }),
                     options: ServiceWorkerCacheQueryOptionsWire::default(),
                 },
@@ -941,6 +944,7 @@ fn ipc_cache_query_options_match_browser_owned_registration_cache() {
                         body: None,
                         client_id: None,
                         resulting_client_id: None,
+                        referrer: None,
                     },
                     options: ServiceWorkerCacheQueryOptionsWire {
                         ignore_search: true,
@@ -981,6 +985,7 @@ fn ipc_cache_query_options_match_browser_owned_registration_cache() {
                         body: None,
                         client_id: None,
                         resulting_client_id: None,
+                        referrer: None,
                     }),
                     options: ServiceWorkerCacheQueryOptionsWire {
                         ignore_search: true,
@@ -1041,6 +1046,7 @@ fn ipc_worker_fetch_event_creates_plan_and_completes_renderer_runtime() {
                     body: None,
                     client_id: Some("renderer-7:1".into()),
                     resulting_client_id: None,
+                    referrer: None,
                 },
             },
         },

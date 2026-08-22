@@ -43,6 +43,7 @@ mod user_actions;
 pub use user_actions::WebViewUserActionResult;
 
 static NEXT_WEBVIEW_ID: AtomicU64 = AtomicU64::new(1);
+static NEXT_IN_PROCESS_FETCH_EVENT_ID: AtomicU64 = AtomicU64::new(1);
 const MAX_SERVICE_WORKER_SCRIPT_BYTES: usize = 16 * 1024 * 1024;
 
 enum ServiceWorkerEvaluationResult {
@@ -2026,9 +2027,20 @@ impl WebView {
         // 落 ok:false stub；浏览器路径由 app 层 FetchBridge 注册异步 __zw_fetch，互斥不重叠）。
         // 回调同步执行 handler 并直接返 fetch_bridge wire（shim R34xx 支持同步返回）。
         if let Some(fetch_handler) = self.fetch_handler.clone() {
+            let sw_manager = self.sw_manager.clone();
+            let sw_page_url = self.page_url_wire.clone();
+            let sw_client_id = self.service_worker_client_id.clone();
+            let sw_client_generation = self.service_worker_client_generation.clone();
+            let sw_fetchers = ServiceWorkerFetchers {
+                source: self.script_source_fetcher.clone(),
+                response: self.service_worker_script_fetcher.clone(),
+                worker: self.fetch_handler.clone(),
+            };
+            let timeout_secs = self.http_client.timeout_secs;
             sandbox.register_callback(
                 "__zw_fetch",
                 Box::new(move |args: &[String]| -> String {
+                    let fetch_id = args.first().map(String::as_str).unwrap_or("");
                     let method = args.get(1).cloned().unwrap_or_else(|| "GET".to_string());
                     let url = args.get(2).cloned().unwrap_or_default();
                     let headers =
@@ -2043,12 +2055,54 @@ impl WebView {
                             (Some(body_raw), None)
                         };
                     let req = zero_engine::fetch_bridge::FetchRequest {
-                        url,
-                        method,
-                        headers,
+                        url: url.clone(),
+                        method: method.clone(),
+                        headers: headers.clone(),
                         body,
                         body_bytes,
                     };
+                    let page_url = sw_page_url.lock().map(|url| url.clone()).unwrap_or_default();
+                    if let Ok(page) = url::Url::parse(&page_url)
+                        && let Ok(request_url) = url::Url::parse(&url)
+                        && page.origin() == request_url.origin()
+                        && matches!(page.scheme(), "http" | "https")
+                        && matches!(request_url.scheme(), "http" | "https")
+                    {
+                        let is_navigation = fetch_id == "r115iframe";
+                        let client_id = format!("{}:{}", sw_client_id, sw_client_generation.load(Ordering::Relaxed));
+                        let sw_request = ServiceWorkerFetchRequest {
+                            url: request_url.as_str().to_string(),
+                            method: method.clone(),
+                            headers: headers.clone(),
+                            body: req.body.clone(),
+                            client_id: Some(client_id.clone()),
+                            resulting_client_id: is_navigation.then_some(format!("{client_id}:nested:{url}")),
+                            referrer: is_navigation.then_some(page_url.clone()),
+                        };
+                        match Self::dispatch_in_process_service_worker_fetch(
+                            &sw_manager,
+                            &sw_fetchers,
+                            &page_url,
+                            sw_request,
+                            timeout_secs,
+                        ) {
+                            Ok(Some(response)) => {
+                                return zero_engine::fetch_bridge::serialize_response(
+                                    &zero_engine::fetch_bridge::FetchResponse {
+                                        status: response.status,
+                                        status_text: response.status_text,
+                                        headers: response.headers,
+                                        body: response.body,
+                                        body_bytes: None,
+                                    },
+                                );
+                            }
+                            Ok(None) => {}
+                            Err(error) => {
+                                tracing::warn!("Service Worker fetch dispatch failed: {error}");
+                            }
+                        }
+                    }
                     match fetch_handler(&req) {
                         Ok(resp) => zero_engine::fetch_bridge::serialize_response(&resp),
                         Err(msg) => format!("__zw_fetch_error:{msg}"),
@@ -3292,6 +3346,65 @@ impl WebView {
                 .map_err(|error| error.to_string())?;
         }
         Ok(events)
+    }
+
+    fn dispatch_in_process_service_worker_fetch(
+        manager: &std::sync::Arc<std::sync::Mutex<ServiceWorkerManager>>,
+        fetchers: &ServiceWorkerFetchers,
+        page_url: &str,
+        request: ServiceWorkerFetchRequest,
+        timeout_secs: u64,
+    ) -> Result<Option<ServiceWorkerFetchResponse>, String> {
+        let authority =
+            url::Url::parse(page_url).map_err(|_| "Service Worker fetch document URL is invalid".to_string())?;
+        if !matches!(authority.scheme(), "http" | "https") {
+            return Ok(None);
+        }
+        let request_url =
+            url::Url::parse(&request.url).map_err(|_| "Service Worker fetch request URL is invalid".to_string())?;
+        if !matches!(request_url.scheme(), "http" | "https") {
+            return Ok(None);
+        }
+        let origin = authority.origin().ascii_serialization();
+        let event_id = NEXT_IN_PROCESS_FETCH_EVENT_ID.fetch_add(1, Ordering::Relaxed);
+        let mut manager = manager
+            .lock()
+            .map_err(|_| "Service Worker manager lock poisoned".to_string())?;
+        match manager
+            .dispatch_fetch(&origin, event_id, request)
+            .map_err(|error| error.to_string())?
+        {
+            zero_page_runtime::ServiceWorkerFetchDispatch::PassThrough => Ok(None),
+            zero_page_runtime::ServiceWorkerFetchDispatch::Dispatched {
+                registration_id,
+                event_id,
+            } => {
+                let deadline = std::time::Instant::now() + std::time::Duration::from_secs(timeout_secs.max(1));
+                loop {
+                    for event in Self::poll_service_worker_manager(&mut manager, fetchers, timeout_secs)? {
+                        if let ServiceWorkerManagerEvent::FetchSettled {
+                            registration_id: settled_registration_id,
+                            event_id: settled_event_id,
+                            response,
+                            message,
+                            ..
+                        } = event
+                            && settled_registration_id == registration_id
+                            && settled_event_id == event_id
+                        {
+                            if response.is_none() && !message.is_empty() {
+                                tracing::warn!("Service Worker fetch fell back to host fetch: {message}");
+                            }
+                            return Ok(response);
+                        }
+                    }
+                    if std::time::Instant::now() >= deadline {
+                        return Err("Service Worker fetch event timed out".into());
+                    }
+                    std::thread::sleep(std::time::Duration::from_millis(1));
+                }
+            }
+        }
     }
 
     fn fetch_service_worker_request(

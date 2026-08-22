@@ -272,6 +272,7 @@ impl ServiceWorkerRuntimeHost for IpcServiceWorkerHost {
                         body: request.body,
                         client_id: request.client_id,
                         resulting_client_id: request.resulting_client_id,
+                        referrer: request.referrer,
                     },
                 },
             },
@@ -497,6 +498,7 @@ fn fetch_request_from_wire(request: ServiceWorkerFetchRequestWire) -> ServiceWor
         body: request.body,
         client_id: request.client_id,
         resulting_client_id: request.resulting_client_id,
+        referrer: request.referrer,
     }
 }
 
@@ -508,6 +510,7 @@ fn fetch_request_to_wire(request: ServiceWorkerFetchRequest) -> ServiceWorkerFet
         body: request.body,
         client_id: request.client_id,
         resulting_client_id: request.resulting_client_id,
+        referrer: request.referrer,
     }
 }
 
@@ -1444,6 +1447,7 @@ impl BrowserServiceWorkerOwner {
             body,
             client_id: Some(client_id.to_string()),
             resulting_client_id: None,
+            referrer: None,
         };
         let dispatch = self.manager_mut(profile).dispatch_fetch(&origin, event_id, request);
         match dispatch {

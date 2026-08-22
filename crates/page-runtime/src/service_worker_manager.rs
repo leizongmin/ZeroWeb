@@ -72,6 +72,7 @@ fn service_worker_request_from_cache(request: &CacheRequest) -> ServiceWorkerFet
         body: None,
         client_id: None,
         resulting_client_id: None,
+        referrer: None,
     }
 }
 
@@ -4054,6 +4055,7 @@ mod tests {
                         body: None,
                         client_id: Some("client-1".into()),
                         resulting_client_id: None,
+                        referrer: None,
                     },
                 )
                 .unwrap(),
@@ -4092,6 +4094,7 @@ mod tests {
                         body: None,
                         client_id: None,
                         resulting_client_id: None,
+                        referrer: None,
                     },
                 )
                 .unwrap(),
@@ -4150,6 +4153,7 @@ mod tests {
                         body: None,
                         client_id: Some("client-1".into()),
                         resulting_client_id: None,
+                        referrer: None,
                     },
                 )
                 .unwrap(),
@@ -4212,6 +4216,7 @@ mod tests {
                         body: None,
                         client_id: Some("client-1".into()),
                         resulting_client_id: None,
+                        referrer: None,
                     },
                 )
                 .unwrap(),
@@ -4285,6 +4290,7 @@ mod tests {
                         body: None,
                         client_id: Some("client-1".into()),
                         resulting_client_id: None,
+                        referrer: None,
                     },
                 )
                 .unwrap(),
@@ -4387,6 +4393,7 @@ mod tests {
                         body: None,
                         client_id: None,
                         resulting_client_id: None,
+                        referrer: None,
                     },
                 )
                 .unwrap(),
@@ -4404,6 +4411,7 @@ mod tests {
                         body: None,
                         client_id: None,
                         resulting_client_id: None,
+                        referrer: None,
                     },
                 )
                 .unwrap(),
