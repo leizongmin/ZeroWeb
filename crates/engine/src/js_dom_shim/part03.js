@@ -6334,6 +6334,25 @@
               h += '</body>';
               var r = JSON.parse(__zw_parse_html_query(h, String(sel), '1', '', '1')) || []; // R161: filter_synthetic（fragment 无 html 容器）
               var out = [];
+              // R163（js-dom M4 / L2 首片）：**真实节点优先**——fragment 子树里
+              // 已存在的节点（cloneNode 产物 `_zwMEl`）直接返回本体（querySelectorAll
+              // 与 traverse/firstChild 遍历同 identity——WPT "tree order" 断言
+              // `elem === result[i]`；旧版恒返 wrapper 三对象域割裂）。索引键
+              // tag+id+outer（节点 outerHTML 与序列化一致时命中）；miss 回落
+              // wrapper 缓存（原行为）。
+              var nodeIdx = null;
+              try {
+                nodeIdx = new Map();
+                (function walk163(n) {
+                  if (!n || n.nodeType !== 1) return;
+                  try {
+                    var nk = String(n.nodeName || '').toLowerCase() + '\x1f' + String(n.id || '') + '\x1f' + String(n.outerHTML || n._zwOuterFallback || '');
+                    if (nk && !nodeIdx.has(nk)) nodeIdx.set(nk, n);
+                  } catch (_e163k) {}
+                  var cs = n.childNodes || [];
+                  for (var w = 0; w < cs.length; w++) walk163(cs[w]);
+                })(frag);
+              } catch (_e163w) { nodeIdx = null; }
               // R158：per-fragment wrapper 缓存（同 _zwMWrapCached——querySelector
               // 与 querySelectorAll[0] 的 identity 断言；key 含 outer，子树变更自然 miss）。
               if (!frag._zwQWrapMap || !(frag._zwQWrapMap instanceof Map)) frag._zwQWrapMap = new Map();
@@ -6341,6 +6360,12 @@
               if (fmap.size > 512) fmap.clear();
               for (var k = 0; k < r.length; k++) {
                 var fk = String(r[k] && r[k].tag || '') + '\x1f' + String(r[k] && r[k].id || '') + '\x1f' + String(r[k] && r[k].outer || '');
+                var real163 = nodeIdx ? nodeIdx.get(fk) : null;
+                if (real163) {
+                  out.push(real163);
+                  fmap.set(fk, real163); // 同键后继查询同 identity
+                  continue;
+                }
                 var fe156 = fmap.get(fk);
                 if (!fe156) {
                   fe156 = new _zwParseEl(r[k]);
