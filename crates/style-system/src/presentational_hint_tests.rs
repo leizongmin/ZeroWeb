@@ -657,6 +657,40 @@ fn textarea_uses_cols_rows_intrinsic_size() {
 }
 
 #[test]
+fn form_control_intrinsic_sizing_rejects_non_finite_attributes() {
+    use zero_css_parser::values::LengthValue;
+    let doc = parse_html(
+        "<body>\
+             <input size=\"Infinity\">\
+             <textarea cols=\"Infinity\" rows=\"Infinity\">txt</textarea>\
+             </body>",
+    );
+    let mut system = StyleSystem::new();
+    let styles = system.compute_styles(&doc, &[]);
+
+    let input = doc.get_elements_by_tag_name("input")[0];
+    let input_style = styles.get(&input).expect("input styled");
+    assert!(
+        matches!(input_style.width, LengthValue::Px(w) if (174.0..=182.0).contains(&w)),
+        "non-finite input size should fall back to default size=20 width ~178px, got {:?}",
+        input_style.width
+    );
+
+    let textarea = doc.get_elements_by_tag_name("textarea")[0];
+    let textarea_style = styles.get(&textarea).expect("textarea styled");
+    assert!(
+        matches!(textarea_style.width, LengthValue::Px(w) if (140.0..=160.0).contains(&w)),
+        "non-finite textarea cols should fall back to default cols=20 width ~148px, got {:?}",
+        textarea_style.width
+    );
+    assert!(
+        matches!(textarea_style.height, LengthValue::Px(h) if (34.0..=42.0).contains(&h)),
+        "non-finite textarea rows should fall back to default rows=2 height ~38px, got {:?}",
+        textarea_style.height
+    );
+}
+
+#[test]
 fn select_suppresses_options_and_gets_intrinsic_width() {
     // R1679：option/optgroup UA display:none（ZW_SELECT_SUPPRESS_OPTIONS default-on）+ select
     // 固有宽 = 最宽 option 标签宽 + chrome。本测试跑在 default env（feature on）下。

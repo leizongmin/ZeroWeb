@@ -256,6 +256,11 @@ fn select_intrinsic_width(doc: &Document, select: NodeId) -> f32 {
     (max_chars as f32 * CHAR_PX + CHROME).max(CHROME)
 }
 
+fn parse_positive_finite_html_dimension_attr(value: &str) -> Option<f32> {
+    // https://html.spec.whatwg.org/multipage/common-microsyntaxes.html#rules-for-parsing-non-negative-integers
+    value.trim().parse::<f32>().ok().filter(|n| n.is_finite() && *n >= 1.0)
+}
+
 /// 样式系统，负责为文档中的元素计算样式。
 ///
 /// 整合选择器匹配、级联、继承和计算值生成。
@@ -1253,8 +1258,7 @@ impl StyleSystem {
                             _ => {
                                 let size = doc
                                     .get_attribute(element, "size")
-                                    .and_then(|s| s.trim().parse::<f32>().ok())
-                                    .filter(|&n| n >= 1.0)
+                                    .and_then(|s| parse_positive_finite_html_dimension_attr(&s))
                                     .unwrap_or(20.0);
                                 // +8 ≈ 输入框左右 padding/border chrome（2px padding + 1px border ×2）。
                                 let w = size * 8.5 + 8.0;
@@ -1286,13 +1290,11 @@ impl StyleSystem {
                         const WIDTH_CHROME: f32 = 8.0; // ≡ R1659 input：左右 padding(4)+border(2)+边距
                         let cols = doc
                             .get_attribute(element, "cols")
-                            .and_then(|s| s.trim().parse::<f32>().ok())
-                            .filter(|&n| n >= 1.0)
+                            .and_then(|s| parse_positive_finite_html_dimension_attr(&s))
                             .unwrap_or(20.0);
                         let rows = doc
                             .get_attribute(element, "rows")
-                            .and_then(|s| s.trim().parse::<f32>().ok())
-                            .filter(|&n| n >= 1.0)
+                            .and_then(|s| parse_positive_finite_html_dimension_attr(&s))
                             .unwrap_or(2.0);
                         let w = cols * CHAR_PX + WIDTH_CHROME;
                         let h = rows * ROW_PX;
