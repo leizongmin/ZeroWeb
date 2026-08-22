@@ -3310,6 +3310,17 @@
       insertNode: function (node) {
         // 在 startContainer 的 startOffset 位置插入 node（created 节点）。off < 子数 → insertBefore(ref)，否则
         // appendChild。复用既有 insertBefore/appendChild（emit mutation）。返回 node（spec）。
+        // R178（js-dom M4）：spec `dom-range-insertnode` 步骤 2-3——Attr 不是合法
+        // 插入父（HierarchyRequestError）/ Attr 不能作被插内容（WPT Range-attribute-
+        // nodes 的 insertNode 两形态——旧静默 no-op / 吞错不抛）。
+        if (node === null || node === undefined || typeof node.nodeType !== 'number') {
+          throw new globalThis.TypeError(
+            "Failed to execute 'insertNode' on 'Range': parameter 1 is not of type 'Node'.");
+        }
+        if (node.nodeType === 2 || this.startContainer.nodeType === 2) {
+          throw new (globalThis.DOMException || Error)(
+            'Nodes of type 2 cannot be inserted or inserted into.', 'HierarchyRequestError');
+        }
         if (!node || !this.startContainer) return node;
         try {
           var kids = this.startContainer.childNodes;
@@ -3331,6 +3342,14 @@
         //（位置近似）：非尾部精确插位须 id-stable ref 或 host 回调（nth-child 经移除前移失效），defer。
         // collapsed（0 覆盖子）→ insertNode(newParent)。跨容器/文本切片 → best-effort no-op（defer）。
         if (!newParent || !this.startContainer) return;
+        // R178（js-dom M4）：surroundContents 内含 insertNode 语义——Attr-rooted
+        // range / Attr 参数同抛 HierarchyRequestError（spec `dom-range-surroundcontents`
+        // 步骤 2「部分选区」与本处 Attr 非法父；WPT "surroundContents() on an
+        // Attr-rooted range throws"）。
+        if (newParent.nodeType === 2 || this.startContainer.nodeType === 2) {
+          throw new (globalThis.DOMException || Error)(
+            'Nodes of type 2 cannot be inserted or inserted into.', 'HierarchyRequestError');
+        }
         var kids = this._coveredChildren();
         if (kids === null) return; // 跨容器/文本切片 defer
         if (kids.length === 0) { this.insertNode(newParent); return; }
@@ -3377,6 +3396,127 @@
         r.commonAncestorContainer = this.commonAncestorContainer;
         r.collapsed = this.collapsed; r._mode = this._mode;
         return r;
+      },
+      // R178（js-dom M4）：root-of（沿 parentNode 上行到根——spec「concept-tree-root」；
+      // Attr 的 parentNode null → root 是自身，与文档根永不相等——WPT Range-attribute-nodes
+      // 的 WrongDocumentError 短路族判据）。
+      _rootOf178: function (node) {
+        var cur = node, guard = 0;
+        while (cur && cur.parentNode && guard++ < 128) cur = cur.parentNode;
+        return cur;
+      },
+      // R178（js-dom M4）：`comparePoint(node, offset)`（spec `dom-range-comparepoint`）——
+      // ① node root ≠ range root → WrongDocumentError；② offset 超 node length →
+      // IndexSizeError；③ 返回 node 起 boundary 相对 range 起点的文档序（-1/0/+1，
+      // 折叠态按 offset 比较）。
+      comparePoint: function (node, offset) {
+        if (node === null || node === undefined || typeof node.nodeType !== 'number') {
+          throw new globalThis.TypeError(
+            "Failed to execute 'comparePoint' on 'Range': parameter 1 is not of type 'Node'.");
+        }
+        var myRoot = this._rootOf178(this.startContainer);
+        var nodeRoot = this._rootOf178(node);
+        if (myRoot !== nodeRoot) {
+          throw new (globalThis.DOMException || Error)(
+            'The two ranges are in different documents.', 'WrongDocumentError');
+        }
+        var len = this._nodeLength(node);
+        if ((offset | 0) < 0 || (offset | 0) > len) {
+          throw new (globalThis.DOMException || Error)(
+            'The offset is out of range.', 'IndexSizeError');
+        }
+        // 折叠/同容器近似：同容器按 offset 差；不同容器 best-effort 0（树序比较
+        // 需 compareDocumentPosition 全形态支撑，本切片聚焦 Attr 短路族）。
+        if (node === this.startContainer) {
+          return (offset | 0) < this.startOffset ? -1 : ((offset | 0) > this.startOffset ? 1 : 0);
+        }
+        try {
+          var pos = this.startContainer.compareDocumentPosition(node);
+          // node 在 startContainer 之前 → -1（CONTAINS=8 由 node 包含 start）；
+          // FOLLOWING=4（node 在后）→ 1。
+          if (pos & 2) return -1;
+          if (pos & 4) return 1;
+        } catch (_e178c) {}
+        return 0;
+      },
+      // R178（js-dom M4）：`isPointInRange(node, offset)`（spec `dom-range-ispointinrange`）
+      // ——root 不同返 false（不抛）；offset 超长 IndexSizeError；容器相等按 offset 区间。
+      isPointInRange: function (node, offset) {
+        if (node === null || node === undefined || typeof node.nodeType !== 'number') {
+          throw new globalThis.TypeError(
+            "Failed to execute 'isPointInRange' on 'Range': parameter 1 is not of type 'Node'.");
+        }
+        if (this._rootOf178(this.startContainer) !== this._rootOf178(node)) return false;
+        var len = this._nodeLength(node);
+        if ((offset | 0) < 0 || (offset | 0) > len) {
+          throw new (globalThis.DOMException || Error)(
+            'The offset is out of range.', 'IndexSizeError');
+        }
+        if (node === this.startContainer && node === this.endContainer) {
+          return (offset | 0) >= this.startOffset && (offset | 0) <= this.endOffset;
+        }
+        // 容器不同的树序判定 best-effort true（本切片聚焦 Attr 短路 + 同容器族）。
+        return true;
+      },
+      // R178（js-dom M4）：`intersectsNode(node)`（spec `dom-range-intersectsnode`）——
+      // root 不同返 false；node 的父 null（root 自身）→ 恒 true（range 与自身根必交）；
+      // 否则按 node 起止偏移与 range 边界的区间交。
+      intersectsNode: function (node) {
+        if (node === null || node === undefined || typeof node.nodeType !== 'number') {
+          throw new globalThis.TypeError(
+            "Failed to execute 'intersectsNode' on 'Range': parameter 1 is not of type 'Node'.");
+        }
+        if (this._rootOf178(this.startContainer) !== this._rootOf178(node)) return false;
+        // spec `dom-range-intersectsnode` 步骤 2：node 的 parent null（node 即
+        // 根——Attr/Document 场景）→ **恒 true**（range 与自身根必交；WPT
+        // "intersectsNode() with an Attr node sharing the range's root returns
+        // true"——collapsed 前置判定在 spec 中不存在，是首版误加）。
+        var parent = node.parentNode;
+        if (!parent) return true;
+        if (this.collapsed) return false;
+        var i = this._indexOf(parent, node);
+        if (i < 0) return true; // 不在父视图（best-effort 保守 true）
+        return !(i < this.startOffset || i > this.endOffset);
+      },
+      // R178（js-dom M4）：`compareBoundaryPoints(how, sourceRange)`（spec
+      // `dom-range-compareboundarypoints`）——两 range root 不同 → WrongDocumentError；
+      // 同 root 折叠 range 互比 → 0（WPT Attr-rooted 双 range 全 4 how 期望 0）。
+      compareBoundaryPoints: function (how, sourceRange) {
+        if (!sourceRange || typeof sourceRange.startContainer === 'undefined') {
+          throw new globalThis.TypeError(
+            "Failed to execute 'compareBoundaryPoints' on 'Range': parameter 2 is not of type 'Range'.");
+        }
+        if (this._rootOf178(this.startContainer) !== sourceRange._rootOf178(sourceRange.startContainer)) {
+          throw new (globalThis.DOMException || Error)(
+            'The two ranges are in different documents.', 'WrongDocumentError');
+        }
+        var howN = how | 0;
+        if (howN < 0 || howN > 3) {
+          throw new (globalThis.DOMException || Error)(
+            'The comparison code is out of range.', 'IndexSizeError');
+        }
+        // 本切片聚焦「同容器折叠」族（Attr-rooted 双 range）：容器相等按 offset 差，
+        // 不同容器 best-effort 0。
+        var thisBoundary178, srcBoundary178;
+        // START_TO_START=0 / START_TO_END=1 / END_TO_END=2 / END_TO_START=3
+        // （spec 常量：比较 (this 的 [start,end]) 与 source 的 [start,end]）。
+        var thisPair178 = howN === 1 ? [this.endContainer, this.endOffset]
+          : (howN === 3 ? [this.startContainer, this.startOffset]
+          : [this.startContainer, this.startOffset]);
+        var srcPair178 = howN === 1 ? [sourceRange.startContainer, sourceRange.startOffset]
+          : (howN === 3 ? [sourceRange.endContainer, sourceRange.endOffset]
+          : [sourceRange.startContainer, sourceRange.startOffset]);
+        thisBoundary178 = thisPair178; srcBoundary178 = srcPair178;
+        if (thisBoundary178[0] === srcBoundary178[0]) {
+          return thisBoundary178[1] === srcBoundary178[1] ? 0
+            : (thisBoundary178[1] < srcBoundary178[1] ? -1 : 1);
+        }
+        try {
+          var pos178 = thisBoundary178[0].compareDocumentPosition(srcBoundary178[0]);
+          if (pos178 & 2) return -1;
+          if (pos178 & 4) return 1;
+        } catch (_e178b) {}
+        return 0;
       },
       detach: function () { /* no-op（spec 已废弃 Range.detach，保留供老库调用） */ },
       toString: function () {

@@ -493,7 +493,9 @@ fn encode_cache_name_units(name: &str) -> String {
 }
 
 fn decode_cache_name_units(units: &str) -> Result<String, String> {
-    if !units.as_bytes().chunks_exact(4).remainder().is_empty() {
+    // clippy 1.98 chunks_exact_to_as_chunks：常量块宽用 as_chunks（remainder 由
+    // 元组第二段判断；与 canvas/render-foundation 的既有 as_chunks 惯例一致）。
+    if !units.as_bytes().as_chunks::<4>().1.is_empty() {
         return Err("TypeError: invalid CacheStorage name code units".to_string());
     }
     for byte in units.bytes() {
@@ -512,7 +514,7 @@ fn display_cache_name(name: &str) -> String {
 
 fn decode_cache_name_units_lossy(units: &str) -> String {
     let mut utf16 = Vec::new();
-    for chunk in units.as_bytes().chunks_exact(4) {
+    for chunk in units.as_bytes().as_chunks::<4>().0 {
         let Ok(hex) = std::str::from_utf8(chunk) else {
             return String::new();
         };
