@@ -1880,7 +1880,16 @@ impl Document {
             Some(n) => n,
             None => return pos,
         };
-        pos.is_empty = node_data.children.is_empty();
+        // R160（js-dom M4）：`:empty` spec 语义（CSS Selectors L4 §boolean-
+        // selectors）——元素无子节点，或所有子节点均为**注释/处理指令**（文本
+        // 节点即使空白也非空——WPT `#pseudo-empty p:empty` expect p1（零子）+
+        // p2（仅注释），p3（空白文本）不中；旧版 any-children 判空把 p2 漏掉）。
+        pos.is_empty = node_data.children.iter().all(|&c| {
+            matches!(
+                self.nodes.get(c).map(|n| &n.kind),
+                Some(NodeKind::Comment(_)) | Some(NodeKind::ProcessingInstruction(_))
+            )
+        });
         let tag = match &node_data.kind {
             NodeKind::Element(e) => e.local_name(),
             _ => return pos,

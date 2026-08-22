@@ -1562,7 +1562,18 @@ pub fn query_all_selector_list_doc(doc: &Document, selector: &str) -> String {
 /// `text` = `text_content`（含后代文本，与 spec `.textContent` 一致）；`outer` = `outer_html`。
 /// shim 据此暴露 `tagName/id/className/textContent/outerHTML/innerHTML(派生)/getAttribute/子树 query`。
 pub fn parse_html_element_json(html: &str, selector: &str, all: bool) -> String {
-    let doc = parse_html(html);
+    parse_html_element_json_with_url(html, selector, all, None)
+}
+
+/// R160（js-dom M4）：带 URL 变体——iframe 子文档查询的 `:target` 需要 fragment
+///（WPT `:target` 簇：detached doc 查询经 `__zw_parse_html_query` 重 parse，旧版
+/// 无 URL → `:target` 恒 miss）。`url` 注入 `doc.set_url`，`:target` 经
+/// `is_target_element` 判定。
+pub fn parse_html_element_json_with_url(html: &str, selector: &str, all: bool, url: Option<&str>) -> String {
+    let mut doc = parse_html(html);
+    if url.is_some() {
+        doc.set_url(url.map(str::to_string));
+    }
     let root = doc.root();
     let ids: Vec<NodeId> = if all {
         doc.query_selector_all(root, zero_dom::trim_ascii_ws(selector))

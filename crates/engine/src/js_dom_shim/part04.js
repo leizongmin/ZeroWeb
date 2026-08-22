@@ -383,6 +383,9 @@
                   // 整页 error 根因）。.html/.xhtml 均走 html 变体（XHTML ns）。
                   var kind = /\.x?html?(\?|#|$)/i.test(_r115Url) ? 'xhtml' : 'xml';
                   _r115Entry.doc = _zwMakeIframeDoc(kind, _r115Body);
+                  // R160：fragment URL 槽（`:target` 判定——WPT :target 簇的
+                  // iframe 子文档 src 带 #target，doc 查询传 host 侧 set_url）。
+                  try { _r115Entry.doc._zwFragmentUrl = _r115Url; } catch (_e160f) {}
                   _r115Entry.win = _zwMakeIframeWin(_r115Entry.doc);
                   try { if (_r115Entry.doc.__r115SetWin) _r115Entry.doc.__r115SetWin(_r115Entry.win); } catch (_eW) {}
                   _r115Entry.state = 'done';

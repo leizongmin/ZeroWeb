@@ -5411,7 +5411,11 @@
     function queryBody(sel, all) {
       if (typeof __zw_parse_html_query !== 'function') return [];
       try {
-        return JSON.parse(__zw_parse_html_query(detHtml(), String(sel), all ? '1' : '0'));
+        // R160：第 4 参 URL（doc._zwFragmentUrl 槽——iframe 子文档的 `:target`
+        // fragment 判定，host 侧 set_url → is_target_element；无槽零变化）。
+        var furl = '';
+        try { furl = doc._zwFragmentUrl ? String(doc._zwFragmentUrl) : ''; } catch (_e160u) {}
+        return JSON.parse(__zw_parse_html_query(detHtml(), String(sel), all ? '1' : '0', furl));
       } catch (_e) { return []; }
     }
     // R158（js-dom M4）：per-element wrapper 缓存——同一元素的 querySelector 与

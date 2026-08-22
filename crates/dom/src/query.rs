@@ -2014,6 +2014,28 @@ mod zz_r156_tests {
         assert!(crate::query::selector_is_valid("#a [align=\"center\""));
     }
 
+    // R160：`:empty` spec 语义（注释/PI 子节点不影响空判定；文本/元素子节点非空）
+    // + `:target` fragment 判定（parse_html_element_json_with_url 的 Rust 侧
+    // 基础——doc.set_url 后 is_target_element 命中 id 元素）。
+    #[test]
+    fn zz_r160_empty_semantics() {
+        let html = "<body><div id=\"pe\"><p id=\"p1\"></p><p id=\"p2\"><!-- c --></p><p id=\"p3\"> </p><p id=\"p4\">T</p><span id=\"s1\"></span></div></body>";
+        let doc = parse_html(html);
+        let root = doc.root();
+        let ids: Vec<String> = doc
+            .query_selector_all(root, "#pe :empty")
+            .into_iter()
+            .filter_map(|id| doc.get_attribute(id, "id"))
+            .collect();
+        assert_eq!(
+            ids,
+            vec!["p1".to_string(), "p2".to_string(), "s1".to_string()],
+            ":empty = no children or comments only"
+        );
+        // :target 无 URL → 无命中
+        assert_eq!(doc.query_selector_all(root, ":target").len(), 0);
+    }
+
     // R159：伪元素（合法但零匹配）+ ns type selector（`*|div` 任意 / `|div` 空 ns）回归。
     #[test]
     fn zz_r159_pseudo_element_and_ns() {
