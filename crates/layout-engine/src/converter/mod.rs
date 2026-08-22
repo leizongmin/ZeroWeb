@@ -824,7 +824,7 @@ fn parse_grid_tracks(value: &Option<String>) -> Vec<taffy::style::GridTemplateCo
     let mut result = Vec::new();
 
     for token in tokens {
-        if let Some(inner) = token.strip_prefix("repeat(").and_then(|s| s.strip_suffix(')')) {
+        if let Some(inner) = grid_track_function_inner(&token, "repeat") {
             result.extend(parse_repeat(inner));
         } else {
             result.push(parse_single_track(&token));
@@ -939,22 +939,17 @@ fn parse_single_track_as_non_repeated(s: &str) -> taffy::style::TrackSizingFunct
     if s.eq_ignore_ascii_case("auto") {
         return TrackSizingFunction::AUTO;
     }
-    if s.ends_with("fr")
-        && let Ok(flex) = s.trim_end_matches("fr").parse::<f32>()
-    {
+    if let Some(flex) = parse_non_negative_number_with_suffix(s, "fr") {
         return TrackSizingFunction::from_fr(flex);
     }
-    if s.ends_with('%')
-        && let Ok(pct) = s.trim_end_matches('%').parse::<f32>()
-    {
+    if let Some(pct) = parse_non_negative_number_with_suffix(s, "%") {
         return TrackSizingFunction::from_percent(pct / 100.0);
     }
-    if s.starts_with("minmax(") && s.ends_with(')') {
-        return parse_minmax_as_non_repeated(&s[7..s.len() - 1]);
+    if let Some(inner) = grid_track_function_inner(s, "minmax") {
+        return parse_minmax_as_non_repeated(inner);
     }
     // fit-content() 函数
-    if s.starts_with("fit-content(") && s.ends_with(')') {
-        let inner = &s["fit-content(".len()..s.len() - 1];
+    if let Some(inner) = grid_track_function_inner(s, "fit-content") {
         if let Some((val, is_pct)) = parse_length_percentage(inner.trim()) {
             return TrackSizingFunction {
                 min: taffy::style::MinTrackSizingFunction::auto(),
@@ -966,12 +961,10 @@ fn parse_single_track_as_non_repeated(s: &str) -> taffy::style::TrackSizingFunct
             };
         }
     }
-    if s.ends_with("px")
-        && let Ok(px) = s.trim_end_matches("px").parse::<f32>()
-    {
+    if let Some(px) = parse_non_negative_number_with_suffix(s, "px") {
         return TrackSizingFunction::from_length(px);
     }
-    if let Ok(px) = s.parse::<f32>() {
+    if let Some(px) = parse_non_negative_number(s) {
         return TrackSizingFunction::from_length(px);
     }
 
@@ -1017,25 +1010,19 @@ fn parse_single_auto_track(s: &str) -> taffy::style::TrackSizingFunction {
     if s.eq_ignore_ascii_case("auto") {
         return TrackSizingFunction::AUTO;
     }
-    if s.ends_with("fr")
-        && let Ok(flex) = s.trim_end_matches("fr").parse::<f32>()
-    {
+    if let Some(flex) = parse_non_negative_number_with_suffix(s, "fr") {
         return TrackSizingFunction::from_fr(flex);
     }
-    if s.ends_with('%')
-        && let Ok(pct) = s.trim_end_matches('%').parse::<f32>()
-    {
+    if let Some(pct) = parse_non_negative_number_with_suffix(s, "%") {
         return TrackSizingFunction::from_percent(pct / 100.0);
     }
-    if s.starts_with("minmax(") && s.ends_with(')') {
-        return parse_minmax_as_non_repeated(&s[7..s.len() - 1]);
+    if let Some(inner) = grid_track_function_inner(s, "minmax") {
+        return parse_minmax_as_non_repeated(inner);
     }
-    if s.ends_with("px")
-        && let Ok(px) = s.trim_end_matches("px").parse::<f32>()
-    {
+    if let Some(px) = parse_non_negative_number_with_suffix(s, "px") {
         return TrackSizingFunction::from_length(px);
     }
-    if let Ok(px) = s.parse::<f32>() {
+    if let Some(px) = parse_non_negative_number(s) {
         return TrackSizingFunction::from_length(px);
     }
 
@@ -1064,22 +1051,17 @@ fn parse_single_track(s: &str) -> taffy::style::GridTemplateComponent<String> {
     if s.eq_ignore_ascii_case("auto") {
         return TrackSizingFunction::AUTO.into();
     }
-    if s.ends_with("fr")
-        && let Ok(flex) = s.trim_end_matches("fr").parse::<f32>()
-    {
+    if let Some(flex) = parse_non_negative_number_with_suffix(s, "fr") {
         return TrackSizingFunction::from_fr(flex).into();
     }
-    if s.ends_with('%')
-        && let Ok(pct) = s.trim_end_matches('%').parse::<f32>()
-    {
+    if let Some(pct) = parse_non_negative_number_with_suffix(s, "%") {
         return TrackSizingFunction::from_percent(pct / 100.0).into();
     }
-    if s.starts_with("minmax(") && s.ends_with(')') {
-        return parse_minmax(&s[7..s.len() - 1]).into();
+    if let Some(inner) = grid_track_function_inner(s, "minmax") {
+        return parse_minmax(inner).into();
     }
     // fit-content() 函数：映射为 taffy 的 FitContent 轨道尺寸
-    if s.starts_with("fit-content(") && s.ends_with(')') {
-        let inner = &s["fit-content(".len()..s.len() - 1];
+    if let Some(inner) = grid_track_function_inner(s, "fit-content") {
         if let Some((val, is_pct)) = parse_length_percentage(inner.trim()) {
             return taffy::style::GridTemplateComponent::Single(taffy::geometry::MinMax {
                 min: taffy::style::MinTrackSizingFunction::auto(),
@@ -1092,12 +1074,10 @@ fn parse_single_track(s: &str) -> taffy::style::GridTemplateComponent<String> {
         }
     }
     // 默认尝试解析为长度
-    if s.ends_with("px")
-        && let Ok(px) = s.trim_end_matches("px").parse::<f32>()
-    {
+    if let Some(px) = parse_non_negative_number_with_suffix(s, "px") {
         return TrackSizingFunction::from_length(px).into();
     }
-    if let Ok(px) = s.parse::<f32>() {
+    if let Some(px) = parse_non_negative_number(s) {
         return TrackSizingFunction::from_length(px).into();
     }
 
@@ -1110,17 +1090,13 @@ fn parse_single_track(s: &str) -> taffy::style::GridTemplateComponent<String> {
 /// 支持 px、%、纯数字（视为 px）。供 fit-content 轨道尺寸用（0.8.3 fit_content_px/percent 取 f32）。
 fn parse_length_percentage(s: &str) -> Option<(f32, bool)> {
     let s = s.trim();
-    if s.ends_with("px")
-        && let Ok(px) = s.trim_end_matches("px").parse::<f32>()
-    {
+    if let Some(px) = parse_non_negative_number_with_suffix(s, "px") {
         return Some((px, false));
     }
-    if s.ends_with('%')
-        && let Ok(pct) = s.trim_end_matches('%').parse::<f32>()
-    {
+    if let Some(pct) = parse_non_negative_number_with_suffix(s, "%") {
         return Some((pct / 100.0, true));
     }
-    if let Ok(px) = s.parse::<f32>() {
+    if let Some(px) = parse_non_negative_number(s) {
         return Some((px, false));
     }
     None
@@ -1147,17 +1123,13 @@ fn parse_min_track(s: &str) -> taffy::style::MinTrackSizingFunction {
     if s.eq_ignore_ascii_case("auto") {
         return MinTrackSizingFunction::auto();
     }
-    if s.ends_with('%')
-        && let Ok(pct) = s.trim_end_matches('%').parse::<f32>()
-    {
+    if let Some(pct) = parse_non_negative_number_with_suffix(s, "%") {
         return MinTrackSizingFunction::percent(pct / 100.0);
     }
-    if s.ends_with("px")
-        && let Ok(px) = s.trim_end_matches("px").parse::<f32>()
-    {
+    if let Some(px) = parse_non_negative_number_with_suffix(s, "px") {
         return MinTrackSizingFunction::length(px);
     }
-    if let Ok(px) = s.parse::<f32>() {
+    if let Some(px) = parse_non_negative_number(s) {
         return MinTrackSizingFunction::length(px);
     }
 
@@ -1173,26 +1145,56 @@ fn parse_max_track(s: &str) -> taffy::style::MaxTrackSizingFunction {
     if s.eq_ignore_ascii_case("auto") {
         return MaxTrackSizingFunction::auto();
     }
-    if s.ends_with("fr")
-        && let Ok(flex) = s.trim_end_matches("fr").parse::<f32>()
-    {
+    if let Some(flex) = parse_non_negative_number_with_suffix(s, "fr") {
         return MaxTrackSizingFunction::from_fr(flex);
     }
-    if s.ends_with('%')
-        && let Ok(pct) = s.trim_end_matches('%').parse::<f32>()
-    {
+    if let Some(pct) = parse_non_negative_number_with_suffix(s, "%") {
         return MaxTrackSizingFunction::percent(pct / 100.0);
     }
-    if s.ends_with("px")
-        && let Ok(px) = s.trim_end_matches("px").parse::<f32>()
-    {
+    if let Some(px) = parse_non_negative_number_with_suffix(s, "px") {
         return MaxTrackSizingFunction::length(px);
     }
-    if let Ok(px) = s.parse::<f32>() {
+    if let Some(px) = parse_non_negative_number(s) {
         return MaxTrackSizingFunction::length(px);
     }
 
     MaxTrackSizingFunction::auto()
+}
+
+fn parse_non_negative_number_with_suffix(value: &str, suffix: &str) -> Option<f32> {
+    // https://drafts.csswg.org/css-values-4/#numeric-types
+    // CSS unit identifiers are ASCII case-insensitive.
+    let number = strip_ascii_case_suffix(value.trim(), suffix)?;
+    let parsed = number.parse::<f32>().ok()?;
+    (parsed.is_finite() && parsed >= 0.0).then_some(parsed)
+}
+
+fn parse_non_negative_number(value: &str) -> Option<f32> {
+    let parsed = value.trim().parse::<f32>().ok()?;
+    (parsed.is_finite() && parsed >= 0.0).then_some(parsed)
+}
+
+fn strip_ascii_case_suffix<'a>(value: &'a str, suffix: &str) -> Option<&'a str> {
+    let suffix_start = value.len().checked_sub(suffix.len())?;
+    let tail = value.get(suffix_start..)?;
+    if !tail.eq_ignore_ascii_case(suffix) {
+        return None;
+    }
+    value.get(..suffix_start).map(str::trim)
+}
+
+fn grid_track_function_inner<'a>(value: &'a str, name: &str) -> Option<&'a str> {
+    let value = value.trim();
+    let prefix_len = name.len();
+    let prefix = value.get(..prefix_len)?;
+    if value.len() <= prefix_len + 1
+        || !prefix.eq_ignore_ascii_case(name)
+        || value.as_bytes().get(prefix_len) != Some(&b'(')
+        || !value.ends_with(')')
+    {
+        return None;
+    }
+    Some(&value[prefix_len + 1..value.len() - 1])
 }
 
 /// 转换 grid-auto-flow 值。

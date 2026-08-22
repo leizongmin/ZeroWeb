@@ -241,12 +241,20 @@ fn grid_length_percentage_supported(value: &str) -> bool {
 }
 
 fn grid_non_negative_number_with_suffix<'a>(value: &'a str, suffix: &str) -> Option<&'a str> {
-    if !value.ends_with(suffix) {
-        return None;
-    }
-    let number = value[..value.len() - suffix.len()].trim();
+    // https://drafts.csswg.org/css-values-4/#numeric-types
+    // CSS unit identifiers are ASCII case-insensitive.
+    let number = strip_ascii_case_suffix(value, suffix)?;
     let parsed = number.parse::<f32>().ok()?;
     (parsed.is_finite() && parsed >= 0.0).then_some(number)
+}
+
+fn strip_ascii_case_suffix<'a>(value: &'a str, suffix: &str) -> Option<&'a str> {
+    let suffix_start = value.len().checked_sub(suffix.len())?;
+    let tail = value.get(suffix_start..)?;
+    if !tail.eq_ignore_ascii_case(suffix) {
+        return None;
+    }
+    value.get(..suffix_start).map(str::trim)
 }
 
 fn grid_zero_number(value: &str) -> bool {

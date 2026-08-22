@@ -489,6 +489,50 @@ fn test_parse_grid_tracks_percentage_values() {
     );
 }
 
+/// CSS units are ASCII case-insensitive; uppercase grid track units must not
+/// fall back to auto during the layout conversion step.
+#[test]
+fn test_grid_track_units_are_case_insensitive_in_converter() {
+    let mut style = ComputedStyle::default();
+    style.display = DisplayValue::Grid;
+    style.grid_template_columns = Some("100PX MINMAX(20PX, 1FR) REPEAT(2, 10PX)".to_string());
+    style.grid_auto_rows = Some("2FR 30PX".to_string());
+
+    let taffy_style = computed_style_to_taffy(&style, None, 800.0, 600.0);
+
+    assert_eq!(taffy_style.grid_template_columns.len(), 4);
+    match &taffy_style.grid_template_columns[0] {
+        taffy::style::GridTemplateComponent::Single(track) => {
+            assert_eq!(track.min.into_raw().value(), 100.0);
+            assert_eq!(track.max.into_raw().value(), 100.0);
+        }
+        other => panic!("expected first track to be 100px, got {other:?}"),
+    }
+    match &taffy_style.grid_template_columns[1] {
+        taffy::style::GridTemplateComponent::Single(track) => {
+            assert_eq!(track.min.into_raw().value(), 20.0);
+            assert!(track.max.is_fr());
+            assert_eq!(track.max.into_raw().value(), 1.0);
+        }
+        other => panic!("expected second track to be minmax(20px, 1fr), got {other:?}"),
+    }
+    for repeated_track in &taffy_style.grid_template_columns[2..] {
+        match repeated_track {
+            taffy::style::GridTemplateComponent::Single(track) => {
+                assert_eq!(track.min.into_raw().value(), 10.0);
+                assert_eq!(track.max.into_raw().value(), 10.0);
+            }
+            other => panic!("expected repeated track to be 10px, got {other:?}"),
+        }
+    }
+
+    assert_eq!(taffy_style.grid_auto_rows.len(), 2);
+    assert!(taffy_style.grid_auto_rows[0].max.is_fr());
+    assert_eq!(taffy_style.grid_auto_rows[0].max.into_raw().value(), 2.0);
+    assert_eq!(taffy_style.grid_auto_rows[1].min.into_raw().value(), 30.0);
+    assert_eq!(taffy_style.grid_auto_rows[1].max.into_raw().value(), 30.0);
+}
+
 /// 测试 resolve_grid_placement 在无 parent_areas 时将所有 Name 转为 Auto。
 ///
 /// 当子元素引用 grid-area 名称但父级容器没有定义 grid-template-areas 时，

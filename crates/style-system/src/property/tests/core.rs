@@ -753,6 +753,32 @@ fn test_apply_property_grid_template_columns() {
 }
 
 #[test]
+fn test_apply_property_grid_track_units_are_case_insensitive() {
+    let mut style = ComputedStyle::default();
+    assert!(apply_property_value(
+        &mut style,
+        "grid-template-columns",
+        "100PX minmax(20PX, 1FR) fit-content(50%)"
+    ));
+    assert_eq!(
+        style.grid_template_columns,
+        Some("100PX minmax(20PX, 1FR) fit-content(50%)".to_string())
+    );
+    assert!(apply_property_value(
+        &mut style,
+        "grid-template-rows",
+        "REPEAT(2, 10PX) FIT-CONTENT(25%)"
+    ));
+    assert_eq!(
+        style.grid_template_rows,
+        Some("REPEAT(2, 10PX) FIT-CONTENT(25%)".to_string())
+    );
+
+    assert!(apply_property_value(&mut style, "grid-auto-rows", "2FR 30PX"));
+    assert_eq!(style.grid_auto_rows, Some("2FR 30PX".to_string()));
+}
+
+#[test]
 fn test_apply_property_grid_template_rows() {
     let mut style = ComputedStyle::default();
     assert!(apply_property_value(&mut style, "grid-template-rows", "50px 1fr"));
