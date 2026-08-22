@@ -1,0 +1,202 @@
+# RFC：P1b L2-d3 统一查询匹配器 + identity 桥（polyfill-live 合一收口设计）
+
+**版本**: v0.1（草案——R165 实证结论的成文化，供后续 rally 轮按切片执行）
+**日期**: 2026-08-22
+**状态**: Draft（rally 自主推进域——纯 polyfill shim 内部重构，kill-switch 无关，不改 Mission）
+**父 RFC**: `docs/specs/p1b-v8-native-bindings-rfc.md` §3.7 L2（本文件是 L2 的 JS 侧细化）
+**goal**: `docs/goal/js-dom.md` M1（L2 polyfill-live 合一）
+
+---
+
+## 0. 执行摘要
+
+**问题**：shim 的 DOM 元素在 JS 侧存在**四个互不相同的对象域**，同一逻辑节点经不同
+API 面返回不同对象——`querySelector` 结果 !== `createElement` 产物 !== 遍历面节点。
+这是 R159–R165 实证的三类 fail 簇（`#any-namespace` 族 / `[*|TiTlE]` 第 3 命中 /
+duplicate-id identity 分歧 / tree order 断言）的共同根因，也是 L2「查询读 live 树」
+按形态逐个 gate 迁移失败（R165 compound 首版 1072P/902F 大回归）的结构性原因。
+
+**方案**：两件事——
+1. **identity 桥**（双向映射表）：任何 API 面首次暴露一个逻辑节点时登记到全局
+   `node ↔ exposed-object` 表；此后**所有**面再产出该节点一律返回已登记对象。
+   不改任何一面的数据源，只改产物归一——identity 分歧类 fail 从根上消失。
+2. **统一匹配器**：把 doc 上下文已验证的「本树查询」（L2-d1 纯 tag →
+   `_queryTreeByCompound`）逐步扩展到 element/fragment 上下文与 compound/组合器
+   形态，最终全部查询面遍历各自 live 树（`_tree` / `_zwMEl` 子树 / handle
+   registry 树——handle 面已有完整先例 `_handleSubtreeNodes`+`_matchComplexAgainst`）。
+
+**切片序**（每片独立 land、全量双路径 WPT net≥0）：
+d3a 桥基建登记（零行为变化）→ d3b 查询产物归一 → d3c doc compound gate →
+d3d element/fragment 本树化 → d3e 组合器/伪类本树化。
+
+**边界**：本 RFC 只动 JS shim 内部（part02/03/05 的查询产物层），不动 host 回调
+协议（`__zw_*` wire 不变）、不动 native 路径、不删 JSON 往返（作为不支持形态的
+回落永续保留）。R43/R77/R165 三次「最小切片绕不开完整方案」的教训在此收口：
+完整方案 = 本 RFC，但它自身仍按可独立 land 的切片分解。
+
+---
+
+## 1. 背景：四对象域与实证证据
+
+### 1.1 对象域盘点（2026-08-22 代码核实）
+
+| 域 | 工厂/形态 | 产生面 | 身份载体 |
+|----|-----------|--------|----------|
+| **A. sel proxy** | `_wrapSelector(sel)`（part05） | `document.querySelector` 等 host 快照命中 | 唯一选择器串（host DOM 元素） |
+| **B. handle proxy** | `_makeProxy`（part04，`_proxyCache['@'+handle]`） | `createElement`/`createDocumentFragment`/shadow root | handle 串（host arena 节点） |
+| **C. mutTree 节点** | `_zwMEl(snap, parent)`（part03） | detached doc 树、cloneNode(deep)、`_zwMBuildBodyTree` | JS 对象本体（childNodes/parentNode 真链接） |
+| **D. 解析 wrapper** | `_zwParseEl(info)`（part02） | `__zw_parse_html_query` JSON 往返产物 | tag+id+outer 快照键（只读） |
+
+同域内部已有 identity 缓存（B：`_proxyCache`；C：对象本体；D：`_zwQWrapCache`/
+`_zwMWrapMap`/fragment `_zwQWrapMap` 三条 per-root 键缓存）。**跨域**只有三个局部
+桥接点：R100 `_zwQueryWrapIdentity`（sel→handle 反查，限 query 返回点）、R163
+fragment 真实节点优先（D 产物按键匹配回 C 本体）、R164 doc 纯 tag 本树直出 C。
+
+### 1.2 实证失败（为什么逐形态 gate 走不通）
+
+| 轮次 | 尝试 | 结果 | 根因 |
+|------|------|------|------|
+| R159 | `#any-namespace` 查询 | fail | setup 面 appendChild 落 C 域 per-element 树，doc 级查询树（A/D 源）**互不合并**——内容都不同，不止 identity |
+| R163 | fragment QSA 真实节点优先 | +1P land | 键匹配（tag+id+outer）可闭合 fragment 单面，但 probe 实证查询源含 `<head>` 内容返 309 vs 遍历面 1——**查询源与活树内容不同** |
+| R165 | doc+element+fragment compound gate | 1072P/902F | doc 上下文正常（docQ:1），element/fragment 上下文消费面依赖 D 域 wrapper 语义，直出 C 域真实节点破坏断言 |
+| R165 | 收窄纯 `#id` | 1936P/38F（-1） | `#id-li-duplicate`：duplicate-id 树首命中（C 域对象）与 JSON 往返首命中（D 域对象）在用例变量里共存 → identity 断言失败 |
+
+**结论**（R165 已记 master.md）：compound 迁移不能按形态逐个 gate；需要统一
+匹配器 + identity 桥。本 RFC 把该结论落成可执行设计。
+
+---
+
+## 2. 设计
+
+### 2.1 identity 桥（`_zwNodeBridge`）
+
+**数据结构**（part03 模块级，全 shim 单例）：
+
+```
+_zwNodeBridge = {
+  map: Map<node, object>,      // C 域真实节点 → 已暴露对象（任意域）
+  rev: Map<object, node>,      // 反向（暴露对象可能是 wrapper/proxy，不能挂 own slot——
+                               //   proxy 的 get trap 拦截属性写；WeakMap 不可枚举遍历，
+                               //   用双向 Map + 代际清理）
+  gen: 0                       // 代际（innerHTML setter / tree rebuild 时 clear）
+}
+```
+
+**API**（三函数，全部幂等）：
+
+```
+_zwBridgeGet(node)        → 已暴露对象 | undefined
+_zwBridgeSet(node, obj)   → 登记并返 obj（同 node 重复登记：首登记者胜，后到者被
+                            _zwBridgeGet 归一——不覆盖，保证「首次暴露」语义稳定）
+_zwBridgeNodeOf(obj)      → 反查真实节点 | undefined（wrapper 消费面升级用，d3e）
+```
+
+**登记点**（d3a，零行为变化——各面仍返回自己的产物，只同步登记）：
+
+| 面 | 登记处 | node 来源 |
+|----|--------|-----------|
+| doc 本树查询（queryBody L2-d1 直出） | part03 queryBody 直出分支 | 树节点（C） |
+| `_zwMWrapCached`（Element.prototype 查询） | part03 缓存命中/新建两分支 | **无真节点**——JSON 往返产物无 C 域对应，登记跳过（见 2.3 限制） |
+| fragment QSA（R163 真实节点优先） | part03 real163 命中分支 | 子树节点（C） |
+| handle proxy 暴露（`_wrapHandle`） | part05 `_proxyCache` 命中分支 | **无 C 域节点**——d3a 不登记（d3d 经 `_handleSubtreeNodes` 建联系） |
+| `_zwQueryWrapIdentity`（R100 sel→handle） | part05 命中分支 | 同上 |
+
+**归一点**（d3b）：三条查询面（queryBody / `_zwMQueryAll`→`_zwMWrapCached` /
+fragment QSA）在返回前对**可定位真实节点**的产物调 `_zwBridgeGet` 命中即返已
+登记对象。D 域 wrapper（无真节点）不参与归一——它们只服务无树上下文的只读面。
+
+**失效**：与 R158 `_zwQWrapCache` 同款代际钩子（`_zwQWrapBump` 已有 set 侧）+
+桥自身在 bump 时 `map.clear()`。树重建（innerHTML setter）后旧节点全部失联，
+桥清空防泄漏与 stale。
+
+### 2.2 统一匹配器（形态门 + 本树遍历）
+
+**已存在**（无需新写，d3c–d3e 只是接线）：
+
+- `_queryTreeByCompound(comp, all)`（part03，R165）：compound 节点局部匹配
+  （tag/`*`/`#id`/`.class`×n/`[attr]`/`[attr="v"]`，class 空白分词，attr 仅 `=`；
+  其余运算符显式回落）。守卫：outerHTML 为空的元素中止 → 整体回落 JSON。
+- `_parseCompoundOf` / `_parseSelectorListOf` / `_matchComplexAgainst` /
+  `_handleSubtreeNodes`（part05，R2928+）：handle 面的**完整**选择器引擎——
+  四组合器（` `/`>`/`+`/`~` 回溯匹配）+ 结构伪类白名单 + nodeInfo（ancestors/
+  parent/prevSiblings 树上下文）。**这是统一匹配器的目标形态**：handle 域查询
+  已完全本树化，从不开 JSON 往返。
+
+**目标接线**：
+
+```
+查询入口（任意上下文）
+  → _zwQueryGuard（非法选择器 SyntaxError，已有）
+  → 形态门：纯 tag / compound（无组合器无伪类）
+      → 本树遍历（根 = 调用者：doc._tree / _zwMEl 自身 / fragment / handle registry）
+      → 产物经 identity 桥归一
+  → 其余形态（组合器/伪类/attr 其它运算符/转义边缘）
+      → 上下文有本树 → part05 匹配器对 nodeInfo 树求值（d3e）
+      → 否则/守卫中止 → 旧 JSON 往返（永续回落）
+```
+
+### 2.3 明确不做 / 已知限制
+
+- **A 域（sel proxy）与 B 域（handle proxy）不迁 C 域**：它们是 host 权威节点的
+  视图（sel/handle 持久于 host arena），强行本树化 = 重造 host 同步协议（正是
+  R133 评估否决的方向）。桥只做**产物归一**（同节点同对象），不做域合并。
+- **`_zwMWrapCached` 的 JSON 产物无真节点可登记**：element 上下文查询在 d3d
+  本树化后才有真节点；d3b 阶段该面行为不变。
+- **duplicate-id 首命中语义**：桥的「首次暴露者胜」使跨面一致，但**哪面先执行**
+  决定用例拿到哪个对象。WPT `#id-li-duplicate` 断言的是 `querySelector` 与
+  `querySelectorAll[0]` 同对象（R158 已保证同面一致）；d3b 后跨面也一致。
+  若仍有 fail（用例断言特定域对象），按 fail 实证再定首暴露优先级——不预设。
+- **quickjs 路径**：shim 双引擎共用，本 RFC 全部 JS 侧改动对 v8/quickjs 同源
+  生效；验证跑双 feature（既有惯例）。
+
+---
+
+## 3. 切片计划（每片独立 land）
+
+| 片 | 内容 | 预期 | 验证门 |
+|----|------|------|--------|
+| **d3a** | 桥基建：`_zwNodeBridge` 三函数 + 三个既有真实节点直出点登记（queryBody 直出 / fragment real163 / cloneNode 产物） | **零行为变化**（纯登记） | 全量双路径逐计数一致 + zero-engine 全绿 |
+| **d3b** | 查询产物归一：三查询面返回前 `_zwBridgeGet` | `#id-li-duplicate` 类跨面 identity fail 收口（±数 P，net≥0 才 land） | 全量双路径 net≥0 + ParentNode 文件级 |
+| **d3c** | doc 上下文 compound gate：queryBody 形态门扩到 `_queryTreeByCompound` 全形态（R165 已实测 doc 上下文无回归——`docQ:1` 保持） | doc 上下文 compound 消 JSON 往返 | 同上 |
+| **d3d** | element/fragment 上下文本树化：`_zwMQueryAll`/fragment QSA 对纯 tag+compound 形态以调用元素为根遍历 `_zwMEl` 子树（复用 `_queryTreeByCompound` 语义 + 守卫），产物经桥；R165 的 902F 回归面在此被桥消解（真实节点 = 已登记对象） | element/fragment 查询读活树（R163「查询源与活树内容不同」收口） | 全量双路径 net≥0 + Element-matches 文件级 |
+| **d3e** | 组合器/伪类本树化：element/fragment/doc 上下文的组合器形态改走 part05 `_matchComplexAgainst`（nodeInfo 从各自树构——复用 `_handleSubtreeNodes` 的 DFS+info 构造，抽公共 helper）；attr 其它运算符同步（`_matchAttrOf` 已有） | 查询面 JSON 往返只剩守卫中止回落 | 同上 + traversal 文件级（walker 与查询序一致性） |
+
+每片统一验证序（既有惯例）：
+1. `make test`（test-guard 包裹）
+2. 全量 dom WPT 双路径（polyfill + `ZW_NATIVE_DOM=1`）逐计数对比，net≥0 才 land
+3. `cargo test -p zero-engine`（2310 基线）+ fmt + clippy（含 quickjs 矩阵）
+4. 单测：每片带 identity 断言（同节点跨面 `===`）+ 形态门判定单测
+
+**回滚**：每片一个 commit；任何一片 net<0 即 revert 该片（切片间无隐藏依赖——
+d3b 依赖 d3a 的登记点，d3d 依赖 d3b 的归一，其余正交）。
+
+---
+
+## 4. 风险与缓解
+
+| 风险 | 缓解 |
+|------|------|
+| 桥 Map 泄漏（长页面大量节点暴露） | 代际清理（bump 全清）+ 上限 4096 超限全清（同 R158 的 512 上限语义，放大因桥跨 root） |
+| proxy 对象作 Map key 的 trap 副作用 | 登记点全部在产物**返回前**的 plain 流程；proxy 仅作 value 不作 key（key 恒为 C 域 plain 节点） |
+| 首暴露语义改变现有用例期望对象 | d3b 单独 land + ParentNode/Element-matches 文件级对比；fail 实证再调 |
+| element 本树化漏守卫（R164 三守卫：容器例外/空 outer 中止/零命中落 JSON） | `_queryTreeByCompound` 已内建守卫；d3d 复用不重写；新增守卫先 probe 实证 |
+| 双引擎行为漂移 | 全部改动在共用 shim；验证双 feature 双路径 |
+
+---
+
+## 5. 与父 RFC / goal 的关系
+
+- 父 RFC §3.7 L2 定义为「polyfill 桥 `__zw_*` 回调改读共享 live Document C」——
+  host 侧（R102/R103 `with_query_doc_live_aware` 已做）。本 RFC 是 **JS 侧对偶**：
+  shim 内部查询面从「序列化→host re-parse→JSON 往返」改「读 JS 侧 live 树」。
+  两翼合拢后 L2 完整收口（M1 完成）。
+- 不触发 Mission 级单向门（不涉 default-on / kill-switch / 删 polyfill）。
+- M6（QuickJS native）已在 R75 全量收口——本 RFC 不涉。
+
+---
+
+## 6. 修订历史
+
+| 版本 | 日期 | 内容 |
+|------|------|------|
+| v0.1 | 2026-08-22 | R165 结论成文化：四对象域盘点 + identity 桥设计 + d3a–d3e 切片计划（js-dom R166） |

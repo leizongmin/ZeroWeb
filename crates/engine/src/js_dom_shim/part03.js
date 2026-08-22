@@ -1689,6 +1689,9 @@
   // 便于跨 part 引用与单测直接 poke）。
   globalThis._zwNodeContains = _zwNodeContains;
   globalThis._zwCompareDocumentPosition = _zwCompareDocumentPosition;
+  // R166（d3a）：identity 桥 API 挂全局——单测 poke 与 d3b 起跨 part 消费面归一调用。
+  globalThis._zwBridgeSet = _zwBridgeSet;
+  globalThis._zwBridgeGet = _zwBridgeGet;
 
   // ── custom element lifecycle slice（R2994）：connectedCallback / disconnectedCallback ──────────
   // spec HTML §4.13：custom element 连入 document 树时调 connectedCallback，断开时调 disconnectedCallback
@@ -4265,6 +4268,31 @@
     }, configurable: true });
   }
   // 可变元素节点：parentNode/childNodes/removeChild/appendChild（relink，无 selector 重算）+ 惰性 textContent/innerHTML/outerHTML 序列化。
+  // R166（js-dom M1 L2-d3a）：**identity 桥**（模块级——`_zwMEl` 工厂出口即登记，
+  // 故须定义在工厂之前且跨 detached-doc/fragment/root 共享）——C 域真实节点
+  // （mutTree `_zwMEl` 产物）↔ 首次暴露对象的登记表。四对象域（sel proxy /
+  // handle proxy / mutTree 节点 / 解析 wrapper）中，mutTree 节点是唯一有真实
+  // 子树链接的域；其余面命中同一逻辑节点时经 `_zwBridgeGet` 归一到首登对象
+  //（跨面 identity 断言的统一解，设计见
+  // docs/specs/p1b-l2d3-unified-matcher-identity-bridge-rfc.md §2.1）。
+  // d3a 仅登记**零行为变化**：各面仍返回自己的产物，只同步登记；归一消费在 d3b。
+  // 首登记者胜（后到不覆盖）——「首次暴露」语义稳定；key 恒为 plain 节点对象
+  //（proxy 不作 key，避免 get trap 副作用）；上限 4096 超限全清（同 R158 的
+  // 512 上限语义，放大因桥跨 root）；树代际失效由各 root 的既有 bump/clear 点
+  // 同步 `_zwNodeBridgeMap.clear()`（part03 内 5 处）。
+  var _zwNodeBridgeMap = new Map();
+  function _zwBridgeSet(node, obj) {
+    if (!node || typeof node !== 'object' || !obj || typeof obj !== 'object') return obj;
+    if (!_zwNodeBridgeMap.has(node)) {
+      if (_zwNodeBridgeMap.size > 4096) _zwNodeBridgeMap.clear();
+      _zwNodeBridgeMap.set(node, obj);
+    }
+    return obj;
+  }
+  function _zwBridgeGet(node) {
+    if (!node || typeof node !== 'object') return undefined;
+    return _zwNodeBridgeMap.get(node);
+  }
   function _zwMEl(snap, parent) {
     snap = snap || {};
     var tag = snap.tag || '';
@@ -5090,6 +5118,10 @@
       node.removeAttribute(n);
       return _zwMakeAttr(n, old, node);
     };
+    // R166（js-dom M1 L2-d3a）：_zwMEl 工厂出口登记 identity 桥（C 域节点首登
+    // 自身——cloneNode/树建/fragment 解析产物统一入口；桥消费在 d3b）。工厂在
+    // 桥定义之前执行的作用域顺序无碍（函数声明提升，调用时桥已初始化）。
+    _zwBridgeSet(node, node);
     return node;
   }
   // R3018：id/class 属性 ↔ IDL 字段（node.id/node.className）同步，setAttribute/removeAttribute 后保持一致。
@@ -5523,7 +5555,9 @@
             var cachedNode = _zwQWrapCache.get(wrapKey);
             if (cachedNode) { out164.push(cachedNode); continue; }
             // R163 同款：真实节点优先（不包 wrapper）
-            if (out164.indexOf(node) < 0) { out164.push(node); _zwQWrapCache.set(wrapKey, node); }
+            // R166（d3a）：真实节点直出点登记 identity 桥（零行为变化——node 即
+            // 首登对象，后续其它面命中同节点时经 _zwBridgeGet 归一到此对象）。
+            if (out164.indexOf(node) < 0) { out164.push(node); _zwQWrapCache.set(wrapKey, node); _zwBridgeSet(node, node); }
           }
           return out164;
         }
@@ -5553,7 +5587,11 @@
         Object.defineProperty(doc, '_zwQWrapBump', {
           configurable: true,
           get: function () { return _zwQWrapGen; },
-          set: function () { _zwQWrapGen++; _zwQWrapCache.clear(); },
+          set: function () {
+            _zwQWrapGen++;
+            _zwQWrapCache.clear();
+            _zwNodeBridgeMap.clear();
+          },
         });
       } catch (_e158g) {}
     })();
@@ -5614,7 +5652,7 @@
       namespaceURI: 'http://www.w3.org/1999/xhtml', prefix: null, // R131：同 docEl/headEl
       parentNode: null, // R3017：detached root，parentNode=null（DOMPurify 经 node.parentNode 取父）
       get innerHTML() { return _tree ? _tree.innerHTML : bodyHtml; },
-      set innerHTML(v) { bodyHtml = v == null ? '' : String(v); _tree = null; _zwQWrapGen++; _zwQWrapCache.clear(); },
+      set innerHTML(v) { bodyHtml = v == null ? '' : String(v); _tree = null; _zwQWrapGen++; _zwQWrapCache.clear(); _zwNodeBridgeMap.clear(); },
       querySelector: function (sel) { if (globalThis._zwQueryGuard) globalThis._zwQueryGuard(sel, arguments.length); return queryOne(sel); },
       querySelectorAll: function (sel) { if (globalThis._zwQueryGuard) globalThis._zwQueryGuard(sel, arguments.length); return queryAll(sel); },
       // R132（js-dom M4）：body 的 set/has/get/removeAttribute 族（WPT Document-importNode
@@ -5727,7 +5765,7 @@
               }
             } catch (_eA2) {}
             var frag = '<' + oTag + oattrs + '>' + oih + '</' + oTag + '>';
-            bodyHtml = (_tree ? _tree.innerHTML : bodyHtml) + frag; _zwQWrapGen++; _zwQWrapCache.clear();
+            bodyHtml = (_tree ? _tree.innerHTML : bodyHtml) + frag; _zwQWrapGen++; _zwQWrapCache.clear(); _zwNodeBridgeMap.clear();
             _tree = null;
             return c;
           } catch (_e112d) { /* 回落通用路径 */ }
@@ -6032,7 +6070,7 @@
               var chtml = mBody ? mBody[1] : cih;
               if (chtml && chtml.trim()) {
                 bodyHtml = chtml; // 查询树源更新（_tree 惰性重建）
-                _zwQWrapGen++; _zwQWrapCache.clear();
+                _zwQWrapGen++; _zwQWrapCache.clear(); _zwNodeBridgeMap.clear();
                 _tree = null;
               }
             }
@@ -6485,6 +6523,7 @@
                 if (real163) {
                   out.push(real163);
                   fmap.set(fk, real163); // 同键后继查询同 identity
+                  _zwBridgeSet(real163, real163); // R166（d3a）：fragment 真实节点直出点登记桥
                   continue;
                 }
                 var fe156 = fmap.get(fk);
