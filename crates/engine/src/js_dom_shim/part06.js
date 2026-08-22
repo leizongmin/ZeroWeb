@@ -2152,6 +2152,15 @@
     createRange: function () {
       // R179：同 new Range() 接 Range.prototype（prototype 方法通道）。
       var _r179cr = _makeRange();
+      // R183：初始边界 (document, 0)（spec `dom-document-createrange`——new range 的
+      // start/end 都在 document 上 offset 0；WPT CAC-2 "Detached Range" 断言
+      // commonAncestorContainer === document）。
+      try {
+        _r179cr.startContainer = globalThis.document;
+        _r179cr.endContainer = globalThis.document;
+        _r179cr._startOffsetBase = 0;
+        _r179cr._endOffsetBase = 0;
+      } catch (_e183d) {}
       try { Object.setPrototypeOf(_r179cr, globalThis.Range.prototype); } catch (_e179c) {}
       return _r179cr;
     },
@@ -3177,7 +3186,14 @@
   // 末尾（selectNodeContents 包整元素内容），非尾部 best-effort 落末尾；跨容器/文本节点部分切片仍 best-effort；
   // ③ getBoundingClientRect/getClientRects 返空（无 layout 选择几何）；④ 无真 live。
   function _makeRange() {
-    return {
+    // R183（js-dom M4）：offset 活性 getter——spec「range 边界点随树变更更新」
+    //（`concept-range` 的 boundary-point 引用 (node, offset) 对；`dom-node-remove` 末段
+    // 「removed node 是 boundary node 的子 → offset 减 1」；被移除的是 start/end 自身 →
+    // 移到 (parent, index)）。_mode.kind==='node'（selectNode 形态）时 startOffset/
+    // endOffset 按被追踪节点在容器中的**当前**位置现算（WPT Range-adopt-test 四断言：
+    // 移除唯一元素后 endOffset 期望 0——旧静态数据恒 1）。其他形态（setStart/setEnd
+    // 自由边界）保持写入值（data 槽），无追踪锚点。
+    var r183 = {
       startContainer: null, startOffset: 0, endContainer: null, endOffset: 0,
       commonAncestorContainer: null, collapsed: true, _mode: null,
       // js-dom M4 R42：spec `range-set-start/end` 校验——① node 无效（非 Node / DocumentType / Attr
@@ -3567,6 +3583,72 @@
         return [];
       }
     };
+    // R183（js-dom M4）：offset 活性 getter 安装——覆盖字面量的 data 槽（configurable）。
+    // selectNode 形态（_mode.kind==='node'）按追踪节点现算 indexOf：移除后节点不在
+    // childNodes → 两 offset 同归其插入位置（endOffset 收敛到 startOffset = spec
+    // collapse-on-remove 语义；WPT Range-adopt-test 四断言）。其他形态读回写入值。
+    // collapse()/setStart/setEnd 写 data 槽并清 _mode（_recalc），getter 随之回落静态值。
+    try {
+      var _r183IdxOf = function (parent, node) {
+        var kids = parent && parent.childNodes;
+        if (!kids) return -1;
+        for (var _r183i = 0; _r183i < kids.length; _r183i++) if (kids[_r183i] === node) return _r183i;
+        return -1;
+      };
+      // R183：commonAncestorContainer 活性 getter——spec「最近共同祖先容器」：
+      // startContainer 的祖先链（含自身）集合，endContainer 上行首个命中。文档级
+      // root（documentElement 的 parentNode = document）天然入链（WPT CAC-2 的
+      // Detached Range 期望 document）。写路径（_recalc 的 best-effort 值）转入
+      // _cacBase 槽；getter 优先现算，非 Node 容器回落 base。
+      var _r183Ancestors = function (n) {
+        var out = [], hops = 0;
+        while (n && hops++ < 128) { out.push(n); n = n.parentNode; }
+        return out;
+      };
+      Object.defineProperty(r183, 'startOffset', {
+        configurable: true,
+        get: function () {
+          if (r183._mode && r183._mode.kind === 'node' && r183._mode.node) {
+            var i = _r183IdxOf(r183.startContainer, r183._mode.node);
+            return i >= 0 ? i : (r183._startOffsetBase | 0);
+          }
+          return r183._startOffsetBase | 0;
+        },
+        set: function (v) { r183._startOffsetBase = v; },
+      });
+      Object.defineProperty(r183, 'endOffset', {
+        configurable: true,
+        get: function () {
+          if (r183._mode && r183._mode.kind === 'node' && r183._mode.node) {
+            var i = _r183IdxOf(r183.startContainer, r183._mode.node);
+            if (i >= 0) return i + 1;
+            return r183._startOffsetBase | 0; // 移除后：collapse 到 start 位（spec）
+          }
+          return r183._endOffsetBase | 0;
+        },
+        set: function (v) { r183._endOffsetBase = v; },
+      });
+      Object.defineProperty(r183, 'commonAncestorContainer', {
+        configurable: true,
+        get: function () {
+          var sc = r183.startContainer, ec = r183.endContainer;
+          if (!sc || !ec || typeof sc.nodeType !== 'number' || typeof ec.nodeType !== 'number') {
+            return r183._cacBase != null ? r183._cacBase : null;
+          }
+          var chain = _r183Ancestors(sc);
+          var cur = ec, hops = 0;
+          while (cur && hops++ < 128) {
+            for (var _r183a = 0; _r183a < chain.length; _r183a++) {
+              if (chain[_r183a] === cur) return cur;
+            }
+            cur = cur.parentNode;
+          }
+          return r183._cacBase != null ? r183._cacBase : null;
+        },
+        set: function (v) { r183._cacBase = v; },
+      });
+    } catch (_e183g) {}
+    return r183;
   }
 
   // Selection 单例工厂。addRange 简化为单 range（多 range 仅 Firefox，主流单 range）。
