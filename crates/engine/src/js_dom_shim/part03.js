@@ -2811,7 +2811,11 @@
   // 不向 dispatch 调用方传播异常。防递归：上报路径内的异常只 console，不再派 error 事件。
   // https://html.spec.whatwg.org/#runtime-script-error
   var _zwInReportError = false;
-  function _zwReportListenerError(err) {
+  // R187（js-dom M4）：realmWin 参数——listener/异常对象印记的 `_zwRealmWin`（iframe win）。
+  // spec「report the exception」按 callback 的关联 realm 定向（WebIDL invoke）——error 事件
+  // 派发到该 realm 的 window（其 _et_listeners['error'] + onerror），主 window 不再收
+  //（单 listener 单目标）。印记缺失（同 realm / 未印记形态）→ 主 window（旧行为）。
+  function _zwReportListenerError(err, realmWin) {
     var msg = String(err && err.message ? err.message : err);
     if (_zwInReportError) {
       // 上报路径内异常：防递归，只 console。
@@ -2819,6 +2823,31 @@
       return;
     }
     _zwInReportError = true;
+    // R187：iframe realm 定向上报——win 有 dispatchEvent（part05 _zwMakeIframeWin 自带
+    // _et_listeners 派发）即向其派发 ErrorEvent（event.error 字段承载异常对象，listener
+    // 经 e.error.constructor 断言 realm 构造器）。派发失败静默回落主 window 路径。
+    if (realmWin && typeof realmWin.dispatchEvent === 'function') {
+      try {
+        var _r187Ev = null;
+        try {
+          if (globalThis.ErrorEvent) {
+            _r187Ev = new globalThis.ErrorEvent('error', { message: msg, error: err });
+          }
+        } catch (_e187c) { _r187Ev = null; }
+        if (!_r187Ev) {
+          _r187Ev = _makeEvent('error', { bubbles: false, cancelable: true });
+          _r187Ev.message = msg;
+          _r187Ev.error = err;
+        }
+        _r187Ev.filename = '';
+        _r187Ev.lineno = 0;
+        _r187Ev.colno = 0;
+        realmWin.dispatchEvent(_r187Ev);
+        return;
+      } catch (_e187d) {} finally {
+        _zwInReportError = false;
+      }
+    }
     try {
       var errEv = null;
       try {
@@ -2868,6 +2897,29 @@
   // R139（js-dom M4）：导出 listener 错误上报到 globalThis——EventTarget.prototype.dispatchEvent
   //（part05，独立 listener 循环）的 handleEvent 非 callable TypeError 上报复用（跨 IIFE 段可达）。
   globalThis._zwReportListenerError = _zwReportListenerError;
+  // R187（js-dom M4）：按关联 realm 构造 TypeError——WebIDL 回调转换失败的 TypeError 在
+  // **callback 的关联 realm** 构造（WPT EventListener-handleEvent-cross-realm 断言
+  // `error.constructor === eventListenerGlobalObject.TypeError`——realm win 的绑定子类）。
+  // 印记 win 有 TypeError（part05 R187 绑定类，constructor identity 正确）即用之；缺失
+  // 回落主 globalThis.TypeError（旧行为）。
+  globalThis._zwRealmError = function (msg, realmWin) {
+    if (realmWin && typeof realmWin.TypeError === 'function') {
+      try { return new realmWin.TypeError(msg); } catch (_e187t) {}
+    }
+    return new globalThis.TypeError(msg);
+  };
+  // R187（js-dom M4）：listener call 抛的异常按 listener 关联 realm 重包裹——WebIDL
+  // callback invoke 的例外经 report the exception 上报，异常构造器须属 callback 的
+  // realm（WPT cross-realm #3/#5：revoked proxy call 抛的主 realm TypeError 期望以
+  // iframe realm TypeError 形态上报——`error.constructor === eventListenerGlobalObject
+  // .TypeError`）。仅 TypeError 形态重包裹（引擎 revoked-call 错误即 TypeError）；非
+  // TypeError（用户自定义异常）原样上报（identity 语义）。stamp 缺失（同 realm）原样。
+  globalThis._zwWrapCallError = function (err, realmWin) {
+    if (!realmWin || typeof realmWin.TypeError !== 'function') return err;
+    if (!(err instanceof globalThis.TypeError)) return err;
+    try { return new realmWin.TypeError(String(err && err.message || '')); } catch (_e187w) {}
+    return err;
+  };
 
   // 派发某元素 key 上的事件 listener。`phase`：`'all'`（target 阶段，capture+非 capture，默认）、
   // `'capture'`（仅 capture listener，捕获期祖先用）、`'bubble'`（仅非 capture，冒泡期祖先用）。
@@ -2915,6 +2967,11 @@
       }
       var fn = entry.fn;
       var callable = fn;
+      // R187：安全读 listener 的 realm 印记——revoked Proxy 上属性 Get 抛，一律 try
+      //（WPT cross-realm #4/#5：listener 本身 revoked 仍按创建 realm 上报）。
+      var _r187Stamp = null;
+      try { _r187Stamp = (fn && typeof fn === 'object') ? fn._zwRealmWin : null; } catch (_e187s) {}
+      var _r187Realm = _r187Stamp;
       if (typeof fn !== 'function') {
         // 对象 listener：Get handleEvent（每次派发都 Get，spec invoke 步骤）。非对象/null handleEvent → 跳过
         //（spec：callback 为 null/undefined 则不抛不调——WebIDL nullable callback 语义）。
@@ -2927,8 +2984,13 @@
         // callable"（返 42）都期望 TypeError 经 error 事件上报。listener 本体是
         // null/undefined（fn 非对象）不进本分支——addEventListener 参数本身 nullable。
         if (typeof callable !== 'function') {
-          _zwReportListenerError(new globalThis.TypeError(
-            "Failed to execute 'addEventListener' on 'EventTarget': parameter 2's 'handleEvent' property is not a function."));
+          // R187：对象 listener 的归属 realm 印记（new eventListenerGlobalObject.Object
+          // 产物）——TypeError 在 callback 关联 realm 构造 + 上报到该 realm 的 window
+          //（spec report the exception；WPT cross-realm 断言 error.constructor ===
+          // eventListenerGlobalObject.TypeError）。印记同时传给构造与上报两处。
+          _zwReportListenerError(globalThis._zwRealmError(
+            "Failed to execute 'addEventListener' on 'EventTarget': parameter 2's 'handleEvent' property is not a function.",
+            _r187Realm), _r187Realm);
           return;
         }
       }
@@ -2954,7 +3016,10 @@
           // 的 **error 事件**（addEventListener 路径）超时。现改经 `_zwReportListenerError`
           // 统一上报（error 事件派发 + onerror 属性调用 + console.error 兜底），异常不传播
           //（继续后续 listener），WPT Event-dispatch-throwing 的 onerror 计数语义保持。
-          _zwReportListenerError(_e106);
+          _zwReportListenerError(globalThis._zwWrapCallError(_e106, _r187Realm),
+            // R187：listener 执行异常同按归属 realm 上报（对象 listener 印记 / 函数
+            // listener 无印记走主 window；revoked 形态印记读取在 try 内——_r187Realm）。
+            _r187Realm);
         } finally {
           if (entry.passive) event._zwInPassive = Math.max(0, (event._zwInPassive || 1) - 1);
         }

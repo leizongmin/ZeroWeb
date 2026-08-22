@@ -1401,12 +1401,58 @@
       CharacterData: globalThis.CharacterData,
       Event: globalThis.Event,
       DOMException: globalThis.DOMException,
-      Object: globalThis.Object,
+      // R187（js-dom M4）：Object 转发改**绑定构造器**——`new eventListenerGlobalObject.Object`
+      // 的产物印记 `_zwRealmWin`（跨 realm 判定锚点）。WPT EventListener-handleEvent-cross-realm
+      // 断言 listener 回调抛的 TypeError 经 error 事件上报到 **callback 关联 realm** 的 window
+      //（WebIDL invoke「report the exception」以 callback 的相关 realm 为目标）。polyfill 单
+      // realm 下 Object 转发产物无任何印记——旧版 5F 的 error 恒 undefined（主 window 派发，
+      // iframe win 的 error listener 永不触发）。binding 经 call/apply 转 Object 本体（支撑
+      // 子类化形态 Object.call(...)），new 形态返真 Object 产物（原型链不变）+ 印记。
+      Object: (function () {
+        function BoundObject(arg) {
+          if (this instanceof BoundObject) {
+            var out = arg === undefined ? new globalThis.Object()
+              : new globalThis.Object(arg === null ? undefined : arg);
+            out._zwRealmWin = win;
+            return out;
+          }
+          return arg === undefined ? globalThis.Object() : globalThis.Object(arg);
+        }
+        BoundObject.prototype = globalThis.Object.prototype;
+        BoundObject.keys = globalThis.Object.keys;
+        return BoundObject;
+      })(),
       Function: globalThis.Function,
       Array: globalThis.Array,
       Error: globalThis.Error,
+      // R187 修正（js-dom M4）：TypeError **保持转发本体**——上游用例（ParentNode-
+      // querySelector-All / Element-matches 簇）经 `root.ownerDocument.defaultView
+      // .TypeError` 取构造器与主 realm 抛出的 TypeError 做 identity 比较
+      //（assert_throws_js constructor 全等），转发时两者同为 globalThis.TypeError 引用
+      // 而通过；绑定子类会打破该契约（净 +12F 实证回归）。cross-realm 用例的
+      // `error.constructor === w.TypeError` 由 report 侧用主 TypeError 构造满足
+      //（_zwRealmError 印记 win 上的 TypeError 即主转发，constructor 恒等）。
       TypeError: globalThis.TypeError,
-      Proxy: globalThis.Proxy,
+      // R187（js-dom M4）：Proxy 转发 + revocable 印记——`eventListenerGlobalObject.Proxy
+      // .revocable(...)` 的 proxy 产物印记 `_zwRealmWin`（WPT cross-realm #4/#5：revoked
+      // Proxy 作为 listener，TypeError 须上报到 iframe realm win）。
+      Proxy: (function () {
+        var P = {
+          revocable: function (target, handler) {
+            var r = globalThis.Proxy.revocable(target, handler);
+            try { r.proxy._zwRealmWin = win; } catch (_e187p) {}
+            // R187：realm 注册表——proxy revoke 后属性 Get 抛（印记不可读），Map 键
+            // 引用不触 trap，派发点 stamp 读取失败时经 __zwRealmOf 反查创建 realm。
+            try {
+              if (!globalThis.__zwRealmOf) globalThis.__zwRealmOf = new globalThis.Map();
+              globalThis.__zwRealmOf.set(r.proxy, win);
+            } catch (_e187m) {}
+            return r;
+          },
+        };
+        try { P.revocable.prototype = globalThis.Proxy.revocable && globalThis.Proxy.revocable.prototype; } catch (_e187q) {}
+        return P;
+      })(),
       // R140（js-dom M4）：EventTarget 构造器（WPT Event-dispatch-throwing-multiple-globals
       // 的 `new w2.EventTarget()`——iframe win 的跨 realm 事件目标面）。
       EventTarget: globalThis.EventTarget,
@@ -7725,7 +7771,29 @@
         // `error.constructor === TypeError` 断言）。旧版直接 `arr[i].call`——对象
         // listener 调用抛 "not a function" 且被吞（无上报）。
         var _r139Cb = arr[i];
-        if (typeof _r139Cb !== 'function') {
+        // R187：安全读 listener 的 realm 印记——revoked Proxy 上直接属性 Get 会抛
+        //（"Cannot perform 'get' on a proxy that has been revoked"），印记读取一律 try
+        //（WPT cross-realm #4/#5：listener 本身是 revoked Proxy 仍须按其创建 realm 上报）。
+        var _r187Stamp = null;
+        try { _r187Stamp = (_r139Cb && typeof _r139Cb === 'object') ? _r139Cb._zwRealmWin : null; } catch (_e187s) {}
+        // R187：revoked Proxy 的属性 Get 抛（印记不可读）——落 realm 注册表反查
+        //（Map.get 不触 proxy trap；WPT cross-realm #4/#5 listener 本身 revoked 形态）。
+        if (!_r187Stamp && _r139Cb && globalThis.__zwRealmOf) {
+          try { _r187Stamp = globalThis.__zwRealmOf.get(_r139Cb) || null; } catch (_e187m) {}
+        }
+        // R187：typeof revoked Proxy 本身抛 TypeError（引擎语义）——callable 判定整体
+        // try，抛按 WebIDL 转换失败上报（WPT cross-realm #4/#5：TypeError 上报到
+        // listener 创建 realm 的 window，error.constructor === 该 realm 的 TypeError）。
+        var _r187IsFn = false;
+        try { _r187IsFn = typeof _r139Cb === 'function'; } catch (_e187tf) {
+          if (typeof globalThis._zwReportListenerError === 'function') {
+            globalThis._zwReportListenerError(globalThis._zwRealmError(
+              "Failed to execute 'addEventListener' on 'EventTarget': parameter 2's 'handleEvent' property is not a function.",
+              _r187Stamp), _r187Stamp);
+          }
+          continue;
+        }
+        if (!_r187IsFn) {
           // 对象 listener：Get handleEvent（spec inner invoke 步骤 1）。Get 本身可抛
           //（revoked Proxy——WPT "non-callable revoked Proxy"），抛同样按 TypeError 上报
           //（WebIDL 转换失败语义）。
@@ -7734,15 +7802,19 @@
             _r139He = _r139Cb ? _r139Cb.handleEvent : _r139Cb;
           } catch (_e139g) {
             if (typeof globalThis._zwReportListenerError === 'function') {
-              globalThis._zwReportListenerError(new globalThis.TypeError(
-                "Failed to execute 'addEventListener' on 'EventTarget': parameter 2's 'handleEvent' property is not a function."));
+              globalThis._zwReportListenerError(globalThis._zwRealmError(
+                "Failed to execute 'addEventListener' on 'EventTarget': parameter 2's 'handleEvent' property is not a function.",
+                _r187Stamp),
+                _r187Stamp);
             }
             continue;
           }
           if (typeof _r139He !== 'function') {
             if (typeof globalThis._zwReportListenerError === 'function') {
-              globalThis._zwReportListenerError(new globalThis.TypeError(
-                "Failed to execute 'addEventListener' on 'EventTarget': parameter 2's 'handleEvent' property is not a function."));
+              globalThis._zwReportListenerError(globalThis._zwRealmError(
+                "Failed to execute 'addEventListener' on 'EventTarget': parameter 2's 'handleEvent' property is not a function.",
+                _r187Stamp),
+                _r187Stamp);
             }
             continue;
           }
@@ -7753,7 +7825,8 @@
           } catch (_e139h) {
             try {
               if (typeof globalThis._zwReportListenerError === 'function') {
-                globalThis._zwReportListenerError(_e139h);
+                globalThis._zwReportListenerError(globalThis._zwWrapCallError(_e139h, _r187Stamp),
+                  _r187Stamp);
               }
             } catch (_e140rp3) {}
           }
@@ -7769,7 +7842,8 @@
           // 同款；R140 实测 dispatch 流内调用不挂——直调挂是顶层上下文差异，记 R141）。
           try {
             if (typeof globalThis._zwReportListenerError === 'function') {
-              globalThis._zwReportListenerError(_e139c);
+              globalThis._zwReportListenerError(globalThis._zwWrapCallError(_e139c, _r187Stamp),
+                _r187Stamp);
             }
           } catch (_e140rp2) {}
         }
