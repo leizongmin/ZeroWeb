@@ -1,8 +1,8 @@
 {
-  "cases": 10,
-  "subtests": 137,
+  "cases": 11,
+  "subtests": 138,
   "status": {
-    "Pass": 137
+    "Pass": 138
   },
   "deterministic": true,
   "results": [
@@ -736,6 +736,16 @@
       [
         {
           "name": "Window sees cache puts by Worker",
+          "status": "Pass",
+          "message": null
+        }
+      ]
+    ],
+    [
+      "service-workers/cache-storage/cache-api-nested-worker.https.html",
+      [
+        {
+          "name": "Cache API in nested worker",
           "status": "Pass",
           "message": null
         }

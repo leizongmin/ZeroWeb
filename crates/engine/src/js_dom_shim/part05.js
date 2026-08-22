@@ -7398,15 +7398,23 @@
     }
     try { return decodeURIComponent(payload); } catch (_e) { return payload; }
   }
-  function Worker(url) {
-    if (!(this instanceof Worker)) return new Worker(url);
+  function Worker(url, options, baseUrl) {
+    if (!(this instanceof Worker)) return new Worker(url, options, baseUrl);
     this._et_listeners = {}; // EventTarget 内部 listener map（构造器未自动调，手动初始化）
     this._terminated = false;
     this._onmessage = null;
     this._onerror = null;
     this._scriptUrl = String(url);
+    this._resolvedScriptUrl = '';
     this._handler = null; // worker 的 onmessage（脚本执行时经 wctx.onmessage setter 注入）
     var main = this; // Worker 实例（worker→main 派发 MessageEvent 到此）
+    var parentHref = baseUrl != null ? String(baseUrl) : '';
+    if (!parentHref) {
+      try { parentHref = String(typeof location !== 'undefined' && location.href ? location.href : ''); } catch (_e) {}
+    }
+    try { this._resolvedScriptUrl = new URL(String(url), parentHref || 'about:blank').href; } catch (_e) {
+      this._resolvedScriptUrl = String(url);
+    }
     // worker self 上下文（DedicatedWorkerGlobalScope 近似）。postMessage 经 microtask 派发到主 Worker 实例。
     var wctx = {
       // worker→main：structuredClone + queueMicrotask 派发 'message' 到 Worker 实例（对称 MessagePort R2779）。
@@ -7427,12 +7435,14 @@
           if (typeof __zw_fetch_script !== 'function') continue;
           var src = null;
           try {
-            src = __zw_fetch_script(String(typeof location !== 'undefined' && location.href ? location.href : ''), u) || null;
+            src = __zw_fetch_script(String(wctx.location && wctx.location.href ? wctx.location.href : ''), u) || null;
           } catch (_e) { src = null; }
           if (src === null) continue;
           try {
             var body = 'var postMessage=self.postMessage.bind(self);'
               + 'var importScripts=function(){};'
+              + 'var location=self.location;'
+              + 'var Worker=self.Worker;'
               + 'var onmessage;'
               + src
               + '\n;if(typeof onmessage==="function")self.onmessage=onmessage;';
@@ -7468,9 +7478,11 @@
     wctx.fonts = (typeof globalThis.FontFaceSet === 'function')
       ? new globalThis.FontFaceSet()
       : { add: function () { return this; }, ready: Promise.resolve(), load: function () { return Promise.resolve([]); } };
+    wctx.Worker = function (nestedUrl, nestedOptions) { return new Worker(nestedUrl, nestedOptions, main._resolvedScriptUrl); };
+    try { wctx.Worker.prototype = Worker.prototype; } catch (_e) {}
     wctx.addEventListener = wctx.addEventListener || function () {};
     wctx.dispatchEvent = wctx.dispatchEvent || function () {};
-    wctx.location = wctx.location || { href: '' };
+    wctx.location = wctx.location || { href: main._resolvedScriptUrl };
     // onmessage setter：worker 脚本 `self.onmessage = fn` 或 bare `onmessage = fn`（经 IIFE 影子同步）注入 handler。
     Object.defineProperty(wctx, 'onmessage', {
       configurable: true,
@@ -7483,7 +7495,7 @@
     // fetch worker 源后同 IIFE 影子执行；未注册 → scriptSrc 仍 null（API 表面可用，worker 不执行，R3080 兼容）。
     if (scriptSrc === null && typeof __zw_fetch_script === 'function') {
       try {
-        scriptSrc = __zw_fetch_script((typeof location !== 'undefined' && location.href) || '', url) || null;
+        scriptSrc = __zw_fetch_script(parentHref, url) || null;
       } catch (_e) {
         scriptSrc = null;
       }
@@ -7500,7 +7512,7 @@
           if (!urlMatch) continue;
           var impSrc = null;
           try {
-            impSrc = __zw_fetch_script(String(typeof location !== 'undefined' && location.href ? location.href : ''), urlMatch[1]) || null;
+            impSrc = __zw_fetch_script(String(wctx.location && wctx.location.href ? wctx.location.href : ''), urlMatch[1]) || null;
           } catch (_e) { impSrc = null; }
           if (impSrc !== null) inlineImports += impSrc + '\n';
         }
@@ -7510,6 +7522,8 @@
         var body = inlineImports
           + 'var postMessage=self.postMessage.bind(self);'
           + 'var importScripts=function(){};'
+          + 'var location=self.location;'
+          + 'var Worker=self.Worker;'
           + 'var onmessage;'
           + scriptSrc
           + '\n;if(typeof onmessage==="function")self.onmessage=onmessage;';

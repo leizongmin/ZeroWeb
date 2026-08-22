@@ -2,7 +2,7 @@
 
 **入口文档**: [../service-workers.md](../service-workers.md)
 **创建日期**: 2026-08-17（goal 拆分 bootstrap）
-**最后更新**: 2026-08-22（SW registration-local CacheStorage 持久化；broader SW fetch/cache baseline 继续）
+**最后更新**: 2026-08-22（sibling CacheStorage nested Worker baseline；broader SW fetch/cache baseline 继续）
 
 ---
 
@@ -24,12 +24,12 @@ M2 fetch/interception 上游 WPT
 `Cache.matchAll()` / `Cache.keys()` 与页面 `Cache.add()` / `Cache.addAll()` GET fetch→store
 链路；共享 `zero-storage::Cache::put()` 已拒绝非 GET、非 HTTP(S)、206、`Vary: *` 与
 允许 `Response.type == "error"` 作为 CacheStorage 条目写入读回，并已接入上游 CacheStorage
-window 面 WPT baseline（10 case / 137 subtest / 137 Pass / 0 Fail），其中
+window 面 WPT baseline（11 case / 138 subtest / 138 Pass / 0 Fail），其中
 delete-dooming 生命周期、DOMString code-unit name wire、Vary/`ignoreVary`、`Cache.matchAll()`、
 `CacheStorage.match()`、cached `Response.type`/`Response.url` 读回保真、`Cache.put()`
 body consumption、opaque 内部 206 / `Vary: *` 可缓存、`Response.redirect()` 与 Blob/FormData
 response body、`Cache.addAll()` undefined entry 拒绝与 Vary-aware duplicate 判定等共享语义
-以及 Window/Dedicated Worker 共享同一 CacheStorage owner 的 WPT 路径已落地。该 sibling 的 page/WebView `StorageManager` owner 现已支持
+以及 Window/Dedicated Worker/nested Dedicated Worker 共享同一 CacheStorage owner 的 WPT 路径已落地。该 sibling 的 page/WebView `StorageManager` owner 现已支持
 per-origin CacheStorage 持久化和跨 WebView 重建读回，Browser normal profile 使用 sibling
 CacheStorage 目录且 private profile 保持内存。SW active registration 的 registration-local
 `CacheStorage` 现已纳入 `ServiceWorkerPersistentRegistration` snapshot/restore；normal profile
@@ -413,16 +413,17 @@ JSON，private profile 继续只保留内存态。
 - storage-cache-api shared Cache response type readback：CacheStorage 专属 `__zwcr:` wire、
   page `Response.type` / `clone().type` 保真与 host type validation 见
   [M2 Cache Response Type Readback](../storage-cache-api/evidence/2026-08-22-m2-cache-response-type-readback.md)
-- storage-cache-api CacheStorage window WPT 扩面：10 case / 137 subtest 全绿，并校正
+- storage-cache-api CacheStorage window WPT 扩面：11 case / 138 subtest 全绿，并校正
   `Response.error()` 可作为 CacheStorage 条目保存/读回、FetchEvent 响应结算仍拒绝 status 0
   的共享边界，以及 `Cache.match()` 对 `Response.url`、fetched MIME、cross-host fixture 和
   opaque response Vary 匹配、`Cache.put()` body consumption、opaque 内部 206 / `Vary: *`、
   `Response.redirect()`、Blob/FormData response body、body-less request consumption、
   `Cache.addAll()` undefined entry 拒绝、Vary-aware duplicate 判定和 Window/Dedicated
-  Worker 共享 CacheStorage owner 的页面侧语义，见
+  Worker/nested Dedicated Worker 共享 CacheStorage owner 的页面侧语义，见
   [M2 CacheStorage Window WPT Expansion](../storage-cache-api/evidence/2026-08-22-m2-cache-window-expansion.md)
   、[M2 Cache.add WPT Expansion](../storage-cache-api/evidence/2026-08-22-m2-cache-add-wpt-expansion.md)
-  和 [M2 CacheStorage Worker Sharing WPT Expansion](../storage-cache-api/evidence/2026-08-22-m2-cache-worker-sharing-wpt-expansion.md)
+  、[M2 CacheStorage Worker Sharing WPT Expansion](../storage-cache-api/evidence/2026-08-22-m2-cache-worker-sharing-wpt-expansion.md)
+  和 [M2 CacheStorage Nested Worker WPT Expansion](../storage-cache-api/evidence/2026-08-22-m2-cache-nested-worker-wpt-expansion.md)
 - M3 registration-local CacheStorage persistence：active registration `CacheStorage` snapshot/
   restore、normal profile mutation dirtying 与 owner 重建读回见
   [M3 Service Worker CacheStorage Persistence](evidence/2026-08-22-m3-registration-cache-storage-persistence.md)

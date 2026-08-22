@@ -654,6 +654,7 @@ pub const CACHE_STORAGE_WINDOW_CASES: &[(&str, &[&str])] = &[
         &["resources/test-helpers.js"],
     ),
     ("service-workers/cache-storage/common.https.window.js", &[]),
+    ("service-workers/cache-storage/cache-api-nested-worker.https.html", &[]),
 ];
 
 /// Fixed Service Worker M1 core corpus at the pinned WPT revision.
@@ -1157,11 +1158,15 @@ pub fn run_cache_storage_cases(wpt_root: &Path, filter: Option<&str>) -> Vec<(St
                     }
                 }
             }
-            let support_refs = support_sources
-                .iter()
-                .map(|(name, source)| (*name, source.as_str()))
-                .collect::<Vec<_>>();
-            let html = any_js_window_wrapper(path, &support_refs, &case_source);
+            let html = if path.ends_with(".html") {
+                apply_wpt_substitutions(&case_source)
+            } else {
+                let support_refs = support_sources
+                    .iter()
+                    .map(|(name, source)| (*name, source.as_str()))
+                    .collect::<Vec<_>>();
+                any_js_window_wrapper(path, &support_refs, &case_source)
+            };
             let results = run_testharness_html(wpt_root, path, &html, &harness_source, CASE_TIMEOUT);
             ((*path).to_string(), results)
         })
@@ -3158,16 +3163,18 @@ async_test(function(test) {
     }
 
     #[test]
-    fn cache_storage_window_manifest_has_ten_unique_cases() {
+    fn cache_storage_window_manifest_has_eleven_unique_cases() {
         let unique = CACHE_STORAGE_WINDOW_CASES
             .iter()
             .map(|(path, _)| *path)
             .collect::<std::collections::BTreeSet<_>>();
-        assert_eq!(CACHE_STORAGE_WINDOW_CASES.len(), 10);
-        assert_eq!(unique.len(), 10);
+        assert_eq!(CACHE_STORAGE_WINDOW_CASES.len(), 11);
+        assert_eq!(unique.len(), 11);
         assert!(CACHE_STORAGE_WINDOW_CASES.iter().all(|(path, support)| {
             if !path.starts_with("service-workers/cache-storage/")
-                || !(path.ends_with(".https.any.js") || path.ends_with(".https.window.js"))
+                || !(path.ends_with(".https.any.js")
+                    || path.ends_with(".https.window.js")
+                    || path.ends_with(".https.html"))
             {
                 return false;
             }
@@ -3177,7 +3184,8 @@ async_test(function(test) {
                 | "service-workers/cache-storage/cache-add.https.any.js" => {
                     *support == ["resources/test-helpers.js", "/common/get-host-info.sub.js"]
                 }
-                "service-workers/cache-storage/common.https.window.js" => support.is_empty(),
+                "service-workers/cache-storage/common.https.window.js"
+                | "service-workers/cache-storage/cache-api-nested-worker.https.html" => support.is_empty(),
                 _ => *support == ["resources/test-helpers.js"],
             }
         }));

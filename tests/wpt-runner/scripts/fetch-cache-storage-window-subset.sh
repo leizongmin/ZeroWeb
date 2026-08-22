@@ -11,7 +11,7 @@ DATA_ROOT="${WPT_CACHE_STORAGE_DATA:-${REPO_ROOT}/tests/wpt-runner/wpt-data/.cac
 REMOTE_ROOT="${WPT_REMOTE_ROOT:-https://raw.githubusercontent.com/web-platform-tests/wpt/${WPT_REV}}"
 FALLBACK_ROOT="${WPT_FALLBACK_ROOT:-https://cdn.jsdelivr.net/gh/web-platform-tests/wpt@${WPT_REV}}"
 CORPUS_LABEL="${WPT_CORPUS_LABEL:-CacheStorage window}"
-EXPECTED_ASSET_COUNT="${WPT_EXPECTED_ASSET_COUNT:-19}"
+EXPECTED_ASSET_COUNT="${WPT_EXPECTED_ASSET_COUNT:-22}"
 MODE="restore"
 
 if [[ "${1:-}" == "--verify-only" ]]; then

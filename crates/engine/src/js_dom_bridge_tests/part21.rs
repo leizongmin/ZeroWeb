@@ -418,6 +418,86 @@ fn test_cache_api_dedicated_worker_uses_window_cache_storage_bridge() {
     );
 }
 
+/// Worker-created nested Workers resolve relative script URLs against the
+/// parent worker script URL, not the page URL.
+#[test]
+fn test_dedicated_worker_nested_worker_resolves_against_parent_script_url() {
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let mut sandbox = V8Sandbox::with_config(zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    })
+    .unwrap();
+    let fetched = Arc::new(Mutex::new(Vec::new()));
+    let fetched_for_callback = fetched.clone();
+    sandbox.register_callback(
+        "__zw_fetch_script",
+        Box::new(move |args| {
+            let page = args.first().map(String::as_str).unwrap_or("");
+            let src = args.get(1).map(String::as_str).unwrap_or("");
+            fetched_for_callback
+                .lock()
+                .unwrap()
+                .push(format!("{page}|{src}"));
+            match (page, src) {
+                ("https://example.com/tests/page.html", "workers/cache-api-nested-worker1.js") => {
+                    "const worker2 = new Worker('cache-api-nested-worker2.js');\
+                     worker2.onmessage = function (event) { self.postMessage(event.data); };"
+                        .to_string()
+                }
+                (
+                    "https://example.com/tests/workers/cache-api-nested-worker1.js",
+                    "cache-api-nested-worker2.js",
+                ) => "self.caches.keys().then(function () { postMessage('PASS'); });".to_string(),
+                _ => String::new(),
+            }
+        }),
+    );
+    sandbox.register_callback(
+        "__zw_cache_storage",
+        Box::new(|args| {
+            let request = args.first().map(String::as_str).unwrap_or("");
+            if request.contains(r#""op":"keys""#) {
+                return r#"__zw_cache_ok:{"keys":[]}"#.to_string();
+            }
+            "__zw_cache_error:unexpected request".to_string()
+        }),
+    );
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new("<html><body></body></html>".to_string()));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("https://example.com/tests/page.html".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+
+    sandbox
+        .execute(
+            "globalThis.__nestedWorkerResult = 'pending';\
+             var worker = new Worker('workers/cache-api-nested-worker1.js');\
+             worker.onmessage = function (event) { globalThis.__nestedWorkerResult = event.data; };",
+        )
+        .unwrap();
+    for i in 0..8 {
+        sandbox.execute(&format!("globalThis.__nestedWorkerPump = {i};")).unwrap();
+    }
+
+    assert_eq!(
+        sandbox.execute("globalThis.__nestedWorkerResult").unwrap().value,
+        "PASS",
+        "nested worker should run and see CacheStorage"
+    );
+    assert_eq!(
+        fetched.lock().unwrap().as_slice(),
+        [
+            "https://example.com/tests/page.html|workers/cache-api-nested-worker1.js",
+            "https://example.com/tests/workers/cache-api-nested-worker1.js|cache-api-nested-worker2.js"
+        ],
+        "nested worker script fetch should use parent worker URL as base"
+    );
+}
+
 /// Cache API query options must be projected into the host bridge for the
 /// storage owner to apply matching semantics.
 #[test]
