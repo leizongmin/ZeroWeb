@@ -667,16 +667,16 @@ fn parse_clip_polygon(rest: &str) -> Option<ClipPathValue> {
     }
 
     let mut fill_rule = PolygonFillRule::NonZero;
-    let points_str = if inner.starts_with("nonzero") || inner.starts_with("NonZero") || inner.starts_with("NONZERO") {
-        let after = inner[7..].trim();
+    let points_str = if let Some(after) = strip_polygon_fill_rule(inner, "nonzero") {
+        let after = after.trim();
         if after.starts_with(',') {
             fill_rule = PolygonFillRule::NonZero;
             after.strip_prefix(',').unwrap().trim()
         } else {
             inner
         }
-    } else if inner.starts_with("evenodd") || inner.starts_with("EvenOdd") || inner.starts_with("EVENODD") {
-        let after = inner[7..].trim();
+    } else if let Some(after) = strip_polygon_fill_rule(inner, "evenodd") {
+        let after = after.trim();
         if after.starts_with(',') {
             fill_rule = PolygonFillRule::EvenOdd;
             after.strip_prefix(',').unwrap().trim()
@@ -707,6 +707,16 @@ fn parse_clip_polygon(rest: &str) -> Option<ClipPathValue> {
     }
 
     Some(ClipPathValue::Polygon { fill_rule, points })
+}
+
+fn strip_polygon_fill_rule<'a>(input: &'a str, keyword: &str) -> Option<&'a str> {
+    // https://drafts.fxtf.org/css-masking-1/#funcdef-basic-shape-polygon
+    // CSS-defined polygon() fill-rule keywords are ASCII case-insensitive.
+    let bytes = input.as_bytes();
+    if bytes.len() >= keyword.len() && bytes[..keyword.len()].eq_ignore_ascii_case(keyword.as_bytes()) {
+        return Some(&input[keyword.len()..]);
+    }
+    None
 }
 
 /// 解析 clip-path 半径值（circle/ellipse 的半径参数）。

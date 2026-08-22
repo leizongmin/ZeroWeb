@@ -210,3 +210,20 @@ fn test_clip_path_pipeline_polygon_evenodd() {
         _ => panic!("Expected Polygon"),
     }
 }
+
+#[test]
+fn test_clip_path_pipeline_polygon_fill_rule_is_case_insensitive() {
+    let mut style = ComputedStyle::default();
+    assert!(apply_property_value(
+        &mut style,
+        "clip-path",
+        "polygon(EvEnOdD, 0 0, 100% 0, 50% 100%)"
+    ));
+    assert!(matches!(
+        style.clip_path,
+        ClipPathComputedValue::Polygon {
+            fill_rule: PolygonFillRule::EvenOdd,
+            ..
+        }
+    ));
+}

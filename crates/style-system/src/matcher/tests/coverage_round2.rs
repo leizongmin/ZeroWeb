@@ -357,6 +357,10 @@ fn test_property_supported_extended_visual_and_layout_properties() {
     assert!(is_property_supported("column-span", "all"));
     assert!(is_property_supported("clip-path", "inset(10px 20%)"));
     assert!(is_property_supported("clip-path", "Circle(50px at center)"));
+    assert!(is_property_supported(
+        "clip-path",
+        "polygon(EvEnOdD, 0 0, 100% 0, 50% 100%)"
+    ));
     assert!(is_property_supported("clip", "rect(0px, auto, 10px, 0px)"));
     assert!(is_property_supported("clip", "RECT(0px, auto, 10px, 0px)"));
 

@@ -359,6 +359,29 @@ fn test_clip_path_polygon_evenodd() {
 }
 
 #[test]
+fn test_clip_path_polygon_fill_rule_is_case_insensitive() {
+    // https://drafts.fxtf.org/css-masking-1/#typedef-basic-shape
+    // CSS-defined polygon() fill-rule keywords are ASCII case-insensitive.
+    let evenodd = parse_clip_path("polygon(EvEnOdD, 0 0, 100% 0, 100% 100%)").unwrap();
+    assert!(matches!(
+        evenodd,
+        ClipPathValue::Polygon {
+            fill_rule: PolygonFillRule::EvenOdd,
+            ..
+        }
+    ));
+
+    let nonzero = parse_clip_path("polygon(NoNzErO, 0 0, 50% 100%)").unwrap();
+    assert!(matches!(
+        nonzero,
+        ClipPathValue::Polygon {
+            fill_rule: PolygonFillRule::NonZero,
+            ..
+        }
+    ));
+}
+
+#[test]
 fn test_clip_path_polygon_nonzero_explicit() {
     let v = parse_clip_path("polygon(nonzero, 0 0, 50% 100%)").unwrap();
     match v {
