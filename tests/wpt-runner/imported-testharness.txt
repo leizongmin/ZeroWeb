@@ -251,3 +251,4 @@ service-workers/cache-storage/serviceworker/cache-keys.https.html 24197a11e8c5bd
 service-workers/cache-storage/serviceworker/cache-matchAll.https.html 24197a11e8c5bd29a5cb7bdf18135a82be8a8546 2026-08-23 SW-M2-cache-storage-serviceworker-expansion
 service-workers/cache-storage/serviceworker/cache-storage-match.https.html 24197a11e8c5bd29a5cb7bdf18135a82be8a8546 2026-08-23 SW-M2-cache-storage-serviceworker-expansion
 service-workers/cache-storage/serviceworker/cache-match.https.html 24197a11e8c5bd29a5cb7bdf18135a82be8a8546 2026-08-23 SW-M2-cache-storage-serviceworker-cache-match
+service-workers/cache-storage/serviceworker/cache-put.https.html 24197a11e8c5bd29a5cb7bdf18135a82be8a8546 2026-08-23 SW-M2-cache-storage-serviceworker-cache-put

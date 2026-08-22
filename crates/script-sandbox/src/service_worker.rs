@@ -529,7 +529,7 @@ const SERVICE_WORKER_BOOTSTRAP: &str = r#"
 
   function normalizeBody(body) {
     if (body === undefined || body === null) return '';
-    return String(body);
+    return utf8Decode(bodyPartBytes(body));
   }
   function normalizeRequestURL(input) {
     const source = String(input);
@@ -554,6 +554,7 @@ const SERVICE_WORKER_BOOTSTRAP: &str = r#"
         this.credentials = init.credentials === undefined ? input.credentials : String(init.credentials);
         this.redirect = init.redirect === undefined ? input.redirect : String(init.redirect);
         this.referrer = init.referrer === undefined ? input.referrer : String(init.referrer);
+        this.bodyUsed = false;
       } else if (typeof input === 'object' && input !== null && input.url !== undefined) {
         this.url = normalizeRequestURL(input.url);
         this.method = init.method === undefined
@@ -568,6 +569,7 @@ const SERVICE_WORKER_BOOTSTRAP: &str = r#"
         if (input.headerGuard === 'immutable' && init.headers === undefined) {
           this.headers._guard = 'immutable';
         }
+        this.bodyUsed = false;
       } else {
         this.url = normalizeRequestURL(input);
         this.method = init.method === undefined ? 'GET' : String(init.method).toUpperCase();
@@ -577,6 +579,7 @@ const SERVICE_WORKER_BOOTSTRAP: &str = r#"
         this.credentials = init.credentials === undefined ? 'same-origin' : String(init.credentials);
         this.redirect = init.redirect === undefined ? 'follow' : String(init.redirect);
         this.referrer = init.referrer === undefined ? '' : String(init.referrer);
+        this.bodyUsed = false;
       }
     }
     text() {
@@ -645,6 +648,17 @@ const SERVICE_WORKER_BOOTSTRAP: &str = r#"
       response.type = 'error';
       response.url = '';
       return response;
+    }
+    // https://fetch.spec.whatwg.org/#dom-response-redirect
+    static redirect(url, status) {
+      status = status === undefined ? 302 : Number(status);
+      if ([301, 302, 303, 307, 308].indexOf(status) < 0) {
+        throw new RangeError('Invalid redirect status');
+      }
+      return new Response(null, {
+        status,
+        headers: [['Location', String(url)]]
+      });
     }
     static _from(value) {
       if (value instanceof Response) return value;
@@ -1198,16 +1212,36 @@ const SERVICE_WORKER_BOOTSTRAP: &str = r#"
       if (!response || response.ok !== true) {
         throw new TypeError(response && response.error || 'Invalid URL');
       }
-      for (const name of ['href', 'origin', 'protocol', 'host', 'hostname', 'port', 'pathname', 'search', 'hash']) {
-        Object.defineProperty(this, name, {
-          value: response[name],
-          enumerable: true,
-          configurable: true,
-          writable: true
-        });
-      }
+      this._protocol = response.protocol;
+      this._hostname = response.hostname;
+      this._port = response.port;
+      this._pathname = response.pathname;
+      this._search = response.search;
+      this._hash = response.hash;
+      this._sync();
+    }
+    _sync() {
+      this.host = this._port ? this._hostname + ':' + this._port : this._hostname;
+      this.origin = this._protocol + '//' + this.host;
+      this.href = this.origin + this._pathname + this._search + this._hash;
+      this.protocol = this._protocol;
+      this.port = this._port;
+      this.pathname = this._pathname;
+      this.search = this._search;
+      this.hash = this._hash;
+    }
+    get hostname() {
+      return this._hostname;
+    }
+    // https://url.spec.whatwg.org/#dom-url-hostname
+    set hostname(value) {
+      this._hostname = String(value);
+      this._sync();
     }
     toString() {
+      return this.href;
+    }
+    toJSON() {
       return this.href;
     }
   }
@@ -6223,6 +6257,85 @@ mod tests {
                     response_type: "default".into(),
                     headers: Vec::new(),
                     body: "https://remote.example/data.txt|opaque|0|false|false|null".into(),
+                }),
+                failed: false,
+                message: String::new(),
+            }
+        );
+    }
+
+    #[test]
+    fn worker_global_fetch_no_cors_request_object_after_url_hostname_mutation_is_opaque() {
+        let mut runtime = ServiceWorkerRuntime::new(test_config()).unwrap();
+        runtime
+            .evaluate(
+                "addEventListener('fetch', event => {
+                   event.respondWith((async () => {
+                     const url = new URL('./data.txt', location.href);
+                     url.hostname = 'remote.example';
+                     const request = new Request(url, {mode: 'no-cors'});
+                     const response = await fetch(request);
+                     return new Response([
+                       request.url,
+                       response.type,
+                       response.status,
+                       response.ok,
+                       String(response.headers.get('content-type'))
+                     ].join('|'));
+                   })());
+                 });",
+                "https://example.test/app/sw.js",
+            )
+            .unwrap();
+        let _ = runtime.recv_timeout(Duration::from_secs(5)).unwrap();
+
+        runtime
+            .dispatch_fetch(
+                56,
+                ServiceWorkerFetchRequest {
+                    url: "https://example.test/app/page".into(),
+                    method: "GET".into(),
+                    headers: Vec::new(),
+                    body: None,
+                    client_id: Some("client-1".into()),
+                    resulting_client_id: None,
+                    referrer: None,
+                },
+            )
+            .unwrap();
+        let ServiceWorkerEvent::FetchRequested { request_id, request } =
+            runtime.recv_timeout(Duration::from_secs(5)).unwrap()
+        else {
+            panic!("missing worker global fetch request");
+        };
+        assert_eq!(request.url, "https://remote.example/app/data.txt");
+        runtime
+            .complete_fetch(
+                request_id,
+                Ok(ServiceWorkerFetchResponse {
+                    status: 200,
+                    status_text: "OK".into(),
+                    response_type: "default".into(),
+                    headers: vec![
+                        ("content-type".into(), "text/plain".into()),
+                        ("x-zero-final-url".into(), "https://remote.example/app/data.txt".into()),
+                    ],
+                    body: "hidden".into(),
+                }),
+            )
+            .unwrap();
+
+        assert_eq!(
+            runtime.recv_timeout(Duration::from_secs(5)).unwrap(),
+            ServiceWorkerEvent::FetchSettled {
+                event_id: 56,
+                request_url: "https://example.test/app/page".into(),
+                response: Some(ServiceWorkerFetchResponse {
+                    status: 200,
+                    status_text: String::new(),
+                    response_type: "default".into(),
+                    headers: Vec::new(),
+                    body: "https://remote.example/app/data.txt|opaque|0|false|null".into(),
                 }),
                 failed: false,
                 message: String::new(),

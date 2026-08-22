@@ -63,8 +63,10 @@ error filtered response 保真与 `Cache.delete()` 缺参 TypeError，支撑 ser
 6-case / 68-subtest SW CacheStorage wrapper baseline。随后 `cache-match.https.html`
 扩面补齐 worker runtime 的最小 Blob/FileReader、cached `Response.url` 往返、response
 guard 隐藏 `Set-Cookie` 与内部 `X-Zero-*` 元数据，以及 cross-origin no-cors opaque
-filtered response 投影，支撑 service-workers 目标的 7-case / 94-subtest SW CacheStorage
-wrapper baseline。
+filtered response 投影；`cache-put.https.html` 扩面补齐 worker runtime 的 `Request.bodyUsed`
+初值、`Response.redirect()`、Blob response body 序列化，以及 `URL.hostname` mutation 后
+`new Request(url, {mode: 'no-cors'})` 经 worker `fetch()` 生成 opaque filtered response 的
+路径，支撑 service-workers 目标的 8-case / 121-subtest SW CacheStorage wrapper baseline。
 更大范围 WPT 导入与完整
 `basic`/`cors`/`opaque`/`opaqueredirect` filtered response 生成矩阵仍待后续切片。
 CacheStorage window asset manifest 已补充逐 asset `source_revision`，恢复脚本会按每行
@@ -350,5 +352,14 @@ WPT checkout 状态。
   - `./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit 300 -- cargo test -p zero-script-sandbox service_worker::tests::worker_global_fetch_ -- --nocapture`：3 passed
   - `./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit 360 -- cargo test -p zero-page-runtime service_worker -- --nocapture`：49 passed
   - `./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit 420 -- make baseline-wpt-service-workers-cache-storage OUTPUT=docs/goal/service-workers/evidence/2026-08-23-m2-cache-storage-serviceworker-baseline.json SUMMARY=docs/goal/service-workers/evidence/2026-08-23-m2-cache-storage-serviceworker-baseline.md`：7 cases / 94 subtests / 94 Pass，double-run deterministic
+  - 证据：[Service Worker CacheStorage WPT Baseline](../service-workers/evidence/2026-08-23-m2-cache-storage-serviceworker-baseline.md)
+- 2026-08-23 Service Worker CacheStorage serviceworker `cache-put` WPT 扩面：
+  - 新增 WPT：`service-workers/cache-storage/serviceworker/cache-put.https.html`
+  - `WPT_SOURCE=$HOME/github/others/wpt ./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit 120 -- make fetch-wpt-service-workers-cache-storage-wave`：25 assets restored
+  - `./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit 300 -- make testharness-service-workers-cache-storage FILTER=cache-put.https.html`：27 entries Pass
+  - `./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit 600 -- cargo test -p zero-script-sandbox service_worker -- --nocapture`：50 passed
+  - `./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit 300 -- cargo test -p zero-wpt-runner service_worker_cache_storage -- --nocapture`：2 passed
+  - `./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit 120 -- make audit-wpt-service-workers-cache-storage-wave`：25 assets verified
+  - `./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit 420 -- make baseline-wpt-service-workers-cache-storage OUTPUT=docs/goal/service-workers/evidence/2026-08-23-m2-cache-storage-serviceworker-baseline.json SUMMARY=docs/goal/service-workers/evidence/2026-08-23-m2-cache-storage-serviceworker-baseline.md`：8 cases / 121 subtests / 121 Pass，double-run deterministic
   - 证据：[Service Worker CacheStorage WPT Baseline](../service-workers/evidence/2026-08-23-m2-cache-storage-serviceworker-baseline.md)
 - 质量门禁：`cargo fmt` + `cargo clippy --workspace --all-targets -- -D warnings` 全过
