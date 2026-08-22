@@ -322,6 +322,102 @@ fn test_cache_api_page_shim_host_roundtrip() {
     );
 }
 
+/// Dedicated Worker sees the same `caches` object as the window shim. This
+/// fixes the upstream `cache-storage/common.https.window.js` worker/window
+/// sharing path.
+#[test]
+fn test_cache_api_dedicated_worker_uses_window_cache_storage_bridge() {
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let mut sandbox = V8Sandbox::with_config(zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    })
+    .unwrap();
+    let worker_put_seen = Arc::new(Mutex::new(false));
+    let worker_put_seen_for_callback = worker_put_seen.clone();
+    let last_request = Arc::new(Mutex::new(String::new()));
+    let last_request_for_callback = last_request.clone();
+    sandbox.register_callback(
+        "__zw_cache_storage",
+        Box::new(move |args| {
+            let request = args.first().map(String::as_str).unwrap_or("");
+            *last_request_for_callback.lock().unwrap() = request.to_string();
+            if request.contains(r#""op":"open""#) && request.contains(r#""name":"shared""#) {
+                return r#"__zw_cache_ok:{"name":"shared","cache_id":9}"#.to_string();
+            }
+            if request.contains(r#""op":"put""#)
+                && request.contains(r#""cache_name":"shared""#)
+                && request.contains(r#""url":"https://example.com/from-worker""#)
+                && request.contains(r#""body":"from-worker""#)
+            {
+                *worker_put_seen_for_callback.lock().unwrap() = true;
+                return r#"__zw_cache_ok:{"ok":true}"#.to_string();
+            }
+            if request.contains(r#""op":"match""#)
+                && request.contains(r#""cache_name":"shared""#)
+                && *worker_put_seen_for_callback.lock().unwrap()
+            {
+                return "__zw_cache_ok:{\"response\":\"__zwcr2:200\\u001fOK\\u001fbasic\\u001fhttps://example.com/from-worker\\u001fcontent-type\\u001etext/plain\\u001ffrom-worker\"}".to_string();
+            }
+            if request.contains(r#""op":"delete""#) && request.contains(r#""name":"shared""#) && !request.contains(r#""request":"#) {
+                *worker_put_seen_for_callback.lock().unwrap() = false;
+                return r#"__zw_cache_ok:{"deleted":true}"#.to_string();
+            }
+            "__zw_cache_error:unexpected request".to_string()
+        }),
+    );
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new("<html><body></body></html>".to_string()));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("https://example.com/page.html".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+
+    sandbox
+        .execute(
+            "globalThis.__workerCacheResult = 'pending';\
+             var source = \"self.onmessage = function () {\" +\
+               \"self.caches.open('shared').then(function (cache) {\" +\
+               \"return cache.put('https://example.com/from-worker', new Response('from-worker'));\" +\
+               \"}).then(function () { self.postMessage('ok'); }, function (error) {\" +\
+               \"self.postMessage('error:' + String(error && error.message ? error.message : error));\" +\
+               \"}); };\";\
+             caches.delete('shared').then(function () {\
+               var worker = new Worker('data:text/javascript,' + encodeURIComponent(source));\
+               return new Promise(function (resolve) {\
+                 worker.addEventListener('message', function listener(event) {\
+                   worker.removeEventListener('message', listener);\
+                   resolve(event.data);\
+                 });\
+                 worker.postMessage('go');\
+               });\
+             }).then(function (message) {\
+               if (message !== 'ok') return message;\
+               return caches.open('shared').then(function (cache) {\
+                 return cache.match('https://example.com/from-worker');\
+               }).then(function (response) {\
+                 return response.text();\
+               });\
+             }).then(function (body) {\
+               globalThis.__workerCacheResult = body;\
+             }, function (error) {\
+               globalThis.__workerCacheResult = 'error:' + String(error && error.message ? error.message : error);\
+             });",
+        )
+        .unwrap();
+    for i in 0..12 {
+        sandbox.execute(&format!("globalThis.__workerCachePump = {i};")).unwrap();
+    }
+    assert_eq!(
+        sandbox.execute("globalThis.__workerCacheResult").unwrap().value,
+        "from-worker",
+        "Dedicated Worker Cache.put should use the same CacheStorage host bridge seen by window; last request: {}",
+        last_request.lock().unwrap()
+    );
+}
+
 /// Cache API query options must be projected into the host bridge for the
 /// storage owner to apply matching semantics.
 #[test]

@@ -611,11 +611,11 @@ pub const INDEXEDDB_CASES: &[(&str, &[&str])] = &[
     ("IndexedDB/open-request-queue.any.js", &["resources/support.js"]),
 ];
 
-/// CacheStorage goal pinned upstream `.any.js` window subset.
+/// CacheStorage goal pinned upstream window subset.
 ///
-/// Each case has `// META: global=window,worker`; this runner only executes the
-/// window variant for `docs/goal/storage-cache-api.md`. Service Worker variants
-/// remain under the Service Worker goal.
+/// Most cases have `// META: global=window,worker`; this runner only executes
+/// the window variant for `docs/goal/storage-cache-api.md`. Service Worker
+/// variants remain under the Service Worker goal.
 pub const CACHE_STORAGE_WINDOW_CASES: &[(&str, &[&str])] = &[
     (
         "service-workers/cache-storage/cache-storage.https.any.js",
@@ -653,6 +653,7 @@ pub const CACHE_STORAGE_WINDOW_CASES: &[(&str, &[&str])] = &[
         "service-workers/cache-storage/cache-storage-match.https.any.js",
         &["resources/test-helpers.js"],
     ),
+    ("service-workers/cache-storage/common.https.window.js", &[]),
 ];
 
 /// Fixed Service Worker M1 core corpus at the pinned WPT revision.
@@ -1095,7 +1096,7 @@ pub fn run_indexeddb_cases(wpt_root: &Path, filter: Option<&str>) -> Vec<(String
         .collect()
 }
 
-/// Run the pinned upstream CacheStorage `.any.js` window subset.
+/// Run the pinned upstream CacheStorage window subset.
 pub fn run_cache_storage_cases(wpt_root: &Path, filter: Option<&str>) -> Vec<(String, Vec<HarnessSubtestResult>)> {
     let harness_source = match std::fs::read_to_string(wpt_root.join("resources/testharness.js")) {
         Ok(source) => source,
@@ -1238,12 +1239,23 @@ fn any_js_window_wrapper(path: &str, support: &[(&str, &str)], case_source: &str
     let case_source = apply_wpt_substitutions(case_source);
     source.push_str(&format!("// source: {path}\n{case_source}"));
     let source = source.replace("</script", "<\\/script");
+    let timeout_meta = if wpt_js_has_long_timeout(&case_source) {
+        "<meta name=\"timeout\" content=\"long\">"
+    } else {
+        ""
+    };
     format!(
-        "<!doctype html><meta charset=\"utf-8\">\
+        "<!doctype html><meta charset=\"utf-8\">{timeout_meta}\
          <script src=\"/resources/testharness.js\"></script>\
          <script src=\"/resources/testharnessreport.js\"></script>\
          <script>{source}</script>"
     )
+}
+
+fn wpt_js_has_long_timeout(source: &str) -> bool {
+    source
+        .lines()
+        .any(|line| line.trim().eq_ignore_ascii_case("// META: timeout=long"))
 }
 
 fn apply_wpt_substitutions(source: &str) -> String {
@@ -1323,15 +1335,20 @@ fn wpt_data_image_fetcher(wpt_root: &std::path::Path) -> Option<zero_webview::Im
 /// testharness.js/canvas-tests.js）——`(page_url, src)` → wpt-data 文件。
 fn wpt_data_script_fetcher(wpt_root: &std::path::Path) -> Option<zero_webview::ScriptSourceFetcher> {
     let root = wpt_root.to_path_buf();
-    Some(std::sync::Arc::new(move |_page_url: &str, src: &str| {
+    Some(std::sync::Arc::new(move |page_url: &str, src: &str| {
         let path_part = match src.strip_prefix("https://wpt.test") {
-            Some(path) => path,
+            Some(path) => path.to_string(),
             None if src.starts_with("http://") || src.starts_with("https://") => {
                 return Err(format!("external script origin is not available in WPT runner: {src}"));
             }
-            None => src,
+            None if src.starts_with('/') => src.to_string(),
+            None => {
+                let page_path = wpt_url_path(page_url).strip_prefix('/').unwrap_or(page_url);
+                let page_dir = page_path.rsplit_once('/').map(|(dir, _)| dir).unwrap_or("");
+                normalize_relative(&format!("{page_dir}/{src}"))
+            }
         };
-        let path_part = path_part.strip_prefix('/').unwrap_or(path_part);
+        let path_part = path_part.strip_prefix('/').unwrap_or(&path_part);
         let clean = path_part.split(['?', '#']).next().unwrap_or(path_part);
         if clean.is_empty() {
             return Err("empty path".to_string());
@@ -3141,15 +3158,17 @@ async_test(function(test) {
     }
 
     #[test]
-    fn cache_storage_window_manifest_has_nine_unique_any_cases() {
+    fn cache_storage_window_manifest_has_ten_unique_cases() {
         let unique = CACHE_STORAGE_WINDOW_CASES
             .iter()
             .map(|(path, _)| *path)
             .collect::<std::collections::BTreeSet<_>>();
-        assert_eq!(CACHE_STORAGE_WINDOW_CASES.len(), 9);
-        assert_eq!(unique.len(), 9);
+        assert_eq!(CACHE_STORAGE_WINDOW_CASES.len(), 10);
+        assert_eq!(unique.len(), 10);
         assert!(CACHE_STORAGE_WINDOW_CASES.iter().all(|(path, support)| {
-            if !path.starts_with("service-workers/cache-storage/") || !path.ends_with(".https.any.js") {
+            if !path.starts_with("service-workers/cache-storage/")
+                || !(path.ends_with(".https.any.js") || path.ends_with(".https.window.js"))
+            {
                 return false;
             }
             match *path {
@@ -3158,6 +3177,7 @@ async_test(function(test) {
                 | "service-workers/cache-storage/cache-add.https.any.js" => {
                     *support == ["resources/test-helpers.js", "/common/get-host-info.sub.js"]
                 }
+                "service-workers/cache-storage/common.https.window.js" => support.is_empty(),
                 _ => *support == ["resources/test-helpers.js"],
             }
         }));

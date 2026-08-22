@@ -7381,7 +7381,7 @@
   // main↔worker 消息经 structuredClone + queueMicrotask + MessageEvent 派发（对称 MessagePort R2779）。
   // extends EventTarget（与 MessagePort/BroadcastChannel 同款）——addEventListener('message'/'error') 可用。
   // spec https://html.spec.whatwg.org/multipage/workers.html#dom-worker。
-  // **已知限制**：① 仅 data: URL inline worker（非 data: 如 './w.js' headless 无 fetch → 不执行，API 表面仍可用）；
+  // **已知限制**：① 仅 data: URL inline worker 或 host __zw_fetch_script 支持的外链 worker；
   // ② 同全局执行（worker 顶层级隐式全局赋值泄漏到主全局——罕见；spec worker 独立全局，headless 简化）；
   // ③ structuredClone 克隆（非可克隆类型 defer）；④ importScripts no-op（无 fetch）；
   // ⑤ worker 顶层级 postMessage（main 未注册 onmessage 前派发）被丢弃（spec 队列，headless 简化）。
@@ -7452,6 +7452,9 @@
     });
     wctx.ImageBitmap = globalThis.ImageBitmap;
     wctx.ImageData = globalThis.ImageData;
+    wctx.CacheStorage = globalThis.CacheStorage;
+    wctx.Cache = globalThis.Cache;
+    wctx.caches = globalThis.caches;
     // R34xx：CanvasGradient/CanvasPattern/CanvasRenderingContext2D 全局（gradient.object.
     // type/return、pattern.basic.type 的 self.CanvasGradient/CanvasPattern 断言——
     // instanceof 与实例原型链同主全局对象）。

@@ -1,8 +1,8 @@
 {
-  "cases": 9,
-  "subtests": 136,
+  "cases": 10,
+  "subtests": 137,
   "status": {
-    "Pass": 136
+    "Pass": 137
   },
   "deterministic": true,
   "results": [
@@ -726,6 +726,16 @@
         },
         {
           "name": "CacheStorageMatch supports ignoreVary",
+          "status": "Pass",
+          "message": null
+        }
+      ]
+    ],
+    [
+      "service-workers/cache-storage/common.https.window.js",
+      [
+        {
+          "name": "Window sees cache puts by Worker",
           "status": "Pass",
           "message": null
         }

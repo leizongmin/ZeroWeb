@@ -2,7 +2,7 @@
 
 **入口文档**: [../storage-cache-api.md](../storage-cache-api.md)
 **创建日期**: 2026-08-17（goal 拆分 bootstrap）
-**最后更新**: 2026-08-22（M2 Cache.add WPT 扩面）
+**最后更新**: 2026-08-22（M2 CacheStorage Worker sharing WPT 扩面）
 
 ---
 
@@ -33,13 +33,13 @@ Service Worker `FetchEvent.respondWith()` 仍保持 200..599 响应结算限制�
 `cache-add.https.any.js` 扩面补齐 body-less `Request.text()` 不应置位 `bodyUsed`、
 `Cache.addAll()` 对 `undefined` request list entry 的 TypeError、以及根据 fetch 后
 response `Vary` 头判定批量请求重复的语义。
-2026-08-22 已接入 9 个上游 CacheStorage `.any.js` window 面 WPT 基线，WebIDL
+2026-08-22 已接入 10 个上游 CacheStorage window 面 WPT 基线，WebIDL
 brand、缺参 TypeError、`CacheStorage.keys()` 创建顺序、Vary 匹配、delete-dooming
 生命周期、DOMString code-unit name wire、`Cache.matchAll()` 查询矩阵与 `CacheStorage.match()`
 跨 cache/cacheName 查询、`Cache.match()` URL/fragment/opaque Vary/MIME/fetched response URL
 矩阵、`Cache.put()` 可缓存性/响应体消费矩阵、`Cache.add()`/`Cache.addAll()` 矩阵修复后
-双跑稳定为 136 subtest / 136 Pass /
-0 Fail。
+继续补入 `common.https.window.js`，固定 Window 与 Dedicated Worker 共享同一 CacheStorage
+owner 的路径，双跑稳定为 137 subtest / 137 Pass / 0 Fail。
 M3 首片已补齐 page/WebView `StorageManager` owner 的 per-origin CacheStorage 持久化：
 CacheStorage 以 origin hash `.cache` 文件落盘，请求/响应元数据和 body bytes JSON 保真，
 写入采用临时文件 + sync + 原子替换，并在启动时清理 `.tmp` / 恢复 `.bak`；页面 host 的
@@ -72,7 +72,7 @@ Service Worker runtime 已补齐 `Cache.delete()` 与 `CacheStorage.delete()/has
   `open` 后 `put/match/matchAll/delete/keys`，并可 `has/keys/match`
 - ✅ 持久化首片：page/WebView `StorageManager` owner 已支持 per-origin CacheStorage 落盘；
   SW registration-local CacheStorage 已随 active registration snapshot/restore 验证
-- ✅ WPT `cache-storage` window 基线已导入：9 case / 136 subtest，136 Pass / 0 Fail
+- ✅ WPT `cache-storage` window 基线已导入：10 case / 137 subtest，137 Pass / 0 Fail
 - 🚧 add/addAll 的页面 fetch 链路、Cache API 返回对象 brand、缺参 TypeError、
   `CacheStorage.keys()` 创建顺序、Vary 匹配、delete-dooming 与 DOMString name wire
   已完成；`Cache.put` 非 GET/非 HTTP(S)/206/`Vary: *` 可缓存性拒绝、used body 拒绝、
@@ -94,7 +94,7 @@ Service Worker runtime 已补齐 `Cache.delete()` 与 `CacheStorage.delete()/has
 
 ## 下一步计划
 
-1. **M2 切片 9**：继续导入 dynamic-server / cross-origin CacheStorage WPT case，补完整 filtered response 生成矩阵
+1. **M2 切片 10**：继续导入 dynamic-server / cross-origin CacheStorage WPT case，补完整 filtered response 生成矩阵
 2. **service-workers 后续**：补 SW cache-storage WPT 验收，持久化能力已由 registration-local snapshot/restore 覆盖
 
 **碰撞管理**：开工前先 `git log --since="14 days ago" -- crates/engine/src/js_dom_shim/`
@@ -104,7 +104,7 @@ Service Worker runtime 已补齐 `Cache.delete()` 与 `CacheStorage.delete()/has
 
 | 里程碑 | 状态 |
 |--------|------|
-| M1 — WPT cache-storage 基线 + caches 骨架 | ✅ 页面骨架 + 9-case window WPT 基线已接入 |
+| M1 — WPT cache-storage 基线 + caches 骨架 | ✅ 页面骨架 + 10-case window WPT 基线已接入 |
 | M2 — Cache 全 API + 查询语义 | 🚧 `Cache.matchAll()` / `Cache.keys()`、`Cache.match()`、`CacheStorage.match()`、`ignoreSearch`/`ignoreMethod`/`ignoreVary`、页面 `add/addAll` GET fetch→store、返回对象 brand、缺参 TypeError、`CacheStorage.keys()` 创建顺序、delete-dooming、DOMString name wire、`Cache.put` 核心可缓存性拒绝/body 消费语义、cached `Response.type`/`Response.url` 读回保真、`Response.error()` 可缓存读回、opaque response 忽略 Vary 与内部 metadata 可缓存、`Response.redirect()`/Blob/FormData response 路径、`addAll` 原子失败、undefined entry 拒绝、Vary-aware duplicate 判定、SW runtime `Cache.delete()` 与 `CacheStorage.delete/has/keys` 已接入；完整 filtered response 生成与更大 WPT 覆盖待完成 |
 | M3 — 持久化 + 剩余语义收尾 | 🚧 page/WebView owner per-origin 持久化与 SW registration-local CacheStorage 持久化已完成；剩余 filtered response 矩阵待补 |
 
@@ -233,6 +233,16 @@ Service Worker runtime 已补齐 `Cache.delete()` 与 `CacheStorage.delete()/has
   - `./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit 1200 -- cargo clippy --workspace --all-targets -- -D warnings`：passed
   - `CARGO_BUILD_JOBS=1 ./target/test-guard --per-proc-mem 4 --total-mem 20 --time-limit 1800 -- cargo test --workspace --jobs 1`：passed
   - 证据：[M2 Cache.add WPT Expansion](evidence/2026-08-22-m2-cache-add-wpt-expansion.md)
+- 2026-08-22 M2 CacheStorage Window/Worker sharing WPT 扩面：
+  - 新增 WPT：`common.https.window.js` + `resources/common-worker.js`
+  - `./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit 300 -- cargo run -p zero-wpt-runner -- testharness-cache-storage common.https.window.js --wpt-data tests/wpt-runner/wpt-data/.cache-storage-window-root --json`：1 subtest / 1 Pass
+  - `./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit 300 -- cargo test -p zero-engine test_cache_api_dedicated_worker_uses_window_cache_storage_bridge -- --nocapture`：1 passed
+  - `./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit 120 -- tests/wpt-runner/scripts/fetch-cache-storage-window-subset.sh --verify-only`：19 assets matched pinned manifest
+  - `cargo test -p zero-wpt-runner cache_storage_window_manifest_has_ten_unique_cases`：1 passed
+  - `cargo test -p zero-wpt-runner cache_storage_runner_reports_every_case_when_harness_is_missing`：1 passed
+  - `./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit 900 -- cargo build --release -p zero-wpt-runner`：passed
+  - `./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit 900 -- python3 tests/wpt-runner/scripts/run-cache-storage-window-baseline.py --runner ./target/release/zero-wpt-runner --wpt-data tests/wpt-runner/wpt-data/.cache-storage-window-root --output docs/goal/storage-cache-api/evidence/2026-08-22-cache-storage-window-baseline.json --summary docs/goal/storage-cache-api/evidence/2026-08-22-cache-storage-window-baseline.md`：10 cases / 137 subtests / 137 Pass / 0 Fail，double-run deterministic
+  - 证据：[M2 CacheStorage Worker Sharing WPT Expansion](evidence/2026-08-22-m2-cache-worker-sharing-wpt-expansion.md)
 - 2026-08-22 M3 CacheStorage 持久化首片：
   - `./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit 300 -- cargo check -p zero-storage -p zero-page-runtime -p zero-webview --all-targets`：passed
   - `./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit 300 -- cargo test -p zero-storage cache_storage_persistence -- --nocapture`：3 passed
