@@ -5615,7 +5615,33 @@
       return o;
     };
     Object.defineProperty(node, 'textContent', { get: function () { var t = ''; for (var i = 0; i < node.childNodes.length; i++) { var c = node.childNodes[i]; if (c.nodeType === 3) t += c.nodeValue; else if (c.nodeType === 1) t += c.textContent; } return t; }, configurable: true });
-    Object.defineProperty(node, 'innerHTML', { get: function () { var s = ''; for (var i = 0; i < node.childNodes.length; i++) s += _zwMSerialize(node.childNodes[i]); return s; }, configurable: true });
+    // R181（js-dom M4）：innerHTML setter（spec `dom-inner-html-setter`——解析 markup 整体替换
+    // 子节点）。detached doc / iframe 工厂的 createElement 产物（_zwMEl）旧只有 getter——
+    // `container.innerHTML = "<p></p>"` 在非严格模式静默 no-op（readonly 属性赋值被吞），
+    // firstChild 读 undefined（WPT node-realm-preserved-across-adoption 三族：inner.document
+    // .createElement("div").innerHTML 赋值后 firstChild 崩）。解析复用 _zwMBuildBodyTree
+    // （markup → _zwMEl 子树），子 parentNode 指本节点。
+    Object.defineProperty(node, 'innerHTML', { get: function () { var s = ''; for (var i = 0; i < node.childNodes.length; i++) s += _zwMSerialize(node.childNodes[i]); return s; },
+      set: function (v) {
+        var kids = [];
+        try { kids = _zwMBuildBodyTree(String(v == null ? '' : v)).childNodes; } catch (_e181p) { kids = []; }
+        node.childNodes = kids;
+        for (var _r181i = 0; _r181i < kids.length; _r181i++) {
+          try { kids[_r181i].parentNode = node; } catch (_e181pp) {}
+          // R181（js-dom M4）：解析子继承创建域（本节点的 ownerDocument——
+          // `_zwMEl` 的 accessor / 显式赋值槽），spec「innerHTML 解析子属本 doc」。
+          try {
+            var _r181od = node.ownerDocument;
+            if (_r181od) {
+              Object.defineProperty(kids[_r181i], 'ownerDocument', {
+                get: function () { return _r181od; },
+                set: function () {},
+                configurable: true,
+              });
+            }
+          } catch (_e181od) {}
+        }
+      }, configurable: true });
     Object.defineProperty(node, 'outerHTML', { get: function () { return _zwMSerialize(node); }, configurable: true });
     // js-dom M4 R81：元素导航 getter 族补齐（firstElementChild/lastElementChild/childElementCount
     // + previousElementSibling/nextElementSibling——WPT Node-properties detachedDiv.children[0] 等；
@@ -6931,6 +6957,12 @@
         var _tagIn = String(t);
         var e = _zwMEl({ tag: _isHtmlDoc ? _tagIn.toLowerCase() : _tagIn, preserveCase: !_isHtmlDoc }, null);
         e.ownerDocument = doc;
+        // R181（js-dom M4）：创建域印章（`_zwCreatorDoc`）——spec concept-node-adopt 的
+        // 对偶信息：节点创建时所属 doc（adoption 改 ownerDocument 但创建域 instanceof
+        // 断言族仍循创建原型链）。子树随容器 adoption 时被清（R177 跨文档 adopt 的
+        // 子树传播点），使 ownerDocument 读回新 doc。与 `_zwOwnerTree`（查询树溯源）
+        // 解耦：本槽只服务 createElement 直产物 + innerHTML 解析子的 adoption 传播。
+        try { e._zwCreatorDoc = doc; } catch (_e181c) {}
         e.namespaceURI = (doc._docNS !== undefined) ? doc._docNS : 'http://www.w3.org/1999/xhtml';
         e.prefix = null;
         e.nodeValue = null;

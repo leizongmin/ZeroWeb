@@ -944,6 +944,9 @@
       prefix: null,
       namespaceURI: isHtml ? 'http://www.w3.org/1999/xhtml' : doc._docNS,
       ownerDocument: doc,
+      // R181（js-dom M4）：创建域印章（与 detached doc createElement 同源——adoption
+      // 子树传播点消费，spec concept-node-adopt）。
+      _zwCreatorDoc: doc,
       childNodes: [],
       attributes: [],
       parentNode: null,
@@ -1054,8 +1057,103 @@
         configurable: true,
         get: function () { return _zwMSerialize(el); },
       });
+      // R181（js-dom M4）：innerHTML setter + firstChild/lastChild getter（spec
+      // `dom-inner-html-setter` / Node 导航）——iframe/detached 工厂元素旧只有
+      // appendChild 维护的 childNodes 数据属性，无导航 getter、无 innerHTML setter
+      //（赋值静默 no-op → firstChild 读 undefined）。WPT
+      // node-realm-preserved-across-adoption：`inner.document.createElement("div")
+      // .innerHTML = "<p></p>"` 后 `container.firstChild.ownerDocument` 崩。解析复用
+      // `_zwMBuildBodyTree`（与 _zwMEl R181 setter 同源），子 parentNode 指本元素。
+      Object.defineProperty(el, 'innerHTML', {
+        configurable: true,
+        get: function () {
+          var s = '';
+          for (var _r181i = 0; _r181i < el.childNodes.length; _r181i++) {
+            var _r181c = el.childNodes[_r181i];
+            if (_r181c && _r181c.nodeType === 3) s += String(_r181c.data != null ? _r181c.data : '');
+            else if (_r181c && _r181c.nodeType === 8) s += '<!--' + String(_r181c.data != null ? _r181c.data : '') + '-->';
+            else if (_r181c && _r181c.nodeType === 1 && typeof _r181c.outerHTML === 'string') s += _r181c.outerHTML;
+          }
+          return s;
+        },
+        set: function (v) {
+          var kids = [];
+          try { kids = _zwMBuildBodyTree(String(v == null ? '' : v)).childNodes; } catch (_e181s) { kids = []; }
+          el.childNodes = kids;
+          for (var _r181j = 0; _r181j < kids.length; _r181j++) {
+            try { kids[_r181j].parentNode = el; } catch (_e181p) {}
+            // R181（js-dom M4）：解析子继承创建域（本工厂元素的 doc——spec
+            // 「innerHTML 解析子属本 doc」；WPT node-realm-preserved-across-adoption
+            // 的 p/text/comment ownerDocument 断言）。
+            try {
+              var _r181fod = doc;
+              Object.defineProperty(kids[_r181j], 'ownerDocument', {
+                get: function () { return _r181fod; },
+                set: function () {},
+                configurable: true,
+              });
+            } catch (_e181fod) {}
+          }
+        },
+      });
+      Object.defineProperty(el, 'firstChild', {
+        configurable: true,
+        get: function () { return el.childNodes.length ? el.childNodes[0] : null; },
+      });
+      Object.defineProperty(el, 'lastChild', {
+        configurable: true,
+        get: function () { return el.childNodes.length ? el.childNodes[el.childNodes.length - 1] : null; },
+      });
+      // R181（js-dom M4）：querySelector(All)——本地 childNodes 子树的 tag/class/id
+      // 简单形态匹配（深度优先）。WPT node-realm-mixed-across-adoption 的
+      // `container.querySelector("p")`（工厂元素旧无方法 → not-a-function）。
+      // 复杂选择器（组合器/伪类）返空（headless 近似，与 shadow root 轻量版同策略）。
+      el.querySelector = function (s) {
+        var a = el.querySelectorAll(s);
+        return a.length ? a[0] : null;
+      };
+      el.querySelectorAll = function (s) {
+        var out = [];
+        var _r181Simple = /^([a-zA-Z][a-zA-Z0-9-]*|\*|#([a-zA-Z_][\w-]*)|\.([a-zA-Z_][\w-]*))$/;
+        var m = _r181Simple.exec(String(s == null ? '' : s).trim());
+        if (!m) return out;
+        (function walk(n) {
+          var kids = n.childNodes || [];
+          for (var i = 0; i < kids.length; i++) {
+            var k = kids[i];
+            if (k && k.nodeType === 1) {
+              var hit = false;
+              if (m[1] === '*') hit = true;
+              else if (m[2]) { try { hit = k.getAttribute && String(k.getAttribute('id')) === m[2]; } catch (_e181i) {} }
+              else if (m[3]) {
+                try {
+                  var cls = String(k.getAttribute && (k.getAttribute('class') != null ? k.getAttribute('class') : (k.className != null ? k.className : '')));
+                  hit = cls.split(/\s+/).indexOf(m[3]) >= 0;
+                } catch (_e181c) {}
+              } else {
+                hit = String(k.tagName || '').toLowerCase() === m[1].toLowerCase();
+              }
+              if (hit) out.push(k);
+              walk(k);
+            }
+          }
+        })(el);
+        return out;
+      };
     } catch (_e174id) {}
-    try { Object.setPrototypeOf(el, globalThis.Element ? globalThis.Element.prototype : Object.prototype); } catch (_e115p) {}
+    // R181（js-dom M4）：按 tag 接原型（spec `instanceof HTMLSpanElement` 等接口断言）
+    // ——与 _zwMEl 的 R125 接线同源：按 tag 查 `__zwHtmlTagIface`，miss 回落
+    // HTMLElement.prototype / Element.prototype（WPT node-realm-preserved-across-adoption
+    // 的 `child instanceof inner.HTMLSpanElement`——旧统一 Element.prototype 使
+    // 子类接口断言 false）。
+    try {
+      var _r181FTag = String(t || '').toLowerCase();
+      var _r181FIface = globalThis.__zwHtmlTagIface && globalThis.__zwHtmlTagIface[_r181FTag];
+      var _r181FProto = (_r181FIface && globalThis[_r181FIface] && globalThis[_r181FIface].prototype)
+        || (globalThis.HTMLElement && globalThis.HTMLElement.prototype)
+        || (globalThis.Element && globalThis.Element.prototype) || Object.prototype;
+      Object.setPrototypeOf(el, _r181FProto);
+    } catch (_e115p) { try { Object.setPrototypeOf(el, globalThis.Element ? globalThis.Element.prototype : Object.prototype); } catch (_e115p2) {} }
     return el;
   }
 
@@ -1324,6 +1422,31 @@
       _zwScriptsRan: false,
       __zwRunInlineScripts: runInlineScripts,
     };
+    // R181（js-dom M4）：HTML 元素接口构造器全表转发（`__zwHtmlTagIface` 值集去重 +
+    // Element/HTMLElement/Node/Document/DocumentFragment/CharacterData 基础面）——WPT
+    // node-realm-preserved-across-adoption 的 `node instanceof inner.HTMLParagraphElement`
+    //（cross-realm instanceof：spec Node 的 realm 创建时固定，`inner[iface]` 须为构造器
+    // 非 undefined——旧缺转发报 "Right-hand side of 'instanceof' is not an object"）。
+    // polyfill 单 realm：直接引用主 window 构造器（与 R140/R179 转发同模式）。
+    try {
+      win.Element = globalThis.Element;
+      win.HTMLElement = globalThis.HTMLElement;
+      win.Node = globalThis.Node;
+      win.Document = globalThis.Document;
+      win.DocumentFragment = globalThis.DocumentFragment;
+      win.CharacterData = globalThis.CharacterData;
+      win.ProcessingInstruction = globalThis.ProcessingInstruction;
+      // R181（js-dom M4）：customElements 转发（WPT node-realm-mixed-across-adoption 的
+      // `innerA.customElements.define(...)`——旧缺转发报 "Cannot read properties of
+      // undefined (reading 'define')"；polyfill 单 registry 近似）。
+      win.customElements = globalThis.customElements;
+      var _r181Table = globalThis.__zwHtmlTagIface || {};
+      for (var _r181Tag in _r181Table) {
+        if (!Object.prototype.hasOwnProperty.call(_r181Table, _r181Tag)) continue;
+        var _r181Ctor = globalThis[_r181Table[_r181Tag]];
+        if (typeof _r181Ctor === 'function') win[_r181Table[_r181Tag]] = _r181Ctor;
+      }
+    } catch (_e181w) {}
     win.window = win;
     win.self = win;
     win.addEventListener = function (type, fn) {

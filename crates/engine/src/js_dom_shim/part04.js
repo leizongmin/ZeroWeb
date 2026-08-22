@@ -3122,6 +3122,30 @@
                   configurable: true,
                 });
               } catch (_e177sa) {}
+              // R181（js-dom M4）：adopt 子树传播（sel 父路径，与 handle 父 R177 分支
+              // 同款）——plain 子的子树 ownerDocument 一并重指（spec
+              // `concept-node-adopt` 递归 adopt descendants；WPT
+              // node-realm-preserved-across-adoption）。
+              try {
+                (function _r181AdoptSubSel(n, _r181Depth) {
+                  if (!n || _r181Depth > 64) return;
+                  var _r181Kids = n.childNodes || [];
+                  for (var _r181k = 0; _r181k < _r181Kids.length; _r181k++) {
+                    var _r181d = _r181Kids[_r181k];
+                    if (!_r181d || _r181d.nodeType !== 1 && _r181d.nodeType !== 3 && _r181d.nodeType !== 8) continue;
+                    try { delete _r181d._zwCreatorDoc; } catch (_e181s1) {}
+                    try { delete _r181d._zwOwnerTree; } catch (_e181s2) {}
+                    try {
+                      Object.defineProperty(_r181d, 'ownerDocument', {
+                        get: function () { return globalThis.document; },
+                        set: function () {},
+                        configurable: true,
+                      });
+                    } catch (_e181s3) {}
+                    _r181AdoptSubSel(_r181d, _r181Depth + 1);
+                  }
+                })(child, 0);
+              } catch (_e181sb) {}
             }
             // js-dom M4 R51：spec `dom-node-pre-insert` 校验——child 即 parent 自身 / 是 parent 的
             // 祖先 → HierarchyRequestError（WPT Range-mutations "paras[0].appendChild(paras[0])"
@@ -3179,6 +3203,32 @@
                   configurable: true,
                 });
               } catch (_e177a) {}
+              // R181（js-dom M4）：adopt 子树传播——plain 子带自有子树（innerHTML
+              // 解析子/工厂 appendChild 子）时，子树节点的 ownerDocument 一并重指
+              //（spec `concept-node-adopt` 递归 adopt descendants；WPT
+              // node-realm-preserved-across-adoption：`document.body.appendChild
+              // (innerContainer)` 后 `p/text/comment.ownerDocument === document`）。
+              // 传播后清 `_zwCreatorDoc`/`_zwOwnerTree` 印章防后续查询误读源 doc。
+              try {
+                (function _r181AdoptSub(n, _r181Depth) {
+                  if (!n || _r181Depth > 64) return;
+                  var _r181Kids181 = n.childNodes || [];
+                  for (var _r181k = 0; _r181k < _r181Kids181.length; _r181k++) {
+                    var _r181d = _r181Kids181[_r181k];
+                    if (!_r181d || _r181d.nodeType !== 1 && _r181d.nodeType !== 3 && _r181d.nodeType !== 8) continue;
+                    try { delete _r181d._zwCreatorDoc; } catch (_e181d1) {}
+                    try { delete _r181d._zwOwnerTree; } catch (_e181d2) {}
+                    try {
+                      Object.defineProperty(_r181d, 'ownerDocument', {
+                        get: function () { return globalThis.document; },
+                        set: function () {},
+                        configurable: true,
+                      });
+                    } catch (_e181d3) {}
+                    _r181AdoptSub(_r181d, _r181Depth + 1);
+                  }
+                })(child, 0);
+              } catch (_e181a) {}
               try {
                 var _r84Parent = _makeProxy(null, handle);
                 Object.defineProperty(child, 'parentNode', { get: function () { return _r84Parent; }, configurable: true });
