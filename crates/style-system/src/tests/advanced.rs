@@ -533,6 +533,35 @@ fn test_var_resolution_in_pipeline() {
     assert_eq!(div_style.color, ColorValue::Rgba(255, 0, 0, 255));
 }
 
+/// var() 函数名在样式计算管线中按 ASCII 大小写不敏感解析。
+#[test]
+fn test_var_function_name_case_insensitive_in_pipeline() {
+    let (doc, _html, _body, div, _p) = make_test_dom();
+    let mut sys = StyleSystem::new();
+
+    let stylesheets = vec![Stylesheet {
+        rules: vec![Rule::Style(StyleRule {
+            selectors: vec![make_tag_selector("div")],
+            declarations: vec![
+                Declaration {
+                    property: "--main-color".to_string(),
+                    value: "red".to_string(),
+                    important: false,
+                },
+                Declaration {
+                    property: "color".to_string(),
+                    value: "VAR(--main-color)".to_string(),
+                    important: false,
+                },
+            ],
+        })],
+    }];
+
+    let styles = sys.compute_styles(&doc, &stylesheets);
+    let div_style = styles.get(&div).expect("div should have style");
+    assert_eq!(div_style.color, ColorValue::Rgba(255, 0, 0, 255));
+}
+
 /// var() 带回退值时，变量不存在则使用回退。
 #[test]
 fn test_var_fallback_in_pipeline() {

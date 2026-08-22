@@ -5,6 +5,7 @@
 //! `mod.rs::expand_one` 调度）；其余为族内私有。
 
 use super::{MatchingDecl, matches_css_wide_keyword};
+use crate::computed::contains_var_function;
 
 /// 展开 background 简写。
 ///
@@ -109,7 +110,7 @@ pub(super) fn expand_background(value: &str, important: bool, specificity: (u32,
 
     // 剩余值若含未解析 var() 或裸颜色函数 rgb()/hsl()，整体作为 background-color
     //（这些值含逗号/空格，不能 split_whitespace；图函数已在上方提取为 bg_image）
-    if working.contains("var(")
+    if contains_var_function(working)
         || working.contains("rgb(")
         || working.contains("rgba(")
         || working.contains("hsl(")

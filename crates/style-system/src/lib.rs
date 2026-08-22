@@ -2152,7 +2152,7 @@ fn rules_cache_safe(rules: &[zero_css_parser::ast::Rule]) -> bool {
                     }
                 }
                 for decl in &st.declarations {
-                    if decl.property.starts_with("--") || decl.value.contains("var(") {
+                    if decl.property.starts_with("--") || computed::contains_var_function(&decl.value) {
                         return false;
                     }
                 }
@@ -2248,6 +2248,28 @@ mod presentational_hint_tests;
 
 #[cfg(test)]
 mod tests;
+
+#[cfg(test)]
+mod style_cache_tests {
+    use super::*;
+    use zero_css_parser::ast::{Declaration, Rule, StyleRule};
+
+    #[test]
+    fn stylesheet_cache_safe_treats_var_function_case_insensitively() {
+        let stylesheet = Stylesheet {
+            rules: vec![Rule::Style(StyleRule {
+                selectors: vec![],
+                declarations: vec![Declaration {
+                    property: "color".to_string(),
+                    value: "VAR(--color)".to_string(),
+                    important: false,
+                }],
+            })],
+        };
+
+        assert!(!stylesheet_cache_safe(&[stylesheet]));
+    }
+}
 
 #[cfg(test)]
 mod q_quotes_tests {

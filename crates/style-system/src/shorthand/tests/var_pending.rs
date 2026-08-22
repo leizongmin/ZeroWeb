@@ -102,6 +102,17 @@ fn test_background_with_var_emits_pending_sentinels() {
 }
 
 #[test]
+fn test_background_with_uppercase_var_emits_pending_sentinels() {
+    let _g = VarGuard::new();
+    let out = expand_shorthands(&[("background".to_string(), "VAR(--foo)".to_string(), false, (0, 0, 0))]);
+    assert_eq!(out.len(), 8);
+    for (_, v, _, _) in &out {
+        assert!(v.starts_with(ZWSP_SENTINEL_PREFIX));
+        assert!(v.contains("VAR(--foo)"));
+    }
+}
+
+#[test]
 fn test_non_var_font_shorthand_unaffected() {
     let _g = VarGuard::new();
     // 不含 var() 的简写走既有展开，不产生 pending 标记。

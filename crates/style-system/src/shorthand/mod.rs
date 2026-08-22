@@ -5,6 +5,8 @@
 //!
 //! 展开在级联之前，确保简写属性与长属性的特异性竞争正确处理。
 
+use crate::computed::contains_var_function;
+
 /// 匹配声明类型：(属性名, 属性值, 是否 important, 特异性)
 type MatchingDecl = (String, String, bool, (u32, u32, u32));
 mod background;
@@ -327,7 +329,7 @@ fn expand_one(property: &str, value: &str, important: bool, specificity: (u32, u
     // 的每个长属性标记为 pending（携带原简写名+原值），var() 解析后由
     // `expand_pending_shorthands` 重新展开。kill-switch：`ZW_SHORTHAND_VAR=0`。
     if std::env::var("ZW_SHORTHAND_VAR").as_deref() != Ok("0")
-        && value.contains("var(")
+        && contains_var_function(value)
         && let Some(longhands) = pending_shorthand_longhands(property)
     {
         let sentinel = format!("{ZWSP_SENTINEL_PREFIX}{property}\x01{value}");

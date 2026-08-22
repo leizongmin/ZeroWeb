@@ -5,7 +5,10 @@
 
 use std::collections::HashMap;
 
-use crate::property::{ComputedStyle, PropertyRegistry, apply_property_value_with_quirks};
+use crate::{
+    computed::contains_var_function,
+    property::{ComputedStyle, PropertyRegistry, apply_property_value_with_quirks},
+};
 use zero_css_parser::values::{LengthValue, parse_length};
 
 /// CSS 声明来源。
@@ -450,7 +453,7 @@ fn cascade_tier_key(order: &CascadeOrder) -> (Origin, bool, Option<usize>) {
 /// driving：keywords-000（`background: "red"` string 值 apply 拒绝 → 丢，下个合法 green 胜出）。
 /// 未知属性 apply 亦返 false → 丢（CSS：未知属性忽略；ZW 原本 apply 也忽略，渲染不变）。
 fn is_cascade_value_valid(property: &str, value: &str, quirks: bool, dummy: &mut ComputedStyle) -> bool {
-    if property.starts_with("--") || value.contains("var(") || is_css_wide_keyword(value) {
+    if property.starts_with("--") || contains_var_function(value) || is_css_wide_keyword(value) {
         return true;
     }
     // 有效性检查（apply-on-dummy）：color-scheme 合法性不依赖 prefers，传 light=false。

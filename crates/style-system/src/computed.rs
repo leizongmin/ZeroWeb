@@ -193,6 +193,12 @@ pub fn resolve_var(value: &str, custom_properties: &HashMap<String, String>) -> 
     resolve_var_recursive(value, custom_properties, &mut visiting).unwrap_or_else(|| value.to_string())
 }
 
+/// https://www.w3.org/TR/css-variables-1/#using-variables
+/// CSS function names are ASCII case-insensitive; custom property names remain case-sensitive.
+pub(crate) fn contains_var_function(value: &str) -> bool {
+    find_var_function(value, 0).is_some()
+}
+
 /// 递归解析 var()。返回 None 表示该值 invalid at computed-value-time
 ///（环引用、或无回退的未定义引用）—— 上层 [`resolve_var`] 据此回退到原值。
 fn resolve_var_recursive(
@@ -200,7 +206,7 @@ fn resolve_var_recursive(
     custom_properties: &HashMap<String, String>,
     visiting: &mut Vec<String>,
 ) -> Option<String> {
-    if !value.contains("var(") {
+    if !contains_var_function(value) {
         return Some(value.to_string());
     }
     substitute_embedded_var(value, custom_properties, visiting)
@@ -237,8 +243,7 @@ fn substitute_embedded_var(
 ) -> Option<String> {
     let mut result = String::new();
     let mut idx = 0;
-    while let Some(rel) = value[idx..].find("var(") {
-        let start = idx + rel;
+    while let Some(start) = find_var_function(value, idx) {
         result.push_str(&value[idx..start]);
         let inner_start = start + 4;
         let end = find_matching_paren(value, inner_start)?;
@@ -250,6 +255,13 @@ fn substitute_embedded_var(
     }
     result.push_str(&value[idx..]);
     Some(result)
+}
+
+fn find_var_function(value: &str, start: usize) -> Option<usize> {
+    value.as_bytes()[start..]
+        .windows(4)
+        .position(|window| window.eq_ignore_ascii_case(b"var("))
+        .map(|offset| start + offset)
 }
 
 /// 将 var() 内部内容拆为 `(name, Option<fallback>)`（按顶层逗号）。
@@ -745,6 +757,16 @@ mod tests {
 
         let result = resolve_var("var(--main-color)", &custom);
         assert_eq!(result, "red");
+    }
+
+    #[test]
+    fn test_resolve_var_function_name_is_case_insensitive() {
+        let mut custom = HashMap::new();
+        custom.insert("--main-color".to_string(), "red".to_string());
+        custom.insert("--gap".to_string(), "10px".to_string());
+
+        assert_eq!(resolve_var("VAR(--main-color)", &custom), "red");
+        assert_eq!(resolve_var("calc(Var(--gap) + 2px)", &custom), "calc(10px + 2px)");
     }
 
     #[test]
