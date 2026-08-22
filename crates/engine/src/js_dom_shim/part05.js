@@ -7541,12 +7541,12 @@
   // script-sandbox 为单上下文（无 sub-context API），真独立沙箱需多嵌入器 host 接线（browser/webview/reftest
   // 各提供 __zw_create_worker，defer）。本切片用 **同沙箱 IIFE 影子执行**（对称 compile_module_script R3083）：
   // data: URL inline worker 脚本经 `new Function` 包一层，影子 `var self/postMessage/onmessage/importScripts`
-  // → worker 脚本用 worker-scoped 全局（不污染主全局），bare `onmessage = fn` 设影子局部，执行后同步 handler。
+  // → worker 脚本用 worker-scoped 全局；bare `onmessage = fn` 设影子局部，执行后同步 handler。
   // main↔worker 消息经 structuredClone + queueMicrotask + MessageEvent 派发（对称 MessagePort R2779）。
   // extends EventTarget（与 MessagePort/BroadcastChannel 同款）——addEventListener('message'/'error') 可用。
   // spec https://html.spec.whatwg.org/multipage/workers.html#dom-worker。
   // **已知限制**：① 仅 data: URL inline worker 或 host __zw_fetch_script 支持的外链 worker；
-  // ② 同全局执行（worker 顶层级隐式全局赋值泄漏到主全局——罕见；spec worker 独立全局，headless 简化）；
+  // ② 仍与页面共享底层 JS realm（构造器/prototype 复用；spec worker 独立 realm，headless 简化）；
   // ③ structuredClone 克隆（非可克隆类型 defer）；④ importScripts no-op（无 fetch）；
   // ⑤ worker 顶层级 postMessage（main 未注册 onmessage 前派发）被丢弃（spec 队列，headless 简化）。
   // 提取 data: URL 脚本 payload（text/javascript / application/javascript，URL-decode 或 base64）。
@@ -7562,6 +7562,28 @@
     }
     try { return decodeURIComponent(payload); } catch (_e) { return payload; }
   }
+  function _zwWorkerLocation(hrefValue) {
+    function href() {
+      return String(hrefValue || 'about:blank');
+    }
+    function parsed() {
+      try {
+        if (typeof globalThis.URL === 'function') return new globalThis.URL(href(), href());
+      } catch (_eWorkerLocationUrl) {}
+      return null;
+    }
+    return {
+      get href() { return href(); },
+      get protocol() { var u = parsed(); return u ? u.protocol : ''; },
+      get host() { var u = parsed(); return u ? u.host : ''; },
+      get hostname() { var u = parsed(); return u ? u.hostname : ''; },
+      get pathname() { var u = parsed(); return u ? u.pathname : ''; },
+      get search() { var u = parsed(); return u ? u.search : ''; },
+      get hash() { var u = parsed(); return u ? u.hash : ''; },
+      get origin() { var u = parsed(); return u ? u.origin : 'null'; },
+      toString: function () { return href(); }
+    };
+  }
   function Worker(url, options, baseUrl) {
     if (!(this instanceof Worker)) return new Worker(url, options, baseUrl);
     this._et_listeners = {}; // EventTarget 内部 listener map（构造器未自动调，手动初始化）
@@ -7571,6 +7593,7 @@
     this._scriptUrl = String(url);
     this._resolvedScriptUrl = '';
     this._handler = null; // worker 的 onmessage（脚本执行时经 wctx.onmessage setter 注入）
+    this._context = null;
     var main = this; // Worker 实例（worker→main 派发 MessageEvent 到此）
     var parentHref = baseUrl != null ? String(baseUrl) : '';
     if (!parentHref) {
@@ -7616,6 +7639,23 @@
       },
       close: function () { main._terminated = true; },
     };
+    wctx.self = wctx;
+    wctx._et_listeners = {};
+    if (!globalThis.WorkerGlobalScope) {
+      globalThis.WorkerGlobalScope = function WorkerGlobalScope() {};
+      globalThis.WorkerGlobalScope.prototype = Object.create(globalThis.EventTarget.prototype);
+      globalThis.WorkerGlobalScope.prototype.constructor = globalThis.WorkerGlobalScope;
+    }
+    if (!globalThis.DedicatedWorkerGlobalScope) {
+      globalThis.DedicatedWorkerGlobalScope = function DedicatedWorkerGlobalScope() {};
+      globalThis.DedicatedWorkerGlobalScope.prototype = Object.create(globalThis.WorkerGlobalScope.prototype);
+      globalThis.DedicatedWorkerGlobalScope.prototype.constructor = globalThis.DedicatedWorkerGlobalScope;
+    }
+    try { Object.setPrototypeOf(wctx, globalThis.DedicatedWorkerGlobalScope.prototype); } catch (_e) {}
+    wctx.EventTarget = globalThis.EventTarget;
+    wctx.WorkerGlobalScope = globalThis.WorkerGlobalScope;
+    wctx.DedicatedWorkerGlobalScope = globalThis.DedicatedWorkerGlobalScope;
+    main._context = wctx;
     // R34xx（G6）：worker 全局暴露（OffscreenCanvas 等 canvas 构造器——worker 测试用）。
     wctx.OffscreenCanvas = globalThis.OffscreenCanvas;
     // R34xx：worker 暴露 OffscreenCanvasRenderingContext2D（self.OffscreenCanvas-
@@ -7626,6 +7666,35 @@
     });
     wctx.ImageBitmap = globalThis.ImageBitmap;
     wctx.ImageData = globalThis.ImageData;
+    wctx.Headers = globalThis.Headers;
+    wctx.Response = globalThis.Response;
+    wctx.URL = globalThis.URL;
+    wctx.DOMException = globalThis.DOMException;
+    wctx.Error = globalThis.Error;
+    wctx.TypeError = globalThis.TypeError;
+    wctx.Request = function WorkerRequest(input, init) {
+      var requestInput = input;
+      if (!(input && typeof input === 'object' && input.url !== undefined)) {
+        try {
+          requestInput = new globalThis.URL(String(input), wctx.location && wctx.location.href ? wctx.location.href : 'about:blank').href;
+        } catch (_eWorkerRequestUrl) {
+          requestInput = input;
+        }
+      }
+      return new globalThis.Request(requestInput, init);
+    };
+    try { wctx.Request.prototype = globalThis.Request.prototype; } catch (_eWorkerRequestProto) {}
+    wctx.fetch = function (input, init) {
+      var requestInput = input;
+      if (!(input && typeof input === 'object' && input.url !== undefined)) {
+        try {
+          requestInput = new globalThis.URL(String(input), wctx.location && wctx.location.href ? wctx.location.href : 'about:blank').href;
+        } catch (_eWorkerFetchUrl) {
+          requestInput = input;
+        }
+      }
+      return globalThis.fetch(requestInput, init);
+    };
     wctx.CacheStorage = globalThis.CacheStorage;
     wctx.Cache = globalThis.Cache;
     wctx.caches = globalThis.caches;
@@ -7644,15 +7713,21 @@
       : { add: function () { return this; }, ready: Promise.resolve(), load: function () { return Promise.resolve([]); } };
     wctx.Worker = function (nestedUrl, nestedOptions) { return new Worker(nestedUrl, nestedOptions, main._resolvedScriptUrl); };
     try { wctx.Worker.prototype = Worker.prototype; } catch (_e) {}
-    wctx.addEventListener = wctx.addEventListener || function () {};
-    wctx.dispatchEvent = wctx.dispatchEvent || function () {};
-    wctx.location = wctx.location || { href: main._resolvedScriptUrl };
+    wctx.location = wctx.location || _zwWorkerLocation(main._resolvedScriptUrl);
     // onmessage setter：worker 脚本 `self.onmessage = fn` 或 bare `onmessage = fn`（经 IIFE 影子同步）注入 handler。
     Object.defineProperty(wctx, 'onmessage', {
       configurable: true,
       set: function (fn) { if (typeof fn === 'function') main._handler = fn; },
       get: function () { return main._handler; },
     });
+    function _zwWorkerExposeBareGlobalCode() {
+      return "var __zwWorkerBindings='';"
+        + "for(var __zwk in self){"
+        + "if(/^[A-Za-z_$][0-9A-Za-z_$]*$/.test(__zwk)&&__zwk!=='self'&&__zwk!=='onmessage')"
+        + "__zwWorkerBindings+='var '+__zwk+'=self['+JSON.stringify(__zwk)+'];';"
+        + "}"
+        + "try{eval(__zwWorkerBindings);}catch(_e){}";
+    }
     // 执行 worker 脚本（data: URL inline 或外链 fetch）。new Function 包影子声明，bare 赋值设局部，执行后同步 onmessage。
     var scriptSrc = _zwDecodeWorkerScript(url);
     // R3091：外链 worker URL（非 data:）—— 若 host 注册了 __zw_fetch_script（backed by ScriptSourceFetcher），
@@ -7684,13 +7759,15 @@
       }
       try {
         var body = inlineImports
+          + _zwWorkerExposeBareGlobalCode()
           + 'var postMessage=self.postMessage.bind(self);'
           + 'var importScripts=function(){};'
           + 'var location=self.location;'
           + 'var Worker=self.Worker;'
           + 'var onmessage;'
+          + 'with(self){'
           + scriptSrc
-          + '\n;if(typeof onmessage==="function")self.onmessage=onmessage;';
+          + '\n;if(typeof onmessage==="function")self.onmessage=onmessage;}';
         new Function('self', body).call(null, wctx);
       } catch (e) {
         // worker 脚本抛（语法/运行时）→ microtask 派发 'error' 到 Worker 实例（spec onerror）。
@@ -7706,17 +7783,16 @@
   }
   Worker.prototype = Object.create(EventTarget.prototype);
   Worker.prototype.constructor = Worker;
-  // main→worker：structuredClone + queueMicrotask 调 worker 的 onmessage（handler 在脚本执行时注入）。
+  // main→worker：structuredClone + queueMicrotask 派发 worker global scope 的 message 事件。
   Worker.prototype.postMessage = function (message, _transfer) {
     if (this._terminated) return;
-    var handler = this._handler;
-    if (typeof handler !== 'function') return; // 无 handler（worker 未设 onmessage）→ 丢弃（spec 队列，headless 简化）
     var data = typeof structuredClone === 'function' ? structuredClone(message) : message;
     var target = this;
     if (typeof queueMicrotask === 'function') {
       queueMicrotask(function () {
         if (target._terminated) return;
-        try { handler(new MessageEvent('message', { data: data, origin: '' })); }
+        if (!target._context || typeof target._context.dispatchEvent !== 'function') return;
+        try { target._context.dispatchEvent(new MessageEvent('message', { data: data, origin: '' })); }
         catch (_e) { /* worker handler 抛 → 真浏览器触发 worker error；headless 静默 */ }
       });
     }

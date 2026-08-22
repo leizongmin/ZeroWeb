@@ -655,6 +655,21 @@ pub const CACHE_STORAGE_WINDOW_CASES: &[(&str, &[&str])] = &[
     ),
     ("service-workers/cache-storage/common.https.window.js", &[]),
     ("service-workers/cache-storage/cache-api-nested-worker.https.html", &[]),
+    ("service-workers/cache-storage/worker/cache-storage.https.html", &[]),
+    (
+        "service-workers/cache-storage/worker/cache-storage-keys.https.html",
+        &[],
+    ),
+    ("service-workers/cache-storage/worker/cache-delete.https.html", &[]),
+    ("service-workers/cache-storage/worker/cache-keys.https.html", &[]),
+    ("service-workers/cache-storage/worker/cache-matchAll.https.html", &[]),
+    (
+        "service-workers/cache-storage/worker/cache-storage-match.https.html",
+        &[],
+    ),
+    ("service-workers/cache-storage/worker/cache-match.https.html", &[]),
+    ("service-workers/cache-storage/worker/cache-put.https.html", &[]),
+    ("service-workers/cache-storage/worker/cache-add.https.html", &[]),
 ];
 
 /// Fixed Service Worker M1 core corpus at the pinned WPT revision.
@@ -3176,13 +3191,13 @@ async_test(function(test) {
     }
 
     #[test]
-    fn cache_storage_window_manifest_has_eleven_unique_cases() {
+    fn cache_storage_window_manifest_has_twenty_unique_cases() {
         let unique = CACHE_STORAGE_WINDOW_CASES
             .iter()
             .map(|(path, _)| *path)
             .collect::<std::collections::BTreeSet<_>>();
-        assert_eq!(CACHE_STORAGE_WINDOW_CASES.len(), 11);
-        assert_eq!(unique.len(), 11);
+        assert_eq!(CACHE_STORAGE_WINDOW_CASES.len(), 20);
+        assert_eq!(unique.len(), 20);
         assert!(CACHE_STORAGE_WINDOW_CASES.iter().all(|(path, support)| {
             if !path.starts_with("service-workers/cache-storage/")
                 || !(path.ends_with(".https.any.js")
@@ -3199,6 +3214,7 @@ async_test(function(test) {
                 }
                 "service-workers/cache-storage/common.https.window.js"
                 | "service-workers/cache-storage/cache-api-nested-worker.https.html" => support.is_empty(),
+                path if path.starts_with("service-workers/cache-storage/worker/") => support.is_empty(),
                 _ => *support == ["resources/test-helpers.js"],
             }
         }));

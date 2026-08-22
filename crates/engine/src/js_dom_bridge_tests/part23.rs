@@ -1,4 +1,74 @@
 #[test]
+fn test_dedicated_worker_imported_self_property_is_bare_global() {
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+
+    let mut sandbox = V8Sandbox::with_config(zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    })
+    .unwrap();
+    let fetched = Arc::new(Mutex::new(Vec::new()));
+    let fetched_for_callback = fetched.clone();
+    sandbox.register_callback(
+        "__zw_fetch_script",
+        Box::new(move |args| {
+            let page = args.first().map(String::as_str).unwrap_or("");
+            let src = args.get(1).map(String::as_str).unwrap_or("");
+            fetched_for_callback.lock().unwrap().push(format!("{page}|{src}"));
+            match (page, src) {
+                ("https://example.com/tests/page.html", "workers/imported-helper-worker.js") => {
+                    "importScripts('helper.js');\
+                     onmessage = function (event) { postMessage(imported_helper(event.data)); };"
+                        .to_string()
+                }
+                ("https://example.com/tests/workers/imported-helper-worker.js", "helper.js") => {
+                    "(function () {\
+                       function imported_helper(value) { return value + 1; }\
+                       self.imported_helper = imported_helper;\
+                     })();"
+                        .to_string()
+                }
+                _ => String::new(),
+            }
+        }),
+    );
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new("<html><body></body></html>".to_string()));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("https://example.com/tests/page.html".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+
+    sandbox
+        .execute(
+            "globalThis.__workerImportedHelperResult = 'pending';\
+             var worker = new Worker('workers/imported-helper-worker.js');\
+             worker.onmessage = function (event) { globalThis.__workerImportedHelperResult = event.data; };\
+             worker.postMessage(41);",
+        )
+        .unwrap();
+    for i in 0..8 {
+        sandbox.execute(&format!("globalThis.__workerImportedHelperPump = {i};")).unwrap();
+    }
+
+    assert_eq!(
+        sandbox.execute("String(globalThis.__workerImportedHelperResult)").unwrap().value,
+        "42",
+        "worker global properties assigned by imported scripts should resolve as bare globals"
+    );
+    assert_eq!(
+        fetched.lock().unwrap().as_slice(),
+        &[
+            "https://example.com/tests/page.html|workers/imported-helper-worker.js".to_string(),
+            "https://example.com/tests/workers/imported-helper-worker.js|helper.js".to_string(),
+        ],
+        "worker importScripts fetch should use the worker script URL as base"
+    );
+}
+
+#[test]
 fn test_iframe_inline_script_xhr_uses_iframe_window_location() {
     use std::sync::{Arc, Mutex};
     use zero_script_sandbox::{Sandbox, V8Sandbox};
