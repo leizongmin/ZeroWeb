@@ -2062,6 +2062,8 @@ impl WebView {
                         body_bytes,
                     };
                     let page_url = sw_page_url.lock().map(|url| url.clone()).unwrap_or_default();
+                    let fetch_client_id = args.get(5).filter(|value| !value.is_empty()).cloned();
+                    let fetch_referrer = args.get(6).filter(|value| !value.is_empty()).cloned();
                     if let Ok(page) = url::Url::parse(&page_url)
                         && let Ok(request_url) = url::Url::parse(&url)
                         && page.origin() == request_url.origin()
@@ -2069,7 +2071,9 @@ impl WebView {
                         && matches!(request_url.scheme(), "http" | "https")
                     {
                         let is_navigation = fetch_id == "r115iframe";
-                        let client_id = format!("{}:{}", sw_client_id, sw_client_generation.load(Ordering::Relaxed));
+                        let client_id = fetch_client_id.unwrap_or_else(|| {
+                            format!("{}:{}", sw_client_id, sw_client_generation.load(Ordering::Relaxed))
+                        });
                         let sw_request = ServiceWorkerFetchRequest {
                             url: request_url.as_str().to_string(),
                             method: method.clone(),
@@ -2077,7 +2081,7 @@ impl WebView {
                             body: req.body.clone(),
                             client_id: Some(client_id.clone()),
                             resulting_client_id: is_navigation.then_some(format!("{client_id}:nested:{url}")),
-                            referrer: is_navigation.then_some(page_url.clone()),
+                            referrer: fetch_referrer.or_else(|| is_navigation.then_some(page_url.clone())),
                         };
                         match Self::dispatch_in_process_service_worker_fetch(
                             &sw_manager,
@@ -2865,6 +2869,40 @@ impl WebView {
             }),
         );
 
+        let observe_client_manager = manager.clone();
+        sandbox.register_callback(
+            "__zw_sw_observe_window_client",
+            Box::new(move |args| {
+                let client_id = args.first().map(String::as_str).unwrap_or("");
+                let client_url = args.get(1).map(String::as_str).unwrap_or("");
+                let frame_type = args.get(2).map(String::as_str).unwrap_or("top-level");
+                let result = observe_client_manager
+                    .lock()
+                    .map_err(|_| "Service Worker manager lock poisoned".to_string())
+                    .and_then(|mut manager| {
+                        manager
+                            .observe_window_client_with_frame_type(client_id, client_url, frame_type)
+                            .map_err(|error| error.to_string())
+                    });
+                match result {
+                    Ok(()) => serde_json::json!({"ok": true}).to_string(),
+                    Err(error) => serde_json::json!({"ok": false, "error": error}).to_string(),
+                }
+            }),
+        );
+
+        let remove_client_manager = manager.clone();
+        sandbox.register_callback(
+            "__zw_sw_remove_window_client",
+            Box::new(move |args| {
+                let client_id = args.first().map(String::as_str).unwrap_or("");
+                if let Ok(mut manager) = remove_client_manager.lock() {
+                    manager.remove_client(client_id);
+                }
+                serde_json::json!({"ok": true}).to_string()
+            }),
+        );
+
         let update_manager = manager.clone();
         let update_page_url = page_url.clone();
         let update_worker_fetcher = worker_fetcher.clone();
@@ -3395,6 +3433,7 @@ impl WebView {
                             if response.is_none() && !message.is_empty() {
                                 tracing::warn!("Service Worker fetch fell back to host fetch: {message}");
                             }
+                            let _ = Self::poll_service_worker_manager(&mut manager, fetchers, timeout_secs);
                             return Ok(response);
                         }
                     }

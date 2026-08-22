@@ -1030,6 +1030,29 @@
         return parentServiceWorker.controller;
       }
     } : undefined;
+    function iframeFetch(input, init) {
+      if (typeof globalThis.fetch !== 'function') {
+        return Promise.reject(new TypeError('fetch is not available'));
+      }
+      var requestInput = input;
+      if (!(input && typeof input === 'object' && input.url !== undefined)) {
+        try {
+          requestInput = new globalThis.URL(String(input), doc && doc._zwURL ? doc._zwURL : undefined).href;
+        } catch (_eFetchUrl) {
+          requestInput = input;
+        }
+      }
+      var previousClientId = globalThis.__zwFetchClientId;
+      var previousReferrer = globalThis.__zwFetchReferrer;
+      try {
+        globalThis.__zwFetchClientId = doc && doc._zwSwClientId ? doc._zwSwClientId : '';
+        globalThis.__zwFetchReferrer = doc && doc._zwURL ? doc._zwURL : '';
+        return globalThis.fetch(requestInput, init);
+      } finally {
+        globalThis.__zwFetchClientId = previousClientId;
+        globalThis.__zwFetchReferrer = previousReferrer;
+      }
+    }
     var win = {
       document: doc,
       navigator: { serviceWorker: serviceWorker },
@@ -1058,6 +1081,11 @@
       // "Right-hand side of 'instanceof' is not an object"）。
       NodeList: globalThis.NodeList,
       HTMLCollection: globalThis.HTMLCollection,
+      fetch: iframeFetch,
+      Headers: globalThis.Headers,
+      Request: globalThis.Request,
+      Response: globalThis.Response,
+      URL: globalThis.URL,
     };
     win.addEventListener = function (type, fn) {
       try { globalThis.addEventListener(type, fn); } catch (_e139a) {}

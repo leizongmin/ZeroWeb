@@ -491,13 +491,13 @@ fn test_iframe_content_document_r115() {
     // WPT Document-createElement（147P/0F）+ Document-createElementNS（596P/0F）同语义。
     let out = sandbox
         .execute(
-            "var f = document.querySelector('iframe');             var doc = f.contentDocument;             var win = f.contentWindow;             var parts = [];             parts.push('de:' + (doc && doc.documentElement ? doc.documentElement.textContent : 'null'));             parts.push('dv:' + (doc.defaultView === win));             var e1 = doc.createElement('Abc');             parts.push('ce:' + e1.localName + '/' + e1.tagName + '/' + e1.namespaceURI);             parts.push('inst:' + (e1 instanceof win.Element));             var e2 = doc.createElementNS('http://example.com/', 'p:l');             parts.push('ns:' + e2.prefix + '/' + e2.localName + '/' + e2.namespaceURI);             var threw = '';             try { doc.createElementNS(null, 'p:l'); } catch (eN) { threw = eN.name; }             parts.push('nserr:' + threw);             var threw2 = '';             try { doc.createElementNS('http://example.com/', 'xmlns'); } catch (eX) { threw2 = eX.name; }             parts.push('xmlnserr:' + threw2);             var threw3 = '';             try { doc.createElement(''); } catch (eV) { threw3 = eV.name; }             parts.push('invalid:' + threw3);             parts.join('|');",
+            "var f = document.querySelector('iframe');             var doc = f.contentDocument;             var win = f.contentWindow;             var parts = [];             parts.push('de:' + (doc && doc.documentElement ? doc.documentElement.textContent : 'null'));             parts.push('dv:' + (doc.defaultView === win));             parts.push('fetch:' + (typeof win.fetch) + '/' + (win.Request === Request) + '/' + (win.Response === Response));             var e1 = doc.createElement('Abc');             parts.push('ce:' + e1.localName + '/' + e1.tagName + '/' + e1.namespaceURI);             parts.push('inst:' + (e1 instanceof win.Element));             var e2 = doc.createElementNS('http://example.com/', 'p:l');             parts.push('ns:' + e2.prefix + '/' + e2.localName + '/' + e2.namespaceURI);             var threw = '';             try { doc.createElementNS(null, 'p:l'); } catch (eN) { threw = eN.name; }             parts.push('nserr:' + threw);             var threw2 = '';             try { doc.createElementNS('http://example.com/', 'xmlns'); } catch (eX) { threw2 = eX.name; }             parts.push('xmlnserr:' + threw2);             var threw3 = '';             try { doc.createElement(''); } catch (eV) { threw3 = eV.name; }             parts.push('invalid:' + threw3);             parts.join('|');",
         )
         .unwrap()
         .value;
     assert_eq!(
         out,
-        "de:Dummy XML document|dv:true|ce:Abc/Abc/null|inst:true|ns:p/l/http://example.com/|nserr:NamespaceError|xmlnserr:NamespaceError|invalid:InvalidCharacterError",
+        "de:Dummy XML document|dv:true|fetch:function/true/true|ce:Abc/Abc/null|inst:true|ns:p/l/http://example.com/|nserr:NamespaceError|xmlnserr:NamespaceError|invalid:InvalidCharacterError",
         "iframe contentDocument：XML doc 语义（保大小写/ns null/instanceof/validate-and-extract/defaultView）"
     );
     sandbox.execute("document.querySelector('iframe').remove();").unwrap();
@@ -508,6 +508,61 @@ fn test_iframe_content_document_r115() {
             "remove:iframe:iframe",
         ],
         "iframe contentWindow/client 生命周期应映射到 Service Worker window client observe/remove"
+    );
+}
+
+#[test]
+fn test_iframe_content_window_fetch_resolves_against_iframe_url() {
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let mut sandbox = V8Sandbox::with_config(zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    })
+    .unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><iframe src=\"/frames/page.html\"></iframe></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("https://wpt.test/tests/main.html".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+    sandbox.register_callback(
+        "__zw_sw_observe_window_client",
+        Box::new(|_args| r#"{"ok":true}"#.to_string()),
+    );
+    let fetches: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
+    let fetches_for_callback = fetches.clone();
+    sandbox.register_callback(
+        "__zw_fetch",
+        Box::new(move |args| {
+            fetches_for_callback
+                .lock()
+                .unwrap()
+                .push(format!(
+                    "{}|{}|{}",
+                    args.get(2).cloned().unwrap_or_default(),
+                    args.get(5).cloned().unwrap_or_default(),
+                    args.get(6).cloned().unwrap_or_default()
+                ));
+            "__zwfr:200\x1fOK\x1f\x1f".to_string()
+        }),
+    );
+    sandbox
+        .execute(
+            "document.body.innerHTML = '<iframe src=\"/frames/page.html\"></iframe>';
+             document.querySelector('iframe').contentWindow.fetch('sibling.txt');",
+        )
+        .unwrap();
+    assert_eq!(
+        fetches.lock().unwrap().as_slice(),
+        &[
+            "https://wpt.test/frames/page.html||".to_string(),
+            "https://wpt.test/frames/sibling.txt|iframe:iframe|https://wpt.test/frames/page.html".to_string(),
+        ],
+        "iframe contentWindow.fetch should resolve relative URLs against the iframe document URL"
     );
 }
 

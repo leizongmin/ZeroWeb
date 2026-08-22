@@ -2856,6 +2856,7 @@
         worker._messageSequence = 0;
         worker._messagePollTarget = 0;
         worker._messagePollPending = false;
+        worker._messagePollDeadline = 0;
         worker.postMessage = function (message, transfer) {
           postSWMessage(worker, message, transfer, null);
         };
@@ -2914,13 +2915,21 @@
           }
           if (worker._messageSequence >= worker._messagePollTarget) {
             worker._messagePollPending = false;
+            worker._messagePollDeadline = 0;
             return;
           }
+        }
+        if (worker._messagePollDeadline && Date.now() >= worker._messagePollDeadline) {
+          worker._messagePollTarget = worker._messageSequence;
+          worker._messagePollPending = false;
+          worker._messagePollDeadline = 0;
+          return;
         }
         if (typeof setTimeout === 'function') {
           setTimeout(function () { pollClientMessages(worker); }, 0);
         } else {
           worker._messagePollPending = false;
+          worker._messagePollDeadline = 0;
         }
       }
       function scheduleClientMessagePoll(worker) {
@@ -2932,6 +2941,17 @@
           pollClientMessages(worker);
         }
       }
+      globalThis.__zwServiceWorkerFetchSettled = function () {
+        ensureDocument();
+        for (var i = 0; i < _registrations.length; i++) {
+          (function(worker) {
+            if (!worker) return;
+            worker._messagePollTarget = Math.max(worker._messagePollTarget, worker._messageSequence + 1);
+            worker._messagePollDeadline = Date.now() + 1000;
+            scheduleClientMessagePoll(worker);
+          })(_registrations[i]._worker);
+        }
+      };
       function dispatchTargetEvent(target, type) {
         if (target && typeof target.dispatchEvent === 'function' &&
             typeof globalThis.Event === 'function') {

@@ -1,8 +1,8 @@
 {
-  "cases": 1,
-  "subtests": 1,
+  "cases": 2,
+  "subtests": 5,
   "status": {
-    "Pass": 1
+    "Pass": 5
   },
   "deterministic": true,
   "results": [
@@ -11,6 +11,31 @@
       [
         {
           "name": "Test FetchEvent.request passed to onfetch",
+          "status": "Pass",
+          "message": null
+        }
+      ]
+    ],
+    [
+      "service-workers/service-worker/fetch-event-async-respond-with.https.html",
+      [
+        {
+          "name": "global setup",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "respondWith in a task throws InvalidStateError",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "respondWith in a microtask does not throw",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "global cleanup",
           "status": "Pass",
           "message": null
         }

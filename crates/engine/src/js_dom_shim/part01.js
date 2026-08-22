@@ -453,7 +453,10 @@
     var clientId = 'iframe:' + String(key);
     try {
       var wire = JSON.parse(String(__zw_sw_observe_window_client(clientId, String(url), 'nested') || ''));
-      if (wire && wire.ok) entry._zwSwClientId = clientId;
+      if (wire && wire.ok) {
+        entry._zwSwClientId = clientId;
+        if (entry.doc) entry.doc._zwSwClientId = clientId;
+      }
     } catch (_e) {}
   }
   function _zwRemoveIframeWindowClient(key) {
@@ -898,6 +901,9 @@
         var settled = false;
         var finishFetch = function(raw) {
           var response = _makeResponseFromWire(raw);
+          if (typeof globalThis.__zwServiceWorkerFetchSettled === 'function') {
+            try { globalThis.__zwServiceWorkerFetchSettled(); } catch (_eSwFetchSettled) {}
+          }
           if (mode === 'no-cors' && _zwUrlOrigin(url) !== _zwUrlOrigin(_zwCurrentHref())) {
             response._zwOpaqueStatus = response.status;
             response._zwOpaqueStatusText = response.statusText;
@@ -930,7 +936,15 @@
           });
         }
         try {
-          var _sync = __zw_fetch(id, method, url, headersWire, body);
+          var _sync = __zw_fetch(
+            id,
+            method,
+            url,
+            headersWire,
+            body,
+            String(globalThis.__zwFetchClientId || ''),
+            String(globalThis.__zwFetchReferrer || '')
+          );
           // R34xx：同步返回契约——headless/testharness 宿主（webview fetch_handler）同步返 wire；
           // 浏览器异步路径（fetch_bridge）返 "" → no-op（__zwResolveCallback 后到，双 settle 由
           // settled 防护）。unblock 2d.composite.image.*（fetch + createImageBitmap(blob)）。

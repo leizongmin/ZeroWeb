@@ -2,5 +2,8 @@ path	manifest_type	roles	referenced_by	bytes	templated	git_blob_sha
 resources/testharness.js	support	harness	1	198291	no	c7ce4f51e1db075809f861255417c27478b2c179
 resources/testharnessreport.js	support	harness-report	1	1231	no	405a2d8b06f00fe8292e0e9d5b917e193cfd416c
 service-workers/service-worker/resources/test-helpers.sub.js	support	page-script	1	10485	yes	74301523e7355ad8d62bcb568280edbc23fdaacf
+service-workers/service-worker/resources/simple.html	support	iframe-document	1	65	no	0c3e3e78707b14dcca98bf1a435a34f402b3dadd
 service-workers/service-worker/resources/request-end-to-end-worker.js	support	worker-script	1	858	no	6bd2b72137e5b4632fe6e144184fde3ff8a87eb2
 service-workers/service-worker/request-end-to-end.https.html	testharness	case	1	2113	no	82475eabc4ab49467955310786f7a405b277bb94
+service-workers/service-worker/resources/fetch-event-async-respond-with-worker.js	support	worker-script	1	2008	no	dc3f1a1e98563ad1b5924c8315c0d64d17ffbbfd
+service-workers/service-worker/fetch-event-async-respond-with.https.html	testharness	case	1	2510	no	d9147f85494c21e54d39a4fd7af16efa1a126384

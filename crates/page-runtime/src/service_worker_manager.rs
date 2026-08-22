@@ -2085,10 +2085,15 @@ impl ServiceWorkerManager {
         if request_origin != origin {
             return Ok(ServiceWorkerFetchDispatch::PassThrough);
         }
-        let Some(registration_id) = self
-            .active_registration_for_url(origin, &request_url)
-            .map(|registration| registration.id)
-        else {
+        let controlled_registration_id = request
+            .client_id
+            .as_deref()
+            .and_then(|client_id| self.active_registration_for_client(origin, client_id))
+            .map(|registration| registration.id);
+        let Some(registration_id) = controlled_registration_id.or_else(|| {
+            self.active_registration_for_url(origin, &request_url)
+                .map(|registration| registration.id)
+        }) else {
             return Ok(ServiceWorkerFetchDispatch::PassThrough);
         };
         let client_id = request.client_id.clone();
@@ -2614,6 +2619,15 @@ impl ServiceWorkerManager {
             })
             .max_by_key(|(scope_length, _)| *scope_length)
             .map(|(_, registration)| registration)
+    }
+
+    fn active_registration_for_client(&self, origin: &str, client_id: &str) -> Option<&ServiceWorkerRegistration> {
+        let client = self.clients.get(client_id)?;
+        let client_origin = url::Url::parse(&client.info.url).ok()?.origin().ascii_serialization();
+        if client_origin != origin {
+            return None;
+        }
+        self.active_registration_for_url(origin, &client.info.url)
     }
 
     /// Find the representative registration with the longest matching scope.
@@ -4181,6 +4195,67 @@ mod tests {
                     response_type: "default".into(),
                     headers: Vec::new(),
                     body: "root".into(),
+                }),
+                message: String::new(),
+            }
+        );
+    }
+
+    #[test]
+    fn fetch_dispatch_uses_controlled_client_registration_before_request_scope() {
+        let mut manager = manager_under_test();
+        let _root = start_active(
+            &mut manager,
+            "/",
+            "addEventListener('fetch', event => {
+               event.respondWith(new Response('root'));
+             });",
+        );
+        let app = start_active(
+            &mut manager,
+            "/app/",
+            "addEventListener('fetch', event => {
+               event.respondWith(new Response('app:' + event.clientId));
+             });",
+        );
+        manager
+            .observe_window_client("client-1", "https://example.test/app/page")
+            .unwrap();
+
+        assert_eq!(
+            manager
+                .dispatch_fetch(
+                    "https://example.test",
+                    122,
+                    ServiceWorkerFetchRequest {
+                        url: "https://example.test/sibling".into(),
+                        method: "GET".into(),
+                        headers: Vec::new(),
+                        body: None,
+                        client_id: Some("client-1".into()),
+                        resulting_client_id: None,
+                        referrer: None,
+                    },
+                )
+                .unwrap(),
+            ServiceWorkerFetchDispatch::Dispatched {
+                registration_id: app,
+                event_id: 122,
+            }
+        );
+        assert_eq!(
+            wait_for_fetch(&mut manager, 122),
+            ServiceWorkerManagerEvent::FetchSettled {
+                registration_id: app,
+                event_id: 122,
+                request_url: "https://example.test/sibling".into(),
+                client_id: Some("client-1".into()),
+                response: Some(ServiceWorkerFetchResponse {
+                    status: 200,
+                    status_text: String::new(),
+                    response_type: "default".into(),
+                    headers: Vec::new(),
+                    body: "app:client-1".into(),
                 }),
                 message: String::new(),
             }

@@ -123,6 +123,8 @@ const SERVICE_WORKER_BOOTSTRAP: &str = r#"
   let currentWaitUntil = null;
   let skipWaitingRequested = false;
   let claimClientsRequested = false;
+  const timerTasks = [];
+  let nextTimerId = 1;
 
   class ExtendableEvent {
     constructor(type) { this.type = type; }
@@ -899,6 +901,29 @@ const SERVICE_WORKER_BOOTSTRAP: &str = r#"
   globalThis.onactivate = null;
   globalThis.onmessage = null;
   globalThis.onfetch = null;
+  globalThis.setTimeout = function(callback, delay) {
+    if (typeof callback !== 'function') {
+      throw new TypeError('setTimeout callback must be a function');
+    }
+    const id = nextTimerId++;
+    timerTasks.push({id, callback, args: Array.prototype.slice.call(arguments, 2)});
+    return id;
+  };
+  globalThis.clearTimeout = function(id) {
+    id = Number(id);
+    for (let i = 0; i < timerTasks.length; i++) {
+      if (timerTasks[i].id === id) {
+        timerTasks.splice(i, 1);
+        return;
+      }
+    }
+  };
+  globalThis.__zwRunOneTask = function() {
+    const task = timerTasks.shift();
+    if (!task) return false;
+    task.callback.apply(globalThis, task.args);
+    return true;
+  };
   globalThis.addEventListener = function(type, listener) {
     if (typeof listener !== 'function') return;
     (listeners[String(type)] || (listeners[String(type)] = [])).push(listener);
@@ -1159,8 +1184,10 @@ const SERVICE_WORKER_BOOTSTRAP: &str = r#"
       if (typeof globalThis.onfetch === 'function') {
         globalThis.onfetch.call(globalThis, event);
       }
-      respondWithAllowed = false;
-      event._respondWith = null;
+      Promise.resolve().then(function() {
+        respondWithAllowed = false;
+        event._respondWith = null;
+      });
     } catch (error) {
       respondWithAllowed = false;
       currentWaitUntil = null;
@@ -1998,11 +2025,27 @@ impl ServiceWorkerRuntime {
                         let _ = event_sender.send(event);
                         pending_lifecycle = None;
                     }
+                    if (pending_lifecycle.is_some() || pending_fetch.is_some())
+                        && let Ok(outbound) = take_outbound_messages(sandbox.as_mut())
+                        && !outbound.is_empty()
+                    {
+                        let _ = event_sender.send(ServiceWorkerEvent::ClientMessagesEmitted { outbound });
+                    }
                     if let Some(pending) = pending_fetch.as_ref()
                         && let Some(event) = poll_fetch(sandbox.as_mut(), pending, lifecycle_timeout_ms)
                     {
+                        if let Ok(outbound) = take_outbound_messages(sandbox.as_mut())
+                            && !outbound.is_empty()
+                        {
+                            let _ = event_sender.send(ServiceWorkerEvent::ClientMessagesEmitted { outbound });
+                        }
                         let _ = event_sender.send(event);
                         pending_fetch = None;
+                    }
+                    if let Ok(outbound) = take_outbound_messages(sandbox.as_mut())
+                        && !outbound.is_empty()
+                    {
+                        let _ = event_sender.send(ServiceWorkerEvent::ClientMessagesEmitted { outbound });
                     }
 
                     let command = if pending_lifecycle.is_some() || pending_fetch.is_some() {
@@ -2940,6 +2983,7 @@ fn script_error_kind(error: &ScriptError) -> ServiceWorkerScriptErrorKind {
 }
 
 fn poll_fetch(sandbox: &mut dyn Sandbox, pending: &PendingFetch, timeout_ms: u64) -> Option<ServiceWorkerEvent> {
+    let _ = sandbox.execute("globalThis.__zwRunOneTask && globalThis.__zwRunOneTask();");
     match sandbox.execute("JSON.stringify(globalThis.__zwFetchResult)") {
         Ok(result) => match serde_json::from_str::<serde_json::Value>(&result.value) {
             Ok(value) if value["settled"].as_bool() == Some(true) => {
@@ -2977,7 +3021,6 @@ fn poll_fetch(sandbox: &mut dyn Sandbox, pending: &PendingFetch, timeout_ms: u64
             format!("fetch event exceeded {timeout_ms}ms"),
         ));
     }
-    let _ = sandbox.execute("'checkpoint'");
     None
 }
 
@@ -3275,7 +3318,7 @@ fn poll_lifecycle(
             format!("lifecycle event exceeded {timeout_ms}ms"),
         ));
     }
-    let _ = sandbox.execute("'checkpoint'");
+    let _ = sandbox.execute("globalThis.__zwRunOneTask && globalThis.__zwRunOneTask();");
     None
 }
 
@@ -5376,5 +5419,120 @@ mod tests {
                 ..
             } if message.contains("respondWith already called")
         ));
+    }
+
+    #[test]
+    fn fetch_event_allows_microtask_respond_with_but_rejects_task() {
+        let mut runtime = ServiceWorkerRuntime::new(test_config()).unwrap();
+        runtime
+            .evaluate(
+                "let reportResult = null;
+                 addEventListener('message', event => {
+                   reportResult = result => event.source.postMessage(result);
+                 });
+                 function tryRespondWith(event) {
+                   try {
+                     event.respondWith(new Response('ok'));
+                     reportResult({didThrow: false});
+                   } catch (error) {
+                     reportResult({didThrow: true, error: error.name});
+                   }
+                 }
+                 addEventListener('fetch', event => {
+                   if (event.request.url.endsWith('/task')) {
+                     setTimeout(() => tryRespondWith(event), 0);
+                   } else {
+                     Promise.resolve().then(() => tryRespondWith(event));
+                   }
+                 });",
+                "https://example.test/sw.js",
+            )
+            .unwrap();
+        let _ = runtime.recv_timeout(Duration::from_secs(5)).unwrap();
+        runtime
+            .dispatch_message(50, "null", "client-1", "https://example.test/app/page")
+            .unwrap();
+        assert!(matches!(
+            runtime.recv_timeout(Duration::from_secs(5)).unwrap(),
+            ServiceWorkerEvent::MessageDispatched { .. }
+        ));
+
+        runtime
+            .dispatch_fetch(
+                51,
+                ServiceWorkerFetchRequest {
+                    url: "https://example.test/app/task".into(),
+                    method: "GET".into(),
+                    headers: Vec::new(),
+                    body: None,
+                    client_id: Some("client-1".into()),
+                    resulting_client_id: None,
+                    referrer: None,
+                },
+            )
+            .unwrap();
+        assert_eq!(
+            runtime.recv_timeout(Duration::from_secs(5)).unwrap(),
+            ServiceWorkerEvent::ClientMessagesEmitted {
+                outbound: vec![ServiceWorkerOutboundMessage {
+                    data_json: r#"{"didThrow":true,"error":"InvalidStateError"}"#.into(),
+                    port_id: None,
+                    transferred_port_ids: Vec::new(),
+                    data_port_index: None,
+                    target_client_id: Some("client-1".into()),
+                }],
+            }
+        );
+        assert_eq!(
+            runtime.recv_timeout(Duration::from_secs(5)).unwrap(),
+            ServiceWorkerEvent::FetchSettled {
+                event_id: 51,
+                request_url: "https://example.test/app/task".into(),
+                response: None,
+                message: String::new(),
+            }
+        );
+
+        runtime
+            .dispatch_fetch(
+                52,
+                ServiceWorkerFetchRequest {
+                    url: "https://example.test/app/microtask".into(),
+                    method: "GET".into(),
+                    headers: Vec::new(),
+                    body: None,
+                    client_id: Some("client-1".into()),
+                    resulting_client_id: None,
+                    referrer: None,
+                },
+            )
+            .unwrap();
+        assert_eq!(
+            runtime.recv_timeout(Duration::from_secs(5)).unwrap(),
+            ServiceWorkerEvent::ClientMessagesEmitted {
+                outbound: vec![ServiceWorkerOutboundMessage {
+                    data_json: r#"{"didThrow":false}"#.into(),
+                    port_id: None,
+                    transferred_port_ids: Vec::new(),
+                    data_port_index: None,
+                    target_client_id: Some("client-1".into()),
+                }],
+            }
+        );
+        assert_eq!(
+            runtime.recv_timeout(Duration::from_secs(5)).unwrap(),
+            ServiceWorkerEvent::FetchSettled {
+                event_id: 52,
+                request_url: "https://example.test/app/microtask".into(),
+                response: Some(ServiceWorkerFetchResponse {
+                    status: 200,
+                    status_text: String::new(),
+                    response_type: "default".into(),
+                    headers: Vec::new(),
+                    body: "ok".into(),
+                }),
+                message: String::new(),
+            }
+        );
     }
 }
