@@ -5,6 +5,7 @@ use std::path::PathBuf;
 
 use crate::StorageError;
 use crate::cache_api::CacheStorage;
+use crate::cache_api::persistence::CacheStoragePersistence;
 use crate::indexed_db::persistence::IndexedDbPersistence;
 use crate::indexed_db::{IdbDatabase, IdbTransaction};
 use crate::local_storage::{StorageType, WebStorage};
@@ -24,6 +25,26 @@ pub fn default_indexed_db_dir() -> PathBuf {
     dirs::data_dir()
         .map(|path| path.join("ZeroBrowser").join("Storage").join("IndexedDB"))
         .unwrap_or_else(|| PathBuf::from(".zero-browser-storage").join("IndexedDB"))
+}
+
+/// 默认持久化存储根目录（`ZERO_STORAGE_DIR` 或平台 data directory）。
+pub fn default_storage_dir() -> PathBuf {
+    if let Some(path) = zero_runtime_config::optional_path("ZERO_STORAGE_DIR") {
+        return path;
+    }
+    dirs::data_dir()
+        .map(|path| path.join("ZeroBrowser").join("Storage"))
+        .unwrap_or_else(|| PathBuf::from(".zero-browser-storage"))
+}
+
+/// 默认 CacheStorage 数据目录（`ZERO_STORAGE_DIR` 或平台 data directory）。
+pub fn default_cache_storage_dir() -> PathBuf {
+    if let Some(path) = zero_runtime_config::optional_path("ZERO_STORAGE_DIR") {
+        return path.join("CacheStorage");
+    }
+    dirs::data_dir()
+        .map(|path| path.join("ZeroBrowser").join("Storage").join("CacheStorage"))
+        .unwrap_or_else(|| PathBuf::from(".zero-browser-storage").join("CacheStorage"))
 }
 
 /// 默认 Service Worker 注册状态文件（`ZERO_STORAGE_DIR` 或平台 data directory）。
@@ -66,6 +87,8 @@ pub struct StorageManager {
     cache_storages: HashMap<String, CacheStorage>,
     /// IndexedDB 持久化 owner；`None` 表示纯内存 manager。
     indexed_db_persistence: Option<IndexedDbPersistence>,
+    /// CacheStorage 持久化 owner；`None` 表示纯内存 manager。
+    cache_storage_persistence: Option<CacheStoragePersistence>,
     /// 每个源的最大容量。
     default_max_size: usize,
 }
@@ -84,19 +107,45 @@ impl StorageManager {
             indexed_databases: HashMap::new(),
             cache_storages: HashMap::new(),
             indexed_db_persistence: None,
+            cache_storage_persistence: None,
             default_max_size,
         }
     }
 
     /// 创建启用 IndexedDB 持久化的 manager，并加载目录中的全部数据库。
     pub fn with_indexed_db_persistence(root: impl Into<PathBuf>) -> Result<Self, StorageError> {
-        let (persistence, indexed_databases) = IndexedDbPersistence::open(root)?;
+        let (indexed_db_persistence, indexed_databases) = IndexedDbPersistence::open(root)?;
         Ok(Self {
             local_stores: HashMap::new(),
             session_stores: HashMap::new(),
             indexed_databases,
             cache_storages: HashMap::new(),
-            indexed_db_persistence: Some(persistence),
+            indexed_db_persistence: Some(indexed_db_persistence),
+            cache_storage_persistence: None,
+            default_max_size: DEFAULT_MAX_SIZE,
+        })
+    }
+
+    /// 创建启用 IndexedDB 和 CacheStorage 持久化的 manager，并加载 `root` 下的全部数据。
+    pub fn with_persistence(root: impl Into<PathBuf>) -> Result<Self, StorageError> {
+        let root = root.into();
+        Self::with_indexed_db_and_cache_storage_persistence(root.join("IndexedDB"), root.join("CacheStorage"))
+    }
+
+    /// 创建启用 IndexedDB 和 CacheStorage 持久化的 manager，并分别指定两个数据目录。
+    pub fn with_indexed_db_and_cache_storage_persistence(
+        indexed_db_root: impl Into<PathBuf>,
+        cache_storage_root: impl Into<PathBuf>,
+    ) -> Result<Self, StorageError> {
+        let (indexed_db_persistence, indexed_databases) = IndexedDbPersistence::open(indexed_db_root)?;
+        let (cache_storage_persistence, cache_storages) = CacheStoragePersistence::open(cache_storage_root)?;
+        Ok(Self {
+            local_stores: HashMap::new(),
+            session_stores: HashMap::new(),
+            indexed_databases,
+            cache_storages,
+            indexed_db_persistence: Some(indexed_db_persistence),
+            cache_storage_persistence: Some(cache_storage_persistence),
             default_max_size: DEFAULT_MAX_SIZE,
         })
     }
@@ -172,6 +221,62 @@ impl StorageManager {
         self.cache_storages.get(origin)
     }
 
+    /// 创建指定源的 CacheStorage；持久化成功后才替换 live state。
+    pub fn open_cache_storage_cache(&mut self, origin: &str, name: &str) -> Result<(), StorageError> {
+        self.mutate_cache_storage(origin, |cache_storage| {
+            cache_storage.open(name);
+            Ok(())
+        })
+    }
+
+    /// 删除指定源的命名 Cache；持久化成功后才替换 live state。
+    pub fn delete_cache_storage_cache(&mut self, origin: &str, name: &str) -> Result<bool, StorageError> {
+        if self
+            .cache_storage_ref(origin)
+            .is_none_or(|cache_storage| !cache_storage.has(name))
+        {
+            return Ok(false);
+        }
+        self.mutate_cache_storage(origin, |cache_storage| Ok(cache_storage.delete(name)))
+    }
+
+    /// 在候选 CacheStorage 上执行修改；持久化成功后才替换 live state。
+    pub fn mutate_cache_storage<T>(
+        &mut self,
+        origin: &str,
+        mutation: impl FnOnce(&mut CacheStorage) -> Result<T, StorageError>,
+    ) -> Result<T, StorageError> {
+        let mut candidate = self
+            .cache_storage_ref(origin)
+            .cloned()
+            .unwrap_or_else(CacheStorage::new);
+        let result = mutation(&mut candidate)?;
+        self.replace_cache_storage(origin, candidate)?;
+        Ok(result)
+    }
+
+    /// 用完整候选 CacheStorage 替换现有数据；写盘先于 live state 切换。
+    pub fn replace_cache_storage(&mut self, origin: &str, cache_storage: CacheStorage) -> Result<(), StorageError> {
+        self.persist_cache_storage(origin, &cache_storage)?;
+        if cache_storage.is_empty() {
+            self.cache_storages.remove(origin);
+        } else {
+            self.cache_storages.insert(origin.to_string(), cache_storage);
+        }
+        Ok(())
+    }
+
+    /// 删除指定源的 CacheStorage，并传播持久化错误。
+    pub fn try_clear_origin_cache_storage(&mut self, origin: &str) -> Result<bool, StorageError> {
+        if self.cache_storage_ref(origin).is_none() {
+            return Ok(false);
+        }
+        if let Some(persistence) = &self.cache_storage_persistence {
+            persistence.delete(origin)?;
+        }
+        Ok(self.cache_storages.remove(origin).is_some())
+    }
+
     /// 在候选副本上修改数据库；持久化成功后才替换 live state。
     pub fn mutate_indexed_db<T>(
         &mut self,
@@ -239,6 +344,13 @@ impl StorageManager {
     fn persist_database(&self, origin: &str, database: &IdbDatabase) -> Result<(), StorageError> {
         if let Some(persistence) = &self.indexed_db_persistence {
             persistence.write(origin, database)?;
+        }
+        Ok(())
+    }
+
+    fn persist_cache_storage(&self, origin: &str, cache_storage: &CacheStorage) -> Result<(), StorageError> {
+        if let Some(persistence) = &self.cache_storage_persistence {
+            persistence.write(origin, cache_storage)?;
         }
         Ok(())
     }

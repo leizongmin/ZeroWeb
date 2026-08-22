@@ -6,8 +6,10 @@ use indexmap::IndexMap;
 
 use crate::StorageError;
 
+pub(crate) mod persistence;
+
 /// 缓存请求的简化表示。
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct CacheRequest {
     /// 请求 URL。
     pub url: String,
@@ -58,7 +60,7 @@ pub struct CacheQueryOptions {
 }
 
 /// 缓存响应的简化表示。
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct CacheResponse {
     /// Response URL associated with the stored response.
     pub url: String,
@@ -143,6 +145,14 @@ impl Cache {
             name: name.to_string(),
             entries: Vec::new(),
         }
+    }
+
+    pub(crate) fn from_entries(name: &str, entries: Vec<(CacheRequest, CacheResponse)>) -> Result<Self, StorageError> {
+        let mut cache = Self::new(name);
+        for (request, response) in entries {
+            cache.put(request, response)?;
+        }
+        Ok(cache)
     }
 
     /// 获取缓存名称。
@@ -240,6 +250,11 @@ impl Cache {
     pub fn is_empty(&self) -> bool {
         self.entries.is_empty()
     }
+
+    /// Iterate over request/response entries in insertion order.
+    pub(crate) fn entries(&self) -> impl Iterator<Item = (&CacheRequest, &CacheResponse)> {
+        self.entries.iter().map(|entry| (&entry.request, &entry.response))
+    }
 }
 
 /// CacheStorage（等价于 Web API 的 CacheStorage）。
@@ -255,6 +270,23 @@ impl CacheStorage {
         Self {
             caches: IndexMap::new(),
         }
+    }
+
+    pub(crate) fn from_caches(caches: Vec<(String, Cache)>) -> Result<Self, StorageError> {
+        let mut cache_storage = Self::new();
+        for (name, cache) in caches {
+            if cache.name() != name {
+                return Err(StorageError::Serialization(
+                    "CacheStorage persistence cache name mismatch".to_string(),
+                ));
+            }
+            if cache_storage.caches.insert(name, cache).is_some() {
+                return Err(StorageError::Serialization(
+                    "duplicate cache in CacheStorage persistence data".to_string(),
+                ));
+            }
+        }
+        Ok(cache_storage)
     }
 
     /// 查找匹配请求的响应（在所有缓存中搜索第一个匹配）。
@@ -305,6 +337,16 @@ impl CacheStorage {
     pub fn keys(&self) -> Vec<&str> {
         // https://w3c.github.io/ServiceWorker/#cache-storage-keys
         self.caches.keys().map(|s| s.as_str()).collect()
+    }
+
+    /// CacheStorage 是否没有任何命名 cache。
+    pub fn is_empty(&self) -> bool {
+        self.caches.is_empty()
+    }
+
+    /// Iterate over named caches in creation order.
+    pub(crate) fn iter_caches(&self) -> impl Iterator<Item = (&str, &Cache)> {
+        self.caches.iter().map(|(name, cache)| (name.as_str(), cache))
     }
 }
 

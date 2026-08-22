@@ -249,3 +249,124 @@ fn indexed_db_persistence_recovers_backup_and_removes_orphan_temp_file() {
     assert!(!backup_path.exists());
     assert!(!orphan.exists());
 }
+
+#[test]
+fn cache_storage_persistence_round_trips_named_caches_entries_and_empty_cache() {
+    let directory = TestDirectory::new();
+    let origin = "https://cache.example";
+    {
+        let mut manager = StorageManager::with_persistence(directory.path()).unwrap();
+        manager.open_cache_storage_cache(origin, "empty").unwrap();
+        manager
+            .mutate_cache_storage(origin, |cache_storage| {
+                cache_storage.open("assets").put(
+                    crate::cache_api::CacheRequest::with_method_and_headers(
+                        "https://cache.example/app/data.txt?version=1#old",
+                        "GET",
+                        vec![("Accept-Language".to_string(), "en".to_string())],
+                    ),
+                    crate::cache_api::CacheResponse {
+                        url: "https://cache.example/app/data.txt?version=1".to_string(),
+                        status: 201,
+                        status_text: "Created".to_string(),
+                        response_type: "basic".to_string(),
+                        headers: [
+                            ("Content-Type".to_string(), "text/plain".to_string()),
+                            ("Vary".to_string(), "Accept-Language".to_string()),
+                        ]
+                        .into(),
+                        body: b"cached body".to_vec(),
+                    },
+                )?;
+                Ok(())
+            })
+            .unwrap();
+    }
+
+    let restored = StorageManager::with_persistence(directory.path()).unwrap();
+    let cache_storage = restored.cache_storage_ref(origin).unwrap();
+    assert_eq!(cache_storage.keys(), vec!["empty", "assets"]);
+    assert!(cache_storage.get("empty").unwrap().is_empty());
+    let matched = cache_storage
+        .get("assets")
+        .unwrap()
+        .match_request_with_options(
+            &crate::cache_api::CacheRequest::with_method_and_headers(
+                "https://cache.example/app/data.txt?version=2#new",
+                "GET",
+                vec![("Accept-Language".to_string(), "en".to_string())],
+            ),
+            crate::cache_api::CacheQueryOptions {
+                ignore_search: true,
+                ignore_method: false,
+                ignore_vary: false,
+            },
+        )
+        .unwrap();
+    assert_eq!(matched.status, 201);
+    assert_eq!(matched.status_text, "Created");
+    assert_eq!(matched.response_type, "basic");
+    assert_eq!(matched.url, "https://cache.example/app/data.txt?version=1");
+    assert_eq!(matched.headers.get("Content-Type"), Some(&"text/plain".to_string()));
+    assert_eq!(matched.body, b"cached body");
+}
+
+#[test]
+fn cache_storage_persistence_deletes_origin_file_after_last_cache_removed() {
+    let directory = TestDirectory::new();
+    let origin = "https://cache-delete.example";
+    {
+        let mut manager = StorageManager::with_persistence(directory.path()).unwrap();
+        manager.open_cache_storage_cache(origin, "v1").unwrap();
+        assert!(manager.delete_cache_storage_cache(origin, "v1").unwrap());
+        assert!(manager.cache_storage_ref(origin).is_none());
+    }
+
+    let restored = StorageManager::with_persistence(directory.path()).unwrap();
+    assert!(restored.cache_storage_ref(origin).is_none());
+}
+
+#[test]
+fn cache_storage_persistence_failure_keeps_live_storage_unchanged() {
+    let directory = TestDirectory::new();
+    let origin = "https://cache-failure.example";
+    let mut manager = StorageManager::with_persistence(directory.path()).unwrap();
+    manager
+        .mutate_cache_storage(origin, |cache_storage| {
+            cache_storage.open("assets").put(
+                crate::cache_api::CacheRequest::new("https://cache-failure.example/stable.txt"),
+                crate::cache_api::CacheResponse::ok(b"stable".to_vec()),
+            )?;
+            Ok(())
+        })
+        .unwrap();
+
+    fs::remove_dir_all(directory.path()).unwrap();
+    fs::write(directory.path(), b"not-a-directory").unwrap();
+    let error = manager
+        .mutate_cache_storage(origin, |cache_storage| {
+            cache_storage.open("assets").put(
+                crate::cache_api::CacheRequest::new("https://cache-failure.example/new.txt"),
+                crate::cache_api::CacheResponse::ok(b"new".to_vec()),
+            )?;
+            Ok(())
+        })
+        .unwrap_err();
+    assert!(matches!(error, StorageError::Io(_)));
+
+    let cache = manager.cache_storage_ref(origin).unwrap().get("assets").unwrap();
+    assert!(
+        cache
+            .match_request(&crate::cache_api::CacheRequest::new(
+                "https://cache-failure.example/stable.txt"
+            ))
+            .is_some()
+    );
+    assert!(
+        cache
+            .match_request(&crate::cache_api::CacheRequest::new(
+                "https://cache-failure.example/new.txt"
+            ))
+            .is_none()
+    );
+}

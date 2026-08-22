@@ -59,7 +59,10 @@ fn browser_storage_manager() -> Result<StorageManager, zero_storage::StorageErro
     if cfg!(test) || zero_runtime_config::enabled_when_true("ZERO_PRIVATE") {
         Ok(StorageManager::new())
     } else {
-        StorageManager::with_indexed_db_persistence(zero_storage::default_indexed_db_dir())
+        StorageManager::with_indexed_db_and_cache_storage_persistence(
+            zero_storage::default_indexed_db_dir(),
+            zero_storage::default_cache_storage_dir(),
+        )
     }
 }
 

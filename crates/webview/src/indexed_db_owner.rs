@@ -26,7 +26,8 @@ impl IndexedDbOwner {
 
     /// Create a persistent owner rooted at `path` and load existing databases.
     pub fn persistent(path: impl Into<PathBuf>) -> Result<Self, WebViewError> {
-        let storage = StorageManager::with_indexed_db_persistence(path)
+        let path = path.into();
+        let storage = StorageManager::with_indexed_db_and_cache_storage_persistence(&path, path.join("CacheStorage"))
             .map_err(|error| WebViewError::Storage(error.to_string()))?;
         Ok(Self {
             storage: Arc::new(Mutex::new(storage)),

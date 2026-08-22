@@ -28,7 +28,8 @@
 >   CacheQueryOptions（ignoreSearch/ignoreMethod/ignoreVary）已实现并有单测。
 > - **JS 页面层**：`js_dom_shim` 已暴露 `CacheStorage` / `Cache` / `caches` 页面 API，
 >   WebView/in-process 页面可走 host callback 进入 zero-storage。
-> - **持久化**：cache_api.rs 为内存结构，无落盘路径。
+> - **持久化**：page/WebView `StorageManager` owner 已支持 CacheStorage per-origin
+>   落盘与跨 WebView 重建读回；Service Worker registration-local CacheStorage 持久化仍待后续。
 > - **WPT 面**：已接入上游 `cache-storage` window 面基线（8 case / 114 subtest，
 >   114 Pass / 0 Fail），扩大覆盖与剩余语义修复继续以该基线为回归锚点。
 
@@ -107,10 +108,11 @@ form-validation——不允许手写 inline 用例替代或充数）。通过率
 - ✅ **Rust 层全 API 面**：cache_api.rs（976 行）——CacheStorage/Cache/CacheQueryOptions
   已实现并有单测
 - ✅ **缺口 1 — 页面接线**：shim 已有 `caches` 全局与 Cache API 初始 host bridge
-- ⚠️ **缺口 2 — 无持久化**：cache_api 为内存结构，重启即失
+- 🚧 **缺口 2 — 持久化**：page/WebView owner per-origin CacheStorage 已落盘；SW
+  registration-local CacheStorage 持久化仍待后续
 - ✅ **缺口 3 — WPT 基线**：上游 `cache-storage` window 面已导入 8 case / 114 subtest 绿线；扩大覆盖与提升通过率继续推进
 - 🚧 **缺口 4 — Request/Response 集成**：add/addAll 的 fetch→put 链路已接通，Response
-  可缓存性剩余 filtered response 矩阵与持久化仍待补齐
+  可缓存性剩余 filtered response 矩阵仍待补齐
 
 ---
 
@@ -134,8 +136,9 @@ form-validation——不允许手写 inline 用例替代或充数）。通过率
 
 ### DC-3: 持久化
 
-- [ ] per-origin 落盘，跨会话 e2e：缓存 → 重建 engine → match 命中
-- [ ] 磁盘错误不 panic，Promise reject
+- [x] per-origin 落盘，跨会话 e2e：缓存 → 重建 engine → match 命中（page/WebView owner）
+- [x] 磁盘错误不 panic，Promise reject（page/WebView owner）
+- [ ] Service Worker registration-local CacheStorage 持久化接入并验证
 
 ### DC-4: 测试与质量不可退让
 

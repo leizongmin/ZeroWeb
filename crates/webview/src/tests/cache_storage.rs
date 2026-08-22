@@ -1,8 +1,41 @@
+use std::fs;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
 
 use zero_engine::fetch_bridge::FetchResponse;
 
 use crate::{IndexedDbOwner, WebView, WebViewConfig};
+
+static TEST_SEQUENCE: AtomicU64 = AtomicU64::new(0);
+
+struct TestDirectory {
+    path: PathBuf,
+}
+
+impl TestDirectory {
+    fn new() -> Self {
+        let sequence = TEST_SEQUENCE.fetch_add(1, Ordering::Relaxed);
+        let path = std::env::temp_dir().join(format!(
+            "zeroweb-webview-cache-storage-{}-{sequence}",
+            std::process::id()
+        ));
+        let _ = fs::remove_dir_all(&path);
+        let _ = fs::remove_file(&path);
+        Self { path }
+    }
+
+    fn path(&self) -> &Path {
+        &self.path
+    }
+}
+
+impl Drop for TestDirectory {
+    fn drop(&mut self) {
+        let _ = fs::remove_dir_all(&self.path);
+        let _ = fs::remove_file(&self.path);
+    }
+}
 
 fn webview_with_owner(owner: IndexedDbOwner, page_url: &str) -> WebView {
     let mut webview = WebView::new_with_indexed_db_owner(WebViewConfig::default(), owner);
@@ -514,4 +547,91 @@ fn page_cache_api_uses_shared_owner_and_origin_isolation() {
         .unwrap();
     pump_microtasks(&mut isolated);
     assert_eq!(isolated.execute_script("globalThis.__cacheRead").unwrap(), "missing");
+}
+
+#[test]
+fn persistent_owner_restores_page_cache_storage_after_webview_rebuild() {
+    let directory = TestDirectory::new();
+    let origin = "https://persistent-cache.example/app/page.html";
+    {
+        let owner = IndexedDbOwner::persistent(directory.path()).unwrap();
+        let mut first = webview_with_owner(owner, origin);
+        first
+            .execute_script(
+                r#"
+                (async function () {
+                  try {
+                    const cache = await caches.open('assets');
+                    await cache.put(
+                      'https://persistent-cache.example/app/data.txt',
+                      new Response('restored body', {
+                        status: 202,
+                        statusText: 'Accepted',
+                        headers: {'content-type': 'text/plain', 'vary': 'Accept-Language'}
+                      })
+                    );
+                    globalThis.__cachePersistentWrite = 'done';
+                  } catch (error) {
+                    globalThis.__cachePersistentWrite = 'error:' + String(error && error.message ? error.message : error);
+                  }
+                })();
+                "#,
+            )
+            .unwrap();
+        pump_microtasks(&mut first);
+        assert_eq!(
+            first.execute_script("globalThis.__cachePersistentWrite").unwrap(),
+            "done"
+        );
+    }
+
+    let owner = IndexedDbOwner::persistent(directory.path()).unwrap();
+    let mut restored = webview_with_owner(owner, origin);
+    restored
+        .execute_script(
+            r#"
+            (async function () {
+              try {
+                const cache = await caches.open('assets');
+                const hit = await cache.match(
+                  new Request('https://persistent-cache.example/app/data.txt', {
+                    headers: {'Accept-Language': 'en'}
+                  }),
+                  {ignoreVary: true}
+                );
+                const keys = await caches.keys();
+                globalThis.__cachePersistentRead = hit
+                  ? [keys.join(','), String(hit.status), hit.statusText, hit.headers.get('content-type'), await hit.text()].join('|')
+                  : 'missing';
+              } catch (error) {
+                globalThis.__cachePersistentRead = 'error:' + String(error && error.message ? error.message : error);
+              }
+            })();
+            "#,
+        )
+        .unwrap();
+    pump_microtasks(&mut restored);
+    assert_eq!(
+        restored.execute_script("globalThis.__cachePersistentRead").unwrap(),
+        "assets|202|Accepted|text/plain|restored body"
+    );
+
+    let owner = IndexedDbOwner::persistent(directory.path()).unwrap();
+    let mut isolated = webview_with_owner(owner, "https://other-persistent-cache.example/app/page.html");
+    isolated
+        .execute_script(
+            r#"
+            caches.match('https://persistent-cache.example/app/data.txt').then(response => {
+              globalThis.__cachePersistentRead = response ? 'hit' : 'missing';
+            }, error => {
+              globalThis.__cachePersistentRead = 'error:' + String(error && error.message ? error.message : error);
+            });
+            "#,
+        )
+        .unwrap();
+    pump_microtasks(&mut isolated);
+    assert_eq!(
+        isolated.execute_script("globalThis.__cachePersistentRead").unwrap(),
+        "missing"
+    );
 }

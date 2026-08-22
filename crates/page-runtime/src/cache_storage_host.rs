@@ -201,7 +201,7 @@ fn dispatch_request(
     match request {
         CacheStorageRequest::Open { name, name_units } => {
             let name = cache_name_from_wire(&name, name_units.as_deref())?;
-            storage.cache_storage(origin).open(&name);
+            storage.open_cache_storage_cache(origin, &name).map_err(storage_error)?;
             let cache_id = state.ensure_active_cache_id(origin, &name);
             serde_json::to_value(CacheStorageOpenResponse {
                 name: display_cache_name(&name),
@@ -230,24 +230,32 @@ fn dispatch_request(
                         cache.delete_with_options(&request, options)
                     } else if state.active_cache_id_matches(origin, &name, cache_id) {
                         storage
-                            .cache_storage(origin)
-                            .get_mut(&name)
-                            .is_some_and(|cache| cache.delete_with_options(&request, options))
+                            .mutate_cache_storage(origin, |cache_storage| {
+                                Ok(cache_storage
+                                    .get_mut(&name)
+                                    .is_some_and(|cache| cache.delete_with_options(&request, options)))
+                            })
+                            .map_err(storage_error)?
                     } else {
                         false
                     }
                 } else {
                     storage
-                        .cache_storage(origin)
-                        .get_mut(&name)
-                        .is_some_and(|cache| cache.delete_with_options(&request, options))
+                        .mutate_cache_storage(origin, |cache_storage| {
+                            Ok(cache_storage
+                                .get_mut(&name)
+                                .is_some_and(|cache| cache.delete_with_options(&request, options)))
+                        })
+                        .map_err(storage_error)?
                 }
             } else {
                 let doomed = storage
                     .cache_storage_ref(origin)
                     .and_then(|caches| caches.get(&name))
                     .cloned();
-                let deleted = storage.cache_storage(origin).delete(&name);
+                let deleted = storage
+                    .delete_cache_storage_cache(origin, &name)
+                    .map_err(storage_error)?;
                 let removed = if deleted {
                     state.remove_active_cache_id(origin, &name).zip(doomed)
                 } else {
@@ -371,18 +379,18 @@ fn dispatch_request(
                     cache.put(request, response).map_err(storage_error)?;
                 } else if state.active_cache_id_matches(origin, &cache_name, cache_id) {
                     storage
-                        .cache_storage(origin)
-                        .open(&cache_name)
-                        .put(request, response)
+                        .mutate_cache_storage(origin, |cache_storage| {
+                            cache_storage.open(&cache_name).put(request, response)
+                        })
                         .map_err(storage_error)?;
                 } else {
                     return Err("InvalidStateError: Cache backing store is no longer available".to_string());
                 }
             } else {
                 storage
-                    .cache_storage(origin)
-                    .open(&cache_name)
-                    .put(request, response)
+                    .mutate_cache_storage(origin, |cache_storage| {
+                        cache_storage.open(&cache_name).put(request, response)
+                    })
                     .map_err(storage_error)?;
             }
             Ok(json!({"ok": true}))
@@ -1230,5 +1238,34 @@ mod tests {
         )
         .unwrap_err();
         assert_eq!(error, "TypeError: invalid Cache response byte body");
+    }
+
+    #[test]
+    fn cache_storage_handler_maps_persistence_io_error_to_unknown_error() {
+        let path = std::env::temp_dir().join(format!("zeroweb-cache-storage-host-io-error-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&path);
+        let _ = std::fs::remove_file(&path);
+        let storage = Arc::new(Mutex::new(StorageManager::with_persistence(&path).unwrap()));
+        let handler = cache_storage_handler(Arc::clone(&storage));
+        call(
+            &handler,
+            "https://example.com",
+            json!({"op": "open", "name": "runtime"}),
+        );
+
+        std::fs::remove_dir_all(&path).unwrap();
+        std::fs::write(&path, b"not-a-directory").unwrap();
+        let error = handler(
+            "https://example.com",
+            &request(json!({
+                "op": "put",
+                "cache_name": "runtime",
+                "request": {"url": "https://example.com/data"},
+                "response": {"status": 200, "headers": "", "body": "new"}
+            })),
+        )
+        .unwrap_err();
+        assert!(error.starts_with("UnknownError: "));
+        let _ = std::fs::remove_file(&path);
     }
 }

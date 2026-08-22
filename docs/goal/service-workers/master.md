@@ -2,7 +2,7 @@
 
 **入口文档**: [../service-workers.md](../service-workers.md)
 **创建日期**: 2026-08-17（goal 拆分 bootstrap）
-**最后更新**: 2026-08-22（CacheStorage window WPT 扩面到 8 case；broader SW fetch/cache baseline 继续）
+**最后更新**: 2026-08-22（CacheStorage page/WebView 持久化底座；broader SW fetch/cache baseline 继续）
 
 ---
 
@@ -27,7 +27,10 @@ M2 fetch/interception 上游 WPT
 delete-dooming 生命周期、DOMString code-unit name wire、Vary/`ignoreVary`、`Cache.matchAll()`、
 `CacheStorage.match()`、cached `Response.type`/`Response.url` 读回保真、`Cache.put()`
 body consumption、opaque 内部 206 / `Vary: *` 可缓存、`Response.redirect()` 与 Blob/FormData
-response body 共享语义已落地。
+response body 共享语义已落地。该 sibling 的 page/WebView `StorageManager` owner 现已支持
+per-origin CacheStorage 持久化和跨 WebView 重建读回，Browser normal profile 使用 sibling
+CacheStorage 目录且 private profile 保持内存；SW registration-local CacheStorage 持久化仍待
+本目标后续接入。
 该 sibling 与当前 SW runtime 链路共用 Cache API 语义，但 SW fetch/cache 专属 WPT baseline
 和 opaque/basic/cors 等剩余 filtered response 生成/可缓存性矩阵仍归后续切片。
 
@@ -246,6 +249,10 @@ response body 共享语义已落地。
 - ✅ storage-cache-api 侧支撑：CacheStorage host match/matchAll 已用 Cache 专属 `__zwcr:`
   wire payload 读回 cached `Response.type`，页面 `Response.clone()` 保留 response type；
   该进展固定共享 Cache API 元数据链路，但不等同于 SW fetch/cache WPT baseline 完成。
+- ✅ storage-cache-api 侧支撑：page/WebView `StorageManager` owner 已支持 per-origin
+  CacheStorage 持久化、跨 WebView 重建读回和磁盘 I/O 错误 Promise reject；该进展是 SW
+  cache 模式底座，但不等同于 registration-local CacheStorage 持久化或 SW cache-storage
+  WPT 完成。
 
 ## 缺口清单
 
@@ -568,6 +575,7 @@ response body 共享语义已落地。
 | 2026-08-21 | M3-32 committed top-level client | production navigation commit 登记 top-level SW client；replacement start 清旧 epoch client |
 | 2026-08-21 | M3-33 window client lifecycle | browser owner 暴露 window client 创建/销毁入口；移除 nested 不影响同 tab top-level/auxiliary |
 | 2026-08-21 | M3-34 renderer iframe lifecycle | iframe contentWindow 物化触发 nested client observe；删除/替换/清空子树触发 remove；browser 归一 child client id |
+| 2026-08-22 | storage-cache-api M3 persistence support | page/WebView owner CacheStorage per-origin 落盘；SW registration-local CacheStorage 待接入 |
 | 2026-08-21 | M2-1 fetch runtime foundation | `FetchEvent`/`Request`/`Response` MVP；manager longest-scope dispatch；browser/renderer IPC command/event；生产页面 fetch/Cache 集成仍待后续 |
 | 2026-08-19 | 三方案对比 | 拒绝同线程 context（无调度隔离）；拒绝从零线程（复制安全基建）；推荐抽取 Worker 线程核 |
 | 2026-08-19 | owner | production browser process 单一 owner；WebView 只做同算法 in-process adapter |

@@ -2,7 +2,7 @@
 
 **入口文档**: [../storage-cache-api.md](../storage-cache-api.md)
 **创建日期**: 2026-08-17（goal 拆分 bootstrap）
-**最后更新**: 2026-08-22（M2 CacheStorage window WPT 扩面到 8 case）
+**最后更新**: 2026-08-22（M3 CacheStorage page/WebView 持久化首片）
 
 ---
 
@@ -35,7 +35,16 @@ brand、缺参 TypeError、`CacheStorage.keys()` 创建顺序、Vary 匹配、de
 生命周期、DOMString code-unit name wire、`Cache.matchAll()` 查询矩阵与 `CacheStorage.match()`
 跨 cache/cacheName 查询、`Cache.match()` URL/fragment/opaque Vary/MIME/fetched response URL
 矩阵、`Cache.put()` 可缓存性/响应体消费矩阵修复后双跑稳定为 114 subtest / 114 Pass /
-0 Fail。持久化、更大范围 WPT 导入与完整
+0 Fail。
+M3 首片已补齐 page/WebView `StorageManager` owner 的 per-origin CacheStorage 持久化：
+CacheStorage 以 origin hash `.cache` 文件落盘，请求/响应元数据和 body bytes JSON 保真，
+写入采用临时文件 + sync + 原子替换，并在启动时清理 `.tmp` / 恢复 `.bak`；页面 host 的
+`caches.open()`、`Cache.put()`、`Cache.delete()` 与 `caches.delete()` 均改为候选状态写盘
+成功后再替换 live state，I/O 错误映射为 Promise `UnknownError`。Browser normal profile
+使用既有 IndexedDB 目录加 sibling CacheStorage 目录，`ZERO_PRIVATE` 仍保持纯内存；
+embedded `IndexedDbOwner::persistent(path)` 保持旧 IndexedDB root 布局兼容，同时新增
+`path/CacheStorage`。Service Worker registration-local CacheStorage 持久化尚未纳入本切片。
+更大范围 WPT 导入与完整
 `basic`/`cors`/`opaque`/`opaqueredirect` filtered response 生成矩阵仍待后续切片。
 
 **与兄弟 goal 的边界**：
@@ -52,7 +61,8 @@ brand、缺参 TypeError、`CacheStorage.keys()` 创建顺序、Vary 匹配、de
   CacheQueryOptions 全 API 面 + 单测
 - ✅ JS 页面层初始表面：`part07.js` 暴露 `CacheStorage`/`Cache`/`caches`，WebView 页面可
   `open` 后 `put/match/matchAll/delete/keys`，并可 `has/keys/match`
-- ⚠️ 无持久化：内存结构
+- ✅ 持久化首片：page/WebView `StorageManager` owner 已支持 per-origin CacheStorage 落盘；
+  SW registration-local CacheStorage 持久化未纳入本切片
 - ✅ WPT `cache-storage` window 基线已导入：8 case / 114 subtest，114 Pass / 0 Fail
 - 🚧 add/addAll 的页面 fetch 链路、Cache API 返回对象 brand、缺参 TypeError、
   `CacheStorage.keys()` 创建顺序、Vary 匹配、delete-dooming 与 DOMString name wire
@@ -68,14 +78,14 @@ brand、缺参 TypeError、`CacheStorage.keys()` 创建顺序、Vary 匹配、de
 |---|------|------|
 | C1 | WPT cache-storage 用例覆盖为零 | ✅ M1 window 首批基线已接入 |
 | C2 | 页面 `caches` 全局缺失（零接线） | ✅ M1 初始桥接完成；全 API 语义继续归 C4 |
-| C3 | 无持久化 | ⬜ M3 |
+| C3 | 无持久化 | 🚧 M3 首片完成：page/WebView owner per-origin 落盘、跨 WebView 重建读回、磁盘错误 reject；SW registration-local CacheStorage 持久化待后续 |
 | C4 | Request/Response 集成（add/addAll/可缓存性） | 🚧 M2 页面 `add/addAll` GET + `Response.ok` 路径、返回对象 brand、缺参 TypeError、Vary 匹配、delete-dooming、DOMString name wire、`Cache.put` 非 GET/非 HTTP(S)/206/`Vary: *` 拒绝、used body 拒绝、empty body 不消费、cached `Response.type`/`Response.url` 读回保真、`Response.error()` 可缓存读回、opaque response 忽略 Vary 与内部 206/`Vary: *` 可缓存、`Response.redirect()`/Blob/FormData response 路径、`addAll` 失败不部分落库完成；完整 `basic`/`cors`/`opaque`/`opaqueredirect` filtered response 生成矩阵待补 |
 | C5 | Cache.matchAll/Cache.keys 页面桥接 | ✅ M2；`ignoreSearch`/`ignoreMethod`/`ignoreVary` 已接线 |
 
 ## 下一步计划
 
 1. **M2 切片 9**：继续导入 dynamic-server / cross-origin CacheStorage WPT case，补完整 filtered response 生成矩阵
-3. **M3**：per-origin 持久化与跨会话 e2e
+2. **M3 后续**：把 Service Worker registration-local CacheStorage 纳入持久化快照，补 SW cache-storage WPT 验收
 
 **碰撞管理**：开工前先 `git log --since="14 days ago" -- crates/engine/src/js_dom_shim/`
 核对 js-dom 流活跃面。
@@ -86,7 +96,7 @@ brand、缺参 TypeError、`CacheStorage.keys()` 创建顺序、Vary 匹配、de
 |--------|------|
 | M1 — WPT cache-storage 基线 + caches 骨架 | ✅ 页面骨架 + 8-case window WPT 基线已接入 |
 | M2 — Cache 全 API + 查询语义 | 🚧 `Cache.matchAll()` / `Cache.keys()`、`Cache.match()`、`CacheStorage.match()`、`ignoreSearch`/`ignoreMethod`/`ignoreVary`、页面 `add/addAll` GET fetch→store、返回对象 brand、缺参 TypeError、`CacheStorage.keys()` 创建顺序、delete-dooming、DOMString name wire、`Cache.put` 核心可缓存性拒绝/body 消费语义、cached `Response.type`/`Response.url` 读回保真、`Response.error()` 可缓存读回、opaque response 忽略 Vary 与内部 metadata 可缓存、`Response.redirect()`/Blob/FormData response 路径、`addAll` 原子失败已接入；完整 filtered response 生成与更大 WPT 覆盖待完成 |
-| M3 — 持久化 + 剩余语义收尾 | ⬜ |
+| M3 — 持久化 + 剩余语义收尾 | 🚧 page/WebView owner per-origin 持久化已完成；SW registration-local CacheStorage 与剩余 filtered response 矩阵待补 |
 
 ## 验证基线
 
@@ -198,4 +208,16 @@ brand、缺参 TypeError、`CacheStorage.keys()` 创建顺序、Vary 匹配、de
   - `./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit 1200 -- cargo clippy --workspace --all-targets -- -D warnings`：passed
   - `CARGO_BUILD_JOBS=1 ./target/test-guard --per-proc-mem 4 --total-mem 20 --time-limit 1800 -- cargo test --workspace --jobs 1`：passed
   - 证据：[M2 CacheStorage Window WPT Expansion](evidence/2026-08-22-m2-cache-window-expansion.md)
+- 2026-08-22 M3 CacheStorage 持久化首片：
+  - `./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit 300 -- cargo check -p zero-storage -p zero-page-runtime -p zero-webview --all-targets`：passed
+  - `./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit 300 -- cargo test -p zero-storage cache_storage_persistence -- --nocapture`：3 passed
+  - `./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit 300 -- cargo test -p zero-page-runtime cache_storage_handler_ -- --nocapture`：15 passed
+  - `./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit 300 -- cargo test -p zero-webview cache_storage -- --nocapture`：9 passed
+  - `./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit 300 -- cargo test -p zero-webview indexed_db_owner -- --nocapture`：4 passed
+  - `./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit 600 -- cargo clippy -p zero-storage -p zero-page-runtime -p zero-webview -p zero-browser --all-targets -- -D warnings`：passed
+  - `cargo fmt --all -- --check`：passed
+  - `./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit 1200 -- cargo clippy --workspace --all-targets -- -D warnings`：passed
+  - `CARGO_BUILD_JOBS=1 ./target/test-guard --per-proc-mem 4 --total-mem 20 --time-limit 1800 -- cargo test --workspace --jobs 1`：passed
+  - `make baseline-wpt-cache-storage OUTPUT=docs/goal/storage-cache-api/evidence/2026-08-22-cache-storage-window-baseline.json SUMMARY=docs/goal/storage-cache-api/evidence/2026-08-22-cache-storage-window-baseline.md`：8 cases / 114 subtests / 114 Pass / 0 Fail，double-run deterministic
+  - 证据：[M3 CacheStorage Persistence](evidence/2026-08-22-m3-cache-storage-persistence.md)
 - 质量门禁：`cargo fmt` + `cargo clippy --workspace --all-targets -- -D warnings` 全过

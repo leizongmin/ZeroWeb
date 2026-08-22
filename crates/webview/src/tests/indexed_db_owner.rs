@@ -138,6 +138,32 @@ fn persistent_owner_reads_record_after_webview_rebuild() {
 }
 
 #[test]
+fn persistent_owner_keeps_existing_indexed_db_root_layout() {
+    let directory = TestDirectory::new();
+    let page_url = "https://persistent-layout.example/page";
+    let origin = "https://persistent-layout.example";
+    {
+        let mut storage = zero_storage::StorageManager::with_indexed_db_persistence(directory.path()).unwrap();
+        storage.open_indexed_db(origin, "app", 1).unwrap();
+        storage
+            .mutate_indexed_db(origin, "app", |database| {
+                database.create_object_store("items", None, false)?;
+                database.put(
+                    "items",
+                    serde_json::json!({"payload": "legacy-root"}),
+                    Some(zero_storage::IdbKey::String("key".to_string())),
+                )?;
+                Ok(())
+            })
+            .unwrap();
+    }
+
+    let owner = IndexedDbOwner::persistent(directory.path()).unwrap();
+    let mut restored = webview_with_owner(owner, page_url);
+    assert_eq!(read_record(&mut restored), "legacy-root");
+}
+
+#[test]
 fn webview_exposes_javascript_safe_integer_database_version() {
     let mut webview = webview_with_owner(IndexedDbOwner::in_memory(), "https://large-version.example/page");
     webview
