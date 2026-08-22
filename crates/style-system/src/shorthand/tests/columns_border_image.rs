@@ -213,6 +213,17 @@ fn test_border_image_shorthand_source_only() {
 }
 
 #[test]
+fn test_border_image_shorthand_url_function_name_is_case_insensitive() {
+    let result = expand_one("border-image", "URL(test.png) 30", false, (0, 0, 1));
+    assert!(
+        result
+            .iter()
+            .any(|d| d.0 == "border-image-source" && d.1 == "URL(test.png)")
+    );
+    assert!(result.iter().any(|d| d.0 == "border-image-slice" && d.1 == "30"));
+}
+
+#[test]
 fn test_border_image_shorthand_slice() {
     let result = expand_one("border-image", "25", false, (0, 0, 1));
     assert!(result.iter().any(|d| d.0 == "border-image-slice" && d.1 == "25"));

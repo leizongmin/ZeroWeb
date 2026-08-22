@@ -872,8 +872,11 @@ fn expand_border_image(value: &str, important: bool, specificity: (u32, u32, u32
         if t.is_empty() {
             continue;
         }
-        // R2354：none 关键字大小写不敏感（CSS Syntax §）
-        if source.is_none() && (t.starts_with("url(") || t.eq_ignore_ascii_case("none")) {
+        // https://drafts.csswg.org/css-values-4/#urls
+        // R2354：none 关键字与 url() 函数名大小写不敏感；URL 内容保持原样。
+        if source.is_none()
+            && (t.get(..4).is_some_and(|prefix| prefix.eq_ignore_ascii_case("url(")) || t.eq_ignore_ascii_case("none"))
+        {
             source = Some(t.to_string());
         } else {
             remaining.push(t.to_string());
