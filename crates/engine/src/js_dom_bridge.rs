@@ -1642,11 +1642,20 @@ pub fn parse_html_element_json_full(
     // matching html element" 的 element 上下文 expect 0）。仅当源串真实含
     // html/body 开标签时才保留对应容器命中（doc 级 detHtml 包装 `<html ...>` 的
     // R159 保真路径）。
-    let (src_has_html, src_has_body) = if filter_synthetic {
+    let (src_has_html, src_has_body, src_has_head) = if filter_synthetic {
         let html_lower = html.to_ascii_lowercase();
-        (html_lower.contains("<html"), html_lower.contains("<body"))
+        let has_html = html_lower.contains("<html");
+        (
+            has_html,
+            html_lower.contains("<body"),
+            // R188（js-dom M4）：head 同为合成容器——片段重解析补 html>head（空）+
+            // body>片段根。子树查询面不含合成 head（WPT ParentNode-querySelector-All
+            // "In-document Element tree order"：`el.querySelectorAll("*")` 首元素
+            // 期望 root 首子而非合成 HEAD）。源串真实含 <head 开标签时保留。
+            html_lower.contains("<head") || has_html,
+        )
     } else {
-        (true, true)
+        (true, true, true)
     };
     for id in ids {
         let Some(nd) = doc.get(id) else {
@@ -1660,6 +1669,9 @@ pub fn parse_html_element_json_full(
             continue;
         }
         if tag == "body" && !src_has_body {
+            continue;
+        }
+        if tag == "head" && !src_has_head {
             continue;
         }
         let mut attrs_json: Vec<String> = Vec::new();

@@ -1652,7 +1652,19 @@
   _zwParseEl.prototype.querySelectorAll = function (sel) {
     if (globalThis._zwQueryGuard) globalThis._zwQueryGuard(sel, arguments.length);
     if (typeof __zw_parse_html_query !== 'function') return [];
-    var arr = JSON.parse(__zw_parse_html_query(this.outerHTML, String(sel), '1', '', '1')); // R161: filter_synthetic
+    var arr = JSON.parse(__zw_parse_html_query(this.outerHTML, String(sel), '1', '', '1')); // R161: filter_synthetic（R188 扩展：head 同滤）
+    // R188（js-dom M4）：子树查询不含根自身——outerHTML 重解析把 root 元素自身
+    // 放进查询面（`el.querySelectorAll("*")` 首元素会是 root 镜像；spec
+    // `dom-parentnode-queryselectorall` 只查**后代**，WPT ParentNode-querySelector-All
+    // "tree order" 断言 result[0] 是 root 首子）。镜像判定：首元素与 root 同 tag+id
+    // 且其 outer 的**尾部**与 root outerHTML 尾部一致（root 自身序列化的闭环特征）。
+    // 跳过首个镜像；后续同 tag+id 的真实后代不受影响（只查 arr[0]）。
+    if (arr.length && this.localName) {
+      var _r188First = arr[0];
+      var _r188TagOk = String(_r188First && _r188First.tag || '').toLowerCase() === String(this.localName).toLowerCase();
+      var _r188IdOk = String(_r188First && _r188First.id || '') === String(this.id || '');
+      if (_r188TagOk && _r188IdOk) arr = arr.slice(1);
+    }
     var out = [];
     for (var i = 0; i < arr.length; i++) out.push(this._zwWrapQ(arr[i]));
     out.__zwQSA = true;

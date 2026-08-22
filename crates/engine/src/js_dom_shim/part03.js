@@ -732,7 +732,22 @@
             src173 = '<html lang="' + langAttr173.replace(/"/g, '&quot;') + '"><body>' + src173 + '</body></html>';
           }
         }
-        var arr = JSON.parse(__zw_parse_html_query(src173, String(sel), '1', url173, '1')); // R161: filter_synthetic（R173：url173 = :target 的 fragment 上下文）
+        var arr = JSON.parse(__zw_parse_html_query(src173, String(sel), '1', url173, '1')); // R161: filter_synthetic（R173：url173 = :target 的 fragment 上下文；R188：head 同滤——host 侧）
+        // R188（js-dom M4）：子树查询不含根自身——outerHTML 重解析把根元素自身放进
+        // 查询面（spec `dom-parentnode-queryselectorall` 只查后代；WPT
+        // ParentNode-querySelector-All "tree order" 断言 result[0] 是根的首子而非
+        // 根镜像）。首元素与根同 tag+id 视为镜像剔除（只查 arr[0]，后续同名后代不受
+        // 影响）。R173 的 lang 包装形态（src173 被改写）不在此路径（:lang 与本滤除
+        // 正交——包装的 html/body 已被 filter_synthetic 剔，首元素仍是根镜像）。
+        if (arr && arr.length && n && n.nodeType === 1) {
+          var _r188T = String(n.localName || (n.tagName || '').toLowerCase() || '').toLowerCase();
+          var _r188I = String(n.id != null ? n.id : '');
+          var _r188F = arr[0];
+          if (_r188F && String(_r188F.tag || '').toLowerCase() === _r188T
+              && String(_r188F.id || '') === _r188I) {
+            arr = arr.slice(1);
+          }
+        }
         return arr || [];
       } catch (_e) { return []; }
     }
@@ -896,7 +911,14 @@
         if (!n || n.nodeType !== 1) return;
         try {
           var nk = String(n.nodeName || '').toLowerCase() + '\x1f' + String(n.id || '') + '\x1f' + String(n.outerHTML || n._zwOuterFallback || '');
-          if (nk && !idx.has(nk)) idx.set(nk, n);
+          if (nk) {
+            // R188：同键多真节点存数组（DFS 序）——id-li-duplicate 等同构元素的
+            // identity 分离（querySelectorAll 的 _zwDupSeq 语义）。
+            var prev = idx.get(nk);
+            if (prev === undefined) idx.set(nk, n);
+            else if (Array.isArray(prev)) prev.push(n);
+            else idx.set(nk, [prev, n]);
+          }
         } catch (_e167k) {}
         var cs = n.childNodes || [];
         for (var w = 0; w < cs.length; w++) walk167(cs[w]);
@@ -904,7 +926,24 @@
       if (idx.size > 512) idx.clear();
       try { root._zwNodeIdx = idx; } catch (_e167s) {}
     }
-    return idx.get(key) || null;
+    var hit188 = idx.get(key) || null;
+    if (hit188 != null && !Array.isArray(hit188)) return hit188;
+    // R188：key 带重复序号后缀（'#N'，_zwDupSeq 派生）→ 数组第 N 个；无后缀的
+    // 同键数组取首个（既有语义）。
+    if (Array.isArray(hit188)) return hit188[0];
+    if (hit188 == null) {
+      var m188 = /\x1f#(\d+)$/.exec(String(key || ''));
+      if (m188) {
+        var base188 = String(key || '').slice(0, m188.index);
+        var arr188 = idx.get(base188);
+        if (Array.isArray(arr188)) {
+          var nth188 = Math.max(0, parseInt(m188[1], 10) - 1);
+          return arr188[nth188] != null ? arr188[nth188] : arr188[arr188.length - 1];
+        }
+        if (arr188) return arr188;
+      }
+    }
+    return null;
   }
   function _zwMWrapCached(root, info) {
     if (!root || typeof root !== 'object') return new _zwParseEl(info);
@@ -913,7 +952,10 @@
       map = new Map();
       try { root._zwQWrapMap = map; } catch (_e158m) {}
     }
-    var key = String(info && info.tag || '') + '\x1f' + String(info && info.id || '') + '\x1f' + String(info && info.outer || '');
+    var key = String(info && info.tag || '') + '\x1f' + String(info && info.id || '') + '\x1f' + String(info && info.outer || '')
+      // R188：重复键出现序（querySelectorAll 的同构多元素 identity 分离——见
+      // Element.prototype.querySelectorAll 的 _zwDupSeq 注释）。
+      + (info && info._zwDupSeq ? '\x1f#' + info._zwDupSeq : '');
     // R167（js-dom M1 L2-d3b）：**桥归一前置**——wrapper 构造前先在 root 子树找
     // 同键真实节点（mutTree `_zwMEl`，d3a 起已入桥），命中即返其桥对象（首登
     // 者胜 = 节点本体）。查询产物与 traverse/mutation 面跨面 identity 统一
@@ -950,7 +992,40 @@
     if (globalThis._zwQueryGuard) globalThis._zwQueryGuard(sel, arguments.length);
     var arr = _zwMQueryAll(this, sel);
     var out = [];
-    for (var i = 0; i < arr.length; i++) out.push(_zwMWrapCached(this, arr[i]));
+    // R188（js-dom M4）：**重复键的 identity 分离**——`_zwMWrapCached` 的缓存键是
+    // tag+id+outer，文档含多个完全同构元素（同 tag+id+outer——WPT
+    // ParentNode-querySelector-All "tree order" 的 id-li-duplicate 族）时全部命中
+    // 同一 wrapper，结果数组里同一对象重复出现，与 traverse（真节点 identity 各异）
+    // 的 assert_equals 失败。修：本轮查询内对同键 info 追加出现序号（`_zwDupSeq`）
+    // 入缓存——首个不标记（既有消费面零变化），第 2+ 个带序号建独立 wrapper。
+    var _r188Seen = null;
+    for (var i = 0; i < arr.length; i++) {
+      var _r188Info = arr[i];
+      var _r188Key = null;
+      // R188：仅 JSON info（有 `.tag` 字段——host 往返形态）参与重复键分离；真节点
+      // 直出（R170 compound/tag 门）本身 identity 各异无需处理（clone 会丢 tagName
+      // 字段——真节点读 `.tag` undefined）。
+      if (_r188Info && _r188Info.tag !== undefined) {
+        try {
+          _r188Key = String(_r188Info.tag || '') + '\x1f' + String(_r188Info.id || '') + '\x1f' + String(_r188Info.outer || '');
+        } catch (_e188k) { _r188Key = null; }
+      }
+      if (_r188Key != null) {
+        if (!_r188Seen) _r188Seen = {};
+        _r188Seen[_r188Key] = (_r188Seen[_r188Key] || 0) + 1;
+        if (_r188Seen[_r188Key] > 1) {
+          try {
+            var _r188Clone = {};
+            for (var _r188P in _r188Info) {
+              if (Object.prototype.hasOwnProperty.call(_r188Info, _r188P)) _r188Clone[_r188P] = _r188Info[_r188P];
+            }
+            _r188Clone._zwDupSeq = _r188Seen[_r188Key];
+            _r188Info = _r188Clone;
+          } catch (_e188c) {}
+        }
+      }
+      out.push(_zwMWrapCached(this, _r188Info));
+    }
     out.__zwQSA = true; // R159：instanceof NodeList 标记
     return out;
   });
