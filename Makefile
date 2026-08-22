@@ -27,15 +27,17 @@ setup-rusty-v8:
 endif
 
 # WPT reftest 数据（上游 web-platform-tests/wpt 子集，~19952 文件，独立 repo）。
-# reftest / reftest-oracle 会自动前置触发；目录已存在则跳过，刷新需先 rm -rf。
+# reftest / reftest-oracle 会自动前置触发；以 reftest-manifest.json 为完整套件
+# 标志（不能以目录非空判断——wpt-data 内有少量被 git 跟踪的资产文件，
+# fresh checkout 后目录非空但套件缺失，会误跳 clone），刷新需先 rm -rf。
 WPT_DATA_REPO ?= https://github.com/leizongmin/zeroweb-wpt-data.git
 WPT_DATA_REF  ?= v1.10
 WPT_DATA_DIR  ?= tests/wpt-runner/wpt-data
 fetch-wpt-data:
 ifeq ($(OS),Windows_NT)
-	@$(WPT_BASH) -c 'if [ -d "$(WPT_DATA_DIR)" ] && [ -n "$$(ls -A $(WPT_DATA_DIR) 2>/dev/null)" ]; then echo "wpt-data 已存在 ($(WPT_DATA_DIR), ref=$(WPT_DATA_REF))；刷新请先 rm -rf 该目录"; else echo "fetch wpt-data $(WPT_DATA_REF) → $(WPT_DATA_DIR)"; git clone --depth=1 --branch $(WPT_DATA_REF) $(WPT_DATA_REPO) "$(WPT_DATA_DIR)"; rm -rf "$(WPT_DATA_DIR)/.git"; fi'
+	@$(WPT_BASH) -c 'if [ -f "$(WPT_DATA_DIR)/reftest-manifest.json" ]; then echo "wpt-data 已存在 ($(WPT_DATA_DIR), ref=$(WPT_DATA_REF))；刷新请先 rm -rf 该目录"; else echo "fetch wpt-data $(WPT_DATA_REF) → $(WPT_DATA_DIR)"; rm -rf "$(WPT_DATA_DIR)"; git clone --depth=1 --branch $(WPT_DATA_REF) $(WPT_DATA_REPO) "$(WPT_DATA_DIR)"; rm -rf "$(WPT_DATA_DIR)/.git"; fi'
 else
-	@if [ -d "$(WPT_DATA_DIR)" ] && [ -n "$$(ls -A $(WPT_DATA_DIR) 2>/dev/null)" ]; then echo "wpt-data 已存在 ($(WPT_DATA_DIR), ref=$(WPT_DATA_REF))；刷新请先 rm -rf 该目录"; else echo "fetch wpt-data $(WPT_DATA_REF) → $(WPT_DATA_DIR)"; git clone --depth=1 --branch $(WPT_DATA_REF) $(WPT_DATA_REPO) "$(WPT_DATA_DIR)"; rm -rf "$(WPT_DATA_DIR)/.git"; fi
+	@if [ -f "$(WPT_DATA_DIR)/reftest-manifest.json" ]; then echo "wpt-data 已存在 ($(WPT_DATA_DIR), ref=$(WPT_DATA_REF))；刷新请先 rm -rf 该目录"; else echo "fetch wpt-data $(WPT_DATA_REF) → $(WPT_DATA_DIR)"; rm -rf "$(WPT_DATA_DIR)"; git clone --depth=1 --branch $(WPT_DATA_REF) $(WPT_DATA_REPO) "$(WPT_DATA_DIR)"; rm -rf "$(WPT_DATA_DIR)/.git"; fi
 endif
 	@$(WPT_BASH) scripts/fetch-wpt-smoke-subdirs.sh
 	@$(WPT_BASH) tests/wpt-runner/scripts/sync-imported-resources.sh

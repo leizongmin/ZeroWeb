@@ -300,6 +300,26 @@ JSON，private profile 继续只保留内存态。
 | S4 | 事件为 setTimeout 模拟 | ✅ manager transition log 为状态源；timer 只执行页面 task 投影 |
 | S5 | WPT 覆盖为零 | ✅ core 34/34 case、156/156 Pass、0 Fail/Timeout/Unsupported |
 
+## CI 守护记录（2026-08-22）
+
+**预存失败（不强行修复，记录待后续 SW 轮次）**：webview 集成测试
+`service_worker_runtime::update_permissions_follow_calling_worker_state_during_installation`
+（M3-25 update permissions + MessagePort）在本地环境约 80% 概率超时失败（20s/60s
+deadline 均超时），CI（812a9338，2026-08-21 19:00）通过。诊断矩阵显示卡点：
+second（replacement）worker 只处理 awaitInstallEvent（messageSequence=1），callUpdate
+消息不被处理，页面侧 nextMessage 永等 → 死锁。
+
+- **根因**（架构时序脆弱性）：worker 侧 `registration.update()` 经 `__zwRequestUpdate`
+  同步阻塞等 host 响应；host 的 `manager.poll()` 由页面轮询链
+  （`__zw_sw_client_messages` 桥）间接驱动，而页面轮询链在
+  `_messageSequence >= _messagePollTarget` 时停止。worker 线程处理延迟时轮询链过早
+  停止 → `UpdateRequested` 滞留 host 队列 → worker 永久阻塞 → 死锁。
+- **归因**：git bisect 无法归因到特定提交（失败点落在纯文档提交上，同代码多次运行
+  PASS/FAIL 交替）——非本次变更引入的确定性回归，是竞态放大（本地环境调度特性
+  比 CI 更易触发）。
+- **处理**：修复需架构级改动（worker 请求的 host 响应不应依赖页面轮询链驱动），
+  超出 CI 守护自主修复范围；不强行修复，等待 SW 专项轮次评估。
+
 ## 待用户决策
 
 | # | 事项 | 状态 |
