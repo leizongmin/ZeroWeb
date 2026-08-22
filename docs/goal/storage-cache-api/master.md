@@ -58,7 +58,9 @@ embedded `IndexedDbOwner::persistent(path)` 保持旧 IndexedDB root 布局兼�
 会触发现有 Service Worker persistence writer，private profile 继续只保留内存态。
 Service Worker runtime 已补齐 `Cache.delete()` 与 `CacheStorage.delete()/has()/keys()` 到
 同一 typed host bridge，entry 删除和命名 cache 删除复用 registration-local
-`zero-storage::CacheStorage`。
+`zero-storage::CacheStorage`；同时已对齐 worker bootstrap 中 `Response.error().clone()` 的
+error filtered response 保真与 `Cache.delete()` 缺参 TypeError，支撑 service-workers 目标的
+6-case / 68-subtest SW CacheStorage wrapper baseline。
 更大范围 WPT 导入与完整
 `basic`/`cors`/`opaque`/`opaqueredirect` filtered response 生成矩阵仍待后续切片。
 CacheStorage window asset manifest 已补充逐 asset `source_revision`，恢复脚本会按每行

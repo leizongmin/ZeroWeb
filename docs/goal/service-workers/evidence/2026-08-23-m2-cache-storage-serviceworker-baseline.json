@@ -1,8 +1,8 @@
 {
-  "cases": 1,
-  "subtests": 11,
+  "cases": 6,
+  "subtests": 68,
   "status": {
-    "Pass": 11
+    "Pass": 68
   },
   "deterministic": true,
   "results": [
@@ -61,6 +61,316 @@
         },
         {
           "name": "CacheStorage",
+          "status": "Pass",
+          "message": null
+        }
+      ]
+    ],
+    [
+      "service-workers/cache-storage/serviceworker/cache-storage-keys.https.html",
+      [
+        {
+          "name": "CacheStorage keys",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "CacheStorage.keys",
+          "status": "Pass",
+          "message": null
+        }
+      ]
+    ],
+    [
+      "service-workers/cache-storage/serviceworker/cache-delete.https.html",
+      [
+        {
+          "name": "Cache.delete with no arguments",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "Cache.delete called with a string URL",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "Cache.delete called with a Request object",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "Cache.delete called with a HEAD request",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "Cache.delete supports ignoreVary",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "Cache.delete with a non-existent entry",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "Cache.delete with ignoreSearch option (request with search parameters)",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "Cache.delete with ignoreSearch option (when it is specified as false)",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "Cache.delete",
+          "status": "Pass",
+          "message": null
+        }
+      ]
+    ],
+    [
+      "service-workers/cache-storage/serviceworker/cache-keys.https.html",
+      [
+        {
+          "name": "Cache.keys() called on an empty cache",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "Cache.keys with no matching entries",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "Cache.keys with URL",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "Cache.keys with Request",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "Cache.keys with new Request",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "Cache.keys with ignoreSearch option (request with no search parameters)",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "Cache.keys with ignoreSearch option (request with search parameters)",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "Cache.keys supports ignoreMethod",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "Cache.keys supports ignoreVary",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "Cache.keys with URL containing fragment",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "Cache.keys with string fragment \"http\" as query",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "Cache.keys without parameters",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "Cache.keys with explicitly undefined request",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "Cache.keys with explicitly undefined request and empty options",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "Cache.keys without parameters and VARY entries",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "Cache.keys with a HEAD Request",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "Cache.keys",
+          "status": "Pass",
+          "message": null
+        }
+      ]
+    ],
+    [
+      "service-workers/cache-storage/serviceworker/cache-matchAll.https.html",
+      [
+        {
+          "name": "Cache.matchAll with no matching entries",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "Cache.matchAll with URL",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "Cache.matchAll with Request",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "Cache.matchAll with new Request",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "Cache.matchAll with HEAD",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "Cache.matchAll with ignoreSearch option (request with no search parameters)",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "Cache.matchAll with ignoreSearch option (request with search parameters)",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "Cache.matchAll supports ignoreMethod",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "Cache.matchAll supports ignoreVary",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "Cache.matchAll with URL containing fragment",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "Cache.matchAll with string fragment \"http\" as query",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "Cache.matchAll without parameters",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "Cache.matchAll with explicitly undefined request",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "Cache.matchAll with explicitly undefined request and empty options",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "Cache.matchAll with responses containing \"Vary\" header",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "Cache.matchAll with multiple vary pairs",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "Cache.matchAll",
+          "status": "Pass",
+          "message": null
+        }
+      ]
+    ],
+    [
+      "service-workers/cache-storage/serviceworker/cache-storage-match.https.html",
+      [
+        {
+          "name": "CacheStorageMatch with no cache name provided",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "CacheStorageMatch from one of many caches",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "CacheStorageMatch from one of many caches by name",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "CacheStorageMatch a string request",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "CacheStorageMatch a HEAD request",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "CacheStorageMatch with no cached entry",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "CacheStorageMatch with no caches available but name provided",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "CacheStorageMatch with empty cache name provided",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "CacheStorageMatch supports ignoreSearch",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "Cache.match supports ignoreMethod",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "CacheStorageMatch supports ignoreVary",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "CacheStorage.match",
           "status": "Pass",
           "message": null
         }

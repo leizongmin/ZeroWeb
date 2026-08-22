@@ -415,6 +415,7 @@ const SERVICE_WORKER_BOOTSTRAP: &str = r#"
     }
     clone() {
       if (this.bodyUsed) throw new TypeError('Response body has already been used');
+      if (this.type === 'error') return Response.error();
       const cloned = new Response(this._body, {
         status: this.status,
         statusText: this.statusText,
@@ -717,8 +718,10 @@ const SERVICE_WORKER_BOOTSTRAP: &str = r#"
       });
     }
     delete(input, options) {
+      const hasInput = arguments.length >= 1;
       let request;
       try {
+        if (!hasInput) throw new TypeError('Cache.delete requires a request');
         request = cacheDeleteRequest(this, input, options);
       } catch (error) {
         return Promise.reject(error);
@@ -5520,6 +5523,107 @@ mod tests {
                     response_type: "default".into(),
                     headers: Vec::new(),
                     body: "true|runtime|true|true".into(),
+                }),
+                failed: false,
+                message: String::new(),
+            }
+        );
+    }
+
+    #[test]
+    fn cache_delete_missing_argument_rejects_and_error_response_clone_roundtrips() {
+        let mut runtime = ServiceWorkerRuntime::new(test_config()).unwrap();
+        runtime
+            .evaluate(
+                "addEventListener('fetch', event => {
+                   event.respondWith((async () => {
+                     const cache = await caches.open('runtime');
+                     let deleteRejected = false;
+                     try {
+                       await cache.delete();
+                     } catch (error) {
+                       deleteRejected = error instanceof TypeError;
+                     }
+                     const cloned = Response.error().clone();
+                     await cache.put(event.request, cloned);
+                     return new Response(String(deleteRejected));
+                   })());
+                 });",
+                "https://example.test/sw.js",
+            )
+            .unwrap();
+        let _ = runtime.recv_timeout(Duration::from_secs(5)).unwrap();
+
+        runtime
+            .dispatch_fetch(
+                48,
+                ServiceWorkerFetchRequest {
+                    url: "https://example.test/app/error-clone".into(),
+                    method: "GET".into(),
+                    headers: Vec::new(),
+                    body: None,
+                    client_id: Some("client-1".into()),
+                    resulting_client_id: None,
+                    referrer: None,
+                },
+            )
+            .unwrap();
+
+        let ServiceWorkerEvent::CacheStorageRequested { request_id, request } =
+            runtime.recv_timeout(Duration::from_secs(5)).unwrap()
+        else {
+            panic!("missing CacheStorage.open request");
+        };
+        assert_eq!(
+            request,
+            ServiceWorkerCacheStorageRequest::Open {
+                cache_name: "runtime".into()
+            }
+        );
+        runtime
+            .complete_cache_storage(
+                request_id,
+                Ok(ServiceWorkerCacheStorageResult::Open {
+                    cache_name: "runtime".into(),
+                    cache_name_units: "00720075006e00740069006d0065".into(),
+                    cache_id: 12,
+                }),
+            )
+            .unwrap();
+
+        let ServiceWorkerEvent::CacheStorageRequested { request_id, request } =
+            runtime.recv_timeout(Duration::from_secs(5)).unwrap()
+        else {
+            panic!("missing Cache.put request");
+        };
+        let ServiceWorkerCacheStorageRequest::Put {
+            cache_name,
+            cache_id,
+            response,
+            ..
+        } = request
+        else {
+            panic!("expected Cache.put request");
+        };
+        assert_eq!(cache_name, "runtime");
+        assert_eq!(cache_id, Some(12));
+        assert_eq!(response.status, 0);
+        assert_eq!(response.response_type, "error");
+        runtime
+            .complete_cache_storage(request_id, Ok(ServiceWorkerCacheStorageResult::Done))
+            .unwrap();
+
+        assert_eq!(
+            runtime.recv_timeout(Duration::from_secs(5)).unwrap(),
+            ServiceWorkerEvent::FetchSettled {
+                event_id: 48,
+                request_url: "https://example.test/app/error-clone".into(),
+                response: Some(ServiceWorkerFetchResponse {
+                    status: 200,
+                    status_text: String::new(),
+                    response_type: "default".into(),
+                    headers: Vec::new(),
+                    body: "true".into(),
                 }),
                 failed: false,
                 message: String::new(),

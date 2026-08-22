@@ -10,8 +10,8 @@ import subprocess
 import sys
 from pathlib import Path
 
-EXPECTED_CASES = 1
-EXPECTED_SUBTESTS = 11
+EXPECTED_CASES = 6
+EXPECTED_SUBTESTS = 68
 
 
 def parse_args() -> argparse.Namespace:
@@ -92,12 +92,15 @@ def render_markdown(summary: dict) -> str:
             "## Scope",
             "",
             "This pinned Service Worker M2 CacheStorage baseline covers the "
-            "`serviceworker/cache-storage.https.html` wrapper. It runs the upstream "
-            "`script-tests/cache-storage.js` in a real Service Worker global and "
-            "validates `caches.open()`, `CacheStorage.has/delete/keys()`, opened "
-            "`Cache` identity, delete dooming semantics, empty cache names, "
-            "required-argument TypeError behavior, worker `Cache.add()`, and "
-            "DOMString cache-name preservation for unpaired surrogate code units.",
+            "six serviceworker CacheStorage wrappers. They run the upstream "
+            "`script-tests/cache-storage*.js`, `cache-delete.js`, `cache-keys.js`, "
+            "`cache-matchAll.js`, and `cache-storage-match.js` in a real Service "
+            "Worker global and validate `caches.open()`, `CacheStorage.has/delete/"
+            "keys/match()`, opened `Cache` identity, delete dooming semantics, "
+            "empty cache names, required-argument TypeError behavior, `Cache.delete/"
+            "keys/matchAll()`, query option handling, Vary matching, worker "
+            "`Cache.add()`, and DOMString cache-name preservation for unpaired "
+            "surrogate code units.",
         ]
     ) + "\n"
 
