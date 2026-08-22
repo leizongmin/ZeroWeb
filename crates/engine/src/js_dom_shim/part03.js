@@ -5420,37 +5420,101 @@
     // 产物等边缘形态；此形态下序列化/活树内容分歧，整体回落 JSON 往返保证
     // 语义与 R163 基线一致——R164 probe 实证 bare div 树查询结果异常）。
     function _queryTreeByTag(tagWanted, all) {
+      return _queryTreeByCompound({ tag: tagWanted }, all);
+    }
+    // R165（L2-d2）：compound 本树匹配——`tag` / `#id` / `.class`（多个）/
+    // `[attr]` / `[attr="v"]`（含单引号）及同 compound 内组合（`div.a#b[c=d]`）。
+    // **不含**组合器（空白/>/+/~）与伪类（:）——形态检测见 queryBody 门。
+    // 节点局部判定（无兄弟/祖先上下文需求），class 按空白分词含判定。
+    function _queryTreeByCompound(comp, all) {
       ensureTree();
       var out = [];
-      var want = tagWanted === '*' ? '*' : tagWanted.toUpperCase();
+      var want = !comp.tag || comp.tag === '*' ? '*' : String(comp.tag).toUpperCase();
       var aborted = false;
-      (function walk164(n) {
+      (function walk165(n) {
         if (!n || aborted) return;
         var cs = n.childNodes || [];
         for (var i = 0; i < cs.length; i++) {
           var c = cs[i];
           if (!c || c.nodeType !== 1) continue;
-          var oh164 = '';
-          try { oh164 = String(c.outerHTML || ''); } catch (_e164o) {}
-          if (!oh164) { aborted = true; return; }
-          if (want === '*' || String(c.nodeName || '') === want) {
-            out.push(c);
-            if (!all) return true;
+          var oh165 = '';
+          try { oh165 = String(c.outerHTML || ''); } catch (_e165o) {}
+          if (!oh165) { aborted = true; return; }
+          var tagOk = want === '*' || String(c.nodeName || '') === want;
+          if (tagOk) {
+            var idOk = !comp.id || String(c.id || '') === comp.id;
+            if (idOk) {
+              var clsOk = true;
+              if (comp.classes && comp.classes.length) {
+                var have = ' ' + String(c.className || '') + ' ';
+                for (var ci = 0; ci < comp.classes.length; ci++) {
+                  if (have.indexOf(' ' + comp.classes[ci] + ' ') < 0) { clsOk = false; break; }
+                }
+              }
+              if (clsOk && comp.attrs && comp.attrs.length) {
+                for (var ai = 0; ai < comp.attrs.length && clsOk; ai++) {
+                  var a = comp.attrs[ai];
+                  var v = c.getAttribute ? c.getAttribute(a.name) : null;
+                  if (v == null) { clsOk = false; break; }
+                  if (a.op === '=') { if (String(v) !== a.value) clsOk = false; }
+                  // 其它运算符（~=、|=、^=、$=、*=）留 JSON 往返（host 引擎权威）。
+                  else { clsOk = false; }
+                }
+              }
+              if (clsOk) {
+                out.push(c);
+                if (!all) return true;
+              }
+            }
           }
-          if (walk164(c) === true && !all) return true;
+          if (walk165(c) === true && !all) return true;
         }
         return false;
       })(_tree);
       return aborted ? null : out;
     }
     function queryBody(sel, all) {
-      // L2-d1：纯 tag（含 `*`）走本树
+      // L2-d1/d2：纯 tag（含 `*`）与 **compound**（tag/#id/.class/[attr=v] 组合，
+      // 无组合器无伪类）走本树
       var s164 = String(sel == null ? '' : sel);
+      // R165：compound 解析（严格形态：tag? (#id)? (.class)* ([attr("op")?="v"])*
+      // ——顺序任意但不含空白/组合器/伪类/转义；解析 miss → undefined 走 JSON）
+      var comp165 = undefined;
+      if (/^[A-Za-z][\w-]*$/.test(s164) || s164 === '*') {
+        comp165 = { tag: s164, id: null, classes: [], attrs: [] };
+      } else if (false) {
+        // R165 实验记录：#id / compound 形态首版实测**非中性**——完整 compound
+        // 跨上下文回归（element/fragment identity 依赖 wrapper）；纯 #id 在
+        // duplicate-id 场景与 JSON 往返的首命中 identity 分歧（WPT
+        // `#id-li-duplicate` 断言特定对象）。**回退到 L2-d1 纯 tag 基线**；
+        // compound 待 L2-d3 统一匹配器（nodeInfo 树上下文 + identity 桥）。
+        var mId = /#[A-Za-z_][\w-]*/.exec(s164);
+        var mCls = /\.[A-Za-z_][\w-]*/g;
+        var mAttr = /\[([A-Za-z_][\w-]*)(?:=("[^"]*"|'[^']*'))?\]/g;
+        var rest = s164;
+        if (mId) { comp165 = comp165 || { tag: null, id: null, classes: [], attrs: [] }; comp165.id = mId[0].slice(1); rest = rest.replace(mId[0], ''); }
+        var c165;
+        while ((c165 = mCls.exec(s164))) { comp165 = comp165 || { tag: null, id: null, classes: [], attrs: [] }; comp165.classes.push(c165[0].slice(1)); rest = rest.replace(c165[0], ''); }
+        var a165;
+        while ((a165 = mAttr.exec(s164))) {
+          comp165 = comp165 || { tag: null, id: null, classes: [], attrs: [] };
+          comp165.attrs.push({ name: a165[1], op: a165[2] ? '=' : null, value: a165[2] ? a165[2].slice(1, -1) : null });
+          rest = rest.replace(a165[0], '');
+        }
+        if (comp165) {
+          rest = rest.trim();
+          if (rest) {
+            if (/^[A-Za-z][\w-]*$/.test(rest) || rest === '*') comp165.tag = rest;
+            else comp165 = undefined; // 残段非纯 tag（无法识别形态）→ JSON
+          }
+        }
+      }
       // html/body 例外：_tree 源是 body 内容（无 html/body 容器——它们只存在于
       // detHtml 的 R159 属性保真包装层），须走 JSON 往返命中包装容器。
-      var isContainerTag = s164.toLowerCase() === 'html' || s164.toLowerCase() === 'body';
-      if (!isContainerTag && (/^[A-Za-z][\w-]*$/.test(s164) || s164 === '*')) {
-        var hits = _queryTreeByTag(s164, all);
+      var compTag = comp165 && comp165.tag ? String(comp165.tag).toLowerCase() : '';
+      var isContainerTag = compTag === 'html' || compTag === 'body';
+      if (comp165 && !isContainerTag) {
+        var hits = _queryTreeByCompound(comp165, all);
         if (hits && hits.length) {
           var out164 = [];
           for (var hi = 0; hi < hits.length; hi++) {
