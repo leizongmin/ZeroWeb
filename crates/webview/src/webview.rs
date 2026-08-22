@@ -2104,6 +2104,7 @@ impl WebView {
                             Ok(None) => {}
                             Err(error) => {
                                 tracing::warn!("Service Worker fetch dispatch failed: {error}");
+                                return format!("__zw_fetch_error:{error}");
                             }
                         }
                     }
@@ -3179,16 +3180,21 @@ impl WebView {
         let controller_fetchers = poll_fetchers;
         sandbox.register_callback(
             "__zw_sw_controller",
-            Box::new(move |_args| {
-                let document_url = match controller_page_url.lock() {
-                    Ok(url) => url.clone(),
-                    Err(_) => {
-                        return serde_json::json!({"ok": false, "error": "page URL lock poisoned"}).to_string();
+            Box::new(move |args| {
+                let document_url = if let Some(url) = args.first().filter(|value| !value.is_empty()) {
+                    url.clone()
+                } else {
+                    match controller_page_url.lock() {
+                        Ok(url) => url.clone(),
+                        Err(_) => {
+                            return serde_json::json!({"ok": false, "error": "page URL lock poisoned"}).to_string();
+                        }
                     }
                 };
                 let Ok(document) = url::Url::parse(&document_url) else {
                     return serde_json::json!({"ok": true, "controller": null}).to_string();
                 };
+                let client_id = args.get(1).filter(|value| !value.is_empty()).cloned();
                 let Ok(mut manager) = controller_manager.lock() else {
                     return serde_json::json!({"ok": false, "error": "manager lock poisoned"}).to_string();
                 };
@@ -3196,8 +3202,11 @@ impl WebView {
                 {
                     return serde_json::json!({"ok": false, "error": error}).to_string();
                 }
-                let controller =
-                    manager.active_registration_for_url(&document.origin().ascii_serialization(), document.as_str());
+                let origin = document.origin().ascii_serialization();
+                let controller = client_id
+                    .as_deref()
+                    .and_then(|id| manager.active_registration_for_client(&origin, id))
+                    .or_else(|| manager.active_registration_for_url(&origin, document.as_str()));
                 serde_json::json!({
                     "ok": true,
                     "controller": controller.map(|registration| serde_json::json!({
@@ -3424,12 +3433,23 @@ impl WebView {
                             registration_id: settled_registration_id,
                             event_id: settled_event_id,
                             response,
+                            failed,
                             message,
                             ..
                         } = event
                             && settled_registration_id == registration_id
                             && settled_event_id == event_id
                         {
+                            if failed {
+                                let diagnostic = if message.is_empty() {
+                                    "Service Worker fetch failed".to_string()
+                                } else {
+                                    message
+                                };
+                                tracing::warn!("Service Worker fetch produced a network error: {diagnostic}");
+                                let _ = Self::poll_service_worker_manager(&mut manager, fetchers, timeout_secs);
+                                return Err(diagnostic);
+                            }
                             if response.is_none() && !message.is_empty() {
                                 tracing::warn!("Service Worker fetch fell back to host fetch: {message}");
                             }

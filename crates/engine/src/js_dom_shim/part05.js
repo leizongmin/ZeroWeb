@@ -723,6 +723,7 @@
   function _zwMakeIframeDoc(kind, markup) {
     var doc = _makeDetachedDocument('');
     var _r115WinRef = null; // defaultView 槽（_zwMakeIframeWin 建后回填）
+    doc._zwMarkup = String(markup || '');
     doc.__r115SetWin = function (w) { _r115WinRef = w; };
     // R141（js-dom M4）：`<meta charset>` → 文档编码归一化（WPT
     // Document-characterSet-normalization-1/2 654 subtest——iframe 子文档的
@@ -1027,6 +1028,23 @@
         return parentServiceWorker.ready.then(wrapRegistration);
       },
       get controller() {
+        if (typeof __zw_sw_controller === 'function') {
+          try {
+            var wire = JSON.parse(__zw_sw_controller(
+              doc && doc._zwURL ? doc._zwURL : '',
+              doc && doc._zwSwClientId ? doc._zwSwClientId : ''
+            ));
+            if (wire && wire.ok && wire.controller) {
+              var worker = Object.create(
+                globalThis.ServiceWorker ? globalThis.ServiceWorker.prototype : Object.prototype);
+              worker._et_listeners = {};
+              worker._id = wire.controller.id;
+              worker.scriptURL = wire.controller.scriptURL || '';
+              worker.state = wire.controller.state || 'activated';
+              return worker;
+            }
+          } catch (_eIframeController) {}
+        }
         return parentServiceWorker.controller;
       }
     } : undefined;
@@ -1053,8 +1071,71 @@
         globalThis.__zwFetchReferrer = previousReferrer;
       }
     }
+    function iframeLocation() {
+      function href() {
+        return doc && doc._zwURL ? String(doc._zwURL) : 'about:blank';
+      }
+      function parsed() {
+        try {
+          if (typeof globalThis.URL === 'function') return new globalThis.URL(href(), href());
+        } catch (_eIframeLocationUrl) {}
+        return null;
+      }
+      return {
+        get href() { return href(); },
+        get protocol() { var u = parsed(); return u ? u.protocol : ''; },
+        get host() { var u = parsed(); return u ? u.host : ''; },
+        get hostname() { var u = parsed(); return u ? u.hostname : ''; },
+        get pathname() { var u = parsed(); return u ? u.pathname : ''; },
+        get search() { var u = parsed(); return u ? u.search : ''; },
+        get hash() { var u = parsed(); return u ? u.hash : ''; },
+        get origin() { var u = parsed(); return u ? u.origin : 'null'; },
+        assign: function () {},
+        replace: function () {},
+        reload: function () {},
+        toString: function () { return href(); }
+      };
+    }
+    function IframeXMLHttpRequest() {
+      if (typeof globalThis.XMLHttpRequest !== 'function') {
+        throw new TypeError('XMLHttpRequest is not available');
+      }
+      var xhr = new globalThis.XMLHttpRequest();
+      xhr._zwXhrBaseUrl = doc && doc._zwURL ? doc._zwURL : '';
+      xhr._zwXhrFetch = iframeFetch;
+      return xhr;
+    }
+    try {
+      IframeXMLHttpRequest.prototype = globalThis.XMLHttpRequest.prototype;
+    } catch (_eIframeXhrProto) {}
+    function runInlineScripts() {
+      if (win._zwScriptsRan) return;
+      win._zwScriptsRan = true;
+      var markup = doc && doc._zwMarkup ? String(doc._zwMarkup) : '';
+      if (!markup) return;
+      var re = /<script\b([^>]*)>([\s\S]*?)<\/script\s*>/ig;
+      var match;
+      while ((match = re.exec(markup))) {
+        var attrs = String(match[1] || '');
+        if (/\bsrc\s*=/i.test(attrs)) continue;
+        var code = String(match[2] || '');
+        try {
+          new Function(
+            'window', 'self', 'document', 'navigator', 'XMLHttpRequest',
+            'fetch', 'Headers', 'Request', 'Response', 'URL', 'parent',
+            'with(window){' + code + '\n}'
+          ).call(
+            win, win, win, doc, win.navigator, win.XMLHttpRequest,
+            win.fetch, win.Headers, win.Request, win.Response, win.URL, win.parent
+          );
+        } catch (_eIframeScript) {}
+      }
+    }
     var win = {
       document: doc,
+      parent: globalThis,
+      top: globalThis.top || globalThis,
+      location: iframeLocation(),
       navigator: { serviceWorker: serviceWorker },
       Element: globalThis.Element,
       Node: globalThis.Node,
@@ -1082,11 +1163,16 @@
       NodeList: globalThis.NodeList,
       HTMLCollection: globalThis.HTMLCollection,
       fetch: iframeFetch,
+      XMLHttpRequest: IframeXMLHttpRequest,
       Headers: globalThis.Headers,
       Request: globalThis.Request,
       Response: globalThis.Response,
       URL: globalThis.URL,
+      _zwScriptsRan: false,
+      __zwRunInlineScripts: runInlineScripts,
     };
+    win.window = win;
+    win.self = win;
     win.addEventListener = function (type, fn) {
       try { globalThis.addEventListener(type, fn); } catch (_e139a) {}
     };

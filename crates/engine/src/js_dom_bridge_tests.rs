@@ -22,3 +22,4 @@ include!("js_dom_bridge_tests/part19.rs");
 include!("js_dom_bridge_tests/part20.rs");
 include!("js_dom_bridge_tests/part21.rs");
 include!("js_dom_bridge_tests/part22.rs");
+include!("js_dom_bridge_tests/part23.rs");

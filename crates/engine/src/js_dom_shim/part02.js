@@ -3054,10 +3054,13 @@
           return wire && wire.ok ? wire : null;
         } catch (_e) { return null; }
       }
-      function readControllerSnapshot() {
+      function readControllerSnapshot(documentURL, clientId) {
         if (typeof __zw_sw_controller !== 'function') return null;
         try {
-          var wire = JSON.parse(__zw_sw_controller());
+          var wire = JSON.parse(__zw_sw_controller(
+            documentURL == null ? '' : String(documentURL),
+            clientId == null ? '' : String(clientId)
+          ));
           return wire && wire.ok ? wire.controller : null;
         } catch (_e) { return null; }
       }

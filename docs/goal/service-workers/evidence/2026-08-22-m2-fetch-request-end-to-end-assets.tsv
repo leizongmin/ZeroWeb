@@ -7,3 +7,6 @@ service-workers/service-worker/resources/request-end-to-end-worker.js	support	wo
 service-workers/service-worker/request-end-to-end.https.html	testharness	case	1	2113	no	82475eabc4ab49467955310786f7a405b277bb94
 service-workers/service-worker/resources/fetch-event-async-respond-with-worker.js	support	worker-script	1	2008	no	dc3f1a1e98563ad1b5924c8315c0d64d17ffbbfd
 service-workers/service-worker/fetch-event-async-respond-with.https.html	testharness	case	1	2510	no	d9147f85494c21e54d39a4fd7af16efa1a126384
+service-workers/service-worker/fetch-event-respond-with-argument.https.html	testharness	case	1	1404	no	05e22105243f710273f56e21502659ad1781e28c
+service-workers/service-worker/resources/fetch-event-respond-with-argument-worker.js	support	worker-script	1	419	no	712c4b73c9bc6da7c828a4c194b09ad9018d47ae
+service-workers/service-worker/resources/fetch-event-respond-with-argument-iframe.html	support	iframe-document	1	1497	no	0ebd1ca81537e529aaa0e3e93985b92364e9225f

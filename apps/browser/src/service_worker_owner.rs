@@ -684,6 +684,7 @@ fn sandbox_event(event: ServiceWorkerHostEvent) -> ServiceWorkerEvent {
             event_id,
             request_url,
             response,
+            failed,
             message,
         } => ServiceWorkerEvent::FetchSettled {
             event_id,
@@ -695,6 +696,7 @@ fn sandbox_event(event: ServiceWorkerHostEvent) -> ServiceWorkerEvent {
                 headers: response.headers,
                 body: response.body,
             }),
+            failed,
             message,
         },
         ServiceWorkerHostEvent::ImportScriptsRequested { request_id, specifiers } => {

@@ -1191,7 +1191,7 @@ const SERVICE_WORKER_BOOTSTRAP: &str = r#"
     } catch (error) {
       respondWithAllowed = false;
       currentWaitUntil = null;
-      result.failed = true;
+      result.failed = respondWithCalled;
       result.responded = false;
       result.response = null;
       result.settled = true;
@@ -1305,6 +1305,8 @@ pub enum ServiceWorkerEvent {
         request_url: String,
         /// Response supplied through `respondWith()`, or `None` for pass-through/failure.
         response: Option<ServiceWorkerFetchResponse>,
+        /// True when `respondWith()` was called but failed, producing a network error.
+        failed: bool,
         /// Handler or response-conversion diagnostic. Empty means success or pass-through.
         message: String,
     },
@@ -2992,6 +2994,7 @@ fn poll_fetch(sandbox: &mut dyn Sandbox, pending: &PendingFetch, timeout_ms: u64
                         event_id: pending.event_id,
                         request_url: pending.request_url.clone(),
                         response,
+                        failed: value["failed"].as_bool().unwrap_or(false),
                         message: value["message"].as_str().unwrap_or_default().to_string(),
                     },
                     Err(error) => failed_fetch_event(pending.event_id, pending.request_url.clone(), error.to_string()),
@@ -3338,6 +3341,7 @@ fn failed_fetch_event(event_id: u64, request_url: String, message: String) -> Se
         event_id,
         request_url,
         response: None,
+        failed: true,
         message,
     }
 }
@@ -4494,6 +4498,7 @@ mod tests {
                     headers: vec![("x-sw".into(), "hit".into())],
                     body: "intercepted:client-1".into(),
                 }),
+                failed: false,
                 message: String::new(),
             }
         );
@@ -4532,6 +4537,7 @@ mod tests {
                 event_id: 41,
                 request_url: "https://example.test/app/pass".into(),
                 response: None,
+                failed: false,
                 message: String::new(),
             }
         );
@@ -4615,6 +4621,7 @@ mod tests {
                     headers: vec![("x-cache".into(), "hit".into())],
                     body: "cached-body".into(),
                 }),
+                failed: false,
                 message: String::new(),
             }
         );
@@ -4769,6 +4776,7 @@ mod tests {
                     headers: vec![("x-cache".into(), "put".into())],
                     body: "stored".into(),
                 }),
+                failed: false,
                 message: String::new(),
             }
         );
@@ -4891,6 +4899,7 @@ mod tests {
                     headers: Vec::new(),
                     body: "error".into(),
                 }),
+                failed: false,
                 message: String::new(),
             }
         );
@@ -5075,6 +5084,7 @@ mod tests {
                     headers: Vec::new(),
                     body: "done".into(),
                 }),
+                failed: false,
                 message: String::new(),
             }
         );
@@ -5212,6 +5222,7 @@ mod tests {
                     headers: Vec::new(),
                     body: "true|runtime|true|true".into(),
                 }),
+                failed: false,
                 message: String::new(),
             }
         );
@@ -5377,6 +5388,7 @@ mod tests {
                     headers: Vec::new(),
                     body: "text/plain|alpha|beta".into(),
                 }),
+                failed: false,
                 message: String::new(),
             }
         );
@@ -5418,6 +5430,45 @@ mod tests {
                 message,
                 ..
             } if message.contains("respondWith already called")
+        ));
+    }
+
+    #[test]
+    fn fetch_event_invalid_respond_with_value_fails_fetch() {
+        let mut runtime = ServiceWorkerRuntime::new(test_config()).unwrap();
+        runtime
+            .evaluate(
+                "addEventListener('fetch', event => {
+                   event.respondWith(new Object());
+                 });",
+                "https://example.test/sw.js",
+            )
+            .unwrap();
+        let _ = runtime.recv_timeout(Duration::from_secs(5)).unwrap();
+
+        runtime
+            .dispatch_fetch(
+                49,
+                ServiceWorkerFetchRequest {
+                    url: "https://example.test/app/invalid".into(),
+                    method: "GET".into(),
+                    headers: Vec::new(),
+                    body: None,
+                    client_id: None,
+                    resulting_client_id: None,
+                    referrer: None,
+                },
+            )
+            .unwrap();
+        assert!(matches!(
+            runtime.recv_timeout(Duration::from_secs(5)).unwrap(),
+            ServiceWorkerEvent::FetchSettled {
+                event_id: 49,
+                response: None,
+                failed: true,
+                message,
+                ..
+            } if message.contains("must resolve with a Response")
         ));
     }
 
@@ -5489,6 +5540,7 @@ mod tests {
                 event_id: 51,
                 request_url: "https://example.test/app/task".into(),
                 response: None,
+                failed: false,
                 message: String::new(),
             }
         );
@@ -5531,6 +5583,7 @@ mod tests {
                     headers: Vec::new(),
                     body: "ok".into(),
                 }),
+                failed: false,
                 message: String::new(),
             }
         );

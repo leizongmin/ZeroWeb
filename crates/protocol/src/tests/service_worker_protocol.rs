@@ -559,6 +559,7 @@ fn service_worker_host_fetch_command_and_event_round_trip() {
                 headers: vec![("x-sw".into(), "hit".into())],
                 body: "intercepted".into(),
             }),
+            failed: false,
             message: String::new(),
         },
     };
@@ -1068,6 +1069,7 @@ fn service_worker_host_fetch_command_and_event_round_trip() {
                     headers: Vec::new(),
                     body: String::new(),
                 }),
+                failed: false,
                 message: String::new(),
             },
         }

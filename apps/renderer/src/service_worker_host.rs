@@ -612,6 +612,7 @@ fn host_event(event: ServiceWorkerEvent) -> ServiceWorkerHostEvent {
             event_id,
             request_url,
             response,
+            failed,
             message,
         } => ServiceWorkerHostEvent::FetchSettled {
             event_id,
@@ -623,6 +624,7 @@ fn host_event(event: ServiceWorkerEvent) -> ServiceWorkerHostEvent {
                 headers: response.headers,
                 body: response.body,
             }),
+            failed,
             message,
         },
         ServiceWorkerEvent::CacheStorageRequested { request_id, request } => {
@@ -963,6 +965,7 @@ mod tests {
                 request_url,
                 response: Some(response),
                 message,
+                ..
             } => {
                 assert_eq!(event_id, 22);
                 assert_eq!(request_url, "https://example.test/app/data");
@@ -1044,6 +1047,7 @@ mod tests {
                 request_url,
                 response: Some(response),
                 message,
+                ..
             } => {
                 assert_eq!(event_id, 23);
                 assert_eq!(request_url, "https://example.test/app/cached");
@@ -1213,6 +1217,7 @@ mod tests {
                 request_url,
                 response: Some(response),
                 message,
+                ..
             } => {
                 assert_eq!(event_id, 24);
                 assert_eq!(request_url, "https://example.test/app/stored");
@@ -1369,6 +1374,7 @@ mod tests {
                 request_url,
                 response: Some(response),
                 message,
+                ..
             } => {
                 assert_eq!(event_id, 25);
                 assert_eq!(request_url, "https://example.test/app/delete?version=1");

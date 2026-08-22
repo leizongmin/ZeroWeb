@@ -1630,6 +1630,7 @@ impl ServiceWorkerHostEventParams {
                 request_url,
                 response,
                 message,
+                ..
             } => {
                 if *event_id == 0 || request_url.is_empty() || request_url.len() > MAX_FIELD_BYTES {
                     return Err("Service Worker fetch event is invalid");
@@ -1703,6 +1704,8 @@ pub enum ServiceWorkerHostEvent {
         request_url: String,
         /// Response supplied through `respondWith()`, or `None` for pass-through/failure.
         response: Option<ServiceWorkerFetchResponseWire>,
+        /// True when `respondWith()` was called but failed, producing a network error.
+        failed: bool,
         /// Handler or response-conversion diagnostic. Empty means success or pass-through.
         message: String,
     },

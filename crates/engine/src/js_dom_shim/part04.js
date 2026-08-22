@@ -3226,6 +3226,12 @@
                     String(ceAdded[ci].tagName || '').toUpperCase() === 'IFRAME') {
                   (function(frame) {
                     _defer(function() {
+                      try {
+                        var _zwIframeWin = frame.contentWindow;
+                        if (_zwIframeWin && typeof _zwIframeWin.__zwRunInlineScripts === 'function') {
+                          _zwIframeWin.__zwRunInlineScripts();
+                        }
+                      } catch (_eIframeScript) {}
                       try { frame.dispatchEvent(new globalThis.Event('load')); } catch (_eIframeLoad) {}
                     });
                   })(ceAdded[ci]);

@@ -357,6 +357,8 @@ pub enum ServiceWorkerManagerEvent {
         client_id: Option<String>,
         /// Response supplied through `respondWith()`, or `None` for pass-through/failure.
         response: Option<ServiceWorkerFetchResponse>,
+        /// True when `respondWith()` was called but failed, producing a network error.
+        failed: bool,
         /// Handler or response-conversion diagnostic. Empty means success or pass-through.
         message: String,
     },
@@ -1420,6 +1422,7 @@ impl ServiceWorkerManager {
                     event_id,
                     request_url,
                     response,
+                    failed,
                     message,
                 } => {
                     let pending = self.pending_fetch_events.remove(&(registration_id, event_id));
@@ -1436,6 +1439,7 @@ impl ServiceWorkerManager {
                                 .flatten()
                         }),
                         response,
+                        failed,
                         message,
                     });
                 }
@@ -2621,7 +2625,8 @@ impl ServiceWorkerManager {
             .map(|(_, registration)| registration)
     }
 
-    fn active_registration_for_client(&self, origin: &str, client_id: &str) -> Option<&ServiceWorkerRegistration> {
+    /// Find the active registration controlling a known window client.
+    pub fn active_registration_for_client(&self, origin: &str, client_id: &str) -> Option<&ServiceWorkerRegistration> {
         let client = self.clients.get(client_id)?;
         let client_origin = url::Url::parse(&client.info.url).ok()?.origin().ascii_serialization();
         if client_origin != origin {
@@ -4157,6 +4162,7 @@ mod tests {
                     headers: vec![("x-scope".into(), "app".into())],
                     body: "app:https://example.test/app/data".into(),
                 }),
+                failed: false,
                 message: String::new(),
             }
         );
@@ -4196,6 +4202,7 @@ mod tests {
                     headers: Vec::new(),
                     body: "root".into(),
                 }),
+                failed: false,
                 message: String::new(),
             }
         );
@@ -4257,6 +4264,7 @@ mod tests {
                     headers: Vec::new(),
                     body: "app:client-1".into(),
                 }),
+                failed: false,
                 message: String::new(),
             }
         );
@@ -4316,6 +4324,7 @@ mod tests {
                     headers: vec![("x-cache".into(), "hit".into())],
                     body: "cached-body".into(),
                 }),
+                failed: false,
                 message: String::new(),
             }
         );
@@ -4379,6 +4388,7 @@ mod tests {
                     headers: vec![("x-cache".into(), "put".into())],
                     body: "stored-body".into(),
                 }),
+                failed: false,
                 message: String::new(),
             }
         );
@@ -4460,6 +4470,7 @@ mod tests {
                     headers: Vec::new(),
                     body: "runtime|true|true|true|true|false".into(),
                 }),
+                failed: false,
                 message: String::new(),
             }
         );
@@ -4560,6 +4571,7 @@ mod tests {
                     headers: vec![("vary".into(), "cookies".into())],
                     body: "cookie-body".into(),
                 }),
+                failed: false,
                 message: String::new(),
             }
         );

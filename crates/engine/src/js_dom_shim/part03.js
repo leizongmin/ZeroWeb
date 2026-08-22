@@ -2,20 +2,123 @@
     self.statusText = '';
     self.responseText = '';
     self.response = '';
+    self.responseURL = '';
+    self.responseType = '';
     self.onreadystatechange = null;
     self.onload = null;
     self.onerror = null;
-    self.open = function(_method, _url) { self.readyState = 1; };
-    self.send = function(_body) {
-      self.readyState = 4;
-      self.status = 404;
-      self.statusText = 'Not Found';
-      if (typeof self.onreadystatechange === 'function') self.onreadystatechange();
-      if (typeof self.onload === 'function') self.onload();
+    self.onloadend = null;
+    self._et_listeners = {};
+    self._zwXhrMethod = 'GET';
+    self._zwXhrUrl = '';
+    self._zwXhrHeaders = {};
+    self._zwXhrAborted = false;
+    function fire(type) {
+      if (typeof globalThis.Event === 'function' && typeof self.dispatchEvent === 'function') {
+        try { self.dispatchEvent(new globalThis.Event(type)); return; } catch (_eXhrEvent) {}
+      }
+      var handler = self['on' + type];
+      if (typeof handler === 'function') {
+        try { handler.call(self, { type: type, target: self, currentTarget: self }); } catch (_eXhrHandler) {}
+      }
+    }
+    function changeReadyState(state) {
+      self.readyState = state;
+      fire('readystatechange');
+    }
+    function resolveXhrUrl(url) {
+      if (self._zwXhrBaseUrl && typeof globalThis.URL === 'function') {
+        try { return new globalThis.URL(String(url), self._zwXhrBaseUrl).href; } catch (_eXhrUrl) {}
+      }
+      return _zwResolveFetchUrl(url);
+    }
+    self.open = function(method, url) {
+      self._zwXhrMethod = String(method || 'GET').toUpperCase();
+      self._zwXhrUrl = resolveXhrUrl(url);
+      self._zwXhrAborted = false;
+      changeReadyState(1);
     };
-    self.abort = function() {};
-    self.setRequestHeader = function() {};
-    self.getResponseHeader = function() { return null; };
+    self.send = function(body) {
+      if (self.readyState !== 1) {
+        throw new (globalThis.DOMException || Error)('The object is in an invalid state.', 'InvalidStateError');
+      }
+      var fetchFn = typeof self._zwXhrFetch === 'function' ? self._zwXhrFetch : globalThis.fetch;
+      if (typeof fetchFn !== 'function') {
+        self.status = 0;
+        self.statusText = '';
+        changeReadyState(4);
+        fire('error');
+        fire('loadend');
+        return;
+      }
+      // https://xhr.spec.whatwg.org/#the-send()-method
+      fetchFn(self._zwXhrUrl, { method: self._zwXhrMethod, headers: self._zwXhrHeaders, body: body })
+        .then(function(response) {
+          if (self._zwXhrAborted) return;
+          if (!response || response.status === 0 || response.type === 'error') {
+            self.status = 0;
+            self.statusText = '';
+            self.responseText = '';
+            self.response = '';
+            changeReadyState(4);
+            fire('error');
+            fire('loadend');
+            return;
+          }
+          self.status = response.status | 0;
+          self.statusText = String(response.statusText || '');
+          self.responseURL = String(response.url || self._zwXhrUrl || '');
+          self._zwXhrResponseHeaders = {};
+          if (response.headers && typeof response.headers.forEach === 'function') {
+            response.headers.forEach(function(value, name) {
+              self._zwXhrResponseHeaders[String(name).toLowerCase()] = String(value);
+            });
+          }
+          changeReadyState(2);
+          var textPromise = typeof response.text === 'function'
+            ? response.text()
+            : Promise.resolve(response._bodyText || '');
+          return textPromise.then(function(text) {
+            if (self._zwXhrAborted) return;
+            self.responseText = String(text == null ? '' : text);
+            self.response = self.responseType === '' || self.responseType === 'text'
+              ? self.responseText
+              : self.responseText;
+            changeReadyState(3);
+            changeReadyState(4);
+            fire('load');
+            fire('loadend');
+          });
+        }, function() {
+          if (self._zwXhrAborted) return;
+          self.status = 0;
+          self.statusText = '';
+          self.responseText = '';
+          self.response = '';
+          changeReadyState(4);
+          fire('error');
+          fire('loadend');
+        });
+    };
+    self.abort = function() {
+      self._zwXhrAborted = true;
+      if (self.readyState !== 0 && self.readyState !== 4) {
+        self.status = 0;
+        self.statusText = '';
+        self.responseText = '';
+        self.response = '';
+        changeReadyState(4);
+        fire('abort');
+        fire('loadend');
+      }
+    };
+    self.setRequestHeader = function(name, value) {
+      self._zwXhrHeaders[String(name)] = String(value);
+    };
+    self.getResponseHeader = function(name) {
+      if (!self._zwXhrResponseHeaders || !name) return null;
+      return self._zwXhrResponseHeaders[String(name).toLowerCase()] || null;
+    };
     self.getAllResponseHeaders = function() { return ''; };
   };
 
