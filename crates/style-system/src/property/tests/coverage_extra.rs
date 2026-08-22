@@ -24,8 +24,8 @@ fn test_parse_grid_line_negative() {
 fn test_parse_grid_line_span_various() {
     assert!(matches!(parse_grid_line("span 3"), Some(GridLineValue::Span(3))));
     assert!(matches!(parse_grid_line("span3"), Some(GridLineValue::Span(3))));
-    // span 0 解析为 Span(0)，虽然语义上无意义但解析不拒绝
-    assert!(matches!(parse_grid_line("span 0"), Some(GridLineValue::Span(0))));
+    // CSS Grid span integers must be positive.
+    assert!(parse_grid_line("span 0").is_none());
     // 非数字 span 解析失败
     assert!(parse_grid_line("span abc").is_none());
 }

@@ -59,9 +59,12 @@ pub fn parse_grid_line(value: &str) -> Option<GridLineValue> {
         return Some(GridLineValue::Auto);
     }
     // https://drafts.csswg.org/css-grid-2/#typedef-grid-line
-    // CSS-defined grid-line `span` keyword is ASCII case-insensitive.
+    // CSS-defined grid-line `span` keyword is ASCII case-insensitive; its integer is positive.
     if let Some(span_str) = strip_grid_span_keyword(value) {
         let span: u16 = span_str.trim().parse().ok()?;
+        if span == 0 {
+            return None;
+        }
         return Some(GridLineValue::Span(span));
     }
     if let Ok(line) = value.parse::<i16>() {

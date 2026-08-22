@@ -149,6 +149,7 @@ fn test_property_supported_grid_placement() {
     assert!(is_property_supported("grid-template", "'a ...' 50px / 1fr 1fr"));
 
     assert!(!is_property_supported("grid-column-start", "0"));
+    assert!(!is_property_supported("grid-column-start", "span 0"));
     assert!(!is_property_supported("grid-column-end", "1 / 2"));
     assert!(!is_property_supported("grid-column", "1 / 2 / 3"));
     assert!(!is_property_supported("grid-row", "/ 2"));

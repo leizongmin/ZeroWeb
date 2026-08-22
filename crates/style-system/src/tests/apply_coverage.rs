@@ -505,6 +505,11 @@ fn test_apply_grid_properties() {
     assert!(ok);
 
     let mut style = ComputedStyle::default();
+    assert!(apply_property_value(&mut style, "grid-column-start", "span 2"));
+    assert_eq!(style.grid_column_start, crate::property::GridLineValue::Span(2));
+    assert!(!apply_property_value(&mut style, "grid-column-start", "span 0"));
+    assert_eq!(style.grid_column_start, crate::property::GridLineValue::Span(2));
+
     assert!(apply_property_value(&mut style, "grid-template-columns", "100px\n1fr"));
     assert_eq!(style.grid_template_columns, Some("100px 1fr".to_string()));
     let previous = style.grid_template_columns.clone();
