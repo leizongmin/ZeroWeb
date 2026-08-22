@@ -31,8 +31,8 @@
 > - **持久化**：page/WebView `StorageManager` owner 已支持 CacheStorage per-origin
 >   落盘与跨 WebView 重建读回；Service Worker registration-local CacheStorage 已纳入
 >   active registration persistence snapshot/restore。
-> - **WPT 面**：已接入上游 `cache-storage` window 面基线（11 case / 138 subtest，
->   138 Pass / 0 Fail），扩大覆盖与剩余语义修复继续以该基线为回归锚点。
+> - **WPT 面**：已接入上游 `cache-storage` window 面基线（20 case / 273 subtest，
+>   273 Pass / 0 Fail），扩大覆盖与剩余语义修复继续以该基线为回归锚点。
 
 ---
 
@@ -111,7 +111,7 @@ form-validation——不允许手写 inline 用例替代或充数）。通过率
 - ✅ **缺口 1 — 页面接线**：shim 已有 `caches` 全局与 Cache API 初始 host bridge
 - ✅ **缺口 2 — 持久化**：page/WebView owner per-origin CacheStorage 已落盘；SW
   registration-local CacheStorage 已随 active registration snapshot/restore 验证
-- ✅ **缺口 3 — WPT 基线**：上游 `cache-storage` window 面已导入 11 case / 138 subtest 绿线；扩大覆盖与提升通过率继续推进
+- ✅ **缺口 3 — WPT 基线**：上游 `cache-storage` window 面已导入 20 case / 273 subtest 绿线；扩大覆盖与提升通过率继续推进
 - 🚧 **缺口 4 — Request/Response 集成**：add/addAll 的 fetch→put 链路已接通，Response
   可缓存性剩余 filtered response 矩阵仍待补齐
 

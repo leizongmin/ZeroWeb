@@ -1183,6 +1183,11 @@ const SERVICE_WORKER_BOOTSTRAP: &str = r#"
           throw new DOMException('respondWith called after dispatch', 'InvalidStateError');
         }
         if (respondWithCalled) {
+          result.failed = true;
+          result.responded = false;
+          result.response = null;
+          result.settled = true;
+          result.message = 'respondWith already called';
           throw new DOMException('respondWith already called', 'InvalidStateError');
         }
         respondWithCalled = true;
@@ -1205,12 +1210,13 @@ const SERVICE_WORKER_BOOTSTRAP: &str = r#"
     } catch (error) {
       respondWithAllowed = false;
       currentWaitUntil = null;
-      result.failed = respondWithCalled;
-      result.responded = false;
-      result.response = null;
-      result.settled = true;
-      result.message = String(error && error.message || error);
-      return;
+      if (result.failed || !respondWithCalled) {
+        result.responded = false;
+        result.response = null;
+        result.settled = true;
+        if (!result.message) result.message = String(error && error.message || error);
+        return;
+      }
     }
     currentWaitUntil = null;
     Promise.all(pending).then(function() {
@@ -5490,6 +5496,52 @@ mod tests {
                 ..
             } if message.contains("must resolve with a Response")
         ));
+    }
+
+    #[test]
+    fn fetch_event_throw_after_respond_with_keeps_committed_response() {
+        let mut runtime = ServiceWorkerRuntime::new(test_config()).unwrap();
+        runtime
+            .evaluate(
+                "addEventListener('fetch', event => {
+                   event.respondWith(new Response('intercepted'));
+                   throw new Error('after respondWith');
+                 });",
+                "https://example.test/sw.js",
+            )
+            .unwrap();
+        let _ = runtime.recv_timeout(Duration::from_secs(5)).unwrap();
+
+        runtime
+            .dispatch_fetch(
+                53,
+                ServiceWorkerFetchRequest {
+                    url: "https://example.test/app/throw-after-respond".into(),
+                    method: "GET".into(),
+                    headers: Vec::new(),
+                    body: None,
+                    client_id: None,
+                    resulting_client_id: None,
+                    referrer: None,
+                },
+            )
+            .unwrap();
+        assert_eq!(
+            runtime.recv_timeout(Duration::from_secs(5)).unwrap(),
+            ServiceWorkerEvent::FetchSettled {
+                event_id: 53,
+                request_url: "https://example.test/app/throw-after-respond".into(),
+                response: Some(ServiceWorkerFetchResponse {
+                    status: 200,
+                    status_text: String::new(),
+                    response_type: "default".into(),
+                    headers: Vec::new(),
+                    body: "intercepted".into(),
+                }),
+                failed: false,
+                message: String::new(),
+            }
+        );
     }
 
     #[test]
