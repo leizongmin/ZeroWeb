@@ -2228,6 +2228,131 @@ fn test_fetch_forbidden_headers_r3221_r3222() {
 }
 
 #[test]
+fn test_fetch_response_final_url_and_blob_mime_type() {
+    // https://fetch.spec.whatwg.org/#concept-response-url
+    // https://fetch.spec.whatwg.org/#dom-body-blob
+    // Fetch host 内部 headers 带最终 URL/类型元数据时，Response.url/type 应保真，但内部头不暴露给页面。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new("<html><body></body></html>".to_string()));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("https://example.com/page.html".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+
+    let captured_id: Arc<Mutex<String>> = Arc::new(Mutex::new(String::new()));
+    let cap = Arc::clone(&captured_id);
+    sandbox.register_callback(
+        "__zw_fetch",
+        Box::new(move |args| {
+            if let Some(id) = args.first() {
+                *cap.lock().unwrap() = id.clone();
+            }
+            "ok".to_string()
+        }),
+    );
+
+    sandbox
+        .execute(
+            "fetch('/asset.html').then(async function(r){\
+               var b1 = await r.blob();\
+               r.headers.set('content-type', 'text/plain');\
+               var b2 = await r.blob();\
+               globalThis.__fetchMeta = [\
+                 r.url,\
+                 r.type,\
+                 String(r.headers.get('x-zero-final-url')),\
+                 String(r.headers.get('x-zero-response-type')),\
+                 b1.type,\
+                 b2.type,\
+                 r.clone().url\
+               ].join('|');\
+             });",
+        )
+        .unwrap();
+    let id = captured_id.lock().unwrap().clone();
+    sandbox.resolve_async_callback(
+        &id,
+        "__zwfr:200\u{001f}OK\u{001f}Content-Type\u{001e}text/html\u{001e}X-Zero-Final-URL\u{001e}https://example.com/asset.html\u{001e}X-Zero-Response-Type\u{001e}cors\u{001f}<p>x</p>",
+    );
+    for i in 0..8 {
+        sandbox.execute(&format!("globalThis.__fetchMetaPump = {i};")).unwrap();
+    }
+
+    assert_eq!(
+        sandbox.execute("globalThis.__fetchMeta").unwrap().value,
+        "https://example.com/asset.html|cors|null|null|text/html|text/plain|https://example.com/asset.html"
+    );
+}
+
+#[test]
+fn test_fetch_no_cors_request_from_url_object_is_opaque() {
+    // https://fetch.spec.whatwg.org/#concept-filtered-response-opaque
+    // https://fetch.spec.whatwg.org/#request-class
+    // WPT cache-match passes a URL object through new Request(..., {mode: 'no-cors'}); Request must preserve
+    // the URL object's href and fetch must classify cross-origin no-cors responses as opaque.
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new("<html><body></body></html>".to_string()));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("https://example.com/page.html".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+
+    let captured: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(vec![]));
+    let cap = Arc::clone(&captured);
+    sandbox.register_callback(
+        "__zw_fetch",
+        Box::new(move |args| {
+            let mut got = cap.lock().unwrap();
+            got.push(args.get(1).cloned().unwrap_or_default());
+            got.push(args.get(2).cloned().unwrap_or_default());
+            got.push(args.get(3).cloned().unwrap_or_default());
+            "__zwfr:200\u{001f}OK\u{001f}X-Zero-Final-URL\u{001e}https://remote.example/resource.txt\u{001f}body".to_string()
+        }),
+    );
+
+    sandbox
+        .execute(
+            "var url = new URL('/resource.txt', 'https://remote.example/base/page.html');\
+             var request = new Request(url, { mode: 'no-cors', headers: { 'foo': 'bar' } });\
+             fetch(request).then(function(response) {\
+               globalThis.__opaqueMeta = [request.url, request.mode, response.type, response.url].join('|');\
+             });",
+        )
+        .unwrap();
+    for i in 0..8 {
+        sandbox.execute(&format!("globalThis.__opaquePump = {i};")).unwrap();
+    }
+
+    let got = captured.lock().unwrap().clone();
+    assert_eq!(got.first().map(|s| s.as_str()), Some("GET"));
+    assert_eq!(got.get(1).map(|s| s.as_str()), Some("https://remote.example/resource.txt"));
+    assert!(
+        got.get(2).is_some_and(|headers| headers.contains("foo\u{001e}bar")),
+        "fetch(Request(URL, no-cors)) should preserve request headers"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__opaqueMeta").unwrap().value,
+        "https://remote.example/resource.txt|no-cors|opaque|https://remote.example/resource.txt"
+    );
+}
+
+#[test]
 fn test_request_headers_guard_r3223() {
     // R3223：Headers guard 系统（Fetch §5.1/§5.2/§6.2/§6.3）——request guard 在 fill 前设（§6.3 step 31-32），
     // append/set/delete 写侧阻断禁止请求头（闭合 R3222 已知限①）；response guard 写侧阻断 Set-Cookie（闭合限③）；

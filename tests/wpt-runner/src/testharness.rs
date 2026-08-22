@@ -622,6 +622,10 @@ pub const CACHE_STORAGE_WINDOW_CASES: &[(&str, &[&str])] = &[
         &["resources/test-helpers.js"],
     ),
     (
+        "service-workers/cache-storage/cache-match.https.any.js",
+        &["resources/test-helpers.js", "/common/get-host-info.sub.js"],
+    ),
+    (
         "service-workers/cache-storage/cache-storage-keys.https.any.js",
         &["resources/test-helpers.js"],
     ),
@@ -1125,7 +1129,12 @@ pub fn run_cache_storage_cases(wpt_root: &Path, filter: Option<&str>) -> Vec<(St
             let case_dir = Path::new(path).parent().unwrap_or_else(|| Path::new(""));
             let mut support_sources = Vec::with_capacity(support.len());
             for script in *support {
-                match std::fs::read_to_string(wpt_root.join(case_dir).join(script)) {
+                let support_path = if let Some(root_relative) = script.strip_prefix('/') {
+                    wpt_root.join(root_relative)
+                } else {
+                    wpt_root.join(case_dir).join(script)
+                };
+                match std::fs::read_to_string(support_path) {
                     Ok(source) => support_sources.push((*script, source)),
                     Err(error) => {
                         return (
@@ -1215,8 +1224,10 @@ fn indexeddb_window_wrapper(path: &str, support: &[(&str, &str)], case_source: &
 fn any_js_window_wrapper(path: &str, support: &[(&str, &str)], case_source: &str) -> String {
     let mut source = String::new();
     for (name, script) in support {
+        let script = apply_wpt_substitutions(script);
         source.push_str(&format!("// source: {name}\n{script}\n"));
     }
+    let case_source = apply_wpt_substitutions(case_source);
     source.push_str(&format!("// source: {path}\n{case_source}"));
     let source = source.replace("</script", "<\\/script");
     format!(
@@ -1225,6 +1236,19 @@ fn any_js_window_wrapper(path: &str, support: &[(&str, &str)], case_source: &str
          <script src=\"/resources/testharnessreport.js\"></script>\
          <script>{source}</script>"
     )
+}
+
+fn apply_wpt_substitutions(source: &str) -> String {
+    source
+        .replace("{{host}}", "wpt.test")
+        .replace("{{domains[www1]}}", "www1.wpt.test")
+        .replace("{{domains[www2]}}", "www2.wpt.test")
+        .replace("{{hosts[alt][]}}", "alt.wpt.test")
+        .replace("{{hosts[alt][www2]}}", "www2.alt.wpt.test")
+        .replace("{{ports[http][0]}}", "80")
+        .replace("{{ports[http][1]}}", "8000")
+        .replace("{{ports[https][0]}}", "443")
+        .replace("{{ports[https][1]}}", "8443")
 }
 
 /// Run one canvas testharness case with `canvas-tests.js` inlined.
@@ -1974,7 +1998,7 @@ fn wpt_data_fetch_handler(wpt_root: &std::path::Path) -> Option<zero_engine::fet
             if req.method != "GET" {
                 return Err(format!("method not supported: {}", req.method));
             }
-            let path_part = req.url.strip_prefix("https://wpt.test").unwrap_or(&req.url);
+            let path_part = wpt_url_path(&req.url);
             let path_part = path_part.strip_prefix('/').unwrap_or(path_part);
             let clean = path_part.split(['?', '#']).next().unwrap_or(path_part);
             if clean.is_empty() {
@@ -2004,23 +2028,104 @@ fn wpt_data_fetch_handler(wpt_root: &std::path::Path) -> Option<zero_engine::fet
                 return Ok(zero_engine::fetch_bridge::FetchResponse {
                     status: 200,
                     status_text: "OK".to_string(),
-                    headers: Vec::new(),
+                    headers: vec![("X-Zero-Final-URL".into(), req.url.clone())],
                     body: body.clone(),
                     body_bytes: Some(body.into_bytes()),
                 });
             }
-            match std::fs::read(root.join(clean)) {
-                Ok(bytes) => Ok(zero_engine::fetch_bridge::FetchResponse {
+            if clean == "service-workers/cache-storage/resources/vary.py" {
+                let query = path_part.split_once('?').map(|(_, query)| query).unwrap_or("");
+                let mut headers = wpt_pipe_headers(query);
+                if let Some(vary) = wpt_query_value(query, "vary") {
+                    headers.push(("vary".into(), vary));
+                }
+                headers.push(("X-Zero-Final-URL".into(), req.url.clone()));
+                return Ok(zero_engine::fetch_bridge::FetchResponse {
                     status: 200,
                     status_text: "OK".to_string(),
-                    headers: Vec::new(),
-                    body: String::from_utf8_lossy(&bytes).into_owned(),
-                    body_bytes: Some(bytes),
-                }),
+                    headers,
+                    body: "vary response".to_string(),
+                    body_bytes: Some(b"vary response".to_vec()),
+                });
+            }
+            match std::fs::read(root.join(clean)) {
+                Ok(bytes) => {
+                    let query = path_part.split_once('?').map(|(_, query)| query).unwrap_or("");
+                    let mut headers = wpt_pipe_headers(query);
+                    headers.extend(wpt_static_resource_headers(clean));
+                    headers.push(("X-Zero-Final-URL".into(), req.url.clone()));
+                    Ok(zero_engine::fetch_bridge::FetchResponse {
+                        status: 200,
+                        status_text: "OK".to_string(),
+                        headers,
+                        body: String::from_utf8_lossy(&bytes).into_owned(),
+                        body_bytes: Some(bytes),
+                    })
+                }
                 Err(e) => Err(format!("not found: {clean} ({e})")),
             }
         },
     ))
+}
+
+fn wpt_url_path(url: &str) -> &str {
+    let Some(scheme_index) = url.find("://") else {
+        return url;
+    };
+    let after_scheme = &url[scheme_index + 3..];
+    match after_scheme.find('/') {
+        Some(path_index) => &after_scheme[path_index..],
+        None => "/",
+    }
+}
+
+fn wpt_query_value(query: &str, name: &str) -> Option<String> {
+    query.split('&').find_map(|pair| {
+        let (key, value) = pair.split_once('=').unwrap_or((pair, ""));
+        if key != name {
+            return None;
+        }
+        Some(
+            percent_encoding::percent_decode_str(value)
+                .decode_utf8_lossy()
+                .to_string(),
+        )
+    })
+}
+
+fn wpt_pipe_headers(query: &str) -> Vec<(String, String)> {
+    let Some(pipe) = wpt_query_value(query, "pipe") else {
+        return Vec::new();
+    };
+    pipe.split('|')
+        .filter_map(|command| {
+            let args = command.strip_prefix("header(")?.strip_suffix(')')?;
+            let (name, value) = args.split_once(',')?;
+            Some((
+                percent_encoding::percent_decode_str(name)
+                    .decode_utf8_lossy()
+                    .to_string(),
+                percent_encoding::percent_decode_str(value)
+                    .decode_utf8_lossy()
+                    .to_string(),
+            ))
+        })
+        .collect()
+}
+
+fn wpt_static_resource_headers(path: &str) -> Vec<(String, String)> {
+    let content_type = if path.ends_with(".html") {
+        Some("text/html")
+    } else if path.ends_with(".txt") {
+        Some("text/plain")
+    } else if path.ends_with(".js") {
+        Some("application/javascript")
+    } else {
+        None
+    };
+    content_type
+        .map(|value| vec![("content-type".to_string(), value.to_string())])
+        .unwrap_or_default()
 }
 
 fn run_testharness_html_inner(
@@ -2996,17 +3101,23 @@ async_test(function(test) {
     }
 
     #[test]
-    fn cache_storage_window_manifest_has_six_unique_any_cases() {
+    fn cache_storage_window_manifest_has_seven_unique_any_cases() {
         let unique = CACHE_STORAGE_WINDOW_CASES
             .iter()
             .map(|(path, _)| *path)
             .collect::<std::collections::BTreeSet<_>>();
-        assert_eq!(CACHE_STORAGE_WINDOW_CASES.len(), 6);
-        assert_eq!(unique.len(), 6);
+        assert_eq!(CACHE_STORAGE_WINDOW_CASES.len(), 7);
+        assert_eq!(unique.len(), 7);
         assert!(CACHE_STORAGE_WINDOW_CASES.iter().all(|(path, support)| {
-            path.starts_with("service-workers/cache-storage/")
-                && path.ends_with(".https.any.js")
-                && *support == ["resources/test-helpers.js"]
+            if !path.starts_with("service-workers/cache-storage/") || !path.ends_with(".https.any.js") {
+                return false;
+            }
+            match *path {
+                "service-workers/cache-storage/cache-match.https.any.js" => {
+                    *support == ["resources/test-helpers.js", "/common/get-host-info.sub.js"]
+                }
+                _ => *support == ["resources/test-helpers.js"],
+            }
         }));
     }
 

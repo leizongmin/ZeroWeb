@@ -13,7 +13,7 @@ use zero_storage::{Cache, CacheQueryOptions, CacheRequest, CacheResponse, Storag
 
 const FIELD_SEP: char = '\x1f';
 const HEADER_SEP: char = '\x1e';
-const RESPONSE_PREFIX: &str = "__zwcr:";
+const RESPONSE_PREFIX: &str = "__zwcr2:";
 const BYTES_PREFIX: &str = "__zw_bytes:";
 
 #[derive(Debug, Deserialize)]
@@ -112,6 +112,8 @@ struct CacheQueryOptionsWire {
 
 #[derive(Debug, Deserialize)]
 struct CacheResponseWire {
+    #[serde(default)]
+    url: String,
     status: u16,
     #[serde(default, rename = "statusText")]
     status_text: String,
@@ -549,6 +551,7 @@ impl CacheResponseWire {
         let headers: HashMap<String, String> = decode_headers(&self.headers).into_iter().collect();
         let response_type = normalize_cache_response_type(&self.response_type)?;
         Ok(CacheResponse {
+            url: self.url,
             status: self.status,
             status_text: self.status_text,
             response_type,
@@ -582,10 +585,11 @@ fn cache_response_wire(response: &CacheResponse) -> String {
         Err(_) => encode_body_bytes(&response.body),
     };
     format!(
-        "{RESPONSE_PREFIX}{status}{FIELD_SEP}{status_text}{FIELD_SEP}{response_type}{FIELD_SEP}{headers}{FIELD_SEP}{body}",
+        "{RESPONSE_PREFIX}{status}{FIELD_SEP}{status_text}{FIELD_SEP}{response_type}{FIELD_SEP}{url}{FIELD_SEP}{headers}{FIELD_SEP}{body}",
         status = response.status,
         status_text = response.status_text,
         response_type = response.response_type,
+        url = response.url,
         headers = encode_headers(&headers),
         body = body,
     )
@@ -763,6 +767,7 @@ mod tests {
                 "cache_name": "v1",
                 "request": {"url": "https://example.com/data", "method": "GET"},
                 "response": {
+                    "url": "https://example.com/fetched-data",
                     "status": 201,
                     "statusText": "Created",
                     "type": "basic",
@@ -783,8 +788,47 @@ mod tests {
             }),
         );
         let wire = matched["response"].as_str().unwrap();
-        assert!(wire.starts_with("__zwcr:201\u{1f}Created\u{1f}basic\u{1f}content-type\u{1e}text/plain\u{1f}"));
+        assert!(wire.starts_with(
+            "__zwcr2:201\u{1f}Created\u{1f}basic\u{1f}https://example.com/fetched-data\u{1f}content-type\u{1e}text/plain\u{1f}"
+        ));
         assert!(wire.ends_with("cached body"));
+    }
+
+    #[test]
+    fn cache_storage_handler_preserves_response_url() {
+        let handler = cache_storage_handler(Arc::new(Mutex::new(StorageManager::new())));
+        call(&handler, "https://example.com", json!({"op": "open", "name": "v1"}));
+        call(
+            &handler,
+            "https://example.com",
+            json!({
+                "op": "put",
+                "cache_name": "v1",
+                "request": {"url": "https://example.com/cache-key", "method": "GET"},
+                "response": {
+                    "url": "https://example.com/fetched.txt",
+                    "status": 200,
+                    "statusText": "OK",
+                    "headers": "",
+                    "body": "body"
+                }
+            }),
+        );
+
+        let matched = call(
+            &handler,
+            "https://example.com",
+            json!({
+                "op": "match",
+                "cache_name": "v1",
+                "request": {"url": "https://example.com/cache-key", "method": "GET"}
+            }),
+        );
+        let wire = matched["response"].as_str().unwrap();
+        assert!(
+            wire.starts_with("__zwcr2:200\u{1f}OK\u{1f}default\u{1f}https://example.com/fetched.txt\u{1f}"),
+            "CacheStorage response wire should preserve Response.url: {wire}"
+        );
     }
 
     #[test]

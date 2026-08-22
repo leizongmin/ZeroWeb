@@ -1,8 +1,8 @@
 {
-  "cases": 6,
-  "subtests": 62,
+  "cases": 7,
+  "subtests": 87,
   "status": {
-    "Pass": 62
+    "Pass": 87
   },
   "deterministic": true,
   "results": [
@@ -56,6 +56,136 @@
         },
         {
           "name": "CacheStorage names are DOMStrings not USVStrings",
+          "status": "Pass",
+          "message": null
+        }
+      ]
+    ],
+    [
+      "service-workers/cache-storage/cache-match.https.any.js",
+      [
+        {
+          "name": "Cache.match with no matching entries",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "Cache.match with URL",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "Cache.match with Request",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "Cache.match with multiple cache hits",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "Cache.match with new Request",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "Cache.match with HEAD",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "Cache.match with ignoreSearch option (request with no search parameters)",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "Cache.match with ignoreSearch option (request with search parameter)",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "Cache.match supports ignoreMethod",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "Cache.match supports ignoreVary",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "Cache.match does not support cacheName option",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "Cache.match with URL containing fragment",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "Cache.match with string fragment \"http\" as query",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "Cache.match with responses containing \"Vary\" header",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "Cache.match with Request and Response objects with different URLs",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "Cache.match invoked multiple times for the same Request/Response",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "Cache.match blob should be sliceable",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "Cache.match with POST Request",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "Cache.match with a non-2xx Response",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "Cache.match with a network error Response",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "Cache produces large Responses that can be cloned and read correctly.",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "cors-exposed header should be stored correctly.",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "MIME type should be set from content-header correctly.",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "MIME type should reflect Content-Type headers of response.",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "Cache.match ignores vary headers on opaque response.",
           "status": "Pass",
           "message": null
         }

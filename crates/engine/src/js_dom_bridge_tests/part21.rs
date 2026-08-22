@@ -221,6 +221,7 @@ fn test_cache_api_page_shim_host_roundtrip() {
                 && request.contains(r#""cache_name":"v1""#)
                 && request.contains(r#""cache_id":7"#)
                 && request.contains(r#""url":"https://example.com/data.txt""#)
+                && request.contains(r#""url":"""#)
                 && request.contains(r#""status":201"#)
                 && request.contains(r#""body":"cached text""#)
             {
@@ -230,7 +231,7 @@ fn test_cache_api_page_shim_host_roundtrip() {
                 && request.contains(r#""cache_name":"v1""#)
                 && request.contains(r#""cache_id":7"#)
             {
-                return "__zw_cache_ok:{\"response\":\"__zwcr:201\\u001fCreated\\u001fbasic\\u001fcontent-type\\u001etext/plain\\u001fcached text\"}".to_string();
+                return "__zw_cache_ok:{\"response\":\"__zwcr2:201\\u001fCreated\\u001fbasic\\u001fhttps://example.com/fetched.txt\\u001fcontent-type\\u001etext/plain\\u001fcached text\"}".to_string();
             }
             if request.contains(r#""op":"match_all""#)
                 && request.contains(r#""cache_name":"v1""#)
@@ -300,6 +301,8 @@ fn test_cache_api_page_shim_host_roundtrip() {
                    response.statusText,\
                    response.type,\
                    response.clone().type,\
+                   response.url,\
+                   response.clone().url,\
                    response.headers.get('content-type'),\
                    body\
                  ].join('|');\
@@ -314,7 +317,7 @@ fn test_cache_api_page_shim_host_roundtrip() {
     }
     assert_eq!(
         sandbox.execute("globalThis.__cacheDone").unwrap().value,
-        "true|[object Response]|[object Headers]|1|true|[object Response]|[object Headers]|1|true|[object Request]|[object Headers]|GET|0|201|Created|basic|basic|text/plain|cached text",
+        "true|[object Response]|[object Headers]|1|true|[object Response]|[object Headers]|1|true|[object Request]|[object Headers]|GET|0|201|Created|basic|basic|https://example.com/fetched.txt|https://example.com/fetched.txt|text/plain|cached text",
         "Cache API page shim should round-trip Response through host bridge"
     );
 }

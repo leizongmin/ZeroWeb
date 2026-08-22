@@ -2,7 +2,7 @@
 
 **入口文档**: [../storage-cache-api.md](../storage-cache-api.md)
 **创建日期**: 2026-08-17（goal 拆分 bootstrap）
-**最后更新**: 2026-08-22（M2 CacheStorage window WPT 扩面到 6 case）
+**最后更新**: 2026-08-22（M2 CacheStorage window WPT 扩面到 7 case）
 
 ---
 
@@ -27,11 +27,12 @@ WPT 扩面时发现上游 `simple_entries` 会把 `Response.error()` 作为普�
 因此已按 WPT 调整为允许 `Cache.put(..., Response.error())` 写入并读回 `type == "error"`；
 Service Worker `FetchEvent.respondWith()` 仍保持 200..599 响应结算限制，CacheStorage
 传输层单独允许 status 0 的 error filtered response。
-2026-08-22 已接入 6 个上游 CacheStorage `.any.js` window 面 WPT 基线，WebIDL
+2026-08-22 已接入 7 个上游 CacheStorage `.any.js` window 面 WPT 基线，WebIDL
 brand、缺参 TypeError、`CacheStorage.keys()` 创建顺序、Vary 匹配、delete-dooming
 生命周期、DOMString code-unit name wire、`Cache.matchAll()` 查询矩阵与 `CacheStorage.match()`
-跨 cache/cacheName 查询修复后双跑稳定为 62 subtest / 62 Pass / 0 Fail。持久化、更大范围 WPT
-导入与 `basic`/`cors`/`opaque`/`opaqueredirect` 等剩余 filtered response 生成矩阵仍待后续切片。
+跨 cache/cacheName 查询、`Cache.match()` URL/fragment/opaque Vary/MIME/fetched response URL
+矩阵修复后双跑稳定为 87 subtest / 87 Pass / 0 Fail。持久化、更大范围 WPT 导入与完整
+`basic`/`cors`/`opaque`/`opaqueredirect` filtered response 生成矩阵仍待后续切片。
 
 **与兄弟 goal 的边界**：
 - [storage-indexeddb](../archive/storage-indexeddb.md)（已归档）— IDB 归其管
@@ -48,13 +49,13 @@ brand、缺参 TypeError、`CacheStorage.keys()` 创建顺序、Vary 匹配、de
 - ✅ JS 页面层初始表面：`part07.js` 暴露 `CacheStorage`/`Cache`/`caches`，WebView 页面可
   `open` 后 `put/match/matchAll/delete/keys`，并可 `has/keys/match`
 - ⚠️ 无持久化：内存结构
-- ✅ WPT `cache-storage` window 基线已导入：6 case / 62 subtest，62 Pass / 0 Fail
+- ✅ WPT `cache-storage` window 基线已导入：7 case / 87 subtest，87 Pass / 0 Fail
 - 🚧 add/addAll 的页面 fetch 链路、Cache API 返回对象 brand、缺参 TypeError、
   `CacheStorage.keys()` 创建顺序、Vary 匹配、delete-dooming 与 DOMString name wire
   已完成；`Cache.put` 非 GET/非 HTTP(S)/206/`Vary: *` 可缓存性拒绝、cached
-  `Response.type` 读回保真、`Response.error()` 可缓存读回、`Cache.matchAll()` 与
-  `CacheStorage.match()` 扩面已完成，`basic`/`cors`/`opaque`/`opaqueredirect`
-  等真实 filtered response 生成矩阵未实现
+  `Response.type`/`Response.url` 读回保真、`Response.error()` 可缓存读回、`Cache.matchAll()`、
+  `Cache.match()` 与 `CacheStorage.match()` 扩面已完成，完整 `basic`/`cors`/`opaque`/
+  `opaqueredirect` filtered response 生成矩阵未实现
 
 ## 缺口清单
 
@@ -63,12 +64,12 @@ brand、缺参 TypeError、`CacheStorage.keys()` 创建顺序、Vary 匹配、de
 | C1 | WPT cache-storage 用例覆盖为零 | ✅ M1 window 首批基线已接入 |
 | C2 | 页面 `caches` 全局缺失（零接线） | ✅ M1 初始桥接完成；全 API 语义继续归 C4 |
 | C3 | 无持久化 | ⬜ M3 |
-| C4 | Request/Response 集成（add/addAll/可缓存性） | 🚧 M2 页面 `add/addAll` GET + `Response.ok` 路径、返回对象 brand、缺参 TypeError、Vary 匹配、delete-dooming、DOMString name wire、`Cache.put` 非 GET/非 HTTP(S)/206/`Vary: *` 拒绝、cached `Response.type` 读回保真、`Response.error()` 可缓存读回与 `addAll` 失败不部分落库完成；`basic`/`cors`/`opaque`/`opaqueredirect` 等真实 filtered response 生成矩阵待补 |
+| C4 | Request/Response 集成（add/addAll/可缓存性） | 🚧 M2 页面 `add/addAll` GET + `Response.ok` 路径、返回对象 brand、缺参 TypeError、Vary 匹配、delete-dooming、DOMString name wire、`Cache.put` 非 GET/非 HTTP(S)/206/`Vary: *` 拒绝、cached `Response.type`/`Response.url` 读回保真、`Response.error()` 可缓存读回、opaque response 忽略 Vary 与 `addAll` 失败不部分落库完成；完整 `basic`/`cors`/`opaque`/`opaqueredirect` filtered response 生成矩阵待补 |
 | C5 | Cache.matchAll/Cache.keys 页面桥接 | ✅ M2；`ignoreSearch`/`ignoreMethod`/`ignoreVary` 已接线 |
 
 ## 下一步计划
 
-1. **M2 切片 7**：补 `basic`/`cors`/`opaque`/`opaqueredirect` 等真实 filtered response 生成矩阵
+1. **M2 切片 8**：继续导入 dynamic-server / cross-origin CacheStorage WPT case，补完整 filtered response 生成矩阵
 3. **M3**：per-origin 持久化与跨会话 e2e
 
 **碰撞管理**：开工前先 `git log --since="14 days ago" -- crates/engine/src/js_dom_shim/`
@@ -78,8 +79,8 @@ brand、缺参 TypeError、`CacheStorage.keys()` 创建顺序、Vary 匹配、de
 
 | 里程碑 | 状态 |
 |--------|------|
-| M1 — WPT cache-storage 基线 + caches 骨架 | ✅ 页面骨架 + 6-case window WPT 基线已接入 |
-| M2 — Cache 全 API + 查询语义 | 🚧 `Cache.matchAll()` / `Cache.keys()`、`CacheStorage.match()`、`ignoreSearch`/`ignoreMethod`/`ignoreVary`、页面 `add/addAll` GET fetch→store、返回对象 brand、缺参 TypeError、`CacheStorage.keys()` 创建顺序、delete-dooming、DOMString name wire、`Cache.put` 核心可缓存性拒绝、cached `Response.type` 读回保真、`Response.error()` 可缓存读回与 `addAll` 原子失败已接入；剩余 filtered response 生成与更大 WPT 覆盖待完成 |
+| M1 — WPT cache-storage 基线 + caches 骨架 | ✅ 页面骨架 + 7-case window WPT 基线已接入 |
+| M2 — Cache 全 API + 查询语义 | 🚧 `Cache.matchAll()` / `Cache.keys()`、`Cache.match()`、`CacheStorage.match()`、`ignoreSearch`/`ignoreMethod`/`ignoreVary`、页面 `add/addAll` GET fetch→store、返回对象 brand、缺参 TypeError、`CacheStorage.keys()` 创建顺序、delete-dooming、DOMString name wire、`Cache.put` 核心可缓存性拒绝、cached `Response.type`/`Response.url` 读回保真、`Response.error()` 可缓存读回、opaque response 忽略 Vary 与 `addAll` 原子失败已接入；完整 filtered response 生成与更大 WPT 覆盖待完成 |
 | M3 — 持久化 + 剩余语义收尾 | ⬜ |
 
 ## 验证基线
@@ -169,13 +170,23 @@ brand、缺参 TypeError、`CacheStorage.keys()` 创建顺序、Vary 匹配、de
   - `CARGO_BUILD_JOBS=1 ./target/test-guard --per-proc-mem 4 --total-mem 20 --time-limit 1800 -- cargo test --workspace --jobs 1`：passed
   - 证据：[M2 Cache Response Type Readback](evidence/2026-08-22-m2-cache-response-type-readback.md)
 - 2026-08-22 M2 CacheStorage window WPT 扩面：
-  - 新增 WPT：`cache-matchAll.https.any.js`、`cache-storage-match.https.any.js`
+  - 新增 WPT：`cache-matchAll.https.any.js`、`cache-storage-match.https.any.js`、`cache-match.https.any.js`
   - `./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit 300 -- cargo test -p zero-storage cache_put -- --nocapture`：11 passed
   - `./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit 300 -- cargo test -p zero-engine test_cache_api_page_shim_puts_error_response -- --nocapture`：1 passed
   - `./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit 300 -- cargo test -p zero-page-runtime cache_storage_handler_preserves_error_response_type -- --nocapture`：1 passed
   - `./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit 300 -- cargo test -p zero-protocol service_worker_host_fetch_command_and_event_round_trip -- --nocapture`：1 passed
   - `./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit 300 -- cargo test -p zero-script-sandbox cache_put_sends_error_response_to_host_storage -- --nocapture`：1 passed
   - `./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit 300 -- cargo test -p zero-webview page_cache_api_rejects_uncacheable_put_and_atomic_add_all -- --nocapture`：1 passed
-  - `./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit 900 -- make baseline-wpt-cache-storage OUTPUT=docs/goal/storage-cache-api/evidence/2026-08-22-cache-storage-window-baseline.json SUMMARY=docs/goal/storage-cache-api/evidence/2026-08-22-cache-storage-window-baseline.md`：6 cases / 62 subtests / 62 Pass / 0 Fail，double-run deterministic
+  - `./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit 300 -- cargo test -p zero-storage cache_vary_ignored_for_opaque_response`：1 passed
+  - `./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit 300 -- cargo test -p zero-page-runtime cache_storage_handler_preserves_response_url`：1 passed
+  - `./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit 300 -- cargo test -p zero-engine test_fetch_ --features v8`：7 passed
+  - `./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit 300 -- cargo run -p zero-wpt-runner -- testharness-cache-storage cache-match.https.any.js --wpt-data tests/wpt-runner/wpt-data/.cache-storage-window-root --json`：25 subtests / 25 Pass
+  - `bash tests/wpt-runner/scripts/fetch-cache-storage-window-subset.sh --verify-only`：14 assets matched pinned manifest
+  - `cargo test -p zero-wpt-runner cache_storage_window_manifest -- --nocapture`：1 passed
+  - `./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit 900 -- cargo build --release --bin zero-wpt-runner`：passed
+  - `./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit 900 -- python3 tests/wpt-runner/scripts/run-cache-storage-window-baseline.py --runner ./target/release/zero-wpt-runner --wpt-data tests/wpt-runner/wpt-data/.cache-storage-window-root --output docs/goal/storage-cache-api/evidence/2026-08-22-cache-storage-window-baseline.json --summary docs/goal/storage-cache-api/evidence/2026-08-22-cache-storage-window-baseline.md`：7 cases / 87 subtests / 87 Pass / 0 Fail，double-run deterministic
+  - `cargo fmt --all -- --check`：passed
+  - `./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit 1200 -- cargo clippy --workspace --all-targets -- -D warnings`：passed
+  - `CARGO_BUILD_JOBS=1 ./target/test-guard --per-proc-mem 4 --total-mem 20 --time-limit 1800 -- cargo test --workspace --jobs 1`：passed
   - 证据：[M2 CacheStorage Window WPT Expansion](evidence/2026-08-22-m2-cache-window-expansion.md)
 - 质量门禁：`cargo fmt` + `cargo clippy --workspace --all-targets -- -D warnings` 全过

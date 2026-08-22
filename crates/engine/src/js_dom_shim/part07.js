@@ -38,11 +38,12 @@
   }
 
   function _zwCacheResponseFromWire(raw) {
-    if (typeof raw !== 'string' || (raw.indexOf('__zwcr:') !== 0 && raw.indexOf('__zwfr:') !== 0)) {
+    if (typeof raw !== 'string' || (raw.indexOf('__zwcr2:') !== 0 && raw.indexOf('__zwcr:') !== 0 && raw.indexOf('__zwfr:') !== 0)) {
       throw new TypeError('malformed Cache response');
     }
-    var isCacheResponseWire = raw.indexOf('__zwcr:') === 0;
-    var rest = raw.slice(7);
+    var isCacheResponseWireV2 = raw.indexOf('__zwcr2:') === 0;
+    var isCacheResponseWire = raw.indexOf('__zwcr:') === 0 || isCacheResponseWireV2;
+    var rest = raw.slice(isCacheResponseWireV2 ? 8 : 7);
     var p1 = rest.indexOf('\x1f');
     var p2 = p1 >= 0 ? rest.indexOf('\x1f', p1 + 1) : -1;
     var p3 = p2 >= 0 ? rest.indexOf('\x1f', p2 + 1) : -1;
@@ -50,8 +51,18 @@
     var status = parseInt(rest.slice(0, p1), 10) || 0;
     var statusText = rest.slice(p1 + 1, p2);
     var responseType = 'default';
+    var responseUrl = '';
     var headersStart = p2 + 1;
-    if (isCacheResponseWire) {
+    if (isCacheResponseWireV2) {
+      responseType = rest.slice(p2 + 1, p3) || 'default';
+      headersStart = p3 + 1;
+      var p4 = rest.indexOf('\x1f', headersStart);
+      if (p4 < 0) throw new TypeError('malformed Cache response');
+      responseUrl = rest.slice(headersStart, p4);
+      headersStart = p4 + 1;
+      p3 = rest.indexOf('\x1f', headersStart);
+      if (p3 < 0) throw new TypeError('malformed Cache response');
+    } else if (isCacheResponseWire) {
       responseType = rest.slice(p2 + 1, p3) || 'default';
       headersStart = p3 + 1;
       p3 = rest.indexOf('\x1f', headersStart);
@@ -62,6 +73,7 @@
     var bodyArg = body.indexOf('__zw_bytes:') === 0 ? _zwCacheDecodeBytesPrefix(body) : body;
     var response = new Response(bodyArg, { status: status, statusText: statusText, headers: headers });
     response.type = String(responseType || 'default');
+    response.url = responseUrl;
     return response;
   }
 
@@ -226,6 +238,7 @@
     }
     var bodyIsBytes = response._bodyBytes != null;
     return {
+      url: String(response.url || ''),
       status: response.status | 0,
       statusText: String(response.statusText || ''),
       type: String(response.type || 'default'),

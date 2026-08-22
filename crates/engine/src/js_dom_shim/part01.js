@@ -621,6 +621,18 @@
     }
     return out;
   }
+  function _takeHeaderValue(headers, name) {
+    var ln = String(name).toLowerCase();
+    var found = null;
+    for (var k in headers) {
+      if (!Object.prototype.hasOwnProperty.call(headers, k)) continue;
+      if (String(k).toLowerCase() !== ln) continue;
+      var value = headers[k];
+      found = Array.isArray(value) ? value[value.length - 1] : value;
+      delete headers[k];
+    }
+    return found == null ? '' : String(found);
+  }
   // 旧 / 错误路径：body 为裸文本（status 200）或 `__zw_fetch_error:` 前缀（ok:false）。增 headers:{}（向后兼容）。
   function _makeResponse(body) {
     var ok = typeof body === 'string' && body.indexOf('__zw_fetch_error') !== 0;
@@ -655,12 +667,19 @@
     var headersWire = rest.slice(p2 + 1, p3);
     var body = rest.slice(p3 + 1); // 末字段，可含 \x1f
     var headers = _parseHeadersWire(headersWire);
+    var finalUrl = _takeHeaderValue(headers, 'x-zero-final-url');
+    var responseType = _takeHeaderValue(headers, 'x-zero-response-type') || 'default';
+    _takeHeaderValue(headers, 'x-zero-resource-type');
     // R3021：二进制 response body 经 `__zw_bytes:` csv-decimal wire → Uint8Array（response.blob()/arrayBuffer() 保真）；
     // 文本 body 原样字符串。
     var bodyArg = body.indexOf('__zw_bytes:') === 0 ? _zwDecodeBytesPrefix(body) : body;
     // R2968：经 new Response 构造（fetch 结果 instanceof Response）。字段 shape 与旧 plain object 一致
     //（headers 经 new Response 封装为 Headers 实例，R2977；body getter 同 R2967）。
-    return new Response(bodyArg, { status: status, statusText: statusText, headers: headers });
+    var response = new Response(bodyArg, { status: status, statusText: statusText, headers: headers });
+    // https://fetch.spec.whatwg.org/#concept-response-url
+    response.url = finalUrl;
+    response.type = responseType;
+    return response;
   }
   // 收集 headers 源（Object / [[k,v]] / Headers-like forEach）→ `name\x1evalue\x1e...` wire（空 → ''）。
   function _headersToWire(src) {
@@ -730,6 +749,17 @@
     }
     return origin + '/' + out.join('/');
   }
+  function _zwFetchInputUrl(input) {
+    if (input && typeof input === 'object' && input.url !== undefined) return String(input.url || '');
+    return String(input == null ? '' : input);
+  }
+  function _zwUrlOrigin(url) {
+    try {
+      if (typeof URL === 'function') return new URL(url, _zwCurrentHref()).origin;
+    } catch (_eUrlOrigin) {}
+    var m = String(url).match(/^([A-Za-z][A-Za-z0-9+.-]*:\/\/[^\/?#]*)/);
+    return m ? m[1] : '';
+  }
 
   // R2923 fetch 完整化：`fetch(input, init)` 透传 method/headers/body → host 返 status/headers/body。
   // input = URL 字符串或 Request-like（.url/.method/.headers/.body）；init = { method, headers, body }。
@@ -759,14 +789,16 @@
     globalThis.fetch = function(input, init) {
       init = init || {};
       var isObj = input && typeof input === 'object';
-      var url = _zwResolveFetchUrl(isObj ? String(input.url || '') : String(input));
-      var method = String(init.method || (isObj ? input.method : '') || 'GET').toUpperCase();
-      var headersWire = _headersToWire(init.headers) || (isObj ? _headersToWire(input.headers) : '');
+      var isRequestLike = isObj && input.url !== undefined;
+      var url = _zwResolveFetchUrl(_zwFetchInputUrl(input));
+      var method = String(init.method || (isRequestLike ? input.method : '') || 'GET').toUpperCase();
+      var mode = String(init.mode || (isRequestLike ? input.mode : '') || 'cors');
+      var headersWire = _headersToWire(init.headers) || (isRequestLike ? _headersToWire(input.headers) : '');
       var body = '';
       // R3014/R3015/R3020：body 类型分发——FormData（multipart）/ URLSearchParams（urlencoded）/ Blob（字节）/
       // string（原样）。各专用类型在用户未设 Content-Type 时设默认值（缺省 Content-Type 不覆写用户显式值）。
       // 文本（URLSearchParams/string）经 UTF-8 wire 保真；二进制（FormData multipart / Blob）经 byte-wire 全保真。
-      var rawBody = init.body != null ? init.body : (isObj && input.body != null ? input.body : null);
+      var rawBody = init.body != null ? init.body : (isRequestLike && input.body != null ? input.body : null);
       if (rawBody instanceof FormData) {
         var mp = rawBody._zwMultipart();
         body = _zwEncodeBytesPrefix(mp.body); // R3020：multipart 字节 byte-wire（含二进制文件内容保真）
@@ -804,10 +836,17 @@
         globalThis.__zw_fetch_counter = (globalThis.__zw_fetch_counter | 0) + 1;
         var id = '__zwfid:' + globalThis.__zw_fetch_counter;
         var settled = false;
+        var finishFetch = function(raw) {
+          var response = _makeResponseFromWire(raw);
+          if (mode === 'no-cors' && _zwUrlOrigin(url) !== _zwUrlOrigin(_zwCurrentHref())) {
+            response.type = 'opaque';
+          }
+          return response;
+        };
         globalThis.__zw_pending[id] = function(raw) {
           if (settled) return;
           settled = true;
-          resolve(_makeResponseFromWire(raw));
+          resolve(finishFetch(raw));
         };
         if (signal) {
           signal.addEventListener('abort', function() {
@@ -827,7 +866,7 @@
           if (_isSyncWire && !settled) {
             settled = true;
             delete globalThis.__zw_pending[id];
-            resolve(_makeResponseFromWire(_sync));
+            resolve(finishFetch(_sync));
           }
         } catch (_e) {
           if (!settled) { settled = true; delete globalThis.__zw_pending[id]; }
@@ -872,7 +911,7 @@
     // append/set/delete 写侧阻断（§5.2），仅 getSetCookie 返数组（spec 特例）。
     this.headers._guard = 'response';
     this.type = 'default';
-    this.url = '';
+    this.url = init.url != null ? String(init.url) : '';
     this.redirected = false;
     // R3021：Uint8Array body（二进制 response）→ 存 _bodyBytes，_bodyText = TextDecoder 解码（供 text()）；
     // 字符串/其他 body → _bodyText 原样，_bodyBytes=null（blob()/arrayBuffer() 回落 UTF-8 编码文本）。
@@ -895,7 +934,12 @@
     // R2978/R3021：补全 Response body-consumption 表面（spec：text/json/blob/arrayBuffer/formData）。
     // blob()：body 包成 Blob（二进制 body 用 _bodyBytes 字节保真）；arrayBuffer()：二进制 body 返 _bodyBytes，
     // 文本 body UTF-8 编码；formData()：application/x-www-form-urlencoded 解析。
-    this.blob = function () { return Promise.resolve(new Blob([self._bodyBytes != null ? self._bodyBytes : self._bodyText])); };
+    this.blob = function () {
+      var contentType = self.headers && typeof self.headers.get === 'function'
+        ? (self.headers.get('content-type') || '')
+        : '';
+      return Promise.resolve(new Blob([self._bodyBytes != null ? self._bodyBytes : self._bodyText], { type: contentType }));
+    };
     this.arrayBuffer = function () {
       if (self._bodyBytes != null) {
         var cp = new Uint8Array(self._bodyBytes.length);
@@ -914,6 +958,7 @@
       var bodyArg = self._bodyBytes != null ? self._bodyBytes : self._bodyText;
       var cloned = new Response(bodyArg, { status: self.status, statusText: self.statusText, headers: self.headers });
       cloned.type = self.type;
+      cloned.url = self.url;
       return cloned;
     };
   };
@@ -939,26 +984,27 @@
     if (!(this instanceof Request)) return new Request(input, init);
     init = init || {};
     var isObj = input && typeof input === 'object';
-    var requestUrl = _zwResolveFetchUrl(isObj ? String(input.url || '') : String(input));
+    var isRequestLike = isObj && input.url !== undefined;
+    var requestUrl = _zwResolveFetchUrl(_zwFetchInputUrl(input));
     this.url = requestUrl;
-    this.method = String(init.method || (isObj ? input.method : '') || 'GET').toUpperCase();
+    this.method = String(init.method || (isRequestLike ? input.method : '') || 'GET').toUpperCase();
     // R3223：request guard（Fetch §6.3 step 31-32）——guard 先于 fill 设，append 过滤禁止请求头
     //（Host/Content-Length/Cookie/Sec-*/Proxy-* 等不在 request.headers 暴露；闭合 R3222 已知限①）。
     this.headers = new Headers();
     this.headers._guard = 'request';
-    _fillHeaders(this.headers, init.headers != null ? init.headers : (isObj ? input.headers : null));
-    this.body = init.body != null ? String(init.body) : (isObj && input.body != null ? String(input.body) : null);
-    this.cache = init.cache || 'default';
-    this.mode = init.mode || 'cors';
-    this.redirect = init.redirect || 'follow';
-    this.credentials = init.credentials || 'same-origin';
+    _fillHeaders(this.headers, init.headers != null ? init.headers : (isRequestLike ? input.headers : null));
+    this.body = init.body != null ? String(init.body) : (isRequestLike && input.body != null ? String(input.body) : null);
+    this.cache = init.cache || (isRequestLike ? input.cache : '') || 'default';
+    this.mode = init.mode || (isRequestLike ? input.mode : '') || 'cors';
+    this.redirect = init.redirect || (isRequestLike ? input.redirect : '') || 'follow';
+    this.credentials = init.credentials || (isRequestLike ? input.credentials : '') || 'same-origin';
     // R3045：Request.signal（spec 恒为 AbortSignal，非 null）。init.signal 优先；否则继承 input（Request）的 signal；
     // 否则新建非 aborted AbortSignal。fetch(new Request(url,{signal})) 经此透传 signal 给 R3044 abort 路径。
     // 注：复用同一 signal 对象（非 spec clone 独立）——同 request 多次 fetch 共享 signal，pragmatic（documented）。
     if (typeof AbortSignal === 'function') {
       this.signal = (init.signal instanceof AbortSignal)
         ? init.signal
-        : ((isObj && input.signal instanceof AbortSignal) ? input.signal : new AbortSignal());
+        : ((isRequestLike && input.signal instanceof AbortSignal) ? input.signal : new AbortSignal());
     } else {
       this.signal = null;
     }
@@ -978,7 +1024,16 @@
     this.formData = function () { return Promise.resolve(_zwParseFormUrlencoded(self.body)); };
   };
   globalThis.Request.prototype.clone = function () {
-    return new Request(this.url, { method: this.method, headers: this.headers, body: this.body });
+    return new Request(this.url, {
+      method: this.method,
+      headers: this.headers,
+      body: this.body,
+      cache: this.cache,
+      mode: this.mode,
+      redirect: this.redirect,
+      credentials: this.credentials,
+      signal: this.signal
+    });
   };
   if (typeof Symbol === 'function' && Symbol.toStringTag) {
     Object.defineProperty(globalThis.Request.prototype, Symbol.toStringTag, {

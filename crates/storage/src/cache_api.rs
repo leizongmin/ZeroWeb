@@ -60,6 +60,8 @@ pub struct CacheQueryOptions {
 /// 缓存响应的简化表示。
 #[derive(Debug, Clone, PartialEq)]
 pub struct CacheResponse {
+    /// Response URL associated with the stored response.
+    pub url: String,
     /// 响应状态码。
     pub status: u16,
     /// 响应状态文本。
@@ -76,6 +78,7 @@ impl CacheResponse {
     /// 创建新的响应。
     pub fn new(status: u16, body: Vec<u8>) -> Self {
         Self {
+            url: String::new(),
             status,
             status_text: String::new(),
             response_type: "default".to_string(),
@@ -87,6 +90,7 @@ impl CacheResponse {
     /// 创建 200 OK 响应。
     pub fn ok(body: Vec<u8>) -> Self {
         Self {
+            url: String::new(),
             status: 200,
             status_text: "OK".to_string(),
             response_type: "default".to_string(),
@@ -98,6 +102,12 @@ impl CacheResponse {
     /// 设置响应类型。
     pub fn with_response_type(mut self, response_type: &str) -> Self {
         self.response_type = response_type.to_string();
+        self
+    }
+
+    /// 设置响应 URL。
+    pub fn with_url(mut self, url: &str) -> Self {
+        self.url = url.to_string();
         self
     }
 
@@ -348,6 +358,9 @@ fn cache_vary_matches(
     options: CacheQueryOptions,
 ) -> bool {
     if options.ignore_vary {
+        return true;
+    }
+    if response.response_type.eq_ignore_ascii_case("opaque") {
         return true;
     }
     let Some(vary) = header_value(&response.headers, "vary") else {
@@ -668,6 +681,31 @@ mod tests {
                     },
                 )
                 .is_some()
+        );
+    }
+
+    #[test]
+    fn test_cache_vary_ignored_for_opaque_response() {
+        let mut cache = Cache::new("v1");
+        let stored =
+            CacheRequest::with_method_and_headers("https://example.com/c", "GET", vec![("foo".into(), "bar".into())]);
+        cache
+            .put(
+                stored.clone(),
+                CacheResponse::ok(Vec::new())
+                    .with_response_type("opaque")
+                    .with_header("Vary", "foo"),
+            )
+            .unwrap();
+
+        let query = CacheRequest::with_method_and_headers(
+            "https://example.com/c",
+            "GET",
+            vec![("foo".into(), "CHANGED".into())],
+        );
+        assert!(
+            cache.match_request(&query).is_some(),
+            "Cache.match ignores Vary headers for opaque responses"
         );
     }
 

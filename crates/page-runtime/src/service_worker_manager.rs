@@ -45,11 +45,19 @@ fn service_worker_response_from_cache(
 }
 
 fn cache_response_from_service_worker(response: ServiceWorkerFetchResponse) -> CacheResponse {
+    let mut headers = response.headers;
+    let url = headers
+        .iter()
+        .find(|(name, _)| name.eq_ignore_ascii_case("x-zero-final-url"))
+        .map(|(_, value)| value.clone())
+        .unwrap_or_default();
+    headers.retain(|(name, _)| !name.eq_ignore_ascii_case("x-zero-final-url"));
     CacheResponse {
+        url,
         status: response.status,
         status_text: response.status_text,
         response_type: response.response_type,
-        headers: response.headers.into_iter().collect(),
+        headers: headers.into_iter().collect(),
         body: response.body.into_bytes(),
     }
 }
