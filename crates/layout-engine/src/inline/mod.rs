@@ -4,7 +4,7 @@
 //! Taffy 仅支持 Block/Flex/Grid，行内布局需要自行实现。
 //! 支持文本对齐方式：left、center、right、justify。
 
-// R342：文本度量与估计辅助抽出（2000 行规则 + Phase A 准备），通过 glob 再导出保持 API。
+// R342：文本度量与估计辅助抽出，glob 再导出保持 API。
 mod text_metrics;
 pub use text_metrics::*;
 
@@ -18,23 +18,19 @@ pub(crate) fn content_visibility_enabled() -> bool {
     runtime_flags::content_visibility()
 }
 
-// R830：行内布局核心数据类型抽出（2000 行规则 + Phase A IFC 统一 Phase 5 准备），
-// 通过 glob 再导出保持 `crate::inline::TextRun` 等 API 路径不变（纯移动，零行为变化）。
+// R830：行内布局核心数据类型抽出，glob 再导出保持公开路径。
 mod inline_types;
 pub use inline_types::*;
 
-// Phase A §12.6 step-1：font-metric 桥接（FontLoader → IFC 真实行度量）。
-// 仅 trait + FontLoader 实现 + IFC 可选字段，dormant 默认零回归（step-2 才消费）。
+// Phase A §12.6 step-1：font-metric 桥接，默认 dormant。
 mod font_metrics;
 pub use font_metrics::*;
 
-// Phase 2a step-1：multicol 列碎片化上下文（IFC 把行盒碎片化到列的输入）。
-// 仅数据结构 + IFC dormant 字段，默认零回归（step-2 才消费）。
+// Phase 2a step-1：multicol 列碎片化上下文，默认 dormant。
 mod column_fragmentation;
 pub use column_fragmentation::*;
 
-// Phase 2a step-2：multicol 列碎片化算法（纯函数，零生产调用方，net 0）。
-// step-2 commit 2 在 layout 侧接线后才有生产调用方。
+// Phase 2a step-2：multicol 列碎片化算法，layout 接线后才有生产调用方。
 mod column_fragmentation_flow;
 pub use column_fragmentation_flow::*;
 
@@ -44,7 +40,6 @@ use std::rc::Rc;
 use zero_css_parser::values::{DisplayValue, LengthValue, OverflowValue, PositionValue, VerticalAlignValue};
 
 use zero_dom::{Document, NodeId, NodeKind};
-
 use zero_style_system::{ComputedStyle, TextAutospaceValue, TextTransformValue};
 
 use crate::{NodeIdMap, NodeIdSet};
@@ -72,9 +67,7 @@ pub struct InlineFormattingContext {
     pub no_wrap: bool,
     /// 是否保留空白字符序列（white-space: pre / pre-wrap 时为 true）。
     pub preserve_whitespace: bool,
-    /// 是否在换行符 `\n` 处强制断行（white-space: pre-line：折叠空白序列但保留换行符为
-    /// 强制断行点，CSS Text 3 §4.2）。介于 normal（折叠含 `\n`）与 pre-wrap（保留全部空白）
-    /// 之间：空白序列仍折叠为单空格，但 `\n` 触发强制断行。
+    /// 是否在换行符 `\n` 处强制断行（white-space: pre-line；CSS Text 3 §4.2）。
     pub break_at_newline: bool,
     /// CSS word-break 行为。
     pub word_break: WordBreakMode,

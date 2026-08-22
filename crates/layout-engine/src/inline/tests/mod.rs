@@ -7,5 +7,6 @@ mod edge_cases;
 mod plaintext;
 mod r1975_vertical_ifc_inf_probe;
 mod r2156_inline_box_model_coherence;
+mod r3701_inline_replaced_attr_finite_tests;
 mod text_align;
 mod text_indent;

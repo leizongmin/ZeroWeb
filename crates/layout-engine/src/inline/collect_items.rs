@@ -1,6 +1,13 @@
 // 行内条目收集方法（collect_inline_items）— 从 mod.rs 拆分以控制文件体积
 // （include! 模式，≡ apps/browser/src/app.rs → app_input.rs；零行为/可见性变更）
 impl InlineFormattingContext {
+    fn parse_html_dimension_attr(value: Option<String>) -> f32 {
+        // https://html.spec.whatwg.org/multipage/rendering.html#attributes-for-embedded-content-and-images
+        value.and_then(|v| v.parse::<f32>().ok().filter(|n| n.is_finite()))
+            .unwrap_or(0.0)
+            .max(0.0)
+    }
+
     /// 收集容器中所有行内级内容（文本节点 + inline 元素 + `<br>` 元素），
     /// 从 ComputedStyle 中读取 font-size 和 line-height。
     fn collect_inline_items(
@@ -241,18 +248,10 @@ impl InlineFormattingContext {
                                     "canvas" | "video" | "iframe" | "embed" | "object" | "applet"
                                 ) {
                                     if w <= 0.0 {
-                                        w = elem_data
-                                            .get_attribute("width")
-                                            .and_then(|v| v.parse::<f32>().ok())
-                                            .unwrap_or(0.0)
-                                            .max(0.0);
+                                        w = Self::parse_html_dimension_attr(elem_data.get_attribute("width"));
                                     }
                                     if h <= 0.0 {
-                                        h = elem_data
-                                            .get_attribute("height")
-                                            .and_then(|v| v.parse::<f32>().ok())
-                                            .unwrap_or(0.0)
-                                            .max(0.0);
+                                        h = Self::parse_html_dimension_attr(elem_data.get_attribute("height"));
                                     }
                                 }
                             }
@@ -321,16 +320,8 @@ impl InlineFormattingContext {
                         // 尺寸来源优先级：HTML width/height 属性 → CSS computed width/height →
                         // LayoutBox 预计算尺寸（含百分比解析和固有尺寸回退）。
                         if elem_data.local_name() == "img" {
-                            let mut w = elem_data
-                                .get_attribute("width")
-                                .and_then(|v| v.parse::<f32>().ok())
-                                .unwrap_or(0.0)
-                                .max(0.0);
-                            let mut h = elem_data
-                                .get_attribute("height")
-                                .and_then(|v| v.parse::<f32>().ok())
-                                .unwrap_or(0.0)
-                                .max(0.0);
+                            let mut w = Self::parse_html_dimension_attr(elem_data.get_attribute("width"));
+                            let mut h = Self::parse_html_dimension_attr(elem_data.get_attribute("height"));
                             // HTML 属性不足时，回退到 CSS computed style
                             if w <= 0.0 || h <= 0.0 {
                                 if let Some(s) = styles.get(&child_id) {
