@@ -168,12 +168,22 @@ fn parse_and_expression(input: &str) -> Option<SupportsCondition> {
 /// 解析 not 表达式。
 fn parse_not_expression(input: &str) -> Option<SupportsCondition> {
     let input = input.trim();
-    if let Some(rest) = input.strip_prefix("not ") {
+    if let Some(rest) = strip_not_prefix(input) {
         let cond = parse_primary(rest.trim())?;
         Some(SupportsCondition::Not(Box::new(cond)))
     } else {
         parse_primary(input)
     }
+}
+
+fn strip_not_prefix(input: &str) -> Option<&str> {
+    // https://www.w3.org/TR/css-conditional-3/#supports_condition
+    // CSS keywords are ASCII case-insensitive; `not` still requires a token boundary.
+    let bytes = input.as_bytes();
+    if bytes.len() >= 4 && bytes[..3].eq_ignore_ascii_case(b"not") && bytes[3].is_ascii_whitespace() {
+        return Some(&input[3..]);
+    }
+    None
 }
 
 /// 解析基本条件（括号表达式或 selector()）。
@@ -185,7 +195,7 @@ fn parse_primary(input: &str) -> Option<SupportsCondition> {
     let input = input.trim();
 
     // selector() 函数
-    if let Some(rest) = input.strip_prefix("selector(")
+    if let Some(rest) = strip_function_prefix(input, "selector")
         && let Some(inner) = rest.strip_suffix(')')
     {
         return Some(SupportsCondition::Selector(inner.trim().to_string()));
@@ -217,6 +227,20 @@ fn parse_primary(input: &str) -> Option<SupportsCondition> {
     }
 
     // 裸形式（无括号）→ feature 须在括号内，非法
+    None
+}
+
+fn strip_function_prefix<'a>(input: &'a str, name: &str) -> Option<&'a str> {
+    // https://www.w3.org/TR/css-syntax-3/#function-token-diagram
+    // Function names are ASCII case-insensitive, but whitespace before `(` is not a function token.
+    let prefix_len = name.len() + 1;
+    let bytes = input.as_bytes();
+    if bytes.len() >= prefix_len
+        && bytes[name.len()] == b'('
+        && bytes[..name.len()].eq_ignore_ascii_case(name.as_bytes())
+    {
+        return Some(&input[prefix_len..]);
+    }
     None
 }
 
@@ -264,6 +288,16 @@ mod tests {
     fn test_parse_selector_condition() {
         let cond = parse_supports_condition("selector(.a > .b)").unwrap();
         assert_eq!(cond, SupportsCondition::Selector(".a > .b".to_string()));
+    }
+
+    #[test]
+    fn test_parse_supports_condition_keywords_and_selector_are_case_insensitive() {
+        // https://www.w3.org/TR/css-conditional-3/#typedef-supports-selector-fn
+        let cond = parse_supports_condition("NOT (SELECTOR(.a > .b))").unwrap();
+        assert_eq!(
+            cond,
+            SupportsCondition::Not(Box::new(SupportsCondition::Selector(".a > .b".to_string())))
+        );
     }
 
     #[test]
