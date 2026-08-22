@@ -635,6 +635,22 @@
   // 重建（`_zwNodeIdxGen` 槽写点失效）。上限 512 防爆。
   function _zwMFindRealNode(root, key) {
     if (!root || typeof root !== 'object' || !key) return null;
+    // R168（L2-d3b2）：root 自身命中——**限 detached doc 树根**（`_zwOwnerDetDoc`
+    // 印章 + tag 段一致）：doc 级 body 查询（R161 容器例外走 JSON 往返）的
+    // key.outer 是 host re-parse 序列化，与树根 `_zwMSerialize` 的属性序/转义
+    // 细节可能不一致 → 键 miss → body 产物是 wrapper（D 域）→ 注册与链派发
+    //（C 域树根）身份错位——WPT Event-dispatch-bubbles 的 cloneNode/new
+    // Document 变体缺 body 站（12 vs 14）根因。**元素子树查询不含自身**
+    //（spec descendants-only）——无印章的元素 root 不特判（首版全 tag 命中致
+    // Element-matches/ParentNode 大回归 55F/241F 实证）。
+    try {
+      if (root._zwOwnerDetDoc && root.nodeType === 1) {
+        var kt168 = String(key).split('\x1f')[0];
+        if (kt168 && String(root.nodeName || '').toLowerCase() === kt168) {
+          return root;
+        }
+      }
+    } catch (_e168rk) {}
     var idx = null;
     try {
       idx = root._zwNodeIdx;
@@ -5703,17 +5719,32 @@
     function ensureTree() {
       if (!_tree) {
         _tree = _zwMBuildBodyTree(bodyHtml);
-        // R167（L2-d3b）：树根盖 doc 印章——查询产物归一后消费面沿
-        // ownerDocument 读源 doc（detached doc 的 body 视图对象与 `_tree` 根是
-        // 两个对象，链在树根断——无印章则归一节点回落主 document）。
+        // R167（L2-d3b）/ R168（d3b2）：**树根独占** doc 印章——ownerDocument
+        // accessor 沿 `_zwOwnerDetDoc` 读源 doc（detached doc 的 body 视图对象
+        // 与 `_tree` 根是两个对象，链在树根断——无印章则归一节点回落主
+        // document）；`_zwMFindRealNode` 的 root-hit 特判（doc 级唯一 body
+        // 语义）以同印章限定。**只盖根不盖全树**：子树元素作查询 root 时
+        //（`el.querySelector`——spec descendants-only 不含自身）印章命中会
+        // 返 root 自身（首版全树 stamp 致 ParentNode "got root" 139F 实证）。
+        try { _tree._zwOwnerDetDoc = doc; } catch (_e167st) {}
+        // R168（d3b2）：iframe 文档的 body 属性（`_r159BodyAttrs` 槽——R159 提取
+        // 的原始 attrs 串）落到树根——root-hit 归一后 `querySelector('body')`
+        // 产物是树根（C 域），id/class IDL 反射须与包装容器一致（WPT
+        // ParentNode "Type selector, matching body element" expected id "body"）。
         try {
-          (function stamp167(n) {
-            if (!n || n.nodeType !== 1) return;
-            try { n._zwOwnerDetDoc = doc; } catch (_e167s2) {}
-            var cs = n.childNodes || [];
-            for (var si = 0; si < cs.length; si++) stamp167(cs[si]);
-          })(_tree);
-        } catch (_e167st) {}
+          var ba168 = String(doc._r159BodyAttrs || '');
+          if (ba168) {
+            var ar168 = /([^\s=]+)\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+))/g;
+            var am168;
+            while ((am168 = ar168.exec(ba168))) {
+              var an168 = am168[1];
+              var av168 = am168[2] != null ? am168[2] : (am168[3] != null ? am168[3] : (am168[4] != null ? am168[4] : ''));
+              if (an168 === 'id') { _tree.id = av168; }
+              else if (an168 === 'class') { _tree.className = av168; }
+              _tree.setAttribute(an168, av168);
+            }
+          }
+        } catch (_e168ba) {}
       }
     }
     // detHtml 反映 live 树（_tree 已建则序列化，否则原始 bodyHtml）→ querySelector 与 mutation 一致。
