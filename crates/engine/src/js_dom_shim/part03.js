@@ -5814,6 +5814,9 @@
                   var a = comp.attrs[ai];
                   var v = c.getAttribute ? c.getAttribute(a.name) : null;
                   if (v == null) { clsOk = false; break; }
+                  // R169（d3c）：`[attr]` 无值形态 = 存在性匹配（op null——
+                  // R165 首版落 else 恒 false，启用 gate 后 [attr] 全灭实证）。
+                  if (a.op === null) { continue; }
                   if (a.op === '=') { if (String(v) !== a.value) clsOk = false; }
                   // 其它运算符（~=、|=、^=、$=、*=）留 JSON 往返（host 引擎权威）。
                   else { clsOk = false; }
@@ -5841,11 +5844,14 @@
       if (/^[A-Za-z][\w-]*$/.test(s164) || s164 === '*') {
         comp165 = { tag: s164, id: null, classes: [], attrs: [] };
       } else if (false) {
-        // R165 实验记录：#id / compound 形态首版实测**非中性**——完整 compound
-        // 跨上下文回归（element/fragment identity 依赖 wrapper）；纯 #id 在
-        // duplicate-id 场景与 JSON 往返的首命中 identity 分歧（WPT
-        // `#id-li-duplicate` 断言特定对象）。**回退到 L2-d1 纯 tag 基线**；
-        // compound 待 L2-d3 统一匹配器（nodeInfo 树上下文 + identity 桥）。
+        // R169（L2-d3c 尝试，回退记录）：compound gate 启用实测 runner 环境大回归
+        //（ParentNode 33→908F）——根因 probe 定位：**iframe doc 双工厂**。WPT
+        // Document 上下文 = iframe contentDocument，其树/查询走 part05 iframe
+        // 工厂（host 快照含 iframe 内容）；`_makeDetachedDocument` 的 bodyHtml
+        // 对 iframe 场景恒空（probe 实证 bodyHtml:0）。gate 拦截后 `_tree`
+        // 空 + detHtml 空 → 零命中（沙箱 createHTMLDocument 全命中、runner
+        // iframe 全灭的对照实证）。**d3c 须先统一 iframe doc 与 detached doc
+        // 的树源**（d3 前置项，记 master.md）。
         var mId = /#[A-Za-z_][\w-]*/.exec(s164);
         var mCls = /\.[A-Za-z_][\w-]*/g;
         var mAttr = /\[([A-Za-z_][\w-]*)(?:=("[^"]*"|'[^']*'))?\]/g;
