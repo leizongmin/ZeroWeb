@@ -131,6 +131,52 @@ fn test_container_inline_size_function_inner() {
 }
 
 #[test]
+fn test_container_nested_size_function_name_is_case_insensitive() {
+    // CSS Syntax 3: function-token values preserve source spelling, while CSS ASCII case-insensitive
+    // matching applies to CSS-defined function names.
+    // https://www.w3.org/TR/css-syntax-3/#function-token-diagram
+    let css = "@container (SIZE(width > 300px)) { div { color: blue; } }";
+    let sheet = Parser::parse_stylesheet(css);
+    assert_eq!(sheet.rules.len(), 1);
+    let Rule::Container(container) = &sheet.rules[0] else {
+        panic!("expected @container rule");
+    };
+    assert_eq!(
+        container.condition,
+        ContainerCondition::Size(ContainerSizeCondition {
+            feature: "width".to_string(),
+            value: "300px".to_string(),
+            operator: Some(">".to_string()),
+            range_min: None,
+            range_max: None,
+        })
+    );
+}
+
+#[test]
+fn test_container_nested_inline_size_function_name_is_case_insensitive() {
+    // CSS Syntax 3: function-token values preserve source spelling, while CSS ASCII case-insensitive
+    // matching applies to CSS-defined function names.
+    // https://www.w3.org/TR/css-syntax-3/#function-token-diagram
+    let css = "@container (InLiNe-SiZe(width >= 400px)) { div { color: green; } }";
+    let sheet = Parser::parse_stylesheet(css);
+    assert_eq!(sheet.rules.len(), 1);
+    let Rule::Container(container) = &sheet.rules[0] else {
+        panic!("expected @container rule");
+    };
+    assert_eq!(
+        container.condition,
+        ContainerCondition::InlineSize(ContainerSizeCondition {
+            feature: "width".to_string(),
+            value: "400px".to_string(),
+            operator: Some(">=".to_string()),
+            range_min: None,
+            range_max: None,
+        })
+    );
+}
+
+#[test]
 fn test_container_colon_format_max_width() {
     // max-width: 800px
     let css = "@container (max-width: 800px) { div { color: purple; } }";

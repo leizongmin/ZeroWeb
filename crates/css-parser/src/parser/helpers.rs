@@ -12,16 +12,29 @@ use crate::ast::*;
 pub(super) fn parse_container_condition(text: &str) -> Option<ContainerCondition> {
     let text = text.trim();
 
-    // 检查 size() 或 inline-size() 包装
-    if let Some(inner) = text.strip_prefix("size(").and_then(|s| s.strip_suffix(')')) {
+    if let Some(inner) = strip_container_function_prefix(text, "size").and_then(|s| s.strip_suffix(')')) {
         return Some(ContainerCondition::Size(parse_size_condition(inner.trim())?));
     }
-    if let Some(inner) = text.strip_prefix("inline-size(").and_then(|s| s.strip_suffix(')')) {
+    if let Some(inner) = strip_container_function_prefix(text, "inline-size").and_then(|s| s.strip_suffix(')')) {
         return Some(ContainerCondition::InlineSize(parse_size_condition(inner.trim())?));
     }
 
     // 默认为 Size 条件（裸条件如 `min-width: 400px`）
     Some(ContainerCondition::Size(parse_size_condition(text)?))
+}
+
+fn strip_container_function_prefix<'a>(input: &'a str, name: &str) -> Option<&'a str> {
+    // https://www.w3.org/TR/css-syntax-3/#function-token-diagram
+    // CSS-defined function names are ASCII case-insensitive; whitespace before `(` is not a function token.
+    let prefix_len = name.len() + 1;
+    let bytes = input.as_bytes();
+    if bytes.len() >= prefix_len
+        && bytes[name.len()] == b'('
+        && bytes[..name.len()].eq_ignore_ascii_case(name.as_bytes())
+    {
+        return Some(&input[prefix_len..]);
+    }
+    None
 }
 
 /// 解析尺寸条件。
