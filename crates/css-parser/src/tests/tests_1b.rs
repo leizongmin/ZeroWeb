@@ -531,6 +531,13 @@ fn test_parse_font_style_all() {
 }
 
 #[test]
+fn test_parse_font_style_rejects_non_finite_oblique_angle() {
+    assert_eq!(parse_font_style("oblique 1e999deg"), None);
+    assert_eq!(parse_font_style("oblique -1e999deg"), None);
+    assert_eq!(parse_font_style("oblique NaNdeg"), None);
+}
+
+#[test]
 /// 测试 parse_length 对百分比的处理
 fn test_parse_length_percentage() {
     let result = parse_length("50%");

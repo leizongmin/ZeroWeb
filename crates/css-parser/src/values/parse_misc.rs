@@ -772,7 +772,8 @@ pub fn parse_font_style(value: &str) -> Option<FontStyleValue> {
                 .strip_suffix(')')
                 .unwrap_or(angle_str);
             let angle: f64 = angle_str.trim_end_matches("deg").trim().parse().ok()?;
-            Some(FontStyleValue::Oblique(Some(angle)))
+            // https://drafts.csswg.org/css-values-4/#angles
+            angle.is_finite().then_some(FontStyleValue::Oblique(Some(angle)))
         }
     } else {
         None
