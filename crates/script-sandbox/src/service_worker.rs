@@ -290,7 +290,171 @@ const SERVICE_WORKER_BOOTSTRAP: &str = r#"
   Object.defineProperty(DOMException, 'NETWORK_ERR', {value: 19});
   Object.defineProperty(DOMException.prototype, 'NETWORK_ERR', {value: 19});
 
+  function utf8Encode(value) {
+    const text = String(value);
+    if (typeof TextEncoder === 'function') return new TextEncoder().encode(text);
+    const bytes = [];
+    for (let i = 0; i < text.length; i++) bytes.push(text.charCodeAt(i) & 0xFF);
+    return new Uint8Array(bytes);
+  }
+  function utf8Decode(bytes) {
+    if (typeof TextDecoder === 'function') return new TextDecoder().decode(bytes);
+    let text = '';
+    for (let i = 0; i < bytes.length; i++) text += String.fromCharCode(bytes[i]);
+    return text;
+  }
+  function bodyPartBytes(part) {
+    if (part === undefined || part === null) return new Uint8Array(0);
+    if (typeof part === 'string') return utf8Encode(part);
+    if (part instanceof ArrayBuffer) return new Uint8Array(part);
+    if (part.buffer instanceof ArrayBuffer) {
+      const offset = part.byteOffset || 0;
+      return new Uint8Array(part.buffer.slice(offset, offset + (part.byteLength || 0)));
+    }
+    if (part instanceof Blob) return blobBytes(part);
+    return utf8Encode(String(part));
+  }
+  function blobBytes(blob) {
+    const parts = blob._parts || [];
+    const chunks = [];
+    let total = 0;
+    for (const part of parts) {
+      const bytes = bodyPartBytes(part);
+      chunks.push(bytes);
+      total += bytes.length;
+    }
+    const out = new Uint8Array(total);
+    let offset = 0;
+    for (const bytes of chunks) {
+      out.set(bytes, offset);
+      offset += bytes.length;
+    }
+    return out;
+  }
+  // https://w3c.github.io/FileAPI/#blob
+  class Blob {
+    constructor(parts, options) {
+      this._parts = parts === undefined || parts === null ? [] : Array.from(parts);
+      this.size = this._parts.reduce((sum, part) => sum + bodyPartBytes(part).length, 0);
+      this.type = options && options.type !== undefined ? String(options.type).toLowerCase() : '';
+    }
+    slice(start, end, contentType) {
+      let from = start === undefined ? 0 : Number(start);
+      let to = end === undefined ? this.size : Number(end);
+      if (!Number.isFinite(from)) from = 0;
+      if (!Number.isFinite(to)) to = 0;
+      if (from < 0) from = Math.max(0, this.size + from);
+      if (to < 0) to = Math.max(0, this.size + to);
+      from = Math.min(Math.max(0, from), this.size);
+      to = Math.min(Math.max(0, to), this.size);
+      if (from > to) from = to;
+      return new Blob([blobBytes(this).slice(from, to)], {
+        type: contentType === undefined ? this.type : String(contentType)
+      });
+    }
+    text() {
+      return Promise.resolve(utf8Decode(blobBytes(this)));
+    }
+    arrayBuffer() {
+      const bytes = blobBytes(this);
+      const copy = new Uint8Array(bytes.length);
+      copy.set(bytes);
+      return Promise.resolve(copy);
+    }
+  }
+  Object.defineProperty(Blob.prototype, Symbol.toStringTag, {value: 'Blob'});
+  // https://w3c.github.io/FileAPI/#FileReader-interface
+  class FileReader {
+    constructor() {
+      this.readyState = 0;
+      this.result = null;
+      this.error = null;
+      this.onloadstart = null;
+      this.onprogress = null;
+      this.onload = null;
+      this.onerror = null;
+      this.onabort = null;
+      this.onloadend = null;
+      this._total = 0;
+    }
+    _fire(type, loaded, total) {
+      const event = {
+        type,
+        target: this,
+        lengthComputable: total !== undefined && total >= 0,
+        loaded: loaded || 0,
+        total: total === undefined ? 0 : total
+      };
+      const handler = this['on' + type];
+      if (typeof handler === 'function') handler.call(this, event);
+    }
+    _start(blob) {
+      this.readyState = 1;
+      this.result = null;
+      this.error = null;
+      this._total = blob && blob.size !== undefined ? blob.size : 0;
+      this._fire('loadstart', 0, this._total);
+    }
+    _done(result) {
+      this.readyState = 2;
+      this.result = result;
+      this._fire('progress', this._total, this._total);
+      this._fire('load', this._total, this._total);
+      this._fire('loadend', this._total, this._total);
+    }
+    _fail(error) {
+      this.readyState = 2;
+      this.error = error;
+      this._fire('error', 0, this._total);
+      this._fire('loadend', 0, this._total);
+    }
+    readAsText(blob) {
+      this._start(blob);
+      blob.text().then(result => this._done(result), error => this._fail(error));
+    }
+    readAsArrayBuffer(blob) {
+      this._start(blob);
+      blob.arrayBuffer().then(result => this._done(result), error => this._fail(error));
+    }
+    readAsBinaryString(blob) {
+      this._start(blob);
+      blob.arrayBuffer().then(bytes => {
+        let text = '';
+        for (let i = 0; i < bytes.length; i++) text += String.fromCharCode(bytes[i]);
+        this._done(text);
+      }, error => this._fail(error));
+    }
+    abort() {
+      if (this.readyState === 0 || this.readyState === 2) return;
+      this.readyState = 2;
+      this.result = null;
+      this._fire('abort', 0, this._total);
+      this._fire('loadend', 0, this._total);
+    }
+  }
+  FileReader.EMPTY = 0;
+  FileReader.LOADING = 1;
+  FileReader.DONE = 2;
+  Object.defineProperties(FileReader.prototype, {
+    EMPTY: {value: 0},
+    LOADING: {value: 1},
+    DONE: {value: 2},
+    [Symbol.toStringTag]: {value: 'FileReader'}
+  });
+
   // https://fetch.spec.whatwg.org/#headers-class
+  function normalizeHeaderName(name) {
+    return String(name).toLowerCase().trim();
+  }
+  function isForbiddenResponseHeader(name) {
+    return name === 'set-cookie' || name === 'set-cookie2';
+  }
+  function isInternalResponseHeader(name) {
+    return name === 'x-zero-final-url' || name === 'x-zero-response-type';
+  }
+  function isHiddenResponseHeader(headers, name) {
+    return headers._guard === 'response' && (isForbiddenResponseHeader(name) || isInternalResponseHeader(name));
+  }
   class Headers {
     constructor(init) {
       this._pairs = [];
@@ -312,19 +476,50 @@ const SERVICE_WORKER_BOOTSTRAP: &str = r#"
       if (this._guard === 'immutable') {
         throw new TypeError('Headers are immutable');
       }
-      this._pairs.push([String(name).toLowerCase(), String(value)]);
+      name = normalizeHeaderName(name);
+      if (isHiddenResponseHeader(this, name)) return;
+      this._pairs.push([name, String(value)]);
+    }
+    delete(name) {
+      if (this._guard === 'immutable') {
+        throw new TypeError('Headers are immutable');
+      }
+      name = normalizeHeaderName(name);
+      if (isHiddenResponseHeader(this, name)) return;
+      this._pairs = this._pairs.filter(pair => pair[0] !== name);
     }
     get(name) {
-      name = String(name).toLowerCase();
+      name = normalizeHeaderName(name);
+      if (isHiddenResponseHeader(this, name)) return null;
       const values = this._pairs.filter(pair => pair[0] === name).map(pair => pair[1]);
       return values.length === 0 ? null : values.join(', ');
     }
+    getSetCookie() {
+      return this._pairs.filter(pair => pair[0] === 'set-cookie').map(pair => pair[1]);
+    }
     has(name) {
-      name = String(name).toLowerCase();
+      name = normalizeHeaderName(name);
+      if (isHiddenResponseHeader(this, name)) return false;
       return this._pairs.some(pair => pair[0] === name);
     }
+    set(name, value) {
+      if (this._guard === 'immutable') {
+        throw new TypeError('Headers are immutable');
+      }
+      name = normalizeHeaderName(name);
+      if (isHiddenResponseHeader(this, name)) return;
+      this._pairs = this._pairs.filter(pair => pair[0] !== name);
+      this._pairs.push([name, String(value)]);
+    }
+    forEach(callback, thisArg) {
+      for (const pair of this._pairs) {
+        if (!isHiddenResponseHeader(this, pair[0])) callback.call(thisArg, pair[1], pair[0], this);
+      }
+    }
     entries() {
-      return this._pairs.map(pair => [pair[0], pair[1]])[Symbol.iterator]();
+      return this._pairs
+        .filter(pair => !isHiddenResponseHeader(this, pair[0]))
+        .map(pair => [pair[0], pair[1]])[Symbol.iterator]();
     }
     [Symbol.iterator]() {
       return this.entries();
@@ -404,23 +599,38 @@ const SERVICE_WORKER_BOOTSTRAP: &str = r#"
       this.status = status;
       this.statusText = init.statusText === undefined ? '' : String(init.statusText);
       this.headers = new Headers(init.headers);
+      this.headers._guard = 'response';
       this._body = normalizeBody(body);
       this.bodyUsed = false;
       this.ok = status >= 200 && status <= 299;
       this.type = 'default';
+      this.url = init.url === undefined ? '' : String(init.url);
     }
     text() {
       this.bodyUsed = true;
       return Promise.resolve(this._body);
     }
+    blob() {
+      this.bodyUsed = true;
+      const contentType = this.headers.get('content-type') || '';
+      return Promise.resolve(new Blob([this._body], {type: contentType}));
+    }
+    arrayBuffer() {
+      this.bodyUsed = true;
+      return Promise.resolve(utf8Encode(this._body));
+    }
     clone() {
       if (this.bodyUsed) throw new TypeError('Response body has already been used');
       if (this.type === 'error') return Response.error();
       const cloned = new Response(this._body, {
-        status: this.status,
+        status: this.status === 0 ? 200 : this.status,
         statusText: this.statusText,
-        headers: this.headers
+        headers: this.headers,
+        url: this.url
       });
+      cloned.status = this.status;
+      cloned.statusText = this.statusText;
+      cloned.ok = this.ok;
       cloned.type = this.type;
       return cloned;
     }
@@ -433,6 +643,7 @@ const SERVICE_WORKER_BOOTSTRAP: &str = r#"
       response.bodyUsed = false;
       response.ok = false;
       response.type = 'error';
+      response.url = '';
       return response;
     }
     static _from(value) {
@@ -441,16 +652,48 @@ const SERVICE_WORKER_BOOTSTRAP: &str = r#"
     }
     static _serialize(response) {
       if (response.bodyUsed) throw new TypeError('Response body has already been used');
+      const headers = Array.from(response.headers);
+      if (response.url) headers.push(['x-zero-final-url', response.url]);
       return {
         status: response.status,
         statusText: response.statusText,
         type: response.type || 'default',
-        headers: Array.from(response.headers),
+        headers,
         body: response._body
       };
     }
   }
   Object.defineProperty(Response.prototype, Symbol.toStringTag, {value: 'Response'});
+
+  function takeHeader(headers, name) {
+    const normalized = normalizeHeaderName(name);
+    let found = '';
+    const kept = [];
+    for (const pair of headers._pairs) {
+      if (pair[0] === normalized) found = pair[1];
+      else kept.push(pair);
+    }
+    headers._pairs = kept;
+    return found;
+  }
+  function urlOrigin(url) {
+    try {
+      return new URL(url, globalThis.location && globalThis.location.href ? String(globalThis.location.href) : '').origin;
+    } catch (_error) {
+      const match = String(url).match(/^([A-Za-z][A-Za-z0-9+.-]*:\/\/[^\/?#]*)/);
+      return match ? match[1] : '';
+    }
+  }
+  function applyOpaqueFilter(response) {
+    response.type = 'opaque';
+    response.status = 0;
+    response.statusText = '';
+    response.ok = false;
+    response.headers = new Headers();
+    response.headers._guard = 'response';
+    response._body = '';
+    return response;
+  }
 
   function cacheRequestWire(input) {
     const request = input instanceof Request ? input : new Request(input);
@@ -496,14 +739,26 @@ const SERVICE_WORKER_BOOTSTRAP: &str = r#"
     }
   }
   function cachedResponseFromWire(response) {
-    if (String(response.type || 'default').toLowerCase() === 'error') {
+    const headers = new Headers(response.headers || []);
+    const finalURL = takeHeader(headers, 'x-zero-final-url');
+    const metadataType = takeHeader(headers, 'x-zero-response-type');
+    const responseType = String(metadataType || response.type || 'default').toLowerCase();
+    if (responseType === 'error') {
       return Response.error();
     }
-    return new Response(response.body || '', {
-      status: response.status,
+    const result = new Response(response.body || '', {
+      status: response.status === 0 ? 200 : response.status,
       statusText: response.statusText || '',
-      headers: response.headers || []
+      headers,
+      url: finalURL
     });
+    result.type = responseType;
+    if (response.status === 0 || responseType === 'opaque') {
+      result.status = response.status || 0;
+      result.statusText = response.statusText || '';
+      result.ok = result.status >= 200 && result.status <= 299;
+    }
+    return responseType === 'opaque' ? applyOpaqueFilter(result) : result;
   }
   function cachedRequestFromWire(request) {
     return new Request(request.url, {
@@ -983,6 +1238,8 @@ const SERVICE_WORKER_BOOTSTRAP: &str = r#"
   globalThis.MessageEvent = MessageEvent;
   globalThis.MessagePort = MessagePort;
   globalThis.MessageChannel = MessageChannel;
+  globalThis.Blob = globalThis.Blob || Blob;
+  globalThis.FileReader = globalThis.FileReader || FileReader;
   globalThis.Headers = globalThis.Headers || Headers;
   globalThis.Request = globalThis.Request || Request;
   globalThis.Response = globalThis.Response || Response;
@@ -1050,7 +1307,11 @@ const SERVICE_WORKER_BOOTSTRAP: &str = r#"
       if (!response || response.ok !== true) {
         return Promise.reject(new TypeError(response && response.error || 'Service Worker fetch failed'));
       }
-      return Promise.resolve(cachedResponseFromWire(response.response));
+      const fetchResponse = cachedResponseFromWire(response.response);
+      if (request.mode === 'no-cors' && urlOrigin(request.url) !== urlOrigin(globalThis.location && globalThis.location.href || '')) {
+        applyOpaqueFilter(fetchResponse);
+      }
+      return Promise.resolve(fetchResponse);
     } catch (_error) {
       return Promise.reject(new TypeError('invalid Service Worker fetch response'));
     }
@@ -5800,6 +6061,168 @@ mod tests {
                     response_type: "default".into(),
                     headers: Vec::new(),
                     body: "text/plain|alpha|beta".into(),
+                }),
+                failed: false,
+                message: String::new(),
+            }
+        );
+    }
+
+    #[test]
+    fn worker_global_fetch_preserves_response_metadata_and_blob_surface() {
+        let mut runtime = ServiceWorkerRuntime::new(test_config()).unwrap();
+        runtime
+            .evaluate(
+                "addEventListener('fetch', event => {
+                   event.respondWith((async () => {
+                     const response = await fetch('./asset.html');
+                     const blob = await response.blob();
+                     const sliceText = await new Promise((resolve) => {
+                       const reader = new FileReader();
+                       reader.onloadend = e => resolve(e.target.result);
+                       reader.readAsText(blob.slice(1, 5));
+                     });
+                     return new Response([
+                       response.url,
+                       response.type,
+                       String(response.headers.get('set-cookie')),
+                       response.headers.get('content-type'),
+                       blob.type,
+                       sliceText
+                     ].join('|'));
+                   })());
+                 });",
+                "https://example.test/app/sw.js",
+            )
+            .unwrap();
+        let _ = runtime.recv_timeout(Duration::from_secs(5)).unwrap();
+
+        runtime
+            .dispatch_fetch(
+                54,
+                ServiceWorkerFetchRequest {
+                    url: "https://example.test/app/page".into(),
+                    method: "GET".into(),
+                    headers: Vec::new(),
+                    body: None,
+                    client_id: Some("client-1".into()),
+                    resulting_client_id: None,
+                    referrer: None,
+                },
+            )
+            .unwrap();
+        let ServiceWorkerEvent::FetchRequested { request_id, request } =
+            runtime.recv_timeout(Duration::from_secs(5)).unwrap()
+        else {
+            panic!("missing worker global fetch request");
+        };
+        assert_eq!(request.url, "https://example.test/app/asset.html");
+        runtime
+            .complete_fetch(
+                request_id,
+                Ok(ServiceWorkerFetchResponse {
+                    status: 200,
+                    status_text: "OK".into(),
+                    response_type: "default".into(),
+                    headers: vec![
+                        ("content-type".into(), "text/html".into()),
+                        ("set-cookie".into(), "a=1".into()),
+                        ("x-zero-final-url".into(), "https://example.test/app/asset.html".into()),
+                        ("x-zero-response-type".into(), "cors".into()),
+                    ],
+                    body: "abcdef".into(),
+                }),
+            )
+            .unwrap();
+
+        assert_eq!(
+            runtime.recv_timeout(Duration::from_secs(5)).unwrap(),
+            ServiceWorkerEvent::FetchSettled {
+                event_id: 54,
+                request_url: "https://example.test/app/page".into(),
+                response: Some(ServiceWorkerFetchResponse {
+                    status: 200,
+                    status_text: String::new(),
+                    response_type: "default".into(),
+                    headers: Vec::new(),
+                    body: "https://example.test/app/asset.html|cors|null|text/html|text/html|bcde".into(),
+                }),
+                failed: false,
+                message: String::new(),
+            }
+        );
+    }
+
+    #[test]
+    fn worker_global_fetch_no_cors_cross_origin_returns_opaque_response() {
+        let mut runtime = ServiceWorkerRuntime::new(test_config()).unwrap();
+        runtime
+            .evaluate(
+                "addEventListener('fetch', event => {
+                   event.respondWith(fetch('https://remote.example/data.txt', {mode: 'no-cors'}).then(function(response) {
+                     return new Response([
+                       response.url,
+                       response.type,
+                       response.status,
+                       response.ok,
+                       response.headers.has('vary'),
+                       String(response.headers.get('content-type'))
+                     ].join('|'));
+                   }));
+                 });",
+                "https://example.test/app/sw.js",
+            )
+            .unwrap();
+        let _ = runtime.recv_timeout(Duration::from_secs(5)).unwrap();
+
+        runtime
+            .dispatch_fetch(
+                55,
+                ServiceWorkerFetchRequest {
+                    url: "https://example.test/app/page".into(),
+                    method: "GET".into(),
+                    headers: Vec::new(),
+                    body: None,
+                    client_id: Some("client-1".into()),
+                    resulting_client_id: None,
+                    referrer: None,
+                },
+            )
+            .unwrap();
+        let ServiceWorkerEvent::FetchRequested { request_id, request } =
+            runtime.recv_timeout(Duration::from_secs(5)).unwrap()
+        else {
+            panic!("missing worker global fetch request");
+        };
+        assert_eq!(request.url, "https://remote.example/data.txt");
+        runtime
+            .complete_fetch(
+                request_id,
+                Ok(ServiceWorkerFetchResponse {
+                    status: 200,
+                    status_text: "OK".into(),
+                    response_type: "default".into(),
+                    headers: vec![
+                        ("content-type".into(), "text/plain".into()),
+                        ("vary".into(), "foo".into()),
+                        ("x-zero-final-url".into(), "https://remote.example/data.txt".into()),
+                    ],
+                    body: "hidden".into(),
+                }),
+            )
+            .unwrap();
+
+        assert_eq!(
+            runtime.recv_timeout(Duration::from_secs(5)).unwrap(),
+            ServiceWorkerEvent::FetchSettled {
+                event_id: 55,
+                request_url: "https://example.test/app/page".into(),
+                response: Some(ServiceWorkerFetchResponse {
+                    status: 200,
+                    status_text: String::new(),
+                    response_type: "default".into(),
+                    headers: Vec::new(),
+                    body: "https://remote.example/data.txt|opaque|0|false|false|null".into(),
                 }),
                 failed: false,
                 message: String::new(),

@@ -2,7 +2,7 @@
 
 **版本**: v1.0
 **日期**: 2026-08-17
-**状态**: Active（方案 C RFC 已批准；M1 已完成；M3 控制语义推进中，M2 fetch 门控中）
+**状态**: Active（方案 C RFC 已批准；M1 已完成；M2 fetch/cache 与 M3 控制语义持续推进中）
 **执行模式**: 轻量修复优先（永不停）；遇需用户决策项或深结构方向 → 记入「待用户决策」清单 → 跳过 → 继续其他轻量修复
 **父目标**: `docs/goal/zero-web.md`（Tier 2「Service Worker（基础）」+ M12「Service Worker 基础（注册、fetch 事件拦截、缓存管理）」列项）
 
@@ -30,8 +30,10 @@
 >   installing/waiting/active 字段经 setTimeout(0) 逐态推进）。**但是**：无真实 worker 执行
 >   （register 的 scriptURL **不被下载执行**）、无 fetch 事件拦截、无 install/activate/message
 >   真事件。
-> - **WPT 面**：`tests/wpt-runner/wpt-data/` 无 service-workers 目录，无基线。上游
->   `service-workers` 目录大量用例依赖真实 worker 环境 + iframe + 多客户端语义。
+> - **WPT 面**：已接入 service-workers core runner 34 case / 156 subtest 全绿、
+>   fetch/interception runner 6 case / 10 subtest 全绿，以及 CacheStorage serviceworker
+>   runner 7 case / 94 subtest 全绿；上游 `service-workers` 仍有大量用例依赖更完整的
+>   iframe/多客户端/动态服务器语义，继续按 skip/defer/gated 清单推进。
 
 ---
 
@@ -114,12 +116,15 @@ cache-storage 用例归本目标（兄弟目标只收 window 面）。
   scope 派生 + oncontrollerchange（part02.js）
 - ✅ **Rust 状态机**：service_worker.rs ServiceWorkerRegistry（register/unregister/state/
   scope 匹配）
-- ⚠️ **缺口 1 — 脚本不执行**：register 的 scriptURL 不被下载执行——SW 事件处理器
-  （addEventListener('fetch')）无从注册
-- ⚠️ **缺口 2 — fetch 拦截为零**：scope 内请求完全绕过 SW
-- ⚠️ **缺口 3 — 事件为模拟**：install/activate 经 setTimeout(0) 推进，非真事件
-- ⚠️ **缺口 4 — WPT 覆盖为零**：上游 `service-workers` 未导入，无基线
-- ⚠️ **缺口 5 — 架构未选型**：SW 执行环境（线程/上下文模型）无 RFC——M0 门控项
+- ✅ **缺口 1 — 脚本不执行**：register 的 scriptURL 已经由 browser/WebView owner 真实下载并在
+  Service Worker runtime 中执行
+- 🚧 **缺口 2 — fetch 拦截**：scope 内 fetch 已接入 SW fetch event 的 respondWith/passThrough
+  基础链路，并已和 registration-local CacheStorage 集成；更宽 fetch/cache WPT 基线仍待扩展
+- ✅ **缺口 3 — 事件为模拟**：install/activate 已改为真实 lifecycle event；页面 timer 仅投影
+  manager transition log
+- 🚧 **缺口 4 — WPT 覆盖**：core / fetch / CacheStorage serviceworker runner 已有确定性绿线，
+  但完整 `service-workers` 可执行面与分类报告仍需持续扩展
+- ✅ **缺口 5 — 架构未选型**：SW 执行环境 RFC 已按方案 C 批准并落地
 
 ---
 

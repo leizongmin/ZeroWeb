@@ -2,7 +2,7 @@
 
 **入口文档**: [../storage-cache-api.md](../storage-cache-api.md)
 **创建日期**: 2026-08-17（goal 拆分 bootstrap）
-**最后更新**: 2026-08-23（CacheStorage window wrapper WPT 扩面）
+**最后更新**: 2026-08-23（CacheStorage window wrapper + SW serviceworker baseline 扩面）
 
 ---
 
@@ -60,7 +60,11 @@ Service Worker runtime 已补齐 `Cache.delete()` 与 `CacheStorage.delete()/has
 同一 typed host bridge，entry 删除和命名 cache 删除复用 registration-local
 `zero-storage::CacheStorage`；同时已对齐 worker bootstrap 中 `Response.error().clone()` 的
 error filtered response 保真与 `Cache.delete()` 缺参 TypeError，支撑 service-workers 目标的
-6-case / 68-subtest SW CacheStorage wrapper baseline。
+6-case / 68-subtest SW CacheStorage wrapper baseline。随后 `cache-match.https.html`
+扩面补齐 worker runtime 的最小 Blob/FileReader、cached `Response.url` 往返、response
+guard 隐藏 `Set-Cookie` 与内部 `X-Zero-*` 元数据，以及 cross-origin no-cors opaque
+filtered response 投影，支撑 service-workers 目标的 7-case / 94-subtest SW CacheStorage
+wrapper baseline。
 更大范围 WPT 导入与完整
 `basic`/`cors`/`opaque`/`opaqueredirect` filtered response 生成矩阵仍待后续切片。
 CacheStorage window asset manifest 已补充逐 asset `source_revision`，恢复脚本会按每行
@@ -107,7 +111,7 @@ WPT checkout 状态。
 ## 下一步计划
 
 1. **M2 切片 13**：继续导入 dynamic-server / cross-origin CacheStorage WPT case，补完整 filtered response 生成矩阵
-2. **service-workers 后续**：补 SW cache-storage WPT 验收，持久化能力已由 registration-local snapshot/restore 覆盖
+2. **service-workers 后续**：继续扩展 SW cache-storage / fetch-cache WPT 验收，持久化能力已由 registration-local snapshot/restore 覆盖
 
 **碰撞管理**：开工前先 `git log --since="14 days ago" -- crates/engine/src/js_dom_shim/`
 核对 js-dom 流活跃面。
@@ -339,4 +343,12 @@ WPT checkout 状态。
   - `./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit 600 -- cargo test -p zero-browser service_worker_owner -- --nocapture`：54 passed
   - `./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit 300 -- cargo test -p zero-protocol service_worker_protocol -- --nocapture`：19 passed
   - 证据：[M2 Service Worker Cache Delete And Listing](../service-workers/evidence/2026-08-22-m2-worker-cache-delete-listing.md)
+- 2026-08-23 Service Worker CacheStorage serviceworker `cache-match` WPT 扩面：
+  - 新增 WPT：`service-workers/cache-storage/serviceworker/cache-match.https.html`
+  - `WPT_SOURCE=$HOME/github/others/wpt ./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit 120 -- make fetch-wpt-service-workers-cache-storage-wave`：22 assets restored
+  - `./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit 300 -- make testharness-service-workers-cache-storage FILTER=cache-match.https.html`：26 entries Pass
+  - `./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit 300 -- cargo test -p zero-script-sandbox service_worker::tests::worker_global_fetch_ -- --nocapture`：3 passed
+  - `./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit 360 -- cargo test -p zero-page-runtime service_worker -- --nocapture`：49 passed
+  - `./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit 420 -- make baseline-wpt-service-workers-cache-storage OUTPUT=docs/goal/service-workers/evidence/2026-08-23-m2-cache-storage-serviceworker-baseline.json SUMMARY=docs/goal/service-workers/evidence/2026-08-23-m2-cache-storage-serviceworker-baseline.md`：7 cases / 94 subtests / 94 Pass，double-run deterministic
+  - 证据：[Service Worker CacheStorage WPT Baseline](../service-workers/evidence/2026-08-23-m2-cache-storage-serviceworker-baseline.md)
 - 质量门禁：`cargo fmt` + `cargo clippy --workspace --all-targets -- -D warnings` 全过

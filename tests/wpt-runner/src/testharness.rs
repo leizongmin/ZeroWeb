@@ -793,6 +793,7 @@ pub const SERVICE_WORKER_CACHE_STORAGE_CASES: &[&str] = &[
     "service-workers/cache-storage/serviceworker/cache-keys.https.html",
     "service-workers/cache-storage/serviceworker/cache-matchAll.https.html",
     "service-workers/cache-storage/serviceworker/cache-storage-match.https.html",
+    "service-workers/cache-storage/serviceworker/cache-match.https.html",
 ];
 
 /// WPT subtest status.
@@ -3365,8 +3366,8 @@ async_test(function(test) {
             .iter()
             .copied()
             .collect::<std::collections::BTreeSet<_>>();
-        assert_eq!(SERVICE_WORKER_CACHE_STORAGE_CASES.len(), 6);
-        assert_eq!(unique.len(), 6);
+        assert_eq!(SERVICE_WORKER_CACHE_STORAGE_CASES.len(), 7);
+        assert_eq!(unique.len(), 7);
         assert!(
             SERVICE_WORKER_CACHE_STORAGE_CASES
                 .iter()

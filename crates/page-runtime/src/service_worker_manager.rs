@@ -31,15 +31,19 @@ fn is_service_worker_window_frame_type(frame_type: &str) -> bool {
 fn service_worker_response_from_cache(
     response: &CacheResponse,
 ) -> Result<ServiceWorkerFetchResponse, ServiceWorkerManagerError> {
+    let mut headers: Vec<(String, String)> = response
+        .headers
+        .iter()
+        .map(|(name, value)| (name.clone(), value.clone()))
+        .collect();
+    if !response.url.is_empty() {
+        headers.push(("x-zero-final-url".into(), response.url.clone()));
+    }
     Ok(ServiceWorkerFetchResponse {
         status: response.status,
         status_text: response.status_text.clone(),
         response_type: response.response_type.clone(),
-        headers: response
-            .headers
-            .iter()
-            .map(|(name, value)| (name.clone(), value.clone()))
-            .collect(),
+        headers,
         body: String::from_utf8(response.body.clone()).map_err(|_| {
             ServiceWorkerManagerError::InvalidInput("cached Service Worker response body is not UTF-8".into())
         })?,
