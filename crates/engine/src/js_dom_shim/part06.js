@@ -2150,7 +2150,10 @@
     },
     // `document.createRange()`——新建 Range（R2804，Selection/Range）。详见 `_makeRange`。
     createRange: function () {
-      return _makeRange();
+      // R179：同 new Range() 接 Range.prototype（prototype 方法通道）。
+      var _r179cr = _makeRange();
+      try { Object.setPrototypeOf(_r179cr, globalThis.Range.prototype); } catch (_e179c) {}
+      return _r179cr;
     },
     // `document.createDocumentFragment()`：DocumentFragment（nodeType 11，轻量容器）。
     // 建 fragment（append 子节点经既有 append_child_handle）+ 标记 handle 到 _fragmentHandles
@@ -2807,6 +2810,16 @@
       _detachEventForKey(_elKey('html', null), type, fn);
     }
   };
+  // R179（js-dom M4）：document.implementation 接 DOMImplementation.prototype
+  //（spec 接口方法在 prototype；WPT node-creation-realm 的 `inner.DOMImplementation
+  // .prototype.createDocumentType.call(document.implementation, ...)`——part03 建
+  // 构造器 + 转发，此处把主 document 的 implementation 对象接入原型链）。
+  try {
+    if (globalThis.DOMImplementation && globalThis.DOMImplementation.prototype
+        && globalThis.document.implementation) {
+      Object.setPrototypeOf(globalThis.document.implementation, globalThis.DOMImplementation.prototype);
+    }
+  } catch (_e179w) {}
   globalThis.window = globalThis;
   globalThis.addEventListener = _globalAddEventListener;
   globalThis.removeEventListener = _globalRemoveEventListener;
@@ -3590,7 +3603,41 @@
   globalThis.Selection = function Selection() {};
   // js-dom M4 R42：`new Range()` 返真实 Range 实例（spec Range 有构造器，同 document.createRange()）。
   // 旧空函数 stub → `new Range().setStart` 抛 TypeError（WPT Range-attribute-nodes 等用 new Range()）。
-  globalThis.Range = function Range() { return _makeRange(); };
+  globalThis.Range = function Range() {
+    var r = _makeRange();
+    // R179：实例接 Range.prototype（spec 原型链；WPT node-creation-realm 的
+    // `inner.Range.prototype.cloneContents.call(range)` 形态——旧字面量无原型链，
+    // prototype 方法 undefined）。
+    try { Object.setPrototypeOf(r, globalThis.Range.prototype); } catch (_e179r) {}
+    return r;
+  };
+  // R179：Range.prototype 方法通道——以 _makeRange 产物为模板，把 own 方法挂到
+  // prototype（转发语义：this 的同名 own 方法权威）。document.createRange() 与
+  // new Range() 共用。
+  (function () {
+    try {
+      var proto179 = globalThis.Range.prototype;
+      var template179 = _makeRange();
+      for (var k179 in template179) {
+        if (typeof template179[k179] === 'function'
+            && Object.prototype.hasOwnProperty.call(template179, k179)) {
+          (function (name179) {
+            if (proto179[name179]) return;
+            Object.defineProperty(proto179, name179, {
+              value: function () {
+                if (this == null || typeof this[name179] !== 'function') {
+                  throw new globalThis.TypeError(
+                    "Illegal invocation - method '" + name179 + "' called on incompatible receiver");
+                }
+                return this[name179].apply(this, arguments);
+              },
+              writable: true, configurable: true, enumerable: false,
+            });
+          })(k179);
+        }
+      }
+    } catch (_e179p) {}
+  })();
   // js-dom M4 R42：`StaticRange` 构造器（spec `dom-staticrange`）——读 RangeInit dict（startContainer/
   // startOffset/endContainer/endOffset），属性 readonly，无 setStart/setEnd 等 mutable 方法。
   // WPT StaticRange-constructor：合法容器（Element/Text/PI/Comment）构造 + collapsed 派生 +

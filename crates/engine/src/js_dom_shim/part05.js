@@ -966,6 +966,52 @@
         n = String(n);
         for (var i = el.attributes.length - 1; i >= 0; i--) { if (el.attributes[i].name === n) el.attributes.splice(i, 1); }
       },
+      // R179（js-dom M4）：`attachShadow` 轻量实现（spec `dom-element-attachshadow`
+      // ——工厂元素无 sel/handle 不能走 part04 的 `_attachShadow` handle 容器）。
+      // 返回轻量 shadow root：innerHTML setter 解析文本/注释/元素子（复用
+      // `_zwMBuildBodyTree`），firstChild/lastChild/childNodes 可读——WPT
+      // node-creation-realm 的 adoption 后 `shadow.innerHTML = "text<!--comment-->"`
+      // 断言 firstChild instanceof Text / lastChild instanceof Comment。
+      attachShadow: function (init) {
+        var shadow = {
+          nodeType: 11,
+          nodeName: '#document-fragment',
+          mode: init && init.mode === 'closed' ? 'closed' : 'open',
+          host: el,
+          childNodes: [],
+          get firstChild() { return this.childNodes.length ? this.childNodes[0] : null; },
+          get lastChild() { return this.childNodes.length ? this.childNodes[this.childNodes.length - 1] : null; },
+          hasChildNodes: function () { return this.childNodes.length > 0; },
+          querySelector: function (s) {
+            var a = this.querySelectorAll(s);
+            return a.length ? a[0] : null;
+          },
+          querySelectorAll: function () { return []; },
+        };
+        Object.defineProperty(shadow, 'innerHTML', {
+          configurable: true,
+          get: function () {
+            var out = '';
+            for (var i = 0; i < this.childNodes.length; i++) {
+              var c = this.childNodes[i];
+              if (c.nodeType === 3) out += String(c.data != null ? c.data : '');
+              else if (c.nodeType === 8) out += '<!--' + String(c.data != null ? c.data : '') + '-->';
+              else if (c.nodeType === 1 && typeof c.outerHTML === 'string') out += c.outerHTML;
+            }
+            return out;
+          },
+          set: function (v) {
+            var tree = null;
+            try { tree = _zwMBuildBodyTree(String(v == null ? '' : v)); } catch (_e179s) {}
+            this.childNodes = tree ? tree.childNodes : [];
+            for (var j = 0; j < this.childNodes.length; j++) {
+              try { this.childNodes[j].parentNode = shadow; } catch (_e179p) {}
+            }
+          },
+        });
+        try { el.shadowRoot = shadow.mode === 'open' ? shadow : null; } catch (_e179h) {}
+        return shadow;
+      },
       appendChild: function (c) {
         // R174：与 _zwMEl appendChild 对齐——先从原父摘除（spec dom-node-append-child
         // 的 adopt 步骤），入树清移除标记。
@@ -1261,6 +1307,13 @@
       // "Right-hand side of 'instanceof' is not an object"）。
       NodeList: globalThis.NodeList,
       HTMLCollection: globalThis.HTMLCollection,
+      // R179（js-dom M4）：DOMImplementation / Range 构造器转发（WPT
+      // node-creation-realm 的 `inner.DOMImplementation.prototype.*` /
+      // `inner.Range.prototype.cloneContents` 形态——旧缺转发，inner 侧
+      // undefined.prototype 直接崩）。
+      DOMImplementation: globalThis.DOMImplementation,
+      Range: globalThis.Range,
+      StaticRange: globalThis.StaticRange,
       fetch: iframeFetch,
       XMLHttpRequest: IframeXMLHttpRequest,
       Headers: globalThis.Headers,

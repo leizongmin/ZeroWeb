@@ -423,6 +423,56 @@
       Object.setPrototypeOf(globalThis.Document.prototype, globalThis.Node.prototype);
     }
   } catch (_e) {}
+  // R179（js-dom M4）：`Document.prototype` 的工厂方法转发（spec WebIDL——工厂方法
+  // 在 Document 接口 prototype 上，`method.apply(doc, args)` 以 this 为目标 document
+  // 创建节点；WPT node-creation-realm 的 `inner.Document.prototype[name].apply
+  // (document, args)` 形态——旧 prototype 无这些方法直接 `undefined.apply` 崩 13F
+  // 整簇）。document 对象自身的同名方法保持权威（本转发只补 prototype 通道：
+  // own property 优先命中，零既有行为变化）。
+  // https://dom.spec.whatwg.org/#interface-document
+  ['createElement', 'createElementNS', 'createTextNode', 'createComment',
+   'createProcessingInstruction', 'createDocumentFragment', 'createAttribute',
+   'createAttributeNS', 'createCDATASection', 'createRange', 'importNode',
+   'adoptNode'].forEach(function (_r179m) {
+    try {
+      if (globalThis.Document.prototype && !globalThis.Document.prototype[_r179m]) {
+        Object.defineProperty(globalThis.Document.prototype, _r179m, {
+          value: function () {
+            if (this == null || typeof this[_r179m] !== 'function') {
+              throw new globalThis.TypeError(
+                "Illegal invocation - method '" + _r179m + "' called on incompatible receiver");
+            }
+            return this[_r179m].apply(this, arguments);
+          },
+          writable: true, configurable: true, enumerable: false,
+        });
+      }
+    } catch (_e179m) {}
+  });
+  // R179（js-dom M4）：`DOMImplementation` 构造器 + prototype 工厂转发（spec
+  // `dom-domimplementation`；WPT node-creation-realm 的 `inner.DOMImplementation
+  // .prototype.createDocumentType.call(document.implementation, ...)` 形态——旧
+  // implementation 是匿名对象字面量，无构造器无 prototype，`undefined.prototype` 崩）。
+  // document.implementation 对象在 part06 建后 setPrototypeOf 接到本 prototype
+  //（方法经 prototype 转发到 this——同 Document 工厂转发语义）。
+  globalThis.DOMImplementation = globalThis.DOMImplementation || function DOMImplementation() {};
+  try { globalThis.DOMImplementation.prototype = Object.create(globalThis.Object.prototype); } catch (_e179di) {}
+  ['hasFeature', 'createDocumentType', 'createDocument', 'createHTMLDocument'].forEach(function (_r179i) {
+    try {
+      if (globalThis.DOMImplementation.prototype && !globalThis.DOMImplementation.prototype[_r179i]) {
+        Object.defineProperty(globalThis.DOMImplementation.prototype, _r179i, {
+          value: function () {
+            if (this == null || typeof this[_r179i] !== 'function') {
+              throw new globalThis.TypeError(
+                "Illegal invocation - method '" + _r179i + "' called on incompatible receiver");
+            }
+            return this[_r179i].apply(this, arguments);
+          },
+          writable: true, configurable: true, enumerable: false,
+        });
+      }
+    } catch (_e179i2) {}
+  });
   // js-dom M4：ProcessingInstruction 构造器占位（spec `dom-processinginstruction`，CharacterData : Node 子类）。
   // createProcessingInstruction 返 polyfill Proxy 节点（非构造器真实例），instanceof 恒 false（与
   // HTMLFormElement 占位同语义）；构造器须以 function 存在，使 `x instanceof ProcessingInstruction` 不抛
@@ -5641,9 +5691,9 @@
   }
   // js-dom M4 R81：firstChild/lastChild getter 补齐（文本/注释节点恒 null——WPT Node-textContent
   // 期望 `emptyText.firstChild === null`；undefined ≠ null 断言失败）。
-  function _zwMText(v, parent) { var t = String(v); var n = { nodeType: 3, nodeName: '#text', nodeValue: t, textContent: t, data: t, childNodes: [], children: [], hasChildNodes: function () { return false; }, contains: function (other) { return _zwNodeContains(n, other); }, compareDocumentPosition: function (other) { return _zwCompareDocumentPosition(n, other); }, parentNode: parent || null }; _zwMDefineSiblings(n); Object.defineProperty(n, 'firstChild', { get: function () { return null; }, configurable: true }); Object.defineProperty(n, 'lastChild', { get: function () { return null; }, configurable: true }); Object.defineProperty(n, 'parentElement', { get: function () { var p = n.parentNode; return p && p.nodeType === 1 ? p : null; }, configurable: true }); Object.defineProperty(n, 'length', { get: function () { return n.data.length; }, configurable: true }); Object.defineProperty(n, 'wholeText', { get: function () { var p = n.parentNode; if (!p || !p.childNodes) return n.data; var t2 = ''; var seen = false; for (var i = 0; i < p.childNodes.length; i++) { var c = p.childNodes[i]; if (c === n) seen = true; if (c && c.nodeType === 3) t2 += String(c.data != null ? c.data : ''); } void seen; return t2; }, configurable: true });   try { Object.setPrototypeOf(n, globalThis.Node ? globalThis.Node.prototype : Object.prototype); } catch (_eR117t) {}
+  function _zwMText(v, parent) { var t = String(v); var n = { nodeType: 3, nodeName: '#text', nodeValue: t, textContent: t, data: t, childNodes: [], children: [], hasChildNodes: function () { return false; }, contains: function (other) { return _zwNodeContains(n, other); }, compareDocumentPosition: function (other) { return _zwCompareDocumentPosition(n, other); }, parentNode: parent || null }; _zwMDefineSiblings(n); Object.defineProperty(n, 'firstChild', { get: function () { return null; }, configurable: true }); Object.defineProperty(n, 'lastChild', { get: function () { return null; }, configurable: true }); Object.defineProperty(n, 'parentElement', { get: function () { var p = n.parentNode; return p && p.nodeType === 1 ? p : null; }, configurable: true }); Object.defineProperty(n, 'length', { get: function () { return n.data.length; }, configurable: true }); Object.defineProperty(n, 'wholeText', { get: function () { var p = n.parentNode; if (!p || !p.childNodes) return n.data; var t2 = ''; var seen = false; for (var i = 0; i < p.childNodes.length; i++) { var c = p.childNodes[i]; if (c === n) seen = true; if (c && c.nodeType === 3) t2 += String(c.data != null ? c.data : ''); } void seen; return t2; }, configurable: true });   /* R179：原型链 Text.prototype（spec Text : CharacterData : Node——`x instanceof Text` 断言；WPT node-creation-realm 的 innerHTML 解析子） */ try { Object.setPrototypeOf(n, (globalThis.Text && globalThis.Text.prototype) || (globalThis.Node ? globalThis.Node.prototype : Object.prototype)); } catch (_eR117t) {}
   return n; }
-  function _zwMComment(v, parent) { var t = String(v); var n = { nodeType: 8, nodeName: '#comment', nodeValue: t, textContent: t, data: t, childNodes: [], children: [], hasChildNodes: function () { return false; }, contains: function (other) { return _zwNodeContains(n, other); }, compareDocumentPosition: function (other) { return _zwCompareDocumentPosition(n, other); }, parentNode: parent || null }; _zwMDefineSiblings(n); Object.defineProperty(n, 'firstChild', { get: function () { return null; }, configurable: true }); Object.defineProperty(n, 'lastChild', { get: function () { return null; }, configurable: true }); Object.defineProperty(n, 'parentElement', { get: function () { var p = n.parentNode; return p && p.nodeType === 1 ? p : null; }, configurable: true }); Object.defineProperty(n, 'length', { get: function () { return n.data.length; }, configurable: true }); return n; }
+  function _zwMComment(v, parent) { var t = String(v); var n = { nodeType: 8, nodeName: '#comment', nodeValue: t, textContent: t, data: t, childNodes: [], children: [], hasChildNodes: function () { return false; }, contains: function (other) { return _zwNodeContains(n, other); }, compareDocumentPosition: function (other) { return _zwCompareDocumentPosition(n, other); }, parentNode: parent || null }; _zwMDefineSiblings(n); Object.defineProperty(n, 'firstChild', { get: function () { return null; }, configurable: true }); Object.defineProperty(n, 'lastChild', { get: function () { return null; }, configurable: true }); Object.defineProperty(n, 'parentElement', { get: function () { var p = n.parentNode; return p && p.nodeType === 1 ? p : null; }, configurable: true }); Object.defineProperty(n, 'length', { get: function () { return n.data.length; }, configurable: true }); /* R179：原型链 Comment.prototype（spec Comment : CharacterData : Node——`x instanceof Comment` 断言；WPT node-creation-realm 的 cloneNode/importNode） */ try { if (globalThis.Comment && globalThis.Comment.prototype) Object.setPrototypeOf(n, globalThis.Comment.prototype); } catch (_e179n) {} return n; }
   // 递归建子树：entry = {k:'E',s:sel}/{k:'T',v}/{k:'C',v}（__zw_parse_html_child_nodes）。元素取快照 + 递归子。
   // R123：`<?...?>` 的 bogus comment（data '?…?'——tokenizer 在首个 '>' 结束并保留 '?' 前缀）
   // 转换为 PI 视图节点（nodeType 7）——Chrome「Parse processing instructions in HTML」后
@@ -5909,6 +5959,7 @@
   function _makeDetachedDocument(title) {
     var bodyHtml = '';
     var _tree = null; // R3017：cached mutable body 树（首次 childNodes 访问建，innerHTML setter 失效）
+    var _r179HeadHtml = ''; // R179：createHTMLDocument 的 head/title 段（detHtml 包装层消费）
     function ensureTree() {
       if (!_tree) {
         _tree = _zwMBuildBodyTree(bodyHtml);
@@ -5962,11 +6013,17 @@
       var ba = '';
       try { ha = String(doc._r159HtmlAttrs || '') || ''; } catch (_e159h) {}
       try { ba = String(doc._r159BodyAttrs || '') || ''; } catch (_e159b) {}
+      // R179：head 段（createHTMLDocument 的 `<head><title>…` ——R130 只建
+      // headEl.childNodes 视图，查询面缺 title；`_r179HeadHtml` 并入包装层，
+      // body 视图零变化）。
+      var hh179 = '';
+      try { hh179 = String(_r179HeadHtml || ''); } catch (_e179h) {}
       // R159：html/body 属性恢复到包装层（`<html id="html"><body id="body">`——
       // 查询树保真；普通 detached doc 无槽零变化）。
-      if (ha || ba) {
+      if (ha || ba || hh179) {
         return '<html' + (ha && ha.charAt(0) !== ' ' ? ' ' + ha : ha)
-          + '><body' + (ba && ba.charAt(0) !== ' ' ? ' ' + ba : ba)
+          + '>' + hh179
+          + '<body' + (ba && ba.charAt(0) !== ' ' ? ' ' + ba : ba)
           + '>' + inner + '</body></html>';
       }
       return '<body>' + inner + '</body>';
@@ -6455,6 +6512,13 @@
         }
       } catch (_e130d) {}
       headEl.childNodes.push(_r130TitleEl);
+      // R179 修正：title 段经局部 `_r179HeadHtml` 并入 **detHtml 包装层**（非
+      // bodyHtml——bodyHtml 前置会使 body.childNodes 视图多 head 子，
+      // DOMImplementation-createHTMLDocument 的 `body.childNodes.length === 0` 回归
+      // 7F；且此处在 doc 字面量求值前，doc 尚未赋值）。包装层 `<html><head>…</head>
+      // <body>` 使 `doc.querySelector("title")` 命中且 body 视图不变。
+      _r179HeadHtml = '<head><title>' + String(title).replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;').replace(/>/g, '&gt;') + '</title></head>';
     }
     var doc = {
       nodeType: 9,
@@ -6930,7 +6994,14 @@
           parentNode: null,
           ownerDocument: doc,
         };
-        try { Object.setPrototypeOf(n4, globalThis.Node ? globalThis.Node.prototype : Object.prototype); } catch (_eR117x) {}
+        // R179：原型链接 CDATASection.prototype（spec 接口链 CDATASection : Text :
+        // CharacterData : Node——`x instanceof CDATASection` 需正确链；WPT
+        // node-creation-realm 的 createCDATASection 断言）。
+        try {
+          var _r179cd = globalThis.CDATASection && globalThis.CDATASection.prototype;
+          Object.setPrototypeOf(n4, _r179cd
+            || (globalThis.Node ? globalThis.Node.prototype : Object.prototype));
+        } catch (_eR117x) {}
           return n4;
       },
       // R51：detached doc 的 ProcessingInstruction/Comment 工厂（common.js setupRangeTests
