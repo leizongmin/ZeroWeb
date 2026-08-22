@@ -330,6 +330,9 @@ fn validate_cache_put(request: &CacheRequest, response: &CacheResponse) -> Resul
             "Cache.put request URL must be an HTTP(S) URL".to_string(),
         ));
     }
+    if response.response_type.eq_ignore_ascii_case("opaque") {
+        return Ok(());
+    }
     if response.status == 206 {
         return Err(StorageError::Type(
             "Cache.put cannot store a 206 Partial Content response".to_string(),
@@ -707,6 +710,25 @@ mod tests {
             cache.match_request(&query).is_some(),
             "Cache.match ignores Vary headers for opaque responses"
         );
+    }
+
+    #[test]
+    fn test_cache_put_accepts_opaque_internal_uncacheable_metadata() {
+        let mut cache = Cache::new("v1");
+        let request = CacheRequest::new("https://example.com/opaque");
+        cache
+            .put(
+                request.clone(),
+                CacheResponse::new(206, b"hidden".to_vec())
+                    .with_response_type("opaque")
+                    .with_header("Vary", "*"),
+            )
+            .unwrap();
+
+        let matched = cache.match_request(&request).unwrap();
+        assert_eq!(matched.response_type, "opaque");
+        assert_eq!(matched.status, 206);
+        assert_eq!(matched.body, b"hidden".to_vec());
     }
 
     #[test]

@@ -851,6 +851,98 @@ fn test_cache_api_page_shim_puts_error_response() {
     assert!(calls[1].contains(r#""type":"error""#));
 }
 
+/// Cache.put validates the WebIDL Response argument and keeps opaque filtered
+/// responses cacheable even when their internal response has normally
+/// uncacheable HTTP metadata.
+#[test]
+fn test_cache_api_page_shim_put_response_validation_and_opaque_internal_response() {
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let mut sandbox = V8Sandbox::with_config(zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    })
+    .unwrap();
+    let calls: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
+    let calls_for_callback = calls.clone();
+    sandbox.register_callback(
+        "__zw_cache_storage",
+        Box::new(move |args| {
+            let request = args.first().cloned().unwrap_or_default();
+            calls_for_callback.lock().unwrap().push(request.clone());
+            if request.contains(r#""op":"open""#) {
+                return r#"__zw_cache_ok:{"name":"assets"}"#.to_string();
+            }
+            if request.contains(r#""op":"put""#) {
+                return "__zw_cache_ok:{}".to_string();
+            }
+            "__zw_cache_error:unexpected request".to_string()
+        }),
+    );
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new("<html><body></body></html>".to_string()));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("https://example.com/page.html".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+
+    sandbox
+        .execute(
+            "globalThis.__cachePutValidation = 'pending';\
+             caches.open('assets').then(function (cache) {\
+               var consumed = new Response('consume-me');\
+               var empty = new Response();\
+               var opaque = new Response('hidden');\
+               opaque.type = 'opaque';\
+               opaque.status = 0;\
+               opaque.ok = false;\
+               opaque._bodyText = '';\
+               opaque._bodyNull = true;\
+               opaque._zwOpaqueStatus = 206;\
+               opaque._zwOpaqueStatusText = 'Partial Content';\
+               opaque._zwOpaqueHeaders = new Headers({'Vary': '*'});\
+               opaque._zwOpaqueBodyText = 'hidden';\
+               return Promise.all([\
+                 cache.put('https://example.com/bad.txt', 'not response').then(function () { return 'bad-resolved'; }, function (e) { return e instanceof TypeError ? 'bad-rejected' : 'bad-other'; }),\
+                 cache.put('https://example.com/opaque.txt', opaque).then(function () { return 'opaque-resolved'; }, function (e) { return 'opaque-rejected:' + e.message; }),\
+                 cache.put('https://example.com/consume.txt', consumed).then(function () {\
+                   var readerResult = 'unset';\
+                   try { consumed.body.getReader(); readerResult = 'reader-open'; }\
+                   catch (e) { readerResult = e instanceof TypeError ? 'reader-locked' : 'reader-other'; }\
+                   return 'used:' + String(consumed.bodyUsed) + '/' + readerResult;\
+                 }, function (e) { return 'consume-rejected:' + e.message; }),\
+                 cache.put('https://example.com/empty.txt', empty).then(function () { return 'empty-used:' + String(empty.bodyUsed); }, function (e) { return 'empty-rejected:' + e.message; })\
+               ]);\
+             }).then(function (values) {\
+               globalThis.__cachePutValidation = values.join('|');\
+             }, function (error) {\
+               globalThis.__cachePutValidation = 'outer-error:' + String(error && error.message ? error.message : error);\
+             });",
+        )
+        .unwrap();
+    for i in 0..8 {
+        sandbox.execute(&format!("globalThis.__cachePutValidationPump = {i};")).unwrap();
+    }
+
+    assert_eq!(
+        sandbox.execute("globalThis.__cachePutValidation").unwrap().value,
+        "bad-rejected|opaque-resolved|used:true/reader-locked|empty-used:false"
+    );
+    let calls = calls.lock().unwrap();
+    let put_calls = calls
+        .iter()
+        .filter(|call| call.contains(r#""op":"put""#))
+        .collect::<Vec<_>>();
+    assert_eq!(put_calls.len(), 3);
+    let opaque_put = put_calls
+        .iter()
+        .find(|call| call.contains(r#""type":"opaque""#))
+        .expect("opaque put request should be sent to the host");
+    assert!(opaque_put.contains(r#""status":206"#));
+    assert!(opaque_put.contains(r#""vary\u001e*""#));
+}
+
 /// Cache API shim 在没有宿主 bridge 时应 reject，而不是悬挂 Promise。
 #[test]
 fn test_cache_api_page_shim_rejects_without_host_bridge() {

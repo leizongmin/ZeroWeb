@@ -681,6 +681,66 @@
     response.type = responseType;
     return response;
   }
+  function _zwBytesFromBodyPart(part) {
+    if (part == null) return new Uint8Array(0);
+    if (part instanceof Uint8Array) {
+      var cp = new Uint8Array(part.length);
+      for (var i = 0; i < part.length; i++) cp[i] = part[i];
+      return cp;
+    }
+    if (part instanceof ArrayBuffer) return new Uint8Array(part);
+    if (part.buffer instanceof ArrayBuffer) {
+      var off = part.byteOffset || 0;
+      return new Uint8Array(part.buffer.slice(off, off + (part.byteLength || 0)));
+    }
+    if (typeof Blob === 'function' && part instanceof Blob && part._parts) return _zwBytesFromBodyParts(part._parts);
+    return _zw_utf8_encode(String(part));
+  }
+  function _zwBytesFromBodyParts(parts) {
+    var chunks = [];
+    var total = 0;
+    for (var i = 0; i < parts.length; i++) {
+      var bytes = _zwBytesFromBodyPart(parts[i]);
+      chunks.push(bytes);
+      total += bytes.length;
+    }
+    var out = new Uint8Array(total);
+    var offset = 0;
+    for (var j = 0; j < chunks.length; j++) {
+      out.set(chunks[j], offset);
+      offset += chunks[j].length;
+    }
+    return out;
+  }
+  function _zwBodyBytesAndContentType(body, headers) {
+    if (typeof Blob === 'function' && body instanceof Blob) {
+      if (headers && typeof headers.has === 'function' && typeof headers.set === 'function' && !headers.has('content-type') && body.type) {
+        headers.set('content-type', body.type);
+      }
+      return _zwBytesFromBodyPart(body);
+    }
+    if (typeof FormData === 'function' && body instanceof FormData) {
+      var multipart = body._zwMultipart();
+      if (headers && typeof headers.has === 'function' && typeof headers.set === 'function' && !headers.has('content-type')) {
+        headers.set('content-type', multipart.contentType);
+      }
+      return multipart.body;
+    }
+    return null;
+  }
+  function _zwMarkBodyUsed(target) {
+    if (!target._bodyNull) target._bodyUsed = true;
+  }
+  function _zwCreateBodyStream(target) {
+    var source = target._bodyBytes != null ? target._bodyBytes : target._bodyText;
+    var stream = _bodyToStream(source);
+    var originalGetReader = stream.getReader;
+    stream.getReader = function () {
+      _zwMarkBodyUsed(target);
+      return originalGetReader.apply(stream, arguments);
+    };
+    return stream;
+  }
   // 收集 headers 源（Object / [[k,v]] / Headers-like forEach）→ `name\x1evalue\x1e...` wire（空 → ''）。
   function _headersToWire(src) {
     if (!src) return '';
@@ -839,7 +899,20 @@
         var finishFetch = function(raw) {
           var response = _makeResponseFromWire(raw);
           if (mode === 'no-cors' && _zwUrlOrigin(url) !== _zwUrlOrigin(_zwCurrentHref())) {
+            response._zwOpaqueStatus = response.status;
+            response._zwOpaqueStatusText = response.statusText;
+            response._zwOpaqueHeaders = response.headers;
+            response._zwOpaqueBodyText = response._bodyText;
+            response._zwOpaqueBodyBytes = response._bodyBytes;
             response.type = 'opaque';
+            response.status = 0;
+            response.statusText = '';
+            response.ok = false;
+            response.headers = new Headers();
+            response.headers._guard = 'response';
+            response._bodyText = '';
+            response._bodyBytes = null;
+            response._bodyNull = true;
           }
           return response;
         };
@@ -913,11 +986,16 @@
     this.type = 'default';
     this.url = init.url != null ? String(init.url) : '';
     this.redirected = false;
+    this._bodyUsed = false;
+    this._bodyNull = body == null;
     // R3021：Uint8Array body（二进制 response）→ 存 _bodyBytes，_bodyText = TextDecoder 解码（供 text()）；
     // 字符串/其他 body → _bodyText 原样，_bodyBytes=null（blob()/arrayBuffer() 回落 UTF-8 编码文本）。
     if (body instanceof Uint8Array) {
       this._bodyBytes = body;
       this._bodyText = new TextDecoder().decode(body);
+    } else if ((typeof Blob === 'function' && body instanceof Blob) || (typeof FormData === 'function' && body instanceof FormData)) {
+      this._bodyBytes = _zwBodyBytesAndContentType(body, this.headers);
+      this._bodyText = new TextDecoder().decode(this._bodyBytes);
     } else {
       this._bodyBytes = null;
       this._bodyText = body == null ? '' : String(body);
@@ -926,21 +1004,27 @@
     // body 为 ReadableStream（lazy，单 chunk + close，复用 _bodyToStream）。二进制 body 时 chunk 为 _bodyBytes
     // 字节；文本 body 同 R2967（UTF-8 文本 chunk）。
     Object.defineProperty(this, 'body', {
-      get: function () { if (!self._bs) self._bs = _bodyToStream(self._bodyBytes != null ? self._bodyBytes : self._bodyText); return self._bs; },
+      get: function () { if (self._bodyNull) return null; if (!self._bs) self._bs = _zwCreateBodyStream(self); return self._bs; },
       configurable: true
     });
-    this.text = function () { return Promise.resolve(self._bodyText); };
-    this.json = function () { return Promise.resolve(JSON.parse(self._bodyText)); };
+    Object.defineProperty(this, 'bodyUsed', {
+      get: function () { return !!self._bodyUsed; },
+      configurable: true
+    });
+    this.text = function () { _zwMarkBodyUsed(self); return Promise.resolve(self._bodyText); };
+    this.json = function () { _zwMarkBodyUsed(self); return Promise.resolve(JSON.parse(self._bodyText)); };
     // R2978/R3021：补全 Response body-consumption 表面（spec：text/json/blob/arrayBuffer/formData）。
     // blob()：body 包成 Blob（二进制 body 用 _bodyBytes 字节保真）；arrayBuffer()：二进制 body 返 _bodyBytes，
     // 文本 body UTF-8 编码；formData()：application/x-www-form-urlencoded 解析。
     this.blob = function () {
+      _zwMarkBodyUsed(self);
       var contentType = self.headers && typeof self.headers.get === 'function'
         ? (self.headers.get('content-type') || '')
         : '';
       return Promise.resolve(new Blob([self._bodyBytes != null ? self._bodyBytes : self._bodyText], { type: contentType }));
     };
     this.arrayBuffer = function () {
+      _zwMarkBodyUsed(self);
       if (self._bodyBytes != null) {
         var cp = new Uint8Array(self._bodyBytes.length);
         for (var j = 0; j < self._bodyBytes.length; j++) cp[j] = self._bodyBytes[j];
@@ -951,7 +1035,7 @@
       for (var k = 0; k < bytes.length; k++) arr[k] = bytes[k];
       return Promise.resolve(arr);
     };
-    this.formData = function () { return Promise.resolve(_zwParseFormUrlencoded(self._bodyText)); };
+    this.formData = function () { _zwMarkBodyUsed(self); return Promise.resolve(_zwParseFormUrlencoded(self._bodyText)); };
     this.clone = function () {
       // R3021：二进制 body（_bodyBytes）须克隆保真，否则 clone().arrayBuffer() 退化为文本 UTF-8 编码。
       if (self.type === 'error') return globalThis.Response.error();
@@ -959,6 +1043,12 @@
       var cloned = new Response(bodyArg, { status: self.status, statusText: self.statusText, headers: self.headers });
       cloned.type = self.type;
       cloned.url = self.url;
+      cloned._zwOpaqueStatus = self._zwOpaqueStatus;
+      cloned._zwOpaqueStatusText = self._zwOpaqueStatusText;
+      cloned._zwOpaqueHeaders = self._zwOpaqueHeaders;
+      cloned._zwOpaqueBodyText = self._zwOpaqueBodyText;
+      cloned._zwOpaqueBodyBytes = self._zwOpaqueBodyBytes;
+      cloned._bodyNull = self._bodyNull;
       return cloned;
     };
   };
@@ -969,6 +1059,18 @@
     r.ok = false;
     r.type = 'error';
     return r;
+  };
+  globalThis.Response.redirect = function(url, status) {
+    // https://fetch.spec.whatwg.org/#dom-response-redirect
+    var normalizedStatus = status == null ? 302 : (status | 0);
+    if (normalizedStatus !== 301 && normalizedStatus !== 302 && normalizedStatus !== 303 && normalizedStatus !== 307 && normalizedStatus !== 308) {
+      throw new RangeError('Invalid redirect status');
+    }
+    return new Response(null, {
+      status: normalizedStatus,
+      statusText: '',
+      headers: { Location: String(url) }
+    });
   };
   if (typeof Symbol === 'function' && Symbol.toStringTag) {
     Object.defineProperty(globalThis.Response.prototype, Symbol.toStringTag, {
@@ -994,6 +1096,7 @@
     this.headers._guard = 'request';
     _fillHeaders(this.headers, init.headers != null ? init.headers : (isRequestLike ? input.headers : null));
     this.body = init.body != null ? String(init.body) : (isRequestLike && input.body != null ? String(input.body) : null);
+    this._bodyUsed = false;
     this.cache = init.cache || (isRequestLike ? input.cache : '') || 'default';
     this.mode = init.mode || (isRequestLike ? input.mode : '') || 'cors';
     this.redirect = init.redirect || (isRequestLike ? input.redirect : '') || 'follow';
@@ -1012,16 +1115,21 @@
     // service worker fetch handler / 请求拦截器 / 测试 mock 读请求体高频。body 为 string|null：null（GET 无体）
     // → text() 返 ''、arrayBuffer() 长度 0；json() 解析空串抛 SyntaxError（spec，非合法 JSON）。
     var self = this;
-    this.text = function () { return Promise.resolve(self.body == null ? '' : String(self.body)); };
-    this.json = function () { return Promise.resolve(JSON.parse(self.body == null ? '' : String(self.body))); };
-    this.blob = function () { return Promise.resolve(new Blob([self.body == null ? '' : String(self.body)])); };
+    Object.defineProperty(this, 'bodyUsed', {
+      get: function () { return !!self._bodyUsed; },
+      configurable: true
+    });
+    this.text = function () { _zwMarkBodyUsed(self); return Promise.resolve(self.body == null ? '' : String(self.body)); };
+    this.json = function () { _zwMarkBodyUsed(self); return Promise.resolve(JSON.parse(self.body == null ? '' : String(self.body))); };
+    this.blob = function () { _zwMarkBodyUsed(self); return Promise.resolve(new Blob([self.body == null ? '' : String(self.body)])); };
     this.arrayBuffer = function () {
+      _zwMarkBodyUsed(self);
       var bytes = _zw_utf8_encode(self.body == null ? '' : String(self.body));
       var arr = new Uint8Array(bytes.length);
       for (var k = 0; k < bytes.length; k++) arr[k] = bytes[k];
       return Promise.resolve(arr);
     };
-    this.formData = function () { return Promise.resolve(_zwParseFormUrlencoded(self.body)); };
+    this.formData = function () { _zwMarkBodyUsed(self); return Promise.resolve(_zwParseFormUrlencoded(self.body)); };
   };
   globalThis.Request.prototype.clone = function () {
     return new Request(this.url, {

@@ -2527,3 +2527,49 @@ fn test_htmlcollection_nameditem_empty_and_children_is_htmlcollection_r38() {
         "正向 namedItem 不受空串守卫影响（非空名仍查，空名 null）"
     );
 }
+
+#[test]
+fn test_response_body_used_redirect_and_blob_formdata_cache_put_support() {
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let mut sandbox = V8Sandbox::with_config(zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    })
+    .unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+
+    sandbox
+        .execute(
+            "globalThis.__bodyChecks = 'pending';\
+             var empty = new Response();\
+             var text = new Response('abc');\
+             var blobResponse = new Response(new Blob(['blob-body']));\
+             var fd = new FormData();\
+             fd.append('name', 'value');\
+             var formResponse = new Response(fd);\
+             var redirect = Response.redirect('https://example.com/next', 301);\
+             Promise.all([\
+               text.text(),\
+               blobResponse.text(),\
+               formResponse.text()\
+             ]).then(function(values) {\
+               globalThis.__bodyChecks = [\
+                 String(empty.body),\
+                 String(empty.bodyUsed),\
+                 String(text.bodyUsed),\
+                 values[0],\
+                 values[1],\
+                 String(values[2].indexOf('name=\"name\"\\r\\n\\r\\nvalue') !== -1),\
+                 String(redirect.status),\
+                 redirect.headers.get('Location')\
+               ].join('|');\
+             });",
+        )
+        .unwrap();
+    sandbox.execute("globalThis.__bodyPump = 1;").unwrap();
+
+    assert_eq!(
+        sandbox.execute("globalThis.__bodyChecks").unwrap().value,
+        "null|false|true|abc|blob-body|true|301|https://example.com/next"
+    );
+}

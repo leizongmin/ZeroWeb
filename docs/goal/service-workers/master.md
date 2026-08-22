@@ -2,7 +2,7 @@
 
 **入口文档**: [../service-workers.md](../service-workers.md)
 **创建日期**: 2026-08-17（goal 拆分 bootstrap）
-**最后更新**: 2026-08-22（CacheStorage window WPT 扩面到 7 case；broader SW fetch/cache baseline 继续）
+**最后更新**: 2026-08-22（CacheStorage window WPT 扩面到 8 case；broader SW fetch/cache baseline 继续）
 
 ---
 
@@ -23,9 +23,11 @@ M2 fetch/interception 上游 WPT
 `Cache.matchAll()` / `Cache.keys()` 与页面 `Cache.add()` / `Cache.addAll()` GET fetch→store
 链路；共享 `zero-storage::Cache::put()` 已拒绝非 GET、非 HTTP(S)、206、`Vary: *` 与
 允许 `Response.type == "error"` 作为 CacheStorage 条目写入读回，并已接入上游 CacheStorage
-`.any.js` window 面 WPT baseline（7 case / 87 subtest / 87 Pass / 0 Fail），其中
+`.any.js` window 面 WPT baseline（8 case / 114 subtest / 114 Pass / 0 Fail），其中
 delete-dooming 生命周期、DOMString code-unit name wire、Vary/`ignoreVary`、`Cache.matchAll()`、
-`CacheStorage.match()` 与 cached `Response.type` 读回保真共享语义已落地。
+`CacheStorage.match()`、cached `Response.type`/`Response.url` 读回保真、`Cache.put()`
+body consumption、opaque 内部 206 / `Vary: *` 可缓存、`Response.redirect()` 与 Blob/FormData
+response body 共享语义已落地。
 该 sibling 与当前 SW runtime 链路共用 Cache API 语义，但 SW fetch/cache 专属 WPT baseline
 和 opaque/basic/cors 等剩余 filtered response 生成/可缓存性矩阵仍归后续切片。
 
@@ -392,10 +394,11 @@ delete-dooming 生命周期、DOMString code-unit name wire、Vary/`ignoreVary`�
 - storage-cache-api shared Cache response type readback：CacheStorage 专属 `__zwcr:` wire、
   page `Response.type` / `clone().type` 保真与 host type validation 见
   [M2 Cache Response Type Readback](../storage-cache-api/evidence/2026-08-22-m2-cache-response-type-readback.md)
-- storage-cache-api CacheStorage window WPT 扩面：7 case / 87 subtest 全绿，并校正
+- storage-cache-api CacheStorage window WPT 扩面：8 case / 114 subtest 全绿，并校正
   `Response.error()` 可作为 CacheStorage 条目保存/读回、FetchEvent 响应结算仍拒绝 status 0
   的共享边界，以及 `Cache.match()` 对 `Response.url`、fetched MIME、cross-host fixture 和
-  opaque response Vary 匹配的页面侧语义，见
+  opaque response Vary 匹配、`Cache.put()` body consumption、opaque 内部 206 / `Vary: *`、
+  `Response.redirect()` 与 Blob/FormData response body 的页面侧语义，见
   [M2 CacheStorage Window WPT Expansion](../storage-cache-api/evidence/2026-08-22-m2-cache-window-expansion.md)
 - M1-5 core WPT：固定 12-case runner、两轮确定性 baseline 与 13 个红项分组见
   [M1 core WPT baseline](evidence/2026-08-19-m1-wpt-core-baseline.md)

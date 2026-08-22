@@ -155,6 +155,10 @@
     return false;
   }
 
+  function _zwCacheMarkResponseBodyUsed(response) {
+    if (response && !response._bodyNull && typeof response._bodyUsed !== 'undefined') response._bodyUsed = true;
+  }
+
   function _zwCacheValidatePut(request, response) {
     // https://w3c.github.io/ServiceWorker/#cache-put
     if (String(request.method || 'GET').toUpperCase() !== 'GET') {
@@ -163,10 +167,13 @@
     if (!_zwCacheRequestIsHttp(request)) {
       throw new TypeError('Cache.put request URL must be an HTTP(S) URL');
     }
+    if (response._bodyUsed && !response._bodyNull) {
+      throw new TypeError('Cache.put cannot store a used response body');
+    }
     if ((response.status | 0) === 206) {
       throw new TypeError('Cache.put cannot store a 206 Partial Content response');
     }
-    if (_zwCacheResponseVaryHasStar(response)) {
+    if (String(response.type || 'default') !== 'opaque' && _zwCacheResponseVaryHasStar(response)) {
       throw new TypeError('Cache.put cannot store a response with Vary: *');
     }
   }
@@ -233,17 +240,20 @@
   }
 
   function _zwCacheResponseWire(response) {
-    if (!(response instanceof Response)) {
-      response = new Response(response);
-    }
-    var bodyIsBytes = response._bodyBytes != null;
+    var isOpaque = String(response.type || 'default') === 'opaque';
+    var status = isOpaque && response._zwOpaqueStatus !== undefined ? response._zwOpaqueStatus : response.status;
+    var statusText = isOpaque && response._zwOpaqueStatusText !== undefined ? response._zwOpaqueStatusText : response.statusText;
+    var headers = isOpaque && response._zwOpaqueHeaders ? response._zwOpaqueHeaders : response.headers;
+    var bodyBytes = isOpaque && response._zwOpaqueBodyBytes !== undefined ? response._zwOpaqueBodyBytes : response._bodyBytes;
+    var bodyText = isOpaque && response._zwOpaqueBodyText !== undefined ? response._zwOpaqueBodyText : response._bodyText;
+    var bodyIsBytes = bodyBytes != null;
     return {
       url: String(response.url || ''),
-      status: response.status | 0,
-      statusText: String(response.statusText || ''),
+      status: status | 0,
+      statusText: String(statusText || ''),
       type: String(response.type || 'default'),
-      headers: _zwCacheHeadersToWire(response.headers),
-      body: bodyIsBytes ? _zwCacheEncodeBytesPrefix(response._bodyBytes) : String(response._bodyText || ''),
+      headers: _zwCacheHeadersToWire(headers),
+      body: bodyIsBytes ? _zwCacheEncodeBytesPrefix(bodyBytes) : String(bodyText || ''),
       bodyIsBytes: bodyIsBytes
     };
   }
@@ -308,7 +318,8 @@
       try {
         if (!hasArguments) throw new TypeError('Cache.put requires a request and response');
         var cacheRequest = request instanceof Request ? request : new Request(request);
-        var cacheResponse = response instanceof Response ? response : new Response(response);
+        if (!(response instanceof Response)) throw new TypeError('Cache.put requires a Response');
+        var cacheResponse = response;
         _zwCacheValidatePut(cacheRequest, cacheResponse);
         var hostRequest = {
           op: 'put',
@@ -318,6 +329,10 @@
         _zwCacheSetNameWire(hostRequest, 'cache_name', cache._name);
         _zwCacheSetIdWire(hostRequest, cache);
         _zwCacheHostCall(hostRequest);
+        if (!cacheResponse._bodyNull && cacheResponse.body && typeof cacheResponse.body.getReader === 'function') {
+          cacheResponse.body.getReader();
+        }
+        _zwCacheMarkResponseBodyUsed(cacheResponse);
         resolve(undefined);
       } catch (error) {
         reject(error);

@@ -626,6 +626,10 @@ pub const CACHE_STORAGE_WINDOW_CASES: &[(&str, &[&str])] = &[
         &["resources/test-helpers.js", "/common/get-host-info.sub.js"],
     ),
     (
+        "service-workers/cache-storage/cache-put.https.any.js",
+        &["resources/test-helpers.js", "/common/get-host-info.sub.js"],
+    ),
+    (
         "service-workers/cache-storage/cache-storage-keys.https.any.js",
         &["resources/test-helpers.js"],
     ),
@@ -2048,15 +2052,31 @@ fn wpt_data_fetch_handler(wpt_root: &std::path::Path) -> Option<zero_engine::fet
                     body_bytes: Some(b"vary response".to_vec()),
                 });
             }
+            if clean == "service-workers/cache-storage/resources/fetch-status.py" {
+                let query = path_part.split_once('?').map(|(_, query)| query).unwrap_or("");
+                let status = wpt_query_value(query, "status")
+                    .and_then(|value| value.parse::<u16>().ok())
+                    .unwrap_or(200);
+                let mut headers = wpt_pipe_headers(query);
+                headers.push(("X-Zero-Final-URL".into(), req.url.clone()));
+                return Ok(zero_engine::fetch_bridge::FetchResponse {
+                    status,
+                    status_text: wpt_status_text(status).to_string(),
+                    headers,
+                    body: String::new(),
+                    body_bytes: Some(Vec::new()),
+                });
+            }
             match std::fs::read(root.join(clean)) {
                 Ok(bytes) => {
                     let query = path_part.split_once('?').map(|(_, query)| query).unwrap_or("");
                     let mut headers = wpt_pipe_headers(query);
                     headers.extend(wpt_static_resource_headers(clean));
                     headers.push(("X-Zero-Final-URL".into(), req.url.clone()));
+                    let status = wpt_pipe_status(query).unwrap_or(200);
                     Ok(zero_engine::fetch_bridge::FetchResponse {
-                        status: 200,
-                        status_text: "OK".to_string(),
+                        status,
+                        status_text: wpt_status_text(status).to_string(),
                         headers,
                         body: String::from_utf8_lossy(&bytes).into_owned(),
                         body_bytes: Some(bytes),
@@ -2113,6 +2133,12 @@ fn wpt_pipe_headers(query: &str) -> Vec<(String, String)> {
         .collect()
 }
 
+fn wpt_pipe_status(query: &str) -> Option<u16> {
+    let pipe = wpt_query_value(query, "pipe")?;
+    pipe.split('|')
+        .find_map(|command| command.strip_prefix("status(")?.strip_suffix(')')?.parse::<u16>().ok())
+}
+
 fn wpt_static_resource_headers(path: &str) -> Vec<(String, String)> {
     let content_type = if path.ends_with(".html") {
         Some("text/html")
@@ -2126,6 +2152,16 @@ fn wpt_static_resource_headers(path: &str) -> Vec<(String, String)> {
     content_type
         .map(|value| vec![("content-type".to_string(), value.to_string())])
         .unwrap_or_default()
+}
+
+fn wpt_status_text(status: u16) -> &'static str {
+    match status {
+        200 => "OK",
+        206 => "Partial Content",
+        404 => "Not Found",
+        500 => "Internal Server Error",
+        _ => "",
+    }
 }
 
 fn run_testharness_html_inner(
@@ -3101,19 +3137,20 @@ async_test(function(test) {
     }
 
     #[test]
-    fn cache_storage_window_manifest_has_seven_unique_any_cases() {
+    fn cache_storage_window_manifest_has_eight_unique_any_cases() {
         let unique = CACHE_STORAGE_WINDOW_CASES
             .iter()
             .map(|(path, _)| *path)
             .collect::<std::collections::BTreeSet<_>>();
-        assert_eq!(CACHE_STORAGE_WINDOW_CASES.len(), 7);
-        assert_eq!(unique.len(), 7);
+        assert_eq!(CACHE_STORAGE_WINDOW_CASES.len(), 8);
+        assert_eq!(unique.len(), 8);
         assert!(CACHE_STORAGE_WINDOW_CASES.iter().all(|(path, support)| {
             if !path.starts_with("service-workers/cache-storage/") || !path.ends_with(".https.any.js") {
                 return false;
             }
             match *path {
-                "service-workers/cache-storage/cache-match.https.any.js" => {
+                "service-workers/cache-storage/cache-match.https.any.js"
+                | "service-workers/cache-storage/cache-put.https.any.js" => {
                     *support == ["resources/test-helpers.js", "/common/get-host-info.sub.js"]
                 }
                 _ => *support == ["resources/test-helpers.js"],

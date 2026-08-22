@@ -216,4 +216,5 @@ service-workers/cache-storage/cache-delete.https.any.js 04067ce9c7c2165e71ad7d0d
 service-workers/cache-storage/cache-keys.https.any.js 04067ce9c7c2165e71ad7d0dde10a4c5cb394a83 2026-08-22 CACHE-M1-window-baseline
 service-workers/cache-storage/cache-matchAll.https.any.js 04067ce9c7c2165e71ad7d0dde10a4c5cb394a83 2026-08-22 CACHE-M2-window-expansion
 service-workers/cache-storage/cache-storage-match.https.any.js 04067ce9c7c2165e71ad7d0dde10a4c5cb394a83 2026-08-22 CACHE-M2-window-expansion
+service-workers/cache-storage/cache-put.https.any.js 04067ce9c7c2165e71ad7d0dde10a4c5cb394a83 2026-08-22 CACHE-M2-window-expansion
 service-workers/service-worker/request-end-to-end.https.html 04067ce9c7c2165e71ad7d0dde10a4c5cb394a83 2026-08-22 SW-M2-fetch-baseline
