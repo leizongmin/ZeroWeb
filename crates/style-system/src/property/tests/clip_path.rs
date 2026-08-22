@@ -35,6 +35,13 @@ fn test_clip_path_apply_basic_shape_function_names_are_case_insensitive() {
 }
 
 #[test]
+fn test_clip_rect_apply_function_name_is_case_insensitive() {
+    let mut style = ComputedStyle::default();
+    assert!(apply_property_value(&mut style, "clip", "RECT(0px, auto, 10px, 0px)"));
+    assert!(matches!(style.clip, ClipRectComputedValue::Rect(_, _, _, _)));
+}
+
+#[test]
 fn test_clip_path_apply_circle() {
     let mut style = ComputedStyle::default();
     assert!(apply_property_value(&mut style, "clip-path", "circle(50px)"));

@@ -802,8 +802,9 @@ pub fn parse_clip(value: &str) -> Option<ClipRectValue> {
     if v.eq_ignore_ascii_case("auto") {
         return Some(ClipRectValue::Auto);
     }
-    // rect(top, right, bottom, left)
-    if let Some(rest) = v.strip_prefix("rect(") {
+    // https://www.w3.org/TR/css-syntax-3/#function-token-diagram
+    // CSS function names are ASCII case-insensitive; whitespace before `(` is not a function token.
+    if let Some(rest) = strip_basic_shape_prefix(v, "rect") {
         let inner = rest.strip_suffix(')')?.trim();
         // rect() 内部参数用逗号分隔
         let parts: Vec<&str> = inner.split(',').collect();
@@ -848,6 +849,21 @@ mod tests {
                 LengthValue::Px(0.0),
                 LengthValue::Px(50.0),
                 LengthValue::Px(50.0),
+                LengthValue::Px(0.0),
+            ))
+        ));
+    }
+
+    #[test]
+    fn test_parse_clip_rect_function_name_is_case_insensitive() {
+        // https://www.w3.org/TR/css-syntax-3/#function-token-diagram
+        // CSS function names are ASCII case-insensitive.
+        assert!(matches!(
+            parse_clip("RECT(0px, auto, 10px, 0px)"),
+            Some(ClipRectValue::Rect(
+                LengthValue::Px(0.0),
+                LengthValue::Px(0.0),
+                LengthValue::Px(10.0),
                 LengthValue::Px(0.0),
             ))
         ));
