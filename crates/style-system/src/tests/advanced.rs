@@ -562,6 +562,28 @@ fn test_var_function_name_case_insensitive_in_pipeline() {
     assert_eq!(div_style.color, ColorValue::Rgba(255, 0, 0, 255));
 }
 
+/// env() 函数应在级联后解析，函数名按 ASCII 大小写不敏感。
+#[test]
+fn test_env_function_name_case_insensitive_in_pipeline() {
+    let (doc, _html, _body, div, _p) = make_test_dom();
+    let mut sys = StyleSystem::new();
+
+    let stylesheets = vec![Stylesheet {
+        rules: vec![Rule::Style(StyleRule {
+            selectors: vec![make_tag_selector("div")],
+            declarations: vec![Declaration {
+                property: "width".to_string(),
+                value: "ENV(safe-area-inset-top)".to_string(),
+                important: false,
+            }],
+        })],
+    }];
+
+    let styles = sys.compute_styles(&doc, &stylesheets);
+    let div_style = styles.get(&div).expect("div should have style");
+    assert_eq!(div_style.width, LengthValue::Px(0.0));
+}
+
 /// var() 带回退值时，变量不存在则使用回退。
 #[test]
 fn test_var_fallback_in_pipeline() {

@@ -6,7 +6,7 @@
 use std::collections::HashMap;
 
 use crate::{
-    computed::contains_var_function,
+    computed::{contains_env_function, contains_var_function},
     property::{ComputedStyle, PropertyRegistry, apply_property_value_with_quirks},
 };
 use zero_css_parser::values::{LengthValue, parse_length};
@@ -446,6 +446,8 @@ fn cascade_tier_key(order: &CascadeOrder) -> (Origin, bool, Option<usize>) {
 /// - 自定义属性 `--foo`：由 gather_custom_properties 处理（var() 解析源），apply 不识别。
 /// - 含 `var(` 的值：var() 在 cascade 之后才解析（resolve_var_in_cascaded），此时未知合法
 ///   性，留给解析 + apply 阶段处理。
+/// - 含 `env(` 的值：env() 与 var() 同在 computed-value 阶段替换，cascade 阶段不能用
+///   未替换字面量预判消费方 grammar。
 /// - CSS-wide 关键字（inherit/initial/unset/revert）：合法但由 inheritance/compute pass 处理
 ///   （非 apply 直接解析），apply 返 false（driving：max-width-104/max-height-104/height-inherit-001
 ///   `max-width: inherit` 等曾被误丢）。
@@ -453,7 +455,11 @@ fn cascade_tier_key(order: &CascadeOrder) -> (Origin, bool, Option<usize>) {
 /// driving：keywords-000（`background: "red"` string 值 apply 拒绝 → 丢，下个合法 green 胜出）。
 /// 未知属性 apply 亦返 false → 丢（CSS：未知属性忽略；ZW 原本 apply 也忽略，渲染不变）。
 fn is_cascade_value_valid(property: &str, value: &str, quirks: bool, dummy: &mut ComputedStyle) -> bool {
-    if property.starts_with("--") || contains_var_function(value) || is_css_wide_keyword(value) {
+    if property.starts_with("--")
+        || contains_var_function(value)
+        || contains_env_function(value)
+        || is_css_wide_keyword(value)
+    {
         return true;
     }
     // 有效性检查（apply-on-dummy）：color-scheme 合法性不依赖 prefers，传 light=false。

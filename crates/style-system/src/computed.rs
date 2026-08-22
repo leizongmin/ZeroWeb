@@ -312,19 +312,24 @@ fn find_top_level_comma(s: &str) -> Option<usize> {
 /// 返回 `Some(new)` 当发生替换，`None` 当值不含 `env(` 或替换后与原值相同（便于调用方判断
 /// 是否需要更新级联值，镜像 [`resolve_var`] 的语义）。
 pub fn resolve_env(value: &str) -> Option<String> {
-    if !value.contains("env(") {
+    if !contains_env_function(value) {
         return None;
     }
     let substituted = substitute_env(value);
     if substituted != value { Some(substituted) } else { None }
 }
 
+/// https://drafts.csswg.org/css-env-1/#env-function
+/// CSS function names are ASCII case-insensitive; environment variable names are handled below.
+pub(crate) fn contains_env_function(value: &str) -> bool {
+    find_env_function(value, 0).is_some()
+}
+
 /// 替换值中所有 `env()` 调用为环境值或 fallback。
 fn substitute_env(value: &str) -> String {
     let mut result = String::new();
     let mut idx = 0;
-    while let Some(rel) = value[idx..].find("env(") {
-        let start = idx + rel;
+    while let Some(start) = find_env_function(value, idx) {
         result.push_str(&value[idx..start]);
         let inner_start = start + 4;
         let Some(end) = find_matching_paren(value, inner_start) else {
@@ -334,16 +339,23 @@ fn substitute_env(value: &str) -> String {
         };
         let inner = &value[inner_start..end];
         let (name, fallback) = split_var_name_fallback(inner);
-        result.push_str(&resolve_env_reference(name, fallback));
+        result.push_str(&resolve_env_reference(name, fallback, &value[start..=end]));
         idx = end + 1;
     }
     result.push_str(&value[idx..]);
     result
 }
 
+fn find_env_function(value: &str, start: usize) -> Option<usize> {
+    value.as_bytes()[start..]
+        .windows(4)
+        .position(|window| window.eq_ignore_ascii_case(b"env("))
+        .map(|offset| start + offset)
+}
+
 /// 解析单个 `env(name, fallback)`：已定义 → 环境值；未定义 → fallback（递归解析其中嵌套 env）；
 /// 无 fallback → 保留字面量（下游 invalid）。
-fn resolve_env_reference(name: &str, fallback: Option<&str>) -> String {
+fn resolve_env_reference(name: &str, fallback: Option<&str>, original: &str) -> String {
     if let Some(v) = env_value(name) {
         return v.to_string();
     }
@@ -351,7 +363,7 @@ fn resolve_env_reference(name: &str, fallback: Option<&str>) -> String {
         // 递归解析 fallback 中的嵌套 env()（如 env(a, env(b, 1px))）。
         Some(f) => substitute_env(f),
         // 未定义且无 fallback：保留字面量 env(name)，下游解析失败 → initial/inherited（同 var()）。
-        None => format!("env({})", name),
+        None => original.to_string(),
     }
 }
 
@@ -831,6 +843,15 @@ mod tests {
     fn test_resolve_env_case_insensitive_name() {
         // env 名大小写不敏感（CSS 关键字约定，对齐 chromium）。
         assert_eq!(resolve_env("env(SAFE-AREA-INSET-TOP)"), Some("0px".to_string()));
+    }
+
+    #[test]
+    fn test_resolve_env_function_name_is_case_insensitive() {
+        assert_eq!(resolve_env("ENV(safe-area-inset-top)"), Some("0px".to_string()));
+        assert_eq!(
+            resolve_env("padding: Env(safe-area-inset-left) 5px;"),
+            Some("padding: 0px 5px;".to_string())
+        );
     }
 
     #[test]
