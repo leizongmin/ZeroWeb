@@ -5,8 +5,9 @@
 > 布局契约：`<分类>/<YYYY-MM>/<YYYY-MM-DD>-<topic>.md`，日期以 frontmatter 为准。
 > 方法论蒸馏层见 `.agents/skills/zeroweb-guidelines/SKILL.md`。
 
-## Bugs — 踩坑记录（根因 + 修复 + 如何避免）（83）
+## Bugs — 踩坑记录（根因 + 修复 + 如何避免）（84）
 
+- 2026-08-22 [Service Worker iframe client observation must cross the WebView bridge](bugs/2026-08/2026-08-22-service-worker-iframe-client-observe-bridge.md) — service-worker,webview,js-dom
 - 2026-08-20 [workspace feature unification 掩盖单包构建缺 JS 引擎 feature](bugs/2026-08/2026-08-20-workspace-feature-unification-masks-single-package-build.md) — zero-script-sandbox, zero-page-runtime, zero-browser
 - 2026-08-20 [SW 求值下放 renderer 后与同步 automation 请求三方互等死锁](bugs/2026-08/2026-08-20-renderer-mainloop-sw-eval-deadlock.md) — zero-renderer, zero-browser, zero-protocol
 - 2026-08-19 [IndexedDB terminal state wait](bugs/2026-08/2026-08-19-indexeddb-terminal-state-wait.md) — apps/browser/src/process_backend/indexed_db_owner_tests.rs
@@ -91,8 +92,9 @@
 - 2026-07-29 [reftest-upstream 大目录触发 test-guard OOM 杀进程（fail-list 捕获空致误判）](bugs/2026-07/2026-07-29-reftest-upstream-large-dir-testguard-oom.md) — tests/wpt-runner（cmd_reftest_upstream）, scripts/test-guard.rs（OOM 包裹器）
 - 2026-07-25 [product-smoke 输出 PNG 路径陷阱（stale 文件致假 bug 误判）](bugs/2026-07/2026-07-25-product-smoke-png-stale-trap.md) — tests/wpt-runner（cmd_product_smoke）, legacy/product smoke 诊断流程
 
-## Patterns — 可复用代码模式与最佳实践（12）
+## Patterns — 可复用代码模式与最佳实践（13）
 
+- 2026-08-22 [Storage root layout compatibility](patterns/2026-08/2026-08-22-storage-root-layout-compatibility.md) — storage, webview
 - 2026-08-22 [用 python 块级 replace 编辑大文件把 441KB 控制面截断成 3.4KB](patterns/2026-08/2026-08-22-python-block-replace-truncates-large-files.md) — js-dom, docs
 - 2026-08-18 [WebIDL readonly interface shape](patterns/2026-08/2026-08-18-webidl-readonly-interface-shape.md) — crates/engine/src/js_dom_shim/part02.js
 - 2026-08-18 [IndexedDB transaction latest view](patterns/2026-08/2026-08-18-indexeddb-transaction-latest-view.md) — crates/storage/src/indexed_db/types.rs, crates/page-runtime/src/indexed_db_host/cursor.rs
