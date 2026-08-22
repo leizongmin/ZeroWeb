@@ -63,6 +63,10 @@ fn test_parse_length_fit_content_edge_cases() {
         crate::values::parse_length("fit-content(100px)"),
         Some(LengthValue::FitContent(inner)) if matches!(*inner, LengthValue::Px(100.0))
     ));
+    assert!(matches!(
+        crate::values::parse_length("FIT-CONTENT(100PX)"),
+        Some(LengthValue::FitContent(inner)) if matches!(*inner, LengthValue::Px(100.0))
+    ));
 
     // fit-content() 的参数可以是 calc()
     let calc_result = crate::values::parse_length("fit-content(calc(50px + 10px))");

@@ -262,9 +262,9 @@ fn test_parse_fit_content() {
     let result = parse_length("fit-content(10em)");
     assert!(matches!(result, Some(LengthValue::FitContent(inner)) if *inner == LengthValue::Em(10.0)));
 
-    // 大小写不敏感
+    // CSS 函数名大小写不敏感
     let result = parse_length("FIT-CONTENT(100px)");
-    assert!(result.is_none()); // starts_with 是大小写敏感的，当前实现要求小写
+    assert!(matches!(result, Some(LengthValue::FitContent(inner)) if *inner == LengthValue::Px(100.0)));
 }
 
 #[test]

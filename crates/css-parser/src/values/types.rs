@@ -1610,8 +1610,16 @@ pub fn parse_length(value: &str) -> Option<LengthValue> {
         return Some(LengthValue::MaxContent);
     }
 
-    // 处理 fit-content() 函数
-    if value.starts_with("fit-content(") && value.ends_with(')') {
+    // https://drafts.csswg.org/css-values-4/#css-css-values
+    // CSS function identifiers are ASCII case-insensitive.
+    let fit_content_name_len = "fit-content".len();
+    if value.len() >= "fit-content(".len()
+        && value
+            .get(..fit_content_name_len)
+            .is_some_and(|prefix| prefix.eq_ignore_ascii_case("fit-content"))
+        && value.as_bytes().get(fit_content_name_len) == Some(&b'(')
+        && value.ends_with(')')
+    {
         let inner = &value["fit-content(".len()..value.len() - 1];
         let inner = inner.trim();
         // fit-content() 不接受空参数

@@ -1122,6 +1122,9 @@ fn test_cascade_source_order() {
     assert!(apply_property_value(&mut style, "width", "100px"));
     assert!(apply_property_value(&mut style, "width", "200px"));
     assert_eq!(style.width, LengthValue::Px(200.0));
+
+    assert!(apply_property_value(&mut style, "width", "FIT-CONTENT(100PX)"));
+    assert!(matches!(style.width, LengthValue::FitContent(inner) if *inner == LengthValue::Px(100.0)));
 }
 
 #[test]
