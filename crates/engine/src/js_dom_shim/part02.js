@@ -1706,6 +1706,53 @@
   _zwParseEl.prototype.appendChild = function (n) { return this._ensureMutTree().appendChild(n); };
   _zwParseEl.prototype.removeChild = function (n) { return this._ensureMutTree().removeChild(n); };
   _zwParseEl.prototype.setAttribute = function (n, v) { this._ensureMutTree().setAttribute(n, v); };
+  // R189（js-dom M4）：normalize 委托 mutTree（WPT Node-normalize "Non-text nodes
+  // with empty textContent values"——DOMParser 文档的 documentElement 上跑合并语义）。
+  // plain 容器版合并（与 part04 R184 的 _r184NormArr plain 分支同款）：exclusive-Text
+  // 兜接 + 空 Text 移除 + 递归子树；CDATA（4）与 PI（7）非 Text 不动（R184 的
+  // textContent exclusive-Text 同口径）。
+  _zwParseEl.prototype.normalize = function () {
+    var tree = this._ensureMutTree();
+    var _r189Norm = function (kids, recurse) {
+      if (!kids || !kids.length) return;
+      if (recurse) {
+        for (var i = 0; i < kids.length; i++) {
+          var k = kids[i];
+          if (k && k.nodeType === 1 && k.childNodes && !k.__zwSelector && !k.__zwHandle) {
+            _r189Norm(k.childNodes, true);
+          }
+        }
+      }
+      var out = [];
+      var lastText = null;
+      for (var j = 0; j < kids.length; j++) {
+        var n = kids[j];
+        var isText = n && (n.nodeType === 3 || (n.__zwIsText && n.nodeType !== 7)) && n.nodeType !== 4;
+        if (isText) {
+          var dv = String(n.data != null ? n.data : (n.nodeValue != null ? n.nodeValue : ''));
+          if (lastText != null) {
+            try {
+              lastText.data = String(lastText.data != null ? lastText.data : '') + dv;
+              lastText.nodeValue = lastText.data;
+            } catch (_e189m) {}
+            continue;
+          }
+          if (dv === '') continue;
+          lastText = n;
+          out.push(n);
+          continue;
+        }
+        lastText = null;
+        out.push(n);
+      }
+      try {
+        kids.length = 0;
+        for (var w = 0; w < out.length; w++) kids.push(out[w]);
+      } catch (_e189w) {}
+    };
+    _r189Norm(tree.childNodes, true);
+    return undefined;
+  };
   // R156（js-dom M4）：cloneNode（WPT Element-matches init 的 `element.cloneNode(true)`
   // 对 getElementById 产物——旧 'element.cloneNode is not a function' 整页中断）。经
   // _ensureMutTree 转 _zwMEl 后用 Element.prototype 的 deepClone（属性 + 子树全复制，
@@ -2018,6 +2065,43 @@
       var c = String(q).indexOf(':');
       if (c > 0) { n.prefix = String(q).slice(0, c); n.localName = String(q).slice(c + 1); n.tagName = String(q); n.nodeName = String(q); }
       return n;
+    };
+    // R189（js-dom M4）：DOMParser 文档可变面三工厂——createTextNode/createComment/
+    // createCDATASection（WPT Node-normalize "Non-text nodes with empty textContent
+    // values"：XML doc 上建 9 类子节点后 normalize 断言非 Text 节点不动——旧缺工厂
+    // `doc.createTextNode is not a function` 整 subtest 崩）。产物 = 轻量节点
+    //（nodeType 3/8/4 + data/nodeValue + ownerDocument 指 d——与 _zwMText 形态兼容，
+    // 可入 _zwParseEl 的 _ensureMutTree 子树（normalize 经 Element.prototype 归一）。
+    // CDATA 的 spec 校验：XML 文档才允许（HTML 文档抛 NotSupportedError）。
+    d.createTextNode = function (text) {
+      return {
+        nodeType: 3, nodeName: '#text', data: String(text == null ? '' : text),
+        get nodeValue() { return this.data; }, set nodeValue(v) { this.data = String(v == null ? '' : v); },
+        parentNode: null, ownerDocument: d, childNodes: [],
+      };
+    };
+    d.createComment = function (text) {
+      return {
+        nodeType: 8, nodeName: '#comment', data: String(text == null ? '' : text),
+        get nodeValue() { return this.data; }, set nodeValue(v) { this.data = String(v == null ? '' : v); },
+        parentNode: null, ownerDocument: d, childNodes: [],
+      };
+    };
+    d.createCDATASection = function (text) {
+      if (d._htmlDoc) {
+        // https://dom.spec.whatwg.org/#dom-document-createcdatasection——HTML 文档
+        // 不支持 CDATASection（NotSupportedError）。
+        throw new (globalThis.DOMException || Error)("Cannot create CDATASection nodes in HTML documents.", 'NotSupportedError');
+      }
+      var v = String(text == null ? '' : text);
+      if (v.indexOf(']]>') >= 0) {
+        throw new (globalThis.DOMException || Error)("Sequence ']]>' not allowed in CDATA sections.", 'InvalidCharacterError');
+      }
+      return {
+        nodeType: 4, nodeName: '#cdata-section', data: v,
+        get nodeValue() { return this.data; }, set nodeValue(v2) { this.data = String(v2 == null ? '' : v2); },
+        parentNode: null, ownerDocument: d, childNodes: [],
+      };
     };
     // R123：PI 属性层（WPT processing-instruction-attributes xml-dom/xml-parser source）。
     // ① createProcessingInstruction：真 PI 视图节点（part03 _zwMPiFromBogus 同款属性五件套，
