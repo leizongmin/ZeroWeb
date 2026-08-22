@@ -3313,6 +3313,17 @@
       var hops = 0, link = _zwNodeParent[handle];
       while (link && hops++ < 64) {
         if (link.parentSel) return true;
+        // R180（js-dom M4）：plain 父链——上行 plain（_zwMEl）祖先到 sel/handle 节点
+        // 即 connected（WPT Event-dispatch-single-activation：handle checkbox 在 plain
+        // INPUT 容器 → FORM → … → test div(handle) 链上，宿主挂 sel 树）。
+        if (link.plainParent) {
+          var _r180Pp = link.plainParent, _r180Hops2 = 0;
+          while (_r180Pp && _r180Hops2++ < 64) {
+            if (_r180Pp.__zwSelector || (_r180Pp.__zwHandle && _zwNodeParent[_r180Pp.__zwHandle] && _zwNodeParent[_r180Pp.__zwHandle].parentSel)) return true;
+            if (!_r180Pp.parentNode) break;
+            _r180Pp = _r180Pp.parentNode;
+          }
+        }
         var ph = link.parentHandle;
         if (!ph) break;
         var meta = typeof _shadowHandleMeta !== 'undefined' && _shadowHandleMeta[ph];
@@ -4346,6 +4357,9 @@
           if (elementOnly && _fragmentHandles && _fragmentHandles[_npl.parentHandle]) return null;
           return _wrapHandle(_npl.parentHandle);
         }
+        // R180（js-dom M4）：plain 父（template.content 克隆树等 _zwMEl 容器）——
+        // appendChild 记的 plainParent 槽直返（spec parentNode 语义）。
+        if (_npl.plainParent) return _npl.plainParent;
       }
       // R155（js-dom M4）：clone 产物（cloneNode deep 分支 innerHTML 重建的子 proxy）
       // 无 _zwNodeParent 反链——经 `_handleChildren` 反查宿主容器（children 数组含本
@@ -5555,7 +5569,26 @@
       },
       configurable: true,
     });
-    node.appendChild = function (c) { if (c && c.parentNode) c.parentNode.removeChild(c); node.childNodes.push(c); c.parentNode = node; if (c && c.__zwHandle && typeof _zwUnmarkRemovedHandle === 'function') _zwUnmarkRemovedHandle(c.__zwHandle); return c; };
+    // R180（js-dom M4）：handle 子 append 到 plain 父时同步记 `_zwNodeParent` 反链
+    //（key 形态 parentSel:null/parentHandle:null 不可用——plain 父无 sel/handle，改记
+    // `plainParent` 槽指向本节点）。proxy 的 parentNode getter / `_zwClickActivationConnected`
+    // 的 `_handleChildren` 反查 / dispatch 链上行遇 plain 父即断（WPT
+    // Event-dispatch-single-activation：template.content 克隆的 handle checkbox append 进
+    // plain INPUT 容器后 `checked` 已翻转但 input/change 不派发——connected 判定 false）。
+    // `plainParent` 消费点：_parentNodeFor / _zwClickActivationConnected / R114 链构建。
+    node.appendChild = function (c) {
+      if (c && c.parentNode) c.parentNode.removeChild(c);
+      node.childNodes.push(c); c.parentNode = node;
+      if (c && c.__zwHandle) {
+        if (typeof _zwUnmarkRemovedHandle === 'function') _zwUnmarkRemovedHandle(c.__zwHandle);
+        // R180：plain 父反链（对偶于 handle 父的 _recordHandleChild）——只在无既有链时
+        // 记（append 移动语义上方已从旧父摘除，此处不会覆盖有效链）。
+        if (typeof _zwNodeParent !== 'undefined' && _zwNodeParent && !_zwNodeParent[c.__zwHandle]) {
+          _zwNodeParent[c.__zwHandle] = { parentSel: null, parentHandle: null, plainParent: node, nextSibling: null };
+        }
+      }
+      return c;
+    };
     // js-dom M4 R81：firstChild/lastChild getter（WPT Node-textContent "set to null" 期望
     // el.firstChild === null——轻量元素缺 getter 使 firstChild 读 undefined）。与上面 textContent
     // getter 同款本地 childNodes 维护。
