@@ -86,6 +86,10 @@ fn test_parse_transform_rejects_non_finite_numbers() {
     assert!(parse_transform("scale(inf)").is_none());
     assert!(parse_transform("rotate(NaNdeg)").is_none());
     assert!(parse_transform("translate(infpx, 0)").is_none());
+    assert!(parse_transform("translate(1e999px, 0)").is_none());
+    assert!(parse_transform("translateX(1e999em)").is_none());
+    assert!(parse_transform("translateY(1e999rem)").is_none());
+    assert!(parse_transform("perspective(1e999px)").is_none());
     assert!(parse_transform("translate(50%, NaN%)").is_none());
     assert!(parse_transform("matrix(1, 0, 0, 1, inf, 0)").is_none());
     assert!(parse_transform("perspective(infpx)").is_none());

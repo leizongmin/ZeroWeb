@@ -695,10 +695,13 @@ fn parse_css_number(s: &str) -> Option<f64> {
         n.trim().parse::<f64>().ok().map(|t| t * 360.0)
     } else if let Some(n) = lower.strip_suffix("rad") {
         n.trim().parse::<f64>().ok().map(|r| r.to_degrees())
-    } else if lower.ends_with("px") || lower.ends_with("em") || lower.ends_with("rem") {
-        // 对于 translate，返回数值部分
-        let num_end = lower.find(|c: char| !c.is_ascii_digit() && c != '.' && c != '-' && c != '+')?;
-        lower[..num_end].parse::<f64>().ok()
+    } else if let Some(n) = lower
+        .strip_suffix("rem")
+        .or_else(|| lower.strip_suffix("px"))
+        .or_else(|| lower.strip_suffix("em"))
+    {
+        // https://drafts.csswg.org/css-values-4/#lengths
+        n.trim().parse::<f64>().ok()
     } else {
         lower.parse::<f64>().ok()
     }?;
