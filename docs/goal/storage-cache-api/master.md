@@ -2,7 +2,7 @@
 
 **入口文档**: [../storage-cache-api.md](../storage-cache-api.md)
 **创建日期**: 2026-08-17（goal 拆分 bootstrap）
-**最后更新**: 2026-08-22（M2 Storage Buckets CacheStorage WPT 扩面）
+**最后更新**: 2026-08-23（CacheStorage WPT manifest source revision 固化）
 
 ---
 
@@ -60,6 +60,9 @@ Service Worker runtime 已补齐 `Cache.delete()` 与 `CacheStorage.delete()/has
 `zero-storage::CacheStorage`。
 更大范围 WPT 导入与完整
 `basic`/`cors`/`opaque`/`opaqueredirect` filtered response 生成矩阵仍待后续切片。
+CacheStorage window asset manifest 已补充逐 asset `source_revision`，恢复脚本会按每行
+revision 下载缺失资产，避免 23-case baseline 中后续 wrapper/support 资产依赖某个本地
+WPT checkout 状态。
 
 **与兄弟 goal 的边界**：
 - [storage-indexeddb](../archive/storage-indexeddb.md)（已归档）— IDB 归其管
@@ -291,6 +294,13 @@ Service Worker runtime 已补齐 `Cache.delete()` 与 `CacheStorage.delete()/has
   - `./target/test-guard --time-limit 240 -- cargo run -p zero-wpt-runner -- testharness-cache-storage cache-storage-buckets.https.any.js --wpt-data tests/wpt-runner/wpt-data/.cache-storage-window-root --json`：2 subtests / 2 Pass
   - `./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit 900 -- python3 tests/wpt-runner/scripts/run-cache-storage-window-baseline.py --runner ./target/debug/zero-wpt-runner --wpt-data tests/wpt-runner/wpt-data/.cache-storage-window-root --output docs/goal/storage-cache-api/evidence/2026-08-22-cache-storage-window-baseline.json --summary docs/goal/storage-cache-api/evidence/2026-08-22-cache-storage-window-baseline.md`：23 cases / 293 subtests / 293 Pass / 0 Fail，double-run deterministic
   - 证据：[M2 Storage Buckets CacheStorage WPT Expansion](evidence/2026-08-22-m2-storage-buckets-wpt-expansion.md)
+- 2026-08-23 CacheStorage window manifest source revision 固化：
+  - `bash -n tests/wpt-runner/scripts/fetch-cache-storage-window-subset.sh`：passed
+  - `./target/test-guard --time-limit 120 -- bash tests/wpt-runner/scripts/fetch-cache-storage-window-subset.sh --verify-only`：49 assets matched pinned manifest
+  - 单 asset 临时数据根恢复验证：`worker/cache-add.https.html` 按 `24197a11e8c5bd29a5cb7bdf18135a82be8a8546` 下载/恢复，361 bytes，blob `2658e1e50f9ebfe8ac5971a16af9e26b02d140a8`
+  - `./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit 300 -- cargo test -p zero-wpt-runner cache_storage_window_manifest_has_expected_unique_cases -- --nocapture`：1 passed
+  - `./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit 900 -- python3 tests/wpt-runner/scripts/run-cache-storage-window-baseline.py --runner ./target/debug/zero-wpt-runner --wpt-data tests/wpt-runner/wpt-data/.cache-storage-window-root --output docs/goal/storage-cache-api/evidence/2026-08-22-cache-storage-window-baseline.json --summary docs/goal/storage-cache-api/evidence/2026-08-22-cache-storage-window-baseline.md`：23 cases / 293 subtests / 293 Pass，double-run deterministic
+  - 证据：[CacheStorage Window Manifest Source Revisions](evidence/2026-08-23-cache-storage-window-manifest-revisions.md)
 - 2026-08-22 M3 CacheStorage 持久化首片：
   - `./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit 300 -- cargo check -p zero-storage -p zero-page-runtime -p zero-webview --all-targets`：passed
   - `./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit 300 -- cargo test -p zero-storage cache_storage_persistence -- --nocapture`：3 passed

@@ -1,50 +1,50 @@
-path	manifest_type	roles	referenced_by	bytes	templated	git_blob_sha
-resources/testharness.js	support	page-script	9	198291	no	c7ce4f51e1db075809f861255417c27478b2c179
-resources/testharnessreport.js	support	page-script	9	1231	no	405a2d8b06f00fe8292e0e9d5b917e193cfd416c
-common/get-host-info.sub.js	support	page-script	3	3039	no	e9ec61659c3927e519170bc4e5253f91b7671945
-service-workers/cache-storage/resources/test-helpers.js	support	page-script	9	9266	no	050ac0b542455ceb53ed36038af5b9b0810977cf
-service-workers/cache-storage/resources/common-worker.js	support	worker-script	1	481	no	d0e8544b56c2677a9c60d47a9e8b587d63bc6d6c
-service-workers/cache-storage/resources/simple.txt	support	fetch-body	5	19	no	9e3cb91fb9b95d6e51de85b82e6f86e92f59ac6d
-service-workers/cache-storage/resources/blank.html	support	fetch-body	2	41	no	a3c3a4689a62b45b1e429f6b7a94690e556a1259
-service-workers/cache-storage/resources/vary.py	support	fetch-body	2	1039	no	7fde1b1094ed4ce4018f17688e55d3be06fff993
-service-workers/cache-storage/resources/fetch-status.py	support	fetch-body	1	77	no	b7109f4787fd6d659a192f7f29157862eef36ae9
-service-workers/cache-storage/cache-storage.https.any.js	testharness	case	1	8265	no	b7d5af7b532036351ab842de451002ca36f7b4af
-service-workers/cache-storage/cache-match.https.any.js	testharness	case	1	17212	no	9ca45903cbb101810488ced4b31bb9f34957b1ef
-service-workers/cache-storage/cache-add.https.any.js	testharness	case	1	13923	no	c4846eaae40afa38d9bf000169a4917d45a6df81
-service-workers/cache-storage/cache-storage-buckets.https.any.js	testharness	case	1	2240	no	fd59ba464db0305de210fc2935d739b2469ec4ae
-service-workers/cache-storage/cache-storage-keys.https.any.js	testharness	case	1	1156	no	f19522be1b437d619b356b5b0290679a8f391866
-service-workers/cache-storage/cache-delete.https.any.js	testharness	case	1	5978	no	3eae2b6a08b7954a6a5e644b8248f6ebab562a83
-service-workers/cache-storage/cache-keys.https.any.js	testharness	case	1	7568	no	232fb760d4080a02051ba5cf5e8d2964771fda9a
-service-workers/cache-storage/cache-matchAll.https.any.js	testharness	case	1	9173	no	93c55178918c333df25104e69ca74af5dbf04be9
-service-workers/cache-storage/cache-storage-match.https.any.js	testharness	case	1	9077	no	0c31b726294b14b1b849ecbeb369d23a59d126d8
-service-workers/cache-storage/cache-put.https.any.js	testharness	case	1	16193	no	dbf2650a75a5ff051f222ccb736b14f65d98f1b9
-service-workers/cache-storage/common.https.window.js	testharness	case	1	1609	no	eba312c273de149ae9007d69bb4796b147e03841
-service-workers/cache-storage/cache-api-nested-worker.https.html	testharness	case	1	641	no	769200f66aa377840ba9c827d374c9cfaff7ec60
-service-workers/cache-storage/cache-api-nested-worker1.js	support	worker-script	1	110	no	eb5c5cd90bb4f352f97071a3201d163039a10cb3
-service-workers/cache-storage/cache-api-nested-worker2.js	support	worker-script	1	79	no	0af8c3eebfeffb8eab2b33e1b78083f3fa9f1031
-service-workers/cache-storage/worker/cache-storage.https.html	testharness	case	1	355	no	0899609e4aeb46463baf719cbeaea50a3523940e
-service-workers/cache-storage/worker/cache-storage-keys.https.html	testharness	case	1	365	no	71d995bc9400b173bef486b178f43d29b8038076
-service-workers/cache-storage/worker/cache-delete.https.html	testharness	case	1	353	no	3d63a2f7f7d3120a5af4b43dc528223b1d9f85b5
-service-workers/cache-storage/worker/cache-keys.https.html	testharness	case	1	347	no	6bafe21d30bb55d4e0dfdc8f3633bcf359fc7d6c
-service-workers/cache-storage/worker/cache-matchAll.https.html	testharness	case	1	359	no	c7e893a23cd63c30d9c0108d92effc55e2c0bfe6
-service-workers/cache-storage/worker/cache-storage-match.https.html	testharness	case	1	373	no	cd93410d234886ce63d97e6c13461b90a9d4d369
-service-workers/cache-storage/worker/cache-match.https.html	testharness	case	1	350	no	479a29d1eec5f49416a075aae9306bcd5b5cc3e6
-service-workers/cache-storage/worker/cache-put.https.html	testharness	case	1	344	no	20aeb2351efb70ceedbd7c5c46dc7d500def71f8
-service-workers/cache-storage/worker/cache-add.https.html	testharness	case	1	361	no	2658e1e50f9ebfe8ac5971a16af9e26b02d140a8
-service-workers/cache-storage/window/cache-abort.https.html	testharness	case	1	415	no	405d34d665c27cee93a03f7013f087cfc0a61af7
-service-workers/cache-storage/worker/cache-abort.https.html	testharness	case	1	357	no	68bbade07d3862c883bf0f95b02a5cb6181d8e79
-service-workers/cache-storage/script-tests/cache-storage.js	support	worker-script	1	8270	no	0de2dbb05e96dd6756f94af769ab2417f3902a95
-service-workers/cache-storage/script-tests/cache-storage-keys.js	support	worker-script	1	1154	no	ef06ccdff5c8df29c2aefb5d11c4d3dfcf493bf6
-service-workers/cache-storage/script-tests/cache-delete.js	support	worker-script	1	5981	no	e5238c455620fc9741a7b149bd060cf10a410874
-service-workers/cache-storage/script-tests/cache-keys.js	support	worker-script	1	7573	no	94b34d1ebf0d91681059875a2e30d83b31e9ca4b
-service-workers/cache-storage/script-tests/cache-matchAll.js	support	worker-script	1	9174	no	438ddebbdc0c716702de01c7cf457678b1276ec5
-service-workers/cache-storage/script-tests/cache-storage-match.js	support	worker-script	1	9074	no	54be7e7b5d78b35314b9fafecd1166203eec9b4d
-service-workers/cache-storage/script-tests/cache-match.js	support	worker-script	1	17226	no	22c0689d36d60cb036376482ffa4a9ca334fc14b
-service-workers/cache-storage/script-tests/cache-put.js	support	worker-script	1	14860	no	f4251105cab0e0e397c65304f784f9af62d17af7
-service-workers/cache-storage/script-tests/cache-add.js	support	worker-script	1	13938	no	62b44c7880168b5762785ed9f75c2dfa167f9401
-service-workers/cache-storage/script-tests/cache-abort.js	support	worker-script	1	3085	no	3c7aa5cd2ffc9ef975e45456b10a60d1c4281693
-common/utils.js	support	page-script	1	2447	no	62e742bee7f67cf3bd92a217a0a92b23fddf3017
-storage/buckets/resources/util.js	support	page-script	1	1459	no	5fff4894442a214f6035956128fe95f4a955791a
-fetch/api/resources/infinite-slow-response.py	support	fetch-body	1	986	no	a26cd8064c88531e6877d2561cd16df964eb7f6e
-fetch/api/resources/stash-take.py	support	fetch-body	1	302	no	e6db80dd86df1e5a80e177b78bd40a59234885b0
-fetch/api/resources/stash-put.py	support	fetch-body	1	745	no	dbc7ceebb882ebb77a0202b3c9a828e2c70dc3bc
+path	manifest_type	roles	referenced_by	bytes	templated	git_blob_sha	source_revision
+resources/testharness.js	support	page-script	9	198291	no	c7ce4f51e1db075809f861255417c27478b2c179	04067ce9c7c2165e71ad7d0dde10a4c5cb394a83
+resources/testharnessreport.js	support	page-script	9	1231	no	405a2d8b06f00fe8292e0e9d5b917e193cfd416c	04067ce9c7c2165e71ad7d0dde10a4c5cb394a83
+common/get-host-info.sub.js	support	page-script	3	3039	no	e9ec61659c3927e519170bc4e5253f91b7671945	04067ce9c7c2165e71ad7d0dde10a4c5cb394a83
+service-workers/cache-storage/resources/test-helpers.js	support	page-script	9	9266	no	050ac0b542455ceb53ed36038af5b9b0810977cf	24197a11e8c5bd29a5cb7bdf18135a82be8a8546
+service-workers/cache-storage/resources/common-worker.js	support	worker-script	1	481	no	d0e8544b56c2677a9c60d47a9e8b587d63bc6d6c	24197a11e8c5bd29a5cb7bdf18135a82be8a8546
+service-workers/cache-storage/resources/simple.txt	support	fetch-body	5	19	no	9e3cb91fb9b95d6e51de85b82e6f86e92f59ac6d	24197a11e8c5bd29a5cb7bdf18135a82be8a8546
+service-workers/cache-storage/resources/blank.html	support	fetch-body	2	41	no	a3c3a4689a62b45b1e429f6b7a94690e556a1259	24197a11e8c5bd29a5cb7bdf18135a82be8a8546
+service-workers/cache-storage/resources/vary.py	support	fetch-body	2	1039	no	7fde1b1094ed4ce4018f17688e55d3be06fff993	24197a11e8c5bd29a5cb7bdf18135a82be8a8546
+service-workers/cache-storage/resources/fetch-status.py	support	fetch-body	1	77	no	b7109f4787fd6d659a192f7f29157862eef36ae9	24197a11e8c5bd29a5cb7bdf18135a82be8a8546
+service-workers/cache-storage/cache-storage.https.any.js	testharness	case	1	8265	no	b7d5af7b532036351ab842de451002ca36f7b4af	04067ce9c7c2165e71ad7d0dde10a4c5cb394a83
+service-workers/cache-storage/cache-match.https.any.js	testharness	case	1	17212	no	9ca45903cbb101810488ced4b31bb9f34957b1ef	04067ce9c7c2165e71ad7d0dde10a4c5cb394a83
+service-workers/cache-storage/cache-add.https.any.js	testharness	case	1	13923	no	c4846eaae40afa38d9bf000169a4917d45a6df81	04067ce9c7c2165e71ad7d0dde10a4c5cb394a83
+service-workers/cache-storage/cache-storage-buckets.https.any.js	testharness	case	1	2240	no	fd59ba464db0305de210fc2935d739b2469ec4ae	04067ce9c7c2165e71ad7d0dde10a4c5cb394a83
+service-workers/cache-storage/cache-storage-keys.https.any.js	testharness	case	1	1156	no	f19522be1b437d619b356b5b0290679a8f391866	04067ce9c7c2165e71ad7d0dde10a4c5cb394a83
+service-workers/cache-storage/cache-delete.https.any.js	testharness	case	1	5978	no	3eae2b6a08b7954a6a5e644b8248f6ebab562a83	04067ce9c7c2165e71ad7d0dde10a4c5cb394a83
+service-workers/cache-storage/cache-keys.https.any.js	testharness	case	1	7568	no	232fb760d4080a02051ba5cf5e8d2964771fda9a	04067ce9c7c2165e71ad7d0dde10a4c5cb394a83
+service-workers/cache-storage/cache-matchAll.https.any.js	testharness	case	1	9173	no	93c55178918c333df25104e69ca74af5dbf04be9	04067ce9c7c2165e71ad7d0dde10a4c5cb394a83
+service-workers/cache-storage/cache-storage-match.https.any.js	testharness	case	1	9077	no	0c31b726294b14b1b849ecbeb369d23a59d126d8	04067ce9c7c2165e71ad7d0dde10a4c5cb394a83
+service-workers/cache-storage/cache-put.https.any.js	testharness	case	1	16193	no	dbf2650a75a5ff051f222ccb736b14f65d98f1b9	04067ce9c7c2165e71ad7d0dde10a4c5cb394a83
+service-workers/cache-storage/common.https.window.js	testharness	case	1	1609	no	eba312c273de149ae9007d69bb4796b147e03841	04067ce9c7c2165e71ad7d0dde10a4c5cb394a83
+service-workers/cache-storage/cache-api-nested-worker.https.html	testharness	case	1	641	no	769200f66aa377840ba9c827d374c9cfaff7ec60	04067ce9c7c2165e71ad7d0dde10a4c5cb394a83
+service-workers/cache-storage/cache-api-nested-worker1.js	support	worker-script	1	110	no	eb5c5cd90bb4f352f97071a3201d163039a10cb3	04067ce9c7c2165e71ad7d0dde10a4c5cb394a83
+service-workers/cache-storage/cache-api-nested-worker2.js	support	worker-script	1	79	no	0af8c3eebfeffb8eab2b33e1b78083f3fa9f1031	04067ce9c7c2165e71ad7d0dde10a4c5cb394a83
+service-workers/cache-storage/worker/cache-storage.https.html	testharness	case	1	355	no	0899609e4aeb46463baf719cbeaea50a3523940e	24197a11e8c5bd29a5cb7bdf18135a82be8a8546
+service-workers/cache-storage/worker/cache-storage-keys.https.html	testharness	case	1	365	no	71d995bc9400b173bef486b178f43d29b8038076	24197a11e8c5bd29a5cb7bdf18135a82be8a8546
+service-workers/cache-storage/worker/cache-delete.https.html	testharness	case	1	353	no	3d63a2f7f7d3120a5af4b43dc528223b1d9f85b5	24197a11e8c5bd29a5cb7bdf18135a82be8a8546
+service-workers/cache-storage/worker/cache-keys.https.html	testharness	case	1	347	no	6bafe21d30bb55d4e0dfdc8f3633bcf359fc7d6c	24197a11e8c5bd29a5cb7bdf18135a82be8a8546
+service-workers/cache-storage/worker/cache-matchAll.https.html	testharness	case	1	359	no	c7e893a23cd63c30d9c0108d92effc55e2c0bfe6	24197a11e8c5bd29a5cb7bdf18135a82be8a8546
+service-workers/cache-storage/worker/cache-storage-match.https.html	testharness	case	1	373	no	cd93410d234886ce63d97e6c13461b90a9d4d369	24197a11e8c5bd29a5cb7bdf18135a82be8a8546
+service-workers/cache-storage/worker/cache-match.https.html	testharness	case	1	350	no	479a29d1eec5f49416a075aae9306bcd5b5cc3e6	24197a11e8c5bd29a5cb7bdf18135a82be8a8546
+service-workers/cache-storage/worker/cache-put.https.html	testharness	case	1	344	no	20aeb2351efb70ceedbd7c5c46dc7d500def71f8	24197a11e8c5bd29a5cb7bdf18135a82be8a8546
+service-workers/cache-storage/worker/cache-add.https.html	testharness	case	1	361	no	2658e1e50f9ebfe8ac5971a16af9e26b02d140a8	24197a11e8c5bd29a5cb7bdf18135a82be8a8546
+service-workers/cache-storage/window/cache-abort.https.html	testharness	case	1	415	no	405d34d665c27cee93a03f7013f087cfc0a61af7	24197a11e8c5bd29a5cb7bdf18135a82be8a8546
+service-workers/cache-storage/worker/cache-abort.https.html	testharness	case	1	357	no	68bbade07d3862c883bf0f95b02a5cb6181d8e79	24197a11e8c5bd29a5cb7bdf18135a82be8a8546
+service-workers/cache-storage/script-tests/cache-storage.js	support	worker-script	1	8270	no	0de2dbb05e96dd6756f94af769ab2417f3902a95	24197a11e8c5bd29a5cb7bdf18135a82be8a8546
+service-workers/cache-storage/script-tests/cache-storage-keys.js	support	worker-script	1	1154	no	ef06ccdff5c8df29c2aefb5d11c4d3dfcf493bf6	24197a11e8c5bd29a5cb7bdf18135a82be8a8546
+service-workers/cache-storage/script-tests/cache-delete.js	support	worker-script	1	5981	no	e5238c455620fc9741a7b149bd060cf10a410874	24197a11e8c5bd29a5cb7bdf18135a82be8a8546
+service-workers/cache-storage/script-tests/cache-keys.js	support	worker-script	1	7573	no	94b34d1ebf0d91681059875a2e30d83b31e9ca4b	24197a11e8c5bd29a5cb7bdf18135a82be8a8546
+service-workers/cache-storage/script-tests/cache-matchAll.js	support	worker-script	1	9174	no	438ddebbdc0c716702de01c7cf457678b1276ec5	24197a11e8c5bd29a5cb7bdf18135a82be8a8546
+service-workers/cache-storage/script-tests/cache-storage-match.js	support	worker-script	1	9074	no	54be7e7b5d78b35314b9fafecd1166203eec9b4d	24197a11e8c5bd29a5cb7bdf18135a82be8a8546
+service-workers/cache-storage/script-tests/cache-match.js	support	worker-script	1	17226	no	22c0689d36d60cb036376482ffa4a9ca334fc14b	24197a11e8c5bd29a5cb7bdf18135a82be8a8546
+service-workers/cache-storage/script-tests/cache-put.js	support	worker-script	1	14860	no	f4251105cab0e0e397c65304f784f9af62d17af7	24197a11e8c5bd29a5cb7bdf18135a82be8a8546
+service-workers/cache-storage/script-tests/cache-add.js	support	worker-script	1	13938	no	62b44c7880168b5762785ed9f75c2dfa167f9401	24197a11e8c5bd29a5cb7bdf18135a82be8a8546
+service-workers/cache-storage/script-tests/cache-abort.js	support	worker-script	1	3085	no	3c7aa5cd2ffc9ef975e45456b10a60d1c4281693	24197a11e8c5bd29a5cb7bdf18135a82be8a8546
+common/utils.js	support	page-script	1	2447	no	62e742bee7f67cf3bd92a217a0a92b23fddf3017	24197a11e8c5bd29a5cb7bdf18135a82be8a8546
+storage/buckets/resources/util.js	support	page-script	1	1459	no	5fff4894442a214f6035956128fe95f4a955791a	04067ce9c7c2165e71ad7d0dde10a4c5cb394a83
+fetch/api/resources/infinite-slow-response.py	support	fetch-body	1	986	no	a26cd8064c88531e6877d2561cd16df964eb7f6e	24197a11e8c5bd29a5cb7bdf18135a82be8a8546
+fetch/api/resources/stash-take.py	support	fetch-body	1	302	no	e6db80dd86df1e5a80e177b78bd40a59234885b0	24197a11e8c5bd29a5cb7bdf18135a82be8a8546
+fetch/api/resources/stash-put.py	support	fetch-body	1	745	no	dbc7ceebb882ebb77a0202b3c9a828e2c70dc3bc	24197a11e8c5bd29a5cb7bdf18135a82be8a8546

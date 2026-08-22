@@ -8,8 +8,20 @@ REPO_ROOT="$(cd "${SCRIPT_DIR}/../../.." && pwd)"
 WPT_REV="04067ce9c7c2165e71ad7d0dde10a4c5cb394a83"
 ASSET_MANIFEST="${WPT_ASSET_MANIFEST:-${REPO_ROOT}/docs/goal/storage-cache-api/evidence/2026-08-22-cache-storage-window-assets.tsv}"
 DATA_ROOT="${WPT_CACHE_STORAGE_DATA:-${REPO_ROOT}/tests/wpt-runner/wpt-data/.cache-storage-window-root}"
-REMOTE_ROOT="${WPT_REMOTE_ROOT:-https://raw.githubusercontent.com/web-platform-tests/wpt/${WPT_REV}}"
-FALLBACK_ROOT="${WPT_FALLBACK_ROOT:-https://cdn.jsdelivr.net/gh/web-platform-tests/wpt@${WPT_REV}}"
+if [[ -n "${WPT_REMOTE_BASE:-}" ]]; then
+  REMOTE_BASE="${WPT_REMOTE_BASE}"
+elif [[ -n "${WPT_REMOTE_ROOT:-}" ]]; then
+  REMOTE_BASE="${WPT_REMOTE_ROOT%/${WPT_REV}}/"
+else
+  REMOTE_BASE="https://raw.githubusercontent.com/web-platform-tests/wpt/"
+fi
+if [[ -n "${WPT_FALLBACK_BASE:-}" ]]; then
+  FALLBACK_BASE="${WPT_FALLBACK_BASE}"
+elif [[ -n "${WPT_FALLBACK_ROOT:-}" ]]; then
+  FALLBACK_BASE="${WPT_FALLBACK_ROOT%@${WPT_REV}}@"
+else
+  FALLBACK_BASE="https://cdn.jsdelivr.net/gh/web-platform-tests/wpt@"
+fi
 CORPUS_LABEL="${WPT_CORPUS_LABEL:-CacheStorage window}"
 EXPECTED_ASSET_COUNT="${WPT_EXPECTED_ASSET_COUNT:-49}"
 MODE="restore"
@@ -35,12 +47,14 @@ validate_entry() {
   local relative="$1"
   local expected_bytes="$2"
   local expected_sha="$3"
+  local source_revision="$4"
 
   case "${relative}" in
     "" | /* | ../* | */../* | */..) return 1 ;;
   esac
   [[ "${expected_bytes}" =~ ^[0-9]+$ ]]
   [[ "${expected_sha}" =~ ^[0-9a-f]{40}$ ]]
+  [[ "${source_revision}" =~ ^[0-9a-f]{40}$ ]]
 }
 
 matches_manifest() {
@@ -54,20 +68,27 @@ matches_manifest() {
 }
 
 fetch_remote() {
-  local root="$1"
-  local relative="$2"
-  local output="$3"
+  local base="$1"
+  local revision="$2"
+  local relative="$3"
+  local output="$4"
+  local separator="/"
+
+  case "${base}" in
+    */ | *@) separator="" ;;
+  esac
 
   curl --fail --location --silent --show-error --retry 2 --retry-all-errors \
     --continue-at - \
     --connect-timeout 10 --max-time 30 \
-    "${root}/${relative}" -o "${output}"
+    "${base}${separator}${revision}/${relative}" -o "${output}"
 }
 
 restore_asset() {
   local relative="$1"
   local expected_bytes="$2"
   local expected_sha="$3"
+  local source_revision="$4"
   local target="${DATA_ROOT}/${relative}"
   local temporary="${target}.tmp"
 
@@ -77,14 +98,20 @@ restore_asset() {
 
   mkdir -p "$(dirname "${target}")"
   if [[ -n "${WPT_SOURCE:-}" ]]; then
-    cp "${WPT_SOURCE}/${relative}" "${temporary}"
-  else
-    if ! fetch_remote "${REMOTE_ROOT}" "${relative}" "${temporary}"; then
-      if [[ -z "${FALLBACK_ROOT}" || "${FALLBACK_ROOT}" == "${REMOTE_ROOT}" ]] ||
-        ! fetch_remote "${FALLBACK_ROOT}" "${relative}" "${temporary}"; then
-        echo "${CORPUS_LABEL} download incomplete; resumable file kept: ${relative}" >&2
-        return 1
-      fi
+    if [[ -f "${WPT_SOURCE}/${relative}" ]]; then
+      cp "${WPT_SOURCE}/${relative}" "${temporary}"
+    fi
+    if matches_manifest "${temporary}" "${expected_bytes}" "${expected_sha}"; then
+      mv "${temporary}" "${target}"
+      return 0
+    fi
+    rm -f "${temporary}"
+  fi
+
+  if ! fetch_remote "${REMOTE_BASE}" "${source_revision}" "${relative}" "${temporary}"; then
+    if ! fetch_remote "${FALLBACK_BASE}" "${source_revision}" "${relative}" "${temporary}"; then
+      echo "${CORPUS_LABEL} download incomplete; resumable file kept: ${relative}" >&2
+      return 1
     fi
   fi
 
@@ -102,11 +129,12 @@ restore_asset() {
 }
 
 count=0
-while IFS=$'\t' read -r relative _manifest_type _roles _referenced_by expected_bytes _templated expected_sha; do
+while IFS=$'\t' read -r relative _manifest_type _roles _referenced_by expected_bytes _templated expected_sha source_revision; do
   if [[ "${relative}" == "path" ]]; then
     continue
   fi
-  if ! validate_entry "${relative}" "${expected_bytes}" "${expected_sha}"; then
+  source_revision="${source_revision:-${WPT_REV}}"
+  if ! validate_entry "${relative}" "${expected_bytes}" "${expected_sha}" "${source_revision}"; then
     echo "Invalid ${CORPUS_LABEL} manifest entry: ${relative}" >&2
     exit 1
   fi
@@ -116,7 +144,7 @@ while IFS=$'\t' read -r relative _manifest_type _roles _referenced_by expected_b
       exit 1
     fi
   else
-    restore_asset "${relative}" "${expected_bytes}" "${expected_sha}"
+    restore_asset "${relative}" "${expected_bytes}" "${expected_sha}" "${source_revision}"
   fi
   count=$((count + 1))
 done < "${ASSET_MANIFEST}"
@@ -126,4 +154,4 @@ if [[ "${count}" -ne "${EXPECTED_ASSET_COUNT}" ]]; then
   exit 1
 fi
 
-echo "${CORPUS_LABEL} corpus ${MODE} complete (${count} assets, WPT ${WPT_REV})"
+echo "${CORPUS_LABEL} corpus ${MODE} complete (${count} assets, default WPT ${WPT_REV})"

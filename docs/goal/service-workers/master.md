@@ -353,7 +353,7 @@ second（replacement）worker 只处理 awaitInstallEvent（messageSequence=1）
 |--------|------|
 | M0 — 选型 RFC（门控） | ✅ 方案 C 已批准 |
 | M1 — 脚本真实执行 + 生命周期真事件 | ✅ current core WPT 156/156 Pass |
-| M2 — fetch 拦截 + Cache 集成 | 🚧 M2-2 production fetch respondWith/pass-through 完成；M2-3/4/5/6 `caches.match()`、`caches.open()`、`Cache.put()`、`Cache.matchAll()`、`Cache.keys()`、`ignoreSearch`/`ignoreMethod` 桥接完成；M2-7 worker-global `fetch()`、`Cache.add/addAll`、CacheStorage `Response.type` 保真与 registration-local CacheStorage 持久化完成；`Response.error()` 可作为 CacheStorage 条目保存/读回，FetchEvent 响应结算仍拒绝 status 0；SW fetch/interception WPT baseline 已扩展到 request projection + respondWith timing/value validation + synthetic Latin-1 response header over iframe XHR，5/8 Pass，broader fetch/cache 基线继续 |
+| M2 — fetch 拦截 + Cache 集成 | 🚧 M2-2 production fetch respondWith/pass-through 完成；M2-3/4/5/6 `caches.match()`、`caches.open()`、`Cache.put()`、`Cache.matchAll()`、`Cache.keys()`、`ignoreSearch`/`ignoreMethod` 桥接完成；M2-7 worker-global `fetch()`、`Cache.add/addAll`、CacheStorage `Response.type` 保真与 registration-local CacheStorage 持久化完成；`Response.error()` 可作为 CacheStorage 条目保存/读回，FetchEvent 响应结算仍拒绝 status 0；SW fetch/interception WPT baseline 已扩展到 request projection + respondWith timing/value validation + synthetic Latin-1 response header over iframe XHR + async fetch listener registration，6/10 Pass，broader fetch/cache 基线继续 |
 | M3 — 控制语义 + 消息 + 收尾 | 🚧 classic startup graph + 控制/消息/update/persistence 完成 |
 
 ## 验证基线
@@ -410,7 +410,7 @@ second（replacement）worker 只处理 awaitInstallEvent（messageSequence=1）
   `make test-wpt-service-workers-import-dynamic-wave-assets` 固化篡改/修复回归
 - Import-event-wave 资产恢复/审计：3 assets / 5 subtest；
   `make test-wpt-service-workers-import-event-wave-assets` 固化篡改/修复回归
-- Fetch-wave 资产恢复/审计：11 assets / 6 subtest；
+- Fetch-wave 资产恢复/审计：20 assets / 10 subtest；
   `make test-wpt-service-workers-fetch-wave-assets` 固化篡改/修复回归
 - Dynamic-import-update-wave 资产恢复/审计：17 assets / 7 subtest；
   `make test-wpt-service-workers-dynamic-import-update-wave-assets` 固化篡改/修复回归
