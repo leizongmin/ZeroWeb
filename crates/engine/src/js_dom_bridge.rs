@@ -1570,6 +1570,22 @@ pub fn parse_html_element_json(html: &str, selector: &str, all: bool) -> String 
 /// 无 URL → `:target` 恒 miss）。`url` 注入 `doc.set_url`，`:target` 经
 /// `is_target_element` 判定。
 pub fn parse_html_element_json_with_url(html: &str, selector: &str, all: bool, url: Option<&str>) -> String {
+    parse_html_element_json_full(html, selector, all, url, false)
+}
+
+/// R161（js-dom M4）：全参变体——`filter_synthetic` 剔除**合成容器**命中
+///（html5ever 解析任意片段都补 html/body 容器；元素子树查询面——`_zwParseEl`/
+/// `_zwMEl` 的 outerHTML 序列化无 `<html`/`<body` 开标签——这些是合成祖先，
+/// spec 子树查询不含根外元素，WPT "Type selector, matching html element" 的
+/// element 上下文 expect 0。doc 级 detHtml 包装含真实标签 → 保留。默认 false
+/// 零变化——DOMParser 的合成 body 导出等既有消费不受影响）。
+pub fn parse_html_element_json_full(
+    html: &str,
+    selector: &str,
+    all: bool,
+    url: Option<&str>,
+    filter_synthetic: bool,
+) -> String {
     let mut doc = parse_html(html);
     if url.is_some() {
         doc.set_url(url.map(str::to_string));
@@ -1583,6 +1599,18 @@ pub fn parse_html_element_json_with_url(html: &str, selector: &str, all: bool, u
             .collect()
     };
     let mut items: Vec<String> = Vec::new();
+    // R161（js-dom M4）：合成容器过滤——html5ever 解析任意片段都会补 html/body
+    // 容器；元素子树查询（`_zwParseEl`/`_zwMEl` 的 outerHTML 序列化）中这些
+    // **合成祖先不在查询面**（spec：子树查询不含根外元素——WPT "Type selector,
+    // matching html element" 的 element 上下文 expect 0）。仅当源串真实含
+    // html/body 开标签时才保留对应容器命中（doc 级 detHtml 包装 `<html ...>` 的
+    // R159 保真路径）。
+    let (src_has_html, src_has_body) = if filter_synthetic {
+        let html_lower = html.to_ascii_lowercase();
+        (html_lower.contains("<html"), html_lower.contains("<body"))
+    } else {
+        (true, true)
+    };
     for id in ids {
         let Some(nd) = doc.get(id) else {
             continue;
@@ -1591,6 +1619,12 @@ pub fn parse_html_element_json_with_url(html: &str, selector: &str, all: bool, u
             continue;
         };
         let tag = e.local_name().to_string();
+        if tag == "html" && !src_has_html {
+            continue;
+        }
+        if tag == "body" && !src_has_body {
+            continue;
+        }
         let mut attrs_json: Vec<String> = Vec::new();
         for attr in &e.attributes {
             attrs_json.push(format!(

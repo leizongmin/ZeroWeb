@@ -301,8 +301,10 @@ pub fn register_dom_callbacks(
             let sel = args.get(1).map(String::as_str).unwrap_or("");
             let all = args.get(2).map(|s| s == "1").unwrap_or(false);
             // R160：arg[3] 可选 URL（iframe 子文档的 `:target` fragment 判定）。
+            // R161：arg[4] 可选 filter_synthetic（元素子树查询剔合成 html/body 容器）。
             let url = args.get(3).map(String::as_str);
-            parse_html_element_json_with_url(html, sel, all, url)
+            let filter_syn = args.get(4).map(|s| s == "1").unwrap_or(false);
+            parse_html_element_json_full(html, sel, all, url, filter_syn)
         }),
     );
 

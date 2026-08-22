@@ -1642,13 +1642,13 @@
   _zwParseEl.prototype.querySelector = function (sel) {
     if (globalThis._zwQueryGuard) globalThis._zwQueryGuard(sel, arguments.length);
     if (typeof __zw_parse_html_query !== 'function') return null;
-    var arr = JSON.parse(__zw_parse_html_query(this.outerHTML, String(sel), '0'));
+    var arr = JSON.parse(__zw_parse_html_query(this.outerHTML, String(sel), '0', '', '1')); // R161: filter_synthetic
     return arr.length ? this._zwWrapQ(arr[0]) : null;
   };
   _zwParseEl.prototype.querySelectorAll = function (sel) {
     if (globalThis._zwQueryGuard) globalThis._zwQueryGuard(sel, arguments.length);
     if (typeof __zw_parse_html_query !== 'function') return [];
-    var arr = JSON.parse(__zw_parse_html_query(this.outerHTML, String(sel), '1'));
+    var arr = JSON.parse(__zw_parse_html_query(this.outerHTML, String(sel), '1', '', '1')); // R161: filter_synthetic
     var out = [];
     for (var i = 0; i < arr.length; i++) out.push(this._zwWrapQ(arr[i]));
     out.__zwQSA = true;

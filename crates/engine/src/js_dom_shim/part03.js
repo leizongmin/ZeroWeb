@@ -502,7 +502,7 @@
     function _zwMQueryAll(n, sel) {
       if (typeof __zw_parse_html_query !== 'function') return [];
       try {
-        var arr = JSON.parse(__zw_parse_html_query(_zwMOuterHtml(n), String(sel), '1'));
+        var arr = JSON.parse(__zw_parse_html_query(_zwMOuterHtml(n), String(sel), '1', '', '1')); // R161: filter_synthetic
         return arr || [];
       } catch (_e) { return []; }
     }
@@ -6332,7 +6332,7 @@
                 if (c.nodeType === 1 && typeof c.outerHTML === 'string') h += c.outerHTML;
               }
               h += '</body>';
-              var r = JSON.parse(__zw_parse_html_query(h, String(sel), '1')) || [];
+              var r = JSON.parse(__zw_parse_html_query(h, String(sel), '1', '', '1')) || []; // R161: filter_synthetic（fragment 无 html 容器）
               var out = [];
               // R158：per-fragment wrapper 缓存（同 _zwMWrapCached——querySelector
               // 与 querySelectorAll[0] 的 identity 断言；key 含 outer，子树变更自然 miss）。

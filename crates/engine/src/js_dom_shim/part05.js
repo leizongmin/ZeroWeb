@@ -1051,6 +1051,11 @@
       // R140（js-dom M4）：EventTarget 构造器（WPT Event-dispatch-throwing-multiple-globals
       // 的 `new w2.EventTarget()`——iframe win 的跨 realm 事件目标面）。
       EventTarget: globalThis.EventTarget,
+      // R161（js-dom M4）：NodeList 构造器（WPT ParentNode-querySelector-All 的
+      // `windowFor(root).NodeList` instanceof 判定——iframe win 缺构造器旧报
+      // "Right-hand side of 'instanceof' is not an object"）。
+      NodeList: globalThis.NodeList,
+      HTMLCollection: globalThis.HTMLCollection,
     };
     win.addEventListener = function (type, fn) {
       try { globalThis.addEventListener(type, fn); } catch (_e139a) {}

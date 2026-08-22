@@ -1711,8 +1711,30 @@
         return _zwMakeCollection(out, false);
       }
       var all = __zw_query_all(q);
-      if (!all) return _zwMakeCollection([], false);
-      var r159 = _zwMakeCollection(all.split('|').filter(Boolean).map(_wrapSelector), false);
+      // R161：tag 形态的 pending 回落（R145 querySelector 单点版的 QSA 镜像——
+      // WPT `querySelectorAll(null)` 对 setup 同 turn append 的 `<null>` 元素
+      // expect 1；host 快照 miss 时扫 pending added）。仅纯 tag。
+      var out161 = all ? all.split('|').filter(Boolean).map(_wrapSelector) : [];
+      var tagM161 = /^[A-Za-z][\w-]*$/.exec(q);
+      if (tagM161 && typeof _zwPendingAdded !== 'undefined' && _zwPendingAdded.length) {
+        var seen161 = {};
+        for (var si = 0; si < out161.length; si++) {
+          try { seen161[_elKeyOf(out161[si]) || ('s' + si)] = 1; } catch (_e161s) {}
+        }
+        var wantTag161 = q.toUpperCase();
+        for (var pi = 0; pi < _zwPendingAdded.length; pi++) {
+          var pn161 = _zwPendingAdded[pi];
+          if (!pn161 || pn161.nodeType !== 1) continue;
+          try {
+            if (String(pn161.tagName) !== wantTag161) continue;
+            var k161 = null;
+            try { k161 = pn161.__zwHandle ? ('@' + pn161.__zwHandle) : (pn161.id ? ('id:' + pn161.id) : null); } catch (_e161k) {}
+            if (k161 && seen161[k161]) continue;
+            out161.push(pn161);
+          } catch (_e161p) {}
+        }
+      }
+      var r159 = _zwMakeCollection(out161, false);
       try { r159.__zwQSA = true; } catch (_e159q) {} // R159：instanceof NodeList 标记
       return r159;
     },
