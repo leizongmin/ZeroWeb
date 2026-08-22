@@ -7015,12 +7015,16 @@
             if (globalThis._zwQueryGuard) globalThis._zwQueryGuard(sel, arguments.length);
             if (typeof __zw_parse_html_query !== 'function') return [];
             try {
-              var h = '<body>';
+              // R175（js-dom M4）：子串直发（不再包字面 `<body>`）——包装串使
+              // host `filter_synthetic` 的 `contains("<body")` 判源含 body，合成
+              // 容器命中被保留，`body` 选择器误返 1（WPT Fragment "Type selector,
+              // matching body element" expect 0——fragment 无 body）。直发后源
+              // 无 body 标签，合成容器由 filter_synthetic 正确剔除。
+              var h = '';
               for (var i = 0; i < frag.childNodes.length; i++) {
                 var c = frag.childNodes[i];
                 if (c.nodeType === 1 && typeof c.outerHTML === 'string') h += c.outerHTML;
               }
-              h += '</body>';
               var r = JSON.parse(__zw_parse_html_query(h, String(sel), '1', '', '1')) || []; // R161: filter_synthetic（fragment 无 html 容器）
               var out = [];
               // R163（js-dom M4 / L2 首片）：**真实节点优先**——fragment 子树里

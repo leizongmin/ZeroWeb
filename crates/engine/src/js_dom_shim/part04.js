@@ -376,12 +376,16 @@
                   // \x1f headers \x1f body——FIELD_SEP=\x1f，body 是末字段（原样保真）。
                   var _r115Parts = _r115Wire.split('\x1f');
                   var _r115Body = _r115Parts.length > 3 ? _r115Parts.slice(3).join('\x1f') : '';
-                  // R156（js-dom M4）：kind 判定补 `.html`——正则 \.xhtml? 只匹配
-                  // .xhtml（漏 .html 大类）→ HTML 子文档被判 'xml'，_zwMakeIframeDoc 的
-                  // XML 分支 bodyInner 不赋值 → body 空、querySelector 全 miss（WPT
-                  // Element-matches/ParentNode-querySelector-All 的 iframe contentDocument
-                  // 整页 error 根因）。.html/.xhtml 均走 html 变体（XHTML ns）。
-                  var kind = /\.x?html?(\?|#|$)/i.test(_r115Url) ? 'xhtml' : 'xml';
+                  // R175（js-dom M4，修正 R156）：kind 判定区分 `.html` 与 `.xhtml`——
+                  // 真浏览器按 HTTP Content-Type/扩展解析：`.html` → HTML 文档
+                  //（contentType 'text/html'，createElement 的 tagName ASCII 大写、
+                  // localName 小写）；`.xhtml` → XHTML（XML 语义，大小写保持——WPT
+                  // Document-createElement "XHTML document" 断言 tagName 原样）。R156
+                  // 把 .html 也判 'xhtml' 使 HTML iframe 子文档的 createElement 产物
+                  // nodeName 小写，doc 查询树的 tag 匹配（want 大写）miss（WPT
+                  // ParentNode "new NodeList" append 后计数不增的根因）。
+                  var kind = /\.xhtml(\?|#|$)/i.test(_r115Url) ? 'xhtml'
+                    : (/\.html?(\?|#|$)/i.test(_r115Url) ? 'html' : 'xml');
                   _r115Entry.doc = _zwMakeIframeDoc(kind, _r115Body);
                   try { _r115Entry.doc._zwURL = _r115Url; } catch (_e115u) {}
                   // R160：fragment URL 槽（`:target` 判定——WPT :target 簇的

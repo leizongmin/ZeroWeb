@@ -747,6 +747,12 @@
     if (kind === 'xml') {
       doc.contentType = 'application/xml';
       doc._docNS = null;
+    } else if (kind === 'html') {
+      // R175：HTML 子文档（.html 扩展）——contentType 'text/html'（真浏览器按
+      // 扩展/Content-Type 判 HTML 解析；createElement tagName 大写 / localName
+      // 小写——_zwIframeCreateElement 的 isHtml 分支）。
+      doc.contentType = 'text/html';
+      doc._docNS = 'http://www.w3.org/1999/xhtml';
     } else {
       doc.contentType = 'application/xhtml+xml';
       doc._docNS = 'http://www.w3.org/1999/xhtml';

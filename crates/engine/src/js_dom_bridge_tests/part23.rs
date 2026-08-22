@@ -211,3 +211,15 @@ fn test_iframe_inline_script_xhr_uses_iframe_window_location() {
     );
     assert_eq!(sandbox.execute("__iframeDone").unwrap().value, "PASS");
 }
+
+// R175（js-dom M4 DBG）：fragment 子串直发后的合成 body 过滤——host 侧
+// `filter_synthetic` 对无 `<body` 开标签的源串必须剔合成 body 命中
+//（WPT Fragment "Type selector, matching body element" expect 0）。
+#[test]
+fn zz_r175_frag_body_filter() {
+    let src = r#"<div id="root"><div id="universal"><p id="universal-p1">x</p></div></div>"#;
+    let out = super::parse_html_element_json_full(src, "body", true, None, true);
+    assert_eq!(out, "[]", "synthetic body must be filtered: {out}");
+    let out2 = super::parse_html_element_json_full(src, "div", true, None, true);
+    assert!(out2.contains("root"), "div should match: {out2}");
+}
