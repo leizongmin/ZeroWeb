@@ -2,7 +2,7 @@
 
 **入口文档**: [../service-workers.md](../service-workers.md)
 **创建日期**: 2026-08-17（goal 拆分 bootstrap）
-**最后更新**: 2026-08-22（CacheStorage page/WebView 持久化底座；broader SW fetch/cache baseline 继续）
+**最后更新**: 2026-08-22（SW registration-local CacheStorage 持久化；broader SW fetch/cache baseline 继续）
 
 ---
 
@@ -29,8 +29,10 @@ delete-dooming 生命周期、DOMString code-unit name wire、Vary/`ignoreVary`�
 body consumption、opaque 内部 206 / `Vary: *` 可缓存、`Response.redirect()` 与 Blob/FormData
 response body 共享语义已落地。该 sibling 的 page/WebView `StorageManager` owner 现已支持
 per-origin CacheStorage 持久化和跨 WebView 重建读回，Browser normal profile 使用 sibling
-CacheStorage 目录且 private profile 保持内存；SW registration-local CacheStorage 持久化仍待
-本目标后续接入。
+CacheStorage 目录且 private profile 保持内存。SW active registration 的 registration-local
+`CacheStorage` 现已纳入 `ServiceWorkerPersistentRegistration` snapshot/restore；normal profile
+在 `caches.open()` / `Cache.put()` 成功后标记持久化 dirty 并写回 Service Worker persistence
+JSON，private profile 继续只保留内存态。
 该 sibling 与当前 SW runtime 链路共用 Cache API 语义，但 SW fetch/cache 专属 WPT baseline
 和 opaque/basic/cors 等剩余 filtered response 生成/可缓存性矩阵仍归后续切片。
 
@@ -251,8 +253,11 @@ CacheStorage 目录且 private profile 保持内存；SW registration-local Cach
   该进展固定共享 Cache API 元数据链路，但不等同于 SW fetch/cache WPT baseline 完成。
 - ✅ storage-cache-api 侧支撑：page/WebView `StorageManager` owner 已支持 per-origin
   CacheStorage 持久化、跨 WebView 重建读回和磁盘 I/O 错误 Promise reject；该进展是 SW
-  cache 模式底座，但不等同于 registration-local CacheStorage 持久化或 SW cache-storage
-  WPT 完成。
+  cache 模式底座；registration-local CacheStorage 持久化见下一条，SW cache-storage WPT
+  扩面仍待后续。
+- ✅ M3 registration-local CacheStorage persistence：active registration 的 `CacheStorage`
+  通过 `CacheStorageSnapshot` 随 `ServiceWorkerPersistentRegistration` 落盘/恢复；normal
+  profile 的 SW cache mutation 会触发现有 persistence writer，private profile 继续内存化。
 
 ## 缺口清单
 
@@ -260,7 +265,7 @@ CacheStorage 目录且 private profile 保持内存；SW registration-local Cach
 |---|------|------|
 | S1 | SW 执行环境架构与独立 runtime | ✅ production browser owner + renderer discovery 真链路 |
 | S2 | scriptURL 不下载执行 | ✅ production navigator 经 browser fetch/evaluate |
-| S3 | fetch 拦截为零 | 🚧 M2-2 production 页面 fetch respondWith/pass-through 已接入；M2-3/4/5/6 `caches.match()`、`caches.open()`、`Cache.put()`、`Cache.matchAll()`、`Cache.keys()` 与 `ignoreSearch`/`ignoreMethod` 桥接已接入；M2-7 worker-global `fetch()`、SW runtime `Cache.add/addAll` 与 CacheStorage `Response.type` 保真已接入；`Response.error()` 可作为 CacheStorage 条目保存/读回，但 FetchEvent 响应结算仍拒绝 status 0；首个 SW fetch/interception WPT baseline 1/1 Pass 已接入，broader fetch/cache 基线未完成 |
+| S3 | fetch 拦截为零 | 🚧 M2-2 production 页面 fetch respondWith/pass-through 已接入；M2-3/4/5/6 `caches.match()`、`caches.open()`、`Cache.put()`、`Cache.matchAll()`、`Cache.keys()` 与 `ignoreSearch`/`ignoreMethod` 桥接已接入；M2-7 worker-global `fetch()`、SW runtime `Cache.add/addAll` 与 CacheStorage `Response.type` 保真已接入；registration-local CacheStorage 持久化已接入；`Response.error()` 可作为 CacheStorage 条目保存/读回，但 FetchEvent 响应结算仍拒绝 status 0；首个 SW fetch/interception WPT baseline 1/1 Pass 已接入，broader fetch/cache 基线未完成 |
 | S4 | 事件为 setTimeout 模拟 | ✅ manager transition log 为状态源；timer 只执行页面 task 投影 |
 | S5 | WPT 覆盖为零 | ✅ core 34/34 case、156/156 Pass、0 Fail/Timeout/Unsupported |
 
@@ -272,8 +277,8 @@ CacheStorage 目录且 private profile 保持内存；SW registration-local Cach
 
 ## 下一步计划
 
-1. **M2 fetch/cache WPT 扩面**：在首个 fetch/interception baseline 之后，继续挑选当前可执行的
-   Service Worker fetch/cache 上游用例，扩展 pass-rate evidence
+1. **M2 fetch/cache WPT 扩面**：在首个 fetch/interception baseline 与 SW CacheStorage
+   持久化之后，继续挑选当前可执行的 Service Worker fetch/cache 上游用例，扩展 pass-rate evidence
 2. **M3 clients follow-up**：popup/auxiliary 真实 browsing context 创建后接入 browser owner
 
 ## 里程碑状态
@@ -282,7 +287,7 @@ CacheStorage 目录且 private profile 保持内存；SW registration-local Cach
 |--------|------|
 | M0 — 选型 RFC（门控） | ✅ 方案 C 已批准 |
 | M1 — 脚本真实执行 + 生命周期真事件 | ✅ current core WPT 156/156 Pass |
-| M2 — fetch 拦截 + Cache 集成 | 🚧 M2-2 production fetch respondWith/pass-through 完成；M2-3/4/5/6 `caches.match()`、`caches.open()`、`Cache.put()`、`Cache.matchAll()`、`Cache.keys()`、`ignoreSearch`/`ignoreMethod` 桥接完成；M2-7 worker-global `fetch()`、`Cache.add/addAll` 与 CacheStorage `Response.type` 保真完成；`Response.error()` 可作为 CacheStorage 条目保存/读回，FetchEvent 响应结算仍拒绝 status 0；首个 SW fetch/interception WPT baseline 1/1 Pass 已接入，broader fetch/cache 基线继续 |
+| M2 — fetch 拦截 + Cache 集成 | 🚧 M2-2 production fetch respondWith/pass-through 完成；M2-3/4/5/6 `caches.match()`、`caches.open()`、`Cache.put()`、`Cache.matchAll()`、`Cache.keys()`、`ignoreSearch`/`ignoreMethod` 桥接完成；M2-7 worker-global `fetch()`、`Cache.add/addAll`、CacheStorage `Response.type` 保真与 registration-local CacheStorage 持久化完成；`Response.error()` 可作为 CacheStorage 条目保存/读回，FetchEvent 响应结算仍拒绝 status 0；首个 SW fetch/interception WPT baseline 1/1 Pass 已接入，broader fetch/cache 基线继续 |
 | M3 — 控制语义 + 消息 + 收尾 | 🚧 classic startup graph + 控制/消息/update/persistence 完成 |
 
 ## 验证基线
@@ -407,6 +412,9 @@ CacheStorage 目录且 private profile 保持内存；SW registration-local Cach
   opaque response Vary 匹配、`Cache.put()` body consumption、opaque 内部 206 / `Vary: *`、
   `Response.redirect()` 与 Blob/FormData response body 的页面侧语义，见
   [M2 CacheStorage Window WPT Expansion](../storage-cache-api/evidence/2026-08-22-m2-cache-window-expansion.md)
+- M3 registration-local CacheStorage persistence：active registration `CacheStorage` snapshot/
+  restore、normal profile mutation dirtying 与 owner 重建读回见
+  [M3 Service Worker CacheStorage Persistence](evidence/2026-08-22-m3-registration-cache-storage-persistence.md)
 - M1-5 core WPT：固定 12-case runner、两轮确定性 baseline 与 13 个红项分组见
   [M1 core WPT baseline](evidence/2026-08-19-m1-wpt-core-baseline.md)
 - M1-5b lifecycle task：manager transition log、IPC cursor、EventTarget/slot task 与 30/36
@@ -575,7 +583,8 @@ CacheStorage 目录且 private profile 保持内存；SW registration-local Cach
 | 2026-08-21 | M3-32 committed top-level client | production navigation commit 登记 top-level SW client；replacement start 清旧 epoch client |
 | 2026-08-21 | M3-33 window client lifecycle | browser owner 暴露 window client 创建/销毁入口；移除 nested 不影响同 tab top-level/auxiliary |
 | 2026-08-21 | M3-34 renderer iframe lifecycle | iframe contentWindow 物化触发 nested client observe；删除/替换/清空子树触发 remove；browser 归一 child client id |
-| 2026-08-22 | storage-cache-api M3 persistence support | page/WebView owner CacheStorage per-origin 落盘；SW registration-local CacheStorage 待接入 |
+| 2026-08-22 | M3 registration CacheStorage persistence | SW active registration-local CacheStorage snapshot/restore；normal profile persistence dirtying |
+| 2026-08-22 | storage-cache-api M3 persistence support | page/WebView owner CacheStorage per-origin 落盘 |
 | 2026-08-21 | M2-1 fetch runtime foundation | `FetchEvent`/`Request`/`Response` MVP；manager longest-scope dispatch；browser/renderer IPC command/event；生产页面 fetch/Cache 集成仍待后续 |
 | 2026-08-19 | 三方案对比 | 拒绝同线程 context（无调度隔离）；拒绝从零线程（复制安全基建）；推荐抽取 Worker 线程核 |
 | 2026-08-19 | owner | production browser process 单一 owner；WebView 只做同算法 in-process adapter |

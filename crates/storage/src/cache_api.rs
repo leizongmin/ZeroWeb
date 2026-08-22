@@ -9,7 +9,7 @@ use crate::StorageError;
 pub(crate) mod persistence;
 
 /// 缓存请求的简化表示。
-#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct CacheRequest {
     /// 请求 URL。
     pub url: String,
@@ -60,7 +60,7 @@ pub struct CacheQueryOptions {
 }
 
 /// 缓存响应的简化表示。
-#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct CacheResponse {
     /// Response URL associated with the stored response.
     pub url: String,
@@ -118,6 +118,34 @@ impl CacheResponse {
         self.headers.insert(name.to_string(), value.to_string());
         self
     }
+}
+
+/// Serializable snapshot of one [`CacheStorage`] instance.
+///
+/// This is an interchange format for storage owners that need to persist
+/// CacheStorage data while keeping [`CacheStorage`] internals private.
+#[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct CacheStorageSnapshot {
+    /// Named caches in creation order.
+    pub caches: Vec<CacheSnapshot>,
+}
+
+/// Serializable snapshot of one named [`Cache`].
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct CacheSnapshot {
+    /// Cache name.
+    pub name: String,
+    /// Cached request/response entries in insertion order.
+    pub entries: Vec<CacheEntrySnapshot>,
+}
+
+/// Serializable snapshot of one Cache entry.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct CacheEntrySnapshot {
+    /// Stored request snapshot.
+    pub request: CacheRequest,
+    /// Stored response snapshot.
+    pub response: CacheResponse,
 }
 
 /// 缓存条目。
@@ -347,6 +375,42 @@ impl CacheStorage {
     /// Iterate over named caches in creation order.
     pub(crate) fn iter_caches(&self) -> impl Iterator<Item = (&str, &Cache)> {
         self.caches.iter().map(|(name, cache)| (name.as_str(), cache))
+    }
+
+    /// Create a serializable snapshot in cache creation and entry insertion order.
+    pub fn snapshot(&self) -> CacheStorageSnapshot {
+        CacheStorageSnapshot {
+            caches: self
+                .iter_caches()
+                .map(|(name, cache)| CacheSnapshot {
+                    name: name.to_string(),
+                    entries: cache
+                        .entries()
+                        .map(|(request, response)| CacheEntrySnapshot {
+                            request: request.clone(),
+                            response: response.clone(),
+                        })
+                        .collect(),
+                })
+                .collect(),
+        }
+    }
+
+    /// Restore CacheStorage from a snapshot, validating entries through [`Cache::put`].
+    pub fn from_snapshot(snapshot: CacheStorageSnapshot) -> Result<Self, StorageError> {
+        let caches = snapshot
+            .caches
+            .into_iter()
+            .map(|cache| {
+                let entries = cache
+                    .entries
+                    .into_iter()
+                    .map(|entry| (entry.request, entry.response))
+                    .collect();
+                Cache::from_entries(&cache.name, entries).map(|cache_data| (cache.name, cache_data))
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        Self::from_caches(caches)
     }
 }
 

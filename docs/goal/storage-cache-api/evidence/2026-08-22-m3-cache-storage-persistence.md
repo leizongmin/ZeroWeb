@@ -36,9 +36,9 @@ the page/WebView host path to use it.
 
 ## Remaining
 
-- Service Worker registration-local CacheStorage still lives on the
-  registration snapshot path; this slice only covers the shared page/WebView
-  `StorageManager` owner.
+- Service Worker registration-local CacheStorage persistence was completed by
+  the follow-up slice recorded in
+  `docs/goal/service-workers/evidence/2026-08-22-m3-registration-cache-storage-persistence.md`.
 - Full `basic` / `cors` / `opaque` / `opaqueredirect` filtered response
   creation coverage remains open.
 - Dynamic-server and cross-origin CacheStorage WPT expansion remains open.

@@ -2112,6 +2112,58 @@ fn persistent_owner_restores_active_runtime_and_unregisters_durably() {
 }
 
 #[test]
+fn persistent_owner_restores_registration_cache_storage() {
+    let path = persistence_path("cache-storage");
+    let _ = std::fs::remove_dir_all(path.parent().unwrap());
+    {
+        let mut owner = BrowserServiceWorkerOwner::with_local_hosts_and_persistence(path.clone());
+        let disposition = owner.begin_request(
+            TabId(1),
+            false,
+            57,
+            Some("https://example.test/app/page"),
+            register_request("https://example.test/app/page"),
+        );
+        attach_script(
+            &mut owner,
+            disposition,
+            "addEventListener('install', event => {
+               event.waitUntil((async () => {
+                 const cache = await caches.open('runtime');
+                 await cache.put(
+                   new Request('https://example.test/app/persisted'),
+                   new Response('persisted-body', {headers: [['x-cache', 'restored']]})
+                 );
+               })());
+             });",
+        );
+        let response = wait_for_response(&mut owner);
+        let Ok(ServiceWorkerResult::Registered { registration_id }) = response.params.result else {
+            panic!("persistent registration failed");
+        };
+        wait_for_registration_state(&mut owner, registration_id, ServiceWorkerState::Activated);
+        let deadline = Instant::now() + Duration::from_secs(5);
+        while !path.is_file() {
+            let _ = owner.poll();
+            assert!(Instant::now() < deadline, "persistence file was not written");
+            std::thread::sleep(Duration::from_millis(5));
+        }
+    }
+
+    let restored = BrowserServiceWorkerOwner::with_local_hosts_and_persistence(path.clone());
+    let registrations = restored.normal.registrations_for_origin("https://example.test");
+    assert_eq!(registrations.len(), 1);
+    let matched = registrations[0]
+        .cache_storage
+        .get("runtime")
+        .and_then(|cache| cache.match_request(&zero_storage::CacheRequest::new("https://example.test/app/persisted")))
+        .expect("registration CacheStorage entry should be restored");
+    assert_eq!(matched.body, b"persisted-body");
+    assert_eq!(matched.headers.get("x-cache").map(String::as_str), Some("restored"));
+    std::fs::remove_dir_all(path.parent().unwrap()).unwrap();
+}
+
+#[test]
 fn private_and_invalid_persistence_never_restore_into_normal_profile() {
     let path = persistence_path("private");
     let _ = std::fs::remove_dir_all(path.parent().unwrap());

@@ -2290,6 +2290,9 @@ impl BrowserServiceWorkerOwner {
                 } => {
                     self.complete_page_fetch_event(profile, registration_id, event_id, request_url, response, message);
                 }
+                ServiceWorkerManagerEvent::CacheStorageMutated { .. } if profile == ProfileKey::Normal => {
+                    persistence_dirty = true;
+                }
                 ServiceWorkerManagerEvent::InstallCompleted {
                     registration_id,
                     succeeded: false,

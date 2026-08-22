@@ -8,8 +8,8 @@ use zero_script_sandbox::{
     ServiceWorkerMessagePorts, ServiceWorkerOutboundMessage, ServiceWorkerRuntime, ServiceWorkerScriptErrorKind,
 };
 use zero_storage::{
-    CacheQueryOptions, CacheRequest, CacheResponse, ServiceWorkerRegistration, ServiceWorkerRegistry,
-    ServiceWorkerScriptType, ServiceWorkerState, ServiceWorkerUpdateViaCache,
+    CacheQueryOptions, CacheRequest, CacheResponse, CacheStorage, CacheStorageSnapshot, ServiceWorkerRegistration,
+    ServiceWorkerRegistry, ServiceWorkerScriptType, ServiceWorkerState, ServiceWorkerUpdateViaCache,
 };
 
 const DEFAULT_RUNTIME_LIMIT: usize = 32;
@@ -93,6 +93,7 @@ struct EvaluationOptions {
     script_type: ServiceWorkerScriptType,
     restoring_active: bool,
     restored_imported_scripts: Vec<ServiceWorkerImportedScript>,
+    restored_cache_storage: CacheStorage,
 }
 
 #[derive(Debug, Clone)]
@@ -203,6 +204,9 @@ pub struct ServiceWorkerPersistentRegistration {
     /// Canonical imported classic script URLs and source bytes.
     #[serde(default)]
     pub imported_scripts: Vec<ServiceWorkerImportedScript>,
+    /// Registration-local CacheStorage owned by this Service Worker.
+    #[serde(default)]
+    pub cache_storage: CacheStorageSnapshot,
 }
 
 /// One imported classic script or static module dependency.
@@ -355,6 +359,11 @@ pub enum ServiceWorkerManagerEvent {
         response: Option<ServiceWorkerFetchResponse>,
         /// Handler or response-conversion diagnostic. Empty means success or pass-through.
         message: String,
+    },
+    /// A registration-local CacheStorage mutation completed successfully.
+    CacheStorageMutated {
+        /// Registration version whose CacheStorage changed.
+        registration_id: u64,
     },
 }
 
@@ -823,6 +832,7 @@ impl ServiceWorkerManager {
                 script_type: ServiceWorkerScriptType::Classic,
                 restoring_active: false,
                 restored_imported_scripts: Vec::new(),
+                restored_cache_storage: CacheStorage::new(),
             },
         )
     }
@@ -847,6 +857,7 @@ impl ServiceWorkerManager {
                 script_type,
                 restoring_active: false,
                 restored_imported_scripts: Vec::new(),
+                restored_cache_storage: CacheStorage::new(),
             },
         )
     }
@@ -908,7 +919,11 @@ impl ServiceWorkerManager {
             update_via_cache,
             script_type,
             imported_scripts,
+            cache_storage,
         } = registration;
+        let cache_storage = CacheStorage::from_snapshot(cache_storage).map_err(|error| {
+            ServiceWorkerManagerError::InvalidInput(format!("invalid Service Worker CacheStorage: {error}"))
+        })?;
         self.start_evaluation_internal(
             &script_url,
             &scope,
@@ -919,6 +934,7 @@ impl ServiceWorkerManager {
                 script_type,
                 restoring_active: true,
                 restored_imported_scripts: imported_scripts,
+                restored_cache_storage: cache_storage,
             },
         )
     }
@@ -963,6 +979,7 @@ impl ServiceWorkerManager {
         registration.state = ServiceWorkerState::Installing;
         registration.update_via_cache = options.update_via_cache;
         registration.script_type = options.script_type;
+        registration.cache_storage = options.restored_cache_storage;
         if let Err(error) = self.host.evaluate(id, script_url, script, options.script_type) {
             self.registry.unregister(id);
             return Err(error);
@@ -1443,7 +1460,14 @@ impl ServiceWorkerManager {
                     );
                 }
                 ServiceWorkerEvent::CacheStorageRequested { request_id, request } => {
+                    let mutates_cache_storage = matches!(
+                        &request,
+                        ServiceWorkerCacheStorageRequest::Open { .. } | ServiceWorkerCacheStorageRequest::Put { .. }
+                    );
                     let result = self.cache_storage_for_worker(registration_id, request);
+                    if mutates_cache_storage && result.is_ok() {
+                        output.push(ServiceWorkerManagerEvent::CacheStorageMutated { registration_id });
+                    }
                     let _ = self.host.complete_cache_storage(
                         registration_id,
                         request_id,
@@ -2623,6 +2647,7 @@ impl ServiceWorkerManager {
                     update_via_cache: registration.update_via_cache,
                     script_type: registration.script_type,
                     imported_scripts,
+                    cache_storage: registration.cache_storage.snapshot(),
                 })
             })
             .collect::<Vec<_>>();
@@ -3727,6 +3752,7 @@ mod tests {
                 update_via_cache: ServiceWorkerUpdateViaCache::Imports,
                 script_type: ServiceWorkerScriptType::Classic,
                 imported_scripts: Vec::new(),
+                cache_storage: CacheStorageSnapshot::default(),
             })
             .unwrap();
         let deadline = Instant::now() + Duration::from_secs(5);
@@ -4261,6 +4287,37 @@ mod tests {
         assert_eq!(cached.response_type, "default");
         assert_eq!(cached.headers.get("x-cache").map(String::as_str), Some("put"));
         assert_eq!(cached.body, b"stored-body");
+    }
+
+    #[test]
+    fn persistent_registration_round_trips_cache_storage() {
+        let mut manager = manager_under_test();
+        let registration_id = start_active(&mut manager, "/app/", "globalThis.ready = true;");
+        manager
+            .put_cached_response(
+                registration_id,
+                "runtime",
+                CacheRequest::new("https://example.test/app/persisted"),
+                zero_storage::CacheResponse::ok(b"persisted-body".to_vec()).with_header("x-cache", "restored"),
+            )
+            .unwrap();
+
+        let mut persisted = manager.persistent_active_registrations();
+        assert_eq!(persisted.len(), 1);
+        assert_eq!(persisted[0].cache_storage.caches.len(), 1);
+        assert_eq!(persisted[0].cache_storage.caches[0].name, "runtime");
+        assert_eq!(persisted[0].cache_storage.caches[0].entries.len(), 1);
+
+        let mut restored = manager_under_test();
+        let restored_id = restored.start_restored_active(persisted.pop().unwrap()).unwrap();
+        wait_for_state(&mut restored, restored_id, ServiceWorkerState::Activated);
+        let matched = restored
+            .registration(restored_id)
+            .and_then(|registration| registration.cache_storage.get("runtime"))
+            .and_then(|cache| cache.match_request(&CacheRequest::new("https://example.test/app/persisted")))
+            .expect("restored CacheStorage entry should match");
+        assert_eq!(matched.body, b"persisted-body");
+        assert_eq!(matched.headers.get("x-cache").map(String::as_str), Some("restored"));
     }
 
     #[test]
