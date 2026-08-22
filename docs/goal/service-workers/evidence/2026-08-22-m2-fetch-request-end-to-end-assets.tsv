@@ -10,3 +10,7 @@ service-workers/service-worker/fetch-event-async-respond-with.https.html	testhar
 service-workers/service-worker/fetch-event-respond-with-argument.https.html	testharness	case	1	1404	no	05e22105243f710273f56e21502659ad1781e28c
 service-workers/service-worker/resources/fetch-event-respond-with-argument-worker.js	support	worker-script	1	419	no	712c4b73c9bc6da7c828a4c194b09ad9018d47ae
 service-workers/service-worker/resources/fetch-event-respond-with-argument-iframe.html	support	iframe-document	1	1497	no	0ebd1ca81537e529aaa0e3e93985b92364e9225f
+service-workers/service-worker/fetch-event-network-error.https.html	testharness	case	1	1330	no	fea2ad1e3c26effcc9fd7c8d7a66917e420606b4
+service-workers/service-worker/resources/fetch-event-network-error-worker.js	support	worker-script	1	1408	no	5bfe3a0bbd9cfe706a72080dcde4cc147344ddc7
+service-workers/service-worker/resources/fetch-event-network-error-controllee-iframe.html	support	iframe-document	1	1760	no	f6c1919bbcf63a0f23f7ea4f0f8baa0e5bae4035
+service-workers/service-worker/resources/other.html	support	worker-fetch	1	64	no	b9f3504387722c4583a0904cb7b7f7a4f9706b71

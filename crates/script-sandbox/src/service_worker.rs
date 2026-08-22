@@ -127,7 +127,14 @@ const SERVICE_WORKER_BOOTSTRAP: &str = r#"
   let nextTimerId = 1;
 
   class ExtendableEvent {
-    constructor(type) { this.type = type; }
+    constructor(type) {
+      this.type = type;
+      this.cancelable = false;
+      this.defaultPrevented = false;
+    }
+    preventDefault() {
+      if (this.cancelable) this.defaultPrevented = true;
+    }
     waitUntil(value) {
       if (typeof currentWaitUntil !== 'function') {
         throw new Error('InvalidStateError: waitUntil called outside dispatch');
@@ -396,13 +403,16 @@ const SERVICE_WORKER_BOOTSTRAP: &str = r#"
       this.statusText = init.statusText === undefined ? '' : String(init.statusText);
       this.headers = new Headers(init.headers);
       this._body = normalizeBody(body);
+      this.bodyUsed = false;
       this.ok = status >= 200 && status <= 299;
       this.type = 'default';
     }
     text() {
+      this.bodyUsed = true;
       return Promise.resolve(this._body);
     }
     clone() {
+      if (this.bodyUsed) throw new TypeError('Response body has already been used');
       const cloned = new Response(this._body, {
         status: this.status,
         statusText: this.statusText,
@@ -417,6 +427,7 @@ const SERVICE_WORKER_BOOTSTRAP: &str = r#"
       response.statusText = '';
       response.headers = new Headers();
       response._body = '';
+      response.bodyUsed = false;
       response.ok = false;
       response.type = 'error';
       return response;
@@ -426,6 +437,7 @@ const SERVICE_WORKER_BOOTSTRAP: &str = r#"
       throw new TypeError('FetchEvent.respondWith must resolve with a Response');
     }
     static _serialize(response) {
+      if (response.bodyUsed) throw new TypeError('Response body has already been used');
       return {
         status: response.status,
         statusText: response.statusText,
@@ -1158,12 +1170,14 @@ const SERVICE_WORKER_BOOTSTRAP: &str = r#"
     currentWaitUntil = function(value) {
       pending.push(Promise.resolve(value));
     };
+    let event;
     try {
-      const event = new FetchEvent('fetch', {
+      event = new FetchEvent('fetch', {
         request: new Request(requestInfo),
         clientId: requestInfo.clientId || '',
         resultingClientId: requestInfo.resultingClientId || ''
       });
+      event.cancelable = true;
       event._respondWith = function(value) {
         if (!respondWithAllowed) {
           throw new DOMException('respondWith called after dispatch', 'InvalidStateError');
@@ -1201,6 +1215,12 @@ const SERVICE_WORKER_BOOTSTRAP: &str = r#"
     currentWaitUntil = null;
     Promise.all(pending).then(function() {
       if (result.failed) return;
+      if (!respondWithCalled && event.defaultPrevented) {
+        result.failed = true;
+        result.response = null;
+        result.responded = false;
+        result.message = 'FetchEvent default action was prevented without respondWith';
+      }
       result.settled = true;
     }, function(error) {
       result.failed = true;
@@ -5469,6 +5489,105 @@ mod tests {
                 message,
                 ..
             } if message.contains("must resolve with a Response")
+        ));
+    }
+
+    #[test]
+    fn fetch_event_prevent_default_without_respond_with_fails_fetch() {
+        let mut runtime = ServiceWorkerRuntime::new(test_config()).unwrap();
+        runtime
+            .evaluate(
+                "addEventListener('fetch', event => {
+                   event.preventDefault();
+                 });",
+                "https://example.test/sw.js",
+            )
+            .unwrap();
+        let _ = runtime.recv_timeout(Duration::from_secs(5)).unwrap();
+
+        runtime
+            .dispatch_fetch(
+                51,
+                ServiceWorkerFetchRequest {
+                    url: "https://example.test/app/prevent-default".into(),
+                    method: "GET".into(),
+                    headers: Vec::new(),
+                    body: None,
+                    client_id: None,
+                    resulting_client_id: None,
+                    referrer: None,
+                },
+            )
+            .unwrap();
+        assert!(matches!(
+            runtime.recv_timeout(Duration::from_secs(5)).unwrap(),
+            ServiceWorkerEvent::FetchSettled {
+                event_id: 51,
+                response: None,
+                failed: true,
+                message,
+                ..
+            } if message.contains("prevented without respondWith")
+        ));
+    }
+
+    #[test]
+    fn fetch_event_used_fetched_response_body_fails_fetch() {
+        let mut runtime = ServiceWorkerRuntime::new(test_config()).unwrap();
+        runtime
+            .evaluate(
+                "addEventListener('fetch', event => {
+                   event.respondWith(fetch('./other.html').then(function(response) {
+                     response.text();
+                     return response;
+                   }));
+                 });",
+                "https://example.test/app/sw.js",
+            )
+            .unwrap();
+        let _ = runtime.recv_timeout(Duration::from_secs(5)).unwrap();
+
+        runtime
+            .dispatch_fetch(
+                52,
+                ServiceWorkerFetchRequest {
+                    url: "https://example.test/app/page".into(),
+                    method: "GET".into(),
+                    headers: Vec::new(),
+                    body: None,
+                    client_id: None,
+                    resulting_client_id: None,
+                    referrer: None,
+                },
+            )
+            .unwrap();
+        let ServiceWorkerEvent::FetchRequested { request_id, request } =
+            runtime.recv_timeout(Duration::from_secs(5)).unwrap()
+        else {
+            panic!("missing worker global fetch request");
+        };
+        assert_eq!(request.url, "https://example.test/app/other.html");
+        runtime
+            .complete_fetch(
+                request_id,
+                Ok(ServiceWorkerFetchResponse {
+                    status: 200,
+                    status_text: "OK".into(),
+                    response_type: "default".into(),
+                    headers: Vec::new(),
+                    body: "other".into(),
+                }),
+            )
+            .unwrap();
+        assert!(matches!(
+            runtime.recv_timeout(Duration::from_secs(5)).unwrap(),
+            ServiceWorkerEvent::FetchSettled {
+                event_id: 52,
+                response: None,
+                failed: true,
+                message,
+                ..
+            } if message.contains("body has already been used")
         ));
     }
 

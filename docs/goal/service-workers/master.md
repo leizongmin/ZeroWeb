@@ -2,7 +2,7 @@
 
 **入口文档**: [../service-workers.md](../service-workers.md)
 **创建日期**: 2026-08-17（goal 拆分 bootstrap）
-**最后更新**: 2026-08-22（SW fetch respondWith argument baseline；broader SW fetch/cache baseline 继续）
+**最后更新**: 2026-08-22（SW fetch network-error baseline；broader SW fetch/cache baseline 继续）
 
 ---
 
@@ -19,8 +19,9 @@ SW runtime `Cache.add()` / `Cache.addAll()` 可用同一 fetch→put 链路写�
 typed host bridge，并复用 `zero-storage` 的请求头快照、Vary/`ignoreVary` 匹配语义；首个
 M2 fetch/interception 上游 WPT
 `request-end-to-end.https.html`、`fetch-event-async-respond-with.https.html` 与
-`fetch-event-respond-with-argument.https.html` 已形成独立 runner 与 3 case / 6 subtest /
-6 Pass 确定性 baseline，broader fetch/cache 基线仍待后续切片，
+`fetch-event-network-error.https.html`、`fetch-event-respond-with-argument.https.html`
+已形成独立 runner 与 4 case / 7 subtest / 7 Pass 确定性 baseline，broader fetch/cache
+基线仍待后续切片，
 M3 控制语义继续推进。兄弟目标
 `storage-cache-api` 已完成 WebView/in-process 页面 `caches.open()` + `Cache.put()/match()` /
 `Cache.matchAll()` / `Cache.keys()` 与页面 `Cache.add()` / `Cache.addAll()` GET fetch→store
@@ -263,6 +264,12 @@ JSON，private profile 继续只保留内存态。
   client 观测桥、iframe `contentWindow.fetch()` / `XMLHttpRequest` 的 iframe URL 相对解析与
   client id/referrer 透传、manager 按受控 client registration 优先派发 fetch 均有定向回归；
   fetch runner 当前 3 case / 6 subtest / 6 Pass / 0 Fail / 0 Timeout / deterministic true。
+- ✅ M2-11：Service Worker fetch/interception WPT baseline 扩展到
+  `service-workers/service-worker/fetch-event-network-error.https.html`；FetchEvent
+  `preventDefault()` 且未调用 `respondWith()` 现在产生 network error，`Response.text()`
+  会标记 `bodyUsed`，已消费 body 的 Response 交给 `respondWith()` 时失败，worker-global
+  `fetch('other.html')` 的 Response 仍可在未消费 body 时直接透传；fetch-wave 资产清单扩展到
+  15 asset，runner 当前 4 case / 7 subtest / 7 Pass / 0 Fail / 0 Timeout / deterministic true。
 - ✅ storage-cache-api 侧支撑：WebView/in-process 页面 `CacheStorage` 初始桥接已可通过共享
   `StorageManager` 执行 `caches.open/has/delete/keys/match` 与 `Cache.put/match/delete`；
   origin 由宿主页面 URL 推导，保持与 IndexedDB 相同单一 storage owner。该进展不等同于 SW
@@ -421,11 +428,14 @@ JSON，private profile 继续只保留内存态。
   [M2 Service Worker Cache Response Type Guard](evidence/2026-08-22-m2-cache-response-type-error.md)
 - M2 fetch/interception WPT baseline：`request-end-to-end.https.html` +
   `fetch-event-async-respond-with.https.html` +
-  `fetch-event-respond-with-argument.https.html` 独立 runner、资产清单与 3/6
+  `fetch-event-network-error.https.html` +
+  `fetch-event-respond-with-argument.https.html` 独立 runner、资产清单与 4/7
   deterministic baseline 见
   [Service Worker Fetch WPT Baseline](evidence/2026-08-22-m2-fetch-request-end-to-end-baseline.md)
   与
   [SW fetch respondWith argument baseline](evidence/2026-08-22-m2-fetch-respond-with-argument.md)
+  与
+  [SW fetch network-error baseline](evidence/2026-08-22-m2-fetch-network-error.md)
 - storage-cache-api shared Cache response type readback：CacheStorage 专属 `__zwcr:` wire、
   page `Response.type` / `clone().type` 保真与 host type validation 见
   [M2 Cache Response Type Readback](../storage-cache-api/evidence/2026-08-22-m2-cache-response-type-readback.md)
@@ -617,6 +627,7 @@ JSON，private profile 继续只保留内存态。
 | 2026-08-22 | M3 registration CacheStorage persistence | SW active registration-local CacheStorage snapshot/restore；normal profile persistence dirtying |
 | 2026-08-22 | M2 worker Cache delete/listing | SW runtime `Cache.delete()` 与 `CacheStorage.delete/has/keys` 贯穿 runtime/renderer/browser/manager/protocol |
 | 2026-08-22 | storage-cache-api M3 persistence support | page/WebView owner CacheStorage per-origin 落盘 |
+| 2026-08-22 | M2 fetch network-error baseline | `fetch-event-network-error.https.html` 纳入 fetch runner；4 case / 7 subtest 全绿 |
 | 2026-08-21 | M2-1 fetch runtime foundation | `FetchEvent`/`Request`/`Response` MVP；manager longest-scope dispatch；browser/renderer IPC command/event；生产页面 fetch/Cache 集成仍待后续 |
 | 2026-08-19 | 三方案对比 | 拒绝同线程 context（无调度隔离）；拒绝从零线程（复制安全基建）；推荐抽取 Worker 线程核 |
 | 2026-08-19 | owner | production browser process 单一 owner；WebView 只做同算法 in-process adapter |

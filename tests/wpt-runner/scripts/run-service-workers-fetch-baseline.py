@@ -10,8 +10,8 @@ import subprocess
 import sys
 from pathlib import Path
 
-EXPECTED_CASES = 3
-EXPECTED_SUBTESTS = 6
+EXPECTED_CASES = 4
+EXPECTED_SUBTESTS = 7
 
 
 def parse_args() -> argparse.Namespace:
@@ -91,13 +91,16 @@ def render_markdown(summary: dict) -> str:
             "",
             "## Scope",
             "",
-            "This pinned Service Worker M2 fetch/interception baseline covers three cases. "
+            "This pinned Service Worker M2 fetch/interception baseline covers four cases. "
             "`request-end-to-end.https.html` registers a real service worker, loads a "
             "controlled iframe, dispatches a FetchEvent, and validates the Request "
             "projection returned via `respondWith(new Response(...))`. "
             "`fetch-event-async-respond-with.https.html` fixes the FetchEvent "
             "`respondWith()` timing boundary: calls from the dispatch microtask "
             "checkpoint are accepted, while later task calls throw `InvalidStateError`. "
+            "`fetch-event-network-error.https.html` covers rejected `respondWith()`, "
+            "`preventDefault()` without `respondWith()`, consumed response body network "
+            "errors, and pass-through after a thrown fetch handler. "
             "`fetch-event-respond-with-argument.https.html` covers Response, "
             "Promise<Response>, and invalid non-Response arguments producing a network error.",
         ]
