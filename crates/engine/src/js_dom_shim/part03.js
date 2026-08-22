@@ -5408,7 +5408,64 @@
       }
       return '<body>' + inner + '</body>';
     }
+    // R164（L2-d1）：**纯 tag 选择器的本树查询**——queryBody 对 `tag` / `*` 形态
+    // 直接遍历自身 `_tree`（活树——mutation 即时可见，消 detHtml 序列化 → host
+    // re-parse → JSON 往返；L2「查询读 live 树」首片）。产物形态与 JSON 往返
+    // 不同（真节点 vs _zwParseEl wrapper）——为保持既有 identity 语义（R158
+    // wrapper 缓存 + R163 真实节点优先），结果经 **adapter** 返回：树节点直接
+    // 出（identity 统一方向），消费面（getElementById/querySelector 族）对节点
+    // 的 tag/id/getAttribute 全兼容。组合器/伪类/compound 仍走 JSON 往返
+    //（L2-d2/d3 迁移）。
+    // 返回 null = 树查询不可用（存在 outerHTML 为空的元素节点——棵 createElement
+    // 产物等边缘形态；此形态下序列化/活树内容分歧，整体回落 JSON 往返保证
+    // 语义与 R163 基线一致——R164 probe 实证 bare div 树查询结果异常）。
+    function _queryTreeByTag(tagWanted, all) {
+      ensureTree();
+      var out = [];
+      var want = tagWanted === '*' ? '*' : tagWanted.toUpperCase();
+      var aborted = false;
+      (function walk164(n) {
+        if (!n || aborted) return;
+        var cs = n.childNodes || [];
+        for (var i = 0; i < cs.length; i++) {
+          var c = cs[i];
+          if (!c || c.nodeType !== 1) continue;
+          var oh164 = '';
+          try { oh164 = String(c.outerHTML || ''); } catch (_e164o) {}
+          if (!oh164) { aborted = true; return; }
+          if (want === '*' || String(c.nodeName || '') === want) {
+            out.push(c);
+            if (!all) return true;
+          }
+          if (walk164(c) === true && !all) return true;
+        }
+        return false;
+      })(_tree);
+      return aborted ? null : out;
+    }
     function queryBody(sel, all) {
+      // L2-d1：纯 tag（含 `*`）走本树
+      var s164 = String(sel == null ? '' : sel);
+      // html/body 例外：_tree 源是 body 内容（无 html/body 容器——它们只存在于
+      // detHtml 的 R159 属性保真包装层），须走 JSON 往返命中包装容器。
+      var isContainerTag = s164.toLowerCase() === 'html' || s164.toLowerCase() === 'body';
+      if (!isContainerTag && (/^[A-Za-z][\w-]*$/.test(s164) || s164 === '*')) {
+        var hits = _queryTreeByTag(s164, all);
+        if (hits && hits.length) {
+          var out164 = [];
+          for (var hi = 0; hi < hits.length; hi++) {
+            var node = hits[hi];
+            var wrapKey = String(node.nodeName || '').toLowerCase() + '\x1f' + String(node.id || '') + '\x1f' + String(node.outerHTML || '');
+            var cachedNode = _zwQWrapCache.get(wrapKey);
+            if (cachedNode) { out164.push(cachedNode); continue; }
+            // R163 同款：真实节点优先（不包 wrapper）
+            if (out164.indexOf(node) < 0) { out164.push(node); _zwQWrapCache.set(wrapKey, node); }
+          }
+          return out164;
+        }
+        // 树零命中/中止（aborted）→ **继续走 JSON 往返**（旧路径语义——零命中
+        // 可能是树视图不完整如 bare-div 边缘形态；硬返 [] 曾致 postLen:0 回归）。
+      }
       if (typeof __zw_parse_html_query !== 'function') return [];
       try {
         // R160：第 4 参 URL（doc._zwFragmentUrl 槽——iframe 子文档的 `:target`
