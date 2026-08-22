@@ -184,6 +184,21 @@ fn test_hwb_rejects_extra_components_and_trailing_input() {
 }
 
 #[test]
+fn r3689_hwb_rejects_non_finite_components() {
+    assert!(parse_color("hwb(NaN 0% 0%)").is_none());
+    assert!(parse_color("hwb(1e999deg 0% 0%)").is_none());
+    assert!(parse_color("hwb(0 NaN% 0%)").is_none());
+    assert!(parse_color("hwb(0 1e999% 0%)").is_none());
+    assert!(parse_color("hwb(0 0% NaN%)").is_none());
+    assert!(parse_color("hwb(0 0% 0% / NaN)").is_none());
+    assert!(parse_color("hwb(0 0% 0% / 1e999)").is_none());
+    assert_eq!(
+        parse_color("hwb(0.5turn 0% 0%)"),
+        Some(ColorValue::Rgba(0, 255, 255, 255))
+    );
+}
+
+#[test]
 fn test_hwb_to_rgba_all_sectors() {
     // Sector 0: h=0..60
     let (r, g, b, _a) = hwb_to_rgba(0.0, 0.0, 0.0, 1.0);

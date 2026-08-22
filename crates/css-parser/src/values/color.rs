@@ -1162,7 +1162,8 @@ fn parse_hwb_function(value: &str) -> Option<ColorValue> {
     }
     let start = value.find('(')?;
     let end = value.rfind(')')?;
-    let inner = value.get(start + 1..end)?.trim();
+    let inner_str = strip_css_comments(value.get(start + 1..end)?);
+    let inner = inner_str.trim();
 
     // 检查是否有斜杠分隔的 alpha
     let slash_pos = inner.find('/');
@@ -1178,23 +1179,37 @@ fn parse_hwb_function(value: &str) -> Option<ColorValue> {
         return None;
     }
 
-    let h: f64 = parts[0].trim_end_matches("deg").parse().ok()?;
-    let w_pct: f64 = parts[1].trim_end_matches('%').parse().ok()?;
-    let b_pct: f64 = parts[2].trim_end_matches('%').parse().ok()?;
-    let w = w_pct / 100.0;
-    let b = b_pct / 100.0;
+    // https://drafts.csswg.org/css-color-4/#the-hwb-notation
+    // CSS numeric tokens do not admit NaN/Infinity; reject non-finite values before HWB normalization.
+    let h = parse_hue_angle(parts[0])?;
+    if !h.is_finite() {
+        return None;
+    }
+    let w = parse_hwb_percentage(parts[1])?;
+    let b = parse_hwb_percentage(parts[2])?;
     let a = if let Some(a_str) = alpha_str {
-        if a_str.ends_with('%') {
-            a_str.trim_end_matches('%').parse::<f64>().ok()? / 100.0
-        } else {
-            a_str.parse::<f64>().ok()?
-        }
+        parse_hwb_alpha(a_str)?
     } else {
         1.0
     };
 
     let (r, g, bv, av) = hwb_to_rgba(h, w, b, a);
     Some(ColorValue::Rgba(r, g, bv, av))
+}
+
+fn parse_hwb_percentage(s: &str) -> Option<f64> {
+    let pct = parse_color_number_value(s.trim().trim_end_matches('%'))?;
+    pct.is_finite().then_some(pct / 100.0)
+}
+
+fn parse_hwb_alpha(s: &str) -> Option<f64> {
+    let s = s.trim();
+    let alpha = if let Some(pct) = s.strip_suffix('%') {
+        parse_color_number_value(pct)? / 100.0
+    } else {
+        parse_color_number_value(s)?
+    };
+    alpha.is_finite().then_some(alpha.clamp(0.0, 1.0))
 }
 
 #[cfg(test)]
