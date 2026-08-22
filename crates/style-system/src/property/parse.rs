@@ -1043,14 +1043,17 @@ fn container_name_ident_supported(value: &str) -> bool {
 
 /// 解析 font-family 值。
 ///
-/// 按逗号分割 font-family 值，保留 quoted 名的引号以区分 generic family。
+/// 按顶层逗号分割 font-family 值，保留 quoted 名的引号以区分 generic family。
 ///
 /// https://drafts.csswg.org/css-fonts-4/#family-name-value
 /// CSS 规范：quoted generic names（如 `"serif"`）应作为自定义字体名而非 generic family。
 /// 保留引号供下游 `resolve_font_id()` 判断是否跳过 generic 匹配。
 pub fn parse_font_family(value: &str) -> Vec<String> {
     let mut result = Vec::new();
-    for part in value.split(',') {
+    let Some(parts) = split_font_family_list(value) else {
+        return Vec::new();
+    };
+    for part in parts {
         let s = part.trim();
         if s.is_empty() {
             continue;
@@ -1073,6 +1076,32 @@ pub fn parse_font_family(value: &str) -> Vec<String> {
         }
     }
     result
+}
+
+fn split_font_family_list(value: &str) -> Option<Vec<&str>> {
+    let mut parts = Vec::new();
+    let mut start = 0;
+    let mut quote = None;
+
+    for (idx, ch) in value.char_indices() {
+        match quote {
+            Some(q) if ch == q => quote = None,
+            Some(_) => {}
+            None if ch == '"' || ch == '\'' => quote = Some(ch),
+            None if ch == ',' => {
+                parts.push(&value[start..idx]);
+                start = idx + ch.len_utf8();
+            }
+            None => {}
+        }
+    }
+
+    if quote.is_some() {
+        return None;
+    }
+
+    parts.push(&value[start..]);
+    Some(parts)
 }
 
 /// 从可能带引号的 font-family 条目中提取裸名。

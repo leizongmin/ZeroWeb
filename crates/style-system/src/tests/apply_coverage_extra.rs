@@ -1163,9 +1163,23 @@ fn test_parse_font_family() {
     let families = parse_font_family("\"Times New Roman\", serif");
     assert_eq!(families[0], "\"Times New Roman\"");
 
+    let families = parse_font_family("\"ACME, Inc\", serif");
+    assert_eq!(families, vec!["\"ACME, Inc\"".to_string(), "serif".to_string()]);
+
+    assert!(parse_font_family("\"Broken, serif").is_empty());
+
     // 空值过滤
     let families = parse_font_family(",");
     assert!(families.is_empty());
+}
+
+#[test]
+fn test_apply_font_family_invalid_quote_keeps_old_value() {
+    let mut style = ComputedStyle::default();
+    style.font_family = vec!["serif".to_string()];
+
+    assert!(!apply_property_value(&mut style, "font-family", "\"Broken, sans-serif"));
+    assert_eq!(style.font_family, vec!["serif".to_string()]);
 }
 
 #[test]
