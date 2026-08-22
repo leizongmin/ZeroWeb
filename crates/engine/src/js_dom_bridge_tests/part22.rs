@@ -128,3 +128,97 @@ fn test_node_bridge_fragment_real_nodes_r166() {
         "R166 d3a：fragment QSA identity 跨查询稳定（R158/R163 语义零回归；createElement 跨域分歧记 RFC d3b 面）"
     );
 }
+
+/// R167（d3b）：查询产物归一——doc 级 getElementById 产物与树遍历产物（childNodes
+/// 下行）**同对象**（旧行为：D 域 wrapper vs C 域节点割裂）。归一经桥消费：
+/// `_zwWrapCached` 前置 `_zwMFindRealNode` + `_zwBridgeGet`。
+#[test]
+fn test_query_unification_doc_getelementby_id_r167() {
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let mut sandbox = V8Sandbox::with_config(zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    })
+    .unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> =
+        Arc::new(Mutex::new("<html><body><div id=\"d\">x</div></body></html>".to_string()));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+
+    let out = sandbox
+        .execute(
+            "var parts = [];\
+             var doc = document.implementation.createHTMLDocument('U');\
+             doc.body.innerHTML = '<div id=\"a\"><span id=\"s\">t</span></div>';\
+             var byId = doc.getElementById('s');\
+             var byQsa = doc.querySelectorAll('#s')[0];\
+             var byTraverse = doc.body.childNodes[0].childNodes[0];\
+             parts.push('idEqQsa:' + (byId === byQsa));\
+             parts.push('idEqTraverse:' + (byId === byTraverse));\
+             var inner = doc.getElementById('a').querySelector('span');\
+             parts.push('elEqTraverse:' + (inner === byTraverse));\
+             parts.join('|')",
+        )
+        .unwrap()
+        .value;
+    assert_eq!(
+        out, "idEqQsa:true|idEqTraverse:true|elEqTraverse:true",
+        "R167 d3b：doc/element/遍历三面查询产物 identity 归一（桥消费）"
+    );
+}
+
+/// R167（d3b）：链派发三阶段——mutTree 节点 dispatchEvent 的祖先链 capture/bubble
+///（WPT Event-dispatch-bubbles "In DOMImplementation.createHTMLDocument()" 语义面，
+/// R112 单测同源）。**proxy 止链**：B 域 proxy（createElement host）不进入 C 域链
+///（lit e2e 双触发教训）。
+#[test]
+fn test_mel_chain_dispatch_phases_r167() {
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let mut sandbox = V8Sandbox::with_config(zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    })
+    .unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> =
+        Arc::new(Mutex::new("<html><body><div id=\"d\">x</div></body></html>".to_string()));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+
+    let out = sandbox
+        .execute(
+            "var parts = [];\
+             var doc = document.implementation.createHTMLDocument('C');\
+             doc.body.innerHTML = '<div id=\"wrap\"><span id=\"leaf\">t</span></div>';\
+             var leaf = doc.getElementById('leaf');\
+             var order = [];\
+             doc.addEventListener('ping', function () { order.push('doc'); });\
+             doc.documentElement.addEventListener('ping', function (e) { order.push('html:' + e.eventPhase); }, true);\
+             doc.body.addEventListener('ping', function (e) { order.push('body:' + e.eventPhase); }, true);\
+             leaf.addEventListener('ping', function (e) { order.push('leaf:' + e.eventPhase); });\
+             leaf.dispatchEvent(new Event('ping', { bubbles: true }));\
+             parts.push(order.join(','));\
+             var noBubble = [];\
+             var leaf2 = doc.getElementById('wrap');\
+             leaf2.addEventListener('x', function () { noBubble.push('t'); });\
+             doc.body.addEventListener('x', function () { noBubble.push('body'); });\
+             leaf2.dispatchEvent(new Event('x', { bubbles: false }));\
+             parts.push('nb:' + noBubble.join(','));\
+             parts.join('|')",
+        )
+        .unwrap()
+        .value;
+    assert_eq!(
+        out, "html:1,body:1,leaf:2,doc|nb:t",
+        "R167 d3b：mutTree 链派发三阶段（capture html→body / AT_TARGET / bubble doc）+ 非 bubbles 不上行"
+    );
+}

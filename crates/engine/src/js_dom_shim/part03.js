@@ -594,10 +594,29 @@
       throw new (globalThis.DOMException || Error)(
         "'" + String(sel) + "' is not a valid selector.", 'SyntaxError');
     }
-    var arr = _zwMQueryAll(this, sel);
-    return arr.length > 0
-      && String(arr[0].id || '') === String(this.id || '')
-      && String(arr[0].tag || '').toLowerCase() === String(this.nodeName || '').toLowerCase();
+    // R167（d3b）：matches 对**整根树**跑 selector 后在结果集中按 id+tag+outer
+    // 强键找自身。旧版两个凑巧成立的前提在归一后被破坏——① 比对 arr[0] 的
+    // id+tag 弱键（wrapper 形态下 arr[0] 恒为自身）；② 查询源是自身 outerHTML
+    // 单元素序列化（组合器 `#universal>*` 对单元素必 miss——wrapper 经
+    // `_zwRootHtml` 挂整根树上下文）。归一产物是 mutTree 真实节点：沿
+    // parentNode 找最近可序列化根（到树根/body 视图止），对整根查询。
+    var rootFor167 = this;
+    var guard167 = 0;
+    while (rootFor167 && guard167++ < 64) {
+      var pn167 = null;
+      try { pn167 = rootFor167.parentNode; } catch (_e167rp) { pn167 = null; }
+      if (pn167 && typeof pn167.__zwHandle !== 'string' && typeof pn167.__zwSelector !== 'string') rootFor167 = pn167;
+      else break;
+    }
+    var arr = _zwMQueryAll(rootFor167, sel);
+    var selfKey167 = String(this.nodeName || '').toLowerCase() + '\x1f' + String(this.id || '') + '\x1f' + String(this.outerHTML || this._zwOuterFallback || '');
+    for (var mi167 = 0; mi167 < arr.length; mi167++) {
+      var cand167 = arr[mi167];
+      if (!cand167) continue;
+      var candKey167 = String(cand167.tag || cand167.nodeName || '').toLowerCase() + '\x1f' + String(cand167.id || '') + '\x1f' + String(cand167.outer || cand167.outerHTML || '');
+      if (candKey167 === selfKey167) return true;
+    }
+    return false;
   });
   _zwDefProtoMethod(globalThis.Element.prototype, 'matchesSelector', function (sel) {
     return globalThis.Element.prototype.matches.apply(this, arguments);
@@ -610,6 +629,33 @@
   // 自身（_zwQWrapMap 槽），树变更经 setAttribute/appendChild 等方法面惰性失效
   //（key 含 outer——树变更后 outer 变化自然 miss；map 代际由 root 的 mutation
   // 方法不直接 hook，靠 outer-key 差异近似 + Map 上限防爆增长：>512 清空）。
+  // R167（js-dom M1 L2-d3b）：root 子树真实节点索引——键 tag+id+outer（与
+  // wrapper 缓存/桥同键空间；R163 fragment nodeIdx 的共用化提取）。挂 root 槽
+  // `_zwNodeIdx`，首次访问 DFS 建一次；key 含 outer 使树变更后查 miss → 上层
+  // 重建（`_zwNodeIdxGen` 槽写点失效）。上限 512 防爆。
+  function _zwMFindRealNode(root, key) {
+    if (!root || typeof root !== 'object' || !key) return null;
+    var idx = null;
+    try {
+      idx = root._zwNodeIdx;
+      if (!(idx instanceof Map)) idx = null;
+    } catch (_e167i) { idx = null; }
+    if (!idx) {
+      idx = new Map();
+      (function walk167(n) {
+        if (!n || n.nodeType !== 1) return;
+        try {
+          var nk = String(n.nodeName || '').toLowerCase() + '\x1f' + String(n.id || '') + '\x1f' + String(n.outerHTML || n._zwOuterFallback || '');
+          if (nk && !idx.has(nk)) idx.set(nk, n);
+        } catch (_e167k) {}
+        var cs = n.childNodes || [];
+        for (var w = 0; w < cs.length; w++) walk167(cs[w]);
+      })(root);
+      if (idx.size > 512) idx.clear();
+      try { root._zwNodeIdx = idx; } catch (_e167s) {}
+    }
+    return idx.get(key) || null;
+  }
   function _zwMWrapCached(root, info) {
     if (!root || typeof root !== 'object') return new _zwParseEl(info);
     var map = root._zwQWrapMap;
@@ -618,6 +664,21 @@
       try { root._zwQWrapMap = map; } catch (_e158m) {}
     }
     var key = String(info && info.tag || '') + '\x1f' + String(info && info.id || '') + '\x1f' + String(info && info.outer || '');
+    // R167（js-dom M1 L2-d3b）：**桥归一前置**——wrapper 构造前先在 root 子树找
+    // 同键真实节点（mutTree `_zwMEl`，d3a 起已入桥），命中即返其桥对象（首登
+    // 者胜 = 节点本体）。查询产物与 traverse/mutation 面跨面 identity 统一
+    //（R166 RFC §2.1 d3b 消费点；数据源不变——JSON 往返仍是语义权威）。
+    // DFS 索引挂 root 槽 `_zwNodeIdx`（代际失效同 _zwQWrapMap——key 含 outer，
+    // 树变更后自然 miss 重建；上限 512 防爆）。
+    var realNode = _zwMFindRealNode(root, key);
+    if (realNode) {
+      var bridged = _zwBridgeGet(realNode);
+      if (bridged) {
+        try { bridged._zwRootHtml = _zwMOuterHtml(root); } catch (_e167r) {}
+        map.set(key, bridged);
+        return bridged;
+      }
+    }
     var cached = map.get(key);
     if (cached) {
       try { cached._zwRootHtml = _zwMOuterHtml(root); } catch (_e158r2) {}
@@ -4319,6 +4380,28 @@
       childNodes: [],
       parentNode: parent || null
     };
+    // R167（js-dom M1 L2-d3b）：ownerDocument accessor——查询产物归一到 mutTree 真实
+    // 节点后，消费面（WPT Element-matches 的 runSpecialMatchesTests
+    // `element.ownerDocument.defaultView.TypeError`）经此读文档。归建树设
+    // `_zwOwnerDetDoc` 指源 doc；显式赋值（detached createElement 的
+    // `e.ownerDocument = doc`）经 setter 转 own 数据属性（defineProperty 遮蔽
+    // accessor）；缺省回落主 document（与 `_zwParseEl.prototype.ownerDocument`
+    // 的 R156 语义一致——零回归护栏）。
+    try {
+      var _odWritten167 = false;
+      Object.defineProperty(node, 'ownerDocument', {
+        configurable: true,
+        get: function () {
+          if (_odWritten167) return node._zwOdOwn;
+          if (node._zwOwnerDetDoc) return node._zwOwnerDetDoc;
+          return globalThis.document;
+        },
+        set: function (v) {
+          _odWritten167 = true;
+          node._zwOdOwn = v;
+        },
+      });
+    } catch (_e167od) {}
     // R125：解析本地元素的接口原型链接（`test instanceof HTMLDivElement`——WPT
     // Document-getElementById "add id attribute via innerHTML"：element.firstChild /
     // getElementById 返回的解析节点须过 instanceof 接口断言）。按 tag 查
@@ -4367,7 +4450,10 @@
     // EventListener callback）；捕获选项 record（listener 对象 capture/passive/once 字段——
     // lit 传 boolean | object 两种形态）。once 派发后移除。派发序 = 注册序。返回值 = ev 的
     // cancelable?defaultPrevented 反相（spec dispatchEvent）。
-    var _mEvListeners = [];
+    // R167（d3b）：listener 表同时挂节点 own 槽——链派发（R167）对**中间站**的
+    // mutTree 节点 fire 时读 `station._zwMEvLs`（闭包 `_mEvListeners` 跨节点
+    // 不可见）。两引用同步维护（本节点方法面用闭包，链派发站查询用槽）。
+    var _mEvListeners = node._zwMEvLs = [];
     node.addEventListener = function (type, listener, opts) {
       if (typeof listener !== 'function' && !(listener && typeof listener.handleEvent === 'function')) return;
       var cap = !!(opts && (typeof opts === 'object' ? opts.capture : opts));
@@ -4394,20 +4480,214 @@
         ev.target = node;
         ev.srcElement = node;
       } catch (_e146t) {}
-      var t = String(ev && ev.type);
-      var idx = [];
-      for (var i = 0; i < _mEvListeners.length; i++) if (_mEvListeners[i].type === t) idx.push(i);
-      for (var j = 0; j < idx.length; j++) {
-        var l = _mEvListeners[idx[j]];
-        try {
-          if (typeof l.fn === 'function') l.fn.call(node, ev);
-          else if (l.fn && typeof l.fn.handleEvent === 'function') l.fn.handleEvent(ev);
-        } catch (_e99d) {}
-        if (l.once) {
-          var at = _mEvListeners.indexOf(l);
-          if (at >= 0) _mEvListeners.splice(at, 1);
+      // R167（js-dom M1 L2-d3b）：**祖先链三阶段派发**（spec
+      // https://dom.spec.whatwg.org/#concept-event-dispatch——capture 远→近 /
+      // target AT_TARGET（capture 先）/ bubble 近→远，仅 ev.bubbles）。d3b 起查询
+      // 产物归一到 mutTree 真实节点，其派发须与 `_zwParseEl` 的 path 链派发
+      //（R112）行为等价——C 域优势：真实 parentNode 链直查各站 listener 存储
+      //（`_zwEvLs` view 形态 + detached doc 的 `_zwLocalListeners`）。链止于 B 域
+      // proxy（get trap 世界有独立派发管线 `_dispatchWithBubble`——交叉双触发，
+      // lit e2e 实证）；树根经 `_zwOwnerDetDoc` 印章接回 doc 的 body/docEl/doc 站
+      //（detached doc 的 body 视图与 `_tree` 根是两个对象，parentNode 链在树根断）。
+      // 环守卫（seen 集）。
+      var chain167 = [];
+      try {
+        var cur167 = node;
+        var seen167 = [];
+        while (cur167 && seen167.indexOf(cur167) < 0) {
+          seen167.push(cur167);
+          chain167.push(cur167);
+          var next167 = null;
+          try { next167 = cur167.parentNode; } catch (_e167p) { next167 = null; }
+          if (next167) {
+            var isProxy167 = false;
+            try {
+              // proxy 的印章经 get trap 返回（part03 _makeProxy）；plain `_zwMEl`
+              // 节点无此二属性（undefined）。读值即判。
+              isProxy167 = next167.__zwHandle != null || next167.__zwSelector != null;
+            } catch (_e167pr) { isProxy167 = false; }
+            // R167：proxy 站**入链但不续上行**——cloneNode("html") 场景 C 节点链
+            // 遇 proxy 父（`new Document().appendChild(cloneNode(true))`），该站
+            // 的 listener（注册经 proxy addEventListener → `_listenerStore`）须
+            // fire（WPT Event-dispatch-bubbles "In new Document()" 14 站）；
+            // 续上行仍归 proxy 世界（shadow composed 语义 = `_dispatchWithBubble`
+            // R114 职责，交叉双触发 lit e2e 实证）。
+            if (isProxy167) {
+              chain167.push(next167);
+              // R167：proxy 站的宿主 doc 接续——proxy.parentNode（get trap）到
+              // 所属 doc（`new Document().appendChild(clone html)` 场景 doc 站
+              // 在 proxy 之上；WPT Event-dispatch-bubbles "In new Document()"）。
+              // 校验 docChain 归属（多 doc 场景防跨 doc 误接）。
+              try {
+                var above167 = next167.parentNode;
+                if (above167 && above167.nodeType === 9) {
+                  var adc167 = globalThis._zwEvDocChain;
+                  if (adc167 && adc167.doc === above167 && chain167.indexOf(above167) < 0) {
+                    chain167.push(above167);
+                  }
+                }
+              } catch (_e167ad) {}
+              break;
+            }
+          }
+          if (!next167 && cur167._zwOwnerDetDoc) {
+            var odc = globalThis._zwEvDocChain;
+            if (odc && odc.doc === cur167._zwOwnerDetDoc) {
+              if (odc.body && chain167.indexOf(odc.body) < 0) chain167.push(odc.body);
+              if (odc.docEl && chain167.indexOf(odc.docEl) < 0) chain167.push(odc.docEl);
+              chain167.push(cur167._zwOwnerDetDoc);
+            }
+            break;
+          }
+          cur167 = next167;
         }
+      } catch (_e167c) {}
+      // 单站派发：target 站（_mEvListeners）/ view 站（_zwEvLs）/ doc 站
+      //（_zwLocalListeners）。captureOnly 过滤（AT_TARGET 双 pass capture 先，
+      // spec invoke 序）。once 派发后移除；派发中被移除跳过（R111）。
+      var t = String(ev && ev.type);
+      var fireStation = function (station, phase, captureOnly) {
+        if (!station) return;
+        if (station === node) {
+          var idx = [];
+          for (var i = 0; i < _mEvListeners.length; i++) if (_mEvListeners[i].type === t) idx.push(i);
+          for (var j = 0; j < idx.length; j++) {
+            var l = _mEvListeners[idx[j]];
+            if (captureOnly !== null && captureOnly !== l.capture) continue;
+            if (_mEvListeners.indexOf(l) < 0) continue;
+            ev.currentTarget = station;
+            ev.eventPhase = phase;
+            try {
+              if (typeof l.fn === 'function') l.fn.call(node, ev);
+              else if (l.fn && typeof l.fn.handleEvent === 'function') l.fn.handleEvent(ev);
+            } catch (_e99d) {}
+            if (l.once) {
+              var at = _mEvListeners.indexOf(l);
+              if (at >= 0) _mEvListeners.splice(at, 1);
+            }
+          }
+          return;
+        }
+        // R167（d3b）：view 存储（`_zwEvLs`——docEl/body 视图）与 mutTree 节点槽
+        //（`_zwMEvLs`——链上中间 C 节点站的注册）双源合并派发。
+        var ls167 = station._zwEvLs && station._zwEvLs[t];
+        var ml167 = station._zwMEvLs;
+        if (ls167) {
+          var s167 = ls167.slice();
+          for (var k167 = 0; k167 < s167.length; k167++) {
+            var e167 = s167[k167];
+            if (captureOnly !== null && captureOnly !== e167.capture) continue;
+            if (ls167.indexOf(e167) < 0) continue; // 派发中被移除（R111）
+            if (e167.once) {
+              station._zwEvLs[t] = ls167.filter(function (x) { return x !== e167; });
+              ls167 = station._zwEvLs[t];
+            }
+            ev.currentTarget = station;
+            ev.eventPhase = phase;
+            var callable167 = typeof e167.fn === 'function' ? e167.fn : (e167.fn && e167.fn.handleEvent);
+            if (typeof callable167 === 'function') {
+              try { callable167.call(typeof e167.fn === 'function' ? station : e167.fn, ev); } catch (_e167f) {}
+            }
+          }
+        }
+        // R167（d3b）：mutTree 中间站槽（`_zwMEvLs`——本节点 addEventListener 的
+        // 注册；listener 的 this = 站节点，spec currentTarget 语义）。
+        if (ml167 && ml167.length) {
+          var ms167 = ml167.slice();
+          for (var mk167 = 0; mk167 < ms167.length; mk167++) {
+            var me167 = ms167[mk167];
+            if (me167.type !== t) continue;
+            if (captureOnly !== null && captureOnly !== me167.capture) continue;
+            if (ml167.indexOf(me167) < 0) continue;
+            ev.currentTarget = station;
+            ev.eventPhase = phase;
+            var mcall167 = typeof me167.fn === 'function' ? me167.fn : (me167.fn && me167.fn.handleEvent);
+            if (typeof mcall167 === 'function') {
+              try { mcall167.call(typeof me167.fn === 'function' ? station : me167.fn, ev); } catch (_e167mf) {}
+            }
+          }
+        }
+        // R167：proxy 站（链遇 B 域断点入链的 clone html 等）——listener 在
+        // `_listenerStore`（proxy addEventListener 入口；key = _elKey 形态）。
+        // 同名 tag 视图兜底（R112 tag-registry 同款）：clone html proxy 站的
+        // listener 注册面可能是**另一对象**（`newDocument.documentElement` 返回
+        // 内部 docEl——注册在 docEl 的 `_zwEvLs`；链上是 clone proxy），按
+        // `_zwEvTagRegistry['tag:TAG']` 找视图站补 fire。
+        try {
+          if (station.__zwHandle != null || station.__zwSelector != null) {
+            var ptag167 = String(station.nodeName || station.tagName || '').toUpperCase();
+            var v167 = globalThis._zwEvTagRegistry && globalThis._zwEvTagRegistry['tag:' + ptag167];
+            if (v167 && v167 !== station && v167._zwEvLs && v167._zwEvLs[t]) {
+              var tv167 = v167._zwEvLs[t].slice();
+              for (var tv167i = 0; tv167i < tv167.length; tv167i++) {
+                var tve167 = tv167[tv167i];
+                if (captureOnly !== null && captureOnly !== tve167.capture) continue;
+                ev.currentTarget = v167;
+                ev.eventPhase = phase;
+                var tvcall167 = typeof tve167.fn === 'function' ? tve167.fn : (tve167.fn && tve167.fn.handleEvent);
+                if (typeof tvcall167 === 'function') {
+                  try { tvcall167.call(typeof tve167.fn === 'function' ? v167 : tve167.fn, ev); } catch (_e167tv) {}
+                }
+              }
+            }
+          }
+        } catch (_e167tr) {}
+        try {
+          var pk167 = null;
+          if (station.__zwHandle) pk167 = '@' + station.__zwHandle;
+          else if (station.__zwSelector) pk167 = station.__zwSelector;
+          if (pk167 && typeof _listenerStore !== 'undefined' && _listenerStore[pk167]) {
+            var pl167 = _listenerStore[pk167][t] || [];
+            var ps167 = pl167.slice();
+            for (var pi167 = 0; pi167 < ps167.length; pi167++) {
+              var pe167 = ps167[pi167];
+              if (captureOnly !== null && captureOnly !== pe167.capture) continue;
+              if (pl167.indexOf(pe167) < 0) continue;
+              if (pe167.once) {
+                _listenerStore[pk167][t] = pl167.filter(function (x) { return x !== pe167; });
+              }
+              ev.currentTarget = station;
+              ev.eventPhase = phase;
+              var pcall167 = typeof pe167.fn === 'function' ? pe167.fn : (pe167.fn && pe167.fn.handleEvent);
+              if (typeof pcall167 === 'function') {
+                try { pcall167.call(typeof pe167.fn === 'function' ? station : pe167.fn, ev); } catch (_e167pf) {}
+              }
+            }
+          }
+        } catch (_e167pk) {}
+        // doc 站存储（detached doc addEventListener 入口）。
+        var dl = (station._zwLocalListeners || {})[t] || [];
+        var ds = dl.slice();
+        for (var m = 0; m < ds.length; m++) {
+          var entry = ds[m];
+          if (captureOnly !== null && captureOnly !== entry.capture) continue;
+          var curL = station._zwLocalListeners[t];
+          if (!curL || curL.indexOf(entry) < 0) continue;
+          if (entry.once) {
+            station._zwLocalListeners[t] = curL.filter(function (x) { return x !== entry; });
+          }
+          ev.currentTarget = station;
+          ev.eventPhase = phase;
+          var callD = typeof entry.fn === 'function' ? entry.fn : (entry.fn && entry.fn.handleEvent);
+          if (typeof callD === 'function') {
+            try { callD.call(typeof entry.fn === 'function' ? station : entry.fn, ev); } catch (_e167df) {}
+          }
+        }
+      };
+      // capture：祖先逆序（远→近，仅 target 之前）。
+      // R167：capture 从链顶（doc 站）倒序到 target 前一站——含链尾（doc 在
+      // `chain[length-1]`，旧 length-2 起跳过 doc 使 capture 期 doc 站缺失、
+      // 顺序反转——WPT Event-dispatch-bubbles 断言 capture 首站是 Document）。
+      for (var ci = chain167.length - 1; ci >= 1; ci--) fireStation(chain167[ci], 1, true);
+      // target：AT_TARGET（2）——capture listener 先。
+      fireStation(node, 2, true);
+      fireStation(node, 2, false);
+      // bubble：近→远（链正序 target+1 起），仅 ev.bubbles。
+      if (ev && ev.bubbles) {
+        for (var bi = 1; bi < chain167.length; bi++) fireStation(chain167[bi], 3, false);
       }
+      ev.eventPhase = 0;
+      ev.currentTarget = null;
       return !(ev && ev.cancelable && ev.defaultPrevented);
     };
     // R151（js-dom M4）：`click()`（HTMLElement 合成激活入口，spec
@@ -5420,7 +5700,22 @@
   function _makeDetachedDocument(title) {
     var bodyHtml = '';
     var _tree = null; // R3017：cached mutable body 树（首次 childNodes 访问建，innerHTML setter 失效）
-    function ensureTree() { if (!_tree) _tree = _zwMBuildBodyTree(bodyHtml); }
+    function ensureTree() {
+      if (!_tree) {
+        _tree = _zwMBuildBodyTree(bodyHtml);
+        // R167（L2-d3b）：树根盖 doc 印章——查询产物归一后消费面沿
+        // ownerDocument 读源 doc（detached doc 的 body 视图对象与 `_tree` 根是
+        // 两个对象，链在树根断——无印章则归一节点回落主 document）。
+        try {
+          (function stamp167(n) {
+            if (!n || n.nodeType !== 1) return;
+            try { n._zwOwnerDetDoc = doc; } catch (_e167s2) {}
+            var cs = n.childNodes || [];
+            for (var si = 0; si < cs.length; si++) stamp167(cs[si]);
+          })(_tree);
+        } catch (_e167st) {}
+      }
+    }
     // detHtml 反映 live 树（_tree 已建则序列化，否则原始 bodyHtml）→ querySelector 与 mutation 一致。
     // R159：detHtml 包装层——html 属性恢复（iframe 文档的 `<html id="html" lang>`
     // 经 doc._r159HtmlAttrs 传入；查询树对 querySelectorAll('html') / `:root` /
@@ -5597,6 +5892,21 @@
     })();
     function _zwWrapCached(info) {
       var key = String(info && info.tag || '') + '\x1f' + String(info && info.id || '') + '\x1f' + String(info && info.outer || '');
+      // R167（js-dom M1 L2-d3b）：桥归一前置（与 _zwMWrapCached 同款）——doc 的
+      // live 树（ensureTree 后的 `_tree`）有同键真实节点时返回其桥对象。JSON
+      // 往返语义不变，只有产物 identity 归一。
+      try {
+        ensureTree();
+        var realNode167 = _zwMFindRealNode(_tree, key);
+        if (realNode167) {
+          var bridged167 = _zwBridgeGet(realNode167);
+          if (bridged167) {
+            try { bridged167._zwRootHtml = detHtml(); } catch (_e167rr) {}
+            _zwQWrapCache.set(key, bridged167);
+            return bridged167;
+          }
+        }
+      } catch (_e167t) {}
       var cached = _zwQWrapCache.get(key);
       if (cached) {
         // R156 attachments refresh（树可能已变更——rootHtml 重挂保 matches 语义）
@@ -6501,19 +6811,8 @@
               // `elem === result[i]`；旧版恒返 wrapper 三对象域割裂）。索引键
               // tag+id+outer（节点 outerHTML 与序列化一致时命中）；miss 回落
               // wrapper 缓存（原行为）。
-              var nodeIdx = null;
-              try {
-                nodeIdx = new Map();
-                (function walk163(n) {
-                  if (!n || n.nodeType !== 1) return;
-                  try {
-                    var nk = String(n.nodeName || '').toLowerCase() + '\x1f' + String(n.id || '') + '\x1f' + String(n.outerHTML || n._zwOuterFallback || '');
-                    if (nk && !nodeIdx.has(nk)) nodeIdx.set(nk, n);
-                  } catch (_e163k) {}
-                  var cs = n.childNodes || [];
-                  for (var w = 0; w < cs.length; w++) walk163(cs[w]);
-                })(frag);
-              } catch (_e163w) { nodeIdx = null; }
+              // R167（js-dom M1 L2-d3b）：nodeIdx 提取为共用 `_zwMFindRealNode`
+              //（挂 frag 槽缓存）；命中节点经桥归一（d3a 起登记，miss 补登）。
               // R158：per-fragment wrapper 缓存（同 _zwMWrapCached——querySelector
               // 与 querySelectorAll[0] 的 identity 断言；key 含 outer，子树变更自然 miss）。
               if (!frag._zwQWrapMap || !(frag._zwQWrapMap instanceof Map)) frag._zwQWrapMap = new Map();
@@ -6521,11 +6820,11 @@
               if (fmap.size > 512) fmap.clear();
               for (var k = 0; k < r.length; k++) {
                 var fk = String(r[k] && r[k].tag || '') + '\x1f' + String(r[k] && r[k].id || '') + '\x1f' + String(r[k] && r[k].outer || '');
-                var real163 = nodeIdx ? nodeIdx.get(fk) : null;
+                var real163 = _zwMFindRealNode(frag, fk);
                 if (real163) {
-                  out.push(real163);
-                  fmap.set(fk, real163); // 同键后继查询同 identity
-                  _zwBridgeSet(real163, real163); // R166（d3a）：fragment 真实节点直出点登记桥
+                  _zwBridgeSet(real163, real163); // d3b：miss 补登（fragment 树建产物不总经 _zwMEl）
+                  out.push(_zwBridgeGet(real163) || real163);
+                  fmap.set(fk, out[out.length - 1]); // 同键后继查询同 identity
                   continue;
                 }
                 var fe156 = fmap.get(fk);
