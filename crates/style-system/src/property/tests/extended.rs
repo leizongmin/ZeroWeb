@@ -1882,6 +1882,16 @@ fn test_apply_property_background_multi_layer_longhands() {
         "center, left top"
     ));
     assert_eq!(style.background_position.len(), 2);
+    assert!(apply_property_value(
+        &mut style,
+        "background-position",
+        "min(0%, 100%), center"
+    ));
+    assert_eq!(style.background_position.len(), 2);
+    assert!(matches!(
+        style.background_position[0],
+        BackgroundPositionComputedValue::Calc(_)
+    ));
     // background-repeat 多层
     assert!(apply_property_value(
         &mut style,

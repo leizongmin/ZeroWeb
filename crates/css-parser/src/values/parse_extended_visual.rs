@@ -666,7 +666,7 @@ pub fn parse_background_image_layers(value: &str) -> Option<Vec<BackgroundImageV
     }
 
     // 多图层：按逗号分隔（注意不要拆分渐变函数内的逗号）
-    let layers = split_background_layers(value);
+    let layers = split_background_layers(value)?;
     let mut result = Vec::with_capacity(layers.len());
     for layer in &layers {
         let v = parse_background_image(layer.trim())?;
@@ -675,24 +675,41 @@ pub fn parse_background_image_layers(value: &str) -> Option<Vec<BackgroundImageV
     if result.is_empty() { None } else { Some(result) }
 }
 
-/// 按顶层逗号分隔 background-image 值（跳过函数内的逗号）。
-fn split_background_layers(value: &str) -> Vec<&str> {
+/// https://drafts.csswg.org/css-backgrounds-3/#layering
+/// 按顶层逗号分隔 background 多层值（跳过函数内的逗号）。
+fn split_background_layers(value: &str) -> Option<Vec<&str>> {
     let mut layers = Vec::new();
     let mut depth = 0i32;
     let mut start = 0;
     for (i, ch) in value.char_indices() {
         match ch {
             '(' => depth += 1,
-            ')' => depth -= 1,
+            ')' => {
+                depth -= 1;
+                if depth < 0 {
+                    return None;
+                }
+            }
             ',' if depth == 0 => {
-                layers.push(&value[start..i]);
+                let layer = value[start..i].trim();
+                if layer.is_empty() {
+                    return None;
+                }
+                layers.push(layer);
                 start = i + 1; // 逗号是 1 字节 ASCII
             }
             _ => {}
         }
     }
-    layers.push(&value[start..]);
-    layers
+    if depth != 0 {
+        return None;
+    }
+    let layer = value[start..].trim();
+    if layer.is_empty() {
+        return None;
+    }
+    layers.push(layer);
+    Some(layers)
 }
 
 // ── CSS Mask 值类型 ──────────────────────────────────────────────
@@ -1161,10 +1178,9 @@ fn bg_size_length_px(raw: &str, value: &LengthValue) -> Option<f32> {
 ///
 /// 单层内可含空格（如 `center top` = 单个 2 值 position），逗号才是图层分隔符。
 /// R2311：单层 byte-identical（1 项 Vec）；多层改变存储。任一层失败 → None；空输入 → None。
-/// position/size/repeat 值均不含括号，故顶层逗号分割用简单 `split(',')`（无需 paren-aware）。
 pub fn parse_background_position_list(value: &str) -> Option<Vec<BackgroundPositionValue>> {
     let mut list = Vec::new();
-    for part in value.split(',') {
+    for part in split_background_layers(value)? {
         list.push(parse_background_position(part)?);
     }
     (!list.is_empty()).then_some(list)
@@ -1174,7 +1190,7 @@ pub fn parse_background_position_list(value: &str) -> Option<Vec<BackgroundPosit
 /// 单层 byte-identical；多层改变存储。任一层失败 → None；空输入 → None。
 pub fn parse_background_repeat_list(value: &str) -> Option<Vec<BackgroundRepeatValue>> {
     let mut list = Vec::new();
-    for part in value.split(',') {
+    for part in split_background_layers(value)? {
         list.push(parse_background_repeat(part)?);
     }
     (!list.is_empty()).then_some(list)
@@ -1185,7 +1201,7 @@ pub fn parse_background_repeat_list(value: &str) -> Option<Vec<BackgroundRepeatV
 /// 任一层失败 → None；空输入 → None。
 pub fn parse_background_size_list(value: &str) -> Option<Vec<BackgroundSizeValue>> {
     let mut list = Vec::new();
-    for part in value.split(',') {
+    for part in split_background_layers(value)? {
         list.push(parse_background_size(part)?);
     }
     (!list.is_empty()).then_some(list)

@@ -1528,7 +1528,7 @@ fn test_background_size_list_multi_layer() {
 
 #[test]
 fn test_background_position_list_multi_layer() {
-    use crate::values::parse_background_position_list;
+    use crate::values::{BackgroundPositionValue, parse_background_position_list};
     // 单层 → 1 项 Vec
     assert_eq!(parse_background_position_list("center").map(|v| v.len()), Some(1));
     // 多层逗号分隔；单层内 "left top"（空格）保持一体非两层
@@ -1540,8 +1540,15 @@ fn test_background_position_list_multi_layer() {
         parse_background_position_list("top, center, bottom").map(|v| v.len()),
         Some(3)
     );
+    let math_layers =
+        parse_background_position_list("min(0%, 100%), center").expect("math function comma stays inside layer");
+    assert_eq!(math_layers.len(), 2);
+    assert!(matches!(math_layers[0], BackgroundPositionValue::Calc(_)));
     // 任一层失败 → None
     assert_eq!(parse_background_position_list("center, bogus"), None);
+    assert_eq!(parse_background_position_list("center,"), None);
+    assert_eq!(parse_background_position_list(", center"), None);
+    assert_eq!(parse_background_position_list("min(0%, 100%, center"), None);
     // 空输入 → None
     assert_eq!(parse_background_position_list(""), None);
 }
