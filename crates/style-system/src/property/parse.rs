@@ -58,11 +58,9 @@ pub fn parse_grid_line(value: &str) -> Option<GridLineValue> {
     if value.eq_ignore_ascii_case("auto") {
         return Some(GridLineValue::Auto);
     }
-    if let Some(span_str) = value.strip_prefix("span ") {
-        let span: u16 = span_str.trim().parse().ok()?;
-        return Some(GridLineValue::Span(span));
-    }
-    if let Some(span_str) = value.strip_prefix("span") {
+    // https://drafts.csswg.org/css-grid-2/#typedef-grid-line
+    // CSS-defined grid-line `span` keyword is ASCII case-insensitive.
+    if let Some(span_str) = strip_grid_span_keyword(value) {
         let span: u16 = span_str.trim().parse().ok()?;
         return Some(GridLineValue::Span(span));
     }
@@ -76,6 +74,23 @@ pub fn parse_grid_line(value: &str) -> Option<GridLineValue> {
     // 合法的命名区域标识符：非空，不含 / 和数字开头
     if !value.is_empty() && !value.starts_with(|c: char| c.is_ascii_digit()) && !value.contains('/') {
         return Some(GridLineValue::Name(value.to_string()));
+    }
+    None
+}
+
+fn strip_grid_span_keyword(value: &str) -> Option<&str> {
+    let bytes = value.as_bytes();
+    if bytes.len() < 4 || !bytes[..4].eq_ignore_ascii_case(b"span") {
+        return None;
+    }
+    let rest = &value[4..];
+    if rest.is_empty()
+        || rest
+            .as_bytes()
+            .first()
+            .is_some_and(|byte| byte.is_ascii_whitespace() || byte.is_ascii_digit())
+    {
+        return Some(rest);
     }
     None
 }

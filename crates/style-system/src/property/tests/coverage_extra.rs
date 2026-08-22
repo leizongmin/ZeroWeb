@@ -31,6 +31,15 @@ fn test_parse_grid_line_span_various() {
 }
 
 #[test]
+fn test_parse_grid_line_span_keyword_is_case_insensitive() {
+    // https://drafts.csswg.org/css-grid-2/#typedef-grid-line
+    // CSS-defined grid-line `span` keyword is ASCII case-insensitive.
+    assert!(matches!(parse_grid_line("SPAN 3"), Some(GridLineValue::Span(3))));
+    assert!(matches!(parse_grid_line("SpAn3"), Some(GridLineValue::Span(3))));
+    assert!(matches!(parse_grid_line("SPANISH"), Some(GridLineValue::Name(_))));
+}
+
+#[test]
 fn test_parse_grid_line_shorthand_no_slash() {
     let result = parse_grid_line_shorthand("2");
     assert!(result.is_some());

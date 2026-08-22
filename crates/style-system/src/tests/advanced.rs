@@ -284,6 +284,36 @@ fn test_grid_span_placement_end_to_end() {
 }
 
 #[test]
+/// grid-line span 关键字大小写不敏感端到端
+fn test_grid_span_keyword_is_case_insensitive_end_to_end() {
+    let (doc, _html, _body, div, _p) = make_test_dom();
+    let mut sys = StyleSystem::new();
+
+    let stylesheets = vec![Stylesheet {
+        rules: vec![Rule::Style(StyleRule {
+            selectors: vec![make_tag_selector("div")],
+            declarations: vec![
+                Declaration {
+                    property: "grid-column-start".to_string(),
+                    value: "SPAN 2".to_string(),
+                    important: false,
+                },
+                Declaration {
+                    property: "grid-column-end".to_string(),
+                    value: "SpAn3".to_string(),
+                    important: false,
+                },
+            ],
+        })],
+    }];
+
+    let styles = sys.compute_styles(&doc, &stylesheets);
+    let div_style = styles.get(&div).expect("div should have style");
+    assert_eq!(div_style.grid_column_start, property::GridLineValue::Span(2));
+    assert_eq!(div_style.grid_column_end, property::GridLineValue::Span(3));
+}
+
+#[test]
 /// negative grid line numbers 端到端
 fn test_grid_negative_line_numbers_end_to_end() {
     let (doc, _html, _body, div, _p) = make_test_dom();
