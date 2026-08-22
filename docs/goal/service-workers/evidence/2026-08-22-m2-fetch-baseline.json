@@ -1,0 +1,75 @@
+{
+  "cases": 5,
+  "subtests": 8,
+  "status": {
+    "Pass": 8
+  },
+  "deterministic": true,
+  "results": [
+    [
+      "service-workers/service-worker/request-end-to-end.https.html",
+      [
+        {
+          "name": "Test FetchEvent.request passed to onfetch",
+          "status": "Pass",
+          "message": null
+        }
+      ]
+    ],
+    [
+      "service-workers/service-worker/fetch-event-async-respond-with.https.html",
+      [
+        {
+          "name": "global setup",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "respondWith in a task throws InvalidStateError",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "respondWith in a microtask does not throw",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "global cleanup",
+          "status": "Pass",
+          "message": null
+        }
+      ]
+    ],
+    [
+      "service-workers/service-worker/fetch-event-network-error.https.html",
+      [
+        {
+          "name": "Rejecting the fetch event or using preventDefault() causes a network error",
+          "status": "Pass",
+          "message": null
+        }
+      ]
+    ],
+    [
+      "service-workers/service-worker/fetch-event-respond-with-argument.https.html",
+      [
+        {
+          "name": "respondWith() takes either a Response or a promise that resolves with a Response. Other values should raise a network error.",
+          "status": "Pass",
+          "message": null
+        }
+      ]
+    ],
+    [
+      "service-workers/service-worker/iso-latin1-header.https.html",
+      [
+        {
+          "name": "Verify the response of FetchEvent using XMLHttpRequest",
+          "status": "Pass",
+          "message": null
+        }
+      ]
+    ]
+  ]
+}

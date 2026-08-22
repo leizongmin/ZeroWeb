@@ -1320,16 +1320,58 @@
       Request: globalThis.Request,
       Response: globalThis.Response,
       URL: globalThis.URL,
+      _et_listeners: {},
       _zwScriptsRan: false,
       __zwRunInlineScripts: runInlineScripts,
     };
     win.window = win;
     win.self = win;
     win.addEventListener = function (type, fn) {
-      try { globalThis.addEventListener(type, fn); } catch (_e139a) {}
+      if (typeof type !== 'string' || typeof fn !== 'function') return;
+      var key = String(type);
+      (win._et_listeners[key] || (win._et_listeners[key] = [])).push(fn);
     };
     win.removeEventListener = function (type, fn) {
-      try { globalThis.removeEventListener(type, fn); } catch (_e139r2) {}
+      var key = String(type);
+      var list = win._et_listeners[key];
+      if (!list) return;
+      win._et_listeners[key] = list.filter(function (listener) { return listener !== fn; });
+    };
+    win.dispatchEvent = function (event) {
+      if (!event || !event.type) throw new TypeError('Invalid event');
+      var previousEvent = globalThis.event;
+      event.target = win;
+      event.currentTarget = win;
+      globalThis.event = event;
+      try {
+        var list = (win._et_listeners[String(event.type)] || []).slice();
+        for (var i = 0; i < list.length; i++) {
+          try { list[i].call(win, event); } catch (_eIframeListener) {}
+        }
+        var handler = win['on' + event.type];
+        if (typeof handler === 'function' && list.indexOf(handler) === -1) {
+          try { handler.call(win, event); } catch (_eIframeOn) {}
+        }
+      } finally {
+        globalThis.event = previousEvent;
+      }
+      return !event.defaultPrevented;
+    };
+    win.postMessage = function (message, targetOrigin, transfer) {
+      var origin = win.location && win.location.origin || '';
+      var sourceOrigin = globalThis.location && globalThis.location.origin || '';
+      var t = targetOrigin == null ? '*' : String(targetOrigin);
+      if (t !== '*' && t !== '/' && t !== origin) {
+        throw new DOMException(
+          "Failed to execute 'postMessage' on 'Window': The target origin provided ('" + t + "') does not match the recipient window's origin ('" + origin + "').",
+          'SecurityError'
+        );
+      }
+      var payload = typeof structuredClone === 'function' ? structuredClone(message) : message;
+      var ports = transfer && typeof Array.prototype.slice === 'function' ? Array.prototype.slice.call(transfer) : [];
+      queueMicrotask(function () {
+        win.dispatchEvent(new MessageEvent('message', { data: payload, origin: sourceOrigin, source: globalThis, ports: ports }));
+      });
     };
     return win;
   }
@@ -7997,7 +8039,7 @@
     ev.origin = (options && options.origin) || '';
     ev.lastEventId = (options && options.lastEventId) || '';
     ev.source = (options && options.source) || null;
-    ev.ports = [];
+    ev.ports = options && options.ports ? Array.prototype.slice.call(options.ports) : [];
     return ev;
   }
   MessageEvent.prototype = Object.create(Event.prototype);

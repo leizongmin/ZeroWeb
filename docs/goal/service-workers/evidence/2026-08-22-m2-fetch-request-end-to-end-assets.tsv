@@ -14,3 +14,6 @@ service-workers/service-worker/fetch-event-network-error.https.html	testharness	
 service-workers/service-worker/resources/fetch-event-network-error-worker.js	support	worker-script	1	1408	no	5bfe3a0bbd9cfe706a72080dcde4cc147344ddc7
 service-workers/service-worker/resources/fetch-event-network-error-controllee-iframe.html	support	iframe-document	1	1760	no	f6c1919bbcf63a0f23f7ea4f0f8baa0e5bae4035
 service-workers/service-worker/resources/other.html	support	worker-fetch	1	64	no	b9f3504387722c4583a0904cb7b7f7a4f9706b71
+service-workers/service-worker/iso-latin1-header.https.html	testharness	case	1	1550	no	c27a5f48a5b9e9384a5c9129d0288761b0df9cd7
+service-workers/service-worker/resources/iso-latin1-header-iframe.html	support	iframe-document	1	657	no	cf2fa8d14f7c6089d11979e4be4094f4e7fbab25
+service-workers/service-worker/resources/iso-latin1-header-worker.js	support	worker-script	1	416	no	d9ecca277b3fae5bc4698ff467a85714be7b15a3

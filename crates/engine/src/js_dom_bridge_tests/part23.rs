@@ -212,6 +212,63 @@ fn test_iframe_inline_script_xhr_uses_iframe_window_location() {
     assert_eq!(sandbox.execute("__iframeDone").unwrap().value, "PASS");
 }
 
+#[test]
+fn test_iframe_content_window_post_message_transfers_ports() {
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+
+    let mut sandbox = V8Sandbox::with_config(zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    })
+    .unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new("<html><body></body></html>".to_string()));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "https://wpt.test/service-workers/service-worker/iso-latin1-header.https.html".to_string(),
+    ));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+    sandbox.register_callback(
+        "__zw_fetch",
+        Box::new(|args| {
+            let url = args.get(2).map(String::as_str).unwrap_or("");
+            if url.ends_with("resources/iso-latin1-header-iframe.html") {
+                "__zwfr:200\x1fOK\x1f\x1f<script></script>".to_string()
+            } else {
+                "__zw_fetch_error:not found".to_string()
+            }
+        }),
+    );
+
+    sandbox
+        .execute(
+            "globalThis.__iframeMessageResult = 'pending';\
+             var frame = document.createElement('iframe');\
+             frame.src = 'resources/iso-latin1-header-iframe.html';\
+             document.body.appendChild(frame);\
+             var win = frame.contentWindow;\
+             win.addEventListener('message', function(evt) {\
+               evt.ports[0].postMessage({ result: evt.data.kind + ':' + evt.origin + ':' + (evt.source === window) });\
+             });\
+             var channel = new MessageChannel();\
+             channel.port1.onmessage = function(evt) { globalThis.__iframeMessageResult = evt.data.result; };\
+             win.postMessage({ kind: 'ping' }, 'https://wpt.test', [channel.port2]);",
+        )
+        .unwrap();
+    for _ in 0..4 {
+        sandbox.execute("0").unwrap();
+    }
+
+    assert_eq!(
+        sandbox.execute("String(globalThis.__iframeMessageResult)").unwrap().value,
+        "ping:https://wpt.test:true",
+        "iframe contentWindow.postMessage should dispatch a message event with transferred ports"
+    );
+}
+
 // R175（js-dom M4 DBG）：fragment 子串直发后的合成 body 过滤——host 侧
 // `filter_synthetic` 对无 `<body` 开标签的源串必须剔合成 body 命中
 //（WPT Fragment "Type selector, matching body element" expect 0）。

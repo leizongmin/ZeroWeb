@@ -725,6 +725,7 @@ pub const SERVICE_WORKER_FETCH_CASES: &[&str] = &[
     "service-workers/service-worker/fetch-event-async-respond-with.https.html",
     "service-workers/service-worker/fetch-event-network-error.https.html",
     "service-workers/service-worker/fetch-event-respond-with-argument.https.html",
+    "service-workers/service-worker/iso-latin1-header.https.html",
 ];
 
 /// WPT subtest status.
@@ -3263,8 +3264,8 @@ async_test(function(test) {
             .iter()
             .copied()
             .collect::<std::collections::BTreeSet<_>>();
-        assert_eq!(SERVICE_WORKER_FETCH_CASES.len(), 4);
-        assert_eq!(unique.len(), 4);
+        assert_eq!(SERVICE_WORKER_FETCH_CASES.len(), 5);
+        assert_eq!(unique.len(), 5);
         assert!(SERVICE_WORKER_FETCH_CASES.contains(&"service-workers/service-worker/request-end-to-end.https.html"));
         assert!(
             SERVICE_WORKER_FETCH_CASES
@@ -3277,6 +3278,7 @@ async_test(function(test) {
             SERVICE_WORKER_FETCH_CASES
                 .contains(&"service-workers/service-worker/fetch-event-respond-with-argument.https.html")
         );
+        assert!(SERVICE_WORKER_FETCH_CASES.contains(&"service-workers/service-worker/iso-latin1-header.https.html"));
     }
 
     #[test]
