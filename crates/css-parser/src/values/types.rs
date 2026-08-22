@@ -1626,6 +1626,11 @@ pub fn parse_length(value: &str) -> Option<LengthValue> {
     let unit = &value[unit_start..];
 
     let num: f64 = num_str.parse().ok()?;
+    // https://drafts.csswg.org/css-syntax-3/#consume-number
+    // CSS numeric tokens are finite; Rust accepts exponent overflow as `inf`.
+    if !num.is_finite() {
+        return None;
+    }
 
     // CSS Values §4：长度单位大小写不敏感（1PX ≡ 1px、1Q ≡ 1q、12.5EX ≡ 12.5ex）。
     // 归一化为小写后匹配（修复前仅认小写 + "Q" 大写 → 常规 `1q` 等失败）。
@@ -1661,16 +1666,20 @@ pub fn parse_length(value: &str) -> Option<LengthValue> {
         "ric" if std::env::var("ZW_ROOT_IC_UNITS").as_deref() != Ok("0") => Some(LengthValue::Ric(num)),
         "%" => Some(LengthValue::Percentage(num)),
         // CSS 绝对长度单位 → 转换为 px（96 DPI）
-        "in" => Some(LengthValue::Px(num * 96.0)),
-        "pt" => Some(LengthValue::Px(num * 96.0 / 72.0)),
-        "pc" => Some(LengthValue::Px(num * 96.0 / 6.0)),
-        "cm" => Some(LengthValue::Px(num * 96.0 / 2.54)),
-        "mm" => Some(LengthValue::Px(num * 96.0 / 25.4)),
-        "q" => Some(LengthValue::Px(num * 96.0 / 101.6)), // 1q = 1/4mm（大小写不敏感）
+        "in" => finite_px(num * 96.0),
+        "pt" => finite_px(num * 96.0 / 72.0),
+        "pc" => finite_px(num * 96.0 / 6.0),
+        "cm" => finite_px(num * 96.0 / 2.54),
+        "mm" => finite_px(num * 96.0 / 25.4),
+        "q" => finite_px(num * 96.0 / 101.6), // 1q = 1/4mm（大小写不敏感）
         // Per CSS spec, a bare zero without units is a valid length (0px).
         "" if num == 0.0 => Some(LengthValue::Px(0.0)),
         _ => None,
     }
+}
+
+fn finite_px(value: f64) -> Option<LengthValue> {
+    value.is_finite().then_some(LengthValue::Px(value))
 }
 
 /// Quirks mode 长度解析。

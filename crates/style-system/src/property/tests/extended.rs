@@ -753,6 +753,12 @@ fn test_tab_size_apply() {
     assert_eq!(style.tab_size, previous);
     assert!(!apply_property_value(&mut style, "tab-size", "thin"));
     assert_eq!(style.tab_size, previous);
+    assert!(!apply_property_value(&mut style, "tab-size", "infpx"));
+    assert_eq!(style.tab_size, previous);
+    assert!(!apply_property_value(&mut style, "tab-size", "NaNpx"));
+    assert_eq!(style.tab_size, previous);
+    assert!(!apply_property_value(&mut style, "tab-size", "1e999px"));
+    assert_eq!(style.tab_size, previous);
 }
 
 #[test]

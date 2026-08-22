@@ -395,6 +395,8 @@ fn test_property_supported_extended_visual_and_layout_properties() {
     assert!(!is_property_supported("pointer-events", "paint"));
     assert!(!is_property_supported("overflow-wrap", "wrap"));
     assert!(!is_property_supported("tab-size", "auto"));
+    assert!(!is_property_supported("tab-size", "infpx"));
+    assert!(!is_property_supported("tab-size", "1e999px"));
     assert!(!is_property_supported("columns", "2 3"));
     assert!(!is_property_supported("column-count", "0"));
     assert!(!is_property_supported("column-width", "50%"));

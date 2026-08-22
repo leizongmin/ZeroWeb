@@ -11,6 +11,9 @@ fn test_parse_tab_size_invalid() {
     assert_eq!(parse_tab_size("50%"), None);
     assert_eq!(parse_tab_size("thin"), None);
     assert_eq!(parse_tab_size("min-content"), None);
+    assert_eq!(parse_tab_size("infpx"), None);
+    assert_eq!(parse_tab_size("NaNpx"), None);
+    assert_eq!(parse_tab_size("1e999px"), None);
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -44,6 +47,8 @@ fn test_parse_length_boundary_conditions() {
     assert_eq!(parse_length("-50%"), Some(LengthValue::Percentage(-50.0)));
     // 科学计数法解析
     assert_eq!(parse_length("1e2px"), Some(LengthValue::Px(100.0)));
+    assert_eq!(parse_length("1e999px"), None);
+    assert_eq!(parse_length("1e307in"), None);
 }
 
 #[test]
