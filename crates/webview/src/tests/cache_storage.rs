@@ -212,6 +212,116 @@ fn page_cache_api_add_and_add_all_fetch_then_store() {
 }
 
 #[test]
+fn page_cache_storage_names_are_domstrings_in_inline_scripts() {
+    let mut webview = WebView::new_with_indexed_db_owner(WebViewConfig::default(), IndexedDbOwner::in_memory());
+    webview.prepare_document_state("https://cache.example/app/page.html");
+    webview.load_html(
+        r#"
+        <html><body><script>
+            (async function () {
+              try {
+                const testCases = [
+                  {
+                    name: 'cache-storage/lowercase',
+                    should_not_match: [
+                      'cache-storage/Lowercase',
+                      ' cache-storage/lowercase',
+                      'cache-storage/lowercase '
+                    ]
+                  },
+                  {
+                    name: 'cache-storage/has a space',
+                    should_not_match: [
+                      'cache-storage/has'
+                    ]
+                  },
+                  {
+                    name: 'cache-storage/has\000_in_the_name',
+                    should_not_match: [
+                      'cache-storage/has',
+                      'cache-storage/has_in_the_name'
+                    ]
+                  },
+                  {
+                    name: 'unpaired\uD800',
+                    should_not_match: [
+                      'unpaired\uFFFD'
+                    ]
+                  }
+                ];
+                const results = await Promise.all(testCases.map(async testcase => {
+                  const cacheName = testcase.name;
+                  await caches.delete(testcase.should_not_match[0]);
+                  await caches.delete(cacheName);
+                  await caches.open(cacheName);
+                  const hasOriginal = await caches.has(cacheName);
+                  const keys = await caches.keys();
+                  const mismatches = await Promise.all(testcase.should_not_match.map(name => caches.has(name)));
+                  await caches.delete(cacheName);
+                  return [
+                    String(cacheName.charCodeAt(17)),
+                    String(hasOriginal),
+                    String(keys.indexOf(cacheName) !== -1),
+                    mismatches.map(String).join(',')
+                  ].join(':');
+                }));
+                globalThis.__cacheDomStringName = results.join('|');
+              } catch (error) {
+                globalThis.__cacheDomStringName = 'error:' + String(error && error.message ? error.message : error);
+              }
+            })();
+        </script></body></html>
+        "#,
+        None,
+    );
+    webview.run_page_scripts_strict().unwrap();
+    pump_microtasks(&mut webview);
+
+    assert_eq!(
+        webview.execute_script("globalThis.__cacheDomStringName").unwrap(),
+        "101:true:true:false,false,false|32:true:true:false|0:true:true:false,false|NaN:true:true:false"
+    );
+}
+
+#[test]
+fn page_cache_storage_delete_dooms_existing_cache_objects() {
+    let mut webview = webview_with_owner(IndexedDbOwner::in_memory(), "https://cache.example/app/page.html");
+
+    webview
+        .execute_script(
+            r#"
+            (async function () {
+              try {
+                const cacheName = 'cache-storage/delete-dooming';
+                const firstCache = await caches.open(cacheName);
+                await caches.delete(cacheName);
+                await firstCache.put('https://cache.example/app/old.txt', new Response('old'));
+                const namesAfterDelete = await caches.keys();
+                const secondCache = await caches.open(cacheName);
+                const secondKeys = await secondCache.keys();
+                const firstKeys = await firstCache.keys();
+                await caches.delete(cacheName);
+                globalThis.__cacheDoomingResult = [
+                  String(namesAfterDelete.indexOf(cacheName)),
+                  String(secondKeys.length),
+                  String(firstKeys.length)
+                ].join('|');
+              } catch (error) {
+                globalThis.__cacheDoomingResult = 'error:' + String(error && error.message ? error.message : error);
+              }
+            })();
+            "#,
+        )
+        .unwrap();
+    pump_microtasks(&mut webview);
+
+    assert_eq!(
+        webview.execute_script("globalThis.__cacheDoomingResult").unwrap(),
+        "-1|0|1"
+    );
+}
+
+#[test]
 fn page_cache_api_uses_shared_owner_and_origin_isolation() {
     let origin = "https://shared-cache.example/app/page.html";
     let owner = IndexedDbOwner::in_memory();

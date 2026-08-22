@@ -9,7 +9,7 @@ use std::sync::{Arc, Mutex};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use zero_engine::CacheStorageHandler;
-use zero_storage::{CacheQueryOptions, CacheRequest, CacheResponse, StorageManager};
+use zero_storage::{Cache, CacheQueryOptions, CacheRequest, CacheResponse, StorageManager};
 
 const FIELD_SEP: char = '\x1f';
 const HEADER_SEP: char = '\x1e';
@@ -20,17 +20,28 @@ const BYTES_PREFIX: &str = "__zw_bytes:";
 #[serde(tag = "op", rename_all = "snake_case")]
 enum CacheStorageRequest {
     Open {
+        #[serde(default)]
         name: String,
+        #[serde(default)]
+        name_units: Option<String>,
     },
     Has {
+        #[serde(default)]
         name: String,
+        #[serde(default)]
+        name_units: Option<String>,
     },
     Delete {
+        #[serde(default)]
         name: String,
+        #[serde(default)]
+        name_units: Option<String>,
         #[serde(default)]
         request: Option<CacheRequestWire>,
         #[serde(default)]
         options: CacheQueryOptionsWire,
+        #[serde(default)]
+        cache_id: Option<u64>,
     },
     Keys,
     Match {
@@ -38,24 +49,43 @@ enum CacheStorageRequest {
         #[serde(default)]
         cache_name: Option<String>,
         #[serde(default)]
+        cache_name_units: Option<String>,
+        #[serde(default)]
+        cache_id: Option<u64>,
+        #[serde(default)]
         options: CacheQueryOptionsWire,
     },
     MatchAll {
+        #[serde(default)]
         cache_name: String,
+        #[serde(default)]
+        cache_name_units: Option<String>,
+        #[serde(default)]
+        cache_id: Option<u64>,
         #[serde(default)]
         request: Option<CacheRequestWire>,
         #[serde(default)]
         options: CacheQueryOptionsWire,
     },
     CacheKeys {
+        #[serde(default)]
         cache_name: String,
+        #[serde(default)]
+        cache_name_units: Option<String>,
+        #[serde(default)]
+        cache_id: Option<u64>,
         #[serde(default)]
         request: Option<CacheRequestWire>,
         #[serde(default)]
         options: CacheQueryOptionsWire,
     },
     Put {
+        #[serde(default)]
         cache_name: String,
+        #[serde(default)]
+        cache_name_units: Option<String>,
+        #[serde(default)]
+        cache_id: Option<u64>,
         request: CacheRequestWire,
         response: CacheResponseWire,
     },
@@ -108,48 +138,121 @@ struct CacheKeysResponse {
     requests: Vec<CacheRequestWire>,
 }
 
-/// 构造由页面运行路径共享的 CacheStorage handler。
-pub fn cache_storage_handler(storage: Arc<Mutex<StorageManager>>) -> CacheStorageHandler {
-    Arc::new(move |origin, request| handle_request(&storage, origin, request))
+#[derive(Debug, Serialize)]
+struct CacheStorageOpenResponse {
+    name: String,
+    #[serde(rename = "name_units")]
+    name_units: String,
+    cache_id: u64,
 }
 
-fn handle_request(storage: &Mutex<StorageManager>, origin: &str, request: &str) -> Result<String, String> {
+#[derive(Debug, Serialize)]
+struct CacheStorageKeysResponse {
+    keys: Vec<String>,
+    #[serde(rename = "keys_units")]
+    keys_units: Vec<String>,
+}
+
+#[derive(Debug, Default)]
+struct CacheStorageHostState {
+    next_cache_id: u64,
+    active_cache_ids: HashMap<(String, String), u64>,
+    doomed_caches: HashMap<(String, u64), Cache>,
+}
+
+/// 构造由页面运行路径共享的 CacheStorage handler。
+pub fn cache_storage_handler(storage: Arc<Mutex<StorageManager>>) -> CacheStorageHandler {
+    let state = Arc::new(Mutex::new(CacheStorageHostState::default()));
+    Arc::new(move |origin, request| handle_request(&storage, &state, origin, request))
+}
+
+fn handle_request(
+    storage: &Mutex<StorageManager>,
+    state: &Mutex<CacheStorageHostState>,
+    origin: &str,
+    request: &str,
+) -> Result<String, String> {
     if origin == "null" {
         return Err("SecurityError: CacheStorage is unavailable for opaque origins".to_string());
     }
 
     let request: CacheStorageRequest =
         serde_json::from_str(request).map_err(|error| format!("TypeError: invalid CacheStorage request: {error}"))?;
+    let mut state = state
+        .lock()
+        .map_err(|_| "UnknownError: CacheStorage state lock is poisoned".to_string())?;
     let mut storage = storage
         .lock()
         .map_err(|_| "UnknownError: CacheStorage lock is poisoned".to_string())?;
-    let response = dispatch_request(&mut storage, origin, request)?;
+    let response = dispatch_request(&mut storage, &mut state, origin, request)?;
     serde_json::to_string(&response).map_err(|error| format!("UnknownError: failed to serialize response: {error}"))
 }
 
 fn dispatch_request(
     storage: &mut StorageManager,
+    state: &mut CacheStorageHostState,
     origin: &str,
     request: CacheStorageRequest,
 ) -> Result<serde_json::Value, String> {
     match request {
-        CacheStorageRequest::Open { name } => {
+        CacheStorageRequest::Open { name, name_units } => {
+            let name = cache_name_from_wire(&name, name_units.as_deref())?;
             storage.cache_storage(origin).open(&name);
-            Ok(json!({"name": name}))
+            let cache_id = state.ensure_active_cache_id(origin, &name);
+            serde_json::to_value(CacheStorageOpenResponse {
+                name: display_cache_name(&name),
+                name_units: encode_cache_name_units(&name),
+                cache_id,
+            })
+            .map_err(|error| format!("UnknownError: failed to serialize response: {error}"))
         }
-        CacheStorageRequest::Has { name } => {
+        CacheStorageRequest::Has { name, name_units } => {
+            let name = cache_name_from_wire(&name, name_units.as_deref())?;
             Ok(json!({"has": storage.cache_storage_ref(origin).is_some_and(|caches| caches.has(&name))}))
         }
-        CacheStorageRequest::Delete { name, request, options } => {
+        CacheStorageRequest::Delete {
+            name,
+            name_units,
+            request,
+            options,
+            cache_id,
+        } => {
+            let name = cache_name_from_wire(&name, name_units.as_deref())?;
             let deleted = if let Some(request) = request {
                 let request = request.into_storage_request()?;
                 let options = options.into_storage_options();
-                storage
-                    .cache_storage(origin)
-                    .get_mut(&name)
-                    .is_some_and(|cache| cache.delete_with_options(&request, options))
+                if let Some(cache_id) = cache_id {
+                    if let Some(cache) = state.doomed_caches.get_mut(&cache_instance_key(origin, cache_id)) {
+                        cache.delete_with_options(&request, options)
+                    } else if state.active_cache_id_matches(origin, &name, cache_id) {
+                        storage
+                            .cache_storage(origin)
+                            .get_mut(&name)
+                            .is_some_and(|cache| cache.delete_with_options(&request, options))
+                    } else {
+                        false
+                    }
+                } else {
+                    storage
+                        .cache_storage(origin)
+                        .get_mut(&name)
+                        .is_some_and(|cache| cache.delete_with_options(&request, options))
+                }
             } else {
-                storage.cache_storage(origin).delete(&name)
+                let doomed = storage
+                    .cache_storage_ref(origin)
+                    .and_then(|caches| caches.get(&name))
+                    .cloned();
+                let deleted = storage.cache_storage(origin).delete(&name);
+                let removed = if deleted {
+                    state.remove_active_cache_id(origin, &name).zip(doomed)
+                } else {
+                    None
+                };
+                if let Some((cache_id, cache)) = removed {
+                    state.doomed_caches.insert(cache_instance_key(origin, cache_id), cache);
+                }
+                deleted
             };
             Ok(json!({"deleted": deleted}))
         }
@@ -158,20 +261,46 @@ fn dispatch_request(
                 .cache_storage_ref(origin)
                 .map(|cache_storage| cache_storage.keys().into_iter().map(str::to_string).collect())
                 .unwrap_or_default();
-            Ok(json!({"keys": keys}))
+            let keys_units = keys.iter().map(|name| encode_cache_name_units(name)).collect();
+            let keys = keys.into_iter().map(|name| display_cache_name(&name)).collect();
+            serde_json::to_value(CacheStorageKeysResponse { keys, keys_units })
+                .map_err(|error| format!("UnknownError: failed to serialize response: {error}"))
         }
         CacheStorageRequest::Match {
             request,
             cache_name,
+            cache_name_units,
+            cache_id,
             options,
         } => {
             let request = request.into_storage_request()?;
             let options = options.into_storage_options();
+            let cache_name = match (cache_name, cache_name_units) {
+                (Some(name), units) => Some(cache_name_from_wire(&name, units.as_deref())?),
+                (None, Some(units)) => Some(cache_name_from_wire("", Some(&units))?),
+                (None, None) => None,
+            };
             let response = match cache_name {
-                Some(name) => storage
-                    .cache_storage_ref(origin)
-                    .and_then(|cache_storage| cache_storage.get(&name))
-                    .and_then(|cache| cache.match_request_with_options(&request, options)),
+                Some(name) => match cache_id {
+                    Some(cache_id) => state
+                        .doomed_caches
+                        .get(&cache_instance_key(origin, cache_id))
+                        .and_then(|cache| cache.match_request_with_options(&request, options))
+                        .or_else(|| {
+                            if state.active_cache_id_matches(origin, &name, cache_id) {
+                                storage
+                                    .cache_storage_ref(origin)
+                                    .and_then(|cache_storage| cache_storage.get(&name))
+                                    .and_then(|cache| cache.match_request_with_options(&request, options))
+                            } else {
+                                None
+                            }
+                        }),
+                    None => storage
+                        .cache_storage_ref(origin)
+                        .and_then(|cache_storage| cache_storage.get(&name))
+                        .and_then(|cache| cache.match_request_with_options(&request, options)),
+                },
                 None => storage
                     .cache_storage_ref(origin)
                     .and_then(|cache_storage| cache_storage.match_request_with_options(&request, options)),
@@ -182,42 +311,31 @@ fn dispatch_request(
         }
         CacheStorageRequest::MatchAll {
             cache_name,
+            cache_name_units,
+            cache_id,
             request,
             options,
         } => {
+            let cache_name = cache_name_from_wire(&cache_name, cache_name_units.as_deref())?;
             let request = request.map(CacheRequestWire::into_storage_request).transpose()?;
             let options = options.into_storage_options();
-            let responses = storage
-                .cache_storage_ref(origin)
-                .and_then(|cache_storage| cache_storage.get(&cache_name))
-                .map(|cache| match &request {
-                    Some(request) => cache
-                        .match_all_with_options(request, options)
-                        .into_iter()
-                        .map(cache_response_wire)
-                        .collect(),
-                    None => cache
-                        .request_keys()
-                        .into_iter()
-                        .filter_map(|request| cache.match_request(request))
-                        .map(cache_response_wire)
-                        .collect(),
-                })
+            let responses = selected_cache_ref(state, storage, origin, &cache_name, cache_id)
+                .map(|cache| cache_response_list(cache, request.as_ref(), options))
                 .unwrap_or_default();
             serde_json::to_value(CacheMatchAllResponse { responses })
                 .map_err(|error| format!("UnknownError: failed to serialize response: {error}"))
         }
         CacheStorageRequest::CacheKeys {
             cache_name,
+            cache_name_units,
+            cache_id,
             request,
             options,
         } => {
+            let cache_name = cache_name_from_wire(&cache_name, cache_name_units.as_deref())?;
             let request = request.map(CacheRequestWire::into_storage_request).transpose()?;
             let options = options.into_storage_options();
-            let requests = match storage
-                .cache_storage_ref(origin)
-                .and_then(|cache_storage| cache_storage.get(&cache_name))
-            {
+            let requests = match selected_cache_ref(state, storage, origin, &cache_name, cache_id) {
                 Some(cache) => match &request {
                     Some(request) => cache.request_keys_with_options(request, options),
                     None => cache.request_keys(),
@@ -236,19 +354,162 @@ fn dispatch_request(
         }
         CacheStorageRequest::Put {
             cache_name,
+            cache_name_units,
+            cache_id,
             request,
             response,
         } => {
+            let cache_name = cache_name_from_wire(&cache_name, cache_name_units.as_deref())?;
             let request = request.into_storage_request()?;
             let response = response.into_storage_response()?;
-            storage
-                .cache_storage(origin)
-                .open(&cache_name)
-                .put(request, response)
-                .map_err(storage_error)?;
+            if let Some(cache_id) = cache_id {
+                if let Some(cache) = state.doomed_caches.get_mut(&cache_instance_key(origin, cache_id)) {
+                    cache.put(request, response).map_err(storage_error)?;
+                } else if state.active_cache_id_matches(origin, &cache_name, cache_id) {
+                    storage
+                        .cache_storage(origin)
+                        .open(&cache_name)
+                        .put(request, response)
+                        .map_err(storage_error)?;
+                } else {
+                    return Err("InvalidStateError: Cache backing store is no longer available".to_string());
+                }
+            } else {
+                storage
+                    .cache_storage(origin)
+                    .open(&cache_name)
+                    .put(request, response)
+                    .map_err(storage_error)?;
+            }
             Ok(json!({"ok": true}))
         }
     }
+}
+
+impl CacheStorageHostState {
+    fn ensure_active_cache_id(&mut self, origin: &str, name: &str) -> u64 {
+        let key = active_cache_key(origin, name);
+        if let Some(id) = self.active_cache_ids.get(&key) {
+            return *id;
+        }
+        self.next_cache_id = self.next_cache_id.saturating_add(1).max(1);
+        let id = self.next_cache_id;
+        self.active_cache_ids.insert(key, id);
+        id
+    }
+
+    fn remove_active_cache_id(&mut self, origin: &str, name: &str) -> Option<u64> {
+        self.active_cache_ids.remove(&active_cache_key(origin, name))
+    }
+
+    fn active_cache_id_matches(&self, origin: &str, name: &str, cache_id: u64) -> bool {
+        self.active_cache_ids
+            .get(&active_cache_key(origin, name))
+            .is_some_and(|active| *active == cache_id)
+    }
+}
+
+fn active_cache_key(origin: &str, name: &str) -> (String, String) {
+    (origin.to_string(), name.to_string())
+}
+
+fn cache_instance_key(origin: &str, cache_id: u64) -> (String, u64) {
+    (origin.to_string(), cache_id)
+}
+
+fn selected_cache_ref<'a>(
+    state: &'a CacheStorageHostState,
+    storage: &'a StorageManager,
+    origin: &str,
+    name: &str,
+    cache_id: Option<u64>,
+) -> Option<&'a Cache> {
+    match cache_id {
+        Some(cache_id) => state
+            .doomed_caches
+            .get(&cache_instance_key(origin, cache_id))
+            .or_else(|| {
+                if state.active_cache_id_matches(origin, name, cache_id) {
+                    storage
+                        .cache_storage_ref(origin)
+                        .and_then(|cache_storage| cache_storage.get(name))
+                } else {
+                    None
+                }
+            }),
+        None => storage
+            .cache_storage_ref(origin)
+            .and_then(|cache_storage| cache_storage.get(name)),
+    }
+}
+
+fn cache_response_list(cache: &Cache, request: Option<&CacheRequest>, options: CacheQueryOptions) -> Vec<String> {
+    match request {
+        Some(request) => cache
+            .match_all_with_options(request, options)
+            .into_iter()
+            .map(cache_response_wire)
+            .collect(),
+        None => cache
+            .request_keys()
+            .into_iter()
+            .filter_map(|request| cache.match_request(request))
+            .map(cache_response_wire)
+            .collect(),
+    }
+}
+
+fn cache_name_from_wire(name: &str, name_units: Option<&str>) -> Result<String, String> {
+    if !name.is_empty() || name_units == Some("") {
+        return Ok(name.to_string());
+    }
+    match name_units {
+        Some(units) => decode_cache_name_units(units),
+        None => Ok(String::new()),
+    }
+}
+
+fn encode_cache_name_units(name: &str) -> String {
+    if let Some(units) = name.strip_prefix("__zw_domstring16:") {
+        return units.to_string();
+    }
+    let mut out = String::new();
+    for unit in name.encode_utf16() {
+        out.push_str(&format!("{unit:04x}"));
+    }
+    out
+}
+
+fn decode_cache_name_units(units: &str) -> Result<String, String> {
+    if !units.as_bytes().chunks_exact(4).remainder().is_empty() {
+        return Err("TypeError: invalid CacheStorage name code units".to_string());
+    }
+    for byte in units.bytes() {
+        if !byte.is_ascii_hexdigit() {
+            return Err("TypeError: invalid CacheStorage name code units".to_string());
+        }
+    }
+    Ok(format!("__zw_domstring16:{units}"))
+}
+
+fn display_cache_name(name: &str) -> String {
+    name.strip_prefix("__zw_domstring16:")
+        .map(decode_cache_name_units_lossy)
+        .unwrap_or_else(|| name.to_string())
+}
+
+fn decode_cache_name_units_lossy(units: &str) -> String {
+    let mut utf16 = Vec::new();
+    for chunk in units.as_bytes().chunks_exact(4) {
+        let Ok(hex) = std::str::from_utf8(chunk) else {
+            return String::new();
+        };
+        let Ok(unit) = u16::from_str_radix(hex, 16) else {
+            return String::new();
+        };
+        utf16.push(unit);
+    }
+    String::from_utf16_lossy(&utf16)
 }
 
 impl CacheQueryOptionsWire {
@@ -392,6 +653,81 @@ mod tests {
     fn call(handler: &CacheStorageHandler, origin: &str, request: serde_json::Value) -> serde_json::Value {
         let response = handler(origin, &self::request(request)).unwrap();
         serde_json::from_str(&response).unwrap()
+    }
+
+    #[test]
+    fn cache_storage_handler_preserves_domstring_code_unit_names() {
+        let handler = cache_storage_handler(Arc::new(Mutex::new(StorageManager::new())));
+        let unpaired_name_units = "0075006e007000610069007200650064d800";
+        let converted_name_units = "0075006e007000610069007200650064fffd";
+
+        let opened = call(
+            &handler,
+            "https://example.com",
+            json!({"op": "open", "name_units": unpaired_name_units}),
+        );
+        assert_eq!(opened["name_units"], unpaired_name_units);
+
+        let listed = call(&handler, "https://example.com", json!({"op": "keys"}));
+        assert_eq!(listed["keys_units"], json!([unpaired_name_units]));
+
+        let has_original = call(
+            &handler,
+            "https://example.com",
+            json!({"op": "has", "name_units": unpaired_name_units}),
+        );
+        assert_eq!(has_original["has"], true);
+
+        let has_converted = call(
+            &handler,
+            "https://example.com",
+            json!({"op": "has", "name_units": converted_name_units}),
+        );
+        assert_eq!(has_converted["has"], false);
+    }
+
+    #[test]
+    fn cache_storage_handler_dooms_deleted_cache_instances() {
+        let handler = cache_storage_handler(Arc::new(Mutex::new(StorageManager::new())));
+        let opened = call(&handler, "https://example.com", json!({"op": "open", "name": "v1"}));
+        let first_cache_id = opened["cache_id"].as_u64().unwrap();
+
+        assert_eq!(
+            call(&handler, "https://example.com", json!({"op": "delete", "name": "v1"}))["deleted"],
+            true
+        );
+        call(
+            &handler,
+            "https://example.com",
+            json!({
+                "op": "put",
+                "cache_name": "v1",
+                "cache_id": first_cache_id,
+                "request": {"url": "https://example.com/old"},
+                "response": {"status": 200, "statusText": "OK", "headers": "", "body": "old"}
+            }),
+        );
+
+        let active_keys = call(&handler, "https://example.com", json!({"op": "keys"}));
+        assert_eq!(active_keys["keys"], json!([]));
+
+        let reopened = call(&handler, "https://example.com", json!({"op": "open", "name": "v1"}));
+        let second_cache_id = reopened["cache_id"].as_u64().unwrap();
+        assert_ne!(first_cache_id, second_cache_id);
+
+        let second_keys = call(
+            &handler,
+            "https://example.com",
+            json!({"op": "cache_keys", "cache_name": "v1", "cache_id": second_cache_id}),
+        );
+        assert_eq!(second_keys["requests"], json!([]));
+
+        let first_keys = call(
+            &handler,
+            "https://example.com",
+            json!({"op": "cache_keys", "cache_name": "v1", "cache_id": first_cache_id}),
+        );
+        assert_eq!(first_keys["requests"][0]["url"], "https://example.com/old");
     }
 
     #[test]

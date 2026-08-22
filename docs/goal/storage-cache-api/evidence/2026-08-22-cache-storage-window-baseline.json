@@ -2,8 +2,7 @@
   "cases": 4,
   "subtests": 35,
   "status": {
-    "Fail": 2,
-    "Pass": 33
+    "Pass": 35
   },
   "deterministic": true,
   "results": [
@@ -17,8 +16,8 @@
         },
         {
           "name": "CacheStorage.delete dooms, but does not delete immediately",
-          "status": "Fail",
-          "message": "assert_equals: expected -1 but got 1"
+          "status": "Pass",
+          "message": null
         },
         {
           "name": "CacheStorage.open with an empty name",
@@ -57,8 +56,8 @@
         },
         {
           "name": "CacheStorage names are DOMStrings not USVStrings",
-          "status": "Fail",
-          "message": "promise_test: Unhandled rejection with value: object \"TypeError: TypeError: invalid CacheStorage request: unexpected end of hex escape at line 1 column 36\""
+          "status": "Pass",
+          "message": null
         }
       ]
     ],

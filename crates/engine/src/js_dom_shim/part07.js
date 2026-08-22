@@ -108,6 +108,50 @@
     });
   }
 
+  function _zwCacheDomStringWire(value) {
+    var s = String(value);
+    var out = '';
+    for (var i = 0; i < s.length; i++) {
+      var unit = s.charCodeAt(i).toString(16);
+      while (unit.length < 4) unit = '0' + unit;
+      out += unit;
+    }
+    return out;
+  }
+
+  function _zwCacheDomStringFromWire(units) {
+    units = String(units || '');
+    if (units.length % 4 !== 0) throw new TypeError('malformed CacheStorage name');
+    var out = '';
+    for (var i = 0; i < units.length; i += 4) {
+      var unit = parseInt(units.slice(i, i + 4), 16);
+      if (!isFinite(unit)) throw new TypeError('malformed CacheStorage name');
+      out += String.fromCharCode(unit);
+    }
+    return out;
+  }
+
+  function _zwCacheSetNameWire(target, field, value) {
+    var s = String(value);
+    var hasSurrogate = false;
+    for (var i = 0; i < s.length; i++) {
+      var unit = s.charCodeAt(i);
+      if (unit >= 0xD800 && unit <= 0xDFFF) {
+        hasSurrogate = true;
+        break;
+      }
+    }
+    if (!hasSurrogate) target[field] = s;
+    target[field + '_units'] = _zwCacheDomStringWire(s);
+  }
+
+  function _zwCacheNameFromResult(result) {
+    if (result && typeof result.name_units === 'string') {
+      return _zwCacheDomStringFromWire(result.name_units);
+    }
+    return String(result && result.name || '');
+  }
+
   function _zwCacheQueryOptionsWire(options) {
     options = options === undefined || options === null ? {} : Object(options);
     return {
@@ -131,9 +175,16 @@
     };
   }
 
-  function Cache(name) {
+  function Cache(name, cacheId) {
     if (!(this instanceof Cache)) return new Cache(name);
     this._name = String(name);
+    this._cacheId = cacheId === undefined || cacheId === null ? null : Number(cacheId);
+  }
+
+  function _zwCacheSetIdWire(target, cache) {
+    if (cache && cache._cacheId !== null && isFinite(cache._cacheId)) {
+      target.cache_id = cache._cacheId;
+    }
   }
 
   Cache.prototype.match = function (request, options) {
@@ -142,12 +193,14 @@
     return new Promise(function (resolve, reject) {
       try {
         if (!hasRequest) throw new TypeError('Cache.match requires a request');
-        var result = _zwCacheHostCall({
+        var hostRequest = {
           op: 'match',
-          cache_name: cache._name,
           request: _zwCacheRequestWire(request),
           options: _zwCacheQueryOptionsWire(options)
-        });
+        };
+        _zwCacheSetNameWire(hostRequest, 'cache_name', cache._name);
+        _zwCacheSetIdWire(hostRequest, cache);
+        var result = _zwCacheHostCall(hostRequest);
         resolve(result.response === null ? undefined : _zwCacheResponseFromWire(result.response));
       } catch (error) {
         reject(error);
@@ -161,9 +214,10 @@
       try {
         var hostRequest = {
           op: 'match_all',
-          cache_name: cache._name,
           options: _zwCacheQueryOptionsWire(options)
         };
+        _zwCacheSetNameWire(hostRequest, 'cache_name', cache._name);
+        _zwCacheSetIdWire(hostRequest, cache);
         if (request !== undefined) hostRequest.request = _zwCacheRequestWire(request);
         var result = _zwCacheHostCall(hostRequest);
         var responses = Array.isArray(result.responses) ? result.responses : [];
@@ -180,12 +234,14 @@
     return new Promise(function (resolve, reject) {
       try {
         if (!hasArguments) throw new TypeError('Cache.put requires a request and response');
-        _zwCacheHostCall({
+        var hostRequest = {
           op: 'put',
-          cache_name: cache._name,
           request: _zwCacheRequestWire(request),
           response: _zwCacheResponseWire(response)
-        });
+        };
+        _zwCacheSetNameWire(hostRequest, 'cache_name', cache._name);
+        _zwCacheSetIdWire(hostRequest, cache);
+        _zwCacheHostCall(hostRequest);
         resolve(undefined);
       } catch (error) {
         reject(error);
@@ -232,12 +288,14 @@
     return new Promise(function (resolve, reject) {
       try {
         if (!hasRequest) throw new TypeError('Cache.delete requires a request');
-        var result = _zwCacheHostCall({
+        var hostRequest = {
           op: 'delete',
-          name: cache._name,
           request: _zwCacheRequestWire(request),
           options: _zwCacheQueryOptionsWire(options)
-        });
+        };
+        _zwCacheSetNameWire(hostRequest, 'name', cache._name);
+        _zwCacheSetIdWire(hostRequest, cache);
+        var result = _zwCacheHostCall(hostRequest);
         resolve(!!result.deleted);
       } catch (error) {
         reject(error);
@@ -251,9 +309,10 @@
       try {
         var hostRequest = {
           op: 'cache_keys',
-          cache_name: cache._name,
           options: _zwCacheQueryOptionsWire(options)
         };
+        _zwCacheSetNameWire(hostRequest, 'cache_name', cache._name);
+        _zwCacheSetIdWire(hostRequest, cache);
         if (request !== undefined) hostRequest.request = _zwCacheRequestWire(request);
         var result = _zwCacheHostCall(hostRequest);
         var requests = Array.isArray(result.requests) ? result.requests : [];
@@ -273,8 +332,10 @@
     return new Promise(function (resolve, reject) {
       try {
         if (!hasName) throw new TypeError('CacheStorage.open requires a name');
-        var result = _zwCacheHostCall({ op: 'open', name: String(name) });
-        resolve(new Cache(result.name));
+        var hostRequest = { op: 'open' };
+        _zwCacheSetNameWire(hostRequest, 'name', name);
+        var result = _zwCacheHostCall(hostRequest);
+        resolve(new Cache(_zwCacheNameFromResult(result), result.cache_id));
       } catch (error) {
         reject(error);
       }
@@ -286,7 +347,9 @@
     return new Promise(function (resolve, reject) {
       try {
         if (!hasName) throw new TypeError('CacheStorage.has requires a name');
-        var result = _zwCacheHostCall({ op: 'has', name: String(name) });
+        var hostRequest = { op: 'has' };
+        _zwCacheSetNameWire(hostRequest, 'name', name);
+        var result = _zwCacheHostCall(hostRequest);
         resolve(!!result.has);
       } catch (error) {
         reject(error);
@@ -299,7 +362,9 @@
     return new Promise(function (resolve, reject) {
       try {
         if (!hasName) throw new TypeError('CacheStorage.delete requires a name');
-        var result = _zwCacheHostCall({ op: 'delete', name: String(name) });
+        var hostRequest = { op: 'delete' };
+        _zwCacheSetNameWire(hostRequest, 'name', name);
+        var result = _zwCacheHostCall(hostRequest);
         resolve(!!result.deleted);
       } catch (error) {
         reject(error);
@@ -311,7 +376,11 @@
     return new Promise(function (resolve, reject) {
       try {
         var result = _zwCacheHostCall({ op: 'keys' });
-        resolve(Array.isArray(result.keys) ? result.keys.slice() : []);
+        if (Array.isArray(result.keys_units)) {
+          resolve(result.keys_units.map(_zwCacheDomStringFromWire));
+        } else {
+          resolve(Array.isArray(result.keys) ? result.keys.slice() : []);
+        }
       } catch (error) {
         reject(error);
       }
@@ -329,7 +398,7 @@
           options: _zwCacheQueryOptionsWire(options)
         };
         if (options !== undefined && options !== null && Object(options).cacheName !== undefined) {
-          hostRequest.cache_name = String(Object(options).cacheName);
+          _zwCacheSetNameWire(hostRequest, 'cache_name', Object(options).cacheName);
         }
         var result = _zwCacheHostCall(hostRequest);
         resolve(result.response === null ? undefined : _zwCacheResponseFromWire(result.response));

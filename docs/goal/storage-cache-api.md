@@ -30,7 +30,7 @@
 >   WebView/in-process 页面可走 host callback 进入 zero-storage。
 > - **持久化**：cache_api.rs 为内存结构，无落盘路径。
 > - **WPT 面**：已接入首批上游 `cache-storage` window 面基线（4 case / 35 subtest，
->   33 Pass / 2 Fail），剩余语义修复以该基线为回归锚点。
+>   35 Pass / 0 Fail），扩大覆盖与剩余语义修复继续以该基线为回归锚点。
 
 ---
 

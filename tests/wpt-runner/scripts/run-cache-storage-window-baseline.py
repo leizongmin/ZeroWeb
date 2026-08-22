@@ -61,6 +61,25 @@ def validate_shape(cases: list) -> None:
 
 
 def markdown_summary(summary: dict) -> str:
+    non_pass = [
+        (case, result)
+        for case, results in summary["results"]
+        for result in results
+        if result["status"] != "Pass"
+    ]
+    if non_pass:
+        notes = (
+            "This is the first pinned window-environment CacheStorage baseline. "
+            "Failures are preserved as baseline data for follow-up semantic work; "
+            "the script only requires the case set and status mapping to be stable "
+            "between consecutive runs."
+        )
+    else:
+        notes = (
+            "This pinned window-environment CacheStorage baseline is fully green. "
+            "The script still verifies that the case set and status mapping remain "
+            "stable between consecutive runs."
+        )
     lines = [
         "# CacheStorage Window WPT Baseline",
         "",
@@ -82,10 +101,7 @@ def markdown_summary(summary: dict) -> str:
             "",
             "## Notes",
             "",
-            "This is the first pinned window-environment CacheStorage baseline. "
-            "Failures are preserved as baseline data for follow-up semantic work; "
-            "the script only requires the case set and status mapping to be stable "
-            "between consecutive runs.",
+            notes,
             "",
             "## Non-Pass Subtests",
             "",
@@ -93,12 +109,6 @@ def markdown_summary(summary: dict) -> str:
             "|---|---|---|---|",
         ]
     )
-    non_pass = [
-        (case, result)
-        for case, results in summary["results"]
-        for result in results
-        if result["status"] != "Pass"
-    ]
     if non_pass:
         for case, result in non_pass:
             message = str(result.get("message") or "").replace("\n", " ")

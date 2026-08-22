@@ -215,23 +215,33 @@ fn test_cache_api_page_shim_host_roundtrip() {
         Box::new(|args| {
             let request = args.first().map(String::as_str).unwrap_or("");
             if request.contains(r#""op":"open""#) {
-                return r#"__zw_cache_ok:{"name":"v1"}"#.to_string();
+                return r#"__zw_cache_ok:{"name":"v1","cache_id":7}"#.to_string();
             }
             if request.contains(r#""op":"put""#)
                 && request.contains(r#""cache_name":"v1""#)
+                && request.contains(r#""cache_id":7"#)
                 && request.contains(r#""url":"https://example.com/data.txt""#)
                 && request.contains(r#""status":201"#)
                 && request.contains(r#""body":"cached text""#)
             {
                 return r#"__zw_cache_ok:{"ok":true}"#.to_string();
             }
-            if request.contains(r#""op":"match""#) && request.contains(r#""cache_name":"v1""#) {
+            if request.contains(r#""op":"match""#)
+                && request.contains(r#""cache_name":"v1""#)
+                && request.contains(r#""cache_id":7"#)
+            {
                 return "__zw_cache_ok:{\"response\":\"__zwfr:201\\u001fCreated\\u001fcontent-type\\u001etext/plain\\u001fcached text\"}".to_string();
             }
-            if request.contains(r#""op":"match_all""#) && request.contains(r#""cache_name":"v1""#) {
+            if request.contains(r#""op":"match_all""#)
+                && request.contains(r#""cache_name":"v1""#)
+                && request.contains(r#""cache_id":7"#)
+            {
                 return "__zw_cache_ok:{\"responses\":[\"__zwfr:201\\u001fCreated\\u001fcontent-type\\u001etext/plain\\u001fcached text\"]}".to_string();
             }
-            if request.contains(r#""op":"cache_keys""#) && request.contains(r#""cache_name":"v1""#) {
+            if request.contains(r#""op":"cache_keys""#)
+                && request.contains(r#""cache_name":"v1""#)
+                && request.contains(r#""cache_id":7"#)
+            {
                 if request.contains(r#""method":"POST""#) {
                     return r#"__zw_cache_ok:{"requests":[]}"#.to_string();
                 }
@@ -326,7 +336,7 @@ fn test_cache_api_page_shim_query_options_wire() {
             let request = args.first().cloned().unwrap_or_default();
             seen_for_callback.lock().unwrap().push(request.clone());
             if request.contains(r#""op":"open""#) {
-                return r#"__zw_cache_ok:{"name":"v1"}"#.to_string();
+                return r#"__zw_cache_ok:{"name":"v1","cache_id":11}"#.to_string();
             }
             if request.contains(r#""op":"match_all""#) {
                 return r#"__zw_cache_ok:{"responses":[]}"#.to_string();
@@ -397,6 +407,67 @@ fn test_cache_api_page_shim_query_options_wire() {
             && request.contains(r#""cache_name":"v1""#)
             && request.contains(r#""ignoreSearch":true"#)
     }));
+}
+
+/// CacheStorage cache names are WebIDL DOMStrings: embedded NUL and unpaired
+/// surrogate code units must survive the page shim -> host JSON bridge.
+#[test]
+fn test_cache_storage_name_uses_domstring_code_units_in_host_wire() {
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let mut sandbox = V8Sandbox::with_config(zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    })
+    .unwrap();
+    let seen: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
+    let seen_for_callback = seen.clone();
+    sandbox.register_callback(
+        "__zw_cache_storage",
+        Box::new(move |args| {
+            let request = args.first().cloned().unwrap_or_default();
+            let response = if request.contains(r#""name_units":"0075006e007000610069007200650064d800""#) {
+                r#"__zw_cache_ok:{"name_units":"0075006e007000610069007200650064d800"}"#
+            } else {
+                r#"__zw_cache_ok:{"name_units":"00630061006300680065002d00730074006f0072006100670065002f0068006100730000005f0069006e005f007400680065005f006e0061006d0065"}"#
+            };
+            seen_for_callback.lock().unwrap().push(request);
+            response.to_string()
+        }),
+    );
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+
+    sandbox
+        .execute(
+            "globalThis.__cacheDomStringNames = 'pending';\
+             caches.open('cache-storage/has\\000_in_the_name').then(function (cache) {\
+               globalThis.__cacheDomStringNames = cache._name.charCodeAt(17) + ':' + cache._name.slice(18);\
+               return caches.open('unpaired\\uD800');\
+             }).then(function (cache) {\
+               globalThis.__cacheDomStringNames += '|' + cache._name.charCodeAt(8).toString(16);\
+             }, function (error) {\
+               globalThis.__cacheDomStringNames = 'error:' + String(error && error.message ? error.message : error);\
+             });",
+        )
+        .unwrap();
+    sandbox.execute("globalThis.__cacheNulPump = 1;").unwrap();
+
+    assert_eq!(
+        sandbox.execute("globalThis.__cacheDomStringNames").unwrap().value,
+        "0:_in_the_name|d800"
+    );
+    let seen = seen.lock().unwrap();
+    assert_eq!(seen.len(), 2);
+    assert!(
+        seen[0].contains(r#""name_units":"00630061006300680065002d00730074006f0072006100670065002f0068006100730000005f0069006e005f007400680065005f006e0061006d0065""#),
+        "CacheStorage host wire should carry NUL as UTF-16 code units, got {:?}",
+        seen[0]
+    );
+    assert!(
+        seen[1].contains(r#""name_units":"0075006e007000610069007200650064d800""#),
+        "CacheStorage host wire should carry unpaired surrogate as UTF-16 code units, got {:?}",
+        seen[1]
+    );
 }
 
 /// Required Cache API arguments should reject before the host bridge is called.
