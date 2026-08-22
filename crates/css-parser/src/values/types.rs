@@ -1561,7 +1561,12 @@ pub fn parse_angle_to_radians(token: &str) -> Option<f64> {
     .into_iter()
     .find_map(|(suffix, f)| lower.strip_suffix(suffix).map(|n| (n, f)))?;
     let v: f64 = num_str.trim().parse().ok()?;
-    Some(v * factor)
+    // https://drafts.csswg.org/css-values-4/#angles
+    if !v.is_finite() {
+        return None;
+    }
+    let radians = v * factor;
+    radians.is_finite().then_some(radians)
 }
 
 /// 解析 CSS 长度值。

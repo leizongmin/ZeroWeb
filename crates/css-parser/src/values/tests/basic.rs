@@ -314,6 +314,14 @@ fn test_eval_calc_trig() {
     assert!(approx(eval("calc(sin(pi / 2))"), 1.0, 1e-9), "sin(pi/2)=1");
 }
 
+#[test]
+fn test_parse_angle_to_radians_rejects_non_finite_values() {
+    assert!(parse_angle_to_radians("1e999deg").is_none());
+    assert!(parse_angle_to_radians("-1e999rad").is_none());
+    assert!(parse_angle_to_radians("NaNturn").is_none());
+    assert!(parse_angle_to_radians("1.7976931348623157e308turn").is_none());
+}
+
 // ── parse_calc 嵌套与优先级 ──
 
 #[test]
