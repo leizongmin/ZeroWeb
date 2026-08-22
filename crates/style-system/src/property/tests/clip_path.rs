@@ -25,6 +25,16 @@ fn test_clip_path_apply_inset() {
 }
 
 #[test]
+fn test_clip_path_apply_basic_shape_function_names_are_case_insensitive() {
+    let mut style = ComputedStyle::default();
+    assert!(apply_property_value(&mut style, "clip-path", "INSET(10px)"));
+    assert!(matches!(style.clip_path, ClipPathComputedValue::Inset { .. }));
+
+    assert!(apply_property_value(&mut style, "clip-path", "Circle(50px at center)"));
+    assert!(matches!(style.clip_path, ClipPathComputedValue::Circle { .. }));
+}
+
+#[test]
 fn test_clip_path_apply_circle() {
     let mut style = ComputedStyle::default();
     assert!(apply_property_value(&mut style, "clip-path", "circle(50px)"));

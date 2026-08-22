@@ -536,17 +536,31 @@ pub fn parse_clip_path(value: &str) -> Option<ClipPathValue> {
     if v.eq_ignore_ascii_case("none") {
         return Some(ClipPathValue::None);
     }
-    if let Some(rest) = v.strip_prefix("inset(") {
+    if let Some(rest) = strip_basic_shape_prefix(v, "inset") {
         return parse_clip_inset(rest);
     }
-    if let Some(rest) = v.strip_prefix("circle(") {
+    if let Some(rest) = strip_basic_shape_prefix(v, "circle") {
         return parse_clip_circle(rest);
     }
-    if let Some(rest) = v.strip_prefix("ellipse(") {
+    if let Some(rest) = strip_basic_shape_prefix(v, "ellipse") {
         return parse_clip_ellipse(rest);
     }
-    if let Some(rest) = v.strip_prefix("polygon(") {
+    if let Some(rest) = strip_basic_shape_prefix(v, "polygon") {
         return parse_clip_polygon(rest);
+    }
+    None
+}
+
+fn strip_basic_shape_prefix<'a>(input: &'a str, name: &str) -> Option<&'a str> {
+    // https://www.w3.org/TR/css-syntax-3/#function-token-diagram
+    // CSS function names are ASCII case-insensitive; whitespace before `(` is not a function token.
+    let prefix_len = name.len() + 1;
+    let bytes = input.as_bytes();
+    if bytes.len() >= prefix_len
+        && bytes[name.len()] == b'('
+        && bytes[..name.len()].eq_ignore_ascii_case(name.as_bytes())
+    {
+        return Some(&input[prefix_len..]);
     }
     None
 }

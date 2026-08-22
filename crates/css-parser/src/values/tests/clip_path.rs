@@ -22,6 +22,31 @@ fn test_clip_path_invalid() {
     assert!(parse_clip_path("rect(0 0 0 0)").is_none());
 }
 
+#[test]
+fn test_clip_path_basic_shape_function_names_are_case_insensitive() {
+    // https://www.w3.org/TR/css-syntax-3/#function-token-diagram
+    // Function names in CSS values are ASCII case-insensitive.
+    assert!(matches!(
+        parse_clip_path("INSET(10px)"),
+        Some(ClipPathValue::Inset { .. })
+    ));
+    assert!(matches!(
+        parse_clip_path("Circle(50px at center)"),
+        Some(ClipPathValue::Circle { .. })
+    ));
+    assert!(matches!(
+        parse_clip_path("ELLIPSE(100px 50px)"),
+        Some(ClipPathValue::Ellipse { .. })
+    ));
+    assert!(matches!(
+        parse_clip_path("Polygon(evenodd, 0 0, 100% 0, 50% 100%)"),
+        Some(ClipPathValue::Polygon {
+            fill_rule: PolygonFillRule::EvenOdd,
+            ..
+        })
+    ));
+}
+
 // ── inset() ──
 
 #[test]
