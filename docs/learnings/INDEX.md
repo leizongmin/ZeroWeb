@@ -91,8 +91,9 @@
 - 2026-07-29 [reftest-upstream 大目录触发 test-guard OOM 杀进程（fail-list 捕获空致误判）](bugs/2026-07/2026-07-29-reftest-upstream-large-dir-testguard-oom.md) — tests/wpt-runner（cmd_reftest_upstream）, scripts/test-guard.rs（OOM 包裹器）
 - 2026-07-25 [product-smoke 输出 PNG 路径陷阱（stale 文件致假 bug 误判）](bugs/2026-07/2026-07-25-product-smoke-png-stale-trap.md) — tests/wpt-runner（cmd_product_smoke）, legacy/product smoke 诊断流程
 
-## Patterns — 可复用代码模式与最佳实践（11）
+## Patterns — 可复用代码模式与最佳实践（12）
 
+- 2026-08-22 [用 python 块级 replace 编辑大文件把 441KB 控制面截断成 3.4KB](patterns/2026-08/2026-08-22-python-block-replace-truncates-large-files.md) — js-dom, docs
 - 2026-08-18 [WebIDL readonly interface shape](patterns/2026-08/2026-08-18-webidl-readonly-interface-shape.md) — crates/engine/src/js_dom_shim/part02.js
 - 2026-08-18 [IndexedDB transaction latest view](patterns/2026-08/2026-08-18-indexeddb-transaction-latest-view.md) — crates/storage/src/indexed_db/types.rs, crates/page-runtime/src/indexed_db_host/cursor.rs
 - 2026-08-18 [IndexedDB persistence requires a single writer](patterns/2026-08/2026-08-18-indexeddb-single-writer-persistence.md) — zero-storage, zero-page-runtime, browser/renderer IPC
