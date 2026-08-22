@@ -1696,7 +1696,8 @@ pub fn parse_length_quirks(value: &str) -> Option<LengthValue> {
 
     // Quirks: 裸数字视为 px
     if let Ok(num) = value.parse::<f64>() {
-        return Some(LengthValue::Px(num));
+        // https://drafts.csswg.org/css-syntax-3/#consume-number
+        return num.is_finite().then_some(LengthValue::Px(num));
     }
 
     None

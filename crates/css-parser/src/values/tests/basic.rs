@@ -1650,6 +1650,13 @@ fn test_parse_length_quirks_unitless_number() {
 }
 
 #[test]
+fn test_parse_length_quirks_rejects_non_finite_unitless_number() {
+    assert_eq!(parse_length_quirks("1e999"), None);
+    assert_eq!(parse_length_quirks("-1e999"), None);
+    assert_eq!(parse_length_quirks("NaN"), None);
+}
+
+#[test]
 fn test_parse_length_quirks_invalid_still_none() {
     assert_eq!(parse_length_quirks("abc"), None);
     assert_eq!(parse_length_quirks(""), None);
