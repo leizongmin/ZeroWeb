@@ -869,6 +869,37 @@ fn test_fetch_abort_signal_r3044() {
         "resolved:200",
         "signal present 未 abort → fetch 正常 resolve（零回归）"
     );
+
+    // ⑤ 同步 host 返回 + 同 task abort：headless/testharness 的 __zw_fetch 可同步返 wire，但带 signal 时
+    // resolve 必须延后一轮 microtask，让随后 controller.abort() 仍能按 spec 抢先拒绝。
+    let cap5: Arc<Mutex<String>> = Arc::new(Mutex::new(String::new()));
+    let cap5c = Arc::clone(&cap5);
+    sandbox.register_callback(
+        "__zw_fetch",
+        Box::new(move |args| {
+            if let Some(id) = args.first() {
+                *cap5c.lock().unwrap() = id.clone();
+            }
+            "__zwfr:200\u{001f}OK\u{001f}\u{001f}sync".to_string()
+        }),
+    );
+    sandbox
+        .execute(
+            "globalThis.__c5 = new AbortController();\
+             globalThis.__syncAbort = 'pending';\
+             fetch('http://test.local/e', { signal: globalThis.__c5.signal })\
+               .then(function(r){ globalThis.__syncAbort = 'resolved:' + r.status; })\
+               .catch(function(e){ globalThis.__syncAbort = 'rejected:' + (e && e.name ? e.name : String(e)); });\
+             globalThis.__c5.abort();",
+        )
+        .unwrap();
+    sandbox.execute("1;").unwrap();
+    assert!(!cap5.lock().unwrap().is_empty(), "同步 host fetch 仍发起请求");
+    assert_eq!(
+        sandbox.execute("globalThis.__syncAbort").unwrap().value,
+        "rejected:AbortError",
+        "同步 host fetch 带 signal 时同 task abort 应优先于同步 resolve"
+    );
 }
 
 #[test]

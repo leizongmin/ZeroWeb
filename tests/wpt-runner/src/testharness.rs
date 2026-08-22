@@ -655,6 +655,14 @@ pub const CACHE_STORAGE_WINDOW_CASES: &[(&str, &[&str])] = &[
     ),
     ("service-workers/cache-storage/common.https.window.js", &[]),
     ("service-workers/cache-storage/cache-api-nested-worker.https.html", &[]),
+    (
+        "service-workers/cache-storage/window/cache-abort.https.html",
+        &[
+            "../resources/test-helpers.js",
+            "/common/utils.js",
+            "../script-tests/cache-abort.js",
+        ],
+    ),
     ("service-workers/cache-storage/worker/cache-storage.https.html", &[]),
     (
         "service-workers/cache-storage/worker/cache-storage-keys.https.html",
@@ -670,6 +678,7 @@ pub const CACHE_STORAGE_WINDOW_CASES: &[(&str, &[&str])] = &[
     ("service-workers/cache-storage/worker/cache-match.https.html", &[]),
     ("service-workers/cache-storage/worker/cache-put.https.html", &[]),
     ("service-workers/cache-storage/worker/cache-add.https.html", &[]),
+    ("service-workers/cache-storage/worker/cache-abort.https.html", &[]),
 ];
 
 /// Fixed Service Worker M1 core corpus at the pinned WPT revision.
@@ -1179,7 +1188,12 @@ pub fn run_cache_storage_cases(wpt_root: &Path, filter: Option<&str>) -> Vec<(St
                 }
             }
             let html = if path.ends_with(".html") {
-                apply_wpt_substitutions(&case_source)
+                let mut html = apply_wpt_substitutions(&case_source);
+                for (name, source) in &support_sources {
+                    let source = apply_wpt_substitutions(source);
+                    html = replace_script_source(&html, name, &format!("<script>{source}</script>"));
+                }
+                html
             } else {
                 let support_refs = support_sources
                     .iter()
@@ -2420,6 +2434,11 @@ add_completion_callback(function() {
   globalThis.__zw_harness_complete = true;
 });
 "#;
+    let cache_abort_fixture = if case_path.contains("cache-abort") {
+        CACHE_ABORT_FETCH_FIXTURE
+    } else {
+        ""
+    };
     let harness_source = harness_source.replacen(
         "\n})(self);",
         "\nglobal_scope.__zw_mark_harness_loaded = function() {\n\
@@ -2454,7 +2473,7 @@ add_completion_callback(function() {
         var fn = globalThis.__zw_pending[due.id];\n\
         if (fn) { delete globalThis.__zw_pending[due.id]; try { fn(); } catch (_e) {} }\n\
       };\n";
-    let harness = format!("<script>\n{timer_stub}{harness_source}\n{reporter}\n</script>");
+    let harness = format!("<script>\n{timer_stub}{harness_source}\n{reporter}\n{cache_abort_fixture}\n</script>");
     // R130（js-dom M4）：crash 类用例（*-crash.html）不引 testharness.js——纯脚本页
     // 断言「不崩溃」。上游跑法是浏览器不崩即 PASS；本 runner 的 completion 探针依赖
     // harness 全局（test/completion callback），无 harness 时永远 Timeout 伪失败。
@@ -2494,6 +2513,76 @@ add_completion_callback(function() {
     );
     html
 }
+
+const CACHE_ABORT_FETCH_FIXTURE: &str = r#"
+(function() {
+  var nativeFetch = globalThis.fetch;
+  var stash = globalThis.__zw_cache_abort_stash || {};
+  globalThis.__zw_cache_abort_stash = stash;
+  function parseUrl(input) {
+    var raw = input && typeof input === 'object' && input.url !== undefined ? input.url : input;
+    try { return new URL(String(raw), location && location.href ? location.href : 'https://wpt.test/'); }
+    catch (_e) { return null; }
+  }
+  function signalOf(input, init) {
+    init = init || {};
+    if (typeof AbortSignal !== 'function') return null;
+    if (init.signal instanceof AbortSignal) return init.signal;
+    if (input && typeof input === 'object' && input.signal instanceof AbortSignal) return input.signal;
+    return null;
+  }
+  function responseFor(url, body, contentType) {
+    return new Response(body, {
+      status: 200,
+      statusText: 'OK',
+      headers: {
+        'Access-Control-Allow-Origin': '*',
+        'Content-Type': contentType || 'text/plain',
+        'X-Zero-Final-URL': url.href
+      },
+      url: url.href
+    });
+  }
+  globalThis.fetch = function(input, init) {
+    var url = parseUrl(input);
+    if (!url) return nativeFetch(input, init);
+    var path = url.pathname;
+    var signal = signalOf(input, init);
+    if (signal && signal.aborted) return Promise.reject(signal.reason);
+    if (path === '/fetch/api/resources/stash-take.py') {
+      var takeKey = url.searchParams.get('key') || '';
+      var value = Object.prototype.hasOwnProperty.call(stash, takeKey) ? stash[takeKey] : null;
+      delete stash[takeKey];
+      return Promise.resolve(responseFor(url, JSON.stringify(value), 'application/json'));
+    }
+    if (path === '/fetch/api/resources/stash-put.py') {
+      var putKey = url.searchParams.get('key') || '';
+      var putValue = url.searchParams.has('value') ? url.searchParams.get('value') : 'done';
+      if (putKey) stash[putKey] = putValue;
+      return Promise.resolve(responseFor(url, 'done', 'text/plain'));
+    }
+    if (path === '/fetch/api/resources/infinite-slow-response.py') {
+      var stateKey = url.searchParams.get('stateKey') || '';
+      if (stateKey) stash[stateKey] = 'open';
+      return new Promise(function(resolve, reject) {
+        var settled = false;
+        function abort() {
+          if (settled) return;
+          settled = true;
+          reject(signal && signal.reason);
+        }
+        if (signal) signal.addEventListener('abort', abort);
+        if (!signal) Promise.resolve().then(function() {
+          if (settled) return;
+          settled = true;
+          resolve(responseFor(url, Array(2049).join('.'), 'text/plain'));
+        });
+      });
+    }
+    return nativeFetch(input, init);
+  };
+})();
+"#;
 
 fn replace_script_source(source: &str, script_src: &str, replacement: &str) -> String {
     let mut output = String::with_capacity(source.len() + replacement.len());
@@ -3191,13 +3280,13 @@ async_test(function(test) {
     }
 
     #[test]
-    fn cache_storage_window_manifest_has_twenty_unique_cases() {
+    fn cache_storage_window_manifest_has_expected_unique_cases() {
         let unique = CACHE_STORAGE_WINDOW_CASES
             .iter()
             .map(|(path, _)| *path)
             .collect::<std::collections::BTreeSet<_>>();
-        assert_eq!(CACHE_STORAGE_WINDOW_CASES.len(), 20);
-        assert_eq!(unique.len(), 20);
+        assert_eq!(CACHE_STORAGE_WINDOW_CASES.len(), 22);
+        assert_eq!(unique.len(), 22);
         assert!(CACHE_STORAGE_WINDOW_CASES.iter().all(|(path, support)| {
             if !path.starts_with("service-workers/cache-storage/")
                 || !(path.ends_with(".https.any.js")
@@ -3214,6 +3303,14 @@ async_test(function(test) {
                 }
                 "service-workers/cache-storage/common.https.window.js"
                 | "service-workers/cache-storage/cache-api-nested-worker.https.html" => support.is_empty(),
+                "service-workers/cache-storage/window/cache-abort.https.html" => {
+                    *support
+                        == [
+                            "../resources/test-helpers.js",
+                            "/common/utils.js",
+                            "../script-tests/cache-abort.js",
+                        ]
+                }
                 path if path.starts_with("service-workers/cache-storage/worker/") => support.is_empty(),
                 _ => *support == ["resources/test-helpers.js"],
             }

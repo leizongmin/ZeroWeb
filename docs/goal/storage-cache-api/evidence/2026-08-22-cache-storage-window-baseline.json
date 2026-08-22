@@ -1,8 +1,8 @@
 {
-  "cases": 20,
-  "subtests": 273,
+  "cases": 22,
+  "subtests": 291,
   "status": {
-    "Pass": 273
+    "Pass": 291
   },
   "deterministic": true,
   "results": [
@@ -752,6 +752,56 @@
       ]
     ],
     [
+      "service-workers/cache-storage/window/cache-abort.https.html",
+      [
+        {
+          "name": "put() on an already-aborted request should reject with AbortError",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "put() synchronously followed by abort should reject with AbortError",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "put() followed by abort after headers received should reject with AbortError",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "add() on an already-aborted request should reject with AbortError",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "add() synchronously followed by abort should reject with AbortError",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "add() followed by abort after headers received should reject with AbortError",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "addAll() on an already-aborted request should reject with AbortError",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "addAll() synchronously followed by abort should reject with AbortError",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "addAll() followed by abort after headers received should reject with AbortError",
+          "status": "Pass",
+          "message": null
+        }
+      ]
+    ],
+    [
       "service-workers/cache-storage/worker/cache-storage.https.html",
       [
         {
@@ -1466,6 +1516,56 @@
         },
         {
           "name": "Cache.addAll should reject when one entry has a vary header matching another entry",
+          "status": "Pass",
+          "message": null
+        }
+      ]
+    ],
+    [
+      "service-workers/cache-storage/worker/cache-abort.https.html",
+      [
+        {
+          "name": "put() on an already-aborted request should reject with AbortError",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "put() synchronously followed by abort should reject with AbortError",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "put() followed by abort after headers received should reject with AbortError",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "add() on an already-aborted request should reject with AbortError",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "add() synchronously followed by abort should reject with AbortError",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "add() followed by abort after headers received should reject with AbortError",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "addAll() on an already-aborted request should reject with AbortError",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "addAll() synchronously followed by abort should reject with AbortError",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "addAll() followed by abort after headers received should reject with AbortError",
           "status": "Pass",
           "message": null
         }

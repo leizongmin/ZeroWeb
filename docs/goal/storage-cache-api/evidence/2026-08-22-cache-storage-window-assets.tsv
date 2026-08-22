@@ -30,6 +30,8 @@ service-workers/cache-storage/worker/cache-storage-match.https.html	testharness	
 service-workers/cache-storage/worker/cache-match.https.html	testharness	case	1	350	no	479a29d1eec5f49416a075aae9306bcd5b5cc3e6
 service-workers/cache-storage/worker/cache-put.https.html	testharness	case	1	344	no	20aeb2351efb70ceedbd7c5c46dc7d500def71f8
 service-workers/cache-storage/worker/cache-add.https.html	testharness	case	1	361	no	2658e1e50f9ebfe8ac5971a16af9e26b02d140a8
+service-workers/cache-storage/window/cache-abort.https.html	testharness	case	1	415	no	405d34d665c27cee93a03f7013f087cfc0a61af7
+service-workers/cache-storage/worker/cache-abort.https.html	testharness	case	1	357	no	68bbade07d3862c883bf0f95b02a5cb6181d8e79
 service-workers/cache-storage/script-tests/cache-storage.js	support	worker-script	1	8270	no	0de2dbb05e96dd6756f94af769ab2417f3902a95
 service-workers/cache-storage/script-tests/cache-storage-keys.js	support	worker-script	1	1154	no	ef06ccdff5c8df29c2aefb5d11c4d3dfcf493bf6
 service-workers/cache-storage/script-tests/cache-delete.js	support	worker-script	1	5981	no	e5238c455620fc9741a7b149bd060cf10a410874
@@ -39,3 +41,8 @@ service-workers/cache-storage/script-tests/cache-storage-match.js	support	worker
 service-workers/cache-storage/script-tests/cache-match.js	support	worker-script	1	17226	no	22c0689d36d60cb036376482ffa4a9ca334fc14b
 service-workers/cache-storage/script-tests/cache-put.js	support	worker-script	1	14860	no	f4251105cab0e0e397c65304f784f9af62d17af7
 service-workers/cache-storage/script-tests/cache-add.js	support	worker-script	1	13938	no	62b44c7880168b5762785ed9f75c2dfa167f9401
+service-workers/cache-storage/script-tests/cache-abort.js	support	worker-script	1	3085	no	3c7aa5cd2ffc9ef975e45456b10a60d1c4281693
+common/utils.js	support	page-script	1	2447	no	62e742bee7f67cf3bd92a217a0a92b23fddf3017
+fetch/api/resources/infinite-slow-response.py	support	fetch-body	1	986	no	a26cd8064c88531e6877d2561cd16df964eb7f6e
+fetch/api/resources/stash-take.py	support	fetch-body	1	302	no	e6db80dd86df1e5a80e177b78bd40a59234885b0
+fetch/api/resources/stash-put.py	support	fetch-body	1	745	no	dbc7ceebb882ebb77a0202b3c9a828e2c70dc3bc

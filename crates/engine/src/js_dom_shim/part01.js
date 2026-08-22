@@ -951,9 +951,21 @@
           var _isSyncWire = typeof _sync === 'string' &&
             (_sync.indexOf('__zwfr:') === 0 || _sync.indexOf('__zw_fetch_error:') === 0);
           if (_isSyncWire && !settled) {
-            settled = true;
-            delete globalThis.__zw_pending[id];
-            resolve(finishFetch(_sync));
+            if (signal) {
+              // https://fetch.spec.whatwg.org/#abort-fetch
+              // Headless 同步 host response 也必须给同一 task 内的 abort() 抢先拒绝机会。
+              var _syncRaw = _sync;
+              _defer(function() {
+                if (settled) return;
+                settled = true;
+                delete globalThis.__zw_pending[id];
+                resolve(finishFetch(_syncRaw));
+              });
+            } else {
+              settled = true;
+              delete globalThis.__zw_pending[id];
+              resolve(finishFetch(_sync));
+            }
           }
         } catch (_e) {
           if (!settled) { settled = true; delete globalThis.__zw_pending[id]; }

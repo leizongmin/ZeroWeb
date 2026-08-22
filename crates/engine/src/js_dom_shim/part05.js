@@ -7813,6 +7813,7 @@
           + 'var importScripts=function(){};'
           + 'var location=self.location;'
           + 'var Worker=self.Worker;'
+          + 'var fetch=self.fetch.bind(self);'
           + 'var onmessage;'
           + 'with(self){'
           + scriptSrc
