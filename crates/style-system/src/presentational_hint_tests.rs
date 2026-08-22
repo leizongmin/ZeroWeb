@@ -40,6 +40,35 @@ fn table_border_and_cell_padding_map_to_css() {
     );
 }
 
+#[test]
+fn presentational_px_hints_reject_non_finite_attributes() {
+    let doc = parse_html(
+        "<table cellspacing=\"Infinity\" cellpadding=\"Infinity\"><tr><td>Layer</td></tr></table>\
+         <hr size=\"Infinitypx\" noshade>",
+    );
+    let table = doc.get_elements_by_tag_name("table")[0];
+    let td = doc.get_elements_by_tag_name("td")[0];
+    let hr = doc.get_elements_by_tag_name("hr")[0];
+
+    let table_hints = collect_presentational_hints(&doc, table);
+    assert!(
+        !table_hints.iter().any(|(p, _)| p == "border-spacing"),
+        "non-finite cellspacing should not emit border-spacing: {table_hints:?}"
+    );
+
+    let td_hints = collect_presentational_hints(&doc, td);
+    assert!(
+        !td_hints.iter().any(|(p, _)| p == "padding"),
+        "non-finite cellpadding should not emit padding: {td_hints:?}"
+    );
+
+    let hr_hints = collect_presentational_hints(&doc, hr);
+    assert!(
+        !hr_hints.iter().any(|(p, _)| p == "border-width"),
+        "non-finite hr size should not emit border-width: {hr_hints:?}"
+    );
+}
+
 /// R1716：`<table align>` 表现提示（HTML4 §11.2.4 / chromium UA）。
 /// center → margin-left/right:auto；left/right → float:left/right。
 #[test]

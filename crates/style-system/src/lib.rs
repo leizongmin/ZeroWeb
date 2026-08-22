@@ -1819,15 +1819,18 @@ fn html_font_size_to_em(size: &str) -> Option<f32> {
     Some(em)
 }
 
+// https://html.spec.whatwg.org/multipage/rendering.html#presentational-hints
 fn parse_html_px(value: &str) -> Option<f32> {
     let v = value.trim();
     if v.is_empty() {
         return None;
     }
     if let Ok(n) = v.parse::<f32>() {
-        return Some(n);
+        return n.is_finite().then_some(n);
     }
-    v.strip_suffix("px").and_then(|n| n.parse().ok())
+    v.strip_suffix("px")
+        .and_then(|n| n.parse::<f32>().ok())
+        .filter(|n| n.is_finite())
 }
 
 fn html_length_attr(value: &str) -> Option<String> {
