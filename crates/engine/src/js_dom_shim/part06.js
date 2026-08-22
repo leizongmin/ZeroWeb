@@ -1743,13 +1743,26 @@
       // 须查 parsedDoc 而非页面 document）。this === 页面 document 时走页面 DOM；否则委托 this.querySelectorAll。
       // R3033：返 HTMLCollection（item + namedItem），包 _zwMakeCollection(arr, true)。
       // R50：liveSpec——同步脚本内 append/remove 后集合 lazy 重查（matches 按 class 判定归属）。
+      // R185（js-dom M4）：class 参数 ASCII 空白分词（spec `dom-document-getelementsbyclassname`
+      // 步骤 2——token 全含匹配；空/全空白 → 空 collection **不抛**——旧 `'.' + cls` 直接构
+      // `'.'`/`'. '` 非法选择器触发 SyntaxError，WPT getElementsByClassName-empty-set 3F）。
+      var _r185Parts = (typeof _zwSplitClassList === 'function') ? _zwSplitClassList(cls) : [String(cls)];
+      if (_r185Parts.length === 0) return _zwMakeCollection([], true);
+      var _r185Q = '.' + _r185Parts.join('.');
       if (this && this !== globalThis.document && typeof this.querySelectorAll === 'function') {
-        return _zwMakeCollection(this.querySelectorAll('.' + cls), true);
+        return _zwMakeCollection(this.querySelectorAll(_r185Q), true);
       }
-      var clsStr = String(cls);
-      return _zwMakeCollection(globalThis.document.querySelectorAll('.' + cls), true, {
+      var clsStr = _r185Parts.join(' ');
+      return _zwMakeCollection(globalThis.document.querySelectorAll(_r185Q), true, {
         matches: function (el) {
-          try { return !!el && (' ' + (el.className || '') + ' ').indexOf(' ' + clsStr + ' ') !== -1; } catch (_e) { return false; }
+          try {
+            if (!el) return false;
+            var cs = String(el.className || '').split(/\s+/).filter(Boolean);
+            for (var _r185p = 0; _r185p < _r185Parts.length; _r185p++) {
+              if (cs.indexOf(_r185Parts[_r185p]) < 0) return false;
+            }
+            return true;
+          } catch (_e) { return false; }
         },
       });
     },
@@ -2405,6 +2418,15 @@
           cloneNode: function () {
             return globalThis.document.implementation.createDocumentType(dt.name, dt.publicId, dt.systemId);
           },
+          // R185（js-dom M4）：isSameNode（spec `dom-node-issamenode`——引用比较；
+          // WPT Node-isSameNode "doctypes should be compared on reference"）。
+          isSameNode: function (other) { return other === dt; },
+          isEqualNode: function (other) {
+            if (!other || other.nodeType !== 10) return false;
+            return String(other.name) === String(dt.name)
+              && String(other.publicId) === String(dt.publicId)
+              && String(other.systemId) === String(dt.systemId);
+          },
           contains: function (other) { return _zwNodeContains(dt, other); },
           compareDocumentPosition: function (other) { return _zwCompareDocumentPosition(dt, other); },
           // js-dom M4 R81：导航面补齐（WPT Node-properties doctype.previousSibling/nextSibling/
@@ -2559,6 +2581,10 @@
     //（树序）；document 不可再有父。
     contains: function (other) { return _zwNodeContains(globalThis.document, other); },
     compareDocumentPosition: function (other) { return _zwCompareDocumentPosition(globalThis.document, other); },
+    // R185（js-dom M4）：isSameNode（spec `dom-node-issamenode` 引用比较；WPT
+    // Node-isSameNode "documents should be compared on reference"——document1/2 互为
+    // implementation.createDocument 产物，引用不同即 false）。
+    isSameNode: function (other) { return other === globalThis.document; },
     get childNodes() {
       // R79 注记：曾「不含 doctype」与 WPT oracle previousNode 遍历世界对齐（html.previousSibling
       // 快照恒 null）。R81 spec 纠正：真浏览器 document.childNodes = [doctype, html]（WPT

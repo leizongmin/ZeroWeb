@@ -678,6 +678,22 @@ pub fn register_dom_callbacks(
         }),
     );
 
+    // R185（js-dom M4）：sel 元素的 namespace 查询（svg/MathML 等非 HTML ns 的
+    // namespaceURI getter + cloneNode ns 保留）。
+    let html = Arc::clone(dom_html);
+    sandbox.register_callback(
+        "__zw_get_ns",
+        Box::new(move |args| {
+            let sel = args.first().map(String::from).unwrap_or_default();
+            // R185 修正：**纯快照查询**——不走 apply_pending_query_html（live 视图构建有
+            // 状态副作用：namespaceURI getter 会在 live-collection 过滤（getElementsByTagName
+            // 的 matches）中被调用，pending-apply 会消费 mutation 队列破坏查询状态，
+            // Attr-prefix g 元素丢失实证）。ns 对静态解析元素恒定，快照足够。
+            let snap = html.lock().unwrap_or_else(|e| e.into_inner()).clone();
+            with_query_doc(&snap, |doc| query_ns_from_html_doc(doc, &sel))
+        }),
+    );
+
     // `getComputedStyle(el).getPropertyValue(prop)`——计算样式（display/position/visibility/
     // opacity + 颜色族）。**per-snapshot + per-style-version 缓存**：(html_key, style_version) →
     // (selector → ComputedStyle)。Document 非 Send（含 observer/listener 闘包 + html5ever tendril

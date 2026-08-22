@@ -3089,6 +3089,25 @@
                 htmlUpper: !!_r128Ns.htmlUpper,
               };
             }
+            // R185（js-dom M4）：sel 源的 ns 探测（cloneNode 专用——**不进通用
+            // namespaceURI getter**：getter 被 live-collection 过滤（getElementsByTagName
+            // 的 matches）高频调用，host 查询在过滤路径有状态干扰，Attr-prefix 回归实证；
+            // 此处仅在显式 clone 时一次性探测）。
+            var _r185SrcNs = '';
+            if (!handle && sel && typeof __zw_get_ns === 'function') {
+              try { _r185SrcNs = String(__zw_get_ns(sel) || ''); } catch (_e185cn) {}
+              if (_r185SrcNs === 'http://www.w3.org/1999/xhtml') _r185SrcNs = '';
+            }
+            if (!nh) {
+              // R185（js-dom M4）：sel-based 非 HTML ns 源（`<svg>` 解析产物）——经
+              // `__zw_create_element_ns` 保留 ns + 记 `_nsHandles`（克隆的 namespaceURI
+              // getter 读回；WPT Node-cloneNode-svg：clone.namespaceURI === SVG ns）。
+              // qualifiedName 用 srcTag 原值（非 HTML ns 不大写——SVG tagName 'svg' 小写）。
+              if (_r185SrcNs && typeof __zw_create_element_ns === 'function') {
+                nh = __zw_create_element_ns(_r185SrcNs, srcTag);
+                if (nh) _nsHandles[nh] = { qualifiedName: srcTag, namespace: _r185SrcNs, htmlUpper: false };
+              }
+            }
             if (!nh) nh = __zw_create_element(srcTag);
             // 复制属性（名 + 值）。R3198：handle 源经 `__zw_attr_names_handle`+`__zw_get_attr_handle`，
             // sel 源经 `__zw_attr_names`（latest-wins，自 R3002）+ 值。R3203：sel 源值改走 `__zw_get_attr_lw`
@@ -3104,6 +3123,24 @@
                     ? (typeof __zw_get_attr_handle === 'function' ? __zw_get_attr_handle(handle, n) : '')
                     : (typeof __zw_get_attr_lw === 'function' ? __zw_get_attr_lw(sel, n) : __zw_get_attr(sel, n));
                   __zw_set_attr_handle(nh, n, v || '');
+                  // R185（js-dom M4）：带 prefix 的属性（`xmlns:xlink`/`xlink:href` 等）补
+                  // NS 元数据（`_attrNSMeta`——Attr 视图的 prefix/localName/namespaceURI
+                  // 来源；WPT Node-cloneNode-svg 的克隆属性 NS 断言）。已知 prefix 映射：
+                  // xmlns → xmlns ns、xlink → xlink ns、xml → xml ns。
+                  var _r185Colon = String(n).indexOf(':');
+                  if (_r185Colon > 0) {
+                    var _r185Pre = String(n).slice(0, _r185Colon);
+                    var _r185NsByPre = { xmlns: 'http://www.w3.org/2000/xmlns/', xlink: 'http://www.w3.org/1999/xlink', xml: 'http://www.w3.org/XML/1998/namespace' }[_r185Pre];
+                    if (_r185NsByPre) {
+                      var _r185Nk = _elKey(null, nh);
+                      var _r185Nm = _attrNSMeta[_r185Nk] || (_attrNSMeta[_r185Nk] = {});
+                      _r185Nm[String(n)] = {
+                        ns: _r185NsByPre,
+                        prefix: _r185Pre,
+                        local: String(n).slice(_r185Colon + 1),
+                      };
+                    }
+                  }
                 });
               }
             } catch (_e) {}

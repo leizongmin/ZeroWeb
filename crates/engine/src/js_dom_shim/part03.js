@@ -6582,6 +6582,10 @@
     var doc = {
       nodeType: 9,
       nodeName: '#document',
+      // R185（js-dom M4）：isSameNode（spec `dom-node-issamenode` 引用比较；WPT
+      // Node-isSameNode "documents should be compared on reference"——createDocument
+      // 产物的 detached doc）。
+      isSameNode: function (other) { return other === doc; },
       // R152（js-dom M4）：namespace 查找（spec `dom-node-lookupnamespaceuri`）——
       // detached doc 经 documentElement（惰性，无元素子 → null 恒返 null；WPT
       // "Document without documentElement" xml/xmlns 均 null——**无预绑定**，与主
@@ -7695,6 +7699,9 @@
       var mine = a.lookupNamespaceURI(null);
       return (ns == null || ns === '') ? (mine == null || mine === '') : mine === String(ns);
     };
+    // R185（js-dom M4）：isSameNode（spec `dom-node-issamenode` 引用比较；WPT
+    // Node-isSameNode "attributes should be compared on reference"）。
+    a.isSameNode = function (other) { return other === a; };
     return a;
   }
   // `el.attributes`（NamedNodeMap）：length / item(i) / getNamedItem(name) / 数值索引 /

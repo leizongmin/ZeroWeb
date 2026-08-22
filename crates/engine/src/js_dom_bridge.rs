@@ -1889,6 +1889,21 @@ pub fn query_tag_from_html_doc(doc: &Document, selector: &str) -> String {
         .unwrap_or_default()
 }
 
+/// R185（js-dom M4）：按 selector 取元素的 namespace（`__zw_get_ns` 回调的消费端）。
+/// sel-based 元素（静态 HTML 解析产物——`<svg>` 等非 HTML ns 元素）的 namespaceURI
+/// getter / cloneNode 的 ns 保留需要 host 权威值（WPT Node-cloneNode-svg：克隆 svg
+/// 的 ns 须保持 SVG ns 而非回落 XHTML）。
+pub fn query_ns_from_html_doc(doc: &Document, selector: &str) -> String {
+    find_by_selector(doc, selector)
+        .and_then(|n| {
+            doc.get(n).and_then(|node| match &node.kind {
+                NodeKind::Element(e) => Some(e.namespace().to_string()),
+                _ => None,
+            })
+        })
+        .unwrap_or_default()
+}
+
 /// P1a form submit：解析元素的 form owner。显式 `form="id"` 优先，否则取最近祖先 form。
 /// 供 Enter-in-input / submit-button 的 submit 派发。
 /// https://html.spec.whatwg.org/multipage/form-control-infrastructure.html#association-of-controls-and-forms
