@@ -384,8 +384,12 @@
                   // 把 .html 也判 'xhtml' 使 HTML iframe 子文档的 createElement 产物
                   // nodeName 小写，doc 查询树的 tag 匹配（want 大写）miss（WPT
                   // ParentNode "new NodeList" append 后计数不增的根因）。
+                  // R176：`.svg` → 'svg'（contentType 'image/svg+xml'——真浏览器按
+                  // 扩展/Content-Type 判 SVG 文档；WPT Document-createElement-
+                  // namespace 的 .svg fixture 族断言 contentType 'image/svg+xml'）。
                   var kind = /\.xhtml(\?|#|$)/i.test(_r115Url) ? 'xhtml'
-                    : (/\.html?(\?|#|$)/i.test(_r115Url) ? 'html' : 'xml');
+                    : (/\.html?(\?|#|$)/i.test(_r115Url) ? 'html'
+                    : (/\.svg(\?|#|$)/i.test(_r115Url) ? 'svg' : 'xml'));
                   _r115Entry.doc = _zwMakeIframeDoc(kind, _r115Body);
                   try { _r115Entry.doc._zwURL = _r115Url; } catch (_e115u) {}
                   // R160：fragment URL 槽（`:target` 判定——WPT :target 簇的

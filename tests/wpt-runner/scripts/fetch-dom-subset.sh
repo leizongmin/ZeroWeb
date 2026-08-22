@@ -42,7 +42,11 @@ fetch_raw() {
   curl --fail --location --silent --show-error --retry 3 \
     --connect-timeout 8 --max-time 30 \
     "${RAW_ROOT}/${relative}" -o "${temporary}"
-  test -s "${temporary}"
+  # R176：合法空文件放行——Document-createElement-namespace-tests 的 empty.* 是
+  # 设计为 0 字节的测试形态（空文档）；`test -s` 把 curl 成功的空响应当失败，
+  # .tmp 残留使该 fixture 永远拉不到。curl --fail 已保证非 2xx 报错，这里只需
+  # 确认文件存在。
+  test -e "${temporary}"
   mv "${temporary}" "${target}"
 }
 
@@ -67,8 +71,10 @@ fetch_dir_html() {
     name="${name%\"}"
     # 拉主线程 .html + .js 依赖（用例常引用同目录 .js 测试体，如 Document-createElementNS.js）。
     # 排除 .worker.js / .any.js 变体（需 dedicated worker / 不同 harness）。
+    # R176：追加 .xml/.xhtml/.svg——Document-createElement-namespace-tests 子目录的
+    # iframe fixture 是四扩展全集（fetch_dir_html 复用于该子目录时需要）。
     case "${name}" in
-      *.html | *.js) fetch_raw "${dir}/${name}" ;;
+      *.html | *.js | *.xml | *.xhtml | *.svg) fetch_raw "${dir}/${name}" ;;
     esac
   done <<< "${names}"
 }
@@ -89,6 +95,13 @@ fetch_raw "dom/events/resources/prefixed-animation-event-tests.js"
 # contentDocument 切片消费。
 fetch_raw "common/dummy.xml"
 fetch_raw "common/dummy.xhtml"
+
+# js-dom R176：Document-createElement-namespace 的 iframe fixture 子目录（40 subtest 经
+# `<iframe src="Document-createElement-namespace-tests/<name>.<ext>">` 取 4 扩展 × 10 形态
+# 的外部文档——fetch_dir_html 只拉 .html/.js 且不递归子目录，缺文件时 contentDocument
+# 恒 null → "Cannot read properties of null (reading 'contentType')" 整簇 fail）。全 41
+# 文件（4 扩展 × 10 形态 + generate.py）逐个拉。
+fetch_dir_html "dom/nodes/Document-createElement-namespace-tests"
 
 for dir in "${SUBDIRS[@]}"; do
   fetch_dir_html "${dir}"

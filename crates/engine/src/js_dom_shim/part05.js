@@ -753,6 +753,12 @@
       // 小写——_zwIframeCreateElement 的 isHtml 分支）。
       doc.contentType = 'text/html';
       doc._docNS = 'http://www.w3.org/1999/xhtml';
+    } else if (kind === 'svg') {
+      // R176：SVG 子文档（.svg 扩展）——contentType 'image/svg+xml'（真浏览器
+      // 判 SVG 文档；WPT Document-createElement-namespace 的 .svg fixture 族
+      // sanity 断言。createElement 语义与 XML 同——ns 按文档派生 null）。
+      doc.contentType = 'image/svg+xml';
+      doc._docNS = null;
     } else {
       doc.contentType = 'application/xhtml+xml';
       doc._docNS = 'http://www.w3.org/1999/xhtml';
