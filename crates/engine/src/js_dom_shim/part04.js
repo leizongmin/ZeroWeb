@@ -491,11 +491,13 @@
             for (var _tci = 0; _tci < _tcKids.length; _tci++) {
               var _tcn = _tcKids[_tci];
               if (!_tcn) continue;
-              // R81：CDATA（nodeType 4）与 PI（7）的 textContent 也是 data（spec CharacterData +
-              // ProcessingInstruction 的 textContent 语义；WPT Node-properties testDiv.textContent
-              // 期望 CDATA 内容计入拼接——spec dom-node-textcontent 对 CDATA/PI 子节点取其 data）。
-              if (_tcn.nodeType === 3 || _tcn.nodeType === 4) _tcOut += String(_tcn.nodeValue != null ? _tcn.nodeValue : (_tcn.data != null ? _tcn.data : ''));
-              else if (_tcn.nodeType === 7) _tcOut += String(_tcn.data != null ? _tcn.data : '');
+              // R184（js-dom M4）spec 纠正：**父元素的 textContent 只拼接 Text 后代**
+              //（spec dom-node-textcontent 步骤「concatenate child's textContent if child
+              // is a Text node... comment/PI 不计入」）——CDATASection 在 spec 是 Text 的
+              // 子类但 textContent 联接规则只认「exclusive Text」（与 normalize 同口径，
+              // WPT Node-textContent "Element with children" 的 PI " ghi " 不计入）。
+              // R81 原注释（CDATA/PI data 计入）与上游期望矛盾，按 WPT 为准修正。
+              if (_tcn.nodeType === 3) _tcOut += String(_tcn.nodeValue != null ? _tcn.nodeValue : (_tcn.data != null ? _tcn.data : ''));
               else if (_tcn.nodeType === 1 && typeof _tcn.textContent === 'string') _tcOut += _tcn.textContent;
             }
             if (_tcOut !== '' || _tcKids.length > 0) return _tcOut;
@@ -2955,11 +2957,74 @@
         // `__zw_get_tag_handle`/`__zw_attr_names_handle`/`__zw_get_attr_handle`（旧 handle 源 tag 回落 'div' +
         // 不复制属性，best-effort 因当时无 handle 枚举回调）；sel 源经 `__zw_get_tag`/`__zw_attr_names`/
         // `__zw_get_attr`（latest-wins）。两端源均完整复制 tag + 属性 +（deep）后代。
-        // `Node.normalize()`（R2853）——合并相邻 Text 子节点 + 移除空 Text。snapshot 模型下元素文本为
-        // 单一串（无独立 Text 子节点暴露），故 normalize 为语义正确的 no-op（DOM 态已「normalized」）。
-        // 提供 no-op 防 `el.normalize()` 防御性调用（rich-text 编辑器 / innerHTML 后清理）抛 TypeError。
+        // `Node.normalize()`（R2853 起 no-op；R184 实化）——spec `dom-node-normalize`：
+        // 每个**exclusive Text** 子（Text 但非 CDATASection）与前一个 Text 兜接（length
+        // 相加，后者移除）；空 Text（length 0）移除；递归子树。snapshot 模型的解析文本为
+        // 单一串（无独立 Text 子暴露）保持 no-op 语义；handle 容器直接写 `_handleChildren`
+        // registry（**权威存储**——childNodes 的 live 视图 refresh 时从这里重建；对 live
+        // 缓存数组直接写会被 refresh 覆盖，R184 首版实证）。
         if (prop === 'normalize') {
-          return function() {};
+          return function() {
+            var _r184IsText = function (n) {
+              return n && (n.nodeType === 3 || n.__zwIsText) && n.nodeType !== 4;
+            };
+            // 对单个容器的「权威子数组」跑合并（registry 数组 / _zwMEl childNodes）。
+            var _r184NormArr = function (kids, recurse) {
+              if (!kids || !kids.length) return;
+              if (recurse) {
+                for (var _r184i = 0; _r184i < kids.length; _r184i++) {
+                  var _r184k = kids[_r184i];
+                  if (_r184k && _r184k.__zwHandle && _handleChildren[_r184k.__zwHandle]) {
+                    _r184NormArr(_handleChildren[_r184k.__zwHandle], true);
+                  } else if (_r184k && _r184k.childNodes && _r184k.nodeType === 1 && !_r184k.__zwSelector && !_r184k.__zwHandle) {
+                    _r184NormArr(_r184k.childNodes, true); // plain 子树
+                  }
+                }
+              }
+              var out = [];
+              var lastText = null;
+              for (var _r184j = 0; _r184j < kids.length; _r184j++) {
+                var _r184n = kids[_r184j];
+                if (_r184IsText(_r184n)) {
+                  var _r184d = String(_r184n.data != null ? _r184n.data : (_r184n.nodeValue != null ? _r184n.nodeValue : ''));
+                  if (lastText != null) {
+                    try {
+                      lastText.data = String(lastText.data != null ? lastText.data : '') + _r184d;
+                      lastText.nodeValue = lastText.data;
+                      if (typeof lastText.length === 'number') lastText.length = lastText.data.length;
+                    } catch (_e184m) {}
+                    continue; // 兜接移除
+                  }
+                  if (_r184d === '') continue; // 空 Text 无前邻 → 移除
+                  lastText = _r184n;
+                  out.push(_r184n);
+                  continue;
+                }
+                lastText = null;
+                out.push(_r184n);
+              }
+              try {
+                kids.length = 0;
+                for (var _r184w = 0; _r184w < out.length; _r184w++) kids.push(out[_r184w]);
+              } catch (_e184wr) {}
+            };
+            if (handle && _handleChildren[handle]) {
+              _r184NormArr(_handleChildren[handle], true);
+            } else if (!sel && !handle) {
+              // 无身份容器（防御）：无操作。
+            } else {
+              // sel 容器：解析文本为单一串（snapshot 模型）——no-op（R2853 原语义）。
+            }
+            // R184：live childNodes 缓存强制 refresh（下次读反映合并态——refresh 闭包在
+            // 承载数组上；直接调 globalThis._zwLiveNLSync 入口亦可，此处经 __zwRefresh）。
+            try {
+              if (globalThis._zwLiveNLCache && globalThis._zwLiveNLCache[key]
+                  && typeof globalThis._zwLiveNLCache[key].__zwRefresh === 'function') {
+                globalThis._zwLiveNLCache[key].__zwRefresh();
+              }
+            } catch (_e184rf) {}
+            return undefined;
+          };
         }
         if (prop === 'cloneNode') {
           return function(deep) {

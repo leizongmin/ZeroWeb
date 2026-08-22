@@ -2148,6 +2148,18 @@
       if (whatToShow === undefined) return _makeNodeWalker(root, 0xFFFFFFFF, filter, false);
       return _makeNodeWalker(root, (whatToShow === null ? 0 : whatToShow), filter, false);
     },
+    // R184（js-dom M4）：`document.normalize()`（spec Node.normalize——Document 是 Node，
+    // 对 documentElement 子树跑合并语义）。委托 html/body 代理的 normalize（part04 get trap
+    // 的 R184 实作——handle/registry 子合并 + 空 Text 移除；WPT Node-normalize #1）。
+    normalize: function () {
+      try {
+        var _r184Dn = globalThis.document.documentElement;
+        if (_r184Dn && typeof _r184Dn.normalize === 'function') _r184Dn.normalize();
+        var _r184Db = globalThis.document.body;
+        if (_r184Db && typeof _r184Db.normalize === 'function') _r184Db.normalize();
+      } catch (_e184dn) {}
+      return undefined;
+    },
     // `document.createRange()`——新建 Range（R2804，Selection/Range）。详见 `_makeRange`。
     createRange: function () {
       // R179：同 new Range() 接 Range.prototype（prototype 方法通道）。

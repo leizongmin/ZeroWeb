@@ -291,6 +291,16 @@
             || prop === 'addEventListener' || prop === 'removeEventListener') {
           return true;
         }
+        // R184（js-dom M4）：Node 接口常量 + DOCUMENT_POSITION 常量的 `in` 可见性（spec
+        // dom-node-constants——常量定义在 Node 接口上、**实例经继承可枚举命中**；WPT
+        // Node-constants 对 Element/Text 实例 `'ELEMENT_NODE' in el` 断言——get trap 返回
+        // 值正确但 has 白名单漏列使 `in` 恒 false）。值面白名单与 part03 R80 常量表同源。
+        if (typeof prop === 'string'
+            && (/^[A-Z][A-Z0-9]+_NODE$/.test(prop) || /^DOCUMENT_POSITION_[A-Z_]+$/.test(prop))) {
+          var _r184v = globalThis.Node && globalThis.Node.prototype
+            ? globalThis.Node.prototype[prop] : undefined;
+          if (_r184v !== undefined) return true;
+        }
         return prop in _t;
       },
       ownKeys: function() {
