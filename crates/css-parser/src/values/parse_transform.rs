@@ -431,6 +431,12 @@ pub fn parse_transform(value: &str) -> Option<TransformValue> {
             }
             pos += 1;
         }
+        // https://drafts.csswg.org/css-transforms-1/#typedef-transform-list
+        // A transform function must be a complete function token; an unclosed `)` rejects
+        // the entire declaration instead of letting the final argument byte be truncated.
+        if depth != 0 {
+            return None;
+        }
         let args_str = value[args_start..pos - 1].trim();
 
         // 解析函数

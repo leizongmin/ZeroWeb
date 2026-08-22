@@ -1197,6 +1197,16 @@ fn test_transform_rejects_non_finite_numbers() {
     assert_eq!(style.transform, old);
 }
 
+#[test]
+fn test_transform_rejects_unclosed_function() {
+    let mut style = ComputedStyle::default();
+    assert!(apply_property_value(&mut style, "transform", "translate(10px)"));
+    let old = style.transform.clone();
+
+    assert!(!apply_property_value(&mut style, "transform", "scale(22"));
+    assert_eq!(style.transform, old);
+}
+
 /// 验证 grid-auto-flow 仅使用 "dense" 关键字时，
 /// 解析为 RowDense（等效于 "row dense"）。
 #[test]

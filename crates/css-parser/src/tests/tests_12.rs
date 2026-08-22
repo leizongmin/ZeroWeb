@@ -188,6 +188,12 @@ fn test_transform_invalid() {
 }
 
 #[test]
+fn test_transform_rejects_unclosed_function() {
+    assert!(parse_transform("scale(22").is_none());
+    assert!(parse_transform("rotate(45degx").is_none());
+}
+
+#[test]
 fn test_transform_multiple_functions() {
     let t = parse_transform("translate(10px) rotate(45deg) scale(2)").unwrap();
     if let TransformValue::List(fs) = t {
