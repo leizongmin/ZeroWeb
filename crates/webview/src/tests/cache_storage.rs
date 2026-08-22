@@ -70,6 +70,58 @@ fn page_cache_api_put_and_match_roundtrip() {
 }
 
 #[test]
+fn page_cache_api_match_preserves_cached_response_type() {
+    let mut webview = webview_with_owner(IndexedDbOwner::in_memory(), "https://cache.example/app/page.html");
+
+    webview
+        .execute_script(
+            r#"
+            (async function () {
+              try {
+                const openResult = JSON.parse(__zw_cache_storage(JSON.stringify({
+                  op: 'open',
+                  name: 'typed'
+                })).slice('__zw_cache_ok:'.length));
+                __zw_cache_storage(JSON.stringify({
+                  op: 'put',
+                  cache_name: 'typed',
+                  cache_id: openResult.cache_id,
+                  request: {
+                    url: 'https://cache.example/app/typed.txt',
+                    method: 'GET'
+                  },
+                  response: {
+                    status: 200,
+                    statusText: 'OK',
+                    type: 'basic',
+                    headers: 'content-type\x1etext/plain',
+                    body: 'typed body'
+                  }
+                }));
+                const cache = await caches.open('typed');
+                const matched = await cache.match('https://cache.example/app/typed.txt');
+                globalThis.__cacheResponseType = [
+                  String(matched instanceof Response),
+                  matched.type,
+                  matched.clone().type,
+                  await matched.text()
+                ].join('|');
+              } catch (error) {
+                globalThis.__cacheResponseType = 'error:' + String(error && error.message ? error.message : error);
+              }
+            })();
+            "#,
+        )
+        .unwrap();
+    pump_microtasks(&mut webview);
+
+    assert_eq!(
+        webview.execute_script("globalThis.__cacheResponseType").unwrap(),
+        "true|basic|basic|typed body"
+    );
+}
+
+#[test]
 fn page_cache_api_query_options_match_delete_and_keys() {
     let mut webview = webview_with_owner(IndexedDbOwner::in_memory(), "https://cache.example/app/page.html");
 

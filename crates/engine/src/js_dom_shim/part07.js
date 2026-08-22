@@ -38,9 +38,10 @@
   }
 
   function _zwCacheResponseFromWire(raw) {
-    if (typeof raw !== 'string' || raw.indexOf('__zwfr:') !== 0) {
+    if (typeof raw !== 'string' || (raw.indexOf('__zwcr:') !== 0 && raw.indexOf('__zwfr:') !== 0)) {
       throw new TypeError('malformed Cache response');
     }
+    var isCacheResponseWire = raw.indexOf('__zwcr:') === 0;
     var rest = raw.slice(7);
     var p1 = rest.indexOf('\x1f');
     var p2 = p1 >= 0 ? rest.indexOf('\x1f', p1 + 1) : -1;
@@ -48,10 +49,20 @@
     if (p1 < 0 || p2 < 0 || p3 < 0) throw new TypeError('malformed Cache response');
     var status = parseInt(rest.slice(0, p1), 10) || 0;
     var statusText = rest.slice(p1 + 1, p2);
-    var headers = _zwCacheParseHeadersWire(rest.slice(p2 + 1, p3));
+    var responseType = 'default';
+    var headersStart = p2 + 1;
+    if (isCacheResponseWire) {
+      responseType = rest.slice(p2 + 1, p3) || 'default';
+      headersStart = p3 + 1;
+      p3 = rest.indexOf('\x1f', headersStart);
+      if (p3 < 0) throw new TypeError('malformed Cache response');
+    }
+    var headers = _zwCacheParseHeadersWire(rest.slice(headersStart, p3));
     var body = rest.slice(p3 + 1);
     var bodyArg = body.indexOf('__zw_bytes:') === 0 ? _zwCacheDecodeBytesPrefix(body) : body;
-    return new Response(bodyArg, { status: status, statusText: statusText, headers: headers });
+    var response = new Response(bodyArg, { status: status, statusText: statusText, headers: headers });
+    response.type = String(responseType || 'default');
+    return response;
   }
 
   function _zwCacheHeadersToWire(src) {

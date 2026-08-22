@@ -13,7 +13,7 @@ use zero_storage::{Cache, CacheQueryOptions, CacheRequest, CacheResponse, Storag
 
 const FIELD_SEP: char = '\x1f';
 const HEADER_SEP: char = '\x1e';
-const RESPONSE_PREFIX: &str = "__zwfr:";
+const RESPONSE_PREFIX: &str = "__zwcr:";
 const BYTES_PREFIX: &str = "__zw_bytes:";
 
 #[derive(Debug, Deserialize)]
@@ -547,17 +547,26 @@ impl CacheResponseWire {
             self.body.into_bytes()
         };
         let headers: HashMap<String, String> = decode_headers(&self.headers).into_iter().collect();
+        let response_type = normalize_cache_response_type(&self.response_type)?;
         Ok(CacheResponse {
             status: self.status,
             status_text: self.status_text,
-            response_type: if self.response_type.is_empty() {
-                "default".to_string()
-            } else {
-                self.response_type
-            },
+            response_type,
             headers,
             body,
         })
+    }
+}
+
+fn normalize_cache_response_type(response_type: &str) -> Result<String, String> {
+    let normalized = if response_type.is_empty() {
+        "default"
+    } else {
+        response_type
+    };
+    match normalized {
+        "default" | "basic" | "cors" | "opaque" | "opaqueredirect" | "error" => Ok(normalized.to_string()),
+        _ => Err("TypeError: invalid Cache response type".to_string()),
     }
 }
 
@@ -573,9 +582,10 @@ fn cache_response_wire(response: &CacheResponse) -> String {
         Err(_) => encode_body_bytes(&response.body),
     };
     format!(
-        "{RESPONSE_PREFIX}{status}{FIELD_SEP}{status_text}{FIELD_SEP}{headers}{FIELD_SEP}{body}",
+        "{RESPONSE_PREFIX}{status}{FIELD_SEP}{status_text}{FIELD_SEP}{response_type}{FIELD_SEP}{headers}{FIELD_SEP}{body}",
         status = response.status,
         status_text = response.status_text,
+        response_type = response.response_type,
         headers = encode_headers(&headers),
         body = body,
     )
@@ -755,6 +765,7 @@ mod tests {
                 "response": {
                     "status": 201,
                     "statusText": "Created",
+                    "type": "basic",
                     "headers": "content-type\u{1e}text/plain",
                     "body": "cached body",
                     "bodyIsBytes": false
@@ -772,7 +783,7 @@ mod tests {
             }),
         );
         let wire = matched["response"].as_str().unwrap();
-        assert!(wire.starts_with("__zwfr:201\u{1f}Created\u{1f}content-type\u{1e}text/plain\u{1f}"));
+        assert!(wire.starts_with("__zwcr:201\u{1f}Created\u{1f}basic\u{1f}content-type\u{1e}text/plain\u{1f}"));
         assert!(wire.ends_with("cached body"));
     }
 
@@ -946,6 +957,23 @@ mod tests {
             assert!(response.starts_with("TypeError: "));
             assert!(response.contains(expected));
         }
+    }
+
+    #[test]
+    fn cache_storage_handler_rejects_unknown_response_type() {
+        let handler = cache_storage_handler(Arc::new(Mutex::new(StorageManager::new())));
+        let response = handler(
+            "https://example.com",
+            &request(json!({
+                "op": "put",
+                "cache_name": "runtime",
+                "request": {"url": "https://example.com/data", "method": "GET"},
+                "response": {"status": 200, "type": "bogus", "headers": "", "body": ""}
+            })),
+        )
+        .unwrap_err();
+
+        assert_eq!(response, "TypeError: invalid Cache response type");
     }
 
     #[test]

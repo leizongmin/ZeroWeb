@@ -2024,8 +2024,7 @@ impl WebView {
         // R34xx：__zw_fetch（同步契约）——headless/testharness 宿主经 config.fetch_handler 提供
         // 本地资源（wpt-data 文件映射：/images/*、/fonts/* 等）。None → 不注册（shim typeof-check
         // 落 ok:false stub；浏览器路径由 app 层 FetchBridge 注册异步 __zw_fetch，互斥不重叠）。
-        // 回调同步执行 handler 并直接返 wire（shim R34xx 支持同步返回）；wire 格式与 fetch_bridge
-        // 相同（__zwfr: status\x1fstatusText\x1fheaders\x1fbody；body 二进制经 __zw_bytes: csv）。
+        // 回调同步执行 handler 并直接返 fetch_bridge wire（shim R34xx 支持同步返回）。
         if let Some(fetch_handler) = self.fetch_handler.clone() {
             sandbox.register_callback(
                 "__zw_fetch",

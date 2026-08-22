@@ -912,7 +912,9 @@
       // R3021：二进制 body（_bodyBytes）须克隆保真，否则 clone().arrayBuffer() 退化为文本 UTF-8 编码。
       if (self.type === 'error') return globalThis.Response.error();
       var bodyArg = self._bodyBytes != null ? self._bodyBytes : self._bodyText;
-      return new Response(bodyArg, { status: self.status, statusText: self.statusText, headers: self.headers });
+      var cloned = new Response(bodyArg, { status: self.status, statusText: self.statusText, headers: self.headers });
+      cloned.type = self.type;
+      return cloned;
     };
   };
   globalThis.Response.error = function() {
