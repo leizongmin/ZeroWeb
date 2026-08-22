@@ -744,7 +744,9 @@ fn selector_lexically_valid(s: &str) -> bool {
             }
             // `ns|type` 前缀 / `::` 伪元素（idx>0 防 `||` 误判——本引擎无 column 组合器）
             b'|' if !in_attr => {
-                if idx == 0 || bytes[idx - 1] == b'|' {
+                // R172：`|*`/`|div` 段首裸形态（idx==0）= 显式空 ns 前缀，合法
+                //（`||` 仍是非法 column 组合器）。
+                if idx > 0 && bytes[idx - 1] == b'|' {
                     return false;
                 }
                 // `|=` / `~=` 等运算符形态由 attr 分支处理；此分支只管元素段的
@@ -753,19 +755,26 @@ fn selector_lexically_valid(s: &str) -> bool {
                 // namespace 声明（@namespace / Parses NS 变量），任何「| 前有内容」的
                 // 形态一律非法（`*|div` 的任意 ns 与 `|div` 的显式空 ns 除外——
                 // 前缀位是 `*` 或段首）。WPT Undeclared namespace / Invalid namespace 簇。
-                let p = bytes[idx - 1];
-                if p != b'*' {
-                    // 段首判定：向前跳空白到段边界（组合器/段首）
-                    let mut j = idx;
-                    while j > 0 {
-                        match bytes[j - 1] {
-                            b' ' | b'\t' | b'\n' | b'\r' | b'>' | b'+' | b'~' | b',' => j -= 1,
-                            _ => break,
-                        }
-                    }
-                    if j > 0 {
-                        return false;
-                    }
+                // R172（js-dom M4）：`|` 的**显式空前缀**（`|div`/`|*`——`|` 是段内
+                // 首字符）在**任意段位置**合法（spec selectors-4：默认 ns 声明缺省时
+                // `|name` = 显式无 ns）——`#id |div` 的后代段同样合法。段首判定
+                // 放宽：`|` 前回溯（跳空白/组合器符号）到段边界即放行；「| 前有
+                // **非空白内容**」（`ns|div`）仍非法。
+                let p = if idx == 0 { b' ' } else { bytes[idx - 1] };
+                // R172：`|` 前是空白/组合器符号（`#id |div` 的后代段首）→ 显式空
+                // ns 前缀，放行（回溯确认 | 与段边界之间**只有空白/组合器**——
+                // `ns|div` 的 | 前是 ident 字符，回溯立即停在非空白处 j<idx 且
+                // bytes[j..idx] 非全空白/符号 → 仍拒）。
+                let is_segment_start = p == b' '
+                    || p == b'\t'
+                    || p == b'\n'
+                    || p == b'\r'
+                    || p == b'>'
+                    || p == b'+'
+                    || p == b'~'
+                    || p == b',';
+                if p != b'*' && !is_segment_start {
+                    return false;
                 }
             }
             // `::` 伪元素（idx+1 是第二冒号）——选择器匹配语义不支持
@@ -1545,6 +1554,30 @@ mod tests {
     use super::*;
     use crate::Document;
 
+    // R172（js-dom M4）：ns 组合形态的 validity 回归——`|div`/`|*`（显式空 ns）
+    // 与 `*|div`（任意 ns）在**任意段位置**合法（含 `#id |div` 后代段）；`ns|div`
+    // 有名前缀仍非法（无 @namespace 声明表）。WPT ParentNode-querySelector-All
+    // Namespace selector 簇（旧词法层把 `#id |div` 的段首 `|` 误判 ns 前缀拒）。
+    #[test]
+    fn zz_r172_ns_forms_validity() {
+        for s in [
+            "#no-namespace |*",
+            "#no-namespace |div",
+            "#any-namespace *|div",
+            "|*",
+            "|div",
+            "*|div",
+            "div |p",
+            "#x > |div",
+        ] {
+            assert!(selector_is_valid(s), "should be valid: {s}");
+            assert!(parse_selector_chain(s).is_some(), "should parse: {s}");
+        }
+        for bad in ["ns|div", "a b|c", "||div"] {
+            assert!(!selector_is_valid(bad), "should be invalid: {bad}");
+        }
+    }
+
     #[test]
     fn test_parse_tag_selector() {
         let sel = parse_simple_selector("div").unwrap();
@@ -1973,7 +2006,7 @@ mod zz_r156_tests {
     #[test]
     fn zz_r157_attr_escaped_values() {
         let html = "<body><div id=\"d1\" title=\"a b c\" lang=\"en-US\" data-x=\"té\" data-y=\"é x\"></div><a id=\"a1\" href=\"https://example.com/x?y=z\"></a></body>";
-        let doc = parse_html(html);
+        let doc = crate::parse_html(html);
         let root = doc.root();
         // 转义值（引号内）：\e9 → é
         assert_eq!(doc.query_selector_all(root, "[data-x=\"t\\e9\"]").len(), 1);
@@ -2027,7 +2060,7 @@ mod zz_r156_tests {
     #[test]
     fn zz_r160_empty_semantics() {
         let html = "<body><div id=\"pe\"><p id=\"p1\"></p><p id=\"p2\"><!-- c --></p><p id=\"p3\"> </p><p id=\"p4\">T</p><span id=\"s1\"></span></div></body>";
-        let doc = parse_html(html);
+        let doc = crate::parse_html(html);
         let root = doc.root();
         let ids: Vec<String> = doc
             .query_selector_all(root, "#pe :empty")
@@ -2047,7 +2080,7 @@ mod zz_r156_tests {
     #[test]
     fn zz_r159_pseudo_element_and_ns() {
         let html = "<body><div id=\"a\" class=\"x\"><p id=\"p1\">t</p></div></body>";
-        let doc = parse_html(html);
+        let doc = crate::parse_html(html);
         let root = doc.root();
         // 伪元素：合法解析 + 恒零匹配（一/二冒号 + slotted 未闭合括号）
         assert!(crate::query::selector_is_valid("#a::before"));
@@ -2069,7 +2102,7 @@ mod zz_r156_tests {
     #[test]
     fn zz_r157_universal_star() {
         let html = "<body><div id=\"universal\"><p id=\"p1\">x</p></div></body>";
-        let doc = parse_html(html);
+        let doc = crate::parse_html(html);
         let root = doc.root();
         // `<body>` 片段解析补全 html/body 等（html5ever 容错）——计数用包含式断言
         let star_hits = doc.query_selector_all(root, "*").len();
@@ -2081,7 +2114,7 @@ mod zz_r156_tests {
     #[test]
     fn zz_r157_unclosed_and_star_pipe() {
         let html = "<body><div id=\"a\" title=\"t\"><div id=\"a1\" align=\"center\"></div></div></body>";
-        let doc = parse_html(html);
+        let doc = crate::parse_html(html);
         let root = doc.root();
         assert!(crate::query::selector_is_valid("#a [align=\"center\""));
         assert_eq!(
@@ -2156,7 +2189,7 @@ mod zz_r156_tests {
     #[test]
     fn zz_r156_sibling_combinators_no_space() {
         let html = "<body><div id=\"adjacent\"><div id=\"a1\" class=\"x\"></div><div id=\"a2\" class=\"x\"></div><p id=\"p3\"></p></div></body>";
-        let doc = parse_html(html);
+        let doc = crate::parse_html(html);
         let root = doc.root();
         assert_eq!(doc.query_selector_all(root, "#a1+div").len(), 1, "v1 id+tag nospace");
         assert_eq!(doc.query_selector_all(root, "#a2+p").len(), 1, "v1b cross-tag");
