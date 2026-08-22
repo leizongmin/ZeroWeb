@@ -420,10 +420,12 @@ fn cache_storage_request_to_wire(request: ServiceWorkerCacheStorageRequest) -> S
         }
         ServiceWorkerCacheStorageRequest::Match {
             cache_name,
+            cache_id,
             request,
             options,
         } => ServiceWorkerCacheStorageRequestWire::Match {
             cache_name,
+            cache_id,
             request: ServiceWorkerFetchRequestWire {
                 url: request.url,
                 method: request.method,
@@ -437,10 +439,12 @@ fn cache_storage_request_to_wire(request: ServiceWorkerCacheStorageRequest) -> S
         },
         ServiceWorkerCacheStorageRequest::MatchAll {
             cache_name,
+            cache_id,
             request,
             options,
         } => ServiceWorkerCacheStorageRequestWire::MatchAll {
             cache_name,
+            cache_id,
             request: request.map(|request| ServiceWorkerFetchRequestWire {
                 url: request.url,
                 method: request.method,
@@ -454,10 +458,12 @@ fn cache_storage_request_to_wire(request: ServiceWorkerCacheStorageRequest) -> S
         },
         ServiceWorkerCacheStorageRequest::Keys {
             cache_name,
+            cache_id,
             request,
             options,
         } => ServiceWorkerCacheStorageRequestWire::Keys {
             cache_name,
+            cache_id,
             request: request.map(|request| ServiceWorkerFetchRequestWire {
                 url: request.url,
                 method: request.method,
@@ -471,10 +477,12 @@ fn cache_storage_request_to_wire(request: ServiceWorkerCacheStorageRequest) -> S
         },
         ServiceWorkerCacheStorageRequest::Delete {
             cache_name,
+            cache_id,
             request,
             options,
         } => ServiceWorkerCacheStorageRequestWire::Delete {
             cache_name,
+            cache_id,
             request: ServiceWorkerFetchRequestWire {
                 url: request.url,
                 method: request.method,
@@ -488,10 +496,12 @@ fn cache_storage_request_to_wire(request: ServiceWorkerCacheStorageRequest) -> S
         },
         ServiceWorkerCacheStorageRequest::Put {
             cache_name,
+            cache_id,
             request,
             response,
         } => ServiceWorkerCacheStorageRequestWire::Put {
             cache_name,
+            cache_id,
             request: ServiceWorkerFetchRequestWire {
                 url: request.url,
                 method: request.method,
@@ -530,6 +540,15 @@ fn cache_query_options_to_wire(options: ServiceWorkerCacheQueryOptions) -> Servi
 fn cache_storage_result_from_wire(result: ServiceWorkerCacheStorageResultWire) -> ServiceWorkerCacheStorageResult {
     match result {
         ServiceWorkerCacheStorageResultWire::Done => ServiceWorkerCacheStorageResult::Done,
+        ServiceWorkerCacheStorageResultWire::Open {
+            cache_name,
+            cache_name_units,
+            cache_id,
+        } => ServiceWorkerCacheStorageResult::Open {
+            cache_name,
+            cache_name_units,
+            cache_id,
+        },
         ServiceWorkerCacheStorageResultWire::Match(response) => {
             ServiceWorkerCacheStorageResult::Match(response.map(fetch_response_from_wire))
         }
@@ -1017,6 +1036,7 @@ mod tests {
             cache_name: None,
             request,
             options,
+            ..
         } = request
         else {
             panic!("expected CacheStorage.match request");
@@ -1118,7 +1138,11 @@ mod tests {
             registration_id: 16,
             command: ServiceWorkerHostCommand::CompleteCacheStorage {
                 request_id,
-                result: Ok(ServiceWorkerCacheStorageResultWire::Done),
+                result: Ok(ServiceWorkerCacheStorageResultWire::Open {
+                    cache_name: "runtime".into(),
+                    cache_name_units: "00720075006e00740069006d0065".into(),
+                    cache_id: 7,
+                }),
             },
         });
 
@@ -1128,6 +1152,7 @@ mod tests {
         };
         let ServiceWorkerCacheStorageRequestWire::Put {
             cache_name,
+            cache_id,
             request,
             response,
         } = request
@@ -1135,6 +1160,7 @@ mod tests {
             panic!("expected Cache.put payload");
         };
         assert_eq!(cache_name, "runtime");
+        assert_eq!(cache_id, Some(7));
         assert_eq!(request.url, "https://example.test/app/stored");
         assert_eq!(response.status, 201);
         assert_eq!(response.status_text, "Created");
@@ -1155,6 +1181,7 @@ mod tests {
         };
         let ServiceWorkerCacheStorageRequestWire::MatchAll {
             cache_name,
+            cache_id,
             request: Some(request),
             options,
         } = request
@@ -1162,6 +1189,7 @@ mod tests {
             panic!("expected named Cache.matchAll payload");
         };
         assert_eq!(cache_name, "runtime");
+        assert_eq!(cache_id, Some(7));
         assert_eq!(request.url, "https://example.test/app/stored");
         assert_eq!(options, ServiceWorkerCacheQueryOptionsWire::default());
         host.handle_command(ServiceWorkerHostCommandParams {
@@ -1188,6 +1216,7 @@ mod tests {
             request,
             ServiceWorkerCacheStorageRequestWire::Keys {
                 cache_name: "runtime".into(),
+                cache_id: Some(7),
                 request: None,
                 options: ServiceWorkerCacheQueryOptionsWire::default(),
             }
@@ -1284,7 +1313,11 @@ mod tests {
             registration_id: 17,
             command: ServiceWorkerHostCommand::CompleteCacheStorage {
                 request_id,
-                result: Ok(ServiceWorkerCacheStorageResultWire::Done),
+                result: Ok(ServiceWorkerCacheStorageResultWire::Open {
+                    cache_name: "runtime".into(),
+                    cache_name_units: "00720075006e00740069006d0065".into(),
+                    cache_id: 8,
+                }),
             },
         });
 
@@ -1325,6 +1358,7 @@ mod tests {
         };
         let ServiceWorkerCacheStorageRequestWire::Delete {
             cache_name,
+            cache_id,
             request,
             options,
         } = request
@@ -1332,6 +1366,7 @@ mod tests {
             panic!("expected Cache.delete payload");
         };
         assert_eq!(cache_name, "runtime");
+        assert_eq!(cache_id, Some(8));
         assert_eq!(request.url, "https://example.test/app/delete?version=1");
         assert_eq!(
             options,
@@ -1429,6 +1464,7 @@ mod tests {
             cache_name: None,
             request,
             options,
+            ..
         } = request
         else {
             panic!("expected CacheStorage.match request");

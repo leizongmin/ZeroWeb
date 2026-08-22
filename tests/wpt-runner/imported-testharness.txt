@@ -244,3 +244,4 @@ service-workers/service-worker/fetch-event-async-respond-with.https.html 04067ce
 service-workers/service-worker/fetch-event-respond-with-argument.https.html 04067ce9c7c2165e71ad7d0dde10a4c5cb394a83 2026-08-22 SW-M2-fetch-baseline
 service-workers/service-worker/fetch-event-network-error.https.html 04067ce9c7c2165e71ad7d0dde10a4c5cb394a83 2026-08-22 SW-M2-fetch-baseline
 service-workers/service-worker/iso-latin1-header.https.html 04067ce9c7c2165e71ad7d0dde10a4c5cb394a83 2026-08-22 SW-M2-fetch-header-baseline
+service-workers/cache-storage/serviceworker/cache-storage.https.html 24197a11e8c5bd29a5cb7bdf18135a82be8a8546 2026-08-23 SW-M2-cache-storage-serviceworker-baseline

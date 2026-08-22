@@ -117,6 +117,8 @@ struct PendingFetch {
     deadline: std::time::Instant,
 }
 
+const CACHE_NAME_DOMSTRING_PREFIX: &str = "__zw_domstring16:";
+
 const SERVICE_WORKER_BOOTSTRAP: &str = r#"
 (function() {
   const listeners = Object.create(null);
@@ -521,64 +523,120 @@ const SERVICE_WORKER_BOOTSTRAP: &str = r#"
     }
     return Promise.resolve(response);
   }
-  function cacheMatchRequest(input, cacheName, options) {
+  function cacheDomStringWire(value) {
+    const s = String(value);
+    let out = '';
+    for (let i = 0; i < s.length; i++) {
+      let unit = s.charCodeAt(i).toString(16);
+      while (unit.length < 4) unit = '0' + unit;
+      out += unit;
+    }
+    return out;
+  }
+  function cacheDomStringFromWire(units) {
+    units = String(units || '');
+    if (units.length % 4 !== 0) throw new TypeError('malformed CacheStorage name');
+    let out = '';
+    for (let i = 0; i < units.length; i += 4) {
+      const unit = parseInt(units.slice(i, i + 4), 16);
+      if (!isFinite(unit)) throw new TypeError('malformed CacheStorage name');
+      out += String.fromCharCode(unit);
+    }
+    return out;
+  }
+  function cacheSetNameWire(target, field, value) {
+    const s = String(value);
+    let hasSurrogate = false;
+    for (let i = 0; i < s.length; i++) {
+      const unit = s.charCodeAt(i);
+      if (unit >= 0xD800 && unit <= 0xDFFF) {
+        hasSurrogate = true;
+        break;
+      }
+    }
+    if (!hasSurrogate) target[field] = s;
+    target[field + 'Units'] = cacheDomStringWire(s);
+  }
+  function cacheNameFromResult(response, fallback) {
+    if (response && typeof response.cacheNameUnits === 'string') {
+      return cacheDomStringFromWire(response.cacheNameUnits);
+    }
+    if (response && typeof response.nameUnits === 'string') {
+      return cacheDomStringFromWire(response.nameUnits);
+    }
+    if (response && typeof response.cacheName === 'string') return response.cacheName;
+    if (response && typeof response.name === 'string') return response.name;
+    return fallback;
+  }
+  function cacheSetIdWire(target, cache) {
+    if (cache && cache._cacheId !== null && isFinite(cache._cacheId)) target.cacheId = cache._cacheId;
+  }
+  function cacheMatchRequest(input, cacheName, options, cache) {
     const request = {
       op: 'match',
       request: cacheRequestWire(input),
       options: cacheQueryOptionsWire(options)
     };
-    if (cacheName !== undefined) request.cacheName = cacheName;
+    if (cacheName !== undefined) cacheSetNameWire(request, 'cacheName', cacheName);
+    cacheSetIdWire(request, cache);
     return request;
   }
-  function cacheMatchAllRequest(cacheName, input, options) {
+  function cacheMatchAllRequest(cache, input, options) {
     const request = {
       op: 'matchAll',
-      cacheName,
       options: cacheQueryOptionsWire(options)
     };
+    cacheSetNameWire(request, 'cacheName', cache._name);
+    cacheSetIdWire(request, cache);
     if (input !== undefined) request.request = cacheRequestWire(input);
     return request;
   }
-  function cacheKeysRequest(cacheName, input, options) {
+  function cacheKeysRequest(cache, input, options) {
     const request = {
       op: 'keys',
-      cacheName,
       options: cacheQueryOptionsWire(options)
     };
+    cacheSetNameWire(request, 'cacheName', cache._name);
+    cacheSetIdWire(request, cache);
     if (input !== undefined) request.request = cacheRequestWire(input);
     return request;
   }
-  function cacheDeleteRequest(cacheName, input, options) {
-    return {
+  function cacheDeleteRequest(cache, input, options) {
+    const request = {
       op: 'delete',
-      cacheName,
       request: cacheRequestWire(input),
       options: cacheQueryOptionsWire(options)
     };
+    cacheSetNameWire(request, 'cacheName', cache._name);
+    cacheSetIdWire(request, cache);
+    return request;
   }
-  function cachePutRequest(cacheName, input, response) {
+  function cachePutRequest(cache, input, response) {
     const request = input instanceof Request ? input : new Request(input);
     const cacheResponse = Response._from(response);
     validateCachePut(request, cacheResponse);
-    return {
+    const hostRequest = {
       op: 'put',
-      cacheName,
       request: cacheRequestWire(request),
       response: Response._serialize(cacheResponse)
     };
+    cacheSetNameWire(hostRequest, 'cacheName', cache._name);
+    cacheSetIdWire(hostRequest, cache);
+    return hostRequest;
   }
   // https://w3c.github.io/ServiceWorker/#cache-interface
   class Cache {
-    constructor(name) {
+    constructor(name, cacheId) {
       this._name = String(name);
+      this._cacheId = cacheId === undefined || cacheId === null ? null : Number(cacheId);
     }
     match(input, options) {
-      return cacheStorageHost(cacheMatchRequest(input, this._name, options)).then(function(response) {
+      return cacheStorageHost(cacheMatchRequest(input, this._name, options, this)).then(function(response) {
         return response.response === null ? undefined : cachedResponseFromWire(response.response);
       });
     }
     matchAll(input, options) {
-      return cacheStorageHost(cacheMatchAllRequest(this._name, input, options)).then(function(response) {
+      return cacheStorageHost(cacheMatchAllRequest(this, input, options)).then(function(response) {
         const responses = Array.isArray(response.responses) ? response.responses : [];
         return responses.map(cachedResponseFromWire);
       });
@@ -586,7 +644,7 @@ const SERVICE_WORKER_BOOTSTRAP: &str = r#"
     put(input, response) {
       let request;
       try {
-        request = cachePutRequest(this._name, input, response);
+        request = cachePutRequest(this, input, response);
       } catch (error) {
         return Promise.reject(error);
       }
@@ -653,7 +711,7 @@ const SERVICE_WORKER_BOOTSTRAP: &str = r#"
       }
     }
     keys(input, options) {
-      return cacheStorageHost(cacheKeysRequest(this._name, input, options)).then(function(response) {
+      return cacheStorageHost(cacheKeysRequest(this, input, options)).then(function(response) {
         const requests = Array.isArray(response.requests) ? response.requests : [];
         return requests.map(cachedRequestFromWire);
       });
@@ -661,7 +719,7 @@ const SERVICE_WORKER_BOOTSTRAP: &str = r#"
     delete(input, options) {
       let request;
       try {
-        request = cacheDeleteRequest(this._name, input, options);
+        request = cacheDeleteRequest(this, input, options);
       } catch (error) {
         return Promise.reject(error);
       }
@@ -675,12 +733,19 @@ const SERVICE_WORKER_BOOTSTRAP: &str = r#"
   // https://w3c.github.io/ServiceWorker/#cache-storage-interface
   class CacheStorage {
     open(name) {
-      name = String(name);
-      return cacheStorageHost({
-        op: 'open',
-        name
-      }).then(function() {
-        return new Cache(name);
+      const hasName = arguments.length >= 1;
+      return new Promise(function(resolve, reject) {
+        try {
+          if (!hasName) throw new TypeError('CacheStorage.open requires a name');
+          const request = {op: 'open'};
+          const fallback = String(name);
+          cacheSetNameWire(request, 'name', fallback);
+          cacheStorageHost(request).then(function(response) {
+            resolve(new Cache(cacheNameFromResult(response, fallback), response.cacheId));
+          }, reject);
+        } catch (error) {
+          reject(error);
+        }
       });
     }
     match(input, options) {
@@ -690,23 +755,40 @@ const SERVICE_WORKER_BOOTSTRAP: &str = r#"
       });
     }
     has(name) {
-      return cacheStorageHost({
-        op: 'has',
-        name: String(name)
-      }).then(function(response) {
-        return Boolean(response.value);
+      const hasName = arguments.length >= 1;
+      return new Promise(function(resolve, reject) {
+        try {
+          if (!hasName) throw new TypeError('CacheStorage.has requires a name');
+          const request = {op: 'has'};
+          cacheSetNameWire(request, 'name', name);
+          cacheStorageHost(request).then(function(response) {
+            resolve(Boolean(response.value));
+          }, reject);
+        } catch (error) {
+          reject(error);
+        }
       });
     }
     delete(name) {
-      return cacheStorageHost({
-        op: 'storageDelete',
-        name: String(name)
-      }).then(function(response) {
-        return Boolean(response.value);
+      const hasName = arguments.length >= 1;
+      return new Promise(function(resolve, reject) {
+        try {
+          if (!hasName) throw new TypeError('CacheStorage.delete requires a name');
+          const request = {op: 'storageDelete'};
+          cacheSetNameWire(request, 'name', name);
+          cacheStorageHost(request).then(function(response) {
+            resolve(Boolean(response.value));
+          }, reject);
+        } catch (error) {
+          reject(error);
+        }
       });
     }
     keys() {
       return cacheStorageHost({op: 'storageKeys'}).then(function(response) {
+        if (Array.isArray(response.cacheNameUnits)) {
+          return response.cacheNameUnits.map(cacheDomStringFromWire);
+        }
         return Array.isArray(response.cacheNames) ? response.cacheNames.map(String) : [];
       });
     }
@@ -901,6 +983,7 @@ const SERVICE_WORKER_BOOTSTRAP: &str = r#"
   globalThis.Headers = globalThis.Headers || Headers;
   globalThis.Request = globalThis.Request || Request;
   globalThis.Response = globalThis.Response || Response;
+  globalThis.Cache = globalThis.Cache || Cache;
   globalThis.CacheStorage = globalThis.CacheStorage || CacheStorage;
   globalThis.caches = globalThis.caches || new CacheStorage();
   globalThis.FetchEvent = FetchEvent;
@@ -1485,6 +1568,8 @@ pub enum ServiceWorkerCacheStorageRequest {
     Match {
         /// Optional cache name for `Cache.match()`.
         cache_name: Option<String>,
+        /// Optional instance ID for an already-opened `Cache`.
+        cache_id: Option<u64>,
         /// Request to match.
         request: ServiceWorkerFetchRequest,
         /// Query matching options.
@@ -1494,6 +1579,8 @@ pub enum ServiceWorkerCacheStorageRequest {
     MatchAll {
         /// Cache name.
         cache_name: String,
+        /// Optional instance ID for an already-opened `Cache`.
+        cache_id: Option<u64>,
         /// Optional request filter.
         request: Option<ServiceWorkerFetchRequest>,
         /// Query matching options.
@@ -1503,6 +1590,8 @@ pub enum ServiceWorkerCacheStorageRequest {
     Keys {
         /// Cache name.
         cache_name: String,
+        /// Optional instance ID for an already-opened `Cache`.
+        cache_id: Option<u64>,
         /// Optional request filter.
         request: Option<ServiceWorkerFetchRequest>,
         /// Query matching options.
@@ -1512,6 +1601,8 @@ pub enum ServiceWorkerCacheStorageRequest {
     Delete {
         /// Cache name.
         cache_name: String,
+        /// Optional instance ID for an already-opened `Cache`.
+        cache_id: Option<u64>,
         /// Request key.
         request: ServiceWorkerFetchRequest,
         /// Query matching options.
@@ -1521,6 +1612,8 @@ pub enum ServiceWorkerCacheStorageRequest {
     Put {
         /// Cache name.
         cache_name: String,
+        /// Optional instance ID for an already-opened `Cache`.
+        cache_id: Option<u64>,
         /// Request key.
         request: ServiceWorkerFetchRequest,
         /// Response value.
@@ -1545,6 +1638,15 @@ pub enum ServiceWorkerCacheStorageRequest {
 pub enum ServiceWorkerCacheStorageResult {
     /// Operation completed without a payload.
     Done,
+    /// CacheStorage.open result.
+    Open {
+        /// Cache name.
+        cache_name: String,
+        /// Cache name as UTF-16 code units.
+        cache_name_units: String,
+        /// Registration-local cache instance ID.
+        cache_id: u64,
+    },
     /// Cache match result.
     Match(Option<ServiceWorkerFetchResponse>),
     /// Cache matchAll result.
@@ -2541,6 +2643,7 @@ impl ServiceWorkerRuntime {
             }
             Ok(
                 response @ (ServiceWorkerCacheStorageResult::Done
+                | ServiceWorkerCacheStorageResult::Open { .. }
                 | ServiceWorkerCacheStorageResult::Match(None)
                 | ServiceWorkerCacheStorageResult::Bool(_)),
             ) => ServiceWorkerCacheStorageResponse::Completed { request_id, response },
@@ -2649,15 +2752,20 @@ fn fetch_failure_json(message: &str) -> String {
 fn cache_storage_request_from_json(value: serde_json::Value) -> Option<ServiceWorkerCacheStorageRequest> {
     match value["op"].as_str()? {
         "open" => Some(ServiceWorkerCacheStorageRequest::Open {
-            cache_name: value["name"].as_str()?.to_string(),
+            cache_name: cache_name_from_json(&value, "name", "nameUnits")?,
         }),
         "match" => Some(ServiceWorkerCacheStorageRequest::Match {
-            cache_name: value["cacheName"].as_str().map(str::to_string),
+            cache_name: match (value["cacheName"].as_str(), value["cacheNameUnits"].as_str()) {
+                (None, None) => None,
+                _ => Some(cache_name_from_json(&value, "cacheName", "cacheNameUnits")?),
+            },
+            cache_id: value["cacheId"].as_u64(),
             request: fetch_request_from_json(&value["request"])?,
             options: cache_query_options_from_json(value.get("options")),
         }),
         "matchAll" => Some(ServiceWorkerCacheStorageRequest::MatchAll {
-            cache_name: value["cacheName"].as_str()?.to_string(),
+            cache_name: cache_name_from_json(&value, "cacheName", "cacheNameUnits")?,
+            cache_id: value["cacheId"].as_u64(),
             request: if value.get("request").is_some() {
                 Some(fetch_request_from_json(&value["request"])?)
             } else {
@@ -2666,7 +2774,8 @@ fn cache_storage_request_from_json(value: serde_json::Value) -> Option<ServiceWo
             options: cache_query_options_from_json(value.get("options")),
         }),
         "keys" => Some(ServiceWorkerCacheStorageRequest::Keys {
-            cache_name: value["cacheName"].as_str()?.to_string(),
+            cache_name: cache_name_from_json(&value, "cacheName", "cacheNameUnits")?,
+            cache_id: value["cacheId"].as_u64(),
             request: if value.get("request").is_some() {
                 Some(fetch_request_from_json(&value["request"])?)
             } else {
@@ -2675,20 +2784,22 @@ fn cache_storage_request_from_json(value: serde_json::Value) -> Option<ServiceWo
             options: cache_query_options_from_json(value.get("options")),
         }),
         "delete" => Some(ServiceWorkerCacheStorageRequest::Delete {
-            cache_name: value["cacheName"].as_str()?.to_string(),
+            cache_name: cache_name_from_json(&value, "cacheName", "cacheNameUnits")?,
+            cache_id: value["cacheId"].as_u64(),
             request: fetch_request_from_json(&value["request"])?,
             options: cache_query_options_from_json(value.get("options")),
         }),
         "put" => Some(ServiceWorkerCacheStorageRequest::Put {
-            cache_name: value["cacheName"].as_str()?.to_string(),
+            cache_name: cache_name_from_json(&value, "cacheName", "cacheNameUnits")?,
+            cache_id: value["cacheId"].as_u64(),
             request: fetch_request_from_json(&value["request"])?,
             response: fetch_response_from_json(&value["response"])?,
         }),
         "has" => Some(ServiceWorkerCacheStorageRequest::StorageHas {
-            cache_name: value["name"].as_str()?.to_string(),
+            cache_name: cache_name_from_json(&value, "name", "nameUnits")?,
         }),
         "storageDelete" => Some(ServiceWorkerCacheStorageRequest::StorageDelete {
-            cache_name: value["name"].as_str()?.to_string(),
+            cache_name: cache_name_from_json(&value, "name", "nameUnits")?,
         }),
         "storageKeys" => Some(ServiceWorkerCacheStorageRequest::StorageKeys),
         _ => None,
@@ -2764,6 +2875,17 @@ fn fetch_response_json(response: ServiceWorkerFetchResponse) -> serde_json::Valu
 fn cache_storage_response_json(response: ServiceWorkerCacheStorageResult) -> String {
     match response {
         ServiceWorkerCacheStorageResult::Done => serde_json::json!({"ok": true}).to_string(),
+        ServiceWorkerCacheStorageResult::Open {
+            cache_name,
+            cache_name_units,
+            cache_id,
+        } => serde_json::json!({
+            "ok": true,
+            "cacheName": display_cache_name(&cache_name),
+            "cacheNameUnits": cache_name_units,
+            "cacheId": cache_id,
+        })
+        .to_string(),
         ServiceWorkerCacheStorageResult::Match(response) => serde_json::json!({
             "ok": true,
             "response": response.map(fetch_response_json),
@@ -2786,10 +2908,62 @@ fn cache_storage_response_json(response: ServiceWorkerCacheStorageResult) -> Str
         .to_string(),
         ServiceWorkerCacheStorageResult::StorageKeys(cache_names) => serde_json::json!({
             "ok": true,
-            "cacheNames": cache_names,
+            "cacheNames": cache_names.iter().map(|name| display_cache_name(name)).collect::<Vec<_>>(),
+            "cacheNameUnits": cache_names.iter().map(|name| encode_cache_name_units(name)).collect::<Vec<_>>(),
         })
         .to_string(),
     }
+}
+
+fn cache_name_from_json(value: &serde_json::Value, name_key: &str, units_key: &str) -> Option<String> {
+    match (value[name_key].as_str(), value[units_key].as_str()) {
+        (Some(name), _) => Some(name.to_string()),
+        (_, Some(units)) => decode_cache_name_units(units),
+        _ => None,
+    }
+}
+
+fn encode_cache_name_units(name: &str) -> String {
+    if let Some(units) = name.strip_prefix(CACHE_NAME_DOMSTRING_PREFIX) {
+        return units.to_string();
+    }
+    let mut out = String::new();
+    for unit in name.encode_utf16() {
+        out.push_str(&format!("{unit:04x}"));
+    }
+    out
+}
+
+fn decode_cache_name_units(units: &str) -> Option<String> {
+    if !units.as_bytes().as_chunks::<4>().1.is_empty() {
+        return None;
+    }
+    if !units.bytes().all(|byte| byte.is_ascii_hexdigit()) {
+        return None;
+    }
+    Some(format!("{CACHE_NAME_DOMSTRING_PREFIX}{units}"))
+}
+
+fn display_cache_name(name: &str) -> String {
+    name.strip_prefix(CACHE_NAME_DOMSTRING_PREFIX)
+        .map(decode_cache_name_units_lossy)
+        .unwrap_or_else(|| name.to_string())
+}
+
+fn decode_cache_name_units_lossy(units: &str) -> String {
+    let mut utf16 = Vec::new();
+    for chunk in units.as_bytes().as_chunks::<4>().0 {
+        let Ok(hex) = std::str::from_utf8(chunk) else {
+            return String::new();
+        };
+        let Ok(unit) = u16::from_str_radix(hex, 16) else {
+            return String::new();
+        };
+        utf16.push(unit);
+    }
+    std::char::decode_utf16(utf16)
+        .map(|item| item.unwrap_or(char::REPLACEMENT_CHARACTER))
+        .collect()
 }
 
 fn validate_cache_name(name: &str) -> Result<(), ScriptError> {
@@ -2840,6 +3014,7 @@ fn validate_cache_storage_request(request: &ServiceWorkerCacheStorageRequest) ->
             cache_name,
             request,
             response,
+            ..
         } => {
             validate_cache_name(cache_name)?;
             validate_fetch_request(request)?;
@@ -4664,6 +4839,7 @@ mod tests {
             cache_name: None,
             request,
             options,
+            ..
         } = request
         else {
             panic!("expected CacheStorage match request");
@@ -4754,7 +4930,14 @@ mod tests {
             }
         );
         runtime
-            .complete_cache_storage(request_id, Ok(ServiceWorkerCacheStorageResult::Done))
+            .complete_cache_storage(
+                request_id,
+                Ok(ServiceWorkerCacheStorageResult::Open {
+                    cache_name: "runtime".into(),
+                    cache_name_units: "00720075006e00740069006d0065".into(),
+                    cache_id: 7,
+                }),
+            )
             .unwrap();
 
         let ServiceWorkerEvent::CacheStorageRequested { request_id, request } =
@@ -4764,6 +4947,7 @@ mod tests {
         };
         let ServiceWorkerCacheStorageRequest::Put {
             cache_name,
+            cache_id,
             request,
             response,
         } = request
@@ -4771,6 +4955,7 @@ mod tests {
             panic!("expected Cache.put request");
         };
         assert_eq!(cache_name, "runtime");
+        assert_eq!(cache_id, Some(7));
         assert_eq!(request.url, "https://example.test/app/store");
         assert_eq!(response.status, 201);
         assert_eq!(response.status_text, "Created");
@@ -4787,6 +4972,7 @@ mod tests {
         };
         let ServiceWorkerCacheStorageRequest::MatchAll {
             cache_name,
+            cache_id,
             request: Some(request),
             options,
         } = request
@@ -4794,6 +4980,7 @@ mod tests {
             panic!("expected named Cache.matchAll request");
         };
         assert_eq!(cache_name, "runtime");
+        assert_eq!(cache_id, Some(7));
         assert_eq!(request.url, "https://example.test/app/store");
         assert_eq!(options, ServiceWorkerCacheQueryOptions::default());
         runtime
@@ -4820,6 +5007,7 @@ mod tests {
             request,
             ServiceWorkerCacheStorageRequest::Keys {
                 cache_name: "runtime".into(),
+                cache_id: Some(7),
                 request: None,
                 options: ServiceWorkerCacheQueryOptions::default(),
             }
@@ -4905,7 +5093,14 @@ mod tests {
             }
         );
         runtime
-            .complete_cache_storage(request_id, Ok(ServiceWorkerCacheStorageResult::Done))
+            .complete_cache_storage(
+                request_id,
+                Ok(ServiceWorkerCacheStorageResult::Open {
+                    cache_name: "runtime".into(),
+                    cache_name_units: "00720075006e00740069006d0065".into(),
+                    cache_id: 8,
+                }),
+            )
             .unwrap();
 
         let ServiceWorkerEvent::CacheStorageRequested { request_id, request } =
@@ -4914,12 +5109,16 @@ mod tests {
             panic!("missing CacheStorage.put request");
         };
         let ServiceWorkerCacheStorageRequest::Put {
-            cache_name, response, ..
+            cache_name,
+            cache_id,
+            response,
+            ..
         } = request
         else {
             panic!("unexpected CacheStorage request");
         };
         assert_eq!(cache_name, "runtime");
+        assert_eq!(cache_id, Some(8));
         assert_eq!(response.status, 0);
         assert_eq!(response.response_type, "error");
         runtime
@@ -4935,6 +5134,7 @@ mod tests {
             request,
             ServiceWorkerCacheStorageRequest::Match {
                 cache_name: Some("runtime".into()),
+                cache_id: Some(8),
                 request: ServiceWorkerFetchRequest {
                     url: "https://example.test/app/error".into(),
                     method: "GET".into(),
@@ -5035,7 +5235,14 @@ mod tests {
             }
         );
         runtime
-            .complete_cache_storage(request_id, Ok(ServiceWorkerCacheStorageResult::Done))
+            .complete_cache_storage(
+                request_id,
+                Ok(ServiceWorkerCacheStorageResult::Open {
+                    cache_name: "runtime".into(),
+                    cache_name_units: "00720075006e00740069006d0065".into(),
+                    cache_id: 9,
+                }),
+            )
             .unwrap();
 
         let ServiceWorkerEvent::CacheStorageRequested { request_id, request } =
@@ -5045,6 +5252,7 @@ mod tests {
         };
         let ServiceWorkerCacheStorageRequest::Match {
             cache_name,
+            cache_id,
             request,
             options,
         } = request
@@ -5052,6 +5260,7 @@ mod tests {
             panic!("expected Cache.match request");
         };
         assert_eq!(cache_name, Some("runtime".into()));
+        assert_eq!(cache_id, Some(9));
         assert_eq!(request.url, "https://example.test/app/store?query=1");
         assert_eq!(request.method, "POST");
         assert_eq!(
@@ -5073,6 +5282,7 @@ mod tests {
         };
         let ServiceWorkerCacheStorageRequest::Match {
             cache_name,
+            cache_id,
             request,
             options,
         } = request
@@ -5080,6 +5290,7 @@ mod tests {
             panic!("expected CacheStorage.match request");
         };
         assert_eq!(cache_name, Some("runtime".into()));
+        assert_eq!(cache_id, None);
         assert_eq!(request.url, "https://example.test/app/store?query=1");
         assert_eq!(
             options,
@@ -5100,6 +5311,7 @@ mod tests {
         };
         let ServiceWorkerCacheStorageRequest::MatchAll {
             cache_name,
+            cache_id,
             request: Some(request),
             options,
         } = request
@@ -5107,6 +5319,7 @@ mod tests {
             panic!("expected Cache.matchAll request");
         };
         assert_eq!(cache_name, "runtime");
+        assert_eq!(cache_id, Some(9));
         assert_eq!(request.url, "https://example.test/app/store?query=1");
         assert_eq!(
             options,
@@ -5127,6 +5340,7 @@ mod tests {
         };
         let ServiceWorkerCacheStorageRequest::Keys {
             cache_name,
+            cache_id,
             request: Some(request),
             options,
         } = request
@@ -5134,6 +5348,7 @@ mod tests {
             panic!("expected Cache.keys request");
         };
         assert_eq!(cache_name, "runtime");
+        assert_eq!(cache_id, Some(9));
         assert_eq!(request.url, "https://example.test/app/store?query=1");
         assert_eq!(
             options,
@@ -5212,7 +5427,14 @@ mod tests {
             }
         );
         runtime
-            .complete_cache_storage(request_id, Ok(ServiceWorkerCacheStorageResult::Done))
+            .complete_cache_storage(
+                request_id,
+                Ok(ServiceWorkerCacheStorageResult::Open {
+                    cache_name: "runtime".into(),
+                    cache_name_units: "00720075006e00740069006d0065".into(),
+                    cache_id: 10,
+                }),
+            )
             .unwrap();
 
         let ServiceWorkerEvent::CacheStorageRequested { request_id, request } =
@@ -5250,6 +5472,7 @@ mod tests {
         };
         let ServiceWorkerCacheStorageRequest::Delete {
             cache_name,
+            cache_id,
             request,
             options,
         } = request
@@ -5257,6 +5480,7 @@ mod tests {
             panic!("expected Cache.delete request");
         };
         assert_eq!(cache_name, "runtime");
+        assert_eq!(cache_id, Some(10));
         assert_eq!(request.url, "https://example.test/app/delete?version=1");
         assert_eq!(
             options,
@@ -5373,7 +5597,14 @@ mod tests {
             }
         );
         runtime
-            .complete_cache_storage(request_id, Ok(ServiceWorkerCacheStorageResult::Done))
+            .complete_cache_storage(
+                request_id,
+                Ok(ServiceWorkerCacheStorageResult::Open {
+                    cache_name: "runtime".into(),
+                    cache_name_units: "00720075006e00740069006d0065".into(),
+                    cache_id: 11,
+                }),
+            )
             .unwrap();
 
         for (expected_url, expected_body) in [
@@ -5407,6 +5638,7 @@ mod tests {
             };
             let ServiceWorkerCacheStorageRequest::Put {
                 cache_name,
+                cache_id,
                 request,
                 response,
             } = request
@@ -5414,6 +5646,7 @@ mod tests {
                 panic!("expected Cache.put request");
             };
             assert_eq!(cache_name, "runtime");
+            assert_eq!(cache_id, Some(11));
             assert_eq!(request.url, expected_url);
             assert_eq!(response.status, 200);
             assert_eq!(response.body, expected_body);
@@ -5432,6 +5665,7 @@ mod tests {
                 request,
                 ServiceWorkerCacheStorageRequest::Match {
                     cache_name: Some(_),
+                    cache_id: Some(11),
                     ..
                 }
             ));

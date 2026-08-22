@@ -1125,6 +1125,16 @@ impl ServiceWorkerHostCommandParams {
                 }
                 match result {
                     Ok(ServiceWorkerCacheStorageResultWire::Done) => Ok(()),
+                    Ok(ServiceWorkerCacheStorageResultWire::Open {
+                        cache_name,
+                        cache_name_units,
+                        cache_id,
+                    }) => {
+                        if *cache_id == 0 || cache_name_units.is_empty() {
+                            return Err("Service Worker cache open response is invalid");
+                        }
+                        validate_service_worker_cache_name(cache_name)
+                    }
                     Ok(ServiceWorkerCacheStorageResultWire::Match(Some(response))) => {
                         validate_service_worker_cache_response(response)
                     }
@@ -1306,6 +1316,7 @@ fn validate_service_worker_cache_storage_request(
         }
         ServiceWorkerCacheStorageRequestWire::Put {
             cache_name,
+            cache_id: _,
             request,
             response,
         } => {
@@ -1479,6 +1490,8 @@ pub enum ServiceWorkerCacheStorageRequestWire {
     Match {
         /// Optional cache name for `Cache.match()`.
         cache_name: Option<String>,
+        /// Optional instance ID for an already-opened `Cache`.
+        cache_id: Option<u64>,
         /// Request to match.
         request: ServiceWorkerFetchRequestWire,
         /// Query matching options.
@@ -1488,6 +1501,8 @@ pub enum ServiceWorkerCacheStorageRequestWire {
     MatchAll {
         /// Cache name.
         cache_name: String,
+        /// Optional instance ID for an already-opened `Cache`.
+        cache_id: Option<u64>,
         /// Optional request filter.
         request: Option<ServiceWorkerFetchRequestWire>,
         /// Query matching options.
@@ -1497,6 +1512,8 @@ pub enum ServiceWorkerCacheStorageRequestWire {
     Keys {
         /// Cache name.
         cache_name: String,
+        /// Optional instance ID for an already-opened `Cache`.
+        cache_id: Option<u64>,
         /// Optional request filter.
         request: Option<ServiceWorkerFetchRequestWire>,
         /// Query matching options.
@@ -1506,6 +1523,8 @@ pub enum ServiceWorkerCacheStorageRequestWire {
     Delete {
         /// Cache name.
         cache_name: String,
+        /// Optional instance ID for an already-opened `Cache`.
+        cache_id: Option<u64>,
         /// Request key.
         request: ServiceWorkerFetchRequestWire,
         /// Query matching options.
@@ -1515,6 +1534,8 @@ pub enum ServiceWorkerCacheStorageRequestWire {
     Put {
         /// Cache name.
         cache_name: String,
+        /// Optional instance ID for an already-opened `Cache`.
+        cache_id: Option<u64>,
         /// Request key.
         request: ServiceWorkerFetchRequestWire,
         /// Response value.
@@ -1539,6 +1560,15 @@ pub enum ServiceWorkerCacheStorageRequestWire {
 pub enum ServiceWorkerCacheStorageResultWire {
     /// Operation completed without a payload.
     Done,
+    /// CacheStorage.open result.
+    Open {
+        /// Cache name.
+        cache_name: String,
+        /// Cache name as UTF-16 code units.
+        cache_name_units: String,
+        /// Registration-local cache instance ID.
+        cache_id: u64,
+    },
     /// Cache match result.
     Match(Option<ServiceWorkerFetchResponseWire>),
     /// Cache matchAll result.

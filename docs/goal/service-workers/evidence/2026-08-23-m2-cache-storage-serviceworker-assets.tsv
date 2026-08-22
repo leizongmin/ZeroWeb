@@ -1,0 +1,8 @@
+path	manifest_type	roles	referenced_by	bytes	templated	git_blob_sha	source_revision
+resources/testharness.js	support	harness	1	182422	no	ca0a92a89d9950253ed0a5e7b2fe69afba711a3b	24197a11e8c5bd29a5cb7bdf18135a82be8a8546
+resources/testharnessreport.js	support	harness-report	1	2268	no	e5cb40fe0ef652be407d4c48b1c59391864cec7b	24197a11e8c5bd29a5cb7bdf18135a82be8a8546
+service-workers/service-worker/resources/test-helpers.sub.js	support	page-script	1	10485	yes	74301523e7355ad8d62bcb568280edbc23fdaacf	24197a11e8c5bd29a5cb7bdf18135a82be8a8546
+service-workers/cache-storage/resources/test-helpers.js	support	worker-script	1	9266	no	050ac0b542455ceb53ed36038af5b9b0810977cf	24197a11e8c5bd29a5cb7bdf18135a82be8a8546
+service-workers/cache-storage/resources/simple.txt	support	fetch-body	1	19	no	9e3cb91fb9b95d6e51de85b82e6f86e92f59ac6d	24197a11e8c5bd29a5cb7bdf18135a82be8a8546
+service-workers/cache-storage/script-tests/cache-storage.js	support	worker-script	1	8270	no	0de2dbb05e96dd6756f94af769ab2417f3902a95	24197a11e8c5bd29a5cb7bdf18135a82be8a8546
+service-workers/cache-storage/serviceworker/cache-storage.https.html	testharness	case	1	414	no	3934258f28f7daf9180998aebbc6401f9ef7dedf	24197a11e8c5bd29a5cb7bdf18135a82be8a8546

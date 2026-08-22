@@ -2,7 +2,7 @@
 
 **入口文档**: [../service-workers.md](../service-workers.md)
 **创建日期**: 2026-08-17（goal 拆分 bootstrap）
-**最后更新**: 2026-08-22（SW fetch async listener WPT baseline；broader SW fetch/cache baseline 继续）
+**最后更新**: 2026-08-23（SW CacheStorage serviceworker WPT baseline；broader SW fetch/cache baseline 继续）
 
 ---
 
@@ -21,8 +21,12 @@ M2 fetch/interception 上游 WPT
 `request-end-to-end.https.html`、`fetch-event-async-respond-with.https.html`、
 `fetch-event-network-error.https.html`、`fetch-event-respond-with-argument.https.html` 与
 `iso-latin1-header.https.html`、`fetch-event-add-async.https.html` 已形成独立 runner 与
-6 case / 10 subtest / 10 Pass 确定性 baseline，broader fetch/cache 基线仍待后续切片，
-M3 控制语义继续推进。兄弟目标
+6 case / 10 subtest / 10 Pass 确定性 baseline；SW CacheStorage serviceworker wrapper 首片
+`service-workers/cache-storage/serviceworker/cache-storage.https.html` 已形成独立 runner 与
+1 case / 11 subtest / 11 Pass 确定性 baseline，覆盖 worker-global `caches.open()`、
+`CacheStorage.has/delete/keys()`、opened `Cache` identity、delete dooming、缺参 TypeError、
+worker `Cache.add()` 和 DOMString code-unit cache name 保真。broader fetch/cache 基线仍待
+后续切片，M3 控制语义继续推进。兄弟目标
 `storage-cache-api` 已完成 WebView/in-process 页面 `caches.open()` + `Cache.put()/match()` /
 `Cache.matchAll()` / `Cache.keys()` 与页面 `Cache.add()` / `Cache.addAll()` GET fetch→store
 链路；共享 `zero-storage::Cache::put()` 已拒绝非 GET、非 HTTP(S)、206、`Vary: *` 与
@@ -304,6 +308,14 @@ JSON，private profile 继续只保留内存态。
 - ✅ M3 registration-local CacheStorage persistence：active registration 的 `CacheStorage`
   通过 `CacheStorageSnapshot` 随 `ServiceWorkerPersistentRegistration` 落盘/恢复；normal
   profile 的 SW cache mutation 会触发现有 persistence writer，private profile 继续内存化。
+- ✅ M2-15：Service Worker CacheStorage WPT 首片 baseline 接入：
+  `service-workers/cache-storage/serviceworker/cache-storage.https.html` 固定 revision
+  `24197a11e8c5bd29a5cb7bdf18135a82be8a8546`，`testharness-service-workers-cache-storage`
+  独立 runner 双跑 1 case / 11 subtest / 11 Pass / 0 Fail / 0 Timeout / deterministic true。
+  该用例在真实 Service Worker global 中运行上游 `script-tests/cache-storage.js`，覆盖
+  `caches.open()`、`CacheStorage.has/delete/keys()`、opened `Cache` identity、delete
+  dooming、empty cache name、缺参 TypeError、worker `Cache.add()` 与 unpaired surrogate
+  cache name 的 DOMString code-unit 保真。
 
 ## 缺口清单
 
@@ -311,7 +323,7 @@ JSON，private profile 继续只保留内存态。
 |---|------|------|
 | S1 | SW 执行环境架构与独立 runtime | ✅ production browser owner + renderer discovery 真链路 |
 | S2 | scriptURL 不下载执行 | ✅ production navigator 经 browser fetch/evaluate |
-| S3 | fetch 拦截为零 | 🚧 M2-2 production 页面 fetch respondWith/pass-through 已接入；M2-3/4/5/6 `caches.match()`、`caches.open()`、`Cache.put()`、`Cache.matchAll()`、`Cache.keys()` 与 `ignoreSearch`/`ignoreMethod` 桥接已接入；M2-7 worker-global `fetch()`、SW runtime `Cache.add/addAll` 与 CacheStorage `Response.type` 保真已接入；M2-9 `Cache.delete()` 与 `CacheStorage.delete/has/keys` 已接入；registration-local CacheStorage 持久化已接入；`Response.error()` 可作为 CacheStorage 条目保存/读回，但 FetchEvent 响应结算仍拒绝 status 0；SW fetch/interception WPT baseline 已扩展到 request projection + async fetch listener registration + respondWith timing/value validation + synthetic Latin-1 response header over iframe XHR，6/10 Pass，broader fetch/cache 基线未完成 |
+| S3 | fetch 拦截为零 | 🚧 M2-2 production 页面 fetch respondWith/pass-through 已接入；M2-3/4/5/6 `caches.match()`、`caches.open()`、`Cache.put()`、`Cache.matchAll()`、`Cache.keys()` 与 `ignoreSearch`/`ignoreMethod` 桥接已接入；M2-7 worker-global `fetch()`、SW runtime `Cache.add/addAll` 与 CacheStorage `Response.type` 保真已接入；M2-9 `Cache.delete()` 与 `CacheStorage.delete/has/keys` 已接入；registration-local CacheStorage 持久化已接入；`Response.error()` 可作为 CacheStorage 条目保存/读回，但 FetchEvent 响应结算仍拒绝 status 0；SW fetch/interception WPT baseline 已扩展到 request projection + async fetch listener registration + respondWith timing/value validation + synthetic Latin-1 response header over iframe XHR，6/10 Pass；SW CacheStorage serviceworker wrapper 首片 1/11 Pass；broader fetch/cache 基线未完成 |
 | S4 | 事件为 setTimeout 模拟 | ✅ manager transition log 为状态源；timer 只执行页面 task 投影 |
 | S5 | WPT 覆盖为零 | ✅ core 34/34 case、156/156 Pass、0 Fail/Timeout/Unsupported |
 
@@ -343,8 +355,9 @@ second（replacement）worker 只处理 awaitInstallEvent（messageSequence=1）
 
 ## 下一步计划
 
-1. **M2 fetch/cache WPT 扩面**：在首个 fetch/interception baseline 与 SW CacheStorage
-   持久化之后，继续挑选当前可执行的 Service Worker fetch/cache 上游用例，扩展 pass-rate evidence
+1. **M2 fetch/cache WPT 扩面**：在首个 fetch/interception baseline、SW CacheStorage
+   serviceworker 首片与持久化之后，继续挑选当前可执行的 Service Worker fetch/cache 上游用例，
+   扩展 pass-rate evidence
 2. **M3 clients follow-up**：popup/auxiliary 真实 browsing context 创建后接入 browser owner
 
 ## 里程碑状态
@@ -353,14 +366,15 @@ second（replacement）worker 只处理 awaitInstallEvent（messageSequence=1）
 |--------|------|
 | M0 — 选型 RFC（门控） | ✅ 方案 C 已批准 |
 | M1 — 脚本真实执行 + 生命周期真事件 | ✅ current core WPT 156/156 Pass |
-| M2 — fetch 拦截 + Cache 集成 | 🚧 M2-2 production fetch respondWith/pass-through 完成；M2-3/4/5/6 `caches.match()`、`caches.open()`、`Cache.put()`、`Cache.matchAll()`、`Cache.keys()`、`ignoreSearch`/`ignoreMethod` 桥接完成；M2-7 worker-global `fetch()`、`Cache.add/addAll`、CacheStorage `Response.type` 保真与 registration-local CacheStorage 持久化完成；`Response.error()` 可作为 CacheStorage 条目保存/读回，FetchEvent 响应结算仍拒绝 status 0；SW fetch/interception WPT baseline 已扩展到 request projection + respondWith timing/value validation + synthetic Latin-1 response header over iframe XHR + async fetch listener registration，6/10 Pass，broader fetch/cache 基线继续 |
+| M2 — fetch 拦截 + Cache 集成 | 🚧 M2-2 production fetch respondWith/pass-through 完成；M2-3/4/5/6 `caches.match()`、`caches.open()`、`Cache.put()`、`Cache.matchAll()`、`Cache.keys()`、`ignoreSearch`/`ignoreMethod` 桥接完成；M2-7 worker-global `fetch()`、`Cache.add/addAll`、CacheStorage `Response.type` 保真与 registration-local CacheStorage 持久化完成；`Response.error()` 可作为 CacheStorage 条目保存/读回，FetchEvent 响应结算仍拒绝 status 0；SW fetch/interception WPT baseline 已扩展到 request projection + respondWith timing/value validation + synthetic Latin-1 response header over iframe XHR + async fetch listener registration，6/10 Pass；SW CacheStorage serviceworker baseline 1/11 Pass；broader fetch/cache 基线继续 |
 | M3 — 控制语义 + 消息 + 收尾 | 🚧 classic startup graph + 控制/消息/update/persistence 完成 |
 
 ## 验证基线
 
 - 测试基线：storage crate 既有单测全绿（立项时点）；clippy 零警告
 - WPT service-workers 面：当前 core runner 34 case / 156 subtest 全绿，fetch runner
-  5 case / 8 subtest 全绿；上游完整分母 294 个 testharness 源 / 331 URL，
+  6 case / 10 subtest 全绿，CacheStorage serviceworker runner 1 case / 11 subtest 全绿；
+  上游完整分母 294 个 testharness 源 / 331 URL，
   正文覆盖 294/294；分层与依赖信号见
   [M0 WPT evidence](evidence/2026-08-19-m0-wpt-executable-surface.md)，逐文件机器清单见
   [WPT case inventory](evidence/2026-08-19-m0-wpt-case-inventory.tsv)，候选 8/3/1 裁决见
@@ -412,6 +426,8 @@ second（replacement）worker 只处理 awaitInstallEvent（messageSequence=1）
   `make test-wpt-service-workers-import-event-wave-assets` 固化篡改/修复回归
 - Fetch-wave 资产恢复/审计：20 assets / 10 subtest；
   `make test-wpt-service-workers-fetch-wave-assets` 固化篡改/修复回归
+- CacheStorage serviceworker-wave 资产恢复/审计：7 assets / 11 subtest；
+  `make test-wpt-service-workers-cache-storage-wave-assets` 固化篡改/修复回归
 - Dynamic-import-update-wave 资产恢复/审计：17 assets / 7 subtest；
   `make test-wpt-service-workers-dynamic-import-update-wave-assets` 固化篡改/修复回归
 - Update-failure-wave 资产恢复/审计：12 assets / 7 subtest；
@@ -494,6 +510,9 @@ second（replacement）worker 只处理 awaitInstallEvent（messageSequence=1）
 - M3 registration-local CacheStorage persistence：active registration `CacheStorage` snapshot/
   restore、normal profile mutation dirtying 与 owner 重建读回见
   [M3 Service Worker CacheStorage Persistence](evidence/2026-08-22-m3-registration-cache-storage-persistence.md)
+- M2 Service Worker CacheStorage WPT baseline：`serviceworker/cache-storage.https.html`
+  独立 runner、资产清单与 1/11 deterministic baseline 见
+  [Service Worker CacheStorage WPT Baseline](evidence/2026-08-23-m2-cache-storage-serviceworker-baseline.md)
 - M1-5 core WPT：固定 12-case runner、两轮确定性 baseline 与 13 个红项分组见
   [M1 core WPT baseline](evidence/2026-08-19-m1-wpt-core-baseline.md)
 - M1-5b lifecycle task：manager transition log、IPC cursor、EventTarget/slot task 与 30/36

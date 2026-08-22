@@ -8,8 +8,9 @@ use zero_script_sandbox::{
     ServiceWorkerMessagePorts, ServiceWorkerOutboundMessage, ServiceWorkerRuntime, ServiceWorkerScriptErrorKind,
 };
 use zero_storage::{
-    CacheQueryOptions, CacheRequest, CacheResponse, CacheStorage, CacheStorageSnapshot, ServiceWorkerRegistration,
-    ServiceWorkerRegistry, ServiceWorkerScriptType, ServiceWorkerState, ServiceWorkerUpdateViaCache,
+    Cache, CacheQueryOptions, CacheRequest, CacheResponse, CacheStorage, CacheStorageSnapshot,
+    ServiceWorkerRegistration, ServiceWorkerRegistry, ServiceWorkerScriptType, ServiceWorkerState,
+    ServiceWorkerUpdateViaCache,
 };
 
 const DEFAULT_RUNTIME_LIMIT: usize = 32;
@@ -21,6 +22,7 @@ const MAX_SCRIPT_BYTES: usize = 16 * 1024 * 1024;
 const MAX_SCRIPT_GRAPH_BYTES: usize = 64 * 1024 * 1024;
 const MAX_IMPORTED_SCRIPTS_PER_VERSION: usize = 1024;
 const MAX_PENDING_FETCH_EVENTS: usize = 1024;
+const CACHE_NAME_DOMSTRING_PREFIX: &str = "__zw_domstring16:";
 
 fn is_service_worker_window_frame_type(frame_type: &str) -> bool {
     matches!(frame_type, "top-level" | "auxiliary" | "nested")
@@ -86,6 +88,122 @@ fn service_worker_request_from_cache(request: &CacheRequest) -> ServiceWorkerFet
 
 fn cache_request_from_service_worker(request: ServiceWorkerFetchRequest) -> CacheRequest {
     CacheRequest::with_method_and_headers(&request.url, &request.method, request.headers)
+}
+
+fn encode_cache_name_units(name: &str) -> String {
+    if let Some(units) = name.strip_prefix(CACHE_NAME_DOMSTRING_PREFIX) {
+        return units.to_string();
+    }
+    let mut out = String::new();
+    for unit in name.encode_utf16() {
+        out.push_str(&format!("{unit:04x}"));
+    }
+    out
+}
+
+fn display_cache_name(name: &str) -> String {
+    name.strip_prefix(CACHE_NAME_DOMSTRING_PREFIX)
+        .map(decode_cache_name_units_lossy)
+        .unwrap_or_else(|| name.to_string())
+}
+
+fn decode_cache_name_units_lossy(units: &str) -> String {
+    let mut utf16 = Vec::new();
+    for chunk in units.as_bytes().as_chunks::<4>().0 {
+        let Ok(hex) = std::str::from_utf8(chunk) else {
+            return String::new();
+        };
+        let Ok(unit) = u16::from_str_radix(hex, 16) else {
+            return String::new();
+        };
+        utf16.push(unit);
+    }
+    std::char::decode_utf16(utf16)
+        .map(|item| item.unwrap_or(char::REPLACEMENT_CHARACTER))
+        .collect()
+}
+
+#[derive(Default)]
+struct CacheStorageRuntimeState {
+    next_cache_id: u64,
+    active_cache_ids: HashMap<(u64, String), u64>,
+    doomed_caches: HashMap<(u64, u64), Cache>,
+}
+
+impl CacheStorageRuntimeState {
+    fn ensure_active_cache_id(&mut self, registration_id: u64, name: &str) -> u64 {
+        let key = active_cache_key(registration_id, name);
+        if let Some(id) = self.active_cache_ids.get(&key) {
+            return *id;
+        }
+        self.next_cache_id = self.next_cache_id.saturating_add(1).max(1);
+        let id = self.next_cache_id;
+        self.active_cache_ids.insert(key, id);
+        id
+    }
+
+    fn remove_active_cache_id(&mut self, registration_id: u64, name: &str) -> Option<u64> {
+        self.active_cache_ids.remove(&active_cache_key(registration_id, name))
+    }
+
+    fn active_cache_id_matches(&self, registration_id: u64, name: &str, cache_id: u64) -> bool {
+        self.active_cache_ids
+            .get(&active_cache_key(registration_id, name))
+            .is_some_and(|active| *active == cache_id)
+    }
+
+    fn selected_cache_ref<'a>(
+        &'a self,
+        registration: &'a ServiceWorkerRegistration,
+        name: &str,
+        cache_id: Option<u64>,
+    ) -> Option<&'a Cache> {
+        match cache_id {
+            Some(cache_id) => self
+                .doomed_caches
+                .get(&cache_instance_key(registration.id, cache_id))
+                .or_else(|| {
+                    if self.active_cache_id_matches(registration.id, name, cache_id) {
+                        registration.cache_storage.get(name)
+                    } else {
+                        None
+                    }
+                }),
+            None => registration.cache_storage.get(name),
+        }
+    }
+
+    fn selected_cache_mut<'a>(
+        &'a mut self,
+        registration: &'a mut ServiceWorkerRegistration,
+        name: &str,
+        cache_id: Option<u64>,
+    ) -> Option<&'a mut Cache> {
+        match cache_id {
+            Some(cache_id) => {
+                if self
+                    .doomed_caches
+                    .contains_key(&cache_instance_key(registration.id, cache_id))
+                {
+                    self.doomed_caches
+                        .get_mut(&cache_instance_key(registration.id, cache_id))
+                } else if self.active_cache_id_matches(registration.id, name, cache_id) {
+                    registration.cache_storage.get_mut(name)
+                } else {
+                    None
+                }
+            }
+            None => registration.cache_storage.get_mut(name),
+        }
+    }
+}
+
+fn active_cache_key(registration_id: u64, name: &str) -> (u64, String) {
+    (registration_id, name.to_string())
+}
+
+fn cache_instance_key(registration_id: u64, cache_id: u64) -> (u64, u64) {
+    (registration_id, cache_id)
 }
 
 struct EvaluationOptions {
@@ -467,6 +585,7 @@ pub struct ServiceWorkerManager {
     update_predecessors: HashMap<u64, u64>,
     pending_worker_updates: HashMap<u64, (u64, u64)>,
     pending_fetch_events: HashMap<(u64, u64), PendingFetchRecord>,
+    cache_storage_state: CacheStorageRuntimeState,
     host: Box<dyn ServiceWorkerRuntimeHost>,
     evaluated: HashSet<u64>,
     restoring_active: HashSet<u64>,
@@ -783,6 +902,7 @@ impl ServiceWorkerManager {
             update_predecessors: HashMap::new(),
             pending_worker_updates: HashMap::new(),
             pending_fetch_events: HashMap::new(),
+            cache_storage_state: CacheStorageRuntimeState::default(),
             host,
             evaluated: HashSet::new(),
             restoring_active: HashSet::new(),
@@ -2472,19 +2592,27 @@ impl ServiceWorkerManager {
         match request {
             ServiceWorkerCacheStorageRequest::Open { cache_name } => {
                 registration.cache_storage.open(&cache_name);
-                Ok(ServiceWorkerCacheStorageResult::Done)
+                let cache_id = self
+                    .cache_storage_state
+                    .ensure_active_cache_id(registration_id, &cache_name);
+                Ok(ServiceWorkerCacheStorageResult::Open {
+                    cache_name: display_cache_name(&cache_name),
+                    cache_name_units: encode_cache_name_units(&cache_name),
+                    cache_id,
+                })
             }
             ServiceWorkerCacheStorageRequest::Match {
                 cache_name,
+                cache_id,
                 request,
                 options,
             } => {
                 let request = cache_request_from_service_worker(request);
                 let options = cache_query_options_from_service_worker(options);
                 let response = match cache_name {
-                    Some(cache_name) => registration
-                        .cache_storage
-                        .get(&cache_name)
+                    Some(cache_name) => self
+                        .cache_storage_state
+                        .selected_cache_ref(registration, &cache_name, cache_id)
                         .and_then(|cache| cache.match_request_with_options(&request, options)),
                     None => registration.cache_storage.match_request_with_options(&request, options),
                 }
@@ -2494,14 +2622,15 @@ impl ServiceWorkerManager {
             }
             ServiceWorkerCacheStorageRequest::MatchAll {
                 cache_name,
+                cache_id,
                 request,
                 options,
             } => {
                 let request = request.map(cache_request_from_service_worker);
                 let options = cache_query_options_from_service_worker(options);
-                let responses = registration
-                    .cache_storage
-                    .get(&cache_name)
+                let responses = self
+                    .cache_storage_state
+                    .selected_cache_ref(registration, &cache_name, cache_id)
                     .map(|cache| match &request {
                         Some(request) => cache.match_all_with_options(request, options),
                         None => cache
@@ -2518,12 +2647,16 @@ impl ServiceWorkerManager {
             }
             ServiceWorkerCacheStorageRequest::Keys {
                 cache_name,
+                cache_id,
                 request,
                 options,
             } => {
                 let request = request.map(cache_request_from_service_worker);
                 let options = cache_query_options_from_service_worker(options);
-                let requests = match registration.cache_storage.get(&cache_name) {
+                let requests = match self
+                    .cache_storage_state
+                    .selected_cache_ref(registration, &cache_name, cache_id)
+                {
                     Some(cache) => match &request {
                         Some(request) => cache.request_keys_with_options(request, options),
                         None => cache.request_keys(),
@@ -2537,39 +2670,68 @@ impl ServiceWorkerManager {
             }
             ServiceWorkerCacheStorageRequest::Delete {
                 cache_name,
+                cache_id,
                 request,
                 options,
             } => {
                 let request = cache_request_from_service_worker(request);
                 let options = cache_query_options_from_service_worker(options);
-                let deleted = registration
-                    .cache_storage
-                    .get_mut(&cache_name)
+                let deleted = self
+                    .cache_storage_state
+                    .selected_cache_mut(registration, &cache_name, cache_id)
                     .map(|cache| cache.delete_with_options(&request, options))
                     .unwrap_or(false);
                 Ok(ServiceWorkerCacheStorageResult::Bool(deleted))
             }
             ServiceWorkerCacheStorageRequest::Put {
                 cache_name,
+                cache_id,
                 request,
                 response,
             } => {
-                registration
-                    .cache_storage
-                    .open(&cache_name)
-                    .put(
-                        cache_request_from_service_worker(request),
-                        cache_response_from_service_worker(response),
-                    )
-                    .map_err(|error| ServiceWorkerManagerError::Runtime(error.to_string()))?;
+                let request = cache_request_from_service_worker(request);
+                let response = cache_response_from_service_worker(response);
+                if let Some(cache_id) = cache_id {
+                    let Some(cache) =
+                        self.cache_storage_state
+                            .selected_cache_mut(registration, &cache_name, Some(cache_id))
+                    else {
+                        return Err(ServiceWorkerManagerError::Runtime(
+                            "InvalidStateError: Cache backing store is no longer available".into(),
+                        ));
+                    };
+                    cache
+                        .put(request, response)
+                        .map_err(|error| ServiceWorkerManagerError::Runtime(error.to_string()))?;
+                } else {
+                    registration
+                        .cache_storage
+                        .open(&cache_name)
+                        .put(request, response)
+                        .map_err(|error| ServiceWorkerManagerError::Runtime(error.to_string()))?;
+                }
                 Ok(ServiceWorkerCacheStorageResult::Done)
             }
             ServiceWorkerCacheStorageRequest::StorageHas { cache_name } => Ok(ServiceWorkerCacheStorageResult::Bool(
                 registration.cache_storage.has(&cache_name),
             )),
-            ServiceWorkerCacheStorageRequest::StorageDelete { cache_name } => Ok(
-                ServiceWorkerCacheStorageResult::Bool(registration.cache_storage.delete(&cache_name)),
-            ),
+            ServiceWorkerCacheStorageRequest::StorageDelete { cache_name } => {
+                let doomed = registration.cache_storage.get(&cache_name).cloned();
+                let deleted = registration.cache_storage.delete(&cache_name);
+                let removed = if deleted {
+                    self.cache_storage_state
+                        .remove_active_cache_id(registration_id, &cache_name)
+                        .zip(doomed)
+                } else {
+                    None
+                };
+                if let Some((cache_id, cache)) = removed {
+                    self.cache_storage_state
+                        .doomed_caches
+                        .insert(cache_instance_key(registration_id, cache_id), cache);
+                }
+                Ok(ServiceWorkerCacheStorageResult::Bool(deleted))
+            }
             ServiceWorkerCacheStorageRequest::StorageKeys => Ok(ServiceWorkerCacheStorageResult::StorageKeys(
                 registration
                     .cache_storage

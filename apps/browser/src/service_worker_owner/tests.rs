@@ -661,6 +661,7 @@ fn ipc_cache_match_uses_browser_owned_registration_cache() {
                 request_id: 8,
                 request: ServiceWorkerCacheStorageRequestWire::Match {
                     cache_name: None,
+                    cache_id: None,
                     request: ServiceWorkerFetchRequestWire {
                         url: "https://example.test/app/cached".into(),
                         method: "GET".into(),
@@ -736,16 +737,22 @@ fn ipc_cache_storage_open_and_put_update_browser_owned_registration_cache() {
         },
     );
     let _ = owner.poll();
-    assert!(
-        owner.take_host_commands().into_iter().any(|outgoing| matches!(
-            outgoing.params.command,
+    let opened_cache = owner
+        .take_host_commands()
+        .into_iter()
+        .any(|outgoing| match outgoing.params.command {
             ServiceWorkerHostCommand::CompleteCacheStorage {
                 request_id: 9,
-                result: Ok(ServiceWorkerCacheStorageResultWire::Done),
-            }
-        )),
-        "CacheStorage.open should complete successfully"
-    );
+                result:
+                    Ok(ServiceWorkerCacheStorageResultWire::Open {
+                        cache_name,
+                        cache_name_units,
+                        cache_id,
+                    }),
+            } => cache_name == "runtime" && cache_name_units == "00720075006e00740069006d0065" && cache_id != 0,
+            _ => false,
+        });
+    assert!(opened_cache, "CacheStorage.open should complete successfully");
 
     owner.inject_host_event(
         TabId(7),
@@ -756,6 +763,7 @@ fn ipc_cache_storage_open_and_put_update_browser_owned_registration_cache() {
                 request_id: 10,
                 request: ServiceWorkerCacheStorageRequestWire::Put {
                     cache_name: "runtime".into(),
+                    cache_id: None,
                     request: ServiceWorkerFetchRequestWire {
                         url: "https://example.test/app/stored".into(),
                         method: "GET".into(),
@@ -838,6 +846,7 @@ fn ipc_cache_match_all_and_keys_use_browser_owned_registration_cache() {
                 request_id: 11,
                 request: ServiceWorkerCacheStorageRequestWire::MatchAll {
                     cache_name: "runtime".into(),
+                    cache_id: None,
                     request: Some(ServiceWorkerFetchRequestWire {
                         url: "https://example.test/app/cached".into(),
                         method: "GET".into(),
@@ -876,6 +885,7 @@ fn ipc_cache_match_all_and_keys_use_browser_owned_registration_cache() {
                 request_id: 12,
                 request: ServiceWorkerCacheStorageRequestWire::Keys {
                     cache_name: "runtime".into(),
+                    cache_id: None,
                     request: None,
                     options: ServiceWorkerCacheQueryOptionsWire::default(),
                 },
@@ -937,6 +947,7 @@ fn ipc_cache_query_options_match_browser_owned_registration_cache() {
                 request_id: 13,
                 request: ServiceWorkerCacheStorageRequestWire::Match {
                     cache_name: Some("runtime".into()),
+                    cache_id: None,
                     request: ServiceWorkerFetchRequestWire {
                         url: "https://example.test/app/cached?version=2".into(),
                         method: "HEAD".into(),
@@ -978,6 +989,7 @@ fn ipc_cache_query_options_match_browser_owned_registration_cache() {
                 request_id: 14,
                 request: ServiceWorkerCacheStorageRequestWire::Keys {
                     cache_name: "runtime".into(),
+                    cache_id: None,
                     request: Some(ServiceWorkerFetchRequestWire {
                         url: "https://example.test/app/cached?version=9".into(),
                         method: "HEAD".into(),
@@ -1100,6 +1112,7 @@ fn ipc_cache_delete_and_storage_listing_use_browser_owned_registration_cache() {
                 request_id: 17,
                 request: ServiceWorkerCacheStorageRequestWire::Delete {
                     cache_name: "runtime".into(),
+                    cache_id: None,
                     request: ServiceWorkerFetchRequestWire {
                         url: "https://example.test/app/cached?version=2".into(),
                         method: "GET".into(),

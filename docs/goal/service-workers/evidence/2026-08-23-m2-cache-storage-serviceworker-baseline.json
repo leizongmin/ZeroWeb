@@ -1,0 +1,70 @@
+{
+  "cases": 1,
+  "subtests": 11,
+  "status": {
+    "Pass": 11
+  },
+  "deterministic": true,
+  "results": [
+    [
+      "service-workers/cache-storage/serviceworker/cache-storage.https.html",
+      [
+        {
+          "name": "CacheStorage.open",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "CacheStorage.delete dooms, but does not delete immediately",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "CacheStorage.open with an empty name",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "CacheStorage.open with no arguments",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "CacheStorage.has with existing cache",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "CacheStorage.has with nonexistent cache",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "CacheStorage.open with existing cache",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "CacheStorage.delete with existing cache",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "CacheStorage.delete with nonexistent cache",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "CacheStorage names are DOMStrings not USVStrings",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "CacheStorage",
+          "status": "Pass",
+          "message": null
+        }
+      ]
+    ]
+  ]
+}

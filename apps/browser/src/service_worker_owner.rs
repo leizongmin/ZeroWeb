@@ -541,46 +541,56 @@ fn cache_storage_request_from_wire(request: ServiceWorkerCacheStorageRequestWire
         }
         ServiceWorkerCacheStorageRequestWire::Match {
             cache_name,
+            cache_id,
             request,
             options,
         } => ServiceWorkerCacheStorageRequest::Match {
             cache_name,
+            cache_id,
             request: fetch_request_from_wire(request),
             options: cache_query_options_from_wire(options),
         },
         ServiceWorkerCacheStorageRequestWire::MatchAll {
             cache_name,
+            cache_id,
             request,
             options,
         } => ServiceWorkerCacheStorageRequest::MatchAll {
             cache_name,
+            cache_id,
             request: request.map(fetch_request_from_wire),
             options: cache_query_options_from_wire(options),
         },
         ServiceWorkerCacheStorageRequestWire::Keys {
             cache_name,
+            cache_id,
             request,
             options,
         } => ServiceWorkerCacheStorageRequest::Keys {
             cache_name,
+            cache_id,
             request: request.map(fetch_request_from_wire),
             options: cache_query_options_from_wire(options),
         },
         ServiceWorkerCacheStorageRequestWire::Delete {
             cache_name,
+            cache_id,
             request,
             options,
         } => ServiceWorkerCacheStorageRequest::Delete {
             cache_name,
+            cache_id,
             request: fetch_request_from_wire(request),
             options: cache_query_options_from_wire(options),
         },
         ServiceWorkerCacheStorageRequestWire::Put {
             cache_name,
+            cache_id,
             request,
             response,
         } => ServiceWorkerCacheStorageRequest::Put {
             cache_name,
+            cache_id,
             request: fetch_request_from_wire(request),
             response: fetch_response_from_wire(response),
         },
@@ -605,6 +615,15 @@ fn cache_query_options_from_wire(options: ServiceWorkerCacheQueryOptionsWire) ->
 fn cache_storage_result_to_wire(result: ServiceWorkerCacheStorageResult) -> ServiceWorkerCacheStorageResultWire {
     match result {
         ServiceWorkerCacheStorageResult::Done => ServiceWorkerCacheStorageResultWire::Done,
+        ServiceWorkerCacheStorageResult::Open {
+            cache_name,
+            cache_name_units,
+            cache_id,
+        } => ServiceWorkerCacheStorageResultWire::Open {
+            cache_name,
+            cache_name_units,
+            cache_id,
+        },
         ServiceWorkerCacheStorageResult::Match(response) => {
             ServiceWorkerCacheStorageResultWire::Match(response.map(fetch_response_to_wire))
         }

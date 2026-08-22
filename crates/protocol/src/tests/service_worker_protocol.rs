@@ -579,6 +579,7 @@ fn service_worker_host_fetch_command_and_event_round_trip() {
             request_id: 5,
             request: ServiceWorkerCacheStorageRequestWire::Match {
                 cache_name: None,
+                cache_id: None,
                 request: ServiceWorkerFetchRequestWire {
                     url: "https://example.test/app/cached".into(),
                     method: "GET".into(),
@@ -637,6 +638,7 @@ fn service_worker_host_fetch_command_and_event_round_trip() {
             request_id: 6,
             request: ServiceWorkerCacheStorageRequestWire::Put {
                 cache_name: "runtime".into(),
+                cache_id: None,
                 request: ServiceWorkerFetchRequestWire {
                     url: "https://example.test/app/cached".into(),
                     method: "GET".into(),
@@ -675,6 +677,27 @@ fn service_worker_host_fetch_command_and_event_round_trip() {
     };
     assert_eq!(decoded_command, cache_done_command);
 
+    let cache_open_command = ServiceWorkerHostCommandParams {
+        registration_id: 8,
+        command: ServiceWorkerHostCommand::CompleteCacheStorage {
+            request_id: 7,
+            result: Ok(ServiceWorkerCacheStorageResultWire::Open {
+                cache_name: "runtime".into(),
+                cache_name_units: "00720075006e00740069006d0065".into(),
+                cache_id: 1,
+            }),
+        },
+    };
+    assert!(cache_open_command.validate().is_ok());
+    let decoded = roundtrip(IpcMessage {
+        id: 58,
+        kind: IpcMessageKind::ServiceWorkerHostCommand(cache_open_command.clone()),
+    });
+    let IpcMessageKind::ServiceWorkerHostCommand(decoded_command) = decoded.kind else {
+        panic!("expected ServiceWorkerHostCommand");
+    };
+    assert_eq!(decoded_command, cache_open_command);
+
     let cache_open_event = ServiceWorkerHostEventParams {
         registration_id: 8,
         event: ServiceWorkerHostEvent::CacheStorageRequested {
@@ -692,6 +715,7 @@ fn service_worker_host_fetch_command_and_event_round_trip() {
             request_id: 8,
             request: ServiceWorkerCacheStorageRequestWire::MatchAll {
                 cache_name: "runtime".into(),
+                cache_id: None,
                 request: Some(ServiceWorkerFetchRequestWire {
                     url: "https://example.test/app/cached".into(),
                     method: "GET".into(),
@@ -707,7 +731,7 @@ fn service_worker_host_fetch_command_and_event_round_trip() {
     };
     assert!(cache_match_all_event.validate().is_ok());
     let decoded = roundtrip(IpcMessage {
-        id: 58,
+        id: 59,
         kind: IpcMessageKind::ServiceWorkerHostEvent(cache_match_all_event.clone()),
     });
     let IpcMessageKind::ServiceWorkerHostEvent(decoded_event) = decoded.kind else {
@@ -721,6 +745,7 @@ fn service_worker_host_fetch_command_and_event_round_trip() {
             request_id: 9,
             request: ServiceWorkerCacheStorageRequestWire::Keys {
                 cache_name: "runtime".into(),
+                cache_id: None,
                 request: None,
                 options: ServiceWorkerCacheQueryOptionsWire::default(),
             },
@@ -734,6 +759,7 @@ fn service_worker_host_fetch_command_and_event_round_trip() {
             request_id: 10,
             request: ServiceWorkerCacheStorageRequestWire::Delete {
                 cache_name: "runtime".into(),
+                cache_id: None,
                 request: ServiceWorkerFetchRequestWire {
                     url: "https://example.test/app/cached?version=2".into(),
                     method: "GET".into(),
@@ -753,7 +779,7 @@ fn service_worker_host_fetch_command_and_event_round_trip() {
     };
     assert!(cache_delete_event.validate().is_ok());
     let decoded = roundtrip(IpcMessage {
-        id: 60,
+        id: 61,
         kind: IpcMessageKind::ServiceWorkerHostEvent(cache_delete_event.clone()),
     });
     let IpcMessageKind::ServiceWorkerHostEvent(decoded_event) = decoded.kind else {
@@ -924,6 +950,7 @@ fn service_worker_host_fetch_command_and_event_round_trip() {
                 request_id: 6,
                 request: ServiceWorkerCacheStorageRequestWire::Put {
                     cache_name: "runtime".into(),
+                    cache_id: None,
                     request: ServiceWorkerFetchRequestWire {
                         url: "https://example.test/app/cached".into(),
                         method: "GET".into(),
@@ -984,6 +1011,7 @@ fn service_worker_host_fetch_command_and_event_round_trip() {
             request_id: 0,
             request: ServiceWorkerCacheStorageRequestWire::Match {
                 cache_name: None,
+                cache_id: None,
                 request: ServiceWorkerFetchRequestWire {
                     url: "https://example.test/app/cached".into(),
                     method: "GET".into(),
@@ -1083,6 +1111,7 @@ fn service_worker_host_fetch_command_and_event_round_trip() {
                 request_id: 0,
                 request: ServiceWorkerCacheStorageRequestWire::Match {
                     cache_name: None,
+                    cache_id: None,
                     request: ServiceWorkerFetchRequestWire {
                         url: "https://example.test/app/cached".into(),
                         method: "GET".into(),
@@ -1106,6 +1135,7 @@ fn service_worker_host_fetch_command_and_event_round_trip() {
                 request_id: 6,
                 request: ServiceWorkerCacheStorageRequestWire::Put {
                     cache_name: "runtime".into(),
+                    cache_id: None,
                     request: ServiceWorkerFetchRequestWire {
                         url: "https://example.test/app/cached".into(),
                         method: "GET".into(),
@@ -1135,6 +1165,7 @@ fn service_worker_host_fetch_command_and_event_round_trip() {
                 request_id: 6,
                 request: ServiceWorkerCacheStorageRequestWire::Put {
                     cache_name: "runtime".into(),
+                    cache_id: None,
                     request: ServiceWorkerFetchRequestWire {
                         url: "https://example.test/app/cached".into(),
                         method: "GET".into(),
