@@ -515,6 +515,7 @@ fn fetch_response_to_wire(response: ServiceWorkerFetchResponse) -> ServiceWorker
     ServiceWorkerFetchResponseWire {
         status: response.status,
         status_text: response.status_text,
+        response_type: response.response_type,
         headers: response.headers,
         body: response.body,
     }
@@ -524,6 +525,7 @@ fn fetch_response_from_wire(response: ServiceWorkerFetchResponseWire) -> Service
     ServiceWorkerFetchResponse {
         status: response.status,
         status_text: response.status_text,
+        response_type: response.response_type,
         headers: response.headers,
         body: response.body,
     }
@@ -666,6 +668,7 @@ fn sandbox_event(event: ServiceWorkerHostEvent) -> ServiceWorkerEvent {
             response: response.map(|response| ServiceWorkerFetchResponse {
                 status: response.status,
                 status_text: response.status_text,
+                response_type: response.response_type,
                 headers: response.headers,
                 body: response.body,
             }),
@@ -2526,6 +2529,7 @@ fn worker_fetch_response(result: Result<HttpResponse, String>) -> Result<Service
     Ok(ServiceWorkerFetchResponse {
         status: response.status_code,
         status_text: status_reason(response.status_code).to_string(),
+        response_type: "default".into(),
         headers: response.headers,
         body,
     })

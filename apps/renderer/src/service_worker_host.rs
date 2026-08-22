@@ -406,6 +406,7 @@ fn fetch_response_from_wire(response: ServiceWorkerFetchResponseWire) -> Service
     ServiceWorkerFetchResponse {
         status: response.status,
         status_text: response.status_text,
+        response_type: response.response_type,
         headers: response.headers,
         body: response.body,
     }
@@ -481,6 +482,7 @@ fn cache_storage_request_to_wire(request: ServiceWorkerCacheStorageRequest) -> S
             response: ServiceWorkerFetchResponseWire {
                 status: response.status,
                 status_text: response.status_text,
+                response_type: response.response_type,
                 headers: response.headers,
                 body: response.body,
             },
@@ -584,6 +586,7 @@ fn host_event(event: ServiceWorkerEvent) -> ServiceWorkerHostEvent {
             response: response.map(|response| ServiceWorkerFetchResponseWire {
                 status: response.status,
                 status_text: response.status_text,
+                response_type: response.response_type,
                 headers: response.headers,
                 body: response.body,
             }),
@@ -991,6 +994,7 @@ mod tests {
                     ServiceWorkerFetchResponseWire {
                         status: 200,
                         status_text: "OK".into(),
+                        response_type: "default".into(),
                         headers: vec![("x-cache".into(), "hit".into())],
                         body: "cached-body".into(),
                     },
@@ -1093,6 +1097,7 @@ mod tests {
         assert_eq!(request.url, "https://example.test/app/stored");
         assert_eq!(response.status, 201);
         assert_eq!(response.status_text, "Created");
+        assert_eq!(response.response_type, "default");
         assert_eq!(response.headers, [("x-cache".into(), "put".into())]);
         assert_eq!(response.body, "stored-body");
         host.handle_command(ServiceWorkerHostCommandParams {
@@ -1126,6 +1131,7 @@ mod tests {
                     ServiceWorkerFetchResponseWire {
                         status: 201,
                         status_text: "Created".into(),
+                        response_type: "default".into(),
                         headers: vec![("x-cache".into(), "put".into())],
                         body: "stored-body".into(),
                     },
@@ -1247,6 +1253,7 @@ mod tests {
                     ServiceWorkerFetchResponseWire {
                         status: 200,
                         status_text: "OK".into(),
+                        response_type: "default".into(),
                         headers: Vec::new(),
                         body: "cached-body".into(),
                     },
@@ -1309,6 +1316,7 @@ mod tests {
                 result: Ok(ServiceWorkerFetchResponseWire {
                     status: 200,
                     status_text: "OK".into(),
+                    response_type: "default".into(),
                     headers: vec![("content-type".into(), "text/plain".into())],
                     body: "from-network".into(),
                 }),

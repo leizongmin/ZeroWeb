@@ -376,16 +376,29 @@ const SERVICE_WORKER_BOOTSTRAP: &str = r#"
       this.headers = new Headers(init.headers);
       this._body = normalizeBody(body);
       this.ok = status >= 200 && status <= 299;
+      this.type = 'default';
     }
     text() {
       return Promise.resolve(this._body);
     }
     clone() {
-      return new Response(this._body, {
+      const cloned = new Response(this._body, {
         status: this.status,
         statusText: this.statusText,
         headers: this.headers
       });
+      cloned.type = this.type;
+      return cloned;
+    }
+    static error() {
+      const response = Object.create(Response.prototype);
+      response.status = 0;
+      response.statusText = '';
+      response.headers = new Headers();
+      response._body = '';
+      response.ok = false;
+      response.type = 'error';
+      return response;
     }
     static _from(value) {
       if (value instanceof Response) return value;
@@ -395,6 +408,7 @@ const SERVICE_WORKER_BOOTSTRAP: &str = r#"
       return {
         status: response.status,
         statusText: response.statusText,
+        type: response.type || 'default',
         headers: Array.from(response.headers),
         body: response._body
       };
@@ -420,6 +434,33 @@ const SERVICE_WORKER_BOOTSTRAP: &str = r#"
       ignoreMethod: !!options.ignoreMethod,
       ignoreVary: !!options.ignoreVary
     };
+  }
+  function cacheRequestIsHttp(request) {
+    return /^https?:/i.test(String(request.url || ''));
+  }
+  function cacheResponseVaryHasStar(response) {
+    if (!response || !response.headers || typeof response.headers.get !== 'function') return false;
+    const vary = response.headers.get('vary');
+    if (vary === null) return false;
+    return String(vary).split(',').some(field => field.trim().toLowerCase() === '*');
+  }
+  function validateCachePut(request, response) {
+    // https://w3c.github.io/ServiceWorker/#cache-put
+    if (request.method !== 'GET') {
+      throw new TypeError('Cache.put request method must be GET');
+    }
+    if (!cacheRequestIsHttp(request)) {
+      throw new TypeError('Cache.put request URL must be an HTTP(S) URL');
+    }
+    if (response.status === 206) {
+      throw new TypeError('Cache.put cannot store a 206 Partial Content response');
+    }
+    if (String(response.type || 'default').toLowerCase() === 'error') {
+      throw new TypeError('Cache.put cannot store an error response');
+    }
+    if (cacheResponseVaryHasStar(response)) {
+      throw new TypeError('Cache.put cannot store a response with Vary: *');
+    }
   }
   function cachedResponseFromWire(response) {
     return new Response(response.body || '', {
@@ -475,11 +516,14 @@ const SERVICE_WORKER_BOOTSTRAP: &str = r#"
     return request;
   }
   function cachePutRequest(cacheName, input, response) {
+    const request = input instanceof Request ? input : new Request(input);
+    const cacheResponse = Response._from(response);
+    validateCachePut(request, cacheResponse);
     return {
       op: 'put',
       cacheName,
-      request: cacheRequestWire(input),
-      response: Response._serialize(Response._from(response))
+      request: cacheRequestWire(request),
+      response: Response._serialize(cacheResponse)
     };
   }
   // https://w3c.github.io/ServiceWorker/#cache-interface
@@ -499,7 +543,13 @@ const SERVICE_WORKER_BOOTSTRAP: &str = r#"
       });
     }
     put(input, response) {
-      return cacheStorageHost(cachePutRequest(this._name, input, response)).then(function() {
+      let request;
+      try {
+        request = cachePutRequest(this._name, input, response);
+      } catch (error) {
+        return Promise.reject(error);
+      }
+      return cacheStorageHost(request).then(function() {
         return undefined;
       });
     }
@@ -514,19 +564,47 @@ const SERVICE_WORKER_BOOTSTRAP: &str = r#"
       if (request.method !== 'GET') {
         return Promise.reject(new TypeError('Cache.add only supports GET requests'));
       }
+      if (!cacheRequestIsHttp(request)) {
+        return Promise.reject(new TypeError('Cache.add request URL must be an HTTP(S) URL'));
+      }
       return fetch(request.clone()).then(function(response) {
         if (!response || !response.ok) {
           throw new TypeError('Cache.add fetch response is not ok');
         }
+        validateCachePut(request, response);
         return cache.put(request, response);
       });
     }
     addAll(inputs) {
       const cache = this;
       try {
-        return Promise.all(Array.from(inputs).map(function(input) {
-          return cache.add(input);
-        })).then(function() {
+        const requests = Array.from(inputs).map(function(input) {
+          const request = input instanceof Request ? input : new Request(input);
+          if (request.method !== 'GET') {
+            throw new TypeError('Cache.addAll only supports GET requests');
+          }
+          if (!cacheRequestIsHttp(request)) {
+            throw new TypeError('Cache.addAll request URL must be an HTTP(S) URL');
+          }
+          return request;
+        });
+        return Promise.all(requests.map(function(request) {
+          return fetch(request.clone()).then(function(response) {
+            if (!response || !response.ok) {
+              throw new TypeError('Cache.addAll fetch response is not ok');
+            }
+            validateCachePut(request, response);
+            return {request, response};
+          });
+        })).then(function(entries) {
+          let chain = Promise.resolve();
+          for (const entry of entries) {
+            chain = chain.then(function() {
+              return cache.put(entry.request, entry.response);
+            });
+          }
+          return chain;
+        }).then(function() {
           return undefined;
         });
       } catch (error) {
@@ -1260,6 +1338,8 @@ pub struct ServiceWorkerFetchResponse {
     pub status: u16,
     /// HTTP status text.
     pub status_text: String,
+    /// Fetch response type (`default` unless a filtered response is represented).
+    pub response_type: String,
     /// Response headers in worker-created order.
     pub headers: Vec<(String, String)>,
     /// UTF-8 response body for the current runtime-level MVP.
@@ -2474,6 +2554,7 @@ fn fetch_response_from_json(value: &serde_json::Value) -> Option<ServiceWorkerFe
     Some(ServiceWorkerFetchResponse {
         status,
         status_text: value["statusText"].as_str().unwrap_or_default().to_string(),
+        response_type: value["type"].as_str().unwrap_or("default").to_string(),
         headers,
         body: value["body"].as_str().unwrap_or_default().to_string(),
     })
@@ -2483,6 +2564,7 @@ fn fetch_response_json(response: ServiceWorkerFetchResponse) -> serde_json::Valu
     serde_json::json!({
         "status": response.status,
         "statusText": response.status_text,
+        "type": response.response_type,
         "headers": response.headers,
         "body": response.body,
     })
@@ -2805,6 +2887,7 @@ fn parse_fetch_result(value: &serde_json::Value) -> Result<Option<ServiceWorkerF
     Ok(Some(ServiceWorkerFetchResponse {
         status,
         status_text,
+        response_type: "default".into(),
         headers,
         body,
     }))
@@ -4206,6 +4289,7 @@ mod tests {
                 response: Some(ServiceWorkerFetchResponse {
                     status: 202,
                     status_text: "Accepted".into(),
+                    response_type: "default".into(),
                     headers: vec![("x-sw".into(), "hit".into())],
                     body: "intercepted:client-1".into(),
                 }),
@@ -4310,6 +4394,7 @@ mod tests {
                 Ok(Some(ServiceWorkerFetchResponse {
                     status: 200,
                     status_text: "OK".into(),
+                    response_type: "default".into(),
                     headers: vec![("x-cache".into(), "hit".into())],
                     body: "cached-body".into(),
                 })),
@@ -4323,6 +4408,7 @@ mod tests {
                 response: Some(ServiceWorkerFetchResponse {
                     status: 200,
                     status_text: "OK".into(),
+                    response_type: "default".into(),
                     headers: vec![("x-cache".into(), "hit".into())],
                     body: "cached-body".into(),
                 }),
@@ -4431,6 +4517,7 @@ mod tests {
                     ServiceWorkerFetchResponse {
                         status: 201,
                         status_text: "Created".into(),
+                        response_type: "default".into(),
                         headers: vec![("x-cache".into(), "put".into())],
                         body: "stored".into(),
                     },
@@ -4473,8 +4560,74 @@ mod tests {
                 response: Some(ServiceWorkerFetchResponse {
                     status: 201,
                     status_text: "Created".into(),
+                    response_type: "default".into(),
                     headers: vec![("x-cache".into(), "put".into())],
                     body: "stored".into(),
+                }),
+                message: String::new(),
+            }
+        );
+    }
+
+    #[test]
+    fn cache_put_rejects_error_response_before_host_write() {
+        let mut runtime = ServiceWorkerRuntime::new(test_config()).unwrap();
+        runtime
+            .evaluate(
+                "addEventListener('fetch', event => {
+                   event.respondWith(caches.open('runtime').then(function(cache) {
+                     return cache.put(event.request, Response.error()).then(function() {
+                       return new Response('resolved');
+                     }, function(error) {
+                       return new Response(String(error instanceof TypeError) + ':' + String(error.message));
+                     });
+                   }));
+                 });",
+                "https://example.test/sw.js",
+            )
+            .unwrap();
+        let _ = runtime.recv_timeout(Duration::from_secs(5)).unwrap();
+
+        runtime
+            .dispatch_fetch(
+                46,
+                ServiceWorkerFetchRequest {
+                    url: "https://example.test/app/error".into(),
+                    method: "GET".into(),
+                    headers: Vec::new(),
+                    body: None,
+                    client_id: Some("client-1".into()),
+                    resulting_client_id: None,
+                },
+            )
+            .unwrap();
+
+        let ServiceWorkerEvent::CacheStorageRequested { request_id, request } =
+            runtime.recv_timeout(Duration::from_secs(5)).unwrap()
+        else {
+            panic!("missing CacheStorage.open request");
+        };
+        assert_eq!(
+            request,
+            ServiceWorkerCacheStorageRequest::Open {
+                cache_name: "runtime".into()
+            }
+        );
+        runtime
+            .complete_cache_storage(request_id, Ok(ServiceWorkerCacheStorageResult::Done))
+            .unwrap();
+
+        assert_eq!(
+            runtime.recv_timeout(Duration::from_secs(5)).unwrap(),
+            ServiceWorkerEvent::FetchSettled {
+                event_id: 46,
+                request_url: "https://example.test/app/error".into(),
+                response: Some(ServiceWorkerFetchResponse {
+                    status: 200,
+                    status_text: String::new(),
+                    response_type: "default".into(),
+                    headers: Vec::new(),
+                    body: "true:Cache.put cannot store an error response".into(),
                 }),
                 message: String::new(),
             }
@@ -4655,6 +4808,7 @@ mod tests {
                 response: Some(ServiceWorkerFetchResponse {
                     status: 200,
                     status_text: String::new(),
+                    response_type: "default".into(),
                     headers: Vec::new(),
                     body: "done".into(),
                 }),
@@ -4713,6 +4867,7 @@ mod tests {
                 Ok(ServiceWorkerFetchResponse {
                     status: 200,
                     status_text: "OK".into(),
+                    response_type: "default".into(),
                     headers: Vec::new(),
                     body: "direct-body".into(),
                 }),
@@ -4751,6 +4906,7 @@ mod tests {
                     Ok(ServiceWorkerFetchResponse {
                         status: 200,
                         status_text: "OK".into(),
+                        response_type: "default".into(),
                         headers: vec![("content-type".into(), "text/plain".into())],
                         body: expected_body.into(),
                     }),
@@ -4799,6 +4955,7 @@ mod tests {
                         ServiceWorkerFetchResponse {
                             status: 200,
                             status_text: "OK".into(),
+                            response_type: "default".into(),
                             headers: vec![("content-type".into(), "text/plain".into())],
                             body: expected_body.into(),
                         },
@@ -4815,6 +4972,7 @@ mod tests {
                 response: Some(ServiceWorkerFetchResponse {
                     status: 200,
                     status_text: String::new(),
+                    response_type: "default".into(),
                     headers: Vec::new(),
                     body: "text/plain|alpha|beta".into(),
                 }),

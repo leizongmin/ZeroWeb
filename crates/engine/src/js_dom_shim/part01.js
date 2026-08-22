@@ -910,12 +910,15 @@
     this.formData = function () { return Promise.resolve(_zwParseFormUrlencoded(self._bodyText)); };
     this.clone = function () {
       // R3021：二进制 body（_bodyBytes）须克隆保真，否则 clone().arrayBuffer() 退化为文本 UTF-8 编码。
+      if (self.type === 'error') return globalThis.Response.error();
       var bodyArg = self._bodyBytes != null ? self._bodyBytes : self._bodyText;
       return new Response(bodyArg, { status: self.status, statusText: self.statusText, headers: self.headers });
     };
   };
   globalThis.Response.error = function() {
-    var r = new Response(null, { status: 0, statusText: '' });
+    var r = new Response(null);
+    r.status = 0;
+    r.statusText = '';
     r.ok = false;
     r.type = 'error';
     return r;

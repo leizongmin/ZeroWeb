@@ -779,6 +779,69 @@ fn test_cache_api_page_shim_add_all_rejects_fragment_duplicates() {
     assert!(calls[0].contains(r#""op":"open""#));
 }
 
+/// Cache.put must reject an error filtered response before the host bridge sees
+/// a write request.
+#[test]
+fn test_cache_api_page_shim_rejects_error_response_put() {
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let mut sandbox = V8Sandbox::with_config(zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    })
+    .unwrap();
+    let calls: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
+    let calls_for_callback = calls.clone();
+    sandbox.register_callback(
+        "__zw_cache_storage",
+        Box::new(move |args| {
+            let request = args.first().cloned().unwrap_or_default();
+            calls_for_callback.lock().unwrap().push(request.clone());
+            if request.contains(r#""op":"open""#) {
+                return r#"__zw_cache_ok:{"name":"assets"}"#.to_string();
+            }
+            "__zw_cache_error:unexpected request".to_string()
+        }),
+    );
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new("<html><body></body></html>".to_string()));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("https://example.com/page.html".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+
+    sandbox
+        .execute(
+            "globalThis.__cacheErrorPut = 'pending';\
+             caches.open('assets').then(function (cache) {\
+               return cache.put('https://example.com/error.txt', Response.error())\
+                 .then(function () {\
+                   globalThis.__cacheErrorPut = 'resolved';\
+                 }, function (error) {\
+                   globalThis.__cacheErrorPut = [\
+                     String(error instanceof TypeError),\
+                     String(error.message)\
+                   ].join('|');\
+                 });\
+             }, function (error) {\
+               globalThis.__cacheErrorPut = 'open-error:' + String(error && error.message ? error.message : error);\
+             });",
+        )
+        .unwrap();
+    for i in 0..8 {
+        sandbox.execute(&format!("globalThis.__cacheErrorPutPump = {i};")).unwrap();
+    }
+
+    assert_eq!(
+        sandbox.execute("globalThis.__cacheErrorPut").unwrap().value,
+        "true|Cache.put cannot store an error response"
+    );
+    let calls = calls.lock().unwrap();
+    assert_eq!(calls.len(), 1);
+    assert!(calls[0].contains(r#""op":"open""#));
+}
+
 /// Cache API shim 在没有宿主 bridge 时应 reject，而不是悬挂 Promise。
 #[test]
 fn test_cache_api_page_shim_rejects_without_host_bridge() {

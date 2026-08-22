@@ -3311,6 +3311,7 @@ impl WebView {
             return Ok(ServiceWorkerFetchResponse {
                 status: response.status,
                 status_text: response.status_text,
+                response_type: "default".into(),
                 headers: response.headers,
                 body: response.body,
             });
@@ -3353,6 +3354,7 @@ impl WebView {
         Ok(ServiceWorkerFetchResponse {
             status: response.status_code,
             status_text: status_reason(response.status_code).to_string(),
+            response_type: "default".into(),
             headers: response.headers,
             body,
         })

@@ -143,6 +143,9 @@
     if ((response.status | 0) === 206) {
       throw new TypeError('Cache.put cannot store a 206 Partial Content response');
     }
+    if (String(response.type || 'default').toLowerCase() === 'error') {
+      throw new TypeError('Cache.put cannot store an error response');
+    }
     if (_zwCacheResponseVaryHasStar(response)) {
       throw new TypeError('Cache.put cannot store a response with Vary: *');
     }
@@ -217,6 +220,7 @@
     return {
       status: response.status | 0,
       statusText: String(response.statusText || ''),
+      type: String(response.type || 'default'),
       headers: _zwCacheHeadersToWire(response.headers),
       body: bodyIsBytes ? _zwCacheEncodeBytesPrefix(response._bodyBytes) : String(response._bodyText || ''),
       bodyIsBytes: bodyIsBytes

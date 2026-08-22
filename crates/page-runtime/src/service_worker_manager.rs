@@ -32,6 +32,7 @@ fn service_worker_response_from_cache(
     Ok(ServiceWorkerFetchResponse {
         status: response.status,
         status_text: response.status_text.clone(),
+        response_type: response.response_type.clone(),
         headers: response
             .headers
             .iter()
@@ -47,6 +48,7 @@ fn cache_response_from_service_worker(response: ServiceWorkerFetchResponse) -> C
     CacheResponse {
         status: response.status,
         status_text: response.status_text,
+        response_type: response.response_type,
         headers: response.headers.into_iter().collect(),
         body: response.body.into_bytes(),
     }
@@ -4070,6 +4072,7 @@ mod tests {
                 response: Some(ServiceWorkerFetchResponse {
                     status: 203,
                     status_text: "Scoped".into(),
+                    response_type: "default".into(),
                     headers: vec![("x-scope".into(), "app".into())],
                     body: "app:https://example.test/app/data".into(),
                 }),
@@ -4107,6 +4110,7 @@ mod tests {
                 response: Some(ServiceWorkerFetchResponse {
                     status: 201,
                     status_text: String::new(),
+                    response_type: "default".into(),
                     headers: Vec::new(),
                     body: "root".into(),
                 }),
@@ -4164,6 +4168,7 @@ mod tests {
                 response: Some(ServiceWorkerFetchResponse {
                     status: 200,
                     status_text: "OK".into(),
+                    response_type: "default".into(),
                     headers: vec![("x-cache".into(), "hit".into())],
                     body: "cached-body".into(),
                 }),
@@ -4225,6 +4230,7 @@ mod tests {
                 response: Some(ServiceWorkerFetchResponse {
                     status: 201,
                     status_text: "Created".into(),
+                    response_type: "default".into(),
                     headers: vec![("x-cache".into(), "put".into())],
                     body: "stored-body".into(),
                 }),
@@ -4239,6 +4245,7 @@ mod tests {
             .expect("Cache.put should store into the registration CacheStorage");
         assert_eq!(cached.status, 201);
         assert_eq!(cached.status_text, "Created");
+        assert_eq!(cached.response_type, "default");
         assert_eq!(cached.headers.get("x-cache").map(String::as_str), Some("put"));
         assert_eq!(cached.body, b"stored-body");
     }
@@ -4296,6 +4303,7 @@ mod tests {
                 response: Some(ServiceWorkerFetchResponse {
                     status: 200,
                     status_text: String::new(),
+                    response_type: "default".into(),
                     headers: vec![("vary".into(), "cookies".into())],
                     body: "cookie-body".into(),
                 }),
@@ -4347,6 +4355,7 @@ mod tests {
                 Ok(ServiceWorkerFetchResponse {
                     status: 200,
                     status_text: "OK".into(),
+                    response_type: "default".into(),
                     headers: Vec::new(),
                     body: "install-body".into(),
                 }),

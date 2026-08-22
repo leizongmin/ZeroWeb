@@ -64,6 +64,8 @@ pub struct CacheResponse {
     pub status: u16,
     /// 响应状态文本。
     pub status_text: String,
+    /// Fetch response type (`default`/`basic`/`cors`/`opaque`/`opaqueredirect`/`error`).
+    pub response_type: String,
     /// 响应头。
     pub headers: HashMap<String, String>,
     /// 响应体。
@@ -76,6 +78,7 @@ impl CacheResponse {
         Self {
             status,
             status_text: String::new(),
+            response_type: "default".to_string(),
             headers: HashMap::new(),
             body,
         }
@@ -86,9 +89,16 @@ impl CacheResponse {
         Self {
             status: 200,
             status_text: "OK".to_string(),
+            response_type: "default".to_string(),
             headers: HashMap::new(),
             body,
         }
+    }
+
+    /// 设置响应类型。
+    pub fn with_response_type(mut self, response_type: &str) -> Self {
+        self.response_type = response_type.to_string();
+        self
     }
 
     /// 添加响应头。
@@ -315,6 +325,11 @@ fn validate_cache_put(request: &CacheRequest, response: &CacheResponse) -> Resul
             "Cache.put cannot store a 206 Partial Content response".to_string(),
         ));
     }
+    if response.response_type.eq_ignore_ascii_case("error") {
+        return Err(StorageError::Type(
+            "Cache.put cannot store an error response".to_string(),
+        ));
+    }
     if response_vary_has_star(response) {
         return Err(StorageError::Type(
             "Cache.put cannot store a response with Vary: *".to_string(),
@@ -473,6 +488,11 @@ mod tests {
                 CacheRequest::new("https://example.com/vary-star"),
                 CacheResponse::ok(Vec::new()).with_header("Vary", "Accept-Encoding, *"),
                 "Vary: *",
+            ),
+            (
+                CacheRequest::new("https://example.com/error"),
+                CacheResponse::new(0, Vec::new()).with_response_type("error"),
+                "error response",
             ),
         ];
 

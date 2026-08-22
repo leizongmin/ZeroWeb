@@ -264,6 +264,10 @@ fn page_cache_api_rejects_uncacheable_put_and_atomic_add_all() {
                   'https://cache.example/app/vary.txt',
                   new Response('vary', {headers: {'vary': 'Accept-Encoding, *'}})
                 ));
+                await capture('error', () => cache.put(
+                  'https://cache.example/app/error.txt',
+                  Response.error()
+                ));
                 await capture('addAll', () => cache.addAll([
                   'https://cache.example/app/ok.txt',
                   'https://cache.example/app/missing.txt'
@@ -285,7 +289,7 @@ fn page_cache_api_rejects_uncacheable_put_and_atomic_add_all() {
 
     assert_eq!(
         webview.execute_script("globalThis.__cacheRejectResult").unwrap(),
-        "post:true:Cache.put request method must be GET|ftp:true:Cache.put request URL must be an HTTP(S) URL|partial:true:Cache.put cannot store a 206 Partial Content response|vary:true:Cache.put cannot store a response with Vary: *|addAll:true:Cache.addAll fetch response is not ok|okMissing:true|keys:0"
+        "post:true:Cache.put request method must be GET|ftp:true:Cache.put request URL must be an HTTP(S) URL|partial:true:Cache.put cannot store a 206 Partial Content response|vary:true:Cache.put cannot store a response with Vary: *|error:true:Cache.put cannot store an error response|addAll:true:Cache.addAll fetch response is not ok|okMissing:true|keys:0"
     );
 }
 

@@ -2,7 +2,7 @@
 
 **入口文档**: [../storage-cache-api.md](../storage-cache-api.md)
 **创建日期**: 2026-08-17（goal 拆分 bootstrap）
-**最后更新**: 2026-08-22（M2 Cache.put/addAll 可缓存性核心矩阵）
+**最后更新**: 2026-08-22（M2 Cache.put Response.error 可缓存性 guard）
 
 ---
 
@@ -19,10 +19,15 @@ Cache API 中接入；`ignoreVary` 已基于请求头快照和响应 `Vary` 匹�
 共享 `zero-storage::Cache::put()` 已拒绝非 GET request、非 HTTP(S) URL、206 Partial
 Content response 与 `Vary: *` response，页面 `Cache.addAll()` 已改为先完成全部 fetch/
 cacheability 校验再串行写入，避免失败批次部分落库。
+同日追加 `Response.type` 首个 cacheability guard：页面 `Response.error()` 可构造
+error filtered response，`Cache.put(..., Response.error())` 在 page shim、WebView、page-runtime
+host 与共享 storage 层均以 TypeError 拒绝；Service Worker runtime/IPC 同步透传
+`response_type` 并复用同一拒存语义。
 2026-08-22 已接入首批 4 个上游 CacheStorage `.any.js` window 面 WPT 基线，WebIDL
 brand、缺参 TypeError、`CacheStorage.keys()` 创建顺序、Vary 匹配、delete-dooming
 生命周期与 DOMString code-unit name wire 修复后双跑稳定为 35 subtest / 35 Pass /
-0 Fail。持久化、更大范围 WPT 导入与 `Response.type`/opaque 等剩余可缓存性矩阵仍待后续切片。
+0 Fail。持久化、更大范围 WPT 导入与 `basic`/`cors`/`opaque`/`opaqueredirect` 等剩余
+filtered response 矩阵仍待后续切片。
 
 **与兄弟 goal 的边界**：
 - [storage-indexeddb](../archive/storage-indexeddb.md)（已归档）— IDB 归其管
@@ -42,8 +47,8 @@ brand、缺参 TypeError、`CacheStorage.keys()` 创建顺序、Vary 匹配、de
 - ✅ WPT `cache-storage` window 首批已导入：4 case / 35 subtest，35 Pass / 0 Fail
 - 🚧 add/addAll 的页面 fetch 链路、Cache API 返回对象 brand、缺参 TypeError、
   `CacheStorage.keys()` 创建顺序、Vary 匹配、delete-dooming 与 DOMString name wire
-  已完成；`Cache.put` 非 GET/非 HTTP(S)/206/`Vary: *` 可缓存性已完成，
-  `Response.type`/opaque 等剩余矩阵未实现
+  已完成；`Cache.put` 非 GET/非 HTTP(S)/206/`Vary: *` 与 `Response.type == "error"`
+  可缓存性拒绝已完成，`basic`/`cors`/`opaque`/`opaqueredirect` 等剩余矩阵未实现
 
 ## 缺口清单
 
@@ -52,13 +57,13 @@ brand、缺参 TypeError、`CacheStorage.keys()` 创建顺序、Vary 匹配、de
 | C1 | WPT cache-storage 用例覆盖为零 | ✅ M1 window 首批基线已接入 |
 | C2 | 页面 `caches` 全局缺失（零接线） | ✅ M1 初始桥接完成；全 API 语义继续归 C4 |
 | C3 | 无持久化 | ⬜ M3 |
-| C4 | Request/Response 集成（add/addAll/可缓存性） | 🚧 M2 页面 `add/addAll` GET + `Response.ok` 路径、返回对象 brand、缺参 TypeError、Vary 匹配、delete-dooming、DOMString name wire、`Cache.put` 非 GET/非 HTTP(S)/206/`Vary: *` 拒绝与 `addAll` 失败不部分落库完成；`Response.type`/opaque 等剩余矩阵待补 |
+| C4 | Request/Response 集成（add/addAll/可缓存性） | 🚧 M2 页面 `add/addAll` GET + `Response.ok` 路径、返回对象 brand、缺参 TypeError、Vary 匹配、delete-dooming、DOMString name wire、`Cache.put` 非 GET/非 HTTP(S)/206/`Vary: *`/`Response.type == "error"` 拒绝与 `addAll` 失败不部分落库完成；`basic`/`cors`/`opaque`/`opaqueredirect` 等剩余矩阵待补 |
 | C5 | Cache.matchAll/Cache.keys 页面桥接 | ✅ M2；`ignoreSearch`/`ignoreMethod`/`ignoreVary` 已接线 |
 
 ## 下一步计划
 
 1. **M2 切片 6**：扩大 `cache-storage` window 面 WPT 导入范围并同步 `imported-tests.txt`
-2. **M2 切片 7**：补 `Response.type`/opaque 等剩余可缓存性矩阵
+2. **M2 切片 7**：补 `basic`/`cors`/`opaque`/`opaqueredirect` 等剩余 filtered response 可缓存性矩阵
 3. **M3**：per-origin 持久化与跨会话 e2e
 
 **碰撞管理**：开工前先 `git log --since="14 days ago" -- crates/engine/src/js_dom_shim/`
@@ -69,7 +74,7 @@ brand、缺参 TypeError、`CacheStorage.keys()` 创建顺序、Vary 匹配、de
 | 里程碑 | 状态 |
 |--------|------|
 | M1 — WPT cache-storage 基线 + caches 骨架 | ✅ 页面骨架 + 首批 window WPT 基线已接入 |
-| M2 — Cache 全 API + 查询语义 | 🚧 `Cache.matchAll()` / `Cache.keys()`、`ignoreSearch`/`ignoreMethod`/`ignoreVary`、页面 `add/addAll` GET fetch→store、返回对象 brand、缺参 TypeError、`CacheStorage.keys()` 创建顺序、delete-dooming、DOMString name wire、`Cache.put` 核心可缓存性拒绝与 `addAll` 原子失败已接入；剩余可缓存性与更大 WPT 覆盖待完成 |
+| M2 — Cache 全 API + 查询语义 | 🚧 `Cache.matchAll()` / `Cache.keys()`、`ignoreSearch`/`ignoreMethod`/`ignoreVary`、页面 `add/addAll` GET fetch→store、返回对象 brand、缺参 TypeError、`CacheStorage.keys()` 创建顺序、delete-dooming、DOMString name wire、`Cache.put` 核心可缓存性拒绝、`Response.type == "error"` 拒存与 `addAll` 原子失败已接入；剩余 filtered response 可缓存性与更大 WPT 覆盖待完成 |
 | M3 — 持久化 + 剩余语义收尾 | ⬜ |
 
 ## 验证基线
@@ -132,4 +137,20 @@ brand、缺参 TypeError、`CacheStorage.keys()` 创建顺序、Vary 匹配、de
   - `./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit 1200 -- cargo clippy --workspace --all-targets -- -D warnings`：passed
   - `CARGO_BUILD_JOBS=1 ./target/test-guard --per-proc-mem 4 --total-mem 20 --time-limit 1800 -- cargo test --workspace --jobs 1`：passed
   - 证据：[M2 Cache.put/addAll cacheability](evidence/2026-08-22-m2-cache-cacheability.md)
+- 2026-08-22 M2 `Response.type == "error"` 可缓存性 guard：
+  - `./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit 600 -- cargo check -p zero-storage -p zero-page-runtime -p zero-script-sandbox -p zero-protocol -p zero-renderer -p zero-browser -p zero-webview --all-targets`：passed
+  - `cargo fmt --all -- --check`：passed
+  - `./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit 300 -- cargo test -p zero-storage cache_api::tests::test_cache_put_rejects_uncacheable_requests_and_responses -- --nocapture`：1 passed
+  - `./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit 600 -- cargo test -p zero-page-runtime cache_storage_handler_ -- --nocapture`：11 passed
+  - `./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit 600 -- cargo test -p zero-engine test_cache_api_page_shim -- --nocapture`：8 passed
+  - `./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit 300 -- cargo test -p zero-script-sandbox cache_put_rejects_error_response_before_host_write -- --nocapture`：1 passed
+  - `./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit 600 -- cargo test -p zero-script-sandbox cache -- --nocapture`：5 passed
+  - `./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit 300 -- cargo test -p zero-protocol service_worker_protocol -- --nocapture`：19 passed
+  - `./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit 600 -- cargo test -p zero-webview cache_storage -- --nocapture`：7 passed
+  - `./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit 600 -- cargo test -p zero-renderer service_worker_host -- --nocapture`：12 passed
+  - `./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit 600 -- cargo test -p zero-browser service_worker_owner -- --nocapture`：52 passed
+  - `./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit 1200 -- cargo clippy -p zero-storage -p zero-page-runtime -p zero-engine -p zero-script-sandbox -p zero-protocol -p zero-renderer -p zero-browser -p zero-webview --all-targets -- -D warnings`：passed
+  - `CARGO_BUILD_JOBS=1 ./target/test-guard --per-proc-mem 4 --total-mem 20 --time-limit 1800 -- cargo test --workspace --jobs 1`：passed
+  - `./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit 1200 -- cargo clippy --workspace --all-targets -- -D warnings`：passed
+  - 证据：[M2 Cache.put Response.error cacheability](evidence/2026-08-22-m2-cache-response-type-error.md)
 - 质量门禁：`cargo fmt` + `cargo clippy --workspace --all-targets -- -D warnings` 全过

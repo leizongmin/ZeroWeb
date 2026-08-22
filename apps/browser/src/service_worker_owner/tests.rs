@@ -766,6 +766,7 @@ fn ipc_cache_storage_open_and_put_update_browser_owned_registration_cache() {
                     response: ServiceWorkerFetchResponseWire {
                         status: 201,
                         status_text: "Created".into(),
+                        response_type: "default".into(),
                         headers: vec![("X-Cache".into(), "put".into())],
                         body: "stored-body".into(),
                     },

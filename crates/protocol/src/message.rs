@@ -1126,7 +1126,7 @@ impl ServiceWorkerHostCommandParams {
                 match result {
                     Ok(ServiceWorkerCacheStorageResultWire::Done) => Ok(()),
                     Ok(ServiceWorkerCacheStorageResultWire::Match(Some(response))) => {
-                        validate_service_worker_fetch_response(response)
+                        validate_service_worker_cache_response(response)
                     }
                     Ok(ServiceWorkerCacheStorageResultWire::Match(None)) => Ok(()),
                     Ok(ServiceWorkerCacheStorageResultWire::MatchAll(responses)) => {
@@ -1134,7 +1134,7 @@ impl ServiceWorkerHostCommandParams {
                             return Err("Service Worker cache response list exceeds the size limit");
                         }
                         for response in responses {
-                            validate_service_worker_fetch_response(response)?;
+                            validate_service_worker_cache_response(response)?;
                         }
                         Ok(())
                     }
@@ -1209,13 +1209,30 @@ fn validate_service_worker_fetch_request(request: &ServiceWorkerFetchRequestWire
 }
 
 fn validate_service_worker_fetch_response(response: &ServiceWorkerFetchResponseWire) -> Result<(), &'static str> {
+    validate_service_worker_response_fields(response)?;
+    if response.status < 200 || response.status > 599 {
+        return Err("Service Worker fetch response is invalid");
+    }
+    Ok(())
+}
+
+fn validate_service_worker_cache_response(response: &ServiceWorkerFetchResponseWire) -> Result<(), &'static str> {
+    validate_service_worker_response_fields(response)?;
+    if !(response.status == 0 || (200..=599).contains(&response.status))
+        || response.response_type.eq_ignore_ascii_case("error")
+    {
+        return Err("Service Worker cache response is invalid");
+    }
+    Ok(())
+}
+
+fn validate_service_worker_response_fields(response: &ServiceWorkerFetchResponseWire) -> Result<(), &'static str> {
     const MAX_FIELD_BYTES: usize = 64 * 1024;
     const MAX_FETCH_HEADERS: usize = 128;
     const MAX_FETCH_HEADER_BYTES: usize = 64 * 1024;
     const MAX_FETCH_BODY_BYTES: usize = 16 * 1024 * 1024;
-    if response.status < 200
-        || response.status > 599
-        || response.status_text.len() > MAX_FIELD_BYTES
+    if response.status_text.len() > MAX_FIELD_BYTES
+        || response.response_type.len() > MAX_FIELD_BYTES
         || response.body.len() > MAX_FETCH_BODY_BYTES
         || response.headers.len() > MAX_FETCH_HEADERS
         || response
@@ -1223,7 +1240,7 @@ fn validate_service_worker_fetch_response(response: &ServiceWorkerFetchResponseW
             .iter()
             .any(|(name, value)| name.len().saturating_add(value.len()) > MAX_FETCH_HEADER_BYTES)
     {
-        return Err("Service Worker fetch response is invalid");
+        return Err("Service Worker response fields are invalid");
     }
     Ok(())
 }
@@ -1276,7 +1293,7 @@ fn validate_service_worker_cache_storage_request(
         } => {
             validate_service_worker_cache_name(cache_name)?;
             validate_service_worker_fetch_request(request)?;
-            validate_service_worker_fetch_response(response)
+            validate_service_worker_cache_response(response)
         }
     }
 }
@@ -1401,10 +1418,17 @@ pub struct ServiceWorkerFetchResponseWire {
     pub status: u16,
     /// HTTP status text.
     pub status_text: String,
+    /// Fetch response type (`default` unless a filtered response is represented).
+    #[serde(default = "default_service_worker_response_type")]
+    pub response_type: String,
     /// Response headers in worker-created order.
     pub headers: Vec<(String, String)>,
     /// UTF-8 response body for the current Service Worker fetch MVP.
     pub body: String,
+}
+
+fn default_service_worker_response_type() -> String {
+    "default".to_string()
 }
 
 /// IPC-safe Service Worker Cache API query options.

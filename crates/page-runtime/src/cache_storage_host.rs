@@ -115,6 +115,8 @@ struct CacheResponseWire {
     status: u16,
     #[serde(default, rename = "statusText")]
     status_text: String,
+    #[serde(default, rename = "type")]
+    response_type: String,
     #[serde(default)]
     headers: String,
     #[serde(default)]
@@ -548,6 +550,11 @@ impl CacheResponseWire {
         Ok(CacheResponse {
             status: self.status,
             status_text: self.status_text,
+            response_type: if self.response_type.is_empty() {
+                "default".to_string()
+            } else {
+                self.response_type
+            },
             headers,
             body,
         })
@@ -915,19 +922,30 @@ mod tests {
     #[test]
     fn cache_storage_handler_maps_cacheability_errors_to_type_error() {
         let handler = cache_storage_handler(Arc::new(Mutex::new(StorageManager::new())));
-        let response = handler(
-            "https://example.com",
-            &request(json!({
-                "op": "put",
-                "cache_name": "runtime",
-                "request": {"url": "https://example.com/data", "method": "GET"},
-                "response": {"status": 206, "statusText": "Partial Content", "headers": "", "body": "partial"}
-            })),
-        )
-        .unwrap_err();
+        for (response, expected) in [
+            (
+                json!({"status": 206, "statusText": "Partial Content", "headers": "", "body": "partial"}),
+                "206 Partial Content",
+            ),
+            (
+                json!({"status": 0, "type": "error", "headers": "", "body": ""}),
+                "error response",
+            ),
+        ] {
+            let response = handler(
+                "https://example.com",
+                &request(json!({
+                    "op": "put",
+                    "cache_name": "runtime",
+                    "request": {"url": "https://example.com/data", "method": "GET"},
+                    "response": response
+                })),
+            )
+            .unwrap_err();
 
-        assert!(response.starts_with("TypeError: "));
-        assert!(response.contains("206 Partial Content"));
+            assert!(response.starts_with("TypeError: "));
+            assert!(response.contains(expected));
+        }
     }
 
     #[test]

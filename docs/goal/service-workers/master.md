@@ -2,7 +2,7 @@
 
 **入口文档**: [../service-workers.md](../service-workers.md)
 **创建日期**: 2026-08-17（goal 拆分 bootstrap）
-**最后更新**: 2026-08-22（共享 Cache.put 可缓存性补强；SW fetch/cache WPT 基线待接入）
+**最后更新**: 2026-08-22（SW Cache.put Response.error guard；fetch/cache WPT 基线待接入）
 
 ---
 
@@ -15,14 +15,16 @@ browser-process 页面 fetch 路由和 Service Worker `caches.match()` / `caches
 `Cache.put()` / `Cache.matchAll()` / `Cache.keys()` 桥接，并已透传 `ignoreSearch` /
 `ignoreMethod` 查询选项；worker-global `fetch()` 已通过 browser-owned network bridge 接入，
 SW runtime `Cache.add()` / `Cache.addAll()` 可用同一 fetch→put 链路写入 active registration
-`CacheStorage`，并复用 `zero-storage` 的请求头快照与 Vary/`ignoreVary` 匹配语义；WPT fetch/cache 基线仍待后续切片，M3 控制语义继续推进。兄弟目标
+`CacheStorage`，并复用 `zero-storage` 的请求头快照、Vary/`ignoreVary` 匹配语义与
+`Response.type == "error"` 拒存 guard；WPT fetch/cache 基线仍待后续切片，M3 控制语义继续推进。兄弟目标
 `storage-cache-api` 已完成 WebView/in-process 页面 `caches.open()` + `Cache.put()/match()` /
 `Cache.matchAll()` / `Cache.keys()` 与页面 `Cache.add()` / `Cache.addAll()` GET fetch→store
-链路；共享 `zero-storage::Cache::put()` 已拒绝非 GET、非 HTTP(S)、206 与 `Vary: *`
+链路；共享 `zero-storage::Cache::put()` 已拒绝非 GET、非 HTTP(S)、206、`Vary: *` 与
+`Response.type == "error"`
 不可缓存写入，并已接入首批上游 CacheStorage `.any.js` window 面 WPT baseline
 （4 case / 35 subtest / 35 Pass / 0 Fail），其中 delete-dooming 生命周期、DOMString
 code-unit name wire 与 Vary/`ignoreVary` 共享语义已落地。该 sibling 与当前 SW runtime
-链路共用 Cache API 语义，但 SW fetch/cache 专属 WPT baseline 和 `Response.type`/opaque
+链路共用 Cache API 语义，但 SW fetch/cache 专属 WPT baseline 和 opaque/basic/cors
 等剩余 cacheability 矩阵仍归后续切片。
 
 **M0 推荐决策**：抽取 `zero-script-sandbox::WorkerRuntime` 的独立线程/引擎/看门狗核心，
@@ -219,7 +221,9 @@ code-unit name wire 与 Vary/`ignoreVary` 共享语义已落地。该 sibling �
   `FetchRequested` / `CompleteFetch` host bridge 发起 browser-owned ordinary fetch，renderer/browser
   IPC、browser fetch proxy、WebView in-process fetch handler 均已接线；`Cache.add()` /
   `Cache.addAll()` 基于该 fetch→put 链路写入 active registration `CacheStorage`；共享
-  `zero-storage::Cache::put()` 已拒绝非 GET、非 HTTP(S)、206 与 `Vary: *` 不可缓存写入。
+  `zero-storage::Cache::put()` 已拒绝非 GET、非 HTTP(S)、206、`Vary: *` 与
+  `Response.type == "error"` 不可缓存写入；runtime/IPC/manager/browser/WebView 显式透传
+  `response_type`，且 FetchEvent response settlement 仍保持 200..599 限制。
   完整 WPT fetch/cache baseline 仍待接入
 - ✅ storage-cache-api 侧支撑：WebView/in-process 页面 `CacheStorage` 初始桥接已可通过共享
   `StorageManager` 执行 `caches.open/has/delete/keys/match` 与 `Cache.put/match/delete`；
@@ -232,7 +236,7 @@ code-unit name wire 与 Vary/`ignoreVary` 共享语义已落地。该 sibling �
 |---|------|------|
 | S1 | SW 执行环境架构与独立 runtime | ✅ production browser owner + renderer discovery 真链路 |
 | S2 | scriptURL 不下载执行 | ✅ production navigator 经 browser fetch/evaluate |
-| S3 | fetch 拦截为零 | 🚧 M2-2 production 页面 fetch respondWith/pass-through 已接入；M2-3/4/5/6 `caches.match()`、`caches.open()`、`Cache.put()`、`Cache.matchAll()`、`Cache.keys()` 与 `ignoreSearch`/`ignoreMethod` 桥接已接入；M2-7 worker-global `fetch()` 与 SW runtime `Cache.add/addAll` 已接入；WPT fetch/cache 基线未完成 |
+| S3 | fetch 拦截为零 | 🚧 M2-2 production 页面 fetch respondWith/pass-through 已接入；M2-3/4/5/6 `caches.match()`、`caches.open()`、`Cache.put()`、`Cache.matchAll()`、`Cache.keys()` 与 `ignoreSearch`/`ignoreMethod` 桥接已接入；M2-7 worker-global `fetch()`、SW runtime `Cache.add/addAll` 与 `Response.type == "error"` 拒存已接入；WPT fetch/cache 基线未完成 |
 | S4 | 事件为 setTimeout 模拟 | ✅ manager transition log 为状态源；timer 只执行页面 task 投影 |
 | S5 | WPT 覆盖为零 | ✅ core 34/34 case、156/156 Pass、0 Fail/Timeout/Unsupported |
 
@@ -254,7 +258,7 @@ code-unit name wire 与 Vary/`ignoreVary` 共享语义已落地。该 sibling �
 |--------|------|
 | M0 — 选型 RFC（门控） | ✅ 方案 C 已批准 |
 | M1 — 脚本真实执行 + 生命周期真事件 | ✅ current core WPT 156/156 Pass |
-| M2 — fetch 拦截 + Cache 集成 | 🚧 M2-2 production fetch respondWith/pass-through 完成；M2-3/4/5/6 `caches.match()`、`caches.open()`、`Cache.put()`、`Cache.matchAll()`、`Cache.keys()`、`ignoreSearch`/`ignoreMethod` 桥接完成；M2-7 worker-global `fetch()` 与 `Cache.add/addAll` 完成；WPT fetch/cache 基线待接入 |
+| M2 — fetch 拦截 + Cache 集成 | 🚧 M2-2 production fetch respondWith/pass-through 完成；M2-3/4/5/6 `caches.match()`、`caches.open()`、`Cache.put()`、`Cache.matchAll()`、`Cache.keys()`、`ignoreSearch`/`ignoreMethod` 桥接完成；M2-7 worker-global `fetch()`、`Cache.add/addAll` 与 `Response.type == "error"` 拒存完成；WPT fetch/cache 基线待接入 |
 | M3 — 控制语义 + 消息 + 收尾 | 🚧 classic startup graph + 控制/消息/update/persistence 完成 |
 
 ## 验证基线
@@ -361,6 +365,9 @@ code-unit name wire 与 Vary/`ignoreVary` 共享语义已落地。该 sibling �
 - M2-7 worker fetch + Cache.add/addAll：worker-global `fetch()`、typed host bridge、
   browser/WebView 网络接线与 SW runtime add/addAll 链路见
   [M2 Service Worker worker fetch and cache add](evidence/2026-08-22-m2-worker-fetch-cache-add.md)
+- M2 Cache response type guard：`Response.error()`、runtime/IPC response type 透传、
+  CacheStorage 与 FetchEvent 分离校验见
+  [M2 Service Worker Cache Response Type Guard](evidence/2026-08-22-m2-cache-response-type-error.md)
 - M1-5 core WPT：固定 12-case runner、两轮确定性 baseline 与 13 个红项分组见
   [M1 core WPT baseline](evidence/2026-08-19-m1-wpt-core-baseline.md)
 - M1-5b lifecycle task：manager transition log、IPC cursor、EventTarget/slot task 与 30/36

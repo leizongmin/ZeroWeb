@@ -554,6 +554,7 @@ fn service_worker_host_fetch_command_and_event_round_trip() {
             response: Some(ServiceWorkerFetchResponseWire {
                 status: 202,
                 status_text: "Accepted".into(),
+                response_type: "default".into(),
                 headers: vec![("x-sw".into(), "hit".into())],
                 body: "intercepted".into(),
             }),
@@ -610,6 +611,7 @@ fn service_worker_host_fetch_command_and_event_round_trip() {
                 ServiceWorkerFetchResponseWire {
                     status: 200,
                     status_text: "OK".into(),
+                    response_type: "default".into(),
                     headers: vec![("x-cache".into(), "hit".into())],
                     body: "cached".into(),
                 },
@@ -643,6 +645,7 @@ fn service_worker_host_fetch_command_and_event_round_trip() {
                 response: ServiceWorkerFetchResponseWire {
                     status: 200,
                     status_text: "OK".into(),
+                    response_type: "default".into(),
                     headers: vec![("x-cache".into(), "put".into())],
                     body: "cached".into(),
                 },
@@ -728,6 +731,7 @@ fn service_worker_host_fetch_command_and_event_round_trip() {
                 ServiceWorkerFetchResponseWire {
                     status: 200,
                     status_text: "OK".into(),
+                    response_type: "default".into(),
                     headers: vec![("x-cache".into(), "hit".into())],
                     body: "cached".into(),
                 },
@@ -785,6 +789,7 @@ fn service_worker_host_fetch_command_and_event_round_trip() {
             result: Ok(ServiceWorkerFetchResponseWire {
                 status: 200,
                 status_text: "OK".into(),
+                response_type: "default".into(),
                 headers: vec![("content-type".into(), "text/plain".into())],
                 body: "network".into(),
             }),
@@ -830,6 +835,7 @@ fn service_worker_host_fetch_command_and_event_round_trip() {
                     response: ServiceWorkerFetchResponseWire {
                         status: 600,
                         status_text: String::new(),
+                        response_type: "default".into(),
                         headers: Vec::new(),
                         body: String::new(),
                     },
@@ -862,6 +868,7 @@ fn service_worker_host_fetch_command_and_event_round_trip() {
                 ServiceWorkerFetchResponseWire {
                     status: 600,
                     status_text: String::new(),
+                    response_type: "default".into(),
                     headers: Vec::new(),
                     body: String::new(),
                 },
@@ -917,6 +924,7 @@ fn service_worker_host_fetch_command_and_event_round_trip() {
                 result: Ok(ServiceWorkerFetchResponseWire {
                     status: 600,
                     status_text: String::new(),
+                    response_type: "default".into(),
                     headers: Vec::new(),
                     body: String::new(),
                 }),
@@ -953,6 +961,7 @@ fn service_worker_host_fetch_command_and_event_round_trip() {
                 response: Some(ServiceWorkerFetchResponseWire {
                     status: 199,
                     status_text: String::new(),
+                    response_type: "default".into(),
                     headers: Vec::new(),
                     body: String::new(),
                 }),
@@ -985,6 +994,62 @@ fn service_worker_host_fetch_command_and_event_round_trip() {
         .is_err()
     );
     assert!(
+        ServiceWorkerHostEventParams {
+            registration_id: 8,
+            event: ServiceWorkerHostEvent::CacheStorageRequested {
+                request_id: 6,
+                request: ServiceWorkerCacheStorageRequestWire::Put {
+                    cache_name: "runtime".into(),
+                    request: ServiceWorkerFetchRequestWire {
+                        url: "https://example.test/app/cached".into(),
+                        method: "GET".into(),
+                        headers: Vec::new(),
+                        body: None,
+                        client_id: None,
+                        resulting_client_id: None,
+                    },
+                    response: ServiceWorkerFetchResponseWire {
+                        status: 0,
+                        status_text: String::new(),
+                        response_type: "default".into(),
+                        headers: Vec::new(),
+                        body: String::new(),
+                    },
+                },
+            },
+        }
+        .validate()
+        .is_ok()
+    );
+    assert!(
+        ServiceWorkerHostEventParams {
+            registration_id: 8,
+            event: ServiceWorkerHostEvent::CacheStorageRequested {
+                request_id: 6,
+                request: ServiceWorkerCacheStorageRequestWire::Put {
+                    cache_name: "runtime".into(),
+                    request: ServiceWorkerFetchRequestWire {
+                        url: "https://example.test/app/cached".into(),
+                        method: "GET".into(),
+                        headers: Vec::new(),
+                        body: None,
+                        client_id: None,
+                        resulting_client_id: None,
+                    },
+                    response: ServiceWorkerFetchResponseWire {
+                        status: 0,
+                        status_text: String::new(),
+                        response_type: "error".into(),
+                        headers: Vec::new(),
+                        body: String::new(),
+                    },
+                },
+            },
+        }
+        .validate()
+        .is_err()
+    );
+    assert!(
         ServiceWorkerHostCommandParams {
             registration_id: 8,
             command: ServiceWorkerHostCommand::CompleteCacheStorage {
@@ -993,6 +1058,7 @@ fn service_worker_host_fetch_command_and_event_round_trip() {
                     ServiceWorkerFetchResponseWire {
                         status: 600,
                         status_text: String::new(),
+                        response_type: "default".into(),
                         headers: Vec::new(),
                         body: String::new(),
                     },
@@ -1011,6 +1077,7 @@ fn service_worker_host_fetch_command_and_event_round_trip() {
                     ServiceWorkerFetchResponseWire {
                         status: 600,
                         status_text: String::new(),
+                        response_type: "default".into(),
                         headers: Vec::new(),
                         body: String::new(),
                     },
