@@ -1,8 +1,8 @@
 {
-  "cases": 22,
-  "subtests": 291,
+  "cases": 23,
+  "subtests": 293,
   "status": {
-    "Pass": 291
+    "Pass": 293
   },
   "deterministic": true,
   "results": [
@@ -441,6 +441,21 @@
         },
         {
           "name": "Cache.addAll should reject when one entry has a vary header matching another entry",
+          "status": "Pass",
+          "message": null
+        }
+      ]
+    ],
+    [
+      "service-workers/cache-storage/cache-storage-buckets.https.any.js",
+      [
+        {
+          "name": "caches from different buckets have different contents",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "cache.open promise is rejected when bucket is gone",
           "status": "Pass",
           "message": null
         }

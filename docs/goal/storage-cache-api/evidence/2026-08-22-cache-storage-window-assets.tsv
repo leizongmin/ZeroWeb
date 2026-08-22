@@ -11,6 +11,7 @@ service-workers/cache-storage/resources/fetch-status.py	support	fetch-body	1	77	
 service-workers/cache-storage/cache-storage.https.any.js	testharness	case	1	8265	no	b7d5af7b532036351ab842de451002ca36f7b4af
 service-workers/cache-storage/cache-match.https.any.js	testharness	case	1	17212	no	9ca45903cbb101810488ced4b31bb9f34957b1ef
 service-workers/cache-storage/cache-add.https.any.js	testharness	case	1	13923	no	c4846eaae40afa38d9bf000169a4917d45a6df81
+service-workers/cache-storage/cache-storage-buckets.https.any.js	testharness	case	1	2240	no	fd59ba464db0305de210fc2935d739b2469ec4ae
 service-workers/cache-storage/cache-storage-keys.https.any.js	testharness	case	1	1156	no	f19522be1b437d619b356b5b0290679a8f391866
 service-workers/cache-storage/cache-delete.https.any.js	testharness	case	1	5978	no	3eae2b6a08b7954a6a5e644b8248f6ebab562a83
 service-workers/cache-storage/cache-keys.https.any.js	testharness	case	1	7568	no	232fb760d4080a02051ba5cf5e8d2964771fda9a
@@ -43,6 +44,7 @@ service-workers/cache-storage/script-tests/cache-put.js	support	worker-script	1	
 service-workers/cache-storage/script-tests/cache-add.js	support	worker-script	1	13938	no	62b44c7880168b5762785ed9f75c2dfa167f9401
 service-workers/cache-storage/script-tests/cache-abort.js	support	worker-script	1	3085	no	3c7aa5cd2ffc9ef975e45456b10a60d1c4281693
 common/utils.js	support	page-script	1	2447	no	62e742bee7f67cf3bd92a217a0a92b23fddf3017
+storage/buckets/resources/util.js	support	page-script	1	1459	no	5fff4894442a214f6035956128fe95f4a955791a
 fetch/api/resources/infinite-slow-response.py	support	fetch-body	1	986	no	a26cd8064c88531e6877d2561cd16df964eb7f6e
 fetch/api/resources/stash-take.py	support	fetch-body	1	302	no	e6db80dd86df1e5a80e177b78bd40a59234885b0
 fetch/api/resources/stash-put.py	support	fetch-body	1	745	no	dbc7ceebb882ebb77a0202b3c9a828e2c70dc3bc

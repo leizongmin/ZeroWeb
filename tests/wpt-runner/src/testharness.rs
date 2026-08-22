@@ -634,6 +634,14 @@ pub const CACHE_STORAGE_WINDOW_CASES: &[(&str, &[&str])] = &[
         &["resources/test-helpers.js", "/common/get-host-info.sub.js"],
     ),
     (
+        "service-workers/cache-storage/cache-storage-buckets.https.any.js",
+        &[
+            "resources/test-helpers.js",
+            "/common/get-host-info.sub.js",
+            "/storage/buckets/resources/util.js",
+        ],
+    ),
+    (
         "service-workers/cache-storage/cache-storage-keys.https.any.js",
         &["resources/test-helpers.js"],
     ),
@@ -3287,8 +3295,8 @@ async_test(function(test) {
             .iter()
             .map(|(path, _)| *path)
             .collect::<std::collections::BTreeSet<_>>();
-        assert_eq!(CACHE_STORAGE_WINDOW_CASES.len(), 22);
-        assert_eq!(unique.len(), 22);
+        assert_eq!(CACHE_STORAGE_WINDOW_CASES.len(), 23);
+        assert_eq!(unique.len(), 23);
         assert!(CACHE_STORAGE_WINDOW_CASES.iter().all(|(path, support)| {
             if !path.starts_with("service-workers/cache-storage/")
                 || !(path.ends_with(".https.any.js")
@@ -3302,6 +3310,14 @@ async_test(function(test) {
                 | "service-workers/cache-storage/cache-put.https.any.js"
                 | "service-workers/cache-storage/cache-add.https.any.js" => {
                     *support == ["resources/test-helpers.js", "/common/get-host-info.sub.js"]
+                }
+                "service-workers/cache-storage/cache-storage-buckets.https.any.js" => {
+                    *support
+                        == [
+                            "resources/test-helpers.js",
+                            "/common/get-host-info.sub.js",
+                            "/storage/buckets/resources/util.js",
+                        ]
                 }
                 "service-workers/cache-storage/common.https.window.js"
                 | "service-workers/cache-storage/cache-api-nested-worker.https.html" => support.is_empty(),

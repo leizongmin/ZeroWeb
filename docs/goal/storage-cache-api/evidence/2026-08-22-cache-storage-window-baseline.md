@@ -2,15 +2,15 @@
 
 - Date: 2026-08-22
 - WPT revision: `04067ce9c7c2165e71ad7d0dde10a4c5cb394a83`
-- Cases: 22
-- Subtests: 291
+- Cases: 23
+- Subtests: 293
 - Deterministic double run: true
 
 ## Status Counts
 
 | Status | Count |
 |---|---:|
-| Pass | 291 |
+| Pass | 293 |
 
 ## Notes
 

@@ -495,17 +495,40 @@
     });
   };
 
-  function CacheStorage() {
-    if (!(this instanceof CacheStorage)) return new CacheStorage();
+  function _zwCacheBucketDeletedError() {
+    try {
+      return new DOMException('Storage bucket is deleted', 'UnknownError');
+    } catch (_e) {
+      var error = new Error('Storage bucket is deleted');
+      error.name = 'UnknownError';
+      return error;
+    }
   }
 
+  function CacheStorage(namePrefix, liveCheck, keyFromHostName) {
+    if (!(this instanceof CacheStorage)) return new CacheStorage();
+    this._namePrefix = typeof namePrefix === 'function' ? namePrefix : null;
+    this._liveCheck = typeof liveCheck === 'function' ? liveCheck : null;
+    this._keyFromHostName = typeof keyFromHostName === 'function' ? keyFromHostName : null;
+  }
+
+  CacheStorage.prototype._assertLive = function () {
+    if (this._liveCheck && !this._liveCheck()) throw _zwCacheBucketDeletedError();
+  };
+
+  CacheStorage.prototype._nameForHost = function (name) {
+    return this._namePrefix ? this._namePrefix(String(name)) : name;
+  };
+
   CacheStorage.prototype.open = function (name) {
+    var storage = this;
     var hasName = arguments.length >= 1;
     return new Promise(function (resolve, reject) {
       try {
+        storage._assertLive();
         if (!hasName) throw new TypeError('CacheStorage.open requires a name');
         var hostRequest = { op: 'open' };
-        _zwCacheSetNameWire(hostRequest, 'name', name);
+        _zwCacheSetNameWire(hostRequest, 'name', storage._nameForHost(name));
         var result = _zwCacheHostCall(hostRequest);
         resolve(new Cache(_zwCacheNameFromResult(result), result.cache_id));
       } catch (error) {
@@ -515,12 +538,14 @@
   };
 
   CacheStorage.prototype.has = function (name) {
+    var storage = this;
     var hasName = arguments.length >= 1;
     return new Promise(function (resolve, reject) {
       try {
+        storage._assertLive();
         if (!hasName) throw new TypeError('CacheStorage.has requires a name');
         var hostRequest = { op: 'has' };
-        _zwCacheSetNameWire(hostRequest, 'name', name);
+        _zwCacheSetNameWire(hostRequest, 'name', storage._nameForHost(name));
         var result = _zwCacheHostCall(hostRequest);
         resolve(!!result.has);
       } catch (error) {
@@ -530,12 +555,14 @@
   };
 
   CacheStorage.prototype.delete = function (name) {
+    var storage = this;
     var hasName = arguments.length >= 1;
     return new Promise(function (resolve, reject) {
       try {
+        storage._assertLive();
         if (!hasName) throw new TypeError('CacheStorage.delete requires a name');
         var hostRequest = { op: 'delete' };
-        _zwCacheSetNameWire(hostRequest, 'name', name);
+        _zwCacheSetNameWire(hostRequest, 'name', storage._nameForHost(name));
         var result = _zwCacheHostCall(hostRequest);
         resolve(!!result.deleted);
       } catch (error) {
@@ -545,14 +572,21 @@
   };
 
   CacheStorage.prototype.keys = function () {
+    var storage = this;
     return new Promise(function (resolve, reject) {
       try {
+        storage._assertLive();
         var result = _zwCacheHostCall({ op: 'keys' });
+        var keys;
         if (Array.isArray(result.keys_units)) {
-          resolve(result.keys_units.map(_zwCacheDomStringFromWire));
+          keys = result.keys_units.map(_zwCacheDomStringFromWire);
         } else {
-          resolve(Array.isArray(result.keys) ? result.keys.slice() : []);
+          keys = Array.isArray(result.keys) ? result.keys.slice() : [];
         }
+        if (storage._keyFromHostName) {
+          keys = keys.map(storage._keyFromHostName).filter(function (name) { return name !== null; });
+        }
+        resolve(keys);
       } catch (error) {
         reject(error);
       }
@@ -560,9 +594,11 @@
   };
 
   CacheStorage.prototype.match = function (request, options) {
+    var storage = this;
     var hasRequest = arguments.length >= 1;
     return new Promise(function (resolve, reject) {
       try {
+        storage._assertLive();
         if (!hasRequest) throw new TypeError('CacheStorage.match requires a request');
         var hostRequest = {
           op: 'match',
@@ -570,7 +606,7 @@
           options: _zwCacheQueryOptionsWire(options)
         };
         if (options !== undefined && options !== null && Object(options).cacheName !== undefined) {
-          _zwCacheSetNameWire(hostRequest, 'cache_name', Object(options).cacheName);
+          _zwCacheSetNameWire(hostRequest, 'cache_name', storage._nameForHost(Object(options).cacheName));
         }
         var result = _zwCacheHostCall(hostRequest);
         resolve(result.response === null ? undefined : _zwCacheResponseFromWire(result.response));
@@ -580,7 +616,92 @@
     });
   };
 
+  function _zwBucketCachePrefix(bucketName) {
+    return '__zw_storage_bucket__' + _zwCacheDomStringWire(bucketName) + ':';
+  }
+
+  function StorageBucket(name, owner) {
+    this.name = String(name);
+    this._owner = owner;
+    this._deleted = false;
+    var prefix = _zwBucketCachePrefix(this.name);
+    var bucket = this;
+    this.caches = new CacheStorage(
+      function (cacheName) { return prefix + cacheName; },
+      function () { return !bucket._deleted && owner._bucketExists(bucket.name); },
+      function (hostName) {
+        hostName = String(hostName);
+        return hostName.indexOf(prefix) === 0 ? hostName.slice(prefix.length) : null;
+      }
+    );
+  }
+
+  function StorageBucketManager() {
+    this._buckets = {};
+    this._order = [];
+  }
+
+  StorageBucketManager.prototype._bucketExists = function (name) {
+    return Object.prototype.hasOwnProperty.call(this._buckets, String(name));
+  };
+
+  StorageBucketManager.prototype.open = function (name) {
+    var manager = this;
+    return new Promise(function (resolve) {
+      name = String(name);
+      if (!manager._bucketExists(name)) {
+        manager._buckets[name] = new StorageBucket(name, manager);
+        manager._order.push(name);
+      }
+      resolve(manager._buckets[name]);
+    });
+  };
+
+  StorageBucketManager.prototype.keys = function () {
+    var manager = this;
+    return Promise.resolve(manager._order.filter(function (name) {
+      return manager._bucketExists(name);
+    }));
+  };
+
+  StorageBucketManager.prototype.delete = function (name) {
+    var manager = this;
+    return new Promise(function (resolve, reject) {
+      try {
+        name = String(name);
+        if (!manager._bucketExists(name)) {
+          resolve(false);
+          return;
+        }
+        var prefix = _zwBucketCachePrefix(name);
+        var result = _zwCacheHostCall({ op: 'keys' });
+        var keys = Array.isArray(result.keys_units)
+          ? result.keys_units.map(_zwCacheDomStringFromWire)
+          : (Array.isArray(result.keys) ? result.keys.slice() : []);
+        keys.forEach(function (cacheName) {
+          cacheName = String(cacheName);
+          if (cacheName.indexOf(prefix) === 0) {
+            var request = { op: 'delete' };
+            _zwCacheSetNameWire(request, 'name', cacheName);
+            _zwCacheHostCall(request);
+          }
+        });
+        manager._buckets[name]._deleted = true;
+        delete manager._buckets[name];
+        manager._order = manager._order.filter(function (bucketName) { return bucketName !== name; });
+        resolve(true);
+      } catch (error) {
+        reject(error);
+      }
+    });
+  };
+
   globalThis.Cache = globalThis.Cache || Cache;
   globalThis.CacheStorage = globalThis.CacheStorage || CacheStorage;
+  globalThis.StorageBucket = globalThis.StorageBucket || StorageBucket;
+  globalThis.StorageBucketManager = globalThis.StorageBucketManager || StorageBucketManager;
   globalThis.caches = globalThis.caches || new globalThis.CacheStorage();
+  if (globalThis.navigator && !globalThis.navigator.storageBuckets) {
+    globalThis.navigator.storageBuckets = new globalThis.StorageBucketManager();
+  }
 })();

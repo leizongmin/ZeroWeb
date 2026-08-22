@@ -269,6 +269,127 @@ fn test_iframe_content_window_post_message_transfers_ports() {
     );
 }
 
+#[test]
+fn test_cache_api_storage_buckets_namespace_and_delete() {
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+
+    let mut sandbox = V8Sandbox::with_config(zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    })
+    .unwrap();
+    let calls: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
+    let calls_for_callback = calls.clone();
+    sandbox.register_callback(
+        "__zw_cache_storage",
+        Box::new(move |args| {
+            let request = args.first().cloned().unwrap_or_default();
+            calls_for_callback.lock().unwrap().push(request.clone());
+            if request.contains(r#""op":"open""#) && request.contains("attachments") {
+                let name = if request.contains("__zw_storage_bucket__0069006e0062006f0078:attachments") {
+                    "__zw_storage_bucket__0069006e0062006f0078:attachments"
+                } else if request.contains("__zw_storage_bucket__006400720061006600740073:attachments") {
+                    "__zw_storage_bucket__006400720061006600740073:attachments"
+                } else {
+                    return "__zw_cache_error:unexpected open".to_string();
+                };
+                return format!(r#"__zw_cache_ok:{{"name":"{name}"}}"#);
+            }
+            if request.contains(r#""op":"put""#) {
+                return r#"__zw_cache_ok:{"ok":true}"#.to_string();
+            }
+            if request.contains(r#""op":"keys""#) {
+                return r#"__zw_cache_ok:{"keys":["__zw_storage_bucket__0069006e0062006f0078:attachments","__zw_storage_bucket__006400720061006600740073:attachments","global"]}"#.to_string();
+            }
+            if request.contains(r#""op":"delete""#) {
+                return r#"__zw_cache_ok:{"deleted":true}"#.to_string();
+            }
+            "__zw_cache_error:unexpected request".to_string()
+        }),
+    );
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new("<html><body></body></html>".to_string()));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("https://example.com/page.html".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+
+    sandbox
+        .execute(
+            "globalThis.__bucketCacheResult = 'pending';\
+             Promise.all([\
+               navigator.storageBuckets.open('inbox'),\
+               navigator.storageBuckets.open('drafts')\
+             ]).then(function (buckets) {\
+               return Promise.all([\
+                 buckets[0].caches.open('attachments'),\
+                 buckets[1].caches.open('attachments')\
+               ]).then(function (caches) {\
+                 return caches[0].put('receipt.txt', new Response('bread')).then(function () {\
+                   return caches[1].put('receipt.txt', new Response('eggs'));\
+                 }).then(function () {\
+                   return Promise.all([buckets[0].caches.keys(), buckets[1].caches.keys()]);\
+                 }).then(function (keys) {\
+                   return navigator.storageBuckets.delete('inbox').then(function (deleted) {\
+                     return buckets[0].caches.open('attachments').then(function () {\
+                       return 'old-open-resolved';\
+                     }, function (error) {\
+                       return navigator.storageBuckets.open('inbox').then(function (newInbox) {\
+                         return newInbox.caches.open('attachments').then(function () {\
+                           return buckets[0].caches.has('attachments').then(function () {\
+                             return 'old-has-resolved';\
+                           }, function (oldError) {\
+                             return [\
+                               keys[0].join(','),\
+                               keys[1].join(','),\
+                               String(deleted),\
+                               error.name,\
+                               newInbox.name,\
+                               oldError.name\
+                             ].join('|');\
+                           });\
+                         });\
+                       });\
+                     });\
+                   });\
+                 });\
+               });\
+             }).then(function (result) {\
+               globalThis.__bucketCacheResult = result;\
+             }, function (error) {\
+               globalThis.__bucketCacheResult = 'error:' + String(error && error.message ? error.message : error);\
+             });",
+        )
+        .unwrap();
+    for i in 0..12 {
+        sandbox.execute(&format!("globalThis.__bucketCachePump = {i};")).unwrap();
+    }
+
+    assert_eq!(
+        sandbox.execute("String(globalThis.__bucketCacheResult)").unwrap().value,
+        "attachments|attachments|true|UnknownError|inbox|UnknownError",
+        "bucket cache result mismatch; host calls: {:?}",
+        calls.lock().unwrap()
+    );
+    let calls = calls.lock().unwrap();
+    assert!(calls.iter().any(|request| {
+        request.contains(r#""op":"put""#)
+            && request.contains("__zw_storage_bucket__0069006e0062006f0078:attachments")
+            && request.contains(r#""body":"bread""#)
+    }));
+    assert!(calls.iter().any(|request| {
+        request.contains(r#""op":"put""#)
+            && request.contains("__zw_storage_bucket__006400720061006600740073:attachments")
+            && request.contains(r#""body":"eggs""#)
+    }));
+    assert!(calls.iter().any(|request| {
+        request.contains(r#""op":"delete""#)
+            && request.contains("__zw_storage_bucket__0069006e0062006f0078:attachments")
+    }));
+}
+
 // R175（js-dom M4 DBG）：fragment 子串直发后的合成 body 过滤——host 侧
 // `filter_synthetic` 对无 `<body` 开标签的源串必须剔合成 body 命中
 //（WPT Fragment "Type selector, matching body element" expect 0）。

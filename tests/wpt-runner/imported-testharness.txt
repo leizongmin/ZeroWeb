@@ -217,6 +217,7 @@ service-workers/cache-storage/cache-keys.https.any.js 04067ce9c7c2165e71ad7d0dde
 service-workers/cache-storage/cache-matchAll.https.any.js 04067ce9c7c2165e71ad7d0dde10a4c5cb394a83 2026-08-22 CACHE-M2-window-expansion
 service-workers/cache-storage/cache-storage-match.https.any.js 04067ce9c7c2165e71ad7d0dde10a4c5cb394a83 2026-08-22 CACHE-M2-window-expansion
 service-workers/cache-storage/cache-put.https.any.js 04067ce9c7c2165e71ad7d0dde10a4c5cb394a83 2026-08-22 CACHE-M2-window-expansion
+service-workers/cache-storage/cache-storage-buckets.https.any.js 04067ce9c7c2165e71ad7d0dde10a4c5cb394a83 2026-08-22 CACHE-M2-storage-buckets
 service-workers/cache-storage/worker/cache-storage.https.html 04067ce9c7c2165e71ad7d0dde10a4c5cb394a83 2026-08-22 CACHE-M2-worker-wrapper-expansion
 service-workers/cache-storage/worker/cache-storage-keys.https.html 04067ce9c7c2165e71ad7d0dde10a4c5cb394a83 2026-08-22 CACHE-M2-worker-wrapper-expansion
 service-workers/cache-storage/worker/cache-delete.https.html 04067ce9c7c2165e71ad7d0dde10a4c5cb394a83 2026-08-22 CACHE-M2-worker-wrapper-expansion
