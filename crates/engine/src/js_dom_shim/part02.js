@@ -1596,7 +1596,11 @@
     try {
       var rootHtml = this._zwRootHtml;
       if (rootHtml) {
-        var rarr = JSON.parse(__zw_parse_html_query(rootHtml, String(sel), '1')) || [];
+        // R162：`:target` 需要 fragment URL（doc 级 `:target` 判定同款——
+        // matches 的根上下文查询透传 doc._zwFragmentUrl）。
+        var furl162 = '';
+        try { furl162 = this._zwOwnerDoc && this._zwOwnerDoc._zwFragmentUrl ? String(this._zwOwnerDoc._zwFragmentUrl) : ''; } catch (_e162u) {}
+        var rarr = JSON.parse(__zw_parse_html_query(rootHtml, String(sel), '1', furl162)) || [];
         var myId = this.id == null ? '' : String(this.id);
         var myOuter = String(this.outerHTML || '');
         for (var ri = 0; ri < rarr.length; ri++) {

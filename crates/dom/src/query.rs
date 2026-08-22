@@ -985,7 +985,14 @@ fn tokenize_combinators(s: &str) -> Vec<(&str, Combinator)> {
 /// 支持：`odd`→(2,1)、`even`→(2,0)、纯整数 `5`→(0,5)、`n`→(1,0)、`2n`→(2,0)、
 /// `2n+1`→(2,1)、`-n+3`→(-1,3)、`n+2`→(1,2)。无法解析 → `None`。
 pub fn parse_nth(arg: &str) -> Option<Nth> {
-    let s = arg.trim();
+    // R162：nth 公式内空白全剥（spec CSS microgrammar 允许 an+b 记号间任意
+    // ASCII whitespace——WPT `2n \t\r\n+ \t\r\n4` 形态；trim 只去两端，
+    // `+` 与数之间的内部空白致 parse fail → None → 整选择器非法）。
+    let s: String = arg
+        .chars()
+        .filter(|c| !matches!(c, ' ' | '\t' | '\r' | '\n' | '\u{c}'))
+        .collect();
+    let s = s.as_str();
     match s {
         "odd" => return Some(Nth { a: 2, b: 1 }),
         "even" => return Some(Nth { a: 2, b: 0 }),
