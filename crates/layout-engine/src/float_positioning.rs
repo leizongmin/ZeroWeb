@@ -233,10 +233,7 @@ fn adjusted_text_max_width(
         style.font_stretch,
     );
     let text = crate::inline::collapse_whitespace(&doc.text_content(node_id)?);
-    let font_size = match &style.font_size {
-        zero_css_parser::values::LengthValue::Px(value) => *value as f32,
-        _ => crate::inline::DEFAULT_FONT_SIZE,
-    };
+    let font_size = crate::inline::resolve_inline_font_size_px(style);
     Some(advance_source.measure_text_with_font_context(
         &text,
         &font_ids,

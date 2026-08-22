@@ -11,8 +11,8 @@ use crate::inline::AdvanceSource;
 use crate::types::LayoutBox;
 use std::collections::HashMap;
 use std::rc::Rc;
-use zero_css_parser::values::FloatValue;
-use zero_style_system::{FontSizeAdjustBasis, FontSizeAdjustValue, StyleSystem};
+use zero_css_parser::values::{DisplayValue, FloatValue, LengthValue};
+use zero_style_system::{ComputedStyle, FontSizeAdjustBasis, FontSizeAdjustMetric, FontSizeAdjustValue, StyleSystem};
 
 /// 深度优先找到第一个 `float:left` 的 LayoutBox。
 fn find_float_left(root: &LayoutBox) -> Option<&LayoutBox> {
@@ -101,6 +101,33 @@ impl AdvanceSource for AdjustedAdvance {
     }
 }
 
+struct FontSizeAdvance;
+
+impl AdvanceSource for FontSizeAdvance {
+    fn measure(&self, _ch: char, _font_id: Option<u32>, font_size: f32, _is_ahem: bool) -> f32 {
+        font_size
+    }
+
+    fn measure_text_with_font_context(
+        &self,
+        text: &str,
+        _font_ids: &[u32],
+        font_size: f32,
+        _is_ahem: bool,
+        size_adjust: &FontSizeAdjustValue,
+        _variations: &zero_style_system::FontVariationSettingsValue,
+    ) -> f32 {
+        let scale = match size_adjust {
+            FontSizeAdjustValue::Adjust {
+                basis: FontSizeAdjustBasis::Number(value),
+                ..
+            } => *value as f32,
+            _ => 1.0,
+        };
+        text.chars().count() as f32 * font_size * scale
+    }
+}
+
 #[test]
 fn adjusted_pure_text_float_uses_resolved_max_content_width() {
     let html = r#"<html><body style="margin:0"><div style="float:left;font:16px/20px test;font-size-adjust:cap-height 1.5">XX XX</div></body></html>"#;
@@ -122,5 +149,42 @@ fn adjusted_pure_text_float_uses_resolved_max_content_width() {
     assert!(
         (float_div.height - 20.0).abs() < 0.01,
         "expanded text must return to one line"
+    );
+}
+
+#[test]
+fn r3687_adjusted_pure_text_float_resolves_residual_font_size() {
+    let (mut doc, body) = super::make_doc_with_body();
+    let div = doc.create_element("div");
+    doc.append_child(body, div).unwrap();
+    let text = doc.create_text_node("XX XX");
+    doc.append_child(div, text).unwrap();
+
+    let mut styles = HashMap::new();
+    let mut body_style = ComputedStyle::default();
+    body_style.display = DisplayValue::Block;
+    styles.insert(body, body_style);
+
+    let mut div_style = ComputedStyle::default();
+    div_style.display = DisplayValue::Block;
+    div_style.float = FloatValue::Left;
+    div_style.font_family = vec!["test".to_string()];
+    div_style.font_size = LengthValue::Em(2.0);
+    div_style.font_size_adjust = FontSizeAdjustValue::Adjust {
+        metric: Some(FontSizeAdjustMetric::CapHeight),
+        basis: FontSizeAdjustBasis::Number(1.5),
+    };
+    styles.insert(div, div_style);
+
+    let mut engine = LayoutEngine::new(800.0, 600.0);
+    engine.set_advance_source(Rc::new(FontSizeAdvance));
+    engine.set_font_resolver(HashMap::from([("test".to_string(), 7)]));
+    let result = engine.compute(&doc, &styles);
+
+    let float_div = super::find_child_by_node_id(&result.root, div).expect("adjusted float found");
+    assert!(
+        (float_div.width - 240.0).abs() < 0.01,
+        "adjusted max-content width should use resolved 32px font size, got {}",
+        float_div.width
     );
 }
