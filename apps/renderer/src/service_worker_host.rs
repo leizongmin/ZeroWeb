@@ -469,6 +469,23 @@ fn cache_storage_request_to_wire(request: ServiceWorkerCacheStorageRequest) -> S
             }),
             options: cache_query_options_to_wire(options),
         },
+        ServiceWorkerCacheStorageRequest::Delete {
+            cache_name,
+            request,
+            options,
+        } => ServiceWorkerCacheStorageRequestWire::Delete {
+            cache_name,
+            request: ServiceWorkerFetchRequestWire {
+                url: request.url,
+                method: request.method,
+                headers: request.headers,
+                body: request.body,
+                client_id: request.client_id,
+                resulting_client_id: request.resulting_client_id,
+                referrer: request.referrer,
+            },
+            options: cache_query_options_to_wire(options),
+        },
         ServiceWorkerCacheStorageRequest::Put {
             cache_name,
             request,
@@ -492,6 +509,13 @@ fn cache_storage_request_to_wire(request: ServiceWorkerCacheStorageRequest) -> S
                 body: response.body,
             },
         },
+        ServiceWorkerCacheStorageRequest::StorageHas { cache_name } => {
+            ServiceWorkerCacheStorageRequestWire::StorageHas { cache_name }
+        }
+        ServiceWorkerCacheStorageRequest::StorageDelete { cache_name } => {
+            ServiceWorkerCacheStorageRequestWire::StorageDelete { cache_name }
+        }
+        ServiceWorkerCacheStorageRequest::StorageKeys => ServiceWorkerCacheStorageRequestWire::StorageKeys,
     }
 }
 
@@ -514,6 +538,10 @@ fn cache_storage_result_from_wire(result: ServiceWorkerCacheStorageResultWire) -
         }
         ServiceWorkerCacheStorageResultWire::Keys(requests) => {
             ServiceWorkerCacheStorageResult::Keys(requests.into_iter().map(fetch_request_from_wire).collect())
+        }
+        ServiceWorkerCacheStorageResultWire::Bool(value) => ServiceWorkerCacheStorageResult::Bool(value),
+        ServiceWorkerCacheStorageResultWire::StorageKeys(cache_names) => {
+            ServiceWorkerCacheStorageResult::StorageKeys(cache_names)
         }
     }
 }
@@ -1199,10 +1227,164 @@ mod tests {
     }
 
     #[test]
-    fn cache_query_options_round_trip_through_renderer_host() {
+    fn cache_delete_and_storage_listing_round_trips_through_renderer_host() {
         let (host, mut transport) = spawn_host();
         host.handle_command(evaluate_command(
             17,
+            "addEventListener('fetch', event => {
+               event.respondWith((async () => {
+                 const cache = await caches.open('runtime');
+                 const before = await caches.has('runtime');
+                 const names = await caches.keys();
+                 const deleted = await cache.delete(event.request, {ignoreSearch: true});
+                 const storageDeleted = await caches.delete('runtime');
+                 return new Response([before, names.join(','), deleted, storageDeleted].join('|'));
+               })());
+             });",
+        ));
+        let evaluated = wait_for_event(&mut transport);
+        assert!(
+            matches!(evaluated.event, ServiceWorkerHostEvent::Evaluated { .. }),
+            "{:?}",
+            evaluated.event
+        );
+
+        host.handle_command(ServiceWorkerHostCommandParams {
+            registration_id: 17,
+            command: ServiceWorkerHostCommand::DispatchFetch {
+                event_id: 25,
+                request: zero_protocol::message::ServiceWorkerFetchRequestWire {
+                    url: "https://example.test/app/delete?version=1".into(),
+                    method: "GET".into(),
+                    headers: Vec::new(),
+                    body: None,
+                    client_id: Some("client-1".into()),
+                    resulting_client_id: None,
+                    referrer: None,
+                },
+            },
+        });
+
+        let open_request = wait_for_event(&mut transport);
+        let ServiceWorkerHostEvent::CacheStorageRequested { request_id, request } = open_request.event else {
+            panic!("expected CacheStorage.open request");
+        };
+        assert_eq!(
+            request,
+            ServiceWorkerCacheStorageRequestWire::Open {
+                cache_name: "runtime".into()
+            }
+        );
+        host.handle_command(ServiceWorkerHostCommandParams {
+            registration_id: 17,
+            command: ServiceWorkerHostCommand::CompleteCacheStorage {
+                request_id,
+                result: Ok(ServiceWorkerCacheStorageResultWire::Done),
+            },
+        });
+
+        let has_request = wait_for_event(&mut transport);
+        let ServiceWorkerHostEvent::CacheStorageRequested { request_id, request } = has_request.event else {
+            panic!("expected CacheStorage.has request");
+        };
+        assert_eq!(
+            request,
+            ServiceWorkerCacheStorageRequestWire::StorageHas {
+                cache_name: "runtime".into()
+            }
+        );
+        host.handle_command(ServiceWorkerHostCommandParams {
+            registration_id: 17,
+            command: ServiceWorkerHostCommand::CompleteCacheStorage {
+                request_id,
+                result: Ok(ServiceWorkerCacheStorageResultWire::Bool(true)),
+            },
+        });
+
+        let keys_request = wait_for_event(&mut transport);
+        let ServiceWorkerHostEvent::CacheStorageRequested { request_id, request } = keys_request.event else {
+            panic!("expected CacheStorage.keys request");
+        };
+        assert_eq!(request, ServiceWorkerCacheStorageRequestWire::StorageKeys);
+        host.handle_command(ServiceWorkerHostCommandParams {
+            registration_id: 17,
+            command: ServiceWorkerHostCommand::CompleteCacheStorage {
+                request_id,
+                result: Ok(ServiceWorkerCacheStorageResultWire::StorageKeys(vec!["runtime".into()])),
+            },
+        });
+
+        let delete_request = wait_for_event(&mut transport);
+        let ServiceWorkerHostEvent::CacheStorageRequested { request_id, request } = delete_request.event else {
+            panic!("expected Cache.delete request");
+        };
+        let ServiceWorkerCacheStorageRequestWire::Delete {
+            cache_name,
+            request,
+            options,
+        } = request
+        else {
+            panic!("expected Cache.delete payload");
+        };
+        assert_eq!(cache_name, "runtime");
+        assert_eq!(request.url, "https://example.test/app/delete?version=1");
+        assert_eq!(
+            options,
+            ServiceWorkerCacheQueryOptionsWire {
+                ignore_search: true,
+                ignore_method: false,
+                ignore_vary: false,
+            }
+        );
+        host.handle_command(ServiceWorkerHostCommandParams {
+            registration_id: 17,
+            command: ServiceWorkerHostCommand::CompleteCacheStorage {
+                request_id,
+                result: Ok(ServiceWorkerCacheStorageResultWire::Bool(true)),
+            },
+        });
+
+        let storage_delete_request = wait_for_event(&mut transport);
+        let ServiceWorkerHostEvent::CacheStorageRequested { request_id, request } = storage_delete_request.event else {
+            panic!("expected CacheStorage.delete request");
+        };
+        assert_eq!(
+            request,
+            ServiceWorkerCacheStorageRequestWire::StorageDelete {
+                cache_name: "runtime".into()
+            }
+        );
+        host.handle_command(ServiceWorkerHostCommandParams {
+            registration_id: 17,
+            command: ServiceWorkerHostCommand::CompleteCacheStorage {
+                request_id,
+                result: Ok(ServiceWorkerCacheStorageResultWire::Bool(true)),
+            },
+        });
+
+        let settled = wait_for_event(&mut transport);
+        match settled.event {
+            ServiceWorkerHostEvent::FetchSettled {
+                event_id,
+                request_url,
+                response: Some(response),
+                message,
+            } => {
+                assert_eq!(event_id, 25);
+                assert_eq!(request_url, "https://example.test/app/delete?version=1");
+                assert_eq!(response.status, 200);
+                assert_eq!(response.body, "true|runtime|true|true");
+                assert!(message.is_empty());
+            }
+            other => panic!("expected FetchSettled response, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn cache_query_options_round_trip_through_renderer_host() {
+        let (host, mut transport) = spawn_host();
+        host.handle_command(evaluate_command(
+            18,
             "addEventListener('fetch', event => {
                event.respondWith(caches.match(event.request, {
                  ignoreSearch: true,
@@ -1219,9 +1401,9 @@ mod tests {
         );
 
         host.handle_command(ServiceWorkerHostCommandParams {
-            registration_id: 17,
+            registration_id: 18,
             command: ServiceWorkerHostCommand::DispatchFetch {
-                event_id: 25,
+                event_id: 26,
                 request: zero_protocol::message::ServiceWorkerFetchRequestWire {
                     url: "https://example.test/app/cached?from=fetch".into(),
                     method: "HEAD".into(),
@@ -1257,7 +1439,7 @@ mod tests {
         );
 
         host.handle_command(ServiceWorkerHostCommandParams {
-            registration_id: 17,
+            registration_id: 18,
             command: ServiceWorkerHostCommand::CompleteCacheStorage {
                 request_id,
                 result: Ok(ServiceWorkerCacheStorageResultWire::Match(Some(
@@ -1275,7 +1457,7 @@ mod tests {
         assert!(matches!(
             settled.event,
             ServiceWorkerHostEvent::FetchSettled {
-                event_id: 25,
+                event_id: 26,
                 response: Some(_),
                 ..
             }

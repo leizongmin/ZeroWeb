@@ -1462,7 +1462,10 @@ impl ServiceWorkerManager {
                 ServiceWorkerEvent::CacheStorageRequested { request_id, request } => {
                     let mutates_cache_storage = matches!(
                         &request,
-                        ServiceWorkerCacheStorageRequest::Open { .. } | ServiceWorkerCacheStorageRequest::Put { .. }
+                        ServiceWorkerCacheStorageRequest::Open { .. }
+                            | ServiceWorkerCacheStorageRequest::Delete { .. }
+                            | ServiceWorkerCacheStorageRequest::Put { .. }
+                            | ServiceWorkerCacheStorageRequest::StorageDelete { .. }
                     );
                     let result = self.cache_storage_for_worker(registration_id, request);
                     if mutates_cache_storage && result.is_ok() {
@@ -2523,6 +2526,20 @@ impl ServiceWorkerManager {
                 };
                 Ok(ServiceWorkerCacheStorageResult::Keys(requests))
             }
+            ServiceWorkerCacheStorageRequest::Delete {
+                cache_name,
+                request,
+                options,
+            } => {
+                let request = cache_request_from_service_worker(request);
+                let options = cache_query_options_from_service_worker(options);
+                let deleted = registration
+                    .cache_storage
+                    .get_mut(&cache_name)
+                    .map(|cache| cache.delete_with_options(&request, options))
+                    .unwrap_or(false);
+                Ok(ServiceWorkerCacheStorageResult::Bool(deleted))
+            }
             ServiceWorkerCacheStorageRequest::Put {
                 cache_name,
                 request,
@@ -2538,6 +2555,20 @@ impl ServiceWorkerManager {
                     .map_err(|error| ServiceWorkerManagerError::Runtime(error.to_string()))?;
                 Ok(ServiceWorkerCacheStorageResult::Done)
             }
+            ServiceWorkerCacheStorageRequest::StorageHas { cache_name } => Ok(ServiceWorkerCacheStorageResult::Bool(
+                registration.cache_storage.has(&cache_name),
+            )),
+            ServiceWorkerCacheStorageRequest::StorageDelete { cache_name } => Ok(
+                ServiceWorkerCacheStorageResult::Bool(registration.cache_storage.delete(&cache_name)),
+            ),
+            ServiceWorkerCacheStorageRequest::StorageKeys => Ok(ServiceWorkerCacheStorageResult::StorageKeys(
+                registration
+                    .cache_storage
+                    .keys()
+                    .into_iter()
+                    .map(str::to_string)
+                    .collect(),
+            )),
         }
     }
 
@@ -4287,6 +4318,82 @@ mod tests {
         assert_eq!(cached.response_type, "default");
         assert_eq!(cached.headers.get("x-cache").map(String::as_str), Some("put"));
         assert_eq!(cached.body, b"stored-body");
+    }
+
+    #[test]
+    fn fetch_handler_can_delete_cache_entries_and_named_cache_storage() {
+        let mut manager = manager_under_test();
+        let registration_id = start_active(
+            &mut manager,
+            "/app/",
+            "addEventListener('fetch', event => {
+               event.respondWith((async () => {
+                 const cache = await caches.open('runtime');
+                 await cache.put(event.request, new Response('stored-body'));
+                 const names = await caches.keys();
+                 const hasBefore = await caches.has('runtime');
+                 const entryDeleted = await cache.delete(new Request(event.request.url + '?miss=1'), {
+                   ignoreSearch: true
+                 });
+                 const hasAfterEntryDelete = await cache.match(event.request) === undefined;
+                 const cacheDeleted = await caches.delete('runtime');
+                 const hasAfterStorageDelete = await caches.has('runtime');
+                 return new Response([
+                   names.join(','),
+                   hasBefore,
+                   entryDeleted,
+                   hasAfterEntryDelete,
+                   cacheDeleted,
+                   hasAfterStorageDelete
+                 ].join('|'));
+               })());
+             });",
+        );
+
+        assert_eq!(
+            manager
+                .dispatch_fetch(
+                    "https://example.test",
+                    127,
+                    ServiceWorkerFetchRequest {
+                        url: "https://example.test/app/delete".into(),
+                        method: "GET".into(),
+                        headers: Vec::new(),
+                        body: None,
+                        client_id: Some("client-1".into()),
+                        resulting_client_id: None,
+                        referrer: None,
+                    },
+                )
+                .unwrap(),
+            ServiceWorkerFetchDispatch::Dispatched {
+                registration_id,
+                event_id: 127,
+            }
+        );
+        assert_eq!(
+            wait_for_fetch(&mut manager, 127),
+            ServiceWorkerManagerEvent::FetchSettled {
+                registration_id,
+                event_id: 127,
+                request_url: "https://example.test/app/delete".into(),
+                client_id: Some("client-1".into()),
+                response: Some(ServiceWorkerFetchResponse {
+                    status: 200,
+                    status_text: String::new(),
+                    response_type: "default".into(),
+                    headers: Vec::new(),
+                    body: "runtime|true|true|true|true|false".into(),
+                }),
+                message: String::new(),
+            }
+        );
+        assert!(
+            manager
+                .registration(registration_id)
+                .is_some_and(|registration| !registration.cache_storage.has("runtime")),
+            "CacheStorage.delete should remove the named registration cache"
+        );
     }
 
     #[test]

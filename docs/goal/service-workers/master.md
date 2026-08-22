@@ -15,7 +15,8 @@ browser-process 页面 fetch 路由和 Service Worker `caches.match()` / `caches
 `Cache.put()` / `Cache.matchAll()` / `Cache.keys()` 桥接，并已透传 `ignoreSearch` /
 `ignoreMethod` 查询选项；worker-global `fetch()` 已通过 browser-owned network bridge 接入，
 SW runtime `Cache.add()` / `Cache.addAll()` 可用同一 fetch→put 链路写入 active registration
-`CacheStorage`，并复用 `zero-storage` 的请求头快照、Vary/`ignoreVary` 匹配语义；首个
+`CacheStorage`，`Cache.delete()` 与 `CacheStorage.delete()/has()/keys()` 也已接入同一
+typed host bridge，并复用 `zero-storage` 的请求头快照、Vary/`ignoreVary` 匹配语义；首个
 M2 fetch/interception 上游 WPT
 `request-end-to-end.https.html` 已形成独立 runner 与 1 case / 1 subtest / 1 Pass
 确定性 baseline，broader fetch/cache 基线仍待后续切片，M3 控制语义继续推进。兄弟目标
@@ -244,6 +245,11 @@ JSON，private profile 继续只保留内存态。
   immutable request headers 与 `new Request(event.request)`；同时新增 WebView in-process
   回归测试固定 iframe plain-text response body 与 iframe `src` absolute getter 行为。
   CacheStorage 方向的更宽 fetch/cache WPT baseline 仍待后续切片。
+- ✅ M2-9：Service Worker runtime 暴露 `Cache.delete()` 与 `CacheStorage.delete()` /
+  `CacheStorage.has()` / `CacheStorage.keys()`；runtime/renderer/browser/manager/protocol
+  全链路新增 typed delete/listing 操作，entry 删除和命名 cache 删除均复用 registration-local
+  `zero-storage::CacheStorage`，成功 delete mutation 会触发 normal profile SW persistence
+  dirtying。SW cache-storage WPT 扩面仍待后续切片。
 - ✅ storage-cache-api 侧支撑：WebView/in-process 页面 `CacheStorage` 初始桥接已可通过共享
   `StorageManager` 执行 `caches.open/has/delete/keys/match` 与 `Cache.put/match/delete`；
   origin 由宿主页面 URL 推导，保持与 IndexedDB 相同单一 storage owner。该进展不等同于 SW
@@ -265,7 +271,7 @@ JSON，private profile 继续只保留内存态。
 |---|------|------|
 | S1 | SW 执行环境架构与独立 runtime | ✅ production browser owner + renderer discovery 真链路 |
 | S2 | scriptURL 不下载执行 | ✅ production navigator 经 browser fetch/evaluate |
-| S3 | fetch 拦截为零 | 🚧 M2-2 production 页面 fetch respondWith/pass-through 已接入；M2-3/4/5/6 `caches.match()`、`caches.open()`、`Cache.put()`、`Cache.matchAll()`、`Cache.keys()` 与 `ignoreSearch`/`ignoreMethod` 桥接已接入；M2-7 worker-global `fetch()`、SW runtime `Cache.add/addAll` 与 CacheStorage `Response.type` 保真已接入；registration-local CacheStorage 持久化已接入；`Response.error()` 可作为 CacheStorage 条目保存/读回，但 FetchEvent 响应结算仍拒绝 status 0；首个 SW fetch/interception WPT baseline 1/1 Pass 已接入，broader fetch/cache 基线未完成 |
+| S3 | fetch 拦截为零 | 🚧 M2-2 production 页面 fetch respondWith/pass-through 已接入；M2-3/4/5/6 `caches.match()`、`caches.open()`、`Cache.put()`、`Cache.matchAll()`、`Cache.keys()` 与 `ignoreSearch`/`ignoreMethod` 桥接已接入；M2-7 worker-global `fetch()`、SW runtime `Cache.add/addAll` 与 CacheStorage `Response.type` 保真已接入；M2-9 `Cache.delete()` 与 `CacheStorage.delete/has/keys` 已接入；registration-local CacheStorage 持久化已接入；`Response.error()` 可作为 CacheStorage 条目保存/读回，但 FetchEvent 响应结算仍拒绝 status 0；首个 SW fetch/interception WPT baseline 1/1 Pass 已接入，broader fetch/cache 基线未完成 |
 | S4 | 事件为 setTimeout 模拟 | ✅ manager transition log 为状态源；timer 只执行页面 task 投影 |
 | S5 | WPT 覆盖为零 | ✅ core 34/34 case、156/156 Pass、0 Fail/Timeout/Unsupported |
 
@@ -508,6 +514,9 @@ JSON，private profile 继续只保留内存态。
 - M2-1 fetch runtime foundation：runtime `FetchEvent`/`Request`/`Response` MVP、
   manager longest-scope dispatch、IPC command/event 与定向验证见
   [M2 fetch runtime foundation](evidence/2026-08-21-m2-fetch-runtime-foundation.md)
+- M2-9 worker Cache delete/listing：`Cache.delete()` 与 `CacheStorage.delete()/has()/keys()`
+  typed bridge、renderer/browser IPC 和 manager-owned registration store 见
+  [M2 worker Cache delete/listing](evidence/2026-08-22-m2-worker-cache-delete-listing.md)
 
 ## M0 证据与决策记录
 
@@ -584,6 +593,7 @@ JSON，private profile 继续只保留内存态。
 | 2026-08-21 | M3-33 window client lifecycle | browser owner 暴露 window client 创建/销毁入口；移除 nested 不影响同 tab top-level/auxiliary |
 | 2026-08-21 | M3-34 renderer iframe lifecycle | iframe contentWindow 物化触发 nested client observe；删除/替换/清空子树触发 remove；browser 归一 child client id |
 | 2026-08-22 | M3 registration CacheStorage persistence | SW active registration-local CacheStorage snapshot/restore；normal profile persistence dirtying |
+| 2026-08-22 | M2 worker Cache delete/listing | SW runtime `Cache.delete()` 与 `CacheStorage.delete/has/keys` 贯穿 runtime/renderer/browser/manager/protocol |
 | 2026-08-22 | storage-cache-api M3 persistence support | page/WebView owner CacheStorage per-origin 落盘 |
 | 2026-08-21 | M2-1 fetch runtime foundation | `FetchEvent`/`Request`/`Response` MVP；manager longest-scope dispatch；browser/renderer IPC command/event；生产页面 fetch/Cache 集成仍待后续 |
 | 2026-08-19 | 三方案对比 | 拒绝同线程 context（无调度隔离）；拒绝从零线程（复制安全基建）；推荐抽取 Worker 线程核 |

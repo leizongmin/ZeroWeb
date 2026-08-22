@@ -566,6 +566,15 @@ fn cache_storage_request_from_wire(request: ServiceWorkerCacheStorageRequestWire
             request: request.map(fetch_request_from_wire),
             options: cache_query_options_from_wire(options),
         },
+        ServiceWorkerCacheStorageRequestWire::Delete {
+            cache_name,
+            request,
+            options,
+        } => ServiceWorkerCacheStorageRequest::Delete {
+            cache_name,
+            request: fetch_request_from_wire(request),
+            options: cache_query_options_from_wire(options),
+        },
         ServiceWorkerCacheStorageRequestWire::Put {
             cache_name,
             request,
@@ -575,6 +584,13 @@ fn cache_storage_request_from_wire(request: ServiceWorkerCacheStorageRequestWire
             request: fetch_request_from_wire(request),
             response: fetch_response_from_wire(response),
         },
+        ServiceWorkerCacheStorageRequestWire::StorageHas { cache_name } => {
+            ServiceWorkerCacheStorageRequest::StorageHas { cache_name }
+        }
+        ServiceWorkerCacheStorageRequestWire::StorageDelete { cache_name } => {
+            ServiceWorkerCacheStorageRequest::StorageDelete { cache_name }
+        }
+        ServiceWorkerCacheStorageRequestWire::StorageKeys => ServiceWorkerCacheStorageRequest::StorageKeys,
     }
 }
 
@@ -597,6 +613,10 @@ fn cache_storage_result_to_wire(result: ServiceWorkerCacheStorageResult) -> Serv
         }
         ServiceWorkerCacheStorageResult::Keys(requests) => {
             ServiceWorkerCacheStorageResultWire::Keys(requests.into_iter().map(fetch_request_to_wire).collect())
+        }
+        ServiceWorkerCacheStorageResult::Bool(value) => ServiceWorkerCacheStorageResultWire::Bool(value),
+        ServiceWorkerCacheStorageResult::StorageKeys(cache_names) => {
+            ServiceWorkerCacheStorageResultWire::StorageKeys(cache_names)
         }
     }
 }

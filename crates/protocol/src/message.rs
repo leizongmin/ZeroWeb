@@ -1147,6 +1147,16 @@ impl ServiceWorkerHostCommandParams {
                         }
                         Ok(())
                     }
+                    Ok(ServiceWorkerCacheStorageResultWire::Bool(_)) => Ok(()),
+                    Ok(ServiceWorkerCacheStorageResultWire::StorageKeys(cache_names)) => {
+                        if cache_names.len() > MAX_SERVICE_WORKER_CACHE_RESULTS {
+                            return Err("Service Worker cache name list exceeds the size limit");
+                        }
+                        for cache_name in cache_names {
+                            validate_service_worker_cache_name(cache_name)?;
+                        }
+                        Ok(())
+                    }
                     Err(message) if message.len() > MAX_URL_BYTES => {
                         Err("Service Worker cache error exceeds the size limit")
                     }
@@ -1288,6 +1298,12 @@ fn validate_service_worker_cache_storage_request(
             }
             Ok(())
         }
+        ServiceWorkerCacheStorageRequestWire::Delete {
+            cache_name, request, ..
+        } => {
+            validate_service_worker_cache_name(cache_name)?;
+            validate_service_worker_fetch_request(request)
+        }
         ServiceWorkerCacheStorageRequestWire::Put {
             cache_name,
             request,
@@ -1297,6 +1313,11 @@ fn validate_service_worker_cache_storage_request(
             validate_service_worker_fetch_request(request)?;
             validate_service_worker_cache_response(response)
         }
+        ServiceWorkerCacheStorageRequestWire::StorageHas { cache_name }
+        | ServiceWorkerCacheStorageRequestWire::StorageDelete { cache_name } => {
+            validate_service_worker_cache_name(cache_name)
+        }
+        ServiceWorkerCacheStorageRequestWire::StorageKeys => Ok(()),
     }
 }
 
@@ -1481,6 +1502,15 @@ pub enum ServiceWorkerCacheStorageRequestWire {
         /// Query matching options.
         options: ServiceWorkerCacheQueryOptionsWire,
     },
+    /// Delete matching entries in one named cache.
+    Delete {
+        /// Cache name.
+        cache_name: String,
+        /// Request key.
+        request: ServiceWorkerFetchRequestWire,
+        /// Query matching options.
+        options: ServiceWorkerCacheQueryOptionsWire,
+    },
     /// Store one response in one named cache.
     Put {
         /// Cache name.
@@ -1490,6 +1520,18 @@ pub enum ServiceWorkerCacheStorageRequestWire {
         /// Response value.
         response: ServiceWorkerFetchResponseWire,
     },
+    /// Test whether one named cache exists.
+    StorageHas {
+        /// Cache name.
+        cache_name: String,
+    },
+    /// Delete one named cache.
+    StorageDelete {
+        /// Cache name.
+        cache_name: String,
+    },
+    /// List cache names in creation order.
+    StorageKeys,
 }
 
 /// IPC-safe Service Worker CacheStorage operation result.
@@ -1503,6 +1545,10 @@ pub enum ServiceWorkerCacheStorageResultWire {
     MatchAll(Vec<ServiceWorkerFetchResponseWire>),
     /// Cache keys result.
     Keys(Vec<ServiceWorkerFetchRequestWire>),
+    /// Boolean result.
+    Bool(bool),
+    /// CacheStorage keys result.
+    StorageKeys(Vec<String>),
 }
 
 /// Renderer → browser 的 Service Worker runtime 事件参数。

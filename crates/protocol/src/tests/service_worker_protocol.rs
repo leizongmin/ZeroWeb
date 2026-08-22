@@ -727,6 +727,70 @@ fn service_worker_host_fetch_command_and_event_round_trip() {
     };
     assert!(cache_keys_event.validate().is_ok());
 
+    let cache_delete_event = ServiceWorkerHostEventParams {
+        registration_id: 8,
+        event: ServiceWorkerHostEvent::CacheStorageRequested {
+            request_id: 10,
+            request: ServiceWorkerCacheStorageRequestWire::Delete {
+                cache_name: "runtime".into(),
+                request: ServiceWorkerFetchRequestWire {
+                    url: "https://example.test/app/cached?version=2".into(),
+                    method: "GET".into(),
+                    headers: Vec::new(),
+                    body: None,
+                    client_id: None,
+                    resulting_client_id: None,
+                    referrer: None,
+                },
+                options: ServiceWorkerCacheQueryOptionsWire {
+                    ignore_search: true,
+                    ignore_method: false,
+                    ignore_vary: false,
+                },
+            },
+        },
+    };
+    assert!(cache_delete_event.validate().is_ok());
+    let decoded = roundtrip(IpcMessage {
+        id: 60,
+        kind: IpcMessageKind::ServiceWorkerHostEvent(cache_delete_event.clone()),
+    });
+    let IpcMessageKind::ServiceWorkerHostEvent(decoded_event) = decoded.kind else {
+        panic!("expected ServiceWorkerHostEvent");
+    };
+    assert_eq!(decoded_event, cache_delete_event);
+
+    let cache_storage_has_event = ServiceWorkerHostEventParams {
+        registration_id: 8,
+        event: ServiceWorkerHostEvent::CacheStorageRequested {
+            request_id: 11,
+            request: ServiceWorkerCacheStorageRequestWire::StorageHas {
+                cache_name: "runtime".into(),
+            },
+        },
+    };
+    assert!(cache_storage_has_event.validate().is_ok());
+
+    let cache_storage_delete_event = ServiceWorkerHostEventParams {
+        registration_id: 8,
+        event: ServiceWorkerHostEvent::CacheStorageRequested {
+            request_id: 12,
+            request: ServiceWorkerCacheStorageRequestWire::StorageDelete {
+                cache_name: "runtime".into(),
+            },
+        },
+    };
+    assert!(cache_storage_delete_event.validate().is_ok());
+
+    let cache_storage_keys_event = ServiceWorkerHostEventParams {
+        registration_id: 8,
+        event: ServiceWorkerHostEvent::CacheStorageRequested {
+            request_id: 13,
+            request: ServiceWorkerCacheStorageRequestWire::StorageKeys,
+        },
+    };
+    assert!(cache_storage_keys_event.validate().is_ok());
+
     let cache_lists_command = ServiceWorkerHostCommandParams {
         registration_id: 8,
         command: ServiceWorkerHostCommand::CompleteCacheStorage {
@@ -763,10 +827,39 @@ fn service_worker_host_fetch_command_and_event_round_trip() {
     };
     assert!(cache_keys_command.validate().is_ok());
 
+    let cache_bool_command = ServiceWorkerHostCommandParams {
+        registration_id: 8,
+        command: ServiceWorkerHostCommand::CompleteCacheStorage {
+            request_id: 10,
+            result: Ok(ServiceWorkerCacheStorageResultWire::Bool(true)),
+        },
+    };
+    assert!(cache_bool_command.validate().is_ok());
+
+    let cache_storage_keys_command = ServiceWorkerHostCommandParams {
+        registration_id: 8,
+        command: ServiceWorkerHostCommand::CompleteCacheStorage {
+            request_id: 13,
+            result: Ok(ServiceWorkerCacheStorageResultWire::StorageKeys(vec![
+                "runtime".into(),
+                "assets".into(),
+            ])),
+        },
+    };
+    assert!(cache_storage_keys_command.validate().is_ok());
+    let decoded = roundtrip(IpcMessage {
+        id: 61,
+        kind: IpcMessageKind::ServiceWorkerHostCommand(cache_storage_keys_command.clone()),
+    });
+    let IpcMessageKind::ServiceWorkerHostCommand(decoded_command) = decoded.kind else {
+        panic!("expected ServiceWorkerHostCommand");
+    };
+    assert_eq!(decoded_command, cache_storage_keys_command);
+
     let worker_fetch_event = ServiceWorkerHostEventParams {
         registration_id: 8,
         event: ServiceWorkerHostEvent::FetchRequested {
-            request_id: 10,
+            request_id: 14,
             request: ServiceWorkerFetchRequestWire {
                 url: "https://example.test/app/network.txt".into(),
                 method: "GET".into(),

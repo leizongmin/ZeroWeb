@@ -1013,6 +1013,165 @@ fn ipc_cache_query_options_match_browser_owned_registration_cache() {
 }
 
 #[test]
+fn ipc_cache_delete_and_storage_listing_use_browser_owned_registration_cache() {
+    let mut owner = BrowserServiceWorkerOwner::new();
+    let disposition = owner.begin_request_for_client(
+        TabId(7),
+        false,
+        78,
+        Some("https://example.test/app/page"),
+        "renderer-7:1",
+        register_request("https://example.test/app/page"),
+    );
+    attach_script(&mut owner, disposition, "addEventListener('install', () => {});");
+    let _ = owner.poll();
+    let evaluate = owner
+        .take_host_commands()
+        .into_iter()
+        .find(|outgoing| matches!(outgoing.params.command, ServiceWorkerHostCommand::Evaluate { .. }))
+        .expect("missing renderer evaluation command");
+    let registration_id = evaluate.params.registration_id;
+    owner
+        .normal
+        .put_cached_response(
+            registration_id,
+            "runtime",
+            zero_storage::CacheRequest::new("https://example.test/app/cached?version=1"),
+            zero_storage::CacheResponse::ok(b"cached-body".to_vec()),
+        )
+        .unwrap();
+
+    owner.inject_host_event(
+        TabId(7),
+        false,
+        ServiceWorkerHostEventParams {
+            registration_id,
+            event: ServiceWorkerHostEvent::CacheStorageRequested {
+                request_id: 15,
+                request: ServiceWorkerCacheStorageRequestWire::StorageHas {
+                    cache_name: "runtime".into(),
+                },
+            },
+        },
+    );
+    let _ = owner.poll();
+    assert!(
+        owner.take_host_commands().into_iter().any(|outgoing| matches!(
+            outgoing.params.command,
+            ServiceWorkerHostCommand::CompleteCacheStorage {
+                request_id: 15,
+                result: Ok(ServiceWorkerCacheStorageResultWire::Bool(true)),
+            }
+        )),
+        "CacheStorage.has should complete successfully"
+    );
+
+    owner.inject_host_event(
+        TabId(7),
+        false,
+        ServiceWorkerHostEventParams {
+            registration_id,
+            event: ServiceWorkerHostEvent::CacheStorageRequested {
+                request_id: 16,
+                request: ServiceWorkerCacheStorageRequestWire::StorageKeys,
+            },
+        },
+    );
+    let _ = owner.poll();
+    let cache_names = owner
+        .take_host_commands()
+        .into_iter()
+        .find_map(|outgoing| match outgoing.params.command {
+            ServiceWorkerHostCommand::CompleteCacheStorage {
+                request_id: 16,
+                result: Ok(ServiceWorkerCacheStorageResultWire::StorageKeys(cache_names)),
+            } => Some(cache_names),
+            _ => None,
+        })
+        .expect("missing CacheStorage.keys completion");
+    assert_eq!(cache_names, ["runtime"]);
+
+    owner.inject_host_event(
+        TabId(7),
+        false,
+        ServiceWorkerHostEventParams {
+            registration_id,
+            event: ServiceWorkerHostEvent::CacheStorageRequested {
+                request_id: 17,
+                request: ServiceWorkerCacheStorageRequestWire::Delete {
+                    cache_name: "runtime".into(),
+                    request: ServiceWorkerFetchRequestWire {
+                        url: "https://example.test/app/cached?version=2".into(),
+                        method: "GET".into(),
+                        headers: Vec::new(),
+                        body: None,
+                        client_id: None,
+                        resulting_client_id: None,
+                        referrer: None,
+                    },
+                    options: ServiceWorkerCacheQueryOptionsWire {
+                        ignore_search: true,
+                        ignore_method: false,
+                        ignore_vary: false,
+                    },
+                },
+            },
+        },
+    );
+    let _ = owner.poll();
+    assert!(
+        owner.take_host_commands().into_iter().any(|outgoing| matches!(
+            outgoing.params.command,
+            ServiceWorkerHostCommand::CompleteCacheStorage {
+                request_id: 17,
+                result: Ok(ServiceWorkerCacheStorageResultWire::Bool(true)),
+            }
+        )),
+        "Cache.delete should complete successfully"
+    );
+    assert!(
+        owner
+            .normal
+            .registration(registration_id)
+            .and_then(|registration| registration.cache_storage.get("runtime"))
+            .is_some_and(zero_storage::Cache::is_empty),
+        "Cache.delete should remove the matching entry"
+    );
+
+    owner.inject_host_event(
+        TabId(7),
+        false,
+        ServiceWorkerHostEventParams {
+            registration_id,
+            event: ServiceWorkerHostEvent::CacheStorageRequested {
+                request_id: 18,
+                request: ServiceWorkerCacheStorageRequestWire::StorageDelete {
+                    cache_name: "runtime".into(),
+                },
+            },
+        },
+    );
+    let _ = owner.poll();
+    assert!(
+        owner.take_host_commands().into_iter().any(|outgoing| matches!(
+            outgoing.params.command,
+            ServiceWorkerHostCommand::CompleteCacheStorage {
+                request_id: 18,
+                result: Ok(ServiceWorkerCacheStorageResultWire::Bool(true)),
+            }
+        )),
+        "CacheStorage.delete should complete successfully"
+    );
+    assert!(
+        owner
+            .normal
+            .registration(registration_id)
+            .is_some_and(|registration| !registration.cache_storage.has("runtime")),
+        "CacheStorage.delete should remove the named cache"
+    );
+}
+
+#[test]
 fn ipc_worker_fetch_event_creates_plan_and_completes_renderer_runtime() {
     let mut owner = BrowserServiceWorkerOwner::new();
     let disposition = owner.begin_request_for_client(

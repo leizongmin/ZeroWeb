@@ -46,6 +46,9 @@ embedded `IndexedDbOwner::persistent(path)` 保持旧 IndexedDB root 布局兼�
 `path/CacheStorage`。Service Worker active registration-local `CacheStorage` 也已纳入
 `ServiceWorkerPersistentRegistration` snapshot/restore；normal profile 的 SW cache mutation
 会触发现有 Service Worker persistence writer，private profile 继续只保留内存态。
+Service Worker runtime 已补齐 `Cache.delete()` 与 `CacheStorage.delete()/has()/keys()` 到
+同一 typed host bridge，entry 删除和命名 cache 删除复用 registration-local
+`zero-storage::CacheStorage`。
 更大范围 WPT 导入与完整
 `basic`/`cors`/`opaque`/`opaqueredirect` filtered response 生成矩阵仍待后续切片。
 
@@ -97,7 +100,7 @@ embedded `IndexedDbOwner::persistent(path)` 保持旧 IndexedDB root 布局兼�
 | 里程碑 | 状态 |
 |--------|------|
 | M1 — WPT cache-storage 基线 + caches 骨架 | ✅ 页面骨架 + 8-case window WPT 基线已接入 |
-| M2 — Cache 全 API + 查询语义 | 🚧 `Cache.matchAll()` / `Cache.keys()`、`Cache.match()`、`CacheStorage.match()`、`ignoreSearch`/`ignoreMethod`/`ignoreVary`、页面 `add/addAll` GET fetch→store、返回对象 brand、缺参 TypeError、`CacheStorage.keys()` 创建顺序、delete-dooming、DOMString name wire、`Cache.put` 核心可缓存性拒绝/body 消费语义、cached `Response.type`/`Response.url` 读回保真、`Response.error()` 可缓存读回、opaque response 忽略 Vary 与内部 metadata 可缓存、`Response.redirect()`/Blob/FormData response 路径、`addAll` 原子失败已接入；完整 filtered response 生成与更大 WPT 覆盖待完成 |
+| M2 — Cache 全 API + 查询语义 | 🚧 `Cache.matchAll()` / `Cache.keys()`、`Cache.match()`、`CacheStorage.match()`、`ignoreSearch`/`ignoreMethod`/`ignoreVary`、页面 `add/addAll` GET fetch→store、返回对象 brand、缺参 TypeError、`CacheStorage.keys()` 创建顺序、delete-dooming、DOMString name wire、`Cache.put` 核心可缓存性拒绝/body 消费语义、cached `Response.type`/`Response.url` 读回保真、`Response.error()` 可缓存读回、opaque response 忽略 Vary 与内部 metadata 可缓存、`Response.redirect()`/Blob/FormData response 路径、`addAll` 原子失败、SW runtime `Cache.delete()` 与 `CacheStorage.delete/has/keys` 已接入；完整 filtered response 生成与更大 WPT 覆盖待完成 |
 | M3 — 持久化 + 剩余语义收尾 | 🚧 page/WebView owner per-origin 持久化与 SW registration-local CacheStorage 持久化已完成；剩余 filtered response 矩阵待补 |
 
 ## 验证基线
@@ -229,4 +232,11 @@ embedded `IndexedDbOwner::persistent(path)` 保持旧 IndexedDB root 布局兼�
   - `./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit 300 -- cargo test -p zero-page-runtime cache_storage -- --nocapture`：19 passed
   - `./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit 600 -- cargo test -p zero-browser service_worker_owner -- --nocapture`：53 passed
   - 证据：[M3 Service Worker CacheStorage Persistence](../service-workers/evidence/2026-08-22-m3-registration-cache-storage-persistence.md)
+- 2026-08-22 Service Worker Cache delete/listing 支撑：
+  - `./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit 600 -- cargo test -p zero-script-sandbox cache -- --nocapture`：6 passed
+  - `./target/test-guard --per-proc-mem 4 --total-mem 12 --time-limit 600 -- cargo test -p zero-renderer service_worker_host -- --nocapture`：13 passed
+  - `./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit 600 -- cargo test -p zero-page-runtime cache_storage -- --nocapture`：20 passed
+  - `./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit 600 -- cargo test -p zero-browser service_worker_owner -- --nocapture`：54 passed
+  - `./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit 300 -- cargo test -p zero-protocol service_worker_protocol -- --nocapture`：19 passed
+  - 证据：[M2 Service Worker Cache Delete And Listing](../service-workers/evidence/2026-08-22-m2-worker-cache-delete-listing.md)
 - 质量门禁：`cargo fmt` + `cargo clippy --workspace --all-targets -- -D warnings` 全过

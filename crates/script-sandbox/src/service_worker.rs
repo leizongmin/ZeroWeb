@@ -534,6 +534,14 @@ const SERVICE_WORKER_BOOTSTRAP: &str = r#"
     if (input !== undefined) request.request = cacheRequestWire(input);
     return request;
   }
+  function cacheDeleteRequest(cacheName, input, options) {
+    return {
+      op: 'delete',
+      cacheName,
+      request: cacheRequestWire(input),
+      options: cacheQueryOptionsWire(options)
+    };
+  }
   function cachePutRequest(cacheName, input, response) {
     const request = input instanceof Request ? input : new Request(input);
     const cacheResponse = Response._from(response);
@@ -636,6 +644,17 @@ const SERVICE_WORKER_BOOTSTRAP: &str = r#"
         return requests.map(cachedRequestFromWire);
       });
     }
+    delete(input, options) {
+      let request;
+      try {
+        request = cacheDeleteRequest(this._name, input, options);
+      } catch (error) {
+        return Promise.reject(error);
+      }
+      return cacheStorageHost(request).then(function(response) {
+        return Boolean(response.value);
+      });
+    }
   }
   Object.defineProperty(Cache.prototype, Symbol.toStringTag, {value: 'Cache'});
 
@@ -654,6 +673,27 @@ const SERVICE_WORKER_BOOTSTRAP: &str = r#"
       const cacheName = options === undefined || options === null ? undefined : Object(options).cacheName;
       return cacheStorageHost(cacheMatchRequest(input, cacheName === undefined ? undefined : String(cacheName), options)).then(function(response) {
         return response.response === null ? undefined : cachedResponseFromWire(response.response);
+      });
+    }
+    has(name) {
+      return cacheStorageHost({
+        op: 'has',
+        name: String(name)
+      }).then(function(response) {
+        return Boolean(response.value);
+      });
+    }
+    delete(name) {
+      return cacheStorageHost({
+        op: 'storageDelete',
+        name: String(name)
+      }).then(function(response) {
+        return Boolean(response.value);
+      });
+    }
+    keys() {
+      return cacheStorageHost({op: 'storageKeys'}).then(function(response) {
+        return Array.isArray(response.cacheNames) ? response.cacheNames.map(String) : [];
       });
     }
   }
@@ -1413,6 +1453,15 @@ pub enum ServiceWorkerCacheStorageRequest {
         /// Query matching options.
         options: ServiceWorkerCacheQueryOptions,
     },
+    /// Delete matching entries in one named cache.
+    Delete {
+        /// Cache name.
+        cache_name: String,
+        /// Request key.
+        request: ServiceWorkerFetchRequest,
+        /// Query matching options.
+        options: ServiceWorkerCacheQueryOptions,
+    },
     /// Store one response in one named cache.
     Put {
         /// Cache name.
@@ -1422,6 +1471,18 @@ pub enum ServiceWorkerCacheStorageRequest {
         /// Response value.
         response: ServiceWorkerFetchResponse,
     },
+    /// Test whether one named cache exists.
+    StorageHas {
+        /// Cache name.
+        cache_name: String,
+    },
+    /// Delete one named cache.
+    StorageDelete {
+        /// Cache name.
+        cache_name: String,
+    },
+    /// List cache names in creation order.
+    StorageKeys,
 }
 
 /// Result of a worker-global CacheStorage operation.
@@ -1435,6 +1496,10 @@ pub enum ServiceWorkerCacheStorageResult {
     MatchAll(Vec<ServiceWorkerFetchResponse>),
     /// Cache keys result.
     Keys(Vec<ServiceWorkerFetchRequest>),
+    /// Boolean result.
+    Bool(bool),
+    /// CacheStorage keys result.
+    StorageKeys(Vec<String>),
 }
 
 /// MessagePort endpoint metadata for one page/worker message.
@@ -2384,9 +2449,25 @@ impl ServiceWorkerRuntime {
                     response: ServiceWorkerCacheStorageResult::Keys(requests),
                 }
             }
-            Ok(response @ (ServiceWorkerCacheStorageResult::Done | ServiceWorkerCacheStorageResult::Match(None))) => {
-                ServiceWorkerCacheStorageResponse::Completed { request_id, response }
+            Ok(ServiceWorkerCacheStorageResult::StorageKeys(cache_names)) => {
+                if cache_names.len() > MAX_CACHE_RESULTS {
+                    return Err(ScriptError::InvalidInput(
+                        "Service Worker cache name list exceeds the size limit".into(),
+                    ));
+                }
+                for cache_name in &cache_names {
+                    validate_cache_name(cache_name)?;
+                }
+                ServiceWorkerCacheStorageResponse::Completed {
+                    request_id,
+                    response: ServiceWorkerCacheStorageResult::StorageKeys(cache_names),
+                }
             }
+            Ok(
+                response @ (ServiceWorkerCacheStorageResult::Done
+                | ServiceWorkerCacheStorageResult::Match(None)
+                | ServiceWorkerCacheStorageResult::Bool(_)),
+            ) => ServiceWorkerCacheStorageResponse::Completed { request_id, response },
             Err(message) => ServiceWorkerCacheStorageResponse::Failed { request_id, message },
         };
         self.cache_storage_response_sender
@@ -2517,11 +2598,23 @@ fn cache_storage_request_from_json(value: serde_json::Value) -> Option<ServiceWo
             },
             options: cache_query_options_from_json(value.get("options")),
         }),
+        "delete" => Some(ServiceWorkerCacheStorageRequest::Delete {
+            cache_name: value["cacheName"].as_str()?.to_string(),
+            request: fetch_request_from_json(&value["request"])?,
+            options: cache_query_options_from_json(value.get("options")),
+        }),
         "put" => Some(ServiceWorkerCacheStorageRequest::Put {
             cache_name: value["cacheName"].as_str()?.to_string(),
             request: fetch_request_from_json(&value["request"])?,
             response: fetch_response_from_json(&value["response"])?,
         }),
+        "has" => Some(ServiceWorkerCacheStorageRequest::StorageHas {
+            cache_name: value["name"].as_str()?.to_string(),
+        }),
+        "storageDelete" => Some(ServiceWorkerCacheStorageRequest::StorageDelete {
+            cache_name: value["name"].as_str()?.to_string(),
+        }),
+        "storageKeys" => Some(ServiceWorkerCacheStorageRequest::StorageKeys),
         _ => None,
     }
 }
@@ -2610,6 +2703,16 @@ fn cache_storage_response_json(response: ServiceWorkerCacheStorageResult) -> Str
             "requests": requests.iter().map(fetch_request_json).collect::<Vec<_>>(),
         })
         .to_string(),
+        ServiceWorkerCacheStorageResult::Bool(value) => serde_json::json!({
+            "ok": true,
+            "value": value,
+        })
+        .to_string(),
+        ServiceWorkerCacheStorageResult::StorageKeys(cache_names) => serde_json::json!({
+            "ok": true,
+            "cacheNames": cache_names,
+        })
+        .to_string(),
     }
 }
 
@@ -2651,6 +2754,12 @@ fn validate_cache_storage_request(request: &ServiceWorkerCacheStorageRequest) ->
             }
             Ok(())
         }
+        ServiceWorkerCacheStorageRequest::Delete {
+            cache_name, request, ..
+        } => {
+            validate_cache_name(cache_name)?;
+            validate_fetch_request(request)
+        }
         ServiceWorkerCacheStorageRequest::Put {
             cache_name,
             request,
@@ -2660,6 +2769,9 @@ fn validate_cache_storage_request(request: &ServiceWorkerCacheStorageRequest) ->
             validate_fetch_request(request)?;
             validate_cache_response(response)
         }
+        ServiceWorkerCacheStorageRequest::StorageHas { cache_name }
+        | ServiceWorkerCacheStorageRequest::StorageDelete { cache_name } => validate_cache_name(cache_name),
+        ServiceWorkerCacheStorageRequest::StorageKeys => Ok(()),
     }
 }
 
@@ -4919,6 +5031,143 @@ mod tests {
                     response_type: "default".into(),
                     headers: Vec::new(),
                     body: "done".into(),
+                }),
+                message: String::new(),
+            }
+        );
+    }
+
+    #[test]
+    fn cache_delete_and_storage_listing_roundtrip_from_worker_script() {
+        let mut runtime = ServiceWorkerRuntime::new(test_config()).unwrap();
+        runtime
+            .evaluate(
+                "addEventListener('fetch', event => {
+                   event.respondWith((async () => {
+                     const cache = await caches.open('runtime');
+                     const before = await caches.has('runtime');
+                     const names = await caches.keys();
+                     const deleted = await cache.delete(event.request, {ignoreSearch: true});
+                     const storageDeleted = await caches.delete('runtime');
+                     return new Response([before, names.join(','), deleted, storageDeleted].join('|'));
+                   })());
+                 });",
+                "https://example.test/sw.js",
+            )
+            .unwrap();
+        let _ = runtime.recv_timeout(Duration::from_secs(5)).unwrap();
+
+        runtime
+            .dispatch_fetch(
+                47,
+                ServiceWorkerFetchRequest {
+                    url: "https://example.test/app/delete?version=1".into(),
+                    method: "GET".into(),
+                    headers: Vec::new(),
+                    body: None,
+                    client_id: Some("client-1".into()),
+                    resulting_client_id: None,
+                    referrer: None,
+                },
+            )
+            .unwrap();
+
+        let ServiceWorkerEvent::CacheStorageRequested { request_id, request } =
+            runtime.recv_timeout(Duration::from_secs(5)).unwrap()
+        else {
+            panic!("missing CacheStorage.open request");
+        };
+        assert_eq!(
+            request,
+            ServiceWorkerCacheStorageRequest::Open {
+                cache_name: "runtime".into()
+            }
+        );
+        runtime
+            .complete_cache_storage(request_id, Ok(ServiceWorkerCacheStorageResult::Done))
+            .unwrap();
+
+        let ServiceWorkerEvent::CacheStorageRequested { request_id, request } =
+            runtime.recv_timeout(Duration::from_secs(5)).unwrap()
+        else {
+            panic!("missing CacheStorage.has request");
+        };
+        assert_eq!(
+            request,
+            ServiceWorkerCacheStorageRequest::StorageHas {
+                cache_name: "runtime".into()
+            }
+        );
+        runtime
+            .complete_cache_storage(request_id, Ok(ServiceWorkerCacheStorageResult::Bool(true)))
+            .unwrap();
+
+        let ServiceWorkerEvent::CacheStorageRequested { request_id, request } =
+            runtime.recv_timeout(Duration::from_secs(5)).unwrap()
+        else {
+            panic!("missing CacheStorage.keys request");
+        };
+        assert_eq!(request, ServiceWorkerCacheStorageRequest::StorageKeys);
+        runtime
+            .complete_cache_storage(
+                request_id,
+                Ok(ServiceWorkerCacheStorageResult::StorageKeys(vec!["runtime".into()])),
+            )
+            .unwrap();
+
+        let ServiceWorkerEvent::CacheStorageRequested { request_id, request } =
+            runtime.recv_timeout(Duration::from_secs(5)).unwrap()
+        else {
+            panic!("missing Cache.delete request");
+        };
+        let ServiceWorkerCacheStorageRequest::Delete {
+            cache_name,
+            request,
+            options,
+        } = request
+        else {
+            panic!("expected Cache.delete request");
+        };
+        assert_eq!(cache_name, "runtime");
+        assert_eq!(request.url, "https://example.test/app/delete?version=1");
+        assert_eq!(
+            options,
+            ServiceWorkerCacheQueryOptions {
+                ignore_search: true,
+                ignore_method: false,
+                ignore_vary: false,
+            }
+        );
+        runtime
+            .complete_cache_storage(request_id, Ok(ServiceWorkerCacheStorageResult::Bool(true)))
+            .unwrap();
+
+        let ServiceWorkerEvent::CacheStorageRequested { request_id, request } =
+            runtime.recv_timeout(Duration::from_secs(5)).unwrap()
+        else {
+            panic!("missing CacheStorage.delete request");
+        };
+        assert_eq!(
+            request,
+            ServiceWorkerCacheStorageRequest::StorageDelete {
+                cache_name: "runtime".into()
+            }
+        );
+        runtime
+            .complete_cache_storage(request_id, Ok(ServiceWorkerCacheStorageResult::Bool(true)))
+            .unwrap();
+
+        assert_eq!(
+            runtime.recv_timeout(Duration::from_secs(5)).unwrap(),
+            ServiceWorkerEvent::FetchSettled {
+                event_id: 47,
+                request_url: "https://example.test/app/delete?version=1".into(),
+                response: Some(ServiceWorkerFetchResponse {
+                    status: 200,
+                    status_text: String::new(),
+                    response_type: "default".into(),
+                    headers: Vec::new(),
+                    body: "true|runtime|true|true".into(),
                 }),
                 message: String::new(),
             }
