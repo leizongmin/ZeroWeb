@@ -416,6 +416,63 @@ fn test_collect_col_widths_resolves_percent_and_px() {
 }
 
 #[test]
+fn test_collect_col_widths_rejects_non_finite_html_width_attr() {
+    use zero_css_parser::values::LengthValue;
+
+    let mut doc = Document::new();
+    let root = doc.root();
+    let table_id = doc.create_element("div");
+    let cg_id = doc.create_element("div");
+    let col0 = doc.create_element("div");
+    let col1 = doc.create_element("div");
+    let col2 = doc.create_element("div");
+    let _ = doc.append_child(root, table_id);
+    let _ = doc.append_child(table_id, cg_id);
+    let _ = doc.append_child(cg_id, col0);
+    let _ = doc.append_child(cg_id, col1);
+    let _ = doc.append_child(cg_id, col2);
+    doc.set_attribute(col0, "width", "Infinity");
+    doc.set_attribute(col1, "width", "NaNpx");
+    doc.set_attribute(col2, "width", "Infinity%");
+
+    let mut styles = HashMap::new();
+    let mk = |d: DisplayValue| {
+        let mut s = ComputedStyle::default();
+        s.display = d;
+        s
+    };
+    styles.insert(table_id, mk(DisplayValue::Table));
+    styles.insert(cg_id, mk(DisplayValue::TableColumnGroup));
+    let mut col0_style = mk(DisplayValue::TableColumn);
+    col0_style.width = LengthValue::Px(48.0);
+    styles.insert(col0, col0_style);
+    styles.insert(col1, mk(DisplayValue::TableColumn));
+    styles.insert(col2, mk(DisplayValue::TableColumn));
+
+    let col = |nid| LayoutBox {
+        node_id: Some(nid),
+        ..Default::default()
+    };
+    let table_box = LayoutBox {
+        node_id: Some(table_id),
+        children: vec![LayoutBox {
+            node_id: Some(cg_id),
+            children: vec![col(col0), col(col1), col(col2)],
+            ..Default::default()
+        }],
+        ..Default::default()
+    };
+
+    let widths = collect_col_widths(&table_box, 3, &styles, &doc, 300.0);
+
+    assert_eq!(
+        widths,
+        vec![Some(48.0), None, None],
+        "non-finite HTML width attrs should be ignored before CSS fallback"
+    );
+}
+
+#[test]
 fn test_collect_col_widths_resolves_relative_css_length() {
     use zero_css_parser::values::LengthValue;
 

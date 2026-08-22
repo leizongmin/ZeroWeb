@@ -544,13 +544,15 @@ pub(crate) fn collect_col_widths(
         }
     };
     let resolve = |w: &str| -> Option<f32> {
+        // https://html.spec.whatwg.org/multipage/rendering.html#tables-2
         let w = w.trim();
         if let Some(pct) = w.strip_suffix('%') {
-            let p = pct.trim().parse::<f32>().ok()?;
-            Some((p / 100.0 * available_width).max(0.0))
+            let p = pct.trim().parse::<f32>().ok().filter(|n| n.is_finite())?;
+            let px = p / 100.0 * available_width;
+            px.is_finite().then_some(px.max(0.0))
         } else {
             let n = w.strip_suffix("px").unwrap_or(w).trim();
-            n.parse::<f32>().ok().map(|v| v.max(0.0))
+            n.parse::<f32>().ok().filter(|n| n.is_finite()).map(|v| v.max(0.0))
         }
     };
     let apply = |col_widths: &mut Vec<Option<f32>>,
