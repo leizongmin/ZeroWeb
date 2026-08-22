@@ -585,6 +585,12 @@
       if (!n || n.nodeType !== 1) return '';
       var h = '<' + String(n.nodeName).toLowerCase();
       var as = n.attributes;
+      // R174（js-dom M4）：no-ns 标记属性（同 `_zwMSerialize`——element/fragment
+      // 查询上下文的序列化源；判据 `!namespaceURI`（null/空串，WebIDL 归一），
+      // `|div` EmptyNs 经 host `apply_empty_ns_markers` 还原后命中）。
+      var _r174ens = false;
+      try { _r174ens = !n.namespaceURI; } catch (_e174o) {}
+      if (_r174ens) h += ' data-zw-empty-ns=""';
       if (as && as.length) {
         for (var _qi = 0; _qi < as.length; _qi++) {
           h += ' ' + as[_qi].name + '="' + String(as[_qi].value == null ? '' : as[_qi].value).replace(/&/g, '&amp;').replace(/"/g, '&quot;') + '"';
@@ -4495,6 +4501,17 @@
     if (node.nodeType !== 1) return '';
     var tag = node.localName || (node.tagName || '').toLowerCase();
     var attrStr = '';
+    // R174（js-dom M4）：**no-ns 标记属性**——`namespaceURI` 为 null/空串的
+    // 元素（createElementNS(null|"", qname) 产物——WebIDL 下两者 namespaceURI
+    // 都是 null）序列化时输出内部属性 `data-zw-empty-ns`；host 侧
+    // `parse_html_element_json_full` 查询前把带此标记的元素 ns 置空，使
+    // `|div`/`|*`（EmptyNs——zero_dom NsKind::EmptyNs 语义）在 re-parse 后
+    // 仍可命中（WPT ParentNode ns 簇 `#no-namespace |div` expect
+    // createElementNS("") 产物）。HTML 序列化无 ns 语法——这是内部协议
+    //（属性名以 data- 前缀降低与真实内容撞车面）。
+    var _r174EmptyNs = false;
+    try { _r174EmptyNs = !node.namespaceURI; } catch (_e174n) {}
+    if (_r174EmptyNs) attrStr += ' data-zw-empty-ns=""';
     for (var i = 0; i < node.attributes.length; i++) attrStr += ' ' + node.attributes[i].name + '="' + _zwMEscapeAttr(node.attributes[i].value) + '"';
     if (_ZW_VOID_TAGS[tag]) return '<' + tag + attrStr + '>';
     var inner = '';
@@ -6879,6 +6896,8 @@
         }
         var e2 = _zwMEl({ tag: _loc, preserveCase: true }, null);
         e2.ownerDocument = doc;
+        // R174 修正：WebIDL 空串 ns → namespaceURI null（WPT 断言 `=== null`，
+        // 同 part05；EmptyNs 匹配经序列化标记协议覆盖）。
         e2.namespaceURI = _nsStr || null;
         e2.prefix = _pre;
         e2.tagName = _qn;

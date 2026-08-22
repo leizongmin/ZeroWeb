@@ -1943,6 +1943,9 @@
       // 'html:span')` → prefix 'html' / localName 'span' / tagName 'HTML:SPAN'）。非 HTML 命名空间
       // 或 detached doc（XML 语义）不转换。
       var _htmlUpper = _nsStr === 'http://www.w3.org/1999/xhtml';
+      // R174 修正：WebIDL 空串 ns → namespaceURI null（WPT Document-
+      // createElementNS "empty string namespace" 断言；EmptyNs 匹配经序列化
+      // 标记协议覆盖）。保持 `|| null` 语义。
       if (handle) _nsHandles[handle] = { qualifiedName: _q, namespace: (_nsStr || null), htmlUpper: _htmlUpper };
       return _wrapHandle(handle);
     },

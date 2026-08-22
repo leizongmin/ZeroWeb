@@ -847,6 +847,10 @@
       el.nodeName = _q;
       el.localName = _loc;
       el.prefix = _pre;
+      // R174 修正：WebIDL `DOMString?`——ns 参数 null/undefined/**空串** 经
+      // legacy 转换后 namespaceURI 都是 **null**（WPT Document-createElementNS
+      // "empty string namespace" 断言 `=== null`）。`|div` EmptyNs 匹配域经
+      // 序列化标记协议（`!namespaceURI` 即标记）覆盖，此处保持 null 语义。
       el.namespaceURI = _nsStr === '' ? null : _nsStr;
       return el;
     };
@@ -907,9 +911,55 @@
         }
         if (!found) el.attributes.push({ name: String(n), value: String(v) });
       },
-      appendChild: function (c) { c.parentNode = el; el.childNodes.push(c); return c; },
+      // R174：removeAttribute（id/className 反射 accessor 的 '' 分支消费——
+      // spec `dom-element-removeattribute` 移除全部同名属性）。
+      removeAttribute: function (n) {
+        n = String(n);
+        for (var i = el.attributes.length - 1; i >= 0; i--) { if (el.attributes[i].name === n) el.attributes.splice(i, 1); }
+      },
+      appendChild: function (c) {
+        // R174：与 _zwMEl appendChild 对齐——先从原父摘除（spec dom-node-append-child
+        // 的 adopt 步骤），入树清移除标记。
+        if (c && c.parentNode && c.parentNode.removeChild) { try { c.parentNode.removeChild(c); } catch (_e174r) {} }
+        el.childNodes.push(c); c.parentNode = el;
+        if (c && c.__zwHandle && typeof _zwUnmarkRemovedHandle === 'function') _zwUnmarkRemovedHandle(c.__zwHandle);
+        return c;
+      },
       hasChildNodes: function () { return el.childNodes.length > 0; }
     };
+    // R174（js-dom M4）：id/className 的 IDL 反射 accessor（spec HTML
+    // `dom-id`/`dom-classname`——`el.id = x` 须落到 content attribute）。
+    // WPT ParentNode-querySelector-All 的 setupSpecialElements 用
+    // `anyNS.id = "any-namespace"` 建 ns 测试元素——旧 plain 数据属性不进
+    // attributes，序列化（查询树/host re-parse）丢 id 使 `#any-namespace`
+    // 族选择器全 miss（ns 24F 的根因之一）。
+    try {
+      Object.defineProperty(el, 'id', {
+        configurable: true,
+        get: function () { var v = el.getAttribute('id'); return v == null ? '' : v; },
+        set: function (v) {
+          var s = v == null ? '' : String(v);
+          if (s === '') el.removeAttribute('id'); else el.setAttribute('id', s);
+        },
+      });
+      Object.defineProperty(el, 'className', {
+        configurable: true,
+        get: function () { var v = el.getAttribute('class'); return v == null ? '' : v; },
+        set: function (v) {
+          var s = v == null ? '' : String(v);
+          if (s === '') el.removeAttribute('class'); else el.setAttribute('class', s);
+        },
+      });
+      // R174：outerHTML getter（复用 part03 的 _zwMSerialize——IIFE 作用域内函数
+      // 声明跨 part 可见）。doc 查询树 walk（_queryTreeByCompound）与序列化源
+      // （detHtml → _tree.innerHTML）都消费 outerHTML/serializer——旧 iframe 工厂
+      // 元素无此属性，append 进 doc 树后本树 walk 即 abort（outerHTML 空守卫），
+      // 整个 compound 门被打回 JSON 往返。
+      Object.defineProperty(el, 'outerHTML', {
+        configurable: true,
+        get: function () { return _zwMSerialize(el); },
+      });
+    } catch (_e174id) {}
     try { Object.setPrototypeOf(el, globalThis.Element ? globalThis.Element.prototype : Object.prototype); } catch (_e115p) {}
     return el;
   }

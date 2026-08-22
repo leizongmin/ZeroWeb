@@ -1569,6 +1569,11 @@ pub fn parse_html_element_json(html: &str, selector: &str, all: bool) -> String 
 ///（WPT `:target` 簇：detached doc 查询经 `__zw_parse_html_query` 重 parse，旧版
 /// 无 URL → `:target` 恒 miss）。`url` 注入 `doc.set_url`，`:target` 经
 /// `is_target_element` 判定。
+// R174（js-dom M4）：`data-zw-empty-ns` 标记属性还原——shim `_zwMSerialize`
+// 对 `namespaceURI === ''` 的元素输出的内部标记（HTML 序列化无 ns 语法，
+// re-parse 后 ns 全是 HTML ns）。还原经 `Document::apply_empty_ns_markers`
+//（zero_dom 侧实现），使 `|div`/`|*`（NsKind::EmptyNs）在 re-parse 后可命中。
+// 见 selectors-4 §6.1 type selector 的 empty namespace 语义。
 pub fn parse_html_element_json_with_url(html: &str, selector: &str, all: bool, url: Option<&str>) -> String {
     parse_html_element_json_full(html, selector, all, url, false)
 }
@@ -1590,6 +1595,12 @@ pub fn parse_html_element_json_full(
     if url.is_some() {
         doc.set_url(url.map(str::to_string));
     }
+    // R174（js-dom M4）：**no-ns 标记属性还原**——shim `_zwMSerialize` 对
+    // `namespaceURI === ''` 的元素（createElementNS("", qname) 产物）输出内部
+    // 属性 `data-zw-empty-ns`；HTML 解析无 ns 语法（re-parse 后全部元素都是
+    // HTML ns），`|div`/`|*`（EmptyNs）恒 miss。查询前还原（zero_dom
+    // `Document::apply_empty_ns_markers`：ns 置空 + 剔标记属性）。
+    doc.apply_empty_ns_markers();
     let root = doc.root();
     let ids: Vec<NodeId> = if all {
         doc.query_selector_all(root, zero_dom::trim_ascii_ws(selector))

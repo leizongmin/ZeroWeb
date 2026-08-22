@@ -1179,6 +1179,31 @@ impl Document {
         self.referrer = referrer;
     }
 
+    /// R174（js-dom M4）：按标记属性把元素命名空间置空（shim 序列化协议——
+    /// `_zwMSerialize` 对无 ns 元素（`!namespaceURI`——WebIDL 下 null/"" 归一）
+    /// 输出 `data-zw-empty-ns` 内部属性，engine re-parse 后经此还原，使
+    /// `|div`/`|*`（NsKind::EmptyNs）可命中）。扫全树：带标记的元素 ns 置空 +
+    /// 剔标记属性（对快照零污染）。spec 依据 selectors-4 §6.1 type selector
+    /// 的 empty namespace 语义。
+    pub fn apply_empty_ns_markers(&mut self) {
+        let ids: Vec<NodeId> = self.collect_descendants(self.root());
+        for id in ids {
+            let Some(node) = self.get_mut(id) else { continue };
+            let NodeKind::Element(elem) = &mut node.kind else {
+                continue;
+            };
+            let Some(marker_idx) = elem
+                .attributes
+                .iter()
+                .position(|attr| attr.name.local.as_ref() == "data-zw-empty-ns")
+            else {
+                continue;
+            };
+            elem.attributes.remove(marker_idx);
+            elem.name.ns = markup5ever::Namespace::from("");
+        }
+    }
+
     // ── content is XML / XHTML ──────────────────────────────────
 
     /// 文档内容是否按 XML/XHTML 语义处理（影响选择器大小写敏感性等）。

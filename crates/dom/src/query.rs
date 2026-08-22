@@ -1554,6 +1554,34 @@ mod tests {
     use super::*;
     use crate::Document;
 
+    // R174（js-dom M4）：no-ns 标记属性还原协议——`apply_empty_ns_markers` 把带
+    // `data-zw-empty-ns` 的元素 ns 置空并剔标记属性，使 `|div`（NsKind::EmptyNs）
+    // 在 shim 序列化 → re-parse 往返后仍可命中（WPT ParentNode ns 簇的
+    // createElementNS("", "div") 产物）。HTML 解析产物 ns 恒 HTMLNS → 不标记
+    // 的元素不受影响（零回归护栏）。
+    #[test]
+    fn zz_r174_empty_ns_marker_roundtrip() {
+        let mut doc =
+            crate::parse_html("<body><div id=\"plain\"></div><div id=\"nons\" data-zw-empty-ns=\"\"></div></body>");
+        doc.apply_empty_ns_markers();
+        let root = doc.root();
+        // 标记元素：ns 置空 + 标记属性剔除
+        let hits = doc.query_selector_all(root, "|div");
+        assert_eq!(hits.len(), 1, "only the marked element should match |div");
+        let got = doc.get(hits[0]).unwrap();
+        let crate::NodeKind::Element(e) = &got.kind else {
+            panic!("not an element");
+        };
+        assert_eq!(e.id.as_deref(), Some("nons"));
+        assert!(
+            !e.attributes.iter().any(|a| a.name.local.as_ref() == "data-zw-empty-ns"),
+            "marker attribute must be stripped"
+        );
+        // 未标记元素：ns 保持 HTMLNS（`|div` 不命中，普通 `div` 命中）
+        let plain = doc.query_selector_all(root, "div");
+        assert_eq!(plain.len(), 2, "plain tag selector matches both");
+    }
+
     // R172（js-dom M4）：ns 组合形态的 validity 回归——`|div`/`|*`（显式空 ns）
     // 与 `*|div`（任意 ns）在**任意段位置**合法（含 `#id |div` 后代段）；`ns|div`
     // 有名前缀仍非法（无 @namespace 声明表）。WPT ParentNode-querySelector-All
