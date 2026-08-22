@@ -2169,6 +2169,37 @@
   globalThis.self = globalThis;
   globalThis.top = globalThis;
   globalThis.parent = globalThis;
+  // R177（js-dom M4）：`window.frames`（HTML spec「window named access」的索引访问面
+  // ——`frames[i]` = 文档树内第 i 个 iframe 的 contentWindow，`frames.length` = iframe
+  // 数）。spec 上 `window.frames === window`（self 别名），真浏览器的索引/getter 语义
+  // 由 WindowProxy 承载；本沙箱以 **Proxy 动态枚举**近似（WPT Node-removeChild 的
+  // `frames[0].document` 族——缺 frames 直接 ReferenceError 整簇 fail）。每次 get
+  // 现查 iframe 列表（iframe contentWindow 是 lazy 物化——建 frames 时 iframe 可能
+  // 尚未注册，快照形态会 miss；Proxy 动态读保证任意时刻拿到已注册 iframe）。
+  // https://html.spec.whatwg.org/multipage/window-object.html#dom-frames
+  globalThis.frames = (function () {
+    function frameWins177() {
+      var wins = [];
+      try {
+        var ifr = globalThis.document.querySelectorAll('iframe');
+        for (var i = 0; i < ifr.length; i++) {
+          try { wins.push(ifr[i].contentWindow); } catch (_e177c) { wins.push(null); }
+        }
+      } catch (_e177q) {}
+      return wins;
+    }
+    return new Proxy({}, {
+      get: function (_t, prop) {
+        var wins = frameWins177();
+        if (prop === 'length') return wins.length;
+        if (typeof prop === 'string' && /^\d+$/.test(prop)) {
+          var idx177 = parseInt(prop, 10);
+          return idx177 < wins.length ? wins[idx177] : undefined;
+        }
+        return undefined;
+      },
+    });
+  })();
   // js-dom M4 R33：`Window.event`（HTML spec `current event`，legacy IE 全局）。Window 须 own `event`
   // 属性，初值 undefined（spec dispatch 前 window.event === undefined）；dispatch 期 = 正在派发的 event
   //（innermost，嵌套 dispatch 后恢复外层）；dispatch 后回 undefined。_dispatchWithBubble（part03）在派发

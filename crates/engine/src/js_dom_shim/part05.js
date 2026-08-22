@@ -795,6 +795,38 @@
         bodyInner = String(markup || '');
       }
     } catch (_e115) {}
+    // R177（js-dom M4）：markup 无根元素（about:blank / 空文档）时 documentElement
+    // 合成 html 元素——spec：HTML 文档解析产物恒有 html 根（即使空文档；WPT
+    // Node-removeChild 的 frame document 变体 `doc.documentElement.appendChild(s)`
+    // ——null 直接 TypeError）。轻量 plain 元素（HTML ns + appendChild 面）。
+    if (!docEl) {
+      var _r177syntheticHtml = {
+        nodeType: 1, tagName: 'HTML', nodeName: 'HTML', localName: 'html',
+        namespaceURI: 'http://www.w3.org/1999/xhtml', prefix: null,
+        childNodes: [], parentNode: null,
+        hasChildNodes: function () { return _r177syntheticHtml.childNodes.length > 0; },
+        get firstChild() { return _r177syntheticHtml.childNodes.length ? _r177syntheticHtml.childNodes[0] : null; },
+        get lastChild() { return _r177syntheticHtml.childNodes.length ? _r177syntheticHtml.childNodes[_r177syntheticHtml.childNodes.length - 1] : null; },
+        appendChild: function (c) {
+          if (!c) return c;
+          if (c.parentNode && c.parentNode.removeChild) { try { c.parentNode.removeChild(c); } catch (_e177r) {} }
+          _r177syntheticHtml.childNodes.push(c); c.parentNode = _r177syntheticHtml;
+          return c;
+        },
+        removeChild: function (c) {
+          for (var _r177i = 0; _r177i < _r177syntheticHtml.childNodes.length; _r177i++) {
+            if (_r177syntheticHtml.childNodes[_r177i] === c) {
+              _r177syntheticHtml.childNodes.splice(_r177i, 1);
+              c.parentNode = null;
+              return c;
+            }
+          }
+          return c;
+        },
+      };
+      try { Object.setPrototypeOf(_r177syntheticHtml, globalThis.Element ? globalThis.Element.prototype : Object.prototype); } catch (_e177p) {}
+      docEl = _r177syntheticHtml;
+    }
     try { doc.body.innerHTML = bodyInner; } catch (_eB) {}
     try {
       Object.defineProperty(doc, 'documentElement', {
@@ -867,7 +899,12 @@
       return el;
     };
     doc.createTextNode = function (text) {
-      var tn = { nodeType: 3, nodeName: '#text', data: String(text), parentNode: null };
+      // R177：ownerDocument 指源 doc（spec `dom-document-createtextnode` 产物归属
+      // ——WPT Node-removeChild frame 变体断言 `s.ownerDocument === doc`）。
+      // R177：childNodes 空数组（叶子节点视图——Node.prototype.removeChild 的
+      // own-childNodes 分支按视图校验抛 NotFoundError；无字段落 lenient 不抛，
+      // WPT `s.removeChild(doc)` 期望 throw）。
+      var tn = { nodeType: 3, nodeName: '#text', data: String(text), parentNode: null, ownerDocument: doc, childNodes: [] };
       try { Object.defineProperty(tn, 'textContent', { configurable: true, get: function () { return tn.data; } }); } catch (_eT) {}
       try { Object.setPrototypeOf(tn, globalThis.Text ? globalThis.Text.prototype : Object.prototype); } catch (_eT2) {}
       return tn;

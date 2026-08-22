@@ -1129,7 +1129,14 @@
         // 执行或 no-op）。remove()/removeChild 校验不受影响（ChildNode 面合法）。
         if ((isText || isComment || isPI)
             && (prop === 'appendChild' || prop === 'insertBefore' || prop === 'replaceChild')) {
-          return function () {
+          return function (child) {
+            // R177：WebIDL Node 类型校验前置（同元素 appendChild 修——null/非 Node
+            // 是 TypeError 先于叶子 HierarchyRequestError；WPT "Appending null to a
+            // text node/comment"）。
+            if (child === null || child === undefined || typeof child.nodeType !== 'number') {
+              throw new globalThis.TypeError(
+                "Failed to execute 'appendChild' on 'Node': parameter 1 is not of type 'Node'.");
+            }
             throw _zwDomException(
               'Nodes of type ' + ((isText && 3) || (isComment && 8) || 7) + ' cannot have children.',
               'HierarchyRequestError');
@@ -3086,6 +3093,36 @@
         }
         if (prop === 'appendChild') {
           return function(child) {
+            // R177（js-dom M4）：WebIDL Node 类型校验前置（spec WebIDL「nullable Node」
+            // ——null / 非 Node 对象抛 TypeError，先于 pre-insert 一切步骤；WPT
+            // Node-appendChild "WebIDL tests" / "Appending null to a *" 族——旧版
+            // null 落自身/祖先守卫后的 no-op 或 HierarchyRequestError，均非 TypeError）。
+            if (child === null || child === undefined || typeof child.nodeType !== 'number') {
+              throw new globalThis.TypeError(
+                "Failed to execute 'appendChild' on 'Node': parameter 1 is not of type 'Node'.");
+            }
+            // R177：Document 不能作 child（spec `dom-node-pre-insert` 步骤 1「node 是
+            // Document → HierarchyRequestError」；WPT "Appending a document"
+            // `document.body.appendChild(frameDoc)` 期望 throw——旧静默 no-op）。
+            if (child.nodeType === 9) {
+              throw _zwDomException('Nodes of type 9 cannot be inserted.', 'HierarchyRequestError');
+            }
+            // R177（js-dom M4）：跨文档 adopt（sel 父路径）——plain 子（无 handle——
+            // iframe 工厂/detached doc createElement 产物）append 到主文档元素后
+            // ownerDocument 重指主 document（spec `concept-node-adopt`；WPT
+            // Node-appendChild "Adopting an orphan/non-orphan"——`document.body
+            // .appendChild(frameDoc.createElement('a'))` 后断言归属）。handle 父
+            // 路径在下文 R81 plain 分支同款。
+            if (child && !child.__zwHandle && child.nodeType === 1) {
+              try {
+                var _r177md = globalThis.document;
+                Object.defineProperty(child, 'ownerDocument', {
+                  get: function () { return _r177md; },
+                  set: function () {},
+                  configurable: true,
+                });
+              } catch (_e177sa) {}
+            }
             // js-dom M4 R51：spec `dom-node-pre-insert` 校验——child 即 parent 自身 / 是 parent 的
             // 祖先 → HierarchyRequestError（WPT Range-mutations "paras[0].appendChild(paras[0])"
             // 非法用例段；旧 shim 不抛真执行 → JS registry 自环 → _zwHCCollectSubtree 无限递归）。
@@ -3128,6 +3165,20 @@
             if (child && !child.__zwHandle && handle && child.nodeType) {
               if (!_handleChildren[handle]) _handleChildren[handle] = [];
               _handleChildren[handle].push(child);
+              // R177（js-dom M4）：跨文档 adopt——plain 子（iframe 工厂/detached doc
+              // createElement 产物）append 到主文档元素后 ownerDocument 重指主
+              // document（spec `concept-node-adopt` pre-insert 步骤 4；WPT
+              // Node-appendChild "Adopting an orphan/non-orphan" 断言
+              // `s.ownerDocument === document`）。defineProperty 遮蔽工厂的
+              // own/数据属性（iframe 工厂产物的 ownerDocument 是数据字段）。
+              try {
+                var _r177mainDoc = globalThis.document;
+                Object.defineProperty(child, 'ownerDocument', {
+                  get: function () { return _r177mainDoc; },
+                  set: function () {},
+                  configurable: true,
+                });
+              } catch (_e177a) {}
               try {
                 var _r84Parent = _makeProxy(null, handle);
                 Object.defineProperty(child, 'parentNode', { get: function () { return _r84Parent; }, configurable: true });

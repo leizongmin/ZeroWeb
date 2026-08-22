@@ -2445,6 +2445,26 @@
         set textContent(_v) {},
         childNodes: [],
         hasChildNodes: function () { return false; },
+        // R177（js-dom M4）：DocumentType 是叶子节点——mutation 族抛
+        // HierarchyRequestError（spec `dom-node-pre-insert`「parent 不是
+        // Element/Document/DocumentFragment」；WPT Node-appendChild "Appending to
+        // a doctype" 期望 throw——旧缺方法直接 TypeError 非 DOMException）。
+        appendChild: function (child) {
+          if (child === null || child === undefined || typeof child.nodeType !== 'number') {
+            throw new globalThis.TypeError(
+              "Failed to execute 'appendChild' on 'Node': parameter 1 is not of type 'Node'.");
+          }
+          throw new (globalThis.DOMException || Error)(
+            'Nodes of type 10 cannot have children.', 'HierarchyRequestError');
+        },
+        insertBefore: function (child) {
+          if (child === null || child === undefined || typeof child.nodeType !== 'number') {
+            throw new globalThis.TypeError(
+              "Failed to execute 'insertBefore' on 'Node': parameter 1 is not of type 'Node'.");
+          }
+          throw new (globalThis.DOMException || Error)(
+            'Nodes of type 10 cannot have children.', 'HierarchyRequestError');
+        },
         contains: function (other) { return _zwNodeContains(dt, other); },
         compareDocumentPosition: function (other) { return _zwCompareDocumentPosition(dt, other); },
         // R81：主文档 doctype 导航面（WPT Node-properties doctype.nextSibling 期望 html——
