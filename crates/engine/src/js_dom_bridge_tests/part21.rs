@@ -627,6 +627,158 @@ fn test_cache_api_page_shim_add_and_add_all_wire() {
     assert!(!puts.iter().any(|request| request.contains("post.txt")));
 }
 
+/// Cache.addAll must validate all fetched responses before storing any entry.
+#[test]
+fn test_cache_api_page_shim_add_all_rejects_without_partial_puts() {
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let mut sandbox = V8Sandbox::with_config(zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    })
+    .unwrap();
+    let fetches: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
+    let fetches_for_callback = fetches.clone();
+    sandbox.register_callback(
+        "__zw_fetch",
+        Box::new(move |args| {
+            let url = args.get(2).cloned().unwrap_or_default();
+            fetches_for_callback.lock().unwrap().push(url.clone());
+            match url.as_str() {
+                "https://example.com/ok.txt" => "__zwfr:200\x1fOK\x1f\x1fok".to_string(),
+                "https://example.com/partial.txt" => "__zwfr:206\x1fPartial Content\x1f\x1fpartial".to_string(),
+                _ => "__zw_fetch_error:not-found".to_string(),
+            }
+        }),
+    );
+
+    let calls: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
+    let calls_for_callback = calls.clone();
+    sandbox.register_callback(
+        "__zw_cache_storage",
+        Box::new(move |args| {
+            let request = args.first().cloned().unwrap_or_default();
+            calls_for_callback.lock().unwrap().push(request.clone());
+            if request.contains(r#""op":"open""#) {
+                return r#"__zw_cache_ok:{"name":"assets"}"#.to_string();
+            }
+            if request.contains(r#""op":"cache_keys""#) {
+                return r#"__zw_cache_ok:{"requests":[]}"#.to_string();
+            }
+            "__zw_cache_error:unexpected put".to_string()
+        }),
+    );
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new("<html><body></body></html>".to_string()));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("https://example.com/page.html".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+
+    sandbox
+        .execute(
+            "globalThis.__cacheAddAllAtomic = 'pending';\
+             caches.open('assets').then(function (cache) {\
+               return cache.addAll(['https://example.com/ok.txt', 'https://example.com/partial.txt'])\
+                 .then(function () {\
+                   globalThis.__cacheAddAllAtomic = 'resolved';\
+                 }, function (error) {\
+                   return cache.keys().then(function (keys) {\
+                     globalThis.__cacheAddAllAtomic = [\
+                       String(error instanceof TypeError),\
+                       String(error.message),\
+                       String(keys.length)\
+                     ].join('|');\
+                   });\
+                 });\
+             }, function (error) {\
+               globalThis.__cacheAddAllAtomic = 'open-error:' + String(error && error.message ? error.message : error);\
+             });",
+        )
+        .unwrap();
+    for i in 0..8 {
+        sandbox.execute(&format!("globalThis.__cacheAddAllAtomicPump = {i};")).unwrap();
+    }
+
+    assert_eq!(
+        sandbox.execute("globalThis.__cacheAddAllAtomic").unwrap().value,
+        "true|Cache.put cannot store a 206 Partial Content response|0"
+    );
+    assert_eq!(
+        *fetches.lock().unwrap(),
+        vec![
+            "https://example.com/ok.txt".to_string(),
+            "https://example.com/partial.txt".to_string(),
+        ]
+    );
+    let calls = calls.lock().unwrap();
+    assert!(calls.iter().any(|request| request.contains(r#""op":"open""#)));
+    assert!(calls.iter().any(|request| request.contains(r#""op":"cache_keys""#)));
+    assert!(!calls.iter().any(|request| request.contains(r#""op":"put""#)));
+}
+
+/// Cache.addAll duplicate detection uses the request URL without fragment,
+/// matching Cache.put replacement semantics.
+#[test]
+fn test_cache_api_page_shim_add_all_rejects_fragment_duplicates() {
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let mut sandbox = V8Sandbox::with_config(zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    })
+    .unwrap();
+    let calls: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
+    let calls_for_callback = calls.clone();
+    sandbox.register_callback(
+        "__zw_cache_storage",
+        Box::new(move |args| {
+            let request = args.first().cloned().unwrap_or_default();
+            calls_for_callback.lock().unwrap().push(request.clone());
+            if request.contains(r#""op":"open""#) {
+                return r#"__zw_cache_ok:{"name":"assets"}"#.to_string();
+            }
+            "__zw_cache_error:unexpected request".to_string()
+        }),
+    );
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new("<html><body></body></html>".to_string()));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("https://example.com/page.html".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+
+    sandbox
+        .execute(
+            "globalThis.__cacheAddAllDuplicate = 'pending';\
+             caches.open('assets').then(function (cache) {\
+               return cache.addAll(['https://example.com/a.txt#one', 'https://example.com/a.txt#two'])\
+                 .then(function () {\
+                   globalThis.__cacheAddAllDuplicate = 'resolved';\
+                 }, function (error) {\
+                   globalThis.__cacheAddAllDuplicate = [\
+                     String(error.name),\
+                     String(error.message)\
+                   ].join('|');\
+                 });\
+             }, function (error) {\
+               globalThis.__cacheAddAllDuplicate = 'open-error:' + String(error && error.message ? error.message : error);\
+             });",
+        )
+        .unwrap();
+    sandbox.execute("globalThis.__cacheAddAllDuplicatePump = 1;").unwrap();
+
+    assert_eq!(
+        sandbox.execute("globalThis.__cacheAddAllDuplicate").unwrap().value,
+        "InvalidStateError|Cache.addAll duplicate requests"
+    );
+    let calls = calls.lock().unwrap();
+    assert_eq!(calls.len(), 1);
+    assert!(calls[0].contains(r#""op":"open""#));
+}
+
 /// Cache API shim 在没有宿主 bridge 时应 reject，而不是悬挂 Promise。
 #[test]
 fn test_cache_api_page_shim_rejects_without_host_bridge() {

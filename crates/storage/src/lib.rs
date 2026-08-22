@@ -34,6 +34,9 @@ pub enum StorageError {
     /// 无效键名。
     #[error("Invalid key: {0}")]
     InvalidKey(String),
+    /// WebIDL TypeError 等价的调用参数或状态错误。
+    #[error("Type error: {0}")]
+    Type(String),
     /// Object Store 未找到。
     #[error("Store not found: {0}")]
     StoreNotFound(String),
@@ -53,7 +56,8 @@ pub enum StorageError {
 
 #[cfg(test)]
 mod tests {
-    use crate::cache_api::{CacheRequest, CacheResponse, CacheStorage};
+    use crate::StorageError;
+    use crate::cache_api::{CacheQueryOptions, CacheRequest, CacheResponse, CacheStorage};
     use crate::indexed_db::{IdbDatabase, IdbKey, IdbKeyRange, IdbTransactionMode};
     use crate::local_storage::{StorageType, WebStorage};
     use crate::storage_manager::StorageManager;
@@ -653,7 +657,7 @@ mod tests {
         assert_eq!(all.len(), 2);
     }
 
-    /// 测试 Cache 在同一 URL 上分别缓存 GET 和 POST 请求，两者互不干扰。
+    /// 测试 Cache 只允许 GET 写入，同 URL 非 GET 查询默认不匹配。
     #[test]
     fn test_cache_same_url_different_methods_isolation() {
         let mut cs = CacheStorage::new();
@@ -665,18 +669,28 @@ mod tests {
         cache
             .put(get_req.clone(), CacheResponse::ok(b"get-resp".to_vec()))
             .unwrap();
-        cache
-            .put(post_req.clone(), CacheResponse::ok(b"post-resp".to_vec()))
-            .unwrap();
+        assert!(matches!(
+            cache.put(post_req.clone(), CacheResponse::ok(b"post-resp".to_vec())),
+            Err(StorageError::Type(_))
+        ));
 
-        // 各自匹配到各自的响应
         assert_eq!(cache.match_request(&get_req).unwrap().body, b"get-resp".to_vec());
-        assert_eq!(cache.match_request(&post_req).unwrap().body, b"post-resp".to_vec());
-        assert_eq!(cache.len(), 2, "不同方法的请求应视为独立条目");
+        assert!(cache.match_request(&post_req).is_none());
+        assert!(
+            cache
+                .match_request_with_options(
+                    &post_req,
+                    CacheQueryOptions {
+                        ignore_method: true,
+                        ..CacheQueryOptions::default()
+                    },
+                )
+                .is_some()
+        );
+        assert_eq!(cache.len(), 1, "非 GET 请求不应写入缓存");
 
-        // keys() 返回同一 URL 两次
         let keys = cache.keys();
-        assert_eq!(keys.len(), 2);
+        assert_eq!(keys.len(), 1);
     }
 
     /// 测试 StorageManager 同时清除所有 localStorage 和 sessionStorage 后，所有源均为空。
@@ -859,7 +873,7 @@ mod tests {
     fn test_cache_response_full_roundtrip_preserves_all_fields() {
         let mut cs = CacheStorage::new();
         let cache = cs.open("api");
-        let req = CacheRequest::with_method("https://example.com/api/login", "POST");
+        let req = CacheRequest::new("https://example.com/api/login");
 
         let resp = CacheResponse::new(201, b"created".to_vec())
             .with_header("Content-Type", "application/json")

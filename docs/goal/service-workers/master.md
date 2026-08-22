@@ -2,7 +2,7 @@
 
 **入口文档**: [../service-workers.md](../service-workers.md)
 **创建日期**: 2026-08-17（goal 拆分 bootstrap）
-**最后更新**: 2026-08-22（CacheStorage window baseline 全绿；SW fetch/cache WPT 基线待接入）
+**最后更新**: 2026-08-22（共享 Cache.put 可缓存性补强；SW fetch/cache WPT 基线待接入）
 
 ---
 
@@ -18,11 +18,12 @@ SW runtime `Cache.add()` / `Cache.addAll()` 可用同一 fetch→put 链路写�
 `CacheStorage`，并复用 `zero-storage` 的请求头快照与 Vary/`ignoreVary` 匹配语义；WPT fetch/cache 基线仍待后续切片，M3 控制语义继续推进。兄弟目标
 `storage-cache-api` 已完成 WebView/in-process 页面 `caches.open()` + `Cache.put()/match()` /
 `Cache.matchAll()` / `Cache.keys()` 与页面 `Cache.add()` / `Cache.addAll()` GET fetch→store
-链路，并已接入首批上游 CacheStorage `.any.js` window 面 WPT baseline
+链路；共享 `zero-storage::Cache::put()` 已拒绝非 GET、非 HTTP(S)、206 与 `Vary: *`
+不可缓存写入，并已接入首批上游 CacheStorage `.any.js` window 面 WPT baseline
 （4 case / 35 subtest / 35 Pass / 0 Fail），其中 delete-dooming 生命周期、DOMString
 code-unit name wire 与 Vary/`ignoreVary` 共享语义已落地。该 sibling 与当前 SW runtime
-链路共用 Cache API 语义，但 SW fetch/cache 专属 WPT baseline 和完整 cacheability 矩阵
-仍归后续切片。
+链路共用 Cache API 语义，但 SW fetch/cache 专属 WPT baseline 和 `Response.type`/opaque
+等剩余 cacheability 矩阵仍归后续切片。
 
 **M0 推荐决策**：抽取 `zero-script-sandbox::WorkerRuntime` 的独立线程/引擎/看门狗核心，
 新增 typed `ServiceWorkerRuntime`；production 由 browser process 的
@@ -217,8 +218,9 @@ code-unit name wire 与 Vary/`ignoreVary` 共享语义已落地。该 sibling �
 - ✅ M2-7：Service Worker runtime 暴露 worker-global `fetch()`；runtime 通过 typed
   `FetchRequested` / `CompleteFetch` host bridge 发起 browser-owned ordinary fetch，renderer/browser
   IPC、browser fetch proxy、WebView in-process fetch handler 均已接线；`Cache.add()` /
-  `Cache.addAll()` 基于该 fetch→put 链路写入 active registration `CacheStorage`。完整 WPT
-  fetch/cache baseline 仍待接入
+  `Cache.addAll()` 基于该 fetch→put 链路写入 active registration `CacheStorage`；共享
+  `zero-storage::Cache::put()` 已拒绝非 GET、非 HTTP(S)、206 与 `Vary: *` 不可缓存写入。
+  完整 WPT fetch/cache baseline 仍待接入
 - ✅ storage-cache-api 侧支撑：WebView/in-process 页面 `CacheStorage` 初始桥接已可通过共享
   `StorageManager` 执行 `caches.open/has/delete/keys/match` 与 `Cache.put/match/delete`；
   origin 由宿主页面 URL 推导，保持与 IndexedDB 相同单一 storage owner。该进展不等同于 SW

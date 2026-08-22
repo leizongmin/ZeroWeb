@@ -165,6 +165,7 @@ impl Cache {
 
     /// 缓存一对 Request/Response（如已存在则覆盖）。
     pub fn put(&mut self, request: CacheRequest, response: CacheResponse) -> Result<(), StorageError> {
+        validate_cache_put(&request, &response)?;
         if let Some(entry) = self
             .entries
             .iter_mut()
@@ -297,6 +298,39 @@ fn cache_entry_matches(entry: &CacheEntry, query: &CacheRequest, options: CacheQ
         && cache_vary_matches(&entry.response, &entry.request, query, options)
 }
 
+fn validate_cache_put(request: &CacheRequest, response: &CacheResponse) -> Result<(), StorageError> {
+    // https://w3c.github.io/ServiceWorker/#cache-put
+    if !request.method.eq_ignore_ascii_case("GET") {
+        return Err(StorageError::Type("Cache.put request method must be GET".to_string()));
+    }
+    let url = url::Url::parse(&request.url)
+        .map_err(|_| StorageError::Type("Cache.put request URL must be an HTTP(S) URL".to_string()))?;
+    if url.scheme() != "http" && url.scheme() != "https" {
+        return Err(StorageError::Type(
+            "Cache.put request URL must be an HTTP(S) URL".to_string(),
+        ));
+    }
+    if response.status == 206 {
+        return Err(StorageError::Type(
+            "Cache.put cannot store a 206 Partial Content response".to_string(),
+        ));
+    }
+    if response_vary_has_star(response) {
+        return Err(StorageError::Type(
+            "Cache.put cannot store a response with Vary: *".to_string(),
+        ));
+    }
+    Ok(())
+}
+
+fn response_vary_has_star(response: &CacheResponse) -> bool {
+    header_value(&response.headers, "vary").is_some_and(|vary| {
+        vary.split(',')
+            .map(str::trim)
+            .any(|field| field.eq_ignore_ascii_case("*"))
+    })
+}
+
 fn cache_vary_matches(
     response: &CacheResponse,
     cached_request: &CacheRequest,
@@ -417,6 +451,53 @@ mod tests {
     }
 
     #[test]
+    fn test_cache_put_rejects_uncacheable_requests_and_responses() {
+        let mut cache = Cache::new("v1");
+        let cases = [
+            (
+                CacheRequest::with_method("https://example.com/page", "POST"),
+                CacheResponse::ok(Vec::new()),
+                "method must be GET",
+            ),
+            (
+                CacheRequest::new("ftp://example.com/page"),
+                CacheResponse::ok(Vec::new()),
+                "HTTP(S) URL",
+            ),
+            (
+                CacheRequest::new("https://example.com/partial"),
+                CacheResponse::new(206, b"partial".to_vec()),
+                "206 Partial Content",
+            ),
+            (
+                CacheRequest::new("https://example.com/vary-star"),
+                CacheResponse::ok(Vec::new()).with_header("Vary", "Accept-Encoding, *"),
+                "Vary: *",
+            ),
+        ];
+
+        for (request, response, expected) in cases {
+            let error = cache.put(request, response).unwrap_err();
+            assert!(matches!(error, StorageError::Type(message) if message.contains(expected)));
+        }
+        assert!(cache.is_empty());
+
+        cache
+            .put(
+                CacheRequest::new("https://example.com/error-response"),
+                CacheResponse::new(0, Vec::new()),
+            )
+            .unwrap();
+        cache
+            .put(
+                CacheRequest::new("https://example.com/server-error"),
+                CacheResponse::new(500, b"server error".to_vec()),
+            )
+            .unwrap();
+        assert_eq!(cache.len(), 2);
+    }
+
+    #[test]
     fn test_cache_match_not_found() {
         let cache = Cache::new("v1");
         let req = CacheRequest::new("https://example.com/missing");
@@ -429,18 +510,22 @@ mod tests {
         let get_req = CacheRequest::new("https://example.com/api");
         let post_req = CacheRequest::with_method("https://example.com/api", "POST");
         cache.put(get_req.clone(), CacheResponse::ok(b"get".to_vec())).unwrap();
-        cache
-            .put(post_req.clone(), CacheResponse::ok(b"post".to_vec()))
-            .unwrap();
 
         let matched = cache.match_all(&post_req);
-        assert_eq!(matched.len(), 1);
-        assert_eq!(matched[0].body, b"post".to_vec());
+        assert!(matched.is_empty());
+        let ignored_method = cache.match_all_with_options(
+            &post_req,
+            CacheQueryOptions {
+                ignore_method: true,
+                ..CacheQueryOptions::default()
+            },
+        );
+        assert_eq!(ignored_method.len(), 1);
+        assert_eq!(ignored_method[0].body, b"get".to_vec());
 
         let keys = cache.request_keys();
-        assert_eq!(keys.len(), 2);
+        assert_eq!(keys.len(), 1);
         assert!(keys.iter().any(|key| key.url == get_req.url && key.method == "GET"));
-        assert!(keys.iter().any(|key| key.url == post_req.url && key.method == "POST"));
     }
 
     #[test]
@@ -476,28 +561,9 @@ mod tests {
     }
 
     #[test]
-    fn test_cache_query_options_ignore_fragment_for_relative_fallback() {
-        let mut cache = Cache::new("v1");
-        cache
-            .put(
-                CacheRequest::new("/api?version=1#old"),
-                CacheResponse::ok(b"cached".to_vec()),
-            )
-            .unwrap();
-
-        assert!(cache.match_request(&CacheRequest::new("/api?version=1#new")).is_some());
-        assert!(
-            cache
-                .match_request_with_options(
-                    &CacheRequest::new("/api?version=2#new"),
-                    CacheQueryOptions {
-                        ignore_search: true,
-                        ignore_method: false,
-                        ignore_vary: false,
-                    },
-                )
-                .is_some()
-        );
+    fn test_cache_urls_match_relative_fallback_ignores_fragment() {
+        assert!(cache_urls_match("/api?version=1#old", "/api?version=1#new", false));
+        assert!(cache_urls_match("/api?version=1#old", "/api?version=2#new", true));
     }
 
     #[test]
@@ -511,7 +577,7 @@ mod tests {
             .unwrap();
         cache
             .put(
-                CacheRequest::with_method("https://example.com/api?two", "POST"),
+                CacheRequest::new("https://example.com/api?two"),
                 CacheResponse::ok(b"two".to_vec()),
             )
             .unwrap();
@@ -849,12 +915,13 @@ mod tests {
         cache
             .put(get_req.clone(), CacheResponse::ok(b"get_resp".to_vec()))
             .unwrap();
-        cache
-            .put(post_req.clone(), CacheResponse::ok(b"post_resp".to_vec()))
-            .unwrap();
-        assert_eq!(cache.len(), 2);
+        assert!(matches!(
+            cache.put(post_req.clone(), CacheResponse::ok(b"post_resp".to_vec())),
+            Err(StorageError::Type(_))
+        ));
+        assert_eq!(cache.len(), 1);
         assert_eq!(cache.match_request(&get_req).unwrap().body, b"get_resp".to_vec());
-        assert_eq!(cache.match_request(&post_req).unwrap().body, b"post_resp".to_vec());
+        assert!(cache.match_request(&post_req).is_none());
     }
 
     #[test]
@@ -1114,21 +1181,31 @@ mod tests {
         let put_req = CacheRequest::with_method(url, "PUT");
 
         cache.put(get_req.clone(), CacheResponse::ok(b"get".to_vec())).unwrap();
-        cache
-            .put(post_req.clone(), CacheResponse::ok(b"post".to_vec()))
-            .unwrap();
-        cache.put(put_req.clone(), CacheResponse::ok(b"put".to_vec())).unwrap();
-        assert_eq!(cache.len(), 3);
+        assert!(matches!(
+            cache.put(post_req.clone(), CacheResponse::ok(b"post".to_vec())),
+            Err(StorageError::Type(_))
+        ));
+        assert!(matches!(
+            cache.put(put_req.clone(), CacheResponse::ok(b"put".to_vec())),
+            Err(StorageError::Type(_))
+        ));
+        assert_eq!(cache.len(), 1);
 
-        // 删除 POST 条目
-        assert!(cache.delete(&post_req));
-        assert_eq!(cache.len(), 2);
+        // 非 GET 查询不匹配，除非显式忽略方法。
+        assert!(!cache.delete(&post_req));
+        assert_eq!(cache.len(), 1);
 
-        // GET 和 PUT 仍可匹配
         assert_eq!(cache.match_request(&get_req).unwrap().body, b"get".to_vec());
-        assert_eq!(cache.match_request(&put_req).unwrap().body, b"put".to_vec());
-        // POST 已无法匹配
         assert!(cache.match_request(&post_req).is_none());
+
+        assert!(cache.delete_with_options(
+            &put_req,
+            CacheQueryOptions {
+                ignore_method: true,
+                ..CacheQueryOptions::default()
+            },
+        ));
+        assert!(cache.is_empty());
     }
 
     // ── Cache API 边界条件测试 ──

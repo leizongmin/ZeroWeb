@@ -2,7 +2,7 @@
 
 **入口文档**: [../storage-cache-api.md](../storage-cache-api.md)
 **创建日期**: 2026-08-17（goal 拆分 bootstrap）
-**最后更新**: 2026-08-22（M2 CacheStorage window baseline 全绿）
+**最后更新**: 2026-08-22（M2 Cache.put/addAll 可缓存性核心矩阵）
 
 ---
 
@@ -16,10 +16,13 @@ callback 进入共享 `StorageManager`，origin 由宿主页面 URL 推导；`Ca
 `Cache.addAll()` 已复用页面 `fetch()` 与 `Cache.put()` 完成 GET 成功响应的 fetch→store
 链路。`ignoreSearch`/`ignoreMethod` 查询选项已在页面 Cache API 与 Service Worker runtime
 Cache API 中接入；`ignoreVary` 已基于请求头快照和响应 `Vary` 匹配语义落地。
+共享 `zero-storage::Cache::put()` 已拒绝非 GET request、非 HTTP(S) URL、206 Partial
+Content response 与 `Vary: *` response，页面 `Cache.addAll()` 已改为先完成全部 fetch/
+cacheability 校验再串行写入，避免失败批次部分落库。
 2026-08-22 已接入首批 4 个上游 CacheStorage `.any.js` window 面 WPT 基线，WebIDL
 brand、缺参 TypeError、`CacheStorage.keys()` 创建顺序、Vary 匹配、delete-dooming
 生命周期与 DOMString code-unit name wire 修复后双跑稳定为 35 subtest / 35 Pass /
-0 Fail。持久化、完整 Response 可缓存性矩阵和更大范围 WPT 导入仍待后续切片。
+0 Fail。持久化、更大范围 WPT 导入与 `Response.type`/opaque 等剩余可缓存性矩阵仍待后续切片。
 
 **与兄弟 goal 的边界**：
 - [storage-indexeddb](../archive/storage-indexeddb.md)（已归档）— IDB 归其管
@@ -39,7 +42,8 @@ brand、缺参 TypeError、`CacheStorage.keys()` 创建顺序、Vary 匹配、de
 - ✅ WPT `cache-storage` window 首批已导入：4 case / 35 subtest，35 Pass / 0 Fail
 - 🚧 add/addAll 的页面 fetch 链路、Cache API 返回对象 brand、缺参 TypeError、
   `CacheStorage.keys()` 创建顺序、Vary 匹配、delete-dooming 与 DOMString name wire
-  已完成；Response 可缓存性完整判定未实现
+  已完成；`Cache.put` 非 GET/非 HTTP(S)/206/`Vary: *` 可缓存性已完成，
+  `Response.type`/opaque 等剩余矩阵未实现
 
 ## 缺口清单
 
@@ -48,13 +52,13 @@ brand、缺参 TypeError、`CacheStorage.keys()` 创建顺序、Vary 匹配、de
 | C1 | WPT cache-storage 用例覆盖为零 | ✅ M1 window 首批基线已接入 |
 | C2 | 页面 `caches` 全局缺失（零接线） | ✅ M1 初始桥接完成；全 API 语义继续归 C4 |
 | C3 | 无持久化 | ⬜ M3 |
-| C4 | Request/Response 集成（add/addAll/可缓存性） | 🚧 M2 页面 `add/addAll` GET + `Response.ok` 路径、返回对象 brand、缺参 TypeError、Vary 匹配、delete-dooming、DOMString name wire 完成；完整可缓存性矩阵待补 |
+| C4 | Request/Response 集成（add/addAll/可缓存性） | 🚧 M2 页面 `add/addAll` GET + `Response.ok` 路径、返回对象 brand、缺参 TypeError、Vary 匹配、delete-dooming、DOMString name wire、`Cache.put` 非 GET/非 HTTP(S)/206/`Vary: *` 拒绝与 `addAll` 失败不部分落库完成；`Response.type`/opaque 等剩余矩阵待补 |
 | C5 | Cache.matchAll/Cache.keys 页面桥接 | ✅ M2；`ignoreSearch`/`ignoreMethod`/`ignoreVary` 已接线 |
 
 ## 下一步计划
 
-1. **M2 切片 5**：补 `add/addAll` 完整 Response 可缓存性判定
-2. **M2 切片 6**：扩大 `cache-storage` window 面 WPT 导入范围并同步 `imported-tests.txt`
+1. **M2 切片 6**：扩大 `cache-storage` window 面 WPT 导入范围并同步 `imported-tests.txt`
+2. **M2 切片 7**：补 `Response.type`/opaque 等剩余可缓存性矩阵
 3. **M3**：per-origin 持久化与跨会话 e2e
 
 **碰撞管理**：开工前先 `git log --since="14 days ago" -- crates/engine/src/js_dom_shim/`
@@ -65,7 +69,7 @@ brand、缺参 TypeError、`CacheStorage.keys()` 创建顺序、Vary 匹配、de
 | 里程碑 | 状态 |
 |--------|------|
 | M1 — WPT cache-storage 基线 + caches 骨架 | ✅ 页面骨架 + 首批 window WPT 基线已接入 |
-| M2 — Cache 全 API + 查询语义 | 🚧 `Cache.matchAll()` / `Cache.keys()`、`ignoreSearch`/`ignoreMethod`/`ignoreVary`、页面 `add/addAll` GET fetch→store、返回对象 brand、缺参 TypeError、`CacheStorage.keys()` 创建顺序、delete-dooming 与 DOMString name wire 已接入；完整可缓存性待完成 |
+| M2 — Cache 全 API + 查询语义 | 🚧 `Cache.matchAll()` / `Cache.keys()`、`ignoreSearch`/`ignoreMethod`/`ignoreVary`、页面 `add/addAll` GET fetch→store、返回对象 brand、缺参 TypeError、`CacheStorage.keys()` 创建顺序、delete-dooming、DOMString name wire、`Cache.put` 核心可缓存性拒绝与 `addAll` 原子失败已接入；剩余可缓存性与更大 WPT 覆盖待完成 |
 | M3 — 持久化 + 剩余语义收尾 | ⬜ |
 
 ## 验证基线
@@ -117,4 +121,15 @@ brand、缺参 TypeError、`CacheStorage.keys()` 创建顺序、Vary 匹配、de
   - `cargo test -p zero-webview cache_storage -- --nocapture`：6 passed
   - `./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit 900 -- cargo build --release --bin zero-wpt-runner`：passed
   - `./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit 900 -- python3 tests/wpt-runner/scripts/run-cache-storage-window-baseline.py --runner ./target/release/zero-wpt-runner --wpt-data tests/wpt-runner/wpt-data/.cache-storage-window-root --output docs/goal/storage-cache-api/evidence/2026-08-22-cache-storage-window-baseline.json --summary docs/goal/storage-cache-api/evidence/2026-08-22-cache-storage-window-baseline.md`：4 cases / 35 subtests / 35 Pass / 0 Fail，double-run deterministic
+- 2026-08-22 M2 Cache.put/addAll 核心可缓存性矩阵：
+  - `cargo test -p zero-storage cache_api::tests:: -- --nocapture`：56 passed
+  - `cargo test -p zero-storage cache -- --nocapture`：75 passed
+  - `cargo test -p zero-page-runtime cache_storage_handler_ -- --nocapture`：11 passed
+  - `cargo test -p zero-engine test_cache_api_page_shim -- --nocapture`：7 passed
+  - `cargo test -p zero-webview cache_storage -- --nocapture`：7 passed
+  - `cargo fmt --all -- --check`：passed
+  - `./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit 900 -- cargo clippy -p zero-storage -p zero-page-runtime -p zero-engine -p zero-webview --all-targets -- -D warnings`：passed
+  - `./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit 1200 -- cargo clippy --workspace --all-targets -- -D warnings`：passed
+  - `CARGO_BUILD_JOBS=1 ./target/test-guard --per-proc-mem 4 --total-mem 20 --time-limit 1800 -- cargo test --workspace --jobs 1`：passed
+  - 证据：[M2 Cache.put/addAll cacheability](evidence/2026-08-22-m2-cache-cacheability.md)
 - 质量门禁：`cargo fmt` + `cargo clippy --workspace --all-targets -- -D warnings` 全过

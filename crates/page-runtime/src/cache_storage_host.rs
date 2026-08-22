@@ -634,6 +634,7 @@ fn storage_error(error: zero_storage::StorageError) -> String {
     match error {
         zero_storage::StorageError::QuotaExceeded(message) => format!("QuotaExceededError: {message}"),
         zero_storage::StorageError::InvalidKey(message) => format!("DataError: {message}"),
+        zero_storage::StorageError::Type(message) => format!("TypeError: {message}"),
         zero_storage::StorageError::StoreNotFound(message) => format!("NotFoundError: {message}"),
         zero_storage::StorageError::KeyNotFound(message) => format!("NotFoundError: {message}"),
         zero_storage::StorageError::Serialization(message) => format!("DataError: {message}"),
@@ -856,8 +857,8 @@ mod tests {
             json!({
                 "op": "put",
                 "cache_name": "runtime",
-                "request": {"url": "https://example.com/data", "method": "POST"},
-                "response": {"status": 201, "statusText": "Created", "headers": "", "body": "post"}
+                "request": {"url": "https://example.com/other", "method": "GET"},
+                "response": {"status": 201, "statusText": "Created", "headers": "", "body": "other"}
             }),
         );
 
@@ -870,7 +871,7 @@ mod tests {
             listed["requests"],
             json!([
                 {"url": "https://example.com/data", "method": "GET"},
-                {"url": "https://example.com/data", "method": "POST"}
+                {"url": "https://example.com/other", "method": "GET"}
             ])
         );
 
@@ -880,12 +881,13 @@ mod tests {
             json!({
                 "op": "cache_keys",
                 "cache_name": "runtime",
-                "request": {"url": "https://example.com/data", "method": "POST"}
+                "request": {"url": "https://example.com/data", "method": "POST"},
+                "options": {"ignoreMethod": true}
             }),
         );
         assert_eq!(
             filtered_keys["requests"],
-            json!([{"url": "https://example.com/data", "method": "POST"}])
+            json!([{"url": "https://example.com/data", "method": "GET"}])
         );
 
         let matched = call(
@@ -894,12 +896,13 @@ mod tests {
             json!({
                 "op": "match_all",
                 "cache_name": "runtime",
-                "request": {"url": "https://example.com/data", "method": "POST"}
+                "request": {"url": "https://example.com/data", "method": "POST"},
+                "options": {"ignoreMethod": true}
             }),
         );
         let responses = matched["responses"].as_array().unwrap();
         assert_eq!(responses.len(), 1);
-        assert!(responses[0].as_str().unwrap().ends_with("post"));
+        assert!(responses[0].as_str().unwrap().ends_with("get"));
 
         let all = call(
             &handler,
@@ -907,6 +910,24 @@ mod tests {
             json!({"op": "match_all", "cache_name": "runtime"}),
         );
         assert_eq!(all["responses"].as_array().unwrap().len(), 2);
+    }
+
+    #[test]
+    fn cache_storage_handler_maps_cacheability_errors_to_type_error() {
+        let handler = cache_storage_handler(Arc::new(Mutex::new(StorageManager::new())));
+        let response = handler(
+            "https://example.com",
+            &request(json!({
+                "op": "put",
+                "cache_name": "runtime",
+                "request": {"url": "https://example.com/data", "method": "GET"},
+                "response": {"status": 206, "statusText": "Partial Content", "headers": "", "body": "partial"}
+            })),
+        )
+        .unwrap_err();
+
+        assert!(response.starts_with("TypeError: "));
+        assert!(response.contains("206 Partial Content"));
     }
 
     #[test]

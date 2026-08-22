@@ -212,6 +212,84 @@ fn page_cache_api_add_and_add_all_fetch_then_store() {
 }
 
 #[test]
+fn page_cache_api_rejects_uncacheable_put_and_atomic_add_all() {
+    let config = WebViewConfig {
+        fetch_handler: Some(Arc::new(|request| match request.url.as_str() {
+            "https://cache.example/app/ok.txt" => Ok(FetchResponse {
+                status: 200,
+                status_text: "OK".to_string(),
+                headers: Vec::new(),
+                body: "ok".to_string(),
+                body_bytes: None,
+            }),
+            "https://cache.example/app/missing.txt" => Ok(FetchResponse {
+                status: 404,
+                status_text: "Not Found".to_string(),
+                headers: Vec::new(),
+                body: "missing".to_string(),
+                body_bytes: None,
+            }),
+            other => Err(format!("unexpected fetch URL: {other}")),
+        })),
+        ..Default::default()
+    };
+    let mut webview = WebView::new_with_indexed_db_owner(config, IndexedDbOwner::in_memory());
+    webview.prepare_document_state("https://cache.example/app/page.html");
+
+    webview
+        .execute_script(
+            r#"
+            (async function () {
+              try {
+                const cache = await caches.open('assets');
+                const results = [];
+                async function capture(label, fn) {
+                  try {
+                    await fn();
+                    results.push(label + ':resolved');
+                  } catch (error) {
+                    results.push(label + ':' + String(error instanceof TypeError) + ':' + String(error.message));
+                  }
+                }
+                await capture('post', () => cache.put(
+                  new Request('https://cache.example/app/post.txt', {method: 'POST'}),
+                  new Response('post')
+                ));
+                await capture('ftp', () => cache.put('ftp://cache.example/app/file.txt', new Response('ftp')));
+                await capture('partial', () => cache.put(
+                  'https://cache.example/app/partial-put.txt',
+                  new Response('partial', {status: 206})
+                ));
+                await capture('vary', () => cache.put(
+                  'https://cache.example/app/vary.txt',
+                  new Response('vary', {headers: {'vary': 'Accept-Encoding, *'}})
+                ));
+                await capture('addAll', () => cache.addAll([
+                  'https://cache.example/app/ok.txt',
+                  'https://cache.example/app/missing.txt'
+                ]));
+                const ok = await cache.match('https://cache.example/app/ok.txt');
+                const keys = await cache.keys();
+                globalThis.__cacheRejectResult = results.concat([
+                  'okMissing:' + String(ok === undefined),
+                  'keys:' + String(keys.length)
+                ]).join('|');
+              } catch (error) {
+                globalThis.__cacheRejectResult = 'error:' + String(error && error.message ? error.message : error);
+              }
+            })();
+            "#,
+        )
+        .unwrap();
+    pump_microtasks(&mut webview);
+
+    assert_eq!(
+        webview.execute_script("globalThis.__cacheRejectResult").unwrap(),
+        "post:true:Cache.put request method must be GET|ftp:true:Cache.put request URL must be an HTTP(S) URL|partial:true:Cache.put cannot store a 206 Partial Content response|vary:true:Cache.put cannot store a response with Vary: *|addAll:true:Cache.addAll fetch response is not ok|okMissing:true|keys:0"
+    );
+}
+
+#[test]
 fn page_cache_storage_names_are_domstrings_in_inline_scripts() {
     let mut webview = WebView::new_with_indexed_db_owner(WebViewConfig::default(), IndexedDbOwner::in_memory());
     webview.prepare_document_state("https://cache.example/app/page.html");

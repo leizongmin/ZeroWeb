@@ -1063,6 +1063,7 @@ fn storage_error(error: StorageError) -> String {
     match error {
         StorageError::QuotaExceeded(message) => format!("QuotaExceededError: {message}"),
         StorageError::InvalidKey(message) => format!("DataError: {message}"),
+        StorageError::Type(message) => format!("TypeError: {message}"),
         StorageError::StoreNotFound(store) => format!("NotFoundError: object store '{store}' does not exist"),
         StorageError::KeyNotFound(key) => format!("NotFoundError: key '{key}' does not exist"),
         StorageError::Serialization(message) => format!("DataCloneError: {message}"),

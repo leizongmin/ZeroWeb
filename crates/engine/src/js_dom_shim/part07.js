@@ -100,6 +100,54 @@
     };
   }
 
+  function _zwCacheRequestCacheKey(request) {
+    var url = String(request.url || '');
+    if (typeof URL === 'function') {
+      try {
+        var parsed = new URL(url);
+        parsed.hash = '';
+        url = parsed.href;
+      } catch (_e) {
+        url = url.split('#')[0];
+      }
+    } else {
+      url = url.split('#')[0];
+    }
+    return String(request.method || 'GET').toUpperCase() + ' ' + url;
+  }
+
+  function _zwCacheRequestIsHttp(request) {
+    var url = String(request.url || '');
+    return /^https?:/i.test(url);
+  }
+
+  function _zwCacheResponseVaryHasStar(response) {
+    if (!response || !response.headers || typeof response.headers.get !== 'function') return false;
+    var vary = response.headers.get('vary');
+    if (vary == null) return false;
+    var fields = String(vary).split(',');
+    for (var i = 0; i < fields.length; i++) {
+      if (fields[i].trim().toLowerCase() === '*') return true;
+    }
+    return false;
+  }
+
+  function _zwCacheValidatePut(request, response) {
+    // https://w3c.github.io/ServiceWorker/#cache-put
+    if (String(request.method || 'GET').toUpperCase() !== 'GET') {
+      throw new TypeError('Cache.put request method must be GET');
+    }
+    if (!_zwCacheRequestIsHttp(request)) {
+      throw new TypeError('Cache.put request URL must be an HTTP(S) URL');
+    }
+    if ((response.status | 0) === 206) {
+      throw new TypeError('Cache.put cannot store a 206 Partial Content response');
+    }
+    if (_zwCacheResponseVaryHasStar(response)) {
+      throw new TypeError('Cache.put cannot store a response with Vary: *');
+    }
+  }
+
   function _zwCacheRequestFromWire(raw) {
     if (!raw || typeof raw.url !== 'string') throw new TypeError('malformed Cache request');
     return new Request(raw.url, {
@@ -234,10 +282,13 @@
     return new Promise(function (resolve, reject) {
       try {
         if (!hasArguments) throw new TypeError('Cache.put requires a request and response');
+        var cacheRequest = request instanceof Request ? request : new Request(request);
+        var cacheResponse = response instanceof Response ? response : new Response(response);
+        _zwCacheValidatePut(cacheRequest, cacheResponse);
         var hostRequest = {
           op: 'put',
-          request: _zwCacheRequestWire(request),
-          response: _zwCacheResponseWire(response)
+          request: _zwCacheRequestWire(cacheRequest),
+          response: _zwCacheResponseWire(cacheResponse)
         };
         _zwCacheSetNameWire(hostRequest, 'cache_name', cache._name);
         _zwCacheSetIdWire(hostRequest, cache);
@@ -257,10 +308,14 @@
       if (cacheRequest.method !== 'GET') {
         return Promise.reject(new TypeError('Cache.add only supports GET requests'));
       }
+      if (!_zwCacheRequestIsHttp(cacheRequest)) {
+        return Promise.reject(new TypeError('Cache.add request URL must be an HTTP(S) URL'));
+      }
       return fetch(cacheRequest.clone()).then(function (response) {
         if (!response || !response.ok) {
           throw new TypeError('Cache.add fetch response is not ok');
         }
+        _zwCacheValidatePut(cacheRequest, response);
         return cache.put(cacheRequest, response);
       });
     } catch (error) {
@@ -271,10 +326,41 @@
   Cache.prototype.addAll = function (requests) {
     var cache = this;
     try {
+      if (arguments.length < 1) throw new TypeError('Cache.addAll requires requests');
       var list = Array.prototype.slice.call(requests);
-      return Promise.all(list.map(function (request) {
-        return cache.add(request);
-      })).then(function () {
+      var cacheRequests = list.map(function (request) {
+        var cacheRequest = request instanceof Request ? request : new Request(request);
+        if (cacheRequest.method !== 'GET') {
+          throw new TypeError('Cache.addAll only supports GET requests');
+        }
+        if (!_zwCacheRequestIsHttp(cacheRequest)) {
+          throw new TypeError('Cache.addAll request URL must be an HTTP(S) URL');
+        }
+        return cacheRequest;
+      });
+      var seen = {};
+      for (var i = 0; i < cacheRequests.length; i++) {
+        var key = _zwCacheRequestCacheKey(cacheRequests[i]);
+        if (seen[key]) {
+          throw new (globalThis.DOMException || Error)('Cache.addAll duplicate requests', 'InvalidStateError');
+        }
+        seen[key] = true;
+      }
+      return Promise.all(cacheRequests.map(function (cacheRequest) {
+        return fetch(cacheRequest.clone()).then(function (response) {
+          if (!response || !response.ok) {
+            throw new TypeError('Cache.addAll fetch response is not ok');
+          }
+          _zwCacheValidatePut(cacheRequest, response);
+          return { request: cacheRequest, response: response };
+        });
+      })).then(function (entries) {
+        var chain = Promise.resolve();
+        entries.forEach(function (entry) {
+          chain = chain.then(function () { return cache.put(entry.request, entry.response); });
+        });
+        return chain;
+      }).then(function () {
         return undefined;
       });
     } catch (error) {
