@@ -212,6 +212,16 @@ fn r3690_perceptual_colors_reject_non_finite_components() {
 }
 
 #[test]
+fn r3691_color_function_rejects_non_finite_components() {
+    assert!(parse_color("color(srgb 1e999 0 0)").is_none());
+    assert!(parse_color("color(display-p3 0 1e999 0)").is_none());
+    assert!(parse_color("color(xyz-d65 0 0 1e999)").is_none());
+    assert!(parse_color("color(srgb 0 0 0 / 1e999)").is_none());
+    assert!(parse_color("color(srgb 1.5 -0.5 0)").is_some());
+    assert!(parse_color("color(display-p3 0% 60% 0%)").is_some());
+}
+
+#[test]
 fn test_hwb_to_rgba_all_sectors() {
     // Sector 0: h=0..60
     let (r, g, b, _a) = hwb_to_rgba(0.0, 0.0, 0.0, 1.0);

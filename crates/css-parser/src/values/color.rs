@@ -374,7 +374,7 @@ fn parse_color_function(value: &str) -> Option<ColorValue> {
     let c1 = parse_color_number(comps[1])?;
     let c2 = parse_color_number(comps[2])?;
     let a = if let Some(ap) = slash_alpha {
-        parse_alpha_value(ap)?
+        parse_finite_alpha_value(ap)?
     } else {
         1.0
     };
@@ -508,12 +508,14 @@ fn parse_color_number(s: &str) -> Option<f64> {
     }
     // CSS Color 4：color() 预定义空间分量可为 <number>（0-1）或 <percentage>（0-100% → 0-1）。
     // driving: css-color predefined-002（color(srgb 0% 60% 0%) ≡ #009900）。
-    // 合法性同 parse_color_component（NaN 拒绝、尾点拒绝、溢出钳制）。
-    if let Some(pct) = s.strip_suffix('%') {
-        let v = parse_color_number_value(pct)?;
-        return Some(v / 100.0);
-    }
-    parse_color_number_value(s)
+    // https://drafts.csswg.org/css-color-4/#color-function
+    // CSS numeric tokens do not admit NaN/Infinity; reject non-finite values before conversion.
+    let v = if let Some(pct) = s.strip_suffix('%') {
+        parse_color_number_value(pct)? / 100.0
+    } else {
+        parse_color_number_value(s)?
+    };
+    v.is_finite().then_some(v)
 }
 
 /// 解析 hsl() / hsla() 函数。
