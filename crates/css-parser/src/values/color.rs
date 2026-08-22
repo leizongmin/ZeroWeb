@@ -705,7 +705,7 @@ fn parse_color_mix_component(s: &str) -> Option<ColorMixComponent> {
     if let Some(ws) = trailing_percentage_pos(s) {
         let color_str = s[..ws].trim();
         let pct_str = s[ws..].trim();
-        let pct = pct_str.trim_end_matches('%').parse::<f64>().ok()?;
+        let pct = parse_color_mix_percentage(pct_str)?;
         let color = parse_color(color_str)?;
         return Some(ColorMixComponent {
             color,
@@ -717,6 +717,13 @@ fn parse_color_mix_component(s: &str) -> Option<ColorMixComponent> {
         color,
         percentage: None,
     })
+}
+
+fn parse_color_mix_percentage(s: &str) -> Option<f64> {
+    let pct = s.trim().strip_suffix('%')?.trim();
+    // https://drafts.csswg.org/css-values-4/#percentages
+    let value = pct.parse::<f64>().ok()?;
+    value.is_finite().then_some(value)
 }
 
 /// 返回末尾百分比在 `s` 中的起始字节位置（最后一个顶层空白处），无则 None。
@@ -734,7 +741,7 @@ fn trailing_percentage_pos(s: &str) -> Option<usize> {
     }
     let ws = last_ws?;
     let after = s[ws..].trim();
-    if after.ends_with('%') && after[..after.len() - 1].parse::<f64>().is_ok() {
+    if parse_color_mix_percentage(after).is_some() {
         Some(ws)
     } else {
         None

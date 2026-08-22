@@ -1720,6 +1720,13 @@ fn test_parse_color_mix_srgb() {
 }
 
 #[test]
+fn test_parse_color_mix_rejects_non_finite_percentages() {
+    assert!(super::super::parse_color("color-mix(in srgb, red 1e999%, blue)").is_none());
+    assert!(super::super::parse_color("color-mix(in srgb, red NaN%, blue)").is_none());
+    assert!(super::super::parse_color("color-mix(in srgb, red, blue 1e999%)").is_none());
+}
+
+#[test]
 /// R2268：RCS 相对色 identity 快捷——`<func>(from currentColor <自然关键字>)` → CurrentColor。
 /// driving: css-color relative-currentcolor-*（14 identity 案）。
 fn test_parse_relative_color_identity() {
