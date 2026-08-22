@@ -5763,19 +5763,43 @@
     // 并入 pending added（父 sel 匹配 + 尚未在快照内）。
     for (var a = 0; a < bucket.added.length; a++) {
       var nd = bucket.added[a];
-      if (!nd || !nd.__zwHandle) continue;
-      var link = _zwNodeParent[nd.__zwHandle];
-      if (!link || link.parentSel !== sel) continue;
-      var seen = false;
-      for (var s = 0; s < res.length; s++) { if (res[s] === nd) { seen = true; break; } }
-      if (seen) continue;
+      // R182（js-dom M4）：sel 子形态（静态页面元素的同步移动——insertAdjacentElement
+      // 的 #testN 形态）。无 __zwHandle，反链经 `_zwSelPendingParent` 槽（insertAdjacent
+      // sel 分支记录 { parentSel, nextSibling }——与 handle 反链同语义的 sel 对偶）。
+      var link = null;
+      if (nd && nd.__zwHandle) {
+        link = _zwNodeParent[nd.__zwHandle];
+      } else if (nd && nd.__zwSelector && nd._zwSelPendingParent) {
+        link = nd._zwSelPendingParent;
+      }
+      if (!nd || !link) continue;
+      if (link.parentSel !== sel) continue;
+      // R182：sel 子**重定位**语义——快照内既有节点被移到新位置（同父移动：旧位剔除
+      // + 新位插入；seen 检查会使快照旧位永远胜出——WPT insertAdjacentElement 的
+      // beforebegin 同父移动形态）。handle 子保持 seen 跳过（快照不含 pending 节点，
+      // seen 命中即重复记账，R51 原语义）。
+      var isSelChild182 = !nd.__zwHandle && !!nd.__zwSelector;
+      if (!isSelChild182) {
+        var seen = false;
+        for (var s = 0; s < res.length; s++) { if (res[s] === nd) { seen = true; break; } }
+        if (seen) continue;
+      }
       // nextSibling 定位（_mo_notify record 的 nextSibling 字段，R47）。ref 已在列表内 → 插其前；
-      // 否则（null=append / ref 也 pending）→ 尾部。
+      // 否则（null=append / ref 也 pending）→ 尾部。R182：匹配按**节点 identity**（不再限定
+      // __zwSelector——text ref（afterend 的「旧 nextSibling 是文本节点」形态）同样可定位）。
       var pos = res.length;
-      if (link.nextSibling && link.nextSibling.__zwSelector) {
+      if (link.nextSibling) {
         for (var q = 0; q < res.length; q++) {
           if (res[q] === link.nextSibling) { pos = q; break; }
         }
+      }
+      // sel 子旧位剔除：移动语义（旧父可能就是同一父——快照基底已含本节点），
+      // 先删旧位再按 nextSibling 插新位。
+      if (isSelChild182) {
+        for (var d0 = res.length - 1; d0 >= 0; d0--) {
+          if (res[d0] === nd) { res.splice(d0, 1); break; }
+        }
+        if (pos > res.length) pos = res.length;
       }
       res.splice(pos, 0, nd);
     }

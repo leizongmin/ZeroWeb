@@ -4283,13 +4283,72 @@
               _mo_notify(sel, handle, { type: 'childList', addedNodes: [element], removedNodes: [] });
               return element;
             }
-            // R133 评估记录：sel 子（静态页面元素——无 handle，WPT 用例 #test1-4 形态）
-            // 的同步移动需要「sel 子 pending overlay」（_zwSelParentOf 移动链 + 新/旧父桶
-            // 记账），首版实现 bucket 结构与 _zwPendBucket 并行集（addedSet/removedSet）
-            // 不一致致 _zwHCLiveInvalidate TypeError、二次移动 overlay 状态漂移——深结构
-            // 记 master.md（M1 L2 live-document 后 sel/handle 双形态统一是正解）。旧路径
-            // 静态元素返 null 保持（4F 记深结构）。
-            return null;
+            // R182（js-dom M4）：sel 子形态（静态页面元素——无 handle，WPT
+            // Element-insertAdjacentElement 的 #test1-4 形态）。R133 曾记深结构——
+            // 本轮以「sel pending 槽 + 既有 bucket 记账 + host sel 子 mutation」三件收口：
+            // ① host 侧新 `__zw_insert_adjacent_sel_element`（child 经 find_by_selector
+            //   解析，insert_nodes_at_position 自带 reparent 移动语义）；
+            // ② JS 侧同步可见性——`_zwSelPendingParent` 槽（{ parentSel, nextSibling }，
+            //   _zwOverlayPendingChildNodes 的 sel 子分支消费）+ 经 _mo_notify 入
+            //   _zwPendBucket（added/removed 对冲语义复用，防 R133 首版并行集漂移）；
+            // ③ 位置翻译——beforebegin/afterend 站 target 的父（ref = target 前后），
+            //   afterbegin/beforeend 站 target 自身（ref = 首子 / null 尾部）。
+            var _r182Self = _makeProxy(sel, handle);
+            var _r182ParentSel = null;
+            var _r182Ref = null;
+            if (pos === 'beforebegin' || pos === 'afterend') {
+              var _r182P = null;
+              try { _r182P = _r182Self.parentNode; } catch (_e182p) {}
+              if (_r182P && _r182P.__zwSelector) _r182ParentSel = _r182P.__zwSelector;
+              if (pos === 'beforebegin') _r182Ref = _r182Self;
+              else {
+                // afterend：插到 target 之后 = 「target 的旧 nextSibling」之前（写前读——
+                // 快照内兄弟；无（末尾）→ null 尾部追加。ref 若是本元素自身（移动到自身
+                // 后 = no-op 位）则取再下一位，防 overlay 自指。
+                try {
+                  var _r182Ns = _r182Self.nextSibling;
+                  if (_r182Ns === element) {
+                    _r182Ns = null;
+                    var _r182Kids = _r182P && _r182P.childNodes ? _r182P.childNodes : [];
+                    for (var _r182ki = 0; _r182ki < _r182Kids.length; _r182ki++) {
+                      if (_r182Kids[_r182ki] === _r182Self && _r182ki + 1 < _r182Kids.length) {
+                        _r182Ns = _r182Kids[_r182ki + 1];
+                        break;
+                      }
+                    }
+                  }
+                  _r182Ref = _r182Ns || null;
+                } catch (_e182n2) {}
+              }
+            } else {
+              _r182ParentSel = sel || null;
+              if (pos === 'afterbegin') {
+                try { _r182Ref = _r182Self.firstChild || null; } catch (_e182f) {}
+              }
+            }
+            // 无可解析父（detached/root 越界）→ 保守 null 返（旧行为）。
+            if (!_r182ParentSel) return null;
+            var _r182ChildSel = element.__zwSelector;
+            if (typeof __zw_insert_adjacent_sel_element === 'function') {
+              try { __zw_insert_adjacent_sel_element(sel, pos, _r182ChildSel); } catch (_e182h) {}
+            }
+            // 同步视图：旧父桶记 removed（若旧父可解析）+ 新父桶记 added。
+            try {
+              var _r182OldParentSel = null;
+              try {
+                var _r182OldP = element.parentNode;
+                if (_r182OldP && _r182OldP.__zwSelector) _r182OldParentSel = _r182OldP.__zwSelector;
+              } catch (_e182o) {}
+              element._zwSelPendingParent = { parentSel: _r182ParentSel, nextSibling: _r182Ref };
+              if (_r182OldParentSel && _r182OldParentSel !== _r182ParentSel) {
+                _mo_notify(_r182OldParentSel, null, { type: 'childList', addedNodes: [], removedNodes: [element] });
+              }
+              _mo_notify(_r182ParentSel, null, { type: 'childList', addedNodes: [element], removedNodes: [], previousSibling: null, nextSibling: _r182Ref });
+              // R182：兄弟缓存失效——sibling getter 的 `_zwSiblingBaseCache` 按快照代缓存
+              //（overlay 差异不在其失效面），sel 子移入/移出旧父与新父两站须重读。
+              if (globalThis._zwSiblingBaseInvalidateAll) globalThis._zwSiblingBaseInvalidateAll();
+            } catch (_e182n) {}
+            return element;
           };
         }
         if (prop === 'querySelector') {

@@ -330,6 +330,18 @@ pub enum DomMutation {
         /// 待插入节点的 create 句柄（`__n1` 等）。
         child_handle: String,
     },
+    /// R182（js-dom M4）：`element.insertAdjacentElement(position, selChild)` 的 **sel 子形态**
+    ///（静态页面元素——`<span id=test1>` 等，无 create 句柄）。与
+    /// [`Self::InsertAdjacentElement`]（handle 子）对偶；child 经 `find_by_selector`
+    /// 解析，`insert_nodes_at_position` 内部复用移动语义（child 已挂载则 reparent）。
+    InsertAdjacentSelElement {
+        /// 目标元素选择器。
+        selector: String,
+        /// 位置关键字。
+        position: String,
+        /// 待插入元素的**选择器**（静态页面元素）。
+        child_selector: String,
+    },
     /// `element.outerHTML = html`（P1a，setter）——解析 HTML 片段，把目标元素**整体替换**为
     /// 片段顶层节点（插入到目标的父节点中目标位置，再移除目标自身）。区别于
     /// [`Self::SetInnerHtml`]（替换子树，保留目标自身）。
@@ -1039,6 +1051,20 @@ pub fn apply_dom_mutations_full(
                     .copied()
                     .ok_or_else(|| format!("unknown child handle {child_handle}"))?;
                 // 复用 append_child 的自动 reparent（child 已挂载则从旧 parent 移除 → 移动语义）。
+                insert_nodes_at_position(doc, &[child], node, &position)?;
+            }
+            // R182（js-dom M4）：sel 子形态（静态页面元素的同步移动）——child 经
+            // find_by_selector 解析（无 create 句柄）。insert_nodes_at_position 的
+            // insert_before/append_child 自带 reparent 移动语义（spec pre-insert adopt）。
+            DomMutation::InsertAdjacentSelElement {
+                selector,
+                position,
+                child_selector,
+            } => {
+                let node = find_by_selector(doc, &selector)
+                    .ok_or_else(|| format!("insert_adjacent_sel_element: no match for {selector}"))?;
+                let child = find_by_selector(doc, &child_selector)
+                    .ok_or_else(|| format!("insert_adjacent_sel_element: no child match for {child_selector}"))?;
                 insert_nodes_at_position(doc, &[child], node, &position)?;
             }
             DomMutation::SetOuterHtml { selector, html } => {

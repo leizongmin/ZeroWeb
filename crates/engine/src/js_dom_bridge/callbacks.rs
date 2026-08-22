@@ -1791,6 +1791,24 @@ pub fn register_dom_callbacks(
         }),
     );
 
+    // R182（js-dom M4）：sel 子形态 insertAdjacentElement（静态页面元素移动）。
+    let m = Arc::clone(mutations);
+    sandbox.register_callback(
+        "__zw_insert_adjacent_sel_element",
+        Box::new(move |args| {
+            if args.len() >= 3 {
+                m.lock()
+                    .unwrap_or_else(|e| e.into_inner())
+                    .push(DomMutation::InsertAdjacentSelElement {
+                        selector: args[0].clone(),
+                        position: args[1].clone(),
+                        child_selector: args[2].clone(),
+                    });
+            }
+            "ok".into()
+        }),
+    );
+
     let m = Arc::clone(mutations);
     sandbox.register_callback(
         "__zw_remove_handle",
