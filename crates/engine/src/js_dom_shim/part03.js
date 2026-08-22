@@ -5843,8 +5843,8 @@
       var comp165 = undefined;
       if (/^[A-Za-z][\w-]*$/.test(s164) || s164 === '*') {
         comp165 = { tag: s164, id: null, classes: [], attrs: [] };
-      } else if (false) {
-        // R169（L2-d3c 尝试，回退记录）：compound gate 启用实测 runner 环境大回归
+      } else {
+        // R170 单变量实验（gate 开）：compound gate 启用实测 runner 环境大回归
         //（ParentNode 33→908F）——根因 probe 定位：**iframe doc 双工厂**。WPT
         // Document 上下文 = iframe contentDocument，其树/查询走 part05 iframe
         // 工厂（host 快照含 iframe 内容）；`_makeDetachedDocument` 的 bodyHtml
@@ -5852,6 +5852,13 @@
         // 空 + detHtml 空 → 零命中（沙箱 createHTMLDocument 全命中、runner
         // iframe 全灭的对照实证）。**d3c 须先统一 iframe doc 与 detached doc
         // 的树源**（d3 前置项，记 master.md）。
+        // R170（d3c）：含空白/组合器（` `/`>`/`+`/`~`）/伪类（`:`）的形态**整体
+        // 拒绝**走 JSON（host 组合器语义权威）——解析器的 token 抽取会把
+        // `#descendant div` 的空白吞掉误判为同 compound（WPT "Descendant
+        // combinator" 返自身实证）。
+        if (/[\s>+~:]/.test(s164)) {
+          var mId = null;
+        } else {
         var mId = /#[A-Za-z_][\w-]*/.exec(s164);
         var mCls = /\.[A-Za-z_][\w-]*/g;
         var mAttr = /\[([A-Za-z_][\w-]*)(?:=("[^"]*"|'[^']*'))?\]/g;
@@ -5872,6 +5879,7 @@
             else comp165 = undefined; // 残段非纯 tag（无法识别形态）→ JSON
           }
         }
+        } // R170：else 分支闭合（空白/组合器形态拒绝）
       }
       // html/body 例外：_tree 源是 body 内容（无 html/body 容器——它们只存在于
       // detHtml 的 R159 属性保真包装层），须走 JSON 往返命中包装容器。
@@ -5928,7 +5936,12 @@
       } catch (_e158g) {}
     })();
     function _zwWrapCached(info) {
-      var key = String(info && info.tag || '') + '\x1f' + String(info && info.id || '') + '\x1f' + String(info && info.outer || '');
+      // R170（d3 前置）：键构造兼容双形态入参——JSON info（`.tag` 小写 / `.outer`）
+      // 与 mutTree 真实节点（`.tagName` 大写 / `.outerHTML`——queryBody 的
+      // compound/tag 门直出真节点后再经本函数二次包装）。旧版只读 `.tag`：真节点
+      // 入参时 tag 段空 → 键撞车命中无关缓存（gate-on 下 getElementById 返空壳
+      // 的根因，R170 probe DBG 实证 N:DIV 直出正常、外层包装后变空）。
+      var key = String(info && (info.tag || (info.tagName || '').toLowerCase()) || '') + '\x1f' + String(info && info.id || '') + '\x1f' + String(info && (info.outer != null ? info.outer : info.outerHTML) || '');
       // R167（js-dom M1 L2-d3b）：桥归一前置（与 _zwMWrapCached 同款）——doc 的
       // live 树（ensureTree 后的 `_tree`）有同键真实节点时返回其桥对象。JSON
       // 往返语义不变，只有产物 identity 归一。
