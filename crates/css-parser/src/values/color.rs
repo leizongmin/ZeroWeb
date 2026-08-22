@@ -892,7 +892,7 @@ fn parse_relative_color(value: &str) -> Option<ColorValue> {
         (channels_str, RcsAlpha::Origin)
     } else {
         match channels_str.split_once('/') {
-            Some((m, a)) => (m.trim(), parse_rcs_alpha(a.trim())),
+            Some((m, a)) => (m.trim(), parse_rcs_alpha(a.trim())?),
             None => (channels_str, RcsAlpha::Origin),
         }
     };
@@ -976,10 +976,10 @@ fn parse_rcs_channel(s: &str, func: RelativeColorFunc, idx: usize) -> Option<Rcs
     let v = match func {
         RelativeColorFunc::Rgb => parse_rcs_number_255(s)?,
         // hsl 首通道 = 色相（数字或角度单位 → 度）。
-        RelativeColorFunc::Hsl if idx == 0 => parse_hue_angle(s)?,
+        RelativeColorFunc::Hsl if idx == 0 => parse_finite_hue_angle(s)?,
         RelativeColorFunc::Hsl => parse_rcs_number_100(s)?,
         // lch/oklch 第三通道（idx=2）= 色相。
-        RelativeColorFunc::Lch | RelativeColorFunc::Oklch if idx == 2 => parse_hue_angle(s)?,
+        RelativeColorFunc::Lch | RelativeColorFunc::Oklch if idx == 2 => parse_finite_hue_angle(s)?,
         // lab/lch/oklab/oklch 非 hue 通道。
         RelativeColorFunc::Lab | RelativeColorFunc::Lch | RelativeColorFunc::Oklab | RelativeColorFunc::Oklch => {
             parse_rcs_number_wide(s, func, idx)?
@@ -993,39 +993,42 @@ fn parse_rcs_channel(s: &str, func: RelativeColorFunc, idx: usize) -> Option<Rcs
 /// 解析 color() RCS 通道数字字面量：`p%` → p/100，裸数字 → 0-1 浮点（可负/越界，回转时钳）。
 fn parse_rcs_color_component(s: &str) -> Option<f64> {
     let s = s.trim();
-    if let Some(pct) = s.strip_suffix('%') {
-        let p: f64 = pct.trim().parse().ok()?;
-        Some(p / 100.0)
+    // https://drafts.csswg.org/css-color-5/#relative-colors
+    // Relative color channel overrides are CSS numbers; reject Rust-only NaN/Infinity.
+    let v = if let Some(pct) = s.strip_suffix('%') {
+        parse_color_number_value(pct)? / 100.0
     } else {
-        s.parse().ok()
-    }
+        parse_color_number_value(s)?
+    };
+    v.is_finite().then_some(v)
 }
 
 /// 解析 rgb 通道数字字面量：`p%` → p/100*255，裸数字 → 0-255（不钳制，paint 时钳）。
 fn parse_rcs_number_255(s: &str) -> Option<f64> {
-    if let Some(pct) = s.strip_suffix('%') {
-        let p: f64 = pct.trim().parse().ok()?;
-        Some(p / 100.0 * 255.0)
+    let v = if let Some(pct) = s.strip_suffix('%') {
+        parse_color_number_value(pct)? / 100.0 * 255.0
     } else {
-        Some(s.parse().ok()?)
-    }
+        parse_color_number_value(s)?
+    };
+    v.is_finite().then_some(v)
 }
 
 /// 解析 hsl s/l 数字字面量：`p%` 或裸数字 → 0-100。
 fn parse_rcs_number_100(s: &str) -> Option<f64> {
-    if let Some(pct) = s.strip_suffix('%') {
-        Some(pct.trim().parse().ok()?)
+    let v = if let Some(pct) = s.strip_suffix('%') {
+        parse_color_number_value(pct)?
     } else {
-        Some(s.parse().ok()?)
-    }
+        parse_color_number_value(s)?
+    };
+    v.is_finite().then_some(v)
 }
 
 /// 解析 wide-gamut RCS 通道数字字面量（lab/lch/oklab/oklch 非 hue 通道）。
 /// `%` 按该通道 spec 百分比基准缩放；裸数字 = 通道自然单位值（不缩放、不钳制，paint 时回转钳）。
 fn parse_rcs_number_wide(s: &str, func: RelativeColorFunc, idx: usize) -> Option<f64> {
     let s = s.trim();
-    if let Some(pct) = s.strip_suffix('%') {
-        let p: f64 = pct.trim().parse().ok()?;
+    let v = if let Some(pct) = s.strip_suffix('%') {
+        let p = parse_color_number_value(pct)?;
         // 百分比基准：lab/lch L=100；lab a/b=125；lch C=150；oklab/oklch L=1；oklab a/b=0.4；oklch C=0.4。
         let basis = match (func, idx) {
             (RelativeColorFunc::Lab | RelativeColorFunc::Lch, 0) => 100.0,
@@ -1036,25 +1039,24 @@ fn parse_rcs_number_wide(s: &str, func: RelativeColorFunc, idx: usize) -> Option
             (RelativeColorFunc::Oklch, _) => 0.4,
             _ => return None,
         };
-        return Some(p / 100.0 * basis);
-    }
-    s.parse().ok()
+        p / 100.0 * basis
+    } else {
+        parse_color_number_value(s)?
+    };
+    v.is_finite().then_some(v)
 }
 
 /// 解析 RCS alpha：`none` → None，`p%` → p/100，裸数字 → 0-1（不钳制）。
-fn parse_rcs_alpha(s: &str) -> RcsAlpha {
+fn parse_rcs_alpha(s: &str) -> Option<RcsAlpha> {
     if s.eq_ignore_ascii_case("none") {
-        return RcsAlpha::None;
+        return Some(RcsAlpha::None);
     }
-    if let Some(pct) = s.strip_suffix('%') {
-        if let Ok(p) = pct.trim().parse::<f64>() {
-            return RcsAlpha::Num(p / 100.0);
-        }
-    }
-    if let Ok(v) = s.parse::<f64>() {
-        return RcsAlpha::Num(v);
-    }
-    RcsAlpha::Origin // 无法解析时退回 origin alpha（保守不破坏规则）
+    let alpha = if let Some(pct) = s.strip_suffix('%') {
+        parse_color_number_value(pct)? / 100.0
+    } else {
+        parse_color_number_value(s)?
+    };
+    alpha.is_finite().then_some(RcsAlpha::Num(alpha))
 }
 
 /// 解析色相角度（CSS Color 4）：数字 + 可选角度单位（`deg`/`grad`/`rad`/`turn`），

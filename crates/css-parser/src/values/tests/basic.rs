@@ -1904,6 +1904,20 @@ fn test_parse_relative_color_color_function() {
 }
 
 #[test]
+/// R3692：RCS 显式数字通道与 slash alpha 必须拒绝非有限 CSS number。
+fn test_parse_relative_color_rejects_non_finite_components() {
+    assert!(super::super::parse_color("rgb(from red 1e999 g b)").is_none());
+    assert!(super::super::parse_color("hsl(from red 1e999deg s l)").is_none());
+    assert!(super::super::parse_color("lab(from red 50% 1e999 b)").is_none());
+    assert!(super::super::parse_color("oklch(from red l c 1e999turn)").is_none());
+    assert!(super::super::parse_color("color(from red srgb 1e999 g b)").is_none());
+    assert!(super::super::parse_color("rgb(from red r g b / 1e999)").is_none());
+    assert!(super::super::parse_color("rgb(from red r g b / bogus)").is_none());
+    assert!(super::super::parse_color("rgb(from red 300 -10 b / 150%)").is_some());
+    assert!(super::super::parse_color("color(from red display-p3 150% -10% b / 50%)").is_some());
+}
+
+#[test]
 /// R2269：lab()/lch()/oklab()/oklch() → sRGB（green #008000 各空间值经 WPT 注释验证）。
 fn test_parse_lab_lch_oklab_oklch() {
     use crate::values::ColorValue;
