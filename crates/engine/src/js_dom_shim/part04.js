@@ -3593,7 +3593,15 @@
               _zwRemoveIframeWindowClientForNode(child);
               try { if (typeof __zw_remove === 'function') __zw_remove(child.__zwSelector); } catch (_eR125r) {}
               _zwMarkRemoved(child.__zwSelector);
-              _mo_notify(sel, handle, { type: 'childList', addedNodes: [], removedNodes: [child] });
+              // R188（js-dom M4）：childList record 的 sibling 字段——移除前从 child proxy
+              // 读 previousSibling/nextSibling（spec mutation record 语义；WPT
+              // MutationObserver-document "removal of parent" 断言 previousSibling 是
+              // 被移除节点的前兄弟 #n012——旧 record 恒 null）。移除标记已设但 sibling
+              // getter 读的是**快照层**（标记只影响父的 childNodes 枚举，不影响本节点的
+              // 兄弟解析），读值仍是移除前形态。
+              var _r188Prev = null, _r188Next = null;
+              try { _r188Prev = child.previousSibling || null; _r188Next = child.nextSibling || null; } catch (_e188s) {}
+              _mo_notify(sel, handle, { type: 'childList', addedNodes: [], removedNodes: [child], previousSibling: _r188Prev, nextSibling: _r188Next });
               _ceApplyConn(child, false);
               // R140：live childNodes 同步（sel 路径 remove）。
               try {

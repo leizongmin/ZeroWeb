@@ -1364,9 +1364,17 @@
       // R49：characterData record 的 target 是**文本节点自身**（spec；call site baseRecord.target
       // 携带——R48 parsed 文本编辑 / R49 textContent= 后 firstChild.data= 场景），其余类型 target=
       // 观测元素 proxy。
+      // R188：document 站（id='doc'，subtree 冒泡终点）的 record.target = **mutation 目标**
+      // 自身（spec——subtree 记录的 target 是发生 mutation 的节点，非观察注册点；WPT
+      // MutationObserver-document "removal of parent" 断言 target === body）。baseRecord
+      // 的 call site 不带 target proxy（sel/handle 形态）——按 sel/handle 现查 body 层
+      // proxy：childList 的目标即 mutation 发生的容器，由 call site 经 baseRecord._r188Target
+      // 传入；未传时回落观察 proxy（document——旧语义）。
       rec.target = baseRecord.type === 'characterData' && baseRecord.target != null
         ? baseRecord.target
-        : obs._targetProxies[id];
+        : (id === 'doc' && baseRecord._r188Target !== undefined
+            ? baseRecord._r188Target
+            : obs._targetProxies[id]);
       // spec 字段：addedNodes/removedNodes 缺省 []（类数组），sibling/attributeNamespace/oldValue 缺省 null。
       rec.addedNodes = baseRecord.addedNodes || [];
       rec.removedNodes = baseRecord.removedNodes || [];
@@ -1420,6 +1428,17 @@
   };
   function _mo_notify(sel, handle, baseRecord) {
     var id = _mo_id(handle, sel);
+    // R188：document 站 record.target 用 mutation 容器 proxy（_makeProxy(sel, handle)）
+    // 统一在此补——childList call site 数量多且均以 sel/handle 标识容器，入口处一次性
+    // 派生（spec：subtree 记录 target = mutation 目标）。characterData 已有 target 字段
+    // 不覆盖；_makeProxy 不可用时（极早初始化）缺省 document 观察代理（deliverToId 回落）。
+    if (baseRecord && baseRecord.type !== 'characterData' && baseRecord._r188Target === undefined) {
+      try {
+        if (typeof _makeProxy === 'function') {
+          baseRecord._r188Target = _makeProxy(sel, handle);
+        }
+      } catch (_e188m) {}
+    }
     _mo_deliverToId(id, baseRecord, false); // 精确 id，不要求 subtree
     // R3026：subtree——mutation 冒泡到 subtree:true 的祖先 observer（record.target=祖先 proxy）。
     // 仅在有 subtree observer 且 sel-based（live DOM 有 __zw_parent 父链）时走祖先链；handle-only detached defer。
@@ -1428,6 +1447,12 @@
       for (var k = 1; k < chain.length; k++) { // 跳过 self（chain[0]，精确 id 已投）
         _mo_deliverToId('s:' + chain[k], baseRecord, true);
       }
+      // R188（js-dom M4）：链顶再投 document 站——`observe(document, {subtree:true})`
+      // 的 observer 收全树 childList/attributes/characterData 冒泡（spec subtree 冒泡
+      // 终点是 document；WPT MutationObserver-document 的 record.target=body 等
+      // mutation 目标——deliverToId 的 _targetProxies 语义见上）。仅 sel-based 路径
+      //（live DOM 变更）；handle-only detached 树不属于 document。
+      _mo_deliverToId('doc', baseRecord, true);
     }
     // js-dom M4 R50：childList mutation → live HTMLCollection 失效标记（本函数是 shim 全部
     // childList 记录的单一汇流点——part04 appendChild/removeChild/insertBefore/replaceChild/
@@ -1511,6 +1536,15 @@
     }
     if (!target) return;
     var id = _mo_id(target.__zwHandle, target.__zwSelector);
+    // R188（js-dom M4）：document 目标——`observe(document, {subtree:true, childList:true})`
+    // 是合法 spec 形态（WPT MutationObserver-document：document 站接收全树 childList 冒泡
+    // 记录，record.target 为 body/html 等真实 mutation 目标）。旧版 document 无
+    // handle/sel → id null → 静默 return（观察不生效，3F 的 assert_unreached
+    // "document observer did not trigger" 直接根因）。落专用 'doc' id；record.target
+    // 语义经 _mo_deliverToId 的既有 subtree 投递路径保持（mutation 目标本体）。
+    if (id == null && target.nodeType === 9) {
+      id = 'doc';
+    }
     // js-dom M4 R48：parsed 文本/注释节点（_wrapNodeEntry 普通对象，无自身 sel/handle）——观测
     // 落到**父元素 id**（其 characterData 编辑 notify 发 s:parentSel，见 part05 _write）。target
     // proxy 仍记原文本节点（record.target 语义）。无父 sel 的纯快照节点不可观测（旧 no-op）。
