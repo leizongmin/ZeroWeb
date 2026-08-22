@@ -83,6 +83,24 @@ fn test_clip_path_apply_polygon() {
 }
 
 #[test]
+fn test_clip_path_apply_polygon_math_function_coordinates() {
+    let mut style = ComputedStyle::default();
+    assert!(apply_property_value(
+        &mut style,
+        "clip-path",
+        "polygon(0 0, min(10%, 20%) calc(100% - 1px), 100% 100%)"
+    ));
+    match &style.clip_path {
+        ClipPathComputedValue::Polygon { points, .. } => {
+            assert_eq!(points.len(), 3);
+            assert!(matches!(points[1].0, LengthValue::Calc(_)));
+            assert!(matches!(points[1].1, LengthValue::Calc(_)));
+        }
+        _ => panic!("Expected Polygon"),
+    }
+}
+
+#[test]
 fn test_clip_path_apply_invalid() {
     let mut style = ComputedStyle::default();
     assert!(!apply_property_value(&mut style, "clip-path", "invalid"));

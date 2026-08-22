@@ -359,6 +359,22 @@ fn test_clip_path_polygon_evenodd() {
 }
 
 #[test]
+fn test_clip_path_polygon_accepts_math_function_coordinates() {
+    // https://drafts.fxtf.org/css-masking-1/#funcdef-basic-shape-polygon
+    // polygon() points are comma-separated at the top level; commas inside CSS math functions
+    // remain part of the <length-percentage> coordinate.
+    let v = parse_clip_path("polygon(0 0, min(10%, 20%) calc(100% - 1px), 100% 100%)").unwrap();
+    match v {
+        ClipPathValue::Polygon { points, .. } => {
+            assert_eq!(points.len(), 3);
+            assert!(matches!(points[1].0, LengthValue::Calc(_)));
+            assert!(matches!(points[1].1, LengthValue::Calc(_)));
+        }
+        _ => panic!("Expected Polygon variant"),
+    }
+}
+
+#[test]
 fn test_clip_path_polygon_fill_rule_is_case_insensitive() {
     // https://drafts.fxtf.org/css-masking-1/#typedef-basic-shape
     // CSS-defined polygon() fill-rule keywords are ASCII case-insensitive.
@@ -424,9 +440,17 @@ fn test_clip_path_polygon_rejects_invalid_length_grammar() {
         "polygon(thin 0, 100% 0, 50% 100%)",
         "polygon(0 infpx, 100% 0, 50% 100%)",
         "polygon(0 auto, 100% 0, 50% 100%)",
+        "polygon(calc(1) 0, 100% 0, 50% 100%)",
+        "polygon(calc(1 + 1px) 0, 100% 0, 50% 100%)",
+        "polygon(calc(auto) 0, 100% 0, 50% 100%)",
     ] {
         assert!(parse_clip_path(value).is_none(), "{value} should be rejected");
     }
+}
+
+#[test]
+fn test_clip_path_radius_rejects_resolved_negative_math() {
+    assert!(parse_clip_path("circle(calc(-1px))").is_none());
 }
 
 #[test]

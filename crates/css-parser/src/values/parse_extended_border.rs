@@ -498,14 +498,89 @@ fn clip_path_length_is_valid(raw: &str, value: &LengthValue, allow_negative: boo
         | LengthValue::Ic(v)
         | LengthValue::Ric(v)
         | LengthValue::Percentage(v) => v.is_finite() && (allow_negative || *v >= 0.0),
-        LengthValue::Calc(_) => true,
+        LengthValue::Calc(expr) => clip_path_calc_is_length_percentage(expr, allow_negative),
         _ => false,
     }
 }
 
 fn parse_clip_length(raw: &str, allow_negative: bool) -> Option<LengthValue> {
-    let length = parse_length(raw)?;
+    let length =
+        parse_length(raw).or_else(|| parse_math_function(raw).map(|expr| LengthValue::Calc(Box::new(expr))))?;
     clip_path_length_is_valid(raw, &length, allow_negative).then_some(length)
+}
+
+fn clip_path_calc_is_length_percentage(expr: &CalcExpr, allow_negative: bool) -> bool {
+    // https://drafts.csswg.org/css-values-4/#calc-type-checking
+    if !matches!(clip_path_calc_type(expr), Some(ClipPathCalcType::LengthPercentage)) {
+        return false;
+    }
+    // https://drafts.csswg.org/css-values-4/#calc-range
+    // Clip radii use a non-negative range; reject math expressions that resolve without
+    // layout context to a negative value, and defer context-dependent ones.
+    allow_negative || eval_calc(expr, None).is_none_or(|v| v.is_finite() && v >= 0.0)
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ClipPathCalcType {
+    Number,
+    LengthPercentage,
+}
+
+fn clip_path_calc_type(expr: &CalcExpr) -> Option<ClipPathCalcType> {
+    match expr {
+        CalcExpr::Number(_) => Some(ClipPathCalcType::Number),
+        CalcExpr::Length(length) => {
+            clip_path_length_is_valid("", length, true).then_some(ClipPathCalcType::LengthPercentage)
+        }
+        CalcExpr::BinaryOp(left, CalcOp::Add | CalcOp::Subtract, right) => {
+            same_clip_path_calc_type(clip_path_calc_type(left)?, clip_path_calc_type(right)?)
+        }
+        CalcExpr::BinaryOp(left, CalcOp::Multiply, right) => {
+            multiply_clip_path_calc_type(clip_path_calc_type(left)?, clip_path_calc_type(right)?)
+        }
+        CalcExpr::BinaryOp(left, CalcOp::Divide, right) => {
+            divide_clip_path_calc_type(clip_path_calc_type(left)?, clip_path_calc_type(right)?)
+        }
+        CalcExpr::BinaryMathOp(_, _, _) => Some(ClipPathCalcType::Number),
+        CalcExpr::Min(args) | CalcExpr::Max(args) => same_clip_path_calc_types(args),
+        CalcExpr::Clamp { min, val, max } => {
+            let ty = clip_path_calc_type(min)?;
+            same_clip_path_calc_type(ty, clip_path_calc_type(val)?)?;
+            same_clip_path_calc_type(ty, clip_path_calc_type(max)?)
+        }
+        CalcExpr::UnaryOp(_, _) => Some(ClipPathCalcType::Number),
+    }
+}
+
+fn same_clip_path_calc_types(args: &[CalcExpr]) -> Option<ClipPathCalcType> {
+    let mut iter = args.iter();
+    let ty = clip_path_calc_type(iter.next()?)?;
+    for arg in iter {
+        same_clip_path_calc_type(ty, clip_path_calc_type(arg)?)?;
+    }
+    Some(ty)
+}
+
+fn same_clip_path_calc_type(left: ClipPathCalcType, right: ClipPathCalcType) -> Option<ClipPathCalcType> {
+    (left == right).then_some(left)
+}
+
+fn multiply_clip_path_calc_type(left: ClipPathCalcType, right: ClipPathCalcType) -> Option<ClipPathCalcType> {
+    match (left, right) {
+        (ClipPathCalcType::Number, ClipPathCalcType::Number) => Some(ClipPathCalcType::Number),
+        (ClipPathCalcType::Number, ClipPathCalcType::LengthPercentage)
+        | (ClipPathCalcType::LengthPercentage, ClipPathCalcType::Number) => Some(ClipPathCalcType::LengthPercentage),
+        (ClipPathCalcType::LengthPercentage, ClipPathCalcType::LengthPercentage) => None,
+    }
+}
+
+fn divide_clip_path_calc_type(left: ClipPathCalcType, right: ClipPathCalcType) -> Option<ClipPathCalcType> {
+    match (left, right) {
+        (ClipPathCalcType::Number, ClipPathCalcType::Number) => Some(ClipPathCalcType::Number),
+        (ClipPathCalcType::LengthPercentage, ClipPathCalcType::Number) => Some(ClipPathCalcType::LengthPercentage),
+        (ClipPathCalcType::Number, ClipPathCalcType::LengthPercentage)
+        | (ClipPathCalcType::LengthPercentage, ClipPathCalcType::LengthPercentage) => None,
+    }
 }
 
 /// CSS counter-set 属性值。
@@ -688,17 +763,18 @@ fn parse_clip_polygon(rest: &str) -> Option<ClipPathValue> {
     };
 
     let mut points = Vec::new();
-    for pair in points_str.split(',') {
+    let point_pairs = split_top_level_commas(points_str)?;
+    for pair in point_pairs {
         let pair = pair.trim();
         if pair.is_empty() {
             return None;
         }
-        let coords: Vec<&str> = pair.split_whitespace().collect();
+        let coords = super::parse_extended_visual::split_top_level_whitespace(pair);
         if coords.len() != 2 {
             return None;
         }
-        let x = parse_clip_length(coords[0], true)?;
-        let y = parse_clip_length(coords[1], true)?;
+        let x = parse_clip_length(&coords[0], true)?;
+        let y = parse_clip_length(&coords[1], true)?;
         points.push((x, y));
     }
 
@@ -707,6 +783,33 @@ fn parse_clip_polygon(rest: &str) -> Option<ClipPathValue> {
     }
 
     Some(ClipPathValue::Polygon { fill_rule, points })
+}
+
+fn split_top_level_commas(s: &str) -> Option<Vec<&str>> {
+    let mut parts = Vec::new();
+    let mut depth = 0i32;
+    let mut start = 0;
+    for (i, ch) in s.char_indices() {
+        match ch {
+            '(' => depth += 1,
+            ')' => {
+                depth -= 1;
+                if depth < 0 {
+                    return None;
+                }
+            }
+            ',' if depth == 0 => {
+                parts.push(s[start..i].trim());
+                start = i + 1;
+            }
+            _ => {}
+        }
+    }
+    if depth != 0 {
+        return None;
+    }
+    parts.push(s[start..].trim());
+    Some(parts)
 }
 
 fn strip_polygon_fill_rule<'a>(input: &'a str, keyword: &str) -> Option<&'a str> {
