@@ -164,6 +164,12 @@ fn test_parse_calc_complex_nested() {
     // 嵌套的 calc 表达式
     assert!(crate::values::parse_calc("calc(calc(100px - 20px) + calc(50px))").is_some());
 
+    // CSS math function identifiers are ASCII case-insensitive.
+    assert!(crate::values::parse_calc("CALC(100PX + 20PX)").is_some());
+    assert!(crate::values::parse_calc("calc(MIN(100PX, 50PX) + MAX(5PX, 10PX))").is_some());
+    assert!(crate::values::parse_calc("calc(CLAMP(10PX, 20PX, 30PX))").is_some());
+    assert!(crate::values::parse_calc("calc(ABS(-10PX) + POW(2, 3))").is_some());
+
     // 混合运算符优先级
     assert!(crate::values::parse_calc("calc(100px + 20px * 2)").is_some());
 
@@ -234,6 +240,11 @@ fn test_math_function_edge_cases() {
     // min/max 空参数
     assert!(crate::values::parse_min("min()").is_none());
     assert!(crate::values::parse_max("max()").is_none());
+
+    // CSS math function identifiers are ASCII case-insensitive.
+    assert!(crate::values::parse_min("MIN(100PX, 200PX)").is_some());
+    assert!(crate::values::parse_max("MAX(100PX, 200PX)").is_some());
+    assert!(crate::values::parse_clamp("CLAMP(100PX, 150PX, 200PX)").is_some());
 
     // min/max 单参数
     let min_single = crate::values::parse_min("min(100px)");

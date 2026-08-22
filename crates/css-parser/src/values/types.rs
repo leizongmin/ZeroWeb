@@ -912,6 +912,23 @@ impl<'a> CalcParser<'a> {
         }
     }
 
+    /// 尝试消费 ASCII case-insensitive 的 CSS 函数名前缀（如 `calc(`）。
+    fn try_consume_function(&mut self, name: &str) -> bool {
+        // https://drafts.csswg.org/css-values-4/#calc-notation
+        let rest = self.peek_rest();
+        let name_len = name.len();
+        if rest
+            .get(..name_len)
+            .is_some_and(|prefix| prefix.eq_ignore_ascii_case(name))
+            && rest.as_bytes().get(name_len) == Some(&b'(')
+        {
+            self.pos += name_len + 1;
+            true
+        } else {
+            false
+        }
+    }
+
     /// 解析顶层表达式（处理 + - 运算符，优先级较低）。
     fn parse_expr(&mut self) -> Option<CalcExpr> {
         let mut left = self.parse_term()?;
@@ -983,7 +1000,7 @@ impl<'a> CalcParser<'a> {
 
         self.skip_whitespace();
 
-        let mut expr = if self.try_consume("calc(") {
+        let mut expr = if self.try_consume_function("calc") {
             // 嵌套 calc() 表达式
             if self.depth >= MAX_CALC_DEPTH {
                 return None;
@@ -996,7 +1013,7 @@ impl<'a> CalcParser<'a> {
             }
             self.depth -= 1;
             inner
-        } else if self.try_consume("min(") {
+        } else if self.try_consume_function("min") {
             // min(v1, v2, ...) 函数
             if self.depth >= MAX_CALC_DEPTH {
                 return None;
@@ -1009,7 +1026,7 @@ impl<'a> CalcParser<'a> {
             }
             self.depth -= 1;
             CalcExpr::Min(args)
-        } else if self.try_consume("max(") {
+        } else if self.try_consume_function("max") {
             // max(v1, v2, ...) 函数
             if self.depth >= MAX_CALC_DEPTH {
                 return None;
@@ -1022,7 +1039,7 @@ impl<'a> CalcParser<'a> {
             }
             self.depth -= 1;
             CalcExpr::Max(args)
-        } else if self.try_consume("clamp(") {
+        } else if self.try_consume_function("clamp") {
             // clamp(min, val, max) 函数
             if self.depth >= MAX_CALC_DEPTH {
                 return None;
@@ -1081,27 +1098,27 @@ impl<'a> CalcParser<'a> {
         if self.depth >= MAX_CALC_DEPTH {
             return None;
         }
-        let op = if self.try_consume("abs(") {
+        let op = if self.try_consume_function("abs") {
             UnaryMathOp::Abs
-        } else if self.try_consume("sign(") {
+        } else if self.try_consume_function("sign") {
             UnaryMathOp::Sign
-        } else if self.try_consume("sqrt(") {
+        } else if self.try_consume_function("sqrt") {
             UnaryMathOp::Sqrt
-        } else if self.try_consume("exp(") {
+        } else if self.try_consume_function("exp") {
             UnaryMathOp::Exp
-        } else if self.try_consume("log(") {
+        } else if self.try_consume_function("log") {
             UnaryMathOp::Log
-        } else if self.try_consume("sin(") {
+        } else if self.try_consume_function("sin") {
             UnaryMathOp::Sin
-        } else if self.try_consume("cos(") {
+        } else if self.try_consume_function("cos") {
             UnaryMathOp::Cos
-        } else if self.try_consume("tan(") {
+        } else if self.try_consume_function("tan") {
             UnaryMathOp::Tan
-        } else if self.try_consume("asin(") {
+        } else if self.try_consume_function("asin") {
             UnaryMathOp::Asin
-        } else if self.try_consume("acos(") {
+        } else if self.try_consume_function("acos") {
             UnaryMathOp::Acos
-        } else if self.try_consume("atan(") {
+        } else if self.try_consume_function("atan") {
             UnaryMathOp::Atan
         } else {
             return None; // 未命中：try_consume 仅在匹配时消费，此处无消费
@@ -1123,17 +1140,17 @@ impl<'a> CalcParser<'a> {
         if self.depth >= MAX_CALC_DEPTH {
             return None;
         }
-        let op = if self.try_consume("pow(") {
+        let op = if self.try_consume_function("pow") {
             BinaryMathOp::Pow
-        } else if self.try_consume("hypot(") {
+        } else if self.try_consume_function("hypot") {
             BinaryMathOp::Hypot
-        } else if self.try_consume("round(") {
+        } else if self.try_consume_function("round") {
             BinaryMathOp::Round
-        } else if self.try_consume("mod(") {
+        } else if self.try_consume_function("mod") {
             BinaryMathOp::Mod
-        } else if self.try_consume("rem(") {
+        } else if self.try_consume_function("rem") {
             BinaryMathOp::Rem
-        } else if self.try_consume("atan2(") {
+        } else if self.try_consume_function("atan2") {
             BinaryMathOp::Atan2
         } else {
             return None;
@@ -1226,14 +1243,7 @@ impl<'a> CalcParser<'a> {
 /// 支持嵌套 calc 表达式如 `"calc(calc(100% - 20px) / 2)"`。
 /// 运算符优先级：`*` `/` 高于 `+` `-`。
 pub fn parse_calc(value: &str) -> Option<CalcExpr> {
-    let value = value.trim();
-
-    // 检查 calc(...) 包装
-    if !value.starts_with("calc(") || !value.ends_with(')') {
-        return None;
-    }
-
-    let inner = value.get(5..value.len() - 1)?.trim();
+    let inner = math_function_inner(value, "calc")?;
     if inner.is_empty() {
         return None;
     }
@@ -1260,34 +1270,41 @@ pub fn parse_calc(value: &str) -> Option<CalcExpr> {
 /// 根据前缀自动识别并解析对应的数学函数。
 /// 返回统一的 [`CalcExpr`] 表达式树。
 pub fn parse_math_function(value: &str) -> Option<CalcExpr> {
-    // CSS Values §4：函数名大小写不敏感（CALC ≡ calc、MIN ≡ min、MAX ≡ max、CLAMP ≡ clamp）。
-    // 归一化小写后分发；内容（数字 + 长度）亦大小写不敏感（R2346），故整体小写委托安全。
-    // 修复前 starts_with 仅认小写 → 大写/混合大小写函数名落 None（部分调用方先 lowercase
-    // 掩盖、部分直传 raw 暴露，如 parse_transform.rs / parse_extended_visual.rs 不一致）。
-    let value = value.trim().to_ascii_lowercase();
-
-    if value.starts_with("calc(") && value.ends_with(')') {
-        parse_calc(&value)
-    } else if value.starts_with("min(") && value.ends_with(')') {
-        parse_min(&value)
-    } else if value.starts_with("max(") && value.ends_with(')') {
-        parse_max(&value)
-    } else if value.starts_with("clamp(") && value.ends_with(')') {
-        parse_clamp(&value)
+    let value = value.trim();
+    if math_function_inner(value, "calc").is_some() {
+        parse_calc(value)
+    } else if math_function_inner(value, "min").is_some() {
+        parse_min(value)
+    } else if math_function_inner(value, "max").is_some() {
+        parse_max(value)
+    } else if math_function_inner(value, "clamp").is_some() {
+        parse_clamp(value)
     } else {
         None
     }
+}
+
+fn math_function_inner<'a>(value: &'a str, name: &str) -> Option<&'a str> {
+    // https://drafts.csswg.org/css-values-4/#calc-notation
+    let value = value.trim();
+    let name_len = name.len();
+    if value.len() < name_len + 2 || !value.ends_with(')') {
+        return None;
+    }
+    if !value.get(..name_len)?.eq_ignore_ascii_case(name) {
+        return None;
+    }
+    if value.as_bytes().get(name_len) != Some(&b'(') {
+        return None;
+    }
+    value.get(name_len + 1..value.len() - 1).map(str::trim)
 }
 
 /// 解析 CSS min() 函数。
 ///
 /// 格式：`min(v1, v2, ...)` — 取所有参数中的最小值。
 pub fn parse_min(value: &str) -> Option<CalcExpr> {
-    let value = value.trim();
-    if !value.starts_with("min(") || !value.ends_with(')') {
-        return None;
-    }
-    let inner = value.get(4..value.len() - 1)?.trim();
+    let inner = math_function_inner(value, "min")?;
     if inner.is_empty() {
         return None;
     }
@@ -1308,11 +1325,7 @@ pub fn parse_min(value: &str) -> Option<CalcExpr> {
 ///
 /// 格式：`max(v1, v2, ...)` — 取所有参数中的最大值。
 pub fn parse_max(value: &str) -> Option<CalcExpr> {
-    let value = value.trim();
-    if !value.starts_with("max(") || !value.ends_with(')') {
-        return None;
-    }
-    let inner = value.get(4..value.len() - 1)?.trim();
+    let inner = math_function_inner(value, "max")?;
     if inner.is_empty() {
         return None;
     }
@@ -1333,11 +1346,7 @@ pub fn parse_max(value: &str) -> Option<CalcExpr> {
 ///
 /// 格式：`clamp(min, val, max)` — 将 val 限制在 [min, max] 范围。
 pub fn parse_clamp(value: &str) -> Option<CalcExpr> {
-    let value = value.trim();
-    if !value.starts_with("clamp(") || !value.ends_with(')') {
-        return None;
-    }
-    let inner = value.get(6..value.len() - 1)?.trim();
+    let inner = math_function_inner(value, "clamp")?;
     if inner.is_empty() {
         return None;
     }
