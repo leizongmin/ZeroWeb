@@ -774,10 +774,14 @@
         }
         // nodeName 已大写（HTML 元素）→ tag 小写 + 缺省大写化；nodeName 非全大写
         //（XML 保大小写）→ preserveCase 保原。
+        // R186（js-dom M4）：preserveCase 形态用**限定名**（nodeName 含 prefix——
+        // `foo:div`），非 localName——旧取 local 丢 prefix（importNode 的
+        // createDocument("xhtml","foo:div") 变体克隆后 tagName 变 'div'，WPT
+        // Element-tagName "with prefix" 期望 FOO:DIV）。
         var _r156Loc = String(n.localName || n.nodeName || 'div');
         var _r156Up = String(n.nodeName || _r156Loc);
         var _r156Keep = _r156Up !== _r156Up.toUpperCase();
-        var snap = { tag: _r156Keep ? _r156Loc : _r156Loc.toLowerCase(), preserveCase: _r156Keep };
+        var snap = { tag: _r156Keep ? _r156Up : _r156Loc.toLowerCase(), preserveCase: _r156Keep };
         var o2 = _zwMEl(snap, null);
         for (var ak = 0; ak < attrs.length; ak++) o2.setAttribute(attrs[ak].name, attrs[ak].value);
         if (n.namespaceURI !== undefined) o2.namespaceURI = n.namespaceURI;

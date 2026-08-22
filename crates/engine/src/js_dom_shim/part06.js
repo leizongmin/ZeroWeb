@@ -2246,6 +2246,24 @@
               configurable: true,
             });
           } catch (_eOd) { n.ownerDocument = globalThis.document; }
+          // R186（js-dom M4）：HTML 文档 adopt 的**HTML ns 元素** tagName/nodeName ASCII
+          // 大写（spec `dom-element-tagname`——HTML-uppercased local name 随文档 HTML-ness
+          // 重算；WPT Element-tagName "tagName should be updated when changing
+          // ownerDocument" 三变体：XML 小写 div → import 后 DIV / foo:div → FOO:DIV）。
+          // 非 HTML ns（SVG/MathML/自定义）保持原样大小写敏感。
+          if (n.nodeType === 1 && n.tagName
+              && (n.namespaceURI == null || n.namespaceURI === 'http://www.w3.org/1999/xhtml')) {
+            var _r186Up = '';
+            var _r186Qn = String(n.tagName);
+            for (var _r186i = 0; _r186i < _r186Qn.length; _r186i++) {
+              var _r186c = _r186Qn.charAt(_r186i);
+              _r186Up += (_r186c >= 'a' && _r186c <= 'z') ? String.fromCharCode(_r186c.charCodeAt(0) - 32) : _r186c;
+            }
+            try {
+              n.tagName = _r186Up;
+              n.nodeName = _r186Up;
+            } catch (_e186u) {}
+          }
           if (n.nodeType === 1 && !(Object.getOwnPropertyDescriptor(n, 'firstChild') || {}).get) {
             try {
               Object.defineProperty(n, 'firstChild', {

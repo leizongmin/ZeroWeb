@@ -1908,6 +1908,37 @@
     var html = str == null ? '' : String(str);
     var d = new _zwParsedDoc(html);
     d.mimeType = mimeType || 'text/html';
+    // R186（js-dom M4）：XML 文档 documentElement = 源串真根元素（spec DOMParser——XML
+    // 根非合成 html 包装；WPT Element-tagName "tagName should be updated when changing
+    // ownerDocument" 断言 parseFromString('<div xmlns=…>', 'text/xml').documentElement
+    // .tagName === 'div'——旧恒取 querySelector('html') 命中合成包装根得 'HTML'）。
+    // 探测规则：strip 注释/PI/doctype 前导后首个标签名（支持 prefix 限定名）；保留源
+    // 大小写（XML 大小写敏感）。源串无元素根（空/纯文本）→ null（spec XML 空 doc）。
+    if (d.mimeType !== 'text/html') {
+      var _r186m = /^[\s]*(?:<!--[\s\S]*?-->|<\?[\s\S]*?\?>|<!DOCTYPE[^>]*>)*[\s]*<([A-Za-z_:][-A-Za-z0-9_:.]*)/.exec(html);
+      if (_r186m) {
+        var _r186root = d.querySelector(_r186m[1]);
+        if (_r186root) {
+          // tagName/nodeName 保源大小写：_zwParseEl 构造恒 toUpperCase（HTML 语义），
+          // XML 文档元素大小写敏感（spec dom-element-tagname 只对 HTML 文档大写）。
+          var _r186Tag = String(_r186root.tagName || '');
+          var _r186Src = _r186root.outerHTML || '';
+          var _r186Open = new RegExp('^<' + _r186m[1].replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\b[^>]*>', 'i').exec(_r186Src);
+          if (_r186Open) {
+            var _r186Name = _r186Open[0].slice(1, -1).split(/[\s/>]/)[0] || _r186Tag;
+            _r186root.tagName = _r186Name;
+            _r186root.nodeName = _r186Name;
+          }
+          // namespaceURI：默认 xmlns 声明读源串根标签（XML ns 语义最小面——
+          // importNode adopt 大写化按 HTML ns 判定，见 part06 R186）。
+          var _r186Xmlns = /\sxmlns\s*=\s*"([^"]*)"/.exec(_r186Open ? _r186Open[0] : '');
+          _r186root.namespaceURI = _r186Xmlns ? _r186Xmlns[1] : null;
+          d.documentElement = _r186root;
+        }
+      } else {
+        d.documentElement = null;
+      }
+    }
     // js-dom M4 R81：spec DOMParser —— Document.contentType = 解析 MIME；createElement 的
     // namespaceURI 由 contentType 派生（text/html 与 application/xhtml+xml → HTML ns；XML/SVG
     // → null——spec 元素 ns 由文档类型决定，WPT Document-createElement-namespace）。
