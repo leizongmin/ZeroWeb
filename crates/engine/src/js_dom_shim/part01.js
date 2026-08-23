@@ -1271,6 +1271,9 @@
   // 限制：仅观测 JS 驱动的 mutation（host 侧 `__zw_dispatch_event` 等不触发）。
   globalThis.__zw_mo_observers = globalThis.__zw_mo_observers || [];
   var _moFlushScheduled = false;
+  // R189（js-dom M4）：轻量元素（DOMParser createElement 产物）的 record 直投后调度
+  // flush——跨 part 可达（_mo_scheduleFlush 本 IIFE 私有）。
+  globalThis.__zw_mo_flush_lite = _mo_scheduleFlush;
 
   // 元素身份 key——handle 优先（JS 创建节点），否则 selector（现有 DOM）。
   function _mo_id(handle, sel) {
@@ -1544,6 +1547,16 @@
     // 语义经 _mo_deliverToId 的既有 subtree 投递路径保持（mutation 目标本体）。
     if (id == null && target.nodeType === 9) {
       id = 'doc';
+    }
+    // R189（js-dom M4）：DOMParser 文档的轻量元素（`_zwParsedDoc.createElement` 产物
+    // ——无 sel/handle 的可变容器，R189 textContent setter 独立派发 record）——observe
+    // 落 `__r189:` 键（WPT MutationObserver-textContent "CDATASection" 变体的
+    // observe(xml.createElement("somelement")) 形态）。
+    if (id == null && target.nodeType === 1 && target.appendChild && !target.__zwSelector) {
+      if (target._zwSeq === undefined) {
+        try { target._zwSeq = String(Math.random()).slice(2); } catch (_e189sq) {}
+      }
+      id = '__r189:' + String(target.tagName) + ':' + String(target._zwSeq);
     }
     // js-dom M4 R48：parsed 文本/注释节点（_wrapNodeEntry 普通对象，无自身 sel/handle）——观测
     // 落到**父元素 id**（其 characterData 编辑 notify 发 s:parentSel，见 part05 _write）。target

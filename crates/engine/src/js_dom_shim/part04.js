@@ -5177,13 +5177,52 @@
             // 空文本节点、新值 ''——融合 getter 读到的当前值已是 ''）也须清空 registry 子 + 反链
             //（WPT "Element with empty text node as child set to null/undefined"：旧子残留
             // childNodes 非空 + parentNode 仍指父）。同值不写 host、不发 record（R49 语义保持）。
-            if (_tcSame && handle && _handleChildren[handle] && _handleChildren[handle].length) {
-              _zwRemoveIframeWindowClientsForNodes(_handleChildren[handle]);
-              for (var _tcs = 0; _tcs < _handleChildren[handle].length; _tcs++) {
-                var _tcsn = _handleChildren[handle][_tcs];
+            // R189：同值判定覆盖本地注册文本子（textContent= 的非 fragment 路径只入
+            // _zwRegisterTextEl 注册表不入 _handleChildren——首 set 后子在此，同值
+            // 二次 set 须同样走 replace-all 发 record）。
+            var _r189LocalKids = (typeof _zwLocalChildNodes === 'function' && handle)
+              ? _zwLocalChildNodes(sel, handle) : null;
+            if (_tcSame && handle
+                && ((_handleChildren[handle] && _handleChildren[handle].length)
+                    || (_r189LocalKids && _r189LocalKids.length))) {
+              // R189（js-dom M4）：同值 set 的 **handle 元素发 childList record**——spec
+              // `dom-node-textcontent` 的 string replace all 恒「移除全部旧子 + 插入新文本
+              // 节点」（同值也重建）；WPT MutationObserver-textContent "Setting
+              // Element.textContent to the same value" 期望 1 条 removed=[text foo]
+              // + added=[text foo]。旧同值短路只清子不发 record（removedNodes[0]
+              // 读取 undefined 崩）。sel-based 快照元素（无节点子视图）保持无 record
+              //（WPT MutationObserver-childList "textContent no mutation" 的 n12 形态
+              // ——静态元素 host 侧无子节点可移除）。
+              var _r189Removed = (_handleChildren[handle] || []).slice();
+              if (_r189LocalKids && _r189LocalKids.length) {
+                for (var _r189lk = 0; _r189lk < _r189LocalKids.length; _r189lk++) {
+                  if (_r189Removed.indexOf(_r189LocalKids[_r189lk]) < 0) _r189Removed.push(_r189LocalKids[_r189lk]);
+                }
+              }
+              var _r189hc2 = _handleChildren[handle] || [];
+              for (var _tcs = 0; _tcs < _r189hc2.length; _tcs++) {
+                var _tcsn = _r189hc2[_tcs];
                 if (_tcsn && _tcsn.__zwHandle && _zwNodeParent) delete _zwNodeParent[_tcsn.__zwHandle];
               }
               _handleChildren[handle] = [];
+              // 同值重建：先注销旧本地注册（防叠加）再注册同值文本节点 + 发 record。
+              var _r189Added = [];
+              if (typeof _zwUnregisterTextEl === 'function') {
+                try { _zwUnregisterTextEl(_makeProxy(sel, handle)); } catch (_e189u) {}
+              }
+              if (typeof _zwRegisterTextEl === 'function' && _tcVal !== '') {
+                _zwRegisterTextEl(_makeProxy(sel, handle), handle, sel, _tcVal);
+                if (_fragmentHandles[handle]) {
+                  var _r189Reg = _zwLocalChildNodes(sel, handle);
+                  _handleChildren[handle] = _r189Reg && _r189Reg[0] ? [_r189Reg[0]] : [];
+                  if (_r189Reg && _r189Reg[0] && _zwNodeParent) {
+                    _zwNodeParent[_r189Reg[0].__zwHandle || ''] = { parentHandle: handle, nextSibling: null };
+                  }
+                }
+                var _r189New = (typeof _zwLocalChildNodes === 'function' ? _zwLocalChildNodes(sel, handle) : [])[0];
+                if (_r189New) _r189Added = [_r189New];
+                }
+              _mo_notify(sel, handle, { type: 'childList', addedNodes: _r189Added, removedNodes: _r189Removed, previousSibling: null, nextSibling: null });
             }
             if (!_tcSame) {
               if (handle) __zw_set_text_handle(handle, _tcVal);
@@ -5217,6 +5256,22 @@
               // added=[新文本节点]；R3027 的 characterData-only 记录不完整——characterData record 仅由
               // 文本节点自身编辑发）。
               var _tcRemoved = _childNodeList(sel, handle);
+              // R189（js-dom M4）：handle 元素（sel null——_childNodeList 恒返 []）的 removed
+              // 快照融合 registry 子 + 本地注册文本（WPT MutationObserver-textContent
+              // "Setting Element.textContent to a different value" 断言 removedNodes[0]
+              // 是 nodeType 3 的 Text 且 data "foo"）。
+              if (handle) {
+                var _r189hc = _handleChildren[handle] || [];
+                for (var _r189h = 0; _r189h < _r189hc.length; _r189h++) {
+                  if (_tcRemoved.indexOf(_r189hc[_r189h]) < 0) _tcRemoved.push(_r189hc[_r189h]);
+                }
+                var _r189lk2 = (typeof _zwLocalChildNodes === 'function') ? _zwLocalChildNodes(sel, handle) : null;
+                if (_r189lk2 && _r189lk2.length) {
+                  for (var _r189l2 = 0; _r189l2 < _r189lk2.length; _r189l2++) {
+                    if (_tcRemoved.indexOf(_r189lk2[_r189l2]) < 0) _tcRemoved.push(_r189lk2[_r189l2]);
+                  }
+                }
+              }
               _zwRemoveIframeWindowClientsForNodes(_tcRemoved);
               // R81：空值（null/''）不注册空文本节点——spec string replace 对空串「移除全部旧子且不插入
               // 新子」→ firstChild 应为 null（WPT "Element with empty text node as child set to null"

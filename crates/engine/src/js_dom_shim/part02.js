@@ -2056,6 +2056,97 @@
         },
         configurable: true, enumerable: true,
       });
+      // R189（js-dom M4）：轻量元素的可变容器面——appendChild/removeChild/normalize
+      //（WPT MutationObserver-textContent "CDATASection" 变体：`xml.createElement
+      // ("somelement")` 产物 appendChild CDATA + observe + textContent= 的 childList
+      // 记录；旧产物无 appendChild 直接 not-a-function 整用例中断）。子存 childNodes
+      // 数组（spec reparent 语义：先从旧父摘除）；textContent setter 走 replace-all
+      //（removed=旧子快照，added=[新文本节点]——与主文档 R189 语义同款）。
+      n.childNodes = [];
+      n.children = [];
+      n.appendChild = function (c) {
+        if (!c) return c;
+        if (c.parentNode && c.parentNode.removeChild) { try { c.parentNode.removeChild(c); } catch (_e189rp) {} }
+        n.childNodes.push(c);
+        try { c.parentNode = n; } catch (_e189pp) {}
+        if (c.nodeType === 1) n.children.push(c);
+        return c;
+      };
+      n.removeChild = function (c) {
+        for (var _r189i = 0; _r189i < n.childNodes.length; _r189i++) {
+          if (n.childNodes[_r189i] === c) {
+            n.childNodes.splice(_r189i, 1);
+            try { c.parentNode = null; } catch (_e189pn) {}
+            var _r189ci = n.children.indexOf(c);
+            if (_r189ci >= 0) n.children.splice(_r189ci, 1);
+            return c;
+          }
+        }
+        return c;
+      };
+      n.hasChildNodes = function () { return n.childNodes.length > 0; };
+      Object.defineProperty(n, 'firstChild', {
+        configurable: true,
+        get: function () { return n.childNodes.length ? n.childNodes[0] : null; },
+      });
+      Object.defineProperty(n, 'lastChild', {
+        configurable: true,
+        get: function () { return n.childNodes.length ? n.childNodes[n.childNodes.length - 1] : null; },
+      });
+      Object.defineProperty(n, 'textContent', {
+        configurable: true,
+        get: function () {
+          // R189 修正：textContent 含 CDATA（nodeType 4）的 data（spec
+          // `dom-node-textcontent`—— descendant text content 收 Text + CDATA +
+          // PI data；normalize 的 exclusive-Text 才排除非 Text）。WPT
+          // MutationObserver-textContent CDATA 变体 observe 前断言 "foo"。
+          var _r189s = '';
+          for (var _r189j = 0; _r189j < n.childNodes.length; _r189j++) {
+            var _r189c = n.childNodes[_r189j];
+            if (_r189c && (_r189c.nodeType === 3 || _r189c.nodeType === 4)) {
+              _r189s += String(_r189c.data != null ? _r189c.data : '');
+            }
+          }
+          return _r189s;
+        },
+        set: function (v) {
+          var _r189val = (v === null || v === undefined) ? '' : String(v);
+          var _r189old = n.childNodes.slice();
+          n.childNodes = [];
+          n.children = [];
+          if (_r189val !== '') {
+            var _r189t = d.createTextNode(_r189val);
+            n.childNodes.push(_r189t);
+            try { _r189t.parentNode = n; } catch (_e189tp) {}
+          }
+          // childList 记录（observe 经 _zwMEl 系注册的 MutationObserver 不覆盖此形态
+          //——轻量元素独立派发：有 observer 时入列）。
+          if (globalThis.__zw_mo_observers && globalThis.__zw_mo_observers.length) {
+            try {
+              var _r189key = '__r189:' + String(n.tagName) + ':' + String(n._zwSeq || '');
+              for (var _r189oi = 0; _r189oi < globalThis.__zw_mo_observers.length; _r189oi++) {
+                var _r189obs = globalThis.__zw_mo_observers[_r189oi];
+                if (_r189obs._targets && (_r189obs._targets['h:' + _r189key] || _r189obs._targets[_r189key])) {
+                  var _r189rec = Object.create(globalThis.MutationRecord.prototype);
+                  _r189rec.type = 'childList';
+                  _r189rec.target = n;
+                  _r189rec.addedNodes = n.childNodes.slice();
+                  _r189rec.removedNodes = _r189old;
+                  _r189rec.previousSibling = null;
+                  _r189rec.nextSibling = null;
+                  _r189rec.attributeName = null;
+                  _r189rec.attributeNamespace = null;
+                  _r189rec.oldValue = null;
+                  _r189obs._records.push(_r189rec);
+                }
+              }
+            } catch (_e189mo) {}
+          }
+          if (typeof globalThis.__zw_mo_flush_lite === 'function') {
+            try { globalThis.__zw_mo_flush_lite(); } catch (_e189fl) {}
+          }
+        },
+      });
       return n;
     };
     d.createElementNS = function (ns, q) {
