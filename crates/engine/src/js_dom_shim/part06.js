@@ -3645,7 +3645,58 @@
           throw new (globalThis.DOMException || Error)(
             'Nodes of type 2 cannot be inserted or inserted into.', 'HierarchyRequestError');
         }
+        // R209（js-dom M4）：spec `dom-range-insertnode` 步骤 1 的「startContainer
+        // 是 node 自身」分支——HierarchyRequestError，树不变（common.js myInsertNode
+        // 同款首查；WPT mega-case "node is startContainer" 族）。其余分支（PI/
+        // Comment 容器、无父 Text）对 host proxy 形态误伤面大（parentNode getter
+        // 形态差异），只收此分支。
+        // https://dom.spec.whatwg.org/#dom-range-insertnode
+        if (this.startContainer === node) {
+          throw new (globalThis.DOMException || Error)(
+            'The Range object is invalid.', 'HierarchyRequestError');
+        }
         if (!node || !this.startContainer) return node;
+        // R209（js-dom M4）：spec `dom-range-insertnode`——startContainer 是 Text/
+        // CDATA 时先 splitText(startOffset)（原节点保前半、尾半为新节点在父内），
+        // 再把 node 插到**尾节点之前**（WPT mega-case 的 common.js myInsertNode 模拟
+        // 同款——surroundContents 折叠路径的树中间态与此对齐）。工厂形态文本的
+        // splitText 由 R209 补齐（part05/parte03）；host proxy 文本经 part04 get trap。
+        // https://dom.spec.whatwg.org/#dom-range-insertnode
+        var sc209 = this.startContainer;
+        if ((sc209.nodeType === 3 || sc209.nodeType === 4)
+          && typeof sc209.splitText === 'function') {
+          var tail209 = null;
+          try { tail209 = sc209.splitText(this.startOffset | 0); } catch (_eR209sp) {}
+          var self209 = this;
+          // R209：末步 range.end 同步（spec 步骤「If range's start and end are the
+          // same, set range's end to (parent, newOffset)」——common.js myInsertNode
+          // 的 range.setEnd(parent_, newOffset) 同款；newOffset = node 插入后索引 + 1）。
+          var syncEnd209 = function () {
+            if (self209.startContainer !== self209.endContainer
+              || self209.startOffset !== self209.endOffset) return;
+            var p = tail209 && tail209.parentNode;
+            if (!p || !p.childNodes) return;
+            var idx = -1;
+            for (var q = 0; q < p.childNodes.length; q++) {
+              if (p.childNodes[q] === node) { idx = q; break; }
+            }
+            if (idx >= 0) {
+              try { self209.setEnd(p, idx + 1); } catch (_eR209se) {}
+            }
+          };
+          if (tail209 && tail209.parentNode
+            && typeof tail209.parentNode.insertBefore === 'function') {
+            try { tail209.parentNode.insertBefore(node, tail209); } catch (_eR209ib) {}
+            syncEnd209();
+            return node;
+          }
+          if (tail209 && tail209.parentNode
+            && typeof tail209.parentNode.appendChild === 'function') {
+            try { tail209.parentNode.appendChild(node); } catch (_eR209ab) {}
+            syncEnd209();
+            return node;
+          }
+        }
         try {
           var kids = this.startContainer.childNodes;
           var off = this.startOffset | 0;
@@ -3674,9 +3725,42 @@
           throw new (globalThis.DOMException || Error)(
             'Nodes of type 2 cannot be inserted or inserted into.', 'HierarchyRequestError');
         }
+        // R209（js-dom M4）：spec `dom-range-surroundcontents` 步骤 1——newParent 是
+        // Document/DocumentType/DocumentFragment 抛 InvalidNodeTypeError（WPT
+        // mega-case 的 INVALID_NODE_TYPE_ERR 簇）。
+        // 注：Text/Comment/PI newParent 的 HRE 发生在**步骤 5**（appendChild(fragment)
+        // 到叶子节点）——extract/insert 先行部分变更树（与 common.js mySurroundContents
+        // 模拟的中间态一致），故此处不提前抛（提前抛使 positionTests 的树比较与
+        // 模拟侧中间态分歧）。
+        // https://dom.spec.whatwg.org/#dom-range-surroundcontents
+        if (newParent.nodeType === 9 || newParent.nodeType === 10) {
+          throw new (globalThis.DOMException || Error)(
+            'The Range has partially selected a non-Text node.', 'InvalidNodeTypeError');
+        }
         var kids = this._coveredChildren();
+        // R209（js-dom M4）：spec `dom-range-surroundcontents` 步骤 5——最终
+        // `newParent.appendChild(fragment)`：newParent 是 Text/Comment/PI 等叶子类型
+        // 时必抛 HierarchyRequestError（WPT mega-case 的 HIERARCHY_REQUEST_ERR 簇；
+        // 旧版吞错/defer-no-op 不抛 → "did not throw"）。抛出**前**先走步骤 3-4 的
+        // insertNode 树变更（折叠路径的 splitText/插入中间态与 common.js
+        // mySurroundContents 模拟一致——先变更后抛，positionTests 的树比较才对齐）。
+        // https://dom.spec.whatwg.org/#dom-range-surroundcontents
+        if (newParent.nodeType === 3 || newParent.nodeType === 4
+          || newParent.nodeType === 7 || newParent.nodeType === 8) {
+          if (kids !== null && kids.length === 0) this.insertNode(newParent);
+          else if (kids === null && this.startContainer !== this.endContainer) {
+            // 跨容器 + 叶子 newParent：extract 不可本地模拟，但 insertNode 语义
+            // （startContainer 为 Text 时 split）仍可先行——保守跳过变更直接抛。
+          } else if (kids === null
+            && (this.startContainer.nodeType === 3 || this.startContainer.nodeType === 4)
+            && this.startContainer === this.endContainer) {
+            this.insertNode(newParent);
+          }
+          throw new (globalThis.DOMException || Error)(
+            'Nodes of type ' + newParent.nodeType + ' cannot have children.',
+            'HierarchyRequestError');
+        }
         if (kids === null) return; // 跨容器/文本切片 defer
-        if (kids.length === 0) { this.insertNode(newParent); return; }
         for (var i = 0; i < kids.length; i++) {
           try { newParent.appendChild(kids[i].cloneNode(true)); } catch (_e) {}
         }

@@ -6050,6 +6050,32 @@
     };
     _write(n.data != null ? n.data : '');
     n.appendData = function (s) { _write(_cur() + String(s == null ? '' : s)); return undefined; };
+    // R209（js-dom M4）：叶子节点 mutation 族抛 HierarchyRequestError（spec
+    // `dom-node-pre-insert`「parent 不是 Element/Document/DocumentFragment」——
+    // CharacterData 子孙全是叶子）。common.js mySurroundContents 对 foreignDoc/
+    // xmlDoc 域文本 newParent 调 appendChild(fragment) 期望 HRE 非 TypeError
+    // （'not a function' 使模拟崩在中途、树中间态与 actual 分歧）。
+    if (n.nodeType === 3 || n.nodeType === 4 || n.nodeType === 7
+      || n.nodeType === 8 || n.nodeType === 10) {
+      var _r209leafThrow = function () {
+        throw new (globalThis.DOMException || Error)(
+          'Nodes of type ' + n.nodeType + ' cannot have children.', 'HierarchyRequestError');
+      };
+      n.appendChild = _r209leafThrow;
+      n.insertBefore = _r209leafThrow;
+      // removeChild：先 spec `dom-node-pre-remove` 的 NotFound 校验（child 的
+      // parent 非本节点 → NotFoundError——WPT Node-removeChild 的文本叶子形态），
+      // 叶子恒无子 → 恒走 NotFound 而非 HRE。
+      n.removeChild = function (c) {
+        if (c && c.parentNode === n) {
+          throw new (globalThis.DOMException || Error)(
+            'Nodes of type ' + n.nodeType + ' cannot have children.', 'HierarchyRequestError');
+        }
+        throw new (globalThis.DOMException || Error)(
+          "Failed to execute 'removeChild' on 'Node': The node to be removed is not a child of this node.",
+          'NotFoundError');
+      };
+    }
     n.insertData = function (offset, s) {
       var cur = _cur(); var o = Math.max(0, offset | 0);
       _write(cur.slice(0, o) + String(s == null ? '' : s) + cur.slice(o));
@@ -6069,6 +6095,34 @@
       var cur = _cur(); var o = Math.max(0, offset | 0); var c2 = Math.max(0, count | 0);
       return cur.slice(o, o + c2);
     };
+    // R209（js-dom M4）：Text.splitText（spec `dom-text-splittext`——offset 越界抛
+    // IndexSizeError；parent 非空时新节点插到原节点 nextSibling 前）。common.js
+    // myInsertNode 对 foreignDoc/xmlDoc 域文本节点（经 detached doc createTextNode
+    // → _zwMText）调 splitText——旧 'not a function'。仅 nodeType 3 挂（comment 无）。
+    if (n.nodeType === 3) {
+      n.splitText = function (offset) {
+        var cur = _cur();
+        var o = offset | 0;
+        if (o < 0 || o > cur.length) {
+          throw new (globalThis.DOMException || Error)(
+            "Failed to execute 'splitText' on 'Text': The offset " + o + " is out of range.",
+            'IndexSizeError');
+        }
+        var tail = cur.slice(o);
+        _write(cur.slice(0, o));
+        var od = n.ownerDocument;
+        var nt = (od && typeof od.createTextNode === 'function')
+          ? od.createTextNode(tail)
+          : globalThis.document.createTextNode(tail);
+        var p = n.parentNode;
+        if (p && typeof p.insertBefore === 'function') {
+          try { p.insertBefore(nt, (typeof n.nextSibling !== 'undefined') ? n.nextSibling : null); } catch (_eR209i) {}
+        } else if (p && typeof p.appendChild === 'function') {
+          try { p.appendChild(nt); } catch (_eR209i2) {}
+        }
+        return nt;
+      };
+    }
     // data/nodeValue 可写（CharacterData data IDL）——旧普通字段赋值只改自身槽
     // （length getter 读 n.data 会失同步）。defineProperty 转 accessor 统一经 _write。
     try {
@@ -7540,6 +7594,11 @@
           ownerDocument: doc,
         };
         _zwMDefineSiblings(n7);
+        // R209（js-dom M4）：CharacterData 方法面 + 叶子 mutation 抛（appendData 族/
+        // substringData/splitText 同源 `_zwAttachCharacterDataMethods`——common.js
+        // mega-case 对 xmlDoc 域 PI 的 myExtractContents substringData 与
+        // mySurroundContents appendChild(fragment) 期望 DOMException 非 TypeError）。
+        _zwAttachCharacterDataMethods(n7);
         try { Object.setPrototypeOf(n7, globalThis.Node ? globalThis.Node.prototype : Object.prototype); } catch (_eR117x) {}
           return n7;
       },
@@ -7644,6 +7703,35 @@
           // docfrag/foreignDocfrag/xmlDocfrag 族——旧缺方法）。
           contains: function (other) { return _zwNodeContains(frag, other); },
           compareDocumentPosition: function (other) { return _zwCompareDocumentPosition(frag, other); },
+          // R209（js-dom M4）：isEqualNode / cloneNode（探针实证 detached doc 的
+          // fragment 旧缺——WPT Range mega-case 的 assertNodesEqual/myExtractContents
+          // 对 extractContents 产物 fragment 直接调）。isEqualNode 递归子；
+          // cloneNode(deep) 复制子（浅 clone 返空 fragment，spec 语义）。
+          isEqualNode: function (other) {
+            if (!other || other.nodeType !== 11) return false;
+            var k1 = frag.childNodes || [], k2 = other.childNodes || [];
+            if (k1.length !== k2.length) return false;
+            for (var _r209i = 0; _r209i < k1.length; _r209i++) {
+              if (!k1[_r209i] || typeof k1[_r209i].isEqualNode !== 'function'
+                || !k1[_r209i].isEqualNode(k2[_r209i])) return false;
+            }
+            return true;
+          },
+          cloneNode: function (deep) {
+            var nf = doc.createDocumentFragment();
+            if (deep) {
+              for (var _r209j = 0; _r209j < frag.childNodes.length; _r209j++) {
+                var fc209 = frag.childNodes[_r209j];
+                if (!fc209) continue;
+                if (typeof fc209.cloneNode === 'function') nf.appendChild(fc209.cloneNode(true));
+                else if (fc209.nodeType === 3 && fc209.ownerDocument
+                  && typeof fc209.ownerDocument.createTextNode === 'function') {
+                  nf.appendChild(fc209.ownerDocument.createTextNode(String(fc209.data != null ? fc209.data : '')));
+                }
+              }
+            }
+            return nf;
+          },
           get firstChild() { return this.childNodes.length ? this.childNodes[0] : null; },
           get lastChild() { return this.childNodes.length ? this.childNodes[this.childNodes.length - 1] : null; },
           hasChildNodes: function () { return this.childNodes.length > 0; },
@@ -7730,6 +7818,23 @@
             textContent: null,
             childNodes: [],
             hasChildNodes: function () { return false; },
+            // R209（js-dom M4）：叶子 mutation 族抛 HierarchyRequestError（spec
+            // `dom-node-pre-insert`——doctype 无子；common.js mySurroundContents 对
+            // doctype newParent 调 appendChild(fragment) 期望 DOMException 非
+            // TypeError）。注意 doctype newParent 在 mySurroundContents 更早被
+            // INVALID_NODE_TYPE 守卫拦截，此处为 ensurePreInsertion 等路径兜底。
+            appendChild: function (_c) {
+              throw new (globalThis.DOMException || Error)(
+                'Nodes of type 10 cannot have children.', 'HierarchyRequestError');
+            },
+            insertBefore: function (_c) {
+              throw new (globalThis.DOMException || Error)(
+                'Nodes of type 10 cannot have children.', 'HierarchyRequestError');
+            },
+            removeChild: function (_c) {
+              throw new (globalThis.DOMException || Error)(
+                'Nodes of type 10 cannot have children.', 'HierarchyRequestError');
+            },
             contains: function (other) { return _zwNodeContains(dt, other); },
             compareDocumentPosition: function (other) { return _zwCompareDocumentPosition(dt, other); },
             // R81：DocumentType 导航面（WPT Node-properties doctype/foreignDoctype.firstChild/

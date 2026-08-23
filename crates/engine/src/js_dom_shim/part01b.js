@@ -208,12 +208,31 @@
     NetworkError: 19, AbortError: 20, URLMismatchError: 21, QuotaExceededError: 22,
     TimeoutError: 23, InvalidNodeTypeError: 24, DataCloneError: 25
   };
+  // R209：code → legacy 常量名反查表（实例挂点消费，见 DOMException 构造器内注释）。
+  var _ZW_DE_LEGACY_BY_CODE = {
+    1: 'INDEX_SIZE_ERR', 2: 'DOMSTRING_SIZE_ERR', 3: 'HIERARCHY_REQUEST_ERR',
+    4: 'WRONG_DOCUMENT_ERR', 5: 'INVALID_CHARACTER_ERR', 6: 'NO_DATA_ALLOWED_ERR',
+    7: 'NO_MODIFICATION_ALLOWED_ERR', 8: 'NOT_FOUND_ERR', 9: 'NOT_SUPPORTED_ERR',
+    10: 'INUSE_ATTRIBUTE_ERR', 11: 'INVALID_STATE_ERR', 12: 'SYNTAX_ERR',
+    13: 'INVALID_MODIFICATION_ERR', 14: 'NAMESPACE_ERR', 15: 'INVALID_ACCESS_ERR',
+    16: 'VALIDATION_ERR', 17: 'TYPE_MISMATCH_ERR', 18: 'SECURITY_ERR',
+    19: 'NETWORK_ERR', 20: 'ABORT_ERR', 21: 'URL_MISMATCH_ERR', 22: 'QUOTA_EXCEEDED_ERR',
+    23: 'TIMEOUT_ERR', 24: 'INVALID_NODE_TYPE_ERR', 25: 'DATA_CLONE_ERR'
+  };
   function DOMException(message, name) {
     // 允许无 new 调用（同 Error 语义）。
     var self = (this instanceof DOMException) ? this : Object.create(DOMException.prototype);
     self.message = (message === undefined) ? '' : String(message);
     self.name = (name === undefined) ? 'Error' : String(name);
     self.code = _ZW_DE_CODE[self.name] || 0;
+    // R209（js-dom M4）：legacy code 常量挂**实例**（可枚举）——WPT dom/common.js
+    // getDomExceptionName 经 `for (prop in e)` 找 `/^[A-Z_]+_ERR$/` 且值 === e.code
+    // 的 prop 反查异常名（mega-case 的模拟异常消费路径）；真浏览器实例经原型链
+    // 可枚举可达这些 legacy 常量。只挂 code≠0 对应的一个（避免实例污染全 25 常量）。
+    if (self.code) {
+      var _r209Legacy = _ZW_DE_LEGACY_BY_CODE[self.code];
+      if (_r209Legacy) self[_r209Legacy] = self.code;
+    }
     return self;
   }
   DOMException.prototype = Object.create(Error.prototype);

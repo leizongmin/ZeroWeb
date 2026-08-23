@@ -2419,3 +2419,129 @@ fn test_iframe_doc_query_cache_invalidation_r208() {
         "R208 同键移除后查询须返 live 新节点（非已移除旧节点）"
     );
 }
+
+/// R209（js-dom M4）：iframe 子文档 testNodes 方法面 + surroundContents 叶子
+/// newParent 的 spec 异常链。根因（探针实证）：iframe/detached 工厂节点形态缺
+/// compareDocumentPosition/hasChildNodes/cloneNode/substringData/splitText/
+/// insertBefore（common.js mega-case 的 getPosition/myInsertNode 直接调）；
+/// host surroundContents 对 Text/Comment/PI newParent 不抛 HRE（步骤 5 的
+/// appendChild(fragment) 到叶子必抛）。spec：
+/// https://dom.spec.whatwg.org/#dom-range-surroundcontents
+/// https://dom.spec.whatwg.org/#dom-range-insertnode
+#[test]
+fn test_iframe_testnodes_method_face_r209() {
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let mut sandbox = V8Sandbox::with_config(zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    })
+    .unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> =
+        Arc::new(Mutex::new("<html><body></body></html>".to_string()));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    let common_js =
+        include_str!("../../../../tests/wpt-runner/wpt-data/dom/common.js").to_string();
+    let iframe_html = include_str!(
+        "../../../../tests/wpt-runner/wpt-data/dom/ranges/Range-test-iframe.html"
+    )
+    .to_string();
+    let fetched_common = common_js.clone();
+    let fetched_iframe = iframe_html.clone();
+    sandbox.register_callback(
+        "__zw_fetch",
+        Box::new(move |args| {
+            let url = args.get(2).map(String::as_str).unwrap_or("");
+            if url.ends_with("Range-test-iframe.html") {
+                return format!("__zwfr:200\u{1f}OK\u{1f}\u{1f}{}", fetched_iframe);
+            }
+            "__zw_fetch_error:not-found".to_string()
+        }),
+    );
+    sandbox.register_callback(
+        "__zw_fetch_script",
+        Box::new(move |args| {
+            let src = args.get(1).map(String::as_str).unwrap_or("");
+            if src.ends_with("common.js") {
+                return fetched_common.clone();
+            }
+            String::new()
+        }),
+    );
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+    let out = sandbox
+        .execute(
+            r#"
+            var ifr = document.createElement('iframe');
+            document.body.appendChild(ifr);
+            ifr.setAttribute('src', 'Range-test-iframe.html');
+            var doc = ifr.contentDocument;
+            var win = ifr.contentWindow;
+            win.setupRangeTests();
+            var out = [];
+            // ① testNodes 方法面：iframe doc 域节点全方法可达
+            var forms = [
+              ['paras[0]', 1], ['paras[0].firstChild', 3], ['detachedPara1', 1],
+              ['detachedPara1.firstChild', 3], ['detachedTextNode', 3],
+              ['detachedDiv', 1], ['docfrag', 11], ['doctype', 10],
+              ['foreignDoctype', 10], ['processingInstruction', 7],
+              ['detachedProcessingInstruction', 7], ['comment', 8], ['detachedComment', 8],
+            ];
+            for (var i = 0; i < forms.length; i++) {
+              win.testNodeInput = forms[i][0];
+              win.testRangeInput = '[paras[0].firstChild, 0, paras[0].firstChild, 0]';
+              win.run();
+              if (win.unexpectedException) {
+                out.push(forms[i][0] + ':SETUP-ERR'); win.unexpectedException = null; continue;
+              }
+              var v = win.testNode;
+              if (!v || v.nodeType !== forms[i][1]) { out.push(forms[i][0] + ':BAD-FORM'); continue; }
+              var need = v.nodeType === 1 || v.nodeType === 11
+                ? ['compareDocumentPosition', 'hasChildNodes', 'cloneNode', 'isEqualNode', 'contains']
+                : v.nodeType === 3 || v.nodeType === 4 || v.nodeType === 7 || v.nodeType === 8
+                ? ['compareDocumentPosition', 'hasChildNodes', 'cloneNode', 'substringData']
+                : ['compareDocumentPosition', 'hasChildNodes', 'cloneNode'];
+              for (var m = 0; m < need.length; m++) {
+                if (typeof v[need[m]] !== 'function') out.push(forms[i][0] + ':MISSING-' + need[m]);
+              }
+            }
+            // ② doctype 可读（Range-test-iframe 的 <!doctype html>）
+            if (!(doc.doctype && doc.doctype.name === 'html' && doc.doctype.nodeType === 10)) {
+              out.push('doctype:UNREADABLE');
+            }
+            // ③ surroundContents 叶子 newParent 抛 HRE + 树中间态（split 截断）
+            win.testNodeInput = 'detachedTextNode';
+            win.testRangeInput = '[paras[0].firstChild, 0, paras[0].firstChild, 0]';
+            win.run();
+            var r3 = win.testRange, n3 = win.testNode;
+            var sc3 = r3.startContainer;
+            var threw = '';
+            try { r3.surroundContents(n3); } catch (e) { threw = e.name; }
+            if (threw !== 'HierarchyRequestError') out.push('surround-leaf:THREW-' + threw);
+            if (String(sc3.data) !== '') out.push('surround-leaf:sc-not-split');
+            // ④ insertNode 的 startContainer === node → HRE 树不变
+            win.testNodeInput = 'paras[0].firstChild';
+            win.testRangeInput = '[paras[0].firstChild, 0, paras[0].firstChild, 0]';
+            win.run();
+            var r4 = win.testRange, n4 = win.testNode;
+            var before4 = String(n4.data);
+            var threw4 = '';
+            try { r4.insertNode(n4); } catch (e) { threw4 = e.name; }
+            if (threw4 !== 'HierarchyRequestError') out.push('insert-self:THREW-' + threw4);
+            if (String(n4.data) !== before4) out.push('insert-self:tree-mutated');
+            // ⑤ DOMException legacy code 常量在实例上可枚举（getDomExceptionName 消费）
+            var de = new (win.DOMException || DOMException)('m', 'HierarchyRequestError');
+            var legacy = '';
+            for (var pr in de) { if (/^[A-Z_]+_ERR$/.test(pr) && de[pr] === de.code) legacy = pr; }
+            if (legacy !== 'HIERARCHY_REQUEST_ERR') out.push('de-legacy:' + legacy);
+            out.length ? out.join('\n') : 'ALL-OK'
+            "#,
+        )
+        .unwrap()
+        .value;
+    assert_eq!(out, "ALL-OK", "R209 iframe testNodes 方法面/surroundContents 异常链");
+}

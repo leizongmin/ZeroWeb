@@ -59,9 +59,50 @@ fn fill_instance(scope: &mut v8::PinScope, obj: &v8::Local<v8::Object>, message:
     };
     set_str("message", message);
     set_str("name", name);
-    set_int("code", code_for_name(name));
+    let code = code_for_name(name);
+    set_int("code", code);
+    // R209（js-dom M4）：legacy code 常量挂**实例**（可枚举）——WPT dom/common.js
+    // getDomExceptionName 经 `for (prop in e)` 找 `^[A-Z_]+_ERR$` 且值 === e.code
+    // 的 prop 反查异常名（mega-case 模拟异常消费路径）；与 polyfill part01b 的
+    // `_ZW_DE_LEGACY_BY_CODE` 实例挂点对齐（A/B 等价）。只挂 code≠0 的那一个。
+    if let Some(legacy) = legacy_name_for_code(code) {
+        set_int(legacy, code);
+    }
     // stack：headless 无真调用栈，给空串（libs 读 .stack 容忍空）。
     set_str("stack", "");
+}
+
+/// code → legacy 常量名反查（实例挂点消费，见 [`fill_instance`]；与 part01b
+/// `_ZW_DE_LEGACY_BY_CODE` 表同源）。
+fn legacy_name_for_code(code: u32) -> Option<&'static str> {
+    match code {
+        1 => Some("INDEX_SIZE_ERR"),
+        2 => Some("DOMSTRING_SIZE_ERR"),
+        3 => Some("HIERARCHY_REQUEST_ERR"),
+        4 => Some("WRONG_DOCUMENT_ERR"),
+        5 => Some("INVALID_CHARACTER_ERR"),
+        6 => Some("NO_DATA_ALLOWED_ERR"),
+        7 => Some("NO_MODIFICATION_ALLOWED_ERR"),
+        8 => Some("NOT_FOUND_ERR"),
+        9 => Some("NOT_SUPPORTED_ERR"),
+        10 => Some("INUSE_ATTRIBUTE_ERR"),
+        11 => Some("INVALID_STATE_ERR"),
+        12 => Some("SYNTAX_ERR"),
+        13 => Some("INVALID_MODIFICATION_ERR"),
+        14 => Some("NAMESPACE_ERR"),
+        15 => Some("INVALID_ACCESS_ERR"),
+        16 => Some("VALIDATION_ERR"),
+        17 => Some("TYPE_MISMATCH_ERR"),
+        18 => Some("SECURITY_ERR"),
+        19 => Some("NETWORK_ERR"),
+        20 => Some("ABORT_ERR"),
+        21 => Some("URL_MISMATCH_ERR"),
+        22 => Some("QUOTA_EXCEEDED_ERR"),
+        23 => Some("TIMEOUT_ERR"),
+        24 => Some("INVALID_NODE_TYPE_ERR"),
+        25 => Some("DATA_CLONE_ERR"),
+        _ => None,
+    }
 }
 
 /// `new DOMException(message [, name])` 构造器 invoke（spec `webidl#dom-domexception-domexception`）。

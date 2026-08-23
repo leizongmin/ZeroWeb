@@ -830,7 +830,12 @@
           for (var _r207d = 0; _r207d < arguments.length; _r207d++) {
             var _n207d = arguments[_r207d];
             if (_n207d && typeof _n207d === 'object') docEl.appendChild(_n207d);
-            else docEl.childNodes.push({ nodeType: 3, nodeName: '#text', data: String(_n207d == null ? '' : _n207d), parentNode: docEl, childNodes: [], hasChildNodes: function () { return false; }, get textContent() { return this.data; } });
+            else {
+              // R209：字符串参数经 doc.createTextNode（完整方法面）。
+              var _t209d = doc.createTextNode(String(_n207d == null ? '' : _n207d));
+              _t209d.parentNode = docEl;
+              docEl.childNodes.push(_t209d);
+            }
           }
         };
         Object.defineProperty(docEl, 'firstChild', { configurable: true, get: function () { return docEl.childNodes.length ? docEl.childNodes[0] : null; } });
@@ -891,6 +896,74 @@
         get: function () { return docEl; }
       });
     } catch (_eD) {}
+    // R209（js-dom M4）：`doc.doctype`（spec Document.doctype：首个 DocumentType 子
+    // 或 null）。Range-test-iframe.html 恒 `<!doctype html>`——common.js setupRangeTests
+    // 的 `doctype = document.doctype` 在 iframe 子文档旧得 undefined → testNodes 的
+    // doctype 行 eval 崩。静态 doctype（name 从 markup 提取；无 doctype 返 null）。
+    // 子节点入 doc.childNodes（restoreIframe 的首/末子 doctype 扫描依赖）。
+    try {
+      var _r209DtM = /<!doctype\s+([^\s>]+)/i.exec(String(markup || ''));
+      if (_r209DtM) {
+        var _r209DtName = String(_r209DtM[1] || 'html');
+        var _r209Dt = {
+          nodeType: 10, name: _r209DtName, nodeName: _r209DtName,
+          publicId: '', systemId: '',
+          ownerDocument: doc, parentNode: null, nodeValue: null, textContent: null,
+          childNodes: [],
+          hasChildNodes: function () { return false; },
+          contains: function (other) { return _zwNodeContains(_r209Dt, other); },
+          compareDocumentPosition: function (other) { return _zwCompareDocumentPosition(_r209Dt, other); },
+          isEqualNode: function (other) {
+            return !!other && other.nodeType === 10
+              && String(other.name) === _r209DtName
+              && String(other.publicId || '') === '' && String(other.systemId || '') === '';
+          },
+          cloneNode: function () {
+            return doc.implementation.createDocumentType(_r209DtName, '', '');
+          },
+          get firstChild() { return null; },
+          get lastChild() { return null; },
+          get parentElement() { return null; },
+          get previousSibling() {
+            var p = this.parentNode;
+            if (!p) return null;
+            var i = p.childNodes.indexOf(this);
+            return i > 0 ? p.childNodes[i - 1] : null;
+          },
+          get nextSibling() {
+            var p = this.parentNode;
+            if (!p) return null;
+            var i = p.childNodes.indexOf(this);
+            return i >= 0 && i < p.childNodes.length - 1 ? p.childNodes[i + 1] : null;
+          },
+          remove: function () {
+            if (_r209Dt.parentNode && _r209Dt.parentNode.removeChild) {
+              try { _r209Dt.parentNode.removeChild(_r209Dt); } catch (_eR209r) {}
+            }
+          },
+        };
+        try {
+          if (globalThis.DocumentType && globalThis.DocumentType.prototype) {
+            Object.setPrototypeOf(_r209Dt, globalThis.DocumentType.prototype);
+          }
+        } catch (_eR209p) {}
+        // R209 注：doctype **不入** doc.childNodes——restoreIframe 的首/末子清理
+        // 循环（while firstChild.nodeType != 10）依赖 doctype 可经 firstChild 到达，
+        // 但 detached doc 的 childNodes 是 doc 级 appendChild 的动态视图（doctest
+        // 首子 unshift 会改变 restoreIframe 清理循环节奏与 referenceDoc 的
+        // removeChild(documentElement) 语义）。getter-only（doc.doctype 可读 +
+        // 节点方法面完整）即可满足 common.js 的 `doctype = document.doctype` 行。
+        Object.defineProperty(doc, 'doctype', {
+          configurable: true,
+          get: function () { return _r209Dt; }
+        });
+      } else {
+        Object.defineProperty(doc, 'doctype', {
+          configurable: true,
+          get: function () { return null; }
+        });
+      }
+    } catch (_eR209d) {}
     // R115：createElement（XML 保大小写 / HTML·XHTML 转换 + ns）+ createTextNode + createElementNS
     //（validate-and-extract 复用主 document.createElementNS 同款规则——R80/R81 语义表）。
     // R115：defaultView → contentWindow（用例 assert_throws_dom 的 doc.defaultView.DOMException）。
@@ -961,8 +1034,65 @@
       // R177：childNodes 空数组（叶子节点视图——Node.prototype.removeChild 的
       // own-childNodes 分支按视图校验抛 NotFoundError；无字段落 lenient 不抛，
       // WPT `s.removeChild(doc)` 期望 throw）。
-      var tn = { nodeType: 3, nodeName: '#text', data: String(text), parentNode: null, ownerDocument: doc, childNodes: [] };
-      try { Object.defineProperty(tn, 'textContent', { configurable: true, get: function () { return tn.data; } }); } catch (_eT) {}
+      // R209（js-dom M4）：方法面补齐（探针实证旧形态缺 compareDocumentPosition/
+      // hasChildNodes/substringData/splitText —— WPT Range mega-case 的 common.js
+      // getPosition/myInsertNode 对 iframe 子文档文本节点直接调）——统一经
+      // `_zwAttachCharacterDataMethods`（appendData 族 + data/nodeValue 可写 accessor）
+      // + `_zwMDefineSiblings`（previous/nextSibling）+ contains/cDP 本地绑定。
+      var tn = {
+        nodeType: 3, nodeName: '#text',
+        data: String(text), textContent: String(text), nodeValue: String(text),
+        parentNode: null, ownerDocument: doc, childNodes: [],
+        hasChildNodes: function () { return false; },
+        contains: function (other) { return _zwNodeContains(tn, other); },
+        compareDocumentPosition: function (other) { return _zwCompareDocumentPosition(tn, other); },
+        // R209：Text 是叶子节点——mutation 族抛 HierarchyRequestError（spec
+        // `dom-node-pre-insert`「parent 不是 Element/Document/DocumentFragment」；
+        // WPT mega-case 的 mySurroundContents 对 Text newParent 调
+        // appendChild(fragment) 期望 HRE 非 TypeError）。
+        appendChild: function (_c) {
+          throw new (globalThis.DOMException || Error)(
+            'Nodes of type 3 cannot have children.', 'HierarchyRequestError');
+        },
+        insertBefore: function (_c) {
+          throw new (globalThis.DOMException || Error)(
+            'Nodes of type 3 cannot have children.', 'HierarchyRequestError');
+        },
+        removeChild: function (_c) {
+          throw new (globalThis.DOMException || Error)(
+            'Nodes of type 3 cannot have children.', 'HierarchyRequestError');
+        },
+        isEqualNode: function (other) {
+          if (!other || other.nodeType !== 3) return false;
+          return String(other.data != null ? other.data : '') === String(tn.data != null ? tn.data : '');
+        },
+        // R209：Text.splitText 本地版（spec `dom-text-splittext`——offset 越界抛
+        // IndexSizeError；parent 非空时新节点插到原节点 nextSibling 前）。宿主
+        // handle 路径（part04 get trap）不受影响——此为 iframe 工厂形态。
+        splitText: function (offset) {
+          var cur = String(tn.data != null ? tn.data : '');
+          var o = offset | 0;
+          if (o < 0 || o > cur.length) {
+            throw new (globalThis.DOMException || Error)(
+              "Failed to execute 'splitText' on 'Text': The offset " + o + " is out of range.",
+              'IndexSizeError');
+          }
+          var tail = cur.slice(o);
+          tn.data = cur.slice(0, o);
+          var nt = doc.createTextNode(tail);
+          var p = tn.parentNode;
+          if (p && typeof p.insertBefore === 'function') {
+            try { p.insertBefore(nt, (typeof tn.nextSibling !== 'undefined') ? tn.nextSibling : null); } catch (_eR209s) {}
+          } else if (p && typeof p.appendChild === 'function') {
+            try { p.appendChild(nt); } catch (_eR209s2) {}
+          }
+          return nt;
+        },
+        cloneNode: function () { return doc.createTextNode(String(tn.data != null ? tn.data : '')); },
+      };
+      _zwAttachCharacterDataMethods(tn);
+      _zwMDefineSiblings(tn);
+      try { Object.defineProperty(tn, 'length', { configurable: true, get: function () { return String(tn.data != null ? tn.data : '').length; } }); } catch (_eR209L) {}
       try { Object.setPrototypeOf(tn, globalThis.Text ? globalThis.Text.prototype : Object.prototype); } catch (_eT2) {}
       return tn;
     };
@@ -1087,7 +1217,64 @@
         if (c && c.__zwHandle && typeof _zwUnmarkRemovedHandle === 'function') _zwUnmarkRemovedHandle(c.__zwHandle);
         return c;
       },
-      hasChildNodes: function () { return el.childNodes.length > 0; }
+      hasChildNodes: function () { return el.childNodes.length > 0; },
+      // R209（js-dom M4）：insertBefore（spec `dom-node-pre-insert`——WPT Range
+      // mega-case 的 common.js myInsertNode 对工厂元素容器调
+      // `parent_.insertBefore(node, referenceNode)`；splitText 的尾节点插入同样
+      // 消费——旧缺方法直接 TypeError）。ref=null 等价 append；ref 不在子列表尾插。
+      insertBefore: function (c, ref) {
+        if (!c) return c;
+        if (c.parentNode && c.parentNode.removeChild) { try { c.parentNode.removeChild(c); } catch (_eR209pr) {} }
+        if (ref == null) {
+          c.parentNode = el; el.childNodes.push(c);
+          return c;
+        }
+        var ri = el.childNodes.indexOf(ref);
+        if (ri < 0) { c.parentNode = el; el.childNodes.push(c); return c; }
+        c.parentNode = el;
+        el.childNodes.splice(ri, 0, c);
+        return c;
+      },
+      // R209（js-dom M4）：contains/compareDocumentPosition（探针实证 iframe 工厂元素
+      // 旧缺 cDP——WPT Range mega-case 的 common.js getPosition 对 nodeB（iframe 子文档
+      // 元素）调 `nodeB.compareDocumentPosition(nodeA)` 直接 TypeError）。
+      contains: function (other) { return _zwNodeContains(el, other); },
+      compareDocumentPosition: function (other) { return _zwCompareDocumentPosition(el, other); },
+      isEqualNode: function (other) {
+        if (!other || other.nodeType !== 1) return false;
+        if (String(other.nodeName != null ? other.nodeName : '') !== String(el.nodeName != null ? el.nodeName : '')) return false;
+        var a1 = el.attributes || [], a2 = other.attributes || [];
+        if (a1.length !== a2.length) return false;
+        for (var _r209a = 0; _r209a < a1.length; _r209a++) {
+          if (String(a2[_r209a] && a2[_r209a].name) !== String(a1[_r209a].name)
+            || String(a2[_r209a] && a2[_r209a].value) !== String(a1[_r209a].value)) return false;
+        }
+        var k1 = el.childNodes || [], k2 = other.childNodes || [];
+        if (k1.length !== k2.length) return false;
+        for (var _r209b = 0; _r209b < k1.length; _r209b++) {
+          if (!k1[_r209b] || typeof k1[_r209b].isEqualNode !== 'function'
+            || !k1[_r209b].isEqualNode(k2[_r209b])) return false;
+        }
+        return true;
+      },
+      cloneNode: function (deep) {
+        // R209：iframe 工厂元素的 cloneNode（restoreIframe 的
+        // `refDoc.documentElement.cloneNode(true)` 之外的普通元素克隆——common.js
+        // myExtractContents 对 originalStartNode（工厂元素）调 cloneNode(false)）。
+        var c = doc.createElement(String(el.localName != null ? el.localName : el.tagName));
+        for (var _r209c = 0; _r209c < (el.attributes || []).length; _r209c++) {
+          c.setAttribute(el.attributes[_r209c].name, el.attributes[_r209c].value);
+        }
+        if (deep) {
+          for (var _r209d = 0; _r209d < (el.childNodes || []).length; _r209d++) {
+            var kc = el.childNodes[_r209d];
+            if (!kc) continue;
+            if (typeof kc.cloneNode === 'function') c.appendChild(kc.cloneNode(true));
+            else if (kc.nodeType === 3) c.appendChild(doc.createTextNode(String(kc.data != null ? kc.data : '')));
+          }
+        }
+        return c;
+      },
     };
     // R174（js-dom M4）：id/className 的 IDL 反射 accessor（spec HTML
     // `dom-id`/`dom-classname`——`el.id = x` 须落到 content attribute）。
@@ -1190,19 +1377,12 @@
         },
         set: function (v) {
           var s = v == null ? '' : String(v);
-          el.childNodes = s === '' ? [] : [{
-            nodeType: 3, nodeName: '#text', data: s, parentNode: el,
-            ownerDocument: doc,
-            childNodes: [],
-            hasChildNodes: function () { return false; },
-            isEqualNode: function (o) {
-              if (!o || o.nodeType !== 3) return false;
-              return String(o.data != null ? o.data : '') === String(this.data != null ? this.data : '');
-            },
-            get textContent() { return this.data; },
-            get nodeValue() { return this.data; },
-            get length() { return this.data.length; },
-          }];
+          // R209：replace-all 的 Text 子经 doc.createTextNode（完整方法面——
+          // 探针实证旧字面量形态缺 compareDocumentPosition/cloneNode/
+          // substringData，WPT Range mega-case 的 common.js 对
+          // paras[0].firstChild 直接调这些方法）。
+          el.childNodes = s === '' ? [] : [doc.createTextNode(s)];
+          if (el.childNodes.length) { try { el.childNodes[0].parentNode = el; } catch (_eR209t) {} }
         },
       });
       // R181（js-dom M4）：querySelector(All)——本地 childNodes 子树的 tag/class/id
@@ -1279,9 +1459,10 @@
             if (_n207.parentNode && _n207.parentNode.removeChild) { try { _n207.parentNode.removeChild(_n207); } catch (_e207m) {} }
             _n207.parentNode = el; el.childNodes.push(_n207);
           } else {
-            el.childNodes.push({ nodeType: 3, nodeName: '#text', data: String(_n207 == null ? '' : _n207), parentNode: el,
-              childNodes: [], hasChildNodes: function () { return false; },
-              get textContent() { return this.data; } });
+            // R209：字符串参数经 doc.createTextNode（完整方法面，同 textContent setter）。
+            var _t209a = doc.createTextNode(String(_n207 == null ? '' : _n207));
+            _t209a.parentNode = el;
+            el.childNodes.push(_t209a);
           }
         }
       };
@@ -1294,9 +1475,9 @@
             if (_n207b.parentNode && _n207b.parentNode.removeChild) { try { _n207b.parentNode.removeChild(_n207b); } catch (_e207n) {} }
             _n207b.parentNode = el; el.childNodes.unshift(_n207b);
           } else {
-            el.childNodes.unshift({ nodeType: 3, nodeName: '#text', data: String(_n207b == null ? '' : _n207b), parentNode: el,
-              childNodes: [], hasChildNodes: function () { return false; },
-              get textContent() { return this.data; } });
+            var _t209b = doc.createTextNode(String(_n207b == null ? '' : _n207b));
+            _t209b.parentNode = el;
+            el.childNodes.unshift(_t209b);
           }
         }
       };
