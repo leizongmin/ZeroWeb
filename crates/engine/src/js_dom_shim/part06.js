@@ -2030,10 +2030,25 @@
     createProcessingInstruction: function(target, data) {
       var t = String(target == null ? '' : target);
       var d = String(data == null ? '' : data);
-      // spec 步骤 2：target 须合法 Name（复用 R3 createElement 校验 helper）。
-      // R135：spec regex 直判（旧 NameStartChar/NameChar 链对 \x0B 等 ASCII 空白外
-      // 字符误拒/对部分 valid 序列误收——spec regex 是唯一仲裁）。
-      if (typeof _r135IsValidName === 'function' ? !_r135IsValidName(t) : !_zwIsValidQualifiedName(t)) {
+      // spec 步骤 2：target 须合法 Name。
+      // R193（js-dom M4）：**XML Name 严格产生式**（spec XML §2.3 NameStartChar/NameChar
+      // 全集——PI target 是 XML 构造，比 HTML createElement 的宽容 Name 窄）：首字符
+      // 排除 \u00D7(×)/\u00F7(÷) 等非法 StartChar；非首字符排除 ×÷（NameChar 不含）。
+      // WPT Document-createProcessingInstruction invalid 列表：·A/×A/A× → InvalidCharacterError，
+      // valid 列表 A·A（· 中位合法）。R135 的 HTML 宽容版对 createElement 保持（HTML parser
+      // 宽容性）。
+      var _r193NameStart = /^[A-Za-z_:\u00C0-\u00D6\u00D8-\u00F6\u00F8-\u02FF\u0370-\u037D\u037F-\u1FFF\u200C-\u200D\u2070-\u218F\u2C00-\u2FEF\u3001-\uD7FF\uF900-\uFDCF\uFDF0-\uFFFD\u{10000}-\u{EFFFF}]$/u;
+      var _r193NameChar = /^[A-Za-z0-9.\-:\u00B7\u00C0-\u00D6\u00D8-\u00F6\u00F8-\u02FF\u0370-\u037D\u037F-\u1FFF\u200C-\u200D\u2070-\u218F\u2C00-\u2FEF\u3001-\uD7FF\uF900-\uFDCF\uFDF0-\uFFFD\u{10000}-\u{EFFFF}]$/u;
+      var _r193ValidName = function (nm) {
+        if (!nm) return false;
+        var first = nm.charAt(0);
+        if (!_r193NameStart.test(first)) return false;
+        for (var ci = 1; ci < nm.length; ci++) {
+          if (!_r193NameChar.test(nm.charAt(ci))) return false;
+        }
+        return true;
+      };
+      if (!_r193ValidName(t)) {
         // globalThis.DOMException（R6 identity：叠加路径下 = 原生 DOMException，避免 wrong global）。
         throw new (globalThis.DOMException)('The target provided is not a valid name.', 'InvalidCharacterError');
       }

@@ -551,6 +551,13 @@
             get lastElementChild() { var ek = this.children; return ek.length ? ek[ek.length - 1] : null; },
             get childElementCount() { return this.children.length; },
             hasChildNodes: function () { return _r145SelKids().length > 0; },
+            // R193（js-dom M4）：template.content 的 getElementById（spec
+            // `dom-nonelementparentnode-getelementbyid`——fragment 是 NonElementParentNode；
+            // WPT DocumentFragment-getElementById "using a template" 变体）。委托
+            // DocumentFragment.prototype 的 DFS 实现（本视图 childNodes 与其同构）。
+            getElementById: globalThis.DocumentFragment && globalThis.DocumentFragment.prototype.getElementById
+              ? function (id) { return globalThis.DocumentFragment.prototype.getElementById.call(_tplContent, id); }
+              : function () { return null; },
             // R151：子树类名查询（ParentNode.getElementsByClassName 语义——spec
             // `dom-parentnode-getelementsbyclassname`，token 全含匹配）。用例对
             // template.content 直调（WPT single-activation getElementsByClassNameInclusive）。
@@ -4560,9 +4567,20 @@
         // shadow root 容器 handle 上按 id 查 shadow 子树）。仅容器 handle（shadow/fragment）
         // 暴露；元素 proxy 不暴露（spec Element 无 getElementById）。
         // https://dom.spec.whatwg.org/#dom-nonelementparentnode-getelementbyid
+        // R193（js-dom M4）：fragment proxy 的 getElementById（template.content 等
+        // `_fragmentHandles` 容器——get trap 拦截属性读，DocumentFragment.prototype
+        // 的方法不可达；WPT "using a template" 变体）。委托 DocumentFragment.prototype
+        // 的 DFS 实现（registry/plain 子树通用）。
+        if (prop === 'getElementById' && handle && _fragmentHandles[handle]
+            && globalThis.DocumentFragment && globalThis.DocumentFragment.prototype.getElementById) {
+          return globalThis.DocumentFragment.prototype.getElementById;
+        }
         if (prop === 'getElementById' && _isContainerHandle(handle)) {
           return function(id) {
             var idText = String(id);
+            // R193（js-dom M4）：空串 id 恒 null（spec——id 缓存只索引非空 id；WPT
+            // DocumentFragment-getElementById "Empty string ID values"）。
+            if (idText === '') return null;
             // id 纯形式（无特殊字符）走 #id；否则属性选择器（同 document.getElementById 的
             // 转义路径——id 含点号等会被当类/伪类）。
             var q = /^[A-Za-z][\w-]*$/.test(idText) ? '#' + idText : '[id="' + idText.replace(/"/g, '\\"') + '"]';

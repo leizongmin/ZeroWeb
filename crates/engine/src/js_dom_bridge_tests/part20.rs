@@ -1928,7 +1928,8 @@ fn test_name_validation_spec_regex_r135() {
              try { d.setAttribute('a=b', 'v'); } catch (e) { s2 = e.name; }\
              try { d.setAttributeNS('urn:x', 'p:a=b', 'v'); } catch (e) { s3 = e.name; }\
              parts.push('set:' + s1 + ':' + s2 + ':' + s3);\
-             // createProcessingInstruction：target spec regex（'\\x01t' 非 NameStart 抛；'A\\x0B' valid）。
+             // createProcessingInstruction：target **XML Name 严格产生式**（R193——'\\x01t' 非
+// NameStart 抛；'A\\x0B' 的 \\x0B 非 XML NameChar 亦抛——WPT invalid 列表 ·A/×A/A× 同抛）。
              var p1 = false, p2 = true;\
              try { document.createProcessingInstruction('\\x01t', 'd'); } catch (e) { p1 = e.name; }\
              try { document.createProcessingInstruction('A\\x0B', 'd'); } catch (e) { p2 = 'THROW:' + e.name; }\
@@ -1948,7 +1949,7 @@ fn test_name_validation_spec_regex_r135() {
 ns:InvalidCharacterError:InvalidCharacterError:InvalidCharacterError:true:true|\
 attr:true:InvalidCharacterError:InvalidCharacterError|attrns:true:InvalidCharacterError|\
 set:true:InvalidCharacterError:InvalidCharacterError|\
-pi:InvalidCharacterError:true|\
+pi:InvalidCharacterError:THROW:InvalidCharacterError|\
 dt:InvalidCharacterError:true",
         "R135 name-validation spec regex 族：createElement \\x0B valid/NUL·空白·slash·gt invalid；NS localName NUL/\\x01 抛（createDocument 同步）；attribute 无首字符限制禁 '='；NS prefix 禁 ':' local 禁 '='；PI target regex；doctype NUL invalid"
     );

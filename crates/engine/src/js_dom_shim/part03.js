@@ -349,6 +349,32 @@
   })();
   globalThis.DocumentFragment = globalThis.DocumentFragment || function DocumentFragment() {};
   globalThis.DocumentFragment.prototype = Object.create(globalThis.Node.prototype);
+  // R193（js-dom M4）：DocumentFragment.prototype.getElementById（spec
+  // `dom-nonelementparentnode-getelementbyid`——fragment 是 NonElementParentNode；
+  // WPT DocumentFragment-getElementById "The method must exist"——原型方法 + 空串 id
+  // 恒 null（id 缓存只索引非空 id）。实例实现走 DFS 后代首命中（spec tree order），
+  // 与 handle 容器分支（`_handleQueryFirst`）互补——本原型方法覆盖 registry/plain
+  // 子树（template.content 的 fragment 产物）。
+  globalThis.DocumentFragment.prototype.getElementById = function (id) {
+    var idText = String(id == null ? '' : id);
+    if (idText === '') return null;
+    var found = null;
+    (function dfs193(node) {
+      if (found || !node || typeof node !== 'object') return;
+      var kids = node.childNodes;
+      if (!kids || typeof kids.length !== 'number') return;
+      for (var i = 0; i < kids.length; i++) {
+        var k = kids[i];
+        if (!k || k.nodeType !== 1) continue;
+        var kid = null;
+        try { kid = k.id !== undefined ? String(k.id) : (k.getAttribute ? String(k.getAttribute('id')) : ''); } catch (_e193g) { kid = ''; }
+        if (kid === idText) { found = k; return; }
+        dfs193(k);
+        if (found) return;
+      }
+    })(this);
+    return found;
+  };
   // js-dom M4 R81：CharacterData 族构造器占位（Text/Comment/ProcessingInstruction/CDATASection）——
   // WPT Node-textContent `firstChild instanceof Text` 断言（构造器缺失 → ReferenceError 崩用例）。
   // 原型链挂 CharacterData → Node（instanceof Node/CharacterData 经原型链为 true；文本节点 proxy 的
