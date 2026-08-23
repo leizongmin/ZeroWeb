@@ -17,6 +17,12 @@ pub struct CacheRequest {
     pub method: String,
     /// 请求头快照（按创建时顺序保存）。
     pub headers: Vec<(String, String)>,
+    /// Whether the request was created by a reload navigation.
+    #[serde(default)]
+    pub is_reload_navigation: bool,
+    /// Whether the request was created by a history navigation.
+    #[serde(default)]
+    pub is_history_navigation: bool,
 }
 
 impl CacheRequest {
@@ -26,6 +32,8 @@ impl CacheRequest {
             url: url.to_string(),
             method: "GET".to_string(),
             headers: Vec::new(),
+            is_reload_navigation: false,
+            is_history_navigation: false,
         }
     }
 
@@ -35,6 +43,8 @@ impl CacheRequest {
             url: url.to_string(),
             method: method.to_string(),
             headers: Vec::new(),
+            is_reload_navigation: false,
+            is_history_navigation: false,
         }
     }
 
@@ -44,6 +54,8 @@ impl CacheRequest {
             url: url.to_string(),
             method: method.to_string(),
             headers,
+            is_reload_navigation: false,
+            is_history_navigation: false,
         }
     }
 }

@@ -1455,6 +1455,12 @@ pub struct ServiceWorkerFetchRequestWire {
     pub resulting_client_id: Option<String>,
     /// Fetch request referrer exposed to `FetchEvent.request`, when known.
     pub referrer: Option<String>,
+    /// Whether this request was created by a reload navigation.
+    #[serde(default)]
+    pub is_reload_navigation: bool,
+    /// Whether this request was created by a history navigation.
+    #[serde(default)]
+    pub is_history_navigation: bool,
 }
 
 /// IPC-safe Service Worker fetch response.

@@ -9,6 +9,7 @@ service-workers/cache-storage/resources/simple.txt	support	fetch-body	4	19	no	9e
 service-workers/cache-storage/resources/blank.html	support	fetch-body	2	41	no	a3c3a4689a62b45b1e429f6b7a94690e556a1259	24197a11e8c5bd29a5cb7bdf18135a82be8a8546
 service-workers/cache-storage/resources/vary.py	support	fetch-body	3	1039	no	7fde1b1094ed4ce4018f17688e55d3be06fff993	24197a11e8c5bd29a5cb7bdf18135a82be8a8546
 service-workers/cache-storage/resources/fetch-status.py	support	fetch-body	2	77	no	b7109f4787fd6d659a192f7f29157862eef36ae9	24197a11e8c5bd29a5cb7bdf18135a82be8a8546
+service-workers/cache-storage/resources/cache-keys-attributes-for-service-worker.js	support	worker-script	1	747	no	ee574d2cb77a76793709f25b67ac17f5f59a7121	24197a11e8c5bd29a5cb7bdf18135a82be8a8546
 service-workers/cache-storage/script-tests/cache-storage.js	support	worker-script	1	8270	no	0de2dbb05e96dd6756f94af769ab2417f3902a95	24197a11e8c5bd29a5cb7bdf18135a82be8a8546
 service-workers/cache-storage/script-tests/cache-storage-keys.js	support	worker-script	1	1154	no	ef06ccdff5c8df29c2aefb5d11c4d3dfcf493bf6	24197a11e8c5bd29a5cb7bdf18135a82be8a8546
 service-workers/cache-storage/script-tests/cache-delete.js	support	worker-script	1	5981	no	e5238c455620fc9741a7b149bd060cf10a410874	24197a11e8c5bd29a5cb7bdf18135a82be8a8546
@@ -29,3 +30,4 @@ service-workers/cache-storage/serviceworker/cache-match.https.html	testharness	c
 service-workers/cache-storage/serviceworker/cache-put.https.html	testharness	case	1	403	no	961602386686665e33202d177a5d8d1c14bef9bb	24197a11e8c5bd29a5cb7bdf18135a82be8a8546
 service-workers/cache-storage/serviceworker/cache-add.https.html	testharness	case	1	420	no	232de668e41ccf60e60ff776c423d31b091b095b	24197a11e8c5bd29a5cb7bdf18135a82be8a8546
 service-workers/cache-storage/serviceworker/cache-abort.https.html	testharness	case	1	415	no	5a8b539be81ef0e4b43f1193d4bb62972968442c	24197a11e8c5bd29a5cb7bdf18135a82be8a8546
+service-workers/cache-storage/serviceworker/cache-keys-attributes-for-service-worker.https.html	testharness	case	1	2567	no	b6044c581b83eeb9fd9d3bfb2f936712b90d0175	24197a11e8c5bd29a5cb7bdf18135a82be8a8546

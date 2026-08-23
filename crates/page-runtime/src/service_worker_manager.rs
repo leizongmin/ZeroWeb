@@ -88,11 +88,16 @@ fn service_worker_request_from_cache(request: &CacheRequest) -> ServiceWorkerFet
         client_id: None,
         resulting_client_id: None,
         referrer: None,
+        is_reload_navigation: request.is_reload_navigation,
+        is_history_navigation: request.is_history_navigation,
     }
 }
 
 fn cache_request_from_service_worker(request: ServiceWorkerFetchRequest) -> CacheRequest {
-    CacheRequest::with_method_and_headers(&request.url, &request.method, request.headers)
+    let mut cache_request = CacheRequest::with_method_and_headers(&request.url, &request.method, request.headers);
+    cache_request.is_reload_navigation = request.is_reload_navigation;
+    cache_request.is_history_navigation = request.is_history_navigation;
+    cache_request
 }
 
 fn encode_cache_name_units(name: &str) -> String {
@@ -4308,6 +4313,8 @@ mod tests {
                         client_id: Some("client-1".into()),
                         resulting_client_id: None,
                         referrer: None,
+                        is_reload_navigation: false,
+                        is_history_navigation: false,
                     },
                 )
                 .unwrap(),
@@ -4349,6 +4356,8 @@ mod tests {
                         client_id: None,
                         resulting_client_id: None,
                         referrer: None,
+                        is_reload_navigation: false,
+                        is_history_navigation: false,
                     },
                 )
                 .unwrap(),
@@ -4412,6 +4421,8 @@ mod tests {
                         client_id: Some("client-1".into()),
                         resulting_client_id: None,
                         referrer: None,
+                        is_reload_navigation: false,
+                        is_history_navigation: false,
                     },
                 )
                 .unwrap(),
@@ -4473,6 +4484,8 @@ mod tests {
                         client_id: Some("client-1".into()),
                         resulting_client_id: None,
                         referrer: None,
+                        is_reload_navigation: false,
+                        is_history_navigation: false,
                     },
                 )
                 .unwrap(),
@@ -4538,6 +4551,8 @@ mod tests {
                         client_id: Some("client-1".into()),
                         resulting_client_id: None,
                         referrer: None,
+                        is_reload_navigation: false,
+                        is_history_navigation: false,
                     },
                 )
                 .unwrap(),
@@ -4621,6 +4636,8 @@ mod tests {
                         client_id: Some("client-1".into()),
                         resulting_client_id: None,
                         referrer: None,
+                        is_reload_navigation: false,
+                        is_history_navigation: false,
                     },
                 )
                 .unwrap(),
@@ -4723,6 +4740,8 @@ mod tests {
                         client_id: Some("client-1".into()),
                         resulting_client_id: None,
                         referrer: None,
+                        is_reload_navigation: false,
+                        is_history_navigation: false,
                     },
                 )
                 .unwrap(),
@@ -4828,6 +4847,8 @@ mod tests {
                         client_id: None,
                         resulting_client_id: None,
                         referrer: None,
+                        is_reload_navigation: false,
+                        is_history_navigation: false,
                     },
                 )
                 .unwrap(),
@@ -4847,6 +4868,8 @@ mod tests {
                         client_id: None,
                         resulting_client_id: None,
                         referrer: None,
+                        is_reload_navigation: false,
+                        is_history_navigation: false,
                     },
                 )
                 .unwrap(),

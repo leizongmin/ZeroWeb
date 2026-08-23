@@ -247,6 +247,10 @@
           var _refAttr = _REFLECTED_UINT[p] ? _REFLECTED_UINT[p].a : (_reflectedStringAttr(p) || p);
           if (handle) __zw_set_attr_handle(handle, _refAttr, String(value));
           else __zw_set_attr(sel, _refAttr, String(value));
+          if (_refAttr === 'src' && _realTag(sel, handle) === 'IFRAME' &&
+              typeof globalThis.__zw_reload_iframe === 'function' && _elConnected(proxy)) {
+            globalThis.__zw_reload_iframe(proxy, String(value), {});
+          }
           moAttr = _refAttr;
         } else {
           // R3069：非 reflected 原始值 → expando（闭合 R3042 限制①）。real browser：自定义原始属性存 JS 对象非内容属性，
@@ -1253,7 +1257,7 @@
     return _ZW_ENC_LABELS[k] || null;
   }
 
-  function _zwMakeIframeWin(doc) {
+  function _zwMakeIframeWin(doc, frameKey) {
     var registrationWrappers = [];
     function wrapRegistration(registration) {
       if (!registration) return registration;
@@ -1339,6 +1343,22 @@
         globalThis.__zwFetchReferrer = previousReferrer;
       }
     }
+    function iframeReload(flags) {
+      if (!frameKey || typeof globalThis.__zw_reload_iframe !== 'function') return;
+      var frame = null;
+      try { frame = _proxyCache[frameKey] || null; } catch (_eFrame) {}
+      if (!frame) return;
+      var targetUrl = doc && doc._zwURL ? doc._zwURL : '';
+      if (flags && flags.history) {
+        try {
+          var entry = _iframeDocCache[frameKey];
+          if (entry && entry.history && entry.history.length > 1) {
+            targetUrl = entry.history[entry.history.length - 2];
+          }
+        } catch (_eHistTarget) {}
+      }
+      globalThis.__zw_reload_iframe(frame, targetUrl, flags || {});
+    }
     function iframeLocation() {
       function href() {
         return doc && doc._zwURL ? String(doc._zwURL) : 'about:blank';
@@ -1360,7 +1380,7 @@
         get origin() { var u = parsed(); return u ? u.origin : 'null'; },
         assign: function () {},
         replace: function () {},
-        reload: function () {},
+        reload: function () { iframeReload({ reload: true }); },
         toString: function () { return href(); }
       };
     }
@@ -1404,6 +1424,14 @@
       parent: globalThis,
       top: globalThis.top || globalThis,
       location: iframeLocation(),
+      history: {
+        go: function(delta) {
+          var d = (delta == null) ? -1 : (delta | 0);
+          if (d === -1) iframeReload({ history: true });
+        },
+        back: function() { iframeReload({ history: true }); },
+        forward: function() {}
+      },
       navigator: { serviceWorker: serviceWorker },
       Element: globalThis.Element,
       Node: globalThis.Node,

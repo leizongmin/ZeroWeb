@@ -115,7 +115,8 @@ form-validation——不允许手写 inline 用例替代或充数）。通过率
 - ✅ **缺口 3 — WPT 基线**：上游 `cache-storage` window / Dedicated Worker / nested Worker
   可执行面已导入 32 case / 429 subtest 绿线；扩大覆盖与提升通过率继续推进
 - 🚧 **缺口 4 — Request/Response 集成**：add/addAll 的 fetch→put 链路已接通，Response
-  可缓存性剩余 filtered response 矩阵仍待补齐
+  可缓存性剩余 filtered response 矩阵仍待补齐；SW serviceworker wrapper 已验证
+  reload/history navigation request metadata 经 Cache API round-trip 保真
 
 ---
 

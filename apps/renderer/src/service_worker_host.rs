@@ -401,6 +401,8 @@ fn fetch_request_from_wire(request: ServiceWorkerFetchRequestWire) -> ServiceWor
         client_id: request.client_id,
         resulting_client_id: request.resulting_client_id,
         referrer: request.referrer,
+        is_reload_navigation: request.is_reload_navigation,
+        is_history_navigation: request.is_history_navigation,
     }
 }
 
@@ -436,6 +438,8 @@ fn cache_storage_request_to_wire(request: ServiceWorkerCacheStorageRequest) -> S
                 client_id: request.client_id,
                 resulting_client_id: request.resulting_client_id,
                 referrer: request.referrer,
+                is_reload_navigation: request.is_reload_navigation,
+                is_history_navigation: request.is_history_navigation,
             },
             options: cache_query_options_to_wire(options),
         },
@@ -456,6 +460,8 @@ fn cache_storage_request_to_wire(request: ServiceWorkerCacheStorageRequest) -> S
                 client_id: request.client_id,
                 resulting_client_id: request.resulting_client_id,
                 referrer: request.referrer,
+                is_reload_navigation: request.is_reload_navigation,
+                is_history_navigation: request.is_history_navigation,
             }),
             options: cache_query_options_to_wire(options),
         },
@@ -476,6 +482,8 @@ fn cache_storage_request_to_wire(request: ServiceWorkerCacheStorageRequest) -> S
                 client_id: request.client_id,
                 resulting_client_id: request.resulting_client_id,
                 referrer: request.referrer,
+                is_reload_navigation: request.is_reload_navigation,
+                is_history_navigation: request.is_history_navigation,
             }),
             options: cache_query_options_to_wire(options),
         },
@@ -496,6 +504,8 @@ fn cache_storage_request_to_wire(request: ServiceWorkerCacheStorageRequest) -> S
                 client_id: request.client_id,
                 resulting_client_id: request.resulting_client_id,
                 referrer: request.referrer,
+                is_reload_navigation: request.is_reload_navigation,
+                is_history_navigation: request.is_history_navigation,
             },
             options: cache_query_options_to_wire(options),
         },
@@ -516,6 +526,8 @@ fn cache_storage_request_to_wire(request: ServiceWorkerCacheStorageRequest) -> S
                 client_id: request.client_id,
                 resulting_client_id: request.resulting_client_id,
                 referrer: request.referrer,
+                is_reload_navigation: request.is_reload_navigation,
+                is_history_navigation: request.is_history_navigation,
             },
             response: ServiceWorkerFetchResponseWire {
                 status: response.status,
@@ -669,6 +681,8 @@ fn host_event(event: ServiceWorkerEvent) -> ServiceWorkerHostEvent {
                 client_id: request.client_id,
                 resulting_client_id: request.resulting_client_id,
                 referrer: request.referrer,
+                is_reload_navigation: request.is_reload_navigation,
+                is_history_navigation: request.is_history_navigation,
             },
         },
         ServiceWorkerEvent::ImportScriptsRequested { request_id, specifiers } => {
@@ -982,6 +996,8 @@ mod tests {
                     client_id: Some("client-1".into()),
                     resulting_client_id: None,
                     referrer: None,
+                    is_reload_navigation: false,
+                    is_history_navigation: false,
                 },
             },
         });
@@ -1034,6 +1050,8 @@ mod tests {
                     client_id: Some("client-1".into()),
                     resulting_client_id: None,
                     referrer: None,
+                    is_reload_navigation: false,
+                    is_history_navigation: false,
                 },
             },
         });
@@ -1130,6 +1148,8 @@ mod tests {
                     client_id: Some("client-1".into()),
                     resulting_client_id: None,
                     referrer: None,
+                    is_reload_navigation: false,
+                    is_history_navigation: false,
                 },
             },
         });
@@ -1245,6 +1265,8 @@ mod tests {
                         client_id: None,
                         resulting_client_id: None,
                         referrer: None,
+                        is_reload_navigation: false,
+                        is_history_navigation: false,
                     },
                 ])),
             },
@@ -1307,6 +1329,8 @@ mod tests {
                     client_id: Some("client-1".into()),
                     resulting_client_id: None,
                     referrer: None,
+                    is_reload_navigation: false,
+                    is_history_navigation: false,
                 },
             },
         });
@@ -1466,6 +1490,8 @@ mod tests {
                     client_id: Some("client-1".into()),
                     resulting_client_id: None,
                     referrer: None,
+                    is_reload_navigation: false,
+                    is_history_navigation: false,
                 },
             },
         });
@@ -1548,6 +1574,8 @@ mod tests {
                     client_id: Some("client-1".into()),
                     resulting_client_id: None,
                     referrer: None,
+                    is_reload_navigation: false,
+                    is_history_navigation: false,
                 },
             },
         });

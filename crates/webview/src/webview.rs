@@ -2066,13 +2066,15 @@ impl WebView {
                     let page_url = sw_page_url.lock().map(|url| url.clone()).unwrap_or_default();
                     let fetch_client_id = args.get(5).filter(|value| !value.is_empty()).cloned();
                     let fetch_referrer = args.get(6).filter(|value| !value.is_empty()).cloned();
+                    let is_navigation = fetch_id == "r115iframe";
+                    let is_reload_navigation = is_navigation && args.get(7).is_some_and(|value| value == "1");
+                    let is_history_navigation = is_navigation && args.get(8).is_some_and(|value| value == "1");
                     if let Ok(page) = url::Url::parse(&page_url)
                         && let Ok(request_url) = url::Url::parse(&url)
                         && page.origin() == request_url.origin()
                         && matches!(page.scheme(), "http" | "https")
                         && matches!(request_url.scheme(), "http" | "https")
                     {
-                        let is_navigation = fetch_id == "r115iframe";
                         let client_id = fetch_client_id.unwrap_or_else(|| {
                             format!("{}:{}", sw_client_id, sw_client_generation.load(Ordering::Relaxed))
                         });
@@ -2085,6 +2087,8 @@ impl WebView {
                             client_id: Some(client_id.clone()),
                             resulting_client_id: is_navigation.then_some(format!("{client_id}:nested:{url}")),
                             referrer: fetch_referrer.or_else(|| is_navigation.then_some(page_url.clone())),
+                            is_reload_navigation,
+                            is_history_navigation,
                         };
                         match Self::dispatch_in_process_service_worker_fetch(
                             &sw_manager,

@@ -1,8 +1,8 @@
 {
-  "cases": 10,
-  "subtests": 154,
+  "cases": 11,
+  "subtests": 156,
   "status": {
-    "Pass": 154
+    "Pass": 156
   },
   "deterministic": true,
   "results": [
@@ -821,6 +821,21 @@
         },
         {
           "name": "Cache Storage: Abort",
+          "status": "Pass",
+          "message": null
+        }
+      ]
+    ],
+    [
+      "service-workers/cache-storage/serviceworker/cache-keys-attributes-for-service-worker.https.html",
+      [
+        {
+          "name": "Request.IsReloadNavigation should persist.",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "Request.IsHistoryNavigation should persist.",
           "status": "Pass",
           "message": null
         }

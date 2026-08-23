@@ -612,6 +612,8 @@ const SERVICE_WORKER_BOOTSTRAP: &str = r#"
         this.redirect = init.redirect === undefined ? input.redirect : String(init.redirect);
         this.referrer = init.referrer === undefined ? input.referrer : String(init.referrer);
         this.signal = init.signal === undefined ? input.signal : init.signal;
+        this.isReloadNavigation = !!input.isReloadNavigation;
+        this.isHistoryNavigation = !!input.isHistoryNavigation;
         this.bodyUsed = false;
       } else if (typeof input === 'object' && input !== null && input.url !== undefined) {
         this.url = normalizeRequestURL(input.url);
@@ -625,6 +627,8 @@ const SERVICE_WORKER_BOOTSTRAP: &str = r#"
         this.redirect = init.redirect === undefined ? String(input.redirect || 'follow') : String(init.redirect);
         this.referrer = init.referrer === undefined ? String(input.referrer || '') : String(init.referrer);
         this.signal = init.signal === undefined ? input.signal : init.signal;
+        this.isReloadNavigation = !!input.isReloadNavigation;
+        this.isHistoryNavigation = !!input.isHistoryNavigation;
         if (input.headerGuard === 'immutable' && init.headers === undefined) {
           this.headers._guard = 'immutable';
         }
@@ -639,6 +643,8 @@ const SERVICE_WORKER_BOOTSTRAP: &str = r#"
         this.redirect = init.redirect === undefined ? 'follow' : String(init.redirect);
         this.referrer = init.referrer === undefined ? '' : String(init.referrer);
         this.signal = init.signal;
+        this.isReloadNavigation = false;
+        this.isHistoryNavigation = false;
         this.bodyUsed = false;
       }
       if (!(this.signal instanceof AbortSignal)) this.signal = null;
@@ -782,7 +788,9 @@ const SERVICE_WORKER_BOOTSTRAP: &str = r#"
       headers: Array.from(request.headers),
       body: request._body,
       clientId: null,
-      resultingClientId: null
+      resultingClientId: null,
+      isReloadNavigation: !!request.isReloadNavigation,
+      isHistoryNavigation: !!request.isHistoryNavigation
     };
   }
   function cacheQueryOptionsWire(options) {
@@ -884,7 +892,14 @@ const SERVICE_WORKER_BOOTSTRAP: &str = r#"
     return responseType === 'opaque' ? applyOpaqueFilter(result) : result;
   }
   function cachedRequestFromWire(request) {
-    return new Request(request.url, {
+    return new Request({
+      url: request.url,
+      method: request.method || 'GET',
+      headers: request.headers || [],
+      body: request.body == null ? undefined : request.body,
+      isReloadNavigation: !!request.isReloadNavigation,
+      isHistoryNavigation: !!request.isHistoryNavigation
+    }, {
       method: request.method || 'GET',
       headers: request.headers || [],
       body: request.body == null ? undefined : request.body
@@ -1989,6 +2004,10 @@ pub struct ServiceWorkerFetchRequest {
     pub resulting_client_id: Option<String>,
     /// Fetch request referrer exposed to `FetchEvent.request`.
     pub referrer: Option<String>,
+    /// Whether this request was created by a reload navigation.
+    pub is_reload_navigation: bool,
+    /// Whether this request was created by a history navigation.
+    pub is_history_navigation: bool,
 }
 
 /// Pure-value fetch response produced by `FetchEvent.respondWith()`.
@@ -3302,6 +3321,8 @@ fn fetch_request_from_json(value: &serde_json::Value) -> Option<ServiceWorkerFet
         client_id: value["clientId"].as_str().map(str::to_string),
         resulting_client_id: value["resultingClientId"].as_str().map(str::to_string),
         referrer: value["referrer"].as_str().map(str::to_string),
+        is_reload_navigation: value["isReloadNavigation"].as_bool().unwrap_or(false),
+        is_history_navigation: value["isHistoryNavigation"].as_bool().unwrap_or(false),
     })
 }
 
@@ -3609,6 +3630,8 @@ fn fetch_request_json(request: &ServiceWorkerFetchRequest) -> serde_json::Value 
         "mode": if is_navigation { "navigate" } else { "cors" },
         "redirect": if is_navigation { "manual" } else { "follow" },
         "referrer": &request.referrer,
+        "isReloadNavigation": request.is_reload_navigation,
+        "isHistoryNavigation": request.is_history_navigation,
         "headerGuard": "immutable",
     })
 }
@@ -5253,6 +5276,8 @@ mod tests {
                     client_id: Some("client-1".into()),
                     resulting_client_id: None,
                     referrer: None,
+                    is_reload_navigation: false,
+                    is_history_navigation: false,
                 },
             )
             .unwrap();
@@ -5299,6 +5324,8 @@ mod tests {
                     client_id: None,
                     resulting_client_id: None,
                     referrer: None,
+                    is_reload_navigation: false,
+                    is_history_navigation: false,
                 },
             )
             .unwrap();
@@ -5349,6 +5376,8 @@ mod tests {
                     client_id: Some("client-1".into()),
                     resulting_client_id: None,
                     referrer: None,
+                    is_reload_navigation: false,
+                    is_history_navigation: false,
                 },
             )
             .unwrap();
@@ -5417,6 +5446,12 @@ mod tests {
                      const requests = await cache.keys();
                      if (responses.length !== 1) throw new Error('matchAll length');
                      if (requests.length !== 1 || requests[0].method !== 'GET') throw new Error('keys length');
+                     if (!event.request.isReloadNavigation || event.request.isHistoryNavigation) {
+                       throw new Error('event request navigation flags');
+                     }
+                     if (!requests[0].isReloadNavigation || requests[0].isHistoryNavigation) {
+                       throw new Error('stored request navigation flags');
+                     }
                      return responses[0];
                    })());
                  });",
@@ -5437,6 +5472,8 @@ mod tests {
                     client_id: Some("client-1".into()),
                     resulting_client_id: None,
                     referrer: None,
+                    is_reload_navigation: true,
+                    is_history_navigation: false,
                 },
             )
             .unwrap();
@@ -5480,6 +5517,8 @@ mod tests {
         assert_eq!(cache_name, "runtime");
         assert_eq!(cache_id, Some(7));
         assert_eq!(request.url, "https://example.test/app/store");
+        assert!(request.is_reload_navigation);
+        assert!(!request.is_history_navigation);
         assert_eq!(response.status, 201);
         assert_eq!(response.status_text, "Created");
         assert_eq!(response.headers, [("x-cache".into(), "put".into())]);
@@ -5505,6 +5544,8 @@ mod tests {
         assert_eq!(cache_name, "runtime");
         assert_eq!(cache_id, Some(7));
         assert_eq!(request.url, "https://example.test/app/store");
+        assert!(request.is_reload_navigation);
+        assert!(!request.is_history_navigation);
         assert_eq!(options, ServiceWorkerCacheQueryOptions::default());
         runtime
             .complete_cache_storage(
@@ -5547,6 +5588,8 @@ mod tests {
                     client_id: None,
                     resulting_client_id: None,
                     referrer: None,
+                    is_reload_navigation: true,
+                    is_history_navigation: false,
                 }])),
             )
             .unwrap();
@@ -5602,6 +5645,8 @@ mod tests {
                     client_id: Some("client-1".into()),
                     resulting_client_id: None,
                     referrer: None,
+                    is_reload_navigation: false,
+                    is_history_navigation: false,
                 },
             )
             .unwrap();
@@ -5669,6 +5714,8 @@ mod tests {
                     client_id: None,
                     resulting_client_id: None,
                     referrer: None,
+                    is_reload_navigation: false,
+                    is_history_navigation: false,
                 },
                 options: Default::default(),
             }
@@ -5746,6 +5793,8 @@ mod tests {
                     client_id: Some("client-1".into()),
                     resulting_client_id: None,
                     referrer: None,
+                    is_reload_navigation: false,
+                    is_history_navigation: false,
                 },
             )
             .unwrap();
@@ -5939,6 +5988,8 @@ mod tests {
                     client_id: Some("client-1".into()),
                     resulting_client_id: None,
                     referrer: None,
+                    is_reload_navigation: false,
+                    is_history_navigation: false,
                 },
             )
             .unwrap();
@@ -6091,6 +6142,8 @@ mod tests {
                     client_id: Some("client-1".into()),
                     resulting_client_id: None,
                     referrer: None,
+                    is_reload_navigation: false,
+                    is_history_navigation: false,
                 },
             )
             .unwrap();
@@ -6191,6 +6244,8 @@ mod tests {
                     client_id: Some("client-1".into()),
                     resulting_client_id: None,
                     referrer: None,
+                    is_reload_navigation: false,
+                    is_history_navigation: false,
                 },
             )
             .unwrap();
@@ -6379,6 +6434,8 @@ mod tests {
                     client_id: Some("client-1".into()),
                     resulting_client_id: None,
                     referrer: None,
+                    is_reload_navigation: false,
+                    is_history_navigation: false,
                 },
             )
             .unwrap();
@@ -6489,6 +6546,8 @@ mod tests {
                     client_id: Some("client-1".into()),
                     resulting_client_id: None,
                     referrer: None,
+                    is_reload_navigation: false,
+                    is_history_navigation: false,
                 },
             )
             .unwrap();
@@ -6605,6 +6664,8 @@ mod tests {
                     client_id: Some("client-1".into()),
                     resulting_client_id: None,
                     referrer: None,
+                    is_reload_navigation: false,
+                    is_history_navigation: false,
                 },
             )
             .unwrap();
@@ -6683,6 +6744,8 @@ mod tests {
                     client_id: Some("client-1".into()),
                     resulting_client_id: None,
                     referrer: None,
+                    is_reload_navigation: false,
+                    is_history_navigation: false,
                 },
             )
             .unwrap();
@@ -6764,6 +6827,8 @@ mod tests {
                     client_id: Some("client-1".into()),
                     resulting_client_id: None,
                     referrer: None,
+                    is_reload_navigation: false,
+                    is_history_navigation: false,
                 },
             )
             .unwrap();
@@ -6883,6 +6948,8 @@ mod tests {
                     client_id: Some("client-1".into()),
                     resulting_client_id: None,
                     referrer: None,
+                    is_reload_navigation: false,
+                    is_history_navigation: false,
                 },
             )
             .unwrap();
@@ -6962,6 +7029,8 @@ mod tests {
                     client_id: Some("client-1".into()),
                     resulting_client_id: None,
                     referrer: None,
+                    is_reload_navigation: false,
+                    is_history_navigation: false,
                 },
             )
             .unwrap();
@@ -7043,6 +7112,8 @@ mod tests {
                     client_id: Some("client-1".into()),
                     resulting_client_id: None,
                     referrer: None,
+                    is_reload_navigation: false,
+                    is_history_navigation: false,
                 },
             )
             .unwrap();
@@ -7112,6 +7183,8 @@ mod tests {
                     client_id: None,
                     resulting_client_id: None,
                     referrer: None,
+                    is_reload_navigation: false,
+                    is_history_navigation: false,
                 },
             )
             .unwrap();
@@ -7151,6 +7224,8 @@ mod tests {
                     client_id: None,
                     resulting_client_id: None,
                     referrer: None,
+                    is_reload_navigation: false,
+                    is_history_navigation: false,
                 },
             )
             .unwrap();
@@ -7192,6 +7267,8 @@ mod tests {
                     client_id: None,
                     resulting_client_id: None,
                     referrer: None,
+                    is_reload_navigation: false,
+                    is_history_navigation: false,
                 },
             )
             .unwrap();
@@ -7238,6 +7315,8 @@ mod tests {
                     client_id: None,
                     resulting_client_id: None,
                     referrer: None,
+                    is_reload_navigation: false,
+                    is_history_navigation: false,
                 },
             )
             .unwrap();
@@ -7281,6 +7360,8 @@ mod tests {
                     client_id: None,
                     resulting_client_id: None,
                     referrer: None,
+                    is_reload_navigation: false,
+                    is_history_navigation: false,
                 },
             )
             .unwrap();
@@ -7362,6 +7443,8 @@ mod tests {
                     client_id: Some("client-1".into()),
                     resulting_client_id: None,
                     referrer: None,
+                    is_reload_navigation: false,
+                    is_history_navigation: false,
                 },
             )
             .unwrap();
@@ -7400,6 +7483,8 @@ mod tests {
                     client_id: Some("client-1".into()),
                     resulting_client_id: None,
                     referrer: None,
+                    is_reload_navigation: false,
+                    is_history_navigation: false,
                 },
             )
             .unwrap();

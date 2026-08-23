@@ -494,6 +494,119 @@
     if (!nodes || typeof _zwRemoveIframeWindowClientForNode !== 'function') return;
     for (var i = 0; i < nodes.length; i++) _zwRemoveIframeWindowClientForNode(nodes[i]);
   }
+  function _zwResolveIframeSrc(rawSrc) {
+    var out = String(rawSrc || '');
+    if (!out) return '';
+    if (/^https?:\/\//i.test(out) || out.indexOf('data:') === 0 || out.indexOf('about:') === 0) {
+      return out;
+    }
+    if (out.indexOf('/') === 0) {
+      return 'https://wpt.test' + out;
+    }
+    if (out.indexOf('./') === 0 || out.indexOf('../') === 0 || /^[?#]/.test(out) || !/^[\w+.-]*:/.test(out)) {
+      var base = '';
+      try { base = String(globalThis.location && globalThis.location.href || ''); } catch (_e141l) {}
+      base = base.replace(/[?#].*$/, '');
+      var dir = base.slice(0, base.lastIndexOf('/') + 1);
+      for (;;) {
+        var m = /^(\.\.\/)(.*)$/.exec(out);
+        if (!m) break;
+        dir = dir.replace(/[^/]*\/$/, '');
+        out = m[2];
+      }
+      return dir + out.replace(/^\.\//, '');
+    }
+    return out;
+  }
+  function _zwLoadIframeEntry(frameKey, rawSrc, flags) {
+    var _r115Entry = { doc: null, win: null, state: 'loading', history: [] };
+    _iframeDocCache[frameKey] = _r115Entry;
+    var _r115Src = String(rawSrc || '');
+    if (_r115Src && _r115Src.indexOf('javascript:') !== 0 && typeof __zw_fetch === 'function') {
+      // R115：同步加载——headless/testharness 宿主的 `__zw_fetch` 是**同步契约**
+      //（webview.rs 直接返 wire；app 层异步版返空串经 resolver 回投——空串时此路径
+      // 落 error，iframe 保持 null，浏览器路径 iframe defer）。dummy 本地文件即时，
+      // 消除 async fetch 与 window load 的竞态（用例 load 后 getWin 读 documentElement）。
+      var _r115Url = _zwResolveIframeSrc(_r115Src);
+      try {
+        var _r115Wire = String(__zw_fetch(
+          'r115iframe',
+          'GET',
+          _r115Url,
+          '',
+          '',
+          '',
+          '',
+          flags && flags.reload ? '1' : '',
+          flags && flags.history ? '1' : ''
+        ) || '');
+        if (_r115Wire && _r115Wire.indexOf('__zw_fetch_error:') !== 0) {
+          // 响应 wire（fetch_bridge serialize_response）：`__zwfr:` + status \x1f statusText
+          // \x1f headers \x1f body——FIELD_SEP=\x1f，body 是末字段（原样保真）。
+          var _r115Parts = _r115Wire.split('\x1f');
+          var _r115Body = _r115Parts.length > 3 ? _r115Parts.slice(3).join('\x1f') : '';
+          // R175（js-dom M4，修正 R156）：kind 判定区分 `.html` 与 `.xhtml`——
+          // 真浏览器按 HTTP Content-Type/扩展解析：`.html` → HTML 文档
+          //（contentType 'text/html'，createElement 的 tagName ASCII 大写、
+          // localName 小写）；`.xhtml` → XHTML（XML 语义，大小写保持——WPT
+          // Document-createElement "XHTML document" 断言 tagName 原样）。R156
+          // 把 .html 也判 'xhtml' 使 HTML iframe 子文档的 createElement 产物
+          // nodeName 小写，doc 查询树的 tag 匹配（want 大写）miss（WPT
+          // ParentNode "new NodeList" append 后计数不增的根因）。
+          // R176：`.svg` → 'svg'（contentType 'image/svg+xml'——真浏览器按
+          // 扩展/Content-Type 判 SVG 文档；WPT Document-createElement-
+          // namespace 的 .svg fixture 族断言 contentType 'image/svg+xml'）。
+          var kind = /\.xhtml(\?|#|$)/i.test(_r115Url) ? 'xhtml'
+            : (/\.html?(\?|#|$)/i.test(_r115Url) ? 'html'
+            : (/\.svg(\?|#|$)/i.test(_r115Url) ? 'svg' : 'xml'));
+          _r115Entry.doc = _zwMakeIframeDoc(kind, _r115Body);
+          try { _r115Entry.doc._zwURL = _r115Url; } catch (_e115u) {}
+          // R160：fragment URL 槽（`:target` 判定——WPT :target 簇的
+          // iframe 子文档 src 带 #target，doc 查询传 host 侧 set_url）。
+          try { _r115Entry.doc._zwFragmentUrl = _r115Url; } catch (_e160f) {}
+          _r115Entry.win = _zwMakeIframeWin(_r115Entry.doc, frameKey);
+          try { if (_r115Entry.doc.__r115SetWin) _r115Entry.doc.__r115SetWin(_r115Entry.win); } catch (_eW) {}
+          _r115Entry.state = 'done';
+          _r115Entry.url = _r115Url;
+          _zwObserveIframeWindowClient(_r115Entry, frameKey, _r115Url);
+        } else {
+          _r115Entry.state = 'error';
+        }
+      } catch (_e115f) {
+        _r115Entry.state = 'error';
+      }
+    } else {
+      _r115Entry.state = 'no-src';
+      // R130（js-dom M4）：无 src iframe 的 contentDocument —— spec：iframe 初始导航
+      // 到 about:blank，contentDocument 是空 Document（非 null）。WPT
+      // createHTMLDocument-with-saved-implementation / -with-null-browsing-context-crash
+      // 都对无 src iframe 取 .implementation（旧 null → TypeError 崩用例）。
+      // 「无嵌套浏览上下文 → null」仅适用已移除 iframe（本框架 detached doc 同样
+      // 可用——统一返空文档，与 contentWindow 的 fallback doc 同源）。
+      _r115Entry.doc = _zwMakeIframeDoc('html', '');
+    }
+    return _r115Entry;
+  }
+  globalThis.__zw_reload_iframe = globalThis.__zw_reload_iframe || function(frame, rawSrc, flags) {
+    if (!frame) return null;
+    var frameKey = frame.__zwHandle ? _elKey(null, frame.__zwHandle) : _elKey(frame.__zwSelector || null, null);
+    if (!frameKey) return null;
+    var previous = _iframeDocCache[frameKey];
+    var nextSrc = rawSrc;
+    if (nextSrc == null || nextSrc === '') {
+      try { nextSrc = frame.__zwHandle ? __zw_get_attr_handle(frame.__zwHandle, 'src') : __zw_get_attr_lw(frame.__zwSelector, 'src'); } catch (_eSrc) { nextSrc = ''; }
+    }
+    var entry = _zwLoadIframeEntry(frameKey, nextSrc, flags || {});
+    entry.history = previous && previous.history ? previous.history.slice() : [];
+    if (flags && flags.history && entry.history.length > 1) {
+      entry.history.pop();
+    } else if (entry.url && (!entry.history.length || entry.history[entry.history.length - 1] !== entry.url)) {
+      entry.history.push(entry.url);
+    }
+    try { if (entry.win && typeof entry.win.__zwRunInlineScripts === 'function') entry.win.__zwRunInlineScripts(); } catch (_eScripts) {}
+    try { frame.dispatchEvent(new globalThis.Event('load')); } catch (_eLoad) {}
+    return entry;
+  };
   // js-dom M4 R116：per-attribute NS 元数据（elKey → { qualifiedName → {ns, prefix, local} }）——
   // setAttributeNS 写入；Attr 节点字段（prefix/localName/namespaceURI）与 NS 读（按 ns+local 匹配
   // 任意 prefix 的存储名）消费。host 侧属性存储是扁平限定名（无 ns），NS 语义须 JS 端登记。
@@ -943,7 +1056,9 @@
             headersWire,
             body,
             String(globalThis.__zwFetchClientId || ''),
-            String(globalThis.__zwFetchReferrer || '')
+            String(globalThis.__zwFetchReferrer || ''),
+            '',
+            ''
           );
           // R34xx：同步返回契约——headless/testharness 宿主（webview fetch_handler）同步返 wire；
           // 浏览器异步路径（fetch_bridge）返 "" → no-op（__zwResolveCallback 后到，双 settle 由

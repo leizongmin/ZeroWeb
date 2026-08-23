@@ -274,6 +274,8 @@ impl ServiceWorkerRuntimeHost for IpcServiceWorkerHost {
                         client_id: request.client_id,
                         resulting_client_id: request.resulting_client_id,
                         referrer: request.referrer,
+                        is_reload_navigation: request.is_reload_navigation,
+                        is_history_navigation: request.is_history_navigation,
                     },
                 },
             },
@@ -501,6 +503,8 @@ fn fetch_request_from_wire(request: ServiceWorkerFetchRequestWire) -> ServiceWor
         client_id: request.client_id,
         resulting_client_id: request.resulting_client_id,
         referrer: request.referrer,
+        is_reload_navigation: request.is_reload_navigation,
+        is_history_navigation: request.is_history_navigation,
     }
 }
 
@@ -514,6 +518,8 @@ fn fetch_request_to_wire(request: ServiceWorkerFetchRequest) -> ServiceWorkerFet
         client_id: request.client_id,
         resulting_client_id: request.resulting_client_id,
         referrer: request.referrer,
+        is_reload_navigation: request.is_reload_navigation,
+        is_history_navigation: request.is_history_navigation,
     }
 }
 
@@ -1493,6 +1499,8 @@ impl BrowserServiceWorkerOwner {
             client_id: Some(client_id.to_string()),
             resulting_client_id: None,
             referrer: None,
+            is_reload_navigation: false,
+            is_history_navigation: false,
         };
         let dispatch = self.manager_mut(profile).dispatch_fetch(&origin, event_id, request);
         match dispatch {
