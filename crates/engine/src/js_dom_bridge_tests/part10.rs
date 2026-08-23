@@ -1808,6 +1808,28 @@ fn test_blob_stream_response_body_readers_r2978() {
         "Response.arrayBuffer('ABC')[0]=65 ('A')"
     );
 
+    // Response(BufferSource)：ArrayBuffer / ArrayBufferView 都按字节 body 处理，供 Service Worker
+    // respondWith(new Response(new TextEncoder().encode(...))) 回传保真文本。
+    sandbox
+        .execute(
+            "var pass = new TextEncoder().encode('PASS');\
+             new Response(pass.buffer).text().then(function(text){ globalThis.__abText = text; });\
+             new Response(pass).arrayBuffer().then(function(buf){\
+               globalThis.__viewText = new TextDecoder().decode(buf);\
+             });",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__abText)").unwrap().value,
+        "PASS",
+        "Response(ArrayBuffer).text() 解码 BufferSource body"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__viewText)").unwrap().value,
+        "PASS",
+        "Response(Uint8Array).arrayBuffer() 保留 BufferSource body"
+    );
+
     // Response.formData()：application/x-www-form-urlencoded 解析（+ → space，% 解码）。
     sandbox
         .execute(
@@ -1832,6 +1854,21 @@ fn test_blob_stream_response_body_readers_r2978() {
         sandbox.execute("String(globalThis.__fdC)").unwrap().value,
         "hello world",
         "Response.formData() + → space（urlencoded 语义）"
+    );
+
+    // multipart/form-data 响应：Service Worker Response(FormData) 经 multipart Content-Type 回传后，
+    // 页面侧 response.formData() 应能读回文本字段。
+    sandbox
+        .execute(
+            "var mpBody = '--ZeroBoundary\\r\\nContent-Disposition: form-data; name=\"result\"\\r\\n\\r\\nPASS\\r\\n--ZeroBoundary--\\r\\n';\
+             new Response(mpBody, {headers: {'Content-Type': 'multipart/form-data; boundary=ZeroBoundary'}})\
+               .formData().then(function(fd){ globalThis.__mpResult = fd.get('result'); });",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__mpResult)").unwrap().value,
+        "PASS",
+        "Response.formData() 解析 multipart/form-data 文本字段"
     );
 }
 

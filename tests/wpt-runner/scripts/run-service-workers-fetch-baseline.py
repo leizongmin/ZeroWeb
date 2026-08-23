@@ -10,8 +10,8 @@ import subprocess
 import sys
 from pathlib import Path
 
-EXPECTED_CASES = 7
-EXPECTED_SUBTESTS = 12
+EXPECTED_CASES = 8
+EXPECTED_SUBTESTS = 23
 
 
 def parse_args() -> argparse.Namespace:
@@ -82,7 +82,8 @@ def render_markdown(summary: dict) -> str:
             "- Date: 2026-08-23",
             "- WPT revision: `04067ce9c7c2165e71ad7d0dde10a4c5cb394a83`",
             "- Additional WPT revision: `24197a11e8c5bd29a5cb7bdf18135a82be8a8546` "
-            "for `fetch-event-within-sw.https.html` and its new support assets",
+            "for `fetch-event-within-sw.https.html`, "
+            "`fetch-event-respond-with-custom-response.https.html`, and their new support assets",
             f"- Cases: {summary['cases']}",
             f"- Subtests: {summary['subtests']}",
             f"- Pass: {status.get('Pass', 0)}",
@@ -93,7 +94,7 @@ def render_markdown(summary: dict) -> str:
             "",
             "## Scope",
             "",
-            "This pinned Service Worker M2 fetch/interception baseline covers seven cases. "
+            "This pinned Service Worker M2 fetch/interception baseline covers eight cases. "
             "`request-end-to-end.https.html` registers a real service worker, loads a "
             "controlled iframe, dispatches a FetchEvent, and validates the Request "
             "projection returned via `respondWith(new Response(...))`. "
@@ -105,6 +106,10 @@ def render_markdown(summary: dict) -> str:
             "`fetch-event-within-sw.https.html` covers controlled-window `fetch()` and "
             "`Cache.add()` interception while worker-global `fetch()` / `Cache.add()` "
             "requests do not self-intercept. "
+            "`fetch-event-respond-with-custom-response.https.html` covers synthetic "
+            "`respondWith(new Response(...))` bodies constructed from strings, Blob, "
+            "ArrayBuffer, ArrayBufferView, FormData, and URLSearchParams across "
+            "subresource fetches and iframe navigations. "
             "`fetch-event-network-error.https.html` covers rejected `respondWith()`, "
             "`preventDefault()` without `respondWith()`, consumed response body network "
             "errors, and pass-through after a thrown fetch handler. "

@@ -1113,6 +1113,33 @@
     }
     return fd;
   }
+  function _zwParseFormMultipart(bodyText, boundary) {
+    var fd = new FormData();
+    if (!boundary) return fd;
+    var delimiter = '--' + boundary;
+    var parts = String(bodyText == null ? '' : bodyText).split(delimiter);
+    for (var i = 1; i < parts.length; i++) {
+      var part = parts[i];
+      if (part.indexOf('--') === 0) break;
+      if (part.indexOf('\r\n') === 0) part = part.slice(2);
+      var headerEnd = part.indexOf('\r\n\r\n');
+      if (headerEnd < 0) continue;
+      var headerText = part.slice(0, headerEnd);
+      var content = part.slice(headerEnd + 4);
+      if (content.slice(-2) === '\r\n') content = content.slice(0, -2);
+      var nameMatch = headerText.match(/(?:^|\r\n)content-disposition:[^\r\n]*\bname="([^"]*)"/i);
+      if (nameMatch) fd.append(nameMatch[1], content);
+    }
+    return fd;
+  }
+  function _zwResponseBodyBytes(body) {
+    if (body instanceof Uint8Array) return body;
+    if (typeof ArrayBuffer !== 'undefined' && body instanceof ArrayBuffer) return new Uint8Array(body);
+    if (typeof ArrayBuffer !== 'undefined' && ArrayBuffer.isView && ArrayBuffer.isView(body)) {
+      return new Uint8Array(body.buffer.slice(body.byteOffset || 0, (body.byteOffset || 0) + (body.byteLength || 0)));
+    }
+    return null;
+  }
   globalThis.Response = function Response(body, init) {
     if (!(this instanceof Response)) return new Response(body, init);
     init = init || {};
@@ -1129,11 +1156,12 @@
     this.redirected = false;
     this._bodyUsed = false;
     this._bodyNull = body == null;
-    // R3021：Uint8Array body（二进制 response）→ 存 _bodyBytes，_bodyText = TextDecoder 解码（供 text()）；
+    // R3021/R35xx：BufferSource body（二进制 response）→ 存 _bodyBytes，_bodyText = TextDecoder 解码（供 text()）；
     // 字符串/其他 body → _bodyText 原样，_bodyBytes=null（blob()/arrayBuffer() 回落 UTF-8 编码文本）。
-    if (body instanceof Uint8Array) {
-      this._bodyBytes = body;
-      this._bodyText = new TextDecoder().decode(body);
+    var responseBodyBytes = _zwResponseBodyBytes(body);
+    if (responseBodyBytes != null) {
+      this._bodyBytes = responseBodyBytes;
+      this._bodyText = new TextDecoder().decode(responseBodyBytes);
     } else if ((typeof Blob === 'function' && body instanceof Blob) || (typeof FormData === 'function' && body instanceof FormData)) {
       this._bodyBytes = _zwBodyBytesAndContentType(body, this.headers);
       this._bodyText = new TextDecoder().decode(this._bodyBytes);
@@ -1176,7 +1204,15 @@
       for (var k = 0; k < bytes.length; k++) arr[k] = bytes[k];
       return Promise.resolve(arr);
     };
-    this.formData = function () { _zwMarkBodyUsed(self); return Promise.resolve(_zwParseFormUrlencoded(self._bodyText)); };
+    this.formData = function () {
+      _zwMarkBodyUsed(self);
+      var contentType = self.headers && typeof self.headers.get === 'function'
+        ? (self.headers.get('content-type') || '')
+        : '';
+      var boundaryMatch = contentType.match(/multipart\/form-data\s*;\s*boundary=([^;]+)/i);
+      if (boundaryMatch) return Promise.resolve(_zwParseFormMultipart(self._bodyText, boundaryMatch[1].replace(/^"|"$/g, '')));
+      return Promise.resolve(_zwParseFormUrlencoded(self._bodyText));
+    };
     this.clone = function () {
       // R3021：二进制 body（_bodyBytes）须克隆保真，否则 clone().arrayBuffer() 退化为文本 UTF-8 编码。
       if (self.type === 'error') return globalThis.Response.error();

@@ -82,6 +82,12 @@ Service Worker `fetch-event-within-sw.https.html` 扩面进一步固定 iframe
 `Cache.add()` 的相对 URL、fetch client id 与 referrer 使用 iframe 文档上下文，因此受控
 iframe 的 `cache.add('sample.txt')` 会经 SW fetch 事件拦截，而 SW 内部 `fetch()` /
 `Cache.add()` 仍保持不自拦截。
+Service Worker `fetch-event-respond-with-custom-response.https.html` 扩面进一步复用并固定
+页面 `Response` body 读回能力：page-side `Response` 支持 ArrayBuffer /
+ArrayBufferView body 字节化，`Response.formData()` 支持最小 multipart/form-data 文本字段解析；
+worker-global 最小 `FormData` 序列化出的 multipart response 可被受控 iframe subresource fetch
+与 navigation 路径读回。该切片服务 service-workers fetch baseline，不改变本目标的 window
+CacheStorage 分母。
 
 **与兄弟 goal 的边界**：
 - [storage-indexeddb](../archive/storage-indexeddb.md)（已归档）— IDB 归其管
@@ -117,7 +123,7 @@ iframe 的 `cache.add('sample.txt')` 会经 SW fetch 事件拦截，而 SW 内�
 | C1 | WPT cache-storage 用例覆盖为零 | ✅ M1 window 首批基线已接入 |
 | C2 | 页面 `caches` 全局缺失（零接线） | ✅ M1 初始桥接完成；全 API 语义继续归 C4 |
 | C3 | 无持久化 | ✅ M3 完成：page/WebView owner per-origin 落盘、跨 WebView 重建读回、磁盘错误 reject；SW registration-local CacheStorage snapshot/restore 与 normal profile 持久化 dirtying 已验证 |
-| C4 | Request/Response 集成（add/addAll/可缓存性） | 🚧 M2 页面 `add/addAll` GET + `Response.ok` 路径、返回对象 brand、缺参 TypeError、Vary 匹配、delete-dooming、DOMString name wire、`Cache.put` 非 GET/非 HTTP(S)/206/`Vary: *` 拒绝、used body 拒绝、empty body 不消费、cached `Response.type`/`Response.url` 读回保真、`Response.error()` 可缓存读回、opaque response 忽略 Vary 与内部 206/`Vary: *` 可缓存、`Response.redirect()`/Blob/FormData response 路径、`addAll` 失败不部分落库、undefined entry 拒绝与 Vary-aware duplicate 判定完成；完整 `basic`/`cors`/`opaque`/`opaqueredirect` filtered response 生成矩阵待补 |
+| C4 | Request/Response 集成（add/addAll/可缓存性） | 🚧 M2 页面 `add/addAll` GET + `Response.ok` 路径、返回对象 brand、缺参 TypeError、Vary 匹配、delete-dooming、DOMString name wire、`Cache.put` 非 GET/非 HTTP(S)/206/`Vary: *` 拒绝、used body 拒绝、empty body 不消费、cached `Response.type`/`Response.url` 读回保真、`Response.error()` 可缓存读回、opaque response 忽略 Vary 与内部 206/`Vary: *` 可缓存、`Response.redirect()`/Blob/FormData response 路径、ArrayBuffer/ArrayBufferView response body 与 multipart `Response.formData()` 文本字段读回、`addAll` 失败不部分落库、undefined entry 拒绝与 Vary-aware duplicate 判定完成；完整 `basic`/`cors`/`opaque`/`opaqueredirect` filtered response 生成矩阵待补 |
 | C5 | Cache.matchAll/Cache.keys 页面桥接 | ✅ M2；`ignoreSearch`/`ignoreMethod`/`ignoreVary` 已接线 |
 
 ## 下一步计划
@@ -133,7 +139,7 @@ iframe 的 `cache.add('sample.txt')` 会经 SW fetch 事件拦截，而 SW 内�
 | 里程碑 | 状态 |
 |--------|------|
 | M1 — WPT cache-storage 基线 + caches 骨架 | ✅ 页面骨架 + 32-case window runner WPT 基线已接入 |
-| M2 — Cache 全 API + 查询语义 | 🚧 `Cache.matchAll()` / `Cache.keys()`、`Cache.match()`、`CacheStorage.match()`、`ignoreSearch`/`ignoreMethod`/`ignoreVary`、页面 `add/addAll` GET fetch→store、iframe `contentWindow.caches` + `Cache.add()` iframe fetch context、返回对象 brand、缺参 TypeError、`CacheStorage.keys()` 创建顺序、delete-dooming、DOMString name wire、Storage Buckets cache namespace、`Cache.put` 核心可缓存性拒绝/body 消费语义、cached `Response.type`/`Response.url` 读回保真、`Response.error()` 可缓存读回、opaque response 忽略 Vary 与内部 metadata 可缓存、`Response.redirect()`/Blob/FormData response 路径、`addAll` 原子失败、undefined entry 拒绝、Vary-aware duplicate 判定、Window/Dedicated Worker/nested Dedicated Worker owner 共享路径、`cache-abort` window/worker abort 语义、SW runtime `Cache.delete()` 与 `CacheStorage.delete/has/keys` 已接入；完整 filtered response 生成与更大 WPT 覆盖待完成 |
+| M2 — Cache 全 API + 查询语义 | 🚧 `Cache.matchAll()` / `Cache.keys()`、`Cache.match()`、`CacheStorage.match()`、`ignoreSearch`/`ignoreMethod`/`ignoreVary`、页面 `add/addAll` GET fetch→store、iframe `contentWindow.caches` + `Cache.add()` iframe fetch context、返回对象 brand、缺参 TypeError、`CacheStorage.keys()` 创建顺序、delete-dooming、DOMString name wire、Storage Buckets cache namespace、`Cache.put` 核心可缓存性拒绝/body 消费语义、cached `Response.type`/`Response.url` 读回保真、`Response.error()` 可缓存读回、opaque response 忽略 Vary 与内部 metadata 可缓存、`Response.redirect()`/Blob/FormData response 路径、ArrayBuffer/ArrayBufferView response body 与 multipart `Response.formData()` 文本字段读回、`addAll` 原子失败、undefined entry 拒绝、Vary-aware duplicate 判定、Window/Dedicated Worker/nested Dedicated Worker owner 共享路径、`cache-abort` window/worker abort 语义、SW runtime `Cache.delete()` 与 `CacheStorage.delete/has/keys` 已接入；完整 filtered response 生成与更大 WPT 覆盖待完成 |
 | M3 — 持久化 + 剩余语义收尾 | 🚧 page/WebView owner per-origin 持久化与 SW registration-local CacheStorage 持久化已完成；剩余 filtered response 矩阵待补 |
 
 ## 验证基线
@@ -398,4 +404,11 @@ iframe 的 `cache.add('sample.txt')` 会经 SW fetch 事件拦截，而 SW 内�
   - `./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit 300 -- make testharness-service-workers-fetch FILTER=fetch-event-within-sw.https.html`：2 entries Pass
   - `./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit 420 -- make baseline-wpt-service-workers-fetch OUTPUT=docs/goal/service-workers/evidence/2026-08-23-m2-fetch-within-sw-baseline.json SUMMARY=docs/goal/service-workers/evidence/2026-08-23-m2-fetch-within-sw-baseline.md`：7 cases / 12 subtests / 12 Pass，double-run deterministic
   - 证据：[Service Worker Fetch WPT Baseline](../service-workers/evidence/2026-08-23-m2-fetch-within-sw-baseline.md)
+- 2026-08-23 Service Worker fetch custom-response 共享 Response/FormData 支撑：
+  - 新增 WPT：`service-workers/service-worker/fetch-event-respond-with-custom-response.https.html`
+  - 新增 support：`service-workers/service-worker/resources/fetch-event-respond-with-custom-response-worker.js`
+  - `./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit 300 -- cargo test -p zero-engine test_response_body_used_redirect_and_blob_formdata_cache_put_support -- --nocapture`：1 passed
+  - `./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit 300 -- cargo test -p zero-script-sandbox fetch_event_respond_with_serializes_buffer_source_and_form_data_response -- --nocapture`：1 passed
+  - `WPT_SOURCE=$HOME/github/others/wpt ./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit 420 -- make baseline-wpt-service-workers-fetch OUTPUT=docs/goal/service-workers/evidence/2026-08-23-m2-fetch-custom-response-baseline.json SUMMARY=docs/goal/service-workers/evidence/2026-08-23-m2-fetch-custom-response-baseline.md`：8 cases / 23 subtests / 23 Pass，double-run deterministic
+  - 证据：[Service Worker Fetch WPT Baseline](../service-workers/evidence/2026-08-23-m2-fetch-custom-response-baseline.md)
 - 质量门禁：`cargo fmt` + `cargo clippy --workspace --all-targets -- -D warnings` 全过

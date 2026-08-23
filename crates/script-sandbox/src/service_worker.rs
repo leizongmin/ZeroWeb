@@ -349,16 +349,83 @@ const SERVICE_WORKER_BOOTSTRAP: &str = r#"
 
   function utf8Encode(value) {
     const text = String(value);
-    if (typeof TextEncoder === 'function') return new TextEncoder().encode(text);
     const bytes = [];
-    for (let i = 0; i < text.length; i++) bytes.push(text.charCodeAt(i) & 0xFF);
+    for (let i = 0; i < text.length; i++) {
+      const c = text.charCodeAt(i);
+      if (c < 0x80) {
+        bytes.push(c);
+      } else if (c < 0x800) {
+        bytes.push(0xc0 | (c >> 6), 0x80 | (c & 0x3f));
+      } else if (c >= 0xd800 && c <= 0xdbff && text.charCodeAt(i + 1) >= 0xdc00 && text.charCodeAt(i + 1) <= 0xdfff) {
+        const lo = text.charCodeAt(++i);
+        const cp = 0x10000 + ((c & 0x3ff) << 10) + (lo & 0x3ff);
+        bytes.push(0xf0 | (cp >> 18), 0x80 | ((cp >> 12) & 0x3f), 0x80 | ((cp >> 6) & 0x3f), 0x80 | (cp & 0x3f));
+      } else {
+        bytes.push(0xe0 | (c >> 12), 0x80 | ((c >> 6) & 0x3f), 0x80 | (c & 0x3f));
+      }
+    }
     return new Uint8Array(bytes);
   }
   function utf8Decode(bytes) {
-    if (typeof TextDecoder === 'function') return new TextDecoder().decode(bytes);
     let text = '';
-    for (let i = 0; i < bytes.length; i++) text += String.fromCharCode(bytes[i]);
+    for (let i = 0; i < bytes.length;) {
+      const b = bytes[i];
+      if (b < 0x80) {
+        text += String.fromCharCode(b);
+        i += 1;
+      } else if (b < 0xc2 || i + 1 >= bytes.length) {
+        text += '\uFFFD';
+        i += 1;
+      } else if (b < 0xe0) {
+        text += String.fromCharCode(((b & 0x1f) << 6) | (bytes[i + 1] & 0x3f));
+        i += 2;
+      } else if (b < 0xf0) {
+        if (i + 2 >= bytes.length) {
+          text += '\uFFFD';
+          i += 1;
+        } else {
+          text += String.fromCharCode(((b & 0x0f) << 12) | ((bytes[i + 1] & 0x3f) << 6) | (bytes[i + 2] & 0x3f));
+          i += 3;
+        }
+      } else if (i + 3 >= bytes.length) {
+        text += '\uFFFD';
+        i += 1;
+      } else {
+        let cp = ((b & 0x07) << 18) | ((bytes[i + 1] & 0x3f) << 12) | ((bytes[i + 2] & 0x3f) << 6) | (bytes[i + 3] & 0x3f);
+        cp -= 0x10000;
+        text += String.fromCharCode(0xd800 + (cp >> 10), 0xdc00 + (cp & 0x3ff));
+        i += 4;
+      }
+    }
     return text;
+  }
+  // https://encoding.spec.whatwg.org/#interface-textencoder
+  class TextEncoderPolyfill {
+    get encoding() {
+      return 'utf-8';
+    }
+    encode(value) {
+      return utf8Encode(value === undefined ? '' : value);
+    }
+    encodeInto(value, destination) {
+      const text = String(value === undefined ? '' : value);
+      const bytes = utf8Encode(text);
+      const written = Math.min(bytes.length, destination && destination.length || 0);
+      for (let i = 0; i < written; i++) destination[i] = bytes[i];
+      return {read: text.length, written};
+    }
+  }
+  // https://encoding.spec.whatwg.org/#interface-textdecoder
+  class TextDecoderPolyfill {
+    constructor() {
+      this.encoding = 'utf-8';
+      this.fatal = false;
+      this.ignoreBOM = false;
+    }
+    decode(input) {
+      if (input === undefined || input === null) return '';
+      return utf8Decode(bodyPartBytes(input));
+    }
   }
   function bodyPartBytes(part) {
     if (part === undefined || part === null) return new Uint8Array(0);
@@ -498,6 +565,98 @@ const SERVICE_WORKER_BOOTSTRAP: &str = r#"
     DONE: {value: 2},
     [Symbol.toStringTag]: {value: 'FileReader'}
   });
+
+  function formDataEntry(name, value, filename) {
+    if (value instanceof Blob) {
+      return [String(name), value, filename === undefined ? (value.name || 'blob') : String(filename)];
+    }
+    return [String(name), String(value), undefined];
+  }
+  let formDataCounter = 0;
+  // https://xhr.spec.whatwg.org/#interface-formdata
+  class FormData {
+    constructor() {
+      this._pairs = [];
+    }
+    append(name, value, filename) {
+      this._pairs.push(formDataEntry(name, value, filename));
+    }
+    delete(name) {
+      name = String(name);
+      this._pairs = this._pairs.filter(pair => pair[0] !== name);
+    }
+    get(name) {
+      name = String(name);
+      const pair = this._pairs.find(pair => pair[0] === name);
+      return pair ? pair[1] : null;
+    }
+    getAll(name) {
+      name = String(name);
+      return this._pairs.filter(pair => pair[0] === name).map(pair => pair[1]);
+    }
+    has(name) {
+      name = String(name);
+      return this._pairs.some(pair => pair[0] === name);
+    }
+    set(name, value, filename) {
+      const entry = formDataEntry(name, value, filename);
+      const index = this._pairs.findIndex(pair => pair[0] === entry[0]);
+      if (index < 0) {
+        this._pairs.push(entry);
+        return;
+      }
+      this._pairs[index] = entry;
+      this._pairs = this._pairs.filter((pair, i) => pair[0] !== entry[0] || i === index);
+    }
+    entries() {
+      return this._pairs.map(pair => [pair[0], pair[1]])[Symbol.iterator]();
+    }
+    keys() {
+      return this._pairs.map(pair => pair[0])[Symbol.iterator]();
+    }
+    values() {
+      return this._pairs.map(pair => pair[1])[Symbol.iterator]();
+    }
+    forEach(callback, thisArg) {
+      for (const pair of this._pairs) callback.call(thisArg, pair[1], pair[0], this);
+    }
+    [Symbol.iterator]() {
+      return this.entries();
+    }
+  }
+  Object.defineProperty(FormData.prototype, Symbol.toStringTag, {value: 'FormData'});
+  function formDataMultipart(formData) {
+    const boundary = '----ZeroWebSWForm' + formDataCounter++;
+    const bytes = [];
+    const pushText = function(text) {
+      const encoded = utf8Encode(text);
+      for (let i = 0; i < encoded.length; i++) bytes.push(encoded[i]);
+    };
+    for (const entry of formData._pairs) {
+      const name = entry[0];
+      const value = entry[1];
+      const filename = entry[2];
+      pushText('--' + boundary + '\r\n');
+      if (value instanceof Blob) {
+        pushText('Content-Disposition: form-data; name="' + name + '"; filename="' + filename + '"\r\n');
+        pushText('Content-Type: ' + (value.type || 'application/octet-stream') + '\r\n\r\n');
+        const blob = blobBytes(value);
+        for (let i = 0; i < blob.length; i++) bytes.push(blob[i]);
+        pushText('\r\n');
+      } else {
+        pushText('Content-Disposition: form-data; name="' + name + '"\r\n\r\n');
+        pushText(value);
+        pushText('\r\n');
+      }
+    }
+    pushText('--' + boundary + '--\r\n');
+    const body = new Uint8Array(bytes.length);
+    for (let i = 0; i < bytes.length; i++) body[i] = bytes[i];
+    return {
+      body,
+      contentType: 'multipart/form-data; boundary=' + boundary
+    };
+  }
 
   // https://fetch.spec.whatwg.org/#headers-class
   function normalizeHeaderName(name) {
@@ -670,7 +829,15 @@ const SERVICE_WORKER_BOOTSTRAP: &str = r#"
       this.statusText = init.statusText === undefined ? '' : String(init.statusText);
       this.headers = new Headers(init.headers);
       this.headers._guard = 'response';
-      this._body = normalizeBody(body);
+      if (body instanceof FormData) {
+        const multipart = formDataMultipart(body);
+        if (!this.headers.has('content-type')) {
+          this.headers.set('content-type', multipart.contentType);
+        }
+        this._body = utf8Decode(multipart.body);
+      } else {
+        this._body = normalizeBody(body);
+      }
       this.bodyUsed = false;
       this.ok = status >= 200 && status <= 299;
       this.type = 'default';
@@ -1408,8 +1575,11 @@ const SERVICE_WORKER_BOOTSTRAP: &str = r#"
   globalThis.MessageEvent = MessageEvent;
   globalThis.MessagePort = MessagePort;
   globalThis.MessageChannel = MessageChannel;
+  globalThis.TextEncoder = globalThis.TextEncoder || TextEncoderPolyfill;
+  globalThis.TextDecoder = globalThis.TextDecoder || TextDecoderPolyfill;
   globalThis.Blob = globalThis.Blob || Blob;
   globalThis.FileReader = globalThis.FileReader || FileReader;
+  globalThis.FormData = globalThis.FormData || FormData;
   globalThis.Headers = globalThis.Headers || Headers;
   globalThis.Request = globalThis.Request || Request;
   globalThis.Response = globalThis.Response || Response;
@@ -5296,6 +5466,110 @@ mod tests {
                 failed: false,
                 message: String::new(),
             }
+        );
+    }
+
+    #[test]
+    fn fetch_event_respond_with_serializes_buffer_source_and_form_data_response() {
+        let mut runtime = ServiceWorkerRuntime::new(test_config()).unwrap();
+        runtime
+            .evaluate(
+                "addEventListener('fetch', event => {
+                   const type = new URL(event.request.url).searchParams.get('type');
+                   if (type === 'buffer') {
+                     const bytes = new TextEncoder().encode('PASS');
+                     event.respondWith(new Response(bytes.buffer));
+                   } else if (type === 'buffer-view') {
+                     event.respondWith(new Response(new Uint8Array([80, 65, 83, 83])));
+                   } else if (type === 'form-data') {
+                     const body = new FormData();
+                     body.set('result', 'PASS');
+                     event.respondWith(new Response(body));
+                   }
+                 });",
+                "https://example.test/sw.js",
+            )
+            .unwrap();
+        let _ = runtime.recv_timeout(Duration::from_secs(5)).unwrap();
+
+        for (event_id, response_type) in [(41, "buffer"), (42, "buffer-view")] {
+            runtime
+                .dispatch_fetch(
+                    event_id,
+                    ServiceWorkerFetchRequest {
+                        url: format!("https://example.test/app/data.txt?type={response_type}"),
+                        method: "GET".into(),
+                        headers: Vec::new(),
+                        body: None,
+                        credentials: None,
+                        client_id: Some("client-1".into()),
+                        resulting_client_id: None,
+                        referrer: None,
+                        is_reload_navigation: false,
+                        is_history_navigation: false,
+                    },
+                )
+                .unwrap();
+            assert_eq!(
+                runtime.recv_timeout(Duration::from_secs(5)).unwrap(),
+                ServiceWorkerEvent::FetchSettled {
+                    event_id,
+                    request_url: format!("https://example.test/app/data.txt?type={response_type}"),
+                    response: Some(ServiceWorkerFetchResponse {
+                        status: 200,
+                        status_text: String::new(),
+                        response_type: "default".into(),
+                        headers: Vec::new(),
+                        body: "PASS".into(),
+                    }),
+                    failed: false,
+                    message: String::new(),
+                }
+            );
+        }
+
+        runtime
+            .dispatch_fetch(
+                43,
+                ServiceWorkerFetchRequest {
+                    url: "https://example.test/app/data.txt?type=form-data".into(),
+                    method: "GET".into(),
+                    headers: Vec::new(),
+                    body: None,
+                    credentials: None,
+                    client_id: Some("client-1".into()),
+                    resulting_client_id: None,
+                    referrer: None,
+                    is_reload_navigation: false,
+                    is_history_navigation: false,
+                },
+            )
+            .unwrap();
+        let event = runtime.recv_timeout(Duration::from_secs(5)).unwrap();
+        let ServiceWorkerEvent::FetchSettled {
+            response: Some(response),
+            failed: false,
+            ..
+        } = event
+        else {
+            panic!("expected FormData response, got {event:?}");
+        };
+        assert_eq!(response.status, 200);
+        assert!(
+            response
+                .headers
+                .iter()
+                .any(|(name, value)| name == "content-type" && value.starts_with("multipart/form-data; boundary=")),
+            "Response(FormData) should set a multipart Content-Type: {:?}",
+            response.headers
+        );
+        assert!(
+            response
+                .body
+                .contains("Content-Disposition: form-data; name=\"result\"")
+                && response.body.contains("PASS"),
+            "Response(FormData) body should preserve the field: {}",
+            response.body
         );
     }
 
