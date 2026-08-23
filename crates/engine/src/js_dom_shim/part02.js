@@ -3170,6 +3170,15 @@
           })(_registrations[i]._worker);
         }
       };
+      globalThis.__zwPollServiceWorkerMessages = function () {
+        ensureDocument();
+        for (var i = 0; i < _registrations.length; i++) {
+          (function(worker) {
+            if (!worker) return;
+            scheduleClientMessagePoll(worker);
+          })(_registrations[i]._worker);
+        }
+      };
       function dispatchTargetEvent(target, type) {
         if (target && typeof target.dispatchEvent === 'function' &&
             typeof globalThis.Event === 'function') {

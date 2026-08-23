@@ -1,8 +1,8 @@
 {
-  "cases": 9,
-  "subtests": 144,
+  "cases": 10,
+  "subtests": 154,
   "status": {
-    "Pass": 144
+    "Pass": 154
   },
   "deterministic": true,
   "results": [
@@ -766,6 +766,61 @@
         },
         {
           "name": "Cache.add and Cache.addAll",
+          "status": "Pass",
+          "message": null
+        }
+      ]
+    ],
+    [
+      "service-workers/cache-storage/serviceworker/cache-abort.https.html",
+      [
+        {
+          "name": "put() on an already-aborted request should reject with AbortError",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "put() synchronously followed by abort should reject with AbortError",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "put() followed by abort after headers received should reject with AbortError",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "add() on an already-aborted request should reject with AbortError",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "add() synchronously followed by abort should reject with AbortError",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "add() followed by abort after headers received should reject with AbortError",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "addAll() on an already-aborted request should reject with AbortError",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "addAll() synchronously followed by abort should reject with AbortError",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "addAll() followed by abort after headers received should reject with AbortError",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "Cache Storage: Abort",
           "status": "Pass",
           "message": null
         }

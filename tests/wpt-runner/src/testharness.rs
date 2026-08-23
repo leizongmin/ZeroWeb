@@ -796,6 +796,7 @@ pub const SERVICE_WORKER_CACHE_STORAGE_CASES: &[&str] = &[
     "service-workers/cache-storage/serviceworker/cache-match.https.html",
     "service-workers/cache-storage/serviceworker/cache-put.https.html",
     "service-workers/cache-storage/serviceworker/cache-add.https.html",
+    "service-workers/cache-storage/serviceworker/cache-abort.https.html",
 ];
 
 /// WPT subtest status.
@@ -2039,7 +2040,11 @@ fn wpt_data_service_worker_script_fetcher(
                 .map_err(|_| format!("Service Worker fixture is not UTF-8: {clean}"))?
                 .replace("{{domains[www1]}}", "www1.wpt.test")
                 .replace("{{ports[https][0]}}", "443");
-            source.into_bytes()
+            if clean.ends_with("/script-tests/cache-abort.js") {
+                format!("{CACHE_ABORT_FETCH_FIXTURE}\n{source}").into_bytes()
+            } else {
+                source.into_bytes()
+            }
         };
         Ok(zero_net::HttpResponse {
             status_code: 200,
@@ -2433,6 +2438,7 @@ fn run_testharness_html_inner(
             return results;
         }
 
+        let _ = webview.poll_service_worker_runtime_events();
         let probe = match take_probe(&mut webview) {
             Ok(probe) => probe,
             Err(error) => {
@@ -2656,19 +2662,19 @@ const CACHE_ABORT_FETCH_FIXTURE: &str = r#"
     var path = url.pathname;
     var signal = signalOf(input, init);
     if (signal && signal.aborted) return Promise.reject(signal.reason);
-    if (path === '/fetch/api/resources/stash-take.py') {
+    if (path.endsWith('/fetch/api/resources/stash-take.py')) {
       var takeKey = url.searchParams.get('key') || '';
       var value = Object.prototype.hasOwnProperty.call(stash, takeKey) ? stash[takeKey] : null;
       delete stash[takeKey];
       return Promise.resolve(responseFor(url, JSON.stringify(value), 'application/json'));
     }
-    if (path === '/fetch/api/resources/stash-put.py') {
+    if (path.endsWith('/fetch/api/resources/stash-put.py')) {
       var putKey = url.searchParams.get('key') || '';
       var putValue = url.searchParams.has('value') ? url.searchParams.get('value') : 'done';
       if (putKey) stash[putKey] = putValue;
       return Promise.resolve(responseFor(url, 'done', 'text/plain'));
     }
-    if (path === '/fetch/api/resources/infinite-slow-response.py') {
+    if (path.endsWith('/fetch/api/resources/infinite-slow-response.py')) {
       var stateKey = url.searchParams.get('stateKey') || '';
       if (stateKey) stash[stateKey] = 'open';
       return new Promise(function(resolve, reject) {
@@ -2876,6 +2882,12 @@ fn take_probe(webview: &mut WebView) -> Result<HarnessProbe, String> {
     // testharness result callbacks before the state snapshot is serialized.
     webview
         .execute_script("if (typeof globalThis.__zw_fire_due_timers === 'function') globalThis.__zw_fire_due_timers()")
+        .map_err(|error| error.to_string())?;
+    webview
+        .execute_script(
+            "if (typeof globalThis.__zwPollServiceWorkerMessages === 'function') \
+             globalThis.__zwPollServiceWorkerMessages()",
+        )
         .map_err(|error| error.to_string())?;
     let value = webview
         .execute_script(
@@ -3396,8 +3408,8 @@ async_test(function(test) {
             .iter()
             .copied()
             .collect::<std::collections::BTreeSet<_>>();
-        assert_eq!(SERVICE_WORKER_CACHE_STORAGE_CASES.len(), 9);
-        assert_eq!(unique.len(), 9);
+        assert_eq!(SERVICE_WORKER_CACHE_STORAGE_CASES.len(), 10);
+        assert_eq!(unique.len(), 10);
         assert!(
             SERVICE_WORKER_CACHE_STORAGE_CASES
                 .iter()

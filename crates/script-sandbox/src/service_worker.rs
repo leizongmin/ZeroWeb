@@ -284,13 +284,68 @@ const SERVICE_WORKER_BOOTSTRAP: &str = r#"
     constructor(message, name) {
       super(String(message));
       this.name = name === undefined ? 'Error' : String(name);
-      this.code = this.name === 'InvalidStateError' ? 11 : this.name === 'NetworkError' ? 19 : 0;
+      this.code = this.name === 'AbortError' ? 20 : this.name === 'InvalidStateError' ? 11 : this.name === 'NetworkError' ? 19 : 0;
     }
   }
+  Object.defineProperty(DOMException, 'ABORT_ERR', {value: 20});
+  Object.defineProperty(DOMException.prototype, 'ABORT_ERR', {value: 20});
   Object.defineProperty(DOMException, 'INVALID_STATE_ERR', {value: 11});
   Object.defineProperty(DOMException.prototype, 'INVALID_STATE_ERR', {value: 11});
   Object.defineProperty(DOMException, 'NETWORK_ERR', {value: 19});
   Object.defineProperty(DOMException.prototype, 'NETWORK_ERR', {value: 19});
+
+  // https://dom.spec.whatwg.org/#abortcontroller
+  class AbortSignal {
+    constructor() {
+      this._aborted = false;
+      this._reason = undefined;
+      this._listeners = [];
+    }
+    get aborted() { return this._aborted; }
+    get reason() { return this._reason; }
+    addEventListener(type, listener) {
+      if (type === 'abort' && typeof listener === 'function') this._listeners.push(listener);
+    }
+    removeEventListener(type, listener) {
+      if (type !== 'abort') return;
+      const index = this._listeners.indexOf(listener);
+      if (index >= 0) this._listeners.splice(index, 1);
+    }
+    dispatchEvent() {
+      return true;
+    }
+    throwIfAborted() {
+      if (this._aborted) throw this._reason;
+    }
+    static abort(reason) {
+      const signal = new AbortSignal();
+      abortSignal(signal, reason);
+      return signal;
+    }
+  }
+  function abortSignal(signal, reason) {
+    if (signal._aborted) return;
+    signal._aborted = true;
+    signal._reason = reason === undefined
+      ? new DOMException('signal is aborted without reason', 'AbortError')
+      : reason;
+    const listeners = signal._listeners.slice();
+    signal._listeners = [];
+    for (const listener of listeners) {
+      try {
+        listener.call(signal, {type: 'abort', target: signal});
+      } catch (_error) {}
+    }
+  }
+  class AbortController {
+    constructor() {
+      this._signal = new AbortSignal();
+    }
+    get signal() { return this._signal; }
+    abort(reason) {
+      abortSignal(this._signal, reason);
+    }
+  }
 
   function utf8Encode(value) {
     const text = String(value);
@@ -556,6 +611,7 @@ const SERVICE_WORKER_BOOTSTRAP: &str = r#"
         this.credentials = init.credentials === undefined ? input.credentials : String(init.credentials);
         this.redirect = init.redirect === undefined ? input.redirect : String(init.redirect);
         this.referrer = init.referrer === undefined ? input.referrer : String(init.referrer);
+        this.signal = init.signal === undefined ? input.signal : init.signal;
         this.bodyUsed = false;
       } else if (typeof input === 'object' && input !== null && input.url !== undefined) {
         this.url = normalizeRequestURL(input.url);
@@ -568,6 +624,7 @@ const SERVICE_WORKER_BOOTSTRAP: &str = r#"
         this.credentials = init.credentials === undefined ? String(input.credentials || 'same-origin') : String(init.credentials);
         this.redirect = init.redirect === undefined ? String(input.redirect || 'follow') : String(init.redirect);
         this.referrer = init.referrer === undefined ? String(input.referrer || '') : String(init.referrer);
+        this.signal = init.signal === undefined ? input.signal : init.signal;
         if (input.headerGuard === 'immutable' && init.headers === undefined) {
           this.headers._guard = 'immutable';
         }
@@ -581,8 +638,10 @@ const SERVICE_WORKER_BOOTSTRAP: &str = r#"
         this.credentials = init.credentials === undefined ? 'same-origin' : String(init.credentials);
         this.redirect = init.redirect === undefined ? 'follow' : String(init.redirect);
         this.referrer = init.referrer === undefined ? '' : String(init.referrer);
+        this.signal = init.signal;
         this.bodyUsed = false;
       }
+      if (!(this.signal instanceof AbortSignal)) this.signal = null;
     }
     text() {
       return Promise.resolve(this._body);
@@ -614,6 +673,10 @@ const SERVICE_WORKER_BOOTSTRAP: &str = r#"
     text() {
       this.bodyUsed = true;
       return Promise.resolve(this._body);
+    }
+    json() {
+      this.bodyUsed = true;
+      return Promise.resolve(JSON.parse(this._body));
     }
     blob() {
       this.bodyUsed = true;
@@ -1286,6 +1349,7 @@ const SERVICE_WORKER_BOOTSTRAP: &str = r#"
       this.pathname = this._pathname;
       this.search = this._search;
       this.hash = this._hash;
+      this.searchParams = new URLSearchParams(this._search.startsWith('?') ? this._search.slice(1) : this._search);
     }
     get hostname() {
       return this._hostname;
@@ -1339,6 +1403,8 @@ const SERVICE_WORKER_BOOTSTRAP: &str = r#"
   globalThis.caches = globalThis.caches || new CacheStorage();
   globalThis.FetchEvent = FetchEvent;
   globalThis.DOMException = globalThis.DOMException || DOMException;
+  globalThis.AbortController = globalThis.AbortController || AbortController;
+  globalThis.AbortSignal = globalThis.AbortSignal || AbortSignal;
   globalThis.URLSearchParams = globalThis.URLSearchParams || URLSearchParams;
   globalThis.URL = globalThis.URL || URL;
   globalThis.WorkerLocation = WorkerLocation;
@@ -1370,6 +1436,9 @@ const SERVICE_WORKER_BOOTSTRAP: &str = r#"
     task.callback.apply(globalThis, task.args);
     return true;
   };
+  globalThis.__zwHasQueuedTask = function() {
+    return timerTasks.length > 0;
+  };
   globalThis.addEventListener = function(type, listener) {
     if (typeof listener !== 'function') return;
     (listeners[String(type)] || (listeners[String(type)] = [])).push(listener);
@@ -1393,21 +1462,54 @@ const SERVICE_WORKER_BOOTSTRAP: &str = r#"
     } catch (error) {
       return Promise.reject(error);
     }
-    try {
-      const hostRequest = cacheRequestWire(request);
-      hostRequest.credentials = request.credentials;
-      const response = JSON.parse(globalThis.__zwFetch(JSON.stringify(hostRequest)));
-      if (!response || response.ok !== true) {
-        return Promise.reject(new TypeError(response && response.error || 'Service Worker fetch failed'));
+    const signal = request.signal;
+    return new Promise(function(resolve, reject) {
+      if (signal && signal.aborted) {
+        reject(signal.reason);
+        return;
       }
-      const fetchResponse = cachedResponseFromWire(response.response);
-      if (request.mode === 'no-cors' && urlOrigin(request.url) !== urlOrigin(globalThis.location && globalThis.location.href || '')) {
-        applyOpaqueFilter(fetchResponse);
+      let settled = false;
+      const abort = function() {
+        if (settled) return;
+        settled = true;
+        reject(signal.reason);
+      };
+      if (signal) signal.addEventListener('abort', abort);
+      const finish = function(response) {
+        if (settled) return;
+        settled = true;
+        if (signal) signal.removeEventListener('abort', abort);
+        if (!response || response.ok !== true) {
+          reject(new TypeError(response && response.error || 'Service Worker fetch failed'));
+          return;
+        }
+        try {
+          const fetchResponse = cachedResponseFromWire(response.response);
+          if (request.mode === 'no-cors' && urlOrigin(request.url) !== urlOrigin(globalThis.location && globalThis.location.href || '')) {
+            applyOpaqueFilter(fetchResponse);
+          }
+          resolve(fetchResponse);
+        } catch (_error) {
+          reject(new TypeError('invalid Service Worker fetch response'));
+        }
+      };
+      try {
+        const hostRequest = cacheRequestWire(request);
+        hostRequest.credentials = request.credentials;
+        const response = JSON.parse(globalThis.__zwFetch(JSON.stringify(hostRequest)));
+        if (signal) {
+          setTimeout(function() { finish(response); }, 0);
+        } else {
+          finish(response);
+        }
+      } catch (_error) {
+        if (!settled) {
+          settled = true;
+          if (signal) signal.removeEventListener('abort', abort);
+          reject(new TypeError('invalid Service Worker fetch response'));
+        }
       }
-      return Promise.resolve(fetchResponse);
-    } catch (_error) {
-      return Promise.reject(new TypeError('invalid Service Worker fetch response'));
-    }
+    });
   };
   class Clients {
     // https://w3c.github.io/ServiceWorker/#clients-get
@@ -2531,6 +2633,8 @@ impl ServiceWorkerRuntime {
                         let _ = event_sender.send(event);
                         pending_fetch = None;
                     }
+                    let has_queued_task =
+                        pending_lifecycle.is_none() && pending_fetch.is_none() && has_queued_task(sandbox.as_mut());
                     let ran_idle_task = if pending_lifecycle.is_none() && pending_fetch.is_none() {
                         run_one_queued_task(sandbox.as_mut())
                     } else {
@@ -2542,18 +2646,19 @@ impl ServiceWorkerRuntime {
                         let _ = event_sender.send(ServiceWorkerEvent::ClientMessagesEmitted { outbound });
                     }
 
-                    let command = if pending_lifecycle.is_some() || pending_fetch.is_some() || ran_idle_task {
-                        match command_receiver.recv_timeout(std::time::Duration::from_millis(1)) {
-                            Ok(command) => command,
-                            Err(mpsc::RecvTimeoutError::Timeout) => continue,
-                            Err(mpsc::RecvTimeoutError::Disconnected) => break,
-                        }
-                    } else {
-                        match command_receiver.recv() {
-                            Ok(command) => command,
-                            Err(_) => break,
-                        }
-                    };
+                    let command =
+                        if pending_lifecycle.is_some() || pending_fetch.is_some() || has_queued_task || ran_idle_task {
+                            match command_receiver.recv_timeout(std::time::Duration::from_millis(1)) {
+                                Ok(command) => command,
+                                Err(mpsc::RecvTimeoutError::Timeout) => continue,
+                                Err(mpsc::RecvTimeoutError::Disconnected) => break,
+                            }
+                        } else {
+                            match command_receiver.recv() {
+                                Ok(command) => command,
+                                Err(_) => break,
+                            }
+                        };
                     match command {
                         ServiceWorkerCommand::Evaluate {
                             script,
@@ -3605,6 +3710,13 @@ fn poll_fetch(sandbox: &mut dyn Sandbox, pending: &PendingFetch, timeout_ms: u64
 fn run_one_queued_task(sandbox: &mut dyn Sandbox) -> bool {
     sandbox
         .execute("globalThis.__zwRunOneTask && globalThis.__zwRunOneTask() ? 'true' : 'false';")
+        .map(|result| result.value == "true")
+        .unwrap_or(false)
+}
+
+fn has_queued_task(sandbox: &mut dyn Sandbox) -> bool {
+    sandbox
+        .execute("globalThis.__zwHasQueuedTask && globalThis.__zwHasQueuedTask() ? 'true' : 'false';")
         .map(|result| result.value == "true")
         .unwrap_or(false)
 }
@@ -4664,6 +4776,44 @@ mod tests {
             runtime.dispatch_message(19, "{", "client-1", "https://example.test/page"),
             Err(ScriptError::InvalidInput(_))
         ));
+    }
+
+    #[test]
+    fn page_message_timer_emits_client_message_after_dispatch() {
+        let mut runtime = ServiceWorkerRuntime::new(test_config()).unwrap();
+        runtime
+            .evaluate(
+                "addEventListener('message', event => {
+                   setTimeout(() => event.source.postMessage({delayed: event.data.name}), 0);
+                 });",
+                "https://example.test/sw.js",
+            )
+            .unwrap();
+        let _ = runtime.recv_timeout(Duration::from_secs(5)).unwrap();
+
+        runtime
+            .dispatch_message(62, r#"{"name":"page"}"#, "client-1", "https://example.test/page")
+            .unwrap();
+        assert_eq!(
+            runtime.recv_timeout(Duration::from_secs(5)).unwrap(),
+            ServiceWorkerEvent::MessageDispatched {
+                event_id: 62,
+                client_id: "client-1".into(),
+                outbound: Vec::new(),
+            }
+        );
+        assert_eq!(
+            runtime.recv_timeout(Duration::from_secs(5)).unwrap(),
+            ServiceWorkerEvent::ClientMessagesEmitted {
+                outbound: vec![ServiceWorkerOutboundMessage {
+                    data_json: r#"{"delayed":"page"}"#.into(),
+                    port_id: None,
+                    transferred_port_ids: Vec::new(),
+                    data_port_index: None,
+                    target_client_id: Some("client-1".into()),
+                }],
+            }
+        );
     }
 
     #[test]
@@ -6177,6 +6327,321 @@ mod tests {
                     response_type: "default".into(),
                     headers: Vec::new(),
                     body: "text/plain|alpha|beta".into(),
+                }),
+                failed: false,
+                message: String::new(),
+            }
+        );
+    }
+
+    #[test]
+    fn cache_add_rejects_aborted_request_signal() {
+        let mut runtime = ServiceWorkerRuntime::new(test_config()).unwrap();
+        runtime
+            .evaluate(
+                "addEventListener('fetch', event => {
+                   event.respondWith((async () => {
+                     const cache = await caches.open('runtime');
+                     const alreadyController = new AbortController();
+                     alreadyController.abort();
+                     let already = 'resolved';
+                     try {
+                       await cache.add(new Request('./already.txt', {signal: alreadyController.signal}));
+                     } catch (error) {
+                       already = error.name + ':' + error.code;
+                     }
+                     const laterController = new AbortController();
+                     const laterPromise = cache.add(new Request('./later.txt', {signal: laterController.signal}));
+                     laterController.abort();
+                     let later = 'resolved';
+                     try {
+                       await laterPromise;
+                     } catch (error) {
+                       later = error.name + ':' + error.code;
+                     }
+                     return new Response(already + '|' + later);
+                   })());
+                 });",
+                "https://example.test/app/sw.js",
+            )
+            .unwrap();
+        let _ = runtime.recv_timeout(Duration::from_secs(5)).unwrap();
+
+        runtime
+            .dispatch_fetch(
+                59,
+                ServiceWorkerFetchRequest {
+                    url: "https://example.test/app/page".into(),
+                    method: "GET".into(),
+                    headers: Vec::new(),
+                    body: None,
+                    credentials: None,
+                    client_id: Some("client-1".into()),
+                    resulting_client_id: None,
+                    referrer: None,
+                },
+            )
+            .unwrap();
+
+        let ServiceWorkerEvent::CacheStorageRequested { request_id, request } =
+            runtime.recv_timeout(Duration::from_secs(5)).unwrap()
+        else {
+            panic!("missing CacheStorage.open request");
+        };
+        assert_eq!(
+            request,
+            ServiceWorkerCacheStorageRequest::Open {
+                cache_name: "runtime".into()
+            }
+        );
+        runtime
+            .complete_cache_storage(
+                request_id,
+                Ok(ServiceWorkerCacheStorageResult::Open {
+                    cache_name: "runtime".into(),
+                    cache_name_units: "00720075006e00740069006d0065".into(),
+                    cache_id: 15,
+                }),
+            )
+            .unwrap();
+
+        let ServiceWorkerEvent::FetchRequested { request_id, request } =
+            runtime.recv_timeout(Duration::from_secs(5)).unwrap()
+        else {
+            panic!("missing Cache.add fetch request");
+        };
+        assert_eq!(request.url, "https://example.test/app/later.txt");
+        runtime
+            .complete_fetch(
+                request_id,
+                Ok(ServiceWorkerFetchResponse {
+                    status: 200,
+                    status_text: "OK".into(),
+                    response_type: "default".into(),
+                    headers: vec![("content-type".into(), "text/plain".into())],
+                    body: "later".into(),
+                }),
+            )
+            .unwrap();
+
+        assert_eq!(
+            runtime.recv_timeout(Duration::from_secs(5)).unwrap(),
+            ServiceWorkerEvent::FetchSettled {
+                event_id: 59,
+                request_url: "https://example.test/app/page".into(),
+                response: Some(ServiceWorkerFetchResponse {
+                    status: 200,
+                    status_text: String::new(),
+                    response_type: "default".into(),
+                    headers: Vec::new(),
+                    body: "AbortError:20|AbortError:20".into(),
+                }),
+                failed: false,
+                message: String::new(),
+            }
+        );
+    }
+
+    #[test]
+    fn cache_add_preserves_signal_through_wrapped_fetch() {
+        let mut runtime = ServiceWorkerRuntime::new(test_config()).unwrap();
+        runtime
+            .evaluate(
+                "const nativeFetch = globalThis.fetch;
+                 globalThis.fetch = function(input, init) {
+                   const signal = input && input.signal ? input.signal : init && init.signal;
+                   if (String(input.url || input).includes('slow.txt')) {
+                     return new Promise((resolve, reject) => {
+                       signal.addEventListener('abort', () => reject(signal.reason));
+                     });
+                   }
+                   return nativeFetch(input, init);
+                 };
+                 addEventListener('fetch', event => {
+                   event.respondWith((async () => {
+                     const cache = await caches.open('runtime');
+                     const controller = new AbortController();
+                     const request = new Request('./slow.txt', {signal: controller.signal});
+                     const promise = cache.add(request);
+                     controller.abort();
+                     try {
+                       await promise;
+                       return new Response('resolved');
+                     } catch (error) {
+                       return new Response(error.name + ':' + error.code);
+                     }
+                   })());
+                 });",
+                "https://example.test/app/sw.js",
+            )
+            .unwrap();
+        let _ = runtime.recv_timeout(Duration::from_secs(5)).unwrap();
+
+        runtime
+            .dispatch_fetch(
+                60,
+                ServiceWorkerFetchRequest {
+                    url: "https://example.test/app/page".into(),
+                    method: "GET".into(),
+                    headers: Vec::new(),
+                    body: None,
+                    credentials: None,
+                    client_id: Some("client-1".into()),
+                    resulting_client_id: None,
+                    referrer: None,
+                },
+            )
+            .unwrap();
+
+        let ServiceWorkerEvent::CacheStorageRequested { request_id, request } =
+            runtime.recv_timeout(Duration::from_secs(5)).unwrap()
+        else {
+            panic!("missing CacheStorage.open request");
+        };
+        assert_eq!(
+            request,
+            ServiceWorkerCacheStorageRequest::Open {
+                cache_name: "runtime".into()
+            }
+        );
+        runtime
+            .complete_cache_storage(
+                request_id,
+                Ok(ServiceWorkerCacheStorageResult::Open {
+                    cache_name: "runtime".into(),
+                    cache_name_units: "00720075006e00740069006d0065".into(),
+                    cache_id: 16,
+                }),
+            )
+            .unwrap();
+
+        assert_eq!(
+            runtime.recv_timeout(Duration::from_secs(5)).unwrap(),
+            ServiceWorkerEvent::FetchSettled {
+                event_id: 60,
+                request_url: "https://example.test/app/page".into(),
+                response: Some(ServiceWorkerFetchResponse {
+                    status: 200,
+                    status_text: String::new(),
+                    response_type: "default".into(),
+                    headers: Vec::new(),
+                    body: "AbortError:20".into(),
+                }),
+                failed: false,
+                message: String::new(),
+            }
+        );
+    }
+
+    #[test]
+    fn cache_add_abort_after_polling_stash_open_rejects() {
+        let mut runtime = ServiceWorkerRuntime::new(test_config()).unwrap();
+        runtime
+            .evaluate(
+                "const nativeFetch = globalThis.fetch;
+                 const stash = {};
+                 globalThis.fetch = function(input, init) {
+                   const raw = input && typeof input === 'object' && input.url !== undefined ? input.url : input;
+                   const url = new URL(String(raw), location.href);
+                   const signal = input && input.signal ? input.signal : init && init.signal;
+                   if (signal && signal.aborted) return Promise.reject(signal.reason);
+                   if (url.pathname === '/fetch/api/resources/stash-take.py') {
+                     const key = url.searchParams.get('key') || '';
+                     const value = Object.prototype.hasOwnProperty.call(stash, key) ? stash[key] : null;
+                     delete stash[key];
+                     return Promise.resolve(new Response(JSON.stringify(value), {headers: {'content-type': 'application/json'}}));
+                   }
+                   if (url.pathname === '/fetch/api/resources/stash-put.py') {
+                     const key = url.searchParams.get('key') || '';
+                     if (key) stash[key] = 'done';
+                     return Promise.resolve(new Response('done'));
+                   }
+                   if (url.pathname === '/fetch/api/resources/infinite-slow-response.py') {
+                     const stateKey = url.searchParams.get('stateKey') || '';
+                     if (stateKey) stash[stateKey] = 'open';
+                     return new Promise((resolve, reject) => {
+                       signal.addEventListener('abort', () => reject(signal.reason));
+                     });
+                   }
+                   return nativeFetch(input, init);
+                 };
+                 addEventListener('fetch', event => {
+                   event.respondWith((async () => {
+                     const cache = await caches.open('runtime');
+                     const controller = new AbortController();
+                     const stateKey = 'state';
+                     const request = new Request(
+                       '../../../fetch/api/resources/infinite-slow-response.py?stateKey=' + stateKey,
+                       {signal: controller.signal});
+                     const promise = cache.add(request);
+                     const response = await fetch('../../../fetch/api/resources/stash-take.py?key=' + stateKey);
+                     const body = await response.json();
+                     if (body !== 'open') return new Response('not-open:' + body);
+                     await new Promise(resolve => setTimeout(resolve, 250));
+                     controller.abort();
+                     try {
+                       await promise;
+                       return new Response('resolved');
+                     } catch (error) {
+                       await fetch('../../../fetch/api/resources/stash-put.py?key=abort');
+                       return new Response(error.name + ':' + error.code);
+                     }
+                   })());
+                 });",
+                "https://example.test/app/sw.js",
+            )
+            .unwrap();
+        let _ = runtime.recv_timeout(Duration::from_secs(5)).unwrap();
+
+        runtime
+            .dispatch_fetch(
+                61,
+                ServiceWorkerFetchRequest {
+                    url: "https://example.test/app/page".into(),
+                    method: "GET".into(),
+                    headers: Vec::new(),
+                    body: None,
+                    credentials: None,
+                    client_id: Some("client-1".into()),
+                    resulting_client_id: None,
+                    referrer: None,
+                },
+            )
+            .unwrap();
+
+        let ServiceWorkerEvent::CacheStorageRequested { request_id, request } =
+            runtime.recv_timeout(Duration::from_secs(5)).unwrap()
+        else {
+            panic!("missing CacheStorage.open request");
+        };
+        assert_eq!(
+            request,
+            ServiceWorkerCacheStorageRequest::Open {
+                cache_name: "runtime".into()
+            }
+        );
+        runtime
+            .complete_cache_storage(
+                request_id,
+                Ok(ServiceWorkerCacheStorageResult::Open {
+                    cache_name: "runtime".into(),
+                    cache_name_units: "00720075006e00740069006d0065".into(),
+                    cache_id: 17,
+                }),
+            )
+            .unwrap();
+
+        assert_eq!(
+            runtime.recv_timeout(Duration::from_secs(5)).unwrap(),
+            ServiceWorkerEvent::FetchSettled {
+                event_id: 61,
+                request_url: "https://example.test/app/page".into(),
+                response: Some(ServiceWorkerFetchResponse {
+                    status: 200,
+                    status_text: String::new(),
+                    response_type: "default".into(),
+                    headers: Vec::new(),
+                    body: "AbortError:20".into(),
                 }),
                 failed: false,
                 message: String::new(),
