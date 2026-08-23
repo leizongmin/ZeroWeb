@@ -29,7 +29,7 @@ service-workers/service-worker/resources/fetch-event-respond-with-stops-propagat
 service-workers/service-worker/uncontrolled-page.https.html	testharness	case	1	1290	no	e22ca8f0a91adf9fbcf64c77cd3d1d4df27956f3	24197a11e8c5bd29a5cb7bdf18135a82be8a8546
 service-workers/service-worker/resources/fail-on-fetch-worker.js	support	worker-script	1	142	no	517f289fbc8e43b1d540a47761538fe84b121c48	24197a11e8c5bd29a5cb7bdf18135a82be8a8546
 service-workers/service-worker/resources/worker-testharness.js	support	worker-script-harness	1	1768	no	73e97be1eaa44bbe96f8801e0c76c37772ac7d1f	24197a11e8c5bd29a5cb7bdf18135a82be8a8546
-service-workers/service-worker/resources/simple.txt	support	network-resource	1	19	no	9e3cb91fb9b95d6e51de85b82e6f86e92f59ac6d	24197a11e8c5bd29a5cb7bdf18135a82be8a8546
+service-workers/service-worker/resources/simple.txt	support	network-resource	2	19	no	9e3cb91fb9b95d6e51de85b82e6f86e92f59ac6d	24197a11e8c5bd29a5cb7bdf18135a82be8a8546
 service-workers/service-worker/claim-fetch.https.html	testharness	case	1	2898	no	ae0082df06bf794d02990a7c0b7213e0d81114cb	24197a11e8c5bd29a5cb7bdf18135a82be8a8546
 service-workers/service-worker/resources/claim-worker.js	support	worker-script	1	623	no	18004079475e2bbd9d1a8d25ae4b26c7638de58e	24197a11e8c5bd29a5cb7bdf18135a82be8a8546
 service-workers/service-worker/resources/blank.html	support	iframe-document	1	41	no	a3c3a4689a62b45b1e429f6b7a94690e556a1259	24197a11e8c5bd29a5cb7bdf18135a82be8a8546
@@ -37,3 +37,6 @@ service-workers/service-worker/claim-not-using-registration.https.html	testharne
 service-workers/service-worker/resources/empty.js	support	worker-script	1	0	no	e69de29bb2d1d6434b8b29ae775ad8c2e48c5391	24197a11e8c5bd29a5cb7bdf18135a82be8a8546
 service-workers/service-worker/resources/empty-worker.js	support	worker-script	1	15	no	49ceb2648a93410bdd5ee53ef0e114146210741b	24197a11e8c5bd29a5cb7bdf18135a82be8a8546
 service-workers/service-worker/claim-using-registration.https.html	testharness	case	1	3983	no	8a2a6ff25c82d8d6de26cca521da99f8ef6d5fbf	24197a11e8c5bd29a5cb7bdf18135a82be8a8546
+service-workers/service-worker/unregister-controller.https.html	testharness	case	1	3733	no	3bf4cff7200e71a7ad157f97f60e0bca45693485	24197a11e8c5bd29a5cb7bdf18135a82be8a8546
+service-workers/service-worker/resources/unregister-controller-page.html	support	iframe-document	1	445	no	18a95ee892b1c9ee7ca597cb2655e6c4504a7912	24197a11e8c5bd29a5cb7bdf18135a82be8a8546
+service-workers/service-worker/resources/simple-intercept-worker.js	support	worker-script	1	174	no	f8b5f8c5cb77b153bc98703821e13f00d8702fd7	24197a11e8c5bd29a5cb7bdf18135a82be8a8546

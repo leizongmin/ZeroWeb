@@ -1,8 +1,8 @@
 {
-  "cases": 13,
-  "subtests": 30,
+  "cases": 14,
+  "subtests": 33,
   "status": {
-    "Pass": 30
+    "Pass": 33
   },
   "deterministic": true,
   "results": [
@@ -216,6 +216,26 @@
         },
         {
           "name": "Test for the waiting worker claims a client which is using the the same registration",
+          "status": "Pass",
+          "message": null
+        }
+      ]
+    ],
+    [
+      "service-workers/service-worker/unregister-controller.https.html",
+      [
+        {
+          "name": "Unregister does not affect existing controller",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "Unregister prevents control of subsequent navigations",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "Unregister prevents new controllee even if registration is still in use",
           "status": "Pass",
           "message": null
         }

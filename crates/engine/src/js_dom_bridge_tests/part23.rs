@@ -213,6 +213,136 @@ fn test_iframe_inline_script_xhr_uses_iframe_window_location() {
 }
 
 #[test]
+fn test_iframe_inline_script_function_is_exposed_on_content_window() {
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+
+    let mut sandbox = V8Sandbox::with_config(zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    })
+    .unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><iframe src=\"resources/unregister-controller-page.html\"></iframe></body></html>"
+            .to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "https://wpt.test/service-workers/service-worker/unregister-controller.https.html".to_string(),
+    ));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+    sandbox.register_callback(
+        "__zw_fetch",
+        Box::new(|args| {
+            let url = args.get(2).map(String::as_str).unwrap_or("");
+            if url.ends_with("resources/unregister-controller-page.html") {
+                "__zwfr:200\x1fOK\x1f\x1f<script>\
+                  function fetch_url(url) {\
+                    return Promise.resolve('loaded:' + url);\
+                  }\
+                </script>"
+                    .to_string()
+            } else {
+                "__zw_fetch_error:not found".to_string()
+            }
+        }),
+    );
+
+    sandbox
+        .execute(
+            "globalThis.__iframeInlineFunction = 'pending';\
+             var win = document.querySelector('iframe').contentWindow;\
+             win.__zwRunInlineScripts();\
+             win.fetch_url('simple.txt').then(function(value) {\
+               globalThis.__iframeInlineFunction = value;\
+             }, function(error) {\
+               globalThis.__iframeInlineFunction = 'error:' + String(error && error.message || error);\
+             });",
+        )
+        .unwrap();
+    for _ in 0..4 {
+        sandbox.execute("0").unwrap();
+    }
+
+    assert_eq!(
+        sandbox.execute("String(globalThis.__iframeInlineFunction)").unwrap().value,
+        "loaded:simple.txt",
+        "iframe inline function declarations should be exposed as contentWindow properties"
+    );
+}
+
+#[test]
+fn test_iframe_service_worker_controller_identity_is_stable() {
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+
+    let mut sandbox = V8Sandbox::with_config(zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    })
+    .unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><iframe src=\"resources/unregister-controller-page.html?load-before-unregister\"></iframe></body></html>"
+            .to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "https://wpt.test/service-workers/service-worker/unregister-controller.https.html".to_string(),
+    ));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+    sandbox.register_callback(
+        "__zw_sw_observe_window_client",
+        Box::new(|_args| r#"{"ok":true}"#.to_string()),
+    );
+    sandbox.register_callback(
+        "__zw_sw_controller",
+        Box::new(|args| {
+            if args.first().map(String::as_str)
+                == Some("https://wpt.test/service-workers/service-worker/resources/unregister-controller-page.html?load-before-unregister")
+                && args.get(1).map(String::as_str) == Some("iframe:iframe")
+            {
+                r#"{"ok":true,"controller":{"id":"r1","scriptURL":"https://wpt.test/service-workers/service-worker/resources/simple-intercept-worker.js","state":"activated"}}"#.to_string()
+            } else {
+                r#"{"ok":true,"controller":null}"#.to_string()
+            }
+        }),
+    );
+    sandbox.register_callback(
+        "__zw_fetch",
+        Box::new(|args| {
+            let url = args.get(2).map(String::as_str).unwrap_or("");
+            if url.contains("resources/unregister-controller-page.html") {
+                "__zwfr:200\x1fOK\x1f\x1f<script></script>".to_string()
+            } else {
+                "__zw_fetch_error:not found".to_string()
+            }
+        }),
+    );
+
+    assert_eq!(
+        sandbox
+            .execute(
+                "var win = document.querySelector('iframe').contentWindow;\
+                 var first = win.navigator.serviceWorker.controller;\
+                 var second = win.navigator.serviceWorker.controller;\
+                 String(first === second && first instanceof win.ServiceWorker &&\
+                   first.scriptURL.endsWith('/resources/simple-intercept-worker.js') &&\
+                   second.state === 'activated');",
+            )
+            .unwrap()
+            .value,
+        "true",
+        "iframe ServiceWorkerContainer.controller should preserve object identity for the same worker"
+    );
+}
+
+#[test]
 fn test_fetch_passes_request_credentials_to_host() {
     use std::sync::{Arc, Mutex};
     use zero_script_sandbox::{Sandbox, V8Sandbox};

@@ -10,8 +10,8 @@ import subprocess
 import sys
 from pathlib import Path
 
-EXPECTED_CASES = 13
-EXPECTED_SUBTESTS = 30
+EXPECTED_CASES = 14
+EXPECTED_SUBTESTS = 33
 
 
 def parse_args() -> argparse.Namespace:
@@ -87,7 +87,8 @@ def render_markdown(summary: dict) -> str:
             "`fetch-event-respond-with-stops-propagation.https.html`, "
             "`uncontrolled-page.https.html`, `claim-fetch.https.html`, "
             "`claim-not-using-registration.https.html`, "
-            "`claim-using-registration.https.html`, and their new support assets",
+            "`claim-using-registration.https.html`, "
+            "`unregister-controller.https.html`, and their new support assets",
             f"- Cases: {summary['cases']}",
             f"- Subtests: {summary['subtests']}",
             f"- Pass: {status.get('Pass', 0)}",
@@ -98,7 +99,7 @@ def render_markdown(summary: dict) -> str:
             "",
             "## Scope",
             "",
-            "This pinned Service Worker M2 fetch/interception baseline covers thirteen cases. "
+            "This pinned Service Worker M2 fetch/interception baseline covers fourteen cases. "
             "`request-end-to-end.https.html` registers a real service worker, loads a "
             "controlled iframe, dispatches a FetchEvent, and validates the Request "
             "projection returned via `respondWith(new Response(...))`. "
@@ -136,7 +137,10 @@ def render_markdown(summary: dict) -> str:
             "not stealing a client matched by a longer in-progress registration. "
             "`claim-using-registration.https.html` covers `clients.claim()` replacing a client "
             "controlled by another registration while rejecting claim from a waiting worker in "
-            "the same registration.",
+            "the same registration. "
+            "`unregister-controller.https.html` covers unregister removing future matching "
+            "while preserving an existing controlled iframe's incumbent controller and fetch "
+            "interception until that client is discarded.",
         ]
     ) + "\n"
 

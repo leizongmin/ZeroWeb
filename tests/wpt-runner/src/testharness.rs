@@ -791,6 +791,7 @@ pub const SERVICE_WORKER_FETCH_CASES: &[&str] = &[
     "service-workers/service-worker/claim-fetch.https.html",
     "service-workers/service-worker/claim-not-using-registration.https.html",
     "service-workers/service-worker/claim-using-registration.https.html",
+    "service-workers/service-worker/unregister-controller.https.html",
 ];
 
 /// Fixed Service Worker CacheStorage corpus at the pinned WPT revision.
@@ -3392,8 +3393,8 @@ async_test(function(test) {
             .iter()
             .copied()
             .collect::<std::collections::BTreeSet<_>>();
-        assert_eq!(SERVICE_WORKER_FETCH_CASES.len(), 13);
-        assert_eq!(unique.len(), 13);
+        assert_eq!(SERVICE_WORKER_FETCH_CASES.len(), 14);
+        assert_eq!(unique.len(), 14);
         assert!(SERVICE_WORKER_FETCH_CASES.contains(&"service-workers/service-worker/request-end-to-end.https.html"));
         assert!(
             SERVICE_WORKER_FETCH_CASES.contains(&"service-workers/service-worker/fetch-event-add-async.https.html")
@@ -3429,6 +3430,9 @@ async_test(function(test) {
         );
         assert!(
             SERVICE_WORKER_FETCH_CASES.contains(&"service-workers/service-worker/claim-using-registration.https.html")
+        );
+        assert!(
+            SERVICE_WORKER_FETCH_CASES.contains(&"service-workers/service-worker/unregister-controller.https.html")
         );
     }
 

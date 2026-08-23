@@ -593,6 +593,7 @@ pub struct ServiceWorkerManager {
     pending_client_messages: HashMap<(u64, String), usize>,
     message_ports: HashSet<(u64, String, u64)>,
     clients: HashMap<String, ClientRecord>,
+    unregistered_active: HashSet<u64>,
     next_client_sequence: u64,
     next_client_focus_sequence: u64,
     script_sources: HashMap<u64, Vec<u8>>,
@@ -937,6 +938,7 @@ impl ServiceWorkerManager {
             pending_client_messages: HashMap::new(),
             message_ports: HashSet::new(),
             clients: HashMap::new(),
+            unregistered_active: HashSet::new(),
             next_client_sequence: 1,
             next_client_focus_sequence: 1,
             script_sources: HashMap::new(),
@@ -2059,26 +2061,34 @@ impl ServiceWorkerManager {
         Ok(())
     }
 
-    /// Remove a registration and stop every version associated with its key.
+    /// Remove a registration from future matching.
+    ///
+    /// https://w3c.github.io/ServiceWorker/#navigator-service-worker-unregister
+    /// A controlled client keeps using its incumbent active worker until the
+    /// client is discarded; later navigations no longer match this registration.
     pub fn unregister(&mut self, registration_id: u64) -> bool {
         let Some(key) = self.registration_keys.get(&registration_id).cloned() else {
             return false;
         };
-        let version_ids = self
-            .registration_keys
-            .iter()
-            .filter_map(|(&id, version_key)| (version_key == &key).then_some(id))
-            .collect::<Vec<_>>();
+        let Some(slots) = self.slots.remove(&key) else {
+            return false;
+        };
         let mut removed = false;
-        for id in version_ids {
-            self.evaluated.remove(&id);
-            self.restoring_active.remove(&id);
+        for id in [slots.installing, slots.waiting].into_iter().flatten() {
             self.mark_redundant_and_stop(id);
-            removed |= self.registry.unregister(id);
-            self.registration_keys.remove(&id);
-            self.state_changes.remove(&id);
+            self.forget_registration(id);
+            removed = true;
         }
-        self.slots.remove(&key);
+        if let Some(active_id) = slots.active {
+            if self.client_is_controlled_by(active_id) {
+                self.unregistered_active.insert(active_id);
+                removed = true;
+            } else {
+                self.mark_redundant_and_stop(active_id);
+                self.forget_registration(active_id);
+                removed = true;
+            }
+        }
         removed
     }
 
@@ -2129,6 +2139,19 @@ impl ServiceWorkerManager {
             .map(|registration| registration.id)
     }
 
+    fn client_is_controlled_by(&self, registration_id: u64) -> bool {
+        self.clients
+            .values()
+            .any(|record| record.controller_registration_id == Some(registration_id))
+    }
+
+    fn forget_registration(&mut self, registration_id: u64) {
+        self.registration_keys.remove(&registration_id);
+        self.state_changes.remove(&registration_id);
+        self.registry.unregister(registration_id);
+        self.unregistered_active.remove(&registration_id);
+    }
+
     fn claim_matching_clients(&mut self, registration_id: u64) {
         let Some(registration) = self.registry.get(registration_id).cloned() else {
             return;
@@ -2169,6 +2192,19 @@ impl ServiceWorkerManager {
             if record.controller_registration_id == Some(registration_id) {
                 record.controller_registration_id = None;
             }
+        }
+    }
+
+    fn collect_uncontrolled_unregistered_workers(&mut self) {
+        let stale = self
+            .unregistered_active
+            .iter()
+            .copied()
+            .filter(|registration_id| !self.client_is_controlled_by(*registration_id))
+            .collect::<Vec<_>>();
+        for registration_id in stale {
+            self.mark_redundant_and_stop(registration_id);
+            self.forget_registration(registration_id);
         }
     }
 
@@ -2628,6 +2664,7 @@ impl ServiceWorkerManager {
         self.client_messages.retain(|(_, id), _| id != client_id);
         self.pending_client_messages.retain(|(_, id), _| id != client_id);
         self.message_ports.retain(|(_, id, _)| id != client_id);
+        self.collect_uncontrolled_unregistered_workers();
     }
 
     fn clients_for_worker(
@@ -3099,6 +3136,7 @@ impl ServiceWorkerManager {
         if changed {
             self.record_state_change(registration_id, ServiceWorkerState::Redundant);
         }
+        self.unregistered_active.remove(&registration_id);
         self.clear_controller_for_registration(registration_id);
         self.claimed_clients.remove(&registration_id);
         self.restoring_active.remove(&registration_id);
@@ -4421,7 +4459,7 @@ mod tests {
     }
 
     #[test]
-    fn unregister_clears_client_controller_assignment() {
+    fn unregister_preserves_existing_controller_until_client_is_removed() {
         let mut manager = manager_under_test();
         let id = start_active(&mut manager, "/app/", "globalThis.ready = true;");
         manager
@@ -4437,9 +4475,30 @@ mod tests {
         assert!(manager.unregister(id));
         assert!(
             manager
-                .active_registration_for_client("https://example.test", "client-1")
-                .is_none()
+                .registration_for_url("https://example.test", "https://example.test/app/page")
+                .is_none(),
+            "unregistered registration must not match later navigations"
         );
+        assert!(
+            manager
+                .active_registration_for_client("https://example.test", "client-1")
+                .map(|registration| registration.id)
+                == Some(id),
+            "existing controlled clients keep their controller after unregister"
+        );
+        manager
+            .observe_window_client("client-2", "https://example.test/app/next")
+            .unwrap();
+        assert!(
+            manager
+                .active_registration_for_client("https://example.test", "client-2")
+                .is_none(),
+            "new clients must not be controlled by an unregistered registration"
+        );
+        manager.remove_client("client-1");
+        assert!(manager.registration(id).is_none());
+        let _ = manager.poll();
+        assert_eq!(manager.runtime_count(), 0);
     }
 
     #[test]

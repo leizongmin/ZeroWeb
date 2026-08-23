@@ -1297,6 +1297,29 @@
       globalThis.navigator && globalThis.navigator.serviceWorker;
     var iframeServiceWorkerControllerId = null;
     var iframeServiceWorkerNotifiedControllerId = null;
+    var iframeServiceWorkerControllers = {};
+    function wrapServiceWorkerController(controller) {
+      if (!controller) return null;
+      var id = String(controller.id);
+      var worker = iframeServiceWorkerControllers[id];
+      if (!worker) {
+        worker = Object.create(
+          globalThis.ServiceWorker ? globalThis.ServiceWorker.prototype : Object.prototype);
+        worker._et_listeners = {};
+        worker._id = controller.id;
+        iframeServiceWorkerControllers[id] = worker;
+      }
+      worker.scriptURL = controller.scriptURL || '';
+      worker.state = controller.state || 'activated';
+      if (typeof globalThis.__zwInitServiceWorkerMessageBridge === 'function') {
+        globalThis.__zwInitServiceWorkerMessageBridge(worker, {
+          id: doc && doc._zwSwClientId ? doc._zwSwClientId : '',
+          url: doc && doc._zwURL ? doc._zwURL : '',
+          container: serviceWorker
+        });
+      }
+      return worker;
+    }
     var serviceWorker = parentServiceWorker ? {
       _et_listeners: {},
       oncontrollerchange: null,
@@ -1324,21 +1347,9 @@
             ));
             if (wire && wire.ok && wire.controller) {
               iframeServiceWorkerControllerId = String(wire.controller.id);
-              var worker = Object.create(
-                globalThis.ServiceWorker ? globalThis.ServiceWorker.prototype : Object.prototype);
-              worker._et_listeners = {};
-              worker._id = wire.controller.id;
-              worker.scriptURL = wire.controller.scriptURL || '';
-              worker.state = wire.controller.state || 'activated';
-              if (typeof globalThis.__zwInitServiceWorkerMessageBridge === 'function') {
-                globalThis.__zwInitServiceWorkerMessageBridge(worker, {
-                  id: doc && doc._zwSwClientId ? doc._zwSwClientId : '',
-                  url: doc && doc._zwURL ? doc._zwURL : '',
-                  container: serviceWorker
-                });
-              }
-              return worker;
+              return wrapServiceWorkerController(wire.controller);
             }
+            if (wire && wire.ok) return null;
           } catch (_eIframeController) {}
         }
         return parentServiceWorker.controller;
@@ -1578,11 +1589,19 @@
         var attrs = String(match[1] || '');
         if (/\bsrc\s*=/i.test(attrs)) continue;
         var code = String(match[2] || '');
+        var functionNames = [];
+        var fnMatch;
+        var fnRe = /\bfunction\s+([A-Za-z_$][0-9A-Za-z_$]*)\s*\(/g;
+        while ((fnMatch = fnRe.exec(code))) functionNames.push(fnMatch[1]);
+        var exposeFunctions = '';
+        for (var i = 0; i < functionNames.length; i++) {
+          exposeFunctions += "\ntry { if (typeof " + functionNames[i] + " === 'function') window[" + JSON.stringify(functionNames[i]) + "] = " + functionNames[i] + "; } catch (_) {}";
+        }
         try {
           new Function(
             'window', 'self', 'document', 'navigator', 'XMLHttpRequest',
             'fetch', 'Headers', 'Request', 'Response', 'URL', 'parent',
-            'with(window){' + code + '\n}'
+            'with(window){' + code + exposeFunctions + '\n}'
           ).call(
             win, win, win, doc, win.navigator, win.XMLHttpRequest,
             win.fetch, win.Headers, win.Request, win.Response, win.URL, win.parent
