@@ -2366,3 +2366,56 @@ fn test_iframe_factory_mutation_face_r207() {
         "R207 iframe 工厂元素 append 族 + textContent replace-all + firstChild/parentNode"
     );
 }
+
+/// R208：iframe doc 查询缓存的同键失效——restoreIframe 每轮「querySelector('#test')
+/// → removeChild → createElement+insertBefore 重建同构 `div#test`」，两节点
+/// tag\x1fid\x1fouterHTML 键全等：移除后 `_zwQWrapCache` 仍持旧节点，后续查询
+/// cache-hit 返**已移除节点**（parentNode=null → `td.parentNode.removeChild` 崩
+/// "Cannot read properties of null"——Range-surroundContents/insertNode r1+ 轮
+/// 919F 簇根因）。修复：body.removeChild / doc.removeChild 移除元素子时清
+/// `_zwQWrapCache` + 失效 `_tree._zwNodeIdx`；`_zwMEl` 子树移除经 owner 溯源
+/// 槽触发 doc 的 `_zwQWrapBump`。spec 依据 dom-node-remove：移除即脱离文档，
+/// 后续查询不得命中。
+/// https://dom.spec.whatwg.org/#concept-node-remove
+#[test]
+fn test_iframe_doc_query_cache_invalidation_r208() {
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let mut sandbox = V8Sandbox::with_config(zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    })
+    .unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> =
+        Arc::new(Mutex::new("<html><body></body></html>".to_string()));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+    let out = sandbox
+        .execute(
+            "var ifr = document.createElement('iframe');\
+             document.body.appendChild(ifr);\
+             ifr.setAttribute('src', 'Range-test-iframe.html');\
+             var doc = ifr.contentDocument;\
+             var log = [];\
+             for (var round = 0; round < 3; round++) {\
+               var td = doc.querySelector('#test');\
+               log.push('r' + round + ':q=' + (td ? 'hit:pn=' + (td.parentNode === doc.body ? 'body' : (td.parentNode ? 'OTHER' : 'null')) : 'null'));\
+               if (td && td.parentNode) { td.parentNode.removeChild(td); }\
+               var nd = doc.createElement('div');\
+               nd.id = 'test';\
+               doc.body.insertBefore(nd, doc.body.firstChild);\
+             }\
+             log.join(' | ')",
+        )
+        .unwrap()
+        .value;
+    assert_eq!(
+        out,
+        "r0:q=null | r1:q=hit:pn=body | r2:q=hit:pn=body",
+        "R208 同键移除后查询须返 live 新节点（非已移除旧节点）"
+    );
+}

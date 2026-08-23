@@ -5686,6 +5686,17 @@
       if (globalThis._zwNotifyIteratorsRemove) { try { globalThis._zwNotifyIteratorsRemove(c); } catch (_e86d) {} }
       node.childNodes.splice(i, 1);
       c.parentNode = null;
+      // R208（js-dom M4）：子树移除时失效所属 doc 的查询缓存——`_zwMEl` 树节点经
+      // `_zwOwnerTree`/`_zwOwnerDetDoc` 溯源源 doc，`_zwQWrapBump` setter（任意赋值）
+      // 清缓存 + 桥表。无法溯源（主文档域节点等）零变化。同键 cache-hit 返已移除
+      // 节点的根因见 body.removeChild 注释。
+      if (c.nodeType === 1 || c.nodeType === 3) {
+        var _r208doc = null;
+        try { _r208doc = node._zwOwnerTree || node._zwOwnerDetDoc || null; } catch (_e208o) {}
+        if (_r208doc) {
+          try { _r208doc._zwQWrapBump = 0; } catch (_e208b) {}
+        }
+      }
       return c;
     };
     // R57（FV M1）：createElement 路径的 Constraint Validation API（validator.js
@@ -6709,7 +6720,21 @@
       // R81：appendChild 后子的 parentNode 重指 body 自身（_tree 是内部代理树，子挂上去
       // parentNode=_tree ≠ foreignDoc.body——WPT Node-properties foreignPara1.parentNode 期望
       // body 对象 identity）。removeChild 同步清理。
-      removeChild: function (c) { ensureTree(); if (globalThis._zwNotifyIteratorsRemove) { try { globalThis._zwNotifyIteratorsRemove(c); } catch (_e86c) {} } var r = _tree.removeChild(c); if (c && c.parentNode === _tree) c.parentNode = null; return r; },
+      // R208（js-dom M4）：移除节点时**失效其查询缓存条目**——`_zwQWrapCache` 的键是
+      // tag\x1fid\x1fouterHTML，结构相同的节点（restoreIframe 每轮重建的 `div#test`）
+      // 键全等：移除后缓存仍持有旧节点对象，后续同键查询 cache-hit 返**已移除节点**
+      //（parentNode=null → `td.parentNode.removeChild` 崩 "Cannot read properties of
+      // null"——Range-surroundContents/insertNode r1+ 轮 919F 簇根因）。spec 依据：
+      // `dom-node-remove` 移除即脱离文档，后续查询不得再命中它。缓存放全清
+      //（精确逐键删除需双键索引，代际 clear 是既有 innerHTML/appendChild 同款语义）。
+      removeChild: function (c) {
+        ensureTree();
+        if (globalThis._zwNotifyIteratorsRemove) { try { globalThis._zwNotifyIteratorsRemove(c); } catch (_e86c) {} }
+        var r = _tree.removeChild(c);
+        if (c && c.parentNode === _tree) c.parentNode = null;
+        if (c && c.nodeType === 1) { _zwQWrapGen++; _zwQWrapCache.clear(); _tree._zwNodeIdx = null; }
+        return r;
+      },
       appendChild: function (c) {
         // js-dom M4 R112：handle 元素（cloneNode 产物等）append 到 detached body——其子树
         // 对查询树（detHtml 串行化）不可见（_zwMSerialize 对 proxy child 的 childNodes 走
@@ -7123,6 +7148,9 @@
             var ci = this.children.indexOf(c);
             if (ci >= 0) this.children.splice(ci, 1);
             c.parentNode = null;
+            // R208（js-dom M4）：doc 级移除（restoreIframe 清首/末子）同款缓存失效
+            //（body.removeChild 注释同源——同键 cache-hit 返已移除节点）。
+            if (c.nodeType === 1) { _zwQWrapGen++; _zwQWrapCache.clear(); if (_tree) _tree._zwNodeIdx = null; }
             // R130：sibling 链重连（移除后剩余子的 position 偏移）。
             _r130WireSiblings(this.childNodes);
             return c;
