@@ -3738,6 +3738,13 @@
           throw new globalThis.TypeError(
             "Failed to execute 'comparePoint' on 'Range': parameter 1 is not of type 'Node'.");
         }
+        // R205（js-dom M4）：spec 步骤 2——node 是 DocumentType 抛
+        // InvalidNodeTypeError（WPT "Must throw InvalidNodeTypeError if node is a
+        // doctype" 186F 簇；isPointInRange 同款）。
+        if (node.nodeType === 10) {
+          throw new (globalThis.DOMException || Error)(
+            'The given node is invalid.', 'InvalidNodeTypeError');
+        }
         var myRoot = this._rootOf178(this.startContainer);
         var nodeRoot = this._rootOf178(node);
         if (myRoot !== nodeRoot) {
@@ -3749,18 +3756,16 @@
           throw new (globalThis.DOMException || Error)(
             'The offset is out of range.', 'IndexSizeError');
         }
-        // 折叠/同容器近似：同容器按 offset 差；不同容器 best-effort 0（树序比较
-        // 需 compareDocumentPosition 全形态支撑，本切片聚焦 Attr 短路族）。
-        if (node === this.startContainer) {
-          return (offset | 0) < this.startOffset ? -1 : ((offset | 0) > this.startOffset ? 1 : 0);
+        // R205：**边界点比较重写**（spec 步骤 5-7——point 在 start 前 → -1，
+        // 在 end 后 → 1，否则 0）：复用 R203 `_zwRangeBpAfter` 树序比较（旧版
+        // cDP best-effort + 方向位写反 → "Must return 1 if point is after end
+        // expected 1 but got -1" 310F 簇）。
+        if (_zwRangeBpAfter(this.startContainer, this.startOffset | 0, node, offset | 0)) {
+          return -1; // point 在 start 之前
         }
-        try {
-          var pos = this.startContainer.compareDocumentPosition(node);
-          // node 在 startContainer 之前 → -1（CONTAINS=8 由 node 包含 start）；
-          // FOLLOWING=4（node 在后）→ 1。
-          if (pos & 2) return -1;
-          if (pos & 4) return 1;
-        } catch (_e178c) {}
+        if (_zwRangeBpAfter(node, offset | 0, this.endContainer, this.endOffset | 0)) {
+          return 1; // point 在 end 之后
+        }
         return 0;
       },
       // R178（js-dom M4）：`isPointInRange(node, offset)`（spec `dom-range-ispointinrange`）
@@ -3770,7 +3775,14 @@
           throw new globalThis.TypeError(
             "Failed to execute 'isPointInRange' on 'Range': parameter 1 is not of type 'Node'.");
         }
+        // R205（js-dom M4）：spec 步骤序——root 不同先返 **false**（不抛），
+        // 之后 node 是 DocumentType 才抛 InvalidNodeTypeError（WPT
+        // expectFalse 与 doctype-throw 两族并存：foreign doctype 走 false 路径）。
         if (this._rootOf178(this.startContainer) !== this._rootOf178(node)) return false;
+        if (node.nodeType === 10) {
+          throw new (globalThis.DOMException || Error)(
+            'The given node is invalid.', 'InvalidNodeTypeError');
+        }
         var len = this._nodeLength(node);
         if ((offset | 0) < 0 || (offset | 0) > len) {
           throw new (globalThis.DOMException || Error)(
@@ -3779,12 +3791,27 @@
         if (node === this.startContainer && node === this.endContainer) {
           return (offset | 0) >= this.startOffset && (offset | 0) <= this.endOffset;
         }
-        // 容器不同的树序判定 best-effort true（本切片聚焦 Attr 短路 + 同容器族）。
+        // R205（js-dom M4）：跨容器树序判定（spec 步骤 4——point 在 (start) 前
+        // 或 (end) 后返 false）：复用 R203 `_zwRangeBpAfter` 边界点比较。
+        //（旧版 best-effort true——WPT isPointInRange 的 "point is before start
+        // or after end" 695F 簇根因。）
+        if (_zwRangeBpAfter(this.startContainer, this.startOffset | 0, node, offset | 0)) {
+          return false; // point 在 start 之前
+        }
+        if (_zwRangeBpAfter(node, offset | 0, this.endContainer, this.endOffset | 0)) {
+          return false; // point 在 end 之后
+        }
         return true;
       },
       // R178（js-dom M4）：`intersectsNode(node)`（spec `dom-range-intersectsnode`）——
       // root 不同返 false；node 的父 null（root 自身）→ 恒 true（range 与自身根必交）；
       // 否则按 node 起止偏移与 range 边界的区间交。
+      // R205（js-dom M4）：**边界点比较重写**——node 占据边界点区间
+      // [(parent, i), (parent, i+1)]；与 range [start, end] 不交 iff
+      // (parent, i+1) ≤ start 或 (parent, i) ≥ end（经 R203 `_zwRangeBpAfter`
+      // 树序比较）。旧版拿 node 在父中的索引 i 直接与 range 的 startOffset/
+      // endOffset 比——**两者不在同一坐标系**（range 容器未必是 node 的父），
+      // 跨容器形态全错（WPT intersectsNode 186F 簇）。
       intersectsNode: function (node) {
         if (node === null || node === undefined || typeof node.nodeType !== 'number') {
           throw new globalThis.TypeError(
@@ -3797,10 +3824,21 @@
         // true"——collapsed 前置判定在 spec 中不存在，是首版误加）。
         var parent = node.parentNode;
         if (!parent) return true;
-        if (this.collapsed) return false;
+        // R205：移除 collapsed 前置 false——spec（2024 版 dom-range-intersectsnode）
+        // 无此步骤：collapsed range 仍与其**边界点所在节点**相交（node 占据
+        // [(parent,i),(parent,i+1)]，start==end 落在其中即交）。旧 early-false 使
+        // 「Node 0 paras[0] + range collapsed in firstChild」形态全错（WPT 186F）。
         var i = this._indexOf(parent, node);
         if (i < 0) return true; // 不在父视图（best-effort 保守 true）
-        return !(i < this.startOffset || i > this.endOffset);
+        // node 的末边界 (parent, i+1) 在 start 之前 → node 整体在 range 前。
+        if (_zwRangeBpAfter(this.startContainer, this.startOffset | 0, parent, i + 1)) {
+          return false;
+        }
+        // node 的首边界 (parent, i) 在 end 之后 → node 整体在 range 后。
+        if (_zwRangeBpAfter(parent, i, this.endContainer, this.endOffset | 0)) {
+          return false;
+        }
+        return true;
       },
       // R178（js-dom M4）：`compareBoundaryPoints(how, sourceRange)`（spec
       // `dom-range-compareboundarypoints`）——两 range root 不同 → WrongDocumentError；

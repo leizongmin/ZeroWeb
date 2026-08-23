@@ -2255,3 +2255,63 @@ fn test_range_cbp_how_constants_direction_r204() {
         "R204 how 常量 + 跨容器方向（r1 在 r2 前 → -1）+ WebIDL 转换形态 + detached createRange"
     );
 }
+
+/// R205：Range 点查询三方法的**边界点比较重写**——isPointInRange 跨容器树序
+///（point 在 start 前/end 后返 false）、intersectsNode 的 (parent,i)/(parent,i+1)
+/// 区间交（+ 移除 collapsed 前置 false——collapsed range 仍与边界点节点相交）、
+/// comparePoint 的 -1/0/1 + doctype InvalidNodeTypeError（root 检查先行的步骤序）。
+#[test]
+fn test_range_point_queries_bptree_r205() {
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let mut sandbox = V8Sandbox::with_config(zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    })
+    .unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><div id='r'><p id='p0'>abc</p><p id='p1'>def</p></div></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+    let out = sandbox
+        .execute(
+            "var p0 = document.querySelector('#p0').firstChild;\
+             var p1 = document.querySelector('#p1').firstChild;\
+             var dt = document.doctype;\
+             var r = document.createRange();\
+             r.setStart(p0, 1); r.setEnd(p1, 2);\
+             var a = [\
+               r.isPointInRange(p0, 0),\
+               r.isPointInRange(p0, 1),\
+               r.isPointInRange(p1, 3),\
+               r.isPointInRange(p1, 2)\
+             ].join(',');\
+             var b = [\
+               r.comparePoint(p0, 0),\
+               r.comparePoint(p0, 1),\
+               r.comparePoint(p1, 2),\
+               r.comparePoint(p1, 3)\
+             ].join(',');\
+             function thr(fn) { try { fn(); return 'no'; } catch (e) { return e.name; } }\
+             var c = [\
+               thr(function () { r.isPointInRange(dt, 0); }),\
+               thr(function () { r.comparePoint(dt, 0); })\
+             ].join(',');\
+             var r2 = document.createRange();\
+             r2.setStart(p0, 1); r2.setEnd(p0, 1);\
+             var d = [r2.collapsed, r2.intersectsNode(p0.parentNode)].join(',');\
+             [a, b, c, d].join('|')",
+        )
+        .unwrap()
+        .value;
+    assert_eq!(
+        out,
+        "false,true,false,true|-1,0,0,1|InvalidNodeTypeError,InvalidNodeTypeError|true,true",
+        "R205 点查询树序：before-start false / after-end false / 同点 true + comparePoint 三态 + doctype 抛错 + collapsed 相交"
+    );
+}
