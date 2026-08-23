@@ -240,6 +240,56 @@ fn test_classic_script_strict_const_let_globals_r198() {
     );
 }
 
+/// R201：strict classic 顶层 `var` 声明的 **accessor 转发导出**（WPT
+/// dom/ranges/Range-mutations.js 的 `var insertDataTests = []` / dom/common.js 的
+/// 多行 `var testDiv, paras,\n    foreignDoc, ...` 跨 `<script>` 可见性）。
+/// 与 const/let 的值快照不同，var 有「声明后跨脚本再赋值」流——setupRangeTests
+/// 在 harness 回调里赋值、后续脚本读取。accessor get/set 双向转发 eval 绑定。
+/// 多行 var 的缩进续行裸声明符同属顶层（common.js 七行形态）。
+#[test]
+fn test_classic_script_strict_var_accessor_export_r201() {
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let mut sandbox = V8Sandbox::with_config(zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    })
+    .unwrap();
+    // 第一段：多行 var（续行缩进）+ 单行 var + 带初始化首名 + 函数（R147 路径）。
+    let first = crate::js_dom_bridge::script_run_classic_page(
+        "'use strict';\nvar testTable = [1, 2, 3];\nvar holder, dependent,\n    continued, tailName;\nvar initialized = 42;\nfunction assignLater() { holder = 'assigned'; continued = 'cont'; tailName = 'tail'; }\n",
+        0,
+    );
+    sandbox.execute(&first).unwrap();
+    let err = sandbox
+        .execute(&crate::js_dom_bridge::page_script_error_check())
+        .unwrap()
+        .value;
+    assert_eq!(err, "", "R201 声明段无抛错（sentinel 干净）");
+    // 第二段：跨脚本读（初始化值 + 未赋值 undefined）+ 跨脚本赋值后再读。
+    // 跨脚本裸标识符读取本就不可见（strict eval 作用域）——消费方经 globalThis.X
+    //（accessor）读写；声明脚本内的函数（assignLater）赋值 eval 绑定，accessor 读得见。
+    let second = crate::js_dom_bridge::script_run_classic_page(
+        "globalThis.__p1 = [String(globalThis.testTable.join('-')), String(typeof globalThis.holder), String(typeof globalThis.continued), String(globalThis.initialized)].join(',');\nglobalThis.testTable = [4];\nassignLater();\nglobalThis.__p2 = [globalThis.holder, globalThis.continued, globalThis.tailName, String(globalThis.testTable.join('-'))].join(',');",
+        1,
+    );
+    sandbox.execute(&second).unwrap();
+    let err2 = sandbox
+        .execute(&crate::js_dom_bridge::page_script_error_check())
+        .unwrap()
+        .value;
+    assert_eq!(err2, "", "R201 消费段无抛错（sentinel 干净）");
+    assert_eq!(
+        sandbox.execute("globalThis.__p1").unwrap().value,
+        "1-2-3,undefined,undefined,42",
+        "R201 初始化值快照读 + 未赋值 var 读 undefined（accessor get 转发）"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__p2").unwrap().value,
+        "assigned,cont,tail,4",
+        "R201 跨脚本赋值 + 声明脚本内函数赋值经 accessor 双向可见（set 转发）"
+    );
+}
+
 /// Cache API 初始页面表面：`caches.open()` / `Cache.put()` / `Cache.match()` 经 host bridge
 /// 往返，match miss 解析为 undefined。
 #[test]

@@ -192,6 +192,14 @@ pub struct WebViewConfig {
     /// 从 re-parsed `Document` 直读（不经 shim 字符串桥）。默认关 → 零回归。生产接线为
     /// read-only 快照（re-parse cached_html；mutation 同步为后续写入切片）。
     pub native_dom: bool,
+    /// js-dom R201：页面脚本执行的 V8 看门狗超时（毫秒，0 = 无超时，默认）。
+    ///
+    /// 每次脚本执行（`run_page_scripts` 的每段 `<script>` / `execute_script`）经
+    /// V8 `terminate_execution` 看门狗强制截断——页面脚本层的死循环（WPT mega-case
+    /// 解锁后暴露的 mutation 视图失同步自旋，如 dom/ranges/Range-mutations-insertBefore
+    /// 的 `indexOf` while 自旋）不再卡死整个 runner/测试套件，而是返回
+    /// `ScriptError::Timeout`。仅测试/headless 宿主应设置（真实浏览器语义不截断）。
+    pub script_timeout_ms: u64,
 }
 
 impl Default for WebViewConfig {
@@ -204,6 +212,7 @@ impl Default for WebViewConfig {
             url: None,
             devtools: false,
             http_timeout_secs: None,
+            script_timeout_ms: 0,
             external_script: None,
             script_source_fetcher: None,
             service_worker_script_fetcher: None,
@@ -1666,6 +1675,11 @@ impl WebView {
         );
         self.indexed_db_bridge.register(&mut *sandbox, &self.page_url_wire);
         self.cache_storage_bridge.register(&mut *sandbox, &self.page_url_wire);
+        // js-dom R201：V8 看门狗超时（0 = 无——生产默认不截断；测试宿主设非零后
+        // 页面脚本死循环经 terminate_execution 截断为 ScriptError::Timeout）。
+        if self.config.script_timeout_ms > 0 {
+            sandbox.set_timeout_ms(self.config.script_timeout_ms);
+        }
         self.js_sandbox = Some(sandbox);
         Ok(())
     }

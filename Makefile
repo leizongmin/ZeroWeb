@@ -214,8 +214,10 @@ testharness-dom: target-disk-guard fetch-wpt-dom target/test-guard zero-wpt-runn
 
 # js-dom goal DC-3 native 路径对照：ZW_NATIVE_DOM=1 走原生绑定路径（非默认 polyfill）。
 # 用于建立 native 通过率基线，对照 R2/R3/R4 native 修复（classList/createElement/node mutation）。
+# js-dom R201：TIME_LIMIT 透传（与 testharness-dom 同款）——Range mega-case 解锁后
+# 全量套件 ~30min，硬编码 900s 整轮被 guard 杀掉丢结果。
 testharness-dom-native: target-disk-guard fetch-wpt-dom target/test-guard zero-wpt-runner-release
-	ZW_NATIVE_DOM=1 ./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit 900 -- ./target/release/zero-wpt-runner testharness-dom $(if $(FILTER),$(FILTER),)
+	ZW_NATIVE_DOM=1 ./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit $(or $(TIME_LIMIT),900) -- ./target/release/zero-wpt-runner testharness-dom $(if $(FILTER),$(FILTER),)
 
 # IndexedDB goal M1：上游 IndexedDB factory/global/event 首批 testharness 基线。
 # `.any.js` 用例由 runner 包装为 window test；filter 按文件路径子串透传。

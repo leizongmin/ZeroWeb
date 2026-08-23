@@ -480,12 +480,53 @@ pub fn script_run_classic_page(code: &str, script_index: usize) -> String {
     // 六测试 NO-REPORT/EXEC-ERR 实证）。每名 `try{...}catch(_){}` 包裹：作用域外的
     // 名字静默跳过，顶层名正常导出。R147 的 function 导出同样补包裹（lit bundle 无
     // 行首 function 故未暴露，防御同款形态）。
+    // R201：var 声明的 accessor 转导出片段（见下方 var 分支注记——get/set 双向
+    // 转发 eval 绑定）。
+    fn var_accessor_export(name: &str) -> String {
+        format!(
+            "try{{Object.defineProperty(globalThis,'{name}',{{configurable:true,get:function(){{return {name};}},set:function(_zw_v){{{name}=_zw_v;}}}});}}catch(_zw_ex){{}}"
+        )
+    }
+    // 从 var 声明行/续行收集**裸声明符名**（无初始化）。遇带初始化声明符（`= ...`）
+    // 停止切分（后续 `,` 在表达式内，名字切分不可靠）。返回 (names, 未闭合)——
+    // 行尾是 `,` 表示 var 语句跨行（续行的缩进声明符同属顶层声明）。
+    fn collect_var_names(fragment: &str) -> (Vec<String>, bool) {
+        let mut names = Vec::new();
+        // 剥行尾 `;`（末声明符的语句终结符——`a, b;` 的 b 不带 `;` 不算裸名）。
+        let trimmed = fragment.trim_end().trim_end_matches(';').trim_end();
+        let open = trimmed.ends_with(',');
+        for declarator in trimmed.split(',') {
+            let d = declarator.trim();
+            let name: String = d
+                .chars()
+                .take_while(|c| c.is_ascii_alphanumeric() || *c == '_' || *c == '$')
+                .collect();
+            if name.is_empty() || name.len() != d.len() {
+                // 带初始化（`a = 1`）或非纯名——终止（保守：只收裸名串）。
+                break;
+            }
+            names.push(name);
+        }
+        (names, open)
+    }
+    // R201：**strict 判定**——var accessor 导出仅在 strict eval 有意义。非 strict 的
+    //间接 eval 里 var 本就泄漏到全局（globalThis.NAME 数据属性）——accessor 重定义
+    //会把数据属性换成 getter，getter 内 `return NAME` 解析到全局属性 = accessor 自身
+    //→ 无限递归（lit e2e template_content_fragment_view 回归实证：非 strict 页面脚本
+    //`var log = []` 后 accessor 自递归 Maximum call stack）。判定 = 源首非空行是
+    //'use strict'/"use strict" 指令（双/单引号两形态）。
+    let is_strict = code.lines().find(|l| !l.trim().is_empty()).is_some_and(|first| {
+        let t = first.trim();
+        t == "'use strict';" || t == "\"use strict\";" || t == "'use strict'" || t == "\"use strict\""
+    });
+    let mut var_stmt_open = false;
     let exports = code
         .lines()
         .filter_map(|line| {
-            // 仅**行首零缩进**的 `function NAME(` / `const NAME =` / `let NAME =`（真顶层
-            // 声明——WPT 测试库无缩进顶层 + IIFE/块内部缩进声明不误匹配；多声明符形态
-            // `const a = 1, b = 2` 只发布首名，后续名困在局部（罕见，接受））。
+            // 仅**行首零缩进**的 `function NAME(` / `const NAME =` / `let NAME =` /
+            // `var NAME...`（真顶层声明——WPT 测试库无缩进顶层 + IIFE/块内部缩进声明
+            // 不误匹配；const/let 多声明符形态 `const a = 1, b = 2` 只发布首名，后续名
+            // 困在局部（罕见，接受））。
             if let Some(rest) = line.strip_prefix("function ") {
                 let name: String = rest
                     .chars()
@@ -496,6 +537,63 @@ pub fn script_run_classic_page(code: &str, script_index: usize) -> String {
                     return None;
                 }
                 return Some(format!("try{{globalThis.{name}={name};}}catch(_zw_ex){{}}"));
+            }
+            if var_stmt_open && is_strict {
+                // R201：多行 var 语句的**续行**（上行尾 `,`）——缩进裸声明符同属顶层
+                // 声明（dom/common.js 的 `var testDiv, paras,\n    foreignDoc, ...`
+                // 七行形态；只收裸名，遇带初始化声明符闭合语句）。
+                let (names, still_open) = collect_var_names(line.trim());
+                var_stmt_open = still_open && line.starts_with(' ');
+                if names.is_empty() {
+                    return None;
+                }
+                return Some(
+                    names
+                        .iter()
+                        .map(|name| var_accessor_export(name))
+                        .collect::<Vec<_>>()
+                        .join(""),
+                );
+            }
+            if is_strict && let Some(rest) = line.strip_prefix("var ") {
+                // R201（js-dom M4）：`var` 声明的**accessor 转发导出**（仅 strict eval——
+                // 非 strict 的 var 泄漏全局，accessor 重定义自递归，见 is_strict 注记）。strict eval 的
+                // var 困在独立变量环境（WPT dom/ranges/Range-mutations.js 顶层
+                // `var insertDataTests = []` 等 12 个测试表跨 `<script>` 不可见 →
+                // "xxxTests is not defined" 整族 12F；dom/common.js 的 `var testDiv,
+                // paras, ...` 同源）。与 const/let 的**值快照**导出不同，var 常见
+                // 「声明后跨脚本再赋值」流（common.js 的 setupRangeTests 在 harness
+                // 回调里给 testDiv/paras 赋值，后续脚本的 `testDiv.style` 读的是
+                // 赋值后的值）——快照恒 undefined 会破坏赋值流。accessor 闭包捕获
+                // eval 作用域，get/set 双向转发：后续脚本读 globalThis.NAME 得当前
+                // 值，写 globalThis.NAME 落回 eval 绑定。
+                // 多声明符：行内 `,` 分隔的裸名全导出；带初始化的声明符（`var a = 1,
+                // b`）只导出首名（accessor 对带初始化同样成立——get 读当前值，set
+                // 写回）；行尾 `,` = 语句跨行（续行经上方 var_stmt_open 分支收集）。
+                let (names, open) = collect_var_names(rest);
+                var_stmt_open = open;
+                let exported: Vec<&String> = if names.is_empty() {
+                    // `var a = 1, b`——首声明符带初始化：单收首名。
+                    let name: String = rest
+                        .trim_start()
+                        .chars()
+                        .take_while(|c| c.is_ascii_alphanumeric() || *c == '_' || *c == '$')
+                        .collect();
+                    if name.is_empty() {
+                        return None;
+                    }
+                    // 覆写 names 以复用导出路径（collect 返回空时手动补首名）。
+                    return Some(var_accessor_export(&name));
+                } else {
+                    names.iter().collect()
+                };
+                return Some(
+                    exported
+                        .iter()
+                        .map(|name| var_accessor_export(name))
+                        .collect::<Vec<_>>()
+                        .join(""),
+                );
             }
             for keyword in ["const ", "let "] {
                 if let Some(rest) = line.strip_prefix(keyword) {

@@ -2384,6 +2384,12 @@ fn run_testharness_html_inner(
         width: 800,
         height: 600,
         native_dom,
+        // js-dom R201：V8 看门狗——页面脚本层死循环（mutation 视图失同步自旋，
+        // Range-mutations-insertBefore 的 indexOf while 自旋）经 terminate_execution
+        // 截断为 ScriptError::Timeout，单用例 Fail 收场，不再卡死整套 runner（case
+        // 级 CASE_TIMEOUT 只在 run_page_scripts 返回后 tick，同步脚本死循环拦不到）。
+        // 阈值取 CASE_TIMEOUT_LONG 同量级放宽（90s > 60s mega-case 正常脚本段）。
+        script_timeout_ms: 90_000,
         // R34xx：headless 图片源——wpt.test/images/* 映射到本地 wpt-data 目录
         //（testharness 无网络；G5 DOM img 源解锁依赖图片加载）。
         // js-dom goal：dom 用例同样需要本地 .js 内联 + 图片资源，两条路径统一走 wpt_root。
