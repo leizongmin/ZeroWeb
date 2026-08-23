@@ -31,7 +31,7 @@
 >   （register 的 scriptURL **不被下载执行**）、无 fetch 事件拦截、无 install/activate/message
 >   真事件。
 > - **WPT 面**：已接入 service-workers core runner 34 case / 156 subtest 全绿、
->   fetch/interception runner 9 case / 24 subtest 全绿，以及 CacheStorage serviceworker
+>   fetch/interception runner 10 case / 25 subtest 全绿，以及 CacheStorage serviceworker
 >   runner 12 case / 157 subtest 全绿；上游 `service-workers` 仍有大量用例依赖更完整的
 >   iframe/多客户端/动态服务器语义，继续按 skip/defer/gated 清单推进。
 
@@ -119,7 +119,8 @@ cache-storage 用例归本目标（兄弟目标只收 window 面）。
 - ✅ **缺口 1 — 脚本不执行**：register 的 scriptURL 已经由 browser/WebView owner 真实下载并在
   Service Worker runtime 中执行
 - 🚧 **缺口 2 — fetch 拦截**：scope 内 fetch 已接入 SW fetch event 的 respondWith/passThrough
-  基础链路，并已和 registration-local CacheStorage 集成；更宽 fetch/cache WPT 基线仍待扩展
+  基础链路，scope 外 uncontrolled 页面绕过 SW fetch handler 已由 WPT 固定，并已和
+  registration-local CacheStorage 集成；更宽 fetch/cache WPT 基线仍待扩展
 - ✅ **缺口 3 — 事件为模拟**：install/activate 已改为真实 lifecycle event；页面 timer 仅投影
   manager transition log
 - 🚧 **缺口 4 — WPT 覆盖**：core / fetch / CacheStorage serviceworker runner 已有确定性绿线，

@@ -10,8 +10,8 @@ import subprocess
 import sys
 from pathlib import Path
 
-EXPECTED_CASES = 9
-EXPECTED_SUBTESTS = 24
+EXPECTED_CASES = 10
+EXPECTED_SUBTESTS = 25
 
 
 def parse_args() -> argparse.Namespace:
@@ -84,7 +84,8 @@ def render_markdown(summary: dict) -> str:
             "- Additional WPT revision: `24197a11e8c5bd29a5cb7bdf18135a82be8a8546` "
             "for `fetch-event-within-sw.https.html`, "
             "`fetch-event-respond-with-custom-response.https.html`, "
-            "`fetch-event-respond-with-stops-propagation.https.html`, and their new support assets",
+            "`fetch-event-respond-with-stops-propagation.https.html`, "
+            "`uncontrolled-page.https.html`, and their new support assets",
             f"- Cases: {summary['cases']}",
             f"- Subtests: {summary['subtests']}",
             f"- Pass: {status.get('Pass', 0)}",
@@ -95,7 +96,7 @@ def render_markdown(summary: dict) -> str:
             "",
             "## Scope",
             "",
-            "This pinned Service Worker M2 fetch/interception baseline covers nine cases. "
+            "This pinned Service Worker M2 fetch/interception baseline covers ten cases. "
             "`request-end-to-end.https.html` registers a real service worker, loads a "
             "controlled iframe, dispatches a FetchEvent, and validates the Request "
             "projection returned via `respondWith(new Response(...))`. "
@@ -121,7 +122,10 @@ def render_markdown(summary: dict) -> str:
             "Promise<Response>, and invalid non-Response arguments producing a network error. "
             "`iso-latin1-header.https.html` covers synthetic `respondWith()` response "
             "headers with ISO-8859-1 values flowing through the controlled iframe's "
-            "XMLHttpRequest path.",
+            "XMLHttpRequest path. "
+            "`uncontrolled-page.https.html` covers the scope boundary that a page outside "
+            "the registered Service Worker scope remains uncontrolled and its XMLHttpRequest "
+            "fetches bypass that worker's fetch handler.",
         ]
     ) + "\n"
 

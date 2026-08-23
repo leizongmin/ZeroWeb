@@ -2,7 +2,7 @@
 
 **入口文档**: [../storage-cache-api.md](../storage-cache-api.md)
 **创建日期**: 2026-08-17（goal 拆分 bootstrap）
-**最后更新**: 2026-08-23（CacheStorage sandboxed iframe WPT 扩面）
+**最后更新**: 2026-08-23（SW fetch uncontrolled-page WPT 扩面）
 
 ---
 
@@ -93,6 +93,9 @@ ArrayBufferView body 字节化，`Response.formData()` 支持最小 multipart/fo
 worker-global 最小 `FormData` 序列化出的 multipart response 可被受控 iframe subresource fetch
 与 navigation 路径读回。该切片服务 service-workers fetch baseline，不改变本目标的 window
 CacheStorage 分母。
+Service Worker `uncontrolled-page.https.html` 扩面固定 scope 外 uncontrolled 页面绕过 SW fetch
+handler 的边界；该切片服务 service-workers fetch baseline，不改变本目标的 window/SW
+CacheStorage 分母。
 
 **与兄弟 goal 的边界**：
 - [storage-indexeddb](../archive/storage-indexeddb.md)（已归档）— IDB 归其管
@@ -134,7 +137,7 @@ CacheStorage 分母。
 ## 下一步计划
 
 1. **M2 切片 13**：继续导入 dynamic-server / cross-origin CacheStorage WPT case，补完整 filtered response 生成矩阵
-2. **service-workers 后续**：继续扩展 SW cache-storage / fetch-cache WPT 验收，持久化能力已由 registration-local snapshot/restore 覆盖
+2. **service-workers 后续**：继续扩展 SW cache-storage / fetch-cache WPT 验收；fetch runner 已覆盖 uncontrolled-page scope bypass，持久化能力已由 registration-local snapshot/restore 覆盖
 
 **碰撞管理**：开工前先 `git log --since="14 days ago" -- crates/engine/src/js_dom_shim/`
 核对 js-dom 流活跃面。

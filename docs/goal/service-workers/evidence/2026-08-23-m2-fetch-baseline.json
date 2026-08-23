@@ -1,0 +1,185 @@
+{
+  "cases": 10,
+  "subtests": 25,
+  "status": {
+    "Pass": 25
+  },
+  "deterministic": true,
+  "results": [
+    [
+      "service-workers/service-worker/request-end-to-end.https.html",
+      [
+        {
+          "name": "Test FetchEvent.request passed to onfetch",
+          "status": "Pass",
+          "message": null
+        }
+      ]
+    ],
+    [
+      "service-workers/service-worker/fetch-event-add-async.https.html",
+      [
+        {
+          "name": "fetch event added asynchronously does not throw",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "Service Worker: Fetch event added asynchronously doesn't throw",
+          "status": "Pass",
+          "message": null
+        }
+      ]
+    ],
+    [
+      "service-workers/service-worker/fetch-event-async-respond-with.https.html",
+      [
+        {
+          "name": "global setup",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "respondWith in a task throws InvalidStateError",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "respondWith in a microtask does not throw",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "global cleanup",
+          "status": "Pass",
+          "message": null
+        }
+      ]
+    ],
+    [
+      "service-workers/service-worker/fetch-event-within-sw.https.html",
+      [
+        {
+          "name": "Service worker intercepts requests from window",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "Service worker does not intercept fetch/cache requests within service worker",
+          "status": "Pass",
+          "message": null
+        }
+      ]
+    ],
+    [
+      "service-workers/service-worker/fetch-event-respond-with-custom-response.https.html",
+      [
+        {
+          "name": "Subresource built from a string",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "Subresource built from a blob",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "Subresource built from a buffer",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "Subresource built from a buffer-view",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "Subresource built from form-data",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "Subresource built from search-params",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "Navigation resource built from a string",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "Navigation resource built from a blob",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "Navigation resource built from a buffer",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "Navigation resource built from a buffer-view",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "Navigation resource built from search-params",
+          "status": "Pass",
+          "message": null
+        }
+      ]
+    ],
+    [
+      "service-workers/service-worker/fetch-event-respond-with-stops-propagation.https.html",
+      [
+        {
+          "name": "respondWith() invokes stopImmediatePropagation()",
+          "status": "Pass",
+          "message": null
+        }
+      ]
+    ],
+    [
+      "service-workers/service-worker/fetch-event-network-error.https.html",
+      [
+        {
+          "name": "Rejecting the fetch event or using preventDefault() causes a network error",
+          "status": "Pass",
+          "message": null
+        }
+      ]
+    ],
+    [
+      "service-workers/service-worker/fetch-event-respond-with-argument.https.html",
+      [
+        {
+          "name": "respondWith() takes either a Response or a promise that resolves with a Response. Other values should raise a network error.",
+          "status": "Pass",
+          "message": null
+        }
+      ]
+    ],
+    [
+      "service-workers/service-worker/iso-latin1-header.https.html",
+      [
+        {
+          "name": "Verify the response of FetchEvent using XMLHttpRequest",
+          "status": "Pass",
+          "message": null
+        }
+      ]
+    ],
+    [
+      "service-workers/service-worker/uncontrolled-page.https.html",
+      [
+        {
+          "name": "Fetch events should not go through uncontrolled page.",
+          "status": "Pass",
+          "message": null
+        }
+      ]
+    ]
+  ]
+}
