@@ -3753,6 +3753,129 @@
           var b = Math.max(this.startOffset, this.endOffset);
           return v.slice(a, b);
         }
+        // R197（js-dom M4）：跨容器形态的 spec 精确化（`range-stringification`）——
+        // ① start 容器是 Text → 起始切片（startOffset 起）；② 两端点间的 contained
+        // Text 节点全收（文档序——按 CAC 子树 DFS 收集后过滤到 (start,end) 区间）；
+        // ③ end 容器是 Text → 尾部切片（至 endOffset）。旧版取 commonAncestor 整
+        // 子树文本，把端点外的兄弟内容（含 <script> 文本）也拼进结果（WPT
+        // Range-stringifier 后两用例 got 含整页 script 源）。contained 判定按
+        //「树序在 start 边界后 + end 边界前」——用 DFS 序 + 边界位置比较实现。
+        var r197sc = this.startContainer, r197ec = this.endContainer;
+        if (r197sc && r197ec && r197sc !== r197ec) {
+          var _r197IsText = function (n) { return !!n && (n.nodeType === 3 || n.__zwIsText); };
+          // 同一容器父下的边界比较：(ancestor, childIndex) 对——node 上行到容器父的
+          // 首 child 索引链比较（spec boundary-point position 的简化：只比到共同深度）。
+          var _r197Pos = function (node, offset, ancestor) {
+            // 返回 [chainOrderIndex, offsetInNode]——node 相对 ancestor 的 DFS 前缀序。
+            var path = [], cur = node, hops = 0;
+            while (cur && cur !== ancestor && hops++ < 128) {
+              var p = cur.parentNode;
+              if (!p) return null;
+              var kids = p.childNodes || [];
+              var idx = -1;
+              for (var k = 0; k < kids.length; k++) if (kids[k] === cur) { idx = k; break; }
+              if (idx < 0) return null;
+              path.unshift(idx);
+              cur = p;
+            }
+            if (cur !== ancestor) return null;
+            return path;
+          };
+          var _r197Cmp = function (pathA, offA, pathB, offB) {
+            if (!pathA || !pathB) return 0; // 不可比（树形态外）→ 调用方回落
+            var n = Math.min(pathA.length, pathB.length);
+            for (var i = 0; i < n; i++) {
+              if (pathA[i] < pathB[i]) return -1;
+              if (pathA[i] > pathB[i]) return 1;
+            }
+            if (pathA.length === pathB.length) return offA <= offB ? -1 : 1;
+            // 前缀相同：更浅（容器自身）按 offset 与子索引比——A 是 B 的祖先形态。
+            if (pathA.length < pathB.length) return offA <= pathB[n] ? -1 : 1;
+            return pathA[n] < offB ? -1 : 1;
+          };
+          var r197cac = this.commonAncestorContainer;
+          if (r197cac && r197cac.childNodes) {
+            // 收集 CAC 子树全部 Text（文档序 DFS），再按边界过滤。
+            var r197texts = [];
+            (function r197Collect(node) {
+              if (_r197IsText(node)) { r197texts.push(node); return; }
+              var kids = node.childNodes || [];
+              for (var ci = 0; ci < kids.length; ci++) r197Collect(kids[ci]);
+            })(r197cac);
+            var r197res = '';
+            var r197sp = _r197Pos(r197sc, null, r197cac);
+            var r197ep = _r197Pos(r197ec, null, r197cac);
+            // R197 fix：路径比较须**数值逐段**——字符串 join(',') 比较在 ≥10 子时
+            // 错序（"10,0" < "2" 字典序 true——`10` 的 '1' < '2'），端点外的大索引
+            // 子树被误收（WPT Range-stringifier got 含注入 script 文本实证）。
+            var _r197PathCmp = function (a, b) {
+              if (!a || !b) return 0;
+              var n = Math.min(a.length, b.length);
+              for (var i = 0; i < n; i++) {
+                if (a[i] < b[i]) return -1;
+                if (a[i] > b[i]) return 1;
+              }
+              if (a.length === b.length) return 0;
+              return a.length < b.length ? -1 : 1; // 前缀短者在前（祖先先序）
+            };
+            var _r197HasPrefix = function (path, prefix) {
+              if (!path || !prefix || path.length <= prefix.length) return false;
+              for (var i = 0; i < prefix.length; i++) if (path[i] !== prefix[i]) return false;
+              return true;
+            };
+            for (var ti = 0; ti < r197texts.length; ti++) {
+              var tn = r197texts[ti];
+              var tp = _r197Pos(tn, null, r197cac);
+              if (!tp) continue;
+              // 边界可见性：tp 严格在 (start, end) 开区间内才全收；等于端点容器走切片。
+              var spStr = r197sp ? true : null; // R197 fix 后仅作 truthy 判定（path 存在性）
+              var afterStart = !r197sp || _r197PathCmp(tp, r197sp) > 0 || _r197HasPrefix(tp, r197sp);
+              var beforeEnd = !r197ep || _r197PathCmp(tp, r197ep) < 0 || _r197HasPrefix(tp, r197ep);
+              // 后代包含判定：tn 在 start 容器子树内 → 由起始切片处理；在 end 容器子树内 → 尾切片处理。
+              var inStartSub = _r197HasPrefix(tp, r197sp);
+              var inEndSub = _r197HasPrefix(tp, r197ep);
+              if (tn === r197sc || inStartSub) {
+                if (tn === r197sc && _r197IsText(r197sc)) {
+                  r197res += String(r197sc.nodeValue || '').slice(r197sc === r197ec ? Math.min(this.startOffset, this.endOffset) : this.startOffset);
+                } else if (inStartSub && !spStr) {
+                  r197res += String(tn.nodeValue || '');
+                }
+                // inStartSub 且容器是元素：start 之后的部分（容器内 offset 之后）——
+                // 常见形态 start=(element,0) 全含 → 收全部子文本。
+                else if (inStartSub && spStr) {
+                  // 收集 start 容器内 offset 后的文本：容器子序 ≥ startOffset 的子树。
+                  var sKids = r197sc.childNodes || [];
+                  var sIdx = -1;
+                  for (var sk = 0; sk < sKids.length; sk++) if (sKids[sk] === tn || (function () {
+                    var sub = sKids[sk], found = false;
+                    (function dig(n2) { if (n2 === tn) { found = true; return; } var kk = n2.childNodes || []; for (var jj = 0; jj < kk.length; jj++) dig(kk[jj]); })(sub);
+                    return found;
+                  })()) { sIdx = sk; break; }
+                  if (sIdx >= (this.startOffset | 0)) r197res += String(tn.nodeValue || '');
+                }
+                continue;
+              }
+              if (tn === r197ec || inEndSub) {
+                if (tn === r197ec && _r197IsText(r197ec) && r197sc !== r197ec) {
+                  r197res += String(r197ec.nodeValue || '').slice(0, this.endOffset);
+                } else if (inEndSub) {
+                  var eKids = r197ec.childNodes || [];
+                  var eIdx = -1;
+                  for (var ek2 = 0; ek2 < eKids.length; ek2++) if (eKids[ek2] === tn || (function () {
+                    var sub2 = eKids[ek2], found2 = false;
+                    (function dig2(n3) { if (n3 === tn) { found2 = true; return; } var kk2 = n3.childNodes || []; for (var jj2 = 0; jj2 < kk2.length; jj2++) dig2(kk2[jj2]); })(sub2);
+                    return found2;
+                  })()) { eIdx = ek2; break; }
+                  if (eIdx < (this.endOffset | 0)) r197res += String(tn.nodeValue || '');
+                }
+                continue;
+              }
+              // 纯中间节点：afterStart && beforeEnd 才收。
+              if (afterStart && beforeEnd) r197res += String(tn.nodeValue || '');
+            }
+            return r197res;
+          }
+        }
         // best-effort：取 commonAncestor 子树文本（跨节点偏移不精确截取）。
         if (this.commonAncestorContainer) { var o2 = []; _descendantText(this.commonAncestorContainer, o2); return o2.join(''); }
         return '';

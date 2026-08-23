@@ -396,7 +396,16 @@
     Object.setPrototypeOf(globalThis.ShadowRoot.prototype,
       globalThis.DocumentFragment ? globalThis.DocumentFragment.prototype : globalThis.Node.prototype);
   } catch (_e194sr) {}
-  globalThis.DocumentFragment = globalThis.DocumentFragment || function DocumentFragment() {};
+  // R197（js-dom M4）：`new DocumentFragment()` 实例化——spec `dom-documentfragment-
+  // documentfragment` 步骤：node document 设为 current global 的 Document。旧空函数
+  // 返裸 `{}`（WPT DocumentFragment-constructor：ownerDocument undefined + 无
+  // appendChild）。改为委托 `document.createDocumentFragment()`（handle 容器，全
+  // mutation/遍历面可用）；host 回调缺席的兜底环境保持占位（防 undefined 崩）。
+  globalThis.DocumentFragment = globalThis.DocumentFragment || function DocumentFragment() {
+    if (globalThis.document && typeof globalThis.document.createDocumentFragment === 'function') {
+      return globalThis.document.createDocumentFragment();
+    }
+  };
   globalThis.DocumentFragment.prototype = Object.create(globalThis.Node.prototype);
   // R193（js-dom M4）：DocumentFragment.prototype.getElementById（spec
   // `dom-nonelementparentnode-getelementbyid`——fragment 是 NonElementParentNode；
