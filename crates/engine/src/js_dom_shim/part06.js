@@ -3926,12 +3926,34 @@
   // startOffset/endContainer/endOffset），属性 readonly，无 setStart/setEnd 等 mutable 方法。
   // WPT StaticRange-constructor：合法容器（Element/Text/PI/Comment）构造 + collapsed 派生 +
   // 非 Node 容器抛 TypeError。
+  // R196（js-dom M4）：补 spec `dom-staticrange-constructor` 的两类校验——
+  // ① 容器是 DocumentType/Attr（nodeType 10/2）→ InvalidNodeTypeError（WPT "Throw on
+  // DocumentType or Attr container"）；② 必填成员缺失（undefined）→ TypeError（WebIDL
+  // dictionary required 成员，WPT "Throw on missing or invalid arguments"——无参/缺
+  // startContainer/startOffset/endContainer/endOffset/null 容器七形态）。
+  // https://dom.spec.whatwg.org/#dom-staticrange-staticrange
   globalThis.StaticRange = function StaticRange(init) {
     var d = init || {};
     var sc = d.startContainer, ec = d.endContainer;
     var isNode = function (n) { return !!n && typeof n.nodeType === 'number'; };
+    if (sc !== undefined && !isNode(sc)) {
+      throw new globalThis.TypeError("Failed to construct 'StaticRange': member startContainer is not of type Node.");
+    }
+    if (ec !== undefined && !isNode(ec)) {
+      throw new globalThis.TypeError("Failed to construct 'StaticRange': member endContainer is not of type Node.");
+    }
     if (!isNode(sc) || !isNode(ec)) {
-      throw new globalThis.TypeError("StaticRangeInit containers must be Nodes");
+      throw new globalThis.TypeError("Failed to construct 'StaticRange': required member startContainer or endContainer is missing.");
+    }
+    // R196：offset 必填（WebIDL required unsigned long——undefined 时 ToNumber 是 NaN，
+    // 真浏览器抛 TypeError；`| 0` 归 0 会静默吞掉）。
+    if (d.startOffset === undefined || d.endOffset === undefined) {
+      throw new globalThis.TypeError("Failed to construct 'StaticRange': required member startOffset or endOffset is missing.");
+    }
+    if (sc.nodeType === 10 || sc.nodeType === 2 || ec.nodeType === 10 || ec.nodeType === 2) {
+      throw new (globalThis.DOMException || Error)(
+        "Failed to construct 'StaticRange': The node is a DocumentType or Attr node.",
+        'InvalidNodeTypeError');
     }
     var r = {};
     var so = d.startOffset | 0, eo = d.endOffset | 0;

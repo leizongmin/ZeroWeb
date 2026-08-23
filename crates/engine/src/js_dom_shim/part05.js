@@ -1840,6 +1840,38 @@
         }
       }
     }
+    // R196（js-dom M4）：append/prepend 的**整批**校验——spec `dom-parentnode-append`
+    // 先 convert nodes into a node（字符串 → Text；多参数 → DocumentFragment）再
+    // pre-insert，故 doc.append('text')（Text 插 doc）与 doc.append(x, y)（frag 多元素）
+    // 都抛 HierarchyRequestError（WPT append-on-Document/prepend-on-Document 后两用例；
+    // 旧逐参校验对字符串参数 continue 跳过 + 多参数 frag 形态不可见）。
+    // https://dom.spec.whatwg.org/#concept-node-ensure-pre-insertion-validity 步骤 6/8
+    if (parentIsDoc) {
+      var _r196Els = 0, _r196NonObj = false;
+      for (var _r196a = 0; _r196a < args.length; _r196a++) {
+        var _r196it = args[_r196a];
+        if (!_r196it || typeof _r196it !== 'object') { _r196NonObj = true; continue; }
+        var _r196nt = 0;
+        try { _r196nt = _r196it.nodeType | 0; } catch (_e196n) {}
+        if (_r196nt === 1) _r196Els++;
+        if (_r196nt === 3 || _r196nt === 7 || _r196nt === 8) _r196NonObj = true; // Text/PI/Comment 插 doc
+      }
+      if (_r196NonObj) {
+        throw new (globalThis.DOMException || Error)(
+          'Nodes of type 3 cannot be inserted into a Document.', 'HierarchyRequestError');
+      }
+      if (_r196Els > 1
+          || (_r196Els === 1 && (function () {
+            var _r196k = parent.childNodes || [];
+            for (var _r196q = 0; _r196q < _r196k.length; _r196q++) {
+              if (_r196k[_r196q] && _r196k[_r196q].nodeType === 1) return true;
+            }
+            return false;
+          })())) {
+        throw new (globalThis.DOMException || Error)(
+          'A Document cannot contain more than one Element.', 'HierarchyRequestError');
+      }
+    }
   }
 
   // js-dom M4 R117：pre-insert 的「先从旧父移除」步骤（spec concept-node-pre-insert 步骤 3：node

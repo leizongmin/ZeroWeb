@@ -1463,16 +1463,49 @@
           };
         }
         // Text.splitText(offset)——在 offset 拆分：原节点保 [0,offset)，返新 text 节点含 [offset,)。
-        // 仅 text（comment 无 splitText）。offset clamp 到 [0,length]；新节点经 createTextNode 建（handle-based，可后续编辑）。
+        // 仅 text（comment 无 splitText）；新节点经 createTextNode 建（handle-based，可后续编辑）。
+        // R196（js-dom M4）：spec `dom-text-splittext` 步骤 1-2——offset > length 抛
+        // IndexSizeError（旧 clamp 不抛，WPT "Split text after end of data"）；步骤 7——
+        // parent 非空时新节点插到原节点 nextSibling 之前（旧只建 detached 节点，
+        // "Split child" 的 new_text.parentNode === parent 断言 fail）。parent 定位经
+        // _zwNodeParent 反链（handle 容器）；host mutation 走 InsertBeforeByHandleHandle
+        //（ref = 原节点），registry 记账 + MO childList record 同步。
+        // https://dom.spec.whatwg.org/#concept-text-split
         if (isText && prop === 'splitText') {
           return function (offset) {
             var cur = handle ? __zw_get_text_handle(handle) : '';
             var o = offset | 0;
-            if (o < 0) o = 0;
-            if (o > cur.length) o = cur.length;
+            if (o < 0 || o > cur.length) {
+              throw _zwDomException(
+                "Failed to execute 'splitText' on 'Text': The offset " + o + " is out of range.",
+                'IndexSizeError');
+            }
             var tail = cur.slice(o);
             if (handle) __zw_set_text_handle(handle, cur.slice(0, o));
-            return globalThis.document.createTextNode(tail);
+            var nt = globalThis.document.createTextNode(tail);
+            // R196：插入到父容器中原节点的 nextSibling 位（spec split 步骤 7）。
+            try {
+              var _r196Link = (handle && typeof _zwNodeParent !== 'undefined' && _zwNodeParent)
+                ? _zwNodeParent[handle] : null;
+              var _r196PH = _r196Link && _r196Link.parentHandle;
+              if (_r196PH && nt && nt.__zwHandle) {
+                if (typeof __zw_insert_before_handle_handle === 'function') {
+                  __zw_insert_before_handle_handle(_r196PH, nt.__zwHandle, handle);
+                }
+                var _r196Kids = _handleChildren[_r196PH] || [];
+                var _r196At = -1;
+                for (var _r196i = 0; _r196i < _r196Kids.length; _r196i++) {
+                  if (_r196Kids[_r196i] && _r196Kids[_r196i].__zwHandle === handle) { _r196At = _r196i; break; }
+                }
+                var _r196Wrap = _wrapHandle(nt.__zwHandle);
+                if (_r196At >= 0) _r196Kids.splice(_r196At + 1, 0, _r196Wrap);
+                else _r196Kids.push(_r196Wrap);
+                try { _handleChildren[_r196PH] = _r196Kids; } catch (_e196k) {}
+                _zwNodeParent[nt.__zwHandle] = { parentSel: null, parentHandle: _r196PH, nextSibling: null };
+                _mo_notify(null, _r196PH, { type: 'childList', addedNodes: [_r196Wrap], removedNodes: [] });
+              }
+            } catch (_e196) {}
+            return nt;
           };
         }
         // R130（js-dom M4）：`baseURI`（spec dom-node-baseuri——node 文档的 URL；WPT

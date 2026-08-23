@@ -7775,6 +7775,37 @@
       var _mk = function (mode) {
         return function () {
           for (var a = 0; a < arguments.length; a++) _r117Validate(target, arguments[a]);
+          // R196（js-dom M4）：doc 目标的整批校验（与 part05 `_zwValidatePreInsert` 的
+          // R196 段同语义——spec convert nodes into a node 后 pre-insert：字符串参数
+          // 变 Text 插 doc 抛 / 多 element 参数（frag 多 element）抛；WPT
+          // append-on-Document / prepend-on-Document 的后两用例）。
+          var _r196IsDoc = false;
+          try { _r196IsDoc = target.nodeType === 9; } catch (_e196d) {}
+          if (_r196IsDoc) {
+            var _r196Els = 0, _r196Text = false;
+            for (var _r196a = 0; _r196a < arguments.length; _r196a++) {
+              var _r196it = arguments[_r196a];
+              if (!_r196it || typeof _r196it !== 'object') { _r196Text = true; continue; }
+              var _r196nt = 0;
+              try { _r196nt = _r196it.nodeType | 0; } catch (_e196n) {}
+              if (_r196nt === 1) _r196Els++;
+              if (_r196nt === 3 || _r196nt === 7 || _r196nt === 8) _r196Text = true;
+            }
+            if (_r196Text) {
+              throw _r117Hre('Nodes of type 3 cannot be inserted into a Document.');
+            }
+            if (_r196Els > 1) {
+              throw _r117Hre('A Document cannot contain more than one Element.');
+            }
+            if (_r196Els === 1) {
+              var _r196k = target.childNodes || [];
+              for (var _r196q = 0; _r196q < _r196k.length; _r196q++) {
+                if (_r196k[_r196q] && _r196k[_r196q].nodeType === 1) {
+                  throw _r117Hre('A Document cannot contain more than one Element.');
+                }
+              }
+            }
+          }
           if (mode === 'prepend') {
             // best-effort：逆序 insertBefore 首子（无 ref → appendChild 前置近似）。
             for (var b = arguments.length - 1; b >= 0; b--) {
