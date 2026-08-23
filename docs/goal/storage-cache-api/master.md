@@ -2,7 +2,7 @@
 
 **入口文档**: [../storage-cache-api.md](../storage-cache-api.md)
 **创建日期**: 2026-08-17（goal 拆分 bootstrap）
-**最后更新**: 2026-08-23（CacheStorage window wrapper + SW serviceworker baseline 扩面）
+**最后更新**: 2026-08-23（iframe contentWindow CacheStorage + SW fetch baseline 扩面）
 
 ---
 
@@ -77,6 +77,11 @@ navigation request 标志经 `Cache.put()` / `Cache.keys()` 的保真，支撑 s
 CacheStorage window asset manifest 已补充逐 asset `source_revision`，恢复脚本会按每行
 revision 下载缺失资产，避免 32-case baseline 中后续 wrapper/support 资产依赖某个本地
 WPT checkout 状态。
+Service Worker `fetch-event-within-sw.https.html` 扩面进一步固定 iframe
+`contentWindow.caches` 页面表面：iframe window 现在暴露 `CacheStorage`/`Cache`/`caches`，
+`Cache.add()` 的相对 URL、fetch client id 与 referrer 使用 iframe 文档上下文，因此受控
+iframe 的 `cache.add('sample.txt')` 会经 SW fetch 事件拦截，而 SW 内部 `fetch()` /
+`Cache.add()` 仍保持不自拦截。
 
 **与兄弟 goal 的边界**：
 - [storage-indexeddb](../archive/storage-indexeddb.md)（已归档）— IDB 归其管
@@ -90,8 +95,8 @@ WPT checkout 状态。
 
 - ✅ Rust 层：`crates/storage/src/cache_api.rs`（976 行 / 67 函数）——CacheStorage/Cache/
   CacheQueryOptions 全 API 面 + 单测
-- ✅ JS 页面层初始表面：`part07.js` 暴露 `CacheStorage`/`Cache`/`caches`，WebView 页面可
-  `open` 后 `put/match/matchAll/delete/keys`，并可 `has/keys/match`
+- ✅ JS 页面层初始表面：`part07.js` 暴露 `CacheStorage`/`Cache`/`caches`，WebView 页面与
+  iframe `contentWindow` 可 `open` 后 `put/match/matchAll/delete/keys`，并可 `has/keys/match`
 - ✅ 持久化首片：page/WebView `StorageManager` owner 已支持 per-origin CacheStorage 落盘；
   SW registration-local CacheStorage 已随 active registration snapshot/restore 验证
 - ✅ WPT `cache-storage` window runner 基线已导入：32 case / 429 subtest，429 Pass / 0 Fail
@@ -128,7 +133,7 @@ WPT checkout 状态。
 | 里程碑 | 状态 |
 |--------|------|
 | M1 — WPT cache-storage 基线 + caches 骨架 | ✅ 页面骨架 + 32-case window runner WPT 基线已接入 |
-| M2 — Cache 全 API + 查询语义 | 🚧 `Cache.matchAll()` / `Cache.keys()`、`Cache.match()`、`CacheStorage.match()`、`ignoreSearch`/`ignoreMethod`/`ignoreVary`、页面 `add/addAll` GET fetch→store、返回对象 brand、缺参 TypeError、`CacheStorage.keys()` 创建顺序、delete-dooming、DOMString name wire、Storage Buckets cache namespace、`Cache.put` 核心可缓存性拒绝/body 消费语义、cached `Response.type`/`Response.url` 读回保真、`Response.error()` 可缓存读回、opaque response 忽略 Vary 与内部 metadata 可缓存、`Response.redirect()`/Blob/FormData response 路径、`addAll` 原子失败、undefined entry 拒绝、Vary-aware duplicate 判定、Window/Dedicated Worker/nested Dedicated Worker owner 共享路径、`cache-abort` window/worker abort 语义、SW runtime `Cache.delete()` 与 `CacheStorage.delete/has/keys` 已接入；完整 filtered response 生成与更大 WPT 覆盖待完成 |
+| M2 — Cache 全 API + 查询语义 | 🚧 `Cache.matchAll()` / `Cache.keys()`、`Cache.match()`、`CacheStorage.match()`、`ignoreSearch`/`ignoreMethod`/`ignoreVary`、页面 `add/addAll` GET fetch→store、iframe `contentWindow.caches` + `Cache.add()` iframe fetch context、返回对象 brand、缺参 TypeError、`CacheStorage.keys()` 创建顺序、delete-dooming、DOMString name wire、Storage Buckets cache namespace、`Cache.put` 核心可缓存性拒绝/body 消费语义、cached `Response.type`/`Response.url` 读回保真、`Response.error()` 可缓存读回、opaque response 忽略 Vary 与内部 metadata 可缓存、`Response.redirect()`/Blob/FormData response 路径、`addAll` 原子失败、undefined entry 拒绝、Vary-aware duplicate 判定、Window/Dedicated Worker/nested Dedicated Worker owner 共享路径、`cache-abort` window/worker abort 语义、SW runtime `Cache.delete()` 与 `CacheStorage.delete/has/keys` 已接入；完整 filtered response 生成与更大 WPT 覆盖待完成 |
 | M3 — 持久化 + 剩余语义收尾 | 🚧 page/WebView owner per-origin 持久化与 SW registration-local CacheStorage 持久化已完成；剩余 filtered response 矩阵待补 |
 
 ## 验证基线
@@ -387,4 +392,10 @@ WPT checkout 状态。
   - `./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit 300 -- make testharness-service-workers-cache-storage FILTER=cache-keys-attributes-for-service-worker.https.html`：2 entries Pass
   - `./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit 420 -- make baseline-wpt-service-workers-cache-storage OUTPUT=docs/goal/service-workers/evidence/2026-08-23-m2-cache-storage-serviceworker-baseline.json SUMMARY=docs/goal/service-workers/evidence/2026-08-23-m2-cache-storage-serviceworker-baseline.md`：11 cases / 156 subtests / 156 Pass，double-run deterministic
   - 证据：[Service Worker CacheStorage WPT Baseline](../service-workers/evidence/2026-08-23-m2-cache-storage-serviceworker-baseline.md)
+- 2026-08-23 Service Worker fetch `fetch-event-within-sw` WPT 扩面：
+  - 新增 WPT：`service-workers/service-worker/fetch-event-within-sw.https.html`
+  - 新增 support：`service-workers/service-worker/resources/fetch-event-within-sw-worker.js`、`resources/sample.txt`
+  - `./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit 300 -- make testharness-service-workers-fetch FILTER=fetch-event-within-sw.https.html`：2 entries Pass
+  - `./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit 420 -- make baseline-wpt-service-workers-fetch OUTPUT=docs/goal/service-workers/evidence/2026-08-23-m2-fetch-within-sw-baseline.json SUMMARY=docs/goal/service-workers/evidence/2026-08-23-m2-fetch-within-sw-baseline.md`：7 cases / 12 subtests / 12 Pass，double-run deterministic
+  - 证据：[Service Worker Fetch WPT Baseline](../service-workers/evidence/2026-08-23-m2-fetch-within-sw-baseline.md)
 - 质量门禁：`cargo fmt` + `cargo clippy --workspace --all-targets -- -D warnings` 全过

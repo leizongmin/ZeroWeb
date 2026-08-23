@@ -1396,6 +1396,87 @@
     try {
       IframeXMLHttpRequest.prototype = globalThis.XMLHttpRequest.prototype;
     } catch (_eIframeXhrProto) {}
+    // https://w3c.github.io/ServiceWorker/#cache-interface
+    // Iframe `contentWindow.caches` shares storage but resolves request URLs and fetch metadata
+    // against the iframe document.
+    function iframeRequestInput(input) {
+      if (input && typeof input === 'object' && input.url !== undefined) return input;
+      try {
+        return new globalThis.URL(String(input), doc && doc._zwURL ? doc._zwURL : undefined).href;
+      } catch (_eIframeCacheUrl) {
+        return input;
+      }
+    }
+    function iframeRequest(input, init) {
+      if (input && typeof input === 'object' && input.url !== undefined && init === undefined) return input;
+      if (typeof globalThis.Request !== 'function') return iframeRequestInput(input);
+      return new globalThis.Request(iframeRequestInput(input), init);
+    }
+    function withIframeFetchContext(callback) {
+      var previousClientId = globalThis.__zwFetchClientId;
+      var previousReferrer = globalThis.__zwFetchReferrer;
+      try {
+        globalThis.__zwFetchClientId = doc && doc._zwSwClientId ? doc._zwSwClientId : '';
+        globalThis.__zwFetchReferrer = doc && doc._zwURL ? doc._zwURL : '';
+        return callback();
+      } finally {
+        globalThis.__zwFetchClientId = previousClientId;
+        globalThis.__zwFetchReferrer = previousReferrer;
+      }
+    }
+    function wrapIframeCache(cache) {
+      if (!cache || typeof cache !== 'object') return cache;
+      var wrapper = Object.create(globalThis.Cache && globalThis.Cache.prototype || Object.getPrototypeOf(cache) || Object.prototype);
+      wrapper._zwInnerCache = cache;
+      wrapper.match = function (request, options) {
+        return arguments.length < 1 ? cache.match() : cache.match(iframeRequest(request), options);
+      };
+      wrapper.matchAll = function (request, options) {
+        return request === undefined ? cache.matchAll(undefined, options) : cache.matchAll(iframeRequest(request), options);
+      };
+      wrapper.put = function (request, response) {
+        return arguments.length < 2 ? cache.put() : cache.put(iframeRequest(request), response);
+      };
+      wrapper.add = function (request) {
+        var hasRequest = arguments.length >= 1;
+        return withIframeFetchContext(function () {
+          return hasRequest ? cache.add(iframeRequest(request)) : cache.add();
+        });
+      };
+      wrapper.addAll = function (requests) {
+        var hasRequests = arguments.length >= 1;
+        return withIframeFetchContext(function () {
+          if (!hasRequests || requests == null) return cache.addAll(requests);
+          return cache.addAll(Array.prototype.slice.call(requests).map(function (request) {
+            return request === undefined ? request : iframeRequest(request);
+          }));
+        });
+      };
+      wrapper.delete = function (request, options) {
+        return arguments.length < 1 ? cache.delete() : cache.delete(iframeRequest(request), options);
+      };
+      wrapper.keys = function (request, options) {
+        return request === undefined ? cache.keys(undefined, options) : cache.keys(iframeRequest(request), options);
+      };
+      return wrapper;
+    }
+    var iframeCaches = globalThis.caches && typeof globalThis.caches.open === 'function'
+      ? Object.create(
+        globalThis.CacheStorage && globalThis.CacheStorage.prototype ||
+        Object.getPrototypeOf(globalThis.caches) || Object.prototype
+      )
+      : globalThis.caches;
+    if (iframeCaches && iframeCaches !== globalThis.caches) {
+      iframeCaches.open = function (name) {
+        return globalThis.caches.open(name).then(wrapIframeCache);
+      };
+      iframeCaches.has = function (name) { return globalThis.caches.has(name); };
+      iframeCaches.delete = function (name) { return globalThis.caches.delete(name); };
+      iframeCaches.keys = function () { return globalThis.caches.keys(); };
+      iframeCaches.match = function (request, options) {
+        return arguments.length < 1 ? globalThis.caches.match() : globalThis.caches.match(iframeRequest(request), options);
+      };
+    }
     function runInlineScripts() {
       if (win._zwScriptsRan) return;
       win._zwScriptsRan = true;
@@ -1516,6 +1597,9 @@
       Headers: globalThis.Headers,
       Request: globalThis.Request,
       Response: globalThis.Response,
+      CacheStorage: globalThis.CacheStorage,
+      Cache: globalThis.Cache,
+      caches: iframeCaches,
       URL: globalThis.URL,
       _et_listeners: {},
       _zwScriptsRan: false,

@@ -1,21 +1,24 @@
-path	manifest_type	roles	referenced_by	bytes	templated	git_blob_sha
-resources/testharness.js	support	harness	1	198291	no	c7ce4f51e1db075809f861255417c27478b2c179
-resources/testharnessreport.js	support	harness-report	1	1231	no	405a2d8b06f00fe8292e0e9d5b917e193cfd416c
-service-workers/service-worker/resources/test-helpers.sub.js	support	page-script	1	10485	yes	74301523e7355ad8d62bcb568280edbc23fdaacf
-service-workers/service-worker/resources/simple.html	support	iframe-document	1	65	no	0c3e3e78707b14dcca98bf1a435a34f402b3dadd
-service-workers/service-worker/resources/request-end-to-end-worker.js	support	worker-script	1	858	no	6bd2b72137e5b4632fe6e144184fde3ff8a87eb2
-service-workers/service-worker/request-end-to-end.https.html	testharness	case	1	2113	no	82475eabc4ab49467955310786f7a405b277bb94
-service-workers/service-worker/fetch-event-add-async.https.html	testharness	case	1	357	no	ac13e4f41675c22669862751b9209835d7210231
-service-workers/service-worker/resources/fetch-event-add-async-worker.js	support	worker-script	1	234	no	a5a44a57c99cb3a289f0015168609852729d50a5
-service-workers/service-worker/resources/fetch-event-async-respond-with-worker.js	support	worker-script	1	2008	no	dc3f1a1e98563ad1b5924c8315c0d64d17ffbbfd
-service-workers/service-worker/fetch-event-async-respond-with.https.html	testharness	case	1	2510	no	d9147f85494c21e54d39a4fd7af16efa1a126384
-service-workers/service-worker/fetch-event-respond-with-argument.https.html	testharness	case	1	1404	no	05e22105243f710273f56e21502659ad1781e28c
-service-workers/service-worker/resources/fetch-event-respond-with-argument-worker.js	support	worker-script	1	419	no	712c4b73c9bc6da7c828a4c194b09ad9018d47ae
-service-workers/service-worker/resources/fetch-event-respond-with-argument-iframe.html	support	iframe-document	1	1497	no	0ebd1ca81537e529aaa0e3e93985b92364e9225f
-service-workers/service-worker/fetch-event-network-error.https.html	testharness	case	1	1330	no	fea2ad1e3c26effcc9fd7c8d7a66917e420606b4
-service-workers/service-worker/resources/fetch-event-network-error-worker.js	support	worker-script	1	1408	no	5bfe3a0bbd9cfe706a72080dcde4cc147344ddc7
-service-workers/service-worker/resources/fetch-event-network-error-controllee-iframe.html	support	iframe-document	1	1760	no	f6c1919bbcf63a0f23f7ea4f0f8baa0e5bae4035
-service-workers/service-worker/resources/other.html	support	worker-fetch	1	64	no	b9f3504387722c4583a0904cb7b7f7a4f9706b71
-service-workers/service-worker/iso-latin1-header.https.html	testharness	case	1	1550	no	c27a5f48a5b9e9384a5c9129d0288761b0df9cd7
-service-workers/service-worker/resources/iso-latin1-header-iframe.html	support	iframe-document	1	657	no	cf2fa8d14f7c6089d11979e4be4094f4e7fbab25
-service-workers/service-worker/resources/iso-latin1-header-worker.js	support	worker-script	1	416	no	d9ecca277b3fae5bc4698ff467a85714be7b15a3
+path	manifest_type	roles	referenced_by	bytes	templated	git_blob_sha	source_revision
+resources/testharness.js	support	harness	1	198291	no	c7ce4f51e1db075809f861255417c27478b2c179	04067ce9c7c2165e71ad7d0dde10a4c5cb394a83
+resources/testharnessreport.js	support	harness-report	1	1231	no	405a2d8b06f00fe8292e0e9d5b917e193cfd416c	04067ce9c7c2165e71ad7d0dde10a4c5cb394a83
+service-workers/service-worker/resources/test-helpers.sub.js	support	page-script	1	10485	yes	74301523e7355ad8d62bcb568280edbc23fdaacf	04067ce9c7c2165e71ad7d0dde10a4c5cb394a83
+service-workers/service-worker/resources/simple.html	support	iframe-document	1	65	no	0c3e3e78707b14dcca98bf1a435a34f402b3dadd	04067ce9c7c2165e71ad7d0dde10a4c5cb394a83
+service-workers/service-worker/resources/request-end-to-end-worker.js	support	worker-script	1	858	no	6bd2b72137e5b4632fe6e144184fde3ff8a87eb2	04067ce9c7c2165e71ad7d0dde10a4c5cb394a83
+service-workers/service-worker/request-end-to-end.https.html	testharness	case	1	2113	no	82475eabc4ab49467955310786f7a405b277bb94	04067ce9c7c2165e71ad7d0dde10a4c5cb394a83
+service-workers/service-worker/fetch-event-add-async.https.html	testharness	case	1	357	no	ac13e4f41675c22669862751b9209835d7210231	04067ce9c7c2165e71ad7d0dde10a4c5cb394a83
+service-workers/service-worker/resources/fetch-event-add-async-worker.js	support	worker-script	1	234	no	a5a44a57c99cb3a289f0015168609852729d50a5	04067ce9c7c2165e71ad7d0dde10a4c5cb394a83
+service-workers/service-worker/resources/fetch-event-async-respond-with-worker.js	support	worker-script	1	2008	no	dc3f1a1e98563ad1b5924c8315c0d64d17ffbbfd	04067ce9c7c2165e71ad7d0dde10a4c5cb394a83
+service-workers/service-worker/fetch-event-async-respond-with.https.html	testharness	case	1	2510	no	d9147f85494c21e54d39a4fd7af16efa1a126384	04067ce9c7c2165e71ad7d0dde10a4c5cb394a83
+service-workers/service-worker/fetch-event-within-sw.https.html	testharness	case	1	1990	no	0b52b18305faa1e36ea6873ed534913adb6e5c75	24197a11e8c5bd29a5cb7bdf18135a82be8a8546
+service-workers/service-worker/resources/fetch-event-within-sw-worker.js	support	worker-script	1	1287	no	5903bab968dc47aec8d5a51da1422d1eccbdb076	24197a11e8c5bd29a5cb7bdf18135a82be8a8546
+service-workers/service-worker/resources/sample.txt	support	worker-fetch	1	12	no	802992c4220de19a90767f3000a79a31b98d0df7	24197a11e8c5bd29a5cb7bdf18135a82be8a8546
+service-workers/service-worker/fetch-event-respond-with-argument.https.html	testharness	case	1	1404	no	05e22105243f710273f56e21502659ad1781e28c	04067ce9c7c2165e71ad7d0dde10a4c5cb394a83
+service-workers/service-worker/resources/fetch-event-respond-with-argument-worker.js	support	worker-script	1	419	no	712c4b73c9bc6da7c828a4c194b09ad9018d47ae	04067ce9c7c2165e71ad7d0dde10a4c5cb394a83
+service-workers/service-worker/resources/fetch-event-respond-with-argument-iframe.html	support	iframe-document	1	1497	no	0ebd1ca81537e529aaa0e3e93985b92364e9225f	04067ce9c7c2165e71ad7d0dde10a4c5cb394a83
+service-workers/service-worker/fetch-event-network-error.https.html	testharness	case	1	1330	no	fea2ad1e3c26effcc9fd7c8d7a66917e420606b4	04067ce9c7c2165e71ad7d0dde10a4c5cb394a83
+service-workers/service-worker/resources/fetch-event-network-error-worker.js	support	worker-script	1	1408	no	5bfe3a0bbd9cfe706a72080dcde4cc147344ddc7	04067ce9c7c2165e71ad7d0dde10a4c5cb394a83
+service-workers/service-worker/resources/fetch-event-network-error-controllee-iframe.html	support	iframe-document	1	1760	no	f6c1919bbcf63a0f23f7ea4f0f8baa0e5bae4035	04067ce9c7c2165e71ad7d0dde10a4c5cb394a83
+service-workers/service-worker/resources/other.html	support	worker-fetch	1	64	no	b9f3504387722c4583a0904cb7b7f7a4f9706b71	04067ce9c7c2165e71ad7d0dde10a4c5cb394a83
+service-workers/service-worker/iso-latin1-header.https.html	testharness	case	1	1550	no	c27a5f48a5b9e9384a5c9129d0288761b0df9cd7	04067ce9c7c2165e71ad7d0dde10a4c5cb394a83
+service-workers/service-worker/resources/iso-latin1-header-iframe.html	support	iframe-document	1	657	no	cf2fa8d14f7c6089d11979e4be4094f4e7fbab25	04067ce9c7c2165e71ad7d0dde10a4c5cb394a83
+service-workers/service-worker/resources/iso-latin1-header-worker.js	support	worker-script	1	416	no	d9ecca277b3fae5bc4698ff467a85714be7b15a3	04067ce9c7c2165e71ad7d0dde10a4c5cb394a83

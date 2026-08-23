@@ -27,7 +27,7 @@
 >   （open/has/delete/keys）、Cache（match/matchAll/add/addAll/put/delete/keys）、
 >   CacheQueryOptions（ignoreSearch/ignoreMethod/ignoreVary）已实现并有单测。
 > - **JS 页面层**：`js_dom_shim` 已暴露 `CacheStorage` / `Cache` / `caches` 页面 API，
->   WebView/in-process 页面可走 host callback 进入 zero-storage。
+>   WebView/in-process 页面与 iframe `contentWindow` 可走 host callback 进入 zero-storage。
 > - **持久化**：page/WebView `StorageManager` owner 已支持 CacheStorage per-origin
 >   落盘与跨 WebView 重建读回；Service Worker registration-local CacheStorage 已纳入
 >   active registration persistence snapshot/restore。

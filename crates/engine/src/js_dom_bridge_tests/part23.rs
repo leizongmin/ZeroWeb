@@ -270,6 +270,129 @@ fn test_iframe_content_window_post_message_transfers_ports() {
 }
 
 #[test]
+fn test_iframe_content_window_cache_add_uses_iframe_fetch_context() {
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+
+    let mut sandbox = V8Sandbox::with_config(zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    })
+    .unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><iframe src=\"resources/simple.html\"></iframe></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "https://wpt.test/service-workers/service-worker/fetch-event-within-sw.https.html".to_string(),
+    ));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+    sandbox.register_callback(
+        "__zw_sw_observe_window_client",
+        Box::new(|_args| r#"{"ok":true}"#.to_string()),
+    );
+
+    let fetches = Arc::new(Mutex::new(Vec::new()));
+    let fetches_for_callback = fetches.clone();
+    sandbox.register_callback(
+        "__zw_fetch",
+        Box::new(move |args| {
+            fetches_for_callback.lock().unwrap().push(format!(
+                "{}|{}|{}",
+                args.get(2).cloned().unwrap_or_default(),
+                args.get(5).cloned().unwrap_or_default(),
+                args.get(6).cloned().unwrap_or_default()
+            ));
+            "__zwfr:200\x1fOK\x1f\x1fintercepted".to_string()
+        }),
+    );
+    let cache_requests = Arc::new(Mutex::new(Vec::new()));
+    let cache_requests_for_callback = cache_requests.clone();
+    sandbox.register_callback(
+        "__zw_cache_storage",
+        Box::new(move |args| {
+            let request = args.first().cloned().unwrap_or_default();
+            cache_requests_for_callback.lock().unwrap().push(request.clone());
+            if request.contains(r#""op":"open""#) {
+                return r#"__zw_cache_ok:{"name":"test","cache_id":17}"#.to_string();
+            }
+            if request.contains(r#""op":"put""#)
+                && request.contains(r#""url":"https://wpt.test/service-workers/service-worker/resources/sample.txt""#)
+                && request.contains(r#""body":"intercepted""#)
+            {
+                return r#"__zw_cache_ok:{"ok":true}"#.to_string();
+            }
+            if request.contains(r#""op":"match""#) {
+                return "__zw_cache_ok:{\"response\":\"__zwcr2:200\\u001fOK\\u001fbasic\\u001fhttps://wpt.test/service-workers/service-worker/resources/sample.txt\\u001f\\u001fintercepted\"}".to_string();
+            }
+            "__zw_cache_error:unexpected request".to_string()
+        }),
+    );
+
+    sandbox
+        .execute(
+            "globalThis.__iframeCacheAdd = 'pending';\
+             var frame = document.querySelector('iframe');\
+             var cache;\
+             frame.contentWindow.caches.match().then(function () {\
+               globalThis.__iframeCacheStorageMatchMissing = 'resolved';\
+             }, function (error) {\
+               globalThis.__iframeCacheStorageMatchMissing = error && error.name;\
+             });\
+             frame.contentWindow.caches.open('test').then(function (opened) {\
+               cache = opened;\
+               return cache.add('sample.txt');\
+             }).then(function () {\
+               return cache.match('sample.txt');\
+             }).then(function (response) {\
+               return response.text();\
+             }).then(function (body) {\
+               globalThis.__iframeCacheAdd = body;\
+             }, function (error) {\
+               globalThis.__iframeCacheAdd = 'error:' + String(error && error.message ? error.message : error);\
+             });",
+        )
+        .unwrap();
+    for i in 0..12 {
+        sandbox.execute(&format!("globalThis.__iframeCacheAddPump = {i};")).unwrap();
+    }
+
+    assert_eq!(
+        sandbox.execute("String(globalThis.__iframeCacheAdd)").unwrap().value,
+        "intercepted",
+        "iframe contentWindow.caches should expose CacheStorage and cache.add should round-trip"
+    );
+    assert_eq!(
+        sandbox
+            .execute("String(globalThis.__iframeCacheStorageMatchMissing)")
+            .unwrap()
+            .value,
+        "TypeError",
+        "iframe CacheStorage.match should preserve the main CacheStorage missing-request validation"
+    );
+    assert_eq!(
+        fetches.lock().unwrap().as_slice(),
+        &[
+            "https://wpt.test/service-workers/service-worker/resources/simple.html||".to_string(),
+            "https://wpt.test/service-workers/service-worker/resources/sample.txt|iframe:iframe|https://wpt.test/service-workers/service-worker/resources/simple.html".to_string(),
+        ],
+        "cache.add should fetch relative to the iframe document URL with the iframe SW client metadata"
+    );
+    assert!(
+        cache_requests
+            .lock()
+            .unwrap()
+            .iter()
+            .any(|request| request.contains(r#""op":"put""#)
+                && request.contains(r#""url":"https://wpt.test/service-workers/service-worker/resources/sample.txt""#)),
+        "Cache.put should store the iframe-resolved request URL"
+    );
+}
+
+#[test]
 fn test_cache_api_storage_buckets_namespace_and_delete() {
     use std::sync::{Arc, Mutex};
     use zero_script_sandbox::{Sandbox, V8Sandbox};
