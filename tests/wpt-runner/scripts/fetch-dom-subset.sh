@@ -89,6 +89,10 @@ fetch_raw "dom/common.js"
 # dom/events 共享 JS（js-dom R113：webkit-animation/transition 四用例引用
 # resources/prefixed-animation-event-tests.js——缺文件时 runner 报 script fetch failed）。
 fetch_raw "dom/events/resources/prefixed-animation-event-tests.js"
+# js-dom R198：dom/nodes/support/ 共享 JS（NodeList-static-length-getter-tampered-{1..3,-indexOf-{1..3}}
+# 六用例引用 support/NodeList-static-length-tampered.js——fetch_dir_html 只列子目录顶层 .html/.js，
+# 不递归 support/；缺文件时六用例 "script fetch failed" 整簇 fail）。
+fetch_raw "dom/nodes/support/NodeList-static-length-tampered.js"
 # dom 根共享 /common/ 静态文档（js-dom R115：Document-createElement/case/createElementNS 等
 # ~750 subtest 经 <iframe src="/common/dummy.xml|.xhtml"> 取 XML/XHTML 文档——缺文件时
 # contentDocument 恒 undefined）。dummy.xml/xhtml 是最小静态文档，R115 iframe

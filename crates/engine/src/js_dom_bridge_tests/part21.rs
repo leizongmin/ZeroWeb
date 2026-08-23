@@ -199,6 +199,47 @@ fn test_classic_script_strict_function_globals_r147() {
     assert_eq!(err, "", "R147 两段脚本均无抛错（sentinel 干净）");
 }
 
+/// R198：strict classic 脚本顶层 `const` / `let` 声明与 R147 的 function 同款全局发布
+///（WPT dom/nodes/support/NodeList-static-length-tampered.js 顶层
+/// `const indexOfNodeList = new Function(...)` 跨 `<script>` 不可见 → 后续脚本
+/// "is not defined"）。IIFE/块内缩进 const 不误发布。
+#[test]
+fn test_classic_script_strict_const_let_globals_r198() {
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let mut sandbox = V8Sandbox::with_config(zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    })
+    .unwrap();
+    let first = crate::js_dom_bridge::script_run_classic_page(
+        "'use strict';\nconst topConstA = new Function('return 41;');\nlet topLetB = 1;\n(function(){\n  const innerConst = 7;\n  globalThis.__innerConstRef = typeof innerConst;\n})();\n",
+        0,
+    );
+    let second = crate::js_dom_bridge::script_run_classic_page(
+        "globalThis.__probe = [typeof topConstA, String(topConstA() + 1), String(topLetB), globalThis.__innerConstRef].join(',');",
+        1,
+    );
+    sandbox.execute(&first).unwrap();
+    sandbox.execute(&second).unwrap();
+    let err = sandbox
+        .execute(&crate::js_dom_bridge::page_script_error_check())
+        .unwrap()
+        .value;
+    assert_eq!(err, "", "R198 两段脚本均无抛错（sentinel 干净）");
+    let out = sandbox.execute("globalThis.__probe").unwrap().value;
+    // `__innerConstRef` 是 IIFE 内 `typeof innerConst`（局部可见 → "number"）；IIFE 的
+    // const **未被发布**的验证在下一行（globalThis.innerConst undefined）。
+    assert_eq!(
+        out, "function,42,1,number",
+        "R198 strict classic 顶层 const/let 经全局发布跨脚本可见"
+    );
+    assert_eq!(
+        sandbox.execute("String(typeof globalThis.innerConst)").unwrap().value,
+        "undefined",
+        "R198 IIFE 内缩进 const 不被误发布到 globalThis"
+    );
+}
+
 /// Cache API 初始页面表面：`caches.open()` / `Cache.put()` / `Cache.match()` 经 host bridge
 /// 往返，match miss 解析为 undefined。
 #[test]
@@ -2017,3 +2058,4 @@ fn test_label_span_click_forward_r155() {
         "R155：LABEL 内 span click——LABEL 转发激活到内部 checkbox（onclick activated 链）"
     );
 }
+

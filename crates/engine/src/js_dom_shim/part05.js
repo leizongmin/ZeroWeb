@@ -6145,7 +6145,105 @@
       value: function (i) { i = _zwToUint32(i); return i < a.length ? a[i] : null; },
       enumerable: false, configurable: true, writable: true,
     });
-    return a;
+    // R198（js-dom M4）：静态 NodeList 的 **length 劫持语义**（WPT NodeList-static-
+    // length-getter-tampered-{1..3,-indexOf-{1..3}} 六用例）。真浏览器 NodeList 的
+    // length 是**原型属性**（实例无 own length）——三形态劫持都改变 `nodeList.length`
+    // 的读取结果：① own defineProperty 覆盖（实例无 own length → 建 accessor 直接生效）；
+    // ② setPrototypeOf 换带 getter 的原型；③ defineProperty(NodeList.prototype,...)
+    // 全局原型篡改。Array 承载根本分叉：length 是 own + non-configurable——①直接抛
+    // "Cannot redefine property"（Proxy invariant：target 有 non-configurable 属性时
+    // trap 不能汇报不存在/不能接受不兼容 defineProperty，无解），②③被 own length
+    // 遮蔽恒返真实计数。
+    // 方案：Proxy 承载，target 用**普通对象**（索引属性 0..n-1 落 target，无 own
+    // length → ① 的 defineProperty 无 invariant 冲突）。`length` 读取按 spec 解析序：
+    // **expando（own defineProperty 劫持）→ 原型链 getter（setPrototypeOf 替换 /
+    // NodeList.prototype 篡改）→ 真实计数**。[[Prototype]] 接 NodeList.prototype →
+    // Array.prototype（Array 原型方法经 receiver=proxy 调用，length/索引经 trap 读取，
+    // indexOf/map/for-of 全兼容）。
+    // **消费面接线**：Array.isArray(product) 由 true → false（Proxy 无法伪造），两处
+    // 补偿——(a) part03 的 NodeList Symbol.hasInstance 改认 `__zwNL` 印记（R159 的
+    // instanceof NodeList 断言保持）；(b) 内部消费（索引循环 out[i]/out.length、
+    // prototype 方法调用）经 trap 语义不变。`__zwNL` 印记落 target（get trap 直通）。
+    var _r198Expando = null; // own defineProperty 劫持描述符（① 形态）
+    var _r198Target = { __zwNL: true };
+    for (var _r198i = 0; _r198i < _elems.length; _r198i++) _r198Target[_r198i] = _elems[_r198i];
+    try {
+      if (globalThis.NodeList && globalThis.NodeList.prototype
+          && Object.getPrototypeOf(globalThis.NodeList.prototype) !== Array.prototype) {
+        Object.setPrototypeOf(globalThis.NodeList.prototype, Array.prototype);
+      }
+      Object.setPrototypeOf(_r198Target, globalThis.NodeList ? globalThis.NodeList.prototype : Array.prototype);
+    } catch (_e198p) {}
+    var _r198Count = _elems.length;
+    var _r198HasLengthGetter = function (obj) {
+      // 沿原型链找 length accessor（target 自身无 own length，从其原型起查）。
+      try {
+        var cur = Object.getPrototypeOf(obj);
+        for (var _r198d = 0; cur && _r198d < 8; _r198d++) {
+          var d = Object.getOwnPropertyDescriptor(cur, 'length');
+          if (d && (typeof d.get === 'function' || typeof d.set === 'function')) return d;
+          cur = Object.getPrototypeOf(cur);
+        }
+      } catch (_e198g) {}
+      return null;
+    };
+    var proxy = new Proxy(_r198Target, {
+      get: function (t, p, recv) {
+        if (p === 'length') {
+          // ① own expando 劫持优先（defineProperty trap 记录的 accessor）。
+          if (_r198Expando && typeof _r198Expando.get === 'function') {
+            return _r198Expando.get.call(recv, 'length');
+          }
+          // ②③ 原型链 getter（setPrototypeOf 替换 / NodeList.prototype 篡改）。
+          var d198 = _r198HasLengthGetter(t);
+          if (d198) return d198.get ? d198.get.call(recv, 'length') : _r198Count;
+          return _r198Count;
+        }
+        if (p === 'item') return t.item;
+        return t[p];
+      },
+      defineProperty: function (t, p, desc) {
+        if (p === 'length') {
+          // ① 形态：own 劫持记 expando（target 无 own length，无 invariant 冲突）。
+          _r198Expando = desc;
+          return true;
+        }
+        Object.defineProperty(t, p, desc);
+        return true;
+      },
+      getOwnPropertyDescriptor: function (t, p) {
+        if (p === 'length') return _r198Expando ? _r198Expando : undefined;
+        return Object.getOwnPropertyDescriptor(t, p);
+      },
+      ownKeys: function (t) {
+        // own 枚举 = 索引属性——length 是原型属性不进 own（spec platform object 语义；
+        // WPT own-props 枚举期望仅索引），内部印记（__zwNL/__zwQSA/item）同样滤除。
+        var out = [];
+        var names = Object.getOwnPropertyNames(t);
+        for (var _r198k = 0; _r198k < names.length; _r198k++) {
+          if (names[_r198k] === '__zwNL' || names[_r198k] === '__zwQSA'
+              || names[_r198k] === '__zwLiveNL' || names[_r198k] === 'item') continue;
+          out.push(names[_r198k]);
+        }
+        return out;
+      },
+      has: function (t, p) {
+        if (p === 'length') return true;
+        return p in t;
+      },
+    });
+    // item 方法落 target（get trap 直通；receiver 校验——proxy 归一后合法）。
+    try {
+      Object.defineProperty(_r198Target, 'item', {
+        value: a.item || function (i) { i = _zwToUint32(i); return i < _r198Count ? _r198Target[i] : null; },
+        enumerable: false, configurable: true, writable: true,
+      });
+      // 旧 __zwQSA 印记（R159 instanceof 标记）兼容：target 同步携带（hasInstance 新逻辑
+      // 认 __zwNL，但既有消费者可能直接读 __zwQSA）。
+      if (a.__zwQSA) _r198Target.__zwQSA = true;
+      if (a.__zwLiveNL) _r198Target.__zwLiveNL = true;
+    } catch (_e198it) {}
+    return proxy;
   }
 
 

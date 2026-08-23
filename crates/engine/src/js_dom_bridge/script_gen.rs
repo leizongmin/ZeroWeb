@@ -466,21 +466,55 @@ pub fn script_run_classic_page(code: &str, script_index: usize) -> String {
     // 修复：扫描行首 `function NAME(` 形态（启发式——行首锚定，字符串/注释内换行后
     // 的伪匹配最坏多发布一个无害 globalThis 赋值），eval 源后拼接
     // `;globalThis.NAME=NAME;`（strict 局部声明经此导出；non-strict 本已全局，恒等）。
+    //
+    // R198（js-dom M4）：顶层 `const NAME =` / `let NAME =` 同款全局发布。strict eval
+    // 的块级声明同样困在独立变量环境（WPT dom/nodes/support/NodeList-static-length-
+    // tampered.js 顶层 `const indexOfNodeList = new Function(...)` 跨 `<script>` 不可见
+    // → 后续脚本报 "indexOfNodeList is not defined"）。const/let 只读不重赋——
+    // `globalThis.NAME=NAME` 读取局部绑定写入全局属性，与 function 导出对称。
+    //
+    // **每名独立 try 包裹（lit bundle 回归教训）**：minified bundle 的 IIFE 内部代码
+    // 也是零缩进行首（`var ns = (function() {` 换行后 `const t=globalThis,...`）——
+    // 行首锚定无法区分真顶层与 IIFE 作用域。后缀在 eval 顶层执行时，IIFE 作用域的
+    // 名字已消亡 → 裸 `globalThis.t=t` 抛 ReferenceError **中止整个 eval**（lit e2e
+    // 六测试 NO-REPORT/EXEC-ERR 实证）。每名 `try{...}catch(_){}` 包裹：作用域外的
+    // 名字静默跳过，顶层名正常导出。R147 的 function 导出同样补包裹（lit bundle 无
+    // 行首 function 故未暴露，防御同款形态）。
     let exports = code
         .lines()
         .filter_map(|line| {
-            // 仅**行首零缩进**的 `function NAME(`（真顶层声明——WPT 测试库无缩进顶层
-            // 函数 + IIFE 内部缩进函数不误匹配。testharness.js 等全 IIFE 包裹源零导出）。
-            let rest = line.strip_prefix("function ")?;
-            let name: String = rest
-                .chars()
-                .take_while(|c| c.is_ascii_alphanumeric() || *c == '_' || *c == '$')
-                .collect();
-            let after = rest.get(name.len()..).unwrap_or_default();
-            if name.is_empty() || !after.trim_start().starts_with('(') {
-                return None;
+            // 仅**行首零缩进**的 `function NAME(` / `const NAME =` / `let NAME =`（真顶层
+            // 声明——WPT 测试库无缩进顶层 + IIFE/块内部缩进声明不误匹配；多声明符形态
+            // `const a = 1, b = 2` 只发布首名，后续名困在局部（罕见，接受））。
+            if let Some(rest) = line.strip_prefix("function ") {
+                let name: String = rest
+                    .chars()
+                    .take_while(|c| c.is_ascii_alphanumeric() || *c == '_' || *c == '$')
+                    .collect();
+                let after = rest.get(name.len()..).unwrap_or_default();
+                if name.is_empty() || !after.trim_start().starts_with('(') {
+                    return None;
+                }
+                return Some(format!("try{{globalThis.{name}={name};}}catch(_zw_ex){{}}"));
             }
-            Some(format!("globalThis.{name}={name};"))
+            for keyword in ["const ", "let "] {
+                if let Some(rest) = line.strip_prefix(keyword) {
+                    let name: String = rest
+                        .chars()
+                        .take_while(|c| c.is_ascii_alphanumeric() || *c == '_' || *c == '$')
+                        .collect();
+                    let after = rest.get(name.len()..).unwrap_or_default();
+                    // 声明符后（允许空白）须紧跟 `=`（初始化）或行尾（`const x` 无初始化
+                    // 是 SyntaxError，实际源不会出现；跳过伪匹配如 `letName`）。const/let
+                    // 只读不重赋——`globalThis.NAME=NAME` 读取局部绑定写入全局属性，合法。
+                    let after_trim = after.trim_start();
+                    if name.is_empty() || !(after_trim.starts_with('=') || after_trim.is_empty()) {
+                        return None;
+                    }
+                    return Some(format!("try{{globalThis.{name}={name};}}catch(_zw_ex){{}}"));
+                }
+            }
+            None
         })
         .collect::<Vec<_>>()
         .join("");

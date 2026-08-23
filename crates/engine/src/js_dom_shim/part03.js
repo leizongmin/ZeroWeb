@@ -318,6 +318,10 @@
         // R159：querySelectorAll 产物数组（__zwQSA 标记）同认 instanceof NodeList
         //（WPT ParentNode-querySelector-All "returns NodeList instance" 断言——
         // spec 返 NodeList 对象；shim 数组形态经标记近似）。
+        // R198：静态 NodeList 升级为 Proxy 承载（plain target——length 劫持语义，
+        // 见 _zwMakeCollection R198 块）后 Array.isArray false——补认 target 的
+        // `__zwNL` 印记；live childNodes 数组（__zwLiveNL）保持 Array 形态不变。
+        if (v && typeof v === 'object' && v.__zwNL === true) return true;
         return Array.isArray(v) && (v.__zwLiveNL === true || v.__zwQSA === true);
       },
     });
