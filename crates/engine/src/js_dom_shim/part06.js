@@ -3806,6 +3806,26 @@
       // `dom-range-compareboundarypoints`）——两 range root 不同 → WrongDocumentError；
       // 同 root 折叠 range 互比 → 0（WPT Attr-rooted 双 range 全 4 how 期望 0）。
       compareBoundaryPoints: function (how, sourceRange) {
+        // R204（js-dom M4）：`how` 的 **WebIDL unsigned short 转换前置**（spec
+        // range-compareboundarypoints 步骤 1 + WebIDL ToUint16）：ToNumber →
+        // NaN/±0/±∞ → +0；否则 sign*floor(abs) mod 2^16（负数回绕）。转换结果非
+        // 0-3 → NotSupportedError（WPT Range-compareBoundaryPoints 的 "-1, 4, 5,
+        // NaN, ±Infinity, 0.5, 字符串形态, null/undefined/bool" 全形态断言——旧版
+        // `| 0` 截断 + IndexSizeError，NaN|0=0 误判合法、-1 回绕 65535 未抛）。
+        // **参数序**：how 转换先于 sourceRange 类型检查（WebIDL 参数序转换）。
+        var howNum = Number(how);
+        var howN;
+        if (isNaN(howNum) || howNum === 0 || howNum === Infinity || howNum === -Infinity) {
+          howN = 0;
+        } else {
+          var posInt = (howNum < 0 ? -1 : 1) * Math.floor(Math.abs(howNum));
+          howN = posInt % 65536;
+          if (howN < 0) howN += 65536;
+        }
+        if (howN !== 0 && howN !== 1 && howN !== 2 && howN !== 3) {
+          throw new (globalThis.DOMException || Error)(
+            'The comparison how argument is not one of START_TO_START, START_TO_END, END_TO_END or END_TO_START.', 'NotSupportedError');
+        }
         if (!sourceRange || typeof sourceRange.startContainer === 'undefined') {
           throw new globalThis.TypeError(
             "Failed to execute 'compareBoundaryPoints' on 'Range': parameter 2 is not of type 'Range'.");
@@ -3813,11 +3833,6 @@
         if (this._rootOf178(this.startContainer) !== sourceRange._rootOf178(sourceRange.startContainer)) {
           throw new (globalThis.DOMException || Error)(
             'The two ranges are in different documents.', 'WrongDocumentError');
-        }
-        var howN = how | 0;
-        if (howN < 0 || howN > 3) {
-          throw new (globalThis.DOMException || Error)(
-            'The comparison code is out of range.', 'IndexSizeError');
         }
         // 本切片聚焦「同容器折叠」族（Attr-rooted 双 range）：容器相等按 offset 差，
         // 不同容器 best-effort 0。
@@ -3837,8 +3852,12 @@
         }
         try {
           var pos178 = thisBoundary178[0].compareDocumentPosition(srcBoundary178[0]);
-          if (pos178 & 2) return -1;
-          if (pos178 & 4) return 1;
+          // R204：方向修正——cDP 位以**接收者为参照**：& 4（FOLLOWING）= source 在
+          // this 之后（this 在前 → -1）；& 2（PRECEDING）= source 在 this 之前
+          //（this 在后 → +1）。旧版两支写反（WPT 跨容器族 expected ±1 got ∓1 各
+          // 1091/1092 实证）。
+          if (pos178 & 4) return -1;
+          if (pos178 & 2) return 1;
         } catch (_e178b) {}
         return 0;
       },
@@ -4145,6 +4164,17 @@
         }
       }
     } catch (_e179p) {}
+    // R204（js-dom M4）：Range 的 **how 常量**（spec `dom-range` 接口常量——
+    // START_TO_START=0 / START_TO_END=1 / END_TO_END=2 / END_TO_START=3）。缺常量
+    // 使 WPT Range-compareBoundaryPoints 的合法性判定（convertedHow 与四常量比对）
+    // 全部失配——所有 how 形态（含合法 0-3）都被期望抛 NotSupportedError，4728F
+    // 整簇（与 compareBoundaryPoints 的 WebIDL how 转换修复同轮）。
+    try {
+      Object.defineProperty(globalThis.Range, 'START_TO_START', { value: 0, writable: false, enumerable: true, configurable: false });
+      Object.defineProperty(globalThis.Range, 'START_TO_END', { value: 1, writable: false, enumerable: true, configurable: false });
+      Object.defineProperty(globalThis.Range, 'END_TO_END', { value: 2, writable: false, enumerable: true, configurable: false });
+      Object.defineProperty(globalThis.Range, 'END_TO_START', { value: 3, writable: false, enumerable: true, configurable: false });
+    } catch (_eR204c) {}
   })();
   // js-dom M4 R42：`StaticRange` 构造器（spec `dom-staticrange`）——读 RangeInit dict（startContainer/
   // startOffset/endContainer/endOffset），属性 readonly，无 setStart/setEnd 等 mutable 方法。

@@ -2208,3 +2208,50 @@ fn test_range_set_start_end_crossing_r203() {
         "R203 setStart 向后穿重设 end / setEnd 向前穿重设 start / 不穿越不动对侧"
     );
 }
+
+/// R204：compareBoundaryPoints 三件——① `how` 的 WebIDL unsigned short 转换前置
+///（ToNumber→NaN/±0/±∞→+0；mod 2^16 负回绕；非 0-3 → NotSupportedError）；② Range
+/// how 常量（START_TO_START..END_TO_START——缺常量使 WPT 合法性判定全失配）；③ 跨
+/// 容器方向位（cDP 以接收者为参照：& 4 FOLLOWING → -1 / & 2 PRECEDING → +1）+
+/// detached doc 的 createRange own 方法（旧落 Document.prototype 转发器自递归）。
+#[test]
+fn test_range_cbp_how_constants_direction_r204() {
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let mut sandbox = V8Sandbox::with_config(zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    })
+    .unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><p id='a'>a</p><p id='b'>b</p></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+    let out = sandbox
+        .execute(
+            "var p0 = document.querySelector('#a'), p1 = document.querySelector('#b');\
+             var consts = [globalThis.Range.START_TO_START, globalThis.Range.START_TO_END,\
+                globalThis.Range.END_TO_END, globalThis.Range.END_TO_START].join(',');\
+             var r1 = document.createRange(); r1.setStart(p0, 0); r1.setEnd(p0, 1);\
+             var r2 = document.createRange(); r2.setStart(p1, 0); r2.setEnd(p1, 1);\
+             var dir = r1.compareBoundaryPoints(0, r2);\
+             function throws(v) { try { r1.compareBoundaryPoints(v, r2); return 'no'; } catch (e) { return e.name; } }\
+             var fdoc = document.implementation.createHTMLDocument('x');\
+             var fr = fdoc.createRange();\
+             [consts, String(dir), throws(-1), throws(4), throws(65535), throws(NaN),\
+              throws(0.5), throws('4'), throws(65536), throws(-65536), throws(null),\
+              throws(undefined), throws('quasit'), String(fr.startContainer === fdoc)].join('|')",
+        )
+        .unwrap()
+        .value;
+    assert_eq!(
+        out,
+        "0,1,2,3|-1|NotSupportedError|NotSupportedError|NotSupportedError|no|no|NotSupportedError|no|no|no|no|no|true",
+        "R204 how 常量 + 跨容器方向（r1 在 r2 前 → -1）+ WebIDL 转换形态 + detached createRange"
+    );
+}

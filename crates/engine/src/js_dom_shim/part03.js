@@ -7335,6 +7335,22 @@
       // HTML ns，XML doc → null；WPT Document-createElement-namespace "Created element's namespace
       // in created HTML/XML/XHTML/SVG/MathML document" 簇）。`_docNS` 由 createDocument/
       // createHTMLDocument 按调用参数设（HTML ns 或 null）。
+      // R204（js-dom M4）：detached doc 的 **createRange own 方法**（body 对象 6685 行
+      // 有同名方法但 doc 对象缺失——旧版 doc.createRange 落到 Document.prototype 的
+      // R179 转发器，转发器 `this[name].apply` 再次解析到自身 → **无限递归 Maximum
+      // call stack**；WPT Range-compareBoundaryPoints 的 "Creating context/argument
+      // range threw" 4041F 整簇根因——common.js rangeFromEndpoints 经
+      // ownerDocument(node).createRange()）。初始边界 (doc, 0)（R183 主文档同款）。
+      createRange: function () {
+        var _r204r = _makeRange();
+        try {
+          _r204r.startContainer = doc;
+          _r204r.endContainer = doc;
+          _r204r._startOffsetBase = 0;
+          _r204r._endOffsetBase = 0;
+        } catch (_eR204a) {}
+        return _r204r;
+      },
       createElement: function (t) {
         // R81 spec 纠正：XML 文档（_docNS null/undefined 且非 HTML doc）createElement 不小写
         // 不大写（WPT Node-properties xmlElement.tagName 期望原样 "igiveuponcreativenames"）。
