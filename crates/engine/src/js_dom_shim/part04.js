@@ -1524,6 +1524,12 @@
           if (handle && globalThis.__zwAdoptDocByHandle && Object.prototype.hasOwnProperty.call(globalThis.__zwAdoptDocByHandle, String(handle))) {
             return globalThis.__zwAdoptDocByHandle[String(handle)] || undefined;
           }
+          // R192（js-dom M4）：sel-based 元素的 adopt 印记（注册表键 's:' + sel——
+          // adoptNode/appendChild 的子树传播对 sel 元素同样落表；WPT Document-adoptNode
+          // "Adopting an Element called 'x<'" 的解析产物形态）。
+          if (!handle && sel && globalThis.__zwAdoptDocBySel && Object.prototype.hasOwnProperty.call(globalThis.__zwAdoptDocBySel, String(sel))) {
+            return globalThis.__zwAdoptDocBySel[String(sel)] || undefined;
+          }
           return globalThis.document;
         }
         // js-dom M4 R116：非 NS 属性 API 的名字语义（spec dom-element-setattribute 等——HTML 文档

@@ -1693,6 +1693,25 @@
         throw new (globalThis.DOMException || Error)(
           'Only a Document can contain nodes of type ' + nt + '.', 'HierarchyRequestError');
       }
+      // R192（js-dom M4）：Document 收 doctype 的 pre-insert step 6 校验（spec
+      // `concept-node-pre-insert` 的 doc 分支——WPT ParentNode-append/prepend 的
+      // "If node is a doctype and parent is a document with another doctype/an element,
+      // then throw a HierarchyRequestError"）：① doc 已有 doctype → 抛；② doc 有
+      // documentElement → append 尾位意味着 doctype 落在 element 之后（违反「doctype
+      // 须在 element 前」）→ 抛。element 参数（nt===1）的「已有 element / doctype 后位」
+      // 对称校验同补（append 尾位 element 合法——doc 无 element 时；prepend 首位 element
+      // 在 doctype 前 → 抛）。
+      if (parentIsDoc && nt === 10) {
+        var _r192dk = parent.childNodes || [];
+        for (var _r192d = 0; _r192d < _r192dk.length; _r192d++) {
+          var _r192dn = _r192dk[_r192d];
+          if (_r192dn && (_r192dn.nodeType === 10 || _r192dn.nodeType === 1)) {
+            throw new (globalThis.DOMException || Error)(
+              'A Document cannot contain more than one DocumentType or a DocumentType after its root element.',
+              'HierarchyRequestError');
+          }
+        }
+      }
     }
   }
 
@@ -6734,8 +6753,23 @@
 
   function _appendVariadic(sel, handle, args) {
     var added = [];
+    // R192（js-dom M4）：参数内重复节点的**后位胜**去重（spec `dom-parentnode-append`
+    // 的 insert 步骤——先收集节点再插入，同一节点多次出现只插最后一次位置；WPT
+    // ParentNode-append "with the same element twice"：append(x, y, x) 期望 [y, x]）。
+    // 文本形态（null/undefined→串）不去重（每次都是新文本节点）。
+    var _r192LastIdx = {};
+    for (var _r192p = 0; _r192p < args.length; _r192p++) {
+      var _r192it = args[_r192p];
+      if (_r192it && typeof _r192it === 'object' && _r192it.__zwHandle) {
+        _r192LastIdx[String(_r192it.__zwHandle)] = _r192p;
+      }
+    }
     for (var i = 0; i < args.length; i++) {
       var item = args[i];
+      if (item && typeof item === 'object' && item.__zwHandle
+          && _r192LastIdx[String(item.__zwHandle)] !== i) {
+        continue; // R192：重复出现的前位跳过（后位胜）
+      }
       // R117：null/undefined 不跳过——WebIDL DOMString 转换（'null'/'undefined' 文本节点，
       // WPT ParentNode-append「with null as an argument」）。
       if (item && typeof item === 'object' && item.__zwHandle) {

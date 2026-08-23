@@ -2200,7 +2200,49 @@
     },
     // `document.adoptNode(node)`（R2818）——跨文档收养。单文档沙箱 → identity no-op（spec：同文档 adopt
     // 返节点自身）。返节点（不抛，feature-detection / 库跨文档逻辑兼容）。
-    adoptNode: function(node) { return node; },
+    // R192（js-dom M4）：spec `dom-document-adoptnode`——① node 是 Document →
+    // NotSupportedError（WPT "Adopting a Document should throw"）；② 从原父摘除
+    //（spec concept-node-adopt 前置——WPT "Explicitly adopting a DocumentType" 断言
+    // adopt 后 parentNode null）；③ 子树 ownerDocument 重指本文档（handle 注册表 +
+    // plain defineProperty，与 R191 appendChild adopt 同款）；④ 返回节点自身。
+    adoptNode: function(node) {
+      if (!node || typeof node !== 'object') return node;
+      if ((node.nodeType | 0) === 9) {
+        throw new (globalThis.DOMException || Error)(
+          'Cannot adopt a Document node.', 'NotSupportedError');
+      }
+      try {
+        if (node.parentNode && typeof node.parentNode.removeChild === 'function') {
+          node.parentNode.removeChild(node);
+        }
+      } catch (_e192ap) {}
+      try {
+        (function _r192adopt(n2) {
+          if (!n2 || typeof n2 !== 'object') return;
+          if (n2.__zwHandle) {
+            if (!globalThis.__zwAdoptDocByHandle) globalThis.__zwAdoptDocByHandle = {};
+            globalThis.__zwAdoptDocByHandle[String(n2.__zwHandle)] = globalThis.document;
+          } else if (n2.__zwSelector) {
+            // R192：sel-based 子树（解析产物）——'s:'+sel 键落表（ownerDocument trap 查）。
+            if (!globalThis.__zwAdoptDocBySel) globalThis.__zwAdoptDocBySel = {};
+            globalThis.__zwAdoptDocBySel[String(n2.__zwSelector)] = globalThis.document;
+          } else if (n2.nodeType === 1 || n2.nodeType === 3 || n2.nodeType === 8 || n2.nodeType === 10) {
+            try { n2.__zwAdoptDoc191 = globalThis.document; } catch (_e192a1) {}
+            try {
+              Object.defineProperty(n2, 'ownerDocument', {
+                get: function () { return n2.__zwAdoptDoc191 || undefined; },
+                configurable: true,
+              });
+            } catch (_e192a2) {}
+          }
+          var k2 = n2.childNodes;
+          if (k2 && typeof k2.length === 'number') {
+            for (var i2 = 0; i2 < k2.length; i2++) _r192adopt(k2[i2]);
+          }
+        })(node);
+      } catch (_e192as) {}
+      return node;
+    },
     // `document.importNode(node, deep?)`（R2818；R132 spec 语义收口）——spec
     // `dom-document-importnode` = clone node + **adopt 到本文档**（副本的 ownerDocument
     // 是 import 的目标文档——WPT Document-importNode 四变体断言 `newDiv.ownerDocument
@@ -2362,6 +2404,47 @@
           Object.defineProperty(doctype, 'ownerDocument', { get: function () { return d; }, configurable: true });
           d.appendChild(doctype);
         }
+        // R192（js-dom M4）：detached doc 的 adoptNode（spec dom-document-adoptnode——
+        // WPT Document-adoptNode "Adopting an Element called 'x<'/'​:good:times:'" 的
+        // `doc.adoptNode(y)` 形态：摘除 + 子树 ownerDocument 重指本 doc + 返回节点）。
+        // Document 参数抛 NotSupportedError（同主文档）。
+        d.adoptNode = function (node) {
+          if (!node || typeof node !== 'object') return node;
+          if ((node.nodeType | 0) === 9) {
+            throw new (globalThis.DOMException || Error)(
+              'Cannot adopt a Document node.', 'NotSupportedError');
+          }
+          try {
+            if (node.parentNode && typeof node.parentNode.removeChild === 'function') {
+              node.parentNode.removeChild(node);
+            }
+          } catch (_e192dp) {}
+          try {
+            (function _r192dAdopt(n2) {
+              if (!n2 || typeof n2 !== 'object') return;
+              if (n2.__zwHandle) {
+                if (!globalThis.__zwAdoptDocByHandle) globalThis.__zwAdoptDocByHandle = {};
+                globalThis.__zwAdoptDocByHandle[String(n2.__zwHandle)] = d;
+              } else if (n2.__zwSelector) {
+                if (!globalThis.__zwAdoptDocBySel) globalThis.__zwAdoptDocBySel = {};
+                globalThis.__zwAdoptDocBySel[String(n2.__zwSelector)] = d;
+              } else if (n2.nodeType === 1 || n2.nodeType === 3 || n2.nodeType === 8 || n2.nodeType === 10) {
+                try { n2.__zwAdoptDoc191 = d; } catch (_e192d1) {}
+                try {
+                  Object.defineProperty(n2, 'ownerDocument', {
+                    get: function () { return n2.__zwAdoptDoc191 || undefined; },
+                    configurable: true,
+                  });
+                } catch (_e192d2) {}
+              }
+              var k2 = n2.childNodes;
+              if (k2 && typeof k2.length === 'number') {
+                for (var i2 = 0; i2 < k2.length; i2++) _r192dAdopt(k2[i2]);
+              }
+            })(node);
+          } catch (_e192ds) {}
+          return node;
+        };
         // R130（js-dom M4）：qualifiedName 非空 → 创建 documentElement（spec
         // `dom-domimplementation-createdocument` 步骤 5「If qualifiedName is not empty:
         // append its element」——WPT createDocument 全非 throw 用例的
@@ -2465,6 +2548,22 @@
             return i >= 0 && i < p.childNodes.length - 1 ? p.childNodes[i + 1] : null;
           },
           parentNode: null,
+          // R192（js-dom M4）：ChildNode.remove()（spec dom-childnode-remove——doctype 是
+          // ChildNode mixin 成员；WPT DocumentType-remove 四变体：remove() 从父的
+          // childNodes 摘除 + parentNode 置 null；无父 no-op）。
+          remove: function () {
+            var p = dt.parentNode;
+            if (!p) return;
+            try {
+              if (typeof p.removeChild === 'function') { p.removeChild(dt); return; }
+            } catch (_e192r) {}
+            try {
+              var k = p.childNodes || [];
+              var ix = k.indexOf(dt);
+              if (ix >= 0) k.splice(ix, 1);
+              dt.parentNode = null;
+            } catch (_e192r2) {}
+          },
         };
           try { Object.setPrototypeOf(dt, globalThis.Node ? globalThis.Node.prototype : Object.prototype); } catch (_eR117dt2) {}
           // R128：原型接线 DocumentType.prototype（WPT Node-cloneNode check_copy 断言
@@ -2628,6 +2727,21 @@
           try { globalThis._zwNotifyIteratorsRemove(c); } catch (_e87d) {}
         }
         this._docDtorRemoved = true;
+        // R192（js-dom M4）：spec remove 语义——被移除子的 parentNode 置 null（WPT
+        // Document-adoptNode "Explicitly adopting a DocumentType" 断言 adopt 后
+        // doctype.parentNode === null——adopt 的摘除经此路径）。
+        try {
+          var _r192dk = this.childNodes || [];
+          var _r192di = _r192dk.indexOf(c);
+          if (_r192di >= 0) _r192dk.splice(_r192di, 1);
+        } catch (_e192ds) {}
+        try {
+          c.parentNode = null;
+          // getter-only accessor 时赋值静默 no-op——defineProperty 兜底（R191 同款教训）。
+          if (c.parentNode !== null && c.parentNode !== undefined) {
+            Object.defineProperty(c, 'parentNode', { value: null, writable: true, configurable: true });
+          }
+        } catch (_e192dp) {}
         return c;
       }
       if (c && c.__zwSelector && typeof __zw_remove === 'function') {

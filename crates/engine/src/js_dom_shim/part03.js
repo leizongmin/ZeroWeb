@@ -7675,6 +7675,17 @@
         if (nt === 1 && hasEl(parentNode)) {
           throw _r117Hre('A Document cannot contain more than one Element.');
         }
+        // R192（js-dom M4）：doc 收 doctype 的 step 6 校验（WPT pre-insertion-validation-
+        // hierarchy 的 append 变体两用例——doc 已有 doctype 或 element 时 append doctype →
+        // HRE：append 尾位使 doctype 落 element 后 / 第二 doctype）。
+        if (nt === 10) {
+          var _r192k = parentNode.childNodes || [];
+          for (var _r192i = 0; _r192i < _r192k.length; _r192i++) {
+            if (_r192k[_r192i] && (_r192k[_r192i].nodeType === 10 || _r192k[_r192i].nodeType === 1)) {
+              throw _r117Hre('A Document cannot contain more than one DocumentType or a DocumentType after its root element.');
+            }
+          }
+        }
         if (nt === 11) {
           var fragEls = 0;
           var fk = node.childNodes || [];
