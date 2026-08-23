@@ -1313,6 +1313,9 @@
               worker._id = wire.controller.id;
               worker.scriptURL = wire.controller.scriptURL || '';
               worker.state = wire.controller.state || 'activated';
+              if (typeof globalThis.__zwInitServiceWorkerMessageBridge === 'function') {
+                globalThis.__zwInitServiceWorkerMessageBridge(worker);
+              }
               return worker;
             }
           } catch (_eIframeController) {}

@@ -10,8 +10,8 @@ import subprocess
 import sys
 from pathlib import Path
 
-EXPECTED_CASES = 8
-EXPECTED_SUBTESTS = 23
+EXPECTED_CASES = 9
+EXPECTED_SUBTESTS = 24
 
 
 def parse_args() -> argparse.Namespace:
@@ -83,7 +83,8 @@ def render_markdown(summary: dict) -> str:
             "- WPT revision: `04067ce9c7c2165e71ad7d0dde10a4c5cb394a83`",
             "- Additional WPT revision: `24197a11e8c5bd29a5cb7bdf18135a82be8a8546` "
             "for `fetch-event-within-sw.https.html`, "
-            "`fetch-event-respond-with-custom-response.https.html`, and their new support assets",
+            "`fetch-event-respond-with-custom-response.https.html`, "
+            "`fetch-event-respond-with-stops-propagation.https.html`, and their new support assets",
             f"- Cases: {summary['cases']}",
             f"- Subtests: {summary['subtests']}",
             f"- Pass: {status.get('Pass', 0)}",
@@ -94,7 +95,7 @@ def render_markdown(summary: dict) -> str:
             "",
             "## Scope",
             "",
-            "This pinned Service Worker M2 fetch/interception baseline covers eight cases. "
+            "This pinned Service Worker M2 fetch/interception baseline covers nine cases. "
             "`request-end-to-end.https.html` registers a real service worker, loads a "
             "controlled iframe, dispatches a FetchEvent, and validates the Request "
             "projection returned via `respondWith(new Response(...))`. "
@@ -110,6 +111,9 @@ def render_markdown(summary: dict) -> str:
             "`respondWith(new Response(...))` bodies constructed from strings, Blob, "
             "ArrayBuffer, ArrayBufferView, FormData, and URLSearchParams across "
             "subresource fetches and iframe navigations. "
+            "`fetch-event-respond-with-stops-propagation.https.html` covers the "
+            "FetchEvent rule that `respondWith()` invokes `stopImmediatePropagation()` "
+            "and keeps later fetch listeners from observing the same request. "
             "`fetch-event-network-error.https.html` covers rejected `respondWith()`, "
             "`preventDefault()` without `respondWith()`, consumed response body network "
             "errors, and pass-through after a thrown fetch handler. "

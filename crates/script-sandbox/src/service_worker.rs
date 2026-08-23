@@ -133,9 +133,18 @@ const SERVICE_WORKER_BOOTSTRAP: &str = r#"
       this.type = type;
       this.cancelable = false;
       this.defaultPrevented = false;
+      this._propagationStopped = false;
+      this._immediateStopped = false;
     }
     preventDefault() {
       if (this.cancelable) this.defaultPrevented = true;
+    }
+    stopPropagation() {
+      this._propagationStopped = true;
+    }
+    stopImmediatePropagation() {
+      this._immediateStopped = true;
+      this._propagationStopped = true;
     }
     waitUntil(value) {
       if (typeof currentWaitUntil !== 'function') {
@@ -148,6 +157,24 @@ const SERVICE_WORKER_BOOTSTRAP: &str = r#"
   const outboundMessages = [];
   const portEndpoints = Object.create(null);
   let nextWorkerPortId = 1;
+  const transferredPortMarker = '__zwServiceWorkerTransferredPortIndex';
+  function cloneWithTransferredPortMarkers(value, ports, seen) {
+    if (value === null || typeof value !== 'object') return value;
+    const portIndex = ports.indexOf(value);
+    if (portIndex >= 0) {
+      const marker = {};
+      marker[transferredPortMarker] = portIndex;
+      return marker;
+    }
+    if (seen.has(value)) return seen.get(value);
+    const out = Array.isArray(value) ? [] : {};
+    seen.set(value, out);
+    const keys = Object.keys(value);
+    for (let i = 0; i < keys.length; i++) {
+      out[keys[i]] = cloneWithTransferredPortMarkers(value[keys[i]], ports, seen);
+    }
+    return out;
+  }
   function cloneMessage(data) {
     const dataJSON = JSON.stringify(data);
     if (dataJSON === undefined) throw new DOMException('message could not be cloned', 'DataCloneError');
@@ -156,8 +183,9 @@ const SERVICE_WORKER_BOOTSTRAP: &str = r#"
   function preparePortTransfer(data, transfer) {
     const ids = [];
     let dataPortIndex = null;
+    const ports = transfer !== undefined && transfer !== null ? Array.from(transfer) : [];
     if (transfer !== undefined && transfer !== null) {
-      for (const item of Array.from(transfer)) {
+      for (const item of ports) {
         if (!(item instanceof MessagePort) || item._closed || item._detached) {
           throw new DOMException('invalid MessagePort transfer', 'DataCloneError');
         }
@@ -179,6 +207,9 @@ const SERVICE_WORKER_BOOTSTRAP: &str = r#"
         item._other = null;
         item._detached = true;
       }
+    }
+    if (ids.length > 0 && dataPortIndex === null) {
+      data = cloneWithTransferredPortMarkers(data, ports, new Map());
     }
     return {
       dataJSON: dataPortIndex === null ? cloneMessage(data) : 'null',
@@ -1837,11 +1868,24 @@ const SERVICE_WORKER_BOOTSTRAP: &str = r#"
       return port;
     });
   }
+  function reviveTransferredPorts(value, ports) {
+    if (value === null || typeof value !== 'object') return value;
+    if (Object.keys(value).length === 1 &&
+        Object.prototype.hasOwnProperty.call(value, transferredPortMarker)) {
+      const index = Number(value[transferredPortMarker]);
+      if (Number.isInteger(index) && index >= 0 && index < ports.length) return ports[index];
+    }
+    const keys = Object.keys(value);
+    for (let i = 0; i < keys.length; i++) {
+      value[keys[i]] = reviveTransferredPorts(value[keys[i]], ports);
+    }
+    return value;
+  }
   globalThis.__zwDispatchMessage = function(
       eventId, data, clientId, clientURL, portIds, dataPortIndex, targetPortId) {
     outboundMessages.splice(0, outboundMessages.length);
     const ports = materializeTransferredPorts(portIds || []);
-    const eventData = dataPortIndex === null ? data : ports[dataPortIndex];
+    const eventData = dataPortIndex === null ? reviveTransferredPorts(data, ports) : ports[dataPortIndex];
     const event = new MessageEvent('message', {data: eventData, ports: ports});
     const pending = [];
     currentWaitUntil = function(value) {
@@ -1918,6 +1962,8 @@ const SERVICE_WORKER_BOOTSTRAP: &str = r#"
           throw new DOMException('respondWith already called', 'InvalidStateError');
         }
         respondWithCalled = true;
+        // https://w3c.github.io/ServiceWorker/#fetch-event-respondwith
+        event.stopImmediatePropagation();
         pending.push(Promise.resolve(value).then(function(response) {
           if (result.failed) return;
           response = Response._from(response);
@@ -1926,8 +1972,11 @@ const SERVICE_WORKER_BOOTSTRAP: &str = r#"
         }));
       };
       const callbacks = (listeners.fetch || []).slice();
-      for (let i = 0; i < callbacks.length; i++) callbacks[i].call(globalThis, event);
-      if (typeof globalThis.onfetch === 'function') {
+      for (let i = 0; i < callbacks.length; i++) {
+        callbacks[i].call(globalThis, event);
+        if (event._immediateStopped) break;
+      }
+      if (!event._immediateStopped && typeof globalThis.onfetch === 'function') {
         globalThis.onfetch.call(globalThis, event);
       }
       Promise.resolve().then(function() {
@@ -7667,6 +7716,59 @@ mod tests {
                 ..
             } if message.contains("body has already been used")
         ));
+    }
+
+    #[test]
+    fn fetch_event_respond_with_stops_later_listeners() {
+        let mut runtime = ServiceWorkerRuntime::new(test_config()).unwrap();
+        runtime
+            .evaluate(
+                "let result = 'unset';
+                 addEventListener('fetch', event => {
+                   if (result === 'unset') result = 'PASS';
+                   event.respondWith(new Response(result));
+                 });
+                 addEventListener('fetch', () => {
+                   result = 'FAIL: fetch event propagated';
+                 });",
+                "https://example.test/sw.js",
+            )
+            .unwrap();
+        let _ = runtime.recv_timeout(Duration::from_secs(5)).unwrap();
+
+        runtime
+            .dispatch_fetch(
+                53,
+                ServiceWorkerFetchRequest {
+                    url: "https://example.test/app/page".into(),
+                    method: "GET".into(),
+                    headers: Vec::new(),
+                    body: None,
+                    credentials: None,
+                    client_id: None,
+                    resulting_client_id: None,
+                    referrer: None,
+                    is_reload_navigation: false,
+                    is_history_navigation: false,
+                },
+            )
+            .unwrap();
+        assert_eq!(
+            runtime.recv_timeout(Duration::from_secs(5)).unwrap(),
+            ServiceWorkerEvent::FetchSettled {
+                event_id: 53,
+                request_url: "https://example.test/app/page".into(),
+                response: Some(ServiceWorkerFetchResponse {
+                    status: 200,
+                    status_text: String::new(),
+                    response_type: "default".into(),
+                    headers: Vec::new(),
+                    body: "PASS".into(),
+                }),
+                failed: false,
+                message: String::new(),
+            }
+        );
     }
 
     #[test]

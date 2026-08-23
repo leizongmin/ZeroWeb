@@ -213,6 +213,126 @@ fn test_iframe_inline_script_xhr_uses_iframe_window_location() {
 }
 
 #[test]
+fn test_iframe_service_worker_controller_post_message_transfers_object_port() {
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+
+    let mut sandbox = V8Sandbox::with_config(zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    })
+    .unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> =
+        Arc::new(Mutex::new("<html><body><iframe src=\"resources/simple.html\"></iframe></body></html>".to_string()));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "https://wpt.test/service-workers/service-worker/fetch-event-respond-with-stops-propagation.https.html"
+            .to_string(),
+    ));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+    sandbox.register_callback(
+        "__zw_sw_observe_window_client",
+        Box::new(|_args| r#"{"ok":true}"#.to_string()),
+    );
+    sandbox.register_callback(
+        "__zw_sw_controller",
+        Box::new(|args| {
+            if args.first().map(String::as_str)
+                == Some("https://wpt.test/service-workers/service-worker/resources/simple.html")
+                && args.get(1).map(String::as_str) == Some("iframe:iframe")
+            {
+                r#"{"ok":true,"controller":{"id":"r1","scriptURL":"https://wpt.test/service-workers/service-worker/resources/fetch-event-respond-with-stops-propagation-worker.js","state":"activated"}}"#.to_string()
+            } else {
+                r#"{"ok":true,"controller":null}"#.to_string()
+            }
+        }),
+    );
+    sandbox.register_callback(
+        "__zw_fetch",
+        Box::new(|args| {
+            let url = args.get(2).map(String::as_str).unwrap_or("");
+            if url.ends_with("resources/simple.html") {
+                "__zwfr:200\x1fOK\x1f\x1f<script></script>".to_string()
+            } else {
+                "__zw_fetch_error:not found".to_string()
+            }
+        }),
+    );
+    let posted = Arc::new(Mutex::new(Vec::new()));
+    let posted_for_callback = posted.clone();
+    let transferred_port_id = Arc::new(Mutex::new(None));
+    let transferred_port_id_for_post = transferred_port_id.clone();
+    sandbox.register_callback(
+        "__zw_sw_post_message",
+        Box::new(move |args| {
+            let port_id = args
+                .get(2)
+                .map(|value| value.trim().trim_start_matches('[').trim_end_matches(']'))
+                .and_then(|value| value.parse::<u64>().ok());
+            if let Some(port_id) = port_id {
+                *transferred_port_id_for_post.lock().unwrap() = Some(port_id);
+            }
+            posted_for_callback.lock().unwrap().push(format!(
+                "{}|{}|{}|{}|{}",
+                args.first().cloned().unwrap_or_default(),
+                args.get(1).cloned().unwrap_or_default(),
+                args.get(2).cloned().unwrap_or_default(),
+                args.get(3).cloned().unwrap_or_default(),
+                args.get(4).cloned().unwrap_or_default()
+            ));
+            r#"{"ok":true}"#.to_string()
+        }),
+    );
+    let transferred_port_id_for_poll = transferred_port_id.clone();
+    sandbox.register_callback(
+        "__zw_sw_client_messages",
+        Box::new(move |args| {
+            let after_sequence = args.get(1).and_then(|value| value.parse::<u64>().ok()).unwrap_or(0);
+            let port_id = *transferred_port_id_for_poll.lock().unwrap();
+            if let (0, Some(port_id)) = (after_sequence, port_id) {
+                return format!(
+                    r#"{{"ok":true,"latestSequence":1,"messages":[{{"data":{{"result":"PASS"}},"portId":{port_id},"transferredPortIds":[],"dataPortIndex":null,"targetClientId":null}}]}}"#
+                );
+            }
+            format!(r#"{{"ok":true,"latestSequence":{after_sequence},"messages":[]}}"#)
+        }),
+    );
+
+    sandbox
+        .execute(
+            "globalThis.__iframeControllerPortResult = 'pending';\
+             var frame = document.querySelector('iframe');\
+             var win = frame.contentWindow;\
+             var worker = win.navigator.serviceWorker.controller;\
+             var channel = new MessageChannel();\
+             channel.port1.onmessage = function(event) {\
+               globalThis.__iframeControllerPortResult = event.data.result;\
+             };\
+             worker.postMessage({port: channel.port2}, [channel.port2]);",
+        )
+        .unwrap();
+    for _ in 0..8 {
+        sandbox.execute("0").unwrap();
+    }
+
+    assert_eq!(
+        sandbox
+            .execute("String(globalThis.__iframeControllerPortResult)")
+            .unwrap()
+            .value,
+        "PASS",
+        "iframe ServiceWorker controller postMessage should poll messages for transferred ports"
+    );
+    assert_eq!(
+        posted.lock().unwrap().as_slice(),
+        &[r#"r1|{"port":{"__zwServiceWorkerTransferredPortIndex":0}}|[2]||"#.to_string()]
+    );
+}
+
+#[test]
 fn test_iframe_content_window_post_message_transfers_ports() {
     use std::sync::{Arc, Mutex};
     use zero_script_sandbox::{Sandbox, V8Sandbox};

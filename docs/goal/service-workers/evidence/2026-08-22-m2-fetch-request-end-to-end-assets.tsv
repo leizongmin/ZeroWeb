@@ -24,3 +24,5 @@ service-workers/service-worker/resources/iso-latin1-header-iframe.html	support	i
 service-workers/service-worker/resources/iso-latin1-header-worker.js	support	worker-script	1	416	no	d9ecca277b3fae5bc4698ff467a85714be7b15a3	04067ce9c7c2165e71ad7d0dde10a4c5cb394a83
 service-workers/service-worker/fetch-event-respond-with-custom-response.https.html	testharness	case	1	2957	no	645a29c9b4f146b8c4024650c358c8325663cbac	24197a11e8c5bd29a5cb7bdf18135a82be8a8546
 service-workers/service-worker/resources/fetch-event-respond-with-custom-response-worker.js	support	worker-script	1	1043	no	ff24aed1282c8cf69b801cb4841594aef19db613	24197a11e8c5bd29a5cb7bdf18135a82be8a8546
+service-workers/service-worker/fetch-event-respond-with-stops-propagation.https.html	testharness	case	1	1346	no	31fd616b6d6f509b7dcb6b56f45e9c2e12e9b8e6	24197a11e8c5bd29a5cb7bdf18135a82be8a8546
+service-workers/service-worker/resources/fetch-event-respond-with-stops-propagation-worker.js	support	worker-script	1	354	no	18da049d69f4fbf94dca596a3de8139dfc5cc1f9	24197a11e8c5bd29a5cb7bdf18135a82be8a8546

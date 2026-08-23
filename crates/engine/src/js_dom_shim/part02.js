@@ -3008,11 +3008,34 @@
         globalThis.ServiceWorkerRegistration || ServiceWorkerRegistration;
       var _nextSWPortId = 2;
       var _swPorts = Object.create(null);
+      var SW_PORT_MARKER = '__zwServiceWorkerTransferredPortIndex';
+      function cloneSWMessageWithPortMarkers(value, ports, seen) {
+        if (value === null || typeof value !== 'object') return structuredClone(value);
+        if (ports.indexOf(value) >= 0) {
+          var marker = {};
+          marker[SW_PORT_MARKER] = ports.indexOf(value);
+          return marker;
+        }
+        if (seen.has(value)) return seen.get(value);
+        if (value instanceof Date || value instanceof RegExp ||
+            value instanceof ArrayBuffer ||
+            (typeof ArrayBuffer !== 'undefined' && ArrayBuffer.isView(value))) {
+          return structuredClone(value);
+        }
+        var out = Array.isArray(value) ? [] : Object.create(Object.getPrototypeOf(value));
+        seen.set(value, out);
+        var keys = Object.keys(value);
+        for (var i = 0; i < keys.length; i++) {
+          out[keys[i]] = cloneSWMessageWithPortMarkers(value[keys[i]], ports, seen);
+        }
+        return out;
+      }
       function transferSWPorts(worker, message, transfer) {
         var ids = [];
         var dataPortIndex = null;
+        var ports = [];
         if (transfer !== undefined && transfer !== null) {
-          var ports = Array.from(transfer);
+          ports = Array.from(transfer);
           for (var i = 0; i < ports.length; i++) {
             var port = ports[i];
             if (!(port instanceof globalThis.MessagePort) ||
@@ -3037,14 +3060,17 @@
         }
         return {
           ids: ids,
-          dataPortIndex: dataPortIndex
+          dataPortIndex: dataPortIndex,
+          message: ids.length && dataPortIndex === null ?
+            cloneSWMessageWithPortMarkers(message, ports, typeof WeakMap !== 'undefined' ? new WeakMap() : new Map()) :
+            message
         };
       }
       function postSWMessage(worker, message, transfer, targetPortId) {
         var ports = transferSWPorts(worker, message, transfer);
         var dataJSON;
         try {
-          dataJSON = ports.dataPortIndex === null ? JSON.stringify(structuredClone(message)) : 'null';
+          dataJSON = ports.dataPortIndex === null ? JSON.stringify(structuredClone(ports.message)) : 'null';
         } catch (_e) {
           throw new DOMException('Service Worker message could not be cloned', 'DataCloneError');
         }
@@ -3069,19 +3095,24 @@
         worker._messagePollTarget++;
         scheduleClientMessagePoll(worker);
       }
+      globalThis.ServiceWorker.prototype.postMessage = function (message, transfer) {
+        postSWMessage(this, message, transfer, null);
+      };
+      globalThis.ServiceWorker.prototype._postPortMessage = function(port, message, transfer) {
+        postSWMessage(this, message, transfer, port._zwSwPortId);
+      };
+      function initSWMessageBridge(worker) {
+        if (!worker) return worker;
+        if (worker._messageSequence === undefined) worker._messageSequence = 0;
+        if (worker._messagePollTarget === undefined) worker._messagePollTarget = 0;
+        if (worker._messagePollPending === undefined) worker._messagePollPending = false;
+        if (worker._messagePollDeadline === undefined) worker._messagePollDeadline = 0;
+        return worker;
+      }
+      globalThis.__zwInitServiceWorkerMessageBridge = initSWMessageBridge;
       function makeSW(scriptURL, state) {
         var worker = new globalThis.ServiceWorker(scriptURL, state);
-        worker._messageSequence = 0;
-        worker._messagePollTarget = 0;
-        worker._messagePollPending = false;
-        worker._messagePollDeadline = 0;
-        worker.postMessage = function (message, transfer) {
-          postSWMessage(worker, message, transfer, null);
-        };
-        worker._postPortMessage = function(port, message, transfer) {
-          postSWMessage(worker, message, transfer, port._zwSwPortId);
-        };
-        return worker;
+        return initSWMessageBridge(worker);
       }
       function pollClientMessages(worker) {
         if (typeof __zw_sw_client_messages !== 'function') {
