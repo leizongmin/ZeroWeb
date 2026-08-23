@@ -54,14 +54,15 @@
     },
     {
       "id": "mb/zero-canvas/fill_rect_1000",
-      "p95": 8650273.411764706,
+      "p95": 8641437.75,
       "tier": "budget",
-      "tightened_at": "2026-08-18T14:45:40Z"
+      "tightened_at": "2026-08-23T13:25:32Z"
     },
     {
       "id": "mb/zero-canvas/path_ops_1000_segments",
-      "p95": 11146.936091686091,
-      "tier": "budget"
+      "p95": 11104.753923853923,
+      "tier": "budget",
+      "tightened_at": "2026-08-23T13:25:32Z"
     },
     {
       "id": "mb/zero-canvas/save_restore_100_deep",
@@ -136,9 +137,9 @@
     },
     {
       "id": "mb/zero-dom/dom/get_elements_by_tag_name_1000",
-      "p95": 11658.783780851641,
+      "p95": 11621.943251711733,
       "tier": "budget",
-      "tightened_at": "2026-08-21T19:25:20Z"
+      "tightened_at": "2026-08-23T13:25:32Z"
     },
     {
       "id": "mb/zero-dom/dom/parse_html_nested_50",
@@ -184,9 +185,9 @@
     },
     {
       "id": "mb/zero-engine/dirty_tracking/mark_100_nodes_and_merge",
-      "p95": 2941.7079897317067,
+      "p95": 2909.4480216944617,
       "tier": "budget",
-      "tightened_at": "2026-08-22T15:02:27Z"
+      "tightened_at": "2026-08-23T13:25:32Z"
     },
     {
       "id": "mb/zero-engine/end_to_end_pipeline",
@@ -213,9 +214,9 @@
     },
     {
       "id": "mb/zero-engine/paint_simple_page_100_elements",
-      "p95": 151982.14912280702,
+      "p95": 148076.40721649484,
       "tier": "budget",
-      "tightened_at": "2026-08-22T15:02:27Z"
+      "tightened_at": "2026-08-23T13:25:32Z"
     },
     {
       "id": "mb/zero-host-runtime/create_100_window_configs",
@@ -289,9 +290,9 @@
     },
     {
       "id": "mb/zero-net/parse_url",
-      "p95": 473.7097754659516,
+      "p95": 468.6964210114958,
       "tier": "budget",
-      "tightened_at": "2026-08-22T15:02:27Z"
+      "tightened_at": "2026-08-23T13:25:32Z"
     },
     {
       "id": "mb/zero-protocol/ipc_deserialize_10000",
@@ -301,9 +302,9 @@
     },
     {
       "id": "mb/zero-protocol/ipc_large_message_serialize_1000",
-      "p95": 1465971.2625,
+      "p95": 1463284.56,
       "tier": "budget",
-      "tightened_at": "2026-08-22T15:02:27Z"
+      "tightened_at": "2026-08-23T13:25:32Z"
     },
     {
       "id": "mb/zero-protocol/ipc_roundtrip_10000",
@@ -313,9 +314,9 @@
     },
     {
       "id": "mb/zero-protocol/ipc_serialize_10000",
-      "p95": 381761.3018018018,
+      "p95": 381443.5263157895,
       "tier": "budget",
-      "tightened_at": "2026-08-18T20:22:54Z"
+      "tightened_at": "2026-08-23T13:25:32Z"
     },
     {
       "id": "mb/zero-render-foundation/damage_tracker/add_damage/100",
@@ -414,9 +415,9 @@
     },
     {
       "id": "mb/zero-script-sandbox/worker_create_terminate",
-      "p95": 3502403.066666667,
+      "p95": 3470238.6315789474,
       "tier": "budget",
-      "tightened_at": "2026-08-22T15:02:27Z"
+      "tightened_at": "2026-08-23T13:25:32Z"
     },
     {
       "id": "mb/zero-security/cors_check_1000",
@@ -605,9 +606,9 @@
     },
     {
       "id": "page/medium/parse_ms",
-      "p95": 9.906683,
+      "p95": 9.744396,
       "tier": "budget",
-      "tightened_at": "2026-08-18T15:12:01Z"
+      "tightened_at": "2026-08-23T13:25:32Z"
     },
     {
       "id": "page/medium/style_ms",
@@ -654,16 +655,16 @@
     },
     {
       "id": "page/morning/paint_ms",
-      "p95": 47.074042000000006,
+      "p95": 47.070707000000006,
       "tier": "budget",
-      "tightened_at": "2026-08-21T13:25:41Z"
+      "tightened_at": "2026-08-23T13:25:32Z"
     },
     {
       "id": "page/morning/total_ms",
-      "p95": 64.06783200000001,
+      "p95": 63.895683,
       "tier": "hard",
       "absolute_budget_ms": 2000.0,
-      "tightened_at": "2026-08-21T13:25:41Z"
+      "tightened_at": "2026-08-23T13:25:32Z"
     },
     {
       "id": "page/welcome/first_paint_wall_ms",
