@@ -2061,7 +2061,7 @@ impl WebView {
                         headers: headers.clone(),
                         body,
                         body_bytes,
-                        credentials: None,
+                        credentials: args.get(9).filter(|value| !value.is_empty()).cloned(),
                     };
                     let page_url = sw_page_url.lock().map(|url| url.clone()).unwrap_or_default();
                     let fetch_client_id = args.get(5).filter(|value| !value.is_empty()).cloned();
@@ -2083,7 +2083,7 @@ impl WebView {
                             method: method.clone(),
                             headers: headers.clone(),
                             body: req.body.clone(),
-                            credentials: None,
+                            credentials: req.credentials.clone(),
                             client_id: Some(client_id.clone()),
                             resulting_client_id: is_navigation.then_some(format!("{client_id}:nested:{url}")),
                             referrer: fetch_referrer.or_else(|| is_navigation.then_some(page_url.clone())),

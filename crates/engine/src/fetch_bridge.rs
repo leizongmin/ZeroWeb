@@ -214,7 +214,7 @@ pub fn serialize_response(resp: &FetchResponse) -> String {
 /// P1b S3 fetch bridge——共享 fetch 机制（handler cell + `__zw_fetch` 注册 + 非阻塞抓取）。
 ///
 /// 各 app 在 `js_worker_main` 构造（传入包装自身 resolver 的 `AsyncResolver`），调
-/// [`FetchBridge::register`] 注 `__zw_fetch(id, method, url, headersWire, body)` 回调；app 的
+/// [`FetchBridge::register`] 注 `__zw_fetch(id, method, url, headersWire, body, ..., credentials)` 回调；app 的
 /// `SetFetchHandler` 命令 arm 调 [`FetchBridge::set_handler`] 注入生产 handler。`__zw_fetch` 回调
 /// 非阻塞——子线程抓取 + `resolver.resolve` 回投——JS worker 不在 fetch 期间冻结。handler 未注入
 /// 时子线程 resolve 错误标记（shim 落 Response.ok=false，不悬挂）。
@@ -243,7 +243,7 @@ impl FetchBridge {
         }
     }
 
-    /// 注册 `__zw_fetch(id, method, url, headersWire, body)` 回调——JS `fetch(input, init)` 经 shim 调此。
+    /// 注册 `__zw_fetch(id, method, url, headersWire, body, ..., credentials)` 回调——JS `fetch(input, init)` 经 shim 调此。
     /// **非阻塞（有界）**：回调锁内克隆 handler Option（`FetchHandler=Arc` 廉价）+ 同步获取并发许可
     /// （满则阻塞 = 反压），acquire 后 `std::thread::spawn` 抓取（`h(&req)`）+ `resolver.resolve` 回投——
     /// JS worker 不在单个 fetch 期间冻结。handler 未注入时子线程 resolve 错误标记。
@@ -272,13 +272,14 @@ impl FetchBridge {
                 } else {
                     (Some(body_raw), None)
                 };
+                let credentials = args.get(9).filter(|value| !value.is_empty()).cloned();
                 let req = FetchRequest {
                     url,
                     method,
                     headers,
                     body,
                     body_bytes,
-                    credentials: None,
+                    credentials,
                 };
                 let handler_opt: Option<FetchHandler> = handler_cell.lock().ok().and_then(|c| c.as_ref().cloned());
                 let resolver = resolver.clone();
@@ -416,6 +417,70 @@ mod tests {
         assert!(
             wire3.ends_with("hello") && !wire3.contains("__zw_bytes:"),
             "valid-UTF-8 body_bytes 仍用文本：{wire3}"
+        );
+    }
+
+    #[test]
+    fn fetch_bridge_preserves_credentials_wire() {
+        let (tx, rx) = std::sync::mpsc::channel();
+        let resolver = AsyncResolver::new(|_, _| {});
+        let bridge = FetchBridge::new(resolver);
+        bridge.set_handler(Arc::new(move |req: &FetchRequest| -> Result<FetchResponse, String> {
+            tx.send(req.credentials.clone()).expect("credentials sent");
+            Ok(FetchResponse::ok(""))
+        }));
+
+        struct CaptureCb {
+            cb: Mutex<Option<Box<dyn Fn(&[String]) -> String + Send + Sync>>>,
+        }
+        impl zero_script_sandbox::Sandbox for CaptureCb {
+            fn execute(
+                &mut self,
+                _: &str,
+            ) -> Result<zero_script_sandbox::ScriptResult, zero_script_sandbox::ScriptError> {
+                unreachable!()
+            }
+            fn execute_json(
+                &mut self,
+                _: &str,
+            ) -> Result<zero_script_sandbox::ScriptResult, zero_script_sandbox::ScriptError> {
+                unreachable!()
+            }
+            fn register_callback(&mut self, _name: &str, callback: Box<dyn Fn(&[String]) -> String + Send + Sync>) {
+                *self.cb.lock().unwrap() = Some(callback);
+            }
+            fn set_timeout_ms(&mut self, _: u64) {}
+            fn reset_context(&mut self) {}
+            fn config(&self) -> &zero_script_sandbox::SandboxConfig {
+                unreachable!()
+            }
+        }
+
+        let mut sandbox = CaptureCb { cb: Mutex::new(None) };
+        bridge.register(&mut sandbox);
+        let cb = sandbox
+            .cb
+            .lock()
+            .unwrap()
+            .take()
+            .expect("__zw_fetch callback installed");
+        cb(&[
+            "id".into(),
+            "GET".into(),
+            "https://wpt.test/fixture".into(),
+            "".into(),
+            "".into(),
+            "".into(),
+            "".into(),
+            "".into(),
+            "".into(),
+            "omit".into(),
+        ]);
+
+        assert_eq!(
+            rx.recv_timeout(std::time::Duration::from_secs(2))
+                .expect("fetch handler saw request"),
+            Some("omit".to_string())
         );
     }
 

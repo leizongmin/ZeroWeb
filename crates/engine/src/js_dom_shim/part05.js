@@ -1257,7 +1257,8 @@
     return _ZW_ENC_LABELS[k] || null;
   }
 
-  function _zwMakeIframeWin(doc, frameKey) {
+  function _zwMakeIframeWin(doc, frameKey, flags) {
+    flags = flags || {};
     var registrationWrappers = [];
     function wrapRegistration(registration) {
       if (!registration) return registration;
@@ -1463,6 +1464,14 @@
       };
       return wrapper;
     }
+    // https://html.spec.whatwg.org/multipage/iframe-embed-object.html#attr-iframe-sandbox
+    var iframeCacheStorageAllowed = !flags.sandboxed || flags.allowSameOrigin;
+    function denyIframeCacheStorage() {
+      return Promise.reject(new DOMException(
+        'CacheStorage is disabled in sandboxed iframes without allow-same-origin.',
+        'SecurityError'
+      ));
+    }
     var iframeCaches = globalThis.caches && typeof globalThis.caches.open === 'function'
       ? Object.create(
         globalThis.CacheStorage && globalThis.CacheStorage.prototype ||
@@ -1471,12 +1480,23 @@
       : globalThis.caches;
     if (iframeCaches && iframeCaches !== globalThis.caches) {
       iframeCaches.open = function (name) {
+        if (!iframeCacheStorageAllowed) return denyIframeCacheStorage();
         return globalThis.caches.open(name).then(wrapIframeCache);
       };
-      iframeCaches.has = function (name) { return globalThis.caches.has(name); };
-      iframeCaches.delete = function (name) { return globalThis.caches.delete(name); };
-      iframeCaches.keys = function () { return globalThis.caches.keys(); };
+      iframeCaches.has = function (name) {
+        if (!iframeCacheStorageAllowed) return denyIframeCacheStorage();
+        return globalThis.caches.has(name);
+      };
+      iframeCaches.delete = function (name) {
+        if (!iframeCacheStorageAllowed) return denyIframeCacheStorage();
+        return globalThis.caches.delete(name);
+      };
+      iframeCaches.keys = function () {
+        if (!iframeCacheStorageAllowed) return denyIframeCacheStorage();
+        return globalThis.caches.keys();
+      };
       iframeCaches.match = function (request, options) {
+        if (!iframeCacheStorageAllowed) return denyIframeCacheStorage();
         return arguments.length < 1 ? globalThis.caches.match() : globalThis.caches.match(iframeRequest(request), options);
       };
     }

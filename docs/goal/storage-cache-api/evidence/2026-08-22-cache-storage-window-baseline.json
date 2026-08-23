@@ -1,8 +1,8 @@
 {
-  "cases": 32,
-  "subtests": 429,
+  "cases": 33,
+  "subtests": 431,
   "status": {
-    "Pass": 429
+    "Pass": 431
   },
   "deterministic": true,
   "results": [
@@ -1536,6 +1536,21 @@
         },
         {
           "name": "addAll() followed by abort after headers received should reject with AbortError",
+          "status": "Pass",
+          "message": null
+        }
+      ]
+    ],
+    [
+      "service-workers/cache-storage/window/sandboxed-iframes.https.html",
+      [
+        {
+          "name": "Sandboxed iframe with allow-same-origin is allowed access",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "Sandboxed iframe without allow-same-origin is denied access",
           "status": "Pass",
           "message": null
         }

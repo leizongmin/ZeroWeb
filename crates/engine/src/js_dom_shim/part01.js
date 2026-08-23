@@ -328,7 +328,7 @@
   // spec reflected string 缺省空串）。1:1 小写名用 `_REFLECTED_STRING_FLAT`；camelCase→attr 映射用 `_REFLECTED_STRING_MAP`。
   // 数值型（size/maxLength/colSpan/rowSpan）+ 布尔型（required/readonly/multiple）spec 返 number/boolean，
   // 另列 follow-up（本切片仅 string）。
-  var _REFLECTED_STRING_FLAT = ' type name placeholder alt min max step pattern action method enctype target rel download headers srcset sizes loading accept inputmode src usemap ';
+  var _REFLECTED_STRING_FLAT = ' type name placeholder alt min max step pattern action method enctype target rel download headers srcset sizes loading accept inputmode src usemap sandbox ';
   var _REFLECTED_STRING_MAP = { crossOrigin: 'crossorigin', formAction: 'formaction', formMethod: 'formmethod', formEnctype: 'formenctype', formTarget: 'formtarget', htmlFor: 'for' };
   function _reflectedStringAttr(prop) {
     if (typeof prop !== 'string') return null;
@@ -518,7 +518,33 @@
     }
     return out;
   }
+  function _zwIframeSandboxFlags(frameKey, flags) {
+    var out = flags || {};
+    var raw = '';
+    var present = false;
+    try {
+      var frame = _proxyCache[frameKey] || null;
+      if (frame && frame.__zwHandle && typeof __zw_get_attr_handle === 'function') {
+        present = typeof __zw_has_attr_handle === 'function' && __zw_has_attr_handle(frame.__zwHandle, 'sandbox') === '1';
+        raw = __zw_get_attr_handle(frame.__zwHandle, 'sandbox') || '';
+      } else if (frame && frame.__zwSelector) {
+        present = (typeof __zw_has_attr_lw === 'function'
+          ? __zw_has_attr_lw(frame.__zwSelector, 'sandbox')
+          : __zw_has_attr(frame.__zwSelector, 'sandbox')) === '1';
+        raw = typeof __zw_get_attr_lw === 'function'
+          ? (__zw_get_attr_lw(frame.__zwSelector, 'sandbox') || '')
+          : (__zw_get_attr(frame.__zwSelector, 'sandbox') || '');
+      }
+    } catch (_eSandboxFlags) {}
+    if (present) {
+      out.sandbox = String(raw);
+      out.sandboxed = true;
+      out.allowSameOrigin = /(^|[\t\n\f\r ])allow-same-origin(?=$|[\t\n\f\r ])/.test(out.sandbox);
+    }
+    return out;
+  }
   function _zwLoadIframeEntry(frameKey, rawSrc, flags) {
+    flags = _zwIframeSandboxFlags(frameKey, flags);
     var _r115Entry = { doc: null, win: null, state: 'loading', history: [] };
     _iframeDocCache[frameKey] = _r115Entry;
     var _r115Src = String(rawSrc || '');
@@ -564,7 +590,7 @@
           // R160：fragment URL 槽（`:target` 判定——WPT :target 簇的
           // iframe 子文档 src 带 #target，doc 查询传 host 侧 set_url）。
           try { _r115Entry.doc._zwFragmentUrl = _r115Url; } catch (_e160f) {}
-          _r115Entry.win = _zwMakeIframeWin(_r115Entry.doc, frameKey);
+          _r115Entry.win = _zwMakeIframeWin(_r115Entry.doc, frameKey, flags);
           try { if (_r115Entry.doc.__r115SetWin) _r115Entry.doc.__r115SetWin(_r115Entry.win); } catch (_eW) {}
           _r115Entry.state = 'done';
           _r115Entry.url = _r115Url;
@@ -969,6 +995,8 @@
       var url = _zwResolveFetchUrl(_zwFetchInputUrl(input));
       var method = String(init.method || (isRequestLike ? input.method : '') || 'GET').toUpperCase();
       var mode = String(init.mode || (isRequestLike ? input.mode : '') || 'cors');
+      // https://fetch.spec.whatwg.org/#concept-request-credentials-mode
+      var credentials = String(init.credentials || (isRequestLike ? input.credentials : '') || 'same-origin');
       var headersWire = _headersToWire(init.headers) || (isRequestLike ? _headersToWire(input.headers) : '');
       var body = '';
       // R3014/R3015/R3020：body 类型分发——FormData（multipart）/ URLSearchParams（urlencoded）/ Blob（字节）/
@@ -1058,7 +1086,8 @@
             String(globalThis.__zwFetchClientId || ''),
             String(globalThis.__zwFetchReferrer || ''),
             '',
-            ''
+            '',
+            credentials
           );
           // R34xx：同步返回契约——headless/testharness 宿主（webview fetch_handler）同步返 wire；
           // 浏览器异步路径（fetch_bridge）返 "" → no-op（__zwResolveCallback 后到，双 settle 由

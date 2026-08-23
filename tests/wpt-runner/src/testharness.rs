@@ -719,6 +719,7 @@ pub const CACHE_STORAGE_WINDOW_CASES: &[(&str, &[&str])] = &[
             "../script-tests/cache-abort.js",
         ],
     ),
+    ("service-workers/cache-storage/window/sandboxed-iframes.https.html", &[]),
     ("service-workers/cache-storage/worker/cache-storage.https.html", &[]),
     (
         "service-workers/cache-storage/worker/cache-storage-keys.https.html",
@@ -3443,8 +3444,8 @@ async_test(function(test) {
             .iter()
             .map(|(path, _)| *path)
             .collect::<std::collections::BTreeSet<_>>();
-        assert_eq!(CACHE_STORAGE_WINDOW_CASES.len(), 32);
-        assert_eq!(unique.len(), 32);
+        assert_eq!(CACHE_STORAGE_WINDOW_CASES.len(), 33);
+        assert_eq!(unique.len(), 33);
         assert!(CACHE_STORAGE_WINDOW_CASES.iter().all(|(path, support)| {
             if !path.starts_with("service-workers/cache-storage/")
                 || !(path.ends_with(".https.any.js")
@@ -3501,6 +3502,7 @@ async_test(function(test) {
                             "../script-tests/cache-add.js",
                         ]
                 }
+                "service-workers/cache-storage/window/sandboxed-iframes.https.html" => support.is_empty(),
                 path if path.starts_with("service-workers/cache-storage/window/") => {
                     let script = path
                         .strip_prefix("service-workers/cache-storage/window/")
@@ -3649,6 +3651,48 @@ async_test(function(test) {
         assert_eq!(resp_none.body, "<!doctype html><meta charset=\"\">");
         // 非 .py 路径仍走静态文件（root 不存在 → 错误）。
         assert!(handler(&make_req("https://wpt.test/dom/nodes/encoding.py.bak")).is_err());
+    }
+
+    #[test]
+    fn vary_py_handler_respects_request_credentials() {
+        let handler = wpt_data_fetch_handler(Path::new("/nonexistent-wpt-root")).unwrap();
+        let make_req = |url: &str, credentials: Option<&str>| zero_engine::fetch_bridge::FetchRequest {
+            url: url.to_string(),
+            method: "GET".to_string(),
+            headers: Vec::new(),
+            body: None,
+            body_bytes: None,
+            credentials: credentials.map(str::to_string),
+        };
+        let set_url =
+            "https://wpt.test/service-workers/cache-storage/resources/vary.py?set-vary-value-override-cookie=x-test";
+        handler(&make_req(set_url, Some("same-origin"))).unwrap();
+
+        let with_credentials = handler(&make_req(
+            "https://wpt.test/service-workers/cache-storage/resources/vary.py",
+            Some("same-origin"),
+        ))
+        .unwrap();
+        assert!(
+            with_credentials
+                .headers
+                .iter()
+                .any(|(name, value)| name.eq_ignore_ascii_case("vary") && value == "x-test"),
+            "same-origin credentials should expose the WPT vary override cookie"
+        );
+
+        let without_credentials = handler(&make_req(
+            "https://wpt.test/service-workers/cache-storage/resources/vary.py",
+            Some("omit"),
+        ))
+        .unwrap();
+        assert!(
+            !without_credentials
+                .headers
+                .iter()
+                .any(|(name, _)| name.eq_ignore_ascii_case("vary")),
+            "omit credentials should ignore the WPT vary override cookie"
+        );
     }
 
     #[test]

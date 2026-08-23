@@ -213,6 +213,55 @@ fn test_iframe_inline_script_xhr_uses_iframe_window_location() {
 }
 
 #[test]
+fn test_fetch_passes_request_credentials_to_host() {
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+
+    let mut sandbox = V8Sandbox::with_config(zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    })
+    .unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let calls: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
+    let calls_for_callback = calls.clone();
+    sandbox.register_callback(
+        "__zw_fetch",
+        Box::new(move |args| {
+            calls_for_callback.lock().unwrap().push(format!(
+                "{}|{}",
+                args.get(2).cloned().unwrap_or_default(),
+                args.get(9).cloned().unwrap_or_default()
+            ));
+            "__zwfr:200\x1fOK\x1f\x1fbody".to_string()
+        }),
+    );
+
+    sandbox
+        .execute(
+            "Promise.all([\
+               fetch('https://example.com/default'),\
+               fetch(new Request('https://example.com/request', { credentials: 'omit' })),\
+               fetch('https://example.com/init', { credentials: 'include' })\
+             ]).then(function() { globalThis.__credentialsDone = 'done'; });",
+        )
+        .unwrap();
+    for _ in 0..8 {
+        sandbox.execute("0").unwrap();
+    }
+
+    assert_eq!(sandbox.execute("String(globalThis.__credentialsDone)").unwrap().value, "done");
+    assert_eq!(
+        calls.lock().unwrap().as_slice(),
+        &[
+            "https://example.com/default|same-origin".to_string(),
+            "https://example.com/request|omit".to_string(),
+            "https://example.com/init|include".to_string(),
+        ]
+    );
+}
+
+#[test]
 fn test_iframe_service_worker_controller_post_message_transfers_object_port() {
     use std::sync::{Arc, Mutex};
     use zero_script_sandbox::{Sandbox, V8Sandbox};
@@ -509,6 +558,75 @@ fn test_iframe_content_window_cache_add_uses_iframe_fetch_context() {
             .any(|request| request.contains(r#""op":"put""#)
                 && request.contains(r#""url":"https://wpt.test/service-workers/service-worker/resources/sample.txt""#)),
         "Cache.put should store the iframe-resolved request URL"
+    );
+}
+
+#[test]
+fn test_iframe_sandbox_without_same_origin_denies_cache_storage() {
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+
+    let mut sandbox = V8Sandbox::with_config(zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    })
+    .unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new("<html><body></body></html>".to_string()));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "https://wpt.test/service-workers/cache-storage/window/sandboxed-iframes.https.html"
+            .to_string(),
+    ));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+    sandbox.register_callback(
+        "__zw_fetch",
+        Box::new(|args| {
+            let url = args.get(2).cloned().unwrap_or_default();
+            if url.ends_with("/resources/iframe.html") {
+                return "__zwfr:200\x1fOK\x1f\x1f<html><body></body></html>".to_string();
+            }
+            "__zwfr:200\x1fOK\x1f\x1f".to_string()
+        }),
+    );
+    sandbox.register_callback(
+        "__zw_cache_storage",
+        Box::new(|args| {
+            let request = args.first().cloned().unwrap_or_default();
+            if request.contains(r#""op":"open""#) {
+                return r#"__zw_cache_ok:{"name":"test","cache_id":23}"#.to_string();
+            }
+            "__zw_cache_error:unexpected request".to_string()
+        }),
+    );
+
+    sandbox
+        .execute(
+            "globalThis.__iframeSandboxCache = 'pending';\
+             var allowed = document.createElement('iframe');\
+             allowed.sandbox = 'allow-scripts allow-same-origin';\
+             allowed.src = '../resources/iframe.html';\
+             document.documentElement.appendChild(allowed);\
+             var denied = document.createElement('iframe');\
+             denied.sandbox = 'allow-scripts';\
+             denied.src = '../resources/iframe.html';\
+             document.documentElement.appendChild(denied);\
+             Promise.all([\
+               allowed.contentWindow.caches.open('allowed').then(function () { return 'allowed'; }, function (e) { return 'allowed-error:' + e.name; }),\
+               denied.contentWindow.caches.open('denied').then(function () { return 'denied-opened'; }, function (e) { return 'denied-error:' + e.name; })\
+             ]).then(function (results) { globalThis.__iframeSandboxCache = results.join('|'); });",
+        )
+        .unwrap();
+    for i in 0..12 {
+        sandbox.execute(&format!("globalThis.__iframeSandboxCachePump = {i};")).unwrap();
+    }
+
+    assert_eq!(
+        sandbox.execute("String(globalThis.__iframeSandboxCache)").unwrap().value,
+        "allowed|denied-error:SecurityError",
+        "sandboxed iframe without allow-same-origin should reject CacheStorage access"
     );
 }
 

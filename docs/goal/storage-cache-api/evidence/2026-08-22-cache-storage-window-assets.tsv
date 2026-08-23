@@ -41,6 +41,8 @@ service-workers/cache-storage/window/cache-match.https.html	testharness	case	1	4
 service-workers/cache-storage/window/cache-put.https.html	testharness	case	1	939	no	9641c3470518636f1d2afbbc692f721f20790739	24197a11e8c5bd29a5cb7bdf18135a82be8a8546
 service-workers/cache-storage/window/cache-add.https.html	testharness	case	1	447	no	b5a64c6c369b5028b4aba1396738dc892bc62d3b	24197a11e8c5bd29a5cb7bdf18135a82be8a8546
 service-workers/cache-storage/window/cache-abort.https.html	testharness	case	1	415	no	405d34d665c27cee93a03f7013f087cfc0a61af7	24197a11e8c5bd29a5cb7bdf18135a82be8a8546
+service-workers/cache-storage/window/sandboxed-iframes.https.html	testharness	case	1	2226	no	4a99d2af1b02a60a939780aa1a2347c45f5dad91	24197a11e8c5bd29a5cb7bdf18135a82be8a8546
+service-workers/cache-storage/resources/iframe.html	support	fetch-body	1	609	no	a2f1e502bb392bbdf443b7de86e730a8e6085af8	24197a11e8c5bd29a5cb7bdf18135a82be8a8546
 service-workers/cache-storage/worker/cache-abort.https.html	testharness	case	1	357	no	68bbade07d3862c883bf0f95b02a5cb6181d8e79	24197a11e8c5bd29a5cb7bdf18135a82be8a8546
 service-workers/cache-storage/script-tests/cache-storage.js	support	worker-script	1	8270	no	0de2dbb05e96dd6756f94af769ab2417f3902a95	24197a11e8c5bd29a5cb7bdf18135a82be8a8546
 service-workers/cache-storage/script-tests/cache-storage-keys.js	support	worker-script	1	1154	no	ef06ccdff5c8df29c2aefb5d11c4d3dfcf493bf6	24197a11e8c5bd29a5cb7bdf18135a82be8a8546

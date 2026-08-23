@@ -2,7 +2,7 @@
 
 **入口文档**: [../storage-cache-api.md](../storage-cache-api.md)
 **创建日期**: 2026-08-17（goal 拆分 bootstrap）
-**最后更新**: 2026-08-23（iframe contentWindow CacheStorage + SW fetch baseline 扩面）
+**最后更新**: 2026-08-23（CacheStorage sandboxed iframe WPT 扩面）
 
 ---
 
@@ -33,19 +33,21 @@ Service Worker `FetchEvent.respondWith()` 仍保持 200..599 响应结算限制�
 `cache-add.https.any.js` 扩面补齐 body-less `Request.text()` 不应置位 `bodyUsed`、
 `Cache.addAll()` 对 `undefined` request list entry 的 TypeError、以及根据 fetch 后
 response `Vary` 头判定批量请求重复的语义。
-2026-08-23 已接入 32 个上游 CacheStorage window runner WPT 基线，WebIDL
+2026-08-23 已接入 33 个上游 CacheStorage window runner WPT 基线，WebIDL
 brand、缺参 TypeError、`CacheStorage.keys()` 创建顺序、Vary 匹配、delete-dooming
 生命周期、DOMString code-unit name wire、`Cache.matchAll()` 查询矩阵与 `CacheStorage.match()`
 跨 cache/cacheName 查询、`Cache.match()` URL/fragment/opaque Vary/MIME/fetched response URL
 矩阵、`Cache.put()` 可缓存性/响应体消费矩阵、`Cache.add()`/`Cache.addAll()` 矩阵修复后
 继续补入 `common.https.window.js`、`cache-api-nested-worker.https.html` 与 9 个
 `worker/*.https.html` Dedicated Worker wrapper case，补齐 `cache-abort` 的 window 与
-Dedicated Worker 覆盖，并新增 9 个 `window/*.https.html` wrapper case；另已加入
+Dedicated Worker 覆盖，并新增 9 个 `window/*.https.html` wrapper case；
+`window/sandboxed-iframes.https.html` 已固定 sandbox iframe 无 `allow-same-origin`
+时的 CacheStorage `SecurityError`、有 `allow-same-origin` 时可访问语义；另已加入
 `cache-storage-buckets.https.any.js`，页面 shim 暴露最小
 `navigator.storageBuckets` / `StorageBucket.caches`，以 bucket 名 UTF-16 code unit 前缀隔离
 同名 cache，bucket 删除后旧 `bucket.caches` 操作按 WPT 期望 reject `UnknownError`。基线
 固定 Window / Dedicated Worker / nested Dedicated Worker 共享同一 CacheStorage owner 的路径，
-双跑稳定为 429 subtest / 429 Pass / 0 Fail。
+双跑稳定为 431 subtest / 431 Pass / 0 Fail。
 M3 首片已补齐 page/WebView `StorageManager` owner 的 per-origin CacheStorage 持久化：
 CacheStorage 以 origin hash `.cache` 文件落盘，请求/响应元数据和 body bytes JSON 保真，
 写入采用临时文件 + sync + 原子替换，并在启动时清理 `.tmp` / 恢复 `.bak`；页面 host 的
@@ -75,7 +77,7 @@ navigation request 标志经 `Cache.put()` / `Cache.keys()` 的保真，支撑 s
 更大范围 WPT 导入与完整
 `basic`/`cors`/`opaque`/`opaqueredirect` filtered response 生成矩阵仍待后续切片。
 CacheStorage window asset manifest 已补充逐 asset `source_revision`，恢复脚本会按每行
-revision 下载缺失资产，避免 32-case baseline 中后续 wrapper/support 资产依赖某个本地
+revision 下载缺失资产，避免 33-case baseline 中后续 wrapper/support 资产依赖某个本地
 WPT checkout 状态。
 Service Worker `fetch-event-within-sw.https.html` 扩面进一步固定 iframe
 `contentWindow.caches` 页面表面：iframe window 现在暴露 `CacheStorage`/`Cache`/`caches`，
@@ -105,7 +107,7 @@ CacheStorage 分母。
   iframe `contentWindow` 可 `open` 后 `put/match/matchAll/delete/keys`，并可 `has/keys/match`
 - ✅ 持久化首片：page/WebView `StorageManager` owner 已支持 per-origin CacheStorage 落盘；
   SW registration-local CacheStorage 已随 active registration snapshot/restore 验证
-- ✅ WPT `cache-storage` window runner 基线已导入：32 case / 429 subtest，429 Pass / 0 Fail
+- ✅ WPT `cache-storage` window runner 基线已导入：33 case / 431 subtest，431 Pass / 0 Fail
 - 🚧 add/addAll 的页面 fetch 链路、Cache API 返回对象 brand、缺参 TypeError、
   `CacheStorage.keys()` 创建顺序、Vary 匹配、delete-dooming、DOMString name wire 与
   Storage Buckets cache namespace
@@ -335,6 +337,18 @@ CacheStorage 分母。
   - `./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit 600 -- cargo run -p zero-wpt-runner -- testharness-cache-storage window/ --wpt-data tests/wpt-runner/wpt-data/.cache-storage-window-root --json`：10 cases / 145 subtests / 145 Pass
   - `./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit 900 -- python3 tests/wpt-runner/scripts/run-cache-storage-window-baseline.py --runner ./target/debug/zero-wpt-runner --wpt-data tests/wpt-runner/wpt-data/.cache-storage-window-root --output docs/goal/storage-cache-api/evidence/2026-08-22-cache-storage-window-baseline.json --summary docs/goal/storage-cache-api/evidence/2026-08-22-cache-storage-window-baseline.md`：32 cases / 429 subtests / 429 Pass，double-run deterministic
   - 证据：[M2 CacheStorage Window Wrapper WPT Expansion](evidence/2026-08-23-m2-cache-window-wrapper-expansion.md)
+- 2026-08-23 M2 CacheStorage sandboxed iframe WPT 扩面：
+  - 新增 WPT：`window/sandboxed-iframes.https.html` 与 helper `resources/iframe.html`
+  - 页面 shim 将 iframe `sandbox` token 传入 `contentWindow`，无 `allow-same-origin` 时 iframe `caches.open/has/delete/keys/match` reject `SecurityError`
+  - `fetch()` shim / WebView `__zw_fetch` / async `FetchBridge` 透传 Request credentials，修复 `cache-add` Vary duplicate fixture 在 `credentials: "omit"` 下的判定
+  - `./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit 420 -- cargo test -p zero-engine test_iframe_sandbox_without_same_origin_denies_cache_storage -- --nocapture`：1 passed
+  - `./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit 420 -- cargo test -p zero-engine test_fetch_passes_request_credentials_to_host -- --nocapture`：1 passed
+  - `./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit 420 -- cargo test -p zero-engine fetch_bridge_preserves_credentials_wire -- --nocapture`：1 passed
+  - `./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit 420 -- cargo test -p zero-wpt-runner vary_py_handler_respects_request_credentials -- --nocapture`：1 passed
+  - `WPT_SOURCE=$HOME/github/others/wpt ./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit 420 -- make testharness-cache-storage FILTER=sandboxed-iframes.https.html`：1 case / 2 subtests / 2 Pass
+  - `WPT_SOURCE=$HOME/github/others/wpt ./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit 600 -- make testharness-cache-storage FILTER=cache-add`：3 cases / 66 subtests / 66 Pass
+  - `./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit 900 -- python3 tests/wpt-runner/scripts/run-cache-storage-window-baseline.py --runner ./target/release/zero-wpt-runner --wpt-data tests/wpt-runner/wpt-data/.cache-storage-window-root --output docs/goal/storage-cache-api/evidence/2026-08-22-cache-storage-window-baseline.json --summary docs/goal/storage-cache-api/evidence/2026-08-22-cache-storage-window-baseline.md`：33 cases / 431 subtests / 431 Pass，double-run deterministic
+  - 证据：[CacheStorage window assets](evidence/2026-08-22-cache-storage-window-assets.tsv)、[CacheStorage window WPT baseline](evidence/2026-08-22-cache-storage-window-baseline.md)
 - 2026-08-22 M3 CacheStorage 持久化首片：
   - `./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit 300 -- cargo check -p zero-storage -p zero-page-runtime -p zero-webview --all-targets`：passed
   - `./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit 300 -- cargo test -p zero-storage cache_storage_persistence -- --nocapture`：3 passed

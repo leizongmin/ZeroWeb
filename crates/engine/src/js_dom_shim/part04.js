@@ -359,7 +359,7 @@
               return _r115Entry.win;
             }
             var _r115FbDoc = _r115Entry.doc || _zwMakeIframeDoc('html', '');
-            var _r115FbWin = _zwMakeIframeWin(_r115FbDoc);
+            var _r115FbWin = _zwMakeIframeWin(_r115FbDoc, key, {});
             try { if (_r115FbDoc.__r115SetWin) _r115FbDoc.__r115SetWin(_r115FbWin); } catch (_eW2) {}
             _r115Entry.win = _r115FbWin; // R139：fallback win 记账（后续读同 identity）
             // R139：named iframe 全局注册（同上 win 分支——no-src fallback 路径）。
