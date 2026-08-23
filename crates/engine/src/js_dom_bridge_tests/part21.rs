@@ -2058,4 +2058,3 @@ fn test_label_span_click_forward_r155() {
         "R155：LABEL 内 span click——LABEL 转发激活到内部 checkbox（onclick activated 链）"
     );
 }
-

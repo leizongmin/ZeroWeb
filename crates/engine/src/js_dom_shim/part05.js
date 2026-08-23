@@ -1143,8 +1143,18 @@
       };
       el.querySelectorAll = function (s) {
         var out = [];
-        var _r181Simple = /^([a-zA-Z][a-zA-Z0-9-]*|\*|#([a-zA-Z_][\w-]*)|\.([a-zA-Z_][\w-]*))$/;
-        var m = _r181Simple.exec(String(s == null ? '' : s).trim());
+        // R199（js-dom M4）：id/class 的 ident 字符集放宽到 CSS ident 域——非 ASCII
+        // 字符（U+0080+，含 U+FFFD）是合法 ident 字符（css-syntax §4.3.3 ident
+        // production）。旧 `[a-zA-Z_][\w-]*` 把 WPT ParentNode-querySelector-escapes
+        // 的 `#<NUL>`（预处理后 `#<FFFD>`）拒之门外 → 工厂容器 querySelector
+        // 恒 null。结构字符（空白/`.`/`#`/`>`/组合器/伪类）仍排除，复杂形态回落
+        // 空（headless 近似语义不变）。
+        // R199：**输入预处理 NUL→U+FFFD**（css-syntax §5.3.3 input preprocessing，
+        // 与 host 侧 preprocess_selector 同步）——JS 侧匹配前归一，`#<NUL>` 与
+        // `#<FFFD>` 命中同一 id。
+        var _r181Sel = String(s == null ? '' : s).replace(/\x00/g, '\u{FFFD}');
+        var _r181Simple = /^([a-zA-Z][a-zA-Z0-9-]*|\*|#([^\s.#:>\[+,]+)|\.([^\s.#:>\[+,]+))$/;
+        var m = _r181Simple.exec(_r181Sel.trim());
         if (!m) return out;
         (function walk(n) {
           var kids = n.childNodes || [];
@@ -2314,7 +2324,11 @@
   }
   // 解析选择器列表 → complex 数组（unsupported 组静默跳过；可能为空）。
   function _parseSelectorListOf(sel) {
-    var groups = _splitSelectorListOf(String(sel));
+    // R199（js-dom M4）：**输入预处理 NUL→U+FFFD**（css-syntax §5.3.3 input
+    // preprocessing，与 host 侧 `preprocess_selector` / 工厂 R181 匹配器同步）——
+    // 裸 NUL 是非法输入字符，spec 在词法层前统一替换为 U+FFFD；WPT
+    // ParentNode-querySelector-escapes 的 `testMatched("\u{fffd}", "#\u{0}")`。
+    var groups = _splitSelectorListOf(String(sel).replace(/\x00/g, '\u{FFFD}'));
     var out = [];
     for (var i = 0; i < groups.length; i++) {
       var c = _parseComplexOf(groups[i]);

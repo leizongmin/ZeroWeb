@@ -500,6 +500,8 @@ pub struct SelectorChain {
 /// 忽略 `()`/`[]` 内的组合器边界（如 `:is(a > b)` 内嵌组合器、`[a>b]` 属性值、
 /// `:nth-child(2n+1)` 参数内的 `+`、`:not(.a~.b)` 内嵌 `~`）。
 pub fn parse_selector_chain(selector: &str) -> Option<SelectorChain> {
+    // R199：输入预处理（NUL→FFFD，css-syntax §5.3.3）——见 preprocess_selector 注记。
+    let selector = &preprocess_selector(selector);
     // R124：ASCII-only trim（内部同源——`str::trim` 的 Unicode 空白集会剥掉单个
     // Unicode 空白字符类名的字符本体，见 trim_ascii_ws 注记）。
     let trimmed = trim_ascii_ws(selector);
@@ -541,6 +543,8 @@ pub fn parse_selector_chain(selector: &str) -> Option<SelectorChain> {
 /// parse 双层：预检拒词法非法形态（parse 对 `]` 等裸符号容错不判非法），
 /// parse 拒组合器/伪类结构错误。
 pub fn selector_is_valid(selector: &str) -> bool {
+    // R199：输入预处理（NUL→FFFD，css-syntax §5.3.3）——见 preprocess_selector 注记。
+    let selector = &preprocess_selector(selector);
     let trimmed = trim_ascii_ws(selector);
     if trimmed.is_empty() {
         return false;
@@ -1378,6 +1382,24 @@ pub fn trim_ascii_ws(s: &str) -> &str {
     s.trim_matches(|c: char| matches!(c, ' ' | '\t' | '\n' | '\u{000C}' | '\r'))
 }
 
+/// R199（js-dom M4）：选择器**输入预处理**——CSS Syntax §5.3.3 "input
+/// preprocessing"：把输入中的每个 U+0000 NULL 替换为 U+FFFD。真浏览器在词法层
+/// 之前统一做这步——`#<NUL>` 与 `#\fffd` 等价、`#ab<NUL>c` 匹配 id `"ab�"c"`
+///（WPT ParentNode-querySelector-escapes 的 `testMatched("\u{fffd}", "#\u{0}")` /
+/// `testMatched("ab\u{fffd}c", "#ab\u{0}c")`）。旧版无此步：裸 NUL 落进
+/// `selector_lexically_valid` 的 ident 首字符判定（NUL 非 ident 字符）→ 整串判
+/// 非法抛 SyntaxError。**应用面**：三个公开解析入口（`selector_is_valid` /
+/// `parse_selector_chain` / `parse_simple_selector`）统一前置——所有查询消费方
+///（document/shadow/dom_bridge/factories）经这三者继承，无需逐点改。`unescape`
+/// 层不动（`\0` 转义序列的 NUL→FFFD 由 `char::from_u32` 后的既有归一覆盖）。
+pub(crate) fn preprocess_selector(selector: &str) -> String {
+    if selector.as_bytes().contains(&0) {
+        selector.replace('\u{0}', "\u{FFFD}")
+    } else {
+        selector.to_string()
+    }
+}
+
 pub(crate) fn unescape_css_ident(s: &str) -> String {
     // R157：与字符串值同源的规范反解（十六进制码点转义）——`#t\\e9` 命中 id "té"
     //（spec CSS Syntax escaped code point；旧逐字符版把 `\\e9` 反解成 "e9"）。
@@ -1398,6 +1420,8 @@ pub(crate) fn unescape_css_ident(s: &str) -> String {
 /// - `":nth-child(2)"` / `":first-child"` 等 — 伪类（多伪类 AND）
 /// - `"div#id.class[attr=val]:first-child"` — 组合
 pub fn parse_simple_selector(selector: &str) -> Option<SimpleSelector> {
+    // R199：输入预处理（NUL→FFFD，css-syntax §5.3.3）——见 preprocess_selector 注记。
+    let selector = &preprocess_selector(selector);
     let s = trim_ascii_ws(selector);
     if s.is_empty() {
         return None;
@@ -2244,6 +2268,48 @@ mod zz_r156_tests {
             doc.query_selector_all(root, "#a1:not(#nope)+div").len(),
             1,
             "v9 pseudo then combinator"
+        );
+    }
+
+    /// R199（js-dom M4）：选择器输入预处理 NUL→U+FFFD（css-syntax §5.3.3 input
+    /// preprocessing）。WPT ParentNode-querySelector-escapes：
+    /// `testMatched("\u{fffd}", "#\u{0}")` / `testMatched("ab\u{fffd}c", "#ab\u{0}c")`
+    /// ——裸 NUL 选择器旧版落进 ident 首字符判定判非法（"not a valid selector"）；
+    /// 预处理后 `#<FFFD>` 与 id 的 U+FFFD 正常命中。
+    #[test]
+    fn zz_r199_nul_preprocessing() {
+        let html =
+            "<body><span id=\"a\u{FFFD}b\"></span><span id=\"ab\u{FFFD}c\"></span><span id=\"\u{FFFD}\"></span></body>";
+        let doc = crate::parse_html(html);
+        let root = doc.root();
+        // 裸 NUL 选择器不再判非法（selector_is_valid 经预处理）。
+        assert!(
+            crate::query::selector_is_valid("#a\u{0}b"),
+            "R199 raw-NUL id selector valid after preprocessing"
+        );
+        // 命中 U+FFFD id（与 #\u{FFFD} 转义形态等价——unescape 层同归一）。
+        assert_eq!(
+            doc.query_selector_all(root, "#a\u{0}b").len(),
+            1,
+            "R199 raw-NUL matches FFFD id"
+        );
+        assert_eq!(
+            doc.query_selector_all(root, "#ab\u{0}c").len(),
+            1,
+            "R199 mid-ident raw-NUL matches FFFD id"
+        );
+        // 无 NUL 选择器零变化（回归守卫）。
+        assert_eq!(
+            doc.query_selector_all(root, "#a\u{FFFD}b").len(),
+            1,
+            "R199 plain FFFD unaffected"
+        );
+        // 裸 `#` + NUL 预处理后 = `#<FFFD>`——非 ASCII ident 字符，**合法**且命中
+        // U+FFFD id（test 121 的正断言形态；浏览器同判合法）。
+        assert_eq!(
+            doc.query_selector_all(root, "#\u{0}").len(),
+            1,
+            "R199 bare hash + NUL == #FFFD matches FFFD-only id"
         );
     }
 }
