@@ -87,6 +87,21 @@ fn local_name_eq(local: &markup5ever::LocalName, s: &str) -> bool {
     &**local == s
 }
 
+/// R190（js-dom M4）：属性**限定名**比对——html5ever 解析 `xmlns:xlink`/`xlink:href` 时
+/// QualName 拆 prefix(local=xlink/href)+ns，旧查找只比 local 使带前缀属性全链丢失前缀
+///（`attribute_names` 返 "xlink"、`get_attribute("xmlns:xlink")` miss）。双形态匹配：
+/// 传入名与「prefix:local 限定名」或「裸 local」任一相等即命中（限定名优先——同 local
+/// 多 prefix 时限定名精确，裸 local 保住既有 setAttribute('x') 简单名路径）。
+fn attr_full_name_eq(attr: &markup5ever::Attribute, s: &str) -> bool {
+    if let Some(p) = attr.name.prefix.as_ref() {
+        let full = format!("{}:{}", &**p, &*attr.name.local);
+        if full == s {
+            return true;
+        }
+    }
+    &*attr.name.local == s
+}
+
 /// js-dom M4 R124：HTML class 属性分词——分隔符仅 **ASCII whitespace**（space / `\t` /
 /// `\n` / `\f` / `\r`，spec html-infrastructure「ascii whitespace」）。Rust
 /// [`str::split_whitespace`] 是 Unicode 空白集（U+00A0 / U+2000-200A / U+3000 等），
@@ -168,7 +183,7 @@ impl ElementData {
         let name = self.attr_name_effective(name);
         self.attributes
             .iter()
-            .find(|a| local_name_eq(&a.name.local, &name))
+            .find(|a| attr_full_name_eq(a, &name))
             .map(|a| a.value.to_string())
     }
 
@@ -179,7 +194,7 @@ impl ElementData {
 
         let name = self.attr_name_effective(name);
 
-        if let Some(attr) = self.attributes.iter_mut().find(|a| local_name_eq(&a.name.local, &name)) {
+        if let Some(attr) = self.attributes.iter_mut().find(|a| attr_full_name_eq(a, &name)) {
             attr.value = StrTendril::from(value);
         } else {
             self.attributes.push(markup5ever::Attribute {
@@ -199,10 +214,7 @@ impl ElementData {
     /// 移除指定属性。
     pub fn remove_attribute(&mut self, name: &str) -> Option<String> {
         let name = self.attr_name_effective(name);
-        let idx = self
-            .attributes
-            .iter()
-            .position(|a| local_name_eq(&a.name.local, &name))?;
+        let idx = self.attributes.iter().position(|a| attr_full_name_eq(a, &name))?;
         let attr = self.attributes.remove(idx);
 
         // 更新缓存
@@ -218,12 +230,20 @@ impl ElementData {
     /// 检查是否有指定属性。
     pub fn has_attribute(&self, name: &str) -> bool {
         let name = self.attr_name_effective(name);
-        self.attributes.iter().any(|a| local_name_eq(&a.name.local, &name))
+        self.attributes.iter().any(|a| attr_full_name_eq(a, &name))
     }
 
     /// 获取所有属性名。
     pub fn attribute_names(&self) -> Vec<String> {
-        self.attributes.iter().map(|a| a.name.local.to_string()).collect()
+        // R190：限定名输出（prefix:local）——旧只返 local 使 `xmlns:xlink` 变 "xlink"
+        //（WPT Node-cloneNode-svg 的克隆属性 name 断言）。
+        self.attributes
+            .iter()
+            .map(|a| match a.name.prefix.as_ref() {
+                Some(p) => format!("{}:{}", &**p, &*a.name.local),
+                None => a.name.local.to_string(),
+            })
+            .collect()
     }
 }
 

@@ -5475,13 +5475,31 @@
     // getter/ownKeys（indices+names）/gOPD。Attr 条目经 `_zwMakeAttr`（instanceof Attr 断言面）。
     // 内部 `node.attributes` 数组消费点（2401 序列化 / 285 deepClone）改读 `_zwAttrsRaw()`。
     var _zwAttrsRaw = function () { return attrs; };
+    // R190：内部访问口挂 node（不可枚举——cloneNode 的 _r190FixNs 经此写 NS 印记）。
+    try {
+      Object.defineProperty(node, '_zwAttrsRaw', { value: _zwAttrsRaw, enumerable: false, configurable: true });
+    } catch (_e190ar) {}
+    // R190（js-dom M4）：attrs 条目带 NS 印记（克隆非 HTML ns 子树时 _r190FixNs 写入
+    // ns/prefix/local）的 Attr 透传——_zwMakeAttr 后覆盖三字段（WPT Node-cloneNode-svg
+    // 的 use.attributes[0].namespaceURI === xlink ns）。
+    var _zwMAttrNS = function (entry, owner) {
+      var a = _zwMakeAttr(String(entry.name), entry.value, owner);
+      if (entry && entry.ns !== undefined) {
+        a.namespaceURI = entry.ns != null ? String(entry.ns) : null;
+        a.prefix = entry.prefix != null ? String(entry.prefix) : null;
+        a.localName = entry.local != null ? String(entry.local) : String(entry.name);
+        var _r190c = String(entry.name).indexOf(':');
+        if (_r190c > 0) a.name = String(entry.name); else a.name = a.localName;
+      }
+      return a;
+    };
     Object.defineProperty(node, 'attributes', {
       get: function () {
         return new Proxy({}, {
           get: function (_t, p) {
             if (p === 'length') return attrs.length;
-            if (p === 'item') return function (i) { var k = i | 0; return k >= 0 && k < attrs.length ? _zwMakeAttr(attrs[k].name, attrs[k].value, node) : null; };
-            if (p === 'getNamedItem') return function (n) { n = String(n); for (var i = 0; i < attrs.length; i++) if (attrs[i].name === n) return _zwMakeAttr(attrs[i].name, attrs[i].value, node); return null; };
+            if (p === 'item') return function (i) { var k = i | 0; return k >= 0 && k < attrs.length ? _zwMAttrNS(attrs[k], node) : null; };
+            if (p === 'getNamedItem') return function (n) { n = String(n); for (var i = 0; i < attrs.length; i++) if (attrs[i].name === n) return _zwMAttrNS(attrs[i], node); return null; };
             // R3022/R3023 mutable tree：set/removeNamedItem 经 node.setAttribute/removeAttribute
             //（attrs 数组真变 + IDL 反射），返旧 Attr（_zwMakeAttr 真实例）。
             if (p === 'setNamedItem') return function (a) {
@@ -5501,7 +5519,7 @@
             };
             var idx = parseInt(p, 10);
             if (!isNaN(idx) && String(idx) === String(p) && idx >= 0 && idx < attrs.length) {
-              return _zwMakeAttr(attrs[idx].name, attrs[idx].value, node);
+              return _zwMAttrNS(attrs[idx], node);
             }
             if (typeof p === 'string') {
               for (var j = 0; j < attrs.length; j++) if (attrs[j].name === p) return _zwMakeAttr(attrs[j].name, attrs[j].value, node);
@@ -7848,6 +7866,37 @@
     a.isSameNode = function (other) { return other === a; };
     return a;
   }
+  // R190（js-dom M4）：解析产物带前缀属性的 NS 字段推导（共享 helper——attributesProxy
+  // 的 attrObj 与 getAttributeNodeNS 的 fallback 构造两处消费）。已知 prefix 映射 +
+  // 「元素自身或祖先链非 HTML ns」判定（svg/math 子继承根 ns；HTML 元素的 "xml:lang"
+  // 是整 local 不拆——WPT Attr-prefix present(HTML) vs (SVG/MathML) 的分野）。局部
+  // 推导专用——不进通用 namespaceURI getter（R185 教训）。
+  globalThis._zwDeriveAttrNS = function (attr, qname, sel, handle) {
+    try {
+      var _r190q = String(qname || '');
+      var _r190Colon = _r190q.indexOf(':');
+      if (_r190Colon <= 0) return attr;
+      var _r190Pre = _r190q.slice(0, _r190Colon);
+      var _r190NsByPre = { xmlns: 'http://www.w3.org/2000/xmlns/', xlink: 'http://www.w3.org/1999/xlink', xml: 'http://www.w3.org/XML/1998/namespace' }[_r190Pre];
+      if (!_r190NsByPre) return attr;
+      var _r190ElNs = handle && _nsHandles[handle] ? _nsHandles[handle].namespace : null;
+      if (_r190ElNs == null && typeof __zw_get_ns === 'function' && typeof _ancestorChain === 'function') {
+        var _r190ChainSel = sel;
+        if (_r190ChainSel) {
+          var _r190Chain = _ancestorChain(_r190ChainSel);
+          for (var _r190ci = 0; _r190ci < _r190Chain.length; _r190ci++) {
+            var _r190Gn = String(__zw_get_ns(_r190Chain[_r190ci]) || '');
+            if (_r190Gn && _r190Gn !== 'http://www.w3.org/1999/xhtml') { _r190ElNs = _r190Gn; break; }
+          }
+        }
+      }
+      if (_r190ElNs == null || _r190ElNs === 'http://www.w3.org/1999/xhtml') return attr;
+      attr.prefix = _r190Pre;
+      attr.localName = _r190q.slice(_r190Colon + 1);
+      attr.namespaceURI = _r190NsByPre;
+      return attr;
+    } catch (_e190dv) { return attr; }
+  };
   // `el.attributes`（NamedNodeMap）：length / item(i) / getNamedItem(name) / 数值索引 /
   // Symbol.iterator，每项 Attr-like {name,value,localName,...}。经 `__zw_attr_names`+`__zw_get_attr`。
   // R3198：handle 经 `__zw_attr_names_handle`（属性名仅来自 mutations，无快照基底）——旧 handle 元素 NamedNodeMap
@@ -8038,6 +8087,9 @@
           attr.prefix = _r116Meta.prefix;
           attr.localName = _r116Meta.local;
           attr.namespaceURI = _r116Meta.ns;
+        } else {
+          // R190：解析产物带前缀属性的 NS 推导（共享 helper _zwDeriveAttrNS）。
+          try { globalThis._zwDeriveAttrNS(attr, _r122Qname, sel, handle); } catch (_e190dv2) {}
         }
       }
       _r122Bind.set(_r122Name, attr);

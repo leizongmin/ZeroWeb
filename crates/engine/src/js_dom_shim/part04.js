@@ -1645,6 +1645,7 @@
               }
             }
             var _gn122qn = _r116NsQName(a, b);
+
             var _gn122v2 = handle
               ? __zw_get_attr_handle(handle, _gn122qn)
               : (typeof __zw_get_attr_lw === 'function' ? __zw_get_attr_lw(sel, _gn122qn) : __zw_get_attr(sel, _gn122qn));
@@ -1664,6 +1665,9 @@
               }
               if (fallbackName != null) {
                 var madeA = _zwMakeAttr(fallbackName, fallbackVal != null ? fallbackVal : '', self);
+                // R190：解析产物带前缀属性的 NS 推导（共享 helper——SVG/MathML 元素的
+                // xlink:href/xml:lang 拆 prefix/local + ns；WPT Attr-prefix present 两簇）。
+                try { globalThis._zwDeriveAttrNS(madeA, fallbackName, sel, handle); } catch (_e190fb) {}
                 try { _zwAttrBindMap(_gn122ElKey).set(fallbackName, madeA); } catch (_eB2) {}
                 return madeA;
               }
@@ -3164,6 +3168,63 @@
                   try {
                     if (typeof _zwFragmentAdded === 'function' && ih.indexOf('<') >= 0) {
                       _handleChildren[nh] = _zwFragmentAdded(ih, nh);
+                      // R190（js-dom M4）：非 HTML ns 源的 deep clone——re-parse 产物是
+                      // HTML 语义（tagName 大写 + XHTML ns + 属性无 NS），对 JS 子树
+                      // （_zwMEl）递归补源 ns + tagName 小写 + 带前缀属性的 NS meta
+                      //（WPT Node-cloneNode-svg 的克隆 <use>：namespaceURI === SVG ns、
+                      // tagName 'use' 小写、xlink:href Attr 的 ns/prefix/localName）。
+                      if (_r185SrcNs && _r185SrcNs !== 'http://www.w3.org/1999/xhtml') {
+                        var _r190FixNs = function (node, nkey) {
+                          if (!node || node.nodeType !== 1) return;
+                          try {
+                            Object.defineProperty(node, 'namespaceURI', {
+                              get: function () { return _r185SrcNs; },
+                              configurable: true,
+                            });
+                            var _r190Low = String(node.nodeName || node.tagName || '').toLowerCase();
+                            try { node.tagName = _r190Low; node.nodeName = _r190Low; } catch (_e190t) {}
+                            // R190：prefix/localName 补齐（_zwMEl 子无这些字段——读
+                            // undefined ≠ spec null；WPT 断言 use.prefix === null）。
+                            try {
+                              if (node.prefix === undefined) node.prefix = null;
+                              if (node.localName === undefined) node.localName = _r190Low;
+                            } catch (_e190pl) {}
+                          } catch (_e190n) {}
+                          try {
+                            var _r190Kids = node.childNodes || [];
+                            for (var _r190i = 0; _r190i < _r190Kids.length; _r190i++) {
+                              _r190FixNs(_r190Kids[_r190i], nkey);
+                            }
+                          } catch (_e190k) {}
+                          // 带前缀属性（xlink:href 等）：attrs 数组条目写 NS 印记
+                          //（_zwMEl attributes Proxy 的 _zwMAttrNS 透传——Attr 视图的
+                          // namespaceURI/prefix/localName）+ NS meta 登记（proxy 消费面）。
+                          try {
+                            var _r190Raw = (typeof node._zwAttrsRaw === 'function') ? node._zwAttrsRaw() : null;
+                            if (_r190Raw) {
+                              for (var _r190a = 0; _r190a < _r190Raw.length; _r190a++) {
+                                var _r190N = String(_r190Raw[_r190a].name || '');
+                                var _r190C = _r190N.indexOf(':');
+                                if (_r190C > 0) {
+                                  var _r190P = _r190N.slice(0, _r190C);
+                                  var _r190NsByPre = { xmlns: 'http://www.w3.org/2000/xmlns/', xlink: 'http://www.w3.org/1999/xlink', xml: 'http://www.w3.org/XML/1998/namespace' }[_r190P];
+                                  if (_r190NsByPre) {
+                                    _r190Raw[_r190a].ns = _r190NsByPre;
+                                    _r190Raw[_r190a].prefix = _r190P;
+                                    _r190Raw[_r190a].local = _r190N.slice(_r190C + 1);
+                                    var _r190Mm = _attrNSMeta[nkey] || (_attrNSMeta[nkey] = {});
+                                    _r190Mm[_r190N] = { ns: _r190NsByPre, prefix: _r190P, local: _r190N.slice(_r190C + 1) };
+                                  }
+                                }
+                              }
+                            }
+                          } catch (_e190m) {}
+                        };
+                        var _r190Kids = _handleChildren[nh] || [];
+                        for (var _r190j = 0; _r190j < _r190Kids.length; _r190j++) {
+                          _r190FixNs(_r190Kids[_r190j], _elKey(null, nh));
+                        }
+                      }
                     } else if (_handleChildren[nh]) {
                       _handleChildren[nh] = [];
                     }
