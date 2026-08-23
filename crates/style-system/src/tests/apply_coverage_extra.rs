@@ -481,6 +481,22 @@ fn test_apply_transition_timing_function_variants() {
 }
 
 #[test]
+fn test_apply_timing_function_cubic_bezier_math_args() {
+    let (ok, style) = apply(
+        "transition-timing-function",
+        "cubic-bezier(calc(0.25 + 0.25), min(0.75, 1.0), max(0.25, 0.125), clamp(0.5, 0.625, 1.0)), ease",
+    );
+    assert!(ok);
+    assert_eq!(
+        style.transition_timing_function,
+        vec![
+            zero_css_parser::values::TimingFunctionValue::CubicBezier(0.5, 0.75, 0.25, 0.625),
+            zero_css_parser::values::TimingFunctionValue::Ease,
+        ]
+    );
+}
+
+#[test]
 fn test_apply_timing_function_invalid_lists_keep_old_values() {
     let mut style = ComputedStyle::default();
     style.transition_timing_function = vec![zero_css_parser::values::TimingFunctionValue::Linear];

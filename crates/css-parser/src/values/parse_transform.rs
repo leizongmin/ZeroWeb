@@ -245,15 +245,16 @@ pub fn parse_timing_function(value: &str) -> Option<TimingFunctionValue> {
         "step-start" => Some(TimingFunctionValue::StepStart),
         "step-end" => Some(TimingFunctionValue::StepEnd),
         _ if value.starts_with("cubic-bezier(") => {
+            // https://drafts.csswg.org/css-easing-1/#cubic-bezier-easing-functions
             let inner = extract_parens_content(&value, "cubic-bezier")?;
-            let parts: Vec<&str> = inner.split(',').map(|s| s.trim()).collect();
+            let parts = split_timing_function_args(inner)?;
             if parts.len() != 4 {
                 return None;
             }
-            let x1 = parts[0].parse::<f64>().ok()?;
-            let y1 = parts[1].parse::<f64>().ok()?;
-            let x2 = parts[2].parse::<f64>().ok()?;
-            let y2 = parts[3].parse::<f64>().ok()?;
+            let x1 = parse_timing_number(parts[0])?;
+            let y1 = parse_timing_number(parts[1])?;
+            let x2 = parse_timing_number(parts[2])?;
+            let y2 = parse_timing_number(parts[3])?;
             if !x1.is_finite()
                 || !y1.is_finite()
                 || !x2.is_finite()
@@ -287,6 +288,70 @@ pub fn parse_timing_function(value: &str) -> Option<TimingFunctionValue> {
         }
         _ => None,
     }
+}
+
+fn parse_timing_number(value: &str) -> Option<f64> {
+    let trimmed = value.trim();
+    if let Ok(number) = trimmed.parse::<f64>() {
+        return number.is_finite().then_some(number);
+    }
+    let expr = parse_math_function(trimmed)?;
+    if !calc_expr_is_number(&expr) {
+        return None;
+    }
+    let value = eval_calc(&expr, None)?;
+    value.is_finite().then_some(value)
+}
+
+fn calc_expr_is_number(expr: &CalcExpr) -> bool {
+    match expr {
+        CalcExpr::Number(_) => true,
+        CalcExpr::Length(_) => false,
+        CalcExpr::BinaryOp(left, _, right) => calc_expr_is_number(left) && calc_expr_is_number(right),
+        CalcExpr::Min(args) | CalcExpr::Max(args) => args.iter().all(calc_expr_is_number),
+        CalcExpr::Clamp { min, val, max } => {
+            calc_expr_is_number(min) && calc_expr_is_number(val) && calc_expr_is_number(max)
+        }
+        CalcExpr::UnaryOp(_, inner) => calc_expr_is_number(inner),
+        CalcExpr::BinaryMathOp(_, left, right) => calc_expr_is_number(left) && calc_expr_is_number(right),
+    }
+}
+
+fn split_timing_function_args(input: &str) -> Option<Vec<&str>> {
+    let mut args = Vec::new();
+    let mut depth = 0i32;
+    let mut start = 0;
+
+    for (idx, ch) in input.char_indices() {
+        match ch {
+            '(' => depth += 1,
+            ')' => {
+                depth -= 1;
+                if depth < 0 {
+                    return None;
+                }
+            }
+            ',' if depth == 0 => {
+                let part = input[start..idx].trim();
+                if part.is_empty() {
+                    return None;
+                }
+                args.push(part);
+                start = idx + ch.len_utf8();
+            }
+            _ => {}
+        }
+    }
+
+    if depth != 0 {
+        return None;
+    }
+    let last = input[start..].trim();
+    if last.is_empty() {
+        return None;
+    }
+    args.push(last);
+    Some(args)
 }
 
 /// 解析 steps() 位置参数。

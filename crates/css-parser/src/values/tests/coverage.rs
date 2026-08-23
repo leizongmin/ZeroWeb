@@ -11,8 +11,8 @@
 //! - grid-area 斜杠语法
 
 use crate::values::{
-    parse_animation_duration, parse_box_shadow, parse_box_shadow_list, parse_gradient, parse_grid_area,
-    parse_text_shadow, parse_text_shadow_list, parse_timing_function, parse_transform,
+    TimingFunctionValue, parse_animation_duration, parse_box_shadow, parse_box_shadow_list, parse_gradient,
+    parse_grid_area, parse_text_shadow, parse_text_shadow_list, parse_timing_function, parse_transform,
 };
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -51,11 +51,21 @@ fn test_timing_function_cubic_bezier() {
 }
 
 #[test]
+fn test_timing_function_cubic_bezier_math_args() {
+    let result = parse_timing_function(
+        "cubic-bezier(calc(0.25 + 0.25), min(0.75, 1.0), max(0.25, 0.125), clamp(0.5, 0.625, 1.0))",
+    );
+    assert_eq!(result, Some(TimingFunctionValue::CubicBezier(0.5, 0.75, 0.25, 0.625)));
+}
+
+#[test]
 fn test_timing_function_cubic_bezier_invalid() {
     // 参数数量不对
     assert!(parse_timing_function("cubic-bezier(0.25, 0.1)").is_none());
     assert!(parse_timing_function("cubic-bezier(-0.1, 0.1, 0.25, 1.0)").is_none());
     assert!(parse_timing_function("cubic-bezier(0.25, 0.1, 1.1, 1.0)").is_none());
+    assert!(parse_timing_function("cubic-bezier(calc(1px + 1px), 0, 1, 1)").is_none());
+    assert!(parse_timing_function("cubic-bezier(calc(infinity), 0, 1, 1)").is_none());
 }
 
 #[test]
