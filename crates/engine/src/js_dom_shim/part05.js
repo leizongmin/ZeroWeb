@@ -789,7 +789,15 @@
     var bodyInner = '';
     var docEl = null;
     try {
-      var mEl = /<([a-zA-Z][\w:-]*)(\s[^>]*)?>([\s\S]*)<\/\1\s*>/.exec(markup);
+      // R207（js-dom M4）：**根元素优先 `<html>`**——通用配对 regex 的首个命中是
+      // 文档首个「开-闭标签对」（Range-test-iframe.html 的 <title>…</title>——
+      // documentElement.tagName 变 TITLE、cloneNode/append 面缺失）。HTML 子文档
+      // 先匹配 `<html …>…</html>` 并**归一到通用 regex 的组序**（[1]=tag [2]=attrs
+      // [3]=inner）；miss 再落通用 regex（XML 根等形态）。
+      var mEl207 = /<html\b(\s[^>]*)?>([\s\S]*)<\/html\s*>/i.exec(String(markup || ''));
+      var mEl = mEl207
+        ? ['<html' + mEl207[1] + '>', 'html', mEl207[1] || '', mEl207[2]]
+        : /<([a-zA-Z][\w:-]*)(\s[^>]*)?>([\s\S]*)<\/\1\s*>/.exec(markup);
       if (mEl) {
         var elTag = mEl[1];
         var elText = mEl[3].replace(/<[^>]*>/g, '');
@@ -800,6 +808,34 @@
           textContent: elText,
           getBoundingClientRect: function () { return _makeDomRect(0, 0, 0, 0); }
         };
+        // R207（js-dom M4）：docEl 的**可变面**——childNodes/appendChild/append/
+        // cloneNode（restoreIframe 的 `refDoc.documentElement.cloneNode(true)` +
+        // 子树重挂；WPT Range mega-case 链）。原型接 HTMLHtmlElement.prototype
+        //（Node.prototype.cloneNode 等经链可达）；append 同 R207 iframe 工厂族。
+        docEl.childNodes = [];
+        docEl.hasChildNodes = function () { return docEl.childNodes.length > 0; };
+        docEl.appendChild = function (c) {
+          if (c && c.parentNode && c.parentNode.removeChild) { try { c.parentNode.removeChild(c); } catch (_eR207a) {} }
+          docEl.childNodes.push(c);
+          try { c.parentNode = docEl; } catch (_eR207b) {}
+          return c;
+        };
+        docEl.removeChild = function (c) {
+          for (var _r207i = 0; _r207i < docEl.childNodes.length; _r207i++) {
+            if (docEl.childNodes[_r207i] === c) { docEl.childNodes.splice(_r207i, 1); try { c.parentNode = null; } catch (_eR207c) {} return c; }
+          }
+          return null;
+        };
+        docEl.append = function () {
+          for (var _r207d = 0; _r207d < arguments.length; _r207d++) {
+            var _n207d = arguments[_r207d];
+            if (_n207d && typeof _n207d === 'object') docEl.appendChild(_n207d);
+            else docEl.childNodes.push({ nodeType: 3, nodeName: '#text', data: String(_n207d == null ? '' : _n207d), parentNode: docEl, childNodes: [], hasChildNodes: function () { return false; }, get textContent() { return this.data; } });
+          }
+        };
+        Object.defineProperty(docEl, 'firstChild', { configurable: true, get: function () { return docEl.childNodes.length ? docEl.childNodes[0] : null; } });
+        Object.defineProperty(docEl, 'lastChild', { configurable: true, get: function () { return docEl.childNodes.length ? docEl.childNodes[docEl.childNodes.length - 1] : null; } });
+        try { Object.setPrototypeOf(docEl, globalThis.HTMLHtmlElement ? globalThis.HTMLHtmlElement.prototype : Object.prototype); } catch (_eR207p) {}
         if (kind !== 'xml') {
         // R159：html/body 属性经 doc 槽传递——detHtml 包装层恢复 `<html ...><body ...>`
         //（查询树对 querySelectorAll('html'/'body'/':root') 命中且保属性；WPT
@@ -972,7 +1008,6 @@
       attributes: [],
       parentNode: null,
       nodeValue: null,
-      textContent: '',
       getBoundingClientRect: function () { return _makeDomRect(0, 0, 0, 0); },
       getClientRects: function () { return []; },
       getAttribute: function (n) { n = String(n); for (var i = 0; i < el.attributes.length; i++) if (el.attributes[i].name === n) return el.attributes[i].value; return null; },
@@ -1133,6 +1168,43 @@
         configurable: true,
         get: function () { return el.childNodes.length ? el.childNodes[el.childNodes.length - 1] : null; },
       });
+      // R207（js-dom M4）：textContent accessor（spec `dom-node-text-content`
+      // setter 的 replace-all 语义）——旧 plain 数据字段：赋值只改字段不建 Text
+      // 子 → firstChild 恒 null（common.js `paras[0].textContent = 'x'` 后 eval
+      // 'paras[0].firstChild' 得 null → rangeFromEndpoints 的 ownerDocument
+      // null.nodeType 崩）。setter：清 childNodes + 单 Text 子（ownerDocument=
+      // 本 doc）；getter：拼接后代文本。
+      Object.defineProperty(el, 'textContent', {
+        configurable: true, enumerable: true,
+        get: function () {
+          var out = '';
+          (function walk207(n) {
+            var kids = n.childNodes || [];
+            for (var w = 0; w < kids.length; w++) {
+              var c = kids[w];
+              if (c && (c.nodeType === 3 || c.nodeType === 8 || (c.nodeType === 7))) out += String(c.data != null ? c.data : '');
+              else if (c && c.nodeType === 1) walk207(c);
+            }
+          })(el);
+          return out;
+        },
+        set: function (v) {
+          var s = v == null ? '' : String(v);
+          el.childNodes = s === '' ? [] : [{
+            nodeType: 3, nodeName: '#text', data: s, parentNode: el,
+            ownerDocument: doc,
+            childNodes: [],
+            hasChildNodes: function () { return false; },
+            isEqualNode: function (o) {
+              if (!o || o.nodeType !== 3) return false;
+              return String(o.data != null ? o.data : '') === String(this.data != null ? this.data : '');
+            },
+            get textContent() { return this.data; },
+            get nodeValue() { return this.data; },
+            get length() { return this.data.length; },
+          }];
+        },
+      });
       // R181（js-dom M4）：querySelector(All)——本地 childNodes 子树的 tag/class/id
       // 简单形态匹配（深度优先）。WPT node-realm-mixed-across-adoption 的
       // `container.querySelector("p")`（工厂元素旧无方法 → not-a-function）。
@@ -1193,6 +1265,48 @@
         || (globalThis.Element && globalThis.Element.prototype) || Object.prototype;
       Object.setPrototypeOf(el, _r181FProto);
     } catch (_e115p) { try { Object.setPrototypeOf(el, globalThis.Element ? globalThis.Element.prototype : Object.prototype); } catch (_e115p2) {} }
+    // R207（js-dom M4）：ParentNode 变异族 **append/prepend/replaceChildren**——
+    // iframe 工厂元素旧只有 appendChild（WPT Range mega-case 经 R206 子文档脚本
+    // 通道执行 common.js 的 setupRangeTests：`paras[5].append('9012')` 直接
+    // TypeError；探针对比 implementation.createHTMLDocument 的 _zwMEl 路径有
+    // append、iframe 工厂路径缺失）。语义对齐 _zwMEl 的 R117 族（校验 + 字符串
+    // 参数转 Text + childNodes 尾/头插）。
+    if (!el.append) {
+      el.append = function () {
+        for (var _r207a = 0; _r207a < arguments.length; _r207a++) {
+          var _n207 = arguments[_r207a];
+          if (_n207 && typeof _n207 === 'object') {
+            if (_n207.parentNode && _n207.parentNode.removeChild) { try { _n207.parentNode.removeChild(_n207); } catch (_e207m) {} }
+            _n207.parentNode = el; el.childNodes.push(_n207);
+          } else {
+            el.childNodes.push({ nodeType: 3, nodeName: '#text', data: String(_n207 == null ? '' : _n207), parentNode: el,
+              childNodes: [], hasChildNodes: function () { return false; },
+              get textContent() { return this.data; } });
+          }
+        }
+      };
+    }
+    if (!el.prepend) {
+      el.prepend = function () {
+        for (var _r207b = arguments.length - 1; _r207b >= 0; _r207b--) {
+          var _n207b = arguments[_r207b];
+          if (_n207b && typeof _n207b === 'object') {
+            if (_n207b.parentNode && _n207b.parentNode.removeChild) { try { _n207b.parentNode.removeChild(_n207b); } catch (_e207n) {} }
+            _n207b.parentNode = el; el.childNodes.unshift(_n207b);
+          } else {
+            el.childNodes.unshift({ nodeType: 3, nodeName: '#text', data: String(_n207b == null ? '' : _n207b), parentNode: el,
+              childNodes: [], hasChildNodes: function () { return false; },
+              get textContent() { return this.data; } });
+          }
+        }
+      };
+    }
+    if (!el.replaceChildren) {
+      el.replaceChildren = function () {
+        el.childNodes.length = 0;
+        el.append.apply(el, arguments);
+      };
+    }
     return el;
   }
 

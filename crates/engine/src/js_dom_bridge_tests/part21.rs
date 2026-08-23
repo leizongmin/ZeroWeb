@@ -2315,3 +2315,54 @@ fn test_range_point_queries_bptree_r205() {
         "R205 点查询树序：before-start false / after-end false / 同点 true + comparePoint 三态 + doctype 抛错 + collapsed 相交"
     );
 }
+
+/// R207：iframe 工厂元素的可变面——① append/prepend/replaceChildren（R206 子文档
+/// 脚本通道执行 common.js 的 `paras[5].append('9012')`——旧 only-appendChild）；
+/// ② textContent setter 的 replace-all 语义（建 Text 子——旧 plain 字段使
+/// firstChild 恒 null → eval 'paras[0].firstChild' 崩 ownerDocument(null)）；
+/// ③ `_zwMakeIframeDoc` 根元素优先 `<html>`（通用配对 regex 首命中 `<title>` 使
+/// documentElement.tagName=TITLE）+ docEl 可变面（appendChild/removeChild/append/
+/// firstChild/lastChild——`refDoc.documentElement.cloneNode(true)` 链）。
+#[test]
+fn test_iframe_factory_mutation_face_r207() {
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let mut sandbox = V8Sandbox::with_config(zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    })
+    .unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> =
+        Arc::new(Mutex::new("<html><body><div id='d'>x</div></body></html>".to_string()));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+    let out = sandbox
+        .execute(
+            "var ifr = document.createElement('iframe');\
+             document.body.appendChild(ifr);\
+             var doc = ifr.contentDocument;\
+             var p = doc.createElement('p');\
+             p.textContent = 'hello';\
+             var a = [typeof p.append, typeof p.prepend, typeof p.replaceChildren,\
+               p.firstChild ? p.firstChild.nodeType : 'null-fc',\
+               p.textContent,\
+               p.firstChild && p.firstChild.parentNode === p].join(',');\
+             p.append('!');\
+             p.prepend('>');\
+             var b = [p.childNodes.length, p.textContent].join(',');\
+             p.replaceChildren('solo');\
+             var c = [p.childNodes.length, p.textContent].join(',');\
+             [a, b, c].join('|')",
+        )
+        .unwrap()
+        .value;
+    assert_eq!(
+        out,
+        "function,function,function,3,hello,true|3,>hello!|1,solo",
+        "R207 iframe 工厂元素 append 族 + textContent replace-all + firstChild/parentNode"
+    );
+}
