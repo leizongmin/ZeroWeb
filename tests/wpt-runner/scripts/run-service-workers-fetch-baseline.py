@@ -10,8 +10,8 @@ import subprocess
 import sys
 from pathlib import Path
 
-EXPECTED_CASES = 10
-EXPECTED_SUBTESTS = 25
+EXPECTED_CASES = 11
+EXPECTED_SUBTESTS = 26
 
 
 def parse_args() -> argparse.Namespace:
@@ -85,7 +85,8 @@ def render_markdown(summary: dict) -> str:
             "for `fetch-event-within-sw.https.html`, "
             "`fetch-event-respond-with-custom-response.https.html`, "
             "`fetch-event-respond-with-stops-propagation.https.html`, "
-            "`uncontrolled-page.https.html`, and their new support assets",
+            "`uncontrolled-page.https.html`, `claim-fetch.https.html`, "
+            "and their new support assets",
             f"- Cases: {summary['cases']}",
             f"- Subtests: {summary['subtests']}",
             f"- Pass: {status.get('Pass', 0)}",
@@ -96,7 +97,7 @@ def render_markdown(summary: dict) -> str:
             "",
             "## Scope",
             "",
-            "This pinned Service Worker M2 fetch/interception baseline covers ten cases. "
+            "This pinned Service Worker M2 fetch/interception baseline covers eleven cases. "
             "`request-end-to-end.https.html` registers a real service worker, loads a "
             "controlled iframe, dispatches a FetchEvent, and validates the Request "
             "projection returned via `respondWith(new Response(...))`. "
@@ -125,7 +126,10 @@ def render_markdown(summary: dict) -> str:
             "XMLHttpRequest path. "
             "`uncontrolled-page.https.html` covers the scope boundary that a page outside "
             "the registered Service Worker scope remains uncontrolled and its XMLHttpRequest "
-            "fetches bypass that worker's fetch handler.",
+            "fetches bypass that worker's fetch handler. "
+            "`claim-fetch.https.html` covers an existing iframe client that starts uncontrolled, "
+            "then becomes controlled only after message-time `clients.claim()` and has later "
+            "fetches intercepted by the claiming active worker.",
         ]
     ) + "\n"
 

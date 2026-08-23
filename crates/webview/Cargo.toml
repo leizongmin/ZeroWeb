@@ -32,6 +32,7 @@ quickjs = ["zero-engine/quickjs", "zero-page-runtime/quickjs", "zero-script-sand
 [dev-dependencies]
 criterion = { workspace = true }
 png = "0.17"
+serial_test = { workspace = true }
 
 [[bench]]
 name = "webview_bench"

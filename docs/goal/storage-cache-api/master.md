@@ -2,7 +2,7 @@
 
 **入口文档**: [../storage-cache-api.md](../storage-cache-api.md)
 **创建日期**: 2026-08-17（goal 拆分 bootstrap）
-**最后更新**: 2026-08-23（SW fetch uncontrolled-page WPT 扩面）
+**最后更新**: 2026-08-23（SW fetch claim-fetch WPT 扩面）
 
 ---
 
@@ -94,8 +94,9 @@ worker-global 最小 `FormData` 序列化出的 multipart response 可被受控 
 与 navigation 路径读回。该切片服务 service-workers fetch baseline，不改变本目标的 window
 CacheStorage 分母。
 Service Worker `uncontrolled-page.https.html` 扩面固定 scope 外 uncontrolled 页面绕过 SW fetch
-handler 的边界；该切片服务 service-workers fetch baseline，不改变本目标的 window/SW
-CacheStorage 分母。
+handler 的边界；`claim-fetch.https.html` 继续固定 message-time `clients.claim()` 控制既有
+iframe client 后的 fetch interception。两个切片服务 service-workers fetch baseline，不改变本
+目标的 window/SW CacheStorage 分母。
 
 **与兄弟 goal 的边界**：
 - [storage-indexeddb](../archive/storage-indexeddb.md)（已归档）— IDB 归其管
@@ -137,7 +138,7 @@ CacheStorage 分母。
 ## 下一步计划
 
 1. **M2 切片 13**：继续导入 dynamic-server / cross-origin CacheStorage WPT case，补完整 filtered response 生成矩阵
-2. **service-workers 后续**：继续扩展 SW cache-storage / fetch-cache WPT 验收；fetch runner 已覆盖 uncontrolled-page scope bypass，持久化能力已由 registration-local snapshot/restore 覆盖
+2. **service-workers 后续**：继续扩展 SW cache-storage / fetch-cache WPT 验收；fetch runner 已覆盖 uncontrolled-page scope bypass 与 message-time `clients.claim()` iframe control，持久化能力已由 registration-local snapshot/restore 覆盖
 
 **碰撞管理**：开工前先 `git log --since="14 days ago" -- crates/engine/src/js_dom_shim/`
 核对 js-dom 流活跃面。
@@ -437,4 +438,10 @@ CacheStorage 分母。
   - `./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit 300 -- cargo test -p zero-script-sandbox fetch_event_respond_with_serializes_buffer_source_and_form_data_response -- --nocapture`：1 passed
   - `WPT_SOURCE=$HOME/github/others/wpt ./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit 420 -- make baseline-wpt-service-workers-fetch OUTPUT=docs/goal/service-workers/evidence/2026-08-23-m2-fetch-custom-response-baseline.json SUMMARY=docs/goal/service-workers/evidence/2026-08-23-m2-fetch-custom-response-baseline.md`：8 cases / 23 subtests / 23 Pass，double-run deterministic
   - 证据：[Service Worker Fetch WPT Baseline](../service-workers/evidence/2026-08-23-m2-fetch-custom-response-baseline.md)
+- 2026-08-23 Service Worker fetch claim-fetch 扩面：
+  - 新增 WPT：`service-workers/service-worker/claim-fetch.https.html`
+  - 新增 support：`service-workers/service-worker/resources/claim-worker.js`、`blank.html`
+  - `WPT_SOURCE=$HOME/github/others/wpt make testharness-service-workers-fetch FILTER=claim-fetch.https.html`：1 Pass
+  - `WPT_SOURCE=$HOME/github/others/wpt make baseline-wpt-service-workers-fetch OUTPUT=docs/goal/service-workers/evidence/2026-08-23-m2-fetch-baseline.json SUMMARY=docs/goal/service-workers/evidence/2026-08-23-m2-fetch-baseline.md`：11 cases / 26 subtests / 26 Pass，double-run deterministic
+  - 证据：[Service Worker Fetch WPT Baseline](../service-workers/evidence/2026-08-23-m2-fetch-baseline.md)
 - 质量门禁：`cargo fmt` + `cargo clippy --workspace --all-targets -- -D warnings` 全过

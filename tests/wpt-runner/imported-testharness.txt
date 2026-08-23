@@ -256,3 +256,4 @@ service-workers/cache-storage/serviceworker/cache-add.https.html 24197a11e8c5bd2
 service-workers/cache-storage/serviceworker/cache-keys-attributes-for-service-worker.https.html 24197a11e8c5bd29a5cb7bdf18135a82be8a8546 2026-08-23 SW-M2-cache-storage-serviceworker-request-navigation-attributes
 service-workers/cache-storage/serviceworker/credentials.https.html 24197a11e8c5bd29a5cb7bdf18135a82be8a8546 2026-08-23 SW-M2-cache-storage-serviceworker-credentials
 service-workers/service-worker/uncontrolled-page.https.html 24197a11e8c5bd29a5cb7bdf18135a82be8a8546 2026-08-23 SW-M2-fetch-uncontrolled-page
+service-workers/service-worker/claim-fetch.https.html 24197a11e8c5bd29a5cb7bdf18135a82be8a8546 2026-08-23 SW-M2-fetch-claim-fetch

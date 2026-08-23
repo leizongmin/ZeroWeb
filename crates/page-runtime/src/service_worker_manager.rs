@@ -227,6 +227,7 @@ struct EvaluationOptions {
 #[derive(Debug, Clone)]
 struct ClientRecord {
     info: ServiceWorkerClientInfo,
+    controller_registration_id: Option<u64>,
     creation_sequence: u64,
     last_focus_sequence: Option<u64>,
 }
@@ -493,6 +494,11 @@ pub enum ServiceWorkerManagerEvent {
     /// A registration-local CacheStorage mutation completed successfully.
     CacheStorageMutated {
         /// Registration version whose CacheStorage changed.
+        registration_id: u64,
+    },
+    /// An active worker requested control of matching clients.
+    ClientsClaimed {
+        /// Registration version whose matching clients are now controlled.
         registration_id: u64,
     },
 }
@@ -1465,6 +1471,7 @@ impl ServiceWorkerManager {
                     });
                     if phase == ServiceWorkerLifecyclePhase::Activate && succeeded && claim_clients {
                         self.claimed_clients.insert(registration_id);
+                        self.claim_matching_clients(registration_id);
                     }
                     let transition = match phase {
                         ServiceWorkerLifecyclePhase::Install => self.apply_install_result(registration_id, succeeded),
@@ -1624,6 +1631,17 @@ impl ServiceWorkerManager {
                         .is_ok()
                     {
                         self.complete_routed_client_messages(registration_id, None, outbound);
+                    }
+                }
+                ServiceWorkerEvent::ClientsClaimRequested => {
+                    if self
+                        .registry
+                        .get(registration_id)
+                        .is_some_and(|registration| registration.state == ServiceWorkerState::Activated)
+                    {
+                        self.claimed_clients.insert(registration_id);
+                        self.claim_matching_clients(registration_id);
+                        output.push(ServiceWorkerManagerEvent::ClientsClaimed { registration_id });
                     }
                 }
             }
@@ -1964,18 +1982,22 @@ impl ServiceWorkerManager {
     ) -> Result<ServiceWorkerManagerEvent, ServiceWorkerManagerError> {
         self.require_state(registration_id, ServiceWorkerState::Activating)?;
         let key = self.key_for(registration_id)?.clone();
-        let slot = self.slots.get_mut(&key).expect("registration key must have slots");
-        if slot.waiting != Some(registration_id) {
-            return Err(ServiceWorkerManagerError::InvalidState {
-                registration_id,
-                expected: ServiceWorkerState::Activating,
-                actual: ServiceWorkerState::Redundant,
-            });
-        }
-        slot.waiting = None;
+        let old_active = {
+            let slot = self.slots.get_mut(&key).expect("registration key must have slots");
+            if slot.waiting != Some(registration_id) {
+                return Err(ServiceWorkerManagerError::InvalidState {
+                    registration_id,
+                    expected: ServiceWorkerState::Activating,
+                    actual: ServiceWorkerState::Redundant,
+                });
+            }
+            slot.waiting = None;
+            succeeded.then(|| slot.active.replace(registration_id)).flatten()
+        };
 
         if succeeded {
-            if let Some(old_active) = slot.active.replace(registration_id) {
+            if let Some(old_active) = old_active {
+                self.transfer_controlled_clients(old_active, registration_id);
                 self.mark_redundant_and_stop(old_active);
             }
             self.registry
@@ -2073,6 +2095,40 @@ impl ServiceWorkerManager {
     /// Return whether this version requested `clients.claim()` while activating.
     pub fn claims_clients(&self, registration_id: u64) -> bool {
         self.claimed_clients.contains(&registration_id)
+    }
+
+    fn active_registration_id_for_url(&self, origin: &str, url: &str) -> Option<u64> {
+        self.active_registration_for_url(origin, url)
+            .map(|registration| registration.id)
+    }
+
+    fn claim_matching_clients(&mut self, registration_id: u64) {
+        let Some(registration) = self.registry.get(registration_id).cloned() else {
+            return;
+        };
+        for record in self.clients.values_mut() {
+            let same_origin = url::Url::parse(&record.info.url)
+                .is_ok_and(|url| url.origin().ascii_serialization() == registration.origin);
+            if same_origin && registration.is_in_scope(&record.info.url) {
+                record.controller_registration_id = Some(registration_id);
+            }
+        }
+    }
+
+    fn transfer_controlled_clients(&mut self, old_registration_id: u64, new_registration_id: u64) {
+        for record in self.clients.values_mut() {
+            if record.controller_registration_id == Some(old_registration_id) {
+                record.controller_registration_id = Some(new_registration_id);
+            }
+        }
+    }
+
+    fn clear_controller_for_registration(&mut self, registration_id: u64) {
+        for record in self.clients.values_mut() {
+            if record.controller_registration_id == Some(registration_id) {
+                record.controller_registration_id = None;
+            }
+        }
     }
 
     /// Queue a page message on an evaluated installing, waiting, or active worker runtime.
@@ -2219,15 +2275,22 @@ impl ServiceWorkerManager {
         if request_origin != origin {
             return Ok(ServiceWorkerFetchDispatch::PassThrough);
         }
-        let controlled_registration_id = request
-            .client_id
-            .as_deref()
-            .and_then(|client_id| self.active_registration_for_client(origin, client_id))
-            .map(|registration| registration.id);
-        let Some(registration_id) = controlled_registration_id.or_else(|| {
+        let registration_id = if request.resulting_client_id.is_some() {
             self.active_registration_for_url(origin, &request_url)
                 .map(|registration| registration.id)
-        }) else {
+        } else if let Some(client_id) = request.client_id.as_deref() {
+            if self.clients.contains_key(client_id) {
+                self.active_registration_for_client(origin, client_id)
+                    .map(|registration| registration.id)
+            } else {
+                self.active_registration_for_url(origin, &request_url)
+                    .map(|registration| registration.id)
+            }
+        } else {
+            self.active_registration_for_url(origin, &request_url)
+                .map(|registration| registration.id)
+        };
+        let Some(registration_id) = registration_id else {
             return Ok(ServiceWorkerFetchDispatch::PassThrough);
         };
         let client_id = request.client_id.clone();
@@ -2437,6 +2500,9 @@ impl ServiceWorkerManager {
         });
         let focused = existing.is_some_and(|record| record.info.focused);
         let last_focus_sequence = existing.and_then(|record| record.last_focus_sequence);
+        let controller_registration_id = existing
+            .and_then(|record| record.controller_registration_id)
+            .or_else(|| self.active_registration_id_for_url(&url.origin().ascii_serialization(), url.as_str()));
         self.clients.insert(
             client_id.to_string(),
             ClientRecord {
@@ -2448,6 +2514,7 @@ impl ServiceWorkerManager {
                     visibility_state: "visible".into(),
                     focused,
                 },
+                controller_registration_id,
                 creation_sequence: sequence,
                 last_focus_sequence,
             },
@@ -2535,10 +2602,7 @@ impl ServiceWorkerManager {
                 (client_type == "all" || client.client_type == client_type)
                     && url::Url::parse(&client.url)
                         .is_ok_and(|url| url.origin().ascii_serialization() == registration.origin)
-                    && (include_uncontrolled
-                        || self
-                            .active_registration_for_url(&registration.origin, &client.url)
-                            .is_some_and(|active| active.id == registration_id))
+                    && (include_uncontrolled || record.controller_registration_id == Some(registration_id))
             })
             .cloned()
             .collect::<Vec<_>>();
@@ -2804,7 +2868,12 @@ impl ServiceWorkerManager {
         if client_origin != origin {
             return None;
         }
-        self.active_registration_for_url(origin, &client.info.url)
+        let registration_id = client.controller_registration_id?;
+        let registration = self.registry.get(registration_id)?;
+        (registration.state == ServiceWorkerState::Activated
+            && registration.origin == origin
+            && registration.is_in_scope(&client.info.url))
+        .then_some(registration)
     }
 
     /// Find the representative registration with the longest matching scope.
@@ -2980,6 +3049,7 @@ impl ServiceWorkerManager {
         if changed {
             self.record_state_change(registration_id, ServiceWorkerState::Redundant);
         }
+        self.clear_controller_for_registration(registration_id);
         self.claimed_clients.remove(&registration_id);
         self.restoring_active.remove(&registration_id);
         self.client_messages.retain(|(id, _), _| *id != registration_id);
@@ -3536,6 +3606,11 @@ mod tests {
             .observe_window_client("controlled", "https://example.test/scope/page")
             .unwrap();
         wait_for_state(&mut manager, id, ServiceWorkerState::Activated);
+        assert!(
+            manager.clients_for_worker(id, false, "window").unwrap().is_empty(),
+            "an existing same-scope client is uncontrolled until clients.claim()"
+        );
+        manager.claim_matching_clients(id);
         assert_eq!(
             manager
                 .clients_for_worker(id, false, "window")
@@ -4205,6 +4280,189 @@ mod tests {
                 ..
             } if *registration_id == id
         )));
+        assert!(manager.claims_clients(id));
+    }
+
+    #[test]
+    fn active_registration_for_client_requires_observed_control_or_claim() {
+        let mut manager = manager_under_test();
+        manager
+            .observe_window_client("client-1", "https://example.test/app/page")
+            .unwrap();
+        let id = start_active(&mut manager, "/app/", "globalThis.ready = true;");
+
+        assert!(
+            manager
+                .active_registration_for_client("https://example.test", "client-1")
+                .is_none(),
+            "an existing same-scope client stays uncontrolled until clients.claim()"
+        );
+
+        manager.claim_matching_clients(id);
+        assert_eq!(
+            manager
+                .active_registration_for_client("https://example.test", "client-1")
+                .map(|registration| registration.id),
+            Some(id)
+        );
+    }
+
+    #[test]
+    fn newly_observed_matching_client_is_controlled_by_active_registration() {
+        let mut manager = manager_under_test();
+        let id = start_active(&mut manager, "/app/", "globalThis.ready = true;");
+        manager
+            .observe_window_client("client-1", "https://example.test/app/page")
+            .unwrap();
+
+        assert_eq!(
+            manager
+                .active_registration_for_client("https://example.test", "client-1")
+                .map(|registration| registration.id),
+            Some(id)
+        );
+    }
+
+    #[test]
+    fn unregister_clears_client_controller_assignment() {
+        let mut manager = manager_under_test();
+        let id = start_active(&mut manager, "/app/", "globalThis.ready = true;");
+        manager
+            .observe_window_client("client-1", "https://example.test/app/page")
+            .unwrap();
+        assert_eq!(
+            manager
+                .active_registration_for_client("https://example.test", "client-1")
+                .map(|registration| registration.id),
+            Some(id)
+        );
+
+        assert!(manager.unregister(id));
+        assert!(
+            manager
+                .active_registration_for_client("https://example.test", "client-1")
+                .is_none()
+        );
+    }
+
+    #[test]
+    fn navigation_fetch_uses_resulting_client_scope_not_uncontrolled_source_client() {
+        let mut manager = manager_under_test();
+        manager
+            .observe_window_client("client-1", "https://example.test/page")
+            .unwrap();
+        let id = start_active(
+            &mut manager,
+            "/app/",
+            "addEventListener('fetch', event => {
+               event.respondWith(new Response('nav:' + event.request.url));
+             });",
+        );
+
+        assert_eq!(
+            manager
+                .dispatch_fetch(
+                    "https://example.test",
+                    118,
+                    ServiceWorkerFetchRequest {
+                        url: "https://example.test/app/frame.html".into(),
+                        method: "GET".into(),
+                        headers: Vec::new(),
+                        body: None,
+                        credentials: None,
+                        client_id: Some("client-1".into()),
+                        resulting_client_id: Some("client-1:nested:https://example.test/app/frame.html".into()),
+                        referrer: Some("https://example.test/page".into()),
+                        is_reload_navigation: false,
+                        is_history_navigation: false,
+                    },
+                )
+                .unwrap(),
+            ServiceWorkerFetchDispatch::Dispatched {
+                registration_id: id,
+                event_id: 118,
+            }
+        );
+        assert_eq!(
+            wait_for_fetch(&mut manager, 118),
+            ServiceWorkerManagerEvent::FetchSettled {
+                registration_id: id,
+                event_id: 118,
+                request_url: "https://example.test/app/frame.html".into(),
+                client_id: Some("client-1".into()),
+                response: Some(ServiceWorkerFetchResponse {
+                    status: 200,
+                    status_text: String::new(),
+                    response_type: "default".into(),
+                    headers: Vec::new(),
+                    body: "nav:https://example.test/app/frame.html".into(),
+                }),
+                failed: false,
+                message: String::new(),
+            }
+        );
+
+        assert_eq!(
+            manager
+                .dispatch_fetch(
+                    "https://example.test",
+                    119,
+                    ServiceWorkerFetchRequest {
+                        url: "https://example.test/app/subresource.txt".into(),
+                        method: "GET".into(),
+                        headers: Vec::new(),
+                        body: None,
+                        credentials: None,
+                        client_id: Some("client-1".into()),
+                        resulting_client_id: None,
+                        referrer: Some("https://example.test/page".into()),
+                        is_reload_navigation: false,
+                        is_history_navigation: false,
+                    },
+                )
+                .unwrap(),
+            ServiceWorkerFetchDispatch::PassThrough
+        );
+    }
+
+    #[test]
+    fn message_time_clients_claim_is_recorded_for_active_version() {
+        let mut manager = manager_under_test();
+        let id = start_active(
+            &mut manager,
+            "/app/",
+            "addEventListener('message', event => {
+               event.waitUntil(clients.claim());
+               event.source.postMessage('claimed');
+             });",
+        );
+        assert!(!manager.claims_clients(id));
+
+        manager
+            .post_message(id, 94, "null", "client-1", "https://example.test/app/page")
+            .unwrap();
+        let deadline = std::time::Instant::now() + Duration::from_secs(5);
+        let mut saw_claim = false;
+        let mut saw_message = false;
+        while !saw_claim || !saw_message {
+            for event in manager.poll() {
+                match event {
+                    ServiceWorkerManagerEvent::ClientsClaimed { registration_id } if registration_id == id => {
+                        saw_claim = true;
+                    }
+                    ServiceWorkerManagerEvent::MessageDispatched {
+                        registration_id,
+                        event_id: 94,
+                        outbound_count: 1,
+                    } if registration_id == id => {
+                        saw_message = true;
+                    }
+                    _ => {}
+                }
+            }
+            assert!(std::time::Instant::now() < deadline, "message clients.claim timed out");
+            std::thread::sleep(Duration::from_millis(1));
+        }
         assert!(manager.claims_clients(id));
     }
 

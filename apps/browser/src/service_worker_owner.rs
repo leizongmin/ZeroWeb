@@ -765,6 +765,7 @@ fn sandbox_event(event: ServiceWorkerHostEvent) -> ServiceWorkerEvent {
                 })
                 .collect(),
         },
+        ServiceWorkerHostEvent::ClientsClaimRequested => ServiceWorkerEvent::ClientsClaimRequested,
         ServiceWorkerHostEvent::ModuleScriptsRequested {
             request_id,
             referrer_url,

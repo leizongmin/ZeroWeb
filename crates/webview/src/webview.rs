@@ -3224,10 +3224,11 @@ impl WebView {
                     return serde_json::json!({"ok": false, "error": error}).to_string();
                 }
                 let origin = document.origin().ascii_serialization();
-                let controller = client_id
-                    .as_deref()
-                    .and_then(|id| manager.active_registration_for_client(&origin, id))
-                    .or_else(|| manager.active_registration_for_url(&origin, document.as_str()));
+                let controller = if let Some(client_id) = client_id.as_deref() {
+                    manager.active_registration_for_client(&origin, client_id)
+                } else {
+                    manager.active_registration_for_url(&origin, document.as_str())
+                };
                 serde_json::json!({
                     "ok": true,
                     "controller": controller.map(|registration| serde_json::json!({

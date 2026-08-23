@@ -1,8 +1,8 @@
 {
-  "cases": 10,
-  "subtests": 25,
+  "cases": 11,
+  "subtests": 26,
   "status": {
-    "Pass": 25
+    "Pass": 26
   },
   "deterministic": true,
   "results": [
@@ -176,6 +176,16 @@
       [
         {
           "name": "Fetch events should not go through uncontrolled page.",
+          "status": "Pass",
+          "message": null
+        }
+      ]
+    ],
+    [
+      "service-workers/service-worker/claim-fetch.https.html",
+      [
+        {
+          "name": "fetch() should be intercepted after the client is claimed.",
           "status": "Pass",
           "message": null
         }

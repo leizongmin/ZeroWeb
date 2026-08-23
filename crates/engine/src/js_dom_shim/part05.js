@@ -1295,6 +1295,8 @@
     }
     var parentServiceWorker =
       globalThis.navigator && globalThis.navigator.serviceWorker;
+    var iframeServiceWorkerControllerId = null;
+    var iframeServiceWorkerNotifiedControllerId = null;
     var serviceWorker = parentServiceWorker ? {
       _et_listeners: {},
       oncontrollerchange: null,
@@ -1321,6 +1323,7 @@
               doc && doc._zwSwClientId ? doc._zwSwClientId : ''
             ));
             if (wire && wire.ok && wire.controller) {
+              iframeServiceWorkerControllerId = String(wire.controller.id);
               var worker = Object.create(
                 globalThis.ServiceWorker ? globalThis.ServiceWorker.prototype : Object.prototype);
               worker._et_listeners = {};
@@ -1341,6 +1344,45 @@
         return parentServiceWorker.controller;
       }
     } : undefined;
+    if (serviceWorker) {
+      serviceWorker.__zwRefreshServiceWorkerController = function() {
+        if (typeof __zw_sw_controller !== 'function') return;
+        try {
+          var wire = JSON.parse(__zw_sw_controller(
+            doc && doc._zwURL ? doc._zwURL : '',
+            doc && doc._zwSwClientId ? doc._zwSwClientId : ''
+          ));
+          var controller = wire && wire.ok ? wire.controller : null;
+          if (!controller || controller.state !== 'activated') return;
+          var nextId = String(controller.id);
+          if (iframeServiceWorkerNotifiedControllerId === nextId) return;
+          var handler = serviceWorker.oncontrollerchange;
+          var listeners = serviceWorker._et_listeners || {};
+          var registered = (listeners.controllerchange || [])
+            .concat(listeners['controllerchange|cap'] || []);
+          if (registered.length === 0 && typeof handler !== 'function') return;
+          iframeServiceWorkerControllerId = nextId;
+          iframeServiceWorkerNotifiedControllerId = nextId;
+          var event = null;
+          if (registered.length > 0 &&
+              typeof serviceWorker.dispatchEvent === 'function' &&
+              typeof globalThis.Event === 'function') {
+            event = new globalThis.Event('controllerchange');
+            try { serviceWorker.dispatchEvent(event); } catch (_eIframeControllerDispatch) {}
+          }
+          if (typeof handler === 'function' && registered.indexOf(handler) < 0) {
+            if (!event && typeof globalThis.Event === 'function') {
+              event = new globalThis.Event('controllerchange');
+              try {
+                event.target = serviceWorker;
+                event.currentTarget = serviceWorker;
+              } catch (_eIframeControllerEventTarget) {}
+            }
+            try { handler.call(serviceWorker, event || { type: 'controllerchange' }); } catch (_eIframeControllerHandler) {}
+          }
+        } catch (_eIframeControllerRefresh) {}
+      };
+    }
     if (serviceWorker && globalThis.EventTarget && globalThis.EventTarget.prototype) {
       try { Object.setPrototypeOf(serviceWorker, globalThis.EventTarget.prototype); } catch (_eIframeSwEt) {}
     }
@@ -1642,6 +1684,8 @@
       StaticRange: globalThis.StaticRange,
       fetch: iframeFetch,
       XMLHttpRequest: IframeXMLHttpRequest,
+      ServiceWorker: globalThis.ServiceWorker,
+      ServiceWorkerRegistration: globalThis.ServiceWorkerRegistration,
       Headers: globalThis.Headers,
       Request: globalThis.Request,
       Response: globalThis.Response,

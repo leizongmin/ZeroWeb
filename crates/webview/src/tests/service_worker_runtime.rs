@@ -22,6 +22,7 @@ fn wait_for_state(webview: &mut crate::WebView, registration_id: u64, expected: 
 }
 
 #[test]
+#[serial_test::serial(service_worker_runtime)]
 fn fetched_script_runs_real_install_and_activate_events() {
     let requests = Arc::new(Mutex::new(Vec::new()));
     let request_log = Arc::clone(&requests);
@@ -56,6 +57,7 @@ fn fetched_script_runs_real_install_and_activate_events() {
 }
 
 #[test]
+#[serial_test::serial(service_worker_runtime)]
 fn embedded_main_script_request_carries_service_worker_metadata() {
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     let origin = format!("http://{}", listener.local_addr().unwrap());
@@ -86,6 +88,7 @@ fn embedded_main_script_request_carries_service_worker_metadata() {
 }
 
 #[test]
+#[serial_test::serial(service_worker_runtime)]
 fn embedded_network_main_script_rejects_non_javascript_mime() {
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     let origin = format!("http://{}", listener.local_addr().unwrap());
@@ -113,6 +116,7 @@ fn embedded_network_main_script_rejects_non_javascript_mime() {
 }
 
 #[test]
+#[serial_test::serial(service_worker_runtime)]
 fn classic_page_script_async_function_is_visible_to_later_script() {
     let mut webview = WebViewBuilder::new().build();
     webview.load_html(
@@ -128,6 +132,7 @@ fn classic_page_script_async_function_is_visible_to_later_script() {
 }
 
 #[test]
+#[serial_test::serial(service_worker_runtime)]
 fn lifecycle_imports_use_persistent_worker_fetch_context() {
     let requests = Arc::new(Mutex::new(Vec::new()));
     let request_log = Arc::clone(&requests);
@@ -184,6 +189,7 @@ fn lifecycle_imports_use_persistent_worker_fetch_context() {
 }
 
 #[test]
+#[serial_test::serial(service_worker_runtime)]
 fn default_scope_uses_script_directory() {
     let mut webview = WebViewBuilder::new()
         .script_source_fetcher(Arc::new(|_, _| Ok(String::new())))
@@ -199,6 +205,7 @@ fn default_scope_uses_script_directory() {
 }
 
 #[test]
+#[serial_test::serial(service_worker_runtime)]
 fn rejected_install_marks_registration_redundant() {
     let mut webview = WebViewBuilder::new()
         .script_source_fetcher(Arc::new(|_, _| {
@@ -215,6 +222,7 @@ fn rejected_install_marks_registration_redundant() {
 }
 
 #[test]
+#[serial_test::serial(service_worker_runtime)]
 fn insecure_and_cross_origin_registration_fail_before_fetch() {
     let fetch_count = Arc::new(Mutex::new(0usize));
     let count = Arc::clone(&fetch_count);
@@ -244,6 +252,7 @@ fn insecure_and_cross_origin_registration_fail_before_fetch() {
 }
 
 #[test]
+#[serial_test::serial(service_worker_runtime)]
 fn navigator_module_registration_fetches_static_graph_and_activates() {
     let requests = Arc::new(Mutex::new(Vec::new()));
     let request_log = Arc::clone(&requests);
@@ -304,6 +313,7 @@ fn navigator_module_registration_fetches_static_graph_and_activates() {
 }
 
 #[test]
+#[serial_test::serial(service_worker_runtime)]
 fn navigator_register_projects_real_manager_state() {
     let mut webview = WebViewBuilder::new()
         .url("https://example.test/page.html")
@@ -383,6 +393,7 @@ fn navigator_register_projects_real_manager_state() {
 }
 
 #[test]
+#[serial_test::serial(service_worker_runtime)]
 fn navigator_register_executes_imported_classic_scripts_in_order() {
     let requests = Arc::new(Mutex::new(Vec::new()));
     let request_log = Arc::clone(&requests);
@@ -434,6 +445,7 @@ fn navigator_register_executes_imported_classic_scripts_in_order() {
 }
 
 #[test]
+#[serial_test::serial(service_worker_runtime)]
 fn structured_import_response_allows_cross_origin_without_cors_headers() {
     let mut webview = WebViewBuilder::new()
         .service_worker_script_fetcher(Arc::new(|_, script| {
@@ -461,6 +473,7 @@ fn structured_import_response_allows_cross_origin_without_cors_headers() {
 }
 
 #[test]
+#[serial_test::serial(service_worker_runtime)]
 fn module_import_response_rejects_cross_origin_without_cors_headers() {
     let mut webview = WebViewBuilder::new()
         .url("https://example.test/page.html")
@@ -506,6 +519,7 @@ fn module_import_response_rejects_cross_origin_without_cors_headers() {
 }
 
 #[test]
+#[serial_test::serial(service_worker_runtime)]
 fn structured_import_response_rejects_non_javascript_mime() {
     let mut webview = WebViewBuilder::new()
         .service_worker_script_fetcher(Arc::new(|_, script| {
@@ -531,6 +545,7 @@ fn structured_import_response_rejects_non_javascript_mime() {
 }
 
 #[test]
+#[serial_test::serial(service_worker_runtime)]
 fn navigator_update_rejects_non_javascript_main_script_as_security_error() {
     let visits = Arc::new(Mutex::new(0usize));
     let fetch_visits = Arc::clone(&visits);
@@ -588,6 +603,7 @@ fn navigator_update_rejects_non_javascript_main_script_as_security_error() {
 }
 
 #[test]
+#[serial_test::serial(service_worker_runtime)]
 fn navigator_lifecycle_events_preserve_state_and_slot_task_order() {
     let mut webview = WebViewBuilder::new()
         .url("https://example.test/page.html")
@@ -650,6 +666,7 @@ fn navigator_lifecycle_events_preserve_state_and_slot_task_order() {
 }
 
 #[test]
+#[serial_test::serial(service_worker_runtime)]
 fn navigator_register_rejects_script_compile_failure() {
     let mut webview = WebViewBuilder::new()
         .url("https://example.test/page.html")
@@ -673,6 +690,7 @@ fn navigator_register_rejects_script_compile_failure() {
 }
 
 #[test]
+#[serial_test::serial(service_worker_runtime)]
 fn navigator_registration_normalizes_urls_and_preserves_error_types() {
     let mut webview = WebViewBuilder::new()
         .url("https://example.test/page.html")
@@ -739,6 +757,7 @@ fn navigator_registration_normalizes_urls_and_preserves_error_types() {
 }
 
 #[test]
+#[serial_test::serial(service_worker_runtime)]
 fn navigator_replacement_reuses_registration_identity_for_scope() {
     let mut webview = WebViewBuilder::new()
         .url("https://example.test/page.html")
@@ -796,6 +815,7 @@ fn navigator_replacement_reuses_registration_identity_for_scope() {
 }
 
 #[test]
+#[serial_test::serial(service_worker_runtime)]
 fn navigator_update_compares_script_bytes_and_dispatches_updatefound_only_when_changed() {
     let source = Arc::new(Mutex::new("globalThis.version = 1;".to_string()));
     let fetch_source = Arc::clone(&source);
@@ -911,6 +931,7 @@ fn navigator_update_compares_script_bytes_and_dispatches_updatefound_only_when_c
 }
 
 #[test]
+#[serial_test::serial(service_worker_runtime)]
 fn navigator_update_succeeds_while_initial_worker_is_installing() {
     let mut webview = WebViewBuilder::new()
         .url("https://example.test/page.html")
@@ -950,6 +971,7 @@ fn navigator_update_succeeds_while_initial_worker_is_installing() {
 }
 
 #[test]
+#[serial_test::serial(service_worker_runtime)]
 fn navigator_update_activates_replacement_without_a_controlled_client() {
     let source = Arc::new(Mutex::new("globalThis.version = 1;".to_string()));
     let fetch_source = Arc::clone(&source);
@@ -1006,6 +1028,7 @@ fn navigator_update_activates_replacement_without_a_controlled_client() {
 }
 
 #[test]
+#[serial_test::serial(service_worker_runtime)]
 fn navigator_update_detects_imported_script_byte_changes() {
     let dependency_version = Arc::new(Mutex::new(1u32));
     let fetch_version = Arc::clone(&dependency_version);
@@ -1084,6 +1107,7 @@ fn navigator_update_detects_imported_script_byte_changes() {
 }
 
 #[test]
+#[serial_test::serial(service_worker_runtime)]
 fn navigator_skip_waiting_activates_replacement_version() {
     let mut webview = WebViewBuilder::new()
         .url("https://example.test/page.html")
@@ -1145,6 +1169,7 @@ fn navigator_skip_waiting_activates_replacement_version() {
 }
 
 #[test]
+#[serial_test::serial(service_worker_runtime)]
 fn navigator_controller_tracks_document_and_skip_waiting_replacement() {
     let mut webview = WebViewBuilder::new()
         .url("https://example.test/page.html")
@@ -1236,6 +1261,7 @@ fn navigator_controller_tracks_document_and_skip_waiting_replacement() {
 }
 
 #[test]
+#[serial_test::serial(service_worker_runtime)]
 fn navigator_clients_claim_controls_current_matching_document() {
     let mut webview = WebViewBuilder::new()
         .url("https://example.test/app/page.html")
@@ -1297,6 +1323,125 @@ fn navigator_clients_claim_controls_current_matching_document() {
 }
 
 #[test]
+#[serial_test::serial(service_worker_runtime)]
+fn message_time_clients_claim_controls_existing_iframe() {
+    const PAGE_URL: &str = "https://example.test/service-workers/service-worker/claim-fetch.https.html";
+    let fallback_requests = Arc::new(Mutex::new(Vec::new()));
+    let fallback_log = Arc::clone(&fallback_requests);
+    let mut webview = crate::WebView::new(WebViewConfig {
+        service_worker_script_fetcher: Some(Arc::new(|_, script| {
+            if script != "https://example.test/service-workers/service-worker/resources/claim-worker.js" {
+                return Err(format!("unexpected script URL: {script}"));
+            }
+            Ok(zero_net::HttpResponse {
+                status_code: 200,
+                headers: vec![("Content-Type".into(), "application/javascript".into())],
+                body: "self.addEventListener('message', function(event) {
+                         self.clients.claim().then(function(result) {
+                           event.data.port.postMessage(result === undefined ? 'PASS' : 'FAIL');
+                         });
+                       });
+                       self.addEventListener('fetch', function(event) {
+                         event.respondWith(new Response('Intercepted!'));
+                       });"
+                .as_bytes()
+                .to_vec(),
+                url: script.to_string(),
+                redirect_count: 0,
+            })
+        })),
+        fetch_handler: Some(Arc::new(move |request| {
+            fallback_log.lock().unwrap().push(request.url.clone());
+            let body = if request.url.ends_with("/resources/blank.html") {
+                "<!doctype html><title>blank</title>"
+            } else if request.url.ends_with("/resources/simple.txt") {
+                "a simple text file\n"
+            } else {
+                "fallback"
+            };
+            Ok(FetchResponse {
+                status: 200,
+                status_text: "OK".into(),
+                headers: vec![("content-type".into(), "text/plain".into())],
+                body: body.into(),
+                body_bytes: None,
+            })
+        })),
+        ..Default::default()
+    });
+
+    webview.load_url(PAGE_URL);
+    webview.complete_load(
+        "<iframe id=\"frame\" src=\"resources/blank.html\"></iframe>
+         <script>
+           globalThis.__claimFetchStage = 'starting';
+           (async function() {
+             const frame = document.getElementById('frame');
+             const before = await frame.contentWindow.fetch('simple.txt').then(r => r.text());
+             globalThis.__claimFetchStage = 'before:' + before;
+             const registration = await navigator.serviceWorker.register(
+               'resources/claim-worker.js', {scope:'resources/'});
+             const worker = registration.installing;
+             await new Promise(resolve => {
+               if (worker.state === 'activated') {
+                 resolve();
+                 return;
+               }
+               worker.addEventListener('statechange', function listener() {
+                 if (worker.state === 'activated') {
+                   worker.removeEventListener('statechange', listener);
+                   resolve();
+                 }
+               });
+             });
+             globalThis.__claimFetchStage = 'activated';
+             const controllerChanged = new Promise(resolve => {
+               frame.contentWindow.navigator.serviceWorker.oncontrollerchange = function() {
+                 resolve(frame.contentWindow.navigator.serviceWorker.controller);
+               };
+             });
+             const sawMessage = new Promise(resolve => {
+               const channel = new MessageChannel();
+               channel.port1.onmessage = event => resolve(event.data);
+               worker.postMessage({port: channel.port2}, [channel.port2]);
+             });
+             const data = await sawMessage;
+             globalThis.__claimFetchStage = 'message:' + data;
+             const controller = await controllerChanged;
+             globalThis.__claimFetchStage = 'controller:' + !!controller;
+             const after = await frame.contentWindow.fetch('simple.txt').then(r => r.text());
+             globalThis.__claimFetchStage = 'after:' + after;
+           })().catch(error => {
+             globalThis.__claimFetchStage = 'error:' + error.name + ':' + error.message;
+           });
+         </script>",
+        None,
+    );
+    webview.run_page_scripts_strict().unwrap();
+
+    let deadline = Instant::now() + Duration::from_secs(20);
+    loop {
+        let value = webview.execute_script("String(globalThis.__claimFetchStage)").unwrap();
+        if value.starts_with("after:") || value.starts_with("error:") {
+            assert_eq!(value, "after:Intercepted!");
+            break;
+        }
+        if Instant::now() >= deadline {
+            panic!("message-time clients.claim iframe fetch timed out: {value}");
+        }
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    assert_eq!(
+        fallback_requests.lock().unwrap().as_slice(),
+        &[
+            "https://example.test/service-workers/service-worker/resources/blank.html".to_string(),
+            "https://example.test/service-workers/service-worker/resources/simple.txt".to_string(),
+        ]
+    );
+}
+
+#[test]
+#[serial_test::serial(service_worker_runtime)]
 fn service_worker_post_message_dispatches_structured_page_payload() {
     let mut webview = WebViewBuilder::new()
         .url("https://example.test/page.html")
@@ -1401,6 +1546,7 @@ fn service_worker_post_message_dispatches_structured_page_payload() {
 }
 
 #[test]
+#[serial_test::serial(service_worker_runtime)]
 fn service_worker_message_port_transfers_bidirectionally() {
     let mut webview = WebViewBuilder::new()
         .url("https://example.test/page.html")
@@ -1445,6 +1591,7 @@ fn service_worker_message_port_transfers_bidirectionally() {
 }
 
 #[test]
+#[serial_test::serial(service_worker_runtime)]
 fn clients_match_all_during_evaluation_reaches_registering_page() {
     let mut webview = WebViewBuilder::new()
         .url("https://example.test/clients-matchall-on-evaluation.https.html")
@@ -1503,6 +1650,7 @@ fn clients_match_all_during_evaluation_reaches_registering_page() {
 }
 
 #[test]
+#[serial_test::serial(service_worker_runtime)]
 fn clients_get_during_evaluation_reaches_registering_page() {
     let mut webview = WebViewBuilder::new()
         .url("https://example.test/clients-get-on-evaluation.https.html")
@@ -1558,6 +1706,7 @@ fn clients_get_during_evaluation_reaches_registering_page() {
 }
 
 #[test]
+#[serial_test::serial(service_worker_runtime)]
 fn update_permissions_follow_calling_worker_state_during_installation() {
     let version = Arc::new(Mutex::new(0usize));
     let fetch_version = Arc::clone(&version);
@@ -1697,6 +1846,7 @@ fn update_permissions_follow_calling_worker_state_during_installation() {
 }
 
 #[test]
+#[serial_test::serial(service_worker_runtime)]
 fn repeated_registration_changes_script_type_and_worker_message() {
     let visits = Arc::new(Mutex::new(0usize));
     let fetch_visits = Arc::clone(&visits);
@@ -1785,6 +1935,7 @@ fn repeated_registration_changes_script_type_and_worker_message() {
 }
 
 #[test]
+#[serial_test::serial(service_worker_runtime)]
 fn message_import_replays_persistent_worker_resource_map() {
     let requests = Arc::new(Mutex::new(Vec::new()));
     let request_log = Arc::clone(&requests);
@@ -1849,6 +2000,7 @@ fn message_import_replays_persistent_worker_resource_map() {
 }
 
 #[test]
+#[serial_test::serial(service_worker_runtime)]
 fn worker_global_fetch_powers_cache_add_in_service_worker_runtime() {
     let config = WebViewConfig {
         service_worker_script_fetcher: Some(Arc::new(|_, script| {

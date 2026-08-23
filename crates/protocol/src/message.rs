@@ -1813,6 +1813,8 @@ pub enum ServiceWorkerHostEvent {
         /// Messages carrying explicit target client identities.
         outbound: Vec<ServiceWorkerMessage>,
     },
+    /// Worker called `clients.claim()` outside lifecycle settlement.
+    ClientsClaimRequested,
 }
 
 /// IPC-safe Service Worker 生命周期阶段。

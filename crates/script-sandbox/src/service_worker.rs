@@ -125,6 +125,7 @@ const SERVICE_WORKER_BOOTSTRAP: &str = r#"
   let currentWaitUntil = null;
   let skipWaitingRequested = false;
   let claimClientsRequested = false;
+  let activeEventClaimClientsRequested = false;
   const timerTasks = [];
   let nextTimerId = 1;
 
@@ -1769,8 +1770,11 @@ const SERVICE_WORKER_BOOTSTRAP: &str = r#"
     }
     claim() {
       claimClientsRequested = true;
-      if (globalThis.__zwLifecycleResult) {
+      if (globalThis.__zwLifecycleResult &&
+          globalThis.__zwLifecycleResult.settled !== true) {
         globalThis.__zwLifecycleResult.claimClientsRequested = true;
+      } else {
+        activeEventClaimClientsRequested = true;
       }
       return Promise.resolve();
     }
@@ -1924,6 +1928,11 @@ const SERVICE_WORKER_BOOTSTRAP: &str = r#"
   };
   globalThis.__zwTakeOutboundMessages = function() {
     return outboundMessages.splice(0, outboundMessages.length);
+  };
+  globalThis.__zwTakeClientsClaimRequested = function() {
+    const requested = activeEventClaimClientsRequested;
+    activeEventClaimClientsRequested = false;
+    return requested;
   };
   globalThis.__zwDispatchFetch = function(eventId, requestInfo) {
     const pending = [];
@@ -2159,6 +2168,8 @@ pub enum ServiceWorkerEvent {
         /// Messages with explicit target client identities.
         outbound: Vec<ServiceWorkerOutboundMessage>,
     },
+    /// The worker called `clients.claim()` outside lifecycle event settlement.
+    ClientsClaimRequested,
     /// The runtime thread exited.
     Closed,
     /// A module worker static dependency batch requires host-owned fetching.
@@ -2868,6 +2879,7 @@ impl ServiceWorkerRuntime {
                         {
                             let _ = event_sender.send(ServiceWorkerEvent::ClientMessagesEmitted { outbound });
                         }
+                        emit_clients_claim_requested(sandbox.as_mut(), &event_sender);
                         let _ = event_sender.send(event);
                         pending_fetch = None;
                     }
@@ -2883,6 +2895,7 @@ impl ServiceWorkerRuntime {
                     {
                         let _ = event_sender.send(ServiceWorkerEvent::ClientMessagesEmitted { outbound });
                     }
+                    emit_clients_claim_requested(sandbox.as_mut(), &event_sender);
 
                     let command =
                         if pending_lifecycle.is_some() || pending_fetch.is_some() || has_queued_task || ran_idle_task {
@@ -2927,6 +2940,7 @@ impl ServiceWorkerRuntime {
                                         let _ =
                                             event_sender.send(ServiceWorkerEvent::ClientMessagesEmitted { outbound });
                                     }
+                                    emit_clients_claim_requested(sandbox.as_mut(), &event_sender);
                                     ServiceWorkerEvent::Evaluated { script_url }
                                 }
                                 Err(error) => ServiceWorkerEvent::ScriptError {
@@ -2979,11 +2993,14 @@ impl ServiceWorkerRuntime {
                             );
                             let event = match sandbox.execute(&dispatch) {
                                 Ok(_) => match take_outbound_messages(sandbox.as_mut()) {
-                                    Ok(outbound) => ServiceWorkerEvent::MessageDispatched {
-                                        event_id,
-                                        client_id,
-                                        outbound,
-                                    },
+                                    Ok(outbound) => {
+                                        emit_clients_claim_requested(sandbox.as_mut(), &event_sender);
+                                        ServiceWorkerEvent::MessageDispatched {
+                                            event_id,
+                                            client_id,
+                                            outbound,
+                                        }
+                                    }
                                     Err(error) => ServiceWorkerEvent::MessageFailed {
                                         event_id,
                                         client_id,
@@ -4282,6 +4299,18 @@ fn failed_fetch_event(event_id: u64, request_url: String, message: String) -> Se
     }
 }
 
+fn take_clients_claim_requested(sandbox: &mut dyn Sandbox) -> Result<bool, ScriptError> {
+    sandbox
+        .execute("globalThis.__zwTakeClientsClaimRequested && globalThis.__zwTakeClientsClaimRequested() ? 'true' : 'false';")
+        .map(|result| result.value == "true")
+}
+
+fn emit_clients_claim_requested(sandbox: &mut dyn Sandbox, event_sender: &mpsc::Sender<ServiceWorkerEvent>) {
+    if take_clients_claim_requested(sandbox).unwrap_or(false) {
+        let _ = event_sender.send(ServiceWorkerEvent::ClientsClaimRequested);
+    }
+}
+
 fn take_outbound_messages(sandbox: &mut dyn Sandbox) -> Result<Vec<ServiceWorkerOutboundMessage>, ScriptError> {
     const MAX_OUTBOUND_MESSAGES: usize = 1024;
     const MAX_MESSAGE_BYTES: usize = 1024 * 1024;
@@ -5368,6 +5397,54 @@ mod tests {
                     succeeded: true,
                     ..
                 }) => install_settled = true,
+                Ok(other) => panic!("unexpected runtime event: {other:?}"),
+                Err(error) => panic!("runtime event timed out: {error}"),
+            }
+        }
+    }
+
+    #[test]
+    fn message_dispatch_reports_clients_claim_request() {
+        let mut runtime = ServiceWorkerRuntime::new(test_config()).unwrap();
+        runtime
+            .evaluate(
+                "addEventListener('message', event => {
+                   clients.claim().then(() => {
+                     event.source.postMessage('claimed');
+                   });
+                 });",
+                "https://example.test/sw.js",
+            )
+            .unwrap();
+        let _ = runtime.recv_timeout(Duration::from_secs(5)).unwrap();
+
+        runtime
+            .dispatch_message(22, "null", "client-1", "https://example.test/page")
+            .unwrap();
+
+        let mut claim_reported = false;
+        let mut message_dispatched = false;
+        let deadline = std::time::Instant::now() + Duration::from_secs(5);
+        while !claim_reported || !message_dispatched {
+            match runtime.recv_timeout(deadline.saturating_duration_since(std::time::Instant::now())) {
+                Ok(ServiceWorkerEvent::ClientsClaimRequested) => {
+                    claim_reported = true;
+                }
+                Ok(ServiceWorkerEvent::MessageDispatched {
+                    event_id: 22, outbound, ..
+                }) => {
+                    assert_eq!(
+                        outbound,
+                        vec![ServiceWorkerOutboundMessage {
+                            data_json: "\"claimed\"".into(),
+                            port_id: None,
+                            transferred_port_ids: Vec::new(),
+                            data_port_index: None,
+                            target_client_id: Some("client-1".into()),
+                        }]
+                    );
+                    message_dispatched = true;
+                }
                 Ok(other) => panic!("unexpected runtime event: {other:?}"),
                 Err(error) => panic!("runtime event timed out: {error}"),
             }

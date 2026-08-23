@@ -713,6 +713,7 @@ fn host_event(event: ServiceWorkerEvent) -> ServiceWorkerHostEvent {
                 })
                 .collect(),
         },
+        ServiceWorkerEvent::ClientsClaimRequested => ServiceWorkerHostEvent::ClientsClaimRequested,
         ServiceWorkerEvent::Closed => ServiceWorkerHostEvent::Closed,
         ServiceWorkerEvent::ModuleScriptsRequested {
             request_id,

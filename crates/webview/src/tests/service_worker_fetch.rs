@@ -20,6 +20,7 @@ fn wait_for_state(webview: &mut crate::WebView, registration_id: u64, expected: 
 }
 
 #[test]
+#[serial_test::serial(service_worker_runtime)]
 fn controlled_iframe_fetch_event_exposes_navigation_request_projection() {
     const PAGE_URL: &str = "https://example.test/service-workers/service-worker/request-end-to-end.https.html";
     let fallback_requests = Arc::new(Mutex::new(Vec::new()));
@@ -117,6 +118,7 @@ fn controlled_iframe_fetch_event_exposes_navigation_request_projection() {
 }
 
 #[test]
+#[serial_test::serial(service_worker_runtime)]
 fn controlled_iframe_fetch_delivers_async_respond_with_result_message() {
     const PAGE_URL: &str =
         "https://example.test/service-workers/service-worker/fetch-event-async-respond-with.https.html";

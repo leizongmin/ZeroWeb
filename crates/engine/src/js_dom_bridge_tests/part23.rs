@@ -382,6 +382,114 @@ fn test_iframe_service_worker_controller_post_message_transfers_object_port() {
 }
 
 #[test]
+fn test_iframe_service_worker_message_poll_refreshes_controller() {
+    use std::sync::{
+        atomic::{AtomicBool, Ordering},
+        Arc, Mutex,
+    };
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+
+    let mut sandbox = V8Sandbox::with_config(zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    })
+    .unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> =
+        Arc::new(Mutex::new("<html><body><iframe src=\"resources/blank.html\"></iframe></body></html>".to_string()));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "https://wpt.test/service-workers/service-worker/claim-fetch.https.html".to_string(),
+    ));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+    sandbox.register_callback(
+        "__zw_sw_observe_window_client",
+        Box::new(|_args| r#"{"ok":true}"#.to_string()),
+    );
+    let claimed = Arc::new(AtomicBool::new(false));
+    let claimed_for_controller = claimed.clone();
+    sandbox.register_callback(
+        "__zw_sw_controller",
+        Box::new(move |args| {
+            if claimed_for_controller.load(Ordering::Relaxed)
+                && args.first().map(String::as_str)
+                    == Some("https://wpt.test/service-workers/service-worker/resources/blank.html")
+                && args.get(1).map(String::as_str) == Some("iframe:iframe")
+            {
+                r#"{"ok":true,"controller":{"id":"r1","scriptURL":"https://wpt.test/service-workers/service-worker/resources/claim-worker.js","state":"activated"}}"#.to_string()
+            } else {
+                r#"{"ok":true,"controller":null}"#.to_string()
+            }
+        }),
+    );
+    sandbox.register_callback(
+        "__zw_fetch",
+        Box::new(|args| {
+            let url = args.get(2).map(String::as_str).unwrap_or("");
+            if url.ends_with("resources/blank.html") {
+                "__zwfr:200\x1fOK\x1f\x1f<script></script>".to_string()
+            } else {
+                "__zw_fetch_error:not found".to_string()
+            }
+        }),
+    );
+    sandbox.register_callback(
+        "__zw_sw_post_message",
+        Box::new(|_args| r#"{"ok":true}"#.to_string()),
+    );
+    let claimed_for_messages = claimed.clone();
+    sandbox.register_callback(
+        "__zw_sw_client_messages",
+        Box::new(move |args| {
+            let after_sequence = args.get(1).and_then(|value| value.parse::<u64>().ok()).unwrap_or(0);
+            if after_sequence == 0 {
+                claimed_for_messages.store(true, Ordering::Relaxed);
+                return r#"{"ok":true,"latestSequence":1,"messages":[{"data":"PASS","portId":2,"transferredPortIds":[],"dataPortIndex":null,"targetClientId":null}]}"#.to_string();
+            }
+            format!(r#"{{"ok":true,"latestSequence":{after_sequence},"messages":[]}}"#)
+        }),
+    );
+
+    sandbox
+        .execute(
+            "globalThis.__iframeClaimControllerChange = 'pending';\
+             var frame = document.querySelector('iframe');\
+             var win = frame.contentWindow;\
+             win.navigator.serviceWorker.oncontrollerchange = function() {\
+               var controller = win.navigator.serviceWorker.controller;\
+               globalThis.__iframeClaimControllerChange = String(!!controller &&\
+                 controller.scriptURL.endsWith('/resources/claim-worker.js') &&\
+                 controller.state === 'activated');\
+             };\
+             var worker = Object.create(ServiceWorker.prototype);\
+             worker._id = 'r1';\
+             worker.scriptURL = 'https://wpt.test/service-workers/service-worker/resources/claim-worker.js';\
+             worker.state = 'activated';\
+             __zwInitServiceWorkerMessageBridge(worker, {\
+               id: 'iframe:iframe',\
+               url: 'https://wpt.test/service-workers/service-worker/resources/blank.html',\
+               container: win.navigator.serviceWorker\
+             });\
+             worker.postMessage('claim');",
+        )
+        .unwrap();
+    for _ in 0..8 {
+        sandbox.execute("0").unwrap();
+    }
+
+    assert_eq!(
+        sandbox
+            .execute("String(globalThis.__iframeClaimControllerChange)")
+            .unwrap()
+            .value,
+        "true",
+        "iframe ServiceWorker message polling should refresh controller state"
+    );
+}
+
+#[test]
 fn test_iframe_content_window_post_message_transfers_ports() {
     use std::sync::{Arc, Mutex};
     use zero_script_sandbox::{Sandbox, V8Sandbox};

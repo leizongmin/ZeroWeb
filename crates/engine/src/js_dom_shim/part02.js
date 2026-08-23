@@ -3174,6 +3174,8 @@
           if (worker._messageSequence >= worker._messagePollTarget) {
             worker._messagePollPending = false;
             worker._messagePollDeadline = 0;
+            refreshControllerFromHost(worker._messageContainer || _container);
+            scheduleControllerRefreshFromHost(worker._messageContainer || _container);
             return;
           }
         }
@@ -3181,6 +3183,8 @@
           worker._messagePollTarget = worker._messageSequence;
           worker._messagePollPending = false;
           worker._messagePollDeadline = 0;
+          refreshControllerFromHost(worker._messageContainer || _container);
+          scheduleControllerRefreshFromHost(worker._messageContainer || _container);
           return;
         }
         if (typeof setTimeout === 'function') {
@@ -3331,6 +3335,37 @@
           return wire && wire.ok ? wire.controller : null;
         } catch (_e) { return null; }
       }
+      function refreshControllerFromHost(container) {
+        if (container && container !== _container &&
+            typeof container.__zwRefreshServiceWorkerController === 'function') {
+          container.__zwRefreshServiceWorkerController();
+        }
+        var snapshot = readControllerSnapshot();
+        if (snapshot && snapshot.state === 'activated') {
+          var reg = upsertSnapshot(snapshot, 'manual');
+          if (reg && reg.active &&
+              (!_controller || String(_controller._id) !== String(reg.active._id))) {
+            setController(reg.active);
+          }
+        }
+        if (typeof _iframeDocCache === 'object') {
+          var frameKeys = Object.keys(_iframeDocCache);
+          for (var i = 0; i < frameKeys.length; i++) {
+            var entry = _iframeDocCache[frameKeys[i]];
+            var frameServiceWorker = entry && entry.win &&
+              entry.win.navigator && entry.win.navigator.serviceWorker;
+            if (frameServiceWorker &&
+                typeof frameServiceWorker.__zwRefreshServiceWorkerController === 'function') {
+              frameServiceWorker.__zwRefreshServiceWorkerController();
+            }
+          }
+        }
+      }
+      function scheduleControllerRefreshFromHost(container) {
+        if (typeof setTimeout === 'function') {
+          setTimeout(function () { refreshControllerFromHost(container); }, 0);
+        }
+      }
       function stateSequence(state) {
         if (state === 'installed') return 1;
         if (state === 'activating') return 2;
@@ -3405,7 +3440,9 @@
       function applySnapshot(reg, snapshot) {
         if (!snapshot) return false;
         reg.scope = snapshot.scope || reg.scope;
-        reg._worker.scriptURL = snapshot.scriptURL || reg._worker.scriptURL;
+        if (String(reg._id) === String(snapshot.id)) {
+          reg._worker.scriptURL = snapshot.scriptURL || reg._worker.scriptURL;
+        }
         var state = snapshot.state;
         var targetSequence = stateSequence(state);
         if (targetSequence > reg._stateSequence) {
