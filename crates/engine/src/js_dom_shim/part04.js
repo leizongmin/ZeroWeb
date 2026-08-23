@@ -3619,6 +3619,22 @@
               // R2994 disconnectedCallback：移除子树断连（仅此前已连入的 custom element 分派）。
               _ceApplyConn(child, false);
             }
+            // R195（js-dom M4）：plain 子（_zwMEl——shadow/fragment 容器 innerHTML 解析
+            // 产物，无 handle 无 sel）——两分支（handle/sel）均不命中时从容器 registry
+            // 剔除 + childList record（WPT Range-{delete,extract}Contents-in-ShadowRoot：
+            // setStart(shadowRoot, n) 后 deleteContents 经 removeChild 移 registry 子——
+            // 旧静默穿透使 innerHTML 读回旧内容）。
+            if (child && !child.__zwHandle && !child.__zwSelector && handle && _isContainerHandle(handle)) {
+              try {
+                if (globalThis._zwNotifyIteratorsRemove) {
+                  globalThis._zwNotifyIteratorsRemove(child);
+                }
+              } catch (_e195n) {}
+              _unrecordHandleChild(handle, child);
+              try { child.parentNode = null; } catch (_e195p) {}
+              _mo_notify(sel, handle, { type: 'childList', addedNodes: [], removedNodes: [child] });
+              return child;
+            }
             // R125：sel-based 子元素移除路径——此前静默穿透（无 Remove mutation、无本地
             // 标记、无 childList record），同步脚本内 getElementById/childNodes/查询面全不
             // 反映（WPT Document-getElementById "in tree order" 移除首个后下一候选 /

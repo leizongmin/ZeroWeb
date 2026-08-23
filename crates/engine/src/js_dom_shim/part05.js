@@ -1775,11 +1775,18 @@
 
   // 从容器 registry 移除 child（removeChild 用）。
   function _unrecordHandleChild(parentHandle, child) {
-    if (!parentHandle || !child || !child.__zwHandle) return;
+    // R195（js-dom M4）：接受 plain 子（无 __zwHandle——shadow/fragment 容器 innerHTML
+    // 解析产物）——按**对象引用**匹配剔除；handle 子保持原 handle 比对（引用比对对
+    // proxy 形态（同 handle 多 proxy）更精确）。旧 early-return + handle-only 过滤使
+    // plain 子剔除恒 no-op（Range-{delete,extract}Contents-in-ShadowRoot 根因）。
+    if (!parentHandle || !child) return;
     var arr = _handleChildren[parentHandle];
     if (!arr) return;
-    var ch = child.__zwHandle;
-    _handleChildren[parentHandle] = arr.filter(function(k) { return !k || k.__zwHandle !== ch; });
+    _handleChildren[parentHandle] = arr.filter(function(k) {
+      if (k === child) return false;
+      if (child.__zwHandle && k && k.__zwHandle === child.__zwHandle) return false;
+      return true;
+    });
     // R140（js-dom M4）：live childNodes 同步（remove 后旧引用 length 反映）。
     try {
       if (globalThis._zwLiveNLSync) {
