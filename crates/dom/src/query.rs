@@ -245,6 +245,11 @@ pub struct AttributeSelector {
     pub name: String,
     /// 属性值匹配模式。
     pub matcher: AttributeMatcher,
+    /// R200（js-dom M4）：**大小写不敏感标志**（CSS Selectors L4 §attribute-selectors
+    /// 的 `[attr=value i]` / `[attr=value s]` 尾标志）——`i`/`I` 置 true（比较双側
+    /// ASCII 小写），`s`/`S` 置 false（显式敏感，HTML 属性本就敏感，恒等）。
+    /// WPT ParentNode-querySelector-case-insensitive 的 `input[name*=user i]`。
+    pub ci: bool,
 }
 
 /// 属性值匹配模式。
@@ -306,6 +311,10 @@ impl SimpleSelector {
 
         // 属性匹配
         if let Some(attr_sel) = &self.attribute {
+            // R200：ci 标志（`[attr=value i]`）——比较前双侧 ASCII 小写。属性值的
+            // 读取走 `get_attribute` 原值；ci 时统一小写后再进各分支比较（Exists
+            // 无值比较不受影响）。
+            let ci = attr_sel.ci;
             match &attr_sel.matcher {
                 AttributeMatcher::Exists => {
                     if !elem.has_attribute(&attr_sel.name) {
@@ -313,7 +322,13 @@ impl SimpleSelector {
                     }
                 }
                 AttributeMatcher::Exact(value) => {
-                    if elem.get_attribute(&attr_sel.name).as_deref() != Some(value.as_str()) {
+                    let attr = elem.get_attribute(&attr_sel.name);
+                    let hit = match (&attr, ci) {
+                        (Some(v), true) => v.eq_ignore_ascii_case(value),
+                        (Some(v), false) => v.as_str() == value.as_str(),
+                        (None, _) => false,
+                    };
+                    if !hit {
                         return false;
                     }
                 }
@@ -324,7 +339,16 @@ impl SimpleSelector {
                     };
                     // R124：~= 的词分隔符同 class 域（ASCII whitespace——Unicode 空白
                     // 是字面字符非分隔符，spec attribute selector words）。
-                    if !crate::node::split_ascii_whitespace(&attr_val)
+                    // R200：ci 时词与参数双双小写比较。
+                    if ci {
+                        let want = value.to_ascii_lowercase();
+                        if !crate::node::split_ascii_whitespace(&attr_val)
+                            .iter()
+                            .any(|v| v.to_ascii_lowercase() == want)
+                        {
+                            return false;
+                        }
+                    } else if !crate::node::split_ascii_whitespace(&attr_val)
                         .iter()
                         .any(|v| v == value)
                     {
@@ -341,7 +365,13 @@ impl SimpleSelector {
                         Some(v) => v,
                         None => return false,
                     };
-                    if !attr_val.starts_with(value) {
+                    // R200：ci 双侧小写。
+                    let hit = if ci {
+                        attr_val.to_ascii_lowercase().starts_with(&value.to_ascii_lowercase())
+                    } else {
+                        attr_val.starts_with(value)
+                    };
+                    if !hit {
                         return false;
                     }
                 }
@@ -354,7 +384,13 @@ impl SimpleSelector {
                         Some(v) => v,
                         None => return false,
                     };
-                    if !attr_val.ends_with(value) {
+                    // R200：ci 双侧小写。
+                    let hit = if ci {
+                        attr_val.to_ascii_lowercase().ends_with(&value.to_ascii_lowercase())
+                    } else {
+                        attr_val.ends_with(value)
+                    };
+                    if !hit {
                         return false;
                     }
                 }
@@ -367,7 +403,13 @@ impl SimpleSelector {
                         Some(v) => v,
                         None => return false,
                     };
-                    if !attr_val.contains(value) {
+                    // R200：ci 双侧小写。
+                    let hit = if ci {
+                        attr_val.to_ascii_lowercase().contains(&value.to_ascii_lowercase())
+                    } else {
+                        attr_val.contains(value)
+                    };
+                    if !hit {
                         return false;
                     }
                 }
@@ -377,7 +419,15 @@ impl SimpleSelector {
                         None => return false,
                     };
                     // `[attr|=val]`：值等于 val，或以 `val-` 开头（如 `en` 匹配 `en-US`）。
-                    if !(attr_val == *value || attr_val.starts_with(&format!("{value}-"))) {
+                    // R200：ci 双侧小写。
+                    let hit = if ci {
+                        let av = attr_val.to_ascii_lowercase();
+                        let want = value.to_ascii_lowercase();
+                        av == want || av.starts_with(&format!("{want}-"))
+                    } else {
+                        attr_val == *value || attr_val.starts_with(&format!("{value}-"))
+                    };
+                    if !hit {
                         return false;
                     }
                 }
@@ -1251,6 +1301,30 @@ fn strip_attr_quotes(s: &str) -> String {
     }
 }
 
+/// R200（js-dom M4）：剥离属性选择器值的**大小写标志**（CSS Selectors L4
+/// §attribute-selectors）：`[attr=value i]` 的值后空白 + 单个 `i`/`I`（不敏感）或
+/// `s`/`S`（显式敏感——HTML 文档属性比较本就大小写敏感，恒等）。返回
+/// `(净 value, ci)`；无标志 `(原值, false)`。值本体为裸 `i`/`s`（如 `[attr=i]`）
+/// **不是标志**——须有前置空白分隔（`[lang~= i]` 的值是空串 + flag；`[a=i]` 的
+/// 值是 "i"）。
+fn strip_attr_case_flag(value: &str) -> (String, bool) {
+    let trimmed = value.trim_end();
+    // char 边界安全：末字符可能是多字节（é 等）——`len()-1` 字节切分会 panic。
+    // 剥最后**一个 char**（含其全部字节），再判标志形态。
+    let Some(last) = trimmed.chars().next_back() else {
+        return (value.to_string(), false);
+    };
+    let head = &trimmed[..trimmed.len() - last.len_utf8()];
+    if last == 'i' || last == 'I' || last == 's' || last == 'S' {
+        // 标志前的分隔空白必须存在（`value i` 的 i 前是空格；裸 `i` 值无分隔
+        // 不算标志）。head 以空白收尾即成立（head 自身再 trim 尾空白得净值）。
+        if head.chars().next_back().is_some_and(char::is_whitespace) {
+            return (head.trim_end().to_string(), last == 'i' || last == 'I');
+        }
+    }
+    (value.to_string(), false)
+}
+
 fn parse_pseudo(name: &str, args: Option<&str>) -> Option<PseudoClass> {
     match name {
         "nth-child" => parse_nth_or_nth_of(args?, false),
@@ -1542,8 +1616,11 @@ pub fn parse_simple_selector(selector: &str) -> Option<SimpleSelector> {
                 // 词法层拒）。
                 let name = name.trim().strip_prefix("*|").unwrap_or(name.trim());
                 let name = unescape_css_string(name);
-                // R157：值反解 CSS 转义（先去引号——转义在引号内层）
-                let value = unescape_css_string(&strip_attr_quotes(value.trim()));
+                // R157：值反解 CSS 转义（先去引号——转义在引号内层）；
+                // R200：剥离值尾的大小写标志（`[attr=value i]`——空白 + i/I/s/S 收尾，
+                // spec 值后的可选 flag，进入值本体即误匹配）。
+                let value_raw = unescape_css_string(&strip_attr_quotes(value.trim()));
+                let (value, ci) = strip_attr_case_flag(&value_raw);
                 let matcher = match op {
                     AttrOp::Includes => AttributeMatcher::Includes(value),
                     AttrOp::Exact => AttributeMatcher::Exact(value),
@@ -1552,11 +1629,14 @@ pub fn parse_simple_selector(selector: &str) -> Option<SimpleSelector> {
                     AttrOp::Substring => AttributeMatcher::Substring(value),
                     AttrOp::DashMatch => AttributeMatcher::DashMatch(value),
                 };
-                AttributeSelector { name, matcher }
+                AttributeSelector { name, matcher, ci }
             } else {
                 AttributeSelector {
                     name: unescape_css_string(attr_content.trim().strip_prefix("*|").unwrap_or(attr_content.trim())),
                     matcher: AttributeMatcher::Exists,
+                    // `[attr]` 仅存在判定无值比较——无标志面（`[attr i]` 是非法
+                    // 选择器，浏览器同拒；此处宽容解析为存在，flag 忽略）。
+                    ci: false,
                 }
             };
 
@@ -2310,6 +2390,71 @@ mod zz_r156_tests {
             doc.query_selector_all(root, "#\u{0}").len(),
             1,
             "R199 bare hash + NUL == #FFFD matches FFFD-only id"
+        );
+    }
+
+    /// R200（js-dom M4）：属性选择器**大小写标志**（CSS Selectors L4
+    /// `[attr=value i]`）。WPT ParentNode-querySelector-case-insensitive 的
+    /// `input[name*=user i]` 命中 name="User"。
+    #[test]
+    fn zz_r200_attr_case_flag() {
+        let html = "<body><input name=\"User\" id=\"a\"></input><input name=\"other\" id=\"b\"></input><p lang=\"en-US\" id=\"c\"></p></body>";
+        let doc = crate::parse_html(html);
+        let root = doc.root();
+        // *= + i：大小写不敏感子串。
+        assert_eq!(
+            doc.query_selector_all(root, "input[name*=user i]").len(),
+            1,
+            "R200 substring ci"
+        );
+        assert_eq!(
+            doc.query_selector(root, "input[name*=user i]"),
+            doc.query_selector(root, "#a"),
+            "R200 hits the right input"
+        );
+        // 无标志：敏感（旧值语义零回归）。
+        assert_eq!(
+            doc.query_selector_all(root, "input[name*=user]").len(),
+            0,
+            "R200 without flag stays case-sensitive"
+        );
+        // = + i / ^= + i / $= + i / ~= + i / |= + i 全运算符面。
+        assert_eq!(
+            doc.query_selector_all(root, "input[name=user i]").len(),
+            1,
+            "R200 exact ci"
+        );
+        assert_eq!(
+            doc.query_selector_all(root, "input[name^=USE i]").len(),
+            1,
+            "R200 prefix ci"
+        );
+        assert_eq!(
+            doc.query_selector_all(root, "input[name$=SER i]").len(),
+            1,
+            "R200 suffix ci"
+        );
+        assert_eq!(
+            doc.query_selector_all(root, "p[lang=en-us i]").len(),
+            1,
+            "R200 dashmatch exact ci"
+        );
+        assert_eq!(
+            doc.query_selector_all(root, "p[lang|=EN i]").len(),
+            1,
+            "R200 dashmatch prefix ci"
+        );
+        // 裸 i 值不是标志（`[name=i]` 匹配字面 "i"——无分隔空白）。
+        assert_eq!(
+            doc.query_selector_all(root, "input[name=i]").len(),
+            0,
+            "R200 bare-i value is not a flag"
+        );
+        // s 标志：显式敏感（恒等于无标志语义）。
+        assert_eq!(
+            doc.query_selector_all(root, "input[name*=user s]").len(),
+            0,
+            "R200 s-flag explicit sensitive"
         );
     }
 }
