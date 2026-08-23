@@ -2108,3 +2108,52 @@ fn test_label_span_click_forward_r155() {
         "R155：LABEL 内 span click——LABEL 转发激活到内部 checkbox（onclick activated 链）"
     );
 }
+
+/// R202：`_zwMText`/`_zwMComment`（foreign/detached doc 的 createTextNode/createComment、
+/// `new Text()`/`new Comment()`、innerHTML 解析树子）的 CharacterData 方法面——
+/// appendData/insertData/deleteData/replaceData/substringData + data/nodeValue setter
+///（本地变更语义，与 R48 主文档路径的 no-parentSel 快照分支同款）。WPT Range
+/// mega-case 的 foreign-doc 簇（`foreignTextNode.insertData` is not a function）。
+#[test]
+fn test_foreign_doc_text_characterdata_methods_r202() {
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let mut sandbox = V8Sandbox::with_config(zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    })
+    .unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> =
+        Arc::new(Mutex::new("<html><body><div id='d'>x</div></body></html>".to_string()));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+    let out = sandbox
+        .execute(
+            "var fdoc = document.implementation.createHTMLDocument('F');\
+             var t = fdoc.createTextNode('xyz');\
+             t.insertData(0, 'foo');\
+             var a = t.data;\
+             t.appendData('!');\
+             var b = t.data + ':' + t.length;\
+             t.deleteData(0, 3);\
+             var c = t.data;\
+             t.replaceData(0, 1, 'X');\
+             var d = t.data + ':' + t.substringData(0, 2);\
+             t.data = 'set';\
+             var e = t.data + ':' + t.nodeValue + ':' + t.textContent;\
+             var cm = fdoc.createComment('c');\
+             cm.appendData('z');\
+             var f = cm.data;\
+             [a, b, c, d, e, f].join('|')",
+        )
+        .unwrap()
+        .value;
+    assert_eq!(
+        out, "fooxyz|fooxyz!:7|xyz!|Xyz!:Xy|set:set:set|cz",
+        "R202 foreign-doc 文本/注释节点 CharacterData 五方法 + data/nodeValue setter（本地变更语义）"
+    );
+}

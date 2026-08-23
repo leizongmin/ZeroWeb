@@ -6020,9 +6020,63 @@
   }
   // js-dom M4 R81：firstChild/lastChild getter 补齐（文本/注释节点恒 null——WPT Node-textContent
   // 期望 `emptyText.firstChild === null`；undefined ≠ null 断言失败）。
+  // js-dom M4 R202：`_zwMText`/`_zwMComment` 产物的 CharacterData 方法面（spec
+  // dom-characterdata ——appendData/insertData/deleteData/replaceData/substringData +
+  // data/nodeValue setter）。消费方：foreign/detached doc 的 createTextNode/
+  // createComment（`foreignDoc.createTextNode(...)` 后 `insertData` is not a
+  // function——WPT Range mega-case 解锁后 24kF 的 foreign-doc 簇）、`new Text()`/
+  // `new Comment()` 构造器、innerHTML 解析树子。**本地变更语义**（与 R48 的
+  // no-parentSel 快照分支同款——无 host SetChildText：foreign 树本就 JS 侧持有）：
+  // 写 `__nv` 并同步 data/nodeValue/textContent/length。offset/count 负值/越界
+  // clamp（permissive——与 R48 主文档路径一致）。null→''（[LegacyNullToEmptyString]）。
+  function _zwAttachCharacterDataMethods(n) {
+    var _cur = function () { return String(n.__nv != null ? n.__nv : ''); };
+    // 注意：_write 只写 __nv/textContent/length——data/nodeValue 在下方转为 accessor
+    //（getter 读 __nv），此处再赋值会触发自身 setter 递归（Maximum call stack）。
+    var _write = function (nv) {
+      nv = String(nv == null ? '' : nv);
+      n.__nv = nv; n.textContent = nv;
+    };
+    _write(n.data != null ? n.data : '');
+    n.appendData = function (s) { _write(_cur() + String(s == null ? '' : s)); return undefined; };
+    n.insertData = function (offset, s) {
+      var cur = _cur(); var o = Math.max(0, offset | 0);
+      _write(cur.slice(0, o) + String(s == null ? '' : s) + cur.slice(o));
+      return undefined;
+    };
+    n.deleteData = function (offset, count) {
+      var cur = _cur(); var o = Math.max(0, offset | 0); var c2 = Math.max(0, count | 0);
+      _write(cur.slice(0, o) + cur.slice(o + c2));
+      return undefined;
+    };
+    n.replaceData = function (offset, count, s) {
+      var cur = _cur(); var o = Math.max(0, offset | 0); var c2 = Math.max(0, count | 0);
+      _write(cur.slice(0, o) + String(s == null ? '' : s) + cur.slice(o + c2));
+      return undefined;
+    };
+    n.substringData = function (offset, count) {
+      var cur = _cur(); var o = Math.max(0, offset | 0); var c2 = Math.max(0, count | 0);
+      return cur.slice(o, o + c2);
+    };
+    // data/nodeValue 可写（CharacterData data IDL）——旧普通字段赋值只改自身槽
+    // （length getter 读 n.data 会失同步）。defineProperty 转 accessor 统一经 _write。
+    try {
+      Object.defineProperty(n, 'data', {
+        get: function () { return n.__nv; },
+        set: function (v) { _write(v === null ? '' : v); },
+        configurable: true, enumerable: true,
+      });
+      Object.defineProperty(n, 'nodeValue', {
+        get: function () { return n.__nv; },
+        set: function (v) { _write(v === null ? '' : v); },
+        configurable: true, enumerable: true,
+      });
+    } catch (_eR202d) {}
+  }
   function _zwMText(v, parent) { var t = String(v); var n = { nodeType: 3, nodeName: '#text', nodeValue: t, textContent: t, data: t, childNodes: [], children: [], hasChildNodes: function () { return false; }, contains: function (other) { return _zwNodeContains(n, other); }, compareDocumentPosition: function (other) { return _zwCompareDocumentPosition(n, other); }, parentNode: parent || null }; _zwMDefineSiblings(n); Object.defineProperty(n, 'firstChild', { get: function () { return null; }, configurable: true }); Object.defineProperty(n, 'lastChild', { get: function () { return null; }, configurable: true }); Object.defineProperty(n, 'parentElement', { get: function () { var p = n.parentNode; return p && p.nodeType === 1 ? p : null; }, configurable: true }); Object.defineProperty(n, 'length', { get: function () { return n.data.length; }, configurable: true }); Object.defineProperty(n, 'wholeText', { get: function () { var p = n.parentNode; if (!p || !p.childNodes) return n.data; var t2 = ''; var seen = false; for (var i = 0; i < p.childNodes.length; i++) { var c = p.childNodes[i]; if (c === n) seen = true; if (c && c.nodeType === 3) t2 += String(c.data != null ? c.data : ''); } void seen; return t2; }, configurable: true });   /* R179：原型链 Text.prototype（spec Text : CharacterData : Node——`x instanceof Text` 断言；WPT node-creation-realm 的 innerHTML 解析子） */ try { Object.setPrototypeOf(n, (globalThis.Text && globalThis.Text.prototype) || (globalThis.Node ? globalThis.Node.prototype : Object.prototype)); } catch (_eR117t) {}
+  _zwAttachCharacterDataMethods(n);
   return n; }
-  function _zwMComment(v, parent) { var t = String(v); var n = { nodeType: 8, nodeName: '#comment', nodeValue: t, textContent: t, data: t, childNodes: [], children: [], hasChildNodes: function () { return false; }, contains: function (other) { return _zwNodeContains(n, other); }, compareDocumentPosition: function (other) { return _zwCompareDocumentPosition(n, other); }, parentNode: parent || null }; _zwMDefineSiblings(n); Object.defineProperty(n, 'firstChild', { get: function () { return null; }, configurable: true }); Object.defineProperty(n, 'lastChild', { get: function () { return null; }, configurable: true }); Object.defineProperty(n, 'parentElement', { get: function () { var p = n.parentNode; return p && p.nodeType === 1 ? p : null; }, configurable: true }); Object.defineProperty(n, 'length', { get: function () { return n.data.length; }, configurable: true }); /* R179：原型链 Comment.prototype（spec Comment : CharacterData : Node——`x instanceof Comment` 断言；WPT node-creation-realm 的 cloneNode/importNode） */ try { if (globalThis.Comment && globalThis.Comment.prototype) Object.setPrototypeOf(n, globalThis.Comment.prototype); } catch (_e179n) {} return n; }
+  function _zwMComment(v, parent) { var t = String(v); var n = { nodeType: 8, nodeName: '#comment', nodeValue: t, textContent: t, data: t, childNodes: [], children: [], hasChildNodes: function () { return false; }, contains: function (other) { return _zwNodeContains(n, other); }, compareDocumentPosition: function (other) { return _zwCompareDocumentPosition(n, other); }, parentNode: parent || null }; _zwMDefineSiblings(n); Object.defineProperty(n, 'firstChild', { get: function () { return null; }, configurable: true }); Object.defineProperty(n, 'lastChild', { get: function () { return null; }, configurable: true }); Object.defineProperty(n, 'parentElement', { get: function () { var p = n.parentNode; return p && p.nodeType === 1 ? p : null; }, configurable: true }); Object.defineProperty(n, 'length', { get: function () { return n.data.length; }, configurable: true }); /* R179：原型链 Comment.prototype（spec Comment : CharacterData : Node——`x instanceof Comment` 断言；WPT node-creation-realm 的 cloneNode/importNode） */ try { if (globalThis.Comment && globalThis.Comment.prototype) Object.setPrototypeOf(n, globalThis.Comment.prototype); } catch (_e179n) {} _zwAttachCharacterDataMethods(n); return n; }
   // 递归建子树：entry = {k:'E',s:sel}/{k:'T',v}/{k:'C',v}（__zw_parse_html_child_nodes）。元素取快照 + 递归子。
   // R123：`<?...?>` 的 bogus comment（data '?…?'——tokenizer 在首个 '>' 结束并保留 '?' 前缀）
   // 转换为 PI 视图节点（nodeType 7）——Chrome「Parse processing instructions in HTML」后
@@ -7404,6 +7458,9 @@
           Object.setPrototypeOf(n4, _r179cd
             || (globalThis.Node ? globalThis.Node.prototype : Object.prototype));
         } catch (_eR117x) {}
+        // R202：CharacterData 方法面（CDATASection : Text : CharacterData——
+        // appendData 族对 cdata 节点同样可达）。
+        _zwAttachCharacterDataMethods(n4);
           return n4;
       },
       // R51：detached doc 的 ProcessingInstruction/Comment 工厂（common.js setupRangeTests
@@ -7463,6 +7520,9 @@
           ownerDocument: doc,
         };
         try { Object.setPrototypeOf(n8, globalThis.Node ? globalThis.Node.prototype : Object.prototype); } catch (_eR117x) {}
+        // R202：CharacterData 方法面（_zwMComment 同款——WPT Range mega-case 的
+        // foreignComment.appendData 族）。
+        _zwAttachCharacterDataMethods(n8);
           return n8;
       },
       // R51：detached doc 的 DocumentFragment 工厂（common.js setupRangeTests
