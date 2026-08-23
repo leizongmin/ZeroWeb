@@ -329,7 +329,14 @@
         if (typeof _zwUserProto !== 'undefined' && _zwUserProto[key]) return _zwUserProto[key];
         // 节点类型判定：PI/fragment/comment/text 经 handle set；element 为默认（无 set 的 selector/handle 节点）。
         if (handle && _piHandles[handle] && _gp.ProcessingInstruction) return _gp.ProcessingInstruction.prototype;
-        if (handle && _fragmentHandles[handle] && _gp.DocumentFragment) return _gp.DocumentFragment.prototype;
+        if (handle && _fragmentHandles[handle] && _gp.DocumentFragment) {
+          // R194（js-dom M4）：shadow root 容器接 ShadowRoot.prototype（WPT
+          // attach-shadow-realm-after-adoption 的 `shadow instanceof ShadowRoot`）。
+          if (typeof _shadowHandles !== 'undefined' && _shadowHandles[handle] && _gp.ShadowRoot) {
+            return _gp.ShadowRoot.prototype;
+          }
+          return _gp.DocumentFragment.prototype;
+        }
         // R81：text/comment 节点的 instanceof 面对齐构造器（WPT Node-textContent
         // `firstChild instanceof Text`——旧返 Node.prototype 使 instanceof Text false）。
         if (handle && _commentHandles[handle] && _gp.Comment) return _gp.Comment.prototype;
@@ -988,7 +995,7 @@
       attachShadow: function (init) {
         var shadow = {
           nodeType: 11,
-          nodeName: '#document-fragment',
+          nodeName: '#shadow-root',
           mode: init && init.mode === 'closed' ? 'closed' : 'open',
           host: el,
           childNodes: [],
@@ -1001,6 +1008,14 @@
           },
           querySelectorAll: function () { return []; },
         };
+        // R194（js-dom M4）：原型接 ShadowRoot.prototype（WPT attach-shadow-realm-
+        // after-adoption 的 `shadow instanceof ShadowRoot`——工厂元素宿主的轻量 shadow
+        // 旧为 plain object 恒 false）。
+        try {
+          if (globalThis.ShadowRoot && globalThis.ShadowRoot.prototype) {
+            Object.setPrototypeOf(shadow, globalThis.ShadowRoot.prototype);
+          }
+        } catch (_e194sp) {}
         Object.defineProperty(shadow, 'innerHTML', {
           configurable: true,
           get: function () {

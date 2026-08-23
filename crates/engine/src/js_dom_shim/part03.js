@@ -347,6 +347,55 @@
       Object.defineProperty(globalThis.Attr.prototype, 'nodeValue', { set: _r122Set, get: function () { return this._r122V != null ? this._r122V : ''; }, configurable: true });
     } catch (_eD122) {}
   })();
+  // R194（js-dom M4）：ShadowRoot 构造器占位（WPT attach-shadow-realm-after-adoption
+  // 的 `shadow instanceof ShadowRoot`——attachShadow 产物（fragment 容器）原型接
+  // DocumentFragment.prototype → ShadowRoot.prototype 链；构造器本身不可 new（spec
+  // 「new ShadowRoot() throws TypeError」不在断言面，占位即可）。
+  // R194b（js-dom M4）：Element.prototype 补真 attachShadow 方法（WPT attach-shadow-
+  // realm 第三变体的 `inner.Element.prototype.attachShadow.call(host, ...)`——proxy 元素的
+  // attachShadow 是 get trap 形态，原型对象上无真方法 → undefined.call 崩）。原型属性
+  // 写不经实例 trap（安全挂载）；实例读 attachShadow 仍走 get trap 优先（零行为变化）。
+  try {
+    if (globalThis.Element && globalThis.Element.prototype
+        && typeof globalThis.Element.prototype.attachShadow !== 'function') {
+      Object.defineProperty(globalThis.Element.prototype, 'attachShadow', {
+        value: function (init) {
+        // host 自身可达的 attachShadow（proxy get trap / 工厂版）优先；否则轻量 shadow
+        //（R179 工厂版同构——detached/adopted 宿主）。
+        var own = Object.getOwnPropertyDescriptor(Object.getPrototypeOf(this) || {}, 'attachShadow');
+        if (own && typeof own.value === 'function' && own.value !== globalThis.Element.prototype.attachShadow) {
+          return own.value.call(this, init);
+        }
+        var el194 = this;
+        var shadow = {
+          nodeType: 11,
+          nodeName: '#shadow-root',
+          mode: init && init.mode === 'closed' ? 'closed' : 'open',
+          host: el194,
+          childNodes: [],
+          get firstChild() { return this.childNodes.length ? this.childNodes[0] : null; },
+          get lastChild() { return this.childNodes.length ? this.childNodes[this.childNodes.length - 1] : null; },
+          hasChildNodes: function () { return this.childNodes.length > 0; },
+          querySelector: function () { return null; },
+          querySelectorAll: function () { return []; },
+        };
+        try {
+          if (globalThis.ShadowRoot && globalThis.ShadowRoot.prototype) {
+            Object.setPrototypeOf(shadow, globalThis.ShadowRoot.prototype);
+          }
+        } catch (_e194sp3) {}
+        try { el194.shadowRoot = shadow; } catch (_e194h3) {}
+          return shadow;
+        },
+        writable: true, configurable: true, enumerable: false,
+      });
+    }
+  } catch (_e194pt) {}
+  if (!globalThis.ShadowRoot) globalThis.ShadowRoot = function ShadowRoot() {};
+  try {
+    Object.setPrototypeOf(globalThis.ShadowRoot.prototype,
+      globalThis.DocumentFragment ? globalThis.DocumentFragment.prototype : globalThis.Node.prototype);
+  } catch (_e194sr) {}
   globalThis.DocumentFragment = globalThis.DocumentFragment || function DocumentFragment() {};
   globalThis.DocumentFragment.prototype = Object.create(globalThis.Node.prototype);
   // R193（js-dom M4）：DocumentFragment.prototype.getElementById（spec

@@ -558,6 +558,39 @@
             getElementById: globalThis.DocumentFragment && globalThis.DocumentFragment.prototype.getElementById
               ? function (id) { return globalThis.DocumentFragment.prototype.getElementById.call(_tplContent, id); }
               : function () { return null; },
+            // R194（js-dom M4）：template.content 的 querySelector（WPT
+            // svg-template-querySelector 的 template1/template2 变体——fragment 是
+            // ParentNode；旧 plain 视图无方法 → "not a function"）。子树 DFS 的简单
+            // 选择器匹配（tag/class/id——与 R181 工厂元素同款策略，复杂选择器返 null）。
+            querySelector: function (q) {
+              var _r194M = /^([a-zA-Z][a-zA-Z0-9-]*|\*|#([\w-]+)|\.([\w-]+))$/.exec(String(q == null ? '' : q).trim());
+              if (!_r194M) return null;
+              var hit194 = null;
+              (function dfs194(node) {
+                if (hit194) return;
+                var kids = node.childNodes || [];
+                for (var i = 0; i < kids.length; i++) {
+                  var k = kids[i];
+                  if (k && k.nodeType === 1) {
+                    var ok = false;
+                    if (_r194M[1] === '*') ok = true;
+                    else if (_r194M[2]) { try { ok = String(k.id || (k.getAttribute && k.getAttribute('id')) || '') === _r194M[2]; } catch (_e194i) {} }
+                    else if (_r194M[3]) {
+                      try {
+                        var cls = String((k.getAttribute && (k.getAttribute('class') != null ? k.getAttribute('class') : k.className)) || '');
+                        ok = cls.split(/\s+/).indexOf(_r194M[3]) >= 0;
+                      } catch (_e194c) {}
+                    } else {
+                      ok = String(k.tagName || '').toLowerCase() === String(_r194M[1]).toLowerCase();
+                    }
+                    if (ok) { hit194 = k; return; }
+                    dfs194(k);
+                    if (hit194) return;
+                  }
+                }
+              })(_tplContent);
+              return hit194;
+            },
             // R151：子树类名查询（ParentNode.getElementsByClassName 语义——spec
             // `dom-parentnode-getelementsbyclassname`，token 全含匹配）。用例对
             // template.content 直调（WPT single-activation getElementsByClassNameInclusive）。

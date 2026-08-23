@@ -3471,7 +3471,10 @@
       _coveredChildren: function () {
         if (!this.startContainer || this.startContainer !== this.endContainer) return null;
         var sc = this.startContainer;
-        if (sc.nodeType !== 1 && !sc.tagName) return null; // 非元素容器（文本切片）→ defer
+        // R194（js-dom M4）：fragment/shadow 容器（nodeType 11）纳入覆盖面——shadow root
+        // 的 Range 操作（WPT Range-{delete,extract,clone}Contents-in-ShadowRoot 九用例：
+        // setStart(shadowRoot, offset) 后 deleteContents 须按 offset 区间移 registry 子）。
+        if (sc.nodeType !== 1 && sc.nodeType !== 11 && !sc.tagName) return null; // 非元素/fragment 容器（文本切片）→ defer
         var kids = sc.childNodes;
         if (!kids || !kids.length) return [];
         var a = Math.max(0, Math.min(this.startOffset | 0, kids.length));
