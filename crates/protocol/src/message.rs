@@ -1355,6 +1355,8 @@ pub enum ServiceWorkerHostCommand {
     DispatchLifecycle {
         /// 生命周期阶段。
         phase: ServiceWorkerLifecycleWire,
+        /// Whether `clients.claim()` is allowed for this dispatched event.
+        clients_claim_allowed: bool,
     },
     /// 派发页面到 worker 的 JSON 结构化消息。
     DispatchMessage {
@@ -1372,6 +1374,8 @@ pub enum ServiceWorkerHostCommand {
         data_port_index: Option<usize>,
         /// Existing worker-side port endpoint addressed by this message.
         target_port_id: Option<u64>,
+        /// Whether `clients.claim()` is allowed for this dispatched event.
+        clients_claim_allowed: bool,
     },
     /// Dispatch a fetch event into the worker global.
     DispatchFetch {
@@ -1379,6 +1383,8 @@ pub enum ServiceWorkerHostCommand {
         event_id: u64,
         /// Pure-value fetch request.
         request: ServiceWorkerFetchRequestWire,
+        /// Whether `clients.claim()` is allowed for this dispatched event.
+        clients_claim_allowed: bool,
     },
     /// 停止并回收 runtime。
     Shutdown,

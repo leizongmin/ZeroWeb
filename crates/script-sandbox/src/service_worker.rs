@@ -36,6 +36,7 @@ enum ServiceWorkerCommand {
     DispatchLifecycle {
         event_id: u64,
         phase: ServiceWorkerLifecyclePhase,
+        clients_claim_allowed: bool,
     },
     DispatchMessage {
         event_id: u64,
@@ -43,10 +44,12 @@ enum ServiceWorkerCommand {
         client_id: String,
         client_url: String,
         ports: ServiceWorkerMessagePorts,
+        clients_claim_allowed: bool,
     },
     DispatchFetch {
         event_id: u64,
         request: ServiceWorkerFetchRequest,
+        clients_claim_allowed: bool,
     },
     Shutdown,
 }
@@ -125,6 +128,7 @@ const SERVICE_WORKER_BOOTSTRAP: &str = r#"
   let currentWaitUntil = null;
   let skipWaitingRequested = false;
   let claimClientsRequested = false;
+  let clientsClaimAllowed = false;
   let activeEventClaimClientsRequested = false;
   const timerTasks = [];
   let nextTimerId = 1;
@@ -1769,6 +1773,12 @@ const SERVICE_WORKER_BOOTSTRAP: &str = r#"
       }));
     }
     claim() {
+      // https://w3c.github.io/ServiceWorker/#clients-claim
+      if (!clientsClaimAllowed) {
+        return Promise.reject(new DOMException(
+          'clients.claim() is only available to an active Service Worker',
+          'InvalidStateError'));
+      }
       claimClientsRequested = true;
       if (globalThis.__zwLifecycleResult &&
           globalThis.__zwLifecycleResult.settled !== true) {
@@ -1933,6 +1943,9 @@ const SERVICE_WORKER_BOOTSTRAP: &str = r#"
     const requested = activeEventClaimClientsRequested;
     activeEventClaimClientsRequested = false;
     return requested;
+  };
+  globalThis.__zwSetClientsClaimAllowed = function(allowed) {
+    clientsClaimAllowed = allowed === true;
   };
   globalThis.__zwDispatchFetch = function(eventId, requestInfo) {
     const pending = [];
@@ -2951,13 +2964,18 @@ impl ServiceWorkerRuntime {
                             };
                             let _ = event_sender.send(event);
                         }
-                        ServiceWorkerCommand::DispatchLifecycle { event_id, phase } => {
+                        ServiceWorkerCommand::DispatchLifecycle {
+                            event_id,
+                            phase,
+                            clients_claim_allowed,
+                        } => {
                             let result = if pending_lifecycle.is_some() {
                                 Err(ScriptError::RuntimeError(
                                     "Service Worker lifecycle event is already pending".into(),
                                 ))
                             } else {
-                                begin_lifecycle(sandbox.as_mut(), event_id, phase)
+                                set_clients_claim_allowed(sandbox.as_mut(), clients_claim_allowed)
+                                    .and_then(|()| begin_lifecycle(sandbox.as_mut(), event_id, phase))
                             };
                             match result {
                                 Ok(()) => {
@@ -2980,6 +2998,7 @@ impl ServiceWorkerRuntime {
                             client_id,
                             client_url,
                             ports,
+                            clients_claim_allowed,
                         } => {
                             let dispatch = format!(
                                 "globalThis.__zwDispatchMessage({}, {}, {}, {}, {}, {}, {});",
@@ -2991,7 +3010,9 @@ impl ServiceWorkerRuntime {
                                 serde_json::to_string(&ports.data_port_index).unwrap(),
                                 serde_json::to_string(&ports.target_port_id).unwrap(),
                             );
-                            let event = match sandbox.execute(&dispatch) {
+                            let event = match set_clients_claim_allowed(sandbox.as_mut(), clients_claim_allowed)
+                                .and_then(|()| sandbox.execute(&dispatch))
+                            {
                                 Ok(_) => match take_outbound_messages(sandbox.as_mut()) {
                                     Ok(outbound) => {
                                         emit_clients_claim_requested(sandbox.as_mut(), &event_sender);
@@ -3015,14 +3036,19 @@ impl ServiceWorkerRuntime {
                             };
                             let _ = event_sender.send(event);
                         }
-                        ServiceWorkerCommand::DispatchFetch { event_id, request } => {
+                        ServiceWorkerCommand::DispatchFetch {
+                            event_id,
+                            request,
+                            clients_claim_allowed,
+                        } => {
                             let request_url = request.url.clone();
                             let result = if pending_fetch.is_some() {
                                 Err(ScriptError::RuntimeError(
                                     "Service Worker fetch event is already pending".into(),
                                 ))
                             } else {
-                                begin_fetch(sandbox.as_mut(), event_id, &request)
+                                set_clients_claim_allowed(sandbox.as_mut(), clients_claim_allowed)
+                                    .and_then(|()| begin_fetch(sandbox.as_mut(), event_id, &request))
                             };
                             match result {
                                 Ok(()) => {
@@ -3114,12 +3140,12 @@ impl ServiceWorkerRuntime {
 
     /// Dispatch an install event.
     pub fn dispatch_install(&mut self, event_id: u64) -> Result<(), ScriptError> {
-        self.dispatch_lifecycle(event_id, ServiceWorkerLifecyclePhase::Install)
+        self.dispatch_lifecycle_with_claim_allowed(event_id, ServiceWorkerLifecyclePhase::Install, false)
     }
 
     /// Dispatch an activate event.
     pub fn dispatch_activate(&mut self, event_id: u64) -> Result<(), ScriptError> {
-        self.dispatch_lifecycle(event_id, ServiceWorkerLifecyclePhase::Activate)
+        self.dispatch_lifecycle_with_claim_allowed(event_id, ServiceWorkerLifecyclePhase::Activate, true)
     }
 
     /// Dispatch one JSON-compatible page message.
@@ -3148,6 +3174,19 @@ impl ServiceWorkerRuntime {
         client_url: &str,
         ports: &ServiceWorkerMessagePorts,
     ) -> Result<(), ScriptError> {
+        self.dispatch_message_with_ports_with_claim_allowed(event_id, data_json, client_id, client_url, ports, true)
+    }
+
+    /// Dispatch a page message with explicit `clients.claim()` eligibility.
+    pub fn dispatch_message_with_ports_with_claim_allowed(
+        &mut self,
+        event_id: u64,
+        data_json: &str,
+        client_id: &str,
+        client_url: &str,
+        ports: &ServiceWorkerMessagePorts,
+        clients_claim_allowed: bool,
+    ) -> Result<(), ScriptError> {
         serde_json::from_str::<serde_json::Value>(data_json)
             .map_err(|error| ScriptError::InvalidInput(format!("invalid Service Worker message JSON: {error}")))?;
         if ports.transferred_port_ids.len() > MAX_MESSAGE_PORTS
@@ -3174,12 +3213,23 @@ impl ServiceWorkerRuntime {
                 client_id: client_id.to_string(),
                 client_url: client_url.to_string(),
                 ports: ports.clone(),
+                clients_claim_allowed,
             })
             .map_err(|_| ScriptError::RuntimeError("Service Worker runtime disconnected".into()))
     }
 
     /// Dispatch one fetch event into the persistent Service Worker global.
     pub fn dispatch_fetch(&mut self, event_id: u64, request: ServiceWorkerFetchRequest) -> Result<(), ScriptError> {
+        self.dispatch_fetch_with_claim_allowed(event_id, request, true)
+    }
+
+    /// Dispatch one fetch event with explicit `clients.claim()` eligibility.
+    pub fn dispatch_fetch_with_claim_allowed(
+        &mut self,
+        event_id: u64,
+        request: ServiceWorkerFetchRequest,
+        clients_claim_allowed: bool,
+    ) -> Result<(), ScriptError> {
         validate_fetch_request(&request)?;
         if self.core.is_terminated() {
             return Err(ScriptError::InvalidInput(
@@ -3187,7 +3237,11 @@ impl ServiceWorkerRuntime {
             ));
         }
         self.core
-            .send(ServiceWorkerCommand::DispatchFetch { event_id, request })
+            .send(ServiceWorkerCommand::DispatchFetch {
+                event_id,
+                request,
+                clients_claim_allowed,
+            })
             .map_err(|_| ScriptError::RuntimeError("Service Worker runtime disconnected".into()))
     }
 
@@ -3430,14 +3484,24 @@ impl ServiceWorkerRuntime {
         !self.core.is_terminated()
     }
 
-    fn dispatch_lifecycle(&mut self, event_id: u64, phase: ServiceWorkerLifecyclePhase) -> Result<(), ScriptError> {
+    /// Dispatch a lifecycle event with explicit `clients.claim()` eligibility.
+    pub fn dispatch_lifecycle_with_claim_allowed(
+        &mut self,
+        event_id: u64,
+        phase: ServiceWorkerLifecyclePhase,
+        clients_claim_allowed: bool,
+    ) -> Result<(), ScriptError> {
         if self.core.is_terminated() {
             return Err(ScriptError::InvalidInput(
                 "Cannot dispatch event on terminated Service Worker runtime".into(),
             ));
         }
         self.core
-            .send(ServiceWorkerCommand::DispatchLifecycle { event_id, phase })
+            .send(ServiceWorkerCommand::DispatchLifecycle {
+                event_id,
+                phase,
+                clients_claim_allowed,
+            })
             .map_err(|_| ScriptError::RuntimeError("Service Worker runtime disconnected".into()))
     }
 }
@@ -4218,6 +4282,14 @@ fn set_worker_location(sandbox: &mut dyn Sandbox, script_url: &str) -> Result<()
     sandbox
         .execute(&format!("globalThis.__zwSetLocation({location});"))
         .map(|_| ())
+}
+
+fn set_clients_claim_allowed(sandbox: &mut dyn Sandbox, allowed: bool) -> Result<(), ScriptError> {
+    let script = format!(
+        "globalThis.__zwSetClientsClaimAllowed({});",
+        if allowed { "true" } else { "false" }
+    );
+    sandbox.execute(&script).map(|_| ())
 }
 
 fn begin_lifecycle(
@@ -5449,6 +5521,50 @@ mod tests {
                 Err(error) => panic!("runtime event timed out: {error}"),
             }
         }
+    }
+
+    #[test]
+    fn message_dispatch_rejects_clients_claim_when_not_active() {
+        let mut runtime = ServiceWorkerRuntime::new(test_config()).unwrap();
+        runtime
+            .evaluate(
+                "addEventListener('message', event => {
+                   clients.claim().then(() => {
+                     event.source.postMessage('PASS');
+                   }, error => {
+                     event.source.postMessage('FAIL: exception: ' + error.name);
+                   });
+                 });",
+                "https://example.test/sw.js",
+            )
+            .unwrap();
+        let _ = runtime.recv_timeout(Duration::from_secs(5)).unwrap();
+
+        runtime
+            .dispatch_message_with_ports_with_claim_allowed(
+                23,
+                "null",
+                "client-1",
+                "https://example.test/page",
+                &ServiceWorkerMessagePorts::default(),
+                false,
+            )
+            .unwrap();
+
+        assert_eq!(
+            runtime.recv_timeout(Duration::from_secs(5)).unwrap(),
+            ServiceWorkerEvent::MessageDispatched {
+                event_id: 23,
+                client_id: "client-1".into(),
+                outbound: vec![ServiceWorkerOutboundMessage {
+                    data_json: "\"FAIL: exception: InvalidStateError\"".into(),
+                    port_id: None,
+                    transferred_port_ids: Vec::new(),
+                    data_port_index: None,
+                    target_client_id: Some("client-1".into()),
+                }],
+            }
+        );
     }
 
     #[test]

@@ -12,9 +12,10 @@ use url::Url;
 use zero_browser_shell::TabId;
 use zero_net::{HttpResponse, is_javascript_mime};
 use zero_page_runtime::{
-    ServiceWorkerFetchDispatch, ServiceWorkerImportedScript, ServiceWorkerManager, ServiceWorkerManagerError,
-    ServiceWorkerManagerEvent, ServiceWorkerPersistentRegistration, ServiceWorkerRegistrationErrorKind,
-    ServiceWorkerRuntimeHost, ServiceWorkerUpdateOutcome, validate_service_worker_registration,
+    ServiceWorkerClientMessageDispatch, ServiceWorkerFetchDispatch, ServiceWorkerImportedScript, ServiceWorkerManager,
+    ServiceWorkerManagerError, ServiceWorkerManagerEvent, ServiceWorkerPersistentRegistration,
+    ServiceWorkerRegistrationErrorKind, ServiceWorkerRuntimeHost, ServiceWorkerUpdateOutcome,
+    validate_service_worker_registration,
 };
 use zero_protocol::message::{
     FetchParams, ServiceWorkerCacheQueryOptionsWire, ServiceWorkerCacheStorageRequestWire,
@@ -201,6 +202,7 @@ impl ServiceWorkerRuntimeHost for IpcServiceWorkerHost {
         &mut self,
         registration_id: u64,
         phase: ServiceWorkerLifecyclePhase,
+        clients_claim_allowed: bool,
     ) -> Result<(), ServiceWorkerManagerError> {
         let Some(tab_id) = self.channels.take_owned_tab(registration_id) else {
             return Err(ServiceWorkerManagerError::UnknownRegistration(registration_id));
@@ -212,6 +214,7 @@ impl ServiceWorkerRuntimeHost for IpcServiceWorkerHost {
                 registration_id,
                 command: ServiceWorkerHostCommand::DispatchLifecycle {
                     phase: wire_phase(phase),
+                    clients_claim_allowed,
                 },
             },
         });
@@ -221,11 +224,7 @@ impl ServiceWorkerRuntimeHost for IpcServiceWorkerHost {
     fn dispatch_client_message(
         &mut self,
         registration_id: u64,
-        event_id: u64,
-        data_json: &str,
-        client_id: &str,
-        client_url: &str,
-        ports: &ServiceWorkerMessagePorts,
+        message: ServiceWorkerClientMessageDispatch<'_>,
     ) -> Result<(), ServiceWorkerManagerError> {
         let Some(tab_id) = self.channels.take_owned_tab(registration_id) else {
             return Err(ServiceWorkerManagerError::UnknownRegistration(registration_id));
@@ -236,13 +235,14 @@ impl ServiceWorkerRuntimeHost for IpcServiceWorkerHost {
             params: ServiceWorkerHostCommandParams {
                 registration_id,
                 command: ServiceWorkerHostCommand::DispatchMessage {
-                    event_id,
-                    data_json: data_json.to_string(),
-                    client_id: client_id.to_string(),
-                    client_url: client_url.to_string(),
-                    transferred_port_ids: ports.transferred_port_ids.clone(),
-                    data_port_index: ports.data_port_index,
-                    target_port_id: ports.target_port_id,
+                    event_id: message.event_id,
+                    data_json: message.data_json.to_string(),
+                    client_id: message.client_id.to_string(),
+                    client_url: message.client_url.to_string(),
+                    transferred_port_ids: message.ports.transferred_port_ids.clone(),
+                    data_port_index: message.ports.data_port_index,
+                    target_port_id: message.ports.target_port_id,
+                    clients_claim_allowed: message.clients_claim_allowed,
                 },
             },
         });
@@ -254,6 +254,7 @@ impl ServiceWorkerRuntimeHost for IpcServiceWorkerHost {
         registration_id: u64,
         event_id: u64,
         request: ServiceWorkerFetchRequest,
+        clients_claim_allowed: bool,
     ) -> Result<(), ServiceWorkerManagerError> {
         let Some(tab_id) = self.channels.take_owned_tab(registration_id) else {
             return Err(ServiceWorkerManagerError::UnknownRegistration(registration_id));
@@ -265,6 +266,7 @@ impl ServiceWorkerRuntimeHost for IpcServiceWorkerHost {
                 registration_id,
                 command: ServiceWorkerHostCommand::DispatchFetch {
                     event_id,
+                    clients_claim_allowed,
                     request: ServiceWorkerFetchRequestWire {
                         url: request.url,
                         method: request.method,

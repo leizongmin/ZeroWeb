@@ -14,6 +14,7 @@ use std::io;
 use std::sync::mpsc::{self, Sender, TryRecvError};
 use std::time::Duration;
 
+use zero_page_runtime::ServiceWorkerClientMessageDispatch;
 use zero_protocol::message::{
     ServiceWorkerCacheQueryOptionsWire, ServiceWorkerCacheStorageRequestWire, ServiceWorkerCacheStorageResultWire,
     ServiceWorkerFetchRequestWire, ServiceWorkerFetchResponseWire, ServiceWorkerHostCommand,
@@ -111,8 +112,11 @@ impl HostThread {
             } => {
                 self.evaluate(params.registration_id, &script_url, &script, script_type);
             }
-            ServiceWorkerHostCommand::DispatchLifecycle { phase } => {
-                self.dispatch_lifecycle(params.registration_id, wire_phase(phase));
+            ServiceWorkerHostCommand::DispatchLifecycle {
+                phase,
+                clients_claim_allowed,
+            } => {
+                self.dispatch_lifecycle(params.registration_id, wire_phase(phase), clients_claim_allowed);
             }
             ServiceWorkerHostCommand::DispatchMessage {
                 event_id,
@@ -122,20 +126,33 @@ impl HostThread {
                 transferred_port_ids,
                 data_port_index,
                 target_port_id,
+                clients_claim_allowed,
             } => self.dispatch_message(
                 params.registration_id,
-                event_id,
-                &data_json,
-                &client_id,
-                &client_url,
-                &ServiceWorkerMessagePorts {
-                    transferred_port_ids,
-                    data_port_index,
-                    target_port_id,
+                ServiceWorkerClientMessageDispatch {
+                    event_id,
+                    data_json: &data_json,
+                    client_id: &client_id,
+                    client_url: &client_url,
+                    ports: &ServiceWorkerMessagePorts {
+                        transferred_port_ids,
+                        data_port_index,
+                        target_port_id,
+                    },
+                    clients_claim_allowed,
                 },
             ),
-            ServiceWorkerHostCommand::DispatchFetch { event_id, request } => {
-                self.dispatch_fetch(params.registration_id, event_id, fetch_request_from_wire(request));
+            ServiceWorkerHostCommand::DispatchFetch {
+                event_id,
+                request,
+                clients_claim_allowed,
+            } => {
+                self.dispatch_fetch(
+                    params.registration_id,
+                    event_id,
+                    fetch_request_from_wire(request),
+                    clients_claim_allowed,
+                );
             }
             ServiceWorkerHostCommand::CompleteImportScripts { request_id, result } => {
                 self.complete_import_scripts(params.registration_id, request_id, result);
@@ -261,43 +278,50 @@ impl HostThread {
         }
     }
 
-    fn dispatch_message(
-        &mut self,
-        registration_id: u64,
-        event_id: u64,
-        data_json: &str,
-        client_id: &str,
-        client_url: &str,
-        ports: &ServiceWorkerMessagePorts,
-    ) {
+    fn dispatch_message(&mut self, registration_id: u64, message: ServiceWorkerClientMessageDispatch<'_>) {
         let Some(runtime) = self.runtimes.get_mut(&registration_id) else {
             tracing::warn!("Service Worker message for unknown registration {registration_id}");
             return;
         };
-        if let Err(error) = runtime.dispatch_message_with_ports(event_id, data_json, client_id, client_url, ports) {
+        if let Err(error) = runtime.dispatch_message_with_ports_with_claim_allowed(
+            message.event_id,
+            message.data_json,
+            message.client_id,
+            message.client_url,
+            message.ports,
+            message.clients_claim_allowed,
+        ) {
             tracing::warn!("Service Worker message dispatch failed: {error}");
         }
     }
 
-    fn dispatch_fetch(&mut self, registration_id: u64, event_id: u64, request: ServiceWorkerFetchRequest) {
+    fn dispatch_fetch(
+        &mut self,
+        registration_id: u64,
+        event_id: u64,
+        request: ServiceWorkerFetchRequest,
+        clients_claim_allowed: bool,
+    ) {
         let Some(runtime) = self.runtimes.get_mut(&registration_id) else {
             tracing::warn!("Service Worker fetch for unknown registration {registration_id}");
             return;
         };
-        if let Err(error) = runtime.dispatch_fetch(event_id, request) {
+        if let Err(error) = runtime.dispatch_fetch_with_claim_allowed(event_id, request, clients_claim_allowed) {
             tracing::warn!("Service Worker fetch dispatch failed: {error}");
         }
     }
 
-    fn dispatch_lifecycle(&mut self, registration_id: u64, phase: ServiceWorkerLifecyclePhase) {
+    fn dispatch_lifecycle(
+        &mut self,
+        registration_id: u64,
+        phase: ServiceWorkerLifecyclePhase,
+        clients_claim_allowed: bool,
+    ) {
         let Some(runtime) = self.runtimes.get_mut(&registration_id) else {
             tracing::warn!("Service Worker lifecycle for unknown registration {registration_id}");
             return;
         };
-        let result = match phase {
-            ServiceWorkerLifecyclePhase::Install => runtime.dispatch_install(registration_id),
-            ServiceWorkerLifecyclePhase::Activate => runtime.dispatch_activate(registration_id),
-        };
+        let result = runtime.dispatch_lifecycle_with_claim_allowed(registration_id, phase, clients_claim_allowed);
         if let Err(error) = result {
             tracing::warn!("Service Worker lifecycle dispatch failed: {error}");
         }
@@ -944,6 +968,7 @@ mod tests {
                 transferred_port_ids: Vec::new(),
                 data_port_index: None,
                 target_port_id: None,
+                clients_claim_allowed: true,
             },
         });
         let dispatched = wait_for_event(&mut transport);
@@ -988,6 +1013,7 @@ mod tests {
             registration_id: 14,
             command: ServiceWorkerHostCommand::DispatchFetch {
                 event_id: 22,
+                clients_claim_allowed: true,
                 request: zero_protocol::message::ServiceWorkerFetchRequestWire {
                     url: "https://example.test/app/data".into(),
                     method: "GET".into(),
@@ -1042,6 +1068,7 @@ mod tests {
             registration_id: 15,
             command: ServiceWorkerHostCommand::DispatchFetch {
                 event_id: 23,
+                clients_claim_allowed: true,
                 request: zero_protocol::message::ServiceWorkerFetchRequestWire {
                     url: "https://example.test/app/cached".into(),
                     method: "GET".into(),
@@ -1140,6 +1167,7 @@ mod tests {
             registration_id: 16,
             command: ServiceWorkerHostCommand::DispatchFetch {
                 event_id: 24,
+                clients_claim_allowed: true,
                 request: zero_protocol::message::ServiceWorkerFetchRequestWire {
                     url: "https://example.test/app/stored".into(),
                     method: "GET".into(),
@@ -1321,6 +1349,7 @@ mod tests {
             registration_id: 17,
             command: ServiceWorkerHostCommand::DispatchFetch {
                 event_id: 25,
+                clients_claim_allowed: true,
                 request: zero_protocol::message::ServiceWorkerFetchRequestWire {
                     url: "https://example.test/app/delete?version=1".into(),
                     method: "GET".into(),
@@ -1482,6 +1511,7 @@ mod tests {
             registration_id: 18,
             command: ServiceWorkerHostCommand::DispatchFetch {
                 event_id: 26,
+                clients_claim_allowed: true,
                 request: zero_protocol::message::ServiceWorkerFetchRequestWire {
                     url: "https://example.test/app/cached?from=fetch".into(),
                     method: "HEAD".into(),
@@ -1566,6 +1596,7 @@ mod tests {
             registration_id: 18,
             command: ServiceWorkerHostCommand::DispatchFetch {
                 event_id: 26,
+                clients_claim_allowed: true,
                 request: zero_protocol::message::ServiceWorkerFetchRequestWire {
                     url: "https://example.test/app/page".into(),
                     method: "GET".into(),

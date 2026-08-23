@@ -596,7 +596,8 @@ second（replacement）worker 只处理 awaitInstallEvent（messageSequence=1）
   `fetch-event-respond-with-stops-propagation.https.html` +
   `uncontrolled-page.https.html` +
   `claim-fetch.https.html` +
-  `claim-not-using-registration.https.html` 独立 runner、资产清单与 12/28
+  `claim-not-using-registration.https.html` +
+  `claim-using-registration.https.html` 独立 runner、资产清单与 13/30
   deterministic baseline 见
   [Service Worker Fetch WPT Baseline](evidence/2026-08-23-m2-fetch-baseline.md)
 - M2-22 fetch custom-response 定向验证：
@@ -632,6 +633,11 @@ second（replacement）worker 只处理 awaitInstallEvent（messageSequence=1）
   - 新增 support：`service-workers/service-worker/resources/empty.js`、`empty-worker.js`
   - `WPT_SOURCE=$HOME/github/others/wpt make testharness-service-workers-fetch FILTER=claim-not-using-registration.https.html`：2 Pass
   - `WPT_SOURCE=$HOME/github/others/wpt make baseline-wpt-service-workers-fetch OUTPUT=docs/goal/service-workers/evidence/2026-08-23-m2-fetch-baseline.json SUMMARY=docs/goal/service-workers/evidence/2026-08-23-m2-fetch-baseline.md`：12 cases / 28 subtests / 28 Pass，double-run deterministic
+- M2-28 fetch claim active-state baseline：
+  - 新增 WPT：`service-workers/service-worker/claim-using-registration.https.html`
+  - 复用 support：`service-workers/service-worker/resources/claim-worker.js`、`empty.js`、`blank.html`
+  - `WPT_SOURCE=$HOME/github/others/wpt ./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit 420 -- make testharness-service-workers-fetch FILTER=claim-using-registration.https.html`：2 Pass
+  - `WPT_SOURCE=$HOME/github/others/wpt ./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit 600 -- make baseline-wpt-service-workers-fetch OUTPUT=docs/goal/service-workers/evidence/2026-08-23-m2-fetch-baseline.json SUMMARY=docs/goal/service-workers/evidence/2026-08-23-m2-fetch-baseline.md`：13 cases / 30 subtests / 30 Pass，double-run deterministic
 - M2 fetch respondWith-after-throw runtime guard：已提交 response promise 不被后续同步 throw
   覆盖，候选 WPT 仍因 iframe document body timing 未入 baseline，见
   [SW fetch throw after respondWith guard](evidence/2026-08-22-m2-fetch-throw-after-respond-with.md)

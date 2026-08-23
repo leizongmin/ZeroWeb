@@ -451,4 +451,10 @@ fetch baseline，不改变本目标的 window/SW CacheStorage 分母。
   - `WPT_SOURCE=$HOME/github/others/wpt make testharness-service-workers-fetch FILTER=claim-not-using-registration.https.html`：2 Pass
   - `WPT_SOURCE=$HOME/github/others/wpt make baseline-wpt-service-workers-fetch OUTPUT=docs/goal/service-workers/evidence/2026-08-23-m2-fetch-baseline.json SUMMARY=docs/goal/service-workers/evidence/2026-08-23-m2-fetch-baseline.md`：12 cases / 28 subtests / 28 Pass，double-run deterministic
   - 证据：[Service Worker Fetch WPT Baseline](../service-workers/evidence/2026-08-23-m2-fetch-baseline.md)
+- 2026-08-23 Service Worker fetch claim active-state 扩面：
+  - 新增 WPT：`service-workers/service-worker/claim-using-registration.https.html`
+  - 复用 support：`service-workers/service-worker/resources/claim-worker.js`、`empty.js`、`blank.html`
+  - `WPT_SOURCE=$HOME/github/others/wpt ./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit 420 -- make testharness-service-workers-fetch FILTER=claim-using-registration.https.html`：2 Pass
+  - `WPT_SOURCE=$HOME/github/others/wpt ./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit 600 -- make baseline-wpt-service-workers-fetch OUTPUT=docs/goal/service-workers/evidence/2026-08-23-m2-fetch-baseline.json SUMMARY=docs/goal/service-workers/evidence/2026-08-23-m2-fetch-baseline.md`：13 cases / 30 subtests / 30 Pass，double-run deterministic
+  - 证据：[Service Worker Fetch WPT Baseline](../service-workers/evidence/2026-08-23-m2-fetch-baseline.md)
 - 质量门禁：`cargo fmt` + `cargo clippy --workspace --all-targets -- -D warnings` 全过

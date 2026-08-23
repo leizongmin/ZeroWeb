@@ -608,6 +608,22 @@ pub struct ServiceWorkerManager {
     runtime_limit: usize,
 }
 
+/// One page-to-worker message dispatch with manager-owned state attached.
+pub struct ServiceWorkerClientMessageDispatch<'a> {
+    /// Host-assigned event ID.
+    pub event_id: u64,
+    /// JSON structured-message payload.
+    pub data_json: &'a str,
+    /// Browser-owned identity of the originating client.
+    pub client_id: &'a str,
+    /// Originating client URL.
+    pub client_url: &'a str,
+    /// MessagePort metadata for transferred or addressed endpoints.
+    pub ports: &'a ServiceWorkerMessagePorts,
+    /// Whether `clients.claim()` is allowed for this dispatched event.
+    pub clients_claim_allowed: bool,
+}
+
 /// Engine-runtime operations delegated by [`ServiceWorkerManager`].
 ///
 /// The manager owns registration state only; worker runtimes live behind this
@@ -629,16 +645,13 @@ pub trait ServiceWorkerRuntimeHost: Send {
         &mut self,
         registration_id: u64,
         phase: ServiceWorkerLifecyclePhase,
+        clients_claim_allowed: bool,
     ) -> Result<(), ServiceWorkerManagerError>;
     /// Dispatch one JSON-compatible page message into a live runtime.
     fn dispatch_client_message(
         &mut self,
         registration_id: u64,
-        event_id: u64,
-        data_json: &str,
-        client_id: &str,
-        client_url: &str,
-        ports: &ServiceWorkerMessagePorts,
+        message: ServiceWorkerClientMessageDispatch<'_>,
     ) -> Result<(), ServiceWorkerManagerError>;
     /// Dispatch one fetch event into a live runtime.
     fn dispatch_fetch(
@@ -646,6 +659,7 @@ pub trait ServiceWorkerRuntimeHost: Send {
         registration_id: u64,
         event_id: u64,
         request: ServiceWorkerFetchRequest,
+        clients_claim_allowed: bool,
     ) -> Result<(), ServiceWorkerManagerError>;
     /// Complete one blocking `importScripts()` request.
     fn complete_import_scripts(
@@ -736,14 +750,23 @@ impl ServiceWorkerRuntimeHost for LocalServiceWorkerHost {
         &mut self,
         registration_id: u64,
         phase: ServiceWorkerLifecyclePhase,
+        clients_claim_allowed: bool,
     ) -> Result<(), ServiceWorkerManagerError> {
         let runtime = self
             .runtimes
             .get_mut(&registration_id)
             .ok_or(ServiceWorkerManagerError::UnknownRegistration(registration_id))?;
         let result = match phase {
-            ServiceWorkerLifecyclePhase::Install => runtime.dispatch_install(registration_id),
-            ServiceWorkerLifecyclePhase::Activate => runtime.dispatch_activate(registration_id),
+            ServiceWorkerLifecyclePhase::Install => runtime.dispatch_lifecycle_with_claim_allowed(
+                registration_id,
+                ServiceWorkerLifecyclePhase::Install,
+                clients_claim_allowed,
+            ),
+            ServiceWorkerLifecyclePhase::Activate => runtime.dispatch_lifecycle_with_claim_allowed(
+                registration_id,
+                ServiceWorkerLifecyclePhase::Activate,
+                clients_claim_allowed,
+            ),
         };
         result.map_err(|error| ServiceWorkerManagerError::Runtime(error.to_string()))
     }
@@ -751,18 +774,21 @@ impl ServiceWorkerRuntimeHost for LocalServiceWorkerHost {
     fn dispatch_client_message(
         &mut self,
         registration_id: u64,
-        event_id: u64,
-        data_json: &str,
-        client_id: &str,
-        client_url: &str,
-        ports: &ServiceWorkerMessagePorts,
+        message: ServiceWorkerClientMessageDispatch<'_>,
     ) -> Result<(), ServiceWorkerManagerError> {
         let runtime = self
             .runtimes
             .get_mut(&registration_id)
             .ok_or(ServiceWorkerManagerError::UnknownRegistration(registration_id))?;
         runtime
-            .dispatch_message_with_ports(event_id, data_json, client_id, client_url, ports)
+            .dispatch_message_with_ports_with_claim_allowed(
+                message.event_id,
+                message.data_json,
+                message.client_id,
+                message.client_url,
+                message.ports,
+                message.clients_claim_allowed,
+            )
             .map_err(|error| ServiceWorkerManagerError::Runtime(error.to_string()))
     }
 
@@ -771,13 +797,14 @@ impl ServiceWorkerRuntimeHost for LocalServiceWorkerHost {
         registration_id: u64,
         event_id: u64,
         request: ServiceWorkerFetchRequest,
+        clients_claim_allowed: bool,
     ) -> Result<(), ServiceWorkerManagerError> {
         let runtime = self
             .runtimes
             .get_mut(&registration_id)
             .ok_or(ServiceWorkerManagerError::UnknownRegistration(registration_id))?;
         runtime
-            .dispatch_fetch(event_id, request)
+            .dispatch_fetch_with_claim_allowed(event_id, request, clients_claim_allowed)
             .map_err(|error| ServiceWorkerManagerError::Runtime(error.to_string()))
     }
 
@@ -1945,7 +1972,7 @@ impl ServiceWorkerManager {
             return Err(ServiceWorkerManagerError::EvaluationPending(registration_id));
         }
         self.host
-            .dispatch_lifecycle(registration_id, ServiceWorkerLifecyclePhase::Install)
+            .dispatch_lifecycle(registration_id, ServiceWorkerLifecyclePhase::Install, false)
     }
 
     /// Move a waiting version into the activating state.
@@ -1971,7 +1998,7 @@ impl ServiceWorkerManager {
     fn dispatch_activate(&mut self, registration_id: u64) -> Result<(), ServiceWorkerManagerError> {
         self.require_state(registration_id, ServiceWorkerState::Activating)?;
         self.host
-            .dispatch_lifecycle(registration_id, ServiceWorkerLifecyclePhase::Activate)
+            .dispatch_lifecycle(registration_id, ServiceWorkerLifecyclePhase::Activate, true)
     }
 
     /// Apply the result of the activate event and its lifetime promises.
@@ -2251,9 +2278,18 @@ impl ServiceWorkerManager {
                 .map(|&port_id| (registration_id, client_id.to_string(), port_id)),
         );
         *self.pending_client_messages.entry(key.clone()).or_default() += 1;
-        let result =
-            self.host
-                .dispatch_client_message(registration_id, event_id, data_json, client_id, client_url, ports);
+        let clients_claim_allowed = state == ServiceWorkerState::Activated;
+        let result = self.host.dispatch_client_message(
+            registration_id,
+            ServiceWorkerClientMessageDispatch {
+                event_id,
+                data_json,
+                client_id,
+                client_url,
+                ports,
+                clients_claim_allowed,
+            },
+        );
         if result.is_err() {
             self.release_client_message_reservation(&key);
             for port_id in &ports.transferred_port_ids {
@@ -2308,7 +2344,7 @@ impl ServiceWorkerManager {
             return Ok(ServiceWorkerFetchDispatch::PassThrough);
         };
         let client_id = request.client_id.clone();
-        self.host.dispatch_fetch(registration_id, event_id, request)?;
+        self.host.dispatch_fetch(registration_id, event_id, request, true)?;
         self.pending_fetch_events.insert(
             (registration_id, event_id),
             PendingFetchRecord {

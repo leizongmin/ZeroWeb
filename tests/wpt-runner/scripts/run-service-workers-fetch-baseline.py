@@ -10,8 +10,8 @@ import subprocess
 import sys
 from pathlib import Path
 
-EXPECTED_CASES = 12
-EXPECTED_SUBTESTS = 28
+EXPECTED_CASES = 13
+EXPECTED_SUBTESTS = 30
 
 
 def parse_args() -> argparse.Namespace:
@@ -86,7 +86,8 @@ def render_markdown(summary: dict) -> str:
             "`fetch-event-respond-with-custom-response.https.html`, "
             "`fetch-event-respond-with-stops-propagation.https.html`, "
             "`uncontrolled-page.https.html`, `claim-fetch.https.html`, "
-            "`claim-not-using-registration.https.html`, and their new support assets",
+            "`claim-not-using-registration.https.html`, "
+            "`claim-using-registration.https.html`, and their new support assets",
             f"- Cases: {summary['cases']}",
             f"- Subtests: {summary['subtests']}",
             f"- Pass: {status.get('Pass', 0)}",
@@ -97,7 +98,7 @@ def render_markdown(summary: dict) -> str:
             "",
             "## Scope",
             "",
-            "This pinned Service Worker M2 fetch/interception baseline covers twelve cases. "
+            "This pinned Service Worker M2 fetch/interception baseline covers thirteen cases. "
             "`request-end-to-end.https.html` registers a real service worker, loads a "
             "controlled iframe, dispatches a FetchEvent, and validates the Request "
             "projection returned via `respondWith(new Response(...))`. "
@@ -132,7 +133,10 @@ def render_markdown(summary: dict) -> str:
             "fetches intercepted by the claiming active worker. "
             "`claim-not-using-registration.https.html` covers `clients.claim()` only controlling "
             "clients for which the claiming registration is the matching registration, including "
-            "not stealing a client matched by a longer in-progress registration.",
+            "not stealing a client matched by a longer in-progress registration. "
+            "`claim-using-registration.https.html` covers `clients.claim()` replacing a client "
+            "controlled by another registration while rejecting claim from a waiting worker in "
+            "the same registration.",
         ]
     ) + "\n"
 

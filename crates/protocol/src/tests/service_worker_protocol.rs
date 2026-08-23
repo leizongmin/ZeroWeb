@@ -526,6 +526,7 @@ fn service_worker_host_fetch_command_and_event_round_trip() {
         registration_id: 8,
         command: ServiceWorkerHostCommand::DispatchFetch {
             event_id: 21,
+            clients_claim_allowed: true,
             request: ServiceWorkerFetchRequestWire {
                 url: "https://example.test/app/data".into(),
                 method: "POST".into(),
@@ -1100,6 +1101,7 @@ fn service_worker_host_fetch_command_and_event_round_trip() {
             registration_id: 8,
             command: ServiceWorkerHostCommand::DispatchFetch {
                 event_id: 22,
+                clients_claim_allowed: true,
                 request: ServiceWorkerFetchRequestWire {
                     url: String::new(),
                     method: "GET".into(),
@@ -1335,6 +1337,7 @@ fn service_worker_host_message_command_round_trips_and_validates() {
                 transferred_port_ids: Vec::new(),
                 data_port_index: None,
                 target_port_id: None,
+                clients_claim_allowed: true,
             },
         }),
     };
@@ -1358,6 +1361,7 @@ fn service_worker_host_message_command_round_trips_and_validates() {
             transferred_port_ids: Vec::new(),
             data_port_index: None,
             target_port_id: None,
+            clients_claim_allowed: true,
         },
     };
     assert!(invalid.validate().is_err());

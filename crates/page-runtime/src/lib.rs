@@ -32,9 +32,10 @@ pub use cache_storage_host::cache_storage_handler;
 pub use indexed_db_host::indexed_db_handler;
 pub mod service_worker_manager;
 pub use service_worker_manager::{
-    LocalServiceWorkerHost, ServiceWorkerFetchDispatch, ServiceWorkerImportedScript, ServiceWorkerManager,
-    ServiceWorkerManagerError, ServiceWorkerManagerEvent, ServiceWorkerPersistentRegistration,
-    ServiceWorkerRegistrationKey, ServiceWorkerRuntimeHost, ServiceWorkerUpdateOutcome, ServiceWorkerVersionSlots,
+    LocalServiceWorkerHost, ServiceWorkerClientMessageDispatch, ServiceWorkerFetchDispatch,
+    ServiceWorkerImportedScript, ServiceWorkerManager, ServiceWorkerManagerError, ServiceWorkerManagerEvent,
+    ServiceWorkerPersistentRegistration, ServiceWorkerRegistrationKey, ServiceWorkerRuntimeHost,
+    ServiceWorkerUpdateOutcome, ServiceWorkerVersionSlots,
 };
 pub mod service_worker_registration;
 pub use service_worker_registration::{

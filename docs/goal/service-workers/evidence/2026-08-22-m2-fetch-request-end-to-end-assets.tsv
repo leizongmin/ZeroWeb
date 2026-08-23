@@ -36,3 +36,4 @@ service-workers/service-worker/resources/blank.html	support	iframe-document	1	41
 service-workers/service-worker/claim-not-using-registration.https.html	testharness	case	1	5252	no	fd61d05ba4ea8a1c416eb6d4b1128f7b65b4b35c	24197a11e8c5bd29a5cb7bdf18135a82be8a8546
 service-workers/service-worker/resources/empty.js	support	worker-script	1	0	no	e69de29bb2d1d6434b8b29ae775ad8c2e48c5391	24197a11e8c5bd29a5cb7bdf18135a82be8a8546
 service-workers/service-worker/resources/empty-worker.js	support	worker-script	1	15	no	49ceb2648a93410bdd5ee53ef0e114146210741b	24197a11e8c5bd29a5cb7bdf18135a82be8a8546
+service-workers/service-worker/claim-using-registration.https.html	testharness	case	1	3983	no	8a2a6ff25c82d8d6de26cca521da99f8ef6d5fbf	24197a11e8c5bd29a5cb7bdf18135a82be8a8546
