@@ -33,3 +33,6 @@ service-workers/service-worker/resources/simple.txt	support	network-resource	1	1
 service-workers/service-worker/claim-fetch.https.html	testharness	case	1	2898	no	ae0082df06bf794d02990a7c0b7213e0d81114cb	24197a11e8c5bd29a5cb7bdf18135a82be8a8546
 service-workers/service-worker/resources/claim-worker.js	support	worker-script	1	623	no	18004079475e2bbd9d1a8d25ae4b26c7638de58e	24197a11e8c5bd29a5cb7bdf18135a82be8a8546
 service-workers/service-worker/resources/blank.html	support	iframe-document	1	41	no	a3c3a4689a62b45b1e429f6b7a94690e556a1259	24197a11e8c5bd29a5cb7bdf18135a82be8a8546
+service-workers/service-worker/claim-not-using-registration.https.html	testharness	case	1	5252	no	fd61d05ba4ea8a1c416eb6d4b1128f7b65b4b35c	24197a11e8c5bd29a5cb7bdf18135a82be8a8546
+service-workers/service-worker/resources/empty.js	support	worker-script	1	0	no	e69de29bb2d1d6434b8b29ae775ad8c2e48c5391	24197a11e8c5bd29a5cb7bdf18135a82be8a8546
+service-workers/service-worker/resources/empty-worker.js	support	worker-script	1	15	no	49ceb2648a93410bdd5ee53ef0e114146210741b	24197a11e8c5bd29a5cb7bdf18135a82be8a8546

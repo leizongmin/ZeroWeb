@@ -1,8 +1,8 @@
 {
-  "cases": 11,
-  "subtests": 26,
+  "cases": 12,
+  "subtests": 28,
   "status": {
-    "Pass": 26
+    "Pass": 28
   },
   "deterministic": true,
   "results": [
@@ -186,6 +186,21 @@
       [
         {
           "name": "fetch() should be intercepted after the client is claimed.",
+          "status": "Pass",
+          "message": null
+        }
+      ]
+    ],
+    [
+      "service-workers/service-worker/claim-not-using-registration.https.html",
+      [
+        {
+          "name": "Test claim client which is not using registration",
+          "status": "Pass",
+          "message": null
+        },
+        {
+          "name": "Test claim client when there's a longer-matched registration not already used by the page",
           "status": "Pass",
           "message": null
         }

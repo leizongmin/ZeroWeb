@@ -2106,12 +2106,26 @@ impl ServiceWorkerManager {
         let Some(registration) = self.registry.get(registration_id).cloned() else {
             return;
         };
-        for record in self.clients.values_mut() {
-            let same_origin = url::Url::parse(&record.info.url)
-                .is_ok_and(|url| url.origin().ascii_serialization() == registration.origin);
-            if same_origin && registration.is_in_scope(&record.info.url) {
-                record.controller_registration_id = Some(registration_id);
-            }
+        let claimable_client_ids = self
+            .clients
+            .values()
+            .filter(|record| {
+                let Ok(url) = url::Url::parse(&record.info.url) else {
+                    return false;
+                };
+                url.origin().ascii_serialization() == registration.origin
+                    && registration.is_in_scope(&record.info.url)
+                    && self
+                        .registration_for_url(&registration.origin, &record.info.url)
+                        .is_some_and(|matched| matched.id == registration_id)
+            })
+            .map(|record| record.info.id.clone())
+            .collect::<Vec<_>>();
+        for client_id in claimable_client_ids {
+            let Some(record) = self.clients.get_mut(&client_id) else {
+                continue;
+            };
+            record.controller_registration_id = Some(registration_id);
         }
     }
 
@@ -4320,6 +4334,53 @@ mod tests {
                 .active_registration_for_client("https://example.test", "client-1")
                 .map(|registration| registration.id),
             Some(id)
+        );
+    }
+
+    #[test]
+    fn clients_claim_does_not_control_client_with_longer_matching_registration() {
+        let mut manager = manager_under_test();
+        manager
+            .observe_window_client("client-1", "https://example.test/app/deeper/page")
+            .unwrap();
+        let app = start_active(&mut manager, "/app/", "globalThis.app = true;");
+        let deeper = start(&mut manager, "/app/deeper/", "globalThis.deeper = true;");
+
+        assert_eq!(
+            manager.registration(deeper).map(|registration| registration.state),
+            Some(ServiceWorkerState::Installing)
+        );
+
+        manager.claim_matching_clients(app);
+        assert!(
+            manager
+                .active_registration_for_client("https://example.test", "client-1")
+                .is_none(),
+            "clients.claim() must not control clients matched by a different longer registration"
+        );
+    }
+
+    #[test]
+    fn clients_claim_can_replace_shorter_controller_when_it_is_longest_match() {
+        let mut manager = manager_under_test();
+        let root = start_active(&mut manager, "/", "globalThis.root = true;");
+        manager
+            .observe_window_client("client-1", "https://example.test/app/page")
+            .unwrap();
+        assert_eq!(
+            manager
+                .active_registration_for_client("https://example.test", "client-1")
+                .map(|registration| registration.id),
+            Some(root)
+        );
+
+        let app = start_active(&mut manager, "/app/", "globalThis.app = true;");
+        manager.claim_matching_clients(app);
+        assert_eq!(
+            manager
+                .active_registration_for_client("https://example.test", "client-1")
+                .map(|registration| registration.id),
+            Some(app)
         );
     }
 

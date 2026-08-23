@@ -10,8 +10,8 @@ import subprocess
 import sys
 from pathlib import Path
 
-EXPECTED_CASES = 11
-EXPECTED_SUBTESTS = 26
+EXPECTED_CASES = 12
+EXPECTED_SUBTESTS = 28
 
 
 def parse_args() -> argparse.Namespace:
@@ -86,7 +86,7 @@ def render_markdown(summary: dict) -> str:
             "`fetch-event-respond-with-custom-response.https.html`, "
             "`fetch-event-respond-with-stops-propagation.https.html`, "
             "`uncontrolled-page.https.html`, `claim-fetch.https.html`, "
-            "and their new support assets",
+            "`claim-not-using-registration.https.html`, and their new support assets",
             f"- Cases: {summary['cases']}",
             f"- Subtests: {summary['subtests']}",
             f"- Pass: {status.get('Pass', 0)}",
@@ -97,7 +97,7 @@ def render_markdown(summary: dict) -> str:
             "",
             "## Scope",
             "",
-            "This pinned Service Worker M2 fetch/interception baseline covers eleven cases. "
+            "This pinned Service Worker M2 fetch/interception baseline covers twelve cases. "
             "`request-end-to-end.https.html` registers a real service worker, loads a "
             "controlled iframe, dispatches a FetchEvent, and validates the Request "
             "projection returned via `respondWith(new Response(...))`. "
@@ -129,7 +129,10 @@ def render_markdown(summary: dict) -> str:
             "fetches bypass that worker's fetch handler. "
             "`claim-fetch.https.html` covers an existing iframe client that starts uncontrolled, "
             "then becomes controlled only after message-time `clients.claim()` and has later "
-            "fetches intercepted by the claiming active worker.",
+            "fetches intercepted by the claiming active worker. "
+            "`claim-not-using-registration.https.html` covers `clients.claim()` only controlling "
+            "clients for which the claiming registration is the matching registration, including "
+            "not stealing a client matched by a longer in-progress registration.",
         ]
     ) + "\n"
 
