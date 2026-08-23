@@ -1,5 +1,6 @@
 //! CSS Transition、Animation、Transform、Gradient 解析。
 
+use super::transform_helpers::{parse_finite_number_math, split_top_level_comma_args, split_transform_args};
 use super::*;
 
 // ── CSS Transition 值类型 ──────────────────────────────────────────────
@@ -247,14 +248,14 @@ pub fn parse_timing_function(value: &str) -> Option<TimingFunctionValue> {
         _ if value.starts_with("cubic-bezier(") => {
             // https://drafts.csswg.org/css-easing-1/#cubic-bezier-easing-functions
             let inner = extract_parens_content(&value, "cubic-bezier")?;
-            let parts = split_timing_function_args(inner)?;
+            let parts = split_top_level_comma_args(inner)?;
             if parts.len() != 4 {
                 return None;
             }
-            let x1 = parse_timing_number(parts[0])?;
-            let y1 = parse_timing_number(parts[1])?;
-            let x2 = parse_timing_number(parts[2])?;
-            let y2 = parse_timing_number(parts[3])?;
+            let x1 = parse_finite_number_math(parts[0])?;
+            let y1 = parse_finite_number_math(parts[1])?;
+            let x2 = parse_finite_number_math(parts[2])?;
+            let y2 = parse_finite_number_math(parts[3])?;
             if !x1.is_finite()
                 || !y1.is_finite()
                 || !x2.is_finite()
@@ -288,70 +289,6 @@ pub fn parse_timing_function(value: &str) -> Option<TimingFunctionValue> {
         }
         _ => None,
     }
-}
-
-fn parse_timing_number(value: &str) -> Option<f64> {
-    let trimmed = value.trim();
-    if let Ok(number) = trimmed.parse::<f64>() {
-        return number.is_finite().then_some(number);
-    }
-    let expr = parse_math_function(trimmed)?;
-    if !calc_expr_is_number(&expr) {
-        return None;
-    }
-    let value = eval_calc(&expr, None)?;
-    value.is_finite().then_some(value)
-}
-
-fn calc_expr_is_number(expr: &CalcExpr) -> bool {
-    match expr {
-        CalcExpr::Number(_) => true,
-        CalcExpr::Length(_) => false,
-        CalcExpr::BinaryOp(left, _, right) => calc_expr_is_number(left) && calc_expr_is_number(right),
-        CalcExpr::Min(args) | CalcExpr::Max(args) => args.iter().all(calc_expr_is_number),
-        CalcExpr::Clamp { min, val, max } => {
-            calc_expr_is_number(min) && calc_expr_is_number(val) && calc_expr_is_number(max)
-        }
-        CalcExpr::UnaryOp(_, inner) => calc_expr_is_number(inner),
-        CalcExpr::BinaryMathOp(_, left, right) => calc_expr_is_number(left) && calc_expr_is_number(right),
-    }
-}
-
-fn split_timing_function_args(input: &str) -> Option<Vec<&str>> {
-    let mut args = Vec::new();
-    let mut depth = 0i32;
-    let mut start = 0;
-
-    for (idx, ch) in input.char_indices() {
-        match ch {
-            '(' => depth += 1,
-            ')' => {
-                depth -= 1;
-                if depth < 0 {
-                    return None;
-                }
-            }
-            ',' if depth == 0 => {
-                let part = input[start..idx].trim();
-                if part.is_empty() {
-                    return None;
-                }
-                args.push(part);
-                start = idx + ch.len_utf8();
-            }
-            _ => {}
-        }
-    }
-
-    if depth != 0 {
-        return None;
-    }
-    let last = input[start..].trim();
-    if last.is_empty() {
-        return None;
-    }
-    args.push(last);
-    Some(args)
 }
 
 /// 解析 steps() 位置参数。
@@ -568,7 +505,7 @@ fn parse_transform_function(name: &str, args: &str) -> Option<TransformFunction>
             Some(TransformFunction::Rotate(angle))
         }
         "scale" => {
-            let vals = parse_transform_args(args)?;
+            let vals = parse_transform_number_args(args)?;
             if vals.len() > 2 {
                 return None;
             }
@@ -577,7 +514,7 @@ fn parse_transform_function(name: &str, args: &str) -> Option<TransformFunction>
             Some(TransformFunction::Scale(sx, sy))
         }
         "scalex" => {
-            let vals = parse_transform_args(args)?;
+            let vals = parse_transform_number_args(args)?;
             if vals.len() != 1 {
                 return None;
             }
@@ -585,7 +522,7 @@ fn parse_transform_function(name: &str, args: &str) -> Option<TransformFunction>
             Some(TransformFunction::ScaleX(sx))
         }
         "scaley" => {
-            let vals = parse_transform_args(args)?;
+            let vals = parse_transform_number_args(args)?;
             if vals.len() != 1 {
                 return None;
             }
@@ -614,7 +551,7 @@ fn parse_transform_function(name: &str, args: &str) -> Option<TransformFunction>
             Some(TransformFunction::RotateZ(angle))
         }
         "translate3d" => {
-            let parts: Vec<&str> = args.split(',').map(|s| s.trim()).collect();
+            let parts = split_top_level_comma_args(args)?;
             if parts.len() != 3 {
                 return None;
             }
@@ -624,23 +561,23 @@ fn parse_transform_function(name: &str, args: &str) -> Option<TransformFunction>
             Some(TransformFunction::Translate3d(tx, ty, tz))
         }
         "scale3d" => {
-            let parts: Vec<&str> = args.split(',').map(|s| s.trim()).collect();
+            let parts = split_top_level_comma_args(args)?;
             if parts.len() != 3 {
                 return None;
             }
-            let sx = parse_css_number(parts[0])?;
-            let sy = parse_css_number(parts[1])?;
-            let sz = parse_css_number(parts[2])?;
+            let sx = parse_transform_number(parts[0])?;
+            let sy = parse_transform_number(parts[1])?;
+            let sz = parse_transform_number(parts[2])?;
             Some(TransformFunction::Scale3d(sx, sy, sz))
         }
         "rotate3d" => {
-            let parts: Vec<&str> = args.split(',').map(|s| s.trim()).collect();
+            let parts = split_top_level_comma_args(args)?;
             if parts.len() != 4 {
                 return None;
             }
-            let x = parse_css_number(parts[0])?;
-            let y = parse_css_number(parts[1])?;
-            let z = parse_css_number(parts[2])?;
+            let x = parse_transform_number(parts[0])?;
+            let y = parse_transform_number(parts[1])?;
+            let z = parse_transform_number(parts[2])?;
             let angle = parse_angle(parts[3])?;
             Some(TransformFunction::Rotate3d(x, y, z, angle))
         }
@@ -652,7 +589,7 @@ fn parse_transform_function(name: &str, args: &str) -> Option<TransformFunction>
             Some(TransformFunction::Perspective(val))
         }
         "matrix" => {
-            let vals = parse_transform_args(args)?;
+            let vals = parse_transform_number_args(args)?;
             if vals.len() != 6 {
                 return None;
             }
@@ -667,22 +604,23 @@ fn parse_transform_function(name: &str, args: &str) -> Option<TransformFunction>
 /// 解析变换参数列表（逗号或空格分隔的数值）。
 fn parse_transform_args(args: &str) -> Option<Vec<f64>> {
     let mut result = Vec::new();
-    if args.contains(',') {
-        for item in args.split(',') {
-            let item = item.trim();
-            if item.is_empty() {
-                return None;
-            }
-            for part in item.split_whitespace() {
-                result.push(parse_css_number(part)?);
-            }
-        }
-    } else {
-        for part in args.split_whitespace() {
-            result.push(parse_css_number(part)?);
-        }
+    for part in split_transform_args(args)? {
+        result.push(parse_css_number(part)?);
     }
     if result.is_empty() { None } else { Some(result) }
+}
+
+fn parse_transform_number_args(args: &str) -> Option<Vec<f64>> {
+    let mut result = Vec::new();
+    for part in split_transform_args(args)? {
+        result.push(parse_transform_number(part)?);
+    }
+    if result.is_empty() { None } else { Some(result) }
+}
+
+fn parse_transform_number(value: &str) -> Option<f64> {
+    // https://drafts.csswg.org/css-transforms-1/#transform-functions
+    parse_css_number(value).or_else(|| parse_finite_number_math(value))
 }
 
 /// 按逗号/空白拆分 translate 参数为原始 token（保留 `%` 后缀供 [`parse_len_or_pct`] 判定）。

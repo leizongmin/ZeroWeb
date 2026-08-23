@@ -65,6 +65,7 @@ fn test_timing_function_cubic_bezier_invalid() {
     assert!(parse_timing_function("cubic-bezier(-0.1, 0.1, 0.25, 1.0)").is_none());
     assert!(parse_timing_function("cubic-bezier(0.25, 0.1, 1.1, 1.0)").is_none());
     assert!(parse_timing_function("cubic-bezier(calc(1px + 1px), 0, 1, 1)").is_none());
+    assert!(parse_timing_function("cubic-bezier(calc(1deg), 0, 1, 1)").is_none());
     assert!(parse_timing_function("cubic-bezier(calc(infinity), 0, 1, 1)").is_none());
 }
 

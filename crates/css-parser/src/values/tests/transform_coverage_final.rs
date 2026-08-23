@@ -227,6 +227,36 @@ fn test_transform_scale3d_zero() {
     assert!(result.is_some());
 }
 
+#[test]
+fn test_transform_comma_args_accept_number_math() {
+    let scale = parse_transform("scale3d(min(1, 2), max(2, 1), clamp(0.5, 1.5, 2))").unwrap();
+    match scale {
+        TransformValue::List(functions) => {
+            assert_eq!(functions[0], TransformFunction::Scale3d(1.0, 2.0, 1.5));
+        }
+        other => panic!("expected transform list, got {other:?}"),
+    }
+
+    let rotate = parse_transform("rotate3d(min(1, 2), max(-1, 0), clamp(0, 1, 1), 45deg)").unwrap();
+    match rotate {
+        TransformValue::List(functions) => {
+            assert_eq!(functions[0], TransformFunction::Rotate3d(1.0, 0.0, 1.0, 45.0));
+        }
+        other => panic!("expected transform list, got {other:?}"),
+    }
+
+    let matrix = parse_transform("matrix(1, 0, 0, 1, min(5, 10), max(20, 10))").unwrap();
+    match matrix {
+        TransformValue::List(functions) => {
+            assert_eq!(functions[0], TransformFunction::Matrix(1.0, 0.0, 0.0, 1.0, 5.0, 20.0));
+        }
+        other => panic!("expected transform list, got {other:?}"),
+    }
+
+    assert!(parse_transform("scale3d(calc(1deg), 1, 1)").is_none());
+    assert!(parse_transform("matrix(1, 0, 0, 1, calc(1px), 0)").is_none());
+}
+
 // 测试 rotate3d 中的零向量
 #[test]
 fn test_transform_rotate3d_zero_vector() {

@@ -11,6 +11,7 @@ pub mod parse_extended_visual;
 pub mod parse_layout;
 pub mod parse_misc;
 pub mod parse_transform;
+mod transform_helpers;
 pub mod types;
 
 // Re-export all public items.
