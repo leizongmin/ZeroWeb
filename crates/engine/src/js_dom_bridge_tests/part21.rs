@@ -2157,3 +2157,54 @@ fn test_foreign_doc_text_characterdata_methods_r202() {
         "R202 foreign-doc 文本/注释节点 CharacterData 五方法 + data/nodeValue setter（本地变更语义）"
     );
 }
+
+/// R203：Range `setStart`/`setEnd` 的 **crossing 重设规则**（spec `range-set-start`
+/// 步骤 3 / `range-set-end` 镜像）——新 start 在当前 end 之后（边界点比较，含跨文档）
+/// 时 end 一并设为 (node, offset)；setEnd 向前穿 start 时 start 一并重设。WPT
+/// Range-set 的 "must set the end node to node too" 族。
+#[test]
+fn test_range_set_start_end_crossing_r203() {
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let mut sandbox = V8Sandbox::with_config(zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    })
+    .unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><div id='r'><p id='p0'>a</p><p id='p1'>b</p><p id='p2'>c</p></div></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+    let out = sandbox
+        .execute(
+            "var p0 = document.querySelector('#p0');\
+             var p2 = document.querySelector('#p2');\
+             var p2t = p2.firstChild;\
+             var r = document.createRange();\
+             r.setStart(p0, 0); r.setEnd(p0, 1);\
+             var a = 'before:' + [r.startContainer === p0, r.endContainer === p0].join(',');\
+             r.setStart(p2t, 0);\
+             var b = 'cross:' + [r.startContainer === p2t, r.endContainer === p2t, r.endOffset].join(',');\
+             var r2 = document.createRange();\
+             r2.setStart(p2t, 0); r2.setEnd(p2, 1);\
+             r2.setEnd(p0, 0);\
+             var c = 'back:' + [r2.endContainer === p0, r2.startContainer === p0, r2.startOffset].join(',');\
+             var r3 = document.createRange();\
+             r3.setStart(p0, 0); r3.setEnd(p2, 1);\
+             r3.setStart(p0.firstChild, 0);\
+             var d = 'noncross:' + [r3.startContainer === p0.firstChild, r3.endContainer === p2].join(',');\
+             [a, b, c, d].join('|')",
+        )
+        .unwrap()
+        .value;
+    assert_eq!(
+        out,
+        "before:true,true|cross:true,true,0|back:true,true,0|noncross:true,true",
+        "R203 setStart 向后穿重设 end / setEnd 向前穿重设 start / 不穿越不动对侧"
+    );
+}

@@ -3362,7 +3362,91 @@
     if (kids && kids.length) { for (var i = 0; i < kids.length; i++) _descendantText(kids[i], out); }
   }
 
-  // 构造 Range（document.createRange / selectNode* 等用）。**已知限制**：① toString 精确覆盖 selectNode/
+  // R203（js-dom M4）：**边界点序比较**（spec `concept-range-bp` 的 position-of——
+  // (containerA, offsetA) 是否**严格在** (containerB, offsetB) 之后）。三段判定：
+  // ① 同容器：offsetA > offsetB；② A 容器是 B 容器的祖先：比较 B 侧在 A offset 处
+  // 的 child 位置（B 容器自身或其祖先链在 A 的 childNodes 中的索引 ≥ offsetA 即 after；
+  // spec「boundary-point (parent, index) 比较」——child (A, offsetA) 及之后的位置在
+  // B 子树之前）；③ 其余：A、B 容器在**共同父**下的 child 索引序（含 A===B 容器的
+  // 兄弟形态）。跨文档/无共同根（异 doc 节点、detached 树）恒 after——spec 的
+  // position-of 在异树间不可比，setStart/setEnd 的「或 in different document」分支
+  // 语义 = 触发对侧重设（WPT Range-set "in different document" 正断言族）。
+  // 实现：child 索引定位经 parentNode/childNodes 链（shim 各节点形态均有）；
+  // 共同父 = 沿 A 容器祖先链收集命中 B 容器祖先链的首个共同节点。
+  function _zwRangeBpAfter(cA, oA, cB, oB) {
+    if (!cA || !cB) return false;
+    if (cA === cB) return (oA | 0) > (oB | 0);
+    // A 是 B 的祖先：A 侧边界点 (cA, oA) 指向 cA 的第 oA 个子——索引 < oA 的子树
+    // 在边界点**之前**，>= oA 的在**之后**。B 的「cA 直接子」索引 childB：B 在
+    // 边界点之后 iff childB >= oA；故 A 点在 B 之后 iff childB < oA。
+    if (_zwIsAncestorOrSelf(cA, cB)) {
+      var childB = _zwBpChildOf(cB, cA);
+      return childB != null && (childB | 0) < (oA | 0);
+    }
+    if (_zwIsAncestorOrSelf(cB, cA)) {
+      // A 是 B 的后代：B 侧边界点 (cB, oB) 指向 cB 的第 oB 个子。A 的「cB 直接子」
+      // 索引 >= oB → A 在 B 边界点之后（该子及其后子树）；< oB → 之前。
+      var childA = _zwBpChildOf(cA, cB);
+      return childA != null && (childA | 0) >= (oB | 0);
+    }
+    // R203 修正：**深度感知双 climb**（首版逐父同步 walk 在深浅不一形态误序——
+    // 单测 noncross 实证：point(t1,0) vs (p2,1)，t1 深 2 层、p2 深 1 层，走一步后
+    // xA=p0 vs xB=div 触发 isAnc 短路误判 after）。先把深侧 climb 到与浅侧同深，
+    // 再同步上行至共同父，双方**直接子**索引定序（offset 不跨共同父层）。
+    var dA = _zwTreeDepth(cA), dB = _zwTreeDepth(cB);
+    var xA = cA, xB = cB;
+    while (dA > dB && xA.parentNode) { xA = xA.parentNode; dA--; }
+    while (dB > dA && xB.parentNode) { xB = xB.parentNode; dB--; }
+    var guard203 = 0;
+    while (xA && xB && xA !== xB && guard203++ < 256) {
+      var ppA = xA.parentNode, ppB = xB.parentNode;
+      if (!ppA || !ppB) break;
+      if (ppA === ppB) {
+        var jA = _zwIndexOfChild(ppA, xA), jB = _zwIndexOfChild(ppB, xB);
+        return jA >= 0 && jB >= 0 ? jA > jB : false;
+      }
+      xA = ppA; xB = ppB;
+    }
+    return true; // 无共同根（跨文档/detached）——恒 after（触发对侧重设）
+  }
+  // 节点深度（root 层级计数；无父 = 0）。
+  function _zwTreeDepth(node) {
+    var d = 0, cur = node;
+    var guard = 0;
+    while (cur && cur.parentNode && guard++ < 512) { d++; cur = cur.parentNode; }
+    return d;
+  }
+  // node 是否为 self 或 other 的祖先（沿 parentNode 链）。
+  function _zwIsAncestorOrSelf(anc, node) {
+    var cur = node;
+    var guard = 0;
+    while (cur && guard++ < 256) {
+      if (cur === anc) return true;
+      cur = cur.parentNode;
+    }
+    return false;
+  }
+  // boundary-point 的「child 侧」索引：container 自身在 anc 的 childNodes 中的索引；
+  // anc 为 null 时返回其在父下的索引（无父 null）。
+  function _zwBpChildOf(node, anc) {
+    if (anc !== null && node === anc) return null;
+    var p = node.parentNode;
+    if (!p || (anc !== null && !_zwIsAncestorOrSelf(anc, node))) return null;
+    // 沿链上行到 anc 的直接子（anc 的 childNodes 索引即 boundary child 位置）。
+    var cur = node;
+    var guard = 0;
+    while (cur && cur.parentNode && cur.parentNode !== anc && guard++ < 256) cur = cur.parentNode;
+    if (!cur || !cur.parentNode || cur.parentNode !== anc) return null;
+    return _zwIndexOfChild(anc, cur);
+  }
+  function _zwIndexOfChild(parent, child) {
+    var kids = parent.childNodes;
+    if (!kids) return -1;
+    for (var i = 0; i < kids.length; i++) if (kids[i] === child) return i;
+    return -1;
+  }
+
+
   // selectNodeContents（整节点子树文本）+ 同文本节点 setStart/setEnd（slice 偏移）；其余 setStart/setEnd
   // 组合 best-effort 取 commonAncestor 子树文本（跨节点偏移不精确截取）；② deleteContents/extractContents/
   // insertNode/cloneContents/surroundContents（R2929/R2930）经既有 mutation-emitting proxy
@@ -3408,6 +3492,17 @@
         if (node.nodeType !== 1 && o > this._nodeLength(node)) {
           throw new globalThis.DOMException('The given offset is out of bounds.', 'IndexSizeError');
         }
+        // R203（js-dom M4）：spec `range-set-start` 步骤 3——新 start 在当前 end 之后
+        //（边界点比较 FOLLOWING，含跨文档形态）时 end 一并设为 (node, offset)
+        //（WPT Range-set 的 "setStart(node, offset) where node is after current end
+        // or in different document must set the end node to node too"——旧版 end 残留
+        // 旧容器）。比较经 `_zwRangeBpAfter`：跨文档（无共同根）恒 after（spec
+        // position-of 边界点在异文档间不可比时 setStart 的 end 重设同样触发——
+        // WPT "in different document" 正断言族）。
+        var _r203End = this.endContainer;
+        if (_r203End && _zwRangeBpAfter(node, o, _r203End, this.endOffset | 0)) {
+          this.endContainer = node; this.endOffset = o;
+        }
         this.startContainer = node; this.startOffset = o; this._recalc(); return this;
       },
       setEnd: function (node, off) {
@@ -3418,6 +3513,12 @@
         if (o < 0) throw new globalThis.DOMException('The given offset is out of bounds.', 'IndexSizeError');
         if (node.nodeType !== 1 && o > this._nodeLength(node)) {
           throw new globalThis.DOMException('The given offset is out of bounds.', 'IndexSizeError');
+        }
+        // R203（js-dom M4）：spec `range-set-end` 步骤 3 镜像——新 end 在当前 start
+        // 之前（PRECEDING）时 start 一并设为 (node, offset)。
+        var _r203Start = this.startContainer;
+        if (_r203Start && _zwRangeBpAfter(_r203Start, this.startOffset | 0, node, o)) {
+          this.startContainer = node; this.startOffset = o;
         }
         this.endContainer = node; this.endOffset = o; this._recalc(); return this;
       },
