@@ -6576,7 +6576,34 @@
             return c;
           } catch (_e112d) { /* 回落通用路径 */ }
         }
-        ensureTree(); var r = _tree.appendChild(c); if (c && c.parentNode === _tree) c.parentNode = body; return r;
+        ensureTree(); var r = _tree.appendChild(c); if (c && c.parentNode === _tree) c.parentNode = body;
+        // R191（js-dom M4）：iframe doc 的 body appendChild 的 **adopt 子树传播**
+        //（spec concept-node-adopt——跨 realm appendChild 时子树 ownerDocument 重指本
+        // doc；WPT node-realm-mixed-across-adoption "Element parsed into an adopted
+        // container"：容器移入 innerB 后 p.ownerDocument === innerB.document）。handle
+        // 形态落全局注册表（ownerDocument trap 查），plain/`_zwMEl` 形态递归 defineProperty。
+        try {
+          (function _r191adoptBody(n2) {
+            if (!n2 || typeof n2 !== 'object') return;
+            if (n2.__zwHandle) {
+              if (!globalThis.__zwAdoptDocByHandle) globalThis.__zwAdoptDocByHandle = {};
+              globalThis.__zwAdoptDocByHandle[String(n2.__zwHandle)] = doc;
+            } else if (n2.nodeType === 1 || n2.nodeType === 3 || n2.nodeType === 8) {
+              try { n2.__zwAdoptDoc191 = doc; } catch (_e191b1) {}
+              try {
+                Object.defineProperty(n2, 'ownerDocument', {
+                  get: function () { return n2.__zwAdoptDoc191 || undefined; },
+                  configurable: true,
+                });
+              } catch (_e191b2) {}
+            }
+            var k2 = n2.childNodes;
+            if (k2 && typeof k2.length === 'number') {
+              for (var i2 = 0; i2 < k2.length; i2++) _r191adoptBody(k2[i2]);
+            }
+          })(c);
+        } catch (_e191ab) {}
+        return r;
       },
       // js-dom M4 R87：body 的 insertBefore（WPT NodeIterator-removal 恢复段经
       // oldParent.insertBefore——foreignPara 的父是 body 代理）。ref=null 等价 append；
@@ -6868,6 +6895,34 @@
         c.parentNode = this;
         this.childNodes.push(c);
         if (c.nodeType === 1) this.children.push(c);
+        // R191（js-dom M4）：doc 级 appendChild 的 **adopt 子树传播**（spec
+        // `concept-node-adopt`——node 移入 doc 时其与全部后代的 ownerDocument 重指本文
+        // 档；WPT Range-adopt-test "Parented range container moved..."——container
+        // 被 createDocument(null,null).appendChild 后 range 的 adopt-collapse 判定读
+        // tracked node 的 ownerDocument 变更）。defineProperty getter（可配置——多次
+        // adopt 覆盖）。
+        var _r191doc = this;
+        (function adoptAll191(n) {
+          if (!n || typeof n !== 'object') return;
+          // handle 形态（proxy）：印记落全局注册表（ownerDocument trap 优先查）；
+          // plain 形态：defineProperty getter。
+          try {
+            if (n.__zwHandle) {
+              if (!globalThis.__zwAdoptDocByHandle) globalThis.__zwAdoptDocByHandle = {};
+              globalThis.__zwAdoptDocByHandle[String(n.__zwHandle)] = _r191doc;
+            } else {
+              n.__zwAdoptDoc191 = _r191doc;
+              Object.defineProperty(n, 'ownerDocument', {
+                get: function () { return n.__zwAdoptDoc191 || undefined; },
+                configurable: true,
+              });
+            }
+          } catch (_e191a) {}
+          var k191 = n.childNodes;
+          if (k191 && typeof k191.length === 'number') {
+            for (var ci191 = 0; ci191 < k191.length; ci191++) adoptAll191(k191[ci191]);
+          }
+        })(c);
         // R130：doc 级子的 sibling 链维护（WPT dom/common.js nextNode oracle 遍历依赖
         // doctype/comment/元素子在 doc.childNodes 内的 next/previousSibling——旧 append
         // 只 push，兄弟导航断链使 oracle 与 iterator 分歧）。
@@ -7052,9 +7107,17 @@
           // R127：spec `concept-node-adopt`——replace 入 doc 的节点 ownerDocument
           // 重指本 doc（WPT Node-replaceChild "inserting a new doctype should work"
           // `doctype2.ownerDocument === doc` 断言——跨 detached doc 移动后归属变更）。
+          // R191：赋值改 defineProperty getter——doctype 的 ownerDocument 是 accessor
+          // 时赋值静默 no-op（探针实证 dt2 停留 doc2）。
           try {
-            newChild.ownerDocument = doc;
-          } catch (_e127h) {}
+            newChild.__zwAdoptDoc191 = doc;
+            Object.defineProperty(newChild, 'ownerDocument', {
+              get: function () { return newChild.__zwAdoptDoc191 || undefined; },
+              configurable: true,
+            });
+          } catch (_e127h) {
+            try { newChild.ownerDocument = doc; } catch (_e127h2) {}
+          }
           if (nnt === 1) {
             var ni = doc.children.indexOf(newChild);
             if (ni < 0) doc.children.push(newChild);

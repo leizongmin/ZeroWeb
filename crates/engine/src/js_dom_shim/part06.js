@@ -3303,9 +3303,15 @@
         var sp = (node && node.parentNode) || null;
         if (!sp) throw new globalThis.DOMException('The given node has no parent.', 'InvalidNodeTypeError');
         var i = this._indexOf(sp, node);
+        // R191（js-dom M4）：ownerDocument 快照——spec `concept-node-adopt` 对 live range
+        // 的 retarget：被 adopt 子树内的 range 边界 collapse（WPT Range-adopt-test
+        // "Parented range container moved..."——container 移入新 doc 后 endOffset 期望 0）。
+        // offset getter 比对 tracked node 的当前 ownerDocument 与快照。
         this.startContainer = sp; this.startOffset = i;
         this.endContainer = sp; this.endOffset = i + 1;
-        this.commonAncestorContainer = sp; this.collapsed = false; this._mode = { node: node, kind: 'node' };
+        this.commonAncestorContainer = sp; this.collapsed = false;
+        // R191：ownerDocument 快照（adopt collapse 判定——offset getter 比对）。
+        this._mode = { node: node, kind: 'node', ownerDoc: node && node.ownerDocument ? node.ownerDocument : null };
         return this;
       },
       selectNodeContents: function (node) {
@@ -3665,6 +3671,11 @@
         configurable: true,
         get: function () {
           if (r183._mode && r183._mode.kind === 'node' && r183._mode.node) {
+            // R191：adopt collapse——tracked node 的 ownerDocument 变更（跨文档 adopt）
+            // 后 startOffset 读 0（spec live range retarget）。
+            if (r183._mode.ownerDoc != null && r183._mode.node.ownerDocument !== r183._mode.ownerDoc) {
+              return 0;
+            }
             var i = _r183IdxOf(r183.startContainer, r183._mode.node);
             return i >= 0 ? i : (r183._startOffsetBase | 0);
           }
@@ -3676,6 +3687,9 @@
         configurable: true,
         get: function () {
           if (r183._mode && r183._mode.kind === 'node' && r183._mode.node) {
+            if (r183._mode.ownerDoc != null && r183._mode.node.ownerDocument !== r183._mode.ownerDoc) {
+              return 0; // R191：adopt collapse（同 startOffset）
+            }
             var i = _r183IdxOf(r183.startContainer, r183._mode.node);
             if (i >= 0) return i + 1;
             return r183._startOffsetBase | 0; // 移除后：collapse 到 start 位（spec）

@@ -1518,6 +1518,12 @@
           } catch (_e130bu) { return 'about:blank'; }
         }
         if (prop === 'ownerDocument') {
+          // R191（js-dom M4）：adopt 印记优先（handle 注册表——proxy 的属性读写均经
+          // trap，实例 defineProperty 不可达；spec concept-node-adopt 的跨文档
+          // ownerDocument 重指；WPT Range-adopt-test 跨文档变体的 adopt-collapse 判定）。
+          if (handle && globalThis.__zwAdoptDocByHandle && Object.prototype.hasOwnProperty.call(globalThis.__zwAdoptDocByHandle, String(handle))) {
+            return globalThis.__zwAdoptDocByHandle[String(handle)] || undefined;
+          }
           return globalThis.document;
         }
         // js-dom M4 R116：非 NS 属性 API 的名字语义（spec dom-element-setattribute 等——HTML 文档
