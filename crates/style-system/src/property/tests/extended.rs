@@ -574,6 +574,48 @@ fn test_font_variation_settings_apply_initial_and_inherit() {
 }
 
 #[test]
+fn test_font_settings_apply_quoted_tag_commas() {
+    let mut style = ComputedStyle::default();
+    assert!(apply_property_value(
+        &mut style,
+        "font-feature-settings",
+        "'a,b,' off, \"k,e,\" 2"
+    ));
+    assert_eq!(
+        style.font_feature_settings,
+        FontFeatureSettingsValue::Features(vec![
+            FontFeatureSetting {
+                tag: *b"a,b,",
+                value: 0,
+            },
+            FontFeatureSetting {
+                tag: *b"k,e,",
+                value: 2,
+            },
+        ])
+    );
+
+    assert!(apply_property_value(
+        &mut style,
+        "font-variation-settings",
+        "'w,g,' 600.7, \"s,l,\" -12"
+    ));
+    assert_eq!(
+        style.font_variation_settings,
+        FontVariationSettingsValue::Settings(vec![
+            FontVariationSetting {
+                tag: *b"w,g,",
+                value: 600.7,
+            },
+            FontVariationSetting {
+                tag: *b"s,l,",
+                value: -12.0,
+            },
+        ])
+    );
+}
+
+#[test]
 fn test_font_variant_ligatures_apply_initial_and_inherit() {
     let mut style = ComputedStyle::default();
     assert!(apply_property_value(

@@ -607,10 +607,15 @@ fn test_property_supported_font_feature_properties() {
     assert!(is_property_supported("font-size-adjust", "cap-height from-font"));
     assert!(is_property_supported("font-feature-settings", "normal"));
     assert!(is_property_supported("font-feature-settings", "\"liga\" off, 'kern' 2"));
+    assert!(is_property_supported("font-feature-settings", "'a,b,' off, \"k,e,\" 2"));
     assert!(is_property_supported("font-variation-settings", "normal"));
     assert!(is_property_supported(
         "font-variation-settings",
         "\"wght\" 600.7, 'slnt' -12"
+    ));
+    assert!(is_property_supported(
+        "font-variation-settings",
+        "'w,g,' 600.7, \"s,l,\" -12"
     ));
     assert!(is_property_supported(
         "font-variant-ligatures",

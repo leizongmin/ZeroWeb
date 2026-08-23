@@ -1030,8 +1030,7 @@ pub fn parse_font_feature_settings(value: &str) -> Option<FontFeatureSettingsVal
     }
 
     let mut features = Vec::new();
-    for item in value.split(',') {
-        let item = item.trim();
+    for item in split_font_settings_list(value)? {
         let quote = item.as_bytes().first().copied()?;
         if quote != b'\'' && quote != b'"' {
             return None;
@@ -1087,8 +1086,7 @@ pub fn parse_font_variation_settings(value: &str) -> Option<FontVariationSetting
     }
 
     let mut settings = Vec::new();
-    for item in value.split(',') {
-        let item = item.trim();
+    for item in split_font_settings_list(value)? {
         let quote = item.as_bytes().first().copied()?;
         if quote != b'\'' && quote != b'"' {
             return None;
@@ -1107,6 +1105,39 @@ pub fn parse_font_variation_settings(value: &str) -> Option<FontVariationSetting
         settings.push(FontVariationSetting { tag, value });
     }
     (!settings.is_empty()).then_some(FontVariationSettingsValue::Settings(settings))
+}
+
+fn split_font_settings_list(value: &str) -> Option<Vec<&str>> {
+    // https://drafts.csswg.org/css-fonts-4/#font-feature-settings-prop
+    let mut items = Vec::new();
+    let mut quote = None;
+    let mut start = 0;
+
+    for (idx, ch) in value.char_indices() {
+        match quote {
+            Some(active) if ch == active => quote = None,
+            Some(_) => {}
+            None if ch == '\'' || ch == '"' => quote = Some(ch),
+            None if ch == ',' => {
+                let item = value[start..idx].trim();
+                if item.is_empty() {
+                    return None;
+                }
+                items.push(item);
+                start = idx + ch.len_utf8();
+            }
+            None => {}
+        }
+    }
+    if quote.is_some() {
+        return None;
+    }
+    let item = value[start..].trim();
+    if item.is_empty() {
+        return None;
+    }
+    items.push(item);
+    Some(items)
 }
 
 /// CSS `font-variant-ligatures` 计算值。

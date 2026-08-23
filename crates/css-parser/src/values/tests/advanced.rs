@@ -78,6 +78,43 @@ fn test_parse_text_decoration_thickness_rejects_negative_length() {
     assert_eq!(parse_text_decoration_thickness("NaNpx"), None);
 }
 
+#[test]
+fn test_font_settings_accept_quoted_tag_commas() {
+    assert_eq!(
+        parse_font_feature_settings("'a,b,' off, \"k,e,\" 2"),
+        Some(FontFeatureSettingsValue::Features(vec![
+            FontFeatureSetting {
+                tag: *b"a,b,",
+                value: 0,
+            },
+            FontFeatureSetting {
+                tag: *b"k,e,",
+                value: 2,
+            },
+        ]))
+    );
+    assert_eq!(
+        parse_font_variation_settings("'w,g,' 600.7, \"s,l,\" -12"),
+        Some(FontVariationSettingsValue::Settings(vec![
+            FontVariationSetting {
+                tag: *b"w,g,",
+                value: 600.7,
+            },
+            FontVariationSetting {
+                tag: *b"s,l,",
+                value: -12.0,
+            },
+        ]))
+    );
+
+    assert!(parse_font_feature_settings("'liga',").is_none());
+    assert!(parse_font_feature_settings(",'liga'").is_none());
+    assert!(parse_font_feature_settings("'liga, 1").is_none());
+    assert!(parse_font_variation_settings("'wght' 1,").is_none());
+    assert!(parse_font_variation_settings(",'wght' 1").is_none());
+    assert!(parse_font_variation_settings("'wght, 1").is_none());
+}
+
 /// 测试 parse_color 边界条件：无效十六进制长度、超出范围的 rgb 分量、空 hwb
 #[test]
 fn test_parse_color_edge_cases() {
