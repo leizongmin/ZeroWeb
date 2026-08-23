@@ -2,7 +2,7 @@
 
 **入口文档**: [../service-workers.md](../service-workers.md)
 **创建日期**: 2026-08-17（goal 拆分 bootstrap）
-**最后更新**: 2026-08-23（SW CacheStorage serviceworker cache-put WPT baseline；broader SW fetch/cache baseline 继续）
+**最后更新**: 2026-08-23（SW CacheStorage serviceworker cache-add WPT baseline；broader SW fetch/cache baseline 继续）
 
 ---
 
@@ -23,12 +23,14 @@ M2 fetch/interception 上游 WPT
 `iso-latin1-header.https.html`、`fetch-event-add-async.https.html` 已形成独立 runner 与
 6 case / 10 subtest / 10 Pass 确定性 baseline；SW CacheStorage serviceworker wrapper 已
 扩展到 `cache-storage`、`cache-storage-keys`、`cache-delete`、`cache-keys`、`cache-matchAll`、
-`cache-storage-match`、`cache-match` 与 `cache-put` 8 case / 121 subtest / 121 Pass 确定性 baseline，覆盖 worker-global
+`cache-storage-match`、`cache-match`、`cache-put` 与 `cache-add` 9 case / 144 subtest /
+144 Pass 确定性 baseline，覆盖 worker-global
 `caches.open()`、`CacheStorage.has/delete/keys/match()`、opened `Cache` identity、
 delete dooming、缺参 TypeError、`Cache.match/delete/keys/matchAll()`、query options、Vary
 matching、worker `fetch()` response URL/type/blob/readback、no-cors opaque filtered response、
 worker `Cache.put()` response body consumption/cacheability、`Response.redirect()`、
-`URL.hostname` mutation 和 DOMString code-unit cache name 保真。broader fetch/cache 基线仍待
+`URL.hostname` mutation、`Cache.addAll()` 原子失败、重复 request / response `Vary`
+重复检测和 DOMString code-unit cache name 保真。broader fetch/cache 基线仍待
 后续切片，M3 控制语义继续推进。兄弟目标
 `storage-cache-api` 已完成 WebView/in-process 页面 `caches.open()` + `Cache.put()/match()` /
 `Cache.matchAll()` / `Cache.keys()` 与页面 `Cache.add()` / `Cache.addAll()` GET fetch→store
@@ -336,6 +338,15 @@ JSON，private profile 继续只保留内存态。
   `Response.redirect()`、Blob response body 序列化，以及 `URL.hostname` mutation 后
   `new Request(url, {mode: 'no-cors'})` 经 worker `fetch()` 生成 opaque filtered response
   的路径；driving WPT 已记入 `imported-testharness.txt`。
+- ✅ M2-18：Service Worker CacheStorage WPT baseline 扩展到
+  `service-workers/cache-storage/serviceworker/cache-add.https.html`；资产清单固定到
+  27 asset，runner 双跑 9 case / 144 subtest / 144 Pass / 0 Fail / 0 Timeout /
+  deterministic true。该切片补齐 worker runtime `Cache.addAll()` 的批量原子写入前
+  duplicate 检查：同一 request key + headers 立即 reject `InvalidStateError`，fetch 后再按
+  response `Vary` 对批次内 entry 做双向匹配，匹配冲突时不发出任何 `Cache.put()`；同时将
+  worker-global `Request.credentials` 透传到 host fetch，使本地 WPT `vary.py` fixture 可区分
+  `same-origin` cookie override 与 `omit` 路径；driving WPT 已记入
+  `imported-testharness.txt`。
 
 ## 缺口清单
 
@@ -343,7 +354,7 @@ JSON，private profile 继续只保留内存态。
 |---|------|------|
 | S1 | SW 执行环境架构与独立 runtime | ✅ production browser owner + renderer discovery 真链路 |
 | S2 | scriptURL 不下载执行 | ✅ production navigator 经 browser fetch/evaluate |
-| S3 | fetch 拦截为零 | 🚧 M2-2 production 页面 fetch respondWith/pass-through 已接入；M2-3/4/5/6 `caches.match()`、`caches.open()`、`Cache.put()`、`Cache.matchAll()`、`Cache.keys()` 与 `ignoreSearch`/`ignoreMethod` 桥接已接入；M2-7 worker-global `fetch()`、SW runtime `Cache.add/addAll` 与 CacheStorage `Response.type` 保真已接入；M2-9 `Cache.delete()` 与 `CacheStorage.delete/has/keys` 已接入；registration-local CacheStorage 持久化已接入；`Response.error()` 可作为 CacheStorage 条目保存/读回，但 FetchEvent 响应结算仍拒绝 status 0；SW fetch/interception WPT baseline 已扩展到 request projection + async fetch listener registration + respondWith timing/value validation + synthetic Latin-1 response header over iframe XHR，6/10 Pass；SW CacheStorage serviceworker wrapper 扩展到 8/121 Pass，并覆盖 cached `Response.url`、Blob/FileReader、Cache.put cacheability 与 no-cors opaque readback；broader fetch/cache 基线未完成 |
+| S3 | fetch 拦截为零 | 🚧 M2-2 production 页面 fetch respondWith/pass-through 已接入；M2-3/4/5/6 `caches.match()`、`caches.open()`、`Cache.put()`、`Cache.matchAll()`、`Cache.keys()` 与 `ignoreSearch`/`ignoreMethod` 桥接已接入；M2-7 worker-global `fetch()`、SW runtime `Cache.add/addAll` 与 CacheStorage `Response.type` 保真已接入；M2-9 `Cache.delete()` 与 `CacheStorage.delete/has/keys` 已接入；registration-local CacheStorage 持久化已接入；`Response.error()` 可作为 CacheStorage 条目保存/读回，但 FetchEvent 响应结算仍拒绝 status 0；SW fetch/interception WPT baseline 已扩展到 request projection + async fetch listener registration + respondWith timing/value validation + synthetic Latin-1 response header over iframe XHR，6/10 Pass；SW CacheStorage serviceworker wrapper 扩展到 9/144 Pass，并覆盖 cached `Response.url`、Blob/FileReader、Cache.put cacheability、Cache.addAll duplicate/Vary atomicity 与 no-cors opaque readback；broader fetch/cache 基线未完成 |
 | S4 | 事件为 setTimeout 模拟 | ✅ manager transition log 为状态源；timer 只执行页面 task 投影 |
 | S5 | WPT 覆盖为零 | ✅ core 34/34 case、156/156 Pass、0 Fail/Timeout/Unsupported |
 
@@ -386,14 +397,14 @@ second（replacement）worker 只处理 awaitInstallEvent（messageSequence=1）
 |--------|------|
 | M0 — 选型 RFC（门控） | ✅ 方案 C 已批准 |
 | M1 — 脚本真实执行 + 生命周期真事件 | ✅ current core WPT 156/156 Pass |
-| M2 — fetch 拦截 + Cache 集成 | 🚧 M2-2 production fetch respondWith/pass-through 完成；M2-3/4/5/6 `caches.match()`、`caches.open()`、`Cache.put()`、`Cache.matchAll()`、`Cache.keys()`、`ignoreSearch`/`ignoreMethod` 桥接完成；M2-7 worker-global `fetch()`、`Cache.add/addAll`、CacheStorage `Response.type` 保真与 registration-local CacheStorage 持久化完成；`Response.error()` 可作为 CacheStorage 条目保存/读回，FetchEvent 响应结算仍拒绝 status 0；SW fetch/interception WPT baseline 已扩展到 request projection + respondWith timing/value validation + synthetic Latin-1 response header over iframe XHR + async fetch listener registration，6/10 Pass；SW CacheStorage serviceworker baseline 8/121 Pass；broader fetch/cache 基线继续 |
+| M2 — fetch 拦截 + Cache 集成 | 🚧 M2-2 production fetch respondWith/pass-through 完成；M2-3/4/5/6 `caches.match()`、`caches.open()`、`Cache.put()`、`Cache.matchAll()`、`Cache.keys()`、`ignoreSearch`/`ignoreMethod` 桥接完成；M2-7 worker-global `fetch()`、`Cache.add/addAll`、CacheStorage `Response.type` 保真与 registration-local CacheStorage 持久化完成；`Response.error()` 可作为 CacheStorage 条目保存/读回，FetchEvent 响应结算仍拒绝 status 0；SW fetch/interception WPT baseline 已扩展到 request projection + respondWith timing/value validation + synthetic Latin-1 response header over iframe XHR + async fetch listener registration，6/10 Pass；SW CacheStorage serviceworker baseline 9/144 Pass；broader fetch/cache 基线继续 |
 | M3 — 控制语义 + 消息 + 收尾 | 🚧 classic startup graph + 控制/消息/update/persistence 完成 |
 
 ## 验证基线
 
 - 测试基线：storage crate 既有单测全绿（立项时点）；clippy 零警告
 - WPT service-workers 面：当前 core runner 34 case / 156 subtest 全绿，fetch runner
-  6 case / 10 subtest 全绿，CacheStorage serviceworker runner 8 case / 121 subtest 全绿；
+  6 case / 10 subtest 全绿，CacheStorage serviceworker runner 9 case / 144 subtest 全绿；
   上游完整分母 294 个 testharness 源 / 331 URL，
   正文覆盖 294/294；分层与依赖信号见
   [M0 WPT evidence](evidence/2026-08-19-m0-wpt-executable-surface.md)，逐文件机器清单见
@@ -446,7 +457,7 @@ second（replacement）worker 只处理 awaitInstallEvent（messageSequence=1）
   `make test-wpt-service-workers-import-event-wave-assets` 固化篡改/修复回归
 - Fetch-wave 资产恢复/审计：20 assets / 10 subtest；
   `make test-wpt-service-workers-fetch-wave-assets` 固化篡改/修复回归
-- CacheStorage serviceworker-wave 资产恢复/审计：25 assets / 121 subtest；
+- CacheStorage serviceworker-wave 资产恢复/审计：27 assets / 144 subtest；
   `make test-wpt-service-workers-cache-storage-wave-assets` 固化篡改/修复回归
 - Dynamic-import-update-wave 资产恢复/审计：17 assets / 7 subtest；
   `make test-wpt-service-workers-dynamic-import-update-wave-assets` 固化篡改/修复回归
@@ -530,8 +541,8 @@ second（replacement）worker 只处理 awaitInstallEvent（messageSequence=1）
 - M3 registration-local CacheStorage persistence：active registration `CacheStorage` snapshot/
   restore、normal profile mutation dirtying 与 owner 重建读回见
   [M3 Service Worker CacheStorage Persistence](evidence/2026-08-22-m3-registration-cache-storage-persistence.md)
-- M2 Service Worker CacheStorage WPT baseline：8 个 `serviceworker/cache-*.https.html`
-  wrapper 独立 runner、资产清单与 8/121 deterministic baseline 见
+- M2 Service Worker CacheStorage WPT baseline：9 个 `serviceworker/cache-*.https.html`
+  wrapper 独立 runner、资产清单与 9/144 deterministic baseline 见
   [Service Worker CacheStorage WPT Baseline](evidence/2026-08-23-m2-cache-storage-serviceworker-baseline.md)
 - M1-5 core WPT：固定 12-case runner、两轮确定性 baseline 与 13 个红项分组见
   [M1 core WPT baseline](evidence/2026-08-19-m1-wpt-core-baseline.md)

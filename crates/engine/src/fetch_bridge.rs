@@ -40,6 +40,8 @@ pub struct FetchRequest {
     /// 请求体（原始字节；R3020 byte-wire——Blob/FormData multipart 二进制保真，csv-decimal 经 wire 传递）。
     /// 二进制 body 时 `body=None, body_bytes=Some(bytes)`；文本 body 时 `body=Some(text), body_bytes=None`。
     pub body_bytes: Option<Vec<u8>>,
+    /// Fetch credentials mode when projected from a higher-level Request.
+    pub credentials: Option<String>,
 }
 
 /// JS `fetch` 响应——status/status_text/headers/body。
@@ -276,6 +278,7 @@ impl FetchBridge {
                     headers,
                     body,
                     body_bytes,
+                    credentials: None,
                 };
                 let handler_opt: Option<FetchHandler> = handler_cell.lock().ok().and_then(|c| c.as_ref().cloned());
                 let resolver = resolver.clone();

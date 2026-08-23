@@ -284,9 +284,11 @@ const SERVICE_WORKER_BOOTSTRAP: &str = r#"
     constructor(message, name) {
       super(String(message));
       this.name = name === undefined ? 'Error' : String(name);
-      this.code = this.name === 'NetworkError' ? 19 : 0;
+      this.code = this.name === 'InvalidStateError' ? 11 : this.name === 'NetworkError' ? 19 : 0;
     }
   }
+  Object.defineProperty(DOMException, 'INVALID_STATE_ERR', {value: 11});
+  Object.defineProperty(DOMException.prototype, 'INVALID_STATE_ERR', {value: 11});
   Object.defineProperty(DOMException, 'NETWORK_ERR', {value: 19});
   Object.defineProperty(DOMException.prototype, 'NETWORK_ERR', {value: 19});
 
@@ -737,6 +739,50 @@ const SERVICE_WORKER_BOOTSTRAP: &str = r#"
     if (vary === null) return false;
     return String(vary).split(',').some(field => field.trim().toLowerCase() === '*');
   }
+  function cacheRequestCacheKey(request) {
+    let url = String(request && request.url || '');
+    try {
+      const parsed = new URL(url);
+      parsed._hash = '';
+      parsed._sync();
+      url = parsed.href;
+    } catch (_error) {
+      url = url.split('#')[0];
+    }
+    return String(request && request.method || 'GET').toUpperCase() + ' ' + url;
+  }
+  function cacheRequestHeader(request, name) {
+    if (!request || !request.headers || typeof request.headers.get !== 'function') return null;
+    const value = request.headers.get(name);
+    return value === null ? null : String(value);
+  }
+  function cacheRequestsMatchByResponseVary(cachedRequest, queryRequest, response) {
+    if (cacheRequestCacheKey(cachedRequest) !== cacheRequestCacheKey(queryRequest)) return false;
+    if (!response || String(response.type || 'default').toLowerCase() === 'opaque') return true;
+    const vary = response.headers && typeof response.headers.get === 'function' ? response.headers.get('vary') : null;
+    if (vary === null) return true;
+    let hasField = false;
+    for (const field of String(vary).split(',').map(field => field.trim()).filter(field => field !== '')) {
+      if (field === '*') return false;
+      hasField = true;
+      if (cacheRequestHeader(cachedRequest, field) !== cacheRequestHeader(queryRequest, field)) {
+        return false;
+      }
+    }
+    return hasField || String(vary).trim() === '';
+  }
+  function cacheAddAllHasDuplicate(entries) {
+    // https://w3c.github.io/ServiceWorker/#batch-cache-operations
+    for (let i = 0; i < entries.length; i++) {
+      for (let j = 0; j < i; j++) {
+        if (cacheRequestsMatchByResponseVary(entries[j].request, entries[i].request, entries[i].response)
+            || cacheRequestsMatchByResponseVary(entries[i].request, entries[j].request, entries[j].response)) {
+          return true;
+        }
+      }
+    }
+    return false;
+  }
   function validateCachePut(request, response) {
     // https://w3c.github.io/ServiceWorker/#cache-put
     if (request.method !== 'GET') {
@@ -957,6 +1003,14 @@ const SERVICE_WORKER_BOOTSTRAP: &str = r#"
           }
           return request;
         });
+        const seen = {};
+        for (const request of requests) {
+          const key = cacheRequestCacheKey(request) + ' ' + Array.from(request.headers).map(pair => pair[0] + '\u001e' + pair[1]).join('\u001f');
+          if (seen[key]) {
+            throw new DOMException('Cache.addAll duplicate requests', 'InvalidStateError');
+          }
+          seen[key] = true;
+        }
         return Promise.all(requests.map(function(request) {
           return fetch(request.clone()).then(function(response) {
             if (!response || !response.ok) {
@@ -966,6 +1020,9 @@ const SERVICE_WORKER_BOOTSTRAP: &str = r#"
             return {request, response};
           });
         })).then(function(entries) {
+          if (cacheAddAllHasDuplicate(entries)) {
+            throw new DOMException('Cache.addAll duplicate requests', 'InvalidStateError');
+          }
           let chain = Promise.resolve();
           for (const entry of entries) {
             chain = chain.then(function() {
@@ -1337,7 +1394,9 @@ const SERVICE_WORKER_BOOTSTRAP: &str = r#"
       return Promise.reject(error);
     }
     try {
-      const response = JSON.parse(globalThis.__zwFetch(JSON.stringify(cacheRequestWire(request))));
+      const hostRequest = cacheRequestWire(request);
+      hostRequest.credentials = request.credentials;
+      const response = JSON.parse(globalThis.__zwFetch(JSON.stringify(hostRequest)));
       if (!response || response.ok !== true) {
         return Promise.reject(new TypeError(response && response.error || 'Service Worker fetch failed'));
       }
@@ -1820,6 +1879,8 @@ pub struct ServiceWorkerFetchRequest {
     pub headers: Vec<(String, String)>,
     /// UTF-8 request body for the current runtime-level MVP.
     pub body: Option<String>,
+    /// Fetch credentials mode (`same-origin`, `omit`, or `include`).
+    pub credentials: Option<String>,
     /// Browser-owned source client identity, when the request has one.
     pub client_id: Option<String>,
     /// Browser-owned resulting client identity for navigation requests, when known.
@@ -3132,6 +3193,7 @@ fn fetch_request_from_json(value: &serde_json::Value) -> Option<ServiceWorkerFet
         method: value["method"].as_str()?.to_string(),
         headers,
         body: value["body"].as_str().map(str::to_string),
+        credentials: value["credentials"].as_str().map(str::to_string),
         client_id: value["clientId"].as_str().map(str::to_string),
         resulting_client_id: value["resultingClientId"].as_str().map(str::to_string),
         referrer: value["referrer"].as_str().map(str::to_string),
@@ -3335,6 +3397,15 @@ fn validate_fetch_request(request: &ServiceWorkerFetchRequest) -> Result<(), Scr
             "Service Worker fetch request method is invalid".into(),
         ));
     }
+    if request
+        .credentials
+        .as_deref()
+        .is_some_and(|credentials| !matches!(credentials, "omit" | "same-origin" | "include"))
+    {
+        return Err(ScriptError::InvalidInput(
+            "Service Worker fetch request credentials mode is invalid".into(),
+        ));
+    }
     if request.headers.len() > MAX_FETCH_HEADERS {
         return Err(ScriptError::InvalidInput(
             "Service Worker fetch request has too many headers".into(),
@@ -3427,10 +3498,10 @@ fn fetch_request_json(request: &ServiceWorkerFetchRequest) -> serde_json::Value 
         "method": &request.method,
         "headers": &request.headers,
         "body": &request.body,
+        "credentials": request.credentials.as_deref().unwrap_or(if is_navigation { "include" } else { "same-origin" }),
         "clientId": &request.client_id,
         "resultingClientId": &request.resulting_client_id,
         "mode": if is_navigation { "navigate" } else { "cors" },
-        "credentials": if is_navigation { "include" } else { "same-origin" },
         "redirect": if is_navigation { "manual" } else { "follow" },
         "referrer": &request.referrer,
         "headerGuard": "immutable",
@@ -5028,6 +5099,7 @@ mod tests {
                     method: "POST".into(),
                     headers: vec![("X-Test".into(), "yes".into())],
                     body: Some("request-body".into()),
+                    credentials: None,
                     client_id: Some("client-1".into()),
                     resulting_client_id: None,
                     referrer: None,
@@ -5073,6 +5145,7 @@ mod tests {
                     method: "GET".into(),
                     headers: Vec::new(),
                     body: None,
+                    credentials: None,
                     client_id: None,
                     resulting_client_id: None,
                     referrer: None,
@@ -5122,6 +5195,7 @@ mod tests {
                     method: "GET".into(),
                     headers: vec![("Accept".into(), "text/plain".into())],
                     body: None,
+                    credentials: None,
                     client_id: Some("client-1".into()),
                     resulting_client_id: None,
                     referrer: None,
@@ -5209,6 +5283,7 @@ mod tests {
                     method: "GET".into(),
                     headers: Vec::new(),
                     body: None,
+                    credentials: None,
                     client_id: Some("client-1".into()),
                     resulting_client_id: None,
                     referrer: None,
@@ -5318,6 +5393,7 @@ mod tests {
                     method: "GET".into(),
                     headers: Vec::new(),
                     body: None,
+                    credentials: None,
                     client_id: None,
                     resulting_client_id: None,
                     referrer: None,
@@ -5372,6 +5448,7 @@ mod tests {
                     method: "GET".into(),
                     headers: Vec::new(),
                     body: None,
+                    credentials: None,
                     client_id: Some("client-1".into()),
                     resulting_client_id: None,
                     referrer: None,
@@ -5438,6 +5515,7 @@ mod tests {
                     method: "GET".into(),
                     headers: Vec::new(),
                     body: Some(String::new()),
+                    credentials: None,
                     client_id: None,
                     resulting_client_id: None,
                     referrer: None,
@@ -5514,6 +5592,7 @@ mod tests {
                     method: "POST".into(),
                     headers: Vec::new(),
                     body: None,
+                    credentials: None,
                     client_id: Some("client-1".into()),
                     resulting_client_id: None,
                     referrer: None,
@@ -5706,6 +5785,7 @@ mod tests {
                     method: "GET".into(),
                     headers: Vec::new(),
                     body: None,
+                    credentials: None,
                     client_id: Some("client-1".into()),
                     resulting_client_id: None,
                     referrer: None,
@@ -5857,6 +5937,7 @@ mod tests {
                     method: "GET".into(),
                     headers: Vec::new(),
                     body: None,
+                    credentials: None,
                     client_id: Some("client-1".into()),
                     resulting_client_id: None,
                     referrer: None,
@@ -5956,6 +6037,7 @@ mod tests {
                     method: "GET".into(),
                     headers: Vec::new(),
                     body: None,
+                    credentials: None,
                     client_id: Some("client-1".into()),
                     resulting_client_id: None,
                     referrer: None,
@@ -6103,6 +6185,199 @@ mod tests {
     }
 
     #[test]
+    fn cache_add_all_duplicate_request_rejects_before_fetch() {
+        let mut runtime = ServiceWorkerRuntime::new(test_config()).unwrap();
+        runtime
+            .evaluate(
+                "addEventListener('fetch', event => {
+                   event.respondWith((async () => {
+                     const cache = await caches.open('runtime');
+                     const request = new Request('./same.txt');
+                     try {
+                       await cache.addAll([request, request]);
+                       return new Response('resolved');
+                     } catch (error) {
+                       return new Response(error.name);
+                     }
+                   })());
+                 });",
+                "https://example.test/app/sw.js",
+            )
+            .unwrap();
+        let _ = runtime.recv_timeout(Duration::from_secs(5)).unwrap();
+
+        runtime
+            .dispatch_fetch(
+                57,
+                ServiceWorkerFetchRequest {
+                    url: "https://example.test/app/page".into(),
+                    method: "GET".into(),
+                    headers: Vec::new(),
+                    body: None,
+                    credentials: None,
+                    client_id: Some("client-1".into()),
+                    resulting_client_id: None,
+                    referrer: None,
+                },
+            )
+            .unwrap();
+
+        let ServiceWorkerEvent::CacheStorageRequested { request_id, request } =
+            runtime.recv_timeout(Duration::from_secs(5)).unwrap()
+        else {
+            panic!("missing CacheStorage.open request");
+        };
+        assert_eq!(
+            request,
+            ServiceWorkerCacheStorageRequest::Open {
+                cache_name: "runtime".into()
+            }
+        );
+        runtime
+            .complete_cache_storage(
+                request_id,
+                Ok(ServiceWorkerCacheStorageResult::Open {
+                    cache_name: "runtime".into(),
+                    cache_name_units: "00720075006e00740069006d0065".into(),
+                    cache_id: 13,
+                }),
+            )
+            .unwrap();
+
+        assert_eq!(
+            runtime.recv_timeout(Duration::from_secs(5)).unwrap(),
+            ServiceWorkerEvent::FetchSettled {
+                event_id: 57,
+                request_url: "https://example.test/app/page".into(),
+                response: Some(ServiceWorkerFetchResponse {
+                    status: 200,
+                    status_text: String::new(),
+                    response_type: "default".into(),
+                    headers: Vec::new(),
+                    body: "InvalidStateError".into(),
+                }),
+                failed: false,
+                message: String::new(),
+            }
+        );
+    }
+
+    #[test]
+    fn cache_add_all_vary_duplicate_rejects_without_put() {
+        let mut runtime = ServiceWorkerRuntime::new(test_config()).unwrap();
+        runtime
+            .evaluate(
+                "addEventListener('fetch', event => {
+                   event.respondWith((async () => {
+                     const cache = await caches.open('runtime');
+                     const requests = [
+                       new Request('./vary.txt', {headers: {'x-shape': 'circle', 'x-size': 'big'}}),
+                       new Request('./vary.txt', {headers: {'x-shape': 'square', 'x-size': 'big'}})
+                     ];
+                     try {
+                       await cache.addAll(requests);
+                       return new Response('resolved');
+                     } catch (error) {
+                       return new Response(error.name);
+                     }
+                   })());
+                 });",
+                "https://example.test/app/sw.js",
+            )
+            .unwrap();
+        let _ = runtime.recv_timeout(Duration::from_secs(5)).unwrap();
+
+        runtime
+            .dispatch_fetch(
+                58,
+                ServiceWorkerFetchRequest {
+                    url: "https://example.test/app/page".into(),
+                    method: "GET".into(),
+                    headers: Vec::new(),
+                    body: None,
+                    credentials: None,
+                    client_id: Some("client-1".into()),
+                    resulting_client_id: None,
+                    referrer: None,
+                },
+            )
+            .unwrap();
+
+        let ServiceWorkerEvent::CacheStorageRequested { request_id, request } =
+            runtime.recv_timeout(Duration::from_secs(5)).unwrap()
+        else {
+            panic!("missing CacheStorage.open request");
+        };
+        assert_eq!(
+            request,
+            ServiceWorkerCacheStorageRequest::Open {
+                cache_name: "runtime".into()
+            }
+        );
+        runtime
+            .complete_cache_storage(
+                request_id,
+                Ok(ServiceWorkerCacheStorageResult::Open {
+                    cache_name: "runtime".into(),
+                    cache_name_units: "00720075006e00740069006d0065".into(),
+                    cache_id: 14,
+                }),
+            )
+            .unwrap();
+
+        for expected_shape in ["circle", "square"] {
+            let ServiceWorkerEvent::FetchRequested { request_id, request } =
+                runtime.recv_timeout(Duration::from_secs(5)).unwrap()
+            else {
+                panic!("missing Cache.addAll fetch request");
+            };
+            assert_eq!(request.url, "https://example.test/app/vary.txt");
+            assert_eq!(request.method, "GET");
+            assert!(
+                request
+                    .headers
+                    .iter()
+                    .any(|(name, value)| name == "x-shape" && value == expected_shape)
+            );
+            assert!(
+                request
+                    .headers
+                    .iter()
+                    .any(|(name, value)| name == "x-size" && value == "big")
+            );
+            runtime
+                .complete_fetch(
+                    request_id,
+                    Ok(ServiceWorkerFetchResponse {
+                        status: 200,
+                        status_text: "OK".into(),
+                        response_type: "default".into(),
+                        headers: vec![("vary".into(), "x-size".into())],
+                        body: expected_shape.into(),
+                    }),
+                )
+                .unwrap();
+        }
+
+        assert_eq!(
+            runtime.recv_timeout(Duration::from_secs(5)).unwrap(),
+            ServiceWorkerEvent::FetchSettled {
+                event_id: 58,
+                request_url: "https://example.test/app/page".into(),
+                response: Some(ServiceWorkerFetchResponse {
+                    status: 200,
+                    status_text: String::new(),
+                    response_type: "default".into(),
+                    headers: Vec::new(),
+                    body: "InvalidStateError".into(),
+                }),
+                failed: false,
+                message: String::new(),
+            }
+        );
+    }
+
+    #[test]
     fn worker_global_fetch_preserves_response_metadata_and_blob_surface() {
         let mut runtime = ServiceWorkerRuntime::new(test_config()).unwrap();
         runtime
@@ -6139,6 +6414,7 @@ mod tests {
                     method: "GET".into(),
                     headers: Vec::new(),
                     body: None,
+                    credentials: None,
                     client_id: Some("client-1".into()),
                     resulting_client_id: None,
                     referrer: None,
@@ -6217,6 +6493,7 @@ mod tests {
                     method: "GET".into(),
                     headers: Vec::new(),
                     body: None,
+                    credentials: None,
                     client_id: Some("client-1".into()),
                     resulting_client_id: None,
                     referrer: None,
@@ -6297,6 +6574,7 @@ mod tests {
                     method: "GET".into(),
                     headers: Vec::new(),
                     body: None,
+                    credentials: None,
                     client_id: Some("client-1".into()),
                     resulting_client_id: None,
                     referrer: None,
@@ -6365,6 +6643,7 @@ mod tests {
                     method: "GET".into(),
                     headers: Vec::new(),
                     body: None,
+                    credentials: None,
                     client_id: None,
                     resulting_client_id: None,
                     referrer: None,
@@ -6403,6 +6682,7 @@ mod tests {
                     method: "GET".into(),
                     headers: Vec::new(),
                     body: None,
+                    credentials: None,
                     client_id: None,
                     resulting_client_id: None,
                     referrer: None,
@@ -6443,6 +6723,7 @@ mod tests {
                     method: "GET".into(),
                     headers: Vec::new(),
                     body: None,
+                    credentials: None,
                     client_id: None,
                     resulting_client_id: None,
                     referrer: None,
@@ -6488,6 +6769,7 @@ mod tests {
                     method: "GET".into(),
                     headers: Vec::new(),
                     body: None,
+                    credentials: None,
                     client_id: None,
                     resulting_client_id: None,
                     referrer: None,
@@ -6530,6 +6812,7 @@ mod tests {
                     method: "GET".into(),
                     headers: Vec::new(),
                     body: None,
+                    credentials: None,
                     client_id: None,
                     resulting_client_id: None,
                     referrer: None,
@@ -6610,6 +6893,7 @@ mod tests {
                     method: "GET".into(),
                     headers: Vec::new(),
                     body: None,
+                    credentials: None,
                     client_id: Some("client-1".into()),
                     resulting_client_id: None,
                     referrer: None,
@@ -6647,6 +6931,7 @@ mod tests {
                     method: "GET".into(),
                     headers: Vec::new(),
                     body: None,
+                    credentials: None,
                     client_id: Some("client-1".into()),
                     resulting_client_id: None,
                     referrer: None,

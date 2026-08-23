@@ -795,6 +795,7 @@ pub const SERVICE_WORKER_CACHE_STORAGE_CASES: &[&str] = &[
     "service-workers/cache-storage/serviceworker/cache-storage-match.https.html",
     "service-workers/cache-storage/serviceworker/cache-match.https.html",
     "service-workers/cache-storage/serviceworker/cache-put.https.html",
+    "service-workers/cache-storage/serviceworker/cache-add.https.html",
 ];
 
 /// WPT subtest status.
@@ -2135,6 +2136,7 @@ pub fn run_canvas_worker_cases(wpt_root: &Path, filter: Option<&str>) -> Vec<(St
 /// fetch 入参，如 '/images/yellow75.png'）；文件缺失返 Err → shim 落 ok:false（404 语义）。
 fn wpt_data_fetch_handler(wpt_root: &std::path::Path) -> Option<zero_engine::fetch_bridge::FetchHandler> {
     let root = wpt_root.to_path_buf();
+    let vary_value_override = std::sync::Arc::new(std::sync::Mutex::new(None::<String>));
     Some(std::sync::Arc::new(
         move |req: &zero_engine::fetch_bridge::FetchRequest| {
             if req.method != "GET" {
@@ -2178,7 +2180,34 @@ fn wpt_data_fetch_handler(wpt_root: &std::path::Path) -> Option<zero_engine::fet
             if clean == "service-workers/cache-storage/resources/vary.py" {
                 let query = path_part.split_once('?').map(|(_, query)| query).unwrap_or("");
                 let mut headers = wpt_pipe_headers(query);
-                if let Some(vary) = wpt_query_value(query, "vary") {
+                // https://github.com/web-platform-tests/wpt/blob/24197a11e8c5bd29a5cb7bdf18135a82be8a8546/service-workers/cache-storage/resources/vary.py
+                if query.split('&').any(|pair| pair == "clear-vary-value-override-cookie") {
+                    *vary_value_override.lock().unwrap() = None;
+                    headers.push(("X-Zero-Final-URL".into(), req.url.clone()));
+                    return Ok(zero_engine::fetch_bridge::FetchResponse {
+                        status: 200,
+                        status_text: "OK".to_string(),
+                        headers,
+                        body: "vary cookie cleared".to_string(),
+                        body_bytes: Some(b"vary cookie cleared".to_vec()),
+                    });
+                }
+                if let Some(vary) = wpt_query_value(query, "set-vary-value-override-cookie") {
+                    *vary_value_override.lock().unwrap() = Some(vary);
+                    headers.push(("X-Zero-Final-URL".into(), req.url.clone()));
+                    return Ok(zero_engine::fetch_bridge::FetchResponse {
+                        status: 200,
+                        status_text: "OK".to_string(),
+                        headers,
+                        body: "vary cookie set".to_string(),
+                        body_bytes: Some(b"vary cookie set".to_vec()),
+                    });
+                }
+                let omits_credentials = req.credentials.as_deref() == Some("omit");
+                let override_vary = (!omits_credentials)
+                    .then(|| vary_value_override.lock().unwrap().clone())
+                    .flatten();
+                if let Some(vary) = override_vary.or_else(|| wpt_query_value(query, "vary")) {
                     headers.push(("vary".into(), vary));
                 }
                 headers.push(("X-Zero-Final-URL".into(), req.url.clone()));
@@ -3367,8 +3396,8 @@ async_test(function(test) {
             .iter()
             .copied()
             .collect::<std::collections::BTreeSet<_>>();
-        assert_eq!(SERVICE_WORKER_CACHE_STORAGE_CASES.len(), 8);
-        assert_eq!(unique.len(), 8);
+        assert_eq!(SERVICE_WORKER_CACHE_STORAGE_CASES.len(), 9);
+        assert_eq!(unique.len(), 9);
         assert!(
             SERVICE_WORKER_CACHE_STORAGE_CASES
                 .iter()
@@ -3574,6 +3603,7 @@ async_test(function(test) {
             headers: Vec::new(),
             body: None,
             body_bytes: None,
+            credentials: None,
         };
         let resp = handler(&make_req(
             "https://wpt.test/dom/nodes/encoding.py?label=unicode-1-1-utf-8",

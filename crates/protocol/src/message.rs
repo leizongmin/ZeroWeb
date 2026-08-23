@@ -1202,6 +1202,13 @@ fn validate_service_worker_fetch_request(request: &ServiceWorkerFetchRequestWire
     if request.method.is_empty() || request.method.len() > MAX_FETCH_METHOD_BYTES {
         return Err("Service Worker fetch request method is invalid");
     }
+    if request
+        .credentials
+        .as_deref()
+        .is_some_and(|credentials| !matches!(credentials, "omit" | "same-origin" | "include"))
+    {
+        return Err("Service Worker fetch request credentials mode is invalid");
+    }
     if request.headers.len() > MAX_FETCH_HEADERS
         || request
             .headers
@@ -1439,6 +1446,9 @@ pub struct ServiceWorkerFetchRequestWire {
     pub headers: Vec<(String, String)>,
     /// UTF-8 request body for the current Service Worker fetch MVP.
     pub body: Option<String>,
+    /// Fetch credentials mode, when known.
+    #[serde(default)]
+    pub credentials: Option<String>,
     /// Browser-owned source client identity, when known.
     pub client_id: Option<String>,
     /// Browser-owned resulting client identity for navigation requests, when known.

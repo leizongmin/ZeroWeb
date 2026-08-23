@@ -1976,6 +1976,7 @@ impl WebView {
                                 headers: Vec::new(),
                                 body: None,
                                 body_bytes: None,
+                                credentials: None,
                             };
                             handler(&req).ok()
                         });
@@ -2060,6 +2061,7 @@ impl WebView {
                         headers: headers.clone(),
                         body,
                         body_bytes,
+                        credentials: None,
                     };
                     let page_url = sw_page_url.lock().map(|url| url.clone()).unwrap_or_default();
                     let fetch_client_id = args.get(5).filter(|value| !value.is_empty()).cloned();
@@ -2079,6 +2081,7 @@ impl WebView {
                             method: method.clone(),
                             headers: headers.clone(),
                             body: req.body.clone(),
+                            credentials: None,
                             client_id: Some(client_id.clone()),
                             resulting_client_id: is_navigation.then_some(format!("{client_id}:nested:{url}")),
                             referrer: fetch_referrer.or_else(|| is_navigation.then_some(page_url.clone())),
@@ -3478,6 +3481,7 @@ impl WebView {
                 headers: request.headers.clone(),
                 body: request.body.clone(),
                 body_bytes: request.body.as_ref().map(|body| body.as_bytes().to_vec()),
+                credentials: request.credentials.clone(),
             })?;
             return Ok(ServiceWorkerFetchResponse {
                 status: response.status,
