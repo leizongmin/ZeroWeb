@@ -10,8 +10,8 @@ import subprocess
 import sys
 from pathlib import Path
 
-EXPECTED_CASES = 11
-EXPECTED_SUBTESTS = 156
+EXPECTED_CASES = 12
+EXPECTED_SUBTESTS = 157
 
 
 def parse_args() -> argparse.Namespace:
@@ -92,11 +92,11 @@ def render_markdown(summary: dict) -> str:
             "## Scope",
             "",
             "This pinned Service Worker M2 CacheStorage baseline covers the "
-            "eleven serviceworker CacheStorage wrappers. They run the upstream "
+            "twelve serviceworker CacheStorage wrappers. They run the upstream "
             "`script-tests/cache-storage*.js`, `cache-delete.js`, `cache-keys.js`, "
             "`cache-abort.js`, `cache-add.js`, `cache-match.js`, `cache-matchAll.js`, "
-            "`cache-put.js`, `cache-storage-match.js`, and the navigation-attribute "
-            "service worker fixture in a real Service "
+            "`cache-put.js`, `cache-storage-match.js`, the navigation-attribute "
+            "service worker fixture, and the credentialed request cache-key fixture in a real Service "
             "Worker global and validate `caches.open()`, `CacheStorage.has/delete/"
             "keys/match()`, opened `Cache` identity, delete dooming semantics, "
             "empty cache names, required-argument TypeError behavior, `Cache.match/"
@@ -107,7 +107,10 @@ def render_markdown(summary: dict) -> str:
             "addAll()` requests, DOMString cache-name preservation for unpaired "
             "surrogate code units, and `Request.isReloadNavigation`/"
             "`Request.isHistoryNavigation` preservation through `Cache.put()` and "
-            "`Cache.keys()`.",
+            "`Cache.keys()`, plus credentialed request URLs preserved through iframe "
+            "XHR, worker fetch interception, Cache key storage, `Cache.match()`/"
+            "`Cache.matchAll()`/`CacheStorage.match()`, and worker-to-controlled-"
+            "iframe `Client.postMessage()`.",
         ]
     ) + "\n"
 

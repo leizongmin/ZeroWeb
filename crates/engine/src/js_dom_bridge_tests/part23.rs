@@ -439,6 +439,136 @@ fn test_iframe_content_window_post_message_transfers_ports() {
 }
 
 #[test]
+fn test_iframe_service_worker_messages_dispatch_to_iframe_container() {
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+
+    let mut sandbox = V8Sandbox::with_config(zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    })
+    .unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> =
+        Arc::new(Mutex::new("<html><body><iframe src=\"../resources/credentials-iframe.html\"></iframe></body></html>".to_string()));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "https://wpt.test/service-workers/cache-storage/serviceworker/credentials.https.html".to_string(),
+    ));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+    sandbox.register_callback(
+        "__zw_sw_observe_window_client",
+        Box::new(|_args| r#"{"ok":true}"#.to_string()),
+    );
+    sandbox.register_callback(
+        "__zw_sw_controller",
+        Box::new(|args| {
+            if args.first().map(String::as_str)
+                == Some("https://wpt.test/service-workers/cache-storage/resources/credentials-iframe.html")
+                && args.get(1).map(String::as_str) == Some("iframe:iframe")
+            {
+                r#"{"ok":true,"controller":{"id":"r1","scriptURL":"https://wpt.test/service-workers/cache-storage/resources/credentials-worker.js","state":"activated"}}"#.to_string()
+            } else {
+                r#"{"ok":true,"controller":null}"#.to_string()
+            }
+        }),
+    );
+    let posted = Arc::new(Mutex::new(Vec::new()));
+    let posted_for_callback = posted.clone();
+    sandbox.register_callback(
+        "__zw_sw_post_message",
+        Box::new(move |args| {
+            posted_for_callback.lock().unwrap().push(format!(
+                "{}|{}|{}|{}",
+                args.get(5).cloned().unwrap_or_default(),
+                args.get(6).cloned().unwrap_or_default(),
+                args.first().cloned().unwrap_or_default(),
+                args.get(1).cloned().unwrap_or_default()
+            ));
+            r#"{"ok":true}"#.to_string()
+        }),
+    );
+    let xhr_fetches = Arc::new(Mutex::new(Vec::new()));
+    let xhr_fetches_for_callback = xhr_fetches.clone();
+    sandbox.register_callback(
+        "__zw_fetch",
+        Box::new(move |args| {
+            let url = args.get(2).map(String::as_str).unwrap_or("");
+            if url.ends_with("resources/credentials-iframe.html") {
+                "__zwfr:200\x1fOK\x1f\x1f<script></script>".to_string()
+            } else {
+                xhr_fetches_for_callback.lock().unwrap().push(format!(
+                    "{}|{}|{}",
+                    args.get(2).cloned().unwrap_or_default(),
+                    args.get(5).cloned().unwrap_or_default(),
+                    args.get(6).cloned().unwrap_or_default()
+                ));
+                "__zwfr:200\x1fOK\x1f\x1fbody".to_string()
+            }
+        }),
+    );
+    sandbox.register_callback(
+        "__zw_sw_client_messages",
+        Box::new(|args| {
+            if args.get(2).map(String::as_str) == Some("iframe:iframe") {
+                r#"{"ok":true,"latestSequence":1,"messages":[{"data":["https://wpt.test/file.txt"],"portId":null,"transferredPortIds":[],"dataPortIndex":null,"targetClientId":"iframe:iframe"}]}"#.to_string()
+            } else {
+                let after_sequence = args.get(1).and_then(|value| value.parse::<u64>().ok()).unwrap_or(0);
+                format!(r#"{{"ok":true,"latestSequence":{after_sequence},"messages":[]}}"#)
+            }
+        }),
+    );
+
+    sandbox
+        .execute(
+            "globalThis.__iframeSwMessageResult = 'pending';\
+             globalThis.__iframeXhrDone = 'pending';\
+             var frame = document.querySelector('iframe');\
+             var win = frame.contentWindow;\
+             win.navigator.serviceWorker.onmessage = function(event) {\
+               globalThis.__iframeSwMessageResult = event.data[0];\
+             };\
+             var xhr = new win.XMLHttpRequest();\
+             xhr.open('GET', 'file.txt', true, 'aa', 'bb');\
+             xhr.onreadystatechange = function() {\
+               if (xhr.readyState === win.XMLHttpRequest.DONE) globalThis.__iframeXhrDone = xhr.responseText;\
+             };\
+             xhr.send();\
+             win.navigator.serviceWorker.controller.postMessage('keys');",
+        )
+        .unwrap();
+    for _ in 0..8 {
+        sandbox.execute("0").unwrap();
+    }
+
+    assert_eq!(
+        sandbox
+            .execute("String(globalThis.__iframeSwMessageResult)")
+            .unwrap()
+            .value,
+        "https://wpt.test/file.txt",
+        "iframe ServiceWorkerContainer should poll and dispatch messages for the iframe client"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__iframeXhrDone)").unwrap().value,
+        "body",
+        "iframe XMLHttpRequest should expose DONE and complete after a credentialed open()"
+    );
+    assert!(
+        xhr_fetches.lock().unwrap().contains(
+            &"https://aa:bb@wpt.test/service-workers/cache-storage/resources/file.txt|iframe:iframe|https://wpt.test/service-workers/cache-storage/resources/credentials-iframe.html".to_string()
+        ),
+        "iframe XMLHttpRequest should preserve username/password in the request URL"
+    );
+    assert_eq!(
+        posted.lock().unwrap().as_slice(),
+        &[r#"iframe:iframe|https://wpt.test/service-workers/cache-storage/resources/credentials-iframe.html|r1|"keys""#.to_string()]
+    );
+}
+
+#[test]
 fn test_iframe_content_window_cache_add_uses_iframe_fetch_context() {
     use std::sync::{Arc, Mutex};
     use zero_script_sandbox::{Sandbox, V8Sandbox};

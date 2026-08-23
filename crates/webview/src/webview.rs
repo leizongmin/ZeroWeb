@@ -3104,17 +3104,27 @@ impl WebView {
                     .unwrap_or_default();
                 let data_port_index = args.get(3).and_then(|value| value.parse::<usize>().ok());
                 let target_port_id = args.get(4).and_then(|value| value.parse::<u64>().ok());
-                let current_client_id = format!(
+                let default_client_id = format!(
                     "{}:{}",
                     post_message_client_id,
                     post_message_generation.load(Ordering::Relaxed)
                 );
-                let client_url = match post_message_page_url.lock() {
+                let client_id = args
+                    .get(5)
+                    .filter(|value| !value.is_empty())
+                    .cloned()
+                    .unwrap_or(default_client_id);
+                let default_client_url = match post_message_page_url.lock() {
                     Ok(url) => url.clone(),
                     Err(_) => {
                         return serde_json::json!({"ok": false, "error": "page URL lock poisoned"}).to_string();
                     }
                 };
+                let client_url = args
+                    .get(6)
+                    .filter(|value| !value.is_empty())
+                    .cloned()
+                    .unwrap_or(default_client_url);
                 let result = post_message_manager
                     .lock()
                     .map_err(|_| "manager lock poisoned".to_string())
@@ -3124,7 +3134,7 @@ impl WebView {
                                 registration_id,
                                 registration_id,
                                 data_json,
-                                &current_client_id,
+                                &client_id,
                                 &client_url,
                                 &ServiceWorkerMessagePorts {
                                     transferred_port_ids,
@@ -3159,9 +3169,13 @@ impl WebView {
                 {
                     return serde_json::json!({"ok": false, "error": error}).to_string();
                 }
-                let current_client_id = format!("{}:{}", client_id, client_messages_generation.load(Ordering::Relaxed));
+                let default_client_id = format!("{}:{}", client_id, client_messages_generation.load(Ordering::Relaxed));
+                let current_client_id = args
+                    .get(2)
+                    .filter(|value| !value.is_empty())
+                    .unwrap_or(&default_client_id);
                 let (latest_sequence, message_wires) =
-                    manager.client_messages_since(registration_id, &current_client_id, after_sequence);
+                    manager.client_messages_since(registration_id, current_client_id, after_sequence);
                 let messages = message_wires
                     .into_iter()
                     .filter_map(|message| {

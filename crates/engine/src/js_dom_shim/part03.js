@@ -32,9 +32,18 @@
       }
       return _zwResolveFetchUrl(url);
     }
-    self.open = function(method, url) {
+    self.open = function(method, url, _async, username, password) {
       self._zwXhrMethod = String(method || 'GET').toUpperCase();
       self._zwXhrUrl = resolveXhrUrl(url);
+      // https://xhr.spec.whatwg.org/#the-open()-method
+      if (username !== undefined || password !== undefined) {
+        try {
+          var parsed = new globalThis.URL(self._zwXhrUrl);
+          if (username !== undefined) parsed.username = String(username);
+          if (password !== undefined) parsed.password = String(password);
+          self._zwXhrUrl = parsed.href;
+        } catch (_eXhrCredentialsUrl) {}
+      }
       self._zwXhrAborted = false;
       changeReadyState(1);
     };
@@ -121,6 +130,17 @@
     };
     self.getAllResponseHeaders = function() { return ''; };
   };
+  // https://xhr.spec.whatwg.org/#states
+  globalThis.XMLHttpRequest.UNSENT = 0;
+  globalThis.XMLHttpRequest.OPENED = 1;
+  globalThis.XMLHttpRequest.HEADERS_RECEIVED = 2;
+  globalThis.XMLHttpRequest.LOADING = 3;
+  globalThis.XMLHttpRequest.DONE = 4;
+  globalThis.XMLHttpRequest.prototype.UNSENT = 0;
+  globalThis.XMLHttpRequest.prototype.OPENED = 1;
+  globalThis.XMLHttpRequest.prototype.HEADERS_RECEIVED = 2;
+  globalThis.XMLHttpRequest.prototype.LOADING = 3;
+  globalThis.XMLHttpRequest.prototype.DONE = 4;
 
   function _ieEventType(type) {
     var s = String(type);

@@ -3085,7 +3085,9 @@
           dataJSON,
           JSON.stringify(ports.ids),
           ports.dataPortIndex === null ? '' : String(ports.dataPortIndex),
-          targetPortId === null ? '' : String(targetPortId)));
+          targetPortId === null ? '' : String(targetPortId),
+          worker._messageClientId || '',
+          worker._messageClientUrl || ''));
         if (!wire || !wire.ok) {
           throw new DOMException(
             wire && wire.error || 'Service Worker postMessage failed',
@@ -3101,12 +3103,17 @@
       globalThis.ServiceWorker.prototype._postPortMessage = function(port, message, transfer) {
         postSWMessage(this, message, transfer, port._zwSwPortId);
       };
-      function initSWMessageBridge(worker) {
+      function initSWMessageBridge(worker, client) {
         if (!worker) return worker;
         if (worker._messageSequence === undefined) worker._messageSequence = 0;
         if (worker._messagePollTarget === undefined) worker._messagePollTarget = 0;
         if (worker._messagePollPending === undefined) worker._messagePollPending = false;
         if (worker._messagePollDeadline === undefined) worker._messagePollDeadline = 0;
+        if (client) {
+          worker._messageClientId = client.id || '';
+          worker._messageClientUrl = client.url || '';
+          worker._messageContainer = client.container || null;
+        }
         return worker;
       }
       globalThis.__zwInitServiceWorkerMessageBridge = initSWMessageBridge;
@@ -3122,7 +3129,9 @@
         var wire;
         try {
           wire = JSON.parse(__zw_sw_client_messages(
-            String(worker._id), String(worker._messageSequence)));
+            String(worker._id),
+            String(worker._messageSequence),
+            worker._messageClientId || ''));
         } catch (_e) {
           wire = null;
         }
@@ -3149,7 +3158,7 @@
               ports: transferred
             });
             if (messageWire.portId === null) {
-              _container.dispatchEvent(event);
+              (worker._messageContainer || _container).dispatchEvent(event);
             } else {
               var target = _swPorts[String(messageWire.portId)] || null;
               if (target) {

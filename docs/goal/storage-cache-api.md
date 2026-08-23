@@ -117,7 +117,8 @@ form-validation——不允许手写 inline 用例替代或充数）。通过率
 - 🚧 **缺口 4 — Request/Response 集成**：add/addAll 的 fetch→put 链路已接通，Response
   可缓存性剩余 filtered response 矩阵仍待补齐；页面 Response body shim 已覆盖
   ArrayBuffer/ArrayBufferView body 与 multipart FormData 文本字段读回；SW serviceworker
-  wrapper 已验证 reload/history navigation request metadata 经 Cache API round-trip 保真
+  wrapper 已验证 reload/history navigation request metadata 与 credentialed request URL
+  cache keys 经 Cache API round-trip 保真
 
 ---
 

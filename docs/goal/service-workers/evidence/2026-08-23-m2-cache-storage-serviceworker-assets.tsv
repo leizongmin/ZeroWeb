@@ -31,3 +31,6 @@ service-workers/cache-storage/serviceworker/cache-put.https.html	testharness	cas
 service-workers/cache-storage/serviceworker/cache-add.https.html	testharness	case	1	420	no	232de668e41ccf60e60ff776c423d31b091b095b	24197a11e8c5bd29a5cb7bdf18135a82be8a8546
 service-workers/cache-storage/serviceworker/cache-abort.https.html	testharness	case	1	415	no	5a8b539be81ef0e4b43f1193d4bb62972968442c	24197a11e8c5bd29a5cb7bdf18135a82be8a8546
 service-workers/cache-storage/serviceworker/cache-keys-attributes-for-service-worker.https.html	testharness	case	1	2567	no	b6044c581b83eeb9fd9d3bfb2f936712b90d0175	24197a11e8c5bd29a5cb7bdf18135a82be8a8546
+service-workers/cache-storage/serviceworker/credentials.https.html	testharness	case	1	1817	no	7bc494eb140a644dfb6072b3906bbcf390c441cc	24197a11e8c5bd29a5cb7bdf18135a82be8a8546
+service-workers/cache-storage/resources/credentials-worker.js	support	worker-script	1	1801	no	43965b5fe4c9c662560cc37ea356cc3687e88ac5	24197a11e8c5bd29a5cb7bdf18135a82be8a8546
+service-workers/cache-storage/resources/credentials-iframe.html	support	frame	1	981	no	00702df9e5b1f2b4b89d8e096121dd97e81198c2	24197a11e8c5bd29a5cb7bdf18135a82be8a8546

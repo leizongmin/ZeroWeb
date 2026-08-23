@@ -72,8 +72,11 @@ filtered response 投影；`cache-put.https.html` 扩面补齐 worker runtime �
 `Vary` duplicate 检查和失败原子性；`cache-abort.https.html` 扩面补齐 SW runtime
 AbortController/AbortSignal 与 aborted `Cache.put/add/addAll()` 的 `AbortError` rejection，
 `cache-keys-attributes-for-service-worker.https.html` 扩面补齐 SW iframe reload/history
-navigation request 标志经 `Cache.put()` / `Cache.keys()` 的保真，支撑 service-workers
-目标的 11-case / 156-subtest SW CacheStorage wrapper baseline。
+navigation request 标志经 `Cache.put()` / `Cache.keys()` 的保真；`credentials.https.html`
+扩面继续验证 credentialed request URL 作为 Cache key 经 iframe XHR、worker fetch
+interception、`Cache.put()`、`Cache.match()` / `Cache.matchAll()` / `CacheStorage.match()`
+和 `Cache.keys()` 往返保真，支撑 service-workers 目标的 12-case / 157-subtest
+SW CacheStorage wrapper baseline。
 更大范围 WPT 导入与完整
 `basic`/`cors`/`opaque`/`opaqueredirect` filtered response 生成矩阵仍待后续切片。
 CacheStorage window asset manifest 已补充逐 asset `source_revision`，恢复脚本会按每行
@@ -411,6 +414,12 @@ CacheStorage 分母。
   - 新增 support：`service-workers/cache-storage/resources/cache-keys-attributes-for-service-worker.js`
   - `./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit 300 -- make testharness-service-workers-cache-storage FILTER=cache-keys-attributes-for-service-worker.https.html`：2 entries Pass
   - `./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit 420 -- make baseline-wpt-service-workers-cache-storage OUTPUT=docs/goal/service-workers/evidence/2026-08-23-m2-cache-storage-serviceworker-baseline.json SUMMARY=docs/goal/service-workers/evidence/2026-08-23-m2-cache-storage-serviceworker-baseline.md`：11 cases / 156 subtests / 156 Pass，double-run deterministic
+  - 证据：[Service Worker CacheStorage WPT Baseline](../service-workers/evidence/2026-08-23-m2-cache-storage-serviceworker-baseline.md)
+- 2026-08-23 Service Worker CacheStorage serviceworker credentials WPT 扩面：
+  - 新增 WPT：`service-workers/cache-storage/serviceworker/credentials.https.html`
+  - 新增 support：`service-workers/cache-storage/resources/credentials-worker.js`、`credentials-iframe.html`
+  - `make testharness-service-workers-cache-storage FILTER=credentials.https.html`：1 entry Pass
+  - `./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit 300 -- python3 tests/wpt-runner/scripts/run-service-workers-cache-storage-baseline.py --runner ./target/release/zero-wpt-runner --wpt-data tests/wpt-runner/wpt-data/.service-workers-tier-a-root --output docs/goal/service-workers/evidence/2026-08-23-m2-cache-storage-serviceworker-baseline.json --summary docs/goal/service-workers/evidence/2026-08-23-m2-cache-storage-serviceworker-baseline.md`：12 cases / 157 subtests / 157 Pass，double-run deterministic
   - 证据：[Service Worker CacheStorage WPT Baseline](../service-workers/evidence/2026-08-23-m2-cache-storage-serviceworker-baseline.md)
 - 2026-08-23 Service Worker fetch `fetch-event-within-sw` WPT 扩面：
   - 新增 WPT：`service-workers/service-worker/fetch-event-within-sw.https.html`

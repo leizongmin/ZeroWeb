@@ -1286,6 +1286,9 @@
     var parentServiceWorker =
       globalThis.navigator && globalThis.navigator.serviceWorker;
     var serviceWorker = parentServiceWorker ? {
+      _et_listeners: {},
+      oncontrollerchange: null,
+      onmessage: null,
       register: function(scriptURL, options) {
         return parentServiceWorker.register(scriptURL, options).then(wrapRegistration);
       },
@@ -1315,7 +1318,11 @@
               worker.scriptURL = wire.controller.scriptURL || '';
               worker.state = wire.controller.state || 'activated';
               if (typeof globalThis.__zwInitServiceWorkerMessageBridge === 'function') {
-                globalThis.__zwInitServiceWorkerMessageBridge(worker);
+                globalThis.__zwInitServiceWorkerMessageBridge(worker, {
+                  id: doc && doc._zwSwClientId ? doc._zwSwClientId : '',
+                  url: doc && doc._zwURL ? doc._zwURL : '',
+                  container: serviceWorker
+                });
               }
               return worker;
             }
@@ -1324,6 +1331,9 @@
         return parentServiceWorker.controller;
       }
     } : undefined;
+    if (serviceWorker && globalThis.EventTarget && globalThis.EventTarget.prototype) {
+      try { Object.setPrototypeOf(serviceWorker, globalThis.EventTarget.prototype); } catch (_eIframeSwEt) {}
+    }
     function iframeFetch(input, init) {
       if (typeof globalThis.fetch !== 'function') {
         return Promise.reject(new TypeError('fetch is not available'));
@@ -1399,6 +1409,11 @@
     }
     try {
       IframeXMLHttpRequest.prototype = globalThis.XMLHttpRequest.prototype;
+      IframeXMLHttpRequest.UNSENT = globalThis.XMLHttpRequest.UNSENT;
+      IframeXMLHttpRequest.OPENED = globalThis.XMLHttpRequest.OPENED;
+      IframeXMLHttpRequest.HEADERS_RECEIVED = globalThis.XMLHttpRequest.HEADERS_RECEIVED;
+      IframeXMLHttpRequest.LOADING = globalThis.XMLHttpRequest.LOADING;
+      IframeXMLHttpRequest.DONE = globalThis.XMLHttpRequest.DONE;
     } catch (_eIframeXhrProto) {}
     // https://w3c.github.io/ServiceWorker/#cache-interface
     // Iframe `contentWindow.caches` shares storage but resolves request URLs and fetch metadata
