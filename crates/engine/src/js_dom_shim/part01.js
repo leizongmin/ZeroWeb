@@ -543,6 +543,92 @@
     }
     return out;
   }
+  // R206（js-dom M4）：iframe 子文档脚本执行——提取 `<script src>`/`<script>` 源，
+  // 外链经 `__zw_fetch_script(pageUrl, src)` 取（相对 page URL 解析），全部按序拼接
+  // 进单个 Function（共享变量环境：common.js var 与 inline 脚本 eval 同链），形参
+  // window/self/parent/top/document/location 绑 iframe win/doc。末尾执行
+  // `<body onload=...>` 的处理器名（若 win 上已定义）。
+  function _zwRunIframeScripts(win, doc, body, pageUrl) {
+    var parts = [];
+    var re = /<script\b([^>]*)>([\s\S]*?)<\/script>/gi;
+    var m;
+    while ((m = re.exec(body)) !== null) {
+      var attrs = m[1] || '';
+      var code = m[2] || '';
+      var srcM = /\bsrc\s*=\s*("([^"]*)"|'([^']*)'|([^\s>]+))/i.exec(attrs);
+      if (srcM) {
+        var src = srcM[2] != null ? srcM[2] : (srcM[3] != null ? srcM[3] : (srcM[4] || ''));
+        if (src && typeof __zw_fetch_script === 'function') {
+          try {
+            var ext = String(__zw_fetch_script(pageUrl, src) || '');
+            if (ext) parts.push(ext);
+          } catch (_eR206f) {}
+        }
+      } else if (code.trim()) {
+        parts.push(code);
+      }
+    }
+    if (!parts.length) return;
+    var loc = win.location || { href: pageUrl, hash: '' };
+    // R206：**顶层声明导出到 win**——真实 iframe 的 window 上顶层 function/var 是
+    // window 属性；合并 Function 作用域内它们只是局部绑定。行首锚定扫描
+    //（script_gen R147/R201 同款启发式）+ 每名 try 包裹导出后缀（作用域外名静默）。
+    // R206：每段独立 try/catch——真浏览器 per-<script> 错误隔离（一段抛错不阻断
+    // 后续段；var 仍函数级共享）。
+    var partsWrapped206 = [];
+    for (var pi206 = 0; pi206 < parts.length; pi206++) {
+      partsWrapped206.push('try{' + parts[pi206] + '\n}catch(_zwE206p){window.unexpectedException=window.unexpectedException||_zwE206p;}');
+    }
+    var combined206 = partsWrapped206.join('\n;\n');
+    var names206 = {};
+    var lines206 = combined206.split('\n');
+    for (var li206 = 0; li206 < lines206.length; li206++) {
+      var line206 = lines206[li206];
+      var nm206 = null;
+      var rest206 = null;
+      if ((rest206 = String(line206).trim()).startsWith('function ')) {
+        nm206 = rest206.slice(9).replace(/^([A-Za-z_$][\w$]*)[\s\S]*$/, '$1');
+        if (nm206 === rest206.slice(9)) nm206 = null;
+      } else {
+        var kw206 = null;
+        if (rest206.startsWith('var ')) kw206 = 4;
+        else if (rest206.startsWith('let ')) kw206 = 4;
+        else if (rest206.startsWith('const ')) kw206 = 6;
+        if (kw206 != null) {
+          var tail206 = rest206.slice(kw206);
+          nm206 = tail206.replace(/^([A-Za-z_$][\w$]*)([\s\S]*)$/, '$1');
+          if (nm206 === tail206) nm206 = null;
+        }
+      }
+      if (nm206 && /^[A-Za-z_$][\w$]*$/.test(nm206)) names206[nm206] = 1;
+    }
+    var exportSuffix206 = '';
+    for (var k206 in names206) {
+      if (Object.prototype.hasOwnProperty.call(names206, k206)) {
+        exportSuffix206 += ';try{window["' + k206 + '"]=' + k206 + ';}catch(_zwE206){}';
+      }
+    }
+    try {
+      // 形参遮蔽：脚本内的 window/self/document 解析到形参（iframe 域），裸全局
+      // （globalThis）仍是宿主（近似——子文档脚本一般经 window 显式访问）。
+      var fn = new Function('window', 'self', 'parent', 'top', 'document', 'location',
+        combined206 + exportSuffix206);
+      fn.call(win, win, win, globalThis, globalThis, doc, loc);
+    } catch (_eR206x) {
+      try { win.unexpectedException = _eR206x; } catch (_eR206w) {}
+    }
+    // <body onload=NAME> —— 脚本注册的处理器（Range-test-iframe 的 run）。
+    var onloadM = /<body\b[^>]*\bonload\s*=\s*("([^"]*)"|'([^']*)'|([^\s>]+))/i.exec(body);
+    if (onloadM) {
+      var handlerName = onloadM[2] != null ? onloadM[2] : (onloadM[3] != null ? onloadM[3] : (onloadM[4] || ''));
+      try {
+        if (handlerName && typeof win[handlerName] === 'function') win[handlerName].call(win);
+      } catch (_eR206o) {
+        try { win.unexpectedException = _eR206o; } catch (_eR206ow) {}
+      }
+    }
+  }
+
   function _zwLoadIframeEntry(frameKey, rawSrc, flags) {
     flags = _zwIframeSandboxFlags(frameKey, flags);
     var _r115Entry = { doc: null, win: null, state: 'loading', history: [] };
@@ -600,6 +686,23 @@
         }
       } catch (_e115f) {
         _r115Entry.state = 'error';
+      }
+      // R206（js-dom M4）：**子文档脚本执行通道**——src iframe 取回 HTML 后提取
+      // `<script src>`/`<script>` 源并执行（旧版只建 doc/win 不跑脚本——WPT
+      // Range-surroundContents/insertNode 经 Range-test-iframe.html 的
+      // `iframe.contentWindow.setupRangeTests is not a function` ×920 +
+      // `typeof Range ... undefined` ×920 双簇 3680F）。**合并作用域**：全部脚本
+      // （外链经 `__zw_fetch_script` 取源）按序拼接进**单个** Function——共享
+      // 变量环境（common.js 的 var 与后续 inline 脚本的 eval('paras[0]') 同链），
+      // window/self/document 形参绑定 iframe win/doc（`window.testRange` 落 win）。
+      // `<body onload=run()>` 语义：脚本执行后调 win.run()（若定义）。
+      // 无脚本的 fixture（dummy.*）零变化。执行异常吞（子文档脚本错误不应阻断
+      // 宿主——harness 侧以 window.unexpectedException 断言形态消费）。
+      if (_r115Entry.state === 'done' && _r115Entry.win) {
+        try { _r115Entry.win.__r206State = _r115Entry.state; } catch (_eR206m) {}
+        try {
+          _zwRunIframeScripts(_r115Entry.win, _r115Entry.doc, _r115Body, _r115Url);
+        } catch (_eR206s) {}
       }
     } else {
       _r115Entry.state = 'no-src';
