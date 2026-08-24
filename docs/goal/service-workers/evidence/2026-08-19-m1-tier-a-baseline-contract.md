@@ -2,7 +2,7 @@
 
 **日期**：2026-08-19
 **上游 revision**：`04067ce9c7c2165e71ad7d0dde10a4c5cb394a83`
-**状态**：complete（Tier A 28/28 Pass）
+**状态**：complete（Tier A + active 30/30 Pass）
 **运行证据**：[M1 core WPT baseline](2026-08-19-m1-wpt-core-baseline.md)
 **资产清单**：[Tier A assets](2026-08-19-m1-tier-a-assets.tsv)
 **Subtest 清单**：[Tier A subtests](2026-08-19-m1-tier-a-subtests.tsv)
@@ -17,43 +17,45 @@
 
 ## 0. 合约摘要
 
-- Tier A 固定为 **8 个 case / 28 个 subtest / 18 个唯一资产**。
-- 18 个资产总计 **235,111 bytes**，包含 8 个 case、6 个页面脚本、3 个 worker 脚本和
+- Tier A asset corpus 现固定为 **9 个 case / 30 个 subtest / 19 个唯一资产**，
+  包含初始 Tier A 8 case 以及后续晋级的 `active.https.html`。
+- 19 个资产总计 **237,073 bytes**，包含 9 个 case、6 个页面脚本、3 个 worker 脚本和
   1 个 HTML fixture。
-- 18/18 资产按 Git blob 算法与 WPT manifest SHA 匹配。
-- SW testharness runner 已执行全部 Tier A case；当前为 28 Pass / 0 Fail / 0 Timeout。
-- `make fetch-wpt-service-workers-tier-a` 已可将 18 个资产恢复到独立 WPT root，并逐 blob
+- 19/19 资产按 Git blob 算法与 WPT manifest SHA 匹配。
+- SW testharness runner 已执行全部 Tier A + active case；当前为 30 Pass / 0 Fail / 0 Timeout。
+- `make fetch-wpt-service-workers-tier-a` 已可将 19 个资产恢复到独立 WPT root，并逐 blob
   fail-closed 校验；不会覆盖其他 goal 的共享 testharness revision。
 - `make audit-wpt-service-workers-tier-a` 可在无网络模式下审计现有 corpus；
   `make test-wpt-service-workers-tier-a-assets` 固化缺失、篡改、修复和 verify-only 回归。
 - M1 首个真实 driving subtest 是 `activation occurs after registration`。
-- Tier A 完成条件是 28/28 Pass、0 Timeout、0 Unsupported，且重复运行不残留 registration。
+- Tier A + active 完成条件是 30/30 Pass、0 Timeout、0 Unsupported，且重复运行不残留
+  registration。
 
 机器清单 SHA-256：
 
-- assets：`c9b8089dc425873e3249d0e834176139c054f3e33845ba6c4080521f23fa6bc0`
-- subtests：`23b3073c0471857b6b61167a438e0f8bf803c3c2d08846ea409ed218af27d302`
+- assets：`cf4d8f2dc58fd9156f08539ba185d42f0a48863fa69e4e68e5fcd62b48d944d6`
+- subtests：`fdaf9ca1bf648bde3fa9e44b81a811e1f06db393c20445c83d30dc6185280f56`
 
 ## 1. 固定资产
 
 | 角色 | 唯一文件 | 说明 |
 |------|---------:|------|
-| case | 8 | `.https.html` testharness 页面 |
+| case | 9 | `.https.html` testharness 页面 |
 | page-script | 6 | testharness/report、SW helper、3 个 registration helper |
 | worker-script | 3 | empty worker、empty script、registration worker |
 | fixture | 1 | `resources/blank.html` |
-| **合计** | **18** | 无 Python handler、无故意 404 |
+| **合计** | **19** | 无 Python handler、无故意 404 |
 
 `test-helpers.sub.js` 是唯一 `.sub.js` 资产。Tier A 使用的 helper 路径不读取其中 host/port
 模板；fetch script 仍必须保留原文件并记录其模板属性，不能静默改写上游正文。
 
 已落地的 pinned fetch 流程：
 
-1. `make fetch-wpt-service-workers-tier-a` 只恢复 assets TSV 中的 18 个路径；
+1. `make fetch-wpt-service-workers-tier-a` 只恢复 assets TSV 中的 19 个路径；
 2. 数据写入 `wpt-data/.service-workers-tier-a-root` 独立根，不覆盖共享 `resources/`；
 3. 支持 `WPT_SOURCE=<checkout>` 离线源、raw GitHub 主源和 jsDelivr 回退；
 4. 固定 revision，不跟随 `master`，下载后逐项计算 Git blob SHA；
-5. 8 个 case 已记入 `imported-testharness.txt`，不误用 reftest `make import-wpt`；
+5. 9 个 case 已记入 `imported-testharness.txt`，不误用 reftest `make import-wpt`；
 6. 网络部分文件跨运行保留并续传；非法相对路径、对象缺失、字节数或 SHA 不符时 fail closed。
 7. `--verify-only` 只读现有 corpus，不下载或修复对象，适合 CI/发布前审计。
 
@@ -67,11 +69,11 @@
 | 阶段 | Case | Subtest | 主要行为 |
 |------|-----:|--------:|----------|
 | 1-core-activation | 1 | 1 | register 后真实执行脚本并最终 activated |
-| 2-state-projection | 2 | 2 | installed 先于 activating；installing/waiting/active 投影 |
+| 2-state-projection | 3 | 4 | installed 先于 activating；installing/waiting/active 投影；active getter identity |
 | 3-basic-scope | 2 | 6 | 默认 scope、fragment、script directory、null scope 拒绝 |
 | 4-url-validation | 2 | 18 | 编码分隔符、scheme、多字节、`.`/`..`、连续斜杠 |
 | 5-error-shape | 1 | 1 | register rejection 是 DOMException 且也是 Error |
-| **合计** | **8** | **28** | |
+| **合计** | **9** | **30** | |
 
 阶段 1 只要求最小空 worker；阶段 2 才验证状态时序和对象槽；阶段 3/4 扩展 URL 与安全校验；
 阶段 5 固定异常对象形状。后续阶段失败不能用来掩盖前一阶段回归。
@@ -83,6 +85,8 @@
 | lifecycle-activation | 1 |
 | lifecycle-ordering | 1 |
 | registration-object-state | 1 |
+| registration-active | 1 |
+| serviceworker-object-identity | 1 |
 | default-scope | 2 |
 | scope-security | 1 |
 | scope-normalization | 7 |
@@ -92,7 +96,7 @@
 | script-url-scheme | 2 |
 | script-url-normalization | 2 |
 | exception-shape | 1 |
-| **合计** | **28** |
+| **合计** | **30** |
 
 ## 3. 行为验收
 
@@ -114,6 +118,8 @@
 - install 完成后的 `installed` statechange 必须早于 `activating`。
 - register Promise resolve 时 newest worker 可从 `installing/waiting/active` 之一取得。
 - `registration.installing/waiting/active` 随 manager 状态迁移，不由独立 JS 私有数组维护。
+- `registration.active` 在 activating 阶段可见；同窗口 getter 对同一 worker 返回同一
+  `ServiceWorker` 对象。
 
 ### Phase 3：基础 scope
 
@@ -135,7 +141,7 @@
 
 > **来源说明（第 2-3 章）**
 >
-> - **一手事实**：28 个 WPT subtest 原始名称与断言正文。
+> - **一手事实**：30 个 WPT subtest 原始名称与断言正文。
 > - **作者综合**：五阶段编排和 BDD 摘要。
 
 ## 4. Runner 与完成门禁
@@ -152,8 +158,8 @@ Tier A runner 必须提供：
 
 ### Tier A 完成判据
 
-- [x] 8/8 case 被 runner 发现，不能静默少文件。
-- [x] 28/28 subtest Pass。
+- [x] 9/9 case 被 runner 发现，不能静默少文件。
+- [x] 30/30 subtest Pass。
 - [x] 0 Fail / 0 Timeout / 0 Unsupported。
 - [x] 每个 case 后 registration 数回到 0。
 - [x] 连续两轮结果逐 case/subtest 一致。
@@ -167,23 +173,23 @@ message、claim/skipWaiting 或 update 已完成。
 
 | 结论 | 来源 1 | 来源 2 | 一致性 | 置信度 |
 |------|--------|--------|--------|--------|
-| Tier A 有 8 个 case | candidate closure TSV | assets manifest 中 8 个 case role | 一致 | 高 |
-| Tier A 有 28 个 subtest | 平衡括号解析 testharness 调用 | subtests TSV 28 唯一 case/ordinal | 一致 | 高 |
-| 固定资产为 18 个 | 8 case 的闭包 union | assets TSV 18 唯一路径 | 一致 | 高 |
-| 资产字节可信 | manifest Git SHA | 18/18 本地 blob 重算 | 一致 | 高 |
+| Tier A + active 有 9 个 case | candidate/final review TSV | assets manifest 中 9 个 case role | 一致 | 高 |
+| Tier A + active 有 30 个 subtest | 上游 testharness 调用 | subtests TSV 30 唯一 case/ordinal | 一致 | 高 |
+| 固定资产为 19 个 | 9 case 的闭包 union | assets TSV 19 唯一路径 | 一致 | 高 |
+| 资产字节可信 | manifest Git SHA | 19/19 本地 blob 重算 | 一致 | 高 |
 | Phase 1 是最小 driving case | case 仅 empty worker/blank/helper | WPT 断言只等待 activated | 一致 | 高 |
-| Tier A 不覆盖 fetch/message | 28 个 requirement group | candidate closure 无 fetch worker | 一致 | 高 |
+| Tier A + active 不覆盖 fetch/message | 30 个 requirement group | candidate/final review 无 fetch worker | 一致 | 高 |
 
 ## 6. 质量审查
 
-- [x] 8/8 Tier A case 已纳入资产与 subtest 清单。
-- [x] 28 个 subtest 保留上游原始名称。
-- [x] 18/18 资产有 manifest type、角色、大小和 Git blob SHA。
-- [x] 五阶段计数可反算为 8 case / 28 subtest。
+- [x] 9/9 Tier A + active case 已纳入资产与 subtest 清单。
+- [x] 30 个 subtest 保留上游原始名称。
+- [x] 19/19 资产有 manifest type、角色、大小和 Git blob SHA。
+- [x] 五阶段计数可反算为 9 case / 30 subtest。
 - [x] 已区分 NotRun、Fail、Timeout、Unsupported、Pass。
 - [x] 未把 Tier A 扩张为完整 Service Worker Done Criteria。
 - [x] 资产恢复脚本已通过本地源、幂等、跨运行续传、篡改修复、非法 manifest 和真实网络路径验证。
-- [x] verify-only 对正常 corpus 18/18 通过，对缺失和篡改对象稳定失败且不修改现场。
+- [x] verify-only 对正常 corpus 19/19 通过，对缺失和篡改对象稳定失败且不修改现场。
 - [x] shell 回归已由 `make test-wpt-service-workers-tier-a-assets` 资产化。
 - [x] `cargo fmt --all -- --check`、workspace clippy 和 `make test` 全通过。
 - [x] 未修改 SW runtime 源码；仅落测试资产基础设施与 testharness 账本。

@@ -34,7 +34,7 @@ service-workers/service-worker/about-blank-replacement.https.html	04067ce9c7c216
 service-workers/service-worker/activate-event-after-install-state-change.https.html	04067ce9c7c2165e71ad7d0dde10a4c5cb394a83	016a52c13c82ebbfb36d48830446b79b4e72f13e	1	core	keep-first	2026-08-19-m0-m1-candidate-resource-closure.tsv
 service-workers/service-worker/activation-after-registration.https.html	04067ce9c7c2165e71ad7d0dde10a4c5cb394a83	29f97e3e3f4c0cda2321776cbf48fed92d1c90a1	1	core	keep-first	2026-08-19-m0-m1-candidate-resource-closure.tsv
 service-workers/service-worker/activation.https.html	04067ce9c7c2165e71ad7d0dde10a4c5cb394a83	278454d3383e3d71a3925663dfcfc3444eddff83	1	gated	gated-dynamic-controller	2026-08-19-m1-final-review.tsv
-service-workers/service-worker/active.https.html	04067ce9c7c2165e71ad7d0dde10a4c5cb394a83	350a34b802f70d6b6c78e6fdba9b2acabe7d143c	1	defer	defer-controller-state	2026-08-19-final-remaining-review.tsv
+service-workers/service-worker/active.https.html	04067ce9c7c2165e71ad7d0dde10a4c5cb394a83	350a34b802f70d6b6c78e6fdba9b2acabe7d143c	1	core	next-wave-active-core	2026-08-19-final-remaining-review.tsv
 service-workers/service-worker/add-routes.https.html	04067ce9c7c2165e71ad7d0dde10a4c5cb394a83	fbab7cdedfa388d8dbd47e1887beb2a02fd18721	1	skip	skip-static-routing-lifecycle	2026-08-19-static-routing-review.tsv
 service-workers/service-worker/claim-affect-other-registration.https.html	04067ce9c7c2165e71ad7d0dde10a4c5cb394a83	52555ac271b5bad279ab37352c9d9937c780909a	1	gated	gated-initial-inventory	2026-08-19-m0-wpt-case-inventory.tsv
 service-workers/service-worker/claim-fetch.https.html	04067ce9c7c2165e71ad7d0dde10a4c5cb394a83	ae0082df06bf794d02990a7c0b7213e0d81114cb	1	gated	gated-initial-inventory	2026-08-19-m0-wpt-case-inventory.tsv

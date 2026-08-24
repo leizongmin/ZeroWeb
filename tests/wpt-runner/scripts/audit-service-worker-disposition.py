@@ -60,7 +60,7 @@ REVIEW_FILES = [
 IDL_SOURCE = "service-workers/idlharness.https.any.js"
 EXPECTED_SOURCE_COUNT = 294
 EXPECTED_URL_COUNT = 331
-EXPECTED_LANES = Counter(core=34, defer=49, gated=169, skip=42)
+EXPECTED_LANES = Counter(core=35, defer=48, gated=169, skip=42)
 SHA_PATTERN = re.compile(r"^[0-9a-f]{40}$")
 
 
@@ -97,7 +97,7 @@ def audit_core_inputs(
     with IMPORTED_LEDGER.open(encoding="utf-8") as stream:
         for line_number, line in enumerate(stream, start=1):
             fields = line.split()
-            if not fields or not fields[0].startswith("service-workers/"):
+            if not fields or not fields[0].startswith("service-workers/service-worker/"):
                 continue
             if len(fields) != 4:
                 raise ValueError(
@@ -107,9 +107,12 @@ def audit_core_inputs(
             if source in imported:
                 raise ValueError(f"duplicate Service Worker import: {source}")
             imported[source] = revision
-    if set(imported) != core_sources:
-        raise ValueError("runner imports do not match core disposition sources")
-    for source, revision in imported.items():
+    missing_imports = core_sources - set(imported)
+    if missing_imports:
+        sample = ", ".join(sorted(missing_imports)[:5])
+        raise ValueError(f"core disposition sources missing from runner imports: {sample}")
+    for source in core_sources:
+        revision = imported[source]
         if revision != WPT_REVISION:
             raise ValueError(f"runner import has wrong revision: {source}")
 

@@ -740,6 +740,7 @@ pub const CACHE_STORAGE_WINDOW_CASES: &[(&str, &[&str])] = &[
 
 /// Fixed Service Worker M1 core corpus at the pinned WPT revision.
 pub const SERVICE_WORKER_CORE_CASES: &[&str] = &[
+    "service-workers/service-worker/active.https.html",
     "service-workers/service-worker/activate-event-after-install-state-change.https.html",
     "service-workers/service-worker/activation-after-registration.https.html",
     "service-workers/service-worker/clients-matchall-on-evaluation.https.html",
@@ -3379,13 +3380,13 @@ async_test(function(test) {
     }
 
     #[test]
-    fn service_worker_core_manifest_has_thirty_four_unique_cases() {
+    fn service_worker_core_manifest_has_thirty_five_unique_cases() {
         let unique = SERVICE_WORKER_CORE_CASES
             .iter()
             .copied()
             .collect::<std::collections::BTreeSet<_>>();
-        assert_eq!(SERVICE_WORKER_CORE_CASES.len(), 34);
-        assert_eq!(unique.len(), 34);
+        assert_eq!(SERVICE_WORKER_CORE_CASES.len(), 35);
+        assert_eq!(unique.len(), 35);
         assert!(
             SERVICE_WORKER_CORE_CASES
                 .iter()

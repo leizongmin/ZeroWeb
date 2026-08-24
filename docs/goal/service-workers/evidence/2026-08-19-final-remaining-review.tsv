@@ -1,6 +1,6 @@
 source_path	manifest_sha	subtests	decision	hidden_dependencies	rationale
 service-workers/service-worker/about-blank-replacement.https.html	b6efe3ec5620d1c83deb305f2c1ebe008a6a23e2	7	skip-multi-context-clients	nested-iframes;popup;about-blank;srcdoc;clients.matchAll;client-id;dynamic-server	初始 about:blank/srcdoc 与最终 Client identity、popup 和 nested client 可见性
-service-workers/service-worker/active.https.html	350a34b802f70d6b6c78e6fdba9b2acabe7d143c	2	defer-controller-state	iframe;registration.active;controller;object-identity	未控制 iframe 上 active worker getter 与 controller 初始状态
+service-workers/service-worker/active.https.html	350a34b802f70d6b6c78e6fdba9b2acabe7d143c	2	next-wave-active-core	iframe;registration.active;controller;object-identity	已由定向 WPT 验证 registration.active 暴露、未控制 iframe controller 初始 null 与同窗口 active worker object identity
 service-workers/service-worker/controller-on-disconnect.https.html	f23dfe71bac505f1cc396bcab191dbee7a6461f4	1	defer-controller-context	iframe;detached-window;controller	移除 iframe 后其 container.controller 必须清空
 service-workers/service-worker/controller-on-load.https.html	e4c5e5f81f8139e1c788f068f716cdbb367fb83e	1	defer-controller-context	iframe;controller;cross-global-identity	新 document load 时 controller 与 registration.active 的跨 global 投影
 service-workers/service-worker/controller-on-reload.https.html	2e966d425788c0a02b1bb25a4c045089fede5ce7	1	defer-controller-context	iframe;reload;controller;cross-global-identity	注册后 reload 才获得 controller，并验证对象投影

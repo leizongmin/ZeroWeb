@@ -23,7 +23,7 @@ else
   FALLBACK_BASE="https://cdn.jsdelivr.net/gh/web-platform-tests/wpt@"
 fi
 CORPUS_LABEL="${WPT_CORPUS_LABEL:-Service Worker Tier A}"
-EXPECTED_ASSET_COUNT="${WPT_EXPECTED_ASSET_COUNT:-18}"
+EXPECTED_ASSET_COUNT="${WPT_EXPECTED_ASSET_COUNT:-19}"
 MODE="restore"
 
 if [[ "${1:-}" == "--verify-only" ]]; then

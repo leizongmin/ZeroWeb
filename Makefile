@@ -286,13 +286,14 @@ audit-wpt-service-workers-disposition:
 
 # Service Worker M1 Tier A：仅恢复固定静态资产；runner/runtime 仍受 M0 RFC 审批门禁。
 fetch-wpt-service-workers-tier-a:
-	$(WPT_BASH) tests/wpt-runner/scripts/fetch-service-workers-tier-a.sh
+	WPT_EXPECTED_ASSET_COUNT=19 $(WPT_BASH) tests/wpt-runner/scripts/fetch-service-workers-tier-a.sh
 
 audit-wpt-service-workers-tier-a:
-	$(WPT_BASH) tests/wpt-runner/scripts/fetch-service-workers-tier-a.sh --verify-only
+	WPT_EXPECTED_ASSET_COUNT=19 $(WPT_BASH) tests/wpt-runner/scripts/fetch-service-workers-tier-a.sh --verify-only
 
 test-wpt-service-workers-tier-a-assets: fetch-wpt-service-workers-tier-a
 	WPT_SERVICE_WORKER_SOURCE="$(CURDIR)/tests/wpt-runner/wpt-data/.service-workers-tier-a-root" \
+		WPT_EXPECTED_ASSET_COUNT=19 \
 		$(WPT_BASH) tests/wpt-runner/scripts/test-service-workers-tier-a-assets.sh
 
 fetch-wpt-service-workers-next-wave:
