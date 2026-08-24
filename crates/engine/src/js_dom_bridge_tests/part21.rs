@@ -3512,3 +3512,57 @@ globalThis.__r222out = [
         "R222 无 markup iframe doc 退化路径稳定（doctype 入树由 WPT 族承载）"
     );
 }
+
+#[test]
+fn r223_doc_append_child_parent_node_sticks() {
+    // R223（js-dom M4）：doc 级 appendChild/insertBefore 的 parentNode 健壮写入
+    // （`_r223SetParent`）。两条形态：① handle proxy 子（comment——get trap 的
+    // parentNode 读 `_zwNodeParent` 注册表）经 R180 plainParent 槽写入；
+    // ② 原型链继承 getter-only accessor 的节点（Element.prototype.parentNode 无
+    // setter——裸赋值 sloppy 静默 no-op）恒经 defineProperty own 数据属性遮蔽。
+    // WPT Range-insertNode 29,x：foreignDoc 的 comment 子 parentNode 恒 null →
+    // sim ensurePreInsertionValidity 读 null.nodeType 崩（insertNode +24P 实证）。
+    // 注：主文档 createElement 产物的 element-proxy 育儿链走 part04 trap 的独立
+    // 分支序（sel 优先/plainParent 槽之后）——不在本切片断言面，由 WPT 族承载。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><div id=\"t\">x</div></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+
+    sandbox
+        .execute(
+            r#"
+var fd = document.implementation.createHTMLDocument('');
+// ① handle comment 子：doc appendChild 后 parentNode 指回 doc（注册表路径）。
+var fc = document.createComment('x');
+fd.appendChild(fc);
+// ② getter-only 继承节点：模拟原型链只读 parentNode 的元素（interface 原型
+// 挂 Element.prototype 后裸赋值 no-op 的形态）——_r223SetParent 的 defineProperty
+// 遮蔽路径经 doc insertBefore 生效。
+var fe = fd.createElement('aside');
+fd.insertBefore(fe, null);
+globalThis.__r223out = [
+  'comment:' + (fc.parentNode === fd),
+  'element-in-list:' + (fd.childNodes.indexOf(fe) >= 0),
+].join('|');
+"#,
+        )
+        .unwrap();
+    let out = sandbox.execute("globalThis.__r223out").unwrap().value;
+    assert_eq!(
+        out, "comment:true|element-in-list:true",
+        "R223 doc 级子的 parentNode 健壮写入（proxy 注册表 + defineProperty 遮蔽）"
+    );
+}

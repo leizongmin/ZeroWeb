@@ -6780,6 +6780,35 @@
         })(kids[i], i);
       }
     }
+    // R223（js-dom M4）：doc 级子的 parentNode **健壮写入**——子可能是 element proxy
+    //（get trap 的 parentNode 为 getter-only accessor，`c.parentNode = this` 抛
+    // "which has only a getter"，WPT Range-insertNode 29,x：foreignDoc
+    // （createHTMLDocument 产物）的 html 子 parentNode 恒 null → sim
+    // ensurePreInsertionValidity 读 parent_.nodeType 崩 null.nodeType）。先直赋，
+    // 失败改 defineProperty 可写数据属性遮蔽 getter。
+    function _r223SetParent(node223, parent223) {
+      if (!node223) return;
+      // handle 形态（element/comment/text proxy）：defineProperty 经 proxy trap 不
+      // 落 target，get trap 的 parentNode 读 `_zwNodeParent` 注册表——按 R180 的
+      // plainParent 槽写入（doc 是 plain 对象，无 sel/handle）。
+      try {
+        var h223 = node223.__zwHandle;
+        if (typeof h223 === 'string' && h223 && typeof _zwNodeParent !== 'undefined' && _zwNodeParent) {
+          _zwNodeParent[h223] = { parentSel: null, parentHandle: null, plainParent: parent223, nextSibling: null };
+          return;
+        }
+      } catch (_eR223h) {}
+      // Element.prototype 的 parentNode 是 getter-only accessor（part03 R57）——
+      // 裸赋值在原型链继承下静默 no-op（sloppy）或抛（strict）；恒经 defineProperty
+      // 建 own 数据属性遮蔽。
+      try {
+        Object.defineProperty(node223, 'parentNode', {
+          value: parent223, writable: true, configurable: true,
+        });
+      } catch (_eR223a) {
+        try { node223.parentNode = parent223; } catch (_eR223b) {}
+      }
+    }
     // R132：body 属性 NS 元数据（限定名→{ns,prefix,local}）——setAttributeNS 登记，
     // getAttributeNS/getAttributeNodeNS 反查（_zwMEl 树无 __zwHandle，本地表）。
     var _r132BodyAttrNS = {};
@@ -7241,7 +7270,7 @@
           return c;
         }
         if (c.parentNode && c.parentNode.removeChild) { try { c.parentNode.removeChild(c); } catch (_e) {} }
-        c.parentNode = this;
+        _r223SetParent(c, this);
         this.childNodes.push(c);
         if (c.nodeType === 1) this.children.push(c);
         // R191（js-dom M4）：doc 级 appendChild 的 **adopt 子树传播**（spec
@@ -7362,17 +7391,17 @@
         if (!c) return c;
         if (c.parentNode && c.parentNode.removeChild) { try { c.parentNode.removeChild(c); } catch (_e87) {} }
         if (ref == null) {
-          c.parentNode = this;
+          _r223SetParent(c, this);
           this.childNodes.push(c);
           if (c.nodeType === 1) this.children.push(c);
         } else {
           var i = this.childNodes.indexOf(ref);
           if (i < 0) {
-            c.parentNode = this;
+            _r223SetParent(c, this);
             this.childNodes.push(c);
             if (c.nodeType === 1) this.children.push(c);
           } else {
-            c.parentNode = this;
+            _r223SetParent(c, this);
             this.childNodes.splice(i, 0, c);
             if (c.nodeType === 1) {
               var ri = this.children.indexOf(ref);
