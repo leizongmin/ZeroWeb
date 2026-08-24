@@ -507,10 +507,10 @@ impl<'a> Parser<'a> {
         // 解析 symbols（逐个去引号/按空白切分）。
         let symbols: Vec<String> = symbols_raw.as_deref().map(split_counter_symbols).unwrap_or_default();
         // 解析 additive-symbols（`<integer> && <symbol>` 对，按 weight 降序）。
-        let additive_symbols: Vec<(i32, String)> = additive_raw
-            .as_deref()
-            .map(parse_counter_additive_symbols)
-            .unwrap_or_default();
+        let additive_symbols: Vec<(i32, String)> = match additive_raw.as_deref() {
+            Some(value) => parse_counter_additive_symbols(value)?,
+            None => Vec::new(),
+        };
         // 解析 range（`[lower upper]` 对；`infinite`→i32 边界）。
         let range: Option<Vec<(i32, i32)>> = range_raw.as_deref().and_then(parse_counter_range);
 

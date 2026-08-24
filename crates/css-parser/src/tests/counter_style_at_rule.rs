@@ -170,6 +170,17 @@ fn test_parse_counter_style_additive_no_symbols_invalid() {
 }
 
 #[test]
+/// R3732：`additive-symbols` 中任一逗号项非法时，descriptor 无效，additive 规则整体丢弃。
+fn test_parse_counter_style_additive_symbols_invalid_pair_rejected() {
+    let css = "@counter-style bad { system: additive; additive-symbols: 3 \"c\", bogus; }";
+    let ws = Parser::parse_stylesheet(css);
+    assert!(
+        !ws.rules.iter().any(|r| matches!(r, Rule::CounterStyle(_))),
+        "additive-symbols 含非法 pair 时不应静默保留合法前缀"
+    );
+}
+
+#[test]
 /// R2394：`range` 单区间 `1 5` → Some([(1,5)])。
 fn test_parse_counter_style_range_single() {
     let css = "@counter-style a { system: extends upper-roman; range: 1 5; }";
