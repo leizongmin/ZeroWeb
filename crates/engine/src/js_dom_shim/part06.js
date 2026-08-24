@@ -4160,6 +4160,33 @@
               // https://dom.spec.whatwg.org/#dom-range-surroundcontents
               this.extractContents();
               this.insertNode(newParent);
+            } else if (kids === null
+              && this.startContainer !== this.endContainer
+              && (this.startContainer.nodeType === 3 || this.startContainer.nodeType === 4
+                || this.startContainer.nodeType === 7 || this.startContainer.nodeType === 8)
+              && this.endContainer.nodeType !== undefined
+              && this.startContainer.parentNode === this.endContainer.parentNode) {
+              // R235（js-dom M4）：**异节点同父 CharData 区间**的 leaf-newParent
+              // 同款「先 extract 再 insert 后抛」（sim 序——common.js
+              // mySurroundContents 对步骤 3 无形态分支：extract 变更树（首尾
+              // 切片 deleteData + contained 子移除）→ 步骤 4 myInsertNode 插
+              // newParent → 步骤 5 appendChild(frag) 抛 HRE。旧版直接抛使树
+              // 保留区间原文（WPT Range-surroundContents 6,x
+              // `[paras[5].firstChild,2,paras[5].lastChild,4]` 46F——CDATA#1→
+              // text 同父区间的「assert_unreached DOMs were not equal」簇）。
+              // https://dom.spec.whatwg.org/#dom-range-surroundcontents
+              this.extractContents();
+              this.insertNode(newParent);
+            } else if (kids !== null && kids.length > 0) {
+              // R235（js-dom M4）：**元素容器含覆盖子**的 leaf-newParent——
+              // sim 序同样是 extract 先行（covered 子移出容器）再 insertNode
+              // 插 newParent（插到 (容器, startOffset)）再抛 HRE。旧版只对
+              // kids.length===0 走 insertNode，kids>0 直接抛使容器保留原文
+              // （WPT Range-surroundContents 18,x
+              // `[paras[0],0,paras[0],1]` + Text newParent 的 differing 簇）。
+              // https://dom.spec.whatwg.org/#dom-range-surroundcontents
+              this.extractContents();
+              this.insertNode(newParent);
             }
           } finally { globalThis._r215NoValidate = false; }
           // R229（js-dom M4）：comment/PI 同节点容器（7/8）的 leaf-newParent 序——

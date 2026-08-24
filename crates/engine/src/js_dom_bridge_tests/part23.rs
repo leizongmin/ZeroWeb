@@ -1502,3 +1502,68 @@ globalThis.__r234out = out.join('|');
         "R234 动态 documentElement getter + 跨容器提取塌缩 + plain 子提取无父登记"
     );
 }
+
+#[test]
+fn r235_leaf_newparent_extract_first_variants() {
+    // R235（js-dom M4）：leaf-newParent（Text/Comment）的「先 extract 再 insert 后抛
+    // HRE」序扩展两形态——① 异节点同父 CharData 区间（WPT 6,x
+    // `[paras[5].firstChild,2,paras[5].lastChild,4]`：extract 先削首尾切片）；
+    // ② 元素容器含覆盖子（WPT 18,x `[paras[0],0,paras[0],1]`：extract 先移出
+    // covered 子）。旧版两形态直接抛 HRE 使树保留区间原文。
+    // https://dom.spec.whatwg.org/#dom-range-surroundcontents
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><div id=\"t\">x</div></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+
+    sandbox
+        .execute(
+            r#"
+var out = [];
+// ① 异节点同父 CharData 区间：p 内 text "abcdefgh" 与 text "ijklmnop"，
+//    range [t1,2, t2,3] + Text newParent → extract 先行（t1 削尾 "ab"、t2 削头
+//    "lmnop"）再 HRE。
+var p6 = document.createElement('p');
+var t1 = document.createTextNode('abcdefgh');
+var t2 = document.createTextNode('ijklmnop');
+p6.appendChild(t1); p6.appendChild(t2);
+document.body.appendChild(p6);
+var r6 = document.createRange();
+r6.setStart(t1, 2); r6.setEnd(t2, 3);
+var threw6 = 'none';
+try { r6.surroundContents(document.createTextNode('z')); } catch (e) { threw6 = (e && e.name) || String(e); }
+out.push('xnode:' + t1.data + ',' + t2.data + ',' + threw6);
+// ② 元素容器含覆盖子：p 内 text "Opqrstuv"，range [p,0,p,1] 整子区间 +
+//    Text newParent → extract 先移出子（p 空）再 HRE。
+var p18 = document.createElement('p');
+var t18 = document.createTextNode('Opqrstuv');
+p18.appendChild(t18);
+document.body.appendChild(p18);
+var r18 = document.createRange();
+r18.setStart(p18, 0); r18.setEnd(p18, 1);
+var threw18 = 'none';
+try { r18.surroundContents(document.createTextNode('z')); } catch (e) { threw18 = (e && e.name) || String(e); }
+out.push('elem:' + t18.parentNode + ',' + p18.childNodes.length + ',' + (p18.firstChild ? p18.firstChild.data : '?') + ',' + threw18);
+globalThis.__r235out = out.join('|');
+"#,
+        )
+        .unwrap();
+    let out = sandbox.execute("globalThis.__r235out").unwrap().value;
+    assert_eq!(
+        out,
+        "xnode:ab,lmnop,HierarchyRequestError|elem:null,1,z,HierarchyRequestError",
+        "R235 leaf-newParent 两形态先 extract 后抛：异节点同父区间削首尾 + 元素容器移出 covered 子"
+    );
+}
