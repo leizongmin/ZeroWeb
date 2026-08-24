@@ -520,6 +520,9 @@ impl<'a> Parser<'a> {
         // https://drafts.csswg.org/css-counter-styles-3/#counter-style-system
         // extends 无需 symbols（继承）；非 additive 系统须 ≥1 symbol；alphabetic/numeric
         // 须 ≥2 symbols；additive 须有 ≥1 additive-symbols 对。
+        if matches!(system, CounterSystem::Extends(_)) && (symbols_raw.is_some() || additive_raw.is_some()) {
+            return None;
+        }
         if matches!(system, CounterSystem::Additive) && additive_symbols.is_empty() {
             return None;
         }

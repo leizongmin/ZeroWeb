@@ -90,9 +90,22 @@ fn test_parse_counter_style_system_rejects_extra_tokens() {
 #[test]
 /// `system: extends <name>`。
 fn test_parse_counter_style_extends() {
-    let css = "@counter-style ext { system: extends decimal; symbols: \"x\"; }";
+    let css = "@counter-style ext { system: extends decimal; }";
     let cs = first_counter_style(css);
     assert_eq!(cs.system, CounterSystem::Extends("decimal".to_string()));
+}
+
+#[test]
+/// R3741：`extends` 系统继承基样式，不能同时声明 symbols / additive-symbols。
+fn test_parse_counter_style_extends_rejects_symbol_descriptors() {
+    for descriptor in ["symbols: a;", "additive-symbols: 1 a;"] {
+        let css = format!("@counter-style bad {{ system: extends decimal; {descriptor} }}");
+        let ws = Parser::parse_stylesheet(&css);
+        assert!(
+            !ws.rules.iter().any(|r| matches!(r, Rule::CounterStyle(_))),
+            "extends with `{descriptor}` 应整体无效"
+        );
+    }
 }
 
 #[test]
