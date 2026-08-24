@@ -1424,6 +1424,7 @@ globalThis.__r228out = [
   'pi-so:' + rp.startOffset + ',pi-threw:' + pThrew,
   'leaf-data:' + dc2.data + ',leaf-threw:' + tThrew,
   'r230:' + dtext.data + ',' + t9,
+  'r231:' + r9.startOffset + ',' + r9.endOffset,
 ].join('|');
 "#,
         )
@@ -1431,7 +1432,7 @@ globalThis.__r228out = [
     let out = sandbox.execute("globalThis.__r228out").unwrap().value;
     assert_eq!(
         out,
-        "data:Stuwxyz|threw:HierarchyRequestError|pi-so:0,pi-threw:HierarchyRequestError|leaf-data:Stuwxyz,leaf-threw:HierarchyRequestError|r230:Op,HierarchyRequestError",
+        "data:Stuwxyz|threw:HierarchyRequestError|pi-so:0,pi-threw:HierarchyRequestError|leaf-data:Stuwxyz,leaf-threw:HierarchyRequestError|r230:Op,HierarchyRequestError|r231:2,8",
         "R228/R229 detached comment 区间 surround：extract 切片 + HRE 上抛 + 同节点 collapse (容器, startOffset) + leaf-newParent 先 extract 再抛"
     );
 }

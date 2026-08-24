@@ -3749,10 +3749,13 @@
             // 的首分支；WPT Range-surroundContents 39,x「startOffset expected 0
             // got 3」17F——PI 同节点区间被 collapse 到 (xmlDoc, 3)）。异节点
             // 同父保持 (父, si+1)（else 分支）。
-            if (_r211sc === _r211ec) {
-              this.setStart(_r211sc, this.startOffset | 0);
-              this.setEnd(_r211sc, this.startOffset | 0);
-            } else {
+            // R231（js-dom M4）：同节点区间 extract **不塌缩边界**——沙箱内直接
+            // 执行 common.js myExtractContents 源探针实证：[t,2,8] 的 data 削为
+            // "Op" 但 range 保持 (t,2)-(t,8)（sim 的 CharacterData first/last
+            // 子路径在中段 clone/deleteData 后早返回，尾部的 setStart/setEnd
+            // 塌缩不执行；WPT Range-surroundContents 2,x/27,x 的
+            // 「endOffset expected 8 got 2」~93F）。异节点同父保持 (父, si+1)。
+            if (_r211sc !== _r211ec) {
               this.setStart(_r211p, _r211si + 1);
               this.setEnd(_r211p, _r211si + 1);
             }
