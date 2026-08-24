@@ -1391,16 +1391,36 @@ r.setEnd(dc, 4);
 var p = document.createElement('p');
 var threwName = 'none';
 try { r.surroundContents(p); } catch (e) { threwName = (e && e.name) || String(e); }
+// R229：同节点 collapse 到 (容器, startOffset)（sim 的 isAncestorContainer self
+// 分支）——PI 同节点区间 [0,4] extract 后 startOffset 保持 0 非 (父, idx+1)。
+var xd = document.implementation.createDocument(null, null, null);
+var pi2 = xd.createProcessingInstruction('t', 'abcdefgh');
+var rp = xd.createRange();
+rp.setStart(pi2, 0);
+rp.setEnd(pi2, 4);
+var pe = document.createElement('p');
+var pThrew = 'none';
+try { rp.surroundContents(pe); } catch (e) { pThrew = (e && e.name) || String(e); }
+// R229：leaf newParent（Text）对 comment 容器先 extract（data 切片）再抛 HRE。
+var dc2 = document.createComment('Stuvwxyz');
+var rt = document.createRange();
+rt.setStart(dc2, 3);
+rt.setEnd(dc2, 4);
+var tThrew = 'none';
+try { rt.surroundContents(document.createTextNode('z')); } catch (e) { tThrew = (e && e.name) || String(e); }
 globalThis.__r228out = [
   'data:' + dc.data,
   'threw:' + threwName,
+  'pi-so:' + rp.startOffset + ',pi-threw:' + pThrew,
+  'leaf-data:' + dc2.data + ',leaf-threw:' + tThrew,
 ].join('|');
 "#,
         )
         .unwrap();
     let out = sandbox.execute("globalThis.__r228out").unwrap().value;
     assert_eq!(
-        out, "data:Stuwxyz|threw:HierarchyRequestError",
-        "R228 detached comment 区间 surround：extract 切片（w 移除）+ HRE 上抛"
+        out,
+        "data:Stuwxyz|threw:HierarchyRequestError|pi-so:0,pi-threw:HierarchyRequestError|leaf-data:Stuwxyz,leaf-threw:HierarchyRequestError",
+        "R228/R229 detached comment 区间 surround：extract 切片 + HRE 上抛 + 同节点 collapse (容器, startOffset) + leaf-newParent 先 extract 再抛"
     );
 }

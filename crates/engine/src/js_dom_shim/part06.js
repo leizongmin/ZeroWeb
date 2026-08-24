@@ -3694,8 +3694,10 @@
               } catch (_eR228m) {}
               try { _r211sc.deleteData(_r228a, _r228b - _r228a); } catch (_eR228d) {}
             }
-            this.setStart(_r211sc, _r228a);
-            this.setEnd(_r211sc, _r228a);
+            // R229（js-dom M4）：detached 无父——range 边界**保持不变**（sim 的
+            // myExtractContents 塌缩步走 parent_ 定位，无父时不重设边界；WPT
+            // Range-surroundContents 32,x「endOffset expected 8 got 0」18F——
+            // 旧版强 collapse 到 (容器, a) 使 position 断言分歧）。
             return _r211frag;
           }
           if (_r211si >= 0 && _r211ei >= _r211si) {
@@ -3741,8 +3743,19 @@
             // common.js myExtractContents 的 newOffset = 1 + indexOf 同款）。
             // 旧版 setStart(si) 使后续 insertNode 落在削弱的 start 容器**前**
             // （sim 落后一位——6,x positionTests 的 offsets A=0,1 E=1,2 根因）。
-            this.setStart(_r211p, _r211si + 1);
-            this.setEnd(_r211p, _r211si + 1);
+            // R229（js-dom M4）：**同节点区间**（sc===ec）的 sim 分支是
+            // isAncestorContainer(start, end) 的 self 命中——collapse 到
+            // (容器, startOffset) 而非 (父, si+1)（common.js myExtractContents
+            // 的首分支；WPT Range-surroundContents 39,x「startOffset expected 0
+            // got 3」17F——PI 同节点区间被 collapse 到 (xmlDoc, 3)）。异节点
+            // 同父保持 (父, si+1)（else 分支）。
+            if (_r211sc === _r211ec) {
+              this.setStart(_r211sc, this.startOffset | 0);
+              this.setEnd(_r211sc, this.startOffset | 0);
+            } else {
+              this.setStart(_r211p, _r211si + 1);
+              this.setEnd(_r211p, _r211si + 1);
+            }
             return _r211frag;
           }
         }
@@ -4110,6 +4123,20 @@
               this.insertNode(newParent);
             }
           } finally { globalThis._r215NoValidate = false; }
+          // R229（js-dom M4）：comment/PI 同节点容器（7/8）的 leaf-newParent 序——
+          // sim（common.js mySurroundContents）先 extractContents（**变更容器
+          // data**：中段切片 deleteData）再在 myInsertNode 处抛 HRE。旧版直接抛
+          // 使容器 data 不变（WPT Range-surroundContents 35,1–2 / 36,x 的
+          // 「Stuwxyz got Stuvwxyz」残余族——newParent 为 Text/Comment 形态）。
+          // https://dom.spec.whatwg.org/#dom-range-surroundcontents
+          if (kids === null
+            && (this.startContainer.nodeType === 7 || this.startContainer.nodeType === 8)
+            && this.startContainer === this.endContainer) {
+            try { this.extractContents(); } catch (_eR229x) {}
+            throw new (globalThis.DOMException || Error)(
+              'Nodes of type ' + newParent.nodeType + ' cannot have children.',
+              'HierarchyRequestError');
+          }
           throw new (globalThis.DOMException || Error)(
             'Nodes of type ' + newParent.nodeType + ' cannot have children.',
             'HierarchyRequestError');
