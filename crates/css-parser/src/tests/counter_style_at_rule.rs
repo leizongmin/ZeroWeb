@@ -47,15 +47,30 @@ fn test_parse_counter_style_fixed_no_value() {
 #[test]
 /// symbolic / alphabetic / numeric 系统。
 fn test_parse_counter_style_systems() {
-    for (kw, expected) in [
-        ("symbolic", CounterSystem::Symbolic),
-        ("alphabetic", CounterSystem::Alphabetic),
-        ("numeric", CounterSystem::Numeric),
-        ("additive", CounterSystem::Additive),
+    for (kw, descriptors, expected) in [
+        ("symbolic", "symbols: \"a\" \"b\";", CounterSystem::Symbolic),
+        ("alphabetic", "symbols: \"a\" \"b\";", CounterSystem::Alphabetic),
+        ("numeric", "symbols: \"a\" \"b\";", CounterSystem::Numeric),
+        ("additive", "additive-symbols: 1 \"a\";", CounterSystem::Additive),
     ] {
-        let css = format!("@counter-style s {{ system: {kw}; symbols: \"a\" \"b\"; }}");
+        let css = format!("@counter-style s {{ system: {kw}; {descriptors} }}");
         let cs = first_counter_style(&css);
         assert_eq!(cs.system, expected, "system: {kw}");
+    }
+}
+
+#[test]
+/// R3740：`alphabetic` / `numeric` 系统必须至少有两个 symbols。
+fn test_parse_counter_style_alphabetic_numeric_require_two_symbols() {
+    for system in ["alphabetic", "numeric"] {
+        for descriptors in ["", "symbols: A;"] {
+            let css = format!("@counter-style bad {{ system: {system}; {descriptors} }}");
+            let ws = Parser::parse_stylesheet(&css);
+            assert!(
+                !ws.rules.iter().any(|r| matches!(r, Rule::CounterStyle(_))),
+                "system: {system} with `{descriptors}` 应整体无效"
+            );
+        }
     }
 }
 
@@ -318,12 +333,14 @@ fn test_parse_counter_style_additive_symbols_quoted_swap() {
 #[test]
 /// R2394：additive 系统无 additive-symbols → at-rule 无效 → 丢弃。
 fn test_parse_counter_style_additive_no_symbols_invalid() {
-    let css = "@counter-style bad { system: additive; }";
-    let ws = Parser::parse_stylesheet(css);
-    assert!(
-        !ws.rules.iter().any(|r| matches!(r, Rule::CounterStyle(_))),
-        "additive 无 additive-symbols 应丢弃"
-    );
+    for descriptors in ["", "symbols: A B;"] {
+        let css = format!("@counter-style bad {{ system: additive; {descriptors} }}");
+        let ws = Parser::parse_stylesheet(&css);
+        assert!(
+            !ws.rules.iter().any(|r| matches!(r, Rule::CounterStyle(_))),
+            "additive with `{descriptors}` 应丢弃"
+        );
+    }
 }
 
 #[test]

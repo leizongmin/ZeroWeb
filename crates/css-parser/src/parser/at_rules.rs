@@ -517,10 +517,16 @@ impl<'a> Parser<'a> {
         // 解析 range（`[lower upper]` 对；`infinite`→i32 边界）。
         let range: Option<Vec<(i32, i32)>> = range_raw.as_deref().and_then(parse_counter_range);
 
-        // 合法性（CSS §3.1.4）：extends 无需 symbols（继承）；非 additive 系统须 ≥1 symbol；
-        // additive 须有 ≥1 additive-symbols 对（否则整体无效丢弃，走 fallback）。
-        let needs_symbols = !matches!(system, CounterSystem::Extends(_));
-        if needs_symbols && symbols.is_empty() && additive_symbols.is_empty() {
+        // https://drafts.csswg.org/css-counter-styles-3/#counter-style-system
+        // extends 无需 symbols（继承）；非 additive 系统须 ≥1 symbol；alphabetic/numeric
+        // 须 ≥2 symbols；additive 须有 ≥1 additive-symbols 对。
+        if matches!(system, CounterSystem::Additive) && additive_symbols.is_empty() {
+            return None;
+        }
+        if !matches!(system, CounterSystem::Extends(_) | CounterSystem::Additive) && symbols.is_empty() {
+            return None;
+        }
+        if matches!(system, CounterSystem::Alphabetic | CounterSystem::Numeric) && symbols.len() < 2 {
             return None;
         }
 
