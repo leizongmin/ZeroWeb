@@ -2,7 +2,7 @@
 
 **入口文档**: [../storage-cache-api.md](../storage-cache-api.md)
 **创建日期**: 2026-08-17（goal 拆分 bootstrap）
-**最后更新**: 2026-08-23（SW fetch claim registration-boundary WPT 扩面）
+**最后更新**: 2026-08-24（CacheStorage common HTML wrapper WPT 扩面）
 
 ---
 
@@ -48,6 +48,9 @@ Dedicated Worker 覆盖，并新增 9 个 `window/*.https.html` wrapper case；
 同名 cache，bucket 删除后旧 `bucket.caches` 操作按 WPT 期望 reject `UnknownError`。基线
 固定 Window / Dedicated Worker / nested Dedicated Worker 共享同一 CacheStorage owner 的路径，
 双跑稳定为 431 subtest / 431 Pass / 0 Fail。
+2026-08-24 补入上游 `common.https.html` HTML wrapper，与已导入的
+`common.https.window.js` 共同固定 Window 读回 Dedicated Worker 写入 cache 条目的共享 owner
+路径，当前 CacheStorage window runner 基线为 34 case / 432 subtest / 432 Pass / 0 Fail。
 M3 首片已补齐 page/WebView `StorageManager` owner 的 per-origin CacheStorage 持久化：
 CacheStorage 以 origin hash `.cache` 文件落盘，请求/响应元数据和 body bytes JSON 保真，
 写入采用临时文件 + sync + 原子替换，并在启动时清理 `.tmp` / 恢复 `.bak`；页面 host 的
@@ -115,7 +118,7 @@ fetch baseline，不改变本目标的 window/SW CacheStorage 分母。
   iframe `contentWindow` 可 `open` 后 `put/match/matchAll/delete/keys`，并可 `has/keys/match`
 - ✅ 持久化首片：page/WebView `StorageManager` owner 已支持 per-origin CacheStorage 落盘；
   SW registration-local CacheStorage 已随 active registration snapshot/restore 验证
-- ✅ WPT `cache-storage` window runner 基线已导入：33 case / 431 subtest，431 Pass / 0 Fail
+- ✅ WPT `cache-storage` window runner 基线已导入：34 case / 432 subtest，432 Pass / 0 Fail
 - 🚧 add/addAll 的页面 fetch 链路、Cache API 返回对象 brand、缺参 TypeError、
   `CacheStorage.keys()` 创建顺序、Vary 匹配、delete-dooming、DOMString name wire 与
   Storage Buckets cache namespace
@@ -356,6 +359,13 @@ fetch baseline，不改变本目标的 window/SW CacheStorage 分母。
   - `WPT_SOURCE=$HOME/github/others/wpt ./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit 420 -- make testharness-cache-storage FILTER=sandboxed-iframes.https.html`：1 case / 2 subtests / 2 Pass
   - `WPT_SOURCE=$HOME/github/others/wpt ./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit 600 -- make testharness-cache-storage FILTER=cache-add`：3 cases / 66 subtests / 66 Pass
   - `./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit 900 -- python3 tests/wpt-runner/scripts/run-cache-storage-window-baseline.py --runner ./target/release/zero-wpt-runner --wpt-data tests/wpt-runner/wpt-data/.cache-storage-window-root --output docs/goal/storage-cache-api/evidence/2026-08-22-cache-storage-window-baseline.json --summary docs/goal/storage-cache-api/evidence/2026-08-22-cache-storage-window-baseline.md`：33 cases / 431 subtests / 431 Pass，double-run deterministic
+  - 证据：[CacheStorage window assets](evidence/2026-08-22-cache-storage-window-assets.tsv)、[CacheStorage window WPT baseline](evidence/2026-08-22-cache-storage-window-baseline.md)
+- 2026-08-24 M2 CacheStorage common HTML wrapper WPT 扩面：
+  - 新增 WPT：`common.https.html`
+  - `./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit 120 -- bash tests/wpt-runner/scripts/fetch-cache-storage-window-subset.sh --verify-only`：61 assets matched pinned manifest
+  - `./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit 300 -- cargo test -p zero-wpt-runner cache_storage_window_manifest_has_expected_unique_cases -- --nocapture`：1 passed
+  - `./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit 300 -- cargo run -p zero-wpt-runner -- testharness-cache-storage common.https.html --wpt-data tests/wpt-runner/wpt-data/.cache-storage-window-root --json`：1 case / 1 subtest / 1 Pass
+  - `./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit 900 -- make baseline-wpt-cache-storage OUTPUT=docs/goal/storage-cache-api/evidence/2026-08-22-cache-storage-window-baseline.json SUMMARY=docs/goal/storage-cache-api/evidence/2026-08-22-cache-storage-window-baseline.md`：34 cases / 432 subtests / 432 Pass，double-run deterministic
   - 证据：[CacheStorage window assets](evidence/2026-08-22-cache-storage-window-assets.tsv)、[CacheStorage window WPT baseline](evidence/2026-08-22-cache-storage-window-baseline.md)
 - 2026-08-22 M3 CacheStorage 持久化首片：
   - `./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit 300 -- cargo check -p zero-storage -p zero-page-runtime -p zero-webview --all-targets`：passed

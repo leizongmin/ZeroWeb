@@ -1,8 +1,8 @@
 {
-  "cases": 33,
-  "subtests": 431,
+  "cases": 34,
+  "subtests": 432,
   "status": {
-    "Pass": 431
+    "Pass": 432
   },
   "deterministic": true,
   "results": [
@@ -748,6 +748,16 @@
     ],
     [
       "service-workers/cache-storage/common.https.window.js",
+      [
+        {
+          "name": "Window sees cache puts by Worker",
+          "status": "Pass",
+          "message": null
+        }
+      ]
+    ],
+    [
+      "service-workers/cache-storage/common.https.html",
       [
         {
           "name": "Window sees cache puts by Worker",

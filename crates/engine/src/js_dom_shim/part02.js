@@ -2976,6 +2976,7 @@
     serviceWorker: (function () {
       var _registrations = [];
       var _controller = null;
+      var _controllerChangeGeneration = 0;
       var _readyResolve;
       var _ready = new Promise(function (resolve) { _readyResolve = resolve; });
       var _container = {
@@ -3335,6 +3336,23 @@
           return wire && wire.ok ? wire.controller : null;
         } catch (_e) { return null; }
       }
+      function readRegistrationSnapshot(clientURL) {
+        if (typeof __zw_sw_get_registration !== 'function') return null;
+        try {
+          var wire = JSON.parse(__zw_sw_get_registration(clientURL || ''));
+          return wire && wire.ok ? wire.registration : null;
+        } catch (_e) { return null; }
+      }
+      function refreshRegistrationAfterRedundant(reg) {
+        // https://w3c.github.io/ServiceWorker/#navigator-service-worker-getRegistration
+        var clientURL = _documentURL ||
+          (globalThis.location && globalThis.location.href) ||
+          reg.scope;
+        var replacement = readRegistrationSnapshot(clientURL);
+        if (replacement && String(replacement.id) !== String(reg._id)) {
+          upsertSnapshot(replacement, 'manual');
+        }
+      }
       function refreshControllerFromHost(container) {
         if (container && container !== _container &&
             typeof container.__zwRefreshServiceWorkerController === 'function') {
@@ -3381,8 +3399,13 @@
       function setController(worker) {
         if (_controller === worker) return;
         _controller = worker;
+        _controllerChangeGeneration++;
+        var generation = _controllerChangeGeneration;
+        var expectedId = worker ? String(worker._id) : '';
         if (typeof setTimeout === 'function') {
           setTimeout(function () {
+            if (generation !== _controllerChangeGeneration) return;
+            if ((_controller ? String(_controller._id) : '') !== expectedId) return;
             dispatchTargetEvent(_container, 'controllerchange');
           }, 0);
         } else {
@@ -3430,6 +3453,7 @@
         } else if (state === 'redundant' && reg.active === worker) {
           reg.active = reg._previousActive;
           reg._previousActive = null;
+          refreshRegistrationAfterRedundant(reg);
         }
         if (state === 'activated' && _readyResolve) {
           _readyResolve(reg);
@@ -3452,6 +3476,9 @@
           reg._stateSequence = targetSequence;
         } else {
           applyState(reg, state);
+        }
+        if (state === 'redundant') {
+          refreshRegistrationAfterRedundant(reg);
         }
         return state === 'activated' || state === 'redundant';
       }
@@ -3661,6 +3688,11 @@
       Object.defineProperty(_container, 'controller', {
         get: function () {
           ensureDocument();
+          var snapshot = readControllerSnapshot();
+          if (snapshot && snapshot.state === 'activated') {
+            var reg = upsertSnapshot(snapshot, 'manual');
+            if (reg && reg.active) _controller = reg.active;
+          }
           return _controller;
         }
       });

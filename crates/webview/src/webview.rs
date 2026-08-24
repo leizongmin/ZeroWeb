@@ -3047,6 +3047,39 @@ impl WebView {
             }),
         );
 
+        let get_registration_manager = manager.clone();
+        let get_registration_fetchers = poll_fetchers.clone();
+        sandbox.register_callback(
+            "__zw_sw_get_registration",
+            Box::new(move |args| {
+                let client_url = args.first().map(String::as_str).unwrap_or("");
+                let Ok(url) = url::Url::parse(client_url) else {
+                    return serde_json::json!({"ok": false, "error": "invalid Service Worker client URL"}).to_string();
+                };
+                let Ok(mut manager) = get_registration_manager.lock() else {
+                    return serde_json::json!({"ok": false, "error": "manager lock poisoned"}).to_string();
+                };
+                if let Err(error) =
+                    Self::poll_service_worker_manager(&mut manager, &get_registration_fetchers, timeout_secs)
+                {
+                    return serde_json::json!({"ok": false, "error": error}).to_string();
+                }
+                let origin = url.origin().ascii_serialization();
+                let registration = manager.registration_for_url(&origin, url.as_str());
+                serde_json::json!({
+                    "ok": true,
+                    "registration": registration.map(|registration| serde_json::json!({
+                        "id": registration.id,
+                        "scriptURL": registration.script_url,
+                        "scope": registration.scope,
+                        "updateViaCache": update_via_cache_name(registration.update_via_cache),
+                        "state": registration.state.to_string(),
+                    })),
+                })
+                .to_string()
+            }),
+        );
+
         let state_changes_manager = manager.clone();
         let state_changes_fetchers = poll_fetchers.clone();
         sandbox.register_callback(
