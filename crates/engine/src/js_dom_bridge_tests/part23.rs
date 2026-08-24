@@ -1640,3 +1640,57 @@ globalThis.__r236out = out.join('|');
         "R236 祖先元素区间：extract 削头 + leaf 先 extract 后抛 + 元素 wrap 全序（清子/insert/select）"
     );
 }
+
+#[test]
+fn r237_surround_path4_full_order() {
+    // R237（js-dom M4）：surroundContents 路径 4（元素容器 covered 子 + 元素
+    // newParent）收尾对齐 sim 全序——① 清 newParent 既有子（步骤 2）；② 插到
+    // (容器, startOffset) 位而非 appendChild 末尾（步骤 4，探针实证 host docEl=
+    // [BODY,P] vs sim [P{head},BODY]）；③ selectNode(newParent) 边界（步骤 6）。
+    // https://dom.spec.whatwg.org/#dom-range-surroundcontents
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><div id=\"t\">x</div></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+
+    sandbox
+        .execute(
+            r#"
+var out = [];
+// 容器 p 内 [text, span]，range 覆盖 span（offset 1..2）+ 元素 newParent（含旧子）。
+var host237 = document.createElement('div');
+var kid1 = document.createTextNode('keep');
+var kid2 = document.createElement('span');
+kid2.appendChild(document.createTextNode('inner'));
+host237.appendChild(kid1); host237.appendChild(kid2);
+document.body.appendChild(host237);
+var np237 = document.createElement('em');
+np237.appendChild(document.createTextNode('old'));
+var r237 = document.createRange();
+r237.setStart(host237, 1); r237.setEnd(host237, 2);
+r237.surroundContents(np237);
+out.push('order:' + host237.childNodes[0].nodeName + ',' + host237.childNodes[1].nodeName);
+out.push('cleared:' + np237.childNodes.length + ',' + (np237.firstChild ? np237.firstChild.nodeName : '?'));
+out.push('sel:' + r237.startOffset + ',' + r237.endOffset + ',' + (r237.startContainer === host237));
+globalThis.__r237out = out.join('|');
+"#,
+        )
+        .unwrap();
+    let out = sandbox.execute("globalThis.__r237out").unwrap().value;
+    assert_eq!(
+        out, "order:#text,EM|cleared:1,SPAN|sel:1,2,true",
+        "R237 路径 4：清 newParent 子 + 按位插入（非 appendChild）+ selectNode 边界"
+    );
+}

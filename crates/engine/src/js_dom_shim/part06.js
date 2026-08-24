@@ -4333,6 +4333,15 @@
           }
           return; // 其余跨容器/文本切片 defer
         }
+        // R237（js-dom M4）：步骤 2 清 newParent 既有子（sim mySurroundContents
+        // 「While newParent has children, remove its first child」——旧漏此步使
+        // newParent 残留原内容（12–14,x 探针 P{2} 形态）。**先清再 clone**——
+        // clone 循环把 covered 子克隆进 newParent，后置清理会把克隆一并误删）。
+        // https://dom.spec.whatwg.org/#dom-range-surroundcontents
+        var _r237clr = 0;
+        while (newParent.childNodes && newParent.childNodes.length && _r237clr++ < 256) {
+          try { newParent.removeChild(newParent.childNodes[0]); } catch (_eR237c) { break; }
+        }
         for (var i = 0; i < kids.length; i++) {
           try { newParent.appendChild(kids[i].cloneNode(true)); } catch (_e) {}
         }
@@ -4366,7 +4375,36 @@
             previousSibling: _rmSnap[m].prev, nextSibling: _rmSnap[m].next,
           });
         }
-        try { this.startContainer.appendChild(newParent); } catch (_e) {}
+        // R237（js-dom M4）：路径 4 收尾对齐 sim（common.js mySurroundContents
+        // 步骤 2/4/6 全序——WPT Range-surroundContents 12–14,x
+        // `[documentElement,0,…]` 探针实证三分歧：host docEl=[BODY,P] 而 sim
+        // [P{head},BODY]）：
+        // ① 步骤 2 清 newParent 既有子（旧漏——paras[0] 原文本残留使 P{2}）；
+        // ② 步骤 4 插到 (startContainer, startOffset) 位（旧 appendChild 恒末尾
+        //    ——docEl 下 P 落到 body 后）；
+        // ③ 步骤 6 selectNode(newParent) 边界（(父, idx)-(父, idx+1)）。
+        // https://dom.spec.whatwg.org/#dom-range-surroundcontents
+        try {
+          var _r237sc = this.startContainer;
+          var _r237ref = _r237sc.childNodes && _r237sc.childNodes[this.startOffset | 0];
+          if (_r237ref != null && typeof _r237sc.insertBefore === 'function') {
+            _r237sc.insertBefore(newParent, _r237ref);
+          } else if (typeof _r237sc.appendChild === 'function') {
+            _r237sc.appendChild(newParent);
+          }
+        } catch (_eR237ins) {
+          try { this.startContainer.appendChild(newParent); } catch (_e237b) {}
+        }
+        try {
+          var _r237np = newParent.parentNode;
+          if (_r237np && _r237np.childNodes) {
+            var _r237ni = _r237np.childNodes.indexOf(newParent);
+            if (_r237ni >= 0) {
+              this.setStart(_r237np, _r237ni);
+              this.setEnd(_r237np, _r237ni + 1);
+            }
+          }
+        } catch (_eR237sel) {}
       },
       cloneRange: function () {
         // 复制 Range（独立边界，互不影响）。spec AbstractRange 边界 + _mode/commonAncestor。
