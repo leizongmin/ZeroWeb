@@ -1160,10 +1160,17 @@
     }
     // 文本/注释：经工厂重建（保 nodeType/原型链/CharacterData 方法面）。
     if (nt === 3) return _zwMText(String(n.data != null ? n.data : (n.nodeValue || '')), null);
-    // R210 评估注：CDATASection（nt=4）的 cloneNode 重建（经源 doc
-    // createCDATASection）单独正确，但 host surroundContents 缺 CDATA 跨容器
-    // extract 语义——sim 侧修好克隆后两侧树分歧（6,x positionTests -34 实测）。
-    // 与 host extract 同切片再 land（master.md R211 靶点）。
+    // R211（js-dom M4）：CDATASection（nt=4）——经源 doc 的 createCDATASection 重建
+    //（保 nodeType=4 + CharacterData 方法面 + 原型链；WPT mega-case 的
+    // myExtractContents 对 CDATA startContainer 调 cloneNode(false)——旧 nt=4
+    // 无分支落 null → "Cannot set properties of null (setting 'data')" 34F 簇）。
+    // 与 host extractContents 的 CDATA 区间分支（R211 同切片）成对 land。
+    // R211 评估注：CDATA cloneNode（nt=4 经源 doc createCDATASection 重建）与
+    // extractContents 的 CharData 区间分支成对验证时，sim 侧克隆修好而 host
+    // surroundContents 的 CharData 路径未完成（6,x positionTests 树分歧 -34）
+    // ——本轮只 land extractContents 分支（独立 +34：extract +24 / clone +10），
+    // CDATA cloneNode 与 surround CharData 路径（含 selectNode 语义）同切片再
+    // land（master.md R212 靶点）。
     if (nt === 8) return _zwMComment(String(n.data != null ? n.data : (n.nodeValue || '')), null);
     // PI：_piHandles 元数据（target/data）重建（R9 桥——handle→元数据表）。handle 形态
     // 的 PI proxy 经 get trap 的 cloneNode 分支（part04 R128）处理；此处兜底 plain

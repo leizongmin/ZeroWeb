@@ -2513,6 +2513,74 @@ fn test_surround_invalid_state_and_step_order_r210() {
         .value;
     assert_eq!(out, "ALL-OK", "R210 surroundContents 步骤 1/2 校验序");
 }
+/// R211（js-dom M4）：extractContents 的 CharacterData 区间分支（spec
+/// `dom-range-extract-contents`——start/end 容器为 Text/CDATA 同父时：
+/// frag = [start 尾切片克隆, contained 子本体, end 头切片克隆]，原树
+/// deleteData 掉切片 + contained 子移动；collapsed 同节点取中段）。
+/// WPT Range-extractContents +24F 收口的 driving 断言。
+/// https://dom.spec.whatwg.org/#dom-range-extractcontents
+#[test]
+fn test_extract_contents_chardata_interval_r211() {
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let mut sandbox = V8Sandbox::with_config(zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    })
+    .unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> =
+        Arc::new(Mutex::new("<html><body></body></html>".to_string()));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+    let out = sandbox
+        .execute(
+            r#"
+            var out = [];
+            // ① 主文档文本同节点中段（collapsed 检查外的基本区间）
+            var p = document.createElement('p');
+            p.textContent = 'abcdef';
+            document.body.appendChild(p);
+            var t = p.firstChild;
+            var r = document.createRange();
+            r.setStart(t, 1);
+            r.setEnd(t, 4);
+            var f = r.extractContents();
+            var parts = [];
+            for (var i = 0; i < f.childNodes.length; i++) parts.push(String(f.childNodes[i].data));
+            out.push('mid:' + parts.join('|') + ':t-after=' + String(t.data));
+            // ② 跨节点：p 内 t1('ab') t2('cd') t3('ef')，range t1[1]..t3[1]
+            var p2 = document.createElement('p');
+            p2.appendChild(document.createTextNode('ab'));
+            p2.appendChild(document.createTextNode('cd'));
+            p2.appendChild(document.createTextNode('ef'));
+            document.body.appendChild(p2);
+            var t1 = p2.childNodes[0], t3 = p2.childNodes[2];
+            var r2 = document.createRange();
+            r2.setStart(t1, 1);
+            r2.setEnd(t3, 1);
+            var f2 = r2.extractContents();
+            var parts2 = [];
+            for (var j = 0; j < f2.childNodes.length; j++) parts2.push(f2.childNodes[j].nodeType + ':' + String(f2.childNodes[j].data));
+            out.push('cross:' + parts2.join('|') + ':p2kids=' + p2.childNodes.length
+              + ':t1=' + String(t1.data) + ':t3=' + String(t3.data));
+            // ③ extract 后 range 收缩到 (parent, si)
+            out.push('r2-sc=' + (r2.startContainer === p2) + ':so=' + r2.startOffset
+              + ':eo=' + r2.endOffset);
+            out.length ? out.join('\n') : 'ALL-OK'
+            "#,
+        )
+        .unwrap()
+        .value;
+    assert_eq!(
+        out,
+        "mid:bcd:t-after=aef\ncross:3:b|3:cd|3:e:p2kids=2:t1=a:t3=f\nr2-sc=true:so=0:eo=1",
+        "R211 extractContents CharData 区间语义"
+    );
+}
 /// R209（js-dom M4）：iframe 子文档 testNodes 方法面 + surroundContents 叶子
 /// newParent 的 spec 异常链。根因（探针实证）：iframe/detached 工厂节点形态缺
 /// compareDocumentPosition/hasChildNodes/cloneNode/substringData/splitText/

@@ -3604,6 +3604,72 @@
         // 克隆正序（保文档序进 fragment）；移除**逆序**——nth-child 结构选择器逆序稳定（移除末尾不前移兄长），
         // 正序移除会因 sibling 前移致选择器错位（删错节点）。同 deleteContents 的逆序移除。
         var f = globalThis.document.createDocumentFragment();
+        // R211（js-dom M4）：**CharacterData 区间提取分支**（spec
+        // `dom-range-extract-contents` 的 first/last partially contained
+        // CharacterData 子 + contained children 三段——common.js
+        // myExtractContents 同款算法）。适用形态：start/end 容器是 Text/CDATA
+        //（或其一在 CharData 内），cac 是其父元素。产出：frag =
+        // [start 容器尾部切片克隆, contained 子本体, end 容器头部切片克隆]，
+        // 原树 deleteData 掉切片 + 移除 contained 子。CDATA cloneNode 的 nt=4
+        // 分支（R211 成对 land）供 sim 侧对齐。
+        // https://dom.spec.whatwg.org/#dom-range-extractcontents
+        var _r211sc = this.startContainer, _r211ec = this.endContainer;
+        var _r211isCd = function (n) {
+          return !!n && (n.nodeType === 3 || n.nodeType === 4
+            || n.nodeType === 7 || n.nodeType === 8);
+        };
+        if (_r211isCd(_r211sc) && _r211isCd(_r211ec)
+          && _r211sc.parentNode && _r211sc.parentNode === _r211ec.parentNode) {
+          var _r211p = _r211sc.parentNode;
+          var _r211kids = _r211p.childNodes || [];
+          var _r211frag = _r211p.ownerDocument
+            ? _r211p.ownerDocument.createDocumentFragment()
+            : globalThis.document.createDocumentFragment();
+          var _r211si = _r211kids.indexOf(_r211sc);
+          var _r211ei = _r211kids.indexOf(_r211ec);
+          if (_r211si >= 0 && _r211ei >= _r211si) {
+            // ① start 容器尾部切片（若 start==end 且同节点 → 单区间中段）
+            if (_r211sc === _r211ec) {
+              var _r211m = String(_r211sc.data != null ? _r211sc.data : '');
+              var _r211a = Math.max(0, Math.min(this.startOffset | 0, this.endOffset | 0));
+              var _r211b = Math.max(_r211a, Math.min(this.endOffset | 0, _r211m.length));
+              if (_r211b > _r211a) {
+                try {
+                  var _r211mid = _r211sc.cloneNode(false);
+                  _r211mid.data = _r211m.slice(_r211a, _r211b);
+                  _r211frag.appendChild(_r211mid);
+                } catch (_eR211m) {}
+                try { _r211sc.deleteData(_r211a, _r211b - _r211a); } catch (_eR211md) {}
+              }
+            } else {
+              try {
+                var _r211head = _r211sc.cloneNode(false);
+                _r211head.data = String(_r211sc.data != null ? _r211sc.data : '')
+                  .slice(this.startOffset | 0);
+                _r211frag.appendChild(_r211head);
+              } catch (_eR211h) {}
+              try { _r211sc.deleteData(this.startOffset | 0,
+                String(_r211sc.data != null ? _r211sc.data : '').length - (this.startOffset | 0)); } catch (_eR211hd) {}
+              // ② contained 子（两容器间，不含端点）本体移动
+              for (var _r211k = _r211si + 1; _r211k < _r211ei; _r211k++) {
+                var _r211c = _r211kids[_r211k];
+                if (!_r211c) continue;
+                try { _r211frag.appendChild(_r211c); } catch (_eR211c) {}
+              }
+              // ③ end 容器头部切片
+              try {
+                var _r211tail = _r211ec.cloneNode(false);
+                _r211tail.data = String(_r211ec.data != null ? _r211ec.data : '')
+                  .slice(0, this.endOffset | 0);
+                _r211frag.appendChild(_r211tail);
+              } catch (_eR211t) {}
+              try { _r211ec.deleteData(0, this.endOffset | 0); } catch (_eR211td) {}
+            }
+            this.setStart(_r211p, _r211si);
+            this.setEnd(_r211p, _r211si + 1);
+            return _r211frag;
+          }
+        }
         var kids = this._coveredChildren();
         if (kids) {
           for (var i = 0; i < kids.length; i++) {
@@ -3797,7 +3863,10 @@
             'Nodes of type ' + newParent.nodeType + ' cannot have children.',
             'HierarchyRequestError');
         }
-        if (kids === null) return; // 跨容器/文本切片 defer
+        if (kids === null) return; // 跨容器/文本切片 defer（R211 评估：CharData 区间
+        // surround 路径（extract→insertNode→appendChild(frag)）首版 docfrag newParent
+        // 误入 leaf-throw / frag 末子丢失两缺陷净 -48——回退，与 selectNode 语义
+        // 同切片再 land，master.md R212 靶点）
         for (var i = 0; i < kids.length; i++) {
           try { newParent.appendChild(kids[i].cloneNode(true)); } catch (_e) {}
         }
