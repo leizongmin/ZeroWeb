@@ -170,14 +170,14 @@ fn test_parse_counter_style_additive_symbols() {
 }
 
 #[test]
-/// R2394：`additive-symbols` 乱序声明 → 按 weight 降序排序（贪心分解所需）。
-fn test_parse_counter_style_additive_symbols_sorted_desc() {
-    let css = "@counter-style a { system: additive; additive-symbols: 1 \"a\", 3 \"c\", 2 \"b\"; }";
+/// R2394：`additive-symbols` 合法声明按 weight 严格递减。
+fn test_parse_counter_style_additive_symbols_descending_weights() {
+    let css = "@counter-style a { system: additive; additive-symbols: 3 \"c\", 2 \"b\", 1 \"a\"; }";
     let cs = first_counter_style(css);
     assert_eq!(
         cs.additive_symbols.iter().map(|(w, _)| *w).collect::<Vec<_>>(),
         vec![3, 2, 1],
-        "应按 weight 降序"
+        "应保留合法的严格递减 weight 列表"
     );
 }
 
@@ -211,6 +211,19 @@ fn test_parse_counter_style_additive_symbols_invalid_pair_rejected() {
         !ws.rules.iter().any(|r| matches!(r, Rule::CounterStyle(_))),
         "additive-symbols 含非法 pair 时不应静默保留合法前缀"
     );
+}
+
+#[test]
+/// R3736：`additive-symbols` weight 必须非负且按严格递减顺序声明。
+fn test_parse_counter_style_additive_symbols_rejects_negative_and_non_decreasing_weights() {
+    for additive_symbols in ["-1 \"X\"", "1 \"I\", 5 \"V\"", "1 \"X\", 1 \"Y\"", "2 C C, 1 B, 0 A"] {
+        let css = format!("@counter-style bad {{ system: additive; additive-symbols: {additive_symbols}; }}");
+        let ws = Parser::parse_stylesheet(&css);
+        assert!(
+            !ws.rules.iter().any(|r| matches!(r, Rule::CounterStyle(_))),
+            "additive-symbols: {additive_symbols} 应整体无效"
+        );
+    }
 }
 
 #[test]

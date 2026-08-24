@@ -191,15 +191,16 @@ fn is_counter_symbol_ident(s: &str) -> bool {
 /// 解析 `additive-symbols` 描述符（CSS Counter Styles 3 §3.1.8）。
 ///
 /// https://www.w3.org/TR/css-counter-styles-3/#the-additive-symbols-descriptor
-/// 格式：逗号分隔的 `<integer> && <symbol>` 对，如 `6 \2685, 5 \2684, ...` 或
-/// `3 "a", 2 "b"`。每对中整数与符号（引号串/裸字形）顺序可互换。结果按 weight 降序排序
-/// （贪心分解算法所需）。任一对缺整数或符号 → descriptor 无效。
+/// 格式：逗号分隔的 `<integer [0,∞]> && <symbol>` 对，如 `6 \2685, 5 \2684, ...` 或
+/// `3 "a", 2 "b"`。每对中整数与符号（引号串/裸字形）顺序可互换。权重须按声明顺序严格递减。
+/// 任一对缺整数或符号 → descriptor 无效。
 /// driving: R2394 slice 2。
 pub(super) fn parse_counter_additive_symbols(value: &str) -> Option<Vec<(i32, String)>> {
     let mut pairs: Vec<(i32, String)> = Vec::new();
+    let mut previous_weight: Option<i32> = None;
     for part in value.split(',') {
         let tokens: Vec<&str> = part.split_whitespace().collect();
-        if tokens.len() < 2 {
+        if tokens.len() != 2 {
             return None;
         }
         // 整数与符号二元组：整数可能在首或次位置。
@@ -208,10 +209,12 @@ pub(super) fn parse_counter_additive_symbols(value: &str) -> Option<Vec<(i32, St
             (None, Some(w)) => (w, strip_css_quotes(tokens[0])),
             _ => return None, // 两端都非整数 / 都为整数 → 非法对。
         };
+        if weight < 0 || previous_weight.is_some_and(|previous| weight >= previous) {
+            return None;
+        }
+        previous_weight = Some(weight);
         pairs.push((weight, symbol));
     }
-    // 降序排序（贪心分解从最大 weight 起）。稳定排序保留同 weight 声明顺序。
-    pairs.sort_by_key(|b| std::cmp::Reverse(b.0));
     (!pairs.is_empty()).then_some(pairs)
 }
 
