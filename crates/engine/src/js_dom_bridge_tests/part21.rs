@@ -3566,3 +3566,60 @@ globalThis.__r223out = [
         "R223 doc 级子的 parentNode 健壮写入（proxy 注册表 + defineProperty 遮蔽）"
     );
 }
+
+#[test]
+fn r224_insert_node_rejects_document_type_node() {
+    // R224（js-dom M4）：Range.insertNode 的 **node 自身类型合法性**检查（spec
+    // `concept-node-ensure-pre-insertion-validity`「If node is not a
+    // DocumentFragment, DocumentType, Element, or CharacterData node, throw
+    // HierarchyRequestError」——common.js ensurePreInsertionValidity 同款第四查）。
+    // 旧版缺此查使 Document（nt=9）作 node 插入静默成功——WPT Range-insertNode
+    // 71F 簇（foreignDoc 27 / xmlDoc 31 / document 13）host 不抛而 sim 返 HRE。
+    // https://dom.spec.whatwg.org/#concept-node-ensure-pre-insertion-validity
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><div id=\"t\">x</div></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+
+    sandbox
+        .execute(
+            r#"
+var t = document.getElementById('t');
+var r = document.createRange();
+r.setStart(t.firstChild, 0);
+r.setEnd(t.firstChild, 0);
+function tryInsert(n) {
+  try { r.insertNode(n); return 'no-throw'; }
+  catch (e) { return (e && e.name) || String(e); }
+}
+// ① Document（nt=9）作 node → HierarchyRequestError（本轮修复主簇）。
+var fd = document.implementation.createHTMLDocument('');
+globalThis.__r224out = [
+  'doc:' + tryInsert(fd),
+  // ② 合法类型不受影响：Element（nt=1）照常插入（返 node 本身，无异常）。
+  'element:' + (function () {
+    try { r.insertNode(document.createElement('b')); return 'ok'; }
+    catch (e) { return (e && e.name) || String(e); }
+  })(),
+].join('|');
+"#,
+        )
+        .unwrap();
+    let out = sandbox.execute("globalThis.__r224out").unwrap().value;
+    assert_eq!(
+        out, "doc:HierarchyRequestError|element:ok",
+        "R224 insertNode 对 Document 型 node 抛 HRE、Element 型不受影响"
+    );
+}

@@ -3792,6 +3792,23 @@
               'Nodes of type ' + parent215.nodeType + ' cannot have children.',
               'HierarchyRequestError');
           }
+          // R224（js-dom M4）：**node 自身类型合法性**（spec
+          // `concept-node-ensure-pre-insertion-validity` 步骤「If node is not a
+          // DocumentFragment, DocumentType, Element, or CharacterData node, throw
+          // HierarchyRequestError」——common.js ensurePreInsertionValidity 同款第
+          // 四查）。旧版缺此查使 Document（nt=9，xmlDoc/foreignDoc/document 作
+          // node）插入静默成功——sim 返 HRE 而 host 不抛（WPT
+          // Range-insertNode「A HIERARCHY_REQUEST_ERR must be thrown」71F 簇：
+          // foreignDoc 27 / xmlDoc 31 / document 13）。Attr（2）同拒。
+          // https://dom.spec.whatwg.org/#concept-node-ensure-pre-insertion-validity
+          var _r224nt = node215.nodeType | 0;
+          if (_r224nt !== 11 && _r224nt !== 10 && _r224nt !== 1
+            && _r224nt !== 3 && _r224nt !== 4 && _r224nt !== 7
+            && _r224nt !== 8) {
+            throw new (globalThis.DOMException || Error)(
+              'Nodes of type ' + _r224nt + ' cannot be inserted.',
+              'HierarchyRequestError');
+          }
           // ② node 自身或后代 === parent → 环（guard 128 防既有环失控）。
           var cur215 = parent215, hops215 = 0;
           while (cur215 && hops215++ < 128) {
