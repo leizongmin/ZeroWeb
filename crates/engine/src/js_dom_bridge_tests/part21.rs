@@ -3008,6 +3008,82 @@ fn test_iframe_docelement_in_doctree_r216() {
         .value;
     assert_eq!(out, "ALL-OK", "R216 iframe docEl 入 doc 树");
 }
+/// R217（js-dom M4）：insertNode 的 **Document 子位置规则**（spec
+/// `dom-node-pre-insert` 的「If parent is a Document」四分支）——WPT
+/// Range-insertNode 25,x 族：element 入已有 element 子的 Document → HRE；
+/// fragment 多 element 子 / Text 子 → HRE；frag 单 element 子 vs 既有 element
+/// 子 / 插入点与 doctype 位序 → HRE；doctype 入已有 doctype / element 子后
+/// → HRE。R215 校验四件之上补 Document 专属分支。
+/// <https://dom.spec.whatwg.org/#concept-node-ensure-pre-insertion-validity>
+#[test]
+fn test_insert_node_document_position_rules_r217() {
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let mut sandbox = V8Sandbox::with_config(zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    })
+    .unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> =
+        Arc::new(Mutex::new("<html><body></body></html>".to_string()));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+    let out = sandbox
+        .execute(
+            r#"
+            var out = [];
+            var mkRange = function (node, a, b) {
+              var r = document.createRange();
+              r.setStart(node, a);
+              r.setEnd(node, b);
+              return r;
+            };
+            // ① element 入已有 element 子的 detached doc（25,x 主形态）
+            var d1 = document.implementation.createHTMLDocument('');
+            var r1 = mkRange(d1, 0, 1);
+            var el1 = d1.createElement('p');
+            var t1 = '';
+            try { r1.insertNode(el1); } catch (e) { t1 = e.name; }
+            out.push('el-vs-el:' + t1);
+            // ② fragment 多 element 子 → HRE
+            var d2 = document.implementation.createDocument(null, null, null);
+            var f2 = d2.createDocumentFragment();
+            f2.appendChild(d2.createElement('a'));
+            f2.appendChild(d2.createElement('b'));
+            var r2 = mkRange(d2, 0, 0);
+            var t2 = '';
+            try { r2.insertNode(f2); } catch (e) { t2 = e.name; }
+            out.push('frag-multi:' + t2);
+            // ③ fragment Text 子 → HRE
+            var d3 = document.implementation.createDocument(null, null, null);
+            var f3 = d3.createDocumentFragment();
+            f3.appendChild(d3.createTextNode('x'));
+            var r3 = mkRange(d3, 0, 0);
+            var t3 = '';
+            try { r3.insertNode(f3); } catch (e) { t3 = e.name; }
+            out.push('frag-text:' + t3);
+            // ④ doctype 入已有 doctype → HRE
+            var d4 = document.implementation.createHTMLDocument('');
+            var dt4 = d4.implementation.createDocumentType('x', '', '');
+            var r4 = mkRange(d4, 0, 0);
+            var t4 = '';
+            try { r4.insertNode(dt4); } catch (e) { t4 = e.name; }
+            out.push('dt-vs-dt:' + t4);
+            out.length ? out.join('\n') : 'ALL-OK'
+            "#,
+        )
+        .unwrap()
+        .value;
+    assert_eq!(
+        out,
+        "el-vs-el:HierarchyRequestError\nfrag-multi:HierarchyRequestError\nfrag-text:HierarchyRequestError\ndt-vs-dt:HierarchyRequestError",
+        "R217 insertNode Document 子位置规则"
+    );
+}
 /// R209（js-dom M4）：iframe 子文档 testNodes 方法面 + surroundContents 叶子
 /// newParent 的 spec 异常链。根因（探针实证）：iframe/detached 工厂节点形态缺
 /// compareDocumentPosition/hasChildNodes/cloneNode/substringData/splitText/

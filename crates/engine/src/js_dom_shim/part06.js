@@ -3813,6 +3813,65 @@
               'Nodes of type 10 cannot be inserted into a non-Document.',
               'HierarchyRequestError');
           }
+          // R217（js-dom M4）：**Document 子位置规则**（spec
+          // `dom-node-pre-insert` 的「If parent is a Document」四分支——WPT
+          // Range-insertNode 25,x 族：element 入已有 element 子的 Document →
+          // HRE；frag 多 element 子 / Text 子 → HRE；doctype 位序（element 前
+          // 有 doctype 期望 / doctype 入已有 doctype）→ HRE。common.js
+          // ensurePreInsertionValidity 的 switch 同款）。
+          // https://dom.spec.whatwg.org/#concept-node-ensure-pre-insertion-validity
+          if (parent215.nodeType === 9) {
+            var isEl217 = function (x) { return !!x && x.nodeType === 1; };
+            var isDt217 = function (x) { return !!x && x.nodeType === 10; };
+            var k217 = parent215.childNodes || [];
+            var elCount217 = 0, dtCount217 = 0;
+            for (var c217 = 0; c217 < k217.length; c217++) {
+              if (isEl217(k217[c217])) elCount217++;
+              if (isDt217(k217[c217])) dtCount217++;
+            }
+            var hre217 = function (m) {
+              throw new (globalThis.DOMException || Error)(m, 'HierarchyRequestError');
+            };
+            if (node215.nodeType === 11) {
+              var fk217 = node215.childNodes || [];
+              var fEl217 = 0, fTxt217 = 0;
+              for (var f217 = 0; f217 < fk217.length; f217++) {
+                if (isEl217(fk217[f217])) fEl217++;
+                if (fk217[f217] && (fk217[f217].nodeType === 3 || fk217[f217].nodeType === 4)) fTxt217++;
+              }
+              if (fEl217 > 1) hre217('Fragment has more than one element child.');
+              if (fTxt217 > 0) hre217('Fragment has a Text child.');
+              if (fEl217 === 1) {
+                if (elCount217 > 0) hre217('Document already has an element child.');
+                if (ref215 && isDt217(ref215)) hre217('Insertion point is before the doctype.');
+                // child 后有 doctype → HRE（ref215 之后存在 doctype）
+                if (ref215) {
+                  var ri217 = k217.indexOf(ref215);
+                  for (var a217 = ri217 + 1; a217 < k217.length; a217++) {
+                    if (isDt217(k217[a217])) hre217('Doctype follows the insertion point.');
+                  }
+                }
+              }
+            } else if (node215.nodeType === 1) {
+              if (elCount217 > 0) hre217('Document already has an element child.');
+              if (ref215 && isDt217(ref215)) hre217('Insertion point is before the doctype.');
+              if (ref215) {
+                var ri2217 = k217.indexOf(ref215);
+                for (var b217 = ri2217 + 1; b217 < k217.length; b217++) {
+                  if (isDt217(k217[b217])) hre217('Doctype follows the insertion point.');
+                }
+              }
+            } else if (node215.nodeType === 10) {
+              if (dtCount217 > 0) hre217('Document already has a doctype child.');
+              if (ref215) {
+                var ri2317 = k217.indexOf(ref215);
+                for (var d217 = 0; d217 < ri2317; d217++) {
+                  if (isEl217(k217[d217])) hre217('Element child precedes the insertion point.');
+                }
+              }
+              if (!ref215 && elCount217 > 0) hre217('Document has an element child and no insertion point.');
+            }
+          }
         })(this, node);
         if (!node || !this.startContainer) return node;
         // R209（js-dom M4）：spec `dom-range-insertnode`——startContainer 是 Text/
