@@ -3658,15 +3658,46 @@
           return !!n && (n.nodeType === 3 || n.nodeType === 4
             || n.nodeType === 7 || n.nodeType === 8);
         };
+        // R228（js-dom M4）：**同节点 CharData 区间（detached 含 comment/PI）**——
+        // start===end 容器时无需父容器（spec `dom-range-extract-contents` 对
+        // partially-contained CharacterData 的 clone-切片 + deleteData 不依赖父；
+        // common.js myExtractContents 同款）。旧版 guard 要求 parentNode 非空使
+        // detachedComment/detachedProcessingInstruction 的区间 surround 整族
+        // 不变（WPT Range-surroundContents 35,x/36,x「Stuwxyz got Stuvwxyz」84F
+        // 簇——extract 空转，树不变）。仅同节点形态放宽（异节点仍需同父定位）。
+        // https://dom.spec.whatwg.org/#dom-range-extractcontents
+        var _r228sameNode = (_r211sc === _r211ec && _r211isCd(_r211sc));
         if (_r211isCd(_r211sc) && _r211isCd(_r211ec)
-          && _r211sc.parentNode && _r211sc.parentNode === _r211ec.parentNode) {
+          && (_r228sameNode
+            || (_r211sc.parentNode && _r211sc.parentNode === _r211ec.parentNode))) {
           var _r211p = _r211sc.parentNode;
-          var _r211kids = _r211p.childNodes || [];
-          var _r211frag = _r211p.ownerDocument
+          // R228：detached 同节点（_r211p null）——kids 空数组（下文同节点分支
+          // 不消费父定位；null.childNodes 直接 TypeError）。
+          var _r211kids = (_r211p && _r211p.childNodes) || [];
+          // R228：detached 同节点（_r211p null）——frag 归主 document。
+          var _r211frag = (_r211p && _r211p.ownerDocument)
             ? _r211p.ownerDocument.createDocumentFragment()
             : globalThis.document.createDocumentFragment();
           var _r211si = _r211kids.indexOf(_r211sc);
           var _r211ei = _r211kids.indexOf(_r211ec);
+          if (_r228sameNode && _r211si < 0) {
+            // R228：detached 同节点——中段切片 + deleteData + collapse 到
+            // (容器, startOffset)（无父定位/collapse-to-parent 步骤）。
+            var _r228m = String(_r211sc.data != null ? _r211sc.data : '');
+            var _r228a = Math.max(0, Math.min(this.startOffset | 0, this.endOffset | 0));
+            var _r228b = Math.max(_r228a, Math.min(this.endOffset | 0, _r228m.length));
+            if (_r228b > _r228a) {
+              try {
+                var _r228mid = _r211sc.cloneNode(false);
+                _r228mid.data = _r228m.slice(_r228a, _r228b);
+                _r211frag.appendChild(_r228mid);
+              } catch (_eR228m) {}
+              try { _r211sc.deleteData(_r228a, _r228b - _r228a); } catch (_eR228d) {}
+            }
+            this.setStart(_r211sc, _r228a);
+            this.setEnd(_r211sc, _r228a);
+            return _r211frag;
+          }
           if (_r211si >= 0 && _r211ei >= _r211si) {
             // ① start 容器尾部切片（若 start==end 且同节点 → 单区间中段）
             if (_r211sc === _r211ec) {
@@ -4094,8 +4125,13 @@
             return !!n && (n.nodeType === 3 || n.nodeType === 4
               || n.nodeType === 7 || n.nodeType === 8);
           };
+          // R228（js-dom M4）：同节点 CharData（detached 含 comment/PI）放宽——
+          // 与 extractContents 的 R228 同节点分支成对（WPT Range-surroundContents
+          // 35,x/36,x「Stuwxyz got Stuvwxyz」族：detached Comment/PI 区间 surround
+          // 旧版因 parentNode 守卫整体空转）。异节点仍需同父。
           if (_r212isCd2(_r212sc2) && _r212isCd2(_r212ec2)
-            && _r212sc2.parentNode && _r212sc2.parentNode === _r212ec2.parentNode) {
+            && (_r212sc2 === _r212ec2
+              || (_r212sc2.parentNode && _r212sc2.parentNode === _r212ec2.parentNode))) {
             var _r212frag2 = this.extractContents();
             // R212：spec 步骤 3——「While newParent has children, remove its
             // first child」（common.js mySurroundContents 同款；旧版漏此步使
@@ -4104,7 +4140,11 @@
             while (newParent.childNodes && newParent.childNodes.length && _r212guard++ < 256) {
               try { newParent.removeChild(newParent.childNodes[0]); } catch (_eR212rm) { break; }
             }
-            try { this.insertNode(newParent); } catch (_eR212i2) {}
+            // R228：insertNode 的 HRE **不再吞**（sim 序：extract 变更树后
+            // insertNode 对叶子容器抛 HRE——common.js mySurroundContents 把
+            // myInsertNode 的返回串原样上抛；旧吞错使 WPT 35–38,x 的
+            // detached Comment/PI/Text 区间「must be thrown」族不抛）。
+            this.insertNode(newParent);
             try { newParent.appendChild(_r212frag2); } catch (_eR212a2) {}
             // selectNode(newParent) 语义：range 落到 newParent 的父 + 索引。
             try {

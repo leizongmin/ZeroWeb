@@ -1356,3 +1356,51 @@ globalThis.__r226out = [
         "R226 自引用 insertBefore 的 ref 位先取后摘（fp1 保持首位 + p0 不动）"
     );
 }
+
+// R228（js-dom M4）：detached 同节点 CharData（comment/PI/text）区间 surround——
+// extractContents 的 R211 分支放宽 parentNode 守卫（同节点中段切片 + deleteData +
+// collapse 到 (容器, startOffset)），surroundContents 的 _r212 门同款放宽 +
+// insertNode 的 HRE 不再吞（sim 序：extract 变更树后抛）。
+// WPT Range-surroundContents 35–38,x「must be thrown + Stuwxyz」族 +50P。
+#[test]
+fn r228_detached_chardata_interval_surround() {
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><div id=\"t\">x</div></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+
+    sandbox
+        .execute(
+            r#"
+var dc = document.createComment('Stuvwxyz');
+var r = document.createRange();
+r.setStart(dc, 3);
+r.setEnd(dc, 4);
+var p = document.createElement('p');
+var threwName = 'none';
+try { r.surroundContents(p); } catch (e) { threwName = (e && e.name) || String(e); }
+globalThis.__r228out = [
+  'data:' + dc.data,
+  'threw:' + threwName,
+].join('|');
+"#,
+        )
+        .unwrap();
+    let out = sandbox.execute("globalThis.__r228out").unwrap().value;
+    assert_eq!(
+        out, "data:Stuwxyz|threw:HierarchyRequestError",
+        "R228 detached comment 区间 surround：extract 切片（w 移除）+ HRE 上抛"
+    );
+}
