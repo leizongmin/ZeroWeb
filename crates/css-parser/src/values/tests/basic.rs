@@ -1269,6 +1269,17 @@ fn test_parse_will_change() {
     assert_eq!(parse_will_change(""), None);
 }
 
+#[test]
+fn test_parse_will_change_list_rejects_invalid_separators() {
+    assert!(matches!(
+        parse_will_change_list("opacity, transform").as_deref(),
+        Some([WillChangeValue::Custom(a), WillChangeValue::Custom(b)]) if a == "opacity" && b == "transform"
+    ));
+    assert_eq!(parse_will_change_list("opacity transform"), None);
+    assert_eq!(parse_will_change_list("opacity,"), None);
+    assert_eq!(parse_will_change_list("opacity,,transform"), None);
+}
+
 // ── PointerEvents 测试 ──
 
 #[test]

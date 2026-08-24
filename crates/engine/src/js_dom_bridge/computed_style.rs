@@ -2059,12 +2059,13 @@ fn perspective_to_css(lv: &LengthValue, font_size_px: f64) -> String {
 }
 
 /// will-change：CSS Will Change 计算值。空 `Vec`（默认 + `will-change: auto`，见
-/// `parse_will_change_list`）→ `auto`；否则各标识符空格连接（`scroll-position` / `contents` /
-/// 自定义属性名原样）。对齐 Chromium getComputedStyle。
+/// `parse_will_change_list`）→ `auto`；否则按逗号列表序列化（`scroll-position` / `contents` /
+/// 自定义属性名原样）。
 fn will_change_to_css(list: &[WillChangeValue]) -> String {
     if list.is_empty() {
         return "auto".to_string();
     }
+    // https://drafts.csswg.org/css-will-change-1/#will-change
     list.iter()
         .map(|v| match v {
             WillChangeValue::Auto => "auto",
@@ -2073,7 +2074,7 @@ fn will_change_to_css(list: &[WillChangeValue]) -> String {
             WillChangeValue::Custom(s) => s.as_str(),
         })
         .collect::<Vec<_>>()
-        .join(" ")
+        .join(", ")
 }
 
 /// clip-path：按 CSS Masking 计算值序列化 basic-shape 函数。

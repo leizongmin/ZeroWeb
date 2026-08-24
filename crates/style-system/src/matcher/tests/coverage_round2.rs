@@ -399,6 +399,9 @@ fn test_property_supported_extended_visual_and_layout_properties() {
     assert!(!is_property_supported("touch-action", "pinch-zoom"));
     assert!(!is_property_supported("user-select", "visible"));
     assert!(!is_property_supported("will-change", "auto, opacity"));
+    assert!(!is_property_supported("will-change", "opacity transform"));
+    assert!(!is_property_supported("will-change", "opacity,"));
+    assert!(!is_property_supported("will-change", "opacity,,transform"));
     assert!(!is_property_supported("pointer-events", "paint"));
     assert!(!is_property_supported("overflow-wrap", "wrap"));
     assert!(!is_property_supported("tab-size", "auto"));

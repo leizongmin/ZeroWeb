@@ -329,24 +329,22 @@ fn parse_will_change_ident(token: &str) -> Option<WillChangeValue> {
 }
 
 /// 解析 will-change 多 ident 列表（CSS Will Change：`auto | scroll-position | contents | <custom-ident>+`）。
-/// `auto` → 空 Vec（默认值）；否则按空白分割（spec 为 `<custom-ident>+` 空格分隔，亦容忍逗号）
-/// 逐个解析 ident，任一失败 → None。空 Vec = auto。
+/// `auto` → 空 Vec（默认值）；否则按 `#` 语法使用逗号分隔，逐个解析 ident，任一失败 → None。
+/// 空 Vec = auto。
 pub fn parse_will_change_list(value: &str) -> Option<Vec<WillChangeValue>> {
     let v = value.trim();
     if v.eq_ignore_ascii_case("auto") {
         return Some(Vec::new());
     }
-    // 按空白和逗号分割（容忍 `will-change: transform, opacity` 的逗号写法）。
-    let tokens: Vec<&str> = v
-        .split(|c: char| c.is_whitespace() || c == ',')
-        .filter(|s| !s.is_empty())
-        .collect();
-    if tokens.is_empty() {
-        return None;
-    }
-    let mut list = Vec::with_capacity(tokens.len());
-    for t in &tokens {
-        list.push(parse_will_change_ident(t)?);
+    // https://drafts.csswg.org/css-will-change-1/#will-change
+    // `#` is comma-separated; whitespace alone must not create a second item.
+    let mut list = Vec::new();
+    for item in v.split(',') {
+        let item = item.trim();
+        if item.is_empty() {
+            return None;
+        }
+        list.push(parse_will_change_ident(item)?);
     }
     Some(list)
 }

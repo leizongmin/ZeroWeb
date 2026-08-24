@@ -1437,7 +1437,8 @@ fn test_get_computed_style_will_change() {
         <div id=\"scroll\" style=\"will-change: scroll-position;\"></div>\
         <div id=\"contents\" style=\"will-change: contents;\"></div>\
         <div id=\"custom\" style=\"will-change: transform;\"></div>\
-        <div id=\"multi\" style=\"will-change: transform opacity;\"></div>\
+        <div id=\"multi\" style=\"will-change: transform, opacity;\"></div>\
+        <div id=\"invalid\" style=\"will-change: transform opacity;\"></div>\
         <div id=\"def\"></div>\
         </body></html>";
     // auto（显式与默认均为空 Vec）。
@@ -1451,11 +1452,12 @@ fn test_get_computed_style_will_change() {
     assert_eq!(computed_style_property(html, "#contents", "will-change"), "contents");
     // 自定义属性名原样。
     assert_eq!(computed_style_property(html, "#custom", "will-change"), "transform");
-    // 多属性组合：空格分隔。
+    // 多属性组合：逗号分隔；空白分隔声明无效，保持默认 auto。
     assert_eq!(
         computed_style_property(html, "#multi", "will-change"),
-        "transform opacity"
+        "transform, opacity"
     );
+    assert_eq!(computed_style_property(html, "#invalid", "will-change"), "auto");
 }
 
 #[test]
