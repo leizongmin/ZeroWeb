@@ -5,6 +5,7 @@
 //! 原 `mod.rs` 内的调用方经 `use super::helpers::*;` 拉入；`pub(super)` 等价于原「parser 模块私有」语义。
 
 use crate::ast::*;
+use crate::tokenizer::{Token, Tokenizer};
 
 /// 解析容器条件文本。
 ///
@@ -166,7 +167,25 @@ pub(super) fn parse_counter_system(value: Option<&str>) -> Option<CounterSystem>
 /// 符号可为带引号串（`"a"` / `'◆'`）或裸标识/字形（`◆`），按空白分隔；逐个去引号。
 /// driving: R2392。
 pub(super) fn split_counter_symbols(value: &str) -> Vec<String> {
-    value.split_whitespace().map(strip_css_quotes).collect()
+    // https://www.w3.org/TR/css-counter-styles-3/#counter-style-symbols
+    // `<symbol>` 可为 string 或 custom-ident；裸 number 不是合法 symbol。
+    let mut symbols = Vec::new();
+    for spanned in Tokenizer::new(value) {
+        match spanned.token {
+            Token::Whitespace | Token::Comment(_) => {}
+            Token::String(s) => symbols.push(s),
+            Token::Ident(s) if is_counter_symbol_ident(&s) => symbols.push(s),
+            _ => return Vec::new(),
+        }
+    }
+    symbols
+}
+
+fn is_counter_symbol_ident(s: &str) -> bool {
+    !matches!(
+        s.to_ascii_lowercase().as_str(),
+        "initial" | "inherit" | "unset" | "revert" | "revert-layer"
+    )
 }
 
 /// 解析 `additive-symbols` 描述符（CSS Counter Styles 3 §3.1.8）。

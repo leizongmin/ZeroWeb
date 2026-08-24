@@ -107,6 +107,26 @@ fn test_parse_counter_style_bare_symbols() {
 }
 
 #[test]
+/// R3735：`symbols` descriptor 的 string symbol 可包含空白，裸数字不是合法 symbol token。
+fn test_parse_counter_style_symbols_token_boundaries() {
+    let css = "@counter-style spaced { system: fixed; symbols: \"a b\" 'c d' e; }";
+    let cs = first_counter_style(css);
+    assert_eq!(cs.symbols, vec!["a b".to_string(), "c d".to_string(), "e".to_string()]);
+
+    let ws = Parser::parse_stylesheet("@counter-style bad { system: fixed; symbols: 0 1 2; }");
+    assert!(
+        !ws.rules.iter().any(|r| matches!(r, Rule::CounterStyle(_))),
+        "bare number tokens are not valid symbols"
+    );
+
+    let ws = Parser::parse_stylesheet("@counter-style bad { system: alphabetic; symbols: ⓐ inherit; }");
+    assert!(
+        !ws.rules.iter().any(|r| matches!(r, Rule::CounterStyle(_))),
+        "CSS-wide keywords are not valid custom-ident symbols"
+    );
+}
+
+#[test]
 /// 无 symbols（且非 extends）→ at-rule 无效 → 丢弃（不产出 Rule::CounterStyle）。
 fn test_parse_counter_style_no_symbols_invalid() {
     let css = "@counter-style bad { system: cyclic; }";
