@@ -128,26 +128,30 @@ pub(super) fn strip_css_quotes(s: &str) -> String {
 }
 
 /// 解析 `@counter-style` 的 `system` 描述符为类型化算法（CSS Counter Styles 3 §3.1.4）。
+///
+/// https://www.w3.org/TR/css-counter-styles-3/#counter-style-system
 /// driving: R2392。`None` = 非法 system（at-rule 无效）。
 pub(super) fn parse_counter_system(value: Option<&str>) -> Option<CounterSystem> {
     let v = value.unwrap_or("symbolic").trim(); // 缺省 symbolic
-    let lower = v.to_ascii_lowercase();
-    let mut parts = lower.split_whitespace();
-    let head = parts.next()?;
-    let system = match head {
-        "cyclic" => CounterSystem::Cyclic,
+    let parts: Vec<&str> = v.split_whitespace().collect();
+    let head = parts.first()?.to_ascii_lowercase();
+    let system = match head.as_str() {
+        "cyclic" if parts.len() == 1 => CounterSystem::Cyclic,
         "fixed" => {
             // `fixed <integer>?`：首符号值（缺省 1）。
-            let first = parts.next().and_then(|s| s.parse::<i32>().ok());
+            if parts.len() > 2 {
+                return None;
+            }
+            let first = parts.get(1).map(|s| s.parse::<i32>()).transpose().ok()?;
             CounterSystem::Fixed(first)
         }
-        "symbolic" => CounterSystem::Symbolic,
-        "alphabetic" => CounterSystem::Alphabetic,
-        "numeric" => CounterSystem::Numeric,
-        "additive" => CounterSystem::Additive,
-        "extends" => {
+        "symbolic" if parts.len() == 1 => CounterSystem::Symbolic,
+        "alphabetic" if parts.len() == 1 => CounterSystem::Alphabetic,
+        "numeric" if parts.len() == 1 => CounterSystem::Numeric,
+        "additive" if parts.len() == 1 => CounterSystem::Additive,
+        "extends" if parts.len() == 2 => {
             // `extends <counter-style-name>`：继承名（原始大小写，取未 lower 的下一段）。
-            let ext = v.split_whitespace().nth(1)?.to_string();
+            let ext = parts[1].to_string();
             if ext.is_empty() {
                 return None;
             }

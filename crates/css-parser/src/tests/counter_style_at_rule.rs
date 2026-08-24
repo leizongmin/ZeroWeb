@@ -60,6 +60,19 @@ fn test_parse_counter_style_systems() {
 }
 
 #[test]
+/// R3734：`system` descriptor 必须完整匹配 grammar，不能忽略尾部或非法参数。
+fn test_parse_counter_style_system_rejects_extra_tokens() {
+    for system in ["cyclic extra", "fixed bogus", "fixed 5 extra", "extends decimal extra"] {
+        let css = format!("@counter-style bad {{ system: {system}; symbols: \"a\"; }}");
+        let ws = Parser::parse_stylesheet(&css);
+        assert!(
+            !ws.rules.iter().any(|r| matches!(r, Rule::CounterStyle(_))),
+            "system: {system} 应整体无效"
+        );
+    }
+}
+
+#[test]
 /// `system: extends <name>`。
 fn test_parse_counter_style_extends() {
     let css = "@counter-style ext { system: extends decimal; symbols: \"x\"; }";
