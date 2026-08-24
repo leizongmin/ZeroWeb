@@ -7297,6 +7297,41 @@
             }
           } catch (_e112a) {}
         }
+        // R221（js-dom M4）：**iframe doc 的 fresh-doc 绑定**——restoreIframe 语义
+        //（清空 doc 首末子 + appendChild(referenceDoc.docEl.cloneNode(true)) +
+        // contentWindow.setupRangeTests()）下，doc.body/head 若仍指 factory 时的
+        // 原字面量，则 setup 建的 paras 落在字面量 body 树、rangeFromEndpoints 走
+        // 的克隆 docEl 树——**平行树**（R220 linkage 实验定位，rows 12–16 -158P）。
+        // appendChild 收到 HTML 元素时把 doc.body/head 重绑到克隆子树的对应节点
+        //（克隆无 head/body 子时保持原值——createHTMLDocument 等非 restoreIframe
+        // 路径零扰动；仅 `_zwMarkup` 印章的 iframe doc 生效）。
+        // https://dom.spec.whatwg.org/#dom-document-body
+        try {
+          if (doc._zwMarkup !== undefined && c && c.nodeType === 1
+            && String(c.nodeName || '').toUpperCase() === 'HTML') {
+            var _r221kids221 = c.childNodes || [];
+            var _r221newBody = null, _r221newHead = null;
+            for (var _r221k = 0; _r221k < _r221kids221.length; _r221k++) {
+              var _r221ch = _r221kids221[_r221k];
+              if (!_r221ch || _r221ch.nodeType !== 1) continue;
+              var _r221nm = String(_r221ch.nodeName || '').toUpperCase();
+              if (_r221nm === 'BODY' && !_r221newBody) _r221newBody = _r221ch;
+              if (_r221nm === 'HEAD' && !_r221newHead) _r221newHead = _r221ch;
+            }
+            if (_r221newBody) {
+              Object.defineProperty(doc, 'body', {
+                configurable: true,
+                get: function () { return _r221newBody; },
+              });
+            }
+            if (_r221newHead) {
+              Object.defineProperty(doc, 'head', {
+                configurable: true,
+                get: function () { return _r221newHead; },
+              });
+            }
+          }
+        } catch (_eR221rb) {}
         return c;
       },
       removeChild: function (c) {

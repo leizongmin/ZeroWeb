@@ -3410,3 +3410,60 @@ globalThis.__r220out = cloned.childNodes.length + '|' + parts.join('|');
         "R220 deep-clone CDATA/PI 子保型（nodeType/data/target）"
     );
 }
+
+#[test]
+fn r221_iframe_doc_body_rebind_on_docel_append() {
+    // R221（js-dom M4）：iframe doc 的 fresh-doc 绑定——restoreIframe 语义（清 doc
+    // 首末子 + appendChild(refDoc.docEl.cloneNode(true)) + setupRangeTests）下，
+    // appendChild 收到 HTML 元素时 doc.body/head 重绑到克隆子树对应节点（R220
+    // 定位的平行树根因：body 保持 factory 原字面量使 setup 内容与 range 的 docEl
+    // 克隆树分裂）。断言：重绑后 document.body === docEl 克隆的 BODY 子 + setup
+    //（body.insertBefore）内容在 range 树内可见。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><div id=\"t\">x</div></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+
+    // 模拟 restoreIframe：建含 head/body 的克隆 docEl，appendChild 进 iframe doc，
+    // 断言 doc.body 重绑 + body 操作反映在 docEl 克隆树。
+    sandbox
+        .execute(
+            r#"
+var out = [];
+var dd = document.implementation.createHTMLDocument('');
+dd._zwMarkup = ''; // iframe doc 印章（_zwMakeIframeDoc 工厂设置——R221 重绑门控）
+var oldBody = dd.body;
+// restoreIframe 等价：先清 doc 现有 element 子，再 append 新克隆 docEl。
+var refDoc2 = document.implementation.createHTMLDocument('');
+var newRoot = refDoc2.documentElement.cloneNode(true);
+dd.appendChild(newRoot);
+var newBody = dd.body;
+out.push('rebound:' + (newBody !== oldBody && newBody === newRoot.childNodes[1]));
+// setup 等价：新 body 上 appendChild —— 内容须落在 range 树（newRoot 子树）内。
+var p221 = dd.createElement('p');
+newBody.appendChild(p221);
+out.push('in-tree:' + (newRoot.childNodes[1].childNodes.indexOf(p221) >= 0));
+// head 重绑同款。
+out.push('head:' + (dd.head === newRoot.childNodes[0]));
+globalThis.__r221out = out.join('|');
+"#,
+        )
+        .unwrap();
+    let out = sandbox.execute("globalThis.__r221out").unwrap().value;
+    assert_eq!(
+        out, "rebound:true|in-tree:true|head:true",
+        "R221 iframe doc body/head 重绑到 appendChild 的 docEl 克隆子树"
+    );
+}
