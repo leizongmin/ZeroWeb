@@ -3467,3 +3467,48 @@ globalThis.__r221out = out.join('|');
         "R221 iframe doc body/head 重绑到 appendChild 的 docEl 克隆子树"
     );
 }
+
+#[test]
+fn r222_iframe_doc_doctype_in_childnodes() {
+    // R222（js-dom M4）：iframe doc 的 doctype 入 childNodes 首位（R216 评估回退件
+    // 在 R221 fresh-doc 后重试成功——WPT 实测 insertNode 1637→1669P + surround
+    // 865→893P）。unit 沙箱无 __zw_fetch 契约，srcdoc iframe 走 no-markup 路径
+    // （无 doctype 可入树）——本单测断言该退化路径的稳定性：docEl 仍是首子、
+    // doc.doctype 为 null（R209 getter-only 兜底）、不抛。doctype 入树断言由
+    // WPT Range-insertNode 25/26,x 的 [document,0,document,N] 族承载。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><div id=\"t\">x</div></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+
+    sandbox
+        .execute(
+            r#"
+var ifr = document.createElement('iframe');
+document.body.appendChild(ifr);
+var idoc = ifr.contentDocument;
+globalThis.__r222out = [
+  'first:' + (idoc.childNodes[0] ? idoc.childNodes[0].nodeType : 'none'),
+  'dt:' + (idoc.doctype == null ? 'null' : 'present'),
+].join('|');
+"#,
+        )
+        .unwrap();
+    let out = sandbox.execute("globalThis.__r222out").unwrap().value;
+    assert_eq!(
+        out, "first:1|dt:null",
+        "R222 无 markup iframe doc 退化路径稳定（doctype 入树由 WPT 族承载）"
+    );
+}

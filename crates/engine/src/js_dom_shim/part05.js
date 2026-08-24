@@ -990,6 +990,18 @@
           configurable: true,
           get: function () { return _r209Dt; }
         });
+        // R222（js-dom M4）：doctype 入 childNodes 首位（R216 评估回退件在 R221
+        // fresh-doc 后重试——旧净 -55 的扰动面已被 body/head 重绑吸收）。初始
+        // [dt, docEl] 使 restoreIframe 的首末子清理循环不再清空 doc → 兜底
+        // createDocumentType 不触发 → 不再累积第二 doctype（WPT
+        // Range-insertNode 25/26/29,x 的 [document,0,document,N] 语义基准）。
+        try {
+          var _r222at = doc.childNodes.indexOf(_r209Dt);
+          if (_r222at < 0) {
+            doc.childNodes.unshift(_r209Dt);
+            try { _r209Dt.parentNode = doc; } catch (_eR222d) {}
+          }
+        } catch (_eR222u) {}
       } else {
         Object.defineProperty(doc, 'doctype', {
           configurable: true,
