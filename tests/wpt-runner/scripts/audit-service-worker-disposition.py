@@ -21,6 +21,9 @@ CANDIDATE_REVIEW = (
 IDL_REVIEW = EVIDENCE_DIR / "2026-08-19-idlharness-review.md"
 CONTRACT = EVIDENCE_DIR / "2026-08-19-wpt-disposition.tsv"
 WPT_REVISION = "04067ce9c7c2165e71ad7d0dde10a4c5cb394a83"
+CORE_REVISION_OVERRIDES = {
+    "service-workers/service-worker/skip-waiting-without-using-registration.https.html": "24197a11e8c5bd29a5cb7bdf18135a82be8a8546",
+}
 IMPORTED_LEDGER = REPO_ROOT / "tests/wpt-runner/imported-testharness.txt"
 CORE_ASSET_MANIFESTS = [
     EVIDENCE_DIR / "2026-08-19-m1-tier-a-assets.tsv",
@@ -60,7 +63,7 @@ REVIEW_FILES = [
 IDL_SOURCE = "service-workers/idlharness.https.any.js"
 EXPECTED_SOURCE_COUNT = 294
 EXPECTED_URL_COUNT = 331
-EXPECTED_LANES = Counter(core=35, defer=48, gated=169, skip=42)
+EXPECTED_LANES = Counter(core=36, defer=47, gated=169, skip=42)
 SHA_PATTERN = re.compile(r"^[0-9a-f]{40}$")
 
 
@@ -113,10 +116,12 @@ def audit_core_inputs(
         raise ValueError(f"core disposition sources missing from runner imports: {sample}")
     for source in core_sources:
         revision = imported[source]
-        if revision != WPT_REVISION:
+        expected_revision = CORE_REVISION_OVERRIDES.get(source, WPT_REVISION)
+        if revision != expected_revision:
             raise ValueError(f"runner import has wrong revision: {source}")
 
     asset_cases: dict[str, str] = {}
+    asset_revisions: dict[str, str] = {}
     for path in CORE_ASSET_MANIFESTS:
         for row in read_tsv(path):
             if row["manifest_type"] != "testharness" or row["roles"] != "case":
@@ -125,11 +130,15 @@ def audit_core_inputs(
             if source in asset_cases:
                 raise ValueError(f"duplicate core case asset: {source}")
             asset_cases[source] = row["git_blob_sha"]
+            asset_revisions[source] = row.get("source_revision") or WPT_REVISION
     if set(asset_cases) != core_sources:
         raise ValueError("core case assets do not match core disposition sources")
     for source, blob_sha in asset_cases.items():
         if blob_sha != inventory[source]["manifest_sha"]:
             raise ValueError(f"core case asset SHA does not match inventory: {source}")
+        expected_revision = CORE_REVISION_OVERRIDES.get(source, WPT_REVISION)
+        if asset_revisions[source] != expected_revision:
+            raise ValueError(f"core case asset revision does not match import: {source}")
 
 
 def build_contract() -> tuple[str, Counter[str]]:
@@ -215,7 +224,7 @@ def build_contract() -> tuple[str, Counter[str]]:
         output_rows.append(
             {
                 "source_path": source,
-                "revision": WPT_REVISION,
+                "revision": CORE_REVISION_OVERRIDES.get(source, WPT_REVISION),
                 "manifest_sha": manifest_sha,
                 "generated_urls": str(generated_urls),
                 "lane": lane,

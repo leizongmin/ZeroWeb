@@ -769,6 +769,7 @@ pub const SERVICE_WORKER_CORE_CASES: &[&str] = &[
     "service-workers/service-worker/state.https.html",
     "service-workers/service-worker/synced-state.https.html",
     "service-workers/service-worker/unregister.https.html",
+    "service-workers/service-worker/skip-waiting-without-using-registration.https.html",
     "service-workers/service-worker/update-bytecheck-cors-import.https.html",
     "service-workers/service-worker/update-bytecheck.https.html",
     "service-workers/service-worker/update-import-scripts.https.html",
@@ -3380,17 +3381,21 @@ async_test(function(test) {
     }
 
     #[test]
-    fn service_worker_core_manifest_has_thirty_five_unique_cases() {
+    fn service_worker_core_manifest_has_thirty_six_unique_cases() {
         let unique = SERVICE_WORKER_CORE_CASES
             .iter()
             .copied()
             .collect::<std::collections::BTreeSet<_>>();
-        assert_eq!(SERVICE_WORKER_CORE_CASES.len(), 35);
-        assert_eq!(unique.len(), 35);
+        assert_eq!(SERVICE_WORKER_CORE_CASES.len(), 36);
+        assert_eq!(unique.len(), 36);
         assert!(
             SERVICE_WORKER_CORE_CASES
                 .iter()
                 .all(|path| path.starts_with("service-workers/service-worker/") && path.ends_with(".html"))
+        );
+        assert!(
+            SERVICE_WORKER_CORE_CASES
+                .contains(&"service-workers/service-worker/skip-waiting-without-using-registration.https.html")
         );
     }
 
