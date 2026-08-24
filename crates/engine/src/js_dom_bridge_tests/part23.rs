@@ -620,6 +620,77 @@ fn test_iframe_service_worker_message_poll_refreshes_controller() {
 }
 
 #[test]
+fn test_iframe_service_worker_container_constructor_brand() {
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+
+    let mut sandbox = V8Sandbox::with_config(zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    })
+    .unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> =
+        Arc::new(Mutex::new("<html><body><iframe src=\"resources/blank.html\"></iframe></body></html>".to_string()));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "https://wpt.test/service-workers/service-worker/skip-waiting-using-registration.https.html"
+            .to_string(),
+    ));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+    sandbox.register_callback(
+        "__zw_sw_observe_window_client",
+        Box::new(|_args| r#"{"ok":true}"#.to_string()),
+    );
+    sandbox.register_callback(
+        "__zw_sw_controller",
+        Box::new(|args| {
+            if args.first().map(String::as_str)
+                == Some("https://wpt.test/service-workers/service-worker/resources/blank.html")
+                && args.get(1).map(String::as_str) == Some("iframe:iframe")
+            {
+                r#"{"ok":true,"controller":{"id":"r2","scriptURL":"https://wpt.test/service-workers/service-worker/resources/skip-waiting-worker.js","state":"activated"}}"#.to_string()
+            } else {
+                r#"{"ok":true,"controller":null}"#.to_string()
+            }
+        }),
+    );
+    sandbox.register_callback(
+        "__zw_fetch",
+        Box::new(|args| {
+            let url = args.get(2).map(String::as_str).unwrap_or("");
+            if url.ends_with("resources/blank.html") {
+                "__zwfr:200\x1fOK\x1f\x1f<script></script>".to_string()
+            } else {
+                "__zw_fetch_error:not found".to_string()
+            }
+        }),
+    );
+
+    assert_eq!(
+        sandbox
+            .execute(
+                "var win = document.querySelector('iframe').contentWindow;\
+                 var eventSeen = null;\
+                 win.navigator.serviceWorker.addEventListener('controllerchange', function(event) {\
+                   eventSeen = event;\
+                 });\
+                 win.navigator.serviceWorker.__zwRefreshServiceWorkerController();\
+                 String(typeof win.ServiceWorkerContainer === 'function') + '|' +\
+                   String(win.navigator.serviceWorker instanceof win.ServiceWorkerContainer) + '|' +\
+                   String(win.navigator.serviceWorker instanceof win.EventTarget) + '|' +\
+                   String(eventSeen && eventSeen.target instanceof win.ServiceWorkerContainer);",
+            )
+            .unwrap()
+            .value,
+        "true|true|true|true",
+        "iframe ServiceWorkerContainer constructor should brand container and controllerchange event target"
+    );
+}
+
+#[test]
 fn test_iframe_content_window_post_message_transfers_ports() {
     use std::sync::{Arc, Mutex};
     use zero_script_sandbox::{Sandbox, V8Sandbox};

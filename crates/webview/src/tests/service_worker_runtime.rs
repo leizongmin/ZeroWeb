@@ -1236,6 +1236,7 @@ fn navigator_controller_tracks_document_and_skip_waiting_replacement() {
                globalThis.__controllerChange = [
                  event.target === navigator.serviceWorker,
                  event.currentTarget === navigator.serviceWorker,
+                 event.target instanceof ServiceWorkerContainer,
                  navigator.serviceWorker.controller.scriptURL.endsWith('/app/sw-v2.js'),
                  navigator.serviceWorker.controller.state,
                  globalThis.__firstController.state
@@ -1252,10 +1253,187 @@ fn navigator_controller_tracks_document_and_skip_waiting_replacement() {
     loop {
         let value = webview.execute_script("globalThis.__controllerChange").unwrap();
         if value != "pending" {
-            assert_eq!(value, "true|true|true|activated|redundant");
+            assert_eq!(value, "true|true|true|true|activating|redundant");
             break;
         }
         assert!(Instant::now() < deadline, "controllerchange timed out");
+        std::thread::sleep(Duration::from_millis(10));
+    }
+}
+
+#[test]
+#[serial_test::serial(service_worker_runtime)]
+fn iframe_controller_tracks_skip_waiting_replacement() {
+    const PAGE_URL: &str =
+        "https://example.test/service-workers/service-worker/skip-waiting-using-registration.https.html";
+    let mut webview = crate::WebView::new(WebViewConfig {
+        service_worker_script_fetcher: Some(Arc::new(|_, script| {
+            let body = if script.ends_with("/skip-waiting-worker.js") {
+                "addEventListener('install', event => {
+                   event.waitUntil(skipWaiting());
+                 });
+                 addEventListener('message', event => {
+                   event.source.postMessage({type:'reply', script:self.location.href});
+                 });"
+            } else {
+                ""
+            };
+            Ok(zero_net::HttpResponse {
+                status_code: 200,
+                headers: vec![("Content-Type".into(), "application/javascript".into())],
+                body: body.as_bytes().to_vec(),
+                url: script.to_string(),
+                redirect_count: 0,
+            })
+        })),
+        fetch_handler: Some(Arc::new(|request| {
+            let body = if request
+                .url
+                .ends_with("/resources/blank.html?skip-waiting-using-registration")
+            {
+                "<!doctype html><title>blank</title>"
+            } else {
+                ""
+            };
+            Ok(FetchResponse {
+                status: 200,
+                status_text: "OK".into(),
+                headers: vec![("content-type".into(), "text/html".into())],
+                body: body.into(),
+                body_bytes: None,
+            })
+        })),
+        ..Default::default()
+    });
+
+    webview.load_url(PAGE_URL);
+    webview.complete_load("<html><body></body></html>", None);
+    webview.run_page_scripts_strict().unwrap();
+    webview
+        .execute_script(
+            "globalThis.__iframeSetup = 'pending';
+             navigator.serviceWorker.register('resources/empty.js', {
+               scope:'resources/blank.html?skip-waiting-using-registration'
+             }).then(function(reg) {
+               return navigator.serviceWorker.ready;
+             }).then(function() {
+               globalThis.__iframeSetup = 'ready';
+             }).catch(function(error) {
+               globalThis.__iframeSetup = 'error:' + error.name + ':' + error.message;
+             });
+             'started';",
+        )
+        .unwrap();
+    let deadline = Instant::now() + Duration::from_secs(20);
+    loop {
+        let value = webview.execute_script("String(globalThis.__iframeSetup)").unwrap();
+        if value != "pending" {
+            assert_eq!(value, "ready");
+            break;
+        }
+        assert!(Instant::now() < deadline, "iframe setup timed out");
+        std::thread::sleep(Duration::from_millis(10));
+    }
+
+    webview.complete_load(
+        "<script>
+           globalThis.__iframeSkipWaiting = 'pending';
+           Promise.resolve().then(function() {
+               return new Promise(function(resolve) {
+                 var frame = document.createElement('iframe');
+                 frame.id = 'frame';
+                 frame.src = 'resources/blank.html?skip-waiting-using-registration';
+                 frame.onload = function() { resolve(frame); };
+                 document.body.appendChild(frame);
+               });
+             }).then(function(frame) {
+               var frameSw = frame.contentWindow.navigator.serviceWorker;
+               globalThis.__iframeFirstController = frameSw.controller;
+               frameSw.oncontrollerchange = function(event) {
+                 var raw = JSON.parse(__zw_sw_controller(
+                   frame.contentWindow.document._zwURL,
+                   frame.contentWindow.document._zwSwClientId
+                 )).controller;
+                 globalThis.__iframeSkipWaiting = [
+                   event.target === frameSw,
+                   event.target instanceof frame.contentWindow.ServiceWorkerContainer,
+                   frameSw.controller !== globalThis.__iframeFirstController,
+                   frameSw.controller._id !== globalThis.__iframeFirstController._id,
+                   frameSw.controller.scriptURL.endsWith('/skip-waiting-worker.js'),
+                   frameSw.controller.state,
+                   raw && raw.id === frameSw.controller._id,
+                   raw && raw.scriptURL.endsWith('/skip-waiting-worker.js')
+                 ].join('|');
+               };
+               navigator.serviceWorker.onmessage = function(event) {
+                 globalThis.__iframeWorkerMessage =
+                   event.data.type + '|' + event.data.script.endsWith('/skip-waiting-worker.js');
+               };
+               navigator.serviceWorker.register('resources/skip-waiting-worker.js', {
+                 scope:'resources/blank.html?skip-waiting-using-registration'
+               }).then(function(registration) {
+                 globalThis.__iframeReplacement = registration;
+               });
+             }).catch(function(error) {
+               globalThis.__iframeSkipWaiting = 'error:' + error.name + ':' + error.message;
+             });
+         </script>",
+        None,
+    );
+    webview.run_page_scripts_strict().unwrap();
+
+    let deadline = Instant::now() + Duration::from_secs(20);
+    loop {
+        let value = webview
+            .execute_script("String(globalThis.__iframeSkipWaiting)")
+            .unwrap();
+        if value != "pending" {
+            assert_eq!(value, "true|true|true|true|true|activating|true|true");
+            break;
+        }
+        if Instant::now() >= deadline {
+            let state = webview
+                .execute_script(
+                    "var frame = document.getElementById('frame');
+                     var frameSw = frame && frame.contentWindow.navigator.serviceWorker;
+                     var raw = frame && JSON.parse(__zw_sw_controller(
+                       frame.contentWindow.document._zwURL,
+                       frame.contentWindow.document._zwSwClientId
+                     )).controller;
+                     JSON.stringify({
+                       value: globalThis.__iframeSkipWaiting,
+                       first: globalThis.__iframeFirstController && {
+                         id: globalThis.__iframeFirstController._id,
+                         scriptURL: globalThis.__iframeFirstController.scriptURL,
+                         state: globalThis.__iframeFirstController.state
+                       },
+                       controller: frameSw && frameSw.controller && {
+                         id: frameSw.controller._id,
+                         scriptURL: frameSw.controller.scriptURL,
+                         state: frameSw.controller.state
+                       },
+                       raw: raw
+                     })",
+                )
+                .unwrap();
+            panic!("iframe skipWaiting controllerchange timed out: {state}");
+        }
+        std::thread::sleep(Duration::from_millis(10));
+    }
+
+    webview
+        .execute_script("globalThis.__iframeReplacement.active.postMessage({type:'ping'});")
+        .unwrap();
+    let deadline = Instant::now() + Duration::from_secs(20);
+    loop {
+        let value = webview
+            .execute_script("String(globalThis.__iframeWorkerMessage || 'pending')")
+            .unwrap();
+        if value != "pending" {
+            assert_eq!(value, "reply|true");
+            break;
+        }
+        assert!(Instant::now() < deadline, "iframe replacement worker message timed out");
         std::thread::sleep(Duration::from_millis(10));
     }
 }

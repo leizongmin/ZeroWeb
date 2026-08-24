@@ -2977,22 +2977,24 @@
       var _registrations = [];
       var _controller = null;
       var _controllerChangeGeneration = 0;
+      var _controllerEventWorker = null;
       var _readyResolve;
       var _ready = new Promise(function (resolve) { _readyResolve = resolve; });
-      var _container = {
-        _et_listeners: {},
-        oncontrollerchange: null,
-        onmessage: null
-      };
+      var _container;
       var _documentURL = null;
       function ServiceWorker(scriptURL, state) {
         this._et_listeners = {};
         this.scriptURL = scriptURL;
-        this.state = state;
+        this._state = state;
+        this._controllerEventState = null;
         this.onstatechange = null;
       }
       function ServiceWorkerRegistration() {
         this._et_listeners = {};
+      }
+      // https://w3c.github.io/ServiceWorker/#serviceworkercontainer-interface
+      function ServiceWorkerContainer() {
+        throw new TypeError('Illegal constructor');
       }
       if (typeof Symbol === 'function' && Symbol.toStringTag) {
         Object.defineProperty(ServiceWorker.prototype, Symbol.toStringTag, {
@@ -3003,10 +3005,30 @@
           configurable: true,
           value: 'ServiceWorkerRegistration'
         });
+        Object.defineProperty(ServiceWorkerContainer.prototype, Symbol.toStringTag, {
+          configurable: true,
+          value: 'ServiceWorkerContainer'
+        });
       }
       globalThis.ServiceWorker = globalThis.ServiceWorker || ServiceWorker;
+      Object.defineProperty(globalThis.ServiceWorker.prototype, 'state', {
+        configurable: true,
+        enumerable: true,
+        get: function () {
+          return this._controllerEventState || this._state;
+        },
+        set: function (value) {
+          this._state = value;
+        }
+      });
       globalThis.ServiceWorkerRegistration =
         globalThis.ServiceWorkerRegistration || ServiceWorkerRegistration;
+      globalThis.ServiceWorkerContainer =
+        globalThis.ServiceWorkerContainer || ServiceWorkerContainer;
+      var _container = Object.create(globalThis.ServiceWorkerContainer.prototype);
+      _container._et_listeners = {};
+      _container.oncontrollerchange = null;
+      _container.onmessage = null;
       var _nextSWPortId = 2;
       var _swPorts = Object.create(null);
       var SW_PORT_MARKER = '__zwServiceWorkerTransferredPortIndex';
@@ -3207,21 +3229,45 @@
       globalThis.__zwServiceWorkerFetchSettled = function () {
         ensureDocument();
         for (var i = 0; i < _registrations.length; i++) {
-          (function(worker) {
-            if (!worker) return;
-            worker._messagePollTarget = Math.max(worker._messagePollTarget, worker._messageSequence + 1);
-            worker._messagePollDeadline = Date.now() + 1000;
-            scheduleClientMessagePoll(worker);
-          })(_registrations[i]._worker);
+          (function (reg) {
+            var seen = {};
+            var workers = [reg._worker, reg.installing, reg.waiting, reg.active];
+            for (var j = 0; j < workers.length; j++) {
+              var worker = workers[j];
+              if (!worker || worker._id == null) continue;
+              var id = String(worker._id);
+              if (seen[id]) continue;
+              seen[id] = true;
+              worker._messagePollTarget = Math.max(
+                worker._messagePollTarget,
+                worker._messageSequence + 1
+              );
+              worker._messagePollDeadline = Date.now() + 1000;
+              scheduleClientMessagePoll(worker);
+            }
+          })(_registrations[i]);
         }
       };
       globalThis.__zwPollServiceWorkerMessages = function () {
         ensureDocument();
         for (var i = 0; i < _registrations.length; i++) {
-          (function(worker) {
-            if (!worker) return;
-            scheduleClientMessagePoll(worker);
-          })(_registrations[i]._worker);
+          (function (reg) {
+            var seen = {};
+            var workers = [reg._worker, reg.installing, reg.waiting, reg.active];
+            for (var j = 0; j < workers.length; j++) {
+              var worker = workers[j];
+              if (!worker || worker._id == null) continue;
+              var id = String(worker._id);
+              if (seen[id]) continue;
+              seen[id] = true;
+              worker._messagePollTarget = Math.max(
+                worker._messagePollTarget,
+                worker._messageSequence + 1
+              );
+              worker._messagePollDeadline = Date.now() + 1000;
+              scheduleClientMessagePoll(worker);
+            }
+          })(_registrations[i]);
         }
       };
       globalThis.__zwPollServiceWorkerRegistrations = function () {
@@ -3354,6 +3400,14 @@
           return wire && wire.ok ? wire.registration : null;
         } catch (_e) { return null; }
       }
+      _container.__zwRefreshRegistration = function (clientURL) {
+        ensureDocument();
+        return upsertSnapshot(readRegistrationSnapshot(clientURL), 'manual') || undefined;
+      };
+      _container.__zwRefreshSnapshot = function (snapshot) {
+        ensureDocument();
+        return upsertSnapshot(snapshot, 'manual') || undefined;
+      };
       function refreshRegistrationAfterRedundant(reg) {
         // https://w3c.github.io/ServiceWorker/#navigator-service-worker-getRegistration
         var clientURL = _documentURL ||
@@ -3409,7 +3463,14 @@
       }
       function setController(worker) {
         if (_controller === worker) return;
+        var previous = _controller;
         _controller = worker;
+        var eventState = worker ? worker.state : null;
+        if (worker && previous &&
+            String(previous._id) !== String(worker._id) &&
+            eventState === 'activated') {
+          eventState = 'activating';
+        }
         _controllerChangeGeneration++;
         var generation = _controllerChangeGeneration;
         var expectedId = worker ? String(worker._id) : '';
@@ -3417,10 +3478,54 @@
           setTimeout(function () {
             if (generation !== _controllerChangeGeneration) return;
             if ((_controller ? String(_controller._id) : '') !== expectedId) return;
+            if (worker) worker._controllerEventState = eventState;
+            _controllerEventWorker = worker;
             dispatchTargetEvent(_container, 'controllerchange');
+            setTimeout(function () {
+              if (worker && worker._controllerEventState === eventState) {
+                worker._controllerEventState = null;
+              }
+              if (_controllerEventWorker === worker) _controllerEventWorker = null;
+            }, 0);
+            notifyIframeControllerChange(worker, previous, eventState);
           }, 0);
         } else {
+          if (worker) worker._controllerEventState = eventState;
+          _controllerEventWorker = worker;
           dispatchTargetEvent(_container, 'controllerchange');
+          setTimeout(function () {
+            if (worker && worker._controllerEventState === eventState) {
+              worker._controllerEventState = null;
+            }
+            if (_controllerEventWorker === worker) _controllerEventWorker = null;
+          }, 0);
+          notifyIframeControllerChange(worker, previous, eventState);
+        }
+      }
+      function notifyIframeControllerChange(worker, previous, eventState) {
+        if (typeof _iframeDocCache !== 'object') return;
+        var frameKeys = Object.keys(_iframeDocCache);
+        for (var i = 0; i < frameKeys.length; i++) {
+          var entry = _iframeDocCache[frameKeys[i]];
+          var frameServiceWorker = entry && entry.win &&
+            entry.win.navigator && entry.win.navigator.serviceWorker;
+          if (frameServiceWorker &&
+              typeof frameServiceWorker.__zwRefreshServiceWorkerController === 'function') {
+            frameServiceWorker.__zwRefreshServiceWorkerController(worker, previous, eventState);
+          }
+        }
+      }
+      function notifyIframeRegistrationChange(reg) {
+        if (typeof _iframeDocCache !== 'object') return;
+        var frameKeys = Object.keys(_iframeDocCache);
+        for (var i = 0; i < frameKeys.length; i++) {
+          var entry = _iframeDocCache[frameKeys[i]];
+          var frameServiceWorker = entry && entry.win &&
+            entry.win.navigator && entry.win.navigator.serviceWorker;
+          if (frameServiceWorker &&
+              typeof frameServiceWorker.__zwRefreshServiceWorkerRegistration === 'function') {
+            frameServiceWorker.__zwRefreshServiceWorkerRegistration(reg);
+          }
         }
       }
       function applyState(reg, state) {
@@ -3437,9 +3542,21 @@
             typeof __zw_sw_activate_waiting === 'function') {
           reg._activationRequested = true;
           try { __zw_sw_activate_waiting(String(reg._id)); } catch (_eActivate) {}
+          if (_controller === reg._previousActive) {
+            worker.state = 'activating';
+            reg.installing = null;
+            reg.waiting = null;
+            reg.active = worker;
+            setController(worker);
+          }
         }
         if (state === 'activating') {
           reg.active = worker;
+          if (reg._previousActive && _controller === reg._previousActive) {
+            setController(worker);
+          } else if (reg._previousActive) {
+            notifyIframeControllerChange(worker, reg._previousActive, worker.state);
+          }
         } else if (state === 'activated') {
           var replaceController = false;
           if (reg._previousActive && reg._previousActive !== worker) {
@@ -3551,6 +3668,7 @@
           }
           reg._id = snapshot.id;
         }
+        notifyIframeRegistrationChange(reg);
         if (!applySnapshot(reg, snapshot)) {
           if (deferPoll === 'manual') {
             return reg;
@@ -3699,6 +3817,7 @@
       Object.defineProperty(_container, 'controller', {
         get: function () {
           ensureDocument();
+          if (_controllerEventWorker) return _controllerEventWorker;
           var snapshot = readControllerSnapshot();
           if (snapshot && snapshot.state === 'activated') {
             var reg = upsertSnapshot(snapshot, 'manual');

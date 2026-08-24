@@ -587,18 +587,18 @@ test-wpt-service-workers-update-not-allowed-wave-assets: fetch-wpt-service-worke
 .PHONY: fetch-wpt-service-workers-skip-waiting-no-client-wave audit-wpt-service-workers-skip-waiting-no-client-wave test-wpt-service-workers-skip-waiting-no-client-wave-assets
 fetch-wpt-service-workers-skip-waiting-no-client-wave:
 	WPT_ASSET_MANIFEST="$(CURDIR)/docs/goal/service-workers/evidence/2026-08-21-m3-skip-waiting-no-client-assets.tsv" \
-		WPT_EXPECTED_ASSET_COUNT=8 WPT_CORPUS_LABEL="Service Worker skipWaiting no-client wave" \
+		WPT_EXPECTED_ASSET_COUNT=9 WPT_CORPUS_LABEL="Service Worker skipWaiting no-client wave" \
 		$(WPT_BASH) tests/wpt-runner/scripts/fetch-service-workers-tier-a.sh
 
 audit-wpt-service-workers-skip-waiting-no-client-wave:
 	WPT_ASSET_MANIFEST="$(CURDIR)/docs/goal/service-workers/evidence/2026-08-21-m3-skip-waiting-no-client-assets.tsv" \
-		WPT_EXPECTED_ASSET_COUNT=8 WPT_CORPUS_LABEL="Service Worker skipWaiting no-client wave" \
+		WPT_EXPECTED_ASSET_COUNT=9 WPT_CORPUS_LABEL="Service Worker skipWaiting no-client wave" \
 		$(WPT_BASH) tests/wpt-runner/scripts/fetch-service-workers-tier-a.sh --verify-only
 
 test-wpt-service-workers-skip-waiting-no-client-wave-assets: fetch-wpt-service-workers-skip-waiting-no-client-wave
 	WPT_SERVICE_WORKER_SOURCE="$(CURDIR)/tests/wpt-runner/wpt-data/.service-workers-tier-a-root" \
 		WPT_ASSET_MANIFEST="$(CURDIR)/docs/goal/service-workers/evidence/2026-08-21-m3-skip-waiting-no-client-assets.tsv" \
-		WPT_EXPECTED_ASSET_COUNT=8 WPT_CORPUS_LABEL="Service Worker skipWaiting no-client wave" \
+		WPT_EXPECTED_ASSET_COUNT=9 WPT_CORPUS_LABEL="Service Worker skipWaiting no-client wave" \
 		WPT_TAMPER_ASSET="service-workers/service-worker/resources/skip-waiting-worker.js" \
 		$(WPT_BASH) tests/wpt-runner/scripts/test-service-workers-tier-a-assets.sh
 

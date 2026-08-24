@@ -1324,15 +1324,15 @@ impl ServiceWorkerManager {
                         {
                             let _ = self.host.complete_update(caller_registration_id, request_id, Ok(()));
                         }
+                        let update_via_cache = self
+                            .registration(registration_id)
+                            .map(|registration| registration.update_via_cache);
+                        if let (Some(update_via_cache), Some(current)) =
+                            (update_via_cache, self.registry.get_mut(current_id))
+                        {
+                            current.update_via_cache = update_via_cache;
+                        }
                         if !changed {
-                            let update_via_cache = self
-                                .registration(registration_id)
-                                .map(|registration| registration.update_via_cache);
-                            if let (Some(update_via_cache), Some(current)) =
-                                (update_via_cache, self.registry.get_mut(current_id))
-                            {
-                                current.update_via_cache = update_via_cache;
-                            }
                             self.fail_installing_version(registration_id);
                             continue;
                         }
@@ -1980,12 +1980,26 @@ impl ServiceWorkerManager {
     /// Move a waiting version into the activating state.
     fn begin_activation(&mut self, registration_id: u64) -> Result<(), ServiceWorkerManagerError> {
         self.require_state(registration_id, ServiceWorkerState::Installed)?;
-        let key = self.key_for(registration_id)?;
-        if self.slots.get(key).and_then(|slot| slot.waiting) != Some(registration_id) {
+        let key = self.key_for(registration_id)?.clone();
+        let old_active = {
+            let slot = self
+                .slots
+                .get(&key)
+                .ok_or(ServiceWorkerManagerError::UnknownRegistration(registration_id))?;
+            if slot.waiting != Some(registration_id) {
+                return Err(ServiceWorkerManagerError::InvalidState {
+                    registration_id,
+                    expected: ServiceWorkerState::Installed,
+                    actual: ServiceWorkerState::Redundant,
+                });
+            }
+            slot.active
+        };
+        if old_active == Some(registration_id) {
             return Err(ServiceWorkerManagerError::InvalidState {
                 registration_id,
                 expected: ServiceWorkerState::Installed,
-                actual: ServiceWorkerState::Redundant,
+                actual: ServiceWorkerState::Activated,
             });
         }
         self.registry
@@ -1993,6 +2007,10 @@ impl ServiceWorkerManager {
             .expect("validated registration must exist")
             .state = ServiceWorkerState::Activating;
         self.record_state_change(registration_id, ServiceWorkerState::Activating);
+        if let Some(old_active) = old_active {
+            // https://w3c.github.io/ServiceWorker/#activation-algorithm
+            self.transfer_controlled_clients(old_active, registration_id);
+        }
         Ok(())
     }
 
@@ -2026,7 +2044,6 @@ impl ServiceWorkerManager {
 
         if succeeded {
             if let Some(old_active) = old_active {
-                self.transfer_controlled_clients(old_active, registration_id);
                 self.mark_redundant_and_stop(old_active);
             }
             self.registry
@@ -2035,6 +2052,9 @@ impl ServiceWorkerManager {
                 .state = ServiceWorkerState::Activated;
             self.record_state_change(registration_id, ServiceWorkerState::Activated);
         } else {
+            if let Some(old_active) = self.slots.get(&key).and_then(|slot| slot.active) {
+                self.transfer_controlled_clients(registration_id, old_active);
+            }
             self.mark_redundant_and_stop(registration_id);
         }
 
@@ -2961,6 +2981,41 @@ impl ServiceWorkerManager {
             && registration.origin == origin
             && registration.is_in_scope(&client.info.url))
         .then_some(registration)
+    }
+
+    /// Find the registration currently exposed as one known window client's
+    /// controller. During activation, clients that were already controlled by
+    /// the replaced active worker observe the replacement as `activating`.
+    pub fn controller_registration_for_client(
+        &self,
+        origin: &str,
+        client_id: &str,
+    ) -> Option<&ServiceWorkerRegistration> {
+        let client = self.clients.get(client_id)?;
+        let client_origin = url::Url::parse(&client.info.url).ok()?.origin().ascii_serialization();
+        if client_origin != origin {
+            return None;
+        }
+        let registration_id = client.controller_registration_id?;
+        let registration = self.registry.get(registration_id)?;
+        (matches!(
+            registration.state,
+            ServiceWorkerState::Activating | ServiceWorkerState::Activated
+        ) && registration.origin == origin
+            && registration.is_in_scope(&client.info.url))
+        .then_some(registration)
+    }
+
+    /// Find the registration currently exposed as one known window client's
+    /// controller when that controller also matches `url`.
+    pub fn controller_registration_for_client_url(
+        &self,
+        origin: &str,
+        client_id: &str,
+        url: &str,
+    ) -> Option<&ServiceWorkerRegistration> {
+        let registration = self.controller_registration_for_client(origin, client_id)?;
+        registration.is_in_scope(url).then_some(registration)
     }
 
     /// Find the representative registration with the longest matching scope.
@@ -4255,6 +4310,9 @@ mod tests {
     fn activation_failure_preserves_existing_active() {
         let mut manager = manager_under_test();
         let first = start_active(&mut manager, "/", "globalThis.version = 1;");
+        manager
+            .observe_window_client("client-1", "https://example.test/app/page")
+            .unwrap();
 
         let second = start(
             &mut manager,
@@ -4271,11 +4329,56 @@ mod tests {
         assert_eq!(slots.active, Some(first));
         assert_eq!(slots.waiting, None);
         assert_eq!(
+            manager
+                .controller_registration_for_client("https://example.test", "client-1")
+                .map(|registration| registration.id),
+            Some(first),
+            "activation failure should restore clients to the incumbent controller"
+        );
+        assert_eq!(
             manager.registration(first).unwrap().state,
             ServiceWorkerState::Activated
         );
         assert_eq!(
             manager.registration(second).unwrap().state,
+            ServiceWorkerState::Redundant
+        );
+    }
+
+    #[test]
+    fn activating_replacement_is_visible_as_controlled_client_controller() {
+        let mut manager = manager_under_test();
+        let first = start_active(&mut manager, "/", "globalThis.version = 1;");
+        manager
+            .observe_window_client("client-1", "https://example.test/app/page")
+            .unwrap();
+
+        let second = start(&mut manager, "/", "globalThis.version = 2;");
+        wait_for_state(&mut manager, second, ServiceWorkerState::Installed);
+        manager.activate_waiting(second).unwrap();
+
+        assert_eq!(
+            manager.registration(second).unwrap().state,
+            ServiceWorkerState::Activating
+        );
+        assert_eq!(
+            manager
+                .controller_registration_for_client("https://example.test", "client-1")
+                .map(|registration| (registration.id, registration.state)),
+            Some((second, ServiceWorkerState::Activating)),
+            "controlled clients should observe the replacement controller during activation"
+        );
+        assert!(
+            manager
+                .active_registration_for_client("https://example.test", "client-1")
+                .is_none(),
+            "fetch dispatch should not treat an activating controller as active"
+        );
+
+        wait_for_state(&mut manager, second, ServiceWorkerState::Activated);
+        assert_eq!(manager.slots(&key("/")).unwrap().active, Some(second));
+        assert_eq!(
+            manager.registration(first).unwrap().state,
             ServiceWorkerState::Redundant
         );
     }

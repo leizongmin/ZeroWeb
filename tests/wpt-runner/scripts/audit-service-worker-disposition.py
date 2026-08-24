@@ -22,6 +22,7 @@ IDL_REVIEW = EVIDENCE_DIR / "2026-08-19-idlharness-review.md"
 CONTRACT = EVIDENCE_DIR / "2026-08-19-wpt-disposition.tsv"
 WPT_REVISION = "04067ce9c7c2165e71ad7d0dde10a4c5cb394a83"
 CORE_REVISION_OVERRIDES = {
+    "service-workers/service-worker/skip-waiting-using-registration.https.html": "24197a11e8c5bd29a5cb7bdf18135a82be8a8546",
     "service-workers/service-worker/skip-waiting-without-using-registration.https.html": "24197a11e8c5bd29a5cb7bdf18135a82be8a8546",
 }
 IMPORTED_LEDGER = REPO_ROOT / "tests/wpt-runner/imported-testharness.txt"
@@ -63,7 +64,7 @@ REVIEW_FILES = [
 IDL_SOURCE = "service-workers/idlharness.https.any.js"
 EXPECTED_SOURCE_COUNT = 294
 EXPECTED_URL_COUNT = 331
-EXPECTED_LANES = Counter(core=36, defer=47, gated=169, skip=42)
+EXPECTED_LANES = Counter(core=37, defer=46, gated=169, skip=42)
 SHA_PATTERN = re.compile(r"^[0-9a-f]{40}$")
 
 

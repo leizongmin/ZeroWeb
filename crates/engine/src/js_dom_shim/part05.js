@@ -1609,20 +1609,34 @@
         if (registrationWrappers[i]._registration === registration) {
           return registrationWrappers[i];
         }
+        if (registrationWrappers[i].scope === registration.scope ||
+            String(registrationWrappers[i]._id) === String(registration._id)) {
+          registrationWrappers[i]._registration = registration;
+          registrationWrappers[i]._id = registration._id;
+          return registrationWrappers[i];
+        }
       }
       var wrapper = Object.create(
         globalThis.ServiceWorkerRegistration ?
           globalThis.ServiceWorkerRegistration.prototype : Object.prototype);
       wrapper._registration = registration;
+      wrapper._id = registration._id;
       ['scope', 'updateViaCache', 'installing', 'waiting', 'active'].forEach(function(name) {
         Object.defineProperty(wrapper, name, {
           configurable: true,
           enumerable: true,
-          get: function() { return registration[name]; }
+          get: function() {
+            var registration = this._registration;
+            return registration && registration[name];
+          }
         });
       });
-      wrapper.unregister = function() { return registration.unregister(); };
-      wrapper.update = function() { return registration.update(); };
+      wrapper.unregister = function() {
+        return this._registration.unregister();
+      };
+      wrapper.update = function() {
+        return this._registration.update();
+      };
       registrationWrappers.push(wrapper);
       return wrapper;
     }
@@ -1630,16 +1644,29 @@
       globalThis.navigator && globalThis.navigator.serviceWorker;
     var iframeServiceWorkerControllerId = null;
     var iframeServiceWorkerNotifiedControllerId = null;
+    var iframeServiceWorkerEventController = null;
     var iframeServiceWorkerControllers = {};
+    function serviceWorkerControllerId(controller) {
+      if (!controller) return null;
+      if (controller.id != null) return controller.id;
+      return controller._id;
+    }
+    function serviceWorkerControllerIdString(controller) {
+      var id = serviceWorkerControllerId(controller);
+      return id == null ? null : String(id);
+    }
     function wrapServiceWorkerController(controller) {
       if (!controller) return null;
-      var id = String(controller.id);
+      var id = serviceWorkerControllerIdString(controller);
+      if (id == null) return null;
       var worker = iframeServiceWorkerControllers[id];
       if (!worker) {
         worker = Object.create(
           globalThis.ServiceWorker ? globalThis.ServiceWorker.prototype : Object.prototype);
         worker._et_listeners = {};
-        worker._id = controller.id;
+        worker._id = serviceWorkerControllerId(controller);
+        worker._state = 'activated';
+        worker._controllerEventState = null;
         iframeServiceWorkerControllers[id] = worker;
       }
       worker.scriptURL = controller.scriptURL || '';
@@ -1653,60 +1680,108 @@
       }
       return worker;
     }
-    var serviceWorker = parentServiceWorker ? {
-      _et_listeners: {},
-      oncontrollerchange: null,
-      onmessage: null,
-      register: function(scriptURL, options) {
+    var serviceWorker = parentServiceWorker ? Object.create(
+      globalThis.ServiceWorkerContainer ?
+        globalThis.ServiceWorkerContainer.prototype : Object.prototype) : undefined;
+    if (serviceWorker) {
+      serviceWorker._et_listeners = {};
+      serviceWorker.oncontrollerchange = null;
+      serviceWorker.onmessage = null;
+      serviceWorker.register = function(scriptURL, options) {
         return parentServiceWorker.register(scriptURL, options).then(wrapRegistration);
-      },
-      getRegistration: function(scope) {
+      };
+      serviceWorker.getRegistration = function(scope) {
         return parentServiceWorker.getRegistration(scope).then(wrapRegistration);
-      },
-      getRegistrations: function() {
+      };
+      serviceWorker.getRegistrations = function() {
         return parentServiceWorker.getRegistrations().then(function(registrations) {
           return registrations.map(wrapRegistration);
         });
-      },
-      get ready() {
-        return parentServiceWorker.ready.then(wrapRegistration);
-      },
-      get controller() {
-        if (typeof __zw_sw_controller === 'function') {
-          try {
+      };
+      Object.defineProperty(serviceWorker, 'ready', {
+        configurable: true,
+        enumerable: true,
+        get: function() {
+          return parentServiceWorker.ready.then(wrapRegistration);
+        }
+      });
+      Object.defineProperty(serviceWorker, 'controller', {
+        configurable: true,
+        enumerable: true,
+        get: function() {
+          if (iframeServiceWorkerEventController) return iframeServiceWorkerEventController;
+          if (typeof __zw_sw_controller === 'function') {
+            try {
+              var wire = JSON.parse(__zw_sw_controller(
+                doc && doc._zwURL ? doc._zwURL : '',
+                doc && doc._zwSwClientId ? doc._zwSwClientId : ''
+              ));
+              if (wire && wire.ok && wire.controller) {
+                iframeServiceWorkerControllerId = serviceWorkerControllerIdString(wire.controller);
+                return wrapServiceWorkerController(wire.controller);
+              }
+              if (wire && wire.ok) return null;
+            } catch (_eIframeController) {}
+          }
+          return parentServiceWorker.controller;
+        }
+      });
+    }
+    if (serviceWorker) {
+      serviceWorker.__zwRefreshServiceWorkerRegistration = function(registration) {
+        wrapRegistration(registration);
+      };
+      serviceWorker.__zwRefreshServiceWorkerController = function(hint, previous, eventState) {
+        if (typeof __zw_sw_controller !== 'function') return;
+        try {
+          var controller = null;
+          if (hint && (!previous || iframeServiceWorkerControllerId === serviceWorkerControllerIdString(previous))) {
+            controller = {
+              id: hint._id,
+              scriptURL: hint.scriptURL,
+              state: hint.state
+            };
+          } else {
             var wire = JSON.parse(__zw_sw_controller(
               doc && doc._zwURL ? doc._zwURL : '',
               doc && doc._zwSwClientId ? doc._zwSwClientId : ''
             ));
-            if (wire && wire.ok && wire.controller) {
-              iframeServiceWorkerControllerId = String(wire.controller.id);
-              return wrapServiceWorkerController(wire.controller);
-            }
-            if (wire && wire.ok) return null;
-          } catch (_eIframeController) {}
-        }
-        return parentServiceWorker.controller;
-      }
-    } : undefined;
-    if (serviceWorker) {
-      serviceWorker.__zwRefreshServiceWorkerController = function() {
-        if (typeof __zw_sw_controller !== 'function') return;
-        try {
-          var wire = JSON.parse(__zw_sw_controller(
-            doc && doc._zwURL ? doc._zwURL : '',
-            doc && doc._zwSwClientId ? doc._zwSwClientId : ''
-          ));
-          var controller = wire && wire.ok ? wire.controller : null;
-          if (!controller || controller.state !== 'activated') return;
-          var nextId = String(controller.id);
-          if (iframeServiceWorkerNotifiedControllerId === nextId) return;
+            controller = wire && wire.ok ? wire.controller : null;
+          }
+          if (!controller ||
+              (controller.state !== 'activating' && controller.state !== 'activated')) return;
+          if (!hint && typeof parentServiceWorker.__zwRefreshSnapshot === 'function') {
+            parentServiceWorker.__zwRefreshSnapshot(controller);
+          }
+          var nextId = serviceWorkerControllerIdString(controller);
+          if (nextId == null) return;
+          var eventController = controller;
+          var controllerChanged =
+            !iframeServiceWorkerControllerId || iframeServiceWorkerControllerId !== nextId;
+          if (!hint && iframeServiceWorkerControllerId &&
+              iframeServiceWorkerControllerId !== nextId &&
+              controller.state === 'activated') {
+            eventController = {
+              id: controller.id,
+              _id: serviceWorkerControllerId(controller),
+              scriptURL: controller.scriptURL,
+              state: 'activating'
+            };
+          }
           var handler = serviceWorker.oncontrollerchange;
           var listeners = serviceWorker._et_listeners || {};
           var registered = (listeners.controllerchange || [])
             .concat(listeners['controllerchange|cap'] || []);
-          if (registered.length === 0 && typeof handler !== 'function') return;
+          if (!hint && registered.length === 0 && typeof handler !== 'function') return;
+          if (!hint && !controllerChanged) return;
+          if (hint && iframeServiceWorkerNotifiedControllerId === nextId) return;
           iframeServiceWorkerControllerId = nextId;
           iframeServiceWorkerNotifiedControllerId = nextId;
+          iframeServiceWorkerEventController = wrapServiceWorkerController(eventController);
+          if (iframeServiceWorkerEventController) {
+            iframeServiceWorkerEventController._controllerEventState =
+              eventState || eventController.state || null;
+          }
           var event = null;
           if (registered.length > 0 &&
               typeof serviceWorker.dispatchEvent === 'function' &&
@@ -1724,11 +1799,17 @@
             }
             try { handler.call(serviceWorker, event || { type: 'controllerchange' }); } catch (_eIframeControllerHandler) {}
           }
+          if (typeof setTimeout === 'function') {
+            setTimeout(function() {
+              if (iframeServiceWorkerEventController &&
+                  String(iframeServiceWorkerEventController._id) === nextId) {
+                iframeServiceWorkerEventController._controllerEventState = null;
+                iframeServiceWorkerEventController = null;
+              }
+            }, 0);
+          }
         } catch (_eIframeControllerRefresh) {}
       };
-    }
-    if (serviceWorker && globalThis.EventTarget && globalThis.EventTarget.prototype) {
-      try { Object.setPrototypeOf(serviceWorker, globalThis.EventTarget.prototype); } catch (_eIframeSwEt) {}
     }
     function iframeFetch(input, init) {
       if (typeof globalThis.fetch !== 'function') {
@@ -2038,6 +2119,7 @@
       XMLHttpRequest: IframeXMLHttpRequest,
       ServiceWorker: globalThis.ServiceWorker,
       ServiceWorkerRegistration: globalThis.ServiceWorkerRegistration,
+      ServiceWorkerContainer: globalThis.ServiceWorkerContainer,
       Headers: globalThis.Headers,
       Request: globalThis.Request,
       Response: globalThis.Response,
@@ -8633,10 +8715,18 @@
       globalThis.EventTarget.prototype
     );
   }
+  if (globalThis.ServiceWorkerContainer) {
+    Object.setPrototypeOf(
+      globalThis.ServiceWorkerContainer.prototype,
+      globalThis.EventTarget.prototype
+    );
+  }
   if (globalThis.navigator && globalThis.navigator.serviceWorker) {
     Object.setPrototypeOf(
       globalThis.navigator.serviceWorker,
-      globalThis.EventTarget.prototype
+      globalThis.ServiceWorkerContainer ?
+        globalThis.ServiceWorkerContainer.prototype :
+        globalThis.EventTarget.prototype
     );
   }
 

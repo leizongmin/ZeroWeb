@@ -3279,7 +3279,7 @@ impl WebView {
                 }
                 let origin = document.origin().ascii_serialization();
                 let controller = if let Some(client_id) = client_id.as_deref() {
-                    manager.active_registration_for_client(&origin, client_id)
+                    manager.controller_registration_for_client(&origin, client_id)
                 } else {
                     manager.active_registration_for_url(&origin, document.as_str())
                 };
