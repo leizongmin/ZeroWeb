@@ -795,9 +795,18 @@
       // 先匹配 `<html …>…</html>` 并**归一到通用 regex 的组序**（[1]=tag [2]=attrs
       // [3]=inner）；miss 再落通用 regex（XML 根等形态）。
       var mEl207 = /<html\b(\s[^>]*)?>([\s\S]*)<\/html\s*>/i.exec(String(markup || ''));
+      // R214（js-dom M4）：**HTML 子文档无显式 `<html>` 标签时不再落通用配对
+      // regex**——首个「开-闭对」是 `<title>…</title>` 使 docEl=TITLE（restoreIframe
+      // 的 refDoc.documentElement.cloneNode 链跟着拿到 TITLE——WPT Range-insertNode
+      // 12,x 的结构层根因）。真浏览器解析：无显式 html 标签的 HTML 文档仍合成
+      // `<html>` 根（head/body 由解析器建）。HTML/XHTML kind 落**合成 html docEl**
+      //（同 R177 no-root 路径，body 内容 = 全 markup）；XML kind 保持通用 regex
+      //（真 XML 根语义）。
       var mEl = mEl207
         ? ['<html' + mEl207[1] + '>', 'html', mEl207[1] || '', mEl207[2]]
-        : /<([a-zA-Z][\w:-]*)(\s[^>]*)?>([\s\S]*)<\/\1\s*>/.exec(markup);
+        : (kind === 'xml'
+          ? /<([a-zA-Z][\w:-]*)(\s[^>]*)?>([\s\S]*)<\/\1\s*>/.exec(markup)
+          : null);
       if (mEl) {
         var elTag = mEl[1];
         var elText = mEl[3].replace(/<[^>]*>/g, '');
@@ -806,6 +815,10 @@
           nodeName: kind === 'xml' ? elTag : elTag.toUpperCase(),
           localName: elTag, namespaceURI: doc._docNS,
           textContent: elText,
+          // R214（js-dom M4）：ownerDocument 指源 doc（WPT Range-insertNode 12,x
+          // 138F——common.js rangeFromEndpoints 经 ownerDocument(docEl).createRange()
+          // 建域内 Range；旧 undefined → 'reading createRange' TypeError 整簇）。
+          ownerDocument: doc,
           getBoundingClientRect: function () { return _makeDomRect(0, 0, 0, 0); }
         };
         // R207（js-dom M4）：docEl 的**可变面**——childNodes/appendChild/append/
@@ -865,6 +878,9 @@
       var _r177syntheticHtml = {
         nodeType: 1, tagName: 'HTML', nodeName: 'HTML', localName: 'html',
         namespaceURI: 'http://www.w3.org/1999/xhtml', prefix: null,
+        // R214（js-dom M4）：ownerDocument 指源 doc（WPT Range-insertNode 12,x——
+        // common.js rangeFromEndpoints 经 ownerDocument(docEl).createRange()）。
+        ownerDocument: doc,
         childNodes: [], parentNode: null,
         hasChildNodes: function () { return _r177syntheticHtml.childNodes.length > 0; },
         get firstChild() { return _r177syntheticHtml.childNodes.length ? _r177syntheticHtml.childNodes[0] : null; },

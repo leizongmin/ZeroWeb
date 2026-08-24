@@ -2770,6 +2770,98 @@ fn test_extract_collapse_offset_and_delete_chardata_r213() {
         "R213 extract 收缩偏移 + deleteContents CharData 删侧"
     );
 }
+/// R214（js-dom M4）：iframe doc 的 documentElement 结构修复两件——
+/// ① **ownerDocument 指源 doc**（两形态：mEl 解析产物 + R177 合成 html）——
+/// common.js rangeFromEndpoints 经 `ownerDocument(docEl).createRange()` 建域内
+/// Range（WPT Range-insertNode 12,x 138F：旧 undefined → 'reading createRange'）；
+/// ② **无显式 `<html>` 标签时不再落通用配对 regex**——首个「开-闭对」是
+/// `<title>…</title>` 使 docEl=TITLE（refDoc 克隆链跟着 TITLE 化）。真浏览器
+/// 对无显式 html 的 HTML 文档合成 `<html>` 根；XML kind 保持通用 regex。
+#[test]
+fn test_iframe_docelement_structure_r214() {
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let mut sandbox = V8Sandbox::with_config(zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    })
+    .unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> =
+        Arc::new(Mutex::new("<html><body></body></html>".to_string()));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    let common_js =
+        include_str!("../../../../tests/wpt-runner/wpt-data/dom/common.js").to_string();
+    let iframe_html = include_str!(
+        "../../../../tests/wpt-runner/wpt-data/dom/ranges/Range-test-iframe.html"
+    )
+    .to_string();
+    let fetched_common = common_js.clone();
+    let fetched_iframe = iframe_html.clone();
+    sandbox.register_callback(
+        "__zw_fetch",
+        Box::new(move |args| {
+            let url = args.get(2).map(String::as_str).unwrap_or("");
+            if url.ends_with("Range-test-iframe.html") {
+                return format!("__zwfr:200\u{1f}OK\u{1f}\u{1f}{}", fetched_iframe);
+            }
+            "__zw_fetch_error:not-found".to_string()
+        }),
+    );
+    sandbox.register_callback(
+        "__zw_fetch_script",
+        Box::new(move |args| {
+            let src = args.get(1).map(String::as_str).unwrap_or("");
+            if src.ends_with("common.js") {
+                return fetched_common.clone();
+            }
+            String::new()
+        }),
+    );
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+    let out = sandbox
+        .execute(
+            r#"
+            var ifr = document.createElement('iframe');
+            document.body.appendChild(ifr);
+            ifr.setAttribute('src', 'Range-test-iframe.html');
+            var doc = ifr.contentDocument;
+            var win = ifr.contentWindow;
+            var out = [];
+            // ① docEl 结构：无显式 <html> 的 Range-test-iframe.html → 合成 HTML 根（非 TITLE）
+            var de = doc.documentElement;
+            if (!de || de.tagName !== 'HTML' || de.nodeType !== 1) out.push('docelem:' + (de ? de.tagName : 'null'));
+            // ② docEl.ownerDocument === doc（rangeFromEndpoints 消费）
+            if (de.ownerDocument !== doc) out.push('owner-doc:' + (de.ownerDocument === document ? 'main' : 'other'));
+            // ③ clone 链：referenceDoc 重建（restoreIframe 主消费）
+            var refDoc = document.implementation.createHTMLDocument('');
+            refDoc.removeChild(refDoc.documentElement);
+            var clone = de.cloneNode(true);
+            refDoc.appendChild(clone);
+            if (!refDoc.documentElement || refDoc.documentElement.tagName !== 'HTML') {
+              out.push('clone-chain:' + (refDoc.documentElement ? refDoc.documentElement.tagName : 'null'));
+            }
+            // ④ docEl-rooted range 建立可用（12,x setup 路径）
+            win.setupRangeTests();
+            win.testNodeInput = 'paras[0]';
+            win.testRangeInput = '[document.documentElement, 0, document.documentElement, 1]';
+            win.run();
+            if (win.unexpectedException) {
+              out.push('range-setup:' + String(win.unexpectedException.message).slice(0, 60));
+              win.unexpectedException = null;
+            } else if (!win.testRange) {
+              out.push('range-setup:null');
+            }
+            out.length ? out.join('\n') : 'ALL-OK'
+            "#,
+        )
+        .unwrap()
+        .value;
+    assert_eq!(out, "ALL-OK", "R214 iframe documentElement 结构");
+}
 /// R209（js-dom M4）：iframe 子文档 testNodes 方法面 + surroundContents 叶子
 /// newParent 的 spec 异常链。根因（探针实证）：iframe/detached 工厂节点形态缺
 /// compareDocumentPosition/hasChildNodes/cloneNode/substringData/splitText/
