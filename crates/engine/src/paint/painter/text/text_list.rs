@@ -11,7 +11,7 @@ use zero_layout_engine::LayoutBox;
 use zero_render_foundation::geometry::Rect;
 use zero_render_foundation::image_cache::ImageKey;
 use zero_render_foundation::primitive::{GlyphPrimitive, ImagePrimitive, RoundedRectPrimitive};
-use zero_style_system::{ComputedStyle, ContentComputedValue, LineHeightValue};
+use zero_style_system::{ComputedStyle, ContentComputedValue, DirectionValue, LineHeightValue, WritingModeValue};
 
 use crate::paint::color::color_value_to_render;
 use crate::paint::helpers::image_resource_key;
@@ -297,6 +297,28 @@ fn is_ahem_marker_font(style: &ComputedStyle) -> bool {
         .any(|family| family.trim_matches('"').eq_ignore_ascii_case("Ahem"))
 }
 
+/// https://drafts.csswg.org/css-counter-styles-3/#disclosure-open
+/// CSS Counter Styles 3 defines `disclosure-open` as block-end and `disclosure-closed`
+/// as inline-end; the concrete triangle therefore depends on writing-mode/direction.
+fn disclosure_symbol(open: bool, style: Option<&ComputedStyle>) -> &'static str {
+    let writing_mode = style.map(|s| &s.writing_mode);
+    let direction = style.map(|s| &s.direction);
+    if open {
+        return match writing_mode {
+            Some(WritingModeValue::VerticalRl) => "◂",
+            Some(WritingModeValue::VerticalLr) => "▸",
+            _ => "▾",
+        };
+    }
+
+    match (writing_mode, direction) {
+        (Some(WritingModeValue::HorizontalTb), Some(DirectionValue::Rtl)) => "◂",
+        (Some(WritingModeValue::VerticalLr | WritingModeValue::VerticalRl), Some(DirectionValue::Rtl)) => "▴",
+        (Some(WritingModeValue::VerticalLr | WritingModeValue::VerticalRl), _) => "▾",
+        _ => "▸",
+    }
+}
+
 /// R2392/R2394：按 `@counter-style` 的 system 算法生成计数器表示（marker body，不含 prefix/suffix）。
 /// CSS Counter Styles 3 §3.1.4。`None` = 该值无法表示（超出 range / 系统不支持）→ 调用方走 fallback。
 /// R2394 注：additive 应用经 A/B 量证为 net-negative（driving WPT 全 font-wall dice/
@@ -304,22 +326,32 @@ fn is_ahem_marker_font(style: &ComputedStyle) -> bool {
 /// 已注册 counter-style / built-in 系统并保留当前 rule affix。
 #[cfg(test)]
 fn counter_style_body(rule: &zero_css_parser::ast::CounterStyleRule, value: i64) -> Option<String> {
-    counter_style_body_with_registry(rule, value, None)
+    counter_style_body_with_registry(rule, value, None, None)
 }
 
 fn counter_style_marker_text(
     rule: &zero_css_parser::ast::CounterStyleRule,
     value: i64,
     registry: Option<&std::collections::HashMap<String, zero_css_parser::ast::CounterStyleRule>>,
+    style: Option<&ComputedStyle>,
 ) -> String {
-    let body = counter_style_body_with_registry(rule, value, registry).unwrap_or_else(|| value.to_string());
-    format!("{}{}{}", rule.prefix, body, rule.suffix)
+    let body = counter_style_body_with_registry(rule, value, registry, style).unwrap_or_else(|| value.to_string());
+    let suffix = match &rule.system {
+        zero_css_parser::ast::CounterSystem::Extends(name)
+            if rule.suffix == ". " && matches!(name.as_str(), "disclosure-open" | "disclosure-closed") =>
+        {
+            " "
+        }
+        _ => rule.suffix.as_str(),
+    };
+    format!("{}{}{}", rule.prefix, body, suffix)
 }
 
 fn counter_style_body_with_registry(
     rule: &zero_css_parser::ast::CounterStyleRule,
     value: i64,
     registry: Option<&std::collections::HashMap<String, zero_css_parser::ast::CounterStyleRule>>,
+    style: Option<&ComputedStyle>,
 ) -> Option<String> {
     use zero_css_parser::ast::CounterSystem;
     if rule.range.as_ref().is_some_and(|ranges| {
@@ -332,7 +364,7 @@ fn counter_style_body_with_registry(
 
     let is_negative = value < 0 && !matches!(rule.system, CounterSystem::Cyclic);
     let body_value = if is_negative { value.checked_abs()? } else { value };
-    let body = counter_style_raw_body(rule, body_value, registry, 0)?;
+    let body = counter_style_raw_body(rule, body_value, registry, style, 0)?;
     let (negative_prefix, negative_suffix): (&str, &str) = if is_negative {
         (rule.negative.0.as_str(), rule.negative.1.as_str())
     } else {
@@ -356,6 +388,7 @@ fn counter_style_raw_body(
     rule: &zero_css_parser::ast::CounterStyleRule,
     value: i64,
     registry: Option<&std::collections::HashMap<String, zero_css_parser::ast::CounterStyleRule>>,
+    style: Option<&ComputedStyle>,
     depth: usize,
 ) -> Option<CounterRepresentation> {
     use zero_css_parser::ast::CounterSystem;
@@ -474,9 +507,15 @@ fn counter_style_raw_body(
                 text,
             })
         }
+        CounterSystem::Extends(ref name) if name == "disclosure-open" || name == "disclosure-closed" => {
+            Some(CounterRepresentation {
+                text: disclosure_symbol(name == "disclosure-open", style).to_string(),
+                symbol_count: 1,
+            })
+        }
         CounterSystem::Extends(ref name) => registry
             .and_then(|rules| rules.get(name))
-            .and_then(|base| counter_style_raw_body(base, value, registry, depth + 1)),
+            .and_then(|base| counter_style_raw_body(base, value, registry, style, depth + 1)),
         // additive / most extends：应用 defer（R2394 A/B 量证 net-negative，见函数注释）→ None（fallback）。
         CounterSystem::Additive => None,
         _ => None,
@@ -525,24 +564,42 @@ pub(super) fn format_counter_roman(value: i64, upper: bool) -> String {
 }
 
 /// 按计数器样式格式化整数值为 content 文本。
-fn format_counter_text(value: i64, style: &Option<String>) -> String {
-    match style.as_deref() {
+fn format_counter_text(
+    value: i64,
+    counter_style: &Option<String>,
+    style: &ComputedStyle,
+    registry: &std::collections::HashMap<String, zero_css_parser::ast::CounterStyleRule>,
+) -> String {
+    match counter_style.as_deref() {
         Some("lower-alpha") | Some("lower-latin") => format_counter_alpha(value, false),
         Some("upper-alpha") | Some("upper-latin") => format_counter_alpha(value, true),
         Some("lower-roman") => format_counter_roman(value, false),
         Some("upper-roman") => format_counter_roman(value, true),
+        Some("disclosure-open") => disclosure_symbol(true, Some(style)).to_string(),
+        Some("disclosure-closed") => disclosure_symbol(false, Some(style)).to_string(),
+        Some(name) => registry
+            .get(name)
+            .and_then(|rule| counter_style_body_with_registry(rule, value, Some(registry), Some(style)))
+            .unwrap_or_else(|| value.to_string()),
         _ => value.to_string(),
     }
 }
 
 impl super::super::Painter {
     /// 解析 CSS `content` 的字符串与计数器项。
-    pub(super) fn resolve_generated_content_text(&self, content: &ContentComputedValue) -> Option<String> {
+    pub(super) fn resolve_generated_content_text(
+        &self,
+        content: &ContentComputedValue,
+        computed_style: &ComputedStyle,
+    ) -> Option<String> {
         match content {
             ContentComputedValue::String(s) => Some(s.clone()),
-            ContentComputedValue::Counter { name, style } => {
-                Some(format_counter_text(self.get_counter(name).unwrap_or(0), style))
-            }
+            ContentComputedValue::Counter { name, style } => Some(format_counter_text(
+                self.get_counter(name).unwrap_or(0),
+                style,
+                computed_style,
+                &self.counter_styles,
+            )),
             ContentComputedValue::Counters { name, separator, style } => {
                 let scopes: Vec<i64> = match self.get_counter_scopes(name) {
                     Some(scopes) if !scopes.is_empty() => scopes.to_vec(),
@@ -551,7 +608,7 @@ impl super::super::Painter {
                 Some(
                     scopes
                         .iter()
-                        .map(|&value| format_counter_text(value, style))
+                        .map(|&value| format_counter_text(value, style, computed_style, &self.counter_styles))
                         .collect::<Vec<_>>()
                         .join(separator),
                 )
@@ -562,7 +619,12 @@ impl super::super::Painter {
                     match item {
                         ContentListItem::Str(value) => text.push_str(value),
                         ContentListItem::Counter { name, style } => {
-                            text.push_str(&format_counter_text(self.get_counter(name).unwrap_or(0), style));
+                            text.push_str(&format_counter_text(
+                                self.get_counter(name).unwrap_or(0),
+                                style,
+                                computed_style,
+                                &self.counter_styles,
+                            ));
                         }
                         ContentListItem::Counters { name, separator, style } => {
                             let scopes: Vec<i64> = match self.get_counter_scopes(name) {
@@ -572,7 +634,9 @@ impl super::super::Painter {
                             text.push_str(
                                 &scopes
                                     .iter()
-                                    .map(|&value| format_counter_text(value, style))
+                                    .map(|&value| {
+                                        format_counter_text(value, style, computed_style, &self.counter_styles)
+                                    })
                                     .collect::<Vec<_>>()
                                     .join(separator),
                             );
@@ -674,7 +738,7 @@ impl super::super::Painter {
                 | ContentComputedValue::Counter { .. }
                 | ContentComputedValue::Counters { .. }
                 | ContentComputedValue::List(_) => {
-                    if let Some(text) = self.resolve_generated_content_text(&marker_style.content) {
+                    if let Some(text) = self.resolve_generated_content_text(&marker_style.content, style) {
                         let mut char_x = text_marker_x;
                         let char_y = text_marker_baseline_y;
                         for ch in text.chars() {
@@ -925,6 +989,35 @@ impl super::super::Painter {
                 }
             }
             ListStyleTypeValue::None => {}
+            ListStyleTypeValue::DisclosureOpen | ListStyleTypeValue::DisclosureClosed => {
+                let text = format!(
+                    "{} ",
+                    disclosure_symbol(
+                        matches!(style.list_style_type, ListStyleTypeValue::DisclosureOpen),
+                        Some(style)
+                    )
+                );
+                let mut char_x = text_marker_x;
+                let char_y = text_marker_baseline_y;
+                for ch in text.chars() {
+                    self.primitives.add_glyph(GlyphPrimitive {
+                        x: char_x,
+                        y: char_y,
+                        font_size: text_marker_font_size,
+                        color,
+                        glyph_id: ch as u32,
+                        font_glyph_index: None,
+                        source: None,
+                        font_id: default_font_id,
+                        font_variation_id,
+                        bitmap_width: None,
+                        bitmap_height: None,
+                        rotation: 0.0,
+                        synthetic_italic: false,
+                    });
+                    char_x += self.measure_char_cached(default_font_id.0, ch, text_marker_font_size, false);
+                }
+            }
             // list-style-type: <string>（CSS Lists 3）：固定字符串标记（非计数器，每个 li 同值）。
             // 按文本 marker 同位绘字（≡ Decimal/script arm 字形循环）；空串 → 无标记。
             ListStyleTypeValue::String(s) => {
@@ -957,7 +1050,7 @@ impl super::super::Painter {
                     .get_counter("list-item")
                     .unwrap_or_else(|| self.compute_list_item_index(doc, node_id));
                 let text = match self.counter_styles.get(name) {
-                    Some(rule) => counter_style_marker_text(rule, value, Some(&self.counter_styles)),
+                    Some(rule) => counter_style_marker_text(rule, value, Some(&self.counter_styles), Some(style)),
                     // 未定义的自定义名 → fallback decimal（CSS Counter Styles 3 §3.1.3）。
                     None => format!("{value}."),
                 };
@@ -1052,6 +1145,7 @@ mod tests {
     use super::to_georgian;
     use super::to_hebrew;
     use zero_dom::parse_html;
+    use zero_style_system::{ComputedStyle, DirectionValue, WritingModeValue};
 
     /// R2471：numeric system 计数器（CSS Counter Styles 3 §6.1）ground-truth 对齐 WPT ref。
     /// 验证值取自 css-counter-styles/{devanagari,bengali,...}/css3-counter-styles-NNN 真实期望。
@@ -1350,9 +1444,37 @@ mod tests {
         registry.insert(chapter.name.clone(), chapter.clone());
         registry.insert(section.name.clone(), section.clone());
 
-        assert_eq!(counter_style_marker_text(&section, 6, Some(&registry)), "Section VI. ");
-        assert_eq!(counter_style_marker_text(&section, 7, Some(&registry)), "Section 7. ");
-        assert_eq!(counter_style_marker_text(&chapter, 0, Some(&registry)), "Chapter 0. ");
+        assert_eq!(
+            counter_style_marker_text(&section, 6, Some(&registry), None),
+            "Section VI. "
+        );
+        assert_eq!(
+            counter_style_marker_text(&section, 7, Some(&registry), None),
+            "Section 7. "
+        );
+        assert_eq!(
+            counter_style_marker_text(&chapter, 0, Some(&registry), None),
+            "Chapter 0. "
+        );
+    }
+
+    #[test]
+    /// R3745：`system: extends disclosure-closed` uses the predefined directional symbol.
+    fn test_counter_style_extends_disclosure_closed_uses_contextual_symbol() {
+        let mut rule = cs_rule(
+            zero_css_parser::ast::CounterSystem::Extends("disclosure-closed".to_string()),
+            &[],
+        );
+        rule.suffix = ". ".to_string();
+
+        let mut style = ComputedStyle::default();
+        style.writing_mode = WritingModeValue::HorizontalTb;
+        style.direction = DirectionValue::Rtl;
+        assert_eq!(counter_style_marker_text(&rule, 1, None, Some(&style)), "◂ ");
+
+        style.writing_mode = WritingModeValue::VerticalLr;
+        style.direction = DirectionValue::Rtl;
+        assert_eq!(counter_style_marker_text(&rule, 1, None, Some(&style)), "▴ ");
     }
 
     #[test]

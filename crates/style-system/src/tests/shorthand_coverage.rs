@@ -293,6 +293,21 @@ fn test_before_pseudo_computed_from_content() {
 }
 
 #[test]
+fn test_before_pseudo_computed_from_counter_content() {
+    let (doc, _html, _body, div, _p) = make_test_dom();
+    let css = r#"div:before { content: counter(x, disclosure-closed); }"#;
+    let s = compute_style_from_css(&doc, css, div);
+    let before = s.before_pseudo.expect("div 应有 before 伪元素样式");
+    match &before.content {
+        crate::property::types::ContentComputedValue::Counter { name, style } => {
+            assert_eq!(name, "x");
+            assert_eq!(style.as_deref(), Some("disclosure-closed"));
+        }
+        other => panic!("before content 应为 Counter，实际 {other:?}"),
+    }
+}
+
+#[test]
 fn test_after_pseudo_and_content_none_no_box() {
     let (doc, _html, _body, div, _p) = make_test_dom();
     // content: none 不应生成盒 → after_pseudo 不设置（content 非 String）

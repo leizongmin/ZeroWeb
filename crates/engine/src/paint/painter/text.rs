@@ -3,7 +3,7 @@
 use std::collections::HashMap;
 
 use zero_css_parser::values::types::FontStyleValue;
-use zero_css_parser::values::{ColorValue, FloatValue, LengthValue};
+use zero_css_parser::values::{ColorValue, DisplayValue, FloatValue, LengthValue};
 use zero_dom::{Document, NodeId, NodeKind};
 use zero_layout_engine::inline_finalization::{
     build_text_parent_override_map, resolve_tab_size_length_px, resolve_text_align, resolve_text_align_last,
@@ -93,7 +93,7 @@ impl super::Painter {
     pub(crate) fn paint_content(&mut self, box_node: &LayoutBox, abs_x: f32, abs_y: f32, style: &ComputedStyle) {
         // R2573：content 文本解析抽出为 resolve_generated_content_text（paint_content 与
         // paint_list_marker 的 ::marker content 覆盖共用）。Normal/None/Attr/Url 无文本 → None。
-        let text = match self.resolve_generated_content_text(&style.content) {
+        let text = match self.resolve_generated_content_text(&style.content, style) {
             Some(t) => t,
             // R1988：content:url() 由 inject_pseudo_text_nodes 注入 `<img>` 元素渲染，paint_content
             //（文本路径）不处理图片；Normal/None/Attr 亦无文本 → 均返回。
@@ -2082,6 +2082,20 @@ pub(super) fn has_direct_paintable_text(
     node_id: NodeId,
     styles: Option<&HashMap<NodeId, ComputedStyle>>,
 ) -> bool {
+    if let Some(styles) = styles
+        && styles.get(&node_id).is_some_and(|style| {
+            matches!(
+                style.display,
+                DisplayValue::Flex | DisplayValue::InlineFlex | DisplayValue::Grid | DisplayValue::InlineGrid
+            )
+        })
+    {
+        // CSS Flexbox §4 / CSS Grid §4: flex/grid children are items, not text
+        // in the container's inline formatting context. Direct text is painted
+        // through anonymous item boxes; element children paint through their own boxes.
+        return false;
+    }
+
     let direct = doc.child_nodes(node_id).iter().any(|child_id| {
         matches!(
             doc.get(*child_id).map(|node| &node.kind),

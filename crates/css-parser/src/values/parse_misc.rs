@@ -263,6 +263,9 @@ pub fn parse_list_style_type(value: &str) -> Option<ListStyleTypeValue> {
         // R2472：cjk-decimal（CJK ideographic digits，非连续 lookup）。cambodian ≡ khmer 别名。
         "cjk-decimal" => Some(ListStyleTypeValue::CjkDecimal),
         "cambodian" => Some(ListStyleTypeValue::Khmer),
+        // https://drafts.csswg.org/css-counter-styles-3/#disclosure-open
+        "disclosure-open" => Some(ListStyleTypeValue::DisclosureOpen),
+        "disclosure-closed" => Some(ListStyleTypeValue::DisclosureClosed),
         "none" => Some(ListStyleTypeValue::None),
         _ => {
             // R2392：非 builtin 的 `<custom-ident>` 视为自定义计数器样式名（@counter-style）。

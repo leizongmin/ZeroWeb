@@ -43,9 +43,11 @@ impl InlineFormattingContext {
                             collapse_whitespace(&text_data.content)
                         };
                         if !text.is_empty() {
-                            // 文本节点没有自己的 ComputedStyle，查找父元素
+                            // CSS Pseudo 4: generated-content text uses the computed style
+                            // of its pseudo element. Normal DOM text nodes still inherit by
+                            // looking at their parent element.
                             let parent_id = doc.parent_node(child_id);
-                            let style = parent_id.and_then(|pid| styles.get(&pid));
+                            let style = styles.get(&child_id).or_else(|| parent_id.and_then(|pid| styles.get(&pid)));
                             let (font_size, line_height) = if style.is_some() {
                                 // U1b：layout IFC（有真实 styles）首消费 font_metric_provider，
                                 // 使 line-height:normal 用 per-font 真实度量。provider 缺省

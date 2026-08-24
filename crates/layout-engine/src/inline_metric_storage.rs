@@ -43,9 +43,10 @@ fn store_font_sizes_from_ifc_mode(
         box_node.text_node_font_sizes.insert(frag.node_id, frag.font_size);
         // R1464: paint Path B has no style map, so retain the fragment owner's
         // family and font-size-adjust values under the fragment NodeId.
-        let font_owner = if doc
-            .get(frag.node_id)
-            .is_some_and(|node| matches!(node.kind, NodeKind::Element(_)))
+        let font_owner = if styles.contains_key(&frag.node_id)
+            || doc
+                .get(frag.node_id)
+                .is_some_and(|node| matches!(node.kind, NodeKind::Element(_)))
         {
             Some(frag.node_id)
         } else {

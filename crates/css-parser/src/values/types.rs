@@ -391,6 +391,10 @@ pub enum ListStyleTypeValue {
     /// cjk-decimal（CJK ideographic digits 〇一二...九，非连续 → lookup table；CSS Counter
     /// Styles 3 §6.1 预定义 numeric system，digit 0=U+3007 / 1-9=U+4E00,U+4E8C...）。R2472。
     CjkDecimal,
+    /// disclosure-open（CSS Counter Styles 3 预定义，符号依 writing-mode/direction 变化）。R3745。
+    DisclosureOpen,
+    /// disclosure-closed（CSS Counter Styles 3 预定义，符号依 writing-mode/direction 变化）。R3745。
+    DisclosureClosed,
     /// none。
     None,
     /// 自定义计数器样式名（`@counter-style` 定义；CSS Counter Styles 3）。driving: R2392。

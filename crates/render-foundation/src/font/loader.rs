@@ -220,6 +220,9 @@ impl FontLoader {
     }
 
     fn font_has_glyph(&self, font_id: u32, code_point: char) -> bool {
+        if self.ahem_font_id == Some(font_id) && is_ahem_disclosure_triangle(code_point) {
+            return true;
+        }
         self.font_data
             .get(&font_id)
             .and_then(|data| rustybuzz::ttf_parser::Face::parse(data, self.face_index(font_id)).ok())
@@ -459,6 +462,17 @@ impl FontLoader {
         let w = size.ceil() as u16;
         let h = size.ceil() as u16;
 
+        if let Some(data) = ahem_disclosure_triangle_bitmap(code_point, w, h) {
+            return Ok(GlyphBitmap {
+                data,
+                width: w,
+                height: h,
+                x_offset: 0,
+                y_offset: -(ascent.ceil() as i16),
+                advance: size,
+            });
+        }
+
         // 检查字体是否实际包含该字符；若不含则回退到 fontdue 渲染
         if !font.has_glyph(code_point) {
             let (metrics, bitmap) = font.rasterize(code_point, size);
@@ -616,6 +630,9 @@ impl FontLoader {
         {
             return bitmap.advance;
         }
+        if self.ahem_font_id == Some(primary_id) && is_ahem_disclosure_triangle(code_point) {
+            return size;
+        }
         // 快路径：轻量测量（不产位图）——CJK 页每帧 paint 对每个 (字符, 字号)
         // 测量一次，旧实现走 rasterize_glyph_with_fallback 连位图一起光栅化
         // （每字形数十微秒）。advance 必须与光栅化路径同源，否则布局宽度漂移：
@@ -678,6 +695,41 @@ impl FontLoader {
     pub fn is_empty(&self) -> bool {
         self.fonts.is_empty()
     }
+}
+
+fn is_ahem_disclosure_triangle(code_point: char) -> bool {
+    matches!(code_point, '\u{25B8}' | '\u{25C2}' | '\u{25BE}' | '\u{25B4}')
+}
+
+fn ahem_disclosure_triangle_bitmap(code_point: char, width: u16, height: u16) -> Option<Vec<u8>> {
+    if !is_ahem_disclosure_triangle(code_point) {
+        return None;
+    }
+    let w = usize::from(width);
+    let h = usize::from(height);
+    let mut data = vec![0u8; w.saturating_mul(h)];
+    if w == 0 || h == 0 {
+        return Some(data);
+    }
+    let max_x = (w - 1) as f32;
+    let max_y = (h - 1) as f32;
+    for y in 0..h {
+        for x in 0..w {
+            let xf = x as f32;
+            let yf = y as f32;
+            let inside = match code_point {
+                '\u{25B8}' => xf <= max_x - (yf - max_y * 0.5).abs(),
+                '\u{25C2}' => xf >= (yf - max_y * 0.5).abs(),
+                '\u{25BE}' => yf <= max_y - (xf - max_x * 0.5).abs(),
+                '\u{25B4}' => yf >= (xf - max_x * 0.5).abs(),
+                _ => false,
+            };
+            if inside {
+                data[y * w + x] = 255;
+            }
+        }
+    }
+    Some(data)
 }
 
 impl Default for FontLoader {
@@ -1756,10 +1808,9 @@ mod tests {
 
     /// Ahem 字体辅助：加载 Ahem.ttf 并返回 (FontLoader, font_id)
     fn load_ahem() -> Option<(FontLoader, u32)> {
-        let path = "tests/wpt-runner/fonts/Ahem.ttf";
-        let data = std::fs::read(path).ok()?;
+        let data = include_bytes!("../../../../tests/wpt-runner/fonts/Ahem.ttf");
         let mut loader = FontLoader::new();
-        let font_id = loader.load_font(&data).ok()?;
+        let font_id = loader.load_font(data).ok()?;
         Some((loader, font_id))
     }
 
@@ -1863,6 +1914,42 @@ mod tests {
             assert!(
                 (advance - size).abs() < 0.01,
                 "measure_advance should return {size}, got {advance}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_ahem_disclosure_triangles_are_em_sized() {
+        let (loader, ahem_id) = match load_ahem() {
+            Some(v) => v,
+            None => {
+                eprintln!("skipping: Ahem.ttf not found");
+                return;
+            }
+        };
+
+        let size = 20.0f32;
+        for ch in ['\u{25B8}', '\u{25C2}', '\u{25BE}', '\u{25B4}'] {
+            let bitmap = loader.rasterize_glyph(ahem_id, ch, size).unwrap();
+            assert_eq!(bitmap.width, 20);
+            assert_eq!(bitmap.height, 20);
+            assert!(
+                (bitmap.advance - size).abs() < 0.01,
+                "Ahem disclosure triangle advance should be {size}, got {}",
+                bitmap.advance
+            );
+            assert!(
+                bitmap.data.contains(&255),
+                "Ahem disclosure triangle should have opaque pixels"
+            );
+            assert!(
+                bitmap.data.contains(&0),
+                "Ahem disclosure triangle should not be a solid square"
+            );
+            let advance = loader.measure_advance(ahem_id, ch, size);
+            assert!(
+                (advance - size).abs() < 0.01,
+                "Ahem disclosure triangle measure_advance should be {size}, got {advance}"
             );
         }
     }

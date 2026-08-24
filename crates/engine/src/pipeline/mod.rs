@@ -906,7 +906,7 @@ impl RenderPipeline {
 
         // 3.5 把 ::before/::after 伪元素的 content 文本注入为合成文本子节点（doc 每帧
         // 重建，合成节点无累积、JS 不可见）。build_subtree 随后按普通文本子节点测量/绘制。
-        inject_pseudo_text_nodes(&mut doc, &mut styles);
+        inject_pseudo_text_nodes(&mut doc, &mut styles, &stylesheets);
 
         // 3.6 R2439：`content:url()` 普通元素 element-becomes-replaced——元素盒自身按
         // image 固有尺寸 sizing（width/height Auto 时设为图尺寸），build_subtree 已抑制其
@@ -1768,9 +1768,23 @@ pub(crate) fn paint_cull_viewport(
 /// `ComputedStyle` 写入 `styles`，使测量/绘制按该样式渲染（颜色、字号等）。
 ///
 /// 复用全部既有机制（文本测量、匿名盒包裹、绘制）——伪元素合成节点即普通文本子节点。
-pub(crate) fn inject_pseudo_text_nodes(doc: &mut Document, styles: &mut HashMap<NodeId, ComputedStyle>) {
-    use zero_css_parser::values::{DisplayValue, FloatValue, PositionValue};
+pub(crate) fn inject_pseudo_text_nodes(
+    doc: &mut Document,
+    styles: &mut HashMap<NodeId, ComputedStyle>,
+    stylesheets: &[Stylesheet],
+) {
+    use zero_css_parser::ast::Rule;
+    use zero_css_parser::values::{ContentListItem, DisplayValue, FloatValue, PositionValue};
     use zero_style_system::property::types::ContentComputedValue;
+
+    let mut counter_styles: HashMap<String, zero_css_parser::ast::CounterStyleRule> = HashMap::new();
+    for rule in stylesheets.iter().flat_map(|sheet| sheet.rules.iter()) {
+        if let Rule::CounterStyle(counter_style) = rule {
+            counter_styles
+                .entry(counter_style.name.clone())
+                .or_insert_with(|| counter_style.clone());
+        }
+    }
 
     // 先收集待注入项，避免在遍历 styles 时变更它。
     // (parent, is_before, text, pseudo_style)
@@ -1781,14 +1795,32 @@ pub(crate) fn inject_pseudo_text_nodes(doc: &mut Document, styles: &mut HashMap<
     for (&nid, st) in styles.iter() {
         // 解析伪元素 content 的文本：String 直接用；attr(name) 读宿主元素（nid）的
         // 属性值（CSS generated content 的 attr() 函数，如 `content: attr(bgcolor)`
-        // 显示属性值）。Counter 由 paint_content 渲染，此处跳过。
-        let resolve_text = |content: &ContentComputedValue| -> Option<String> {
+        // 显示属性值）；counter()/counters() 在布局前注入为文本，使 ::before/::after
+        // 的 measured width 与绘制一致。
+        let resolve_text = |content: &ContentComputedValue, pseudo_style: &ComputedStyle| -> Option<String> {
             match content {
                 ContentComputedValue::String(s) => Some(s.clone()),
                 ContentComputedValue::Attr(name) => doc.get(nid).and_then(|n| match &n.kind {
                     zero_dom::NodeKind::Element(elem) => elem.get_attribute(name).as_deref().map(str::to_string),
                     _ => None,
                 }),
+                ContentComputedValue::Counter { style, .. } => {
+                    pseudo_disclosure_counter_text(style, pseudo_style, &counter_styles)
+                }
+                ContentComputedValue::Counters { .. } => None,
+                ContentComputedValue::List(items) => {
+                    let mut text = String::new();
+                    for item in items {
+                        match item {
+                            ContentListItem::Str(value) => text.push_str(value),
+                            ContentListItem::Counter { style, .. } => {
+                                text.push_str(&pseudo_disclosure_counter_text(style, pseudo_style, &counter_styles)?);
+                            }
+                            ContentListItem::Counters { .. } => return None,
+                        }
+                    }
+                    Some(text)
+                }
                 _ => None,
             }
         };
@@ -1800,14 +1832,14 @@ pub(crate) fn inject_pseudo_text_nodes(doc: &mut Document, styles: &mut HashMap<
             }
         };
         if let Some(b) = st.before_pseudo.as_ref() {
-            if let Some(t) = resolve_text(&b.content) {
+            if let Some(t) = resolve_text(&b.content, b) {
                 pending.push((nid, true, t, (**b).clone()));
             } else if let Some(u) = resolve_url(&b.content) {
                 pending_img.push((nid, true, u, (**b).clone()));
             }
         }
         if let Some(a) = st.after_pseudo.as_ref() {
-            if let Some(t) = resolve_text(&a.content) {
+            if let Some(t) = resolve_text(&a.content, a) {
                 pending.push((nid, false, t, (**a).clone()));
             } else if let Some(u) = resolve_url(&a.content) {
                 pending_img.push((nid, false, u, (**a).clone()));
@@ -1874,6 +1906,54 @@ pub(crate) fn inject_pseudo_text_nodes(doc: &mut Document, styles: &mut HashMap<
         if !inserted {
             styles.remove(&img_id);
         }
+    }
+}
+
+fn pseudo_disclosure_counter_text(
+    counter_style: &Option<String>,
+    style: &ComputedStyle,
+    registry: &HashMap<String, zero_css_parser::ast::CounterStyleRule>,
+) -> Option<String> {
+    let name = counter_style.as_deref()?;
+    let resolved = resolve_disclosure_counter_name(name, registry, 0)?;
+    Some(disclosure_counter_symbol(resolved == "disclosure-open", style).to_string())
+}
+
+fn resolve_disclosure_counter_name<'a>(
+    name: &'a str,
+    registry: &'a HashMap<String, zero_css_parser::ast::CounterStyleRule>,
+    depth: usize,
+) -> Option<&'a str> {
+    if depth > 16 {
+        return None;
+    }
+    match name {
+        "disclosure-open" | "disclosure-closed" => Some(name),
+        _ => match &registry.get(name)?.system {
+            zero_css_parser::ast::CounterSystem::Extends(base) => {
+                resolve_disclosure_counter_name(base, registry, depth + 1)
+            }
+            _ => None,
+        },
+    }
+}
+
+/// https://drafts.csswg.org/css-counter-styles-3/#disclosure-open
+fn disclosure_counter_symbol(open: bool, style: &ComputedStyle) -> &'static str {
+    use zero_style_system::{DirectionValue, WritingModeValue};
+    if open {
+        return match style.writing_mode {
+            WritingModeValue::VerticalRl => "◂",
+            WritingModeValue::VerticalLr => "▸",
+            WritingModeValue::HorizontalTb => "▾",
+        };
+    }
+
+    match (&style.writing_mode, &style.direction) {
+        (WritingModeValue::HorizontalTb, DirectionValue::Rtl) => "◂",
+        (WritingModeValue::VerticalLr | WritingModeValue::VerticalRl, DirectionValue::Rtl) => "▴",
+        (WritingModeValue::VerticalLr | WritingModeValue::VerticalRl, DirectionValue::Ltr) => "▾",
+        (WritingModeValue::HorizontalTb, DirectionValue::Ltr) => "▸",
     }
 }
 
@@ -2054,7 +2134,9 @@ fn apply_animation_overrides(
 #[cfg(test)]
 mod pseudo_tests {
     use super::*;
+    use zero_css_parser::values::ContentListItem;
     use zero_style_system::property::types::ContentComputedValue;
+    use zero_style_system::property::types::DirectionValue;
 
     /// 递归查找首个标签名为 `tag` 的元素 NodeId。
     fn find_element(doc: &Document, id: NodeId, tag: &str) -> Option<NodeId> {
@@ -2089,7 +2171,7 @@ mod pseudo_tests {
         }));
         styles.insert(div, div_style);
 
-        inject_pseudo_text_nodes(&mut doc, &mut styles);
+        inject_pseudo_text_nodes(&mut doc, &mut styles, &[]);
 
         // div 的首个子节点应为注入的文本节点 "Y"
         let first_child = doc
@@ -2127,7 +2209,7 @@ mod pseudo_tests {
         }));
         styles.insert(div, div_style);
 
-        inject_pseudo_text_nodes(&mut doc, &mut styles);
+        inject_pseudo_text_nodes(&mut doc, &mut styles, &[]);
 
         let first_child = doc
             .get(div)
@@ -2164,7 +2246,7 @@ mod pseudo_tests {
         }));
         styles.insert(div, div_style);
 
-        inject_pseudo_text_nodes(&mut doc, &mut styles);
+        inject_pseudo_text_nodes(&mut doc, &mut styles, &[]);
 
         let first_child = doc
             .get(div)
@@ -2198,7 +2280,7 @@ mod pseudo_tests {
         }));
         styles.insert(div, div_style);
 
-        inject_pseudo_text_nodes(&mut doc, &mut styles);
+        inject_pseudo_text_nodes(&mut doc, &mut styles, &[]);
 
         let children = &doc.get(div).unwrap().children;
         // 末子节点应为 "Z"
@@ -2213,6 +2295,111 @@ mod pseudo_tests {
             zero_dom::NodeKind::Text(t) => assert_eq!(t.content, "X"),
             _ => panic!("首子节点应仍是原文本 X"),
         }
+    }
+
+    #[test]
+    fn inject_before_counter_extending_disclosure_uses_pseudo_direction() {
+        let html = r#"<html><body><span></span></body></html>"#;
+        let mut doc = zero_dom::parse_html(html);
+        let span = find_element(&doc, doc.root(), "span").expect("span exists");
+        let mut styles: HashMap<NodeId, ComputedStyle> = HashMap::new();
+        let mut span_style = ComputedStyle::default();
+        span_style.before_pseudo = Some(Box::new(ComputedStyle {
+            content: ContentComputedValue::List(vec![
+                ContentListItem::Counter {
+                    name: "x".to_string(),
+                    style: Some("closed-ext".to_string()),
+                },
+                ContentListItem::Str(" ".to_string()),
+            ]),
+            direction: DirectionValue::Rtl,
+            ..ComputedStyle::default()
+        }));
+        styles.insert(span, span_style);
+        let stylesheets = vec![zero_css_parser::Parser::parse_stylesheet(
+            "@counter-style closed-ext { system: extends disclosure-closed; }",
+        )];
+
+        inject_pseudo_text_nodes(&mut doc, &mut styles, &stylesheets);
+
+        let first_child = doc
+            .get(span)
+            .and_then(|n| n.children.first().copied())
+            .expect("pseudo text inserted");
+        match &doc.get(first_child).unwrap().kind {
+            zero_dom::NodeKind::Text(t) => assert_eq!(t.content, "◂ "),
+            other => panic!("首个子节点应为 disclosure 文本，实际 {other:?}"),
+        }
+    }
+
+    #[test]
+    fn render_before_counter_disclosure_inherits_font_size() {
+        let html =
+            r#"<html><body><div class="cell"><span class="m" style="direction: rtl"></span></div></body></html>"#;
+        let css = r#"
+            @counter-style closed-ext { system: extends disclosure-closed; }
+            .cell { font: 100px/1 Ahem; }
+            .m::before { content: counter(x, closed-ext); }
+        "#;
+        let mut pipeline = RenderPipeline::new(800.0, 600.0);
+        let result = pipeline.render_html(html, css);
+        let glyph = result
+            .primitives()
+            .glyphs
+            .iter()
+            .find(|glyph| glyph.glyph_id == '◂' as u32)
+            .expect("disclosure glyph should be painted");
+        assert_eq!(glyph.font_size, 100.0);
+    }
+
+    #[test]
+    fn render_before_counter_disclosure_inherits_font_size_with_linked_css() {
+        let html = r#"<!DOCTYPE html>
+<meta charset="utf-8">
+<link rel="stylesheet" href="/fonts/ahem.css">
+<style>
+  @counter-style closed-ext { system: extends disclosure-closed; }
+  .cell {
+    width: 160px; height: 160px;
+    display: flex; align-items: center; justify-content: center;
+    font: 100px/1 Ahem;
+  }
+  .m::before { content: counter(x, closed-ext); }
+</style>
+<div class="cell"><span class="m" style="writing-mode: horizontal-tb; direction: rtl"></span></div>"#;
+        let css = r#"
+@font-face {
+  font-family: Ahem;
+  src: url("../../fonts/Ahem.ttf");
+}
+"#;
+        let doc = zero_dom::parse_html(html);
+        let stylesheets = collect_stylesheets(&doc, css);
+        let mut sys = StyleSystem::new();
+        let styles = sys.compute_styles(&doc, &stylesheets);
+        let cell = doc.query_selector(doc.root(), ".cell").expect(".cell exists");
+        let marker = doc.query_selector(doc.root(), ".m").expect(".m exists");
+        assert_eq!(
+            styles.get(&cell).expect(".cell style").font_size,
+            zero_css_parser::values::LengthValue::Px(100.0)
+        );
+        assert_eq!(
+            styles
+                .get(&marker)
+                .and_then(|style| style.before_pseudo.as_ref())
+                .expect(".m::before style")
+                .font_size,
+            zero_css_parser::values::LengthValue::Px(100.0)
+        );
+        let mut pipeline = RenderPipeline::new(800.0, 600.0);
+        let result = pipeline.render_html(html, css);
+        let glyph = result
+            .primitives()
+            .glyphs
+            .iter()
+            .find(|glyph| glyph.glyph_id == '◂' as u32)
+            .expect("disclosure glyph should be painted");
+        assert_eq!(glyph.font_size, 100.0);
     }
 
     #[test]

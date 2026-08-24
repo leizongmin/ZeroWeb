@@ -5,7 +5,9 @@ use zero_dom::Document;
 use zero_layout_engine::LayoutBox;
 use zero_layout_engine::types::OverflowClip;
 use zero_render_foundation::geometry::Rect;
-use zero_style_system::{ComputedStyle, ContentComputedValue, ObjectFitComputedValue};
+use zero_style_system::{
+    ComputedStyle, ContentComputedValue, DirectionValue, ObjectFitComputedValue, WritingModeValue,
+};
 
 use super::super::painter::Painter;
 use crate::paint::image_resource_key;
@@ -175,6 +177,105 @@ fn test_paint_content_counter_upper_roman() {
     assert_eq!(painter.primitives().glyphs.len(), glyphs_before + 2);
     assert_eq!(painter.primitives().glyphs[glyphs_before].glyph_id, 'I' as u32);
     assert_eq!(painter.primitives().glyphs[glyphs_before + 1].glyph_id, 'V' as u32);
+}
+
+#[test]
+fn test_paint_content_counter_disclosure_closed_tracks_direction_and_writing_mode() {
+    let cases = [
+        (WritingModeValue::HorizontalTb, DirectionValue::Ltr, '▸'),
+        (WritingModeValue::HorizontalTb, DirectionValue::Rtl, '◂'),
+        (WritingModeValue::VerticalLr, DirectionValue::Ltr, '▾'),
+        (WritingModeValue::VerticalLr, DirectionValue::Rtl, '▴'),
+        (WritingModeValue::VerticalRl, DirectionValue::Ltr, '▾'),
+        (WritingModeValue::VerticalRl, DirectionValue::Rtl, '▴'),
+    ];
+
+    for (writing_mode, direction, expected) in cases {
+        let mut painter = Painter::new();
+        painter.counters.insert("item".to_string(), vec![1]);
+
+        let mut style = ComputedStyle::default();
+        style.content = ContentComputedValue::Counter {
+            name: "item".to_string(),
+            style: Some("disclosure-closed".to_string()),
+        };
+        style.font_size = LengthValue::Px(16.0);
+        style.color = ColorValue::Rgba(0, 0, 0, 255);
+        style.writing_mode = writing_mode;
+        style.direction = direction;
+
+        let box_node = make_box(200.0, 20.0);
+        painter.paint_content(&box_node, 0.0, 0.0, &style);
+
+        assert_eq!(painter.primitives().glyphs.len(), 1);
+        assert_eq!(painter.primitives().glyphs[0].glyph_id, expected as u32);
+    }
+}
+
+#[test]
+fn test_paint_content_counter_disclosure_open_tracks_writing_mode() {
+    let cases = [
+        (WritingModeValue::HorizontalTb, '▾'),
+        (WritingModeValue::VerticalLr, '▸'),
+        (WritingModeValue::VerticalRl, '◂'),
+    ];
+
+    for (writing_mode, expected) in cases {
+        let mut painter = Painter::new();
+        painter.counters.insert("item".to_string(), vec![1]);
+
+        let mut style = ComputedStyle::default();
+        style.content = ContentComputedValue::Counter {
+            name: "item".to_string(),
+            style: Some("disclosure-open".to_string()),
+        };
+        style.font_size = LengthValue::Px(16.0);
+        style.color = ColorValue::Rgba(0, 0, 0, 255);
+        style.writing_mode = writing_mode;
+
+        let box_node = make_box(200.0, 20.0);
+        painter.paint_content(&box_node, 0.0, 0.0, &style);
+
+        assert_eq!(painter.primitives().glyphs.len(), 1);
+        assert_eq!(painter.primitives().glyphs[0].glyph_id, expected as u32);
+    }
+}
+
+#[test]
+fn test_paint_content_counter_custom_extends_disclosure_uses_registry() {
+    let mut painter = Painter::new();
+    painter.counters.insert("item".to_string(), vec![1]);
+    painter.counter_styles.insert(
+        "closed-ext".to_string(),
+        zero_css_parser::ast::CounterStyleRule {
+            name: "closed-ext".to_string(),
+            system: zero_css_parser::ast::CounterSystem::Extends("disclosure-closed".to_string()),
+            symbols: Vec::new(),
+            additive_symbols: Vec::new(),
+            prefix: String::new(),
+            suffix: ". ".to_string(),
+            fallback: "decimal".to_string(),
+            range: None,
+            negative: ("-".to_string(), String::new()),
+            pad: None,
+        },
+    );
+
+    let mut style = ComputedStyle::default();
+    style.content = ContentComputedValue::Counter {
+        name: "item".to_string(),
+        style: Some("closed-ext".to_string()),
+    };
+    style.font_size = LengthValue::Px(16.0);
+    style.color = ColorValue::Rgba(0, 0, 0, 255);
+    style.writing_mode = WritingModeValue::HorizontalTb;
+    style.direction = DirectionValue::Rtl;
+
+    let box_node = make_box(200.0, 20.0);
+    painter.paint_content(&box_node, 0.0, 0.0, &style);
+
+    assert_eq!(painter.primitives().glyphs.len(), 1);
+    assert_eq!(painter.primitives().glyphs[0].glyph_id, '◂' as u32);
 }
 
 #[test]

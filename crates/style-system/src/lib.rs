@@ -649,6 +649,7 @@ impl StyleSystem {
                     before.content,
                     property::types::ContentComputedValue::String(_)
                         | property::types::ContentComputedValue::Attr(_)
+                        | property::types::ContentComputedValue::Counter { .. }
                         | property::types::ContentComputedValue::List(_)
                 ) {
                     computed.before_pseudo = Some(Box::new(before));
@@ -664,6 +665,7 @@ impl StyleSystem {
                     after.content,
                     property::types::ContentComputedValue::String(_)
                         | property::types::ContentComputedValue::Attr(_)
+                        | property::types::ContentComputedValue::Counter { .. }
                         | property::types::ContentComputedValue::List(_)
                 ) {
                     computed.after_pseudo = Some(Box::new(after));

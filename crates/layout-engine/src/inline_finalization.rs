@@ -784,6 +784,19 @@ pub(crate) fn compute_final_inline_layouts(
         return;
     }
 
+    // CSS Flexbox §4 / Grid §4：flex/grid 容器的 in-flow 子元素会 blockify 为
+    // flex/grid item。即使 computed display 仍是 inline，作为独立 item 的叶文本容器
+    // 也需要存储 IFC 度量，供 paint Path B 恢复 generated-content 文本字号。
+    let is_flex_grid_item = doc
+        .parent_node(node_id)
+        .and_then(|pid| styles.get(&pid))
+        .is_some_and(|parent| {
+            matches!(
+                parent.display,
+                DisplayValue::Flex | DisplayValue::InlineFlex | DisplayValue::Grid | DisplayValue::InlineGrid
+            )
+        });
+
     // 跳过非块级元素（display: inline）：
     // 这些元素的文本内容已经参与父级 IFC 排列，不需要单独存储。
     // 如果为它们也存储 inline_layout，paint 系统会双重渲染文本——
@@ -808,7 +821,7 @@ pub(crate) fn compute_final_inline_layouts(
         .child_nodes(node_id)
         .iter()
         .any(|c| doc.get(*c).is_some_and(|n| matches!(n.kind, NodeKind::Text(_))));
-    if !root.is_block_level && !is_table_internal_with_text {
+    if !root.is_block_level && !is_table_internal_with_text && !is_flex_grid_item {
         return;
     }
 
@@ -1248,8 +1261,11 @@ pub(crate) fn measure_text_content(
         if text.is_empty() {
             return Size::ZERO;
         }
-        // 获取父元素的 ComputedStyle 用于字体指标
-        let parent_style = doc.parent_node(dom_id).and_then(|pid| styles.get(&pid));
+        // CSS Pseudo 4: generated-content text uses the computed style of its
+        // pseudo element. Normal DOM text nodes still inherit from their parent.
+        let parent_style = styles
+            .get(&dom_id)
+            .or_else(|| doc.parent_node(dom_id).and_then(|pid| styles.get(&pid)));
         let (font_size, line_height) =
             crate::inline::resolve_font_metrics_with_provider(parent_style, font_metric_provider);
         let is_ahem = parent_style

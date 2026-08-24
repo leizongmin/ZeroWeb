@@ -121,7 +121,7 @@ impl RenderPipeline {
                         .set_viewport(self.viewport_width as f64, self.viewport_height as f64);
                     session.styles = self.style_system.compute_styles(doc, &session.stylesheets);
                     if let Some(doc_mut) = session.doc.as_mut() {
-                        inject_pseudo_text_nodes(doc_mut, &mut session.styles);
+                        inject_pseudo_text_nodes(doc_mut, &mut session.styles, &session.stylesheets);
                     }
                     session.timings.style_ms = start.elapsed().as_secs_f64() * 1000.0;
                     session.step = BudgetStep::Layout;
@@ -226,7 +226,7 @@ impl RenderPipeline {
         let mut styles = self.style_system.compute_styles(&doc, &stylesheets);
         let style_ms = style_start.elapsed().as_secs_f64() * 1000.0;
 
-        inject_pseudo_text_nodes(&mut doc, &mut styles);
+        inject_pseudo_text_nodes(&mut doc, &mut styles, &stylesheets);
 
         let layout_start = Instant::now();
         let (img_sizes, _img_ratios, img_no_ratio) = self.build_img_intrinsic_all(&doc);

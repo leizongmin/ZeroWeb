@@ -639,6 +639,14 @@ fn test_parse_list_style_type_values() {
         parse_list_style_type("upper-alpha"),
         Some(ListStyleTypeValue::UpperAlpha)
     );
+    assert_eq!(
+        parse_list_style_type("disclosure-open"),
+        Some(ListStyleTypeValue::DisclosureOpen)
+    );
+    assert_eq!(
+        parse_list_style_type("disclosure-closed"),
+        Some(ListStyleTypeValue::DisclosureClosed)
+    );
     assert_eq!(parse_list_style_type("none"), Some(ListStyleTypeValue::None));
     // R2392：合法 custom-ident 名 → Custom（render 走 decimal fallback）。
     assert_eq!(
