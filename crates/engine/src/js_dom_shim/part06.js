@@ -3797,7 +3797,41 @@
         // 保持 (docEl, body) 异侧）。_coveredChildren null（跨容器/文本切片）
         // 时 best-effort 塌缩到 (startContainer, startOffset)。
         // https://dom.spec.whatwg.org/#dom-range-extractcontents
-        else {
+        else if (this.startContainer !== this.endContainer
+          && this.startContainer.nodeType === 1
+          && (this.endContainer.nodeType === 3 || this.endContainer.nodeType === 4
+            || this.endContainer.nodeType === 7 || this.endContainer.nodeType === 8)
+          && this.endContainer.parentNode === this.startContainer) {
+          // R236（js-dom M4）：**sc 是 ec 的元素祖先容器且 ec 是其直接 CharData 子**
+          //（spec `dom-range-extract-contents` 的 ancestor 分支：first partially
+          // contained child = null，last partially contained child = ec——common.js
+          // myExtractContents 全序对齐：clone ec 的 substringData(0, eo) 入 frag +
+          // ec.deleteData(0, eo) 削头，range 塌缩到 (sc, so)）。旧版落 collapse-only
+          // 空转使树保留区间原文（WPT Range-surroundContents 23,x
+          // `[paras[0],0,paras[0].firstChild,7]` 32F differing 簇——expected 削头
+          // "̈efgh\n" got 原文全串）。
+          // https://dom.spec.whatwg.org/#dom-range-extractcontents
+          var _r236ec = this.endContainer;
+          var _r236eo = Math.max(0, Math.min(this.endOffset | 0,
+            String(_r236ec.data != null ? _r236ec.data : '').length));
+          if (_r236eo > 0) {
+            try {
+              var _r236head = _r236ec.cloneNode(false);
+              _r236head.data = String(_r236ec.data).slice(0, _r236eo);
+              f.appendChild(_r236head);
+            } catch (_eR236c) {}
+            try {
+              if (typeof _r236ec.deleteData === 'function') {
+                _r236ec.deleteData(0, _r236eo);
+              } else {
+                _r236ec.data = String(_r236ec.data).slice(_r236eo);
+              }
+            } catch (_eR236d) {}
+          }
+          var _r236so = this.startOffset | 0;
+          this.setStart(this.startContainer, _r236so);
+          this.setEnd(this.startContainer, _r236so);
+        } else {
           this.collapse(true);
         }
         return f;
@@ -4177,6 +4211,21 @@
               // https://dom.spec.whatwg.org/#dom-range-surroundcontents
               this.extractContents();
               this.insertNode(newParent);
+            } else if (kids === null
+              && this.startContainer.nodeType === 1
+              && (this.endContainer.nodeType === 3 || this.endContainer.nodeType === 4
+                || this.endContainer.nodeType === 7 || this.endContainer.nodeType === 8)
+              && this.endContainer.parentNode === this.startContainer) {
+              // R236（js-dom M4）：**sc 是 ec 的元素祖先容器且 ec 为直接
+              // CharData 子**的 leaf-newParent（WPT Range-surroundContents 23,x
+              // `[paras[0],0,paras[0].firstChild,7]` + Text newParent——sim 序
+              // 步骤 3 extract 削 ec 头部（deleteData(0,eo)，remainder 留树）→
+              // 步骤 4 insertNode 插 newParent 到 (sc, so) → 步骤 5 抛 HRE。
+              // 旧版直接抛使 text 保留区间原文）。extractContents 的 R236 分支
+              // 承担树变更，此处按 sim 序先 extract 再 insert 后抛。
+              // https://dom.spec.whatwg.org/#dom-range-surroundcontents
+              this.extractContents();
+              this.insertNode(newParent);
             } else if (kids !== null && kids.length > 0) {
               // R235（js-dom M4）：**元素容器含覆盖子**的 leaf-newParent——
               // sim 序同样是 extract 先行（covered 子移出容器）再 insertNode
@@ -4247,6 +4296,40 @@
                 if (_r212ni >= 0) { this.setStart(_r212np, _r212ni); this.setEnd(_r212np, _r212ni + 1); }
               }
             } catch (_eR212s2) {}
+          }
+          // R236（js-dom M4）：**sc 是 ec 的元素祖先容器且 ec 为直接 CharData 子**
+          // 的元素 newParent（WPT Range-surroundContents 23,4/6/9/11/13——sim 序：
+          // 步骤 3 extract 削 ec 头部（remainder 留树）→ 步骤 4 insertNode(newParent)
+          // 到 (sc, so)（newParent === sc 自身时 ensurePreInsertion 的 inclusive
+          // ancestor 查抛 HRE——步骤 3 已变更树后再抛，与 mySurroundContents 对齐，
+          // 即 23,0 形态）→ 步骤 5 appendChild(frag) → selectNode(newParent)）。
+          // https://dom.spec.whatwg.org/#dom-range-surroundcontents
+          if (this.startContainer !== this.endContainer
+            && this.startContainer.nodeType === 1
+            && (this.endContainer.nodeType === 3 || this.endContainer.nodeType === 4
+              || this.endContainer.nodeType === 7 || this.endContainer.nodeType === 8)
+            && this.endContainer.parentNode === this.startContainer) {
+            var _r236frag2 = this.extractContents();
+            // 步骤 2：清 newParent 既有子（sim「While newParent has children,
+            // remove its first child」——R212 同款；旧漏此步使 newParent 残留
+            // 原内容（expected 头切片 got "Efghijkl"）。
+            var _r236guard = 0;
+            while (newParent.childNodes && newParent.childNodes.length && _r236guard++ < 256) {
+              try { newParent.removeChild(newParent.childNodes[0]); } catch (_eR236rm) { break; }
+            }
+            this.insertNode(newParent);
+            try { newParent.appendChild(_r236frag2); } catch (_eR236a) {}
+            try {
+              var _r236np2 = newParent.parentNode;
+              if (_r236np2 && _r236np2.childNodes) {
+                var _r236ni2 = _r236np2.childNodes.indexOf(newParent);
+                if (_r236ni2 >= 0) {
+                  this.setStart(_r236np2, _r236ni2);
+                  this.setEnd(_r236np2, _r236ni2 + 1);
+                }
+              }
+            } catch (_eR236s) {}
+            return;
           }
           return; // 其余跨容器/文本切片 defer
         }

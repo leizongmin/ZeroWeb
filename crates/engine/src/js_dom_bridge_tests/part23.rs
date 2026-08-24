@@ -1567,3 +1567,76 @@ globalThis.__r235out = out.join('|');
         "R235 leaf-newParent 两形态先 extract 后抛：异节点同父区间削首尾 + 元素容器移出 covered 子"
     );
 }
+
+#[test]
+fn r236_ancestor_element_range_surround_extract() {
+    // R236（js-dom M4）：sc 是 ec 的元素祖先容器且 ec 为直接 CharData 子的
+    // surround/extract——extractContents 削 ec 头部（clone [0,eo) 入 frag +
+    // deleteData，remainder 留树，range 塌缩到 (sc, so)）；surroundContents
+    // leaf-newParent 先 extract 再 insert 后抛 HRE，元素 newParent 清子后
+    // insert + appendChild(frag) + selectNode。
+    // https://dom.spec.whatwg.org/#dom-range-extractcontents
+    // https://dom.spec.whatwg.org/#dom-range-surroundcontents
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><div id=\"t\">x</div></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+
+    sandbox
+        .execute(
+            r#"
+var out = [];
+// extract：[p,0,t,7] → frag 头切片 "Abcdef"（前 7 code unit）+ t 削头 + 塌缩 (p,0)。
+var p23 = document.createElement('p');
+var t23 = document.createTextNode('Abcdefgh');
+p23.appendChild(t23);
+document.body.appendChild(p23);
+var r23 = document.createRange();
+r23.setStart(p23, 0); r23.setEnd(t23, 7);
+var frag23 = r23.extractContents();
+out.push('ex:' + frag23.childNodes[0].data + ',' + t23.data + ',' + r23.startContainer.nodeName + ',' + r23.startOffset + ',' + r23.endOffset);
+// leaf newParent：先 extract 再 insert 后 HRE。
+var p23b = document.createElement('p');
+var t23b = document.createTextNode('Abcdefgh');
+p23b.appendChild(t23b);
+document.body.appendChild(p23b);
+var r23b = document.createRange();
+r23b.setStart(p23b, 0); r23b.setEnd(t23b, 7);
+var threw = 'none';
+try { r23b.surroundContents(document.createTextNode('z')); } catch (e) { threw = (e && e.name) || String(e); }
+out.push('leaf:' + t23b.data + ',' + p23b.childNodes.length + ',' + threw);
+// 元素 newParent：清子 + insert + appendChild(frag) + selectNode。
+var wrap = document.createElement('span');
+wrap.appendChild(document.createTextNode('old'));
+var p23c = document.createElement('p');
+var t23c = document.createTextNode('Abcdefgh');
+p23c.appendChild(t23c);
+document.body.appendChild(p23c);
+var r23c = document.createRange();
+r23c.setStart(p23c, 0); r23c.setEnd(t23c, 7);
+r23c.surroundContents(wrap);
+out.push('el:' + wrap.childNodes.length + ',' + (wrap.firstChild ? wrap.firstChild.data : '?') + ','
+  + r23c.startContainer.nodeName + ',' + r23c.startOffset + ',' + r23c.endOffset);
+globalThis.__r236out = out.join('|');
+"#,
+        )
+        .unwrap();
+    let out = sandbox.execute("globalThis.__r236out").unwrap().value;
+    assert_eq!(
+        out,
+        "ex:Abcdefg,h,P,0,0|leaf:h,2,HierarchyRequestError|el:1,Abcdefg,P,0,1",
+        "R236 祖先元素区间：extract 削头 + leaf 先 extract 后抛 + 元素 wrap 全序（清子/insert/select）"
+    );
+}
