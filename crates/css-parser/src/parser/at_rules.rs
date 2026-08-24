@@ -462,6 +462,9 @@ impl<'a> Parser<'a> {
         let name = match self.peek().clone() {
             Token::Ident(s) => {
                 self.advance();
+                if !is_valid_counter_style_rule_name(&s) {
+                    return None;
+                }
                 s
             }
             _ => return None,
@@ -496,7 +499,7 @@ impl<'a> Parser<'a> {
                 "additive-symbols" if additive_raw.is_none() => additive_raw = Some(decl.value.trim().to_string()),
                 "prefix" if prefix.is_none() => prefix = parse_counter_affix_symbol(decl.value.trim()),
                 "suffix" if suffix.is_none() => suffix = parse_counter_affix_symbol(decl.value.trim()),
-                "fallback" if fallback.is_none() => fallback = Some(decl.value.trim().to_string()),
+                "fallback" if fallback.is_none() => fallback = parse_counter_style_name_reference(decl.value.trim()),
                 "range" if range_raw.is_none() => range_raw = Some(decl.value.trim().to_string()),
                 _ => {}
             }

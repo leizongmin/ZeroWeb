@@ -81,6 +81,70 @@ fn test_parse_counter_style_extends() {
 }
 
 #[test]
+/// R3738：`@counter-style` rule name 必须排除 `none`、CSS-wide keywords 与保留内置名。
+fn test_parse_counter_style_name_rejects_reserved_names() {
+    for name in [
+        "foo",
+        "lower-alpha",
+        "cjk-decimal",
+        "japanese-informal",
+        "ethiopic-numeric",
+    ] {
+        let css = format!("@counter-style {name} {{ system: symbolic; symbols: \"X\" \"Y\"; }}");
+        let cs = first_counter_style(&css);
+        assert_eq!(cs.name, name);
+    }
+
+    for name in [
+        "none",
+        "initial",
+        "inherit",
+        "unset",
+        "decimal",
+        "disc",
+        "square",
+        "circle",
+        "disclosure-open",
+        "disclosure-closed",
+    ] {
+        let css = format!("@counter-style {name} {{ system: symbolic; symbols: \"X\" \"Y\"; }}");
+        let ws = Parser::parse_stylesheet(&css);
+        assert!(
+            !ws.rules.iter().any(|r| matches!(r, Rule::CounterStyle(_))),
+            "@counter-style name {name} 应整体无效"
+        );
+    }
+}
+
+#[test]
+/// R3738：可引用的 `<counter-style-name>` 必须是单个非 `none` / CSS-wide ident。
+fn test_parse_counter_style_references_reject_invalid_names() {
+    for fallback in ["none", "decimal cjk-decimal", "\"*\""] {
+        let css = format!(
+            "@counter-style fallback-ref {{ system: fixed; symbols: A B; fallback: {fallback}; fallback: lower-roman; }}"
+        );
+        let cs = first_counter_style(&css);
+        assert_eq!(
+            cs.fallback, "lower-roman",
+            "invalid fallback {fallback} must not mask a later valid fallback"
+        );
+    }
+
+    let ws = Parser::parse_stylesheet("@counter-style bad { system: extends none; symbols: \"x\"; }");
+    assert!(
+        !ws.rules.iter().any(|r| matches!(r, Rule::CounterStyle(_))),
+        "system: extends none 应整体无效"
+    );
+
+    let ws =
+        Parser::parse_stylesheet("@counter-style bad { system: extends lower-roman upper-roman; symbols: \"x\"; }");
+    assert!(
+        !ws.rules.iter().any(|r| matches!(r, Rule::CounterStyle(_))),
+        "system: extends 多个名称应整体无效"
+    );
+}
+
+#[test]
 /// `system` 缺省 → symbolic（CSS §3.1.4 默认）。
 fn test_parse_counter_style_default_system() {
     let css = "@counter-style dflt { symbols: \"a\" \"b\"; }";

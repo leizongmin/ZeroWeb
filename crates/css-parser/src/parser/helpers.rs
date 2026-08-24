@@ -129,6 +129,41 @@ pub(super) fn strip_css_quotes(s: &str) -> String {
     }
 }
 
+/// 判定 `@counter-style` rule name（CSS Counter Styles 3 §3）是否可自定义。
+///
+/// https://www.w3.org/TR/css-counter-styles-3/#the-counter-style-rule
+/// 该名称是 `<custom-ident>`，但不能为 `none`、CSS-wide keywords 或不可重定义的内置名。
+pub(super) fn is_valid_counter_style_rule_name(name: &str) -> bool {
+    is_counter_style_name_reference(name)
+        && !matches!(
+            name.to_ascii_lowercase().as_str(),
+            "decimal" | "disc" | "square" | "circle" | "disclosure-open" | "disclosure-closed"
+        )
+}
+
+/// 解析单个 `<counter-style-name>` 引用（如 `fallback` / `system: extends`）。
+///
+/// https://www.w3.org/TR/css-counter-styles-3/#typedef-counter-style-name
+pub(super) fn parse_counter_style_name_reference(value: &str) -> Option<String> {
+    let tokens: Vec<Token> = Tokenizer::new(value)
+        .filter_map(|spanned| match spanned.token {
+            Token::Whitespace | Token::Comment(_) => None,
+            token => Some(token),
+        })
+        .collect();
+    match tokens.as_slice() {
+        [Token::Ident(s)] if is_counter_style_name_reference(s) => Some(s.clone()),
+        _ => None,
+    }
+}
+
+fn is_counter_style_name_reference(name: &str) -> bool {
+    !matches!(
+        name.to_ascii_lowercase().as_str(),
+        "none" | "initial" | "inherit" | "unset" | "revert" | "revert-layer"
+    )
+}
+
 /// 解析 `@counter-style` 的 `system` 描述符为类型化算法（CSS Counter Styles 3 §3.1.4）。
 ///
 /// https://www.w3.org/TR/css-counter-styles-3/#counter-style-system
@@ -151,14 +186,7 @@ pub(super) fn parse_counter_system(value: Option<&str>) -> Option<CounterSystem>
         "alphabetic" if parts.len() == 1 => CounterSystem::Alphabetic,
         "numeric" if parts.len() == 1 => CounterSystem::Numeric,
         "additive" if parts.len() == 1 => CounterSystem::Additive,
-        "extends" if parts.len() == 2 => {
-            // `extends <counter-style-name>`：继承名（原始大小写，取未 lower 的下一段）。
-            let ext = parts[1].to_string();
-            if ext.is_empty() {
-                return None;
-            }
-            CounterSystem::Extends(ext)
-        }
+        "extends" if parts.len() == 2 => CounterSystem::Extends(parse_counter_style_name_reference(parts[1])?),
         _ => return None,
     };
     Some(system)
