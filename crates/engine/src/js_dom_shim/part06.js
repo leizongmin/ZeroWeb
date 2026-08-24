@@ -3717,14 +3717,6 @@
         //（位置近似）：非尾部精确插位须 id-stable ref 或 host 回调（nth-child 经移除前移失效），defer。
         // collapsed（0 覆盖子）→ insertNode(newParent)。跨容器/文本切片 → best-effort no-op（defer）。
         if (!newParent || !this.startContainer) return;
-        // R178（js-dom M4）：surroundContents 内含 insertNode 语义——Attr-rooted
-        // range / Attr 参数同抛 HierarchyRequestError（spec `dom-range-surroundcontents`
-        // 步骤 2「部分选区」与本处 Attr 非法父；WPT "surroundContents() on an
-        // Attr-rooted range throws"）。
-        if (newParent.nodeType === 2 || this.startContainer.nodeType === 2) {
-          throw new (globalThis.DOMException || Error)(
-            'Nodes of type 2 cannot be inserted or inserted into.', 'HierarchyRequestError');
-        }
         // R209（js-dom M4）：spec `dom-range-surroundcontents` 步骤 1——newParent 是
         // Document/DocumentType/DocumentFragment 抛 InvalidNodeTypeError（WPT
         // mega-case 的 INVALID_NODE_TYPE_ERR 簇）。
@@ -3736,6 +3728,51 @@
         if (newParent.nodeType === 9 || newParent.nodeType === 10) {
           throw new (globalThis.DOMException || Error)(
             'The Range has partially selected a non-Text node.', 'InvalidNodeTypeError');
+        }
+        // R210（js-dom M4）：spec `dom-range-surroundcontents` 步骤 2——「If a
+        // non-Text node is partially contained in the context object, throw
+        // InvalidStateError」。部分包含 = 是 start 或 end 边界容器的祖先但非双方
+        // 共同祖先（common.js isPartiallyContained 同款）。cac 子树内非 Text 节点
+        // 逐个检查（探针 20,x 族 115F：cac=DIV 正确但 host 不抛 → assert_throws_dom
+        // "did not throw"）。
+        // https://dom.spec.whatwg.org/#dom-range-surroundcontents
+        (function _r210PartialCheck(self) {
+          var ancIn = function (a, d) {
+            while (d) { if (d === a) return true; d = d.parentNode; }
+            return false;
+          };
+          var partial = function (n) {
+            var c1 = ancIn(n, self.startContainer);
+            var c2 = ancIn(n, self.endContainer);
+            return (c1 && !c2) || (c2 && !c1);
+          };
+          var cac = self.commonAncestorContainer;
+          if (!cac || !cac.childNodes) return;
+          // cac 自身必是双方祖先（非部分包含）；检查其后代非 Text 节点
+          //（DFS——Text 节点部分包含是合法的，spec 只拒非 Text）。
+          var stack = [cac];
+          var guard = 0;
+          while (stack.length && guard++ < 2048) {
+            var cur = stack.pop();
+            var kids = cur.childNodes || [];
+            for (var i = 0; i < kids.length; i++) {
+              var k = kids[i];
+              if (!k) continue;
+              if (k.nodeType !== 3 && k.nodeType !== 4 && partial(k)) {
+                throw new (globalThis.DOMException || Error)(
+                  'The Range has partially selected a non-Text node.', 'InvalidStateError');
+              }
+              if (k.childNodes && k.childNodes.length) stack.push(k);
+            }
+          }
+        })(this);
+        // R178（js-dom M4）：surroundContents 内含 insertNode 语义——Attr-rooted
+        // range / Attr 参数同抛 HierarchyRequestError（spec `dom-range-surroundcontents`
+        // 步骤 2「部分选区」与本处 Attr 非法父；WPT "surroundContents() on an
+        // Attr-rooted range throws"）。
+        if (newParent.nodeType === 2 || this.startContainer.nodeType === 2) {
+          throw new (globalThis.DOMException || Error)(
+            'Nodes of type 2 cannot be inserted or inserted into.', 'HierarchyRequestError');
         }
         var kids = this._coveredChildren();
         // R209（js-dom M4）：spec `dom-range-surroundcontents` 步骤 5——最终

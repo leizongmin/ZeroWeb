@@ -1160,6 +1160,10 @@
     }
     // 文本/注释：经工厂重建（保 nodeType/原型链/CharacterData 方法面）。
     if (nt === 3) return _zwMText(String(n.data != null ? n.data : (n.nodeValue || '')), null);
+    // R210 评估注：CDATASection（nt=4）的 cloneNode 重建（经源 doc
+    // createCDATASection）单独正确，但 host surroundContents 缺 CDATA 跨容器
+    // extract 语义——sim 侧修好克隆后两侧树分歧（6,x positionTests -34 实测）。
+    // 与 host extract 同切片再 land（master.md R211 靶点）。
     if (nt === 8) return _zwMComment(String(n.data != null ? n.data : (n.nodeValue || '')), null);
     // PI：_piHandles 元数据（target/data）重建（R9 桥——handle→元数据表）。handle 形态
     // 的 PI proxy 经 get trap 的 cloneNode 分支（part04 R128）处理；此处兜底 plain

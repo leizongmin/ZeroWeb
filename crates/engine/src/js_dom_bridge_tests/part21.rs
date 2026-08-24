@@ -2420,6 +2420,99 @@ fn test_iframe_doc_query_cache_invalidation_r208() {
     );
 }
 
+/// R210（js-dom M4）：surroundContents 的 spec 步骤 1/2 校验序——newParent 是
+/// Document/DocumentType 抛 InvalidNodeTypeError（步骤 1，先于一切）；range 部分
+/// 包含非 Text 节点抛 InvalidStateError（步骤 2——「是 start 或 end 边界容器的
+/// 祖先但非双方共同祖先」的 cac 子树 DFS）。WPT 20,x 族 115F：cac=DIV 正确但
+/// host 不抛 → assert_throws_dom "did not throw"。
+/// https://dom.spec.whatwg.org/#dom-range-surroundcontents
+#[test]
+fn test_surround_invalid_state_and_step_order_r210() {
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let mut sandbox = V8Sandbox::with_config(zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    })
+    .unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> =
+        Arc::new(Mutex::new("<html><body></body></html>".to_string()));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    let common_js =
+        include_str!("../../../../tests/wpt-runner/wpt-data/dom/common.js").to_string();
+    let iframe_html = include_str!(
+        "../../../../tests/wpt-runner/wpt-data/dom/ranges/Range-test-iframe.html"
+    )
+    .to_string();
+    let fetched_common = common_js.clone();
+    let fetched_iframe = iframe_html.clone();
+    sandbox.register_callback(
+        "__zw_fetch",
+        Box::new(move |args| {
+            let url = args.get(2).map(String::as_str).unwrap_or("");
+            if url.ends_with("Range-test-iframe.html") {
+                return format!("__zwfr:200\u{1f}OK\u{1f}\u{1f}{}", fetched_iframe);
+            }
+            "__zw_fetch_error:not-found".to_string()
+        }),
+    );
+    sandbox.register_callback(
+        "__zw_fetch_script",
+        Box::new(move |args| {
+            let src = args.get(1).map(String::as_str).unwrap_or("");
+            if src.ends_with("common.js") {
+                return fetched_common.clone();
+            }
+            String::new()
+        }),
+    );
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+    let out = sandbox
+        .execute(
+            r#"
+            var ifr = document.createElement('iframe');
+            document.body.appendChild(ifr);
+            ifr.setAttribute('src', 'Range-test-iframe.html');
+            var win = ifr.contentWindow;
+            win.setupRangeTests();
+            var out = [];
+            // ① 跨容器 range（paras[0].firstChild → paras[1].firstChild，cac=DIV）
+            // + 元素 newParent → InvalidStateError（testDiv 部分包含）
+            win.testNodeInput = 'paras[0]';
+            win.testRangeInput = '[paras[0].firstChild, 0, paras[1].firstChild, 0]';
+            win.run();
+            var r1 = win.testRange, n1 = win.testNode;
+            var t1 = '';
+            try { r1.surroundContents(n1); } catch (e) { t1 = e.name; }
+            if (t1 !== 'InvalidStateError') out.push('cross-container:' + t1);
+            // ② Document newParent → InvalidNodeTypeError（步骤 1 先于步骤 2）
+            win.testNodeInput = 'document';
+            win.testRangeInput = '[paras[0].firstChild, 0, paras[1].firstChild, 0]';
+            win.run();
+            var r2 = win.testRange, n2 = win.testNode;
+            var t2 = '';
+            try { r2.surroundContents(n2); } catch (e) { t2 = e.name; }
+            if (t2 !== 'InvalidNodeTypeError') out.push('doc-newparent:' + t2);
+            // ③ 单容器整选区（无部分包含）不抛 InvalidStateError（合法路径——
+            // host 对该形态的既有行为不回归：collapsed/整元素选区不因新校验误伤）
+            win.testNodeInput = 'paras[0]';
+            win.testRangeInput = '[testDiv, 0, testDiv, 1]';
+            win.run();
+            var r3 = win.testRange, n3 = win.testNode;
+            var t3 = 'no-throw';
+            try { r3.surroundContents(n3); } catch (e) { t3 = e.name; }
+            if (t3 === 'InvalidStateError') out.push('full-selection:false-positive');
+            out.length ? out.join('\n') : 'ALL-OK'
+            "#,
+        )
+        .unwrap()
+        .value;
+    assert_eq!(out, "ALL-OK", "R210 surroundContents 步骤 1/2 校验序");
+}
 /// R209（js-dom M4）：iframe 子文档 testNodes 方法面 + surroundContents 叶子
 /// newParent 的 spec 异常链。根因（探针实证）：iframe/detached 工厂节点形态缺
 /// compareDocumentPosition/hasChildNodes/cloneNode/substringData/splitText/
