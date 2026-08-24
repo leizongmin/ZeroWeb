@@ -2443,9 +2443,11 @@ fn test_surround_invalid_state_and_step_order_r210() {
     let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
         std::sync::Arc::new(Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
     let common_js =
-        include_str!("../../../../tests/wpt-runner/wpt-data/dom/common.js").to_string();
+        // WPT dom/common.js（rev 3159769… 与 fetch-dom-subset.sh 同步，vendor 于
+        // crates/engine/tests/fixtures/wpt-dom/——wpt-data/ 在 CI 会被重建，不可编译期引用）
+        include_str!("../../tests/fixtures/wpt-dom/common.js").to_string();
     let iframe_html = include_str!(
-        "../../../../tests/wpt-runner/wpt-data/dom/ranges/Range-test-iframe.html"
+        "../../tests/fixtures/wpt-dom/ranges/Range-test-iframe.html"
     )
     .to_string();
     let fetched_common = common_js.clone();
@@ -2610,9 +2612,11 @@ fn test_surround_chardata_path_r212() {
     let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
         std::sync::Arc::new(Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
     let common_js =
-        include_str!("../../../../tests/wpt-runner/wpt-data/dom/common.js").to_string();
+        // WPT dom/common.js（rev 3159769… 与 fetch-dom-subset.sh 同步，vendor 于
+        // crates/engine/tests/fixtures/wpt-dom/——wpt-data/ 在 CI 会被重建，不可编译期引用）
+        include_str!("../../tests/fixtures/wpt-dom/common.js").to_string();
     let iframe_html = include_str!(
-        "../../../../tests/wpt-runner/wpt-data/dom/ranges/Range-test-iframe.html"
+        "../../tests/fixtures/wpt-dom/ranges/Range-test-iframe.html"
     )
     .to_string();
     let fetched_common = common_js.clone();
@@ -2794,9 +2798,11 @@ fn test_iframe_docelement_structure_r214() {
     let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
         std::sync::Arc::new(Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
     let common_js =
-        include_str!("../../../../tests/wpt-runner/wpt-data/dom/common.js").to_string();
+        // WPT dom/common.js（rev 3159769… 与 fetch-dom-subset.sh 同步，vendor 于
+        // crates/engine/tests/fixtures/wpt-dom/——wpt-data/ 在 CI 会被重建，不可编译期引用）
+        include_str!("../../tests/fixtures/wpt-dom/common.js").to_string();
     let iframe_html = include_str!(
-        "../../../../tests/wpt-runner/wpt-data/dom/ranges/Range-test-iframe.html"
+        "../../tests/fixtures/wpt-dom/ranges/Range-test-iframe.html"
     )
     .to_string();
     let fetched_common = common_js.clone();
@@ -2951,9 +2957,11 @@ fn test_iframe_docelement_in_doctree_r216() {
     let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
         std::sync::Arc::new(Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
     let common_js =
-        include_str!("../../../../tests/wpt-runner/wpt-data/dom/common.js").to_string();
+        // WPT dom/common.js（rev 3159769… 与 fetch-dom-subset.sh 同步，vendor 于
+        // crates/engine/tests/fixtures/wpt-dom/——wpt-data/ 在 CI 会被重建，不可编译期引用）
+        include_str!("../../tests/fixtures/wpt-dom/common.js").to_string();
     let iframe_html = include_str!(
-        "../../../../tests/wpt-runner/wpt-data/dom/ranges/Range-test-iframe.html"
+        "../../tests/fixtures/wpt-dom/ranges/Range-test-iframe.html"
     )
     .to_string();
     let fetched_common = common_js.clone();
@@ -3179,9 +3187,11 @@ fn test_iframe_testnodes_method_face_r209() {
     let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
         std::sync::Arc::new(Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
     let common_js =
-        include_str!("../../../../tests/wpt-runner/wpt-data/dom/common.js").to_string();
+        // WPT dom/common.js（rev 3159769… 与 fetch-dom-subset.sh 同步，vendor 于
+        // crates/engine/tests/fixtures/wpt-dom/——wpt-data/ 在 CI 会被重建，不可编译期引用）
+        include_str!("../../tests/fixtures/wpt-dom/common.js").to_string();
     let iframe_html = include_str!(
-        "../../../../tests/wpt-runner/wpt-data/dom/ranges/Range-test-iframe.html"
+        "../../tests/fixtures/wpt-dom/ranges/Range-test-iframe.html"
     )
     .to_string();
     let fetched_common = common_js.clone();
