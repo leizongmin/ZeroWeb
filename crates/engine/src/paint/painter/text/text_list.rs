@@ -16,6 +16,8 @@ use zero_style_system::{ComputedStyle, ContentComputedValue};
 use crate::paint::color::color_value_to_render;
 use crate::paint::helpers::image_resource_key;
 
+const MAX_COUNTER_PAD_WIDTH: usize = 1024;
+
 /// 将正整数转为大写罗马数字（lowercase 由调用方 `to_lowercase()`）。
 fn to_roman(mut num: usize) -> String {
     if num == 0 {
@@ -266,6 +268,11 @@ fn to_hebrew(value: usize) -> String {
     result
 }
 
+struct CounterRepresentation {
+    text: String,
+    symbol_count: usize,
+}
+
 /// R2392/R2394：按 `@counter-style` 的 system 算法生成计数器表示（marker body，不含 prefix/suffix）。
 /// CSS Counter Styles 3 §3.1.4。`None` = 该值无法表示（超出 range / 系统不支持）→ 调用方走 fallback。
 /// R2394 注：additive/range/extends 应用经 A/B 量证为 net-negative（driving WPT 全 font-wall dice/
@@ -274,84 +281,153 @@ fn to_hebrew(value: usize) -> String {
 /// cyclic 数学取模修正。
 fn counter_style_body(rule: &zero_css_parser::ast::CounterStyleRule, value: i64) -> Option<String> {
     use zero_css_parser::ast::CounterSystem;
-    let syms = &rule.symbols;
-    let len = syms.len();
-    if len == 0 {
+    if rule.range.as_ref().is_some_and(|ranges| {
+        !ranges
+            .iter()
+            .any(|(lower, upper)| (*lower as i64) <= value && value <= (*upper as i64))
+    }) {
         return None;
     }
+
+    let is_negative = value < 0 && !matches!(rule.system, CounterSystem::Cyclic);
+    let body_value = if is_negative { value.checked_abs()? } else { value };
+    let body = counter_style_raw_body(rule, body_value)?;
+    let (negative_prefix, negative_suffix): (&str, &str) = if is_negative {
+        (rule.negative.0.as_str(), rule.negative.1.as_str())
+    } else {
+        ("", "")
+    };
+    let negative_symbol_count = usize::from(!negative_prefix.is_empty()) + usize::from(!negative_suffix.is_empty());
+    let representation_symbol_count = body.symbol_count.saturating_add(negative_symbol_count);
+    let pad = rule
+        .pad
+        .as_ref()
+        .map(|(width, symbol)| {
+            let width = usize::try_from(*width).unwrap_or(0).min(MAX_COUNTER_PAD_WIDTH);
+            let needed = width.saturating_sub(representation_symbol_count);
+            symbol.repeat(needed)
+        })
+        .unwrap_or_default();
+    Some(format!("{negative_prefix}{pad}{}{negative_suffix}", body.text))
+}
+
+fn counter_style_raw_body(rule: &zero_css_parser::ast::CounterStyleRule, value: i64) -> Option<CounterRepresentation> {
+    use zero_css_parser::ast::CounterSystem;
+    let syms = &rule.symbols;
+    let len = syms.len();
     match rule.system {
         // R2394：cyclic 用数学取模（rem_euclid），表示任意整数（含 0/负数）；CSS §3.1.4 cyclic
         // 不限值域。旧 `value < 1 → None` 致 disclosure-* 等 cyclic value 0 永远 fallback。
-        CounterSystem::Cyclic => Some(syms[(value - 1).rem_euclid(len as i64) as usize].clone()),
+        CounterSystem::Cyclic if len > 0 => Some(CounterRepresentation {
+            text: syms[(value - 1).rem_euclid(len as i64) as usize].clone(),
+            symbol_count: 1,
+        }),
         // fixed [N]：symbols[value - first]；超出 symbols 范围走 fallback。
-        CounterSystem::Fixed(first) => {
+        CounterSystem::Fixed(first) if len > 0 => {
             let first = first.unwrap_or(1) as i64;
             if value < first {
                 return None;
             }
             let offset = value - first;
             if (offset as usize) < len {
-                Some(syms[offset as usize].clone())
+                Some(CounterRepresentation {
+                    text: syms[offset as usize].clone(),
+                    symbol_count: 1,
+                })
             } else {
                 None
             }
         }
         // symbolic：symbols[(value-1) % len] × ceil(value/len) 次（value >= 1）。
-        CounterSystem::Symbolic => {
+        CounterSystem::Symbolic if len > 0 => {
             if value < 1 {
                 return None;
             }
             let idx = ((value - 1) as usize) % len;
             let reps = ((value - 1) as usize) / len + 1;
-            Some(syms[idx].repeat(reps))
+            Some(CounterRepresentation {
+                text: syms[idx].repeat(reps),
+                symbol_count: reps,
+            })
         }
         // alphabetic：双射 base-len（无零位，类似 Excel 列名）。value >= 1。
-        CounterSystem::Alphabetic => {
+        CounterSystem::Alphabetic if len > 0 => {
             if value < 1 || len < 2 {
                 // len < 2 无法表示 > 1 的值（spec：alphabetic 须 ≥2 symbols）。
                 return if len == 1 && value == 1 {
-                    Some(syms[0].clone())
+                    Some(CounterRepresentation {
+                        text: syms[0].clone(),
+                        symbol_count: 1,
+                    })
                 } else {
                     None
                 };
             }
             let mut n = value as usize;
-            let mut out = String::new();
+            let mut digits = Vec::new();
             while n > 0 {
                 n -= 1;
-                out.insert(0, syms[n % len].chars().next().unwrap_or(' '));
+                digits.push(n % len);
                 n /= len;
             }
-            Some(out)
+            digits.reverse();
+            Some(CounterRepresentation {
+                text: digits.iter().map(|&d| syms[d].as_str()).collect(),
+                symbol_count: digits.len(),
+            })
         }
         // numeric：标准 base-len（含零位）。value >= 0；value 0 → symbols[0]。
-        CounterSystem::Numeric => {
+        CounterSystem::Numeric if len > 0 => {
             if value < 0 || len < 2 {
                 return if len == 1 && (0..=1).contains(&value) {
-                    Some(syms[0].clone())
+                    Some(CounterRepresentation {
+                        text: syms[0].clone(),
+                        symbol_count: 1,
+                    })
                 } else {
                     None
                 };
             }
             let mut n = value as usize;
             if n == 0 {
-                return Some(syms[0].clone());
+                return Some(CounterRepresentation {
+                    text: syms[0].clone(),
+                    symbol_count: 1,
+                });
             }
             let mut digits: Vec<usize> = Vec::new();
             while n > 0 {
                 digits.push(n % len);
                 n /= len;
             }
-            // digits 收集为低位在前，输出需反转并取每 symbol 首字符。
-            let out: String = digits
-                .iter()
-                .rev()
-                .map(|&d| syms[d].chars().next().unwrap_or(' '))
-                .collect();
-            Some(out)
+            let text: String = digits.iter().rev().map(|&d| syms[d].as_str()).collect();
+            Some(CounterRepresentation {
+                text,
+                symbol_count: digits.len(),
+            })
         }
-        // additive / extends：应用 defer（R2394 A/B 量证 net-negative，见函数注释）→ None（fallback）。
+        // R3743：descriptor-negative/pad WPT 依赖 `extends decimal` / `extends upper-roman`。
+        // 先只闭合这两个预定义基样式，additive 与其他 extends 应用仍 defer。
+        CounterSystem::Extends(ref name) if name == "decimal" => {
+            let text = value.to_string();
+            Some(CounterRepresentation {
+                symbol_count: text.len(),
+                text,
+            })
+        }
+        CounterSystem::Extends(ref name) if name == "upper-roman" => {
+            if value == 0 {
+                return None;
+            }
+            let text = to_roman(value.max(0) as usize);
+            Some(CounterRepresentation {
+                symbol_count: text.chars().count(),
+                text,
+            })
+        }
+        // additive / most extends：应用 defer（R2394 A/B 量证 net-negative，见函数注释）→ None（fallback）。
         CounterSystem::Additive | CounterSystem::Extends(_) => None,
+        _ => None,
     }
 }
 
@@ -616,9 +692,10 @@ impl super::super::Painter {
                 // 优先使用 CSS counter "list-item"，回退到兄弟索引
                 let index = self
                     .get_counter("list-item")
-                    .map(|v| v as usize)
                     .unwrap_or_else(|| self.compute_list_item_index(doc, node_id));
-                let text = if matches!(style.list_style_type, ListStyleTypeValue::DecimalLeadingZero) && index < 10 {
+                let text = if matches!(style.list_style_type, ListStyleTypeValue::DecimalLeadingZero)
+                    && (0..10).contains(&index)
+                {
                     format!("0{index}.")
                 } else {
                     format!("{index}.")
@@ -647,7 +724,6 @@ impl super::super::Painter {
             ListStyleTypeValue::LowerAlpha | ListStyleTypeValue::UpperAlpha => {
                 let index = self
                     .get_counter("list-item")
-                    .map(|v| v as usize)
                     .unwrap_or_else(|| self.compute_list_item_index(doc, node_id));
                 let ch = if index > 0 && index <= 26 {
                     let base = if matches!(style.list_style_type, ListStyleTypeValue::LowerAlpha) {
@@ -655,7 +731,7 @@ impl super::super::Painter {
                     } else {
                         b'A'
                     };
-                    (base + (index - 1) as u8) as char
+                    (base + (index as u8 - 1)) as char
                 } else {
                     '?'
                 };
@@ -684,13 +760,16 @@ impl super::super::Painter {
             ListStyleTypeValue::LowerRoman | ListStyleTypeValue::UpperRoman => {
                 let index = self
                     .get_counter("list-item")
-                    .map(|v| v as usize)
                     .unwrap_or_else(|| self.compute_list_item_index(doc, node_id));
-                let roman = to_roman(index);
-                let text = if matches!(style.list_style_type, ListStyleTypeValue::LowerRoman) {
-                    format!("{}.", roman.to_lowercase())
+                let text = if index <= 0 {
+                    format!("{index}.")
                 } else {
-                    format!("{roman}.")
+                    let roman = to_roman(index as usize);
+                    if matches!(style.list_style_type, ListStyleTypeValue::LowerRoman) {
+                        format!("{}.", roman.to_lowercase())
+                    } else {
+                        format!("{roman}.")
+                    }
                 };
                 let mut char_x = actual_marker_x;
                 let char_y = marker_y + font_size;
@@ -738,33 +817,32 @@ impl super::super::Painter {
             | ListStyleTypeValue::CjkDecimal => {
                 let index = self
                     .get_counter("list-item")
-                    .map(|v| v as usize)
                     .unwrap_or_else(|| self.compute_list_item_index(doc, node_id));
                 // lower-armenian = armenian 算法输出 + Unicode to_lowercase（Armenian 双层壳，
                 // U+0531→U+0561 等；Rust 用 Unicode case folding，ground-truth 验证 1=ա/9999=քջղթ）。
                 // R2471 numeric scripts：base = 该脚本 DIGIT ZERO 码点（U+0966/09E6/0AE6/0A66/
                 // 0CE6/0D66/0BE6/0C66/0ED0/17E0/1040）。
                 let body = match style.list_style_type {
-                    ListStyleTypeValue::LowerGreek => to_greek(index),
-                    ListStyleTypeValue::Persian => to_persian(index),
-                    ListStyleTypeValue::Armenian => to_armenian(index),
-                    ListStyleTypeValue::LowerArmenian => to_armenian(index).to_lowercase(),
-                    ListStyleTypeValue::Georgian => to_georgian(index),
-                    ListStyleTypeValue::Hebrew => to_hebrew(index),
-                    ListStyleTypeValue::ArabicIndic => to_arabic_indic(index),
-                    ListStyleTypeValue::Devanagari => to_digit_script(index, 0x0966),
-                    ListStyleTypeValue::Bengali => to_digit_script(index, 0x09E6),
-                    ListStyleTypeValue::Gujarati => to_digit_script(index, 0x0AE6),
-                    ListStyleTypeValue::Gurmukhi => to_digit_script(index, 0x0A66),
-                    ListStyleTypeValue::Kannada => to_digit_script(index, 0x0CE6),
-                    ListStyleTypeValue::Malayalam => to_digit_script(index, 0x0D66),
-                    ListStyleTypeValue::Tamil => to_digit_script(index, 0x0BE6),
-                    ListStyleTypeValue::Telugu => to_digit_script(index, 0x0C66),
-                    ListStyleTypeValue::Lao => to_digit_script(index, 0x0ED0),
-                    ListStyleTypeValue::Khmer => to_digit_script(index, 0x17E0),
-                    ListStyleTypeValue::Myanmar => to_digit_script(index, 0x1040),
-                    ListStyleTypeValue::CjkDecimal => to_cjk_decimal(index),
-                    _ => unreachable!(),
+                    ListStyleTypeValue::LowerGreek if index > 0 => to_greek(index as usize),
+                    ListStyleTypeValue::Persian if index >= 0 => to_persian(index as usize),
+                    ListStyleTypeValue::Armenian if index > 0 => to_armenian(index as usize),
+                    ListStyleTypeValue::LowerArmenian if index > 0 => to_armenian(index as usize).to_lowercase(),
+                    ListStyleTypeValue::Georgian if index > 0 => to_georgian(index as usize),
+                    ListStyleTypeValue::Hebrew if index > 0 => to_hebrew(index as usize),
+                    ListStyleTypeValue::ArabicIndic if index >= 0 => to_arabic_indic(index as usize),
+                    ListStyleTypeValue::Devanagari if index >= 0 => to_digit_script(index as usize, 0x0966),
+                    ListStyleTypeValue::Bengali if index >= 0 => to_digit_script(index as usize, 0x09E6),
+                    ListStyleTypeValue::Gujarati if index >= 0 => to_digit_script(index as usize, 0x0AE6),
+                    ListStyleTypeValue::Gurmukhi if index >= 0 => to_digit_script(index as usize, 0x0A66),
+                    ListStyleTypeValue::Kannada if index >= 0 => to_digit_script(index as usize, 0x0CE6),
+                    ListStyleTypeValue::Malayalam if index >= 0 => to_digit_script(index as usize, 0x0D66),
+                    ListStyleTypeValue::Tamil if index >= 0 => to_digit_script(index as usize, 0x0BE6),
+                    ListStyleTypeValue::Telugu if index >= 0 => to_digit_script(index as usize, 0x0C66),
+                    ListStyleTypeValue::Lao if index >= 0 => to_digit_script(index as usize, 0x0ED0),
+                    ListStyleTypeValue::Khmer if index >= 0 => to_digit_script(index as usize, 0x17E0),
+                    ListStyleTypeValue::Myanmar if index >= 0 => to_digit_script(index as usize, 0x1040),
+                    ListStyleTypeValue::CjkDecimal if index >= 0 => to_cjk_decimal(index as usize),
+                    _ => index.to_string(),
                 };
                 let text = format!("{body}.");
                 let mut char_x = actual_marker_x;
@@ -817,19 +895,17 @@ impl super::super::Painter {
             // → prefix+body+suffix。未定义 / 超出 range → fallback（decimal "N."）。
             // R2394 注：additive/extends 应用 defer（A/B net-negative，见 counter_style_body 注释）。
             ListStyleTypeValue::Custom(name) => {
-                let index = self
+                let value = self
                     .get_counter("list-item")
-                    .map(|v| v as usize)
                     .unwrap_or_else(|| self.compute_list_item_index(doc, node_id));
-                let value = index as i64;
                 let text = match self.counter_styles.get(name) {
                     Some(rule) => match counter_style_body(rule, value) {
                         Some(body) => format!("{}{}{}", rule.prefix, body, rule.suffix),
                         // body 超出 range → fallback（decimal）。
-                        None => format!("{index}."),
+                        None => format!("{value}."),
                     },
                     // 未定义的自定义名 → fallback decimal（CSS Counter Styles 3 §3.1.3）。
-                    None => format!("{index}."),
+                    None => format!("{value}."),
                 };
                 let mut char_x = actual_marker_x;
                 let char_y = marker_y + font_size;
@@ -856,8 +932,8 @@ impl super::super::Painter {
     }
 
     /// 计算当前列表项在其兄弟中的 1-based 索引。
-    fn compute_list_item_index(&self, doc: &Document, node_id: NodeId) -> usize {
-        list_item_counter(doc, node_id) as usize
+    fn compute_list_item_index(&self, doc: &Document, node_id: NodeId) -> i64 {
+        list_item_counter(doc, node_id)
     }
 }
 
@@ -869,11 +945,10 @@ pub(super) fn list_item_counter(doc: &Document, node_id: NodeId) -> i64 {
         Some(id) => id,
         None => return 1,
     };
-    // <ol start=N>：默认 1；负数/非数字忽略（HTML4 start 须为整数）。
+    // <ol start=N>：默认 1；CSS list-item counter 允许负数，非数字忽略。
     let start: i64 = doc
         .get_attribute(parent_id, "start")
         .and_then(|v| v.trim().parse::<i64>().ok())
-        .filter(|&n| n >= 1)
         .unwrap_or(1);
     let mut counter = start;
     let mut found = false;
@@ -901,9 +976,9 @@ pub(super) fn list_item_counter(doc: &Document, node_id: NodeId) -> i64 {
         .get_attribute(node_id, "value")
         .and_then(|s| s.trim().parse::<i64>().ok())
     {
-        return v.max(1);
+        return v;
     }
-    counter.max(1)
+    counter
 }
 
 fn is_li(doc: &Document, id: NodeId) -> bool {
@@ -1051,6 +1126,16 @@ mod tests {
         assert_eq!(list_item_counter(&doc, li(&doc, 3)), 11); // K（从 10+1 继续）
     }
 
+    /// R3743：负数 `start`/`value` 进入 list-item counter，供 @counter-style negative descriptor 使用。
+    #[test]
+    fn list_counter_allows_negative_start_and_value_attrs() {
+        let doc = parse_html("<ol start=\"-2\"><li>a</li><li>b</li><li value=\"-5\">c</li><li>d</li></ol>");
+        assert_eq!(list_item_counter(&doc, li(&doc, 0)), -2);
+        assert_eq!(list_item_counter(&doc, li(&doc, 1)), -1);
+        assert_eq!(list_item_counter(&doc, li(&doc, 2)), -5);
+        assert_eq!(list_item_counter(&doc, li(&doc, 3)), -4);
+    }
+
     /// 无 start=/value= 时等价 1-based 兄弟位置（向后兼容，R1701 前行为）。
     #[test]
     fn list_counter_default_is_one_based_position() {
@@ -1083,6 +1168,8 @@ mod tests {
             suffix: ". ".to_string(),
             fallback: "decimal".to_string(),
             range: None,
+            negative: ("-".to_string(), String::new()),
+            pad: None,
         }
     }
 
@@ -1145,6 +1232,47 @@ mod tests {
         assert_eq!(counter_style_body(&r, 3).unwrap(), "10"); // base-3 进位
         assert_eq!(counter_style_body(&r, 4).unwrap(), "11");
         assert_eq!(counter_style_body(&r, 6).unwrap(), "20");
+    }
+
+    #[test]
+    /// R3743：`pad` 在生成 marker body 后补齐到最小宽度（对齐 descriptor-pad.html）。
+    fn test_counter_style_pad_applies_to_body() {
+        let mut r = cs_rule(zero_css_parser::ast::CounterSystem::Numeric, &["0", "1", "2"]);
+        r.pad = Some((3, "0".to_string()));
+        assert_eq!(counter_style_body(&r, 0).unwrap(), "000");
+        assert_eq!(counter_style_body(&r, 1).unwrap(), "001");
+        assert_eq!(counter_style_body(&r, 4).unwrap(), "011");
+
+        let mut alphabetic = cs_rule(zero_css_parser::ast::CounterSystem::Alphabetic, &["a", "b"]);
+        alphabetic.pad = Some((3, "o".to_string()));
+        assert_eq!(counter_style_body(&alphabetic, 1).unwrap(), "ooa");
+        assert_eq!(counter_style_body(&alphabetic, 3).unwrap(), "oaa");
+    }
+
+    #[test]
+    /// R3743：负号包装和 pad 顺序对齐 descriptor-pad.html：padding 插入负号后、主体前。
+    fn test_counter_style_negative_and_pad_match_wpt_order() {
+        let mut r = cs_rule(zero_css_parser::ast::CounterSystem::Extends("decimal".to_string()), &[]);
+        r.negative = ("(".to_string(), ")".to_string());
+        r.pad = Some((3, "0".to_string()));
+        assert_eq!(counter_style_body(&r, -2).unwrap(), "(2)");
+        assert_eq!(counter_style_body(&r, 0).unwrap(), "000");
+        assert_eq!(counter_style_body(&r, 1).unwrap(), "001");
+    }
+
+    #[test]
+    /// R3743：显式 range 在 marker 格式化时生效，超出范围走 fallback。
+    fn test_counter_style_range_applies_before_pad() {
+        let mut r = cs_rule(
+            zero_css_parser::ast::CounterSystem::Extends("upper-roman".to_string()),
+            &[],
+        );
+        r.range = Some(vec![(i32::MIN, 5)]);
+        r.pad = Some((3, "*".to_string()));
+        assert_eq!(counter_style_body(&r, 4).unwrap(), "*IV");
+        assert_eq!(counter_style_body(&r, 5).unwrap(), "**V");
+        assert!(counter_style_body(&r, 0).is_none());
+        assert!(counter_style_body(&r, 6).is_none());
     }
 
     #[test]

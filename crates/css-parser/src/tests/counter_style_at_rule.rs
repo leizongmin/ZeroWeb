@@ -235,6 +235,48 @@ fn test_parse_counter_style_descriptors() {
 }
 
 #[test]
+/// R3743：`pad` descriptor 接受 `<integer [0,∞]> && <symbol>`，两个分量顺序无关。
+fn test_parse_counter_style_pad_descriptor() {
+    let cs = first_counter_style("@counter-style padded { system: numeric; symbols: '0' '1'; pad: 3 '0'; }");
+    assert_eq!(cs.pad, Some((3, "0".to_string())));
+
+    let cs = first_counter_style(
+        "@counter-style padded {
+            system: numeric;
+            symbols: '0' '1';
+            pad: '*' calc(2 + sign(100em - 1px));
+        }",
+    );
+    assert_eq!(cs.pad, Some((3, "*".to_string())));
+}
+
+#[test]
+/// R3743：非法 `pad` descriptor 被忽略，不能屏蔽后续合法声明。
+fn test_parse_counter_style_pad_rejects_invalid_descriptor() {
+    let css = "@counter-style padded { system: numeric; symbols: '0' '1'; pad: -1 '0'; pad: 1 2; pad: '*' 2; }";
+    let cs = first_counter_style(css);
+    assert_eq!(cs.pad, Some((2, "*".to_string())));
+}
+
+#[test]
+/// R3743：`negative` descriptor 接受一到两个 `<symbol>`，缺省为 `-` + 空后缀。
+fn test_parse_counter_style_negative_descriptor() {
+    let cs = first_counter_style("@counter-style neg { system: numeric; symbols: '0' '1'; negative: '(' ')'; }");
+    assert_eq!(cs.negative, ("(".to_string(), ")".to_string()));
+
+    let cs = first_counter_style("@counter-style neg { system: numeric; symbols: '0' '1'; negative: '~'; }");
+    assert_eq!(cs.negative, ("~".to_string(), String::new()));
+}
+
+#[test]
+/// R3743：非法 `negative` descriptor 被忽略，不能覆盖默认值或后续合法声明。
+fn test_parse_counter_style_negative_rejects_invalid_descriptor() {
+    let css = "@counter-style neg { system: numeric; symbols: '0' '1'; negative: 1; negative: '*' '*'; }";
+    let cs = first_counter_style(css);
+    assert_eq!(cs.negative, ("*".to_string(), "*".to_string()));
+}
+
+#[test]
 /// R3737：`prefix`/`suffix` descriptor 必须是单个 `<symbol>`，非法值应被忽略。
 fn test_parse_counter_style_prefix_suffix_reject_invalid_symbols() {
     let css = r##"@counter-style a {

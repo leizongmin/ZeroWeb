@@ -492,6 +492,8 @@ impl<'a> Parser<'a> {
         let mut suffix: Option<String> = None;
         let mut fallback: Option<String> = None;
         let mut range_raw: Option<String> = None;
+        let mut negative: Option<(String, String)> = None;
+        let mut pad: Option<(i32, String)> = None;
         for decl in &declarations {
             match decl.property.to_ascii_lowercase().as_str() {
                 "system" if system.is_none() => system = Some(decl.value.trim().to_string()),
@@ -501,6 +503,8 @@ impl<'a> Parser<'a> {
                 "suffix" if suffix.is_none() => suffix = parse_counter_affix_symbol(decl.value.trim()),
                 "fallback" if fallback.is_none() => fallback = parse_counter_style_name_reference(decl.value.trim()),
                 "range" if range_raw.is_none() => range_raw = Some(decl.value.trim().to_string()),
+                "negative" if negative.is_none() => negative = parse_counter_negative(decl.value.trim()),
+                "pad" if pad.is_none() => pad = parse_counter_pad(decl.value.trim()),
                 _ => {}
             }
         }
@@ -543,6 +547,8 @@ impl<'a> Parser<'a> {
             suffix: suffix.unwrap_or_else(|| ". ".to_string()),
             fallback: fallback.unwrap_or_else(|| "decimal".to_string()),
             range,
+            negative: negative.unwrap_or_else(|| ("-".to_string(), String::new())),
+            pad,
         })
     }
 

@@ -207,8 +207,8 @@ pub enum CounterSystem {
 /// @counter-style 规则（CSS Counter Styles 3 §3）。
 ///
 /// 格式：`@counter-style <name> { system: cyclic; symbols: "a" "b"; suffix: ") "; }`
-/// 解析 `system`/`symbols`/`additive-symbols`/`prefix`/`suffix`/`fallback`/`range` 描述符
-/// 为类型化字段；`negative`/`pad`/`speak-as` 描述符 slice 2 仍忽略（应用 defer）。
+/// 解析 `system`/`symbols`/`additive-symbols`/`prefix`/`suffix`/`fallback`/`range`/`negative`/`pad`
+/// 描述符为类型化字段；`speak-as` 描述符 slice 2 仍忽略（应用 defer）。
 /// 非法规则（无名 / 无 system / symbols 不足 / additive 无 additive-symbols）返回 None 由上层丢弃。
 #[derive(Debug, Clone)]
 pub struct CounterStyleRule {
@@ -231,6 +231,12 @@ pub struct CounterStyleRule {
     /// `None` = 缺省（按系统默认 range；slice 2 仅应用此显式 range）。
     /// driving: R2394 slice 2（extends + range 越界 fallback 所需）。
     pub range: Option<Vec<(i32, i32)>>,
+    /// `negative` 描述符（缺省 `("-", "")`）。
+    /// https://drafts.csswg.org/css-counter-styles-3/#counter-style-negative
+    pub negative: (String, String),
+    /// `pad` 描述符（`<integer [0,∞]> && <symbol>`）；`None` = 无 padding。
+    /// https://drafts.csswg.org/css-counter-styles-3/#counter-style-pad
+    pub pad: Option<(i32, String)>,
 }
 
 /// @keyframes 规则。

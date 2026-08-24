@@ -253,6 +253,36 @@ pub(super) fn parse_counter_affix_symbol(value: &str) -> Option<String> {
     }
 }
 
+/// 解析 `negative` 描述符（CSS Counter Styles 3 §3.1.10）。
+///
+/// https://drafts.csswg.org/css-counter-styles-3/#counter-style-negative
+/// 语法为 `<symbol> <symbol>?`；非法 token 或多余 component value 整体拒绝。
+pub(super) fn parse_counter_negative(value: &str) -> Option<(String, String)> {
+    let tokens = split_top_level_whitespace(value)?;
+    match tokens.as_slice() {
+        [prefix] => Some((parse_counter_affix_symbol(prefix)?, String::new())),
+        [prefix, suffix] => Some((parse_counter_affix_symbol(prefix)?, parse_counter_affix_symbol(suffix)?)),
+        _ => None,
+    }
+}
+
+/// 解析 `pad` 描述符（CSS Counter Styles 3 §3.1.9）。
+///
+/// https://drafts.csswg.org/css-counter-styles-3/#counter-style-pad
+/// 语法为 `<integer [0,∞]> && <symbol>`；整数与符号顺序可互换，整数可使用 `calc()`。
+pub(super) fn parse_counter_pad(value: &str) -> Option<(i32, String)> {
+    let tokens = split_top_level_whitespace(value)?;
+    if tokens.len() != 2 {
+        return None;
+    }
+    let (width, symbol) = match (parse_counter_integer(tokens[0]), parse_counter_integer(tokens[1])) {
+        (Some(width), None) => (width, parse_counter_affix_symbol(tokens[1])?),
+        (None, Some(width)) => (width, parse_counter_affix_symbol(tokens[0])?),
+        _ => return None,
+    };
+    (width >= 0).then_some((width, symbol))
+}
+
 /// 解析 `additive-symbols` 描述符（CSS Counter Styles 3 §3.1.8）。
 ///
 /// https://www.w3.org/TR/css-counter-styles-3/#the-additive-symbols-descriptor
