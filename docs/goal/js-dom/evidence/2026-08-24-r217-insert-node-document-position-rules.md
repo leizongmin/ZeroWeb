@@ -41,4 +41,4 @@ ensurePreInsertionValidity switch）返 HRE → "did not throw"。
 
 ## 五、commit
 
-（落盘时待填）
+fc7b6e9a1
