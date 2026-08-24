@@ -1408,11 +1408,22 @@ rt.setStart(dc2, 3);
 rt.setEnd(dc2, 4);
 var tThrew = 'none';
 try { rt.surroundContents(document.createTextNode('z')); } catch (e) { tThrew = (e && e.name) || String(e); }
+// R230：Text 同节点容器的 leaf-newParent（Text 型）也先 extract（源 text 削为
+// 前缀 "Op"）再 insertNode 再抛 HRE（sim 序步骤 3-5；旧版源保留 "Opqrstuv"）。
+var dpara = document.createElement('p');
+var dtext = document.createTextNode('Opqrstuv');
+dpara.appendChild(dtext);
+var r9 = document.createRange();
+r9.setStart(dtext, 2);
+r9.setEnd(dtext, 8);
+var t9 = 'none';
+try { r9.surroundContents(document.createTextNode('z')); } catch (e) { t9 = (e && e.name) || String(e); }
 globalThis.__r228out = [
   'data:' + dc.data,
   'threw:' + threwName,
   'pi-so:' + rp.startOffset + ',pi-threw:' + pThrew,
   'leaf-data:' + dc2.data + ',leaf-threw:' + tThrew,
+  'r230:' + dtext.data + ',' + t9,
 ].join('|');
 "#,
         )
@@ -1420,7 +1431,7 @@ globalThis.__r228out = [
     let out = sandbox.execute("globalThis.__r228out").unwrap().value;
     assert_eq!(
         out,
-        "data:Stuwxyz|threw:HierarchyRequestError|pi-so:0,pi-threw:HierarchyRequestError|leaf-data:Stuwxyz,leaf-threw:HierarchyRequestError",
+        "data:Stuwxyz|threw:HierarchyRequestError|pi-so:0,pi-threw:HierarchyRequestError|leaf-data:Stuwxyz,leaf-threw:HierarchyRequestError|r230:Op,HierarchyRequestError",
         "R228/R229 detached comment 区间 surround：extract 切片 + HRE 上抛 + 同节点 collapse (容器, startOffset) + leaf-newParent 先 extract 再抛"
     );
 }

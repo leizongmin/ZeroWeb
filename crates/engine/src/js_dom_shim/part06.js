@@ -4120,6 +4120,14 @@
             else if (kids === null
               && (this.startContainer.nodeType === 3 || this.startContainer.nodeType === 4)
               && this.startContainer === this.endContainer) {
+              // R230（js-dom M4）：Text/CDATA 同节点容器的 leaf-newParent 同样
+              // **先 extract 再 insert**（sim 序：步骤 3 extract 变更源 data →
+              // 步骤 4 insertNode(newParent) → 步骤 5 appendChild(frag) 抛 HRE。
+              // 旧版只 insertNode 使源 text 保留区间原文（WPT
+              // Range-surroundContents 9,x「got "qrstuv"」族——expected 源已削
+              // 为前缀 + newParent 文本在位）。
+              // https://dom.spec.whatwg.org/#dom-range-surroundcontents
+              this.extractContents();
               this.insertNode(newParent);
             }
           } finally { globalThis._r215NoValidate = false; }
