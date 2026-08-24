@@ -52,4 +52,4 @@ ancestor → HRE。host 缺整个校验族（336F HRE 簇同根因）。
 
 ## 五、commit
 
-（落盘时待填）
+1bab18cb7
