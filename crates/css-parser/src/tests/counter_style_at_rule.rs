@@ -37,6 +37,50 @@ fn test_parse_counter_style_fixed_with_value() {
 }
 
 #[test]
+/// R3742：`@counter-style` 整数描述符接受可解析为整数的 `calc()`。
+fn test_parse_counter_style_integer_descriptors_accept_calc() {
+    let cs = first_counter_style("@counter-style b { system: fixed calc(1 + sign(100em - 1px)); symbols: g h; }");
+    assert_eq!(cs.system, CounterSystem::Fixed(Some(2)));
+
+    let cs = first_counter_style(
+        "@counter-style a {
+            system: extends upper-roman;
+            range: calc(2 - sign(100em - 1px)) calc(5 + sign(100em - 1px));
+        }",
+    );
+    assert_eq!(cs.range, Some(vec![(1, 6)]));
+
+    let cs = first_counter_style(
+        "@counter-style c {
+            system: additive;
+            additive-symbols: calc(2 + sign(100em - 1px)) c, 2 b, 1 a;
+        }",
+    );
+    assert_eq!(
+        cs.additive_symbols,
+        vec![(3, "c".to_string()), (2, "b".to_string()), (1, "a".to_string())]
+    );
+}
+
+#[test]
+/// R3742：整数描述符中的 `calc()` 必须求得有限 i32，不能放宽非法输入。
+fn test_parse_counter_style_integer_descriptors_reject_invalid_calc() {
+    for descriptor in [
+        "system: fixed calc(1em); symbols: a;",
+        "system: fixed calc(infinity); symbols: a;",
+        "system: fixed calc(2147483648); symbols: a;",
+        "system: additive; additive-symbols: calc(1em) a;",
+    ] {
+        let css = format!("@counter-style bad {{ {descriptor} }}");
+        let ws = Parser::parse_stylesheet(&css);
+        assert!(
+            !ws.rules.iter().any(|r| matches!(r, Rule::CounterStyle(_))),
+            "`{descriptor}` 应整体无效"
+        );
+    }
+}
+
+#[test]
 /// `system: fixed`（无首符号值）→ Fixed(None)。
 fn test_parse_counter_style_fixed_no_value() {
     let css = "@counter-style f { system: fixed; symbols: 'a'; }";

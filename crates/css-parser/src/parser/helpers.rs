@@ -6,7 +6,10 @@
 
 use crate::ast::*;
 use crate::tokenizer::{Token, Tokenizer};
-use crate::values::{BackgroundImageValue, parse_background_image};
+use crate::values::{
+    BackgroundImageValue, CalcContext, CalcExpr, CalcOp, UnaryMathOp, eval_calc_with_context, parse_background_image,
+    parse_math_function,
+};
 
 /// 解析容器条件文本。
 ///
@@ -170,7 +173,7 @@ fn is_counter_style_name_reference(name: &str) -> bool {
 /// driving: R2392。`None` = 非法 system（at-rule 无效）。
 pub(super) fn parse_counter_system(value: Option<&str>) -> Option<CounterSystem> {
     let v = value.unwrap_or("symbolic").trim(); // 缺省 symbolic
-    let parts: Vec<&str> = v.split_whitespace().collect();
+    let parts = split_top_level_whitespace(v)?;
     let head = parts.first()?.to_ascii_lowercase();
     let system = match head.as_str() {
         "cyclic" if parts.len() == 1 => CounterSystem::Cyclic,
@@ -179,7 +182,10 @@ pub(super) fn parse_counter_system(value: Option<&str>) -> Option<CounterSystem>
             if parts.len() > 2 {
                 return None;
             }
-            let first = parts.get(1).map(|s| s.parse::<i32>()).transpose().ok()?;
+            let first = match parts.get(1) {
+                Some(value) => Some(parse_counter_integer(value)?),
+                None => None,
+            };
             CounterSystem::Fixed(first)
         }
         "symbolic" if parts.len() == 1 => CounterSystem::Symbolic,
@@ -257,13 +263,13 @@ pub(super) fn parse_counter_affix_symbol(value: &str) -> Option<String> {
 pub(super) fn parse_counter_additive_symbols(value: &str) -> Option<Vec<(i32, String)>> {
     let mut pairs: Vec<(i32, String)> = Vec::new();
     let mut previous_weight: Option<i32> = None;
-    for part in value.split(',') {
-        let tokens: Vec<&str> = part.split_whitespace().collect();
+    for part in split_top_level_commas(value)? {
+        let tokens = split_top_level_whitespace(part)?;
         if tokens.len() != 2 {
             return None;
         }
         // 整数与符号二元组：整数可能在首或次位置。
-        let (weight, symbol) = match (tokens[0].parse::<i32>().ok(), tokens[1].parse::<i32>().ok()) {
+        let (weight, symbol) = match (parse_counter_integer(tokens[0]), parse_counter_integer(tokens[1])) {
             (Some(w), None) => (w, strip_css_quotes(tokens[1])),
             (None, Some(w)) => (w, strip_css_quotes(tokens[0])),
             _ => return None, // 两端都非整数 / 都为整数 → 非法对。
@@ -286,18 +292,18 @@ pub(super) fn parse_counter_additive_symbols(value: &str) -> Option<Vec<(i32, St
 /// driving: R2394 slice 2。
 pub(super) fn parse_counter_range(value: &str) -> Option<Vec<(i32, i32)>> {
     let lower = value.to_ascii_lowercase();
-    if lower.split_whitespace().eq(["auto"]) {
+    if split_top_level_whitespace(&lower)?.as_slice() == ["auto"] {
         return None;
     }
     let mut ranges = Vec::new();
-    for part in lower.split(',') {
-        let mut iter = part.split_whitespace();
-        // lower 为 infinite → -∞（i32::MIN）；upper 为 infinite → +∞（i32::MAX）。
-        let lo = parse_range_bound(iter.next()?, false)?;
-        let hi = parse_range_bound(iter.next()?, true)?;
-        if iter.next().is_some() {
+    for part in split_top_level_commas(&lower)? {
+        let bounds = split_top_level_whitespace(part)?;
+        if bounds.len() != 2 {
             return None;
         }
+        // lower 为 infinite → -∞（i32::MIN）；upper 为 infinite → +∞（i32::MAX）。
+        let lo = parse_range_bound(bounds[0], false)?;
+        let hi = parse_range_bound(bounds[1], true)?;
         if lo > hi {
             return None;
         }
@@ -310,8 +316,223 @@ pub(super) fn parse_counter_range(value: &str) -> Option<Vec<(i32, i32)>> {
 fn parse_range_bound(tok: &str, is_upper: bool) -> Option<i32> {
     match tok {
         "infinite" => Some(if is_upper { i32::MAX } else { i32::MIN }),
-        _ => tok.parse::<i32>().ok(),
+        _ => parse_counter_integer(tok),
     }
+}
+
+fn parse_counter_integer(value: &str) -> Option<i32> {
+    if let Ok(number) = value.trim().parse::<i32>() {
+        return Some(number);
+    }
+
+    // https://drafts.csswg.org/css-values-4/#calc-notation
+    // calc() may be used where an <integer> is expected; the result is rounded
+    // to the nearest integer, with ties toward positive infinity.
+    let expr = parse_math_function(value)?;
+    if !counter_integer_calc_has_number_type(&expr) {
+        return None;
+    }
+    let computed = eval_calc_with_context(&expr, &counter_style_calc_context())?;
+    if !computed.is_finite() {
+        return None;
+    }
+    let rounded = (computed + 0.5).floor();
+    if rounded < i32::MIN as f64 || rounded > i32::MAX as f64 {
+        return None;
+    }
+    Some(rounded as i32)
+}
+
+#[derive(Clone, Copy, PartialEq)]
+enum CounterCalcType {
+    Number,
+    Length,
+}
+
+fn counter_integer_calc_has_number_type(expr: &CalcExpr) -> bool {
+    counter_calc_type(expr) == Some(CounterCalcType::Number)
+}
+
+fn counter_calc_type(expr: &CalcExpr) -> Option<CounterCalcType> {
+    match expr {
+        CalcExpr::Number(_) => Some(CounterCalcType::Number),
+        CalcExpr::Length(_) => Some(CounterCalcType::Length),
+        CalcExpr::BinaryOp(left, op, right) => {
+            let left = counter_calc_type(left)?;
+            let right = counter_calc_type(right)?;
+            match op {
+                CalcOp::Add | CalcOp::Subtract if left == right => Some(left),
+                CalcOp::Multiply if left == CounterCalcType::Number && right == CounterCalcType::Number => {
+                    Some(CounterCalcType::Number)
+                }
+                CalcOp::Multiply
+                    if left == CounterCalcType::Number && right == CounterCalcType::Length
+                        || left == CounterCalcType::Length && right == CounterCalcType::Number =>
+                {
+                    Some(CounterCalcType::Length)
+                }
+                CalcOp::Divide if left == CounterCalcType::Number && right == CounterCalcType::Number => {
+                    Some(CounterCalcType::Number)
+                }
+                CalcOp::Divide if left == CounterCalcType::Length && right == CounterCalcType::Number => {
+                    Some(CounterCalcType::Length)
+                }
+                _ => None,
+            }
+        }
+        CalcExpr::Min(args) | CalcExpr::Max(args) => {
+            let mut iter = args.iter();
+            let first = counter_calc_type(iter.next()?)?;
+            iter.all(|arg| counter_calc_type(arg) == Some(first)).then_some(first)
+        }
+        CalcExpr::Clamp { min, val, max } => {
+            let min = counter_calc_type(min)?;
+            let val = counter_calc_type(val)?;
+            let max = counter_calc_type(max)?;
+            (min == val && val == max).then_some(val)
+        }
+        CalcExpr::UnaryOp(UnaryMathOp::Sign, inner) => counter_calc_type(inner).map(|_| CounterCalcType::Number),
+        CalcExpr::UnaryOp(UnaryMathOp::Abs, inner) => counter_calc_type(inner),
+        CalcExpr::UnaryOp(_, inner) => {
+            (counter_calc_type(inner)? == CounterCalcType::Number).then_some(CounterCalcType::Number)
+        }
+        CalcExpr::BinaryMathOp(_, left, right) => (counter_calc_type(left)? == CounterCalcType::Number
+            && counter_calc_type(right)? == CounterCalcType::Number)
+            .then_some(CounterCalcType::Number),
+    }
+}
+
+fn counter_style_calc_context() -> CalcContext {
+    CalcContext {
+        font_size: Some(16.0),
+        x_height: Some(16.0 * 0.8),
+        root_font_size: Some(16.0),
+        root_x_height: Some(16.0 * 0.8),
+        cap_height: Some(16.0 * 0.8),
+        root_cap_height: Some(16.0 * 0.8),
+        ch_width: Some(16.0 * 0.5),
+        root_ch_width: Some(16.0 * 0.5),
+        ic_width: Some(16.0),
+        root_ic_width: Some(16.0),
+        viewport_width: Some(800.0),
+        viewport_height: Some(600.0),
+        ..Default::default()
+    }
+}
+
+fn split_top_level_commas(input: &str) -> Option<Vec<&str>> {
+    split_top_level(input, ',')
+}
+
+fn split_top_level_whitespace(input: &str) -> Option<Vec<&str>> {
+    let mut parts = Vec::new();
+    let mut depth = 0i32;
+    let mut quote: Option<char> = None;
+    let mut escaped = false;
+    let mut start: Option<usize> = None;
+
+    for (idx, ch) in input.char_indices() {
+        if let Some(q) = quote {
+            if escaped {
+                escaped = false;
+            } else if ch == '\\' {
+                escaped = true;
+            } else if ch == q {
+                quote = None;
+            }
+            continue;
+        }
+
+        match ch {
+            '"' | '\'' => {
+                quote = Some(ch);
+                start.get_or_insert(idx);
+            }
+            '(' => {
+                depth += 1;
+                start.get_or_insert(idx);
+            }
+            ')' => {
+                depth -= 1;
+                if depth < 0 {
+                    return None;
+                }
+            }
+            ch if ch.is_whitespace() && depth == 0 => {
+                if let Some(begin) = start.take() {
+                    let part = input[begin..idx].trim();
+                    if !part.is_empty() {
+                        parts.push(part);
+                    }
+                }
+            }
+            _ => {
+                start.get_or_insert(idx);
+            }
+        }
+    }
+
+    if depth != 0 || quote.is_some() {
+        return None;
+    }
+    if let Some(begin) = start {
+        let part = input[begin..].trim();
+        if !part.is_empty() {
+            parts.push(part);
+        }
+    }
+    (!parts.is_empty()).then_some(parts)
+}
+
+fn split_top_level(input: &str, delimiter: char) -> Option<Vec<&str>> {
+    let mut parts = Vec::new();
+    let mut depth = 0i32;
+    let mut quote: Option<char> = None;
+    let mut escaped = false;
+    let mut start = 0usize;
+
+    for (idx, ch) in input.char_indices() {
+        if let Some(q) = quote {
+            if escaped {
+                escaped = false;
+            } else if ch == '\\' {
+                escaped = true;
+            } else if ch == q {
+                quote = None;
+            }
+            continue;
+        }
+
+        match ch {
+            '"' | '\'' => quote = Some(ch),
+            '(' => depth += 1,
+            ')' => {
+                depth -= 1;
+                if depth < 0 {
+                    return None;
+                }
+            }
+            ch if ch == delimiter && depth == 0 => {
+                let part = input[start..idx].trim();
+                if part.is_empty() {
+                    return None;
+                }
+                parts.push(part);
+                start = idx + ch.len_utf8();
+            }
+            _ => {}
+        }
+    }
+
+    if depth != 0 || quote.is_some() {
+        return None;
+    }
+    let part = input[start..].trim();
+    if part.is_empty() {
+        return None;
+    }
+    parts.push(part);
+    Some(parts)
 }
 
 /// 从 `src` 描述符值中提取所有 `url(...)` 内的 URL（按出现顺序，去引号）。
