@@ -99,6 +99,60 @@ fn test_parse_counter_style_descriptors() {
 }
 
 #[test]
+/// R3737：`prefix`/`suffix` descriptor 必须是单个 `<symbol>`，非法值应被忽略。
+fn test_parse_counter_style_prefix_suffix_reject_invalid_symbols() {
+    let css = r##"@counter-style a {
+        system: extends decimal;
+        prefix: "#";
+        prefix: *;
+        prefix: 0;
+        prefix: '$' '$';
+        suffix: ',';
+        suffix: *;
+        suffix: 0;
+        suffix: '$' '$';
+    }"##;
+    let cs = first_counter_style(css);
+    assert_eq!(
+        cs.prefix, "#",
+        "invalid prefix descriptors should not override the first valid one"
+    );
+    assert_eq!(
+        cs.suffix, ",",
+        "invalid suffix descriptors should not override the first valid one"
+    );
+}
+
+#[test]
+/// R3737：非法 `prefix`/`suffix` descriptor 在合法值之前出现时也必须被忽略。
+fn test_parse_counter_style_prefix_suffix_invalid_before_valid() {
+    let css = r##"@counter-style a {
+        system: extends decimal;
+        prefix: *;
+        prefix: "#";
+        suffix: 0;
+        suffix: ",";
+    }"##;
+    let cs = first_counter_style(css);
+    assert_eq!(cs.prefix, "#");
+    assert_eq!(cs.suffix, ",");
+}
+
+#[test]
+/// R3737：`prefix`/`suffix` 可接受单个 `<image>` symbol，保留原 descriptor 字面量。
+fn test_parse_counter_style_prefix_suffix_image_symbols() {
+    let css = r#"@counter-style image-affix {
+        system: cyclic;
+        symbols: "a";
+        prefix: url("https://example.com/foo.png");
+        suffix: linear-gradient(yellow, blue);
+    }"#;
+    let cs = first_counter_style(css);
+    assert_eq!(cs.prefix, "url(https://example.com/foo.png)");
+    assert_eq!(cs.suffix, "linear-gradient(yellow, blue)");
+}
+
+#[test]
 /// 裸字形（无引号）symbols：按空白切分。
 fn test_parse_counter_style_bare_symbols() {
     let css = "@counter-style dots { system: cyclic; symbols: ● ○ ■; }";
@@ -123,6 +177,12 @@ fn test_parse_counter_style_symbols_token_boundaries() {
     assert!(
         !ws.rules.iter().any(|r| matches!(r, Rule::CounterStyle(_))),
         "CSS-wide keywords are not valid custom-ident symbols"
+    );
+
+    let ws = Parser::parse_stylesheet("@counter-style bad { system: alphabetic; symbols: default \"X\"; }");
+    assert!(
+        !ws.rules.iter().any(|r| matches!(r, Rule::CounterStyle(_))),
+        "default is not a valid custom-ident symbol"
     );
 }
 

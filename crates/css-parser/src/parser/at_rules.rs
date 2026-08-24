@@ -494,8 +494,8 @@ impl<'a> Parser<'a> {
                 "system" if system.is_none() => system = Some(decl.value.trim().to_string()),
                 "symbols" if symbols_raw.is_none() => symbols_raw = Some(decl.value.trim().to_string()),
                 "additive-symbols" if additive_raw.is_none() => additive_raw = Some(decl.value.trim().to_string()),
-                "prefix" if prefix.is_none() => prefix = Some(strip_css_quotes(decl.value.trim())),
-                "suffix" if suffix.is_none() => suffix = Some(strip_css_quotes(decl.value.trim())),
+                "prefix" if prefix.is_none() => prefix = parse_counter_affix_symbol(decl.value.trim()),
+                "suffix" if suffix.is_none() => suffix = parse_counter_affix_symbol(decl.value.trim()),
                 "fallback" if fallback.is_none() => fallback = Some(decl.value.trim().to_string()),
                 "range" if range_raw.is_none() => range_raw = Some(decl.value.trim().to_string()),
                 _ => {}

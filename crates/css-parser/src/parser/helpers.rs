@@ -6,6 +6,7 @@
 
 use crate::ast::*;
 use crate::tokenizer::{Token, Tokenizer};
+use crate::values::{BackgroundImageValue, parse_background_image};
 
 /// 解析容器条件文本。
 ///
@@ -184,8 +185,38 @@ pub(super) fn split_counter_symbols(value: &str) -> Vec<String> {
 fn is_counter_symbol_ident(s: &str) -> bool {
     !matches!(
         s.to_ascii_lowercase().as_str(),
-        "initial" | "inherit" | "unset" | "revert" | "revert-layer"
+        "default" | "initial" | "inherit" | "unset" | "revert" | "revert-layer"
     )
+}
+
+/// 解析 `prefix` / `suffix` 的单个 `<symbol>` 描述符值（CSS Counter Styles 3 §3.1.6/§3.1.7）。
+///
+/// https://www.w3.org/TR/css-counter-styles-3/#typedef-symbol
+/// `<symbol>` 可为 string、image 或 custom-ident；多个 component value 或非法 token 整体拒绝。
+pub(super) fn parse_counter_affix_symbol(value: &str) -> Option<String> {
+    let value = value.trim();
+    if value.is_empty() {
+        return None;
+    }
+
+    if matches!(
+        parse_background_image(value),
+        Some(BackgroundImageValue::Url(_) | BackgroundImageValue::Gradient(_))
+    ) {
+        return Some(value.to_string());
+    }
+
+    let tokens: Vec<Token> = Tokenizer::new(value)
+        .filter_map(|spanned| match spanned.token {
+            Token::Whitespace | Token::Comment(_) => None,
+            token => Some(token),
+        })
+        .collect();
+    match tokens.as_slice() {
+        [Token::String(s)] => Some(s.clone()),
+        [Token::Ident(s)] if is_counter_symbol_ident(s) => Some(s.clone()),
+        _ => None,
+    }
 }
 
 /// 解析 `additive-symbols` 描述符（CSS Counter Styles 3 §3.1.8）。
