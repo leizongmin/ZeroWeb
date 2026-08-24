@@ -135,7 +135,7 @@ pub struct RenderPipeline {
     /// `pending_transition_events`）。
     pending_animation_events: Vec<AnimationEvent>,
     /// 缓存的基础样式（用于过渡检测，存储覆盖前的原始计算样式）。
-    cached_styles: HashMap<NodeId, ComputedStyle>,
+    pub(crate) cached_styles: HashMap<NodeId, ComputedStyle>,
     /// 文本表单控件的页面级当前值，独立于 HTML 内容属性。
     form_control_values: HashMap<NodeId, String>,
     /// js-dom M3 R100：跨 apply 的 handle→NodeId 持久表（同一 `cached_doc` 生命周期内，

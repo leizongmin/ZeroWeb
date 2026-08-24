@@ -672,6 +672,7 @@ fn test_property_supported_animation_and_transition() {
     assert!(is_property_supported("transition-delay", "-0.1s, 50ms"));
     assert!(is_property_supported("animation", "fade 1s linear infinite"));
     assert!(is_property_supported("animation-name", "fade, slide"));
+    assert!(is_property_supported("animation-name", "\"fade, in\", slide"));
     assert!(is_property_supported("animation-duration", "1s, 200ms"));
     assert!(is_property_supported(
         "animation-timing-function",
@@ -698,6 +699,8 @@ fn test_property_supported_animation_and_transition() {
     assert!(!is_property_supported("transition-delay", "0.1s, bogus"));
     assert!(!is_property_supported("animation", "fade slide 1s"));
     assert!(!is_property_supported("animation-name", "123"));
+    assert!(!is_property_supported("animation-name", "\"fade, in\","));
+    assert!(!is_property_supported("animation-name", "\"fade, in, slide"));
     assert!(!is_property_supported("animation-duration", "infs"));
     assert!(!is_property_supported(
         "animation-timing-function",

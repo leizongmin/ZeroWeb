@@ -829,6 +829,9 @@
     _rafBudget = 64;
     // R2946：每页首次脚本执行前反射 <body on*> → window.on*（幂等，按 page URL 去重）。
     if (typeof _zw_reflect_body_window_handlers === 'function') _zw_reflect_body_window_handlers();
+    if (typeof globalThis.__zwPollServiceWorkerRegistrations === 'function') {
+      globalThis.__zwPollServiceWorkerRegistrations();
+    }
   };
 
   // P1b S1（方案 A）异步回调 resolve 通道（JS 侧契约）：

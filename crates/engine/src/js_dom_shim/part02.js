@@ -3224,6 +3224,17 @@
           })(_registrations[i]._worker);
         }
       };
+      globalThis.__zwPollServiceWorkerRegistrations = function () {
+        if (!_registrations.length && !_controller) return;
+        ensureDocument();
+        for (var i = 0; i < _registrations.length; i++) {
+          pollRegistration(_registrations[i]);
+        }
+        // https://w3c.github.io/ServiceWorker/#navigator-service-worker-controller
+        // Keep the page-side controller projection aligned with host-owned
+        // activation when execute_script is the only event-loop driver.
+        refreshControllerFromHost(_container);
+      };
       function dispatchTargetEvent(target, type) {
         if (target && typeof target.dispatchEvent === 'function' &&
             typeof globalThis.Event === 'function') {

@@ -5,6 +5,7 @@ use zero_layout_engine::types::OverflowClip;
 use zero_render_foundation::geometry::Rect;
 
 use crate::pipeline::RenderPipeline;
+use crate::{BudgetAdvance, BudgetedRenderSession};
 
 /// A fixed-position box is anchored to the viewport and must not extend the
 /// root scrolling area.
@@ -1712,6 +1713,32 @@ fn render_with_dom_mutations_input_value_only_paints() {
         painted.contains("new value"),
         "updated control value must be painted: {painted:?}"
     );
+}
+
+#[test]
+fn budgeted_render_preserves_form_value_incremental_paint_cache() {
+    let mut pipeline = RenderPipeline::new(800.0, 600.0);
+    let mut session = BudgetedRenderSession::new(r#"<html><body><input id="name" value="old"></body></html>"#, "");
+    for _ in 0..8 {
+        if pipeline.advance_budgeted_render(&mut session, 1000.0) == BudgetAdvance::Complete {
+            break;
+        }
+    }
+    assert!(session.take_result().is_some(), "budgeted render should complete");
+
+    let mutation = crate::js_dom_bridge::DomMutation::SetFormValue {
+        selector: "#name".to_string(),
+        value: "new value".to_string(),
+    };
+    let (result, snapshot, _) = pipeline
+        .render_with_dom_mutations(std::slice::from_ref(&mutation), "")
+        .expect("value mutation after budget render applied");
+
+    assert!(snapshot.is_none(), "IDL value edit must not serialize HTML");
+    assert_eq!(result.timings.parse_count, 0);
+    assert_eq!(result.timings.style_count, 0);
+    assert_eq!(result.timings.layout_count, 0);
+    assert_eq!(result.timings.paint_count, 1);
 }
 
 /// IDL 当前值不改变 `[value]` 内容属性选择器，仍走 paint-only。

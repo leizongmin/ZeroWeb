@@ -530,19 +530,30 @@ fn comma_list_supported(value: &str, mut is_valid: impl FnMut(&str) -> bool) -> 
 }
 
 fn split_top_level_commas(value: &str) -> Option<Vec<&str>> {
+    // CSS comma-separated value lists split on top-level commas; quoted strings
+    // and nested function arguments keep their internal commas.
     let mut start = 0;
     let mut depth = 0i32;
+    let mut quote = None;
+    let mut escaped = false;
     let mut items = Vec::new();
     for (index, ch) in value.char_indices() {
+        if escaped {
+            escaped = false;
+            continue;
+        }
         match ch {
-            '(' => depth += 1,
-            ')' => {
+            '\\' if quote.is_some() => escaped = true,
+            '\'' | '"' if quote == Some(ch) => quote = None,
+            '\'' | '"' if quote.is_none() => quote = Some(ch),
+            '(' if quote.is_none() => depth += 1,
+            ')' if quote.is_none() => {
                 if depth == 0 {
                     return None;
                 }
                 depth -= 1;
             }
-            ',' if depth == 0 => {
+            ',' if quote.is_none() && depth == 0 => {
                 let item = value[start..index].trim();
                 if item.is_empty() {
                     return None;
@@ -553,7 +564,7 @@ fn split_top_level_commas(value: &str) -> Option<Vec<&str>> {
             _ => {}
         }
     }
-    if depth != 0 {
+    if quote.is_some() || depth != 0 {
         return None;
     }
     let item = value[start..].trim();

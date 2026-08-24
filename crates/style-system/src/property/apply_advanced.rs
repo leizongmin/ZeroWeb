@@ -13,8 +13,8 @@ use zero_css_parser::values;
 
 fn parse_non_negative_time_list(value: &str) -> Option<Vec<f64>> {
     let mut out = Vec::new();
-    for part in value.split(',') {
-        let time = values::parse_animation_duration(part.trim())?;
+    for part in split_top_level_commas(value)? {
+        let time = values::parse_animation_duration(part)?;
         match time {
             zero_css_parser::values::AnimationDurationValue::Time(n, zero_css_parser::values::TimeUnit::S) => {
                 out.push(n)
@@ -31,26 +31,37 @@ fn parse_non_negative_time_list(value: &str) -> Option<Vec<f64>> {
 // https://drafts.csswg.org/css-animations-1/#animation-delay
 fn parse_time_list(value: &str) -> Option<Vec<f64>> {
     let mut out = Vec::new();
-    for part in value.split(',') {
-        out.push(values::parse_time(part.trim())?);
+    for part in split_top_level_commas(value)? {
+        out.push(values::parse_time(part)?);
     }
     Some(out)
 }
 
 fn split_top_level_commas(value: &str) -> Option<Vec<&str>> {
+    // CSS comma-separated value lists split on top-level commas; quoted strings
+    // and nested function arguments keep their internal commas.
     let mut start = 0;
     let mut depth = 0i32;
+    let mut quote = None;
+    let mut escaped = false;
     let mut items = Vec::new();
     for (index, ch) in value.char_indices() {
+        if escaped {
+            escaped = false;
+            continue;
+        }
         match ch {
-            '(' => depth += 1,
-            ')' => {
+            '\\' if quote.is_some() => escaped = true,
+            '\'' | '"' if quote == Some(ch) => quote = None,
+            '\'' | '"' if quote.is_none() => quote = Some(ch),
+            '(' if quote.is_none() => depth += 1,
+            ')' if quote.is_none() => {
                 if depth == 0 {
                     return None;
                 }
                 depth -= 1;
             }
-            ',' if depth == 0 => {
+            ',' if quote.is_none() && depth == 0 => {
                 let item = value[start..index].trim();
                 if item.is_empty() {
                     return None;
@@ -61,7 +72,7 @@ fn split_top_level_commas(value: &str) -> Option<Vec<&str>> {
             _ => {}
         }
     }
-    if depth != 0 {
+    if quote.is_some() || depth != 0 {
         return None;
     }
     let item = value[start..].trim();
@@ -75,8 +86,7 @@ fn split_top_level_commas(value: &str) -> Option<Vec<&str>> {
 // https://drafts.csswg.org/css-transitions-1/#transition-property-property
 fn parse_transition_property_list(value: &str) -> Option<Vec<String>> {
     let mut out = Vec::new();
-    for part in value.split(',') {
-        let name = part.trim();
+    for name in split_top_level_commas(value)? {
         if name.is_empty() || !is_transition_property_ident(name) {
             return None;
         }
@@ -124,8 +134,8 @@ fn is_css_name_char(c: char) -> bool {
 // https://drafts.csswg.org/css-animations-1/#animation-direction
 fn parse_animation_direction_list(value: &str) -> Option<Vec<zero_css_parser::values::AnimationDirectionValue>> {
     let mut out = Vec::new();
-    for part in value.split(',') {
-        out.push(values::parse_animation_direction(part.trim())?);
+    for part in split_top_level_commas(value)? {
+        out.push(values::parse_animation_direction(part)?);
     }
     Some(out)
 }
@@ -133,8 +143,8 @@ fn parse_animation_direction_list(value: &str) -> Option<Vec<zero_css_parser::va
 // https://drafts.csswg.org/css-animations-1/#animation-fill-mode
 fn parse_animation_fill_mode_list(value: &str) -> Option<Vec<zero_css_parser::values::AnimationFillModeValue>> {
     let mut out = Vec::new();
-    for part in value.split(',') {
-        out.push(values::parse_animation_fill_mode(part.trim())?);
+    for part in split_top_level_commas(value)? {
+        out.push(values::parse_animation_fill_mode(part)?);
     }
     Some(out)
 }
@@ -142,8 +152,8 @@ fn parse_animation_fill_mode_list(value: &str) -> Option<Vec<zero_css_parser::va
 // https://drafts.csswg.org/css-animations-1/#animation-play-state
 fn parse_animation_play_state_list(value: &str) -> Option<Vec<zero_css_parser::values::AnimationPlayStateValue>> {
     let mut out = Vec::new();
-    for part in value.split(',') {
-        out.push(values::parse_animation_play_state(part.trim())?);
+    for part in split_top_level_commas(value)? {
+        out.push(values::parse_animation_play_state(part)?);
     }
     Some(out)
 }
@@ -520,8 +530,10 @@ pub fn apply_advanced_property_value(style: &mut ComputedStyle, property: &str, 
         "animation-name" => {
             // https://drafts.csswg.org/css-animations-1/#animation-name
             let mut names = Vec::new();
-            for part in value.split(',') {
-                let name = part.trim();
+            let Some(parts) = split_top_level_commas(value) else {
+                return false;
+            };
+            for name in parts {
                 if name.is_empty() || values::parse_animation_name(name).is_none() {
                     return false;
                 }

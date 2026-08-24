@@ -29,6 +29,16 @@ fn test_webview_execute_script_errors() {
 }
 
 #[test]
+fn test_execute_script_preserves_use_strict_directive() {
+    let mut webview = WebView::new(WebViewConfig::default());
+    let result = webview
+        .execute_script(r#""use strict"; (function() { return this === undefined; })();"#)
+        .unwrap();
+
+    assert_eq!(result, "true");
+}
+
+#[test]
 fn test_webview_extract_origin() {
     assert_eq!(
         WebView::extract_origin("https://example.com/path"),

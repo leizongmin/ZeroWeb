@@ -174,6 +174,7 @@ impl RenderPipeline {
                     session.step = BudgetStep::Done;
 
                     self.cached_doc = session.doc.take().map(|d| Rc::new(RefCell::new(d)));
+                    self.cached_styles = session.styles.clone();
                     // DOM 已替换：CSS 解析缓存失效（见 RenderPipeline.cached_css_text 注释）。
                     self.cached_css_text = None;
                     let layout_out = LayoutResult {

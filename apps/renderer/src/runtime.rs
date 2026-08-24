@@ -1916,6 +1916,13 @@ impl RendererRuntime {
         if let Some(wv) = self.webview.as_mut() {
             wv.resize(params.width, params.height);
         }
+        if self
+            .webview
+            .as_ref()
+            .is_none_or(|webview| webview.last_render().is_none())
+        {
+            return Ok(());
+        }
         // R3254（CSSOM View §resizing / UI Events §resize）：视口尺寸变化注入 `__zw_user_resize(w,h)` →
         // 更新 innerWidth/innerHeight + 派 'resize' 到 window（响应式 JS / innerWidth watcher / matchMedia）。
         // gate javascript_enabled + best-effort（先于 republish，使本帧派发）。

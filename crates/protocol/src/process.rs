@@ -440,6 +440,11 @@ impl RendererHandle {
         self.exit_reason().is_none()
     }
 
+    /// Return the bounded renderer stderr tail captured by the background reader.
+    pub fn stderr_tail(&self) -> String {
+        stderr_tail_text(&self.stderr_tail)
+    }
+
     /// 关闭渲染进程。
     pub fn shutdown(&mut self) -> Result<(), ProtocolError> {
         // 先终止子进程，避免仅关闭 stdin 后 renderer 仍向 stdout 写导致 Broken pipe 刷屏。

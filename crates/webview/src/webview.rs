@@ -1612,7 +1612,14 @@ impl WebView {
         // 仿 `dispatch_event`（webview.rs:1486）既定幂等模式（`js_shim_initialized` 守卫，仅首次装一次）。
         // 生产多进程 js_worker 路径经 `external_script` 早 return（:1110），不触此分支，零回归。
         self.ensure_js_shim()?;
-        match self.js_sandbox.as_mut().expect("js sandbox").execute(script) {
+        if script.trim().is_empty() {
+            return Err(WebViewError::Script("script is empty".into()));
+        }
+        let sandbox = self.js_sandbox.as_mut().expect("js sandbox");
+        sandbox
+            .execute("__zw_begin_script&&__zw_begin_script();")
+            .map_err(|e| WebViewError::Script(format!("{e}")))?;
+        match sandbox.execute(script) {
             Ok(result) => {
                 tracing::debug!("execute_script completed in {:.2}ms", result.execution_time_ms);
                 // P1b L1b（R3108）：native 写经此路径直改 live cached_doc（不经 polyfill

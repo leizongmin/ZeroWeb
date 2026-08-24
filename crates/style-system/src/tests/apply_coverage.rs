@@ -774,6 +774,26 @@ fn test_apply_animation_name_invalid_list_keeps_old_values() {
     assert_eq!(style.animation_name, vec!["fadeIn".to_string()]);
 }
 
+#[test]
+fn test_apply_animation_name_quoted_comma_list() {
+    let mut style = ComputedStyle::default();
+    assert!(apply_property_value(
+        &mut style,
+        "animation-name",
+        "\"fade, in\", slide"
+    ));
+    assert_eq!(
+        style.animation_name,
+        vec!["\"fade, in\"".to_string(), "slide".to_string()]
+    );
+
+    let previous = style.animation_name.clone();
+    assert!(!apply_property_value(&mut style, "animation-name", "\"fade, in\","));
+    assert_eq!(style.animation_name, previous);
+    assert!(!apply_property_value(&mut style, "animation-name", "\"fade, in, slide"));
+    assert_eq!(style.animation_name, previous);
+}
+
 // === Scroll Snap 属性 ===
 
 #[test]

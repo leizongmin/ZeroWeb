@@ -9,7 +9,9 @@ use zero_protocol::ProtocolError;
 use zero_protocol::message::{
     AutomationElementRef, AutomationError, AutomationErrorCode, AutomationKey, AutomationLocatorStrategy,
     AutomationOperation, AutomationRequest, AutomationResult, AutomationValue, FetchParams, FramePublishMode,
-    IpcMessage, IpcMessageKind, SetViewportParams,
+    IpcMessage, IpcMessageKind, ServiceWorkerClientMessages, ServiceWorkerError, ServiceWorkerErrorCode,
+    ServiceWorkerOperation, ServiceWorkerRequestParams, ServiceWorkerResponseParams, ServiceWorkerResult,
+    ServiceWorkerStateChanges, SetViewportParams,
 };
 use zero_protocol::process::RendererHandle;
 
@@ -186,7 +188,14 @@ impl Session {
         let deadline = Instant::now() + NAVIGATION_TIMEOUT;
         loop {
             if Instant::now() >= deadline {
-                return Err(DriverError::new("timeout", "navigation timed out"));
+                let stderr_tail = self.renderer.stderr_tail();
+                if stderr_tail.is_empty() {
+                    return Err(DriverError::new("timeout", "navigation timed out"));
+                }
+                return Err(DriverError::new(
+                    "timeout",
+                    format!("navigation timed out; renderer stderr tail: {stderr_tail}"),
+                ));
             }
             match self.renderer.try_recv().map_err(protocol_error)? {
                 Some(message) => {
@@ -263,7 +272,8 @@ fn handle_renderer_message(
     renderer: &mut RendererHandle,
     message: IpcMessage,
 ) -> Result<RendererEvent, DriverError> {
-    match message.kind {
+    let IpcMessage { id, kind } = message;
+    match kind {
         IpcMessageKind::FetchRequest(params) => {
             proxy_fetch(http, renderer, params)?;
             Ok(RendererEvent::Other)
@@ -273,9 +283,71 @@ fn handle_renderer_message(
             Ok(RendererEvent::Other)
         }
         IpcMessageKind::LoadComplete => Ok(RendererEvent::LoadComplete),
-        IpcMessageKind::LoadFailed(message) => Ok(RendererEvent::LoadFailed(message)),
-        IpcMessageKind::CrashNotification(message) => Ok(RendererEvent::LoadFailed(message)),
+        IpcMessageKind::LoadFailed(message) => {
+            tracing::warn!(message = %message, "webdriver observed load failed");
+            Ok(RendererEvent::LoadFailed(message))
+        }
+        IpcMessageKind::CrashNotification(message) => {
+            tracing::warn!(message = %message, "webdriver observed renderer crash");
+            Ok(RendererEvent::LoadFailed(message))
+        }
+        IpcMessageKind::ServiceWorkerRequest(params) => {
+            renderer
+                .send(IpcMessage {
+                    id,
+                    kind: IpcMessageKind::ServiceWorkerResponse(webdriver_service_worker_response(params)),
+                })
+                .map_err(protocol_error)?;
+            Ok(RendererEvent::Other)
+        }
         _ => Ok(RendererEvent::Other),
+    }
+}
+
+fn webdriver_service_worker_response(params: ServiceWorkerRequestParams) -> ServiceWorkerResponseParams {
+    if let Err(message) = params.validate() {
+        return service_worker_error(ServiceWorkerErrorCode::InvalidArgument, message);
+    }
+    let result = match params.operation {
+        ServiceWorkerOperation::Controller | ServiceWorkerOperation::GetRegistration { .. } => {
+            Ok(ServiceWorkerResult::OptionalSnapshot(None))
+        }
+        ServiceWorkerOperation::GetRegistrations => Ok(ServiceWorkerResult::Snapshots(Vec::new())),
+        ServiceWorkerOperation::StateChanges { .. } => {
+            Ok(ServiceWorkerResult::StateChanges(ServiceWorkerStateChanges {
+                latest_sequence: 0,
+                states: Vec::new(),
+                claim_clients: false,
+            }))
+        }
+        ServiceWorkerOperation::ClientMessages { .. } => {
+            Ok(ServiceWorkerResult::ClientMessages(ServiceWorkerClientMessages {
+                latest_sequence: 0,
+                messages: Vec::new(),
+            }))
+        }
+        ServiceWorkerOperation::ObserveWindowClient { .. } | ServiceWorkerOperation::RemoveWindowClient { .. } => {
+            Ok(ServiceWorkerResult::Empty)
+        }
+        ServiceWorkerOperation::Register { .. }
+        | ServiceWorkerOperation::Snapshot { .. }
+        | ServiceWorkerOperation::Unregister { .. }
+        | ServiceWorkerOperation::ActivateWaiting { .. }
+        | ServiceWorkerOperation::PostMessage { .. }
+        | ServiceWorkerOperation::Update { .. } => Err(ServiceWorkerError {
+            code: ServiceWorkerErrorCode::InvalidState,
+            message: "Service Worker registration is not supported by WebDriver sessions".into(),
+        }),
+    };
+    ServiceWorkerResponseParams { result }
+}
+
+fn service_worker_error(code: ServiceWorkerErrorCode, message: impl Into<String>) -> ServiceWorkerResponseParams {
+    ServiceWorkerResponseParams {
+        result: Err(ServiceWorkerError {
+            code,
+            message: message.into(),
+        }),
     }
 }
 
@@ -458,5 +530,53 @@ mod tests {
                 AutomationKey::Text("B".into()),
             ]
         );
+    }
+
+    #[test]
+    fn webdriver_service_worker_queries_return_empty_results() {
+        assert_eq!(
+            webdriver_service_worker_response(ServiceWorkerRequestParams {
+                operation: ServiceWorkerOperation::Controller,
+            })
+            .result,
+            Ok(ServiceWorkerResult::OptionalSnapshot(None))
+        );
+        assert_eq!(
+            webdriver_service_worker_response(ServiceWorkerRequestParams {
+                operation: ServiceWorkerOperation::GetRegistrations,
+            })
+            .result,
+            Ok(ServiceWorkerResult::Snapshots(Vec::new()))
+        );
+        assert_eq!(
+            webdriver_service_worker_response(ServiceWorkerRequestParams {
+                operation: ServiceWorkerOperation::StateChanges {
+                    registration_id: 1,
+                    after_sequence: 9,
+                },
+            })
+            .result,
+            Ok(ServiceWorkerResult::StateChanges(ServiceWorkerStateChanges {
+                latest_sequence: 0,
+                states: Vec::new(),
+                claim_clients: false,
+            }))
+        );
+    }
+
+    #[test]
+    fn webdriver_service_worker_registration_returns_stable_error() {
+        let response = webdriver_service_worker_response(ServiceWorkerRequestParams {
+            operation: ServiceWorkerOperation::Register {
+                script_url: "/sw.js".into(),
+                scope: None,
+                document_url: "https://example.test/".into(),
+                update_via_cache: zero_protocol::ServiceWorkerUpdateViaCacheWire::Imports,
+                script_type: zero_protocol::ServiceWorkerScriptTypeWire::Classic,
+            },
+        });
+        let error = response.result.expect_err("registration should be unsupported");
+        assert_eq!(error.code, ServiceWorkerErrorCode::InvalidState);
+        assert!(error.message.contains("WebDriver sessions"));
     }
 }
