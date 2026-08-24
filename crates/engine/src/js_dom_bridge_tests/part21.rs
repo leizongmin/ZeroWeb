@@ -3356,3 +3356,57 @@ globalThis.__r219out = out.join('|');
         "R219 insertBefore 防递归/proxy 委托/own 直调三层"
     );
 }
+
+#[test]
+fn r220_deep_clone_preserves_cdata_and_pi_children() {
+    // R220（js-dom M4）：`_zwDeepCloneEl` 对 CDATASection/ProcessingInstruction 子
+    // 旧落 `return null` → 克隆树丢子（Element.prototype.cloneNode 的 deep 路径）。
+    // WPT mega-case 的 restoreIframe 克隆链（referenceDoc.appendChild(docEl
+    // .cloneNode(true))）虽当前因 docEl 空壳不经此路径（R221 靶点），但任何
+    // 含 CDATA/PI 子的元素深克隆（cloneContents/克隆 foreignDoc 子树等）都消费
+    // 本分支——保型断言：CDATA 重建后 nodeType=4 + data 保持，PI 重建后
+    // nodeType=7 + target/data 保持。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><div id=\"t\">x</div></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+
+    // detached doc 建含 CDATA + PI 子的元素，经原型 cloneNode(true) 深克隆，
+    // 断言三形态子的保型（元素/CDATA/PI）。
+    sandbox
+        .execute(
+            r#"
+var dd = document.implementation.createDocument(null, null, null);
+var holder = dd.createElement('div');
+holder.appendChild(dd.createTextNode('txt'));
+holder.appendChild(dd.createCDATASection('cdata-payload'));
+holder.appendChild(dd.createProcessingInstruction('pitarget', 'pi-data'));
+var cloned = globalThis.Node.prototype.cloneNode.call(holder, true);
+var parts = [];
+for (var i = 0; i < cloned.childNodes.length; i++) {
+  var c = cloned.childNodes[i];
+  parts.push(c.nodeType + ':' + (c.data != null ? c.data : '')
+    + (c.target != null ? ':' + c.target : ''));
+}
+globalThis.__r220out = cloned.childNodes.length + '|' + parts.join('|');
+"#,
+        )
+        .unwrap();
+    let out = sandbox.execute("globalThis.__r220out").unwrap().value;
+    assert_eq!(
+        out, "3|3:txt|4:cdata-payload|7:pi-data:pitarget",
+        "R220 deep-clone CDATA/PI 子保型（nodeType/data/target）"
+    );
+}

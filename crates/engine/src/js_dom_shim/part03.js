@@ -934,6 +934,28 @@
           }
         }
         o = o2;
+      } else if (n.nodeType === 4 || n.nodeType === 7) {
+        // R220（js-dom M4）：CDATASection/ProcessingInstruction 子——WPT mega-case
+        // 的 restoreIframe 链（referenceDoc.appendChild(docEl.cloneNode(true)) +
+        // 后续每轮从 referenceDoc 再克隆）对 CDATA/PI 子落 `return null` →
+        // 克隆树丢子 → referenceDoc 逐轮漂移 → 后续 subtest 树形态与 host 分歧
+        //（Range-insertNode 16/18/20–28,x「pass isolated / fail cumulative」的
+        // 跨轮残留簇）。CDATA 经源 doc createCDATASection 重建（R218 尾节点保型
+        // 同款），PI 经 _zwMPiFromBogus 视图重建。
+        var _r220Data = String(n.data != null ? n.data : (n.nodeValue != null ? n.nodeValue : ''));
+        if (n.nodeType === 4) {
+          var _r220od = n.ownerDocument;
+          if (_r220od && typeof _r220od.createCDATASection === 'function') {
+            try { return _r220od.createCDATASection(_r220Data); } catch (_eR220c) {}
+          }
+          return _zwMText(_r220Data, null);
+        }
+        var _r220Tgt = '';
+        try { _r220Tgt = String(n.target != null ? n.target : ''); } catch (_eR220t) {}
+        if (_r220Tgt && typeof _zwMPiFromBogus === 'function') {
+          try { return _zwMPiFromBogus('?' + _r220Tgt + ' ' + _r220Data + '?', null); } catch (_eR220p) {}
+        }
+        return _zwMText(_r220Data, null);
       } else {
         return null;
       }

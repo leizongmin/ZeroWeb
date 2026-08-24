@@ -925,6 +925,12 @@
       doc.childNodes.push(docEl);
       if (docEl.nodeType === 1 && doc.children && !doc.children.length) doc.children.push(docEl);
     } catch (_eR216m) {}
+    // R220 评估记录（已试已回退）：把 doc.head/doc.body 链入 docEl.childNodes 使
+    // documentElement.cloneNode(true) 保真（旧克隆空壳 = referenceDoc 链 body 内容
+    // 全丢的根因）——但 docEl 有子后 sim 的 myInsertNode 对 [docEl, off] 形态的
+    // referenceNode 解析路径改变（kids[off]=head 而非 null），host 不随动 → rows
+    // 12–16 翻红 -158P。两侧须成对（host Range.insertNode 的 docEl 分支同步消费
+    // head/body 子视图）后才能 land——记入 R221 靶点。
     // R209（js-dom M4）：`doc.doctype`（spec Document.doctype：首个 DocumentType 子
     // 或 null）。Range-test-iframe.html 恒 `<!doctype html>`——common.js setupRangeTests
     // 的 `doctype = document.doctype` 在 iframe 子文档旧得 undefined → testNodes 的
