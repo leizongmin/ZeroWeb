@@ -3586,6 +3586,46 @@
       },
       deleteContents: function () {
         // 删除范围内子节点（逆序 remove，保索引稳定）。复用 child.remove()（sel→__zw_remove / handle→__zw_remove_handle）。
+        // R213（js-dom M4）：**CharData 区间删侧分支**（spec
+        // `dom-range-delete-contents` 的删侧三段——start 容器尾段 deleteData +
+        // contained 子移除 + end 容器头段 deleteData；同节点取中段；range 收缩到
+        // (parent, si+1)——与 R213 的 extract 收缩偏移一致）。
+        // https://dom.spec.whatwg.org/#dom-range-deletecontents
+        var _r213sc = this.startContainer, _r213ec = this.endContainer;
+        var _r213isCd = function (n) {
+          return !!n && (n.nodeType === 3 || n.nodeType === 4
+            || n.nodeType === 7 || n.nodeType === 8);
+        };
+        if (_r213isCd(_r213sc) && _r213isCd(_r213ec)
+          && _r213sc.parentNode && _r213sc.parentNode === _r213ec.parentNode) {
+          var _r213p = _r213sc.parentNode;
+          var _r213kids = _r213p.childNodes || [];
+          var _r213si = _r213kids.indexOf(_r213sc);
+          var _r213ei = _r213kids.indexOf(_r213ec);
+          if (_r213si >= 0 && _r213ei >= _r213si) {
+            if (_r213sc === _r213ec) {
+              var _r213m = String(_r213sc.data != null ? _r213sc.data : '');
+              var _r213a = Math.max(0, Math.min(this.startOffset | 0, this.endOffset | 0));
+              var _r213b = Math.max(_r213a, Math.min(this.endOffset | 0, _r213m.length));
+              if (_r213b > _r213a) {
+                try { _r213sc.deleteData(_r213a, _r213b - _r213a); } catch (_eR213m) {}
+              }
+              this.collapse(true);
+              return;
+            }
+            try { _r213sc.deleteData(this.startOffset | 0,
+              String(_r213sc.data != null ? _r213sc.data : '').length - (this.startOffset | 0)); } catch (_eR213h) {}
+            for (var _r213k = _r213ei - 1; _r213k > _r213si; _r213k--) {
+              var _r213c = _r213kids[_r213k];
+              if (!_r213c) continue;
+              try { _r213p.removeChild(_r213c); } catch (_eR213c) {}
+            }
+            try { _r213ec.deleteData(0, this.endOffset | 0); } catch (_eR213t) {}
+            this.setStart(_r213p, _r213si + 1);
+            this.setEnd(_r213p, _r213si + 1);
+            return;
+          }
+        }
         var kids = this._coveredChildren();
         if (kids) {
           for (var i = kids.length - 1; i >= 0; i--) {
@@ -3665,7 +3705,12 @@
               } catch (_eR211t) {}
               try { _r211ec.deleteData(0, this.endOffset | 0); } catch (_eR211td) {}
             }
-            this.setStart(_r211p, _r211si);
+            // R213（js-dom M4）：collapse 偏移修正——spec「Set new offset to one
+            // plus the index of reference node」（referenceNode = start 容器，
+            // common.js myExtractContents 的 newOffset = 1 + indexOf 同款）。
+            // 旧版 setStart(si) 使后续 insertNode 落在削弱的 start 容器**前**
+            // （sim 落后一位——6,x positionTests 的 offsets A=0,1 E=1,2 根因）。
+            this.setStart(_r211p, _r211si + 1);
             this.setEnd(_r211p, _r211si + 1);
             return _r211frag;
           }

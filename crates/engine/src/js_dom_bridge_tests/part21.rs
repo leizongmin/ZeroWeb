@@ -2577,7 +2577,7 @@ fn test_extract_contents_chardata_interval_r211() {
         .value;
     assert_eq!(
         out,
-        "mid:bcd:t-after=aef\ncross:3:b|3:cd|3:e:p2kids=2:t1=a:t3=f\nr2-sc=true:so=0:eo=1",
+        "mid:bcd:t-after=aef\ncross:3:b|3:cd|3:e:p2kids=2:t1=a:t3=f\nr2-sc=true:so=1:eo=1",
         "R211 extractContents CharData 区间语义"
     );
 }
@@ -2692,8 +2692,82 @@ fn test_surround_chardata_path_r212() {
         .value;
     assert_eq!(
         out,
-        "tree:E[nt4(34)nt4(5678)nt3(9012)]t4(12)t3()\nrange:true:0:1",
+        "tree:t4(12)E[nt4(34)nt4(5678)nt3(9012)]t3()\nrange:true:1:2",
         "R212 surroundContents CharData 路径 + CDATA cloneNode"
+    );
+}
+/// R213（js-dom M4）：extractContents 收缩偏移修正（spec「Set new offset to
+/// one plus the index of reference node」——旧版 setStart(si) 使后续 insertNode
+/// 落在削弱的 start 容器**前**，sim 落后一位：6,x positionTests 的 offsets
+/// A=0,1 E=1,2 根因）+ deleteContents 的 CharData 区间删侧分支（三段：
+/// start 尾段 deleteData + contained 子移除 + end 头段 deleteData；同节点中段；
+/// collapse 到 (parent, si+1)）。忠实复刻 testharness 双 iframe 流程验证
+/// （common.js 真源 + mySurroundContents 真函数注入）。
+/// <https://dom.spec.whatwg.org/#dom-range-deletecontents>
+#[test]
+fn test_extract_collapse_offset_and_delete_chardata_r213() {
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let mut sandbox = V8Sandbox::with_config(zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    })
+    .unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> =
+        Arc::new(Mutex::new("<html><body></body></html>".to_string()));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+    let out = sandbox
+        .execute(
+            r#"
+            var out = [];
+            // ① extract 收缩偏移：跨节点 extract 后 startOffset = si+1（sim 对齐）
+            var p = document.createElement('p');
+            p.appendChild(document.createTextNode('ab'));
+            p.appendChild(document.createTextNode('cd'));
+            p.appendChild(document.createTextNode('ef'));
+            document.body.appendChild(p);
+            var t1 = p.childNodes[0], t3 = p.childNodes[2];
+            var r = document.createRange();
+            r.setStart(t1, 1);
+            r.setEnd(t3, 1);
+            r.extractContents();
+            out.push('collapse:' + (r.startContainer === p) + ':' + r.startOffset + ':' + r.endOffset);
+            // ② deleteContents CharData 跨节点三段：t1 保 'a'，cd 全删，t3 保 'f'
+            var p2 = document.createElement('p');
+            p2.appendChild(document.createTextNode('ab'));
+            p2.appendChild(document.createTextNode('cd'));
+            p2.appendChild(document.createTextNode('ef'));
+            document.body.appendChild(p2);
+            var u1 = p2.childNodes[0], u3 = p2.childNodes[2];
+            var r2 = document.createRange();
+            r2.setStart(u1, 1);
+            r2.setEnd(u3, 1);
+            r2.deleteContents();
+            out.push('del-cross:' + String(u1.data) + '|' + String(u3.data)
+              + '|kids=' + p2.childNodes.length + '|off=' + r2.startOffset);
+            // ③ deleteContents 同节点中段
+            var p3 = document.createElement('p');
+            p3.textContent = 'abcdef';
+            document.body.appendChild(p3);
+            var r3 = document.createRange();
+            r3.setStart(p3.firstChild, 1);
+            r3.setEnd(p3.firstChild, 4);
+            r3.deleteContents();
+            out.push('del-mid:' + String(p3.firstChild.data) + '|collapsed=' + r3.collapsed);
+            out.length ? out.join('\n') : 'ALL-OK'
+            "#,
+        )
+        .unwrap()
+        .value;
+    assert_eq!(
+        out,
+        "collapse:true:1:1\ndel-cross:a|f|kids=2|off=1\ndel-mid:aef|collapsed=true",
+        "R213 extract 收缩偏移 + deleteContents CharData 删侧"
     );
 }
 /// R209（js-dom M4）：iframe 子文档 testNodes 方法面 + surroundContents 叶子
