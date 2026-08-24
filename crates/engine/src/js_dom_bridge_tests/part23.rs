@@ -1276,3 +1276,83 @@ globalThis.__r225out = [
         "R225 doc 级 insertBefore 摘除移位（PI 单次）+ 空 docfrag endOffset 同步"
     );
 }
+
+// R226（js-dom M4）：`_zwMEl` insertBefore 的 **ref 位先取后摘**——spec
+// `concept-node-pre-insert` 的 referenceNode index 在 adopt 摘除之前固定；旧版先
+// remove 再 indexOf(ref)，c===ref 自引用形态（WPT Range-insertNode 30,4 的
+// foreignDoc.body[0] === node）detach 后 ref miss 落尾部。28,0 形态（工厂 div
+// off 0 自引用）同时回归。整文件 1840P / 0F（100%）。
+#[test]
+fn r226_self_ref_insert_before_keeps_position() {
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><div id=\"t\">x</div></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+
+    sandbox
+        .execute(
+            r#"
+// 30,4 形态：foreignDoc.body 折叠 off 0，node=body[0]=foreignPara1
+var foreignDoc = document.implementation.createHTMLDocument('');
+var fp1 = foreignDoc.createElement('p');
+fp1.appendChild(foreignDoc.createTextNode('Efghijkl'));
+var fp2 = foreignDoc.createElement('p');
+fp2.appendChild(foreignDoc.createTextNode('Mnopqrst'));
+foreignDoc.body.appendChild(fp1);
+foreignDoc.body.appendChild(fp2);
+var ftn = foreignDoc.createTextNode('I admit that I harbor doubts');
+foreignDoc.body.appendChild(ftn);
+var r30 = foreignDoc.createRange();
+r30.setStart(foreignDoc.body, 0);
+r30.setEnd(ftn, 0);
+r30.insertNode(fp1);
+var bodyKids = [];
+for (var i = 0; i < foreignDoc.body.childNodes.length; i++) {
+  var c = foreignDoc.body.childNodes[i];
+  bodyKids.push(c.nodeType + ':' + String(c.textContent || '').slice(0, 4));
+}
+// 28,0 形态：工厂 div 容器 off 0，node=div[0]=p0
+var td = document.createElement('div');
+var ps = [];
+for (var k = 0; k < 3; k++) {
+  ps.push(document.createElement('p'));
+  ps[k].appendChild(document.createTextNode('P' + k));
+  td.appendChild(ps[k]);
+}
+var cm = document.createComment('c');
+td.appendChild(cm);
+var r28 = document.createRange();
+r28.setStart(td, 0);
+r28.setEnd(cm, 0);
+r28.insertNode(ps[0]);
+var tdKids = [];
+for (var j = 0; j < td.childNodes.length; j++) {
+  var d = td.childNodes[j];
+  tdKids.push(d.nodeType + ':' + String(d.textContent || d.data || '').slice(0, 3));
+}
+globalThis.__r226out = [
+  'body:' + bodyKids.join(','),
+  'td:' + tdKids.join(','),
+].join('|');
+"#,
+        )
+        .unwrap();
+    let out = sandbox.execute("globalThis.__r226out").unwrap().value;
+    assert_eq!(
+        out,
+        "body:1:Efgh,1:Mnop,3:I ad|td:1:P0,1:P1,1:P2,8:c",
+        "R226 自引用 insertBefore 的 ref 位先取后摘（fp1 保持首位 + p0 不动）"
+    );
+}

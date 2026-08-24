@@ -5996,9 +5996,17 @@
         for (var ii225 = 0; ii225 < ic225.length; ii225++) node.insertBefore(ic225[ii225], ref);
         return c;
       }
-      if (c && c.parentNode) c.parentNode.removeChild(c);
+      // R226（js-dom M4）：**ref 位先取后摘**（spec `concept-node-pre-insert` 的
+      // referenceNode 语义——「child 的 index」在 adopt 摘除**之前**即固定。旧版先
+      // remove 再 indexOf(ref)：c===ref 自引用形态（WPT Range-insertNode 30,4 的
+      // foreignDoc.body[0] === node）detach 后 ref miss → push 到尾部，fp1 落
+      // [fp2, ftn, fp1]（期望 [fp1, fp2, ftn]）。
+      // https://dom.spec.whatwg.org/#concept-node-pre-insert
+      var _r226RefIdx = (ref == null) ? -2 : node.childNodes.indexOf(ref);
+      if (c && c.parentNode) { try { c.parentNode.removeChild(c); } catch (_eR226d) {} }
       if (ref == null) { node.childNodes.push(c); }
-      else { var i = node.childNodes.indexOf(ref); if (i < 0) node.childNodes.push(c); else node.childNodes.splice(i, 0, c); }
+      else if (_r226RefIdx === -1) { node.childNodes.push(c); }
+      else { node.childNodes.splice(_r226RefIdx, 0, c); }
       c.parentNode = node;
       // R87：入树清移除标记（恢复段 insertBefore 后迭代器重新命中）。
       if (c && c.__zwHandle && typeof _zwUnmarkRemovedHandle === 'function') _zwUnmarkRemovedHandle(c.__zwHandle);
