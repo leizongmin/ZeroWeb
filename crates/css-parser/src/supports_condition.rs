@@ -42,8 +42,8 @@ fn parse_or_expression(input: &str) -> Option<SupportsCondition> {
     if parts.len() > 1 {
         let conditions: Vec<SupportsCondition> = parts
             .into_iter()
-            .filter_map(|p| parse_and_expression(p.trim()))
-            .collect();
+            .map(|p| parse_and_expression(p.trim()))
+            .collect::<Option<Vec<_>>>()?;
         if conditions.is_empty() {
             return None;
         }
@@ -152,8 +152,8 @@ fn parse_and_expression(input: &str) -> Option<SupportsCondition> {
     if parts.len() > 1 {
         let conditions: Vec<SupportsCondition> = parts
             .into_iter()
-            .filter_map(|p| parse_not_expression(p.trim()))
-            .collect();
+            .map(|p| parse_not_expression(p.trim()))
+            .collect::<Option<Vec<_>>>()?;
         if conditions.is_empty() {
             return None;
         }
@@ -434,6 +434,16 @@ mod tests {
             parse_supports_condition("(not (color: rainbow) or (color: green))"),
             None
         );
+    }
+
+    #[test]
+    fn test_parse_and_or_reject_invalid_operands() {
+        // https://www.w3.org/TR/css-conditional-3/#typedef-supports-condition
+        // `and`/`or` 链中每个操作数都必须是 <supports-in-parens>；不能把非法半句静默丢掉。
+        assert_eq!(parse_supports_condition("(color: green) or color: red"), None);
+        assert_eq!(parse_supports_condition("color: red or (color: green)"), None);
+        assert_eq!(parse_supports_condition("(display: grid) and display: flex"), None);
+        assert_eq!(parse_supports_condition("display: flex and (display: grid)"), None);
     }
 
     #[test]
