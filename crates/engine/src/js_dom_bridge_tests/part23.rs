@@ -1436,3 +1436,69 @@ globalThis.__r228out = [
         "R228/R229 detached comment 区间 surround：extract 切片 + HRE 上抛 + 同节点 collapse (容器, startOffset) + leaf-newParent 先 extract 再抛"
     );
 }
+
+#[test]
+fn r234_dynamic_document_element_and_extract_semantics() {
+    // R234（js-dom M4）：三件断言——① iframe doc 的 documentElement 动态 getter
+    // （restoreIframe 摘除工厂 docEl + appendChild 克隆后，documentElement 读到
+    // 克隆子树而非脱离的空壳工厂 docEl——surround 12–14,x 的 cDP 108F 簇根因）；
+    // ② 跨容器提取塌缩（[docEl,1,body,0] 类 extract 后 start/end 同容器——
+    // harness「must always be the same」断言）；    // ③ plain 子提取摘除后的
+    // 无父登记（摘除原件 parentNode 记到 fragment，不成为第二棵无根树）。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><div id=\"t\">x</div></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+
+    sandbox
+        .execute(
+            r#"
+var out = [];
+// ① 动态 documentElement：iframe doc（no-src 退化路径）append 克隆 docEl 后
+//    documentElement 读到该克隆（旧固定闭包返脱离空壳）。
+var ifr = document.createElement('iframe');
+document.body.appendChild(ifr);
+var idoc = ifr.contentDocument;
+var refDoc = document.implementation.createHTMLDocument('');
+var cloneRoot = refDoc.documentElement.cloneNode(true);
+// restoreIframe 等价：先清 doc 现有非 doctype 首末子，再 append 克隆。
+while (idoc.firstChild && idoc.firstChild.nodeType !== 10) { idoc.removeChild(idoc.firstChild); }
+while (idoc.lastChild && idoc.lastChild.nodeType !== 10) { idoc.removeChild(idoc.lastChild); }
+idoc.appendChild(cloneRoot);
+out.push('dyn:' + (idoc.documentElement === cloneRoot));
+out.push('cdp:' + (typeof cloneRoot.compareDocumentPosition === 'function'));
+// ② 跨容器提取塌缩（detached doc 克隆树同款形态）：docEl(1) → body(0) 提取后同容器。
+var r49 = refDoc.createRange();
+r49.setStart(refDoc.documentElement, 1);
+r49.setEnd(refDoc.body, 0);
+var frag49 = r49.extractContents();
+out.push('same:' + (r49.startContainer === r49.endContainer));
+// ③ plain 子提取的无父登记：docEl(0..1)（head）提取后摘除原件非无根。
+var r12 = refDoc.createRange();
+r12.setStart(refDoc.documentElement, 0);
+r12.setEnd(refDoc.documentElement, 1);
+var frag12 = r12.extractContents();
+var headNode = frag12.childNodes.length ? frag12.childNodes[0] : null;
+out.push('rooted:' + (headNode == null || headNode.parentNode != null));
+globalThis.__r234out = out.join('|');
+"#,
+        )
+        .unwrap();
+    let out = sandbox.execute("globalThis.__r234out").unwrap().value;
+    assert_eq!(
+        out, "dyn:true|cdp:true|same:true|rooted:true",
+        "R234 动态 documentElement getter + 跨容器提取塌缩 + plain 子提取无父登记"
+    );
+}

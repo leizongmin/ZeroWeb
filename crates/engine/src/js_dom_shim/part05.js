@@ -907,9 +907,23 @@
     }
     try { doc.body.innerHTML = bodyInner; } catch (_eB) {}
     try {
+      // R234（js-dom M4）：**动态 documentElement getter**——首个元素子优先，回落
+      // 工厂 docEl。旧固定闭包返工厂 docEl：restoreIframe 清理循环摘除工厂 docEl
+      // 再 appendChild(referenceDoc 克隆) 后，documentElement 仍指**已脱离的空壳**
+      // （无 cDP/contains 方法面——surround 12–14,x `[documentElement,0,…]` 的
+      // `node2.compareDocumentPosition is not a function` 108F 簇根因；spec
+      // `dom-document-documentelement`：首个元素子）。克隆子树经 _zwDeepCloneEl
+      // → _zwMEl 工厂产物方法面全配，动态 getter 使 restoreIframe 后读到克隆。
       Object.defineProperty(doc, 'documentElement', {
         configurable: true,
-        get: function () { return docEl; }
+        get: function () {
+          var _r234kids = doc.childNodes || [];
+          for (var _r234i = 0; _r234i < _r234kids.length; _r234i++) {
+            var _r234k = _r234kids[_r234i];
+            if (_r234k && _r234k.nodeType === 1) return _r234k;
+          }
+          return docEl;
+        }
       });
     } catch (_eD) {}
     // R216（js-dom M4）：docEl **入 doc 树**（spec：documentElement 是 Document

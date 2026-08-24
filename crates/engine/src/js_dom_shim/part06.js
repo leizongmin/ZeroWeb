@@ -3769,7 +3769,35 @@
           }
           for (var j = kids.length - 1; j >= 0; j--) {
             try { if (typeof kids[j].remove === 'function') kids[j].remove(); } catch (_e) {}
+            // R234（js-dom M4）：plain 子摘除后的**无父登记**——spec
+            // `dom-range-extract-contents` contained children 是 move 语义（原件
+            // 入 fragment、parentNode=frag）；host 是 clone+remove（host 桥 proxy
+            // 子不能直接 move），但 plain 子（iframe 子文档克隆树/_zwMEl 产物）
+            // remove 后 parentNode 置 null 成为**无根游离树**，harness
+            // （Range-extractContents 12–14,x「different number of pieces
+            // expected 1 got 2」）把游离原件数作第二棵根树。把摘除原件的
+            // parentNode 记到 fragment（与 move 语义的无根判定等价；proxy 子
+            // remove 后自身维护 parentNode，不经过此登记）。
+            // https://dom.spec.whatwg.org/#dom-range-extractcontents
+            try {
+              if (kids[j] && typeof kids[j].__zwHandle !== 'string'
+                && kids[j].parentNode == null) {
+                kids[j].parentNode = f;
+              }
+            } catch (_eR234p) {}
           }
+          this.collapse(true);
+        }
+        // R234（js-dom M4）：**跨容器提取塌缩**（spec `dom-range-extract-contents`
+        // 末步「collapse to start」在移除 contained 后边界同容器化——harness
+        // 断言「startContainer and endContainer must always be the same after
+        // extractContents()」；WPT Range-{extract,delete,clone}Contents 49,x
+        // `[documentElement, 1, document.body, 0]`——动态 documentElement getter
+        // （R234 part05）后该形态从空转 no-op 变为真实跨容器提取，旧版容器
+        // 保持 (docEl, body) 异侧）。_coveredChildren null（跨容器/文本切片）
+        // 时 best-effort 塌缩到 (startContainer, startOffset)。
+        // https://dom.spec.whatwg.org/#dom-range-extractcontents
+        else {
           this.collapse(true);
         }
         return f;
