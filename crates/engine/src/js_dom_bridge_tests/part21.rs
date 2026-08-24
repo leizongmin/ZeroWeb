@@ -2862,6 +2862,72 @@ fn test_iframe_docelement_structure_r214() {
         .value;
     assert_eq!(out, "ALL-OK", "R214 iframe documentElement 结构");
 }
+/// R215（js-dom M4）：insertNode 的 **ensure-pre-insertion validity 前置**
+/// （spec `dom-node-pre-insert` 校验族——336F HRE 簇 + 8,9/9,9 的 P→DIV→P
+/// **parentNode 环**根因：旧版 splitText 路径无校验直接 insertBefore，把插入
+/// 目标自身的祖先插进目标成环（upwalk 探针 101 hops 实证），后续 sim 的
+/// isInclusiveAncestor 上行 walk 栈溢出）。校验四件：① parent 非
+/// Element/Document/DocumentFragment → HRE；② node 是 parent 的 inclusive
+/// ancestor → HRE（环检测，guard 128）；③ Text 入 Document → HRE；
+/// ④ Doctype 入非 Document → HRE。surroundContents 叶子 newParent 路径经
+/// `_r215NoValidate` 帧标志抑制校验（保持 R212 的先变更后抛序——sim 的
+/// myExtractContents 在步骤 5 抛之前已变更树）。
+/// <https://dom.spec.whatwg.org/#concept-node-ensure-pre-insertion-validity>
+#[test]
+fn test_insert_node_pre_insertion_validity_r215() {
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let mut sandbox = V8Sandbox::with_config(zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    })
+    .unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> =
+        Arc::new(Mutex::new("<html><body></body></html>".to_string()));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+    let out = sandbox
+        .execute(
+            r#"
+            var out = [];
+            // ① 祖先插入自身后代 → HRE 且不建环（8,9 形态）
+            var div = document.createElement('div');
+            var p = document.createElement('p');
+            var t = document.createTextNode('xy');
+            p.appendChild(t);
+            div.appendChild(p);
+            var r1 = document.createRange();
+            r1.setStart(t, 0);
+            r1.setEnd(t, 1);
+            var threw1 = '';
+            try { r1.insertNode(div); } catch (e) { threw1 = e.name; }
+            out.push('ancestor:' + threw1 + ':p.parent-is-div=' + (p.parentNode === div));
+            // 环检测（upwalk 有界）
+            var hops = 0, cur = t;
+            while (cur && hops++ < 50) cur = cur.parentNode;
+            out.push('upwalk:' + (hops < 50 ? 'ok' : 'CYCLE'));
+            // ② Text 入 Document → HRE
+            var r2 = document.createRange();
+            r2.setStart(document, 0);
+            r2.setEnd(document, 0);
+            var threw2 = '';
+            try { r2.insertNode(document.createTextNode('x')); } catch (e) { threw2 = e.name; }
+            out.push('text-in-doc:' + threw2);
+            out.length ? out.join('\n') : 'ALL-OK'
+            "#,
+        )
+        .unwrap()
+        .value;
+    assert_eq!(
+        out,
+        "ancestor:HierarchyRequestError:p.parent-is-div=true\nupwalk:ok\ntext-in-doc:HierarchyRequestError",
+        "R215 insertNode pre-insertion validity"
+    );
+}
 /// R209（js-dom M4）：iframe 子文档 testNodes 方法面 + surroundContents 叶子
 /// newParent 的 spec 异常链。根因（探针实证）：iframe/detached 工厂节点形态缺
 /// compareDocumentPosition/hasChildNodes/cloneNode/substringData/splitText/

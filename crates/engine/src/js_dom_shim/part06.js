@@ -3766,6 +3766,54 @@
           throw new (globalThis.DOMException || Error)(
             'The Range object is invalid.', 'HierarchyRequestError');
         }
+        // R215（js-dom M4）：**ensure-pre-insertion validity 前置**（spec
+        // `dom-node-pre-insert` 校验族，common.js ensurePreInsertionValidity 同款
+        // ——insertNode 336F HRE 簇 + 8,9/9,9 的 P→DIV→P 循环根因：旧版 splitText
+        // 路径无校验直接 insertBefore，把**插入目标自身的祖先**插进目标形成
+        // parentNode 环（upwalk 探针 P→DIV→P→DIV… 101 hops 实证），后续 sim 的
+        // isInclusiveAncestor 上行 walk 栈溢出）。校验四件：
+        // ① parent 非 Element/Document/DocumentFragment → HRE
+        // ② node 是 parent 的 host-including inclusive ancestor → HRE
+        // ③ Text 入 Document / Doctype 入非 Document → HRE
+        // https://dom.spec.whatwg.org/#concept-node-ensure-pre-insertion-validity
+        (function _r215Validate(self, node215) {
+          if (globalThis._r215NoValidate) return; // surround 叶子路径的先变更后抛序（R215）
+          var sc215 = self.startContainer;
+          // referenceNode：Text 容器 → 自身；否则 childNodes[startOffset]。
+          var ref215 = null;
+          if (sc215.nodeType === 3 || sc215.nodeType === 4) ref215 = sc215;
+          else if (sc215.childNodes && (self.startOffset | 0) < sc215.childNodes.length) {
+            ref215 = sc215.childNodes[self.startOffset | 0];
+          }
+          var parent215 = ref215 === null ? sc215 : (ref215.parentNode || sc215);
+          if (parent215.nodeType !== 1 && parent215.nodeType !== 9
+            && parent215.nodeType !== 11) {
+            throw new (globalThis.DOMException || Error)(
+              'Nodes of type ' + parent215.nodeType + ' cannot have children.',
+              'HierarchyRequestError');
+          }
+          // ② node 自身或后代 === parent → 环（guard 128 防既有环失控）。
+          var cur215 = parent215, hops215 = 0;
+          while (cur215 && hops215++ < 128) {
+            if (cur215 === node215) {
+              throw new (globalThis.DOMException || Error)(
+                'The new child element contains the parent.',
+                'HierarchyRequestError');
+            }
+            cur215 = cur215.parentNode;
+          }
+          if ((node215.nodeType === 3 || node215.nodeType === 4)
+            && parent215.nodeType === 9) {
+            throw new (globalThis.DOMException || Error)(
+              'Nodes of type ' + node215.nodeType + ' cannot be inserted into a Document.',
+              'HierarchyRequestError');
+          }
+          if (node215.nodeType === 10 && parent215.nodeType !== 9) {
+            throw new (globalThis.DOMException || Error)(
+              'Nodes of type 10 cannot be inserted into a non-Document.',
+              'HierarchyRequestError');
+          }
+        })(this, node);
         if (!node || !this.startContainer) return node;
         // R209（js-dom M4）：spec `dom-range-insertnode`——startContainer 是 Text/
         // CDATA 时先 splitText(startOffset)（原节点保前半、尾半为新节点在父内），
@@ -3899,15 +3947,21 @@
         // https://dom.spec.whatwg.org/#dom-range-surroundcontents
         if (newParent.nodeType === 3 || newParent.nodeType === 4
           || newParent.nodeType === 7 || newParent.nodeType === 8) {
-          if (kids !== null && kids.length === 0) this.insertNode(newParent);
-          else if (kids === null && this.startContainer !== this.endContainer) {
-            // 跨容器 + 叶子 newParent：extract 不可本地模拟，但 insertNode 语义
-            // （startContainer 为 Text 时 split）仍可先行——保守跳过变更直接抛。
-          } else if (kids === null
-            && (this.startContainer.nodeType === 3 || this.startContainer.nodeType === 4)
-            && this.startContainer === this.endContainer) {
-            this.insertNode(newParent);
-          }
+          // R215（js-dom M4）：叶子 newParent 的「先变更后抛」序恢复——
+          // sim（common.js mySurroundContents）在步骤 3 extract 变更树之后
+          // 步骤 5 才抛。R215 的 insertNode pre-insertion 校验会拦在变更前
+          // ——对**本 surround 路径**抑制校验（_r215NoValidate 帧标志），恢复
+          // 旧 split/insert 行为后抛（R212 序，829 基线）。8,9 循环场景的
+          // 校验在 insertNode 直接调用时仍然生效。
+          globalThis._r215NoValidate = true;
+          try {
+            if (kids !== null && kids.length === 0) this.insertNode(newParent);
+            else if (kids === null
+              && (this.startContainer.nodeType === 3 || this.startContainer.nodeType === 4)
+              && this.startContainer === this.endContainer) {
+              this.insertNode(newParent);
+            }
+          } finally { globalThis._r215NoValidate = false; }
           throw new (globalThis.DOMException || Error)(
             'Nodes of type ' + newParent.nodeType + ' cannot have children.',
             'HierarchyRequestError');
