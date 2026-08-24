@@ -878,7 +878,13 @@
       if (!n || typeof n !== 'object' || n.nodeType === undefined) return null;
       var o;
       if (n.nodeType === 3 || n.nodeType === 8) {
-        o = { nodeType: n.nodeType, nodeName: n.nodeName, nodeValue: n.nodeValue, data: n.nodeValue, textContent: n.nodeValue, childNodes: [], children: [] };
+        // R219（js-dom M4）：经 `_zwMText`/`_zwMComment` 工厂重建（hasChildNodes/
+        // contains/cDP + Text/Comment 原型链全配）——旧裸对象缺方法面，common.js
+        // nextNode oracle 的 `node.hasChildNodes()` 直接 TypeError（WPT
+        // Range-extractContents「Returned fragment」簇：cloneContents/
+        // extractContents 的 fragment 子树深克隆走此分支）。
+        var _r219Data = String(n.data != null ? n.data : (n.nodeValue != null ? n.nodeValue : ''));
+        o = n.nodeType === 3 ? _zwMText(_r219Data, null) : _zwMComment(_r219Data, null);
       } else if (n.nodeType === 1) {
         // R156：经 `_zwMEl` 工厂重建（原型链 + setAttribute/mutation/事件面全配——
         // WPT Element-matches 的 traverse(clone) 调 elem.setAttribute，旧 plain 对象
@@ -1603,12 +1609,65 @@
     _r117GenVal(this, newNode, 'insertBefore');
     // R117：refNode NotFound 校验 lenient——内部加载路径经 insertBefore 挂 pending ref（视图
     // 不完整会误抛，browser IndexedDB owner 测试的 blank 页加载实证回归）；L2 live 视图后收口。
-    if (this && typeof this.insertBefore === 'function') {
+    // R219（js-dom M4）：own-property 委托判定（R126 removeChild/R127 replaceChild 同款教训
+    // ——`typeof this.insertBefore` 对**无自身实现**的 plain 元素（iframe 子文档 docEl/
+    // head/body——R130/R216 合成树）命中本原型方法自身 → 无限自递归（探针实测 depth
+    // 4198 Maximum call stack；WPT Range-insertNode 12,x–15,x 72F：restoreIframe 的
+    // refDoc documentElement 容器 insertNode）。有自身实现（proxy/_zwMEl/detached doc）
+    // 直调；无实现回落 appendChild 兜底（R219 试过本地 splice 插入语义——绕过 detached
+    // doc 的 _tree 查询树使 restoreIframe 后 sim 残留跨轮泄漏，surround rows 12–24
+    // P2F 350+，已回退；本地插入须等 iframe contentDocument 每轮 fresh-doc 后再做）。
+    // R219 修正：proxy 元素（host 桥，`insertBefore` 经 get trap 动态返回、非 own
+    // property——own-property 判定会误判「无实现」走兜底，绕过桥使 mutation 失同步）。
+    // proxy 判据 = `__zwHandle` 经 get trap 可读（part03 `_makeProxy` get 分支）——
+    // 命中即直调 trap 版本。
+    var _r219OwnIb = this && Object.prototype.hasOwnProperty.call(this, 'insertBefore')
+      ? this.insertBefore : null;
+    if (!_r219OwnIb && this && this.__zwHandle !== undefined
+      && typeof this.insertBefore === 'function'
+      && this.insertBefore !== globalThis.Node.prototype.insertBefore) {
       return this.insertBefore(newNode, refNode);
+    }
+    if (_r219OwnIb && typeof _r219OwnIb === 'function'
+        && _r219OwnIb !== globalThis.Node.prototype.insertBefore) {
+      return _r219OwnIb.call(this, newNode, refNode);
     }
     try { this.appendChild(newNode); } catch (_e6) {}
     return newNode;
   });
+  // R219（js-dom M4）：`Node.prototype.contains` / `compareDocumentPosition` /
+  // `hasChildNodes` 泛型（spec Node 接口三方法）。既有实现只逐节点 own-property
+  // 附加（_zwMEl/工厂元素/文本——R79/R209），iframe 子文档合成树（docEl/head/
+  // body——R130/R216/R207）与 fragment 字面量缺方法面：R219 insertBefore 防递归
+  // 修复使 Range mega-case 的模拟层（common.js isAncestorContainer →
+  // `node2.compareDocumentPosition`）深入到这些节点后 TypeError
+  // （"compareDocumentPosition is not a function"——surroundContents 12,x–14,x）。
+  // 委托共享 `_zwNodeContains`/`_zwCompareDocumentPosition`（own-property 版本
+  // 同源；own 实现优先，原型仅兜底——own 判定防自身递归同 R126 教训）。
+  // https://dom.spec.whatwg.org/#dom-node-contains
+  // https://dom.spec.whatwg.org/#dom-node-comparedocumentposition
+  // R219 暂缓（记录）：三个原型兜底方法会解锁 sim（common.js mySurroundContents）
+  // 深入到 iframe 子文档合成树，但 shim 的 iframe contentDocument 是跨轮共享对象，
+  // restoreIframe 清理只动 doc 首末子——sim 的部分变更（head 内 comment/PI 移入）
+  // 跨轮残留使 mega-case 后续 subtest 树形态与 host 分歧（surround -335P 实测）。
+  // 待「iframe contentDocument 每轮 fresh-doc」（R208 家族深项）后随同启用。
+  var _r219ProtoMethods = false;
+  if (_r219ProtoMethods && !globalThis.Node.prototype.contains) {
+    _zwDefProtoMethod(globalThis.Node.prototype, 'contains', function (other) {
+      return _zwNodeContains(this, other);
+    });
+  }
+  if (_r219ProtoMethods && !globalThis.Node.prototype.compareDocumentPosition) {
+    _zwDefProtoMethod(globalThis.Node.prototype, 'compareDocumentPosition', function (other) {
+      return _zwCompareDocumentPosition(this, other);
+    });
+  }
+  if (_r219ProtoMethods && !globalThis.Node.prototype.hasChildNodes) {
+    _zwDefProtoMethod(globalThis.Node.prototype, 'hasChildNodes', function () {
+      var kids = this && this.childNodes;
+      return !!(kids && typeof kids.length === 'number' && kids.length > 0);
+    });
+  }
   _zwDefProtoMethod(globalThis.Node.prototype, 'removeChild', function(child) {
     // R126 spec 纠正：`dom-node-pre-remove` 步骤 1 是 **child 包含检查**（不在子的
     // childNodes → NotFoundError）——先于任何「父类型不能有子」检查（WPT

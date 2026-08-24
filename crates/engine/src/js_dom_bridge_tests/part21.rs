@@ -3289,3 +3289,70 @@ fn test_iframe_testnodes_method_face_r209() {
         .value;
     assert_eq!(out, "ALL-OK", "R209 iframe testNodes 方法面/surroundContents 异常链");
 }
+
+#[test]
+fn r219_insert_before_anti_recursion_and_fallback() {
+    // R219（js-dom M4）：Node.prototype.insertBefore 的 own-property 防递归判定 +
+    // proxy 委托 + 无实现回落。三层：
+    // ① plain 元素（无 own insertBefore/appendChild）经原型调用不再自递归
+    //    （旧 `typeof this.insertBefore` 命中原型方法自身 → Maximum call stack）；
+    // ② proxy 元素（get trap 动态返回 insertBefore，非 own property）直调 trap 版本
+    //    （own-property 判定单独会误判「无实现」绕过 host 桥）；
+    // ③ 有 own insertBefore 的节点（iframe 工厂元素）直调自身实现。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><div id=\"t\">x</div></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+
+    // ①②③ 一体断言：plain 元素原型调用无递归完成；proxy 元素（#t 的 get trap）
+    // insertBefore 走 host 桥（mutation 记录 childList）；工厂元素 own 实现直调。
+    sandbox
+        .execute(
+            r#"
+var out = [];
+// ① plain 元素（Object.create 挂 HTMLHtmlElement.prototype 链——无任何 own 方法）：
+// 经原型 insertBefore 不抛 RangeError（自递归消除），无 childNodes 视图时 appendChild
+// 兜底亦无 → 静默返回入参。
+var plain = Object.create(globalThis.HTMLHtmlElement.prototype);
+plain.nodeType = 1; plain.nodeName = 'HTML'; plain.tagName = 'HTML';
+try {
+  var r1 = plain.insertBefore({ nodeType: 1, nodeName: 'X' }, null);
+  out.push('plain:' + (r1 === r1) + ':' + (typeof r1));
+} catch (e1) { out.push('plain-throw:' + (e1 && e1.name)); }
+// ② proxy 元素（主文档 #t 的 handle proxy——insertBefore 经 get trap 返回）：
+// 原型方法入口对 proxy 直调 trap 版本 → mutation 走 host 桥。
+var el = document.getElementById('t');
+globalThis.Node.prototype.insertBefore.call(el, document.createTextNode('nb'), el.firstChild);
+out.push('proxy-first:' + (el.firstChild && el.firstChild.data));
+// ③ 工厂元素（detached doc createElement 产物有 own insertBefore）：直调自身。
+var dd = document.implementation.createHTMLDocument('');
+var fe = dd.createElement('p');
+var fk = dd.createTextNode('kid');
+fe.appendChild(fk);
+globalThis.Node.prototype.insertBefore.call(fe, dd.createTextNode('pre'), fk);
+out.push('own-impl:' + fe.childNodes[0].data + ',' + fe.childNodes[1].data);
+globalThis.__r219out = out.join('|');
+"#,
+        )
+        .unwrap();
+    let out = sandbox
+        .execute("globalThis.__r219out")
+        .unwrap()
+        .value;
+    assert_eq!(
+        out, "plain:true:object|proxy-first:nb|own-impl:pre,kid",
+        "R219 insertBefore 防递归/proxy 委托/own 直调三层"
+    );
+}

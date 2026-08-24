@@ -3923,6 +3923,25 @@
           } else {
             this.startContainer.appendChild(node);
           }
+          // R219（js-dom M4）：spec `dom-range-insertnode` 末步——「If range's start
+          // and end are the same, set range's end to (parent, newOffset)」（与上方
+          // Text 分支的 syncEnd209 同款；common.js myInsertNode 的
+          // `range.setEnd(parent_, newOffset)`）。newOffset = 插入后 node 在父内的
+          // 索引 + 1（fragment 按其子长度计——此处插入已展平，取实际索引即可）。
+          // WPT Range-insertNode 15,x「resulting range position」的 endOffset
+          // expected 2 got 1 簇（element 容器 collapsed 插入后 end 未同步）。
+          // https://dom.spec.whatwg.org/#dom-range-insertnode
+          if (this.startContainer === this.endContainer
+            && this.startOffset === this.endOffset) {
+            var _r219p = node.parentNode || this.startContainer;
+            var _r219kids = _r219p.childNodes;
+            if (_r219kids && typeof _r219kids.indexOf === 'function') {
+              var _r219ni = _r219kids.indexOf(node);
+              if (_r219ni >= 0) {
+                try { this.setEnd(_r219p, _r219ni + 1); } catch (_eR219se) {}
+              }
+            }
+          }
         } catch (_e) {}
         return node;
       },
