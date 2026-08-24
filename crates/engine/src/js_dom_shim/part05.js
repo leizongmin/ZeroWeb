@@ -912,6 +912,19 @@
         get: function () { return docEl; }
       });
     } catch (_eD) {}
+    // R216（js-dom M4）：docEl **入 doc 树**（spec：documentElement 是 Document
+    // 的子——WPT Range-insertNode 12,x/25,x：`[document, 0, document, 1]` 与
+    // `[documentElement, 0, …]` 的 setEnd 按 doc.childNodes 长度校验，doc 无子
+    // 使 setEnd(doc,1) 抛 IndexSizeError——setup unexpectedException 整簇）。
+    // doc.childNodes 是 doc 级 appendChild 的动态视图（detached doc 字面量数组，
+    // 非 R209 时代的 query-tree），push 不扰动 restoreIframe 清理循环（循环读
+    // firstChild/lastChild 即本数组首末——docEl 入列后循环正确跳过 doctype 只
+    // 清 doctype 后的动态子）。
+    try {
+      docEl.parentNode = doc;
+      doc.childNodes.push(docEl);
+      if (docEl.nodeType === 1 && doc.children && !doc.children.length) doc.children.push(docEl);
+    } catch (_eR216m) {}
     // R209（js-dom M4）：`doc.doctype`（spec Document.doctype：首个 DocumentType 子
     // 或 null）。Range-test-iframe.html 恒 `<!doctype html>`——common.js setupRangeTests
     // 的 `doctype = document.doctype` 在 iframe 子文档旧得 undefined → testNodes 的
@@ -963,12 +976,10 @@
             Object.setPrototypeOf(_r209Dt, globalThis.DocumentType.prototype);
           }
         } catch (_eR209p) {}
-        // R209 注：doctype **不入** doc.childNodes——restoreIframe 的首/末子清理
-        // 循环（while firstChild.nodeType != 10）依赖 doctype 可经 firstChild 到达，
-        // 但 detached doc 的 childNodes 是 doc 级 appendChild 的动态视图（doctest
-        // 首子 unshift 会改变 restoreIframe 清理循环节奏与 referenceDoc 的
-        // removeChild(documentElement) 语义）。getter-only（doc.doctype 可读 +
-        // 节点方法面完整）即可满足 common.js 的 `doctype = document.doctype` 行。
+        // R216 评估注：doctype 入 childNodes 首位在 docEl 已入树的形态下仍净
+        // -55（restoreIframe 清理循环节奏 + referenceDoc 语义的扰动面比 docEl
+        // 单独入树更广）——保持 getter-only（doc.doctype 可读即可）。`[document,
+        // 0, document, N]` 边界经 docEl 单子近似（length 1）。
         Object.defineProperty(doc, 'doctype', {
           configurable: true,
           get: function () { return _r209Dt; }

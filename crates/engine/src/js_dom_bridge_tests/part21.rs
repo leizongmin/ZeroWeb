@@ -2928,6 +2928,86 @@ fn test_insert_node_pre_insertion_validity_r215() {
         "R215 insertNode pre-insertion validity"
     );
 }
+/// R216（js-dom M4）：iframe doc 的 docEl **入 doc 树**（spec：documentElement
+/// 是 Document 的子——WPT Range-insertNode 25,x：`[document, 0, document, 1]`
+/// 的 setEnd 按 doc.childNodes 长度校验，doc 无子使 setup 抛 IndexSizeError
+/// 整簇；12,x 的 upwalk 链 HTML→#document）。doctype 保持 getter-only
+/// （入 childNodes 首位实测 -55——restoreIframe 清理节奏扰动面更广，R216 评估注）。
+/// <https://dom.spec.whatwg.org/#document>
+#[test]
+fn test_iframe_docelement_in_doctree_r216() {
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let mut sandbox = V8Sandbox::with_config(zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    })
+    .unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> =
+        Arc::new(Mutex::new("<html><body></body></html>".to_string()));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    let common_js =
+        include_str!("../../../../tests/wpt-runner/wpt-data/dom/common.js").to_string();
+    let iframe_html = include_str!(
+        "../../../../tests/wpt-runner/wpt-data/dom/ranges/Range-test-iframe.html"
+    )
+    .to_string();
+    let fetched_common = common_js.clone();
+    let fetched_iframe = iframe_html.clone();
+    sandbox.register_callback(
+        "__zw_fetch",
+        Box::new(move |args| {
+            let url = args.get(2).map(String::as_str).unwrap_or("");
+            if url.ends_with("Range-test-iframe.html") {
+                return format!("__zwfr:200\u{1f}OK\u{1f}\u{1f}{}", fetched_iframe);
+            }
+            "__zw_fetch_error:not-found".to_string()
+        }),
+    );
+    sandbox.register_callback(
+        "__zw_fetch_script",
+        Box::new(move |args| {
+            let src = args.get(1).map(String::as_str).unwrap_or("");
+            if src.ends_with("common.js") {
+                return fetched_common.clone();
+            }
+            String::new()
+        }),
+    );
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+    let out = sandbox
+        .execute(
+            r#"
+            var ifr = document.createElement('iframe');
+            document.body.appendChild(ifr);
+            ifr.setAttribute('src', 'Range-test-iframe.html');
+            var doc = ifr.contentDocument;
+            var win = ifr.contentWindow;
+            win.setupRangeTests();
+            var out = [];
+            // ① docEl.parentNode === doc（upwalk 链 HTML→#document）
+            if (doc.documentElement.parentNode !== doc) out.push('parent:' + (doc.documentElement.parentNode ? 'other' : 'null'));
+            // ② docEl 在 doc.childNodes 内
+            var has = false;
+            for (var i = 0; i < doc.childNodes.length; i++) if (doc.childNodes[i] === doc.documentElement) has = true;
+            if (!has) out.push('in-childNodes:false');
+            // ③ doc-rooted range setup 不抛（25,x 前置）
+            win.testRangeInput = '[document, 0, document, 1]';
+            win.testNodeInput = 'paras[0]';
+            win.run();
+            if (win.unexpectedException) out.push('setup:' + String(win.unexpectedException.message).slice(0, 50));
+            else if (!win.testRange) out.push('setup:null-range');
+            out.length ? out.join('\n') : 'ALL-OK'
+            "#,
+        )
+        .unwrap()
+        .value;
+    assert_eq!(out, "ALL-OK", "R216 iframe docEl 入 doc 树");
+}
 /// R209（js-dom M4）：iframe 子文档 testNodes 方法面 + surroundContents 叶子
 /// newParent 的 spec 异常链。根因（探针实证）：iframe/detached 工厂节点形态缺
 /// compareDocumentPosition/hasChildNodes/cloneNode/substringData/splitText/
