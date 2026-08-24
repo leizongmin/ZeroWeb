@@ -6116,7 +6116,10 @@
     // IndexSizeError；parent 非空时新节点插到原节点 nextSibling 前）。common.js
     // myInsertNode 对 foreignDoc/xmlDoc 域文本节点（经 detached doc createTextNode
     // → _zwMText）调 splitText——旧 'not a function'。仅 nodeType 3 挂（comment 无）。
-    if (n.nodeType === 3) {
+    // R218（js-dom M4）：nt=4（CDATASection）补入——spec CDATASection : Text
+    // （splitText 经继承可达；WPT Range-insertNode 6,x：sim 对 CDATA startContainer
+    // 调 range.startContainer.splitText——旧 'not a function' 34F）。
+    if (n.nodeType === 3 || n.nodeType === 4) {
       n.splitText = function (offset) {
         var cur = _cur();
         var o = offset | 0;
@@ -6128,9 +6131,16 @@
         var tail = cur.slice(o);
         _write(cur.slice(0, o));
         var od = n.ownerDocument;
-        var nt = (od && typeof od.createTextNode === 'function')
-          ? od.createTextNode(tail)
-          : globalThis.document.createTextNode(tail);
+        // R218：nt=4（CDATA）时尾节点同为 CDATA（spec CDATASection : Text——
+        // split 产物类型保源；旧版恒 createTextNode 使 CDATA split 尾变 Text）。
+        var nt;
+        if (n.nodeType === 4 && od && typeof od.createCDATASection === 'function') {
+          nt = od.createCDATASection(tail);
+        } else {
+          nt = (od && typeof od.createTextNode === 'function')
+            ? od.createTextNode(tail)
+            : globalThis.document.createTextNode(tail);
+        }
         var p = n.parentNode;
         if (p && typeof p.insertBefore === 'function') {
           try { p.insertBefore(nt, (typeof n.nextSibling !== 'undefined') ? n.nextSibling : null); } catch (_eR209i) {}
@@ -7778,6 +7788,30 @@
             }
             if (c && c.parentNode && c.parentNode.removeChild) { try { c.parentNode.removeChild(c); } catch (_e) {} }
             if (c) { c.parentNode = this; this.childNodes.push(c); if (c.nodeType === 1) this.children.push(c); }
+            return c;
+          },
+          // R218（js-dom M4）：insertBefore（spec `dom-node-pre-insert`——WPT
+          // Range-insertNode 38,x：range 落在 docfrag 容器时 sim 的
+          // `parent_.insertBefore(node, referenceNode)`——旧 'not a function' 17F。
+          // ref=null 等价 append；ref 不在子列表尾插）。
+          insertBefore: function (c, ref) {
+            if (c && c.nodeType === 11 && c !== this) {
+              var _r218kids = c.childNodes.slice();
+              c.childNodes.length = 0;
+              for (var _r218i = 0; _r218i < _r218kids.length; _r218i++) this.insertBefore(_r218kids[_r218i], ref);
+              return c;
+            }
+            if (c && c.parentNode && c.parentNode.removeChild) { try { c.parentNode.removeChild(c); } catch (_eR218) {} }
+            if (!c) return c;
+            if (ref == null) { c.parentNode = this; this.childNodes.push(c); if (c.nodeType === 1) this.children.push(c); return c; }
+            var _r218ri = this.childNodes.indexOf(ref);
+            if (_r218ri < 0) { c.parentNode = this; this.childNodes.push(c); if (c.nodeType === 1) this.children.push(c); return c; }
+            c.parentNode = this;
+            this.childNodes.splice(_r218ri, 0, c);
+            if (c.nodeType === 1) {
+              var _r218ci = this.children.indexOf(ref);
+              this.children.splice(_r218ci < 0 ? this.children.length : _r218ci, 0, c);
+            }
             return c;
           },
           removeChild: function (c) {

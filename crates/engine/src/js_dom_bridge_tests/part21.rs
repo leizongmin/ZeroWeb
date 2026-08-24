@@ -3084,6 +3084,76 @@ fn test_insert_node_document_position_rules_r217() {
         "R217 insertNode Document 子位置规则"
     );
 }
+/// R218（js-dom M4）：两件方法面补齐——
+/// ① **CDATASection（nt=4）的 splitText**（spec CDATASection : Text——splitText
+///   经继承可达；WPT Range-insertNode 6,x：sim 对 CDATA startContainer 调
+///   range.startContainer.splitText——旧 'not a function' 34F）；
+/// ② **detached doc fragment 的 insertBefore**（spec `dom-node-pre-insert`——
+///   38,x：range 落在 docfrag 容器时 sim 的 parent_.insertBefore——旧
+///   'not a function' 17F；ref=null 等价 append + fragment 展平）。
+/// <https://dom.spec.whatwg.org/#concept-node-pre-insert>
+#[test]
+fn test_cdata_splittext_and_fragment_insertbefore_r218() {
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let mut sandbox = V8Sandbox::with_config(zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    })
+    .unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> =
+        Arc::new(Mutex::new("<html><body></body></html>".to_string()));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+    let out = sandbox
+        .execute(
+            r#"
+            var out = [];
+            // ① CDATA splitText：offset 拆分 + parent 内插入
+            var xd = document.implementation.createDocument(null, null, null);
+            var cd = xd.createCDATASection('1234');
+            xd.appendChild(cd);
+            var tail = cd.splitText(2);
+            out.push('cdata-split:' + String(cd.data) + '|' + String(tail.data)
+              + ':tail-is-cdata=' + (tail.nodeType === 4));
+            // ② CDATA splitText 越界 IndexSizeError
+            var cd2 = xd.createCDATASection('ab');
+            var threw = '';
+            try { cd2.splitText(5); } catch (e) { threw = e.name; }
+            out.push('cdata-oob:' + threw);
+            // ③ detached-doc fragment insertBefore：ref 前插 + ref=null 尾插 + 展平
+            //（R218 的修复面在 detached doc fragment——主文档 fragment 为 handle proxy 另径）
+            var dd = document.implementation.createDocument(null, null, null);
+            var frag = dd.createDocumentFragment();
+            var a = dd.createElement('a');
+            var b = dd.createElement('b');
+            frag.appendChild(a);
+            var c = dd.createElement('c');
+            frag.insertBefore(c, a);
+            out.push('frag-order:' + (frag.childNodes[0] === c && frag.childNodes[1] === a));
+            frag.insertBefore(b, null);
+            out.push('frag-tail:' + (frag.childNodes[2] === b));
+            var frag2 = dd.createDocumentFragment();
+            var inner = dd.createDocumentFragment();
+            inner.appendChild(dd.createElement('x'));
+            frag2.insertBefore(inner, null);
+            out.push('frag-flatten:' + (frag2.childNodes.length === 1 && frag2.childNodes[0] && String(frag2.childNodes[0].nodeName).toLowerCase() === 'x')
+              + ':inner-emptied=' + (inner.childNodes.length === 0));
+            out.length ? out.join('\n') : 'ALL-OK'
+            "#,
+        )
+        .unwrap()
+        .value;
+    assert_eq!(
+        out,
+        "cdata-split:12|34:tail-is-cdata=true\ncdata-oob:IndexSizeError\nfrag-order:true\nfrag-tail:true\nfrag-flatten:true:inner-emptied=true",
+        "R218 CDATA splitText + fragment insertBefore"
+    );
+}
 /// R209（js-dom M4）：iframe 子文档 testNodes 方法面 + surroundContents 叶子
 /// newParent 的 spec 异常链。根因（探针实证）：iframe/detached 工厂节点形态缺
 /// compareDocumentPosition/hasChildNodes/cloneNode/substringData/splitText/
