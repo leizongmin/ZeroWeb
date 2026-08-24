@@ -5,6 +5,7 @@
 use std::collections::HashMap;
 
 use zero_css_parser::values::{CalcExpr, LengthValue};
+use zero_css_parser::{Token, Tokenizer};
 
 use crate::property::ComputedStyle;
 use crate::property::types::{ColumnRuleWidthComputedValue, FlexBasisValue, LineHeightValue};
@@ -223,6 +224,9 @@ fn resolve_var_reference(
     custom_properties: &HashMap<String, String>,
     visiting: &mut Vec<String>,
 ) -> Option<String> {
+    if !is_custom_property_name(name) {
+        return None;
+    }
     if visiting.iter().any(|n| n == name) {
         return fallback.and_then(|f| resolve_var_recursive(f, custom_properties, visiting));
     }
@@ -233,6 +237,12 @@ fn resolve_var_reference(
         return resolved;
     }
     fallback.and_then(|f| resolve_var_recursive(f, custom_properties, visiting))
+}
+
+fn is_custom_property_name(name: &str) -> bool {
+    let mut tokens = Tokenizer::new(name).collect_tokens().into_iter();
+    matches!(tokens.next(), Some(Token::Ident(ident)) if ident.starts_with("--") && ident.len() > 2)
+        && tokens.next().is_none()
 }
 
 /// 替换值中嵌入的所有 var() 调用。任一 var() invalid → 整值 invalid（None）。
@@ -786,6 +796,15 @@ mod tests {
         let custom = HashMap::new();
         let result = resolve_var("var(--undefined, blue)", &custom);
         assert_eq!(result, "blue");
+    }
+
+    #[test]
+    fn test_resolve_var_rejects_invalid_custom_property_name() {
+        let custom = HashMap::new();
+        assert_eq!(resolve_var("var(color, blue)", &custom), "var(color, blue)");
+        assert_eq!(resolve_var("var(, blue)", &custom), "var(, blue)");
+        assert_eq!(resolve_var("var(--color blue, red)", &custom), "var(--color blue, red)");
+        assert_eq!(resolve_var("var(--color(), red)", &custom), "var(--color(), red)");
     }
 
     #[test]

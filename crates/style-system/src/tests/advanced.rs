@@ -606,6 +606,28 @@ fn test_var_fallback_in_pipeline() {
     assert_eq!(div_style.color, ColorValue::Rgba(0, 0, 255, 255));
 }
 
+/// var() 第一参数不是 custom property name 时，整条声明按 computed-value-time invalid 处理。
+#[test]
+fn test_var_invalid_custom_property_name_in_pipeline() {
+    let (doc, _html, _body, div, _p) = make_test_dom();
+    let mut sys = StyleSystem::new();
+
+    let stylesheets = vec![Stylesheet {
+        rules: vec![Rule::Style(StyleRule {
+            selectors: vec![make_tag_selector("div")],
+            declarations: vec![Declaration {
+                property: "color".to_string(),
+                value: "var(color, blue)".to_string(),
+                important: false,
+            }],
+        })],
+    }];
+
+    let styles = sys.compute_styles(&doc, &stylesheets);
+    let div_style = styles.get(&div).expect("div should have style");
+    assert_eq!(div_style.color, ColorValue::Rgba(0, 0, 0, 255));
+}
+
 /// var() 解析 width 长度值。
 #[test]
 fn test_var_resolution_width_length() {

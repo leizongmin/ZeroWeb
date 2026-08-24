@@ -183,6 +183,11 @@ fn test_parse_var_edge_cases() {
     assert_eq!(parse_var(""), None);
     // 缺少右括号应返回 None
     assert_eq!(parse_var("var(--color"), None);
+    // CSS Variables: var() 的第一个参数必须是 custom property name（--*）。
+    assert_eq!(parse_var("var(color, red)"), None);
+    assert_eq!(parse_var("var(, red)"), None);
+    assert_eq!(parse_var("var(--color blue, red)"), None);
+    assert_eq!(parse_var("var(--color(), red)"), None);
     // CSS Values §4：函数名大小写不敏感（VAR/Var ≡ var）；自定义属性名大小写敏感（保持原样）。
     let result = parse_var("VAR(--color, red)").unwrap();
     assert_eq!(result.name, "--color");

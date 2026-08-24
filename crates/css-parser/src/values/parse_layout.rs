@@ -1,6 +1,7 @@
 //! CSS Scroll Snap、变量、分页属性解析。
 
 use super::*;
+use crate::tokenizer::{Token, Tokenizer};
 
 // ── CSS Scroll Snap 值类型 ──────────────────────────────────────────
 
@@ -303,8 +304,9 @@ pub fn parse_length_shorthand(value: &str) -> Option<[LengthValue; 4]> {
 pub fn parse_var(value: &str) -> Option<VarReference> {
     let value = value.trim();
 
-    // CSS Values §4：函数名大小写不敏感（VAR ≡ Var ≡ var）。自定义属性名（--x）大小写敏感，
-    // 故仅前缀大小写不敏感检查，内容（变量名/回退）按原样提取。
+    // CSS Values §4：函数名大小写不敏感（VAR ≡ Var ≡ var）。
+    // https://www.w3.org/TR/css-variables-1/#using-variables
+    // 自定义属性名（--x）大小写敏感，须保留原样。
     if !(value.len() >= 4 && value[..4].eq_ignore_ascii_case("var(") && value.ends_with(')')) {
         return None;
     }
@@ -314,18 +316,30 @@ pub fn parse_var(value: &str) -> Option<VarReference> {
 
     // 找到逗号（如果有）
     if let Some(comma_pos) = inner.find(',') {
-        let name = inner[..comma_pos].trim().to_string();
+        let name = inner[..comma_pos].trim();
+        if !is_custom_property_name(name) {
+            return None;
+        }
         let fallback = inner[comma_pos + 1..].trim().to_string();
         Some(VarReference {
-            name,
+            name: name.to_string(),
             fallback: Some(fallback),
         })
     } else {
+        if !is_custom_property_name(inner) {
+            return None;
+        }
         Some(VarReference {
             name: inner.to_string(),
             fallback: None,
         })
     }
+}
+
+fn is_custom_property_name(name: &str) -> bool {
+    let mut tokens = Tokenizer::new(name).collect_tokens().into_iter();
+    matches!(tokens.next(), Some(Token::Ident(ident)) if ident.starts_with("--") && ident.len() > 2)
+        && tokens.next().is_none()
 }
 
 // ── CSS Page Break 值类型 ──────────────────────────────────────────────

@@ -180,6 +180,8 @@ fn test_property_supported_font() {
     assert!(!is_property_supported("font-size", "auto"));
     assert!(!is_property_supported("font-size", "-1px"));
     assert!(!is_property_supported("font-size", "infpx"));
+    assert!(!is_property_supported("color", "var(color, blue)"));
+    assert!(!is_property_supported("color", "var(--color blue, red)"));
 }
 
 #[test]
