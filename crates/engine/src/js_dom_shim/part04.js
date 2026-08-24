@@ -342,6 +342,15 @@
             _r115Entry = _zwLoadIframeEntry(key, _r115Src, {});
             if (_r115Entry.url) _r115Entry.history = [_r115Entry.url];
           }
+          if (_r115Entry && _r115Entry.state === 'loading' && _r115Entry.pendingId &&
+              typeof __zw_drain_async_iframe === 'function') {
+            try {
+              var _r115Drained = __zw_drain_async_iframe(_r115Entry.pendingId);
+              if (_r115Drained && globalThis.__zw_pending && globalThis.__zw_pending[_r115Entry.pendingId]) {
+                globalThis.__zw_pending[_r115Entry.pendingId](_r115Drained);
+              }
+            } catch (_e115drain) {}
+          }
           if (prop === 'contentWindow') {
             if (_r115Entry.win) {
               // R139（js-dom M4）：named iframe 的 window 全局注册（HTML「window named
@@ -359,6 +368,10 @@
               return _r115Entry.win;
             }
             var _r115FbDoc = _r115Entry.doc || _zwMakeIframeDoc('html', '');
+            try {
+              if (_r115Entry.url && !_r115FbDoc._zwURL) _r115FbDoc._zwURL = _r115Entry.url;
+              if (_r115Entry._zwSwClientId && !_r115FbDoc._zwSwClientId) _r115FbDoc._zwSwClientId = _r115Entry._zwSwClientId;
+            } catch (_e115fbMeta) {}
             var _r115FbWin = _zwMakeIframeWin(_r115FbDoc, key, {});
             try { if (_r115FbDoc.__r115SetWin) _r115FbDoc.__r115SetWin(_r115FbWin); } catch (_eW2) {}
             _r115Entry.win = _r115FbWin; // R139：fallback win 记账（后续读同 identity）
@@ -3509,13 +3522,16 @@
                     String(ceAdded[ci].tagName || '').toUpperCase() === 'IFRAME') {
                   (function(frame) {
                     _defer(function() {
-                      try {
-                        var _zwIframeWin = frame.contentWindow;
-                        if (_zwIframeWin && typeof _zwIframeWin.__zwRunInlineScripts === 'function') {
-                          _zwIframeWin.__zwRunInlineScripts();
-                        }
-                      } catch (_eIframeScript) {}
-                      try { frame.dispatchEvent(new globalThis.Event('load')); } catch (_eIframeLoad) {}
+                      try { frame.contentWindow; } catch (_eIframeStart) {}
+                      _zwWhenIframeSettled(frame, function() {
+                        try {
+                          var _zwIframeWin = frame.contentWindow;
+                          if (_zwIframeWin && typeof _zwIframeWin.__zwRunInlineScripts === 'function') {
+                            _zwIframeWin.__zwRunInlineScripts();
+                          }
+                        } catch (_eIframeScript) {}
+                        try { frame.dispatchEvent(new globalThis.Event('load')); } catch (_eIframeLoad) {}
+                      });
                     });
                   })(ceAdded[ci]);
                 }

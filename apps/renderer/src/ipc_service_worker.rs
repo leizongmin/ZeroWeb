@@ -110,7 +110,17 @@ impl ServiceWorkerIpcClient {
                     script_type,
                 }) {
                     Ok(ServiceWorkerResult::Registered { registration_id }) => {
-                        serde_json::json!({"ok": true, "id": registration_id}).to_string()
+                        let existing = matches!(
+                            register_client.request(ServiceWorkerOperation::Snapshot { registration_id }),
+                            Ok(ServiceWorkerResult::Snapshot(snapshot))
+                                if snapshot.state != ServiceWorkerStateWire::Installing
+                        );
+                        serde_json::json!({
+                            "ok": true,
+                            "id": registration_id,
+                            "existing": existing,
+                        })
+                        .to_string()
                     }
                     Ok(_) => error_wire("invalid register response"),
                     Err(error) => response_error_wire(error),

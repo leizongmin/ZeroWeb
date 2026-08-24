@@ -47,6 +47,25 @@ fn extract_path(url: &str) -> &str {
     url
 }
 
+/// Extract the path plus query string from a URL, omitting the fragment.
+fn extract_path_query(url: &str) -> &str {
+    let candidate = if url.starts_with('/') {
+        url
+    } else {
+        let after_scheme = url
+            .strip_prefix("http://")
+            .or_else(|| url.strip_prefix("https://"))
+            .unwrap_or(url);
+        if let Some(slash_pos) = after_scheme.find('/') {
+            &after_scheme[slash_pos..]
+        } else {
+            url
+        }
+    };
+    let end = candidate.find('#').unwrap_or(candidate.len());
+    &candidate[..end]
+}
+
 /// Service Worker 生命周期状态。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ServiceWorkerState {
@@ -146,7 +165,11 @@ impl ServiceWorkerRegistration {
     pub fn is_in_scope(&self, url: &str) -> bool {
         // 如果 scope 以 / 开头，从 URL 中提取路径部分进行比较
         if self.scope.starts_with('/') {
-            let path = extract_path(url);
+            let path = if self.scope.contains('?') {
+                extract_path_query(url)
+            } else {
+                extract_path(url)
+            };
             return path.starts_with(&self.scope);
         }
         // 否则做前缀匹配（完整 URL scope）
@@ -851,6 +874,16 @@ mod tests {
         assert!(reg.is_in_scope("/app/page.html?q=1"));
         assert!(reg.is_in_scope("/app/page.html?foo=bar&baz=2"));
         assert!(reg.is_in_scope("https://example.com/app/page.html?v=2"));
+    }
+
+    #[test]
+    fn test_scope_matching_query_bearing_scope() {
+        let reg = ServiceWorkerRegistration::new(1, "/sw.js", "/app/page.html?controlled", "https://example.com");
+
+        assert!(reg.is_in_scope("/app/page.html?controlled"));
+        assert!(reg.is_in_scope("https://example.com/app/page.html?controlled#section"));
+        assert!(!reg.is_in_scope("/app/page.html?other"));
+        assert!(!reg.is_in_scope("/app/page.html"));
     }
 
     #[test]

@@ -446,9 +446,69 @@
   // win }）——静态 `<iframe src="/common/dummy.xml|.xhtml">` 用例族（Document-createElement /
   // case / createElementNS 等 ~750 subtest）经此取子文档。导航清空（页级）。
   var _iframeDocCache = {};
+  function _zwIframeKindFromUrl(url) {
+    return /\.xhtml(\?|#|$)/i.test(url) ? 'xhtml'
+      : (/\.html?(\?|#|$)/i.test(url) ? 'html'
+      : (/\.svg(\?|#|$)/i.test(url) ? 'svg' : 'xml'));
+  }
+  function _zwFlushIframeSettledCallbacks(entry) {
+    var callbacks = entry && entry._settleCallbacks;
+    if (!callbacks || !callbacks.length) return;
+    entry._settleCallbacks = [];
+    for (var i = 0; i < callbacks.length; i++) {
+      try { callbacks[i](); } catch (_e115cb) {}
+    }
+  }
+  function _zwFinishIframeEntry(entry, frameKey, url, wire) {
+    if (!entry || entry.state === 'done' || entry.state === 'error') return;
+    try {
+      if (!wire || String(wire).indexOf('__zw_fetch_error:') === 0) {
+        entry.state = 'error';
+        _zwFlushIframeSettledCallbacks(entry);
+        return;
+      }
+      // 响应 wire（fetch_bridge serialize_response）：`__zwfr:` + status \x1f statusText
+      // \x1f headers \x1f body——FIELD_SEP=\x1f，body 是末字段（原样保真）。
+      var parts = String(wire).split('\x1f');
+      var body = parts.length > 3 ? parts.slice(3).join('\x1f') : '';
+      var kind = _zwIframeKindFromUrl(url);
+      entry.doc = _zwMakeIframeDoc(kind, body);
+      try { entry.doc._zwURL = url; } catch (_e115u) {}
+      try { if (entry._zwSwClientId) entry.doc._zwSwClientId = entry._zwSwClientId; } catch (_e115c) {}
+      // R160：fragment URL 槽（`:target` 判定——WPT :target 簇的
+      // iframe 子文档 src 带 #target，doc 查询传 host 侧 set_url）。
+      try { entry.doc._zwFragmentUrl = url; } catch (_e160f) {}
+      var previousWin = entry.win || null;
+      entry.win = _zwMakeIframeWin(entry.doc, frameKey, entry.flags || {}, previousWin);
+      try { if (entry.doc.__r115SetWin) entry.doc.__r115SetWin(entry.win); } catch (_eW) {}
+      entry.state = 'done';
+      entry.url = url;
+      _zwObserveIframeWindowClient(entry, frameKey, url);
+      try { entry.win.__r206State = entry.state; } catch (_eR206m) {}
+      try { _zwRunIframeScripts(entry.win, entry.doc, body, url); } catch (_eR206s) {}
+      _zwFlushIframeSettledCallbacks(entry);
+    } catch (_e115f) {
+      entry.state = 'error';
+      _zwFlushIframeSettledCallbacks(entry);
+    }
+  }
+  function _zwWhenIframeSettled(frame, callback) {
+    var key = frame && frame.__zwHandle ? _elKey(null, frame.__zwHandle)
+      : (frame ? _elKey(frame.__zwSelector || null, null) : '');
+    var entry = key ? _iframeDocCache[key] : null;
+    if (!entry || entry.state !== 'loading') {
+      callback();
+      return;
+    }
+    entry._settleCallbacks = entry._settleCallbacks || [];
+    entry._settleCallbacks.push(callback);
+  }
   function _zwObserveIframeWindowClient(entry, key, url) {
     if (!entry || entry._zwSwClientId || entry._zwSwDestroyed || !key || !url ||
-        typeof __zw_sw_observe_window_client !== 'function') return;
+        typeof __zw_sw_observe_window_client !== 'function') {
+      if (entry && entry._zwSwClientId && entry.doc) entry.doc._zwSwClientId = entry._zwSwClientId;
+      return;
+    }
     // https://w3c.github.io/ServiceWorker/#client-frametype
     var clientId = 'iframe:' + String(key);
     try {
@@ -549,6 +609,9 @@
   // window/self/parent/top/document/location 绑 iframe win/doc。末尾执行
   // `<body onload=...>` 的处理器名（若 win 上已定义）。
   function _zwRunIframeScripts(win, doc, body, pageUrl) {
+    try {
+      if (win && win._zwScriptsRan) return;
+    } catch (_eR206once) {}
     var parts = [];
     var re = /<script\b([^>]*)>([\s\S]*?)<\/script>/gi;
     var m;
@@ -569,6 +632,7 @@
       }
     }
     if (!parts.length) return;
+    try { if (win) win._zwScriptsRan = true; } catch (_eR206mark) {}
     var loc = win.location || { href: pageUrl, hash: '' };
     // R206：**顶层声明导出到 win**——真实 iframe 的 window 上顶层 function/var 是
     // window 属性；合并 Function 作用域内它们只是局部绑定。行首锚定扫描
@@ -581,7 +645,7 @@
     }
     var combined206 = partsWrapped206.join('\n;\n');
     var names206 = {};
-    var lines206 = combined206.split('\n');
+    var lines206 = parts.join('\n').split('\n');
     for (var li206 = 0; li206 < lines206.length; li206++) {
       var line206 = lines206[li206];
       var nm206 = null;
@@ -611,9 +675,17 @@
     try {
       // 形参遮蔽：脚本内的 window/self/document 解析到形参（iframe 域），裸全局
       // （globalThis）仍是宿主（近似——子文档脚本一般经 window 显式访问）。
-      var fn = new Function('window', 'self', 'parent', 'top', 'document', 'location',
+      // https://html.spec.whatwg.org/multipage/nav-history-apis.html#the-window-object
+      // Iframe scripts resolve browser globals against their child Window.
+      var fn = new Function(
+        'window', 'self', 'parent', 'top', 'document', 'location',
+        'navigator', 'XMLHttpRequest', 'fetch', 'Headers', 'Request', 'Response', 'URL', 'caches',
         combined206 + exportSuffix206);
-      fn.call(win, win, win, globalThis, globalThis, doc, loc);
+      fn.call(
+        win, win, win, globalThis, globalThis, doc, loc,
+        win.navigator, win.XMLHttpRequest, win.fetch, win.Headers, win.Request,
+        win.Response, win.URL, win.caches
+      );
     } catch (_eR206x) {
       try { win.unexpectedException = _eR206x; } catch (_eR206w) {}
     }
@@ -631,7 +703,7 @@
 
   function _zwLoadIframeEntry(frameKey, rawSrc, flags) {
     flags = _zwIframeSandboxFlags(frameKey, flags);
-    var _r115Entry = { doc: null, win: null, state: 'loading', history: [] };
+    var _r115Entry = { doc: null, win: null, state: 'loading', history: [], flags: flags };
     _iframeDocCache[frameKey] = _r115Entry;
     var _r115Src = String(rawSrc || '');
     if (_r115Src && _r115Src.indexOf('javascript:') !== 0 && typeof __zw_fetch === 'function') {
@@ -641,8 +713,12 @@
       // 消除 async fetch 与 window load 的竞态（用例 load 后 getWin 读 documentElement）。
       var _r115Url = _zwResolveIframeSrc(_r115Src);
       try {
+        var _r115PendingId = 'r115iframe:' + frameKey;
+        _zwObserveIframeWindowClient(_r115Entry, frameKey, _r115Url);
+        _r115Entry.url = _r115Url;
+        var _r115ClientId = _r115Entry._zwSwClientId || ('iframe:' + String(frameKey));
         var _r115Wire = String(__zw_fetch(
-          'r115iframe',
+          _r115PendingId,
           'GET',
           _r115Url,
           '',
@@ -650,39 +726,19 @@
           '',
           '',
           flags && flags.reload ? '1' : '',
-          flags && flags.history ? '1' : ''
+          flags && flags.history ? '1' : '',
+          '',
+          _r115ClientId
         ) || '');
-        if (_r115Wire && _r115Wire.indexOf('__zw_fetch_error:') !== 0) {
-          // 响应 wire（fetch_bridge serialize_response）：`__zwfr:` + status \x1f statusText
-          // \x1f headers \x1f body——FIELD_SEP=\x1f，body 是末字段（原样保真）。
-          var _r115Parts = _r115Wire.split('\x1f');
-          var _r115Body = _r115Parts.length > 3 ? _r115Parts.slice(3).join('\x1f') : '';
-          // R175（js-dom M4，修正 R156）：kind 判定区分 `.html` 与 `.xhtml`——
-          // 真浏览器按 HTTP Content-Type/扩展解析：`.html` → HTML 文档
-          //（contentType 'text/html'，createElement 的 tagName ASCII 大写、
-          // localName 小写）；`.xhtml` → XHTML（XML 语义，大小写保持——WPT
-          // Document-createElement "XHTML document" 断言 tagName 原样）。R156
-          // 把 .html 也判 'xhtml' 使 HTML iframe 子文档的 createElement 产物
-          // nodeName 小写，doc 查询树的 tag 匹配（want 大写）miss（WPT
-          // ParentNode "new NodeList" append 后计数不增的根因）。
-          // R176：`.svg` → 'svg'（contentType 'image/svg+xml'——真浏览器按
-          // 扩展/Content-Type 判 SVG 文档；WPT Document-createElement-
-          // namespace 的 .svg fixture 族断言 contentType 'image/svg+xml'）。
-          var kind = /\.xhtml(\?|#|$)/i.test(_r115Url) ? 'xhtml'
-            : (/\.html?(\?|#|$)/i.test(_r115Url) ? 'html'
-            : (/\.svg(\?|#|$)/i.test(_r115Url) ? 'svg' : 'xml'));
-          _r115Entry.doc = _zwMakeIframeDoc(kind, _r115Body);
-          try { _r115Entry.doc._zwURL = _r115Url; } catch (_e115u) {}
-          // R160：fragment URL 槽（`:target` 判定——WPT :target 簇的
-          // iframe 子文档 src 带 #target，doc 查询传 host 侧 set_url）。
-          try { _r115Entry.doc._zwFragmentUrl = _r115Url; } catch (_e160f) {}
-          _r115Entry.win = _zwMakeIframeWin(_r115Entry.doc, frameKey, flags);
-          try { if (_r115Entry.doc.__r115SetWin) _r115Entry.doc.__r115SetWin(_r115Entry.win); } catch (_eW) {}
-          _r115Entry.state = 'done';
-          _r115Entry.url = _r115Url;
-          _zwObserveIframeWindowClient(_r115Entry, frameKey, _r115Url);
+        if (_r115Wire) {
+          _zwFinishIframeEntry(_r115Entry, frameKey, _r115Url, _r115Wire);
         } else {
-          _r115Entry.state = 'error';
+          // Async host path: WebView/browser will resolve this key via __zwResolveCallback.
+          _r115Entry.pendingId = _r115PendingId;
+          globalThis.__zw_pending[_r115PendingId] = function(raw) {
+            delete globalThis.__zw_pending[_r115PendingId];
+            _zwFinishIframeEntry(_r115Entry, frameKey, _r115Url, raw);
+          };
         }
       } catch (_e115f) {
         _r115Entry.state = 'error';
@@ -698,12 +754,8 @@
       // `<body onload=run()>` 语义：脚本执行后调 win.run()（若定义）。
       // 无脚本的 fixture（dummy.*）零变化。执行异常吞（子文档脚本错误不应阻断
       // 宿主——harness 侧以 window.unexpectedException 断言形态消费）。
-      if (_r115Entry.state === 'done' && _r115Entry.win) {
-        try { _r115Entry.win.__r206State = _r115Entry.state; } catch (_eR206m) {}
-        try {
-          _zwRunIframeScripts(_r115Entry.win, _r115Entry.doc, _r115Body, _r115Url);
-        } catch (_eR206s) {}
-      }
+      // Synchronous entries are finalized by _zwFinishIframeEntry above; async entries
+      // run child scripts when their host result resolves.
     } else {
       _r115Entry.state = 'no-src';
       // R130（js-dom M4）：无 src iframe 的 contentDocument —— spec：iframe 初始导航
@@ -1468,6 +1520,7 @@
   // sleep 后 resolve → `__zwResolveCallback` 取出调用回调。未注册（engine/reftest/polyfill
   // 等无 host 路径）时 fallback `_defer`（microtask 同步触发）——保持旧行为，零回归。
   function _timerIdKey(handle) { return '__zwtid:' + handle; }
+  function _intervalIdKey(handle) { return '__zwint:' + handle; }
   globalThis.setTimeout = function(fn, delay) {
     var handle = _timerId++;
     if (typeof fn !== 'function') return handle;
@@ -1492,7 +1545,7 @@
   globalThis.setInterval = function(fn, delay) {
     var handle = _timerId++;
     if (typeof fn !== 'function') return handle;
-    var id = _timerIdKey(handle);
+    var id = _intervalIdKey(handle);
     var ms = delay | 0;
     if (typeof __zw_setTimeout === 'function') {
       // host 路径：回调内 re-arm 实现重复触发（host 仅实现单次定时器）。
@@ -1522,7 +1575,7 @@
     delete globalThis.__zw_pending[_timerIdKey(handle)];
   };
   globalThis.clearInterval = function(handle) {
-    delete globalThis.__zw_pending[_timerIdKey(handle)];
+    delete globalThis.__zw_pending[_intervalIdKey(handle)];
   };
   // requestIdleCallback/cancelIdleCallback：镜像 setTimeout 机制（host __zw_setTimeout + pending 表；
   // 无 host → _defer 微任务，同 setTimeout fallback）。回调传 IdleDeadline（didTimeout/timeRemaining

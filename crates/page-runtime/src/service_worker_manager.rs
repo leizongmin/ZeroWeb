@@ -1655,11 +1655,16 @@ impl ServiceWorkerManager {
                     });
                 }
                 ServiceWorkerEvent::ClientMessagesEmitted { outbound } => {
+                    let pending_fetch_client_id = self.pending_fetch_client_id(registration_id);
                     if self
-                        .record_outbound_message_ports(registration_id, "", &outbound)
+                        .record_fetch_outbound_message_ports(
+                            registration_id,
+                            pending_fetch_client_id.as_deref(),
+                            &outbound,
+                        )
                         .is_ok()
                     {
-                        self.complete_routed_client_messages(registration_id, None, outbound);
+                        self.route_client_messages(registration_id, pending_fetch_client_id.as_deref(), outbound);
                     }
                 }
                 ServiceWorkerEvent::ClientsClaimRequested => {
@@ -2498,6 +2503,25 @@ impl ServiceWorkerManager {
         Ok(())
     }
 
+    fn record_fetch_outbound_message_ports(
+        &mut self,
+        registration_id: u64,
+        default_client_id: Option<&str>,
+        messages: &[ServiceWorkerOutboundMessage],
+    ) -> Result<(), ServiceWorkerManagerError> {
+        let mut targeted_messages = Vec::with_capacity(messages.len());
+        for message in messages {
+            let mut targeted = message.clone();
+            if targeted.target_client_id.is_none()
+                && let Some(port_id) = targeted.port_id
+            {
+                targeted.target_client_id = self.message_port_client_id(registration_id, port_id);
+            }
+            targeted_messages.push(targeted);
+        }
+        self.record_outbound_message_ports(registration_id, default_client_id.unwrap_or(""), &targeted_messages)
+    }
+
     fn complete_routed_client_messages(
         &mut self,
         registration_id: u64,
@@ -2507,12 +2531,26 @@ impl ServiceWorkerManager {
         if let Some(client_id) = source_client_id {
             self.release_client_message_reservation(&(registration_id, client_id.to_string()));
         }
+        self.route_client_messages(registration_id, source_client_id, messages);
+    }
+
+    fn route_client_messages(
+        &mut self,
+        registration_id: u64,
+        default_client_id: Option<&str>,
+        messages: Vec<ServiceWorkerOutboundMessage>,
+    ) {
         let mut batches: Vec<(String, Vec<ServiceWorkerOutboundMessage>)> = Vec::new();
         for message in messages {
             let client_id = message
                 .target_client_id
                 .clone()
-                .or_else(|| source_client_id.map(str::to_string));
+                .or_else(|| {
+                    message
+                        .port_id
+                        .and_then(|port_id| self.message_port_client_id(registration_id, port_id))
+                })
+                .or_else(|| default_client_id.map(str::to_string));
             let Some(client_id) = client_id else {
                 continue;
             };
@@ -2525,6 +2563,29 @@ impl ServiceWorkerManager {
         for (client_id, batch) in batches {
             self.append_client_message_batch(registration_id, &client_id, batch);
         }
+    }
+
+    fn pending_fetch_client_id(&self, registration_id: u64) -> Option<String> {
+        let mut client_id = None;
+        for pending in self.pending_fetch_events.values() {
+            if pending.registration_id != registration_id {
+                continue;
+            }
+            let Some(current) = pending.client_id.as_ref() else {
+                continue;
+            };
+            if client_id.as_ref().is_some_and(|existing| existing != current) {
+                return None;
+            }
+            client_id = Some(current.clone());
+        }
+        client_id
+    }
+
+    fn message_port_client_id(&self, registration_id: u64, port_id: u64) -> Option<String> {
+        self.message_ports.iter().find_map(|(id, client_id, current_port_id)| {
+            (*id == registration_id && *current_port_id == port_id).then(|| client_id.clone())
+        })
     }
 
     fn complete_client_message_batch(
@@ -2607,8 +2668,8 @@ impl ServiceWorkerManager {
         let focused = existing.is_some_and(|record| record.info.focused);
         let last_focus_sequence = existing.and_then(|record| record.last_focus_sequence);
         let controller_registration_id = existing
-            .and_then(|record| record.controller_registration_id)
-            .or_else(|| self.active_registration_id_for_url(&url.origin().ascii_serialization(), url.as_str()));
+            .map(|record| record.controller_registration_id)
+            .unwrap_or_else(|| self.active_registration_id_for_url(&url.origin().ascii_serialization(), url.as_str()));
         self.clients.insert(
             client_id.to_string(),
             ClientRecord {
@@ -4499,6 +4560,33 @@ mod tests {
     }
 
     #[test]
+    fn repeated_observe_does_not_control_existing_uncontrolled_client() {
+        let mut manager = manager_under_test();
+        manager
+            .observe_window_client("client-1", "https://example.test/app/page")
+            .unwrap();
+        let id = start_active(&mut manager, "/app/", "globalThis.ready = true;");
+        manager
+            .observe_window_client("client-1", "https://example.test/app/page")
+            .unwrap();
+
+        assert!(
+            manager
+                .active_registration_for_client("https://example.test", "client-1")
+                .is_none(),
+            "an existing same-document client must not become controlled just because it is observed again"
+        );
+
+        manager.claim_matching_clients(id);
+        assert_eq!(
+            manager
+                .active_registration_for_client("https://example.test", "client-1")
+                .map(|registration| registration.id),
+            Some(id)
+        );
+    }
+
+    #[test]
     fn newly_observed_matching_client_is_controlled_by_active_registration() {
         let mut manager = manager_under_test();
         let id = start_active(&mut manager, "/app/", "globalThis.ready = true;");
@@ -4558,6 +4646,58 @@ mod tests {
                 .active_registration_for_client("https://example.test", "client-1")
                 .map(|registration| registration.id),
             Some(app)
+        );
+    }
+
+    #[test]
+    fn clients_claim_can_replace_controller_for_query_scope() {
+        let mut manager = manager_under_test();
+        let root = start_active(&mut manager, "/app/", "globalThis.root = true;");
+        manager
+            .observe_window_client("client-1", "https://example.test/app/page.html?controlled")
+            .unwrap();
+        assert_eq!(
+            manager
+                .active_registration_for_client("https://example.test", "client-1")
+                .map(|registration| registration.id),
+            Some(root)
+        );
+
+        let query = start_active(&mut manager, "/app/page.html?controlled", "globalThis.query = true;");
+        manager.claim_matching_clients(query);
+        assert_eq!(
+            manager
+                .active_registration_for_client("https://example.test", "client-1")
+                .map(|registration| registration.id),
+            Some(query)
+        );
+    }
+
+    #[test]
+    fn clients_claim_can_replace_controller_for_full_url_query_scope() {
+        let mut manager = manager_under_test();
+        let root = start_active(&mut manager, "https://example.test/app/", "globalThis.root = true;");
+        manager
+            .observe_window_client("client-1", "https://example.test/app/page.html?controlled")
+            .unwrap();
+        assert_eq!(
+            manager
+                .active_registration_for_client("https://example.test", "client-1")
+                .map(|registration| registration.id),
+            Some(root)
+        );
+
+        let query = start_active(
+            &mut manager,
+            "https://example.test/app/page.html?controlled",
+            "globalThis.query = true;",
+        );
+        manager.claim_matching_clients(query);
+        assert_eq!(
+            manager
+                .active_registration_for_client("https://example.test", "client-1")
+                .map(|registration| registration.id),
+            Some(query)
         );
     }
 
@@ -4723,6 +4863,70 @@ mod tests {
             std::thread::sleep(Duration::from_millis(1));
         }
         assert!(manager.claims_clients(id));
+    }
+
+    #[test]
+    fn waiting_worker_rejected_clients_claim_can_reply_over_message_port() {
+        let mut manager = manager_under_test();
+        let active = start_active(&mut manager, "/app/", "globalThis.version = 1;");
+        let ServiceWorkerUpdateOutcome::Started {
+            registration_id: waiting,
+        } = manager
+            .start_update(
+                active,
+                "addEventListener('message', event => {
+                   clients.claim().then(() => {
+                     event.data.port.postMessage('PASS');
+                   }, error => {
+                     event.data.port.postMessage('FAIL: exception: ' + error.name);
+                   });
+                 });",
+            )
+            .unwrap()
+        else {
+            panic!("changed update must start a waiting candidate");
+        };
+        wait_for_state(&mut manager, waiting, ServiceWorkerState::Installed);
+
+        manager
+            .post_message_with_ports(
+                waiting,
+                95,
+                r#"{"port":{"__zwServiceWorkerTransferredPortIndex":0}}"#,
+                "client-1",
+                "https://example.test/app/page",
+                &ServiceWorkerMessagePorts {
+                    transferred_port_ids: vec![2],
+                    data_port_index: None,
+                    target_port_id: None,
+                },
+            )
+            .unwrap();
+
+        let deadline = Instant::now() + Duration::from_secs(5);
+        loop {
+            let _ = manager.poll();
+            let (_, messages) = manager.client_messages_since(waiting, "client-1", 0);
+            if !messages.is_empty() {
+                assert_eq!(
+                    messages,
+                    [ServiceWorkerOutboundMessage {
+                        data_json: "\"FAIL: exception: InvalidStateError\"".into(),
+                        port_id: Some(2),
+                        transferred_port_ids: Vec::new(),
+                        data_port_index: None,
+                        target_client_id: None,
+                    }]
+                );
+                break;
+            }
+            assert!(
+                Instant::now() < deadline,
+                "waiting worker clients.claim rejection timed out"
+            );
+            std::thread::sleep(Duration::from_millis(1));
+        }
+        assert!(!manager.claims_clients(waiting));
     }
 
     #[test]

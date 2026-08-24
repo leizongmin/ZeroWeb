@@ -1606,7 +1606,7 @@
     return _ZW_ENC_LABELS[k] || null;
   }
 
-  function _zwMakeIframeWin(doc, frameKey, flags) {
+  function _zwMakeIframeWin(doc, frameKey, flags, previousWin) {
     flags = flags || {};
     var registrationWrappers = [];
     function wrapRegistration(registration) {
@@ -1693,6 +1693,15 @@
       serviceWorker._et_listeners = {};
       serviceWorker.oncontrollerchange = null;
       serviceWorker.onmessage = null;
+      try {
+        var previousServiceWorker = previousWin && previousWin.navigator &&
+          previousWin.navigator.serviceWorker;
+        if (previousServiceWorker) {
+          serviceWorker._et_listeners = previousServiceWorker._et_listeners || {};
+          serviceWorker.oncontrollerchange = previousServiceWorker.oncontrollerchange || null;
+          serviceWorker.onmessage = previousServiceWorker.onmessage || null;
+        }
+      } catch (_eIframeSwReuse) {}
       serviceWorker.register = function(scriptURL, options) {
         return parentServiceWorker.register(scriptURL, options).then(wrapRegistration);
       };
@@ -1779,7 +1788,8 @@
           var registered = (listeners.controllerchange || [])
             .concat(listeners['controllerchange|cap'] || []);
           if (!hint && registered.length === 0 && typeof handler !== 'function') return;
-          if (!hint && !controllerChanged) return;
+          if (!hint && !controllerChanged &&
+              iframeServiceWorkerNotifiedControllerId === nextId) return;
           if (hint && iframeServiceWorkerNotifiedControllerId === nextId) return;
           iframeServiceWorkerControllerId = nextId;
           iframeServiceWorkerNotifiedControllerId = nextId;

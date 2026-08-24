@@ -17,13 +17,21 @@ committed through `respondWith()`. The corrected behavior keeps the committed
 response promise authoritative. A synchronous exception only immediately fails
 the fetch when `respondWith()` was never called.
 
-## WPT Probe
+The follow-up iframe navigation slice makes the upstream WPT pass end to end.
+Controlled iframe navigation fetches now use an async completion path so the
+page can keep pumping MessagePort tasks while the worker `respondWith()` promise
+is pending. During that pending fetch window, unaddressed worker-to-client
+messages are routed to the single pending fetch client, which lets the WPT page
+receive the worker's `SYNC` message and send its `ACK` before the iframe load
+settles.
+
+## WPT Baseline
 
 The upstream candidate
 `service-workers/service-worker/fetch-event-throws-after-respond-with.https.html`
-was probed at WPT revision `04067ce9c7c2165e71ad7d0dde10a4c5cb394a83`.
+is imported at WPT revision `24197a11e8c5bd29a5cb7bdf18135a82be8a8546`.
 
-Candidate assets checked:
+Imported assets:
 
 - `service-workers/service-worker/fetch-event-throws-after-respond-with.https.html`
   - bytes: `1392`
@@ -32,18 +40,8 @@ Candidate assets checked:
   - bytes: `999`
   - blob SHA: `adb48de69e72351ab0aca1df5be3757da0a93796`
 
-The runtime-level semantic defect is covered by a new unit test, but the full
-WPT case is not added to `SERVICE_WORKER_FETCH_CASES` yet. The current WPT run
-still fails before the final assertion because the controlled iframe document
-load path exposes a null `contentDocument.body`:
-
-```text
-promise_test: Unhandled rejection with value: object "TypeError: Cannot read properties of null (reading 'body')"
-```
-
-That remaining issue appears to be an iframe document materialization/load
-timing gap, not the FetchEvent throw-after-`respondWith()` settlement bug fixed
-in this slice.
+The case is now part of `SERVICE_WORKER_FETCH_CASES`. It raises the fetch-wave
+baseline to 15 cases / 34 subtests / 34 Pass.
 
 ## Verification
 
@@ -51,8 +49,12 @@ Targeted checks run for this slice:
 
 ```sh
 ./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit 300 -- cargo test -p zero-script-sandbox fetch_event_throw_after_respond_with_keeps_committed_response -- --nocapture
+./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit 240 -- cargo test -p zero-webview controlled_iframe_fetch_waits_for_message_port_backed_response -- --nocapture
+./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit 420 -- cargo run -p zero-wpt-runner -- testharness-service-workers-fetch --wpt-data "$HOME/github/others/wpt" fetch-event-throws-after-respond-with.https.html
 ```
 
 Result:
 
 - `zero-script-sandbox` throw-after-`respondWith()` runtime test: 1 passed
+- `zero-webview` controlled iframe MessagePort-backed response test: 1 passed
+- focused WPT `fetch-event-throws-after-respond-with.https.html`: 1 Pass

@@ -788,6 +788,7 @@ pub const SERVICE_WORKER_FETCH_CASES: &[&str] = &[
     "service-workers/service-worker/fetch-event-within-sw.https.html",
     "service-workers/service-worker/fetch-event-respond-with-custom-response.https.html",
     "service-workers/service-worker/fetch-event-respond-with-stops-propagation.https.html",
+    "service-workers/service-worker/fetch-event-throws-after-respond-with.https.html",
     "service-workers/service-worker/fetch-event-network-error.https.html",
     "service-workers/service-worker/fetch-event-respond-with-argument.https.html",
     "service-workers/service-worker/iso-latin1-header.https.html",
@@ -2906,6 +2907,12 @@ fn take_probe(webview: &mut WebView) -> Result<HarnessProbe, String> {
         .map_err(|error| error.to_string())?;
     webview
         .execute_script(
+            "if (typeof globalThis.__zwPollServiceWorkerRegistrations === 'function') \
+             globalThis.__zwPollServiceWorkerRegistrations()",
+        )
+        .map_err(|error| error.to_string())?;
+    webview
+        .execute_script(
             "if (typeof globalThis.__zwPollServiceWorkerMessages === 'function') \
              globalThis.__zwPollServiceWorkerMessages()",
         )
@@ -3411,8 +3418,8 @@ async_test(function(test) {
             .iter()
             .copied()
             .collect::<std::collections::BTreeSet<_>>();
-        assert_eq!(SERVICE_WORKER_FETCH_CASES.len(), 14);
-        assert_eq!(unique.len(), 14);
+        assert_eq!(SERVICE_WORKER_FETCH_CASES.len(), 15);
+        assert_eq!(unique.len(), 15);
         assert!(SERVICE_WORKER_FETCH_CASES.contains(&"service-workers/service-worker/request-end-to-end.https.html"));
         assert!(
             SERVICE_WORKER_FETCH_CASES.contains(&"service-workers/service-worker/fetch-event-add-async.https.html")
@@ -3431,6 +3438,10 @@ async_test(function(test) {
         assert!(
             SERVICE_WORKER_FETCH_CASES
                 .contains(&"service-workers/service-worker/fetch-event-respond-with-stops-propagation.https.html")
+        );
+        assert!(
+            SERVICE_WORKER_FETCH_CASES
+                .contains(&"service-workers/service-worker/fetch-event-throws-after-respond-with.https.html")
         );
         assert!(
             SERVICE_WORKER_FETCH_CASES.contains(&"service-workers/service-worker/fetch-event-network-error.https.html")

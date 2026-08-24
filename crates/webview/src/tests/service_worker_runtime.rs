@@ -1530,7 +1530,10 @@ fn message_time_clients_claim_controls_existing_iframe() {
         })),
         fetch_handler: Some(Arc::new(move |request| {
             fallback_log.lock().unwrap().push(request.url.clone());
-            let body = if request.url.ends_with("/resources/blank.html") {
+            let body = if request
+                .url
+                .ends_with("/resources/blank.html?using-different-registration")
+            {
                 "<!doctype html><title>blank</title>"
             } else if request.url.ends_with("/resources/simple.txt") {
                 "a simple text file\n"
@@ -1550,7 +1553,7 @@ fn message_time_clients_claim_controls_existing_iframe() {
 
     webview.load_url(PAGE_URL);
     webview.complete_load(
-        "<iframe id=\"frame\" src=\"resources/blank.html\"></iframe>
+        "<iframe id=\"frame\" src=\"resources/blank.html?using-different-registration\"></iframe>
          <script>
            globalThis.__claimFetchStage = 'starting';
            (async function() {
@@ -1558,7 +1561,7 @@ fn message_time_clients_claim_controls_existing_iframe() {
              const before = await frame.contentWindow.fetch('simple.txt').then(r => r.text());
              globalThis.__claimFetchStage = 'before:' + before;
              const registration = await navigator.serviceWorker.register(
-               'resources/claim-worker.js', {scope:'resources/'});
+               'resources/claim-worker.js', {scope:'resources/blank.html?using-different-registration'});
              const worker = registration.installing;
              await new Promise(resolve => {
                if (worker.state === 'activated') {
@@ -1586,7 +1589,10 @@ fn message_time_clients_claim_controls_existing_iframe() {
              const data = await sawMessage;
              globalThis.__claimFetchStage = 'message:' + data;
              const controller = await controllerChanged;
-             globalThis.__claimFetchStage = 'controller:' + !!controller;
+             if (!controller || !controller.scriptURL.endsWith('/resources/claim-worker.js')) {
+               globalThis.__claimFetchStage = 'controller:' + (controller && controller.scriptURL);
+               return;
+             }
              const after = await frame.contentWindow.fetch('simple.txt').then(r => r.text());
              globalThis.__claimFetchStage = 'after:' + after;
            })().catch(error => {
@@ -1605,17 +1611,169 @@ fn message_time_clients_claim_controls_existing_iframe() {
             break;
         }
         if Instant::now() >= deadline {
-            panic!("message-time clients.claim iframe fetch timed out: {value}");
+            let state = webview
+                .execute_script(
+                    "const frame = document.getElementById('frame');
+                     const sw = frame && frame.contentWindow.navigator.serviceWorker;
+                     const raw = frame && JSON.parse(__zw_sw_controller(
+                       frame.contentWindow.document._zwURL,
+                       frame.contentWindow.document._zwSwClientId
+                     )).controller;
+                     JSON.stringify({
+                       value: globalThis.__claimFetchStage,
+                       controller: sw && sw.controller && sw.controller.scriptURL,
+                       raw: raw && raw.scriptURL,
+                       client: frame && frame.contentWindow.document._zwSwClientId
+                     })",
+                )
+                .unwrap();
+            panic!("message-time clients.claim iframe fetch timed out: {state}");
         }
         std::thread::sleep(Duration::from_millis(10));
     }
     assert_eq!(
         fallback_requests.lock().unwrap().as_slice(),
         &[
-            "https://example.test/service-workers/service-worker/resources/blank.html".to_string(),
+            "https://example.test/service-workers/service-worker/resources/blank.html?using-different-registration"
+                .to_string(),
             "https://example.test/service-workers/service-worker/resources/simple.txt".to_string(),
         ]
     );
+}
+
+#[test]
+#[serial_test::serial(service_worker_runtime)]
+fn waiting_worker_clients_claim_rejects_over_message_port() {
+    const PAGE_URL: &str = "https://example.test/service-workers/service-worker/claim-using-registration.https.html";
+    let mut webview = crate::WebView::new(WebViewConfig {
+        service_worker_script_fetcher: Some(Arc::new(|_, script| {
+            let body = if script.ends_with("/resources/claim-worker.js") {
+                "self.addEventListener('message', function(event) {
+                   self.clients.claim().then(function(result) {
+                     event.data.port.postMessage(result === undefined ? 'PASS' : 'FAIL');
+                   }).catch(function(error) {
+                     event.data.port.postMessage('FAIL: exception: ' + error.name);
+                   });
+                 });"
+            } else {
+                ""
+            };
+            Ok(zero_net::HttpResponse {
+                status_code: 200,
+                headers: vec![("Content-Type".into(), "application/javascript".into())],
+                body: body.as_bytes().to_vec(),
+                url: script.to_string(),
+                redirect_count: 0,
+            })
+        })),
+        fetch_handler: Some(Arc::new(|request| {
+            let body = if request.url.ends_with("/resources/blank.html?using-same-registration") {
+                "<!doctype html><title>blank</title>"
+            } else {
+                ""
+            };
+            Ok(FetchResponse {
+                status: 200,
+                status_text: "OK".into(),
+                headers: vec![("content-type".into(), "text/html".into())],
+                body: body.into(),
+                body_bytes: None,
+            })
+        })),
+        ..Default::default()
+    });
+
+    webview.load_url(PAGE_URL);
+    webview.complete_load(
+        "<script>
+           globalThis.__waitingClaimResult = 'starting';
+           (async function() {
+             const scope = 'resources/blank.html?using-same-registration';
+             const existing = await navigator.serviceWorker.getRegistration(scope);
+             if (existing) {
+               await existing.unregister();
+             }
+             const first = await navigator.serviceWorker.register('resources/empty.js', {
+               scope: scope
+             });
+             globalThis.__waitingClaimResult = 'registered-first';
+             const firstWorker = first.installing;
+             await new Promise(resolve => {
+               if (firstWorker.state === 'activated') {
+                 resolve();
+                 return;
+               }
+               firstWorker.addEventListener('statechange', function listener() {
+                 if (firstWorker.state === 'activated') {
+                   firstWorker.removeEventListener('statechange', listener);
+                   resolve();
+                 }
+               });
+             });
+             globalThis.__waitingClaimResult = 'activated-first';
+             await new Promise(resolve => {
+               const frame = document.createElement('iframe');
+               frame.id = 'frame';
+               frame.src = 'resources/blank.html?using-same-registration';
+               frame.onload = () => resolve(frame);
+               document.body.appendChild(frame);
+             });
+             globalThis.__waitingClaimResult = 'loaded-frame';
+             const registration = await navigator.serviceWorker.register(
+               'resources/claim-worker.js',
+               {scope: scope});
+             const worker = registration.installing;
+             await new Promise(resolve => {
+               if (worker.state === 'installed') {
+                 resolve();
+                 return;
+               }
+               worker.addEventListener('statechange', function listener() {
+                 if (worker.state === 'installed') {
+                   worker.removeEventListener('statechange', listener);
+                   resolve();
+                 }
+               });
+             });
+             globalThis.__waitingClaimResult = 'installed:' + worker.state;
+             const channel = new MessageChannel();
+             channel.port1.onmessage = event => {
+               globalThis.__waitingClaimResult = 'message:' + event.data;
+             };
+             worker.postMessage({port: channel.port2}, [channel.port2]);
+           })().catch(error => {
+             globalThis.__waitingClaimResult =
+               'error:' + globalThis.__waitingClaimResult + ':' + error.name + ':' + error.message;
+           });
+         </script>",
+        None,
+    );
+    webview.run_page_scripts_strict().unwrap();
+
+    let deadline = Instant::now() + Duration::from_secs(20);
+    loop {
+        let _ = webview.poll_service_worker_runtime_events();
+        let value = webview
+            .execute_script(
+                "if (typeof globalThis.__zwPollServiceWorkerRegistrations === 'function') {
+                   globalThis.__zwPollServiceWorkerRegistrations();
+                 }
+                 if (typeof globalThis.__zwPollServiceWorkerMessages === 'function') {
+                   globalThis.__zwPollServiceWorkerMessages();
+                 }
+                 String(globalThis.__waitingClaimResult)",
+            )
+            .unwrap();
+        if value.starts_with("message:") || value.starts_with("error:") {
+            assert_eq!(value, "message:FAIL: exception: InvalidStateError");
+            break;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "waiting worker clients.claim message timed out: {value}"
+        );
+        std::thread::sleep(Duration::from_millis(10));
+    }
 }
 
 #[test]

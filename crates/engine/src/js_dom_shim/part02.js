@@ -3194,6 +3194,13 @@
               }
             }
           }
+            if (messages.length > 0) {
+              // https://w3c.github.io/ServiceWorker/#clients-claim
+              // A worker message may be emitted after clients.claim() in the
+              // same task; refresh controlled clients before page promises
+              // resume from that message.
+              refreshControllerFromHost(worker._messageContainer || _container);
+            }
           if (worker._messageSequence >= worker._messagePollTarget) {
             worker._messagePollPending = false;
             worker._messagePollDeadline = 0;
@@ -3393,6 +3400,21 @@
           return wire && wire.ok ? wire.controller : null;
         } catch (_e) { return null; }
       }
+      function hasControlledClientForWorker(worker) {
+        if (!worker || worker._id == null) return false;
+        var workerId = String(worker._id);
+        if (_controller && String(_controller._id) === workerId) return true;
+        if (typeof _iframeDocCache !== 'object') return false;
+        var frameKeys = Object.keys(_iframeDocCache);
+        for (var i = 0; i < frameKeys.length; i++) {
+          var entry = _iframeDocCache[frameKeys[i]];
+          var doc = entry && entry.doc;
+          if (!doc || !doc._zwURL || !doc._zwSwClientId) continue;
+          var controller = readControllerSnapshot(doc._zwURL, doc._zwSwClientId);
+          if (controller && String(controller.id) === workerId) return true;
+        }
+        return false;
+      }
       function readRegistrationSnapshot(clientURL) {
         if (typeof __zw_sw_get_registration !== 'function') return null;
         try {
@@ -3537,7 +3559,7 @@
         reg.waiting = state === 'installed' ? worker : null;
         if (state === 'installed' &&
             reg._previousActive &&
-            _controller !== reg._previousActive &&
+            !hasControlledClientForWorker(reg._previousActive) &&
             !reg._activationRequested &&
             typeof __zw_sw_activate_waiting === 'function') {
           reg._activationRequested = true;
@@ -3655,6 +3677,12 @@
         } else {
           reg.updateViaCache = snapshot.updateViaCache || reg.updateViaCache;
           if (String(reg._id) !== String(snapshot.id)) {
+            if (reg.active && String(reg.active._id) === String(snapshot.id)) {
+              reg.active.scriptURL = snapshot.scriptURL || reg.active.scriptURL;
+              reg.active.state = snapshot.state || reg.active.state;
+              notifyIframeRegistrationChange(reg);
+              return reg;
+            }
             reg._previousActive = reg.active;
             reg._worker = makeSW(snapshot.scriptURL || '', 'installing');
             reg._worker._id = snapshot.id;
@@ -3748,13 +3776,14 @@
           scriptURL: snapshot && snapshot.scriptURL || scriptURL,
           scope: snapshot && snapshot.scope || scope,
           updateViaCache: snapshot && snapshot.updateViaCache || updateViaCache,
-          state: snapshot && snapshot.state || 'installing'
+          state: wire.existing === false ? 'installing' : (snapshot && snapshot.state || 'installing')
         }, 'manual');
         scheduleClientMessagePoll(reg._worker);
-        return Promise.resolve(reg).then(function (registration) {
+        var registrationPromise = Promise.resolve(reg);
+        registrationPromise.then(function (registration) {
           scheduleRegistrationPoll(registration);
-          return registration;
         });
+        return registrationPromise;
       };
       _container.getRegistration = function (scope) {
         ensureDocument();

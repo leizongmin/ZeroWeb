@@ -358,9 +358,6 @@ pub fn generate_dom_api_polyfill() -> String {
   // stub 覆写 globalThis.document——execute 路径上 getElementById/body 视图全空
   //（Vue createApp().mount('#app') 在 execute 路径找不到宿主元素的根因），且两套
   // DOM 实现互相不可见。无 document 的环境（dom polyfill 独立消费方）行为不变。
-  if (globalThis.document && globalThis.document.__zwHandle !== undefined) return;
-
-
   // ── WebAssembly API with Host Auto-Bridge ──
   // Full WebAssembly JavaScript API surface with automatic bridge to the
   // host WASM runtime (zero-wasm-sandbox / wasmi or wasmtime).
@@ -525,7 +522,7 @@ pub fn generate_dom_api_polyfill() -> String {
     }
   };
 
-  if (globalThis.document && typeof globalThis.document.__zwShimInstalled === 'boolean') return;
+  if (globalThis.document && (globalThis.document.__zwHandle !== undefined || globalThis.document.__zwShimInstalled)) return;
   var _nodeIdCounter = 1;
   var _nodeMap = {};
 

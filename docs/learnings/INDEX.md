@@ -5,8 +5,11 @@
 > 布局契约：`<分类>/<YYYY-MM>/<YYYY-MM-DD>-<topic>.md`，日期以 frontmatter 为准。
 > 方法论蒸馏层见 `.agents/skills/zeroweb-guidelines/SKILL.md`。
 
-## Bugs — 踩坑记录（根因 + 修复 + 如何避免）（85）
+## Bugs — 踩坑记录（根因 + 修复 + 如何避免）（88）
 
+- 2026-08-24 [Service Worker registration polling must rearm across execute_script calls](bugs/2026-08/2026-08-24-service-worker-registration-poll-rearm.md) — service-worker,webview,js-dom
+- 2026-08-24 [Service Worker registration discovery must be available in WebView](bugs/2026-08/2026-08-24-service-worker-registration-discovery-bridge.md) — service-worker,webview,js-dom
+- 2026-08-24 [Service Worker iframe navigation fetch must not block page-side ACK](bugs/2026-08/2026-08-24-service-worker-iframe-navigation-fetch-ack.md) — service-worker,webview,js-dom
 - 2026-08-23 [Service Worker iframe Cache API must use the iframe fetch context](bugs/2026-08/2026-08-23-service-worker-iframe-cache-context.md) — service-worker,cache-api,js-dom
 - 2026-08-22 [Service Worker iframe client observation must cross the WebView bridge](bugs/2026-08/2026-08-22-service-worker-iframe-client-observe-bridge.md) — service-worker,webview,js-dom
 - 2026-08-20 [workspace feature unification 掩盖单包构建缺 JS 引擎 feature](bugs/2026-08/2026-08-20-workspace-feature-unification-masks-single-package-build.md) — zero-script-sandbox, zero-page-runtime, zero-browser

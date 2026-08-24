@@ -5568,6 +5568,54 @@ mod tests {
     }
 
     #[test]
+    fn message_port_reply_after_rejected_clients_claim_when_not_active() {
+        let mut runtime = ServiceWorkerRuntime::new(test_config()).unwrap();
+        runtime
+            .evaluate(
+                "addEventListener('message', event => {
+                   clients.claim().then(() => {
+                     event.data.port.postMessage('PASS');
+                   }, error => {
+                     event.data.port.postMessage('FAIL: exception: ' + error.name);
+                   });
+                 });",
+                "https://example.test/sw.js",
+            )
+            .unwrap();
+        let _ = runtime.recv_timeout(Duration::from_secs(5)).unwrap();
+
+        runtime
+            .dispatch_message_with_ports_with_claim_allowed(
+                24,
+                r#"{"port":{"__zwServiceWorkerTransferredPortIndex":0}}"#,
+                "client-1",
+                "https://example.test/page",
+                &ServiceWorkerMessagePorts {
+                    transferred_port_ids: vec![2],
+                    data_port_index: None,
+                    target_port_id: None,
+                },
+                false,
+            )
+            .unwrap();
+
+        assert_eq!(
+            runtime.recv_timeout(Duration::from_secs(5)).unwrap(),
+            ServiceWorkerEvent::MessageDispatched {
+                event_id: 24,
+                client_id: "client-1".into(),
+                outbound: vec![ServiceWorkerOutboundMessage {
+                    data_json: "\"FAIL: exception: InvalidStateError\"".into(),
+                    port_id: Some(2),
+                    transferred_port_ids: Vec::new(),
+                    data_port_index: None,
+                    target_client_id: None,
+                }],
+            }
+        );
+    }
+
+    #[test]
     fn idle_timer_task_can_emit_client_message_without_pending_event() {
         let mut runtime = ServiceWorkerRuntime::new(test_config()).unwrap();
         runtime

@@ -277,3 +277,154 @@ fn controlled_iframe_fetch_delivers_async_respond_with_result_message() {
         ]
     );
 }
+
+#[test]
+#[serial_test::serial(service_worker_runtime)]
+fn controlled_iframe_fetch_waits_for_message_port_backed_response() {
+    const PAGE_URL: &str =
+        "https://example.test/service-workers/service-worker/fetch-event-throws-after-respond-with.https.html";
+    let fallback_requests = Arc::new(Mutex::new(Vec::new()));
+    let fallback_log = Arc::clone(&fallback_requests);
+    let mut webview = crate::WebView::new(WebViewConfig {
+        service_worker_script_fetcher: Some(Arc::new(|_, script| {
+            if script != "https://example.test/service-workers/service-worker/resources/respond-then-throw-worker.js" {
+                return Err(format!("unexpected script URL: {script}"));
+            }
+            Ok(zero_net::HttpResponse {
+                status_code: 200,
+                headers: vec![("Content-Type".into(), "application/javascript".into())],
+                body: "var syncport = null;
+                       self.addEventListener('message', function(e) {
+                         if ('port' in e.data) {
+                           if (syncport) {
+                             syncport(e.data.port);
+                           } else {
+                             syncport = e.data.port;
+                           }
+                         }
+                       });
+                       function sync() {
+                         return new Promise(resolve => {
+                           if (syncport) {
+                             resolve(syncport);
+                           } else {
+                             syncport = resolve;
+                           }
+                         }).then(port => {
+                           port.postMessage('SYNC');
+                           return new Promise(resolve => {
+                             port.onmessage = e => {
+                               if (e.data === 'ACK') {
+                                 resolve();
+                               }
+                             };
+                           });
+                         });
+                       }
+                       self.addEventListener('fetch', function(event) {
+                         event.respondWith(sync().then(() => new Response('intercepted')));
+                         throw('error');
+                       });"
+                .as_bytes()
+                .to_vec(),
+                url: script.to_string(),
+                redirect_count: 0,
+            })
+        })),
+        fetch_handler: Some(Arc::new(move |request| {
+            fallback_log.lock().unwrap().push(request.url.clone());
+            Ok(FetchResponse {
+                status: 200,
+                status_text: "OK".into(),
+                headers: vec![("content-type".into(), "text/html".into())],
+                body: "fallback".into(),
+                body_bytes: None,
+            })
+        })),
+        ..Default::default()
+    });
+
+    webview.load_url(PAGE_URL);
+    webview.complete_load(
+        "<script>
+           globalThis.__zw_timers = [];
+           globalThis.__zw_setTimeout = function(id, delay) {
+             globalThis.__zw_timers.push({id: id, at: Date.now() + (delay | 0)});
+           };
+           globalThis.__zw_fire_due_timers = function() {
+             var timers = globalThis.__zw_timers || [];
+             if (!timers.length) return;
+             var now = Date.now();
+             var due = null, rest = [];
+             for (var i = 0; i < timers.length; i++) {
+               if (due === null && timers[i].at <= now) due = timers[i];
+               else rest.push(timers[i]);
+             }
+             globalThis.__zw_timers = rest;
+             if (due === null) return;
+             var fn = globalThis.__zw_pending[due.id];
+             if (fn) {
+               delete globalThis.__zw_pending[due.id];
+               try { fn(); } catch (_e) {}
+             }
+           };
+           globalThis.__swFrameResult = 'pending';
+           navigator.serviceWorker.register(
+             'resources/respond-then-throw-worker.js',
+             {scope: 'resources/fetch-event-throws-after-respond-with-iframe.html'}
+           ).then(reg => {
+             const worker = reg.installing || reg.active;
+             function waitActive() {
+               if (worker.state === 'activated') {
+                 const channel = new MessageChannel();
+                 channel.port1.onmessage = function(e) {
+                   if (e.data === 'SYNC') {
+                     channel.port1.postMessage('ACK');
+                   }
+                 };
+                 worker.postMessage({port: channel.port2}, [channel.port2]);
+                 const frame = document.createElement('iframe');
+                 frame.src = 'resources/fetch-event-throws-after-respond-with-iframe.html';
+                 frame.onload = function() {
+                   try {
+                     globalThis.__swFrameResult = frame.contentDocument.body.innerHTML;
+                   } catch (error) {
+                     globalThis.__swFrameResult = 'error:' + error.name + ':' + error.message;
+                   }
+                 };
+                 document.body.appendChild(frame);
+               } else {
+                 setTimeout(waitActive, 0);
+               }
+             }
+             waitActive();
+           }, error => {
+             globalThis.__swFrameResult = 'error:' + error.name + ':' + error.message;
+           });
+         </script>",
+        None,
+    );
+    webview.run_page_scripts_strict().unwrap();
+
+    let deadline = Instant::now() + Duration::from_secs(20);
+    loop {
+        let value = webview
+            .execute_script(
+                "if (typeof globalThis.__zw_fire_due_timers === 'function') {
+                   globalThis.__zw_fire_due_timers();
+                 }
+                 if (typeof globalThis.__zwPollServiceWorkerMessages === 'function') {
+                   globalThis.__zwPollServiceWorkerMessages();
+                 }
+                 String(globalThis.__swFrameResult)",
+            )
+            .unwrap();
+        if value != "pending" {
+            assert_eq!(value, "intercepted");
+            break;
+        }
+        assert!(Instant::now() < deadline, "Service Worker iframe fetch timed out");
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    assert!(fallback_requests.lock().unwrap().is_empty());
+}

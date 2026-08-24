@@ -1287,12 +1287,13 @@ impl BrowserServiceWorkerOwner {
                 self.result_disposition(tab_id, request_id, result)
             }
             ServiceWorkerOperation::Controller => {
+                // https://w3c.github.io/ServiceWorker/#navigator-service-worker-controller
+                // The controller is tied to this client, not just any active
+                // registration whose scope matches the current document URL.
+                let origin = authority.origin().ascii_serialization();
                 let controller = self
                     .manager(profile)
-                    .and_then(|manager| {
-                        manager
-                            .active_registration_for_url(&authority.origin().ascii_serialization(), authority.as_str())
-                    })
+                    .and_then(|manager| manager.controller_registration_for_client(&origin, client_id))
                     .cloned()
                     .map(snapshot);
                 self.result_disposition(

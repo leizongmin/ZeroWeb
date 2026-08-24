@@ -706,36 +706,39 @@ fn committed_page_fetch_is_routed_through_active_service_worker() {
         .unwrap();
     owner.attach_fetch(plan, receiver);
     let deadline = Instant::now() + Duration::from_secs(5);
-    loop {
+    let registration_id = loop {
         let responses = owner.poll();
-        if responses
-            .iter()
-            .any(|response| matches!(response.params.result, Ok(ServiceWorkerResult::Registered { .. })))
-        {
-            break;
+        if let Some(registration_id) = responses.iter().find_map(|response| {
+            if let Ok(ServiceWorkerResult::Registered { registration_id }) = response.params.result {
+                Some(registration_id)
+            } else {
+                None
+            }
+        }) {
+            break registration_id;
         }
         assert!(Instant::now() < deadline, "local registration did not complete");
         std::thread::sleep(Duration::from_millis(1));
-    }
+    };
     loop {
         let _ = owner.poll();
-        let ServiceWorkerRequestDisposition::Respond(controller) = owner.begin_request(
+        let ServiceWorkerRequestDisposition::Respond(snapshot) = owner.begin_request(
             TabId(812),
             false,
             2,
             Some(document_url),
             ServiceWorkerRequestParams {
-                operation: ServiceWorkerOperation::Controller,
+                operation: ServiceWorkerOperation::Snapshot { registration_id },
             },
         ) else {
-            panic!("controller query must not fetch");
+            panic!("snapshot query must not fetch");
         };
         if matches!(
-            controller.params.result,
-            Ok(ServiceWorkerResult::OptionalSnapshot(Some(ServiceWorkerSnapshot {
+            snapshot.params.result,
+            Ok(ServiceWorkerResult::Snapshot(ServiceWorkerSnapshot {
                 state: ServiceWorkerStateWire::Activated,
                 ..
-            })))
+            }))
         ) {
             break;
         }

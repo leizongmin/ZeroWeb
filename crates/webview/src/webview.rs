@@ -3,7 +3,8 @@
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
+use std::sync::mpsc;
 
 use zero_engine::{
     BudgetAdvance, BudgetedRenderSession, DomMutation, MediaType, PipelineTimings, PrefersColorSchemeValue,
@@ -143,6 +144,16 @@ struct ServiceWorkerFetchers {
     source: Option<ScriptSourceFetcher>,
     response: Option<ServiceWorkerScriptFetcher>,
     worker: Option<zero_engine::fetch_bridge::FetchHandler>,
+}
+
+struct ServiceWorkerHostContext {
+    manager: std::sync::Arc<std::sync::Mutex<ServiceWorkerManager>>,
+    fetchers: ServiceWorkerFetchers,
+    page_url: std::sync::Arc<std::sync::Mutex<String>>,
+    client_id: String,
+    client_generation: std::sync::Arc<AtomicU64>,
+    event_backlog: std::sync::Arc<std::sync::Mutex<Vec<ServiceWorkerManagerEvent>>>,
+    timeout_secs: u64,
 }
 
 /// R34xx：图片源获取器（headless/testharness 路径 fetch `<img src>` / CSS `url()` 图片；
@@ -410,6 +421,18 @@ pub struct WebView {
     service_worker_client_id: String,
     /// Current Document generation used to isolate worker message queues.
     service_worker_client_generation: std::sync::Arc<AtomicU64>,
+    /// Host-completed async JS callbacks queued by synchronous sandbox callbacks.
+    async_callback_rx: mpsc::Receiver<(String, String)>,
+    async_callback_tx: mpsc::Sender<(String, String)>,
+    pending_timer_callbacks: std::sync::Arc<AtomicUsize>,
+    /// Serializes async iframe navigation fetches through the one-fetch-per-worker runtime slot.
+    async_navigation_fetch_lock: std::sync::Arc<std::sync::Mutex<()>>,
+    /// Number of async iframe navigation fetches waiting for host completion.
+    async_navigation_fetches_in_flight: std::sync::Arc<AtomicUsize>,
+    async_navigation_results: std::sync::Arc<std::sync::Mutex<HashMap<String, String>>>,
+    /// Manager events observed by one in-process Service Worker waiter but
+    /// still owned by another caller.
+    service_worker_event_backlog: std::sync::Arc<std::sync::Mutex<Vec<ServiceWorkerManagerEvent>>>,
     /// DOM shim（generate_js_dom_shim）是否已注入沙箱（M2：幂等保护——
     /// 重复执行会重置 _nodeMap 丢失监听器，故只注入一次）。
     js_shim_initialized: bool,
@@ -524,6 +547,12 @@ impl WebView {
         let page_url_wire = std::sync::Arc::new(std::sync::Mutex::new(String::from("about:blank")));
         let service_worker_client_id = format!("webview-{}", NEXT_WEBVIEW_ID.fetch_add(1, Ordering::Relaxed));
         let service_worker_client_generation = std::sync::Arc::new(AtomicU64::new(0));
+        let (async_callback_tx, async_callback_rx) = mpsc::channel();
+        let pending_timer_callbacks = std::sync::Arc::new(AtomicUsize::new(0));
+        let async_navigation_fetch_lock = std::sync::Arc::new(std::sync::Mutex::new(()));
+        let async_navigation_fetches_in_flight = std::sync::Arc::new(AtomicUsize::new(0));
+        let async_navigation_results = std::sync::Arc::new(std::sync::Mutex::new(HashMap::new()));
+        let service_worker_event_backlog = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
         // 懒创建：js_sandbox 延后到首次实际执行脚本时初始化（见 ensure_sandbox）。
         // 无脚本页面（多数 WebView 页面）不创建 V8 isolate，显著降低常驻内存
         // （RSS ~0.2G/实例）；首次执行脚本时才有初始化成本，行为等价。
@@ -544,6 +573,13 @@ impl WebView {
             page_url_wire,
             service_worker_client_id,
             service_worker_client_generation,
+            async_callback_rx,
+            async_callback_tx,
+            pending_timer_callbacks,
+            async_navigation_fetch_lock,
+            async_navigation_fetches_in_flight,
+            async_navigation_results,
+            service_worker_event_backlog,
             js_shim_initialized: false,
             external_script,
             script_source_fetcher,
@@ -1615,6 +1651,7 @@ impl WebView {
         if script.trim().is_empty() {
             return Err(WebViewError::Script("script is empty".into()));
         }
+        self.drain_next_async_callback_if_pending(std::time::Duration::from_millis(20));
         let sandbox = self.js_sandbox.as_mut().expect("js sandbox");
         sandbox
             .execute("__zw_begin_script&&__zw_begin_script();")
@@ -1630,6 +1667,17 @@ impl WebView {
             }
             Err(e) => Err(WebViewError::Script(format!("{e}"))),
         }
+    }
+
+    fn execute_script_raw(&mut self, script: &str) -> Result<String, WebViewError> {
+        let sandbox = self
+            .js_sandbox
+            .as_mut()
+            .ok_or_else(|| WebViewError::Script("no js sandbox".to_string()))?;
+        sandbox
+            .execute(script)
+            .map(|result| result.value)
+            .map_err(|error| WebViewError::Script(format!("{error}")))
     }
 
     /// 惰性初始化进程内 JS 沙箱（V8/QuickJS isolate）。
@@ -1667,18 +1715,66 @@ impl WebView {
             zero_script_sandbox::QuickJSSandbox::with_config(js_config)
                 .map_err(|e| WebViewError::Script(format!("QuickJS sandbox init: {e}")))?,
         );
+        let timer_callback_tx = self.async_callback_tx.clone();
+        let pending_timer_callbacks = self.pending_timer_callbacks.clone();
+        sandbox.register_callback(
+            "__zw_setTimeout",
+            Box::new(move |args| {
+                let id = args.first().cloned().unwrap_or_default();
+                if id.is_empty() {
+                    return String::new();
+                }
+                let delay_ms = args.get(1).and_then(|delay| delay.parse::<u64>().ok()).unwrap_or(0);
+                let timer_callback_tx = timer_callback_tx.clone();
+                let pending_timer_callbacks = pending_timer_callbacks.clone();
+                pending_timer_callbacks.fetch_add(1, Ordering::Release);
+                std::thread::spawn(move || {
+                    if delay_ms > 0 {
+                        std::thread::sleep(std::time::Duration::from_millis(delay_ms));
+                    }
+                    let _ = timer_callback_tx.send((id, String::new()));
+                    pending_timer_callbacks.fetch_sub(1, Ordering::Release);
+                });
+                String::new()
+            }),
+        );
+        let iframe_drain_results = self.async_navigation_results.clone();
+        sandbox.register_callback(
+            "__zw_drain_async_iframe",
+            Box::new(move |args| {
+                let id = args.first().map(String::as_str).unwrap_or("");
+                if id.is_empty() {
+                    return String::new();
+                }
+                let deadline = std::time::Instant::now() + std::time::Duration::from_millis(50);
+                loop {
+                    if let Ok(mut results) = iframe_drain_results.lock()
+                        && let Some(result) = results.remove(id)
+                    {
+                        return result;
+                    }
+                    if std::time::Instant::now() >= deadline {
+                        return String::new();
+                    }
+                    std::thread::sleep(std::time::Duration::from_millis(1));
+                }
+            }),
+        );
         Self::register_service_worker_host_callbacks(
             &mut *sandbox,
-            self.sw_manager.clone(),
-            ServiceWorkerFetchers {
-                source: self.script_source_fetcher.clone(),
-                response: self.service_worker_script_fetcher.clone(),
-                worker: self.fetch_handler.clone(),
+            ServiceWorkerHostContext {
+                manager: self.sw_manager.clone(),
+                fetchers: ServiceWorkerFetchers {
+                    source: self.script_source_fetcher.clone(),
+                    response: self.service_worker_script_fetcher.clone(),
+                    worker: self.fetch_handler.clone(),
+                },
+                page_url: self.page_url_wire.clone(),
+                client_id: self.service_worker_client_id.clone(),
+                client_generation: self.service_worker_client_generation.clone(),
+                event_backlog: self.service_worker_event_backlog.clone(),
+                timeout_secs: self.http_client.timeout_secs,
             },
-            self.page_url_wire.clone(),
-            self.service_worker_client_id.clone(),
-            self.service_worker_client_generation.clone(),
-            self.http_client.timeout_secs,
         );
         self.indexed_db_bridge.register(&mut *sandbox, &self.page_url_wire);
         self.cache_storage_bridge.register(&mut *sandbox, &self.page_url_wire);
@@ -1808,6 +1904,74 @@ impl WebView {
         Ok(())
     }
 
+    fn drain_async_callbacks(&mut self) {
+        let Some(sandbox) = self.js_sandbox.as_mut() else {
+            return;
+        };
+        let mut callbacks = Vec::new();
+        while let Ok((id, result)) = self.async_callback_rx.try_recv() {
+            callbacks.push((id, result));
+        }
+        for (id, result) in callbacks {
+            sandbox.resolve_async_callback(&id, &result);
+        }
+    }
+
+    fn drain_next_async_callback_if_pending(&mut self, timeout: std::time::Duration) {
+        let Some(sandbox) = self.js_sandbox.as_mut() else {
+            return;
+        };
+        let deadline = std::time::Instant::now() + timeout;
+        loop {
+            let callback = match self.async_callback_rx.try_recv() {
+                Ok(callback) => Some(callback),
+                Err(mpsc::TryRecvError::Empty)
+                    if self.pending_timer_callbacks.load(Ordering::Acquire) > 0
+                        || self.async_navigation_fetches_in_flight.load(Ordering::Acquire) > 0 =>
+                {
+                    let now = std::time::Instant::now();
+                    if now >= deadline {
+                        None
+                    } else {
+                        self.async_callback_rx.recv_timeout(deadline - now).ok()
+                    }
+                }
+                Err(mpsc::TryRecvError::Empty | mpsc::TryRecvError::Disconnected) => None,
+            };
+            let Some((id, result)) = callback else {
+                return;
+            };
+            let is_interval = id.starts_with("__zwint:");
+            sandbox.resolve_async_callback(&id, &result);
+            if is_interval {
+                return;
+            }
+        }
+    }
+
+    fn drain_async_navigation_callbacks_until_idle(&mut self, timeout: std::time::Duration) {
+        let deadline = std::time::Instant::now() + timeout;
+        loop {
+            self.drain_async_callbacks();
+            if self.async_navigation_fetches_in_flight.load(Ordering::Acquire) == 0 {
+                return;
+            }
+            let now = std::time::Instant::now();
+            if now >= deadline {
+                return;
+            }
+            let wait_for = (deadline - now).min(std::time::Duration::from_millis(10));
+            let Some(sandbox) = self.js_sandbox.as_mut() else {
+                return;
+            };
+            match self.async_callback_rx.recv_timeout(wait_for) {
+                Ok((id, result)) => sandbox.resolve_async_callback(&id, &result),
+                Err(mpsc::RecvTimeoutError::Timeout) => {}
+                Err(mpsc::RecvTimeoutError::Disconnected) => return,
+            }
+        }
+    }
+
     /// P1b L1b（R3108）：native 写触发重渲染，闭合 R3107 caveat ①（native 写「live 且渲染」）。
     ///
     /// native 绑定直接改 live `cached_doc`（不经 `DomMutation` 队列），polyfill 增量路径
@@ -1894,7 +2058,21 @@ impl WebView {
             Self::register_forward_identity_bridge_callback(&self.handle_selector_forward, &mut **sandbox);
         }
 
-        let result = self.execute_script(&full_script)?;
+        self.drain_next_async_callback_if_pending(std::time::Duration::from_millis(20));
+        self.ensure_js_shim()?;
+        let result = {
+            let sandbox = self
+                .js_sandbox
+                .as_mut()
+                .ok_or_else(|| WebViewError::Script("no js sandbox".to_string()))?;
+            sandbox
+                .execute("__zw_begin_script&&__zw_begin_script();")
+                .map_err(|e| WebViewError::Script(format!("{e}")))?;
+            sandbox
+                .execute(&full_script)
+                .map_err(|e| WebViewError::Script(format!("{e}")))?
+                .value
+        };
 
         // 应用本 execute 新增的 DOM 变更（游标尾部；与 run_page_scripts_impl 同机制：
         // 活 DOM 直改 + cached_html 快照同步 + 重渲染）。
@@ -2058,6 +2236,11 @@ impl WebView {
                 response: self.service_worker_script_fetcher.clone(),
                 worker: self.fetch_handler.clone(),
             };
+            let async_callback_tx = self.async_callback_tx.clone();
+            let async_navigation_fetch_lock = self.async_navigation_fetch_lock.clone();
+            let async_navigation_fetches_in_flight = self.async_navigation_fetches_in_flight.clone();
+            let async_navigation_results = self.async_navigation_results.clone();
+            let service_worker_event_backlog = self.service_worker_event_backlog.clone();
             let timeout_secs = self.http_client.timeout_secs;
             sandbox.register_callback(
                 "__zw_fetch",
@@ -2087,32 +2270,89 @@ impl WebView {
                     let page_url = sw_page_url.lock().map(|url| url.clone()).unwrap_or_default();
                     let fetch_client_id = args.get(5).filter(|value| !value.is_empty()).cloned();
                     let fetch_referrer = args.get(6).filter(|value| !value.is_empty()).cloned();
-                    let is_navigation = fetch_id == "r115iframe";
+                    let is_navigation = fetch_id.starts_with("r115iframe:");
                     let is_reload_navigation = is_navigation && args.get(7).is_some_and(|value| value == "1");
                     let is_history_navigation = is_navigation && args.get(8).is_some_and(|value| value == "1");
+                    let resulting_client_id = is_navigation
+                        .then(|| args.get(10).filter(|value| !value.is_empty()).cloned())
+                        .flatten();
                     if let Ok(page) = url::Url::parse(&page_url)
                         && let Ok(request_url) = url::Url::parse(&url)
                         && page.origin() == request_url.origin()
                         && matches!(page.scheme(), "http" | "https")
                         && matches!(request_url.scheme(), "http" | "https")
                     {
-                        let client_id = fetch_client_id.unwrap_or_else(|| {
-                            format!("{}:{}", sw_client_id, sw_client_generation.load(Ordering::Relaxed))
-                        });
+                        let client_id = if is_navigation {
+                            fetch_client_id
+                        } else {
+                            Some(fetch_client_id.unwrap_or_else(|| {
+                                format!("{}:{}", sw_client_id, sw_client_generation.load(Ordering::Relaxed))
+                            }))
+                        };
                         let sw_request = ServiceWorkerFetchRequest {
                             url: request_url.as_str().to_string(),
                             method: method.clone(),
                             headers: headers.clone(),
                             body: req.body.clone(),
                             credentials: req.credentials.clone(),
-                            client_id: Some(client_id.clone()),
-                            resulting_client_id: is_navigation.then_some(format!("{client_id}:nested:{url}")),
+                            client_id,
+                            resulting_client_id,
                             referrer: fetch_referrer.or_else(|| is_navigation.then_some(page_url.clone())),
                             is_reload_navigation,
                             is_history_navigation,
                         };
+                        if is_navigation {
+                            let sw_manager = sw_manager.clone();
+                            let sw_fetchers = sw_fetchers.clone();
+                            let page_url = page_url.clone();
+                            let fetch_id = fetch_id.to_string();
+                            let async_callback_tx = async_callback_tx.clone();
+                            let async_navigation_fetch_lock = async_navigation_fetch_lock.clone();
+                            let async_navigation_fetches_in_flight = async_navigation_fetches_in_flight.clone();
+                            let async_navigation_results = async_navigation_results.clone();
+                            let service_worker_event_backlog = service_worker_event_backlog.clone();
+                            let fallback_fetch_handler = fetch_handler.clone();
+                            let fallback_req = req.clone();
+                            async_navigation_fetches_in_flight.fetch_add(1, Ordering::Release);
+                            std::thread::spawn(move || {
+                                let _guard = async_navigation_fetch_lock.lock().ok();
+                                let result = match Self::dispatch_in_process_service_worker_fetch(
+                                    &sw_manager,
+                                    &service_worker_event_backlog,
+                                    &sw_fetchers,
+                                    &page_url,
+                                    sw_request,
+                                    timeout_secs,
+                                ) {
+                                    Ok(Some(response)) => zero_engine::fetch_bridge::serialize_response(
+                                        &zero_engine::fetch_bridge::FetchResponse {
+                                            status: response.status,
+                                            status_text: response.status_text,
+                                            headers: response.headers,
+                                            body: response.body,
+                                            body_bytes: None,
+                                        },
+                                    ),
+                                    Ok(None) => match fallback_fetch_handler(&fallback_req) {
+                                        Ok(resp) => zero_engine::fetch_bridge::serialize_response(&resp),
+                                        Err(msg) => format!("__zw_fetch_error:{msg}"),
+                                    },
+                                    Err(error) => {
+                                        tracing::warn!("Service Worker fetch dispatch failed: {error}");
+                                        format!("__zw_fetch_error:{error}")
+                                    }
+                                };
+                                if let Ok(mut results) = async_navigation_results.lock() {
+                                    results.insert(fetch_id.clone(), result.clone());
+                                }
+                                let _ = async_callback_tx.send((fetch_id, result));
+                                async_navigation_fetches_in_flight.fetch_sub(1, Ordering::Release);
+                            });
+                            return String::new();
+                        }
                         match Self::dispatch_in_process_service_worker_fetch(
                             &sw_manager,
+                            &service_worker_event_backlog,
                             &sw_fetchers,
                             &page_url,
                             sw_request,
@@ -2254,6 +2494,8 @@ impl WebView {
             self.js_shim_initialized = true;
         }
         for (script, script_index) in scripts {
+            self.drain_async_navigation_callbacks_until_idle(std::time::Duration::from_millis(50));
+            let sandbox = self.js_sandbox.as_mut().expect("js sandbox");
             let (code, is_module) = match script {
                 zero_engine::pipeline::PageScript::Inline(c) => (c, false),
                 // R3083：`<script type="module">` 经 compile_module_script 转 import/export 为经典可执行
@@ -2371,6 +2613,7 @@ impl WebView {
                 }
                 tracing::warn!("页面脚本执行警告: {e}");
             }
+            self.drain_async_navigation_callbacks_until_idle(std::time::Duration::from_millis(50));
         }
         self.page_scripts_initialized = true;
         let pending = {
@@ -2700,6 +2943,7 @@ impl WebView {
             .map_err(|error| WebViewError::Script(error.to_string()))?;
         Self::wait_for_service_worker_evaluation(
             &mut manager,
+            &self.service_worker_event_backlog,
             registration_id,
             source_fetcher.as_ref(),
             response_fetcher.as_ref(),
@@ -2712,18 +2956,21 @@ impl WebView {
 
     /// Drain Service Worker manager events and advance lifecycle state.
     pub fn poll_service_worker_runtime_events(&mut self) -> Vec<ServiceWorkerManagerEvent> {
+        self.drain_async_callbacks();
         let fetchers = ServiceWorkerFetchers {
             source: self.script_source_fetcher.clone(),
             response: self.service_worker_script_fetcher.clone(),
             worker: self.fetch_handler.clone(),
         };
-        self.sw_manager
+        let events = self
+            .sw_manager
             .lock()
             .ok()
             .and_then(|mut manager| {
                 Self::poll_service_worker_manager(&mut manager, &fetchers, self.http_client.timeout_secs).ok()
             })
-            .unwrap_or_default()
+            .unwrap_or_default();
+        Self::store_service_worker_fetch_events(&self.service_worker_event_backlog, events)
     }
 
     /// Inspect one real Service Worker registration version.
@@ -2765,13 +3012,17 @@ impl WebView {
 
     fn register_service_worker_host_callbacks(
         sandbox: &mut dyn zero_script_sandbox::Sandbox,
-        manager: std::sync::Arc<std::sync::Mutex<ServiceWorkerManager>>,
-        fetchers: ServiceWorkerFetchers,
-        page_url: std::sync::Arc<std::sync::Mutex<String>>,
-        client_id: String,
-        client_generation: std::sync::Arc<AtomicU64>,
-        timeout_secs: u64,
+        context: ServiceWorkerHostContext,
     ) {
+        let ServiceWorkerHostContext {
+            manager,
+            fetchers,
+            page_url,
+            client_id,
+            client_generation,
+            event_backlog,
+            timeout_secs,
+        } = context;
         let source_fetcher = fetchers.source;
         let response_fetcher = fetchers.response;
         let worker_fetcher = fetchers.worker;
@@ -2788,6 +3039,7 @@ impl WebView {
         let register_source_fetcher = source_fetcher.clone();
         let register_response_fetcher = response_fetcher.clone();
         let register_worker_fetcher = worker_fetcher.clone();
+        let register_event_backlog = event_backlog.clone();
         sandbox.register_callback(
             "__zw_sw_register",
             Box::new(move |args| {
@@ -2826,7 +3078,7 @@ impl WebView {
                             .to_string();
                         }
                     };
-                let result = (|| -> Result<u64, ServiceWorkerMainScriptFetchError> {
+                let result = (|| -> Result<(u64, bool), ServiceWorkerMainScriptFetchError> {
                     let current_client_id = format!(
                         "{}:{}",
                         register_client_id,
@@ -2849,7 +3101,7 @@ impl WebView {
                             )
                             .map_err(|error| error.to_string())?
                         {
-                            return Ok(registration_id);
+                            return Ok((registration_id, true));
                         }
                     }
                     let source = Self::fetch_service_worker_main_script(
@@ -2875,6 +3127,7 @@ impl WebView {
                         .map_err(|error| error.to_string())?;
                     let completed = Self::wait_for_service_worker_evaluation(
                         &mut manager,
+                        &register_event_backlog,
                         registration_id,
                         register_source_fetcher.as_ref(),
                         register_response_fetcher.as_ref(),
@@ -2882,12 +3135,19 @@ impl WebView {
                         timeout_secs,
                     )?;
                     Ok(match completed {
-                        ServiceWorkerEvaluationResult::UpdateChecked { registration_id, .. } => registration_id,
-                        ServiceWorkerEvaluationResult::Evaluated => registration_id,
+                        ServiceWorkerEvaluationResult::UpdateChecked { registration_id, .. } => {
+                            (registration_id, false)
+                        }
+                        ServiceWorkerEvaluationResult::Evaluated => (registration_id, false),
                     })
                 })();
                 match result {
-                    Ok(id) => serde_json::json!({"ok": true, "id": id}).to_string(),
+                    Ok((id, existing)) => serde_json::json!({
+                        "ok": true,
+                        "id": id,
+                        "existing": existing,
+                    })
+                    .to_string(),
                     Err(error) => serde_json::json!({
                         "ok": false,
                         "error": error.message,
@@ -2935,6 +3195,7 @@ impl WebView {
         let update_manager = manager.clone();
         let update_page_url = page_url.clone();
         let update_worker_fetcher = worker_fetcher.clone();
+        let update_event_backlog = event_backlog.clone();
         sandbox.register_callback(
             "__zw_sw_update",
             Box::new(move |args| {
@@ -2991,6 +3252,7 @@ impl WebView {
                         zero_page_runtime::ServiceWorkerUpdateOutcome::Started { registration_id } => {
                             match Self::wait_for_service_worker_evaluation(
                                 &mut manager,
+                                &update_event_backlog,
                                 registration_id,
                                 source_fetcher.as_ref(),
                                 response_fetcher.as_ref(),
@@ -3027,6 +3289,7 @@ impl WebView {
 
         let snapshot_manager = manager.clone();
         let snapshot_fetchers = poll_fetchers.clone();
+        let snapshot_event_backlog = event_backlog.clone();
         sandbox.register_callback(
             "__zw_sw_snapshot",
             Box::new(move |args| {
@@ -3036,8 +3299,13 @@ impl WebView {
                 let Ok(mut manager) = snapshot_manager.lock() else {
                     return serde_json::json!({"ok": false, "error": "manager lock poisoned"}).to_string();
                 };
-                if let Err(error) = Self::poll_service_worker_manager(&mut manager, &snapshot_fetchers, timeout_secs) {
-                    return serde_json::json!({"ok": false, "error": error}).to_string();
+                match Self::poll_service_worker_manager(&mut manager, &snapshot_fetchers, timeout_secs) {
+                    Ok(events) => {
+                        Self::store_service_worker_fetch_events(&snapshot_event_backlog, events);
+                    }
+                    Err(error) => {
+                        return serde_json::json!({"ok": false, "error": error}).to_string();
+                    }
                 }
                 let Some(registration) = manager.registration(registration_id) else {
                     return serde_json::json!({"ok": false, "error": "registration not found"}).to_string();
@@ -3056,6 +3324,7 @@ impl WebView {
 
         let get_registration_manager = manager.clone();
         let get_registration_fetchers = poll_fetchers.clone();
+        let get_registration_event_backlog = event_backlog.clone();
         sandbox.register_callback(
             "__zw_sw_get_registration",
             Box::new(move |args| {
@@ -3066,10 +3335,13 @@ impl WebView {
                 let Ok(mut manager) = get_registration_manager.lock() else {
                     return serde_json::json!({"ok": false, "error": "manager lock poisoned"}).to_string();
                 };
-                if let Err(error) =
-                    Self::poll_service_worker_manager(&mut manager, &get_registration_fetchers, timeout_secs)
-                {
-                    return serde_json::json!({"ok": false, "error": error}).to_string();
+                match Self::poll_service_worker_manager(&mut manager, &get_registration_fetchers, timeout_secs) {
+                    Ok(events) => {
+                        Self::store_service_worker_fetch_events(&get_registration_event_backlog, events);
+                    }
+                    Err(error) => {
+                        return serde_json::json!({"ok": false, "error": error}).to_string();
+                    }
                 }
                 let origin = url.origin().ascii_serialization();
                 let registration = manager.registration_for_url(&origin, url.as_str());
@@ -3089,6 +3361,7 @@ impl WebView {
 
         let state_changes_manager = manager.clone();
         let state_changes_fetchers = poll_fetchers.clone();
+        let state_changes_event_backlog = event_backlog.clone();
         sandbox.register_callback(
             "__zw_sw_state_changes",
             Box::new(move |args| {
@@ -3099,10 +3372,13 @@ impl WebView {
                 let Ok(mut manager) = state_changes_manager.lock() else {
                     return serde_json::json!({"ok": false, "error": "manager lock poisoned"}).to_string();
                 };
-                if let Err(error) =
-                    Self::poll_service_worker_manager(&mut manager, &state_changes_fetchers, timeout_secs)
-                {
-                    return serde_json::json!({"ok": false, "error": error}).to_string();
+                match Self::poll_service_worker_manager(&mut manager, &state_changes_fetchers, timeout_secs) {
+                    Ok(events) => {
+                        Self::store_service_worker_fetch_events(&state_changes_event_backlog, events);
+                    }
+                    Err(error) => {
+                        return serde_json::json!({"ok": false, "error": error}).to_string();
+                    }
                 }
                 let Some((latest_sequence, states)) = manager.state_changes_since(registration_id, after_sequence)
                 else {
@@ -3207,6 +3483,7 @@ impl WebView {
 
         let client_messages_manager = manager.clone();
         let client_messages_fetchers = poll_fetchers.clone();
+        let client_messages_event_backlog = event_backlog.clone();
         let client_messages_generation = client_generation;
         sandbox.register_callback(
             "__zw_sw_client_messages",
@@ -3218,10 +3495,13 @@ impl WebView {
                 let Ok(mut manager) = client_messages_manager.lock() else {
                     return serde_json::json!({"ok": false, "error": "manager lock poisoned"}).to_string();
                 };
-                if let Err(error) =
-                    Self::poll_service_worker_manager(&mut manager, &client_messages_fetchers, timeout_secs)
-                {
-                    return serde_json::json!({"ok": false, "error": error}).to_string();
+                match Self::poll_service_worker_manager(&mut manager, &client_messages_fetchers, timeout_secs) {
+                    Ok(events) => {
+                        Self::store_service_worker_fetch_events(&client_messages_event_backlog, events);
+                    }
+                    Err(error) => {
+                        return serde_json::json!({"ok": false, "error": error}).to_string();
+                    }
                 }
                 let default_client_id = format!("{}:{}", client_id, client_messages_generation.load(Ordering::Relaxed));
                 let current_client_id = args
@@ -3253,6 +3533,7 @@ impl WebView {
 
         let controller_manager = manager.clone();
         let controller_fetchers = poll_fetchers;
+        let controller_event_backlog = event_backlog;
         sandbox.register_callback(
             "__zw_sw_controller",
             Box::new(move |args| {
@@ -3273,9 +3554,13 @@ impl WebView {
                 let Ok(mut manager) = controller_manager.lock() else {
                     return serde_json::json!({"ok": false, "error": "manager lock poisoned"}).to_string();
                 };
-                if let Err(error) = Self::poll_service_worker_manager(&mut manager, &controller_fetchers, timeout_secs)
-                {
-                    return serde_json::json!({"ok": false, "error": error}).to_string();
+                match Self::poll_service_worker_manager(&mut manager, &controller_fetchers, timeout_secs) {
+                    Ok(events) => {
+                        Self::store_service_worker_fetch_events(&controller_event_backlog, events);
+                    }
+                    Err(error) => {
+                        return serde_json::json!({"ok": false, "error": error}).to_string();
+                    }
                 }
                 let origin = document.origin().ascii_serialization();
                 let controller = if let Some(client_id) = client_id.as_deref() {
@@ -3317,6 +3602,7 @@ impl WebView {
 
     fn wait_for_service_worker_evaluation(
         manager: &mut ServiceWorkerManager,
+        event_backlog: &std::sync::Arc<std::sync::Mutex<Vec<ServiceWorkerManagerEvent>>>,
         registration_id: u64,
         source_fetcher: Option<&ScriptSourceFetcher>,
         response_fetcher: Option<&ServiceWorkerScriptFetcher>,
@@ -3330,7 +3616,10 @@ impl WebView {
         };
         let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
         loop {
-            let events = Self::poll_service_worker_manager(manager, &fetchers, timeout_secs)?;
+            let events = Self::store_service_worker_fetch_events(
+                event_backlog,
+                Self::poll_service_worker_manager(manager, &fetchers, timeout_secs)?,
+            );
             if let Some(result) = events.iter().find_map(|event| match event {
                 ServiceWorkerManagerEvent::UpdateChecked {
                     candidate_registration_id,
@@ -3382,97 +3671,108 @@ impl WebView {
         fetchers: &ServiceWorkerFetchers,
         timeout_secs: u64,
     ) -> Result<Vec<ServiceWorkerManagerEvent>, String> {
-        let events = manager.poll();
-        for event in &events {
-            if let ServiceWorkerManagerEvent::WorkerUpdateRequested {
-                caller_registration_id,
-                request_id,
-                target_registration_id,
-            } = event
-            {
-                let registration = manager
-                    .registration(*target_registration_id)
-                    .ok_or_else(|| "Service Worker update registration is missing".to_string())?
+        let mut output = Vec::new();
+        for _ in 0..64 {
+            let events = manager.poll();
+            if events.is_empty() {
+                break;
+            }
+            for event in &events {
+                if let ServiceWorkerManagerEvent::WorkerUpdateRequested {
+                    caller_registration_id,
+                    request_id,
+                    target_registration_id,
+                } = event
+                {
+                    let registration = manager
+                        .registration(*target_registration_id)
+                        .ok_or_else(|| "Service Worker update registration is missing".to_string())?
+                        .clone();
+                    let result = Self::fetch_service_worker_main_script(
+                        &registration.script_url,
+                        &registration.script_url,
+                        fetchers.response.as_ref(),
+                        fetchers.source.as_ref(),
+                        timeout_secs,
+                        registration.update_via_cache != ServiceWorkerUpdateViaCache::All,
+                    )
+                    .map_err(|error| (error.exception_name.to_string(), error.message));
+                    manager
+                        .complete_worker_update_fetch(*caller_registration_id, *request_id, result)
+                        .map_err(|error| error.to_string())?;
+                    continue;
+                }
+                if let ServiceWorkerManagerEvent::WorkerFetchRequested {
+                    registration_id,
+                    request_id,
+                    request,
+                } = event
+                {
+                    let result = Self::fetch_service_worker_request(request, fetchers.worker.as_ref(), timeout_secs);
+                    manager
+                        .complete_worker_fetch(*registration_id, *request_id, result)
+                        .map_err(|error| error.to_string())?;
+                    continue;
+                }
+                let (registration_id, request_id, urls, is_module) = match event {
+                    ServiceWorkerManagerEvent::ImportScriptsRequested {
+                        registration_id,
+                        request_id,
+                        urls,
+                        ..
+                    } => (registration_id, request_id, urls, false),
+                    ServiceWorkerManagerEvent::ModuleScriptsRequested {
+                        registration_id,
+                        request_id,
+                        urls,
+                        ..
+                    } => (registration_id, request_id, urls, true),
+                    _ => continue,
+                };
+                let context_url = manager
+                    .registration(*registration_id)
+                    .ok_or_else(|| "Service Worker import registration is missing".to_string())?
+                    .script_url
                     .clone();
-                let result = Self::fetch_service_worker_main_script(
-                    &registration.script_url,
-                    &registration.script_url,
-                    fetchers.response.as_ref(),
-                    fetchers.source.as_ref(),
-                    timeout_secs,
-                    registration.update_via_cache != ServiceWorkerUpdateViaCache::All,
-                )
-                .map_err(|error| (error.exception_name.to_string(), error.message));
-                manager
-                    .complete_worker_update_fetch(*caller_registration_id, *request_id, result)
-                    .map_err(|error| error.to_string())?;
-                continue;
-            }
-            if let ServiceWorkerManagerEvent::WorkerFetchRequested {
-                registration_id,
-                request_id,
-                request,
-            } = event
-            {
-                let result = Self::fetch_service_worker_request(request, fetchers.worker.as_ref(), timeout_secs);
-                manager
-                    .complete_worker_fetch(*registration_id, *request_id, result)
-                    .map_err(|error| error.to_string())?;
-                continue;
-            }
-            let (registration_id, request_id, urls, is_module) = match event {
-                ServiceWorkerManagerEvent::ImportScriptsRequested {
-                    registration_id,
-                    request_id,
-                    urls,
-                    ..
-                } => (registration_id, request_id, urls, false),
-                ServiceWorkerManagerEvent::ModuleScriptsRequested {
-                    registration_id,
-                    request_id,
-                    urls,
-                    ..
-                } => (registration_id, request_id, urls, true),
-                _ => continue,
-            };
-            let context_url = manager
-                .registration(*registration_id)
-                .ok_or_else(|| "Service Worker import registration is missing".to_string())?
-                .script_url
-                .clone();
-            let scripts = urls
-                .iter()
-                .map(
-                    |url| match fetchers.response.as_ref().filter(|_| !url.starts_with("data:")) {
-                        Some(fetcher) => fetcher(&context_url, url).and_then(|response| {
-                            Self::validate_service_worker_imported_script_response(
-                                url,
-                                &context_url,
-                                is_module,
-                                response,
-                            )
-                        }),
-                        None => match fetchers.source.as_ref().filter(|_| !url.starts_with("data:")) {
-                            Some(fetcher) => fetcher(&context_url, url).map(|source| ServiceWorkerImportedScript {
-                                url: url.clone(),
-                                source,
+                let scripts = urls
+                    .iter()
+                    .map(
+                        |url| match fetchers.response.as_ref().filter(|_| !url.starts_with("data:")) {
+                            Some(fetcher) => fetcher(&context_url, url).and_then(|response| {
+                                Self::validate_service_worker_imported_script_response(
+                                    url,
+                                    &context_url,
+                                    is_module,
+                                    response,
+                                )
                             }),
-                            None => {
-                                Self::fetch_service_worker_imported_script(url, &context_url, is_module, timeout_secs)
-                            }
+                            None => match fetchers.source.as_ref().filter(|_| !url.starts_with("data:")) {
+                                Some(fetcher) => fetcher(&context_url, url).map(|source| ServiceWorkerImportedScript {
+                                    url: url.clone(),
+                                    source,
+                                }),
+                                None => Self::fetch_service_worker_imported_script(
+                                    url,
+                                    &context_url,
+                                    is_module,
+                                    timeout_secs,
+                                ),
+                            },
                         },
-                    },
-                )
-                .collect::<Result<Vec<_>, _>>();
-            manager
-                .complete_import_scripts(*registration_id, *request_id, scripts)
-                .map_err(|error| error.to_string())?;
+                    )
+                    .collect::<Result<Vec<_>, _>>();
+                manager
+                    .complete_import_scripts(*registration_id, *request_id, scripts)
+                    .map_err(|error| error.to_string())?;
+            }
+            output.extend(events);
         }
-        Ok(events)
+        Ok(output)
     }
 
     fn dispatch_in_process_service_worker_fetch(
         manager: &std::sync::Arc<std::sync::Mutex<ServiceWorkerManager>>,
+        event_backlog: &std::sync::Arc<std::sync::Mutex<Vec<ServiceWorkerManagerEvent>>>,
         fetchers: &ServiceWorkerFetchers,
         page_url: &str,
         request: ServiceWorkerFetchRequest,
@@ -3490,13 +3790,15 @@ impl WebView {
         }
         let origin = authority.origin().ascii_serialization();
         let event_id = NEXT_IN_PROCESS_FETCH_EVENT_ID.fetch_add(1, Ordering::Relaxed);
-        let mut manager = manager
-            .lock()
-            .map_err(|_| "Service Worker manager lock poisoned".to_string())?;
-        match manager
-            .dispatch_fetch(&origin, event_id, request)
-            .map_err(|error| error.to_string())?
-        {
+        let dispatch = {
+            let mut manager = manager
+                .lock()
+                .map_err(|_| "Service Worker manager lock poisoned".to_string())?;
+            manager
+                .dispatch_fetch(&origin, event_id, request)
+                .map_err(|error| error.to_string())?
+        };
+        match dispatch {
             zero_page_runtime::ServiceWorkerFetchDispatch::PassThrough => Ok(None),
             zero_page_runtime::ServiceWorkerFetchDispatch::Dispatched {
                 registration_id,
@@ -3504,33 +3806,44 @@ impl WebView {
             } => {
                 let deadline = std::time::Instant::now() + std::time::Duration::from_secs(timeout_secs.max(1));
                 loop {
-                    for event in Self::poll_service_worker_manager(&mut manager, fetchers, timeout_secs)? {
-                        if let ServiceWorkerManagerEvent::FetchSettled {
-                            registration_id: settled_registration_id,
-                            event_id: settled_event_id,
-                            response,
-                            failed,
-                            message,
-                            ..
-                        } = event
-                            && settled_registration_id == registration_id
-                            && settled_event_id == event_id
-                        {
-                            if failed {
-                                let diagnostic = if message.is_empty() {
-                                    "Service Worker fetch failed".to_string()
-                                } else {
-                                    message
-                                };
-                                tracing::warn!("Service Worker fetch produced a network error: {diagnostic}");
-                                let _ = Self::poll_service_worker_manager(&mut manager, fetchers, timeout_secs);
-                                return Err(diagnostic);
+                    if let Some(event) =
+                        Self::take_backlogged_service_worker_fetch_event(event_backlog, registration_id, event_id)
+                    {
+                        return Self::resolve_service_worker_fetch_event(
+                            manager,
+                            event_backlog,
+                            fetchers,
+                            timeout_secs,
+                            event,
+                        );
+                    }
+                    let events = {
+                        let mut manager = manager
+                            .lock()
+                            .map_err(|_| "Service Worker manager lock poisoned".to_string())?;
+                        Self::poll_service_worker_manager(&mut manager, fetchers, timeout_secs)?
+                    };
+                    for event in events {
+                        match event {
+                            ServiceWorkerManagerEvent::FetchSettled {
+                                registration_id: settled_registration_id,
+                                event_id: settled_event_id,
+                                ..
+                            } if settled_registration_id == registration_id && settled_event_id == event_id => {
+                                return Self::resolve_service_worker_fetch_event(
+                                    manager,
+                                    event_backlog,
+                                    fetchers,
+                                    timeout_secs,
+                                    event,
+                                );
                             }
-                            if response.is_none() && !message.is_empty() {
-                                tracing::warn!("Service Worker fetch fell back to host fetch: {message}");
+                            ServiceWorkerManagerEvent::FetchSettled { .. } => {
+                                if let Ok(mut backlog) = event_backlog.lock() {
+                                    backlog.push(event);
+                                }
                             }
-                            let _ = Self::poll_service_worker_manager(&mut manager, fetchers, timeout_secs);
-                            return Ok(response);
+                            _ => {}
                         }
                     }
                     if std::time::Instant::now() >= deadline {
@@ -3540,6 +3853,87 @@ impl WebView {
                 }
             }
         }
+    }
+
+    fn store_service_worker_fetch_events(
+        event_backlog: &std::sync::Arc<std::sync::Mutex<Vec<ServiceWorkerManagerEvent>>>,
+        events: Vec<ServiceWorkerManagerEvent>,
+    ) -> Vec<ServiceWorkerManagerEvent> {
+        let mut output = Vec::new();
+        let mut fetch_events = Vec::new();
+        for event in events {
+            if matches!(event, ServiceWorkerManagerEvent::FetchSettled { .. }) {
+                fetch_events.push(event);
+            } else {
+                output.push(event);
+            }
+        }
+        if !fetch_events.is_empty()
+            && let Ok(mut backlog) = event_backlog.lock()
+        {
+            backlog.extend(fetch_events);
+        }
+        output
+    }
+
+    fn take_backlogged_service_worker_fetch_event(
+        event_backlog: &std::sync::Arc<std::sync::Mutex<Vec<ServiceWorkerManagerEvent>>>,
+        registration_id: u64,
+        event_id: u64,
+    ) -> Option<ServiceWorkerManagerEvent> {
+        let mut backlog = event_backlog.lock().ok()?;
+        let index = backlog.iter().position(|event| {
+            matches!(
+                event,
+                ServiceWorkerManagerEvent::FetchSettled {
+                    registration_id: settled_registration_id,
+                    event_id: settled_event_id,
+                    ..
+                } if *settled_registration_id == registration_id && *settled_event_id == event_id
+            )
+        })?;
+        Some(backlog.remove(index))
+    }
+
+    fn resolve_service_worker_fetch_event(
+        manager: &std::sync::Arc<std::sync::Mutex<ServiceWorkerManager>>,
+        event_backlog: &std::sync::Arc<std::sync::Mutex<Vec<ServiceWorkerManagerEvent>>>,
+        fetchers: &ServiceWorkerFetchers,
+        timeout_secs: u64,
+        event: ServiceWorkerManagerEvent,
+    ) -> Result<Option<ServiceWorkerFetchResponse>, String> {
+        let ServiceWorkerManagerEvent::FetchSettled {
+            response,
+            failed,
+            message,
+            ..
+        } = event
+        else {
+            return Err("Service Worker fetch waiter received a non-fetch event".into());
+        };
+        if failed {
+            let diagnostic = if message.is_empty() {
+                "Service Worker fetch failed".to_string()
+            } else {
+                message
+            };
+            tracing::warn!("Service Worker fetch produced a network error: {diagnostic}");
+            if let Ok(mut manager) = manager.lock()
+                && let Ok(events) = Self::poll_service_worker_manager(&mut manager, fetchers, timeout_secs)
+            {
+                Self::store_service_worker_fetch_events(event_backlog, events);
+            }
+            return Err(diagnostic);
+        }
+        if response.is_none() && !message.is_empty() {
+            tracing::warn!("Service Worker fetch fell back to host fetch: {message}");
+        }
+        if let Ok(mut manager) = manager.lock()
+            && let Ok(events) = Self::poll_service_worker_manager(&mut manager, fetchers, timeout_secs)
+        {
+            Self::store_service_worker_fetch_events(event_backlog, events);
+        }
+        Ok(response)
     }
 
     fn fetch_service_worker_request(
@@ -3783,7 +4177,12 @@ impl WebView {
             })()
         "#;
 
-        let probe_result = self.execute_script(probe_script).unwrap_or_default();
+        let probe_result = self
+            .js_sandbox
+            .as_mut()
+            .and_then(|sandbox| sandbox.execute(probe_script).ok())
+            .map(|result| result.value)
+            .unwrap_or_default();
 
         if probe_result.is_empty() {
             return Ok(script_output.to_string());
@@ -3851,7 +4250,7 @@ impl WebView {
                     "if (!globalThis.__wasm_errors__) globalThis.__wasm_errors__ = {{}}; \
                      globalThis.__wasm_errors__[{instance_id}] = 'compile: {err_msg}'"
                 );
-                let _ = self.execute_script(&err_script);
+                let _ = self.execute_script_raw(&err_script);
                 return Ok(script_output.to_string());
             }
         };
@@ -3869,7 +4268,7 @@ impl WebView {
                     "if (!globalThis.__wasm_errors__) globalThis.__wasm_errors__ = {{}}; \
                      globalThis.__wasm_errors__[{instance_id}] = 'instantiate: {err_msg}'"
                 );
-                let _ = self.execute_script(&err_script);
+                let _ = self.execute_script_raw(&err_script);
                 return Ok(script_output.to_string());
             }
         };
@@ -3958,7 +4357,7 @@ impl WebView {
             }})();
             "#,
         );
-        let _ = self.execute_script(&inject_script);
+        let _ = self.execute_script_raw(&inject_script);
 
         tracing::debug!(
             "WASM bridge: instance {} created, {} exports: {:?}",
@@ -4017,7 +4416,7 @@ impl WebView {
             }};
             "#,
         );
-        let _ = self.execute_script(&inject_script);
+        let _ = self.execute_script_raw(&inject_script);
 
         Ok(script_output.to_string())
     }
@@ -4039,7 +4438,9 @@ impl WebView {
             })()
         "#;
 
-        let queue_json = self.execute_script(probe_script).unwrap_or_else(|_| "[]".to_string());
+        let queue_json = self
+            .execute_script_raw(probe_script)
+            .unwrap_or_else(|_| "[]".to_string());
 
         let calls: Vec<serde_json::Value> = match serde_json::from_str(&queue_json) {
             Ok(v) => v,
@@ -4095,7 +4496,7 @@ impl WebView {
         }
 
         // 注入结果回 JS
-        let _ = self.execute_script(&results_script);
+        let _ = self.execute_script_raw(&results_script);
 
         Ok(())
     }
