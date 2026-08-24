@@ -1,4 +1,5 @@
 .PHONY: setup-rusty-v8 fetch-wpt-data fetch-wpt-html-testharness update-wpt-data build browser-build browser browser-cpu browser-wpt-parity browser-debug browser-debug-wayland browser-debug-wayland-log browser-debug-x11 browser-compositor-smoke browser-compositor-real-site-smoke test testharness-html reftest reftest-oracle capture-oracle product-smoke-oracle product-smoke form-visual-smoke form-visual-browser-gpu-smoke product-smoke-legacy import-wpt audit-imported-font-resources reftest-trend reftest-trend-oracle reftest-smoke layout-golden layout-golden-update monthly-report bench bench-gate bench-capture bench-trend fetch-wpt-dom testharness-dom testharness-dom-native fetch-wpt-indexeddb testharness-indexeddb fetch-wpt-cache-storage audit-wpt-cache-storage testharness-cache-storage baseline-wpt-cache-storage audit-wpt-service-workers-disposition fetch-wpt-service-workers-tier-a audit-wpt-service-workers-tier-a test-wpt-service-workers-tier-a-assets fetch-wpt-service-workers-next-wave audit-wpt-service-workers-next-wave test-wpt-service-workers-next-wave-assets fetch-wpt-service-workers-static-wave audit-wpt-service-workers-static-wave test-wpt-service-workers-static-wave-assets fetch-wpt-service-workers-update-wave audit-wpt-service-workers-update-wave test-wpt-service-workers-update-wave-assets fetch-wpt-service-workers-module-wave audit-wpt-service-workers-module-wave test-wpt-service-workers-module-wave-assets fetch-wpt-service-workers-module-bytecheck-wave audit-wpt-service-workers-module-bytecheck-wave test-wpt-service-workers-module-bytecheck-wave-assets fetch-wpt-service-workers-module-cors-wave audit-wpt-service-workers-module-cors-wave test-wpt-service-workers-module-cors-wave-assets fetch-wpt-service-workers-module-registration-wave audit-wpt-service-workers-module-registration-wave test-wpt-service-workers-module-registration-wave-assets fetch-wpt-service-workers-module-type-update-wave audit-wpt-service-workers-module-type-update-wave test-wpt-service-workers-module-type-update-wave-assets fetch-wpt-service-workers-module-request-metadata-wave audit-wpt-service-workers-module-request-metadata-wave test-wpt-service-workers-module-request-metadata-wave-assets fetch-wpt-service-workers-update-via-cache-matrix-wave audit-wpt-service-workers-update-via-cache-matrix-wave test-wpt-service-workers-update-via-cache-matrix-wave-assets fetch-wpt-service-workers-dynamic-import-update-wave audit-wpt-service-workers-dynamic-import-update-wave test-wpt-service-workers-dynamic-import-update-wave-assets fetch-wpt-service-workers-update-failure-wave audit-wpt-service-workers-update-failure-wave test-wpt-service-workers-update-failure-wave-assets fetch-wpt-service-workers-multiple-update-wave audit-wpt-service-workers-multiple-update-wave test-wpt-service-workers-multiple-update-wave-assets testharness-service-workers-core baseline-wpt-service-workers-core target-disk-guard target/test-guard android-preflight android-apk android-release-apk android-wsl-renderer-apk android-wsl-renderer-install-smoke android-install-smoke
+.PHONY: dev-guard guarded-test guarded-clippy guarded-browser
 
 # Windows 的 make recipe 可能落到 cmd.exe（本机）或 Git Bash（GitHub Actions runner）——
 # 统一显式走 Git Bash，避免 cmd 语法在 bash 下解析失败（2026-08-16 CI 实测）。
@@ -7,6 +8,39 @@ ifeq ($(OS),Windows_NT)
 WPT_BASH ?= "C:/Program Files/Git/bin/bash.exe"
 else
 WPT_BASH ?= bash
+endif
+
+# Linux 开发兜底：把重型开发命令放进单独 systemd scope，避免裸 cargo/clippy/build
+# 失控时连带杀掉外层 tmux server。默认 24G，双 clone 并行时给宿主保留足够余量。
+ZW_DEV_MEMORY_MAX ?= 24G
+ZW_DEV_SWAP_MAX ?= 0
+ZW_DEV_GUARD_UNIT ?= zeroweb-dev-guard-$(notdir $(CURDIR))
+SYSTEMD_RUN ?= systemd-run
+DEV_SHELL ?= bash
+
+ifeq ($(OS),Windows_NT)
+dev-guard guarded-test guarded-clippy guarded-browser:
+	@echo "Error: systemd-run guarded targets are only available on Linux"; exit 2
+else
+dev-guard:
+	$(SYSTEMD_RUN) --user --scope --unit=$(ZW_DEV_GUARD_UNIT) \
+		-p MemoryMax=$(ZW_DEV_MEMORY_MAX) -p MemorySwapMax=$(ZW_DEV_SWAP_MAX) \
+		$(DEV_SHELL)
+
+guarded-test:
+	$(SYSTEMD_RUN) --user --scope --unit=$(ZW_DEV_GUARD_UNIT)-test \
+		-p MemoryMax=$(ZW_DEV_MEMORY_MAX) -p MemorySwapMax=$(ZW_DEV_SWAP_MAX) \
+		make test
+
+guarded-clippy:
+	$(SYSTEMD_RUN) --user --scope --unit=$(ZW_DEV_GUARD_UNIT)-clippy \
+		-p MemoryMax=$(ZW_DEV_MEMORY_MAX) -p MemorySwapMax=$(ZW_DEV_SWAP_MAX) \
+		cargo clippy --workspace --all-targets -- -D warnings
+
+guarded-browser:
+	$(SYSTEMD_RUN) --user --scope --unit=$(ZW_DEV_GUARD_UNIT)-browser \
+		-p MemoryMax=$(ZW_DEV_MEMORY_MAX) -p MemorySwapMax=$(ZW_DEV_SWAP_MAX) \
+		make browser
 endif
 
 # target/ 磁盘占用守卫（2026-08-18：长时间 rally 循环曾把整块磁盘跑满——target/

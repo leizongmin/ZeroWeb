@@ -3,6 +3,7 @@ Rally 本来就是跨轮次、跨 session 的长期执行循环。遇到需要�
 有阶段性进展时应该及时在当前的分支提交代码并推送到远端，也要及时拉取远端的更新并rebase。
 单个代码文件一般不要超过2000行，如果超过了应该考虑合理拆分成多个文件。
 跑测试或 WPT reftest 时必须用 `make test` / `make reftest`，禁止裸跑 `cargo test` 或 `cargo run --bin zero-wpt-runner -- reftest`：入口会先在**不设内存阈值**的阶段完成编译，再以 `scripts/test-guard.rs` 包裹测试/runner 的执行阶段；内存型 bug（如无限循环 realloc）只会被杀掉测试进程树，不会触发系统 OOM 连累整个 tmux session / rally 流程。阈值/兜底见 docs/rally/oom-guard.md。
+Linux 下长期 agent/rally 或双 clone 并行开发时，先用 `make dev-guard` 进入 24G systemd scope，或直接用 `make guarded-test` / `make guarded-clippy` / `make guarded-browser` 跑重型入口；tmux server 保持在 scope 外，避免 cargo/rustc/runner 失控时带崩整个 session。
 涉及渲染/布局变更时建议额外跑 `make product-smoke`（DC-13 welcome.html vs chromium Oracle 回归门禁，diff>20% 退出 2）：`make test` + scoped reftest 不覆盖产品 fixture，曾致 R428 min-size:auto 的 welcome +7.65pp 回归藏了 14 轮未被发现（R541）。阈值可调：`make product-smoke MAX_DIFF=22`。
 - legacy HTML 产品 smoke（DC-13 Tier 1，HTML 3.2/4 + CSS1/2）：`make product-smoke-legacy`（42 fixture vs chrome-127 oracle，trend-only exit 0）。diff% 为 font-wall 趋势数据；**struct-check FAIL 是「待查清单」诊断入口，不阻 CI**——run-all.sh 现打印 issue 详情（sibling overlap / collapsed / text concatenation）。历史 known struct FAIL = 37-form-controls（Phase A 阻塞，**R2156 slice 1 + R2162 slice 2 default-on 后已 struct PASS 3.85%**，非再 FAIL；R2163 实测 legacy 51/51 struct PASS）。涉及 UA 样式 / 表单 / legacy 元素变更时跑，防结构性退化藏匿（曾抓到 R1651 center / R1653 caption / R1657 noframes / R1669 area+frame+keygen / R1675 datalist+source+track 等真 bug）。
 

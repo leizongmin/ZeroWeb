@@ -16,21 +16,44 @@ OOM，内核回收整个 `app-tmux.slice`（含 tmux session），rally 无人�
    源码默认 6/16GB/1800s，仅直接调用 `./target/test-guard` 且未传参时生效）。
    macOS / Linux 通用，不依赖
    `ulimit -v`（macOS 无效）或 `timeout`（macOS 默认无）。
-2. **L2 Linux cgroup 兜底（本文件）**：把 rally 跑在限内存的 systemd scope
-   内。L1 万一失效（agent 裸跑 `cargo test`、或非测试命令爆内存），OOM 只
-   杀 scope，不动 tmux server。
+2. **L2 Linux cgroup 兜底（本文件）**：把 rally / agent / 重型开发命令跑在
+   限内存的 systemd scope 内。L1 万一失效（agent 裸跑 `cargo test`、或非测试
+   命令爆内存），OOM 只杀 scope，不动 tmux server。
 3. macOS 无 cgroup，仅依赖 L1。
+
+## L2：在限内存 scope 内开发（仅 Linux）
+
+本仓 Makefile 提供 24G 默认上限的快捷入口：
+
+```bash
+# 开一个受限开发 shell；后续 cargo/build/test 命令都留在该 scope 内
+make dev-guard
+
+# 把常用重型入口整体放进受限 scope
+make guarded-test
+make guarded-clippy
+make guarded-browser
+```
+
+可通过环境变量临时调整：
+
+```bash
+make dev-guard ZW_DEV_MEMORY_MAX=20G ZW_DEV_SWAP_MAX=0
+```
+
+并行两个独立 clone 开发时，每个 clone 各开一个 guarded shell。tmux server 保持
+在 guarded scope 外，避免某个 clone 的 cargo/rustc/runner 失控时连带关闭 tmux。
 
 ## L2：在限内存 scope 内跑 rally（仅 Linux）
 
 ```bash
 systemd-run --user --scope --unit=rally-oom-guard \
-  -p MemoryMax=32G -p MemorySwapMax=8G \
+  -p MemoryMax=24G -p MemorySwapMax=0 \
   rally run "你的任务" -w ~/work/ZeroWeb
 ```
 
-- `MemoryMax=32G`：rally + agent + cargo test 全树硬上限（47GB 机器留约
-  15GB 给系统 / tmux / 其他进程）。
+- `MemoryMax=24G`：rally + agent + cargo test 全树硬上限；双 clone 并行时给
+  系统 / tmux / 另一个 clone 保留足够余量。
 - `--scope`：当前进程树归入新 scope，OOM 时 systemd 只杀该 scope 内进程。
 - tmux server 不在该 scope，不受影响——这正是「整垮 session」问题的根治点。
 
