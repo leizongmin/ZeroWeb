@@ -93,6 +93,19 @@ fn br_parent_has_following_inflow_sibling(
     false
 }
 
+fn has_non_whitespace_text_child(doc: &Document, dom_id: NodeId) -> bool {
+    doc.child_nodes(dom_id).iter().any(|&child| {
+        doc.get(child)
+            .is_some_and(|node| matches!(&node.kind, NodeKind::Text(text) if !text.content.trim().is_empty()))
+    })
+}
+
+fn is_html_list_item(doc: &Document, dom_id: NodeId) -> bool {
+    doc.get(dom_id).is_some_and(
+        |node| matches!(&node.kind, NodeKind::Element(elem) if elem.local_name().eq_ignore_ascii_case("li")),
+    )
+}
+
 fn resolve_tree_definite_real_length(value: &LengthValue, style: &ComputedStyle) -> Option<f32> {
     match value {
         LengthValue::Auto
@@ -1786,6 +1799,29 @@ fn build_subtree(
                     }
                 }
             }
+        }
+    }
+
+    // https://drafts.csswg.org/css-lists-3/#list-style-position-property
+    // An inside marker is part of the list item's first line box. Empty list
+    // items therefore still need a strut so successive marker-only items do
+    // not collapse onto the same baseline.
+    if (matches!(computed.display, DisplayValue::ListItem) || is_html_list_item(doc, dom_id))
+        && matches!(
+            computed.list_style_position,
+            zero_css_parser::values::ListStylePositionValue::Inside
+        )
+        && !matches!(
+            computed.list_style_type,
+            zero_css_parser::values::ListStyleTypeValue::None
+        )
+        && matches!(computed.height, LengthValue::Auto)
+        && child_taffy_ids.is_empty()
+        && !has_non_whitespace_text_child(doc, dom_id)
+    {
+        let (_fs, lh) = crate::inline::resolve_font_metrics(Some(&computed));
+        if lh > 0.0 {
+            taffy_style.min_size.height = taffy::style::Dimension::length(lh);
         }
     }
 

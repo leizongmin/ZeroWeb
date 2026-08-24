@@ -1,4 +1,5 @@
 use super::*;
+use zero_css_parser::Parser;
 use zero_css_parser::values::{
     AlignmentValue, DisplayValue, FlexDirectionValue, FlexWrapValue, LengthValue, OverflowValue, PositionValue,
 };
@@ -70,6 +71,34 @@ fn test_compute_text_blocks_have_nonzero_height() {
     assert!(
         second_box.y >= first_box.y + first_box.height,
         "second text block should be laid out after first: first={first_box:?}, second={second_box:?}"
+    );
+}
+
+/// Empty list items with an inside marker still create a marker line box.
+/// https://drafts.csswg.org/css-lists-3/#list-style-position-property
+#[test]
+fn test_empty_inside_list_items_advance_by_line_height() {
+    let html = r#"<html><body><ol><li></li><li></li></ol></body></html>"#;
+    let css = r#"ol { list-style-position: inside; }"#;
+    let doc = zero_dom::parse_html(html);
+    let stylesheet = Parser::parse_stylesheet(css);
+    let mut sys = StyleSystem::new();
+    sys.set_viewport(800.0, 600.0);
+    let styles = sys.compute_styles(&doc, &[stylesheet]);
+    let items = doc.get_elements_by_tag_name("li");
+    assert_eq!(items.len(), 2, "test fixture should contain two list items");
+    let first = items[0];
+    let second = items[1];
+
+    let mut engine = LayoutEngine::new(800.0, 600.0);
+    let result = engine.compute(&doc, &styles);
+    let first_box = find_child_by_node_id(&result.root, first).unwrap();
+    let second_box = find_child_by_node_id(&result.root, second).unwrap();
+
+    assert!(first_box.height > 0.0, "empty list item should keep marker line height");
+    assert!(
+        second_box.y >= first_box.y + first_box.height,
+        "second empty list item should be laid out after first: first={first_box:?}, second={second_box:?}"
     );
 }
 

@@ -11,7 +11,7 @@ use zero_layout_engine::LayoutBox;
 use zero_render_foundation::geometry::Rect;
 use zero_render_foundation::image_cache::ImageKey;
 use zero_render_foundation::primitive::{GlyphPrimitive, ImagePrimitive, RoundedRectPrimitive};
-use zero_style_system::{ComputedStyle, ContentComputedValue};
+use zero_style_system::{ComputedStyle, ContentComputedValue, LineHeightValue};
 
 use crate::paint::color::color_value_to_render;
 use crate::paint::helpers::image_resource_key;
@@ -273,13 +273,54 @@ struct CounterRepresentation {
     symbol_count: usize,
 }
 
+fn text_marker_baseline_offset(style: &ComputedStyle, font_size: f32) -> f32 {
+    let line_height = match &style.line_height {
+        LineHeightValue::Normal => {
+            let ratio = if is_ahem_marker_font(style) { 1.0 } else { 1.164 };
+            font_size * ratio
+        }
+        LineHeightValue::Number(n) => font_size * (*n as f32),
+        LineHeightValue::Length(length) => {
+            zero_style_system::computed::resolve_length(length, font_size as f64, None, None) as f32
+        }
+    };
+    let ascent_ratio = if is_ahem_marker_font(style) { 0.8 } else { 0.928 };
+    // https://www.w3.org/TR/CSS22/visudet.html#line-height
+    // Match inline layout's strut baseline: half-leading + font ascent.
+    (line_height - font_size).max(0.0) / 2.0 + font_size * ascent_ratio
+}
+
+fn is_ahem_marker_font(style: &ComputedStyle) -> bool {
+    style
+        .font_family
+        .iter()
+        .any(|family| family.trim_matches('"').eq_ignore_ascii_case("Ahem"))
+}
+
 /// R2392/R2394：按 `@counter-style` 的 system 算法生成计数器表示（marker body，不含 prefix/suffix）。
 /// CSS Counter Styles 3 §3.1.4。`None` = 该值无法表示（超出 range / 系统不支持）→ 调用方走 fallback。
-/// R2394 注：additive/range/extends 应用经 A/B 量证为 net-negative（driving WPT 全 font-wall dice/
-/// triangle 字形 + system-additive ref 依赖 document.write JS + system-extends nbsp/marker 渲染差），
-/// 故**应用 defer**（parse-retain，见 ast.rs 字段 + parser.rs 解析）；本函数仅消费已落地 5 系统 +
-/// cyclic 数学取模修正。
+/// R2394 注：additive 应用经 A/B 量证为 net-negative（driving WPT 全 font-wall dice/
+/// triangle 字形 + system-additive ref 依赖 document.write JS），故仍 defer；extends 只解析到
+/// 已注册 counter-style / built-in 系统并保留当前 rule affix。
+#[cfg(test)]
 fn counter_style_body(rule: &zero_css_parser::ast::CounterStyleRule, value: i64) -> Option<String> {
+    counter_style_body_with_registry(rule, value, None)
+}
+
+fn counter_style_marker_text(
+    rule: &zero_css_parser::ast::CounterStyleRule,
+    value: i64,
+    registry: Option<&std::collections::HashMap<String, zero_css_parser::ast::CounterStyleRule>>,
+) -> String {
+    let body = counter_style_body_with_registry(rule, value, registry).unwrap_or_else(|| value.to_string());
+    format!("{}{}{}", rule.prefix, body, rule.suffix)
+}
+
+fn counter_style_body_with_registry(
+    rule: &zero_css_parser::ast::CounterStyleRule,
+    value: i64,
+    registry: Option<&std::collections::HashMap<String, zero_css_parser::ast::CounterStyleRule>>,
+) -> Option<String> {
     use zero_css_parser::ast::CounterSystem;
     if rule.range.as_ref().is_some_and(|ranges| {
         !ranges
@@ -291,7 +332,7 @@ fn counter_style_body(rule: &zero_css_parser::ast::CounterStyleRule, value: i64)
 
     let is_negative = value < 0 && !matches!(rule.system, CounterSystem::Cyclic);
     let body_value = if is_negative { value.checked_abs()? } else { value };
-    let body = counter_style_raw_body(rule, body_value)?;
+    let body = counter_style_raw_body(rule, body_value, registry, 0)?;
     let (negative_prefix, negative_suffix): (&str, &str) = if is_negative {
         (rule.negative.0.as_str(), rule.negative.1.as_str())
     } else {
@@ -311,8 +352,16 @@ fn counter_style_body(rule: &zero_css_parser::ast::CounterStyleRule, value: i64)
     Some(format!("{negative_prefix}{pad}{}{negative_suffix}", body.text))
 }
 
-fn counter_style_raw_body(rule: &zero_css_parser::ast::CounterStyleRule, value: i64) -> Option<CounterRepresentation> {
+fn counter_style_raw_body(
+    rule: &zero_css_parser::ast::CounterStyleRule,
+    value: i64,
+    registry: Option<&std::collections::HashMap<String, zero_css_parser::ast::CounterStyleRule>>,
+    depth: usize,
+) -> Option<CounterRepresentation> {
     use zero_css_parser::ast::CounterSystem;
+    if depth > 16 {
+        return None;
+    }
     let syms = &rule.symbols;
     let len = syms.len();
     match rule.system {
@@ -425,8 +474,11 @@ fn counter_style_raw_body(rule: &zero_css_parser::ast::CounterStyleRule, value: 
                 text,
             })
         }
+        CounterSystem::Extends(ref name) => registry
+            .and_then(|rules| rules.get(name))
+            .and_then(|base| counter_style_raw_body(base, value, registry, depth + 1)),
         // additive / most extends：应用 defer（R2394 A/B 量证 net-negative，见函数注释）→ None（fallback）。
-        CounterSystem::Additive | CounterSystem::Extends(_) => None,
+        CounterSystem::Additive => None,
         _ => None,
     }
 }
@@ -602,6 +654,12 @@ impl super::super::Painter {
             zero_css_parser::values::ListStylePositionValue::Outside => marker_x - marker_size * 2.5,
             zero_css_parser::values::ListStylePositionValue::Inside => marker_x + marker_size * 0.5,
         };
+        let text_marker_x = match style.list_style_position {
+            zero_css_parser::values::ListStylePositionValue::Outside => actual_marker_x,
+            zero_css_parser::values::ListStylePositionValue::Inside => marker_x,
+        };
+        let text_marker_font_size = font_size;
+        let text_marker_baseline_y = marker_y + text_marker_baseline_offset(style, text_marker_font_size);
 
         // ::marker 伪元素 content 覆盖（CSS Lists 3）：marker_pseudo 存在时，content 决定标记
         // 文本——`none` 抑制标记；具体生成内容（String/Counter/Counters/List）替代默认
@@ -617,13 +675,13 @@ impl super::super::Painter {
                 | ContentComputedValue::Counters { .. }
                 | ContentComputedValue::List(_) => {
                     if let Some(text) = self.resolve_generated_content_text(&marker_style.content) {
-                        let mut char_x = actual_marker_x;
-                        let char_y = marker_y + font_size;
+                        let mut char_x = text_marker_x;
+                        let char_y = text_marker_baseline_y;
                         for ch in text.chars() {
                             self.primitives.add_glyph(GlyphPrimitive {
                                 x: char_x,
                                 y: char_y,
-                                font_size: font_size * 0.85,
+                                font_size: text_marker_font_size,
                                 color,
                                 glyph_id: ch as u32,
                                 font_glyph_index: None,
@@ -635,7 +693,7 @@ impl super::super::Painter {
                                 rotation: 0.0,
                                 synthetic_italic: false,
                             });
-                            char_x += self.measure_char_cached(default_font_id.0, ch, font_size * 0.85, false);
+                            char_x += self.measure_char_cached(default_font_id.0, ch, text_marker_font_size, false);
                         }
                         return;
                     }
@@ -700,13 +758,13 @@ impl super::super::Painter {
                 } else {
                     format!("{index}.")
                 };
-                let mut char_x = actual_marker_x;
-                let char_y = marker_y + font_size;
+                let mut char_x = text_marker_x;
+                let char_y = text_marker_baseline_y;
                 for ch in text.chars() {
                     self.primitives.add_glyph(GlyphPrimitive {
                         x: char_x,
                         y: char_y,
-                        font_size: font_size * 0.85,
+                        font_size: text_marker_font_size,
                         color,
                         glyph_id: ch as u32,
                         font_glyph_index: None,
@@ -718,7 +776,7 @@ impl super::super::Painter {
                         rotation: 0.0,
                         synthetic_italic: false,
                     });
-                    char_x += self.measure_char_cached(default_font_id.0, ch, font_size * 0.85, false);
+                    char_x += self.measure_char_cached(default_font_id.0, ch, text_marker_font_size, false);
                 }
             }
             ListStyleTypeValue::LowerAlpha | ListStyleTypeValue::UpperAlpha => {
@@ -736,13 +794,13 @@ impl super::super::Painter {
                     '?'
                 };
                 let text = format!("{ch}.");
-                let mut char_x = actual_marker_x;
-                let char_y = marker_y + font_size;
+                let mut char_x = text_marker_x;
+                let char_y = text_marker_baseline_y;
                 for ch in text.chars() {
                     self.primitives.add_glyph(GlyphPrimitive {
                         x: char_x,
                         y: char_y,
-                        font_size: font_size * 0.85,
+                        font_size: text_marker_font_size,
                         color,
                         glyph_id: ch as u32,
                         font_glyph_index: None,
@@ -754,7 +812,7 @@ impl super::super::Painter {
                         rotation: 0.0,
                         synthetic_italic: false,
                     });
-                    char_x += self.measure_char_cached(default_font_id.0, ch, font_size * 0.85, false);
+                    char_x += self.measure_char_cached(default_font_id.0, ch, text_marker_font_size, false);
                 }
             }
             ListStyleTypeValue::LowerRoman | ListStyleTypeValue::UpperRoman => {
@@ -771,13 +829,13 @@ impl super::super::Painter {
                         format!("{roman}.")
                     }
                 };
-                let mut char_x = actual_marker_x;
-                let char_y = marker_y + font_size;
+                let mut char_x = text_marker_x;
+                let char_y = text_marker_baseline_y;
                 for ch in text.chars() {
                     self.primitives.add_glyph(GlyphPrimitive {
                         x: char_x,
                         y: char_y,
-                        font_size: font_size * 0.85,
+                        font_size: text_marker_font_size,
                         color,
                         glyph_id: ch as u32,
                         font_glyph_index: None,
@@ -789,7 +847,7 @@ impl super::super::Painter {
                         rotation: 0.0,
                         synthetic_italic: false,
                     });
-                    char_x += self.measure_char_cached(default_font_id.0, ch, font_size * 0.85, false);
+                    char_x += self.measure_char_cached(default_font_id.0, ch, text_marker_font_size, false);
                 }
             }
             // R2445：lower-greek / persian 预定义计数器样式（CSS Counter Styles 3 §6）。
@@ -845,13 +903,13 @@ impl super::super::Painter {
                     _ => index.to_string(),
                 };
                 let text = format!("{body}.");
-                let mut char_x = actual_marker_x;
-                let char_y = marker_y + font_size;
+                let mut char_x = text_marker_x;
+                let char_y = text_marker_baseline_y;
                 for ch in text.chars() {
                     self.primitives.add_glyph(GlyphPrimitive {
                         x: char_x,
                         y: char_y,
-                        font_size: font_size * 0.85,
+                        font_size: text_marker_font_size,
                         color,
                         glyph_id: ch as u32,
                         font_glyph_index: None,
@@ -863,20 +921,20 @@ impl super::super::Painter {
                         rotation: 0.0,
                         synthetic_italic: false,
                     });
-                    char_x += self.measure_char_cached(default_font_id.0, ch, font_size * 0.85, false);
+                    char_x += self.measure_char_cached(default_font_id.0, ch, text_marker_font_size, false);
                 }
             }
             ListStyleTypeValue::None => {}
             // list-style-type: <string>（CSS Lists 3）：固定字符串标记（非计数器，每个 li 同值）。
             // 按文本 marker 同位绘字（≡ Decimal/script arm 字形循环）；空串 → 无标记。
             ListStyleTypeValue::String(s) => {
-                let mut char_x = actual_marker_x;
-                let char_y = marker_y + font_size;
+                let mut char_x = text_marker_x;
+                let char_y = text_marker_baseline_y;
                 for ch in s.chars() {
                     self.primitives.add_glyph(GlyphPrimitive {
                         x: char_x,
                         y: char_y,
-                        font_size: font_size * 0.85,
+                        font_size: text_marker_font_size,
                         color,
                         glyph_id: ch as u32,
                         font_glyph_index: None,
@@ -888,7 +946,7 @@ impl super::super::Painter {
                         rotation: 0.0,
                         synthetic_italic: false,
                     });
-                    char_x += self.measure_char_cached(default_font_id.0, ch, font_size * 0.85, false);
+                    char_x += self.measure_char_cached(default_font_id.0, ch, text_marker_font_size, false);
                 }
             }
             // R2392：自定义计数器样式（@counter-style）。查注册表 → 按 system 生成 body
@@ -899,21 +957,17 @@ impl super::super::Painter {
                     .get_counter("list-item")
                     .unwrap_or_else(|| self.compute_list_item_index(doc, node_id));
                 let text = match self.counter_styles.get(name) {
-                    Some(rule) => match counter_style_body(rule, value) {
-                        Some(body) => format!("{}{}{}", rule.prefix, body, rule.suffix),
-                        // body 超出 range → fallback（decimal）。
-                        None => format!("{value}."),
-                    },
+                    Some(rule) => counter_style_marker_text(rule, value, Some(&self.counter_styles)),
                     // 未定义的自定义名 → fallback decimal（CSS Counter Styles 3 §3.1.3）。
                     None => format!("{value}."),
                 };
-                let mut char_x = actual_marker_x;
-                let char_y = marker_y + font_size;
+                let mut char_x = text_marker_x;
+                let char_y = text_marker_baseline_y;
                 for ch in text.chars() {
                     self.primitives.add_glyph(GlyphPrimitive {
                         x: char_x,
                         y: char_y,
-                        font_size: font_size * 0.85,
+                        font_size: text_marker_font_size,
                         color,
                         glyph_id: ch as u32,
                         font_glyph_index: None,
@@ -925,7 +979,7 @@ impl super::super::Painter {
                         rotation: 0.0,
                         synthetic_italic: false,
                     });
-                    char_x += self.measure_char_cached(default_font_id.0, ch, font_size * 0.85, false);
+                    char_x += self.measure_char_cached(default_font_id.0, ch, text_marker_font_size, false);
                 }
             }
         }
@@ -989,6 +1043,7 @@ fn is_li(doc: &Document, id: NodeId) -> bool {
 #[cfg(test)]
 mod tests {
     use super::counter_style_body;
+    use super::counter_style_marker_text;
     use super::list_item_counter;
     use super::to_arabic_indic;
     use super::to_armenian;
@@ -1273,6 +1328,31 @@ mod tests {
         assert_eq!(counter_style_body(&r, 5).unwrap(), "**V");
         assert!(counter_style_body(&r, 0).is_none());
         assert!(counter_style_body(&r, 6).is_none());
+    }
+
+    #[test]
+    /// R3744：`extends <custom-ident>` 使用被扩展样式的 body，但 range fallback 保留当前规则 affix。
+    fn test_counter_style_custom_extends_resolves_base_body_and_own_affix() {
+        let mut chapter = cs_rule(
+            zero_css_parser::ast::CounterSystem::Extends("upper-roman".to_string()),
+            &[],
+        );
+        chapter.name = "chapter".to_string();
+        chapter.prefix = "Chapter ".to_string();
+        chapter.range = Some(vec![(1, 5)]);
+
+        let mut section = cs_rule(zero_css_parser::ast::CounterSystem::Extends("chapter".to_string()), &[]);
+        section.name = "section".to_string();
+        section.prefix = "Section ".to_string();
+        section.range = Some(vec![(1, 6)]);
+
+        let mut registry = std::collections::HashMap::new();
+        registry.insert(chapter.name.clone(), chapter.clone());
+        registry.insert(section.name.clone(), section.clone());
+
+        assert_eq!(counter_style_marker_text(&section, 6, Some(&registry)), "Section VI. ");
+        assert_eq!(counter_style_marker_text(&section, 7, Some(&registry)), "Section 7. ");
+        assert_eq!(counter_style_marker_text(&chapter, 0, Some(&registry)), "Chapter 0. ");
     }
 
     #[test]
