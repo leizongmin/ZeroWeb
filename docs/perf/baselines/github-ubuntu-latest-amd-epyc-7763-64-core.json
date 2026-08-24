@@ -30,9 +30,9 @@
     },
     {
       "id": "mb/zero-browser-shell/bookmark_add_1000",
-      "p95": 154287.4247311828,
+      "p95": 154051.12903225806,
       "tier": "budget",
-      "tightened_at": "2026-08-22T13:25:08Z"
+      "tightened_at": "2026-08-24T15:11:40Z"
     },
     {
       "id": "mb/zero-browser-shell/download_manager_100",
@@ -226,9 +226,9 @@
     },
     {
       "id": "mb/zero-host-runtime/host_runtime_new",
-      "p95": 18.112666669742772,
+      "p95": 18.109061901103857,
       "tier": "budget",
-      "tightened_at": "2026-08-21T13:25:41Z"
+      "tightened_at": "2026-08-24T15:11:40Z"
     },
     {
       "id": "mb/zero-host-runtime/window_config_builder_chain",
@@ -237,9 +237,9 @@
     },
     {
       "id": "mb/zero-host-runtime/window_config_default",
-      "p95": 1.871509680424017,
+      "p95": 1.8689645270192923,
       "tier": "budget",
-      "tightened_at": "2026-08-23T19:25:15Z"
+      "tightened_at": "2026-08-24T15:11:40Z"
     },
     {
       "id": "mb/zero-layout-engine/block_layout_1000_elements",
