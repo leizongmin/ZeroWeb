@@ -375,6 +375,14 @@ fn test_parse_counter_style_range_rejects_extra_bound() {
 }
 
 #[test]
+/// R3739：`range` 的 lower 必须小于等于 upper。
+fn test_parse_counter_style_range_rejects_reversed_bounds() {
+    let css = "@counter-style a { system: extends decimal; range: 0 -1; }";
+    let cs = first_counter_style(css);
+    assert_eq!(cs.range, None, "range: 0 -1 应无效并走默认 range");
+}
+
+#[test]
 /// R2394：`range: auto` → None（走系统默认）。
 fn test_parse_counter_style_range_auto() {
     let css = "@counter-style a { system: extends decimal; range: auto; }";

@@ -298,6 +298,9 @@ pub(super) fn parse_counter_range(value: &str) -> Option<Vec<(i32, i32)>> {
         if iter.next().is_some() {
             return None;
         }
+        if lo > hi {
+            return None;
+        }
         ranges.push((lo, hi));
     }
     if ranges.is_empty() { None } else { Some(ranges) }
