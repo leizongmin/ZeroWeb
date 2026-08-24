@@ -223,7 +223,7 @@ pub fn parse_animation_iteration_count(value: &str) -> Option<AnimationIteration
     if v.eq_ignore_ascii_case("infinite") {
         return Some(AnimationIterationCountValue::Infinite);
     }
-    let n: f64 = v.parse().ok()?;
+    let n = parse_finite_number_math(v)?;
     if n.is_finite() && n >= 0.0 {
         Some(AnimationIterationCountValue::Number(n))
     } else {

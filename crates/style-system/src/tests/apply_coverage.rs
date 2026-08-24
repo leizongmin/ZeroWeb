@@ -1269,6 +1269,25 @@ fn test_apply_animation_iteration_count_infinite() {
     assert!(s.animation_iteration_count[0].is_none());
 }
 
+#[test]
+fn test_apply_animation_iteration_count_math_function_list() {
+    let mut style = ComputedStyle::default();
+    assert!(apply_property_value(
+        &mut style,
+        "animation-iteration-count",
+        "min(1, 2), infinite, clamp(1, 2, 3)"
+    ));
+    assert_eq!(style.animation_iteration_count, vec![Some(1.0), None, Some(2.0)]);
+
+    let previous = style.animation_iteration_count.clone();
+    assert!(!apply_property_value(
+        &mut style,
+        "animation-iteration-count",
+        "calc(1px), infinite"
+    ));
+    assert_eq!(style.animation_iteration_count, previous);
+}
+
 // === transition-property none ===
 
 #[test]

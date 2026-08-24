@@ -626,7 +626,17 @@ fn test_animation_iteration_count() {
         parse_animation_iteration_count("0"),
         Some(AnimationIterationCountValue::Number(0.0))
     );
+    assert_eq!(
+        parse_animation_iteration_count("min(1, 2)"),
+        Some(AnimationIterationCountValue::Number(1.0))
+    );
+    assert_eq!(
+        parse_animation_iteration_count("clamp(1, 2, 3)"),
+        Some(AnimationIterationCountValue::Number(2.0))
+    );
     assert!(parse_animation_iteration_count("-1").is_none());
+    assert!(parse_animation_iteration_count("calc(-1)").is_none());
+    assert!(parse_animation_iteration_count("calc(1px)").is_none());
 }
 
 #[test]

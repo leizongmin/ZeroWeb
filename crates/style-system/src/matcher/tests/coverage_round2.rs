@@ -679,6 +679,10 @@ fn test_property_supported_animation_and_transition() {
     ));
     assert!(is_property_supported("animation-delay", "-1s"));
     assert!(is_property_supported("animation-iteration-count", "2, infinite"));
+    assert!(is_property_supported(
+        "animation-iteration-count",
+        "min(1, 2), infinite, clamp(1, 2, 3)"
+    ));
     assert!(is_property_supported("animation-direction", "alternate, reverse"));
     assert!(is_property_supported("animation-fill-mode", "forwards, both"));
     assert!(is_property_supported("animation-play-state", "running, paused"));
@@ -701,6 +705,7 @@ fn test_property_supported_animation_and_transition() {
     ));
     assert!(!is_property_supported("animation-delay", "0.2s, bogus"));
     assert!(!is_property_supported("animation-iteration-count", "-1"));
+    assert!(!is_property_supported("animation-iteration-count", "calc(1px)"));
     assert!(!is_property_supported("animation-direction", "normal, bogus"));
     assert!(!is_property_supported("animation-fill-mode", "both, bogus"));
     assert!(!is_property_supported("animation-play-state", "running, bogus"));

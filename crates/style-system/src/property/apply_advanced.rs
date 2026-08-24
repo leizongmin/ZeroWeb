@@ -37,6 +37,41 @@ fn parse_time_list(value: &str) -> Option<Vec<f64>> {
     Some(out)
 }
 
+fn split_top_level_commas(value: &str) -> Option<Vec<&str>> {
+    let mut start = 0;
+    let mut depth = 0i32;
+    let mut items = Vec::new();
+    for (index, ch) in value.char_indices() {
+        match ch {
+            '(' => depth += 1,
+            ')' => {
+                if depth == 0 {
+                    return None;
+                }
+                depth -= 1;
+            }
+            ',' if depth == 0 => {
+                let item = value[start..index].trim();
+                if item.is_empty() {
+                    return None;
+                }
+                items.push(item);
+                start = index + ch.len_utf8();
+            }
+            _ => {}
+        }
+    }
+    if depth != 0 {
+        return None;
+    }
+    let item = value[start..].trim();
+    if item.is_empty() {
+        return None;
+    }
+    items.push(item);
+    Some(items)
+}
+
 // https://drafts.csswg.org/css-transitions-1/#transition-property-property
 fn parse_transition_property_list(value: &str) -> Option<Vec<String>> {
     let mut out = Vec::new();
@@ -518,8 +553,14 @@ pub fn apply_advanced_property_value(style: &mut ComputedStyle, property: &str, 
         }
         "animation-iteration-count" => {
             let mut counts = Vec::new();
-            for part in value.split(',') {
-                match values::parse_animation_iteration_count(part.trim()) {
+            // https://drafts.csswg.org/css-animations-1/#animation-iteration-count
+            // CSS math functions can contain commas, so only split the list at
+            // top-level commas.
+            let Some(parts) = split_top_level_commas(value) else {
+                return false;
+            };
+            for part in parts {
+                match values::parse_animation_iteration_count(part) {
                     Some(zero_css_parser::values::AnimationIterationCountValue::Infinite) => counts.push(None),
                     Some(zero_css_parser::values::AnimationIterationCountValue::Number(n)) => counts.push(Some(n)),
                     None => return false,
