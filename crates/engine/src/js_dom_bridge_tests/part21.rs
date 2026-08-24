@@ -2581,6 +2581,121 @@ fn test_extract_contents_chardata_interval_r211() {
         "R211 extractContents CharData 区间语义"
     );
 }
+/// R212（js-dom M4）：surroundContents 的 CharData 区间路径三件（spec
+/// `dom-range-surroundcontents` 完整链）：
+/// ① 步骤 1 补 nodeType 11（DocumentFragment newParent → InvalidNodeTypeError，
+///   旧版漏检使 docfrag 走到 CharData 路径实际变更树——,20 族 48F）
+/// ② 步骤 3「While newParent has children, remove its first child」（旧版漏，
+///   wrapped 元素残留 setup 期原文本）
+/// ③ 工厂元素 appendChild 的 DocumentFragment 展平（spec
+///   `dom-node-append-child`——frag 子逐个 append 后清空；旧版塞 fragment 本体，
+///   frag 子丢失）
+/// + CDATA cloneNode nt=4 分支（成对 land——两侧对称闭合）。
+///
+/// <https://dom.spec.whatwg.org/#dom-range-surroundcontents>
+#[test]
+fn test_surround_chardata_path_r212() {
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let mut sandbox = V8Sandbox::with_config(zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    })
+    .unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> =
+        Arc::new(Mutex::new("<html><body></body></html>".to_string()));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    let common_js =
+        include_str!("../../../../tests/wpt-runner/wpt-data/dom/common.js").to_string();
+    let iframe_html = include_str!(
+        "../../../../tests/wpt-runner/wpt-data/dom/ranges/Range-test-iframe.html"
+    )
+    .to_string();
+    let fetched_common = common_js.clone();
+    let fetched_iframe = iframe_html.clone();
+    sandbox.register_callback(
+        "__zw_fetch",
+        Box::new(move |args| {
+            let url = args.get(2).map(String::as_str).unwrap_or("");
+            if url.ends_with("Range-test-iframe.html") {
+                return format!("__zwfr:200\u{1f}OK\u{1f}\u{1f}{}", fetched_iframe);
+            }
+            "__zw_fetch_error:not-found".to_string()
+        }),
+    );
+    sandbox.register_callback(
+        "__zw_fetch_script",
+        Box::new(move |args| {
+            let src = args.get(1).map(String::as_str).unwrap_or("");
+            if src.ends_with("common.js") {
+                return fetched_common.clone();
+            }
+            String::new()
+        }),
+    );
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+    let out = sandbox
+        .execute(
+            r#"
+            var ifr = document.createElement('iframe');
+            document.body.appendChild(ifr);
+            ifr.setAttribute('src', 'Range-test-iframe.html');
+            var win = ifr.contentWindow;
+            win.setupRangeTests();
+            var out = [];
+            // ① DocumentFragment newParent → InvalidNodeTypeError（步骤 1 三类型）
+            win.testNodeInput = 'docfrag';
+            win.testRangeInput = '[paras[0].firstChild, 0, paras[0].firstChild, 0]';
+            win.run();
+            var r1 = win.testRange, n1 = win.testNode;
+            var t1 = '';
+            try { r1.surroundContents(n1); } catch (e) { t1 = e.name; }
+            if (t1 !== 'InvalidNodeTypeError') out.push('docfrag:' + t1);
+            // ③ CDATA cloneNode(false) 保 nodeType=4（须在 surround 变更 paras[5] 前检查）
+            win.testNodeInput = 'paras[5].firstChild';
+            win.testRangeInput = '[paras[0].firstChild, 0, paras[0].firstChild, 0]';
+            win.run();
+            var cd = win.testNode;
+            var cl = cd.cloneNode(false);
+            if (!(cl && cl.nodeType === 4 && String(cl.data) === String(cd.data))) out.push('cdata-clone:bad');
+            // ② CDATA 区间 surround：树形态（wrapped 元素 = frag 内容、父 =
+            // [wrapped, 剩余 cdata 头, 空 text]）+ newParent 原子清除 + range select
+            win.testNodeInput = 'paras[0]';
+            win.testRangeInput = '[paras[5].firstChild, 2, paras[5].lastChild, 4]';
+            win.run();
+            var r2 = win.testRange, n2 = win.testNode;
+            var p5 = r2.startContainer.parentNode;
+            try {
+              r2.surroundContents(n2);
+              var s = '';
+              for (var i = 0; i < p5.childNodes.length; i++) {
+                var c = p5.childNodes[i];
+                s += c.nodeType === 1 ? 'E[' : ('t' + c.nodeType + '(' + String(c.data) + ')');
+                if (c.nodeType === 1) {
+                  var w = '';
+                  for (var j = 0; j < c.childNodes.length; j++)
+                    w += 'nt' + c.childNodes[j].nodeType + '(' + String(c.childNodes[j].data) + ')';
+                  s += w + ']';
+                }
+              }
+              out.push('tree:' + s);
+              out.push('range:' + (r2.startContainer === p5) + ':' + r2.startOffset + ':' + r2.endOffset);
+            } catch (e) { out.push('threw:' + e.name); }
+            out.length ? out.join('\n') : 'ALL-OK'
+            "#,
+        )
+        .unwrap()
+        .value;
+    assert_eq!(
+        out,
+        "tree:E[nt4(34)nt4(5678)nt3(9012)]t4(12)t3()\nrange:true:0:1",
+        "R212 surroundContents CharData 路径 + CDATA cloneNode"
+    );
+}
 /// R209（js-dom M4）：iframe 子文档 testNodes 方法面 + surroundContents 叶子
 /// newParent 的 spec 异常链。根因（探针实证）：iframe/detached 工厂节点形态缺
 /// compareDocumentPosition/hasChildNodes/cloneNode/substringData/splitText/

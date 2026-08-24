@@ -3791,7 +3791,11 @@
         // 模拟的中间态一致），故此处不提前抛（提前抛使 positionTests 的树比较与
         // 模拟侧中间态分歧）。
         // https://dom.spec.whatwg.org/#dom-range-surroundcontents
-        if (newParent.nodeType === 9 || newParent.nodeType === 10) {
+        // R212（js-dom M4）：补 nodeType 11（DocumentFragment）——spec 步骤 1 的
+        // 三类型之一，旧版漏检使 docfrag newParent 走到 CharData 路径实际变更树
+        //（模拟侧 InvalidNodeTypeError 树不变——,20 族 positionTests 48F 根因）。
+        if (newParent.nodeType === 9 || newParent.nodeType === 10
+          || newParent.nodeType === 11) {
           throw new (globalThis.DOMException || Error)(
             'The Range has partially selected a non-Text node.', 'InvalidNodeTypeError');
         }
@@ -3863,10 +3867,40 @@
             'Nodes of type ' + newParent.nodeType + ' cannot have children.',
             'HierarchyRequestError');
         }
-        if (kids === null) return; // 跨容器/文本切片 defer（R211 评估：CharData 区间
-        // surround 路径（extract→insertNode→appendChild(frag)）首版 docfrag newParent
-        // 误入 leaf-throw / frag 末子丢失两缺陷净 -48——回退，与 selectNode 语义
-        // 同切片再 land，master.md R212 靶点）
+        if (kids === null) {
+          // R212（js-dom M4）：**CharData 区间 range 的 surround 路径**——
+          // extractContents 的 R211 分支（start/end 容器为 Text/CDATA 同父）+
+          // insertNode 把 newParent 插到区间原位 + newParent.appendChild(frag)
+          //（R212 工厂元素 appendChild 补 fragment 展平——首版 frag 末子丢失的
+          // 根因）。与 common.js mySurroundContents 模拟树形态对齐（6,x 族）。
+          var _r212sc2 = this.startContainer, _r212ec2 = this.endContainer;
+          var _r212isCd2 = function (n) {
+            return !!n && (n.nodeType === 3 || n.nodeType === 4
+              || n.nodeType === 7 || n.nodeType === 8);
+          };
+          if (_r212isCd2(_r212sc2) && _r212isCd2(_r212ec2)
+            && _r212sc2.parentNode && _r212sc2.parentNode === _r212ec2.parentNode) {
+            var _r212frag2 = this.extractContents();
+            // R212：spec 步骤 3——「While newParent has children, remove its
+            // first child」（common.js mySurroundContents 同款；旧版漏此步使
+            // wrapped 元素残留 setup 期原文本）。
+            var _r212guard = 0;
+            while (newParent.childNodes && newParent.childNodes.length && _r212guard++ < 256) {
+              try { newParent.removeChild(newParent.childNodes[0]); } catch (_eR212rm) { break; }
+            }
+            try { this.insertNode(newParent); } catch (_eR212i2) {}
+            try { newParent.appendChild(_r212frag2); } catch (_eR212a2) {}
+            // selectNode(newParent) 语义：range 落到 newParent 的父 + 索引。
+            try {
+              var _r212np = newParent.parentNode;
+              if (_r212np && _r212np.childNodes) {
+                var _r212ni = _r212np.childNodes.indexOf(newParent);
+                if (_r212ni >= 0) { this.setStart(_r212np, _r212ni); this.setEnd(_r212np, _r212ni + 1); }
+              }
+            } catch (_eR212s2) {}
+          }
+          return; // 其余跨容器/文本切片 defer
+        }
         for (var i = 0; i < kids.length; i++) {
           try { newParent.appendChild(kids[i].cloneNode(true)); } catch (_e) {}
         }

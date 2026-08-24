@@ -1212,6 +1212,17 @@
       appendChild: function (c) {
         // R174：与 _zwMEl appendChild 对齐——先从原父摘除（spec dom-node-append-child
         // 的 adopt 步骤），入树清移除标记。
+        // R212（js-dom M4）：DocumentFragment 展平（spec「append fragment's children
+        // and then clear it」——WPT mega-case 的 mySurroundContents 对工厂元素
+        // newParent 调 appendChild(frag)，旧版把 fragment 本体塞进 childNodes 使
+        // frag 子丢失、树形态与模拟分歧）。
+        if (c && c.nodeType === 11) {
+          var _r212kids = c.childNodes || [];
+          var _r212copy = _r212kids.slice();
+          _r212kids.length = 0;
+          for (var _r212i = 0; _r212i < _r212copy.length; _r212i++) el.appendChild(_r212copy[_r212i]);
+          return c;
+        }
         if (c && c.parentNode && c.parentNode.removeChild) { try { c.parentNode.removeChild(c); } catch (_e174r) {} }
         el.childNodes.push(c); c.parentNode = el;
         if (c && c.__zwHandle && typeof _zwUnmarkRemovedHandle === 'function') _zwUnmarkRemovedHandle(c.__zwHandle);
