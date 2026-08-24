@@ -1201,3 +1201,78 @@ fn zz_r175_frag_body_filter() {
     let out2 = super::parse_html_element_json_full(src, "div", true, None, true);
     assert!(out2.contains("root"), "div should match: {out2}");
 }
+
+
+// R225（js-dom M4）：Range.insertNode 三修复回归——① doc 级 insertBefore 先从原父
+// 摘除（spec pre-insert adopt 步骤；PI/comment 移位不重复入列）；② 空片段不占位
+// （_zwMEl/工厂元素 insertBefore/appendChild 展平 + syncEnd 的 handle-aware
+// indexOf + fragment newOffset 语义）；③ collapsed 插入后 endOffset 同步到 sim 的
+// newOffset。WPT Range-insertNode 25/26/29/31,16/18 + 0/4/8/10/15,20 共 +21P。
+#[test]
+fn r225_insert_node_doc_order_and_fragment_flatten() {
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><div id=\"t\">x</div></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+
+    sandbox
+        .execute(
+            r#"
+// 复刻 common.js setupRangeTests 的 xmlDoc 段 + WPT 31,16 形态
+var xmlDoctype = document.implementation.createDocumentType('qorflesnorf', 'abcde', 'x');
+var xmlDoc = document.implementation.createDocument(null, null, xmlDoctype);
+var processingInstruction = xmlDoc.createProcessingInstruction('somePI', 'data');
+var xmlComment = xmlDoc.createComment('comment');
+var xmlElement = xmlDoc.createElement('igiveuponcreativenames');
+xmlElement.appendChild(xmlDoc.createTextNode('do re mi'));
+xmlDoc.appendChild(xmlElement);
+xmlDoc.appendChild(processingInstruction);
+xmlDoc.appendChild(xmlComment);
+function dumpKids(d) {
+  var out = [];
+  for (var i = 0; i < d.childNodes.length; i++) {
+    out.push(d.childNodes[i].nodeType + ':' + String(d.childNodes[i].nodeName).slice(0, 6));
+  }
+  return out.join(',');
+}
+var r = xmlDoc.createRange();
+r.setStart(xmlDoc, 1);
+r.setEnd(xmlComment, 0);
+r.insertNode(processingInstruction);
+var xmlAfter = dumpKids(xmlDoc);
+// foreignDoc 域 docfrag：折叠 text 插入空 df → endOffset 1（sim newOffset 语义）
+var foreignDoc = document.implementation.createHTMLDocument('');
+var fb = foreignDoc.body;
+var t0 = foreignDoc.createTextNode('x');
+fb.appendChild(t0);
+var rd = foreignDoc.createRange();
+rd.setStart(t0, 0);
+rd.setEnd(t0, 0);
+rd.insertNode(foreignDoc.createDocumentFragment());
+globalThis.__r225out = [
+  'xml:' + xmlAfter,
+  'df-endoff:' + rd.endOffset,
+  'pi-once:' + (xmlDoc.childNodes.filter(function (c) { return c === processingInstruction; }).length),
+].join('|');
+"#,
+        )
+        .unwrap();
+    let out = sandbox.execute("globalThis.__r225out").unwrap().value;
+    assert_eq!(
+        out,
+        "xml:10:qorfle,7:somePI,1:igiveu,8:#comme|df-endoff:1|pi-once:1",
+        "R225 doc 级 insertBefore 摘除移位（PI 单次）+ 空 docfrag endOffset 同步"
+    );
+}

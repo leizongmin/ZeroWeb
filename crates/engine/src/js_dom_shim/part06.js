@@ -3911,9 +3911,31 @@
               || self209.startOffset !== self209.endOffset) return;
             var p = tail209 && tail209.parentNode;
             if (!p || !p.childNodes) return;
+            // R225（js-dom M4）：**handle-aware identity**——父 childNodes 视图元素是
+            // `_wrapHandle` 包装 proxy，与插入时的 raw 节点对象不同 identity（旧版
+            // `=== node` 对 handle 形态恒 miss → collapsed 插入后 end 不同步，WPT
+            // Range-insertNode 0/4/8/10/15,20 的 endOffset 族）。按 `__zwHandle`
+            // 相等判节点同一。
+            var _r225Same = function (a, b) {
+              if (a === b) return true;
+              try {
+                return !!(a && b && a.__zwHandle && a.__zwHandle === b.__zwHandle);
+              } catch (_e225s) { return false; }
+            };
             var idx = -1;
             for (var q = 0; q < p.childNodes.length; q++) {
-              if (p.childNodes[q] === node) { idx = q; break; }
+              if (_r225Same(p.childNodes[q], node)) { idx = q; break; }
+            }
+            // R225（js-dom M4）：node 是 fragment 时已展平（本体不在父内）——按 sim
+            // myInsertNode 的 newOffset 语义取 `indexOf(tail) + nodeLength(node)`：
+            // 空 df → tail 索引（同族 endOffset expected 1 got 2/0——旧版 idx=-1
+            // 不同步或按本体索引多 1）。
+            if (idx < 0 && node && node.nodeType === 11) {
+              var ti225 = -1;
+              for (var q225 = 0; q225 < p.childNodes.length; q225++) {
+                if (_r225Same(p.childNodes[q225], tail209)) { ti225 = q225; break; }
+              }
+              if (ti225 >= 0) idx = ti225 + (node.childNodes ? node.childNodes.length : 0) - 1;
             }
             if (idx >= 0) {
               try { self209.setEnd(p, idx + 1); } catch (_eR209se) {}

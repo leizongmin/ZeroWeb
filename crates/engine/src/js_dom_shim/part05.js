@@ -1280,6 +1280,18 @@
       // 消费——旧缺方法直接 TypeError）。ref=null 等价 append；ref 不在子列表尾插。
       insertBefore: function (c, ref) {
         if (!c) return c;
+        // R225（js-dom M4）：DocumentFragment 展平（spec `concept-node-pre-insert` 的
+        // fragment 语义「逐子插入后清空」——与 appendChild 的 R212 分支对齐；旧缺使
+        // 空 docfrag 本体被 splice 进 childNodes 占位，WPT Range-insertNode 0/4/8/10,20
+        // 的 endOffset expected 1 got 2——syncEnd 按 df 本体索引 +1 多算）。
+        // https://dom.spec.whatwg.org/#concept-node-pre-insert
+        if (c.nodeType === 11) {
+          var fk225b = c.childNodes || [];
+          var fc225b = fk225b.slice();
+          fk225b.length = 0;
+          for (var fi225b = 0; fi225b < fc225b.length; fi225b++) el.insertBefore(fc225b[fi225b], ref);
+          return c;
+        }
         if (c.parentNode && c.parentNode.removeChild) { try { c.parentNode.removeChild(c); } catch (_eR209pr) {} }
         if (ref == null) {
           c.parentNode = el; el.childNodes.push(c);

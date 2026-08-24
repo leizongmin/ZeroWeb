@@ -5956,6 +5956,19 @@
     // plain INPUT 容器后 `checked` 已翻转但 input/change 不派发——connected 判定 false）。
     // `plainParent` 消费点：_parentNodeFor / _zwClickActivationConnected / R114 链构建。
     node.appendChild = function (c) {
+      // R225（js-dom M4）：DocumentFragment 展平（spec `concept-node-ensure-pre-insert`
+      // 对 fragment「append 其全部子后清空」——common.js myInsertNode 对空 docfrag 的
+      // insertNode 期望树不变、仅 endOffset 前移；旧版把 fragment 本体 push 进
+      // childNodes（WPT Range-insertNode 0/4/8/10/15,20 的 endOffset expected 1 got 2
+      // ——空 df 在 tail 前占一位使 indexOf(tail) 多 1）。
+      // https://dom.spec.whatwg.org/#concept-node-pre-insert
+      if (c && c.nodeType === 11 && c !== node) {
+        var fk225 = c.childNodes || [];
+        var fc225 = fk225.slice();
+        fk225.length = 0;
+        for (var fi225 = 0; fi225 < fc225.length; fi225++) node.appendChild(fc225[fi225]);
+        return c;
+      }
       if (c && c.parentNode) c.parentNode.removeChild(c);
       node.childNodes.push(c); c.parentNode = node;
       if (c && c.__zwHandle) {
@@ -5975,6 +5988,14 @@
     Object.defineProperty(node, 'lastChild', { get: function () { return node.childNodes.length ? node.childNodes[node.childNodes.length - 1] : null; }, configurable: true });
     // R3018：insertBefore/replaceChild（DOMPurify 重定位节点、替换用）。ref=null 等价 append。
     node.insertBefore = function (c, ref) {
+      // R225：fragment 展平（同 appendChild 的 pre-insert 语义——逐子插到 ref 前后清空）。
+      if (c && c.nodeType === 11 && c !== node) {
+        var ik225 = c.childNodes || [];
+        var ic225 = ik225.slice();
+        ik225.length = 0;
+        for (var ii225 = 0; ii225 < ic225.length; ii225++) node.insertBefore(ic225[ii225], ref);
+        return c;
+      }
       if (c && c.parentNode) c.parentNode.removeChild(c);
       if (ref == null) { node.childNodes.push(c); }
       else { var i = node.childNodes.indexOf(ref); if (i < 0) node.childNodes.push(c); else node.childNodes.splice(i, 0, c); }
@@ -7549,6 +7570,17 @@
           throw new globalThis.TypeError(
             "Failed to execute 'insertBefore' on 'Node': parameter 1 is not of type 'Node'.");
         }
+        // R225（js-dom M4）：**先从原父摘除**（spec `concept-node-pre-insert` 步骤
+        // 「adopt：node 有父时先 remove」——common.js myInsertNode 对已入树 node 先
+        // `node.parentNode.removeChild(node)` 再 insertBefore。旧缺使 xmlDoc 内
+        // PI/comment 移位时**重复入列**（原位保留 + 新位插入，WPT Range-insertNode
+        // 25/26/29/31,16/18 的 doc 级树序与 sim 分歧主根因）。
+        // https://dom.spec.whatwg.org/#concept-node-pre-insert
+        try {
+          if (newNode.parentNode && typeof newNode.parentNode.removeChild === 'function') {
+            newNode.parentNode.removeChild(newNode);
+          }
+        } catch (_eR225dp) {}
         var nnt2 = newNode.nodeType | 0;
         if (nnt2 === 3 || nnt2 === 4 || nnt2 === 9) {
           throw new (globalThis.DOMException || Error)(
