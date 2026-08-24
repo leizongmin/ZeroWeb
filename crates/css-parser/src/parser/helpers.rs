@@ -194,6 +194,7 @@ pub(super) fn parse_counter_additive_symbols(value: &str) -> Option<Vec<(i32, St
 
 /// 解析 `range` 描述符（CSS Counter Styles 3 §3.1.2）。
 ///
+/// https://www.w3.org/TR/css-counter-styles-3/#the-range-descriptor
 /// 格式：逗号分隔的 `[lower upper]` 对，每对两值，`infinite` → i32::{MIN,MAX}。
 /// 如 `1 5`、`1 5, 10 20`、`infinite -1`。仅当所有对解析成功时返回 Some；任一畸形返回 None
 /// （缺省 range 由系统默认决定，slice 2 不应用）。`auto` 关键字返回 None（走系统默认）。
@@ -209,6 +210,9 @@ pub(super) fn parse_counter_range(value: &str) -> Option<Vec<(i32, i32)>> {
         // lower 为 infinite → -∞（i32::MIN）；upper 为 infinite → +∞（i32::MAX）。
         let lo = parse_range_bound(iter.next()?, false)?;
         let hi = parse_range_bound(iter.next()?, true)?;
+        if iter.next().is_some() {
+            return None;
+        }
         ranges.push((lo, hi));
     }
     if ranges.is_empty() { None } else { Some(ranges) }

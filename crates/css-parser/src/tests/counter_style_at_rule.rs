@@ -197,6 +197,14 @@ fn test_parse_counter_style_range_multi_infinite() {
 }
 
 #[test]
+/// R3733：`range` 每个逗号项必须恰好两个边界，不能忽略尾部 token。
+fn test_parse_counter_style_range_rejects_extra_bound() {
+    let css = "@counter-style a { system: extends decimal; range: 1 5 9; }";
+    let cs = first_counter_style(css);
+    assert_eq!(cs.range, None, "range: 1 5 9 应无效并走默认 range");
+}
+
+#[test]
 /// R2394：`range: auto` → None（走系统默认）。
 fn test_parse_counter_style_range_auto() {
     let css = "@counter-style a { system: extends decimal; range: auto; }";
