@@ -42,6 +42,33 @@ fn test_clip_rect_apply_function_name_is_case_insensitive() {
 }
 
 #[test]
+fn test_clip_rect_apply_math_function_offsets() {
+    let mut style = ComputedStyle::default();
+    assert!(apply_property_value(
+        &mut style,
+        "clip",
+        "rect(min(10px, 20px), auto, clamp(0px, 5px, 10px), 0px)"
+    ));
+    assert!(matches!(
+        style.clip,
+        ClipRectComputedValue::Rect(
+            LengthValue::Calc(_),
+            LengthValue::Px(0.0),
+            LengthValue::Calc(_),
+            LengthValue::Px(0.0)
+        )
+    ));
+
+    let previous = style.clip.clone();
+    assert!(!apply_property_value(
+        &mut style,
+        "clip",
+        "rect(calc(1), auto, 10px, 0px)"
+    ));
+    assert_eq!(style.clip, previous);
+}
+
+#[test]
 fn test_clip_path_apply_circle() {
     let mut style = ComputedStyle::default();
     assert!(apply_property_value(&mut style, "clip-path", "circle(50px)"));

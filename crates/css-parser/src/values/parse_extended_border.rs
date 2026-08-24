@@ -919,15 +919,17 @@ pub fn parse_clip(value: &str) -> Option<ClipRectValue> {
     // CSS function names are ASCII case-insensitive; whitespace before `(` is not a function token.
     if let Some(rest) = strip_basic_shape_prefix(v, "rect") {
         let inner = rest.strip_suffix(')')?.trim();
-        // rect() 内部参数用逗号分隔
-        let parts: Vec<&str> = inner.split(',').collect();
+        // https://www.w3.org/TR/CSS2/visufx.html#clipping
+        // rect() is a comma-separated list; commas nested inside CSS math
+        // functions belong to the offset expression, not to the outer list.
+        let parts = split_top_level_commas(inner)?;
         if parts.len() != 4 {
             return None;
         }
-        let top = parse_length_or_auto_clip(parts[0].trim())?;
-        let right = parse_length_or_auto_clip(parts[1].trim())?;
-        let bottom = parse_length_or_auto_clip(parts[2].trim())?;
-        let left = parse_length_or_auto_clip(parts[3].trim())?;
+        let top = parse_length_or_auto_clip(parts[0])?;
+        let right = parse_length_or_auto_clip(parts[1])?;
+        let bottom = parse_length_or_auto_clip(parts[2])?;
+        let left = parse_length_or_auto_clip(parts[3])?;
         return Some(ClipRectValue::Rect(top, right, bottom, left));
     }
     None
@@ -939,7 +941,7 @@ fn parse_length_or_auto_clip(s: &str) -> Option<LengthValue> {
     if v.eq_ignore_ascii_case("auto") {
         Some(LengthValue::Px(0.0))
     } else {
-        parse_length(v)
+        parse_clip_length(v, true)
     }
 }
 
@@ -998,9 +1000,28 @@ mod tests {
     }
 
     #[test]
+    fn test_parse_clip_rect_math_function_offsets() {
+        // https://www.w3.org/TR/CSS2/visufx.html#clipping
+        // rect() offsets are a comma-separated list; commas inside math functions
+        // must not split the outer argument list.
+        let result = parse_clip("rect(min(10px, 20px), auto, clamp(0px, 5px, 10px), 0px)");
+        assert!(matches!(
+            result,
+            Some(ClipRectValue::Rect(
+                LengthValue::Calc(_),
+                LengthValue::Px(0.0),
+                LengthValue::Calc(_),
+                LengthValue::Px(0.0),
+            ))
+        ));
+    }
+
+    #[test]
     fn test_parse_clip_invalid() {
         assert!(parse_clip("inherit").is_none());
         assert!(parse_clip("rect(10px)").is_none());
         assert!(parse_clip("rect(10px, 20px)").is_none());
+        assert!(parse_clip("rect(calc(1), auto, 10px, 0px)").is_none());
+        assert!(parse_clip("rect(0px, auto, 10px, 0px,)").is_none());
     }
 }
