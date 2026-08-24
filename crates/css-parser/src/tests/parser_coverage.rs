@@ -151,6 +151,18 @@ fn test_keyframes_multiple_percentages() {
     }
 }
 
+#[test]
+fn test_keyframes_rejects_out_of_range_and_empty_selector_items() {
+    let css =
+        "@keyframes strict { 50%, { opacity: 0.5; } -1% { opacity: 0; } 101% { opacity: 1; } to { opacity: 1; } }";
+    let ss = Parser::parse_stylesheet(css);
+    assert_eq!(ss.rules.len(), 1);
+    if let Rule::Keyframes(kf) = &ss.rules[0] {
+        assert_eq!(kf.keyframes.len(), 1);
+        assert_eq!(kf.keyframes[0].selectors, vec![KeyframeSelector::To]);
+    }
+}
+
 // ── 4. 容器条件：size() 和 inline-size() 包装（行 1238-1242）────────
 
 #[test]

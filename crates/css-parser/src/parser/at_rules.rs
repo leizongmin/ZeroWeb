@@ -577,8 +577,10 @@ impl<'a> Parser<'a> {
                 break;
             }
 
-            // 读取关键帧选择器（百分比、from、to），逗号分隔
+            // https://drafts.csswg.org/css-animations-1/#typedef-keyframe-selector
+            // 读取关键帧选择器（百分比、from、to），逗号分隔。
             let mut selectors = Vec::new();
+            let mut selector_list_valid = true;
             loop {
                 self.skip_whitespace();
                 match self.peek().clone() {
@@ -590,12 +592,13 @@ impl<'a> Parser<'a> {
                         selectors.push(KeyframeSelector::To);
                         self.advance();
                     }
-                    Token::Percentage(pct) => {
+                    Token::Percentage(pct) if pct.is_finite() && (0.0..=100.0).contains(&pct) => {
                         selectors.push(KeyframeSelector::Percentage(pct));
                         self.advance();
                     }
                     _ => {
                         // 无法识别的选择器，跳过这个关键帧块
+                        selector_list_valid = false;
                         break;
                     }
                 }
@@ -603,14 +606,18 @@ impl<'a> Parser<'a> {
                 self.skip_whitespace();
                 if matches!(self.peek(), Token::Comma) {
                     self.advance();
+                    self.skip_whitespace();
+                    if matches!(self.peek(), Token::LBrace | Token::RBrace | Token::Eof) {
+                        selector_list_valid = false;
+                        break;
+                    }
                 } else {
                     break;
                 }
             }
 
-            if selectors.is_empty() {
-                // 跳过无效内容直到 } 或下一个可识别的选择器
-                self.advance();
+            if selectors.is_empty() || !selector_list_valid {
+                self.skip_malformed_keyframe_block();
                 continue;
             }
 
@@ -637,6 +644,19 @@ impl<'a> Parser<'a> {
         }
 
         Some(KeyframesRule { name, keyframes })
+    }
+
+    fn skip_malformed_keyframe_block(&mut self) {
+        loop {
+            match self.peek() {
+                Token::LBrace => {
+                    self.skip_simple_block();
+                    return;
+                }
+                Token::RBrace | Token::Eof => return,
+                _ => self.advance(),
+            }
+        }
     }
 
     /// 消耗 @layer 规则。
