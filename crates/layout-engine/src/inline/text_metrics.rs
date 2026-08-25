@@ -5,6 +5,7 @@
 //! AdvanceSource trait + EstimateAdvance 默认实现、CJK/emoji 字符分类、
 //! font-metrics 解析（resolve_font_metrics）、inline-block 尺寸解析、BiDi 重排序。
 
+use std::ops::Range;
 use std::rc::Rc;
 use std::sync::{Arc, LazyLock};
 
@@ -565,7 +566,7 @@ pub(crate) struct BidiReorderedText {
     /// 视觉顺序文本。
     pub visual_text: String,
     /// 与 `visual_text.chars()` 一一对应的逻辑源码 byte range。
-    pub visual_to_logical: Vec<std::ops::Range<usize>>,
+    pub visual_to_logical: Vec<Range<usize>>,
     /// 与 `visual_text.chars()` 一一对应的 UBA resolved level 奇偶方向。
     pub visual_is_rtl: Vec<bool>,
 }
@@ -712,6 +713,16 @@ pub(crate) struct BidiFragmentCursor {
     visual_char_offset: usize,
 }
 
+pub(crate) struct BidiFragmentMapping {
+    pub source: Option<TextFragmentSource>,
+    pub visual_to_logical: Vec<Option<Range<usize>>>,
+}
+
+struct BidiLogicalMapping {
+    visual_to_logical: Vec<Option<Range<usize>>>,
+    visual_is_rtl: Vec<bool>,
+}
+
 /// 返回 plaintext 段落首个 strong 字符的基方向。
 pub(crate) fn plaintext_base_is_rtl(text: &str) -> bool {
     use unicode_bidi::{BidiClass, bidi_class};
@@ -786,7 +797,26 @@ impl BidiFragmentCursor {
 
     /// 消费下一个视觉片段，并返回与片段字符对齐的逻辑源码范围。
     pub(crate) fn take_source(&mut self, fragment: &str) -> Option<TextFragmentSource> {
-        let source_text = self.source_text.clone()?;
+        self.source_text.as_ref()?;
+        self.take_source_and_logical_ranges(fragment)
+            .and_then(|mapping| mapping.source)
+    }
+
+    /// 消费下一个视觉片段，并同时返回逻辑源码范围。
+    pub(crate) fn take_source_and_logical_ranges(&mut self, fragment: &str) -> Option<BidiFragmentMapping> {
+        let logical = self.take_logical_mapping(fragment)?;
+        let source = self.source_text.clone().map(|source_text| TextFragmentSource {
+            text: source_text,
+            visual_to_logical: logical.visual_to_logical.clone(),
+            visual_is_rtl: logical.visual_is_rtl,
+        });
+        Some(BidiFragmentMapping {
+            source,
+            visual_to_logical: logical.visual_to_logical,
+        })
+    }
+
+    fn take_logical_mapping(&mut self, fragment: &str) -> Option<BidiLogicalMapping> {
         let remaining = &self.reordered.visual_text[self.visual_byte_offset..];
         let core = fragment.trim_end_matches(' ');
         let synthetic_count = fragment.chars().count() - core.chars().count();
@@ -818,8 +848,7 @@ impl BidiFragmentCursor {
 
         self.visual_byte_offset += relative_start + matched.len();
         self.visual_char_offset = mapped_end;
-        Some(TextFragmentSource {
-            text: source_text,
+        Some(BidiLogicalMapping {
             visual_to_logical,
             visual_is_rtl,
         })

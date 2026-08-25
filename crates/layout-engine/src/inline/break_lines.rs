@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 // 行盒分割方法（break_into_lines / break_items_into_lines）— 从 mod.rs 拆分以控制文件体积
 // （include! 模式，≡ apps/browser/src/app.rs → app_input.rs；零行为/可见性变更）
 impl InlineFormattingContext {
@@ -596,6 +598,334 @@ impl InlineFormattingContext {
 
         // 应用 vertical-align 对齐
         self.apply_vertical_alignment();
+    }
+
+    fn emit_vertical_text_runs(
+        &mut self,
+        runs: &[&TextRun],
+        max_depth: f32,
+        current_column: &mut LineBox,
+        current_depth: &mut f32,
+    ) {
+        let Some(first) = runs.first().copied() else {
+            return;
+        };
+        let mut spans = Vec::with_capacity(runs.len());
+        let mut combined = String::new();
+        for run in runs {
+            let start = combined.len();
+            combined.push_str(&run.text);
+            spans.push(VerticalTextRunSpan {
+                start,
+                end: combined.len(),
+                run,
+                source_text: Arc::from(run.text.as_str()),
+            });
+        }
+
+        let mut source_cursor = if let Some(is_rtl) = self.bidi_override_direction {
+            BidiFragmentCursor::with_override(&combined, is_rtl)
+        } else {
+            BidiFragmentCursor::with_direction(&combined, first.is_rtl, first.is_plaintext_bidi)
+        };
+        let words = self.split_into_words(source_cursor.visual_text(), first.is_ahem_font);
+
+        // 空 inline 元素
+        if words.is_empty() && combined.is_empty() {
+            let col_width = first.line_height;
+            if col_width > current_column.height {
+                current_column.height = col_width;
+            }
+            if first.margin_left > 0.0 {
+                *current_depth += first.margin_left;
+            }
+            return;
+        }
+
+        if first.margin_left > 0.0 {
+            *current_depth += first.margin_left;
+        }
+
+        for (word_idx, word) in words.iter().enumerate() {
+            let char_count = word.chars().count();
+            // 垂直模式下，单词的"高度" = 水平模式的宽度
+            let mut word_height = self.advance_run_width(word, first) + first.letter_spacing * char_count as f32;
+            if word_idx > 0 {
+                word_height += first.word_spacing;
+            }
+
+            // 检查当前列是否放得下（深度方向）
+            if !self.no_wrap && *current_depth + word_height > max_depth && !current_column.runs.is_empty() {
+                self.push_vertical_column(current_column, current_depth);
+            }
+
+            // overflow-wrap / word-break: break-all
+            let need_char_break = !self.no_wrap
+                && (self.break_word || self.word_break == WordBreakMode::BreakAll)
+                && *current_depth + word_height > max_depth
+                && !word.is_empty();
+
+            if need_char_break {
+                let mut partial_depth = *current_depth;
+
+                for (ci, ch) in word.chars().enumerate() {
+                    let text = ch.to_string();
+                    let mapping = source_cursor.take_source_and_logical_ranges(&text);
+                    let span_index = vertical_span_index_for_ranges(
+                        &spans,
+                        mapping.as_ref().map_or(&[], |mapping| mapping.visual_to_logical.as_slice()),
+                    );
+                    let span = &spans[span_index];
+                    let source =
+                        mapping
+                            .as_ref()
+                            .and_then(|mapping| vertical_local_source(mapping, span, 0, 1));
+                    let run = span.run;
+                    let ch_height =
+                        self.advance_of(ch, run.font_id, run.font_size, run.is_ahem_font) + run.letter_spacing;
+
+                    if partial_depth + ch_height > max_depth && ci > 0 {
+                        self.push_vertical_column(current_column, &mut partial_depth);
+                    }
+
+                    current_column.runs.push(TextFragment {
+                        x: 0.0,
+                        y: partial_depth,
+                        width: run.line_height,
+                        height: ch_height,
+                        text,
+                        source,
+                        node_id: run.node_id,
+                        font_size: run.font_size,
+                        vertical_align: run.vertical_align.clone(),
+                        is_ahem: run.is_ahem_font,
+                        letter_spacing: run.letter_spacing,
+                        margin_left: run.margin_left,
+                        margin_right: run.margin_right,
+                        margin_top: 0.0,
+                        baseline: run.font_size,
+                    });
+
+                    partial_depth += ch_height;
+                    current_column.height = current_column.height.max(run.line_height);
+                }
+                *current_depth = partial_depth;
+            } else {
+                let mapping = source_cursor.take_source_and_logical_ranges(word);
+                let mut segment_depth = *current_depth;
+                for (segment_index, segment) in vertical_word_segments(word, mapping, &spans).into_iter().enumerate()
+                {
+                    let segment_char_count = segment.text.chars().count();
+                    let mut segment_height = self.advance_run_width(&segment.text, segment.run)
+                        + segment.run.letter_spacing * segment_char_count as f32;
+                    if word_idx > 0 && segment_index == 0 {
+                        segment_height += segment.run.word_spacing;
+                    }
+                    current_column.runs.push(TextFragment {
+                        x: 0.0,
+                        y: segment_depth,
+                        width: segment.run.line_height,
+                        height: segment_height,
+                        text: segment.text,
+                        source: segment.source,
+                        node_id: segment.run.node_id,
+                        font_size: segment.run.font_size,
+                        vertical_align: segment.run.vertical_align.clone(),
+                        is_ahem: segment.run.is_ahem_font,
+                        letter_spacing: segment.run.letter_spacing,
+                        margin_left: segment.run.margin_left,
+                        margin_right: segment.run.margin_right,
+                        margin_top: 0.0,
+                        baseline: segment.run.font_size,
+                    });
+
+                    segment_depth += segment_height;
+                    current_column.height = current_column.height.max(segment.run.line_height);
+                }
+                *current_depth += word_height;
+            }
+        }
+
+        if let Some(last) = runs.last()
+            && last.margin_right > 0.0
+        {
+            *current_depth += last.margin_right;
+        }
+    }
+
+    fn push_vertical_column(&mut self, current_column: &mut LineBox, current_depth: &mut f32) {
+        self.lines.push(std::mem::replace(current_column, empty_inline_line_box()));
+        *current_depth = 0.0;
+    }
+}
+
+fn vertical_text_group_end(items: &[InlineItem], start: usize) -> usize {
+    let InlineItem::Text(first) = &items[start] else {
+        return start;
+    };
+    if !vertical_text_run_can_group(first) {
+        return start + 1;
+    }
+
+    let mut end = start + 1;
+    while let Some(InlineItem::Text(next)) = items.get(end) {
+        if vertical_text_run_can_group(next) && vertical_text_runs_are_compatible(first, next) {
+            end += 1;
+        } else {
+            break;
+        }
+    }
+    end
+}
+
+struct VerticalTextRunSpan<'a> {
+    start: usize,
+    end: usize,
+    run: &'a TextRun,
+    source_text: Arc<str>,
+}
+
+struct VerticalTextSegment<'a> {
+    text: String,
+    source: Option<TextFragmentSource>,
+    run: &'a TextRun,
+}
+
+fn vertical_span_index_for_ranges(spans: &[VerticalTextRunSpan<'_>], ranges: &[Option<std::ops::Range<usize>>]) -> usize {
+    ranges
+        .iter()
+        .flatten()
+        .find_map(|range| spans.iter().position(|span| range.start >= span.start && range.end <= span.end))
+        .unwrap_or(0)
+}
+
+fn vertical_word_segments<'a>(
+    word: &str,
+    mapping: Option<BidiFragmentMapping>,
+    spans: &[VerticalTextRunSpan<'a>],
+) -> Vec<VerticalTextSegment<'a>> {
+    if word.is_empty() {
+        return vec![VerticalTextSegment {
+            text: String::new(),
+            source: mapping.and_then(|mapping| mapping.source),
+            run: spans[0].run,
+        }];
+    }
+
+    let chars = word.chars().collect::<Vec<_>>();
+    let mut segments = Vec::new();
+    let mut start = 0usize;
+    let ranges = mapping
+        .as_ref()
+        .map_or(&[] as &[Option<std::ops::Range<usize>>], |mapping| {
+            mapping.visual_to_logical.as_slice()
+        });
+    let mut current_span_index = vertical_span_index_for_char(spans, ranges, 0);
+    for index in 1..chars.len() {
+        let span_index = vertical_span_index_for_char(spans, ranges, index);
+        if span_index != current_span_index {
+            segments.push(vertical_word_segment(
+                &chars,
+                mapping.as_ref(),
+                start,
+                index,
+                &spans[current_span_index],
+            ));
+            start = index;
+            current_span_index = span_index;
+        }
+    }
+    segments.push(vertical_word_segment(
+        &chars,
+        mapping.as_ref(),
+        start,
+        chars.len(),
+        &spans[current_span_index],
+    ));
+    segments
+}
+
+fn vertical_span_index_for_char(
+    spans: &[VerticalTextRunSpan<'_>],
+    ranges: &[Option<std::ops::Range<usize>>],
+    index: usize,
+) -> usize {
+    if let Some(range) = ranges.get(index) {
+        vertical_span_index_for_ranges(spans, std::slice::from_ref(range))
+    } else {
+        0
+    }
+}
+
+fn vertical_word_segment<'a>(
+    chars: &[char],
+    mapping: Option<&BidiFragmentMapping>,
+    start: usize,
+    end: usize,
+    span: &VerticalTextRunSpan<'a>,
+) -> VerticalTextSegment<'a> {
+    let text = chars[start..end].iter().collect::<String>();
+    let source = mapping.and_then(|mapping| vertical_local_source(mapping, span, start, end));
+    VerticalTextSegment {
+        text,
+        source,
+        run: span.run,
+    }
+}
+
+fn vertical_local_source(
+    mapping: &BidiFragmentMapping,
+    span: &VerticalTextRunSpan<'_>,
+    start: usize,
+    end: usize,
+) -> Option<TextFragmentSource> {
+    mapping.source.as_ref()?;
+    let visual_to_logical = mapping
+        .visual_to_logical
+        .get(start..end)?
+        .iter()
+        .map(|range| {
+            range.as_ref().map_or(Some(None), |range| {
+                (range.start >= span.start && range.end <= span.end)
+                    .then(|| Some(range.start - span.start..range.end - span.start))
+            })
+        })
+        .collect::<Option<Vec<_>>>()?;
+    Some(TextFragmentSource {
+        text: span.source_text.clone(),
+        visual_to_logical,
+        visual_is_rtl: mapping.source.as_ref()?.visual_is_rtl.get(start..end)?.to_vec(),
+    })
+}
+
+fn vertical_text_run_can_group(run: &TextRun) -> bool {
+    !run.text.is_empty() && run.margin_left == 0.0 && run.margin_right == 0.0
+}
+
+fn vertical_text_runs_are_compatible(a: &TextRun, b: &TextRun) -> bool {
+    a.font_size == b.font_size
+        && a.line_height == b.line_height
+        && a.vertical_align == b.vertical_align
+        && a.letter_spacing == b.letter_spacing
+        && a.word_spacing == b.word_spacing
+        && a.padding_top == b.padding_top
+        && a.padding_bottom == b.padding_bottom
+        && a.border_top == b.border_top
+        && a.border_bottom == b.border_bottom
+        && a.is_ahem_font == b.is_ahem_font
+        && a.font_id == b.font_id
+        && a.is_rtl == b.is_rtl
+        && a.is_plaintext_bidi == b.is_plaintext_bidi
+}
+
+fn empty_inline_line_box() -> LineBox {
+    LineBox {
+        y: 0.0,
+        height: 0.0,
+        runs: Vec::new(),
+        baseline_y: 0.0,
+        ascent: 0.0,
+        descent: 0.0,
     }
 }
 

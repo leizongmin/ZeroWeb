@@ -10,3 +10,4 @@ mod r2156_inline_box_model_coherence;
 mod r3701_inline_replaced_attr_finite_tests;
 mod text_align;
 mod text_indent;
+mod vertical_bidi;

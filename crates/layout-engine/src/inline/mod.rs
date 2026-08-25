@@ -1230,135 +1230,21 @@ impl InlineFormattingContext {
         // 当前深度（字符沿 y 向下推进的位置）
         let mut current_depth = self.text_indent;
 
-        for item in items {
-            match item {
-                InlineItem::Text(run) => {
-                    let mut source_cursor = if let Some(is_rtl) = self.bidi_override_direction {
-                        BidiFragmentCursor::with_override(&run.text, is_rtl)
-                    } else {
-                        BidiFragmentCursor::with_direction(&run.text, run.is_rtl, run.is_plaintext_bidi)
-                    };
-                    let words = self.split_into_words(source_cursor.visual_text(), run.is_ahem_font);
-
-                    // 空 inline 元素
-                    if words.is_empty() && run.text.is_empty() {
-                        let col_width = run.line_height;
-                        if col_width > current_column.height {
-                            current_column.height = col_width;
-                        }
-                        if run.margin_left > 0.0 {
-                            current_depth += run.margin_left;
-                        }
-                        continue;
-                    }
-
-                    if run.margin_left > 0.0 {
-                        current_depth += run.margin_left;
-                    }
-
-                    for (word_idx, word) in words.iter().enumerate() {
-                        let char_count = word.chars().count();
-                        // 垂直模式下，单词的"高度" = 水平模式的宽度
-                        let mut word_height =
-                            self.advance_run_width(word, &run) + run.letter_spacing * char_count as f32;
-                        if word_idx > 0 {
-                            word_height += run.word_spacing;
-                        }
-
-                        // 检查当前列是否放得下（深度方向）
-                        if !self.no_wrap && current_depth + word_height > max_depth && !current_column.runs.is_empty() {
-                            self.lines.push(current_column);
-                            current_column = LineBox {
-                                y: 0.0,
-                                height: 0.0,
-                                runs: Vec::new(),
-                                baseline_y: 0.0,
-                                ascent: 0.0,
-                                descent: 0.0,
-                            };
-                            current_depth = 0.0;
-                        }
-
-                        // overflow-wrap / word-break: break-all
-                        let need_char_break = !self.no_wrap
-                            && (self.break_word || self.word_break == WordBreakMode::BreakAll)
-                            && current_depth + word_height > max_depth
-                            && !word.is_empty();
-
-                        if need_char_break {
-                            let char_col_width = run.line_height;
-                            let chars: Vec<char> = word.chars().collect();
-                            let mut partial_depth = current_depth;
-
-                            for (ci, ch) in chars.iter().enumerate() {
-                                let ch_height = self.advance_of(*ch, run.font_id, run.font_size, run.is_ahem_font)
-                                    + run.letter_spacing;
-                                let text = ch.to_string();
-                                let source = source_cursor.take_source(&text);
-
-                                if partial_depth + ch_height > max_depth && ci > 0 {
-                                    self.lines.push(current_column);
-                                    current_column = LineBox {
-                                        y: 0.0,
-                                        height: 0.0,
-                                        runs: Vec::new(),
-                                        baseline_y: 0.0,
-                                        ascent: 0.0,
-                                        descent: 0.0,
-                                    };
-                                    partial_depth = 0.0;
-                                }
-
-                                current_column.runs.push(TextFragment {
-                                    x: 0.0,
-                                    y: partial_depth,
-                                    width: char_col_width,
-                                    height: ch_height,
-                                    text,
-                                    source,
-                                    node_id: run.node_id,
-                                    font_size: run.font_size,
-                                    vertical_align: run.vertical_align.clone(),
-                                    is_ahem: run.is_ahem_font,
-                                    letter_spacing: run.letter_spacing,
-                                    margin_left: run.margin_left,
-                                    margin_right: run.margin_right,
-                                    margin_top: 0.0,
-                                    baseline: run.font_size,
-                                });
-
-                                partial_depth += ch_height;
-                                current_column.height = current_column.height.max(char_col_width);
-                            }
-                            current_depth = partial_depth;
-                        } else {
-                            let col_width = run.line_height;
-                            current_column.runs.push(TextFragment {
-                                x: 0.0,
-                                y: current_depth,
-                                width: col_width,
-                                height: word_height,
-                                text: word.clone(),
-                                source: source_cursor.take_source(word),
-                                node_id: run.node_id,
-                                font_size: run.font_size,
-                                vertical_align: run.vertical_align.clone(),
-                                is_ahem: run.is_ahem_font,
-                                letter_spacing: run.letter_spacing,
-                                margin_left: run.margin_left,
-                                margin_right: run.margin_right,
-                                margin_top: 0.0,
-                                baseline: run.font_size,
-                            });
-
-                            current_depth += word_height;
-                            current_column.height = current_column.height.max(col_width);
-                        }
-                    }
-
-                    if run.margin_right > 0.0 {
-                        current_depth += run.margin_right;
-                    }
+        let mut item_index = 0;
+        while item_index < items.len() {
+            match &items[item_index] {
+                InlineItem::Text(_) => {
+                    let group_end = vertical_text_group_end(&items, item_index);
+                    let runs = items[item_index..group_end]
+                        .iter()
+                        .map(|item| match item {
+                            InlineItem::Text(run) => run,
+                            _ => unreachable!("vertical text group contains only text runs"),
+                        })
+                        .collect::<Vec<_>>();
+                    self.emit_vertical_text_runs(&runs, max_depth, &mut current_column, &mut current_depth);
+                    item_index = group_end;
+                    continue;
                 }
                 InlineItem::InlineBlock(box_info) => {
                     // 垂直模式下 inline-block 的 height 变为向下推进量，width 变为列宽
@@ -1416,6 +1302,7 @@ impl InlineFormattingContext {
                     current_depth = 0.0;
                 }
             }
+            item_index += 1;
         }
 
         // 添加最后一列（非空时）

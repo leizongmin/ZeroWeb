@@ -2420,11 +2420,10 @@ fn test_iframe_doc_query_cache_invalidation_r208() {
     );
 }
 
-/// R210（js-dom M4）：surroundContents 的 spec 步骤 1/2 校验序——newParent 是
-/// Document/DocumentType 抛 InvalidNodeTypeError（步骤 1，先于一切）；range 部分
-/// 包含非 Text 节点抛 InvalidStateError（步骤 2——「是 start 或 end 边界容器的
-/// 祖先但非双方共同祖先」的 cac 子树 DFS）。WPT 20,x 族 115F：cac=DIV 正确但
-/// host 不抛 → assert_throws_dom "did not throw"。
+/// R210（js-dom M4）：surroundContents 的部分包含校验回归。R239 后按 WPT
+/// common.js 模拟顺序，部分包含检查先于 newParent 类型检查；因此 partial range
+/// + Document newParent 也应先抛 InvalidStateError。
+///
 /// https://dom.spec.whatwg.org/#dom-range-surroundcontents
 #[test]
 fn test_surround_invalid_state_and_step_order_r210() {
@@ -2491,14 +2490,14 @@ fn test_surround_invalid_state_and_step_order_r210() {
             var t1 = '';
             try { r1.surroundContents(n1); } catch (e) { t1 = e.name; }
             if (t1 !== 'InvalidStateError') out.push('cross-container:' + t1);
-            // ② Document newParent → InvalidNodeTypeError（步骤 1 先于步骤 2）
+            // ② Document newParent + partial range → InvalidStateError（R239：partial 先于 nodeType）
             win.testNodeInput = 'document';
             win.testRangeInput = '[paras[0].firstChild, 0, paras[1].firstChild, 0]';
             win.run();
             var r2 = win.testRange, n2 = win.testNode;
             var t2 = '';
             try { r2.surroundContents(n2); } catch (e) { t2 = e.name; }
-            if (t2 !== 'InvalidNodeTypeError') out.push('doc-newparent:' + t2);
+            if (t2 !== 'InvalidStateError') out.push('doc-newparent:' + t2);
             // ③ 单容器整选区（无部分包含）不抛 InvalidStateError（合法路径——
             // host 对该形态的既有行为不回归：collapsed/整元素选区不因新校验误伤）
             win.testNodeInput = 'paras[0]';
@@ -2513,7 +2512,7 @@ fn test_surround_invalid_state_and_step_order_r210() {
         )
         .unwrap()
         .value;
-    assert_eq!(out, "ALL-OK", "R210 surroundContents 步骤 1/2 校验序");
+    assert_eq!(out, "ALL-OK", "R210 surroundContents partial 校验序");
 }
 /// R211（js-dom M4）：extractContents 的 CharacterData 区间分支（spec
 /// `dom-range-extract-contents`——start/end 容器为 Text/CDATA 同父时：
