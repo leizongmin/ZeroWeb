@@ -2491,3 +2491,73 @@ globalThis.__r256r = out.join('|');
         "R256 factory docEl mutation 兄弟 getter 重接线 + title ns 显式标注：insertBefore/removeChild 后 nextNode 遍历连续（P.nextSibling=BOD Y），title 与克隆形态 ns 等价"
     );
 }
+
+#[test]
+fn r257_self_surround_ancestor_hre_and_div_wrap() {
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let mut sandbox = V8Sandbox::with_config(zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    })
+    .unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><div id=\"t\">x</div></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+    let out = sandbox
+        .execute(
+            r#"
+var out = [];
+// 18,0 form: [paras[0],0,paras[0],1] + paras[0] (self-surround) -> HRE, tree = paras[0] emptied
+var paras0 = document.createElement('p');
+paras0.id = 'a';
+paras0.appendChild(document.createTextNode('Axyz'));
+document.body.appendChild(paras0);
+var r1 = document.createRange();
+r1.setStart(paras0, 0);
+r1.setEnd(paras0, 1);
+try { r1.surroundContents(paras0); out.push('noThrow'); }
+catch (e1) { out.push('t:' + e1.name); }
+out.push('kids=' + paras0.childNodes.length);
+out.push('inBody=' + (paras0.parentNode === document.body));
+// 19,6 form: [detachedPara1,0,detachedPara1,1] + detachedPara1 (self) -> HRE
+var dp1 = document.createElement('p');
+dp1.appendChild(document.createTextNode('Opqrstuv'));
+var r2 = document.createRange();
+r2.setStart(dp1, 0);
+r2.setEnd(dp1, 1);
+try { r2.surroundContents(dp1); out.push('noThrow2'); }
+catch (e2) { out.push('t2:' + e2.name); }
+out.push('kids2=' + dp1.childNodes.length);
+// 19,9 form: [detachedPara1,0,detachedPara1,1] + detachedDiv (parent) -> NO throw, wrap succeeds
+// (fresh paragraph — dp1 was emptied by the 19,6 HRE path above)
+var dp1b = document.createElement('p');
+dp1b.appendChild(document.createTextNode('Opqrstuv'));
+var dd = document.createElement('div');
+dd.appendChild(dp1b);
+var dp2 = document.createElement('p');
+dp2.appendChild(document.createTextNode('Wxyz'));
+dd.appendChild(dp2);
+var r3 = document.createRange();
+r3.setStart(dp1b, 0);
+r3.setEnd(dp1b, 1);
+try { r3.surroundContents(dd); out.push('ok3'); }
+catch (e3) { out.push('t3:' + e3.name); }
+var ddK = ''; for (var q = 0; q < dd.childNodes.length; q++) { var c257 = dd.childNodes[q]; ddK += (c257.nodeType === undefined ? 'UNT' : c257.nodeType) + (c257.data !== undefined ? ':' + c257.data : ':' + c257.nodeName) + ';'; }
+out.push('wrap=' + (dp1b.firstChild === dd ? 'Y' : 'N') + ' ddKids=' + ddK);
+globalThis.__r257r = out.join('|');
+"#,
+        )
+        .unwrap();
+    let out = sandbox.execute("globalThis.__r257r").unwrap().value;
+    assert_eq!(
+        out, "t:HierarchyRequestError|kids=0|inBody=true|t2:HierarchyRequestError|kids2=0|ok3|wrap=Y ddKids=3:Opqrstuv;",
+        "R257 self-surround HRE（先清子后判 inclusive ancestor）+ detachedDiv 父 newParent 成功 wrap（清子断链后不误抛）"
+    );
+}

@@ -4564,6 +4564,41 @@
         while (newParent.childNodes && newParent.childNodes.length && _r237clr++ < 256) {
           try { newParent.removeChild(newParent.childNodes[0]); } catch (_eR237c) { break; }
         }
+        // R257（js-dom M4）：**newParent 仍是 range 容器的 inclusive ancestor
+        // → HRE（先 extract/清子后抛）**——spec `dom-range-surroundcontents` 步骤
+        // 4 调 insertNode，其 pre-insertion validity（`concept-node-pre-insertion-
+        // validity`「node 是 parent 的 inclusive ancestor → HRE」）对 self-
+        // surround（WPT Range-surroundContents 18,0 `[paras[0],0,paras[0],1]` +
+        // paras[0] / 19,6 `[detachedPara1,0,…]` + detachedPara1）必抛。**检查时点
+        // 在清 newParent 子之后**（sim 序：步骤 3 extract 移出 covered 子 →
+        // 步骤 2 清 newParent 子——若 sc 是 newParent 的子，此步已断 sc→newParent
+        // 父链，步骤 4 的 inclusive ancestor 查经 parentNode 上行不再命中（19,9
+        // 的 detachedDiv 族 sim 不抛而成功 wrap）；self-surround 的 newParent===
+        // sc 父链不经 newParent 子列表，仍命中 → 抛。旧版元素主路径不经
+        // insertNode（直接 clone 循环 + insertBefore），对 self-surround 无任何
+        // 拦截：清 newParent 子（误删自身内容）+ newParent.remove()（把自己摘出
+        // 旧父）后静默成功。
+        // https://dom.spec.whatwg.org/#dom-range-surroundcontents
+        var _r257npAnc = false;
+        try {
+          var _r257cur = this.startContainer, _r257h = 0;
+          while (_r257cur && _r257h++ < 128) {
+            if (_r257cur === newParent) { _r257npAnc = true; break; }
+            _r257cur = _r257cur.parentNode;
+          }
+        } catch (_eR257a) {}
+        if (_r257npAnc) {
+          // sim 步骤 3 等价：covered 子移出（对 sc===ec 元素即 kids 逆序
+          // remove + range 塌缩），再抛。
+          for (var _r257k = kids.length - 1; _r257k >= 0; _r257k--) {
+            try { if (typeof kids[_r257k].remove === 'function') kids[_r257k].remove(); }
+            catch (_eR257rm) {}
+          }
+          try { this.collapse(true); } catch (_eR257c) {}
+          throw new (globalThis.DOMException || Error)(
+            'The new child element contains the parent.',
+            'HierarchyRequestError');
+        }
         // R254（js-dom M4）：**clone 循环前先摘除 newParent**——covered 子的深克隆
         // 源树里 newParent 仍挂在旧父（如 13,0 的 docEl[0,2] 覆盖 BODY>div#test>
         // paras[0]=newParent 自身）时，`kids[i].cloneNode(true)` 会把 newParent 的
