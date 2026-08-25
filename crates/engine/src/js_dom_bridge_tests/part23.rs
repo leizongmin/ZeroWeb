@@ -2439,3 +2439,55 @@ globalThis.__r255c = out.join('|');
         "R255 iframe docEl own cloneNode 保真：克隆链 appendChild 后 body 子数不变（head/body 视图经 _zwDeepCloneEl 深克隆 + R221 rebind 前置条件）"
     );
 }
+
+#[test]
+fn r256_factory_docelement_mutation_rewires_siblings() {
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let mut sandbox = V8Sandbox::with_config(zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    })
+    .unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><div id=\"t\">x</div></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+    let out = sandbox
+        .execute(
+            r#"
+var out = [];
+// R256 regression: factory docEl mutation re-wires sibling getters.
+// setup: foreignDoc = createHTMLDocument('') (factory docEl with [headEl, body]);
+// insert a wrapper-domain P before BODY; nextNode walk must traverse BODY subtree.
+var foreignDoc = document.implementation.createHTMLDocument('T');
+var paras0 = document.createElement('p');
+paras0.id = 'a';
+var de = foreignDoc.documentElement;
+de.insertBefore(paras0, de.childNodes[de.childNodes.length - 1]);
+// walk via nextNode (getter chain): HTML -> P -> (no kids) -> next sibling must be BODY
+out.push('pNext=' + (paras0.nextSibling ? paras0.nextSibling.nodeName : 'null'));
+out.push('hNext=' + (de.childNodes[0].nextSibling ? de.childNodes[0].nextSibling.nodeName : 'null'));
+// title ns parity: original factory title vs its deep clone
+var t1 = foreignDoc.querySelector ? null : null;
+var headEl = foreignDoc.head;
+var titleEl = headEl ? headEl.firstChild : null;
+out.push('titleNS=' + (titleEl && titleEl.namespaceURI === 'http://www.w3.org/1999/xhtml'));
+// removeChild also re-wires: remove P -> BODY.previousSibling === headEl? After removal kids=[HEAD,BODY]
+de.removeChild(paras0);
+out.push('bodyPrev=' + (de.lastChild.previousSibling ? de.lastChild.previousSibling.nodeName : 'null'));
+globalThis.__r256r = out.join('|');
+"#,
+        )
+        .unwrap();
+    let out = sandbox.execute("globalThis.__r256r").unwrap().value;
+    assert_eq!(
+        out, "pNext=BODY|hNext=P|titleNS=true|bodyPrev=HEAD",
+        "R256 factory docEl mutation 兄弟 getter 重接线 + title ns 显式标注：insertBefore/removeChild 后 nextNode 遍历连续（P.nextSibling=BOD Y），title 与克隆形态 ns 等价"
+    );
+}

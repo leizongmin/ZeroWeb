@@ -886,6 +886,12 @@
             if (_r79link) {
               if (_r79link.parentSel) _r79parent = _wrapSelector(_r79link.parentSel);
               else if (_r79link.parentHandle) _r79parent = _wrapHandle(_r79link.parentHandle);
+              // R256（js-dom M4）：plain-object 父（factory docEl/headEl 等 detached
+              // 工厂容器经 _r223SetParent 写入 plainParent 槽）——handle 子插入工厂
+              // docEl 后的兄弟导航读父的 childNodes 数组定位 index ±1（WPT
+              // Range-surroundContents 17,x：surround 把 paras[0] 插 foreignDoc
+              // docEl，nextNode oracle 遍历须从 P 续到 BODY）。
+              else if (_r79link.plainParent) _r79parent = _r79link.plainParent;
             }
             if (_r79parent && _r79parent.childNodes) {
               try {

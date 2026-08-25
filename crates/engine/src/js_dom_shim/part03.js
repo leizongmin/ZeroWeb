@@ -7085,8 +7085,9 @@
           return c;
         }
         if (c.parentNode && c.parentNode.removeChild) { try { c.parentNode.removeChild(c); } catch (_e126a) {} }
-        c.parentNode = docEl;
+        _r223SetParent(c, docEl);
         this.childNodes.push(c);
+        _r130WireSiblings(docEl.childNodes);
         return c;
       },
       removeChild: function (c) {
@@ -7101,6 +7102,7 @@
             }
             this.childNodes.splice(i, 1);
             if (c.parentNode === docEl) c.parentNode = null;
+            _r130WireSiblings(this.childNodes);
             return c;
           }
         }
@@ -7112,8 +7114,9 @@
         if (!c) return c;
         if (c.parentNode && c.parentNode.removeChild) { try { c.parentNode.removeChild(c); } catch (_e126c) {} }
         var i = ref ? this.childNodes.indexOf(ref) : -1;
-        if (i < 0) { c.parentNode = docEl; this.childNodes.push(c); }
-        else { c.parentNode = docEl; this.childNodes.splice(i, 0, c); }
+        if (i < 0) { _r223SetParent(c, docEl); this.childNodes.push(c); }
+        else { _r223SetParent(c, docEl); this.childNodes.splice(i, 0, c); }
+        _r130WireSiblings(docEl.childNodes);
         return c;
       } };
     // R130（js-dom M4）：docEl/headEl/body 原型接线对应 HTML 接口（WPT
@@ -7202,6 +7205,15 @@
       };
       var _r130TitleEl = {
         nodeType: 1, tagName: 'TITLE', nodeName: 'TITLE', localName: 'title',
+        // R256（js-dom M4）：ns/prefix 显式标注（与 headEl/docEl 同款）——spec
+        // createHTMLDocument 步骤 4「create a title element」是 HTML 解析语义，
+        // 元素恒 XHTML ns 无 prefix。旧缺 namespaceURI 字段（undefined）使
+        // isEqualNode 的 ns 归一比较（`ns == null ? '' : ns`）把 title 判空，
+        // 而经 _zwDeepCloneEl 克隆的副本落 _zwMEl 缺省 XHTML ns——原件（sim
+        // 移动路径）与克隆（host surround clone 循环）ns 分歧，WPT
+        // Range-surroundContents 17,x 的 isEqualNode 树比较失败。
+        // https://dom.spec.whatwg.org/#dom-node-isequalnode
+        namespaceURI: 'http://www.w3.org/1999/xhtml', prefix: null,
         childNodes: [_r130TitleText], parentNode: headEl,
         get firstChild() { return this.childNodes.length ? this.childNodes[0] : null; },
         get lastChild() { return this.childNodes.length ? this.childNodes[this.childNodes.length - 1] : null; },
