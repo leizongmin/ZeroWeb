@@ -3907,6 +3907,72 @@
                     _zwNodeParent[newNode.__zwHandle] = { parentSel: null, parentHandle: handle, nextSibling: null };
                   }
                 } catch (_e97p) {}
+              } else if (handle && refNode && refNode.__zwIsText
+                  && (typeof _zwTextEntryForEl !== 'function'
+                    || !_zwTextEntryForEl(_makeProxy(sel, handle)))
+                  && (_handleChildren[handle] || []).indexOf(refNode) >= 0) {
+                // R265 续：**物化后二次插入**——textEl 包装已在 _handleChildren
+                //（首次插入物化后，注册表已注销）但无 __zwHandle，handle-handle
+                // 分支与 textEl 分支均 miss——按 registry 内位次直接 splice。
+                ceAdded = [newNode];
+                try {
+                  var _r265k2 = _handleChildren[handle];
+                  var _r265a2 = _r265k2.indexOf(refNode);
+                  if (typeof __zw_insert_before_handle_handle === 'function') {
+                    try { __zw_append_child_handle(handle, newNode.__zwHandle); } catch (_eR265w2) {}
+                  }
+                  if (_r265a2 >= 0) _r265k2.splice(_r265a2, 0, newNode);
+                  else _r265k2.push(newNode);
+                  try {
+                    if (typeof _zwNodeParent !== 'undefined' && _zwNodeParent) {
+                      _zwNodeParent[newNode.__zwHandle] = { parentSel: null, parentHandle: handle, nextSibling: null };
+                    }
+                  } catch (_eR265p2) {}
+                } catch (_eR265m2) {}
+              } else if (handle && refNode && refNode.__zwIsText
+                  && typeof _zwTextEntryForEl === 'function'
+                  && _zwTextEntryForEl(_makeProxy(sel, handle))) {
+                // R265（js-dom M4）：**textEl ref 的 registry 插入**——R264 定位的
+                // insertBefore 死循环根因修复：refNode 是 textContent= 建的文本包装
+                //（无 selector 无 handle）且其 textEl 注册表条目以本容器为父时，三个
+                // wire 分支全不命中 → 插入静默不入 registry → 调用方 common.js
+                // indexOf（无终止 while）在融合视图 miss 上自旋（Range-mutations-
+                // insertBefore 超时族，entry 7 单点 90s 复现）。
+                // 修法 = **物化 + 前插**：把 textEl 包装从注册表域移入 _handleChildren
+                //（保留融合视图顺序 [text, ...handles] → handles = [text, e1, …]），
+                // 再 splice newNode 到 text 前一位——融合视图此后读 _handleChildren
+                //（_zwLocalChildNodes 已注销返 null）顺序正确 [newNode, text, e1, …]。
+                // textEl 注销安全性（handle-only 形态）：node 的 data/appendData 族
+                // 是 node 自身闭包（_regWrite 只写 node.__nv，不查注册表）；
+                // firstChild/childNodes 走融合视图返同一 node 对象（identity 保持）。
+                // https://dom.spec.whatwg.org/#concept-node-pre-insert
+                ceAdded = [newNode];
+                try {
+                  var _r265Entry = _zwTextEntryForEl(_makeProxy(sel, handle));
+                  var _r265Text = _r265Entry && _r265Entry.node;
+                  var _r265Kids = _handleChildren[handle] || [];
+                  // 物化：融合序 [textEl…handles] → registry 域完整序（textEl 首）。
+                  _r265Kids = (_zwLocalChildNodes && _zwLocalChildNodes(sel, handle)
+                    ? _zwLocalChildNodes(sel, handle).slice() : []).concat(_r265Kids);
+                  if (_r265Text && _r265Kids.indexOf(_r265Text) < 0) _r265Kids.push(_r265Text);
+                  // 前插：newNode 到 text 位前（indexOf 无终止风险的 spec 位次）。
+                  var _r265At = _r265Text ? _r265Kids.indexOf(_r265Text) : -1;
+                  if (typeof __zw_insert_before_handle_handle === 'function') {
+                    // host 侧近似：无 text ref wire 能力——降级 append（host 序近似，
+                    // JS 视图权威）；容错忽略失败。
+                    try { __zw_append_child_handle(handle, newNode.__zwHandle); } catch (_eR265w) {}
+                  }
+                  if (_r265At >= 0) _r265Kids.splice(_r265At, 0, newNode);
+                  else _r265Kids.push(newNode);
+                  _handleChildren[handle] = _r265Kids;
+                  // 注销 textEl 注册（融合视图单源化——防 text 双计）。
+                  if (typeof _zwUnregisterTextEl === 'function') _zwUnregisterTextEl(_makeProxy(sel, handle));
+                  try {
+                    if (typeof _zwNodeParent !== 'undefined' && _zwNodeParent) {
+                      _zwNodeParent[newNode.__zwHandle] = { parentSel: null, parentHandle: handle, nextSibling: null };
+                    }
+                  } catch (_eR265p) {}
+                } catch (_eR265m) {}
               }
               // refNode 为 create 句柄（无 selector）且父非 handle 时不支持（罕见）。
               // js-dom M4 R47：fragment flatten record——addedNodes 用 ceAdded（fragment 子节点，

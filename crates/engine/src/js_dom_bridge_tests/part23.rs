@@ -2926,3 +2926,69 @@ globalThis.__r263r = out.join('|');
         "R263 insert 侧边界调整：append 移动 = remove(旧位)+insert(新位) 两段（边界在 moved 节点 → (父, 旧 idx)；父内 offset 净 0 经 -1+1）；replaceChild 三段序"
     );
 }
+
+#[test]
+fn r265_insertbefore_text_ref_registry_insert() {
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let mut sandbox = V8Sandbox::with_config(zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    })
+    .unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><div id=\"t\">x</div></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+    let out = sandbox
+        .execute(
+            r#"
+var out = [];
+// R265 form: insertBefore(el, textEl-ref) — paras[0].insertBefore(paras[1], paras[0].firstChild)
+var p0 = document.createElement('p');
+p0.textContent = 'Axyz';
+document.body.appendChild(p0);
+var p1 = document.createElement('p');
+p1.textContent = 'B';
+document.body.appendChild(p1);
+var fk = p0.firstChild;
+p0.insertBefore(p1, fk);
+// ① childNodes 视图含 p1（死循环根因 = indexOf 在视图 miss 上无终止自旋）
+var p1In = false, order = '';
+for (var i = 0; i < p0.childNodes.length; i++) {
+  var c = p0.childNodes[i];
+  if (c === p1) p1In = true;
+  order += (c === p1 ? 'P1' : (c === fk ? 'TXT' : (c && c.nodeType))) + ';';
+}
+out.push('kids=' + p0.childNodes.length + ' p1In=' + p1In + ' order=' + order);
+// ② 无终止 indexOf 的等价安全读（splice 后视图命中即验证不挂）
+var idx = -1;
+for (var j = 0; j < p0.childNodes.length; j++) if (p0.childNodes[j] === p1) { idx = j; break; }
+out.push('idx=' + idx);
+// ③ text identity 保持 + data 仍可编辑（materialize 不注销 node 闭包）
+out.push('txtSame=' + (p0.childNodes[1] === fk) + ' len=' + (p0.lastChild && p0.lastChild.length));
+// ④ 再插一个（物化后路径——无 textEl 注册表，走 handle-handle splice）
+var p2 = document.createElement('p');
+p2.textContent = 'C';
+p0.insertBefore(p2, fk);
+var order2 = '';
+for (var k = 0; k < p0.childNodes.length; k++) {
+  var c2 = p0.childNodes[k];
+  order2 += (c2 === p1 ? 'P1' : (c2 === p2 ? 'P2' : (c2 === fk ? 'TXT' : (c2 && c2.nodeType)))) + ';';
+}
+out.push('order2=' + order2);
+globalThis.__r265r = out.join('|');
+"#,
+        )
+        .unwrap();
+    let out = sandbox.execute("globalThis.__r265r").unwrap().value;
+    assert_eq!(
+        out, "kids=2 p1In=true order=P1;TXT;|idx=0|txtSame=true len=4|order2=P1;P2;TXT;",
+        "R265 textEl ref 的 insertBefore registry 插入：视图含 newNode（indexOf 不再自旋）+ 顺序 [new, text] + text identity/data 保持 + 物化后二次插入位次正确"
+    );
+}
