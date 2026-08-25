@@ -1574,6 +1574,10 @@
     if (newChild && newChild.parentNode && typeof newChild.parentNode.removeChild === 'function') {
       try { newChild.parentNode.removeChild(newChild); } catch (_e127c) {}
     }
+    // R263：oldChild 的 remove 段调整（WPT testReplaceChild = remove(old) +
+    // remove(new) + insert(new)；new 的 remove 已由上方 removeChild 走 R262，
+    // 此处补 old——须在原位替换前（oldParent/index 读替换前形态）。
+    try { if (globalThis.__zwAdjustRangesForRemove) globalThis.__zwAdjustRangesForRemove(oldChild); } catch (_eR263gr) {}
     var _r127Idx = -1;
     try {
       var _r127K2 = this.childNodes || [];
@@ -1587,6 +1591,8 @@
     this.childNodes[_r127Idx] = newChild;
     try { newChild.parentNode = this; } catch (_e127e) {}
     try { oldChild.parentNode = null; } catch (_e127f) {}
+    // R263：insert 段调整（原位替换后调用——newParent/newIndex 读替换后形态）。
+    try { if (globalThis.__zwAdjustRangesForInsert) globalThis.__zwAdjustRangesForInsert(newChild); } catch (_eR263gi) {}
     return oldChild;
   });
   // R127：Document pre-insert step 6 校验（`dom-node-replace-all` 的「给定当前子」
@@ -6373,6 +6379,59 @@
     } catch (_e262a) {}
   }
   try { globalThis.__zwAdjustRangesForRemove = _zwAdjustRangesForRemove; } catch (_eR262ex) {}
+  // R263（js-dom M4）：**节点插入的 live-range 边界调整**（spec
+  // `concept-node-pre-insert` 末段「for each boundary point whose node is
+  // the new parent of inserted node and whose offset is greater than the
+  // new index, add one」——WPT Range-mutations.js modifyForInsert 逐字引用）。
+  // **须在实际插入后调用**（newParent/newIndex 读插入后形态——与 R262 的
+  // 移除前快照对偶）。移动语义（appendChild/insertBefore/replaceChild）=
+  // remove 调整（R262）+ insert 调整（本函数）两段串联。消费方：part04
+  // proxy 域 appendChild/insertBefore/replaceChild + part03 各域插入站点。
+  // https://dom.spec.whatwg.org/#concept-node-pre-insert
+  function _zwAdjustRangesForInsert(inserted263) {
+    try {
+      var regs263 = globalThis.__zwLiveRanges;
+      if (!regs263 || !regs263.length || !inserted263) return;
+      var newParent263 = null, newIndex263 = -1;
+      try {
+        newParent263 = inserted263.parentNode || null;
+        if (newParent263 && newParent263.childNodes) {
+          for (var _r263i = 0; _r263i < newParent263.childNodes.length; _r263i++) {
+            if (newParent263.childNodes[_r263i] === inserted263) { newIndex263 = _r263i; break; }
+          }
+        }
+      } catch (_e263p) {}
+      if (!newParent263 || newIndex263 < 0) return;
+      // 父匹配（与 R262 sameParent262 同款三键：identity / handle / sel）。
+      var sameParent263 = function (cont) {
+        if (cont === newParent263) return true;
+        if (!cont) return false;
+        try {
+          var ph263 = null, ps263 = null;
+          try { ph263 = typeof newParent263.__zwHandle === 'string' ? newParent263.__zwHandle : null; } catch (_e263ph) {}
+          try { ps263 = typeof newParent263.__zwSelector === 'string' ? newParent263.__zwSelector : null; } catch (_e263ps) {}
+          if (ph263 != null && typeof cont.__zwHandle === 'string') return cont.__zwHandle === ph263;
+          if (ps263 != null && typeof cont.__zwSelector === 'string') return cont.__zwSelector === ps263;
+        } catch (_e263pc) {}
+        return false;
+      };
+      for (var _r263r = 0; _r263r < regs263.length; _r263r++) {
+        var rg263 = regs263[_r263r];
+        if (!rg263) continue;
+        try {
+          if (sameParent263(rg263.startContainer)) {
+            var so263 = rg263._startOffsetBase != null ? rg263._startOffsetBase : rg263.startOffset;
+            if (so263 > newIndex263) rg263._startOffsetBase = so263 + 1;
+          }
+          if (sameParent263(rg263.endContainer)) {
+            var eo263 = rg263._endOffsetBase != null ? rg263._endOffsetBase : rg263.endOffset;
+            if (eo263 > newIndex263) rg263._endOffsetBase = eo263 + 1;
+          }
+        } catch (_e263rg) {}
+      }
+    } catch (_e263a) {}
+  }
+  try { globalThis.__zwAdjustRangesForInsert = _zwAdjustRangesForInsert; } catch (_eR263ex) {}
   function _zwAttachCharacterDataMethods(n) {
     var _cur = function () { return String(n.__nv != null ? n.__nv : ''); };
     // 注意：_write 只写 __nv/textContent/length——data/nodeValue 在下方转为 accessor
@@ -7804,6 +7863,10 @@
         if (newChild.parentNode && typeof newChild.parentNode.removeChild === 'function') {
           try { newChild.parentNode.removeChild(newChild); } catch (_e127g) {}
         }
+        // R263：oldChild 的 remove 段调整（WPT testReplaceChild 序 = remove(old) +
+        // remove(new) + insert(new)；new 的 remove 已由上方 removeChild 走 R262，
+        // 此处补 old——须在 splice 前（oldParent/index 读替换前形态））。
+        try { if (globalThis.__zwAdjustRangesForRemove) globalThis.__zwAdjustRangesForRemove(oldChild); } catch (_eR263or) {}
         var idx = -1;
         for (var j = 0; j < doc.childNodes.length; j++) {
           if (doc.childNodes[j] === oldChild) { idx = j; break; }
@@ -7848,6 +7911,20 @@
           }
         }
         oldChild.parentNode = null;
+        // R263：insert 段调整（splice 后调用——newParent/newIndex 读替换后形态；
+        // fragment 形态逐子调整）。
+        try {
+          if (globalThis.__zwAdjustRangesForInsert) {
+            if (nnt === 11) {
+              var fk263 = newChild.childNodes || [];
+              for (var q263 = 0; q263 < fk263.length; q263++) {
+                globalThis.__zwAdjustRangesForInsert(fk263[q263]);
+              }
+            } else {
+              globalThis.__zwAdjustRangesForInsert(newChild);
+            }
+          }
+        } catch (_eR263oi) {}
         return oldChild;
       },
       insertBefore: function (newNode, refNode) {

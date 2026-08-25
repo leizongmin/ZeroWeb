@@ -3486,6 +3486,10 @@
               //   indexOf 移动用例——不剔则旧父 childNodes 双份）。
               var _r51OldLink = _zwNodeParent[child.__zwHandle];
               if (_r51OldLink) {
+                // R263：移动语义的 remove 段边界调整（spec pre-insert 的「先从旧父
+                // 摘除」= remove 调整（R262）+ insert 调整两段）——先于 registry
+                // 剔除（oldParent/index 读摘除前形态）。
+                try { if (globalThis.__zwAdjustRangesForRemove) globalThis.__zwAdjustRangesForRemove(child); } catch (_eR263rm) {}
                 if (_r51OldLink.parentHandle) {
                   _unrecordHandleChild(_r51OldLink.parentHandle, child);
                   _mo_notify(_r51OldLink.parentSel || null, _r51OldLink.parentHandle,
@@ -3581,6 +3585,16 @@
                   })(ceAdded[ci]);
                 }
               }
+              // R263：insert 段边界调整（spec concept-node-pre-insert 末段——插入后
+              // 调用，读插入后 newParent/newIndex；与开头的 remove 段成对构成移动
+              // 语义）。fragment 形态逐子调整（flatten 后各自占位）。
+              try {
+                if (globalThis.__zwAdjustRangesForInsert) {
+                  for (var _r263a = 0; _r263a < ceAdded.length; _r263a++) {
+                    globalThis.__zwAdjustRangesForInsert(ceAdded[_r263a]);
+                  }
+                }
+              } catch (_eR263in) {}
             }
             return child;
           };
@@ -3968,7 +3982,19 @@
             }
             // R127：replace-with-self 短路（spec「node is child」步骤 2——
             // `a.replaceChild(b, b)` 不动树；先于 wire 记账）。
-            if (newChild === oldChild) return oldChild;
+            // R263：树不动但 **live-range 边界照 WPT testReplaceChild 序迁移**——
+            // modifyForRemove(child) 后 modifyForInsert(child)（newIndex 相同 →
+            // offset>newIndex 才 +1）：边界在 child 内 → (parent, idx)；在 parent
+            // 且 offset>idx+1 → −1 再 +1 净 0；offset==idx+1 → −1 后不 +1 净 −1
+            //（child 自身腾出的位）。真浏览器 replace-self 同迁移（remove+insert
+            // 两段对边界的净效应）。
+            if (newChild === oldChild) {
+              try {
+                if (globalThis.__zwAdjustRangesForRemove) globalThis.__zwAdjustRangesForRemove(oldChild);
+                if (globalThis.__zwAdjustRangesForInsert) globalThis.__zwAdjustRangesForInsert(newChild);
+              } catch (_eR263rs) {}
+              return oldChild;
+            }
             // js-dom M3 R100：handle-handle 形态（parent/new/old 全部 createElement 建立，
             // detached 容器内 replaceChild——WPT replaceChild 用例 setup 即此形态）。
             // host 无对应 wire（无 selector ref）；JS 侧 registry 原位替换（_handleChildren
@@ -3978,6 +4004,15 @@
                 var _r100Kids = _handleChildren[handle];
                 // R127：replace-with-self 短路（spec「node is child」——不动树，返 old）。
                 if (newChild === oldChild) return oldChild;
+                // R263：spec replace 的两段 remove 调整（WPT testReplaceChild =
+                // modifyForRemove(oldChild) + modifyForRemove(newChild)——先于任何
+                // registry 变更（oldParent/index 读摘除前形态）。
+                try {
+                  if (globalThis.__zwAdjustRangesForRemove) {
+                    globalThis.__zwAdjustRangesForRemove(oldChild);
+                    globalThis.__zwAdjustRangesForRemove(newChild);
+                  }
+                } catch (_eR263rr) {}
                 // R127：spec replace 语义——先 adopt（new 是 old 兄弟时先从父移除，
                 // 再定位 old 的 index；旧「先定位后 splice(new,1,newChild)」在 new===
                 // 兄弟时定位的是 new 自己 → 把 new 换成自己 → old 残留，WPT
@@ -4012,6 +4047,15 @@
                 var _r100Pc = _ceParentConnected(sel, handle);
                 for (var _r100c = 0; _r100c < _r100Added100.length; _r100c++) _ceApplyConn(_r100Added100[_r100c], _r100Pc);
                 _ceApplyConn(oldChild, false);
+                // R263：insert 段调整（registry splice 后调用——newParent/newIndex
+                // 读插入后形态；与开头的两段 remove 成对 = WPT testReplaceChild 序）。
+                try {
+                  if (globalThis.__zwAdjustRangesForInsert) {
+                    for (var _r263r = 0; _r263r < _r100Added100.length; _r263r++) {
+                      globalThis.__zwAdjustRangesForInsert(_r100Added100[_r263r]);
+                    }
+                  }
+                } catch (_eR263ri) {}
               }
               return oldChild;
             }
@@ -4020,6 +4064,14 @@
               var ceAdded = _fragmentHandles[newChild.__zwHandle]
                 ? (_handleChildren[newChild.__zwHandle] || []).slice()
                 : [newChild];
+              // R263：spec replace 的两段 remove 调整（先于 wire 插入/移除——
+              // oldParent/index 读摘除前形态）。
+              try {
+                if (globalThis.__zwAdjustRangesForRemove) {
+                  globalThis.__zwAdjustRangesForRemove(oldChild);
+                  globalThis.__zwAdjustRangesForRemove(newChild);
+                }
+              } catch (_eR263rr2) {}
               // DocumentFragment：flatten 子到 old 前（非插 fragment 节点本身），再移除 old。
               if (_fragmentHandles[newChild.__zwHandle]) {
                 if (handle && typeof __zw_insert_fragment_before_handle === 'function')
@@ -4043,6 +4095,14 @@
               var cePconn = _ceParentConnected(sel, handle);
               for (var ci = 0; ci < ceAdded.length; ci++) _ceApplyConn(ceAdded[ci], cePconn);
               _ceApplyConn(oldChild, false);
+              // R263：insert 段调整（wire 插入后——与开头 remove 段成对）。
+              try {
+                if (globalThis.__zwAdjustRangesForInsert) {
+                  for (var _r263r2 = 0; _r263r2 < ceAdded.length; _r263r2++) {
+                    globalThis.__zwAdjustRangesForInsert(ceAdded[_r263r2]);
+                  }
+                }
+              } catch (_eR263ri2) {}
               return oldChild;
             }
             // R127：selector-based newChild（主文档内既有元素替换——WPT MO-childList
@@ -4057,6 +4117,14 @@
             // 近似正确（replace-with-sibling 常见形态），跨父移动的位次由 host 快照
             // 残留近似（wire 限制，M1 L2 收口）。
             if (newChild && newChild.__zwSelector && oldChild && oldChild.__zwSelector) {
+              // R263：spec replace 的两段 remove 调整（先于 __zw_remove——
+              // oldParent/index 读摘除前形态）。
+              try {
+                if (globalThis.__zwAdjustRangesForRemove) {
+                  globalThis.__zwAdjustRangesForRemove(oldChild);
+                  globalThis.__zwAdjustRangesForRemove(newChild);
+                }
+              } catch (_eR263rr3) {}
               var _r127NewParent = null, _r127NewPrev = null, _r127NewNext = null;
               try {
                 _r127NewParent = newChild.parentNode || null;
@@ -4101,8 +4169,21 @@
                   if (handle && globalThis._zwLiveNLSync['@' + handle]) globalThis._zwLiveNLSync['@' + handle]();
                 }
               } catch (_e140rp) {}
+              // R263：insert 段调整（sel 域 newChild 的 parentNode 在 host wire 限制
+              // 下近似——同父 internal replace 形态正确，跨父由快照残留近似）。
+              try { if (globalThis.__zwAdjustRangesForInsert) globalThis.__zwAdjustRangesForInsert(newChild); } catch (_eR263ri3) {}
               return oldChild;
             }
+            // R263：**无 wire 域兜底**（text oldChild 无 handle/sel、或 host 无对应
+            // wire 形态）——树变更静默穿透，但 live-range 边界仍按 WPT
+            // testReplaceChild 序调整（remove(old)+remove(new)+insert(new)）。
+            try {
+              if (globalThis.__zwAdjustRangesForRemove) {
+                globalThis.__zwAdjustRangesForRemove(oldChild);
+                if (newChild !== oldChild) globalThis.__zwAdjustRangesForRemove(newChild);
+              }
+              if (globalThis.__zwAdjustRangesForInsert) globalThis.__zwAdjustRangesForInsert(newChild);
+            } catch (_eR263rf) {}
             return oldChild;
           };
         }

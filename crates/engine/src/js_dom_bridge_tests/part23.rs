@@ -2853,3 +2853,76 @@ globalThis.__r262r = out.join('|');
         "R262 removeChild live-range 边界迁移：边界在被移除节点上 → (父, 旧索引)；边界在父且 offset>索引 → -1；offset<=索引不动"
     );
 }
+
+#[test]
+fn r263_insert_range_boundary_adjust() {
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let mut sandbox = V8Sandbox::with_config(zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    })
+    .unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><div id=\"t\">x</div></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+    let out = sandbox
+        .execute(
+            r#"
+var out = [];
+// appendChild move: remove(old pos) + insert(new pos) — WPT testAppendChild 序
+var testDiv = document.createElement('div');
+var p0 = document.createElement('p'); p0.appendChild(document.createTextNode('A'));
+var p1 = document.createElement('p'); p1.appendChild(document.createTextNode('B'));
+var p2 = document.createElement('p'); p2.appendChild(document.createTextNode('C'));
+testDiv.appendChild(p0); testDiv.appendChild(p1); testDiv.appendChild(p2);
+document.body.appendChild(testDiv);
+// boundary ON the moved node (WPT "collapsed at (testDiv.lastChild, 0)")
+var r1 = document.createRange();
+r1.setStart(p2, 0);
+r1.setEnd(p2, 1);
+testDiv.appendChild(p2); // move last to last: remove(idx2)+insert(idx2)
+out.push('onMoved=' + (r1.startContainer === testDiv ? 'div' : 'other') + ':' + r1.startOffset
+  + '/' + (r1.endContainer === testDiv ? 'div' : 'other') + ':' + r1.endOffset);
+// boundary in parent, offset > old index and > new index (net 0 via -1+1)
+var testDiv2 = document.createElement('div');
+var q0 = document.createElement('p'); q0.appendChild(document.createTextNode('A'));
+var q1 = document.createElement('p'); q1.appendChild(document.createTextNode('B'));
+var q2 = document.createElement('p'); q2.appendChild(document.createTextNode('C'));
+testDiv2.appendChild(q0); testDiv2.appendChild(q1); testDiv2.appendChild(q2);
+document.body.appendChild(testDiv2);
+var r2 = document.createRange();
+r2.setStart(testDiv2, 3);
+r2.setEnd(testDiv2, 3);
+testDiv2.appendChild(q0); // move first to last: remove(idx0)+insert(idx2)
+out.push('inParent=' + (r2.startContainer === testDiv2 ? 'div' : 'other') + ':' + r2.startOffset
+  + '/' + (r2.endContainer === testDiv2 ? 'div' : 'other') + ':' + r2.endOffset);
+// replaceChild: remove(old)+remove(new)+insert(new) — WPT testReplaceChild 序
+var testDiv3 = document.createElement('div');
+var w0 = document.createElement('p'); w0.appendChild(document.createTextNode('A'));
+var w1 = document.createElement('p'); w1.appendChild(document.createTextNode('B'));
+testDiv3.appendChild(w0); testDiv3.appendChild(w1);
+document.body.appendChild(testDiv3);
+var wNew = document.createElement('p'); wNew.appendChild(document.createTextNode('N'));
+var r3 = document.createRange();
+r3.setStart(testDiv3, 1);
+r3.setEnd(testDiv3, 2);
+testDiv3.replaceChild(wNew, w1);
+out.push('replaced=' + (r3.startContainer === testDiv3 ? 'div' : 'other') + ':' + r3.startOffset
+  + '/' + (r3.endContainer === testDiv3 ? 'div' : 'other') + ':' + r3.endOffset);
+globalThis.__r263r = out.join('|');
+"#,
+        )
+        .unwrap();
+    let out = sandbox.execute("globalThis.__r263r").unwrap().value;
+    assert_eq!(
+        out, "onMoved=div:2/div:2|inParent=div:2/div:2|replaced=div:1/div:1",
+        "R263 insert 侧边界调整：append 移动 = remove(旧位)+insert(新位) 两段（边界在 moved 节点 → (父, 旧 idx)；父内 offset 净 0 经 -1+1）；replaceChild 三段序"
+    );
+}
