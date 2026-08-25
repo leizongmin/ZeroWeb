@@ -3217,3 +3217,63 @@ fn r270_title_cdp_methods() {
         "R270 title cDP/contains: full foreignDoc subtree has the methods (getPosition contract); cDP(docEl, doctype) = PRECEDING (2)"
     );
 }
+
+#[test]
+fn r271_removechild_plain_child_in_registry() {
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let mut sandbox = V8Sandbox::with_config(zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    })
+    .unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><div id=\"t\">x</div></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+    let js = [
+        "var out = [];",
+        "// CDATA via the XML-document realm (same as WPT common.js paras[5])",
+        "var xmlDocument = new Document();",
+        "var c1 = xmlDocument.createCDATASection('1234');",
+        "var c2 = xmlDocument.createCDATASection('5678');",
+        "var t = document.createTextNode('9012');",
+        "var p = document.createElement('p');",
+        "document.body.appendChild(p);",
+        "p.appendChild(c1); p.appendChild(c2); p.appendChild(t);",
+        "p.removeChild(c2);",
+        "var kids = '';",
+        "for (var i = 0; i < p.childNodes.length; i++) {",
+        "  var k = p.childNodes[i];",
+        "  kids += k.nodeName + ':' + String(k.data != null ? k.data : '') + ';';",
+        "}",
+        "out.push('kids=' + kids + ' c2parent=' + (c2.parentNode === null ? 'null' : 'live'));",
+        "// full range-6 shape deleteContents",
+        "var p2 = document.createElement('p');",
+        "document.body.appendChild(p2);",
+        "var f2 = xmlDocument.createCDATASection('1234');",
+        "var m2 = xmlDocument.createCDATASection('5678');",
+        "var l2 = document.createTextNode('9012');",
+        "p2.appendChild(f2); p2.appendChild(m2); p2.appendChild(l2);",
+        "var r = document.createRange();",
+        "r.setStart(f2, 2); r.setEnd(l2, 4);",
+        "r.deleteContents();",
+        "var kids2 = '';",
+        "for (var j = 0; j < p2.childNodes.length; j++) {",
+        "  var k2 = p2.childNodes[j];",
+        "  kids2 += k2.nodeName + ':' + String(k2.data != null ? k2.data : '') + ';';",
+        "}",
+        "out.push('range6=' + kids2 + ' so=' + r.startOffset);",
+        "globalThis.__r271r = out.join('|');",
+    ].join("\n");
+    let out = sandbox.execute(&js).unwrap().value;
+    assert_eq!(
+        out, "kids=#cdata-section:1234;#text:9012; c2parent=live|range6=#cdata-section:12;#text:; so=1",
+        "R271 removeChild plain-child registry splice: CDATA mid removed from normal element parent (childNodes contract); parentNode slot of the XML-realm wrapper is a closure (documented limitation); range-6 shape deleteContents trims both ends + removes middle + collapses to (p,1)"
+    );
+}

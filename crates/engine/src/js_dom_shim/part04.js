@@ -3736,7 +3736,13 @@
             // 剔除 + childList record（WPT Range-{delete,extract}Contents-in-ShadowRoot：
             // setStart(shadowRoot, n) 后 deleteContents 经 removeChild 移 registry 子——
             // 旧静默穿透使 innerHTML 读回旧内容）。
-            if (child && !child.__zwHandle && !child.__zwSelector && handle && _isContainerHandle(handle)) {
+            // R271（js-dom M4）：**容器限定放宽**——child 在 `_handleChildren` 中即
+            // 剔除（普通元素父同样承载 plain 子——createCDATASection 的轻量包装
+            // append 后入 registry；WPT Range-deleteContents 6,x 的中段 CDATA
+            // removeChild 旧静默穿透）。
+            if (child && !child.__zwHandle && !child.__zwSelector && handle
+                && ((_isContainerHandle(handle))
+                  || ((_handleChildren[handle] || []).indexOf(child) >= 0))) {
               try {
                 if (globalThis._zwNotifyIteratorsRemove) {
                   globalThis._zwNotifyIteratorsRemove(child);
