@@ -2615,3 +2615,49 @@ globalThis.__r258r = out.join('|');
         "R258 selectNode 落位 sc 回退：newParent 自身被 extract 移入 frag 后，尾部落位经 sc 的 childNodes 视图回退（endOffset=idx+1）"
     );
 }
+
+#[test]
+fn r259_leaf_hre_extract_first_boundaries() {
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let mut sandbox = V8Sandbox::with_config(zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    })
+    .unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><div id=\"t\">x</div></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+    let out = sandbox
+        .execute(
+            r#"
+var out = [];
+// R259 regression: 16,x shape — element container, empty covered children,
+// leaf (Text) newParent -> HRE with range collapsed to (sc, newOffset).
+var testDiv = document.createElement('div');
+document.body.appendChild(testDiv);
+var textNewParent = document.createTextNode('leaf');
+var range = document.createRange();
+range.setStart(document.body, 4);
+range.setEnd(document.body, 5);
+try { range.surroundContents(textNewParent); out.push('noThrow'); }
+catch (e) { out.push('t:' + e.name); }
+out.push('so=' + range.startOffset + ' eo=' + range.endOffset);
+out.push('scIsBody=' + (range.startContainer === document.body));
+out.push('bodyLast=' + (document.body.lastChild === textNewParent ? 'leaf' : document.body.lastChild.nodeName));
+globalThis.__r259r = out.join('|');
+"#,
+        )
+        .unwrap();
+    let out = sandbox.execute("globalThis.__r259r").unwrap().value;
+    assert_eq!(
+        out, "t:HierarchyRequestError|so=3 eo=3|scIsBody=true|bodyLast=leaf",
+        "R259 leaf-HRE 先 extract 折叠 + insertNode R219 setEnd 经 crossing 重设：终态 (sc, newOffset) 对（16,x 形态）"
+    );
+}

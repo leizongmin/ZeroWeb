@@ -4356,7 +4356,18 @@
           // 校验在 insertNode 直接调用时仍然生效。
           globalThis._r215NoValidate = true;
           try {
-            if (kids !== null && kids.length === 0) this.insertNode(newParent);
+            // R259（js-dom M4）：kids===0 也先 extract——sim（common.js
+            // mySurroundContents）对步骤 3 无形态分支：myExtractContents 无条件
+            // setStart/setEnd 折叠对（WPT 16,x `[document.body,4,body,5]` 的
+            // E 侧探针：extract 后 (body,4→4)，myInsertNode 尾步 setEnd(body,2)
+            // 经 shim 的 R203 crossing 重设把 start 一并拉到 2——终态 (2,2)）。
+            // 旧版只 insertNode：range 保持 (4,5) 未折叠使 R219 的
+            // start===end 守卫跳过、边界漂移（A 侧终态 (5,5)）。
+            // https://dom.spec.whatwg.org/#dom-range-surroundcontents
+            if (kids !== null && kids.length === 0) {
+              try { this.extractContents(); } catch (_eR259x) {}
+              this.insertNode(newParent);
+            }
             else if (kids === null
               && (this.startContainer.nodeType === 3 || this.startContainer.nodeType === 4)
               && this.startContainer === this.endContainer) {
