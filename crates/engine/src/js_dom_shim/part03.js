@@ -7477,6 +7477,12 @@
         hasChildNodes: function () { return false; },
         get firstChild() { return null; },
         get lastChild() { return null; },
+        // R270（js-dom M4）：contains/cDP 方法面（common.js getPosition 对
+        // oracle 遍历到的任意节点调 nodeB.compareDocumentPosition——title
+        // 文本子缺方法使 myDeleteContents 整体抛异常回退未触碰树，
+        // WPT Range-deleteContents 17,x）。
+        contains: function (other) { return _zwNodeContains(_r130TitleText, other); },
+        compareDocumentPosition: function (other) { return _zwCompareDocumentPosition(_r130TitleText, other); },
       };
       var _r130TitleEl = {
         nodeType: 1, tagName: 'TITLE', nodeName: 'TITLE', localName: 'title',
@@ -7493,6 +7499,9 @@
         get firstChild() { return this.childNodes.length ? this.childNodes[0] : null; },
         get lastChild() { return this.childNodes.length ? this.childNodes[this.childNodes.length - 1] : null; },
         hasChildNodes: function () { return this.childNodes.length > 0; },
+        // R270：title 元素同款 cDP/contains（oracle getPosition 遍历面）。
+        contains: function (other) { return _zwNodeContains(_r130TitleEl, other); },
+        compareDocumentPosition: function (other) { return _zwCompareDocumentPosition(_r130TitleEl, other); },
       };
       _r130TitleText.parentNode = _r130TitleEl;
       try {

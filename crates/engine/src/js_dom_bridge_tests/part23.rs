@@ -3174,3 +3174,46 @@ fn r269_deletecontents_document_container() {
         "R269 deleteContents document-container: contained doctype removed + collapse to (doc, 0)"
     );
 }
+
+#[test]
+fn r270_title_cdp_methods() {
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let mut sandbox = V8Sandbox::with_config(zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    })
+    .unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><div id=\"t\">x</div></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+    let js = [
+        "var fd = document.implementation.createHTMLDocument('T');",
+        // walk the whole subtree: every node must have cDP + contains (getPosition contract)
+        "var missing = [];",
+        "(function walk(n) {",
+        "  if (!n) return;",
+        "  if (typeof n.compareDocumentPosition !== 'function' || typeof n.contains !== 'function') {",
+        "    missing.push(n.nodeName + '(' + n.nodeType + ')');",
+        "  }",
+        "  var kids = n.childNodes || [];",
+        "  for (var i = 0; i < kids.length; i++) walk(kids[i]);",
+        "})(fd);",
+        // and a live call must return a numeric bitmask
+        "var de = fd.documentElement;",
+        "var pos = 0;",
+        "try { pos = de.compareDocumentPosition(fd.doctype); } catch (e) { missing.push('THREW:' + e.message); }",
+        "globalThis.__r270r = 'missing=' + missing.join(',') + ';pos=' + pos;",
+    ].join("\n");
+    let out = sandbox.execute(&js).unwrap().value;
+    assert_eq!(
+        out, "missing=;pos=2",
+        "R270 title cDP/contains: full foreignDoc subtree has the methods (getPosition contract); cDP(docEl, doctype) = PRECEDING (2)"
+    );
+}
