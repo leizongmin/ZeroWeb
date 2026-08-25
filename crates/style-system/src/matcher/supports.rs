@@ -367,8 +367,63 @@ fn axis_pair_supported<T>(value: &str, parse_component: fn(&str) -> Option<T>) -
     count > 0
 }
 
+fn split_top_level_whitespace(value: &str) -> Option<Vec<&str>> {
+    let mut items = Vec::new();
+    let mut start = None;
+    let mut depth = 0i32;
+    let mut quote = None;
+    let mut escaped = false;
+    for (index, ch) in value.char_indices() {
+        if escaped {
+            escaped = false;
+            continue;
+        }
+        match ch {
+            '\\' if quote.is_some() => escaped = true,
+            '\'' | '"' if quote == Some(ch) => quote = None,
+            '\'' | '"' if quote.is_none() => {
+                quote = Some(ch);
+                start.get_or_insert(index);
+            }
+            '(' if quote.is_none() => {
+                depth += 1;
+                start.get_or_insert(index);
+            }
+            ')' if quote.is_none() => {
+                if depth == 0 {
+                    return None;
+                }
+                depth -= 1;
+            }
+            c if c.is_whitespace() && quote.is_none() && depth == 0 => {
+                if let Some(part_start) = start.take() {
+                    let item = value[part_start..index].trim();
+                    if !item.is_empty() {
+                        items.push(item);
+                    }
+                }
+            }
+            _ => {
+                start.get_or_insert(index);
+            }
+        }
+    }
+    if quote.is_some() || depth != 0 {
+        return None;
+    }
+    if let Some(part_start) = start {
+        let item = value[part_start..].trim();
+        if !item.is_empty() {
+            items.push(item);
+        }
+    }
+    Some(items)
+}
+
 fn origin_pair_supported(value: &str) -> bool {
-    let parts: Vec<&str> = value.split_whitespace().collect();
+    let Some(parts) = split_top_level_whitespace(value) else {
+        return false;
+    };
     match parts.as_slice() {
         [single] => origin_component_kind(single).is_some(),
         [first, second] => {

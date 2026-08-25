@@ -1324,6 +1324,19 @@ fn test_transform_origin_rejects_invalid_tail() {
 }
 
 #[test]
+fn test_transform_origin_accepts_spaced_math_lengths() {
+    let mut style = ComputedStyle::default();
+
+    assert!(apply_property_value(
+        &mut style,
+        "transform-origin",
+        "calc(10px + 5px) min(20%, 30%)"
+    ));
+    assert!(matches!(style.transform_origin_x, LengthValue::Calc(_)));
+    assert!(matches!(style.transform_origin_y, LengthValue::Calc(_)));
+}
+
+#[test]
 /// 测试 perspective: 500px 应用
 fn test_perspective_apply() {
     let mut style = ComputedStyle::default();
@@ -1452,6 +1465,19 @@ fn test_perspective_origin_rejects_invalid_tail() {
         assert_eq!(style.perspective_origin_x, LengthValue::Px(10.0));
         assert_eq!(style.perspective_origin_y, LengthValue::Px(20.0));
     }
+}
+
+#[test]
+fn test_perspective_origin_accepts_spaced_math_lengths() {
+    let mut style = ComputedStyle::default();
+
+    assert!(apply_property_value(
+        &mut style,
+        "perspective-origin",
+        "max(10px, 20px) calc(30% - 5px)"
+    ));
+    assert!(matches!(style.perspective_origin_x, LengthValue::Calc(_)));
+    assert!(matches!(style.perspective_origin_y, LengthValue::Calc(_)));
 }
 
 // ═══════════════════════════════════════════════════════════════════

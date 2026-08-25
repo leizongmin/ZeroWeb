@@ -83,6 +83,59 @@ fn split_top_level_commas(value: &str) -> Option<Vec<&str>> {
     Some(items)
 }
 
+fn split_top_level_whitespace(value: &str) -> Option<Vec<&str>> {
+    let mut items = Vec::new();
+    let mut start = None;
+    let mut depth = 0i32;
+    let mut quote = None;
+    let mut escaped = false;
+    for (index, ch) in value.char_indices() {
+        if escaped {
+            escaped = false;
+            continue;
+        }
+        match ch {
+            '\\' if quote.is_some() => escaped = true,
+            '\'' | '"' if quote == Some(ch) => quote = None,
+            '\'' | '"' if quote.is_none() => {
+                quote = Some(ch);
+                start.get_or_insert(index);
+            }
+            '(' if quote.is_none() => {
+                depth += 1;
+                start.get_or_insert(index);
+            }
+            ')' if quote.is_none() => {
+                if depth == 0 {
+                    return None;
+                }
+                depth -= 1;
+            }
+            c if c.is_whitespace() && quote.is_none() && depth == 0 => {
+                if let Some(part_start) = start.take() {
+                    let item = value[part_start..index].trim();
+                    if !item.is_empty() {
+                        items.push(item);
+                    }
+                }
+            }
+            _ => {
+                start.get_or_insert(index);
+            }
+        }
+    }
+    if quote.is_some() || depth != 0 {
+        return None;
+    }
+    if let Some(part_start) = start {
+        let item = value[part_start..].trim();
+        if !item.is_empty() {
+            items.push(item);
+        }
+    }
+    Some(items)
+}
+
 // https://drafts.csswg.org/css-transitions-1/#transition-property-property
 fn parse_transition_property_list(value: &str) -> Option<Vec<String>> {
     let mut out = Vec::new();
@@ -268,7 +321,7 @@ fn position_value_to_computed(
 }
 
 fn parse_origin_xy(value: &str) -> Option<(LengthValue, LengthValue)> {
-    let parts: Vec<&str> = value.split_whitespace().collect();
+    let parts = split_top_level_whitespace(value)?;
     match parts.as_slice() {
         [single] => parse_origin_single(single),
         [first, second] => parse_origin_pair(first, second),

@@ -751,6 +751,60 @@ fn test_supports_applies_when_condition_met() {
 }
 
 #[test]
+fn test_supports_transform_origin_spaced_math_lengths() {
+    let (doc, _html, _body, div, _p) = make_test_dom();
+    let mut sys = StyleSystem::new();
+
+    let stylesheets = vec![Stylesheet {
+        rules: vec![Rule::Supports(zero_css_parser::ast::SupportsRule {
+            condition: zero_css_parser::ast::SupportsCondition::Property(
+                "transform-origin".to_string(),
+                "calc(10px + 5px) min(20%, 30%)".to_string(),
+            ),
+            rules: vec![Rule::Style(StyleRule {
+                selectors: vec![make_tag_selector("div")],
+                declarations: vec![Declaration {
+                    property: "color".to_string(),
+                    value: "red".to_string(),
+                    important: false,
+                }],
+            })],
+        })],
+    }];
+
+    let styles = sys.compute_styles(&doc, &stylesheets);
+    let div_style = styles.get(&div).expect("div should have style");
+    assert_eq!(div_style.color, ColorValue::Rgba(255, 0, 0, 255));
+}
+
+#[test]
+fn test_supports_transform_origin_rejects_unclosed_math_length() {
+    let (doc, _html, _body, div, _p) = make_test_dom();
+    let mut sys = StyleSystem::new();
+
+    let stylesheets = vec![Stylesheet {
+        rules: vec![Rule::Supports(zero_css_parser::ast::SupportsRule {
+            condition: zero_css_parser::ast::SupportsCondition::Property(
+                "transform-origin".to_string(),
+                "calc(10px + 5px 20px".to_string(),
+            ),
+            rules: vec![Rule::Style(StyleRule {
+                selectors: vec![make_tag_selector("div")],
+                declarations: vec![Declaration {
+                    property: "color".to_string(),
+                    value: "red".to_string(),
+                    important: false,
+                }],
+            })],
+        })],
+    }];
+
+    let styles = sys.compute_styles(&doc, &stylesheets);
+    let div_style = styles.get(&div).expect("div should have style");
+    assert_eq!(div_style.color, ColorValue::Rgba(0, 0, 0, 255));
+}
+
+#[test]
 fn test_supports_skips_when_condition_not_met() {
     let (doc, _html, _body, div, _p) = make_test_dom();
     let mut sys = StyleSystem::new();
