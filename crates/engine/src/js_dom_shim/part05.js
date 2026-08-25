@@ -1287,6 +1287,34 @@
         if (c && c.__zwHandle && typeof _zwUnmarkRemovedHandle === 'function') _zwUnmarkRemovedHandle(c.__zwHandle);
         return c;
       },
+      // R249（js-dom M4）：**own removeChild**——iframe 工厂元素旧无自身 removeChild，
+      // Node.prototype.removeChild 的数组分支对 `childNodes` 为 getter 视图（每次读
+      // 返新数组）的容器 splice 到**副本**上（源未动）而 `child.parentNode = null`
+      // 持久生效——单向断链（WPT Range-surroundContents 13/14,0 的「幽灵 P」：
+      // A 侧 testDiv 6 P vs sim 5 P，R249 栈捕获实证 remove → proto removeChild →
+      // 1740 行 null 父链但子列表未失）。本实现单次读列表 + identity indexOf +
+      // 就地 splice + 父链置空，与 _zwMEl removeChild（part03 6041）同款。
+      // https://dom.spec.whatwg.org/#dom-node-removechild
+      removeChild: function (c) {
+        if (c === null || c === undefined || typeof c.nodeType !== 'number') {
+          throw new globalThis.TypeError(
+            "Failed to execute 'removeChild' on 'Node': parameter 1 is not of type 'Node'.");
+        }
+        var ks249 = el.childNodes || [];
+        for (var i249 = 0; i249 < ks249.length; i249++) {
+          if (ks249[i249] === c) {
+            if (globalThis._zwNotifyIteratorsRemove) {
+              try { globalThis._zwNotifyIteratorsRemove(c); } catch (_e249n) {}
+            }
+            ks249.splice(i249, 1);
+            try { c.parentNode = null; } catch (_e249p) {}
+            return c;
+          }
+        }
+        throw new (globalThis.DOMException || Error)(
+          "Failed to execute 'removeChild' on 'Node': The node to be removed is not a child of this node.",
+          'NotFoundError');
+      },
       hasChildNodes: function () { return el.childNodes.length > 0; },
       // R209（js-dom M4）：insertBefore（spec `dom-node-pre-insert`——WPT Range
       // mega-case 的 common.js myInsertNode 对工厂元素容器调

@@ -2229,3 +2229,70 @@ globalThis.__r245out = out.join('|');
         "R245 factory parentNode getter-only 移动语义：fragment 父链强写 + 摘除守卫"
     );
 }
+
+#[test]
+fn r249_iframe_element_own_remove_child_splices() {
+    // R249（js-dom M4）：iframe 工厂元素（_zwIframeCreateElement 产物）补 own
+    // removeChild——旧版经 Node.prototype.removeChild 的数组分支，对 childNodes 为
+    // getter 视图的容器 splice 到副本（源未动）而父链置空持久——单向断链
+    //（WPT Range-surroundContents 13/14,0「幽灵 P」：R249 栈捕获实证
+    // remove → proto removeChild → 父链 null 但 testDiv.childNodes 未失）。
+    // 本实现单次读列表 + identity indexOf + 就地 splice。
+    // https://dom.spec.whatwg.org/#dom-node-removechild
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><div id=\"t\">x</div></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+
+    let out = sandbox
+        .execute(
+            r#"
+var out = [];
+var ifr = document.createElement('iframe');
+document.body.appendChild(ifr);
+var idoc = ifr.contentDocument;
+var div = idoc.createElement('div');
+var kids = [];
+for (var q = 0; q < 3; q++) {
+  var p = idoc.createElement('p');
+  p.appendChild(idoc.createTextNode('T' + q));
+  div.appendChild(p);
+  kids.push(p);
+}
+out.push('pre:' + div.childNodes.length);
+// remove 中间子——own removeChild 应就地 splice
+var rm = div.removeChild(kids[1]);
+out.push('rm:' + (rm === kids[1]) + ',len:' + div.childNodes.length);
+out.push('order:' + (div.childNodes[0] === kids[0] && div.childNodes[1] === kids[2]));
+out.push('p1p:' + (kids[1].parentNode === null));
+// 不在子列表 → NotFoundError
+var nf = 'none';
+try { div.removeChild(kids[1]); } catch (e) { nf = (e && e.name) || String(e); }
+out.push('nf:' + nf);
+// 非 Node → TypeError
+var te = 'none';
+try { div.removeChild(null); } catch (e) { te = (e && e.name) || String(e); }
+out.push('te:' + te);
+globalThis.__r249out = out.join('|');
+"#,
+        )
+        .unwrap();
+    let out = sandbox.execute("globalThis.__r249out").unwrap().value;
+    assert_eq!(
+        out,
+        "pre:3|rm:true,len:2|order:true|p1p:true|nf:NotFoundError|te:TypeError",
+        "R249 iframe 工厂元素 own removeChild：就地 splice + 位置保序 + 父链置空 + NotFound/TypeError 校验"
+    );
+}
