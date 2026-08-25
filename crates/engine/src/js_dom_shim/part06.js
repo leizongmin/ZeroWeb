@@ -3812,6 +3812,28 @@
           // "̈efgh\n" got 原文全串）。
           // https://dom.spec.whatwg.org/#dom-range-extractcontents
           var _r236ec = this.endContainer;
+          // R240（js-dom M4）：**contained 中段子的移动**（spec
+          // `dom-range-extract-contents` ancestor 分支的 containedChildren——
+          // common.js myExtractContents 对 [sc,so,ec,eo]（ec 为 sc 直接 CD 子）
+          // 除 ec 削头外还把 sc 的 [so, ecIdx) 子**本体移入 frag**。旧版只削头
+          // 使中段子残留原树（WPT Range-surroundContents 28,x
+          // `[testDiv,0,comment,5]` differing 簇——paras[0..4] 应入 frag）。
+          // https://dom.spec.whatwg.org/#dom-range-extractcontents
+          var _r236scNode = this.startContainer;
+          var _r236kids = _r236scNode.childNodes || [];
+          var _r236ecIdx = _r236kids.indexOf(_r236ec);
+          var _r236so0 = this.startOffset | 0;
+          if (_r236ecIdx > _r236so0) {
+            // R240 修正：**快照后移动**——appendChild 把子移入 frag 时 sc的
+            // childNodes 数组同步收缩，按下标迭代会滑位（首版 ecIdx 失效把 ec
+            // 本体也移入 frag——探针 ex-frag=[P,"oup?","bet s"] 实证）。
+            var _r240snap = _r236kids.slice(_r236so0, _r236ecIdx);
+            for (var _r240i = 0; _r240i < _r240snap.length; _r240i++) {
+              var _r240k = _r240snap[_r240i];
+              if (!_r240k) continue;
+              try { f.appendChild(_r240k); } catch (_eR240m) {}
+            }
+          }
           var _r236eo = Math.max(0, Math.min(this.endOffset | 0,
             String(_r236ec.data != null ? _r236ec.data : '').length));
           if (_r236eo > 0) {

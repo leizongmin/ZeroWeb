@@ -1804,3 +1804,64 @@ globalThis.__r239out = out.join('|');
         "R239 部分包含检查：先于 newParent 类型检查 + nextNode 序遍历"
     );
 }
+
+
+#[test]
+fn r240_ancestor_extract_moves_contained_children() {
+    // R240（js-dom M4）：extractContents 祖先分支的 **contained 中段子移动**——
+    // `[sc,so,ec,eo]`（ec 为 sc 直接 CharData 子）除 ec 削头外，sc 的
+    // [so, ecIdx) 子本体移入 frag（spec containedChildren）。**快照后移动**：
+    // appendChild 使 sc.childNodes 同步收缩，按下标迭代滑位会把 ec 本体也
+    // 移入 frag（探针实证 ex-frag=[P,"oup?","bet s"] 错序含 remainder）。
+    // https://dom.spec.whatwg.org/#dom-range-extractcontents
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><div id=\"t\">x</div></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+
+    sandbox
+        .execute(
+            r#"
+var out = [];
+var d240 = document.createElement('div');
+var p0 = document.createElement('p'); p0.appendChild(document.createTextNode('Ab'));
+var p1 = document.createElement('p'); p1.appendChild(document.createTextNode('Ij'));
+var cm = document.createComment('bet soup?');
+d240.appendChild(p0); d240.appendChild(p1); d240.appendChild(cm);
+document.body.appendChild(d240);
+var r240 = document.createRange();
+r240.setStart(d240, 0); r240.setEnd(cm, 5);
+var frag = r240.extractContents();
+function kids(n) {
+  var s = [];
+  for (var i = 0; i < n.childNodes.length; i++) {
+    var k = n.childNodes[i];
+    s.push((k.nodeName || k.nodeType) + (k.data != null ? '"' + String(k.data) + '"' : ''));
+  }
+  return s.join(',');
+}
+out.push('div:[' + kids(d240) + ']');
+out.push('frag:[' + kids(frag) + ']');
+globalThis.__r240out = out.join('|');
+"#,
+        )
+        .unwrap();
+    let out = sandbox.execute("globalThis.__r240out").unwrap().value;
+    assert_eq!(
+        out,
+        "div:[#comment\"oup?\"]|frag:[P,P,#comment\"bet s\"]",
+        "R240 祖先 extract：中段子本体移入 frag（快照防滑位）+ ec 削头 remainder 留树"
+    );
+}
