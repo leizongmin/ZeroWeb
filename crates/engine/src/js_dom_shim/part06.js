@@ -4273,6 +4273,71 @@
           throw new (globalThis.DOMException || Error)(
             'Nodes of type 2 cannot be inserted or inserted into.', 'HierarchyRequestError');
         }
+        // R244（js-dom M4）：**contained children 含 DocumentType →
+        // HierarchyRequestError（树不变）**——spec `dom-range-extract-contents`
+        // 步骤 9「If any member of contained children is a DocumentType, throw」
+        // （surroundContents 步骤 3 调 extractContents，HRE 原样上抛）。common.js
+        // myExtractContents 的 containedChildren 循环同款；contained = cac 的子
+        // 中「after (sc,so) 且 before (ec,eo)」全含者。WPT Range-surroundContents
+        // 25/26,x 元素 newParent（paras[0]/foreignPara1/detachedPara1/detachedDiv/
+        // foreignPara2/xmlElement——j=0,4,6,9,11,13）12F 簇：range 覆盖 doc 的
+        // doctype 子（`[document,0,document,1/2]`——iframe doc 首子是 doctype），
+        // sim 步骤 3 先抛 HRE 而 host 对元素 newParent 无任何拦截（NO_THROW——
+        // 探针 25/26,x 24 行实证：j 非 6 元素族全部 NO_THROW、文本族 host 已抛）。
+        // 阈值门：仅 cac 是 Document（nodeType 9）时做 contained 扫描——contained
+        // children 只对 cac 直接子有意义，其余容器 cac 无 doctype 子（doctype
+        // 只能挂在 Document 下），零扫描成本。
+        // https://dom.spec.whatwg.org/#dom-range-extractcontents
+        (function _r244DoctypeCheck(self) {
+          var cac = self.commonAncestorContainer;
+          if (!cac || cac.nodeType !== 9 || !cac.childNodes) return;
+          var _r244isContained = function (n) {
+            // contained = 严格在 (sc,so) 之后且严格在 (ec,eo) 之前（common.js
+            // isContained 的 getPosition 语义；sc===ec===cac 时退化为区间算术：
+            // so < idx+? —— 子 idx 边界点是 idx 与 idx+1，含 = idx >= so 且
+            // idx+1 <= eo（eo 计到子数））。
+            if (self.startContainer === self.endContainer
+              && self.startContainer === cac) {
+              var idx = cac.childNodes.indexOf(n);
+              if (idx < 0) return false;
+              return idx >= (self.startOffset | 0)
+                && (idx + 1) <= (self.endOffset | 0);
+            }
+            // 跨容器形态（cac 是 Document 的 sc/ec 深容器祖先）：按 ancestor-of
+            // 边界判定——n 含 start 边界容器 → 非全含；n 含 end 边界容器 →
+            // 非全含；否则 n 在 cac 直接子序列且 start/end 边界容器都在 n 的
+            // 兄弟序列外时近似 contained（保守：仅同容器精确，跨容器仅当
+            // start/end 容器都是 cac 自身或 n 的严格后代时判 idx 区间）。
+            var ancOf = function (a, d) {
+              while (d) { if (d === a) return true; d = d.parentNode; }
+              return false;
+            };
+            if (ancOf(n, self.startContainer) || ancOf(n, self.endContainer)) return false;
+            var idx2 = cac.childNodes.indexOf(n);
+            if (idx2 < 0) return false;
+            // start 边界在 cac 直接子序列上的落点：边界容器是 cac 某子 k 的
+            // 后代 → 落点该子；是 cac 自身 → 落点 so。
+            var sideIdx = function (container, offset) {
+              if (container === cac) return offset | 0;
+              var cur = container;
+              while (cur && cur.parentNode && cur.parentNode !== cac) cur = cur.parentNode;
+              if (!cur || !cur.parentNode) return -1;
+              return cac.childNodes.indexOf(cur) + 1; // 边界在子树末尾之后
+            };
+            var sSide = sideIdx(self.startContainer, self.startOffset);
+            var eSide = sideIdx(self.endContainer, self.endOffset);
+            if (sSide < 0 || eSide < 0) return false;
+            return idx2 >= sSide && (idx2 + 1) <= eSide;
+          };
+          var ks244 = cac.childNodes;
+          for (var c244 = 0; c244 < ks244.length; c244++) {
+            if (ks244[c244] && ks244[c244].nodeType === 10
+              && _r244isContained(ks244[c244])) {
+              throw new (globalThis.DOMException || Error)(
+                'A DocumentType node cannot be extracted.', 'HierarchyRequestError');
+            }
+          }
+        })(this);
         var kids = this._coveredChildren();
         // R209（js-dom M4）：spec `dom-range-surroundcontents` 步骤 5——最终
         // `newParent.appendChild(fragment)`：newParent 是 Text/Comment/PI 等叶子类型

@@ -2040,3 +2040,115 @@ globalThis.__r243out = out.join('|');
         "R243 detached-doc docEl/headEl/body 的 contains/cDP 方法面 + CONTAINS 位语义"
     );
 }
+
+#[test]
+fn r244_doc_container_doctype_contained_surround_hre() {
+    // R244（js-dom M4）：**contained children 含 DocumentType → HRE（树不变）**
+    // ——spec `dom-range-extract-contents` 步骤 9（surroundContents 步骤 3 调
+    // extractContents，HRE 原样上抛；common.js myExtractContents 的
+    // containedChildren 循环同款）。WPT Range-surroundContents 25/26,x 元素
+    // newParent 12F 簇：range 覆盖 doc 的 doctype 子（`[document,0,document,1/2]`）
+    // 时 sim 步骤 3 先抛 HRE 而 host 对元素 newParent 无拦截（探针 24 行实证
+    // j 非 6 元素族全部 NO_THROW）。跨容器 sideIdx 形态（sc/ec 深容器）+ 非含
+    // doctype 形态（不误伤正常 wrap）双断言。
+    // https://dom.spec.whatwg.org/#dom-range-extractcontents
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><div id=\"t\">x</div></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+
+    sandbox
+        .execute(
+            r#"
+var out = [];
+globalThis.__r244err = '';
+try {
+// 形态 A（WPT 25,x 同构）：iframe doc = [doctype, html]，range [doc,0,doc,1]
+// 覆盖 doctype 子 → 元素 newParent 抛 HRE 且 doc 子数不变（树不变）。
+var ifr = document.createElement('iframe');
+document.body.appendChild(ifr);
+var idoc = ifr.contentDocument;
+var refDoc = document.implementation.createHTMLDocument('');
+var cloneRoot = refDoc.documentElement.cloneNode(true);
+while (idoc.firstChild && idoc.firstChild.nodeType !== 10) { idoc.removeChild(idoc.firstChild); }
+while (idoc.lastChild && idoc.lastChild.nodeType !== 10) { idoc.removeChild(idoc.lastChild); }
+// engine sandbox 的 iframe doc 无内建 doctype——WPT harness 的 doc 形态
+// [doctype, html] 需显式构造（implementation.createDocumentType）。
+if (!idoc.firstChild || idoc.firstChild.nodeType !== 10) {
+  try { idoc.insertBefore(idoc.implementation.createDocumentType('html', '', ''), idoc.firstChild); } catch (_e244dt) {}
+  if ((!idoc.firstChild || idoc.firstChild.nodeType !== 10) && idoc.childNodes.length === 0) {
+    idoc.appendChild(cloneRoot);
+    // prepend doctype via insertBefore if it threw earlier
+  }
+}
+if (!idoc.firstChild || idoc.firstChild.nodeType !== 10) {
+  out.push('SHAPE:kids=' + idoc.childNodes.length);
+} else {
+  var hasHtml = false;
+  for (var _q244 = 0; _q244 < idoc.childNodes.length; _q244++) {
+    if (idoc.childNodes[_q244].nodeType === 1) hasHtml = true;
+  }
+  if (!hasHtml) idoc.appendChild(cloneRoot);
+}
+var rA = idoc.createRange();
+rA.setStart(idoc, 0); rA.setEnd(idoc, 1);
+var newP = idoc.createElement('p');
+var threwA = 'none';
+try { rA.surroundContents(newP); } catch (e) { threwA = (e && e.name) || String(e); }
+out.push('A:' + threwA + ',kids:' + idoc.childNodes.length + ',dt-first:' + (idoc.firstChild && idoc.firstChild.nodeType));
+
+// 形态 B（WPT 26,x 同构）：range [doc,0,doc,2] 覆盖 doctype+html → 同抛 HRE。
+var rB = idoc.createRange();
+rB.setStart(idoc, 0); rB.setEnd(idoc, 2);
+var newP2 = idoc.createElement('span');
+var threwB = 'none';
+try { rB.surroundContents(newP2); } catch (e) { threwB = (e && e.name) || String(e); }
+out.push('B:' + threwB + ',kids:' + idoc.childNodes.length);
+
+// 形态 C（负例——不误伤正常 wrap）：doc 下 [doctype, html] 但 range 在 body
+// 内部（不覆盖 doctype）→ wrap 正常完成不抛。
+var body244 = idoc.body || (cloneRoot.getElementsByTagName('body')[0]);
+var t1 = idoc.createTextNode('wx');
+var t2 = idoc.createTextNode('yz');
+body244.appendChild(t1); body244.appendChild(t2);
+var rC = idoc.createRange();
+var _baseC = body244.childNodes.length;
+rC.setStart(body244, _baseC - 2);
+rC.setEnd(body244, _baseC);
+var wrapC = idoc.createElement('b');
+var threwC = 'none';
+try { rC.surroundContents(wrapC); } catch (e) { threwC = (e && e.name) || String(e); }
+out.push('C:' + threwC + ',wrap-tag:' + (wrapC.parentNode ? wrapC.parentNode.nodeName : 'null') + ',wrap-n:' + wrapC.childNodes.length);
+
+// 形态 D（跨容器 sideIdx）：sc 是 doc 直接子（html）内部深容器、ec 也是——
+// doctype 不在任何边界子树 → 不抛（contained 判定不误伤跨容器）。
+var rD = idoc.createRange();
+rD.setStart(body244, 0); rD.setEnd(body244, 0);
+var wrapD = idoc.createElement('i');
+var threwD = 'none';
+try { rD.surroundContents(wrapD); } catch (e) { threwD = (e && e.name) || String(e); }
+out.push('D:' + threwD);
+} catch (_e244) { globalThis.__r244err = (_e244 && _e244.name) + ': ' + (_e244 && _e244.message); }
+globalThis.__r244out = out.join('|') + (globalThis.__r244err ? ' ||ERR[' + globalThis.__r244err + ']' : '');
+"#,
+        )
+        .unwrap();
+    let out = sandbox.execute("globalThis.__r244out").unwrap().value;
+    assert_eq!(
+        out,
+        "A:HierarchyRequestError,kids:2,dt-first:10|B:HierarchyRequestError,kids:2|C:none,wrap-tag:BODY,wrap-n:2|D:none",
+        "R244 doc 容器 doctype contained surround：HRE 树不变 + 正常 wrap 零误伤 + 跨容器零误伤"
+    );
+}
