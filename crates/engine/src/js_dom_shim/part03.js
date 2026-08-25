@@ -8120,6 +8120,23 @@
           get firstChild() { return null; },
           get lastChild() { return null; },
           get parentElement() { var p = n4.parentNode; return p && p.nodeType === 1 ? p : null; },
+          // R273（js-dom M4）：兄弟导航 getter——common.js nextNode oracle 的爬升
+          // `while (cn && !cn.nextSibling)` 对 undefined 兄弟槽不断上行到根、
+          // 遍历提前终止（WPT Range-deleteContents 6,x 的 oracle walk n=0
+          // 根因：克隆域 append 只设 parentNode 不接兄弟链——同 `_zwMEl` 域的
+          // `_zwMDefineSiblings` 动态求值模式）。
+          get nextSibling() {
+            var p = n4.parentNode;
+            if (!p || !p.childNodes) return null;
+            var i = p.childNodes.indexOf(n4);
+            return i >= 0 && i < p.childNodes.length - 1 ? p.childNodes[i + 1] : null;
+          },
+          get previousSibling() {
+            var p = n4.parentNode;
+            if (!p || !p.childNodes) return null;
+            var i = p.childNodes.indexOf(n4);
+            return i > 0 ? p.childNodes[i - 1] : null;
+          },
           parentNode: null,
           ownerDocument: doc,
         };

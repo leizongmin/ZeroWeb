@@ -3277,3 +3277,48 @@ fn r271_removechild_plain_child_in_registry() {
         "R271 removeChild plain-child registry splice: CDATA mid removed from normal element parent (childNodes contract); parentNode slot of the XML-realm wrapper is a closure (documented limitation); range-6 shape deleteContents trims both ends + removes middle + collapses to (p,1)"
     );
 }
+
+#[test]
+fn r273_cdata_sibling_navigation() {
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let mut sandbox = V8Sandbox::with_config(zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    })
+    .unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><div id=\"t\">x</div></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+    let js = [
+        "var out = [];",
+        "var xmlDocument = new Document();",
+        "var c1 = xmlDocument.createCDATASection('1234');",
+        "var c2 = xmlDocument.createCDATASection('5678');",
+        "var t = document.createTextNode('9012');",
+        "var p = document.createElement('p');",
+        "document.body.appendChild(p);",
+        "p.appendChild(c1); p.appendChild(c2); p.appendChild(t);",
+        // detached: null
+        "var d0 = xmlDocument.createCDATASection('dd');",
+        "out.push('detached=' + (d0.nextSibling === null ? 'null' : 'BAD') + '/' + (d0.previousSibling === null ? 'null' : 'BAD'));",
+        // parented: sibling navigation via parent's childNodes
+        "var ns = c1.nextSibling === c2 ? 'c2' : String(c1.nextSibling);",
+        "var ps = t.previousSibling === c2 ? 'c2' : String(t.previousSibling);",
+        "var last = c2.nextSibling === t ? 't' : String(c2.nextSibling);",
+        "var end = t.nextSibling === null ? 'null' : 'BAD';",
+        "out.push('parented=' + ns + '/' + ps + '/' + last + '/' + end);",
+        "globalThis.__r273r = out.join('|');",
+    ].join("\n");
+    let out = sandbox.execute(&js).unwrap().value;
+    assert_eq!(
+        out, "detached=null/null|parented=c2/c2/t/null",
+        "R273 CDATA sibling getters: self-computed via parent childNodes indexOf (oracle nextNode climb contract); null when detached or at edges"
+    );
+}
