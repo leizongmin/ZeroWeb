@@ -1432,8 +1432,8 @@ globalThis.__r228out = [
     let out = sandbox.execute("globalThis.__r228out").unwrap().value;
     assert_eq!(
         out,
-        "data:Stuwxyz|threw:HierarchyRequestError|pi-so:0,pi-threw:HierarchyRequestError|leaf-data:Stuwxyz,leaf-threw:HierarchyRequestError|r230:Op,HierarchyRequestError|r231:2,8",
-        "R228/R229 detached comment 区间 surround：extract 切片 + HRE 上抛 + 同节点 collapse (容器, startOffset) + leaf-newParent 先 extract 再抛"
+        "data:Stuwxyz|threw:HierarchyRequestError|pi-so:0,pi-threw:HierarchyRequestError|leaf-data:Stuwxyz,leaf-threw:HierarchyRequestError|r230:Op,HierarchyRequestError|r231:2,2",
+        "R228/R229 detached comment 区间 surround：extract 切片 + HRE 上抛 + 同节点 collapse (容器, startOffset) + leaf-newParent 先 extract 再抛（R260 更新：deleteData 现按 spec concept-node-replace-data 调整 live-range 边界，(2→8) 折到 (2→2)——旧断言 2,8 是无调整机制的观测，WPT Range-extractContents 以折叠为准）"
     );
 }
 
@@ -2661,3 +2661,68 @@ globalThis.__r259r = out.join('|');
         "R259 leaf-HRE 先 extract 折叠 + insertNode R219 setEnd 经 crossing 重设：终态 (sc, newOffset) 对（16,x 形态）"
     );
 }
+
+
+#[test]
+fn r260_data_mutation_adjusts_live_ranges() {
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let mut sandbox = V8Sandbox::with_config(zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    })
+    .unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><div id=\"t\">x</div></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+    let out = sandbox
+        .execute(
+            r#"
+var out = [];
+// R260 regression: CharacterData mutations adjust live-range boundaries
+// (spec concept-node-replace-data). deleteData [2,8) on a range (2->8):
+// both boundaries land at 2 (eo was inside the removed span).
+var t = document.createTextNode('AbcdefghIjklmno');
+var range = document.createRange();
+range.setStart(t, 2);
+range.setEnd(t, 8);
+t.deleteData(2, 6);
+out.push('del=' + range.startOffset + '/' + range.endOffset + ':' + t.data);
+// insertData at 0 shifts both +len
+var t2 = document.createTextNode('Ab');
+var range2 = document.createRange();
+range2.setStart(t2, 1);
+range2.setEnd(t2, 2);
+t2.insertData(0, 'xx');
+out.push('ins=' + range2.startOffset + '/' + range2.endOffset + ':' + t2.data);
+// replaceData adjusts by delta
+var t3 = document.createTextNode('Abcdefgh');
+var range3 = document.createRange();
+range3.setStart(t3, 3);
+range3.setEnd(t3, 7);
+t3.replaceData(2, 4, 'Z');
+out.push('rep=' + range3.startOffset + '/' + range3.endOffset + ':' + t3.data);
+// boundary before offset untouched
+var t4 = document.createTextNode('Abcdefgh');
+var range4 = document.createRange();
+range4.setStart(t4, 1);
+range4.setEnd(t4, 2);
+t4.deleteData(4, 2);
+out.push('before=' + range4.startOffset + '/' + range4.endOffset);
+globalThis.__r260r = out.join('|');
+"#,
+        )
+        .unwrap();
+    let out = sandbox.execute("globalThis.__r260r").unwrap().value;
+    assert_eq!(
+        out, "del=2/2:AbIjklmno|ins=3/4:xxAb|rep=2/4:AbZgh|before=1/2",
+        "R260 CharacterData 变更的 live-range 边界调整（spec replace-data 末段：删区间内折叠/区间后偏移/区间前不动）"
+    );
+}
+

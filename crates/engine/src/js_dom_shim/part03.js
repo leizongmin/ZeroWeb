@@ -6199,6 +6199,85 @@
   // no-parentSel 快照分支同款——无 host SetChildText：foreign 树本就 JS 侧持有）：
   // 写 `__nv` 并同步 data/nodeValue/textContent/length。offset/count 负值/越界
   // clamp（permissive——与 R48 主文档路径一致）。null→''（[LegacyNullToEmptyString]）。
+  // R260（js-dom M4）：**CharacterData 变更的 live-range 边界调整**（spec
+  // `concept-node-replace-data` 末段「for each live range whose start/end
+  // boundary point is in node」：删 [offset, offset+count) 插入 insertLen 后
+  // ① boundary < offset 不动；② offset ≤ boundary ≤ offset+count → 移到
+  // offset+insertLen；③ boundary > offset+count → 偏移 insertLen-count）。
+  // WPT Range-extractContents 同节点 Text 区间簇（`[paras[0].firstChild,0,
+  // …,1]` 的「startOffset and endOffset must always be the same after
+  // extractContents()」13F——sim 侧真浏览器 deleteData 经此机制把
+  // (text,so→eo) 折到 (so→so)，shim 旧不调整使双侧恒不折叠、断言两侧
+  // startOffset/endOffset 恒不等）。消费方：_zwAttachCharacterDataMethods
+  // 的 insertData/deleteData/replaceData（注册表 __zwLiveRanges 由 part06
+  // _makeRange 登记，跨 part 经 globalThis 交付）。
+  // https://dom.spec.whatwg.org/#concept-node-replace-data
+  function _zwAdjustRangesForData(node260, offset260, count260, insertLen260) {
+    try {
+      var regs260 = globalThis.__zwLiveRanges;
+      if (!regs260 || !regs260.length) return;
+      // R260：文本节点的跨形态逻辑身份匹配——三域三键：
+      // ① identity（plain 域，_zwMText 等闭包对象稳定）；
+      // ② __zwHandle 字符串（handle/proxy 域，单次 get trap 产物 identity 不稳定）；
+      // ③ parsed sel 域（part05 _childNodeList 产物）：__zwIsText + 父 sel +
+      //    __zwChildIndex（parent proxy 本身 identity 亦不稳——以父的 __zwSelector
+      //    字符串为键）。
+      var h260 = null;
+      try { h260 = node260 && typeof node260.__zwHandle === 'string' ? node260.__zwHandle : null; } catch (_e260h) {}
+      var p260sel = null, p260idx = null, p260ph = null;
+      try {
+        if (node260 && node260.__zwIsText) {
+          p260idx = node260.__zwChildIndex;
+          var pp260 = node260.parentNode;
+          if (pp260) {
+            if (typeof pp260.__zwSelector === 'string') p260sel = pp260.__zwSelector;
+            // R260 续：iframe/handle 域父（paras[0] 等 createElement 产物——无 sel）
+            // 以 __zwHandle 为键（probe R260ID 实证 harness 形态 pSel=N）。
+            else if (typeof pp260.__zwHandle === 'string') p260ph = pp260.__zwHandle;
+          }
+        }
+      } catch (_e260p) {}
+      var sameNode260 = function (cont) {
+        if (cont === node260) return true;
+        if (!cont) return false;
+        try {
+          if (h260 != null && typeof cont.__zwHandle === 'string' && cont.__zwHandle === h260) return true;
+          if ((p260sel != null || p260ph != null) && cont.__zwIsText
+            && cont.__zwChildIndex === p260idx && cont.parentNode) {
+            var cp260 = cont.parentNode;
+            if (p260sel != null && typeof cp260.__zwSelector === 'string') return cp260.__zwSelector === p260sel;
+            if (p260ph != null && typeof cp260.__zwHandle === 'string') return cp260.__zwHandle === p260ph;
+          }
+        } catch (_e260c) {}
+        return false;
+      };
+      for (var i260 = 0; i260 < regs260.length; i260++) {
+        var rg260 = regs260[i260];
+        if (!rg260) continue;
+        // spec `concept-node-replace-data` 末段（与 WPT Range-mutations.js 的
+        // testReplaceDataAlgorithm 引用语义逐条对应）：
+        // ① off ≤ offset 不动；② offset < off ≤ offset+count → 收到 offset
+        //（被替换区间内的边界点折叠到替换起点——非 offset+insertLen）；
+        // ③ off > offset+count → + insertLen − count。
+        var adj260 = function (cont, off) {
+          if (!sameNode260(cont)) return off;
+          if (off <= offset260) return off;
+          if (off <= offset260 + count260) return offset260;
+          return off + insertLen260 - count260;
+        };
+        try {
+          // offset accessor（part06 _makeRange R183）恒读 _base 槽——写 _base
+          // 即生效；_mode.kind==='node'（selectNode 形态）的现算路径不受影响
+          //（其 _base 只是 fallback）。
+          rg260._startOffsetBase = adj260(rg260.startContainer,
+            rg260._startOffsetBase != null ? rg260._startOffsetBase : rg260.startOffset);
+          rg260._endOffsetBase = adj260(rg260.endContainer,
+            rg260._endOffsetBase != null ? rg260._endOffsetBase : rg260.endOffset);
+        } catch (_e260r) {}
+      }
+    } catch (_e260a) {}
+  }
+  try { globalThis.__zwAdjustRangesForData = _zwAdjustRangesForData; } catch (_eR260ex) {}
   function _zwAttachCharacterDataMethods(n) {
     var _cur = function () { return String(n.__nv != null ? n.__nv : ''); };
     // 注意：_write 只写 __nv/textContent/length——data/nodeValue 在下方转为 accessor
@@ -6237,16 +6316,20 @@
     }
     n.insertData = function (offset, s) {
       var cur = _cur(); var o = Math.max(0, offset | 0);
-      _write(cur.slice(0, o) + String(s == null ? '' : s) + cur.slice(o));
+      var ins260 = String(s == null ? '' : s);
+      _zwAdjustRangesForData(n, o, 0, ins260.length);
+      _write(cur.slice(0, o) + ins260 + cur.slice(o));
       return undefined;
     };
     n.deleteData = function (offset, count) {
       var cur = _cur(); var o = Math.max(0, offset | 0); var c2 = Math.max(0, count | 0);
+      _zwAdjustRangesForData(n, o, c2, 0);
       _write(cur.slice(0, o) + cur.slice(o + c2));
       return undefined;
     };
     n.replaceData = function (offset, count, s) {
       var cur = _cur(); var o = Math.max(0, offset | 0); var c2 = Math.max(0, count | 0);
+      _zwAdjustRangesForData(n, o, c2, String(s == null ? '' : s).length);
       _write(cur.slice(0, o) + String(s == null ? '' : s) + cur.slice(o + c2));
       return undefined;
     };

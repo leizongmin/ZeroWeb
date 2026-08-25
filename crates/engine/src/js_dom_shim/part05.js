@@ -6464,20 +6464,38 @@
         __zw_set_child_text(parentSel, String(node.__zwChildIndex || 0), nv);
         _mo_notify(parentSel, null, { type: 'characterData', oldValue: _old, target: node.__zwNotifyTarget || node });
       };
-      node.appendData = function (s) { _write(_cur() + String(s == null ? '' : s)); return undefined; };
+      // R260（js-dom M4）：parsed 文本/注释的 live-range 边界调整（spec
+      // `concept-node-replace-data` 末段——与 _zwAttachCharacterDataMethods
+      // （plain 域）和 part04（proxy 域）三域同语义；sel 域 parsed 节点是
+      // WPT Range-mutations-{insert,delete,replace}Data 套件的主体）。
+      // appendData 等价 insertData(len)；data/nodeValue setter 的全量替换在
+      // _write 内统一以 (0, 旧长, 新长) 调整。
+      var _r260adj = function (o, c, ins) {
+        try { globalThis.__zwAdjustRangesForData(node, o, c, ins); } catch (_eR260p5) {}
+      };
+      node.appendData = function (s) {
+        var ap = String(s == null ? '' : s);
+        _r260adj(_cur().length, 0, ap.length);
+        _write(_cur() + ap); return undefined;
+      };
       node.insertData = function (offset, s) {
         var cur = _cur(); var o = Math.max(0, offset | 0);
-        _write(cur.slice(0, o) + String(s == null ? '' : s) + cur.slice(o));
+        var ins = String(s == null ? '' : s);
+        _r260adj(o, 0, ins.length);
+        _write(cur.slice(0, o) + ins + cur.slice(o));
         return undefined;
       };
       node.deleteData = function (offset, count) {
         var cur = _cur(); var o = Math.max(0, offset | 0); var c2 = Math.max(0, count | 0);
+        _r260adj(o, c2, 0);
         _write(cur.slice(0, o) + cur.slice(o + c2));
         return undefined;
       };
       node.replaceData = function (offset, count, s) {
         var cur = _cur(); var o = Math.max(0, offset | 0); var c2 = Math.max(0, count | 0);
-        _write(cur.slice(0, o) + String(s == null ? '' : s) + cur.slice(o + c2));
+        var rs = String(s == null ? '' : s);
+        _r260adj(o, c2, rs.length);
+        _write(cur.slice(0, o) + rs + cur.slice(o + c2));
         return undefined;
       };
       node.substringData = function (offset, count) {

@@ -5138,6 +5138,21 @@
         set: function (v) { r183._cacBase = v; },
       });
     } catch (_e183g) {}
+    // R260（js-dom M4）：**live-range 注册表**（环形缓冲 8192）——spec
+    // `concept-node-replace-data` 的「for each live range whose boundary
+    // point is in node, update」要求 CharacterData 变更（deleteData/
+    // insertData/replaceData）同步调整活动 range 边界（WPT
+    // Range-extractContents「startOffset and endOffset must always be the
+    // same after extractContents()」簇：sim 侧在真浏览器经此机制把
+    // (text,2→8) 折到 (2→2)，shim deleteData 不调整使双侧恒不折叠）。
+    // 超容覆盖最旧（长测试序列里最旧 range 已不可达，调整 dead range
+    // 无副作用）。`_zwAdjustRangesForData` 在 part03 的 CharacterData 方法
+    // 面消费（跨 part 经 globalThis 交付）。
+    try {
+      if (!globalThis.__zwLiveRanges) globalThis.__zwLiveRanges = [];
+      globalThis.__zwLiveRanges.push(r183);
+      if (globalThis.__zwLiveRanges.length > 8192) globalThis.__zwLiveRanges.shift();
+    } catch (_eR260lr) {}
     return r183;
   }
 
@@ -5552,17 +5567,25 @@ function _zwRegisterTextEl(el, handle, sel, text) {
     enumerable: true, configurable: true,
   });
   node.appendData = function (s) { node.__prevForMo = node.__nv; _regWrite(node.__nv + String(s == null ? '' : s)); };
+  // R260（js-dom M4）：textContent= 建的本地文本节点（paras[0].firstChild 的
+  // 主体域）——live-range 边界调整同四域语义（plain/handle-proxy/parsed sel/
+  // 本 textEl 域）。
   node.deleteData = function (o, c2) {
     var a = Math.max(0, o | 0), b = Math.max(0, c2 | 0);
-    node.__prevForMo = node.__nv; _regWrite(node.__nv.slice(0, a) + node.__nv.slice(a + b));
+    node.__prevForMo = node.__nv;
+    try { globalThis.__zwAdjustRangesForData(node, a, b, 0); } catch (_eR260d) {}
+    _regWrite(node.__nv.slice(0, a) + node.__nv.slice(a + b));
   };
   node.insertData = function (o, s) {
     var a = Math.max(0, o | 0);
-    node.__prevForMo = node.__nv; _regWrite(node.__nv.slice(0, a) + String(s == null ? '' : s) + node.__nv.slice(a));
+    node.__prevForMo = node.__nv;
+    try { globalThis.__zwAdjustRangesForData(node, a, 0, String(s == null ? '' : s).length); } catch (_eR260i) {}
+    _regWrite(node.__nv.slice(0, a) + String(s == null ? '' : s) + node.__nv.slice(a));
   };
   node.replaceData = function (o, c2, s) {
     var a = Math.max(0, o | 0), b = Math.max(0, c2 | 0);
     node.__prevForMo = node.__nv;
+    try { globalThis.__zwAdjustRangesForData(node, a, b, String(s == null ? '' : s).length); } catch (_eR260rp) {}
     _regWrite(node.__nv.slice(0, a) + String(s == null ? '' : s) + node.__nv.slice(a + b));
   };
   node.substringData = function (o, c2) {

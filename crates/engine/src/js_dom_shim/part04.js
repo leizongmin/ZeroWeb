@@ -1420,6 +1420,9 @@
             var c = count >>> 0;
             if (c > cur.length - o) c = cur.length - o;
             var nv = cur.slice(0, o) + cur.slice(o + c);
+            // R260（js-dom M4）：live-range 边界调整（spec concept-node-replace-data
+            // 末段——proxy 域文本与 plain 域同语义；经 handle 匹配 range 边界容器）。
+            try { globalThis.__zwAdjustRangesForData(_makeProxy(sel, handle), o, c, 0); } catch (_eR260d) {}
             _zwTextDataSet(handle, nv, function () { __zw_set_text_handle(handle, nv); });
             return undefined;
           };
@@ -1437,6 +1440,8 @@
               throw _zwDomException("Failed to execute 'insertData' on 'CharacterData': The offset " + o + " is out of range.", 'IndexSizeError');
             }
             var nv = cur.slice(0, o) + String(s) + cur.slice(o);
+            var ins260b = String(s).length;
+            try { globalThis.__zwAdjustRangesForData(_makeProxy(sel, handle), o, 0, ins260b); } catch (_eR260i) {}
             _zwTextDataSet(handle, nv, function () { __zw_set_text_handle(handle, nv); });
             return undefined;
           };
@@ -1458,6 +1463,8 @@
             var c = count >>> 0;
             if (c > cur.length - o) c = cur.length - o;
             var nv = cur.slice(0, o) + String(s) + cur.slice(o + c);
+            // R260：live-range 边界调整（同 delete/insert）。
+            try { globalThis.__zwAdjustRangesForData(_makeProxy(sel, handle), o, c, String(s).length); } catch (_eR260rp) {}
             _zwTextDataSet(handle, nv, function () { __zw_set_text_handle(handle, nv); });
             return undefined;
           };
