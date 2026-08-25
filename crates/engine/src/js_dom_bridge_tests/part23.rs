@@ -1694,3 +1694,51 @@ globalThis.__r237out = out.join('|');
         "R237 路径 4：清 newParent 子 + 按位插入（非 appendChild）+ selectNode 边界"
     );
 }
+
+#[test]
+fn r238_node_prototype_remove_generic() {
+    // R238（js-dom M4）：`Node.prototype.remove` 泛型（spec `dom-child-remove`）——
+    // Range extract/surround 的 covered 子摘除经 `typeof kids[j].remove === 'function'`
+    // 守卫；iframe 子文档工厂文本无 remove 方法使守卫静默跳过、区间原文残留
+    // （WPT 19,x 探针实证 detachedPara1=[Ä,Op] 双文本）。断言：工厂 text 的
+    // remove() 经父 removeChild 生效 + 元素自有 remove 优先不受影响。
+    // https://dom.spec.whatwg.org/#dom-child-remove
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><div id=\"t\">x</div></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+
+    sandbox
+        .execute(
+            r#"
+var out = [];
+// 工厂 text 的 remove()：经父 removeChild 生效。
+var p238 = document.createElement('p');
+var t238 = document.createTextNode('Opqrstuv');
+p238.appendChild(t238);
+document.body.appendChild(p238);
+out.push('has-remove:' + (typeof t238.remove === 'function'));
+t238.remove();
+out.push('removed:' + p238.childNodes.length);
+globalThis.__r238out = out.join('|');
+"#,
+        )
+        .unwrap();
+    let out = sandbox.execute("globalThis.__r238out").unwrap().value;
+    assert_eq!(
+        out, "has-remove:true|removed:0",
+        "R238 Node.prototype.remove 泛型：工厂 text remove 生效 + 元素语义不变"
+    );
+}

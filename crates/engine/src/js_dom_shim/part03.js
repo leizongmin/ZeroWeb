@@ -716,6 +716,23 @@
     var p = this.parentNode;
     if (p && typeof p.removeChild === 'function') p.removeChild(this);
   }, configurable: true });
+  // R238（js-dom M4）：`Node.prototype.remove` 泛型（spec `dom-child-remove`——
+  // child.remove() = 若父非空则 parent.removeChild(child)）。WPT Range 的
+  // extractContents/surroundContents 路径 4 经 `typeof kids[j].remove === 'function'`
+  // 守卫摘除 covered 子——iframe 子文档的 createTextNode 工厂文本无 remove 方法
+  // （Text.prototype 占位链亦无），守卫**静默跳过移除**使区间原文残留（WPT
+  // Range-surroundContents 19,x 探针实证 detachedPara1=[Ä,Op] 双文本）。own-property
+  // 优先（Element.prototype.remove / 工厂自有版本先于本兜底）。
+  // https://dom.spec.whatwg.org/#dom-child-remove
+  if (!globalThis.Node.prototype.remove) {
+    _zwDefProtoMethod(globalThis.Node.prototype, 'remove', function () {
+      var p238 = this && this.parentNode;
+      if (p238 && typeof p238.removeChild === 'function') {
+        try { p238.removeChild(this); } catch (_eR238p) {}
+      }
+    });
+  }
+
   // cloneNode(deep)（Node 方法）：DOMPurify keep-content 路径（clone 子节点插回 parentNode）。deep 克隆
   // 复制 nodeType/attrs/子树（含文本/注释），parentNode=null 由 insertBefore relink。内联深克隆（不依赖子
   // 节点有 cloneNode 方法——_zwMText/_zwMComment 为 plain object 无原型方法）。
