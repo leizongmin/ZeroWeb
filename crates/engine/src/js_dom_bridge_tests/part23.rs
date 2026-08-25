@@ -1989,3 +1989,54 @@ globalThis.__r242out = out.join('|');
         "R242 元素 ec 祖先 extract：中段本体移动 + shallow clone 承接首子 + 塌缩"
     );
 }
+
+#[test]
+fn r243_detached_doc_docelement_cdp_surface() {
+    // R243（js-dom M4）：_makeDetachedDocument 内部 docEl/headEl/body 补
+    // contains/cDP own-property（R235 首测净 -28 回退；R236–R242 全序分支落地后
+    // 重评转正 +26——sim（common.js isAncestorContainer/getPosition）深入
+    // foreignDoc/iframe doc 的合成树不再 TypeError）。
+    // https://dom.spec.whatwg.org/#dom-node-contains
+    // https://dom.spec.whatwg.org/#dom-node-comparedocumentposition
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><div id=\"t\">x</div></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+
+    sandbox
+        .execute(
+            r#"
+var out = [];
+var fd = document.implementation.createHTMLDocument('');
+var de = fd.documentElement;
+out.push('cdp:' + (typeof de.compareDocumentPosition === 'function'));
+out.push('contains:' + (typeof de.contains === 'function'));
+out.push('head:' + (typeof fd.head.compareDocumentPosition === 'function'));
+out.push('body:' + (typeof fd.body.compareDocumentPosition === 'function'));
+// 语义：body 在 docEl 内 → CONTAINS 位。
+var Node243 = globalThis.Node;
+var pos = de.compareDocumentPosition(fd.body);
+out.push('pos-num:' + (typeof pos === 'number' && pos >= 0));
+out.push('self:' + de.contains(de));
+globalThis.__r243out = out.join('|');
+"#,
+        )
+        .unwrap();
+    let out = sandbox.execute("globalThis.__r243out").unwrap().value;
+    assert_eq!(
+        out, "cdp:true|contains:true|head:true|body:true|pos-num:true|self:true",
+        "R243 detached-doc docEl/headEl/body 的 contains/cDP 方法面 + CONTAINS 位语义"
+    );
+}

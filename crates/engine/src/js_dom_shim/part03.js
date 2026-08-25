@@ -7123,6 +7123,21 @@
         Object.setPrototypeOf(body, globalThis.HTMLBodyElement.prototype);
       }
     } catch (_e130c) {}
+    // R243（js-dom M4）：docEl/headEl/body 补 **contains / compareDocumentPosition**
+    // own-property（spec `dom-node-contains` / `dom-node-comparedocumentposition`——
+    // R235 首测净 -28 回退；R243 重评：R236–R242 十一个 surround/extract 全序分支
+    // 落地后 host 行为面大改，当时 position 断言翻转面可能已消失。委托共享
+    // `_zwNodeContains`/`_zwCompareDocumentPosition`）。
+    // https://dom.spec.whatwg.org/#dom-node-contains
+    // https://dom.spec.whatwg.org/#dom-node-comparedocumentposition
+    try {
+      docEl.contains = function (other) { return _zwNodeContains(docEl, other); };
+      docEl.compareDocumentPosition = function (other) { return _zwCompareDocumentPosition(docEl, other); };
+      headEl.contains = function (other) { return _zwNodeContains(headEl, other); };
+      headEl.compareDocumentPosition = function (other) { return _zwCompareDocumentPosition(headEl, other); };
+      body.contains = function (other) { return _zwNodeContains(body, other); };
+      body.compareDocumentPosition = function (other) { return _zwCompareDocumentPosition(body, other); };
+    } catch (_eR243cdp) {}
     // R130：docEl 子树兄弟导航（WPT dom/common.js nextNode oracle 遍历依赖
     // head/body/title 的 nextSibling/previousSibling/parentNode 链——title 子加入 head 后
     // oracle 从 title-text 回溯经 head.nextSibling 须到 body；旧 headEl/body 无 sibling
