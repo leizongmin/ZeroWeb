@@ -3808,6 +3808,43 @@
           _r268handled = true;
         })(this);
         if (_r268handled) return;
+        // R269（js-dom M4）：**同容器子区间删除（Document 容器限定）**——WPT
+        // Range-deleteContents 25/26,x `[document,0,document,1/2]`：doc 的
+        // contained 子（doctype/html）旧 `_coveredChildren` 融合视图对主文档
+        // proxy 恒空 → 无移除（「expected 1/0 got 2」）。spec 同容器形态 =
+        // contained children 直接删（deleteContents 的中段），塌缩 (容器, so)。
+        // **限定 nodeType 9**：元素/fragment 容器已被 _coveredChildren 回落
+        // 正确处理（防行为面漂移）。doctype 走主文档 removeChild 的本地标记
+        // 路径；html 移除 host 不支持但 JS 视图按记录反映。
+        // https://dom.spec.whatwg.org/#dom-range-deletecontents
+        var _r269handled = false;
+        (function _r269SameContainerDel(self) {
+          var sc = self.startContainer, ec = self.endContainer;
+          if (!sc || sc !== ec) return;
+          var sn = sc.nodeType | 0;
+          if (sn !== 9) return;
+          if (!sc.childNodes || !sc.childNodes.length) return;
+          var so = self.startOffset | 0, eo = self.endOffset | 0;
+          if (so >= eo) return;
+          var rm269 = function (n, parent) {
+            try {
+              if (typeof n.remove === 'function') n.remove();
+              if (n.parentNode != null && parent && typeof parent.removeChild === 'function') {
+                parent.removeChild(n);
+              }
+            } catch (_e) {
+              try { if (parent && typeof parent.removeChild === 'function') parent.removeChild(n); } catch (_e2) {}
+            }
+          };
+          for (var k269 = eo - 1; k269 >= so; k269--) {
+            var c269 = sc.childNodes[k269];
+            if (!c269) continue;
+            rm269(c269, sc);
+          }
+          try { self.setStart(sc, so); self.setEnd(sc, so); } catch (_eR269c) {}
+          _r269handled = true;
+        })(this);
+        if (_r269handled) return;
         var kids = this._coveredChildren();
         if (kids) {
           for (var i = kids.length - 1; i >= 0; i--) {

@@ -3139,3 +3139,38 @@ fn r268_deletecontents_cross_chardata() {
         "R268 deleteContents cross-container CharData: sc tail trim + middle p-removal + ec head trim + collapse to (cac, refIdx+1)"
     );
 }
+
+#[test]
+fn r269_deletecontents_document_container() {
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let mut sandbox = V8Sandbox::with_config(zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    })
+    .unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><div id=\"t\">x</div></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+    let js = [
+        "var out = [];",
+        // (doc, 0)-(doc, 1): contained doctype removed (child count 2 -> 1)
+        "var r1 = document.createRange();",
+        "r1.setStart(document, 0); r1.setEnd(document, 1);",
+        "r1.deleteContents();",
+        "out.push('kids=' + document.childNodes.length",
+        "  + '/so=' + r1.startOffset + '/scIsDoc=' + (r1.startContainer === document));",
+        "globalThis.__r269r = out.join('|');",
+    ].join("\n");
+    let out = sandbox.execute(&js).unwrap().value;
+    assert_eq!(
+        out, "kids=1/so=0/scIsDoc=true",
+        "R269 deleteContents document-container: contained doctype removed + collapse to (doc, 0)"
+    );
+}
