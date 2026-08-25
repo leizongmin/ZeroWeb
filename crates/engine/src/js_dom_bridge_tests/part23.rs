@@ -1742,3 +1742,65 @@ globalThis.__r238out = out.join('|');
         "R238 Node.prototype.remove 泛型：工厂 text remove 生效 + 元素语义不变"
     );
 }
+
+#[test]
+fn r239_partial_check_order_and_traversal() {
+    // R239（js-dom M4）：surroundContents 的部分包含检查两件——① **先于 newParent
+    // 类型检查**（common.js mySurroundContents 序：partial → INVALID_STATE 在
+    // nodeType → INVALID_NODE_TYPE 前；WPT 20–22,x/29/31,x 的 Document/Doctype
+    // 作 newParent 期望 INVALID_STATE）；② **nextNode 序遍历**（sim 的遍历原语
+    // ——hasChildNodes→firstChild / 爬 nextSibling，盲区与 sim 对齐；旧 DFS 更
+    // 完备使 24,x 反向翻转 12F）。
+    // https://dom.spec.whatwg.org/#dom-range-surroundcontents
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><div id=\"t\">x</div></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+
+    sandbox
+        .execute(
+            r#"
+var out = [];
+// ① 跨 text 边界部分包含 + Document newParent → INVALID_STATE（先于 nodeType）。
+var wrap239 = document.createElement('div');
+var p0 = document.createElement('p');
+p0.appendChild(document.createTextNode('Ab'));
+var p1 = document.createElement('p');
+p1.appendChild(document.createTextNode('Cd'));
+wrap239.appendChild(p0); wrap239.appendChild(p1);
+document.body.appendChild(wrap239);
+var r239 = document.createRange();
+r239.setStart(p0.firstChild, 0); r239.setEnd(p1.firstChild, 0);
+var threwA = 'none';
+try { r239.surroundContents(document.implementation.createHTMLDocument('')); }
+catch (e) { threwA = (e && e.name) || String(e); }
+out.push('doc-np:' + threwA);
+// ② 同形态 + 元素 newParent → 同样 INVALID_STATE（partial 命中 p0）。
+var r239b = document.createRange();
+r239b.setStart(p0.firstChild, 0); r239b.setEnd(p1.firstChild, 0);
+var threwB = 'none';
+try { r239b.surroundContents(document.createElement('em')); }
+catch (e) { threwB = (e && e.name) || String(e); }
+out.push('el-np:' + threwB);
+globalThis.__r239out = out.join('|');
+"#,
+        )
+        .unwrap();
+    let out = sandbox.execute("globalThis.__r239out").unwrap().value;
+    assert_eq!(
+        out, "doc-np:InvalidStateError|el-np:InvalidStateError",
+        "R239 部分包含检查：先于 newParent 类型检查 + nextNode 序遍历"
+    );
+}

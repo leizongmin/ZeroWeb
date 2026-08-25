@@ -4102,22 +4102,12 @@
         //（位置近似）：非尾部精确插位须 id-stable ref 或 host 回调（nth-child 经移除前移失效），defer。
         // collapsed（0 覆盖子）→ insertNode(newParent)。跨容器/文本切片 → best-effort no-op（defer）。
         if (!newParent || !this.startContainer) return;
-        // R209（js-dom M4）：spec `dom-range-surroundcontents` 步骤 1——newParent 是
-        // Document/DocumentType/DocumentFragment 抛 InvalidNodeTypeError（WPT
-        // mega-case 的 INVALID_NODE_TYPE_ERR 簇）。
-        // 注：Text/Comment/PI newParent 的 HRE 发生在**步骤 5**（appendChild(fragment)
-        // 到叶子节点）——extract/insert 先行部分变更树（与 common.js mySurroundContents
-        // 模拟的中间态一致），故此处不提前抛（提前抛使 positionTests 的树比较与
-        // 模拟侧中间态分歧）。
-        // https://dom.spec.whatwg.org/#dom-range-surroundcontents
-        // R212（js-dom M4）：补 nodeType 11（DocumentFragment）——spec 步骤 1 的
-        // 三类型之一，旧版漏检使 docfrag newParent 走到 CharData 路径实际变更树
-        //（模拟侧 InvalidNodeTypeError 树不变——,20 族 positionTests 48F 根因）。
-        if (newParent.nodeType === 9 || newParent.nodeType === 10
-          || newParent.nodeType === 11) {
-          throw new (globalThis.DOMException || Error)(
-            'The Range has partially selected a non-Text node.', 'InvalidNodeTypeError');
-        }
+        // R239（js-dom M4）：**部分包含检查先于 newParent 类型检查**——common.js
+        // mySurroundContents 的序（步骤 2 partial → INVALID_STATE 在步骤 1
+        // nodeType → INVALID_NODE_TYPE 之前执行；WPT 20–22,x/29/31,x 的
+        // document/foreignDoc/xmlDoc/docfrag/doctype 作 newParent 期望
+        // INVALID_STATE_ERR——host 旧序先抛 InvalidNodeTypeError 30F 簇）。
+        // R210 注释原文如下。
         // R210（js-dom M4）：spec `dom-range-surroundcontents` 步骤 2——「If a
         // non-Text node is partially contained in the context object, throw
         // InvalidStateError」。部分包含 = 是 start 或 end 边界容器的祖先但非双方
@@ -4137,24 +4127,51 @@
           };
           var cac = self.commonAncestorContainer;
           if (!cac || !cac.childNodes) return;
-          // cac 自身必是双方祖先（非部分包含）；检查其后代非 Text 节点
-          //（DFS——Text 节点部分包含是合法的，spec 只拒非 Text）。
-          var stack = [cac];
-          var guard = 0;
-          while (stack.length && guard++ < 2048) {
-            var cur = stack.pop();
-            var kids = cur.childNodes || [];
-            for (var i = 0; i < kids.length; i++) {
-              var k = kids[i];
-              if (!k) continue;
-              if (k.nodeType !== 3 && k.nodeType !== 4 && partial(k)) {
-                throw new (globalThis.DOMException || Error)(
-                  'The Range has partially selected a non-Text node.', 'InvalidStateError');
-              }
-              if (k.childNodes && k.childNodes.length) stack.push(k);
+          // R239（js-dom M4）：**nextNode 序遍历**（common.js mySurroundContents 的
+          // `for (node = cac; node != stop; node = nextNode(node))` 同款）——旧 DFS
+          // 全覆盖比 sim 的 nextNode 遍历**更完备**：sim 在 sibling getter 断链处
+          // 提前终止（24,x 的 paras[4] 未被扫到 → WPT 期望 INVALID_NODE_TYPE 而
+          // host DFS 命中 partial 抛 INVALID_STATE，12F 反向翻转）。遍历原语与
+          // sim 一致（hasChildNodes→firstChild；否则沿 parentNode 爬到有
+          // nextSibling 的祖先取 nextSibling），盲区与 sim 对齐。
+          var stop239 = (function () {
+            var n = cac, h = 0;
+            while (n && !n.nextSibling && h++ < 128) n = n.parentNode;
+            return n && n.nextSibling ? n.nextSibling : null;
+          })();
+          var node239 = cac, guard239 = 0;
+          while (node239 && node239 !== stop239 && guard239++ < 2048) {
+            if (node239.nodeType !== 3 && node239.nodeType !== 4 && partial(node239)) {
+              throw new (globalThis.DOMException || Error)(
+                'The Range has partially selected a non-Text node.', 'InvalidStateError');
             }
+            var nx = null;
+            if (typeof node239.hasChildNodes === 'function' && node239.hasChildNodes()) {
+              nx = node239.firstChild;
+            } else {
+              var cn = node239, hh = 0;
+              while (cn && !cn.nextSibling && hh++ < 128) cn = cn.parentNode;
+              nx = cn && cn.nextSibling ? cn.nextSibling : null;
+            }
+            node239 = nx;
           }
         })(this);
+        // R209（js-dom M4）：spec `dom-range-surroundcontents` 步骤 1——newParent 是
+        // Document/DocumentType/DocumentFragment 抛 InvalidNodeTypeError（WPT
+        // mega-case 的 INVALID_NODE_TYPE_ERR 簇）。
+        // 注：Text/Comment/PI newParent 的 HRE 发生在**步骤 5**（appendChild(fragment)
+        // 到叶子节点）——extract/insert 先行部分变更树（与 common.js mySurroundContents
+        // 模拟的中间态一致），故此处不提前抛（提前抛使 positionTests 的树比较与
+        // 模拟侧中间态分歧）。
+        // https://dom.spec.whatwg.org/#dom-range-surroundcontents
+        // R212（js-dom M4）：补 nodeType 11（DocumentFragment）——spec 步骤 1 的
+        // 三类型之一，旧版漏检使 docfrag newParent 走到 CharData 路径实际变更树
+        //（模拟侧 InvalidNodeTypeError 树不变——,20 族 positionTests 48F 根因）。
+        if (newParent.nodeType === 9 || newParent.nodeType === 10
+          || newParent.nodeType === 11) {
+          throw new (globalThis.DOMException || Error)(
+            'The Range has partially selected a non-Text node.', 'InvalidNodeTypeError');
+        }
         // R178（js-dom M4）：surroundContents 内含 insertNode 语义——Attr-rooted
         // range / Attr 参数同抛 HierarchyRequestError（spec `dom-range-surroundcontents`
         // 步骤 2「部分选区」与本处 Attr 非法父；WPT "surroundContents() on an
