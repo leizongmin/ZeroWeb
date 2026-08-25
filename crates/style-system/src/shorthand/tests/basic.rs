@@ -66,6 +66,16 @@ fn test_margin_shorthand_rejects_invalid_tokens() {
     assert!(inherit.iter().all(|(_, value, _, _)| value == "inherit"));
 }
 
+#[test]
+fn test_margin_shorthand_accepts_spaced_math_lengths() {
+    let result = expand_one("margin", "calc(1px + 2px) min(10%, 20%)", false, (0, 0, 1));
+    assert_eq!(result.len(), 4);
+    assert_eq!(result[0].1, "calc(1px + 2px)");
+    assert_eq!(result[1].1, "min(10%, 20%)");
+    assert_eq!(result[2].1, "calc(1px + 2px)");
+    assert_eq!(result[3].1, "min(10%, 20%)");
+}
+
 // ── padding 简写测试 ──
 
 #[test]
@@ -99,6 +109,21 @@ fn test_padding_shorthand_rejects_invalid_tokens() {
     let inherit = expand_one("padding", "inherit", false, (0, 0, 1));
     assert_eq!(inherit.len(), 4);
     assert!(inherit.iter().all(|(_, value, _, _)| value == "inherit"));
+}
+
+#[test]
+fn test_padding_shorthand_accepts_spaced_math_lengths() {
+    let result = expand_one("padding", "calc(1px + 2px) clamp(1px, 2px, 3px)", false, (0, 0, 1));
+    assert_eq!(result.len(), 4);
+    assert_eq!(result[0].1, "calc(1px + 2px)");
+    assert_eq!(result[1].1, "clamp(1px, 2px, 3px)");
+    assert_eq!(result[2].1, "calc(1px + 2px)");
+    assert_eq!(result[3].1, "clamp(1px, 2px, 3px)");
+}
+
+#[test]
+fn test_padding_shorthand_rejects_unclosed_math_length() {
+    assert!(expand_one("padding", "calc(1px + 2px 4px", false, (0, 0, 1)).is_empty());
 }
 
 // ── border-width/style/color 简写测试 ──
@@ -364,6 +389,21 @@ fn test_inset_4_values() {
     assert_eq!(result[2].1, "3px");
     assert_eq!(result[3].0, "left");
     assert_eq!(result[3].1, "4px");
+}
+
+#[test]
+fn test_inset_shorthand_accepts_spaced_math_lengths() {
+    let result = expand_one("inset", "calc(1px + 2px) auto", false, (0, 0, 1));
+    assert_eq!(result.len(), 4);
+    assert_eq!(result[0].1, "calc(1px + 2px)");
+    assert_eq!(result[1].1, "auto");
+    assert_eq!(result[2].1, "calc(1px + 2px)");
+    assert_eq!(result[3].1, "auto");
+}
+
+#[test]
+fn test_inset_shorthand_rejects_unclosed_math_length() {
+    assert!(expand_one("inset", "calc(1px + 2px auto", false, (0, 0, 1)).is_empty());
 }
 
 // ── 非简写属性测试 ──

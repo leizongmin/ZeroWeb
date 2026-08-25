@@ -165,6 +165,14 @@ fn test_logical_margin_rejects_invalid_tokens() {
 }
 
 #[test]
+fn test_logical_margin_accepts_spaced_math_lengths() {
+    let result = expand_one("margin-inline", "calc(1px + 2px) min(10%, 20%)", false, (0, 0, 1));
+    assert_eq!(result.len(), 2);
+    assert_eq!(result[0].1, "calc(1px + 2px)");
+    assert_eq!(result[1].1, "min(10%, 20%)");
+}
+
+#[test]
 fn test_padding_block_shorthand() {
     let result = expand_one("padding-block", "8px", false, (0, 0, 1));
     assert_eq!(result.len(), 2);
@@ -197,6 +205,19 @@ fn test_logical_padding_rejects_invalid_tokens() {
 }
 
 #[test]
+fn test_logical_padding_accepts_spaced_math_lengths() {
+    let result = expand_one(
+        "padding-block",
+        "calc(1px + 2px) clamp(1px, 2px, 3px)",
+        false,
+        (0, 0, 1),
+    );
+    assert_eq!(result.len(), 2);
+    assert_eq!(result[0].1, "calc(1px + 2px)");
+    assert_eq!(result[1].1, "clamp(1px, 2px, 3px)");
+}
+
+#[test]
 fn test_inset_block_shorthand() {
     let result = expand_one("inset-block", "100px 200px", false, (0, 0, 1));
     assert_eq!(result.len(), 2);
@@ -225,6 +246,14 @@ fn test_logical_inset_rejects_invalid_tokens() {
     assert_eq!(result.len(), 2);
     assert_eq!(result[0].1, "auto");
     assert_eq!(result[1].1, "-1px");
+}
+
+#[test]
+fn test_logical_inset_accepts_spaced_math_lengths() {
+    let result = expand_one("inset-block", "calc(1px + 2px) auto", false, (0, 0, 1));
+    assert_eq!(result.len(), 2);
+    assert_eq!(result[0].1, "calc(1px + 2px)");
+    assert_eq!(result[1].1, "auto");
 }
 
 // ── border 逻辑属性轴简写（CSS Logical Properties §3.1）──

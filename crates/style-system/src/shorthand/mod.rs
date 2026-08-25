@@ -992,6 +992,8 @@ pub(crate) fn border_image_shorthand_supported(value: &str) -> bool {
 
 /// 解析 4 边简写的值部分。
 ///
+/// https://drafts.csswg.org/css-box-4/#margin-physical
+///
 /// 返回 (top, right, bottom, left) 值字符串。
 ///
 /// 模式：
@@ -1000,7 +1002,11 @@ pub(crate) fn border_image_shorthand_supported(value: &str) -> bool {
 /// - 3 值：上, 左右, 下
 /// - 4 值：上, 右, 下, 左
 fn parse_rect_values(value: &str) -> Option<(&str, &str, &str, &str)> {
-    let parts: Vec<&str> = value.split_whitespace().collect();
+    let parts = split_top_level_whitespace(value)?;
+    parse_rect_tokens(&parts)
+}
+
+fn parse_rect_tokens<'a>(parts: &[&'a str]) -> Option<(&'a str, &'a str, &'a str, &'a str)> {
     match parts.len() {
         1 => Some((parts[0], parts[0], parts[0], parts[0])),
         2 => Some((parts[0], parts[1], parts[0], parts[1])),
@@ -1011,7 +1017,8 @@ fn parse_rect_values(value: &str) -> Option<(&str, &str, &str, &str)> {
 }
 
 fn parse_rect_values_with(value: &str, is_valid: fn(&str) -> bool) -> Option<(&str, &str, &str, &str)> {
-    let rect = parse_rect_values(value)?;
+    let parts = split_top_level_whitespace(value)?;
+    let rect = parse_rect_tokens(&parts)?;
     if [rect.0, rect.1, rect.2, rect.3].iter().all(|part| is_valid(part)) {
         Some(rect)
     } else {
@@ -1556,6 +1563,60 @@ fn split_outside_parens(s: &str) -> Vec<String> {
     result
 }
 
+// https://drafts.csswg.org/css-syntax-3/#component-value
+fn split_top_level_whitespace(value: &str) -> Option<Vec<&str>> {
+    let mut parts = Vec::new();
+    let mut start = None;
+    let mut depth = 0i32;
+    let mut quote = None;
+    let mut escaped = false;
+    for (index, ch) in value.char_indices() {
+        if escaped {
+            escaped = false;
+            continue;
+        }
+        match ch {
+            '\\' if quote.is_some() => escaped = true,
+            '\'' | '"' if quote == Some(ch) => quote = None,
+            '\'' | '"' if quote.is_none() => {
+                quote = Some(ch);
+                start.get_or_insert(index);
+            }
+            '(' if quote.is_none() => {
+                depth += 1;
+                start.get_or_insert(index);
+            }
+            ')' if quote.is_none() => {
+                if depth == 0 {
+                    return None;
+                }
+                depth -= 1;
+            }
+            c if c.is_whitespace() && quote.is_none() && depth == 0 => {
+                if let Some(part_start) = start.take() {
+                    let part = value[part_start..index].trim();
+                    if !part.is_empty() {
+                        parts.push(part);
+                    }
+                }
+            }
+            _ => {
+                start.get_or_insert(index);
+            }
+        }
+    }
+    if quote.is_some() || depth != 0 {
+        return None;
+    }
+    if let Some(part_start) = start {
+        let part = value[part_start..].trim();
+        if !part.is_empty() {
+            parts.push(part);
+        }
+    }
+    Some(parts)
+}
+
 fn expand_axis_logical_with(
     value: &str,
     start_prop: &str,
@@ -1564,7 +1625,9 @@ fn expand_axis_logical_with(
     important: bool,
     specificity: (u32, u32, u32),
 ) -> Vec<MatchingDecl> {
-    let parts: Vec<&str> = value.split_whitespace().collect();
+    let Some(parts) = split_top_level_whitespace(value) else {
+        return vec![];
+    };
     let mk = |prop: &str, val: &str| -> MatchingDecl { (prop.to_string(), val.to_string(), important, specificity) };
     let valid = matches_css_wide_keyword(value) || parts.iter().all(|part| is_valid(part));
     match parts.len() {
