@@ -2296,3 +2296,96 @@ globalThis.__r249out = out.join('|');
         "R249 iframe 工厂元素 own removeChild：就地 splice + 位置保序 + 父链置空 + NotFound/TypeError 校验"
     );
 }
+
+#[test]
+fn r254_surround_clone_detaches_newparent_before_deepclone() {
+    // R254（js-dom M4）：surroundContents 主路径（covered-children 形态）的
+    // clone 循环**前**先摘除 newParent——旧版克隆循环先于 removal 循环
+    //（R2930 正序 clone → 逆序 remove），covered 子树（docEl[0,2] 含
+    // BODY>div#test>paras[0]=newParent 自身）深克隆时把 newParent 的
+    // **克隆中间态**（先克隆进 HEAD-clone、BODY 未克隆时的半完成形态）烘进
+    // BODY-clone 内的 div#test（WPT Range-surroundContents 13/14,x「幽灵
+    // P#a{HEAD-only}」——probe R254-v5/v6 实证 div#test 首子 = isNP=false 的
+    // 第三对象）。spec 序（surround 步骤 3 extract 先移出原件）等效于「克隆
+    // 前 newParent 不在覆盖子树内」。摘除幂等（已 detached 时 no-op）。
+    // https://dom.spec.whatwg.org/#dom-range-surroundcontents
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><div id=\"t\">x</div></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+
+    let out = sandbox
+        .execute(
+            r#"
+var out = [];
+// iframe 工厂域（与 WPT 13,0 同形态）：idoc 的 docEl 容器覆盖 [h1, wrap]，
+// wrap 内含 newParent(np)——克隆循环深克隆 wrap 时旧版把 np 的克隆中间态
+// 烘进 wrap-clone（幽灵）；R254 摘除后 wrap-clone 不含 np。
+var ifr = document.createElement('iframe');
+document.body.appendChild(ifr);
+var idoc = ifr.contentDocument;
+var container = idoc.createElement('div');
+var h1 = idoc.createElement('h1'); h1.appendChild(idoc.createTextNode('H'));
+var wrap = idoc.createElement('div'); wrap.id = 'w';
+var np = idoc.createElement('p'); np.id = 'np';
+np.appendChild(idoc.createTextNode('NP'));
+wrap.appendChild(np);
+container.appendChild(h1);
+container.appendChild(wrap);
+var r = idoc.createRange();
+r.setStart(container, 0);
+r.setEnd(container, 2);
+out.push('kids:' + (r._coveredChildren ? r._coveredChildren().length : 'n/a'));
+// R254 前置：np 摘除即时生效（工厂域 own remove → removeChild 就地 splice）
+out.push('preRm wrapKids:' + wrap.childNodes.length + ',npPn:' + (np.parentNode === wrap));
+np.remove();
+out.push('postRm wrapKids:' + wrap.childNodes.length + ',npPn:' + (np.parentNode === null));
+// 覆盖子重挂回（模拟摘除发生在 surround 内部前的状态）——直接构造克隆形态验证：
+// 摘除后 np 的深克隆不在 container 覆盖子树里
+wrap.appendChild(np);
+r.setStart(container, 0);
+r.setEnd(container, 2);
+r.surroundContents(np);
+// 断言 1：container 首子是 np（上移）
+out.push('first:' + (container.childNodes[0] === np ? 'np' : String(container.childNodes[0] && container.childNodes[0].nodeName)));
+// 断言 2（R254 核心不变式）：np 子树内无「np 自身的克隆」（幽灵）
+var ghost = 'none';
+(function walk(n, depth) {
+  if (!n || !n.childNodes || depth > 8) return;
+  for (var q = 0; q < n.childNodes.length; q++) {
+    var c = n.childNodes[q];
+    if (c !== np && c.nodeName === 'P' && c.id === 'np') { ghost = 'found'; return; }
+    walk(c, depth + 1);
+    if (ghost !== 'none') return;
+  }
+})(np, 0);
+out.push('ghost:' + ghost);
+// 断言 3：np 内的 wrap 克隆是空壳（克隆前 np 已摘除）
+var wrapInNp = null;
+for (var wq = 0; wq < np.childNodes.length; wq++) {
+  if (np.childNodes[wq].id === 'w') wrapInNp = np.childNodes[wq];
+}
+out.push('wrapGhost:' + (wrapInNp ? wrapInNp.childNodes.length : 'missing'));
+globalThis.__r254out = out.join('|');
+"#,
+        )
+        .unwrap();
+    let out = sandbox.execute("globalThis.__r254out").unwrap().value;
+    assert_eq!(
+        out,
+        "kids:2|preRm wrapKids:1,npPn:true|postRm wrapKids:0,npPn:true|first:np|ghost:none|wrapGhost:0",
+        "R254 surround 克隆前摘除 newParent：无幽灵克隆中间态烘进覆盖子树克隆"
+    );
+}

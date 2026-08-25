@@ -4564,6 +4564,21 @@
         while (newParent.childNodes && newParent.childNodes.length && _r237clr++ < 256) {
           try { newParent.removeChild(newParent.childNodes[0]); } catch (_eR237c) { break; }
         }
+        // R254（js-dom M4）：**clone 循环前先摘除 newParent**——covered 子的深克隆
+        // 源树里 newParent 仍挂在旧父（如 13,0 的 docEl[0,2] 覆盖 BODY>div#test>
+        // paras[0]=newParent 自身）时，`kids[i].cloneNode(true)` 会把 newParent 的
+        // **克隆中间态**（先克隆进 HEAD-clone、BODY 未克隆时的半完成形态）一并烘进
+        // BODY-clone 内的 div#test（WPT Range-surroundContents 13/14,x 的「幽灵
+        // P#a{HEAD-only}」——probe R254-v5/v6 实证：BODY-clone 的 div#test 首子 =
+        // isNP=false 的第三对象，outerHTML=`<p id="a"><head>…`，sim 侧无此形态，
+        // 因 common.js 步骤 3 extract 先移出原件再插 newParent）。spec 序
+        // （surround 步骤 2「清 newParent 子」在步骤 3 extract 之后，extract 时
+        // newParent 若在覆盖子树内已被移出）等效于「克隆前 newParent 不在覆盖
+        // 子树内」。提前摘除与 R248 的 insert 前摘除幂等（已 detached 时 no-op）。
+        // https://dom.spec.whatwg.org/#dom-range-surroundcontents
+        try {
+          if (typeof newParent.remove === 'function' && newParent.parentNode) newParent.remove();
+        } catch (_eR254rm) {}
         for (var i = 0; i < kids.length; i++) {
           try { newParent.appendChild(kids[i].cloneNode(true)); } catch (_e) {}
         }

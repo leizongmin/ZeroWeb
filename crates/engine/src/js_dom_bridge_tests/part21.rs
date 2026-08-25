@@ -2490,9 +2490,14 @@ fn test_surround_invalid_state_and_step_order_r210() {
             var t1 = '';
             try { r1.surroundContents(n1); } catch (e) { t1 = e.name; }
             if (t1 !== 'InvalidStateError') out.push('cross-container:' + t1);
-            // ② Document newParent + partial range → InvalidStateError（R239：partial 先于 nodeType）
+            // ② Document newParent → InvalidNodeTypeError。R239 后校验序为
+            // partial-check 先于 nodeType 检查（common.js mySurroundContents 同序
+            // ——WPT 20–22,x/29/31,x +30P 实证），故本场景须用**无部分包含**的
+            // range（单容器整选区 `[testDiv,0,testDiv,1]`）——跨容器 range 会先抛
+            // InvalidStateError（r210 首版用跨容器 range 的期望已过时，R254 修正；
+            // 与 layout 流 dbacb3fa7 的同款修复汇合）。)
             win.testNodeInput = 'document';
-            win.testRangeInput = '[paras[0].firstChild, 0, paras[1].firstChild, 0]';
+            win.testRangeInput = '[testDiv, 0, testDiv, 1]';
             win.run();
             var r2 = win.testRange, n2 = win.testNode;
             var t2 = '';
