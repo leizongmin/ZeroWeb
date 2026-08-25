@@ -1251,15 +1251,12 @@ fn supports_border_width_value(value: &str) -> bool {
         .is_some_and(|v| crate::property::border_width_length_is_valid(value, v))
 }
 
+// https://drafts.csswg.org/css-align-3/#gap-shorthand
 fn supports_gap_values(value: &str) -> bool {
-    let mut count = 0;
-    for part in value.split_whitespace() {
-        count += 1;
-        if count > 2 || !supports_gap_value(part) {
-            return false;
-        }
-    }
-    count > 0
+    let Some(parts) = split_top_level_whitespace(value) else {
+        return false;
+    };
+    !parts.is_empty() && parts.len() <= 2 && parts.iter().all(|part| supports_gap_value(part))
 }
 
 fn supports_gap_value(value: &str) -> bool {
@@ -1292,6 +1289,59 @@ fn supports_word_spacing_value(value: &str) -> bool {
         return true;
     }
     supports_text_length_percentage_value(value)
+}
+
+fn split_top_level_whitespace(value: &str) -> Option<Vec<&str>> {
+    let mut parts = Vec::new();
+    let mut start = None;
+    let mut depth = 0i32;
+    let mut quote = None;
+    let mut escaped = false;
+    for (index, ch) in value.char_indices() {
+        if escaped {
+            escaped = false;
+            continue;
+        }
+        match ch {
+            '\\' if quote.is_some() => escaped = true,
+            '\'' | '"' if quote == Some(ch) => quote = None,
+            '\'' | '"' if quote.is_none() => {
+                quote = Some(ch);
+                start.get_or_insert(index);
+            }
+            '(' if quote.is_none() => {
+                depth += 1;
+                start.get_or_insert(index);
+            }
+            ')' if quote.is_none() => {
+                if depth == 0 {
+                    return None;
+                }
+                depth -= 1;
+            }
+            c if c.is_whitespace() && quote.is_none() && depth == 0 => {
+                if let Some(part_start) = start.take() {
+                    let part = value[part_start..index].trim();
+                    if !part.is_empty() {
+                        parts.push(part);
+                    }
+                }
+            }
+            _ => {
+                start.get_or_insert(index);
+            }
+        }
+    }
+    if quote.is_some() || depth != 0 {
+        return None;
+    }
+    if let Some(part_start) = start {
+        let part = value[part_start..].trim();
+        if !part.is_empty() {
+            parts.push(part);
+        }
+    }
+    Some(parts)
 }
 
 fn supports_outline_offset_value(value: &str) -> bool {

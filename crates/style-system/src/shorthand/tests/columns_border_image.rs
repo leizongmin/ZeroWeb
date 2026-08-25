@@ -170,6 +170,18 @@ fn test_gap_shorthand_two_values() {
 }
 
 #[test]
+fn test_gap_shorthand_accepts_spaced_math_lengths() {
+    let result = expand_one("gap", "calc(1px + 2px) min(10%, 20%)", false, (0, 0, 1));
+    assert_eq!(result.len(), 3);
+    assert_eq!(result[0].0, "gap");
+    assert_eq!(result[0].1, "calc(1px + 2px)");
+    assert_eq!(result[1].0, "row-gap");
+    assert_eq!(result[1].1, "calc(1px + 2px)");
+    assert_eq!(result[2].0, "column-gap");
+    assert_eq!(result[2].1, "min(10%, 20%)");
+}
+
+#[test]
 /// gap 简写三值及以上应为空
 fn test_gap_shorthand_too_many_values() {
     let result = expand_one("gap", "10px 20px 30px", false, (0, 0, 1));

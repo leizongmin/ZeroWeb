@@ -805,6 +805,60 @@ fn test_supports_transform_origin_rejects_unclosed_math_length() {
 }
 
 #[test]
+fn test_supports_gap_spaced_math_lengths() {
+    let (doc, _html, _body, div, _p) = make_test_dom();
+    let mut sys = StyleSystem::new();
+
+    let stylesheets = vec![Stylesheet {
+        rules: vec![Rule::Supports(zero_css_parser::ast::SupportsRule {
+            condition: zero_css_parser::ast::SupportsCondition::Property(
+                "gap".to_string(),
+                "calc(1px + 2px) min(10%, 20%)".to_string(),
+            ),
+            rules: vec![Rule::Style(StyleRule {
+                selectors: vec![make_tag_selector("div")],
+                declarations: vec![Declaration {
+                    property: "display".to_string(),
+                    value: "grid".to_string(),
+                    important: false,
+                }],
+            })],
+        })],
+    }];
+
+    let styles = sys.compute_styles(&doc, &stylesheets);
+    let div_style = styles.get(&div).expect("div should have style");
+    assert_eq!(div_style.display, DisplayValue::Grid);
+}
+
+#[test]
+fn test_supports_gap_rejects_unclosed_math_length() {
+    let (doc, _html, _body, div, _p) = make_test_dom();
+    let mut sys = StyleSystem::new();
+
+    let stylesheets = vec![Stylesheet {
+        rules: vec![Rule::Supports(zero_css_parser::ast::SupportsRule {
+            condition: zero_css_parser::ast::SupportsCondition::Property(
+                "gap".to_string(),
+                "calc(1px + 2px 4px".to_string(),
+            ),
+            rules: vec![Rule::Style(StyleRule {
+                selectors: vec![make_tag_selector("div")],
+                declarations: vec![Declaration {
+                    property: "display".to_string(),
+                    value: "grid".to_string(),
+                    important: false,
+                }],
+            })],
+        })],
+    }];
+
+    let styles = sys.compute_styles(&doc, &stylesheets);
+    let div_style = styles.get(&div).expect("div should have style");
+    assert_eq!(div_style.display, DisplayValue::Block);
+}
+
+#[test]
 fn test_supports_skips_when_condition_not_met() {
     let (doc, _html, _body, div, _p) = make_test_dom();
     let mut sys = StyleSystem::new();

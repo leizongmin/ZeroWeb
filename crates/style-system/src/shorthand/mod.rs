@@ -806,13 +806,21 @@ fn expand_one(property: &str, value: &str, important: bool, specificity: (u32, u
             if matches_css_wide_keyword(value) {
                 return wide_keyword_to_longhands(value, &["gap", "row-gap", "column-gap"], important, specificity);
             }
-            let parts: Vec<&str> = value.split_whitespace().collect();
+            let parts = split_outside_parens(value);
             if parts.is_empty() || parts.len() > 2 || parts.iter().any(|part| !is_gap_value_token(part)) {
                 return vec![];
             }
             match parts.len() {
-                1 => vec![mk("gap", parts[0]), mk("row-gap", parts[0]), mk("column-gap", parts[0])],
-                2 => vec![mk("gap", parts[0]), mk("row-gap", parts[0]), mk("column-gap", parts[1])],
+                1 => vec![
+                    mk("gap", &parts[0]),
+                    mk("row-gap", &parts[0]),
+                    mk("column-gap", &parts[0]),
+                ],
+                2 => vec![
+                    mk("gap", &parts[0]),
+                    mk("row-gap", &parts[0]),
+                    mk("column-gap", &parts[1]),
+                ],
                 _ => unreachable!(),
             }
         }
