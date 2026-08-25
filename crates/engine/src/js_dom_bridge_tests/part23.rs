@@ -3097,3 +3097,45 @@ fn r267_deletecontents_ancestor_chardata() {
         "R267 deleteContents ancestor branch: ec head deleteData + contained middle removal + collapse to (sc, so)"
     );
 }
+
+#[test]
+fn r268_deletecontents_cross_chardata() {
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let mut sandbox = V8Sandbox::with_config(zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    })
+    .unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><div id=\"t\">x</div></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+    let js = [
+        "var out = [];",
+        // 20/21,x form: sc=text in p0, ec=text in p1 (disjoint subtrees under testDiv)
+        "var testDiv = document.createElement('div');",
+        "var p0 = document.createElement('p'); p0.textContent = 'Aabcdef';",
+        "var p1 = document.createElement('p'); p1.textContent = 'Ijklmnop';",
+        "var p2 = document.createElement('p'); p2.textContent = 'Qrstuvwx';",
+        "testDiv.appendChild(p0); testDiv.appendChild(p1); testDiv.appendChild(p2);",
+        "document.body.appendChild(testDiv);",
+        "var r = document.createRange();",
+        "r.setStart(p0.firstChild, 3); r.setEnd(p1.firstChild, 4);",
+        "r.deleteContents();",
+        "out.push('p0t=' + p0.firstChild.data + '/p1t=' + p1.firstChild.data",
+        "  + '/kids=' + testDiv.childNodes.length",
+        "  + '/sc=' + (r.startContainer === testDiv ? 'div' : 'other') + ':' + r.startOffset);",
+        "globalThis.__r268r = out.join('|');",
+    ].join("\n");
+    let out = sandbox.execute(&js).unwrap().value;
+    assert_eq!(
+        out, "p0t=Aab/p1t=mnop/kids=3/sc=div:1",
+        "R268 deleteContents cross-container CharData: sc tail trim + middle p-removal + ec head trim + collapse to (cac, refIdx+1)"
+    );
+}

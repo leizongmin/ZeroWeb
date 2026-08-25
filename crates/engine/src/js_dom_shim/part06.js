@@ -3681,6 +3681,133 @@
           _r267handled = true;
         })(this);
         if (_r267handled) return;
+        // R268（js-dom M4）：**跨容器泛化**（对齐 common.js myDeleteContents 的
+        // 树序算法）——sc/ec 不同容器（WPT Range-deleteContents 20-22/24/52/53,x：
+        // `[paras[0].firstChild,0,paras[1].firstChild,8]` 跨段、`[testDiv,1,
+        // paras[2].firstChild,5]` 深祖先、`[paras[3],1,comment,8]` 元素 sc + doc
+        // comment ec）。四段：sc 尾段 deleteData + sc 侧爬升路径右侧兄弟移除 +
+        // ec 头段 deleteData + ec 侧爬升路径左侧兄弟移除，塌缩 (reference 父,
+        // idx+1)。contained 判定以「父也在区间内的剔除」（nodesToRemove 语义）。
+        // https://dom.spec.whatwg.org/#dom-range-deletecontents
+        var _r268handled = false;
+        (function _r268CrossDel(self) {
+          var sc = self.startContainer, ec = self.endContainer;
+          if (!sc || !ec || sc === ec) return;
+          var sn = sc.nodeType | 0, en = ec.nodeType | 0;
+          // R268 首版教训：泛化 climb-tail 规则对 **element 端点**错（ec 是元素时
+          // 其子树是 partially-contained——本体保留仅内部 [0,eo) 删，而 sc 元素
+          // 尾部规则把 ec 子树一并删掉；ancestor 方向同理）。本切片先收敛到已验证
+          // 正确的形态：**双侧 CharData 端点 + 子树不相交**（WPT 20/21,x 跨段 text
+          // 形态）；element 端点/ancestor 方向走既有回落（R269 靶点——需按方向分支
+          // 的 contained 递归算法）。
+          var isCd2 = function (n) {
+            var t = n ? (n.nodeType | 0) : 0;
+            return t === 3 || t === 4 || t === 7 || t === 8;
+          };
+          if (!isCd2(sc) || !isCd2(ec)) return;
+          // cac：sc 祖先链上首个含 ec 的容器。
+          var chain = [];
+          var cur = sc, hops = 0;
+          while (cur && hops++ < 128) { chain.push(cur); cur = cur.parentNode; }
+          var cac = null;
+          for (var ci = 0; ci < chain.length; ci++) {
+            var anc = chain[ci], probe = ec, h2 = 0;
+            while (probe && h2++ < 128) {
+              if (probe === anc) { cac = anc; break; }
+              probe = probe.parentNode;
+            }
+            if (cac) break;
+          }
+          if (!cac) return;
+          var isCd = function (n) {
+            var t = n ? (n.nodeType | 0) : 0;
+            return t === 3 || t === 4 || t === 7 || t === 8;
+          };
+          var rmNode = function (n, parent) {
+            try {
+              if (typeof n.remove === 'function') n.remove();
+              if (n.parentNode != null && parent && typeof parent.removeChild === 'function') {
+                parent.removeChild(n);
+              }
+            } catch (_e) {
+              try { if (parent && typeof parent.removeChild === 'function') parent.removeChild(n); } catch (_e2) {}
+            }
+          };
+          // sc 侧：CharData 尾段；元素 sc 的 [so, end) 右侧子；逐级爬升移除右侧兄弟。
+          var so = self.startOffset | 0, eo = self.endOffset | 0;
+          if (isCd(sc) && typeof sc.deleteData === 'function') {
+            var sl = String(sc.data != null ? sc.data : '').length;
+            if (so < sl) { try { sc.deleteData(so, sl - so); } catch (_eR268a) {} }
+          } else if (sn === 1 || sn === 11) {
+            var sk = sc.childNodes || [];
+            for (var i2 = sk.length - 1; i2 >= so; i2--) rmNode(sk[i2], sc);
+          }
+          // sc 爬升：到 cac 前的每级，移除「本级路径子」的右侧兄弟（含本级尾部）。
+          // R268：cac 级跳过（右侧全删会误删 ec 路径子——cac 级中段由下方
+          // cac-middle 段统一处理 (sIdx, eIdx) 区间）。
+          var lvl = sc, lvlPar = sc.parentNode;
+          var hp = 0;
+          while (lvlPar && lvl !== cac && hp++ < 128) {
+            if (lvlPar === cac) break;
+            var pk = lvlPar.childNodes || [];
+            var pi = -1;
+            for (var pj = 0; pj < pk.length; pj++) if (pk[pj] === lvl) { pi = pj; break; }
+            if (pi < 0) break;
+            for (var q2 = pk.length - 1; q2 > pi; q2--) rmNode(pk[q2], lvlPar);
+            lvl = lvlPar;
+            lvlPar = lvlPar.parentNode;
+          }
+          // ec 侧：爬升移除左侧兄弟（不含路径子本身），到 cac 停（cac 级的中段
+          // 由 sc 侧的右侧移除覆盖——两路径在 cac 相遇）。
+          var elvl = ec, epar = ec.parentNode;
+          var hp2 = 0;
+          while (epar && elvl !== cac && hp2++ < 128) {
+            // R268：cac 级的中段（(sIdx, eIdx)）由下方 cac-middle 段统一处理——
+            // 本循环跳过 cac 级（此处左侧全删会误删 sc 路径子及其左侧内容）。
+            if (epar === cac) break;
+            var ek = epar.childNodes || [];
+            var ei2 = -1;
+            for (var ej = 0; ej < ek.length; ej++) if (ek[ej] === elvl) { ei2 = ej; break; }
+            if (ei2 < 0) break;
+            for (var q3 = ei2 - 1; q3 >= 0; q3--) rmNode(ek[q3], epar);
+            elvl = epar;
+            epar = epar.parentNode;
+          }
+          // cac 级中段（sc 路径子 与 ec 路径子 之间）——两侧爬升循环都在 cac 级
+          // break，中段统一在此移除（(sIdx, eIdx) 开区间）。
+          var ck = cac.childNodes || [];
+          var sIdx = -1, eIdx = -1;
+          var sRef = sc;
+          while (sRef && sRef.parentNode !== cac && sRef.parentNode) sRef = sRef.parentNode;
+          var eRef = ec;
+          while (eRef && eRef.parentNode !== cac && eRef.parentNode) eRef = eRef.parentNode;
+          for (var ck2 = 0; ck2 < ck.length; ck2++) {
+            if (sRef && ck[ck2] === sRef) sIdx = ck2;
+            if (eRef && ck[ck2] === eRef) eIdx = ck2;
+          }
+          if (sIdx >= 0 && eIdx > sIdx) {
+            for (var q4 = eIdx - 1; q4 > sIdx; q4--) rmNode(ck[q4], cac);
+          }
+          if (isCd(ec) && typeof ec.deleteData === 'function') {
+            if (eo > 0) { try { ec.deleteData(0, eo); } catch (_eR268b) {} }
+          } else if (en === 1 || en === 11) {
+            var ek2 = ec.childNodes || [];
+            for (var i3 = eo - 1; i3 >= 0; i3--) rmNode(ek2[i3], ec);
+          }
+          // 塌缩：reference node = sc 侧爬到 cac 的路径子（原位）；(其父= cac,
+          // idx+1)。sc 是 cac 的 CharData 后代时 reference = sc 的 cac 直接祖先。
+          var ref = sc;
+          while (ref && ref.parentNode && ref.parentNode !== cac) ref = ref.parentNode;
+          var rpk = cac.childNodes || [];
+          var rIdx = -1;
+          for (var rj = 0; rj < rpk.length; rj++) if (rpk[rj] === ref) { rIdx = rj; break; }
+          try {
+            if (rIdx >= 0) { self.setStart(cac, rIdx + 1); self.setEnd(cac, rIdx + 1); }
+            else { self.setStart(cac, 0); self.setEnd(cac, 0); }
+          } catch (_eR268c) {}
+          _r268handled = true;
+        })(this);
+        if (_r268handled) return;
         var kids = this._coveredChildren();
         if (kids) {
           for (var i = kids.length - 1; i >= 0; i--) {
