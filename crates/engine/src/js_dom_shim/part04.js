@@ -3838,6 +3838,20 @@
               // the node"：insertBefore(b, b) 返 b 且子列表不变——旧 R97 registry 分支
               // 会把 b 重复 splice 进 registry）。
               if (newNode === refNode) return newNode;
+              // R263：移动语义的 remove 段调整（spec pre-insert 的 adopt「先从旧父
+              // 摘除」——先于任何 wire 插入/registry 记账（oldParent/index 读摘除
+              // 前形态）；insert 段在插入完成后统一补）。
+              try { if (globalThis.__zwAdjustRangesForRemove) globalThis.__zwAdjustRangesForRemove(newNode); } catch (_eR263ir) {}
+              // R264 诊断注记：refNode 是 textEl 包装（无 selector 无 handle——
+              // textContent= 建的文本子）且 handle 父时，下方三个 wire 分支全不
+              // 命中 → 插入静默不入 registry（JS childNodes 视图不反映），调用方
+              // 随后的 common.js indexOf（`while (node != parent.childNodes[i]) i++`
+              // 无终止条件）在视图 miss 时**死循环**——Range-mutations-insertBefore
+              // 超时族（entry 7 `paras[0].insertBefore(paras[1], paras[0].firstChild)`
+              // 单点复现 90s 挂起，探针实证引擎 insertBefore 本身 0ms、PRE 视图
+              // 全正确、死循环在调用方 indexOf 读**插入后**视图）。修复方向：text
+              // ref 的 registry 插入（refNode.parentNode 经 textEl 注册表反查父
+              // handle，按融合视图位次 splice）——R265 靶点。
               // R2994：捕获实际入树的顶层节点（fragment flatten 前取其子）。
               var ceAdded;
               // DocumentFragment：flatten 子节点（refNode 非 null 时插到 ref 前，null 时 append）。
@@ -3927,6 +3941,16 @@
                 var cePconn = _ceParentConnected(sel, handle);
                 for (var ci = 0; ci < ceAdded.length; ci++) _ceApplyConn(ceAdded[ci], cePconn);
               }
+              // R263：insert 段调整（wire 插入 + registry 记账后调用——读插入后
+              // newParent/newIndex；与开头的 remove 段成对 = WPT testInsertBefore 序
+              // modifyForRemove + modifyForInsert）。fragment 形态逐子调整。
+              try {
+                if (globalThis.__zwAdjustRangesForInsert && ceAdded) {
+                  for (var _r263b = 0; _r263b < ceAdded.length; _r263b++) {
+                    globalThis.__zwAdjustRangesForInsert(ceAdded[_r263b]);
+                  }
+                }
+              } catch (_eR263ii) {}
             }
             return newNode;
           };
