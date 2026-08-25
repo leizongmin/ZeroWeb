@@ -2490,19 +2490,23 @@ fn test_surround_invalid_state_and_step_order_r210() {
             var t1 = '';
             try { r1.surroundContents(n1); } catch (e) { t1 = e.name; }
             if (t1 !== 'InvalidStateError') out.push('cross-container:' + t1);
-            // ② Document newParent → InvalidNodeTypeError。R239 后校验序为
-            // partial-check 先于 nodeType 检查（common.js mySurroundContents 同序
-            // ——WPT 20–22,x/29/31,x +30P 实证），故本场景须用**无部分包含**的
-            // range（单容器整选区 `[testDiv,0,testDiv,1]`）——跨容器 range 会先抛
-            // InvalidStateError（r210 首版用跨容器 range 的期望已过时，R254 修正；
-            // 与 layout 流 dbacb3fa7 的同款修复汇合）。)
+            // ② Document newParent + partial range → InvalidStateError
+            //（R239：partial 先于 nodeType；layout 流 dbacb3fa7 同款修正）。
             win.testNodeInput = 'document';
-            win.testRangeInput = '[testDiv, 0, testDiv, 1]';
+            win.testRangeInput = '[paras[0].firstChild, 0, paras[1].firstChild, 0]';
             win.run();
             var r2 = win.testRange, n2 = win.testNode;
             var t2 = '';
             try { r2.surroundContents(n2); } catch (e) { t2 = e.name; }
             if (t2 !== 'InvalidStateError') out.push('doc-newparent:' + t2);
+            // ②b R254 补：无部分包含 range + Document newParent →
+            // InvalidNodeTypeError（nodeType 校验在 partial 之后的独立验证）
+            win.testRangeInput = '[testDiv, 0, testDiv, 1]';
+            win.run();
+            var r2b = win.testRange;
+            var t2b = '';
+            try { r2b.surroundContents(n2); } catch (e) { t2b = e.name; }
+            if (t2b !== 'InvalidNodeTypeError') out.push('doc-newparent-clean:' + t2b);
             // ③ 单容器整选区（无部分包含）不抛 InvalidStateError（合法路径——
             // host 对该形态的既有行为不回归：collapsed/整元素选区不因新校验误伤）
             win.testNodeInput = 'paras[0]';
