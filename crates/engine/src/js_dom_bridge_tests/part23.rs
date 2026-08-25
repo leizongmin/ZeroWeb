@@ -2152,3 +2152,80 @@ globalThis.__r244out = out.join('|') + (globalThis.__r244err ? ' ||ERR[' + globa
         "R244 doc 容器 doctype contained surround：HRE 树不变 + 正常 wrap 零误伤 + 跨容器零误伤"
     );
 }
+
+#[test]
+fn r245_factory_parent_move_semantics() {
+    // R245（js-dom M4）：factory doc（implementation.createHTMLDocument）内部
+    // headEl/body 的 parentNode 是 getter-only accessor——fragment appendChild 的
+    // `c.parentNode = this` 赋值被吞（parentNode 恒指 factory docEl），后续把
+    // HEAD 移入元素时 `_zwMEl.appendChild` 的「从旧父摘除」调 factory
+    // docEl.removeChild(HEAD)（HEAD 已摘出）抛 NotFoundError 且未包裹直接传播
+    // （micro-probe 实证：p1.appendChild(frag-with-HEAD) THREW NotFoundError）。
+    // 修两件：① factory fragment appendChild 的父链经 defineProperty 强写
+    // （getter-only 遮蔽）；② _zwMEl appendChild 的摘除 try/catch + 入树父链
+    // defineProperty 强写（spec `concept-node-pre-insert` 的 adopt 摘除幂等语义）。
+    // https://dom.spec.whatwg.org/#concept-node-pre-insert
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><div id=\"t\">x</div></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+
+    let out = sandbox
+        .execute(
+            r#"
+var out = [];
+var fd = document.implementation.createHTMLDocument('');
+var bodyF = fd.body;
+var fp1 = fd.createElement('p');
+fp1.appendChild(fd.createTextNode('Efghijkl'));
+bodyF.appendChild(fp1);
+var deF = fd.documentElement;
+var frag = fd.createDocumentFragment();
+// HEAD 移入 frag（extract 的 contained-children 步同款）
+frag.appendChild(deF.childNodes[0]);
+out.push('headP:' + (frag.childNodes[0].parentNode && frag.childNodes[0].parentNode.nodeName));
+// 再移入元素（surround 步骤 5 同款）——旧版在此抛 NotFoundError
+try { fp1.appendChild(frag); out.push('move:ok:' + fp1.childNodes.length); }
+catch (e) { out.push('move:THREW:' + ((e && e.name) || String(e))); }
+// 17,4 形态端到端：docEl 区间 surround 同 doc 元素 newParent
+var fd2 = document.implementation.createHTMLDocument('');
+var b2 = fd2.body;
+var q2 = fd2.createElement('p');
+q2.appendChild(fd2.createTextNode('Efghijkl'));
+b2.appendChild(q2);
+var d2 = fd2.documentElement;
+var r2 = fd2.createRange();
+r2.setStart(d2, 0); r2.setEnd(d2, 1);
+var oc2;
+try { r2.surroundContents(q2); oc2 = 'NO_THROW'; }
+catch (e) { oc2 = 'THREW:' + ((e && e.name) || String(e)); }
+function sig(n) {
+  var s = [];
+  var ks = n.childNodes || [];
+  for (var i = 0; i < ks.length; i++) s.push((ks[i].nodeName || ks[i].nodeType) + '(' + (ks[i].childNodes ? ks[i].childNodes.length : 0) + ')');
+  return s.join(',');
+}
+out.push('surround:' + oc2 + ',docEl:' + sig(d2) + ',q2p:' + (q2.parentNode && q2.parentNode.nodeName));
+globalThis.__r245out = out.join('|');
+"#,
+        )
+        .unwrap();
+    let out = sandbox.execute("globalThis.__r245out").unwrap().value;
+    assert_eq!(
+        out,
+        "headP:#document-fragment|move:ok:2|surround:NO_THROW,docEl:P(1),BODY(0),q2p:HTML",
+        "R245 factory parentNode getter-only 移动语义：fragment 父链强写 + 摘除守卫"
+    );
+}

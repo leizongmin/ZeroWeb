@@ -5986,8 +5986,23 @@
         for (var fi225 = 0; fi225 < fc225.length; fi225++) node.appendChild(fc225[fi225]);
         return c;
       }
-      if (c && c.parentNode) c.parentNode.removeChild(c);
-      node.childNodes.push(c); c.parentNode = node;
+      // R245（js-dom M4）：**摘除守卫 + 父链强写**——旧父的 removeChild 可能抛
+      // NotFoundError（c 的 parentNode 是 factory headEl/body 等 getter-only
+      // accessor 形态：fragment appendChild 的 `c.parentNode = this` 赋值被吞，
+      // parentNode 恒指 factory docEl，而 c 已从 docEl.childNodes 摘出——
+      // factory docEl.removeChild 按 identity 找不到 → NotFoundError 未包直接
+      // 传播；WPT Range-surroundContents 17,4/11/13 sim NOT_FOUND_ERR 根因）。
+      // 两层：① 摘除 try/catch 吞错（移动语义只求尽力摘除，旧父已无此子不视为
+      // 错误——与 spec pre-insert 的 adopt 摘除幂等语义一致）；② 入树父链经
+      // defineProperty 强写（getter-only 遮蔽，_r223SetParent 同款）。
+      // https://dom.spec.whatwg.org/#concept-node-pre-insert
+      if (c && c.parentNode) { try { c.parentNode.removeChild(c); } catch (_eR245rm) {} }
+      node.childNodes.push(c);
+      try {
+        Object.defineProperty(c, 'parentNode', {
+          value: node, writable: true, configurable: true,
+        });
+      } catch (_eR245dp) { try { c.parentNode = node; } catch (_eR245as) {} }
       if (c && c.__zwHandle) {
         if (typeof _zwUnmarkRemovedHandle === 'function') _zwUnmarkRemovedHandle(c.__zwHandle);
         // R180：plain 父反链（对偶于 handle 父的 _recordHandleChild）——只在无既有链时
@@ -8004,7 +8019,18 @@
               return c;
             }
             if (c && c.parentNode && c.parentNode.removeChild) { try { c.parentNode.removeChild(c); } catch (_e) {} }
-            if (c) { c.parentNode = this; this.childNodes.push(c); if (c.nodeType === 1) this.children.push(c); }
+            // R245（js-dom M4）：父链 defineProperty 强写——factory headEl/body 的
+            // parentNode 是 getter-only accessor，裸赋值 `c.parentNode = this` 被吞使
+            // 后续 append 目标的「从旧父摘除」读到 stale docEl（NotFoundError 链源头，
+            // 见 _zwMEl appendChild 的 R245 注释）。
+            if (c) {
+              try {
+                Object.defineProperty(c, 'parentNode', {
+                  value: this, writable: true, configurable: true,
+                });
+              } catch (_eR245f) { try { c.parentNode = this; } catch (_eR245f2) {} }
+              this.childNodes.push(c); if (c.nodeType === 1) this.children.push(c);
+            }
             return c;
           },
           // R218（js-dom M4）：insertBefore（spec `dom-node-pre-insert`——WPT
