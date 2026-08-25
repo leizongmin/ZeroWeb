@@ -1925,3 +1925,67 @@ globalThis.__r241out = out.join('|');
         "R241 move 兜底：frag 得中段子 + 头切片克隆，sc 只剩 remainder，无双份"
     );
 }
+
+#[test]
+fn r242_element_ec_ancestor_extract() {
+    // R242（js-dom M4）：**sc 元素祖先 + ec 元素直接子 + 双侧 clean 边界**（
+    // `[testDiv,2,paras[4],1]` 形态）的 extractContents——contained 中段子本体
+    // 移入 frag（R241 move 兜底）+ ec shallow clone 承接 [0,eo) 子 + 塌缩
+    // (sc,so)。surround 全序断言由 WPT 24,x 承载（harness 克隆树的 partial
+    // 检查遍历盲区使 surround 成功路径可观测；engine 沙箱树形态完好时 spec
+    // 正确行为是 partial 检查先抛 InvalidStateError）。
+    // https://dom.spec.whatwg.org/#dom-range-extractcontents
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><div id=\"t\">x</div></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+
+    sandbox
+        .execute(
+            r#"
+var out = [];
+var d242 = document.createElement('div');
+for (var q = 0; q < 4; q++) {
+  var p = document.createElement('p');
+  p.appendChild(document.createTextNode('T' + q + 'x'));
+  p.appendChild(document.createTextNode('T' + q + 'y'));
+  d242.appendChild(p);
+}
+document.body.appendChild(d242);
+var r242 = document.createRange();
+r242.setStart(d242, 1); r242.setEnd(d242.childNodes[3], 1);
+var frag242 = r242.extractContents();
+function sig242(n) {
+  var s = [];
+  for (var i = 0; i < n.childNodes.length; i++) {
+    var k = n.childNodes[i];
+    s.push((k.nodeName || k.nodeType) + (k.childNodes && k.childNodes.length ? '{' + k.childNodes.length + '}' : (k.data != null ? '"' + k.data + '"' : '')));
+  }
+  return s.join(',');
+}
+out.push('div:' + sig242(d242));
+out.push('frag:' + sig242(frag242));
+out.push('bound:' + r242.startOffset + ',' + r242.endOffset);
+globalThis.__r242out = out.join('|');
+"#,
+        )
+        .unwrap();
+    let out = sandbox.execute("globalThis.__r242out").unwrap().value;
+    assert_eq!(
+        out,
+        "div:P{2},P{1}|frag:P{2},P{2},P{1}|bound:1,1",
+        "R242 元素 ec 祖先 extract：中段本体移动 + shallow clone 承接首子 + 塌缩"
+    );
+}

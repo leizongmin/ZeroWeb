@@ -3799,6 +3799,64 @@
         // https://dom.spec.whatwg.org/#dom-range-extractcontents
         else if (this.startContainer !== this.endContainer
           && this.startContainer.nodeType === 1
+          && this.endContainer.nodeType === 1
+          && this.endContainer.parentNode === this.startContainer
+          && (this.endOffset | 0) <= (this.endContainer.childNodes
+            ? this.endContainer.childNodes.length : 0)
+          && (this.startOffset | 0) <= this.startContainer.childNodes.indexOf(this.endContainer)) {
+          // R242（js-dom M4）：**sc 元素祖先 + ec 元素直接子 + 双侧 clean 边界**
+          //（so 在 sc 的子边界、eo 在 ec 的子边界——`[testDiv,2,paras[4],1]` 形态，
+          // common.js myExtractContents 的 ancestor 分支：contained = sc 的
+          // [so, ecIdx) 子**本体移入 frag**；last partially contained = ec（元素）
+          // → shallow clone 入 frag + 子区间 [ec,0,ec,eo] 递归提取（ec 的 [0,eo)
+          // 子移入 clone）；range 塌缩 (sc, so)。旧版该形态 defer 空转（WPT
+          // Range-surroundContents 24,x assert_unreached 32F 簇）。中段移动复用
+          // R241 的 wrapper 域 move 兜底（append 后原件残留则强制摘除）。
+          // https://dom.spec.whatwg.org/#dom-range-extractcontents
+          var _r242sc = this.startContainer;
+          var _r242ec = this.endContainer;
+          var _r242kids = _r242sc.childNodes || [];
+          var _r242ecIdx = _r242kids.indexOf(_r242ec);
+          var _r242so = this.startOffset | 0;
+          var _r242eo = this.endOffset | 0;
+          var _r242moveIn = function (kid, into) {
+            try { into.appendChild(kid); } catch (_eR242a) {}
+            try {
+              var still = _r242kids.indexOf(kid);
+              if (still >= 0 && typeof _r242sc.removeChild === 'function') {
+                _r242sc.removeChild(kid);
+              }
+            } catch (_eR242r) {}
+          };
+          if (_r242ecIdx > _r242so) {
+            var _r242snap = _r242kids.slice(_r242so, _r242ecIdx);
+            for (var _r242i = 0; _r242i < _r242snap.length; _r242i++) {
+              if (_r242snap[_r242i]) _r242moveIn(_r242snap[_r242i], f);
+            }
+          }
+          try {
+            var _r242clone = _r242ec.cloneNode(false);
+            f.appendChild(_r242clone);
+            var _r242ekids = _r242ec.childNodes || [];
+            if (_r242eo > 0) {
+              var _r242esnap = _r242ekids.slice(0, _r242eo);
+              for (var _r242j = 0; _r242j < _r242esnap.length; _r242j++) {
+                var _r242k = _r242esnap[_r242j];
+                if (!_r242k) continue;
+                try { _r242clone.appendChild(_r242k); } catch (_eR242c) {}
+                try {
+                  var still2 = _r242ekids.indexOf(_r242k);
+                  if (still2 >= 0 && typeof _r242ec.removeChild === 'function') {
+                    _r242ec.removeChild(_r242k);
+                  }
+                } catch (_eR242r2) {}
+              }
+            }
+          } catch (_eR242cl) {}
+          this.setStart(_r242sc, _r242so);
+          this.setEnd(_r242sc, _r242so);
+        } else if (this.startContainer !== this.endContainer
+          && this.startContainer.nodeType === 1
           && (this.endContainer.nodeType === 3 || this.endContainer.nodeType === 4
             || this.endContainer.nodeType === 7 || this.endContainer.nodeType === 8)
           && this.endContainer.parentNode === this.startContainer) {
@@ -4278,6 +4336,21 @@
               // https://dom.spec.whatwg.org/#dom-range-surroundcontents
               this.extractContents();
               this.insertNode(newParent);
+            } else if (kids === null
+              && this.startContainer !== this.endContainer
+              && this.startContainer.nodeType === 1
+              && this.endContainer.nodeType === 1
+              && this.endContainer.parentNode === this.startContainer
+              && (this.endOffset | 0) <= (this.endContainer.childNodes
+                ? this.endContainer.childNodes.length : 0)
+              && (this.startOffset | 0) <= this.startContainer.childNodes.indexOf(this.endContainer)) {
+              // R242（js-dom M4）：**sc 元素祖先 + ec 元素直接子（clean 边界）**
+              // 的 leaf-newParent（WPT 24,x Text/Comment 型 newParent——sim 序
+              // 步骤 3 extract（中段子移出 + ec shallow clone 承接）→ 步骤 4
+              // insertNode → 步骤 5 抛 HRE；旧版直接抛使树保留原文）。
+              // https://dom.spec.whatwg.org/#dom-range-surroundcontents
+              this.extractContents();
+              this.insertNode(newParent);
             } else if (kids !== null && kids.length > 0) {
               // R235（js-dom M4）：**元素容器含覆盖子**的 leaf-newParent——
               // sim 序同样是 extract 先行（covered 子移出容器）再 insertNode
@@ -4381,6 +4454,38 @@
                 }
               }
             } catch (_eR236s) {}
+            return;
+          }
+          // R242（js-dom M4）：**sc 元素祖先 + ec 元素直接子 + clean 边界**的
+          // surround（24,x `[testDiv,2,paras[4],1]`——extractContents 的 R242
+          // 分支承担树变更：中段子本体移入 frag + ec shallow clone 承接
+          // [0,eo) 子；surround 侧同 sim 全序：extract → 清 newParent 子 →
+          // insertNode 到 (sc, so) → appendChild(frag) → selectNode）。
+          // https://dom.spec.whatwg.org/#dom-range-surroundcontents
+          if (this.startContainer !== this.endContainer
+            && this.startContainer.nodeType === 1
+            && this.endContainer.nodeType === 1
+            && this.endContainer.parentNode === this.startContainer
+            && (this.endOffset | 0) <= (this.endContainer.childNodes
+              ? this.endContainer.childNodes.length : 0)
+            && (this.startOffset | 0) <= this.startContainer.childNodes.indexOf(this.endContainer)) {
+            var _r242frag2 = this.extractContents();
+            var _r242clr2 = 0;
+            while (newParent.childNodes && newParent.childNodes.length && _r242clr2++ < 256) {
+              try { newParent.removeChild(newParent.childNodes[0]); } catch (_eR242rm) { break; }
+            }
+            this.insertNode(newParent);
+            try { newParent.appendChild(_r242frag2); } catch (_eR242a2) {}
+            try {
+              var _r242np2 = newParent.parentNode;
+              if (_r242np2 && _r242np2.childNodes) {
+                var _r242ni2 = _r242np2.childNodes.indexOf(newParent);
+                if (_r242ni2 >= 0) {
+                  this.setStart(_r242np2, _r242ni2);
+                  this.setEnd(_r242np2, _r242ni2 + 1);
+                }
+              }
+            } catch (_eR242s2) {}
             return;
           }
           return; // 其余跨容器/文本切片 defer
