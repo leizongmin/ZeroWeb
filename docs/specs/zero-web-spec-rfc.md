@@ -638,9 +638,11 @@
 
 ### 8.1 现状分析（As-Is）
 
-**当前架构**: M1 里程碑执行中。Cargo workspace 已建立，包含 16 个 crate 骨架 + 2 个应用入口，其中 `render-foundation` 和 `host-runtime` 已有实质性实现。wgpu GPU 渲染后端已在 `render-foundation` 中实现，`host-runtime` 提供 `run_with_window()` 用于 GPU surface 创建，Demo 二进制已切换到 wgpu GPU 渲染路径。
+**当前架构**（截至 2026-08-26）: Cargo workspace 已扩展到 30 个 member（20 个库 crate、7 个应用入口、2 个测试工具、1 个开发工具）。核心内核（`dom` / `css-parser` / `style-system` / `layout-engine` / `engine` / `render-foundation` / `host-runtime` / `net` / `security` / `storage` / `protocol` / `canvas` / `wasm-sandbox` / `script-sandbox` / `page-runtime` / `webview`）均有实质实现；产品层（`apps/browser` 桌面入口 + headless / remote debugging、`apps/renderer` 多进程渲染、`apps/image-decoder` 图像解码进程、`apps/compositor` 合成器进程、`apps/webdriver` WebDriver 服务、`apps/android-browser` Android M0 bootstrap）已打通。当前主线为 P1b V8 原生 DOM 绑定（S5 customElements/Web Components 里程碑已完成）与 js-dom M4 兼容性收口；渲染兼容性（WPT/CSSWG reftest 对齐 Chromium Oracle）自 2026-08-09 字体栈重建 RFC 获批后恢复主动实施。详见 [docs/architecture.md](../architecture.md) 与 [docs/goal/zero-web/master.md](../goal/zero-web/master.md)。
 
-**代码规模**: 3,616 行 Rust 源代码（32 个 `.rs` 文件），69 个单元测试，5 个 criterion 基准测试，零 clippy 警告。
+**代码规模**（2026-08-25 静态统计）: 约 16,888 个 `#[test]`（v8 feature 全量全绿），wpt-runner 导入上游 WPT reftest 约 9,967 个 + WPT testharness 常驻断言集（`tests/wpt-runner`）；criterion 基准 + `make bench-gate` 性能门禁（perf-gate 基线/趋势回写 main）；`cargo clippy --workspace --all-targets -- -D warnings` 全绿（CI 强制）。
+
+> 以下「已有资产 / 尚未实现 / OmniTerm 资产清单 / 剩余技术差距」为 2026-05-30 M1 建立时的设计期快照，保留作 RFC 演进记录；当前实现状态以仓库 README、docs/architecture.md 与各 goal 控制面为准。
 
 **已有资产**:
 
