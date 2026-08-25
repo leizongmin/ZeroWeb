@@ -3832,6 +3832,19 @@
               var _r240k = _r240snap[_r240i];
               if (!_r240k) continue;
               try { f.appendChild(_r240k); } catch (_eR240m) {}
+              // R241（js-dom M4）：**本体未离场时强制摘除**——WPT iframe 的
+              // wrapper 域子（setupRangeTests 经 querySelector("#test") 返
+              // wrapper，append 落 wrapper 列表）对 frag 的 appendChild 是
+              // clone 语义而非 move，原件残留 sc 使树出现**双份**（R241-probe
+              // 实证 DIV=[newParent[拷贝…], 原件…]）。append 后若原件仍在
+              // sc.childNodes 则 removeChild 强制离场（move 语义兜底）。
+              // https://dom.spec.whatwg.org/#dom-range-extractcontents
+              try {
+                var _r241still = _r236kids.indexOf(_r240k);
+                if (_r241still >= 0 && typeof _r236scNode.removeChild === 'function') {
+                  _r236scNode.removeChild(_r240k);
+                }
+              } catch (_eR241r) {}
             }
           }
           var _r236eo = Math.max(0, Math.min(this.endOffset | 0,

@@ -1865,3 +1865,63 @@ globalThis.__r240out = out.join('|');
         "R240 祖先 extract：中段子本体移入 frag（快照防滑位）+ ec 削头 remainder 留树"
     );
 }
+
+#[test]
+fn r241_extract_move_semantics_on_clone_append() {
+    // R241（js-dom M4）：祖先 extract 的 contained 子移动 **move 语义兜底**——
+    // WPT iframe 的 wrapper 域子对 fragment 的 appendChild 是 clone 语义
+    // （R241-probe 实证树双份：newParent[拷贝…] + 原件残留），append 后原件
+    // 仍在 sc.childNodes 时 removeChild 强制离场（spec containedChildren 是
+    // move）。断言：extract 后 sc 只剩 ec remainder、frag 含中段子、无残留。
+    // https://dom.spec.whatwg.org/#dom-range-extractcontents
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><div id=\"t\">x</div></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+
+    sandbox
+        .execute(
+            r#"
+var out = [];
+// 主文档形态（append 是 move）——不因兜底误伤：无双份。
+var d241 = document.createElement('div');
+var p0 = document.createElement('p'); p0.appendChild(document.createTextNode('Ab'));
+var p1 = document.createElement('p'); p1.appendChild(document.createTextNode('Ij'));
+var cm = document.createComment('bet soup?');
+d241.appendChild(p0); d241.appendChild(p1); d241.appendChild(cm);
+document.body.appendChild(d241);
+var r241 = document.createRange();
+r241.setStart(d241, 0); r241.setEnd(cm, 5);
+var frag = r241.extractContents();
+function cnt(n, name) {
+  var c = 0;
+  for (var i = 0; i < n.childNodes.length; i++) {
+    if ((n.childNodes[i].nodeName || '') === name) c++;
+  }
+  return c;
+}
+out.push('divP:' + cnt(d241, 'P') + ',divCm:' + cnt(d241, '#comment'));
+out.push('fragP:' + cnt(frag, 'P') + ',fragCm:' + cnt(frag, '#comment'));
+out.push('cm-data:' + cm.data);
+globalThis.__r241out = out.join('|');
+"#,
+        )
+        .unwrap();
+    let out = sandbox.execute("globalThis.__r241out").unwrap().value;
+    assert_eq!(
+        out, "divP:0,divCm:1|fragP:2,fragCm:1|cm-data:oup?",
+        "R241 move 兜底：frag 得中段子 + 头切片克隆，sc 只剩 remainder，无双份"
+    );
+}
