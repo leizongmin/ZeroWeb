@@ -6372,6 +6372,39 @@
         } else if (p && typeof p.appendChild === 'function') {
           try { p.appendChild(nt); } catch (_eR209i2) {}
         }
+        // R261（js-dom M4）：**split 的 live-range 边界更新**（spec
+        // `dom-text-splittext` 两段——WPT Range-mutations.js testSplitText
+        // 逐条引证）。① replace-data 段（split 等价 replaceData(o, len−o, '')）：
+        // 边界在 (node, off) 且 o < off ≤ len → 收到 o；② split 段——**仅
+        // parent 非空**（spec「If parent is not null, run these substeps」）：
+        // 原始 off > o 的边界迁到 (nt, off−o)（detached 节点无此段——旧版
+        // 无条件迁移使 WPT「Wrong end container expected [original]」12F 残余）。
+        // https://dom.spec.whatwg.org/#concept-text-split
+        try {
+          var _r261regs = globalThis.__zwLiveRanges;
+          if (_r261regs && _r261regs.length) {
+            for (var _r261i = 0; _r261i < _r261regs.length; _r261i++) {
+              var _r261rg = _r261regs[_r261i];
+              if (!_r261rg) continue;
+              // WPT 语义（testSplitText 逐字）：split 段的判定用 **originalOffset**
+              //（replace-data 收缩前的值），迁移值 = original − o——两段不是链式。
+              if (_r261rg.startContainer === n) {
+                var _r261so0 = _r261rg._startOffsetBase != null ? _r261rg._startOffsetBase : _r261rg.startOffset;
+                var _r261so = _r261so0;
+                if (_r261so > o && _r261so <= cur.length) _r261so = o;
+                if (p && _r261so0 > o) { _r261rg.startContainer = nt; _r261so = _r261so0 - o; }
+                _r261rg._startOffsetBase = _r261so;
+              }
+              if (_r261rg.endContainer === n) {
+                var _r261eo0 = _r261rg._endOffsetBase != null ? _r261rg._endOffsetBase : _r261rg.endOffset;
+                var _r261eo = _r261eo0;
+                if (_r261eo > o && _r261eo <= cur.length) _r261eo = o;
+                if (p && _r261eo0 > o) { _r261rg.endContainer = nt; _r261eo = _r261eo0 - o; }
+                _r261rg._endOffsetBase = _r261eo;
+              }
+            }
+          }
+        } catch (_eR261sr) {}
         return nt;
       };
     }

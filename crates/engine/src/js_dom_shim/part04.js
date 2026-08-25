@@ -1531,6 +1531,38 @@
                 _mo_notify(null, _r196PH, { type: 'childList', addedNodes: [_r196Wrap], removedNodes: [] });
               }
             } catch (_e196) {}
+            // R261（js-dom M4）：split 的 live-range retarget（spec concept-text-split
+            // 末段——同 part03 域；proxy 域边界容器以 handle 匹配：单次 get trap 产物
+            // identity 不稳，比较 _zwNodeParent 键与 startContainer 的 handle）。
+            try {
+              var _r261regs4 = globalThis.__zwLiveRanges;
+              if (_r261regs4 && _r261regs4.length) {
+                for (var _r261i4 = 0; _r261i4 < _r261regs4.length; _r261i4++) {
+                  var _r261rg4 = _r261regs4[_r261i4];
+                  if (!_r261rg4) continue;
+                  var _r261isNode4 = function (cont) {
+                    if (!cont) return false;
+                    if (cont === self4261) return true;
+                    try { return typeof cont.__zwHandle === 'string' && cont.__zwHandle === handle; } catch (e4261) { return false; }
+                  };
+                  var self4261 = _makeProxy(sel, handle);
+                  if (_r261isNode4(_r261rg4.startContainer)) {
+                    var _r261so04 = _r261rg4._startOffsetBase != null ? _r261rg4._startOffsetBase : _r261rg4.startOffset;
+                    var _r261so4 = _r261so04;
+                    if (_r261so4 > o && _r261so4 <= cur.length) _r261so4 = o;
+                    if (_r196PH && _r261so04 > o) { _r261rg4.startContainer = nt; _r261so4 = _r261so04 - o; }
+                    _r261rg4._startOffsetBase = _r261so4;
+                  }
+                  if (_r261isNode4(_r261rg4.endContainer)) {
+                    var _r261eo04 = _r261rg4._endOffsetBase != null ? _r261rg4._endOffsetBase : _r261rg4.endOffset;
+                    var _r261eo4 = _r261eo04;
+                    if (_r261eo4 > o && _r261eo4 <= cur.length) _r261eo4 = o;
+                    if (_r196PH && _r261eo04 > o) { _r261rg4.endContainer = nt; _r261eo4 = _r261eo04 - o; }
+                    _r261rg4._endOffsetBase = _r261eo4;
+                  }
+                }
+              }
+            } catch (_eR261sr4) {}
             return nt;
           };
         }

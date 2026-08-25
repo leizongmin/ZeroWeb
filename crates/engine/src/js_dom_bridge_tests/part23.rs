@@ -2726,3 +2726,56 @@ globalThis.__r260r = out.join('|');
     );
 }
 
+
+
+#[test]
+fn r261_splittext_range_retarget() {
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let mut sandbox = V8Sandbox::with_config(zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    })
+    .unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><div id=\"t\">x</div></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+    let out = sandbox
+        .execute(
+            r#"
+var out = [];
+// parented split: boundary retargets to (new tail node, off - o)
+var p = document.createElement('p');
+var t = document.createTextNode('Abcdefgh');
+p.appendChild(t);
+document.body.appendChild(p);
+var r1 = document.createRange();
+r1.setStart(t, 1);
+r1.setEnd(t, 3);
+var tail = t.splitText(1);
+out.push('parented=' + (r1.startContainer === tail ? 'tail' : (r1.startContainer === t ? 'orig' : 'other'))
+  + ':' + r1.startOffset + '/' + (r1.endContainer === tail ? 'tail' : 'orig') + ':' + r1.endOffset);
+// detached split: boundary stays on original, shrink-to-offset per replace-data
+var t2 = document.createTextNode('Abcdefgh');
+var r2 = document.createRange();
+r2.setStart(t2, 1);
+r2.setEnd(t2, 3);
+var tail2 = t2.splitText(1);
+out.push('detached=' + (r2.startContainer === t2 ? 'orig' : 'other') + ':' + r2.startOffset
+  + '/' + (r2.endContainer === t2 ? 'orig' : 'other') + ':' + r2.endOffset);
+globalThis.__r261r = out.join('|');
+"#,
+        )
+        .unwrap();
+    let out = sandbox.execute("globalThis.__r261r").unwrap().value;
+    assert_eq!(
+        out, "parented=orig:1/tail:2|detached=orig:1/orig:1",
+        "R261 splitText live-range retarget：so=1 不>o=1 保持 (orig,1)；eo=3>1 → (tail, 3-1=2)（split 段判 original offset）；detached 无 split 段仅 replace-data 收缩（eo 3→1）"
+    );
+}
