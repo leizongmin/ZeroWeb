@@ -3046,3 +3046,54 @@ globalThis.__r266r = out.join('|');
         "R266 deleteContents 同节点 CharData（detached）放宽：deleteData 削区间 + collapse（R228 extract 同款——sc===ec 无需父容器）"
     );
 }
+
+#[test]
+fn r267_deletecontents_ancestor_chardata() {
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let mut sandbox = V8Sandbox::with_config(zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    })
+    .unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><div id=\"t\">x</div></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+    let js = [
+        "var out = [];",
+        // 23,x form: sc = p (element), ec = its direct text child; so=0, eo=6 of "Aabcdef" -> remainder "ef"
+        "var p = document.createElement('p');",
+        "p.textContent = 'Aabcdef';",
+        "document.body.appendChild(p);",
+        "var t = p.firstChild;",
+        "var r = document.createRange();",
+        "r.setStart(p, 0); r.setEnd(t, 4);",
+        "r.deleteContents();",
+        "out.push('data=' + t.data + '/kids=' + p.childNodes.length",
+        "  + '/sc=' + (r.startContainer === p ? 'p' : 'other') + ':' + r.startOffset);",
+        // contained middle children: [p2, 0, t2, 2] with leading span removed
+        "var p2 = document.createElement('p');",
+        "var sp = document.createElement('span');",
+        "p2.appendChild(sp);",
+        "var t2 = document.createTextNode('tail');",
+        "p2.appendChild(t2);",
+        "document.body.appendChild(p2);",
+        "var r2 = document.createRange();",
+        "r2.setStart(p2, 0); r2.setEnd(t2, 2);",
+        "r2.deleteContents();",
+        "out.push('kids2=' + p2.childNodes.length + '/data2=' + t2.data + '/so2=' + r2.startOffset);",
+        "globalThis.__r267r = out.join('|');",
+    ].join("\n");
+    let out = sandbox.execute(&js).unwrap().value;
+    let expected = "data=def/kids=1/sc=p:0|kids2=1/data2=il/so2=0";
+    assert_eq!(
+        out, expected,
+        "R267 deleteContents ancestor branch: ec head deleteData + contained middle removal + collapse to (sc, so)"
+    );
+}

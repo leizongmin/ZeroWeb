@@ -3636,6 +3636,51 @@
             return;
           }
         }
+        // R267（js-dom M4）：**祖先元素容器 + 直接 CharData 子**的 delete 侧
+        //（R236 extract 的 ancestor 分支对称缺口）——sc 是 ec 的父元素且 ec 是
+        // sc 的直接 text/comment/PI/CDATA 子（WPT Range-deleteContents 23,x
+        // `[paras[0],0,paras[0].firstChild,7]`：期望削 text 头部 [0,eo) 保留
+        // remainder "̈efgh\n" + contained 中段子移除 + 塌缩 (sc,so)；旧版落
+        // _coveredChildren 融合视图空转——text 头部残留）。spec 序：
+        // first-partially（ec 头部）deleteData + contained children 移除 +
+        // collapse（delete 无 start 尾段——sc 自身是容器，so 之前的子不在区间）。
+        // https://dom.spec.whatwg.org/#dom-range-deletecontents
+        var _r267handled = false;
+        (function _r267AncestorDel(self) {
+          var sc = self.startContainer, ec = self.endContainer;
+          var isCd = function (n) {
+            return !!n && (n.nodeType === 3 || n.nodeType === 4
+              || n.nodeType === 7 || n.nodeType === 8);
+          };
+          if (!sc || sc === ec || !isCd(ec) || ec.parentNode !== sc) return;
+          if (!sc.childNodes || typeof ec.deleteData !== 'function') return;
+          var so = self.startOffset | 0;
+          var eo = self.endOffset | 0;
+          // contained children：sc 的直接子中 [so, ecIdx) 区间全含者（逆序移除保索引）。
+          var kidsNow = sc.childNodes;
+          var ecIdx = -1;
+          for (var i = 0; i < kidsNow.length; i++) if (kidsNow[i] === ec) { ecIdx = i; break; }
+          if (ecIdx < 0) return;
+          try { ec.deleteData(0, eo); } catch (_eR267d) {}
+          for (var k = ecIdx - 1; k >= so; k--) {
+            var c267 = kidsNow[k];
+            if (!c267) continue;
+            // R267：remove() 优先 + 结果校验兜底（泛型 Node.prototype.remove 对
+            // 部分域形态静默失败——探针实证 post-parent 不变；removeChild 直调
+            // 走 part04 域分发更可靠）。
+            try {
+              if (typeof c267.remove === 'function') c267.remove();
+              if (c267.parentNode != null && typeof sc.removeChild === 'function') {
+                sc.removeChild(c267);
+              }
+            } catch (_eR267r) {
+              try { sc.removeChild(c267); } catch (_eR267r2) {}
+            }
+          }
+          try { self.setStart(sc, so); self.setEnd(sc, so); } catch (_eR267c) {}
+          _r267handled = true;
+        })(this);
+        if (_r267handled) return;
         var kids = this._coveredChildren();
         if (kids) {
           for (var i = kids.length - 1; i >= 0; i--) {
