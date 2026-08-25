@@ -2561,3 +2561,57 @@ globalThis.__r257r = out.join('|');
         "R257 self-surround HRE（先清子后判 inclusive ancestor）+ detachedDiv 父 newParent 成功 wrap（清子断链后不误抛）"
     );
 }
+
+#[test]
+fn r258_selectnode_sc_fallback_endoffset() {
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let mut sandbox = V8Sandbox::with_config(zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    })
+    .unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><div id=\"t\">x</div></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+    let out = sandbox
+        .execute(
+            r#"
+var out = [];
+// R258 regression: 30,x shape — newParent itself inside covered children of
+// [foreignDoc.body,0,foreignTextNode,N]. Extract moves newParent into frag2
+// (parentNode -> fragment); the selectNode tail must fall back to sc's
+// childNodes view so endOffset lands at idx+1 (WPT "expected 1 got 0").
+var foreignDoc = document.implementation.createHTMLDocument('');
+var foreignPara1 = foreignDoc.createElement('p');
+foreignPara1.appendChild(foreignDoc.createTextNode('Efghijkl'));
+foreignDoc.body.appendChild(foreignPara1);
+var foreignTextNode = foreignDoc.createTextNode('I admit that I harbor doubts about whether we really need so many things to test, but it is too late to stop now.');
+foreignDoc.body.appendChild(foreignTextNode);
+var fb = foreignDoc.body;
+var range = foreignDoc.createRange();
+range.setStart(fb, 0);
+range.setEnd(foreignTextNode, 36);
+try {
+  range.surroundContents(foreignPara1);
+  out.push('noThrow');
+} catch (e) { out.push('throw:' + e.name); }
+out.push('so=' + range.startOffset + ' eo=' + range.endOffset);
+out.push('scIsFb=' + (range.startContainer === fb));
+out.push('fbKids=' + fb.childNodes.length + ':k0=' + fb.childNodes[0].nodeName);
+globalThis.__r258r = out.join('|');
+"#,
+        )
+        .unwrap();
+    let out = sandbox.execute("globalThis.__r258r").unwrap().value;
+    assert_eq!(
+        out, "noThrow|so=0 eo=1|scIsFb=true|fbKids=2:k0=P",
+        "R258 selectNode 落位 sc 回退：newParent 自身被 extract 移入 frag 后，尾部落位经 sc 的 childNodes 视图回退（endOffset=idx+1）"
+    );
+}

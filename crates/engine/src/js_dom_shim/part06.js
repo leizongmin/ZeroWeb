@@ -4481,10 +4481,13 @@
             // selectNode(newParent) 语义：range 落到 newParent 的父 + 索引。
             try {
               var _r212np = newParent.parentNode;
-              if (_r212np && _r212np.childNodes) {
-                var _r212ni = _r212np.childNodes.indexOf(newParent);
-                if (_r212ni >= 0) { this.setStart(_r212np, _r212ni); this.setEnd(_r212np, _r212ni + 1); }
+              var _r212ni = _r212np && _r212np.childNodes
+                ? _r212np.childNodes.indexOf(newParent) : -1;
+              if (_r212ni < 0 && this.startContainer && this.startContainer.childNodes) {
+                var _r258si1 = this.startContainer.childNodes.indexOf(newParent);
+                if (_r258si1 >= 0) { _r212np = this.startContainer; _r212ni = _r258si1; }
               }
+              if (_r212ni >= 0) { this.setStart(_r212np, _r212ni); this.setEnd(_r212np, _r212ni + 1); }
             } catch (_eR212s2) {}
           }
           // R236（js-dom M4）：**sc 是 ec 的元素祖先容器且 ec 为直接 CharData 子**
@@ -4507,16 +4510,29 @@
             while (newParent.childNodes && newParent.childNodes.length && _r236guard++ < 256) {
               try { newParent.removeChild(newParent.childNodes[0]); } catch (_eR236rm) { break; }
             }
+            // R258（js-dom M4）：**selectNode 落位的 sc 回退**——newParent 自身是
+            // covered 子时（30,x：foreignPara1 在 [fb,0→foreignTextNode,36] 覆盖
+            // 子内），extract 把 newParent 本体移进 frag2 使其 parentNode 指向
+            // fragment；insertNode 后工厂 body 的 _tree 视图已含 newParent 但
+            // parentNode 修复链（_tree.appendChild 事后 if 判定）对 frag 旧链
+            // miss——`np.childNodes.indexOf(newParent)` 返 -1 使 selectNode 落位
+            // 整体跳过（WPT「endOffset expected 1 got 0」——DOM 断言已过，仅
+            // 边界缺写）。回退：以**本分支插入前的 sc**（insertNode 未改 sc 的
+            // 形态下二者一致）为父查 indexOf（树视图权威）。
+            // https://dom.spec.whatwg.org/#dom-range-surroundcontents
             this.insertNode(newParent);
             try { newParent.appendChild(_r236frag2); } catch (_eR236a) {}
             try {
               var _r236np2 = newParent.parentNode;
-              if (_r236np2 && _r236np2.childNodes) {
-                var _r236ni2 = _r236np2.childNodes.indexOf(newParent);
-                if (_r236ni2 >= 0) {
-                  this.setStart(_r236np2, _r236ni2);
-                  this.setEnd(_r236np2, _r236ni2 + 1);
-                }
+              var _r236ni2 = _r236np2 && _r236np2.childNodes
+                ? _r236np2.childNodes.indexOf(newParent) : -1;
+              if (_r236ni2 < 0 && this.startContainer && this.startContainer.childNodes) {
+                var _r258si2 = this.startContainer.childNodes.indexOf(newParent);
+                if (_r258si2 >= 0) { _r236np2 = this.startContainer; _r236ni2 = _r258si2; }
+              }
+              if (_r236ni2 >= 0) {
+                this.setStart(_r236np2, _r236ni2);
+                this.setEnd(_r236np2, _r236ni2 + 1);
               }
             } catch (_eR236s) {}
             return;
@@ -4543,12 +4559,15 @@
             try { newParent.appendChild(_r242frag2); } catch (_eR242a2) {}
             try {
               var _r242np2 = newParent.parentNode;
-              if (_r242np2 && _r242np2.childNodes) {
-                var _r242ni2 = _r242np2.childNodes.indexOf(newParent);
-                if (_r242ni2 >= 0) {
-                  this.setStart(_r242np2, _r242ni2);
-                  this.setEnd(_r242np2, _r242ni2 + 1);
-                }
+              var _r242ni2 = _r242np2 && _r242np2.childNodes
+                ? _r242np2.childNodes.indexOf(newParent) : -1;
+              if (_r242ni2 < 0 && this.startContainer && this.startContainer.childNodes) {
+                var _r258si3 = this.startContainer.childNodes.indexOf(newParent);
+                if (_r258si3 >= 0) { _r242np2 = this.startContainer; _r242ni2 = _r258si3; }
+              }
+              if (_r242ni2 >= 0) {
+                this.setStart(_r242np2, _r242ni2);
+                this.setEnd(_r242np2, _r242ni2 + 1);
               }
             } catch (_eR242s2) {}
             return;
