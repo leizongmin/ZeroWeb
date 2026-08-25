@@ -3596,13 +3596,23 @@
           return !!n && (n.nodeType === 3 || n.nodeType === 4
             || n.nodeType === 7 || n.nodeType === 8);
         };
+        // R266（js-dom M4）：**同节点 CharData（detached 含 comment/PI）放宽**——
+        // 与 extractContents 的 R228 同款：sc===ec 时无需父容器（spec
+        // `dom-range-delete-contents` 的 replace-data 段不依赖 parent；WPT
+        // Range-deleteContents 32-37,x `[detachedTextNode,0,…,8]` 等 12F 簇：
+        // 旧 parentNode 门使 detached 同节点整体空转——期望 deleteData 削区间
+        // 而 data 原样）。异节点仍需同父（中段 remove 循环依赖 kids）。
+        // https://dom.spec.whatwg.org/#dom-range-deletecontents
         if (_r213isCd(_r213sc) && _r213isCd(_r213ec)
-          && _r213sc.parentNode && _r213sc.parentNode === _r213ec.parentNode) {
+          && ((_r213sc === _r213ec)
+            || (_r213sc.parentNode && _r213sc.parentNode === _r213ec.parentNode))) {
           var _r213p = _r213sc.parentNode;
-          var _r213kids = _r213p.childNodes || [];
+          var _r213kids = _r213p ? (_r213p.childNodes || []) : [];
           var _r213si = _r213kids.indexOf(_r213sc);
           var _r213ei = _r213kids.indexOf(_r213ec);
-          if (_r213si >= 0 && _r213ei >= _r213si) {
+          // R266：detached 同节点（_r213p null）——si/ei 双 -1 仍走同节点
+          // deleteData + collapse（无中段兄弟需移除）；si>=0 门只对异节点形态。
+          if (_r213sc === _r213ec || (_r213si >= 0 && _r213ei >= _r213si)) {
             if (_r213sc === _r213ec) {
               var _r213m = String(_r213sc.data != null ? _r213sc.data : '');
               var _r213a = Math.max(0, Math.min(this.startOffset | 0, this.endOffset | 0));

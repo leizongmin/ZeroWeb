@@ -2992,3 +2992,57 @@ globalThis.__r265r = out.join('|');
         "R265 textEl ref 的 insertBefore registry 插入：视图含 newNode（indexOf 不再自旋）+ 顺序 [new, text] + text identity/data 保持 + 物化后二次插入位次正确"
     );
 }
+
+#[test]
+fn r266_deletecontents_detached_chardata() {
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let mut sandbox = V8Sandbox::with_config(zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    })
+    .unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><div id=\"t\">x</div></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+    let out = sandbox
+        .execute(
+            r#"
+var out = [];
+// full-range delete on detached text
+var dn = document.createTextNode('Uvwxyzab');
+var r1 = dn.ownerDocument.createRange();
+r1.setStart(dn, 0);
+r1.setEnd(dn, 8);
+r1.deleteContents();
+out.push('full=' + dn.data + '/collapsed=' + r1.collapsed);
+// mid-range delete on detached text
+var dn2 = document.createTextNode('Uvwxyzab');
+var r2 = dn2.ownerDocument.createRange();
+r2.setStart(dn2, 2);
+r2.setEnd(dn2, 5);
+r2.deleteContents();
+out.push('mid=' + dn2.data);
+// detached comment
+var dc = document.createComment('cabcdef');
+var r3 = dc.ownerDocument.createRange();
+r3.setStart(dc, 1);
+r3.setEnd(dc, 4);
+r3.deleteContents();
+out.push('cmt=' + dc.data);
+globalThis.__r266r = out.join('|');
+"#,
+        )
+        .unwrap();
+    let out = sandbox.execute("globalThis.__r266r").unwrap().value;
+    assert_eq!(
+        out, "full=/collapsed=true|mid=Uvzab|cmt=cdef",
+        "R266 deleteContents 同节点 CharData（detached）放宽：deleteData 削区间 + collapse（R228 extract 同款——sc===ec 无需父容器）"
+    );
+}
