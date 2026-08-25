@@ -4608,6 +4608,17 @@
         // https://dom.spec.whatwg.org/#dom-range-surroundcontents
         try {
           var _r237sc = this.startContainer;
+          // R248（js-dom M4）：**先经 ChildNode.remove 摘除 newParent**——旧父可能是
+          // iframe-doc/主文档的 wrapper 域容器，factory docEl insertBefore 的
+          // 「从旧父摘除」按 identity 在 wrapper 域 miss（旧父 childNodes 存的是
+          // wrapper 而非本体）→ 摘除静默失败，newParent 原件留在旧父（WPT
+          // Range-surroundContents 13/14,0 的 DIV 六 P vs sim 五 P——probe ROOT dump
+          // 实证）。Node.prototype.remove（R238 泛型）按节点自身 parentNode 走
+          // mutation-emitting 路径，wrapper/handle/plain 三域通吃。
+          // https://dom.spec.whatwg.org/#dom-range-surroundcontents
+          try {
+            if (typeof newParent.remove === 'function' && newParent.parentNode) newParent.remove();
+          } catch (_eR248rm) {}
           var _r237ref = _r237sc.childNodes && _r237sc.childNodes[this.startOffset | 0];
           if (_r237ref != null && typeof _r237sc.insertBefore === 'function') {
             _r237sc.insertBefore(newParent, _r237ref);
