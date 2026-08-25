@@ -867,7 +867,29 @@
         } catch (_eA4) {}
       }
       } else {
-        bodyInner = String(markup || '');
+        // R255（js-dom M4）：无显式 `<html>…</html>` 对的 HTML 子文档——
+        // **body 内容标准化提取**（spec HTML 解析：html/head/body 由解析器
+        // 合成，body 内的 <script> 等元素是 body 的子）。旧版 bodyInner =
+        // 全 markup（含 doctype/<html>/<head> 段），ensureTree 的
+        // `_zwMBuildBodyTree('<body>'+全文+'</body>')` 让 host parser 对
+        // body 上下文里的 <html>/<head> 标签 foster/剥离，body 视图丢
+        // <script> 元素（WPT Range-surroundContents 16,x `[document.body,4,
+        // document.body,5]` 的 iframe body 只剩 [#text]——真浏览器 body 含
+        // script 元素使 offset 4 合法；probe R255P 实证 A=[DIV,#text] 双侧
+        // sim 落 so=2 host 落 so=4）。提取规则：有 `<body …>` 开标签取其后
+        // 全文（忽略未闭合——HTML 解析器同款）；无 `<body>` 标签时去
+        // doctype/`<html…>`/`<head>…</head>` 段取剩余。
+        var _r255mk = String(markup || '');
+        var _r255BodyOpen = /<body\b[^>]*>/i.exec(_r255mk);
+        if (_r255BodyOpen) {
+          bodyInner = _r255mk.slice(_r255BodyOpen.index + _r255BodyOpen[0].length);
+        } else {
+          bodyInner = _r255mk
+            .replace(/<!doctype[^>]*>/ig, '')
+            .replace(/<html\b[^>]*>/ig, '')
+            .replace(/<\/html\s*>/ig, '')
+            .replace(/<head\b[^>]*>[\s\S]*?<\/head\s*>/ig, '');
+        }
       }
     } catch (_e115) {}
     // R177（js-dom M4）：markup 无根元素（about:blank / 空文档）时 documentElement
@@ -905,6 +927,27 @@
       try { Object.setPrototypeOf(_r177syntheticHtml, globalThis.Element ? globalThis.Element.prototype : Object.prototype); } catch (_e177p) {}
       docEl = _r177syntheticHtml;
     }
+    // R255（js-dom M4）：docEl **own cloneNode(deep) 保真 head/body**——运行时
+    // docEl.childNodes 是工厂空数组（body 内容在 doc.body 视图的 bodyHtml/_tree
+    // 闭包），`documentElement.cloneNode(true)`（WPT restoreIframe 的
+    // referenceDoc 链）经 `_zwDeepCloneEl` 只产空壳，克隆文档丢 body 的 script
+    // 等元素（probe R255P 实证首次 onload body0=7 子 vs 克隆后 [DIV,#text]——
+    // 16,x `[document.body,4,…]` 的 offset 算术因此分歧）。**只改克隆产物不改
+    // 运行时结构**（R220 教训：运行时把 head/body 链入 docEl.childNodes 曾
+    // -158P——sim insertNode 的 referenceNode 解析路径改变而 host 未随动）；
+    // 克隆树按 spec 解析产物形态 [head, body] 递归克隆两视图。浅克隆走通用
+    // 工厂。覆盖 mEl 提取与 R177 合成两条 docEl 路径。
+    docEl.cloneNode = function (deep255) {
+      if (!deep255) return _zwMEl({ tag: 'html' }, null);
+      var c255 = _zwMEl({ tag: 'html' }, null);
+      try {
+        if (doc.head) c255.appendChild(_zwDeepCloneEl(doc.head, true));
+      } catch (_e255h) {}
+      try {
+        if (doc.body) c255.appendChild(_zwDeepCloneEl(doc.body, true));
+      } catch (_e255b) {}
+      return c255;
+    };
     try { doc.body.innerHTML = bodyInner; } catch (_eB) {}
     try {
       // R234（js-dom M4）：**动态 documentElement getter**——首个元素子优先，回落

@@ -2389,3 +2389,53 @@ globalThis.__r254out = out.join('|');
         "R254 surround 克隆前摘除 newParent：无幽灵克隆中间态烘进覆盖子树克隆"
     );
 }
+
+#[test]
+fn r255_repro_reference_doc_clone_chain() {
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let mut sandbox = V8Sandbox::with_config(zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    })
+    .unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><div id=\"t\">x</div></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+    let out = sandbox
+        .execute(
+            r#"
+var out = [];
+var ifr = document.createElement('iframe');
+document.body.appendChild(ifr);
+var idoc = ifr.contentDocument;
+try { idoc.body.innerHTML = '<div id="test">x</div>\n<script src="../common.js"><\/script>\n<script>"use strict";<\/script>'; } catch (e) { out.push('setERR'); }
+out.push('bodyN=' + idoc.body.childNodes.length);
+var referenceDoc = document.implementation.createHTMLDocument('');
+referenceDoc.removeChild(referenceDoc.documentElement);
+var cl1 = idoc.documentElement.cloneNode(true);
+var cl1Body = null;
+for (var q = 0; q < cl1.childNodes.length; q++) if (String(cl1.childNodes[q].nodeName).toUpperCase()==='BODY') cl1Body = cl1.childNodes[q];
+out.push('cl1BodyN=' + (cl1Body ? cl1Body.childNodes.length : 'null'));
+referenceDoc.appendChild(cl1);
+var rdEl = referenceDoc.documentElement;
+var rdKids = rdEl.childNodes || [];
+var rdBody = null;
+for (var q2 = 0; q2 < rdKids.length; q2++) if (String(rdKids[q2].nodeName).toUpperCase()==='BODY') rdBody = rdKids[q2];
+out.push('rdBodyN=' + (rdBody ? rdBody.childNodes.length : 'null'));
+globalThis.__r255c = out.join('|');
+"#,
+        )
+        .unwrap();
+    let out = sandbox.execute("globalThis.__r255c").unwrap().value;
+    assert_eq!(
+        out, "bodyN=5|cl1BodyN=5|rdBodyN=5",
+        "R255 iframe docEl own cloneNode 保真：克隆链 appendChild 后 body 子数不变（head/body 视图经 _zwDeepCloneEl 深克隆 + R221 rebind 前置条件）"
+    );
+}
