@@ -3697,6 +3697,10 @@
               if (globalThis._zwNotifyIteratorsRemove) {
                 try { globalThis._zwNotifyIteratorsRemove(child); } catch (_e86n) {}
               }
+              // R262：live-range 边界迁移（spec concept-node-pre-remove 末段——先于
+              // 任何树状态变化；oldParent/index 读融合视图（childNodes getter——
+              // _zwLocalChildNodes + registry 合并），须在 _unrecordHandleChild 前）。
+              try { if (globalThis.__zwAdjustRangesForRemove) globalThis.__zwAdjustRangesForRemove(child); } catch (_eR262h) {}
               __zw_remove_handle(child.__zwHandle);
               // R86：handle 移除标记（迭代器 order 扫描跳过）。
               if (typeof _zwMarkRemovedHandle === 'function') _zwMarkRemovedHandle(child.__zwHandle);
@@ -3739,6 +3743,9 @@
               if (globalThis._zwNotifyIteratorsRemove) {
                 try { globalThis._zwNotifyIteratorsRemove(child); } catch (_eR125i) {}
               }
+              // R262：live-range 边界迁移（spec concept-node-pre-remove 末段——先于
+              // 移除标记/Remove mutation）。
+              try { if (globalThis.__zwAdjustRangesForRemove) globalThis.__zwAdjustRangesForRemove(child); } catch (_eR262s) {}
               _zwRemoveIframeWindowClientForNode(child);
               try { if (typeof __zw_remove === 'function') __zw_remove(child.__zwSelector); } catch (_eR125r) {}
               _zwMarkRemoved(child.__zwSelector);

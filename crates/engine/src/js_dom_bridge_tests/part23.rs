@@ -2535,8 +2535,11 @@ r2.setEnd(dp1, 1);
 try { r2.surroundContents(dp1); out.push('noThrow2'); }
 catch (e2) { out.push('t2:' + e2.name); }
 out.push('kids2=' + dp1.childNodes.length);
-// 19,9 form: [detachedPara1,0,detachedPara1,1] + detachedDiv (parent) -> NO throw, wrap succeeds
-// (fresh paragraph — dp1 was emptied by the 19,6 HRE path above)
+// 19,9 form: [detachedPara1,0,detachedPara1,1] + detachedDiv (parent) -> HRE
+// (R262 语义翻转：清子循环 dd.removeChild(dp1b) 按 spec concept-node-pre-remove
+// 末段把边界 (dp1b,0) 迁到 (dd,0)，R257 ancestor 检查从 sc=dd 命中 newParent=dd
+// 自身 → HRE。旧引擎不迁移边界才「成功 wrap」——真浏览器（spec）同抛 HRE，
+// WPT 19,9 两侧（sim+actual）同步翻转为 assert_throws 通过，1840P/0F 保持。)
 var dp1b = document.createElement('p');
 dp1b.appendChild(document.createTextNode('Opqrstuv'));
 var dd = document.createElement('div');
@@ -2557,8 +2560,8 @@ globalThis.__r257r = out.join('|');
         .unwrap();
     let out = sandbox.execute("globalThis.__r257r").unwrap().value;
     assert_eq!(
-        out, "t:HierarchyRequestError|kids=0|inBody=true|t2:HierarchyRequestError|kids2=0|ok3|wrap=Y ddKids=3:Opqrstuv;",
-        "R257 self-surround HRE（先清子后判 inclusive ancestor）+ detachedDiv 父 newParent 成功 wrap（清子断链后不误抛）"
+        out, "t:HierarchyRequestError|kids=0|inBody=true|t2:HierarchyRequestError|kids2=0|t3:HierarchyRequestError|wrap=N ddKids=",
+        "R257 self-surround HRE（先清子后判 inclusive ancestor）+ R262 后 19,9 detachedDiv 父 newParent 同抛 HRE（清子 removeChild 按 spec 迁移边界到 (dd,0)，ancestor 自检查命中）"
     );
 }
 
@@ -2777,5 +2780,76 @@ globalThis.__r261r = out.join('|');
     assert_eq!(
         out, "parented=orig:1/tail:2|detached=orig:1/orig:1",
         "R261 splitText live-range retarget：so=1 不>o=1 保持 (orig,1)；eo=3>1 → (tail, 3-1=2)（split 段判 original offset）；detached 无 split 段仅 replace-data 收缩（eo 3→1）"
+    );
+}
+
+#[test]
+fn r262_removechild_range_boundary_migration() {
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let mut sandbox = V8Sandbox::with_config(zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    })
+    .unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><div id=\"t\">x</div></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+    let out = sandbox
+        .execute(
+            r#"
+var out = [];
+// Case 1 (WPT 2,x/3,x): boundary ON the removed node -> migrates to (parent, index)
+var testDiv = document.createElement('div');
+var p0 = document.createElement('p'); p0.appendChild(document.createTextNode('A'));
+var p1 = document.createElement('p'); p1.appendChild(document.createTextNode('B'));
+var p2 = document.createElement('p'); p2.appendChild(document.createTextNode('C'));
+testDiv.appendChild(p0); testDiv.appendChild(p1); testDiv.appendChild(p2);
+document.body.appendChild(testDiv);
+var r1 = document.createRange();
+r1.setStart(p1, 0);
+r1.setEnd(p1, 1);
+testDiv.removeChild(p1);
+out.push('onNode=' + (r1.startContainer === testDiv ? 'div' : 'other') + ':' + r1.startOffset
+  + '/' + (r1.endContainer === testDiv ? 'div' : 'other') + ':' + r1.endOffset);
+// Case 2 (WPT 4-9,x): boundary in parent, offset > index -> offset - 1
+var testDiv2 = document.createElement('div');
+var q0 = document.createElement('p'); q0.appendChild(document.createTextNode('A'));
+var q1 = document.createElement('p'); q1.appendChild(document.createTextNode('B'));
+var q2 = document.createElement('p'); q2.appendChild(document.createTextNode('C'));
+testDiv2.appendChild(q0); testDiv2.appendChild(q1); testDiv2.appendChild(q2);
+document.body.appendChild(testDiv2);
+var r2 = document.createRange();
+r2.setStart(testDiv2, 0);
+r2.setEnd(testDiv2, 2);
+testDiv2.removeChild(q0);
+out.push('inParent=' + (r2.startContainer === testDiv2 ? 'div' : 'other') + ':' + r2.startOffset
+  + '/' + (r2.endContainer === testDiv2 ? 'div' : 'other') + ':' + r2.endOffset);
+// Case 3: offset <= index -> unchanged
+var testDiv3 = document.createElement('div');
+var w0 = document.createElement('p'); w0.appendChild(document.createTextNode('A'));
+var w1 = document.createElement('p'); w1.appendChild(document.createTextNode('B'));
+testDiv3.appendChild(w0); testDiv3.appendChild(w1);
+document.body.appendChild(testDiv3);
+var r3 = document.createRange();
+r3.setStart(testDiv3, 0);
+r3.setEnd(testDiv3, 1);
+testDiv3.removeChild(w1);
+out.push('leIdx=' + (r3.startContainer === testDiv3 ? 'div' : 'other') + ':' + r3.startOffset
+  + '/' + (r3.endContainer === testDiv3 ? 'div' : 'other') + ':' + r3.endOffset);
+globalThis.__r262r = out.join('|');
+"#,
+        )
+        .unwrap();
+    let out = sandbox.execute("globalThis.__r262r").unwrap().value;
+    assert_eq!(
+        out, "onNode=div:1/div:1|inParent=div:0/div:1|leIdx=div:0/div:1",
+        "R262 removeChild live-range 边界迁移：边界在被移除节点上 → (父, 旧索引)；边界在父且 offset>索引 → -1；offset<=索引不动"
     );
 }

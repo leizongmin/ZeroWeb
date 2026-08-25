@@ -5799,6 +5799,8 @@
           'NotFoundError');
       }
       if (globalThis._zwNotifyIteratorsRemove) { try { globalThis._zwNotifyIteratorsRemove(c); } catch (_e86d) {} }
+      // R262：live-range 边界迁移（spec concept-node-pre-remove 末段——先于树状态变化）。
+      try { if (globalThis.__zwAdjustRangesForRemove) globalThis.__zwAdjustRangesForRemove(c); } catch (_eR262m) {}
       node.childNodes.splice(i, 1);
       c.parentNode = null;
       // R208（js-dom M4）：子树移除时失效所属 doc 的查询缓存——`_zwMEl` 树节点经
@@ -6278,6 +6280,99 @@
     } catch (_e260a) {}
   }
   try { globalThis.__zwAdjustRangesForData = _zwAdjustRangesForData; } catch (_eR260ex) {}
+  // R262（js-dom M4）：**节点移除的 live-range 边界调整**（spec
+  // `concept-node-pre-remove` 末段「removed node 是 boundary point 的 node 或其
+  // 子孙 → (old parent, old index)；boundary 在 old parent 且 offset > old
+  // index → offset−1」——WPT Range-mutations.js modifyForRemove 逐字引用）。
+  // **须在实际摘除前调用**（oldParent/index 读移除前形态）。sameNode 复用
+  // R260 的四域身份匹配策略（identity / handle / sel+ChildIndex / textEl），
+  // 外加子孙判定（沿 parentNode 上行命中 removed 即子孙）。消费方：各域
+  // removeChild 站点（part03 doc/docEl/body/_zwMEl + part04 proxy 域）。
+  // https://dom.spec.whatwg.org/#concept-node-pre-remove
+  function _zwAdjustRangesForRemove(removed262) {
+    try {
+      var regs262 = globalThis.__zwLiveRanges;
+      if (!regs262 || !regs262.length || !removed262) return;
+      // 移除前快照（调用时机契约：先于树状态变化）。
+      var oldParent262 = null, oldIndex262 = -1;
+      try {
+        oldParent262 = removed262.parentNode || null;
+        if (oldParent262 && oldParent262.childNodes) {
+          for (var _r262i = 0; _r262i < oldParent262.childNodes.length; _r262i++) {
+            if (oldParent262.childNodes[_r262i] === removed262) { oldIndex262 = _r262i; break; }
+          }
+        }
+      } catch (_e262p) {}
+      if (!oldParent262 || oldIndex262 < 0) return;
+      // 四域身份键（与 _zwAdjustRangesForData 的 sameNode260 同源）。
+      var h262 = null;
+      try { h262 = typeof removed262.__zwHandle === 'string' ? removed262.__zwHandle : null; } catch (_e262h) {}
+      var s262 = null;
+      try { s262 = typeof removed262.__zwSelector === 'string' ? removed262.__zwSelector : null; } catch (_e262s) {}
+      var sameNode262 = function (cont) {
+        if (cont === removed262) return true;
+        if (!cont) return false;
+        try {
+          if (h262 != null && typeof cont.__zwHandle === 'string' && cont.__zwHandle === h262) return true;
+          if (s262 != null && typeof cont.__zwSelector === 'string' && cont.__zwSelector === s262) return true;
+        } catch (_e262c) {}
+        return false;
+      };
+      // spec「node is removed node or a descendant of it」——沿 parentNode 上行
+      //（128 跳防环；proxy 域 parentNode 经 trap 返父 proxy，identity 由父级
+      // sameNode262 判定）。
+      var inRemovedSubtree262 = function (cont) {
+        var cur = cont, hops = 0;
+        while (cur && hops++ < 128) {
+          if (sameNode262(cur)) return true;
+          try { cur = cur.parentNode; } catch (_e262u) { return false; }
+        }
+        return false;
+      };
+      // 边界容器是否逻辑等于 oldParent（三键：identity / handle / sel）。
+      var sameParent262 = function (cont) {
+        if (cont === oldParent262) return true;
+        if (!cont) return false;
+        try {
+          if (h262 == null && s262 == null) return false;
+          if (h262 != null && typeof cont.__zwHandle === 'string' && cont.__zwHandle === h262) return false;
+          if (s262 != null && typeof cont.__zwSelector === 'string' && cont.__zwSelector === s262) return false;
+          var ph = null, ps = null;
+          try { ph = typeof oldParent262.__zwHandle === 'string' ? oldParent262.__zwHandle : null; } catch (_e262ph) {}
+          try { ps = typeof oldParent262.__zwSelector === 'string' ? oldParent262.__zwSelector : null; } catch (_e262ps) {}
+          if (ph != null && typeof cont.__zwHandle === 'string') return cont.__zwHandle === ph;
+          if (ps != null && typeof cont.__zwSelector === 'string') return cont.__zwSelector === ps;
+        } catch (_e262pc) {}
+        return false;
+      };
+      for (var _r262r = 0; _r262r < regs262.length; _r262r++) {
+        var rg262 = regs262[_r262r];
+        if (!rg262) continue;
+        try {
+          // ① 边界在被移除子树内 → (oldParent, oldIndex)。须重写 container（清
+          // _mode 锚点——selectNode 形态的现算路径会覆盖写入值）。
+          if (inRemovedSubtree262(rg262.startContainer)) {
+            rg262.startContainer = oldParent262;
+            rg262._startOffsetBase = oldIndex262;
+            rg262._mode = null;
+          } else if (sameParent262(rg262.startContainer)) {
+            // ② 边界在 oldParent 且 offset > oldIndex → −1。
+            var so262 = rg262._startOffsetBase != null ? rg262._startOffsetBase : rg262.startOffset;
+            if (so262 > oldIndex262) rg262._startOffsetBase = so262 - 1;
+          }
+          if (inRemovedSubtree262(rg262.endContainer)) {
+            rg262.endContainer = oldParent262;
+            rg262._endOffsetBase = oldIndex262;
+            rg262._mode = null;
+          } else if (sameParent262(rg262.endContainer)) {
+            var eo262 = rg262._endOffsetBase != null ? rg262._endOffsetBase : rg262.endOffset;
+            if (eo262 > oldIndex262) rg262._endOffsetBase = eo262 - 1;
+          }
+        } catch (_e262rg) {}
+      }
+    } catch (_e262a) {}
+  }
+  try { globalThis.__zwAdjustRangesForRemove = _zwAdjustRangesForRemove; } catch (_eR262ex) {}
   function _zwAttachCharacterDataMethods(n) {
     var _cur = function () { return String(n.__nv != null ? n.__nv : ''); };
     // 注意：_write 只写 __nv/textContent/length——data/nodeValue 在下方转为 accessor
@@ -7098,6 +7193,9 @@
       removeChild: function (c) {
         ensureTree();
         if (globalThis._zwNotifyIteratorsRemove) { try { globalThis._zwNotifyIteratorsRemove(c); } catch (_e86c) {} }
+        // R262：live-range 边界迁移（spec concept-node-pre-remove 末段——先于树状态变化；
+        // _tree.removeChild 内部（_zwMEl 域）亦有一处调用，此处对 proxy/registry 域父形态兜底）。
+        try { if (globalThis.__zwAdjustRangesForRemove) globalThis.__zwAdjustRangesForRemove(c); } catch (_eR262b) {}
         var r = _tree.removeChild(c);
         if (c && c.parentNode === _tree) c.parentNode = null;
         if (c && c.nodeType === 1) { _zwQWrapGen++; _zwQWrapCache.clear(); _tree._zwNodeIdx = null; }
@@ -7216,6 +7314,8 @@
             if (globalThis._zwNotifyIteratorsRemove) {
               try { globalThis._zwNotifyIteratorsRemove(c); } catch (_e126b) {}
             }
+            // R262：live-range 边界迁移（spec concept-node-pre-remove 末段——先于树状态变化）。
+            try { if (globalThis.__zwAdjustRangesForRemove) globalThis.__zwAdjustRangesForRemove(c); } catch (_eR262e) {}
             this.childNodes.splice(i, 1);
             if (c.parentNode === docEl) c.parentNode = null;
             _r130WireSiblings(this.childNodes);
@@ -7574,6 +7674,8 @@
             if (globalThis._zwNotifyIteratorsRemove) {
               try { globalThis._zwNotifyIteratorsRemove(c); } catch (_e86) {}
             }
+            // R262：live-range 边界迁移（spec concept-node-pre-remove 末段——先于树状态变化）。
+            try { if (globalThis.__zwAdjustRangesForRemove) globalThis.__zwAdjustRangesForRemove(c); } catch (_eR262d) {}
             this.childNodes.splice(i, 1);
             var ci = this.children.indexOf(c);
             if (ci >= 0) this.children.splice(ci, 1);
