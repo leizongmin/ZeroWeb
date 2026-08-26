@@ -3620,3 +3620,58 @@ fn r281_cross_container_clone_contents() {
         "R281 cross-container cloneContents: CD→CD path-clone [P#a(tail), P#b(head)], CD→comment [P#c(tail), middles none, comment head-clone], same-node comment slice, collapsed empty frag; source tree untouched"
     );
 }
+
+#[test]
+fn r282_doc_sc_extract_foreign_comment() {
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let mut sandbox = V8Sandbox::with_config(zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    })
+    .unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><div id=\"t\">x</div></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+    let js = [
+        "var out = [];",
+        // 29,x shape: foreignDoc (implementation HTMLDocument) with [dt, html, comment]
+        "var fdoc = document.implementation.createHTMLDocument('');",
+        "var fc = fdoc.createComment('Commenter tail');",
+        "fdoc.appendChild(fc);",
+        "var dk = fdoc.childNodes;",
+        "var dts = [];",
+        "for (var i = 0; i < dk.length; i++) dts.push(String(dk[i].nodeName));",
+        "out.push('pre=' + dk.length + '[' + dts.join(',') + ']');",
+        "var r = fdoc.createRange();",
+        "r.setStart(fdoc, 1); r.setEnd(fc, 2);",
+        "var frag = r.extractContents();",
+        "var dts2 = [];",
+        "var dk2 = fdoc.childNodes;",
+        "for (var j = 0; j < dk2.length; j++) {",
+        "  var k2 = dk2[j];",
+        "  dts2.push(String(k2.nodeName) + (k2.data != null ? '(' + JSON.stringify(String(k2.data).slice(0, 12)) + ')' : ''));",
+        "}",
+        "var fk = frag.childNodes; var fks = [];",
+        "for (var q = 0; q < fk.length; q++) {",
+        "  var fq = fk[q];",
+        "  fks.push(String(fq.nodeName) + (fq.data != null ? '(' + JSON.stringify(String(fq.data).slice(0, 12)) + ')' : ''));",
+        "}",
+        "out.push('post=' + dk2.length + '[' + dts2.join(',') + '] frag=' + fk.length + '[' + fks.join(',') + ']');",
+        "out.push('col=' + (r.startContainer === fdoc) + '/' + r.startOffset);",
+        "globalThis.__r282r = out.join('|');",
+    ].join("\n");
+    let out = sandbox.execute(&js).unwrap().value;
+    eprintln!("R282PROBE: {}", out);
+    assert_eq!(
+        out,
+        "pre=3[html,HTML,#comment]|post=2[html,#comment(\"mmenter tail\")] frag=2[HTML,#comment(\"Co\")]|col=true/1",
+        "R282 doc-sc extract 29,x shape: HTML moved to frag, comment head-trimmed, collapse (fdoc,1)"
+    );
+}

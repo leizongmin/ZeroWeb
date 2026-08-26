@@ -4246,6 +4246,52 @@
         // 入 clone 后 clone 入 frag）。源树修剪 = R278/R279 的 delete 侧同款
         //（sc 尾部止于 ec 路径子 + cac 中段 + ec 头部）。
         // https://dom.spec.whatwg.org/#dom-range-extractcontents
+        // R282（js-dom M4）：**doctype contained 抛 HRE**（spec `dom-range-
+        // extract-contents` 与 cloneContents 同款步骤「If a contained child is
+        // a DocumentType, throw」——WPT Range-extractContents 25/26,x
+        // `[document,0,document,1/2]`：expected HierarchyRequestError；旧版
+        // 静默返回 frag。R281b 只接了 clone 侧——本切片对称移植）。
+        // https://dom.spec.whatwg.org/#concept-range-extract
+        (function _r282DocThrow(self) {
+          var sc = self.startContainer, ec = self.endContainer;
+          if (!sc) return;
+          // 同容器（含 doc 同节点）：contained = [so, eo) 子区间。
+          // 跨容器：cac 级 (sIdx, eIdx) 开区间 + sc/ec 侧路径区间——近似取
+          // 主区间（spec 的 contained children 全集里 doctype 只会在 doc 直下）。
+          var checkKids = function (parent, from, to) {
+            if (!parent || !parent.childNodes) return false;
+            var ks = parent.childNodes;
+            var a = Math.max(0, from | 0), b = Math.min(to | 0, ks.length);
+            for (var i = a; i < b; i++) {
+              if (ks[i] && ks[i].nodeType === 10) return true;
+            }
+            return false;
+          };
+          if (sc === ec) {
+            if (checkKids(sc, self.startOffset, self.endOffset)) {
+              throw new (globalThis.DOMException || Error)(
+                'The range includes a DocumentType node.', 'HierarchyRequestError');
+            }
+            return;
+          }
+          if (!ec || sc.nodeType !== 9) return;
+          // doc sc 跨容器：doc 的 [so, ecPathIdx) 尾段区间。
+          var ks9 = sc.childNodes || [];
+          var ePath9 = -1;
+          for (var k9 = 0; k9 < ks9.length; k9++) {
+            var anc9 = ec, h9 = 0;
+            while (anc9 && h9++ < 128) {
+              if (ks9[k9] === anc9) { ePath9 = k9; break; }
+              anc9 = anc9.parentNode;
+            }
+            if (ePath9 >= 0) break;
+          }
+          var end9 = (ePath9 >= 0) ? ePath9 : ks9.length;
+          if (checkKids(sc, self.startOffset, end9)) {
+            throw new (globalThis.DOMException || Error)(
+              'The range includes a DocumentType node.', 'HierarchyRequestError');
+          }
+        })(this);
         (function _r280CrossExtract(self) {
           var sc = self.startContainer, ec = self.endContainer;
           if (!sc || !ec || sc === ec) return;
@@ -4258,7 +4304,11 @@
           // foreignComment,2]` 族（doc 的 [so, ecPathIdx) 子 move + ec 头段）。
           if (!scCd && !(sc.nodeType === 1 || sc.nodeType === 11 || sc.nodeType === 9)) return;
           if (!ecCd && !(ec.nodeType === 1 || ec.nodeType === 11)) return;
-          if (!sc.parentNode || !ec.parentNode) return;
+          // R282：**doc sc 的 parentNode 恒 null 是合法形态**（Document 无父——
+          // 旧守卫在此拒绝 doc sc 使 29/31,x 的 ⓪ 尾段从未执行，probe 实证
+          // dbg=unset 而 collapse 却发生）。仅要求 sc 非 doc 时有父。
+          var scParOk = (sc.nodeType === 9) || !!sc.parentNode;
+          if (!scParOk || !ec.parentNode) return;
           // cac：sc 祖先链上首个含 ec 的容器（R268 同款）。
           var chain = [], cur = sc, hops = 0;
           while (cur && hops++ < 128) { chain.push(cur); cur = cur.parentNode; }
