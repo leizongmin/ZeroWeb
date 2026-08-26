@@ -3808,6 +3808,150 @@
           _r268handled = true;
         })(this);
         if (_r268handled) return;
+        // R279（js-dom M4）：**sc 元素端点的跨容器删除**——R278 分支的对称缺口
+        //（sc=element + ec=element/CharData，两形态共用骨架）。spec 语义：
+        // ① sc 元素 partially-contained——**本体保留，仅 [so, end) 直接子删除**
+        //（不是删子树——R268 首版教训的另一半：element sc 的尾部规则）；
+        // ② ec 元素同 R278（本体保留、[0, eo) 子删）；ec CharData 头段 deleteData；
+        // ③ cac 级 (sIdx, eIdx) 开区间中段 + 两侧爬升兄弟移除（R268 同款）。
+        // WPT Range-deleteContents 24,x `[testDiv,2,paras[4],1]`（ec=元素：
+        // DIV 删 [2,4) 子 + P#e 空壳化 + 塌缩 (DIV,2)）；48,x `[testDiv,1,
+        // paras[2].firstChild,5]`（ec=深后代 CharData：DIV 删 [1,2) 子 + 爬升
+        // 右侧兄弟 + ec 头段削）；53,x `[paras[3],1,comment,8]`（sc=P#d 元素 +
+        // ec=DIV comment——P#d 删 [1,2) 子（其 text）+ 爬升 + comment 头段削）。
+        // 旧版 miss（R268/R278 都要求 sc 是 CharData）→ 回落空转。
+        // https://dom.spec.whatwg.org/#dom-range-deletecontents
+        var _r279handled = false;
+        (function _r279ElDel(self) {
+          var sc = self.startContainer, ec = self.endContainer;
+          if (!sc || !ec || sc === ec) return;
+          var sn = sc.nodeType | 0;
+          if (sn !== 1 && sn !== 11) return;
+          var isCd = function (n) {
+            var t = n ? (n.nodeType | 0) : 0;
+            return t === 3 || t === 4 || t === 7 || t === 8;
+          };
+          var en = ec.nodeType | 0;
+          var ecIsEl = (en === 1 || en === 11);
+          if (!ecIsEl && !isCd(ec)) return;
+          if (!sc.parentNode || !ec.parentNode) return;
+          // cac：sc 祖先链上首个含 ec 的容器（R268 同款）。
+          var chain = [], cur = sc, hops = 0;
+          while (cur && hops++ < 128) { chain.push(cur); cur = cur.parentNode; }
+          var cac = null;
+          for (var ci = 0; ci < chain.length && !cac; ci++) {
+            var probe = ec, h2 = 0;
+            while (probe && h2++ < 128) {
+              if (probe === chain[ci]) { cac = chain[ci]; break; }
+              probe = probe.parentNode;
+            }
+          }
+          if (!cac) return;
+          var so = self.startOffset | 0, eo = self.endOffset | 0;
+          // **同树位守卫**（WPT 49/50,x `[docEl,1,body,0]` 形态）：sc 的 so 位子
+          // === ec 且 eo===0 → (sc,so) 与 (ec,0) 是**同一树位**——删除区间为空，
+          // 零删除。spec 塌缩序「sc 是 ec 的 ancestor container → (sc, so)」
+          //（common.js myDeleteContents 同款）——首版教训：塌 (ec,0) 使
+          // startContainer !== 期望的 (sc,so)。
+          var sk0 = sc.childNodes || [];
+          if (sk0[so] === ec && eo === 0) {
+            try { self.setStart(sc, so); self.setEnd(sc, so); } catch (_eR279g) {}
+            _r279handled = true;
+            return;
+          }
+          var rmNode = function (n, parent) {
+            try {
+              if (typeof n.remove === 'function') n.remove();
+              if (n.parentNode != null && parent && typeof parent.removeChild === 'function') {
+                parent.removeChild(n);
+              }
+            } catch (_e) {
+              try { if (parent && typeof parent.removeChild === 'function') parent.removeChild(n); } catch (_e2) {}
+            }
+          };
+          // ① sc 元素尾部：[so, ecIdx) 直接子逆序移除（partially-contained——本体
+          // 保留，尾部**止于 ec 的路径子**：ec 是端点本体不动、ec 后的兄弟不在
+          // 区间。ec 非 sc 后代（隔层）时 ecIdx=-1 → 尾部止于爬升段处理，此处
+          // 只删 [so, end) 中 sc 的全部子——与 R268 sc 侧爬升对称由下方统一）。
+          var sk279 = sc.childNodes || [];
+          var ecIdxIn279 = -1;
+          for (var k279f = 0; k279f < sk279.length; k279f++) {
+            if (sk279[k279f] === ec) { ecIdxIn279 = k279f; break; }
+            // ec 的祖先在 sc 直接子中（ec 是深后代）→ 尾部止于该路径子。
+            var anc279 = ec, ah279 = 0;
+            while (anc279 && ah279++ < 128) {
+              if (sk279[k279f] === anc279) { ecIdxIn279 = k279f; break; }
+              anc279 = anc279.parentNode;
+            }
+            if (ecIdxIn279 >= 0) break;
+          }
+          var tailEnd279 = (ecIdxIn279 >= 0) ? ecIdxIn279 : sk279.length;
+          for (var i279 = tailEnd279 - 1; i279 >= so; i279--) rmNode(sk279[i279], sc);
+          // ② sc 侧爬升：到 cac 前逐级移除路径子右侧兄弟（cac 级跳过——mid 段处理）。
+          var lvl279 = sc, lvlPar279 = sc.parentNode, hp279 = 0;
+          while (lvlPar279 && lvl279 !== cac && hp279++ < 128) {
+            if (lvlPar279 === cac) break;
+            var pk279 = lvlPar279.childNodes || [];
+            var pi279 = -1;
+            for (var pj279 = 0; pj279 < pk279.length; pj279++) if (pk279[pj279] === lvl279) { pi279 = pj279; break; }
+            if (pi279 < 0) break;
+            for (var q279b = pk279.length - 1; q279b > pi279; q279b--) rmNode(pk279[q279b], lvlPar279);
+            lvl279 = lvlPar279;
+            lvlPar279 = lvlPar279.parentNode;
+          }
+          // ③ ec 侧：元素端点 [0, eo) 子删（R278 同款）；CharData 头段 deleteData
+          //（先做头段——R268 序）；再爬升移除左侧兄弟（cac 级跳过）。
+          if (ecIsEl) {
+            var ek279 = ec.childNodes || [];
+            for (var i279c = Math.min(eo, ek279.length) - 1; i279c >= 0; i279c--) rmNode(ek279[i279c], ec);
+          } else if (typeof ec.deleteData === 'function') {
+            if (eo > 0) { try { ec.deleteData(0, eo); } catch (_eR279d) {} }
+          }
+          var elvl279 = ec, epar279 = ec.parentNode, hp279b = 0;
+          while (epar279 && elvl279 !== cac && hp279b++ < 128) {
+            if (epar279 === cac) break;
+            var ekp279 = epar279.childNodes || [];
+            var ei279 = -1;
+            for (var ej279 = 0; ej279 < ekp279.length; ej279++) if (ekp279[ej279] === elvl279) { ei279 = ej279; break; }
+            if (ei279 < 0) break;
+            for (var q279c = ei279 - 1; q279c >= 0; q279c--) rmNode(ekp279[q279c], epar279);
+            elvl279 = epar279;
+            epar279 = epar279.parentNode;
+          }
+          // ④ cac 级中段 (sIdx, eIdx) 开区间移除（R268 同款；ec CharData 时其
+          // cac 直接子就是 eRef，头段已削）。
+          var ck279 = cac.childNodes || [];
+          var sRef279 = sc;
+          while (sRef279 && sRef279.parentNode !== cac && sRef279.parentNode) sRef279 = sRef279.parentNode;
+          var eRef279 = ec;
+          while (eRef279 && eRef279.parentNode !== cac && eRef279.parentNode) eRef279 = eRef279.parentNode;
+          var sIdx279 = -1, eIdx279 = -1;
+          for (var ck279b = 0; ck279b < ck279.length; ck279b++) {
+            if (sRef279 && ck279[ck279b] === sRef279) sIdx279 = ck279b;
+            if (eRef279 && ck279[ck279b] === eRef279) eIdx279 = ck279b;
+          }
+          if (sIdx279 >= 0 && eIdx279 > sIdx279) {
+            for (var q279d = eIdx279 - 1; q279d > sIdx279; q279d--) rmNode(ck279[q279d], cac);
+          }
+          // ⑤ 塌缩（spec 塌缩序 + common.js myDeleteContents 同款）：**sc 是 ec 的
+          // ancestor container（cac === sc）→ (sc, so)**（24,x 期望 (DIV,2)；首版
+          // R268 式 (cac, sIdx+1) 对 cac===sc 形态把 sRef 爬过头 → rIdx=-1 → 0）；
+          // 否则 (cac, sIdx+1)（sc 路径子之后，R268 同款）。
+          if (cac === sc) {
+            try { self.setStart(sc, so); self.setEnd(sc, so); } catch (_eR279e) {}
+            _r279handled = true;
+            return;
+          }
+          var rpk279 = cac.childNodes || [];
+          var rIdx279 = -1;
+          for (var rj279 = 0; rj279 < rpk279.length; rj279++) if (rpk279[rj279] === sRef279) { rIdx279 = rj279; break; }
+          try {
+            if (rIdx279 >= 0) { self.setStart(cac, rIdx279 + 1); self.setEnd(cac, rIdx279 + 1); }
+            else { self.setStart(cac, 0); self.setEnd(cac, 0); }
+          } catch (_eR279c) {}
+          _r279handled = true;
+        })(this);
+        if (_r279handled) return;
         // R278（js-dom M4）：**sc CharData + ec 元素端点的跨容器删除**——R268
         // 首版教训把 element 端点整体排除（「climb-tail 规则对元素端点错」），
         // 但 spec 的 ec 元素形态有独立正解：**partially-contained 语义——ec 本体

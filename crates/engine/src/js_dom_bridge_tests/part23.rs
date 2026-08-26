@@ -3383,3 +3383,94 @@ fn r278_clone_realm_paras_sibling_chain() {
         "R278 clone-realm paras sibling chain: oracle nextNode climb needs paras[i].nextSibling resolvable in the restoreIframe clone realm (append into iframe-doc body/testDiv); WPT Range-deleteContents 22,x oracle walk n=0 root cause"
     );
 }
+
+#[test]
+fn r279_sc_element_cross_container_delete() {
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let mut sandbox = V8Sandbox::with_config(zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    })
+    .unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><div id=\"t\">x</div></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+    // R279 repro: sc=element cross-container deleteContents in the iframe-realm
+    // shape (restoreIframe + setupRangeTests paras). Covers three forms:
+    // 24,x sc-el/ec-el (DIV[2..4) removed + P#e emptied + collapse (DIV,2)),
+    // 48,x sc-el/ec-CharData (DIV[1..2) removed + ec head-trimmed + collapse (DIV,1)),
+    // 49,x same-tree-position (empty delete + collapse (sc,so)).
+    let js = [
+        "var out = [];",
+        "var referenceDoc = document.implementation.createHTMLDocument('');",
+        "referenceDoc.removeChild(referenceDoc.documentElement);",
+        "var ifr = document.createElement('iframe');",
+        "document.body.appendChild(ifr);",
+        "var idoc = ifr.contentDocument;",
+        "idoc.appendChild(referenceDoc.documentElement.cloneNode(true));",
+        "var testDiv = idoc.createElement('div');",
+        "idoc.body.insertBefore(testDiv, idoc.body.firstChild);",
+        "var mk = function (id, text) {",
+        "  var p = idoc.createElement('p');",
+        "  p.id = id;",
+        "  p.textContent = text;",
+        "  testDiv.appendChild(p);",
+        "  return p;",
+        "};",
+        "var pa = mk('a', 'A0123');",
+        "var pb = mk('b', 'B0123');",
+        "var pc = mk('c', 'C0123');",
+        "var pd = mk('d', 'D0123');",
+        "var pe = mk('e', 'E0123');",
+        "var cm = idoc.createComment('tailcm');",
+        "testDiv.appendChild(cm);",
+        "function dumpDiv() {",
+        "  var ks = testDiv.childNodes, s = [];",
+        "  for (var i = 0; i < ks.length; i++) {",
+        "    var k = ks[i];",
+        "    s.push(k.nodeName + (k.id ? '#' + k.id : '') + '('",
+        "      + String(k.firstChild && k.firstChild.data != null ? k.firstChild.data : (k.data != null ? k.data : '')) + ')');",
+        "  }",
+        "  return ks.length + '[' + s.join(',') + ']';",
+        "}",
+        // form 24,x: [testDiv, 2, paras[4] (P#e), 1] — kids=[pa,pb,pc,pd,pe,cm],
+        // delete [2,4)=pc,pd, empty P#e, collapse (DIV,2) -> [pa,pb,pe(),cm]
+        "var r1 = idoc.createRange();",
+        "r1.setStart(testDiv, 2); r1.setEnd(pe, 1);",
+        "r1.deleteContents();",
+        "out.push('f24=' + dumpDiv() + ' col=' + (r1.startContainer === testDiv) + '/' + r1.startOffset);",
+        // form 48,x: [testDiv, 1, paras[2] (P#c) firstChild, 5] — fresh paras so
+        // the f24 empties don't bleed in; kids=[pa,pb,pc2,pd2,pe2,cm], delete
+        // [1,2)=pb, head-trim pc2 text by 5 ("C012345"->"45"), collapse (DIV,1)
+        "var pc2 = mk('c', 'C012345');",
+        "var pd2 = mk('d', 'D0123');",
+        "var pe2 = mk('e', 'E0123');",
+        "testDiv.appendChild(cm);",
+        "var r2 = idoc.createRange();",
+        "r2.setStart(testDiv, 1); r2.setEnd(pc2.firstChild, 5);",
+        "r2.deleteContents();",
+        "out.push('f48=' + dumpDiv() + ' col=' + (r2.startContainer === testDiv) + '/' + r2.startOffset + ' pcText=' + String(pc2.firstChild.data));",
+        // form 49,x: same-tree-position — sc=testDiv so=1 (pc2 index), ec=pc2 eo=0:
+        // empty delete, collapse (sc,so)=(testDiv,1). (WPT 49,x uses docEl/body —
+        // here testDiv/pc2 keeps the shape minimal while sk0[so]===ec holds.)
+        "var r3 = idoc.createRange();",
+        "r3.setStart(testDiv, 1); r3.setEnd(pc2, 0);",
+        "var before3 = dumpDiv();",
+        "r3.deleteContents();",
+        "out.push('f49=same=' + (before3 === dumpDiv()) + ' col=' + (r3.startContainer === testDiv) + '/' + r3.startOffset);",
+        "globalThis.__r279r = out.join('|');",
+    ].join("\n");
+    let out = sandbox.execute(&js).unwrap().value;
+    assert_eq!(
+        out,
+        "f24=4[P#a(A0123),P#b(B0123),P#e(),#comment(tailcm)] col=true/2|f48=5[P#a(A0123),P#c(45),P#d(D0123),P#e(E0123),#comment(tailcm)] col=true/1 pcText=45|f49=same=true col=true/1",
+        "R279 sc-element cross-container deleteContents: 24,x form removes DIV[2,4) + empties P#e + collapses (DIV,2); 48,x form removes DIV[1,2) + head-trims ec text; 49,x same-tree-position deletes nothing + collapses (sc,so)"
+    );
+}
