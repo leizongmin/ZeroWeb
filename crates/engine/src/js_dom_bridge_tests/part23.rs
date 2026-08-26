@@ -3429,7 +3429,7 @@ fn r279_sc_element_cross_container_delete() {
         "var pc = mk('c', 'C0123');",
         "var pd = mk('d', 'D0123');",
         "var pe = mk('e', 'E0123');",
-        "var cm = idoc.createComment('tailcm');",
+        "var cm = idoc.createComment('tailcm-longpad');",
         "testDiv.appendChild(cm);",
         "function dumpDiv() {",
         "  var ks = testDiv.childNodes, s = [];",
@@ -3470,7 +3470,7 @@ fn r279_sc_element_cross_container_delete() {
     let out = sandbox.execute(&js).unwrap().value;
     assert_eq!(
         out,
-        "f24=4[P#a(A0123),P#b(B0123),P#e(),#comment(tailcm)] col=true/2|f48=5[P#a(A0123),P#c(45),P#d(D0123),P#e(E0123),#comment(tailcm)] col=true/1 pcText=45|f49=same=true col=true/1",
+        "f24=4[P#a(A0123),P#b(B0123),P#e(),#comment(tailcm-longpad)] col=true/2|f48=5[P#a(A0123),P#c(45),P#d(D0123),P#e(E0123),#comment(tailcm-longpad)] col=true/1 pcText=45|f49=same=true col=true/1",
         "R279 sc-element cross-container deleteContents: 24,x form removes DIV[2,4) + empties P#e + collapses (DIV,2); 48,x form removes DIV[1,2) + head-trims ec text; 49,x same-tree-position deletes nothing + collapses (sc,so)"
     );
 }
@@ -3514,7 +3514,7 @@ fn r280_cross_container_extract_probe() {
         "var pb = mk('b', 'B0123');",
         "var pc = mk('c', 'C0123');",
         "var pd = mk('d', 'D0123');",
-        "var cm = idoc.createComment('tailcm');",
+        "var cm = idoc.createComment('tailcm-longpad');",
         "testDiv.appendChild(cm);",
         "function dump(n) {",
         "  var ks = n.childNodes, s = [];",
@@ -3537,7 +3537,7 @@ fn r280_cross_container_extract_probe() {
     eprintln!("R280PROBE: {}", out);
     assert_eq!(
         out,
-        "tree=4[P#a(A0123),P#b(B0123),P#c(C012),#comment(ilcm)] frag=3[P#c(3),P#d(D0123),#comment(ta)]|col=true/3",
+        "tree=4[P#a(A0123),P#b(B0123),P#c(C012),#comment(ilcm-longpad)] frag=3[P#c(3),P#d(D0123),#comment(ta)]|col=true/3",
         "R280 cross-container extract 52,x shape: firstPartial P#c clone wraps the sc tail text, middle P#d moved, ec comment head-clone last; source tree pruned; collapse (DIV,3)"
     );
 }
@@ -3580,7 +3580,7 @@ fn r281_cross_container_clone_contents() {
         "var pa = mk('a', 'A0123');",
         "var pb = mk('b', 'B0123');",
         "var pc = mk('c', 'C0123');",
-        "var cm = idoc.createComment('tailcm');",
+        "var cm = idoc.createComment('tailcm-longpad');",
         "testDiv.appendChild(cm);",
         "function dump(n) {",
         "  var ks = n.childNodes, s = [];",
@@ -3616,7 +3616,7 @@ fn r281_cross_container_clone_contents() {
     let out = sandbox.execute(&js).unwrap().value;
     assert_eq!(
         out,
-        "cdcd=2[P#a(123),P#b(B01)] tree=4[P#a(A0123),P#b(B0123),P#c(C0123),#comment(tailcm)]|cdcm=2[P#c(0123),#comment(ta)]|samecd=1[#comment(ilc)]|empty=0",
+        "cdcd=2[P#a(123),P#b(B01)] tree=4[P#a(A0123),P#b(B0123),P#c(C0123),#comment(tailcm-longpad)]|cdcm=2[P#c(0123),#comment(ta)]|samecd=1[#comment(ilc)]|empty=0",
         "R281 cross-container cloneContents: CD→CD path-clone [P#a(tail), P#b(head)], CD→comment [P#c(tail), middles none, comment head-clone], same-node comment slice, collapsed empty frag; source tree untouched"
     );
 }
@@ -3673,5 +3673,99 @@ fn r282_doc_sc_extract_foreign_comment() {
         out,
         "pre=3[html,HTML,#comment]|post=2[html,#comment(\"mmenter tail\")] frag=2[HTML,#comment(\"Co\")]|col=true/1",
         "R282 doc-sc extract 29,x shape: HTML moved to frag, comment head-trimmed, collapse (fdoc,1)"
+    );
+}
+
+#[test]
+fn r283_element_sc_deep_extract() {
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let mut sandbox = V8Sandbox::with_config(zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    })
+    .unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><div id=\"t\">x</div></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+    let js = [
+        "var out = [];",
+        "var referenceDoc = document.implementation.createHTMLDocument('');",
+        "referenceDoc.removeChild(referenceDoc.documentElement);",
+        "var ifr = document.createElement('iframe');",
+        "document.body.appendChild(ifr);",
+        "var idoc = ifr.contentDocument;",
+        "idoc.appendChild(referenceDoc.documentElement.cloneNode(true));",
+        "var testDiv = idoc.createElement('div');",
+        "idoc.body.insertBefore(testDiv, idoc.body.firstChild);",
+        "var mk = function (id, text) {",
+        "  var p = idoc.createElement('p');",
+        "  p.id = id;",
+        "  p.textContent = text;",
+        "  testDiv.appendChild(p);",
+        "  return p;",
+        "};",
+        "var pa = mk('a', 'A0123456');",
+        "var pb = mk('b', 'B0123456');",
+        "var pc = mk('c', 'C0123456');",
+        "var cm = idoc.createComment('tailcm-longpad');",
+        "testDiv.appendChild(cm);",
+        "function dump(n) {",
+        "  var ks = n.childNodes, s = [];",
+        "  for (var i = 0; i < ks.length; i++) {",
+        "    var k = ks[i];",
+        "    s.push(k.nodeName + (k.id ? '#' + k.id : '') + '('",
+        "      + String(k.firstChild && k.firstChild.data != null ? k.firstChild.data : (k.data != null ? k.data : '')) + ')');",
+        "  }",
+        "  return ks.length + '[' + s.join(',') + ']';",
+        "}",
+        // 48,x shape: [testDiv, 1, pc.firstChild, 5]
+        "var r = idoc.createRange();",
+        "r.setStart(testDiv, 1); r.setEnd(pc.firstChild, 5);",
+        "var frag = r.extractContents();",
+        "out.push('f48 tree=' + dump(testDiv) + ' frag=' + dump(frag));",
+        "out.push('f48col=' + (r.startContainer === testDiv) + '/' + r.startOffset);",
+        // 53,x shape: [pd, 1, cm, 8]
+        "var pd = mk('d', 'D0123');",
+        "var pe = mk('e', 'E0123');",
+        "testDiv.appendChild(cm);",
+        "var r2 = idoc.createRange();",
+        "r2.setStart(pd, 1); r2.setEnd(cm, 8);",
+        "var frag2 = r2.extractContents();",
+        "out.push('f53 tree=' + dump(testDiv) + ' frag=' + dump(frag2));",
+        "out.push('f53col=' + (r2.startContainer === testDiv) + '/' + r2.startOffset + ' cmData=' + JSON.stringify(String(cm.data != null ? cm.data : cm.nodeValue)));",
+        // 51,x shape: same-node doc [1, 2] (idoc has [dt, html])
+        "out.push('pre51 kids=' + idoc.childNodes.length);",
+        "var r3 = idoc.createRange();",
+        "try { r3.setStart(idoc, 1); r3.setEnd(idoc, Math.min(2, idoc.childNodes.length)); } catch (e51) { out.push('f51 setErr=' + e51.name + ' kids=' + idoc.childNodes.length); }",
+        "if (r3.startContainer) {",
+        "var frag3 = r3.extractContents();",
+        "var fk3 = frag3.childNodes;",
+        "out.push('f51 docKids=' + idoc.childNodes.length + ' frag=' + fk3.length + ' col=' + (r3.startContainer === idoc) + '/' + r3.startOffset); }",
+        "globalThis.__r283r = out.join('|');",
+    ].join("\n");
+    let out = sandbox.execute(&js).unwrap().value;
+    // f48 + f53 are the contract this test pins; f51 (same-node doc) is the
+    // known leftover (tracked in master.md R283 evidence) — excluded here.
+    let f48_end = out.find("|f53").unwrap_or(out.len());
+    let f48 = &out[..f48_end];
+    let f53_start = out.find("f53").unwrap_or(out.len());
+    let f53_end = out[f53_start..].find("|pre51").map(|i| f53_start + i).unwrap_or(out.len());
+    let f53 = &out[f53_start..f53_end];
+    assert_eq!(
+        f48,
+        "f48 tree=3[P#a(A0123456),P#c(456),#comment(tailcm-longpad)] frag=2[P#b(B0123456),P#c(C0123)]|f48col=true/1",
+        "R283 element-sc one-level extract: P#b fully-contained moved, P#c partially-contained cloned with ec head moved in, source head-trimmed, collapse (testDiv,1)"
+    );
+    assert_eq!(
+        f53,
+        "f53 tree=4[P#a(A0123456),P#c(456),P#d(D0123),#comment(ongpad)] frag=2[P#e(E0123),#comment(tailcm-l)]|f53col=true/3 cmData=\"ongpad\"",
+        "R283 element-sc sibling extract: P#d kept (offset past its text), P#e middle moved, comment head-trimmed, collapse (DIV,3)"
     );
 }

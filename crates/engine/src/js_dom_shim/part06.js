@@ -4322,12 +4322,30 @@
           }
           if (!cac) return;
           // **形态限流（首版教训：泛化分支抢了 R242/R236 已正确处理的直接子
-          // 形态——24/28/30,x 回归 +9）**：本分支只接 sc 是 CharData 或 Document
-          // 的跨容器形态（CD→CD 跨段 / CD→ec 元素 / doc 容器）；sc 元素 + ec
-          // 深后代的 contained 子**递归组树**（firstPartial.clone + subfrag）非
-          // 扁平化可表达——48,x 等元素 sc 形态留给既有 R236/R242 直接子分支 +
-          // 后续递归版）。
-          if (!scCd && sc.nodeType !== 9) return;
+          // 形态——24/28/30,x 回归 +9）**：本分支接 sc 是 CharData 或 Document
+          // 的跨容器形态 + **R283 element-sc 一层递归形态**（ec 的父链在 sc
+          // 直接子一级内——48,x `[testDiv,1,pc.firstChild,5]`：sc 尾段子中
+          // fully-contained 者本体 move、partially-contained 的 ec 路径子
+          // clone 后把 ec 头段 move 进 clone）；更深的 element sc 递归与
+          // R242/R236 直接子形态仍让位（防 R280 首版 +9 回归）。
+          var r283elSc = false;
+          if (!scCd && sc.nodeType !== 9) {
+            r283elSc = (sc.nodeType === 1 || sc.nodeType === 11)
+              && sc !== ec
+              && ec.parentNode !== sc
+              && (function () {
+                // 形态 A（48,x）：ec 的父在 sc 的直接子里（一层递归——sc 尾段
+                // fully-contained 子 move + ec 路径子由 ④' lastPartial 组树）。
+                var ep = ec.parentNode;
+                var ks = sc.childNodes || [];
+                for (var q = 0; q < ks.length; q++) if (ks[q] === ep) return true;
+                // 形态 B（53,x）：ec 的父 === sc 的父（sibling 方向——sc 尾段 +
+                // cac 级 (sIdx,eIdx) 中段 + ec 头段，全部既有段可表达）。
+                if (ep && ep === sc.parentNode) return true;
+                return false;
+              })();
+            if (!r283elSc) return;
+          }
           var so = self.startOffset | 0, eo = self.endOffset | 0;
           var sameTreePos = false;
           if (!scCd && (sc.childNodes || [])[so] === ec && eo === 0) sameTreePos = true;
@@ -4432,6 +4450,24 @@
           // ③ sc 是 cac 直接子（element sc）时：sc 自身 partially-contained
           //（本体留树），其 [so, ecPathIdx) 尾段子 move 入 frag（R279 尾部
           // 规则同款——止于 ec 路径子）。
+          // R283：**sc 即 cac 的 element-sc 形态**（`cac === sc`，48,x——
+          // sc 自身是容器：fully-contained 尾段子（非 ec 路径子）move 入
+          // frag；ec 路径子本体留树，其内容由 ④' 的 lastPartial 组树承载）。
+          if (!scCd && cac === sc) {
+            var skR283 = sc.childNodes || [];
+            var ecPathR283 = -1;
+            for (var kR283 = 0; kR283 < skR283.length; kR283++) {
+              var ancR283 = ec, ahR283 = 0;
+              while (ancR283 && ahR283++ < 128) {
+                if (skR283[kR283] === ancR283) { ecPathR283 = kR283; break; }
+                ancR283 = ancR283.parentNode;
+              }
+              if (ecPathR283 >= 0) break;
+            }
+            var tailEndR283 = (ecPathR283 >= 0) ? ecPathR283 : skR283.length;
+            var tsnapR283 = skR283.slice(so, tailEndR283);
+            for (var tR283 = 0; tR283 < tsnapR283.length; tR283++) moveIn(tsnapR283[tR283], f);
+          }
           if (!scCd && sc.parentNode === cac) {
             var sk280 = sc.childNodes || [];
             var ecPath280 = -1;
