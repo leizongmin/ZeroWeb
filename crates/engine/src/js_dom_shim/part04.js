@@ -602,6 +602,13 @@
               }
               if (_ihOut !== '') return _ihOut;
             }
+            // R286（js-dom M4）：**容器 handle 的 registry 空态**——shadow root /
+            // fragment 的内容只存 JS registry（host 无对应 mutation 域），旧版回落
+            // `__zw_get_inner_html_handle` 的缓存序列化使**删除后 innerHTML 仍显示
+            // 旧内容**（WPT Range-deleteContents-in-ShadowRoot `<div><shadow-root>{
+            // <span>ABC</span>}</shadow-root></div>`：deleteContents 后期望 "" got
+            // "<span>ABC</span>"）。容器以 registry 为唯一事实源：空 registry → ''。
+            if (_isContainerHandle(handle)) return '';
             return __zw_get_inner_html_handle(handle);
           }
           return __zw_get_inner_html(sel);

@@ -3811,3 +3811,42 @@ fn r284_doc_container_covered_children() {
         "R284 doc-container covered children: same-node doc [1,2] extracts the html child (move to frag, docKids drops to 1) + collapse (doc,1)"
     );
 }
+
+#[test]
+fn r286_shadowroot_delete_all_children() {
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let mut sandbox = V8Sandbox::with_config(zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    })
+    .unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><div id=\"t\">x</div></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+    let js = [
+        "var out = [];",
+        "var host = document.createElement('div');",
+        "var shadowRoot = host.attachShadow({mode: 'open'});",
+        "shadowRoot.innerHTML = '<span>ABC</span>';",
+        "var range = document.createRange();",
+        "range.setStart(shadowRoot, 0);",
+        "range.setEnd(shadowRoot, 1);",
+        "out.push('pre kids=' + (shadowRoot.childNodes ? shadowRoot.childNodes.length : 'noc') + ' html=' + JSON.stringify(shadowRoot.innerHTML));",
+        "range.deleteContents();",
+        "out.push('post kids=' + (shadowRoot.childNodes ? shadowRoot.childNodes.length : 'noc') + ' html=' + JSON.stringify(shadowRoot.innerHTML));",
+        "globalThis.__r286r = out.join('|');",
+    ].join("\n");
+    let out = sandbox.execute(&js).unwrap().value;
+    eprintln!("R286PROBE: {}", out);
+    assert_eq!(
+        out, "pre kids=1 html=\"<span>ABC</span>\"|post kids=0 html=\"\"",
+        "R286 ShadowRoot full-range deleteContents: [0,1) children removed, innerHTML empty"
+    );
+}
