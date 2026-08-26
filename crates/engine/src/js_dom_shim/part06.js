@@ -3553,7 +3553,27 @@
         return this;
       },
       selectNodeContents: function (node) {
-        var cnt = node && node.childNodes ? node.childNodes.length : 0;
+        // R289（js-dom M4）：node 是 DocumentType → 抛 InvalidNodeTypeError（spec
+        // `dom-range-select-node-contents` 步骤 1「If node is a doctype, rethrow」
+        // ——WPT "selectNodeContents() on a doctype must throw" 12F 簇
+        // current doc[0]/xmlDoc[0] qorflesnorf × 4 range 域）。
+        if (node && node.nodeType === 10) {
+          throw new globalThis.DOMException(
+            'The given node is invalid.', 'InvalidNodeTypeError');
+        }
+        // R289（js-dom M4）：endOffset = **node length**（spec
+        // `dom-range-select-node-contents` 步骤 2「length of node」——
+        // `concept-node-length`：CharacterData = data.length，其他 = 子节点数）。
+        // 旧版恒读 childNodes.length 使 text/comment/PI 容器 endOffset 恒 0
+        // （WPT Range-selectNode "endOffset must equal node length" 144F 簇：
+        // #text 112 + #comment 24 + somepi 8）。
+        var cnt;
+        if (node && (node.nodeType === 3 || node.nodeType === 4 || node.nodeType === 7 || node.nodeType === 8)) {
+          var d289 = node.data != null ? node.data : (node.__nv != null ? node.__nv : '');
+          cnt = String(d289).length;
+        } else {
+          cnt = node && node.childNodes ? node.childNodes.length : 0;
+        }
         this.startContainer = node; this.startOffset = 0;
         this.endContainer = node; this.endOffset = cnt;
         this.commonAncestorContainer = node; this.collapsed = cnt === 0; this._mode = { node: node, kind: 'contents' };
@@ -6005,12 +6025,21 @@
         // 「Node 0 paras[0] + range collapsed in firstChild」形态全错（WPT 186F）。
         var i = this._indexOf(parent, node);
         if (i < 0) return true; // 不在父视图（best-effort 保守 true）
-        // node 的末边界 (parent, i+1) 在 start 之前 → node 整体在 range 前。
-        if (_zwRangeBpAfter(this.startContainer, this.startOffset | 0, parent, i + 1)) {
+        // R289（js-dom M4）：**严格不等**修正（WPT intersectsNode-2 Chromium
+        // crbug 822510 形态）：true iff (parent,i) 严格 before end **且**
+        // (parent,i+1) 严格 after start。旧版两分支用的是「(i+1) ≤ start 或
+        // (i) ≥ end」的**非严格**否定——边界相接（node 首边界 == range end 或
+        // node 末边界 == range start）被误判相交：range [div,0,div,1] 对 s1
+        // 占据 [(div,1),(div,2)]，(div,1) vs end (div,1) 相等不交，旧版
+        // after(1,1)=false 漏拦 → true（期望 false）。修：非交条件改为
+        // ¬((parent,i) before end) 或 ¬((parent,i+1) after start)，其中
+        // before(a,b) = after(b,a) 且相等的边界点既非 before 也非 after。
+        // node 的首边界 (parent, i) 不严格在 end 之前（≥ end）→ node 整体在 range 后。
+        if (!_zwRangeBpAfter(this.endContainer, this.endOffset | 0, parent, i)) {
           return false;
         }
-        // node 的首边界 (parent, i) 在 end 之后 → node 整体在 range 后。
-        if (_zwRangeBpAfter(parent, i, this.endContainer, this.endOffset | 0)) {
+        // node 的末边界 (parent, i+1) 不严格在 start 之后（≤ start）→ node 整体在 range 前。
+        if (!_zwRangeBpAfter(parent, i + 1, this.startContainer, this.startOffset | 0)) {
           return false;
         }
         return true;
@@ -6362,6 +6391,17 @@
   // 旧空函数 stub → `new Range().setStart` 抛 TypeError（WPT Range-attribute-nodes 等用 new Range()）。
   globalThis.Range = function Range() {
     var r = _makeRange();
+    // R289（js-dom M4）：初始边界 (document, 0)——spec Range 构造器「set start to
+    // (document, 0), end to (document, 0)」（与 `document.createRange()` 同款，
+    // WPT Range-constructor 六断言：startContainer/endContainer === document、
+    // offset 0、collapsed、CAC === document）。R183 只在 createRange 落了该初始化，
+    // 构造器漏同步——startContainer 恒 null。
+    try {
+      r.startContainer = globalThis.document;
+      r.endContainer = globalThis.document;
+      r._startOffsetBase = 0;
+      r._endOffsetBase = 0;
+    } catch (_e289d) {}
     // R179：实例接 Range.prototype（spec 原型链；WPT node-creation-realm 的
     // `inner.Range.prototype.cloneContents.call(range)` 形态——旧字面量无原型链，
     // prototype 方法 undefined）。
@@ -6684,6 +6724,12 @@ function _zwRegisterTextEl(el, handle, sel, text) {
     nodeType: 3, nodeName: '#text', __nv: text, textContent: text,
     length: text.length, __zwIsText: true,
     previousSibling: null, nextSibling: null,
+    // R289（js-dom M4）：childNodes/children 空数组——spec CharacterData 叶子（同
+    // _zwMText/doc.createTextNode/_wrapNodeEntry 三工厂；common.js nodeLength/testTree 的
+    // `node.childNodes.length` 对缺字段抛 undefined.length TypeError 使整文件 setup 崩，
+    // WPT Range-selectNode 主文档 textEl 域实证）。
+    childNodes: [],
+    children: [],
     // R51：spec ownerDocument（common.js rangeFromEndpoints 经 ownerDocument(node).createRange()）。
     ownerDocument: globalThis.document,
     // js-dom M4 R79：Node.contains / hasChildNodes / compareDocumentPosition——WPT testNodes 的

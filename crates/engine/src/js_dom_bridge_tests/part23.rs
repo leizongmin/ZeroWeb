@@ -4008,3 +4008,139 @@ fn r288_compare_boundary_points_pair_selection() {
         "R288 compareBoundaryPoints: how=2 uses END pair (not START), ancestor pairs compare offset-vs-childIndex, cross-container tree order"
     );
 }
+
+#[test]
+fn r289_range_constructor_initial_boundaries() {
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let mut sandbox = V8Sandbox::with_config(zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    })
+    .unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><div id=\"t\">x</div></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+    // WPT Range-constructor 六断言：new Range() 初始边界 (document, 0)。
+    // https://dom.spec.whatwg.org/#dom-range-range
+    let out = sandbox
+        .execute(
+            r#"
+var range = new Range();
+var out = [];
+out.push('sc=' + (range.startContainer === document));
+out.push('ec=' + (range.endContainer === document));
+out.push('so=' + range.startOffset + ' eo=' + range.endOffset);
+out.push('col=' + range.collapsed);
+out.push('cac=' + (range.commonAncestorContainer === document));
+globalThis.__r289r = out.join('|');
+"#,
+        )
+        .unwrap();
+    let out = sandbox.execute("globalThis.__r289r").unwrap().value;
+    assert_eq!(
+        out, "sc=true|ec=true|so=0 eo=0|col=true|cac=true",
+        "R289 Range constructor: initial boundary (document, 0) per spec (R183 createRange parity)"
+    );
+}
+
+#[test]
+fn r289_select_node_contents_chardata_length_and_doctype_throw() {
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let mut sandbox = V8Sandbox::with_config(zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    })
+    .unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><div id=\"t\">x</div></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+    // WPT Range-selectNode：selectNodeContents 的 endOffset = node length（spec
+    // `dom-range-select-node-contents`——CharacterData = data.length）；doctype 抛
+    // InvalidNodeTypeError；叶子 textEl 的 childNodes.length === 0（不再 undefined）。
+    // https://dom.spec.whatwg.org/#dom-range-selectnodecontents
+    let out = sandbox
+        .execute(
+            &[
+                "var out = [];",
+                "var range = document.createRange();",
+                "var t = document.getElementById('t').firstChild;",
+                "out.push('cnLen=' + (t.childNodes ? t.childNodes.length : 'nocn'));",
+                "range.selectNodeContents(t);",
+                "out.push('textEo=' + range.endOffset);",
+                "var cm = document.createComment('hello');",
+                "range.selectNodeContents(cm);",
+                "out.push('cmEo=' + range.endOffset);",
+                "try { range.selectNodeContents(document.doctype); out.push('dt:throw-miss'); }",
+                "catch (e) { out.push('dt:' + e.name); }",
+                "globalThis.__r289s = out.join('|');",
+            ]
+            .join("\n"),
+        )
+        .unwrap();
+    let out = sandbox.execute("globalThis.__r289s").unwrap().value;
+    assert_eq!(
+        out, "cnLen=0|textEo=1|cmEo=5|dt:InvalidNodeTypeError",
+        "R289 selectNodeContents: charData endOffset = data.length, doctype throws, textEl childNodes defined"
+    );
+}
+
+#[test]
+fn r289_intersects_node_strict_boundary_adjacency() {
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let mut sandbox = V8Sandbox::with_config(zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    })
+    .unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><div id=\"d\"><span id=\"s0\">s0</span><span id=\"s1\">s1</span><span id=\"s2\">s2</span></div></body></html>"
+            .to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+    // WPT Range-intersectsNode-2（Chromium crbug 822510）：严格不等——相邻兄弟
+    // 不相交（node 首边界 == range end / 末边界 == range start 均不交）。
+    // https://dom.spec.whatwg.org/#dom-range-intersectsnode
+    let out = sandbox
+        .execute(
+            &[
+                "var out = [];",
+                "var range = new Range();",
+                "var div = document.getElementById('d');",
+                "var s0 = document.getElementById('s0');",
+                "var s1 = document.getElementById('s1');",
+                "var s2 = document.getElementById('s2');",
+                "range.setStart(div, 0); range.setEnd(div, 1);",
+                "out.push('a=' + range.intersectsNode(s0) + '/' + range.intersectsNode(s1) + '/' + range.intersectsNode(s2));",
+                "range.setStart(div, 1); range.setEnd(div, 2);",
+                "out.push('b=' + range.intersectsNode(s0) + '/' + range.intersectsNode(s1) + '/' + range.intersectsNode(s2));",
+                "globalThis.__r289i = out.join('|');",
+            ]
+            .join("\n"),
+        )
+        .unwrap();
+    let out = sandbox.execute("globalThis.__r289i").unwrap().value;
+    assert_eq!(
+        out, "a=true/false/false|b=false/true/false",
+        "R289 intersectsNode strict adjacency: boundary-touching siblings do not intersect"
+    );
+}

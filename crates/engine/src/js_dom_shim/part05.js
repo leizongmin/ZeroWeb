@@ -6457,6 +6457,14 @@
       parentNode: parentProxy,
       parentElement: parentProxy,
       __zwIsText: true,
+      // R289（js-dom M4）：childNodes/children 空数组——spec CharacterData 是叶子
+      // （`concept-node-tree` 无子），但 `node.childNodes.length`（common.js nodeLength
+      // / testTree 遍历）对缺字段形态抛 `undefined.length` TypeError 使整文件 setup 崩
+      // （WPT Range-selectNode "Cannot read properties of undefined (reading 'length')"
+      // ——旧形态 hasChildNodes() 有但 childNodes 字段无）。与 `_zwMText`/doc.createTextNode
+      // 两工厂（均有 childNodes: []）对齐——三工厂叶子字段面统一。
+      childNodes: [],
+      children: [],
       // js-dom M4 R79：Node.contains / hasChildNodes / compareDocumentPosition——WPT
       // Node-contains/compareDocumentPosition 的 testNodes 含 paras[0].firstChild 等文本节点
       //（旧为普通 data 字段无方法 → "reference.contains is not a function" 1002F 簇）。spec：
