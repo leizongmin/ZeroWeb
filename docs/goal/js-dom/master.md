@@ -3,7 +3,8 @@
 **入口文档**: [../js-dom.md](../js-dom.md)（长期 Mission / Done Criteria / 执行协议 / 文档治理规则）
 **关联 RFC**: [../../specs/p1b-v8-native-bindings-rfc.md](../../specs/p1b-v8-native-bindings-rfc.md) + [../../specs/p1b-l2d3-unified-matcher-identity-bridge-rfc.md](../../specs/p1b-l2d3-unified-matcher-identity-bridge-rfc.md)（R166 新增——L2-d3 统一匹配器 + identity 桥设计）
 **创建日期**: 2026-08-13（goal 拆分 bootstrap）
-**本轮**: R287 — **M4：clone 侧 doc 守卫 + 九轮全量 A/B 复核（引擎修复 land，cloneContents 185P/2F→187P/0F 100%——**ranges 域六套件全部 100% 收口**）——R282 修的「doc parentNode 恒 null 合法」只落了 extract 侧，cloneContents 仍持旧守卫使 doc-sc 路径从未执行（sandbox probe frag=0）；对称移植 scParOk 后 HTML 深克隆 + comment 头克隆全对齐。**dom 全量 A/B（R278-R287 九轮累计 vs R279 基线双跑）**：52717P→52778P（+61，set-diff 0 回归 / 62 fail 消失）+ nodes/events/traversal/collections 持平（-1 为已知 flaky）。教训：双侧同构的 spec 修正须双侧同步落，extract/clone 修正清单互为 checklist。engine 2420 全绿（+1 r287 单测）+ fmt/clippy 干净。commit：`480d6f96f`**
+**本轮**: R288 — **M4：Range 三大域 956F 一轮全解（引擎修复 land，compareBoundaryPoints 592F→0F + Range-set 240F→0F + comparePoint 124F→0F，三套件全 100%）——四个独立根因**：① comparePoint 步骤序（root 检查 WrongDocumentError 先于 doctype 检查——旧序 cross-root doctype 报错类型错）；② compareBoundaryPoints 边界点对选取重写（how=2 END_TO_END 旧版落入 START_TO_START 分支 + 跨容器 cDP 位无祖先 offset-vs-childIndex 比较——修为 spec 表选取 + 复用 R203 `_zwRangeBpAfter` 深度感知双 climb）；③ setStart/setEnd 元素容器超长 offset 恢复精确校验（R286 registry 事实源使 handle childNodes 长度可判定，旧 `nodeType!==1` 放宽过时）；④ iframe load 事件改 `_defer` 微任务延迟派发（spec 异步完成语义——旧同步派发使 onload 在 `.src=...` 赋值语句序列中间执行，R255 时代 16,x 时序深项收口）。**dom 全量单跑**：52778P→**53733P（+955）**，ranges 38841P；A/B（stash 前后同命令）证实剩余 ranges 10F 全部 pre-existing（constructor/selectNode/intersectsNode-2/in-shadow 3F + mutations-data 5F 超时族）。engine 2423 全绿（+3 r288 单测）+ fmt/clippy 干净 + integration/wpt-runner/quickjs 矩阵全绿。commit：`e411dfd76`**
+**上轮**: R287 — **M4：clone 侧 doc 守卫 + 九轮全量 A/B 复核（引擎修复 land，cloneContents 185P/2F→187P/0F 100%——**ranges 域六套件全部 100% 收口**）——R282 修的「doc parentNode 恒 null 合法」只落了 extract 侧，cloneContents 仍持旧守卫使 doc-sc 路径从未执行（sandbox probe frag=0）；对称移植 scParOk 后 HTML 深克隆 + comment 头克隆全对齐。**dom 全量 A/B（R278-R287 九轮累计 vs R279 基线双跑）**：52717P→52778P（+61，set-diff 0 回归 / 62 fail 消失）+ nodes/events/traversal/collections 持平（-1 为已知 flaky）。教训：双侧同构的 spec 修正须双侧同步落，extract/clone 修正清单互为 checklist。engine 2420 全绿（+1 r287 单测）+ fmt/clippy 干净。commit：`480d6f96f`**
 **上轮**: R286 — **M4：容器 handle innerHTML 空态（引擎修复 land，Range-deleteContents-in-ShadowRoot 3P/1F→4P/0F 100%）——sandbox 复现：shadow `{<span>ABC</span>}` 全删后 childNodes=0 但 innerHTML 仍显示旧 span。根因：shadow/fragment handle 的内容只存 JS registry（host 无对应 mutation 域），innerHTML getter 融合视图空时回落 `__zw_get_inner_html_handle` 的缓存序列化——删除后空态被旧缓存掩盖。修：容器以 registry 为唯一事实源，空 registry 返 ''（_isContainerHandle 分支）。**Range.detach() 连带翻绿**（R281 时代记录的 1F 实测 Pass——同族空态掩盖）。A/B 全 ranges sweep：ShadowRoot +1 + 五套件 100%（delete/delete-ShadowRoot/insert/surround/extract）+ clone 185P/2F 持平 + set-diff **0 回归**；engine 2419 全绿（+1 r286 单测）+ fmt/clippy 干净。ranges 域现状：五套件 100% + clone 最后 2F（29/31,x docEl clone 域）。commit：`475205df8`**
 **上轮**: R285 — **M4：firstPartial clone 引导（引擎修复 land，extractContents 达 100%——187P/0F；clone 184P→185P）——R284 的「comparator walk 域」归因被推翻**：dual-walk probe 实证 E（oracle）是正确 spec 输出——sc 是 cac 直接子且 partially-contained 时 frag 以 sc 的空 clone 开头（first partially contained child 分支；53,x so=1 越过唯一 text 子 → P#d 空壳引导），引擎缺引导使 A 侧全部错位一位（walk 读成「expected Element got Text」）。修：extract/clone 双侧引导（限定 sc.parentNode===cac——**首版教训**：cac===sc 全形态引导使 48,x -3 回归，容器自身非 firstPartial）。**教训**：DOM/frag 两断言是两轮独立提取，probe 须注入目标断言同一轮（第一 probe 在 DOM 轮得出错误结论）。A/B 全 ranges sweep：extract +1（100%）+ clone +1 + deleteContents/insertNode/surround 100% 保持 + set-diff **0 回归**；engine 2418 全绿 + fmt/clippy 干净。ranges 域现状：四套件 100%（delete/extract/insert/surround）+ clone 185P/2F（29/31,x docEl clone 域小簇）。commit：`3c3fe2014`**
 **上轮**: R284 — **M4：doc 容器 covered children + frag 域归一（引擎修复 land，extract 183P/4F→186P/1F + clone 180P/7F→184P/3F 双修 +7P）——①51,x：R194 的 `_coveredChildren` 容器白名单漏 Document（9）——同容器 doc 区间的 contained 子语义与元素一致，旧版返 null 使 extract/delete/clone 三侧同容器 doc 形态全空转；修后 html 子 move + 塌缩 (doc,1)。②53,x frag：extract/clone 的 frag 恒主 document 域——跨域 append 对 iframe 域子被 flat；修为 frag 归 start 节点 ownerDocument（spec 步骤 1）。**probe 先行归因**：53,x 残余非 frag 构造（probe 实证 P#e 已包裹 nodeType 1）而是 comparator walk 域（R276 家族，独立切片）。A/B 全 ranges sweep：extract +3 + clone +4 + deleteContents/insertNode/surround 100% 保持 + set-diff **0 回归**；engine 2418 全绿（+1 r284 单测）+ fmt/clippy 干净。残余 = comparator walk 域簇 4F + Range.detach() 预存。commit：`51818851f`**
@@ -450,6 +451,7 @@
 
 | 日期 | 轮次 | 证据 | 结果 |
 |------|------|------|------|
+| 2026-08-26 | R288 | comparePoint 顺序 + compareBoundaryPoints 重写 + setStart/End 精确校验 + iframe load 微任务延迟（part01/06.js + part21/23.rs）+ evidence/2026-08-26-r288-compare-point-boundary-set.md | compareBoundaryPoints **592F→0F** + Range-set **240F→0F** + comparePoint **124F→0F**（三大域全 100%）；dom 全量 52778P→**53733P（+955）**；ranges 九套件 100%；engine 2423 绿；A/B 证实剩余 ranges Fail 全 pre-existing |
 | 2026-08-26 | R287 | clone 侧 doc 守卫（scParOk 对称移植）+ part23 doc-sc clone 单测 + evidence/2026-08-26-r287-clone-doc-guard-full-ab.md | cloneContents **187P/0F（100%）——ranges 六套件全 100%**；dom 全量 A/B 九轮累计 +61P（0 回归）；engine 2420 绿 |
 | 2026-08-26 | R286 | 容器 handle innerHTML 空态（part04 _isContainerHandle 分支）+ part23 shadow 全删单测 + evidence/2026-08-26-r286-container-innerhtml-empty.md | ShadowRoot deleteContents **4P/0F（100%）**；ranges 全量 37857P（set-diff 0 回归）；五套件 100%；detach 连带翻绿；engine 2419 绿 |
 | 2026-08-26 | R285 | firstPartial clone 引导（extract/clone 双侧，限定 sc.parentNode===cac）+ r283 f53 期望更新 + evidence/2026-08-26-r285-firstpartial-clone-bootstrap.md | extractContents 186P/1F→**187P/0F（100%）** + clone 184P/3F→185P/2F；ranges 全量 37855P（set-diff 0 回归）；四套件 100%；engine 2418 绿 |
@@ -670,9 +672,14 @@
 ---
 
 ## 下一步计划
-0. **R288 下一步（R287 后，按 ROI）**——ranges 六套件 100% 收口，剩余失败面为三大未动域：
-   - **(a) Range-comparePoint 124F 重聚类**（中等簇，可能与既有 cDP 域修复有连带）。
-   - **(b) Range-set 240F / Range-compareBoundaryPoints 592F 重聚类**（大片域，先取样归因）。
+0. **R289 下一步（R288 后，按 ROI）**——三大域（compareBoundaryPoints/set/comparePoint 共 956F）已全解，ranges 剩余失败面收窄至 10F + mutations 超时族：
+   - **(a) Range-constructor 1F**（`new Range()` startContainer expected Document got null——构造器 document 关联域，小簇独立可修）。
+   - **(b) Range-selectNode 1F**（setup 阶段 `Cannot read properties of undefined (reading 'length')`——testNodeInput 域）。
+   - **(c) Range-intersectsNode-2 1F + in-shadow-after-the-shadow-removed 2F**（shadow 域 3F）。
+   - **(d) mutations-data 5F 超时族**（执行超时 90s，环境慢低 ROI 备档——R261 已归因）。
+0. **R288 下一步（R287 后，按 ROI，已执行——三域 956F 全解）**：
+   - ~~(a) Range-comparePoint 124F 重聚类~~ ✅ root-先于-doctype 顺序修正全解。
+   - ~~(b) Range-set 240F / compareBoundaryPoints 592F 重聚类~~ ✅ setStart/End 元素容器精确校验 + cBP 边界点对选取重写全解。
    - **(c) mutations 超时族**（环境慢，低 ROI 备档）。
 0. **R287 下一步（R286 后，按 ROI）**：
    - **(a) clone 29/31,x**（docEl clone 域：expected plain vs got handle——doc sc 的 docElement 深克隆走 host handle 域，oracle 走 _zwDeepCloneEl plain 域）。
