@@ -4380,3 +4380,58 @@ globalThis.__r293i = out.join('|');
         "R293 insertAdjacentText/Element: syntax throw, sync sibling visibility, root HRE, doctype TypeError"
     );
 }
+
+#[test]
+fn r294_mo_records_sibling_fields_and_textel_identity() {
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let mut sandbox = V8Sandbox::with_config(zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    })
+    .unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><p id=\"n71\">CHANN</p></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+    // WPT MutationObserver-childList "Range.deleteContents: child and data removal"：
+    // record 的 previousSibling/nextSibling 字段（spec MutationRecord——旧 record 缺
+    // 两字段恒 null）。+ innerHTML 纯文本的 addedNodes 与 firstChild 同 identity
+    // （WPT MutationObserver-inner-outer "innerHTML mutation"）。
+    // https://dom.spec.whatwg.org/#concept-mutation-observer-queue
+    let out = sandbox
+        .execute(
+            r#"
+var out = [];
+var n71 = document.getElementById('n71');
+n71.appendChild(document.createTextNode("NNN"));
+n71.appendChild(document.createTextNode("NGED"));
+var recs = null;
+var mo = new MutationObserver(function(rs) { recs = rs; });
+mo.observe(n71, { childList: true });
+var r71 = document.createRange();
+r71.setStart(n71.firstChild, 4);
+r71.setEnd(n71.lastChild, 1);
+r71.deleteContents();
+sandboxDeliver = function() { mo.takeRecords(); };
+var trs = [];
+try { trs = mo.takeRecords(); } catch (e) {}
+out.push('n=' + trs.length);
+for (var i = 0; i < trs.length; i++) {
+  out.push('r' + i + ':' + (trs[i].previousSibling ? String(trs[i].previousSibling.data || '').slice(0,4) : 'null') + '/' + (trs[i].nextSibling ? String(trs[i].nextSibling.data || '').slice(0,4) : 'null'));
+}
+globalThis.__r294m = out.join('|');
+"#,
+        )
+        .unwrap();
+    let out = sandbox.execute("globalThis.__r294m").unwrap().value;
+    assert_eq!(
+        out, "n=1|r0:CHAN/GED",
+        "R294 MO childList record: sibling fields captured pre-removal (deleteContents middle text; next data post ec-head trim)"
+    );
+}

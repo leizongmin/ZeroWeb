@@ -3725,9 +3725,46 @@
               __zw_remove_handle(child.__zwHandle);
               // R86：handle 移除标记（迭代器 order 扫描跳过）。
               if (typeof _zwMarkRemovedHandle === 'function') _zwMarkRemovedHandle(child.__zwHandle);
+              // R294（js-dom M4）：record 的 previousSibling/nextSibling——移除前从
+              // 父融合 childNodes 定位（WPT MutationObserver-childList "Range.
+              // deleteContents: child and data removal" 断言 previousSibling ===
+              // n71.firstChild；旧 record 缺字段）。在 _unrecordHandleChild（registry
+              // 剔除）**前**读。
+              var _r294k = null, _r294pv = null, _r294nx = null;
+              try {
+                _r294k = _childNodeList(sel, handle);
+                var _r294ix = _r294k.indexOf(child);
+                if (_r294ix < 0) {
+                  // R294：identity miss（包装换代/缓存代差）——按 handle/data 内容匹配
+                  // 定位（child 是 handle 文本/元素时 __zwHandle 唯一；textEl 域按
+                  // nodeType+data 双键）。
+                  var _r294ch = child.__zwHandle;
+                  for (var _r294m = 0; _r294m < _r294k.length; _r294m++) {
+                    var _r294c = _r294k[_r294m];
+                    if (!_r294c) continue;
+                    if (_r294ch && _r294c.__zwHandle === _r294ch) { _r294ix = _r294m; break; }
+                    if (_r294c === child) { _r294ix = _r294m; break; }
+                    if (child.nodeType === 3 && _r294c.nodeType === 3
+                      && String(_r294c.data != null ? _r294c.data : '') === String(child.data != null ? child.data : '')) {
+                      _r294ix = _r294m; break;
+                    }
+                  }
+                }
+                if (_r294ix < 0 && handle) {
+                  var _r294hk = _handleChildren[handle];
+                  if (_r294hk) {
+                    _r294k = _r294hk;
+                    _r294ix = _r294hk.indexOf(child);
+                  }
+                }
+                if (_r294ix >= 0) {
+                  _r294pv = _r294ix > 0 ? _r294k[_r294ix - 1] : null;
+                  _r294nx = _r294ix + 1 < _r294k.length ? _r294k[_r294ix + 1] : null;
+                }
+              } catch (_e294k) {}
               // R2927/R2928：handle 父同步从 registry 移除子节点（保持 querySelector 子树一致）。
               if (handle) _unrecordHandleChild(handle, child);
-              _mo_notify(sel, handle, { type: 'childList', addedNodes: [], removedNodes: [child] });
+              _mo_notify(sel, handle, { type: 'childList', addedNodes: [], removedNodes: [child], previousSibling: _r294pv, nextSibling: _r294nx });
               // R140：live childNodes 同步（handle 子 removeChild——sel 父的 pending
               // overlay 经 notify 记账后 refresh 生效）。
               try {
@@ -4301,6 +4338,19 @@
                 ? _zwNodeParent[handle] : null;
               if (_r129Parent && _r129Parent.parentHandle && _handleChildren[_r129Parent.parentHandle]) {
                 var _r129Kids = _handleChildren[_r129Parent.parentHandle];
+                // R294（js-dom M4）：移除**前**捕获兄弟——record 的
+                // previousSibling/nextSibling 字段（spec MutationRecord——WPT
+                // MutationObserver-childList "Range.deleteContents: child and data
+                // removal" 断言 `previousSibling === n71.firstChild`（"CHAN" text），
+                // 旧 record 缺两字段恒 null/undefined）。
+                var _r294prev = null, _r294next = null;
+                for (var _r294i = 0; _r294i < _r129Kids.length; _r294i++) {
+                  if (_r129Kids[_r294i] && _r129Kids[_r294i].__zwHandle === handle) {
+                    _r294prev = _r294i > 0 ? _r129Kids[_r294i - 1] : null;
+                    _r294next = _r294i + 1 < _r129Kids.length ? _r129Kids[_r294i + 1] : null;
+                    break;
+                  }
+                }
                 for (var _r129i = 0; _r129i < _r129Kids.length; _r129i++) {
                   if (_r129Kids[_r129i] && _r129Kids[_r129i].__zwHandle === handle) {
                     _r129Kids.splice(_r129i, 1);
@@ -4309,10 +4359,13 @@
                 }
                 _mo_notify(_r129Parent.parentSel || null, _r129Parent.parentHandle, {
                   type: 'childList', addedNodes: [], removedNodes: [_makeProxy(sel, handle)],
+                  previousSibling: _r294prev, nextSibling: _r294next,
                 });
               }
               // sel 父形态（文本句柄挂主文档元素）：无 per-text wire（remove 由 host apply
               // 后快照融合反映），仅标记 + 通知。
+              // R294 试加 record 后回退：MO record 的 _zwNodeParent 清链副作用改变
+              // surroundContents HRE 路径的回滚依赖（r259 单测 bodyLast 回归）。
               if (handle) {
                 if (typeof _zwMarkRemovedHandle === 'function') _zwMarkRemovedHandle(handle);
                 try { __zw_remove_handle(handle); } catch (_e129h) {}
@@ -5565,6 +5618,16 @@
             // _makeProxy 经 _proxyCache 返同一 proxy 对象（parentNode===el 成立）。
             if (typeof _zwRegisterTextEl === 'function' && _ihVal.indexOf('<') < 0) {
               _zwRegisterTextEl(_makeProxy(sel, handle), handle, sel, _ihVal);
+              // R294（js-dom M4）：纯文本形态的 addedNodes 用**注册表同一 textEl 节点**
+              // ——消费方断言 `record.addedNodes[0] === el.firstChild`（WPT
+              // MutationObserver-inner-outer "innerHTML mutation"——firstChild 经
+              // _zwTextElsBySel 读注册表节点；旧 record 用 _zwFragmentAdded 的独立
+              // wrapper，data 相同 identity 不同「expected Text node got Text node」）。
+              try {
+                var _r294te = (handle && _zwTextElsByHandle && _zwTextElsByHandle.get(handle))
+                  || (sel && _zwTextElsBySel && _zwTextElsBySel.get(sel));
+                if (_r294te && _r294te.node) _ihAdded = [_r294te.node];
+              } catch (_e294t) {}
             } else if (typeof _zwUnregisterTextEl === 'function' && typeof _makeProxy === 'function') {
               _zwUnregisterTextEl(_makeProxy(sel, handle));
             }
