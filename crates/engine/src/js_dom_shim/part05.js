@@ -1377,11 +1377,24 @@
           for (var fi225b = 0; fi225b < fc225b.length; fi225b++) el.insertBefore(fc225b[fi225b], ref);
           return c;
         }
+        // R279（js-dom M4）：**自插入重定向**（spec `concept-node-pre-insert` 步骤
+        // 2「If referenceChild is child, set it to the next sibling of child」+
+        // common.js myInsertNode 的「node is referenceNode → nextSibling」同款）。
+        // c===ref 自插入形态（WPT Range-insertNode 28,0 `[testDiv,0,comment,5]` +
+        // node paras[0]——insertNode 把 DIV 首子插到自身原位）：ref 换成 c 的
+        // nextSibling 后再走摘除/定位，净效果 = 原位不动（真浏览器 no-op）。重定向
+        // 读值在摘除前（c 仍在树内，R278 动态 sibling getter 现算）。
+        // https://dom.spec.whatwg.org/#concept-node-pre-insert
+        if (ref === c && c.nextSibling) {
+          ref = c.nextSibling;
+        }
         if (c.parentNode && c.parentNode.removeChild) { try { c.parentNode.removeChild(c); } catch (_eR209pr) {} }
         if (ref == null) {
           c.parentNode = el; el.childNodes.push(c);
           return c;
         }
+        // R279：ref 是 c 原位的**后继**（自插入重定向后）或普通 ref——摘除后按
+        // identity 重定位（摘除可能使 ref 前移一位，indexOf 现算即正确）。
         var ri = el.childNodes.indexOf(ref);
         if (ri < 0) { c.parentNode = el; el.childNodes.push(c); return c; }
         c.parentNode = el;
@@ -1640,6 +1653,17 @@
         el.childNodes.length = 0;
         el.append.apply(el, arguments);
       };
+    }
+    // R278（js-dom M4）：**iframe 工厂元素的兄弟导航 getter**——`_zwIframeCreateElement`
+    // 产物是 plain 对象（无 sel/handle，不走 part04 proxy 的 sibling trap），原型链的
+    // `Element.prototype.nextSibling`（R3019 `_zwProtoOwnGetter`）对无 own 槽恒 null →
+    // WPT Range mega-case 的 oracle 树序遍历（common.js nextNode 的 firstChild/
+    // nextSibling 爬升）在 restoreIframe 克隆域提前终止（nodesToRemove=0，Range-
+    // deleteContents 22/48/52/53,x 的 expected 侧中段子全不删）。修：R273 CDATA 同款
+    // `_zwMDefineSiblings` 动态 getter（parentNode.childNodes.indexOf 现算，detached/
+    // 边界 null）——与 `_zwMText`/`_zwMComment`/`_zwMEl` 工厂一致，R279 尾簇补元素域。
+    if (typeof _zwMDefineSiblings === 'function') {
+      try { _zwMDefineSiblings(el); } catch (_eR278s) {}
     }
     return el;
   }

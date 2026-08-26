@@ -3808,7 +3808,111 @@
           _r268handled = true;
         })(this);
         if (_r268handled) return;
-        // R269（js-dom M4）：**同容器子区间删除（Document 容器限定）**——WPT
+        // R278（js-dom M4）：**sc CharData + ec 元素端点的跨容器删除**——R268
+        // 首版教训把 element 端点整体排除（「climb-tail 规则对元素端点错」），
+        // 但 spec 的 ec 元素形态有独立正解：**partially-contained 语义——ec 本体
+        // 保留，仅其 [0, eo) 直接子（fully contained，因 ec 是端点）删除**。
+        // WPT Range-deleteContents 22,x `[paras[0].firstChild,3,paras[3],1]`：
+        // sc=text 尾段删（保 "Äb"）+ 中段 contained 子移除（paras[1..2]）+
+        // ec=P#d 保留本体、其首个子（text "Yzabcdef"）删 + 塌缩。旧版全分支
+        // miss（R268 要求双 CharData）→ `_coveredChildren` 回落对 sc≠ec 恒
+        // null → 整体 no-op（probe 实证：POST sc.nodeValue 仍全量、P#a kids=1）。
+        // 与 R268 的差别仅 ec 侧两段：头段 deleteData 换成 [0,eo) 子移除，
+        // ec 侧爬升从「ec 的父」起步（ec 本体不动）。sc 侧/mid/collapse 复用
+        // R268 同款（已验证形态）。
+        // https://dom.spec.whatwg.org/#dom-range-deletecontents
+        var _r278handled = false;
+        (function _r278CdElDel(self) {
+          var sc = self.startContainer, ec = self.endContainer;
+          if (!sc || !ec || sc === ec) return;
+          var isCd = function (n) {
+            var t = n ? (n.nodeType | 0) : 0;
+            return t === 3 || t === 4 || t === 7 || t === 8;
+          };
+          if (!isCd(sc)) return;
+          var en = ec.nodeType | 0;
+          if (en !== 1 && en !== 11 && !ec.tagName) return;
+          if (!sc.parentNode || !ec.parentNode) return;
+          // cac：sc 祖先链上首个含 ec 的容器（R268 同款）。
+          var chain = [], cur = sc, hops = 0;
+          while (cur && hops++ < 128) { chain.push(cur); cur = cur.parentNode; }
+          var cac = null;
+          for (var ci = 0; ci < chain.length && !cac; ci++) {
+            var probe = ec, h2 = 0;
+            while (probe && h2++ < 128) {
+              if (probe === chain[ci]) { cac = chain[ci]; break; }
+              probe = probe.parentNode;
+            }
+          }
+          if (!cac) return;
+          var so = self.startOffset | 0, eo = self.endOffset | 0;
+          var rmNode = function (n, parent) {
+            try {
+              if (typeof n.remove === 'function') n.remove();
+              if (n.parentNode != null && parent && typeof parent.removeChild === 'function') {
+                parent.removeChild(n);
+              }
+            } catch (_e) {
+              try { if (parent && typeof parent.removeChild === 'function') parent.removeChild(n); } catch (_e2) {}
+            }
+          };
+          // ① sc 尾段 deleteData（保 [0, so)）。
+          if (typeof sc.deleteData === 'function') {
+            var sl = String(sc.data != null ? sc.data : '').length;
+            if (so < sl) { try { sc.deleteData(so, sl - so); } catch (_eR278a) {} }
+          }
+          // ② sc 侧爬升：到 cac 前逐级移除路径子右侧兄弟（cac 级跳过——mid 段处理）。
+          var lvl = sc, lvlPar = sc.parentNode, hp = 0;
+          while (lvlPar && lvl !== cac && hp++ < 128) {
+            if (lvlPar === cac) break;
+            var pk = lvlPar.childNodes || [];
+            var pi = -1;
+            for (var pj = 0; pj < pk.length; pj++) if (pk[pj] === lvl) { pi = pj; break; }
+            if (pi < 0) break;
+            for (var q2 = pk.length - 1; q2 > pi; q2--) rmNode(pk[q2], lvlPar);
+            lvl = lvlPar;
+            lvlPar = lvlPar.parentNode;
+          }
+          // ③ ec 侧（元素端点 partially-contained）：本体保留，[0, eo) 直接子
+          // 逆序移除；再从 ec 的父爬升移除左侧兄弟（不含 ec 本身，cac 级跳过）。
+          var ek = ec.childNodes || [];
+          for (var i3 = Math.min(eo, ek.length) - 1; i3 >= 0; i3--) rmNode(ek[i3], ec);
+          var elvl = ec, epar = ec.parentNode, hp2 = 0;
+          while (epar && elvl !== cac && hp2++ < 128) {
+            if (epar === cac) break;
+            var ekp = epar.childNodes || [];
+            var ei2 = -1;
+            for (var ej = 0; ej < ekp.length; ej++) if (ekp[ej] === elvl) { ei2 = ej; break; }
+            if (ei2 < 0) break;
+            for (var q3 = ei2 - 1; q3 >= 0; q3--) rmNode(ekp[q3], epar);
+            elvl = epar;
+            epar = epar.parentNode;
+          }
+          // ④ cac 级中段 (sIdx, eIdx) 开区间移除（R268 同款）。
+          var ck = cac.childNodes || [];
+          var sRef = sc;
+          while (sRef && sRef.parentNode !== cac && sRef.parentNode) sRef = sRef.parentNode;
+          var eRef = ec;
+          while (eRef && eRef.parentNode !== cac && eRef.parentNode) eRef = eRef.parentNode;
+          var sIdx = -1, eIdx = -1;
+          for (var ck2 = 0; ck2 < ck.length; ck2++) {
+            if (sRef && ck[ck2] === sRef) sIdx = ck2;
+            if (eRef && ck[ck2] === eRef) eIdx = ck2;
+          }
+          if (sIdx >= 0 && eIdx > sIdx) {
+            for (var q4 = eIdx - 1; q4 > sIdx; q4--) rmNode(ck[q4], cac);
+          }
+          // ⑤ 塌缩 (cac, sIdx+1)（R268 同款 reference 定位）。
+          var rpk = cac.childNodes || [];
+          var rIdx = -1;
+          for (var rj = 0; rj < rpk.length; rj++) if (rpk[rj] === sRef) { rIdx = rj; break; }
+          try {
+            if (rIdx >= 0) { self.setStart(cac, rIdx + 1); self.setEnd(cac, rIdx + 1); }
+            else { self.setStart(cac, 0); self.setEnd(cac, 0); }
+          } catch (_eR278c) {}
+          _r278handled = true;
+        })(this);
+        if (_r278handled) return;
         // Range-deleteContents 25/26,x `[document,0,document,1/2]`：doc 的
         // contained 子（doctype/html）旧 `_coveredChildren` 融合视图对主文档
         // proxy 恒空 → 无移除（「expected 1/0 got 2」）。spec 同容器形态 =

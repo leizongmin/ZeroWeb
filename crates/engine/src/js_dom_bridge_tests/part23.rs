@@ -3322,3 +3322,64 @@ fn r273_cdata_sibling_navigation() {
         "R273 CDATA sibling getters: self-computed via parent childNodes indexOf (oracle nextNode climb contract); null when detached or at edges"
     );
 }
+
+#[test]
+fn r278_clone_realm_paras_sibling_chain() {
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let mut sandbox = V8Sandbox::with_config(zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    })
+    .unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><div id=\"test\">x</div></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+    // R278 repro: mimic restoreIframe + setupRangeTests — a fresh doc gets a
+    // cloned docElement appended, then handle-element paras are appended into
+    // the (clone-realm) testDiv/body. The oracle nextNode climb contract:
+    // P#a.nextSibling === P#b, and DIV's nextSibling via body chain.
+    let js = [
+        "var out = [];",
+        // referenceDoc clone chain (restoreIframe shape)
+        "var referenceDoc = document.implementation.createHTMLDocument('');",
+        "referenceDoc.removeChild(referenceDoc.documentElement);",
+        "var ifr = document.createElement('iframe');",
+        "document.body.appendChild(ifr);",
+        "var idoc = ifr.contentDocument;",
+        "idoc.appendChild(referenceDoc.documentElement.cloneNode(true));",
+        // setupRangeTests shape inside the iframe doc realm
+        "var testDiv = idoc.createElement('div');",
+        "testDiv.id = 'test';",
+        "idoc.body.insertBefore(testDiv, idoc.body.firstChild);",
+        "var paras = [];",
+        "for (var i = 0; i < 3; i++) {",
+        "  var p = idoc.createElement('p');",
+        "  p.id = ['a','b','c'][i];",
+        "  p.textContent = 'p' + i;",
+        "  testDiv.appendChild(p);",
+        "  paras.push(p);",
+        "}",
+        "var cm = idoc.createComment('tail');",
+        "testDiv.appendChild(cm);",
+        // oracle climb contract probes
+        "var nsA = paras[0].nextSibling === paras[1] ? 'b' : String(paras[0].nextSibling && paras[0].nextSibling.nodeName);",
+        "var nsB = paras[1].nextSibling === paras[2] ? 'c' : String(paras[1].nextSibling && paras[1].nextSibling.nodeName);",
+        "var nsC = paras[2].nextSibling === cm ? 'cm' : String(paras[2].nextSibling && paras[2].nextSibling.nodeName);",
+        "var nsDiv = testDiv.nextSibling === null ? 'null' : String(testDiv.nextSibling && testDiv.nextSibling.nodeName);",
+        "var fnA = paras[0].firstChild != null && String(paras[0].firstChild.data);",
+        "out.push('chain=' + nsA + '/' + nsB + '/' + nsC + '/' + nsDiv + ' text=' + fnA);",
+        "globalThis.__r278r = out.join('|');",
+    ].join("\n");
+    let out = sandbox.execute(&js).unwrap().value;
+    assert_eq!(
+        out, "chain=b/c/cm/null text=p0",
+        "R278 clone-realm paras sibling chain: oracle nextNode climb needs paras[i].nextSibling resolvable in the restoreIframe clone realm (append into iframe-doc body/testDiv); WPT Range-deleteContents 22,x oracle walk n=0 root cause"
+    );
+}
