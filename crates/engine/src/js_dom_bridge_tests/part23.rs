@@ -4435,3 +4435,48 @@ globalThis.__r294m = out.join('|');
         "R294 MO childList record: sibling fields captured pre-removal (deleteContents middle text; next data post ec-head trim)"
     );
 }
+
+#[test]
+fn r295_iframe_realm_node_constructors_owner_document() {
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let mut sandbox = V8Sandbox::with_config(zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    })
+    .unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><div id=\"t\">x</div></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+    // WPT Text/Comment-constructor "across globals"：iframe realm 的构造器产物
+    // ownerDocument 须是该 iframe 的 document（spec WebIDL node ctor 的 realm 关联）。
+    // https://dom.spec.whatwg.org/#dom-text
+    let out = sandbox
+        .execute(
+            r#"
+var out = [];
+var iframe = document.createElement("iframe");
+document.body.appendChild(iframe);
+var w = iframe.contentWindow;
+var t = new w.Text("abc");
+var c = new w.Comment("note");
+out.push('tOd=' + (t.ownerDocument === iframe.contentDocument));
+out.push('cOd=' + (c.ownerDocument === iframe.contentDocument));
+out.push('tData=' + t.data + '/cData=' + c.data);
+out.push('tIframeT=' + (t instanceof w.Text) + '/tMainT=' + (t instanceof Text));
+globalThis.__r295r = out.join('|');
+"#,
+        )
+        .unwrap();
+    let out = sandbox.execute("globalThis.__r295r").unwrap().value;
+    assert_eq!(
+        out, "tOd=true|cOd=true|tData=abc/cData=note|tIframeT=true/tMainT=true",
+        "R295 iframe-realm Text/Comment ctor: ownerDocument = iframe doc, instanceof both realms"
+    );
+}

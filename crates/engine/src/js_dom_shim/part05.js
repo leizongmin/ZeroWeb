@@ -2265,8 +2265,50 @@
       SVGElement: globalThis.SVGElement,
       MathMLElement: globalThis.MathMLElement,
       Document: globalThis.Document,
-      Text: globalThis.Text,
-      Comment: globalThis.Comment,
+      // R295（js-dom M4）：Text/Comment 的 **per-realm 构造器**（spec WebIDL
+      // 「node constructor 的 ownerDocument = 该 realm 的 document」——WPT
+      // Text/Comment-constructor "across globals"：`new iframe.contentWindow
+      // .Text().ownerDocument === iframe.contentDocument`。旧直接转发主构造器
+      // 使产物 ownerDocument 恒主 document——「expected Document with 1 child
+      // got 2」2F 簇）。包装类：实例经主构造器建（完整方法面），ownerDocument
+      // 覆写本 iframe doc。prototype 链接主构造器 prototype（instanceof 跨
+      // realm 保持）。
+      Text: (function () {
+        var doc295 = doc;
+        function IframeText(data295) {
+          var n295 = new globalThis.Text(data295 === undefined ? '' : data295);
+          try {
+            Object.defineProperty(n295, 'ownerDocument', {
+              configurable: true, enumerable: true,
+              get: function () { return doc295; },
+            });
+          } catch (_e295t) {}
+          return n295;
+        }
+        try {
+          IframeText.prototype = globalThis.Text.prototype;
+          Object.defineProperty(IframeText, 'prototype', { writable: false, configurable: false });
+        } catch (_e295p) {}
+        return IframeText;
+      })(),
+      Comment: (function () {
+        var doc295c = doc;
+        function IframeComment(data295c) {
+          var n295c = new globalThis.Comment(data295c === undefined ? '' : data295c);
+          try {
+            Object.defineProperty(n295c, 'ownerDocument', {
+              configurable: true, enumerable: true,
+              get: function () { return doc295c; },
+            });
+          } catch (_e295t2) {}
+          return n295c;
+        }
+        try {
+          IframeComment.prototype = globalThis.Comment.prototype;
+          Object.defineProperty(IframeComment, 'prototype', { writable: false, configurable: false });
+        } catch (_e295p2) {}
+        return IframeComment;
+      })(),
       CharacterData: globalThis.CharacterData,
       Event: globalThis.Event,
       DOMException: globalThis.DOMException,
