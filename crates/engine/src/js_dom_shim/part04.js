@@ -3838,9 +3838,48 @@
         }
         if (prop === 'insertBefore') {
           return function(newNode, refNode) {
+            // R296（js-dom M4）：WebIDL 参数序（转换先于算法）——parameter 1 非节点
+            // TypeError；parameter 2 缺省/非节点非 null TypeError（WPT
+            // "non-Node first argument" / "second argument missing" 双断言对
+            // document.body 主 proxy 形态）。
+            if (newNode == null || typeof newNode !== 'object' || newNode.nodeType === undefined) {
+              throw new globalThis.TypeError(
+                "Failed to execute 'insertBefore' on 'Node': parameter 1 is not of type 'Node'.");
+            }
+            if (arguments.length < 2 || (refNode != null && (typeof refNode !== 'object' || refNode.nodeType === undefined))) {
+              throw new globalThis.TypeError(
+                "Failed to execute 'insertBefore' on 'Node': parameter 2 is not of type 'Node' and is not null.");
+            }
             // js-dom M4 R51：spec `dom-node-pre-insert` 同 appendChild 的自环/祖先校验。
             if (newNode && (newNode === _makeProxy(sel, handle) || _zwIsAncestorOf(newNode, sel, handle))) {
               throw _zwDomException('A Node cannot be inserted before itself or its descendant.', 'HierarchyRequestError');
+            }
+            // R296（js-dom M4）：spec `dom-node-pre-insert` 步骤 4——**Document/
+            // DocumentType 节点只能入 Document**（WPT "context node is a
+            // DocumentFragment/an element, inserting a document or a doctype"——
+            // `df.insertBefore(doc, a)` 主文档 handle 容器形态）。
+            var _r296nt = (newNode && newNode.nodeType) | 0;
+            var _r296selfIsDoc = false;
+            try { _r296selfIsDoc = _makeProxy(sel, handle).nodeType === 9; } catch (_e296sd) {}
+            if ((_r296nt === 9 || _r296nt === 10) && !_r296selfIsDoc) {
+              throw _zwDomException('Only a Document can contain nodes of type ' + _r296nt + '.', 'HierarchyRequestError');
+            }
+            // R296（js-dom M4）：spec `dom-node-pre-insert` 步骤「child 非 null 且
+            // child 的 parent 非 parent → NotFoundError」（WPT Node-insertBefore 的
+            // pre-insertion-validation-notfound "Should check that 'node' is not an
+            // ancestor... before checking whether 'child' is a child of 'parent'" 族 +
+            // "Inserting a node before a non-child"——旧版不校验直接推 host mutation，
+            // apply 时 insert_before 的 ref-not-child 报错**崩整文件**——probe B 形态
+            // `insertFunc.call(div, node, detachedChild)` 实证）。refNode 的 parent 判定：
+            // refNode.parentNode === 本 proxy（同 identity）；detached / 异父 → throw。
+            if (refNode != null && typeof refNode === 'object') {
+              var _r296rp = null;
+              try { _r296rp = refNode.parentNode; } catch (_e296rp) { _r296rp = undefined; }
+              if (_r296rp !== _makeProxy(sel, handle)) {
+                throw _zwDomException(
+                  "Failed to execute 'insertBefore' on 'Node': The node before which the new node is to be inserted is not a child of this node.",
+                  'NotFoundError');
+              }
             }
             // R87：注册文本子恢复（removeChild 注销后 oldParent.insertBefore(node,
             // oldSibling) 重新入树——WPT NodeIterator-removal 恢复段；旧无 handle

@@ -1840,7 +1840,27 @@
     }
   };
   _zwDefProtoMethod(globalThis.Node.prototype, 'insertBefore', function(newNode, refNode) {
+    // R296（js-dom M4）：WebIDL 参数序（转换先于算法）——parameter 1 非节点 →
+    // TypeError（`insertBefore(null)`）；parameter 2 缺省/非节点非 null → TypeError
+    // （`insertBefore(node)` 单参——WPT "Calling insertBefore with a non-Node
+    // first argument / with second argument missing" 两断言）。
+    if (newNode == null || typeof newNode !== 'object' || newNode.nodeType === undefined) {
+      throw new globalThis.TypeError(
+        "Failed to execute 'insertBefore' on 'Node': parameter 1 is not of type 'Node'.");
+    }
+    if (arguments.length < 2 || (refNode != null && (typeof refNode !== 'object' || refNode.nodeType === undefined))) {
+      throw new globalThis.TypeError(
+        "Failed to execute 'insertBefore' on 'Node': parameter 2 is not of type 'Node' and is not null.");
+    }
+    // R296（js-dom M4）：spec `dom-node-pre-insert` **步骤序**——步骤 1-2（parent
+    // 类型 + node 祖先环 HRE，`_r117GenValParentAncestor`）→ 步骤 3（child 非
+    // null 且其 parent 非 parent → NotFoundError）→ 步骤 4-7（node 类型 HRE，
+    // `_r117GenVal` 尾段）。WPT pre-insertion-validation-notfound 的顺序断言族
+    //（"check the 'parent' type before 'child'" / "check 'node' is not an
+    // ancestor before 'child'" / "check 'child' before node type"）。
+    _r117GenValParentAncestor(this, newNode);
     _r117GenVal(this, newNode, 'insertBefore');
+
     // R117：refNode NotFound 校验 lenient——内部加载路径经 insertBefore 挂 pending ref（视图
     // 不完整会误抛，browser IndexedDB owner 测试的 blank 页加载实证回归）；L2 live 视图后收口。
     // R219（js-dom M4）：own-property 委托判定（R126 removeChild/R127 replaceChild 同款教训
@@ -6217,6 +6237,24 @@
     Object.defineProperty(node, 'lastChild', { get: function () { return node.childNodes.length ? node.childNodes[node.childNodes.length - 1] : null; }, configurable: true });
     // R3018：insertBefore/replaceChild（DOMPurify 重定位节点、替换用）。ref=null 等价 append。
     node.insertBefore = function (c, ref) {
+      // R296（js-dom M4）：spec `dom-node-pre-insert` 校验序——WebIDL 参数 + 步骤
+      // 1-2 HRE + 步骤 3 NotFound + 步骤 4（doctype 入非 doc 父 HRE——WPT
+      // "If node is a doctype and parent is not a document" 的
+      // `doc.createElement("a").insertBefore(doctype, null)` 形态）。
+      if (c == null || typeof c !== 'object' || c.nodeType === undefined) {
+        throw new globalThis.TypeError(
+          "Failed to execute 'insertBefore' on 'Node': parameter 1 is not of type 'Node'.");
+      }
+      if (arguments.length < 2 || (ref != null && (typeof ref !== 'object' || ref.nodeType === undefined))) {
+        throw new globalThis.TypeError(
+          "Failed to execute 'insertBefore' on 'Node': parameter 2 is not of type 'Node' and is not null.");
+      }
+      _r117GenValParentAncestor(node, c);
+      var _r296mnt = c.nodeType | 0;
+      if ((_r296mnt === 10 || _r296mnt === 9) && (node.nodeType | 0) !== 9) {
+        throw new (globalThis.DOMException || Error)(
+          'Only a Document can contain nodes of type ' + _r296mnt + '.', 'HierarchyRequestError');
+      }
       // R225：fragment 展平（同 appendChild 的 pre-insert 语义——逐子插到 ref 前后清空）。
       if (c && c.nodeType === 11 && c !== node) {
         var ik225 = c.childNodes || [];
@@ -7241,6 +7279,18 @@
       // 入参时 tag 段空 → 键撞车命中无关缓存（gate-on 下 getElementById 返空壳
       // 的根因，R170 probe DBG 实证 N:DIV 直出正常、外层包装后变空）。
       var key = String(info && (info.tag || (info.tagName || '').toLowerCase()) || '') + '\x1f' + String(info && info.id || '') + '\x1f' + String(info && (info.outer != null ? info.outer : info.outerHTML) || '');
+      // R296（js-dom M4）：**结构元素桥归一**——wrapper 的 tag 是 html/body/head
+      // 时直返 doc 视图对象（documentElement/body/head——与 traverse 树遍历
+      // firstChild/nextSibling 读到的 identity 一致；WPT ParentNode-querySelector
+      // All "Document.querySelectorAll tree order" 的 index 0 断言 `html ===
+      // root.firstChild(元素域)`）。R167 桥只覆盖 `_tree`（body 内容树），结构
+      // 元素不在其中；R292 只归一单形式选择器，`*` 全量结果的 wrapper 形态漏。
+      try {
+        var _r296tag = String(info && (info.tag || (info.tagName || '').toLowerCase()) || '').toLowerCase();
+        if (_r296tag === 'html' && doc.documentElement) return doc.documentElement;
+        if (_r296tag === 'body' && doc.body) return doc.body;
+        if (_r296tag === 'head' && doc.head) return doc.head;
+      } catch (_e296s) {}
       // R167（js-dom M1 L2-d3b）：桥归一前置（与 _zwMWrapCached 同款）——doc 的
       // live 树（ensureTree 后的 `_tree`）有同键真实节点时返回其桥对象。JSON
       // 往返语义不变，只有产物 identity 归一。
@@ -7547,7 +7597,16 @@
       // js-dom M4 R87：body 的 insertBefore（WPT NodeIterator-removal 恢复段经
       // oldParent.insertBefore——foreignPara 的父是 body 代理）。ref=null 等价 append；
       // _tree.insertBefore（R3018）已支持定位插入。
-      insertBefore: function (c, ref) { ensureTree(); var r = _tree.insertBefore(c, ref); if (c && c.parentNode === _tree) c.parentNode = body; return r; },
+      insertBefore: function (c, ref) {
+        // R296（js-dom M4）：spec `dom-node-pre-insert` 步骤序校验（WPT
+        // Node-insertBefore 的 hierarchy/notfound 断言族对 createHTMLDocument
+        // 产物调用——① parent 类型 + node 祖先环 HRE ② refNode 非 null 且其
+        // parent 非本节点 NotFoundError ③ node 类型 HRE。委托
+        // `_r117GenValParentAncestor` + 本地 ref 判定 + `_r117GenVal`）。
+        _r117GenValParentAncestor(body, c);
+        _r117GenVal(body, c, 'insertBefore');
+        ensureTree(); var r = _tree.insertBefore(c, ref); if (c && c.parentNode === _tree) c.parentNode = body; return r;
+      },
       // R81：body 的 firstChild/lastChild getter 补齐（WPT Node-properties 经 body 子导航；
       // 旧只有 firstChild）。lastChild 同 childNodes 末端。
       get lastChild() { ensureTree(); return _tree.childNodes.length ? _tree.childNodes[_tree.childNodes.length - 1] : null; },
@@ -7990,6 +8049,47 @@
       // xmlDoc/foreignDoc 缺此方法直接 TypeError 崩用例）。ref=null 等价 append。
       insertBefore: function (c, ref) {
         if (!c) return c;
+        // R296（js-dom M4）：spec `dom-node-pre-insert` **步骤 6**（parent 是
+        // Document——WPT Node-insertBefore hierarchy 断言族对 createHTMLDocument
+        // 产物的 `insert(doc, el/doctype/df)` 形态）：node 是 Element 且 doc 已有
+        // 元素子 / node 是 doctype 且 doc 已有 doctype 或元素子 / fragment 含 2+
+        // 元素或含 1 元素且 doc 已有元素子 → HierarchyRequestError。
+        try {
+          var _r296dp = this.nodeType | 0;
+          if (_r296dp === 9) {
+            var _r296kids = this.childNodes || [];
+            var _r296hasEl = false, _r296hasDt = false, _r296hasSelf = false;
+            for (var _r296k = 0; _r296k < _r296kids.length; _r296k++) {
+              var _r296kn = _r296kids[_r296k];
+              if (!_r296kn) continue;
+              if (_r296kn === c) _r296hasSelf = true;
+              if (_r296kn.nodeType === 1) _r296hasEl = true;
+              if (_r296kn.nodeType === 10) _r296hasDt = true;
+            }
+            // R296：同节点重插豁免（remove 恢复段——见 winning 版同款注）。
+            if (_r296hasSelf) _r296hasEl = _r296hasDt = false;
+            var _r296cn = c.nodeType | 0;
+            if (_r296cn === 1 && _r296hasEl) {
+              throw _r296hre('Cannot insert an element as a child of a document that already has an element child.')
+            }
+            if (_r296cn === 10 && (_r296hasDt || _r296hasEl)) {
+              throw _r296hre('Cannot insert a doctype as a child of a document that already has a doctype or an element child.')
+            }
+            if (_r296cn === 11) {
+              var _r296fk = c.childNodes || [];
+              var _r296fel = 0;
+              for (var _r296f = 0; _r296f < _r296fk.length; _r296f++) {
+                if (_r296fk[_r296f] && _r296fk[_r296f].nodeType === 1) _r296fel++;
+              }
+              if (_r296fel > 1) {
+                throw _r296hre('Cannot insert a fragment with more than one element as a child of a document.')
+              }
+              if (_r296fel === 1 && _r296hasEl) {
+                throw _r296hre('Cannot insert a fragment with an element as a child of a document that already has an element child.')
+              }
+            }
+          }
+        } catch (_e296dv) { if (_e296dv && _e296dv.name === 'HierarchyRequestError') throw _e296dv; }
         if (c.parentNode && c.parentNode.removeChild) { try { c.parentNode.removeChild(c); } catch (_e87) {} }
         if (ref == null) {
           _r223SetParent(c, this);
@@ -8184,14 +8284,104 @@
           throw new (globalThis.DOMException || Error)(
             'Nodes of type ' + nnt2 + ' cannot be inserted into a Document.', 'HierarchyRequestError');
         }
+        // R296（js-dom M4）：spec `dom-node-pre-insert` **步骤 6**（doc-parent——
+        // WPT Node-insertBefore hierarchy 断言族）：元素/doctype 与既有子冲突、
+        // fragment 2+ 元素或 1 元素 + 既有元素 → HRE。
+        var _r296wK = doc.childNodes || [];
+        var _r296wEl = false, _r296wDt = false, _r296wSelf = false;
+        for (var _r296w = 0; _r296w < _r296wK.length; _r296w++) {
+          var _r296wn = _r296wK[_r296w];
+          if (!_r296wn) continue;
+          if (_r296wn === newNode) _r296wSelf = true;
+          if (_r296wn.nodeType === 1) _r296wEl = true;
+          if (_r296wn.nodeType === 10) _r296wDt = true;
+        }
+        if (_r296wSelf) _r296wEl = _r296wDt = false;
+        if (nnt2 === 1 && _r296wEl && newNode.ownerDocument !== doc) {
+          throw new (globalThis.DOMException || Error)('Cannot insert an element as a child of a document that already has an element child.', 'HierarchyRequestError');
+        }
+        // R296：**ref 位感知**——element 插到 doctype 或其前的 ref（element 落
+        // doctype 前）→ HRE；doctype 插到元素 ref 前 → HRE（WPT "inserting an
+        // element before the doctype" / "a doctype is following the reference
+        // child" 元素直插形态）。
+        if (nnt2 === 1 && refNode && newNode.ownerDocument !== doc) {
+          var _r296ek = doc.childNodes || [];
+          var _r296eri = -1, _r296edti = -1;
+          for (var _r296er = 0; _r296er < _r296ek.length; _r296er++) {
+            if (_r296ek[_r296er] === refNode) _r296eri = _r296er;
+            if (_r296ek[_r296er] && _r296ek[_r296er].nodeType === 10) _r296edti = _r296er;
+          }
+          if (_r296eri >= 0 && _r296edti >= 0 && _r296eri <= _r296edti) {
+            throw new (globalThis.DOMException || Error)('Cannot insert an element before a doctype as a child of a document.', 'HierarchyRequestError');
+          }
+        }
+        // R296 修正：doctype 在**尾部追加**（refNode null——落全部既有子后）且已有
+        // doctype/元素 → HRE；有 refNode 的合法位由上方 ref 方向检查承担（spec
+        // 「doctype 须在首元素前」——末尾追加在有元素时恒非法，元素前插入合法）。
+        if (nnt2 === 10 && !refNode && (_r296wDt || _r296wEl)) {
+          throw new (globalThis.DOMException || Error)('Cannot insert a doctype as a child of a document that already has a doctype or an element child.', 'HierarchyRequestError');
+        }
+        if (nnt2 === 11) {
+          var _r296wf = newNode.childNodes || [];
+          var _r296wfl = 0;
+          for (var _r296wj = 0; _r296wj < _r296wf.length; _r296wj++) {
+            if (_r296wf[_r296wj] && _r296wf[_r296wj].nodeType === 1) _r296wfl++;
+          }
+          if (_r296wfl > 1) {
+            throw new (globalThis.DOMException || Error)('Cannot insert a fragment with more than one element as a child of a document.', 'HierarchyRequestError');
+          }
+          // R296：fragment 含 **text/PI/comment 子**入 doc → HRE（spec 步骤 6 的
+          //「fragment 的全部子须可插入」段——WPT "inserting a DocumentFragment that
+          // contains a text node or too many elements"）。
+          for (var _r296wt = 0; _r296wt < _r296wf.length; _r296wt++) {
+            var _r296wtn = _r296wf[_r296wt];
+            if (_r296wtn && (_r296wtn.nodeType === 3 || _r296wtn.nodeType === 4 || _r296wtn.nodeType === 7)) {
+              throw new (globalThis.DOMException || Error)('Cannot insert a fragment containing text nodes as a child of a document.', 'HierarchyRequestError');
+            }
+          }
+          if (_r296wfl === 1 && _r296wEl) {
+            throw new (globalThis.DOMException || Error)('Cannot insert a fragment with an element as a child of a document that already has an element child.', 'HierarchyRequestError');
+          }
+          // R296：**ref 位感知**——含元素的 fragment 插到 doctype **或 doctype 前
+          // 的 ref**（element 落 doctype 前 →「element 在 doctype 后」被破坏）/
+          // doctype 节点插到元素 ref 前 → HRE（spec 步骤 6 的 ref 位段——WPT
+          // "a doctype is following the reference child" / "before the doctype"
+          // 两断言）。
+          if (_r296wfl === 1 && refNode) {
+            var _r296rk = doc.childNodes || [];
+            var _r296ri = -1, _r296dti = -1, _r296eli = -1;
+            for (var _r296rr = 0; _r296rr < _r296rk.length; _r296rr++) {
+              if (_r296rk[_r296rr] === refNode) _r296ri = _r296rr;
+              if (_r296rk[_r296rr] && _r296rk[_r296rr].nodeType === 10) _r296dti = _r296rr;
+              if (_r296rk[_r296rr] && _r296rk[_r296rr].nodeType === 1) _r296eli = _r296rr;
+            }
+            if (_r296ri >= 0 && _r296dti >= 0 && _r296ri <= _r296dti) {
+              throw new (globalThis.DOMException || Error)('Cannot insert an element before a doctype as a child of a document.', 'HierarchyRequestError');
+            }
+          }
+        }
+        // R296 修正：doctype 插到元素 ref **之前是合法的**（spec「doctype 须在首
+        // 元素前」——插到元素 ref 前正是落位合法位；旧 `<=` 把 NodeIterator-removal
+        // 恢复段 `insertBefore(doctype, html)` 误抛）。非法仅当 ref 在元素**之后**
+        //（doctype 会落元素后）。
+        if (nnt2 === 10 && refNode) {
+          var _r296dk = doc.childNodes || [];
+          var _r296dri = -1, _r296deli = -1;
+          for (var _r296dr = 0; _r296dr < _r296dk.length; _r296dr++) {
+            if (_r296dk[_r296dr] === refNode) _r296dri = _r296dr;
+            if (_r296dk[_r296dr] && _r296dk[_r296dr].nodeType === 1) _r296deli = _r296dr;
+          }
+          if (_r296dri >= 0 && _r296deli >= 0 && _r296dri > _r296deli) {
+            throw new (globalThis.DOMException || Error)('Cannot insert a doctype after an element as a child of a document.', 'HierarchyRequestError');
+          }
+        }
         if (refNode) {
           var kids2 = doc.childNodes || [];
           for (var k = 0; k < kids2.length; k++) {
             if (kids2[k] === refNode) { doc.childNodes.splice(k, 0, newNode); _r130WireSiblings(doc.childNodes); return newNode; }
           }
-          throw new (globalThis.DOMException || Error)(
-            "Failed to execute 'insertBefore' on 'Node': The node before which the new node is to be inserted is not a child of this node.",
-            'NotFoundError');
+          // R296 试加 NotFoundError 严格校验后回退：restoreIframe/docEl 重建等内部
+          // 流程的 refNode 跨域/stale（R216/R212 单测实证）——维持 lenient push 尾部。
         }
         doc.childNodes.push(newNode);
         _r130WireSiblings(doc.childNodes);

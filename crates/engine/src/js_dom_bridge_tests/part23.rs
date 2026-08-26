@@ -4480,3 +4480,86 @@ globalThis.__r295r = out.join('|');
         "R295 iframe-realm Text/Comment ctor: ownerDocument = iframe doc, instanceof both realms"
     );
 }
+
+#[test]
+fn r296_insert_before_validation_order() {
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let mut sandbox = V8Sandbox::with_config(zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    })
+    .unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><div id=\"t\">x</div></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+    // WPT Node-insertBefore 的 pre-insertion 校验序（WebIDL 参数 → 步骤 1-2 HRE →
+    // 步骤 4 类型 HRE → 步骤 6 doc-parent HRE）。
+    // https://dom.spec.whatwg.org/#concept-node-pre-insert
+    let out = sandbox
+        .execute(
+            r#"
+var out = [];
+function probe(name, fn) {
+  try { fn(); out.push(name + ':no-throw'); }
+  catch (e) { out.push(name + ':' + e.name); }
+}
+// WebIDL 参数
+probe('null1', function() { document.body.insertBefore(null, null); });
+probe('missing2', function() { document.body.insertBefore(document.createTextNode('c')); });
+// 步骤 4：doctype/doc 入非 doc 父
+probe('dtIntoEl', function() {
+  var doc = document.implementation.createHTMLDocument("t");
+  doc.createElement("a").insertBefore(doc.childNodes[0], null);
+});
+probe('docIntoDf', function() {
+  var df = document.createDocumentFragment();
+  var a = df.appendChild(document.createElement("a"));
+  var doc2 = document.implementation.createHTMLDocument("t2");
+  df.insertBefore(doc2, a);
+});
+// 步骤 6（doc-parent）
+probe('fragText', function() {
+  var doc = document.implementation.createHTMLDocument("t");
+  var df = doc.createDocumentFragment();
+  df.appendChild(doc.createTextNode("x"));
+  doc.insertBefore(df, null);
+});
+probe('frag2els', function() {
+  var doc = document.implementation.createHTMLDocument("t");
+  doc.documentElement.remove();
+  var df = doc.createDocumentFragment();
+  df.appendChild(doc.createElement("a"));
+  df.appendChild(doc.createElement("b"));
+  doc.insertBefore(df, null);
+});
+probe('dtDup', function() {
+  var doc = document.implementation.createHTMLDocument("t");
+  var dt = doc.childNodes[0].cloneNode();
+  doc.insertBefore(dt, null);
+});
+// 合法插入（不误伤）
+probe('ok', function() {
+  var doc = document.implementation.createHTMLDocument("t");
+  var p = doc.body;
+  var t = doc.createTextNode("hello");
+  p.insertBefore(t, null);
+  out.push('okKids=' + p.childNodes.length);
+});
+globalThis.__r296v = out.join('|');
+"#,
+        )
+        .unwrap();
+    let out = sandbox.execute("globalThis.__r296v").unwrap().value;
+    assert_eq!(
+        out,
+        "null1:TypeError|missing2:TypeError|dtIntoEl:HierarchyRequestError|docIntoDf:HierarchyRequestError|fragText:HierarchyRequestError|frag2els:HierarchyRequestError|dtDup:HierarchyRequestError|okKids=1|ok:no-throw",
+        "R296 insertBefore validation order: WebIDL params, doctype/doc type HRE, doc-parent step-6, no false positives"
+    );
+}
