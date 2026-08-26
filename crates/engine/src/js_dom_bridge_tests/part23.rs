@@ -4325,3 +4325,58 @@ globalThis.__r292q = out.join('|');
         "R292 struct-node identity: body/head/html query returns doc view objects, content-tree ids unaffected"
     );
 }
+
+#[test]
+fn r293_insert_adjacent_text_semantics() {
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let mut sandbox = V8Sandbox::with_config(zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    })
+    .unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><div id=\"t\"><span>existing</span></div></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+    // WPT Element-insertAdjacentText / insert-adjacent：position 非法 SyntaxError、
+    // doc 根 beforebegin/afterend 抛 HierarchyRequestError、同轮可见性（sibling
+    // getter 反映插入）、doctype 参数 TypeError。
+    // https://dom.spec.whatwg.org/#dom-element-insertadjacenttext
+    let out = sandbox
+        .execute(
+            r#"
+var out = [];
+var target = document.getElementById('t');
+try { target.insertAdjacentText('test', 'x'); out.push('inv=miss'); }
+catch (e) { out.push('inv=' + e.name); }
+target.insertAdjacentText('beforebegin', 'test1');
+out.push('prev=' + target.previousSibling.nodeValue);
+target.insertAdjacentText('afterend', 'test4');
+out.push('next=' + target.nextSibling.nodeValue);
+target.insertAdjacentText('afterbegin', 'test3');
+out.push('first=' + target.firstChild.nodeValue);
+var h3 = document.createElement('h3');
+h3.id = 'hd';
+target.insertAdjacentElement('afterend', h3);
+out.push('elNext=' + target.nextSibling.id);
+try { document.documentElement.insertAdjacentText('beforebegin', 'x'); out.push('root=miss'); }
+catch (e) { out.push('root=' + e.name); }
+try { target.insertAdjacentElement('afterbegin', document.implementation.createDocumentType('html', '', '')); out.push('dt=miss'); }
+catch (e) { out.push('dt=' + e.name); }
+globalThis.__r293i = out.join('|');
+"#,
+        )
+        .unwrap();
+    let out = sandbox.execute("globalThis.__r293i").unwrap().value;
+    assert_eq!(
+        out,
+        "inv=SyntaxError|prev=test1|next=test4|first=test3|elNext=hd|root=HierarchyRequestError|dt=TypeError",
+        "R293 insertAdjacentText/Element: syntax throw, sync sibling visibility, root HRE, doctype TypeError"
+    );
+}

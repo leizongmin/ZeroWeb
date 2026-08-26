@@ -4699,13 +4699,62 @@
         // `element.insertAdjacentText(position, text)`（P1a）：文本作**字面 Text 节点**（不解析
         // HTML）按 position 插入——区别于 insertAdjacentHTML（解析片段）。仅 sel-based（已挂载）
         // 元素经 host `__zw_insert_adjacent_text`；handle-only detached 无操作（同 insertAdjacentHTML）。
+        // R293（js-dom M4）：spec 语义对齐 insertAdjacentElement 的 R133 收口——① position
+        // 四值（ASCII case-insensitive）非法同步抛 SyntaxError；② documentElement 的
+        // beforebegin/afterend（无元素父——插 sibling 进 doc 造成第二元素子）抛
+        // HierarchyRequestError（WPT Element-insertAdjacentText "Adding more than one child
+        // to document"——host 报错经 mutation 异步 apply 不可达断言面，JS 侧前置判定）；
+        // ③ documentElement 的 afterbegin/beforeend 同步反映到本地子视图（host mutation
+        // 异步 apply，同步断言 `documentElement.firstChild.nodeValue` 旧读快照恒 null）。
         if (prop === 'insertAdjacentText') {
           return function(position, text) {
+            var pos293 = String(position == null ? '' : position).trim().toLowerCase();
+            if (pos293 !== 'beforebegin' && pos293 !== 'afterbegin' && pos293 !== 'beforeend' && pos293 !== 'afterend') {
+              throw new (globalThis.DOMException || Error)(
+                "Failed to execute 'insertAdjacentText' on 'Element': The value provided ('" + String(position) + "') is not one of 'beforebegin', 'afterbegin', 'beforeend', or 'afterend'.",
+                'SyntaxError');
+            }
+            var _r293IsRoot = _realTag(sel, handle) === 'HTML'
+              && !(function () {
+                var p = _makeProxy(sel, handle).parentNode;
+                return p && p.nodeType === 1;
+              })();
+            if (_r293IsRoot && (pos293 === 'beforebegin' || pos293 === 'afterend')) {
+              throw new (globalThis.DOMException || Error)(
+                'Failed to execute \'insertAdjacentText\' on \'Element\': A document node cannot be inserted here.',
+                'HierarchyRequestError');
+            }
             if (sel && typeof __zw_insert_adjacent_text === 'function') {
               try {
-                __zw_insert_adjacent_text(sel, String(position), String(text));
+                __zw_insert_adjacent_text(sel, pos293, String(text));
                 _mo_notify(sel, handle, { type: 'childList', addedNodes: [], removedNodes: [] });
               } catch (_e) {}
+              // R293：**同步子视图**（host mutation 异步 apply——WPT 断言
+              // `previousSibling.nodeValue`/`firstChild` 同 turn 读）。经 proxy 自身
+              // 的 insertBefore/appendChild（pending overlay 记账 + handle 反链，
+              // R182 sel 子同款可见性管线）。位置翻译：beforebegin/afterend 站
+              // 父（ref = 自身/旧 nextSibling），afterbegin/beforeend 站自身
+              //（ref = 首子 / null 尾）。
+              try {
+                var tn293 = globalThis.document.createTextNode(String(text == null ? '' : text));
+                var self293 = _makeProxy(sel, handle);
+                if (pos293 === 'beforebegin' || pos293 === 'afterend') {
+                  var p293 = null, ref293 = null;
+                  try { p293 = self293.parentNode; } catch (_e293p) {}
+                  if (p293) {
+                    ref293 = pos293 === 'beforebegin' ? self293 : (self293.nextSibling || null);
+                    try { p293.insertBefore(tn293, ref293); } catch (_e293i) {}
+                  }
+                } else if (pos293 === 'afterbegin') {
+                  try { self293.insertBefore(tn293, self293.firstChild || null); } catch (_e293i2) {}
+                } else {
+                  try { self293.appendChild(tn293); } catch (_e293a) {}
+                }
+                // R293：兄弟缓存失效——sibling getter 的 `_zwSiblingBaseCache` 按快照代
+                // 缓存（overlay 差异不在其失效面），text 插入后 target 的 prev/nextSibling
+                // 须重读（R182 sel 子同款）。
+                if (globalThis._zwSiblingBaseInvalidateAll) globalThis._zwSiblingBaseInvalidateAll();
+              } catch (_e293v) {}
             }
             return undefined;
           };
@@ -4727,7 +4776,11 @@
                 "Failed to execute 'insertAdjacentElement' on 'Element': The value provided ('" + String(position) + "') is not one of 'beforebegin', 'afterbegin', 'beforeend', or 'afterend'.",
                 'SyntaxError');
             }
-            if (!element || typeof element !== 'object' || element.nodeType === undefined) {
+            // R293（js-dom M4）：参数须是 **Element**（nodeType 1——WebIDL 接口类型；
+            // WPT insert-adjacent 的 createDocumentType 形态期望 TypeError，旧只查
+            // nodeType !== undefined 使 doctype 落 sel 分支推 host mutation →
+            // apply 报 "no child match for undefined" 整文件崩）。
+            if (!element || typeof element !== 'object' || element.nodeType !== 1) {
               throw new globalThis.TypeError(
                 "Failed to execute 'insertAdjacentElement' on 'Element': parameter 2 is not of type 'Element'.");
             }
@@ -4751,7 +4804,36 @@
               typeof __zw_insert_adjacent_element === 'function'
             ) {
               __zw_insert_adjacent_element(sel, pos, element.__zwHandle);
-              _mo_notify(sel, handle, { type: 'childList', addedNodes: [element], removedNodes: [] });
+              // R293（js-dom M4）：pending bucket 按**实际插入父**记账——beforebegin/
+              // afterend 的子落在 target 的父（overlay 从父的 _childNodeList 读，
+              // 旧按 target sel 记账使 handle 子不可见 → 同轮断言
+              // `el.previousSibling.id` null，WPT insert-adjacent 4F 簇）。afterbegin/
+              // beforeend 站 target 自身。nextSibling 同步定位（ref = 插入位后继）。
+              var _r293pSel = sel, _r293pHandle = handle, _r293ref = null;
+              var _r293self = _makeProxy(sel, handle);
+              if (pos === 'beforebegin' || pos === 'afterend') {
+                var _r293pp = null;
+                try { _r293pp = _r293self.parentNode; } catch (_e293pp2) {}
+                if (_r293pp) {
+                  _r293pSel = _r293pp.__zwSelector || null;
+                  _r293pHandle = _r293pp.__zwHandle || null;
+                }
+                _r293ref = pos === 'beforebegin' ? _r293self : (_r293self.nextSibling || null);
+              } else if (pos === 'afterbegin') {
+                try { _r293ref = _r293self.firstChild || null; } catch (_e293f2) {}
+              }
+              // handle 反链先行（overlay 经 _zwNodeParent[handle] 解析父）。
+              try {
+                if (typeof _zwNodeParent !== 'undefined' && _zwNodeParent) {
+                  _zwNodeParent[element.__zwHandle] = {
+                    parentSel: _r293pSel || null,
+                    parentHandle: _r293pHandle || null,
+                    nextSibling: _r293ref,
+                  };
+                }
+              } catch (_e293np) {}
+              _mo_notify(_r293pSel, _r293pHandle, { type: 'childList', addedNodes: [element], removedNodes: [], nextSibling: _r293ref });
+              if (globalThis._zwSiblingBaseInvalidateAll) globalThis._zwSiblingBaseInvalidateAll();
               return element;
             }
             // R182（js-dom M4）：sel 子形态（静态页面元素——无 handle，WPT

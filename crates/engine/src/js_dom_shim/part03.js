@@ -1142,6 +1142,79 @@
   _zwDefProtoMethod(globalThis.Element.prototype, 'webkitMatchesSelector', function (sel) {
     return globalThis.Element.prototype.matches.apply(this, arguments);
   });
+  // R293（js-dom M4）：Element.prototype 的 insertAdjacentElement/Text（plain 元素
+  // 对象——_zwMEl/createHTMLDocument 产物经 setPrototypeOf 继承本原型；WPT
+  // insert-adjacent 的 "invalid caller object" 双形态在 createHTMLDocument()
+  // .documentElement 上调用，旧 plain 链缺方法直接 TypeError）。
+  // https://dom.spec.whatwg.org/#dom-element-insertadjacentelement
+  var _r293Pos = function (p293) {
+    var s293 = String(p293 == null ? '' : p293).trim().toLowerCase();
+    if (s293 !== 'beforebegin' && s293 !== 'afterbegin' && s293 !== 'beforeend' && s293 !== 'afterend') {
+      throw new (globalThis.DOMException || Error)(
+        "Failed to execute 'insertAdjacent' on 'Element': The value provided ('" + String(p293) + "') is not one of 'beforebegin', 'afterbegin', 'beforeend', or 'afterend'.",
+        'SyntaxError');
+    }
+    return s293;
+  };
+  _zwDefProtoMethod(globalThis.Element.prototype, 'insertAdjacentElement', function (position, element) {
+    var pos293 = _r293Pos(position);
+    if (!element || typeof element !== 'object' || element.nodeType !== 1) {
+      throw new globalThis.TypeError(
+        "Failed to execute 'insertAdjacentElement' on 'Element': parameter 2 is not of type 'Element'.");
+    }
+    // 父解析：plain 元素沿 parentNode；doc 根（父是 Document/nodeType 9 或无父且
+    // 自身是 html 的 documentElement 形态）的 beforebegin/afterend 抛 HRE。
+    var p293 = null;
+    try { p293 = this.parentNode; } catch (_e293p) { p293 = null; }
+    var isDocRoot293 = !p293 || (p293.nodeType === 9)
+      || (this.nodeName === 'HTML' && !(p293 && p293.nodeType === 1));
+    if (isDocRoot293 && (pos293 === 'beforebegin' || pos293 === 'afterend')) {
+      throw new (globalThis.DOMException || Error)(
+        'Failed to execute \'insertAdjacentElement\' on \'Element\': A document node cannot be inserted here.',
+        'HierarchyRequestError');
+    }
+    if (element.parentNode && element.parentNode.removeChild) {
+      try { element.parentNode.removeChild(element); } catch (_e293r) {}
+    }
+    try { element.parentNode = this; } catch (_e293pp) {}
+    if (pos293 === 'afterbegin') this.childNodes.unshift(element);
+    else if (pos293 === 'beforeend') this.childNodes.push(element);
+    else if (p293) {
+      // beforebegin/afterend：插到父的自身前后。
+      var pk293 = p293.childNodes || [];
+      var ix293 = pk293.indexOf(this);
+      if (ix293 < 0) { pk293.push(element); }
+      else if (pos293 === 'beforebegin') pk293.splice(ix293, 0, element);
+      else pk293.splice(ix293 + 1, 0, element);
+    }
+    return element;
+  });
+  _zwDefProtoMethod(globalThis.Element.prototype, 'insertAdjacentText', function (position, text) {
+    var pos293t = _r293Pos(position);
+    var p293t = null;
+    try { p293t = this.parentNode; } catch (_e293q) { p293t = null; }
+    var isDocRoot293t = !p293t || (p293t.nodeType === 9)
+      || (this.nodeName === 'HTML' && !(p293t && p293t.nodeType === 1));
+    if (isDocRoot293t && (pos293t === 'beforebegin' || pos293t === 'afterend')) {
+      throw new (globalThis.DOMException || Error)(
+        'Failed to execute \'insertAdjacentText\' on \'Element\': A document node cannot be inserted here.',
+        'HierarchyRequestError');
+    }
+    var doc293 = (this.ownerDocument && typeof this.ownerDocument.createTextNode === 'function')
+      ? this.ownerDocument : globalThis.document;
+    var tn293 = doc293.createTextNode(String(text == null ? '' : text));
+    try { tn293.parentNode = this; } catch (_e293tp) {}
+    if (pos293t === 'afterbegin') this.childNodes.unshift(tn293);
+    else if (pos293t === 'beforeend') this.childNodes.push(tn293);
+    else if (p293t) {
+      var pk293t = p293t.childNodes || [];
+      var ix293t = pk293t.indexOf(this);
+      if (ix293t < 0) pk293t.push(tn293);
+      else if (pos293t === 'beforebegin') pk293t.splice(ix293t, 0, tn293);
+      else pk293t.splice(ix293t + 1, 0, tn293);
+    }
+    return undefined;
+  });
   // R158：per-root wrapper 缓存（与 detached doc 的 _zwWrapCached 同理——
   // querySelector(x) === querySelectorAll(x)[0] identity 断言）。挂在 root 对象
   // 自身（_zwQWrapMap 槽），树变更经 setAttribute/appendChild 等方法面惰性失效

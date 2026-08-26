@@ -856,6 +856,54 @@
         };
         Object.defineProperty(docEl, 'firstChild', { configurable: true, get: function () { return docEl.childNodes.length ? docEl.childNodes[0] : null; } });
         Object.defineProperty(docEl, 'lastChild', { configurable: true, get: function () { return docEl.childNodes.length ? docEl.childNodes[docEl.childNodes.length - 1] : null; } });
+        // R293（js-dom M4）：docEl 的 insertAdjacentElement/Text（spec
+        // `dom-element-insertadjacent*`——WPT insert-adjacent 的 "invalid caller
+        // object" 双形态：createHTMLDocument().documentElement 上调用，beforebegin/
+        // afterend（doc 根无元素父——插 sibling 进 doc 造成第二元素子）抛
+        // HierarchyRequestError；afterbegin/beforeend 正常插入 docEl.childNodes。
+        // 旧工厂 docEl 无此二方法直接 TypeError。
+        docEl.insertAdjacentElement = function (position293, element293) {
+          var pos293e = String(position293 == null ? '' : position293).trim().toLowerCase();
+          if (pos293e !== 'beforebegin' && pos293e !== 'afterbegin' && pos293e !== 'beforeend' && pos293e !== 'afterend') {
+            throw new (globalThis.DOMException || Error)(
+              "Failed to execute 'insertAdjacentElement' on 'Element': The value provided ('" + String(position293) + "') is not one of 'beforebegin', 'afterbegin', 'beforeend', or 'afterend'.",
+              'SyntaxError');
+          }
+          if (!element293 || typeof element293 !== 'object' || element293.nodeType === undefined) {
+            throw new globalThis.TypeError(
+              "Failed to execute 'insertAdjacentElement' on 'Element': parameter 2 is not of type 'Element'.");
+          }
+          if (pos293e === 'beforebegin' || pos293e === 'afterend') {
+            throw new (globalThis.DOMException || Error)(
+              'Failed to execute \'insertAdjacentElement\' on \'Element\': A document node cannot be inserted here.',
+              'HierarchyRequestError');
+          }
+          if (element293.parentNode && element293.parentNode.removeChild) {
+            try { element293.parentNode.removeChild(element293); } catch (_e293r) {}
+          }
+          try { element293.parentNode = docEl; } catch (_e293pp) {}
+          if (pos293e === 'afterbegin') docEl.childNodes.unshift(element293);
+          else docEl.childNodes.push(element293);
+          return element293;
+        };
+        docEl.insertAdjacentText = function (position293, text293) {
+          var pos293t = String(position293 == null ? '' : position293).trim().toLowerCase();
+          if (pos293t !== 'beforebegin' && pos293t !== 'afterbegin' && pos293t !== 'beforeend' && pos293t !== 'afterend') {
+            throw new (globalThis.DOMException || Error)(
+              "Failed to execute 'insertAdjacentText' on 'Element': The value provided ('" + String(position293) + "') is not one of 'beforebegin', 'afterbegin', 'beforeend', or 'afterend'.",
+              'SyntaxError');
+          }
+          if (pos293t === 'beforebegin' || pos293t === 'afterend') {
+            throw new (globalThis.DOMException || Error)(
+              'Failed to execute \'insertAdjacentText\' on \'Element\': A document node cannot be inserted here.',
+              'HierarchyRequestError');
+          }
+          var tn293d = doc.createTextNode(String(text293 == null ? '' : text293));
+          tn293d.parentNode = docEl;
+          if (pos293t === 'afterbegin') docEl.childNodes.unshift(tn293d);
+          else docEl.childNodes.push(tn293d);
+          return undefined;
+        };
         // R292（js-dom M4）：docEl 的属性反射最小面（getAttribute/hasAttribute）——
         // R292 结构元素归一后 `doc.querySelector('html')` 直返 docEl（旧返带属性
         // 的 wrapper），消费方（WPT selectors 套件的 `found.getAttribute('id')`
