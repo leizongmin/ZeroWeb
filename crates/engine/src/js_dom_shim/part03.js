@@ -9699,7 +9699,13 @@
         // 12 常量——"Object __n0 doesn't have CDATA_SECTION_NODE" 2F）。挂在 constructor
         // 短路后、其余分支前（常量名与属性分支零冲突）。与 `_zwNodeConsts`（part03
         // Node.prototype/构造器挂载点）同源。
-        if (typeof prop === 'string' && Object.prototype.hasOwnProperty.call(_zwNodeConsts, prop)) {
+        // R294（CI-GUARD-20260827）：native 叠加路径（`_zwBuiltNodeChain=false`）下
+        // `_zwNodeConsts` 未定义（常量由 R137 经 `_r137Consts` 补挂 Node.prototype，
+        // 不写本表）——无防御引用致 `hasOwnProperty.call(undefined)` 抛
+        // "Cannot convert undefined or null to object"，native parity 全量回归
+        //（CI smoke 21 例；R290 引入，二分定位）。`_zwNodeConsts &&` 短路保持
+        // R290 前行为（native 路径 shim proxy 常量名回落 undefined，零回归）。
+        if (typeof prop === 'string' && _zwNodeConsts && Object.prototype.hasOwnProperty.call(_zwNodeConsts, prop)) {
           return _zwNodeConsts[prop];
         }
         // js-dom M3 R98：CE 用户类**首层原型** accessor getter 优先（先于 shim 反射属性分支）。
