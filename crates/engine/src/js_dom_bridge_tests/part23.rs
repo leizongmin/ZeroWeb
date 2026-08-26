@@ -4144,3 +4144,135 @@ fn r289_intersects_node_strict_boundary_adjacency() {
         "R289 intersectsNode strict adjacency: boundary-touching siblings do not intersect"
     );
 }
+
+#[test]
+fn r290_remove_handle_parent_and_registry() {
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let mut sandbox = V8Sandbox::with_config(zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    })
+    .unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><div id=\"t\">x</div></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+    // WPT Element-remove / ChildNode-remove.js：handle-only 父子形态（createElement
+    // 后 append）的 remove() 语义——spec `dom-child-remove`。
+    // https://dom.spec.whatwg.org/#dom-childnode-remove
+    let out = sandbox
+        .execute(
+            r#"
+var out = [];
+var node = document.createElement("div");
+var parentNode = document.createElement("div");
+parentNode.appendChild(node);
+out.push('appended=' + (node.parentNode === parentNode));
+node.remove();
+out.push('pn=' + (node.parentNode === null));
+out.push('kids=' + parentNode.childNodes.length);
+out.push('kidsArr=' + (Array.isArray(parentNode.childNodes) ? parentNode.childNodes.length : 'nl'));
+globalThis.__r290r = out.join('|');
+"#,
+        )
+        .unwrap();
+    let out = sandbox.execute("globalThis.__r290r").unwrap().value;
+    assert_eq!(
+        out, "appended=true|pn=true|kids=0|kidsArr=0",
+        "R290 remove: handle-only child detaches (parentNode null) and parent registry drops it"
+    );
+}
+
+#[test]
+fn r290_node_constants_on_instances() {
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let mut sandbox = V8Sandbox::with_config(zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    })
+    .unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><div id=\"t\">x</div></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+    // WPT Node-constants：实例经 `in` 与取值见全部 12 Node 常量（含内部下划线名
+    // CDATA_SECTION_NODE / ENTITY_REFERENCE_NODE / DOCUMENT_TYPE_NODE /
+    // DOCUMENT_FRAGMENT_NODE）。
+    // https://dom.spec.whatwg.org/#interface-node
+    let out = sandbox
+        .execute(
+            r#"
+var out = [];
+var el = document.createElement("foo");
+var t = document.createTextNode("bar");
+var names = ["ELEMENT_NODE","CDATA_SECTION_NODE","ENTITY_REFERENCE_NODE","DOCUMENT_TYPE_NODE","DOCUMENT_FRAGMENT_NODE","NOTATION_NODE","DOCUMENT_POSITION_PRECEDING"];
+for (var i = 0; i < names.length; i++) {
+  out.push(names[i] + '=' + (names[i] in el) + '/' + (names[i] in t) + ':' + el[names[i]]);
+}
+globalThis.__r290c = out.join('|');
+"#,
+        )
+        .unwrap();
+    let out = sandbox.execute("globalThis.__r290c").unwrap().value;
+    assert_eq!(
+        out,
+        "ELEMENT_NODE=true/true:1|CDATA_SECTION_NODE=true/true:4|ENTITY_REFERENCE_NODE=true/true:5|DOCUMENT_TYPE_NODE=true/true:10|DOCUMENT_FRAGMENT_NODE=true/true:11|NOTATION_NODE=true/true:12|DOCUMENT_POSITION_PRECEDING=true/true:2",
+        "R290 Node constants: underscore-bearing names visible via in + value on element/text instances"
+    );
+}
+
+#[test]
+fn r290_interface_prototype_constructor_identity() {
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let mut sandbox = V8Sandbox::with_config(zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    })
+    .unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><div id=\"t\">x</div></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+    // WPT Document-constructor：接口原型 constructor 自反（WebIDL interface
+    // prototype object）+ XML doc createElement 产物是泛型 Element + XHTML ns
+    // createElementNS 产物是 HTML 子类接口。
+    // https://webidl.spec.whatwg.org/#interface-prototype-object
+    let out = sandbox
+        .execute(
+            r#"
+var out = [];
+var doc = new Document();
+out.push('ct=' + doc.contentType);
+out.push('xmlEl=' + (doc.createElement("DIV").constructor === Element));
+out.push('xhtmlA=' + (doc.createElementNS("http://www.w3.org/1999/xhtml", "a").constructor === HTMLAnchorElement));
+var hd = document.createElement("div");
+out.push('htmlDiv=' + (hd.constructor === HTMLDivElement));
+out.push('htmlDivIface=' + (hd instanceof HTMLDivElement));
+globalThis.__r290i = out.join('|');
+"#,
+        )
+        .unwrap();
+    let out = sandbox.execute("globalThis.__r290i").unwrap().value;
+    assert_eq!(
+        out, "ct=application/xml|xmlEl=true|xhtmlA=true|htmlDiv=true|htmlDivIface=true",
+        "R290 prototype constructor: reflexive ctor, XML doc -> Element, XHTML ns -> HTMLAnchorElement, HTML div -> HTMLDivElement"
+    );
+}

@@ -4353,6 +4353,27 @@
             if (globalThis._zwNotifyIteratorsRemove) {
               try { globalThis._zwNotifyIteratorsRemove(ceSelf); } catch (_e86m) {}
             }
+            // R290（js-dom M4）：**通知后**清理父容器的 registry + 反链——`_zwNotify
+            // IteratorsRemove` 的 pred/succ 计算读 removedNode 的旧 parentNode/
+            // previousSibling（spec 迭代器移除步骤用移除前树位），清理须在其后。
+            // 旧版元素分支不剔 `_handleChildren[父handle]` 也不清 `_zwNodeParent`
+            // 反链：handle-only 父子（createElement 后 append）的 `node.remove()`
+            // 后 `node.parentNode` 仍返父 proxy + `parent.childNodes` 残留被移除子
+            // （WPT Element-remove "Removed node should not have a parent"/"Parent
+            // should not have children" 2F）。与 R129 文本分支的 registry 剔除对称。
+            if (handle && _zwNodeParent && _zwNodeParent[handle]) {
+              var _r290ph = _zwNodeParent[handle].parentHandle;
+              if (_r290ph && _handleChildren[_r290ph]) {
+                var _r290kids = _handleChildren[_r290ph];
+                for (var _r290i = 0; _r290i < _r290kids.length; _r290i++) {
+                  if (_r290kids[_r290i] && _r290kids[_r290i].__zwHandle === handle) {
+                    _r290kids.splice(_r290i, 1);
+                    break;
+                  }
+                }
+              }
+              try { delete _zwNodeParent[handle]; } catch (_e290np) {}
+            }
             // R34xx：移除注册的文本元素（DOM 对照侧几何清理）。
             // R86：注销前物化子视图（detached 子树保留其子）。
             if (typeof _zwMaterializeDetachedChildren === 'function') {

@@ -299,8 +299,11 @@
         // dom-node-constants——常量定义在 Node 接口上、**实例经继承可枚举命中**；WPT
         // Node-constants 对 Element/Text 实例 `'ELEMENT_NODE' in el` 断言——get trap 返回
         // 值正确但 has 白名单漏列使 `in` 恒 false）。值面白名单与 part03 R80 常量表同源。
+        // R290（js-dom M4）：正则放宽 `_`——`[A-Z0-9]+_NODE` 漏 `CDATA_SECTION_NODE`/
+        // `ENTITY_REFERENCE_NODE`/`DOCUMENT_TYPE_NODE`/`DOCUMENT_FRAGMENT_NODE`（常量名
+        // 含内部下划线，WPT Node-constants "doesn't have CDATA_SECTION_NODE" 2F）。
         if (typeof prop === 'string'
-            && (/^[A-Z][A-Z0-9]+_NODE$/.test(prop) || /^DOCUMENT_POSITION_[A-Z_]+$/.test(prop))) {
+            && (/^[A-Z][A-Z0-9_]+_NODE$/.test(prop) || /^DOCUMENT_POSITION_[A-Z_]+$/.test(prop))) {
           var _r184v = globalThis.Node && globalThis.Node.prototype
             ? globalThis.Node.prototype[prop] : undefined;
           if (_r184v !== undefined) return true;

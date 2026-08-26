@@ -644,6 +644,39 @@
         : Object.create(globalThis.HTMLElement.prototype);
     }
   }
+  // R290（js-dom M4）：接口原型的 **constructor 自反属性**（spec WebIDL「interface
+  // prototype object」自带 non-enumerable constructor 指回接口构造器）。旧链
+  // `Node.prototype = {}` / `Element.prototype = Object.create(...)` / 子类
+  // `Object.create(HTMLElement.prototype)` 全缺 constructor → `el.constructor` 沿链
+  // 落到 Object.prototype.constructor 恒 Object（WPT Document-constructor "metadata"/
+  // "URL parsing"：`doc.createElement("DIV").constructor === Element`、XHTML ns 的
+  // `a.constructor === HTMLAnchorElement` 2F）。对三基座 + 全部 HTML/SVG 子类原型
+  // 统一补（幂等：已有 own constructor 跳过）。
+  // https://webidl.spec.whatwg.org/#interface-prototype-object
+  (function () {
+    var _r290bases = ['Node', 'Element', 'HTMLElement'];
+    for (var _b = 0; _b < _r290bases.length; _b++) {
+      var _bc = globalThis[_r290bases[_b]];
+      if (_bc && _bc.prototype
+          && !Object.prototype.hasOwnProperty.call(_bc.prototype, 'constructor')) {
+        try {
+          Object.defineProperty(_bc.prototype, 'constructor',
+            { value: _bc, writable: true, enumerable: false, configurable: true });
+        } catch (_e290b) {}
+      }
+    }
+    var _r290all = _zwHtmlElementIfaces.concat(_zwSvgElementIfaces);
+    for (var _i290 = 0; _i290 < _r290all.length; _i290++) {
+      var _c290 = globalThis[_r290all[_i290]];
+      if (_c290 && _c290.prototype
+          && !Object.prototype.hasOwnProperty.call(_c290.prototype, 'constructor')) {
+        try {
+          Object.defineProperty(_c290.prototype, 'constructor',
+            { value: _c290, writable: true, enumerable: false, configurable: true });
+        } catch (_e290i) {}
+      }
+    }
+  })();
   // js-dom M4 R107：HTMLBodyElement/HTMLFrameSetElement.prototype 的 Window-forwarding
   // handler 属性（onblur/onerror/onfocus/onload/onscroll/onresize）以 **enumerable**
   // data property（值 null）挂原型——spec IDL handler 属性 for-in 可见（WPT
@@ -8030,6 +8063,15 @@
         e.namespaceURI = (doc._docNS !== undefined) ? doc._docNS : 'http://www.w3.org/1999/xhtml';
         e.prefix = null;
         e.nodeValue = null;
+        // R290（js-dom M4）：XML 文档的 createElement 产物原型回落 **Element.prototype**
+        //（spec：HTML 元素接口（HTMLDivElement 等）只对 HTML-namespace 元素生效——
+        // XML doc 的元素是泛型 Element。`_zwMEl` 的 R125 按 tag 查 __zwHtmlTagIface
+        // 无条件挂 HTML 子类 prototype，使 `new Document().createElement("DIV")
+        // .constructor` 是 HTMLDivElement 而非 Element（WPT Document-constructor
+        // "metadata" 断言 `=== Element`）。HTML 文档（_isHtmlDoc）维持 R125 子类链。
+        if (!_isHtmlDoc && globalThis.Element && globalThis.Element.prototype) {
+          try { Object.setPrototypeOf(e, globalThis.Element.prototype); } catch (_e290xp) {}
+        }
         return e;
       },
       createTextNode: function (t) { var n = _zwMText(String(t), null); n.ownerDocument = doc; return n; },
@@ -9455,6 +9497,16 @@
             _cChain = Object.getPrototypeOf(_cChain);
             _cGuard++;
           }
+        }
+        // R290（js-dom M4）：Node 接口常量直答（spec `dom-node` 常量表—— ELEMENT_NODE..
+        // NOTATION_NODE + DOCUMENT_POSITION_*）。proxy target 是普通对象（无 Node 原型链），
+        // get trap 中间分支不认常量名 → undefined。WPT Node-constants 的 Element/Text
+        // **实例**形态（createElement("foo")/createTextNode("bar") 沿原型链须见全部
+        // 12 常量——"Object __n0 doesn't have CDATA_SECTION_NODE" 2F）。挂在 constructor
+        // 短路后、其余分支前（常量名与属性分支零冲突）。与 `_zwNodeConsts`（part03
+        // Node.prototype/构造器挂载点）同源。
+        if (typeof prop === 'string' && Object.prototype.hasOwnProperty.call(_zwNodeConsts, prop)) {
+          return _zwNodeConsts[prop];
         }
         // js-dom M3 R98：CE 用户类**首层原型** accessor getter 优先（先于 shim 反射属性分支）。
         // 真实 DOM 原型链序：用户类 prototype（lit createProperty 装的 get/set——响应式属性）
