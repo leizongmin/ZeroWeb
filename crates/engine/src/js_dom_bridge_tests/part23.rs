@@ -3850,3 +3850,46 @@ fn r286_shadowroot_delete_all_children() {
         "R286 ShadowRoot full-range deleteContents: [0,1) children removed, innerHTML empty"
     );
 }
+
+#[test]
+fn r287_clone_doc_sc_fragment() {
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let mut sandbox = V8Sandbox::with_config(zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    })
+    .unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><div id=\"t\">x</div></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+    let js = [
+        "var out = [];",
+        // 29,x clone shape: [foreignDoc, 1, foreignComment, 2]
+        "var fdoc = document.implementation.createHTMLDocument('');",
+        "var fc = fdoc.createComment('Commenter tail');",
+        "fdoc.appendChild(fc);",
+        "var r = fdoc.createRange();",
+        "r.setStart(fdoc, 1); r.setEnd(fc, 2);",
+        "var frag = r.cloneContents();",
+        "var fk = frag.childNodes;",
+        "var names = [];",
+        "for (var q = 0; q < fk.length; q++) {",
+        "  var k = fk[q];",
+        "  names.push(String(k.nodeName) + ':' + (k.nodeType | 0) + ':h=' + (typeof k.__zwHandle !== 'undefined') + ':fc=' + (k.firstChild ? String(k.firstChild.nodeName) : 'null') + ':nk=' + (k.childNodes ? k.childNodes.length : '?'));",
+        "}",
+        "out.push('frag=' + fk.length + '[' + names.join(',') + ']');",
+        "globalThis.__r287r = out.join('|');",
+    ].join("\n");
+    let out = sandbox.execute(&js).unwrap().value;
+    assert_eq!(
+        out, "frag=2[HTML:1:h=false:fc=HEAD:nk=2,#comment:8:h=false:fc=null:nk=0]",
+        "R287 clone doc-sc: HTML deep-cloned (plain, HEAD first child) + comment head-clone last"
+    );
+}

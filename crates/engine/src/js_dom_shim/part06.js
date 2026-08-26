@@ -4872,7 +4872,10 @@
           var scOk = scCd || sc.nodeType === 1 || sc.nodeType === 11 || sc.nodeType === 9;
           var ecOk = ecCd || ec.nodeType === 1 || ec.nodeType === 11;
           if (!scOk || !ecOk) return;
-          if (!sc.parentNode || !ec.parentNode) return;
+          // R287：doc sc 的 parentNode 恒 null 是合法形态（R282 在 extract 侧的
+          // 同款修正——clone 侧漏对称移植使 29/31,x 的 doc-sc 路径从未执行）。
+          var scParOk287 = (sc.nodeType === 9) || !!sc.parentNode;
+          if (!scParOk287 || !ec.parentNode) return;
           // 同容器形态留给 _coveredChildren 既有路径（含 doc 容器 [so,eo)）。
           if (sc === ec) {
             if (scCd) return;
