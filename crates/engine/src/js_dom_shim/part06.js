@@ -4229,6 +4229,275 @@
             return _r211frag;
           }
         }
+        // R280（js-dom M4）：**跨容器提取泛化**（sc/ec 异容器、非直接子形态——
+        // R278 oracle 复活后重聚类的 extract 侧镜像缺口）。覆盖簇（WPT
+        // Range-extractContents）：20/21,x `[paras[0].firstChild,0,paras[1].
+        // firstChild,8]`（CD→CD 跨 P 段）、22,x `[paras[0].firstChild,3,
+        // paras[3],1]`（sc CD + ec 元素）、48,x `[testDiv,1,paras[2].firstChild,5]`
+        //（sc 元素 + ec 深后代 CD）、52,x `[paras[2].firstChild,4,comment,2]`
+        //（sc CD + ec DIV comment）、29/31,x（doc 容器 + comment）——旧版全
+        // miss（R211 同父 / R236/R242 直接子限定）→ `_coveredChildren` sc≠ec
+        // null → 空转（fail 面三件：DOM 未剪 / fragment 空 / cursor 未塌）。
+        // 对齐 common.js myExtractContents 的扁平化三段：sc 尾段（CD 切片克隆
+        // 入 frag + 源 deleteData；sc 元素的尾段子属 contained 子走 move）+
+        // 中段 contained 子**本体 move** 入 frag（wrapper 域 move 兜底同
+        // R241：append 后残留则 removeChild 强制离场）+ ec 头段（CD 切片克隆
+        // 入 frag + 源 deleteData；ec 元素 shallow clone + 其 [0,eo) 子 move
+        // 入 clone 后 clone 入 frag）。源树修剪 = R278/R279 的 delete 侧同款
+        //（sc 尾部止于 ec 路径子 + cac 中段 + ec 头部）。
+        // https://dom.spec.whatwg.org/#dom-range-extractcontents
+        (function _r280CrossExtract(self) {
+          var sc = self.startContainer, ec = self.endContainer;
+          if (!sc || !ec || sc === ec) return;
+          var isCd = function (n) {
+            var t = n ? (n.nodeType | 0) : 0;
+            return t === 3 || t === 4 || t === 7 || t === 8;
+          };
+          var scCd = isCd(sc), ecCd = isCd(ec);
+          // R280b：sc Document 容器（nodeType 9）纳入——29/31,x `[foreignDoc,1,
+          // foreignComment,2]` 族（doc 的 [so, ecPathIdx) 子 move + ec 头段）。
+          if (!scCd && !(sc.nodeType === 1 || sc.nodeType === 11 || sc.nodeType === 9)) return;
+          if (!ecCd && !(ec.nodeType === 1 || ec.nodeType === 11)) return;
+          if (!sc.parentNode || !ec.parentNode) return;
+          // cac：sc 祖先链上首个含 ec 的容器（R268 同款）。
+          var chain = [], cur = sc, hops = 0;
+          while (cur && hops++ < 128) { chain.push(cur); cur = cur.parentNode; }
+          var cac = null;
+          for (var ci = 0; ci < chain.length && !cac; ci++) {
+            var probe = ec, h2 = 0;
+            while (probe && h2++ < 128) {
+              if (probe === chain[ci]) { cac = chain[ci]; break; }
+              probe = probe.parentNode;
+            }
+          }
+          if (!cac) return;
+          // **形态限流（首版教训：泛化分支抢了 R242/R236 已正确处理的直接子
+          // 形态——24/28/30,x 回归 +9）**：本分支只接 sc 是 CharData 或 Document
+          // 的跨容器形态（CD→CD 跨段 / CD→ec 元素 / doc 容器）；sc 元素 + ec
+          // 深后代的 contained 子**递归组树**（firstPartial.clone + subfrag）非
+          // 扁平化可表达——48,x 等元素 sc 形态留给既有 R236/R242 直接子分支 +
+          // 后续递归版）。
+          if (!scCd && sc.nodeType !== 9) return;
+          var so = self.startOffset | 0, eo = self.endOffset | 0;
+          var sameTreePos = false;
+          if (!scCd && (sc.childNodes || [])[so] === ec && eo === 0) sameTreePos = true;
+          // R241 同款 wrapper 域 move 兜底：proxy fragment 的 appendChild 对 plain
+          // 子只登记/改 parentNode 不摘原件（探针实证 pd 同时在 tree 与 frag 的
+          // childNodes）——先记原父与原列表，append 后仍残留则强制 removeChild。
+          var moveIn = function (kid, into) {
+            if (!kid) return;
+            var origPar280 = kid.parentNode;
+            var origKids280 = origPar280 && origPar280.childNodes ? origPar280.childNodes : null;
+            try { into.appendChild(kid); } catch (_e280a) {}
+            try {
+              if (origKids280 && origKids280.indexOf(kid) >= 0
+                && origPar280 !== into
+                && typeof origPar280.removeChild === 'function') {
+                origPar280.removeChild(kid);
+              }
+            } catch (_e280r) {}
+          };
+          // ⓪ Document sc 尾段：doc 的 [so, ecPathIdx) 直接子 move 入 frag
+          //（doc 是 cac 时 middle 段不覆盖此区间——sRef=doc 自身）。
+          if (sc.nodeType === 9 && sc === cac) {
+            try {
+              var dk280 = sc.childNodes || [];
+              var decPath280 = -1;
+              for (var dk2 = 0; dk2 < dk280.length; dk2++) {
+                var danc280 = ec, dah280 = 0;
+                while (danc280 && dah280++ < 128) {
+                  if (dk280[dk2] === danc280) { decPath280 = dk2; break; }
+                  danc280 = danc280.parentNode;
+                }
+                if (decPath280 >= 0) break;
+              }
+              var dtailEnd280 = (decPath280 >= 0) ? decPath280 : dk280.length;
+              var dsnap280 = dk280.slice(so, dtailEnd280);
+              for (var dq280 = 0; dq280 < dsnap280.length; dq280++) {
+                moveIn(dsnap280[dq280], f);
+              }
+            } catch (_e280dc) {}
+          }
+          // ①' sc 侧路径克隆组树（spec frag 结构 [firstPartial.clone(subtree),
+          // contained..., lastPartial.clone(subtree)]——flat 尾段文本首版教训：
+          // 20,x frag 首节点期望 <p id="a">全文本</p> 而非裸 #text）。
+          // firstClone = sc 的 cac 直接子（P#a 域）shallow clone；sc 尾段文本
+          // 与 sc 侧爬升的右侧兄弟按所属层级挂进 clone 链（每级 clone 一层，
+          // 内容 = 该级路径子的 [so|0, end) 区间——近似递归 subfrag 的扁平实现）。
+          if (scCd) {
+            try {
+              // sc 尾段切片 + 源削（数据面）。
+              var sData = String(sc.data != null ? sc.data : '');
+              var sl = sData.length;
+              if (so < sl) { try { sc.deleteData(so, sl - so); } catch (_e280d) {} }
+              // sc 的 cac 直接子（firstPartial）与逐级路径（P#a ← … ← cac）。
+              var fPath = [];
+              var walk = sc;
+              while (walk && walk.parentNode !== cac && fPath.length < 128) {
+                fPath.unshift(walk);
+                walk = walk.parentNode;
+              }
+              var firstPartial = (walk && walk.parentNode === cac) ? walk : null;
+              if (firstPartial && firstPartial.nodeType === 1) {
+                var cloneStack = [];
+                var topClone = firstPartial.cloneNode(false);
+                f.appendChild(topClone);
+                cloneStack.push(topClone);
+                // fPath 末位是 sc 自身（文本端点）——不 clone 该层（tail 文本
+                // 就是该层内容，首版教训：多 clone 一层空壳使 P#c=[#text(""),#text("3")]）。
+                for (var fp = 0; fp < fPath.length - (sc === fPath[fPath.length - 1] ? 1 : 0); fp++) {
+                  var lvlClone = fPath[fp].cloneNode(false);
+                  cloneStack[cloneStack.length - 1].appendChild(lvlClone);
+                  cloneStack.push(lvlClone);
+                }
+                // 最内层 clone 承载 sc 尾段文本。
+                var tailTxt = sc.cloneNode(false);
+                tailTxt.data = sData.slice(so);
+                cloneStack[cloneStack.length - 1].appendChild(tailTxt);
+                // sc 侧爬升：每级把路径子的右侧兄弟 move 进**同层 clone**。
+                for (var lv = fPath.length - 1; lv >= 0; lv--) {
+                  var lvlNode = fPath[lv];
+                  var lp = lvlNode.parentNode;
+                  if (!lp || !lp.childNodes) continue;
+                  var pk = lp.childNodes;
+                  var pi = -1;
+                  for (var pj = 0; pj < pk.length; pj++) if (pk[pj] === lvlNode) { pi = pj; break; }
+                  if (pi < 0) continue;
+                  // 层内承载：lv 层的右侧兄弟挂进 lv 层的 clone——sc 层（末位，
+                  // 无 clone）的兄弟挂最内层 clone（cloneStack 末位）。
+                  var hostClone = cloneStack[Math.min(lv + 1, cloneStack.length - 1)];
+                  var rsnap = pk.slice(pi + 1);
+                  for (var q2 = 0; q2 < rsnap.length; q2++) {
+                    moveIn(rsnap[q2], hostClone);
+                  }
+                }
+              } else {
+                // firstPartial 非 elements（doc 容器直挂 CD 等）——flat 兜底。
+                var tailF = sc.cloneNode(false);
+                tailF.data = sData.slice(so);
+                f.appendChild(tailF);
+              }
+            } catch (_e280t) {}
+          }
+          // ③ sc 是 cac 直接子（element sc）时：sc 自身 partially-contained
+          //（本体留树），其 [so, ecPathIdx) 尾段子 move 入 frag（R279 尾部
+          // 规则同款——止于 ec 路径子）。
+          if (!scCd && sc.parentNode === cac) {
+            var sk280 = sc.childNodes || [];
+            var ecPath280 = -1;
+            for (var k280 = 0; k280 < sk280.length; k280++) {
+              var anc280 = ec, ah280 = 0;
+              while (anc280 && ah280++ < 128) {
+                if (sk280[k280] === anc280) { ecPath280 = k280; break; }
+                anc280 = anc280.parentNode;
+              }
+              if (ecPath280 >= 0) break;
+            }
+            var tailEnd280 = (ecPath280 >= 0) ? ecPath280 : sk280.length;
+            var tsnap = sk280.slice(so, tailEnd280);
+            for (var t280 = 0; t280 < tsnap.length; t280++) moveIn(tsnap[t280], f);
+          }
+          // ④ ec 侧 + 中段：ec 头段（CD 切片克隆入 frag + 源 deleteData 保
+          // [eo,)；元素 shallow clone + [0,eo) 子 move 入 clone，clone 入 frag）
+          // + ec 侧爬升把路径子左侧兄弟 move 入 frag + cac 级 (sIdx,eIdx)
+          // 开区间中段 move。同树位（(sc,so)===(ec,0)）只塌缩零提取。
+          if (sameTreePos) {
+            try { self.setStart(sc, so); self.setEnd(sc, so); } catch (_e280g) {}
+            return;
+          }
+          var elvl = ec, epar = ec.parentNode, hp2 = 0;
+          while (epar && elvl !== cac && hp2++ < 128) {
+            if (epar === cac) break;
+            var ekp = epar.childNodes || [];
+            var ei = -1;
+            for (var ej = 0; ej < ekp.length; ej++) if (ekp[ej] === elvl) { ei = ej; break; }
+            if (ei < 0) break;
+            var lsnap = ekp.slice(0, ei);
+            for (var q3 = lsnap.length - 1; q3 >= 0; q3--) moveIn(lsnap[q3], f);
+            elvl = epar;
+            epar = epar.parentNode;
+          }
+          var ck = cac.childNodes || [];
+          var sRef = sc;
+          while (sRef && sRef.parentNode !== cac && sRef.parentNode) sRef = sRef.parentNode;
+          var eRef = ec;
+          while (eRef && eRef.parentNode !== cac && eRef.parentNode) eRef = eRef.parentNode;
+          var sIdx = -1, eIdx = -1;
+          for (var ck2 = 0; ck2 < ck.length; ck2++) {
+            if (sRef && ck[ck2] === sRef) sIdx = ck2;
+            if (eRef && ck[ck2] === eRef) eIdx = ck2;
+          }
+          if (sIdx >= 0 && eIdx > sIdx) {
+            var msnap = ck.slice(sIdx + 1, eIdx);
+            for (var q4 = 0; q4 < msnap.length; q4++) moveIn(msnap[q4], f);
+          }
+          // ④' ec 侧路径克隆组树（sc 侧 ①' 的对称——lastPartial.clone 包 ec
+          // 头段；20,x frag 尾节点期望 <p id="b"></p> 空壳而非裸 #text）。
+          // 数据面：ec 头段切片 + 源削 [0,eo)。
+          try {
+            var eData = String(ec.data != null ? ec.data : '');
+            if (ecCd && eo > 0) { try { ec.deleteData(0, eo); } catch (_e280hd) {} }
+            var ePath = [];
+            var ewalk = ec;
+            while (ewalk && ewalk.parentNode !== cac && ePath.length < 128) {
+              ePath.unshift(ewalk);
+              ewalk = ewalk.parentNode;
+            }
+            var lastPartial = (ewalk && ewalk.parentNode === cac) ? ewalk : null;
+            if (lastPartial && lastPartial.nodeType === 1) {
+              var eStack = [];
+              var eTop = lastPartial.cloneNode(false);
+              f.appendChild(eTop);
+              eStack.push(eTop);
+              var eSkip = (ecCd && ec === ePath[ePath.length - 1]) ? 1 : 0;
+              for (var ep = 0; ep < ePath.length - eSkip; ep++) {
+                var eLvlClone = ePath[ep].cloneNode(false);
+                eStack[eStack.length - 1].appendChild(eLvlClone);
+                eStack.push(eLvlClone);
+              }
+              if (ecCd) {
+                var headTxt = ec.cloneNode(false);
+                headTxt.data = eData.slice(0, eo);
+                eStack[eStack.length - 1].appendChild(headTxt);
+              } else {
+                // ec 元素形态：ec 的 [0, eo) 子 move 进最内层 clone。
+                var ek280 = ec.childNodes || [];
+                var hsnap = ek280.slice(0, eo);
+                for (var h280 = 0; h280 < hsnap.length; h280++) {
+                  moveIn(hsnap[h280], eStack[eStack.length - 1]);
+                }
+              }
+              // ec 侧爬升：每级把路径子的左侧兄弟 move 进同层 clone（含本层）。
+              for (var elv = ePath.length - 1; elv >= 0; elv--) {
+                var eLvlNode = ePath[elv];
+                var elp = eLvlNode.parentNode;
+                if (!elp || !elp.childNodes) continue;
+                var ekp = elp.childNodes;
+                var eip = -1;
+                for (var epj = 0; epj < ekp.length; epj++) if (ekp[epj] === eLvlNode) { eip = epj; break; }
+                if (eip < 0) continue;
+                var eHost = eStack[Math.min(elv + 1, eStack.length - 1)];
+                var lsnap = ekp.slice(0, eip);
+                for (var eq3 = 0; eq3 < lsnap.length; eq3++) {
+                  moveIn(lsnap[eq3], eHost);
+                }
+              }
+            } else if (ecCd) {
+              var headF = ec.cloneNode(false);
+              headF.data = eData.slice(0, eo);
+              f.appendChild(headF);
+            }
+          } catch (_e280h) {}
+          // ⑤ 塌缩：cac===sc → (sc,so)（R279 同款）；否则 (cac, sIdx+1)。
+          if (cac === sc) {
+            try { self.setStart(sc, so); self.setEnd(sc, so); } catch (_e280e) {}
+            return;
+          }
+          try {
+            if (sIdx >= 0) { self.setStart(cac, sIdx + 1); self.setEnd(cac, sIdx + 1); }
+            else { self.setStart(cac, 0); self.setEnd(cac, 0); }
+          } catch (_e280c) {}
+        })(this);
         var kids = this._coveredChildren();
         if (kids) {
           for (var i = 0; i < kids.length; i++) {

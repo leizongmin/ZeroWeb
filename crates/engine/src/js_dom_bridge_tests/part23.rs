@@ -3474,3 +3474,70 @@ fn r279_sc_element_cross_container_delete() {
         "R279 sc-element cross-container deleteContents: 24,x form removes DIV[2,4) + empties P#e + collapses (DIV,2); 48,x form removes DIV[1,2) + head-trims ec text; 49,x same-tree-position deletes nothing + collapses (sc,so)"
     );
 }
+
+#[test]
+fn r280_cross_container_extract_probe() {
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let mut sandbox = V8Sandbox::with_config(zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    })
+    .unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><div id=\"t\">x</div></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+    let js = [
+        "var out = [];",
+        "var referenceDoc = document.implementation.createHTMLDocument('');",
+        "referenceDoc.removeChild(referenceDoc.documentElement);",
+        "var ifr = document.createElement('iframe');",
+        "document.body.appendChild(ifr);",
+        "var idoc = ifr.contentDocument;",
+        "idoc.appendChild(referenceDoc.documentElement.cloneNode(true));",
+        "var testDiv = idoc.createElement('div');",
+        "idoc.body.insertBefore(testDiv, idoc.body.firstChild);",
+        "var mk = function (id, text) {",
+        "  var p = idoc.createElement('p');",
+        "  p.id = id;",
+        "  p.textContent = text;",
+        "  testDiv.appendChild(p);",
+        "  return p;",
+        "};",
+        "var pa = mk('a', 'A0123');",
+        "var pb = mk('b', 'B0123');",
+        "var pc = mk('c', 'C0123');",
+        "var pd = mk('d', 'D0123');",
+        "var cm = idoc.createComment('tailcm');",
+        "testDiv.appendChild(cm);",
+        "function dump(n) {",
+        "  var ks = n.childNodes, s = [];",
+        "  for (var i = 0; i < ks.length; i++) {",
+        "    var k = ks[i];",
+        "    s.push(k.nodeName + (k.id ? '#' + k.id : '') + '('",
+        "      + String(k.firstChild && k.firstChild.data != null ? k.firstChild.data : (k.data != null ? k.data : '')) + ')');",
+        "  }",
+        "  return ks.length + '[' + s.join(',') + ']';",
+        "}",
+        // 52,x shape: [pc.firstChild, 4, comment, 2]
+        "var r = idoc.createRange();",
+        "r.setStart(pc.firstChild, 4); r.setEnd(cm, 2);",
+        "var frag = r.extractContents();",
+        "out.push('tree=' + dump(testDiv) + ' frag=' + dump(frag));",
+        "out.push('col=' + (r.startContainer === testDiv) + '/' + r.startOffset);",
+        "globalThis.__r280p = out.join('|');",
+    ].join("\n");
+    let out = sandbox.execute(&js).unwrap().value;
+    eprintln!("R280PROBE: {}", out);
+    assert_eq!(
+        out,
+        "tree=4[P#a(A0123),P#b(B0123),P#c(C012),#comment(ilcm)] frag=3[P#c(3),P#d(D0123),#comment(ta)]|col=true/3",
+        "R280 cross-container extract 52,x shape: firstPartial P#c clone wraps the sc tail text, middle P#d moved, ec comment head-clone last; source tree pruned; collapse (DIV,3)"
+    );
+}
