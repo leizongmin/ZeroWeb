@@ -3,7 +3,8 @@
 **入口文档**: [../js-dom.md](../js-dom.md)（长期 Mission / Done Criteria / 执行协议 / 文档治理规则）
 **关联 RFC**: [../../specs/p1b-v8-native-bindings-rfc.md](../../specs/p1b-v8-native-bindings-rfc.md) + [../../specs/p1b-l2d3-unified-matcher-identity-bridge-rfc.md](../../specs/p1b-l2d3-unified-matcher-identity-bridge-rfc.md)（R166 新增——L2-d3 统一匹配器 + identity 桥设计）
 **创建日期**: 2026-08-13（goal 拆分 bootstrap）
-**本轮**: R294 — **M4：MutationObserver record 语义两件（引擎修复 land，childList Range.deleteContents + inner-outer innerHTML mutation 各 -1F，dom 全量 54066P→54070P / 91F→89F）**：① removeChild 的 handle-子 record 补 previousSibling/nextSibling（移除前从父融合 childNodes 定位——identity 优先 + handle/data 内容键回退，registry 剔除前读）；② innerHTML 纯文本 addedNodes 用注册表同一 textEl 节点（消费方 el.firstChild 读同一注册表——旧用 _zwFragmentAdded 独立 wrapper「expected Text node got Text node」）。**教训（试加后回退）**：R129 sel-parent 分支补 record 被 r259 单测当场抓回（_mo_notify 的 _zwNodeParent 清链是 surroundContents HRE 回滚的隐式依赖）——extractContents 形态的真 record 来源在别处，记 R295。set-diff 恰 -2 零新增。engine 2432 全绿（+1 r294 单测）+ fmt/clippy 干净。commit：`5282b8ff9`**
+**本轮**: R295 — **M4：iframe realm 的 Text/Comment 构造器 ownerDocument（引擎修复 land，Text-constructor + Comment-constructor 双 16P/0F 100%，dom 全量 89F→87F）**：`_zwMakeIframeWin` 旧直接转发主构造器使 `new iframe.contentWindow.Text().ownerDocument` 恒主 document（WPT across globals「expected Document with 1 child got 2」2F）——修：per-realm 包装类（实例经主构造器建保完整方法面 + ownerDocument defineProperty 覆写闭包 doc + prototype 直连主构造器 prototype 跨 realm instanceof 保持）。**首版教训**：对象字面量内闭包捕获 `win` 变量在字面量求值时未赋值（得 undefined）——改捕获函数参数 `doc`。MO-document parser 3F 归因 parse-time record 基建（深结构记档）。set-diff 恰 -2 零新增。engine 2433 全绿（+1 r295 单测）+ fmt/clippy 干净。commit：`a1a4fa7d6`**
+**上轮**: **本轮**: R294 — **M4：MutationObserver record 语义两件（引擎修复 land，childList Range.deleteContents + inner-outer innerHTML mutation 各 -1F，dom 全量 54066P→54070P / 91F→89F）**：① removeChild 的 handle-子 record 补 previousSibling/nextSibling（移除前从父融合 childNodes 定位——identity 优先 + handle/data 内容键回退，registry 剔除前读）；② innerHTML 纯文本 addedNodes 用注册表同一 textEl 节点（消费方 el.firstChild 读同一注册表——旧用 _zwFragmentAdded 独立 wrapper「expected Text node got Text node」）。**教训（试加后回退）**：R129 sel-parent 分支补 record 被 r259 单测当场抓回（_mo_notify 的 _zwNodeParent 清链是 surroundContents HRE 回滚的隐式依赖）——extractContents 形态的真 record 来源在别处，记 R295。set-diff 恰 -2 零新增。engine 2432 全绿（+1 r294 单测）+ fmt/clippy 干净。commit：`5282b8ff9`**
 **上轮**: R293 — **M4：insertAdjacent 家族全解（引擎修复 land，Element-insertAdjacentText + insert-adjacent 两文件整文件崩→6P/14P 全 100%，dom 全量 54045P→54066P / 93F→91F）——四层修复**：① insertAdjacentText 重写对齐 R133（position SyntaxError + doc 根 HRE + **同轮可见性**——proxy insertBefore/appendChild 同步子视图 + 兄弟缓存失效；旧只推异步 host mutation 使同步断言读 stale 快照 + 非法 position 在 apply 崩整文件）；② Element.prototype 补 insertAdjacentElement/Text（plain 链——createHTMLDocument().documentElement 旧 TypeError）+ 工厂 docEl 双方法；③ 参数校验收紧 nodeType===1（DocumentType 旧落 sel 分支推 host mutation → apply "no child match for undefined" **崩整文件**）；④ handle 子 pending bucket 按**实际插入父**记账（beforebegin/afterend 落 target 父——旧按 target sel 记账使 overlay 盲）。set-diff 恰消失 2 文件级 F 零新增 + 解锁 20 subtest。engine 2431 全绿（+1 r293 单测）+ fmt/clippy 干净。commit：`a76d07b8c`**
 **上轮**: R292 — **M4：querySelector 结构元素身份归一（引擎修复 land，Element-matches + webkitMatchesSelector 双套件 100%，dom 全量 95F→93F）——R291 归因收窄的靶簇收口**：detached-doc 的 `queryOne`/`queryAll`（iframe 子文档共用族）对 body/head/html 的 tag/`#id` 形态直返 **doc 视图对象**（动态读 `doc.body`/`doc.head`/`doc.documentElement` 槽——R221 fresh-doc 重绑兼容；旧返 `_zwParseEl` wrapper 使 `q === doc.body` false + wrapper.matches 恒 false）。**首版教训**：归一后工厂 docEl 缺 `getAttribute` 使消费方 TypeError（+2F 当场暴露）——补 docEl 属性反射最小面（惰性解析 `_r159HtmlAttrs`）。A/B：matches 双套件 675P/669P 全 0F、querySelector-All 1971P/4F 持平（tree-order 4F 是内容树 wrapper 另簇）、closest/contains/createElement(-NS)/getElementById/escapes/scope/mixed-case 全持平；set-diff 恰消失 2F 零新增。engine 2430 全绿（+1 r292 单测）+ fmt/clippy 干净。commit：`9656235a0`**
 **上轮**: R291 — **M4：body type selector 匹配域部分进展 + 归因收窄（引擎增量 land，dom 全量 set-diff 0/0 零回归）**——三件增量：① `_zwMOuterHtml` 对 Document 根合成 `<html>{head}{body}</html>`（旧 nodeType 9 恒返 '' 使查询源空）；② 轻量视图无 attributes 数组时反射 id/class 进序列化；③ matches 键比较改 tag+id 主键 + outer 决胜 + documentElement tag-only。sandbox 直测 `iframeDoc.body/head.matches` false→true，但 **WPT 套件数字不变**——归因收窄：测试经 `querySelector('#body')` 取元素，iframe 子文档 querySelector 返 `_zwParseEl` wrapper（probe：q===doc.body false、parentNode null），wrapper 上 matches 无根上下文恒 false；ParentNode-querySelector-All tree-order 4F 同源（结果数组 identity 与视图节点不一致）。**wrapper→视图归一定性为深结构域**（R158/R171/R173 系列，R171 曾实测 902F 依赖）——转 R292 靶点立项。engine 2429 全绿 + fmt/clippy 干净 + closest/contains/escapes/scope/MO 全持平。commit：`7e125f487`**
@@ -457,6 +458,7 @@
 
 | 日期 | 轮次 | 证据 | 结果 |
 |------|------|------|------|
+| 2026-08-27 | R295 | iframe realm Text/Comment 构造器（part05.js + part23.rs）+ evidence/2026-08-27-r295-iframe-realm-constructors.md | Text/Comment-constructor 双 **16P/0F（100%）**；dom 全量 89F→**87F**（set-diff 恰 -2）；MO parser 3F 归因 parse-time 基建记档；engine 2433 绿 |
 | 2026-08-27 | R294 | MO record 兄弟字段 + addedNodes textEl identity（part04.js + part23.rs）+ evidence/2026-08-27-r294-mo-record-siblings.md | MO-childList 22P/3F→**23P/2F** + inner-outer **-1F**；dom 全量 54066P→**54070P/91F→89F（-2）**；R129 试加 record 回退教训记档；engine 2432 绿 |
 | 2026-08-27 | R293 | insertAdjacent 家族 spec 语义（part03/04/05.js + part23.rs）+ evidence/2026-08-27-r293-insert-adjacent-family.md | Element-insertAdjacentText **6P/0F** + insert-adjacent **14P/0F（双 100%，均整文件崩）**；dom 全量 54045P→**54066P/93F→91F（+21/-2）**；engine 2431 绿 |
 | 2026-08-27 | R292 | querySelector 结构元素身份归一 + docEl 属性反射（part03/05.js + part23.rs）+ evidence/2026-08-27-r292-struct-node-identity.md | Element-matches **675P/0F** + webkitMatchesSelector **669P/0F（双 100%）**；dom 全量 95F→**93F**（set-diff 恰 -2 零新增）；engine 2430 绿 |
@@ -684,12 +686,18 @@
 ---
 
 ## 下一步计划
-0. **R295 下一步（R294 后，按 ROI）**——nodes 域 45F 剩余面：
-   - **(a) MO 剩余 6F**：extractContents 形态 1F（record 真实来源定位——rmNode remove→removeChild 之外）+ surroundContents 形态 1F（"#s1" previousSibling 反向）+ inner-outer "2 children" 1F（wrapper identity）+ document parser 3F。
+0. **R296 下一步（R295 后，按 ROI）**——nodes 域 43F 剩余面：
+   - **(a) querySelector-All tree-order 4F**（内容树 wrapper identity——R167 桥归一覆盖缺口；MO "2 children" 同族或连带）。
+   - **(b) Node-insertBefore 1F**（host ref 校验域——apply 报「节点不是子节点」）。
+   - **(c) MO-document parser 3F**（parse-time record 基建——深结构，评估立项）。
+   - **(d) querySelector-mixed-case 1F / escapes 2F / scope 2F**（selector 引擎域小簇重聚类）。
+   - **(e) variant 基建最小支持**（解锁 ranges/in-shadow 2F + events/handler-count；低优先备档）。
    - **(b) querySelector-All tree-order 4F**（内容树 wrapper identity——R167 桥归一覆盖缺口）。
    - **(c) Text/Comment-constructor 跨 globals 2F**（iframe doc childNodes 计数 1 vs 2——doctype 链入域）。
    - **(d) Node-insertBefore 1F**（apply 报「节点不是子节点」——host ref 校验域）。
    - **(e) variant 基建最小支持**（解锁 ranges/in-shadow 2F + events/handler-count；低优先备档）。
+0. **R295 下一步（R294 后，已执行——转序切片 (d) 全解）**：
+   - ~~(c) Text/Comment-constructor 跨 globals 2F~~ ✅ per-realm 构造器包装（ownerDocument 闭包 doc）。(a) MO 剩余 6F 的归因补记见 evidence（parser 3F = parse-time 基建深结构；3F = wrapper identity 族）。
 0. **R294 下一步（R293 后，已执行——MO 两件 -2F）**：
    - ~~(a) MutationObserver 8F~~ 🟡 首两件全解（deleteContents 兄弟字段 + innerHTML textEl identity）；R129 试加 record 回退（教训记档）；剩 6F 转 R295(a)。
 0. **R293 下一步（R292 后，已执行——insertAdjacent 双文件 100%）**：
