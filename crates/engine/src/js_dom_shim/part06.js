@@ -4669,6 +4669,259 @@
         // R2929：真实子树克隆（cloneNode deep）到 fragment。元素容器 + offset 区间精确；
         // 跨容器/文本节点容器回落文本（既有 best-effort）。
         var f = globalThis.document.createDocumentFragment();
+        // R281（js-dom M4）：**跨容器 clone 的路径克隆组树**（R280 extract 同款
+        // 结构的纯 clone 版——无 move 无删源；WPT Range-cloneContents 29F 的
+        // 主簇「Returned fragment」expected `<p id="a">full-text</p>` vs got 裸
+        // #text / __n 句柄——旧 `_coveredChildren` sc≠ec 恒 null → toString
+        // 文本回落）。frag = [firstPartial.clone(sc 侧子树切片), contained 中段
+        // deep clone, lastPartial.clone(ec 侧子树切片)]，spec
+        // `dom-range-clone-contents` 与 common.js myCloneContents 同构。
+        // https://dom.spec.whatwg.org/#dom-range-clonecontents
+        (function _r281CrossClone(self) {
+          var sc = self.startContainer, ec = self.endContainer;
+          if (!sc || !ec) return;
+          var isCd281 = function (n) {
+            var t = n ? (n.nodeType | 0) : 0;
+            return t === 3 || t === 4 || t === 7 || t === 8;
+          };
+          // R281b：**同节点 CharData 的 clone 切片**（spec `dom-range-clone-contents`
+          // 首分支——frag = clone + substringData [so,eo)；WPT 27/35/36/37/39,x 的
+          // comment/PI 同节点簇：旧版回落 toString 文本 frag）。
+          if (sc === ec && isCd281(sc)) {
+            try {
+              var sd281 = String(sc.data != null ? sc.data : '');
+              var sa281 = Math.max(0, Math.min(self.startOffset | 0, sd281.length));
+              var sb281 = Math.max(sa281, Math.min(self.endOffset | 0, sd281.length));
+              // 空切片（collapsed / 零宽）→ 空 frag（首版教训：空 #text 克隆
+              // 使 0/4/8/56-59,x 的 collapsed 文本族整簇翻红——spec 返回空 frag）。
+              if (sb281 > sa281) {
+                var sn281 = cl281(sc);
+                if (sn281) {
+                  try { sn281.data = sd281.slice(sa281, sb281); } catch (_e281s) {}
+                  f.appendChild(sn281);
+                }
+              }
+            } catch (_e281t) {}
+            return;
+          }
+          // R281b：**doctype contained 抛 HRE**（spec 步骤「If a contained child is
+          // a DocumentType, throw」——WPT 25/26,x `[document,0,document,1/2]` 族：
+          // 期望 HierarchyRequestError；旧版静默返回 frag）。
+          if (sc.nodeType === 9 || sc === ec) {
+            try {
+              var dk281b = (sc === ec) ? (sc.childNodes || []) : (sc.childNodes || []);
+              var dso281 = self.startOffset | 0, deo281 = self.endOffset | 0;
+              for (var di281 = dso281; sc === ec && di281 < Math.min(deo281, dk281b.length); di281++) {
+                if (dk281b[di281] && dk281b[di281].nodeType === 10) {
+                  throw new (globalThis.DOMException || Error)(
+                    'The range includes a DocumentType node.', 'HierarchyRequestError');
+                }
+              }
+            } catch (e281hre) {
+              if (e281hre && (e281hre.name === 'HierarchyRequestError' || (globalThis.DOMException && e281hre instanceof globalThis.DOMException))) {
+                throw e281hre;
+              }
+            }
+          }
+          function cl281(n) {
+            try { return n.cloneNode(false); } catch (_e) { return null; }
+          }
+          var isCd = function (n) {
+            var t = n ? (n.nodeType | 0) : 0;
+            return t === 3 || t === 4 || t === 7 || t === 8;
+          };
+          var scCd = isCd(sc), ecCd = isCd(ec);
+          var scOk = scCd || sc.nodeType === 1 || sc.nodeType === 11 || sc.nodeType === 9;
+          var ecOk = ecCd || ec.nodeType === 1 || ec.nodeType === 11;
+          if (!scOk || !ecOk) return;
+          if (!sc.parentNode || !ec.parentNode) return;
+          // 同容器形态留给 _coveredChildren 既有路径（含 doc 容器 [so,eo)）。
+          if (sc === ec) {
+            if (scCd) return;
+            return;
+          }
+          // cac：sc 祖先链上首个含 ec 的容器（R268 同款）。
+          var chain = [], cur = sc, hops = 0;
+          while (cur && hops++ < 128) { chain.push(cur); cur = cur.parentNode; }
+          var cac = null;
+          for (var ci = 0; ci < chain.length && !cac; ci++) {
+            var probe = ec, h2 = 0;
+            while (probe && h2++ < 128) {
+              if (probe === chain[ci]) { cac = chain[ci]; break; }
+              probe = probe.parentNode;
+            }
+          }
+          if (!cac) return;
+          var so = self.startOffset | 0, eo = self.endOffset | 0;
+          var cl = function (n) {
+            try { return n.cloneNode(false); } catch (_e) { return null; }
+          };
+          // sc 侧：firstPartial.clone + 路径层 clone + sc 尾段文本切片（CD）或
+          // sc 元素的 [so, ecPathIdx) 子区间（element sc 尾部规则——R279 同款）。
+          var sPath = [];
+          var swalk = sc;
+          while (swalk && swalk.parentNode !== cac && sPath.length < 128) {
+            sPath.unshift(swalk);
+            swalk = swalk.parentNode;
+          }
+          var firstPartial = (swalk && swalk.parentNode === cac) ? swalk : null;
+          if (scCd) {
+            if (firstPartial && firstPartial.nodeType === 1) {
+              var sStack = [];
+              var sTop = cl(firstPartial);
+              if (sTop) {
+                f.appendChild(sTop);
+                sStack.push(sTop);
+                var sSkip = (sc === sPath[sPath.length - 1]) ? 1 : 0;
+                for (var sp = 0; sp < sPath.length - sSkip; sp++) {
+                  var sLvl = cl(sPath[sp]);
+                  if (!sLvl) { sStack = null; break; }
+                  sStack[sStack.length - 1].appendChild(sLvl);
+                  sStack.push(sLvl);
+                }
+                if (sStack) {
+                  var sTxt = cl(sc);
+                  if (sTxt) {
+                    try { sTxt.data = String(sc.data != null ? sc.data : '').slice(so); } catch (_e281a) {}
+                    sStack[sStack.length - 1].appendChild(sTxt);
+                  }
+                  // sc 侧爬升：每级路径子的右侧兄弟 deep clone 进同层。
+                  for (var slv = sPath.length - 1; slv >= 0; slv--) {
+                    var sLvlNode = sPath[slv];
+                    var slp = sLvlNode.parentNode;
+                    if (!slp || !slp.childNodes) continue;
+                    var spk = slp.childNodes;
+                    var spi = -1;
+                    for (var spj = 0; spj < spk.length; spj++) if (spk[spj] === sLvlNode) { spi = spj; break; }
+                    if (spi < 0) continue;
+                    var sHost = sStack[Math.min(slv + 1, sStack.length - 1)];
+                    for (var sq = spi + 1; sq < spk.length; sq++) {
+                      try { sHost.appendChild(spk[sq].cloneNode(true)); } catch (_e281b) {}
+                    }
+                  }
+                }
+              }
+            } else {
+              var sFlat = cl(sc);
+              if (sFlat) {
+                try { sFlat.data = String(sc.data != null ? sc.data : '').slice(so); } catch (_e281c) {}
+                f.appendChild(sFlat);
+              }
+            }
+          } else if (sc.nodeType === 1 || sc.nodeType === 11) {
+            // element sc：本体不动，[so, ecPathIdx) 子 deep clone 直接入 frag
+            //（sc 是 cac 时；sc 深于 cac 时由中段/爬升覆盖——保守只接 sc===cac）。
+            if (sc === cac) {
+              var sk281 = sc.childNodes || [];
+              var secPath281 = -1;
+              for (var sk2 = 0; sk2 < sk281.length; sk2++) {
+                var sanc281 = ec, sah281 = 0;
+                while (sanc281 && sah281++ < 128) {
+                  if (sk281[sk2] === sanc281) { secPath281 = sk2; break; }
+                  sanc281 = sanc281.parentNode;
+                }
+                if (secPath281 >= 0) break;
+              }
+              var stailEnd281 = (secPath281 >= 0) ? secPath281 : sk281.length;
+              var ssnap281 = sk281.slice(so, stailEnd281);
+              for (var sq2 = 0; sq2 < ssnap281.length; sq2++) {
+                try { f.appendChild(ssnap281[sq2].cloneNode(true)); } catch (_e281d) {}
+              }
+            }
+          } else if (sc.nodeType === 9 && sc === cac) {
+            // doc sc：[so, ecPathIdx) 子 deep clone。
+            var dk281 = sc.childNodes || [];
+            var decPath281 = -1;
+            for (var dk2b = 0; dk2b < dk281.length; dk2b++) {
+              var danc281b = ec, dah281b = 0;
+              while (danc281b && dah281b++ < 128) {
+                if (dk281[dk2b] === danc281b) { decPath281 = dk2b; break; }
+                danc281b = danc281b.parentNode;
+              }
+              if (decPath281 >= 0) break;
+            }
+            var dtailEnd281 = (decPath281 >= 0) ? decPath281 : dk281.length;
+            var dsnap281 = dk281.slice(so, dtailEnd281);
+            for (var dq281 = 0; dq281 < dsnap281.length; dq281++) {
+              try { f.appendChild(dsnap281[dq281].cloneNode(true)); } catch (_e281e) {}
+            }
+          }
+          // 中段：cac 级 (sIdx, eIdx) 开区间 deep clone。
+          var ck = cac.childNodes || [];
+          var sRef = sc;
+          while (sRef && sRef.parentNode !== cac && sRef.parentNode) sRef = sRef.parentNode;
+          var eRef = ec;
+          while (eRef && eRef.parentNode !== cac && eRef.parentNode) eRef = eRef.parentNode;
+          var sIdx = -1, eIdx = -1;
+          for (var ck2 = 0; ck2 < ck.length; ck2++) {
+            if (sRef && ck[ck2] === sRef) sIdx = ck2;
+            if (eRef && ck[ck2] === eRef) eIdx = ck2;
+          }
+          if (sIdx >= 0 && eIdx > sIdx) {
+            var msnap281 = ck.slice(sIdx + 1, eIdx);
+            for (var mq = 0; mq < msnap281.length; mq++) {
+              try { f.appendChild(msnap281[mq].cloneNode(true)); } catch (_e281f) {}
+            }
+          }
+          // ec 侧：lastPartial.clone + 路径层 + ec 头段切片（CD）/ [0,eo) 子 clone
+          //（element ec）；ec 侧爬升左侧兄弟 deep clone 进同层。
+          var ePath = [];
+          var ewalk = ec;
+          while (ewalk && ewalk.parentNode !== cac && ePath.length < 128) {
+            ePath.unshift(ewalk);
+            ewalk = ewalk.parentNode;
+          }
+          var lastPartial = (ewalk && ewalk.parentNode === cac) ? ewalk : null;
+          if (lastPartial && lastPartial.nodeType === 1) {
+            var eStack = [];
+            var eTop = cl(lastPartial);
+            if (eTop) {
+              f.appendChild(eTop);
+              eStack.push(eTop);
+              var eSkip = (ecCd && ec === ePath[ePath.length - 1]) ? 1 : 0;
+              for (var ep = 0; ep < ePath.length - eSkip; ep++) {
+                var eLvl = cl(ePath[ep]);
+                if (!eLvl) { eStack = null; break; }
+                eStack[eStack.length - 1].appendChild(eLvl);
+                eStack.push(eLvl);
+              }
+              if (eStack) {
+                if (ecCd) {
+                  var eTxt = cl(ec);
+                  if (eTxt) {
+                    try { eTxt.data = String(ec.data != null ? ec.data : '').slice(0, eo); } catch (_e281g) {}
+                    eStack[eStack.length - 1].appendChild(eTxt);
+                  }
+                } else {
+                  var ek281 = ec.childNodes || [];
+                  var esnap281 = ek281.slice(0, eo);
+                  for (var eq2 = 0; eq2 < esnap281.length; eq2++) {
+                    try { eStack[eStack.length - 1].appendChild(esnap281[eq2].cloneNode(true)); } catch (_e281h) {}
+                  }
+                }
+                for (var elv = ePath.length - 1; elv >= 0; elv--) {
+                  var eLvlNode = ePath[elv];
+                  var elp = eLvlNode.parentNode;
+                  if (!elp || !elp.childNodes) continue;
+                  var ekp = elp.childNodes;
+                  var eip = -1;
+                  for (var epj = 0; epj < ekp.length; epj++) if (ekp[epj] === eLvlNode) { eip = epj; break; }
+                  if (eip < 0) continue;
+                  var eHost = eStack[Math.min(elv + 1, eStack.length - 1)];
+                  for (var eq3 = 0; eq3 < eip; eq3++) {
+                    try { eHost.appendChild(ekp[eq3].cloneNode(true)); } catch (_e281i) {}
+                  }
+                }
+              }
+            }
+          } else if (ecCd) {
+            var eFlat = cl(ec);
+            if (eFlat) {
+              try { eFlat.data = String(ec.data != null ? ec.data : '').slice(0, eo); } catch (_e281j) {}
+              f.appendChild(eFlat);
+            }
+          }
+        })(this);
         var kids = this._coveredChildren();
         if (kids) {
           for (var i = 0; i < kids.length; i++) {
@@ -4676,7 +4929,7 @@
           }
         } else {
           var t = this.toString();
-          if (t) f.appendChild(globalThis.document.createTextNode(t));
+          if (t && !f.childNodes.length) f.appendChild(globalThis.document.createTextNode(t));
         }
         return f;
       },

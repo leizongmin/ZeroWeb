@@ -3541,3 +3541,82 @@ fn r280_cross_container_extract_probe() {
         "R280 cross-container extract 52,x shape: firstPartial P#c clone wraps the sc tail text, middle P#d moved, ec comment head-clone last; source tree pruned; collapse (DIV,3)"
     );
 }
+
+#[test]
+fn r281_cross_container_clone_contents() {
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let mut sandbox = V8Sandbox::with_config(zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    })
+    .unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><div id=\"t\">x</div></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+    let js = [
+        "var out = [];",
+        "var referenceDoc = document.implementation.createHTMLDocument('');",
+        "referenceDoc.removeChild(referenceDoc.documentElement);",
+        "var ifr = document.createElement('iframe');",
+        "document.body.appendChild(ifr);",
+        "var idoc = ifr.contentDocument;",
+        "idoc.appendChild(referenceDoc.documentElement.cloneNode(true));",
+        "var testDiv = idoc.createElement('div');",
+        "idoc.body.insertBefore(testDiv, idoc.body.firstChild);",
+        "var mk = function (id, text) {",
+        "  var p = idoc.createElement('p');",
+        "  p.id = id;",
+        "  p.textContent = text;",
+        "  testDiv.appendChild(p);",
+        "  return p;",
+        "};",
+        "var pa = mk('a', 'A0123');",
+        "var pb = mk('b', 'B0123');",
+        "var pc = mk('c', 'C0123');",
+        "var cm = idoc.createComment('tailcm');",
+        "testDiv.appendChild(cm);",
+        "function dump(n) {",
+        "  var ks = n.childNodes, s = [];",
+        "  for (var i = 0; i < ks.length; i++) {",
+        "    var k = ks[i];",
+        "    s.push(k.nodeName + (k.id ? '#' + k.id : '') + '('",
+        "      + String(k.firstChild && k.firstChild.data != null ? k.firstChild.data : (k.data != null ? k.data : '')) + ')');",
+        "  }",
+        "  return ks.length + '[' + s.join(',') + ']';",
+        "}",
+        // cross CD→CD: [pa.firstChild, 2, pb.firstChild, 3]
+        "var r1 = idoc.createRange();",
+        "r1.setStart(pa.firstChild, 2); r1.setEnd(pb.firstChild, 3);",
+        "var f1 = r1.cloneContents();",
+        "out.push('cdcd=' + dump(f1) + ' tree=' + dump(testDiv));",
+        // cross CD→comment: [pc.firstChild, 1, cm, 2]
+        "var r2 = idoc.createRange();",
+        "r2.setStart(pc.firstChild, 1); r2.setEnd(cm, 2);",
+        "var f2 = r2.cloneContents();",
+        "out.push('cdcm=' + dump(f2));",
+        // same-node CD slice: [cm, 2, cm, 5]
+        "var r3 = idoc.createRange();",
+        "r3.setStart(cm, 2); r3.setEnd(cm, 5);",
+        "var f3 = r3.cloneContents();",
+        "out.push('samecd=' + dump(f3));",
+        // same-node CD empty slice: collapsed → empty frag
+        "var r4 = idoc.createRange();",
+        "r4.setStart(cm, 2); r4.setEnd(cm, 2);",
+        "var f4 = r4.cloneContents();",
+        "out.push('empty=' + f4.childNodes.length);",
+        "globalThis.__r281r = out.join('|');",
+    ].join("\n");
+    let out = sandbox.execute(&js).unwrap().value;
+    assert_eq!(
+        out,
+        "cdcd=2[P#a(123),P#b(B01)] tree=4[P#a(A0123),P#b(B0123),P#c(C0123),#comment(tailcm)]|cdcm=2[P#c(0123),#comment(ta)]|samecd=1[#comment(ilc)]|empty=0",
+        "R281 cross-container cloneContents: CD→CD path-clone [P#a(tail), P#b(head)], CD→comment [P#c(tail), middles none, comment head-clone], same-node comment slice, collapsed empty frag; source tree untouched"
+    );
+}
