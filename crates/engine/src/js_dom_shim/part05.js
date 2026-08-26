@@ -856,6 +856,28 @@
         };
         Object.defineProperty(docEl, 'firstChild', { configurable: true, get: function () { return docEl.childNodes.length ? docEl.childNodes[0] : null; } });
         Object.defineProperty(docEl, 'lastChild', { configurable: true, get: function () { return docEl.childNodes.length ? docEl.childNodes[docEl.childNodes.length - 1] : null; } });
+        // R292（js-dom M4）：docEl 的属性反射最小面（getAttribute/hasAttribute）——
+        // R292 结构元素归一后 `doc.querySelector('html')` 直返 docEl（旧返带属性
+        // 的 wrapper），消费方（WPT selectors 套件的 `found.getAttribute('id')`
+        // 断言族）对工厂 docEl 缺方法直接 TypeError。属性源 = R159 的
+        // `_r159HtmlAttrs` 串（markup 提取的 `<html attrs>`）。惰性解析缓存。
+        var _r292DocElAttrs = null, _r292DocElParsed = false;
+        docEl.getAttribute = function (n292) {
+          if (!_r292DocElParsed) {
+            _r292DocElParsed = true; _r292DocElAttrs = {};
+            try {
+              var _s292 = String(doc._r159HtmlAttrs || '');
+              var _r292re = /([a-zA-Z_:][-a-zA-Z0-9_:.]*)\s*=\s*("([^"]*)"|'([^']*)'|[^\s]*)/g;
+              var _m292;
+              while ((_m292 = _r292re.exec(_s292)) !== null) {
+                _r292DocElAttrs[_m292[1].toLowerCase()] = _m292[3] != null ? _m292[3] : (_m292[4] != null ? _m292[4] : _m292[2]);
+              }
+            } catch (_e292pa) {}
+          }
+          var k292 = String(n292 == null ? '' : n292).toLowerCase();
+          return Object.prototype.hasOwnProperty.call(_r292DocElAttrs, k292) ? _r292DocElAttrs[k292] : null;
+        };
+        docEl.hasAttribute = function (n292) { return docEl.getAttribute(n292) !== null; };
         try { Object.setPrototypeOf(docEl, globalThis.HTMLHtmlElement ? globalThis.HTMLHtmlElement.prototype : Object.prototype); } catch (_eR207p) {}
         if (kind !== 'xml') {
         // R159：html/body 属性经 doc 槽传递——detHtml 包装层恢复 `<html ...><body ...>`

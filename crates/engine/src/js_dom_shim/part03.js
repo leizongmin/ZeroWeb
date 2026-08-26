@@ -7195,16 +7195,54 @@
       _zwQWrapCache.set(key, e);
       return e;
     }
+    // R292（js-dom M4）：**文档结构元素的身份归一**——detached/iframe 子文档的
+    // `querySelector('body'/'#body'/'head'/'#head'/'html'/'#html')` 旧返
+    // `_zwParseEl` wrapper（JSON 往返产物，probe 实证 q===doc.body false、
+    // parentNode null）——WPT ParentNode-querySelector-All/Element-matches 的
+    // tree-order + matches 簇根因（wrapper 上 `.matches('body')` 无根上下文
+    // 恒 false）。spec：查询产物是真实节点对象，`doc.querySelector('body') ===
+    // doc.body` 须成立。`_zwWrapCached` 的 R167 桥归一只覆盖 `_tree`（body
+    // 内容树）内的节点——body/head/html 自身不在 `_tree`。特例直返 doc 视图
+    // 对象（documentElement 走 R234 动态 getter）。
+    function _r292StructNode(sel) {
+      var s = String(sel == null ? '' : sel).trim();
+      if (/^(body|head|html)$/.test(s) || /^#(body|head|html)$/.test(s)) {
+        var name292 = s.charAt(0) === '#' ? s.slice(1) : s;
+        // **动态读 doc 槽**（R221 fresh-doc 的 appendChild 重绑会把 doc.body/head
+        // 换成新节点——静态闭包引用会 stale；probe 断言的是 === doc.body 时刻值）。
+        try {
+          if (name292 === 'body' && doc.body) return doc.body;
+          if (name292 === 'head' && doc.head) return doc.head;
+          if (name292 === 'html' && doc.documentElement) return doc.documentElement;
+        } catch (_e292d) {}
+        if (name292 === 'body') return body;
+        if (name292 === 'head') return headEl || null;
+        return null;
+      }
+      return null;
+    }
     function queryOne(sel) {
       if (globalThis._zwQueryGuard) globalThis._zwQueryGuard(sel);
       var a = queryBody(sel, false);
+      // R292：结构元素形态（tag/id）——queryBody 的 detHtml 包装层含
+      // `<html><head/><body/></html>`（R159），命中即结构元素自身（HTML 文档
+      // 结构元素唯一，无内容树同名歧义）。恒归一 doc 视图对象。
+      var _r292s = _r292StructNode(sel);
+      if (_r292s) return _r292s;
       if (!a.length) return null;
       return _zwWrapCached(a[0]);
     }
     function queryAll(sel) {
       if (globalThis._zwQueryGuard) globalThis._zwQueryGuard(sel);
       var a = queryBody(sel, true); var out = [];
-      for (var i = 0; i < a.length; i++) out.push(_zwWrapCached(a[i]));
+      // R292：结构元素形态——结果数组归一 [结构节点]（同 queryOne；html 是
+      // doc 级根，body/head 在 detHtml 层而非内容树）。
+      var _r292sn = _r292StructNode(sel);
+      if (_r292sn) {
+        out.push(_r292sn);
+      } else {
+        for (var i = 0; i < a.length; i++) out.push(_zwWrapCached(a[i]));
+      }
       out.__zwQSA = true; // R159：instanceof NodeList 标记
       return out;
     }

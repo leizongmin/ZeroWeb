@@ -4276,3 +4276,52 @@ globalThis.__r290i = out.join('|');
         "R290 prototype constructor: reflexive ctor, XML doc -> Element, XHTML ns -> HTMLAnchorElement, HTML div -> HTMLDivElement"
     );
 }
+
+#[test]
+fn r292_query_selector_struct_node_identity() {
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let mut sandbox = V8Sandbox::with_config(zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    })
+    .unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><div id=\"t\">x</div></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+    // R292：结构元素身份归一——detached/子文档 querySelector('body'/'#body'/
+    // 'head'/'html') 直返 doc 视图对象（spec 查询产物是真实节点；旧返
+    // _zwParseEl wrapper 使 === 断言 + wrapper.matches 恒 false）。
+    // https://dom.spec.whatwg.org/#dom-parentnode-queryselector
+    let out = sandbox
+        .execute(
+            r#"
+var out = [];
+var doc = document.implementation.createHTMLDocument('t');
+doc.body.innerHTML = '<p id="a">x</p>';
+out.push('bodyTag=' + (doc.querySelector('body') === doc.body));
+out.push('bodyId=' + (doc.querySelector('#body') === doc.body));
+out.push('headTag=' + (doc.querySelector('head') === doc.head));
+out.push('htmlTag=' + (doc.querySelector('html') === doc.documentElement));
+var all = doc.querySelectorAll('body');
+out.push('allBody=' + (all.length === 1 && all[0] === doc.body));
+out.push('bodyMatch=' + doc.querySelector('body').matches('body'));
+out.push('pNotStruct=' + (doc.querySelector('#a') !== doc.body));
+out.push('pIsP=' + (doc.querySelector('#a').nodeName === 'P'));
+globalThis.__r292q = out.join('|');
+"#,
+        )
+        .unwrap();
+    let out = sandbox.execute("globalThis.__r292q").unwrap().value;
+    assert_eq!(
+        out,
+        "bodyTag=true|bodyId=true|headTag=true|htmlTag=true|allBody=true|bodyMatch=true|pNotStruct=true|pIsP=true",
+        "R292 struct-node identity: body/head/html query returns doc view objects, content-tree ids unaffected"
+    );
+}
