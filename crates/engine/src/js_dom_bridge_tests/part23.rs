@@ -3765,8 +3765,8 @@ fn r283_element_sc_deep_extract() {
     );
     assert_eq!(
         f53,
-        "f53 tree=4[P#a(A0123456),P#c(456),P#d(D0123),#comment(ongpad)] frag=2[P#e(E0123),#comment(tailcm-l)]|f53col=true/3 cmData=\"ongpad\"",
-        "R283 element-sc sibling extract: P#d kept (offset past its text), P#e middle moved, comment head-trimmed, collapse (DIV,3)"
+        "f53 tree=4[P#a(A0123456),P#c(456),P#d(D0123),#comment(ongpad)] frag=3[P#d(),P#e(E0123),#comment(tailcm-l)]|f53col=true/3 cmData=\"ongpad\"",
+        "R283/R285 element-sc sibling extract: P#d empty-clone bootstrap (offset past its text), P#e middle moved, comment head-trimmed, collapse (DIV,3)"
     );
 }
 

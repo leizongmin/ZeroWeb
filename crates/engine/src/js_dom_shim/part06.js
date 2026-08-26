@@ -4467,6 +4467,38 @@
           // R283：**sc 即 cac 的 element-sc 形态**（`cac === sc`，48,x——
           // sc 自身是容器：fully-contained 尾段子（非 ec 路径子）move 入
           // frag；ec 路径子本体留树，其内容由 ④' 的 lastPartial 组树承载）。
+          if (!scCd && cac !== sc && sc.parentNode === cac) {
+            // R285：**firstPartial（sc 自身）的 clone 引导**——sc 是 cac 的直接子
+            // 且 partially-contained（R283 形态 A/B 的共同前置）：frag 以 sc 的
+            // shallow clone 开头，其内容 = sc 的 [so, scEcPath) 子区间提取
+            //（53,x `[P#d,1,comment,8]`：P#d 的 clone（so=1 越过唯一 text 子 →
+            // 空壳）引导 + P#e/P5 中段 + comment 头段——旧版缺引导使 A/E 首节点
+            // 错位「expected Element got Text」）。**cac===sc 时无引导**（sc 是
+            // 容器自身非 firstPartial——48,x 的 frag 以 contained/middle 开头；
+            // 首版全形态引导 -3 回归的教训）。
+            // https://dom.spec.whatwg.org/#dom-range-extractcontents
+            try {
+              var fb285 = sc.cloneNode(false);
+              if (fb285) {
+                var fbk285 = sc.childNodes || [];
+                var fbPath285 = -1;
+                for (var fk285 = 0; fk285 < fbk285.length; fk285++) {
+                  var fa285 = ec, fh285 = 0;
+                  while (fa285 && fh285++ < 128) {
+                    if (fbk285[fk285] === fa285) { fbPath285 = fk285; break; }
+                    fa285 = fa285.parentNode;
+                  }
+                  if (fbPath285 >= 0) break;
+                }
+                var fbEnd285 = (fbPath285 >= 0) ? fbPath285 : fbk285.length;
+                var fbSnap285 = fbk285.slice(so, fbEnd285);
+                for (var fq285 = 0; fq285 < fbSnap285.length; fq285++) {
+                  moveIn(fbSnap285[fq285], fb285);
+                }
+                f.appendChild(fb285);
+              }
+            } catch (_e285fb) {}
+          }
           if (!scCd && cac === sc) {
             var skR283 = sc.childNodes || [];
             var ecPathR283 = -1;
@@ -4915,6 +4947,32 @@
               }
             }
           } else if (sc.nodeType === 1 || sc.nodeType === 11) {
+            // R285：**sc 是 cac 直接子的 clone 引导**（extract 侧同款对称——
+            // 53,x clone 的 [P#d-empty-clone, P#e, P5, comment-head] 首节点）：
+            // sc 的 shallow clone 引导 frag，其内承载 [so, scEcPath) 子 deep clone。
+            if (sc !== cac && sc.parentNode === cac) {
+              try {
+                var cb285 = cl(sc);
+                if (cb285) {
+                  var cbk285 = sc.childNodes || [];
+                  var cbPath285 = -1;
+                  for (var cf285 = 0; cf285 < cbk285.length; cf285++) {
+                    var ca285 = ec, ch285 = 0;
+                    while (ca285 && ch285++ < 128) {
+                      if (cbk285[cf285] === ca285) { cbPath285 = cf285; break; }
+                      ca285 = ca285.parentNode;
+                    }
+                    if (cbPath285 >= 0) break;
+                  }
+                  var cbEnd285 = (cbPath285 >= 0) ? cbPath285 : cbk285.length;
+                  var cbSnap285 = cbk285.slice(so, cbEnd285);
+                  for (var cq285 = 0; cq285 < cbSnap285.length; cq285++) {
+                    try { cb285.appendChild(cbSnap285[cq285].cloneNode(true)); } catch (_e285cb) {}
+                  }
+                  f.appendChild(cb285);
+                }
+              } catch (_e285cbs) {}
+            }
             // element sc：本体不动，[so, ecPathIdx) 子 deep clone 直接入 frag
             //（sc 是 cac 时；sc 深于 cac 时由中段/爬升覆盖——保守只接 sc===cac）。
             if (sc === cac) {
