@@ -790,9 +790,52 @@
   // WPT Element-matches 对 clone 产物调 root.querySelector/element.matches。
   // 经序列化 + host 二次 parse 查询；matches 判自身（outerHTML 包裹后命中首元素）。
   function _zwMOuterHtml(n) {
+      // R291（js-dom M4）：Document 根的序列化——iframe 子文档形态 `docEl.
+      // childNodes` 是工厂空数组（R220 评估：head/body 链入曾 -158P 回归，两侧
+      // 须成对），body/head 内容在 doc.body/doc.head 视图闭包。matches/closest
+      // 的 root-uptrack 对 plain 链上行到 **Document**（body→html→doc），旧版
+      // nodeType!==1 直接返 '' 使查询源为空 → `iframeDoc.body.matches('body')`
+      // 恒 false（WPT Element-matches/webkitMatchesSelector/ParentNode-
+      // querySelector-All 的 body/html type selector 簇 6F）。合成
+      // `<html attrs>{head}{body}</html>`（head/body 从 doc 视图序列化；无则
+      // 回落 docEl 的工厂子列表）。
+      if (n && n.nodeType === 9) {
+        var _r291de = null;
+        try { _r291de = n.documentElement; } catch (_e291de) {}
+        if (!_r291de || _r291de.nodeType !== 1) return '';
+        var _r291h = '<html';
+        try {
+          var _r291ha = (n._r159HtmlAttrs != null && String(n._r159HtmlAttrs)) || '';
+          if (_r291ha) _r291h += ' ' + _r291ha;
+        } catch (_e291ha) {}
+        _r291h += '>';
+        var _r291parts = [];
+        try { if (n.head && n.head.nodeType === 1) _r291parts.push(_zwMOuterHtml(n.head)); } catch (_e291hh) {}
+        try { if (n.body && n.body.nodeType === 1) _r291parts.push(_zwMOuterHtml(n.body)); } catch (_e291hb) {}
+        if (!_r291parts[0] && !_r291parts[1]) {
+          // 无 head/body 视图（XML doc 等）——回落 docEl 工厂子列表序列化。
+          var _r291cs = _r291de.childNodes || [];
+          for (var _r291i = 0; _r291i < _r291cs.length; _r291i++) {
+            var _r291c = _r291cs[_r291i];
+            if (_r291c && _r291c.nodeType === 1) _r291parts.push(_zwMOuterHtml(_r291c));
+          }
+        }
+        return _r291h + _r291parts.join('') + '</html>';
+      }
       if (!n || n.nodeType !== 1) return '';
       var h = '<' + String(n.nodeName).toLowerCase();
       var as = n.attributes;
+      // R291（js-dom M4）：无 attributes 数组的轻量视图（iframe 子文档 body 等）
+      // 反射 id/class 进序列化——matches 的 self/cand 强键两侧同源序列化时才
+      // 可对齐（self 侧 getAttribute('id') 可达，cand 侧依赖序列化产物携带 id）。
+      if ((!as || !as.length) && typeof n.getAttribute === 'function') {
+        var _r291rid = null, _r291rcls = null;
+        try { _r291rid = n.getAttribute('id'); } catch (_e291ri) {}
+        try { _r291rcls = n.getAttribute('class'); } catch (_e291rc) {}
+        as = [];
+        if (_r291rid != null && _r291rid !== '') as.push({ name: 'id', value: String(_r291rid) });
+        if (_r291rcls != null && _r291rcls !== '') as.push({ name: 'class', value: String(_r291rcls) });
+      }
       // R174（js-dom M4）：no-ns 标记属性（同 `_zwMSerialize`——element/fragment
       // 查询上下文的序列化源；判据 `!namespaceURI`（null/空串，WebIDL 归一），
       // `|div` EmptyNs 经 host `apply_empty_ns_markers` 还原后命中）。
@@ -1044,11 +1087,51 @@
       else break;
     }
     var arr = _zwMQueryAll(rootFor167, sel);
-    var selfKey167 = String(this.nodeName || '').toLowerCase() + '\x1f' + String(this.id || '') + '\x1f' + String(this.outerHTML || this._zwOuterFallback || '');
+    // R291（js-dom M4）：self 键的 id/outer 回落——iframe 子文档的 body/head 视图
+    // 是轻量对象（无反射 id getter、无 outerHTML accessor——probe 实证均
+    // undefined，但 getAttribute('id') 可达）；旧键 String(this.id||'') 恒空段
+    // 使 iframe `body.matches('body')` 键失配恒 false（WPT Element-matches 的
+    // body/head/html type selector 簇）。id 回落 getAttribute；outer 回落
+    // `_zwMOuterHtml(this)`（从 childNodes 递归序列化，不依赖 accessor）。
+    var _r291id = this.id;
+    if (_r291id == null || _r291id === '') {
+      try { _r291id = typeof this.getAttribute === 'function' ? this.getAttribute('id') : ''; } catch (_e291g) { _r291id = ''; }
+    }
+    var _r291outer = this.outerHTML;
+    if (_r291outer == null || _r291outer === '') {
+      try { _r291outer = _zwMOuterHtml(this) || this._zwOuterFallback || ''; } catch (_e291o) { _r291outer = this._zwOuterFallback || ''; }
+    }
+    var selfKey167 = String(this.nodeName || '').toLowerCase() + '\x1f' + String(_r291id || '') + '\x1f' + String(_r291outer || '');
+    // R291（js-dom M4）：**tag+id 主键 + outer 决胜**——self 与 cand 的 outer
+    // 序列化源不对称（self 的 `_zwMOuterHtml` 只走自身 childNodes；cand 的
+    // `.outer` 来自查询源整树——iframe 子文档 documentElement 的工厂
+    // childNodes 恒空使 outer 恒 `<html></html>` vs cand 含 head/body 全文，
+    // 强键恒失配）。tag+id 相同的 cand 唯一时直接命中（WPT selectors 套件
+    // fixture 的 id 唯一）；多个 tag+id 相同才用 outer 决胜（R167 的区分意图
+    // 保留——重复形态仍精确）。
+    var _r291cands = [];
+    // R291：documentElement 的 tag-only 形态——工厂 docEl 无属性反射面（无
+    // getAttribute/id），cand 的 id 来自查询源序列化的 `<html attrs>`（R159 提
+    // 取的 _r159HtmlAttrs）恒非空使 tag+id 失配。documentElement 在文档内 tag
+    // 唯一，self 是 root 的 documentElement 时降级为 tag 匹配（WPT Element-
+    // matches "Type selector, matching html element" 簇）。
+    var _r291isDocEl = false;
+    try {
+      if (rootFor167 && rootFor167.nodeType === 9 && rootFor167.documentElement === this) _r291isDocEl = true;
+    } catch (_e291rde) {}
     for (var mi167 = 0; mi167 < arr.length; mi167++) {
       var cand167 = arr[mi167];
       if (!cand167) continue;
-      var candKey167 = String(cand167.tag || cand167.nodeName || '').toLowerCase() + '\x1f' + String(cand167.id || '') + '\x1f' + String(cand167.outer || cand167.outerHTML || '');
+      var candTag167 = String(cand167.tag || cand167.nodeName || '').toLowerCase();
+      if (_r291isDocEl && candTag167 === selfKey167.split('\x1f')[0]) { _r291cands.push(cand167); continue; }
+      if (candTag167 === selfKey167.split('\x1f')[0] && String(cand167.id || '') === String(_r291id || '')) {
+        _r291cands.push(cand167);
+      }
+    }
+    if (_r291cands.length === 1) return true;
+    for (var mo167 = 0; mo167 < _r291cands.length; mo167++) {
+      var c291 = _r291cands[mo167];
+      var candKey167 = String(c291.tag || c291.nodeName || '').toLowerCase() + '\x1f' + String(c291.id || '') + '\x1f' + String(c291.outer || c291.outerHTML || '');
       if (candKey167 === selfKey167) return true;
     }
     return false;
