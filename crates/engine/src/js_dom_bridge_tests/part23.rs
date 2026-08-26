@@ -3769,3 +3769,45 @@ fn r283_element_sc_deep_extract() {
         "R283 element-sc sibling extract: P#d kept (offset past its text), P#e middle moved, comment head-trimmed, collapse (DIV,3)"
     );
 }
+
+#[test]
+fn r284_doc_container_covered_children() {
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let mut sandbox = V8Sandbox::with_config(zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    })
+    .unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><div id=\"t\">x</div></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+    let js = [
+        "var out = [];",
+        // 51,x shape: same-node doc [1,2] on an iframe doc ([dt, html])
+        "var referenceDoc = document.implementation.createHTMLDocument('');",
+        "referenceDoc.removeChild(referenceDoc.documentElement);",
+        "var ifr = document.createElement('iframe');",
+        "document.body.appendChild(ifr);",
+        "var idoc = ifr.contentDocument;",
+        "idoc.appendChild(referenceDoc.documentElement.cloneNode(true));",
+        "var r = idoc.createRange();",
+        "r.setStart(idoc, 1); r.setEnd(idoc, 2);",
+        "var frag = r.extractContents();",
+        "out.push('docKids=' + idoc.childNodes.length + ' frag=' + frag.childNodes.length",
+        "  + ' frag0=' + String(frag.childNodes[0] && frag.childNodes[0].nodeName));",
+        "out.push('col=' + (r.startContainer === idoc) + '/' + r.startOffset);",
+        "globalThis.__r284r = out.join('|');",
+    ].join("\n");
+    let out = sandbox.execute(&js).unwrap().value;
+    assert_eq!(
+        out, "docKids=1 frag=1 frag0=HTML|col=true/1",
+        "R284 doc-container covered children: same-node doc [1,2] extracts the html child (move to frag, docKids drops to 1) + collapse (doc,1)"
+    );
+}

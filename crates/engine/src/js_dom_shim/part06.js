@@ -3575,7 +3575,11 @@
         // R194（js-dom M4）：fragment/shadow 容器（nodeType 11）纳入覆盖面——shadow root
         // 的 Range 操作（WPT Range-{delete,extract,clone}Contents-in-ShadowRoot 九用例：
         // setStart(shadowRoot, offset) 后 deleteContents 须按 offset 区间移 registry 子）。
-        if (sc.nodeType !== 1 && sc.nodeType !== 11 && !sc.tagName) return null; // 非元素/fragment 容器（文本切片）→ defer
+        // R284（js-dom M4）：Document 容器（nodeType 9）纳入——同容器 doc 区间的
+        // contained 子语义与元素一致（WPT Range-extractContents 51,x
+        // `[document,1,document,2]`：html 子 move 入 frag + 塌缩 (doc,1)；旧版
+        // 对 doc 返 null 使 extract/delete/clone 三侧同容器 doc 形态全空转）。
+        if (sc.nodeType !== 1 && sc.nodeType !== 11 && sc.nodeType !== 9 && !sc.tagName) return null; // 非元素/fragment/doc 容器（文本切片）→ defer
         var kids = sc.childNodes;
         if (!kids || !kids.length) return [];
         var a = Math.max(0, Math.min(this.startOffset | 0, kids.length));
@@ -4110,7 +4114,17 @@
         // fragment + 移除原件（净效果等价：文档去内容、fragment 得内容；fragment 内为克隆非原件，documented）。
         // 克隆正序（保文档序进 fragment）；移除**逆序**——nth-child 结构选择器逆序稳定（移除末尾不前移兄长），
         // 正序移除会因 sibling 前移致选择器错位（删错节点）。同 deleteContents 的逆序移除。
-        var f = globalThis.document.createDocumentFragment();
+        // R284（js-dom M4）：**frag 归 start 节点的 ownerDocument 域**（spec
+        // `dom-range-extract-contents` 步骤 1——common.js myExtractContents 同款；
+        // 旧版恒主 document fragment，跨域 append 对 iframe/detached 域子被
+        // flat 成裸 text——WPT Range-extractContents 53,x frag 期望 <p id="e">
+        // 包裹 got "Ghijklmn"）。
+        // https://dom.spec.whatwg.org/#dom-range-extractcontents
+        var _r284od = null;
+        try { _r284od = this.startContainer.ownerDocument || (this.startContainer.nodeType === 9 ? this.startContainer : null); } catch (_e284od) {}
+        var f = (_r284od && typeof _r284od.createDocumentFragment === 'function')
+          ? _r284od.createDocumentFragment()
+          : globalThis.document.createDocumentFragment();
         // R211（js-dom M4）：**CharacterData 区间提取分支**（spec
         // `dom-range-extract-contents` 的 first/last partially contained
         // CharacterData 子 + contained children 三段——common.js
@@ -4754,7 +4768,13 @@
       cloneContents: function () {
         // R2929：真实子树克隆（cloneNode deep）到 fragment。元素容器 + offset 区间精确；
         // 跨容器/文本节点容器回落文本（既有 best-effort）。
-        var f = globalThis.document.createDocumentFragment();
+        // R284：frag 归 start 节点 ownerDocument 域（同 extractContents——spec
+        // `dom-range-clone-contents` 同款步骤 1）。
+        var _r284od2 = null;
+        try { _r284od2 = this.startContainer.ownerDocument || (this.startContainer.nodeType === 9 ? this.startContainer : null); } catch (_e284od2) {}
+        var f = (_r284od2 && typeof _r284od2.createDocumentFragment === 'function')
+          ? _r284od2.createDocumentFragment()
+          : globalThis.document.createDocumentFragment();
         // R281（js-dom M4）：**跨容器 clone 的路径克隆组树**（R280 extract 同款
         // 结构的纯 clone 版——无 move 无删源；WPT Range-cloneContents 29F 的
         // 主簇「Returned fragment」expected `<p id="a">full-text</p>` vs got 裸
