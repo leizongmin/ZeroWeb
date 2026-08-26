@@ -2859,12 +2859,17 @@ fn test_iframe_docelement_structure_r214() {
               out.push('clone-chain:' + (refDoc.documentElement ? refDoc.documentElement.tagName : 'null'));
             }
             // ④ docEl-rooted range 建立可用（12,x setup 路径）
+            // R288 注：工厂期 docEl.childNodes 恒空（R220 评估——head/body 不链入
+            // 运行时 docEl），[docEl,1] 超长按 spec 抛 IndexSizeError（旧 lax 校验
+            // 吞掉）。真实 harness 的 12,x 走 restoreIframe 后的克隆 docEl（含
+            // head/body 两子），[docEl,1] 合法——WPT 12,x 1840P/0F 保持。本单测
+            // 断言工厂期正确抛错 + 克隆链后 docEl 结构。
             win.setupRangeTests();
             win.testNodeInput = 'paras[0]';
             win.testRangeInput = '[document.documentElement, 0, document.documentElement, 1]';
             win.run();
             if (win.unexpectedException) {
-              out.push('range-setup:' + String(win.unexpectedException.message).slice(0, 60));
+              out.push('range-setup:' + String(win.unexpectedException.name || win.unexpectedException.message).slice(0, 60));
               win.unexpectedException = null;
             } else if (!win.testRange) {
               out.push('range-setup:null');
@@ -2874,7 +2879,10 @@ fn test_iframe_docelement_structure_r214() {
         )
         .unwrap()
         .value;
-    assert_eq!(out, "ALL-OK", "R214 iframe documentElement 结构");
+    assert_eq!(
+        out, "range-setup:IndexSizeError",
+        "R214 iframe documentElement 结构（R288：工厂期 docEl 空子使 [docEl,1] 正确抛 IndexSizeError；克隆链/ownerDocument 断言全过）"
+    );
 }
 /// R215（js-dom M4）：insertNode 的 **ensure-pre-insertion validity 前置**
 /// （spec `dom-node-pre-insert` 校验族——336F HRE 簇 + 8,9/9,9 的 P→DIV→P

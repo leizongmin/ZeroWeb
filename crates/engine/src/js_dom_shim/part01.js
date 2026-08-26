@@ -785,7 +785,16 @@
       entry.history.push(entry.url);
     }
     try { if (entry.win && typeof entry.win.__zwRunInlineScripts === 'function') entry.win.__zwRunInlineScripts(); } catch (_eScripts) {}
-    try { frame.dispatchEvent(new globalThis.Event('load')); } catch (_eLoad) {}
+    // R288（js-dom M4）：load 事件派发**延迟到 microtask**——spec（HTML「the end」
+    // + `event-loop-processing-model`）iframe 加载完成是异步任务：`.src = ...`
+    // 赋值语句本身须先完成，load 才触发。旧同步派发使 `expectedIframe.onload`
+    // 在同一赋值表达式的**语句序列中间**执行（WPT Range mega-case 的 onload 链
+    // `expectedIframe.src = ...; referenceDoc.appendChild(...)`——旧序 onload 先
+    // 跑，referenceDoc 尚空，restoreIframe 克隆出空 BODY 使 16,x `[body,4]`
+    // 超长 IndexSizeError）。`_defer`（microtask）在当前脚本任务末尾派发，
+    // 此时 onload handler 已赋值、referenceDoc 已填充。R288 实测：insertNode/
+    // surroundContents 16,x 46F×2 全解。
+    try { _defer(function() { try { frame.dispatchEvent(new globalThis.Event('load')); } catch (_eL2) {} }); } catch (_eLoad) {}
     return entry;
   };
   // js-dom M4 R116：per-attribute NS 元数据（elKey → { qualifiedName → {ns, prefix, local} }）——

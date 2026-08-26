@@ -2641,10 +2641,20 @@ fn r259_leaf_hre_extract_first_boundaries() {
         .execute(
             r#"
 var out = [];
-// R259 regression: 16,x shape — element container, empty covered children,
-// leaf (Text) newParent -> HRE with range collapsed to (sc, newOffset).
+// R288 注：body 须有 ≥5 子使 [body,4]/[body,5] 合法（原 fixture 1 子 + testDiv
+// + 2 text = 4 子使 setEnd(body,5) 超 long 抛 IndexSizeError——WPT 真形态 6 子）。
 var testDiv = document.createElement('div');
 document.body.appendChild(testDiv);
+document.body.appendChild(document.createTextNode('t1'));
+document.body.appendChild(document.createTextNode('t2'));
+document.body.appendChild(document.createTextNode('t3'));
+"#,
+        )
+        .unwrap();
+    sandbox
+        .execute(
+            r#"
+var out = [];
 var textNewParent = document.createTextNode('leaf');
 var range = document.createRange();
 range.setStart(document.body, 4);
@@ -2660,8 +2670,8 @@ globalThis.__r259r = out.join('|');
         .unwrap();
     let out = sandbox.execute("globalThis.__r259r").unwrap().value;
     assert_eq!(
-        out, "t:HierarchyRequestError|so=3 eo=3|scIsBody=true|bodyLast=leaf",
-        "R259 leaf-HRE 先 extract 折叠 + insertNode R219 setEnd 经 crossing 重设：终态 (sc, newOffset) 对（16,x 形态）"
+        out, "t:HierarchyRequestError|so=4 eo=5|scIsBody=true|bodyLast=#text",
+        "R259 leaf-HRE 先 extract 折叠 + insertNode R219 setEnd 经 crossing 重设（R288 fixture 5 子形态：HRE 抛出 + 边界保持 [4,5)）"
     );
 }
 
@@ -3891,5 +3901,110 @@ fn r287_clone_doc_sc_fragment() {
     assert_eq!(
         out, "frag=2[HTML:1:h=false:fc=HEAD:nk=2,#comment:8:h=false:fc=null:nk=0]",
         "R287 clone doc-sc: HTML deep-cloned (plain, HEAD first child) + comment head-clone last"
+    );
+}
+
+#[test]
+fn r288_probe_body_script_children_preserved() {
+    // R288 诊断辅助：iframe 子文档（无显式 <html> 对的 HTML kind）经
+    // _zwMBuildBodyTree 解析后 body 视图是否保 <script> 元素子（真浏览器
+    // body 含 script 使 [body,4] 合法——16,x 形态的 length 事实源）。
+    let html = "<!doctype html>\n<title>Range test iframe</title>\n<meta name=timeout content=long>\n<body onload=run()>\n<script src=../common.js></script>\n<script>\n\"use strict\";\nvar x = 1;\n</script>\n";
+    let json = crate::js_dom_bridge::child_nodes_json(html, "body");
+    eprintln!("R288SCRIPT: {}", json);
+    assert!(
+        json.matches("\"k\":\"E\"").count() >= 2,
+        "body 视图应含至少 2 个 script 元素子\n{json}"
+    );
+}
+
+#[test]
+fn r288_compare_point_doctype_root_order() {
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let mut sandbox = V8Sandbox::with_config(zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    })
+    .unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><div id=\"t\">x</div></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+    let js = [
+        "var out = [];",
+        // WPT Range-comparePoint 88/89,x shape: range rooted in main doc, point = foreign/xml doctype
+        "var range = document.createRange();",
+        "range.setStart(document.body.firstChild, 0);",
+        "range.setEnd(document.body.firstChild, 0);",
+        "var foreignDoctype = document.implementation.createHTMLDocument('').doctype;",
+        "var xmlDoctype = document.implementation.createDocumentType('qorflesnorf', 'abcde', \"x\\\"'y\");",
+        "function probe(name, node) {",
+        "  try { range.comparePoint(node, 0); out.push(name + ':no-throw'); }",
+        "  catch (e) { out.push(name + ':' + String(e.name)); }",
+        "}",
+        "probe('foreignDt', foreignDoctype);",
+        "probe('xmlDt', xmlDoctype);",
+        // 同根 doctype 仍须 InvalidNodeTypeError（spec 步骤 3 在 root 检查之后）
+        "probe('mainDt', document.doctype);",
+        "globalThis.__r288r = out.join('|');",
+    ].join("\n");
+    let out = sandbox.execute(&js).unwrap().value;
+    eprintln!("R288PROBE: {}", out);
+    assert_eq!(
+        out, "foreignDt:WrongDocumentError|xmlDt:WrongDocumentError|mainDt:InvalidNodeTypeError",
+        "R288 comparePoint: cross-root doctype throws WrongDocumentError (root check before nodeType), same-root doctype InvalidNodeTypeError"
+    );
+}
+
+#[test]
+fn r288_compare_boundary_points_pair_selection() {
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let mut sandbox = V8Sandbox::with_config(zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    })
+    .unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><div id=\"t\"><p id=\"a\">AÃ¯</p><p id=\"b\">B</p></div></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+    let js = [
+        "var out = [];",
+        // WPT 1,2,2 形态：同容器 END_TO_END —— this end (t#0,0) vs src end (t#0,1)
+        "var ta = document.getElementById('a').firstChild;",
+        "var r1 = document.createRange(); r1.setStart(ta, 0); r1.setEnd(ta, 0);",
+        "var r2 = document.createRange(); r2.setStart(ta, 0); r2.setEnd(ta, 1);",
+        "out.push('sameEnd=' + r1.compareBoundaryPoints(2, r2));",
+        // WPT 1,17,x 形态：祖先容器 —— this start (ta,0) vs src start (dv,1)。
+        // body 容器在 handle 域融合视图不定长（IndexSizeError 风险），改用 dv
+        // （ta 的 P 祖先在 dv 下索引 0 < 1 → this 在前 → -1）。
+        "var dv = document.getElementById('t');",
+        "var r17 = document.createRange(); r17.setStart(dv, 1); r17.setEnd(dv, 2);",
+        "out.push('ancStart=' + r1.compareBoundaryPoints(0, r17));",
+        // 跨容器祖先序：(dv,0) 边界点在首子树**之前** → (ta,0) 在其后 → this=+1
+        "var r3 = document.createRange(); r3.setStart(dv, 0); r3.setEnd(dv, 1);",
+        "out.push('sibStart=' + r1.compareBoundaryPoints(0, r3));",
+        "out.push('sibStartRev=' + r3.compareBoundaryPoints(0, r1));",
+        // END_TO_START：this start vs src end
+        "out.push('ets=' + r1.compareBoundaryPoints(3, r2));",
+        "globalThis.__r288c = out.join('|');",
+    ].join("\n");
+    let out = sandbox.execute(&js).unwrap().value;
+    eprintln!("R288CBP: {}", out);
+    assert_eq!(
+        out, "sameEnd=-1|ancStart=-1|sibStart=1|sibStartRev=-1|ets=-1",
+        "R288 compareBoundaryPoints: how=2 uses END pair (not START), ancestor pairs compare offset-vs-childIndex, cross-container tree order"
     );
 }

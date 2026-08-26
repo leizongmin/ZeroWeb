@@ -3480,16 +3480,23 @@
       },
       // R42 修正：spec `range-set-start/end` 仅拒 **DocumentType**（InvalidNodeTypeError）——Attr 允许作
       // 端点容器（length=0，offset 0 合法、>0 抛 IndexSizeError，WPT Range-attribute-nodes 正反两断言）。
-      // 旧初版把 Attr 一并拒绝 → "at offset 0 is allowed" 误伤。Offset 校验：仅当 length 可判定时
-      //（detached/handle-only proxy childNodes 恒空但树存在——children 视图缺失时 childNodes.length===0
-      // 与真 length 无法区分 → 对元素容器放宽不抛，保既有用例不回归；文本/注释/PI data 可判定仍精确校验）。
+      // 旧初版把 Attr 一并拒绝 → "at offset 0 is allowed" 误伤。R288 起元素容器的超长 offset
+      // 恢复精确校验（旧版对 nodeType===1 放宽的历史动机——handle proxy childNodes 视图缺失——
+      // 已被 R286 registry 事实源消解）。
       setStart: function (node, off) {
         if (!node || typeof node.nodeType !== 'number' || node.nodeType === 10) {
           throw new globalThis.DOMException('The given node is invalid.', 'InvalidNodeTypeError');
         }
         var o = off | 0;
         if (o < 0) throw new globalThis.DOMException('The given offset is out of bounds.', 'IndexSizeError');
-        if (node.nodeType !== 1 && o > this._nodeLength(node)) {
+        // R288（js-dom M4）：spec `range-set-start` 步骤 2——offset > node length 对
+        // **元素容器同样抛 IndexSizeError**（旧版对 nodeType===1 整体放宽——WPT
+        // Range-set "setStart()/setEnd() to a too-large offset must throw
+        // INDEX_SIZE_ERR" point 30/39/40 [documentElement,7]/[paras[0],2]/
+        // [paras[1],2] 240F 簇：html 2 子、p 1 子，offset 7/2 超 length 须抛）。
+        // handle/registry 容器的 childNodes 融合视图自 R286 起以 registry 为
+        // 事实源，长度可判定。
+        if (o > this._nodeLength(node)) {
           throw new globalThis.DOMException('The given offset is out of bounds.', 'IndexSizeError');
         }
         // R203（js-dom M4）：spec `range-set-start` 步骤 3——新 start 在当前 end 之后
@@ -3511,7 +3518,8 @@
         }
         var o = off | 0;
         if (o < 0) throw new globalThis.DOMException('The given offset is out of bounds.', 'IndexSizeError');
-        if (node.nodeType !== 1 && o > this._nodeLength(node)) {
+        // R288：同 setStart——元素容器的超长 offset 同样抛（spec `range-set-end` 步骤 2）。
+        if (o > this._nodeLength(node)) {
           throw new globalThis.DOMException('The given offset is out of bounds.', 'IndexSizeError');
         }
         // R203（js-dom M4）：spec `range-set-end` 步骤 3 镜像——新 end 在当前 start
@@ -5901,18 +5909,22 @@
           throw new globalThis.TypeError(
             "Failed to execute 'comparePoint' on 'Range': parameter 1 is not of type 'Node'.");
         }
-        // R205（js-dom M4）：spec 步骤 2——node 是 DocumentType 抛
-        // InvalidNodeTypeError（WPT "Must throw InvalidNodeTypeError if node is a
-        // doctype" 186F 簇；isPointInRange 同款）。
-        if (node.nodeType === 10) {
-          throw new (globalThis.DOMException || Error)(
-            'The given node is invalid.', 'InvalidNodeTypeError');
-        }
+        // R288（js-dom M4）：spec 步骤序——root 不同 → WrongDocumentError **先于**
+        // DocumentType 检查（WPT "Must throw WrongDocumentError if node and range
+        // have different roots" 88/89,x 124F 簇：cross-root doctype 旧序先抛
+        // InvalidNodeTypeError）。isPointInRange 同款序但 root 不同返 false 不抛。
         var myRoot = this._rootOf178(this.startContainer);
         var nodeRoot = this._rootOf178(node);
         if (myRoot !== nodeRoot) {
           throw new (globalThis.DOMException || Error)(
             'The two ranges are in different documents.', 'WrongDocumentError');
+        }
+        // R205（js-dom M4）：spec 步骤 3——node 是 DocumentType 抛
+        // InvalidNodeTypeError（WPT "Must throw InvalidNodeTypeError if node is a
+        // doctype" 簇）。
+        if (node.nodeType === 10) {
+          throw new (globalThis.DOMException || Error)(
+            'The given node is invalid.', 'InvalidNodeTypeError');
         }
         var len = this._nodeLength(node);
         if ((offset | 0) < 0 || (offset | 0) > len) {
@@ -6035,31 +6047,33 @@
           throw new (globalThis.DOMException || Error)(
             'The two ranges are in different documents.', 'WrongDocumentError');
         }
-        // 本切片聚焦「同容器折叠」族（Attr-rooted 双 range）：容器相等按 offset 差，
-        // 不同容器 best-effort 0。
-        var thisBoundary178, srcBoundary178;
+        // R288（js-dom M4）：spec 步骤 4-6 的边界点对选取 + 位置比较完整重写。
+        // 旧版两缺陷（WPT 592F 簇实证）：① how=2（END_TO_END）落入默认分支成了
+        // START_TO_START 语义（同容器 offset 差恒等 → "expected -1 got 0" 12F +
+        // 跨容器符号对调 282F）；② 跨容器走 cDP 位（FOLLOWING/PRECEDING）——
+        // 祖先/后代容器对（point 在祖先 offset 与后代树序之间）cDP 位只有树序，
+        // 无 offset-vs-childIndex 比较（WPT 1,17,x [pf,0] vs [body,4] 族 56F 符号反）。
+        // 修：按 spec 表选取 (this, source) 边界点对，复用 R203 `_zwRangeBpAfter`
+        //（祖先 offset-vs-childIndex + 深度感知双 climb 已实现——comparePoint/
+        // isPointInRange 同源）。
         // START_TO_START=0 / START_TO_END=1 / END_TO_END=2 / END_TO_START=3
         // （spec 常量：比较 (this 的 [start,end]) 与 source 的 [start,end]）。
-        var thisPair178 = howN === 1 ? [this.endContainer, this.endOffset]
-          : (howN === 3 ? [this.startContainer, this.startOffset]
-          : [this.startContainer, this.startOffset]);
-        var srcPair178 = howN === 1 ? [sourceRange.startContainer, sourceRange.startOffset]
-          : (howN === 3 ? [sourceRange.endContainer, sourceRange.endOffset]
-          : [sourceRange.startContainer, sourceRange.startOffset]);
-        thisBoundary178 = thisPair178; srcBoundary178 = srcPair178;
-        if (thisBoundary178[0] === srcBoundary178[0]) {
-          return thisBoundary178[1] === srcBoundary178[1] ? 0
-            : (thisBoundary178[1] < srcBoundary178[1] ? -1 : 1);
+        var thisPair178 = howN === 1 || howN === 2
+          ? [this.endContainer, this.endOffset]
+          : [this.startContainer, this.startOffset];
+        var srcPair178 = howN === 0 || howN === 1
+          ? [sourceRange.startContainer, sourceRange.startOffset]
+          : [sourceRange.endContainer, sourceRange.endOffset];
+        if (thisPair178[0] === srcPair178[0]) {
+          return thisPair178[1] === srcPair178[1] ? 0
+            : (thisPair178[1] < srcPair178[1] ? -1 : 1);
         }
-        try {
-          var pos178 = thisBoundary178[0].compareDocumentPosition(srcBoundary178[0]);
-          // R204：方向修正——cDP 位以**接收者为参照**：& 4（FOLLOWING）= source 在
-          // this 之后（this 在前 → -1）；& 2（PRECEDING）= source 在 this 之前
-          //（this 在后 → +1）。旧版两支写反（WPT 跨容器族 expected ±1 got ∓1 各
-          // 1091/1092 实证）。
-          if (pos178 & 4) return -1;
-          if (pos178 & 2) return 1;
-        } catch (_e178b) {}
+        if (_zwRangeBpAfter(srcPair178[0], srcPair178[1] | 0, thisPair178[0], thisPair178[1] | 0)) {
+          return -1; // this 边界点在 source 边界点之前
+        }
+        if (_zwRangeBpAfter(thisPair178[0], thisPair178[1] | 0, srcPair178[0], srcPair178[1] | 0)) {
+          return 1; // this 边界点在 source 边界点之后
+        }
         return 0;
       },
       detach: function () { /* no-op（spec 已废弃 Range.detach，保留供老库调用） */ },
