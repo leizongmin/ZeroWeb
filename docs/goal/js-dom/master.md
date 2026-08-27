@@ -742,7 +742,6 @@
    - **(a) 深结构面专项评估**：L2 identity 双源统一（R299/R321 双实例确证的 host 快照 vs JS registry 归一）——blast radius 探针 + 切片拆解，若达可立项粒度记「待用户决策」清单申请专项；getElementsByClassName live/activation 交互域同批评估。
    - **(b) 常规轻量面巡检**：当前 58F 备档集逐域再走查（realm/adoption 族、HTMLCollection live 边缘、crash 族），新轻量件优先。
    - **(c) 全量基线引用**（54140P/58F/22T 维持定稿基线）。
-   - **(c) 全量基线引用**（54140P/58F/22T 维持 R319/R320 定稿基线）。
 0. **R314 下一步（R313 后，按 ROI）**：
    - **(a) collections/traversal 域尾部归因**（events 剩 4F 全部深结构/不追——转域：collections 与 traversal 的既有失败取样聚类，可能有轻量件）。
    - **(b) dom 全域 sweep 结果核对**（后台全量未完成——重启一次定稿态跑，结果与逐套件 A/B 对照）。
