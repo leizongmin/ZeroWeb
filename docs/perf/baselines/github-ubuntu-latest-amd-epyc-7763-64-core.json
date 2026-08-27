@@ -60,9 +60,9 @@
     },
     {
       "id": "mb/zero-canvas/path_ops_1000_segments",
-      "p95": 11103.407076205287,
+      "p95": 11101.561904761904,
       "tier": "budget",
-      "tightened_at": "2026-08-23T19:25:15Z"
+      "tightened_at": "2026-08-27T13:53:57Z"
     },
     {
       "id": "mb/zero-canvas/save_restore_100_deep",
