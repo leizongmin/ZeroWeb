@@ -794,6 +794,49 @@ fn test_shorthand_font_bold_size_line_family() {
     assert!(result.iter().any(|item| item.0 == "font-kerning" && item.1 == "auto"));
 }
 
+// ── R3752：font spaced math size ──
+
+#[test]
+/// R3752：`font: min(10px, 2em) serif` → size=min(...), family=serif
+///（math 函数内部空白/逗号不是组件边界；CSS Fonts §4 size 接受 <length-percentage> math）。
+fn r3752_font_spaced_math_size() {
+    let result = expand_one("font", "min(10px, 2em) serif", false, (0, 0, 1));
+    assert_eq!(result.len(), 13);
+    assert_eq!(result[2].0, "font-size");
+    assert_eq!(result[2].1, "min(10px, 2em)");
+    assert_eq!(result[4].0, "font-family");
+    assert_eq!(result[4].1, "serif");
+}
+
+#[test]
+/// R3752：`font: calc(2em + 4px)/1.5 serif` attached math size / line-height。
+fn r3752_font_attached_math_size_line_height() {
+    let result = expand_one("font", "calc(2em + 4px)/1.5 serif", false, (0, 0, 1));
+    assert_eq!(result.len(), 13);
+    assert_eq!(result[2].1, "calc(2em + 4px)");
+    assert_eq!(result[3].0, "line-height");
+    assert_eq!(result[3].1, "1.5");
+    assert_eq!(result[4].1, "serif");
+}
+
+#[test]
+/// R3752：`font: bold clamp(1em, 2vw, 20px) / 2 sans-serif` spaced slash + math size。
+fn r3752_font_spaced_slash_math_size() {
+    let result = expand_one("font", "bold clamp(1em, 2vw, 20px) / 2 sans-serif", false, (0, 0, 1));
+    assert_eq!(result.len(), 13);
+    assert_eq!(result[1].1, "bold");
+    assert_eq!(result[2].1, "clamp(1em, 2vw, 20px)");
+    assert_eq!(result[3].1, "2");
+    assert_eq!(result[4].1, "sans-serif");
+}
+
+#[test]
+/// R3752：未闭合 math size 拒绝整条声明。
+fn r3752_font_rejects_unclosed_math_size() {
+    assert!(expand_one("font", "calc(2em + 4px serif", false, (0, 0, 1)).is_empty());
+    assert!(expand_one("font", "min(10px, 2em serif", false, (0, 0, 1)).is_empty());
+}
+
 #[test]
 /// list-style 简写展开：disc inside → list-style-type=disc, list-style-position=inside（R2487：+image=none）
 fn test_shorthand_list_style_disc_inside() {

@@ -2419,14 +2419,20 @@ fn expand_font(value: &str, important: bool, specificity: (u32, u32, u32)) -> Ve
         ) || zero_css_parser::values::parse_math_function(s).is_some()
     };
 
-    // 找到 size 部分：包含数字或者带 / 的部分
-    let parts: Vec<&str> = value.split_whitespace().collect();
+    // 找到 size 部分：包含数字或者带 / 的部分。
+    // R3752：math 函数内部空白不是组件边界（`font: min(10px, 2em) serif`、
+    // `font: calc(2em + 4px)/1.5 serif`）——括号/引号感知顶层空白切分。
+    let Some(parts) = split_top_level_whitespace(value) else {
+        return vec![];
+    };
     let mut size_found = false;
     let mut family_parts: Vec<&str> = Vec::new();
 
     // R2486：`font-size / line-height` 的 `/` 允许两侧空白（CSS Fonts §4 font shorthand）。
-    // spaced `/` 经 split_whitespace 成独立 token；用 expect_line_height 旗在遇 `/` 后把下一
-    // token 归 line-height（而非 family）。attached `16px/1.5` 仍走 contains('/') 分支。
+    // spaced `/` 经顶层空白切分成独立 token；用 expect_line_height 旗在遇 `/` 后把下一
+    // token 归 line-height（而非 family）。attached `16px/1.5`（含 math 前缀
+    // `calc(2em + 4px)/1.5`）仍走 contains('/') 分支——math 内部 `/` 不存在（math 函数
+    // 名与括号内不会有顶层 `/`），故 contains('/') 判定安全。
     let mut expect_line_height = false;
     for part in &parts {
         if expect_line_height {
