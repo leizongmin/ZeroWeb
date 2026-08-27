@@ -1267,12 +1267,92 @@ globalThis.__r314p = out.join('|');
         .unwrap();
     let out = sandbox.execute("globalThis.__r314p").unwrap().value;
     println!("R314-DIAG: {out}");
-    // 归因断言（记录当前事实域——修复后应更新为期望值链）：
+    // R315 修复后的期望值链（R314 时记录的归因事实 pPrevSib=null/prevNode=null
+    // 已被 R315 兄弟链 identity 归一翻转——见下方 r315 回归测试）：
     // lastChild=P ✓（removeChild 后 lastChild 在 root 子树内正确）；
-    // pPrevSib=null（handle 融合视图 regraft 断链——R291 域）；
-    // prevNode=null（R314 root 止步修复——父上行不再越过 root 返链外节点）。
+    // pPrevSib=HEAD（handle 融合视图重挂后兄弟链恢复）；
+    // prevNode=TITLE（previousNode 沿 head 深入子树尾——root 止步 + 兄弟链双修生效）。
     assert!(
-        out.contains("lastChild=P") && out.contains("pPrevSib=null") && out.contains("prevNode=null"),
-        "R314 regraft domain facts (fix will flip these), got: {out}"
+        out.contains("lastChild=P") && out.contains("pPrevSib=HEAD") && out.contains("prevNode=TITLE"),
+        "R314 regraft domain facts (updated by R315 fix), got: {out}"
+    );
+}
+
+// R315 (js-dom M4) — regraft 后的 handle 兄弟链 identity 归一回归测试。
+// 根因链：R52 消零清 `_proxyCache['@h']` → remove 后属性读重建 proxy B → 页面持有
+// 的旧 proxy A 与 B 分裂 → regraft 把 A 记入 registry → `_makeProxy` 恒返 B →
+// sibling getter 的 `kids[i] === self` 恒 miss（previousSibling 恒 null，
+// WPT TreeWalker-walking-outside-a-tree 的 previousNode 逆向遍历断链）。
+// 修复：`_recordHandleChild` 检测缓存与传入 child 分裂 → 翻转缓存到 A。
+#[test]
+fn r315_regraft_sibling_identity_resurrection() {
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let mut sandbox = V8Sandbox::with_config(zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    })
+    .unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+    // WPT TreeWalker-walking-outside-a-tree（Acid3 6a）的最小 regraft 形态：
+    // 建树 → walker 绑定 body → removeChild(body)（walker 止步于子树内）→
+    // appendChild(p) 重挂（此时 R52 消零已清 p 的 proxy 缓存、页面 p 与缓存
+    // 分裂）→ 断言兄弟链与 previousNode 全链（探针实证修复前 pPrev=null/prevNode=null）。
+    let out = sandbox
+        .execute(
+            r#"
+var out = [];
+try {
+  var doc = document.createElement("div");
+  var head = document.createElement('head');
+  var title = document.createElement('title');
+  var body = document.createElement('body');
+  var p = document.createElement('p');
+  doc.appendChild(head);
+  head.appendChild(title);
+  doc.appendChild(body);
+  body.appendChild(p);
+  var w = document.createTreeWalker(body, 0xFFFFFFFF, null);
+  doc.removeChild(body);
+  var lc = w.lastChild();
+  out.push('lastChild=' + String(lc ? lc.nodeName : 'null'));
+  doc.appendChild(p);
+  var ps = p.previousSibling;
+  out.push('pPrevSib=' + String(ps ? ps.nodeName : 'null'));
+  var pn = w.previousNode();
+  out.push('prevNode=' + String(pn ? pn.nodeName : 'null'));
+  p.appendChild(body);
+  var n1 = w.nextNode();
+  out.push('nextNode1=' + String(n1 ? n1.nodeName : 'null'));
+  var n2 = w.nextNode();
+  out.push('nextNode2=' + String(n2 ? n2.nodeName : 'null'));
+  var pn2 = w.previousNode();
+  out.push('prevNode2=' + String(pn2 ? String(pn2.nodeName) : 'null'));
+} catch (e) { out.push('err=' + String(e && e.message)); }
+globalThis.__r315p = out.join('|');
+"#,
+        )
+        .unwrap();
+    let out = sandbox.execute("globalThis.__r315p").unwrap().value;
+    // 修复后期望：p 的兄弟链在重挂后恢复——previousSibling=head（registry 融合
+    // 视图首子），previousNode 沿 head 深入其子树尾 title（spec 逆向树序）。
+    // 完整 WPT 六步：p.appendChild(body) 后 nextNode 回溯到 p、再进 body（root）；
+    // 末步 previousNode 在 root 止步返 null（R314 修复）。
+    // 五步对齐 WPT（body 重挂 p 内后 nextNode 链止于 p——WPT 期望 P,BODY 两步；
+    // 本引擎 treeWalker nextNode 对「root 为 body 且 body 已移入 p 子树」形态
+    // 止步 p（root 边界重检——WPT 第 5 断言 expected __n3(body) 的残余面）；
+    // prevNode2 止步 TITLE 非 null 同源（root 链的当前位置语义），残余面归 R316。
+    assert!(
+        out.contains("lastChild=P") && out.contains("pPrevSib=HEAD") && out.contains("prevNode=TITLE")
+            && out.contains("nextNode1=P"),
+        "R315 regraft sibling identity (fix flips null to HEAD/TITLE), got: {out}"
     );
 }

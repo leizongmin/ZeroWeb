@@ -2605,6 +2605,21 @@
   // child registry，spec：fragment append 后清空）。仅 handle-based child 可记录。
   function _recordHandleChild(parentHandle, child) {
     if (!parentHandle || !child || !child.__zwHandle) return;
+    // R315（js-dom M4）：**消零后重挂的 identity 归一**——R52 消零语义清了
+    // `_proxyCache['@h']`（GR3 泄漏修复，假设「节点已消零不会再被访问」），但节点
+    // 可被重挂（regraft：removeChild+appendChild——WPT TreeWalker-walking-outside-a-tree
+    // 的核心形态）：remove 后任何属性读触发 `_makeProxy` cache miss 重建 proxy B，
+    // 页面持有的旧 proxy A 从此与 B 分裂。重挂时页面把 A 传入 appendChild →
+    // `_recordHandleChild(h, A)`——**registry/反链/live-NL refresh 的成员都是 A**，
+    // 而此后 `_makeProxy(null, h)` 恒返 B → sibling getter 的 `kids[i] === self`
+    // 恒 miss（previousSibling/nextSibling 恒 null，oracle 逆向遍历断链；探针
+    // SPLIT:__n4 实证）。修：重挂时缓存命中但与传入 child 不同 → 以 **A 翻转缓存**
+    //（页面视角 identity = A；B 是 remove 窗口期的孤儿重建，不被页面持有——live-NL
+    // 数组的 stale B 成员在下次 refresh 时按 `arr[i] !== view[i]` 覆写为 A，天然收敛）。
+    if (child.__zwHandle && _proxyCache['@' + child.__zwHandle]
+        && _proxyCache['@' + child.__zwHandle] !== child) {
+      _proxyCache['@' + child.__zwHandle] = child;
+    }
     var arr = _handleChildren[parentHandle] || (_handleChildren[parentHandle] = []);
     if (_fragmentHandles[child.__zwHandle]) {
       // fragment flatten：移入 fragment 的已记录子节点，清空 fragment registry。
