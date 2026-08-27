@@ -6,6 +6,7 @@
 //! 重导出，register_dom_callbacks 调用点零改动。
 
 use super::*;
+use zero_dom::NodeId;
 
 /// `element.matches(selector)`——元素是否匹配选择器（含组合器，querySelectorAll 全匹配语义）。
 /// 求全匹配集，判 elem 是否在集中。供 `__zw_matches` 回调 → shim `el.matches()`。
@@ -106,11 +107,32 @@ pub fn query_match_in_subtree_doc(doc: &Document, elem_sel: &str, selector: &str
     let Some(root) = find_by_selector(doc, elem_sel) else {
         return String::new();
     };
-    doc.query_selector(root, zero_dom::trim_ascii_ws(selector))
+    // R298（js-dom M4）：`:scope` 伪类的子树查询作用域语义（同 closest 的 R153 模式）——
+    // spec selectors-4 §6.4「:scope = scoping root itself」；querySelector(All) 的
+    // scoping root = 调用元素。dom crate 静态匹配把 `:scope` 判为文档根 html，须先把
+    // 独立 `:scope` token 替换为 root 的唯一选择器（WPT ParentNode-querySelector-scope
+    // 的 `div.querySelector(':scope > p')`）。
+    // https://dom.spec.whatwg.org/#dom-parentnode-queryselector
+    let sel_raw = zero_dom::trim_ascii_ws(selector);
+    let resolved = resolve_subtree_scope(doc, root, sel_raw);
+    doc.query_selector(root, resolved.as_str())
         // 子树作用域：排除元素自身（dom crate query_selector 含 root，spec descendants-only）。
         .filter(|n| *n != root)
         .and_then(|n| unique_selector_for_node(doc, n))
         .unwrap_or_default()
+}
+
+/// 子树查询的 `:scope` token 解析：选择器含 `:scope` 时替换为 root 的唯一选择器
+///（root 无唯一选择器时原样返回——`:scope` 走 dom crate 的文档根语义，兜底不劣化）。
+fn resolve_subtree_scope(doc: &Document, root: NodeId, sel_raw: &str) -> String {
+    if sel_raw.contains(":scope") {
+        match unique_selector_for_node(doc, root) {
+            Some(unique) => replace_scope_tokens(sel_raw, &unique),
+            None => sel_raw.to_string(),
+        }
+    } else {
+        sel_raw.to_string()
+    }
 }
 
 /// `element.querySelectorAll(selector)`——元素**子树**内全部匹配元素（spec：仅后代），
@@ -126,7 +148,10 @@ pub fn query_all_in_subtree_doc(doc: &Document, elem_sel: &str, selector: &str) 
     let Some(root) = find_by_selector(doc, elem_sel) else {
         return String::new();
     };
-    doc.query_selector_all(root, zero_dom::trim_ascii_ws(selector))
+    // R298：`:scope` 子树作用域解析（同 query_match_in_subtree_doc 注记）。
+    let sel_raw = zero_dom::trim_ascii_ws(selector);
+    let resolved = resolve_subtree_scope(doc, root, sel_raw);
+    doc.query_selector_all(root, resolved.as_str())
         .into_iter()
         // 子树作用域：排除元素自身（dom crate collect_matching 含 root，spec descendants-only）。
         .filter(|id| *id != root)

@@ -95,3 +95,44 @@ globalThis.__r297e = e.join('|');"#,
         "R297 escapes lone-surrogate never-match: raw id preserved, selector FFFD decode never equals lone surrogate, attribute/remove paths in sync"
     );
 }
+
+#[test]
+fn r298_query_in_subtree_scope_pseudo_class() {
+    // R298：WPT ParentNode-querySelector-scope——`:scope` 在元素子树查询里指向调用元素
+    //（scoping root = 调用元素，spec selectors-4 §6.4 + dom spec querySelector）。
+    // 旧版 `:scope` 由 dom crate 静态判为文档根 html → `:scope > p` 在 div 子树内
+    // 恒无匹配（div ≠ html）。修复 = closest 的 R153 替换模式复用（独立 `:scope`
+    // token → root 唯一选择器）。
+    let html = "<html><body>\
+                <div id='d'><h1 id='test'>t</h1><p><span>hello</span></p></div>\
+                <p>sibling</p>\
+                </body></html>";
+    // `:scope > p` → div 的直接子 p（span 是孙层不命中）。
+    let hit = query_match_in_subtree(html, "#d", ":scope > p");
+    let doc = parse_html(html);
+    let n = find_by_selector(&doc, &hit).expect("须可解析");
+    // 命中元素须是 p（含 span 文本 hello 的那个 p，非 body 直接子 sibling p）。
+    let kid_tags: Vec<String> = doc
+        .child_nodes(n)
+        .iter()
+        .filter_map(|k| match doc.get(*k).map(|nd| &nd.kind) {
+            Some(zero_dom::NodeKind::Element(e)) => Some(e.local_name().to_string()),
+            _ => None,
+        })
+        .collect();
+    assert!(
+        kid_tags.contains(&"span".to_string()),
+        "命中的 p 须含 span 子（div 的直接子 p），got {kid_tags:?}"
+    );
+    // 命中的 p 的父必须是 div（:scope 指向 d）。
+    let parent_sel = unique_selector_for_node(&doc, doc.parent_node(n).unwrap()).unwrap();
+    assert!(parent_sel.contains("d"), "父须是 #d，got {parent_sel}");
+    // `:scope > span` → null（span 是孙层）。
+    assert_eq!(query_match_in_subtree(html, "#d", ":scope > span"), "");
+    assert_eq!(query_all_in_subtree(html, "#d", ":scope > span"), "");
+    // `:scope > h1` → #test（另一直接子形态）。
+    assert!(!query_all_in_subtree(html, "#d", ":scope > h1").is_empty());
+    // 不含 :scope 的查询不受影响（既有 scoping 回归）。
+    assert!(!query_match_in_subtree(html, "#d", "p").is_empty());
+    assert!(!query_all_in_subtree(html, "#d", "span").is_empty());
+}
