@@ -233,7 +233,10 @@ fn parse_cis_longhand(value: &str) -> Option<ContainIntrinsicLonghand> {
     if v.eq_ignore_ascii_case("none") {
         return Some(ContainIntrinsicLonghand::None);
     }
-    let length = values::parse_length(v)?;
+    // https://drafts.csswg.org/css-sizing-4/#intrinsic-size-override
+    // <length> 的 <length-percentage> math 形式（如 `clamp(100px, 50vw, 300px)`）。
+    let length = values::parse_length(v)
+        .or_else(|| values::parse_math_function(v).map(|expr| LengthValue::Calc(Box::new(expr))))?;
     contain_intrinsic_length_is_valid(v, &length).then_some(ContainIntrinsicLonghand::Length(length))
 }
 
@@ -260,7 +263,13 @@ fn contain_intrinsic_length_is_valid(raw: &str, value: &LengthValue) -> bool {
         | LengthValue::Rch(v)
         | LengthValue::Ic(v)
         | LengthValue::Ric(v) => v.is_finite() && *v >= 0.0,
-        LengthValue::Calc(_) => true,
+        // https://drafts.csswg.org/css-values-4/#calc-type-checking
+        // R3751：math 须整体为 <length-percentage>（纯 number / 混类型拒绝），
+        // 且 https://drafts.csswg.org/css-values-4/#calc-range 非常量负分量拒绝。
+        LengthValue::Calc(expr) => {
+            values::calc_expr_is_length_percentage(expr)
+                && values::eval_calc(expr, None).is_none_or(|v| v.is_finite() && v >= 0.0)
+        }
         _ => false,
     }
 }
@@ -1390,12 +1399,18 @@ pub fn apply_advanced_property_value(style: &mut ComputedStyle, property: &str, 
             }
             // https://drafts.csswg.org/css-sizing-4/#intrinsic-size-override
             // 收集长度 token，忽略 `auto` 关键字（静态无 remembered size，auto 按显式长度处理）。
+            // R3751：math 函数内部空白不是组件边界（`calc(100px + 2em) min(300px, 50vh)`）。
             let mut lens = Vec::new();
-            for token in v.split_whitespace() {
+            let Some(tokens) = crate::shorthand::split_top_level_whitespace(v) else {
+                return false;
+            };
+            for token in tokens {
                 if token.eq_ignore_ascii_case("auto") {
                     continue;
                 }
-                let Some(length) = values::parse_length(token) else {
+                let Some(length) = values::parse_length(token)
+                    .or_else(|| values::parse_math_function(token).map(|expr| LengthValue::Calc(Box::new(expr))))
+                else {
                     return false;
                 };
                 if !contain_intrinsic_length_is_valid(token, &length) {

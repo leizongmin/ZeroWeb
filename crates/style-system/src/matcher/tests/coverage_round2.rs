@@ -399,6 +399,20 @@ fn test_property_supported_extended_visual_and_layout_properties() {
     assert!(!is_property_supported("contain-intrinsic-height", "10%"));
     assert!(!is_property_supported("contain-intrinsic-inline-size", "auto auto"));
     assert!(!is_property_supported("contain-intrinsic-block-size", "infpx"));
+    // R3751：contain-intrinsic-* 的 math 长度；纯 number / 混类型 / 未闭合拒绝。
+    assert!(is_property_supported(
+        "contain-intrinsic-size",
+        "calc(100px + 2em) min(300px, 50vh)"
+    ));
+    assert!(is_property_supported(
+        "contain-intrinsic-width",
+        "clamp(100px, 50vw, 300px)"
+    ));
+    assert!(!is_property_supported("contain-intrinsic-size", "calc(5)"));
+    assert!(!is_property_supported(
+        "contain-intrinsic-size",
+        "calc(100px + 2em min(300px, 50vh)"
+    ));
     assert!(!is_property_supported("page-break-inside", "left"));
     assert!(!is_property_supported("box-decoration-break", "split"));
     assert!(!is_property_supported("image-rendering", "nearest"));

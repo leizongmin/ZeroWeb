@@ -293,8 +293,12 @@ fn contain_intrinsic_size_supported(value: &str) -> bool {
     if value.eq_ignore_ascii_case("none") {
         return true;
     }
+    // R3751：math 函数内部空白不是组件边界。
+    let Some(tokens) = crate::shorthand::split_top_level_whitespace(value) else {
+        return false;
+    };
     let mut lengths = 0;
-    for token in value.split_whitespace() {
+    for token in tokens {
         if token.eq_ignore_ascii_case("auto") {
             continue;
         }
@@ -344,7 +348,13 @@ fn contain_intrinsic_length_supported(value: &str) -> bool {
             | Some(values::LengthValue::Ic(v))
             | Some(values::LengthValue::Ric(v))
             if v.is_finite() && v >= 0.0
-    )
+    ) || values::parse_math_function(value).is_some_and(|calc| {
+        // https://drafts.csswg.org/css-sizing-4/#intrinsic-size-override
+        // R3751：<length> 的 <length-percentage> math 形式；类型一致性与
+        // 非常量负分量拒绝与 direct apply 共用消费端语义。
+        values::calc_expr_is_length_percentage(&calc)
+            && values::eval_calc(&calc, None).is_none_or(|v| v.is_finite() && v >= 0.0)
+    })
 }
 
 fn justify_items_supported(value: &str) -> bool {

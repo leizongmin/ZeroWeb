@@ -127,6 +127,40 @@ fn test_contain_intrinsic_size_parse() {
     }
 }
 
+#[test]
+/// R3751：contain-intrinsic-* 接受 CSS math 长度（CSS Sizing 4 `[<length> | auto]{1,2}`
+/// 的 <length-percentage> math 形式；shorthand 组件切分须括号感知）。
+fn r3751_contain_intrinsic_math_lengths() {
+    use zero_css_parser::values::LengthValue;
+    let mut style = ComputedStyle::default();
+
+    // shorthand：math 函数内部空白不是组件边界。
+    assert!(apply_property_value(
+        &mut style,
+        "contain-intrinsic-size",
+        "calc(100px + 2em) min(300px, 50vh)"
+    ));
+    assert!(matches!(style.contain_intrinsic_width, Some(LengthValue::Calc(_))));
+    assert!(matches!(style.contain_intrinsic_height, Some(LengthValue::Calc(_))));
+
+    // longhand：math 写入；纯 number / 混类型 / 未闭合 math 拒绝且不覆盖。
+    assert!(apply_property_value(
+        &mut style,
+        "contain-intrinsic-width",
+        "clamp(100px, 50vw, 300px)"
+    ));
+    assert!(matches!(style.contain_intrinsic_width, Some(LengthValue::Calc(_))));
+
+    let previous_w = style.contain_intrinsic_width.clone();
+    let previous_h = style.contain_intrinsic_height.clone();
+    for value in ["calc(5)", "clamp(100px, 5, 300px)", "calc(100px +"] {
+        assert!(!apply_property_value(&mut style, "contain-intrinsic-width", value));
+        assert_eq!(style.contain_intrinsic_width, previous_w);
+        assert!(!apply_property_value(&mut style, "contain-intrinsic-height", value));
+        assert_eq!(style.contain_intrinsic_height, previous_h);
+    }
+}
+
 /// R2462 系统审计：`contain-intrinsic-width`/`-height` 长手属性非默认继承，但显式
 /// `inherit` 关键字（CSS wide keyword）须经 inherit_property 从父元素复制（同 box-shadow
 /// R2462 gap class）。driving: contain-intrinsic-size 子树用 `inherit` 的 case。
