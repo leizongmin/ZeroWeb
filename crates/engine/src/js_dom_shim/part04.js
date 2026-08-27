@@ -2728,6 +2728,23 @@
         }
         if (prop === 'click') {
           return function() {
+            // R313（js-dom M4）：**disabled 表单元素不派发**（spec HTML §activation
+            // 「form-associated element 是 disabled 的 → 返 undefined 跳过激活行为」；
+            // WPT Event-dispatch-on-disabled-elements `.click() must not dispatch on
+            // disabled HTMLButtonElement`）。可禁用族 = button/fieldset/input/select/
+            // textarea/optgroup/option（spec §form-attr-associated-elements）。属性存在
+            // 即禁用（boolean attribute 语义——handle latest-wins / sel 快照同 disabled
+            // getter 口径）。
+            var _r313Tag = _realTag(sel, handle);
+            if (_r313Tag === 'BUTTON' || _r313Tag === 'INPUT' || _r313Tag === 'SELECT'
+                || _r313Tag === 'TEXTAREA' || _r313Tag === 'FIELDSET'
+                || _r313Tag === 'OPTGROUP' || _r313Tag === 'OPTION') {
+              try {
+                var _r313Dis = handle ? __zw_has_attr_handle(handle, 'disabled')
+                  : (typeof __zw_has_attr_lw === 'function' ? __zw_has_attr_lw(sel, 'disabled') : __zw_has_attr(sel, 'disabled'));
+                if (_r313Dis === '1') return;
+              } catch (_e313d) {}
+            }
             if (globalThis.__zwR155InlGen != null) globalThis.__zwR155InlGen++;
             var ev = _makeEvent('click', { bubbles: true, cancelable: true });
             // R108：合成 click 打标——pre-click activation 认它（非 MouseEvent 实例）。

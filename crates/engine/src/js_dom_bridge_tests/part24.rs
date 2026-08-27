@@ -1154,3 +1154,62 @@ globalThis.__r312m = out.join('|');
     println!("R312-M: {out}");
     assert!(out.contains("firstMouseup="), "sanity: {out}");
 }
+
+#[test]
+fn r313_disabled_click_and_boolean_roundtrip() {
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let mut sandbox = V8Sandbox::with_config(zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    })
+    .unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><button id='b'>x</button></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+    // R313：spec HTML §activation——disabled 表单元素的 click() 不派发；re-enable 后
+    // 恢复派发（WPT Event-dispatch-on-disabled-elements）。含 handle 布尔 falsy 真移除
+    // （旧「不设」使 .disabled=false 后属性残留——re-enable 断言必败的根因）。
+    let out = sandbox
+        .execute(
+            r#"
+var out = [];
+try {
+  // handle 元素（createElement 产物）
+  var btn = document.createElement('button');
+  var dispatched = 0;
+  btn.onclick = function () { dispatched++; };
+  document.body.appendChild(btn);
+  btn.disabled = true;
+  out.push('disNow=' + String(btn.disabled));
+  btn.click();
+  out.push('clickWhileDisabled=' + String(dispatched));
+  btn.disabled = false;
+  out.push('disAfterUnset=' + String(btn.disabled));
+  btn.click();
+  out.push('clickAfterEnable=' + String(dispatched));
+  // dispatchEvent 直发不受 disabled 门影响（spec：dispatchEvent 无激活行为）
+  var ev = document.createEvent('Event');
+  ev.initEvent('click', true, true);
+  btn.disabled = true;
+  btn.dispatchEvent(ev);
+  out.push('directDispatchWhileDisabled=' + String(dispatched));
+  out.push('disStill=' + String(btn.disabled));
+} catch (e) { out.push('err=' + String(e && e.message)); }
+globalThis.__r313p = out.join('|');
+"#,
+        )
+        .unwrap();
+    let out = sandbox.execute("globalThis.__r313p").unwrap().value;
+    println!("R313: {out}");
+    assert_eq!(
+        out, "disNow=true|clickWhileDisabled=0|disAfterUnset=false|clickAfterEnable=1|directDispatchWhileDisabled=2|disStill=true",
+        "R313 disabled click gate + boolean falsy removal roundtrip, got: {out}"
+    );
+}

@@ -52,11 +52,17 @@
             if (handle) __zw_set_attr_handle(handle, p, '');
             else __zw_set_attr(sel, p, '');
             moAttr = p;
+          } else if (handle && typeof __zw_remove_attr_handle === 'function') {
+            // R313（js-dom M4）：handle falsy 真移除（`__zw_remove_attr_handle` 已注册
+            // callbacks.rs——旧「不设」使 `.disabled = false` 后属性残留，click() 的
+            // disabled 门与 getter 恒真；WPT Event-dispatch-on-disabled-elements 的
+            // re-enabled 后 `.click() must dispatch` 断言）。与下方 R3039/40 反射表同款。
+            __zw_remove_attr_handle(handle, p);
+            moAttr = p;
           } else if (!handle && typeof __zw_remove_attr === 'function') {
             __zw_remove_attr(sel, p);
             moAttr = p;
           }
-          // handle falsy：无 remove-handle 变体 → 不设（detach 元素 append 时默认无该布尔属性）。
         } else if (_reflectedBoolAttr(p) !== null) {
           // R3039/R3040：布尔 reflected setter（_REFLECTED_BOOL 全表）。旧经 generic fallthrough 写
           // `attr="false"`（present）→ 读返 true（set-false bug）。修正：truthy → set 空（presence）；
