@@ -2312,6 +2312,12 @@
       CharacterData: globalThis.CharacterData,
       Event: globalThis.Event,
       DOMException: globalThis.DOMException,
+      // R302（js-dom M4）：iframe realm 的 MutationObserver 构造器（WPT
+      // MutationObserver-cross-realm-callback-report-exception 的
+      // `new frames[0].MutationObserver(...)`——旧 win 无此名 "not a
+      // constructor" 直接 TypeError）。转发主构造器（observe 回调经主 realm 的
+      // MO 微任务派发——回调内异常上报到 callback 的关联 realm 是后续域）。
+      MutationObserver: globalThis.MutationObserver,
       // R187（js-dom M4）：Object 转发改**绑定构造器**——`new eventListenerGlobalObject.Object`
       // 的产物印记 `_zwRealmWin`（跨 realm 判定锚点）。WPT EventListener-handleEvent-cross-realm
       // 断言 listener 回调抛的 TypeError 经 error 事件上报到 **callback 关联 realm** 的 window
@@ -2333,7 +2339,28 @@
         BoundObject.keys = globalThis.Object.keys;
         return BoundObject;
       })(),
-      Function: globalThis.Function,
+      // R302（js-dom M4）：Function 转**绑定构造器**——产物（函数对象）印记
+      // `_zwRealmWin` + 入 `__zwRealmOf` 注册表（WPT MutationObserver-cross-realm-
+      // callback-report-exception：`new frames[1].Function(...)` 造的 MO 回调抛错
+      // 须上报到 frame1 的 onerror——回调按创建 realm 定向，R187 Object 同款）。
+      Function: (function () {
+        var win302 = win;
+        function BoundFunction() {
+          var args302 = Array.prototype.slice.call(arguments);
+          var fn302 = Function.apply(null, args302);
+          try {
+            fn302._zwRealmWin = win302;
+            if (!globalThis.__zwRealmOf) globalThis.__zwRealmOf = new globalThis.Map();
+            globalThis.__zwRealmOf.set(fn302, win302);
+          } catch (_e302f) {}
+          return fn302;
+        }
+        try {
+          BoundFunction.prototype = globalThis.Function.prototype;
+          Object.defineProperty(BoundFunction, 'prototype', { writable: false, configurable: false });
+        } catch (_e302p) {}
+        return BoundFunction;
+      })(),
       Array: globalThis.Array,
       Error: globalThis.Error,
       // R187 修正（js-dom M4）：TypeError **保持转发本体**——上游用例（ParentNode-

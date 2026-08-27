@@ -389,3 +389,60 @@ Promise.resolve().then(function () {
     // surroundContents 三 records：s1(pv null,nx s2) / s2(pv null——顺序移除后无左邻) / added。
     assert!(out.contains("§B=[{\"rm\":1,\"rmId\":\"s1\",\"ad\":0,\"adId\":\"-\",\"pv\":null,\"nx\":\"s2\"},{\"rm\":1,\"rmId\":\"s2\",\"ad\":0,\"adId\":\"-\",\"pv\":null,\"nx\":null},{\"rm\":0,\"rmId\":\"-\",\"ad\":1,\"adId\":\"SPAN\""), "probe B: {out}");
 }
+
+#[test]
+fn r302_mo_callback_realm_error_reporting() {
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let mut sandbox = V8Sandbox::with_config(zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    })
+    .unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><div id=\"t\">x</div></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+    // R302：MO 回调抛异常的「report the exception」——按 callback 的关联 realm
+    //（`__zwRealmOf` 注册表反查）定向到该 realm win 的 error 派发（onerror 触发）。
+    // https://dom.spec.whatwg.org/#mutationobserver
+    let out = sandbox
+        .execute(
+            r#"
+var out = [];
+// 假 realm win（dispatchEvent + onerror 面）
+var fakeWin = { onerror: null };
+fakeWin.addEventListener = function () {};
+fakeWin.dispatchEvent = function (ev) {
+  out.push('disp:' + (ev && ev.type));
+  var h = fakeWin['on' + (ev && ev.type)];
+  if (typeof h === 'function') { h.call(fakeWin, ev); }
+  return true;
+};
+// 绑定构造器形态的回调（registry 印记模拟——iframe Function 的 R302 绑定）
+var cb = new Function('throw new Error("X")');
+if (!globalThis.__zwRealmOf) globalThis.__zwRealmOf = new Map();
+globalThis.__zwRealmOf.set(cb, fakeWin);
+fakeWin.onerror = function () { out.push('onerrorHit'); };
+var target = document.getElementById('t');
+var mo = new MutationObserver(cb);
+mo.observe(target, { childList: true, subtree: true });
+target.appendChild(document.createTextNode('y'));
+Promise.resolve().then(function () {
+  globalThis.__r302p = out.join('|');
+});
+"#,
+        )
+        .unwrap();
+    let _ = sandbox.execute("0").unwrap();
+    let out = sandbox.execute("globalThis.__r302p").unwrap().value;
+    assert_eq!(
+        out, "disp:error|onerrorHit",
+        "R302 MO callback exception reports to the callback realm's onerror"
+    );
+}

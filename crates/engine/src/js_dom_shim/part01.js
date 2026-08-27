@@ -1849,7 +1849,23 @@
         if (obs._records.length > 0) {
           var records = obs._records;
           obs._records = [];
-          try { obs._callback(records, obs); } catch (_e) {}
+          // R302（js-dom M4）：回调抛异常经「report the exception」上报（spec
+          // WebIDL invoke——MO 回调异常不静默吞）。上报目标 = **callback 的关联
+          // realm**（印记 `_zwRealmWin` / `__zwRealmOf` 注册表反查——R187 同款）；
+          // 无印记回落主 window。WPT MutationObserver-cross-realm-callback-
+          // report-exception：frames[1].Function 造的回调抛错 → frame1 的 onerror。
+          try {
+            obs._callback(records, obs);
+          } catch (_e302) {
+            var _r302Realm = null;
+            try { _r302Realm = (obs._callback && typeof obs._callback === 'object') ? obs._callback._zwRealmWin : null; } catch (_e302s) {}
+            if (!_r302Realm && globalThis.__zwRealmOf) {
+              try { _r302Realm = globalThis.__zwRealmOf.get(obs._callback) || null; } catch (_e302m) {}
+            }
+            if (typeof globalThis._zwReportListenerError === 'function') {
+              try { globalThis._zwReportListenerError(_e302, _r302Realm); } catch (_e302r) {}
+            }
+          }
         }
       }
     });
