@@ -1024,6 +1024,22 @@ fn test_parse_content_none() {
 }
 
 #[test]
+/// R3754：非 ASCII 前缀/后缀的 content 值不得 panic（char-boundary 安全切片）。
+/// `"中文"url(x.png)` 首引号串 + 尾多字节字符 + ')' 曾在 `input[..fn_open.len()]`
+/// 与 `input[..len-1]` 字节切片处 panic（renderer 崩溃）。
+fn r3754_parse_content_non_ascii_boundary_safety() {
+    // 非 ASCII 前缀 + url( 单函数：不 panic，正常解析或拒绝均可。
+    let _ = parse_content("\u{0081}url(x.png)");
+    let _ = parse_content("中文url(x.png)");
+    // 非 ASCII 后缀 + counters(：尾 ')' 前是多字节字符。
+    let _ = parse_content("counters(c, \".\") 中");
+    let _ = parse_content("attr(名)");
+    // 正常路径不受影响。
+    assert!(parse_content("url(x.png)").is_some());
+    assert!(parse_content("counter(c)").is_some());
+}
+
+#[test]
 fn test_parse_content_string_double_quotes() {
     assert_eq!(
         parse_content("\"Hello\""),

@@ -981,6 +981,8 @@ fn shift_siblings_after_ifc_grow_inner(
         && parent_backfill.value(|| std::env::var("ZW_IFC_PARENT_HEIGHT_BACKFILL").as_deref() != Ok("0"));
     let mut max_in_flow_bottom: f32 = 0.0;
     let mut has_negative_margin = false;
+    // R3754：父 BFC 判定先于子循环借用（ establishes_bfc 只读 box_node 自身标志）。
+    let parent_is_bfc = parent_backfill_active && crate::margin_collapse::establishes_bfc(box_node);
     for child in &mut box_node.children {
         // 排除 OOF（abspos/fixed）+ float + relative/sticky（flow 位特殊，偏移保留，
         // 不应被 R1492 长高 shift 移动——test_relative_position_preserves_flow_space）。
@@ -1047,13 +1049,28 @@ fn shift_siblings_after_ifc_grow_inner(
         // negative-clearance-after-adjoining-float 7.92→4.79 + margin-collapse-through-percentage-
         // padding 4.69→2.61，floats-clear 214 + normal-flow 750 共 977 案 0 回归 + welcome 字节
         // 一致 + 1220 单测）。env `ZW_CLEARANCE_NO_FLOAT_CONTAINMENT=0` 关闭（kill-switch）。
+        //
+        // R3754（CSS §8.3.1 + CSS Contain §3.1）：父为 BFC 时空块的 collapse-through 边距
+        // **不逃出父盒**（父与子边距不折叠）——空块自身 mt/mb 互相折叠但留在父内，父 auto 高
+        // 须计入 child.y + child.margin_bottom（mt 已含在 child.y 偏移中）。此时空块不可排除：
+        // 排除会让 `div{overflow:hidden} > div{margin:30px 0}`（空）父高 30（Chromium 60），
+        // contain-content-002 的 19.6% 离散 fail 即此根因。非 BFC 父维持 R1771 排除。
+        // 负 margin（BFC 内合法内含）由下方 has_negative_margin 守卫与既有 R1746 逃生兜底。
+        let r3754_empty_in_bfc =
+            parent_is_bfc && crate::margin_collapse::is_empty_block(child) && child.margin_bottom.is_finite();
         let r1771_exclude_empty = std::env::var("ZW_CLEARANCE_NO_FLOAT_CONTAINMENT").as_deref() != Ok("0")
-            && crate::margin_collapse::is_empty_block(child);
+            && crate::margin_collapse::is_empty_block(child)
+            && !r3754_empty_in_bfc;
         if parent_backfill_active && child.is_block_level && !r1771_exclude_empty {
             if child.margin_top < 0.0 || child.margin_bottom < 0.0 {
                 has_negative_margin = true;
             }
-            let bottom = child.y + child.height;
+            // R3754：BFC 父内空块贡献 mt+mb（mt 在 child.y，mb 补加）。
+            let bottom = if r3754_empty_in_bfc {
+                child.y + child.height + child.margin_bottom.max(0.0)
+            } else {
+                child.y + child.height
+            };
             if bottom > max_in_flow_bottom {
                 max_in_flow_bottom = bottom;
             }

@@ -555,7 +555,13 @@ pub enum ContentListItem {
 /// 或未平衡输入（如 `counter(c counter(d)`）。单 item 分支须确保只捕获真单 item，
 /// 多 item / 畸形交由 parse_content_list 或返回 None。
 fn extract_single_function_inner<'a>(input: &'a str, fn_open: &str) -> Option<&'a str> {
-    if input.len() < fn_open.len() || !input[..fn_open.len()].eq_ignore_ascii_case(fn_open) {
+    // https://www.w3.org/TR/css-syntax-3/#consume-function
+    // 函数名后须紧随 '('；边界切片须 char-boundary 安全（非 ASCII 前缀/后缀的
+    // content 值如 `"中文"url(x.png)` 不得 panic——R3754 reftest 崩溃归因）。
+    if input.len() < fn_open.len() || !input.is_char_boundary(fn_open.len()) {
+        return None;
+    }
+    if !input.get(..fn_open.len())?.eq_ignore_ascii_case(fn_open) {
         return None;
     }
     let bytes = input.as_bytes();
@@ -573,7 +579,11 @@ fn extract_single_function_inner<'a>(input: &'a str, fn_open: &str) -> Option<&'
     if depth != 0 || i != input.len() {
         return None;
     }
-    Some(input[fn_open.len()..input.len() - 1].trim())
+    let tail = input.len() - 1;
+    if !input.is_char_boundary(tail) {
+        return None;
+    }
+    Some(input[fn_open.len()..tail].trim())
 }
 
 /// 解析 CSS content 属性值。
