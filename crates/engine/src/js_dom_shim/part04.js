@@ -1314,6 +1314,13 @@
         // DocumentFragment/Element 恒 null；旧缺此分支返 undefined，WPT Document-createElementNS
         // `assert_equals(element.nodeValue, null)` 85F 簇）。textContent setter 另有分支（下方）。
         // R81：fragment/shadow 的 nodeValue 也恒 null（spec——DocumentFragment 无 nodeValue）。
+        // R325：PI 的 nodeValue = data（spec dom-processinginstruction——data 与 nodeValue
+        // 同源），须在通用 Element-null 分支之前分流；旧顺序使 PI 的 nodeValue 恒 null
+        //（WPT Node-nodeValue "ProcessingInstruction.nodeValue" 期望 "A PI!"）。
+        if (isPI && prop === 'nodeValue') {
+          var _pinv = _piHandles[handle];
+          return _pinv ? _pinv.data : '';
+        }
         if (prop === 'nodeValue') {
           return null;
         }

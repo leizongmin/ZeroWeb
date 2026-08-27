@@ -2052,6 +2052,16 @@
       if (handle) _commentHandles[handle] = true;
       return _wrapHandle(handle);
     },
+    // `document.createCDATASection(data)`（R325，spec `dom-document-createcdatasection`）——
+    // **主文档恒 HTML 文档**：CDATASection 只在 XML 文档可建（HTML parser 无 CDATA 节点
+    // 语义），HTML 文档上调用抛 NotSupportedError。旧缺方法 → TypeError（非 DOMException，
+    // WPT Document-createCDATASection 的 `assert_throws_dom("NotSupportedError", ...)` 失败：
+    // "threw TypeError ... that is not a DOMException NotSupportedError"）。
+    // https://dom.spec.whatwg.org/#dom-document-createcdatasection
+    createCDATASection: function(data) {
+      throw new (globalThis.DOMException || Error)(
+        "Cannot create CDATASection nodes in HTML documents.", 'NotSupportedError');
+    },
     // `document.createProcessingInstruction(target, data)`（js-dom M4，spec `dom-document-createprocessinginstruction`）——
     // PI 节点（nodeType 7，target/data/nodeName=target）。spec 校验在调用点同步抛 DOMException（与 native
     // dom_bindings factories.rs 对齐：① target 须合法 Name production ② data 不得含 `?>`，违则
