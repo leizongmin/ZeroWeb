@@ -398,9 +398,10 @@
     }
     function syncOrderPosTo(node) {
       orderInit(); // 层级方法路径可能先于 nextNode 触发（order 未建）
-      if (node === root) { orderPos = 0; return; }
-      for (var i = 0; i < order.length; i++) { if (order[i] === node) { orderPos = i; return; } }
+      if (node === root) { orderPos = 0; return 0; }
+      for (var i = 0; i < order.length; i++) { if (order[i] === node) { orderPos = i; return i; } }
       orderPos = -1;
+      return -1;
     }
     // R84：遍历中标志（filter 重入检测）。NodeIterator 专属 detach() no-op（spec：历史方法
     // 恒 no-op，WPT "detach() should be a no-op"——iter.detach 可调用且无副作用）。
@@ -547,7 +548,14 @@
                 // Reject：cur=B2、sibling=B1 ACCEPT 但 B1 有子 → 期望 C1 非 B1；
                 // childless 才返）。traversal-reject 的 B2（childless）两模型同果。
                 if (node.lastChild) { sibling = node.lastChild; continue; }
-                currentNodeVal = node; syncOrderPosTo(node); idx = accepted.indexOf(node); return node;
+                currentNodeVal = node; idx = accepted.indexOf(node);
+                // R316（js-dom M4）：着陆点不在 order 快照内（orderPos=-1）→ 快照已
+                // stale（regraft 等树重构后新位置不在快照）。置 relocated 使后续
+                // nextNode 走 live 导航（nextNodeOffOrder 沿真实 getter 步进——WPT
+                // TreeWalker-walking-outside-a-tree 第 4-5 断言：title→p→body 回溯链
+                // 在 stale 快照外，order-scan 越界恒 null）。
+                if (syncOrderPosTo(node) < 0) relocated = true;
+                return node;
               }
               if (r === 2) {
                 sibling = node.previousSibling; // REJECT → 跳过子树
@@ -574,7 +582,12 @@
               if (!_r314InRoot) return null;
             } catch (_e314r) {}
             var rp = check(node);
-            if (rp === 1) { currentNodeVal = node; syncOrderPosTo(node); idx = accepted.indexOf(node); return node; }
+            // R316：同上——climb 着陆快照外节点时置 relocated（快照 stale）。
+            if (rp === 1) {
+              currentNodeVal = node; idx = accepted.indexOf(node);
+              if (syncOrderPosTo(node) < 0) relocated = true;
+              return node;
+            }
             // rp 非 ACCEPT → 回 sibling 循环（node 的 previousSibling 起）
           }
           return null;

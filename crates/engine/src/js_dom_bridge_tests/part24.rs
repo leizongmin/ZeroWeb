@@ -1342,17 +1342,15 @@ globalThis.__r315p = out.join('|');
         )
         .unwrap();
     let out = sandbox.execute("globalThis.__r315p").unwrap().value;
-    // 修复后期望：p 的兄弟链在重挂后恢复——previousSibling=head（registry 融合
-    // 视图首子），previousNode 沿 head 深入其子树尾 title（spec 逆向树序）。
-    // 完整 WPT 六步：p.appendChild(body) 后 nextNode 回溯到 p、再进 body（root）；
-    // 末步 previousNode 在 root 止步返 null（R314 修复）。
-    // 五步对齐 WPT（body 重挂 p 内后 nextNode 链止于 p——WPT 期望 P,BODY 两步；
-    // 本引擎 treeWalker nextNode 对「root 为 body 且 body 已移入 p 子树」形态
-    // 止步 p（root 边界重检——WPT 第 5 断言 expected __n3(body) 的残余面）；
-    // prevNode2 止步 TITLE 非 null 同源（root 链的当前位置语义），残余面归 R316。
+    // 完整 WPT 六步断言（R316 root 重挂后 relocated 置位 → nextNode 走 live 导航）：
+    // 1) lastChild=P（removeChild 后 root 子树内）2) pPrevSib=HEAD（R315 identity 归一）
+    // 3) prevNode=TITLE（sibling 导航入 head 子树尾）4) nextNode1=P（retrace）
+    // 5) nextNode2=BODY（step back into root——live 导航 descend p.firstChild）
+    // 6) prevNode2=null（root 止步——R314 修复）。
     assert!(
         out.contains("lastChild=P") && out.contains("pPrevSib=HEAD") && out.contains("prevNode=TITLE")
-            && out.contains("nextNode1=P"),
-        "R315 regraft sibling identity (fix flips null to HEAD/TITLE), got: {out}"
+            && out.contains("nextNode1=P") && out.contains("nextNode2=BODY")
+            && out.contains("prevNode2=null"),
+        "R315+R316 regraft full WPT sequence, got: {out}"
     );
 }
