@@ -1197,7 +1197,10 @@ pub fn apply_advanced_property_value(style: &mut ComputedStyle, property: &str, 
         // columns: <column-width> <column-count>
         // 单值时按类型判断：纯数字 → column-count，带单位 → column-width
         "columns" => {
-            let parts: Vec<&str> = value.split_whitespace().collect();
+            // R3749：math 函数内部空白不是组件边界（`columns: 2 calc(6em + 5px)`）。
+            let Some(parts) = crate::shorthand::split_top_level_whitespace(value) else {
+                return false;
+            };
             if parts.len() == 2 {
                 // https://drafts.csswg.org/css-multicol-1/#columns
                 let parsed = if let (Some(count), Some(width)) = (

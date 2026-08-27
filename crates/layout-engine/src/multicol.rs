@@ -131,7 +131,20 @@ fn length_to_px(value: &LengthValue, container_width: f32, font_size_px: f32) ->
         LengthValue::Rem(v) => *v as f32 * 16.0,
         LengthValue::Vw(v) => *v as f32 * 8.0,
         LengthValue::Vh(v) => *v as f32 * 6.0,
-        LengthValue::Auto | LengthValue::Calc(_) => 0.0,
+        // R3749：column-width math 形式（`columns: 2 calc(6em + 5px)`）在 apply 阶段存为
+        // Calc；用容器宽度/字号上下文求值，无法求值（如需 viewport 外部上下文）时回退 0。
+        LengthValue::Calc(expr) => {
+            let ctx = zero_css_parser::values::CalcContext {
+                parent_length: Some(container_width as f64),
+                font_size: Some(font_size_px as f64),
+                root_font_size: Some(16.0),
+                ..Default::default()
+            };
+            zero_css_parser::values::eval_calc_with_context(expr, &ctx)
+                .map(|v| v as f32)
+                .unwrap_or(0.0)
+        }
+        LengthValue::Auto => 0.0,
         LengthValue::Vmin(v) => (*v as f32) * 6.0,
         LengthValue::Vmax(v) => (*v as f32) * 8.0,
         LengthValue::Ch(v) => *v as f32 * 8.0,

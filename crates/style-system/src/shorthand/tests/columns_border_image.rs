@@ -93,6 +93,49 @@ fn test_columns_rejects_duplicate_or_invalid_width_components() {
     assert_eq!(result[1].1, "0");
 }
 
+// ── R3749：columns spaced math 组件（CSS Multicol §3.4）──
+
+#[test]
+/// R3749：`columns: 2 calc(6em + 5px)` → count=2, width=calc(...)（math 函数内部空白
+/// 不是组件边界；css-ruby break-within-bases driving 形态）。
+fn r3749_columns_count_then_spaced_math_width() {
+    let result = expand_one("columns", "2 calc(6em + 5px)", false, (0, 0, 1));
+    assert_eq!(result.len(), 2);
+    assert_eq!(result[0].0, "column-count");
+    assert_eq!(result[0].1, "2");
+    assert_eq!(result[1].0, "column-width");
+    assert_eq!(result[1].1, "calc(6em + 5px)");
+}
+
+#[test]
+/// R3749：`columns: calc(100px + 2em) 3` → count=3, width=calc(...)（顺序无关，整数总为 count）。
+fn r3749_columns_spaced_math_width_then_count() {
+    let result = expand_one("columns", "calc(100px + 2em) 3", false, (0, 0, 1));
+    assert_eq!(result.len(), 2);
+    assert_eq!(result[0].0, "column-count");
+    assert_eq!(result[0].1, "3");
+    assert_eq!(result[1].0, "column-width");
+    assert_eq!(result[1].1, "calc(100px + 2em)");
+}
+
+#[test]
+/// R3749：`columns: min(200px, 50%)` 单值 → width=math, count=auto。
+fn r3749_columns_single_spaced_math_width() {
+    let result = expand_one("columns", "min(200px, 50%)", false, (0, 0, 1));
+    assert_eq!(result.len(), 2);
+    assert_eq!(result[0].0, "column-count");
+    assert_eq!(result[0].1, "auto");
+    assert_eq!(result[1].0, "column-width");
+    assert_eq!(result[1].1, "min(200px, 50%)");
+}
+
+#[test]
+/// R3749：未闭合 math / clamp 内部逗号拆分拒绝继续 fail-closed。
+fn r3749_columns_rejects_unclosed_or_number_math_width() {
+    assert!(expand_one("columns", "2 calc(6em + 5px", false, (0, 0, 1)).is_empty());
+    assert!(expand_one("columns", "2 clamp(100px, 5, 300px)", false, (0, 0, 1)).is_empty());
+}
+
 // ── column-rule 简写测试 ──
 
 #[test]

@@ -959,7 +959,7 @@ pub enum ColumnWidthValue {
 
 /// 解析 CSS column-width 属性值。
 ///
-/// 支持格式如 `"auto"`、`"200px"`、`"10em"`。
+/// 支持格式如 `"auto"`、`"200px"`、`"10em"`、`"calc(6em + 5px)"`。
 pub fn parse_column_width(value: &str) -> Option<ColumnWidthValue> {
     let value = value.trim();
     if value.eq_ignore_ascii_case("auto") {
@@ -971,7 +971,11 @@ pub fn parse_column_width(value: &str) -> Option<ColumnWidthValue> {
     ) {
         return None;
     }
-    let length = parse_length(value)?;
+    // https://drafts.csswg.org/css-multicol-1/#column-width
+    // <length [0,∞]> 的 <length-percentage> math 形式（如 `columns: 2 calc(6em + 5px)`）；
+    // 非常量负分量由 column_width_length_is_valid 拒绝。
+    let length =
+        parse_length(value).or_else(|| parse_math_function(value).map(|expr| LengthValue::Calc(Box::new(expr))))?;
     if !column_width_length_is_valid(&length) {
         return None;
     }
@@ -995,6 +999,33 @@ fn column_width_length_is_valid(value: &LengthValue) -> bool {
         | LengthValue::Rch(v)
         | LengthValue::Ic(v)
         | LengthValue::Ric(v) => *v >= 0.0,
+        // https://drafts.csswg.org/css-values-4/#calc-type-checking
+        // math 须为 <length-percentage> 类型（纯 number math 拒绝），且
+        // https://drafts.csswg.org/css-values-4/#calc-range 非常量负分量拒绝。
+        LengthValue::Calc(expr) => {
+            calc_expr_is_length_percentage(expr) && eval_calc(expr, None).is_none_or(|v| v.is_finite() && v >= 0.0)
+        }
         _ => false,
+    }
+}
+
+/// 判断 math 表达式是否整体为 <length-percentage> 类型：每个叶子都是带维度的
+/// 长度/百分比值。纯 number 叶子（如 `clamp(100px, 5, 300px)` 的 `5`）与之混合
+/// 属 CSS Values §8.1 类型不一致，整式无效。
+fn calc_expr_is_length_percentage(expr: &CalcExpr) -> bool {
+    match expr {
+        CalcExpr::Number(_) => false,
+        CalcExpr::Length(_) => true,
+        CalcExpr::BinaryOp(left, _, right) => {
+            calc_expr_is_length_percentage(left) && calc_expr_is_length_percentage(right)
+        }
+        CalcExpr::Min(args) | CalcExpr::Max(args) => args.iter().all(calc_expr_is_length_percentage),
+        CalcExpr::Clamp { min, val, max } => {
+            calc_expr_is_length_percentage(min)
+                && calc_expr_is_length_percentage(val)
+                && calc_expr_is_length_percentage(max)
+        }
+        // abs/sign/sqrt/exp/log/pow/hypot/round/mod/rem 均为 number → number。
+        CalcExpr::UnaryOp(_, _) | CalcExpr::BinaryMathOp(_, _, _) => false,
     }
 }

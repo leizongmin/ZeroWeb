@@ -419,6 +419,21 @@ fn test_property_supported_extended_visual_and_layout_properties() {
 }
 
 #[test]
+/// R3749：`@supports` 对 columns spaced math 组件与 column-width math longhand 的判定。
+/// math 函数内部空白/逗号不是组件边界；纯 number math 与未闭合 math 继续 fail-closed。
+fn r3749_supports_columns_spaced_math_width() {
+    assert!(is_property_supported("columns", "2 calc(6em + 5px)"));
+    assert!(is_property_supported("columns", "min(200px, 50%)"));
+    assert!(is_property_supported("column-width", "calc(6em + 5px)"));
+    assert!(is_property_supported("column-width", "min(200px, 50%)"));
+
+    assert!(!is_property_supported("columns", "2 calc(6em + 5px"));
+    assert!(!is_property_supported("columns", "2 clamp(100px, 5, 300px)"));
+    assert!(!is_property_supported("column-width", "clamp(100px, 5, 300px)"));
+    assert!(!is_property_supported("column-width", "calc(6em + 5px"));
+}
+
+#[test]
 fn test_property_supported_border_image_properties() {
     assert!(is_property_supported(
         "border-image",

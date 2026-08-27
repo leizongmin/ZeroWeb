@@ -1564,7 +1564,7 @@ fn split_outside_parens(s: &str) -> Vec<String> {
 }
 
 // https://drafts.csswg.org/css-syntax-3/#component-value
-fn split_top_level_whitespace(value: &str) -> Option<Vec<&str>> {
+pub(crate) fn split_top_level_whitespace(value: &str) -> Option<Vec<&str>> {
     let mut parts = Vec::new();
     let mut start = None;
     let mut depth = 0i32;
@@ -2120,10 +2120,10 @@ fn expand_columns(value: &str, important: bool, specificity: (u32, u32, u32)) ->
         s.eq_ignore_ascii_case("auto") || s.parse::<u32>().is_ok_and(|n| n >= 1)
     }
 
-    /// 检查值是否为有效的 column-width 值（非负长度或 auto）。
+    /// 检查值是否为有效的 column-width 值（非负长度、math 长度或 auto）。
     /// CSS Multi-column §3.1: <length [0,∞]> | auto.
     fn is_valid_column_width(s: &str) -> bool {
-        use zero_css_parser::values::LengthValue;
+        use zero_css_parser::values::{ColumnWidthValue, LengthValue};
 
         if s.eq_ignore_ascii_case("auto") {
             return true;
@@ -2137,29 +2137,37 @@ fn expand_columns(value: &str, important: bool, specificity: (u32, u32, u32)) ->
         {
             return false;
         }
-        matches!(
-            zero_css_parser::values::parse_length(s),
-            Some(
+        // R3749：与 `column-width` longhand 共用消费端 grammar（CSS Values §4
+        // <length-percentage> math + calc-range 非常量负分量拒绝）。
+        match zero_css_parser::values::parse_column_width(s) {
+            Some(ColumnWidthValue::Auto) => true,
+            Some(ColumnWidthValue::Length(length)) => match length {
                 LengthValue::Px(v)
-                    | LengthValue::Em(v)
-                    | LengthValue::Ex(v)
-                    | LengthValue::Rex(v)
-                    | LengthValue::Cap(v)
-                    | LengthValue::Rcap(v)
-                    | LengthValue::Rem(v)
-                    | LengthValue::Vh(v)
-                    | LengthValue::Vw(v)
-                    | LengthValue::Vmin(v)
-                    | LengthValue::Vmax(v)
-                    | LengthValue::Ch(v)
-                    | LengthValue::Rch(v)
-                    | LengthValue::Ic(v)
-                    | LengthValue::Ric(v)
-                ) if v >= 0.0
-        ) || zero_css_parser::values::parse_math_function(s).is_some()
+                | LengthValue::Em(v)
+                | LengthValue::Ex(v)
+                | LengthValue::Rex(v)
+                | LengthValue::Cap(v)
+                | LengthValue::Rcap(v)
+                | LengthValue::Rem(v)
+                | LengthValue::Vh(v)
+                | LengthValue::Vw(v)
+                | LengthValue::Vmin(v)
+                | LengthValue::Vmax(v)
+                | LengthValue::Ch(v)
+                | LengthValue::Rch(v)
+                | LengthValue::Ic(v)
+                | LengthValue::Ric(v) => v >= 0.0,
+                LengthValue::Calc(_) => true,
+                _ => false,
+            },
+            None => false,
+        }
     }
 
-    let parts: Vec<&str> = value.split_whitespace().collect();
+    // R3749：math 函数内部空白不是组件边界（`columns: 2 calc(6em + 5px)`）。
+    let Some(parts) = split_top_level_whitespace(value) else {
+        return vec![];
+    };
     match parts.len() {
         1 => {
             // 单值：判断是正整数（column-count）还是长度（column-width）。

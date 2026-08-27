@@ -271,7 +271,10 @@ fn color_scheme_supported(value: &str) -> bool {
 }
 
 fn columns_supported(value: &str) -> bool {
-    let parts: Vec<&str> = value.split_whitespace().collect();
+    // R3749：math 函数内部空白不是组件边界（`columns: 2 calc(6em + 5px)`）。
+    let Some(parts) = crate::shorthand::split_top_level_whitespace(value) else {
+        return false;
+    };
     match parts.as_slice() {
         [single] => values::parse_column_count(single).is_some() || values::parse_column_width(single).is_some(),
         [first, second] => {

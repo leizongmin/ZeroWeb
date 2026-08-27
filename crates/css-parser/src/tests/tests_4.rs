@@ -81,6 +81,28 @@ fn test_parse_column_width() {
 }
 
 #[test]
+/// R3749：parse_column_width 接受 CSS math 函数（CSS Multicol §3.1 <length [0,∞]> 的
+/// <length-percentage> math 形式，如 `columns: 2 calc(6em + 5px)`）。
+fn test_parse_column_width_math_function() {
+    assert!(matches!(
+        parse_column_width("calc(6em + 5px)"),
+        Some(ColumnWidthValue::Length(LengthValue::Calc(_)))
+    ));
+    assert!(matches!(
+        parse_column_width("min(200px, 50%)"),
+        Some(ColumnWidthValue::Length(LengthValue::Calc(_)))
+    ));
+    assert!(matches!(
+        parse_column_width("CALC(100px + 2em)"),
+        Some(ColumnWidthValue::Length(LengthValue::Calc(_)))
+    ));
+    // 纯 number math 与带负分量的非常量结果继续拒绝（非 <length-percentage> / 负值）。
+    assert_eq!(parse_column_width("calc(5)"), None);
+    assert_eq!(parse_column_width("calc(1px - 5px)"), None);
+    assert_eq!(parse_column_width("calc(1px +"), None);
+}
+
+#[test]
 /// 测试 parse_object_fit 所有关键字。
 fn test_parse_object_fit() {
     assert_eq!(parse_object_fit("fill"), Some(ObjectFitValue::Fill));

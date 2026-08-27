@@ -169,6 +169,44 @@ fn test_apply_columns_invalid() {
     assert!(!ok);
 }
 
+// ── R3749：columns spaced math 组件与 column-width math longhand ──
+
+#[test]
+/// R3749：`columns: 2 calc(6em + 5px)` 双值 spaced math 展开 + longhand apply。
+fn r3749_apply_columns_spaced_math_width() {
+    let (ok, s) = apply("columns", "2 calc(6em + 5px)");
+    assert!(ok);
+    assert!(matches!(s.column_count, ColumnCountComputedValue::Number(2)));
+    assert!(matches!(
+        s.column_width,
+        ColumnWidthComputedValue::Length(LengthValue::Calc(_))
+    ));
+}
+
+#[test]
+/// R3749：`column-width: min(200px, 50%)` longhand math 写入；非法 math 不覆盖旧值。
+fn r3749_apply_column_width_math_longhand() {
+    let mut style = ComputedStyle::default();
+    style.column_width = ColumnWidthComputedValue::Length(LengthValue::Px(100.0));
+
+    assert!(apply_property_value(&mut style, "column-width", "min(200px, 50%)"));
+    assert!(matches!(
+        style.column_width,
+        ColumnWidthComputedValue::Length(LengthValue::Calc(_))
+    ));
+
+    // 纯 number math（非 <length-percentage>）与未闭合 math fail-closed 且不覆盖。
+    let previous = style.column_width.clone();
+    assert!(!apply_property_value(
+        &mut style,
+        "column-width",
+        "clamp(100px, 5, 300px)"
+    ));
+    assert_eq!(style.column_width, previous);
+    assert!(!apply_property_value(&mut style, "column-width", "calc(6em + 5px"));
+    assert_eq!(style.column_width, previous);
+}
+
 #[test]
 fn test_apply_columns_invalid_pair_keeps_old_values() {
     let mut style = ComputedStyle::default();
