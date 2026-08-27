@@ -833,3 +833,41 @@ fn test_background_rejects_invalid_size_and_attachment_components() {
     assert_eq!(map.get("background-size"), Some(&"auto 10px"));
     assert_eq!(map.get("background-attachment"), Some(&"fixed"));
 }
+
+// ── R3753：background 简写 math 值组件（pos-side 与 size-side）──
+
+#[test]
+/// R3753：pos-side math `background: red min(0%, 100%) no-repeat` →
+/// color=red / position=min(...) / repeat（math 内部空白/逗号不是组件边界）。
+fn r3753_background_pos_side_math_value() {
+    let result = expand_one("background", "red min(0%, 100%) no-repeat", false, (0, 0, 1));
+    let map: std::collections::HashMap<&str, &str> =
+        result.iter().map(|(p, v, _, _)| (p.as_str(), v.as_str())).collect();
+    assert_eq!(map.get("background-color"), Some(&"red"));
+    assert_eq!(map.get("background-position"), Some(&"min(0%, 100%)"));
+    assert_eq!(map.get("background-repeat"), Some(&"no-repeat"));
+}
+
+#[test]
+/// R3753：size-side math `background: url("x.png") center / min(50%, 25%) no-repeat` →
+/// position=center / size=min(...)（`/` 后 math 保持一体）。
+fn r3753_background_size_side_math_value() {
+    let result = expand_one(
+        "background",
+        "url(\"x.png\") center / min(50%, 25%) no-repeat",
+        false,
+        (0, 0, 1),
+    );
+    let map: std::collections::HashMap<&str, &str> =
+        result.iter().map(|(p, v, _, _)| (p.as_str(), v.as_str())).collect();
+    assert_eq!(map.get("background-image"), Some(&"url(\"x.png\")"));
+    assert_eq!(map.get("background-position"), Some(&"center"));
+    assert_eq!(map.get("background-size"), Some(&"min(50%, 25%)"));
+    assert_eq!(map.get("background-repeat"), Some(&"no-repeat"));
+}
+
+#[test]
+/// R3753：未闭合 math 拒绝整条声明（fail-closed 不变）。
+fn r3753_background_rejects_unclosed_math() {
+    assert!(expand_one("background", "red min(0%, 100% no-repeat", false, (0, 0, 1)).is_empty());
+}

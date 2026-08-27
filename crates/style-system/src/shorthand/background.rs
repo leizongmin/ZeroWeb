@@ -137,11 +137,12 @@ pub(super) fn expand_background(value: &str, important: bool, specificity: (u32,
     // R2481：分离 position 部分与 size 部分（depth-0 `/`，url()/渐变内的 `/` 被排除）。
     let (pos_part, size_part) = split_bg_position_and_size(working);
 
+    // R3753：math 函数内部空白不是组件边界（`background: red min(0%, 100%) no-repeat`）。
     // 逐 token 分类 pos-side（图函数已提取，pos_part 仅含 color/position/repeat/attachment/box）。
-    for token in pos_part.split_whitespace() {
-        if token.is_empty() {
-            continue;
-        }
+    let Some(pos_tokens) = crate::shorthand::split_top_level_whitespace(pos_part) else {
+        return vec![];
+    };
+    for token in pos_tokens {
         if !classify_bg_token(token, &mut slots, false) {
             return vec![];
         }
@@ -150,10 +151,10 @@ pub(super) fn expand_background(value: &str, important: bool, specificity: (u32,
     // R2481：size 部分（`/` 之后）—— size-side（length/percent/auto/contain/cover→size；
     // repeat/attachment/box/color 仍正常分类，因它们可在 `/` 后出现，如 `... / 100% auto no-repeat`）。
     if let Some(size) = size_part {
-        for token in size.split_whitespace() {
-            if token.is_empty() {
-                continue;
-            }
+        let Some(size_tokens) = crate::shorthand::split_top_level_whitespace(size) else {
+            return vec![];
+        };
+        for token in size_tokens {
             if !classify_bg_token(token, &mut slots, true) {
                 return vec![];
             }
@@ -369,7 +370,8 @@ fn can_append_background_size(slots: &BgSlots) -> bool {
     if slots.size == "cover" || slots.size == "contain" {
         return false;
     }
-    slots.size.split_whitespace().count() < 2
+    // R3753：math size（`min(50%, 25%)`）是一个组件，函数内部空白不计。
+    crate::shorthand::split_top_level_whitespace(&slots.size).is_some_and(|parts| parts.len() < 2)
 }
 
 fn is_background_length_percentage(token: &str) -> bool {

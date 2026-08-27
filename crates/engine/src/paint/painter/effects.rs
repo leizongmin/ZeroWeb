@@ -1288,6 +1288,13 @@ fn resolve_background_size(
             let h = if img_w > 0.0 { w * img_h / img_w } else { container_h };
             (w, h)
         }
+        // R3753：math 单值，% 相对定位区宽度（与 Percent 同语义；eval_calc 的 parent_length
+        // 即 % 基准）。px/% 求值；em/vw 等需 font/viewport 上下文（此处无）→ 回退固有宽。
+        BackgroundSizeComputedValue::Calc(expr) => {
+            let w = zero_css_parser::values::eval_calc(expr, Some(container_w as f64)).unwrap_or(img_w as f64) as f32;
+            let h = if img_w > 0.0 { w * img_h / img_w } else { container_h };
+            (w, h)
+        }
         // R2878：两值语法 `<w> <h>`（CSS Backgrounds §3.9）。每维独立解析；auto 维由另一维 +
         // 固有比推导，无固有比（渐变等）则取定位区该维尺寸；两维皆 auto 取固有尺寸。
         BackgroundSizeComputedValue::TwoValue(cw, ch) => {
@@ -1295,11 +1302,18 @@ fn resolve_background_size(
             let w_fixed = match cw {
                 BgSizeComponentComputed::Length(px) => Some(*px),
                 BgSizeComponentComputed::Percent(p) => Some(container_w * p / 100.0),
+                // R3753：math 分量，% 相对定位区该维。
+                BgSizeComponentComputed::Calc(expr) => {
+                    Some(zero_css_parser::values::eval_calc(expr, Some(container_w as f64)).unwrap_or(f64::NAN) as f32)
+                }
                 BgSizeComponentComputed::Auto => None,
             };
             let h_fixed = match ch {
                 BgSizeComponentComputed::Length(px) => Some(*px),
                 BgSizeComponentComputed::Percent(p) => Some(container_h * p / 100.0),
+                BgSizeComponentComputed::Calc(expr) => {
+                    Some(zero_css_parser::values::eval_calc(expr, Some(container_h as f64)).unwrap_or(f64::NAN) as f32)
+                }
                 BgSizeComponentComputed::Auto => None,
             };
             let w = match w_fixed {

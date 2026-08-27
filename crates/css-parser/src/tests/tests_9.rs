@@ -1337,6 +1337,31 @@ fn test_background_size_two_value() {
 }
 
 #[test]
+/// R3753：background-size 接受 <length-percentage> math（单值与两值分量），
+/// 切分括号感知（math 内部空白不是两值边界）。
+fn r3753_background_size_math() {
+    use crate::values::{BackgroundSizeValue, BgSizeComponent as B};
+    // 单值 math → Calc。
+    assert!(matches!(
+        parse_background_size("min(50%, 25%)"),
+        Some(BackgroundSizeValue::Calc(_))
+    ));
+    // 两值：math + auto（括号感知切分，`min(50%, 25%)` 保持一体）。
+    assert!(matches!(
+        parse_background_size("min(50%, 25%) auto"),
+        Some(BackgroundSizeValue::TwoValue(B::Calc(_), B::Auto))
+    ));
+    // 两值：auto + math。
+    assert!(matches!(
+        parse_background_size("auto clamp(100px, 50%, 300px)"),
+        Some(BackgroundSizeValue::TwoValue(B::Auto, B::Calc(_)))
+    ));
+    // 纯 number math 与未闭合 math 拒绝。
+    assert!(parse_background_size("calc(5)").is_none());
+    assert!(parse_background_size("min(50%, 25%").is_none());
+}
+
+#[test]
 fn test_background_attachment_values() {
     use crate::values::BackgroundAttachmentValue;
     assert_eq!(

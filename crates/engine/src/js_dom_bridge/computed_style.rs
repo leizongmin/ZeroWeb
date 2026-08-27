@@ -2997,6 +2997,8 @@ fn bg_size_component_to_css(c: &BgSizeComponentComputed) -> String {
         BgSizeComponentComputed::Auto => "auto".to_string(),
         BgSizeComponentComputed::Length(f) => format_num(*f as f64, "px"),
         BgSizeComponentComputed::Percent(f) => format_num(*f as f64, "%"),
+        // R3753：% calc 无容器尺寸不可解析（非 % calc 已 resolve）→ ''（同 position Calc）。
+        BgSizeComponentComputed::Calc(_) => String::new(),
     }
 }
 
@@ -3012,7 +3014,9 @@ fn background_size_to_css(layers: &[BackgroundSizeComputedValue]) -> String {
             BackgroundSizeComputedValue::Contain => "contain".to_string(),
             BackgroundSizeComputedValue::Length(f) => format_num(*f as f64, "px"),
             BackgroundSizeComputedValue::Percent(f) => format_num(*f as f64, "%"),
-            // R2878：两值语法序列化（`<w> <h>`，auto/length/percent 每维）。
+            // R3753：% calc 无容器尺寸不可解析（非 % calc 已 resolve）→ ''。
+            BackgroundSizeComputedValue::Calc(_) => String::new(),
+            // R2878：两值语法序列化（`<w> <h>`，auto/length/percent/math 每维）。
             BackgroundSizeComputedValue::TwoValue(cw, ch) => {
                 format!("{} {}", bg_size_component_to_css(cw), bg_size_component_to_css(ch))
             }

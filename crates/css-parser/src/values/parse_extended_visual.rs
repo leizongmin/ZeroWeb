@@ -1076,13 +1076,15 @@ pub enum BackgroundSizeValue {
     Length(f32),
     /// 百分比值（如 50%）。
     Percent(f32),
-    /// 两值语法 `<w> <h>`（CSS Backgrounds §3.9），每维 auto/length/percent。
+    /// R3753：math 单值（如 `min(50%, 25%)`），% 相对定位区该维，paint 期解析。
+    Calc(Box<CalcExpr>),
+    /// 两值语法 `<w> <h>`（CSS Backgrounds §3.9），每维 auto/length/percent/math。
     /// driving：css-backgrounds background-size-013/025/041 等（`auto 100px`/`200px auto`）。
     TwoValue(BgSizeComponent, BgSizeComponent),
 }
 
 /// background-size 两值语法的单维分量。
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum BgSizeComponent {
     /// auto — 该维由另一维 + 固有比推导（无比则为定位区尺寸）。
     Auto,
@@ -1090,6 +1092,8 @@ pub enum BgSizeComponent {
     Length(f32),
     /// 百分比（相对定位区该维）。
     Percent(f32),
+    /// R3753：math 分量（`/ min(50%, 25%) auto`），% 相对定位区该维，paint 期解析。
+    Calc(Box<CalcExpr>),
 }
 
 /// 解析 CSS background-size 属性值。
@@ -1099,11 +1103,15 @@ pub fn parse_background_size(value: &str) -> Option<BackgroundSizeValue> {
     let v = value.trim().to_ascii_lowercase();
     // 两值语法（空格分隔恰好两 token，每 token = auto/length/percent）。
     // cover/contain 不允许组合，两 token 时若含 cover/contain → parse_bg_size_component 返 None。
-    let tokens: Vec<&str> = v.split_whitespace().collect();
+    // R3753：切分括号感知——math size（`min(50%, 25%)`）内部空白不是组件边界。
+    let tokens = split_top_level_whitespace(&v);
     if tokens.len() == 2 {
-        let c1 = parse_bg_size_component(tokens[0])?;
-        let c2 = parse_bg_size_component(tokens[1])?;
+        let c1 = parse_bg_size_component(&tokens[0])?;
+        let c2 = parse_bg_size_component(&tokens[1])?;
         return Some(BackgroundSizeValue::TwoValue(c1, c2));
+    }
+    if tokens.len() > 2 {
+        return None;
     }
     match v.as_str() {
         "auto" => Some(BackgroundSizeValue::Auto),
@@ -1120,13 +1128,18 @@ pub fn parse_background_size(value: &str) -> Option<BackgroundSizeValue> {
             } else if let Some(lv) = parse_length(&v) {
                 bg_size_length_px(&v, &lv).map(BackgroundSizeValue::Length)
             } else {
-                None
+                // R3753：<length-percentage> math 单值（CSS Backgrounds §3.10 的
+                // `[<length-percentage]>` 分量 math 形式，如 `min(50%, 25%)`）→ Calc 延迟解析。
+                // 纯 number math（calc(5)）非 <length-percentage>，拒绝。
+                parse_math_function(&v)
+                    .filter(crate::values::calc_expr_is_length_percentage)
+                    .map(|expr| BackgroundSizeValue::Calc(Box::new(expr)))
             }
         }
     }
 }
 
-/// 解析两值语法的单维分量：auto / <length> / <percentage>。
+/// 解析两值语法的单维分量：auto / <length> / <percentage> / math。
 fn parse_bg_size_component(token: &str) -> Option<BgSizeComponent> {
     if token.eq_ignore_ascii_case("auto") {
         return Some(BgSizeComponent::Auto);
@@ -1139,8 +1152,13 @@ fn parse_bg_size_component(token: &str) -> Option<BgSizeComponent> {
             None
         };
     }
-    let lv = parse_length(token)?;
-    bg_size_length_px(token, &lv).map(BgSizeComponent::Length)
+    if let Some(lv) = parse_length(token) {
+        return bg_size_length_px(token, &lv).map(BgSizeComponent::Length);
+    }
+    // R3753：math 分量（`/ min(50%, 25%) auto` 的第一维）；纯 number math 拒绝。
+    parse_math_function(token)
+        .filter(crate::values::calc_expr_is_length_percentage)
+        .map(|expr| BgSizeComponent::Calc(Box::new(expr)))
 }
 
 fn bg_size_length_px(raw: &str, value: &LengthValue) -> Option<f32> {

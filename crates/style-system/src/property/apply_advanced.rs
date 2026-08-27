@@ -1706,6 +1706,9 @@ pub fn apply_advanced_property_value(style: &mut ComputedStyle, property: &str, 
                         zero_css_parser::values::BackgroundSizeValue::Percent(n) => {
                             BackgroundSizeComputedValue::Percent(n)
                         }
+                        zero_css_parser::values::BackgroundSizeValue::Calc(expr) => {
+                            BackgroundSizeComputedValue::Calc(*expr)
+                        }
                         zero_css_parser::values::BackgroundSizeValue::TwoValue(cw, ch) => {
                             BackgroundSizeComputedValue::TwoValue(map_bg_size_comp(cw), map_bg_size_comp(ch))
                         }
@@ -2187,5 +2190,6 @@ fn map_bg_size_comp(c: zero_css_parser::values::BgSizeComponent) -> BgSizeCompon
         zero_css_parser::values::BgSizeComponent::Auto => BgSizeComponentComputed::Auto,
         zero_css_parser::values::BgSizeComponent::Length(n) => BgSizeComponentComputed::Length(n),
         zero_css_parser::values::BgSizeComponent::Percent(n) => BgSizeComponentComputed::Percent(n),
+        zero_css_parser::values::BgSizeComponent::Calc(expr) => BgSizeComponentComputed::Calc(*expr),
     }
 }

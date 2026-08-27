@@ -93,13 +93,15 @@ pub enum BackgroundSizeComputedValue {
     Length(f32),
     /// 百分比值（0-100）。
     Percent(f32),
-    /// 两值语法 `<w> <h>`（CSS Backgrounds §3.9），每维 auto/length/percent。
+    /// R3753：math 单值（如 `min(50%, 25%)`），% 相对定位区该维，paint 期解析。
+    Calc(zero_css_parser::values::CalcExpr),
+    /// 两值语法 `<w> <h>`（CSS Backgrounds §3.9），每维 auto/length/percent/math。
     /// driving：css-backgrounds background-size-013/025/041 等（`auto 100px`/`200px auto`）。
     TwoValue(BgSizeComponentComputed, BgSizeComponentComputed),
 }
 
 /// background-size 两值语法的单维分量（计算值）。
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum BgSizeComponentComputed {
     /// auto。
     Auto,
@@ -107,6 +109,8 @@ pub enum BgSizeComponentComputed {
     Length(f32),
     /// 百分比（相对定位区该维）。
     Percent(f32),
+    /// R3753：math 分量，% 相对定位区该维，paint 期解析。
+    Calc(zero_css_parser::values::CalcExpr),
 }
 
 /// CSS background-attachment 属性值。
