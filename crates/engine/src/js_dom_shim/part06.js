@@ -556,7 +556,23 @@
               }
             }
             node = node.parentNode;
+            // R314（js-dom M4）：**root 止步的 spec 语义**——上行到的父是 root 自身
+            // （或脱离 root 树）→ 前驱必在 root 外 → null（spec previousNode 的
+            // 「node == root → return null」分支对双向 parent-up 生效——旧只挡
+            // `node === root` 但**仍会对 root 自身跑 check 并可能返回**（探针实证
+            // prevNode=DIV：currentNode=regraft 的 p、父链上到 DIV(root 外) 被误返）。
+            // WPT TreeWalker-walking-outside-a-tree 的 root 边界即此形态）。
             if (!node || node === root) return null;
+            try {
+              var _r314InRoot = false;
+              var _r314Anc = node;
+              var _r314g = 0;
+              while (_r314Anc && _r314g++ < 1000) {
+                if (_r314Anc === root) { _r314InRoot = true; break; }
+                _r314Anc = _r314Anc.parentNode;
+              }
+              if (!_r314InRoot) return null;
+            } catch (_e314r) {}
             var rp = check(node);
             if (rp === 1) { currentNodeVal = node; syncOrderPosTo(node); idx = accepted.indexOf(node); return node; }
             // rp 非 ACCEPT → 回 sibling 循环（node 的 previousSibling 起）

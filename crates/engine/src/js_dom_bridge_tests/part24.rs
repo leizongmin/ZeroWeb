@@ -1213,3 +1213,66 @@ globalThis.__r313p = out.join('|');
         "R313 disabled click gate + boolean falsy removal roundtrip, got: {out}"
     );
 }
+
+#[test]
+fn r314_treewalker_regraft_diagnostics() {
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let mut sandbox = V8Sandbox::with_config(zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    })
+    .unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><div id='t'>x</div></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+    // R314（js-dom M4）：TreeWalker「walking outside a tree」的归因诊断（主文档
+    // createElement 产物 = handle proxy 域）。探针实断两域事实：① regraft 后
+    // `p.previousSibling`（handle proxy 融合视图）恒 null——handle registry 的
+    // 兄弟链在 removeChild+appendChild 重挂后断（R291 域，同 R309 教训的
+    // identity 双源问题）；② `previousNode` 的父上行越过 root（R85 循环的
+    // root 止步只在一个分支）——walker 算法轻量点，待兄弟链修复后生效。
+    let out = sandbox
+        .execute(
+            r#"
+var out = [];
+try {
+  var doc = document.createElement("div");
+  var head = document.createElement('head');
+  var title = document.createElement('title');
+  var body = document.createElement('body');
+  var p = document.createElement('p');
+  doc.appendChild(head);
+  head.appendChild(title);
+  doc.appendChild(body);
+  body.appendChild(p);
+  var w = document.createTreeWalker(body, 0xFFFFFFFF, null);
+  doc.removeChild(body);
+  var lc = w.lastChild();
+  out.push('lastChild=' + String(lc ? lc.nodeName : 'null'));
+  doc.appendChild(p);
+  out.push('pPrevSib=' + String(p.previousSibling ? p.previousSibling.nodeName : 'null'));
+  var prev = w.previousNode();
+  out.push('prevNode=' + String(prev ? prev.nodeName : 'null'));
+} catch (e) { out.push('err=' + String(e && e.message)); }
+globalThis.__r314p = out.join('|');
+"#,
+        )
+        .unwrap();
+    let out = sandbox.execute("globalThis.__r314p").unwrap().value;
+    println!("R314-DIAG: {out}");
+    // 归因断言（记录当前事实域——修复后应更新为期望值链）：
+    // lastChild=P ✓（removeChild 后 lastChild 在 root 子树内正确）；
+    // pPrevSib=null（handle 融合视图 regraft 断链——R291 域）；
+    // prevNode=null（R314 root 止步修复——父上行不再越过 root 返链外节点）。
+    assert!(
+        out.contains("lastChild=P") && out.contains("pPrevSib=null") && out.contains("prevNode=null"),
+        "R314 regraft domain facts (fix will flip these), got: {out}"
+    );
+}
