@@ -8349,6 +8349,20 @@
     if (event._zwDispatching) {
       throw new (globalThis.DOMException)('The event is already being dispatched.', 'InvalidStateError');
     }
+    // R312（js-dom M4）：**脚本派发置 isTrusted=false**（legacy DOM3 dispatchEvent
+    // 语义，WPT Event-dispatch-redispatch 断言「Redispatched ... shouldn't be
+    // trusted」——UA 合成的 trusted 事件对象被页面脚本再 dispatch 后须翻 false；
+    // 全部 dispatch 入口经本 guard，单一落点）。try/catch 防 own-readonly 形态。
+    try {
+      // UA 通道印记（__zwMakeTrustedEvent / __zw_dispatch_event 置位）：宿主注入的
+      // 首次 dispatch 保持 trusted；印记消费后同一事件对象再经脚本 dispatch 即翻
+      // false（WPT redispatch 语义——「Received ... trusted before, shouldn't be
+      // trusted after redispatching」）。
+      if (event.isTrusted && !event._zwUaDispatch) {
+        Object.defineProperty(event, 'isTrusted', { value: false, writable: true, configurable: true, enumerable: true });
+      }
+      event._zwUaDispatch = false;
+    } catch (_e312t) {}
     return true;
   };
   // R138（js-dom M4）：事件方法族上 Event.prototype——native 叠加路径下 native

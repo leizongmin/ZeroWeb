@@ -1043,3 +1043,114 @@ globalThis.__r311p = out.join('|');
         "R311 CDATA contributes to textContent concatenation (comment/PI still excluded), got: {out}"
     );
 }
+
+#[test]
+fn r312_redispatch_is_trusted_repro() {
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let mut sandbox = V8Sandbox::with_config(zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    })
+    .unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><button id='b'>x</button></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+    // R312：redispatch 语义——① isTrusted：dispatchEvent（untrusted 派发）后事件的
+    // isTrusted 须 false（spec `dom-event-istrusted` 只读标志，dispatch 时置位）；②
+    // dispatching 中的事件再 dispatch 抛 InvalidStateError（spec `dom-event-dispatch`
+    // 步骤 2）。WPT Event-dispatch-redispatch 两失败的核心机制面。
+    let out = sandbox
+        .execute(
+            r#"
+var out = [];
+try {
+  var b = document.querySelector('#b');
+  var ev = document.createEvent('Event');
+  ev.initEvent('click', true, true);
+  out.push('beforeTrusted=' + String(ev.isTrusted));
+  b.dispatchEvent(ev);
+  out.push('afterTrusted=' + String(ev.isTrusted));
+  // dispatching 中再 dispatch（listener 内）——spec 抛 InvalidStateError
+  var ev2 = document.createEvent('Event');
+  ev2.initEvent('custom', true, true);
+  var innerErr = 'none';
+  var target = document.createElement('div');
+  target.addEventListener('custom', function () {
+    try { target.dispatchEvent(ev2); innerErr = 'no-throw'; } catch (e) { innerErr = String(e && e.name); }
+  });
+  target.dispatchEvent(ev2);
+  out.push('reentrant=' + innerErr);
+  // redispatch 已派发完的（listener 外）——spec 不抛（可再派发）
+  var againErr = 'none';
+  try { b.dispatchEvent(ev); } catch (e) { againErr = String(e && e.name); }
+  out.push('reDispatch=' + againErr);
+} catch (e) { out.push('err=' + String(e && e.message)); }
+globalThis.__r312p = out.join('|');
+"#,
+        )
+        .unwrap();
+    let out = sandbox.execute("globalThis.__r312p").unwrap().value;
+    println!("R312: {out}");
+    assert!(out.contains("beforeTrusted="), "sanity: {out}");
+}
+
+#[test]
+fn r312_mouseup_redispatch_repro2() {
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let mut sandbox = V8Sandbox::with_config(zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    })
+    .unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><button id='b'>x</button></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+    // R312：UA mouseup（__zw_dispatch_event trusted 化）→ click listener 内脚本
+    // re-dispatch mouseup ——isTrusted 须翻 false（guard 的 _zwUaDispatch 一次性语义）。
+    let out = sandbox
+        .execute(
+            r#"
+var out = [];
+try {
+  var b = document.querySelector('#b');
+  var mouseupEvent = null;
+  var clickEvent = null;
+  var mouseupTrustedAtDispatch = null;
+  var clickTrustedAtDispatch = null;
+  b.addEventListener('mouseup', function (e) { mouseupEvent = e; mouseupTrustedAtDispatch = e.isTrusted; }, { once: true });
+  b.addEventListener('click', function (e) {
+    clickEvent = e;
+    clickTrustedAtDispatch = e.isTrusted;
+    // listener 内 re-dispatch（此时 mouseup 已派发完）——翻 false
+    b.dispatchEvent(mouseupEvent);
+    out.push('afterRedispatch=' + String(mouseupEvent.isTrusted));
+    out.push('clickStill=' + String(clickEvent.isTrusted));
+  }, { once: true });
+  // UA 派发链：mouseup → click（宿主 __zw_dispatch_event 两事件）
+  __zw_dispatch_event('#b', 'mouseup', null);
+  __zw_dispatch_event('#b', 'click', null);
+  out.push('firstMouseup=' + String(mouseupTrustedAtDispatch));
+  out.push('firstClick=' + String(clickTrustedAtDispatch));
+} catch (e) { out.push('err=' + String(e && e.message)); }
+globalThis.__r312m = out.join('|');
+"#,
+        )
+        .unwrap();
+    let out = sandbox.execute("globalThis.__r312m").unwrap().value;
+    println!("R312-M: {out}");
+    assert!(out.contains("firstMouseup="), "sanity: {out}");
+}

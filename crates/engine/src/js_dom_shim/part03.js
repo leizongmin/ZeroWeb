@@ -4435,7 +4435,12 @@
       // 使 composed 事件（shadow 边界穿越派发）永不生效（WPT event-global shadow 用例）。
       composed: !!options.composed,
       eventPhase: 0, // spec NONE=0
-      isTrusted: false, // spec（合成事件恒 false）
+      // spec（合成事件恒 false）。R312（js-dom M4）：`__zwTrusted` 内部口——宿主
+      // （runner/wpt-runner 注入的 DOMContentLoaded/load 等页面生命周期事件）合成
+      // 的事件按 UA 派发语义 isTrusted=true（WPT Event-dispatch-redispatch 断言
+      // 「Received DOMContentLoaded event should be trusted」——页面脚本无法经
+      // Event 构造器置位（spec），只有 UA 侧（本注入点）可trusted）。
+      isTrusted: !!options.__zwTrusted,
       target: null,
       currentTarget: null,
       // srcElement（js-dom M4 R32，spec `dom-event-srcelement`）：Event.target 的 legacy IE 别名（IDL
@@ -4533,6 +4538,19 @@
     });
     return ev;
   }
+  // R312（js-dom M4）：UA 合成 trusted 事件的出口——runner 注入的 DOMContentLoaded/
+  // load 等页面生命周期事件按 spec 由 UA 置 isTrusted=true（页面脚本的 Event 构造器
+  // 恒 false，spec 保证只有 UA 能造 trusted 事件——本出口只在宿主注入脚本里调用）。
+  globalThis.__zwMakeTrustedEvent = function (type, options) {
+    var o = options ? Object.assign({}, options) : {};
+    o.__zwTrusted = true;
+    var ev = _makeEvent(type, o);
+    // R312：UA 派发通道印记——首过 dispatch 不翻 isTrusted（页面脚本再 dispatch
+    // 同一事件对象时翻 false，WPT redispatch 断言语义）。
+    try { ev._zwUaDispatch = true; } catch (_e312u) {}
+    return ev;
+  };
+
 
   function _tagFromSel(sel) {
     if (!sel) return 'DIV';

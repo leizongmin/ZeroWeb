@@ -2639,8 +2639,11 @@ add_completion_callback(function() {
     html = inline_local_scripts(&html, wpt_root, case_path);
     html.push_str(
         "<script>\
-         document.dispatchEvent(new Event('DOMContentLoaded'));\
-         globalThis.dispatchEvent(new Event('load'));\
+         (function () {\
+           var mk = globalThis.__zwMakeTrustedEvent;\
+           document.dispatchEvent(mk ? mk('DOMContentLoaded') : new Event('DOMContentLoaded'));\
+           globalThis.dispatchEvent(mk ? mk('load') : new Event('load'));\
+         })();\
          if (typeof globalThis.__zw_mark_harness_loaded === 'function') {\
            globalThis.__zw_mark_harness_loaded();\
          }\

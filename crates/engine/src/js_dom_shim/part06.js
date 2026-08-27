@@ -6708,6 +6708,16 @@
     } else {
       ev = _makeEvent(type, { bubbles: true, cancelable: true });
     }
+    // R312（js-dom M4）：宿主派发 = UA 合成事件，isTrusted=true（spec——真实浏览器
+    // 的用户输入/激活事件链全部 trusted；`__zw_dispatch_event` 只被 engine 的
+    // script_gen 宿主脚本调用，页面脚本不可达——无越权面）。经 `_zwUaDispatch`
+    // 印记走 UA 通道（脚本再 dispatch 同一对象时 guard 翻 false，redispatch 语义）。
+    try {
+      if (ev && typeof ev === 'object' && !ev.isTrusted) {
+        Object.defineProperty(ev, 'isTrusted', { value: true, writable: true, configurable: true, enumerable: true });
+        ev._zwUaDispatch = true;
+      }
+    } catch (_e312h) {}
     // R145（js-dom M4）：sel→handle identity 桥——listener 注册在 handle proxy 的
     // `_listenerStore['@'+handle]`（createElement/cloneNode 产物经 addEventListener），
     // sel-key 派发查不到（WPT pointer-event-document-move：模板 clone 的 p 上
@@ -6719,6 +6729,10 @@
     } catch (_e145h) {}
     var r145Key = r145Handle ? _elKey(null, r145Handle) : _elKey(sel, null);
     var ok = _dispatchWithBubble(r145Key, r145Handle ? null : sel, r145Handle || null, ev);
+    // R312（js-dom M4）：UA 通道印记一次性——本（宿主）dispatch 完成即消费；同一
+    // 事件对象再经页面脚本 dispatchEvent 时 guard 按 legacy DOM3 语义翻
+    // isTrusted=false（WPT Event-dispatch-redispatch 的 before/after 断言对）。
+    try { ev._zwUaDispatch = false; } catch (_e312ua) {}
     return ok ? 'ok' : 'prevented';
   };
 })();
