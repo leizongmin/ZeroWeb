@@ -1958,6 +1958,13 @@
   globalThis.MutationObserver.prototype.disconnect = function() {
     this._targets = {};
     this._targetProxies = {};
+    // R303（js-dom M4）：spec `dom-mutationobserver-disconnect` 步骤 2——
+    // 「empty the observer's record queue」（disconnect 丢弃未派发的 pending
+    // records；WPT MutationObserver-disconnect "disconnect discarded some
+    // mutations"：disconnect→observe→mutate→disconnect→observe→mutate 后回调
+    // 期望仅 1 条 record——旧版不清队列收 4 条）。
+    // https://dom.spec.whatwg.org/#dom-mutationobserver-disconnect
+    this._records = [];
   };
   globalThis.MutationObserver.prototype.takeRecords = function() {
     var r = this._records;

@@ -446,3 +446,105 @@ Promise.resolve().then(function () {
         "R302 MO callback exception reports to the callback realm's onerror"
     );
 }
+
+#[test]
+fn r303_mo_disconnect_discards_pending_records() {
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let mut sandbox = V8Sandbox::with_config(zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    })
+    .unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><p id=\"n00\"></p></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+    // R303：spec `dom-mutationobserver-disconnect` 步骤 2——disconnect 清空 record
+    // queue（WPT MutationObserver-disconnect 的三段 observe/disconnect 序列）。
+    let out = sandbox
+        .execute(
+            r#"
+var n00 = document.getElementById('n00');
+var counts = [];
+var mo = new MutationObserver(function (rs) { counts.push(rs.length); });
+mo.observe(n00, { attributes: true });
+n00.id = "foo";
+n00.id = "bar";
+mo.disconnect();
+mo.observe(n00, { attributes: true, attributeOldValue: true });
+n00.id = "latest";
+mo.disconnect();
+mo.observe(n00, { attributes: true, attributeOldValue: true });
+n00.id = "n0000";
+Promise.resolve().then(function () {
+  globalThis.__r303p = counts.join(',') + '|' + (typeof mo.takeRecords().length === 'number');
+});
+"#,
+        )
+        .unwrap();
+    let _ = sandbox.execute("0").unwrap();
+    let out = sandbox.execute("globalThis.__r303p").unwrap().value;
+    assert_eq!(
+        out, "1|true",
+        "R303 disconnect discards pending records; final flush delivers exactly the post-reconnect record"
+    );
+}
+
+#[test]
+fn r303_probe_inner_html_added_identity() {
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let mut sandbox = V8Sandbox::with_config(zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    })
+    .unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><div id=\"n01\">old text</div></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+    let out = sandbox
+        .execute(
+            r#"
+var n01 = document.getElementById('n01');
+var recs = [];
+var mo = new MutationObserver(function (rs) { recs = rs; });
+mo.observe(n01, { childList: true });
+n01.innerHTML = "<span>new</span><span>text</span>";
+Promise.resolve().then(function () {
+  var ad = recs.length ? recs[0].addedNodes : [];
+  var fc = n01.firstChild, lc = n01.lastChild;
+  var o = [];
+  o.push('recs=' + recs.length);
+  o.push('adLen=' + ad.length);
+  o.push('fc=' + (fc ? String(fc.tagName || fc.data || fc) : 'null'));
+  o.push('lc=' + (lc ? String(lc.tagName || lc.data || lc) : 'null'));
+  o.push('ad0=' + (ad[0] ? String(ad[0].tagName || ad[0].data || typeof ad[0]) : 'null'));
+  o.push('fcEqAd0=' + String(fc === ad[0]));
+  o.push('lcEqAd1=' + String(lc === ad[1]));
+  o.push('fcIsText=' + String(fc && fc.nodeType === 3));
+  globalThis.__r303q = o.join('|');
+});
+"#,
+        )
+        .unwrap();
+    let _ = sandbox.execute("0").unwrap();
+    let out = sandbox.execute("globalThis.__r303q").unwrap().value;
+    // R303 归因探针（记档，非回归断言）：sel-based innerHTML 后同 turn 的
+    // firstChild/lastChild 仍读 stale host 快照（fc=old text），addedNodes 是
+    // _zwFragmentAdded wrapper——identity 断言族（WPT inner-outer "2 children"）
+    // 依赖 firstChild 立即反映新子，归 R220 live-view 域（同 turn 视图桥）。
+    println!("R303-PROBE: {out}");
+    assert!(out.contains("recs=1"), "probe sanity: {out}");
+}
