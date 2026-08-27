@@ -147,6 +147,8 @@ impl RenderPipeline {
                     let mut painter = Painter::new();
                     painter.skip_indicators = self.skip_indicators;
                     painter.image_sizes.clone_from(&self.image_sizes);
+                    painter.image_no_ratio_keys = self.image_no_ratio.keys().copied().collect();
+                    painter.image_ratio_keys = self.image_ratios.clone();
                     painter.set_font_resolver(self.font_resolver.clone());
                     painter.set_document_url(self.document_url.as_deref());
                     painter.set_canvas_registry(self.canvas_registry.clone());
@@ -243,6 +245,8 @@ impl RenderPipeline {
         let mut painter = Painter::new();
         painter.skip_indicators = self.skip_indicators;
         painter.image_sizes.clone_from(&self.image_sizes);
+        painter.image_no_ratio_keys = self.image_no_ratio.keys().copied().collect();
+        painter.image_ratio_keys = self.image_ratios.clone();
         painter.set_font_resolver(self.font_resolver.clone());
         painter.set_document_url(self.document_url.as_deref());
         painter.set_canvas_registry(self.canvas_registry.clone());

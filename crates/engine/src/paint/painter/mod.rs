@@ -62,6 +62,15 @@ pub struct Painter {
     /// 用于 background-image 的 background-size: auto 计算。
     /// 在绘制开始前由调用方从 ImageCache 填充。
     pub image_sizes: HashMap<u64, (f32, f32)>,
+    /// R3759：no-ratio SVG 背景 key 集（CSS §10.3.2：width/height 非双绝对且无 viewBox
+    /// 的 SVG 无确定固有尺寸、无固有宽高比——其 pixmap 尺寸是 usvg 默认值，非真实固有
+    /// 尺寸）。css-backgrounds-3 §3.9：此类背景 `auto`（及退化的 contain/cover）的使用
+    /// 尺寸 = background positioning area 尺寸。
+    pub image_no_ratio_keys: std::collections::HashSet<u64>,
+    /// R3759：ratio-only SVG 背景（仅有 viewBox 宽高比、无确定固有尺寸；key → ratio）。
+    /// css-backgrounds-3 §3.9：`auto` 双 auto 时按固有宽高比在 positioning area 内
+    /// contain-fit（宽 = min(定位区宽, 定位区高 × ratio)）；contain/cover 用同 ratio。
+    pub image_ratio_keys: std::collections::HashMap<u64, f32>,
     /// 文本表单控件的 retained 当前值；内容属性仍保留默认值语义。
     pub(crate) form_control_values: HashMap<NodeId, String>,
     /// 文本控件的临时 IME preedit 与其替换选区。
@@ -409,6 +418,8 @@ impl Painter {
             counters: HashMap::new(),
             skip_indicators: false,
             image_sizes: HashMap::new(),
+            image_no_ratio_keys: std::collections::HashSet::new(),
+            image_ratio_keys: std::collections::HashMap::new(),
             form_control_values: HashMap::new(),
             form_control_compositions: HashMap::new(),
             focused_node: None,

@@ -239,14 +239,30 @@ impl super::Painter {
 
         // 解析背景图像固有尺寸（从 image_sizes 缓存查找）。
         // background-size: auto 时使用图像的原始像素尺寸，而非容器尺寸。
+        // R3759：no-ratio SVG（width/height 非双绝对且无 viewBox）的 pixmap 尺寸是
+        // usvg 默认值而非真实固有尺寸——按 css-backgrounds-3 §3.9，此类图像 auto
+        // （及退化的 contain/cover）的使用尺寸 = background positioning area；ratio-only
+        // SVG（viewBox-only）的 auto 按固有宽高比 contain-fit。两类 key 由管线注入。
         let default_intrinsic = (origin_w, origin_h);
         let first_url_hash = style.background_image.iter().find_map(|layer| match layer {
             BackgroundImageComputedValue::Url(url) => Some(image_resource_key(url, self.document_url.as_deref())),
             _ => None,
         });
-        let (img_w, img_h) = first_url_hash
-            .and_then(|h| self.get_image_size(h))
-            .unwrap_or(default_intrinsic);
+        let bg_no_ratio = first_url_hash.is_some_and(|h| self.image_no_ratio_keys.contains(&h));
+        let bg_ratio = first_url_hash.and_then(|h| self.image_ratio_keys.get(&h).copied());
+        let (img_w, img_h) = if bg_no_ratio {
+            // css-backgrounds-3 §3.9：无固有尺寸无宽高比 → positioning area 尺寸。
+            default_intrinsic
+        } else if let Some(ratio) = bg_ratio {
+            // ratio-only：以 viewBox 宽高比按定位区 contain-fit 的尺寸作伪固有尺寸，
+            // 使 Auto（双 auto）解析为 contain-fit、Cover/Contain 同比缩放正确。
+            let w = origin_w.min(origin_h * ratio);
+            (w, w / ratio)
+        } else {
+            first_url_hash
+                .and_then(|h| self.get_image_size(h))
+                .unwrap_or(default_intrinsic)
+        };
 
         // CSS 规范：多图层逆序渲染（最后一层在最底，第一层在最上）。
         // R2311：background-position/size/repeat 均为多层 `<...>#`，按图层 cyclic 取值
