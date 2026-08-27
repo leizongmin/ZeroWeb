@@ -1737,3 +1737,58 @@ globalThis.__r322p = out.join('|');
         "R322 handle subtree query merge, got: {out}"
     );
 }
+
+
+// R323 (js-dom M4/L2 切片二) — tree-order 归并：桶匹配子按反链 nextSibling 锚点插入 host
+// 结果序（R51 overlay 定位逻辑迁移到查询站点）。R322 切片一的尾并在 mid 插入形态下序错
+// （期望 a.mid.b 得 a.b.mid）。锚点 = nextSibling 的 sel 字符串在 host 结果中的索引；
+// nextSibling 为 pending/无锚 → 尾部（append 语义）。
+#[test]
+fn r323_tree_order_merge() {
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let mut sandbox = V8Sandbox::with_config(zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    })
+    .unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><div id='host'><p class='a'>1</p><p class='b'>2</p></div></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+    let out = sandbox
+        .execute(
+            r#"
+var out = [];
+try {
+  var host = document.getElementById('host');
+  var mid = document.createElement('span');
+  mid.className = 'mid';
+  host.insertBefore(mid, host.childNodes[1]);
+  var q1 = [];
+  var r1 = host.querySelectorAll('*');
+  for (var i = 0; i < r1.length; i++) q1.push(r1[i].className || r1[i].tagName);
+  out.push('mid=' + q1.join('.'));
+  var end = document.createElement('span');
+  end.className = 'end';
+  host.appendChild(end);
+  var q2 = [];
+  var r2 = host.querySelectorAll('*');
+  for (var j = 0; j < r2.length; j++) q2.push(r2[j].className || r2[j].tagName);
+  out.push('end=' + q2.join('.'));
+} catch (e) { out.push('err=' + String(e && e.message)); }
+globalThis.__r323p = out.join('|');
+"#,
+        )
+        .unwrap();
+    let out = sandbox.execute("globalThis.__r323p").unwrap().value;
+    assert!(
+        out.contains("mid=a.mid.b") && out.contains("end=a.mid.b.end"),
+        "R323 tree-order merge, got: {out}"
+    );
+}

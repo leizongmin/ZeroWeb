@@ -5386,6 +5386,11 @@
                     }
                   }
                   if (_r322mg > 0) {
+                    // R323（js-dom M4/L2 切片二）：**tree-order 归并**——匹配子按反链
+                    // nextSibling 锚点插入 host 结果（R51 overlay 同款定位逻辑迁移到查询
+                    // 站点）：nextSibling 是 sel 元素（__zwSelector）→ 在 host 结果中定位
+                    // 其 wrapper 索引插到之前；nextSibling 是 pending handle / 无锚 →
+                    // 尾部（append 语义）。桶内序（数组序）保持——多子同锚时按序紧邻插入。
                     var _r322out = [];
                     for (var _r322k3 = 0; _r322k3 < _r310list.length; _r322k3++) _r322out.push(_wrapSelector(_r310list[_r322k3]));
                     for (var _r322a2 = 0; _r322a2 < _r322b3.added.length; _r322a2++) {
@@ -5393,12 +5398,38 @@
                       if (!_r322n2 || !_r322n2.__zwHandle) continue;
                       var _r322ln2 = (typeof _zwNodeParent !== 'undefined' && _zwNodeParent) ? _zwNodeParent[_r322n2.__zwHandle] : null;
                       if (!_r322ln2 || _r322ln2.parentSel !== sel) continue;
+                      // 锚点：nextSibling 的 sel 字符串（sel 元素形态）——在 host 结果的索引。
+                      var _r322anchor = -1;
+                      var _r322nsSel = null;
+                      try { _r322nsSel = _r322ln2.nextSibling && _r322ln2.nextSibling.__zwSelector ? String(_r322ln2.nextSibling.__zwSelector) : null; } catch (_e322ns) {}
+                      if (_r322nsSel) {
+                        for (var _r322s2 = 0; _r322s2 < _r310list.length; _r322s2++) {
+                          if (_r310list[_r322s2] === _r322nsSel) { _r322anchor = _r322s2; break; }
+                        }
+                      }
                       var _r322flat2 = [];
                       _zwHCCollectSubtree(_r322n2, _r322flat2);
                       for (var _r322f3 = 0; _r322f3 < _r322flat2.length; _r322f3++) {
                         var _r322el2 = _r322flat2[_r322f3];
                         if (!_r322el2 || _r322el2.nodeType !== 1) continue;
-                        try { if (_matchCompoundOf(_r322el2, _r322comp)) _r322out.push(_r322el2); } catch (_e322m2) {}
+                        try {
+                          if (_matchCompoundOf(_r322el2, _r322comp)) {
+                            // 子树内匹配元素：首个（顶层子）用锚点定位，孙层按 DFS 序紧随其后插入。
+                            if (_r322anchor >= 0) {
+                              var _r322pos = -1;
+                              for (var _r322p2 = 0; _r322p2 < _r322out.length; _r322p2++) {
+                                if (_r322out[_r322p2] === _wrapSelector(_r322nsSel)) { _r322pos = _r322p2; break; }
+                              }
+                              if (_r322pos < 0) _r322pos = _r322out.length;
+                              _r322out.splice(_r322pos, 0, _r322el2);
+                            } else {
+                              _r322out.push(_r322el2);
+                            }
+                          } else if (_r322anchor >= 0) {
+                            // 未匹配的顶层子仍占树位——后续匹配子的锚点索引要平移（跳过）。
+                            void 0;
+                          }
+                        } catch (_e322m2) {}
                       }
                     }
                     return _zwMakeCollection(_r322out, false);
