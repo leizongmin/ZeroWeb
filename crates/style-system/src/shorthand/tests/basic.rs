@@ -369,6 +369,47 @@ fn test_flex_three_values() {
     assert_eq!(result[2].1, "100px"); // basis
 }
 
+// ── R3750：flex spaced math basis ──
+
+#[test]
+/// R3750：`flex: 1 calc(100px + 2em)` → grow=1, shrink=1, basis=calc(...)
+///（math 函数内部空白不是组件边界；CSS Flexbox §7.2 basis 接受 <length-percentage> math）。
+fn r3750_flex_two_values_spaced_math_basis() {
+    let result = expand_one("flex", "1 calc(100px + 2em)", false, (0, 0, 1));
+    assert_eq!(result.len(), 3);
+    assert_eq!(result[0].0, "flex-grow");
+    assert_eq!(result[0].1, "1");
+    assert_eq!(result[1].0, "flex-shrink");
+    assert_eq!(result[1].1, "1");
+    assert_eq!(result[2].0, "flex-basis");
+    assert_eq!(result[2].1, "calc(100px + 2em)");
+}
+
+#[test]
+/// R3750：`flex: 1 1 min(200px, 50%)` 三值 spaced math basis 原样透传。
+fn r3750_flex_three_values_spaced_math_basis() {
+    let result = expand_one("flex", "1 1 min(200px, 50%)", false, (0, 0, 1));
+    assert_eq!(result.len(), 3);
+    assert_eq!(result[2].1, "min(200px, 50%)");
+}
+
+#[test]
+/// R3750：未闭合 math 拒绝整条简写展开；混类型 math 由 longhand apply 拒绝
+///（flex 简写展开是 passthrough，不做组件级 grammar 校验——与既有 `2 1 100px` 路径一致）。
+fn r3750_flex_rejects_invalid_math_basis() {
+    assert!(expand_one("flex", "1 calc(100px + 2em", false, (0, 0, 1)).is_empty());
+
+    // 混类型 math basis：展开透传，但 longhand apply 拒绝 → flex_basis 保持初值。
+    let mut style = crate::ComputedStyle::default();
+    let previous = style.flex_basis.clone();
+    assert!(!crate::property::apply::apply_property_value(
+        &mut style,
+        "flex",
+        "1 clamp(100px, 5, 300px)"
+    ));
+    assert_eq!(style.flex_basis, previous);
+}
+
 // ── inset 简写测试 ──
 
 #[test]

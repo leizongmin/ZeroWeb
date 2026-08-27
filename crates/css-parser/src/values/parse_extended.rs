@@ -1012,7 +1012,7 @@ fn column_width_length_is_valid(value: &LengthValue) -> bool {
 /// 判断 math 表达式是否整体为 <length-percentage> 类型：每个叶子都是带维度的
 /// 长度/百分比值。纯 number 叶子（如 `clamp(100px, 5, 300px)` 的 `5`）与之混合
 /// 属 CSS Values §8.1 类型不一致，整式无效。
-fn calc_expr_is_length_percentage(expr: &CalcExpr) -> bool {
+pub fn calc_expr_is_length_percentage(expr: &CalcExpr) -> bool {
     match expr {
         CalcExpr::Number(_) => false,
         CalcExpr::Length(_) => true,

@@ -214,7 +214,10 @@ fn flex_shorthand_supported(value: &str) -> bool {
         return true;
     }
 
-    let parts: Vec<&str> = value.split_whitespace().collect();
+    // R3750：math 函数内部空白不是组件边界（`flex: 1 calc(100px + 2em)`）。
+    let Some(parts) = crate::shorthand::split_top_level_whitespace(value) else {
+        return false;
+    };
     match parts.as_slice() {
         [single] => flex_number_supported(single) || crate::property::parse_flex_basis(single).is_some(),
         [grow, second] => {

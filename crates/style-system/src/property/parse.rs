@@ -779,13 +779,14 @@ pub fn parse_flex_basis(value: &str) -> Option<FlexBasisValue> {
     if value.eq_ignore_ascii_case("content") {
         return Some(FlexBasisValue::Content);
     }
-    if let Some(length) = values::parse_length(value) {
-        if !flex_basis_length_is_valid(value, &length) {
-            return None;
-        }
-        return Some(FlexBasisValue::Length(length));
+    // https://drafts.csswg.org/css-flexbox-1/#flex-basis-property
+    // <width> 的 <length-percentage> math 形式（如 `flex: 1 calc(100px + 2em)`）。
+    let length = values::parse_length(value)
+        .or_else(|| values::parse_math_function(value).map(|expr| LengthValue::Calc(Box::new(expr))))?;
+    if !flex_basis_length_is_valid(value, &length) {
+        return None;
     }
-    None
+    Some(FlexBasisValue::Length(length))
 }
 
 fn flex_basis_length_is_valid(raw: &str, value: &LengthValue) -> bool {
@@ -815,6 +816,13 @@ fn flex_basis_length_is_valid(raw: &str, value: &LengthValue) -> bool {
         | LengthValue::Percentage(v) => v.is_finite() && *v >= 0.0,
         LengthValue::MinContent | LengthValue::MaxContent => true,
         LengthValue::FitContent(inner) => flex_basis_length_is_valid("", inner),
+        // https://drafts.csswg.org/css-values-4/#calc-type-checking
+        // math 须整体为 <length-percentage>（每个叶子带维度，混类型/纯 number 拒绝）；
+        // https://drafts.csswg.org/css-values-4/#calc-range 非常量负分量拒绝。
+        LengthValue::Calc(expr) => {
+            values::calc_expr_is_length_percentage(expr)
+                && values::eval_calc(expr, None).is_none_or(|v| v.is_finite() && v >= 0.0)
+        }
         _ => false,
     }
 }

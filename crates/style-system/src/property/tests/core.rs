@@ -155,6 +155,26 @@ fn test_parse_flex_basis() {
 }
 
 #[test]
+/// R3750：flex-basis 接受 CSS math 形式（CSS Flexbox §7.2 `<length-percentage>` 的
+/// math 形式；`flex: 1 calc(100px + 2em)` 是合法简写值）。
+fn r3750_parse_flex_basis_math() {
+    assert!(matches!(
+        parse_flex_basis("calc(100px + 2em)"),
+        Some(FlexBasisValue::Length(LengthValue::Calc(_)))
+    ));
+    assert!(matches!(
+        parse_flex_basis("min(200px, 50%)"),
+        Some(FlexBasisValue::Length(LengthValue::Calc(_)))
+    ));
+    // 纯 number math / 混类型 math / 未闭合 math 继续拒绝。
+    assert_eq!(parse_flex_basis("calc(5)"), None);
+    assert_eq!(parse_flex_basis("clamp(100px, 5, 300px)"), None);
+    assert_eq!(parse_flex_basis("calc(100px +"), None);
+    // 常量负分量（可求值为负）拒绝。
+    assert_eq!(parse_flex_basis("calc(1px - 5px)"), None);
+}
+
+#[test]
 fn test_parse_z_index() {
     assert_eq!(parse_z_index("auto"), Some(ZIndexValue::Auto));
     assert_eq!(parse_z_index("10"), Some(ZIndexValue::Integer(10)));

@@ -107,6 +107,19 @@ fn test_property_supported_flex() {
 }
 
 #[test]
+/// R3750：`@supports (flex: ...)` 对 spaced math basis 的判定。
+/// math 函数内部空白不是组件边界；basis 须为合法 <length-percentage> math。
+fn r3750_supports_flex_spaced_math_basis() {
+    assert!(is_property_supported("flex", "1 calc(100px + 2em)"));
+    assert!(is_property_supported("flex", "1 1 min(200px, 50%)"));
+    assert!(is_property_supported("flex-basis", "calc(100px + 2em)"));
+
+    assert!(!is_property_supported("flex", "1 calc(100px + 2em"));
+    assert!(!is_property_supported("flex", "1 clamp(100px, 5, 300px)"));
+    assert!(!is_property_supported("flex-basis", "calc(5)"));
+}
+
+#[test]
 fn test_property_supported_alignment() {
     assert!(is_property_supported("justify-content", "center"));
     assert!(is_property_supported("align-items", "flex-start"));

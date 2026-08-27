@@ -1493,7 +1493,10 @@ fn expand_flex(value: &str, important: bool, specificity: (u32, u32, u32)) -> Ve
         );
     }
 
-    let parts: Vec<&str> = value.split_whitespace().collect();
+    // R3750：math 函数内部空白不是组件边界（`flex: 1 calc(100px + 2em)`）。
+    let Some(parts) = split_top_level_whitespace(value) else {
+        return vec![];
+    };
     match parts.len() {
         // 单值：<number> → grow；否则（<width>/关键字）→ basis
         1 => {
