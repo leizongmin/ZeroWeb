@@ -1274,10 +1274,33 @@
           var _wtData = handle ? _zwTextDataGet(handle, function () { return __zw_get_text_handle(handle); }) : '';
           var _wtParent = _parentNodeFor(sel, handle);
           if (!_wtParent || !_wtParent.childNodes) return _wtData;
+          // R319（js-dom M4）：spec dom-text-wholetext 的**contiguous 语义**——wholeText 是
+          // this 所在的「逻辑相邻 Text 序列」的联接，被非 Text 节点（元素/注释/PI）隔断即止；
+          // 旧版全子树 Text 拼接（WPT Text-wholeText：insertBefore(<a>, t3) 后 t1.wholeText
+          // 期望 "ab"，旧得 "abc"）。先定位 self 在子列表中的位次，再向两侧延伸。
+          var _wtSelf = _makeProxy(sel, handle);
+          var _wtIdx = -1;
+          var _wtKids = _wtParent.childNodes;
+          for (var _wts = 0; _wts < _wtKids.length; _wts++) {
+            if (_wtKids[_wts] === _wtSelf) { _wtIdx = _wts; break; }
+          }
+          if (_wtIdx < 0) return _wtData;
           var _wtOut = '';
-          for (var _wti = 0; _wti < _wtParent.childNodes.length; _wti++) {
-            var _wtc = _wtParent.childNodes[_wti];
-            if (_wtc && _wtc.nodeType === 3) _wtOut += String(_wtc.data != null ? _wtc.data : '');
+          var _wtLo = _wtIdx, _wtHi = _wtIdx, _wtFound = false;
+          for (var _wtl = _wtIdx; _wtl >= 0; _wtl--) {
+            var _wtcl = _wtKids[_wtl];
+            if (!_wtcl || _wtcl.nodeType !== 3) break;
+            _wtLo = _wtl; _wtFound = true;
+          }
+          for (var _wth = _wtIdx + 1; _wth < _wtKids.length; _wth++) {
+            var _wtch = _wtKids[_wth];
+            if (!_wtch || _wtch.nodeType !== 3) break;
+            _wtHi = _wth;
+          }
+          if (!_wtFound) return _wtData;
+          for (var _wto = _wtLo; _wto <= _wtHi; _wto++) {
+            var _wtco = _wtKids[_wto];
+            if (_wtco && _wtco.nodeType === 3) _wtOut += String(_wtco.data != null ? _wtco.data : '');
           }
           return _wtOut || _wtData;
         }

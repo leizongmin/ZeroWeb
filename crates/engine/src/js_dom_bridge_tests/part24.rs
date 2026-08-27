@@ -1455,3 +1455,57 @@ globalThis.__r318p = out.join('|');
     let out = sandbox.execute("globalThis.__r318p").unwrap().value;
     println!("R318-PROBE: {out}");
 }
+
+
+// R319 (js-dom M4) — wholeText 的 contiguous 语义（spec dom-text-wholetext：wholeText 是
+// this 所在「逻辑相邻 Text 序列」的联接，被非 Text 节点隔断即止）。旧版全子树 Text 拼接
+//（insertBefore(<a>, t3) 后 t1.wholeText 期望 "ab" 得 "abc"）+ 向后延伸区间初值缺陷
+//（_wtHi 初始 0 非 idx，自身非首子时后邻丢失——t2.wholeText 期望 "ab" 得 "a"）。
+#[test]
+fn r319_wholetext_contiguous_semantics() {
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let mut sandbox = V8Sandbox::with_config(zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    })
+    .unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new("<html><body></body></html>".to_string()));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+    // WPT Text-wholeText 的完整序列（handle 域）：逐段 append + 隔断 + 分段断言。
+    let out = sandbox
+        .execute(
+            r#"
+var out = [];
+try {
+  var parent = document.createElement("div");
+  var t1 = document.createTextNode("a");
+  var t2 = document.createTextNode("b");
+  var t3 = document.createTextNode("c");
+  parent.appendChild(t1);
+  out.push('w0=' + t1.wholeText);
+  parent.appendChild(t2);
+  out.push('w1=' + t1.wholeText + ',' + t2.wholeText);
+  parent.appendChild(t3);
+  out.push('w2=' + t1.wholeText + ',' + t2.wholeText + ',' + t3.wholeText);
+  var a = document.createElement("a");
+  a.textContent = "x";
+  parent.insertBefore(a, t3);
+  out.push('w3=' + t1.wholeText + ',' + t2.wholeText + ',' + t3.wholeText);
+} catch (e) { out.push('err=' + String(e && e.message)); }
+globalThis.__r319p = out.join('|');
+"#,
+        )
+        .unwrap();
+    let out = sandbox.execute("globalThis.__r319p").unwrap().value;
+    assert!(
+        out.contains("w0=a") && out.contains("w1=ab,ab") && out.contains("w2=abc,abc,abc")
+            && out.contains("w3=ab,ab,c"),
+        "R319 wholeText contiguous semantics, got: {out}"
+    );
+}
