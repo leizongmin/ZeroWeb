@@ -2731,28 +2731,41 @@
   function _hAttrOf(p, name) { return _hSafe(function () { return p.getAttribute(name); }, null); }
 
   // 解析单个属性选择器内部 `name` / `name op val`（val 去引号）。不匹配 → null。
+  // R299（js-dom M4）：值尾的大小写标志（CSS Selectors L4 §attribute-selectors 的
+  // `[attr=value i]` / `s`）——值与标志间须有空白分隔（裸 `i` 值非标志）；`i` 比较
+  // 双侧 ASCII 小写、`s` 显式敏感（恒等）。与 dom crate query.rs 的
+  // `strip_attr_case_flag`（R200）同源；旧版无剥离使 `"alpha" s` 的值误含引号+标志
+  // 全 miss（WPT querySelector-mixed-case 的 `[testAttr="alpha" s]`）。
+  // https://drafts.csswg.org/selectors/#attribute-case
   function _parseAttrInner(inner) {
     var m = inner.match(/^\s*([\w:-]+)\s*(?:([~|^$*]?=)\s*(.*?))?\s*$/);
     if (!m) return null;
     var val = m[3];
-    if (val != null) val = String(val).replace(/^['"]|['"]$/g, '');
-    return { name: m[1], op: m[2] || null, val: val == null ? '' : val };
+    if (val != null) {
+      val = String(val).replace(/^['"]|['"]$/g, '');
+      var fm = val.match(/^(.*?)\s+([iIsS])$/);
+      if (fm) { val = fm[1].replace(/^['"]|['"]$/g, ''); return { name: m[1], op: m[2] || null, val: val, flag: fm[2].toLowerCase() }; }
+    }
+    return { name: m[1], op: m[2] || null, val: val == null ? '' : val, flag: null };
   }
   function _matchAttrOf(p, a) {
     var av = _hAttrOf(p, a.name);
     if (a.op === null) return av != null;
     if (av == null) return false;
+    // R299：`i` 标志——值比较双侧 ASCII 小写（`s` 恒等已由精确比较覆盖）。
     var v = String(av);
+    var val = a.flag === 'i' ? a.val.toLowerCase() : a.val;
+    if (a.flag === 'i') v = v.toLowerCase();
     switch (a.op) {
-      case '=': return v === a.val;
+      case '=': return v === val;
       // R124：~= 的属性值分词同 class 域（ASCII whitespace——spec attribute selector
       // whitespace-separated words；Unicode 空白是字面字符非分隔符）。
-      case '~=': return a.val !== '' && _zwSplitClassList(v).indexOf(a.val) >= 0;
-      case '|=': return v === a.val || v.indexOf(a.val + '-') === 0;
-      case '^=': return a.val !== '' && v.indexOf(a.val) === 0;
-      case '$=': return a.val !== '' && v.length >= a.val.length &&
-        v.lastIndexOf(a.val) === v.length - a.val.length;
-      case '*=': return a.val !== '' && v.indexOf(a.val) >= 0;
+      case '~=': return val !== '' && _zwSplitClassList(v).indexOf(val) >= 0;
+      case '|=': return v === val || v.indexOf(val + '-') === 0;
+      case '^=': return val !== '' && v.indexOf(val) === 0;
+      case '$=': return val !== '' && v.length >= val.length &&
+        v.lastIndexOf(val) === v.length - val.length;
+      case '*=': return val !== '' && v.indexOf(val) >= 0;
     }
     return false;
   }

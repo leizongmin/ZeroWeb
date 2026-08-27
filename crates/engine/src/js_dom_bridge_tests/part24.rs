@@ -136,3 +136,60 @@ fn r298_query_in_subtree_scope_pseudo_class() {
     assert!(!query_match_in_subtree(html, "#d", "p").is_empty());
     assert!(!query_all_in_subtree(html, "#d", "span").is_empty());
 }
+
+#[test]
+fn r299_attr_selector_case_flags() {
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let mut sandbox = V8Sandbox::with_config(zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    })
+    .unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><div id=\"t\">x</div></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+    // R299：CSS Selectors L4 §attribute-case 的值尾 `i`/`s` 标志（JS 客户端匹配器
+    // `_parseAttrInner`/`_matchAttrOf`）——`i` 双侧 ASCII 小写、`s` 恒等；值与标志间
+    // 须有空白（裸 `i` 值非标志）。WPT querySelector-mixed-case 的
+    // `[testAttr="alpha" s]`（detached 容器形态）。
+    // https://drafts.csswg.org/selectors/#attribute-case
+    let out = sandbox
+        .execute(
+            r#"
+var out = [];
+var c = document.createElement("div");
+var html1 = document.createElement("div");
+html1.setAttribute("testAttr", "alpha");
+var svg1 = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+svg1.setAttribute("testAttr", "ALPHA");
+c.appendChild(html1);
+c.appendChild(svg1);
+out.push('s=' + c.querySelectorAll('[testAttr="alpha" s]').length);
+out.push('sUP=' + c.querySelectorAll('[testAttr="Alpha" s]').length);
+out.push('i=' + c.querySelectorAll('[testAttr="ALPHA" i]').length);
+out.push('inc=' + c.querySelectorAll('[testAttr*=LPH i]').length);
+out.push('plain=' + c.querySelectorAll('[testAttr="alpha"]').length);
+// 裸 i 值非标志：`[a=i]` 的值是 "i"
+var c2 = document.createElement("div");
+var e2 = document.createElement("span");
+e2.setAttribute("k", "i");
+c2.appendChild(e2);
+out.push('bareI=' + c2.querySelectorAll('[k=i]').length);
+container = null;
+globalThis.__r299p = out.join('|');
+"#,
+        )
+        .unwrap();
+    let out = sandbox.execute("globalThis.__r299p").unwrap().value;
+    assert_eq!(
+        out, "s=1|sUP=0|i=2|inc=2|plain=1|bareI=1",
+        "R299 attr case flags: s exact-only, i folds both sides, bare-i is a value not a flag"
+    );
+}
