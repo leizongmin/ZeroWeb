@@ -3505,13 +3505,48 @@
                 // 摘除」= remove 调整（R262）+ insert 调整两段）——先于 registry
                 // 剔除（oldParent/index 读摘除前形态）。
                 try { if (globalThis.__zwAdjustRangesForRemove) globalThis.__zwAdjustRangesForRemove(child); } catch (_eR263rm) {}
+                // R301（js-dom M4）：旧父 removed record 的 previousSibling/
+                // nextSibling——摘除前从旧父融合 childNodes 定位（identity 优先，
+                // handle/data 内容键回退——R294 removeChild 同款判据）。旧 record
+                // 缺兄弟字段（WPT MutationObserver-childList "Range.extractContents:
+                // child and data removal" 断言 prev=firstChild/next=lastChild——
+                // extractContents 的中段子 move 经本路径）。
+                var _r301pv = null, _r301nx = null;
+                try {
+                  var _r301op = null;
+                  if (_r51OldLink.parentHandle) {
+                    try { _r301op = _childNodeList(_r51OldLink.parentSel || null, _r51OldLink.parentHandle); } catch (_e301cl) {}
+                  }
+                  if (!_r301op && _r51OldLink.parentSel) {
+                    try { _r301op = _childNodeList(_r51OldLink.parentSel, null); } catch (_e301cl2) {}
+                  }
+                  if (!_r301op) {
+                    try { _r301op = child.parentNode ? child.parentNode.childNodes : null; } catch (_e301pp) {}
+                  }
+                  if (_r301op) {
+                    var _r301ix = _r301op.indexOf(child);
+                    if (_r301ix < 0) {
+                      for (var _r301q = 0; _r301q < _r301op.length; _r301q++) {
+                        var _r301w = _r301op[_r301q];
+                        if (_r301w && ((_r301w.__zwHandle && _r301w.__zwHandle === child.__zwHandle)
+                          || (_r301w.nodeType === 3 && child.nodeType === 3 && _r301w.data === child.data))) {
+                          _r301ix = _r301q; break;
+                        }
+                      }
+                    }
+                    if (_r301ix >= 0) {
+                      _r301pv = _r301ix > 0 ? (_r301op[_r301ix - 1] || null) : null;
+                      _r301nx = _r301ix + 1 < _r301op.length ? (_r301op[_r301ix + 1] || null) : null;
+                    }
+                  }
+                } catch (_e301sw) {}
                 if (_r51OldLink.parentHandle) {
                   _unrecordHandleChild(_r51OldLink.parentHandle, child);
                   _mo_notify(_r51OldLink.parentSel || null, _r51OldLink.parentHandle,
-                    { type: 'childList', addedNodes: [], removedNodes: [child] });
+                    { type: 'childList', addedNodes: [], removedNodes: [child], previousSibling: _r301pv, nextSibling: _r301nx });
                 } else if (_r51OldLink.parentSel) {
                   _mo_notify(_r51OldLink.parentSel, null,
-                    { type: 'childList', addedNodes: [], removedNodes: [child] });
+                    { type: 'childList', addedNodes: [], removedNodes: [child], previousSibling: _r301pv, nextSibling: _r301nx });
                 }
               }
               // R2994：捕获实际入树的顶层节点（fragment flatten 前取其子），供连接态传播。

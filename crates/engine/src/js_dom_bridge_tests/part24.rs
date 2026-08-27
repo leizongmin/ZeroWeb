@@ -304,3 +304,88 @@ globalThis.__r300ok = p.childNodes.length;"#,
     let ok = sandbox.execute("globalThis.__r300ok").unwrap().value;
     assert_eq!(ok, "1", "R300 legal insert unaffected");
 }
+
+#[test]
+fn r301_mo_move_records_sibling_fields() {
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let mut sandbox = V8Sandbox::with_config(zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    })
+    .unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><p id=\"n100\"><span id=\"s1\">CHAN</span><span id=\"s2\">GED</span></p>\
+         <p id=\"n81\">CHANN</p></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+    let out = sandbox
+        .execute(
+            r#"
+var out = [];
+// n81: extractContents 中段 text 节点移除——期望 record prev=firstChild next=lastChild
+(function () {
+  var n81 = document.getElementById('n81');
+  n81.appendChild(document.createTextNode("NNN"));
+  n81.appendChild(document.createTextNode("NGED"));
+  var r81 = document.createRange();
+  r81.setStart(n81.firstChild, 4);
+  r81.setEnd(n81.lastChild, 1);
+  var recs = [];
+  var mo = new MutationObserver(function (rs) { recs = rs; });
+  mo.observe(n81, { childList: true });
+  r81.extractContents();
+  Promise.resolve().then(function () {
+    globalThis.__r301a = JSON.stringify(recs.map(function (r) {
+      return { rm: r.removedNodes.length,
+        rmId: r.removedNodes.length ? String(r.removedNodes[0].data || r.removedNodes[0].id || r.removedNodes[0].nodeType) : '-',
+        pv: r.previousSibling ? String(r.previousSibling.data || '?') : null,
+        nx: r.nextSibling ? String(r.nextSibling.data || '?') : null };
+    }));
+  });
+  out.push('n81sync=' + recs.length);
+})();
+// n100: surroundContents——期望三 records
+(function () {
+  var n100 = document.getElementById('n100');
+  var f100 = document.createElement("span");
+  var r100 = document.createRange();
+  r100.setStartBefore(n100.firstChild);
+  r100.setEndAfter(n100.lastChild);
+  var recs2 = [];
+  var mo2 = new MutationObserver(function (rs) { recs2 = rs; });
+  mo2.observe(n100, { childList: true });
+  r100.surroundContents(f100);
+  Promise.resolve().then(function () {
+    globalThis.__r301b = JSON.stringify(recs2.map(function (r) {
+      return { rm: r.removedNodes ? r.removedNodes.length : 0,
+        rmId: r.removedNodes && r.removedNodes.length ? String(r.removedNodes[0].id || r.removedNodes[0].data || '?') : '-',
+        ad: r.addedNodes ? r.addedNodes.length : 0,
+        adId: r.addedNodes && r.addedNodes.length ? String(r.addedNodes[0].id || r.addedNodes[0].tagName || '?') : '-',
+        pv: r.previousSibling ? String(r.previousSibling.id || r.previousSibling.data || '?') : null,
+        nx: r.nextSibling ? String(r.nextSibling.id || r.nextSibling.data || '?') : null };
+    }));
+  });
+  out.push('n100sync=' + recs2.length);
+})();
+globalThis.__r301p = out.join('|');
+Promise.resolve().then(function () {
+  globalThis.__r301p = out.join('|') + '§A=' + String(globalThis.__r301a || 'none') + '§B=' + String(globalThis.__r301b || 'none');
+});
+"#,
+        )
+        .unwrap();
+    let _ = sandbox.execute("0").unwrap();
+    let out = sandbox.execute("globalThis.__r301p").unwrap().value;
+    // extractContents 中段子 move record：prev/next 齐（identity 断言经 nodeType+data
+    // 近似——n81 形态 firstChild="CHANN"/lastChild="NGED"，next 在末段 deleteData 后
+    // data 削为 "GED"，故 data 比对用前缀）。
+    assert!(out.contains("§A=[{\"rm\":1,\"rmId\":\"NNN\",\"pv\":\"CHAN\""), "probe A: {out}");
+    // surroundContents 三 records：s1(pv null,nx s2) / s2(pv null——顺序移除后无左邻) / added。
+    assert!(out.contains("§B=[{\"rm\":1,\"rmId\":\"s1\",\"ad\":0,\"adId\":\"-\",\"pv\":null,\"nx\":\"s2\"},{\"rm\":1,\"rmId\":\"s2\",\"ad\":0,\"adId\":\"-\",\"pv\":null,\"nx\":null},{\"rm\":0,\"rmId\":\"-\",\"ad\":1,\"adId\":\"SPAN\""), "probe B: {out}");
+}

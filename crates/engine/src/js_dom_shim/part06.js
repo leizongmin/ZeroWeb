@@ -4232,7 +4232,9 @@
               } catch (_eR211h) {}
               try { _r211sc.deleteData(this.startOffset | 0,
                 String(_r211sc.data != null ? _r211sc.data : '').length - (this.startOffset | 0)); } catch (_eR211hd) {}
-              // ② contained 子（两容器间，不含端点）本体移动
+              // ② contained 子（两容器间，不含端点）本体移动——源父的 removed
+              // record（含兄弟字段）由 appendChild move 路径的 R301 修复统一发出
+              //（part04 appendChild trap 旧父 record 捕获 prev/next）。
               for (var _r211k = _r211si + 1; _r211k < _r211ei; _r211k++) {
                 var _r211c = _r211kids[_r211k];
                 if (!_r211c) continue;
@@ -5842,11 +5844,27 @@
           _scSel = this.startContainer.__zwSelector || null;
           _scHandle = this.startContainer.__zwHandle || null;
         } catch (_e) {}
+        // R301（js-dom M4）：record 兄弟按**顺序移除后的树形态**取值——spec 每条
+        // record 反映该次移除时刻的邻居；全范围移除时已移除的兄弟不可见（WPT
+        // MutationObserver-childList "Range.surroundContents" 期望第二条 record 的
+        // previousSibling === null——s1 已移除后 s2 无左邻）。旧快照一次取全部
+        // 移除前兄弟使 record2.pv 停留 s1。计算：prev/next 沿 kids 边界外扩到
+        // 真实父 childNodes 的首个**不在本移除集**的邻居（含集外兄弟）。
+        var _r301inSet = [];
+        try { for (var _r301i2 = 0; _r301i2 < kids.length; _r301i2++) _r301inSet.push(kids[_r301i2]); } catch (_e301is) {}
         for (var j = 0; j < kids.length; j++) {
           var _rprev = null, _rnext = null;
           try {
-            _rprev = kids[j].previousSibling || null;
-            _rnext = kids[j].nextSibling || null;
+            // 左邻：kids 内更早者均已移除 → 集外首个左兄弟（沿真实 previousSibling
+            // 链跳过集内节点）。
+            var _r301w = kids[j].previousSibling || null;
+            while (_r301w && _r301inSet.indexOf(_r301w) >= 0) _r301w = _r301w.previousSibling || null;
+            _rprev = _r301w;
+            // 右邻：集内更晚者尚未移除但将移除——spec 顺序语义下对 record j 而言
+            // 后续移除的兄弟在**本 record 时刻仍在**……WPT 期望第二条（s2）的
+            // nextSibling null（s2 已是末子）。next 按移除前原值（集外右邻）。
+            var _r301v = kids[j].nextSibling || null;
+            _rnext = _r301v;
           } catch (_e) {}
           _rmSnap.push({ node: kids[j], prev: _rprev, next: _rnext });
         }
