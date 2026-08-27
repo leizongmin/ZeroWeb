@@ -5132,7 +5132,25 @@
               // js-dom M3 R100：query 返回点 identity 反查（同 document.querySelector
               // ——命中 createElement 建立的 handle 节点时返回原 handle proxy，事件
               // 监听器跨 execute 可达；未命中回调 → 原 sel proxy 零回归）。
-              try { var hit = __zw_query_match_sub(sel, String(q)); if (hit) return _zwQueryWrapIdentity(hit); } catch (_e) {}
+              try {
+                var hit = __zw_query_match_sub(sel, String(q));
+                // R310（js-dom M4/L2）：pending-removed 过滤（querySelectorAll 同款）——
+                // 同 turn remove 的子树未 apply 前快照仍可命中，命中 sel 在本容器桶
+                // removed 子树的剔除集内 → 视为未命中。
+                if (hit) {
+                  var _r310qb = _zwPendingByParent.get(sel);
+                  if (_r310qb && _r310qb.removed.length) {
+                    for (var _r310qr = 0; _r310qr < _r310qb.removed.length; _r310qr++) {
+                      var _r310qf = [];
+                      _zwHCCollectSubtree(_r310qb.removed[_r310qr], _r310qf);
+                      for (var _r310qi = 0; _r310qi < _r310qf.length; _r310qi++) {
+                        if (_r310qf[_r310qi] && _r310qf[_r310qi].__zwSelector === hit) return null;
+                      }
+                    }
+                  }
+                  return _zwQueryWrapIdentity(hit);
+                }
+              } catch (_e) {}
               return null;
             }
             if (handle) return _handleQueryFirst(handle, q);
@@ -5221,7 +5239,34 @@
               if (_r309fused) return _zwMakeCollection(_r309fused, false);
               try {
                 var all = __zw_query_all_sub(sel, String(q));
-                if (all) return _zwMakeCollection(all.split('|').filter(Boolean).map(_wrapSelector), false);
+                // R310（js-dom M4/L2）：**pending-removed 过滤**——同步 turn 内 removeChild/
+                // remove 的子树经 host 异步 apply，快照查询仍含已移除元素（spec
+                // `dom-parentnode-queryselectorall` 查 live 树——WPT removed-elements 同源
+                // 语义的 remove 形态；probe 实证 `afterRemove=a1,a2` a2 残留）。本容器桶的
+                // removed 子树（`_zwHCCollectSubtree` 展开）有 sel 的条目从 host 结果剔除。
+                if (all) {
+                  var _r310list = all.split('|').filter(Boolean);
+                  var _r310b2 = _zwPendingByParent.get(sel);
+                  if (_r310b2 && _r310b2.removed.length) {
+                    var _r310rm = new Set();
+                    for (var _r310r = 0; _r310r < _r310b2.removed.length; _r310r++) {
+                      var _r310flat = [];
+                      _zwHCCollectSubtree(_r310b2.removed[_r310r], _r310flat);
+                      for (var _r310f = 0; _r310f < _r310flat.length; _r310f++) {
+                        var _r310rs = _r310flat[_r310f] && _r310flat[_r310f].__zwSelector;
+                        if (_r310rs) _r310rm.add(_r310rs);
+                      }
+                    }
+                    if (_r310rm.size) {
+                      var _r310kept = [];
+                      for (var _r310k = 0; _r310k < _r310list.length; _r310k++) {
+                        if (!_r310rm.has(_r310list[_r310k])) _r310kept.push(_r310list[_r310k]);
+                      }
+                      _r310list = _r310kept;
+                    }
+                  }
+                  return _zwMakeCollection(_r310list.map(_wrapSelector), false);
+                }
               } catch (_e) {}
               return _zwMakeCollection([], false);
             }

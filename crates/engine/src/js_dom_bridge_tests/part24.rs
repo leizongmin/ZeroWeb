@@ -928,3 +928,64 @@ globalThis.__r309p = out.join('|');
         "R309 removed-elements: same-turn querySelectorAll reflects innerHTML replacements"
     );
 }
+
+#[test]
+fn r310_pending_removed_query_repro() {
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let mut sandbox = V8Sandbox::with_config(zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    })
+    .unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><div id='container'><a id='a1' class='test'>1</a><a id='a2' class='test'>2</a><a id='a3' class='test'>3</a></div></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+    // R310：removed 语义的同 turn 查询——removeChild 后立即 querySelectorAll 不得返已移除元素。
+    let out = sandbox
+        .execute(
+            r#"
+var out = [];
+try {
+  var container = document.querySelector('#container');
+  out.push('initial=' + (function () {
+    var els = container.querySelectorAll('a.test'), ids = [];
+    for (var i = 0; i < els.length; i++) ids.push(els[i].id);
+    return ids.join(',');
+  })());
+  var a2 = container.querySelector('#a2');
+  container.removeChild(a2);
+  out.push('afterRemove=' + (function () {
+    var els = container.querySelectorAll('a.test'), ids = [];
+    for (var i = 0; i < els.length; i++) ids.push(els[i].id);
+    return ids.join(',');
+  })());
+  // remove() 方法形态 + querySelector 单数路径（R310 同款过滤）
+  var a1 = container.querySelector('#a1');
+  a1.remove();
+  out.push('afterMethodRemove=' + (function () {
+    var els = container.querySelectorAll('a.test');
+    return String(els.length);
+  })());
+  out.push('qsRemovedNull=' + String(container.querySelector('#a2') === null));
+  out.push('qsLiveHit=' + String(container.querySelector('#a3') !== null));
+} catch (e) { out.push('err=' + String(e && e.message)); }
+globalThis.__r310p = out.join('|');
+"#,
+        )
+        .unwrap();
+    let out = sandbox.execute("globalThis.__r310p").unwrap().value;
+    println!("R310: {out}");
+    // R310 断言：同 turn removeChild/remove 后查询不再含已移除元素——
+    // pending-removed 子树的 sel 从 host 快照结果剔除（L2「查询读 live」removed 面）。
+    assert_eq!(
+        out, "initial=a1,a2,a3|afterRemove=a1,a3|afterMethodRemove=1|qsRemovedNull=true|qsLiveHit=true",
+        "R310 same-turn removed elements filtered from subtree queries, got: {out}"
+    );
+}
