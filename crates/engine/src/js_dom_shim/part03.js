@@ -1226,6 +1226,14 @@
   // 重建（`_zwNodeIdxGen` 槽写点失效）。上限 512 防爆。
   function _zwMFindRealNode(root, key) {
     if (!root || typeof root !== 'object' || !key) return null;
+    // R307（js-dom M4）：键的 empty-ns 标记归一——真节点 `outerHTML`（`_zwMSerialize`
+    // 对 createElementNS("") 产物输出内部标记属性 `data-zw-empty-ns`，R174）与 host
+    // JSON info 的 `.outer`（host 查询前消费标记还原 ns，序列化产物**不含**标记）
+    // 片段不一致 → 含空 ns 后代的元素键恒 miss（WPT ParentNode-querySelector-All
+    // "tree order" 的 namespace 簇：anyNS 容器 res=wrapper vs trav=真节点——
+    // resOuter 缺标记片段）。键构造两侧统一剥离标记段（host 消费面不变——
+    // 序列化源不动，只在比对键里归一）。
+    var _r307Strip = function (s) { return String(s == null ? '' : s).split(' data-zw-empty-ns=""').join(''); };
     // R168（L2-d3b2）：root 自身命中——**限 detached doc 树根**（`_zwOwnerDetDoc`
     // 印章 + tag 段一致）：doc 级 body 查询（R161 容器例外走 JSON 往返）的
     // key.outer 是 host re-parse 序列化，与树根 `_zwMSerialize` 的属性序/转义
@@ -1249,21 +1257,31 @@
     } catch (_e167i) { idx = null; }
     if (!idx) {
       idx = new Map();
+      // R307（js-dom M4）：**非元素根的子树递归**——DocumentFragment（nodeType 11）
+      // 根使旧版 walk167 在 `n.nodeType !== 1` 处直接 return（不递归 childNodes），
+      // `_zwNodeIdx` 恒空 → fragment 查询全部回落 wrapper 域（WPT "tree order"
+      // Fragment 上下文 idx0 起 identity 全断——探针实证 fragIdx=0）。改为：根非
+      // 元素（11/9）时跳过自身登记但仍递归子（元素根维持 descendants-only 语义）。
+      var _r307IsRoot = true;
       (function walk167(n) {
-        if (!n || n.nodeType !== 1) return;
-        try {
-          var nk = String(n.nodeName || '').toLowerCase() + '\x1f' + String(n.id || '') + '\x1f' + String(n.outerHTML || n._zwOuterFallback || '');
-          if (nk) {
-            // R188：同键多真节点存数组（DFS 序）——id-li-duplicate 等同构元素的
-            // identity 分离（querySelectorAll 的 _zwDupSeq 语义）。
-            var prev = idx.get(nk);
-            if (prev === undefined) idx.set(nk, n);
-            else if (Array.isArray(prev)) prev.push(n);
-            else idx.set(nk, [prev, n]);
-          }
-        } catch (_e167k) {}
+        if (!n) return;
+        var _r307El = n.nodeType === 1;
+        if (_r307El) {
+          try {
+            var nk = String(n.nodeName || '').toLowerCase() + '\x1f' + String(n.id || '') + '\x1f' + _r307Strip(n.outerHTML || n._zwOuterFallback || '');
+            if (nk) {
+              // R188：同键多真节点存数组（DFS 序）——id-li-duplicate 等同构元素的
+              // identity 分离（querySelectorAll 的 _zwDupSeq 语义）。
+              var prev = idx.get(nk);
+              if (prev === undefined) idx.set(nk, n);
+              else if (Array.isArray(prev)) prev.push(n);
+              else idx.set(nk, [prev, n]);
+            }
+          } catch (_e167k) {}
+        }
         var cs = n.childNodes || [];
         for (var w = 0; w < cs.length; w++) walk167(cs[w]);
+        void _r307IsRoot;
       })(root);
       if (idx.size > 512) idx.clear();
       try { root._zwNodeIdx = idx; } catch (_e167s) {}
@@ -1294,9 +1312,11 @@
       map = new Map();
       try { root._zwQWrapMap = map; } catch (_e158m) {}
     }
-    var key = String(info && info.tag || '') + '\x1f' + String(info && info.id || '') + '\x1f' + String(info && info.outer || '')
+    var key = String(info && info.tag || '') + '\x1f' + String(info && info.id || '') + '\x1f' + String(info && info.outer || '').split(' data-zw-empty-ns=""').join('')
       // R188：重复键出现序（querySelectorAll 的同构多元素 identity 分离——见
       // Element.prototype.querySelectorAll 的 _zwDupSeq 注释）。
+      // R307：outer 段 empty-ns 标记归一（与 _zwMFindRealNode 的 walk 键同源——
+      // 真节点 outerHTML 含标记 vs JSON info.outer 不含，键恒 miss）。
       + (info && info._zwDupSeq ? '\x1f#' + info._zwDupSeq : '');
     // R167（js-dom M1 L2-d3b）：**桥归一前置**——wrapper 构造前先在 root 子树找
     // 同键真实节点（mutTree `_zwMEl`，d3a 起已入桥），命中即返其桥对象（首登
@@ -6038,6 +6058,17 @@
       try { if (globalThis.__zwAdjustRangesForRemove) globalThis.__zwAdjustRangesForRemove(c); } catch (_eR262m) {}
       node.childNodes.splice(i, 1);
       c.parentNode = null;
+      // R307：祖先查询索引失效（同 appendChild 的 R307 注释——remove 后索引/缓存
+      // 仍含被移除子会使查询命中已摘除节点的旧键）。
+      try {
+        var _r307AncR = node;
+        var _r307GuardR = 0;
+        while (_r307AncR && _r307GuardR++ < 64) {
+          if (_r307AncR._zwNodeIdx) _r307AncR._zwNodeIdx = null;
+          if (_r307AncR._zwQWrapMap) _r307AncR._zwQWrapMap.clear();
+          _r307AncR = _r307AncR.parentNode;
+        }
+      } catch (_e307invr) {}
       // R208（js-dom M4）：子树移除时失效所属 doc 的查询缓存——`_zwMEl` 树节点经
       // `_zwOwnerTree`/`_zwOwnerDetDoc` 溯源源 doc，`_zwQWrapBump` setter（任意赋值）
       // 清缓存 + 桥表。无法溯源（主文档域节点等）零变化。同键 cache-hit 返已移除
@@ -6235,6 +6266,21 @@
       // https://dom.spec.whatwg.org/#concept-node-pre-insert
       if (c && c.parentNode) { try { c.parentNode.removeChild(c); } catch (_eR245rm) {} }
       node.childNodes.push(c);
+      // R307（js-dom M4）：**祖先查询索引失效**——`_zwNodeIdx`/`_zwQWrapMap` 挂 root
+      // 槽缓存（R167/R158），首次查询后 append 的子不在索引 → 后续查询对该子键
+      // 恒 miss 回落 wrapper（WPT ParentNode-querySelector-All "tree order" 的
+      // verifyStaticList append div 后 `*` 查询尾部 identity 断）。沿父链向上失效
+      // 全部祖先（同 7566/8127 的 `_tree._zwNodeIdx = null` 语义的泛化——本域根
+      // 是任意 plain 元素/fragment，不止 `_tree`）。
+      try {
+        var _r307Anc = node;
+        var _r307Guard = 0;
+        while (_r307Anc && _r307Guard++ < 64) {
+          if (_r307Anc._zwNodeIdx) _r307Anc._zwNodeIdx = null;
+          if (_r307Anc._zwQWrapMap) _r307Anc._zwQWrapMap.clear();
+          _r307Anc = _r307Anc.parentNode;
+        }
+      } catch (_e307inv) {}
       try {
         Object.defineProperty(c, 'parentNode', {
           value: node, writable: true, configurable: true,
@@ -6411,6 +6457,56 @@
       node.removeAttribute(n);
       return _zwMakeAttr(n, old, node);
     };
+    // R307（js-dom M4）：`id`/`className` IDL accessor 化——旧版是 plain 数据字段，
+    // `el.id = 'x'` 只写字段不进 attrs 数组 → `_zwMSerialize`（读 node.attributes）
+    // 丢 id → 查询源序列化无 id、host JSON info 的 `.id` 恒空（WPT
+    // ParentNode-querySelector-All "tree order" 的 namespace 簇：anyNS/div1/div2
+    // 用 `.id =` 赋值后查询结果与 traverse 的 identity+id 双断）。spec
+    // dom-id reflect 语义——IDL setter 等价 setAttribute（同步 attrs 数组，
+    // 序列化/查询/host JSON 三面一致）。
+    var _r307IdOwn = String(snap.id || '');
+    var _r307ClsOwn = String(snap.cls || '');
+    try {
+      Object.defineProperty(node, 'id', {
+        configurable: true, enumerable: true,
+        get: function () { return _r307IdOwn; },
+        set: function (v) {
+          _r307IdOwn = v == null ? '' : String(v);
+          var _r307Had = false;
+          for (var _r307i = 0; _r307i < attrs.length; _r307i++) {
+            if (attrs[_r307i].name === 'id') { attrs[_r307i].value = _r307IdOwn; _r307Had = true; break; }
+          }
+          if (!_r307Had) attrs.push({ name: 'id', value: _r307IdOwn });
+        },
+      });
+      if (snap.id) node.id = String(snap.id);
+    } catch (_e307id) {}
+    try {
+      Object.defineProperty(node, 'className', {
+        configurable: true, enumerable: true,
+        get: function () { return _r307ClsOwn; },
+        set: function (v) {
+          _r307ClsOwn = v == null ? '' : String(v);
+          var _r307HadC = false;
+          for (var _r307j = 0; _r307j < attrs.length; _r307j++) {
+            if (attrs[_r307j].name === 'class') { attrs[_r307j].value = _r307ClsOwn; _r307HadC = true; break; }
+          }
+          if (!_r307HadC) attrs.push({ name: 'class', value: _r307ClsOwn });
+        },
+      });
+      if (snap.cls) node.className = String(snap.cls);
+    } catch (_e307cls) {}
+    // R307：内部槽直写口（_zwMReflectIdl 的回写绕过 setter——避免 removeAttribute
+    // 后回写空值时反向把属性复活进 attrs）。
+    try {
+      Object.defineProperty(node, '_zwIdlSet', {
+        value: function (name, v) {
+          if (name === 'id') _r307IdOwn = v == null ? '' : String(v);
+          else if (name === 'class') _r307ClsOwn = v == null ? '' : String(v);
+        },
+        configurable: true, enumerable: false,
+      });
+    } catch (_e307is) {}
     // R166（js-dom M1 L2-d3a）：_zwMEl 工厂出口登记 identity 桥（C 域节点首登
     // 自身——cloneNode/树建/fragment 解析产物统一入口；桥消费在 d3b）。工厂在
     // 桥定义之前执行的作用域顺序无碍（函数声明提升，调用时桥已初始化）。
@@ -6418,9 +6514,11 @@
     return node;
   }
   // R3018：id/class 属性 ↔ IDL 字段（node.id/node.className）同步，setAttribute/removeAttribute 后保持一致。
+  // R307：经内部槽直写（`_zwIdlSet`——accessor 化后 `node.id = ` 会反向同步回 attrs，
+  // removeAttribute 的回写把刚删的属性复活）。
   function _zwMReflectIdl(node, attrName) {
-    if (attrName === 'id') node.id = node.getAttribute('id') || '';
-    else if (attrName === 'class') node.className = node.getAttribute('class') || '';
+    if (attrName === 'id') { if (node._zwIdlSet) node._zwIdlSet('id', node.getAttribute('id') || ''); else node.id = node.getAttribute('id') || ''; }
+    else if (attrName === 'class') { if (node._zwIdlSet) node._zwIdlSet('class', node.getAttribute('class') || ''); else node.className = node.getAttribute('class') || ''; }
   }
 
   // R154（js-dom M4）：_zwMEl 的 boolean reflected 属性 accessor（checked/disabled/
@@ -8751,7 +8849,8 @@
               var fmap = frag._zwQWrapMap;
               if (fmap.size > 512) fmap.clear();
               for (var k = 0; k < r.length; k++) {
-                var fk = String(r[k] && r[k].tag || '') + '\x1f' + String(r[k] && r[k].id || '') + '\x1f' + String(r[k] && r[k].outer || '');
+                // R307：outer 段 empty-ns 标记归一（与 _zwMFindRealNode 的 walk 键同源）。
+                var fk = String(r[k] && r[k].tag || '') + '\x1f' + String(r[k] && r[k].id || '') + '\x1f' + String(r[k] && r[k].outer || '').split(' data-zw-empty-ns=""').join('');
                 var real163 = _zwMFindRealNode(frag, fk);
                 if (real163) {
                   _zwBridgeSet(real163, real163); // d3b：miss 补登（fragment 树建产物不总经 _zwMEl）
@@ -8845,6 +8944,9 @@
                 });
               } catch (_eR245f) { try { c.parentNode = this; } catch (_eR245f2) {} }
               this.childNodes.push(c); if (c.nodeType === 1) this.children.push(c);
+              // R307：fragment 查询索引失效（同 _zwMEl appendChild 的 R307 注释——
+              // append 后 `_zwNodeIdx`/`_zwQWrapMap` 需重建才含新子）。
+              try { frag._zwNodeIdx = null; if (frag._zwQWrapMap) frag._zwQWrapMap.clear(); } catch (_e307fa) {}
             }
             return c;
           },

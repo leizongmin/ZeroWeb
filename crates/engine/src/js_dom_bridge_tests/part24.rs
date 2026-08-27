@@ -608,3 +608,131 @@ globalThis.__r306p = out.join('|');
         "host JSON * returns full tree starting at html, got: {out}"
     );
 }
+
+#[test]
+fn r307_tree_order_identity_domains() {
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let mut sandbox = V8Sandbox::with_config(zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    })
+    .unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><div id=\"root\"><p id=\"a\">x</p><p id=\"b\">y</p></div></body></html>"
+            .to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+    let out = sandbox
+        .execute(
+            r#"
+var out = [];
+// R307：完整复刻 WPT ParentNode-querySelector-All 的 tree-order 执行序——
+// setupSpecialElements（append null/undefined + namespace div 簇）→ verifyStaticList
+// 逐上下文 append div（静态表断言）→ outOfScope 注解（in-doc 前追加）→ tree order。
+var doc = document.implementation.createHTMLDocument('t');
+doc.body.innerHTML = "<div id='root'><p id='a'>x</p><p id='b'>y</p></div>";
+var element = doc.getElementById('root');
+function setupSpecialElements(d, parent) {
+  parent.appendChild(d.createElement('null'));
+  parent.appendChild(d.createElement('undefined'));
+  // namespace 簇（真实 setupSpecialElements 的 anyNS/noNS div 组）
+  var anyNS = d.createElement('div');
+  anyNS.id = 'any-namespace';
+  var divs = [d.createElement('div'),
+              d.createElementNS('http://www.w3.org/1999/xhtml', 'div'),
+              d.createElementNS('', 'div'),
+              d.createElementNS('http://www.example.org/ns', 'div')];
+  divs[0].id = 'any-namespace-div1';
+  divs[1].id = 'any-namespace-div2';
+  divs[2].setAttribute('id', 'any-namespace-div3');
+  divs[3].setAttribute('id', 'any-namespace-div4');
+  for (var i = 0; i < divs.length; i++) anyNS.appendChild(divs[i]);
+  var noNS = d.createElement('div');
+  noNS.id = 'no-namespace';
+  var divs2 = [d.createElement('div'),
+               d.createElementNS('http://www.w3.org/1999/xhtml', 'div'),
+               d.createElementNS('', 'div'),
+               d.createElementNS('http://www.example.org/ns', 'div')];
+  divs2[0].id = 'no-namespace-div1';
+  divs2[1].id = 'no-namespace-div2';
+  divs2[2].setAttribute('id', 'no-namespace-div3');
+  divs2[3].setAttribute('id', 'no-namespace-div4');
+  for (var j = 0; j < divs2.length; j++) noNS.appendChild(divs2[j]);
+  parent.appendChild(anyNS);
+  parent.appendChild(noNS);
+}
+setupSpecialElements(doc, element);
+var outOfScope = element.cloneNode(true);
+function traverse(elem, fn) {
+  if (elem.nodeType === 1) fn(elem);
+  elem = elem.firstChild;
+  while (elem) { traverse(elem, fn); elem = elem.nextSibling; }
+}
+traverse(outOfScope, function (e) { e.setAttribute('data-clone', ''); });
+var detached = element.cloneNode(true);
+var fragment = doc.createDocumentFragment();
+fragment.appendChild(element.cloneNode(true));
+// verifyStaticList：每上下文 root.querySelectorall('div') 后 append 一个新 div
+function verifyStaticList(root) {
+  var pre = root.querySelectorAll('div');
+  var d = doc.createElement('div');
+  (root.body || root).appendChild(d);
+  return pre;
+}
+verifyStaticList(doc);
+verifyStaticList(detached);
+verifyStaticList(fragment);
+verifyStaticList(element);
+doc.body.appendChild(outOfScope); // in-doc 测试前的关键追加
+function firstDiverge(root, label) {
+  var res = root.querySelectorAll('*');
+  var travList = [];
+  traverse(root, function (e) { if (e !== root) travList.push(e); });
+  var di = -1;
+  for (var i = 0; i < Math.min(res.length, travList.length); i++) {
+    if (res[i] !== travList[i]) { di = i; break; }
+  }
+  if (di < 0 && res.length !== travList.length) di = Math.min(res.length, travList.length);
+  out.push(label + ':res=' + res.length + '/trav=' + travList.length + '/div=' + di);
+  if (di >= 0) {
+    var t = travList[di], r = res[di];
+    out.push(label + ':dTrav=' + (t ? String(t.nodeName) + '/' + String(t.id || '') : 'null')
+      + '|dRes=' + (r ? String(r.nodeName) + '/' + String(r.id || '') : 'null'));
+  }
+}
+firstDiverge(detached, 'detach');
+firstDiverge(fragment, 'frag');
+firstDiverge(element, 'indoc');
+globalThis.__r307p = out.join('|');
+"#,
+        )
+        .unwrap();
+    let out = sandbox.execute("globalThis.__r307p").unwrap().value;
+    // R307 修复断言：三上下文（Detached/Fragment/In-document）的 querySelectorAll("*")
+    // 与 traverse 产物逐位 identity 全等（div=-1）。四层修复：
+    // ① walk167 非元素根子树递归（Fragment 的 _zwNodeIdx 不再为空）；
+    // ② 键的 empty-ns 标记归一（namespace 簇的 wrapper 键不再恒 miss）；
+    // ③ `el.id =` IDL accessor 化（赋值同步 attrs——序列化/host JSON 不再丢 id）；
+    // ④ appendChild/removeChild 的祖先查询索引失效（append 后索引含新子）。
+    // 注：WPT 本体的 tree-order 3F 在 iframe contentDocument 代理域（查询产物是
+    // _wrapSelector proxy vs traverse 读工厂树——两套对象域，R291 深结构桥），
+    // 本断言覆盖 createHTMLDocument 工厂域的等价形态。
+    assert!(
+        out.contains("detach:res=15/trav=15/div=-1"),
+        "R307 detached tree-order identity unified, got: {out}"
+    );
+    assert!(
+        out.contains("frag:res=16/trav=16/div=-1"),
+        "R307 fragment tree-order identity unified (walk167 recursion into fragment children), got: {out}"
+    );
+    assert!(
+        out.contains("indoc:res=15/trav=15/div=-1"),
+        "R307 in-document tree-order identity unified (empty-ns key normalization + id reflect), got: {out}"
+    );
+}

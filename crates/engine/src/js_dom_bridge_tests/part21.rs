@@ -3567,6 +3567,11 @@ fd.appendChild(fc);
 // ② getter-only 继承节点：模拟原型链只读 parentNode 的元素（interface 原型
 // 挂 Element.prototype 后裸赋值 no-op 的形态）——_r223SetParent 的 defineProperty
 // 遮蔽路径经 doc insertBefore 生效。
+// R307：先摘既有 docEl——R300 起 spec pre-insert 步骤 6 严格化（doc 已有元素子
+// 再插元素抛 HierarchyRequestError），旧测试的宽松前提失效。
+if (fd.documentElement && fd.documentElement.parentNode === fd) {
+  fd.removeChild(fd.documentElement);
+}
 var fe = fd.createElement('aside');
 fd.insertBefore(fe, null);
 globalThis.__r223out = [
