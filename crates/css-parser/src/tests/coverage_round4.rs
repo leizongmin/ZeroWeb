@@ -830,6 +830,68 @@ fn test_parse_selector_with_pseudo_class() {
     assert_eq!(stylesheet.rules.len(), 1);
 }
 
+// ── R3757：@namespace 注册与 prefix|name 选择器（CSS Namespaces 3）──
+
+/// R3757：default namespace 声明后，裸类型选择器解析为 Namespaced（ns=Some）；
+/// :is() 参数内的裸类型选择器不受 default ns 影响（Selectors 4 §4.2）。
+#[test]
+fn r3757_default_namespace_applies_to_bare_tags() {
+    // default ns 声明 + 裸 div 规则应正常入样式表（注册不吞规则）。
+    let css = "@namespace url(http://www.w3.org/2000/svg); div { color: red }";
+    let sheet = Parser::parse_stylesheet(css);
+    assert_eq!(sheet.rules.len(), 1, "ns+div rule should parse: {:?}", sheet.rules);
+}
+
+#[test]
+fn r3757_default_namespace_ignored_in_is_args() {
+    let css = "@namespace url(http://www.w3.org/2000/svg); *|*:is(div) { color: red }";
+    let sheet = Parser::parse_stylesheet(css);
+    assert_eq!(sheet.rules.len(), 1, ":is() 参数内规则应保留");
+}
+
+#[test]
+/// R3757：注册前缀 → `prefix|name` 选择器合法（规则保留，TypeSelector::Namespaced）。
+fn r3757_namespace_registered_prefix_selector_valid() {
+    let stylesheet =
+        Parser::parse_stylesheet("@namespace x url(http://www.w3.org/1999/xhtml);\n x|div { color: green; }");
+    assert_eq!(stylesheet.rules.len(), 1, "注册前缀选择器应保留规则");
+    let Rule::Style(style) = &stylesheet.rules[0] else {
+        panic!("Expected Style rule");
+    };
+    let Some(TypeSelector::Namespaced { ns, name }) = style.selectors[0].complex.parts[0].0.type_selector.as_ref()
+    else {
+        panic!("Expected Namespaced type selector");
+    };
+    assert_eq!(ns.as_deref(), Some("http://www.w3.org/1999/xhtml"));
+    assert_eq!(name, "div");
+}
+
+#[test]
+/// R3757：未注册前缀 → 整条选择器非法（规则丢弃，CSS Namespaces §3.4）。
+fn r3757_namespace_unregistered_prefix_drops_rule() {
+    let stylesheet = Parser::parse_stylesheet("y|div { color: red; }");
+    assert!(stylesheet.rules.is_empty(), "未注册前缀应丢弃规则");
+}
+
+#[test]
+/// R3757：`*|name` 合法（任意命名空间）；错位 @namespace（@supports 后）不影响
+/// 已注册前缀（注册按出现顺序，@supports 后的 @namespace 仅对其后的选择器生效）。
+fn r3757_namespace_universal_and_ordering() {
+    // *|div 合法。
+    let stylesheet = Parser::parse_stylesheet("*|div { color: green; }");
+    assert_eq!(stylesheet.rules.len(), 1);
+
+    // @supports 之后注册的 y 对其后的选择器生效（x 未注册则那条被丢）。
+    let stylesheet = Parser::parse_stylesheet(concat!(
+        "@supports (background: blue) { .t2 { color: green } }\n",
+        ".test1, x|div { color: green; }\n",
+        "@namespace y url(http://www.w3.org/);\n",
+        ".test1, y|div { color: red; }\n",
+    ));
+    // `.test1, x|div` 丢（x 未注册）；`.test1, y|div` 留（y 已注册）。
+    assert_eq!(stylesheet.rules.len(), 2, "x|div 丢 / y|div 留");
+}
+
 #[test]
 fn test_parse_unterminated_comment() {
     let stylesheet = Parser::parse_stylesheet("div /* unterminated");

@@ -74,6 +74,10 @@ fn css_selector_to_string(sel: &zero_css_parser::Selector) -> String {
         let mut s = match &c.type_selector {
             Some(TypeSelector::Tag(t)) => t.clone(),
             Some(TypeSelector::Universal) => "*".to_string(),
+            // R3757：序列化为本地名（wire 快照不含命名空间映射；本地名足够用于
+            // 快照比对场景）。`*|`（ns=None 空 name）按 "*"。
+            Some(TypeSelector::Namespaced { name, .. }) if !name.is_empty() => name.clone(),
+            Some(TypeSelector::Namespaced { .. }) => "*".to_string(),
             None => String::new(),
         };
         for sub in &c.subclass_selectors {

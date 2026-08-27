@@ -1072,7 +1072,9 @@ impl<'a> Iterator for Tokenizer<'a> {
                 } else if self.consume_if('|') {
                     Token::Column
                 } else {
-                    Token::Ident("|".to_string())
+                    // R3757：单独 `|` 为 Delim（CSS Syntax §4 delim token；此前误作
+                    // Ident("|") 使 namespace 限定选择器 `prefix|name` 不可解析）。
+                    Token::Delim('|')
                 }
             }
 

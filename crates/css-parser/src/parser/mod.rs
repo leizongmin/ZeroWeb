@@ -18,6 +18,10 @@ pub struct Parser<'a> {
     tokens: &'a mut Vec<Token>,
     /// 当前位置。
     pos: usize,
+    /// R3757（CSS Namespaces 3 §5）：本样式表内 `@namespace` 前缀注册表（prefix → URL）。
+    /// 空前缀 = default namespace。解析 `prefix|name` 选择器时查此表：未注册前缀使
+    /// 整条选择器非法（CSS Namespaces §3.4）。
+    namespace_prefixes: std::collections::HashMap<String, String>,
 }
 
 /// 未编译的样式规则（CSS 嵌套中间结构）。
@@ -273,7 +277,11 @@ fn merge_compound(parent: &CompoundSelector, nested: &CompoundSelector) -> Compo
 impl<'a> Parser<'a> {
     /// 创建新的解析器。
     pub fn new(tokens: &'a mut Vec<Token>) -> Self {
-        Self { tokens, pos: 0 }
+        Self {
+            tokens,
+            pos: 0,
+            namespace_prefixes: std::collections::HashMap::new(),
+        }
     }
 
     /// 从 CSS 文本解析完整的样式表。
@@ -370,6 +378,14 @@ impl<'a> Parser<'a> {
                     self.consume_property_rule().map(Rule::Property)
                 } else if name.eq_ignore_ascii_case("counter-style") {
                     self.consume_counter_style_rule().map(Rule::CounterStyle)
+                } else if name.eq_ignore_ascii_case("namespace") {
+                    // R3757（CSS Namespaces 3 §5）：@namespace <prefix>? <url>; —— 注册前缀
+                    // 到 Parser 状态供后续 `prefix|name` 选择器解析；规则本体不进入样式表
+                    //（无消费方，等价通用 At 规则的忽略语义）。
+                    // 注意须在 rule_opt 之外处理（返回 None 会触发下游 malformed 恢复，
+                    // 把其后一条合法规则当残余吞掉）。
+                    self.consume_namespace_rule();
+                    return vec![];
                 } else {
                     // 通用 at-rule：consume_at_rule 内部循环到 `;`/`{block}`，总消费全部 extent，
                     // 不触发 fallback。
@@ -971,15 +987,36 @@ impl<'a> Parser<'a> {
         let mut type_selector = None;
         let mut subclass_selectors = Vec::new();
 
-        // 类型选择器
+        // 类型选择器（R3757：支持 CSS Namespaces 3 §3.1 的 `prefix|name` / `*|name` /
+        // `prefix|*` 形式——`|` 为 Delim，前置 Ident/`*` 与后置 Ident/`*` 组合解析；
+        // 未注册前缀 → 整条选择器非法（返回 None，调用方丢整条规则）。
+        // 裸 tag：若样式表声明了 default namespace 且不在 :is() 等函数参数上下文
+        //（Selectors 4 §4.2：函数参数内 default ns 不作用于主题化合物），解析为
+        // Namespaced{ns:Some(default)} 使匹配按元素命名空间相等比较。
+        let default_ns = self.namespace_prefixes.get("").cloned();
         match self.peek().clone() {
             Token::Ident(tag) => {
-                type_selector = Some(TypeSelector::Tag(tag));
                 self.advance();
+                if matches!(self.peek(), Token::Delim('|')) {
+                    self.advance();
+                    type_selector = Some(self.consume_namespaced_name(Some(tag))?);
+                } else if let Some(url) = default_ns {
+                    type_selector = Some(TypeSelector::Namespaced {
+                        ns: Some(url),
+                        name: tag,
+                    });
+                } else {
+                    type_selector = Some(TypeSelector::Tag(tag));
+                }
             }
             Token::Delim('*') => {
-                type_selector = Some(TypeSelector::Universal);
                 self.advance();
+                if matches!(self.peek(), Token::Delim('|')) {
+                    self.advance();
+                    type_selector = Some(self.consume_namespaced_name(None)?);
+                } else {
+                    type_selector = Some(TypeSelector::Universal);
+                }
             }
             _ => {}
         }
@@ -1772,6 +1809,81 @@ impl<'a> Parser<'a> {
     ///——`p (` 选择器后非 `{`，`(...)` 块内含 `{...}`/`p {...}`，须把整个 `(...)` 作 prelude
     /// 一部分整块消耗，再到真 `{`（规则 3 的块），整条作为一条畸形 qualified rule 丢弃
     ///（prelude `p(...)p` 非法），故规则 3 不应用，`<p>` 保持规则 1 的 green。
+    /// R3757：消耗 `@namespace <prefix>? <url>;`（CSS Namespaces 3 §5）并注册前缀。
+    /// - 无前缀（`@namespace "url";`）→ default namespace（存空键）。
+    /// - URL 取 String token 或非函数 `url(...)` token 内容。
+    /// - 语句以 `;` 结束；畸形（无 URL/无 `;`）→ 消耗至 `;`/块/EOF 并放弃注册。
+    fn consume_namespace_rule(&mut self) {
+        self.skip_whitespace();
+        // 可选前缀：第一个 Ident（若其后紧跟 String/url token 则它是前缀；否则它是……
+        // URL 只能是 String 或 url()，Ident 不是合法 URL → 无前缀形式下首 Ident 非法）。
+        let mut prefix = String::new();
+        if let Token::Ident(name) = self.peek().clone() {
+            prefix = name;
+            self.advance();
+            self.skip_whitespace();
+        }
+        let url = match self.peek().clone() {
+            Token::String(s) => {
+                self.advance();
+                s
+            }
+            Token::Url(u) => {
+                self.advance();
+                u
+            }
+            _ => {
+                // 畸形：消耗至 `;` / `{...}` / EOF（同 malformed 恢复），不注册。
+                self.skip_malformed_qualified_rule();
+                return;
+            }
+        };
+        self.skip_whitespace();
+        if matches!(self.peek(), Token::Semicolon) {
+            self.advance();
+            self.namespace_prefixes.insert(prefix, url);
+        } else {
+            self.skip_malformed_qualified_rule();
+        }
+    }
+
+    /// R3757：`|` 之后消耗命名空间限定的名字部分（CSS Namespaces 3 §3.1）。
+    /// `prefix` = `Some(前缀)`（`prefix|name` / `prefix|*`）或 `None`（`*|name` / `*|*`）。
+    /// 未注册前缀 → `None`（整条选择器非法）；`*|` → 任意命名空间（`ns = None`）；
+    /// 注册前缀 → 解析为注册 URL（`ns = Some(url)`），匹配期按元素命名空间比较。
+    fn consume_namespaced_name(&mut self, prefix: Option<String>) -> Option<TypeSelector> {
+        let (ns, name) = match self.peek().clone() {
+            Token::Ident(name) => {
+                self.advance();
+                let ns = match &prefix {
+                    Some(p) => Some(self.namespace_prefixes.get(p).cloned()?),
+                    // `*|name` = 任意命名空间（CSS Namespaces §3.1 universal ns）。
+                    None => None,
+                };
+                (ns, name)
+            }
+            Token::Delim('*') => {
+                self.advance();
+                let ns = match &prefix {
+                    Some(p) => Some(self.namespace_prefixes.get(p).cloned()?),
+                    None => None,
+                };
+                (ns, String::new())
+            }
+            _ => return None,
+        };
+        if name.is_empty() {
+            // `prefix|*` / `*|*`：任意本地名，命名空间限定 → Universal 语义扩展。
+            // 以 Namespaced + 空 name 表达（matcher 空 name = 任意本地名）。
+            Some(TypeSelector::Namespaced {
+                ns,
+                name: String::new(),
+            })
+        } else {
+            Some(TypeSelector::Namespaced { ns, name })
+        }
+    }
+
     fn skip_malformed_qualified_rule(&mut self) {
         loop {
             match self.peek() {

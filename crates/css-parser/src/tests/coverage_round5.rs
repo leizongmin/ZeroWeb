@@ -86,9 +86,11 @@ fn test_tokenizer_delim_star() {
 
 #[test]
 fn test_tokenizer_pipe_alone() {
+    // R3757：单 `|` 为 Delim（CSS Syntax §4；此前误作 Ident("|")，致 namespace 限定
+    // 选择器 prefix|name 不可解析）。`|=`（DashMatch）与 `||`（Column）不受影响。
     let tokens: Vec<_> = Tokenizer::new("|").collect_tokens();
     assert_eq!(tokens.len(), 1);
-    assert!(matches!(&tokens[0], Token::Ident(s) if s == "|"));
+    assert!(matches!(&tokens[0], Token::Delim('|')));
 }
 
 #[test]
@@ -1277,14 +1279,15 @@ fn test_parse_at_rule_semicolon() {
 
 #[test]
 fn test_parse_at_rule_eof() {
+    // R3757：@namespace 由专用解析器消费并注册前缀；缺 `;` 至 EOF 属畸形语句 →
+    // 规则丢弃（CSS Namespaces §5 语句以 `;` 结束），不再落通用 At Statement。
     let css = "@namespace svg url(http://www.w3.org/2000/svg)";
     let stylesheet = Parser::parse_stylesheet(css);
-    match &stylesheet.rules[0] {
-        Rule::At(at) => {
-            assert_eq!(at.name, "namespace");
-        }
-        _ => panic!("Expected At"),
-    }
+    assert!(
+        stylesheet.rules.is_empty(),
+        "缺 ; 的 @namespace 应丢弃: {:?}",
+        stylesheet.rules
+    );
 }
 
 // ═══════════════════════════════════════════════════════════════════════

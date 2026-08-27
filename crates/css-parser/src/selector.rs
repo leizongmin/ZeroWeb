@@ -24,6 +24,12 @@ pub fn specificity(selector: &Selector) -> (u32, u32, u32) {
             match ts {
                 TypeSelector::Tag(_) => c += 1,
                 TypeSelector::Universal => {}
+                // R3757：`prefix|name` 计入类型选择器特异性；`*|`/`prefix|*` 通配不计。
+                TypeSelector::Namespaced { ns, name } => {
+                    if ns.is_some() || !name.is_empty() {
+                        c += 1;
+                    }
+                }
             }
         }
 

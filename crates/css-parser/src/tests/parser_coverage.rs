@@ -477,12 +477,10 @@ fn test_at_rule_with_block() {
 
 #[test]
 fn test_at_rule_eof_in_prelude() {
+    // R3757：@namespace 专用解析；缺 `;` 至 EOF 属畸形 → 规则丢弃。
     let css = "@namespace svg http://www.w3.org/2000/svg";
     let ss = Parser::parse_stylesheet(css);
-    assert_eq!(ss.rules.len(), 1);
-    if let Rule::At(at) = &ss.rules[0] {
-        matches!(&at.body, AtRuleBody::Statement);
-    }
+    assert!(ss.rules.is_empty(), "缺 ; 的 @namespace 应丢弃: {:?}", ss.rules);
 }
 
 // ── 13. 声明块中无法识别的 token（行 722-723）─────────────────────

@@ -13,6 +13,9 @@ fn compound_to_string(c: &CompoundSelector) -> String {
     match &c.type_selector {
         Some(TypeSelector::Tag(t)) => s.push_str(t),
         Some(TypeSelector::Universal) => s.push('*'),
+        // R3757：测试辅助序列化为本地名。
+        Some(TypeSelector::Namespaced { name, .. }) if !name.is_empty() => s.push_str(name),
+        Some(TypeSelector::Namespaced { .. }) => s.push('*'),
         None => {}
     }
     for sub in &c.subclass_selectors {

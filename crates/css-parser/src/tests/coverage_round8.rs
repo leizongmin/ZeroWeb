@@ -579,13 +579,10 @@ fn test_generic_at_rule_statement() {
 
 #[test]
 fn test_generic_at_rule_eof() {
+    // R3757：@namespace 专用解析；缺 `;` 至 EOF 属畸形 → 规则丢弃。
     let css = "@namespace svg http://www.w3.org/2000/svg";
     let sheet = Parser::parse_stylesheet(css);
-    assert_eq!(sheet.rules.len(), 1);
-    let Rule::At(at) = &sheet.rules[0] else {
-        panic!("expected at rule")
-    };
-    assert!(matches!(at.body, AtRuleBody::Statement));
+    assert!(sheet.rules.is_empty(), "缺 ; 的 @namespace 应丢弃: {:?}", sheet.rules);
 }
 
 // ═══════════════════════════════════════════════════════════════════════

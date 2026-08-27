@@ -337,6 +337,15 @@ pub enum TypeSelector {
     Tag(String),
     /// 通配符（`*`）。
     Universal,
+    /// 命名空间限定类型选择器（R3757，CSS Namespaces 3 §3.1：`prefix|name` / `*|name`）。
+    /// `ns` = 已注册前缀解析出的命名空间 URL（`*|` 时 `None` = 任意命名空间）。
+    /// 未注册前缀使整条选择器非法（解析期拒绝），不会构造此变体。
+    Namespaced {
+        /// 命名空间 URL（`*|` = None 表示任意命名空间）。
+        ns: Option<String>,
+        /// 本地名（空 = `|*` 通配本地名）。
+        name: String,
+    },
 }
 
 /// 子类选择器。

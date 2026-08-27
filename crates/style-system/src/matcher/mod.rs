@@ -143,6 +143,17 @@ fn matches_type(doc: &Document, element: NodeId, type_sel: &TypeSelector) -> boo
         NodeKind::Element(elem) => match type_sel {
             TypeSelector::Universal => true,
             TypeSelector::Tag(tag) => elem.local_name().eq_ignore_ascii_case(tag),
+            // R3757（CSS Namespaces 3 §3.1）：`prefix|name` / `*|name`。ns = Some(url)
+            // 时按元素命名空间相等比较；ns = None（`*|`）时任意命名空间。空 name
+            //（`prefix|*` / `*|*`）= 任意本地名。标签比较维持既有 ASCII 大小写不敏感
+            //（HTML 文档语义）。
+            TypeSelector::Namespaced { ns, name } => {
+                let ns_ok = match ns {
+                    Some(url) => elem.namespace() == url,
+                    None => true,
+                };
+                ns_ok && (name.is_empty() || elem.local_name().eq_ignore_ascii_case(name))
+            }
         },
         _ => false,
     }
@@ -1778,13 +1789,16 @@ pub struct StylesheetIndex {
 }
 
 /// 从选择器最右复合选择器提取 type selector tag（小写）；无/Universal → None。
+/// R3757：`prefix|name` 的 name 参与分桶（同 Tag 语义——命名空间匹配在 matches_type
+/// 精判，分桶只按本地名粗筛）；`*|`/`prefix|*`（空 name）按 Universal 处理。
 fn selector_leading_tag(selector: &zero_css_parser::ast::Selector) -> Option<String> {
     use zero_css_parser::ast::{Selector, TypeSelector};
     let Selector { complex } = selector;
     let (compound, _) = complex.parts.last()?;
     match &compound.type_selector {
         Some(TypeSelector::Tag(tag)) => Some(tag.to_ascii_lowercase()),
-        Some(TypeSelector::Universal) | None => None,
+        Some(TypeSelector::Namespaced { name, .. }) if !name.is_empty() => Some(name.to_ascii_lowercase()),
+        Some(TypeSelector::Universal) | Some(TypeSelector::Namespaced { .. }) | None => None,
     }
 }
 
