@@ -348,7 +348,10 @@ fn test_background_repeat_clips_to_origin() {
     painter.paint(&layout, &styles, None);
 
     let prims = painter.primitives();
-    // 验证所有 tile 都在容器范围内
+    // R3760：repeat tile 溢出 painting area 时图元语义改为「rect = 完整 tile 尺寸 +
+    // clip = 与 painting area 交集」（crop 不重缩放，修复 cover/contain 溢出重缩放）。
+    // 约束改为：rect 起点不越 painting area 左/上边界；溢出 tile 必须携带 clip 且
+    // clip 完全在 painting area 内（渲染可见部分不越界）。
     for img in &prims.images {
         assert!(
             img.rect.origin.x >= -0.1,
@@ -356,20 +359,18 @@ fn test_background_repeat_clips_to_origin() {
             img.rect.origin.x
         );
         assert!(
-            img.rect.right() <= 50.1,
-            "tile 不应超出右边界: right={}",
-            img.rect.right()
-        );
-        assert!(
             img.rect.origin.y >= -0.1,
             "tile 不应超出上边界: y={}",
             img.rect.origin.y
         );
-        assert!(
-            img.rect.origin.y + img.rect.size.height <= 50.1,
-            "tile 不应超出下边界: bottom={}",
-            img.rect.origin.y + img.rect.size.height
-        );
+        if img.rect.right() > 50.1 || img.rect.origin.y + img.rect.size.height > 50.1 {
+            let clip = img.clip.expect("溢出 painting area 的 tile 必须携带 clip");
+            assert!(
+                clip.right() <= 50.1 && clip.origin.y + clip.size.height <= 50.1,
+                "clip 应完全在 painting area 内: clip_right={}",
+                clip.right()
+            );
+        }
     }
 }
 

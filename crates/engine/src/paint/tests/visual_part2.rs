@@ -327,11 +327,18 @@ fn test_r2312_background_clip_applied_to_image() {
 
     let img = &painter.primitives().images;
     assert_eq!(img.len(), 1);
-    // 图像从 padding-box origin (10,10) 起绘（Auto size=190×90），被裁到 content-box (15,15) 180×80。
-    assert_eq!(img[0].rect.origin.x, 15.0);
-    assert_eq!(img[0].rect.origin.y, 15.0);
-    assert_eq!(img[0].rect.size.width, 180.0);
-    assert_eq!(img[0].rect.size.height, 80.0);
+    // R3760：溢出 painting area 的图元语义 = rect 保留完整 tile 尺寸 + clip 记录与
+    // painting area 的交集（crop 不重缩放）。Auto size=190×90 从 padding-box (10,10)
+    // 起绘，溢出 content-box (15,15) 180×80 → rect=(10,10,190,90) + clip=交集。
+    assert_eq!(img[0].rect.origin.x, 10.0);
+    assert_eq!(img[0].rect.origin.y, 10.0);
+    assert_eq!(img[0].rect.size.width, 190.0);
+    assert_eq!(img[0].rect.size.height, 90.0);
+    let clip = img[0].clip.expect("溢出 tile 应携带 clip");
+    assert_eq!(clip.origin.x, 15.0);
+    assert_eq!(clip.origin.y, 15.0);
+    assert_eq!(clip.size.width, 180.0);
+    assert_eq!(clip.size.height, 80.0);
 }
 
 /// 测试 background-position + background-size 组合。

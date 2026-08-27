@@ -751,6 +751,26 @@ fn extract_svg_attr_dims(bytes: &[u8]) -> Option<(u32, u32)> {
     Some((attr("width")?.ceil() as u32, attr("height")?.ceil() as u32))
 }
 
+/// R3760：提取 SVG 根元素 `viewBox` 的 `(width, height)`（第 3/4 个分量）。
+///
+/// 仅用于退化检测（0 维 → 空图像，css-images-4 §5.4.1）；无 viewBox 或分量缺失/非数
+/// 返回 None（不做退化处理，走正常栅格化）。
+fn extract_svg_viewbox_dims(bytes: &[u8]) -> Option<(f32, f32)> {
+    let text = std::str::from_utf8(bytes).ok()?;
+    let svg_start = text.find("<svg")?;
+    let rest = &text[svg_start..];
+    let tag_end = rest.find('>')?;
+    let viewbox =
+        extract_svg_attr(&rest[..tag_end], "viewBox").or_else(|| extract_svg_attr(&rest[..tag_end], "viewbox"))?;
+    let nums: Vec<&str> = viewbox.split([' ', ',']).filter(|t| !t.is_empty()).collect();
+    if nums.len() != 4 {
+        return None;
+    }
+    let vw: f32 = nums[2].parse().ok()?;
+    let vh: f32 = nums[3].parse().ok()?;
+    Some((vw, vh))
+}
+
 /// 解析 `data:` URI 为原始字节。
 ///
 /// `data:[<mediatype>][;base64],<payload>` —— header 含 `base64` 则 base64 解码 payload，
@@ -829,6 +849,21 @@ fn looks_like_svg(bytes: &[u8]) -> bool {
 ///（no-ratio）——usvg 对缺失维给出默认值（如缺 height 时 h=100），该默认值非真实固有
 /// 尺寸，布局须以 `no_ratio` 信号处理（不设 aspect_ratio，缺失维按 default object size 回退）。
 pub fn decode_svg_bytes(bytes: &[u8]) -> Result<ImageData, String> {
+    // R3760：viewBox 含 0 维（`viewBox="0 0 8 0"` 等）的退化 SVG——css-images-4 §5.4.1
+    //（default sizing algorithm）：固有宽度/高度为 0 的图像视为空。usvg 对缺失 width/
+    // height 属性的此类 SVG 仍按默认 100×100 栅格化（内容 100%×100% 会被画出 lime 实心，
+    // WPT background-size/vector zero-*-ratio 簇期望**空**）。绕过栅格化直接返回 1×1
+    // 全透明；固有分类仍走 svg_intrinsic_kind（0 维 viewBox 无有效 ratio → NoRatio），
+    // width-only 等属性维照常保留（布局/painter 的 no_ratio 语义不变）。
+    if let Some((vw, vh)) = extract_svg_viewbox_dims(bytes)
+        && (vw <= 0.0 || vh <= 0.0)
+    {
+        let mut data = ImageData::from_rgba(vec![0u8; 4], 1, 1)?;
+        if let SvgIntrinsicKind::NoRatio { width, height } = svg_intrinsic_kind(bytes) {
+            data.no_ratio = Some((width, height));
+        }
+        return Ok(data);
+    }
     let tree = match resvg::usvg::Tree::from_data(bytes, &resvg::usvg::Options::default()) {
         Ok(tree) => tree,
         Err(e) => {
@@ -1462,6 +1497,30 @@ mod tests {
     fn make_image(w: u32, h: u32, fill: u8) -> ImageData {
         let pixels = vec![fill; (w as usize) * (h as usize) * 4];
         ImageData::from_rgba(pixels, w, h).unwrap()
+    }
+
+    /// R3760：WPT vector 簇 `nonpercent-width-omitted-height.svg`（width="8px"，
+    /// height 缺失，无 viewBox）应分类 NoRatio 且保留真实固有宽 8——painter
+    /// §3.9 逐维解析依赖该维值（auto = 8×定位区高，非全定位区）。
+    #[test]
+    fn r3760_width_only_svg_no_ratio_keeps_dim() {
+        let bytes = b"<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"8px\"><rect width=\"100%\" height=\"50%\" fill=\"lime\"/></svg>";
+        let img = decode_image_bytes(bytes).expect("decode");
+        assert_eq!(img.no_ratio_intrinsic(), Some((Some(8.0), None)));
+        assert_eq!(img.intrinsic_ratio(), None);
+    }
+
+    /// R3760：零维 viewBox（`viewBox="0 0 8 0"`）退化 SVG → 1×1 全透明（css-images-4
+    /// §5.4.1：固有宽/高为 0 的图像视为空），且无 ratio 信号——usvg 对缺 width/height
+    /// 属性的此类 SVG 会按默认 100×100 栅格化出实心内容，WPT 期望空。
+    #[test]
+    fn r3760_zero_viewbox_svg_renders_transparent() {
+        let bytes = b"<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 8 0\"><rect width=\"100%\" height=\"100%\" fill=\"lime\"/></svg>";
+        let img = decode_image_bytes(bytes).expect("decode");
+        assert_eq!((img.width, img.height), (1, 1));
+        assert!(img.pixels.iter().all(|&b| b == 0), "1x1 应全透明");
+        assert_eq!(img.no_ratio_intrinsic(), Some((None, None)));
+        assert_eq!(img.intrinsic_ratio(), None);
     }
 
     #[test]

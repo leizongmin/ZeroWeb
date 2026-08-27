@@ -243,16 +243,20 @@ impl super::Painter {
         // usvg 默认值而非真实固有尺寸——按 css-backgrounds-3 §3.9，此类图像 auto
         // （及退化的 contain/cover）的使用尺寸 = background positioning area；ratio-only
         // SVG（viewBox-only）的 auto 按固有宽高比 contain-fit。两类 key 由管线注入。
+        // R3760：no-ratio 图像改带真实固有维 `(Option<w>, Option<h>)`——§3.9 逐维解析：
+        // 有固有维的维度 auto 取固有维（如 `width="8px"` SVG auto = 8×定位区高），
+        // 双缺失维才整体 = positioning area（R3759 行为）；单维混合型不再全图拉伸。
         let default_intrinsic = (origin_w, origin_h);
         let first_url_hash = style.background_image.iter().find_map(|layer| match layer {
             BackgroundImageComputedValue::Url(url) => Some(image_resource_key(url, self.document_url.as_deref())),
             _ => None,
         });
-        let bg_no_ratio = first_url_hash.is_some_and(|h| self.image_no_ratio_keys.contains(&h));
+        let bg_no_ratio = first_url_hash.and_then(|h| self.image_no_ratio_keys.get(&h).copied());
         let bg_ratio = first_url_hash.and_then(|h| self.image_ratio_keys.get(&h).copied());
-        let (img_w, img_h) = if bg_no_ratio {
-            // css-backgrounds-3 §3.9：无固有尺寸无宽高比 → positioning area 尺寸。
-            default_intrinsic
+        let (img_w, img_h) = if let Some((w_opt, h_opt)) = bg_no_ratio {
+            // css-backgrounds-3 §3.9：无固有尺寸无宽高比——真实固有维逐维生效，
+            // 缺失维取 positioning area 对应维（伪固有尺寸，无比例语义）。
+            (w_opt.unwrap_or(origin_w), h_opt.unwrap_or(origin_h))
         } else if let Some(ratio) = bg_ratio {
             // ratio-only：以 viewBox 宽高比按定位区 contain-fit 的尺寸作伪固有尺寸，
             // 使 Auto（双 auto）解析为 contain-fit、Cover/Contain 同比缩放正确。
@@ -262,6 +266,19 @@ impl super::Painter {
             first_url_hash
                 .and_then(|h| self.get_image_size(h))
                 .unwrap_or(default_intrinsic)
+        };
+        // R3760：图像固有宽高比信号（None = 无比例）。no-ratio 图像的 pixmap 伪尺寸
+        // （768×256 等）不得参与比例推导——`auto auto` 的另一维 / 单值语法的等比维
+        // 须按 §3.9 走 positioning area 回退。ratio-only 图像用 viewBox 比；双绝对图
+        // 像用 pixmap 比（真固有尺寸）。
+        let img_ratio = if bg_no_ratio.is_some() {
+            None
+        } else if let Some(ratio) = bg_ratio {
+            Some(ratio)
+        } else if img_w > 0.0 && img_h > 0.0 {
+            Some(img_w / img_h)
+        } else {
+            None
         };
 
         // CSS 规范：多图层逆序渲染（最后一层在最底，第一层在最上）。
@@ -275,7 +292,9 @@ impl super::Painter {
             let repeat = &style.background_repeat[layer_idx % style.background_repeat.len()];
 
             // size/position 相对 positioning area（origin）解析（fixed 时 origin=视口）。
-            let (sized_w, sized_h) = resolve_background_size(size, origin_w, origin_h, img_w, img_h);
+            // R3760：no-ratio 图像的 contain/cover 语义在 resolve_background_size 内处理
+            //（img_ratio=None → positioning area），auto/两值用伪固有维逐维解析。
+            let (sized_w, sized_h) = resolve_background_size(size, origin_w, origin_h, img_w, img_h, img_ratio);
             let (offset_x, offset_y) = resolve_background_position(position, origin_w, origin_h, sized_w, sized_h);
 
             // positioned = 定位区域 origin + bg-position offset + anchor 偏移。
@@ -313,10 +332,23 @@ impl super::Painter {
                         while x < repeat_x.1 {
                             let clipped = clip_tile_to_origin(x, y, tile_w, tile_h, clip_x, clip_y, clip_w, clip_h);
                             if let Some((cx, cy, cw, ch)) = clipped {
+                                // R3760：cover/contain（及任一维溢出 painting area 的 tile）
+                                // 不得把裁剪后矩形当 rect——ImagePrimitive 语义是 source
+                                // 映射到整个 rect，裁剪后 rect 会把溢出图重缩放成 fill
+                                //（cover 的 lime/aqua 边界被拉进可视区）。改为 rect = 完整
+                                // tile 尺寸、clip = 与 painting area 交集（crop 不重缩放，
+                                // 与 render_image 的 clip 语义一致）。tile 完全在区域内时
+                                // clip=None（零行为变化，避免给所有平铺图元加裁剪开销）。
+                                let overflows = x < clip_x
+                                    || y < clip_y
+                                    || x + tile_w > clip_x + clip_w
+                                    || y + tile_h > clip_y + clip_h;
+                                let prim_rect = Rect::new(x, y, tile_w, tile_h);
+                                let clip_rect = overflows.then(|| Rect::new(cx, cy, cw, ch));
                                 self.primitives.add_image(ImagePrimitive {
-                                    rect: Rect::new(cx, cy, cw, ch),
+                                    rect: prim_rect,
                                     image_key: ImageKey::new(key),
-                                    clip: None,
+                                    clip: clip_rect,
                                 });
                             }
                             x += tile_w;
@@ -1271,50 +1303,72 @@ fn filter_computed_to_kind(value: &FilterComputedValue) -> FilterKind {
 // ── background-position / background-size 辅助函数 ─────────────────────────
 
 /// 计算 background-size 后的图片尺寸。
+///
+/// R3760：`no_ratio` 图像（无固有尺寸、无固有比例）的 contain/cover 无比例可缩放，
+/// css-backgrounds-3 §3.9：使用尺寸 = positioning area；auto/两值 auto 维仍用伪固有维
+///（`img_w/img_h` 已按逐维规则编码：真实固有维或定位区该维）。
 fn resolve_background_size(
     size: &BackgroundSizeComputedValue,
     container_w: f32,
     container_h: f32,
     img_w: f32,
     img_h: f32,
+    img_ratio: Option<f32>,
 ) -> (f32, f32) {
+    // contain/cover 的有效固有尺寸：无比例图像用定位区（避免伪维触发缩放）。
+    let (cc_w, cc_h) = if img_ratio.is_none() {
+        (container_w, container_h)
+    } else {
+        (img_w, img_h)
+    };
     match size {
         BackgroundSizeComputedValue::Auto => (img_w, img_h),
         BackgroundSizeComputedValue::Cover => {
-            if img_w <= 0.0 || img_h <= 0.0 || container_w <= 0.0 || container_h <= 0.0 {
+            if cc_w <= 0.0 || cc_h <= 0.0 || container_w <= 0.0 || container_h <= 0.0 {
                 return (container_w, container_h);
             }
-            let scale = (container_w / img_w).max(container_h / img_h);
-            (img_w * scale, img_h * scale)
+            let scale = (container_w / cc_w).max(container_h / cc_h);
+            (cc_w * scale, cc_h * scale)
         }
         BackgroundSizeComputedValue::Contain => {
-            if img_w <= 0.0 || img_h <= 0.0 || container_w <= 0.0 || container_h <= 0.0 {
+            if cc_w <= 0.0 || cc_h <= 0.0 || container_w <= 0.0 || container_h <= 0.0 {
                 return (container_w, container_h);
             }
-            let scale = (container_w / img_w).min(container_h / img_h);
-            (img_w * scale, img_h * scale)
+            let scale = (container_w / cc_w).min(container_h / cc_h);
+            (cc_w * scale, cc_h * scale)
         }
         BackgroundSizeComputedValue::Length(px) => {
             let w = *px;
-            let h = if img_w > 0.0 { w * img_h / img_w } else { container_h };
+            // R3760：等比维推导仅在图像确有固有比例时生效（img_ratio=None → 定位区高）。
+            let h = match img_ratio {
+                Some(r) if r > 0.0 => w / r,
+                _ => container_h,
+            };
             (w, h)
         }
         BackgroundSizeComputedValue::Percent(pct) => {
             let w = container_w * pct / 100.0;
-            let h = if img_w > 0.0 { w * img_h / img_w } else { container_h };
+            let h = match img_ratio {
+                Some(r) if r > 0.0 => w / r,
+                _ => container_h,
+            };
             (w, h)
         }
         // R3753：math 单值，% 相对定位区宽度（与 Percent 同语义；eval_calc 的 parent_length
         // 即 % 基准）。px/% 求值；em/vw 等需 font/viewport 上下文（此处无）→ 回退固有宽。
         BackgroundSizeComputedValue::Calc(expr) => {
             let w = zero_css_parser::values::eval_calc(expr, Some(container_w as f64)).unwrap_or(img_w as f64) as f32;
-            let h = if img_w > 0.0 { w * img_h / img_w } else { container_h };
+            let h = match img_ratio {
+                Some(r) if r > 0.0 => w / r,
+                _ => container_h,
+            };
             (w, h)
         }
         // R2878：两值语法 `<w> <h>`（CSS Backgrounds §3.9）。每维独立解析；auto 维由另一维 +
         // 固有比推导，无固有比（渐变等）则取定位区该维尺寸；两维皆 auto 取固有尺寸。
+        // R3760：比例判定改用 img_ratio 信号——no-ratio 图像的伪 pixmap 尺寸不再触发
+        // 比例推导（`auto 32px` 在 width-only SVG 上正确得到 定位区宽×32 而非 96×32）。
         BackgroundSizeComputedValue::TwoValue(cw, ch) => {
-            let has_ratio = img_w > 0.0 && img_h > 0.0;
             let w_fixed = match cw {
                 BgSizeComponentComputed::Length(px) => Some(*px),
                 BgSizeComponentComputed::Percent(p) => Some(container_w * p / 100.0),
@@ -1334,21 +1388,17 @@ fn resolve_background_size(
             };
             let w = match w_fixed {
                 Some(w) => w,
-                None => match h_fixed {
-                    Some(h) if has_ratio => h * img_w / img_h,
-                    Some(_) => container_w,
-                    None if has_ratio => img_w,
-                    None => container_w,
-                },
+                // 双 auto：同 `auto auto` 单值语义——用 img_w/img_h（R3760 no-ratio 图像
+                // 的伪固有维已按逐维规则编码：真实固有维或定位区该维回退），不再经
+                // img_ratio 推导（no-ratio 图像的 (None, None) 比例信号会把 auto/auto
+                // 错误放大成全定位区）。
+                None if h_fixed.is_none() => img_w,
+                None => img_ratio.map_or(container_w, |r| img_h * r),
             };
             let h = match h_fixed {
                 Some(h) => h,
-                None => match w_fixed {
-                    Some(w) if has_ratio => w * img_h / img_w,
-                    Some(_) => container_h,
-                    None if has_ratio => img_h,
-                    None => container_h,
-                },
+                None if w_fixed.is_none() => img_h,
+                None => img_ratio.map_or(container_h, |v| w / v),
             };
             (w, h)
         }
@@ -1555,6 +1605,50 @@ mod tests {
     use zero_render_foundation::color::Color;
     use zero_render_foundation::geometry::Rect;
     use zero_render_foundation::primitive::{GradientKind, GradientPrimitive, GradientStop};
+
+    /// R3760：css-backgrounds-3 §3.9 逐维解析——no-ratio 图像（img_ratio=None）的
+    /// 真实固有维只作用于 auto 维，缺失维取 positioning area 对应维。
+    #[test]
+    fn r3760_no_ratio_image_one_intrinsic_dim() {
+        // width="8px" width-only SVG：伪固有 (8, 256=定位区高)、无比例。
+        // auto → (8, 定位区高 256)，非全定位区 (768, 256)。
+        let (w, h) = resolve_background_size(&BackgroundSizeComputedValue::Auto, 768.0, 256.0, 8.0, 256.0, None);
+        assert_eq!((w, h), (8.0, 256.0));
+    }
+
+    /// R3760：no-ratio 图像两值语法 `auto 32px`——32px 维不触发伪比例推导
+    ///（R3759 曾把 auto 维解析为 32×768/256=96）。
+    #[test]
+    fn r3760_no_ratio_image_two_value_no_ratio_derivation() {
+        let size =
+            BackgroundSizeComputedValue::TwoValue(BgSizeComponentComputed::Auto, BgSizeComponentComputed::Length(32.0));
+        let (w, h) = resolve_background_size(&size, 768.0, 256.0, 768.0, 256.0, None);
+        assert_eq!((w, h), (768.0, 32.0));
+    }
+
+    /// R3760：双绝对图像的 auto 32px 仍按真固有比推导（回归防护）。
+    #[test]
+    fn r3760_both_abs_image_two_value_keeps_ratio() {
+        let size =
+            BackgroundSizeComputedValue::TwoValue(BgSizeComponentComputed::Auto, BgSizeComponentComputed::Length(32.0));
+        // 8×32 真固有 → ratio 0.25 → auto 宽 = 32×0.25 = 8。
+        let (w, h) = resolve_background_size(&size, 768.0, 256.0, 8.0, 32.0, Some(0.25));
+        assert_eq!((w, h), (8.0, 32.0));
+    }
+
+    /// R3760：单值 12px 在 no-ratio 图像上高取定位区（非伪比推导）。
+    #[test]
+    fn r3760_no_ratio_image_single_length() {
+        let (w, h) = resolve_background_size(
+            &BackgroundSizeComputedValue::Length(12.0),
+            768.0,
+            256.0,
+            768.0,
+            256.0,
+            None,
+        );
+        assert_eq!((w, h), (12.0, 256.0));
+    }
 
     /// 测试 compute_gradient_mask_alpha — 空 stops 返回 1.0。
     #[test]
