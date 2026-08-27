@@ -3,6 +3,7 @@
 **入口文档**: [../js-dom.md](../js-dom.md)（长期 Mission / Done Criteria / 执行协议 / 文档治理规则）
 **关联 RFC**: [../../specs/p1b-v8-native-bindings-rfc.md](../../specs/p1b-v8-native-bindings-rfc.md) + [../../specs/p1b-l2d3-unified-matcher-identity-bridge-rfc.md](../../specs/p1b-l2d3-unified-matcher-identity-bridge-rfc.md)（R166 新增——L2-d3 统一匹配器 + identity 桥设计）
 **创建日期**: 2026-08-13（goal 拆分 bootstrap）
+**本轮**: R316 — **M4：walker 着陆点 relocated 置位（TreeWalker-walking-outside-a-tree 全文件转绿，dom/traversal 目录 1F→0F 收口）**：R315 后残余第 4-6 断言（`p.appendChild(body)` root 进 currentNode 子树后 `nextNode` 期望 P→BODY，实测 null）——探针实证 previousNode 导航着陆 title 后 `syncOrderPosTo` 返 -1 但 **`relocated` 未置位** → 后续 nextNode 仍走 order-scan（构造期快照 [body,p] 在 regraft 后整体 stale）越界恒 null，而 R97 的 `nextNodeOffOrder` live 导航通道入口条件漏了「导航着陆点出快照」这一来源。修：`syncOrderPosTo` 返回定位值 + previousNode 两处着陆点（sibling 循环/climb）对 -1 置 relocated——零新状态零新路径，stale 检测面从「setter 重定位」扩展到「着陆点出快照」。**A/B**：walking-outside 1F→Pass；TreeWalker/NodeIterator 全族持平；全量 sweep 54128P/67F Fail set 恰消失该件零新增（4 个新 Timeout 单跑全 Pass=并发环境噪声）；engine 2454 绿（r315 扩为完整 WPT 六步断言）；lit 21P/e2e 20P；fmt/clippy 干净。**域状态**：traversal 0F——R314 root 止步 + R315 identity 归一 + R316 relocated 三轮收口；dom 域剩余 Fail 全为既存备档。**教训**：入口条件按状态语义（快照是否含当前位置）枚举而非触发路径——R97 只修了 setter 来源，着陆来源残留到三轮 regraft 链才暴露。commit：见下方
 **本轮**: R315 — **M4：regraft 后 handle 兄弟链 identity 归一（R314 缺口 1 正面修复；TreeWalker-walking-outside-a-tree 断言 2→5，全量 54129P/68F/23T→54131P/68F/21T Fail set 逐文件一致）**：探针七轮 trace 链（B/W/ENTER-F/STEP0/F-OUT → SPLIT 实锤）定位根因 = **R52 消零清 `_proxyCache['@h']` 的「节点不再被访问」假设被 regraft 打破**——remove 后属性读触发 `_makeProxy` cache miss 重建 proxy B，页面持有的旧 proxy A 与 B 分裂；重挂把 A 记入 registry 后 `_makeProxy` 恒返 B → sibling getter `kids[i]===self` 恒 miss（previousSibling 恒 null）。修：`_recordHandleChild` 检测缓存与传入 child 分裂 → 翻转缓存到 A（live-NL refresh 按 `arr[i]!==view[i]` 天然收敛；R52 泄漏修复语义不变——消零仍清、重挂才翻转）。**A/B**：TreeWalker/NodeIterator/Range-mutations 八套件/Range 三大套件/querySelector-All/matches/Event-dispatch/MO 全持平零回归；walking-outside 残余 = 第 5 断言（root 被 regraft 进 p 子树后的 nextNode root 边界重检，R314 对称面）；engine 2454 绿（+1 r315 六步回归 + r314 归因断言更新为期望值链）；quickjs 矩阵绿；fmt/clippy 干净。**教训**：「消零后不再访问」是性能修复的合法性前提——后续功能修复须复核；python 截取脚本误删 part24.rs 既有测试（-1236 行）被 git diff 复核当场抓回（脚本改文件须 diff 复核）。commit：见下方
 **本轮**: R314 — **M4：collections/traversal 域尾部归因（collections 0F 干净；traversal 1F 拆双缺口——walker root 止步已修 + handle 兄弟链 R291 备档）**：探针逐步打点 TreeWalker-walking-outside-a-tree（Acid3 6a，主文档 createElement 产物 = handle proxy 域）实断两个独立缺口：① regraft（removeChild+appendChild 重挂）后 `p.previousSibling` 恒 null——handle registry 兄弟融合视图在重挂后断链（应返 head→title；R291 identity 双源同构面，深结构备档）；② previousNode 父上行越过 root 仍对链外节点跑 check 误返（探针 prevNode=DIV）——**已修**（part06：上行节点须在 root 子树内才参与，修复后 prevNode=null 正确边界）。**A/B**：traversal/TreeWalker 数字持平但失败分量改善（`__n0`→null）；collections/NodeIterator/cloneNode/ParentNode/matches 全持平；engine 2453 绿（+1 r314 归因诊断）；make test 1F 环境项；fmt/clippy 干净。**dom 域尾部盘点（R305–R314）**：collections 0F；traversal 1F（R291 备档）；events 4F（深结构备档+不追）；MO 4F（备档）；三大套件全 0F。commit：见下方
 **上轮**: R313 — **M4：disabled 表单元素的 click() 门 + handle 布尔 falsy 真移除（Event-dispatch-on-disabled-elements subtest 100%；dom/events 581P/5F→582P/4F）**：① spec HTML §activation——form-associated disabled 元素的激活行为跳过（part04 click trap 增门：button/input/select/textarea/fieldset/optgroup/option 属性存在即 no-dispatch；**dispatchEvent 直发不受门影响**）；② part05 布尔 setter 的 hidden/checked/disabled/selected 分支——旧注释「handle falsy 无 remove 变体不设」已过期（`__zw_remove_attr_handle` 在 R3039/40 已注册），`.disabled=false` 属性残留使门恒真——补 handle remove 分支（re-enable 断言的根因）。**A/B**：on-disabled-elements 恰 +1P/-1F；dom/events 582P/4F；ParentNode/matches/Node-properties/MO 全持平；vue e2e 3P；engine 2452 绿（+1 r313 六态断言：门/布尔往返/直发三面）；make test 1F 环境项；fmt/clippy 干净。**events 剩 4F 域界定**：handlers-changed（target 阶段双 listener 拷贝语义——dispatch 循环深改备档）+ event-global-onerror（window.event 恢复跨 realm——深结构备档）+ pseudo（Chromium 专有不追）+ 本地探针；尾部 Timeout = CSS transitions（渲染域）。**教训**：「无变体」注释会过期——共享机制注册后应 grep 同语义旧分支。commit：见下方
@@ -478,6 +479,7 @@
 
 | 日期 | 轮次 | 证据 | 结果 |
 |------|------|------|------|
+| 2026-08-28 | R316 | previousNode 着陆点 relocated 置位（part06 三处 + part24 r315 扩为 WPT 六步断言）+ evidence/2026-08-28-r316-walker-relocated.md | **walking-outside-a-tree 全文件 Pass，dom/traversal 0F 收口**；全量 54128P/67F Fail set 恰 -1 零新增；engine 2454 绿 |
 | 2026-08-28 | R315 | regraft identity 翻转（part05 `_recordHandleChild` + part24 六步回归 + r314 期望链更新）+ evidence/2026-08-28-r315-regraft-identity.md | **walking-outside-a-tree 断言 2→5**；全量 54131P/68F/21T Fail set 一致；R52 性能域零回归；engine 2454 绿 |
 | 2026-08-27 | R314 | TreeWalker root 止步修复（part06 + part24 归因诊断）+ evidence/2026-08-27-r314-collections-traversal-tail.md | collections 0F；traversal 1F 拆双缺口（root 止步已修 + handle 兄弟链 R291 备档）；engine 2453 绿；dom 域尾部盘点完成 |
 | 2026-08-27 | R313 | disabled click 门 + 布尔 falsy handle 真移除（part04 click trap + part05 set trap + part24 六态单测）+ evidence/2026-08-27-r313-disabled-click-gate.md | **on-disabled-elements subtest 100%**；dom/events 582P/4F；全族 set-diff 零回归；engine 2452 绿 |
@@ -726,10 +728,10 @@
 ---
 
 ## 下一步计划
-0. **R316 下一步（R315 后，按 ROI）**：
-   - **(a) walking-outside-a-tree 残余第 5 断言**（root 被 regraft 进 currentNode 子树后的 nextNode root 边界重检——R314/R315 双修后的对称收尾，独立小切片）。
-   - **(b) L2 深水区评估**：普通 append 域 identity 双源统一（R309/R314/R315 三轮撞上的同一 R291 面——本轮 identity 翻转是 registry→缓存方向，缓存→registry 反方向（查询域）仍未归一；blast radius 探针先行）。
-   - **(c) dom 全域 sweep 复跑**（R315 后定稿态，本轮 sweep2 已确认 Fail set 一致，下轮可作基线引用）。
+0. **R317 下一步（R316 后，按 ROI）**：
+   - **(a) L2 深水区评估**：普通 append 域 identity 双源统一（R309/R314/R315 三轮撞上的同一 R291 面——R315 翻转是 registry→缓存方向，缓存→registry 反方向（查询域）仍未归一；blast radius 探针先行）。
+   - **(b) dom 全域 sweep 基线固化**（R316 后 54128P/67F 已为定稿基线，下轮 A/B 直接引用）。
+   - **(c) events/MO 剩余备档面复核**（深结构域的假设是否随三轮 regraft 修复过期——R313 教训的系统性应用）。
 0. **R314 下一步（R313 后，按 ROI）**：
    - **(a) collections/traversal 域尾部归因**（events 剩 4F 全部深结构/不追——转域：collections 与 traversal 的既有失败取样聚类，可能有轻量件）。
    - **(b) dom 全域 sweep 结果核对**（后台全量未完成——重启一次定稿态跑，结果与逐套件 A/B 对照）。
