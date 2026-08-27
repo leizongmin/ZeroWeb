@@ -716,6 +716,21 @@
           if (!sel || typeof __zw_element_children !== 'function') {
             return prop === 'childElementCount' ? 0 : null;
           }
+          // R317（js-dom M4）：sel 父的元素子优先走融合 childNodes 视图（`_childNodeList`
+          // 含 pending overlay——同 turn append 后 childElementCount/firstElementChild
+          // 立即可见；host `__zw_element_children` 只读快照恒 stale。WPT
+          // Element-childElementCount-dynamic-add：`parentEl.appendChild(newChild)` 后
+          // 期望 count 2，旧快照返 1）。回落 host 直读（融合视图空而快照有子的形态）。
+          var _r317fk = _childNodeList(sel, null);
+          var _r317ek = [];
+          for (var _r317i = 0; _r317i < _r317fk.length; _r317i++) {
+            if (_r317fk[_r317i] && _r317fk[_r317i].nodeType === 1) _r317ek.push(_r317fk[_r317i]);
+          }
+          if (_r317ek.length || _childNodeList(sel, null).length) {
+            if (prop === 'childElementCount') return _r317ek.length;
+            if (!_r317ek.length) return null;
+            return prop === 'firstElementChild' ? _r317ek[0] : _r317ek[_r317ek.length - 1];
+          }
           var kids = _splitSelectors(__zw_element_children(sel));
           if (prop === 'childElementCount') return kids.length;
           if (!kids.length) return null;

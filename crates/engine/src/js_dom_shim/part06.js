@@ -2636,12 +2636,35 @@
     // testharness 用例恒 `<!doctype html>`：静态 DocumentType（name 'html'，publicId/systemId 空）。
     // ownerDocument/parentNode 经 getter 惰性绑（对象字面量求值期 globalThis.document 尚未赋值）。
     doctype: (function () {
+      // R317（js-dom M4）：doctype 元数据从 host 解析树读真实值（WPT DocumentType-literal
+      // 的 `<!DOCTYPE html PUBLIC "STAFF" "staffNS.dtd">`——静态硬编码空串使 publicId/
+      // systemId 断言失败；spec DocumentType.name/publicId/systemId 反映 DOCTYPE 声明）。
+      // **惰性求值**：IIFE 在 shim 加载时执行、此时 __zw_* 回调尚未注册（register_dom_callbacks
+      // 在 execute(shim) 之后）——快照式读取恒得默认值。改 getter + 一次性缓存（首次属性
+      // 访问时回调已就绪）。
+      var _r317Meta = null;
+      function _r317MetaOf() {
+        if (_r317Meta === null) {
+          _r317Meta = { name: 'html', publicId: '', systemId: '' };
+          try {
+            if (typeof __zw_doc_doctype_json === 'function') {
+              var _r317dt = JSON.parse(__zw_doc_doctype_json() || 'null');
+              if (_r317dt) {
+                _r317Meta.name = String(_r317dt.name || 'html');
+                _r317Meta.publicId = String(_r317dt.publicId || '');
+                _r317Meta.systemId = String(_r317dt.systemId || '');
+              }
+            }
+          } catch (_e317dtm) {}
+        }
+        return _r317Meta;
+      }
       var dt = {
         nodeType: 10,
-        name: 'html',
-        nodeName: 'html',
-        publicId: '',
-        systemId: '',
+        get name() { return _r317MetaOf().name; },
+        get nodeName() { return _r317MetaOf().name; },
+        get publicId() { return _r317MetaOf().publicId; },
+        get systemId() { return _r317MetaOf().systemId; },
         get ownerDocument() { return globalThis.document; },
         get parentNode() { return globalThis.document; },
         get nodeValue() { return null; },
@@ -2689,6 +2712,16 @@
         lookupNamespaceURI: function (_prefix) { return null; },
         isDefaultNamespace: function (ns) { return ns == null || ns === ''; },
       };
+      // R317（js-dom M4）：原型接线 DocumentType.prototype（spec DOM 速查表 DocumentType :
+      // Node 接口——WPT Document-doctype "Doctype should be a DocumentType" 断言
+      // `document.doctype instanceof DocumentType`。主文档 doctype 是本 IIFE 字面量，
+      // R128 的接线只落在了 implementation.createDocumentType 产物上（同文件下方），
+      // 本字面量漏配 → instanceof 恒 false）。
+      try {
+        if (globalThis.DocumentType && globalThis.DocumentType.prototype) {
+          Object.setPrototypeOf(dt, globalThis.DocumentType.prototype);
+        }
+      } catch (_e317dt) {}
       return dt;
     })(),
     // node-level 身份与连入态（Document 节点恒 connected + 恒有 documentElement 子）。`document.nodeType`
@@ -2754,8 +2787,30 @@
       // JS 侧 _zwCompareDocumentPosition 链式判定取代，不依赖该子序）。
       // R87：_docDtorRemoved（removeChild(doctype) 本地标记）时剔除 doctype（恢复段
       // insertBefore 还原）。
-      if (this._docDtorRemoved) return [_wrapSelector('html')];
-      return [this.doctype, _wrapSelector('html')];
+      // R317（js-dom M4）：前导注释/PI 入 childNodes（spec 解析树——doctype 与文档元素
+      // 之前的 comment/PI 是 document 子节点；WPT Document-doctype 断言
+      // `document.childNodes[1] === document.doctype` 依赖 `<!-- comment -->` 占位）。
+      // host `__zw_doc_comments` 读解析树的根级 Comment；JS 视图合成 [comments…, dt, html]
+      //（Doctype/Element 仍由本侧合成——R81 形态保持，探测缓存防每读一往返）。
+      var _r317cm = this._r317CommentCache;
+      if (_r317cm === undefined && typeof __zw_doc_comments === 'function') {
+        try {
+          _r317cm = JSON.parse(__zw_doc_comments() || '[]').map(function (c) {
+            return { nodeType: 8, nodeName: '#comment', data: String(c.v || ''), nodeValue: String(c.v || ''),
+              get ownerDocument() { return globalThis.document; },
+              get parentNode() { return globalThis.document; },
+              childNodes: [], hasChildNodes: function () { return false; },
+              get textContent() { return String(c.v || ''); },
+              get firstChild() { return null; }, get lastChild() { return null; },
+              cloneNode: function () { return globalThis.document.childNodes && null; },
+            };
+          });
+        } catch (_e317c) { _r317cm = []; }
+        this._r317CommentCache = _r317cm;
+      }
+      if (!_r317cm || !_r317cm.length) _r317cm = [];
+      if (this._docDtorRemoved) return _r317cm.concat([_wrapSelector('html')]);
+      return _r317cm.concat([this.doctype, _wrapSelector('html')]);
     },
     // R87 修复回归：firstChild/lastChild getter 曾被 R87 注释块误删（oracle
     // nextNode(document) 助手无法下行 → NodeIterator.html document root 变体 8F）。

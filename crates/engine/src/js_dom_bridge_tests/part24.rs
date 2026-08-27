@@ -1354,3 +1354,59 @@ globalThis.__r315p = out.join('|');
         "R315+R316 regraft full WPT sequence, got: {out}"
     );
 }
+
+
+// R317 (js-dom M4) — 主文档 doctype 的 DocumentType 品牌化 + ParentNode 导航族 `in` 可见性。
+// 两缺口：① part06 document.doctype 的 IIFE 字面量漏接 DocumentType.prototype（R128 只落了
+// implementation.createDocumentType 产物）→ `document.doctype instanceof DocumentType` 恒
+// false（WPT Document-doctype "Doctype should be a DocumentType"）；② has trap 白名单漏
+// ParentNode/元素导航族（children/firstElementChild/lastElementChild/childElementCount/
+// previous/nextElementSibling——get trap 提供 accessor 但 target 无 own key）→
+// `"childElementCount" in el` 恒 false（WPT Element-childElementCount 首断言）。
+#[test]
+fn r317_doctype_brand_and_parentnode_in_visibility() {
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let mut sandbox = V8Sandbox::with_config(zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    })
+    .unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<!-- comment --><!DOCTYPE html PUBLIC \"STAFF\" \"staffNS.dtd\"><html><body><p id='parentEl'><span id='a'></span><span id='b'></span><span id='c'></span></p></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+    let out = sandbox
+        .execute(
+            r#"
+var out = [];
+try {
+  out.push('dtInst=' + (document.doctype instanceof DocumentType));
+  out.push('dtAt1=' + (document.childNodes[1] === document.doctype));
+  out.push('cmAt0=' + (document.childNodes[0] && document.childNodes[0].nodeType === 8));
+  var dk315 = [];
+  for (var ci = 0; ci < document.childNodes.length; ci++) dk315.push(document.childNodes[ci].nodeType);
+  out.push('docKids=' + dk315.join(','));
+  var p = document.getElementById('parentEl');
+  out.push('cec=' + p.childElementCount);
+  out.push('cecIn=' + ('childElementCount' in p) + ',' + ('children' in p) + ',' + ('firstElementChild' in p));
+  out.push('dtpub=' + document.doctype.publicId + ',' + document.doctype.systemId + ',' + document.doctype.name);
+} catch (e) { out.push('err=' + String(e && e.message)); }
+globalThis.__r317p = out.join('|');
+"#,
+        )
+        .unwrap();
+    let out = sandbox.execute("globalThis.__r317p").unwrap().value;
+    println!("R317-OUT: {out}");
+    assert!(
+        out.contains("dtInst=true") && out.contains("dtAt1=true") && out.contains("cmAt0=true")
+            && out.contains("cec=3") && out.contains("cecIn=true,true,true")
+            && out.contains("dtpub=STAFF,staffNS.dtd,html"),
+        "R317 doctype brand + real doctype metadata + leading comment + ParentNode in-visibility, got: {out}"
+    );
+}

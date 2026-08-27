@@ -298,7 +298,14 @@
             || prop === 'data' || prop === 'length' || prop === 'cloneNode'
             || prop === 'childNodes' || prop === 'parentNode' || prop === 'nodeValue'
             || prop === 'textContent' || prop === 'ownerDocument' || prop === 'dispatchEvent'
-            || prop === 'addEventListener' || prop === 'removeEventListener') {
+            || prop === 'addEventListener' || prop === 'removeEventListener'
+            // R317（js-dom M4）：ParentNode/元素导航族的存在性（get trap 提供的 accessor 面，
+            // target 上无 own key → `prop in el` 恒 false。spec ParentNode mixin 成员对元素
+            // 实例可枚举命中——WPT Element-childElementCount 首断言
+            // `"childElementCount" in parentEl`）。
+            || prop === 'children' || prop === 'firstElementChild' || prop === 'lastElementChild'
+            || prop === 'childElementCount' || prop === 'previousElementSibling'
+            || prop === 'nextElementSibling') {
           return true;
         }
         // R184（js-dom M4）：Node 接口常量 + DOCUMENT_POSITION 常量的 `in` 可见性（spec

@@ -1758,6 +1758,44 @@ fn node_entry_json(doc: &Document, id: NodeId) -> Option<String> {
     })
 }
 
+/// 文档根的**前导注释**列表（spec：doctype/文档元素前可出现 comment/PI，作为 document
+/// 子节点存在——WPT Document-doctype 依赖 `document.childNodes = [comment, doctype, html]`
+/// 的 comment 位）。JSON 数组 `[{"v":"..."}]`，仅 Comment 子（Doctype/Element 由 shim 侧
+/// 视图合成，见 part06 `document.childNodes` getter 的 R317 注记）。
+pub fn doc_top_level_comments_json_doc(doc: &Document) -> String {
+    let root = doc.root();
+    let entries: Vec<String> = doc
+        .child_nodes(root)
+        .into_iter()
+        .filter_map(|c| match doc.get(c).map(|n| &n.kind) {
+            Some(NodeKind::Comment(cm)) => Some(format!("{{\"v\":{}}}", json_str(&cm.content))),
+            _ => None,
+        })
+        .collect();
+    format!("[{}]", entries.join(","))
+}
+
+/// 文档级 **doctype 元数据**（R317 扩展）——host 解析树的真实 name/publicId/systemId
+///（WPT DocumentType-literal 的 `<!DOCTYPE html PUBLIC "STAFF" "staffNS.dtd">`：JS 静态
+/// doctype 硬编码空串导致 publicId 断言失败）。JSON `{"name":..,"publicId":..,"systemId":..}`
+/// 或 `null`（无 doctype）。
+pub fn doc_doctype_json_doc(doc: &Document) -> String {
+    let root = doc.root();
+    for c in doc.child_nodes(root) {
+        if let Some(NodeKind::DocumentType(dt)) = doc.get(c).map(|n| &n.kind) {
+            let pid = dt.public_id.clone().unwrap_or_default();
+            let sid = dt.system_id.clone().unwrap_or_default();
+            return format!(
+                "{{\"name\":{},\"publicId\":{},\"systemId\":{}}}",
+                json_str(&dt.name),
+                json_str(&pid),
+                json_str(&sid)
+            );
+        }
+    }
+    "null".to_string()
+}
+
 /// 元素的**全部子节点**（含文本/注释，区别于 [`element_children_selectors`] 仅元素子），JSON 数组。
 /// 供 `__zw_child_nodes` 回调 → shim `el.childNodes` / `firstChild` / `lastChild`。
 pub fn child_nodes_json(html: &str, elem_sel: &str) -> String {

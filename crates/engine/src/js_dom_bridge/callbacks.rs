@@ -573,6 +573,27 @@ pub fn register_dom_callbacks(
         }),
     );
 
+    // 文档根的前导注释（R317）——spec：doctype/文档元素前的 comment/PI 是 document 子节点。
+    // 供 part06 `document.childNodes` getter 合成 [comments..., doctype, html]。
+    // 文档 doctype 元数据（R317）——host 解析树真实 name/publicId/systemId。
+    let html = Arc::clone(dom_html);
+    sandbox.register_callback(
+        "__zw_doc_doctype_json",
+        Box::new(move |_args| {
+            let snap = html.lock().unwrap_or_else(|e| e.into_inner());
+            with_query_doc_live_aware(&snap, true, doc_doctype_json_doc)
+        }),
+    );
+
+    let html = Arc::clone(dom_html);
+    sandbox.register_callback(
+        "__zw_doc_comments",
+        Box::new(move |_args| {
+            let snap = html.lock().unwrap_or_else(|e| e.into_inner());
+            with_query_doc_live_aware(&snap, true, doc_top_level_comments_json_doc)
+        }),
+    );
+
     let html = Arc::clone(dom_html);
     sandbox.register_callback(
         "__zw_sibling_nodes",
