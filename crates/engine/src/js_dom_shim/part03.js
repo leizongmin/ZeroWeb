@@ -852,10 +852,18 @@
       if (cs) for (var _qj = 0; _qj < cs.length; _qj++) {
         var c = cs[_qj];
         if (!c) continue;
-        if (c.nodeType === 3) h += String(c.nodeValue == null ? '' : c.nodeValue).replace(/&/g, '&amp;').replace(/</g, '&lt;');
+        if (c.nodeType === 3) h += String(c.nodeValue == null ? '' : c.nodeValue).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); // R308：与 _zwMEscapeText/host 序列化的 > 转义对齐（键一致性）
         else if (c.nodeType === 8) h += '<!--' + c.nodeValue + '-->';
         else if (c.nodeType === 1) h += _zwMOuterHtml(c);
       }
+      // R308（js-dom M4）：**void 元素无闭合标签**——与 `_zwMSerialize` 的
+      // `_ZW_VOID_TAGS` 表对齐（spec HTML void elements：hr/br/img/input 等）。
+      // 旧版恒输出 `</hr>` 使 walk 键（`_zwMOuterHtml` 源）与 host JSON info
+      // `.outer`（host 按 void 语义序列化，无闭合）在**含 void 后代的元素**上恒
+      // 失配——WPT tree-order Detached idx1（#universal 含 <hr>）的 wrapper 键
+      // miss 根因。两序列化器（_zwMSerialize / _zwMOuterHtml）自此对齐。
+      var _r308Tag = String(n.nodeName || '').toLowerCase();
+      if (_ZW_VOID_TAGS[_r308Tag]) return h;
       h += '</' + String(n.nodeName).toLowerCase() + '>';
       return h;
     }
@@ -910,6 +918,20 @@
         // `_r159HtmlAttrs` 槽（R159 提取）或其 documentElement 的 lang 属性。
         var s173 = String(sel);
         var src173 = _zwMOuterHtml(n);
+        // R308（js-dom M4）：**DocumentFragment 根的序列化源**——`_zwMOuterHtml` 对
+        // nodeType 11 返 ''（非元素短路），fragment 上下文的查询源恒空 → `matches`
+        // 的 root-up-track 上行到 fragment 后候选恒 0（WPT Element-matches Fragment
+        // `#pseudo-ui :checked` 族 4F——旧版查询产物是 wrapper 走 `_zwRootHtml` 全树
+        // 恰好命中；R308 桥归一后产物是真节点，暴露本缺口）。子串直发（与 fragment
+        // querySelectorAll 的 R175 语义一致：无 body 包装、filter_synthetic 剔合成容器）。
+        if (n && n.nodeType === 11) {
+          src173 = '';
+          var _r308cs = n.childNodes || [];
+          for (var _r308ci = 0; _r308ci < _r308cs.length; _r308ci++) {
+            var _r308c2 = _r308cs[_r308ci];
+            if (_r308c2 && _r308c2.nodeType === 1 && typeof _r308c2.outerHTML === 'string') src173 += _r308c2.outerHTML;
+          }
+        }
         // R173：`:target` 须 fragment URL（owner doc 的 `_zwFragmentUrl` 槽——
         // R160 doc 级同源；element 查询旧传空串恒 miss）。
         var url173 = '';
@@ -1326,7 +1348,16 @@
     // 树变更后自然 miss 重建；上限 512 防爆）。
     var realNode = _zwMFindRealNode(root, key);
     if (realNode) {
-      var bridged = _zwBridgeGet(realNode);
+      // R308（js-dom M4）：**miss 补登**——桥表会被 `_zwQWrapBump`/innerHTML 写点
+      // 整表清空（doc 级 appendChild 等触发），先于桥登记创建的节点（如
+      // `_zwIframeCreateElement` 出口登记后被 doc 级操作清掉的 `<null>` 族）查
+      // 询时 `_zwBridgeGet` miss → 回落 wrapper（WPT tree-order In-document
+      // idx306 identity 断）。与 fragment 查询路径（R163/d3b 的 miss 补登）同款：
+      // 键命中即节点本体，登记后返自身。
+      var bridged = _zwBridgeGet(realNode) || (function () {
+        try { _zwBridgeSet(realNode, realNode); } catch (_e308s) {}
+        return realNode;
+      })();
       if (bridged) {
         try { bridged._zwRootHtml = _zwMOuterHtml(root); } catch (_e167r) {}
         map.set(key, bridged);
@@ -8848,21 +8879,30 @@
               if (!frag._zwQWrapMap || !(frag._zwQWrapMap instanceof Map)) frag._zwQWrapMap = new Map();
               var fmap = frag._zwQWrapMap;
               if (fmap.size > 512) fmap.clear();
+              // R308（js-dom M4）：**同键重复的 identity 分离**（R188 的 fragment 版）——
+              // fixture 含多个完全同构元素（`id-li-duplicate` 族）时，`_zwMFindRealNode`
+              // 对无后缀键恒返数组首项，结果数组全部解析到同一真节点（WPT tree-order
+              // Fragment idx267 族）。本轮查询内对同键 info 追加出现序号（`#N`）——
+              // `_zwMFindRealNode` 的 R188 后缀解析取数组第 N 个。
+              var _r308Seen = null;
               for (var k = 0; k < r.length; k++) {
                 // R307：outer 段 empty-ns 标记归一（与 _zwMFindRealNode 的 walk 键同源）。
                 var fk = String(r[k] && r[k].tag || '') + '\x1f' + String(r[k] && r[k].id || '') + '\x1f' + String(r[k] && r[k].outer || '').split(' data-zw-empty-ns=""').join('');
-                var real163 = _zwMFindRealNode(frag, fk);
+                if (!_r308Seen) _r308Seen = {};
+                _r308Seen[fk] = (_r308Seen[fk] || 0) + 1;
+                var _r308fk = _r308Seen[fk] > 1 ? fk + '\x1f#' + _r308Seen[fk] : fk;
+                var real163 = _zwMFindRealNode(frag, _r308fk);
                 if (real163) {
                   _zwBridgeSet(real163, real163); // d3b：miss 补登（fragment 树建产物不总经 _zwMEl）
                   out.push(_zwBridgeGet(real163) || real163);
                   fmap.set(fk, out[out.length - 1]); // 同键后继查询同 identity
                   continue;
                 }
-                var fe156 = fmap.get(fk);
+                var fe156 = fmap.get(_r308fk);
                 if (!fe156) {
                   fe156 = new _zwParseEl(r[k]);
                   fe156._zwRootHtml = h;
-                  fmap.set(fk, fe156);
+                  fmap.set(_r308fk, fe156);
                 } else {
                   try { fe156._zwRootHtml = h; } catch (_e158r3) {}
                 }

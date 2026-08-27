@@ -1401,6 +1401,7 @@
         if (c && c.parentNode && c.parentNode.removeChild) { try { c.parentNode.removeChild(c); } catch (_e174r) {} }
         el.childNodes.push(c); c.parentNode = el;
         if (c && c.__zwHandle && typeof _zwUnmarkRemovedHandle === 'function') _zwUnmarkRemovedHandle(c.__zwHandle);
+        _r308Invalidate(el);
         return c;
       },
       // R249（js-dom M4）：**own removeChild**——iframe 工厂元素旧无自身 removeChild，
@@ -1424,6 +1425,7 @@
             }
             ks249.splice(i249, 1);
             try { c.parentNode = null; } catch (_e249p) {}
+            _r308Invalidate(el);
             return c;
           }
         }
@@ -1464,14 +1466,16 @@
         if (c.parentNode && c.parentNode.removeChild) { try { c.parentNode.removeChild(c); } catch (_eR209pr) {} }
         if (ref == null) {
           c.parentNode = el; el.childNodes.push(c);
+          _r308Invalidate(el);
           return c;
         }
         // R279：ref 是 c 原位的**后继**（自插入重定向后）或普通 ref——摘除后按
         // identity 重定位（摘除可能使 ref 前移一位，indexOf 现算即正确）。
         var ri = el.childNodes.indexOf(ref);
-        if (ri < 0) { c.parentNode = el; el.childNodes.push(c); return c; }
+        if (ri < 0) { c.parentNode = el; el.childNodes.push(c); _r308Invalidate(el); return c; }
         c.parentNode = el;
         el.childNodes.splice(ri, 0, c);
+        _r308Invalidate(el);
         return c;
       },
       // R209（js-dom M4）：contains/compareDocumentPosition（探针实证 iframe 工厂元素
@@ -1631,6 +1635,28 @@
       el.querySelector = function (s) {
         var a = el.querySelectorAll(s);
         return a.length ? a[0] : null;
+      };
+      // R308（js-dom M4）：**identity 桥登记**——iframe 工厂 createElement 产物是
+      // plain 对象字面量（不经 part03 `_zwMEl` 工厂），出口无 `_zwBridgeSet(el, el)`
+      // 使查询包装（`_zwMWrapCached` → `_zwMFindRealNode` 键命中后 `_zwBridgeGet`
+      // miss）回落 wrapper 域——WPT ParentNode-querySelector-All "tree order" 的
+      // In-document 上下文 idx306（`<null>` append 族 identity 断；探针实证
+      // `wrap:null:real=true:bridged=false`）。与 `_zwMEl` 工厂出口（part03 R166
+      // d3a）同源语义：首登自身。
+      try { if (typeof globalThis._zwBridgeSet === 'function') globalThis._zwBridgeSet(el, el); } catch (_e308b) {}
+      // R308：**祖先查询索引失效**——append 进工厂树后，树根的 `_zwNodeIdx`/
+      // `_zwQWrapMap`（R167/R158 缓存）不含新子 → 后续查询键 miss 回落 wrapper。
+      // 与 `_zwMEl` appendChild/removeChild 的 R307 失效同款（沿父链向上）。
+      var _r308Invalidate = function (startNode) {
+        try {
+          var anc = startNode;
+          var guard = 0;
+          while (anc && guard++ < 64) {
+            if (anc._zwNodeIdx) anc._zwNodeIdx = null;
+            if (anc._zwQWrapMap) anc._zwQWrapMap.clear();
+            anc = anc.parentNode;
+          }
+        } catch (_e308i) {}
       };
       el.querySelectorAll = function (s) {
         var out = [];

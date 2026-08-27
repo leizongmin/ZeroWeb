@@ -736,3 +736,141 @@ globalThis.__r307p = out.join('|');
         "R307 in-document tree-order identity unified (empty-ns key normalization + id reflect), got: {out}"
     );
 }
+
+#[test]
+fn r308_iframe_domain_query_identity() {
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let mut sandbox = V8Sandbox::with_config(zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    })
+    .unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><div id=\"t\">x</div></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+    // R308：iframe contentDocument 域（WPT tree-order 3F 的真实域）——
+    // `_zwIframeCreateElement` 产物（plain 字面量，非 _zwMEl 工厂）出口补 identity
+    // 桥登记（`_zwBridgeSet(el, el)`）+ append/remove/insert 的祖先查询索引失效。
+    // 探针复刻：doc.body.innerHTML 设树 → getElementById 取 element（工厂树节点）
+    // → appendChild(doc.createElement('null'))（iframe 工厂元素）→ element/fragment/
+    // detached 三上下文 querySelectorAll('*') 与 traverse 逐位 identity。
+    let out = sandbox
+        .execute(
+            r#"
+var out = [];
+try {
+  var frame = document.createElement('iframe');
+  frame.src = 'about:blank';
+  document.body.appendChild(frame);
+  var doc = frame.contentDocument;
+  doc.body.innerHTML = "<div id='root'><p id='a'>x</p></div>";
+  var byId = doc.getElementById('root');
+  var extra = doc.createElement('null');
+  byId.appendChild(extra);
+  var frag = doc.createDocumentFragment();
+  frag.appendChild(byId.cloneNode(true));
+  var detached = byId.cloneNode(true);
+  function traverse(elem, fn) {
+    if (elem.nodeType === 1) fn(elem);
+    elem = elem.firstChild;
+    while (elem) { traverse(elem, fn); elem = elem.nextSibling; }
+  }
+  function divergeOf(root) {
+    var qa = root.querySelectorAll('*');
+    var trav = [];
+    traverse(root, function (e) { if (e !== root) trav.push(e); });
+    var di = -1;
+    for (var i = 0; i < Math.min(qa.length, trav.length); i++) { if (qa[i] !== trav[i]) { di = i; break; } }
+    if (di < 0 && qa.length !== trav.length) di = Math.min(qa.length, trav.length);
+    return 'div=' + di + '/len=' + qa.length + ',' + trav.length;
+  }
+  out.push('indoc:' + divergeOf(byId));
+  out.push('frag:' + divergeOf(frag));
+  out.push('detach:' + divergeOf(detached));
+  // 查询产物与 append 本体的 identity（append 子在结果数组里 === 真节点）
+  var qa = byId.querySelectorAll('*');
+  out.push('extraInRes=' + String(qa.indexOf(extra) >= 0));
+} catch (e) { out.push('err=' + String(e && e.message)); }
+globalThis.__r308p = out.join('|');
+"#,
+        )
+        .unwrap();
+    let out = sandbox.execute("globalThis.__r308p").unwrap().value;
+    println!("R308: {out}");
+    // R308 断言：三上下文 identity 全等（div=-1）+ append 本体出现在查询结果。
+    assert!(
+        out.contains("indoc:div=-1") && out.contains("frag:div=-1") && out.contains("detach:div=-1"),
+        "R308 iframe-domain query identity unified, got: {out}"
+    );
+    assert!(
+        out.contains("extraInRes=true"),
+        "R308 appended iframe-factory element appears in query results as itself, got: {out}"
+    );
+}
+
+#[test]
+fn r308_matches_void_regression_probe() {
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let mut sandbox = V8Sandbox::with_config(zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    })
+    .unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><div id=\"t\">x</div></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+    let out = sandbox
+        .execute(
+            r#"
+var out = [];
+try {
+  var doc = document.implementation.createHTMLDocument('t');
+  doc.body.innerHTML = "<div id='pseudo-ui'><input id='i4' type='radio' checked='checked'></div>";
+  var frag = doc.createDocumentFragment();
+  frag.appendChild(doc.getElementById('pseudo-ui').cloneNode(true));
+  var i4 = frag.firstChild.firstChild;
+  out.push('fragHasKids=' + String(frag.childNodes.length));
+  out.push('i4=' + String(i4.nodeName) + '[' + String(i4.id) + ']');
+  out.push('checked=' + String(i4.matches('#pseudo-ui :checked')));
+  // 序列化源对比
+  var src = '';
+  for (var i = 0; i < frag.childNodes.length; i++) {
+    var c = frag.childNodes[i];
+    if (c.nodeType === 1 && typeof c.outerHTML === 'string') src += c.outerHTML;
+  }
+  out.push('srcTail=' + JSON.stringify(src.slice(-80)));
+  // host 查询直测
+  try {
+    var jq = JSON.parse(__zw_parse_html_query(src, '#pseudo-ui :checked', '1', '', '1'));
+    out.push('hostHit=' + String(jq.length) + (jq.length ? '/id=' + String(jq[0].id) : ''));
+  } catch (eH) { out.push('hostErr=' + String(eH && eH.message)); }
+} catch (e) { out.push('err=' + String(e && e.message)); }
+globalThis.__r308m = out.join('|');
+"#,
+        )
+        .unwrap();
+    let out = sandbox.execute("globalThis.__r308m").unwrap().value;
+    println!("R308-M: {out}");
+    // R308 断言：fragment 根的序列化源直发（R308 `_zwMQueryAll` 的 nodeType 11 分支）
+    // 使 `matches` 的 root-up-track 上行到 fragment 后 host 查询可见——`:checked`
+    // 伪类（checked 属性的 radio）命中。旧版 `_zwMOuterHtml(fragment)` 返 '' 使
+    // 候选恒 0（WPT Element-matches Fragment `#pseudo-ui :checked` 族 139F 根因）。
+    assert!(
+        out.contains("checked=true"),
+        "R308 fragment-root serialization makes matches see fragment subtree, got: {out}"
+    );
+}
