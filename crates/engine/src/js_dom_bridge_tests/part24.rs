@@ -1682,3 +1682,58 @@ globalThis.__r321p = out.join('|');
         "R321 replaceWith fragment facts (view visibility pending L2), got: {out}"
     );
 }
+
+
+// R322 (js-dom M4/L2 切片一) — 普通追加的 handle 子对查询视图可见（host 快照 + 桶归并）。
+// R299（querySelector-mixed-case）与 R321（replaceWith fragment）确证的「handle 子树对
+// host 快照查询恒 miss」缺口的保守切片：querySelector/querySelectorAll 的 sel 分支在
+// host 结果之外，将本容器 pending 桶中反链 parentSel === sel 的 handle 子树经客户端
+// compound 匹配归并（R309 的 compound-only 限定；handle 子无 sel 字符串，与快照结果无
+// identity 冲突 → 无 R309 教训的双计风险）。组合器/伪类等 unsupported 形态回落 host 快照
+// 语义零变化。视图可见性（L2 完整归一）仍待后续切片。
+#[test]
+fn r322_query_handle_subtree_merge() {
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let mut sandbox = V8Sandbox::with_config(zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    })
+    .unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><div id='host'><p class='keep'>a</p></div></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+    // 三形态：appendChild / insertBefore / 快照查询不受扰（'p' 归并 M:0 走原路径）。
+    let out = sandbox
+        .execute(
+            r#"
+var out = [];
+try {
+  var host = document.getElementById('host');
+  var c1 = document.createElement('span');
+  c1.className = 'appended';
+  host.appendChild(c1);
+  out.push('append:k=' + host.childNodes.length + ',q=' + host.querySelectorAll('*').length + ',m=' + (host.querySelector('.appended') ? 'hit' : 'miss'));
+  var d1 = document.createElement('div');
+  d1.className = 'prep';
+  host.insertBefore(d1, host.childNodes[0]);
+  out.push('insert:k=' + host.childNodes.length + ',q=' + host.querySelectorAll('*').length + ',m=' + (host.querySelector('.prep') ? 'hit' : 'miss'));
+  out.push('snapQ=' + host.querySelectorAll('p').length);
+} catch (e) { out.push('err=' + String(e && e.message)); }
+globalThis.__r322p = out.join('|');
+"#,
+        )
+        .unwrap();
+    let out = sandbox.execute("globalThis.__r322p").unwrap().value;
+    assert!(
+        out.contains("append:k=2,q=2,m=hit") && out.contains("insert:k=3,q=3,m=hit")
+            && out.contains("snapQ=1"),
+        "R322 handle subtree query merge, got: {out}"
+    );
+}

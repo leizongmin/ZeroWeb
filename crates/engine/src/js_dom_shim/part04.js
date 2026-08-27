@@ -5224,6 +5224,31 @@
                   }
                   return _zwQueryWrapIdentity(hit);
                 }
+                // R322（js-dom M4/L2 切片一）：host miss 时归并域兜底——本容器桶 added 的
+                // handle 子树中第一个 compound 匹配的元素（querySelectorAll 同款归并的单数
+                // 形态；探针 querySelector('.appended') miss 实证）。
+                var _r322compQ = null;
+                try { _r322compQ = (typeof _parseCompoundOf === 'function') ? _parseCompoundOf(String(q)) : null; } catch (_e322pq) { _r322compQ = null; }
+                if (_r322compQ && !_r322compQ.unsupported) {
+                  var _r322bq = _zwPendingByParent.get(sel);
+                  if (_r322bq && _r322bq.added.length) {
+                    for (var _r322qa = 0; _r322qa < _r322bq.added.length; _r322qa++) {
+                      var _r322qn = _r322bq.added[_r322qa];
+                      if (!_r322qn || !_r322qn.__zwHandle) continue;
+                      var _r322ql = (typeof _zwNodeParent !== 'undefined' && _zwNodeParent) ? _zwNodeParent[_r322qn.__zwHandle] : null;
+                      if (!_r322ql || _r322ql.parentSel !== sel) continue;
+                      var _r322qf = [];
+                      _zwHCCollectSubtree(_r322qn, _r322qf);
+                      for (var _r322qi2 = 0; _r322qi2 < _r322qf.length; _r322qi2++) {
+                        var _r322qe = _r322qf[_r322qi2];
+                        if (!_r322qe || _r322qe.nodeType !== 1) continue;
+                        try {
+                          if (_matchCompoundOf(_r322qe, _r322compQ)) return _r322qe;
+                        } catch (_e322qm) {}
+                      }
+                    }
+                  }
+                }
               } catch (_e) {}
               return null;
             }
@@ -5338,6 +5363,45 @@
                       }
                       _r310list = _r310kept;
                     }
+                  }
+                  var _r322comp = null;
+                  try { _r322comp = (typeof _parseCompoundOf === 'function') ? _parseCompoundOf(String(q)) : null; } catch (_e322p) { _r322comp = null; }
+                  var _r322mg = 0;
+                  if (_r322comp && !_r322comp.unsupported) {
+                    var _r322b3 = _zwPendingByParent.get(sel);
+                    if (_r322b3 && _r322b3.added.length) {
+                      for (var _r322a = 0; _r322a < _r322b3.added.length; _r322a++) {
+                        var _r322n = _r322b3.added[_r322a];
+                        if (!_r322n || !_r322n.__zwHandle) continue;
+                        var _r322ln = (typeof _zwNodeParent !== 'undefined' && _zwNodeParent) ? _zwNodeParent[_r322n.__zwHandle] : null;
+                        if (!_r322ln || _r322ln.parentSel !== sel) continue;
+                        var _r322flat = [];
+                        _zwHCCollectSubtree(_r322n, _r322flat);
+                        for (var _r322f2 = 0; _r322f2 < _r322flat.length; _r322f2++) {
+                          var _r322el = _r322flat[_r322f2];
+                          if (!_r322el || _r322el.nodeType !== 1) continue;
+                          try { if (_matchCompoundOf(_r322el, _r322comp)) _r322mg++; } catch (_e322m) {}
+                        }
+                      }
+                    }
+                  }
+                  if (_r322mg > 0) {
+                    var _r322out = [];
+                    for (var _r322k3 = 0; _r322k3 < _r310list.length; _r322k3++) _r322out.push(_wrapSelector(_r310list[_r322k3]));
+                    for (var _r322a2 = 0; _r322a2 < _r322b3.added.length; _r322a2++) {
+                      var _r322n2 = _r322b3.added[_r322a2];
+                      if (!_r322n2 || !_r322n2.__zwHandle) continue;
+                      var _r322ln2 = (typeof _zwNodeParent !== 'undefined' && _zwNodeParent) ? _zwNodeParent[_r322n2.__zwHandle] : null;
+                      if (!_r322ln2 || _r322ln2.parentSel !== sel) continue;
+                      var _r322flat2 = [];
+                      _zwHCCollectSubtree(_r322n2, _r322flat2);
+                      for (var _r322f3 = 0; _r322f3 < _r322flat2.length; _r322f3++) {
+                        var _r322el2 = _r322flat2[_r322f3];
+                        if (!_r322el2 || _r322el2.nodeType !== 1) continue;
+                        try { if (_matchCompoundOf(_r322el2, _r322comp)) _r322out.push(_r322el2); } catch (_e322m2) {}
+                      }
+                    }
+                    return _zwMakeCollection(_r322out, false);
                   }
                   return _zwMakeCollection(_r310list.map(_wrapSelector), false);
                 }
