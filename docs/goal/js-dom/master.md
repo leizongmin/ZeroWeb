@@ -3,6 +3,7 @@
 **入口文档**: [../js-dom.md](../js-dom.md)（长期 Mission / Done Criteria / 执行协议 / 文档治理规则）
 **关联 RFC**: [../../specs/p1b-v8-native-bindings-rfc.md](../../specs/p1b-v8-native-bindings-rfc.md) + [../../specs/p1b-l2d3-unified-matcher-identity-bridge-rfc.md](../../specs/p1b-l2d3-unified-matcher-identity-bridge-rfc.md)（R166 新增——L2-d3 统一匹配器 + identity 桥设计）
 **创建日期**: 2026-08-13（goal 拆分 bootstrap）
+**本轮**: R323 — **M4/L2 切片二：tree-order 归并（匹配子按 nextSibling 锚点插入 host 结果序；ParentNode-querySelector-All 1975→1976P；全量 Fail set 恒等零回归）**：R322 尾并在 mid 插入形态序错（insertBefore(mid, childNodes[1]) 后 QSA 期望 a.mid.b 得 a.b.mid）。修：匹配子按反链 nextSibling 锚点插入——nextSibling 的 `__zwSelector` 在 host 结果 sel 列表的索引 → wrapper 输出中同索引位（_proxyCache identity 稳定使 `===` 匹配成立）插到之前；pending/无锚 → 尾部。**数据源已就绪**：_mo_notify 汇流点（part01:1828，R51 时代）已记 parentSel + nextSibling——查询站点只消费既有记账零新增状态。探针 `mid=a.mid.b` ✓、`end=a.mid.b.end` ✓（append 无锚尾部正确）。**A/B**：ParentNode-querySelector-All +1（tree-order 序断言解锁）；matches/querySelectorAll/getElementsByTagName 持平；全量 54137P/58F/25T Fail set 恒等（4 Timeout 单跑全 Pass=并发噪声 R196 同款）；engine 2462 绿（+1 r323 序断言回归）；quickjs 1460 绿；fmt/clippy 干净。**L2 路线**：切片 1✓2✓，剩 ③ sel 子重定位形态（_zwSelPendingParent 槽记账已存在）④ 视图层完整归一（深水区本体）。commit：见下方
 **本轮**: R322 — **M4/L2 切片一：查询视图的 handle 子树归并（querySelector/querySelectorAll 的 sel 分支；全量 54140P/58F/22T→54141P/58F/21T，Fail set 恒等 +1P）**：L2 blast radius 探针矩阵确证缺口边界——**childNodes 视图可见而查询站点恒 miss**（append:k=2,q=1,m=miss），消费面 = 查询三族 10 调用点（视图层 41 处已接 overlay）。修：两查询站点的 sel 分支在 host 结果之外，归并本容器 pending 桶中反链 parentSel===sel 的 handle 子树（_zwHCCollectSubtree 展开 + R309 的 compound-only 客户端匹配）——**无双计前提**：handle 子无 sel 字符串，host 结果结构上不含它（R309 innerHTML 域的 identity 双源风险不适用）；unsupported 形态回落快照零变化；querySelector host miss 时归并域兜底单数形态。**过程教训（增量 land）**：首版一次性写入使全探针归零（连 host 路径都没返回），stash A/B 确证回归在 patch 内、删整块恢复基线后改三增量 land（parse-only→桶读计数→early return），每步探针+全量验证——真因未定位但每步可回退可归因。**L2 后续切片路线登记**：② tree-order 归并（nextSibling 定位）③ sel 子重定位形态 ④ 视图层完整归一（深水区本体）。**A/B**：探针 q=2/3、m=hit 全通；engine 2461 绿（+1 r322 归并矩阵回归）；quickjs 1460 绿；fmt/clippy 干净。commit：见下方
 **本轮**: R321 — **M4：replaceWith/insertAdjacent 的 DocumentFragment 参数展开（三层修复；全量 Fail set 恒等零回归）**：WPT remove-next-sibling-during-replace-with（replaceWith(content.clone) 后 querySelector('script') 返 null）探针链三层定位：① `_insertAdjacentVariadic` 对 nodeType 11 参数整体挂载（host 端 fragment 语义未消费）→ 展开子按序逐个 INS + text 子走 adjacent_text；② afterbegin 头插位逐子 INS 反序——既有 `test_fragment_flatten_all_insertion_paths_e2e` 当场抓回（期望 a<b<X 得 <b><a>X），逆序遍历保参数序（R119 同理）；③ JS 侧记账缺失（host wire 不写注册表）→ 每子记 `_zwNodeParent` 反链 + 批后 `_zwHCLiveInvalidate`（appendChild R51/R47 同款三件套）。**已知限制（L2 深水区确证）**：展开子对 host 快照查询/sel 父融合视图仍不可见（appendChild 对照 `apKids=3` 视图认/`apTags=2` 查询不认实证两面同缺）——querySelector-mixed-case 同域，L2 identity 双源统一落地后翻转，测试以事实域锁定。**A/B**：全量 Fail set 与 R319/R320 恒等（54140P/58F/22T）；engine 2460 绿（+1 r321 事实域测试）；quickjs 1460 绿；fmt/clippy 干净。**教训**：① 展开式修复的头插位子序必须反向适配（既有 e2e 是正确守卫）；② 每个新插入路径都要补全反链+pending 桶+live 失效三件套（host wire 不回写 JS 注册表——R300「同语义多实现点」另一实例）。commit：见下方
 **本轮**: R320 — **M4：events/MO 备档面假设复核第二轮（Fail set 恒等 54140P/58F/22T；+2 正式测试零生产改动）**：① handlers-changed 归因**精确化**——快照/removed-flag/once 机制均在（R111/R34/R35），探针断言基线四站序正确；真缺口 = **listener 内 swap（remove 自身 + add 新 handler）后后续站点的快照循环仍消费新 add 的 handler**（3@3@parent 稳定复现，首版探针丢守卫的断言失败反而暴露此证据）——深结构备档维持；② MO-document parse-time 3F / event-global-onerror 跨 realm / Node-isConnected iframe 三域旧归因维持；③ Document-URL 新归因 = redirect.py 需服务端重定向（runner 基建非 DOM 域）；④ remove-next-sibling 部分推进：template 内联 script 不执行已验证（spec 惰性文档片段语义）+ 资产化为正式测试，残余 = replaceWith 克隆后 querySelector('script') 返 null（模板/克隆域待归因）。**资产化**：`r320_handlers_changed_attribution`（dispatch 基线四站序回归锚）+ `r320_template_script_inert_probe`（template 惰性语义锚）。**A/B**：全量 Fail set 与 R319 恒等（Timeout 双向漂移 1 例单跑 Pass）；engine 2459 绿（+2 纯测试）；quickjs 1460 绿；fmt/clippy 干净。**教训**：① 探针断言失败本身可以成为归因证据（首版丢守卫暴露 3@3 稳定复现）；② 备档维持时把归因精确化记录比笼统重跑更有下一轮价值。commit：见下方
@@ -485,6 +486,7 @@
 
 | 日期 | 轮次 | 证据 | 结果 |
 |------|------|------|------|
+| 2026-08-28 | R323 | tree-order 锚点归并（part04 + part24 序断言回归）+ evidence/2026-08-28-r323-tree-order.md | **L2 切片二 land**：ParentNode-querySelector-All +1P（序断言解锁）；全量 Fail set 恒等；engine 2462 绿 |
 | 2026-08-28 | R322 | querySelector(All) sel 分支 handle 子树归并（part04 + part24 归并矩阵回归）+ evidence/2026-08-28-r322-query-merge.md | **L2 切片一 land**：探针 m=miss→hit、q +1P；全量 54141P/58F Fail set 恒等；增量 land 法验证；engine 2461 绿 |
 | 2026-08-28 | R321 | _insertAdjacentVariadic fragment 展开/保序/记账（part05 + part24 事实域测试）+ evidence/2026-08-28-r321-fragment-flatten.md | **三层修复零回归**（Fail set 恒等）；反序回归既有 e2e 当场抓回；视图可见性归 L2 确证；engine 2460 绿 |
 | 2026-08-28 | R320 | handlers-changed 基线序 + template 惰性语义测试 + 六域复核（part24 + evidence/2026-08-28-r320-archive-recheck.md） | **Fail set 恒等零回归**；handlers-changed 归因精确化（swap add 再触发通道）；Document-URL 归因基建域；engine 2459 绿 |
@@ -740,7 +742,11 @@
 ---
 
 ## 下一步计划
-0. **R323 下一步（R322 后，按 ROI）**：
+0. **R324 下一步（R323 后，按 ROI）**：
+   - **(a) L2 切片三：sel 子重定位形态归并**——R182 的快照内既有节点同父移动（`_zwSelPendingParent` 槽记账已存在，查询结果旧位剔除 + 新位插入；探针判定轻量可行性）。
+   - **(b) 常规轻量面巡检**（58F 备档集走查，新轻量件优先）。
+   - **(c) 全量基线引用**（54137P/58F/25T 为 R323 定稿基线——Timeout 波动面 ±4 属并发噪声带）。
+
    - **(a) L2 切片二：tree-order 归并**——桶子按 nextSibling 定位插入 host 结果序（R51 overlay 同款逻辑迁移到查询站点；WPT ParentNode tree-order 断言域，探针先行验证序断言）。
    - **(b) L2 切片三：sel 子重定位形态归并**（R182 的快照内既有节点同父移动——查询结果旧位剔除 + 新位插入）。
    - **(c) 常规轻量面巡检**（58F 备档集走查，新轻量件优先；54141P/58F/21T 为 R322 定稿基线）。
