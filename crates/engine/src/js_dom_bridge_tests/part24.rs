@@ -1509,3 +1509,116 @@ globalThis.__r319p = out.join('|');
         "R319 wholeText contiguous semantics, got: {out}"
     );
 }
+
+// R320 (js-dom M4) — handlers-changed 归因探针（正式化）。基线（无 listener 内换 handler）四站
+// 序列正确；swap 形态（listener 内 remove 自身 + add 新 handler）后 parent-bubble 的再触发
+// 路径多消费一次新 add 的 handler（3@3@parent）——spec 内层 invoke 的快照不含 swap 新加的
+// listener。归因记录：非「快照缺失」（R111 removed-flag/once/快照均在），疑点收敛到 swap
+// add 后的再触发通道；与 Event-dispatch-handlers-changed 的 1F（17 vs 16 站）同域，深结构
+// 备档维持。
+#[test]
+fn r320_handlers_changed_attribution() {
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let mut sandbox = V8Sandbox::with_config(zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    })
+    .unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><table id='table'><tbody id='table-body'><tr id='parent'><td id='target'>x</td></tr></tbody></table></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+    let out = sandbox
+        .execute(
+            r#"
+var out = [];
+try {
+  var target = document.getElementById("target");
+  var parent = document.getElementById("parent");
+  var actual = [];
+  var handlers = [null, null, null, null];
+  function mk(i) { return function (evt) { actual.push(i + '@' + evt.eventPhase + '@' + (evt.currentTarget.id || '?')); }; }
+  handlers[0] = mk(0); handlers[1] = mk(1); handlers[2] = mk(2); handlers[3] = mk(3);
+  function swap(evt) {
+    if (evt.eventPhase !== 1 && !evt.currentTarget._f1) {
+      evt.currentTarget.removeEventListener('bar', handlers[0], true);
+      evt.currentTarget.addEventListener('bar', handlers[2], true);
+      evt.currentTarget._f1 = 1;
+    }
+    if (evt.eventPhase !== 2 && !evt.currentTarget._f3) {
+      evt.currentTarget.removeEventListener('bar', handlers[0], false);
+      evt.currentTarget.addEventListener('bar', handlers[3], false);
+      evt.currentTarget._f3 = 3;
+    }
+  }
+  function mkSwap(i) { return function (evt) { actual.push(i + '@' + evt.eventPhase + '@' + (evt.currentTarget.id || '?')); if (globalThis.__r320swap) swap(evt); }; }
+  handlers[0] = mkSwap(0); handlers[1] = mkSwap(1);
+  globalThis.__r320swap = false;
+  for (var n of [target, parent]) {
+    n.addEventListener('bar', handlers[0], true);
+    n.addEventListener('bar', handlers[1], false);
+  }
+  var evt = document.createEvent('Event');
+  evt.initEvent('bar', true, true);
+  target.dispatchEvent(evt);
+  out.push('base=' + actual.length + ':' + actual.join(','));
+} catch (e) { out.push('err=' + String(e && e.message)); }
+globalThis.__r320p = out.join('|');
+"#,
+        )
+        .unwrap();
+    let out = sandbox.execute("globalThis.__r320p").unwrap().value;
+    // 基线四站序（spec：capture 站只跑 capture listener，target 站 AT_TARGET 跑 [cap,bub]，bubble 站只跑 bubble）。
+    assert!(
+        out.contains("base=4:0@1@parent,0@2@target,1@2@target,1@3@parent"),
+        "R320 handlers-changed baseline dispatch order, got: {out}"
+    );
+}
+
+#[test]
+fn r320_template_script_inert_probe() {
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let mut sandbox = V8Sandbox::with_config(zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    })
+    .unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><template><span>a</span><script>window.__tplRan=(window.__tplRan||0)+1;</script><span>b</span></template><div id='cc'></div></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+    let out = sandbox
+        .execute(
+            r#"
+var out = [];
+try {
+  out.push('tplRan=' + String(globalThis.__tplRan || 0));
+  var tpl = document.querySelector('template');
+  out.push('hasContent=' + String(!!tpl.content));
+  out.push('contentKids=' + String(tpl.content ? tpl.content.childNodes.length : 'na'));
+} catch (e) { out.push('err=' + String(e && e.message)); }
+globalThis.__r320p = out.join('|');
+"#,
+        )
+        .unwrap();
+    let out = sandbox.execute("globalThis.__r320p").unwrap().value;
+    // spec HTML template：内容是惰性文档片段——内联 script 不执行（WPT
+    // remove-next-sibling-during-replace-with 的前置依赖：template script 里的
+    // querySelector('b').remove() 若执行会在解析期抛错）。
+    assert!(
+        out.contains("tplRan=0") && out.contains("hasContent=true") && out.contains("contentKids=3"),
+        "R320 template inline script inertness, got: {out}"
+    );
+}
