@@ -1410,3 +1410,48 @@ globalThis.__r317p = out.join('|');
         "R317 doctype brand + real doctype metadata + leading comment + ParentNode in-visibility, got: {out}"
     );
 }
+
+#[test]
+fn r318_children_ns_append_probe() {
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let mut sandbox = V8Sandbox::with_config(zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    })
+    .unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><div id='test'><img><img id='foo'><img id='foo'><img name='bar'></div></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+    let out = sandbox
+        .execute(
+            r#"
+var out = [];
+try {
+  var container = document.getElementById("test");
+  out.push('base=' + container.children.length);
+  var child = document.createElementNS("", "img");
+  child.setAttribute("id", "baz");
+  container.appendChild(child);
+  out.push('after1=' + container.children.length);
+  out.push('kids=' + container.childNodes.length);
+  var child2 = document.createElementNS("", "img");
+  child2.setAttribute("name", "qux");
+  container.appendChild(child2);
+  out.push('after2=' + container.children.length);
+  var own = Object.getOwnPropertyNames(container.children);
+  out.push('own=' + own.join('.'));
+} catch (e) { out.push('err=' + String(e && e.message)); }
+globalThis.__r318p = out.join('|');
+"#,
+        )
+        .unwrap();
+    let out = sandbox.execute("globalThis.__r318p").unwrap().value;
+    println!("R318-PROBE: {out}");
+}

@@ -686,6 +686,22 @@
             })();
             return _zwMakeCollection(_r81Kids.filter(function (k) { return k && k.nodeType === 1; }), true);
           }
+          // R318（js-dom M4）：sel 父优先走融合 childNodes 视图（同 childElementCount 的
+          // R317 路由——同 turn append 后立即可见；WPT Element-children edge cases 在
+          // setup 里 append 两个 createElementNS img 后枚举期望 6 项，快照恒 4）。
+          if (sel && typeof _childNodeList === 'function') {
+            var _r318fk = _childNodeList(sel, null);
+            var _r318ek = [];
+            for (var _r318i = 0; _r318i < _r318fk.length; _r318i++) {
+              if (_r318fk[_r318i] && _r318fk[_r318i].nodeType === 1) _r318ek.push(_r318fk[_r318i]);
+            }
+            if (_r318ek.length || _childNodeList(sel, null).length) {
+              return _zwMakeCollection(_r318ek, true, {
+                matches: function (el) { try { return !!el && el.nodeType === 1; } catch (_e318cm) { return false; } },
+                scopeHandle: handle || null, scopeSel: sel || null,
+              });
+            }
+          }
           return sel && typeof __zw_element_children === 'function'
             ? _zwMakeCollection(_splitSelectors(__zw_element_children(sel)), true) : _zwMakeCollection([], true);
         }
@@ -5345,6 +5361,10 @@
               } catch (_e) {}
               return _zwMakeCollection([], true);
             }
+            // R318（js-dom M4）：live 维护——matches 回调按类名全含判定（同 getElementsByTagName
+            // 的 liveSpec 接线），childList mutation 后集合并入/剔除新元素（WPT
+            // Element-getElementsByClassName "should be a live collection"：append c.foo 后
+            // l.length 期望 2，静态快照恒 1）。
             if (handle) return _zwMakeCollection(_handleQueryAll(handle, q), true);
             return _zwMakeCollection([], true);
           };
