@@ -548,3 +548,63 @@ Promise.resolve().then(function () {
     println!("R303-PROBE: {out}");
     assert!(out.contains("recs=1"), "probe sanity: {out}");
 }
+
+#[test]
+fn r306_bare_universal_doc_query_struct_first() {
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let mut sandbox = V8Sandbox::with_config(zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    })
+    .unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><div id=\"t\">x</div></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+    let out = sandbox
+        .execute(
+            r#"
+var out = [];
+// 主 document 的 *（sel 域，host __zw_query_all）
+var d = document;
+var main = d.querySelectorAll('*');
+out.push('main=' + main.length);
+// detached doc 的 *（工厂域 JSON 路径）
+var dd = document.implementation.createHTMLDocument('t');
+dd.body.innerHTML = "<div id='a'><span>x</span></div><p>y</p>";
+var ddAll = dd.querySelectorAll('*');
+out.push('dd=' + ddAll.length);
+// 首/尾 tag + R296 结构桥 identity（html === documentElement）
+out.push('ddFirst=' + (ddAll[0] ? String(ddAll[0].tagName) : 'null'));
+out.push('bridge=' + String(ddAll[0] === dd.documentElement) + '/' + String(Array.prototype.some.call(ddAll, function (n) { return n === dd.body; })));
+// JSON host 直测（绕 shim）
+if (typeof __zw_parse_html_query === 'function') {
+  try {
+    var det = '<html><head><meta charset="utf-8"></head><body><div id="a"><span>x</span></div></body></html>';
+    var r = JSON.parse(__zw_parse_html_query(det, '*', '1'));
+    out.push('jsonStar=' + (r ? r.length : 'null'));
+    if (r && r.length) out.push('json0=' + String((r[0] && r[0].tag) || '?'));
+  } catch (e) { out.push('jsonErr=' + String(e && e.message).slice(0, 40)); }
+}
+globalThis.__r306p = out.join('|');
+"#,
+        )
+        .unwrap();
+    let out = sandbox.execute("globalThis.__r306p").unwrap().value;
+    // R306：doc 作用域裸 `*` 走 JSON 全树 + R296 结构桥——结果以 html 起、
+    // html/body 与 documentElement/body 视图对象 identity 全等。
+    assert!(
+        out.contains("ddFirst=HTML") && out.contains("bridge=true/true"),
+        "R306 bare-* doc query: structured-first + bridge identity, got: {out}"
+    );
+    assert!(
+        out.contains("json0=html"),
+        "host JSON * returns full tree starting at html, got: {out}"
+    );
+}

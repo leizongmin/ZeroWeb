@@ -7242,7 +7242,16 @@
       // detHtml 的 R159 属性保真包装层），须走 JSON 往返命中包装容器。
       var compTag = comp165 && comp165.tag ? String(comp165.tag).toLowerCase() : '';
       var isContainerTag = compTag === 'html' || compTag === 'body';
-      if (comp165 && !isContainerTag) {
+      // R306（js-dom M4）：裸 `*` 同容器例外——_tree 是 body 内容树（无 html/
+      // head 层），doc 作用域的 `*` 须含结构元素且以 html 起（WPT
+      // ParentNode-querySelector-All "Document.querySelectorAll tree order" 的
+      // idx0 `trav=HTML/res=META`——树路径优先使容器元素恒缺席；探针实证
+      // host JSON `*` 返全树 6 元素以 html 起）。走 JSON 往返 + R296 结构桥
+      //（_zwWrapCached 的 html/body/head→doc 视图对象——traverse 的
+      // firstChild/nextSibling 与结果 identity 归一）。element 上下文
+      //（_zwMQueryAll）不受影响（subtree 查询面不含容器）。
+      var isBareUniversal = comp165 && (!comp165.tag || comp165.tag === '*') && !comp165.id && !(comp165.classes && comp165.classes.length) && !(comp165.attrs && comp165.attrs.length);
+      if (comp165 && !isContainerTag && !isBareUniversal) {
         var hits = _queryTreeByCompound(comp165, all);
         if (hits && hits.length) {
           var out164 = [];
