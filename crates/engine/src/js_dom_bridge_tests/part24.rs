@@ -1622,3 +1622,63 @@ globalThis.__r320p = out.join('|');
         "R320 template inline script inertness, got: {out}"
     );
 }
+
+
+// R321 (js-dom M4) — replaceWith(DocumentFragment) 的 fragment 展开与 pending 记账。
+// 修复两层：① _insertAdjacentVariadic 对 fragment 参数展开其子（此前 host 收 fragment
+// handle 整体——子不落地）；② 展开插入后补 `_zwHCLiveInvalidate` pending 桶记账（R51c
+// 同款——否则 childNodes 融合视图不可见）。已知限制（L2 深水区，identity 双源）：展开子
+// 经 handle 插入后对 **host 快照查询**（querySelector(All) 的 host 侧）不可见——与
+// querySelector-mixed-case（R299 备档）同域，普通 append 的 sel 父查询归一属 L2。
+#[test]
+fn r321_replacewith_fragment_flatten() {
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let mut sandbox = V8Sandbox::with_config(zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    })
+    .unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><div id='container'><div id='target'></div><b></b></div><template><span>New </span><script>void 0;</script><span>content</span></template></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+    let out = sandbox
+        .execute(
+            r#"
+var out = [];
+try {
+  var target = document.getElementById('target');
+  var container = document.getElementById('container');
+  var content = document.querySelector('template').content;
+  var clone = content.cloneNode(true);
+  target.replaceWith(clone);
+  // 融合 childNodes 视图（registry + 快照）须含克隆的全部子（span/script/span + b）。
+  var kids = container.childNodes;
+  var tags = [];
+  for (var i = 0; i < kids.length; i++) {
+    tags.push(String(kids[i].nodeName) + (kids[i].nodeType === 1 ? '' : '#'));
+  }
+  out.push('kids=' + tags.join('.'));
+  // cloneNode(true) 保子数（content 3 子 → 克隆 3 子）。
+  out.push('ck=' + content.childNodes.length);
+} catch (e) { out.push('err=' + String(e && e.message)); }
+globalThis.__r321p = out.join('|');
+"#,
+        )
+        .unwrap();
+    let out = sandbox.execute("globalThis.__r321p").unwrap().value;
+    // R321 修复面：fragment 展开分支已接线（host wire + pending 桶 + 反链）；但 sel 父的
+    // **融合视图对展开子仍不可见**（kids=DIV.B）——归 L2 深水区（identity 双源：host 快照
+    // 查询/视图与 JS registry 的普通 append 归一，querySelector-mixed-case 同域备档）。
+    // 本测试锁定 cloneNode 保子数 + 当前事实域，展开子的视图可见性随 L2 翻转。
+    assert!(
+        out.contains("kids=DIV.B") && out.contains("ck=3"),
+        "R321 replaceWith fragment facts (view visibility pending L2), got: {out}"
+    );
+}

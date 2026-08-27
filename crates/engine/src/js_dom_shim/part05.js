@@ -7847,6 +7847,35 @@
     for (var k = 0; k < items.length; k++) {
       var item = items[k];
       try {
+        // R321（js-dom M4）：DocumentFragment 参数展开（spec `concept-node-convert-nodes-into-a-node`
+        // + pre-insert 的 fragment 语义——fragment 自身不入树、其子按序插到目标位；WPT
+        // remove-next-sibling-during-replace-with 的 replaceWith(fragment)：不展开则 host 收到
+        // fragment handle 整体挂载/丢弃，查询视图无 span/script（探针 ccKids=2、tags=DIV.B 实证）。
+        if (item && typeof item === 'object' && item.nodeType === 11 && item.childNodes && item.childNodes.length) {
+          var _r321fk = Array.prototype.slice.call(item.childNodes);
+          // afterbegin（头插）逐子 INS 会反序——逆序遍历保参数序（R119 prepend 的
+          // 「逆序 unshift = 参数序」同理）；beforebegin/afterend 尾插天然保序。
+          if (position === 'afterbegin') _r321fk.reverse();
+          for (var _r321f = 0; _r321f < _r321fk.length; _r321f++) {
+            var _r321c = _r321fk[_r321f];
+            if (!_r321c) continue;
+            if (_r321c.__zwHandle) {
+              __zw_insert_adjacent_element(sel, position, _r321c.__zwHandle);
+              // R321：JS 侧反链记账（appendChild 的 R51 同款——host wire 不写 JS 注册表，
+              // 不记则 childNodes 融合视图的 overlay / live collection 并入的 _zwMutationInDoc
+              // 上行判 detached 而跳过）。
+              try {
+                if (typeof _zwNodeParent !== 'undefined' && _zwNodeParent) {
+                  _zwNodeParent[_r321c.__zwHandle] = { parentSel: sel, parentHandle: null, nextSibling: null };
+                }
+              } catch (_e321pl) {}
+              ceInserted.push(_r321c);
+            } else if (typeof _r321c.data === 'string' && _r321c.nodeType === 3) {
+              __zw_insert_adjacent_text(sel, position, String(_r321c.data));
+            }
+          }
+          continue;
+        }
         if (item && typeof item === 'object' && item.__zwHandle) {
           __zw_insert_adjacent_element(sel, position, item.__zwHandle);
           ceInserted.push(item);
@@ -7857,6 +7886,13 @@
       } catch (_e) {}
     }
     for (var ci = 0; ci < ceInserted.length; ci++) _ceApplyConn(ceInserted[ci], true);
+    // R321：pending 桶记账（R51c `_zwHCLiveInvalidate` 的 added 分桶）——展开插入的子按本 sel
+    // 父入桶，childNodes/查询 overlay（_zwOverlayPendingChildNodes）与 HTMLCollection live
+    // 才可见（appendChild 的 R47 同款记账；旧缺失使 replaceWith(fragment) 的展开子对查询
+    // 视图不可见——探针 ccKids=2/tags=DIV.B 实证）。
+    if (ceInserted.length && typeof _zwHCLiveInvalidate === 'function') {
+      try { _zwHCLiveInvalidate(ceInserted.slice(), [], sel, null); } catch (_e321inv) {}
+    }
   }
 
   // append/replaceChildren 共用：variadic 节点/字符串追加到 this 末尾（DocumentFragment flatten）。
