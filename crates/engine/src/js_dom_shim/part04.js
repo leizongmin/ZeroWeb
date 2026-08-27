@@ -430,13 +430,16 @@
             for (var _tci = 0; _tci < _tcKids.length; _tci++) {
               var _tcn = _tcKids[_tci];
               if (!_tcn) continue;
-              // R184（js-dom M4）spec 纠正：**父元素的 textContent 只拼接 Text 后代**
-              //（spec dom-node-textcontent 步骤「concatenate child's textContent if child
-              // is a Text node... comment/PI 不计入」）——CDATASection 在 spec 是 Text 的
-              // 子类但 textContent 联接规则只认「exclusive Text」（与 normalize 同口径，
-              // WPT Node-textContent "Element with children" 的 PI " ghi " 不计入）。
-              // R81 原注释（CDATA/PI data 计入）与上游期望矛盾，按 WPT 为准修正。
-              if (_tcn.nodeType === 3) _tcOut += String(_tcn.nodeValue != null ? _tcn.nodeValue : (_tcn.data != null ? _tcn.data : ''));
+              // R184（js-dom M4）spec 纠正：**父元素的 textContent 只拼接字符数据后代**
+              //（spec dom-node-textcontent——comment/PI 不计入；WPT Node-textContent
+              // "Element with children" 的 PI " ghi " 不计入）。R311（js-dom M4）勘误：
+              // **CDATASection 计入**——spec CDATASection : Text（字符数据语义），R184
+              // 误把 normalize 的「exclusive Text」口径套到 textContent（WPT
+              // Node-properties testDiv.textContent 期望 CDATA "1234"+"5678"+"9012"
+              // 拼接 = "123456789012"——旧只拼 Text 使 got "9012"）。Node-textContent
+              // 套件只测 PI/Comment 排除（不含 CDATA 元素内形态），本修零冲突。
+              // https://dom.spec.whatwg.org/#dom-node-textcontent
+              if (_tcn.nodeType === 3 || _tcn.nodeType === 4) _tcOut += String(_tcn.nodeValue != null ? _tcn.nodeValue : (_tcn.data != null ? _tcn.data : ''));
               else if (_tcn.nodeType === 1 && typeof _tcn.textContent === 'string') _tcOut += _tcn.textContent;
             }
             if (_tcOut !== '' || _tcKids.length > 0) return _tcOut;

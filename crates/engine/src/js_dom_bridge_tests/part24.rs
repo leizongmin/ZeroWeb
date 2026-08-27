@@ -989,3 +989,57 @@ globalThis.__r310p = out.join('|');
         "R310 same-turn removed elements filtered from subtree queries, got: {out}"
     );
 }
+
+#[test]
+fn r311_cdata_text_content_concat() {
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let mut sandbox = V8Sandbox::with_config(zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    })
+    .unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><p id='p'>x</p></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+    // R311：textContent 的 CDATA 拼接——spec CDATASection : Text（字符数据计入
+    // textContent 联接；comment/PI 不计入维持 R184）。WPT Node-properties testDiv
+    // .textContent 期望 CDATA "1234"+"5678" + Text "9012" = "123456789012"。
+    // https://dom.spec.whatwg.org/#dom-node-textcontent
+    let out = sandbox
+        .execute(
+            r#"
+var out = [];
+try {
+  // WPT Node-properties 形态：主文档 p（handle 元素）+ new Document() 的 CDATA 子
+  var xml = new Document();
+  var p = document.createElement('p');
+  p.appendChild(xml.createCDATASection('1234'));
+  p.appendChild(xml.createCDATASection('5678'));
+  p.append('9012');
+  out.push('tc=' + String(p.textContent));
+  // comment/PI 仍不计入（R184 语义维持）
+  p.appendChild(document.createComment('c'));
+  p.appendChild(xml.createProcessingInstruction('x', 'pi'));
+  out.push('tcNoCommentPI=' + String(p.textContent));
+  // CDATA 自身 textContent = data
+  var cd = xml.createCDATASection('abc');
+  out.push('cdSelf=' + String(cd.textContent));
+} catch (e) { out.push('err=' + String(e && e.message)); }
+globalThis.__r311p = out.join('|');
+"#,
+        )
+        .unwrap();
+    let out = sandbox.execute("globalThis.__r311p").unwrap().value;
+    println!("R311: {out}");
+    assert_eq!(
+        out, "tc=123456789012|tcNoCommentPI=123456789012|cdSelf=abc",
+        "R311 CDATA contributes to textContent concatenation (comment/PI still excluded), got: {out}"
+    );
+}
