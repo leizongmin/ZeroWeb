@@ -3862,6 +3862,22 @@
             if (newNode && (newNode === _makeProxy(sel, handle) || _zwIsAncestorOf(newNode, sel, handle))) {
               throw _zwDomException('A Node cannot be inserted before itself or its descendant.', 'HierarchyRequestError');
             }
+            // R300（js-dom M4）：spec `dom-node-pre-insert` **步骤 3 先于步骤 4-6**——
+            // child 非 null 且其 parent 非 parent → NotFoundError（WPT
+            // pre-insertion-validation-notfound 顺序断言族 "Should check whether
+            // 'child' is a child of 'parent' before checking whether 'node' is of
+            // a type..."——非法 node + 非 child ref 双违时须报 NotFound 非 HRE）。
+            // 判定与 R296 版相同（refNode.parentNode identity）；仅位置前移到类型
+            // 检查之前（步骤序），无新抛出条件。
+            if (refNode != null && typeof refNode === 'object') {
+              var _r300rp = null;
+              try { _r300rp = refNode.parentNode; } catch (_e300rp) { _r300rp = undefined; }
+              if (_r300rp !== _makeProxy(sel, handle)) {
+                throw _zwDomException(
+                  "Failed to execute 'insertBefore' on 'Node': The node before which the new node is to be inserted is not a child of this node.",
+                  'NotFoundError');
+              }
+            }
             // R296（js-dom M4）：spec `dom-node-pre-insert` 步骤 4——**Document/
             // DocumentType 节点只能入 Document**（WPT "context node is a
             // DocumentFragment/an element, inserting a document or a doctype"——
@@ -3872,21 +3888,84 @@
             if ((_r296nt === 9 || _r296nt === 10) && !_r296selfIsDoc) {
               throw _zwDomException('Only a Document can contain nodes of type ' + _r296nt + '.', 'HierarchyRequestError');
             }
-            // R296（js-dom M4）：spec `dom-node-pre-insert` 步骤「child 非 null 且
-            // child 的 parent 非 parent → NotFoundError」（WPT Node-insertBefore 的
-            // pre-insertion-validation-notfound "Should check that 'node' is not an
-            // ancestor... before checking whether 'child' is a child of 'parent'" 族 +
-            // "Inserting a node before a non-child"——旧版不校验直接推 host mutation，
-            // apply 时 insert_before 的 ref-not-child 报错**崩整文件**——probe B 形态
-            // `insertFunc.call(div, node, detachedChild)` 实证）。refNode 的 parent 判定：
-            // refNode.parentNode === 本 proxy（同 identity）；detached / 异父 → throw。
-            if (refNode != null && typeof refNode === 'object') {
-              var _r296rp = null;
-              try { _r296rp = refNode.parentNode; } catch (_e296rp) { _r296rp = undefined; }
-              if (_r296rp !== _makeProxy(sel, handle)) {
-                throw _zwDomException(
-                  "Failed to execute 'insertBefore' on 'Node': The node before which the new node is to be inserted is not a child of this node.",
-                  'NotFoundError');
+            // R300（js-dom M4）：spec `dom-node-pre-insert` **步骤 6**（parent 是
+            // Document——trap 此前只有步骤 4 类型检查，step-6 全缺）：element 插入
+            // 而文档已有**其它**元素子（≠newNode）/ 元素插入位后有 doctype /
+            // doctype 插入而文档已有 doctype / doctype 插入位**前**有元素 /
+            // fragment 含 text / fragment 含 2+ 元素 / fragment 含 1 元素且文档已有
+            // 其它元素。插入位 = refNode 在 childNodes 中的 index（null = 尾部）。
+            // **同节点豁免**：newNode 已是本 doc 子（移动形态——remove 恢复段）时
+            // 位置约束按「先移出再插入」评估（spec adopt 语义）。WPT
+            // pre-insertion-validation-hierarchy 的 doc-parent 六断言族 +
+            // Node-insertBefore 的 "context node is a document" 五断言族
+            // （`doc.insertBefore(a, doc.doctype)` 等——createHTMLDocument 产物经
+            // wrapper proxy 走本 trap，detached-doc 的 R296 step-6 不可达）。
+            // https://dom.spec.whatwg.org/#concept-node-pre-insert
+            if (_r296selfIsDoc) {
+              var _r300kids = [];
+              try { _r300kids = _makeProxy(sel, handle).childNodes || []; } catch (_e300k) {}
+              var _r300n = newNode.nodeType | 0;
+              var _r300hasEl = false, _r300hasDt = false, _r300hasSelf = false;
+              var _r300refIdx = -1;
+              for (var _r300i = 0; _r300i < _r300kids.length; _r300i++) {
+                var _r300k = _r300kids[_r300i];
+                if (!_r300k) continue;
+                if (_r300k === newNode) { _r300hasSelf = true; _r300refIdx = _r300i; }
+                else if (_r300k === refNode) _r300refIdx = _r300i;
+                if (_r300k.nodeType === 1 && _r300k !== newNode) _r300hasEl = true;
+                if (_r300k.nodeType === 10 && _r300k !== newNode) _r300hasDt = true;
+              }
+              // ref null → 插尾部；refIdx 即插入位（ref 之前）。
+              var _r300pos = _r300refIdx >= 0 ? _r300refIdx : _r300kids.length;
+              // 同节点移动豁免基线（spec：adopt 先移出——既有元素/doctype 子计数已排除
+              // 自身；位置约束按插入位评估，doctype 位置约束用「移出后」的位次）。
+              if (_r300n === 3 || _r300n === 4) {
+                throw _zwDomException('Nodes of type ' + _r300n + ' cannot be inserted into a Document.', 'HierarchyRequestError');
+              }
+              if (_r300n === 1 && _r300hasEl) {
+                throw _zwDomException('Cannot insert an element as a child of a document that already has an element child.', 'HierarchyRequestError');
+              }
+              if (_r300n === 1) {
+                // 元素插入位之后不得有 doctype（spec step 6.2「element 须在 doctype 后」）。
+                for (var _r300j = _r300pos; _r300j < _r300kids.length; _r300j++) {
+                  if (_r300kids[_r300j] && _r300kids[_r300j] !== newNode && _r300kids[_r300j].nodeType === 10) {
+                    throw _zwDomException('Cannot insert an element as a child of a document if there is a doctype after the insertion point.', 'HierarchyRequestError');
+                  }
+                }
+              }
+              if (_r300n === 10 && _r300hasDt) {
+                throw _zwDomException('Cannot insert a doctype as a child of a document that already has a doctype child.', 'HierarchyRequestError');
+              }
+              if (_r300n === 10) {
+                // doctype 插入位之前不得有元素（spec「doctype 须在元素前」）。
+                for (var _r300m = 0; _r300m < _r300pos; _r300m++) {
+                  if (_r300kids[_r300m] && _r300kids[_r300m] !== newNode && _r300kids[_r300m].nodeType === 1) {
+                    throw _zwDomException('Cannot insert a doctype as a child of a document if there is an element before the insertion point.', 'HierarchyRequestError');
+                  }
+                }
+              }
+              if (_r300n === 11) {
+                var _r300fk = [];
+                try { _r300fk = newNode.childNodes || []; } catch (_e300f) {}
+                var _r300fel = 0;
+                for (var _r300g = 0; _r300g < _r300fk.length; _r300g++) {
+                  var _r300fn = _r300fk[_r300g] ? _r300fk[_r300g].nodeType | 0 : 0;
+                  if (_r300fn === 3) {
+                    throw _zwDomException('Nodes of type 3 cannot be inserted into a Document.', 'HierarchyRequestError');
+                  }
+                  if (_r300fn === 1) _r300fel++;
+                }
+                if (_r300fel > 1 || (_r300fel === 1 && _r300hasEl)) {
+                  throw _zwDomException('Cannot insert a fragment with ' + (_r300fel > 1 ? 'more than one element' : 'an element') + ' as a child of a document' + (_r300hasEl ? ' that already has an element child' : '') + '.', 'HierarchyRequestError');
+                }
+                if (_r300fel === 1) {
+                  // fragment 的唯一元素插入位后不得有 doctype（同元素位置约束）。
+                  for (var _r300h = _r300pos; _r300h < _r300kids.length; _r300h++) {
+                    if (_r300kids[_r300h] && _r300kids[_r300h] !== newNode && _r300kids[_r300h].nodeType === 10) {
+                      throw _zwDomException('Cannot insert an element as a child of a document if there is a doctype after the insertion point.', 'HierarchyRequestError');
+                    }
+                  }
+                }
               }
             }
             // R87：注册文本子恢复（removeChild 注销后 oldParent.insertBefore(node,

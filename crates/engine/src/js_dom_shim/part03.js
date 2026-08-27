@@ -1859,6 +1859,26 @@
     //（"check the 'parent' type before 'child'" / "check 'node' is not an
     // ancestor before 'child'" / "check 'child' before node type"）。
     _r117GenValParentAncestor(this, newNode);
+    // R300（js-dom M4）：步骤 3 **先于** `_r117GenVal`（步骤 4-6 类型/文档 HRE）。
+    // **限定域**：`this` 无 `__zwSelector`（detached 容器——createElement/
+    // fragment/工厂对象）——R296 教训的 Internal-loading 域（blank 页
+    // document.head/body 挂 pending ref，sel-based in-document 路径视图不完整会
+    // 误抛 1840F 回归）被 sel 判据整体排除；detached 域 childNodes/parentNode
+    // 视图完整，identity 判定安全。WPT pre-insertion-validation-notfound 三断言
+    //（fragment 容器 doctype 形态 `insertFunc.call(df, doctype, child)` 等：
+    // detached child 的 parentNode null ≠ 容器 → NotFound 先于类型 HRE）。
+    // https://dom.spec.whatwg.org/#concept-node-pre-insert
+    var _r300detached = false;
+    try { _r300detached = this != null && (this.__zwSelector === undefined || this.__zwSelector === null); } catch (_e300ds) { _r300detached = false; }
+    if (_r300detached && refNode != null && typeof refNode === 'object') {
+      var _r300rp = null;
+      try { _r300rp = refNode.parentNode; } catch (_e300gp) { _r300rp = undefined; }
+      if (_r300rp !== this) {
+        throw new (globalThis.DOMException || Error)(
+          "Failed to execute 'insertBefore' on 'Node': The node before which the new node is to be inserted is not a child of this node.",
+          'NotFoundError');
+      }
+    }
     _r117GenVal(this, newNode, 'insertBefore');
 
     // R117：refNode NotFound 校验 lenient——内部加载路径经 insertBefore 挂 pending ref（视图
@@ -8049,6 +8069,22 @@
       // xmlDoc/foreignDoc 缺此方法直接 TypeError 崩用例）。ref=null 等价 append。
       insertBefore: function (c, ref) {
         if (!c) return c;
+        // R300（js-dom M4）：HRE/NFE 异常工厂（R296 的 `_r296hre` 引用从未定义——
+        // ReferenceError 被外层 `catch (_e296dv)` 静默吞掉使 step-6 检查全 no-op，
+        // 本轮补定义使既有检查真正生效；WPT "inserting an element if there
+        // already is an element child ... did not throw" 实证缺口）。
+        var _r296hre = function (msg) { return new (globalThis.DOMException || Error)(msg, 'HierarchyRequestError'); };
+        var _r296nfe = function (msg) { return new (globalThis.DOMException || Error)(msg, 'NotFoundError'); };
+        // R300（js-dom M4）：spec `dom-node-pre-insert` **步骤 3 先于步骤 4-6**——
+        // ref 非 null 且非本 doc 子（childNodes identity miss）→ NotFoundError
+        //（WPT pre-insertion-validation-notfound "check 'child' before node can be
+        // inserted into the document"——createDocument(null,null,null) 容器形态）。
+        // 本 doc 是 WPT detached 文档（createDocument/createHTMLDocument），不经
+        // 主文档加载路径（R117 lenient 警告的域）——childNodes 视图完整，identity
+        // 判定安全（合法子/同节点重插 restoreIframe 段均通过）。
+        if (ref != null && (typeof ref !== 'object' || this.childNodes.indexOf(ref) < 0)) {
+          throw _r296nfe("Failed to execute 'insertBefore' on 'Node': The node before which the new node is to be inserted is not a child of this node.");
+        }
         // R296（js-dom M4）：spec `dom-node-pre-insert` **步骤 6**（parent 是
         // Document——WPT Node-insertBefore hierarchy 断言族对 createHTMLDocument
         // 产物的 `insert(doc, el/doctype/df)` 形态）：node 是 Element 且 doc 已有
@@ -8297,14 +8333,18 @@
           if (_r296wn.nodeType === 10) _r296wDt = true;
         }
         if (_r296wSelf) _r296wEl = _r296wDt = false;
-        if (nnt2 === 1 && _r296wEl && newNode.ownerDocument !== doc) {
+        // R300：移除 `newNode.ownerDocument !== doc` 限定——同 doc 元素与既有元素
+        // 冲突同样须抛（WPT pre-insertion-validation-hierarchy "If node is an
+        // Element and parent is a document with another element" 的 el 即
+        // doc.createElement 产物）；「同节点重插」豁免已由 _r296wSelf 承担。
+        if (nnt2 === 1 && _r296wEl) {
           throw new (globalThis.DOMException || Error)('Cannot insert an element as a child of a document that already has an element child.', 'HierarchyRequestError');
         }
         // R296：**ref 位感知**——element 插到 doctype 或其前的 ref（element 落
         // doctype 前）→ HRE；doctype 插到元素 ref 前 → HRE（WPT "inserting an
         // element before the doctype" / "a doctype is following the reference
         // child" 元素直插形态）。
-        if (nnt2 === 1 && refNode && newNode.ownerDocument !== doc) {
+        if (nnt2 === 1 && refNode) {
           var _r296ek = doc.childNodes || [];
           var _r296eri = -1, _r296edti = -1;
           for (var _r296er = 0; _r296er < _r296ek.length; _r296er++) {
@@ -8320,6 +8360,13 @@
         // 「doctype 须在首元素前」——末尾追加在有元素时恒非法，元素前插入合法）。
         if (nnt2 === 10 && !refNode && (_r296wDt || _r296wEl)) {
           throw new (globalThis.DOMException || Error)('Cannot insert a doctype as a child of a document that already has a doctype or an element child.', 'HierarchyRequestError');
+        }
+        // R300：doctype 唯一性——已有**其它** doctype 子时任何位插入 doctype → HRE
+        //（spec step 6「doctype 须在首元素前」蕴含唯一；WPT "inserting a doctype
+        // if there already is a doctype child" 的 `doc.insertBefore(doctype,
+        // comment)` 形态——既有 doctype 在插入位之后，旧版只在尾部追加分支拦截）。
+        if (nnt2 === 10 && _r296wDt) {
+          throw new (globalThis.DOMException || Error)('Cannot insert a doctype as a child of a document that already has a doctype child.', 'HierarchyRequestError');
         }
         if (nnt2 === 11) {
           var _r296wf = newNode.childNodes || [];

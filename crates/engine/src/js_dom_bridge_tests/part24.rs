@@ -193,3 +193,114 @@ globalThis.__r299p = out.join('|');
         "R299 attr case flags: s exact-only, i folds both sides, bare-i is a value not a flag"
     );
 }
+
+#[test]
+fn r300_insert_before_step3_ordering_and_doc_parent_step6() {
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let mut sandbox = V8Sandbox::with_config(zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    })
+    .unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><div id=\"t\">x</div></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+    let out = sandbox
+        .execute(
+            r#"
+var out = [];
+function probe(name, fn) {
+  try { fn(); out.push(name + ':no-throw'); }
+  catch (e) { out.push(name + ':' + e.name + '(' + (e.code != null ? e.code : '-') + ')'); }
+}
+var insertFunc = Node.prototype.insertBefore;
+// Test1 parent: createElement div (proxy), node: createHTMLDocument (non-insertable), child detached
+probe('t1', function () {
+  var parent = document.createElement("div");
+  var child = document.createElement("div");
+  var node = document.implementation.createHTMLDocument("title");
+  insertFunc.call(parent, node, child);
+});
+// Test2a parent: createDocument(null,"foo",null) (detached doc), node text, child detached
+probe('t2a', function () {
+  var child = document.createElement("div");
+  var node = document.createTextNode("");
+  var parent = document.implementation.createDocument(null, "foo", null);
+  insertFunc.call(parent, node, child);
+});
+// Test2b parent: createElement div / createDocumentFragment, node doctype, child detached
+probe('t2b', function () {
+  var child = document.createElement("div");
+  var node = document.implementation.createDocumentType("html", "", "");
+  var parent = document.createElement("div");
+  insertFunc.call(parent, node, child);
+});
+probe('t2b2', function () {
+  var child = document.createElement("div");
+  var node = document.implementation.createDocumentType("html", "", "");
+  var parent = document.createDocumentFragment();
+  insertFunc.call(parent, node, child);
+});
+// Test3a parent: createDocument(null,null,null), node fragment(2 el), child detached
+probe('t3a', function () {
+  var child = document.createElement("div");
+  var parent = document.implementation.createDocument(null, null, null);
+  var node = document.createDocumentFragment();
+  node.appendChild(document.createElement("div"));
+  node.appendChild(document.createElement("div"));
+  insertFunc.call(parent, node, child);
+});
+// Test3b parent doc w/ element, node element, child detached
+probe('t3b', function () {
+  var child = document.createElement("div");
+  var parent = document.implementation.createDocument(null, null, null);
+  var node = document.createElement("div");
+  parent.appendChild(document.createElement("div"));
+  insertFunc.call(parent, node, child);
+});
+globalThis.__r300p = out.join('|');
+var out2 = [];
+function pr(name, fn) { try { fn(); out2.push(name+':no-throw'); } catch(e) { out2.push(name+':'+e.name); } }
+pr('docEl', function () { var doc = document.implementation.createHTMLDocument("title"); var el = doc.createElement("a"); doc.insertBefore(el, null); });
+pr('docDf1', function () { var doc = document.implementation.createHTMLDocument("title"); var df = doc.createDocumentFragment(); df.appendChild(doc.createElement("a")); doc.insertBefore(df, null); });
+pr('docDf2', function () { var doc = document.implementation.createHTMLDocument("title"); doc.documentElement.remove(); var df = doc.createDocumentFragment(); df.appendChild(doc.createElement("a")); df.appendChild(doc.createElement("b")); doc.insertBefore(df, null); });
+pr('docText', function () { var doc = document.implementation.createHTMLDocument("title"); doc.insertBefore(doc.createTextNode("t"), null); });
+globalThis.__r300q = out2.join('|');
+"#,
+        )
+        .unwrap();
+    let out = sandbox.execute("globalThis.__r300p").unwrap().value;
+    let out2 = sandbox.execute("globalThis.__r300q").unwrap().value;
+    // 步骤 3（child NotFound，code 8）先于步骤 4-6（类型/doc HRE，code 3）——六形态
+    //（proxy 容器 / detached doc / fragment / 元素容器 × 非法 node 类型）。
+    assert_eq!(
+        out,
+        "t1:NotFoundError(8)|t2a:NotFoundError(8)|t2b:NotFoundError(8)|t2b2:NotFoundError(8)|t3a:NotFoundError(8)|t3b:NotFoundError(8)",
+        "R300 pre-insert step-3 ordering: NotFound precedes type/doc HRE across proxy/detached-doc/fragment/element containers"
+    );
+    // doc-parent step-6（winning fn 的 ownerDocument 门移除 + doctype 唯一性）：
+    // element 入已有元素的 doc / fragment 单元素 / 尾部 doctype / text 均须 HRE。
+    assert_eq!(
+        out2,
+        "docEl:HierarchyRequestError|docDf1:HierarchyRequestError|docDf2:HierarchyRequestError|docText:HierarchyRequestError",
+        "R300 doc-parent step-6: same-doc element conflict throws (ownerDocument gate removed)"
+    );
+    // 合法插入不受影响（对照）。
+    let ok = sandbox
+        .execute(
+            r#"var doc = document.implementation.createHTMLDocument("t");
+var p = doc.body; var t = doc.createTextNode("hello");
+p.insertBefore(t, null);
+globalThis.__r300ok = p.childNodes.length;"#,
+        )
+        .unwrap();
+    let ok = sandbox.execute("globalThis.__r300ok").unwrap().value;
+    assert_eq!(ok, "1", "R300 legal insert unaffected");
+}
