@@ -10615,6 +10615,9 @@
           return _readClass(key, sel, handle);
         }
         if (prop === 'id') {
+          // R297：JS 原值优先（含孤立代理的 id——host 值经 lossy 换损为 U+FFFD，
+          // WPT escapes never-match 族须原值比较；详见 part01 `_zwRawIds` 注记）。
+          if (Object.prototype.hasOwnProperty.call(_zwRawIds, key)) return _zwRawIds[key];
           return handle ? __zw_get_attr_handle(handle, 'id') : __zw_get_attr(sel, 'id');
         }
         // reflected 字符串属性（title/lang）——get 反射同名 attribute（无 → ''）；同步 set→get 优先读

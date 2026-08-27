@@ -1827,6 +1827,12 @@
             if (n === 'id') {
               if (!handle && globalThis._zwIdOverrideSet) globalThis._zwIdOverrideSet(key, v);
               if (handle && v && typeof _zwPAIdAdd === 'function') _zwPAIdAdd(proxy);
+              // R297：JS 原值缓存同步（同 .id= setter——lone surrogate 的 id 须原值
+              // 读回/匹配；详见 part01 `_zwRawIds`）。
+              try {
+                if (/[\uD800-\uDFFF]/.test(v)) _zwRawIds[key] = v;
+                else delete _zwRawIds[key];
+              } catch (_e297s) {}
             }
             // R122：绑定表值同步——已有绑定的 Attr 值跟随 setAttribute 更新（直写 _r122V
             // 绕过原型 setter 的回传播环；textContent/data 同步）。
@@ -1945,6 +1951,8 @@
             else __zw_set_attr(sel, n, '');
             // R125：id 移除登记覆盖表（null = absent——sel-based 元素旧 id 查询剔除）。
             if (n === 'id' && !handle && globalThis._zwIdOverrideSet) globalThis._zwIdOverrideSet(key, null);
+            // R297：id 移除清 JS 原值缓存（回落 host 读——attr 已 absent）。
+            if (n === 'id') { try { delete _zwRawIds[key]; } catch (_e297m) {} }
             if (_rmExisted) _mo_notify(sel, handle, { type: 'attributes', attributeName: n, oldValue: moOld });
             if (ceEntry) _ce_dispatchAttrChange(ceEntry, proxy, n, ceOld, null);
           };
@@ -5963,6 +5971,13 @@
         } else if (p === 'id') {
           // spec [LegacyNullToEmptyString]：null → 空串（非 "null"）。
           var idv = value === null ? '' : String(value);
+          // R297：JS 原值缓存同步（含孤立代理的 id——host 写入 lossy 换损 U+FFFD，
+          // 读回与客户端匹配须原值；值无 lone surrogate 时清表走 host 快路径）。
+          // 详见 part01 `_zwRawIds` 注记。
+          try {
+            if (/[\uD800-\uDFFF]/.test(idv)) _zwRawIds[key] = idv;
+            else delete _zwRawIds[key];
+          } catch (_e297r) {}
           // A node can be appended before its ID is assigned.  Keep the pending
           // insertion index in sync so getElementById() observes that node in
           // the same script turn, before the renderer publishes its next DOM

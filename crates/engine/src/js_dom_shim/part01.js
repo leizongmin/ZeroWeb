@@ -42,6 +42,12 @@
   // 同脚本内连续 add 末次覆盖前次（`add('a');add('b')` 丢 'a'）。缓存累积全量，末次 SetAttr 携带
   // 正确值；className set 同步更新缓存保证一致。导航经 `__zw_reset_form_state` 清空。
   var _classCache = {};
+  // R297（js-dom M4）：per-element-key 的 id **JS 原值**缓存（含孤立代理——V8→Rust 的
+  // to_rust_string_lossy 会把 lone surrogate 替换成 U+FFFD，WPT ParentNode-querySelector-
+  // escapes 的 never-match 族（`#\d83d …` 解码为 U+FFFD ≠ id 本体 \ud83d）在 JS 侧客户端
+  // 匹配（handle 容器 querySelector/_handleQueryFirst）须用原值比较——host 侧值已 lossy，
+  // 会 U+FFFD === U+FFFD 误命中）。值 === host 值时不入表（零开销快路径）。
+  var _zwRawIds = {};
   // Constraint Validation（R2825）：per-element-key 自定义校验消息（setCustomValidity 设置）。
   // 空串/未设=valid；非空=customError + validity.valid=false + validationMessage=msg。原生约束
   // （required/pattern/type 等）headless 不强制（permissive valid）。同 _inputValues/_classCache 经
