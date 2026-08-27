@@ -228,8 +228,32 @@ pub(super) fn expand_at_imports(
     let n = bytes.len();
     let mut out = String::with_capacity(css.len());
     let mut i = 0;
+    // R3756（CSS Conditional 3 §contents-of）：@import 须先于样式表中所有其他规则
+    //（仅 @charset / @layer 语句可前置）。首个非 @charset/@import/@namespace/@layer 的
+    // 顶层内容（选择器首字符或其他 at-rule）出现后，样式表序言结束——其后的 @import
+    // 非法，整条忽略（不展开也不透传，与 invalid rule 被丢弃的语义一致）。
+    // driving: css/css-conditional at-supports-045 / at-media-003（@supports 块之后的
+    // `@import "support/fail.css"` 被误应用致整页红）。
+    let mut prologue_ended = false;
     while i < n {
         let c = bytes[i];
+        if !prologue_ended && c.is_ascii_whitespace() {
+            i += 1;
+            continue;
+        }
+        if !prologue_ended && c != b'@' {
+            // 序言中首个非 at-rule 字符 = 选择器开始 → 序言结束。
+            prologue_ended = true;
+        }
+        if !prologue_ended && c == b'@' {
+            // 序言 at-rule：仅 charset/import/namespace/layer 允许前置；其余（如 @supports）
+            // 本身即规则 → 序言结束。该 at-rule 本体照常走后续逻辑（透传/展开）。
+            let rest_lower = css[i..].to_ascii_lowercase();
+            let allowed = ["@charset", "@import", "@namespace", "@layer"];
+            if !allowed.iter().any(|kw| rest_lower.starts_with(kw)) {
+                prologue_ended = true;
+            }
+        }
         // 跳过 string literal（原样输出，不在串内匹配 @import）
         if c == b'"' || c == b'\'' {
             let quote = c;
@@ -265,6 +289,23 @@ pub(super) fn expand_at_imports(
             let rest = &css[i..];
             let lower_rest = rest.to_ascii_lowercase();
             if lower_rest.starts_with("@import") && (rest.len() == 7 || !is_ident_char(rest.as_bytes()[7])) {
+                // R3756：序言结束后的 @import 非法（CSS Conditional 3 §contents-of）——
+                // 整条丢弃（跳过到 ';'，不输出、不展开），与 invalid rule 丢弃语义一致。
+                if prologue_ended {
+                    let mut j = i + 7;
+                    while j < n && bytes[j] != b';' {
+                        if bytes[j] == b'"' || bytes[j] == b'\'' {
+                            let q = bytes[j];
+                            j += 1;
+                            while j < n && bytes[j] != q {
+                                j += 1;
+                            }
+                        }
+                        j += 1;
+                    }
+                    i = (j + 1).min(n);
+                    continue;
+                }
                 // 找语句末尾 ';'（跨 string 防 ';' 在串内）
                 let mut j = i + 7;
                 while j < n && bytes[j] != b';' {
@@ -1095,6 +1136,46 @@ mod tests {
         );
         assert!(!out2.contains(".test"), "media 不匹配应整条删除: {out2}");
         assert!(!out2.contains("@supports"), "media 不匹配不输出 supports 包裹: {out2}");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// R3756：@import 须先于样式表中所有其他规则（CSS Conditional 3 §contents-of）。
+    /// 序言（@charset/@import/@namespace/@layer）之后的 @import 非法 → 整条丢弃。
+    /// driving: css/css-conditional at-supports-045 / at-media-003（@supports 块后的
+    /// `@import "support/fail.css"` 被误应用致整页红）。
+    #[test]
+    fn expand_at_imports_drops_after_style_rules() {
+        let dir = std::env::temp_dir().join(format!("zw_reftest_import_ord_{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("fail.css"), ".test { background: red }").unwrap();
+        std::fs::write(dir.join("ok.css"), ".test { background: green }").unwrap();
+        let ctx = zero_css_parser::media_query::MediaContext::new(800.0, 600.0);
+        let mut chain = std::collections::HashSet::new();
+
+        // 序言内的 @import 正常展开；@supports 块之后的 @import 丢弃。
+        let css = concat!(
+            "@import \"ok.css\";\n",
+            "@supports (background: blue) {\n  .t2 { background: green; }\n}\n",
+            "@import \"fail.css\";\n",
+            "div { background: red }\n",
+        );
+        let out = expand_at_imports(css, &dir, &ctx, &mut chain);
+        assert!(
+            out.contains(".test { background: green }"),
+            "序言 @import 正常展开: {out}"
+        );
+        assert!(
+            !out.contains(".test { background: red }"),
+            "规则后 @import 须丢弃: {out}"
+        );
+
+        // 选择器出现（无前置 at-rule）后的 @import 同样丢弃。
+        let css2 = "div { color: blue }\n@import \"fail.css\";\n";
+        let out2 = expand_at_imports(css2, &dir, &ctx, &mut chain);
+        assert!(!out2.contains(".test"), "选择器后 @import 须丢弃: {out2}");
+        assert!(out2.contains("div { color: blue }"), "既有规则原样保留: {out2}");
+
         let _ = std::fs::remove_dir_all(&dir);
     }
 }
