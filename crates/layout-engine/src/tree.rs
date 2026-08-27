@@ -1293,6 +1293,32 @@ fn build_subtree(
         }
     }
 
+    // R3755（CSS 2.1 §9.4.1 + CSS Containment §3/§4）：建立 BFC 的元素——display:flow-root、
+    // display:inline-block（原子 inline-level）、contain:layout|paint（content = layout+paint
+    // 含之）——同样设置 taffy overflow: Hidden 阻止 taffy 内部的父子 margin 折叠与
+    // collapse-through。谓词与 engine.rs is_flow_root（后置 LayoutBox 旗标）同源；仅影响
+    // taffy margin 折叠行为，不影响视觉裁剪（同上 multicol 模式）。
+    // driving: css/css-contain/contain-content-002（嵌套 contain:content 链，子 mt 被折叠
+    // 出父盒 → 三层背景同 y 重叠，19.6% 离散 fail）。
+    {
+        // 注：inline-block / flow-root 虽按 CSS 亦建立 BFC，但其 float 环绕/收缩几何
+        //（floats-wrap-bfc-* 左表案、css-sizing bfc-next-to-float-2、margin-trim
+        // block-in-inline-005）与 ZW 既有 float-avoidance 路径交互 net 负（flow-root arm
+        // 单独 -2：bfc-next-to-float-2 + replaced-next-to-float-2，margin-trim-005 亦
+        // flow-root），本轮仅纳入 contain 系（net +2 contain independent-formatting-context
+        // 翻绿 + contain-content-002 19.60→14.70），flow-root/inline-block float-adjacent
+        // BFC narrowing 留待 float_positioning 深路径专项。
+        let establishes_bfc = (computed.contain.has_layout() || computed.contain.has_paint())
+            && !matches!(
+                computed.display,
+                DisplayValue::Inline | DisplayValue::Contents | DisplayValue::None
+            );
+        if establishes_bfc && !matches!(taffy_style.overflow.y, taffy::style::Overflow::Scroll) {
+            taffy_style.overflow.x = taffy::style::Overflow::Hidden;
+            taffy_style.overflow.y = taffy::style::Overflow::Hidden;
+        }
+    }
+
     // 垂直书写模式轴交换
     // CSS Writing Modes §7.1：在垂直书写模式中，水平/垂直维度互换。
     // 当父元素（即当前元素的 containing block）具有 vertical writing mode 时，
