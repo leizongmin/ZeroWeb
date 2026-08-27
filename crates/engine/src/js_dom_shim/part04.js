@@ -5171,6 +5171,54 @@
             // R158：非法选择器守卫（同 querySelector 分支）。
             if (globalThis._zwQueryGuard) globalThis._zwQueryGuard(q, arguments.length);
             if (sel && typeof __zw_query_all_sub === 'function') {
+              // R309（js-dom M4）：**pending-fused 子树查询**——同步 turn 内 innerHTML
+              // 替换 / appendChild 等 mutation 经 host 异步 apply，快照查询对「刚写入
+              // 的子树」恒 miss / 对「刚移除的子树」恒 stale（WPT
+              // ParentNode-querySelectorAll-removed-elements：innerHTML 换新后同 turn
+              // 查询须返新元素、不返旧元素）。本容器 pending 桶非空时，改从
+              // `_childNodeList`（含 overlay 的 live 子列表）**重建**结果——compound
+              // 选择器（tag/#id/.class/[attr] 组合，`_parseCompoundOf`/`_matchCompoundOf`
+              // 客户端匹配）覆盖；不支持形态（组合器/伪类等 `unsupported`）回落 host
+              // 快照语义（零变化）。桶空 = 无 pending → 纯 host 路径（零开销）。
+              var _r309fused = null;
+              try {
+                var _r309b = _zwPendingByParent.get(sel);
+                if (_r309b && _r309b.added.length) {
+                  // R309：**限 innerHTML 替换域**——桶 added 里存在「innerHTML 解析
+                  // wrapper 打挂父槽」形态（R304 的 `_zwSelPendingParent`，无 handle
+                  // 无 sel）时本容器有同 turn 整体替换，快照子已 stale。仅此时重建
+                  //（基底已被 R304 置空，overlay 即全部新子）；handle/proxy 子的普通
+                  // append（Vue mount 等）基底仍有效且 overlay 有 identity 双源风险，
+                  // 维持 host 快照语义（vue_reconciliation 的 lis:A,B,A,B 双计教训）。
+                  var _r309ih = false;
+                  for (var _r309g = 0; _r309g < _r309b.added.length; _r309g++) {
+                    var _r309n = _r309b.added[_r309g];
+                    if (_r309n && !_r309n.__zwHandle && !_r309n.__zwSelector
+                        && _r309n._zwSelPendingParent && _r309n._zwSelPendingParent.parentSel === sel) {
+                      _r309ih = true; break;
+                    }
+                  }
+                  if (_r309ih) {
+                    var _r309comp = _parseCompoundOf(String(q));
+                    if (_r309comp && !_r309comp.unsupported) {
+                      var _r309kids = _childNodeList(sel, null);
+                      var _r309out = [];
+                      (function _r309walk(n) {
+                        if (!n) return;
+                        var cs = n.childNodes || [];
+                        for (var _r309i = 0; _r309i < cs.length; _r309i++) {
+                          var _r309c = cs[_r309i];
+                          if (!_r309c || _r309c.nodeType !== 1) continue;
+                          if (_matchCompoundOf(_r309c, _r309comp)) _r309out.push(_r309c);
+                          _r309walk(_r309c);
+                        }
+                      })({ childNodes: _r309kids });
+                      _r309fused = _r309out;
+                    }
+                  }
+                }
+              } catch (_e309) { _r309fused = null; }
+              if (_r309fused) return _zwMakeCollection(_r309fused, false);
               try {
                 var all = __zw_query_all_sub(sel, String(q));
                 if (all) return _zwMakeCollection(all.split('|').filter(Boolean).map(_wrapSelector), false);

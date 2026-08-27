@@ -874,3 +874,57 @@ globalThis.__r308m = out.join('|');
         "R308 fragment-root serialization makes matches see fragment subtree, got: {out}"
     );
 }
+
+#[test]
+fn r309_removed_elements_repro() {
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let mut sandbox = V8Sandbox::with_config(zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    })
+    .unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><div id=\"container\"></div></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+    // R309：主文档域（sel 容器）——innerHTML 替换后 querySelectorAll 不得返旧元素。
+    // jsdom#2519 回归：innerHTML 换新 HTML 后同键 wrapper 缓存命中旧对象/旧查询源。
+    let out = sandbox
+        .execute(
+            r#"
+var out = [];
+try {
+  var container = document.querySelector('#container');
+  out.push('container=' + String(container && container.nodeName));
+  function getIDs() {
+    var els = container.querySelectorAll('a.test');
+    var ids = [];
+    for (var i = 0; i < els.length; i++) ids.push(String(els[i].id));
+    return ids.join(',');
+  }
+  container.innerHTML = '<a id="link-a" class="test">a link</a>';
+  out.push('first=' + getIDs());
+  container.innerHTML = '<a id="link-b" class="test"><img src="foo.jpg"></a>';
+  out.push('second=' + getIDs());
+  container.innerHTML = '<a id="link-a" class="test">a link</a>';
+  out.push('third=' + getIDs());
+} catch (e) { out.push('err=' + String(e && e.message)); }
+globalThis.__r309p = out.join('|');
+"#,
+        )
+        .unwrap();
+    let out = sandbox.execute("globalThis.__r309p").unwrap().value;
+    println!("R309: {out}");
+    // R309 断言：innerHTML 逐次替换后同 turn 查询返新子树元素（不返旧元素）——
+    // pending-fused 子树查询（`_childNodeList` overlay 重建 + 客户端 compound 匹配）。
+    assert_eq!(
+        out, "container=DIV|first=link-a|second=link-b|third=link-a",
+        "R309 removed-elements: same-turn querySelectorAll reflects innerHTML replacements"
+    );
+}
