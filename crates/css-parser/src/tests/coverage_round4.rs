@@ -832,6 +832,56 @@ fn test_parse_selector_with_pseudo_class() {
 
 // ── R3757：@namespace 注册与 prefix|name 选择器（CSS Namespaces 3）──
 
+/// R3758：@namespace 序言位置校验（CSS Namespaces §5 + CSS Conditional §contents-of）。
+/// @supports 块之后（序言结束）的 `@namespace y` 整条无效——y 不注册，`y|div` 规则
+/// 非法整体丢弃，使 `.test1` 保持 green 规则（driving: at-supports-045/at-media-003）。
+#[test]
+fn r3758_namespace_after_prologue_not_registered() {
+    let css = concat!(
+        "@namespace x \"http://www.w3.org/\";\n",
+        "@supports (background: blue) { }\n",
+        "@import \"support/fail.css\";\n",
+        "@namespace y \"http://www.w3.org/\";\n",
+        "\n",
+        ".test1, x|div { background: green; }\n",
+        ".test1, y|div { background: red; }\n",
+        "\n",
+        "div {\n",
+        "  background: red;\n",
+        "  height: 50px;\n",
+        "  width: 100px;\n",
+        "}\n",
+    );
+    let sheet = Parser::parse_stylesheet(css);
+    // @supports + green 规则 + div = 3 条（@import/@namespace y 序言后无效，red 规则
+    // 因 y|div 非法整体丢弃——.test1 保持 green）。
+    assert_eq!(sheet.rules.len(), 3, "rules: {:?}", sheet.rules.len());
+    // green 规则含 .test1 + x|div（x 序言内注册 ✓）。
+    let Rule::Style(green) = &sheet.rules[1] else {
+        panic!("expected green style rule");
+    };
+    assert_eq!(green.selectors.len(), 2, "green 规则两个选择器都应保留");
+    // red 规则：y|div 非法 → 整条选择器列表非法……CSS Namespaces §3.4 整列表非法，
+    // 但 .test1 是合法选择器——列表级 invalidation 下整条规则丢弃。此处 Chromium
+    // 行为：y 未注册 → 列表含非法选择器 → 整条规则丢弃 → rules 中不出现。
+    // ZW 当前实现与 WPT 期望一致（red 规则丢弃后 .test1 保持 green）。
+}
+
+#[test]
+/// R3758：序言内的 @namespace 正常注册（对照）。
+fn r3758_namespace_in_prologue_still_registers() {
+    let css = "@namespace x \"http://www.w3.org/\"; x|div { color: green }";
+    let sheet = Parser::parse_stylesheet(css);
+    assert_eq!(sheet.rules.len(), 1);
+    let Rule::Style(st) = &sheet.rules[0] else {
+        panic!("expected style rule");
+    };
+    assert!(matches!(
+        st.selectors[0].complex.parts[0].0.type_selector,
+        Some(TypeSelector::Namespaced { .. })
+    ));
+}
+
 /// R3757：default namespace 声明后，裸类型选择器解析为 Namespaced（ns=Some）；
 /// :is() 参数内的裸类型选择器不受 default ns 影响（Selectors 4 §4.2）。
 #[test]
@@ -875,21 +925,22 @@ fn r3757_namespace_unregistered_prefix_drops_rule() {
 
 #[test]
 /// R3757：`*|name` 合法（任意命名空间）；错位 @namespace（@supports 后）不影响
-/// 已注册前缀（注册按出现顺序，@supports 后的 @namespace 仅对其后的选择器生效）。
+/// R3758 订正（原 R3757 断言基于旧无序言校验行为）：@supports 后序言已结束，
+/// `@namespace y` 不注册 → `y|div` 规则非法丢弃；`x|div` 亦因 x 未注册丢弃。
 fn r3757_namespace_universal_and_ordering() {
     // *|div 合法。
     let stylesheet = Parser::parse_stylesheet("*|div { color: green; }");
     assert_eq!(stylesheet.rules.len(), 1);
 
-    // @supports 之后注册的 y 对其后的选择器生效（x 未注册则那条被丢）。
+    // @supports 之后序言结束：y 不注册 → y|div 规则非法丢弃。
     let stylesheet = Parser::parse_stylesheet(concat!(
         "@supports (background: blue) { .t2 { color: green } }\n",
         ".test1, x|div { color: green; }\n",
         "@namespace y url(http://www.w3.org/);\n",
         ".test1, y|div { color: red; }\n",
     ));
-    // `.test1, x|div` 丢（x 未注册）；`.test1, y|div` 留（y 已注册）。
-    assert_eq!(stylesheet.rules.len(), 2, "x|div 丢 / y|div 留");
+    // @supports 一条；x|div/y|div 两条规则均因未注册前缀丢弃。
+    assert_eq!(stylesheet.rules.len(), 1, "仅 @supports 保留（R3758 语义）");
 }
 
 #[test]

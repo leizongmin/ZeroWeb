@@ -22,6 +22,10 @@ pub struct Parser<'a> {
     /// 空前缀 = default namespace。解析 `prefix|name` 选择器时查此表：未注册前缀使
     /// 整条选择器非法（CSS Namespaces §3.4）。
     namespace_prefixes: std::collections::HashMap<String, String>,
+    /// R3758（CSS Namespaces 3 §5 + CSS Conditional 3 §contents-of）：样式表序言是否已
+    /// 结束（已出现样式规则或 @supports 等非前置 at-rule）。序言结束后的 @namespace
+    /// 整条无效——消耗但不注册。
+    namespace_prologue_ended: bool,
 }
 
 /// 未编译的样式规则（CSS 嵌套中间结构）。
@@ -281,6 +285,7 @@ impl<'a> Parser<'a> {
             tokens,
             pos: 0,
             namespace_prefixes: std::collections::HashMap::new(),
+            namespace_prologue_ended: false,
         }
     }
 
@@ -363,6 +368,12 @@ impl<'a> Parser<'a> {
                 } else if name.eq_ignore_ascii_case("layer") {
                     self.consume_layer_rule().map(Rule::Layer)
                 } else if name.eq_ignore_ascii_case("import") {
+                    // R3758（CSS Conditional §contents-of）：@import 仅序言有效。序言结束后
+                    // 的 @import 整条无效——消耗但丢弃（fail.css 之类误置导入不得应用）。
+                    if self.namespace_prologue_ended {
+                        self.consume_import_rule();
+                        return vec![];
+                    }
                     self.consume_import_rule().map(Rule::Import)
                 } else if name.eq_ignore_ascii_case("supports") {
                     self.consume_supports_rule().map(Rule::Supports)
@@ -384,13 +395,41 @@ impl<'a> Parser<'a> {
                     //（无消费方，等价通用 At 规则的忽略语义）。
                     // 注意须在 rule_opt 之外处理（返回 None 会触发下游 malformed 恢复，
                     // 把其后一条合法规则当残余吞掉）。
-                    self.consume_namespace_rule();
+                    // R3758（CSS Namespaces 3 §5 + CSS Conditional 3 §contents-of）：
+                    // @namespace 仅可出现在样式表序言（先于任何其他规则；仅 @charset/
+                    // @import/@namespace 自身可前置）。序言结束（已出现样式规则或
+                    // @supports/@media 等条件/其他 at-rule）后的 @namespace 整条无效——
+                    // 消耗但不注册，否则后注册前缀使本应非法的 `prefix|name` 规则生效
+                    //（driving: at-supports-045/at-media-003 的错位 `@namespace y` 使
+                    // y|div 红规则按序胜出致 test1 红色）。
+                    if self.namespace_prologue_ended {
+                        // 序言结束：消耗语句但不注册（R3758 整条无效语义）。
+                        self.consume_namespace_rule(false);
+                        return vec![];
+                    }
+                    if !self.consume_namespace_rule(true) {
+                        // 畸形 @namespace（缺 URL/缺 `;`）同样终结序言（其本身即非法规则）。
+                        self.namespace_prologue_ended = true;
+                    }
                     return vec![];
                 } else {
                     // 通用 at-rule：consume_at_rule 内部循环到 `;`/`{block}`，总消费全部 extent，
                     // 不触发 fallback。
+                    // R3758：非前置 at-rule（@media/@container 通用块等）出现 → @namespace
+                    // 序言结束（@media { } 无条件体等畸形语句亦然——其本身即规则）。
+                    if !matches!(
+                        name.to_ascii_lowercase().as_str(),
+                        "charset" | "import" | "namespace" | "layer"
+                    ) {
+                        self.namespace_prologue_ended = true;
+                    }
                     return vec![Rule::At(self.consume_at_rule(name))];
                 };
+                // R3758：@supports/@media/@layer 等非前置 at-rule 出现 → @namespace 序言结束
+                //（@charset/@import/@namespace/@layer 之外的 at-rule 本身即规则）。
+                if !matches!(name.to_ascii_lowercase().as_str(), "charset" | "import" | "layer") {
+                    self.namespace_prologue_ended = true;
+                }
                 match rule_opt {
                     Some(r) => vec![r],
                     None => {
@@ -401,6 +440,8 @@ impl<'a> Parser<'a> {
                 }
             }
             _ => {
+                // R3758：样式规则出现 → @namespace 序言结束。
+                self.namespace_prologue_ended = true;
                 // 样式规则：选择器 + { 声明块（可能含嵌套）}。parse_style_rule_structure
                 // 解析选择器与块结构；选择器非法或块缺失时返回 None，由调用方做畸形恢复。
                 match self.parse_style_rule_structure(parent.is_some()) {
@@ -1813,7 +1854,10 @@ impl<'a> Parser<'a> {
     /// - 无前缀（`@namespace "url";`）→ default namespace（存空键）。
     /// - URL 取 String token 或非函数 `url(...)` token 内容。
     /// - 语句以 `;` 结束；畸形（无 URL/无 `;`）→ 消耗至 `;`/块/EOF 并放弃注册。
-    fn consume_namespace_rule(&mut self) {
+    ///
+    /// 返回是否成功消耗（以 `;` 结束）。畸形返回 false。
+    /// `register=false`（序言结束后）：消耗语句但不注册前缀（R3758 整条无效语义）。
+    fn consume_namespace_rule(&mut self, register: bool) -> bool {
         self.skip_whitespace();
         // 可选前缀：第一个 Ident（若其后紧跟 String/url token 则它是前缀；否则它是……
         // URL 只能是 String 或 url()，Ident 不是合法 URL → 无前缀形式下首 Ident 非法）。
@@ -1835,15 +1879,19 @@ impl<'a> Parser<'a> {
             _ => {
                 // 畸形：消耗至 `;` / `{...}` / EOF（同 malformed 恢复），不注册。
                 self.skip_malformed_qualified_rule();
-                return;
+                return false;
             }
         };
         self.skip_whitespace();
         if matches!(self.peek(), Token::Semicolon) {
             self.advance();
-            self.namespace_prefixes.insert(prefix, url);
+            if register {
+                self.namespace_prefixes.insert(prefix, url);
+            }
+            true
         } else {
             self.skip_malformed_qualified_rule();
+            false
         }
     }
 
