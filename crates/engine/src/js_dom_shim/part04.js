@@ -5773,7 +5773,14 @@
             //（_zwFragmentAdded 的 _zwMEl 解析代理，无 __zwHandle）不并入 → length=0
             //（security/xss/innerHTML-sanitization 全平台 FAIL）。删条目后回退 host 读
             //（旧快照 + 每次新包装不命中剔除，R55 前语义），flush 重注册后自然换代。
-            if (!handle && typeof _zwChildBaseCache !== 'undefined') _zwChildBaseCache.delete(sel);
+            // R304（js-dom M4）：改删条目为**基底置空**——innerHTML 是整体替换，host
+            // apply 前的读应 = addedNodes（stale 快照子的 wrapper identity 与
+            // _ihRemoved 不同源，overlay 剔除恒 miss——R303 归因的 inner-outer
+            // "2 children" firstChild 停留旧子形态）。空基底 + R304 挂父槽的
+            // pending-added 并入 = 同 turn firstChild/lastChild/childNodes 立即
+            // 反映新子；host apply（dom_html 换代）时 _zwChildBaseInvalidateAll
+            // 全量失效换代（生命周期不变）。
+            if (!handle && typeof _zwChildBaseCache !== 'undefined') _zwChildBaseCache.set(sel, []);
             // R34xx：纯文本 innerHTML → 本地文本节点注册（selection-rects 的
             // el.childNodes[0] 文本节点——created handle 元素无 sel，host 不可查）。
             // _makeProxy 经 _proxyCache 返同一 proxy 对象（parentNode===el 成立）。
@@ -5792,6 +5799,18 @@
             } else if (typeof _zwUnregisterTextEl === 'function' && typeof _makeProxy === 'function') {
               _zwUnregisterTextEl(_makeProxy(sel, handle));
             }
+            // R304（js-dom M4）：innerHTML 解析 wrapper 打挂父槽（sel 容器的同 turn
+            // 可见性——wrapper 无 handle/sel，_zwOverlayPendingChildNodes 的反链
+            // miss 使 firstChild/childNodes 在 host apply 前读 stale 快照；R303
+            // 归因 inner-outer "2 children" identity 族的直接根因）。nextSibling
+            // null = 尾部追加（innerHTML 整体替换语义）。
+            try {
+              if (_ihAdded && _ihAdded.length) {
+                for (var _r304a = 0; _r304a < _ihAdded.length; _r304a++) {
+                  if (_ihAdded[_r304a]) _ihAdded[_r304a]._zwSelPendingParent = { parentSel: sel || null, parentHandle: handle || null, nextSibling: null };
+                }
+              }
+            } catch (_e304s) {}
             _mo_notify(sel, handle, { type: 'childList', addedNodes: _ihAdded, removedNodes: _ihRemoved });
             // R125：innerHTML 替换后旧子的 pending-ID 索引同步剔除——host 快照未换代前
             // getElementById 的 pending 回落仍会命中已清除的旧子（WPT "remove id attribute

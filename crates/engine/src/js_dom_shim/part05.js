@@ -6872,6 +6872,11 @@
         link = _zwNodeParent[nd.__zwHandle];
       } else if (nd && nd.__zwSelector && nd._zwSelPendingParent) {
         link = nd._zwSelPendingParent;
+      } else if (nd && nd._zwSelPendingParent) {
+        // R304（js-dom M4）：innerHTML 解析 wrapper（_zwFragmentAdded 产物——无
+        // handle 无 sel）的挂父槽——setter 侧打点（同 turn firstChild/childNodes
+        // 可见性，R303 归因的 inner-outer identity 族 + 框架 observe 后读子模式）。
+        link = nd._zwSelPendingParent;
       }
       if (!nd || !link) continue;
       if (link.parentSel !== sel) continue;
