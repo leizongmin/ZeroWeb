@@ -927,11 +927,12 @@ impl InlineFormattingContext {
                 c
             }
         };
-        if constraint <= 0.0 {
+        if constraint < 0.0 {
             return None;
         }
         let n = (constraint / lh_px).floor();
-        (n >= 1.0).then_some(n as usize)
+        // R3766b：n=0 合法（max-height:0 / <1lh → 0 行可见，auto-011/037）。
+        (n >= 0.0).then_some(n as usize)
     }
 
     /// 容器自身的 used line-height（px）。`line-height` 计算值解析：Length 直接解析
@@ -951,7 +952,9 @@ impl InlineFormattingContext {
     /// 从 `layout()` 抽出供单测直接驱动（break_into_lines + apply_line_clamp_cap）。
     /// 截断保留前 N 行完整几何（float exclusion / inline-box 对齐不变）；下游 height 从 lines 推。
     pub(crate) fn apply_line_clamp_cap(&mut self, n: usize) {
-        if n > 0 && self.lines.len() > n {
+        // R3766b：n=0 也截断（`line-clamp: auto` + `max-height: 0` / <1lh → 0 行可见，
+        // css-overflow-4 auto-011/037：内容盒 intrinsic size = 0）。旧行为 n>0 才截断。
+        if self.lines.len() > n {
             self.lines.truncate(n);
             self.clamped = true;
         }

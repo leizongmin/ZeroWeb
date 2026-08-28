@@ -65,11 +65,13 @@ fn test_line_clamp_content_fewer_than_n() {
     assert!(!ctx.clamped, "clamped=false（内容不足 N）");
 }
 
-/// apply_line_clamp_cap(0) → 不截断（n=0 守卫）。
+/// R3766b：apply_line_clamp_cap(0) → 截断全部（`line-clamp: auto` + `max-height: 0`/
+/// <1lh → 0 行可见，css-overflow-4 auto-011/037）。旧 R2431 n=0 守卫随 Auto 语义订正
+///（Count(0) 不可解析，n=0 仅来自 Auto 的块尺寸约束路径）。
 #[test]
-fn test_line_clamp_zero_no_cap() {
+fn test_line_clamp_zero_truncates_all() {
     let mut ctx = ctx_with_lines(5);
     ctx.apply_line_clamp_cap(0);
-    assert_eq!(ctx.lines.len(), 5, "clamp 0：不夹");
-    assert!(!ctx.clamped, "clamped=false（n=0）");
+    assert_eq!(ctx.lines.len(), 0, "clamp 0：截断全部行");
+    assert!(ctx.clamped, "clamped=true（n=0 且有内容被截）");
 }
