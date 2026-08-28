@@ -971,6 +971,20 @@ fn shift_siblings_after_ifc_grow_inner(
     let mut prev_plain = false;
     let mut prev_margin_bottom: f32 = 0.0;
     let auto_parent_height = box_node.declared_height_auto;
+    // R3765（css-sizing-4 §5.2）：`aspect-ratio` + definite width + height:auto + **非
+    // visible overflow** 的块盒，used block-size 已由 ratio **传递确定**（taffy 已按 100
+    // 布局），非「内容决定型 auto 高」——scroll container 无 content-based minimum，
+    // 内容不撑盒（overflow:hidden 裁剪）。R1743 回填把它当 auto 高容器长到子 max-bottom
+    //（block-aspect-ratio-010/011/012：100×100 ratio 盒被撑到 1000）→ 此类盒豁免回填。
+    // overflow:visible 保持回填（ZW 无溢出绘制，回填近似溢出生长，009/035/042 靠它过阈）。
+    // horizontal-tb 限定（块轴 = height）。
+    let ar_transferred_block_size = box_node.node_id.and_then(|id| styles.get(&id)).is_some_and(|s| {
+        s.aspect_ratio.is_some_and(|r| r > 0.0)
+            && matches!(s.height, LengthValue::Auto)
+            && !matches!(s.overflow_y, OverflowValue::Visible)
+            && matches!(s.writing_mode, zero_style_system::WritingModeValue::HorizontalTb)
+            && resolve_postprocess_real_length(&s.width, s).is_some()
+    });
     // R1743：父容器高度回填信号。taffy 对含 `<br>`/多行 inline 内容的块子通过 ctx_node 测高
     // 欠计（br-split 子 taffy 测 ~0），remeasure_inline_only_containers 之后子盒 height 已正确，
     // 但父盒（body/html/任意 Block）仍持 taffy 旧值 → 父 h=0 或仅计首子（R1654 fixture 27 谱系）。
@@ -978,6 +992,7 @@ fn shift_siblings_after_ifc_grow_inner(
     // 末子无后续兄弟触发不了 cumulative_shift，故须单独 max-bottom 信号。
     let parent_backfill_active = shift_active
         && auto_parent_height
+        && !ar_transferred_block_size
         && parent_backfill.value(|| std::env::var("ZW_IFC_PARENT_HEIGHT_BACKFILL").as_deref() != Ok("0"));
     let mut max_in_flow_bottom: f32 = 0.0;
     let mut has_negative_margin = false;
