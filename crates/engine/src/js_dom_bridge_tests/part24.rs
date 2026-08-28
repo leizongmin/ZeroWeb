@@ -2151,3 +2151,57 @@ globalThis.__r336e = out.join('|');
         "R336: same-value Attr.value set and handle-text CharacterData edits emit records"
     );
 }
+
+// R337（js-dom M4）：disabled 元素 click() 激活语义——WPT
+// Event-dispatch-on-disabled-elements 的 sync test「Calling click() on disabled
+// elements must not dispatch events」的语义面（该文件 5 pending 属动画时钟/
+// test_driver Activate 管线深项，非本测试的语义缺口——R337 探针归因）。
+// spec：disabled form element 的 click() **不派发** click 事件；enabled 后派发。
+// https://html.spec.whatwg.org/multipage/form-control-infrastructure.html#enabling-and-disabling-form-controls
+#[test]
+fn test_disabled_form_click_activation_r337() {
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let mut sandbox = V8Sandbox::with_config(zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    })
+    .unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><input id='i'></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+    sandbox
+        .execute(
+            r#"
+var formElements = ['button','input','select','textarea','optgroup','option','fieldset'];
+var results = [];
+for (var fi = 0; fi < formElements.length; fi++) {
+  var elem = document.createElement(formElements[fi]);
+  elem.disabled = true;
+  var pass = true;
+  elem.onclick = function () { pass = false; };
+  elem.click();
+  var disabledOK = pass;
+  elem.disabled = false;
+  pass = false;
+  elem.onclick = function () { pass = true; };
+  elem.click();
+  results.push(formElements[fi] + ':' + (disabledOK ? 'dOK' : 'dFAIL') + (pass ? '/eOK' : '/eFAIL'));
+}
+globalThis.__r337e = results.join(',');
+"#,
+        )
+        .unwrap();
+    let out = sandbox.execute("globalThis.__r337e").unwrap().value;
+    assert_eq!(
+        out,
+        "button:dOK/eOK,input:dOK/eOK,select:dOK/eOK,textarea:dOK/eOK,optgroup:dOK/eOK,option:dOK/eOK,fieldset:dOK/eOK",
+        "R337: disabled form elements do not dispatch click(); enabled ones do (all 7 types)"
+    );
+}
