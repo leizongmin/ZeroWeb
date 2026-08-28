@@ -1644,16 +1644,24 @@ impl WebView {
                 let sel_map = self.selector_handle_map.lock().unwrap_or_else(|e| e.into_inner());
                 sel_map.iter().map(|(s, h)| (h.clone(), s.clone())).collect()
             };
-            self.pipeline
+            // R344：失败不再静默——单条坏 mutation（如跨重建失配的 handle）中止整批
+            // apply 会让后续 Create/Append 全部丢失（元素凭空消失），warn 留痕供归因。
+            match self
+                .pipeline
                 .render_with_dom_mutations_persistent(subset, &self.cached_css, Some(&forward))
-                .ok()
-                .map(|(_, snap, handles)| {
+            {
+                Ok((_, snap, handles)) => {
                     self.merge_handle_selectors(&handles);
                     snap
-                })
+                }
+                Err(error) => {
+                    tracing::warn!("apply_mutations_subset: {error}");
+                    None
+                }
+            }
         };
         self.applied_mutations += subset.len();
-        if let Some(Some(mutated)) = html_snapshot {
+        if let Some(mutated) = html_snapshot {
             self.cached_html = mutated;
         }
     }
@@ -1690,6 +1698,11 @@ impl WebView {
         // 仿 `dispatch_event`（webview.rs:1486）既定幂等模式（`js_shim_initialized` 守卫，仅首次装一次）。
         // 生产多进程 js_worker 路径经 `external_script` 早 return（:1110），不触此分支，零回归。
         self.ensure_js_shim()?;
+        // js-dom R344：刷新 live 查询源——pipeline 结构性 apply（render_html 重建）会替换
+        // cached_doc 的 Rc，不刷新则 shim 的 LIVE_QUERY_DOC 停留在旧代 Document，跨帧
+        // dispatch 脚本的 querySelector 查不到新元素（动画事件派发对新建元素静默丢事件）。
+        // 镜像 dispatch_event（:2181）的既定发布模式。
+        zero_engine::js_dom_bridge::publish_live_query_doc(self.pipeline.cached_doc_shared());
         if script.trim().is_empty() {
             return Err(WebViewError::Script("script is empty".into()));
         }

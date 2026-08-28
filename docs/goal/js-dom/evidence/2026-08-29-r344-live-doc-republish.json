@@ -1,0 +1,33 @@
+{
+  "round": "R344",
+  "date": "2026-08-29",
+  "slice": "M4/events——execute_script live 查询源刷新 + 子集 apply 错误留痕（动画事件跨帧派发的 stale Rc 根因）",
+  "background": "R342/R343 记档的 disabled-elements pending:4/5 归因：pipeline 结构性 apply（render_html 重建）替换 cached_doc 的 Rc，而 webview.execute_script 不刷新 shim 的 LIVE_QUERY_DOC thread-local——宿主跨帧 dispatch 脚本（动画/过渡事件派发）的 document.querySelector 读到旧代 Document，新建元素查询恒 miss，事件静默丢弃（script_gen IIFE 的 null guard 吞掉）。R342 的探针「单元素/双元素链通、真实用例挂」的 context 依赖由此解释：链是否能继续取决于该帧是否有结构性 apply 换代。",
+  "changes": [
+    "webview.execute_script：执行前 publish_live_query_doc(cached_doc_shared())——镜像 dispatch_event（:2181）的既定发布模式；闭合结构性 apply 后 shim live 源 stale 的缺口",
+    "apply_mutations_subset：render_with_dom_mutations_persistent 失败从静默 .ok() 改为 tracing::warn 留痕——单条坏 mutation 中止整批 apply 会让后续 Create/Append 全部丢失（元素凭空消失），不可无日志"
+  ],
+  "root_cause_chain": [
+    "探针逐步收敛：animation seek 全链（start→-100s seek→iteration→-200s seek→end）在 button 上全通且 Promise 全 resolve → 卡在「下一元素迭代不启动」",
+    "document 级 capture 探针：animationstart 对 input 只有一次 doc-start（button）——input 的动画事件在 engine 侧已产生且 runner 已 dispatch（sel=input.animate），但页面没收到",
+    "dump 探针：document.querySelector('input.animate') = null 且 body.innerHTML 无 input——shim 视图（live doc）里根本没有该元素",
+    "engine trace：AnimationClock 对 input 的 start 正常（started_out=true）→ 事件进了 pending → runner dispatch 了 → querySelector miss → 事件丢",
+    "根因：结构性 apply 换代 cached_doc Rc，execute_script 不重发布 LIVE_QUERY_DOC → shim 读旧代文档"
+  ],
+  "results": {
+    "probe_full_seek_chain": "4 元素 ×（disabled + classList + 3 promise 并行 + 负 delay seek）全 Pass（修复前挂第 2 元素）",
+    "real_case_blocks_standalone": "transition 3ev 块 + animation 3ev 块单独/顺序运行均 Pass",
+    "full_dom_sweep": "54172P/53F/19T vs R343 54171P/53F/20T——Fail 集逐字节一致，Timeout 仅 crash 文件/incumbent 噪声轮转",
+    "engine_v8": "2479P / quickjs 1470P",
+    "clippy": "0 error；fmt 无 diff",
+    "known_flakes": "webview navigator_controller（SW 域时序竞态）+ image_decoder proxy_mode（clean HEAD 同败）——R342 已记档预存"
+  },
+  "remaining_gaps_next_round": [
+    "disabled-elements 文件级 Timeout 在单跑下仍现（pending:5 上下文依赖）——republish 修复后 5 个 promise 链 standalone 块全通，残余是「5 个 promise_test 顺序调度 + 前序 sync test 状态」的组合形态，需再定位（疑 testharness 调度器与 pending 计数交互）",
+    "test_driver.click 走 Activate 管线（html-compat activation 域，非本 goal 工作面）"
+  ],
+  "lessons": [
+    "「engine 事件已产生 + runner 已 dispatch + 页面没收到」三段式探针（engine trace → runner trace → JS dump）一步锁定断点在 dispatch 脚本的 querySelector——比猜测监听器身份/时钟状态快一个量级",
+    "共享 Rc 发布模式（LIVE_QUERY_DOC）的所有换代点（load_html 清空 / run_page_scripts / dispatch_event / execute_script）必须成对维护——结构性 apply 换代不刷新 = 跨帧静默读旧代，这类 bug 不报错只丢事件"
+  ]
+}
