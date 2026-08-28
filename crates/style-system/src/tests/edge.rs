@@ -47,6 +47,64 @@ fn test_parsed_table_display() {
 }
 
 #[test]
+/// R3763：`<table>` UA 默认 box-sizing:border-box（chromium html.css，Chrome 64 起）——
+/// table 的 width 作用于含 border 的边到边尺寸（CSS2.1 §17.5.2）。作者 content-box 可覆盖。
+fn test_table_ua_default_box_sizing_border_box() {
+    let html = r#"<html><body><table style="width:452px; border:8px solid black"></table></body></html>"#;
+    let doc = zero_dom::parse_html(html);
+    let mut sys = StyleSystem::new();
+    sys.set_viewport(800.0, 600.0);
+
+    let root = doc.root();
+    let mut stack = vec![root];
+    let mut table_id = None;
+    while let Some(nid) = stack.pop() {
+        if let Some(n) = doc.get(nid) {
+            if let zero_dom::NodeKind::Element(elem) = &n.kind {
+                if elem.local_name() == "table" {
+                    table_id = Some(nid);
+                }
+            }
+            stack.extend(n.children.iter().copied());
+        }
+    }
+    let table_id = table_id.expect("should find table element");
+
+    let style = sys.compute_element_style(&doc, table_id, &[], None);
+    assert_eq!(
+        style.box_sizing,
+        zero_css_parser::values::BoxSizingValue::BorderBox,
+        "table UA default should be box-sizing:border-box (chromium html.css)"
+    );
+
+    // 作者 box-sizing:content-box 覆盖 UA 默认（specificity 0,0,0 最低）。
+    let html2 = r#"<html><body><table style="box-sizing:content-box"></table></body></html>"#;
+    let doc2 = zero_dom::parse_html(html2);
+    let mut sys2 = StyleSystem::new();
+    sys2.set_viewport(800.0, 600.0);
+    let root2 = doc2.root();
+    let mut stack2 = vec![root2];
+    let mut table2 = None;
+    while let Some(nid) = stack2.pop() {
+        if let Some(n) = doc2.get(nid) {
+            if let zero_dom::NodeKind::Element(elem) = &n.kind {
+                if elem.local_name() == "table" {
+                    table2 = Some(nid);
+                }
+            }
+            stack2.extend(n.children.iter().copied());
+        }
+    }
+    let table2 = table2.expect("should find table element");
+    let style2 = sys2.compute_element_style(&doc2, table2, &[], None);
+    assert_eq!(
+        style2.box_sizing,
+        zero_css_parser::values::BoxSizingValue::ContentBox,
+        "author box-sizing:content-box should override table UA default"
+    );
+}
+
+#[test]
 /// scroll-snap-type: none 产生默认值（strictness=None, axis=Both）。
 fn test_scroll_snap_type_none() {
     let (doc, _html, _body, div, _p) = make_test_dom();

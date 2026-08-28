@@ -1022,6 +1022,22 @@ impl StyleSystem {
                     ua_decl_inputs.push(("font-weight".to_string(), "bold".to_string(), false, (0, 0, 0), None));
                     ua_decl_inputs.push(("text-align".to_string(), "center".to_string(), false, (0, 0, 0), None));
                 }
+                // R3763：chromium UA `table { box-sizing: border-box }`（html.css，Chrome 64 起
+                // 显式化，blink-dev "Intent to Implement and Ship: table box-sizing"——Blink 表格
+                // 内部早已按 border-box 行为）。CSS2.1 §17.5.2 table 的 width 作用于含 border
+                // 的边到边尺寸：`width:452px; border:8px` 总宽 452（内容 436），与 div 的
+                // content-box（总宽 468）发散。driving：WPT diagonal-percentage-vector-background
+                // ref 页 table `width:452px /* 436px wide plus 2×8px borders */`。specificity
+                // 0,0,0 可被作者 box-sizing:content-box 覆盖（min-max-size-table-content-box）。
+                "table" => {
+                    ua_decl_inputs.push((
+                        "box-sizing".to_string(),
+                        "border-box".to_string(),
+                        false,
+                        (0, 0, 0),
+                        None,
+                    ));
+                }
                 // R1698：HTML 渲染规范 UA `caption { text-align: center }`（chromium UA）。
                 // caption 默认水平居中（caption-side 上下定位由 R1653 top_caption_extent 独立处理）。
                 // ZW 此前无 → caption 文本左对齐，与 chromium 发散。specificity 0,0,0 可被作者覆盖。

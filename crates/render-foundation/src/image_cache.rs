@@ -220,15 +220,74 @@ pub struct ImageCache {
 /// R3761：SVG 重栅格化缓存条目上限（每条最大 4M px ≈ 16MB，上限 8 条防内存膨胀）。
 const SVG_RASTERIZED_MAX: usize = 8;
 
+/// R3762：无 abs width/height 属性的 SVG，把目标尺寸注入根标签（width/height 属性
+/// 替换或插入）——SVG 作为图像使用且无固有尺寸时 viewport = 使用处尺寸（css-images-4
+/// default sizing + SVG2 viewport 建立语义），百分比内容（stroke-width、rect 几何）按
+/// 真实 viewport 解析而非 usvg 默认 100×100（driving: WPT diagonal-percentage-vector-
+/// background，10% stroke-width 应按定位区对角线 d=√(vw²+vh²)/√2 解析）。
+/// 双 abs SVG 不注入（真固有 viewport，from_scale 矢量放大语义与 chromium 一致）。
+fn inject_svg_target_dims(source: &[u8], target_w: u32, target_h: u32) -> Vec<u8> {
+    let Ok(text) = std::str::from_utf8(source) else {
+        return source.to_vec();
+    };
+    // 仅非双 abs 时注入（与本仓 svg_intrinsic_kind 分类一致：abs 维 = 正数非 % 值）。
+    let Some(svg_start) = text.find("<svg") else {
+        return source.to_vec();
+    };
+    let after = &text[svg_start..];
+    let Some(tag_end_rel) = after.find('>') else {
+        return source.to_vec();
+    };
+    let tag = &after[..tag_end_rel]; // 含 "<svg"
+    let width_attr = extract_svg_attr(tag, "width");
+    let height_attr = extract_svg_attr(tag, "height");
+    let w_abs = width_attr.as_deref().and_then(parse_abs_length_value);
+    let h_abs = height_attr.as_deref().and_then(parse_abs_length_value);
+    if w_abs.is_some() && h_abs.is_some() {
+        return source.to_vec();
+    }
+    // 替换或插入属性（改写根标签片段；值按目标 px 取整）。
+    let mut new_tag = tag.to_string();
+    for (name, value) in [("width", target_w), ("height", target_h)] {
+        let v = format!("{value}");
+        if extract_svg_attr(&new_tag, name).is_some() {
+            // 替换现有值（引号样式保持简单：统一双引号重写该属性）。
+            if let Some(idx) = new_tag.find(&format!("{name}=")) {
+                let rest = &new_tag[idx + name.len() + 1..];
+                let quote = rest.chars().next().unwrap_or('"');
+                if (quote == '"' || quote == '\'')
+                    && let Some(end_rel) = rest[1..].find(quote)
+                {
+                    let attr_end = idx + name.len() + 1 + 1 + end_rel + 1;
+                    new_tag.replace_range(idx..attr_end, &format!("{name}=\"{v}\""));
+                }
+            }
+        } else {
+            // 插入到 "<svg" 之后（紧跟标签名，前置空格）。
+            let insert_at = 4; // "<svg".len()
+            new_tag.insert_str(insert_at, &format!(" {name}=\"{v}\""));
+        }
+    }
+    let mut out = String::with_capacity(text.len() + 32);
+    out.push_str(&text[..svg_start]);
+    out.push_str(&new_tag);
+    out.push_str(&after[tag_end_rel..]);
+    out.into_bytes()
+}
+
 /// R3761：把 SVG 源栅格化到指定目标尺寸（矢量重渲染）。
 ///
-/// 与 [`decode_svg_bytes`] 的固有尺寸栅格化相对：按 `target_w × target_h` 直接渲染
-///（`Transform::from_scale`），不改变 SVG 的固有尺寸语义。目标含 0 维返回 Err。
+/// 与 [`decode_svg_bytes`] 的固有尺寸栅格化相对：按 `target_w × target_h` 直接渲染。
+/// R3762：无 abs 固有尺寸的 SVG 先注入目标 viewport（[`inject_svg_target_dims`]）再
+/// 解析——百分比内容按真实 viewport 解析（usvg 对缺失 width/height 用默认 100×100，
+/// 位图缩放会把 10% stroke 之类的 viewport 相对值错位）。双 abs SVG 保持固有 viewport
+/// 等比 `Transform::from_scale` 放大。目标含 0 维返回 Err。
 fn rasterize_svg_at(source: &[u8], target_w: u32, target_h: u32) -> Result<ImageData, String> {
     if target_w == 0 || target_h == 0 {
         return Err("SVG 目标尺寸为 0".to_string());
     }
-    let tree = resvg::usvg::Tree::from_data(source, &resvg::usvg::Options::default())
+    let bytes = inject_svg_target_dims(source, target_w, target_h);
+    let tree = resvg::usvg::Tree::from_data(&bytes, &resvg::usvg::Options::default())
         .map_err(|e| format!("SVG 解析失败: {e}"))?;
     let size = tree.size();
     let (iw, ih) = (size.width(), size.height());
@@ -1575,6 +1634,47 @@ mod tests {
     fn make_image(w: u32, h: u32, fill: u8) -> ImageData {
         let pixels = vec![fill; (w as usize) * (h as usize) * 4];
         ImageData::from_rgba(pixels, w, h).unwrap()
+    }
+
+    /// R3762：无 width/height 属性的 SVG 注入目标 viewport——属性插入且原字节保留。
+    #[test]
+    fn r3762_inject_target_dims_into_attrless_svg() {
+        let src = b"<svg xmlns=\"http://www.w3.org/2000/svg\"><rect width=\"50%\" fill=\"lime\"/></svg>";
+        let out = inject_svg_target_dims(src, 420, 344);
+        let text = std::str::from_utf8(&out).unwrap();
+        assert!(text.contains("<svg height=\"344\" width=\"420\" xmlns="), "got: {text}");
+        assert!(text.contains("<rect width=\"50%\""), "内容保留");
+    }
+
+    /// R3762：% 值 width 属性被替换为目标的 abs px。
+    #[test]
+    fn r3762_inject_replaces_percent_attr() {
+        let src = b"<svg width=\"50%\" height='32px' xmlns=\"x\"><rect/></svg>";
+        let out = inject_svg_target_dims(src, 256, 768);
+        let text = std::str::from_utf8(&out).unwrap();
+        assert!(text.contains("width=\"256\""), "got: {text}");
+        assert!(text.contains("height=\"768\""), "got: {text}");
+    }
+
+    /// R3762：双 abs SVG 不注入（真固有 viewport 语义）。
+    #[test]
+    fn r3762_inject_skips_both_abs_svg() {
+        let src = b"<svg width=\"8px\" height=\"32px\" xmlns=\"x\"><rect/></svg>";
+        let out = inject_svg_target_dims(src, 420, 344);
+        assert_eq!(out.as_slice(), &src[..]);
+    }
+
+    /// R3762：端到端——无尺寸 SVG 栅格化到目标尺寸后 viewport = 目标（50% 宽 rect
+    /// 占据目标宽一半），而非 usvg 默认 100×100 的 50%。
+    #[test]
+    fn r3762_rasterize_at_uses_target_viewport() {
+        let src =
+            b"<svg xmlns=\"http://www.w3.org/2000/svg\"><rect width=\"50%\" height=\"100%\" fill=\"#ff0000\"/></svg>";
+        let img = rasterize_svg_at(src, 400, 200).expect("rasterize");
+        assert_eq!((img.width, img.height), (400, 200));
+        // x=300（>50% 宽）应透明，x=100（<50%）应为红。
+        assert_eq!(img.get_pixel(100, 100), [255, 0, 0, 255]);
+        assert_eq!(img.get_pixel(300, 100), [0, 0, 0, 0]);
     }
 
     /// R3760：WPT vector 簇 `nonpercent-width-omitted-height.svg`（width="8px"，
