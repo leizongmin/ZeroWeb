@@ -1885,9 +1885,12 @@ impl super::Painter {
                     // - `box_node.line_clamp_clamped`：layout 期 IFC `apply_line_clamp_cap` 真截断
                     //   （stored 路径：pure-Ahem 容器 inline_layout 已被 cap 到 max 行，paint 看到
                     //   行数 == max → exceeded=false → 须读此标志才能补 ellipsis）。
-                    // max==0（CSS line-clamp:0 视同 none）或无行 → 不触发。
-                    let exceeded = max >= 1 && line_ys.len() > max as usize;
-                    let clamped = max >= 1 && box_node.line_clamp_clamped;
+                    // max==0：CSS `line-clamp: 0` 视同 none（parser 拒绝，resolve_line_clamp
+                    // 不会返回 Some(0)）；R3768 跨块盒的 line_clamp_cap 可为 0（clamp 点
+                    // 落在该子盒首行前 → 0 行可见），此时须截全部 glyph，0 视为合法 cap。
+                    let max_usize = max as usize;
+                    let exceeded = line_ys.len() > max_usize;
+                    let clamped = (max >= 1 || box_node.line_clamp_cap.is_some()) && box_node.line_clamp_clamped;
                     if exceeded || clamped {
                         // 截断：移除第 max 行之后的所有 glyph。stored 路径已被 layout cap → 无超出行 →
                         // 此处 exceeded=false 跳过；non-stored 路径 exceeded=true 主动截。
@@ -1904,9 +1907,11 @@ impl super::Painter {
 
                         // 在最后一可见行（第 max 行）末尾渲 U+2026 ellipsis（与 WPT line-clamp refs
                         // 一致：单字符 `…`，非 3 个 ASCII '.'）。`max.min(line_ys.len())` 防越界
-                        //（stored 路径行数 == max）。
+                        //（stored 路径行数 == max）。max=0（跨块 cap，0 行可见）无末行 →
+                        // 不渲 ellipsis。
                         let last_idx = (max as usize).min(line_ys.len()).saturating_sub(1);
                         let last_line_y = line_ys[last_idx];
+                        let ellipsis_enabled = max >= 1;
 
                         // 末行最右可见 glyph 及其字符 advance（求末行文本 end x）。
                         let last_glyph = self.primitives.glyphs[glyphs_before_fragments..]
@@ -1942,21 +1947,23 @@ impl super::Painter {
                             cut_x
                         };
 
-                        self.primitives.add_glyph(GlyphPrimitive {
-                            x: ellipsis_x,
-                            y: last_line_y,
-                            font_size,
-                            color,
-                            glyph_id: ellipsis_char as u32,
-                            font_glyph_index: None,
-                            source: None,
-                            font_id: default_font_id,
-                            font_variation_id: default_font_variation_id,
-                            bitmap_width: None,
-                            bitmap_height: None,
-                            rotation: 0.0,
-                            synthetic_italic: false,
-                        });
+                        if ellipsis_enabled {
+                            self.primitives.add_glyph(GlyphPrimitive {
+                                x: ellipsis_x,
+                                y: last_line_y,
+                                font_size,
+                                color,
+                                glyph_id: ellipsis_char as u32,
+                                font_glyph_index: None,
+                                source: None,
+                                font_id: default_font_id,
+                                font_variation_id: default_font_variation_id,
+                                bitmap_width: None,
+                                bitmap_height: None,
+                                rotation: 0.0,
+                                synthetic_italic: false,
+                            });
+                        }
                     }
                 }
 

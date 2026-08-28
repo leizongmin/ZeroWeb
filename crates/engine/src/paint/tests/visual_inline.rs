@@ -952,6 +952,50 @@ fn r2467_line_clamp_no_ellipsis_when_content_fits() {
     assert!(!has_ellipsis, "R2467: 内容不足 line-clamp N 行时不应渲 ellipsis");
 }
 
+/// R3769：跨块盒 line-clamp 的 paint 侧两处泄漏（**非** pure-Ahem 容器 → layout 不存
+/// inline_layout，paint 重跑 IFC 走 non-stored 路径，stored 路径截行/隐藏在 layout 期已生效）：
+/// ① 预算恰好用尽时 clamp 点落在中间子首行前，该子 `line_clamp_cap = Some(0)`——旧代码
+///   `max >= 1` 守卫把 cap=0 当「不 clamp」，其 glyph 全部照绘；
+/// ② clamp 点之后的 in-flow 兄弟标 `line_clamp_hidden`——R3768 只在 paint_node_in_rect
+///   （脏矩形路径）检查，常规 paint_node 路径漏检，其 glyph 照绘。
+/// 容器**无** overflow:hidden（否则 hidden 裁剪掩盖两处泄漏，测不到）。
+#[test]
+fn r3769_cross_block_cap_zero_and_hidden_no_glyph_leak() {
+    use crate::pipeline::RenderPipeline;
+    let mut pipeline = RenderPipeline::new(400.0, 400.0);
+    // line-clamp:3 + 5 个 block 子（各 1 行，width:80px，20px serif 4 字符 < 80px）：
+    // 子1/2/3 消耗 3 行预算（remaining=0）→ 子4 cap=Some(0)（D 泄漏①）、
+    // 子5 line_clamp_hidden（E 泄漏②）。
+    let html = "<html><body style=\"margin:0\">\
+        <div style=\"width:80px; line-clamp:3; font:20px/1 serif\">\
+        <div>AAAA</div><div>BBBB</div><div>CCCC</div><div>DDDD</div><div>EEEE</div>\
+        </div></body></html>";
+    let result = pipeline.render_html(html, "");
+    let visible: Vec<char> = result
+        .primitives()
+        .glyphs
+        .iter()
+        .filter(|g| g.font_size > 0.0)
+        .filter_map(|g| char::from_u32(g.glyph_id))
+        .collect();
+    assert!(
+        !visible.contains(&'D'),
+        "R3769①: cap=Some(0) 子盒 glyph 须全截，实见 {:?}",
+        visible
+    );
+    assert!(
+        !visible.contains(&'E'),
+        "R3769②: line_clamp_hidden 子盒 glyph 须全跳，实见 {:?}",
+        visible
+    );
+    // 预算内 3 子正常可见，对照确保截断没有误伤。
+    assert_eq!(
+        visible.iter().filter(|c| **c != '\u{2026}').count(),
+        12,
+        "R3769: 预算内 A/B/C 12 个 glyph 应全部可见，实见 {visible:?}"
+    );
+}
+
 /// R2469：body{display:none} → body 不生成 principal box，其背景不传播到画布
 ///（CSS §9.2.4/§14.2）。driving: css-backgrounds background-color-body-propagation-004
 ///（ref=blank，无红填充）。注：display:contents 同理但 ZW 把 contents 当 block 布局

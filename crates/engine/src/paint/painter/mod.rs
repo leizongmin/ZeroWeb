@@ -908,6 +908,13 @@ impl Painter {
             return;
         }
 
+        // R3769：跨块盒 line-clamp「跳过」子盒（clamp point 之后）在此主绘制路径同样
+        // 须整子树跳过——R3768 只加了 paint_node_in_rect（脏矩形路径），本路径（常规
+        // paint 递归）漏检，容器无 overflow:hidden 时隐藏子盒文本/背景照绘。
+        if box_node.line_clamp_hidden {
+            return;
+        }
+
         let abs_x = offset_x + box_node.x;
         let abs_y = offset_y + box_node.y;
 
