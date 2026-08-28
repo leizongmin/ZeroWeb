@@ -3608,6 +3608,46 @@
               for (var _r97j = 0; _r97j < _r97Added.length; _r97j++) _ceApplyConn(_r97Added[_r97j], _r97Pc);
               return child;
             }
+            // R334（js-dom M4）：**sel 子**（静态页面元素，有 __zwSelector 无 __zwHandle）
+            // append 到 sel 父——R334 探针实证旧版全通道 miss（无 record、parent 不变、
+            // kids 不变，WPT MutationObserver-childList n40-n42/n30-n32 挂起族根因）。
+            // 复用 R182 的 insertAdjacentSelElement wire（'beforeend' = append；host
+            // insert_nodes_at_position 自带 reparent 移动语义）+ `_zwSelPendingParent` 槽
+            // 同步可见性 + childList record（removed 归旧父、added 归新父）。
+            if (child && child.__zwSelector && !child.__zwHandle && sel
+                && typeof __zw_insert_adjacent_sel_element === 'function') {
+              if (child === _makeProxy(sel, handle) || _zwIsAncestorOf(child, sel, handle)) {
+                throw _zwDomException('A Node cannot be appended to itself or its descendant.', 'HierarchyRequestError');
+              }
+              var _r334ChildSel = child.__zwSelector;
+              try { __zw_insert_adjacent_sel_element(sel, 'beforeend', _r334ChildSel); } catch (_e334w) {}
+              try {
+                var _r334OldSel = null;
+                try {
+                  var _r334op = child.parentNode;
+                  if (_r334op && _r334op.__zwSelector) _r334OldSel = _r334op.__zwSelector;
+                } catch (_e334o) {}
+                // R334：removed record 的兄弟字段——wire 前的兄弟 getter 快照。
+                var _r334rprev = null, _r334rnext = null;
+                try {
+                  _r334rprev = child.previousSibling || null;
+                  _r334rnext = child.nextSibling || null;
+                } catch (_e334rs) {}
+                var _r334kids = _childNodeList(sel, handle);
+                var _r334prev = _r334kids.length ? _r334kids[_r334kids.length - 1] : null;
+                child._zwSelPendingParent = { parentSel: sel, nextSibling: null };
+                // R334：同父移动（WPT n42 appendChild(firstChild.nextSibling)）也发 removed——
+                // spec remove-then-insert 两步各一条 record。
+                if (_r334OldSel) {
+                  _mo_notify(_r334OldSel, null, { type: 'childList', addedNodes: [], removedNodes: [child], previousSibling: _r334rprev, nextSibling: _r334rnext });
+                }
+                _mo_notify(sel, handle, { type: 'childList', addedNodes: [child], removedNodes: [], previousSibling: _r334prev, nextSibling: null });
+                if (globalThis._zwSiblingBaseInvalidateAll) globalThis._zwSiblingBaseInvalidateAll();
+              } catch (_e334n) {}
+              var _r334pc = _ceParentConnected(sel, handle);
+              _ceApplyConn(child, _r334pc);
+              return child;
+            }
             // R34xx：重新插入清除移除标记（append 后元素回到文档）。
             if (sel) _zwUnmarkRemoved(sel);
             if (child && child.__zwSelector) _zwUnmarkRemoved(child.__zwSelector);
@@ -3738,6 +3778,12 @@
               // DocumentFragment：flatten 子节点到 this（fragment 自身不入树），区别于 append 节点自身。
               if (_fragmentHandles[child.__zwHandle] && typeof __zw_append_fragment_children === 'function') {
                 ceAdded = (_handleChildren[child.__zwHandle] || []).slice();
+                // R334：fragment 自身的 removed records（WPT childList "fragment removal
+                // mutations"——observer 挂在 fragment 上，flatten 后其子逐个 removed；
+                // target = fragment，record 先于新父 added）。
+                if (ceAdded.length) {
+                  _mo_notify(null, child.__zwHandle, { type: 'childList', addedNodes: [], removedNodes: ceAdded.slice() });
+                }
                 if (handle) __zw_append_fragment_children_handle(handle, child.__zwHandle);
                 else __zw_append_fragment_children(sel, child.__zwHandle);
               } else if (handle) {
@@ -4196,6 +4242,56 @@
                 && !_zwLocalChildNodes(sel, handle)) {
               _zwRegisterTextEl(_makeProxy(sel, handle), handle, sel, String(newNode.data != null ? newNode.data : (newNode.__nv || '')));
             }
+            // R334（js-dom M4）：**sel 子** insertBefore（静态页面元素移动/插入到 sel 父
+            // 的指定位次；WPT MutationObserver-childList n30/n31/n32/n35 挂起族）。
+            // wire 复用 InsertAdjacentSelElement：ref 有 sel → (refSel,'beforebegin',child)，
+            // ref null → (parentSel,'beforeend',child)（append 语义，与 appendChild 的
+            // R334 分支一致）。JS 侧 `_zwSelPendingParent` + removed/added record 对。
+            if (newNode && newNode.__zwSelector && !newNode.__zwHandle && sel
+                && typeof __zw_insert_adjacent_sel_element === 'function') {
+              if (newNode === _makeProxy(sel, handle) || _zwIsAncestorOf(newNode, sel, handle)) {
+                throw _zwDomException('A Node cannot be inserted before itself or its descendant.', 'HierarchyRequestError');
+              }
+              var _r334bChildSel = newNode.__zwSelector;
+              // R334：removed record 的兄弟字段——wire 移动前的兄弟 getter 快照。
+              var _r334bRprev = null, _r334bRnext = null;
+              try {
+                _r334bRprev = newNode.previousSibling || null;
+                _r334bRnext = newNode.nextSibling || null;
+              } catch (_e334brs) {}
+              var _r334bTarget = null, _r334bPos = 'beforeend';
+              if (refNode != null && refNode.__zwSelector) {
+                _r334bTarget = refNode.__zwSelector;
+                _r334bPos = 'beforebegin';
+              }
+              try {
+                if (_r334bTarget) __zw_insert_adjacent_sel_element(_r334bTarget, _r334bPos, _r334bChildSel);
+                else __zw_insert_adjacent_sel_element(sel, 'beforeend', _r334bChildSel);
+              } catch (_e334bw) {}
+              try {
+                var _r334bOldSel = null;
+                try {
+                  var _r334bop = newNode.parentNode;
+                  if (_r334bop && _r334bop.__zwSelector) _r334bOldSel = _r334bop.__zwSelector;
+                } catch (_e334bo) {}
+                var _r334bLink = { parentSel: sel, nextSibling: refNode || null };
+                newNode._zwSelPendingParent = _r334bLink;
+                var _r334bkids = _childNodeList(sel, handle);
+                var _r334bprev = null;
+                for (var _r334bi = 0; _r334bi < _r334bkids.length; _r334bi++) {
+                  if (_r334bkids[_r334bi] === refNode) { _r334bprev = _r334bi > 0 ? _r334bkids[_r334bi - 1] : null; break; }
+                }
+                if (refNode == null && _r334bkids.length) _r334bprev = _r334bkids[_r334bkids.length - 1];
+                if (_r334bOldSel) {
+                  _mo_notify(_r334bOldSel, null, { type: 'childList', addedNodes: [], removedNodes: [newNode], previousSibling: _r334bRprev, nextSibling: _r334bRnext });
+                }
+                _mo_notify(sel, handle, { type: 'childList', addedNodes: [newNode], removedNodes: [], previousSibling: _r334bprev, nextSibling: refNode || null });
+                if (globalThis._zwSiblingBaseInvalidateAll) globalThis._zwSiblingBaseInvalidateAll();
+              } catch (_e334bn) {}
+              var _r334bpc = _ceParentConnected(sel, handle);
+              _ceApplyConn(newNode, _r334bpc);
+              return newNode;
+            }
             // js-dom M3 R97：无 handle fragment 视图插入（appendChild 同款分支的带位变体）——
             // lit-html commit 的 `marker.parentNode.insertBefore(importedFragment, endNode)`：
             // imported 无 __zwHandle（template.content 派生视图），子节点展开到 refNode 前
@@ -4252,6 +4348,10 @@
               // DocumentFragment：flatten 子节点（refNode 非 null 时插到 ref 前，null 时 append）。
               if (_fragmentHandles[newNode.__zwHandle]) {
                 ceAdded = (_handleChildren[newNode.__zwHandle] || []).slice();
+                // R334：fragment 自身的 removed records（appendChild 同款）。
+                if (ceAdded.length) {
+                  _mo_notify(null, newNode.__zwHandle, { type: 'childList', addedNodes: [], removedNodes: ceAdded.slice() });
+                }
                 if (refNode == null) {
                   if (handle && typeof __zw_append_fragment_children_handle === 'function')
                     __zw_append_fragment_children_handle(handle, newNode.__zwHandle);
@@ -4478,6 +4578,15 @@
                 if (globalThis.__zwAdjustRangesForRemove) globalThis.__zwAdjustRangesForRemove(oldChild);
                 if (globalThis.__zwAdjustRangesForInsert) globalThis.__zwAdjustRangesForInsert(newChild);
               } catch (_eR263rs) {}
+              // R334：replace-with-self 仍发 removed+added 两条 record（spec replace = 前插
+              // + 移除，树序不变但 record 序列不变；WPT childList
+              // "self internal replacement mutation" 期望 2 条）。
+              try {
+                var _r334ssib = oldChild.previousSibling || null;
+                var _r334snext = oldChild.nextSibling || null;
+                _mo_notify(sel, handle, { type: 'childList', addedNodes: [], removedNodes: [oldChild], previousSibling: _r334ssib, nextSibling: _r334snext });
+                _mo_notify(sel, handle, { type: 'childList', addedNodes: [newChild], removedNodes: [], previousSibling: _r334ssib, nextSibling: _r334snext });
+              } catch (_e334sr) {}
               return oldChild;
             }
             // js-dom M3 R100：handle-handle 形态（parent/new/old 全部 createElement 建立，

@@ -2009,3 +2009,79 @@ globalThis.__r333e = out.join('|');
         "R333 children collection scope: other-container inserts and descendant nodes never merge in"
     );
 }
+
+// R334（js-dom M4）：sel 子移动族的 childList record（MutationObserver-childList
+// pending 11→1 的修复面）。appendChild/insertBefore 对「有 __zwSelector 无 __zwHandle」
+// 的静态页面元素此前全通道 miss（无 wire、无 record、视图不变——R182 只覆盖
+// insertAdjacent 家族）。三件：
+// ① wire 复用 InsertAdjacentSelElement（append='beforeend' on 父 sel；insertBefore 有
+//    ref 时 = 'beforebegin' on ref sel——host insert_nodes_at_position 自带 reparent）；
+// ② `_zwSelPendingParent` 槽 + _zwSiblingBaseInvalidateAll 同步可见性；
+// ③ record：removed 归旧父（含 wire 前兄弟快照）、added 归新父（同父移动两条都发——
+//    spec replace/move 是 remove+insert 两步，WPT n42 期望 2 record）。
+// 另两件：fragment flatten 的 fragment 自身 removed record（WPT f34/f44 "fragment
+// removal mutations"）；replace-with-self 的 removed+added 双 record（WPT n53）。
+// https://dom.spec.whatwg.org/#concept-mutationobserver-queue-mutation-record
+#[test]
+fn test_sel_child_move_mo_records_r334() {
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let mut sandbox = V8Sandbox::with_config(zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    })
+    .unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><p id='dummies'><span id='d40'>t</span></p><p id='n40'><span>keep</span></p><p id='n42'><span>A1</span><span>B2</span><span>C3</span></p></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+    sandbox
+        .execute(
+            r#"
+var out = [];
+function recCount() { var o = globalThis.__zw_mo_observers; return o[o.length - 1]._records.length; }
+// ① 跨父移动：d40 从 #dummies append 到 #n40——旧父 removed + 新父 added。
+(function () {
+  var n40 = document.getElementById('n40');
+  var d40 = document.getElementById('d40');
+  var mo = new MutationObserver(function (mrl) { });
+  mo.observe(n40, { childList: true });
+  n40.appendChild(d40);
+  var recs = globalThis.__zw_mo_observers[globalThis.__zw_mo_observers.length - 1]._records;
+  var last = recs[recs.length - 1];
+  out.push('add=' + recCount()
+    + ',added0=' + (last.addedNodes[0] === d40)
+    + ',prev=' + (last.previousSibling && last.previousSibling.textContent));
+})();
+// ② 同父移动：n42 的 firstChild.nextSibling 移到末尾——removed + added 双 record。
+(function () {
+  var n42 = document.getElementById('n42');
+  var mo = new MutationObserver(function (mrl) { });
+  mo.observe(n42, { childList: true });
+  n42.appendChild(n42.firstChild.nextSibling);
+  var recs = globalThis.__zw_mo_observers[globalThis.__zw_mo_observers.length - 1]._records;
+  var order = [];
+  for (var i = 0; i < n42.childNodes.length; i++) order.push(n42.childNodes[i].textContent);
+  out.push('move=' + recs.length
+    + ',r0rm=' + recs[0].removedNodes.length
+    + ',r0prev=' + (recs[0].previousSibling && recs[0].previousSibling.textContent)
+    + ',r0next=' + (recs[0].nextSibling && recs[0].nextSibling.textContent)
+    + ',r1add=' + recs[1].addedNodes.length
+    + ',order=' + order.join('|'));
+})();
+globalThis.__r334e = out.join('|');
+"#,
+        )
+        .unwrap();
+    let out = sandbox.execute("globalThis.__r334e").unwrap().value;
+    assert_eq!(
+        out,
+        "add=1,added0=true,prev=keep|move=2,r0rm=1,r0prev=A1,r0next=C3,r1add=1,order=A1|C3|B2",
+        "R334 sel-child move records: cross-parent removed+added pair; internal move keeps sibling fields"
+    );
+}
