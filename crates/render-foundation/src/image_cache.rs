@@ -1095,10 +1095,11 @@ enum SvgIntrinsicKind {
     /// 非双绝对 + 无 viewBox → 无固有宽高比；`width`/`height` 为真实固有维（仅 abs 属性
     /// 存在的维，缺失维 `None`）。usvg 对缺失维的默认值非真实固有尺寸，不可用于比例推导。
     NoRatio { width: Option<f32>, height: Option<f32> },
-    /// 一维 abs + 另一维**缺失** + viewBox 宽高比 → 有可计算的真实固有尺寸（abs 维 × ratio）。
-    /// usvg 对缺失维用原始 viewBox 值（pixmap bogus，如 `height="25" viewBox 1000×500` →
-    /// pixmap (1000,25) 应 (50,25)），故携带计算值 `(w, h)` 覆盖 pixmap（走 image_sizes）。
-    /// 仅「另一维缺失」触发（百分比维存在时仍 RatioOnly，避 flex ratio-derivation 回归）。
+    /// 一维 abs + 另一维**缺失或百分比** + viewBox 宽高比 → 有可计算的真实固有尺寸（abs 维
+    /// × ratio）。usvg 对缺失维用原始 viewBox 值、对百分比维按默认 viewport 100 解析（pixmap
+    /// bogus，如 `height="25" viewBox 1000×500` → pixmap (1000,25) 应 (50,25)），故携带计算值
+    /// `(w, h)` 覆盖 pixmap（走 image_sizes）。R3764：百分比维不贡献固有尺寸（css-images-4
+    /// default sizing），同缺失维处理。
     ComputedIntrinsic(f32, f32),
 }
 
@@ -1108,8 +1109,8 @@ enum SvgIntrinsicKind {
 /// - `RatioOnly(ratio)`：非双绝对且 viewBox 提供有效宽高比（ratio = viewBox_w / viewBox_h）。
 /// - `NoRatio { width, height }`：非双绝对且无可用 viewBox 比；`width`/`height` 为 abs 属性
 ///   存在维的真实值（缺失维 `None`）。
-/// - `ComputedIntrinsic(w, h)`：一维 abs + 另一维缺失 + viewBox 比 → 计算的真实固有尺寸
-///   （abs × ratio），覆盖 usvg bogus pixmap。
+/// - `ComputedIntrinsic(w, h)`：一维 abs + 另一维缺失或百分比 + viewBox 比 → 计算的真实
+///   固有尺寸（abs × ratio），覆盖 usvg bogus pixmap。
 fn svg_intrinsic_kind(bytes: &[u8]) -> SvgIntrinsicKind {
     let Ok(s) = std::str::from_utf8(bytes) else {
         return SvgIntrinsicKind::NoRatio {
@@ -1151,17 +1152,20 @@ fn svg_intrinsic_kind(bytes: &[u8]) -> SvgIntrinsicKind {
             && vh > 0.0
         {
             let ratio = vw / vh;
-            // 一维 abs + 另一维**缺失** + viewBox → 计算真实固有尺寸（usvg pixmap 对缺失维
-            // 用原始 viewBox 值，bogus）。如 `height="25" viewBox 1000×500`（ratio 2）→ (50,25)。
-            // 仅「另一维属性缺失」触发；若另一维是百分比（属性存在），仍 RatioOnly（避 flex
-            // ratio-derivation 回归，mixed-percent 案保持 R717 行为）。
+            // 一维 abs + 另一维**缺失或百分比** + viewBox → 计算真实固有尺寸（css-images-4
+            // default sizing：百分比属性维不贡献固有尺寸，仅 abs 维 + viewBox 比推导另一维）。
+            // 如 `height="25" viewBox 1000×500`（ratio 2）→ (50,25)；R3764：`width="50%"
+            // height="32px" viewBox="0 0 4 64"` → (2,32)。旧实现仅「另一维属性缺失」触发，
+            // 百分比维误走 RatioOnly → 背景 auto 用 contain-fit 伪尺寸（48×768 应 2×32）。
+            // computed_intrinsic 只进 image_sizes 不设 intrinsic_ratio——flex transferred-size
+            // 经 image_sizes 的 aspect_ratio 推导（R1438 ratio-derivation 回归路径不复现）。
             if let Some(h) = h_val
-                && width.is_none()
+                && w_val.is_none()
             {
                 return SvgIntrinsicKind::ComputedIntrinsic(h * ratio, h);
             }
             if let Some(w) = w_val
-                && height.is_none()
+                && h_val.is_none()
             {
                 return SvgIntrinsicKind::ComputedIntrinsic(w, w / ratio);
             }
@@ -1497,12 +1501,16 @@ mod decode_tests {
         assert_eq!(svg_intrinsic_kind(svg), SvgIntrinsicKind::RatioOnly(2.0));
     }
 
-    /// 一维百分比、一维绝对 → 仍 ratio-only（非双绝对），ratio 来自 viewBox。
+    /// 一维百分比、一维绝对 → ComputedIntrinsic（R3764：百分比维不贡献固有尺寸，
+    /// abs 维 + viewBox 比 → 计算真实固有尺寸 (100, 50)）。
     #[test]
     fn svg_kind_mixed_percent_and_absolute() {
         let svg = b"<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"100%\" height=\"50\" viewBox=\"0 0 200 100\">\
                    <rect width=\"200\" height=\"100\" fill=\"green\"/></svg>";
-        assert_eq!(svg_intrinsic_kind(svg), SvgIntrinsicKind::RatioOnly(2.0));
+        assert_eq!(
+            svg_intrinsic_kind(svg),
+            SvgIntrinsicKind::ComputedIntrinsic(100.0, 50.0)
+        );
     }
 
     /// 无 width/height 也无 viewBox → no-ratio，无任何固有维。
@@ -1566,11 +1574,35 @@ mod decode_tests {
         assert_eq!(svg_intrinsic_kind(svg), SvgIntrinsicKind::ComputedIntrinsic(50.0, 25.0));
     }
 
-    /// R1438 gate：一维 abs + 另一维**百分比**（属性存在）+ viewBox → 仍 RatioOnly
-    ///（不触发 ComputedIntrinsic，避 flex ratio-derivation 回归；mixed-percent 保持 R717）。
+    /// R3764：一维 abs + 另一维**百分比**（属性存在）+ viewBox → ComputedIntrinsic
+    ///（css-images-4 default sizing：百分比属性维不贡献固有尺寸，abs 维 + viewBox 比
+    /// 推导另一维；`width="100%" height="50" viewBox="0 0 200 100"` → (100, 50)）。
+    /// 旧 R1438 gate 判 RatioOnly（避 flex ratio-derivation 回归）——computed_intrinsic
+    /// 只进 image_sizes 不设 intrinsic_ratio，flex 经 image_sizes aspect_ratio 推导，回归
+    /// 路径不复现；driving：WPT vector-023 / tall-viewbox 混合型 auto sizing。
     #[test]
-    fn svg_kind_mixed_percent_abs_viewbox_still_ratio_only() {
+    fn svg_kind_mixed_percent_abs_viewbox_computed_intrinsic() {
         let svg = b"<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"100%\" height=\"50\" viewBox=\"0 0 200 100\">\
+                   <rect width=\"200\" height=\"100\" fill=\"green\"/></svg>";
+        assert_eq!(
+            svg_intrinsic_kind(svg),
+            SvgIntrinsicKind::ComputedIntrinsic(100.0, 50.0)
+        );
+    }
+
+    /// R3764：镜像方向（width abs + height 百分比）+ viewBox → ComputedIntrinsic
+    ///（`width="8px" height="50%" viewBox="0 0 4 64"`（ratio 1/16）→ (8, 128)）。
+    #[test]
+    fn svg_kind_width_abs_percent_height_viewbox_computed_intrinsic() {
+        let svg = b"<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"8px\" height=\"50%\" viewBox=\"0 0 4 64\" preserveAspectRatio=\"none\">\
+                   <rect width=\"4\" height=\"64\" fill=\"lime\"/></svg>";
+        assert_eq!(svg_intrinsic_kind(svg), SvgIntrinsicKind::ComputedIntrinsic(8.0, 128.0));
+    }
+
+    /// R3764：双百分比维 + viewBox 仍 RatioOnly（两维都不贡献固有尺寸，仅 viewBox 比）。
+    #[test]
+    fn svg_kind_both_percent_dims_viewbox_still_ratio_only() {
+        let svg = b"<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"100%\" height=\"50%\" viewBox=\"0 0 200 100\">\
                    <rect width=\"200\" height=\"100\" fill=\"green\"/></svg>";
         assert_eq!(svg_intrinsic_kind(svg), SvgIntrinsicKind::RatioOnly(2.0));
     }
