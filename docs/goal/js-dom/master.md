@@ -3,6 +3,7 @@
 **入口文档**: [../js-dom.md](../js-dom.md)（长期 Mission / Done Criteria / 执行协议 / 文档治理规则）
 **关联 RFC**: [../../specs/p1b-v8-native-bindings-rfc.md](../../specs/p1b-v8-native-bindings-rfc.md) + [../../specs/p1b-l2d3-unified-matcher-identity-bridge-rfc.md](../../specs/p1b-l2d3-unified-matcher-identity-bridge-rfc.md)（R166 新增——L2-d3 统一匹配器 + identity 桥设计）
 **创建日期**: 2026-08-13（goal 拆分 bootstrap）
+**本轮**: R326 — **M4：备档集巡检续（adoptNode attributes ownerDocument 1F 负结果回退降级 L2；worktree clean 基线零漂移）**：探针四轮定位——① _zwMakeAttr 补 ownerDocument 动态 getter（沿 ownerElement 读，adopt 自动跟随）✓；② _zwParseEl/R112 串行合并域补 sel/handle 子 adopt 落表 ✓；③ 目标 doc 引用改显式印章（_zwOwnerDetDoc/_zwOwnerTree——body 字面量 ownerDocument getter 的主文档回落误判同文档）后分步探针（od3=true/L4=false）决断性收窄：**body 的 appendChild 分派走了未定位的第四条通道**，三处落表全不在执行路径。按深结构护栏整组回退（不留半成品）。**降级记录**：sel/handle 子跨文档移动的 adopt 记账链路须先做执行路径测绘（div 域×移动域×wire 域三面枚举），与 R324 四环节链路同批随 L2 主线专项处理。同轮巡检：Element 导航族/remove/replaceWith/ChildNode 全绿确认。**教训**：① 探针先行确认执行路径（本轮计划写了但没严格执行——补丁落在死代码上）；② 分步探针的排他价值（od3/L4 一条探针同时排除数据源缺与消费缺两假设）。commit：见下方
 **本轮**: R325 — **M4：备档集巡检两件轻量修复（Document-createCDATASection HTML 守卫 + PI nodeValue 分流；全量 54140P/58F/22T→54139P/56F/25T，Fail set 恰 -2 零新增）**：① 主文档 `document.createCDATASection` 旧缺方法 → TypeError；HTML 文档应抛 NotSupportedError（spec `dom-document-createcdatasection`——HTML parser 无 CDATA 语义）——part06 补方法恒抛（主文档恒 HTML 文档语义固定；XML 域 DOMParser 版本 part02 已有）；② PI `nodeValue` 恒 null——part04 proxy 的通用 nodeValue-null 分支（R80）在 isPI 分支（data 同源）**之前**遮蔽——isPI 分流提前。**同轮巡检定性**（无代码）：adopt-thcrash = window.open 无 popup 通道（环境基建）；其余备档维持（R318–R320 已复核）。**A/B**：两文件各 +1P；engine 2462/quickjs 1460 持平（shim 方法面由 WPT 资产锁定）；fmt/clippy 干净。**教训**：分流顺序即语义——proxy get trap 加「通用分支」时若特定类型分支在后方会被遮蔽（R80 加 Element-null 三年后暴露 PI 面）。commit：见下方
 **本轮**: R324 — **M4/L2 切片三负结果：sel 子重定位三层改动已实现但环境路径分裂无法收敛验证，整组回退降级 L2 主线（worktree clean，基线 2462 零漂移）**：三层改动各自 spec 正确——① Node.prototype.insertBefore 泛型的 R219 trap 直调判定扩展 sel proxy（`__zwSelector` 可读；旧只认 handle proxy，sel 元素移动落 appendChild 兜底丢位次）；② insertBefore trap 统一出口补 sel 子挂父槽（`_zwSelPendingParent` R182 同款）；③ QSA 归并消费（旧位剔除+锚点插入+mg 计数纳入）。**回退根因**：单测环境（detached shim）的 getElementById 产物是 wrapper/桥对象（insertBefore 路径既非 trap 也非泛型，三重判定全空执行路径未定位）；WPT 探针的 debug 全局（__r324t）跨探针不可读（global 隔离面）断点定位中断。**降级记录**：四环节链路（泛型直调→SLOT→pending 桶→归并消费）须在同一执行路径一次打通并验证——散点改动在双环境路径分裂下不可独立验证，按深结构护栏整组回退，随 L2 identity 双源统一专项处理。**教训**：① 改动跨泛型/trap/域实现三层时先确认验证环境走哪条路径（getElementById 产物域×dispatch 域×wire 域）；② debug 全局通道可达性是 R309 DBG 方法论前提，失效即切 assert 消息回显；③ 负结果分层——「消费端依赖前两者在真实路径生效」的半生效状态不可 land。commit：见下方
 **本轮**: R323 — **M4/L2 切片二：tree-order 归并（匹配子按 nextSibling 锚点插入 host 结果序；ParentNode-querySelector-All 1975→1976P；全量 Fail set 恒等零回归）**：R322 尾并在 mid 插入形态序错（insertBefore(mid, childNodes[1]) 后 QSA 期望 a.mid.b 得 a.b.mid）。修：匹配子按反链 nextSibling 锚点插入——nextSibling 的 `__zwSelector` 在 host 结果 sel 列表的索引 → wrapper 输出中同索引位（_proxyCache identity 稳定使 `===` 匹配成立）插到之前；pending/无锚 → 尾部。**数据源已就绪**：_mo_notify 汇流点（part01:1828，R51 时代）已记 parentSel + nextSibling——查询站点只消费既有记账零新增状态。探针 `mid=a.mid.b` ✓、`end=a.mid.b.end` ✓（append 无锚尾部正确）。**A/B**：ParentNode-querySelector-All +1（tree-order 序断言解锁）；matches/querySelectorAll/getElementsByTagName 持平；全量 54137P/58F/25T Fail set 恒等（4 Timeout 单跑全 Pass=并发噪声 R196 同款）；engine 2462 绿（+1 r323 序断言回归）；quickjs 1460 绿；fmt/clippy 干净。**L2 路线**：切片 1✓2✓，剩 ③ sel 子重定位形态（_zwSelPendingParent 槽记账已存在）④ 视图层完整归一（深水区本体）。commit：见下方
@@ -488,6 +489,7 @@
 
 | 日期 | 轮次 | 证据 | 结果 |
 |------|------|------|------|
+| 2026-08-28 | R326 | adopt attributes ownerDocument 四轮探针 + 整组回退降级 + evidence/2026-08-28-r326-adopt-attr-deferred.md | **负结果回退**（基线零漂移）；第四条分派通道未定位降级 L2；Element 导航族全绿确认 |
 | 2026-08-28 | R325 | createCDATASection HTML 守卫 + PI nodeValue 分流（part06 + part04）+ evidence/2026-08-28-r325-patrol-fixes.md | **巡检两件 +2P**（createCDATASection 1F、Node-nodeValue 1F 转绿）；全量 54139P/56F Fail set 恰 -2；engine 持平 |
 | 2026-08-28 | R324 | sel 子重定位三层改动回退 + 降级记录 + evidence/2026-08-28-r324-sel-reloc-deferred.md | **负结果整组回退**（基线零漂移 2462 绿）；四环节链路降级 L2 主线；环境路径分裂教训 |
 | 2026-08-28 | R323 | tree-order 锚点归并（part04 + part24 序断言回归）+ evidence/2026-08-28-r323-tree-order.md | **L2 切片二 land**：ParentNode-querySelector-All +1P（序断言解锁）；全量 Fail set 恒等；engine 2462 绿 |
@@ -746,7 +748,11 @@
 ---
 
 ## 下一步计划
-0. **R326 下一步（R325 后，按 ROI）**：
+0. **R327 下一步（R326 后，按 ROI）**：
+   - **(a) 执行路径测绘**（轻量前置）：body.appendChild 的实际分派域枚举（div 域×移动域×wire 域）——单测/探针双环境各一条调用路径确认，产出后 R324/R326 两个降级件的落表修复即可精准落地。
+   - **(b) L2 主线专项评估收敛**（立项材料：R299/R321/R322-R323 切片 + R324/R326 四环节链路——就绪度已达可立项粒度，记「待用户决策」申请）。
+   - **(c) 全量基线引用**（54139P/56F/25T 系维持定稿基线）。
+
    - **(a) 备档集巡检续**（56F 剩余：realm/adoption 族、MO 族、crash 族——真实文件注入法确认执行路径后再动手）。
    - **(b) L2 主线专项评估收敛**（identity 双源统一含 R324 四环节链路——立项材料就绪度评估）。
    - **(c) 全量基线引用**（54139P/56F/25T 为 R325 定稿基线）。
