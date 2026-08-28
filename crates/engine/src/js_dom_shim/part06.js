@@ -3228,6 +3228,25 @@
       },
     });
   }
+  // R329（js-dom M4）：document IDL on* 补 GlobalEventHandlers 全族（spec DOM §interface
+  // Document : Node + GlobalEventHandlers——`document.onclick = fn` 合法 IDL handler，旧只列
+  // 4 个 Document 专有事件 + DOMContentLoaded，click 赋值落 plain 属性、冒泡派发不触发；
+  // WPT handler-count ?document 变体的 onclick 计数族）。列表与 window 级 R143 同源（spec
+  // GlobalEventHandlers + DocumentAndElementEventHandlers），document 派发虚站（tgt='doc'）
+  // 消费 addEventListener 注册——setter 经 document.addEventListener 同链路可触。
+  [
+    'click', 'dblclick', 'auxclick', 'contextmenu', 'mousedown', 'mouseup', 'mousemove', 'mouseover', 'mouseout',
+    'mouseenter', 'mouseleave', 'pointerdown', 'pointerup', 'pointermove', 'pointerover', 'pointerout',
+    'pointerenter', 'pointerleave', 'pointercancel', 'gotpointercapture', 'lostpointercapture',
+    'keydown', 'keyup', 'input', 'beforeinput', 'change', 'submit', 'reset', 'invalid', 'select',
+    'wheel', 'drag', 'dragstart', 'dragend', 'dragenter', 'dragleave', 'dragover', 'drop',
+    'copy', 'cut', 'paste', 'abort', 'canplay', 'canplaythrough', 'durationchange', 'emptied', 'ended',
+    'loadeddata', 'loadedmetadata', 'loadstart', 'pause', 'play', 'playing', 'progress', 'ratechange',
+    'seeked', 'seeking', 'stalled', 'suspend', 'timeupdate', 'volumechange', 'waiting', 'toggle',
+    'animationstart', 'animationend', 'animationiteration', 'animationcancel',
+    'transitionstart', 'transitionend', 'transitionrun', 'transitioncancel',
+    'securitypolicyviolation', 'slotchange', 'scroll',
+  ].forEach(_defineDocOnHandler);
   ['fullscreenchange', 'fullscreenerror', 'pointerlockchange', 'pointerlockerror', 'DOMContentLoaded'].forEach(_defineDocOnHandler);
 
   // R2947 CSS Font Loading API：`document.fonts` FontFaceSet——@font-face 字体加载事件的 JS 入口。

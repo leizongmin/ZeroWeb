@@ -1146,11 +1146,53 @@ pub fn run_dom_cases(wpt_root: &Path, filter: Option<&str>) -> Vec<(String, Vec<
                     continue;
                 }
             };
-            let results = run_testharness_html(wpt_root, &relative, &source, &harness_source, CASE_TIMEOUT);
-            cases.push((relative, results));
+            let variants = case_variants(&source);
+            if variants.is_empty() {
+                let results = run_testharness_html(wpt_root, &relative, &source, &harness_source, CASE_TIMEOUT);
+                cases.push((relative, results));
+                continue;
+            }
+            // R329：variant 用例逐 query 跑（基础 URL 的行为由上游 harness 不注册 =
+            // 0 subtest 空转，跳过防超时伪败；case 名带 query 区分，与上游 dashboard 对齐）。
+            for variant in variants {
+                let case_name = format!("{relative}{variant}");
+                let results = run_testharness_html(wpt_root, &case_name, &source, &harness_source, CASE_TIMEOUT);
+                cases.push((case_name, results));
+            }
         }
     }
     cases
+}
+
+/// 解析用例声明的 `<meta name="variant" content="?query">` 列表（js-dom R329）。
+///
+/// WPT variant 用例（如 Range-in-shadow-after-the-shadow-removed 的 `?mode=open` /
+/// `?mode=closed`）以同一文件 + 不同 query string 组成参数矩阵；runner 此前只跑基础
+/// URL（无 query），依赖 variant 参数的用例全簇误败（`mode=null` 落 TypeError）。
+/// content 支持无引号/单双引号形式；与上游 wpt struct 一致，query 含前导 `?`。
+fn case_variants(source: &str) -> Vec<String> {
+    let mut out = Vec::new();
+    let lower = source.to_ascii_lowercase();
+    let mut rest = lower.as_str();
+    while let Some(idx) = rest.find("name=\"variant\"").or_else(|| rest.find("name=variant")) {
+        let after = &rest[idx..];
+        let Some(content_idx) = after.find("content=") else {
+            break;
+        };
+        let tail = &after[content_idx + "content=".len()..];
+        let value = if let Some(stripped) = tail.strip_prefix('"') {
+            stripped.split('"').next().unwrap_or("")
+        } else if let Some(stripped) = tail.strip_prefix('\'') {
+            stripped.split('\'').next().unwrap_or("")
+        } else {
+            tail.split_whitespace().next().unwrap_or("")
+        };
+        if !value.is_empty() {
+            out.push(value.to_string());
+        }
+        rest = &after[1..];
+    }
+    out
 }
 
 /// Run the pinned upstream IndexedDB `.any.js` subset.
