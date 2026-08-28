@@ -1941,3 +1941,71 @@ globalThis.__r332e = out.join('|');
         "R332 normalize childList MO records: handle container 1 record; sel container 2 records with live-tree siblings"
     );
 }
+
+// R333（js-dom M4）：R318 children live 集合的归属收窄——R2929/R2930 断言
+// 「cloneContents 不改源 → #cc 仍 3 子」「surroundContents 后 #sc 仅 1 子」
+// 曾回归（#cc.children 吸收 insertNode 进 #ic 的 <b>；#sc.children 吸收 #w
+// 内的克隆 span）。children 集合的 matches 改为「直接子」判定（parentNode ===
+// 容器），scoped live 并入门收窄为「mutation 容器即作用域容器」，构建期并入
+// 改从作用域桶取——文档其他容器的插入不再并进本容器集合。
+// https://dom.spec.whatwg.org/#concept-collections-live
+#[test]
+fn test_children_collection_scope_attribution_r333() {
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let mut sandbox = V8Sandbox::with_config(zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    })
+    .unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><div id='cc'><span>A</span><span>B</span><span>C</span></div><div id='ic'><p>0</p></div></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+    sandbox
+        .execute(
+            r#"
+var out = [];
+// ① 先建 #cc.children 集合，再往 #ic 插元素——#cc 集合不得吸收。
+(function () {
+  var cc = document.getElementById('cc');
+  var ic = document.getElementById('ic');
+  var ccLive = cc.children;
+  var b = document.createElement('b');
+  ic.appendChild(b);
+  out.push('ccN=' + ccLive.length + ',bIn=' + (ccLive.namedItem ? (ccLive[0] && ccLive[0].tagName === 'B') : false)
+    + ',cc0=' + (ccLive[0] && ccLive[0].tagName));
+})();
+// ② 子树内克隆不并入父集合：#w（#sc 子）内的 span 不是 #sc 的直接子。
+(function () {
+  var sc = document.getElementById('ic');
+  var w = document.createElement('div');
+  w.id = 'wrap';
+  sc.appendChild(w);
+  var scLive = sc.children;
+  var sp = document.createElement('span');
+  w.appendChild(sp);
+  var names2 = [];
+  for (var q = 0; q < scLive.length; q++) {
+    var it = scLive[q];
+    names2.push(it.tagName + (it.id ? ':' + it.id : ''));
+    if (it === sp) names2.push('SPLICE');
+  }
+  out.push('scN=' + scLive.length + ',items=' + names2.join('/'));
+})();
+globalThis.__r333e = out.join('|');
+"#,
+        )
+        .unwrap();
+    let out = sandbox.execute("globalThis.__r333e").unwrap().value;
+    assert_eq!(
+        out,
+        "ccN=3,bIn=false,cc0=SPAN|scN=3,items=P/B/DIV:wrap",
+        "R333 children collection scope: other-container inserts and descendant nodes never merge in"
+    );
+}

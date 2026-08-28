@@ -696,10 +696,13 @@
               if (_r318fk[_r318i] && _r318fk[_r318i].nodeType === 1) _r318ek.push(_r318fk[_r318i]);
             }
             if (_r318ek.length || _childNodeList(sel, null).length) {
-              return _zwMakeCollection(_r318ek, true, {
-                matches: function (el) { try { return !!el && el.nodeType === 1; } catch (_e318cm) { return false; } },
-                scopeHandle: handle || null, scopeSel: sel || null,
-              });
+              // R333：不再携带 liveSpec——融合视图每次读 children 时重建（R318 本语义），
+              // live 集合的 matches 并入（R318 首版 nodeType 单判定）会把**其他容器**的
+              // 插入（#ic.insertNode(b) 并进 #cc.children，R2929 形态）和**子孙节点**
+              //（#w 内克隆 span 并进 #sc.children，R2930 形态）错收进来。同 turn
+              // 可见性由融合视图重建保证；live collection 断言面（ParentNode-children
+              // 「length 4→5 after append」）由融合视图 + pending overlay 覆盖。
+              return _zwMakeCollection(_r318ek, true);
             }
           }
           return sel && typeof __zw_element_children === 'function'

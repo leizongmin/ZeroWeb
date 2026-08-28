@@ -7011,11 +7011,23 @@
             if (els[_pi] === _zwPendingRemoved[_p]) els.splice(_pi, 1);
           }
         }
-        for (var _pa = 0; _pa < _zwPendingAdded.length; _pa++) {
-          var _pnd = _zwPendingAdded[_pa];
+        // R333：scoped 集合（scopeHandle/scopeSel 非空）的构建期并入改从**作用域桶**取——
+        // 全局 _zwPendingAdded 扫描 + 「in-doc 即并入」会把文档其他容器的插入错并进来
+        // （R2929 形态：#ic.insertNode(b) 时读 #cc.children → b 被并入 #cc 集合，3→4）。
+        // 文档级集合（scope 空）保持全局扫描 + R54 in-doc 门。
+        var _r333Cand = null;
+        if (liveSpec.scopeHandle || liveSpec.scopeSel) {
+          var _r333B = _zwPendBucket(liveSpec.scopeSel || null, liveSpec.scopeHandle || null);
+          _r333Cand = _r333B.added;
+        } else {
+          _r333Cand = _zwPendingAdded;
+        }
+        for (var _pa = 0; _pa < _r333Cand.length; _pa++) {
+          var _pnd = _r333Cand[_pa];
           // R54：构建期并入同款主文档过滤（走 `_zwNodeParent` 挂载记账链——append 当时写入，
-          // 不断链；detached/foreign 容器根无链 → false）。
-          if (_pnd && _pnd.__zwHandle && !_zwMutationInDoc(null, _pnd.__zwHandle)) continue;
+          // 不断链；detached/foreign 容器根无链 → false）。scoped 桶条目已在桶内（父匹配），
+          // 跳过 in-doc 门以保 detached 作用域容器（R120 WPT 形态）可并入。
+          if (!(_r333Cand !== _zwPendingAdded) && _pnd && _pnd.__zwHandle && !_zwMutationInDoc(null, _pnd.__zwHandle)) continue;
           var _pm = false;
           try { _pm = liveSpec.matches(_pnd); } catch (_e) { _pm = false; }
           if (_pm) {
@@ -7605,10 +7617,19 @@
       // 容器上时放行（WPT Element-getElementsByTagNameNS live collection：context =
       // createElement('div') detached 容器）；文档级集合（scopeHandle/scopeSel 空）维持
       // R54 in-doc 门。
+      // R333（js-dom M4）：作用域集合的并入门收窄——scoped 集合只在「mutation 容器 ===
+      // 作用域容器」时并入（R120 原语义）。R318 起 children 集合也带 scopeSel，旧门
+      // `_r54InDoc || _r120Scoped` 使**文档任意处**的 in-doc 插入（如 #ic.insertNode(b)）
+      // 都并入 #cc 的 children 集合（matches 只判 nodeType，无子树归属判定）——
+      // tab/renderer R2929/R2930 断言 #cc children 3→4 回归。文档级集合（scope 空）
+      // 保持 in-doc 门；scoped 集合要求 mutation 容器即作用域容器（元素级 getElementsBy*
+      // 的深层插入经「读时重查」路径补偿——_zwHCCollectSubtree 展开在 mutSel=深层父时
+      // 也触发并入，见 R50 构建期同款）。
       var _r120Scoped = lc.scopeHandle
         ? (lc.scopeHandle === mutHandle)
         : (lc.scopeSel ? (lc.scopeSel === mutSel) : false);
-      if (addFlat.length && (_r54InDoc || _r120Scoped)) {
+      var _r333Gate = (lc.scopeHandle || lc.scopeSel) ? _r120Scoped : _r54InDoc;
+      if (addFlat.length && _r333Gate) {
         for (var a = 0; a < addFlat.length; a++) {
           var nd = addFlat[a];
           if (!nd) continue;
