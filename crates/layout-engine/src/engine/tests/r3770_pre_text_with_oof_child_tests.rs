@@ -632,3 +632,50 @@ Line 6</div></body></html>"#;
         "约束 136px / 行高 32px → 4 行（非 0 行全裁）"
     );
 }
+
+/// R3775：clamp 边界**之后**的零高盒（margin-collapse 推移的空 div + 其 abspos 后代）
+/// 随 clamp point 后内容一并隐藏；边界上的零高盒（abspos-023）保持豁免。
+/// driving: line-clamp-auto-031（.collapse-through/.rel 被推到边界后 y=138 > 128，
+/// Chromium assert「.rel after the clamp point → abspos won't be visible」）。
+#[test]
+fn r3775_post_boundary_zero_height_hidden() {
+    let html = "<html><body style=\"margin:0\">\
+<div style=\"line-clamp: 4; font: 16px/32px serif; white-space: pre; background-color: yellow;\">\
+<div style=\"margin-bottom: 10px;\">Line 1\nLine 2\nLine 3\nLine 4</div>\
+<div class=\"gap\"></div>\
+<div class=\"rel\"><div style=\"position: absolute; top: 0; right: 0; width: 20px; height: 20px; background-color: skyblue;\"></div></div>\
+<div>Line 5\nLine 6\nLine 7\nLine 8</div></div></body></html>";
+    let doc = zero_dom::parse_html(html);
+    let mut sys = StyleSystem::new();
+    sys.set_viewport(800.0, 600.0);
+    let styles = sys.compute_styles(&doc, &[]);
+    let mut engine = LayoutEngine::new(800.0, 600.0);
+    let result = engine.compute(&doc, &styles);
+    fn find_hidden(b: &LayoutBox, doc: &zero_dom::Document) -> usize {
+        let mut n = 0;
+        let is_rel = b
+            .node_id
+            .and_then(|id| doc.get(id))
+            .and_then(|n| match &n.kind {
+                zero_dom::NodeKind::Element(e) => Some(
+                    e.local_name() == "div"
+                        && e.attributes
+                            .iter()
+                            .any(|a| a.name.local.as_ref() == "class" && a.value.as_ref() == "rel"),
+                ),
+                _ => None,
+            })
+            .unwrap_or(false);
+        if is_rel && b.line_clamp_hidden {
+            n += 1;
+        }
+        for c in &b.children {
+            n += find_hidden(c, doc);
+        }
+        n
+    }
+    assert!(
+        find_hidden(&result.root, &doc) > 0,
+        "边界后的零高 .rel 盒被隐藏（旧高度判据豁免之，abspos 照绘）"
+    );
+}

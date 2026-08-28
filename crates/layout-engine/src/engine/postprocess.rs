@@ -1999,6 +1999,7 @@ pub(super) fn apply_cross_block_line_clamp(
         remaining: &mut usize,
         ellipsis_host: &mut Option<(usize, usize)>,
         doc: &zero_dom::Document,
+        boundary_y: &mut f32,
     ) -> bool {
         let child_count = b.children.len();
         let mut exhausted = false;
@@ -2112,8 +2113,10 @@ pub(super) fn apply_cross_block_line_clamp(
                             if (c.height - visible_h).abs() > 0.5 {
                                 c.height = visible_h;
                             }
+                            *boundary_y = c.y + c.height;
                         } else {
                             *remaining -= lines;
+                            *boundary_y = c.y + c.height;
                         }
                     }
                 }
@@ -2134,7 +2137,28 @@ pub(super) fn apply_cross_block_line_clamp(
             // L4 末的空 .rel 盒 fits before the clamp point → 其 abspos shown）。
             // 零高盒走正常消费（leaf 路径 lines=0 → remaining 不减），其后续有内容
             // 兄弟仍被本守卫/耗尽隐藏。
+            // R3775：豁免加**位置判据**——零高盒 y 须 ≤ clamp 边界（boundary_y = 预算
+            // 耗尽处最后一个可见子盒的底边）。auto-031 实证：`.collapse-through`/
+            // `.rel`（h=0，含 abspos 后代）位于边界**之后**（margin-collapse 推到
+            // y=138 > 128），Chromium 判「clamp point 在 .collapse-through 之前 →
+            // .rel 及其 abspos 不绘制」——纯高度判据把边界后的零高盒一并豁免了。
             if *remaining == 0 && b.children[idx].height > 0.5 {
+                // 有高盒无条件隐藏——clamp 边界 = 最后可见行盒底边，起点 ≥ 边界即
+                // 「clamp point 之后」（012：.rel y == 边界但其 Line 5/6 内容全在点后 →
+                // CB 完全在点后，R3770 机制）。R3775 A/B 实证加 y > boundary 判据会把
+                // 「起点恰在边界」的有高 CB 盒（012/022、fixed-pos-012/017）一并豁免，
+                // 四案回退——有高盒的内容位置由其内部递归/consumption 决定，不适用
+                // 零高盒的「起点即位置」语义。
+                hide_subtree(&mut b.children[idx]);
+                exhausted = true;
+                continue;
+            } else if *remaining == 0 && b.children[idx].height <= 0.5 && b.children[idx].y > *boundary_y + 0.5 {
+                // R3775：边界之后的**零高**盒（.collapse-through/.rel 型——margin-collapse
+                // 把空盒推到边界后）同样隐藏：css-overflow-4「clamp point 后内容不绘制」
+                // 不豁免零高。023 的 .rel y == 边界 → `>` 严格比较保其豁免（abspos shown）。
+                // 031 的 .rel（含 abspos 后代）y=138 > 128 → 隐藏（abspos 随 hide_subtree
+                // 一并清零，Chromium assert「.rel after the clamp point → abspos won't
+                // be visible」）。
                 hide_subtree(&mut b.children[idx]);
                 exhausted = true;
                 continue;
@@ -2165,7 +2189,21 @@ pub(super) fn apply_cross_block_line_clamp(
             if has_block_grandchildren || is_inline_flow_carrier {
                 let before = *remaining;
                 let mut inner_host: Option<(usize, usize)> = None;
-                exhausted = walk_children(&mut b.children[idx], styles, remaining, &mut inner_host, doc);
+                let mut inner_boundary = *boundary_y;
+                exhausted = walk_children(
+                    &mut b.children[idx],
+                    styles,
+                    remaining,
+                    &mut inner_host,
+                    doc,
+                    &mut inner_boundary,
+                );
+                // R3775：递归内部的 clamp 边界（其内部坐标系）换算回本层（子 y 相对
+                // 本层内容盒顶）。
+                let inner_abs = b.children[idx].y + inner_boundary;
+                if inner_abs > *boundary_y {
+                    *boundary_y = inner_abs;
+                }
                 // R3770b：递归内部用尽预算时，ellipsis host 责任在内部——若内部消耗了
                 // 预算（last visible line 在嵌套盒内），由内部层标记（其自身 host 已在
                 // 其 loop 尾应用），本层 host 记录作废；若内部零消耗（remaining==before，
@@ -2249,9 +2287,17 @@ pub(super) fn apply_cross_block_line_clamp(
                         c.height = visible_h;
                         c.content_height = (c.content_height - delta).max(0.0);
                     }
+                    *boundary_y = c.y + c.height;
                     exhausted = true;
                 } else {
                     *remaining -= lines;
+                    // R3775：边界推进到最后一个**真实消耗预算**的子盒底边（零高豁免的
+                    // 位置判据）。lines=0 的子盒（空 div）不消耗不推进——否则零高盒把
+                    // 边界推过自己，后续零高豁免判据失效（031 的 collapse-through 把
+                    // 边界从 128 推到 138，.rel 豁免未被收紧）。
+                    if lines > 0 {
+                        *boundary_y = b.children[idx].y + b.children[idx].height;
+                    }
                     // R3770b：完整消耗预算的子记录为 ellipsis host 候选（若后续子
                     // 被 cap/隐藏，省略号附其末行末）。
                     *ellipsis_host = Some((idx, lines));
@@ -2301,7 +2347,8 @@ pub(super) fn apply_cross_block_line_clamp(
         // 自身 IFC 已由 R2431 cap 过（容器有直接 inline 文本时），此处只处理跨块预算。
         let mut remaining = limit;
         let mut ellipsis_host: Option<(usize, usize)> = None;
-        let exhausted = walk_children(b, styles, &mut remaining, &mut ellipsis_host, doc);
+        let mut boundary_y = 0.0f32;
+        let exhausted = walk_children(b, styles, &mut remaining, &mut ellipsis_host, doc, &mut boundary_y);
         if exhausted && style.height == LengthValue::Auto && b.declared_height_auto {
             // 收缩容器到可见内容 extent（隐藏盒已清零，max 取可见子底边）。
             let pb = b.padding_top + b.padding_bottom + b.border_top + b.border_bottom;
