@@ -67,6 +67,17 @@ fn script_is_module(type_attr: Option<&str>) -> bool {
         .unwrap_or(false)
 }
 
+/// 判断节点是否位于 `<template>` 子树内（R328——template 内容 inert，脚本不执行）。
+fn is_inside_template(doc: &zero_dom::Document, mut id: zero_dom::NodeId) -> bool {
+    while let Some(parent) = doc.parent_node(id) {
+        if doc.is_template_element(parent) {
+            return true;
+        }
+        id = parent;
+    }
+    false
+}
+
 /// 按文档顺序提取 `<script>` 内联文本与 `src`。
 pub fn extract_page_scripts(html: &str) -> Vec<PageScript> {
     extract_page_scripts_indexed(html).into_iter().map(|(s, _)| s).collect()
@@ -85,6 +96,19 @@ pub fn extract_page_scripts_indexed(html: &str) -> Vec<(PageScript, usize)> {
     for (this_idx, script_id) in doc.get_elements_by_tag_name("script").into_iter().enumerate() {
         let type_attr = doc.get_attribute(script_id, "type");
         if !script_type_is_javascript(type_attr.as_deref()) {
+            continue;
+        }
+        // R328（js-dom M4）：`<template>` 内容是 inert DocumentFragment（spec HTML
+        // §the-template-element——内容文档 "scripts are not executed"）。html5ever 的
+        // `get_template_contents` 暂返 template 元素自身，脚本留在文档树内；
+        // `get_elements_by_tag_name` 全树 DFS 不跳过 template 子树，此前把 template
+        // 内联脚本当页面脚本执行——WPT remove-next-sibling-during-replace-with 的
+        // template 脚本在测试体前运行、抢先把 `<b>` 摘除（测试体
+        // `container.querySelector('script')` 因 template 内 script 的 remove mutation
+        // 与查询叠加而 miss → "Cannot read properties of null"）。序号计数不受影响：
+        // this_idx 在过滤前递增，与 `getElementsByTagName('script')` 一一对应。
+        // https://html.spec.whatwg.org/multipage/scripting.html#the-template-element
+        if is_inside_template(&doc, script_id) {
             continue;
         }
         let is_module = script_is_module(type_attr.as_deref());
@@ -507,7 +531,7 @@ fn strip_script_cdata(code: &str) -> &str {
 
 #[cfg(test)]
 mod tests {
-    use super::{MediaResourceElementKind, extract_media_resources};
+    use super::{MediaResourceElementKind, PageScript, extract_media_resources, extract_page_scripts_indexed};
 
     #[test]
     fn media_resource_extraction_respects_owner_and_direct_src() {
@@ -528,5 +552,24 @@ mod tests {
                 (MediaResourceElementKind::Track, "captions.vtt"),
             ]
         );
+    }
+
+    /// R328（js-dom M4）：`<template>` 内容 inert——内联/外链脚本不进页面脚本序列，
+    /// template 外脚本正常提取；序号（含 template 内 script）仍按全文档 script 序递增。
+    /// Driving WPT：dom/nodes/remove-next-sibling-during-replace-with（template 脚本
+    /// 抢跑使测试体 `container.querySelector('script')` miss）。
+    /// https://html.spec.whatwg.org/multipage/scripting.html#the-template-element
+    #[test]
+    fn extract_page_scripts_skips_template_contents_r328() {
+        let html = "<html><body><div id=\"container\"><div id=\"target\"></div><b></b></div>\
+            <template><span>New </span><script>window.__inTemplate=1;</script><span>content</span></template>\
+            <script>window.__topLevel=1;</script></body></html>";
+        let scripts = extract_page_scripts_indexed(html);
+        // 仅 template 外的顶层脚本进入执行序列。
+        assert_eq!(scripts.len(), 1, "template inline script must not execute");
+        assert!(matches!(&scripts[0].0, PageScript::Inline(c) if c.contains("__topLevel")));
+        // 序号按全文档 script 计数（template 内 script 占 index 0，顶层为 index 1）——
+        // 与 shim getElementsByTagName('script') 的文档序一一对应（currentScript 对齐）。
+        assert_eq!(scripts[0].1, 1, "script index counts template scripts too");
     }
 }

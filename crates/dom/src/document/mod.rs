@@ -1613,6 +1613,15 @@ impl Document {
         )
     }
 
+    /// 节点是否为 `<template>` 元素（R328，供 engine 提取层判定 template 内容
+    /// inert——脚本不执行、脚本计数仍按文档序递增）。
+    pub fn is_template_element(&self, id: NodeId) -> bool {
+        matches!(
+            self.nodes.get(id),
+            Some(NodeData { kind: NodeKind::Element(e), .. }) if e.local_name() == "template"
+        )
+    }
+
     /// 选择器链是否显式寻址 `template` 段（任一部分 tag 为 template）——direct-address
     /// 例外开关（见 [`Self::is_query_opaque`] 文档）。
     fn chain_addresses_template(chain: &crate::query::SelectorChain) -> bool {
