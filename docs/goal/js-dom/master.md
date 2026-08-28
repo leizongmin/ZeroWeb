@@ -3,6 +3,8 @@
 **入口文档**: [../js-dom.md](../js-dom.md)（长期 Mission / Done Criteria / 执行协议 / 文档治理规则）
 **关联 RFC**: [../../specs/p1b-v8-native-bindings-rfc.md](../../specs/p1b-v8-native-bindings-rfc.md) + [../../specs/p1b-l2d3-unified-matcher-identity-bridge-rfc.md](../../specs/p1b-l2d3-unified-matcher-identity-bridge-rfc.md)（R166 新增——L2-d3 统一匹配器 + identity 桥设计）
 **创建日期**: 2026-08-13（goal 拆分 bootstrap）
+**本轮**: R338 — **M4/L2：R331 identity 反查消费面复核 + 普通 append 域 identity 评估（blast radius 探针先行）**：① **消费面复核**——integration 781 全绿（Vue 3/3 + lit/WC e2e 含其中），R331 的 QSA 产物 identity 反查包装对框架消费面零回归。② **普通 append 域评估**（探针先行）——createElement handle 子 append 到 sel 父后：appendChild 返回/querySelector（singular R322 id 回落）/childNodes（overlay）三条读路径 identity 一致（`appendSame=true,querySame=true,kidsSame=true`）；**querySelectorAll 同 turn 返空**（host 快照语义，R322 归并的 `_r322mg` 门未触发）——这是 **R309 的刻意取舍**（普通 append 域维持 host 语义规避 identity 双源双计，vue_reconciliation 两次回归教训），非新缺陷。QSA 同 turn 可见性 + identity 统一的正确解 = **L2 identity 桥深水区专项**（归并/overlay/查询三源的 wrapper 归一），确认无轻量切片可达，维持 L2 专项立项。探针转 `test_append_domain_identity_baseline_r338` 现状锚定（专项落地后更新断言）。engine v8 2476（+1）/quickjs 1467 绿，fmt/clippy 干净。commit：见下方
+
 **本轮**: R337 — **M4/M8 巡检收口（零源码改动）：events 备档集 Timeout 复核定性与 DC-8 path-objects 深项勘误**：① **events 备档复核**（R336 同法：single-run + pending 计数 + JS 探针逐个归因）——`Event-dispatch-on-disabled-elements` 4P/5T：sync click() 语义经探针 7 个 form element 全 dOK/eOK（**非语义缺口**），5 pending = 4 个 CSS transition/animation promise_test（依赖真动画时钟——R331 已定性「动画时钟 pump」架构项）+ 1 个 `test_driver.click` 实测（走 Activate 管线 disabled 判定，html-compat activation 域）；`EventListener-invoke-legacy` 6/6 pending = 同动画时钟架构项；`event-global-onerror` restore 1F = 跨 realm + 多层 onerror 恢复链（R295 family 深结构）；timestamp-cross-realm / incumbent-global = frames undefined 跨 realm 深项。**结论：events 备档集全部为「动画时钟 / 跨 realm / test_driver Activate 管线」三类深结构/架构项，无轻量修复可达面，备档维持且定性精确化**。② **DC-8 path-objects 勘误**（canvas 流 3 天零编辑，零碰撞核查通过）——全量跑 `testharness-canvas path-objects`：**202P/0F/3 NotRun**；R56 记录的「剩余 3 深项」现状勘误：skew = NotRun（runner 对套件内 CTM 语义互斥用例的策略性 skip，非 Fail）、end.3（roundrect.end.3）= Pass、scaleddashes（isPointInStroke.scaleddashes）= Pass；另 2 NotRun 为 reftest-format 用例（走 reftest/oracle 面）。**DC-8 收敛状态勘误为「202P/0F，3 NotRun 均为格式/互斥 skip，无 Fail」**。零源码改动轮（巡检 + 文档治理）。commit：见下方
 
 **本轮**: R336 — **M4：MO record 三处补口（MutationObserver 全族 134P/4F/0T——4 个文件级 Timeout 全消除，fail 集恒等备档）**：R331 记档的「MO Timeout 族全量并发慢」复核定性推翻——单文件复跑 + 探针逐个归因，Timeout 是**真实 record 缺口挂起**（pending 计数精确可循）。三件修复：① `Attr.value` **同值 set** 补 attributes record（spec `dom-attr-value` = change an attribute，queue 无值等价豁免；R122 幂等护栏把同值 set 整体吞掉——attributes 文件 "same id mutation" 挂起根因；同值分支只补通知不传播，互写环防护保持）；② handle 文本节点 CharacterData 四方法（append/delete/insert/replaceData）补 characterData record（oldValue 仅 observer 请求时捕获；R3034 只接了 data/nodeValue setter——characterData 文件 "(2)" 族观察挂文本节点自身，23P 全绿）；③ sel 元素 outerHTML setter 补**父 target** record（removed=[自身 proxy] + added=[解析 wrapper]；spec outerHTML replace 的 childList record target = 父，旧只发自身 target 且 removed 空——inner-outer "outerHTML mutation" 转绿；R3031 自身 target record 保留兼容）。**A/B**：MutationObserver-attributes **42/42** / childList 38/38 / inner-outer 3/3 / characterData 23P；MO 全族 134P/4F/0T；engine v8 2474（+1 回归测试 `test_attr_same_value_and_handle_text_records_r336`）/quickjs 1467 绿；tab 38P + renderer R2929/R2930 绿；fmt/clippy 双矩阵干净。**教训**：R331 的「全量并发下慢非死循环」定性被本轮推翻——Timeout 文件逐个 single-run + pending 计数才能区分「环境慢」与「record 缺口挂起」；宏观定性要随新证据持续复核。commit：见下方
@@ -505,6 +507,7 @@
 | 日期 | 轮次 | 证据 | 结果 |
 |------|------|------|------|
 | 2026-08-28 | R332 | normalize childList MO record 双容器修复（part04 `_r184NormArr` 逐步 record + sel 容器合并/移除/record 三件）+ part24 `test_normalize_childlist_mo_records_r332` + evidence/2026-08-28-r332-normalize-mo-records.md | **MutationObserver-childList pending 13→11、normalize 双用例 Pass**（Node-normalize 4P 维持）；MO 全族 fail 集恒等；engine 2471/quickjs 1466 绿 |
+| 2026-08-28 | R338 | R331 消费面复核（integration 781 + Vue/lit e2e 全绿）+ append 域 identity 探针评估 + part24 `test_append_domain_identity_baseline_r338` | **QSA 同 turn 返空确认为 R309 刻意取舍**（非新缺陷）；identity 统一归 L2 深水区专项；engine 2476/quickjs 1467 绿 |
 | 2026-08-28 | R337 | events 备档集 single-run 归因（探针 7 form element click 全 dOK/eOK）+ DC-8 path-objects 全量复核（202P/0F/3 NotRun）+ evidence/2026-08-28-r337-patrol-events-dc8.md | **events 备档定性精确化**（全部为动画时钟/跨 realm/Activate 管线三类深项）+ **DC-8 勘误**（3 深项实为 Pass/skip，无 Fail）；零源码改动轮 |
 | 2026-08-28 | R336 | MO record 三处补口（part03 Attr 同值 set + part04 handle 文本 CharacterData 四方法 + outerHTML 父 target）+ part24 `test_attr_same_value_and_handle_text_records_r336` + evidence/2026-08-28-r336-mo-record-gaps.md | **MO 全族 134P/4F/0T——4 文件级 Timeout 全消除**；attributes 42/42、inner-outer 3/3、characterData 23P；engine 2474/quickjs 1467 绿 |
 | 2026-08-28 | R335 | sel 域 parsed Text splitText（part05 `_wrapNodeEntry`）+ evidence/2026-08-28-r335-parsed-text-splittext.md | **MutationObserver-childList 38/38 全 Pass、文件级 Timeout 消除**（自 R37 导入以来首次全绿）；MO 全族 130P/4F/3T；Range-insertNode 1841P 持平；engine 2473/quickjs 1467 绿 |
@@ -774,11 +777,11 @@
 ---
 
 ## 下一步计划
-0. **R338 下一步（R337 后，按 ROI）**：
+0. **R339 下一步（R338 后，按 ROI）**：
    - **(a) make test 全量常态化**：A/B 清单固定含 browser/renderer crate（R333 教训延续执行）。
-   - **(b) L2 深水区专项**（identity 双源统一——R324 四环节链路 + R328 残余 + R299 indoc + tagName 动态大写持续累积立项材料；下一轻量切片候选 = 普通 append 域的 identity 反查去重推广[blast radius 探针先行]）。
-   - **(c) 架构项立项材料**：动画时钟 pump（events 备档 11+ pending 的收口前提——runner 层 feature，跨域协调项）。
-   - **(d) DC-8 遗留 reftest-format 2 用例**（clip.scale 走 reftest/oracle 面——需 oracle 基线，随 reftest 面推进）。
+   - **(b) M3 验收资产化收尾评估**：DC-2 剩余 = QuickJS feature 同页对齐（Vue/lit 验收页在 `--features quickjs` 下复跑）——评估 quickjs 矩阵下 e2e 可用性。
+   - **(c) L2 深水区专项**（identity 桥统一——R338 评估确认无轻量切片；立项材料已齐：R324 四环节链路 + R328 残余 + R299 indoc + tagName 动态大写 + R338 QSA 同 turn 域）。
+   - **(d) 架构项立项材料**：动画时钟 pump（events 备档收口前提——runner 层 feature，跨域协调项）。
 0. **R332 下一步（R331 后，按 ROI）**：
    - **(a) 备档集巡检续**（events 备档 4F→3F[handlers-changed R331 已收口]：Event-dispatch-on-disabled-elements Timeout 域 / event-global-onerror 跨 realm / pseudo 不追；MO Timeout 族 single-run 复核归因——R331 实测 attributes/childList/characterData/inner-outer 全量跑 Timeout 但 41/25 单 subtest 全 Pass[41P/1T 与 clean-HEAD 同值]，疑全量并发下慢非死循环，值得 TIME_LIMIT 调参或单独二分定位）。
    - **(b) R331 同域复核**：lit/CE e2e 消费查询面 + webkit-animation 族（R147 后未动画时钟 pump）+ `querySelector-mixed-case indoc`（R220/L2 域）——R331 的 identity 反查包装改了 QSA 产物形态，框架消费面已验证[vue 3/3]，lit 的 parts 提取面建议单独复跑一次确认。
@@ -1583,6 +1586,7 @@
 
 > 已完成的 milestone/切片记录到 `archive/`。
 
+- R338：M4/L2 **R331 消费面复核 + append 域评估**（integration 781 + Vue 3/3 + lit/WC 全绿——identity 反查包装零回归；探针实证 append/querySelector/childNodes 三路 identity 一致、QSA 同 turn 返空 = R309 刻意取舍非缺陷；identity 统一归 L2 identity 桥专项确认无轻量切片；现状锚定测试落地）
 - R337：M4/M8 **巡检收口**（events 备档集 single-run 归因[disabled-elements 探针 7 form element click 全 dOK/eOK 非语义缺口；invoke-legacy 6/6 = 动画时钟；onerror restore = 跨 realm 深结构]——定性精确化为三类深项无轻量可达面；DC-8 path-objects 勘误[202P/0F/3 NotRun：skew=互斥 skip、end.3/scaleddashes=Pass——R56 记 3 深项已收敛]；零源码改动轮）→ evidence/2026-08-28-r337-patrol-events-dc8.md
 - R336：M4 **MO record 三处补口**（① Attr.value 同值 set 补 attributes record[R122 幂等护栏吞 set，同值分支只通知不传播]；② handle 文本 CharacterData 四方法补 record[观察挂文本节点自身，R3034 只接 setter]；③ outerHTML setter 补父 target record[removed=[自身]+added=[wrapper]，R3031 自身 target 兼容保留]；MO 全族 134P/4F/0T——4 文件级 Timeout 全消除、attributes 42/42 全绿；教训：Timeout 定性要 single-run + pending 计数复核[推翻 R331 并发慢假设]）→ evidence/2026-08-28-r336-mo-record-gaps.md
 - R335：M4 **sel 域 parsed Text splitText**（`_wrapNodeEntry` 补 splitText[spec dom-text-splittext：IndexSizeError 越界 + 原保前半/新含后半 + nextSibling 位插入]——insertNode R209 split 分支在此静默跳过使尾节点 record 永不派发；MutationObserver-childList 38/38 全 Pass 文件级 Timeout 消除[自 R37 导入首次全绿]、MO 全族 130P/4F/3T fail 集恒等、Range-insertNode 1841P 持平）→ evidence/2026-08-28-r335-parsed-text-splittext.md

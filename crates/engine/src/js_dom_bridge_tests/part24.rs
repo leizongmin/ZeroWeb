@@ -2205,3 +2205,50 @@ globalThis.__r337e = results.join(',');
         "R337: disabled form elements do not dispatch click(); enabled ones do (all 7 types)"
     );
 }
+
+// R338（js-dom M4/L2）：普通 append 域的 identity 现状锚定——同 turn
+// appendChild(handle 子) 后：appendChild/querySelector（singular 的 R322 id 回落）/
+// childNodes（overlay）三条读路径 identity 一致；querySelectorAll 在同 turn 返回
+// host 快照语义（R309 刻意取舍——普通 append 域维持 host 语义以规避 identity 双源
+// 双计，vue_reconciliation lis:A,B,A,B 两次回归的教训）。QSA 同 turn 可见性 +
+// identity 统一归 L2 identity 桥深水区专项（本测试锚定现状，专项落地后更新断言）。
+#[test]
+fn test_append_domain_identity_baseline_r338() {
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let mut sandbox = V8Sandbox::with_config(zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    })
+    .unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><div id='root'></div></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+    sandbox
+        .execute(
+            r#"
+var root = document.getElementById('root');
+var btn = document.createElement('button');
+btn.id = 'b1';
+btn.textContent = 'x';
+var appended = root.appendChild(btn);
+var queried = root.querySelector('button');
+globalThis.__r338e = 'appendSame=' + (appended === btn)
+  + ',querySame=' + (queried === btn)
+  + ',kidsSame=' + (root.childNodes[0] === btn);
+"#,
+        )
+        .unwrap();
+    let out = sandbox.execute("globalThis.__r338e").unwrap().value;
+    assert_eq!(
+        out,
+        "appendSame=true,querySame=true,kidsSame=true",
+        "R338 append-domain identity baseline: append/querySelector/childNodes agree on identity"
+    );
+}
