@@ -1123,7 +1123,15 @@ pub fn apply_dom_mutations_full(
     // 供 RectBridge handler 解析 handle-identity（`__n{n}`）→ selector → NodeId → rect。
     let mut handle_selectors: HashMap<String, String> = HashMap::new();
     for (handle, node) in &handles {
+        // R346：**游离节点不产出 selector**——createElement-only（从未 append）的节点
+        // 不在文档树中，无法被任何文档选择器寻址；若此处为游离节点发 tag 选择器
+        //（stable_selector 恒返回裸 tag，query_selector_all 从 root 走不含游离节点 →
+        // matches.len()==1 成立——以「文档里恰好一个同名元素」误判「自己可被寻址」），
+        // selector_handle_map['button'] 会被游离 handle 占据并覆盖后到的真实元素映射
+        //（HashMap 迭代序随机 → 谁后写谁赢 → 同一用例多次运行结果分裂）。游离节点的
+        // handle 仍入 persistent 表（下一块），经 handle 直达路径照常可写。
         if doc.get(*node).is_some()
+            && doc.get(*node).is_some_and(|n| n.parent.is_some())
             && let Some(sel) = unique_selector_for_node(doc, *node)
         {
             handle_selectors.insert(handle.clone(), sel);

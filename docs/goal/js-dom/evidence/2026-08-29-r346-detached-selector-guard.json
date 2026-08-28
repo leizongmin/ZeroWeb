@@ -1,0 +1,31 @@
+{
+  "round": "R346",
+  "date": "2026-08-29",
+  "slice": "M4/events——游离节点 selector 污染修复（disabled-elements 单跑 nondeterminism 闭合：6/6 稳定 5 Pass）",
+  "background": "R345 记档的单跑 nondeterminism（disabled-elements transition promise_test 4-5 Pass 随机）本轮闭合。三段探针（engine trace → runner trace → JS dump + identity 比对）定位到 selector_handle_map 被游离节点污染。",
+  "root_cause": [
+    "sync tests 1-3 createElement 了 16 个元素（button/input/select/textarea ×4）但**从未 append**——host doc 中游离（parent=None）。",
+    "apply_dom_mutations_full 的 handle_selectors 对游离节点也算 unique_selector_for_node：stable_selector='button'，query_selector_all 从 root 走**不含游离节点自身** → matches.len()==1（恰好文档里有另一个同名 attached 元素时）误判「可被 'button' 寻址」→ handle_selectors['__n0'（游离）]='button'。",
+    "merge_handle_selectors 把 selector_handle_map['button']='__n0'（游离 handle）——HashMap 迭代序随机决定游离条目与真实元素条目谁后写 → **同一用例多次运行结果分裂**。",
+    "派发脚本 querySelector('button') → _zwQueryWrapIdentity('button') → __zw_handle_for_selector → __n0（游离 proxy）→ dispatchEvent 派到无 listener 的游离元素 → transitionrun 永不触达真实监听器 → promise 链卡死（探针 same=false + hsel=__n0 + 文档 capture 无事件三证）。"
+  ],
+  "fixes": [
+    "js_dom_bridge.rs：handle_selectors 构建加 **parent.is_some() 守卫**——游离节点不产出 selector（无法被文档选择器寻址是语义事实）；游离 handle 仍入 persistent 表（handle 直达路径照常）",
+    "script_gen：transition/animation 派发脚本 querySelector 后经 `_zwQueryWrapIdentity(sel)` 过 identity 桥（R100 反查 sel→handle 返回与页面持有者同一 proxy）——防御性闭合任何残余的 wrap 身份分裂",
+    "part06.js：R145 纯 tag pending 回落加 `_zwMutationInDoc` in-doc 门（R54/R120 同源语义）——createElement-only 的孤儿不再被 document.querySelector 的 pending 扫描命中"
+  ],
+  "results": {
+    "disabled_elements_single_run": "6/6 稳定 5 Pass（修复前 4-5 随机；transition promise_test 首次单跑稳定通过）",
+    "full_dom_sweep": "54173P/53F/19T vs R345 54173P/53F/19T——Fail 集逐字节一致（Timeout 差 = crash 文件 known 噪声轮转）",
+    "invoke_legacy": "6/6 保持",
+    "engine_v8": "2479P / clippy 0 error / fmt 无 diff"
+  },
+  "remaining_gaps_next_round": [
+    "disabled-elements 剩 pending:3（transitioncancel/animation seek 链/animationcancel）——三块 standalone 探针均通，随调度闭合预期逐步转绿；animation 链依赖负 delay seek 的多轮 pump 时序",
+    "test_driver.click 归 html-compat activation 域（非本 goal 工作面）"
+  ],
+  "lessons": [
+    "「同 binary 多次运行结果分裂」的第一嫌疑：HashMap 迭代序参与的写覆盖竞态——merge 类操作的 value 若来自「碰巧同键」的多个来源，迭代序即语义",
+    "游离（未 append）节点在 selector 语义里等价于不存在——凡「selector→元素」映射的构建都必须带 parent 守卫；matches.len()==1 的唯一性检查衡量的是「文档里恰好一个同名」而非「自己可被此选择器寻址」，两者对游离节点不等价"
+  ]
+}

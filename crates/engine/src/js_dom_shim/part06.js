@@ -1449,6 +1449,14 @@
         for (var _r145p = 0; _r145p < _zwPendingAdded.length; _r145p++) {
           var _r145n = _zwPendingAdded[_r145p];
           if (!_r145n || _r145n.nodeType !== 1) continue;
+          // R346：in-doc 门——createElement-only（从未 append）的孤儿不在文档中，spec 查询
+          // 不可见（WPT Event-dispatch-on-disabled-elements：sync tests 留下 16 个孤儿
+          // button/input，孤儿排在 _zwPendingAdded 首部 → 派发脚本 querySelector 命中孤儿
+          // → 事件派到无 listener 的元素 → 链卡死）。R54/R120 的 `_zwMutationInDoc` 门同源。
+          try {
+            if (typeof _zwMutationInDoc === 'function'
+                && !_zwMutationInDoc(_r145n.__zwSelector, _r145n.__zwHandle)) continue;
+          } catch (_e346g) {}
           try {
             if (String(_r145n.tagName) === wantTag) return _r145n;
           } catch (_e145p) {}
