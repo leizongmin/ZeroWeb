@@ -3138,25 +3138,53 @@
               return n && (n.nodeType === 3 || n.__zwIsText) && n.nodeType !== 4;
             };
             // 对单个容器的「权威子数组」跑合并（registry 数组 / _zwMEl childNodes）。
-            var _r184NormArr = function (kids, recurse) {
+            // R332：recsOut 传参时逐移除步推 childList record（removed=单移除节点，
+            // prev/next = 合并时刻该位的保留兄弟）——spec normalize 每步 remove 经
+            // queue-mutation-record 入队（WPT n21 期望 2 条独立 record）。
+            var _r184NormArr = function (kids, recurse, recsOut) {
               if (!kids || !kids.length) return;
               if (recurse) {
                 for (var _r184i = 0; _r184i < kids.length; _r184i++) {
                   var _r184k = kids[_r184i];
                   if (_r184k && _r184k.__zwHandle && _handleChildren[_r184k.__zwHandle]) {
-                    _r184NormArr(_handleChildren[_r184k.__zwHandle], true);
+                    _r184NormArr(_handleChildren[_r184k.__zwHandle], true, recsOut);
                   } else if (_r184k && _r184k.childNodes && _r184k.nodeType === 1 && !_r184k.__zwSelector && !_r184k.__zwHandle) {
-                    _r184NormArr(_r184k.childNodes, true); // plain 子树
+                    _r184NormArr(_r184k.childNodes, true, recsOut); // plain 子树
                   }
                 }
               }
               var out = [];
               var lastText = null;
+              // R332：live 工作数组——record 的 prev/next 按**移除时刻**的保留兄弟
+              //（spec queue-mutation-record：sibling 取自移除后的树形态；WPT n21
+              // record2 期望 prev=CH[AN 已被前一步移除]——首版按初始快照索引取到了
+              // 已移除的 AN）。
+              var _r332live = null;
+              if (recsOut) {
+                _r332live = [];
+                for (var _r332lv = 0; _r332lv < kids.length; _r332lv++) _r332live.push(kids[_r332lv]);
+              }
+              var _r332LiveRemove = function (node) {
+                for (var _r332lp = 0; _r332lp < _r332live.length; _r332lp++) {
+                  if (_r332live[_r332lp] === node) {
+                    var _r332pv = _r332lp > 0 ? _r332live[_r332lp - 1] : null;
+                    var _r332nx = _r332lp + 1 < _r332live.length ? _r332live[_r332lp + 1] : null;
+                    _r332live.splice(_r332lp, 1);
+                    return { previousSibling: _r332pv, nextSibling: _r332nx };
+                  }
+                }
+                return { previousSibling: null, nextSibling: null };
+              };
               for (var _r184j = 0; _r184j < kids.length; _r184j++) {
                 var _r184n = kids[_r184j];
                 if (_r184IsText(_r184n)) {
                   var _r184d = String(_r184n.data != null ? _r184n.data : (_r184n.nodeValue != null ? _r184n.nodeValue : ''));
                   if (lastText != null) {
+                    // R332：本步移除 _r184n——record 兄弟按 live 数组移除时刻取。
+                    if (recsOut) {
+                      var _r332sib = _r332LiveRemove(_r184n);
+                      recsOut.push({ type: 'childList', addedNodes: [], removedNodes: [_r184n], previousSibling: _r332sib.previousSibling, nextSibling: _r332sib.nextSibling });
+                    }
                     try {
                       lastText.data = String(lastText.data != null ? lastText.data : '') + _r184d;
                       lastText.nodeValue = lastText.data;
@@ -3164,7 +3192,14 @@
                     } catch (_e184m) {}
                     continue; // 兜接移除
                   }
-                  if (_r184d === '') continue; // 空 Text 无前邻 → 移除
+                  if (_r184d === '') {
+                    // R332：空 Text 无前邻 → 移除——record 兄弟同 live 语义。
+                    if (recsOut) {
+                      var _r332sibE = _r332LiveRemove(_r184n);
+                      recsOut.push({ type: 'childList', addedNodes: [], removedNodes: [_r184n], previousSibling: _r332sibE.previousSibling, nextSibling: _r332sibE.nextSibling });
+                    }
+                    continue; // 空 Text 无前邻 → 移除
+                  }
                   lastText = _r184n;
                   out.push(_r184n);
                   continue;
@@ -3177,12 +3212,77 @@
                 for (var _r184w = 0; _r184w < out.length; _r184w++) kids.push(out[_r184w]);
               } catch (_e184wr) {}
             };
+            var kidsArr = (handle && _handleChildren[handle]) || null;
             if (handle && _handleChildren[handle]) {
-              _r184NormArr(_handleChildren[handle], true);
+              // js-dom M4 R332：normalize 的 childList MO record（spec
+              // `concept-mutationobserver-queue-mutation-record`——每步兜接/移除各发一条
+              // childList record（WPT MutationObserver-childList n21 期望 2 条：record1
+              // removed=[AN] prev=CH next=GED、record2 removed=[GED] prev=CH——spec
+              // normalize 的 each-step remove 经 queue-mutation-record 逐次入队）。
+              // removedNodes = 被合并/移除的 Text 子，previousSibling = 移除位前的
+              // **保留**兄弟，nextSibling = 移除位后的保留兄弟（合并时刻）。
+              // R332 首版把 record 逻辑放 _r184NormArr 外引用其局部 `out` →
+              // ReferenceError 被 catch 吞 → 永不派发（探针实证）。
+              var _r332Recs = [];
+              _r184NormArr(_handleChildren[handle], true, _r332Recs);
+              for (var _r332s = 0; _r332s < _r332Recs.length; _r332s++) {
+                try { _mo_notify(sel, handle, _r332Recs[_r332s]); } catch (_e332mo) {}
+              }
             } else if (!sel && !handle) {
               // 无身份容器（防御）：无操作。
-            } else {
-              // sel 容器：解析文本为单一串（snapshot 模型）——no-op（R2853 原语义）。
+            } else if (sel) {
+              // js-dom M4 R332：**sel 容器** normalize（WPT MutationObserver-childList
+              // n20/n21 的 getElementById 元素形态）。快照模型的解析文本是**单一串**
+              //（`<p id='n20'>PAS</p>` 的 childNodes = [Text 'PAS']），同步 append 的
+              // handle 文本经 pending overlay 挂尾。合并 = ① 保留头 Text 的 data 兜接
+              // 被并文本（`__zwWriteChildText` → host SetChildText；快照文本节点带
+              // W 写路径，R48），② 被并/空 Text 经 `__zw_remove_handle` 移除 + 每步
+              // childList record（removed=[文本 proxy]，prev/next = 合并时刻的保留
+              // 兄弟）。头节点非 Text（元素开头）时兜接目标无从写——保守跳过 data
+              // 合并只发移除 record（与 spec「移除后其数据并入前邻」在快照域的
+              // best-effort 折衷，WPT n20/n21 的头都是 Text）。
+              // https://dom.spec.whatwg.org/#dom-node-normalize
+              try {
+                var _r332kids = (typeof _zwLocalChildNodes === 'function' && _zwLocalChildNodes(sel, handle))
+                  ? _zwLocalChildNodes(sel, handle).slice() : [];
+                var _r332reg = (_childNodeList(sel, handle) || []);
+                if (_r332reg.length > _r332kids.length) _r332kids = _r332reg;
+                if (_r332kids.length > 1) {
+                  var _r332first = null;
+                  for (var _r332f = 0; _r332f < _r332kids.length; _r332f++) {
+                    if (_r184IsText(_r332kids[_r332f])) { _r332first = _r332kids[_r332f]; break; }
+                  }
+                  if (_r332first) {
+                    // R332：live 工作数组——prev/next 按**移除时刻**保留兄弟（与
+                    // handle 分支同语义；首版索引取位会命中上一步已移除的节点）。
+                    var _r332live = [];
+                    for (var _r332lv2 = 0; _r332lv2 < _r332kids.length; _r332lv2++) _r332live.push(_r332kids[_r332lv2]);
+                    for (var _r332i2 = 0; _r332i2 < _r332kids.length; _r332i2++) {
+                      var _r332n2 = _r332kids[_r332i2];
+                      if (_r332n2 === _r332first || !_r184IsText(_r332n2)) continue;
+                      var _r332d2 = String(_r332n2.data != null ? _r332n2.data : '');
+                      if (_r332d2 !== '' && _r332first.__zwWriteChildText) {
+                        _r332first.__zwWriteChildText(String(_r332first.data != null ? _r332first.data : '') + _r332d2);
+                      }
+                      var _r332pv2 = null, _r332nx2 = null;
+                      for (var _r332lw = 0; _r332lw < _r332live.length; _r332lw++) {
+                        if (_r332live[_r332lw] === _r332n2) {
+                          _r332pv2 = _r332lw > 0 ? _r332live[_r332lw - 1] : null;
+                          _r332nx2 = _r332lw + 1 < _r332live.length ? _r332live[_r332lw + 1] : null;
+                          _r332live.splice(_r332lw, 1);
+                          break;
+                        }
+                      }
+                      if (typeof _mo_notify === 'function') {
+                        try { _mo_notify(sel, handle, { type: 'childList', addedNodes: [], removedNodes: [_r332n2], previousSibling: _r332pv2, nextSibling: _r332nx2 }); } catch (_e332n2) {}
+                      }
+                      if (_r332n2.__zwHandle) {
+                        try { __zw_remove_handle(_r332n2.__zwHandle); } catch (_e332rh) {}
+                      }
+                    }
+                  }
+                }
+              } catch (_e332sel) {}
             }
             // R184：live childNodes 缓存强制 refresh（下次读反映合并态——refresh 闭包在
             // 承载数组上；直接调 globalThis._zwLiveNLSync 入口亦可，此处经 __zwRefresh）。

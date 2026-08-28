@@ -1857,3 +1857,87 @@ globalThis.__r323p = out.join('|');
         "R323 tree-order merge, got: {out}"
     );
 }
+
+// R332（js-dom M4）：normalize 的 childList MO record（spec `dom-node-normalize` 每步
+// 兜接/移除经 `concept-mutationobserver-queue-mutation-record` 逐次入队——R184 实化
+// normalize 时漏发 record，WPT MutationObserver-childList「Node.normalize mutation(s)」
+// 的 async_test 永挂起 → 文件 Timeout）。双容器形态：
+// ① handle 容器（createElement div + 2 Text）——`_r184NormArr` 逐移除步推 record
+//    （live 数组取移除时刻兄弟；首版把 record 逻辑放函数外引用局部 `out` →
+//    ReferenceError 被 catch 吞 → 永不派发，探针实证）。
+// ② sel 容器（getElementById 元素，快照单文本 + pending handle 文本）——合并保留头
+//    Text 的 data（`__zwWriteChildText` → host SetChildText）+ `__zw_remove_handle`
+//    移除被并文本 + 每步 childList record（WPT n21 期望 2 条：r1 removed=[AN] prev=CH
+//    next=GED；r2 removed=[GED] prev=CH——live 数组语义，非初始快照索引）。
+// https://dom.spec.whatwg.org/#dom-node-normalize
+#[test]
+fn test_normalize_childlist_mo_records_r332() {
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let mut sandbox = V8Sandbox::with_config(zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    })
+    .unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><p id='n21'>CH</p></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+    sandbox
+        .execute(
+            r#"
+var out = [];
+// ① handle 容器：2 Text 合并 → 1 条 record（removed=[t2]，prev=t1）。
+(function () {
+  var n = document.createElement('div');
+  var t1 = document.createTextNode('S');
+  var t2 = document.createTextNode('T');
+  n.appendChild(t1); n.appendChild(t2);
+  var mo = new MutationObserver(function (mrl) { });
+  mo.observe(n, { childList: true });
+  n.normalize();
+  var obs = globalThis.__zw_mo_observers;
+  var recs = obs[obs.length - 1]._records;
+  var pend = 0;
+  for (var j = 0; j < obs.length; j++) pend += obs[j]._records.length;
+  out.push('handle:pend=' + pend + ',kids=' + n.childNodes.length
+    + ',first=' + (n.firstChild && n.firstChild.data)
+    + ',rm=' + (recs.length ? recs[0].removedNodes.length : '?')
+    + ',prev=' + (recs.length && recs[0].previousSibling === t1 ? 't1' : '?'));
+})();
+// ② sel 容器：CH + AN + GED → 2 条 record（r1 prev=CH next=GED；r2 prev=CH）。
+(function () {
+  var n21 = document.getElementById('n21');
+  n21.appendChild(document.createTextNode('AN'));
+  n21.appendChild(document.createTextNode('GED'));
+  var fc = n21.firstChild;
+  var mo = new MutationObserver(function (mrl) { });
+  mo.observe(n21, { childList: true });
+  n21.normalize();
+  var obs = globalThis.__zw_mo_observers;
+  var recs = obs[obs.length - 1]._records;
+  var desc = [];
+  for (var k = 0; k < recs.length; k++) {
+    desc.push('r' + k + ':rm=[' + (recs[k].removedNodes[0] && recs[k].removedNodes[0].data) + ']'
+      + ',prev=' + (recs[k].previousSibling === fc ? 'CH' : '?')
+      + ',next=' + (k === 0 ? (recs[k].nextSibling && recs[k].nextSibling.data) : String(recs[k].nextSibling)));
+  }
+  out.push('sel:n=' + recs.length + ',' + desc.join(';')
+    + ',after=' + n21.childNodes.length + ':' + (n21.firstChild && n21.firstChild.data));
+})();
+globalThis.__r332e = out.join('|');
+"#,
+        )
+        .unwrap();
+    let out = sandbox.execute("globalThis.__r332e").unwrap().value;
+    assert_eq!(
+        out,
+        "handle:pend=1,kids=1,first=ST,rm=1,prev=t1|sel:n=2,r0:rm=[AN],prev=CH,next=GED;r1:rm=[GED],prev=CH,next=null,after=1:CHANGED",
+        "R332 normalize childList MO records: handle container 1 record; sel container 2 records with live-tree siblings"
+    );
+}
