@@ -234,9 +234,17 @@ impl InlineFormattingContext {
                         if is_block_level {
                             // R57（M3）：in-flow block 子 → BlockBreak（无 R1286 空行 strut——
                             // block 前被折叠的空白行不应获得 line-height，canvas-grid 22px 偏移
-                            // 根因）；**浮动元素保留 Br**（r1733 float-avoidance 依赖旧 strut
-                            // 语义定位 inline-block 与 float 的可用宽）。
-                            if style.is_some_and(crate::inline_block_split::is_out_of_flow) {
+                            // 根因）。
+                            // R3779b：**float 子同发 BlockBreak**——CSS2 §9.5 float 脱离常规流
+                            // 不产生行盒，其后的行通过 float exclusion 缩宽（effective_content_area），
+                            // 无需断行条目占位。旧发 Br + R1286 strut 给行首空行赋 20px 高 →
+                            // line-clamp 计数含幽灵行（line-clamp-with-floats-001：cap=4 裁掉
+                            // 4 行真文本只留 3 行；floats-002 ref 同塌）；floats-zero-height-wrap /
+                            // floats-wrap-top-below-bfc-001l 簇同享此修复。kill-switch
+                            // `ZW_FLOAT_NO_GHOST_LINE=0` 回退旧行为。
+                            if style.is_some_and(crate::inline_block_split::is_out_of_flow)
+                                && !runtime_flags::float_no_ghost_line()
+                            {
                                 items.push(InlineItem::Br);
                             } else {
                                 items.push(InlineItem::BlockBreak);

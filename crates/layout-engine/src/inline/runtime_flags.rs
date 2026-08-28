@@ -30,6 +30,13 @@ pub(super) fn line_clamp() -> bool {
     selected(*VALUE, || default_on("ZW_LINE_CLAMP"))
 }
 
+/// R3779b：float 子在 IFC 内不发占位 Br（无 R1286 幽灵空行）。default-on；
+/// `ZW_FLOAT_NO_GHOST_LINE=0` 回退旧行为（float → Br + 行首空行 strut）。
+pub(super) fn float_no_ghost_line() -> bool {
+    static VALUE: LazyLock<bool> = LazyLock::new(|| default_on("ZW_FLOAT_NO_GHOST_LINE"));
+    selected(*VALUE, || default_on("ZW_FLOAT_NO_GHOST_LINE"))
+}
+
 pub(super) fn inline_box_recurse() -> bool {
     static VALUE: LazyLock<bool> = LazyLock::new(|| default_on("ZW_INLINE_BOX_RECURSE"));
     selected(*VALUE, || default_on("ZW_INLINE_BOX_RECURSE"))

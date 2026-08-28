@@ -515,6 +515,19 @@ impl InlineFormattingContext {
                     // 强制换行：将当前行推入结果，开始新行
                     // Br 总是产生一个换行，即使当前行为空
                     last_was_collapsible_ws = false;
+                    // R3779b：BlockBreak（block/float 子代理断行）在**行首空行**上不推 0 高
+                    // 行盒——空行仅作 current_x/current_y 光标推进，无内容可断（CSS2 §9.2.1.1
+                    // 匿名块拆分无 line box；float 脱流 §9.5 同理）。旧实现照 push → 幽灵
+                    // 0 高行占据 line-clamp 预算（line-clamp-with-floats-001 cap=4 只剩 3 行
+                    // 真文本）。Br 保持旧行为（真 <br> 的空行有 strut，R1286）。
+                    if matches!(item, InlineItem::BlockBreak)
+                        && current_line.runs.is_empty()
+                        && current_line.height <= 0.0
+                    {
+                        let (new_left, _) = self.effective_content_area(current_y, default_line_height);
+                        current_x = new_left;
+                        continue;
+                    }
                     let est_height = if current_line.height > 0.0 {
                         current_line.height
                     } else {

@@ -108,6 +108,11 @@ fn r3612_inline_block_relative_declared_width_preserved_beside_left_float() {
 /// 同容器，加 inline-block w=200。多-float 协调应判不可行→保持原位 + 宽度不变，非 per-float
 /// over-shrink 错缩到小宽（floats-wrap-top-below-inline-002r 回归实证）。load-bearing：
 /// 旧 per-float 实现把 inline-block 错缩/错移到右侧。
+/// R3779b 更新：float 子不再向 IFC 注入占位 Br（无 R1286 幽灵空行 strut）——容器行盒
+/// 高度由 90 收敛为 50（仅 inline-block 行），taffy 堆叠的 float_r（y=75..150）不再与
+/// inline-block（y=0..50）垂直重叠 → 只剩 float_l 单 float 重叠 → 单 float 分支把
+/// inline-block shift 到 float_l 右缘 x=250 并收缩宽度到剩余 150（CSS2 §9.5 line-box
+/// 缩短的终末近似；「不可行保持原位」分支现仅在 2+ float 同时重叠时触发）。
 #[test]
 fn r1733_multifloat_inline_block_not_misplaced_when_infeasible() {
     let (mut doc, body) = make_doc_with_body();
@@ -151,10 +156,16 @@ fn r1733_multifloat_inline_block_not_misplaced_when_infeasible() {
     let result = engine.compute(&doc, &styles);
 
     let ib_box = find_child_by_node_id(&result.root, ib).expect("inline-block found");
-    // inline-block 宽度应保持 200（声明宽），不被 per-float over-shrink 错缩到小值。
+    // R3779b 后：只剩 float_l 垂直重叠 → 单 float 分支 shift 到右缘 x=250 + 收缩到剩余宽
+    // 150（非 over-shrink 到任意小值，非错移到右 float 旁）。
     assert!(
-        ib_box.width >= 195.0,
-        "多-float 不可行时 inline-block 应保持声明宽 200（保持原位），非 over-shrink，实际 width={}",
+        ib_box.x >= 245.0,
+        "单 float 重叠时 inline-block 应 shift 到 float:left 右缘旁（x≈250），实际 x={}",
+        ib_box.x
+    );
+    assert!(
+        (ib_box.width - 150.0).abs() < 1.0,
+        "inline-block 应收缩到 float 右侧剩余宽 150，实际 width={}",
         ib_box.width
     );
 }
@@ -162,6 +173,10 @@ fn r1733_multifloat_inline_block_not_misplaced_when_infeasible() {
 /// R3613：multi-float 不可行分支虽然保持原位，也必须恢复声明宽的 used-value。
 /// `width:10em;font-size:20px` = 200px；旧逻辑在不可行时直接 no-op，
 /// 因而把 taffy raw `Em(10)` 的 10px 宽留到最终布局。
+/// R3779b 更新：同 r1733_multifloat——float 子不再注入占位 Br 后，inline-block
+/// （y=0..50）只与 float_l（y=0..75）重叠 → 单 float 分支 shift + 收缩。
+/// 本测试改守护「relative declared width 恢复」在单 float 收缩路径下仍成立：
+/// 收缩宽 = float 右侧剩余 150，而非 raw `Em(10)`=10px 或其它错值。
 #[test]
 fn r3613_multifloat_infeasible_relative_inline_block_preserves_declared_width() {
     let (mut doc, body) = make_doc_with_body();
@@ -206,13 +221,13 @@ fn r3613_multifloat_infeasible_relative_inline_block_preserves_declared_width() 
 
     let ib_box = find_child_by_node_id(&result.root, ib).expect("inline-block found");
     assert!(
-        ib_box.x < 50.0,
-        "multi-float 不可行时 inline-block 应保持原位，实际 x={}",
+        ib_box.x >= 245.0,
+        "单 float 重叠时 inline-block 应 shift 到 float:left 右缘旁（x≈250），实际 x={}",
         ib_box.x
     );
     assert!(
-        ib_box.width >= 195.0,
-        "multi-float 不可行时 relative inline-block 应保持 width≈200，实际 {}",
+        (ib_box.width - 150.0).abs() < 1.0,
+        "relative inline-block 收缩宽应为 float 右侧剩余 150（used-value 恢复），实际 {}",
         ib_box.width
     );
 }

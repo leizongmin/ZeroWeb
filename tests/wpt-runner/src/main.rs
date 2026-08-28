@@ -1785,11 +1785,21 @@ fn cmd_layout_dump(options: &CliOptions, filter: Option<&str>) {
         let base_dir = case.base_dir.as_deref();
 
         // 只渲染 test 页；ref 页布局不在 dump 范围
+        //（ZW_LAYOUT_DUMP_REF=1 时追加 dump ref 页，供 test/ref 双页布局差分——R3779b
+        // floats-001 ghost-row 调试用，默认关闭不影响 golden 契约）。
         let (_, root, rendered_html) =
             render_to_framebuffer_with_layout_with_base(&case.test_html, "", &config, base_dir);
 
         eprintln!("##### {} #####", case.id);
         dump_layout_tree(&root, &rendered_html);
+
+        if std::env::var("ZW_LAYOUT_DUMP_REF").is_ok() {
+            let ref_base = case.ref_base_dir.as_deref().or(base_dir);
+            let (_, ref_root, ref_rendered) =
+                render_to_framebuffer_with_layout_with_base(&case.ref_html, "", &config, ref_base);
+            eprintln!("##### {} [REF] #####", case.id);
+            dump_layout_tree(&ref_root, &ref_rendered);
+        }
     }
 }
 
