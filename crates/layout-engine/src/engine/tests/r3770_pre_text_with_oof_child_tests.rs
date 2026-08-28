@@ -442,3 +442,46 @@ fn r3771_flow_root_child_still_counts_lines() {
         "flow-root 子与后续兄弟均不被整体隐藏（flow-root 非独立 BFC）"
     );
 }
+
+/// R3772：跨块 clamp leaf 收缩 used line-height 取**被 cap 子盒自身**样式——行盒属于子盒
+/// IFC，行高由子盒 font/line-height 决定，与 clamp 容器（可能无字体声明、line-height 继承
+/// normal）无关。
+/// driving: line-clamp-with-abspos-017（.child `font: 16px/32px monospace`、.clamp 无字体
+/// → 旧实现收缩高 3×18.62=55.9px，应 3×32=96px）。
+#[test]
+fn r3772_cross_block_cap_shrink_uses_child_line_height() {
+    let html = "<html><body style=\"margin:0\">\
+<div style=\"line-clamp: 3; background-color: yellow;\">\
+<div style=\"font: 16px/32px monospace; white-space: pre;\">Line 1\nLine 2\nLine 3\nLine 4</div></div>\
+</body></html>";
+    let doc = zero_dom::parse_html(html);
+    let mut sys = StyleSystem::new();
+    sys.set_viewport(800.0, 600.0);
+    let styles = sys.compute_styles(&doc, &[]);
+    let mut engine = LayoutEngine::new(800.0, 600.0);
+    let result = engine.compute(&doc, &styles);
+    fn find_clamp_container<'a>(
+        b: &'a LayoutBox,
+        styles: &std::collections::HashMap<zero_dom::NodeId, zero_style_system::ComputedStyle>,
+    ) -> Option<&'a LayoutBox> {
+        for c in &b.children {
+            if c.node_id
+                .and_then(|id| styles.get(&id))
+                .is_some_and(|s| s.line_clamp != zero_style_system::property::types::LineClampComputedValue::None)
+            {
+                return Some(c);
+            }
+            if let Some(f) = find_clamp_container(c, styles) {
+                return Some(f);
+            }
+        }
+        None
+    }
+    let container = find_clamp_container(&result.root, &styles).expect("clamp container");
+    let child = container.children.first().expect("text child");
+    assert_eq!(child.line_clamp_cap, Some(3), "4 行文本被截到余量 3 行");
+    assert_eq!(
+        child.height, 96.0,
+        "收缩高 = 3 × 子盒自身 32px 行高 = 96（非容器 normal 行高 55.9）"
+    );
+}

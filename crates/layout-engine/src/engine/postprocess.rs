@@ -2118,8 +2118,15 @@ pub(super) fn apply_cross_block_line_clamp(root: &mut LayoutBox, styles: &HashMa
                 // 行数来源：stored IFC 行数；非 stored（paint 重跑 IFC，inline_layout
                 // 为 None）按 content_height / used line-height 推导（.pre 等纯文本块
                 // 行高一致，n = round(h/lh)）。R3768。
+                // R3772：used line-height 取**该子盒自身**样式——行盒属于子盒的 IFC，其
+                // 行高由子盒字体/line-height 决定（017 的 .child `font: 16px/32px
+                // monospace`，而 clamp 容器 .clamp 无字体声明、line-height 继承 normal
+                // ≈18.62px）。旧实现读父容器 b 的行高 → 017 行数估成 7、收缩高
+                // 3×18.62=55.9px（应 3×32=96px）。子样式缺失时回退容器样式。
+                let child_style = b.children[idx].node_id.and_then(|id| styles.get(&id));
                 let container_style = b.node_id.and_then(|id| styles.get(&id));
-                let lh = container_style
+                let lh = child_style
+                    .or(container_style)
                     .and_then(|s| {
                         let fs = crate::inline::container_used_line_height_px(
                             s,
