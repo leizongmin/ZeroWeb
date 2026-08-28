@@ -789,7 +789,7 @@
 0. **R341 下一步（R340 后，按 ROI）**：
    - **(a) make test 全量常态化**：A/B 清单固定含 browser/renderer crate（R333 教训延续执行）。
    - **(b) L2 深水区专项**（identity 桥统一——R338 确认无轻量切片；立项材料已齐：R324 四环节 + R328 残余 + R299 indoc + tagName 动态大写 + R338 QSA 同 turn 域）。
-   - **(c) 架构项立项材料**：动画时钟 pump（events 备档收口前提——runner 层 feature，跨域协调项）。
+   - **(c) 架构项立项材料**：动画时钟 pump（events 备档收口前提）——**R341 立项细化**：基建四件已存在[engine `pipeline.pending_animation_events` 产生于 render 管线 compute_styles 后 / webview `take_pending_*_events` 取用 / renderer `page_scripts::dispatch_{transition,animation}_events` 派发 / transition_clock+animation_clock 时钟]；**缺口 = runner `take_probe` 循环无 re-style+tick 泵**（run_page_scripts 只跑脚本不重渲染，style 变更后无第二轮 compute_styles → 时钟无 tick → 事件永不产生）；切片形态 = ① pipeline 加 `tick_animation_clock`（re-compute + tick + 收集）② webview 包装 `pump_animation_clock` ③ runner take_probe 循环调用 + 复用 renderer dispatch 函数 ④ 时钟源用真实时间（probe 间隔自然推进 30ms/100ms 测试动画）。涉及 pipeline/webview/runner 三层 ~200 行，测试基建（不改 Mission）可自主推进。
    - **(d) DC-7 第 4 项default-on = M7**：待用户点名（改 Mission 级单向门，见「待用户决策清单」）。
 0. **R332 下一步（R331 后，按 ROI）**：
    - **(a) 备档集巡检续**（events 备档 4F→3F[handlers-changed R331 已收口]：Event-dispatch-on-disabled-elements Timeout 域 / event-global-onerror 跨 realm / pseudo 不追；MO Timeout 族 single-run 复核归因——R331 实测 attributes/childList/characterData/inner-outer 全量跑 Timeout 但 41/25 单 subtest 全 Pass[41P/1T 与 clean-HEAD 同值]，疑全量并发下慢非死循环，值得 TIME_LIMIT 调参或单独二分定位）。
