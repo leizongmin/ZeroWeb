@@ -2033,7 +2033,12 @@ pub(super) fn apply_cross_block_line_clamp(root: &mut LayoutBox, styles: &HashMa
             // remaining=0 只 cap 掉 in-flow 文本子，嵌套 CB 盒自身及其 abspos 照留
             //（line-clamp-with-abspos-011/012/022：clamp 点后的 .rel 盒 + 天空蓝 abspos
             // 照绘，容器高不塌缩）。
-            if *remaining == 0 {
+            // R3770d：**零高子盒豁免**——clamp 边界上的空 div（h≈0）不占行预算，恰在
+            // clamp point 处而非之后（css-overflow-4 with-abspos-023：clamp 容器内
+            // L4 末的空 .rel 盒 fits before the clamp point → 其 abspos shown）。
+            // 零高盒走正常消费（leaf 路径 lines=0 → remaining 不减），其后续有内容
+            // 兄弟仍被本守卫/耗尽隐藏。
+            if *remaining == 0 && b.children[idx].height > 0.5 {
                 hide_subtree(&mut b.children[idx]);
                 exhausted = true;
                 continue;

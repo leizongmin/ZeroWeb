@@ -292,3 +292,54 @@ fn r3770c_inline_child_growth_does_not_shift_siblings() {
     let all_same = ys.iter().all(|&y| (y - ys[0]).abs() < 0.5);
     assert!(all_same, "同行 ruby 盒 y 应一致（不被增长位移推开），实得 {:?}", ys);
 }
+
+/// R3770d：clamp 边界上的零高 in-flow 子盒豁免整体隐藏——空 div 不占行预算，恰在
+/// clamp point 处而非之后，其 abspos shown（css-overflow-4 with-abspos-023：
+/// 「other-wise empty, zero-height div, which does fit before the clamp point」）。
+#[test]
+fn r3770d_zero_height_child_at_clamp_boundary_survives() {
+    let html = "<html><body style=\"margin:0\">\
+<div style=\"line-clamp: 4; font: 16px/32px serif; background-color: yellow;\">\
+Line 1<br>Line 2<br>Line 3<br>Line 4<br>\
+<div style=\"position: relative;\"><div style=\"position: absolute; right: 0; width: 100px; height: 100px; background-color: green;\">V</div></div>\
+Line 5</div></body></html>";
+    let doc = zero_dom::parse_html(html);
+    let mut sys = StyleSystem::new();
+    sys.set_viewport(800.0, 600.0);
+    let styles = sys.compute_styles(&doc, &[]);
+    let mut engine = LayoutEngine::new(800.0, 600.0);
+    let result = engine.compute(&doc, &styles);
+    fn find_boundary_rel(b: &LayoutBox) -> Option<&LayoutBox> {
+        for c in &b.children {
+            if c.is_relative && !c.is_absolute {
+                let has_abs = c.children.iter().any(|g| g.is_absolute);
+                if has_abs {
+                    return Some(c);
+                }
+            }
+            if let Some(f) = find_boundary_rel(c) {
+                return Some(f);
+            }
+        }
+        None
+    }
+    let rel = find_boundary_rel(&result.root).expect("boundary .rel box");
+    assert!(
+        !rel.line_clamp_hidden && rel.width > 0.0,
+        "零高 .rel 在 clamp 边界不隐藏（fits before the clamp point）"
+    );
+    let abspos = rel.children.iter().find(|c| c.is_absolute).expect("abspos box");
+    assert!(
+        !abspos.line_clamp_hidden && abspos.width > 0.0 && abspos.height > 0.0,
+        "边界 .rel 内 abspos 保留几何（spec: shown）"
+    );
+    // clamp 点后的有内容子仍隐藏（Line 5 在 clamp point 之后）。
+    let container = &result.root;
+    fn any_hidden_after(b: &LayoutBox) -> bool {
+        b.children.iter().any(|c| c.line_clamp_hidden) || b.children.iter().any(any_hidden_after)
+    }
+    assert!(
+        any_hidden_after(container),
+        "clamp point 后的有内容子（Line 5 anon）仍隐藏"
+    );
+}
