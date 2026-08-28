@@ -14,7 +14,7 @@
 // - 响应式：ref/reactive state 变更 → 组件重渲染
 // - 事件：@click → handler → state 更新 → patch
 
-#[cfg(all(test, feature = "v8"))]
+#[cfg(all(test, any(feature = "v8", feature = "quickjs")))]
 mod vue_e2e {
     use zero_webview::{WebView, WebViewConfig};
 
