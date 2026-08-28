@@ -1813,8 +1813,11 @@
       // + _zwDocAllElements 枚举源（快照 '*' ∪ 动态 handle 子——querySelectorAll(tag) 快照
       // 对 appendChild 动态子恒 miss，WPT「live collection」length 1≠2）。
       var _r120Tag = String(tag);
-      return _zwMakeCollection(_zwFilterByTagNameNS(_zwDocAllElements(), _r120Tag, undefined), true,
-        { matches: _zwLiveMatchesFor(_r120Tag, undefined) });
+      // R330：htmlCtx 查询时捕获（主文档 HTML——document 级调用者的 context 是主文档；
+      // cross-document 委托已在函数头分流）。
+      var _r330Html = _zwCtxIsHtmlDoc(null, null);
+      return _zwMakeCollection(_zwFilterByTagNameNS(_zwDocAllElements(), _r120Tag, undefined, _r330Html), true,
+        { matches: _zwLiveMatchesFor(_r120Tag, undefined, _r330Html) });
     },
     // `document.getElementsByTagNameNS(ns, localName)`（spec `dom-document-getelementsbytagnamens`，R12）——
     // 命名空间作用域的标签集合查询。polyfill 无 ns 概念（HTML 单 ns），忽略 ns 按 localName 查

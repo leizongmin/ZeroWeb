@@ -997,6 +997,28 @@
           if (!c) return c;
           if (c.parentNode && c.parentNode.removeChild) { try { c.parentNode.removeChild(c); } catch (_e177r) {} }
           _r177syntheticHtml.childNodes.push(c); c.parentNode = _r177syntheticHtml;
+          // R330（js-dom M4）：adopt 子树传播（spec concept-node-adopt——WPT
+          // change-document-HTMLNess 经 `frames[0].document.documentElement.appendChild`
+          // 移入 XML 子文档后新查询按 XML 语义；旧无印记 ownerDocument 回落主文档）。
+          (function adoptAll330(n) {
+            if (!n || typeof n !== 'object') return;
+            try {
+              if (n.__zwHandle) {
+                if (!globalThis.__zwAdoptDocByHandle) globalThis.__zwAdoptDocByHandle = {};
+                globalThis.__zwAdoptDocByHandle[String(n.__zwHandle)] = doc;
+              } else {
+                n.__zwAdoptDoc330 = doc;
+                Object.defineProperty(n, 'ownerDocument', {
+                  get: function () { return n.__zwAdoptDoc330 || undefined; },
+                  configurable: true,
+                });
+              }
+            } catch (_e330af) {}
+            var k330 = n.childNodes;
+            if (k330 && typeof k330.length === 'number') {
+              for (var ci330 = 0; ci330 < k330.length; ci330++) adoptAll330(k330[ci330]);
+            }
+          })(c);
           return c;
         },
         removeChild: function (c) {
@@ -8104,29 +8126,61 @@
   //   非 NS 变体：输入与元素 **qualifiedName**（tagName，含 prefix）比较——'te:st' 命中
   //   prefix 元素（WPT「prefix, lowercase name」）。
   // https://dom.spec.whatwg.org/#concept-getelementsbytagname
-  function _zwGetByTagNameSubtree(sel, handle, input, nsArg) {
+  function _zwGetByTagNameSubtree(sel, handle, input, nsArg, htmlCtx) {
     var els;
     if (sel) els = _descendantElements(sel);
     else if (handle) els = _handleQueryAll(handle, '*');
     else return [];
-    return _zwFilterByTagNameNS(els, input, nsArg);
+    return _zwFilterByTagNameNS(els, input, nsArg, htmlCtx);
+  }
+
+  // R330：查询上下文的文档 HTML-ness（getelementsbytagname 步骤 3「document is an
+  // HTML document」——查询时从 context object 的 node document 捕获；HTML 文档缺省
+  // true，XML/XHTML/SVG 子文档经 contentType 判定）。adopt 印记优先（R191 同源——
+  // 移入子文档后 ownerDocument 已重指）。
+  function _zwCtxIsHtmlDoc(sel, handle) {
+    var doc = null;
+    try {
+      if (handle && globalThis.__zwAdoptDocByHandle
+          && Object.prototype.hasOwnProperty.call(globalThis.__zwAdoptDocByHandle, String(handle))) {
+        doc = globalThis.__zwAdoptDocByHandle[String(handle)];
+      } else if (!handle && sel && globalThis.__zwAdoptDocBySel
+          && Object.prototype.hasOwnProperty.call(globalThis.__zwAdoptDocBySel, String(sel))) {
+        doc = globalThis.__zwAdoptDocBySel[String(sel)];
+      }
+    } catch (_e330a) {}
+    if (!doc) {
+      try { doc = _makeProxy(sel, handle).ownerDocument; } catch (_e330b) { doc = null; }
+    }
+    if (!doc) return true; // 无 doc 回落主文档（HTML）
+    try {
+      var ct = doc.contentType;
+      if (typeof ct !== 'string') return true; // 缺省 HTML（主文档/旧工厂）
+      return ct === 'text/html';
+    } catch (_e330c) { return true; }
   }
 
   // js-dom M4 R120：live HTMLCollection 的 matches 闭包（R50 liveSpec 接线——同步脚本内
   // append/remove 后 `_zwHCLiveInvalidate` 按此判定新子归属，WPT「should be a live
   // collection」length 断言）。判定复用 `_zwFilterByTagNameNS`（单元素跑过滤器）。
-  function _zwLiveMatchesFor(input, nsArg) {
+  // htmlCtx = 创建时捕获的文档 HTML-ness（live 判定与构建期语义一致）。
+  function _zwLiveMatchesFor(input, nsArg, htmlCtx) {
     return function (el) {
-      return _zwFilterByTagNameNS([el], input, nsArg).length > 0;
+      return _zwFilterByTagNameNS([el], input, nsArg, htmlCtx).length > 0;
     };
   }
 
   // js-dom M4 R120：getElementsBy* 匹配核心（与 Element 级 / Document 级共用）。
   // input = 限定名（非 NS 变体，对 tagName 含 prefix）或 localName（NS 变体）；
   // nsArg = undefined（非 NS）/ ns（'*' 任意 / null 无 ns / 精确串）。
-  function _zwFilterByTagNameNS(els, input, nsArg) {
+  // htmlCtx = 查询上下文的文档 HTML-ness（R330，getelementsbytagname 步骤 3 的
+  // 「document is an HTML document」判定——**查询时捕获**，不随元素移动改变：WPT
+  // change-document-HTMLNess 的旧 live list 在文档移入 XML 后仍保持 HTML 折叠语义；
+  // 同根新查询用新文档语义）。undefined = HTML（缺省主文档）。
+  function _zwFilterByTagNameNS(els, input, nsArg, htmlCtx) {
     var nsMode = (typeof nsArg !== 'undefined');
     var nsWant = nsMode ? (nsArg == null ? '' : String(nsArg)) : null;
+    var htmlDoc = (htmlCtx === undefined) ? true : !!htmlCtx;
     var inputLower = _zwAsciiLower(String(input));
     var out = [];
     for (var i = 0; i < els.length; i++) {
@@ -8134,7 +8188,12 @@
       if (!el || el.nodeType !== 1) continue;
       var ns = null;
       try { ns = el.namespaceURI; } catch (_e) {}
-      var isHtml = ns === null || ns === undefined || ns === 'http://www.w3.org/1999/xhtml';
+      // R330：HTML-ness 折叠只看查询上下文文档（htmlDoc）；元素的 ns 参与匹配
+      // 语义——非 HTML ns 元素（含 createElementNS('', …) 的 no namespace）恒
+      // 精确比较（'a' 不被 'A' 命中）。HTML ns 元素在 HTML 文档上下文才折叠；
+      // XML 文档上下文精确（XHTML 文档 'A' 只被 'A' 命中——spec 步骤 3 按
+      // document HTML-ness 而非元素 ns）。
+      var isHtml = htmlDoc && ns === 'http://www.w3.org/1999/xhtml';
       if (nsMode) {
         if (nsWant !== '*') {
           var nsActual = (ns === null || ns === undefined) ? '' : String(ns);
@@ -8165,6 +8224,14 @@
           var qn = null;
           try { qn = el.tagName; } catch (_e3) {}
           if (qn == null) continue;
+          // R330：createElementNS 产物（_nsHandles）的 qualifiedName 原值优先——
+          // wrapper tagName 经 htmlUpper 烘焙（HTML 文档创建时大写），移入 XML 文档
+          // 后 spec 的 tagName 须为 qualifiedName 原值（'a' 保持 'a'），精确比较以
+          // 原值为准（change-document-HTMLNess 断言 3：XML 语义下 n1[a] 不被 'A' 命中）。
+          if (el && el.__zwHandle && typeof _nsHandles !== 'undefined'
+              && _nsHandles[el.__zwHandle]) {
+            qn = _nsHandles[el.__zwHandle].qualifiedName;
+          }
           var qnCmp = isHtml ? _zwAsciiLower(String(qn)) : String(qn);
           if (qnCmp !== (isHtml ? inputLower : String(input))) continue;
         }

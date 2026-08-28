@@ -5470,8 +5470,11 @@
               if (q === '') return _zwMakeCollection([], true);
               // R120：全量客户端 NS 感知匹配（'*' 同路径——localName '*' 恒真）+ liveSpec
               //（同步 append/remove 后集合反映，WPT live collection）。
-              return _zwMakeCollection(_zwGetByTagNameSubtree(sel, handle, q, undefined), true,
-                { matches: _zwLiveMatchesFor(q, undefined), scopeHandle: handle || null, scopeSel: sel || null });
+              // R330：htmlCtx 查询时捕获（context 文档 HTML-ness——change-document-HTMLNess
+              // 的旧 list 语义随创建时文档、新查询随新文档）。
+              var _r330Html = _zwCtxIsHtmlDoc(sel, handle);
+              return _zwMakeCollection(_zwGetByTagNameSubtree(sel, handle, q, undefined, _r330Html), true,
+                { matches: _zwLiveMatchesFor(q, undefined, _r330Html), scopeHandle: handle || null, scopeSel: sel || null });
             }
             // getElementsByClassName：空白分隔多类名 → 须同时含全部 → '.a.b'。
             // R124：分词用 ASCII whitespace（spec）——JS /\s+/ 的 Unicode 空白集会把
@@ -5505,6 +5508,8 @@
             var ln = String(localName == null ? '' : localName);
             if (ln === '') return _zwMakeCollection([], true);
             // R120：liveSpec 接线（同 getElementsByTagName——同步 append/remove 反映）。
+            // R330：htmlCtx 透传（NS 变体的 localName 比较恒精确，htmlCtx 仅保持
+            // matches 闭包签名一致）。
             return _zwMakeCollection(_zwGetByTagNameSubtree(sel, handle, ln, _ns), true,
               { matches: _zwLiveMatchesFor(ln, _ns), scopeHandle: handle || null, scopeSel: sel || null });
           };

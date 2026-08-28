@@ -7828,6 +7828,31 @@
         if (c.parentNode && c.parentNode.removeChild) { try { c.parentNode.removeChild(c); } catch (_e126a) {} }
         _r223SetParent(c, docEl);
         this.childNodes.push(c);
+        // R330（js-dom M4）：docEl appendChild 的 **adopt 子树传播**（spec
+        // concept-node-adopt——node 移入文档时其与全部后代的 ownerDocument 重指本文
+        // 档；WPT Element-getElementsByTagName-change-document-HTMLNess：
+        // `frames[0].document.documentElement.appendChild(parent)` 后新查询须按
+        // XML 文档语义[精确比较]——旧无印记使 ownerDocument getter 回落主文档，
+        // HTML-ness 判定错）。与 doc 级 appendChild 的 R191 传播同构。
+        (function adoptAll330(n) {
+          if (!n || typeof n !== 'object') return;
+          try {
+            if (n.__zwHandle) {
+              if (!globalThis.__zwAdoptDocByHandle) globalThis.__zwAdoptDocByHandle = {};
+              globalThis.__zwAdoptDocByHandle[String(n.__zwHandle)] = doc;
+            } else {
+              n.__zwAdoptDoc330 = doc;
+              Object.defineProperty(n, 'ownerDocument', {
+                get: function () { return n.__zwAdoptDoc330 || undefined; },
+                configurable: true,
+              });
+            }
+          } catch (_e330ad) {}
+          var k330 = n.childNodes;
+          if (k330 && typeof k330.length === 'number') {
+            for (var ci330 = 0; ci330 < k330.length; ci330++) adoptAll330(k330[ci330]);
+          }
+        })(c);
         _r130WireSiblings(docEl.childNodes);
         return c;
       },
