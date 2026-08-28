@@ -1,6 +1,22 @@
 // 行内条目收集方法（collect_inline_items）— 从 mod.rs 拆分以控制文件体积
 // （include! 模式，≡ apps/browser/src/app.rs → app_input.rs；零行为/可见性变更）
 impl InlineFormattingContext {
+    /// R3778：ComputedStyle.white_space → run 级 white-space 三标志
+    ///（preserve / break_at_newline / no_wrap）。与 inline_finalization 容器级映射同源
+    ///（Pre=(T,T,T) 的 `\n` 断行由 preserve 模式的 split_into_words 承载，故
+    /// break_at_newline 恒随 preserve 置位以简化 run 侧判定）。
+    fn run_white_space(ws: &zero_style_system::WhiteSpaceValue) -> crate::inline::RunWhiteSpace {
+        use zero_style_system::WhiteSpaceValue;
+        match ws {
+            WhiteSpaceValue::Pre => crate::inline::RunWhiteSpace { preserve: true, break_at_newline: true, no_wrap: true },
+            WhiteSpaceValue::PreWrap => crate::inline::RunWhiteSpace { preserve: true, break_at_newline: true, no_wrap: false },
+            WhiteSpaceValue::PreLine => crate::inline::RunWhiteSpace { preserve: false, break_at_newline: true, no_wrap: false },
+            WhiteSpaceValue::BreakSpaces => crate::inline::RunWhiteSpace { preserve: true, break_at_newline: true, no_wrap: false },
+            WhiteSpaceValue::Nowrap => crate::inline::RunWhiteSpace { preserve: false, break_at_newline: false, no_wrap: true },
+            _ => crate::inline::RunWhiteSpace::default(),
+        }
+    }
+
     fn parse_html_dimension_attr(value: Option<String>) -> f32 {
         // https://html.spec.whatwg.org/multipage/rendering.html#attributes-for-embedded-content-and-images
         value.and_then(|v| v.parse::<f32>().ok().filter(|n| n.is_finite()))
@@ -37,7 +53,25 @@ impl InlineFormattingContext {
                         // `\n` 在 break_into_lines 中作为强制换行机会（见 split_into_words）。
                         // 旧实现无条件 collapse_whitespace，把 `\n` 折叠为普通空格 → 多行
                         // `<pre>` 内容塌缩为一行（如 morning-work 文章代码块垂直压缩）。
-                        let text = if self.preserve_whitespace {
+                        // R3778：run 级有效 white-space 在**折叠前**判定——文本节点的
+                        // 有效值 = 最近祖先声明（styles 键为元素，text 节点取父元素样式）。
+                        // pre 族原始文本不折叠（`\n`/连续空格/制表符保留给 break_lines）；
+                        // collapse 有损（`\n`→空格），事后无法恢复。
+                        let parent_id = doc.parent_node(child_id);
+                        let run_ws = doc
+                            .parent_node(child_id)
+                            .and_then(|pid| styles.get(&pid))
+                            .map(|s| Self::run_white_space(&s.white_space))
+                            .or_else(|| {
+                                // R3778：paint Path B（空 styles）——layout 期存储的 run 级
+                                // white-space 覆盖（按文本节点/其父元素 id 键）。
+                                self.ws_overrides
+                                    .get(&child_id)
+                                    .copied()
+                                    .or_else(|| parent_id.and_then(|pid| self.ws_overrides.get(&pid)).copied())
+                            });
+                        let run_preserves = run_ws.map_or(self.preserve_whitespace, |ws| ws.preserve);
+                        let text = if run_preserves {
                             text_data.content.clone()
                         } else {
                             collapse_whitespace(&text_data.content)
@@ -144,6 +178,7 @@ impl InlineFormattingContext {
                                         self.plaintext_bidi_override
                                             || parent_id.is_some_and(|id| self.plaintext_bidi_overrides.contains(&id))
                                     }),
+                                ws_override: run_ws,
                             }));
                         }
                     }
@@ -443,13 +478,20 @@ impl InlineFormattingContext {
                         // R1022：<ruby> 默认 text_content 会扁平化 <rt>/<rp> 文本
                         // （● 当行内字符渲染）。改为只收集 rb 文本作 inline 流，
                         // rt 文本由 paint 期作 zero-width annotation 上移到 rb 之上。
+                        let style = styles.get(&child_id);
+                        // R3778：run 级有效 white-space 在**折叠前**判定（collapse 有损，
+                        // `\n`→空格不可逆）——inline 元素声明的 pre 使其整段文本保留原始
+                        // 换行/空白（line-clamp-014 类：span 包裹 pre 代码块）。
+                        let run_ws = style
+                            .map(|s| Self::run_white_space(&s.white_space))
+                            .or_else(|| self.ws_overrides.get(&child_id).copied());
+                        let run_preserves = run_ws.map_or(self.preserve_whitespace, |ws| ws.preserve);
                         let text = if elem_data.local_name() == "ruby" {
                             Self::collect_text_excluding(doc, child_id, &["rt", "rp"])
                         } else {
                             doc.text_content(child_id).unwrap_or_default()
                         };
-                        let trimmed = collapse_whitespace(&text);
-                        let style = styles.get(&child_id);
+                        let trimmed = if run_preserves { text } else { collapse_whitespace(&text) };
                         let (font_size, line_height) = if style.is_some() {
                             // U1b：layout IFC（有真实 styles）首消费 font_metric_provider
                             // （per-font line-height）。provider 缺省时等价于 resolve_font_metrics。
@@ -487,6 +529,7 @@ impl InlineFormattingContext {
                             Self::extract_inline_box_metrics(style);
                         if !trimmed.is_empty() {
                             items.push(InlineItem::Text(TextRun {
+                                ws_override: run_ws,
                                 text: trimmed,
                                 node_id: child_id,
                                 font_size,
@@ -525,6 +568,7 @@ impl InlineFormattingContext {
                             // CSS 规范：空 inline 元素仍需通过 line-height + padding + border 影响行盒高度
                             // 生成零宽度 TextRun，贡献 line-height + padding + border
                             items.push(InlineItem::Text(TextRun {
+                                ws_override: style.map(|s| Self::run_white_space(&s.white_space)),
                                 text: String::new(),
                                 node_id: child_id,
                                 font_size,

@@ -308,6 +308,11 @@ pub struct LayoutBox {
     /// 使用此映射正确设置 is_ahem 标志，使字符宽度计算使用 1.0×font_size
     /// 而非默认的 0.55×font_size。
     pub text_node_is_ahem: NodeIdMap<bool>,
+    /// R3778：文本节点的有效 white-space 三标志映射（来自 layout IFC 的 run 解析）。
+    ///
+    /// paint 系统重跑 IFC（空 styles）时无法感知 inline 包裹层声明的 white-space
+    ///（容器级标志近似使其丢失），使用此映射恢复 run 级标志（line-clamp-014 类）。
+    pub text_node_ws_overrides: NodeIdMap<crate::inline::RunWhiteSpace>,
     /// 文本节点的 letter-spacing 映射（来自 layout engine 的 IFC 运行）。
     ///
     /// paint 系统在运行空 styles IFC 时无法获取 letter-spacing（无 style 信息），
@@ -506,6 +511,7 @@ impl Default for LayoutBox {
             line_clamp_hidden: false,
             text_node_font_sizes: NodeIdMap::default(),
             text_node_is_ahem: NodeIdMap::default(),
+            text_node_ws_overrides: NodeIdMap::default(),
             text_node_letter_spacing: NodeIdMap::default(),
             text_node_word_spacing: NodeIdMap::default(),
             text_node_line_heights: NodeIdMap::default(),

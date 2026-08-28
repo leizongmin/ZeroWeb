@@ -41,6 +41,7 @@ fn ahem_run(text: &str) -> TextRun {
         font_id: None,
         is_rtl: false,
         is_plaintext_bidi: false,
+        ws_override: None,
     }
 }
 

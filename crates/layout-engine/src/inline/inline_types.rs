@@ -74,6 +74,24 @@ pub struct TextRun {
     /// CSS `unicode-bidi: plaintext` — 强制 BiDi 段落方向从文本内容自动检测，
     /// 忽略 CSS `direction`（UAX #9 HL4 / CSS Writing Modes §2.2）。
     pub is_plaintext_bidi: bool,
+    /// R3778：该文本 run 的**有效 white-space**（文本节点最近祖先的声明，white-space
+    /// 是继承属性按元素生效）。`None` = 沿用 IFC 容器级标志（旧行为，测试/直文本容器
+    /// 等价）。生产路径（collect_items）恒 Some——修复「white-space 声明在 inline 包裹层
+    /// 被忽略」（014 类：span 上的 pre 丢失，5 行折叠 1 行，根因 = IFC 容器级标志近似）。
+    pub ws_override: Option<RunWhiteSpace>,
+}
+
+/// R3778：单个文本 run 的有效 white-space 三标志（CSS Text 3 §4.1 白空格处理维度的
+/// 最小集；`white-space: normal` = (false, false, false)、`pre` = (true, _, true no-wrap)，
+/// 由 collect_items 从 ComputedStyle.white_space 映射）。
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
+pub struct RunWhiteSpace {
+    /// preserve：空白序列不折叠（pre/pre-wrap）。
+    pub preserve: bool,
+    /// break_at_newline：`\n` 强制断行（pre/pre-line/pre-wrap）。
+    pub break_at_newline: bool,
+    /// no_wrap：禁止软换行（pre/nowrap）。
+    pub no_wrap: bool,
 }
 
 impl TextRun {
@@ -105,6 +123,7 @@ impl TextRun {
             font_id: None,
             is_rtl: false,
             is_plaintext_bidi: false,
+            ws_override: None,
         }
     }
 
@@ -270,6 +289,10 @@ fn valid_source_range(text: &str, range: &Range<usize>) -> bool {
 /// 文本片段 — 文本运行在行盒中的布局结果。
 #[derive(Debug, Clone)]
 pub struct TextFragment {
+    /// R3778：该片段的有效 white-space（继承自文本节点祖先的声明）。paint Path B
+    /// 重跑 IFC（空 styles）时经 `text_node_ws_overrides` 恢复，使行断与 layout 一致。
+    /// `None` = 沿用容器级标志。
+    pub ws_override: Option<RunWhiteSpace>,
     /// 片段在行盒中的 x 坐标。
     pub x: f32,
     /// 片段在行盒中的 y 坐标（相对于行盒顶部）。

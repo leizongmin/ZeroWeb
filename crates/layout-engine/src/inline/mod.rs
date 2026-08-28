@@ -128,6 +128,10 @@ pub struct InlineFormattingContext {
     /// `with_img_intrinsic_sizes` 注入（`img_intrinsic_sizes` 来自 engine 输入）。
     /// env-gated `ZW_IFC_IMG_INTRINSIC=0` 关闭（default-on R1578 slice 2）。
     pub img_intrinsic_sizes: HashMap<NodeId, (f32, f32)>,
+    /// R3778：逐文本节点的有效 white-space 覆盖（paint Path B 空 styles 重跑 IFC 时，
+    /// 从 LayoutBox.text_node_ws_overrides 注入；layout IFC 有真实 styles 不消费）。
+    /// 缺省空 map = 沿用容器级标志（旧行为）。
+    pub ws_overrides: NodeIdMap<RunWhiteSpace>,
     /// 默认字体度量 — 当 styles HashMap 中找不到元素样式时使用。
     ///
     /// 这主要用于 paint 系统的 IFC，因为 paint 系统传入空的 styles HashMap。
@@ -288,6 +292,7 @@ impl InlineFormattingContext {
             block_extent: container_width,
             inline_block_sizes: HashMap::new(),
             img_intrinsic_sizes: HashMap::new(),
+            ws_overrides: NodeIdMap::default(),
             default_font_metrics: None,
             container_font_size: DEFAULT_FONT_SIZE,
             font_size_overrides: NodeIdMap::default(),
@@ -377,6 +382,12 @@ impl InlineFormattingContext {
     /// 设置 `<img>` 替换元素的解码固有尺寸（R1578，见 `img_intrinsic_sizes` 字段文档）。
     pub fn with_img_intrinsic_sizes(mut self, sizes: HashMap<NodeId, (f32, f32)>) -> Self {
         self.img_intrinsic_sizes = sizes;
+        self
+    }
+
+    /// R3778：设置逐文本节点的有效 white-space 覆盖（paint Path B 恢复行断用）。
+    pub fn with_ws_overrides(mut self, overrides: NodeIdMap<RunWhiteSpace>) -> Self {
+        self.ws_overrides = overrides;
         self
     }
 
@@ -1283,6 +1294,7 @@ impl InlineFormattingContext {
                     }
 
                     current_column.runs.push(TextFragment {
+                        ws_override: None,
                         x: 0.0,
                         y: current_depth,
                         width: box_col_width,
@@ -1608,6 +1620,18 @@ impl InlineFormattingContext {
     /// - 默认模式：按空白字符分割，每个单词追加尾部空格。
     ///   CJK 字符每个单独作为一个"单词"（CSS 规范要求 normal 模式下 CJK 允许任意断行）。
     fn split_into_words(&self, text: &str, is_ahem: bool) -> Vec<String> {
+        self.split_into_words_with_ws(text, is_ahem, self.preserve_whitespace, self.break_at_newline)
+    }
+
+    /// R3778：run 级 white-space 版本——inline 子元素声明的 pre/nowrap 等不再丢失
+    ///（容器级标志近似使 span 包裹的 pre 代码块折叠成一行，line-clamp-014 类）。
+    fn split_into_words_with_ws(
+        &self,
+        text: &str,
+        is_ahem: bool,
+        preserve_whitespace: bool,
+        break_at_newline: bool,
+    ) -> Vec<String> {
         // word-break: keep-all — CJK 字符不被视为断行点，
         // 将连续的 CJK 文本保持为一个单词（类似拉丁文本的行为）
         if self.word_break == WordBreakMode::KeepAll {
@@ -1632,7 +1656,7 @@ impl InlineFormattingContext {
 
         // 默认模式（normal）：CJK 字符每个单独作为"单词"以允许任意断行点。
         // 非 CJK 字符按空白分割保持原有行为。
-        if self.preserve_whitespace {
+        if preserve_whitespace {
             // 保留空白字符序列：不折叠空格，保留换行符作为强制换行点
             let mut result = Vec::new();
             for (i, segment) in text.split('\n').enumerate() {
@@ -1700,7 +1724,7 @@ impl InlineFormattingContext {
                 result.push(format!("{text} "));
             }
             result
-        } else if self.break_at_newline {
+        } else if break_at_newline {
             // pre-line 模式（CSS Text 3 §4.2）：空白序列折叠为单空格（同 normal），但换行符
             // `\n` 触发强制断行（同 pre-wrap 的强制断行语义）。按 `\n` 切段，每段走 normal
             // 折叠分割（collapse_split_words），段间插入空串强制断行标记——break_items_into_lines
@@ -1826,6 +1850,7 @@ impl InlineFormattingContext {
                 // horizontal 仍 run.y + line_y（line.y 是行盒 y 偏移）。WM gate 零回归。
                 let vert_y = self.vertical;
                 line.runs.iter().map(move |run| TextFragment {
+                    ws_override: run.ws_override,
                     x: run.x,
                     y: if vert_y { run.y } else { run.y + line_y },
                     width: run.width,

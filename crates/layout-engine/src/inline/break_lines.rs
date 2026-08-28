@@ -93,10 +93,23 @@ impl InlineFormattingContext {
                     } else {
                         BidiFragmentCursor::with_direction(&run.text, run.is_rtl, run.is_plaintext_bidi)
                     };
-                    let has_leading_collapsible_space = !self.preserve_whitespace
+                    // R3778：run 级有效 white-space——collect_items 已从文本节点最近祖先
+                    // 声明解析（white-space 是继承属性按元素生效），None = 容器级标志
+                    //（测试/旧路径）。pre 声明在 inline 包裹层（span 包裹 pre 代码块）时
+                    // 容器级近似会丢失 pre → 多行折叠一行（line-clamp-014 类）。
+                    let (run_preserve, run_break_at_newline, run_no_wrap) = match run.ws_override {
+                        Some(ws) => (ws.preserve, ws.break_at_newline, ws.no_wrap),
+                        None => (self.preserve_whitespace, self.break_at_newline, self.no_wrap),
+                    };
+                    let has_leading_collapsible_space = !run_preserve
                         && run.text.chars().next().is_some_and(is_collapsible_ws);
                     // 按字符类别逐字符估算宽度，替代统一 0.6 倍近似
-                    let words = self.split_into_words(source_cursor.visual_text(), run.is_ahem_font);
+                    let words = self.split_into_words_with_ws(
+                        source_cursor.visual_text(),
+                        run.is_ahem_font,
+                        run_preserve,
+                        run_break_at_newline,
+                    );
 
                     // 空 inline 元素：文本为空但 line-height + padding + border 仍需贡献到行盒高度
                     if words.is_empty() && run.text.is_empty() {
@@ -113,6 +126,7 @@ impl InlineFormattingContext {
                         // 这样 layout/paint 后处理仍可感知其几何，写回真实的 inline box 尺寸，
                         // 并在需要时绘制 padding/border/background。
                         current_line.runs.push(TextFragment {
+                            ws_override: run.ws_override,
                             x: current_x,
                             y: 0.0,
                             width: 0.0,
@@ -160,7 +174,7 @@ impl InlineFormattingContext {
                         // CSS 2.1 §16.6.1：normal/nowrap 模式下行尾空格不渲染，不计入行宽。
                         // 将尾部空格从内容宽度中分离，仅作为词间距离使用。
                         // pre/pre-wrap 模式（preserve_whitespace）空格不可折叠，不剥离。
-                        let (content_word, trailing_space_width) = if !self.preserve_whitespace && word.ends_with(' ') {
+                        let (content_word, trailing_space_width) = if !run_preserve && word.ends_with(' ') {
                             let trimmed = word.trim_end_matches(' ');
                             let space_count = word.len() - trimmed.len();
                             let space_w =
@@ -175,7 +189,7 @@ impl InlineFormattingContext {
                         // tab stop 相对内容盒起点（0）；current_x 已含 text-indent/float/前置词宽，
                         // 故直接用作行内位置。tab 是空白：无 word-spacing/autospace 前导 gap，
                         // 贡献行高，渲染为不可见（空文本片段，宽度由 current_x 序列消费）。
-                        if self.preserve_whitespace && content_word == "\t" {
+                        if run_preserve && content_word == "\t" {
                             let space_advance = self.advance_of(' ', run.font_id, run.font_size, run.is_ahem_font);
                             let tab_unit = if self.tab_size_is_length {
                                 self.tab_size.max(space_advance)
@@ -189,6 +203,7 @@ impl InlineFormattingContext {
                                 current_line.height = run.line_height;
                             }
                             current_line.runs.push(crate::inline::TextFragment {
+                                ws_override: run.ws_override,
                                 x: current_x,
                                 y: 0.0,
                                 width: tab_advance,
@@ -213,7 +228,7 @@ impl InlineFormattingContext {
                         // CSS 2.1 §16.6.1：行首空格不渲染。
                         // 当前行首的第一个词如果以空格开头，去除前导空格。
                         let content_word = if current_line.runs.is_empty()
-                            && !self.preserve_whitespace
+                            && !run_preserve
                             && content_word.starts_with(' ')
                         {
                             content_word.trim_start_matches(' ')
@@ -225,7 +240,7 @@ impl InlineFormattingContext {
                         // 推入空字符串作为强制换行标记——此处消费它：把当前行推入结果并开始新行（同 <br>）。
                         // 旧实现在此只对空词 continue，静默丢弃标记 → 多行 <pre> 塌缩为一行。
                         // pre-line（break_at_newline）：空白序列折叠但 `\n` 仍强制断行（CSS Text 3 §4.2）。
-                        if (self.preserve_whitespace || self.break_at_newline) && content_word.is_empty() {
+                        if (run_preserve || run_break_at_newline) && content_word.is_empty() {
                             last_was_collapsible_ws = false;
                             let est_height = if current_line.height > 0.0 {
                                 current_line.height
@@ -304,7 +319,7 @@ impl InlineFormattingContext {
                         }
 
                         // 检查当前行是否放得下（含前导 word-spacing gap）
-                        if !self.no_wrap
+                        if !run_no_wrap
                             && current_x + lead_gap + word_width > left_offset + avail_width
                             && !current_line.runs.is_empty()
                         {
@@ -332,7 +347,7 @@ impl InlineFormattingContext {
                             self.effective_content_area(current_y, current_line.height.max(run.box_height()));
 
                         // overflow-wrap: break-word / anywhere 或 word-break: break-all
-                        let need_char_break = !self.no_wrap
+                        let need_char_break = !run_no_wrap
                             && (self.break_word || self.word_break == WordBreakMode::BreakAll)
                             && current_x + word_width > current_x + avail_w
                             && !content_word.is_empty();
@@ -368,6 +383,7 @@ impl InlineFormattingContext {
                                 }
 
                                 current_line.runs.push(TextFragment {
+                                    ws_override: run.ws_override,
                                     x: partial_x,
                                     y: 0.0,
                                     width: ch_width,
@@ -395,6 +411,7 @@ impl InlineFormattingContext {
                             // word_width 已不含尾部空格（在上方剥离），直接用作可视宽度
                             // 尾部空格作为词间距离添加到 current_x
                             current_line.runs.push(TextFragment {
+                                ws_override: run.ws_override,
                                 x: current_x,
                                 y: 0.0,
                                 width: word_width,
@@ -473,6 +490,7 @@ impl InlineFormattingContext {
                     );
                     current_x += m_left;
                     current_line.runs.push(TextFragment {
+                        ws_override: None,
                         x: current_x,
                         y: 0.0,
                         width: box_width,
@@ -689,6 +707,7 @@ impl InlineFormattingContext {
                     }
 
                     current_column.runs.push(TextFragment {
+                        ws_override: None,
                         x: 0.0,
                         y: partial_depth,
                         width: run.line_height,
@@ -722,6 +741,7 @@ impl InlineFormattingContext {
                         segment_height += segment.run.word_spacing;
                     }
                     current_column.runs.push(TextFragment {
+                        ws_override: None,
                         x: 0.0,
                         y: segment_depth,
                         width: segment.run.line_height,

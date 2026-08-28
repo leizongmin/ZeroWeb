@@ -187,6 +187,7 @@ fn test_negative_container_width_no_panic() {
         font_id: None,
         is_rtl: false,
         is_plaintext_bidi: false,
+        ws_override: None,
     }];
     // 不应 panic
     ctx.break_into_lines(runs);
@@ -216,6 +217,7 @@ fn test_very_narrow_container_single_char_per_line() {
         font_id: None,
         is_rtl: false,
         is_plaintext_bidi: false,
+        ws_override: None,
     }];
     ctx.break_into_lines(runs);
     // 极窄容器中每个单词应单独一行
@@ -266,6 +268,7 @@ fn test_zero_width_inline_block() {
             font_id: None,
             is_rtl: false,
             is_plaintext_bidi: false,
+            ws_override: None,
         }),
     ];
     ctx.break_items_into_lines(items);
@@ -298,6 +301,7 @@ fn test_zero_height_inline_block() {
             font_id: None,
             is_rtl: false,
             is_plaintext_bidi: false,
+            ws_override: None,
         }),
         InlineItem::InlineBlock(InlineBlockBox {
             width: 50.0,
@@ -383,6 +387,7 @@ fn r3636_refresh_reused_inline_block_metrics_resolves_residual_vertical_margins(
         y: 0.0,
         height: 10.0,
         runs: vec![TextFragment {
+            ws_override: None,
             x: 0.0,
             y: 0.0,
             width: 40.0,
@@ -439,6 +444,7 @@ fn space_run() -> TextRun {
         font_id: None,
         is_rtl: false,
         is_plaintext_bidi: false,
+        ws_override: None,
     }
 }
 
@@ -697,6 +703,7 @@ fn make_run(text: &str) -> TextRun {
         font_id: None,
         is_rtl: false,
         is_plaintext_bidi: false,
+        ws_override: None,
     }
 }
 
@@ -897,6 +904,7 @@ fn r1338_prewrap_single_interword_space() {
         font_id: None,
         is_rtl: false,
         is_plaintext_bidi: false,
+        ws_override: None,
     };
     let mut ctx = InlineFormattingContext::new(800.0).with_preserve_whitespace(true);
     ctx.break_into_lines(vec![run]);
@@ -937,6 +945,7 @@ fn r1338_prewrap_right_align_trailing_space_hangs() {
         font_id: None,
         is_rtl: false,
         is_plaintext_bidi: false,
+        ws_override: None,
     };
     let mut ctx = InlineFormattingContext::new(300.0)
         .with_preserve_whitespace(true)
@@ -1168,6 +1177,7 @@ fn test_vertical_single_column() {
         font_id: None,
         is_rtl: false,
         is_plaintext_bidi: false,
+        ws_override: None,
     }];
     ctx.break_into_lines(runs);
     // 短文本应在单列中
@@ -1213,6 +1223,7 @@ fn test_vertical_column_breaking() {
         font_id: None,
         is_rtl: false,
         is_plaintext_bidi: false,
+        ws_override: None,
     }];
     ctx.break_into_lines(runs);
     // 应产生多列（max_depth=50px，每个字符 16px，第 4 个字符开始换列）
@@ -1241,6 +1252,7 @@ fn test_vertical_columns_advance_along_x() {
         font_id: None,
         is_rtl: false,
         is_plaintext_bidi: false,
+        ws_override: None,
     }];
     ctx.break_into_lines(runs);
     // 列的 y 值（实际是 x 坐标）应递增
@@ -1284,6 +1296,7 @@ fn test_r1456_vertical_fragment_y_is_depth_not_column_x() {
         font_id: None,
         is_rtl: false,
         is_plaintext_bidi: false,
+        ws_override: None,
     }];
     ctx.break_into_lines(runs);
     // 须多列且存在 line.y>0 的列（line.y = 列 x），否则无法暴露「加 line.y」bug。
@@ -1325,6 +1338,7 @@ fn test_vertical_fragment_width_is_line_height() {
         font_id: None,
         is_rtl: false,
         is_plaintext_bidi: false,
+        ws_override: None,
     }];
     ctx.break_into_lines(runs);
     let frags: Vec<_> = ctx.all_fragments();
@@ -1360,6 +1374,7 @@ fn test_vertical_br_forces_new_column() {
             font_id: None,
             is_rtl: false,
             is_plaintext_bidi: false,
+            ws_override: None,
         }),
         InlineItem::Br,
         InlineItem::Text(TextRun {
@@ -1380,6 +1395,7 @@ fn test_vertical_br_forces_new_column() {
             font_id: None,
             is_rtl: false,
             is_plaintext_bidi: false,
+            ws_override: None,
         }),
     ];
     ctx.break_items_into_lines(items);
@@ -1408,6 +1424,7 @@ fn test_horizontal_mode_unaffected_by_vertical_impl() {
         font_id: None,
         is_rtl: false,
         is_plaintext_bidi: false,
+        ws_override: None,
     }];
     ctx.break_into_lines(runs);
     assert_eq!(ctx.lines.len(), 1, "水平模式：短文本应在单行中");
@@ -1440,6 +1457,7 @@ fn test_empty_inline_element_applies_margin_right() {
         font_id: None,
         is_rtl: false,
         is_plaintext_bidi: false,
+        ws_override: None,
     };
     let text_run = TextRun {
         text: "after".to_string(),
@@ -1459,6 +1477,7 @@ fn test_empty_inline_element_applies_margin_right() {
         font_id: None,
         is_rtl: false,
         is_plaintext_bidi: false,
+        ws_override: None,
     };
     let items = vec![InlineItem::Text(empty_run), InlineItem::Text(text_run)];
     ctx.break_items_into_lines(items);
@@ -1792,6 +1811,7 @@ fn ifc_advance_source_injected_is_consulted_in_wrapping() {
             font_id: None,
             is_rtl: false,
             is_plaintext_bidi: false,
+            ws_override: None,
         })];
         ctx.break_items_into_lines(items);
         ctx
@@ -1848,6 +1868,7 @@ fn ifc_advance_source_uses_contextual_text_measurement() {
         font_id: Some(7),
         is_rtl: false,
         is_plaintext_bidi: false,
+        ws_override: None,
     }]);
 
     assert_eq!(ctx.lines[0].runs[0].width, 15.0);
@@ -2018,6 +2039,7 @@ fn ifc_advance_source_receives_ordered_font_ids() {
         font_id: Some(7),
         is_rtl: false,
         is_plaintext_bidi: false,
+        ws_override: None,
     };
     ctx.break_into_lines(vec![run.clone()]);
 
@@ -2051,6 +2073,7 @@ fn build_single_text_line(is_ahem: bool) -> InlineFormattingContext {
         font_id: None,
         is_rtl: false,
         is_plaintext_bidi: false,
+        ws_override: None,
     })];
     ctx.break_items_into_lines(items);
     ctx
@@ -2114,6 +2137,7 @@ fn test_r1004_ascent_ratio_override_supersedes_r990_constant() {
         font_id: None,
         is_rtl: false,
         is_plaintext_bidi: false,
+        ws_override: None,
     })];
     ctx.break_items_into_lines(items);
     assert_eq!(ctx.lines.len(), 1);

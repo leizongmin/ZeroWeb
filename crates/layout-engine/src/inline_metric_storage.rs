@@ -68,6 +68,15 @@ fn store_font_sizes_from_ifc_mode(
             }
         }
         box_node.text_node_is_ahem.insert(frag.node_id, frag.is_ahem);
+        // R3778：run 级有效 white-space 存储供 paint Path B 重跑 IFC 恢复行断。
+        // 双键：文本节点 id + 其 owner 元素 id（paint Path B 的 element 分支按元素 id
+        // 收集整段 text_content，查 owner 键）。
+        if let Some(ws) = frag.ws_override {
+            box_node.text_node_ws_overrides.insert(frag.node_id, ws);
+            if let Some(owner) = font_owner {
+                box_node.text_node_ws_overrides.insert(owner, ws);
+            }
+        }
         box_node
             .text_node_letter_spacing
             .insert(frag.node_id, frag.letter_spacing);
@@ -132,6 +141,7 @@ mod tests {
 
     fn fragment(node_id: NodeId, font_size: f32, height: f32) -> TextFragment {
         TextFragment {
+            ws_override: None,
             x: 0.0,
             y: 0.0,
             width: 10.0,

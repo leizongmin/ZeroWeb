@@ -32,6 +32,7 @@ fn ctx_with_lines(n_runs: usize) -> InlineFormattingContext {
             font_id: None,
             is_rtl: false,
             is_plaintext_bidi: false,
+            ws_override: None,
         })
         .collect();
     ctx.break_into_lines(runs);
@@ -106,4 +107,35 @@ fn r3776_inline_container_not_clamped() {
     ctx.layout(&doc, span_id, &styles);
     assert_eq!(ctx.lines.len(), 5, "inline 容器的 line-clamp 不适用：5 行全保留");
     assert!(!ctx.clamped, "inline 容器不置 clamped");
+}
+
+/// R3778：inline 包裹层声明的 white-space 经继承作用于其内文本——IFC 逐 run 消费
+///（旧实现只读容器样式 → span 上的 pre 丢失，5 行折叠 1 行）。
+/// driving: line-clamp-014（.block normal > span.clamp pre > 5 行）。
+#[test]
+fn r3778_inline_wrapper_white_space_honored() {
+    let html = r#"<html><body>
+<div style="font: 16px / 32px serif;"><span style="white-space: pre;">Line 1
+Line 2
+Line 3
+Line 4
+Line 5</span></div></body></html>"#;
+    let doc = zero_dom::parse_html(html);
+    let mut sys = zero_style_system::StyleSystem::new();
+    sys.set_viewport(800.0, 600.0);
+    let styles = sys.compute_styles(&doc, &[]);
+    let mut span_id = None;
+    for id in styles.keys() {
+        let is_span = doc.get(*id).is_some_and(|n| match &n.kind {
+            zero_dom::NodeKind::Element(e) => e.local_name() == "span",
+            _ => false,
+        });
+        if is_span {
+            span_id = Some(*id);
+        }
+    }
+    let span_id = span_id.expect("inline span");
+    let mut ctx = InlineFormattingContext::new(800.0);
+    ctx.layout(&doc, span_id, &styles);
+    assert_eq!(ctx.lines.len(), 5, "span 的 pre 生效：5 行（非折叠 1 行）");
 }

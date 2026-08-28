@@ -879,6 +879,10 @@ impl super::Painter {
                         ),
                     )
                     .with_plaintext_bidi_overrides(box_node.plaintext_bidi_nodes.clone())
+                    // R3778：run 级有效 white-space 覆盖——inline 包裹层声明的 pre 等在
+                    // 容器级标志近似下丢失（line-clamp-014 类），layout 期按文本节点存储，
+                    // 此处恢复使 paint IFC 行断与 layout 一致。
+                    .with_ws_overrides(box_node.text_node_ws_overrides.clone())
                     .with_break_word(break_word)
                     .with_no_wrap(no_wrap)
                     .with_preserve_whitespace(preserve_whitespace)

@@ -39,6 +39,7 @@ fn test_text_align_center() {
         font_id: None,
         is_rtl: false,
         is_plaintext_bidi: false,
+        ws_override: None,
     }];
     ctx.break_into_lines(runs);
 
@@ -77,6 +78,7 @@ fn test_text_align_right() {
         font_id: None,
         is_rtl: false,
         is_plaintext_bidi: false,
+        ws_override: None,
     }];
     ctx.break_into_lines(runs);
 
@@ -113,6 +115,7 @@ fn test_text_align_left_no_offset() {
         font_id: None,
         is_rtl: false,
         is_plaintext_bidi: false,
+        ws_override: None,
     }];
     ctx.break_into_lines(runs);
 
@@ -148,6 +151,7 @@ fn test_text_align_justify_distributes_space() {
         font_id: None,
         is_rtl: false,
         is_plaintext_bidi: false,
+        ws_override: None,
     }];
     ctx.break_into_lines(runs);
 
@@ -190,6 +194,7 @@ fn test_text_align_justify_last_line_not_stretched() {
         font_id: None,
         is_rtl: false,
         is_plaintext_bidi: false,
+        ws_override: None,
     }];
     ctx.break_into_lines(runs);
 
@@ -228,6 +233,7 @@ fn test_text_align_center_multiline() {
         font_id: None,
         is_rtl: false,
         is_plaintext_bidi: false,
+        ws_override: None,
     }];
     ctx.break_into_lines(runs);
 
@@ -270,6 +276,7 @@ fn test_text_align_right_multiline() {
         font_id: None,
         is_rtl: false,
         is_plaintext_bidi: false,
+        ws_override: None,
     }];
     ctx.break_into_lines(runs);
 
@@ -309,6 +316,7 @@ fn test_text_align_justify_single_fragment_line() {
         font_id: None,
         is_rtl: false,
         is_plaintext_bidi: false,
+        ws_override: None,
     }];
     ctx.break_into_lines(runs);
     // 不应 panic
@@ -337,6 +345,7 @@ fn test_text_align_does_not_affect_total_height() {
         font_id: None,
         is_rtl: false,
         is_plaintext_bidi: false,
+        ws_override: None,
     }];
 
     let mut ctx_left = InlineFormattingContext::new(100.0).with_text_align(TextAlign::Left);
@@ -378,6 +387,7 @@ fn test_text_align_does_not_change_line_count() {
         font_id: None,
         is_rtl: false,
         is_plaintext_bidi: false,
+        ws_override: None,
     }];
 
     let mut ctx_left = InlineFormattingContext::new(100.0).with_text_align(TextAlign::Left);

@@ -1606,6 +1606,7 @@ impl LayoutEngine {
             line_clamp_hidden: false,
             text_node_font_sizes: Default::default(),
             text_node_is_ahem: Default::default(),
+            text_node_ws_overrides: Default::default(),
             text_node_letter_spacing: Default::default(),
             text_node_word_spacing: Default::default(),
             text_node_line_heights: Default::default(),
