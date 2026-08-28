@@ -92,7 +92,8 @@ JSON，private profile 继续只保留内存态。
   完整 manifest 为 294 个 testharness 源 / 331 个 URL；初筛 12 个 M1 候选经资源闭包
   校准为 8 个静态首批 / 3 个高阶事件案 / 1 个动态 server 阻塞案
 - ✅ Tier A 资产化：8 case / 28 subtest / 18 asset 已固定，fetch target + blob-SHA
-  fail-closed + testharness 账本已落；SW runner 仍待 RFC 批准后实现
+  fail-closed + testharness 账本已落；SW runner 已随 M1 实现（D1 方案 C 2026-08-19
+  获批，core WPT 162/162 Pass——勘误 2026-08-28 巡检，原文「待 RFC 批准」已过时）
 - ✅ 第二批资产化：14 个 M1/no-signal review 中 3 case / 4 subtest 已固定并入共享独立
   corpus；5 advanced defer / 5 dynamic-server gated / 1 update defer，剩余逻辑 review 138
 - ✅ iframe 裁决：11 case / 41 subtest 分为 single-iframe/worker/controller defer、
