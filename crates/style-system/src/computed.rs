@@ -550,9 +550,18 @@ pub fn resolve_computed_style_with_font_metrics(
         LineHeightValue::Normal => font_size_px * 1.164,
     };
     let resolve_lh_field = |field: &mut LengthValue| {
-        if let LengthValue::Lh(v) = field {
-            let px = *v * used_line_height_px;
-            *field = LengthValue::Px(px);
+        match field {
+            LengthValue::Lh(v) => {
+                let px = *v * used_line_height_px;
+                *field = LengthValue::Px(px);
+            }
+            // R3774：calc() 内层的 lh（如 `calc(4lh + 2*4px)`）无法被顶层 Lh 分支触及，
+            // 残留 Lh 会让后续 resolve_length_field 的 calc 求值 fail-closed 为 0
+            //（R3767 n=0 全裁 → 整页空白）。递归改写树内 Lh → Px。
+            LengthValue::Calc(expr) => {
+                zero_css_parser::values::rewrite_calc_lh(expr, used_line_height_px);
+            }
+            _ => {}
         }
     };
     resolve_lh_field(&mut resolved.width);

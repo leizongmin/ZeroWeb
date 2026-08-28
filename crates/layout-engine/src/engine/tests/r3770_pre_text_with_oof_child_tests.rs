@@ -593,3 +593,42 @@ Line 1\nLine 2\n<ruby style=\"font-size: 48px;\">Line 3<rt>r</rt></ruby>\nLine 4
     assert_eq!(ruby.line_clamp_cap, None, "ruby 盒不被行计数收缩");
     assert!(!ruby.line_clamp_clamped, "ruby 盒不被置 clamped");
 }
+
+/// R3774：calc() 内层的 lh 单位（`calc(4lh + 2*4px)`）在 computed 阶段按元素 used
+/// line-height 解析——残留 Lh 会让 calc 求值 fail-closed 为 0 → R3767 n=0 全裁 →
+/// 整页空白（auto-030 曾全白渲染）。
+/// driving: line-clamp-auto-030.tentative。
+#[test]
+fn r3774_calc_inner_lh_resolves() {
+    use zero_style_system::StyleSystem;
+    let html = r#"<html><body><div style="line-clamp: auto; max-height: calc(4lh + 2 * 4px); font: 16px / 32px serif; white-space: pre;">Line 1
+Line 2
+Line 3
+Line 4
+Line 5
+Line 6</div></body></html>"#;
+    let doc = zero_dom::parse_html(html);
+    let mut sys = StyleSystem::new();
+    sys.set_viewport(800.0, 600.0);
+    let styles = sys.compute_styles(&doc, &[]);
+    let mut probe: Option<zero_style_system::ComputedStyle> = None;
+    for (id, s) in styles.iter() {
+        if doc
+            .get(*id)
+            .is_some_and(|n| matches!(&n.kind, zero_dom::NodeKind::Element(e) if e.local_name() == "div"))
+        {
+            probe = Some(s.clone());
+        }
+    }
+    let s = probe.expect("div style");
+    assert_eq!(
+        s.max_height,
+        zero_css_parser::values::LengthValue::Px(136.0),
+        "calc(4lh+2*4px) = 4×32+8 = 136px"
+    );
+    assert_eq!(
+        crate::inline::line_clamp_auto_max_lines(&s),
+        Some(4),
+        "约束 136px / 行高 32px → 4 行（非 0 行全裁）"
+    );
+}

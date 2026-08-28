@@ -1917,6 +1917,18 @@ pub(crate) fn line_clamp_auto_max_lines(style: &ComputedStyle) -> Option<usize> 
             | LengthValue::MaxContent
             | LengthValue::FitContent(_) => None,
             LengthValue::Px(p) if *p == f64::INFINITY => None,
+            // R3774：calc() 内含 lh（如 auto-030 的 `calc(4lh + 2*4px)`）——通用
+            // resolve_length 无 line-height 上下文 → Lh 臂 fail-closed → 整式求值 None
+            // → 0（R3767 n=0 全裁 → 整页空白）。此处以本函数已解析的 used line-height
+            // 构建完整 CalcContext 精确求值（css-values-4：lh = 元素 used line-height）。
+            LengthValue::Calc(expr) => {
+                let ctx = zero_css_parser::values::CalcContext {
+                    font_size: Some(font_size),
+                    line_height: Some(lh_px),
+                    ..Default::default()
+                };
+                zero_css_parser::values::eval_calc_with_context(expr, &ctx)
+            }
             other => {
                 let px = zero_style_system::computed::resolve_length(other, font_size, None, None);
                 px.is_finite().then_some(px)

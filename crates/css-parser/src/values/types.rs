@@ -881,6 +881,9 @@ pub struct CalcContext {
     pub viewport_width: Option<f64>,
     /// "0" 字形宽度（px），用于 ch 单位转换。
     pub ch_width: Option<f64>,
+    /// 元素 used line-height（px），用于 lh 单位（css-values-4：lh = 元素 used
+    /// line-height）。无上下文的消费方保持 None → Lh 求值 None（保守 fail-closed）。
+    pub line_height: Option<f64>,
 }
 
 /// calc() 表达式解析器内部状态。
@@ -1401,6 +1404,42 @@ pub fn eval_calc(expr: &CalcExpr, parent_length: Option<f64>) -> Option<f64> {
 ///
 /// 支持所有单位：px、百分比、em、rem、vh、vw、vmin、vmax、ch。
 /// 相对单位需要对应的上下文字段已设置，否则返回 `None`。
+/// R3774：就地改写 calc 表达式内的 `lh` 单位为 px（css-values-4：lh = 元素 used
+/// line-height）。computed 阶段在 line-height 确定后调用——Calc 树内层 Lh 无法被
+/// `resolve_lh_field` 的顶层 Lh 分支触及，残留 Lh 会让 calc 求值 fail-closed 为
+/// 0（R3767 n=0 全裁 → 整页空白，driving：line-clamp-auto-030 `calc(4lh + 2*4px)`）。
+pub fn rewrite_calc_lh(expr: &mut CalcExpr, used_line_height: f64) {
+    match expr {
+        CalcExpr::Number(_) => {}
+        CalcExpr::Length(lv) => {
+            if let LengthValue::Lh(v) = lv {
+                *lv = LengthValue::Px(*v * used_line_height);
+            }
+        }
+        CalcExpr::BinaryOp(left, _, right) => {
+            rewrite_calc_lh(left, used_line_height);
+            rewrite_calc_lh(right, used_line_height);
+        }
+        CalcExpr::Min(args) | CalcExpr::Max(args) => {
+            for arg in args {
+                rewrite_calc_lh(arg, used_line_height);
+            }
+        }
+        CalcExpr::Clamp { min, val, max } => {
+            rewrite_calc_lh(min, used_line_height);
+            rewrite_calc_lh(val, used_line_height);
+            rewrite_calc_lh(max, used_line_height);
+        }
+        CalcExpr::UnaryOp(_, inner) => rewrite_calc_lh(inner, used_line_height),
+        CalcExpr::BinaryMathOp(_, a, b) => {
+            rewrite_calc_lh(a, used_line_height);
+            rewrite_calc_lh(b, used_line_height);
+        }
+    }
+}
+
+/// 以 [`CalcContext`] 提供的参考尺寸求值 calc 表达式为 px 值。任一子式无法解析
+/// （如无上下文的 lh/百分比）返回 None——消费方自行决定 fail 策略。
 pub fn eval_calc_with_context(expr: &CalcExpr, ctx: &CalcContext) -> Option<f64> {
     match expr {
         CalcExpr::Number(n) => Some(*n),
@@ -1555,9 +1594,10 @@ fn resolve_length_to_px(lv: &LengthValue, ctx: &CalcContext) -> Option<f64> {
         LengthValue::Rch(v) => ctx.root_ch_width.map(|cw| v * cw),
         LengthValue::Ic(v) => ctx.ic_width.map(|width| v * width),
         LengthValue::Ric(v) => ctx.root_ic_width.map(|width| v * width),
-        // lh 单位（css-values-4）：calc 上下文无 line-height 参考，保守 None（消费方
-        // 有元素 line-height 上下文时自行解析，如 layout 的 line-clamp:auto clamp 路径）。
-        LengthValue::Lh(_) => None,
+        // lh 单位（css-values-4：lh = 元素 used line-height）。R3774：上下文携带
+        // line_height 时精确求值（消费方如 layout 的 line-clamp:auto clamp 路径）；
+        // 无上下文保持 None（保守 fail-closed）。
+        LengthValue::Lh(v) => ctx.line_height.map(|lh| v * lh),
         LengthValue::Auto => None,
         LengthValue::Calc(expr) => eval_calc_with_context(expr, ctx),
         LengthValue::FitContent(inner) => resolve_length_to_px(inner, ctx),
