@@ -1781,7 +1781,47 @@ pub(crate) fn remeasure_inline_only_containers(
     // 会把纯空白/原子片段高度膨胀（ws 片段 0→721px、canvas 片段 50→442px，
     // canvas-grid reftest 的 2d.gradient.colorInterpolationMethod）。其高度由
     // R109_BACKFILL 专项处理。
-    if !has_floats
+    //
+    // R3770：**纯文本/inline 叶片段**豁免上述排除——taffy 经 ctx_node（片段首个文本
+    // 节点）测匿名块盒高 = 单行 line_height，多行片段内容欠计（R109_BACKFILL ① 只对
+    // stored（pure-Ahem）inline_layout 回填；非 Ahem 片段不存储 → 永远单行高，
+    // line-clamp-with-abspos-011/013：容器 4 行 128px 的匿名片段被测成 32px）。
+    // 按片段 node_ids 跑 fragment-scoped IFC 精确测高（仅增大）。原子 inline 子
+    //（img/canvas/inline-block）片段仍排除（无 ib_sizes 会误测）。
+    if box_node.fragment_node_ids.is_some()
+        && !has_floats
+        && box_node.inline_layout.is_none()
+        && let Some(dom_id) = box_node.node_id
+        && let Some(style) = styles.get(&dom_id)
+        && matches!(style.height, LengthValue::Auto)
+        && box_node.fragment_node_ids.as_ref().is_some_and(|ids| {
+            ids.iter().all(|&id| match doc.get(id).map(|n| &n.kind) {
+                Some(NodeKind::Text(_)) => true,
+                Some(NodeKind::Element(_)) => styles.get(&id).is_some_and(|s| {
+                    matches!(s.display, DisplayValue::Inline)
+                        && !doc
+                            .child_nodes(id)
+                            .iter()
+                            .any(|&gc| doc.get(gc).is_some_and(|g| matches!(g.kind, NodeKind::Element(_))))
+                }),
+                _ => false,
+            })
+        })
+    {
+        let frag_ids = box_node.fragment_node_ids.clone().unwrap_or_default();
+        let mut inline_ctx = InlineFormattingContext::new(box_node.content_width)
+            .with_no_wrap(resolve_no_wrap_for_ifc_measure(styles.get(&dom_id)))
+            .with_preserve_whitespace(resolve_preserve_for_ifc_measure(styles.get(&dom_id)))
+            .with_break_at_newline(resolve_break_at_newline_for_ifc_measure(styles.get(&dom_id)));
+        inline_ctx.set_fragment_node_ids(frag_ids);
+        inline_ctx.layout(doc, dom_id, styles);
+        let frag_h = inline_ctx.total_height();
+        if frag_h > box_node.content_height + 0.5 {
+            let delta = frag_h - box_node.content_height;
+            box_node.content_height = frag_h;
+            box_node.height += delta;
+        }
+    } else if !has_floats
         && !box_node.is_r109_split
         && (has_inline_children || needs_dom_text_remeasure)
         && let Some(dom_id) = box_node.node_id
@@ -1797,6 +1837,14 @@ pub(crate) fn remeasure_inline_only_containers(
         let text_align = resolve_text_align(styles.get(&dom_id));
         let text_align_last = resolve_text_align_last(styles.get(&dom_id));
         let no_wrap = resolve_no_wrap_for_ifc_measure(styles.get(&dom_id));
+        // R3770：remeasure 期同样传 preserve/break_at_newline（镜像 R1935 measure 路径）。
+        // 旧实现漏传 → white-space:pre 容器的 `\n` 在此 IFC 被折叠成空格，多行文本被测成
+        // 1 行，容器高度塌缩（line-clamp-with-abspos-002 族：[abspos 子 + pre 直接文本]
+        // 容器 4 行 128px 被测成 32px）。复用 measure 路径既有 kill-switch
+        // `ZW_MEASURE_PRESERVE=0`（R1935 约定）。
+        let measure_preserve_on = std::env::var("ZW_MEASURE_PRESERVE").as_deref() != Ok("0");
+        let preserve = measure_preserve_on && resolve_preserve_for_ifc_measure(styles.get(&dom_id));
+        let break_at_newline = measure_preserve_on && resolve_break_at_newline_for_ifc_measure(styles.get(&dom_id));
         // 收集 inline-block 子元素的 LayoutBox 尺寸，供 IFC 解析百分比宽度。
         let ib_sizes: HashMap<NodeId, (f32, f32)> = box_node
             .children
@@ -1821,6 +1869,8 @@ pub(crate) fn remeasure_inline_only_containers(
             .with_text_align(text_align)
             .with_text_align_last(text_align_last)
             .with_no_wrap(no_wrap)
+            .with_preserve_whitespace(preserve)
+            .with_break_at_newline(break_at_newline)
             .with_inline_block_sizes(ib_sizes)
             .with_img_intrinsic_sizes(img_intrinsic_sizes.clone());
         inline_ctx.layout(doc, dom_id, styles);

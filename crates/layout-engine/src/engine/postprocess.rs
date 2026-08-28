@@ -2006,6 +2006,17 @@ pub(super) fn apply_cross_block_line_clamp(root: &mut LayoutBox, styles: &HashMa
                 hide_subtree(&mut b.children[idx]);
                 continue;
             }
+            // R3770：预算为 0 = clamp point 已在该子之前 → 整个子盒（含其 abspos/fixed
+            // 后代与嵌套 CB 盒）都在 clamp point 之后 → 整体隐藏（css-overflow-4：
+            // containing block 完全在 clamp point 之后的 abspos 不绘制）。旧实现递归下传
+            // remaining=0 只 cap 掉 in-flow 文本子，嵌套 CB 盒自身及其 abspos 照留
+            //（line-clamp-with-abspos-011/012/022：clamp 点后的 .rel 盒 + 天空蓝 abspos
+            // 照绘，容器高不塌缩）。
+            if *remaining == 0 {
+                hide_subtree(&mut b.children[idx]);
+                exhausted = true;
+                continue;
+            }
             let has_block_grandchildren = {
                 let c = &b.children[idx];
                 c.children.iter().any(|g| {

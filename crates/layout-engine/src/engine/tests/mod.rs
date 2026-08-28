@@ -170,6 +170,7 @@ mod r2854_clear_display_gate_tests;
 mod r3755_bfc_margin_collapse_tests;
 mod r3765_block_ar_tests;
 mod r3769_cross_block_cap_zero_tests;
+mod r3770_pre_text_with_oof_child_tests;
 mod r717_flex_ratio_img_tests;
 mod table_layout_tests;
 mod tests_1;

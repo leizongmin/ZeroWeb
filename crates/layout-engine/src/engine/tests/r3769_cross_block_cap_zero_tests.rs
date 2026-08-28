@@ -5,6 +5,12 @@
 //! 路径该子 glyph 全部照绘；hidden 兄弟盒在 paint_node 主路径漏检同样照绘。R3769 修复
 //! paint 侧触发条件与 paint_node 的 hidden 检查；本文件锁定 layout 侧确实产生
 //! cap=Some(0)（下游语义的前提）。driving：css-overflow-4 line-clamp。
+//!
+//! R3770 订正：纯文本子（无 abspos/fixed 后代）在 `remaining == 0` 时直接
+//! `line_clamp_hidden` 整体隐藏（css-overflow-4：CB 完全在 clamp point 之后不绘制；
+//! 与 cap=0 同为「0 行可见无省略号」，hidden 额外保证 OOF 后代一并跳过——abspos
+//! 泄漏即 R3770 修复点）。cap=Some(0) 路径仍由嵌套递归内部（grandchild 级）产生，
+//! paint 侧 R3769 语义不变。
 
 use crate::engine::LayoutEngine;
 use crate::types::LayoutBox;
@@ -45,15 +51,14 @@ fn r3769_cross_block_third_child_gets_cap_zero() {
     let blocks: Vec<_> = container.children.iter().filter(|c| c.node_id.is_some()).collect();
     assert!(blocks.len() >= 3, "前置：容器应含 3 个子 div，实得 {}", blocks.len());
     let third = blocks[2];
-    assert_eq!(
-        third.line_clamp_cap,
-        Some(0),
-        "R3769: 预算用尽后第三子应得到 cap=Some(0)"
+    // R3770 订正：纯文本子 remaining==0 → 整体隐藏（等价 0 行可见、无省略号）。
+    assert!(
+        third.line_clamp_hidden,
+        "R3769/R3770: 预算用尽后第三子应整体隐藏（0 行可见）"
     );
-    assert!(third.line_clamp_clamped, "R3769: 第三子应标记 clamped");
     assert!(
         third.height < 0.5,
-        "R3769: 第三子盒高应收缩到 0（0 行可见），实得 {}",
+        "R3769/R3770: 第三子盒高应收缩到 0（0 行可见），实得 {}",
         third.height
     );
 }
