@@ -6740,6 +6740,36 @@
       var _r260adj = function (o, c, ins) {
         try { globalThis.__zwAdjustRangesForData(node, o, c, ins); } catch (_eR260p5) {}
       };
+      // R335（js-dom M4）：sel 域 parsed Text 的 splitText（spec `dom-text-splittext`——
+      // 原节点保 [0,offset)，返新 Text 含 [offset,)，插到原节点后；WPT childList n91
+      // "insertNode children" 的 split 步骤 + 尾节点 childList record）。新节点走同款
+      // 轻量构造（_wrapNodeEntry 同域、data 可写），record 经 _mo_notify（childList
+      // added=[tail]，target = 父——spec split 步骤 7 的插入即 childList mutation）。
+      // https://dom.spec.whatwg.org/#dom-text-splittext
+      node.splitText = function (offset) {
+        var cur = _cur();
+        var o = Math.max(0, Math.min(offset | 0, cur.length));
+        if (offset < 0 || offset > cur.length) {
+          throw new (globalThis.DOMException || Error)(
+            "Failed to execute 'splitText' on 'Text': The offset " + (offset | 0) + " is out of range.",
+            'IndexSizeError');
+        }
+        var tail = cur.slice(o);
+        _write(cur.slice(0, o));
+        var parent = node.parentNode;
+        var nt = (parent && typeof parent.ownerDocument === 'object' && parent.ownerDocument
+          && typeof parent.ownerDocument.createTextNode === 'function')
+          ? parent.ownerDocument.createTextNode(tail)
+          : globalThis.document.createTextNode(tail);
+        try {
+          if (parent && typeof parent.insertBefore === 'function') {
+            parent.insertBefore(nt, node.nextSibling);
+          } else if (parent && typeof parent.appendChild === 'function') {
+            parent.appendChild(nt);
+          }
+        } catch (_e335ins) {}
+        return nt;
+      };
       node.appendData = function (s) {
         var ap = String(s == null ? '' : s);
         _r260adj(_cur().length, 0, ap.length);
