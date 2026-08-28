@@ -2669,14 +2669,15 @@ add_completion_callback(function() {
         var timers = globalThis.__zw_timers || [];\n\
         if (!timers.length) return;\n\
         var now = Date.now();\n\
-        var due = null, rest = [];\n\
+        var rest = [], due = [];\n\
         for (var i = 0; i < timers.length; i++) {\n\
-          if (due === null && timers[i].at <= now) due = timers[i]; else rest.push(timers[i]);\n\
+          if (timers[i].at <= now) due.push(timers[i]); else rest.push(timers[i]);\n\
         }\n\
         globalThis.__zw_timers = rest;\n\
-        if (due === null) return;\n\
-        var fn = globalThis.__zw_pending[due.id];\n\
-        if (fn) { delete globalThis.__zw_pending[due.id]; try { fn(); } catch (_e) {} }\n\
+        for (var d = 0; d < due.length; d++) {\n\
+          var fn = globalThis.__zw_pending[due[d].id];\n\
+          if (fn) { delete globalThis.__zw_pending[due[d].id]; try { fn(); } catch (_e) {} }\n\
+        }\n\
       };\n";
     let harness = format!("<script>\n{timer_stub}{harness_source}\n{reporter}\n{cache_abort_fixture}\n</script>");
     // R130（js-dom M4）：crash 类用例（*-crash.html）不引 testharness.js——纯脚本页

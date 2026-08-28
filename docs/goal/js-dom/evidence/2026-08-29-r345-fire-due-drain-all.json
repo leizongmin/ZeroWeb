@@ -1,0 +1,29 @@
+{
+  "round": "R345",
+  "date": "2026-08-29",
+  "slice": "M4/events——runner 定时器泵 fire-due 一次一饥饿修复 + disabled-elements 单跑 nondeterminism 诊断（未闭合，记档续查）",
+  "background": "R344 后 disabled-elements 在单跑下稳定 4 Pass/文件 Timeout（transition promise_test 不记录）；全量 sweep 下间歇 Pass。本轮定位到 runner 定时器泵的调度饥饿。",
+  "diagnosis": [
+    "复现与量化：real case 单跑 8 次 → 8×4 Pass（transition 从未记录）；加 10s dump timer 的探针 4 跑 → 4×4 Pass 且 DUMP:[]（transition body 从未运行）；同 binary 偶发 5 Pass。",
+    "testharness.js 机制核实：promise_test 的 5 个 body 经 `tests.promise_tests = Promise.resolve().then(...)` 纯微任务链调度（非 setTimeout）——链在页面脚本 eval 末的 V8 microtask checkpoint 排空时逐级启动。",
+    "runner timer_stub 的 `__zw_fire_due_timers` 每次 probe 调用只派发**一个**到期 timer（`due === null && ...` 取首个，其余留队）——testharness 内部（`on_event(load)` → setTimeout(0)、test 超时守卫、run_next 链）与页面 timer 竞争这一个名额时，链条推进被稀释，body 启动点对 probe 循环与墙钟的相对时序敏感 → nondeterminism。",
+    "phase:3 pending:6 + RES 长度 4 的 state dump 实证：transition body 已注册未完成（num_pending 在注册时 ++，非 body 启动时）。"
+  ],
+  "changes": [
+    "__zw_fire_due_timers 改为**排空全部到期 timer**（先分类 due/rest，再逐个派发，异常 per-callback try/catch 隔离）——严格多于旧的一次一个语义，消除并发 timer 流的调度饥饿；语义风险低（timer 本就该按到期即触发，浏览器同语义）"
+  ],
+  "results": {
+    "full_dom_sweep": "54173P/53F/18T vs R344 54172P/53F/19T——Fail 集逐字节一致（Timeout 差 = crash 文件/known 噪声轮转），净 +1P/-1T",
+    "gates": "engine v8 2479 / runner v8 191 / runner quickjs 126 / clippy 0 error / fmt 无 diff",
+    "stability": "单跑 real case 8× 仍 4 Pass（本轮修复未闭合单跑 flake，见 remaining）"
+  },
+  "remaining_gaps_next_round": [
+    "**disabled-elements 单跑 nondeterminism 未闭合**：5 个 promise body 的微任务链在单跑时第一链（transition）不启动。下一轮方向：① 在 testharness 注入 `tests.promise_tests` 链的探针（每 link 启动时 push log）确认链首是否被 checkpoint 排空；② 检查 run_page_scripts_strict 末尾 checkpoint 与 promise_test 注册顺序的交互（sync test 的 dispatchEvent 是否吞 checkpoint）；③ 若确认微任务链在页面脚本 checkpoint 未排空，查 V8 perform_microtask_checkpoint 的调用点覆盖（跨 call_page_scripts 的多 script 段）",
+    "animation seek 链 / transitioncancel / animationcancel 三个块 standalone 均通（R342-R344 探针已证），闭合调度问题后预期随 transition 一并转绿",
+    "test_driver.click 归 html-compat activation 域（非本 goal 工作面）"
+  ],
+  "lessons": [
+    "「同一 binary 同一文件多次运行结果不同」→ 优先怀疑 runner/harness 调度层的时序饥饿而非引擎语义；本轮 8×复现的稳定 4 Pass 与偶发 5 Pass 的差异最终指向 runner 自建的 timer stub 而非被测引擎",
+    "testharness.js 的 promise_test 用微任务链（非 timer）调度 body——任何「微任务 checkpoint 未在正确时机排空」的环境差异都会让整条链卡死，且表象是 pending 而非报错"
+  ]
+}
