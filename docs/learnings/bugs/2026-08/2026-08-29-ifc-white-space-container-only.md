@@ -1,5 +1,7 @@
+---
 date: 2026-08-29
 modules: layout-engine,rendering-compat
+---
 
 # IFC white-space 标志只读容器样式——inline 子元素声明的 white-space 被忽略
 

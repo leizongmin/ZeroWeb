@@ -1,5 +1,7 @@
+---
 date: 2026-08-29
 modules: layout-engine,rendering-compat
+---
 
 # R1743 父高回填纳入 inline 子底边两次判据收窄均 net-negative（014 负结果记录）
 
