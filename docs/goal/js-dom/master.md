@@ -1569,8 +1569,8 @@
 ## 未解决问题
 
 1. ~~**`cargo-llvm-cov` 本地未安装** → dom_bindings 独立 coverage 口径（M0 项 4）~~ → ✅ **R30 已解**：cargo-llvm-cov 0.8.7 + llvm-tools-preview **已安装**（R30 核实推翻 R0 记录）。`scripts/check-dom-bindings-coverage.sh` 落地，基线 源码 93.14% / 全部 95.15%。**提升候选**：dom_exception 71.4% / css_style_declaration 86.7% / custom_elements 89.0%（纯补测试，下轮候选 b）。
-2. **canvas path-objects 是热碰撞面**：canvas 流（`f7219b2c` 等）正在活跃编辑 `part05.js` canvas 段 + `canvas.rs`。M8 path-objects 接手须等 canvas 流告段落，或确认 part04/05 path-objects 段无并发编辑后再动。碰撞信号点：`git log --since="14 days" -- crates/engine/src/js_dom_shim/part05.js crates/canvas/src/`。
-3. **canvas wpt-data html 子树缺失**：canvas testharness 用例（含 path-objects）需从上游 `web-platform-tests/wpt` 仓库单独导入到 `wpt-data/html/canvas/element/`，`make fetch-wpt-data` 不提供。M8 接手第一动作。
+2. ~~**canvas path-objects 是热碰撞面**~~ → ✅ **已解除（R337 核实）**：canvas 流 3 天零编辑（`git log --since` 核查）；M8 path-objects 已由 js-dom 流接手完成（202P/0F/3 NotRun，DC-8 收敛——见 R56→R337 evidence）。碰撞信号点核查命令保留：`git log --since="14 days" -- crates/engine/src/js_dom_shim/part05.js crates/canvas/src/`。
+3. ~~**canvas wpt-data html 子树缺失**~~ → ✅ **已解（R56→R56i 九轮导入）**：path-objects 205 用例已入库（`wpt-data/html/canvas/element/path-objects/`），当前 202P/0F/3 NotRun（R337 复核）。
 4. **polyfill appendChild/insertBefore 闭环校验架构限制**（R4 发现）：polyfill 桥的 mutation 经 `__zw_append_child` 回调延迟批处理（`apply_dom_mutations` 在脚本执行后 apply），且 shim 层 `_makeProxy` 只有 selector/handle 无 live 祖先链——无法在 `appendChild` 调用点同步抛 HierarchyRequestError。native 路径已修（R4），polyfill 待 M1 L2 polyfill-live 合一（shim 改读 live Document 后才有祖先链）。
 5. **testharness-dom 仅测 polyfill 路径**（R4 发现，**R5 已解**）：R5 加 `testharness-dom-native` 入口（ZW_NATIVE_DOM=1）。
 6. ~~**native DOMException identity**（R5 定位）~~ → ✅ **R6 已修**：三重根因全部修复。native dom/nodes 41.25% → 56.08% 追平 polyfill（注：R7 .js 依赖补齐后基线真实化为 50.79%，双路径对等）。
