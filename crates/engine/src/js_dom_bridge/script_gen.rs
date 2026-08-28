@@ -90,7 +90,8 @@ pub fn script_dispatch_transition_event(selector: &str, event_type: &str, proper
         "0".to_string()
     };
     format!(
-        "(function(){{var _e=document.querySelector('{sel}');if(_e){{try{{_e.dispatchEvent(new TransitionEvent('{ty}',{{propertyName:'{prop}',elapsedTime:{elapsed_str},bubbles:true}}));}}catch(_x){{}}}}}})();"
+        "(function(){{var _e=document.querySelector('{sel}');if(_e){{try{{_e.dispatchEvent(new TransitionEvent('{ty}',{{propertyName:'{prop}',elapsedTime:{elapsed_str},bubbles:true}}));}}catch(_x){{}}\
+         try{{if(typeof __zw_dispatch_prefixed_alias==='function')__zw_dispatch_prefixed_alias(_e,'{ty}','{prop}',{elapsed_str});}}catch(_x2){{}}}}}})();"
     )
 }
 
@@ -112,7 +113,8 @@ pub fn script_dispatch_animation_event(selector: &str, event_type: &str, name: &
         "0".to_string()
     };
     format!(
-        "(function(){{var _e=document.querySelector('{sel}');if(_e){{try{{_e.dispatchEvent(new AnimationEvent('{ty}',{{animationName:'{nm}',elapsedTime:{elapsed_str},bubbles:true}}));}}catch(_x){{}}}}}})();"
+        "(function(){{var _e=document.querySelector('{sel}');if(_e){{try{{_e.dispatchEvent(new AnimationEvent('{ty}',{{animationName:'{nm}',elapsedTime:{elapsed_str},bubbles:true}}));}}catch(_x){{}}\
+         try{{if(typeof __zw_dispatch_prefixed_alias==='function')__zw_dispatch_prefixed_alias(_e,'{ty}','{nm}',{elapsed_str});}}catch(_x2){{}}}}}})();"
     )
 }
 

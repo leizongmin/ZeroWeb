@@ -1783,6 +1783,48 @@
     webkitanimationend: 'webkitAnimationEnd',
     webkittransitionend: 'webkitTransitionEnd',
   };
+  // js-dom R343：标准 → webkit 前缀的**派发侧**别名（compat spec `#css-prefixed-animations`——
+  // UA 动画系统产生 animationstart/iteration/end + transitionrun/start/end 事件时，同元素上
+  // 对应 webkit 前缀名 listener 也触发；WPT EventListener-invoke-legacy「Legacy listener of X」
+  // 断言 prefixed addEventListener 收到真实动画事件）。与 R113 注册侧映射（handler IDL 名 →
+  // event type）方向相反、消费面不同：本表只供 `__zw_dispatch_prefixed_alias` 在 UA 合成事件
+  // 派发后补发前缀别名事件——页面脚本 `dispatchEvent` **不**经此（Chromium 对合成派发不触发
+  // 前缀别名，invoke-legacy 第二段 count>1 语义依赖此区分）。
+  globalThis._ZW_STANDARD_TO_PREFIXED = {
+    animationstart: 'webkitAnimationStart',
+    animationiteration: 'webkitAnimationIteration',
+    animationend: 'webkitAnimationEnd',
+    transitionend: 'webkitTransitionEnd',
+  };
+  // R343：UA 合成动画/过渡事件的前缀别名补发——`_e` 为已派发标准事件的目标元素；标准 type 命中
+  // 别名表时，以同参构造前缀类型事件再派发（isTrusted 语义随 shim dispatchEvent 默认面，WPT 只断言
+  // 触发）。无别名单独派发（transitionrun/start 无前缀对应——compat spec 只列 end 族 +
+  // webkitTransitionEnd；Chromium 同）。守卫：非函数/未安装时静默跳过（script_gen typeof 已守）。
+  globalThis.__zw_dispatch_prefixed_alias = function(elem, standardType, ctorArg, elapsed) {
+    var prefixed = globalThis._ZW_STANDARD_TO_PREFIXED && globalThis._ZW_STANDARD_TO_PREFIXED[standardType];
+    if (!prefixed) return;
+    // Blink 兼容语义：元素上已有**标准名** listener 时抑制前缀别名（prefixed events are
+    // suppressed when unprefixed listeners exist——WPT EventListener-invoke-legacy 两段对偶：
+    // 「Listener of X」（standard+legacy 双注册）期望 legacy 不触发；「Legacy listener of X」
+    // （仅 legacy）期望 legacy 恰触发一次）。无 key/表时按无标准 listener 处理（照常别名）。
+    var hasStandard = false;
+    try {
+      if (typeof _elKey === 'function' && typeof _listenerStore !== 'undefined') {
+        var key = _elKey(elem && elem.__zwSelector, elem && elem.__zwHandle);
+        var store = key && _listenerStore[key];
+        hasStandard = !!(store && store[standardType] && store[standardType].length);
+      }
+    } catch (_e343k) {}
+    if (hasStandard) return;
+    var isAnim = standardType.indexOf('animation') === 0;
+    var ev;
+    if (isAnim && typeof AnimationEvent === 'function') {
+      ev = new AnimationEvent(prefixed, { animationName: String(ctorArg), elapsedTime: Number(elapsed) || 0, bubbles: true });
+    } else if (!isAnim && typeof TransitionEvent === 'function') {
+      ev = new TransitionEvent(prefixed, { propertyName: String(ctorArg), elapsedTime: Number(elapsed) || 0, bubbles: true });
+    }
+    if (ev) { try { elem.dispatchEvent(ev); } catch (_e343) {} }
+  };
   function _mo_notify(sel, handle, baseRecord) {
     var id = _mo_id(handle, sel);
     // R188：document 站 record.target 用 mutation 容器 proxy（_makeProxy(sel, handle)）

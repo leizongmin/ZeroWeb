@@ -1,0 +1,26 @@
+{
+  "round": "R343",
+  "date": "2026-08-29",
+  "slice": "M4/events——webkit 前缀动画/过渡事件的 UA 侧别名派发（compat spec §css-prefixed-animations）",
+  "background": "R342 后 EventListener-invoke-legacy 剩 3 个「Legacy listener of X」pending：UA 动画/过渡事件（animationstart/iteration/end、transitionend）只派标准名，注册 webkit 前缀名的 listener 永不触发。compat spec 要求 UA 动画系统对同一事件同时产生标准名与 webkit 前缀名两个事件；WPT 同目录 webkit-animation-*-event 系列锁定合成 dispatchEvent **不**触发别名（别名只在 UA 合成事件上）。",
+  "changes": [
+    "script_gen（engine 侧，renderer+runner 共用汇流点）：script_dispatch_transition_event / script_dispatch_animation_event 在标准事件派发后追加 __zw_dispatch_prefixed_alias 守卫调用（typeof 守卫，shim 未安装时静默跳过）",
+    "shim part01：_ZW_STANDARD_TO_PREFIXED 别名表（animationstart/iteration/end→webkitAnimation*、transitionend→webkitTransitionEnd；run/start 无前缀对应不派）+ __zw_dispatch_prefixed_alias helper——别名事件以同参构造（AnimationEvent/TransitionEvent，bubbles）在**同元素**上再派发",
+    "Blink 兼容抑制：元素上已有**标准名** listener 时不派前缀别名（prefixed events suppressed when unprefixed listeners exist）——invoke-legacy 两段对偶断言的精确语义：Listener of X（standard+legacy 双注册）期望 legacy 不触发；Legacy listener of X（仅 legacy）期望恰触发一次"
+  ],
+  "results": {
+    "EventListener-invoke-legacy": "6/6 全 Pass（R342 基线 3P/3T）",
+    "webkit-animation-{start,iteration,end}-event / webkit-transition-end-event": "合成 dispatchEvent 不触发别名的守卫断言全 Pass（别名只在 engine 合成事件面）",
+    "full_dom_sweep": "54171P/53F/20T vs R342 54169P/53F/21T——Fail 集逐字节一致（diff 仅 Timeout 旋转：incumbent flake + crash 文件轮转，R196 时代已记档的并发噪声族）",
+    "engine_v8": "2479P / quickjs 1470P / integration 781P",
+    "clippy": "0 error；fmt 无 diff"
+  ],
+  "lessons": [
+    "include_str! 变更后 cargo 不重编 zero-engine 是 R327 教训第四次实证——本轮探针一度误判别名逻辑（0.45s Finished 假象），touch js_dom_bridge.rs 强制重编后归因才可信",
+    "别名派发的抑制条件（标准 listener 存在→跳过前缀别名）是 WPT 六断言同时转绿的唯一解——首轮无抑制版 3P/3F（Listener trio 翻红），对照上游用例双段对偶结构反推出 Blink 的 suppression 行为"
+  ],
+  "remaining_gaps_next_round": [
+    "disabled-elements 剩 pending:4（transitioncancel/animation seek 链/animationcancel/test_driver.click）——R342 记档的「真实用例形态 phase:2 挂起」仍待归因（探针复现：同构探针单元素/双元素全通、真实用例 body 不被调度）",
+    "webkit-animation-*-event 文件内 pending:9 = 真实动画链（style.animation + 迭代 seek）深化，依赖 R342 泵的时序在并发全量下的稳定性"
+  ]
+}
