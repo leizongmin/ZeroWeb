@@ -7738,6 +7738,12 @@
             var frag = '<' + oTag + oattrs + '>' + oih + '</' + oTag + '>';
             bodyHtml = (_tree ? _tree.innerHTML : bodyHtml) + frag; _zwQWrapGen++; _zwQWrapCache.clear(); _zwNodeBridgeMap.clear();
             _tree = null;
+            // R327（M4/L2 执行路径测绘落地）：串行合并分支的 adopt 落表——R326 补丁
+            // 随整组回退，本次按测绘结论（WPT 环境 body.appendChild 确证本域）精准重放。
+            try {
+              if (!globalThis.__zwAdoptDocByHandle) globalThis.__zwAdoptDocByHandle = {};
+              globalThis.__zwAdoptDocByHandle[String(c.__zwHandle)] = doc;
+            } catch (_e327ah) {}
             return c;
           } catch (_e112d) { /* 回落通用路径 */ }
         }
@@ -9530,6 +9536,17 @@
     a.textContent = v;
     a.data = v;
     a.ownerElement = ownerEl || null;
+    // R327（M4/L2）：Attr 的 ownerDocument（spec `dom-node-ownerdocument`——Attr 随
+    // ownerElement 的 node document；WPT Node-mutation-adoptNode "the owner docs of
+    // it's attributes"）。动态沿 ownerElement 读——跨文档 adopt 落表重指元素的
+    // ownerDocument 后 Attr 自动跟随，零维护（测绘落地第二件）。
+    Object.defineProperty(a, 'ownerDocument', {
+      get: function () {
+        try { return a.ownerElement ? a.ownerElement.ownerDocument : globalThis.document; }
+        catch (_e327od) { return globalThis.document; }
+      },
+      configurable: true, enumerable: true,
+    });
     // R130（js-dom M4）：Attr 的 baseURI（WPT Node-baseURI "attributes ..." 三形态——
     // 与元素同源读 document URL；spec dom-node-baseuri：非文档节点回落 node document）。
     Object.defineProperty(a, 'baseURI', {
