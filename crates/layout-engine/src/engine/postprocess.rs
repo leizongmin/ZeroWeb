@@ -2043,6 +2043,27 @@ pub(super) fn apply_cross_block_line_clamp(root: &mut LayoutBox, styles: &HashMa
                 exhausted = true;
                 continue;
             }
+            // R3771：**独立 BFC 子盒豁免**（css-overflow-4：line-clamp 的行计数跳过
+            // independent formatting context 子树——其行不计预算、不截断、clamp 点后语义
+            // 照常）。BFC 子盒在 clamp point 之前/跨（!exhausted）→ 完整渲染、零行预算
+            // 消费（webkit-line-clamp-029 的 overflow:hidden .child 5 行全显；008 的两个
+            // overflow:hidden div 行不计数，容器自身 IFC 行独占预算）；exhausted（在
+            // clamp point 后）→ 走上方 exhausted 隐藏，此处不可达。
+            // 判定：overflow ∈ {hidden, scroll, auto}（visible/clip 不建 BFC，CSS Overflow 3
+            // §2.1/§2.2）。**不含** display:flow-root——auto-034 实证 flow-root 子行仍参与
+            // clamp 计数（auto clamp point 落其 IFC 边界「clamp point between two IFCs」）。
+            // float≠None 已在 in-flow 判定排除；table/flex/grid 等非 block-display 子走上方
+            // 非 in-flow 分支不经此处。
+            {
+                let c = &b.children[idx];
+                let is_bfc = c.node_id.and_then(|id| styles.get(&id)).is_some_and(|s| {
+                    !matches!(s.overflow_x, OverflowValue::Visible | OverflowValue::Clip)
+                        || !matches!(s.overflow_y, OverflowValue::Visible | OverflowValue::Clip)
+                });
+                if is_bfc {
+                    continue;
+                }
+            }
             let has_block_grandchildren = {
                 let c = &b.children[idx];
                 c.children.iter().any(|g| {
@@ -2163,12 +2184,12 @@ pub(super) fn apply_cross_block_line_clamp(root: &mut LayoutBox, styles: &HashMa
         if !matches!(style.writing_mode, zero_style_system::WritingModeValue::HorizontalTb) {
             return;
         }
-        // R3768 范围限定：legacy `-webkit-line-clamp` 跳过——-webkit-box 语义（ZW 无
-        // -webkit-box display，display 声明被丢弃回退 block）与 css-overflow-4 跨块累计
-        // clamp 不同（webkit-line-clamp-008/009 的 ref 为不 clamp 全内容，误 clamp 反退）。
-        if style.line_clamp_legacy_webkit {
-            return;
-        }
+        // R3768 曾按 `line_clamp_legacy_webkit` 跳过 legacy `-webkit-line-clamp` 容器。
+        // R3771 实证 A/B：该 gate 在 R2921 canonical 化后从未在生产置位（死代码），A/B 复活
+        // 反致 webkit-line-clamp-007/012/013/016/030/031 六案回退（-webkit-box 容器的
+        // same-BFC 跨块计数语义 = ZW 跨块 pass 本身）；其真正目标案（008/029，BFC 子行
+        // 不计数）由本 pass 的独立 BFC 子盒豁免正确处理，故移除 gate。
+
         let Some(limit) = limit_of(style) else { return };
         // R3768 范围限定：flex/grid 容器跳过（-webkit-box legacy 语义 = flow-root 化 +
         // 子项堆叠后再 clamp，ZW 未做该转换，flex 几何下跨块隐藏产生错误结果——

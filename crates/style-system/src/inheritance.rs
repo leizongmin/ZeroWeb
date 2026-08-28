@@ -131,6 +131,14 @@ pub fn compute_inherited_style_with_quirks(
         }
     }
 
+    // R3771：`-webkit-line-clamp` legacy 溯源（css-overflow-3：legacy 别名仅在
+    // display:-webkit-box 上下文生效，且 clamp 限容器自身 IFC——跨块 clamp pass 须跳过，
+    // postprocess 读 `line_clamp_legacy_webkit` 门控）。cascade 的分组合并已保证
+    // prefixed 声明在 `line-clamp` 槽位胜出时才置合成键；主循环对该未知键 apply no-op。
+    if cascaded.contains_key("-webkit-line-clamp-origin") {
+        style.line_clamp_legacy_webkit = true;
+    }
+
     // https://drafts.csswg.org/css-fonts-4/#font-weight-prop
     // `bolder`/`lighter` 的 computed value 依赖父元素，须在继承完成后解析为绝对字重，
     // 使 layout、paint 与 getComputedStyle 消费同一结果。
@@ -973,5 +981,22 @@ mod tests {
             WritingModeValue::VerticalRl,
             "writing-mode with explicit 'inherit' should use parent value"
         );
+    }
+
+    /// R3771：`-webkit-line-clamp-origin` 合成键置 `line_clamp_legacy_webkit`
+    /// （css-overflow-3：legacy 别名 clamp 限自身 IFC，跨块 pass 跳过）。
+    #[test]
+    fn r3771_webkit_line_clamp_origin_sets_legacy_flag() {
+        let mut cascaded = HashMap::new();
+        cascaded.insert("line-clamp".to_string(), "3".to_string());
+        cascaded.insert("-webkit-line-clamp-origin".to_string(), "true".to_string());
+        let style = compute_inherited_style(None, &cascaded);
+        assert!(style.line_clamp_legacy_webkit, "origin 键存在 → legacy 标记置位");
+
+        // 无 origin 键（标准 line-clamp 胜出或无 prefixed 声明）→ 标记不置位。
+        let mut cascaded2 = HashMap::new();
+        cascaded2.insert("line-clamp".to_string(), "3".to_string());
+        let style2 = compute_inherited_style(None, &cascaded2);
+        assert!(!style2.line_clamp_legacy_webkit, "无 origin 键 → legacy 标记不置位");
     }
 }

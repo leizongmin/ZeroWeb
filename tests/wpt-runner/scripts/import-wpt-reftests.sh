@@ -64,7 +64,10 @@ declare -a LEDGER_ENTRIES=()
 if [[ -f "$LEDGER" ]]; then
   while IFS= read -r line; do
     line="${line%%#*}"   # 去注释
-    line="$(echo "$line" | xargs)"  # 去首尾空白
+    # R3771：sed 去首尾空白（原 xargs 会因账本备注中的双引号/单引号字符报
+    # 「未匹配的双引号」错误，阻塞 --add 单条导入——2026-08-28 js-dom 流 R331 条目
+    # 引入引号字符后必现）。xargs 对此处只是 trim 工具，sed 语义等价且引号安全。
+    line="$(printf '%s' "$line" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')"
     [[ -z "$line" ]] && continue
     LEDGER_ENTRIES+=("$line")
   done < "$LEDGER"

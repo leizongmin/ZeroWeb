@@ -343,3 +343,102 @@ Line 5</div></body></html>";
         "clamp point 后的有内容子（Line 5 anon）仍隐藏"
     );
 }
+
+/// R3771：独立 BFC 子盒（overflow:hidden/auto/scroll）豁免跨块 clamp 行计数——其行不计
+/// 预算、不截断、整体照绘（css-overflow-4：clamp 行计数跳过 independent formatting
+/// context 子树）。
+/// driving: webkit-line-clamp-029（overflow:hidden .child 5 行全显，ref 为不 clamp 全内容）、
+/// webkit-line-clamp-008（两个 overflow:hidden div 行不计数，clamp 点落容器自身 IFC 第 2 行）。
+#[test]
+fn r3771_cross_block_clamp_skips_bfc_child_lines() {
+    // 预算 3：block 子 A（2 行）+ BFC 子（overflow:hidden，2 行）+ block 子 C（2 行）。
+    // 旧实现（无 BFC 豁免）：A 消 2、BFC 子被 leaf 计 2 行 → 第 3 行截断 C。
+    // 新行为：BFC 子不计数 → C 完整消耗第 3-4 行超预算 → C 截到 1 行 + BFC 子全 2 行可见。
+    let html = "<html><body style=\"margin:0\">\
+<div style=\"line-clamp: 3; font: 16px/32px serif; white-space: pre; background-color: yellow;\">\
+<div>Line 1\nLine 2</div>\
+<div class=\"bfc\" style=\"overflow: hidden;\">Line A\nLine B</div>\
+<div class=\"tail\">Line 3\nLine 4</div></div></body></html>";
+    let doc = zero_dom::parse_html(html);
+    let mut sys = StyleSystem::new();
+    sys.set_viewport(800.0, 600.0);
+    let styles = sys.compute_styles(&doc, &[]);
+    let mut engine = LayoutEngine::new(800.0, 600.0);
+    let result = engine.compute(&doc, &styles);
+    fn find_child<'a>(b: &'a LayoutBox, doc: &'a zero_dom::Document, class: &str) -> Option<&'a LayoutBox> {
+        for c in &b.children {
+            let hits = c
+                .node_id
+                .and_then(|id| doc.get(id))
+                .and_then(|n| match &n.kind {
+                    zero_dom::NodeKind::Element(e) => e.attributes.iter().find_map(|a| {
+                        if a.name.local.as_ref() == "class" {
+                            Some(a.value.to_string())
+                        } else {
+                            None
+                        }
+                    }),
+                    _ => None,
+                })
+                .is_some_and(|cls| cls.split_whitespace().any(|w| w == class));
+            if hits {
+                return Some(c);
+            }
+            if let Some(f) = find_child(c, doc, class) {
+                return Some(f);
+            }
+        }
+        None
+    }
+    // BFC 子完整保留（未被 cap/隐藏）。
+    let bfc = find_child(&result.root, &doc, "bfc").expect("BFC child box");
+    assert!(!bfc.line_clamp_hidden, "BFC 子盒不被跨块隐藏");
+    assert_eq!(bfc.line_clamp_cap, None, "BFC 子盒不受 clamp cap");
+    assert_eq!(bfc.height, 64.0, "BFC 子盒 2 行 64px 完整保留");
+    // clamp 点落在 BFC 子之后的 block 子 C（预算余 1 行）。
+    let c = find_child(&result.root, &doc, "tail").expect("tail block child box");
+    assert_eq!(c.line_clamp_cap, Some(1), "后续 block 子被截到余量 1 行");
+}
+
+/// R3771 对照：flow-root 子盒**不是**独立 BFC 豁免——其行仍参与 clamp 计数
+///（css-overflow-4 auto-034：clamp point 落于两个 IFC 之间，flow-root 子行计数）。
+#[test]
+fn r3771_flow_root_child_still_counts_lines() {
+    let html = "<html><body style=\"margin:0\">\
+<div style=\"line-clamp: 3; font: 16px/32px serif; white-space: pre; background-color: yellow;\">\
+<div style=\"display: flow-root;\">Line 1\nLine 2</div>\
+<div>Line 3\nLine 4</div></div></body></html>";
+    let doc = zero_dom::parse_html(html);
+    let mut sys = StyleSystem::new();
+    sys.set_viewport(800.0, 600.0);
+    let styles = sys.compute_styles(&doc, &[]);
+    let mut engine = LayoutEngine::new(800.0, 600.0);
+    let result = engine.compute(&doc, &styles);
+    fn find_clamp_container<'a>(
+        b: &'a LayoutBox,
+        styles: &std::collections::HashMap<zero_dom::NodeId, zero_style_system::ComputedStyle>,
+    ) -> Option<&'a LayoutBox> {
+        for c in &b.children {
+            if c.node_id
+                .and_then(|id| styles.get(&id))
+                .is_some_and(|s| s.line_clamp != zero_style_system::property::types::LineClampComputedValue::None)
+            {
+                return Some(c);
+            }
+            if let Some(f) = find_clamp_container(c, styles) {
+                return Some(f);
+            }
+        }
+        None
+    }
+    let container = find_clamp_container(&result.root, &styles).expect("clamp container");
+    // 预算 3：flow-root 子消 2 行（**正常计数**，未被 BFC 豁免跳过），后续兄弟截到余量 1 行。
+    assert!(
+        container.children.iter().any(|c| c.line_clamp_cap == Some(1)),
+        "flow-root 子行参与计数：后续兄弟截到余量 1 行"
+    );
+    assert!(
+        container.children.iter().all(|c| !c.line_clamp_hidden),
+        "flow-root 子与后续兄弟均不被整体隐藏（flow-root 非独立 BFC）"
+    );
+}

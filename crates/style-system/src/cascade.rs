@@ -285,9 +285,31 @@ fn canonical_property_name(property: &str) -> &str {
         // 随机种子）决定 → line-clamp-019 结果进程级硬币翻转（64px/128px）。canonical 化后
         // 同槽位按 CascadeOrder（position）竞争，后声明胜，与真实浏览器一致。
         // driving: css-overflow/line-clamp/line-clamp-019。
-        "-webkit-line-clamp" => "line-clamp",
+        // R3771：`-webkit-line-clamp` 移出通用 canonical 化——css-overflow-3 规定 legacy
+        // 别名仅在 `display: -webkit-box / -webkit-inline-box` 上下文生效（webkit-line-clamp-001：
+        // 无 -webkit-box 声明 → 整条 no-op，ref 为不 clamp 全内容）；且生效时 clamp 只作用于
+        // 容器自身 IFC（webkit-line-clamp-008 assert：「Lines in IFC are skipped」的独立 FC 子
+        // 行不计数语义 = ZW 跨块 pass 须跳过，由 `line_clamp_legacy_webkit` 标记驱动）。
+        // 通用 canonical 化丢失「声明来自 prefixed 别名」的溯源 → 标记永不置位 + 无 -webkit-box
+        // 时误 clamp（001 系 10.46%）。现改在 `cascade()` 内做**带溯源的门控合并**：
+        // ① 元素级联中存在 `display: -webkit-box/-webkit-inline-box` 声明（legacy 上下文）时，
+        //   prefixed 声明与标准 `line-clamp` 同槽位按 CascadeOrder 竞争（保留 R2921 确定性）；
+        // ② 竞争胜出者若为 prefixed：legacy 上下文 → 应用值 + 置合成键
+        //   `-webkit-line-clamp-origin`（inheritance 据此置 `line_clamp_legacy_webkit`）；
+        //   非 legacy 上下文 → 整条 no-op（连败者的标准声明也不回退，034 assert：
+        //   prefixed 胜出但不适用 = clamp 完全不生效）。
+        //   胜出者为标准 `line-clamp` → 照常应用、无标记（text-overflow-string-001：box 声明
+        //   不影响标准属性的适用性）。
         _ => property,
     }
+}
+
+/// R3771：值是否为 legacy `-webkit-box` / `-webkit-inline-box` display 声明。
+/// 解析器无对应 DisplayValue（声明被丢，used display 回退 block），此处只做
+/// 「声明存在性」检测供 `-webkit-line-clamp` 适用性门控（css-overflow-3 legacy 语义）。
+fn is_legacy_webkit_box_value(value: &str) -> bool {
+    let v = value.trim();
+    v.eq_ignore_ascii_case("-webkit-box") || v.eq_ignore_ascii_case("-webkit-inline-box")
 }
 
 /// 级联算法。
@@ -299,6 +321,13 @@ fn canonical_property_name(property: &str) -> &str {
 /// 返回一个 HashMap，键为属性名，值为胜出的声明值。
 // https://drafts.csswg.org/css-cascade-4/#cascading
 pub fn cascade<'a>(declarations: Vec<CascadedDeclaration<'a>>, quirks: bool) -> HashMap<String, String> {
+    // R3771：`-webkit-line-clamp` 适用性门控（css-overflow-3：仅 display:-webkit-box /
+    // -webkit-inline-box 上下文生效）。元素级联中存在 legacy box display 声明即视为
+    // legacy 上下文（used display 的近似：-webkit-box 值本身被解析器丢弃，apply 阶段
+    // 不可见，只能提前在声明层检测）。
+    let has_legacy_webkit_box = declarations
+        .iter()
+        .any(|d| d.property.eq_ignore_ascii_case("display") && is_legacy_webkit_box_value(d.value));
     // 按属性名分组（遗留别名先规范化为标准名——见 canonical_property_name）。
     // by_property 键借用声明自身的 property（&'a str，不克隆）——热路径每属性省 1 次
     // String 分配；分组内声明也是借用（构造侧已省克隆，见 collect_declarations）。
@@ -330,10 +359,71 @@ pub fn cascade<'a>(declarations: Vec<CascadedDeclaration<'a>>, quirks: bool) -> 
             continue;
         }
         let canonical = canonical_property_name(decl.property);
+        // R3771：`-webkit-line-clamp` 走门控分组——非 legacy 上下文整条丢弃（no-op）；
+        // legacy 上下文保留原名（不 canonical 化，与标准 `line-clamp` 分槽入组，由下方
+        // 合并步骤按 CascadeOrder 确定性决出唯一胜者）。CSS-wide 关键字值交由通用
+        // 胜者选择逻辑处理（inherit 等对 prefixed 别名同样合法）。
+        if decl.property.eq_ignore_ascii_case("-webkit-line-clamp") {
+            if !has_legacy_webkit_box {
+                continue;
+            }
+            by_property.entry("-webkit-line-clamp").or_default().push(decl);
+            continue;
+        }
         by_property.entry(canonical).or_default().push(decl);
     }
 
+    // R3771：`line-clamp` 与 `-webkit-line-clamp` 双槽确定性合并（两者是同一 computed
+    // 属性的 shorthand，css-overflow-3/4）。分槽分组后按各槽「最高优先级合法声明」的
+    // CascadeOrder 决出唯一胜者槽位，移除败者槽——否则两键独立应用、先后随 HashMap
+    // 迭代序随机（R2921 同款硬币翻转问题在合并层的再现）。
+    // 胜者溯源：
+    // ① prefixed 胜（legacy 上下文必有 box 声明）→ 把该组声明搬到 canonical `line-clamp`
+    //   槽位 + 记 `prefixed_line_clamp_won`（结果表置合成键 `-webkit-line-clamp-origin`，
+    //   inheritance 据此置 `line_clamp_legacy_webkit`：跨块 clamp pass 跳过、clamp 限自身
+    //   IFC 语义）。
+    // ② prefixed 胜且**非** legacy 上下文 → 不可能（非 legacy 上下文 prefixed 已在分组时
+    //   丢弃，槽位不存在）。
+    // ③ 标准 `line-clamp` 胜 → 照常，无标记。
+    let mut prefixed_line_clamp_won = false;
+    if by_property.contains_key("-webkit-line-clamp") {
+        let slot_best_order = |decls: &[CascadedDeclaration<'a>]| -> Option<CascadeOrder> {
+            let mut dummy = ComputedStyle::default();
+            let mut best: Option<CascadeOrder> = None;
+            for d in decls {
+                let valid = is_css_wide_keyword(d.value)
+                    || (!is_invalid_negative_length("line-clamp", d.value)
+                        && !is_invalid_enum_value("line-clamp", d.value)
+                        && is_cascade_value_valid("line-clamp", d.value, quirks, &mut dummy));
+                if !valid {
+                    continue;
+                }
+                if best.as_ref().is_none_or(|b| d.order > *b) {
+                    best = Some(d.order.clone());
+                }
+            }
+            best
+        };
+        let wk_best = slot_best_order(&by_property["-webkit-line-clamp"]);
+        let std_best = by_property.get("line-clamp").and_then(|d| slot_best_order(d));
+        // 胜者 = order 更大的槽；平局（相同 order 不可能——同 position 唯一）按 std 保守。
+        let prefixed_won = match (wk_best, std_best) {
+            (Some(wk), Some(std)) => wk > std,
+            (Some(_), None) => true,
+            (None, _) => false,
+        };
+        if prefixed_won {
+            let wk_decls = by_property.remove("-webkit-line-clamp").unwrap_or_default();
+            by_property.insert("line-clamp", wk_decls);
+        } else {
+            by_property.remove("-webkit-line-clamp");
+        }
+        prefixed_line_clamp_won = prefixed_won;
+    }
+    // R3771：`-webkit-line-clamp` 未出现在级联时（绝大多数元素），零额外开销。
+
     let mut result = HashMap::new();
+
     // kill-switch `ZW_REVERT_LAYER=0`（default-on）：进程运行中 env 不变，读一次。
     let revert_layer_active = std::env::var("ZW_REVERT_LAYER").as_deref() != Ok("0");
 
@@ -421,6 +511,12 @@ pub fn cascade<'a>(declarations: Vec<CascadedDeclaration<'a>>, quirks: bool) -> 
         if let Some(w) = winner.or(first_valid) {
             result.insert(property.to_string(), w.value.to_string());
         }
+    }
+
+    // R3771：prefixed 胜出溯源键（见分组合并注释）。inheritance 主循环 apply no-op，
+    // 循环后读取置 `line_clamp_legacy_webkit`。
+    if prefixed_line_clamp_won {
+        result.insert("-webkit-line-clamp-origin".to_string(), "true".to_string());
     }
 
     result
@@ -1292,19 +1388,35 @@ mod tests {
     /// 未 canonical 化前二者各占独立槽位 → 同规则双声明都被应用、终值由 HashMap
     /// 迭代序（进程随机种子）决定 → line-clamp-019 结果进程级硬币翻转。
     /// canonical 化后同槽位按 CascadeOrder（position）竞争，**后声明者胜**。
+    /// R3771 更新：prefixed 别名仅在 legacy `-webkit-box` 上下文参与竞争（css-overflow-3）；
+    /// 胜出时置溯源键 `-webkit-line-clamp-origin`（单槽位 + origin 键 = 2 个 key）。
     #[test]
     fn test_cascade_webkit_line_clamp_canonicalized_to_line_clamp() {
-        // 同规则同 specificity：`line-clamp: 2` 先声明、`-webkit-line-clamp: 4` 后声明。
-        let decls = vec![("line-clamp", "2", false), ("-webkit-line-clamp", "4", false)];
+        // 同规则同 specificity：`line-clamp: 2` 先声明、`-webkit-line-clamp: 4` 后声明，
+        // 且带 `display: -webkit-box`（legacy 上下文）。
+        let decls = vec![
+            ("line-clamp", "2", false),
+            ("-webkit-line-clamp", "4", false),
+            ("display", "-webkit-box", false),
+        ];
         let order = CascadeOrder::new(Origin::Author, None, (0, 1, 0), 0, false);
         let cascaded = collect_declarations(&decls, Origin::Author, None, (0, 1, 0), 0);
-        assert_eq!(cascaded.len(), 2);
+        assert_eq!(cascaded.len(), 3);
         assert_eq!(cascaded[0].order, order);
         let result = cascade(cascaded, false);
-        // 归一化为单槽位（后声明胜），而非两个 key 并存。
-        assert_eq!(result.len(), 1, "别名须归一化为单一槽位：{result:?}");
+        // 归一化为单槽位（后声明胜），溯源键随胜者并存。
         assert_eq!(result.get("line-clamp").map(String::as_str), Some("4"));
+        assert_eq!(
+            result.get("-webkit-line-clamp-origin").map(String::as_str),
+            Some("true")
+        );
         assert!(result.get("-webkit-line-clamp").is_none());
+        // R3771：无 legacy box 上下文 → prefixed 声明整条丢弃（no-op），标准声明胜出。
+        let decls = vec![("line-clamp", "2", false), ("-webkit-line-clamp", "4", false)];
+        let cascaded = collect_declarations(&decls, Origin::Author, None, (0, 1, 0), 0);
+        let result = cascade(cascaded, false);
+        assert_eq!(result.get("line-clamp").map(String::as_str), Some("2"));
+        assert!(result.get("-webkit-line-clamp-origin").is_none());
     }
 
     #[test]
