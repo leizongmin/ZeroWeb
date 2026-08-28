@@ -294,7 +294,18 @@ impl super::Painter {
             // size/position 相对 positioning area（origin）解析（fixed 时 origin=视口）。
             // R3760：no-ratio 图像的 contain/cover 语义在 resolve_background_size 内处理
             //（img_ratio=None → positioning area），auto/两值用伪固有维逐维解析。
-            let (sized_w, sized_h) = resolve_background_size(size, origin_w, origin_h, img_w, img_h, img_ratio);
+            // R3761：两值语法的 auto 维需该轴**真实固有维**（no-ratio 的伪维含定位区
+            // 回退，无法区分「有固有维」与「回退」）——`auto 32px` 在 width-only SVG 上
+            // 应解析 8×32（固有宽）而非 定位区宽×32。
+            let (sized_w, sized_h) = resolve_background_size(
+                size,
+                origin_w,
+                origin_h,
+                img_w,
+                img_h,
+                img_ratio,
+                bg_no_ratio.unwrap_or((None, None)),
+            );
             let (offset_x, offset_y) = resolve_background_position(position, origin_w, origin_h, sized_w, sized_h);
 
             // positioned = 定位区域 origin + bg-position offset + anchor 偏移。
@@ -1307,6 +1318,9 @@ fn filter_computed_to_kind(value: &FilterComputedValue) -> FilterKind {
 /// R3760：`no_ratio` 图像（无固有尺寸、无固有比例）的 contain/cover 无比例可缩放，
 /// css-backgrounds-3 §3.9：使用尺寸 = positioning area；auto/两值 auto 维仍用伪固有维
 ///（`img_w/img_h` 已按逐维规则编码：真实固有维或定位区该维）。
+/// R3761：`intrinsic_dims` = no-ratio 图像的原始固有维 `(Option<w>, Option<h>)`（非
+/// no-ratio 图像传 `(None, None)`）——两值语法的单 auto 维按 §3.9 优先用该轴真实
+/// 固有维（width-only SVG `auto 32px` → 8×32）。
 fn resolve_background_size(
     size: &BackgroundSizeComputedValue,
     container_w: f32,
@@ -1314,6 +1328,7 @@ fn resolve_background_size(
     img_w: f32,
     img_h: f32,
     img_ratio: Option<f32>,
+    intrinsic_dims: (Option<f32>, Option<f32>),
 ) -> (f32, f32) {
     // contain/cover 的有效固有尺寸：无比例图像用定位区（避免伪维触发缩放）。
     let (cc_w, cc_h) = if img_ratio.is_none() {
@@ -1321,6 +1336,7 @@ fn resolve_background_size(
     } else {
         (img_w, img_h)
     };
+    let (intrinsic_w, intrinsic_h) = intrinsic_dims;
     match size {
         BackgroundSizeComputedValue::Auto => (img_w, img_h),
         BackgroundSizeComputedValue::Cover => {
@@ -1392,13 +1408,21 @@ fn resolve_background_size(
                 // 的伪固有维已按逐维规则编码：真实固有维或定位区该维回退），不再经
                 // img_ratio 推导（no-ratio 图像的 (None, None) 比例信号会把 auto/auto
                 // 错误放大成全定位区）。
+                // R3761：单 auto 维 §3.9 解析优先级——该轴真实固有维（no_ratio 原始维）
+                // > ratio 推导 > 定位区该维。width-only SVG `auto 32px` → 8×32。
                 None if h_fixed.is_none() => img_w,
-                None => img_ratio.map_or(container_w, |r| img_h * r),
+                None => match intrinsic_w {
+                    Some(w) => w,
+                    None => img_ratio.map_or(container_w, |r| img_h * r),
+                },
             };
             let h = match h_fixed {
                 Some(h) => h,
                 None if w_fixed.is_none() => img_h,
-                None => img_ratio.map_or(container_h, |v| w / v),
+                None => match intrinsic_h {
+                    Some(h) => h,
+                    None => img_ratio.map_or(container_h, |v| w / v),
+                },
             };
             (w, h)
         }
@@ -1612,7 +1636,15 @@ mod tests {
     fn r3760_no_ratio_image_one_intrinsic_dim() {
         // width="8px" width-only SVG：伪固有 (8, 256=定位区高)、无比例。
         // auto → (8, 定位区高 256)，非全定位区 (768, 256)。
-        let (w, h) = resolve_background_size(&BackgroundSizeComputedValue::Auto, 768.0, 256.0, 8.0, 256.0, None);
+        let (w, h) = resolve_background_size(
+            &BackgroundSizeComputedValue::Auto,
+            768.0,
+            256.0,
+            8.0,
+            256.0,
+            None,
+            (Some(8.0), None),
+        );
         assert_eq!((w, h), (8.0, 256.0));
     }
 
@@ -1622,7 +1654,7 @@ mod tests {
     fn r3760_no_ratio_image_two_value_no_ratio_derivation() {
         let size =
             BackgroundSizeComputedValue::TwoValue(BgSizeComponentComputed::Auto, BgSizeComponentComputed::Length(32.0));
-        let (w, h) = resolve_background_size(&size, 768.0, 256.0, 768.0, 256.0, None);
+        let (w, h) = resolve_background_size(&size, 768.0, 256.0, 768.0, 256.0, None, (None, None));
         assert_eq!((w, h), (768.0, 32.0));
     }
 
@@ -1632,7 +1664,19 @@ mod tests {
         let size =
             BackgroundSizeComputedValue::TwoValue(BgSizeComponentComputed::Auto, BgSizeComponentComputed::Length(32.0));
         // 8×32 真固有 → ratio 0.25 → auto 宽 = 32×0.25 = 8。
-        let (w, h) = resolve_background_size(&size, 768.0, 256.0, 8.0, 32.0, Some(0.25));
+        let (w, h) = resolve_background_size(&size, 768.0, 256.0, 8.0, 32.0, Some(0.25), (None, None));
+        assert_eq!((w, h), (8.0, 32.0));
+    }
+
+    /// R3761：两值语法 `auto 32px` 在 width-only SVG（固有宽 8）上——auto 宽取该轴
+    /// **真实固有维** 8（§3.9 单 auto 维优先级：固有维 > ratio > 定位区），非定位区宽。
+    /// driving: WPT wide--auto-32px--nonpercent-width-omitted-height（ref 8×32）。
+    #[test]
+    fn r3761_no_ratio_image_two_value_uses_axis_intrinsic() {
+        let size =
+            BackgroundSizeComputedValue::TwoValue(BgSizeComponentComputed::Auto, BgSizeComponentComputed::Length(32.0));
+        // 伪固有维 (8, 256=定位区高回退)、无 ratio、真实固有 (Some(8), None)。
+        let (w, h) = resolve_background_size(&size, 768.0, 256.0, 8.0, 256.0, None, (Some(8.0), None));
         assert_eq!((w, h), (8.0, 32.0));
     }
 
@@ -1646,6 +1690,7 @@ mod tests {
             768.0,
             256.0,
             None,
+            (None, None),
         );
         assert_eq!((w, h), (12.0, 256.0));
     }

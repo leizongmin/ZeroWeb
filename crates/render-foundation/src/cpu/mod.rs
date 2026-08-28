@@ -1035,16 +1035,27 @@ fn blend_pixel(fb: &mut FrameBuffer, x: u32, y: u32, color: Color, alpha: u8) {
 
 /// 渲染图片图元 — 将 RGBA 像素数据合成到帧缓冲。
 fn render_image(fb: &mut FrameBuffer, image: &ImagePrimitive, scale: f32, image_cache: &mut ImageCache) {
-    let Some(data) = image_cache.get(&image.image_key) else {
-        return;
-    };
-
     // source 映射基 = **完整 image.rect**（保持原始分辨率，不因裁剪缩放）。
     // crop 语义（R294）：clip 窗口只收窄绘制区域，source 仍按完整 rect 映射。
     let rect_left = image.rect.left() * scale;
     let rect_top = image.rect.top() * scale;
     let rect_w = (image.rect.right() - image.rect.left()) * scale;
     let rect_h = (image.rect.bottom() - image.rect.top()) * scale;
+
+    // R3761：SVG 放大绘制（rect 高分尺寸 > 固有位图）→ 按目标尺寸矢量重栅格化，
+    // 消除位图插值的宽渐变带（chromium 同为矢量栅格化语义）。取不到（非 SVG /
+    // 缩小 / 超预算/条目不存在）回退固有位图 get（None → 缓存未命中，跳过绘制）。
+    let data = match image_cache.get_rasterized(
+        &image.image_key,
+        rect_w.ceil().max(1.0) as u32,
+        rect_h.ceil().max(1.0) as u32,
+    ) {
+        Some(hi) => Some(hi),
+        None => image_cache.get(&image.image_key),
+    };
+    let Some(data) = data else {
+        return;
+    };
     if rect_w <= 0.0 || rect_h <= 0.0 {
         image_cache.release(&image.image_key);
         return;

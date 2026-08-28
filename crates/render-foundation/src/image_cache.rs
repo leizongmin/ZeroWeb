@@ -7,6 +7,7 @@
 
 use crate::geometry::Size;
 use hashbrown::HashMap;
+use std::sync::Arc;
 
 /// 图片缓存键 — 唯一标识一张图片
 #[derive(Debug, Clone, Hash, PartialEq, Eq)]
@@ -52,6 +53,9 @@ pub struct ImageData {
     /// usvg 对缺失维用原始 viewBox 值（pixmap bogus），须按 abs 维 × ratio 计算。`Some((w,h))`
     /// 覆盖 pixmap 用于 image_sizes（aspect_ratio 由 w/h 推导）。仅该类 SVG 出现；其余为 `None`。
     computed_intrinsic: Option<(f32, f32)>,
+    /// R3761：SVG 源字节（仅 SVG 置 Some）。放大绘制时渲染层按目标尺寸矢量重栅格化
+    ///（`ImageCache::get_rasterized`），替代位图插值的宽渐变带。
+    pub svg_source: Option<Arc<[u8]>>,
 }
 
 /// RGBA 像素内容摘要（R3254-M2 共享实现——ImageData 插入时预存一次，GPU 纹理缓存
@@ -97,6 +101,7 @@ impl ImageData {
             intrinsic_ratio: None,
             no_ratio: None,
             computed_intrinsic: None,
+            svg_source: None,
         })
     }
 
@@ -113,6 +118,7 @@ impl ImageData {
             intrinsic_ratio: None,
             no_ratio: None,
             computed_intrinsic: None,
+            svg_source: None,
         }
     }
 
@@ -207,6 +213,36 @@ pub struct ImageCache {
     max_entries: usize,
     /// 最大字节数
     max_bytes: usize,
+    /// R3761：SVG 按目标尺寸重栅格化缓存（(ImageKey, w, h) → 高分 ImageData）。
+    svg_rasterized: HashMap<(ImageKey, u32, u32), ImageData>,
+}
+
+/// R3761：SVG 重栅格化缓存条目上限（每条最大 4M px ≈ 16MB，上限 8 条防内存膨胀）。
+const SVG_RASTERIZED_MAX: usize = 8;
+
+/// R3761：把 SVG 源栅格化到指定目标尺寸（矢量重渲染）。
+///
+/// 与 [`decode_svg_bytes`] 的固有尺寸栅格化相对：按 `target_w × target_h` 直接渲染
+///（`Transform::from_scale`），不改变 SVG 的固有尺寸语义。目标含 0 维返回 Err。
+fn rasterize_svg_at(source: &[u8], target_w: u32, target_h: u32) -> Result<ImageData, String> {
+    if target_w == 0 || target_h == 0 {
+        return Err("SVG 目标尺寸为 0".to_string());
+    }
+    let tree = resvg::usvg::Tree::from_data(source, &resvg::usvg::Options::default())
+        .map_err(|e| format!("SVG 解析失败: {e}"))?;
+    let size = tree.size();
+    let (iw, ih) = (size.width(), size.height());
+    if iw <= 0.0 || ih <= 0.0 {
+        return Err("SVG 固有尺寸为 0".to_string());
+    }
+    let mut pixmap = resvg::tiny_skia::Pixmap::new(target_w, target_h)
+        .ok_or_else(|| format!("SVG pixmap 分配失败 {target_w}x{target_h}"))?;
+    resvg::render(
+        &tree,
+        resvg::tiny_skia::Transform::from_scale(target_w as f32 / iw, target_h as f32 / ih),
+        &mut pixmap.as_mut(),
+    );
+    ImageData::from_rgba(pixmap.take(), target_w, target_h)
 }
 
 impl ImageCache {
@@ -221,6 +257,7 @@ impl ImageCache {
             current_gen: 0,
             max_entries,
             max_bytes,
+            svg_rasterized: HashMap::new(),
         }
     }
 
@@ -263,6 +300,42 @@ impl ImageCache {
         entry.ref_count = entry.ref_count.saturating_add(1);
         entry.last_access_gen = self.current_gen;
         Some(&entry.data)
+    }
+
+    /// R3761：按目标尺寸取 SVG 栅格化结果（矢量重栅格化，替代位图插值）。
+    ///
+    /// 放大绘制（background-size cover/contain、大尺寸替换元素）时，固有尺寸位图
+    /// 的双线性插值会在色块边界产生数倍于源像素的渐变带（chromium 矢量栅格化边界
+    /// 锐利）。此 API 按目标矩形尺寸对 SVG 源**重栅格化**（usvg 矢量重渲染，边界
+    /// 精确），结果缓存在 `svg_rasterized`（FIFO，上限 [`SVG_RASTERIZED_MAX`]）。
+    /// 非 SVG 条目或目标尺寸不大于固有尺寸（无放大收益）返回 `None`，调用方回退
+    /// 原位图路径。
+    pub fn get_rasterized(&mut self, key: &ImageKey, target_w: u32, target_h: u32) -> Option<&ImageData> {
+        let source = {
+            let entry = self.entries.get(key)?;
+            let src = entry.data.svg_source.clone()?;
+            // 固有尺寸（栅格图尺寸即上报尺寸）——仅放大时重栅格化有收益。
+            let (iw, ih) = (entry.data.width, entry.data.height);
+            if target_w <= iw || target_h <= ih || target_w == 0 || target_h == 0 {
+                return None;
+            }
+            // 像素预算：超大目标回退位图路径（重栅格化 + 缓存不划算）。
+            if u64::from(target_w) * u64::from(target_h) > 4_000_000 {
+                return None;
+            }
+            src
+        };
+        let cache_key = (key.clone(), target_w, target_h);
+        if !self.svg_rasterized.contains_key(&cache_key) {
+            if self.svg_rasterized.len() >= SVG_RASTERIZED_MAX {
+                // FIFO 驱逐最旧条目（HashMap 迭代序不定，驱逐任一即可——缓存语义）。
+                let victim = self.svg_rasterized.keys().next().cloned().expect("len >= 1");
+                self.svg_rasterized.remove(&victim);
+            }
+            let data = rasterize_svg_at(&source, target_w, target_h).ok()?;
+            self.svg_rasterized.insert(cache_key, data);
+        }
+        self.svg_rasterized.get(&(key.clone(), target_w, target_h))
     }
 
     /// 释放一次引用（递减引用计数）
@@ -648,6 +721,7 @@ fn decode_gif_bytes(bytes: &[u8]) -> Result<ImageData, String> {
         intrinsic_ratio: None,
         no_ratio: None,
         computed_intrinsic: None,
+        svg_source: None,
     })
 }
 
@@ -912,6 +986,10 @@ pub fn decode_svg_bytes(bytes: &[u8]) -> Result<ImageData, String> {
     resvg::render(&tree, resvg::tiny_skia::Transform::default(), &mut pixmap.as_mut());
     let rgba = pixmap.take();
     let mut data = ImageData::from_rgba(rgba, w, h)?;
+    // R3761：携带 SVG 源字节——放大绘制（背景 cover/contain、大尺寸替换元素）时
+    // 渲染层可按目标尺寸矢量重栅格化（`ImageCache::get_rasterized`），替代位图插值
+    // 的宽渐变带。仅 SVG 置 Some（栅格图无矢量语义）。
+    data.svg_source = Some(Arc::from(bytes.to_vec()));
     // ★ chromium 实测（visudet replaced-elements 簇 4 变体 × 7 SVG + css-flexbox
     // aspect-ratio-intrinsic-size-007，2026-07-15）：
     // - **INLINE `<img>`**（CSS2 §10.3.2）：非 BothAbs SVG 一律按 **default object size 300×150**
@@ -1721,6 +1799,7 @@ mod tests {
             intrinsic_ratio: None,
             no_ratio: None,
             computed_intrinsic: None,
+            svg_source: None,
         };
         assert_eq!(img.get_pixel(0, 0), [0, 0, 0, 0]);
     }
