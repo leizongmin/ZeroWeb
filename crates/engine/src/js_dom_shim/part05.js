@@ -451,6 +451,10 @@
     return _wrapSelector(sel);
   }
 
+  // js-dom M4 R331：全局发布（execute 路径的调试/工具消费面；shim 闭包外的
+  // script 读不到闭包内函数——发布幂等无副作用）。
+  globalThis._zwQueryWrapIdentity = _zwQueryWrapIdentity;
+
 
   // js-dom M4 R121：handle text/comment 节点的 JS 侧 data 覆盖缓存——wire 层
   // （to_rust_string_lossy，WTF-16→UTF-8）把孤立代理替换为 U+FFFD，而 spec 允许

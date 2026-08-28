@@ -3535,6 +3535,13 @@
     // 与 non-capture listener 都为 AT_TARGET（WPT Event-dispatch-order-at-target）。dispatch 后由调用方
     // （_dispatchWithBubble finally 或 _dispatchToListeners 末尾）复位为 NONE(0)。
     event.eventPhase = phase === 'capture' ? 1 : (phase === 'bubble' ? 3 : 2);
+    // js-dom M4 R331：spec `concept-event-dispatch` 步骤 4「let listeners be a **clone** of
+    // event's currentTarget's event listener list」是**每站**（每结构遍历步）重新克隆——
+    // 不再是整次 dispatch 一次快照。WPT Event-dispatch-handlers-changed：target 站
+    // AT_TARGET 阶段 copy-of-listeners 时把当前 listener 表拷两遍（capture+bubble 各消费
+    // 一份「当时」的拷贝）——capture 段 listener 内 remove 自身 + add 新 handler 的 swap
+    // 改变了 listener 表，bubble 段取 swap 后的表；快照逐段取（capture 段一份、bubble 段
+    // 一份），故新加的 bubble handler 在 bubble 段可见、而同段内的 swap 不影响本段快照。
     var snap = list.slice();
     var firedOnce = null;
     // js-dom M4 R27：spec `EventListener` invoke——listener 是**函数**直接 call；是**对象**则每次派发
@@ -3647,6 +3654,13 @@
         }
         return !event._defaultPrevented;
       }
+      // js-dom M4 R331：bubble 段取「当时」的快照（前文 R331 spec 引证——每结构遍历步克隆）——
+      // capture 段 listener 内的 swap（remove+add）在本段可见；同段内 swap 仍受本段快照约束。
+      // slot 过滤同步应用（html/doc/win 三站共存 _elKey('html') key——新 add 的 listener 若是
+      // 本站身份才进快照；未过滤时 doc/win 虚站会把 html 站新 add 的 listener 误触发，R40 门）。
+      snap = (slot === undefined ? listeners[event.type] : (slot === null
+        ? listeners[event.type].filter(function(e) { return e.tgt === undefined; })
+        : listeners[event.type].filter(function(e) { return e.tgt === slot; }))).slice();
       for (var j = 0; j < snap.length; j++) {
         if (!snap[j].capture) {
           // R111：同 capture 分支——派发中被移除的 listener 跳过。

@@ -5393,13 +5393,35 @@
                     }
                   }
                   if (_r322mg > 0) {
+                    // js-dom M4 R331：**identity 反查去重前置**——pending 桶里已应用入
+                    // host 快照的 handle 子（R100 反查命中 = 快照已含该节点）不再归并
+                    //（否则同一元素双 identity 双计：快照 sel wrapper + pending handle
+                    // proxy——vue_reconciliation lis:A,B,A,B，R322/R323 轮 A/B 列表未含
+                    // vue e2e，回归潜伏两轮）。跨 execute 旧 handle（反查未命中，快照
+                    // 滞后的同 turn append 形态）保持归并——pending 语义不变。
+                    var _r331seenHandles = false;
+                    try {
+                      for (var _r331i = 0; _r331i < _r322b3.added.length; _r331i++) {
+                        var _r331n = _r322b3.added[_r331i];
+                        if (_r331n && _r331n.__zwHandle && typeof __zw_handle_for_selector === 'function'
+                            && _r310list.indexOf(String(__zw_selector_for_handle ? __zw_selector_for_handle(_r331n.__zwHandle) : '')) >= 0) {
+                          _r331seenHandles = true; break;
+                        }
+                      }
+                    } catch (_e331s) { _r331seenHandles = false; }
                     // R323（js-dom M4/L2 切片二）：**tree-order 归并**——匹配子按反链
                     // nextSibling 锚点插入 host 结果（R51 overlay 同款定位逻辑迁移到查询
                     // 站点）：nextSibling 是 sel 元素（__zwSelector）→ 在 host 结果中定位
                     // 其 wrapper 索引插到之前；nextSibling 是 pending handle / 无锚 →
                     // 尾部（append 语义）。桶内序（数组序）保持——多子同锚时按序紧邻插入。
                     var _r322out = [];
-                    for (var _r322k3 = 0; _r322k3 < _r310list.length; _r322k3++) _r322out.push(_wrapSelector(_r310list[_r322k3]));
+                    // js-dom M4 R331：host 结果包装经 `_zwQueryWrapIdentity`（R100 反查——
+                    // host sel 命中反查出 createElement 建立的 handle 时返回原 handle proxy）。
+                    // 旧 `_wrapSelector` 恒产 sel wrapper：同一 li 双 identity（快照 sel wrapper
+                    // + pending handle proxy）双计——vue_reconciliation lis:A,B,A,B（R322/R323
+                    // 轮 A/B 列表未含 vue e2e，回归潜伏两轮）。
+                    for (var _r322k3 = 0; _r322k3 < _r310list.length; _r322k3++) _r322out.push(_zwQueryWrapIdentity(_r310list[_r322k3]));
+                    if (_r331seenHandles) return _zwMakeCollection(_r322out, false);
                     for (var _r322a2 = 0; _r322a2 < _r322b3.added.length; _r322a2++) {
                       var _r322n2 = _r322b3.added[_r322a2];
                       if (!_r322n2 || !_r322n2.__zwHandle) continue;
@@ -5441,7 +5463,8 @@
                     }
                     return _zwMakeCollection(_r322out, false);
                   }
-                  return _zwMakeCollection(_r310list.map(_wrapSelector), false);
+                  // js-dom M4 R331：同上——无 pending 归并时的 host 结果包装也走反查。
+                  return _zwMakeCollection(_r310list.map(_zwQueryWrapIdentity), false);
                 }
               } catch (_e) {}
               return _zwMakeCollection([], false);

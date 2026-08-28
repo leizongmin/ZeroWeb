@@ -1743,7 +1743,14 @@
       // R161：tag 形态的 pending 回落（R145 querySelector 单点版的 QSA 镜像——
       // WPT `querySelectorAll(null)` 对 setup 同 turn append 的 `<null>` 元素
       // expect 1；host 快照 miss 时扫 pending added）。仅纯 tag。
-      var out161 = all ? all.split('|').filter(Boolean).map(_wrapSelector) : [];
+      // js-dom M4 R331：query 返回点 identity 反查（R100 `_zwQueryWrapIdentity` 的 QSA 面
+      //——命中 handle 建立的节点时返回原 handle proxy 而非新 sel proxy。document QSA 的
+      // 单数入口 querySelector（:1430）已有反查，复数入口漏配——Vue v-for `li` 挂载后
+      // `document.querySelectorAll('li.item')` 旧返 sel wrapper（`nth-child` 在 sel 键快照
+      // 已含 li 时由 host 判定命中）+ pending 归并（R322 链）消费 handle proxy，同一 li 两
+      // identity 双计（lis:A,B,A,B，vue_reconciliation 首渲染回归 R322 轮未发现——A/B 列表
+      // 未含 vue e2e）。反查命中 → 原复用 = 双源合流；未命中 → 原 sel wrapper 零变化。
+      var out161 = all ? all.split('|').filter(Boolean).map(_zwQueryWrapIdentity) : [];
       var tagM161 = /^[A-Za-z][\w-]*$/.exec(q);
       if (tagM161 && typeof _zwPendingAdded !== 'undefined' && _zwPendingAdded.length) {
         var seen161 = {};

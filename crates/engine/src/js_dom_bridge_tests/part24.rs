@@ -1581,6 +1581,71 @@ globalThis.__r320p = out.join('|');
     );
 }
 
+// js-dom M4 R331：listener 内 swap（remove 自身 + add 新 handler）后，**同站 bubble 段**
+// 消费 swap 后的 listener 表（spec concept-event-dispatch 步骤 4 的克隆是每结构遍历步——
+// target 站 AT_TARGET 的 copy-of-listeners 把当前表拷两遍，capture 段与 bubble 段各取一份
+// 「当时」拷贝）。WPT Event-dispatch-handlers-changed 的 swap 断言面（R320 归因精确化：
+// 「3@3@parent 稳定复现」的修复验证）。
+#[test]
+fn r331_listener_swap_bubble_phase_refresh() {
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let mut sandbox = V8Sandbox::with_config(zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    })
+    .unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><div id='t'></div></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+    let out = sandbox
+        .execute(
+            r#"
+var out = [];
+try {
+  var t = document.getElementById('t');
+  var actual = [];
+  var h0 = function (evt) {
+    actual.push('0@' + evt.eventPhase);
+    if (evt.eventPhase !== 2) {
+      t.removeEventListener('bar', h0, true);
+      t.addEventListener('bar', h2, true);
+    }
+    if (evt.eventPhase !== 1) {
+      t.removeEventListener('bar', h0, false);
+      t.addEventListener('bar', h3, false);
+    }
+  };
+  var h2 = function () { actual.push('2@' + arguments[0].eventPhase); };
+  var h3 = function () { actual.push('3@' + arguments[0].eventPhase); };
+  var h1 = function (evt) { actual.push('1@' + evt.eventPhase); };
+  t.addEventListener('bar', h0, true);
+  t.addEventListener('bar', h1, false);
+  var evt = document.createEvent('Event');
+  evt.initEvent('bar', true, true);
+  t.dispatchEvent(evt);
+  // spec（WPT swap 形态）：target 站 AT_TARGET——capture 段 h0（swap 前）→ swap（bubble
+  // 表加入 h3）→ bubble 段消费 swap 后的表 [h1, h3]（h0 已 remove；h2 在 capture 段后不再
+  // 有 capture 站）。期望 0@2,1@2,3@2——修复前 bubble 段消费 swap 前快照 [h1] 得 0@2,1@2。
+  out.push('seq=' + actual.join(','));
+} catch (e) { out.push('err=' + String(e && e.message)); }
+globalThis.__r331p = out.join('|');
+"#,
+        )
+        .unwrap();
+    let out = sandbox.execute("globalThis.__r331p").unwrap().value;
+    assert!(
+        out.contains("seq=0@2,1@2,3@2"),
+        "R331 listener swap: bubble segment must consume post-swap listener list, got: {out}"
+    );
+}
+
 #[test]
 fn r320_template_script_inert_probe() {
     use std::sync::{Arc, Mutex};
