@@ -1951,7 +1951,11 @@ pub(super) fn apply_block_relative_percent_insets(
 /// 3. 容器 `height` 为 auto 时收缩到可见内容 extent（隐藏盒高度已清零自然塌缩）。
 ///
 /// env `ZW_CROSS_BLOCK_CLAMP=0` 关闭（kill-switch）。仅 horizontal-tb。
-pub(super) fn apply_cross_block_line_clamp(root: &mut LayoutBox, styles: &HashMap<NodeId, ComputedStyle>) {
+pub(super) fn apply_cross_block_line_clamp(
+    root: &mut LayoutBox,
+    styles: &HashMap<NodeId, ComputedStyle>,
+    doc: &zero_dom::Document,
+) {
     use zero_css_parser::values::{DisplayValue, FloatValue, LengthValue};
     if std::env::var("ZW_CROSS_BLOCK_CLAMP").as_deref() == Ok("0") {
         return;
@@ -1994,6 +1998,7 @@ pub(super) fn apply_cross_block_line_clamp(root: &mut LayoutBox, styles: &HashMa
         styles: &HashMap<NodeId, ComputedStyle>,
         remaining: &mut usize,
         ellipsis_host: &mut Option<(usize, usize)>,
+        doc: &zero_dom::Document,
     ) -> bool {
         let child_count = b.children.len();
         let mut exhausted = false;
@@ -2005,7 +2010,37 @@ pub(super) fn apply_cross_block_line_clamp(root: &mut LayoutBox, styles: &HashMa
                     !c.is_absolute && !c.is_fixed && matches!(c.float, FloatValue::None) && is_block_child(style);
                 (in_flow, c.inline_layout.as_ref().map_or(0, |l| l.len()))
             };
-            if !is_in_flow_block {
+            // R3773：**inline 流载体**——R109 split inline（如 line-clamp-030 的 `<span>` 包
+            // [inline 片段 + block div] 序列）是 display:Inline 的盒，但持有跨块流。旧实现
+            // 落入非 block-display 分支仅 `continue` → 整簇不 clamp（030/webkit-002/auto-
+            // 035/033 同值 10.45% 族全量不裁）。此类载体视同递归入口（下方 block-孙分支）。
+            // 判定：in-flow（非 ooflow/float）+ display:Inline + 直接子含 block 盒。
+            // PERF：仅对非 block 子计算（block 子走块路径无需此判定），且 block-孙扫描
+            // 复用下方 `has_block_grandchildren` 的结果（一次遍历，两处消费）。
+            let is_inline_flow_carrier;
+            let has_block_grandchildren;
+            {
+                let c = &b.children[idx];
+                if is_in_flow_block {
+                    has_block_grandchildren = c.children.iter().any(|g| {
+                        let gs = g.node_id.and_then(|id| styles.get(&id));
+                        !g.is_absolute && !g.is_fixed && matches!(g.float, FloatValue::None) && is_block_child(gs)
+                    });
+                    is_inline_flow_carrier = false;
+                } else {
+                    let style = c.node_id.and_then(|id| styles.get(&id));
+                    let in_flow = !c.is_absolute && !c.is_fixed && matches!(c.float, FloatValue::None);
+                    let is_inline = in_flow && style.is_some_and(|s| matches!(s.display, DisplayValue::Inline));
+                    has_block_grandchildren = false;
+                    is_inline_flow_carrier = is_inline
+                        && !c.children.is_empty()
+                        && c.children.iter().any(|g| {
+                            let gs = g.node_id.and_then(|id| styles.get(&id));
+                            !g.is_absolute && !g.is_fixed && matches!(g.float, FloatValue::None) && is_block_child(gs)
+                        });
+                }
+            }
+            if !is_in_flow_block && !is_inline_flow_carrier {
                 if exhausted {
                     // R3770b：abspos/fixed 豁免本处隐藏。其 containing block = 本盒 b
                     //（或更近 positioned 祖先）——b 含 clamp point（预算在 b 内部某
@@ -2019,6 +2054,67 @@ pub(super) fn apply_cross_block_line_clamp(root: &mut LayoutBox, styles: &HashMa
                     let is_oof_positioned = child.is_absolute || child.is_fixed;
                     if !is_oof_positioned {
                         hide_subtree(&mut b.children[idx]);
+                    }
+                    continue;
+                }
+                // R3773：**inline 片段行计数**——R109 split inline 的文本片段盒（display:
+                // Inline、in-flow、无 block 子）承载 clamp 容器流中的行盒（030 的
+                // 「Line 1」/「Line 6」片段），其行计入跨块预算（css-overflow-4：same-BFC
+                // 块内 inline 流行盒参与 clamp 计数）。行数 = round(h / 子盒自身 used
+                // line-height)（R3772：行高取子盒样式）。限 display:Inline——table 等其余
+                // 非 block-display in-flow 子（008 的 table.red）不在此列、保持可隐藏语义。
+                // 未 host 标记（片段文本经容器 IFC 绘制，cap 不被其 paint 路径消费；
+                // 030 族 clamp 点落在 block 子内，ellipsis host 为该 block 子）。
+                {
+                    let c = &b.children[idx];
+                    let style = c.node_id.and_then(|id| styles.get(&id));
+                    let is_inline = style.is_some_and(|s| matches!(s.display, DisplayValue::Inline));
+                    let in_flow = !c.is_absolute && !c.is_fixed && matches!(c.float, FloatValue::None);
+                    // R3773 踩坑：ruby 元素（027/028）同为 display:Inline 的非 block 子——
+                    // 其盒高含注音（rt 可 3em），不是行盒行数，误计数/误收缩致两案回退。
+                    // ruby/rt/rb 元素排除（按 DOM local_name；文档引用经 apply_cross_block_
+                    // line_clamp 线程传入）。PERF：廉价检查前置（display/高度），doc 查找
+                    // 仅对最终候选执行且不分配。
+                    let ruby_candidate = in_flow && is_inline && c.height > 0.5;
+                    let is_ruby = ruby_candidate
+                        && c.node_id
+                            .and_then(|id| doc.get(id))
+                            .and_then(|n| match &n.kind {
+                                zero_dom::NodeKind::Element(e) => Some(e.local_name()),
+                                _ => None,
+                            })
+                            .is_some_and(|name| {
+                                name.eq_ignore_ascii_case("ruby")
+                                    || name.eq_ignore_ascii_case("rt")
+                                    || name.eq_ignore_ascii_case("rb")
+                            });
+                    if ruby_candidate && !is_ruby {
+                        let fs = style
+                            .and_then(|s| {
+                                crate::inline::container_used_line_height_px(
+                                    s,
+                                    zero_style_system::computed::resolve_length(&s.font_size, 16.0, None, None),
+                                )
+                            })
+                            .unwrap_or(19.2) as f32;
+                        let lines = ((c.height / fs).round() as usize).max(1);
+                        if lines >= *remaining {
+                            // 片段行数 ≥ 余量：clamp point 落在片段内。收缩到余量行数
+                            //（其 glyph 由容器 IFC 绘制，paint 侧无 per-frag cap 机制，
+                            // 030 族 clamp 点不落此处——真落到时由 ellipsis host 兜底）。
+                            let take = *remaining;
+                            *remaining = 0;
+                            exhausted = true;
+                            let c = &mut b.children[idx];
+                            c.line_clamp_cap = Some(take);
+                            c.line_clamp_clamped = true;
+                            let visible_h = take as f32 * fs;
+                            if (c.height - visible_h).abs() > 0.5 {
+                                c.height = visible_h;
+                            }
+                        } else {
+                            *remaining -= lines;
+                        }
                     }
                 }
                 continue;
@@ -2064,17 +2160,12 @@ pub(super) fn apply_cross_block_line_clamp(root: &mut LayoutBox, styles: &HashMa
                     continue;
                 }
             }
-            let has_block_grandchildren = {
-                let c = &b.children[idx];
-                c.children.iter().any(|g| {
-                    let gs = g.node_id.and_then(|id| styles.get(&id));
-                    !g.is_absolute && !g.is_fixed && matches!(g.float, FloatValue::None) && is_block_child(gs)
-                })
-            };
-            if has_block_grandchildren {
+            // has_block_grandchildren 已在 loop 头统一计算（R3773 PERF：块/载体双路复用）。
+            // inline 流载体（carrier）同样走递归分支——其块子序列 = 跨块流。
+            if has_block_grandchildren || is_inline_flow_carrier {
                 let before = *remaining;
                 let mut inner_host: Option<(usize, usize)> = None;
-                exhausted = walk_children(&mut b.children[idx], styles, remaining, &mut inner_host);
+                exhausted = walk_children(&mut b.children[idx], styles, remaining, &mut inner_host, doc);
                 // R3770b：递归内部用尽预算时，ellipsis host 责任在内部——若内部消耗了
                 // 预算（last visible line 在嵌套盒内），由内部层标记（其自身 host 已在
                 // 其 loop 尾应用），本层 host 记录作废；若内部零消耗（remaining==before，
@@ -2182,9 +2273,9 @@ pub(super) fn apply_cross_block_line_clamp(root: &mut LayoutBox, styles: &HashMa
         }
         exhausted
     }
-    fn walk(b: &mut LayoutBox, styles: &HashMap<NodeId, ComputedStyle>) {
+    fn walk(b: &mut LayoutBox, styles: &HashMap<NodeId, ComputedStyle>, doc: &zero_dom::Document) {
         for c in &mut b.children {
-            walk(c, styles);
+            walk(c, styles, doc);
         }
         let Some(id) = b.node_id else { return };
         let Some(style) = styles.get(&id) else { return };
@@ -2210,7 +2301,7 @@ pub(super) fn apply_cross_block_line_clamp(root: &mut LayoutBox, styles: &HashMa
         // 自身 IFC 已由 R2431 cap 过（容器有直接 inline 文本时），此处只处理跨块预算。
         let mut remaining = limit;
         let mut ellipsis_host: Option<(usize, usize)> = None;
-        let exhausted = walk_children(b, styles, &mut remaining, &mut ellipsis_host);
+        let exhausted = walk_children(b, styles, &mut remaining, &mut ellipsis_host, doc);
         if exhausted && style.height == LengthValue::Auto && b.declared_height_auto {
             // 收缩容器到可见内容 extent（隐藏盒已清零，max 取可见子底边）。
             let pb = b.padding_top + b.padding_bottom + b.border_top + b.border_bottom;
@@ -2227,7 +2318,7 @@ pub(super) fn apply_cross_block_line_clamp(root: &mut LayoutBox, styles: &HashMa
             }
         }
     }
-    walk(root, styles);
+    walk(root, styles, doc);
 }
 
 /// 将 OverflowValue 转换为 OverflowClip。

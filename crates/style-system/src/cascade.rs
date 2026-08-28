@@ -321,13 +321,17 @@ fn is_legacy_webkit_box_value(value: &str) -> bool {
 /// 返回一个 HashMap，键为属性名，值为胜出的声明值。
 // https://drafts.csswg.org/css-cascade-4/#cascading
 pub fn cascade<'a>(declarations: Vec<CascadedDeclaration<'a>>, quirks: bool) -> HashMap<String, String> {
-    // R3771：`-webkit-line-clamp` 适用性门控（css-overflow-3：仅 display:-webkit-box /
-    // -webkit-inline-box 上下文生效）。元素级联中存在 legacy box display 声明即视为
-    // legacy 上下文（used display 的近似：-webkit-box 值本身被解析器丢弃，apply 阶段
-    // 不可见，只能提前在声明层检测）。
+    // R3771/R3773：`-webkit-line-clamp` 适用性门控（css-overflow-3：仅 display:-webkit-box
+    // / -webkit-inline-box **且 -webkit-box-orient:vertical** 上下文生效——webkit-002：缺
+    // orient 声明按默认 horizontal → clamp 不适用（ref 为不 clamp 全 5 行）；webkit-015：
+    // 显式 horizontal → 同样不适用）。元素级联中存在两条声明即视为 legacy 上下文（两个
+    // 属性均被解析器丢弃、apply 阶段不可见，只能提前在声明层检测）。
     let has_legacy_webkit_box = declarations
         .iter()
-        .any(|d| d.property.eq_ignore_ascii_case("display") && is_legacy_webkit_box_value(d.value));
+        .any(|d| d.property.eq_ignore_ascii_case("display") && is_legacy_webkit_box_value(d.value))
+        && declarations.iter().any(|d| {
+            d.property.eq_ignore_ascii_case("-webkit-box-orient") && d.value.trim().eq_ignore_ascii_case("vertical")
+        });
     // 按属性名分组（遗留别名先规范化为标准名——见 canonical_property_name）。
     // by_property 键借用声明自身的 property（&'a str，不克隆）——热路径每属性省 1 次
     // String 分配；分组内声明也是借用（构造侧已省克隆，见 collect_declarations）。
@@ -1393,15 +1397,17 @@ mod tests {
     #[test]
     fn test_cascade_webkit_line_clamp_canonicalized_to_line_clamp() {
         // 同规则同 specificity：`line-clamp: 2` 先声明、`-webkit-line-clamp: 4` 后声明，
-        // 且带 `display: -webkit-box`（legacy 上下文）。
+        // 且带 `display: -webkit-box` + `-webkit-box-orient: vertical`（R3773 legacy 上下文
+        // 双条件：缺 orient 声明按默认 horizontal → clamp 不适用，webkit-002）。
         let decls = vec![
             ("line-clamp", "2", false),
             ("-webkit-line-clamp", "4", false),
             ("display", "-webkit-box", false),
+            ("-webkit-box-orient", "vertical", false),
         ];
         let order = CascadeOrder::new(Origin::Author, None, (0, 1, 0), 0, false);
         let cascaded = collect_declarations(&decls, Origin::Author, None, (0, 1, 0), 0);
-        assert_eq!(cascaded.len(), 3);
+        assert_eq!(cascaded.len(), 4);
         assert_eq!(cascaded[0].order, order);
         let result = cascade(cascaded, false);
         // 归一化为单槽位（后声明胜），溯源键随胜者并存。
@@ -1411,6 +1417,17 @@ mod tests {
             Some("true")
         );
         assert!(result.get("-webkit-line-clamp").is_none());
+        // R3773：box 声明但无 `-webkit-box-orient: vertical`（默认 horizontal）→ 同样
+        // 不适用（webkit-002），标准声明胜出。
+        let decls = vec![
+            ("line-clamp", "2", false),
+            ("-webkit-line-clamp", "4", false),
+            ("display", "-webkit-box", false),
+        ];
+        let cascaded = collect_declarations(&decls, Origin::Author, None, (0, 1, 0), 0);
+        let result = cascade(cascaded, false);
+        assert_eq!(result.get("line-clamp").map(String::as_str), Some("2"));
+        assert!(result.get("-webkit-line-clamp-origin").is_none());
         // R3771：无 legacy box 上下文 → prefixed 声明整条丢弃（no-op），标准声明胜出。
         let decls = vec![("line-clamp", "2", false), ("-webkit-line-clamp", "4", false)];
         let cascaded = collect_declarations(&decls, Origin::Author, None, (0, 1, 0), 0);

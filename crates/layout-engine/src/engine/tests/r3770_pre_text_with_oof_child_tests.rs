@@ -485,3 +485,111 @@ fn r3772_cross_block_cap_shrink_uses_child_line_height() {
         "收缩高 = 3 × 子盒自身 32px 行高 = 96（非容器 normal 行高 55.9）"
     );
 }
+
+/// R3773：R109 split inline（block-in-inline）载体盒对跨块 clamp 可见——载体递归计入
+/// 预算，其内 inline 片段行计入预算、block 子正常 cap。
+/// driving: line-clamp-030（span 包 [Line 1 片段 + div(2 行) + div(2 行) + Line 6 片段]，
+/// 预算 4 → clamp 点落第 2 个 div 首行，旧实现整簇不 clamp 渲全部 6 行）。
+#[test]
+fn r3773_block_in_inline_carrier_clamps() {
+    let html = r##"<html><body style="margin:0">
+<div style="line-clamp: 4; font: 16px/32px serif; background-color: yellow; padding: 0 4px;">
+  <span>
+    Line 1
+    <div>
+      Line 2 <br>
+      Line 3
+    </div>
+    <div>
+      Line 4 <br>
+      Line 5
+    </div>
+    Line 6
+  </span>
+</div>
+</body></html>"##;
+    let doc = zero_dom::parse_html(html);
+    let mut sys = StyleSystem::new();
+    sys.set_viewport(800.0, 600.0);
+    let styles = sys.compute_styles(&doc, &[]);
+    let mut engine = LayoutEngine::new(800.0, 600.0);
+    let result = engine.compute(&doc, &styles);
+    // clamp 点落第 2 个 div 首行：该 div cap=1 行 + clamped；第 1 个 div 为 ellipsis
+    // host（cap=2 末行补 …）；L6 片段隐藏；容器收缩到 4 行。
+    let mut caps: Vec<Option<usize>> = Vec::new();
+    fn collect_caps(b: &LayoutBox, out: &mut Vec<Option<usize>>) {
+        out.push(b.line_clamp_cap);
+        for c in &b.children {
+            collect_caps(c, out);
+        }
+    }
+    collect_caps(&result.root, &mut caps);
+    assert!(
+        caps.contains(&Some(2)) && caps.contains(&Some(1)),
+        "div1 host cap=2 + div2 cap=1（L4 + …），旧实现全树无 cap：{caps:?}"
+    );
+    fn find_hidden(b: &LayoutBox) -> bool {
+        b.line_clamp_hidden || b.children.iter().any(find_hidden)
+    }
+    assert!(find_hidden(&result.root), "L6 片段（clamp 点后）被隐藏");
+    // 容器收缩到可见 extent：L1(32) + div1(64) + div2 一行(32) = 128（不含隐藏的 L5/L6）。
+    fn find_clamp_container<'a>(
+        b: &'a LayoutBox,
+        styles: &std::collections::HashMap<zero_dom::NodeId, zero_style_system::ComputedStyle>,
+    ) -> Option<&'a LayoutBox> {
+        for c in &b.children {
+            if c.node_id
+                .and_then(|id| styles.get(&id))
+                .is_some_and(|s| s.line_clamp != zero_style_system::property::types::LineClampComputedValue::None)
+            {
+                return Some(c);
+            }
+            if let Some(f) = find_clamp_container(c, styles) {
+                return Some(f);
+            }
+        }
+        None
+    }
+    let container = find_clamp_container(&result.root, &styles).expect("clamp container");
+    assert!(
+        (container.height - 128.0).abs() < 1.0,
+        "容器收缩到 4 行 128px（旧实现 6 行全显 192px）"
+    );
+}
+
+/// R3773 踩坑对照：ruby 元素（display:Inline、盒高含注音）不作行计数/收缩——
+/// 027/028 实证误计数致回退；ruby 行数已由容器自身 IFC（R1022 rb 文本收集）承载。
+#[test]
+fn r3773_ruby_inline_children_not_counted() {
+    let html = "<html><body style=\"margin:0\">\
+<div style=\"line-clamp: 3; font-size: 16px/16px serif; white-space: pre-wrap; background-color: yellow;\">\
+Line 1\nLine 2\n<ruby style=\"font-size: 48px;\">Line 3<rt>r</rt></ruby>\nLine 4</div></body></html>";
+    let doc = zero_dom::parse_html(html);
+    let mut sys = StyleSystem::new();
+    sys.set_viewport(800.0, 600.0);
+    let styles = sys.compute_styles(&doc, &[]);
+    let mut engine = LayoutEngine::new(800.0, 600.0);
+    let result = engine.compute(&doc, &styles);
+    fn find_ruby<'a>(b: &'a LayoutBox, doc: &'a zero_dom::Document) -> Option<&'a LayoutBox> {
+        for c in &b.children {
+            let is_ruby = c
+                .node_id
+                .and_then(|id| doc.get(id))
+                .and_then(|n| match &n.kind {
+                    zero_dom::NodeKind::Element(e) => Some(e.local_name() == "ruby"),
+                    _ => None,
+                })
+                .unwrap_or(false);
+            if is_ruby {
+                return Some(c);
+            }
+            if let Some(f) = find_ruby(c, doc) {
+                return Some(f);
+            }
+        }
+        None
+    }
+    let ruby = find_ruby(&result.root, &doc).expect("ruby box");
+    assert_eq!(ruby.line_clamp_cap, None, "ruby 盒不被行计数收缩");
+    assert!(!ruby.line_clamp_clamped, "ruby 盒不被置 clamped");
+}
