@@ -133,6 +133,9 @@ fn length_to_px(value: &LengthValue, container_width: f32, font_size_px: f32) ->
         LengthValue::Vh(v) => *v as f32 * 6.0,
         // R3749：column-width math 形式（`columns: 2 calc(6em + 5px)`）在 apply 阶段存为
         // Calc；用容器宽度/字号上下文求值，无法求值（如需 viewport 外部上下文）时回退 0。
+        // R3766：lh 单位（css-values-4）——multicol 上下文无 line-height，按 1.2em 近似
+        //（与 resolve_length Lh 臂同近似）。
+        LengthValue::Lh(v) => *v as f32 * font_size_px * 1.2,
         LengthValue::Calc(expr) => {
             let ctx = zero_css_parser::values::CalcContext {
                 parent_length: Some(container_width as f64),

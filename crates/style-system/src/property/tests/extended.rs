@@ -1609,8 +1609,15 @@ fn test_apply_property_line_clamp_invalid() {
     let mut style = ComputedStyle::default();
     assert!(!apply_property_value(&mut style, "line-clamp", "0"));
     assert!(!apply_property_value(&mut style, "line-clamp", "-1"));
-    assert!(!apply_property_value(&mut style, "line-clamp", "auto"));
     assert!(!apply_property_value(&mut style, "line-clamp", "invalid"));
+}
+
+/// R3766：`line-clamp: auto` 合法（css-overflow-4），映射 Auto 计算值。
+#[test]
+fn test_apply_property_line_clamp_auto() {
+    let mut style = ComputedStyle::default();
+    assert!(apply_property_value(&mut style, "line-clamp", "auto"));
+    assert_eq!(style.line_clamp, LineClampComputedValue::Auto);
 }
 
 #[test]

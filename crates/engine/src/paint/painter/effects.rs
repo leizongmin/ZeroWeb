@@ -1127,6 +1127,9 @@ impl super::Painter {
         match style.line_clamp {
             LineClampComputedValue::None => None,
             LineClampComputedValue::Count(n) => Some(n),
+            // R3766：auto 的行数截断在 layout 期完成（块尺寸约束 → floor(约束/lh)），
+            // paint 层无行数语义（省略号 block-ellipsis 留 slice 2）。
+            LineClampComputedValue::Auto => None,
         }
     }
 

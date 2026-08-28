@@ -836,6 +836,9 @@ pub enum LineClampComputedValue {
     None,
     /// 限制为指定行数。
     Count(u32),
+    // https://drafts.csswg.org/css-overflow-4/#line-clamp
+    /// auto — 按 max-height/min-height/height 块尺寸约束截断（R3766）。
+    Auto,
 }
 
 // 背景与边框图像相关计算值类型（background-* / border-image-* / mask-mode /

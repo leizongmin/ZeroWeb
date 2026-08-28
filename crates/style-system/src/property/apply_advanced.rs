@@ -1588,6 +1588,7 @@ pub fn apply_advanced_property_value(style: &mut ComputedStyle, property: &str, 
                 style.line_clamp = match v {
                     zero_css_parser::values::LineClampValue::None => LineClampComputedValue::None,
                     zero_css_parser::values::LineClampValue::Count(n) => LineClampComputedValue::Count(n),
+                    zero_css_parser::values::LineClampValue::Auto => LineClampComputedValue::Auto,
                 };
                 return true;
             }

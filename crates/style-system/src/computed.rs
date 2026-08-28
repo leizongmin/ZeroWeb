@@ -146,6 +146,11 @@ fn resolve_length_with_font_metrics(
         LengthValue::Rch(v) => v * root_metrics.ch_width.unwrap_or(ROOT_FONT_SIZE * 0.5),
         LengthValue::Ic(v) => v * font_size * font_metrics.map_or(1.0, |metrics| metrics.ic_width),
         LengthValue::Ric(v) => v * root_metrics.ic_width.unwrap_or(ROOT_FONT_SIZE),
+        // https://drafts.csswg.org/css-values-4/#lh
+        // lh = 元素自身的 used line-height。通用 resolve 无 line-height 上下文，按
+        // css-values-4 UA 惯例 1lh ≈ 1.2em 近似（line-clamp:auto 的 layout clamp 路径
+        // 用元素真实 line-height 精确解析，不走此臂）。无字体上下文同近似。
+        LengthValue::Lh(v) => v * font_size * 1.2,
         // 百分比值不在此处解析，由布局引擎根据容器尺寸处理
         LengthValue::Percentage(v) => *v,
         // auto 不需要解析为 px
@@ -534,6 +539,40 @@ pub fn resolve_computed_style_with_font_metrics(
             _ => {}
         }
     }
+
+    // R3766（css-values-4 §lh）：`lh` = 元素自身的 used line-height。在 line-height
+    // 计算值确定后解析各长度字段的 Lh 单位（driving：css-overflow line-clamp:auto 簇
+    // `max-height: 4lh` / `4.5lh`，4×32px=128 应非 4×1.2em）。Number 系数 × font-size、
+    // Normal 按非 Ahem 常数比 1.164（与 layout text_metrics 同源近似）。
+    let used_line_height_px = match &resolved.line_height {
+        LineHeightValue::Length(l) => resolve_length(l, font_size_px, viewport_width, viewport_height),
+        LineHeightValue::Number(n) => font_size_px * n,
+        LineHeightValue::Normal => font_size_px * 1.164,
+    };
+    let resolve_lh_field = |field: &mut LengthValue| {
+        if let LengthValue::Lh(v) = field {
+            let px = *v * used_line_height_px;
+            *field = LengthValue::Px(px);
+        }
+    };
+    resolve_lh_field(&mut resolved.width);
+    resolve_lh_field(&mut resolved.height);
+    resolve_lh_field(&mut resolved.min_width);
+    resolve_lh_field(&mut resolved.min_height);
+    resolve_lh_field(&mut resolved.max_width);
+    resolve_lh_field(&mut resolved.max_height);
+    resolve_lh_field(&mut resolved.margin_top);
+    resolve_lh_field(&mut resolved.margin_right);
+    resolve_lh_field(&mut resolved.margin_bottom);
+    resolve_lh_field(&mut resolved.margin_left);
+    resolve_lh_field(&mut resolved.padding_top);
+    resolve_lh_field(&mut resolved.padding_right);
+    resolve_lh_field(&mut resolved.padding_bottom);
+    resolve_lh_field(&mut resolved.padding_left);
+    resolve_lh_field(&mut resolved.border_top_width);
+    resolve_lh_field(&mut resolved.border_right_width);
+    resolve_lh_field(&mut resolved.border_bottom_width);
+    resolve_lh_field(&mut resolved.border_left_width);
 
     let resolve_field = |field: &mut LengthValue| {
         resolve_length_field(

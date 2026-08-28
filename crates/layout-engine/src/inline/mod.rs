@@ -861,16 +861,90 @@ impl InlineFormattingContext {
         let items = self.collect_inline_items(doc, container, styles);
         self.break_items_into_lines(items);
         // R2431 line-clamp（CSS Overflow 4）：容器声明 `line-clamp: Count(n)` 时，把行夹到 N。
+        // R3766：`line-clamp: auto` 按块尺寸约束截断（css-overflow-4）——约束 =
+        // max(min-height, max-height)，height definite 时再封顶（auto-005）；行数 =
+        // floor(约束 / used line-height)（auto-001 `4lh`→4 行、auto-004 `4.5lh`→floor 4 行）。
         if !self.vertical
             && runtime_flags::line_clamp()
             && let Some(style) = styles.get(&container)
-            && let Some(n) = match &style.line_clamp {
-                zero_style_system::property::types::LineClampComputedValue::Count(n) => Some(*n as usize),
-                _ => None,
-            }
         {
-            self.apply_line_clamp_cap(n);
+            let n = match &style.line_clamp {
+                zero_style_system::property::types::LineClampComputedValue::Count(n) => Some(*n as usize),
+                zero_style_system::property::types::LineClampComputedValue::Auto => self.auto_clamp_line_count(style),
+                _ => None,
+            };
+            if let Some(n) = n {
+                self.apply_line_clamp_cap(n);
+            }
         }
+    }
+
+    /// R3766 `line-clamp: auto` 的截断行数：块尺寸约束（px）/ used line-height 向下取整。
+    ///
+    /// css-overflow-4：auto 的 clamp 点由块尺寸约束决定——约束 = max(min-height,
+    /// max-height)（auto-013/014：min>max 时取 max，min<max 不变），height definite 时
+    /// 也构成约束（auto-005）取 min。约束不可测（auto/%）→ None（不截断）。
+    fn auto_clamp_line_count(&self, style: &ComputedStyle) -> Option<usize> {
+        use zero_css_parser::values::LengthValue;
+        let font_size = resolve_inline_font_size_px(style) as f64;
+        let lh_px = self.container_used_line_height(style, font_size)?;
+        let resolve_definite = |v: &LengthValue| -> Option<f64> {
+            match v {
+                LengthValue::Auto
+                | LengthValue::Percentage(_)
+                | LengthValue::MinContent
+                | LengthValue::MaxContent
+                | LengthValue::FitContent(_) => None,
+                LengthValue::Px(p) if *p == f64::INFINITY => None,
+                other => {
+                    let px = zero_style_system::computed::resolve_length(other, font_size, None, None);
+                    px.is_finite().then_some(px)
+                }
+            }
+        };
+        // R3766：lh 单位按容器自身 used line-height 精确解析（css-values-4：lh = 元素
+        // used line-height；通用 resolve_length 无此上下文，此处覆盖 Lh 臂）。
+        let resolve_with_lh = |v: &LengthValue| -> Option<f64> {
+            match v {
+                LengthValue::Lh(n) => Some(*n * lh_px),
+                other => resolve_definite(other),
+            }
+        };
+        let max_h = resolve_with_lh(&style.max_height);
+        let min_h = resolve_with_lh(&style.min_height);
+        let height = resolve_with_lh(&style.height);
+        let constraint = match (max_h, min_h, height) {
+            (None, None, None) => return None,
+            (max_h, min_h, height) => {
+                let mut c = max_h.unwrap_or(0.0).max(min_h.unwrap_or(0.0));
+                if let Some(h) = height {
+                    c = if max_h.is_none() && min_h.is_none() {
+                        h
+                    } else {
+                        c.min(h)
+                    };
+                }
+                c
+            }
+        };
+        if constraint <= 0.0 {
+            return None;
+        }
+        let n = (constraint / lh_px).floor();
+        (n >= 1.0).then_some(n as usize)
+    }
+
+    /// 容器自身的 used line-height（px）。`line-height` 计算值解析：Length 直接解析
+    ///（Px 精确；Lh 单位自引用 → 按近似 font_size×1.2）、Number 系数 × font-size、
+    /// Normal 按非 Ahem 常数比（与 text_metrics NORMAL_LINE_HEIGHT_RATIO 同源近似）。
+    fn container_used_line_height(&self, style: &ComputedStyle, font_size: f64) -> Option<f64> {
+        use zero_style_system::property::types::LineHeightValue;
+        let px = match &style.line_height {
+            LineHeightValue::Number(n) => font_size * *n,
+            LineHeightValue::Length(l) => zero_style_system::computed::resolve_length(l, font_size, None, None),
+            LineHeightValue::Normal => font_size * 1.164,
+        };
+        (px.is_finite() && px > 0.0).then_some(px)
     }
 
     /// R2431 line-clamp：把 `self.lines` 夹到 `n` 行并置 `clamped`（n>0 且行数>n 时截断）。

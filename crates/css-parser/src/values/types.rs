@@ -37,6 +37,10 @@ pub enum LengthValue {
     Ic(f64),
     /// ric 单位（根元素字体中 U+6C34 "水" 字形的 advance）。
     Ric(f64),
+    // https://drafts.csswg.org/css-values-4/#lh
+    /// lh 单位（元素自身的 used line-height）。css-values-4 字体相对单位；解析消费方
+    /// 无 line-height 上下文时按近似值回退（见 resolve_length Lh 臂）。
+    Lh(f64),
     /// 百分比值（0-100）。
     Percentage(f64),
     /// auto 关键字。
@@ -1551,6 +1555,9 @@ fn resolve_length_to_px(lv: &LengthValue, ctx: &CalcContext) -> Option<f64> {
         LengthValue::Rch(v) => ctx.root_ch_width.map(|cw| v * cw),
         LengthValue::Ic(v) => ctx.ic_width.map(|width| v * width),
         LengthValue::Ric(v) => ctx.root_ic_width.map(|width| v * width),
+        // lh 单位（css-values-4）：calc 上下文无 line-height 参考，保守 None（消费方
+        // 有元素 line-height 上下文时自行解析，如 layout 的 line-clamp:auto clamp 路径）。
+        LengthValue::Lh(_) => None,
         LengthValue::Auto => None,
         LengthValue::Calc(expr) => eval_calc_with_context(expr, ctx),
         LengthValue::FitContent(inner) => resolve_length_to_px(inner, ctx),
@@ -1690,6 +1697,11 @@ pub fn parse_length(value: &str) -> Option<LengthValue> {
         "rch" if std::env::var("ZW_ROOT_FONT_UNITS").as_deref() != Ok("0") => Some(LengthValue::Rch(num)),
         "ic" if std::env::var("ZW_ROOT_IC_UNITS").as_deref() != Ok("0") => Some(LengthValue::Ic(num)),
         "ric" if std::env::var("ZW_ROOT_IC_UNITS").as_deref() != Ok("0") => Some(LengthValue::Ric(num)),
+        // https://drafts.csswg.org/css-values-4/#lh
+        // lh 单位（元素 used line-height）；driving：css-overflow line-clamp:auto 簇
+        // `max-height: 4lh` / `4.5lh`。解析消费方按元素自身 line-height 解析（layout
+        // clamp 路径）；无上下文的 resolve_length 回退近似。
+        "lh" => Some(LengthValue::Lh(num)),
         "%" => Some(LengthValue::Percentage(num)),
         // CSS 绝对长度单位 → 转换为 px（96 DPI）
         "in" => finite_px(num * 96.0),

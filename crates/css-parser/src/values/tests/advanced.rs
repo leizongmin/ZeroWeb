@@ -658,8 +658,14 @@ fn test_parse_line_clamp_invalid() {
     assert_eq!(parse_line_clamp("0"), None);
     assert_eq!(parse_line_clamp("-1"), None);
     assert_eq!(parse_line_clamp("1.5"), None);
-    assert_eq!(parse_line_clamp("auto"), None);
     assert_eq!(parse_line_clamp(""), None);
+}
+
+/// R3766：`line-clamp: auto` 合法（css-overflow-4），ASCII 大小写不敏感。
+#[test]
+fn test_parse_line_clamp_auto() {
+    assert_eq!(parse_line_clamp("auto"), Some(LineClampValue::Auto));
+    assert_eq!(parse_line_clamp("AUTO"), Some(LineClampValue::Auto));
 }
 
 // ── background-image 解析测试 ──

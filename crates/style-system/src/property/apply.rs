@@ -1182,6 +1182,7 @@ fn gap_length_is_valid(raw: &str, value: &LengthValue) -> bool {
         | LengthValue::Rch(v)
         | LengthValue::Ic(v)
         | LengthValue::Ric(v)
+        | LengthValue::Lh(v)
         | LengthValue::Percentage(v) => v.is_finite() && *v >= 0.0,
         LengthValue::Calc(_) => true,
         _ => false,
@@ -1212,6 +1213,7 @@ fn sizing_length_is_valid(raw: &str, value: &LengthValue) -> bool {
         | LengthValue::Rch(v)
         | LengthValue::Ic(v)
         | LengthValue::Ric(v)
+        | LengthValue::Lh(v)
         | LengthValue::Percentage(v) => v.is_finite() && *v >= 0.0,
         LengthValue::FitContent(inner) => sizing_length_is_valid("", inner),
         LengthValue::Auto | LengthValue::MinContent | LengthValue::MaxContent | LengthValue::Calc(_) => true,
@@ -1241,6 +1243,7 @@ pub(crate) fn padding_length_is_valid(raw: &str, value: &LengthValue) -> bool {
         | LengthValue::Rch(v)
         | LengthValue::Ic(v)
         | LengthValue::Ric(v)
+        | LengthValue::Lh(v)
         | LengthValue::Percentage(v) => v.is_finite() && *v >= 0.0,
         LengthValue::Calc(_) => true,
         _ => false,
@@ -1301,7 +1304,8 @@ pub(crate) fn letter_spacing_length_is_valid(raw: &str, value: &LengthValue) -> 
         | LengthValue::Ch(v)
         | LengthValue::Rch(v)
         | LengthValue::Ic(v)
-        | LengthValue::Ric(v) => v.is_finite(),
+        | LengthValue::Ric(v)
+        | LengthValue::Lh(v) => v.is_finite(),
         LengthValue::Calc(_) => true,
         _ => false,
     }
@@ -1329,7 +1333,8 @@ fn outline_offset_length_is_valid(raw: &str, value: &LengthValue) -> bool {
         | LengthValue::Ch(v)
         | LengthValue::Rch(v)
         | LengthValue::Ic(v)
-        | LengthValue::Ric(v) => v.is_finite(),
+        | LengthValue::Ric(v)
+        | LengthValue::Lh(v) => v.is_finite(),
         LengthValue::Calc(_) => true,
         _ => false,
     }

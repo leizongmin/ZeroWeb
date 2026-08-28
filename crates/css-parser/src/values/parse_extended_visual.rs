@@ -559,15 +559,22 @@ pub enum LineClampValue {
     None,
     /// 限制为指定行数。
     Count(u32),
+    // https://drafts.csswg.org/css-overflow-4/#line-clamp
+    /// auto — 按 max-height/min-height/height 块尺寸约束截断（driving：line-clamp-auto
+    /// 簇 `line-clamp: auto; max-height: 4lh`）。
+    Auto,
 }
 
 /// 解析 CSS line-clamp 属性值。
 ///
-/// 支持格式如 `"none"`、`"3"`。
+/// 支持格式如 `"none"`、`"3"`、`"auto"`。
 pub fn parse_line_clamp(value: &str) -> Option<LineClampValue> {
     let value = value.trim();
     if value.eq_ignore_ascii_case("none") {
         return Some(LineClampValue::None);
+    }
+    if value.eq_ignore_ascii_case("auto") {
+        return Some(LineClampValue::Auto);
     }
     let n: u32 = value.parse().ok()?;
     if n > 0 { Some(LineClampValue::Count(n)) } else { None }

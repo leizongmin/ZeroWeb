@@ -63,7 +63,8 @@ fn postprocess_raw_real_length_value(value: &LengthValue) -> Option<f32> {
         | LengthValue::Ch(v)
         | LengthValue::Rch(v)
         | LengthValue::Ic(v)
-        | LengthValue::Ric(v) => v.is_finite().then_some((*v).max(0.0) as f32),
+        | LengthValue::Ric(v)
+        | LengthValue::Lh(v) => v.is_finite().then_some((*v).max(0.0) as f32),
         LengthValue::Calc(_) | LengthValue::FitContent(_) | LengthValue::MinContent | LengthValue::MaxContent => None,
     }
 }
