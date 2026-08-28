@@ -864,9 +864,14 @@ impl InlineFormattingContext {
         // R3766：`line-clamp: auto` 按块尺寸约束截断（css-overflow-4）——约束 =
         // max(min-height, max-height)，height definite 时再封顶（auto-005）；行数 =
         // floor(约束 / used line-height)（auto-001 `4lh`→4 行、auto-004 `4.5lh`→floor 4 行）。
+        // R3776：line-clamp 仅作用于 **block 容器**——inline 盒上的声明不适用
+        //（css-overflow-4，line-clamp-014 assert「only affects block containers, not
+        // inline boxes」：inline span.clamp 上的 line-clamp:4 被旧实现照裁 → 5 行裁成
+        // 4 行）。display:Inline 的容器跳过。
         if !self.vertical
             && runtime_flags::line_clamp()
             && let Some(style) = styles.get(&container)
+            && !matches!(style.display, zero_css_parser::values::DisplayValue::Inline)
         {
             let n = match &style.line_clamp {
                 zero_style_system::property::types::LineClampComputedValue::Count(n) => Some(*n as usize),

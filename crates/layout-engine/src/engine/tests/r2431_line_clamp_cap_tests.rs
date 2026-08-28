@@ -75,3 +75,35 @@ fn test_line_clamp_zero_truncates_all() {
     assert_eq!(ctx.lines.len(), 0, "clamp 0：截断全部行");
     assert!(ctx.clamped, "clamped=true（n=0 且有内容被截）");
 }
+
+/// R3776：line-clamp 仅作用于 block 容器——display:Inline 的容器不裁行
+///（css-overflow-4，line-clamp-014：「only affects block containers, not inline boxes」，
+/// inline span.clamp 的 line-clamp:4 被旧实现照裁 5→4 行）。
+#[test]
+fn r3776_inline_container_not_clamped() {
+    let html = r#"<html><head><style>
+.block { font: 16px / 32px serif; }
+.clamp { line-clamp: 4; }
+</style></head><body>
+<div class="block"><span class="clamp">Line 1<br>Line 2<br>Line 3<br>Line 4<br>Line 5</span></div></body></html>"#;
+    let doc = zero_dom::parse_html(html);
+    let mut sys = zero_style_system::StyleSystem::new();
+    sys.set_viewport(800.0, 600.0);
+    let styles = sys.compute_styles(&doc, &[]);
+    // 找 inline span 容器，驱动 IFC layout：旧行为裁到 4 行，新行为 5 行全保留。
+    let mut span_id = None;
+    for (id, s) in styles.iter() {
+        let is_span = doc.get(*id).is_some_and(|n| match &n.kind {
+            zero_dom::NodeKind::Element(e) => e.local_name() == "span",
+            _ => false,
+        });
+        if is_span && matches!(s.display, zero_css_parser::values::DisplayValue::Inline) {
+            span_id = Some(*id);
+        }
+    }
+    let span_id = span_id.expect("inline span container");
+    let mut ctx = InlineFormattingContext::new(800.0);
+    ctx.layout(&doc, span_id, &styles);
+    assert_eq!(ctx.lines.len(), 5, "inline 容器的 line-clamp 不适用：5 行全保留");
+    assert!(!ctx.clamped, "inline 容器不置 clamped");
+}
