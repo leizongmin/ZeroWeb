@@ -216,3 +216,79 @@ fn r3770b_ellipsis_host_marked_on_last_consuming_child() {
         "L4（第 4 个完整消耗预算的子）应为 ellipsis host"
     );
 }
+
+/// R3770c：remeasure 增高 block 子盒后，后续 in-flow 兄弟随之下移（与收缩位移对称）。
+/// driving: line-clamp-with-abspos-010 的 ref 页结构——[pre 文本 anon] + [relative 子
+/// （remeasure 0→64 增高）] + [trailing anon 'Line 4…']：trailing anon 须从旧 taffy 位
+/// （与 .rel 重叠）移到 .rel 之后。
+#[test]
+fn r3770c_growth_of_block_child_shifts_following_siblings() {
+    let html = "<html><body style=\"margin:0\">\
+<div style=\"font: 16px/32px serif; white-space: pre; background-color: yellow;\">Line 1\
+<div style=\"position: relative;\">Line 2\nLine 3</div>Line 4</div></body></html>";
+    let doc = zero_dom::parse_html(html);
+    let mut sys = StyleSystem::new();
+    sys.set_viewport(800.0, 600.0);
+    let styles = sys.compute_styles(&doc, &[]);
+    let mut engine = LayoutEngine::new(800.0, 600.0);
+    let result = engine.compute(&doc, &styles);
+    fn find_mixed_container(b: &LayoutBox) -> Option<&LayoutBox> {
+        for c in &b.children {
+            if c.children.iter().any(|g| g.fragment_node_ids.is_some()) && c.children.iter().any(|g| g.is_relative) {
+                return Some(c);
+            }
+            if let Some(f) = find_mixed_container(c) {
+                return Some(f);
+            }
+        }
+        None
+    }
+    let container = find_mixed_container(&result.root).expect("mixed container（frag 子 + relative 子）");
+    let rel = container
+        .children
+        .iter()
+        .find(|c| c.is_relative)
+        .expect("relative child");
+    assert_eq!(rel.height, 64.0, "relative 子 remeasure 后 2 行 64");
+    let rel_bottom = rel.y + rel.height;
+    let trailing = container
+        .children
+        .iter()
+        .filter(|c| c.fragment_node_ids.is_some())
+        .max_by(|a, b| a.y.partial_cmp(&b.y).unwrap_or(std::cmp::Ordering::Equal))
+        .expect("trailing anon fragment");
+    assert!(
+        trailing.y >= rel_bottom - 0.5,
+        "trailing anon（y={:.1}）应移到增高后的 relative 子（bottom={:.1}）之后",
+        trailing.y,
+        rel_bottom
+    );
+}
+
+/// R3770c 守卫：inline-level 子（ruby 等）的 remeasure 增长**不**触发兄弟位移——
+/// 同行 inline 流语义下 taffy 竖排是既有约定（driving: line-clamp-026 回归）。
+#[test]
+fn r3770c_inline_child_growth_does_not_shift_siblings() {
+    let html = "<html><body style=\"margin:0\">\
+<div style=\"font: 16px/32px serif; background-color: yellow;\">\
+<ruby>a<rt>x</ruby><ruby>b<rt>y</ruby><ruby>c<rt>z</ruby></div></body></html>";
+    let doc = zero_dom::parse_html(html);
+    let mut sys = StyleSystem::new();
+    sys.set_viewport(800.0, 600.0);
+    let styles = sys.compute_styles(&doc, &[]);
+    let mut engine = LayoutEngine::new(800.0, 600.0);
+    let result = engine.compute(&doc, &styles);
+    fn ruby_ys(b: &LayoutBox, out: &mut Vec<f32>) {
+        for c in &b.children {
+            if c.node_id.is_some() && c.height == 32.0 && c.width >= 800.0 {
+                out.push(c.y);
+            }
+            ruby_ys(c, out);
+        }
+    }
+    let mut ys = Vec::new();
+    ruby_ys(&result.root, &mut ys);
+    assert!(ys.len() >= 2, "前置：应有多 ruby 盒，实得 {}", ys.len());
+    let all_same = ys.iter().all(|&y| (y - ys[0]).abs() < 0.5);
+    assert!(all_same, "同行 ruby 盒 y 应一致（不被增长位移推开），实得 {:?}", ys);
+}

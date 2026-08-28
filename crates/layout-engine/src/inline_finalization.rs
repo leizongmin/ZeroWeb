@@ -1982,6 +1982,43 @@ pub(crate) fn remeasure_inline_only_containers(
                 sibling.y += shift;
             }
         }
+        // R3770c：对称的增长位移。本 remeasure 使某 in-flow 子盒**增高**（如
+        // needs_dom_text_remeasure 把 [OOF/inline 子 + pre 文本] 的 relative 容器从
+        // taffy 欠计高长到真实多行高）时，其后续 in-flow 兄弟仍停在旧 taffy 位 →
+        // 与增高后的子盒重叠（line-clamp-with-abspos-010 的 ref 页：.rel 增高 0→64，
+        // 其后的匿名块 'Line 4…' 停在 y=32 与 .rel 内容叠绘）。与上方收缩位移同一
+        // 守卫（in-flow 非 float 非 OOF + horizontal-tb），位移量 = 增高后的
+        // `child.y + height + collapsed_margin - sibling.y`（正值下移，仅移后续兄弟
+        // 本身——relative 子的 flow 位不动，符合 R1492「偏移保留」原则）。
+        else if shrink_delta > 0.01
+            // 仅 block-level 子：inline-level 子（ruby/span 等）虽被 taffy 竖排，
+            // 语义仍在同一行流（line-clamp-026 实测：ruby remeasure 0→32 增长会
+            // 把同行后续 ruby 误推到下一行）。
+            && box_node.children[idx].is_block_level
+            && matches!(box_node.children[idx].float, FloatValue::None)
+            && !box_node.children[idx].is_absolute
+            && !box_node.children[idx].is_fixed
+            && matches!(box_node.writing_mode, WritingModeValue::HorizontalTb)
+        {
+            let child = &box_node.children[idx];
+            let next_in_flow = box_node.children.iter().enumerate().skip(idx + 1).find(|(_, sibling)| {
+                !sibling.is_absolute && !sibling.is_fixed && matches!(sibling.float, FloatValue::None)
+            });
+            let shift = next_in_flow
+                .map(|(_, sibling)| {
+                    let collapsed_margin = child.margin_bottom.max(sibling.margin_top).max(0.0);
+                    (child.y + child.height + collapsed_margin - sibling.y).max(0.0)
+                })
+                .unwrap_or(0.0);
+            if shift > 0.01 {
+                for sibling in box_node.children.iter_mut().skip(idx + 1) {
+                    if sibling.is_absolute || sibling.is_fixed || !matches!(sibling.float, FloatValue::None) {
+                        continue;
+                    }
+                    sibling.y += shift;
+                }
+            }
+        }
         idx += 1;
     }
     if let Some((dom_id, mut inline_ctx)) = position_reuse {
