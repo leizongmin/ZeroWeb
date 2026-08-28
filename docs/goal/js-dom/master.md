@@ -3,6 +3,8 @@
 **入口文档**: [../js-dom.md](../js-dom.md)（长期 Mission / Done Criteria / 执行协议 / 文档治理规则）
 **关联 RFC**: [../../specs/p1b-v8-native-bindings-rfc.md](../../specs/p1b-v8-native-bindings-rfc.md) + [../../specs/p1b-l2d3-unified-matcher-identity-bridge-rfc.md](../../specs/p1b-l2d3-unified-matcher-identity-bridge-rfc.md)（R166 新增——L2-d3 统一匹配器 + identity 桥设计）
 **创建日期**: 2026-08-13（goal 拆分 bootstrap）
+**本轮**: R340 — **M6/DC-7：控制面勘误（零源码改动）——「当前状态」表 DC-7 行从 R64 时点勘误到 R75 全量收口事实，核心缺口清单第 7 条关闭**：重新通读 master.md 历史记录（R57→R78 的 M6 系列切片记录）与代码实况对照，发现控制面两处严重滞后——① 「当前状态」表 DC-7 行停在 R64 时点（「S5q PoC 深度；剩余 = 深度补齐[capture·bubble/Event 构造器/DOMException/weak·finalizer/S1q 复合对象]」），而 R65-R75 已全部落地：capture·bubble 三阶段[R67 `a8fa85b5`]、Event/CustomEvent 构造器[R72]、DOMException 构造器+instanceof[R73 `be431968`]、weak/finalizer 生命周期实验+结论关闭[R74 `4efd76aa`：strong Persistent+reset 换代是唯一正确形态，rquickjs 缺 finalizer 钩子记 TBD]、S1q 复合对象三件套[R69-R71]、whenDefined 真 pending[R75 `4bfa87e3`——R75 定稿「M6 全量收口」]；② 核心缺口清单第 7 条「QuickJS native 完全真空」仍标记开放。**勘误后 DC-7 状态**：前三项（S0q-S5q 原生绑定镜像 V8 / GC 生命周期安全验证 / 双 feature A/B 等价[WPT 双路径对等差 0.02pp，R76]）代码事实满足；第 4 项 default-on 属 M7 改 Mission 级单向门（待用户点名）。同轮基线复核：make test 全量跑（唯一失败 XOpenDisplayFailed 环境项）；webview quickjs **611P**（wiring 断言面）/ engine v8 217 dom_bindings + quickjs 3 PoC 全绿。commit：见下方
+
 **本轮**: R339 — **M3：DC-2 的 QuickJS feature 同页对齐达成（Vue e2e gate 放宽为双引擎，quickjs 下 3/3 全绿）**：DC-2 剩余项「QuickJS feature 同页对齐」评估落地——vue e2e 走 `WebView.run_page_scripts` 引擎中立路径，`#[cfg(all(test, feature = "v8"))]` 是历史保守门；放宽为 `any(v8, quickjs)` 后 **Vue 3/3（mount/reactive+event/reconciliation）在 quickjs 下原样全绿**（1.43s，无一行测试改动）。同轮复核：lit e2e 6/6 + WC e2e 8/8 本就无 gate，在 quickjs 763 全绿矩阵内已覆盖。**DC-2 的 SPA + WC 验收现于 v8/quickjs 双 feature 均验证通过**（DC-7 的「双 feature 行为等价」验收面相应收窄为原生绑定域）。v8 矩阵复跑 3/3 零影响；clippy 双矩阵干净；fmt 无 diff。commit：见下方
 
 **本轮**: R338 — **M4/L2：R331 identity 反查消费面复核 + 普通 append 域 identity 评估（blast radius 探针先行）**：① **消费面复核**——integration 781 全绿（Vue 3/3 + lit/WC e2e 含其中），R331 的 QSA 产物 identity 反查包装对框架消费面零回归。② **普通 append 域评估**（探针先行）——createElement handle 子 append 到 sel 父后：appendChild 返回/querySelector（singular R322 id 回落）/childNodes（overlay）三条读路径 identity 一致（`appendSame=true,querySame=true,kidsSame=true`）；**querySelectorAll 同 turn 返空**（host 快照语义，R322 归并的 `_r322mg` 门未触发）——这是 **R309 的刻意取舍**（普通 append 域维持 host 语义规避 identity 双源双计，vue_reconciliation 两次回归教训），非新缺陷。QSA 同 turn 可见性 + identity 统一的正确解 = **L2 identity 桥深水区专项**（归并/overlay/查询三源的 wrapper 归一），确认无轻量切片可达，维持 L2 专项立项。探针转 `test_append_domain_identity_baseline_r338` 现状锚定（专项落地后更新断言）。engine v8 2476（+1）/quickjs 1467 绿，fmt/clippy 干净。commit：见下方
@@ -367,7 +369,7 @@
 | **V8 native API 面（核实后更完整）** | ✅ 超基线 | `mod.rs:558-624` 已注册：`__zw_native_query_selector/_all`、`create_element/text_node/comment/document_fragment`、`documentElement/body/head`、`get_element_by_id`——比入口文档基线描述更完整 |
 | L2 polyfill-live 合一（V8） | ❌ 未做（M1） | `js_dom_bridge/callbacks.rs:119-137` `__zw_query_match/_all` 仍 `with_query_doc(snap, …)` 经 `parse_html(dom_html)` 重解析快照；`callbacks.rs:1454` 注释明示每次查询 re-parse |
 | S6 高层 API 去字符串（V8） | ❌ 未做（M2） | Fetch/Observer/FontFaceSet 仍经 `__zw_*` String ser/deser（part02.js / part01.js） |
-| **QuickJS 原生 DOM 绑定（DC-7）** | 🟡 **S0q–S5q 全部有 land 实现（R57 `b781252f` → R64 `243811c6` 十切片；S5q PoC 深度）**：4 全局工厂 + customElements 五件套（Rust CE_REGISTRY）+ 13 属性（6 setter）+ 11 方法 + LISTENERS/CONNECTED_CUSTOM/CE_REGISTRY 存储 + lifecycle 派发 + escape-hatch + webview 接线（kill-switch 仍默认关）；剩余 = 深度补齐（~~ctor 执行链~~ R65 已落 / capture·bubble / Event 构造器 / DOMException / weak·finalizer / S1q 复合对象） | `script-sandbox/src/lib.rs:167 install_native_bindings` 仅 `#[cfg(feature="v8")]` 存在，QuickJS trait 方法**不存在**；`quickjs_runtime.rs:357 register_callback` 走 `__zw_*` polyfill 桥（与 V8 共用 `js_dom_shim`） |
+| **QuickJS 原生 DOM 绑定（DC-7）** | ✅ **M6 全量收口（R57→R78；R75 定稿「M6 S0q–S5q 全部完整落地」）**：S0q 骨架+weak 生命周期结论[R74：strong+reset 唯一正确形态，rquickjs 缺 finalizer 钩子记 TBD] / S1q 属性+复合对象三件套[attributes/classList/dataset R69-R71] / S2q 写入+mutation+树读回 / S3q 查询 / S4q EventTarget+三阶段 capture/bubble[R67]+Event/CustomEvent 构造器[R72]+DOMException 构造器与 instanceof[R73] / S5q 五件套+完整 ctor 执行[R65]+observedAttributes+whenDefined 真 pending[R75]；escape-hatch + webview 接线已通（kill-switch 仍默认关=M5/M7 域）；**WPT 双路径基线 quickjs polyfill 64.55% vs native 64.53%（对等差 0.02pp，R76）** | `crates/engine/src/quickjs_dom_bindings.rs`（3084 行）；`install_native_bindings_quickjs` escape-hatch + webview QuickJS 接线（R57 起存在——R339 前「QuickJS trait 方法不存在」表述已过时）；ZW_NATIVE_DOM=1 quickjs 管线 R76 首次全量贯通 |
 | S7 死代码清理 + shim 萎缩 | ❌ 未做（M5/M7） | `js_dom_shim/part01-06.js` 共 ~815KB（part01 111KB+part01b 28KB+part02 149KB+part03 148KB+part04 127KB+part05 150KB+part06 103KB） |
 | **双引擎** default-on + 删 kill-switch | ❌ 未做（V8=M5, QuickJS=M7，改 Mission 级单向门） | `WebViewConfig.native_dom` 默认 `false`（`webview_builder.rs:79`） |
 | 真实 SPA/WC 端到端验收 | 🟡 **双资产落地（M3 进行中）**：**WC = lit 全链闭环**（R90-R99：定义/升级/lifecycle/Shadow DOM/首渲染/响应式/事件交互，e2e_web_components + e2e_lit_library 6 组件组全绿，DC-2 第二项实质达成）；**SPA = Vue 3 mount/响应式/事件落地**（R100：e2e_vue_library 2 组——模板编译插值渲染 + @click handler + count 更新 patch，DC-2 第一项实质达成）。剩余：DC-2 验收资产化收尾（hydration/reconciliation 深场景 + QuickJS feature 同页对齐） | `tests/integration/src/e2e_web_components.rs` + `e2e_lit_library.rs` + `e2e_vue_library.rs`（`fixtures/lit/` + `fixtures/vue/vue.global.js` vendored）；R100 四层根因修复详见本轮记录 |
@@ -384,7 +386,7 @@
 4. V8 native 路径默认关 → 生产仍走 polyfill 字符串桥（DC-1，M5）
 5. V8 polyfill 桥仍 re-parse String 快照，三方 Document 未合一（DC-1，M1 L2）
 6. V8 高层 API 仍经 `__zw_*` String ser/deser（DC-1，M2 S6）
-7. **QuickJS 页面引擎 native 完全真空**（DC-7，M6）
+7. ~~**QuickJS 页面引擎 native 完全真空**（DC-7，M6）~~ → ✅ **M6 全量收口**（R57→R78；WPT 双路径对等差 0.02pp[R76]）；剩余 = DC-7 的 default-on（M7，改 Mission 级单向门待用户点名）
 8. canvas path-objects 用例需重新导入 + roundRect panic/精度（DC-8，M8，但当前 canvas 流活跃碰撞）
 
 ---
@@ -509,6 +511,7 @@
 | 日期 | 轮次 | 证据 | 结果 |
 |------|------|------|------|
 | 2026-08-28 | R332 | normalize childList MO record 双容器修复（part04 `_r184NormArr` 逐步 record + sel 容器合并/移除/record 三件）+ part24 `test_normalize_childlist_mo_records_r332` + evidence/2026-08-28-r332-normalize-mo-records.md | **MutationObserver-childList pending 13→11、normalize 双用例 Pass**（Node-normalize 4P 维持）；MO 全族 fail 集恒等；engine 2471/quickjs 1466 绿 |
+| 2026-08-28 | R340 | master.md DC-7 行勘误（R64 时点→R75 全量收口）+ 核心缺口第 7 条关闭 + evidence/2026-08-28-r340-dc7-errata.md | **DC-7 前三项代码事实满足**（S0q-S5q 镜像 V8 / GC 生命周期验证 / 双 feature A/B 对等 0.02pp）；第 4 项 default-on 归 M7 待用户点名；零源码改动轮 |
 | 2026-08-28 | R339 | vue e2e gate 放宽为 any(v8,quickjs)（tests/integration e2e_vue_library.rs）| **DC-2 QuickJS 同页对齐达成**：Vue 3/3 在 quickjs 下全绿（引擎中立路径）；lit 6/6 + WC 8/8 quickjs 已覆盖；v8 矩阵零影响 |
 | 2026-08-28 | R338 | R331 消费面复核（integration 781 + Vue/lit e2e 全绿）+ append 域 identity 探针评估 + part24 `test_append_domain_identity_baseline_r338` | **QSA 同 turn 返空确认为 R309 刻意取舍**（非新缺陷）；identity 统一归 L2 深水区专项；engine 2476/quickjs 1467 绿 |
 | 2026-08-28 | R337 | events 备档集 single-run 归因（探针 7 form element click 全 dOK/eOK）+ DC-8 path-objects 全量复核（202P/0F/3 NotRun）+ evidence/2026-08-28-r337-patrol-events-dc8.md | **events 备档定性精确化**（全部为动画时钟/跨 realm/Activate 管线三类深项）+ **DC-8 勘误**（3 深项实为 Pass/skip，无 Fail）；零源码改动轮 |
@@ -780,11 +783,11 @@
 ---
 
 ## 下一步计划
-0. **R340 下一步（R339 后，按 ROI）**：
+0. **R341 下一步（R340 后，按 ROI）**：
    - **(a) make test 全量常态化**：A/B 清单固定含 browser/renderer crate（R333 教训延续执行）。
    - **(b) L2 深水区专项**（identity 桥统一——R338 确认无轻量切片；立项材料已齐：R324 四环节 + R328 残余 + R299 indoc + tagName 动态大写 + R338 QSA 同 turn 域）。
    - **(c) 架构项立项材料**：动画时钟 pump（events 备档收口前提——runner 层 feature，跨域协调项）。
-   - **(d) M6 QuickJS native 深度补齐**：capture·bubble 派发 / Event 构造器 / DOMException / weak·finalizer（DC-7 剩余，随 dom_bindings quickjs 测试点对齐推进）。
+   - **(d) DC-7 第 4 项default-on = M7**：待用户点名（改 Mission 级单向门，见「待用户决策清单」）。
 0. **R332 下一步（R331 后，按 ROI）**：
    - **(a) 备档集巡检续**（events 备档 4F→3F[handlers-changed R331 已收口]：Event-dispatch-on-disabled-elements Timeout 域 / event-global-onerror 跨 realm / pseudo 不追；MO Timeout 族 single-run 复核归因——R331 实测 attributes/childList/characterData/inner-outer 全量跑 Timeout 但 41/25 单 subtest 全 Pass[41P/1T 与 clean-HEAD 同值]，疑全量并发下慢非死循环，值得 TIME_LIMIT 调参或单独二分定位）。
    - **(b) R331 同域复核**：lit/CE e2e 消费查询面 + webkit-animation 族（R147 后未动画时钟 pump）+ `querySelector-mixed-case indoc`（R220/L2 域）——R331 的 identity 反查包装改了 QSA 产物形态，框架消费面已验证[vue 3/3]，lit 的 parts 提取面建议单独复跑一次确认。
@@ -1557,7 +1560,7 @@
 | 事项 | 触发条件 | 状态 |
 |------|----------|------|
 | V8 `ZW_NATIVE_DOM` default-on（改 Mission 级单向门，M5） | M1–M4 完成、V8 native 路径生产就绪 | **方向已获 2026-08-19 用户批复启动**（zero-web ⚡ 块：P1b default-on 拍板，"js-dom 侧同门 = M5 V8 default-on"）；触发条件 M1–M4 完成仍待，M5 启动时点按 zero-web ⚡ 块执行序（先 default-off 全量基线 → 翻开关 → 双流守门 A/B net≥0）执行，无需再征询方向 |
-| QuickJS `ZW_NATIVE_DOM` default-on（改 Mission 级单向门，M7） | M6 QuickJS native 移植完成 | 待 M7 启动前征询 |
+| QuickJS `ZW_NATIVE_DOM` default-on（改 Mission 级单向门，M7） | M6 QuickJS native 移植完成 | **触发条件已满足（R340 勘误：M6 于 R75 全量收口）**——待 M7 启动前征询用户 |
 
 > 本轮 A/B 对照门骨架为纯测试新增，不触发上述门禁。
 
@@ -1589,6 +1592,7 @@
 
 > 已完成的 milestone/切片记录到 `archive/`。
 
+- R340：M6/DC-7 **控制面勘误**（「当前状态」表 DC-7 行 R64→R75 全量收口事实[三阶段 capture/bubble R67/Event 构造器 R72/DOMException R73/weak 结论 R74/复合对象 R69-R71/whenDefined R75]；核心缺口第 7 条「QuickJS native 真空」关闭；DC-7 前三项满足、第 4 项归 M7 待用户点名；零源码改动）→ evidence/2026-08-28-r340-dc7-errata.md
 - R339：M3 **DC-2 QuickJS 同页对齐达成**（vue e2e gate 放宽 any(v8,quickjs)——run_page_scripts 引擎中立路径，quickjs 下 Vue 3/3 原样全绿无测试改动；lit 6/6 + WC 8/8 quickjs 已覆盖[无 gate]；DC-2 验收现于双 feature 均验证；教训：历史 feature 门要核对是否真依赖[引擎中立路径上的 v8-only gate 是保守惯性]）
 - R338：M4/L2 **R331 消费面复核 + append 域评估**（integration 781 + Vue 3/3 + lit/WC 全绿——identity 反查包装零回归；探针实证 append/querySelector/childNodes 三路 identity 一致、QSA 同 turn 返空 = R309 刻意取舍非缺陷；identity 统一归 L2 identity 桥专项确认无轻量切片；现状锚定测试落地）
 - R337：M4/M8 **巡检收口**（events 备档集 single-run 归因[disabled-elements 探针 7 form element click 全 dOK/eOK 非语义缺口；invoke-legacy 6/6 = 动画时钟；onerror restore = 跨 realm 深结构]——定性精确化为三类深项无轻量可达面；DC-8 path-objects 勘误[202P/0F/3 NotRun：skew=互斥 skip、end.3/scaleddashes=Pass——R56 记 3 深项已收敛]；零源码改动轮）→ evidence/2026-08-28-r337-patrol-events-dc8.md
