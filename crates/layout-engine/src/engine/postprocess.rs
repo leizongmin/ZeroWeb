@@ -1985,7 +1985,16 @@ pub(super) fn apply_cross_block_line_clamp(root: &mut LayoutBox, styles: &HashMa
         }
     }
     // 返回是否已耗尽预算（后续兄弟须隐藏）。
-    fn walk_children(b: &mut LayoutBox, styles: &HashMap<NodeId, ComputedStyle>, remaining: &mut usize) -> bool {
+    // `ellipsis_host`：本层最后完整消耗预算的子盒 (idx, 消耗行数)——clamp point 落在
+    // 该子末行末（R3770b）。后续任何子被 cap/隐藏时，省略号应附在该子末行末
+    //（css-overflow-4：block-ellipsis 附于 clamp 前最后一行），置
+    // `cap = Some(消耗行数)` + `clamped`（paint 截到自身行数 = no-op + 末行补 …）。
+    fn walk_children(
+        b: &mut LayoutBox,
+        styles: &HashMap<NodeId, ComputedStyle>,
+        remaining: &mut usize,
+        ellipsis_host: &mut Option<(usize, usize)>,
+    ) -> bool {
         let child_count = b.children.len();
         let mut exhausted = false;
         for idx in 0..child_count {
@@ -1998,7 +2007,19 @@ pub(super) fn apply_cross_block_line_clamp(root: &mut LayoutBox, styles: &HashMa
             };
             if !is_in_flow_block {
                 if exhausted {
-                    hide_subtree(&mut b.children[idx]);
+                    // R3770b：abspos/fixed 豁免本处隐藏。其 containing block = 本盒 b
+                    //（或更近 positioned 祖先）——b 含 clamp point（预算在 b 内部某
+                    // 兄弟处用尽）时 spec 判「CB precedes or contains clamp point →
+                    // shown」（css-overflow-4，line-clamp-with-abspos-014：.rel 的
+                    // top:0 abspos 须绘制）。CB 完全在 clamp point 后的 abspos 随其
+                    // CB 盒在 entry 边界处被 hide_subtree 整体隐藏（011/012 路径），
+                    // 不经此处。float 与其余非 in-flow 子（table 等非 block-display
+                    // in-flow——line-clamp-008 的 table.red）仍隐藏。
+                    let child = &b.children[idx];
+                    let is_oof_positioned = child.is_absolute || child.is_fixed;
+                    if !is_oof_positioned {
+                        hide_subtree(&mut b.children[idx]);
+                    }
                 }
                 continue;
             }
@@ -2025,10 +2046,47 @@ pub(super) fn apply_cross_block_line_clamp(root: &mut LayoutBox, styles: &HashMa
                 })
             };
             if has_block_grandchildren {
-                exhausted = walk_children(&mut b.children[idx], styles, remaining);
+                let before = *remaining;
+                let mut inner_host: Option<(usize, usize)> = None;
+                exhausted = walk_children(&mut b.children[idx], styles, remaining, &mut inner_host);
+                // R3770b：递归内部用尽预算时，ellipsis host 责任在内部——若内部消耗了
+                // 预算（last visible line 在嵌套盒内），由内部层标记（其自身 host 已在
+                // 其 loop 尾应用），本层 host 记录作废；若内部零消耗（remaining==before，
+                // clamp point 在嵌套盒边界 = 本层前一个子的末行末），保留本层 host。
+                if exhausted && *remaining != before {
+                    *ellipsis_host = None;
+                }
+                // R3770b：clamp 作用域内祖先盒高度压缩传播。递归可能在其内部置
+                // `line_clamp_cap`（盒高收缩到可见行数）或 `line_clamp_hidden`（几何
+                // 清零），该嵌套盒自身的高度不会自动收缩——重算其可见 extent（非隐藏
+                // 子盒 max-bottom，子盒 y 相对该盒内容盒顶），大于才收缩（CSS §10.6.3
+                // auto 高 = in-flow 子 border-box 最大底边；clamp 隐藏/截断后可见底边
+                // 即真实内容高）。无 cap/hidden 时 extent == 当前高，no-op。
+                // exhausted（预算在该盒内用尽）时同样压缩——顶层容器 extent 收缩
+                //（walk 尾部）按子盒 max-bottom 取值，中间盒不收缩会多计（014）。
+                {
+                    let c = &mut b.children[idx];
+                    let pb = c.padding_top + c.padding_bottom + c.border_top + c.border_bottom;
+                    let extent = c
+                        .children
+                        .iter()
+                        .filter(|g| !g.line_clamp_hidden)
+                        .map(|g| g.y + g.height)
+                        .fold(0.0f32, f32::max);
+                    if extent > 0.0 && extent + pb < c.height - 0.5 {
+                        let new_content = extent;
+                        c.height = new_content + pb;
+                        c.content_height = new_content;
+                    }
+                }
                 if exhausted {
-                    // 该子的后续兄弟全部隐藏（下一轮循环 idx+1.. 时处理）。
+                    // 该盒（或其内部）用尽预算——host 责任已在内部标记（其 loop 尾）或
+                    // 保留本层记录（内部零消耗，见上）。直接进下一轮隐藏后续兄弟。
                     continue;
+                }
+                // 嵌套盒完整消耗（remaining 减少）且未耗尽 → 记为本层 host 候选。
+                if *remaining < before {
+                    *ellipsis_host = Some((idx, before - *remaining));
                 }
             } else {
                 // 行数来源：stored IFC 行数；非 stored（paint 重跑 IFC，inline_layout
@@ -2070,7 +2128,23 @@ pub(super) fn apply_cross_block_line_clamp(root: &mut LayoutBox, styles: &HashMa
                     exhausted = true;
                 } else {
                     *remaining -= lines;
+                    // R3770b：完整消耗预算的子记录为 ellipsis host 候选（若后续子
+                    // 被 cap/隐藏，省略号附其末行末）。
+                    *ellipsis_host = Some((idx, lines));
                 }
+            }
+        }
+        // R3770b：本层 host 标记（每层递归自洽——顶层 walk() 不再重复）。exhausted 且
+        // host 存在 = clamp point 在该子末行末、后续子被 cap/隐藏 → 置
+        // cap=消耗行数 + clamped（paint 截到自身行数 no-op + 末行补 …）。
+        if exhausted
+            && let Some((host_idx, host_lines)) = *ellipsis_host
+            && host_lines > 0
+        {
+            let c = &mut b.children[host_idx];
+            if !c.line_clamp_clamped {
+                c.line_clamp_cap = Some(host_lines);
+                c.line_clamp_clamped = true;
             }
         }
         exhausted
@@ -2102,7 +2176,8 @@ pub(super) fn apply_cross_block_line_clamp(root: &mut LayoutBox, styles: &HashMa
         }
         // 自身 IFC 已由 R2431 cap 过（容器有直接 inline 文本时），此处只处理跨块预算。
         let mut remaining = limit;
-        let exhausted = walk_children(b, styles, &mut remaining);
+        let mut ellipsis_host: Option<(usize, usize)> = None;
+        let exhausted = walk_children(b, styles, &mut remaining, &mut ellipsis_host);
         if exhausted && style.height == LengthValue::Auto && b.declared_height_auto {
             // 收缩容器到可见内容 extent（隐藏盒已清零，max 取可见子底边）。
             let pb = b.padding_top + b.padding_bottom + b.border_top + b.border_bottom;

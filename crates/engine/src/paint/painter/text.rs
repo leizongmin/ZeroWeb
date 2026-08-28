@@ -1866,7 +1866,14 @@ impl super::Painter {
                 // 用尽，行数 cap = 余量 n（paint 自身 style 无 line-clamp，max_lines
                 // 为 None，须从此标志取）。
                 let max = max_lines.or(box_node.line_clamp_cap.map(|n| n as u32));
-                if let Some(max) = max {
+                // R3770b：本盒 paint 期可能零 glyph（文本经父 IFC/owned-inline 路径绘制，
+                // 本盒自身无 fragment——R3770b ellipsis host 标记只保证布局侧行数，不保证
+                // 本盒 paint 期有 glyph）。line_ys 空 = 无末行可附省略号，整块跳过
+                //（旧实现 line_ys[last_idx] 直接索引空 vec panic，全量 corpus 崩溃中止）。
+                if let Some(max) = max.filter(|_| {
+                    let glyphs = &self.primitives.glyphs;
+                    glyphs[glyphs_before_fragments..].iter().any(|g| g.font_size > 0.0)
+                }) {
                     let glyphs = &self.primitives.glyphs;
                     let fragment_glyphs = &glyphs[glyphs_before_fragments..];
 

@@ -125,3 +125,94 @@ fn r3770_r109_anon_fragment_multiline_height_backfill() {
     let anon_h = find_anon(&result.root).expect("R109 anon fragment box");
     assert_eq!(anon_h, 128.0, "多行 anon 片段高度 = 4 行 128px（非 ctx 单行 32px）");
 }
+
+/// R3770b：clamp 点落在嵌套 CB 中部时祖先盒高度压缩传播 + ellipsis host。
+/// driving: line-clamp-with-abspos-014（.rel 含 clamp point，L4 可见 + …，L5 隐藏）。
+#[test]
+fn r3770b_nested_cb_midway_clamp_compacts_heights() {
+    let html = format!(
+        "<html><body style=\"margin:0\">\
+<div style=\"line-clamp: 4; font: 16px/32px serif; padding: 0 4px; background-color: yellow;\">\
+<div>Line 1</div><div>Line 2</div><div>Line 3</div>\
+<div style=\"position: relative;\"><div>Line 4</div><div>Line 5</div>{ABSPOS_SKYBLUE}</div></div>\
+</body></html>"
+    );
+    let doc = zero_dom::parse_html(&html);
+    let mut sys = StyleSystem::new();
+    sys.set_viewport(800.0, 600.0);
+    let styles = sys.compute_styles(&doc, &[]);
+    let mut engine = LayoutEngine::new(800.0, 600.0);
+    let result = engine.compute(&doc, &styles);
+    use zero_style_system::property::types::LineClampComputedValue as LCC;
+    fn find_clamp_container<'a>(
+        b: &'a LayoutBox,
+        styles: &std::collections::HashMap<zero_dom::NodeId, zero_style_system::ComputedStyle>,
+    ) -> Option<&'a LayoutBox> {
+        for c in &b.children {
+            if c.node_id
+                .and_then(|id| styles.get(&id))
+                .is_some_and(|s| matches!(s.line_clamp, LCC::Count(4)))
+            {
+                return Some(c);
+            }
+            if let Some(f) = find_clamp_container(c, styles) {
+                return Some(f);
+            }
+        }
+        None
+    }
+    let container = find_clamp_container(&result.root, &styles).expect("clamp container");
+    assert_eq!(container.height, 128.0, "clamp 点在 .rel 内部：容器收缩到 4 行 128");
+    // 含 clamp 点的嵌套 CB 盒自身也压缩到可见 extent（L4 一行）。
+    fn find_nested_cb(b: &LayoutBox) -> Option<&LayoutBox> {
+        for c in &b.children {
+            if c.is_relative && c.children.iter().any(|g| g.line_clamp_hidden) {
+                return Some(c);
+            }
+            if let Some(f) = find_nested_cb(c) {
+                return Some(f);
+            }
+        }
+        None
+    }
+    let rel = find_nested_cb(container).expect("nested CB box");
+    assert_eq!(rel.height, 32.0, "嵌套 CB 盒压缩到 L4 一行 32（L5 隐藏不计）");
+    // CB 含 clamp point 的 abspos 保留几何（不被隐藏清零）。
+    let abspos = rel.children.iter().find(|c| c.is_absolute).expect("abspos box");
+    assert!(
+        !abspos.line_clamp_hidden && abspos.width > 0.0,
+        "CB 含 clamp point 的 abspos 不隐藏（spec: shown iff CB precedes or contains clamp point）"
+    );
+}
+
+/// R3770b：ellipsis host——clamp point 落在最后完整消耗预算的子末行末，省略号附该子
+/// 末行末（cap = 消耗行数 + clamped；paint 截到自身行数 no-op + 补 …）。
+/// driving: line-clamp-with-abspos-010/014（'Line 4…'）。
+#[test]
+fn r3770b_ellipsis_host_marked_on_last_consuming_child() {
+    let html = "<html><body style=\"margin:0\">\
+<div style=\"line-clamp: 4; font: 16px/32px serif; padding: 0 4px; background-color: yellow;\">\
+<div>Line 1</div><div>Line 2</div><div>Line 3</div><div>Line 4</div><div>Line 5</div></div></body></html>";
+    let doc = zero_dom::parse_html(html);
+    let mut sys = StyleSystem::new();
+    sys.set_viewport(800.0, 600.0);
+    let styles = sys.compute_styles(&doc, &[]);
+    let mut engine = LayoutEngine::new(800.0, 600.0);
+    let result = engine.compute(&doc, &styles);
+    fn find_host(b: &LayoutBox) -> Option<&LayoutBox> {
+        for c in &b.children {
+            if c.line_clamp_clamped && c.line_clamp_cap == Some(1) {
+                return Some(c);
+            }
+            if let Some(f) = find_host(c) {
+                return Some(f);
+            }
+        }
+        None
+    }
+    let host = find_host(&result.root).expect("ellipsis host box");
+    assert!(
+        host.line_clamp_clamped,
+        "L4（第 4 个完整消耗预算的子）应为 ellipsis host"
+    );
+}
