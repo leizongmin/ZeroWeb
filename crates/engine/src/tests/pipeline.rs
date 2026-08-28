@@ -1857,3 +1857,141 @@ fn text_control_paint_emits_utf16_caret_boundaries() {
             .all(|boundary| boundary.node_handle == boundaries[0].node_handle)
     );
 }
+
+/// js-dom R342：动画时钟泵链路单测——`tick_animation_clock` 对 cached_doc 重算样式时，
+/// `start_transitions` 能从 inline style（transition 简写 + 属性变化）启动过渡并产出
+/// transitionrun/start/end 事件（disabled-elements / invoke-legacy 用例的 promise 链）。
+#[test]
+fn test_tick_animation_clock_transitions_r342() {
+    use crate::pipeline::RenderPipeline;
+
+    let html = r#"<html><head><style>input { opacity: 1; }</style></head><body><input id="t"></body></html>"#;
+    let mut p = RenderPipeline::new(800.0, 600.0);
+    let _result = p.render_html(html, "");
+    assert!(p.transition_clock_pending_empty_for_test(), "no events at t0");
+
+    // 模拟页面脚本:el.style.transition = 'opacity .1s'; el.style.opacity = 0
+    // （经 apply_pending_shared_mutations → render_with_dom_mutations_persistent 的
+    // 全量分支 → render_html → cached_doc/stylesheets 刷新，但无 transition 检测）。
+    let doc_shared = p.cached_doc_shared().expect("cached doc");
+    {
+        let mut doc = doc_shared.borrow_mut();
+        let node = doc.query_selector(doc.root(), "#t").expect("node");
+        doc.set_attribute(node, "style", "transition: opacity .1s; opacity: 0");
+    }
+    p.sync_stylesheets_for_test(html, "");
+
+    // 第一次 tick：检测到 opacity 变化 → transitionrun + transitionstart。
+    assert!(p.tick_animation_clock(100.0), "tick with cached doc");
+    let run = p.take_pending_transition_events();
+    assert_eq!(run.len(), 2, "run+start on first tick, got {run:?}");
+
+    // 第二次 tick（跨过 0.1s）：transitionend。
+    p.tick_animation_clock(100.3);
+    let fin = p.take_pending_transition_events();
+    assert_eq!(fin.len(), 1, "end after duration, got {fin:?}");
+    assert_eq!(fin[0].kind.as_event_type(), "transitionend");
+
+    // 稳定态：无新事件。
+    p.tick_animation_clock(100.5);
+    assert!(p.take_pending_transition_events().is_empty());
+
+    // R342 关键场景：同一 slotmap 代内的第二次样式变化——set_attribute 后
+    // query_selector 仍能定位该节点，第二次过渡照常启动。
+    let doc_shared2 = p.cached_doc_shared().unwrap();
+    {
+        let mut doc2 = doc_shared2.borrow_mut();
+        let node = doc2.query_selector(doc2.root(), "#t").expect("node still queryable");
+        doc2.set_attribute(node, "style", "transition: opacity .1s; opacity: 1");
+    }
+    assert!(p.tick_animation_clock(101.0));
+    let evs = p.take_pending_transition_events();
+    assert_eq!(evs.len(), 2, "second transition run+start, got {evs:?}");
+}
+
+/// R342 调试探针：`.1s` 时长值解析链（is_time_value → parse_animation_duration）。
+#[test]
+fn probe_r342_time_parse() {
+    assert!(
+        zero_css_parser::values::parse_animation_duration(".1s").is_some(),
+        ".1s must parse"
+    );
+    assert!(zero_css_parser::values::parse_animation_duration("100ms").is_some());
+    // Computed-style field check via pipeline: render inline transition
+    use crate::pipeline::RenderPipeline;
+    let mut p = RenderPipeline::new(800.0, 600.0);
+    let _ = p.render_html(
+        r#"<html><body><input style="transition: opacity .1s; opacity: 0"></body></html>"#,
+        "",
+    );
+    let doc = p.cached_doc_shared().unwrap();
+    let doc = doc.borrow();
+    let node = doc.query_selector(doc.root(), "input").unwrap();
+    let sheets = crate::pipeline::collect_stylesheets(&doc, "");
+    let mut ss = zero_style_system::StyleSystem::new();
+    let styles = ss.compute_styles(&doc, &sheets);
+    let st = styles.get(&node).unwrap();
+    println!(
+        "PROBE transition_property={:?} duration={:?}",
+        st.transition_property, st.transition_duration
+    );
+}
+
+/// R342：animation-delay 负值 seek → animationiteration/animationend（disabled-elements 动画链）。
+#[test]
+fn test_anim_delay_seek_iteration_r342() {
+    use crate::pipeline::RenderPipeline;
+    let html = r#"<html><head><style>@keyframes test { 0% { color: red; } 100% { color: green; } }</style></head><body><div id="t"></div></body></html>"#;
+    let mut p = RenderPipeline::new(800.0, 600.0);
+    let _ = p.render_html(html, "");
+    // start animation: fade 100s 2 (iteration count 2)
+    {
+        let doc_shared = p.cached_doc_shared().unwrap();
+        let mut doc = doc_shared.borrow_mut();
+        let node = doc.query_selector(doc.root(), "#t").unwrap();
+        doc.set_attribute(
+            node,
+            "style",
+            "animation-name: test; animation-duration: 100s; animation-iteration-count: 2;",
+        );
+    }
+    p.sync_stylesheets_for_test(html, "");
+    p.tick_animation_clock(100.0);
+    let evs = p.take_pending_animation_events();
+    assert_eq!(evs.len(), 1, "start first, got {evs:?}");
+    assert_eq!(evs[0].kind.as_event_type(), "animationstart");
+
+    // seek: delay -100s → iteration 1 boundary
+    {
+        let doc_shared = p.cached_doc_shared().unwrap();
+        let mut doc = doc_shared.borrow_mut();
+        let node = doc.query_selector(doc.root(), "#t").unwrap();
+        doc.set_attribute(
+            node,
+            "style",
+            "animation-name: test; animation-duration: 100s; animation-iteration-count: 2; animation-delay: -100s;",
+        );
+    }
+    p.sync_stylesheets_for_test(html, "");
+    p.tick_animation_clock(100.1);
+    let evs = p.take_pending_animation_events();
+    assert_eq!(evs.len(), 1, "iteration after seek, got {evs:?}");
+    assert_eq!(evs[0].kind.as_event_type(), "animationiteration");
+
+    // seek: delay -200s → finish (2 iterations)
+    {
+        let doc_shared = p.cached_doc_shared().unwrap();
+        let mut doc = doc_shared.borrow_mut();
+        let node = doc.query_selector(doc.root(), "#t").unwrap();
+        doc.set_attribute(
+            node,
+            "style",
+            "animation-name: test; animation-duration: 100s; animation-iteration-count: 2; animation-delay: -200s;",
+        );
+    }
+    p.sync_stylesheets_for_test(html, "");
+    p.tick_animation_clock(100.2);
+    let evs = p.take_pending_animation_events();
+    assert_eq!(evs.len(), 1, "end after second seek, got {evs:?}");
+    assert_eq!(evs[0].kind.as_event_type(), "animationend");
+}

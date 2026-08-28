@@ -460,6 +460,27 @@ impl AnimationClock {
         true
     }
 
+    /// R342：animation-delay 变更的 seek 语义（css-animations §animations—样式变更
+    /// 重新求值动画时序）。WPT 用例在 animationstart 里把 delay 改为负值（-100s）
+    /// 「seek 到第二轮迭代」驱动 animationiteration/animationend（
+    /// Event-dispatch-on-disabled-elements 动画链）。时钟的 delay 在 start 时快照，
+    /// 这里按当前 computed delay 更新活跃动画（未完成）的 delay——负 delay 使
+    /// active_elapsed 前跳，下一 tick 的迭代边界检测自然派发 iteration。
+    /// 返回是否发生了更新。
+    pub fn refresh_delay(&mut self, element_id: u64, name: &str, delay: f64) -> bool {
+        let Some(animations) = self.active_animations.get_mut(&element_id) else {
+            return false;
+        };
+        let mut updated = false;
+        for anim in animations.iter_mut() {
+            if anim.name == name && !anim.finished && anim.delay != delay {
+                anim.delay = delay;
+                updated = true;
+            }
+        }
+        updated
+    }
+
     /// 从 ComputedStyle 的 animation 属性自动创建动画。
     ///
     /// 检查元素的 animation-name 列表，为每个名称创建动画。

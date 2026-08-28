@@ -1,0 +1,42 @@
+{
+  "round": "R342",
+  "date": "2026-08-29",
+  "slice": "M4/events 备档集——动画时钟泵（runner 动画用例基建）+ 过渡检测 before-change 基线",
+  "background": "R331/R337 两轮定性：events 备档集 Timeout 的主体是 CSS transition/animation promise_test——run_page_scripts 只执行脚本不重渲染，页面脚本设置的 transition/animation 永无第二轮 compute_styles，时钟不 tick 事件不产生。R341 后 429 打断，本轮接手完成基建并 land。",
+  "changes": [
+    "runner 泵接线：testharness.rs probe 循环每帧调 webview.pump_animation_clock(墙钟秒)，take_pending_{transition,animation}_events 经 script_gen 脚本派发（与 renderer 同汇流点）",
+    "webview.pump_animation_clock：先 apply_pending_shared_mutations（页面脚本排队的 style/mutation 先落活 DOM）再 tick_animation_clock",
+    "pipeline.tick_animation_clock：对 cached_doc + cached_stylesheets 重算样式 + 推进 transition/animation 时钟 + 收集事件（render_html_animated 的 4b–cleanup 段抽取为 tick_animation_styles 共用 helper，行为等价重构）；插值后样式仅作渲染层不写回检测基线（防每帧重启过渡）",
+    "render_with_dom_mutations_persistent paint-only 分支补 cached_stylesheets 刷新（inline transition 声明进时钟泵注册表；探针实证缺失时泵恒 0 事件）",
+    "apply_pending_shared_mutations 混合批两步 apply：结构 mutation 先落 → restyle_cached_baseline 物化 before-change style → 样式 mutation 后落 → seed_transition_baseline 预置给首次 tick。单步 apply 会把终态写进检测基线使 old==new 过渡永不启动（探针实证 old_op=0,new_op=0）；pre-apply 快照对同批新建元素又无条目",
+    "AnimationClock.refresh_delay：animation-delay 变更的 seek 语义（css-animations 样式变更重新求值时序）——WPT 在 animationstart 里改 delay 负值（-100s/-200s）seek 迭代边界驱动 animationiteration/animationend；pipeline apply_animation_overrides 每 tick 按当前 computed delay 调 refresh_delay"
+  ],
+  "tests": [
+    "crates/engine/src/tests/pipeline.rs::test_tick_animation_clock_transitions_r342（同 slotmap 代两次过渡 run/start/end + 稳定态零事件）",
+    "crates/engine/src/tests/pipeline.rs::test_anim_delay_seek_iteration_r342（delay 负值 seek → start→iteration→end 全链）"
+  ],
+  "results": {
+    "EventListener-invoke-legacy": "2/6 Pass（Listener of transitionend + animationend/animationstart 全部 3 listener Pass；此前 pending:4 全挂）→ pending:3（Legacy listener ×3 剩余：dispatchEvent(new ctor) 重派发面，下一片）",
+    "Event-dispatch-on-disabled-elements": "5/9 Pass（新增 CSS Transitions transitionrun/start/end 三事件 promise_test 整测 Pass；此前 4/9 pending:5）",
+    "full_dom_suite": "54169P / 53F / 21T；关键哨兵零回归：Element-classlist 1420P（100%）、Node-properties 726P（100%）、ParentNode-querySelector-All 1975P、MutationObserver-attributes 42P/0F、Event-dispatch-click 32P",
+    "engine_v8": "2479P",
+    "engine_quickjs": "1470P",
+    "webview_quickjs": "611P",
+    "integration": "781P",
+    "wpt_runner": "191P",
+    "clippy": "v8 + quickjs 双矩阵 0 error",
+    "product_smoke": "23.37%（与 R331 记录逐字节一致 = 渲染流 oracle 时代漂移预存；struct-check PASS）"
+  },
+  "known_flakes_pre_existing": [
+    "webview navigator_controller_tracks_document_and_skip_waiting_replacement（clean HEAD 5 跑 3 败——__firstController.state 时序竞态，SW 域预存非本切片）",
+    "webview image_decoder proxy_mode_decodes_png_correctly（clean HEAD 同败，net/image 域）"
+  ],
+  "remaining_gaps_next_round": [
+    "事件 listener 内的 style 写入（animationstart 回调里 elem.style.animationDelay=-100s）经 dispatchEvent 派发后未达 host apply——探针实证 __zw_set_style_handle 只收到 shorthand 一次，listener 内的二次写静默丢失（疑 sel/handle wrapper 域 style setter 分流或 listener 错误被 dispatchEvent 吞）。disabled-elements 剩 pending:4（transitioncancel/animation 迭代 seek/animationcancel/testdriver-click）+ invoke-legacy 剩 Legacy listener ×3 全在此缺口",
+    "test_driver.click 走 Activate 管线（html-compat activation 域，R337 已定性非 DOM 面）"
+  ],
+  "lessons": [
+    "过渡检测的 before-change style 基线必须来自「结构就位、样式未落」的中间态——单步 apply 的终态回写使 old==new 恒无差异，这是渲染引擎接管动画事件驱动时最容易踩的时序坑",
+    "监听器回调里改样式（seek）依赖「dispatch → mutation → 下一帧 apply → refresh」的跨帧闭环，任何一环（wire 推队、apply 路径、computed 读回）断链都表现为整链 pending 而非显式错误"
+  ]
+}

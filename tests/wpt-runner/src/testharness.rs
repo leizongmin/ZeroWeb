@@ -2503,6 +2503,34 @@ fn run_testharness_html_inner(
         }
 
         let _ = webview.poll_service_worker_runtime_events();
+        // js-dom R342：动画时钟泵——页面脚本设置的 transition/animation 需要第二轮
+        // re-style + 时钟 tick 才产生事件（run_page_scripts 只执行脚本不重渲染）。
+        // 真实时间作时钟源：probe 循环的墙钟间隔自然推进 30ms/100ms 量级测试动画；
+        // 事件经 engine 的 script_gen 脚本派发进 shim（与 renderer 同汇流点）。
+        {
+            let now_secs = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_secs_f64())
+                .unwrap_or(0.0);
+            if webview.pump_animation_clock(now_secs) {
+                for ev in webview.take_pending_transition_events() {
+                    let _ = webview.execute_script(&zero_engine::script_dispatch_transition_event(
+                        &ev.selector,
+                        ev.kind.as_event_type(),
+                        &ev.property,
+                        ev.elapsed,
+                    ));
+                }
+                for ev in webview.take_pending_animation_events() {
+                    let _ = webview.execute_script(&zero_engine::script_dispatch_animation_event(
+                        &ev.selector,
+                        ev.kind.as_event_type(),
+                        &ev.name,
+                        ev.elapsed,
+                    ));
+                }
+            }
+        }
         let probe = match take_probe(&mut webview) {
             Ok(probe) => probe,
             Err(error) => {

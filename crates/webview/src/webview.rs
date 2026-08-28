@@ -1616,6 +1616,48 @@ impl WebView {
         self.pipeline.take_pending_animation_events()
     }
 
+    /// js-dom R342：动画时钟推进泵（runner 动画用例基建）——先应用页面脚本排队的
+    /// mutation（style 写入等，否则 tick 看不到样式变化），再对缓存文档重算样式并推进
+    /// transition/animation 时钟，事件进 pipeline 的 pending 缓冲，随后
+    /// [`Self::take_pending_transition_events`] / [`Self::take_pending_animation_events`]
+    /// 取用派发。`current_time` 为动画时钟时间（秒）。未渲染过（无缓存文档）时 no-op。
+    pub fn pump_animation_clock(&mut self, current_time: f64) -> bool {
+        // 页面脚本（含 promise_test 回调、事件 listener 回调）设置的 style/mutation
+        // 先落到活 DOM——否则时钟 tick 看不到样式变化，过渡/动画永不推进（R342 实测）。
+        // apply 内部对混合批做「结构→基线→样式」两步切分（见
+        // [`Self::apply_pending_shared_mutations`]），保证 before-change style 基线。
+        // 失败（如 stale handle）时该 mutation 丢弃——时钟 tick 继续对当前活 DOM 推进，
+        // 不因单条坏 mutation 阻塞后续帧（与 runner 探针循环的容错语义一致）。
+        let _ = self.apply_pending_shared_mutations();
+        self.pipeline.tick_animation_clock(current_time)
+    }
+
+    /// R342：应用 mutation 子集（不触发渲染增量分支——泵随后统一 tick 重算）。
+    /// 更新 `applied_mutations` 游标并同步 handle 映射（与
+    /// [`Self::apply_pending_shared_mutations`] 同机制，按给定子集切分）。
+    fn apply_mutations_subset(&mut self, subset: &[zero_engine::js_dom_bridge::DomMutation]) {
+        if subset.is_empty() {
+            return;
+        }
+        let html_snapshot = {
+            let forward: std::collections::HashMap<String, String> = {
+                let sel_map = self.selector_handle_map.lock().unwrap_or_else(|e| e.into_inner());
+                sel_map.iter().map(|(s, h)| (h.clone(), s.clone())).collect()
+            };
+            self.pipeline
+                .render_with_dom_mutations_persistent(subset, &self.cached_css, Some(&forward))
+                .ok()
+                .map(|(_, snap, handles)| {
+                    self.merge_handle_selectors(&handles);
+                    snap
+                })
+        };
+        self.applied_mutations += subset.len();
+        if let Some(Some(mutated)) = html_snapshot {
+            self.cached_html = mutated;
+        }
+    }
+
     /// 执行 JavaScript。
     ///
     /// 需要 zero-script-sandbox 后端引擎（V8/QuickJS）。
@@ -2769,6 +2811,33 @@ impl WebView {
             guard[self.applied_mutations.min(guard.len())..].to_vec()
         };
         if tail.is_empty() {
+            return Ok(());
+        }
+        // R342：批内混合「结构 + 样式」mutation 时走两步 apply——结构先落，重算样式作
+        // 过渡基线（css-transitions §starting-of-transitions 的 before-change style；
+        // ≈ 真浏览器 gCS flush 的强制样式更新），样式后落并把基线预置给动画时钟泵的
+        // 首次 tick。WPT 事件用例（Event-dispatch-on-disabled-elements 等）在一个脚本
+        // 轮次内「建元素 + 写 transition/animation」排队同批，单步 apply 会把终态样式
+        // 写进检测基线（old==new），transition/animation 永不启动。纯结构或纯样式批
+        // 走原单步路径（零行为变化）。
+        let is_style = |m: &DomMutation| {
+            matches!(
+                m,
+                DomMutation::SetStyle { .. }
+                    | DomMutation::RemoveStyle { .. }
+                    | DomMutation::SetStyleOnHandle { .. }
+                    | DomMutation::RemoveStyleOnHandle { .. }
+            )
+        };
+        let has_style = tail.iter().any(is_style);
+        let has_structure = tail.iter().any(|m| !is_style(m));
+        if has_style && has_structure {
+            let (structure, styles_only): (Vec<_>, Vec<_>) = tail.iter().cloned().partition(|m| !is_style(m));
+            self.apply_mutations_subset(&structure);
+            self.pipeline.restyle_cached_baseline();
+            let baseline = self.pipeline.cached_styles_snapshot();
+            self.apply_mutations_subset(&styles_only);
+            self.pipeline.seed_transition_baseline(baseline);
             return Ok(());
         }
         // R100：未 load_html 的直接调用方（wasm_bridge/edge 类测试）——pipeline 无

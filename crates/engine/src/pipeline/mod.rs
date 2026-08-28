@@ -123,6 +123,10 @@ pub struct RenderPipeline {
     animation_clock: AnimationClock,
     /// CSS 过渡时钟。
     transition_clock: TransitionClock,
+    /// R342：宿主（webview 泵 / run_page_scripts 两步 apply）预置的过渡检测基线——
+    /// 结构 mutation 应用后、样式 mutation 应用前的「before-change style」快照，
+    /// [`Self::tick_animation_clock`] 首个 tick 一次性消费（take）。None = 常规路径。
+    pending_transition_baseline: Option<HashMap<NodeId, ComputedStyle>>,
     /// 「已派发待消费」的过渡事件（R3248 transitionend + R3252 transitionrun/transitionstart）——元素选择器、
     /// 事件类型（Run/Start/End）、属性名（propertyName）、时长（elapsedTime）。过渡创建/启动/完成帧由
     /// `start_transitions` + `tick()` 收集 + `unique_selector_for_node` 映射元素后存此；宿主经
@@ -327,6 +331,7 @@ impl RenderPipeline {
             dirty_tracker: DirtyTracker::new(),
             animation_clock: AnimationClock::new(),
             transition_clock: TransitionClock::new(),
+            pending_transition_baseline: None,
             pending_transition_events: Vec::new(),
             pending_animation_events: Vec::new(),
             cached_styles: HashMap::new(),
@@ -592,6 +597,160 @@ impl RenderPipeline {
         std::mem::take(&mut self.pending_animation_events)
     }
 
+    /// js-dom R342：动画时钟推进泵（runner 动画用例基建）——对 `cached_doc` 重算样式 +
+    /// 推进 transition/animation 时钟 + 收集事件到 `pending_*` 缓冲，宿主随后
+    /// `take_pending_*_events` 取用派发（与渲染路径同汇流点）。
+    ///
+    /// 背景：`run_page_scripts` 只执行脚本不重渲染；页面脚本设置 `transition/animation`
+    /// 后没有第二轮 `compute_styles`，时钟永不 tick，事件永不产生（WPT
+    /// EventListener-invoke-legacy / Event-dispatch-on-disabled-elements 的 CSS 动画
+    /// promise_test 依赖此链）。真实时间作为时钟源——宿主在 probe 等待循环中按
+    /// 墙钟间隔调用即可自然推进 30ms/100ms 量级的测试动画。
+    ///
+    /// 无缓存文档/样式表（未渲染过）时 no-op 返 false。
+    pub fn tick_animation_clock(&mut self, current_time: f64) -> bool {
+        let Some(doc_rc) = self.cached_doc.clone() else {
+            return false;
+        };
+        // R342：宿主两步 apply 预置的过渡基线（before-change style）——一次性消费。
+        if let Some(baseline) = self.pending_transition_baseline.take() {
+            self.cached_styles = baseline;
+        }
+        let stylesheets = self.cached_stylesheets.clone();
+        let doc = doc_rc.borrow();
+        // 插值后的 styles 仅用于渲染层——此处丢弃。`cached_styles` 已由
+        // `tick_animation_styles` 步骤 4b 写入「原始 computed 基线」（未叠加插值），
+        // 下一次 tick 的过渡检测必须与原始基线比较：若把插值后的样式写回，
+        // old（插值中间值）≠ new（目标值）会每帧重启过渡、重复发 transitionrun/start。
+        let _styles = self.tick_animation_styles(&doc, &stylesheets, current_time);
+        drop(doc);
+        true
+    }
+
+    /// R342：过渡检测基线快照/回种（webview 泵专用）——mutation apply 路径
+    /// （`paint_only_incremental`）已把应用后样式写入 `cached_styles`，泵若直接 tick，
+    /// 过渡检测「old=应用后 vs new=应用后」恒无差异，transitionrun/start 被吞（探针实证
+    /// old_op=0,new_op=0）。泵在 apply 前取基线、apply 后回种，恢复「前样式 vs 后样式」
+    /// 的 spec 比较（css-transitions §starting-of-transitions 的 before-change style）。
+    pub fn cached_styles_snapshot(&self) -> HashMap<NodeId, ComputedStyle> {
+        self.cached_styles.clone()
+    }
+
+    /// R342：预置过渡检测基线（见 [`Self::pending_transition_baseline`]）——
+    /// 由 [`Self::tick_animation_clock`] 首个 tick 一次性消费。
+    pub fn seed_transition_baseline(&mut self, styles: HashMap<NodeId, ComputedStyle>) {
+        self.pending_transition_baseline = Some(styles);
+    }
+
+    /// R342：对缓存文档重算样式并作为过渡检测基线（不启动过渡、不 tick 时钟）——
+    /// 泵「先结构后样式」两步 apply 的第一步消费：结构 mutation（建元素等）应用后
+    /// 物化各元素的 before-change style（≈ 真浏览器 gCS flush 的强制样式更新，
+    /// css-transitions §starting-of-transitions）。无缓存文档时 no-op。
+    pub fn restyle_cached_baseline(&mut self) {
+        let Some(doc_rc) = self.cached_doc.clone() else {
+            return;
+        };
+        let stylesheets = self.cached_stylesheets.clone();
+        let doc = doc_rc.borrow();
+        let styles = self.style_system.compute_styles(&doc, &stylesheets);
+        drop(doc);
+        self.cached_styles = styles;
+    }
+
+    /// [`Self::tick_animation_clock`] 与渲染路径共用的「重算样式 + 时钟 tick + 事件
+    /// 收集」段（自 `render_html_animated` 的 4b–cleanup 段抽取；行为等价重构）。
+    /// 返回本轮计算的新样式表（调用方负责写回 `cached_styles`）。
+    fn tick_animation_styles(
+        &mut self,
+        doc: &zero_dom::Document,
+        stylesheets: &[zero_css_parser::Stylesheet],
+        current_time: f64,
+    ) -> HashMap<NodeId, ComputedStyle> {
+        self.animation_clock.register_from_stylesheets(stylesheets);
+        let mut styles = self.style_system.compute_styles(doc, stylesheets);
+
+        // 4b. 过渡检测：比较新旧基础样式，启动必要的过渡
+        {
+            let old = std::mem::replace(&mut self.cached_styles, styles.clone());
+            for (nid, ns) in &styles {
+                if let Some(os) = old.get(nid) {
+                    self.transition_clock
+                        .start_transitions(nid.data().as_ffi(), os, ns, current_time);
+                }
+            }
+        }
+
+        // 5. 启动动画并应用插值覆盖（事件 → pending 缓冲，宿主取用派发）。
+        for (nid, kind, name, elapsed) in
+            apply_animation_overrides(&mut self.animation_clock, &mut styles, current_time)
+        {
+            if let Some(sel) = crate::js_dom_bridge::unique_selector_for_node(doc, nid) {
+                self.pending_animation_events.push(AnimationEvent {
+                    kind,
+                    selector: sel,
+                    name,
+                    elapsed,
+                });
+            }
+        }
+
+        // 5b. 应用活跃的过渡插值
+        let node_ids: Vec<NodeId> = styles.keys().copied().collect();
+        for nid in &node_ids {
+            let key = nid.data().as_ffi();
+            let props = self.transition_clock.tick(key, current_time);
+            if !props.is_empty()
+                && let Some(s) = styles.get_mut(nid)
+            {
+                TransitionClock::apply_to_computed_style(&props, s);
+            }
+        }
+        // 过渡事件收集（Run → Start → End 派发序）。
+        {
+            let mut key_to_nid: HashMap<u64, NodeId> = HashMap::new();
+            for nid in &node_ids {
+                key_to_nid.insert(nid.data().as_ffi(), *nid);
+            }
+            let map_sel = |ek: &u64| -> Option<(NodeId, String)> {
+                let nid = key_to_nid.get(ek)?;
+                let sel = crate::js_dom_bridge::unique_selector_for_node(doc, *nid)?;
+                Some((*nid, sel))
+            };
+            for r in self.transition_clock.drain_just_run() {
+                if let Some((_, sel)) = map_sel(&r.element_key) {
+                    self.pending_transition_events.push(TransitionEvent {
+                        kind: TransitionEventKind::Run,
+                        selector: sel,
+                        property: r.property,
+                        elapsed: 0.0,
+                    });
+                }
+            }
+            for s in self.transition_clock.drain_just_started() {
+                if let Some((_, sel)) = map_sel(&s.element_key) {
+                    self.pending_transition_events.push(TransitionEvent {
+                        kind: TransitionEventKind::Start,
+                        selector: sel,
+                        property: s.property,
+                        elapsed: 0.0,
+                    });
+                }
+            }
+            for fin in self.transition_clock.drain_just_finished() {
+                if let Some((_, sel)) = map_sel(&fin.element_key) {
+                    self.pending_transition_events.push(TransitionEvent {
+                        kind: TransitionEventKind::End,
+                        selector: sel,
+                        property: fin.property,
+                        elapsed: fin.duration,
+                    });
+                }
+            }
+        }
+        self.transition_clock.cleanup_finished();
+        styles
+    }
+
     /// 渲染 HTML 文档（带动画）。
     ///
     /// 与 `render_html` 相同管线，但在样式计算后注册 @keyframes、
@@ -627,99 +786,10 @@ impl RenderPipeline {
         let style_start = Instant::now();
         self.style_system
             .set_viewport(self.viewport_width as f64, self.viewport_height as f64);
-        let mut styles = self.style_system.compute_styles(&doc, &stylesheets);
+        // R342：动画/过渡段（4b–cleanup）抽取为 `tick_animation_styles` 共用 helper
+        //（runner 的 `tick_animation_clock` 泵复用同一段；行为等价重构零语义变化）。
+        let styles = self.tick_animation_styles(&doc, &stylesheets, current_time);
         let style_ms = style_start.elapsed().as_secs_f64() * 1000.0;
-
-        // 4b. 过渡检测：比较新旧基础样式，启动必要的过渡
-        {
-            let old = std::mem::replace(&mut self.cached_styles, styles.clone());
-            for (nid, ns) in &styles {
-                if let Some(os) = old.get(nid) {
-                    self.transition_clock
-                        .start_transitions(nid.data().as_ffi(), os, ns, current_time);
-                }
-            }
-        }
-
-        // 5. 启动动画并应用插值覆盖
-        // R3249（animationend）/R3250（animationiteration）/R3251（animationstart）：apply_animation_overrides
-        // 返「本轮新产生」动画事件 → 映射 NodeId→unique_selector，存 pending_animation_events 待宿主派发
-        // （Start→animationstart / End→animationend / Iteration→animationiteration）。
-        for (nid, kind, name, elapsed) in
-            apply_animation_overrides(&mut self.animation_clock, &mut styles, current_time)
-        {
-            if let Some(sel) = crate::js_dom_bridge::unique_selector_for_node(&doc, nid) {
-                self.pending_animation_events.push(AnimationEvent {
-                    kind,
-                    selector: sel,
-                    name,
-                    elapsed,
-                });
-            }
-        }
-
-        // 5b. 应用活跃的过渡插值
-        let node_ids: Vec<NodeId> = styles.keys().copied().collect();
-        for nid in &node_ids {
-            let key = nid.data().as_ffi();
-            let props = self.transition_clock.tick(key, current_time);
-            if !props.is_empty()
-                && let Some(s) = styles.get_mut(nid)
-            {
-                TransitionClock::apply_to_computed_style(&props, s);
-            }
-        }
-        // R3248（§transitionend）/R3252（§transitionrun/§transitionstart）：收集「本轮新产生」过渡事件 →
-        // 映射元素（element_key=u64 → NodeId，经 node_ids 建 key→nid 索引）→ unique_selector_for_node 转
-        // selector，存 pending 待宿主派发。drain 顺序 Run → Start → End（spec 派发序：transitionrun 先于
-        // transitionstart 先于 transitionend）。cleanup_finished 在此之后移除已完成 transition（不触
-        // just_finished——drain 已先取）。just_run 由 §4b start_transitions 填充；just_started/just_finished
-        // 由本节 tick 填充，故三者在同一收集块 drain。
-        {
-            let mut key_to_nid: HashMap<u64, NodeId> = HashMap::new();
-            for nid in &node_ids {
-                key_to_nid.insert(nid.data().as_ffi(), *nid);
-            }
-            let map_sel = |ek: &u64| -> Option<(NodeId, String)> {
-                let nid = key_to_nid.get(ek)?;
-                let sel = crate::js_dom_bridge::unique_selector_for_node(&doc, *nid)?;
-                Some((*nid, sel))
-            };
-            // transitionrun（创建）——elapsedTime=0。
-            for r in self.transition_clock.drain_just_run() {
-                if let Some((_, sel)) = map_sel(&r.element_key) {
-                    self.pending_transition_events.push(TransitionEvent {
-                        kind: TransitionEventKind::Run,
-                        selector: sel,
-                        property: r.property,
-                        elapsed: 0.0,
-                    });
-                }
-            }
-            // transitionstart（delay 过后活跃）——elapsedTime=0。
-            for s in self.transition_clock.drain_just_started() {
-                if let Some((_, sel)) = map_sel(&s.element_key) {
-                    self.pending_transition_events.push(TransitionEvent {
-                        kind: TransitionEventKind::Start,
-                        selector: sel,
-                        property: s.property,
-                        elapsed: 0.0,
-                    });
-                }
-            }
-            // transitionend（完成）——elapsedTime=duration。
-            for fin in self.transition_clock.drain_just_finished() {
-                if let Some((_, sel)) = map_sel(&fin.element_key) {
-                    self.pending_transition_events.push(TransitionEvent {
-                        kind: TransitionEventKind::End,
-                        selector: sel,
-                        property: fin.property,
-                        elapsed: fin.duration,
-                    });
-                }
-            }
-        }
-        self.transition_clock.cleanup_finished();
 
         // 6. 计算布局
         let layout_start = Instant::now();
@@ -976,6 +1046,9 @@ impl RenderPipeline {
         // R100：doc 全量重建（slotmap 换代）——旧 handle→NodeId 全部失效。
         self.persistent_handle_nodes.clear();
         self.cached_styles = styles;
+        // R342：缓存 stylesheets——runner 的动画时钟泵（tick_animation_clock）依赖
+        // 此缓存对 cached_doc 重算样式（与 render_with_dom_mutations_persistent 对齐）。
+        self.cached_stylesheets = stylesheets;
         // DOM 已替换：CSS 解析缓存失效（新文档的 <style>/meta 内容可能不同）。
         self.cached_css_text = None;
 
@@ -1318,7 +1391,14 @@ impl RenderPipeline {
                 let doc = doc_rc.borrow();
                 self.paint_only_incremental(&doc, mutations, css)
             };
-            self.cached_doc = Some(doc_rc);
+            self.cached_doc = Some(doc_rc.clone());
+            // R342：paint-only 分支不刷新 cached_stylesheets——inline `transition` 声明
+            // 进不了时钟泵的注册表，tick 检测不到 transition-property（探针实证：
+            // `el.style.transition`+`el.style.opacity` 两 mutation 后泵恒 0 事件）。
+            if r.is_some() {
+                let doc = doc_rc.borrow();
+                self.cached_stylesheets = collect_stylesheets(&doc, css);
+            }
             r
         } else {
             // A structural mutation invalidates the retained layout tree. Repainting it would
@@ -2103,6 +2183,17 @@ fn apply_animation_overrides(
 
         // 为元素启动动画（如果尚未启动）
         clock.start_from_computed_style(elem_key, style, current_time);
+
+        // R342：animation-delay 变更的 seek 语义——运行中的动画按当前 computed delay
+        // 更新（WPT 在 animationstart 回调里改 delay 负值 seek 迭代边界）。
+        for (i, name) in style.animation_name.iter().enumerate() {
+            if name.is_empty() || name == "none" {
+                continue;
+            }
+            if let Some(delay) = style.animation_delay.get(i) {
+                clock.refresh_delay(elem_key, name, *delay);
+            }
+        }
 
         // 推进时钟并获取插值属性
         let props = clock.tick(elem_key, current_time);
@@ -3160,5 +3251,21 @@ mod meta_color_scheme_hint_tests {
         let doc = zero_dom::parse_html(html);
         let sheets = collect_stylesheets(&doc, "");
         assert!(sheets.is_empty(), "空 content 不应注入");
+    }
+}
+
+#[cfg(test)]
+impl RenderPipeline {
+    /// R342 测试辅助：测试内无 pending 事件的断言面。
+    pub(crate) fn transition_clock_pending_empty_for_test(&self) -> bool {
+        self.pending_transition_events.is_empty() && self.pending_animation_events.is_empty()
+    }
+
+    /// R342 测试辅助：按给定 html/css 刷新 cached_stylesheets（模拟 `render_html` 的
+    /// stylesheets 缓存步骤——测试里不经全量 render 直接同步缓存，避免 render 覆盖
+    /// 手工改过的 cached_doc）。
+    pub(crate) fn sync_stylesheets_for_test(&mut self, _html: &str, css: &str) {
+        let doc = self.cached_doc.as_ref().expect("cached doc").borrow();
+        self.cached_stylesheets = collect_stylesheets(&doc, css);
     }
 }
