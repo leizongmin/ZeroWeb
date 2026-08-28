@@ -1,8 +1,10 @@
 # JS/DOM 原生化 — 主控面板（master.md）
 
 **入口文档**: [../js-dom.md](../js-dom.md)（长期 Mission / Done Criteria / 执行协议 / 文档治理规则）
-**关联 RFC**: [../../specs/p1b-v8-native-bindings-rfc.md](../../specs/p1b-v8-native-bindings-rfc.md) + [../../specs/p1b-l2d3-unified-matcher-identity-bridge-rfc.md](../../specs/p1b-l2d3-unified-matcher-identity-bridge-rfc.md)（R166 新增——L2-d3 统一匹配器 + identity 桥设计）
+**关联 RFC**: [../../specs/p1b-v8-native-bindings-rfc.md](../../specs/p1b-v8-native-bindings-rfc.md) + [../../specs/p1b-l2d3-unified-matcher-identity-bridge-rfc.md](../../specs/p1b-l2d3-unified-matcher-identity-bridge-rfc.md)（R166 新增——L2-d3 统一匹配器 + identity 桥设计；**v0.2 @ R341**：d3a-c 已落、d3d 元素上下文回退定格[重启前置 = 归一路径统一]、§2.4 落地后新证据）
 **创建日期**: 2026-08-13（goal 拆分 bootstrap）
+**本轮**: R341 — **M1/L2：L2-d3 RFC v0.2 修订（纯文档）——d3a-d3c 落地状态回填 + d3d 负结果定格 + §2.4 落地后新证据成文**：R338 评估确认 L2 深水区无轻量切片后，把散落在 master.md 历史记录（R166-R171）与近轮新材料（R331/R338）中的 L2-d3 状态合并回 RFC 本体（`p1b-l2d3-unified-matcher-identity-bridge-rfc.md` v0.1→v0.2）：① 切片计划表加状态列——d3a ✅[R166 `8d40bb957` 桥基建]/d3b ✅[R167 `5258ab632` 三面归一 + R168 root-hit 特判]/d3c ✅[R170 `0a4146465` compound gate 开通 + R169 `[attr]` 修复]/d3d ⏸️ 回退定格[R171 `8a825479b` 两轮实验 0 改善 +2F——重启前置 = 产物归一路径统一]/d3e ⏸️ 未启动[共用解析器已提取]；② 新增 §2.4 落地后新证据六条——`_zwWrapCached` key 双形态前置检查项[R170]、iframe doc 双工厂树源统一前置[R169]、d3d 负结果与 `:enabled` +2 机制[R171]、R331 identity 反查与本 RFC 桥的**正交面**澄清[A/B 域 vs C/D 域]、QSA 同 turn 返空 = R309 刻意取舍**不属 d3d**[R338 归 L2 主线]、现状锚定测试指引；③ 修订历史 v0.2 + master.md 头部 RFC 关联注记同步。**价值**：L2 主线重启时的设计输入单点化（此前散在 6+ 轮历史记录中），d3d 重启前置明确为「归一路径统一 + iframe 树源统一」两项。零源码改动。commit：见下方
+
 **本轮**: R340 — **M6/DC-7：控制面勘误（零源码改动）——「当前状态」表 DC-7 行从 R64 时点勘误到 R75 全量收口事实，核心缺口清单第 7 条关闭**：重新通读 master.md 历史记录（R57→R78 的 M6 系列切片记录）与代码实况对照，发现控制面两处严重滞后——① 「当前状态」表 DC-7 行停在 R64 时点（「S5q PoC 深度；剩余 = 深度补齐[capture·bubble/Event 构造器/DOMException/weak·finalizer/S1q 复合对象]」），而 R65-R75 已全部落地：capture·bubble 三阶段[R67 `a8fa85b5`]、Event/CustomEvent 构造器[R72]、DOMException 构造器+instanceof[R73 `be431968`]、weak/finalizer 生命周期实验+结论关闭[R74 `4efd76aa`：strong Persistent+reset 换代是唯一正确形态，rquickjs 缺 finalizer 钩子记 TBD]、S1q 复合对象三件套[R69-R71]、whenDefined 真 pending[R75 `4bfa87e3`——R75 定稿「M6 全量收口」]；② 核心缺口清单第 7 条「QuickJS native 完全真空」仍标记开放。**勘误后 DC-7 状态**：前三项（S0q-S5q 原生绑定镜像 V8 / GC 生命周期安全验证 / 双 feature A/B 等价[WPT 双路径对等差 0.02pp，R76]）代码事实满足；第 4 项 default-on 属 M7 改 Mission 级单向门（待用户点名）。同轮基线复核：make test 全量跑（唯一失败 XOpenDisplayFailed 环境项）；webview quickjs **611P**（wiring 断言面）/ engine v8 217 dom_bindings + quickjs 3 PoC 全绿。commit：见下方
 
 **本轮**: R339 — **M3：DC-2 的 QuickJS feature 同页对齐达成（Vue e2e gate 放宽为双引擎，quickjs 下 3/3 全绿）**：DC-2 剩余项「QuickJS feature 同页对齐」评估落地——vue e2e 走 `WebView.run_page_scripts` 引擎中立路径，`#[cfg(all(test, feature = "v8"))]` 是历史保守门；放宽为 `any(v8, quickjs)` 后 **Vue 3/3（mount/reactive+event/reconciliation）在 quickjs 下原样全绿**（1.43s，无一行测试改动）。同轮复核：lit e2e 6/6 + WC e2e 8/8 本就无 gate，在 quickjs 763 全绿矩阵内已覆盖。**DC-2 的 SPA + WC 验收现于 v8/quickjs 双 feature 均验证通过**（DC-7 的「双 feature 行为等价」验收面相应收窄为原生绑定域）。v8 矩阵复跑 3/3 零影响；clippy 双矩阵干净；fmt 无 diff。commit：见下方
@@ -511,6 +513,7 @@
 | 日期 | 轮次 | 证据 | 结果 |
 |------|------|------|------|
 | 2026-08-28 | R332 | normalize childList MO record 双容器修复（part04 `_r184NormArr` 逐步 record + sel 容器合并/移除/record 三件）+ part24 `test_normalize_childlist_mo_records_r332` + evidence/2026-08-28-r332-normalize-mo-records.md | **MutationObserver-childList pending 13→11、normalize 双用例 Pass**（Node-normalize 4P 维持）；MO 全族 fail 集恒等；engine 2471/quickjs 1466 绿 |
+| 2026-08-28 | R341 | L2-d3 RFC v0.2（docs/specs/p1b-l2d3-unified-matcher-identity-bridge-rfc.md：切片状态表 + §2.4 新证据 + 修订历史）+ master.md 头部 RFC 注记同步 | **L2 重启设计输入单点化**（d3a-c 已落/d3d 定格[重启前置 = 归一路径统一 + iframe 树源统一]/d3e 未启动）；零源码改动 |
 | 2026-08-28 | R340 | master.md DC-7 行勘误（R64 时点→R75 全量收口）+ 核心缺口第 7 条关闭 + evidence/2026-08-28-r340-dc7-errata.md | **DC-7 前三项代码事实满足**（S0q-S5q 镜像 V8 / GC 生命周期验证 / 双 feature A/B 对等 0.02pp）；第 4 项 default-on 归 M7 待用户点名；零源码改动轮 |
 | 2026-08-28 | R339 | vue e2e gate 放宽为 any(v8,quickjs)（tests/integration e2e_vue_library.rs）| **DC-2 QuickJS 同页对齐达成**：Vue 3/3 在 quickjs 下全绿（引擎中立路径）；lit 6/6 + WC 8/8 quickjs 已覆盖；v8 矩阵零影响 |
 | 2026-08-28 | R338 | R331 消费面复核（integration 781 + Vue/lit e2e 全绿）+ append 域 identity 探针评估 + part24 `test_append_domain_identity_baseline_r338` | **QSA 同 turn 返空确认为 R309 刻意取舍**（非新缺陷）；identity 统一归 L2 深水区专项；engine 2476/quickjs 1467 绿 |
@@ -1592,6 +1595,7 @@
 
 > 已完成的 milestone/切片记录到 `archive/`。
 
+- R341：M1/L2 **L2-d3 RFC v0.2**（切片状态回填 d3a-c ✅/d3d ⏸️ 回退定格/d3e ⏸️ + §2.4 六条落地后新证据[key 双形态前置/iframe 双工厂/`:enabled` +2 机制/R331 反查正交面/R309 QSA 域边界/现状锚定测试]；L2 重启设计输入单点化；纯文档轮）
 - R340：M6/DC-7 **控制面勘误**（「当前状态」表 DC-7 行 R64→R75 全量收口事实[三阶段 capture/bubble R67/Event 构造器 R72/DOMException R73/weak 结论 R74/复合对象 R69-R71/whenDefined R75]；核心缺口第 7 条「QuickJS native 真空」关闭；DC-7 前三项满足、第 4 项归 M7 待用户点名；零源码改动）→ evidence/2026-08-28-r340-dc7-errata.md
 - R339：M3 **DC-2 QuickJS 同页对齐达成**（vue e2e gate 放宽 any(v8,quickjs)——run_page_scripts 引擎中立路径，quickjs 下 Vue 3/3 原样全绿无测试改动；lit 6/6 + WC 8/8 quickjs 已覆盖[无 gate]；DC-2 验收现于双 feature 均验证；教训：历史 feature 门要核对是否真依赖[引擎中立路径上的 v8-only gate 是保守惯性]）
 - R338：M4/L2 **R331 消费面复核 + append 域评估**（integration 781 + Vue 3/3 + lit/WC 全绿——identity 反查包装零回归；探针实证 append/querySelector/childNodes 三路 identity 一致、QSA 同 turn 返空 = R309 刻意取舍非缺陷；identity 统一归 L2 identity 桥专项确认无轻量切片；现状锚定测试落地）

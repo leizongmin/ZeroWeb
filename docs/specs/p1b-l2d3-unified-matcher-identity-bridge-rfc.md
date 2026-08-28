@@ -1,8 +1,8 @@
 # RFC：P1b L2-d3 统一查询匹配器 + identity 桥（polyfill-live 合一收口设计）
 
-**版本**: v0.1（草案——R165 实证结论的成文化，供后续 rally 轮按切片执行）
-**日期**: 2026-08-22
-**状态**: Draft（rally 自主推进域——纯 polyfill shim 内部重构，kill-switch 无关，不改 Mission）
+**版本**: v0.2（v0.1→v0.2：d3a–d3c 落地进展 + d3d 负结果定格 + R331/R338 新材料合并——2026-08-28 R341）
+**日期**: 2026-08-22（v0.1）/ 2026-08-28（v0.2）
+**状态**: Partially-landed（d3a/d3b/d3c 已落；d3d 元素上下文回退[负结果 R171]；d3e 未启动。doc 上下文已收口 = M1 实用收口点[R171]；全量收口待 L2 主线重启）
 **父 RFC**: `docs/specs/p1b-v8-native-bindings-rfc.md` §3.7 L2（本文件是 L2 的 JS 侧细化）
 **goal**: `docs/goal/js-dom.md` M1（L2 polyfill-live 合一）
 
@@ -151,15 +151,43 @@ fragment QSA）在返回前对**可定位真实节点**的产物调 `_zwBridgeGe
 
 ---
 
+### 2.4 v0.2 增补：落地后新证据（R167–R171 / R331 / R338）
+
+1. **key 双形态**（R170）：`_zwWrapCached` 缓存键原来只认 JSON info 的 `.tag`/`.outer`；
+   gate 直出真实节点后 `.tagName`/`.outerHTML` 形态使 tag 段空键撞车返空壳。归一缓存的
+   键构造必须双形态兼容（`.tag||.tagName`、`.outer||.outerHTML`）——任何后续本树化
+   切片的**前置检查项**。
+2. **iframe doc 双工厂**（R169）：src-iframe 的树/查询走 part05 iframe 工厂，
+   `_makeDetachedDocument` 的 bodyHtml 对 iframe 恒空——树源统一是 element/fragment
+   本树化（d3d 重启）的前置项，单变量实验曾误判其为伪根因（srcdoc 无 src 分支）。
+3. **d3d 负结果**（R171）：element 上下文 compound 全形态本树前置 +2F/0 改善、收缩
+   纯 tag 持平互换——R165 的「902F wrapper 依赖」在 key 修复后**部分幸存**（element
+   消费面对产物形态敏感度高于 doc）。`:enabled` 形态 `querySelector !== QSA[0]` 的
+   归一缓存键命中不同步是 +2 机制。**重启前置 = 产物归一路径统一**。
+4. **R331 identity 反查去重联动**：QSA 归并域（pending handle 子树并入 host 结果）
+   的 identity 双源已由 `_zwQueryWrapIdentity`（R100 反查）+ 归并前置反查去重收口
+   （vue_reconciliation lis:A,B,A,B 两次回归教训）——本 RFC 的桥（C 域真实节点 ↔
+   暴露对象）与 R100 反查（sel ↔ handle）是**两个正交面**：前者归一 C/D 域产物，
+   后者归一 A/B 域产物。d3b 的 `_zwMFindRealNode` 与 R100 反查在查询返回点的组合
+   已覆盖「C 域节点经 host 快照命中」形态。
+5. **QSA 同 turn 返空 = R309 刻意取舍**（R338）：普通 append（Vue mount 形态）域
+   的 QSA 维持 host 快照语义以规避 identity 双源双计。该域的 identity 统一**不属
+   本 RFC d3d**（R309 注记「基底仍有效且 overlay 有 identity 双源风险，维持 host
+   快照语义」），归 L2 主线（polyfill-live 合一 M1 完整方案）——本 RFC 只收
+   C/D 域（detached/fragment/clone 树）的查询面。
+6. **现状锚定测试**：`test_append_domain_identity_baseline_r338`（part24）锚定
+   append/querySelector/childNodes 三路 identity 一致 + QSA host 语义；L2 主线
+   落地后更新断言。
+
 ## 3. 切片计划（每片独立 land）
 
-| 片 | 内容 | 预期 | 验证门 |
-|----|------|------|--------|
-| **d3a** | 桥基建：`_zwNodeBridge` 三函数 + 三个既有真实节点直出点登记（queryBody 直出 / fragment real163 / cloneNode 产物） | **零行为变化**（纯登记） | 全量双路径逐计数一致 + zero-engine 全绿 |
-| **d3b** | 查询产物归一：三查询面返回前 `_zwBridgeGet` | `#id-li-duplicate` 类跨面 identity fail 收口（±数 P，net≥0 才 land） | 全量双路径 net≥0 + ParentNode 文件级 |
-| **d3c** | doc 上下文 compound gate：queryBody 形态门扩到 `_queryTreeByCompound` 全形态（R165 已实测 doc 上下文无回归——`docQ:1` 保持） | doc 上下文 compound 消 JSON 往返 | 同上 |
-| **d3d** | element/fragment 上下文本树化：`_zwMQueryAll`/fragment QSA 对纯 tag+compound 形态以调用元素为根遍历 `_zwMEl` 子树（复用 `_queryTreeByCompound` 语义 + 守卫），产物经桥；R165 的 902F 回归面在此被桥消解（真实节点 = 已登记对象） | element/fragment 查询读活树（R163「查询源与活树内容不同」收口） | 全量双路径 net≥0 + Element-matches 文件级 |
-| **d3e** | 组合器/伪类本树化：element/fragment/doc 上下文的组合器形态改走 part05 `_matchComplexAgainst`（nodeInfo 从各自树构——复用 `_handleSubtreeNodes` 的 DFS+info 构造，抽公共 helper）；attr 其它运算符同步（`_matchAttrOf` 已有） | 查询面 JSON 往返只剩守卫中止回落 | 同上 + traversal 文件级（walker 与查询序一致性） |
+| 片 | 内容 | 预期 | 验证门 | 状态 |
+|----|------|------|--------|------|
+| **d3a** | 桥基建：`_zwNodeBridge` 三函数 + 三个既有真实节点直出点登记（queryBody 直出 / fragment real163 / cloneNode 产物） | **零行为变化**（纯登记） | 全量双路径逐计数一致 + zero-engine 全绿 | ✅ **已落**（R166 `8d40bb957`：`_zwNodeBridgeMap` part03 模块级 + 三登记点 + 5 处树代际 bump 清桥 + part22 三单测） |
+| **d3b** | 查询产物归一：三查询面返回前 `_zwBridgeGet` | `#id-li-duplicate` 类跨面 identity fail 收口（±数 P，net≥0 才 land） | 全量双路径 net≥0 + ParentNode 文件级 | ✅ **已落**（R167 `5258ab632`：`_zwMFindRealNode` 键索引归一 + matches 重写 + `_zwMEl.dispatchEvent` 三阶段链派发；d3b2 bubbles 残留 → R168 `9d62b27fa` root-hit 特判收口） |
+| **d3c** | doc 上下文 compound gate：queryBody 形态门扩到 `_queryTreeByCompound` 全形态（R165 已实测 doc 上下文无回归——`docQ:1` 保持） | doc 上下文 compound 消 JSON 往返 | 同上 | ✅ **已落**（R170 `0a4146465`：`_zwWrapCached` key 双形态兼容 + 组合器守卫；R169 先行修复 `[attr]` 存在性匹配） |
+| **d3d** | element/fragment 上下文本树化：`_zwMQueryAll`/fragment QSA 对纯 tag+compound 形态以调用元素为根遍历 `_zwMEl` 子树（复用 `_queryTreeByCompound` 语义 + 守卫），产物经桥；R165 的 902F 回归面在此被桥消解（真实节点 = 已登记对象） | element/fragment 查询读活树（R163「查询源与活树内容不同」收口） | 全量双路径 net≥0 + Element-matches 文件级 | ⏸️ **回退定格**（R171 `8a825479b`：两轮实验 0 subtest 改善、+2F identity 时序——element 消费面对产物形态敏感度高于 doc；**重启前置 = 产物归一路径统一**；普通 append 域 QSA 同 turn 语义 = R309 刻意取舍[R338 评估]不属本片） |
+| **d3e** | 组合器/伪类本树化：element/fragment/doc 上下文的组合器形态改走 part05 `_matchComplexAgainst`（nodeInfo 从各自树构——复用 `_handleSubtreeNodes` 的 DFS+info 构造，抽公共 helper）；attr 其它运算符同步（`_matchAttrOf` 已有） | 查询面 JSON 往返只剩守卫中止回落 | 同上 + traversal 文件级（walker 与查询序一致性） | ⏸️ 未启动（依赖 d3d；保留共用解析器 `_zwParseCompoundSel` 已提取[R171]） |
 
 每片统一验证序（既有惯例）：
 1. `make test`（test-guard 包裹）
@@ -200,3 +228,4 @@ d3b 依赖 d3a 的登记点，d3d 依赖 d3b 的归一，其余正交）。
 | 版本 | 日期 | 内容 |
 |------|------|------|
 | v0.1 | 2026-08-22 | R165 结论成文化：四对象域盘点 + identity 桥设计 + d3a–d3e 切片计划（js-dom R166） |
+| v0.2 | 2026-08-28 | d3a–d3c 落地状态回填（R166/R167/R168/R170）+ d3d 负结果定格（R171：element 上下文回退、重启前置 = 归一路径统一）+ §2.4 落地后新证据（key 双形态/iframe 双工厂/R331 反查正交面/R309 QSA 域边界/R338 现状锚定）（js-dom R341） |
