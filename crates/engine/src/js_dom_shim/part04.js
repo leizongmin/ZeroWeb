@@ -1471,8 +1471,11 @@
                 "Failed to execute 'appendData' on 'CharacterData': 1 argument required, but only 0 present.");
             }
             if (!handle) return undefined;
-            var nv = _zwTextDataGet(handle, function () { return __zw_get_text_handle(handle); }) + String(s);
+            var _r336cdCurA = _zwTextDataGet(handle, function () { return __zw_get_text_handle(handle); });
+            var _r336cdOldA = _mo_any_wants_char_old(_mo_id(handle, sel)) ? _r336cdCurA : null;
+            var nv = _r336cdCurA + String(s);
             _zwTextDataSet(handle, nv, function () { __zw_set_text_handle(handle, nv); });
+            try { _mo_notify(sel, handle, { type: 'characterData', oldValue: _r336cdOldA, target: _makeProxy(sel, handle) }); } catch (_e336cda) {}
             return undefined;
           };
         }
@@ -1497,7 +1500,11 @@
             // R260（js-dom M4）：live-range 边界调整（spec concept-node-replace-data
             // 末段——proxy 域文本与 plain 域同语义；经 handle 匹配 range 边界容器）。
             try { globalThis.__zwAdjustRangesForData(_makeProxy(sel, handle), o, c, 0); } catch (_eR260d) {}
+            // R336：characterData record（观察者可挂文本节点自身，_mo_id 按 handle 解析；
+            // oldValue = 编辑前数据。WPT MutationObserver-characterData "(2)" 族）。
+            var _r336cdOld = _mo_any_wants_char_old(_mo_id(handle, sel)) ? cur : null;
             _zwTextDataSet(handle, nv, function () { __zw_set_text_handle(handle, nv); });
+            try { _mo_notify(sel, handle, { type: 'characterData', oldValue: _r336cdOld, target: _makeProxy(sel, handle) }); } catch (_e336cd) {}
             return undefined;
           };
         }
@@ -1516,7 +1523,9 @@
             var nv = cur.slice(0, o) + String(s) + cur.slice(o);
             var ins260b = String(s).length;
             try { globalThis.__zwAdjustRangesForData(_makeProxy(sel, handle), o, 0, ins260b); } catch (_eR260i) {}
+            var _r336cdOldI = _mo_any_wants_char_old(_mo_id(handle, sel)) ? cur : null;
             _zwTextDataSet(handle, nv, function () { __zw_set_text_handle(handle, nv); });
+            try { _mo_notify(sel, handle, { type: 'characterData', oldValue: _r336cdOldI, target: _makeProxy(sel, handle) }); } catch (_e336cdi) {}
             return undefined;
           };
         }
@@ -1539,7 +1548,9 @@
             var nv = cur.slice(0, o) + String(s) + cur.slice(o + c);
             // R260：live-range 边界调整（同 delete/insert）。
             try { globalThis.__zwAdjustRangesForData(_makeProxy(sel, handle), o, c, String(s).length); } catch (_eR260rp) {}
+            var _r336cdOldR = _mo_any_wants_char_old(_mo_id(handle, sel)) ? cur : null;
             _zwTextDataSet(handle, nv, function () { __zw_set_text_handle(handle, nv); });
+            try { _mo_notify(sel, handle, { type: 'characterData', oldValue: _r336cdOldR, target: _makeProxy(sel, handle) }); } catch (_e336cdr) {}
             return undefined;
           };
         }
@@ -6534,9 +6545,33 @@
           var _ohVal = value === null ? '' : String(value);
           if (sel && typeof __zw_set_outer_html === 'function') {
             try {
+              // R336：record 归**父**（spec outerHTML algorithm "replace this with
+              // fragment"——childList record 的 target = 父；removed = 被替换的自身
+              // proxy，added = 解析片段。旧 notify 以自身 sel/handle 为 target 且
+              // removed 空，observer 挂父时 miss——WPT "outerHTML mutation"）。
+              var _ohParent = null, _ohPSel = null, _ohPHandle = null;
+              try {
+                _ohParent = _makeProxy(sel, handle).parentNode;
+                if (_ohParent) {
+                  _ohPSel = _ohParent.__zwSelector || null;
+                  _ohPHandle = _ohParent.__zwHandle || null;
+                }
+              } catch (_e336op) {}
+              var _ohSelf = _makeProxy(sel, handle);
               var _ohAdded = _zwFragmentAdded(value);
               __zw_set_outer_html(sel, _ohVal);
+              // 挂父槽（R304 同款）：解析 wrapper 无 handle 时 overlay 的可见性通道。
+              for (var _ohJ0 = 0; _ohJ0 < _ohAdded.length; _ohJ0++) {
+                var _ohN0 = _ohAdded[_ohJ0];
+                if (_ohN0 && !_ohN0.__zwHandle) {
+                  _ohN0._zwSelPendingParent = { parentSel: _ohPSel || null, nextSibling: null };
+                }
+              }
+              // R3031 兼容：自身 target 的 record 保留（观察挂被替换元素自身的形态）。
               _mo_notify(sel, handle, { type: 'childList', addedNodes: _ohAdded, removedNodes: [] });
+              if (_ohPSel || _ohPHandle) {
+                _mo_notify(_ohPSel, _ohPHandle, { type: 'childList', addedNodes: _ohAdded, removedNodes: [_ohSelf] });
+              }
               // R125：outerHTML 替换 = 自身移除——① sel 移除标记（同步脚本内 getElementById/
               // 查询门须立即反映，host 快照未换代仍含旧元素——WPT "remove id attribute via
               // outerHTML"）② 新 id 元素进 pending 查询面（WPT "add id attribute via

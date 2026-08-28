@@ -2085,3 +2085,69 @@ globalThis.__r334e = out.join('|');
         "R334 sel-child move records: cross-parent removed+added pair; internal move keeps sibling fields"
     );
 }
+
+// R336（js-dom M4）：attributes/characterData MO record 补口。
+// ① `Attr.value` setter 的**同值 set**仍发 attributes record（spec `dom-attr-value` =
+// change an attribute，queue 无值等价豁免；R122 幂等护栏曾把同值 set 整体吞掉——
+// MutationObserver-attributes "same id mutation" 挂起根因）。
+// ② handle 文本节点的 CharacterData 四方法（append/delete/insert/replaceData）补
+// characterData record（观察可挂文本节点自身；oldValue 仅 observer 请求时携带——
+// MutationObserver-characterData "(2)" 族挂起根因）。
+// https://dom.spec.whatwg.org/#dom-attr-value
+// https://dom.spec.whatwg.org/#dom-characterdata-deletedata
+#[test]
+fn test_attr_same_value_and_handle_text_records_r336() {
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let mut sandbox = V8Sandbox::with_config(zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    })
+    .unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><p id='n51'>t</p><div id='n71'>CHANN</div></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+    sandbox
+        .execute(
+            r#"
+var out = [];
+// ① 同值 Attr.value set → attributes record（oldValue = 旧值，attributeName = id）。
+(function () {
+  var n51 = document.getElementById('n51');
+  var mo = new MutationObserver(function (mrl) { });
+  mo.observe(n51, { attributes: true, attributeOldValue: true });
+  n51.attributes[0].value = 'n51';
+  var recs = globalThis.__zw_mo_observers[globalThis.__zw_mo_observers.length - 1]._records;
+  var r = recs[recs.length - 1];
+  out.push('attr:recs=' + recs.length + ',name=' + (r && r.attributeName) + ',old=' + (r && r.oldValue));
+})();
+// ② 观察挂 handle 文本节点自身 + deleteData → characterData record（oldValue = 编辑前）。
+(function () {
+  var n71 = document.getElementById('n71');
+  n71.appendChild(document.createTextNode('NNN'));
+  n71.appendChild(document.createTextNode('NGED'));
+  var lastChild = n71.lastChild;
+  var mo = new MutationObserver(function (mrl) { });
+  mo.observe(lastChild, { characterData: true, characterDataOldValue: true });
+  lastChild.deleteData(0, 1);
+  var recs = globalThis.__zw_mo_observers[globalThis.__zw_mo_observers.length - 1]._records;
+  var r = recs[recs.length - 1];
+  out.push('cd:recs=' + recs.length + ',type=' + (r && r.type) + ',old=' + (r && r.oldValue) + ',data=' + lastChild.data);
+})();
+globalThis.__r336e = out.join('|');
+"#,
+        )
+        .unwrap();
+    let out = sandbox.execute("globalThis.__r336e").unwrap().value;
+    assert_eq!(
+        out,
+        "attr:recs=1,name=id,old=n51|cd:recs=1,type=characterData,old=NGED,data=GED",
+        "R336: same-value Attr.value set and handle-text CharacterData edits emit records"
+    );
+}

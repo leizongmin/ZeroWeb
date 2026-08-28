@@ -350,7 +350,24 @@
   (function () {
     var _r122Set = function (v) {
       var s = v == null ? '' : String(v);
-      if (this._r122V === s) return; // 幂等护栏：值未变不传播（防 setAttribute↔绑定 Attr 互写环）
+      // R336：同值 set 仍须发 attributes record（spec `dom-attr-value` setter = change an
+      // attribute，record 的 queue 在 change 步骤——**无值等价豁免**；WPT
+      // MutationObserver-attributes "same id mutation" 期望 oldValue = 旧值 + 回调结算）。
+      // 通知走 ownerElement 的 setAttribute（下方）已带 notify——本处只为同值形态补 record。
+      if (this._r122V === s) {
+        var _r336oe0 = this.ownerElement;
+        if (_r336oe0 && typeof _r336oe0.getAttribute === 'function') {
+          var _r336n0 = this.name != null ? String(this.name) : '';
+          var _r336old0 = _r336oe0.getAttribute(_r336n0);
+          if (typeof _mo_notify === 'function') {
+            try {
+              _mo_notify(_r336oe0.__zwSelector || null, _r336oe0.__zwHandle || null,
+                { type: 'attributes', attributeName: _r336n0, oldValue: _r336old0 });
+            } catch (_e336m0) {}
+          }
+        }
+        return; // 幂等护栏保持（防 setAttribute↔绑定 Attr 互写环）——只补通知不传播
+      }
       this._r122V = s;
       this.textContent = s;
       this.data = s;
