@@ -288,6 +288,15 @@ pub struct LayoutBox {
     /// paint 据此在 stored 路径补 ellipsis（text.rs line-clamp 后处理）。non-stored 路径
     ///（非 Ahem）paint IFC 用空 styles 重跑不 cap → 全量行 → `line_ys.len() > max` 仍可独立触发。
     pub line_clamp_clamped: bool,
+    /// R3768 line-clamp slice 3：跨块盒 clamp 中，预算在该子用尽时该子可见行数上限
+    ///（container 预算余量）。paint 期该子自身样式无 line-clamp（max_lines=None），
+    /// 从此字段取 cap：非 stored 路径 paint IFC 全量行 → 按此 cap 截 glyph + 补 ellipsis。
+    /// stored 路径（inline_layout 已截）不需要（行数已 ≤ cap，line_clamp_clamped 触发）。
+    pub line_clamp_cap: Option<usize>,
+    /// R3768 line-clamp slice 3：跨块盒 clamp 中，位于 clamp point 之后的 in-flow 子盒
+    /// 被整体「跳过」（css-overflow-4：后续盒子不渲染不占位）。几何已清零（height 0 +
+    /// inline_layout 清空），此标志供 paint 跳过整棵子树（防红/背景照绘）。
+    pub line_clamp_hidden: bool,
     /// 文本节点的 font_size 映射（来自 layout engine 的 IFC 运行）。
     ///
     /// paint 系统在运行空 styles IFC 后，使用这些正确的 font_size 值
@@ -493,6 +502,8 @@ impl Default for LayoutBox {
             inline_layout: None,
             inline_layout_width: 0.0,
             line_clamp_clamped: false,
+            line_clamp_cap: None,
+            line_clamp_hidden: false,
             text_node_font_sizes: NodeIdMap::default(),
             text_node_is_ahem: NodeIdMap::default(),
             text_node_letter_spacing: NodeIdMap::default(),

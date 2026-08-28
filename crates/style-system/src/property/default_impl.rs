@@ -320,6 +320,7 @@ impl Default for ComputedStyle {
             text_wrap: TextWrapComputedValue::Wrap,
             hyphens: HyphensComputedValue::None,
             line_clamp: LineClampComputedValue::None,
+            line_clamp_legacy_webkit: false,
 
             // Background Image / Position / Repeat / Size / Attachment / Clip / Origin
             background_image: vec![],

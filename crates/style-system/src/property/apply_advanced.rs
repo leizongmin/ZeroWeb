@@ -1583,13 +1583,26 @@ pub fn apply_advanced_property_value(style: &mut ComputedStyle, property: &str, 
                 return true;
             }
         }
-        "line-clamp" | "-webkit-line-clamp" => {
+        "line-clamp" => {
             if let Some(v) = values::parse_line_clamp(value) {
                 style.line_clamp = match v {
                     zero_css_parser::values::LineClampValue::None => LineClampComputedValue::None,
                     zero_css_parser::values::LineClampValue::Count(n) => LineClampComputedValue::Count(n),
                     zero_css_parser::values::LineClampValue::Auto => LineClampComputedValue::Auto,
                 };
+                return true;
+            }
+        }
+        // R3768：legacy `-webkit-line-clamp` 别名——值语法同 line-clamp，但附 legacy
+        // 标记（-webkit-box 语义下跨块 clamp pass 跳过，见 postprocess）。
+        "-webkit-line-clamp" => {
+            if let Some(v) = values::parse_line_clamp(value) {
+                style.line_clamp = match v {
+                    zero_css_parser::values::LineClampValue::None => LineClampComputedValue::None,
+                    zero_css_parser::values::LineClampValue::Count(n) => LineClampComputedValue::Count(n),
+                    zero_css_parser::values::LineClampValue::Auto => LineClampComputedValue::Auto,
+                };
+                style.line_clamp_legacy_webkit = true;
                 return true;
             }
         }

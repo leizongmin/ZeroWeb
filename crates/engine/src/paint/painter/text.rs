@@ -1862,7 +1862,11 @@ impl super::Painter {
                 }
 
                 // CSS line-clamp 后处理：限制可见行数并在截断处添加省略号
-                if let Some(max) = max_lines {
+                // R3768：跨块盒 clamp 中间子（line_clamp_cap Some(n)）——容器预算在该子
+                // 用尽，行数 cap = 余量 n（paint 自身 style 无 line-clamp，max_lines
+                // 为 None，须从此标志取）。
+                let max = max_lines.or(box_node.line_clamp_cap.map(|n| n as u32));
+                if let Some(max) = max {
                     let glyphs = &self.primitives.glyphs;
                     let fragment_glyphs = &glyphs[glyphs_before_fragments..];
 

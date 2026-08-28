@@ -879,73 +879,9 @@ impl InlineFormattingContext {
         }
     }
 
-    /// R3766 `line-clamp: auto` 的截断行数：块尺寸约束（px）/ used line-height 向下取整。
-    ///
-    /// css-overflow-4：auto 的 clamp 点由块尺寸约束决定——约束 = max(min-height,
-    /// max-height)（auto-013/014：min>max 时取 max，min<max 不变），height definite 时
-    /// 也构成约束（auto-005）取 min。约束不可测（auto/%）→ None（不截断）。
+    /// R3766/R3768：`line-clamp: auto` 截断行数（独立 fn，供 postprocess 跨块 clamp 共用）。
     fn auto_clamp_line_count(&self, style: &ComputedStyle) -> Option<usize> {
-        use zero_css_parser::values::LengthValue;
-        let font_size = resolve_inline_font_size_px(style) as f64;
-        let lh_px = self.container_used_line_height(style, font_size)?;
-        let resolve_definite = |v: &LengthValue| -> Option<f64> {
-            match v {
-                LengthValue::Auto
-                | LengthValue::Percentage(_)
-                | LengthValue::MinContent
-                | LengthValue::MaxContent
-                | LengthValue::FitContent(_) => None,
-                LengthValue::Px(p) if *p == f64::INFINITY => None,
-                other => {
-                    let px = zero_style_system::computed::resolve_length(other, font_size, None, None);
-                    px.is_finite().then_some(px)
-                }
-            }
-        };
-        // R3766：lh 单位按容器自身 used line-height 精确解析（css-values-4：lh = 元素
-        // used line-height；通用 resolve_length 无此上下文，此处覆盖 Lh 臂）。
-        let resolve_with_lh = |v: &LengthValue| -> Option<f64> {
-            match v {
-                LengthValue::Lh(n) => Some(*n * lh_px),
-                other => resolve_definite(other),
-            }
-        };
-        let max_h = resolve_with_lh(&style.max_height);
-        let min_h = resolve_with_lh(&style.min_height);
-        let height = resolve_with_lh(&style.height);
-        let constraint = match (max_h, min_h, height) {
-            (None, None, None) => return None,
-            (max_h, min_h, height) => {
-                let mut c = max_h.unwrap_or(0.0).max(min_h.unwrap_or(0.0));
-                if let Some(h) = height {
-                    c = if max_h.is_none() && min_h.is_none() {
-                        h
-                    } else {
-                        c.min(h)
-                    };
-                }
-                c
-            }
-        };
-        if constraint < 0.0 {
-            return None;
-        }
-        let n = (constraint / lh_px).floor();
-        // R3766b：n=0 合法（max-height:0 / <1lh → 0 行可见，auto-011/037）。
-        (n >= 0.0).then_some(n as usize)
-    }
-
-    /// 容器自身的 used line-height（px）。`line-height` 计算值解析：Length 直接解析
-    ///（Px 精确；Lh 单位自引用 → 按近似 font_size×1.2）、Number 系数 × font-size、
-    /// Normal 按非 Ahem 常数比（与 text_metrics NORMAL_LINE_HEIGHT_RATIO 同源近似）。
-    fn container_used_line_height(&self, style: &ComputedStyle, font_size: f64) -> Option<f64> {
-        use zero_style_system::property::types::LineHeightValue;
-        let px = match &style.line_height {
-            LineHeightValue::Number(n) => font_size * *n,
-            LineHeightValue::Length(l) => zero_style_system::computed::resolve_length(l, font_size, None, None),
-            LineHeightValue::Normal => font_size * 1.164,
-        };
-        (px.is_finite() && px > 0.0).then_some(px)
+        line_clamp_auto_max_lines(style)
     }
 
     /// R2431 line-clamp：把 `self.lines` 夹到 `n` 行并置 `clamped`（n>0 且行数>n 时截断）。
@@ -1962,3 +1898,73 @@ fn ascent_ratio_lookup(overrides: &HashMap<NodeId, f32>, node_id: NodeId, is_ahe
 
 #[cfg(test)]
 mod tests;
+
+/// R3766：`line-clamp: auto` 的截断行数（css-overflow-4）。
+///
+/// 块尺寸约束 = max(min-height, max-height)（auto-013/014：min>max 取 max、min<max 不变），
+/// height definite 时也构成约束（auto-005）取 min；行数 = floor(约束 / used line-height)。
+/// 约束不可测（auto/%）→ None（不截断）；n=0 合法（max-height:0 / <1lh，auto-011/037）。
+/// R3768：供 IFC layout 与跨块盒 clamp postprocess 双方共用（同一数学保证一致性）。
+pub(crate) fn line_clamp_auto_max_lines(style: &ComputedStyle) -> Option<usize> {
+    use zero_css_parser::values::LengthValue;
+    let font_size = resolve_inline_font_size_px(style) as f64;
+    let lh_px = container_used_line_height_px(style, font_size)?;
+    let resolve_definite = |v: &LengthValue| -> Option<f64> {
+        match v {
+            LengthValue::Auto
+            | LengthValue::Percentage(_)
+            | LengthValue::MinContent
+            | LengthValue::MaxContent
+            | LengthValue::FitContent(_) => None,
+            LengthValue::Px(p) if *p == f64::INFINITY => None,
+            other => {
+                let px = zero_style_system::computed::resolve_length(other, font_size, None, None);
+                px.is_finite().then_some(px)
+            }
+        }
+    };
+    // lh 单位按容器自身 used line-height 精确解析（css-values-4：lh = 元素 used
+    // line-height；通用 resolve_length 无此上下文，此处覆盖 Lh 臂）。
+    let resolve_with_lh = |v: &LengthValue| -> Option<f64> {
+        match v {
+            LengthValue::Lh(n) => Some(*n * lh_px),
+            other => resolve_definite(other),
+        }
+    };
+    let max_h = resolve_with_lh(&style.max_height);
+    let min_h = resolve_with_lh(&style.min_height);
+    let height = resolve_with_lh(&style.height);
+    let constraint = match (max_h, min_h, height) {
+        (None, None, None) => return None,
+        (max_h, min_h, height) => {
+            let mut c = max_h.unwrap_or(0.0).max(min_h.unwrap_or(0.0));
+            if let Some(h) = height {
+                c = if max_h.is_none() && min_h.is_none() {
+                    h
+                } else {
+                    c.min(h)
+                };
+            }
+            c
+        }
+    };
+    if constraint < 0.0 {
+        return None;
+    }
+    let n = (constraint / lh_px).floor();
+    // n=0 合法（max-height:0 / <1lh → 0 行可见，auto-011/037）。
+    (n >= 0.0).then_some(n as usize)
+}
+
+/// 容器自身的 used line-height（px）。`line-height` 计算值解析：Length 直接解析
+///（Px 精确；Lh 单位自引用 → 按近似 font_size×1.2）、Number 系数 × font-size、
+/// Normal 按非 Ahem 常数比（与 text_metrics NORMAL_LINE_HEIGHT_RATIO 同源近似）。
+pub(crate) fn container_used_line_height_px(style: &ComputedStyle, font_size: f64) -> Option<f64> {
+    use zero_style_system::property::types::LineHeightValue;
+    let px = match &style.line_height {
+        LineHeightValue::Number(n) => font_size * *n,
+        LineHeightValue::Length(l) => zero_style_system::computed::resolve_length(l, font_size, None, None),
+        LineHeightValue::Normal => font_size * 1.164,
+    };
+    (px.is_finite() && px > 0.0).then_some(px)
+}

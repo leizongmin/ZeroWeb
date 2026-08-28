@@ -1933,6 +1933,184 @@ pub(super) fn apply_block_relative_percent_insets(
     walk(box_node, Some(viewport_height), false, styles, strict_r711);
 }
 
+/// R3768：跨块盒 line-clamp（css-overflow-4 §line-clamp）。
+///
+/// R2431 的行数截断只作用于**单个 IFC**（`InlineFormattingContext::apply_line_clamp_cap`）；
+/// clamp 容器含 **block 子**时（line-clamp-008：`<div class=clamp>` 下 5 行 `.pre` div +
+/// `.red` div + table …），clamp 点跨多个子盒——须累计各子的行数、在预算用尽的子内截断、
+/// 并把后续 in-flow 子盒整体「跳过」（不渲染不占位，其内 abspos 随 CB 一起消失）。
+///
+/// 机制（在各子 IFC 终化后运行）：
+/// 1. 容器样式 `line-clamp` = Count(n) → 预算 n；Auto → R3766 块尺寸约束数学（共享
+///    `line_clamp_auto_max_lines`）。
+/// 2. 按序遍历 in-flow block 子（跳过 abspos/fixed/float——非 in-flow 不计数不隐藏）：
+///    叶子文本盒消耗 `inline_layout.len()` 行预算；超预算时截断该盒行数到余量并置
+///    `line_clamp_clamped`（paint stored 路径据此补 ellipsis），其后所有 in-flow 兄弟
+///    递归标记 `line_clamp_hidden`（几何清零 + inline_layout 清空 + paint 跳过整子树）。
+///    嵌套 block 子递归下传剩余预算。
+/// 3. 容器 `height` 为 auto 时收缩到可见内容 extent（隐藏盒高度已清零自然塌缩）。
+///
+/// env `ZW_CROSS_BLOCK_CLAMP=0` 关闭（kill-switch）。仅 horizontal-tb。
+pub(super) fn apply_cross_block_line_clamp(root: &mut LayoutBox, styles: &HashMap<NodeId, ComputedStyle>) {
+    use zero_css_parser::values::{DisplayValue, FloatValue, LengthValue};
+    if std::env::var("ZW_CROSS_BLOCK_CLAMP").as_deref() == Ok("0") {
+        return;
+    }
+    fn limit_of(style: &ComputedStyle) -> Option<usize> {
+        match &style.line_clamp {
+            zero_style_system::property::types::LineClampComputedValue::Count(n) => Some(*n as usize),
+            zero_style_system::property::types::LineClampComputedValue::Auto => {
+                crate::inline::line_clamp_auto_max_lines(style)
+            }
+            _ => None,
+        }
+    }
+    fn is_block_child(style: Option<&ComputedStyle>) -> bool {
+        style.is_some_and(|s| {
+            matches!(
+                s.display,
+                DisplayValue::Block | DisplayValue::Flow | DisplayValue::FlowRoot | DisplayValue::ListItem
+            )
+        })
+    }
+    fn hide_subtree(b: &mut LayoutBox) {
+        b.line_clamp_hidden = true;
+        b.width = 0.0;
+        b.height = 0.0;
+        b.content_width = 0.0;
+        b.content_height = 0.0;
+        b.inline_layout = None;
+        for c in &mut b.children {
+            hide_subtree(c);
+        }
+    }
+    // 返回是否已耗尽预算（后续兄弟须隐藏）。
+    fn walk_children(b: &mut LayoutBox, styles: &HashMap<NodeId, ComputedStyle>, remaining: &mut usize) -> bool {
+        let child_count = b.children.len();
+        let mut exhausted = false;
+        for idx in 0..child_count {
+            let (is_in_flow_block, has_lines) = {
+                let c = &b.children[idx];
+                let style = c.node_id.and_then(|id| styles.get(&id));
+                let in_flow =
+                    !c.is_absolute && !c.is_fixed && matches!(c.float, FloatValue::None) && is_block_child(style);
+                (in_flow, c.inline_layout.as_ref().map_or(0, |l| l.len()))
+            };
+            if !is_in_flow_block {
+                if exhausted {
+                    hide_subtree(&mut b.children[idx]);
+                }
+                continue;
+            }
+            if exhausted {
+                hide_subtree(&mut b.children[idx]);
+                continue;
+            }
+            let has_block_grandchildren = {
+                let c = &b.children[idx];
+                c.children.iter().any(|g| {
+                    let gs = g.node_id.and_then(|id| styles.get(&id));
+                    !g.is_absolute && !g.is_fixed && matches!(g.float, FloatValue::None) && is_block_child(gs)
+                })
+            };
+            if has_block_grandchildren {
+                exhausted = walk_children(&mut b.children[idx], styles, remaining);
+                if exhausted {
+                    // 该子的后续兄弟全部隐藏（下一轮循环 idx+1.. 时处理）。
+                    continue;
+                }
+            } else {
+                // 行数来源：stored IFC 行数；非 stored（paint 重跑 IFC，inline_layout
+                // 为 None）按 content_height / used line-height 推导（.pre 等纯文本块
+                // 行高一致，n = round(h/lh)）。R3768。
+                let container_style = b.node_id.and_then(|id| styles.get(&id));
+                let lh = container_style
+                    .and_then(|s| {
+                        let fs = crate::inline::container_used_line_height_px(
+                            s,
+                            zero_style_system::computed::resolve_length(&s.font_size, 16.0, None, None),
+                        )?;
+                        Some(fs as f32)
+                    })
+                    .unwrap_or(19.2);
+                let lines = if has_lines > 0 {
+                    has_lines
+                } else {
+                    let c = &b.children[idx];
+                    ((c.content_height / lh).round() as usize).max(if c.content_height > 0.5 { 1 } else { 0 })
+                };
+                if lines > *remaining {
+                    let c = &mut b.children[idx];
+                    // stored 路径：直接截行；非 stored：置 line_clamp_cap 供 paint 期
+                    // 截 glyph + ellipsis，并把盒高收缩到可见行数（防占位/溢出红字）。
+                    if has_lines > 0
+                        && let Some(l) = &mut c.inline_layout
+                    {
+                        l.truncate(*remaining);
+                    }
+                    c.line_clamp_cap = Some(*remaining);
+                    c.line_clamp_clamped = true;
+                    let visible_h = *remaining as f32 * lh;
+                    if (c.height - visible_h).abs() > 0.5 {
+                        let delta = c.height - visible_h;
+                        c.height = visible_h;
+                        c.content_height = (c.content_height - delta).max(0.0);
+                    }
+                    exhausted = true;
+                } else {
+                    *remaining -= lines;
+                }
+            }
+        }
+        exhausted
+    }
+    fn walk(b: &mut LayoutBox, styles: &HashMap<NodeId, ComputedStyle>) {
+        for c in &mut b.children {
+            walk(c, styles);
+        }
+        let Some(id) = b.node_id else { return };
+        let Some(style) = styles.get(&id) else { return };
+        if !matches!(style.writing_mode, zero_style_system::WritingModeValue::HorizontalTb) {
+            return;
+        }
+        // R3768 范围限定：legacy `-webkit-line-clamp` 跳过——-webkit-box 语义（ZW 无
+        // -webkit-box display，display 声明被丢弃回退 block）与 css-overflow-4 跨块累计
+        // clamp 不同（webkit-line-clamp-008/009 的 ref 为不 clamp 全内容，误 clamp 反退）。
+        if style.line_clamp_legacy_webkit {
+            return;
+        }
+        let Some(limit) = limit_of(style) else { return };
+        // R3768 范围限定：flex/grid 容器跳过（-webkit-box legacy 语义 = flow-root 化 +
+        // 子项堆叠后再 clamp，ZW 未做该转换，flex 几何下跨块隐藏产生错误结果——
+        // webkit-line-clamp-008 曾由本 pass 误伤回归）。
+        if matches!(
+            style.display,
+            DisplayValue::Flex | DisplayValue::InlineFlex | DisplayValue::Grid | DisplayValue::InlineGrid
+        ) {
+            return;
+        }
+        // 自身 IFC 已由 R2431 cap 过（容器有直接 inline 文本时），此处只处理跨块预算。
+        let mut remaining = limit;
+        let exhausted = walk_children(b, styles, &mut remaining);
+        if exhausted && style.height == LengthValue::Auto && b.declared_height_auto {
+            // 收缩容器到可见内容 extent（隐藏盒已清零，max 取可见子底边）。
+            let pb = b.padding_top + b.padding_bottom + b.border_top + b.border_bottom;
+            let extent = b
+                .children
+                .iter()
+                .filter(|c| !c.line_clamp_hidden)
+                .map(|c| c.y + c.height)
+                .fold(0.0f32, f32::max);
+            let new_content = extent.max(0.0);
+            if (new_content - b.content_height).abs() > 0.5 {
+                b.content_height = new_content;
+                b.height = new_content + pb;
+            }
+        }
+    }
+    walk(root, styles);
+}
+
 /// 将 OverflowValue 转换为 OverflowClip。
 pub(super) fn convert_overflow_to_clip(value: &OverflowValue) -> OverflowClip {
     match value {

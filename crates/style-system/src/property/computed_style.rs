@@ -512,6 +512,10 @@ pub struct ComputedStyle {
     pub hyphens: HyphensComputedValue,
     /// line-clamp 属性。
     pub line_clamp: LineClampComputedValue,
+    /// R3768：line-clamp 值是否来自 legacy `-webkit-line-clamp` 别名。legacy -webkit-box
+    /// 语义（逐 flex item clamp，与本仓跨块累计 clamp 不同）下跨块 pass 跳过，避免
+    /// webkit-line-clamp-008/009 类用例被误 clamp（其 ref 为不 clamp 全内容）。
+    pub line_clamp_legacy_webkit: bool,
 
     // ── Background Image / Position / Repeat / Size / Attachment ──
     /// background-image 属性（支持多图层，CSS 规范渲染顺序为逆序）。

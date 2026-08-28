@@ -888,6 +888,12 @@ impl LayoutEngine {
         // 仅根传视口高度作包含块；后代经 my_definite_content_height 链传播。
         clamp_percentage_max_height(&mut root_box, Some(self.viewport_height), styles);
 
+        // 12.x R3768：跨块盒 line-clamp（css-overflow-4）。clamp 容器含 block 子时累计
+        // 各子 IFC 行数定位 clamp 点、超预算子内截断、后续 in-flow 子盒跳过（几何清零 +
+        // line_clamp_hidden，paint 据此跳过整子树）。须在各子 IFC 终化（compute_final_inline_
+        // layouts）与 R109 回填之后（inline_layout 行几何已终态）。
+        apply_cross_block_line_clamp(&mut root_box, styles);
+
         // 12.7 后处理（R1544 Phase 2）：vertical-rl/lr 容器的 block-level in-flow 子用
         // native block-flow 重定位（rl 右到左 / lr 左到右，同 y），并修正容器 block-size
         //（物理 width = Σ 子宽）。**须在所有 HorizontalTb 语义的兄弟位移/高度调整之后**
@@ -1596,6 +1602,8 @@ impl LayoutEngine {
             inline_layout: None,
             inline_layout_width: 0.0,
             line_clamp_clamped: false,
+            line_clamp_cap: None,
+            line_clamp_hidden: false,
             text_node_font_sizes: Default::default(),
             text_node_is_ahem: Default::default(),
             text_node_letter_spacing: Default::default(),

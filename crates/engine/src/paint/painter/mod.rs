@@ -699,6 +699,13 @@ impl Painter {
         if box_node.node_id.is_some_and(|id| self.paint_skip_nodes.contains(&id)) {
             return;
         }
+
+        // R3768：跨块盒 line-clamp 中被「跳过」的 in-flow 子盒（clamp point 之后）——
+        // 布局期几何已清零并标记，paint 整子树跳过（否则其背景/边框/文本照绘，如
+        // line-clamp-008 的 `.red` 盒与 table）。
+        if box_node.line_clamp_hidden {
+            return;
+        }
         let abs_x = offset_x + box_node.x;
         let abs_y = offset_y + box_node.y;
 
