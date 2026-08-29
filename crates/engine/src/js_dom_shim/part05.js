@@ -2512,6 +2512,28 @@
         if (typeof _r181Ctor === 'function') win[_r181Table[_r181Tag]] = _r181Ctor;
       }
     } catch (_e181w) {}
+    // R356（js-dom M1 L2-d3d-r2 前置切片）：iframe realm 的 **timer 面**——
+    // 子文档脚本（common.js 的 `setTimeoutToWindow`、事件时序用例的定时延迟）
+    // 经 iframe window 调 setTimeout/clearTimeout，旧 win 无此名 "not a
+    // function" 静默丢失（脚本 try/catch 吞掉——定时回调永不执行）。polyfill
+    // 单事件循环：转发主 window 的记录式 stub（`__zw_setTimeout` 记录 id/at，
+    // runner probe 循环按真实时间 fire；与 part01 全局 setTimeout 同一 pending
+    // 队列），回调在主 realm 执行（iframe 脚本经形参 window 访问本 realm 面）。
+    // https://html.spec.whatwg.org/multipage/timers-and-user-prompts.html#timers
+    win.setTimeout = function (fn356, delay356) {
+      if (typeof globalThis.setTimeout !== 'function') return null;
+      return globalThis.setTimeout(fn356, delay356);
+    };
+    win.clearTimeout = function (handle356) {
+      if (typeof globalThis.clearTimeout === 'function') globalThis.clearTimeout(handle356);
+    };
+    win.setInterval = function (fn356i, delay356i) {
+      if (typeof globalThis.setInterval !== 'function') return null;
+      return globalThis.setInterval(fn356i, delay356i);
+    };
+    win.clearInterval = function (handle356i) {
+      if (typeof globalThis.clearInterval === 'function') globalThis.clearInterval(handle356i);
+    };
     win.window = win;
     win.self = win;
     win.addEventListener = function (type, fn) {

@@ -2252,3 +2252,55 @@ globalThis.__r338e = 'appendSame=' + (appended === btn)
         "R338 append-domain identity baseline: append/querySelector/childNodes agree on identity"
     );
 }
+
+/// R356（js-dom M1 L2-d3d-r2 前置切片）：iframe realm 的 timer 面——`_zwMakeIframeWin`
+/// 补 setTimeout/clearTimeout/setInterval/clearInterval 转发主 window 的记录式 stub。
+/// 旧 win 无此名：子文档脚本（WPT common.js `setTimeoutToWindow`、事件时序用例）
+/// 经 iframe window 调 setTimeout 落 "not a function" 被脚本 try/catch 吞——定时回调
+/// 永不执行。转发目标 = `globalThis.setTimeout`（part01 记录式 stub：host
+/// `__zw_setTimeout` 记录 id/at → runner probe 循环 fire；无 host → _defer 微任务）。
+/// https://html.spec.whatwg.org/multipage/timers-and-user-prompts.html#timers
+#[test]
+fn test_iframe_realm_timer_surface_r356() {
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let mut sandbox = V8Sandbox::with_config(zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    })
+    .unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> =
+        Arc::new(Mutex::new("<html><body></body></html>".to_string()));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+    sandbox
+        .execute(
+            "var ifr = document.createElement('iframe');\
+             document.body.appendChild(ifr);\
+             var win = ifr.contentWindow;\
+             var types = [typeof win.setTimeout, typeof win.clearTimeout,\
+               typeof win.setInterval, typeof win.clearInterval].join(',');\
+             var fired = 'no';\
+             win.setTimeout(function () { fired = 'yes'; }, 0);\
+             globalThis.__r356e = types;\
+             globalThis.__r356f = 'pending';\
+             win.setTimeout(function () { globalThis.__r356f = 'yes'; }, 0);",
+        )
+        .unwrap();
+    let out = sandbox.execute("globalThis.__r356e").unwrap().value;
+    assert_eq!(
+        out, "function,function,function,function",
+        "R356 iframe realm timer surface: win.setTimeout/clearTimeout/setInterval/clearInterval 四件转发可用"
+    );
+    // 微任务 checkpoint 在 execute 返回后派发（_defer 回调落第二次 execute 的
+    // globalThis 读点前）——fire 断言单独读。
+    let fired = sandbox.execute("globalThis.__r356f").unwrap().value;
+    assert_eq!(
+        fired, "yes",
+        "R356 win.setTimeout 回调经主 stub 微任务链可执行"
+    );
+}

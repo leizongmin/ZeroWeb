@@ -1,8 +1,8 @@
 # RFC：P1b L2-d3 统一查询匹配器 + identity 桥（polyfill-live 合一收口设计）
 
-**版本**: v0.3（v0.2→v0.3：§6 L2 深水区专项总装——R350–R353 性能证据入册 + d3 重启路线切片分解——2026-08-29 R354）
+**版本**: v0.4（v0.3→v0.4：d3d-r2 达成裁定 + iframe realm timer 子片——探针普查确认树源前提已消、d3d-r3 两前置均满足——2026-08-29 R356）
 **日期**: 2026-08-22（v0.1）/ 2026-08-28（v0.2）/ 2026-08-29（v0.3）
-**状态**: Partially-landed（d3a/d3b/d3c 已落；d3d 元素上下文回退[负结果 R171，重启路线见 §6 路线 A]；d3e 未启动。doc 上下文已收口 = M1 实用收口点[R171]；全量收口按 §6 总装推进）
+**状态**: Partially-landed（d3a/d3b/d3c/d3d-r1 已落；**d3d-r2 达成**[R356 探针裁定：树源前提已由 R296–R310 收口]；d3d-r3 重启条件满足未启动；d3e 未启动。doc 上下文已收口 = M1 实用收口点[R171]；全量收口按 §6 总装推进）
 **父 RFC**: `docs/specs/p1b-v8-native-bindings-rfc.md` §3.7 L2（本文件是 L2 的 JS 侧细化）
 **goal**: `docs/goal/js-dom.md` M1（L2 polyfill-live 合一）
 
@@ -250,7 +250,7 @@ d3b 依赖 d3a 的登记点，d3d 依赖 d3b 的归一，其余正交）。
 | 片 | 内容 | 前置 | 验证门 |
 |----|------|------|--------|
 | **d3d-r1 产物归一路径统一** | element/fragment 查询的**归一缓存键构造**统一为单一 helper（消 R171 的 `:enabled` +2 时序机制——两路径键命中不同步的根因）；key 双形态兼容[§2.4-1]纳入 helper | 无（纯重构，行为等价） | 全量双路径逐计数一致 + Element-matches 文件级 |
-| **d3d-r2 iframe 树源统一** | part05 iframe 工厂与 `_makeDetachedDocument` 的 bodyHtml 空态收口[§2.4-2]（src-iframe 树/查询单一来源） | d3d-r1 | 同上 + case/createElementNS 文件级 |
+| **d3d-r2 iframe 树源统一** | part05 iframe 工厂与 `_makeDetachedDocument` 的 bodyHtml 空态收口[§2.4-2]（src-iframe 树/查询单一来源） | d3d-r1 | 同上 + case/createElementNS 文件级 | ✅ **达成（R356 裁定：探针普查确认树源分裂主体已由 R296–R310 历史切片收口——iframe doc 经 `doc.body.innerHTML` 落 detached-doc 工厂同源管线，compound/组合器/identity/traverse 探针全绿；原 R169「srcdoc 0 命中」前提不复现。附带子片：iframe realm timer 面四件转发 land）** |
 | **d3d-r3 element/fragment 本树化重启** | `_zwMQueryAll`/fragment QSA 纯 tag+compound 以调用元素为根遍历（复用 `_queryTreeByCompound` + 守卫），产物经桥 | d3d-r1 + d3d-r2 | 全量双路径 net≥0 + Element-matches/`#id-li-duplicate` 文件级 |
 | **d3e 组合器本树化** | 组合器形态走 part05 `_matchComplexAgainst`（nodeInfo 从各自树构）；attr 其它运算符同步 | d3d-r3 | 同上 + traversal 文件级 |
 
@@ -290,3 +290,4 @@ zero-engine` + fmt + clippy（含 quickjs 矩阵）→ 单测带 identity/形态
 | v0.1 | 2026-08-22 | R165 结论成文化：四对象域盘点 + identity 桥设计 + d3a–d3e 切片计划（js-dom R166） |
 | v0.2 | 2026-08-28 | d3a–d3c 落地状态回填（R166/R167/R168/R170）+ d3d 负结果定格（R171：element 上下文回退、重启前置 = 归一路径统一）+ §2.4 落地后新证据（key 双形态/iframe 双工厂/R331 反查正交面/R309 QSA 域边界/R338 现状锚定）（js-dom R341） |
 | v0.3 | 2026-08-29 | **L2 深水区专项总装（§6 新增）**：R350–R353 四轮性能证据入册（E1 adjust 扫描 0.35ms/条形态依赖 / E2 parentNode host 往返 / E3 R98 78µs / E4 游离堆积查询）→ 切片总装（路线 A = d3d-r1 归一路径统一 → d3d-r2 iframe 树源 → d3d-r3 本树化重启 → d3e；路线 B = P1–P3 性能片随 A 接续）；边界重申（R309 QSA 域/dataChange 尾部不再独立切片）（js-dom R354） |
+| v0.4 | 2026-08-29 | **d3d-r2 达成裁定 + timer 子片（§3 表状态回填）**：R356 开工探针普查（12 个 WPT 同构临时 fixture）实证 iframe 工厂域 compound/组合器/identity/traverse 全绿——R169 的「srcdoc 0 命中 + bodyHtml:0」前提已被 R296–R310 历史切片消解，d3d-r2「树源统一」目标判定达成（范围重裁定）；附带 land iframe realm timer 面四件转发（`_zwMakeIframeWin` → part01 记录式 stub）。**d3d-r3 两前置（d3d-r1 + d3d-r2）均满足**（js-dom R356） |
