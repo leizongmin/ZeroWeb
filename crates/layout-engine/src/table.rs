@@ -1052,6 +1052,31 @@ fn cell_float_aware_content_height(cell_box: &LayoutBox) -> f32 {
 /// struct-check FAIL：caption & thead 11913px²）。caption-side:bottom 由调用方 post-processing
 /// 移到表底，此处只累计非-bottom caption 高度。供 [`position_cells`]（cell + 表高）与
 /// [`update_row_group_positions`]（行组盒 y）一致偏移共用。
+/// R3813：caption 的垂直 margin 计入表内 extents（CSS Tables §17.1.1：caption margin
+/// 随 caption 占位）。margin-applies-to-015：abspos wrapper 内 caption margin 50 →
+/// wrapper 高差 50（ZW 290 vs chromium 340）——caption margin-bottom 未计入表高。
+/// 返回 (top_caption_mb, bottom_caption_mt)。
+fn caption_vertical_margins(table_box: &LayoutBox, styles: &HashMap<NodeId, ComputedStyle>) -> (f32, f32) {
+    use zero_style_system::property::CaptionSideValue;
+    let mut top_mb = 0.0f32;
+    let mut bottom_mt = 0.0f32;
+    for c in &table_box.children {
+        if let Some(id) = c.node_id
+            && let Some(s) = styles.get(&id)
+            && s.display == DisplayValue::TableCaption
+        {
+            let mt = resolve_table_used_length(&s.margin_top, s).unwrap_or(0.0);
+            let mb = resolve_table_used_length(&s.margin_bottom, s).unwrap_or(0.0);
+            if matches!(s.caption_side, CaptionSideValue::Bottom) {
+                bottom_mt += mt;
+            } else {
+                top_mb += mb;
+            }
+        }
+    }
+    (top_mb, bottom_mt)
+}
+
 fn top_caption_extent(table_box: &LayoutBox, styles: &HashMap<NodeId, ComputedStyle>) -> f32 {
     use zero_style_system::property::CaptionSideValue;
     table_box
@@ -1459,8 +1484,12 @@ fn position_cells(
         row_y += row_height + if row_collapsed { 0.0 } else { spacing_y };
     }
 
+    // R3813：top-caption 的 margin-bottom 计入表内总高（CSS Tables §17.1.1 caption
+    // margin 随 caption 占位；margin-applies-to-015：caption mb 50 未计入 → abspos
+    // wrapper shrink-wrap 矮 50）。bottom-caption 的 margin-top 由其后处理补。
+    let (top_caption_mb, _bottom_caption_mt) = caption_vertical_margins(table_box, styles);
     // 后处理：应用 min-height/max-height/min-width/max-width 约束
-    apply_table_size_constraints(table_box, grid, row_y, col_widths, spacing_y, styles);
+    apply_table_size_constraints(table_box, grid, row_y + top_caption_mb, col_widths, spacing_y, styles);
 
     // 后处理：更新行组（tbody/thead/tfoot）的位置以包含其所有行
     // 对于 position:relative 的行组，还需应用 inset 偏移
