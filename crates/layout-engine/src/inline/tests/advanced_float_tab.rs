@@ -492,3 +492,106 @@ fn r1450_letter_spacing_between_adjacent_cjk_preserved() {
         san2.x
     );
 }
+
+// ── R3786：块断行后紧随的强制断行不重复推空行盒 ──────────────────────────
+
+/// R3786：FloatAnchor（块断行）刚开启的新行上，紧随的 `\n`（pre 强制断行标记）
+/// 不再推空行盒——块边界已提供断行机会，断行机会不重复（CSS2 §9.2.1.1 /
+/// CSS Text §5.2）。line-clamp-with-floats-007：`Line 3<float>\nLine 4\n` 的
+/// float 闭标签后换行曾再推 0 高幽灵行，占掉第 4 行的 clamp 预算（4 行真文本
+/// 被裁成 3 行 + 1 幽灵行）。
+#[test]
+fn r3786_newline_after_block_break_no_ghost_line() {
+    // 序列：[Line 3][FloatAnchor(float)][\n][Line 4]——float 断行后的换行不产生空行盒。
+    let mut ctx = InlineFormattingContext::new(800.0);
+    let l3 = TextRun {
+        text: "Line 3".to_string(),
+        ws_override: Some(RunWhiteSpace {
+            preserve: true,
+            break_at_newline: true,
+            no_wrap: false,
+        }),
+        ..TextRun::simple("Line 3".to_string(), NodeId::default(), 16.0, 32.0, VA::Baseline)
+    };
+    let rest = TextRun {
+        text: "\nLine 4".to_string(),
+        ws_override: Some(RunWhiteSpace {
+            preserve: true,
+            break_at_newline: true,
+            no_wrap: false,
+        }),
+        ..TextRun::simple("\nLine 4".to_string(), NodeId::default(), 16.0, 32.0, VA::Baseline)
+    };
+    ctx.break_items_into_lines(vec![
+        InlineItem::Text(l3),
+        InlineItem::FloatAnchor(NodeId::default()),
+        InlineItem::Text(rest),
+    ]);
+
+    // 旧行为：FloatAnchor 推行 → [\n] 再推 0 高幽灵行 → Line 4 落第 3 行（3 行盒）。
+    // 新行为：Line 3 一行、Line 4 一行 = 2 行盒，无 0 高幽灵行。
+    assert_eq!(
+        ctx.lines.len(),
+        2,
+        "R3786: float 断行后的 \\n 不应再推空行盒，实际 {} 行盒（高度 {:?}）",
+        ctx.lines.len(),
+        ctx.lines.iter().map(|l| l.height).collect::<Vec<_>>()
+    );
+    assert!(ctx.lines[0].runs.iter().any(|r| r.text.contains("3")));
+    assert!(ctx.lines[1].runs.iter().any(|r| r.text.contains("4")));
+}
+
+/// R3786：真连续 `\n`（不经过块断行）仍照常推空行盒——`A\n\nB` 三行
+///（中间空行，pre 语义保留空行盒）不受「不重复断行」豁免影响。
+#[test]
+fn r3786_consecutive_newlines_still_produce_empty_line() {
+    let mut ctx = InlineFormattingContext::new(800.0);
+    let run = TextRun {
+        text: "A\n\nB".to_string(),
+        ws_override: Some(RunWhiteSpace {
+            preserve: true,
+            break_at_newline: true,
+            no_wrap: false,
+        }),
+        ..TextRun::simple("A\n\nB".to_string(), NodeId::default(), 16.0, 32.0, VA::Baseline)
+    };
+    ctx.break_items_into_lines(vec![InlineItem::Text(run)]);
+
+    assert_eq!(ctx.lines.len(), 3, "A\\n\\nB 应为 3 行盒（含空行）");
+    // 空行（第 2 行）无 fragment
+    assert!(ctx.lines[1].runs.is_empty(), "中间行应为空行盒");
+}
+
+/// R3786：BlockBreak 后紧随的 `\n` 同样不重复推空行盒（in-flow block 子场景）。
+#[test]
+fn r3786_newline_after_block_break_in_flow_block() {
+    let mut ctx = InlineFormattingContext::new(800.0);
+    let l3 = TextRun {
+        ws_override: Some(RunWhiteSpace {
+            preserve: true,
+            break_at_newline: true,
+            no_wrap: false,
+        }),
+        ..TextRun::simple("Line 3".to_string(), NodeId::default(), 16.0, 32.0, VA::Baseline)
+    };
+    let rest = TextRun {
+        ws_override: Some(RunWhiteSpace {
+            preserve: true,
+            break_at_newline: true,
+            no_wrap: false,
+        }),
+        ..TextRun::simple("\nLine 4".to_string(), NodeId::default(), 16.0, 32.0, VA::Baseline)
+    };
+    ctx.break_items_into_lines(vec![
+        InlineItem::Text(l3),
+        InlineItem::BlockBreak,
+        InlineItem::Text(rest),
+    ]);
+
+    assert_eq!(
+        ctx.lines.len(),
+        2,
+        "R3786: BlockBreak 断行后的 \\n 不应再推空行盒，实际 {} 行盒",
+        ctx.lines.len()
+    );
+}

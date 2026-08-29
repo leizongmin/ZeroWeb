@@ -83,6 +83,9 @@ impl InlineFormattingContext {
         // 的后继与前者同源序行槽，锚继承前 float 的锚 y）。
         let mut last_push_was_float_anchor = false;
         let mut last_float_anchor_y = 0.0f32;
+        // R3786：上一个被推行盒是否由块断行（FloatAnchor/BlockBreak）产生——刚开启的
+        // 新行上紧随的 `\n` 不再推空行盒（断行机会不重复）。
+        let mut last_push_was_block_break = false;
 
         for item in items {
             match item {
@@ -248,6 +251,16 @@ impl InlineFormattingContext {
                         // pre-line（break_at_newline）：空白序列折叠但 `\n` 仍强制断行（CSS Text 3 §4.2）。
                         if (run_preserve || run_break_at_newline) && content_word.is_empty() {
                             last_was_collapsible_ws = false;
+                            // R3786：块断行（FloatAnchor/BlockBreak）刚开启的新行上，紧随的
+                            // `\n` 不再推空行盒（CSS2 §9.2.1.1 / CSS Text §5.2：块边界已提供
+                            // 断行机会，断行机会不重复；007：`Line 3<float>\n` 的 float 闭标签
+                            // 后换行在断行产物上再推 0 高幽灵行，占掉第 4 行的 clamp 预算）。
+                            // 消费一次即清标志——真连续 `\n`（空行）仍照常推空行盒。
+                            if last_push_was_block_break && current_line.runs.is_empty() {
+                                last_push_was_block_break = false;
+                                continue;
+                            }
+                            last_push_was_block_break = false;
                             let est_height = if current_line.height > 0.0 {
                                 current_line.height
                             } else {
@@ -286,6 +299,8 @@ impl InlineFormattingContext {
                         if content_word.is_empty() {
                             continue;
                         }
+                        // R3786：本行已有真实内容词——块断行「不重复断行」豁免结束。
+                        last_push_was_block_break = false;
 
                         // 基础宽度 + letter-spacing（仅基于内容字符，不含尾部空格）
                         let content_char_count = content_word.chars().count();
@@ -491,6 +506,8 @@ impl InlineFormattingContext {
                     let box_height = box_info.height;
                     // 行内级盒打破了可折叠空白的连续性
                     last_was_collapsible_ws = false;
+                    // R3786：本行将有真实内容——块断行「不重复断行」豁免结束。
+                    last_push_was_block_break = false;
 
                     let est_height = if current_line.height > 0.0 {
                         current_line.height
@@ -638,6 +655,9 @@ impl InlineFormattingContext {
                     };
                     let (new_left, _) = self.effective_content_area(current_y, default_line_height);
                     current_x = new_left;
+                    // R3786：本行由块断行（FloatAnchor/BlockBreak/Br）产生——新行上紧随的
+                    // `\n` 不再推空行盒（断行机会不重复）。
+                    last_push_was_block_break = true;
                 }
             }
         }
