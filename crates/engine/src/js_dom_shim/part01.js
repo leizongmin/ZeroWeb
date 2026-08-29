@@ -502,6 +502,10 @@
       var previousWin = entry.win || null;
       entry.win = _zwMakeIframeWin(entry.doc, frameKey, entry.flags || {}, previousWin);
       try { if (entry.doc.__r115SetWin) entry.doc.__r115SetWin(entry.win); } catch (_eW) {}
+      // R365（js-dom M1/M4 CE registry 专项）：iframe doc 的 **realm registry 槽**——
+      // per-realm 实例（part05 R364 工厂产物）挂 doc，供 owner-doc realm 升级路由查表
+      // （工厂 innerHTML setter 的 node-document realm 解析；无 win（no-src）时不挂）。
+      try { if (entry.win && entry.win.customElements) entry.doc._zwCERegistry = entry.win.customElements; } catch (_e365r) {}
       entry.state = 'done';
       entry.url = typeof effectiveUrl === 'string' && effectiveUrl ? effectiveUrl : url;
       _zwObserveIframeWindowClient(entry, frameKey, url);

@@ -1613,19 +1613,60 @@
           var kids = [];
           try { kids = _zwMBuildBodyTree(String(v == null ? '' : v)).childNodes; } catch (_e181s) { kids = []; }
           el.childNodes = kids;
+          // R365（js-dom M1/M4 CE registry 专项第二片）：**解析子的 node document =
+          // 元素当前文档**（spec create-an-element-for-a-token 步骤 1：node document 非
+          // 创建域文档——容器被 adopt 进主文档后 innerHTML 解析子属主文档；WPT
+          // node-realm-mixed-across-adoption 的 ownerDocument===document 断言）。爬
+          // parentNode 链到 Document（主文档无印章=主；iframe 工厂 doc 有 `_zwMarkup`），
+          // 兜底创建 doc。
+          var _r365EffDoc = doc;
+          try {
+            // ① adopt 印记优先（主文档 body appendChild 的 R191 ownerDocument getter
+            // 已重指 node document——pending 未 apply 时 parentNode 链断，印记是唯一
+            // 可靠信号）。
+            var _r365od = el.ownerDocument;
+            if (_r365od && _r365od.nodeType === 9 && _r365od !== doc) {
+              _r365EffDoc = _r365od;
+            } else {
+              // ② parentNode 爬链（直接挂载形态——container.parentNode=body→doc）。
+              var _r365cur = el.parentNode;
+              var _r365guard = 0;
+              while (_r365cur && _r365guard++ < 64) {
+                if (_r365cur.nodeType === 9) { _r365EffDoc = _r365cur; break; }
+                _r365cur = _r365cur.parentNode;
+              }
+            }
+          } catch (_e365c) {}
+          var _r365IsMain = _r365EffDoc === globalThis.document;
+          // R365：**node-document realm 升级**——解析子的 hyphen tag 命中当前文档
+          // realm registry（主文档 → globalThis.customElements；iframe doc →
+          // `_zwCERegistry` 槽[R364 后续]）即升级（_ceRunCtor——R94 ctor 体 +
+          // R3274 初始 attr 派发 + 已连 connect）。factory 解析子此前从不升级。
+          var _r365Reg = _r365IsMain
+            ? globalThis.customElements
+            : (function () { try { return _r365EffDoc._zwCERegistry || null; } catch (_e365r) { return null; } })();
           for (var _r181j = 0; _r181j < kids.length; _r181j++) {
             try { kids[_r181j].parentNode = el; } catch (_e181p) {}
-            // R181（js-dom M4）：解析子继承创建域（本工厂元素的 doc——spec
-            // 「innerHTML 解析子属本 doc」；WPT node-realm-preserved-across-adoption
-            // 的 p/text/comment ownerDocument 断言）。
+            // R181（js-dom M4）：解析子 ownerDocument = 当前文档（未 adopt 时=创建 doc，
+            // adopt 后按爬链结果——两形态 spec 都归 node document）。
             try {
-              var _r181fod = doc;
+              var _r181fod = _r365EffDoc;
               Object.defineProperty(kids[_r181j], 'ownerDocument', {
                 get: function () { return _r181fod; },
                 set: function () {},
                 configurable: true,
               });
             } catch (_e181fod) {}
+            // R365：hyphen tag 升级（_ceRunCtor 定义于 part03 同 IIFE，hoisting 可达）。
+            try {
+              if (_r365Reg && typeof _ceRunCtor === 'function' && kids[_r181j].nodeType === 1) {
+                var _r365tag = String(kids[_r181j].tagName || '').toLowerCase();
+                if (_r365tag.indexOf('-') >= 0) {
+                  var _r365ctor = _r365Reg.get(_r365tag);
+                  if (typeof _r365ctor === 'function') _ceRunCtor(_r365ctor, kids[_r181j]);
+                }
+              }
+            } catch (_e365u) {}
           }
         },
       });

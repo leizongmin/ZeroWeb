@@ -374,6 +374,8 @@
             } catch (_e115fbMeta) {}
             var _r115FbWin = _zwMakeIframeWin(_r115FbDoc, key, {});
             try { if (_r115FbDoc.__r115SetWin) _r115FbDoc.__r115SetWin(_r115FbWin); } catch (_eW2) {}
+            // R365：no-src fallback doc 的 realm registry 槽（同 part01 加载路径）。
+            try { if (_r115FbWin.customElements) _r115FbDoc._zwCERegistry = _r115FbWin.customElements; } catch (_e365r) {}
             _r115Entry.win = _r115FbWin; // R139：fallback win 记账（后续读同 identity）
             // R139：named iframe 全局注册（同上 win 分支——no-src fallback 路径）。
             try {
