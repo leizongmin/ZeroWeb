@@ -6685,6 +6685,45 @@
     try { rg351[kKey351] = cont351; rg351[rKey351] = root351; } catch (_e351c) {}
     return root351;
   }
+  // R352（js-dom M4）：**removed 标记容器快道**——W6 探针实测 removeChild 对 60 条
+  // stale 注册表仍 47.8ms（OFF 1.5ms）：被摘子树的旧 proxy `parentNode` 链在 host 快照
+  // 侧**未断**（上行仍达 html），R351 根快道对「removed(新树节点) vs 旧条目容器」判
+  // **同根**而放行 → 每条目付逐跳 walk + 键读。**快道语义**：容器自身或其祖先链在
+  // removed 标记表（`_zwRemovedSels`/`_zwRemovedHandles`，removeChild/remove 时标记、
+  // re-append 时清除——plain 查表 ns 级）→ 该容器属已摘子树。本次 mutation 作用于
+  // **活树**；已摘子树的边界点在摘除那次 R262（pre-remove）已重写到活树父，此后：
+  // ① 重写过的条目容器=活树节点（不在 removed 表）不受影响；② 未重写的孤儿条目
+  // （容器仍挂 removed 标记）键属死树，活树 mutation 的 identity/键命中均不可能成立。
+  // 故对 removed-marked 容器直接判 false 安全——**identity 命中不经过本快道**
+  //（调用方先比 identity，或同函数内 identity 分支在前）。祖先上行走
+  // `_zwNodeParent` 反向链（plain 对象表，handle→parentHandle/parentSel）+
+  // 标记表查询，全程无 trap/host 往返；__zwHandle/__zwSelector 已由 R351 提到
+  // trap 顶部，同为 ns 级。链长 64 跳防环。
+  function _zwDeadContainer352(cont352) {
+    if (!cont352) return false;
+    var s352 = null, h352 = null;
+    try {
+      s352 = cont352.__zwSelector;
+      h352 = cont352.__zwHandle;
+    } catch (_e352d) { return false; }
+    if (s352 != null && _zwRemovedSels[s352]) return true;
+    if (h352 != null && _zwRemovedHandles[h352]) return true;
+    // 祖先链（plain 表上行——旧子树标记只挂摘除顶点，子孙经反链达顶点）。
+    if (h352 != null && typeof _zwNodeParent !== 'undefined' && _zwNodeParent) {
+      var hops352 = 0, link352 = _zwNodeParent[h352];
+      while (link352 && hops352++ < 64) {
+        if (link352.parentSel != null && _zwRemovedSels[link352.parentSel]) return true;
+        var ph352 = link352.parentHandle;
+        if (ph352 != null) {
+          if (_zwRemovedHandles[ph352]) return true;
+          link352 = _zwNodeParent[ph352];
+          continue;
+        }
+        break;
+      }
+    }
+    return false;
+  }
   function _zwRangeRootDiffers(a350, b350) {
     if (!a350 || !b350) return false; // 缺容器（未初始化 range）不跳过，走旧路径兜底
     try { return _zwRangeRootOf(a350) !== _zwRangeRootOf(b350); } catch (_e350r) { return false; }
@@ -6743,6 +6782,9 @@
       var sameNode260Verified = function (cont, rg351, slot351) {
         if (!sameNode260(cont)) return false;
         if (cont === node260) return true;
+        // R352：removed 标记容器快道（键命中后的跨树防误判——identity 命中已在上方
+        // 返回，见 _zwDeadContainer352 文档）。
+        if (_zwDeadContainer352(cont)) return false;
         return _zwEntryRootOf(rg351, cont, slot351) === nodeRoot260;
       };
       for (var i260 = 0; i260 < regs260.length; i260++) {
@@ -6840,6 +6882,9 @@
       // 在上行）。同根才进逐跳 walk（行为与旧路径一致）。
       var inRemovedSubtree262 = function (cont, rg351, slot351) {
         if (!cont) return false;
+        // R352：removed 标记容器快道（见 _zwDeadContainer352 文档）——容器在已摘
+        // 子树 → 其祖先链不含本次 removed 的活树节点，直接 false。
+        if (_zwDeadContainer352(cont)) return false;
         if (_zwEntryRootOf(rg351, cont, slot351) !== rmRoot262) return false;
         var cur = cont, hops = 0;
         while (cur && hops++ < 128) {
@@ -6863,6 +6908,8 @@
       var sameParent262Verified = function (cont) {
         if (!sameParent262(cont)) return false;
         if (cont === oldParent262) return true;
+        // R352：removed 标记容器快道（键命中后的跨树防误判——见 _zwDeadContainer352）。
+        if (_zwDeadContainer352(cont)) return false;
         return !_zwRangeRootDiffers(cont, rmRoot262);
       };
       for (var _r262r = 0; _r262r < regs262.length; _r262r++) {
@@ -6948,6 +6995,8 @@
       // false，省去每条目 2 容器 × 键读 trap（跨树条目主档成本，见 `_zwEntryRootOf`）。
       var sameParent263Verified = function (cont, rg351, slot351) {
         if (!cont) return false;
+        // R352：removed 标记容器快道（先于根缓存——见 _zwDeadContainer352 文档）。
+        if (_zwDeadContainer352(cont)) return false;
         if (_zwEntryRootOf(rg351, cont, slot351) !== insRoot263) return false;
         if (!sameParent263(cont)) return false;
         if (cont === newParent263) return true;
