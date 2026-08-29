@@ -510,6 +510,30 @@ impl WebView {
         let recorded = mutations.lock().unwrap_or_else(|error| error.into_inner()).clone();
         let result = self.apply_dom_script_result(value, recorded)?;
         *dom_html.lock().unwrap_or_else(|error| error.into_inner()) = self.cached_html.clone();
+        // R348：**恢复共享 mutation 队列绑定**——上面的 register_dom_callbacks 用本函数
+        // 自建的 fresh `mutations` Arc 覆盖了沙箱级 `__zw_*` 回调的捕获（同名单重注册
+        // 后者胜），此后页面脚本的所有 DOM 写入都进了这个私有队列，而
+        // `apply_pending_shared_mutations`（pump/run_page_scripts 的统一 apply 入口）
+        // 只消费 `shared_mutations` → 用户动作之后的页面元素**静默消失**（WPT
+        // Event-dispatch-on-disabled-elements「Real clicks」input 元素 20 帧不落 doc 的
+        // 根因）。用户动作脚本自身的变化已由 apply_dom_script_result 同步应用，此处把
+        // 回调重绑回共享队列 + 刷新快照，恢复 pump 消费语义（镜像 run_page_scripts 的
+        // 注册形态）。
+        {
+            let sandbox = self.js_sandbox.as_mut().expect("js sandbox");
+            let shared = self.shared_mutations.clone();
+            let dom_html_shared = Arc::new(std::sync::Mutex::new(self.cached_html.clone()));
+            let page_url = Arc::new(std::sync::Mutex::new(self.current_url.clone().unwrap_or_default()));
+            register_dom_callbacks(
+                &mut **sandbox,
+                &shared,
+                &dom_html_shared,
+                &page_url,
+                &self.canvas_registry,
+                Some(&self.layout_rect_snapshot),
+            );
+            zero_engine::js_dom_bridge::publish_live_query_doc(self.pipeline.cached_doc_shared());
+        }
         Ok(result)
     }
 

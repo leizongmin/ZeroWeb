@@ -1,0 +1,28 @@
+{
+  "round": "R348",
+  "date": "2026-08-29",
+  "slice": "M4/events——user action 后恢复共享 mutation 队列绑定（Real clicks subtest 转绿；disabled-elements 9/9 全绿）",
+  "background": "R347 记档的「Real clicks td 多元素流 input 20 帧不 materialize」闭合。disabled-elements 全文件 9/9 全绿（R342 时 4 Pass + 文件 Timeout）。",
+  "root_cause": [
+    "user_actions.rs `execute_dom_script`（进程内分支）用**自建 fresh mutations Arc** 调 register_dom_callbacks——沙箱级同名回调重注册后者胜，此后页面脚本的所有 `__zw_*` DOM 写回调全部捕获**私有队列**，而 WebView 的统一 apply 入口 `apply_pending_shared_mutations`（pump/run_page_scripts）只消费 `shared_mutations`。",
+    "后果链：testdriver button 的 enabled-click（一次用户动作）触发 execute_dom_script → 回调重绑私有队列 → 页面后续 create(input)+append+disabled 写入进私有队列 → pump tail 恒空 → input 永不落 doc（host_input=false 全程 20 帧铁证）→ td 解析 'input' 恒 miss → Real clicks Fail。",
+    "影响面不止本用例：**任何**「用户动作（click/keydown 等）之后页面脚本再建元素」的流程都会静默丢元素——这是产品级 bug（真实浏览器里用户点击后 SPA 挂载的内容也会消失于渲染/查询）。"
+  ],
+  "fix": [
+    "user_actions.rs execute_dom_script 末尾（apply_dom_script_result 之后）：把 register_dom_callbacks **重绑回 shared_mutations** + 以最新 cached_html 刷新快照 Arc + `publish_live_query_doc(cached_doc_shared())`（R344 一致性）——恢复 pump 消费语义，镜像 run_page_scripts 的注册形态"
+  ],
+  "results": {
+    "disabled_elements": "4/4 单跑 **9/9 全 Pass**（R347 为 8/9 + Real clicks Fail；R342 时 4 Pass + 文件 Timeout）",
+    "full_dom_sweep": "54180P/53F/15T vs R347 54177P/54F/17T——唯一变化 = Real clicks Fail 消失（+1P/-1F），其余逐字节一致零回归",
+    "gates": "engine v8 2479 / runner v8 191 / webview user_actions 5P / integration 781 / clippy 0 error / fmt 无 diff",
+    "known_flakes": "webview navigator_controller（SW 竞态）+ image_decoder proxy_mode（clean HEAD 同败）——R342 已记档预存"
+  },
+  "remaining_gaps_next_round": [
+    "disabled-elements 全文件收口完成；R342-R348 七轮动画事件基建收官",
+    "下一片回归主线：M4 剩余聚类（events iframe 域跨 realm 族 / shadow retarget 深结构）或 M1 L2 深水区专项"
+  ],
+  "lessons": [
+    "「共享队列 + 私有队列」双绑定的回调注册是静默数据丢失的温床——任何 re-register callbacks 的代码路径必须审计其捕获的队列身份与消费方一致；本例 20 帧 × 每帧查询全 false 的确定性表现反而是幸运（若偶发会更难查）",
+    "user action pipeline（渲染域基础设施）与 js-dom 桥的交界是本轮三连 bug（R346 游离 selector / R347 td 重试 / R348 队列重绑）的公共根——工作面切分边界（run-rules §9）正应在此类交界处增加联合测试"
+  ]
+}
