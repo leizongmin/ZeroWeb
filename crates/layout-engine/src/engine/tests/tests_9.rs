@@ -592,6 +592,57 @@ fn test_measure_text_content_min_content_is_widest_word() {
     );
 }
 
+/// R3787：h=0 的 float 子在 exclusion 构建期按其 DOM 子树补测内容高（kill-switch
+/// `ZW_FLOAT_H_BACKFILL`，default-on）。 driving: line-clamp-auto-015/016——300px
+/// float 占满 200px 容器，其 h=0 使 exclusion 被过滤、R3785 垂直推压不触发、
+/// L5 不被推出 clamp 边界（容器 160 应 128）。本测试锁定 measure 对 float 子树
+/// （div + 直接文本）的 IFC 测高路径可用（补测数据源），env 组合语义由全量
+/// corpus A/B 守护（13435→13438 +3 flip / 0 broke）。
+#[test]
+fn test_r3787_float_subtree_measure_for_exclusion_backfill() {
+    use zero_css_parser::values::FloatValue;
+    use zero_style_system::ComputedStyle;
+    let mut doc = Document::new();
+    let root = doc.root();
+    let html = doc.create_element("html");
+    doc.append_child(root, html).unwrap();
+    let body = doc.create_element("body");
+    doc.append_child(html, body).unwrap();
+    // float 容器：含直接文本「Float」（CSS float:left 由调用方样式表给定）
+    let float_div = doc.create_element("div");
+    doc.append_child(body, float_div).unwrap();
+    let text = doc.create_text_node("Float");
+    doc.append_child(float_div, text).unwrap();
+
+    // 构造 float div 的 computed style（float:left + 默认 block 显示）
+    let mut style = ComputedStyle::default();
+    style.float = FloatValue::Left;
+    let mut styles = HashMap::new();
+    styles.insert(float_div, style);
+
+    // IFC 测高：1 行文本 → 行高 > 0（排除带据此生效）
+    let size = measure_text_content(
+        &doc,
+        &styles,
+        float_div,
+        taffy::geometry::Size {
+            width: Some(300.0),
+            height: None,
+        },
+        taffy::geometry::Size {
+            width: taffy::style::AvailableSpace::Definite(300.0),
+            height: taffy::style::AvailableSpace::Definite(f32::INFINITY),
+        },
+        &HashMap::new(),
+        InlineFontContext::default(),
+    );
+    assert!(
+        size.height > 0.0,
+        "R3787: float 子树 IFC 测高应 > 0（文本一行），实际 {}",
+        size.height
+    );
+}
+
 /// R1578：measure path 经 `img_intrinsic_sizes` 推导 auto-width img 的缺失维度，
 /// 解「inline 元素包裹 auto-width img 致父容器塌缩」（wintertc footer
 /// `<p><a><img class="h-6"></a></p>`）。load-bearing：env ON 时 `<a>` measured

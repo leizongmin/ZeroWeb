@@ -1637,6 +1637,14 @@ pub(crate) fn remeasure_text_with_float_exclusions(
         }
 
         // 构建 float 排除区域列表
+        // R3787：float 子此刻 h=0（taffy 对 float 叶子的内容高欠计，其 LayoutBox 子树
+        // 尚未终化）时按其 DOM 子树跑 IFC 补测内容高（CSS §9.5.1：float 的排除带高度 =
+        // 其 margin box；auto-015 的 300px float 占满 200px 容器，排除带决定后续行是否
+        // 被推过 clamp 边界）。补测值只进 exclusion（不覆盖 LayoutBox.height——后继
+        // pass 与 paint 路径各有自己的回填语义），排除带据此正确参与推压判据。
+        // 已有高度的 float（h>0，如 007 的 80px）不重复测量（零开销）。
+        // kill-switch `ZW_FLOAT_H_BACKFILL=0` 回退（default-on）。
+        let float_h_backfill = std::env::var("ZW_FLOAT_H_BACKFILL").as_deref() != Ok("0");
         let exclusions: Vec<FloatExclusion> = box_node
             .children
             .iter()
@@ -1644,12 +1652,41 @@ pub(crate) fn remeasure_text_with_float_exclusions(
             .filter_map(|c| {
                 // c.y 现在是相对于父级内容区域的坐标（与 taffy 一致）
                 let rel_y = c.y;
-                if rel_y < 0.0 || c.width <= 0.0 || c.height <= 0.0 {
+                if rel_y < 0.0 || c.width <= 0.0 {
+                    return None;
+                }
+                // R3787：h<=0 的 float 按其 DOM 子树补测内容高（宽用自身 width；容器宽
+                // 未知时按 0 = 最长不可拆单元行，仅影响 exclusion 高度精度）。
+                let mut height = c.height;
+                if float_h_backfill
+                    && height <= 0.0
+                    && let Some(fid) = c.node_id
+                {
+                    let m = measure_text_content(
+                        doc,
+                        styles,
+                        fid,
+                        Size {
+                            width: Some(c.width),
+                            height: None,
+                        },
+                        Size {
+                            width: AvailableSpace::Definite(c.width),
+                            height: AvailableSpace::Definite(f32::INFINITY),
+                        },
+                        img_intrinsic_sizes,
+                        inline_fonts,
+                    );
+                    if m.height > height {
+                        height = m.height;
+                    }
+                }
+                if height <= 0.0 {
                     return None;
                 }
                 Some(FloatExclusion {
                     y: rel_y + c.margin_top,
-                    height: c.height + c.margin_bottom,
+                    height: height + c.margin_bottom,
                     width: c.width + c.margin_left + c.margin_right,
                     is_left: matches!(c.float, FloatValue::Left),
                 })
