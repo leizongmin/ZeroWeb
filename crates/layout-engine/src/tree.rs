@@ -415,6 +415,8 @@ fn apply_replaced_element_sizing(
     //（vertical 模式主/交叉轴互换，aspect-ratio 推导不同，跳过会致 vert-lr 回归）。
     use zero_css_parser::values::{DisplayValue, FlexDirectionValue};
     use zero_style_system::property::types::WritingModeValue;
+    // R3800：no-ratio 分支是否触发（其 size 来自 default object size 回退，非真实比）。
+    let mut no_ratio_fired = false;
     let (is_flex_row_item, is_flex_col_item) = match doc.parent_node(dom_id).and_then(|p| styles.get(&p)) {
         Some(ps)
             if matches!(ps.display, DisplayValue::Flex | DisplayValue::InlineFlex)
@@ -606,6 +608,7 @@ fn apply_replaced_element_sizing(
             //（宽 300 / 高 150）。显式 CSS 侧由 converter 处理，min/max 由 taffy 钳制。
             // 驱动案：visudet replaced-elements-{height-20,width-40,max-height-20,max-width-40}。
             if let Some(&(w_opt, h_opt)) = img_intrinsic_no_ratio.get(&dom_id) {
+                no_ratio_fired = true;
                 let width_auto = matches!(computed.width, LengthValue::Auto);
                 let height_auto = matches!(computed.height, LengthValue::Auto);
                 // 不设 aspect_ratio（no-ratio）
@@ -865,6 +868,100 @@ fn apply_replaced_element_sizing(
     // 明确 cross size × 固有比。此处仅当父是 flex 容器且有明确 cross size 时计算
     // transferred 并设 min_size.main（row + column 对称，仅水平书写模式）。
     apply_flex_transferred_min_size(taffy_style, computed, doc, styles, dom_id);
+
+    // R3800（CSS2 §10.4）：min/max 约束违反解析表（ratio 保持重推导）。
+    // no-ratio SVG 跳过——其 size 来自 default object size 回退（w0/h0 非真实比，
+    // 以假比推导会污染：min-width-80 的 width-50-no-ratio 80×150 被推成 80×240）。
+    // flex item 亦跳过——min/max 是 flex base 的钳制非 base 本身，flex 算法（taffy）
+    // 语义优先（R3794/R3796 同款边界；row-007 min-width 写 definite 会抬 flex base）。
+    let parent_is_flex_ctx = doc
+        .parent_node(dom_id)
+        .and_then(|p| styles.get(&p))
+        .is_some_and(|ps| matches!(ps.display, DisplayValue::Flex | DisplayValue::InlineFlex));
+    if !no_ratio_fired && !parent_is_flex_ctx {
+        apply_replaced_min_max_constraint_table(taffy_style, computed);
+    }
+}
+
+/// R3800（CSS2 §10.4）：替换元素 min/max 约束违反解析表。
+///
+/// taffy 逐轴独立钳制 min/max，不做 ratio 保持重推导（box-sizing-replaced-003 img6：
+/// 150×150 + min-w60 max-h75 → taffy 150×75，应 h=75 后 ratio 重推 w=75 → 75×75）。
+/// spec：definite min/max 与固有尺寸起手——
+///   ① 逐轴钳制（w=clamp(w,minw,maxw)、h 同）；
+///   ② 单轴变更时按固有比重推另一轴（w 变 → h=w/r；h 变 → w=h×r）；
+///   ③ 重钳另一轴；
+///   ④ 组合违反终判（spec 表）：`w>maxw ∧ h<minh → w=maxw, h=minh`；
+///      `w<minw ∧ h>maxh → w=minw, h=maxh`。
+///
+/// 仅 content-box（border-box 约束作用于 border-box 尺寸，需折算 frame——002 簇后续切片）。
+/// 仅当至少一轴有 definite 约束时运行；结果设回 taffy size（definite），taffy 钳制成为
+/// no-op（结果已合规）。box-sizing-replaced-003 全 20 变体均应收敛 75×75。
+fn apply_replaced_min_max_constraint_table(taffy_style: &mut taffy::Style, computed: &ComputedStyle) {
+    use zero_css_parser::values::LengthValue;
+    if matches!(
+        computed.box_sizing,
+        zero_style_system::property::types::BoxSizingValue::BorderBox
+    ) {
+        return;
+    }
+    // 提取 definite min/max（Auto/百分比/关键字 → None）。
+    let resolve = |v: &LengthValue| -> Option<f32> {
+        match v {
+            LengthValue::Auto
+            | LengthValue::Percentage(_)
+            | LengthValue::MinContent
+            | LengthValue::MaxContent
+            | LengthValue::FitContent(_) => None,
+            LengthValue::Px(p) if *p == f64::INFINITY => None,
+            other => zero_style_system::computed::resolve_length(other, 16.0, None, None)
+                .is_finite()
+                .then_some(other_px(other)),
+        }
+    };
+    fn other_px(v: &LengthValue) -> f32 {
+        match v {
+            LengthValue::Px(p) => *p as f32,
+            LengthValue::Em(e) => *e as f32 * 16.0,
+            LengthValue::Rem(r) => *r as f32 * 16.0,
+            LengthValue::Ch(c) => *c as f32 * 8.0,
+            _ => 0.0,
+        }
+    }
+    let minw = resolve(&computed.min_width);
+    let maxw = resolve(&computed.max_width);
+    let minh = resolve(&computed.min_height);
+    let maxh = resolve(&computed.max_height);
+    if minw.is_none() && maxw.is_none() && minh.is_none() && maxh.is_none() {
+        return;
+    }
+    // 起手固有尺寸（内容盒）：此前分支写入的 size（属性/解码固有值）。
+    let (Some(iw), Some(ih)) = (
+        taffy_style.size.width.into_option(),
+        taffy_style.size.height.into_option(),
+    ) else {
+        return;
+    };
+    let r = taffy_style.aspect_ratio.unwrap_or(iw / ih);
+    if !r.is_finite() || r <= 0.0 {
+        return;
+    }
+    // R3800 算法（CSS2 §10.4 + blink ResolveWidthAndHeight 实践，w→h→w 链式定点）：
+    //   w1 = clamp(iw, minw, maxw)
+    //   h1 = clamp(w1 / r, minh, maxh)     —— ratio 保持推导，钳入高度约束
+    //   w2 = clamp(h1 × r, minw, maxw)     —— 高度钳制破坏 ratio 时宽度随之约束收敛
+    // 约束冲突时约束胜过 ratio（blink 同款）；box-sizing-replaced-003 全 20 变体
+    // 经该链逐一验算收敛 75×75（img10 300×375 minw75 maxw150 maxh75：
+    // w1=150 → h1=187.5→75 → w2=clamp(60,75,150)=75 ✓）。
+    let clamp = |v: f32, lo: Option<f32>, hi: Option<f32>| v.min(hi.unwrap_or(f32::INFINITY)).max(lo.unwrap_or(0.0));
+    let w1 = clamp(iw, minw, maxw);
+    let h1 = clamp(w1 / r, minh, maxh);
+    let w2 = clamp(h1 * r, minw, maxw);
+    let (w, h) = (w2, h1);
+    if (w, h) != (iw, ih) {
+        taffy_style.size.width = taffy::style::Dimension::length(w.max(0.5));
+        taffy_style.size.height = taffy::style::Dimension::length(h.max(0.5));
+    }
 }
 
 /// 替换元素 flex item 的 min-size:auto transferred-size-suggestion（CSS Flexbox §4.5 / csswg #5663）。

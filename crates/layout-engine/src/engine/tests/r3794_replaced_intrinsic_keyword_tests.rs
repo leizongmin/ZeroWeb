@@ -372,3 +372,37 @@ fn r3797_degenerate_ratio_treated_as_no_ratio() {
     );
     assert!((gh - 100.0).abs() < 1.0, "R3797: 绿方块高 100 不受 NaN 污染，实际 {gh}");
 }
+
+/// R3800（box-sizing-replaced-003 驱动案，CSS2 §10.4）：替换元素 min/max 约束表的
+/// w→h→w 链式定点——min-w60/max-h75 的 150×150 img（ratio 1）：h=75 钳 → w=h×r=75
+/// → 75×75（旧 taffy 逐轴独立钳 150×75 不重推）。
+#[test]
+fn r3800_min_max_constraint_table_ratio_rederivation() {
+    let html = r#"<!DOCTYPE html><html><body style="margin:0">
+<img src="x.png" style="min-width: 60px; max-height: 75px;">
+</body></html>"#;
+    let (doc, result) = compute_with_intrinsic(html, 150.0, 150.0);
+    let img = doc.get_elements_by_tag_name("img").into_iter().next().expect("img");
+    let (w, h) = find_box(&result.root, img).expect("img box");
+    assert!(
+        (w - 75.0).abs() < 1.0 && (h - 75.0).abs() < 1.0,
+        "R3800: 150×150 + min-w60 max-h75 → h 钳 75 后 ratio 重推 w=75（§10.4），实际 {w}×{h}（旧逐轴钳 150×75）"
+    );
+}
+
+/// R3800 守卫（box-sizing-replaced-003 img10 形）：约束冲突时约束胜过 ratio——
+/// 300×375（r=0.8）+ minw75 maxw150 maxh75：w1=150 → h1=187.5→75 → w2=clamp(60,75,150)=75
+/// → 75×75。
+#[test]
+fn r3800_constraints_win_over_ratio_on_conflict() {
+    let html = r#"<!DOCTYPE html><html><body style="margin:0">
+<img src="x.png" style="min-width: 75px; max-width: 150px; max-height: 75px;">
+</body></html>"#;
+    let (doc, result) = compute_with_intrinsic(html, 300.0, 375.0);
+    let img = doc.get_elements_by_tag_name("img").into_iter().next().expect("img");
+    let (w, h) = find_box(&result.root, img).expect("img box");
+    assert!(
+        (w - 75.0).abs() < 1.0 && (h - 75.0).abs() < 1.0,
+        "R3800: 约束冲突 w→h→w 链收敛 75×75，实际 {w}×{h}"
+    );
+}
