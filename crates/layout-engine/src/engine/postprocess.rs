@@ -2225,7 +2225,20 @@ pub(super) fn apply_cross_block_line_clamp(
                     !matches!(s.overflow_x, OverflowValue::Visible | OverflowValue::Clip)
                         || !matches!(s.overflow_y, OverflowValue::Visible | OverflowValue::Clip)
                 });
-                if is_bfc {
+                // R3793：**fieldset 豁免**（css-overflow-3 webkit-line-clamp-027 assert
+                // 「-webkit-line-clamp should skip over fieldsets」）——fieldset 内容行不
+                // 计预算、不 cap、不隐藏（WebKit legacy clamp 语义中 fieldset 为独立渲染
+                // 树，整棵子树照常渲染：027 ref 的 fieldset L3-L6 全显，clamp 点落在其后
+                // 的 L7 末）。无 overflow:hidden（仅 border），R3771 overflow 判定不覆盖。
+                let is_fieldset = c
+                    .node_id
+                    .and_then(|id| doc.get(id))
+                    .and_then(|n| match &n.kind {
+                        zero_dom::NodeKind::Element(e) => Some(e.local_name()),
+                        _ => None,
+                    })
+                    .is_some_and(|name| name.eq_ignore_ascii_case("fieldset"));
+                if is_bfc || is_fieldset {
                     continue;
                 }
             }
