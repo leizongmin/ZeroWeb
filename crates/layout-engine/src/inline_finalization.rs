@@ -1711,25 +1711,42 @@ pub(crate) fn remeasure_text_with_float_exclusions(
             // R3784：clamp 点后的 float 子隐藏（css-overflow-4 with-floats-003：「floats
             // after the clamp point are always hidden」）。锚行号 ≥ clamp cap = float 在
             // 源序中落入 clamp 点后的行 → 整体隐藏（paint 跳过 + 不计 float_bottom）。
+            // R3785：第二判据——float 自身占位推压了行（auto-015 assert「the float and
+            // the line will both be hidden」）：float 顶 ≥ clamp 边界 − 一行高（float 占
+            // 据了最后一个保留行之后的槽，其后行全被推过边界）。两判据任一命中即隐藏。
             if inline_ctx.clamped
                 && let Some(cap) = inline_ctx.line_clamp
-                && let Some(ctx) = anchor_ctx.as_ref()
             {
+                let lh = inline_ctx.lines.first().map(|l| l.height).unwrap_or(0.0);
+                let boundary = cap as f32 * lh;
                 for child in box_node.children.iter_mut() {
                     if matches!(child.float, FloatValue::None) {
                         continue;
                     }
-                    if let Some(fid) = child.node_id
-                        && let Some(idx) = ctx.float_anchor_line_idxs.get(&fid)
-                        && *idx >= cap
-                    {
+                    let after_clamp_point = child.node_id.is_some_and(|fid| {
+                        anchor_ctx
+                            .as_ref()
+                            .and_then(|ctx| ctx.float_anchor_line_idxs.get(&fid))
+                            .is_some_and(|idx| *idx >= cap)
+                    });
+                    let occupies_hidden_slot = child.y >= boundary - lh - 0.5;
+                    if after_clamp_point || occupies_hidden_slot {
                         child.line_clamp_hidden = true;
                     }
                 }
             }
 
             // 容器高度需要包含 float 元素占用的空间
-            let text_height = inline_ctx.total_height();
+            // R3785：text extent 用**末保留行的真实底**（含 float 推压空隙的行位）——
+            // total_height() 顺序累计高度和，px-cap 后（末行 y=128 3 行）extent=128 而
+            // 和=96；且 compute_final 的 float-unaware IFC 先行 cap（无 exclusion 平坦行
+            // → 5 行 160），remeasure 的 px-cap extent（128）更小——auto 高 float 容器
+            // 须**双向**收敛到 exclusion-aware 值（既扩也缩）。
+            let text_height = inline_ctx
+                .lines
+                .last()
+                .map(|l| l.y + l.height)
+                .unwrap_or_else(|| inline_ctx.total_height());
             let float_bottom = box_node
                 .children
                 .iter()
@@ -1752,10 +1769,12 @@ pub(crate) fn remeasure_text_with_float_exclusions(
                 .and_then(|id| styles.get(&id))
                 .is_some_and(|s| matches!(s.height, LengthValue::Auto));
             let should_expand = if fix_active { is_auto_height } else { true };
-            if should_expand && content_height > box_node.content_height {
-                let diff = content_height - box_node.content_height;
+            // R3785：双向收敛——compute_final 的 float-unaware IFC 先行设高（无 exclusion
+            // 平坦行位），exclusion-aware px-cap extent 可大于**或小于**它（auto-015：
+            // unaware 5 行 160 vs aware 4 行 128）；auto 高 float 容器直接置值。
+            if should_expand && (content_height - box_node.content_height).abs() > 0.5 {
+                box_node.height += content_height - box_node.content_height;
                 box_node.content_height = content_height;
-                box_node.height += diff;
             }
         }
     }

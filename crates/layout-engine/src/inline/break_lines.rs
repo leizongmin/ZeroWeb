@@ -63,8 +63,10 @@ impl InlineFormattingContext {
         // 估算默认行高（用于初始浮动排除计算）
         let default_line_height = 20.0_f32;
 
+        // R3785：行盒 y 哨兵 NaN = 未定位——行盒 y 在 push 时按 current_y 记录
+        // （float 垂直推压后行位非顺序累计）；末尾只为 NaN 行盒顺序补位。
         let mut current_line = LineBox {
-            y: 0.0,
+            y: f32::NAN,
             height: 0.0,
             runs: Vec::new(),
             baseline_y: 0.0,
@@ -77,6 +79,10 @@ impl InlineFormattingContext {
         // 用于将连续纯空白 run（如 inline-block 之间被注释分隔的两个文本节点）
         // 按 CSS Text §4.1 折叠为单个空格。
         let mut last_was_collapsible_ws = false;
+        // R3784：连续 float 锚继承——上一个被推行盒是否由 FloatAnchor 推行（连续 float
+        // 的后继与前者同源序行槽，锚继承前 float 的锚 y）。
+        let mut last_push_was_float_anchor = false;
+        let mut last_float_anchor_y = 0.0f32;
 
         for item in items {
             match item {
@@ -247,16 +253,31 @@ impl InlineFormattingContext {
                             } else {
                                 default_line_height
                             };
-                            self.lines.push(current_line);
+            current_line.y = current_y;
+            self.lines.push(current_line);
                             current_y += est_height;
                             current_line = LineBox {
-                                y: 0.0,
+                                y: f32::NAN,
                                 height: 0.0,
                                 runs: Vec::new(),
                                 baseline_y: 0.0,
                                 ascent: 0.0,
                                 descent: 0.0,
                             };
+                            // R3785：新行落位——float 推压（新行带与 float 排除带重叠且
+                            // 可用宽 ≤ 0 → 下推到带底；CSS §9.5 行盒不与 float 重叠）。
+                            let (_, avail0) = self.effective_content_area(current_y, default_line_height);
+                            if avail0 <= 0.0 && !self.float_exclusions.is_empty() {
+                                let pushed = self
+                                    .float_exclusions
+                                    .iter()
+                                    .filter(|e| e.y < current_y + default_line_height && e.y + e.height > current_y)
+                                    .map(|e| e.y + e.height)
+                                    .fold(0.0f32, f32::max);
+                                if pushed > current_y {
+                                    current_y = pushed;
+                                }
+                            }
                             let (new_left, _) = self.effective_content_area(current_y, default_line_height);
                             current_x = new_left;
                             continue;
@@ -311,7 +332,29 @@ impl InlineFormattingContext {
                         } else {
                             run.line_height.max(default_line_height)
                         };
-                        let (left_offset, avail_width) = self.effective_content_area(current_y, est_height);
+                        let (mut left_offset, mut avail_width) = self.effective_content_area(current_y, est_height);
+
+                        // R3785：float 垂直推压（CSS §9.5）——空行（行首）落在 float 排除
+                        // 带内且可用宽被吃尽（avail ≤ 0）时，行位下推到该带底（行盒不与
+                        // float 重叠；auto-015：300px float 占满 200px 容器 → 带内行全部
+                        // 下推到 float 底）。仅 avail ≤ 0 触发（有剩余宽的环绕不推）。
+                        if current_line.runs.is_empty()
+                            && avail_width <= 0.0
+                            && !self.float_exclusions.is_empty()
+                        {
+                            let pushed = self
+                                .float_exclusions
+                                .iter()
+                                .filter(|e| e.y < current_y + est_height && e.y + e.height > current_y)
+                                .map(|e| e.y + e.height)
+                                .fold(0.0f32, f32::max);
+                            if pushed > current_y {
+                                current_y = pushed;
+                                let (lo, aw) = self.effective_content_area(current_y, est_height);
+                                left_offset = lo;
+                                avail_width = aw;
+                            }
+                        }
 
                         // 调整 current_x 到浮动排除区域之后（仅在行首且无 text-indent 时）
                         if current_line.runs.is_empty() && self.text_indent >= 0.0 && current_x < left_offset {
@@ -324,10 +367,11 @@ impl InlineFormattingContext {
                             && !current_line.runs.is_empty()
                         {
                             // 当前行放不下，开始新行
-                            self.lines.push(current_line);
+            current_line.y = current_y;
+            self.lines.push(current_line);
                             current_y += est_height;
                             current_line = LineBox {
-                                y: 0.0,
+                                y: f32::NAN,
                                 height: 0.0,
                                 runs: Vec::new(),
                                 baseline_y: 0.0,
@@ -368,10 +412,11 @@ impl InlineFormattingContext {
 
                                 if partial_x + ch_width > line_limit && ci > 0 {
                                     // 当前行满了，开始新行
-                                    self.lines.push(current_line);
+            current_line.y = current_y;
+            self.lines.push(current_line);
                                     current_y += fragment_height;
                                     current_line = LineBox {
-                                        y: 0.0,
+                                        y: f32::NAN,
                                         height: 0.0,
                                         runs: Vec::new(),
                                         baseline_y: 0.0,
@@ -465,10 +510,11 @@ impl InlineFormattingContext {
                         && !current_line.runs.is_empty()
                     {
                         // 当前行放不下，开始新行
-                        self.lines.push(current_line);
+            current_line.y = current_y;
+            self.lines.push(current_line);
                         current_y += est_height;
                         current_line = LineBox {
-                            y: 0.0,
+                            y: f32::NAN,
                             height: 0.0,
                             runs: Vec::new(),
                             baseline_y: 0.0,
@@ -522,18 +568,32 @@ impl InlineFormattingContext {
                     // = current_y − 当前行高（floats-006：X 与 float 同行 → 锚 = 行顶 0，
                     // float 不下推）。
                     if let InlineItem::FloatAnchor(fid) = &item {
-                        let last_line_h = if current_line.runs.is_empty() {
-                            self.lines.last().map(|l| l.height).unwrap_or(0.0)
+                        // 行中（同前文 inline 内容共行）→ 锚 = 当前行盒顶（floats-006：
+                        // X 与 float 同行 → 锚 0）；行首空行（前文以断行收尾）→ 锚 =
+                        // current_y = 下一空行槽顶（auto-015：L1-L4 后的 float 锚 128，
+                        // 占 L5 的槽，L5 被推过 clamp 边界 → float 与 L5 均隐藏）。
+                        // 例外：**前一条目也是 float**（连续 float，floats-006 的 f2）——
+                        // 行首空行是 f1 的 FloatAnchor 推行的产物，f2 与 f1 同源序行槽，
+                        // 锚继承前 float（0），非推进后的 current_y。
+                        let anchor_y = if current_line.runs.is_empty() {
+                            if last_push_was_float_anchor {
+                                last_float_anchor_y
+                            } else {
+                                current_y
+                            }
                         } else {
-                            current_line.height
+                            (current_y - current_line.height).max(0.0)
                         };
-                        let anchor_y = (current_y - last_line_h).max(0.0);
                         self.float_anchor_ys.insert(*fid, anchor_y);
+                        last_float_anchor_y = anchor_y;
                         // 锚行号 = float 将落入的行盒 index = 已推行数（行首空行时 float
                         // 落下一行 = lines.len()；行中时 float 同行 = 当前行 index
                         // = lines.len()）。clamp 后隐藏判据用。
                         let anchor_idx = self.lines.len();
                         self.float_anchor_line_idxs.insert(*fid, anchor_idx);
+                        last_push_was_float_anchor = true;
+                    } else {
+                        last_push_was_float_anchor = false;
                     }
                     // R3779b：BlockBreak（block/float 子代理断行）在**行首空行**上不推 0 高
                     // 行盒——空行仅作 current_x/current_y 光标推进，无内容可断（CSS2 §9.2.1.1
@@ -565,10 +625,11 @@ impl InlineFormattingContext {
                     {
                         current_line.height = est_height;
                     }
-                    self.lines.push(current_line);
+            current_line.y = current_y;
+            self.lines.push(current_line);
                     current_y += est_height;
                     current_line = LineBox {
-                        y: 0.0,
+                        y: f32::NAN,
                         height: 0.0,
                         runs: Vec::new(),
                         baseline_y: 0.0,
@@ -585,6 +646,7 @@ impl InlineFormattingContext {
         // CSS 2.1 §10.8.1：空 inline 元素的 line-height 仍贡献到行盒高度，
         // 即使没有文本片段，行盒高度 > 0 时也需要保留。
         if !current_line.runs.is_empty() || current_line.height > 0.0 {
+            current_line.y = current_y;
             self.lines.push(current_line);
         }
 
@@ -628,10 +690,14 @@ impl InlineFormattingContext {
         }
 
         // 计算每行的 y 坐标
-        let mut y = 0.0;
+        // R3785：push 时已按 current_y 记录真实 y（float 垂直推压后行位含空隙，非顺序
+        // 累计）；此处只为 NaN 哨兵（未定位）行盒顺序补位。
+        let mut y = 0.0f32;
         for line in &mut self.lines {
-            line.y = y;
-            y += line.height;
+            if line.y.is_nan() {
+                line.y = y;
+            }
+            y = line.y + line.height;
         }
 
         // 诊断（R2027）：dump 最终行盒高度（与上方条目构成对应）。

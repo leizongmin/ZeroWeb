@@ -916,13 +916,41 @@ impl InlineFormattingContext {
     /// R2431 line-clamp：把 `self.lines` 夹到 `n` 行并置 `clamped`（n>0 且行数>n 时截断）。
     /// 从 `layout()` 抽出供单测直接驱动（break_into_lines + apply_line_clamp_cap）。
     /// 截断保留前 N 行完整几何（float exclusion / inline-box 对齐不变）；下游 height 从 lines 推。
+    /// R3785：**px-extent 判据**——无 float 时行位顺序累计（第 i 行底 = (i+1)·lh），
+    /// 截断等价计数；有 float 时行位含推压空隙（R3785 vertical push），以行盒真实底
+    /// `y+height ≤ n·lh` 判（clamp 边界 = n 行高，auto-015：被 float 推过边界的行为
+    /// 隐藏）。边界处的行（底 == n·lh）保留（css-overflow-4 auto-016 语义对立面——
+    /// 015 的推压行走 px 判据，普通行不影响）。
     pub(crate) fn apply_line_clamp_cap(&mut self, n: usize) {
         // R3766b：n=0 也截断（`line-clamp: auto` + `max-height: 0` / <1lh → 0 行可见，
         // css-overflow-4 auto-011/037：内容盒 intrinsic size = 0）。旧行为 n>0 才截断。
-        if self.lines.len() > n {
+        let boundary = n as f32 * self.used_line_height();
+        let has_gaps = self
+            .lines
+            .iter()
+            .enumerate()
+            .any(|(i, l)| !l.y.is_nan() && (l.y - i as f32 * self.used_line_height()).abs() > 0.5);
+        if has_gaps {
+            // px-extent：保留底 ≤ 边界的行
+            let kept = self
+                .lines
+                .iter()
+                .take_while(|l| !l.y.is_nan() && l.y + l.height <= boundary + 0.5)
+                .count();
+            if kept < self.lines.len() {
+                self.lines.truncate(kept);
+                self.clamped = true;
+            }
+        } else if self.lines.len() > n {
             self.lines.truncate(n);
             self.clamped = true;
         }
+    }
+
+    /// 行高（clamp px-extent 判据用）：取首行高（行高一致的 pre/normal 文本）；
+    /// 无行时 0（cap 0 边界 0，全裁）。
+    fn used_line_height(&self) -> f32 {
+        self.lines.first().map(|l| l.height).unwrap_or(0.0)
     }
 
     /// 递归收集 `id` 子树的所有文本，跳过 `local_name` 在 `exclude` 中的元素子树。
