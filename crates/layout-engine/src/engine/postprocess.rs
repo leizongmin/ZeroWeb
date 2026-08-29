@@ -1993,14 +1993,22 @@ pub(super) fn apply_cross_block_line_clamp(
     // 该子末行末（R3770b）。后续任何子被 cap/隐藏时，省略号应附在该子末行末
     //（css-overflow-4：block-ellipsis 附于 clamp 前最后一行），置
     // `cap = Some(消耗行数)` + `clamped`（paint 截到自身行数 = no-op + 末行补 …）。
+    /// R3780：walk 输出（嵌套递归逐层上抛的几何量）。
+    struct WalkOutput {
+        /// clamp 边界（本层内容盒坐标系，最后真实消耗预算的子盒底边）。
+        boundary_y: f32,
+        /// R3780：边界上被隐藏的零高自塌盒 margin-box 底（y+height+margin_bottom）。
+        zero_margin_extent: f32,
+    }
+
     fn walk_children(
         b: &mut LayoutBox,
         styles: &HashMap<NodeId, ComputedStyle>,
         remaining: &mut usize,
         ellipsis_host: &mut Option<(usize, usize)>,
         doc: &zero_dom::Document,
-        boundary_y: &mut f32,
-        zero_margin_extent: &mut f32,
+        out: &mut WalkOutput,
+        auto_mode: bool,
     ) -> bool {
         let child_count = b.children.len();
         let mut exhausted = false;
@@ -2114,10 +2122,10 @@ pub(super) fn apply_cross_block_line_clamp(
                             if (c.height - visible_h).abs() > 0.5 {
                                 c.height = visible_h;
                             }
-                            *boundary_y = c.y + c.height;
+                            out.boundary_y = c.y + c.height;
                         } else {
                             *remaining -= lines;
-                            *boundary_y = c.y + c.height;
+                            out.boundary_y = c.y + c.height;
                         }
                     }
                 }
@@ -2153,7 +2161,7 @@ pub(super) fn apply_cross_block_line_clamp(
                 hide_subtree(&mut b.children[idx]);
                 exhausted = true;
                 continue;
-            } else if *remaining == 0 && b.children[idx].height <= 0.5 && b.children[idx].y > *boundary_y + 0.5 {
+            } else if *remaining == 0 && b.children[idx].height <= 0.5 && b.children[idx].y > out.boundary_y + 0.5 {
                 // R3775：边界之后的**零高**盒（.collapse-through/.rel 型——margin-collapse
                 // 把空盒推到边界后）同样隐藏：css-overflow-4「clamp point 后内容不绘制」
                 // 不豁免零高。023 的 .rel y == 边界 → `>` 严格比较保其豁免（abspos shown）。
@@ -2168,8 +2176,8 @@ pub(super) fn apply_cross_block_line_clamp(
                 {
                     let z = &b.children[idx];
                     let mb = z.y + z.height + z.margin_bottom;
-                    if mb > *zero_margin_extent {
-                        *zero_margin_extent = mb;
+                    if mb > out.zero_margin_extent {
+                        out.zero_margin_extent = mb;
                     }
                 }
                 hide_subtree(&mut b.children[idx]);
@@ -2202,28 +2210,28 @@ pub(super) fn apply_cross_block_line_clamp(
             if has_block_grandchildren || is_inline_flow_carrier {
                 let before = *remaining;
                 let mut inner_host: Option<(usize, usize)> = None;
-                let mut inner_boundary = *boundary_y;
-                let mut inner_zero_margin = 0.0f32;
+                let mut inner_out = WalkOutput { boundary_y: out.boundary_y, zero_margin_extent: 0.0 };
+
                 exhausted = walk_children(
                     &mut b.children[idx],
                     styles,
                     remaining,
                     &mut inner_host,
                     doc,
-                    &mut inner_boundary,
-                    &mut inner_zero_margin,
+                    &mut inner_out,
+                    auto_mode,
                 );
                 // R3775：递归内部的 clamp 边界（其内部坐标系）换算回本层（子 y 相对
                 // 本层内容盒顶）。
-                let inner_abs = b.children[idx].y + inner_boundary;
-                if inner_abs > *boundary_y {
-                    *boundary_y = inner_abs;
+                let inner_abs = b.children[idx].y + inner_out.boundary_y;
+                if inner_abs > out.boundary_y {
+                    out.boundary_y = inner_abs;
                 }
                 // R3780：内部零高自塌盒 margin 上抛（内部坐标 → 本层坐标）。
-                if inner_zero_margin > 0.0 {
-                    let abs = b.children[idx].y + inner_zero_margin;
-                    if abs > *zero_margin_extent {
-                        *zero_margin_extent = abs;
+                if inner_out.zero_margin_extent > 0.0 {
+                    let abs = b.children[idx].y + inner_out.zero_margin_extent;
+                    if abs > out.zero_margin_extent {
+                        out.zero_margin_extent = abs;
                     }
                 }
                 // R3770b：递归内部用尽预算时，ellipsis host 责任在内部——若内部消耗了
@@ -2298,6 +2306,24 @@ pub(super) fn apply_cross_block_line_clamp(
                     ((c.content_height / lh).round() as usize).max(if c.content_height > 0.5 { 1 } else { 0 })
                 };
                 if lines > *remaining {
+                    // R3781：**clamp 点不可落入异 IFC/定高盒内部 → 回退到盒前**
+                    //（css-overflow-4 auto 语义，仅 Auto 限值）：
+                    // - flow-root 子（auto-033）：其行属独立 IFC，「clamp point 不能
+                    //   在 IFC 内部」→ 回退到 IFC 前（max-height 偏移落入其中时）。
+                    // - 定高子（auto-035）：cap 行数不收缩盒（height definite 保持），
+                    //   盒内任何 clamp 点都令容器 = 盒底 > 约束 → 全部非法 → 回退。
+                    // 两者的正确宿主 = 最后完整消耗预算的兄（ellipsis host 已记录，
+                    // loop 尾置 cap + clamped → paint 末行补 …）。
+                    // Count(n) 限值不适用（经典 mid-box clamp 即其语义，032 的 .inner）。
+                    let retreat = auto_mode
+                        && child_style.is_some_and(|s| {
+                            matches!(s.display, DisplayValue::FlowRoot) || !matches!(s.height, LengthValue::Auto)
+                        });
+                    if retreat {
+                        hide_subtree(&mut b.children[idx]);
+                        exhausted = true;
+                        continue;
+                    }
                     let c = &mut b.children[idx];
                     // stored 路径：直接截行；非 stored：置 line_clamp_cap 供 paint 期
                     // 截 glyph + ellipsis，并把盒高收缩到可见行数（防占位/溢出红字）。
@@ -2314,7 +2340,7 @@ pub(super) fn apply_cross_block_line_clamp(
                         c.height = visible_h;
                         c.content_height = (c.content_height - delta).max(0.0);
                     }
-                    *boundary_y = c.y + c.height;
+                    out.boundary_y = c.y + c.height;
                     exhausted = true;
                 } else {
                     *remaining -= lines;
@@ -2323,7 +2349,7 @@ pub(super) fn apply_cross_block_line_clamp(
                     // 边界推过自己，后续零高豁免判据失效（031 的 collapse-through 把
                     // 边界从 128 推到 138，.rel 豁免未被收紧）。
                     if lines > 0 {
-                        *boundary_y = b.children[idx].y + b.children[idx].height;
+                        out.boundary_y = b.children[idx].y + b.children[idx].height;
                     }
                     // R3770b：完整消耗预算的子记录为 ellipsis host 候选（若后续子
                     // 被 cap/隐藏，省略号附其末行末）。
@@ -2383,16 +2409,18 @@ pub(super) fn apply_cross_block_line_clamp(
         // 自身 IFC 已由 R2431 cap 过（容器有直接 inline 文本时），此处只处理跨块预算。
         let mut remaining = limit;
         let mut ellipsis_host: Option<(usize, usize)> = None;
-        let mut boundary_y = 0.0f32;
-        let mut zero_margin_extent = 0.0f32;
+        let mut out = WalkOutput { boundary_y: 0.0, zero_margin_extent: 0.0 };
         let exhausted = walk_children(
             b,
             styles,
             &mut remaining,
             &mut ellipsis_host,
             doc,
-            &mut boundary_y,
-            &mut zero_margin_extent,
+            &mut out,
+            matches!(
+                style.line_clamp,
+                zero_style_system::property::types::LineClampComputedValue::Auto
+            ),
         );
         if exhausted && style.height == LengthValue::Auto && b.declared_height_auto {
             // 收缩容器到可见内容 extent（隐藏盒已清零，max 取可见子底边）。
@@ -2412,7 +2440,7 @@ pub(super) fn apply_cross_block_line_clamp(
                 .max(0.0);
             let new_content = if let Some(constraint) = auto_constraint_px {
                 let constraint = constraint as f32;
-                extent.max(zero_margin_extent.min(constraint))
+                extent.max(out.zero_margin_extent.min(constraint))
             } else {
                 extent
             };

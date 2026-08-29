@@ -24,17 +24,26 @@ fn compute_clamp_container_height(html: &str) -> f32 {
     let styles = sys.compute_styles(&doc, &[]);
     let mut engine = LayoutEngine::new(800.0, 600.0);
     let result = engine.compute(&doc, &styles);
-    fn find_clamp(b: &LayoutBox) -> Option<&LayoutBox> {
-        // clamp 容器 = 置 clamped/cap 或含 hidden 子的盒（跨块 clamp 消费标记）。
-        // 结构唯一性由用例保证（单 clamp 容器）。
-        if (b.line_clamp_clamped || b.line_clamp_cap.is_some() || b.children.iter().any(|c| c.line_clamp_hidden))
-            && b.height > 1.0
-        {
+    // clamp 容器 = 声明 line-clamp 的节点对应盒（结构唯一性由用例保证）。
+    let clamp_ids: std::collections::HashSet<_> = styles
+        .iter()
+        .filter(|(_, s)| {
+            !matches!(
+                s.line_clamp,
+                zero_style_system::property::types::LineClampComputedValue::None
+            )
+        })
+        .map(|(id, _)| *id)
+        .collect();
+    fn find_clamp<'a>(b: &'a LayoutBox, ids: &std::collections::HashSet<zero_dom::NodeId>) -> Option<&'a LayoutBox> {
+        if b.node_id.is_some_and(|id| ids.contains(&id)) {
             return Some(b);
         }
-        b.children.iter().find_map(find_clamp)
+        b.children.iter().find_map(|c| find_clamp(c, ids))
     }
-    find_clamp(&result.root).map(|b| b.height).expect("clamp container box")
+    find_clamp(&result.root, &clamp_ids)
+        .map(|b| b.height)
+        .expect("clamp container box")
 }
 
 /// 根因 1：clamp 边界上的可见 abspos 不贡献容器 auto 高（in-flow extent）。
@@ -89,5 +98,58 @@ fn r3780_zero_margin_beyond_constraint_capped() {
         compute_clamp_container_height(html),
         128.0,
         "边界后零高盒 margin 经 min(constraint) 截掉：容器 = 128（非 133/138）"
+    );
+}
+
+/// R3781：clamp 点不可落入异 IFC/定高盒内部 → 回退到盒前（css-overflow-4 auto 语义）。
+/// driving: line-clamp-auto-033（flow-root 子 = 异 IFC）、line-clamp-auto-035（定高子）。
+/// 容器 6lh 预算，[4 行文本片段][3 行 flow-root][Line 8]——偏移落入 flow-root 行内 →
+/// 回退到其前：flow-root 整体隐藏、Line 8 隐藏、4 行片段为 ellipsis host → 容器 128。
+#[test]
+fn r3781_auto_retreat_before_foreign_ifc_child() {
+    let html = "<html><body style=\"margin:0\">\
+<div style=\"line-clamp: auto; max-height: 192px; font: 16px/32px serif;\">\
+<div style=\"white-space: pre;\">Line 1\nLine 2\nLine 3\nLine 4</div>\
+<div style=\"display: flow-root; white-space: pre;\">Line 5\nLine 6\nLine 7</div>\
+<div style=\"white-space: pre;\">Line 8</div></div>\
+</body></html>";
+    assert_eq!(
+        compute_clamp_container_height(html),
+        128.0,
+        "max-height 偏移落入 flow-root IFC 内 → clamp 回退到盒前：容器 128（旧 192，.ifc 被错误 mid-cap 到 2 行）"
+    );
+}
+
+/// R3781 对照：定高子盒同理——cap 行数不收缩盒（height definite 保持），盒内任何
+/// clamp 点都令容器超约束 → 回退到盒前。
+#[test]
+fn r3781_auto_retreat_before_definite_height_child() {
+    let html = "<html><body style=\"margin:0\">\
+<div style=\"line-clamp: auto; max-height: 192px; font: 16px/32px serif;\">\
+<div style=\"white-space: pre;\">Line 1\nLine 2\nLine 3\nLine 4</div>\
+<div style=\"height: 96px; white-space: pre;\">Line 5\nLine 6</div>\
+<div style=\"white-space: pre;\">Line 7</div></div>\
+</body></html>";
+    assert_eq!(
+        compute_clamp_container_height(html),
+        128.0,
+        "偏移落入定高盒 → 回退：容器 128（旧 192）"
+    );
+}
+
+/// R3781 对照（034 不回退）：偏移恰在 flow-root IFC 边界（盒行数 ≤ 余量）→ 正常
+/// 完整消耗，不触发回退。
+#[test]
+fn r3781_flow_root_child_at_boundary_consumes_normally() {
+    // 预算 7 行：4（片段）+ 3（flow-root 全部）= 7 → 无溢出无回退，容器 7×32 = 224。
+    let html = "<html><body style=\"margin:0\">\
+<div style=\"line-clamp: auto; max-height: 224px; font: 16px/32px serif;\">\
+<div style=\"white-space: pre;\">Line 1\nLine 2\nLine 3\nLine 4</div>\
+<div style=\"display: flow-root; white-space: pre;\">Line 5\nLine 6\nLine 7</div>\
+</body></html>";
+    assert_eq!(
+        compute_clamp_container_height(html),
+        224.0,
+        "偏移恰在 flow-root 边界：完整消耗，容器 224"
     );
 }
