@@ -26,6 +26,7 @@ pub(crate) fn resolve_collapsed_borders(
     table_box: &mut LayoutBox,
     grid: &TableGrid,
     styles: &HashMap<NodeId, ComputedStyle>,
+    doc: &zero_dom::Document,
 ) {
     use zero_style_system::BorderCollapseValue;
 
@@ -51,6 +52,73 @@ pub(crate) fn resolve_collapsed_borders(
     }
     let last_row = row_count - 1;
     let last_col = grid.col_count.saturating_sub(1);
+
+    // R3805：列覆盖映射——每列 → 覆盖它的 (colgroup, col) 元素（§17.6.2.1 Column /
+    // ColumnGroup 参与左右缘冲突解析的前提）。游标推进与 collect_table_col_backgrounds
+    // 的 Pass 1/2 同构：colgroup 占 span（含内部 col 时为其和），col 依次占自身 span。
+    let mut col_cover: Vec<(Option<NodeId>, Option<NodeId>)> = vec![(None, None); grid.col_count];
+    {
+        use crate::table::{get_display, get_span};
+        use zero_css_parser::values::DisplayValue;
+        let mut cursor = 0usize;
+        for child in &table_box.children {
+            if cursor >= grid.col_count {
+                break;
+            }
+            let display = get_display(child, styles);
+            match display {
+                Some(DisplayValue::TableColumnGroup) => {
+                    let has_inner_cols = child
+                        .children
+                        .iter()
+                        .any(|c| get_display(c, styles) == Some(DisplayValue::TableColumn));
+                    let rg_span = if has_inner_cols {
+                        child
+                            .children
+                            .iter()
+                            .filter(|c| get_display(c, styles) == Some(DisplayValue::TableColumn))
+                            .map(|c| get_span(c, doc))
+                            .sum::<usize>()
+                    } else {
+                        get_span(child, doc)
+                    };
+                    let start = cursor.min(grid.col_count);
+                    let end = (cursor + rg_span).min(grid.col_count);
+                    let rg_id = child.node_id;
+                    for slot in col_cover.iter_mut().take(end).skip(start) {
+                        slot.0 = rg_id;
+                    }
+                    // 内部 col 覆盖各自 span（列级来源优先于组级）
+                    let mut inner_cursor = cursor;
+                    for inner in &child.children {
+                        if get_display(inner, styles) != Some(DisplayValue::TableColumn) {
+                            continue;
+                        }
+                        let cspan = get_span(inner, doc);
+                        let istart = inner_cursor.min(grid.col_count);
+                        let iend = (inner_cursor + cspan).min(grid.col_count);
+                        let col_id = inner.node_id;
+                        for slot in col_cover.iter_mut().take(iend).skip(istart) {
+                            slot.1 = col_id;
+                        }
+                        inner_cursor += cspan;
+                    }
+                    cursor += rg_span;
+                }
+                Some(DisplayValue::TableColumn) => {
+                    let cspan = get_span(child, doc);
+                    let start = cursor.min(grid.col_count);
+                    let end = (cursor + cspan).min(grid.col_count);
+                    let col_id = child.node_id;
+                    for slot in col_cover.iter_mut().take(end).skip(start) {
+                        slot.1 = col_id;
+                    }
+                    cursor += cspan;
+                }
+                _ => {}
+            }
+        }
+    }
 
     /// 单元格四边边框信息（宽度 + 样式），从 ComputedStyle 读取
     #[derive(Clone)]
@@ -125,6 +193,43 @@ pub(crate) fn resolve_collapsed_borders(
 
         cell_border_data.push(borders);
         cell_col_map.push(col_map);
+    }
+
+    // R3805：Column/ColumnGroup 边框参与左右缘冲突的解析 helper（§17.6.2.1 优先级
+    // Cell > Row > RowGroup > Column > ColumnGroup > Table，故在 Table 之后、RowGroup
+    // 之前解析）。col/colgroup 的 border 仅作用于其覆盖列的左右缘（§17.5.3 表格层）。
+    fn resolve_element_side(
+        winner: &mut (f32, BorderStyleValue, u32, BorderSource),
+        elem_id: Option<NodeId>,
+        side: u8,
+        styles: &HashMap<NodeId, ComputedStyle>,
+    ) {
+        let Some(id) = elem_id else { return };
+        let Some(es) = styles.get(&id) else { return };
+        let (w, st, color) = match side {
+            1 => (
+                length_to_px(&es.border_right_width, es),
+                &es.border_right_style,
+                color_value_to_u32(&es.border_right_color, &es.color),
+            ),
+            3 => (
+                length_to_px(&es.border_left_width, es),
+                &es.border_left_style,
+                color_value_to_u32(&es.border_left_color, &es.color),
+            ),
+            _ => return,
+        };
+        if w <= 0.0 || matches!(st, BorderStyleValue::None | BorderStyleValue::Hidden) {
+            return;
+        }
+        let (ref mut win_w, ref mut win_s, ref mut win_color, ref mut win_src) = *winner;
+        let res = resolve_border((*win_w, win_s, *win_src), (w, st, BorderSource::Column));
+        if let BorderSource::Column = res {
+            *win_w = w;
+            *win_s = st.clone();
+            *win_color = color;
+            *win_src = BorderSource::Column;
+        }
     }
 
     // 阶段 2：解析所有边框冲突，收集需要覆盖的边框值
@@ -360,6 +465,10 @@ pub(crate) fn resolve_collapsed_borders(
                 let (mut win_w, mut win_s) = (table_bl, &table_style.border_left_style as &BorderStyleValue);
                 let mut win_color = color_value_to_u32(&table_style.border_left_color, &table_style.color);
                 let mut win_src = BorderSource::Table;
+                // R3805：ColumnGroup → Column 依次解析（col 覆盖列的列级来源优先于组级）。
+                let cover = col_cover.get(cell.col_start).copied().unwrap_or((None, None));
+                resolve_element_side(&mut (win_w, win_s.clone(), win_color, win_src), cover.0, 3, styles);
+                resolve_element_side(&mut (win_w, win_s.clone(), win_color, win_src), cover.1, 3, styles);
                 if let Some((rg_w, rg_s, rg_c)) = rg_info {
                     let winner = resolve_border((win_w, win_s, win_src), (rg_w, rg_s, BorderSource::RowGroup));
                     if winner == BorderSource::RowGroup {
@@ -367,6 +476,28 @@ pub(crate) fn resolve_collapsed_borders(
                         win_s = rg_s;
                         win_color = rg_c;
                         win_src = BorderSource::RowGroup;
+                    }
+                }
+                // R3805：Row 参与左缘冲突（CSS2 §17.6.2.1 优先级 Cell > Row > RowGroup > Table；
+                // 旧实现 Row 仅参与顶/底缘，display:table-row 的 border-left 在 collapse 中失权——
+                // border-left-width-applies-to-004 族 driving）。
+                if let Some(rb) = get_row_box(table_box, row)
+                    && let Some(rs) = rb.node_id.and_then(|id| styles.get(&id))
+                {
+                    let row_bl = length_to_px(&rs.border_left_width, rs);
+                    if row_bl > 0.0
+                        && !matches!(rs.border_left_style, BorderStyleValue::None | BorderStyleValue::Hidden)
+                    {
+                        let winner = resolve_border(
+                            (win_w, win_s, win_src),
+                            (row_bl, &rs.border_left_style, BorderSource::Row),
+                        );
+                        if winner == BorderSource::Row {
+                            win_w = row_bl;
+                            win_s = &rs.border_left_style;
+                            win_color = color_value_to_u32(&rs.border_left_color, &rs.color);
+                            win_src = BorderSource::Row;
+                        }
                     }
                 }
                 let winner = resolve_border((win_w, win_s, win_src), (cb.left_w, &cb.left_s, BorderSource::Cell));
@@ -452,6 +583,10 @@ pub(crate) fn resolve_collapsed_borders(
                 let (mut win_w, mut win_s) = (table_br, &table_style.border_right_style as &BorderStyleValue);
                 let mut win_color = color_value_to_u32(&table_style.border_right_color, &table_style.color);
                 let mut win_src = BorderSource::Table;
+                // R3805：ColumnGroup → Column 依次解析（镜像左缘）。
+                let cover = col_cover.get(cell.col_start).copied().unwrap_or((None, None));
+                resolve_element_side(&mut (win_w, win_s.clone(), win_color, win_src), cover.0, 1, styles);
+                resolve_element_side(&mut (win_w, win_s.clone(), win_color, win_src), cover.1, 1, styles);
                 if let Some((rg_w, rg_s, rg_c)) = rg_info {
                     let winner = resolve_border((win_w, win_s, win_src), (rg_w, rg_s, BorderSource::RowGroup));
                     if winner == BorderSource::RowGroup {
@@ -459,6 +594,26 @@ pub(crate) fn resolve_collapsed_borders(
                         win_s = rg_s;
                         win_color = rg_c;
                         win_src = BorderSource::RowGroup;
+                    }
+                }
+                // R3805：Row 参与右缘冲突（镜像左缘，§17.6.2.1 Cell > Row > RowGroup > Table）。
+                if let Some(rb) = get_row_box(table_box, row)
+                    && let Some(rs) = rb.node_id.and_then(|id| styles.get(&id))
+                {
+                    let row_br = length_to_px(&rs.border_right_width, rs);
+                    if row_br > 0.0
+                        && !matches!(rs.border_right_style, BorderStyleValue::None | BorderStyleValue::Hidden)
+                    {
+                        let winner = resolve_border(
+                            (win_w, win_s, win_src),
+                            (row_br, &rs.border_right_style, BorderSource::Row),
+                        );
+                        if winner == BorderSource::Row {
+                            win_w = row_br;
+                            win_s = &rs.border_right_style;
+                            win_color = color_value_to_u32(&rs.border_right_color, &rs.color);
+                            win_src = BorderSource::Row;
+                        }
                     }
                 }
                 let winner = resolve_border((win_w, win_s, win_src), (cb.right_w, &cb.right_s, BorderSource::Cell));

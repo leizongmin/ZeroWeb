@@ -1015,3 +1015,36 @@ fn test_root_relative_position_applies_inset() {
         result2.root.y
     );
 }
+
+/// R3805：Row 参与左右缘 collapse 冲突（CSS2 §17.6.2.1 Cell > Row > RowGroup > Column > ColumnGroup >
+/// Table）。旧实现 Row 仅参与顶/底缘，display:table-row 的 border-left 在 collapse 中失权
+/// （border-left-width-applies-to-004 族 driving：row border-left 1in solid → cell 左缘应被覆盖为 96px）。
+#[test]
+fn r3805_row_border_left_participates_in_collapse() {
+    let html = r#"<html><body style="margin:0"><table style="border-collapse: collapse"><tr style="border-left: 96px solid green"><td style="width: 50px; height: 50px"></td></tr></table></body></html>"#;
+    let doc = zero_dom::parse_html(html);
+    let mut sys = zero_style_system::StyleSystem::new();
+    sys.set_viewport(800.0, 600.0);
+    let styles = sys.compute_styles(&doc, &[]);
+    let mut engine = LayoutEngine::new(800.0, 600.0);
+    let result = engine.compute(&doc, &styles);
+
+    // 找到 cell 盒：验证其 border_left 被覆盖为 row 的 96px（胜出宽度写入 cell 供 paint 折半绘制）
+    fn find_cell(box_node: &crate::types::LayoutBox) -> Option<&crate::types::LayoutBox> {
+        if box_node.border_left > 50.0 {
+            return Some(box_node);
+        }
+        for child in &box_node.children {
+            if let Some(c) = find_cell(child) {
+                return Some(c);
+            }
+        }
+        None
+    }
+    let cell = find_cell(&result.root).expect("cell with winning row border-left expected");
+    assert!(
+        (cell.border_left - 96.0).abs() < 0.5,
+        "row border-left (96px) must win the left-edge collapse and be written to the cell, got {}",
+        cell.border_left
+    );
+}

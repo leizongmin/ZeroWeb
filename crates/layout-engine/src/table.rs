@@ -332,7 +332,7 @@ pub(crate) fn layout_table(
 
     // 4. border-collapse: collapse 时解析边框冲突
     //    必须在 suppress 之前，因为 resolve 从 ComputedStyle 读取边框
-    resolve_collapsed_borders(table_box, &grid, styles);
+    resolve_collapsed_borders(table_box, &grid, styles, doc);
 
     // 5. 抑制行组和行的 border/padding/margin
     //    CSS 2.1 规范：在 separated border model 中，
