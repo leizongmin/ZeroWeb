@@ -655,6 +655,58 @@
           }
           return '';
         }
+        // R374（js-dom M4/DC-3）：**DOMTokenList 反射族**（WPT dom/lists
+        // DOMTokenList-coverage-for-attributes）——relList（a/area/link → 'rel'）、
+        // sandbox（iframe → 'sandbox'）、sizes（link → 'sizes'）、htmlFor（output →
+        // 'for'；label.htmlFor 是字符串反射不受影响——_realTag 判定）。旧均落 generic
+        // 字符串反射/undefined。空串/缺失时 spec 仍返**空 DOMTokenList**（非 undefined，
+        // coverage 测试对 sup 表内组合断言 class_string；表外组合走原路径 undefined）。
+        // https://html.spec.whatwg.org/multipage/common-microsyntaxes.html#ordered-set
+        if ((prop === 'relList' || prop === 'sandbox' || prop === 'sizes' || prop === 'htmlFor')
+            && typeof _classListProxy === 'function') {
+          var _r374clTag = '', _r374clNs = 'http://www.w3.org/1999/xhtml';
+          try {
+            // R374：NS 元素（createElementNS → _nsHandles 印记）的 tag/ns 从印记取——
+            // host 侧 pending 未 apply 时 _realTag 回落 DIV（探针实证 relList:div），
+            // coverage 测试全部经 createElementNS 建。非 NS 元素默认 HTML ns。
+            if (handle && typeof _nsHandles !== 'undefined' && _nsHandles[handle]) {
+              _r374clTag = String(_nsHandles[handle].qualifiedName || '').toLowerCase();
+              var _r374c = _r374clTag.indexOf(':');
+              if (_r374c >= 0) _r374clTag = _r374clTag.slice(_r374c + 1);
+              // R374：空/null ns ≠ XHTML——`null || XHTML` 会把 null ns 误判 HTML
+              //（coverage 的 null-namespace 组合期望 undefined）。null/'' 归一空串。
+              _r374clNs = _nsHandles[handle].namespace == null ? '' : String(_nsHandles[handle].namespace);
+            } else {
+              _r374clTag = _realTag(sel, handle).toLowerCase();
+            }
+          } catch (_e374clt) {}
+          var _r374isHtmlNs = _r374clNs === 'http://www.w3.org/1999/xhtml';
+          // spec relList：HTML ns 的 a/area/link + **SVG ns 的 a**（SVGAnchorElement）——
+          // SVG area/link、MathML 全部无此属性（coverage 表外组合期望 undefined）。
+          if (prop === 'relList'
+              && (_r374isHtmlNs ? (_r374clTag === 'a' || _r374clTag === 'area' || _r374clTag === 'link')
+                               : ((_r374clNs === 'http://www.w3.org/2000/svg' || _r374clNs === 'http://www.w3.org/1998/Math/MathML') && _r374clTag === 'a'))) {
+            return _classListProxy(sel, handle, 'rel');
+          }
+          if (prop === 'sandbox' && _r374isHtmlNs && _r374clTag === 'iframe') {
+            return _classListProxy(sel, handle, 'sandbox');
+          }
+          if (prop === 'sizes' && _r374isHtmlNs && _r374clTag === 'link') {
+            return _classListProxy(sel, handle, 'sizes');
+          }
+          if (prop === 'htmlFor' && _r374isHtmlNs && _r374clTag === 'output') {
+            return _classListProxy(sel, handle, 'for');
+          }
+          // R374：四属性 gate-miss（错误元素/错误 ns）→ undefined（spec：这些 IDL
+          // 属性只存在于特定接口；generic 反射回落属性串 "" 不可接受——coverage
+          // 表外组合全族期望 undefined）。label.htmlFor 例外（R2840 字符串反射）。
+          if (prop === 'htmlFor' && _r374clTag !== 'label') {
+            return undefined;
+          }
+          if (prop === 'relList' || prop === 'sandbox' || prop === 'sizes') {
+            return undefined;
+          }
+        }
         if (prop === 'parentNode') {
           // R136（js-dom M4）：shadow root 的 parentNode 恒 null（spec ShadowRoot 不在
           // 树——getRootNode composed 经 host 上行不依赖 parentNode；WPT rootNode

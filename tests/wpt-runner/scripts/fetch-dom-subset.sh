@@ -30,6 +30,7 @@ SUBDIRS=(
   "dom/traversal"
   "dom/ranges"
   "dom/abort"
+  "dom/lists"
 )
 
 fetch_raw() {

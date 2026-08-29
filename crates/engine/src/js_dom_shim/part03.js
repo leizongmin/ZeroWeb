@@ -3462,15 +3462,38 @@
   //（force 参被忽略——常见 `classList.toggle('x', cond)` 模式失效）、`replace`、`item`、`length`、indexed 访问、
   // `forEach`、`toString`/`value`、variadic add/remove、`Symbol.iterator`。modern 框架/库高频用 length/indexed/
   // forEach 迭代 + replace + toggle(cond) 条件切换。Proxy 暴露动态 length + indexed 访问（每次读 live 列表）。
-  function _classListProxy(sel, handle) {
-    var key = _elKey(sel, handle);
+  function _classListProxy(sel, handle, attrName) {
+    // R374（js-dom M4/DC-3）：attrName 参数化（默认 'class'）——relList/sandbox/sizes/
+    // htmlFor(output) 同为 DOMTokenList 反射（WPT dom/lists
+    // DOMTokenList-coverage-for-attributes 全族）。缓存键带 attr 后缀防同元素多列表互踩。
+    attrName = attrName || 'class';
+    // R374：默认 'class' 保持**无后缀键**——_classCache 的其余写点（className setter/
+    // host merge/R358 清桶等）全用无后缀键，后缀化会使同脚本内 class 读/写分裂两个
+    // 缓存条目（Element-classlist length 全族 0 回归根因）。非 class 列表（rel/sandbox/
+    // sizes/for）才加后缀隔离。
+    var key = _elKey(sel, handle) + (attrName === 'class' ? '' : ':' + attrName);
     // R19：per-element 缓存——spec classList accessor 每次返回同一 DOMTokenList 对象（WPT identity 断言）。
     if (_clsProxyCache[key]) return _clsProxyCache[key];
+    // R374：attr 感知的本地读/缺失判定（模块级 _readClass/_readClassRaw 硬编码 'class'，
+    // 不能直接复用——本闭包按 attrName 读）。
+    var _r374read = function () {
+      if (_classCache[key] != null) return _classCache[key];
+      var v = (handle ? __zw_get_attr_handle(handle, attrName) : __zw_get_attr(sel, attrName)) || '';
+      _classCache[key] = v;
+      return v;
+    };
+    var _r374readRaw = function () {
+      try {
+        if (handle && typeof __zw_has_attr_handle === 'function') return __zw_has_attr_handle(handle, attrName) === '1' ? '' : null;
+        if (typeof __zw_has_attr_lw === 'function') return __zw_has_attr_lw(sel, attrName) === '1' ? '' : null;
+        return null;
+      } catch (_e374rr) { return null; }
+    };
     // 当前列表（缓存优先，反映同脚本内累积操作，非 stale snapshot）。
     // spec DOMTokenList：token 集合为**有序去重**（首个出现位置保留，后续重复丢弃）+ 按 ASCII 空白分隔。
     // `"a a a"` → `["a"]`（length 1）；`"\t\n\f\r a\t\n\f\r b\t\n\f\r "` → `["a","b"]`（R13 classlist 去重）。
     var cur = function () {
-      var raw = _zwSplitClassList(_readClass(key, sel, handle));
+      var raw = _zwSplitClassList(_r374read());
       var seen = Object.create(null);
       var out = [];
       for (var i = 0; i < raw.length; i++) {
@@ -3495,14 +3518,14 @@
       // force（R19 replace）语义保持。
       // **例外（R46 修正）**：remove 到空集且原 attribute 缺失（null）——不写不 notify（remove 无 token
       // 不得**创建**空 class 属性；WPT classlist checkRemove(null, ["a"], null) 期望 attribute 保持 null）。
-      if (!force && v === '' && _readClassRaw(key, sel, handle) === null) return;
+      if (!force && v === '' && _r374readRaw() === null) return;
       // js-dom M4 R45：classList write 的 attributeOldValue——写入前捕获（同 IDL setter 模式）。
       var _clsMoId = _mo_id(handle, sel);
-      var _clsOld = (_clsMoId != null && _mo_any_wants_attr_old(_clsMoId, 'class'))
-        ? _mo_read_attr(sel, handle, 'class') : null;
+      var _clsOld = (_clsMoId != null && _mo_any_wants_attr_old(_clsMoId, attrName))
+        ? _mo_read_attr(sel, handle, attrName) : null;
       _classCache[key] = v;
-      if (handle) __zw_set_attr_handle(handle, 'class', v);
-      else __zw_set_attr(sel, 'class', v);
+      if (handle) __zw_set_attr_handle(handle, attrName, v);
+      else __zw_set_attr(sel, attrName, v);
       // R122：classList write 同步实例层（getAttribute 的实例优先读需要——classList 直写
       // host 不经 setAttribute，实例层不更新会读回 stale 旧值）。
       try {
@@ -3510,12 +3533,12 @@
         if (_clsInst) {
           var _clsHit = false;
           for (var _ci122 = 0; _ci122 < _clsInst.length; _ci122++) {
-            if (_clsInst[_ci122].qname === 'class') { _clsInst[_ci122].value = v; _clsHit = true; break; }
+            if (_clsInst[_ci122].qname === attrName) { _clsInst[_ci122].value = v; _clsHit = true; break; }
           }
-          if (!_clsHit) _zwAttrInstUpsert(key, 'class', null, null, 'class', v);
+          if (!_clsHit) _zwAttrInstUpsert(key, attrName, null, null, attrName, v);
         }
       } catch (_eCls122) {}
-      _mo_notify(sel, handle, { type: 'attributes', attributeName: 'class', oldValue: _clsOld });
+      _mo_notify(sel, handle, { type: 'attributes', attributeName: attrName, oldValue: _clsOld });
     };
     // DOMTokenList token 校验（spec `dom-domtokenlist-validation`）：空串 → SyntaxError
     // DOMException（code 12）；含 ASCII 空白 → InvalidCharacterError DOMException（code 5）。
@@ -3640,16 +3663,83 @@
         var p = cur();
         for (var k = 0; k < p.length; k++) cb.call(thisArg, p[k], k, proxy);
       },
-      toString: function () { return _readClass(key, sel, handle); },
+      toString: function () { return _r374read(); },
       entries: function () { var p = cur(); var n = 0; return { next: function () { return n < p.length ? { value: [n, p[n++]], done: false } : { value: undefined, done: true }; } }; },
       keys: function () { var p = cur(); var n = 0; return { next: function () { return n < p.length ? { value: n++, done: false } : { value: undefined, done: true }; } }; },
       values: function () { var p = cur(); var n = 0; return { next: function () { return n < p.length ? { value: p[n++], done: false } : { value: undefined, done: true }; } }; },
     };
+    // R374（js-dom M4/DC-3）：**DOMTokenList 品牌与迭代器协议补全**（WPT dom/lists 基
+    // 线驱动）。① Symbol.toStringTag——`Object.prototype.toString.call(list)` 返
+    // '[object DOMTokenList]'（coverage-for-attributes 全族 + stringifier 的
+    // assert_class_string；旧返 '[object Object]'）。② 迭代器对象可迭代——values/
+    // keys/entries 的返回值加 `Symbol.iterator: self`（spec 的 iterator objects 是
+    // %IteratorIterator% 形态：`[...list.values()]` 展开要求返回值自身可迭代；旧裸
+    // {next} 对象使展开抛 not-iterable）。
+    // https://webidl.spec.whatwg.org/#es-DOMTokenList
+    try {
+      Object.defineProperty(target, Symbol.toStringTag, {
+        value: 'DOMTokenList', configurable: true, enumerable: false, writable: false,
+      });
+    } catch (_e374tag) {}
+    var _r374mkIterable = function (it) {
+      try { it[Symbol.iterator] = function () { return it; }; } catch (_e374it) {}
+      return it;
+    };
+    var _r374origValues = target.values;
+    var _r374origKeys = target.keys;
+    var _r374origEntries = target.entries;
+    target.values = function () { return _r374mkIterable(_r374origValues.call(target)); };
+    target.keys = function () { return _r374mkIterable(_r374origKeys.call(target)); };
+    target.entries = function () { return _r374mkIterable(_r374origEntries.call(target)); };
     // Proxy：length + indexed 访问动态读 live 列表；value/nodeValue 返当前 class 串；Symbol iterable。
+    // R374：has trap——`'length' in list` 等 membership 断言（Iterable 测试族）旧恒 false
+    //（无 has trap 时 `in` 走 target own 查询，get trap 动态面全 miss）。set trap——
+    // `list.value = '...'`（spec `dom-domtokenlist-value` setter：字面值写 attribute，
+    // **不规范化**——WPT value "assigning value should set the literal value" 期望
+    // " foo bar foo " 原样；区别于 add/remove 的 runUpdate 规范化路径）。
     var proxy = new Proxy(target, {
-      get: function (_t, prop) {
+      has: function (_t, prop) {
+        if (prop === 'length' || prop === 'value' || prop === 'nodeValue' || prop === 'toString'
+            || prop === 'forEach' || prop === 'keys' || prop === 'values' || prop === 'entries'
+            || prop === 'add' || prop === 'remove' || prop === 'contains' || prop === 'toggle'
+            || prop === 'replace' || prop === 'supports' || prop === 'item'
+            || prop === Symbol.iterator || prop === Symbol.toStringTag) return true;
+        if (typeof prop === 'string' && /^\d+$/.test(prop)) return +prop < cur().length;
+        if (typeof prop === 'string' && prop in target) return true;
+        return false;
+      },
+      set: function (_t, prop, v) {
+        if (prop === 'value' || prop === 'nodeValue') {
+          // 字面值写（spec value setter——不规范化）：本地缓存 + attribute 直写 + record。
+          var _r374lit = v == null ? '' : String(v);
+          var _r374moId = _mo_id(handle, sel);
+          var _r374old = (_r374moId != null && _mo_any_wants_attr_old(_r374moId, 'class'))
+            ? _mo_read_attr(sel, handle, 'class') : null;
+          _classCache[key] = _r374lit;
+          if (handle) __zw_set_attr_handle(handle, 'class', _r374lit);
+          else __zw_set_attr(sel, 'class', _r374lit);
+          _mo_notify(sel, handle, { type: 'attributes', attributeName: 'class', oldValue: _r374old });
+          return true;
+        }
+        return false;
+      },
+      get: function (_t, prop, _recv) {
         if (prop === 'length') return cur().length;
-        if (prop === 'value' || prop === 'nodeValue') return _readClass(key, sel, handle);
+        if (prop === 'value' || prop === 'nodeValue') return _r374read();
+        // R374（js-dom M4/DC-3）：**iterable<T> 声明的方法 = Array.prototype 同源**
+        //（spec WebIDL iterable：keys/values/entries/forEach/Symbol.iterator 与
+        // Array 相同的 generic 函数——WPT dom/lists DOMTokenList-iteration
+        // "classList inheritance from Array.prototype" 断言恒等）。generic 方法经
+        // this=length/indexed 读（get trap 服务）作用于 proxy 本体。
+        if (prop === 'keys' || prop === 'entries' || prop === 'forEach') {
+          return Array.prototype[prop];
+        }
+        if (prop === Symbol.iterator) {
+          return Array.prototype[Symbol.iterator] || target[Symbol.iterator];
+        }
+        if (prop === 'values') {
+          return Array.prototype.values || target.values;
+        }
         if (typeof prop !== 'string') return target[prop];
         if (/^\d+$/.test(prop)) {
           var p = cur();
