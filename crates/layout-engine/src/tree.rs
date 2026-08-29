@@ -958,15 +958,25 @@ fn apply_replaced_min_max_constraint_table(
         // both-abs）——ratio-only SVG 的 R2054-C2 size 来自容器宽（bb 语义），加 frame 双重
         // 计数（intrinsic-ratio-replaced-box-sizing 100→120 实证）。
         if border_box && css_dims_auto && stored_is_content_intrinsic {
+            use zero_style_system::property::types::BorderStyleValue;
+            // border 宽度仅计入非 none 边——UA 默认 border-width:medium(3px) +
+            // border-style:none 不渲染（001 img0：pad 10 + 假 border 12 → bb 91 应 85）。
             let px = |v: &LengthValue| -> f32 { other_px(v) };
+            let bw = |w: &LengthValue, s: &BorderStyleValue| -> f32 {
+                if matches!(s, BorderStyleValue::None | BorderStyleValue::Hidden) {
+                    0.0
+                } else {
+                    px(w)
+                }
+            };
             let fx = px(&computed.padding_left)
                 + px(&computed.padding_right)
-                + px(&computed.border_left_width)
-                + px(&computed.border_right_width);
+                + bw(&computed.border_left_width, &computed.border_left_style)
+                + bw(&computed.border_right_width, &computed.border_right_style);
             let fy = px(&computed.padding_top)
                 + px(&computed.padding_bottom)
-                + px(&computed.border_top_width)
-                + px(&computed.border_bottom_width);
+                + bw(&computed.border_top_width, &computed.border_top_style)
+                + bw(&computed.border_bottom_width, &computed.border_bottom_style);
             if let (Some(iw0), Some(ih0)) = (
                 taffy_style.size.width.into_option(),
                 taffy_style.size.height.into_option(),
@@ -1009,15 +1019,24 @@ fn apply_replaced_min_max_constraint_table(
         zero_style_system::property::types::BoxSizingValue::BorderBox
     );
     let (iw_used, r) = if border_box {
+        use zero_style_system::property::types::BorderStyleValue;
         let px = |v: &LengthValue| -> f32 { resolve(v).unwrap_or(0.0) };
+        // border 宽度仅计入非 none 边（同上——UA medium/none 不渲染）。
+        let bw = |w: &LengthValue, s: &BorderStyleValue| -> f32 {
+            if matches!(s, BorderStyleValue::None | BorderStyleValue::Hidden) {
+                0.0
+            } else {
+                px(w)
+            }
+        };
         let fx = px(&computed.padding_left)
             + px(&computed.padding_right)
-            + px(&computed.border_left_width)
-            + px(&computed.border_right_width);
+            + bw(&computed.border_left_width, &computed.border_left_style)
+            + bw(&computed.border_right_width, &computed.border_right_style);
         let fy = px(&computed.padding_top)
             + px(&computed.padding_bottom)
-            + px(&computed.border_top_width)
-            + px(&computed.border_bottom_width);
+            + bw(&computed.border_top_width, &computed.border_top_style)
+            + bw(&computed.border_bottom_width, &computed.border_bottom_style);
         let bb_w = iw + fx;
         let bb_h = ih + fy;
         (bb_w, taffy_style.aspect_ratio.unwrap_or(bb_w / bb_h))

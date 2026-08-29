@@ -440,3 +440,20 @@ fn r3801_explicit_css_dims_not_frame_adjusted() {
         "R3801: 显式 CSS 尺寸（bb 语义）+ 无 min/max → 不加 frame，实际 {w}×{h}（误加 → 240）"
     );
 }
+
+/// R3802（box-sizing-replaced-001 驱动案）：border-style:none（UA 默认 medium 3px +
+/// none 不渲染）的边不计入 border-box frame——img pad 5（frame 10，border 假宽 0）：
+/// 无约束 bb = content 75 + 10 = 85（旧假 border 12 → 91×91）。
+#[test]
+fn r3802_border_style_none_excluded_from_frame() {
+    let html = r#"<!DOCTYPE html><html><body style="margin:0">
+<img src="x.png" style="padding: 5px; box-sizing: border-box;">
+</body></html>"#;
+    let (doc, result) = compute_with_intrinsic(html, 75.0, 75.0);
+    let img = doc.get_elements_by_tag_name("img").into_iter().next().expect("img");
+    let (w, h) = find_box(&result.root, img).expect("img box");
+    assert!(
+        (w - 85.0).abs() < 1.0 && (h - 85.0).abs() < 1.0,
+        "R3802: border-style:none 不计 frame——bb = 75 + pad 10 = 85，实际 {w}×{h}（UA medium/none 假 border 12 → 91）"
+    );
+}
