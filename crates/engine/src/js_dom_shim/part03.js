@@ -8168,6 +8168,25 @@
         // R262：live-range 边界迁移（spec concept-node-pre-remove 末段——先于树状态变化；
         // _tree.removeChild 内部（_zwMEl 域）亦有一处调用，此处对 proxy/registry 域父形态兜底）。
         try { if (globalThis.__zwAdjustRangesForRemove) globalThis.__zwAdjustRangesForRemove(c); } catch (_eR262b) {}
+        // R369（js-dom M4）：串行合并子（handle 元素 append 进 iframe 子文档 body 的
+        // 登记数组）——host 树里只有序列化副本，_tree.removeChild 找不到 → 静默穿透。
+        // 登记命中时本地剔除 + 断父链 + 反链清理（spec `dom-child-remove`；part04
+        // remove trap 的 R369 委托与显式 body.removeChild 调用共同消费本分支）。
+        var _r369Serial = body._zwSerialKids;
+        if (_r369Serial) {
+          var _r369si = _r369Serial.indexOf(c);
+          if (_r369si >= 0) {
+            _r369Serial.splice(_r369si, 1);
+            try { if (c.parentNode === body) c.parentNode = null; } catch (_e369pc) {}
+            try {
+              if (c.__zwHandle && typeof _zwNodeParent !== 'undefined' && _zwNodeParent) {
+                var _r369lnk = _zwNodeParent[String(c.__zwHandle)];
+                if (_r369lnk && _r369lnk.innerBody === body) delete _zwNodeParent[String(c.__zwHandle)];
+              }
+            } catch (_e369np2) {}
+            return c;
+          }
+        }
         var r = _tree.removeChild(c);
         if (c && c.parentNode === _tree) c.parentNode = null;
         if (c && c.nodeType === 1) { _zwQWrapGen++; _zwQWrapCache.clear(); _tree._zwNodeIdx = null; }
@@ -8198,6 +8217,29 @@
             var frag = '<' + oTag + oattrs + '>' + oih + '</' + oTag + '>';
             bodyHtml = (_tree ? _tree.innerHTML : bodyHtml) + frag; _zwQWrapGen++; _zwQWrapCache.clear(); _zwNodeBridgeMap.clear();
             _tree = null;
+            // R369（js-dom M4）：**父链重接 + 反链记账**——本分支 early-return 此前不设
+            // `c.parentNode` 也不写 `_zwNodeParent` 反链：handle 子（iframe 元素等）append
+            // 到 iframe 子文档 body 后 parentNode 恒 null、`isConnected` 反链爬升无记录
+            // （WPT Node-isConnected "Test with iframes"：`frames[0].contentDocument.body
+            // .appendChild(frames[1])` 后 frames[1].isConnected 期望 true——spec connected
+            // = shadow-including root 是 document，iframe 子文档本身即 Document）。记账
+            // `{ parentSel: null, parentHandle: null, innerBody: body }`——part04 isConnected
+            // 爬升遇 innerBody 记录时做**容器身份包含判定**（body.childNodes 含子 ⇒ 子的
+            // 根是本 doc ⇒ connected；body.removeChild/子 remove 后数组失含 ⇒ 自动断开，
+            // 无需额外清除钩子）。
+            try { c.parentNode = body; } catch (_e369p) {}
+            // R369：串行合并子登记（body 侧本地数组）——host 重建树里的解析副本与 JS
+            // 侧对象无 identity，包含判定须走**登记数组**（removeChild/委托移除时同步
+            // 剔除，见 body.removeChild 的 R369 分支）。
+            try {
+              if (!body._zwSerialKids) body._zwSerialKids = [];
+              if (body._zwSerialKids.indexOf(c) < 0) body._zwSerialKids.push(c);
+            } catch (_e369sk) {}
+            try {
+              if (typeof _zwNodeParent !== 'undefined' && _zwNodeParent) {
+                _zwNodeParent[String(c.__zwHandle)] = { parentSel: null, parentHandle: null, innerBody: body, plainParent: body };
+              }
+            } catch (_e369np) {}
             // R327（M4/L2 执行路径测绘落地）：串行合并分支的 adopt 落表——R326 补丁
             // 随整组回退，本次按测绘结论（WPT 环境 body.appendChild 确证本域）精准重放。
             try {

@@ -2860,3 +2860,56 @@ fn test_identity_stamp_plain_child_adoption_r368() {
         "R368 身份盖章：无身份 plain 子 append 时分配 handle + ownerDocument 子树传播重指主文档；已有身份的子不盖章"
     );
 }
+
+// R369（js-dom M4）：iframe 子文档 body 的 handle 子记账——detached-doc body
+// appendChild 的串行合并分支（R369 父链重接 + `_zwSerialKids` 登记数组）与
+// part04 isConnected 的 innerBody 包含判定。spec connected = shadow-including
+// root 是 Document（iframe 子文档本身即 Document）——`frames[0].contentDocument
+// .body.appendChild(frames[1])` 后 frames[1].isConnected 期望 true（WPT
+// Node-isConnected "Test with iframes"）。四态：① 记账（parentNode/serialKids）②
+// isConnected true ③ removeChild 后 false ④ remove() 委托后 false。
+#[test]
+fn test_iframe_inner_body_connected_chain_r369() {
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let mut sandbox = V8Sandbox::with_config(zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    })
+    .unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> =
+        Arc::new(Mutex::new("<html><body><iframe id=f0></iframe></body></html>".to_string()));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+    sandbox
+        .execute(
+            "try {\
+             var log = [];\
+             var f0 = globalThis.document.getElementById('f0');\
+             var f1 = globalThis.document.createElement('iframe');\
+             var innerDoc = f0.contentDocument;\
+             var innerBody = innerDoc.body;\
+             innerBody.appendChild(f1);\
+             log.push('par:' + (f1.parentNode === innerBody ? 'body' : 'other'));\
+             log.push('sk:' + (innerBody._zwSerialKids && innerBody._zwSerialKids.indexOf(f1) >= 0 ? 'in' : 'out'));\
+             log.push('conn:' + (f1.isConnected ? 'true' : 'false'));\
+             innerBody.removeChild(f1);\
+             log.push('afterRm:' + (f1.isConnected ? 'true' : 'false'));\
+             var f2 = globalThis.document.createElement('iframe');\
+             innerBody.appendChild(f2);\
+             f2.remove();\
+             log.push('afterSelfRm:' + (f2.isConnected ? 'true' : 'false'));\
+             globalThis.__r369e = log.join('|');\
+             } catch (err) { globalThis.__r369e = 'ERR:' + err.message; }",
+        )
+        .unwrap();
+    let out = sandbox.execute("globalThis.__r369e").unwrap().value;
+    assert_eq!(
+        out, "par:body|sk:in|conn:true|afterRm:false|afterSelfRm:false",
+        "R369 iframe 子文档 body 记账：串行合并分支重接父链 + serialKids 登记；isConnected innerBody 包含判定（append=true / removeChild=false / remove()=false）"
+    );
+}

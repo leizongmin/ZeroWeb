@@ -1071,6 +1071,23 @@
               }
               var _r90hops = 0;
               while (_r90p && _r90hops++ < 64) {
+                // R369（js-dom M4）：iframe 子文档 body 记录（part03 串行合并分支落表
+                // `{ parentSel: null, parentHandle: null, innerBody }`）——容器身份包含
+                // 判定：body.childNodes 仍含本节点 ⇒ 本节点的 shadow-including root 是
+                // 该 body 所属的 Document ⇒ connected（spec `dom-node-isconnected`；
+                // WPT Node-isConnected "Test with iframes" 全族）。remove 后 body 数组
+                // 失含 ⇒ false（iframe 文档对象随 iframe 移除仍存活——WPT 期望 frames[3]
+                // .remove() 后 nodes[3] 断开而 nodes[4] 保持 connected）。
+                if (_r90p.innerBody) {
+                  try {
+                    var _r369kids = _r90p.innerBody._zwSerialKids || _r90p.innerBody.childNodes || [];
+                    for (var _r369i = 0; _r369i < _r369kids.length; _r369i++) {
+                      var _r369k = _r369kids[_r369i];
+                      if (_r369k && String(_r369k.__zwHandle) === String(handle)) return true;
+                    }
+                  } catch (_e369c) {}
+                  return false;
+                }
                 if (_r90p.parentSel) return true; // 挂到 sel 节点（html/body/容器）→ 在档
                 var _r90ph = _r90p.parentHandle;
                 if (!_r90ph) break;
@@ -4918,6 +4935,22 @@
               _rmNext = ceSelf.nextSibling || null;
             } catch (_e) {}
             _zwRemoveIframeWindowClientForNode(ceSelf);
+            // R369（js-dom M4）：iframe 子文档 body 记录的移除委托——本节点经 part03
+            // 串行合并分支记账进 innerBody（`_zwNodeParent[handle].innerBody`）时，host
+            // 侧 `__zw_remove_handle` 只作用于主文档（本节点不在主档），innerBody 数组
+            // 不会失含 → isConnected 包含判定恒 true（WPT Node-isConnected "Test with
+            // iframes" 的 `frames[3].remove()` 期望 nodes[3] 断开）。委托父容器
+            // removeChild（spec `dom-child-remove` 步骤「detach 自 parent」）——detached
+            // body 的 removeChild 会 splice 数组 + 清 parentNode + 反链，容器判定自然
+            // 断开。委托仅限 innerBody 记录形态（主文档父维持原 host wire 路径零变化）。
+            try {
+              var _r369Link = handle && (typeof _zwNodeParent !== 'undefined') && _zwNodeParent
+                ? _zwNodeParent[handle] : null;
+              if (_r369Link && _r369Link.innerBody
+                  && typeof _r369Link.innerBody.removeChild === 'function') {
+                _r369Link.innerBody.removeChild(ceSelf);
+              }
+            } catch (_e369rm) {}
             if (handle) __zw_remove_handle(handle);
             else { __zw_remove(sel); _zwMarkRemoved(sel); }
             // R140：live childNodes 同步（remove() 后父的旧引用反映）。
