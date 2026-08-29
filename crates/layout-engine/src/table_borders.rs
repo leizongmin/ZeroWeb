@@ -153,7 +153,7 @@ pub(crate) fn resolve_collapsed_borders(
                 // 先解析低优先级对，再与高优先级比较
                 let rg_info = get_row_group_border_info(table_box, grid, row_idx, styles, 0);
                 let (mut win_w, mut win_s) = (table_bt, &table_style.border_top_style as &BorderStyleValue);
-                let mut win_color = color_value_to_u32(&table_style.border_top_color);
+                let mut win_color = color_value_to_u32(&table_style.border_top_color, &table_style.color);
                 let mut win_src = BorderSource::Table;
                 if let Some((rg_w, rg_s, rg_c)) = rg_info {
                     let winner = resolve_border((win_w, win_s, win_src), (rg_w, rg_s, BorderSource::RowGroup));
@@ -256,7 +256,7 @@ pub(crate) fn resolve_collapsed_borders(
                 // 单元格底边在表格底部：table vs rowgroup vs cell 多来源解析
                 let rg_info = get_row_group_border_info(table_box, grid, cell_last_row, styles, 2);
                 let (mut win_w, mut win_s) = (table_bb, &table_style.border_bottom_style as &BorderStyleValue);
-                let mut win_color = color_value_to_u32(&table_style.border_bottom_color);
+                let mut win_color = color_value_to_u32(&table_style.border_bottom_color, &table_style.color);
                 let mut win_src = BorderSource::Table;
                 if let Some((rg_w, rg_s, rg_c)) = rg_info {
                     let winner = resolve_border((win_w, win_s, win_src), (rg_w, rg_s, BorderSource::RowGroup));
@@ -307,7 +307,7 @@ pub(crate) fn resolve_collapsed_borders(
                         );
                         if winner == BorderSource::Row {
                             // 行边框获胜：使用行的颜色和宽度
-                            let row_color = color_value_to_u32(&rs.border_bottom_color);
+                            let row_color = color_value_to_u32(&rs.border_bottom_color, &rs.color);
                             overrides.push((
                                 (row_idx, cell_idx),
                                 2,
@@ -340,7 +340,7 @@ pub(crate) fn resolve_collapsed_borders(
                         );
                         if winner == BorderSource::Row {
                             // 行边框获胜：使用行的颜色和宽度
-                            let row_color = color_value_to_u32(&rs.border_top_color);
+                            let row_color = color_value_to_u32(&rs.border_top_color, &rs.color);
                             overrides.push((
                                 (row_idx, cell_idx),
                                 0,
@@ -358,7 +358,7 @@ pub(crate) fn resolve_collapsed_borders(
                 // 外边缘：table vs rowgroup vs cell 多来源解析
                 let rg_info = get_row_group_border_info(table_box, grid, row_idx, styles, 3);
                 let (mut win_w, mut win_s) = (table_bl, &table_style.border_left_style as &BorderStyleValue);
-                let mut win_color = color_value_to_u32(&table_style.border_left_color);
+                let mut win_color = color_value_to_u32(&table_style.border_left_color, &table_style.color);
                 let mut win_src = BorderSource::Table;
                 if let Some((rg_w, rg_s, rg_c)) = rg_info {
                     let winner = resolve_border((win_w, win_s, win_src), (rg_w, rg_s, BorderSource::RowGroup));
@@ -450,7 +450,7 @@ pub(crate) fn resolve_collapsed_borders(
                 // 外边缘：table vs rowgroup vs cell 多来源解析
                 let rg_info = get_row_group_border_info(table_box, grid, row_idx, styles, 1);
                 let (mut win_w, mut win_s) = (table_br, &table_style.border_right_style as &BorderStyleValue);
-                let mut win_color = color_value_to_u32(&table_style.border_right_color);
+                let mut win_color = color_value_to_u32(&table_style.border_right_color, &table_style.color);
                 let mut win_src = BorderSource::Table;
                 if let Some((rg_w, rg_s, rg_c)) = rg_info {
                     let winner = resolve_border((win_w, win_s, win_src), (rg_w, rg_s, BorderSource::RowGroup));
@@ -692,8 +692,23 @@ pub(crate) fn length_to_px(value: &zero_css_parser::values::LengthValue, style: 
 }
 
 /// 将 ColorValue 转换为 RGBA u32 格式（0xRRGGBBAA）。
-pub(crate) fn color_value_to_u32(color: &zero_css_parser::values::ColorValue) -> u32 {
+///
+/// `current` 为元素自身计算 `color`，用于解析 `currentColor`（CSS-Color §resolving；
+/// border-color 初始值即 currentColor）。`transparent` 必须保留 alpha=0——旧实现
+/// 落入黑色 fallback 使 collapse 胜出边被画成不透明黑（CSS2 §17.6.2 table-backgrounds
+/// bc/bs 族 driving，transparent 边框应不可见）。
+pub(crate) fn color_value_to_u32(
+    color: &zero_css_parser::values::ColorValue,
+    current: &zero_css_parser::values::ColorValue,
+) -> u32 {
     match color {
+        zero_css_parser::values::ColorValue::CurrentColor => {
+            if current != color {
+                return color_value_to_u32(current, current);
+            }
+            0x000000FF
+        }
+        zero_css_parser::values::ColorValue::Transparent => 0x00000000,
         zero_css_parser::values::ColorValue::Rgba(r, g, b, a) => {
             ((*r as u32) << 24) | ((*g as u32) << 16) | ((*b as u32) << 8) | (*a as u32)
         }
@@ -746,7 +761,7 @@ pub(crate) fn get_cell_border_color(
         3 => &cell_style.border_left_color,
         _ => return None,
     };
-    Some(color_value_to_u32(color))
+    Some(color_value_to_u32(color, &cell_style.color))
 }
 
 /// 获取行所在的行组（tbody/thead/tfoot）的边框信息。
@@ -767,22 +782,22 @@ pub(crate) fn get_row_group_border_info<'a>(
         0 => (
             length_to_px(&rg_style.border_top_width, rg_style),
             &rg_style.border_top_style,
-            color_value_to_u32(&rg_style.border_top_color),
+            color_value_to_u32(&rg_style.border_top_color, &rg_style.color),
         ),
         1 => (
             length_to_px(&rg_style.border_right_width, rg_style),
             &rg_style.border_right_style,
-            color_value_to_u32(&rg_style.border_right_color),
+            color_value_to_u32(&rg_style.border_right_color, &rg_style.color),
         ),
         2 => (
             length_to_px(&rg_style.border_bottom_width, rg_style),
             &rg_style.border_bottom_style,
-            color_value_to_u32(&rg_style.border_bottom_color),
+            color_value_to_u32(&rg_style.border_bottom_color, &rg_style.color),
         ),
         3 => (
             length_to_px(&rg_style.border_left_width, rg_style),
             &rg_style.border_left_style,
-            color_value_to_u32(&rg_style.border_left_color),
+            color_value_to_u32(&rg_style.border_left_color, &rg_style.color),
         ),
         _ => return None,
     };
@@ -796,7 +811,34 @@ pub(crate) fn get_row_group_border_info<'a>(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use zero_css_parser::values::LengthValue;
+    use zero_css_parser::values::{ColorValue, LengthValue};
+
+    // R3803：collapse 胜出边颜色转换保留 transparent 与 currentColor 语义。
+    // 旧实现 `_ => 0x000000FF` 把 Transparent 打成不透明黑（CSS2 §17.6.2
+    // table-backgrounds bc/bs 族 driving：transparent 边框应不可见）。
+    #[test]
+    fn collapsed_border_color_keeps_transparent_alpha() {
+        let c = color_value_to_u32(&ColorValue::Transparent, &ColorValue::Named("black".into()));
+        assert_eq!(c, 0x00000000, "transparent must stay alpha=0, got {:#010X}", c);
+    }
+
+    #[test]
+    fn collapsed_border_color_resolves_current_color_from_element() {
+        let current = ColorValue::Named("green".into());
+        let c = color_value_to_u32(&ColorValue::CurrentColor, &current);
+        assert_eq!(
+            c, 0x008000FF,
+            "currentColor must resolve to element color, got {:#010X}",
+            c
+        );
+        // 元素 color 本身未解析（仍为 currentColor）时回落黑色（旧行为）
+        let c = color_value_to_u32(&ColorValue::CurrentColor, &ColorValue::CurrentColor);
+        assert_eq!(
+            c, 0x000000FF,
+            "unresolved currentColor falls back to black, got {:#010X}",
+            c
+        );
+    }
 
     #[test]
     fn collapsed_border_length_uses_source_font_size_for_em() {
