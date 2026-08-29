@@ -975,6 +975,9 @@ pub(crate) fn adjust_float_positions_with_context(
     // 累积（每个正 clearance 子贡献其 margin_top）。计算 contained parent height
     // 时须从 trailing 折叠链中扣除，避免 clearance-absorbed margin 双计。
     let mut clearance_consumed_mt = 0.0f32;
+    // R3808：容器 collapsed-mt 泄漏撤销只执行一次的标记（首个命中正 clearance 的
+    // 流内块子撤完即止，防多子连环误撤）。
+    let mut parent_mt_reverted = false;
 
     // 收集本容器自身的 float 子元素几何（border-box 帧），用于 BFC 排斥 + 嵌套透传。
     // 注意：c.y 已含 margin_top（Phase 1 定位），故 float_h 只需 height + margin_bottom。
@@ -1129,6 +1132,27 @@ pub(crate) fn adjust_float_positions_with_context(
                         // 当元素自身 margin-top 足够大时，即使不折叠也已在浮动之下
                         let uncollapsed_pos = flow_bottom + child.margin_top;
                         child.y = content_y_offset + clear_bottom.max(uncollapsed_pos);
+                        // R3808：正 clearance 吸收了该子的 margin-top（位置 = clear_bottom，
+                        // margin 不再下推自身），但 taffy 已把该 mt 折叠进容器（§8.3.1
+                        // parent-child collapse——首个流内块子的 mt 上浮），容器被多推下
+                        // 一段（margin-collapse-142：td 内 container 被 .clear 的 4em mt
+                        // 推下 64px 露 td 红底；chromium container 顶在 cell content 顶）。
+                        // 泄漏签名与上方 float-mt 恢复（§8.3.1 float mt 不折叠）同构：
+                        // 容器无 border/padding-top + 容器 mt 膨胀到 == 该子 mt + 该子 mt
+                        // 为声明值 + 该子是首个非 float 流内块子 → 撤销多折叠量。
+                        // 只撤一次（首个命中子），后续兄弟不再触发。
+                        if !parent_mt_reverted
+                            && std::env::var("ZW_CLEAR_MT_LEAK_REVERT").as_deref() != Ok("0")
+                            && content_y_offset == 0.0
+                            && box_node.margin_top > box_node.declared_margin_top + 0.01
+                            && (box_node.margin_top - child.margin_top).abs() < 0.01
+                            && (child.margin_top - child.declared_margin_top).abs() < 0.01
+                        {
+                            let over_collapse = box_node.margin_top - box_node.declared_margin_top;
+                            box_node.y -= over_collapse;
+                            box_node.margin_top = box_node.declared_margin_top;
+                            parent_mt_reverted = true;
+                        }
                         // R1316 defect ①/②：正 clearance 被应用 → 该子的 margin 不再
                         // collapse-through（§8.3.1），它建立流位置，且其后所有兄弟
                         // 须以 flow_bottom 重定位（taffy 未知 clearance）。
@@ -1151,6 +1175,21 @@ pub(crate) fn adjust_float_positions_with_context(
                         // 零 clearance 仍阻止 margin 折叠（CSSWG resolution），
                         // 但视觉位置与假设位置相同。
                         child.y = content_y_offset + hypothetical_y;
+                        // R3808：零 clearance 同样使该子 margin 不与容器折叠链合并
+                        //（collapse 被 clearance 打断）——taffy 已折叠进容器的 mt 按同一
+                        // 泄漏签名撤销（与正 clearance 臂同构）。
+                        if !parent_mt_reverted
+                            && std::env::var("ZW_CLEAR_MT_LEAK_REVERT").as_deref() != Ok("0")
+                            && content_y_offset == 0.0
+                            && box_node.margin_top > box_node.declared_margin_top + 0.01
+                            && (box_node.margin_top - child.margin_top).abs() < 0.01
+                            && (child.margin_top - child.declared_margin_top).abs() < 0.01
+                        {
+                            let over_collapse = box_node.margin_top - box_node.declared_margin_top;
+                            box_node.y -= over_collapse;
+                            box_node.margin_top = box_node.declared_margin_top;
+                            parent_mt_reverted = true;
+                        }
                     } else {
                         // hypothetical_y > clear_bottom：元素（含 margin）已过浮动。
                         // R1393 adjoining-float 吸收：若 clear 清除的是「嵌套在非 BFC 后代中的

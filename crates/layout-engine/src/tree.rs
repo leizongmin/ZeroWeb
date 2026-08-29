@@ -4,8 +4,11 @@
 //! 跳过文本节点、注释节点和 display:none 的元素。
 
 use std::collections::{HashMap, HashSet};
+use std::sync::OnceLock;
 use taffy::prelude::*;
-use zero_css_parser::values::{DisplayValue, FlexDirectionValue, FloatValue, LengthValue, PositionValue};
+use zero_css_parser::values::{
+    ClearValue, DisplayValue, FlexDirectionValue, FloatValue, LengthValue, OverflowValue, PositionValue,
+};
 use zero_dom::{Document, NodeId, NodeKind};
 use zero_style_system::{ComputedStyle, WritingModeValue};
 
@@ -260,6 +263,11 @@ struct BuildContext {
     /// R109 接线产物（仅 R109_WIRE=1 时填充）。
     r109: R109Wiring,
     flags: TreeRuntimeFlags,
+    /// R3808：float 元素集合（构树期一次预计算，O(styles)）——float-then-clear 容器
+    /// 抑制判定的廉价位测（替代逐子 HashMap styles 查询，1000 元素页微基准敏感）。
+    r3808_float_nodes: HashSet<NodeId>,
+    /// R3808：带 clear 的块级元素集合（同上预计算）。
+    r3808_cleared_block_nodes: HashSet<NodeId>,
 }
 
 impl BuildContext {
@@ -275,6 +283,25 @@ impl BuildContext {
             img_intrinsic_no_ratio: HashMap::new(),
             r109: R109Wiring::default(),
             flags,
+            r3808_float_nodes: HashSet::new(),
+            r3808_cleared_block_nodes: HashSet::new(),
+        }
+    }
+
+    /// R3808：构树入口处一次性预计算 float / cleared-block 节点集合（O(styles)），
+    /// 供 float-then-clear 容器抑制判定的位测查询（避免逐容器逐子 HashMap 查询）。
+    fn precompute_r3808_sets(&mut self, styles: &HashMap<NodeId, ComputedStyle>) {
+        static GUARD_ON: OnceLock<bool> = OnceLock::new();
+        let on = *GUARD_ON.get_or_init(|| std::env::var("ZW_CLEAR_MT_TAFFY_GUARD").as_deref() != Ok("0"));
+        if !on {
+            return;
+        }
+        for (&id, cs) in styles {
+            if !matches!(cs.float, FloatValue::None) {
+                self.r3808_float_nodes.insert(id);
+            } else if !matches!(cs.display, DisplayValue::Inline) && !matches!(cs.clear, ClearValue::None) {
+                self.r3808_cleared_block_nodes.insert(id);
+            }
         }
     }
 }
@@ -331,6 +358,7 @@ pub(crate) fn build_layout_tree_with_r109(
     ctx.img_intrinsic_sizes = img_intrinsic_sizes;
     ctx.img_intrinsic_ratios = img_intrinsic_ratios;
     ctx.img_intrinsic_no_ratio = img_intrinsic_no_ratio;
+    ctx.precompute_r3808_sets(styles);
 
     // 找到第一个元素节点作为根（通常是 document > html）
     let root = doc.root();
@@ -2142,6 +2170,54 @@ fn build_subtree(
         let (_fs, lh) = crate::inline::resolve_font_metrics(Some(&computed));
         if lh > 0.0 {
             taffy_style.min_size.height = taffy::style::Dimension::length(lh);
+        }
+    }
+
+    // R3808：float-then-clear 容器的 taffy 父子 margin 折叠抑制。
+    // taffy 0.12 在容器无 border/padding-top 时把「首个流内块子的 margin-top」折叠进
+    // 容器自身 margin（§8.3.1 parent-child collapse）。当该子带 clear 且前面有 float
+    // 时，clearance 会吸收该 margin（CSS §9.5.2：clearance 打断折叠链）——折叠本不应
+    // 发生；taffy 折叠后容器被多推下一段（margin-collapse-142：td 内 container 被
+    // .clear 的 4em mt 推下 64px 露 td 红底；chromium container 顶在 cell content 顶）。
+    // 沿 R3755 先例：对命中「float 前置 + 后随 cleared 块子」的普通块容器设 taffy
+    // overflow:Hidden 抑制 taffy 内部父子折叠。仅 taffy 输入层——LayoutBox 的
+    // overflow 旗标仍来自 computed style（engine.rs），ZW 自身的 BFC 判定与裁剪
+    // 路径不受影响。kill-switch `ZW_CLEAR_MT_TAFFY_GUARD=0`。
+    // OPTIMIZATION：kill-switch 经 OnceLock 缓存（每节点调 std::env 会锁 environ 表，
+    // 1000 元素页实测 block_layout 微基准 1.5-1.9× 膨胀）；且仅在「元素子数 ≥2」时才做
+    // DOM 子扫描（float + 后随 cleared 块子的最低结构要求）。
+    static CLEAR_MT_GUARD_ON: OnceLock<bool> = OnceLock::new();
+    let guard_env_on =
+        *CLEAR_MT_GUARD_ON.get_or_init(|| std::env::var("ZW_CLEAR_MT_TAFFY_GUARD").as_deref() != Ok("0"));
+    if guard_env_on
+        && child_taffy_ids.len() >= 2
+        && matches!(own_writing_mode, WritingModeValue::HorizontalTb)
+        && matches!(computed.display, DisplayValue::Block)
+        && matches!(computed.float, FloatValue::None)
+        && matches!(computed.overflow_x, OverflowValue::Visible)
+        && matches!(computed.overflow_y, OverflowValue::Visible)
+        // 仅「margin 可与首子折叠」的容器（无 border-top/padding-top）——
+        // 有 border/padding-top 时 taffy 不发生父子折叠，无需抑制
+        //（R1318 margin-collapse-clear-012 的 #parent 带 border-top:1px，抑制会改变
+        // taffy 浮动包含语义致其 containment 回归 -19）。
+        && matches!(computed.border_top_width, LengthValue::Px(v) if v == 0.0)
+        && matches!(computed.padding_top, LengthValue::Px(v) if v == 0.0)
+    {
+        let mut saw_float = false;
+        let mut has_cleared_after_float = false;
+        if let Some(node_data) = doc.get(dom_id) {
+            for &c in node_data.children.iter() {
+                if ctx.r3808_float_nodes.contains(&c) {
+                    saw_float = true;
+                } else if saw_float && ctx.r3808_cleared_block_nodes.contains(&c) {
+                    has_cleared_after_float = true;
+                    break;
+                }
+            }
+        }
+        if has_cleared_after_float {
+            taffy_style.overflow.x = taffy::style::Overflow::Hidden;
+            taffy_style.overflow.y = taffy::style::Overflow::Hidden;
         }
     }
 
