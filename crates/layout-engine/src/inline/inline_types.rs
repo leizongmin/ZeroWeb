@@ -191,6 +191,11 @@ pub enum InlineItem {
     /// 不应获得 line-height——canvas-grid reftest 的 span>div+canvas 中 div 前的空白
     /// 曾撑出 20px 行，canvas 被推到第 2 行，oracle A/B 22px 偏移根因）。
     BlockBreak,
+    /// R3784：float 子的锚点标记——语义同 BlockBreak（断行、无 strut、行首空行跳过），
+    /// 额外在断行处记录 float 的锚 y（= 此前行盒累计高度，CSS §9.5.1 float outer top
+    /// 不得高于源序前文生成的行盒/块顶）。remeasure 用它把 float 子从 taffy 的
+    /// block 堆叠位（y=0）搬到行内流锚位（如 [L1-L4][float] 的 y=128）。
+    FloatAnchor(zero_dom::NodeId),
 }
 
 /// 行盒 — 一行中的所有行内内容。

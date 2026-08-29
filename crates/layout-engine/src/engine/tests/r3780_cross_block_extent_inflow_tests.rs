@@ -216,3 +216,59 @@ fn r3783_float_text_container_not_collapsed() {
         "[文本 + float + 文本] 容器应含文本行高（≥1 行 18.6px），实际 {h}（旧塌 0）"
     );
 }
+
+/// R3784：float 行内流锚 y + clamp 点后 float 隐藏。
+/// driving: line-clamp-auto-015（float 锚位 y=0→前置文本行顶）、
+/// line-clamp-with-floats-003（clamp 点后 float 恒隐藏）。
+#[test]
+fn r3784_float_anchors_at_preceding_line_top() {
+    let html = "<html><body style=\"margin:0\">\
+<div style=\"font: 16px/32px serif; white-space: pre; width: 200px;\">Line 1\nLine 2\nLine 3\nLine 4\n\
+<div style=\"float: left; width: 300px; height: 32px;\">F</div>Line 5</div>\
+</body></html>";
+    let doc = zero_dom::parse_html(html);
+    let mut sys = StyleSystem::new();
+    sys.set_viewport(800.0, 600.0);
+    let styles = sys.compute_styles(&doc, &[]);
+    let mut engine = LayoutEngine::new(800.0, 600.0);
+    let result = engine.compute(&doc, &styles);
+    // 找 float 盒（width:300px 标识）
+    fn find_float(b: &LayoutBox) -> Option<&LayoutBox> {
+        if (b.width - 300.0).abs() < 0.5 {
+            return Some(b);
+        }
+        b.children.iter().find_map(find_float)
+    }
+    let f = find_float(&result.root).expect("float box");
+    assert!(
+        f.y > 32.0,
+        "float 应锚在前置文本行盒区间（y > 1 行高），实际 y={}（旧塌到 0）",
+        f.y
+    );
+}
+
+#[test]
+fn r3784_float_after_clamp_point_hidden() {
+    let html = "<html><body style=\"margin:0\">\
+<div style=\"line-clamp: 4; font: 16px/32px serif; white-space: pre;\">Line 1\nLine 2\nLine 3\nLine 4\n\
+<div style=\"float: left; width: 50px; height: 50px;\">F</div>Line 5</div>\
+</body></html>";
+    let doc = zero_dom::parse_html(html);
+    let mut sys = StyleSystem::new();
+    sys.set_viewport(800.0, 600.0);
+    let styles = sys.compute_styles(&doc, &[]);
+    let mut engine = LayoutEngine::new(800.0, 600.0);
+    let result = engine.compute(&doc, &styles);
+    fn find_float(b: &LayoutBox) -> Option<&LayoutBox> {
+        if (b.width - 50.0).abs() < 0.5 && b.height > 10.0 {
+            return Some(b);
+        }
+        b.children.iter().find_map(find_float)
+    }
+    let f = find_float(&result.root).expect("float box");
+    assert!(
+        f.line_clamp_hidden,
+        "clamp 点后的 float 应隐藏（锚行号 ≥ cap），实际可见 y={} h={}",
+        f.y, f.height
+    );
+}

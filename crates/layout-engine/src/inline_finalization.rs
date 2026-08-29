@@ -1600,6 +1600,42 @@ pub(crate) fn remeasure_text_with_float_exclusions(
     let has_floats = box_node.children.iter().any(|c| !matches!(c.float, FloatValue::None));
 
     if has_floats {
+        // R3784：float 行内流锚 y 两遍测量第一遍——无 exclusion IFC 跑到每个 float 子的
+        // FloatAnchor 条目，取得该 float 在源序中的行盒累计 y（CSS §9.5.1：float outer
+        // top 不得高于源序前文的行盒顶）。taffy 把 float 当 block 堆叠 → [文本 + float +
+        // 文本] 的 float 落 y=0（应 = 前置文本行高，如 auto-015 的 L1-L4 后 = 128）。
+        // 用锚 y 下推 float 子 → exclusions 用正确 y 构建 → 第二遍 exclusion-aware IFC。
+        // kill-switch `ZW_FLOAT_ANCHOR_Y=0` 回退。
+        let mut anchor_ctx: Option<InlineFormattingContext> = None;
+        if std::env::var("ZW_FLOAT_ANCHOR_Y").as_deref() != Ok("0")
+            && let Some(dom_id) = box_node.node_id
+            && has_inline_content(doc, styles, dom_id)
+        {
+            let container_width = box_node.content_width;
+            let no_wrap = resolve_no_wrap_for_ifc_measure(styles.get(&dom_id));
+            let mut ctx = InlineFormattingContext::new(container_width)
+                .with_no_wrap(no_wrap)
+                .with_preserve_whitespace(resolve_preserve_for_ifc_measure(styles.get(&dom_id)))
+                .with_break_at_newline(resolve_break_at_newline_for_ifc_measure(styles.get(&dom_id)));
+            ctx = configure_inline_fonts(ctx, inline_fonts, false);
+            ctx.layout(doc, dom_id, styles);
+            let anchor_y_map = ctx.float_anchor_ys.clone();
+            anchor_ctx = Some(ctx);
+            for child in box_node.children.iter_mut() {
+                if matches!(child.float, FloatValue::None) {
+                    continue;
+                }
+                if let Some(fid) = child.node_id
+                    && let Some(anchor_y) = anchor_y_map.get(&fid)
+                {
+                    // float 不高于锚位（前文行盒顶）；已更低（clear/前 float 堆叠）则保留。
+                    if *anchor_y > child.y {
+                        child.y = *anchor_y;
+                    }
+                }
+            }
+        }
+
         // 构建 float 排除区域列表
         let exclusions: Vec<FloatExclusion> = box_node
             .children
@@ -1672,12 +1708,32 @@ pub(crate) fn remeasure_text_with_float_exclusions(
             store_font_sizes_from_ifc(&inline_ctx, box_node, doc, styles);
             sync_inline_child_boxes_from_ifc(box_node, &inline_ctx, styles);
 
+            // R3784：clamp 点后的 float 子隐藏（css-overflow-4 with-floats-003：「floats
+            // after the clamp point are always hidden」）。锚行号 ≥ clamp cap = float 在
+            // 源序中落入 clamp 点后的行 → 整体隐藏（paint 跳过 + 不计 float_bottom）。
+            if inline_ctx.clamped
+                && let Some(cap) = inline_ctx.line_clamp
+                && let Some(ctx) = anchor_ctx.as_ref()
+            {
+                for child in box_node.children.iter_mut() {
+                    if matches!(child.float, FloatValue::None) {
+                        continue;
+                    }
+                    if let Some(fid) = child.node_id
+                        && let Some(idx) = ctx.float_anchor_line_idxs.get(&fid)
+                        && *idx >= cap
+                    {
+                        child.line_clamp_hidden = true;
+                    }
+                }
+            }
+
             // 容器高度需要包含 float 元素占用的空间
             let text_height = inline_ctx.total_height();
             let float_bottom = box_node
                 .children
                 .iter()
-                .filter(|c| !matches!(c.float, FloatValue::None))
+                .filter(|c| !matches!(c.float, FloatValue::None) && !c.line_clamp_hidden)
                 .map(|c| c.y + c.height + c.margin_bottom)
                 .fold(0.0_f32, f32::max);
 

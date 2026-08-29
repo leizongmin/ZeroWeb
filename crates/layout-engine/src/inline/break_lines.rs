@@ -511,16 +511,36 @@ impl InlineFormattingContext {
                     current_x += box_width + m_right;
                     current_line.height = current_line.height.max(box_height + m_top + m_bot);
                 }
-                InlineItem::Br | InlineItem::BlockBreak => {
+                InlineItem::Br | InlineItem::BlockBreak | InlineItem::FloatAnchor(_) => {
                     // 强制换行：将当前行推入结果，开始新行
                     // Br 总是产生一个换行，即使当前行为空
                     last_was_collapsible_ws = false;
+                    // R3784：FloatAnchor 记录 float 锚 y = **最后一个含前文内容的行盒顶**
+                    //（CSS §9.5.1 规则 5：float outer top 不得高于源序前文内容所在行盒的
+                    // 顶）。行首空行（FloatAnchor/BlockBreak 刚断行、current_line 空）时
+                    // = current_y − 上一个被推行盒的高；行中（float 在同一行 inline 内容后）
+                    // = current_y − 当前行高（floats-006：X 与 float 同行 → 锚 = 行顶 0，
+                    // float 不下推）。
+                    if let InlineItem::FloatAnchor(fid) = &item {
+                        let last_line_h = if current_line.runs.is_empty() {
+                            self.lines.last().map(|l| l.height).unwrap_or(0.0)
+                        } else {
+                            current_line.height
+                        };
+                        let anchor_y = (current_y - last_line_h).max(0.0);
+                        self.float_anchor_ys.insert(*fid, anchor_y);
+                        // 锚行号 = float 将落入的行盒 index = 已推行数（行首空行时 float
+                        // 落下一行 = lines.len()；行中时 float 同行 = 当前行 index
+                        // = lines.len()）。clamp 后隐藏判据用。
+                        let anchor_idx = self.lines.len();
+                        self.float_anchor_line_idxs.insert(*fid, anchor_idx);
+                    }
                     // R3779b：BlockBreak（block/float 子代理断行）在**行首空行**上不推 0 高
                     // 行盒——空行仅作 current_x/current_y 光标推进，无内容可断（CSS2 §9.2.1.1
                     // 匿名块拆分无 line box；float 脱流 §9.5 同理）。旧实现照 push → 幽灵
                     // 0 高行占据 line-clamp 预算（line-clamp-with-floats-001 cap=4 只剩 3 行
                     // 真文本）。Br 保持旧行为（真 <br> 的空行有 strut，R1286）。
-                    if matches!(item, InlineItem::BlockBreak)
+                    if !matches!(item, InlineItem::Br)
                         && current_line.runs.is_empty()
                         && current_line.height <= 0.0
                     {
@@ -980,7 +1000,7 @@ fn plaintext_paragraph_directions(items: &[InlineItem]) -> HashMap<NodeId, bool>
                 paragraph.push_str(&run.text);
                 nodes.push(run.node_id);
             }
-            InlineItem::Br | InlineItem::BlockBreak => flush(&mut paragraph, &mut nodes, &mut directions),
+            InlineItem::Br | InlineItem::BlockBreak | InlineItem::FloatAnchor(_) => flush(&mut paragraph, &mut nodes, &mut directions),
             _ => {}
         }
     }

@@ -132,6 +132,14 @@ pub struct InlineFormattingContext {
     /// 从 LayoutBox.text_node_ws_overrides 注入；layout IFC 有真实 styles 不消费）。
     /// 缺省空 map = 沿用容器级标志（旧行为）。
     pub ws_overrides: NodeIdMap<RunWhiteSpace>,
+    /// R3784：float 子的行内流锚 y（key = float 元素 NodeId，value = 该 float 在源序中
+    /// 出现处的行盒累计 y）。`break_items_into_lines` 消费 `FloatAnchor` 条目时写入。
+    /// remeasure 用它把 float 子从 taffy block 堆叠位搬到行内流锚位（CSS §9.5.1：
+    /// float outer top 不得高于源序前文的行盒顶）。
+    pub float_anchor_ys: NodeIdMap<f32>,
+    /// R3784：float 子的锚行号（float 源序出现处将落入的行盒 0-based index）。clamp 点
+    /// 后的 float 隐藏判据用（css-overflow-4 with-floats-003：clamp 点后的 float 恒隐藏）。
+    pub float_anchor_line_idxs: NodeIdMap<usize>,
     /// 默认字体度量 — 当 styles HashMap 中找不到元素样式时使用。
     ///
     /// 这主要用于 paint 系统的 IFC，因为 paint 系统传入空的 styles HashMap。
@@ -293,6 +301,8 @@ impl InlineFormattingContext {
             inline_block_sizes: HashMap::new(),
             img_intrinsic_sizes: HashMap::new(),
             ws_overrides: NodeIdMap::default(),
+            float_anchor_ys: NodeIdMap::default(),
+            float_anchor_line_idxs: NodeIdMap::default(),
             default_font_metrics: None,
             container_font_size: DEFAULT_FONT_SIZE,
             font_size_overrides: NodeIdMap::default(),
@@ -890,6 +900,9 @@ impl InlineFormattingContext {
                 _ => None,
             };
             if let Some(n) = n {
+                // R3784：镜像 cap 到字段（remeasure 的 clamp 点后 float 隐藏判据读
+                // `line_clamp` 作 cap；旧行为只置 clamped 不记 cap 值）。
+                self.line_clamp = Some(n);
                 self.apply_line_clamp_cap(n);
             }
         }
@@ -1319,7 +1332,7 @@ impl InlineFormattingContext {
                         .height
                         .max(box_col_width + box_info.margin_left + box_info.margin_right);
                 }
-                InlineItem::Br | InlineItem::BlockBreak => {
+                InlineItem::Br | InlineItem::BlockBreak | InlineItem::FloatAnchor(_) => {
                     self.lines.push(current_column);
                     current_column = LineBox {
                         y: 0.0,

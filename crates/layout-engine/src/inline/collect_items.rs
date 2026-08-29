@@ -246,6 +246,11 @@ impl InlineFormattingContext {
                                 && !runtime_flags::float_no_ghost_line()
                             {
                                 items.push(InlineItem::Br);
+                            } else if style.is_some_and(|s| !matches!(s.float, zero_css_parser::values::FloatValue::None)) {
+                                // R3784：float 子 → FloatAnchor(id)——断行语义同 BlockBreak，
+                                // 额外记录行内流锚 y（remeasure 据此把 float 从 taffy 堆叠位
+                                // 搬到源序行位）。
+                                items.push(InlineItem::FloatAnchor(child_id));
                             } else {
                                 items.push(InlineItem::BlockBreak);
                             }
