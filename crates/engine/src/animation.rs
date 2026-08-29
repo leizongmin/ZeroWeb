@@ -661,6 +661,41 @@ impl AnimationClock {
         }
     }
 
+    /// R347（CSS Animations §animationcancel）：取消指定元素的未完成动画——元素
+    /// `display:none` 使动画不再渲染相关。返回 (key, name, elapsed) 供宿主派发
+    /// animationcancel。保留 finished 状态（fill-mode 消费），只移除未完成的。
+    pub fn cancel_display_none(
+        &mut self,
+        element_keys: &std::collections::HashSet<u64>,
+        cancelled: &mut Vec<(u64, String, f64)>,
+    ) {
+        let keys: Vec<u64> = self
+            .active_animations
+            .keys()
+            .copied()
+            .collect::<Vec<u64>>()
+            .into_iter()
+            .filter(|k| element_keys.contains(k))
+            .collect();
+        for key in keys {
+            let mut cancelled_names: Vec<String> = Vec::new();
+            if let Some(anims) = self.active_animations.get_mut(&key) {
+                for anim in anims.iter_mut() {
+                    if anim.finished {
+                        continue;
+                    }
+                    let elapsed = anim.duration * (anim.iteration as f64);
+                    cancelled_names.push(anim.name.clone());
+                    cancelled.push((key, anim.name.clone(), elapsed));
+                    anim.finished = true;
+                }
+            }
+            // 已完成状态保留（fill-mode forwards 消费最后帧）；若全部取消且无 fill 消费价值
+            // 则由既有 cleanup 逻辑处理——此处不额外清理。
+            let _ = cancelled_names.len();
+        }
+    }
+
     /// 获取所有有活跃动画的元素 ID。
     pub fn active_element_ids(&self) -> Vec<u64> {
         self.active_animations

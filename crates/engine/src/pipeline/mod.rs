@@ -34,8 +34,11 @@ pub enum AnimationEventKind {
     Start,
     /// animationend（CSS Animations §animationend）——有限动画完成时派发。
     End,
-    /// animationiteration（CSS Animations §animationiteration）——迭代边界派发（infinite 动画循环回调）。
+    /// animationiteration（CSS Animations §animationiteration）——迭代边界派发（infinite 循环回调）。
     Iteration,
+    /// animationcancel（CSS Animations §animationcancel）——动画被取消派发（元素 display:none 等；
+    /// elapsedTime=取消时的活跃时长）。
+    Cancel,
 }
 
 impl AnimationEventKind {
@@ -47,6 +50,7 @@ impl AnimationEventKind {
             AnimationEventKind::Start => "animationstart",
             AnimationEventKind::End => "animationend",
             AnimationEventKind::Iteration => "animationiteration",
+            AnimationEventKind::Cancel => "animationcancel",
         }
     }
 }
@@ -61,6 +65,9 @@ pub enum TransitionEventKind {
     Start,
     /// transitionend（CSS Transitions §transitionend）——过渡完成派发（elapsedTime=duration）。
     End,
+    /// transitioncancel（CSS Transitions §transitioncancel）——过渡被取消派发（元素 display:none /
+    /// 从文档移除等使过渡不再相关；elapsedTime=取消时的活跃时长）。
+    Cancel,
 }
 
 impl TransitionEventKind {
@@ -72,6 +79,7 @@ impl TransitionEventKind {
             TransitionEventKind::Run => "transitionrun",
             TransitionEventKind::Start => "transitionstart",
             TransitionEventKind::End => "transitionend",
+            TransitionEventKind::Cancel => "transitioncancel",
         }
     }
 }
@@ -744,6 +752,55 @@ impl RenderPipeline {
                         property: fin.property,
                         elapsed: fin.duration,
                     });
+                }
+            }
+        }
+        // R347（CSS Transitions §transitioncancel / CSS Animations §animationcancel）：
+        // display:none 的元素其运行中的过渡/动画不再渲染相关 → 取消并派发 cancel 事件。
+        // 扫描本轮 computed styles（attached 元素集合），对 display==None 的元素取消时钟条目。
+        {
+            let now = current_time;
+            let mut hidden_keys: std::collections::HashSet<u64> = std::collections::HashSet::new();
+            for (nid, st) in &styles {
+                if st.display == zero_css_parser::values::DisplayValue::None {
+                    hidden_keys.insert(nid.data().as_ffi());
+                }
+            }
+            if !hidden_keys.is_empty() {
+                // key→nid 映射（取消事件须映射回元素选择器；node_ids 本轮 5b 已收集）。
+                let mut cancel_key_to_nid: HashMap<u64, NodeId> = HashMap::new();
+                for nid in &node_ids {
+                    cancel_key_to_nid.insert(nid.data().as_ffi(), *nid);
+                }
+                let mut cancelled_transitions: Vec<(u64, String, f64)> = Vec::new();
+                self.transition_clock
+                    .cancel_display_none(&hidden_keys, now, &mut cancelled_transitions);
+                for (key, property, elapsed) in cancelled_transitions {
+                    if let Some(nid) = cancel_key_to_nid.get(&key)
+                        && let Some(sel) = crate::js_dom_bridge::unique_selector_for_node(doc, *nid)
+                    {
+                        self.pending_transition_events.push(TransitionEvent {
+                            kind: TransitionEventKind::Cancel,
+                            selector: sel,
+                            property,
+                            elapsed,
+                        });
+                    }
+                }
+                let mut cancelled_animations: Vec<(u64, String, f64)> = Vec::new();
+                self.animation_clock
+                    .cancel_display_none(&hidden_keys, &mut cancelled_animations);
+                for (key, name, elapsed) in cancelled_animations {
+                    if let Some(nid) = cancel_key_to_nid.get(&key)
+                        && let Some(sel) = crate::js_dom_bridge::unique_selector_for_node(doc, *nid)
+                    {
+                        self.pending_animation_events.push(AnimationEvent {
+                            kind: AnimationEventKind::Cancel,
+                            selector: sel,
+                            name,
+                            elapsed,
+                        });
+                    }
                 }
             }
         }

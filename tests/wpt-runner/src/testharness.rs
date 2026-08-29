@@ -2488,6 +2488,10 @@ fn run_testharness_html_inner(
     let mut last_test_function = "unknown".to_string();
     let mut last_harness_hook = "unknown".to_string();
     let mut last_state = serde_json::Value::Null;
+    // R347：testdriver 命令解析重试计数——目标元素由 pending mutation 异步 apply
+    //（body 在 timer 回调里 enqueue，host 侧 next pump 才 materialize），probe 每帧
+    // 排空队列的首次解析可能先于元素落 doc。同 id 最多重试 20 帧，超限按原错误处理。
+    let mut td_command_attempts: std::collections::HashMap<u64, u32> = std::collections::HashMap::new();
     loop {
         if Instant::now() >= deadline {
             let mut results = map_harness_results(partial_results);
@@ -2547,6 +2551,31 @@ fn run_testharness_html_inner(
         last_state = probe.state;
         for command in probe.commands {
             let result = apply_testdriver_command(&mut webview, &command);
+            // R347：目标未解析（元素尚未 materialize）→ 重新入队下帧重试。
+            let unresolved = result.as_deref().is_some_and(|message| {
+                message.starts_with("testdriver target not found")
+                    || message.starts_with("testdriver target has no stable selector")
+            });
+            if unresolved {
+                let attempts = td_command_attempts.entry(command.id).or_insert(0);
+                if *attempts < 20 {
+                    *attempts += 1;
+                    let sel_js = match &command.selector {
+                        Some(v) => format!("'{}'", v.replace('\'', "\\'")),
+                        None => "null".to_string(),
+                    };
+                    let text_js = match &command.text {
+                        Some(v) => format!("'{}'", v.replace('\'', "\\'")),
+                        None => "null".to_string(),
+                    };
+                    let op = command.operation.replace('\'', "\\'");
+                    let _ = webview.execute_script(&format!(
+                        "(globalThis.__zw_td_queue = globalThis.__zw_td_queue || []).push({{id:{}, operation:'{}', selector:{}, text:{}}});",
+                        command.id, op, sel_js, text_js
+                    ));
+                    continue;
+                }
+            }
             if let Err(error) = resolve_testdriver_command(&mut webview, command.id, result.as_deref()) {
                 return vec![HarnessSubtestResult {
                     name: case_name.to_string(),
@@ -3093,6 +3122,11 @@ fn dispatch_action(
         shift: false,
     }) {
         Ok(result) if result.noop_reason.is_none() => None,
+        // R347：disabled 目标的合成 click =「事件送达但激活被抑制」——noop(DisabledTarget)
+        // 对 testdriver 语义即成功（spec HTML §activation：disabled 表单控件跳过激活行为，
+        // 但自动化的 click 仍需 resolve 以驱动后续断言；onclick 不触发由页面侧断言）。
+        // WPT Event-dispatch-on-disabled-elements「Real clicks」段依赖此 resolve。
+        Ok(result) if result.noop_reason == Some(zero_page_runtime::ActionNoopReason::DisabledTarget) => None,
         Ok(result) => Some(format!("action was not applicable: {:?}", result.noop_reason)),
         Err(error) => Some(error.to_string()),
     }

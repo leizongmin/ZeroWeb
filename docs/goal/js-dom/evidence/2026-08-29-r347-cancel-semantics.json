@@ -1,0 +1,24 @@
+{
+  "round": "R347",
+  "date": "2026-08-29",
+  "slice": "M4/events——transitioncancel/animationcancel 取消语义 + testdriver 点击重试与 disabled 目标 resolve（disabled-elements 8/9，文件级 Timeout 消除）",
+  "background": "R346 后 disabled-elements 剩 pending:4（transitioncancel/animation seek 链/animationcancel/test_driver.click）。",
+  "changes": [
+    "engine 取消语义：TransitionEventKind::Cancel + AnimationEventKind::Cancel 变体（as_event_type → transitioncancel/animationcancel，CSS Transitions §transitioncancel / CSS Animations §animationcancel）；TransitionClock::cancel_display_none（取消未完成过渡，elapsed=clamp(now-start-delay,0,duration)，finished 条目清理）+ AnimationClock::cancel_display_none（未完成动画标 finished，elapsed=duration×iteration）；tick_animation_styles 末尾扫描 computed styles 中 display==None 的元素 → 取消其时钟条目 → 经 key→nid 映射推 Cancel 事件进 pending（shim TransitionEvent/AnimationEvent 构造器接受任意 type，零 shim 改动）",
+    "runner：__zw_td_queue 命令解析重试——td click 的目标元素由 pending mutation 异步 apply（body 在 timer 回调 enqueue，host 侧 next pump 才 materialize），probe 每帧排空的首次解析可能先于元素落 doc；同 id 未解析（target not found / no stable selector）重入队至多 20 帧",
+    "runner：dispatch_action 对 noop(DisabledTarget) 映射为成功——testdriver 合成 click 对 disabled 目标 =「事件送达但激活被抑制」（spec HTML §activation：disabled 表单控件跳过激活行为）；onclick 不触发由页面断言，resolve 驱动后续流程（此前 Reject → Unhandled rejection → 测试 Fail）"
+  ],
+  "results": {
+    "disabled_elements": "单跑 6× 稳定 8 Pass/1 Fail/0 Timeout（修复前 4-5 Pass + 文件 Timeout；新 Fail = Real clicks td 多元素流，见 remaining）；transitioncancel/animation 三链/animationcancel 全部首次通过",
+    "full_dom_sweep": "54177P/54F/17T vs R346 54173P/53F/19T——净 +4P/-2T；Fail 集唯一新增 = disabled 的 Real clicks subtest（此前被文件 Timeout 掩盖，现显性化），其余逐字节一致",
+    "gates": "engine v8 2479 / runner v8 191 / quickjs 1470 / clippy 0 error / fmt 无 diff"
+  },
+  "remaining_gaps_next_round": [
+    "**Real clicks td 多元素流**：input 元素的 create/append mutation 已 enqueue 但 20 帧内未 materialize（host_input=false 全程，host_button=true）——队列被消费但元素未落 doc 的消费路径待查（疑 user-action pipeline 内部 script 执行的 apply 交互）；此为 runner td 基建 + 元素生命周期问题，非引擎语义",
+    "test_driver.click 的 focus/Activate 完整管线归 html-compat 域（R337 定性）"
+  ],
+  "lessons": [
+    "文件级 Timeout 会掩盖显性 Fail——pending:4 → 逐个修复后暴露出此前不可见的 Real clicks subtest Fail，这是修复生效的证据而非回归（subtest 级 diff 才是真账本）",
+    "testdriver stub 的 enqueue 时解析 vs 出队时解析双路径（R145）在「body 跑在 timer 回调里」的形态下与 pump apply 存在一帧错位——重试基础设施是 runner 自动化协议的正确补齐"
+  ]
+}

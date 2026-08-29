@@ -270,6 +270,42 @@ impl TransitionClock {
         std::mem::take(&mut self.just_started)
     }
 
+    /// R347（CSS Transitions §transitioncancel）：取消指定元素的全部未完成过渡——元素
+    /// `display:none`（或从文档移除）使过渡不再相关。返回 (property, elapsed) 列表供宿主
+    /// 派发 transitioncancel（elapsed=取消时的活跃时长 = tick 的 last_elapsed 记录；
+    /// 此处无法拿 current_time 差值——由调用方传入 now，elapsed = now - start_time - delay
+    /// clamp ≥0）。
+    pub fn cancel_display_none(
+        &mut self,
+        element_keys: &std::collections::HashSet<u64>,
+        now: f64,
+        cancelled: &mut Vec<(u64, String, f64)>,
+    ) {
+        let mut affected: Vec<u64> = self
+            .active_transitions
+            .keys()
+            .copied()
+            .collect::<Vec<u64>>()
+            .into_iter()
+            .filter(|k| element_keys.contains(k))
+            .collect();
+        for key in affected.drain(..) {
+            if let Some(transitions) = self.active_transitions.get_mut(&key) {
+                transitions.retain_mut(|t| {
+                    if t.finished {
+                        return false;
+                    }
+                    let active = ((now - t.start_time - t.delay).max(0.0)).min(t.duration);
+                    cancelled.push((key, t.property.clone(), active));
+                    false
+                });
+                if transitions.is_empty() {
+                    self.active_transitions.remove(&key);
+                }
+            }
+        }
+    }
+
     /// 移除已完成的过渡。
     pub fn cleanup_finished(&mut self) {
         self.active_transitions.retain(|_, transitions| {
