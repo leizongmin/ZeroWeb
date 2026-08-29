@@ -8,6 +8,7 @@
 //! 静默）。共享 [`run_script`]（tests.rs，pub(super)）。
 
 use super::tests::run_script;
+use crate::js_dom_bridge::{DomMutation, generate_js_dom_shim, register_dom_callbacks};
 
 /// 连接态 lifecycle：native appendChild（连入 body → connect 派发）→ removeChild（断开 →
 /// disconnect 派发）。polyfill hook 由脚本预置记录调用。R3271 fast-path：div（无连字符）
@@ -100,4 +101,64 @@ body.appendChild(tn);
 "#;
     let out = run_script(r#"<html><body></body></html>"#, script);
     assert_eq!(out, "ok", "R362 CE 守卫臂：无 hook / text 节点路径静默不抛");
+}
+
+/// R367（js-dom M1/M4 CE registry 专项 slice 3）：**native CE hooks per-realm 查表**——
+/// Rust 侧把元素 node document root（owner_document）作为 ownerId 传给 polyfill hook；
+/// 主文档元素（owner == live Document root）读主实例，distinct root（另一 doc 域元素）
+/// 由 polyfill 按 ownerId 路由。本测验证①主文档路径不回归（ownerId 传入后 lookup/
+/// notify 照常主 registry 命中）；②ownerId 传播形态（hook 实参收数组/字符串而非缺省）。
+/// spec：createElement/upgrade 的 registry = 元素 node document 的相关 realm。
+/// https://dom.spec.whatwg.org/#concept-create-element
+#[test]
+fn native_ce_hooks_per_realm_lookup_r367() {
+    let script = r#"
+globalThis.__calls = [];
+var _ce = {};
+globalThis.customElements = { define: function(n,c){ _ce[n]=c; }, get: function(n){ return _ce[n] || null; } };
+// 记录 lookup 收到的 ownerId（R367 起 Rust 传第二参——主文档元素 owner = doc root 字符串）。
+globalThis.__zw_native_ce_lookup = function (tag, ownerId) {
+  __calls.push('lookup:' + tag + ':' + (ownerId === undefined ? 'undef' : (ownerId === null ? 'null' : String(typeof ownerId))));
+  return _ce[tag] || null;
+};
+class MyEl extends HTMLElement { constructor() { super(); this.__upgraded = true; } }
+customElements.define('my-el', MyEl);
+var e = __zw_native_create_element('my-el');
+__calls.push('upgraded:' + (e instanceof MyEl) + ':' + e.__upgraded);
+// connect notify：R367 起第四参 = ownerIds 数组（每实例一项）。
+globalThis.__zw_native_ce_notify_connect = function (instances, connected, tags, ownerIds) {
+  __calls.push('conn:' + connected + ':' + tags.length + ':' + (ownerIds ? ownerIds.length : 'noarr'));
+};
+__zw_native_get_body().appendChild(e);
+// attr notify：R367 起第六参 = ownerId。
+globalThis.__zw_native_ce_notify_attr_change = function (instance, name, oldVal, newVal, tag, ownerId) {
+  __calls.push('attr:' + tag + ':' + name + ':' + (ownerId === undefined ? 'undef' : String(typeof ownerId)));
+};
+e.setAttribute('data-x', '1');
+__calls.join('|');
+"#;
+    let out = run_script(r#"<html><body></body></html>"#, script);
+    // 主文档元素：lookup 收 string ownerId（doc root ffi）；upgrade 成功；connect 的 ownerIds
+    // 数组与 tags 等长；attr notify 收 string ownerId。
+    assert_eq!(
+        out, "lookup:my-el:string|upgraded:true:true|conn:true:1:1|attr:MY-EL:data-x:string",
+        "R367 native CE hooks per-realm：lookup/notify 收 ownerId（string 形态）、upgrade 与 lifecycle 主路径不回归"
+    );
+}
+
+/// R367：ownerId **缺省回退**——`__zw_native_doc_root_id` 缺席（shim-only 沙箱等）时
+/// lookup/notify 仍按主实例工作（域判据降级为主文档路径，零回归）。
+#[test]
+fn native_ce_entry_fallback_without_domain_probe_r367() {
+    let script = r#"
+var log = [];
+log.push('probe:' + (typeof globalThis.__zw_native_doc_root_id));
+log.push('entryType:' + typeof globalThis.__zw_native_ce_entry);
+log.join('|');
+"#;
+    let out = run_script(r#"<html><body></body></html>"#, script);
+    assert_eq!(
+        out, "probe:function|entryType:undefined",
+        "R367 native 测试路径：域探针 `__zw_native_doc_root_id` 已随 install 注入（function）；shim 侧 `__zw_native_ce_entry` 不在（undefined，shim 断言归 js_dom_bridge_tests）"
+    );
 }

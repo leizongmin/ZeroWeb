@@ -40,7 +40,7 @@ use zero_dom::{Document, NodeId};
 // 仅 slot 映射助手（cache/cached/encode/decode/node_exists/element_template_local + 模板/DOM 源 setter）留此。
 use gc::{
     cache_native_element, cached_native_element, decode_node_id, drop_cached_native_element, element_template_local,
-    encode_node_id, node_exists, set_dom_source, set_element_template,
+    encode_node_id, node_exists, set_dom_source, set_element_template, with_dom,
 };
 
 /// P1b 原生 DOM 绑定 kill-switch 环境变量名（默认关）。
@@ -694,6 +694,29 @@ pub fn install_dom_bindings(scope: &mut v8::PinScope, ctx: v8::Local<v8::Context
     // P1b S5a（R3264）：原生 HTMLElement 构造器——`class X extends HTMLElement` 子类化基础。
     // kill-switch：随 native_dom 安装（默认关 → 零回归）。
     html_element::build_and_register(scope, global);
+    // R367（js-dom M1/M4 CE registry 专项 slice 3）：`__zw_native_doc_root_id()` → 当前 live
+    // Document root 的 NodeId(ffi) 字符串。polyfill `__zw_native_ce_lookup` 的 per-realm 判据——
+    // host 元素的 ownerDocument root ≠ 本文档 root 时该元素属另一 doc（iframe 工厂），查表走该 doc
+    // 的 `_zwCERegistry` 槽而非主 registry（R364/R365 接线）。主文档单源架构下的最小域探针。
+    let gdri = v8::FunctionTemplate::builder(native_doc_root_id_invoke).build(scope);
+    let gdri_fn = gdri.get_function(scope);
+    let gdri_key = v8::String::new(scope, "__zw_native_doc_root_id");
+    if let (Some(f), Some(key)) = (gdri_fn, gdri_key) {
+        let _ = global.set(scope, key.into(), f.into());
+    }
+}
+
+/// `__zw_native_doc_root_id()`（R367）：当前 live Document root 的 NodeId(ffi) 字符串——
+/// polyfill per-realm registry 查表的域判据（见 install 内注释）。无 DOM 源返空串。
+fn native_doc_root_id_invoke(
+    scope: &mut v8::PinScope,
+    _args: v8::FunctionCallbackArguments,
+    mut rv: v8::ReturnValue<v8::Value>,
+) {
+    let s = with_dom(|d| encode_node_id(d.root()).to_string()).unwrap_or_default();
+    if let Some(v) = v8::String::new(scope, &s) {
+        rv.set(v.into());
+    }
 }
 
 // ── 共享助手（slot 读写 / 字符串参 / 值转换）─────────────────────

@@ -149,7 +149,19 @@ fn try_upgrade_custom_element<'s>(
     id: NodeId,
     tag: &str,
 ) -> Option<v8::Local<'s, v8::Object>> {
-    // 反查 polyfill registry：全局 __zw_native_ce_lookup(tag) → ctor 或 null。
+    // 反查 polyfill registry：全局 __zw_native_ce_lookup(tag, ownerId) → ctor 或 null。
+    // R367：ownerId = 元素 node document root（owner_document 爬 parent 链）——polyfill 侧按域
+    // 判据走该 doc 的 `_zwCERegistry` 槽（per-realm registry）或主实例。createElement 产物恒
+    // detached（owner_document 沿链到自身）→ 归 live root（勘误同 custom_elements R367）。
+    let owner_id = with_dom(|d| {
+        let root = d.root();
+        let od = d.owner_document(id);
+        if od == Some(id) { Some(root) } else { od }
+    });
+    let owner_arg: Option<v8::Local<v8::String>> = match owner_id.flatten() {
+        Some(oid) => v8::String::new(scope, &super::encode_node_id(oid).to_string()),
+        None => None,
+    };
     let context = scope.get_current_context();
     let global = context.global(scope);
     let lookup_key = v8::String::new(scope, "__zw_native_ce_lookup")?;
@@ -158,7 +170,10 @@ fn try_upgrade_custom_element<'s>(
         return None; // polyfill 未注册 lookup（native_dom 模式 shim 未加载等）→ 无 upgrade。
     };
     let tag_str = v8::String::new(scope, tag)?;
-    let ctor_val = lookup.call(scope, global.into(), &[tag_str.into()]);
+    let ctor_val = match owner_arg {
+        Some(oa) => lookup.call(scope, global.into(), &[tag_str.into(), oa.into()]),
+        None => lookup.call(scope, global.into(), &[tag_str.into()]),
+    };
     // null/undefined/缺失 → 未注册（普通元素）。
     let ctor_val = ctor_val.filter(|v| !v.is_null_or_undefined())?;
     let Ok(ctor) = v8::Local::<v8::Function>::try_from(ctor_val) else {

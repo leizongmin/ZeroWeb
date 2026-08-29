@@ -2736,3 +2736,62 @@ fn test_shadowroot_prototype_innerhtml_node_document_r366() {
         "R366 ShadowRoot.prototype innerHTML：子 realm accessor 可达、adopted host 走主 registry、工厂 own setter 委托、inner doc 走 inner registry、原型 getter 可读"
     );
 }
+
+/// R367（js-dom M1/M4 CE registry 专项 slice 3）：**`__zw_native_ce_entry` 的域判据**——
+/// ownerId == 本文档 root → 主实例命中；ownerId ≠ root 且该 doc 无 `_zwCERegistry` 槽 →
+/// null（不误命中主实例）；ownerId 缺省 → 主实例回退；lookup 归一返 ctor 本体。shim 侧
+///（part03 R367）为 native CE hooks（Rust `factories`/`custom_elements` 传 owner id）的
+/// per-realm 查表提供路由核。
+/// spec：custom element 的 registry 按元素 node document 的相关 realm 解析。
+/// https://dom.spec.whatwg.org/#concept-create-element
+/// https://html.spec.whatwg.org/multipage/custom-elements.html#customelementregistry
+#[test]
+fn test_native_ce_entry_domain_routing_r367() {
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let mut sandbox = V8Sandbox::with_config(zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    })
+    .unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> =
+        Arc::new(Mutex::new("<html><body></body></html>".to_string()));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+    // 注入 native 绑定（`__zw_native_doc_root_id` 域探针随 install 注册）——域路由断言的前提。
+    sandbox.install_native_bindings(Box::new(|scope, ctx| {
+        let dom = std::rc::Rc::new(std::cell::RefCell::new(zero_dom::parse_html(
+            "<html><body></body></html>",
+        )));
+        crate::dom_bindings::install_dom_bindings(scope, ctx, dom);
+    }));
+    sandbox
+        .execute(
+            "try {\
+             var log = [];\
+             log.push('probe:' + typeof globalThis.__zw_native_doc_root_id);\
+             class MainEl extends HTMLElement {}\
+             customElements.define('x-r367', MainEl);\
+             var rootId = globalThis.__zw_native_doc_root_id();\
+             var e1 = globalThis.__zw_native_ce_entry('x-r367', rootId);\
+             log.push('main:' + (e1 && e1.ctor === MainEl ? 'hit' : 'miss'));\
+             var e2 = globalThis.__zw_native_ce_entry('x-r367', '99999');\
+             log.push('foreign:' + (e2 === null ? 'null' : 'wrong'));\
+             var e3 = globalThis.__zw_native_ce_entry('x-r367');\
+             log.push('default:' + (e3 && e3.ctor === MainEl ? 'hit' : 'miss'));\
+             var c4 = globalThis.__zw_native_ce_lookup('x-r367', rootId);\
+             log.push('lookup:' + (c4 === MainEl ? 'ctor' : 'wrong'));\
+             globalThis.__r367e = log.join('|');\
+             } catch (err) { globalThis.__r367e = 'ERR:' + err.message; }",
+        )
+        .unwrap();
+    let out = sandbox.execute("globalThis.__r367e").unwrap().value;
+    assert_eq!(
+        out, "probe:function|main:hit|foreign:null|default:hit|lookup:ctor",
+        "R367 __zw_native_ce_entry 域判据：主文档 root 命中主实例、distinct root 无槽返 null、缺省回退主实例、lookup 返 ctor"
+    );
+}

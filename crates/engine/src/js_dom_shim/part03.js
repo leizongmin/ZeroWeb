@@ -2489,8 +2489,13 @@
   //（Rust 侧 `new_instance` 触发 super() → native HTMLElement ctor 复用 host NodeId 填 slot[0]，产出 native
   // custom 实例），未命中返 null。native_dom 关闭时此函数定义但无人调用（零开销）。registry 在 polyfill 闭包
   // 内，故经本全局函数暴露只读查询（不暴露内部 Map/对象引用）。
-  globalThis.__zw_native_ce_lookup = globalThis.__zw_native_ce_lookup || function (tag) {
-    var entry = _ce_registry[tag];
+  // R367（js-dom M1/M4 CE registry 专项 slice 3）：**per-realm 查表**——Rust 现传 (tag, ownerId)，host 元素
+  // 的 ownerDocument root 是 distinct Document 时走该 doc 的 `_zwCERegistry` 槽（R364 per-realm 实例 +
+  // R365 槽接线）；主文档（含 ownerId 缺省）读主实例三变量。spec：createElement 的 registry = this 的
+  // node document 相关 realm（`https://dom.spec.whatwg.org/#concept-create-element`）。
+  globalThis.__zw_native_ce_lookup = globalThis.__zw_native_ce_lookup || function (tag, ownerId) {
+    // R367：per-realm 查表（__zw_native_ce_entry 归一 { ctor }）→ 返 ctor 或 null。
+    var entry = globalThis.__zw_native_ce_entry(tag, ownerId);
     return entry ? entry.ctor : null;
   };
 
@@ -2504,10 +2509,12 @@
   // 经 setAttribute polyfill trap 已就绪（native_dom 下 setAttribute 走 Rust，attr 派发为后续）。
   globalThis.__zw_native_ce_notify_connect =
     globalThis.__zw_native_ce_notify_connect ||
-    function (instances, connected, tags) {
+    function (instances, connected, tags, ownerIds) {
       if (!instances || !tags || instances.length !== tags.length) return;
       for (var i = 0; i < instances.length; i++) {
-        var entry = _ce_registry[tags[i]];
+        // R367：per-realm 查表——ownerId（node document root ffi）≠ 本文档 root 的元素走
+        // 其 doc 的 `_zwCERegistry` 槽（R364 per-realm 实例）；主文档读主实例三变量。
+        var entry = _r367CeEntry(tags[i], ownerIds ? ownerIds[i] : null);
         if (!entry || !entry.ctor) continue;
         var proto = entry.ctor.prototype;
         if (!proto) continue;
@@ -2517,6 +2524,39 @@
         }
       }
     };
+  // R367：native CE hooks 的 per-realm entry 解析（lookup/notify_connect/notify_attr_change
+  // 共用）——ownerId 缺省 / 等于本文档 root → 主实例；distinct root → 该 doc `_zwCERegistry`
+  // 槽的 get/define 记录。主实例 entry 形态 = { ctor, options }（与子 registry get 的 ctor 直返
+  // 不同——统一在 _r367CeEntry 归一为 { ctor } 消费形态）。
+  globalThis.__zw_native_ce_entry = globalThis.__zw_native_ce_entry || function (tag, ownerId) {
+    try {
+      // R367 域判据：ownerId 与本文档 root（`__zw_native_doc_root_id`，native 绑定
+      // 安装）不一致 → 另一 doc 域。探针缺席（shim-only 沙箱/纯 polyfill 环境）时
+      // **不可判定**——保持主实例回退（native生产路径探针恒在，域路由只在
+      // default-on 后生效；shim-only 回退 = 主文档语义零回归）。
+      if (ownerId != null && typeof globalThis.__zw_native_doc_root_id === 'function') {
+        var isMain = false;
+        try { isMain = String(globalThis.__zw_native_doc_root_id()) === String(ownerId); } catch (_e367m) {}
+        if (!isMain) {
+          var _r367od2 = globalThis.document && globalThis.document.documentElement
+            ? globalThis.document.documentElement.ownerDocument : null;
+          if (_r367od2 && _r367od2 !== globalThis.document) {
+            var reg367 = _r367od2._zwCERegistry;
+            if (reg367 && typeof reg367.get === 'function') {
+              var c367 = reg367.get(tag);
+              return c367 ? { ctor: c367 } : null;
+            }
+          }
+          return null;
+        }
+      }
+    } catch (_e367e) {}
+    var e367 = _ce_registry[tag];
+    return e367 ? e367 : null;
+  };
+  function _r367CeEntry(tag, ownerId) {
+    return globalThis.__zw_native_ce_entry(tag, ownerId);
+  }
 
   // P1b S5d（R3267）：custom element attributeChangedCallback 派发 hook——native_dom 路径
   // setAttribute/removeAttribute/toggleAttribute（Rust 直接改 DOM）绕过本 polyfill 的 setAttribute trap
@@ -2527,9 +2567,10 @@
   // `_ce_dispatchAttrChange`）。native_dom 关闭时此函数定义但无人调用（零开销）。
   globalThis.__zw_native_ce_notify_attr_change =
     globalThis.__zw_native_ce_notify_attr_change ||
-    function (instance, name, oldVal, newVal, tag) {
+    function (instance, name, oldVal, newVal, tag, ownerId) {
       if (!instance || !tag) return;
-      var entry = _ce_registry[String(tag).toLowerCase()];
+      // R367：per-realm 查表（同 notify_connect——distinct root 走该 doc registry）。
+      var entry = _r367CeEntry(String(tag).toLowerCase(), ownerId);
       if (!entry) return; // 非 custom 元素
       _ce_dispatchAttrChange(entry, instance, name, oldVal, newVal);
     };

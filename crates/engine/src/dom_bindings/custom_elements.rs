@@ -103,9 +103,18 @@ fn dispatch_connect(scope: &mut v8::PinScope, ids: &[NodeId], connected: bool) {
     let Ok(notify) = v8::Local::<v8::Function>::try_from(notify_val) else {
         return;
     };
-    // 构造 (instances[], tags[]) 两并列数组——polyfill 按 tag 查 registry，按 index 配对实例。
+    // 构造 (instances[], tags[], ownerIds[]) 三并列数组——polyfill 按 tag+owner 查 per-realm
+    // registry，按 index 配对实例。R367：ownerId = 元素 node document root（owner_document）——
+    // 主文档元素 owner == live Document root（polyfill 判据命中主实例），iframe 工厂元素 owner
+    // 为 distinct root（走该 doc 的 `_zwCERegistry` 槽）。
     // 用 Array::new + set_index（v8::Array::new_with_elements 非 rusty_v8 公共 API）。
-    let mut pairs: Vec<(v8::Local<v8::Object>, String)> = Vec::with_capacity(ids.len());
+    // R367 勘误：owner_document 对 **已摘除节点**（removeChild 后 parent=None）沿链走到
+    // 自身 → 产出 bogus root id ≠ doc root → polyfill 域判据误判 FOREIGN → 主实例 miss
+    // → disconnectedCallback 丢失（webview r3270 e2e 当场抓回）。owner 解析须 **先比
+    // live Document root**：节点 connected（祖先链到 root）→ root；否则 disconnected
+    // notify 语义 = 元素此前属 live Document → 亦归 root（本架构 live Document 单源，
+    // 无跨文档 native 元素，FOREIGN 臂仅为 per-realm 查表预留的形态位）。
+    let mut pairs: Vec<(v8::Local<v8::Object>, String, Option<String>)> = Vec::with_capacity(ids.len());
     for &id in ids {
         let Some(obj) = get_or_create_native_element(scope, id) else {
             continue;
@@ -113,21 +122,44 @@ fn dispatch_connect(scope: &mut v8::PinScope, ids: &[NodeId], connected: bool) {
         let Some(tag) = element_tag(id) else {
             continue;
         };
-        pairs.push((obj, tag.to_lowercase()));
+        let owner = super::with_dom(|d| {
+            let root = d.root();
+            if d.owner_document(id) == Some(root) || d.owner_document(id) == Some(id) {
+                Some(root)
+            } else {
+                d.owner_document(id)
+            }
+        })
+        .flatten()
+        .map(|o| super::encode_node_id(o).to_string());
+        pairs.push((obj, tag.to_lowercase(), owner));
     }
     if pairs.is_empty() {
         return;
     }
     let inst_arr = v8::Array::new(scope, pairs.len() as i32);
     let tag_arr = v8::Array::new(scope, pairs.len() as i32);
-    for (i, (obj, tag)) in pairs.into_iter().enumerate() {
+    let own_arr = v8::Array::new(scope, pairs.len() as i32);
+    for (i, (obj, tag, owner)) in pairs.into_iter().enumerate() {
         let _ = inst_arr.set_index(scope, i as u32, obj.into());
         if let Some(t) = v8::String::new(scope, &tag) {
             let _ = tag_arr.set_index(scope, i as u32, t.into());
         }
+        match owner.as_deref().and_then(|s| v8::String::new(scope, s)) {
+            Some(o) => {
+                let _ = own_arr.set_index(scope, i as u32, o.into());
+            }
+            None => {
+                let _ = own_arr.set_index(scope, i as u32, v8::null(scope).into());
+            }
+        }
     }
     let conn_v = v8::Boolean::new(scope, connected);
-    let _ = notify.call(scope, global.into(), &[inst_arr.into(), conn_v.into(), tag_arr.into()]);
+    let _ = notify.call(
+        scope,
+        global.into(),
+        &[inst_arr.into(), conn_v.into(), tag_arr.into(), own_arr.into()],
+    );
 }
 
 /// DFS 收集 `root` 子树（含 root 自身）的所有元素节点，对每个调 `f(id, tag)`。**pre-order tree order**
@@ -256,10 +288,24 @@ pub(super) fn notify_attribute_change(
     let Some(tag_v) = v8::String::new(scope, tag) else {
         return;
     };
+    // R367：ownerId（node document root）——polyfill per-realm registry 查表的域判据。
+    // R367 勘误同 dispatch_connect：detached 节点（owner_document 沿链到自身）归 live root。
+    let owner_v: v8::Local<v8::Value> = match super::with_dom(|d| {
+        let root = d.root();
+        let od = d.owner_document(id);
+        if od == Some(id) { Some(root) } else { od }
+    })
+    .flatten()
+    {
+        Some(oid) => v8::String::new(scope, &super::encode_node_id(oid).to_string())
+            .map(|s| s.into())
+            .unwrap_or_else(|| v8::null(scope).into()),
+        None => v8::null(scope).into(),
+    };
     let _ = notify.call(
         scope,
         global.into(),
-        &[instance.into(), name_v.into(), old_v, new_v, tag_v.into()],
+        &[instance.into(), name_v.into(), old_v, new_v, tag_v.into(), owner_v],
     );
 }
 
