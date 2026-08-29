@@ -8204,6 +8204,35 @@
               if (!globalThis.__zwAdoptDocByHandle) globalThis.__zwAdoptDocByHandle = {};
               globalThis.__zwAdoptDocByHandle[String(c.__zwHandle)] = doc;
             } catch (_e327ah) {}
+            // R368（js-dom M4）：串行合并分支的 early-return 此前跳过下方 R191 的 adopt
+            // 子树传播——handle 子（R368 身份盖章后的 iframe 工厂容器）经此路径再 adopt
+            // 时子树 ownerDocument 停留旧文档（WPT node-realm-mixed-across-adoption
+            // "moved into realm B's document" 回归：盖章使容器落入本分支，B 段重 adopt
+            // 后 ownerDocument 仍指主文档）。按 R327 测绘结论（本分支确证 iframe doc
+            // body 域）补传播——handle 子落 `__zwAdoptDocByHandle` 表，plain 子树递归
+            // defineProperty（与下方 R191 同构）。
+            // https://dom.spec.whatwg.org/#concept-node-adopt
+            try {
+              (function _r368adoptMerge(n3) {
+                if (!n3 || typeof n3 !== 'object') return;
+                if (n3.__zwHandle) {
+                  if (!globalThis.__zwAdoptDocByHandle) globalThis.__zwAdoptDocByHandle = {};
+                  globalThis.__zwAdoptDocByHandle[String(n3.__zwHandle)] = doc;
+                } else if (n3.nodeType === 1 || n3.nodeType === 3 || n3.nodeType === 8) {
+                  try { n3.__zwAdoptDoc191 = doc; } catch (_e368m1) {}
+                  try {
+                    Object.defineProperty(n3, 'ownerDocument', {
+                      get: function () { return n3.__zwAdoptDoc191 || undefined; },
+                      configurable: true,
+                    });
+                  } catch (_e368m2) {}
+                }
+                var k3 = n3.childNodes;
+                if (k3 && typeof k3.length === 'number') {
+                  for (var i3 = 0; i3 < k3.length; i3++) _r368adoptMerge(k3[i3]);
+                }
+              })(c);
+            } catch (_e368ab) {}
             return c;
           } catch (_e112d) { /* 回落通用路径 */ }
         }

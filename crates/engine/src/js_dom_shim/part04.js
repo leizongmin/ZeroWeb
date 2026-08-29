@@ -3566,6 +3566,54 @@
             if (child.nodeType === 9) {
               throw _zwDomException('Nodes of type 9 cannot be inserted.', 'HierarchyRequestError');
             }
+            // R368（js-dom M4）：**无身份 plain 元素的 host 身份盖章**——iframe 工厂/detached
+            // doc createElement 产物（纯 JS plain 对象，无 `__zwSelector`/`__zwHandle`）append
+            // 到 sel/handle 父后对主文档**查询面整体不可见**（getElementById/querySelector/
+            // getElementsByTagName 恒 miss——host 快照与 pending 索引都无从寻址一个无身份
+            // 对象；WPT node-realm-adoption-after-frame-removal test 3 "Node reached through
+            // the adopting document"：adopted 工厂子树经 `document.getElementById` 访问，
+            // R368 探针实证 q/gebi/mainP 全 miss 而同树经容器自身 querySelector 可见）。
+            // 修：append 入口处为无身份元素子分配 host 句柄（`__zw_create_element(tag)`）
+            // 并盖 `__zwHandle` 章——落入下方 handle-child 分支（`__zw_append_child(sel,
+            // handle)` wire + pending 记账），子树经 R51c `_zwHCCollectSubtree` 的
+            // childNodes 展开进同步索引 → 文档级查询可见。已带任何身份（sel/handle）的
+            // 子走原路径零变化。盖章的 plain 子跳过下方 R177 的 ownerDocument 重指（该
+            // 分支 gated `!child.__zwHandle`），其 adopt 传播在 R368 传播段（下方）统一做。
+            // **容器 gate**：目标是 shadow/fragment 容器（`_isContainerHandle`）时不盖章——
+            // 容器子树是本地 registry 语义（R97 fragment 展平/R195 plain 子剔除），盖章会把
+            // extractContents/fragment 移动产物改道 handle wire（R368 回归：ShadowRoot
+            // extractContents 3F——span 被盖章后其文本子注册错位，序列化丢文本）。
+            // https://github.com/whatwg/dom/issues/977
+            if (child && child.nodeType === 1 && !child.__zwHandle && !child.__zwSelector
+                && !(handle && _isContainerHandle(handle))
+                && typeof __zw_create_element === 'function') {
+              try {
+                child.__zwHandle = __zw_create_element(
+                  String(child.tagName || child.nodeName || 'div').toLowerCase());
+              } catch (_e368st) {}
+              // R368：adopt 子树传播——盖章 plain 子的 ownerDocument 重指主 document
+              //（spec `concept-node-adopt` 递归 descendants）。R177/R181 的传播分支 gated
+              // `!child.__zwHandle`，盖章子（含子树）在此独立传播（configurable getter，
+              // 后续 R177 形态重 adopt 可再覆盖）。子节点保留创建域原型链（instanceof
+              // InnerParagraph 等 creation-realm 断言不受影响——realm 与 ownerDocument
+              // 正交，spec `concept-node-adopt` 只重指 node document）。
+              try {
+                (function _r368AdoptSub(n, _r368Depth) {
+                  if (!n || _r368Depth > 64) return;
+                  try {
+                    Object.defineProperty(n, 'ownerDocument', {
+                      get: function () { return globalThis.document; },
+                      set: function () {},
+                      configurable: true,
+                    });
+                  } catch (_e368ad) {}
+                  var _r368Kids = n.childNodes || [];
+                  for (var _r368k = 0; _r368k < _r368Kids.length; _r368k++) {
+                    _r368AdoptSub(_r368Kids[_r368k], _r368Depth + 1);
+                  }
+                })(child, 0);
+              } catch (_e368sp) {}
+            }
             // R177（js-dom M4）：跨文档 adopt（sel 父路径）——plain 子（无 handle——
             // iframe 工厂/detached doc createElement 产物）append 到主文档元素后
             // ownerDocument 重指主 document（spec `concept-node-adopt`；WPT

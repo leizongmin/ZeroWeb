@@ -2795,3 +2795,68 @@ fn test_native_ce_entry_domain_routing_r367() {
         "R367 __zw_native_ce_entry 域判据：主文档 root 命中主实例、distinct root 无槽返 null、缺省回退主实例、lookup 返 ctor"
     );
 }
+
+// R368（js-dom M4）：无身份 plain 元素 append 到主文档的 **host 身份盖章**——iframe 工厂
+// createElement 产物（plain 对象，无 `__zwSelector`/`__zwHandle`）旧 append 后对文档级
+// 查询面（getElementById/querySelector/getElementsByTagName）整体不可见（host 快照与
+// pending 索引无从寻址无身份对象；WPT node-realm-adoption-after-frame-removal
+// "Node reached through the adopting document" 根因）。盖章分支为无身份元素子分配
+// host 句柄（`__zw_create_element(tag)`）+ adopt 子树传播（ownerDocument 重指主
+// document）。断言四态：① 盖章后 handle 已分配 ② ownerDocument 重指主 document
+// ③ 解析子（innerHTML 产物）同被传播 ④ 已带身份的子不重复盖章（sel 子原样）。
+// https://dom.spec.whatwg.org/#concept-node-adopt
+#[test]
+fn test_identity_stamp_plain_child_adoption_r368() {
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let mut sandbox = V8Sandbox::with_config(zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    })
+    .unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> =
+        Arc::new(Mutex::new("<html><body><p id=r368-anchor></p></body></html>".to_string()));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+    sandbox
+        .execute(
+            "try {\
+             function makePlain(tag, inner) {\
+               var el = { nodeType: 1, tagName: tag.toUpperCase(), nodeName: tag.toUpperCase(),\
+                 localName: tag, childNodes: [], attributes: [], parentNode: null,\
+                 ownerDocument: globalThis.document,\
+                 getAttribute: function (n) { n = String(n); for (var i = 0; i < el.attributes.length; i++) if (el.attributes[i].name === n) return el.attributes[i].value; return null; },\
+                 setAttribute: function (n, v) { el.attributes.push({ name: String(n), value: String(v) }); } };\
+               if (inner) {\
+                 var kid = { nodeType: 1, tagName: 'P', nodeName: 'P', localName: 'p', childNodes: [], parentNode: el };\
+                 Object.defineProperty(kid, 'ownerDocument', { get: function () { return el.ownerDocument; }, configurable: true });\
+                 el.childNodes.push(kid);\
+               }\
+               return el;\
+             }\
+             var log = [];\
+             var body = globalThis.document.body;\
+             var plain = makePlain('div', true);\
+             plain.setAttribute('id', 'r368-stamped');\
+             body.appendChild(plain);\
+             log.push('stamped:' + (plain.__zwHandle ? 'yes' : 'no'));\
+             log.push('od:' + (plain.ownerDocument === globalThis.document ? 'main' : 'other'));\
+             var kid = plain.childNodes[0];\
+             log.push('kid-od:' + (kid && kid.ownerDocument === globalThis.document ? 'main' : 'other'));\
+             var selLike = { nodeType: 1, __zwSelector: '#r368-anchor', childNodes: [], parentNode: null };\
+             body.appendChild(selLike);\
+             log.push('sel-kept:' + (selLike.__zwSelector === '#r368-anchor' && !selLike.__zwHandle ? 'yes' : 'no'));\
+             globalThis.__r368e = log.join('|');\
+             } catch (err) { globalThis.__r368e = 'ERR:' + err.message; }",
+        )
+        .unwrap();
+    let out = sandbox.execute("globalThis.__r368e").unwrap().value;
+    assert_eq!(
+        out, "stamped:yes|od:main|kid-od:main|sel-kept:yes",
+        "R368 身份盖章：无身份 plain 子 append 时分配 handle + ownerDocument 子树传播重指主文档；已有身份的子不盖章"
+    );
+}
