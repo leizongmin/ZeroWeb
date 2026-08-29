@@ -78,3 +78,33 @@ try/catch 吞 → 定时回调永不执行（静默）。common.js 的 `setTimeo
 
 d3d-r3（element/fragment 本树化重启）——RFC v0.3 §6.2 路线 A 第三片；或先收
 iframe 工厂元素的 `getElementsByTagName`/compound QSA 补面（低风险高 ROI 的 R356 续片）。
+
+## 6. 续片（同轮第二片）：iframe 工厂元素的元素级集合查询
+
+探针（probe11/18）定位的残余缺口 1 已收口：`_zwIframeCreateElement` 补
+`getElementsByTagName`/`getElementsByClassName`（spec `dom-element-getelementsbytagname`/
+`-classname`，元素**子树**作用域；旧缺方法 → 工厂元素直接 TypeError——R181 只接了
+querySelector 族）。实现复用 own QSA 的 R181 walk 匹配器（tag/`*`/#id/.class 简单形态）
++ R44 `_zwMakeCollection` 承载（HTMLCollection 面：item/namedItem/length）；多类名
+getElementsByClassName 走复合 `.a.b` 形态（全含语义）。
+
+**验证（续片门）**：
+
+- engine 单测 v8 2482（+1 `test_iframe_factory_element_collections_r356`：子树作用域
+  tag/`*`/空串/类名 + HTMLCollection 承载断言）/ quickjs 1471 全绿；
+- Range-mutations 全族（iframe 域最重消费方）A/B：appendData 384P / deleteData 564P /
+  insertData 382P 全持平（dataChange/replaceData 2F = 17 已知集）；其余 8 文件全绿；
+- WPT 环境探针（probe18）：`td.getElementsByTagName('p').length=6`、产物与
+  `doc.querySelector('#a')` **identity 同一**、空类名 0；
+- 全量 dom sweep 二跑：**55481P/19F/15T——真实 Fail 集合 17=17 恒等零回归**，
+  Pass +3 净正（Timeout 轮转族收敛）；文件级门 QSA 1975 / matches 669 / appendData 384 /
+  MO-attributes 42 / **Element-getElementsByTagName 19P/0F** 全保持；
+- clippy 双矩阵零警告 / fmt 无 diff。
+
+## 7. 残余缺口更新
+
+- ~~iframe 工厂元素 getElementsByTagName 缺方法~~ → ✅ 本轮续片收口；
+- own QSA 的 compound 形态（`p#a` 返 0）维持 headless 近似（own 匹配器为简单形态）——
+  d3d-r3 本树化后该面走统一匹配器自然覆盖；
+- iframe realm 的 `requestAnimationFrame`/`getComputedStyle` 等其余 window 能力面未核查
+  （无已知消费用例，按需补）。

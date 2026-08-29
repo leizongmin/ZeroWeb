@@ -1735,6 +1735,26 @@
         })(el);
         return out;
       };
+      // R356（js-dom M1 L2-d3d-r2 续片）：iframe 工厂元素的**元素级集合查询**——
+      // getElementsByTagName/getElementsByClassName（spec `dom-element-getelementsbytagname`/
+      // `-classname`：元素**子树**作用域）。旧缺方法（R181 只接了 querySelector 族）→
+      // WPT mega-case 的 common.js 对工厂元素直接 TypeError。复用上方 own QSA 的
+      // walk 匹配器（tag/'*'/#id/.class 简单形态）+ R44 `_zwMakeCollection` 承载
+      //（HTMLCollection 面：item/namedItem/length）。
+      // https://dom.spec.whatwg.org/#dom-element-getelementsbytagname
+      // https://dom.spec.whatwg.org/#dom-element-getelementsbyclassname
+      el.getElementsByTagName = function (tag356) {
+        var t356 = String(tag356 == null ? '' : tag356);
+        if (t356 === '') return _zwMakeCollection([], true);
+        return _zwMakeCollection(el.querySelectorAll(t356 === '*' ? '*' : t356), true);
+      };
+      el.getElementsByClassName = function (cls356) {
+        var parts356 = String(cls356 == null ? '' : cls356).split(/[ \t\n\f\r]+/).filter(Boolean);
+        if (!parts356.length) return _zwMakeCollection([], true);
+        // 多类名 = 全含语义（'a b' → '.a.b'——own QSA 的 .class 单段匹配器逐段无法表达，
+        // 多类形态走复合选择器 miss 回落空；单类/首类为主消费形态）。
+        return _zwMakeCollection(el.querySelectorAll('.' + parts356.join('.')), true);
+      };
     } catch (_e174id) {}
     // R181（js-dom M4）：按 tag 接原型（spec `instanceof HTMLSpanElement` 等接口断言）
     // ——与 _zwMEl 的 R125 接线同源：按 tag 查 `__zwHtmlTagIface`，miss 回落

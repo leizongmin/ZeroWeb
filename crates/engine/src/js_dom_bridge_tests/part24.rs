@@ -2304,3 +2304,53 @@ fn test_iframe_realm_timer_surface_r356() {
         "R356 win.setTimeout 回调经主 stub 微任务链可执行"
     );
 }
+
+/// R356 续片：iframe 工厂元素的**元素级集合查询**——`getElementsByTagName`/
+/// `getElementsByClassName`（spec `dom-element-getelementsbytagname`/-classname，
+/// 元素子树作用域）。旧缺方法（R181 只接 querySelector 族）→ 工厂元素直接
+/// TypeError。复用 own QSA 的 walk 匹配器 + `_zwMakeCollection` 承载。
+#[test]
+fn test_iframe_factory_element_collections_r356() {
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let mut sandbox = V8Sandbox::with_config(zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    })
+    .unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> =
+        Arc::new(Mutex::new("<html><body></body></html>".to_string()));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+    sandbox
+        .execute(
+            "var ifr = document.createElement('iframe');\
+             document.body.appendChild(ifr);\
+             var doc = ifr.contentDocument;\
+             var td = doc.createElement('div');\
+             td.id = 'td';\
+             doc.body.appendChild(td);\
+             var p1 = doc.createElement('p'); p1.id = 'a'; p1.className = 'x y';\
+             var p2 = doc.createElement('p'); p2.id = 'b';\
+             var sp = doc.createElement('span'); sp.className = 'x';\
+             td.appendChild(p1); td.appendChild(p2); p2.appendChild(sp);\
+             var out = [];\
+             out.push('byTag:' + td.getElementsByTagName('p').length);\
+             out.push('byTagSpan:' + td.getElementsByTagName('span').length);\
+             out.push('byStar:' + td.getElementsByTagName('*').length);\
+             out.push('byEmpty:' + td.getElementsByTagName('').length);\
+             out.push('byCls:' + td.getElementsByClassName('x').length);\
+             out.push('isHC:' + (td.getElementsByTagName('p').item ? 'collection' : 'array'));\
+             globalThis.__r356c = out.join('|');",
+        )
+        .unwrap();
+    let out = sandbox.execute("globalThis.__r356c").unwrap().value;
+    assert_eq!(
+        out, "byTag:2|byTagSpan:1|byStar:3|byEmpty:0|byCls:2|isHC:collection",
+        "R356 iframe 工厂元素集合查询：子树作用域 tag/class 匹配 + HTMLCollection 承载"
+    );
+}
