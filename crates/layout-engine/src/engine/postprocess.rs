@@ -2051,6 +2051,12 @@ pub(super) fn apply_cross_block_line_clamp(
                 }
             }
             if !is_in_flow_block && !is_inline_flow_carrier {
+                // R3789 调查记录（float 上浮——未采用）：clamp 点前 float 上浮到前序子
+                // 末行盒顶（CSS2 §9.5.1 规则 4/5 近似）使 006 收敛 1.16%→0.35%，但
+                // auto-016（4.00%）/with-floats-005（1.04%）/with-floats-010（1.04%）
+                // 三案回退——chromium 的跨块 float 定位不只由前块末行几何决定（ floats-005/
+                // 010 的 float 上浮后与新位置内容重叠）。上浮需逐案 float-fits-beside 语义
+                // （float 宽度 vs 上浮目标行可用宽），留独立切片。
                 // R3788：预算已耗尽（remaining==0）但 `exhausted` 尚未置位时到达的
                 // **float** 子——其源序位置在 clamp point 之后（css-overflow-4
                 // with-floats-004 assert「floats … always hidden if they come after the
@@ -2462,11 +2468,25 @@ pub(super) fn apply_cross_block_line_clamp(
             // 「bottom margins … end at the clamp boundary」）；真在边界后的（031 型）
             // 经 min(constraint) 截掉。Count(n) 无约束语义，保持纯 extent 收缩。
             let pb = b.padding_top + b.padding_bottom + b.border_top + b.border_bottom;
+            // R3789：clamp 点前的 **float** 子不隐藏（css-overflow-4 with-floats-006：
+            // 「floats before the clamp point are not hidden」），但其超出 clamp 边界的
+            // 部分**裁剪到容器内容边**（assert「clipped to the line-clamp container's
+            // content edge」）——容器 extent 不被 float 溢出部分撑高（float bottom 对
+            // extent 的贡献 = min(float bottom, clamp 边界)；无边界信息时（未 exhausted，
+            // 预算未耗尽——此时本 walk 本就不收缩）不适用）。
+            let boundary = out.boundary_y;
             let extent = b
                 .children
                 .iter()
                 .filter(|c| !c.line_clamp_hidden && !c.is_absolute && !c.is_fixed)
-                .map(|c| c.y + c.height)
+                .map(|c| {
+                    let bottom = c.y + c.height;
+                    if !matches!(c.float, FloatValue::None) && bottom > boundary {
+                        boundary.max(c.y) // float 裁剪后至少保留自身顶部（防边界在 float 顶之上时负贡献）
+                    } else {
+                        bottom
+                    }
+                })
                 .fold(0.0f32, f32::max)
                 .max(0.0);
             let new_content = if let Some(constraint) = auto_constraint_px {
