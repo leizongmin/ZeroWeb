@@ -878,6 +878,7 @@
 >   - [ ] Phase A slice-3 IFC 深构造（IFC 单一权威化）— 深 architectural，设计已就绪 — 等点名
 >   - [x] ~~font-stack coherence rebuild + Phase A IFC line-box-metric 统一（R2025 user-blocked；RFC-ready [`unified-font-stack-design.md`](rendering-compat/unified-font-stack-design.md) v0.2.3）~~ ✅ **已批准（2026-08-09 用户决策）**：接受 HarfBuzz C 依赖，恢复主动实施，分片执行中 — **⚠️ R2869 勘误 R2867（历史依据，不改变批准）**：Skia/raster C-dep **非** font-wall unlock（R1560 real-skia-safe A/B net-24 已证伪；光栅层 R1068/R1159 FreeType default-on 已对齐 chromium）；font-wall 残余在 **layout/metric coherence（Phase A IFC）**，须 **full font-stack rebuild（layout/paint/wrap metric coherence）整体做**（isolated slice 全 net-negative：line-height ×3 + advance ×4 + raster ×1，不可切片），二者皆 deep multi-week user-gated；DC-2~5/2026 65% oracle absent 此授权 = unreachable
 >   - [ ] 响应式图片 srcset / `<picture>` / CSS `image-set()`（R2412 发现）— `extract_img_resources` 仅取 `<img src>`，不解析 srcset/source；srcset-only 图缺抓、其余仅次优分辨率。正确选源须 DPR+`sizes`+布局（layout-dependent）+ painter effective-src plumbing — 深，须 RFC+布局集成 — 等点名
+>   - [ ] webkit-039 R109 盒树调查（R3800-R3803 四轮残簇标注「深结构需授权」，2026-08-29 巡检补登记）— webkit-line-clamp-039 残差 15.91%，归因 R109 盒树构造谱系（anon 块/line box 层级与 chromium 不一致），R1043 谱系停止条件曾触发的同族四层协调深改 — 等点名
 > - 真正需用户拍板的 4 类（不兼容/闭源许可证、破坏性 git/文件操作、改 Mission/Done/范围、超大磁盘网络下载工具审批无法覆盖）同上格式追加。当前该 4 类无悬而未决项。
 >   - [x] ~~**Mission 95% 的时间账本校准（A1）** — 改 Mission/Done/范围 — Ladybird 7 年/8 人全职/428 贡献者才到同源 93.33%（2026-08-05 实测，官方算法复算），ZeroWeb 当前 oracle ~57% + G0 单维护者；95% 作为短期冲刺目标与幂律现实不匹配是 plateau 反复的根源之一~~ ✅ **已拍板（2026-08-07）**：采纳分阶段里程碑（2026 65% → 2027 80% → 长期 95%），Mission 已更新
 >
