@@ -437,6 +437,166 @@
     Object.setPrototypeOf(globalThis.ShadowRoot.prototype,
       globalThis.DocumentFragment ? globalThis.DocumentFragment.prototype : globalThis.Node.prototype);
   } catch (_e194sr) {}
+  // R366（js-dom M1/M4 CE registry 专项 slice 2b）：**ShadowRoot.prototype innerHTML
+  // accessor**——shadow 的 node document 路由面（spec `dom-innerhtml-innerhtml`：
+  // fragment 序列化 setter）。WPT create-element-realm-after-adoption 的
+  // `Object.getOwnPropertyDescriptor(inner.ShadowRoot.prototype, 'innerHTML').set`
+  // 需要**子 realm prototype 上可达的 accessor**（R364 后 iframe win 构造器多为主 realm
+  // 转发——R295 只 per-realm 化 Text/Comment）；各工厂 attachShadow 产物的 own accessor
+  // 遮蔽原型，行为不变；轻量产物（无 own accessor）经本原型面获得同语义 setter。
+  // 路由与升级复用 R365 的三法则：node document（adopt 印记优先 + parentNode 爬链 +
+  // 兜底 main）→ per-realm registry → hyphen tag `_ceRunCtor`。
+  try {
+    if (globalThis.ShadowRoot && globalThis.ShadowRoot.prototype
+        && !Object.getOwnPropertyDescriptor(globalThis.ShadowRoot.prototype, 'innerHTML')) {
+      Object.defineProperty(globalThis.ShadowRoot.prototype, 'innerHTML', {
+        configurable: true,
+        get: function () {
+          var _r366s = '';
+          var _r366k = this.childNodes || [];
+          for (var _r366i = 0; _r366i < _r366k.length; _r366i++) {
+            var _r366c = _r366k[_r366i];
+            if (!_r366c) continue;
+            if (_r366c.nodeType === 3) _r366s += String(_r366c.data != null ? _r366c.data : (_r366c.nodeValue != null ? _r366c.nodeValue : ''));
+            else if (_r366c.nodeType === 8) _r366s += '<!--' + String(_r366c.data != null ? _r366c.data : (_r366c.nodeValue != null ? _r366c.nodeValue : '')) + '-->';
+            else if (_r366c.nodeType === 1 && typeof _r366c.outerHTML === 'string') _r366s += _r366c.outerHTML;
+          }
+          return _r366s;
+        },
+        set: function (v) {
+          var _r366host = this.host;
+          // R366：node document 路由三法则（R365 同构，兜底序 = creator 印记）——
+          // ① adopt 印记优先（host.ownerDocument 经 adopt 传播已重指 node document，
+          // 与创建域不同即采纳）；② parentNode 爬链（直接挂载形态）；③ 兜底创建域
+          //（host._zwCreatorDoc——iframe/detached 工厂 host 未 adopt 时解析子属创建
+          // doc realm；plain host 无印记回落主文档）。
+          var _r366creator = null;
+          try { _r366creator = (_r366host && _r366host._zwCreatorDoc) || null; } catch (_e366c0) {}
+          var _r366EffDoc = (_r366creator && _r366creator.nodeType === 9) ? _r366creator : globalThis.document;
+          try {
+            var _r366od = _r366host && _r366host.ownerDocument;
+            if (_r366od && _r366od.nodeType === 9 && _r366od !== _r366creator) {
+              _r366EffDoc = _r366od;
+            } else {
+              var _r366cur = _r366host && _r366host.parentNode;
+              var _r366guard = 0;
+              while (_r366cur && _r366guard++ < 64) {
+                if (_r366cur.nodeType === 9) { _r366EffDoc = _r366cur; break; }
+                _r366cur = _r366cur.parentNode;
+              }
+            }
+          } catch (_e366d) {}
+          var _r366IsMain = _r366EffDoc === globalThis.document;
+          var _r366Reg = _r366IsMain
+            ? globalThis.customElements
+            : (function () { try { return _r366EffDoc._zwCERegistry || null; } catch (_e366r) { return null; } })();
+          var _r366kids = [];
+          try { _r366kids = _zwMBuildBodyTree(String(v == null ? '' : v)).childNodes; } catch (_e366s) { _r366kids = []; }
+          this.childNodes = _r366kids;
+          for (var _r366j = 0; _r366j < _r366kids.length; _r366j++) {
+            try { _r366kids[_r366j].parentNode = this; } catch (_r366p) {}
+            try {
+              var _r366fod = _r366EffDoc;
+              Object.defineProperty(_r366kids[_r366j], 'ownerDocument', {
+                get: function () { return _r366fod; },
+                set: function () {},
+                configurable: true,
+              });
+            } catch (_e366fod) {}
+            try {
+              if (_r366Reg && typeof _ceRunCtor === 'function' && _r366kids[_r366j].nodeType === 1) {
+                var _r366tag = String(_r366kids[_r366j].tagName || '').toLowerCase();
+                if (_r366tag.indexOf('-') >= 0) {
+                  var _r366ctor = _r366Reg.get(_r366tag);
+                  if (typeof _r366ctor === 'function') _ceRunCtor(_r366ctor, _r366kids[_r366j]);
+                }
+              }
+            } catch (_e366u) {}
+          }
+        },
+      });
+    }
+  } catch (_e366proto) {}
+  // R366：shadow root 内容树查询（queryShadowTree）——与元素 own QSA（part05 R181/
+  // R359）同构的本树 walk：querySelector/querySelectorAll 在**子树**上 compound
+  // 判定（tag 大小写折叠 + id + class 全含 + attr =/存在性）。挂原型一次覆盖
+  // light-shadow 形态（工厂产物 / part04 proxy / part03 R194 占位）——重定义分支
+  // 随 R364 的多族教训**不设**（避开手写 try/catch 与 get trap 遮蔽两个历史坑）。
+  // handle-shadow 形态（_shadowHandles proxy）保持 R2926 域，不在本面。
+  try {
+    if (globalThis.ShadowRoot && globalThis.ShadowRoot.prototype) {
+      if (!globalThis.ShadowRoot.prototype.querySelector) {
+        globalThis.ShadowRoot.prototype.querySelector = function (s) {
+          var a = this.querySelectorAll(s);
+          return a.length ? a[0] : null;
+        };
+      }
+      if (!globalThis.ShadowRoot.prototype.querySelectorAll) {
+        globalThis.ShadowRoot.prototype.querySelectorAll = function (s) {
+          var _r366out = [];
+          var _r366sel = String(s == null ? '' : s).trim();
+          var _r366m = /^([a-zA-Z][a-zA-Z0-9-]*|\*|#([^\s.#:>\[+,]+)|\.([^\s.#:>\[+,]+))$/.exec(_r366sel);
+          var _r366comp = null;
+          if (!_r366m) {
+            try {
+              if (typeof _zwParseCompoundSel === 'function') {
+                var _r366sel2 = _r366sel.replace(/\[([A-Za-z_][\w-]*)=([^\s\]"'`]+)\]/g,
+                  function (_m366, n366, v366) { return '[' + n366 + '="' + v366 + '"]'; });
+                _r366comp = _zwParseCompoundSel(_r366sel2);
+              }
+            } catch (_e366ps) { _r366comp = null; }
+            if (!_r366comp) return _r366out;
+          }
+          var _r366want = _r366comp && _r366comp.tag ? String(_r366comp.tag).toUpperCase() : '*';
+          (function _r366walk(n) {
+            var _r366kids = n.childNodes || [];
+            for (var _r366i = 0; _r366i < _r366kids.length; _r366i++) {
+              var _r366k = _r366kids[_r366i];
+              if (!_r366k || _r366k.nodeType !== 1) continue;
+              var _r366hit = false;
+              if (_r366comp) {
+                _r366hit = _r366want === '*' || String(_r366k.nodeName || '').toUpperCase() === _r366want;
+                if (_r366hit && _r366comp.id) {
+                  var _r366cid = '';
+                  try { _r366cid = String(_r366k.id != null ? _r366k.id : (_r366k.getAttribute ? _r366k.getAttribute('id') : '')); } catch (_e366i) {}
+                  if (_r366cid !== _r366comp.id) _r366hit = false;
+                }
+                if (_r366hit && _r366comp.classes && _r366comp.classes.length) {
+                  var _r366cls = '';
+                  try { _r366cls = String(_r366k.getAttribute && (_r366k.getAttribute('class') != null ? _r366k.getAttribute('class') : (_r366k.className != null ? _r366k.className : ''))); } catch (_e366c) {}
+                  var _r366have = ' ' + _r366cls.replace(/\s+/g, ' ').trim() + ' ';
+                  for (var _r366ci = 0; _r366ci < _r366comp.classes.length; _r366ci++) {
+                    if (_r366have.indexOf(' ' + _r366comp.classes[_r366ci] + ' ') < 0) { _r366hit = false; break; }
+                  }
+                }
+                if (_r366hit && _r366comp.attrs && _r366comp.attrs.length) {
+                  for (var _r366ai = 0; _r366ai < _r366comp.attrs.length && _r366hit; _r366ai++) {
+                    var _r366at = _r366comp.attrs[_r366ai];
+                    var _r366av = null;
+                    try { _r366av = _r366k.getAttribute ? _r366k.getAttribute(_r366at.name) : null; } catch (_e366a) { _r366av = null; }
+                    if (_r366av == null) { _r366hit = false; break; }
+                    if (_r366at.op === '=') { if (String(_r366av) !== _r366at.value) _r366hit = false; }
+                  }
+                }
+              } else if (_r366m[1] === '*') _r366hit = true;
+              else if (_r366m[2]) { try { _r366hit = _r366k.getAttribute && String(_r366k.getAttribute('id')) === _r366m[2]; } catch (_e366i2) {} }
+              else if (_r366m[3]) {
+                try {
+                  var _r366cls2 = String(_r366k.getAttribute && (_r366k.getAttribute('class') != null ? _r366k.getAttribute('class') : (_r366k.className != null ? _r366k.className : '')));
+                  _r366hit = _r366cls2.split(/\s+/).indexOf(_r366m[3]) >= 0;
+                } catch (_e366c2) {}
+              } else {
+                _r366hit = String(_r366k.tagName || '').toLowerCase() === _r366m[1].toLowerCase();
+              }
+              if (_r366hit) _r366out.push(_r366k);
+              _r366walk(_r366k);
+            }
+          })(this);
+          return _r366out;
+        };
+      }
+    }
+  } catch (_e366q) {}
   // R197（js-dom M4）：`new DocumentFragment()` 实例化——spec `dom-documentfragment-
   // documentfragment` 步骤：node document 设为 current global 的 Document。旧空函数
   // 返裸 `{}`（WPT DocumentFragment-constructor：ownerDocument undefined + 无

@@ -2660,3 +2660,79 @@ fn test_per_realm_ce_registry_r364() {
         "R364 per-realm registry：内外 realm 同名 define 互不冲突、各自 get/getName/whenDefined 独立、per-realm 冲突检测保持"
     );
 }
+
+/// R366（js-dom M1/M4 CE registry 专项 slice 2b）：**ShadowRoot.prototype innerHTML
+/// accessor（node-document 路由）+ 工厂产物委托 + iframe win 转发**——WPT
+/// create-element-realm-after-adoption 的 4F 直接解：
+/// ① `Object.getOwnPropertyDescriptor(inner.ShadowRoot.prototype, 'innerHTML').set`
+/// 经 `.call(shadow, …)` 直调（inner.ShadowRoot.prototype 可达——旧缺转发崩）；
+/// ② 原型 setter 内 node-document 路由（adopt 印记优先 + 爬链）+ per-realm registry
+/// 升级（主文档 host → 主 registry；R364 的 inner 实例不误升）；
+/// ③ 工厂 attachShadow 产物 own setter 委托原型（this=shadow——R356 同族教训）。
+/// spec：innerHTML 的 fragment 解析子属 node document 的 realm/registry。
+/// https://dom.spec.whatwg.org/#dom-innerhtml-innerhtml
+/// https://dom.spec.whatwg.org/#concept-create-element
+#[test]
+fn test_shadowroot_prototype_innerhtml_node_document_r366() {
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let mut sandbox = V8Sandbox::with_config(zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    })
+    .unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> =
+        Arc::new(Mutex::new("<html><body></body></html>".to_string()));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+    sandbox
+        .execute(
+            "try {\
+             var ifr = document.createElement('iframe');\
+             document.body.appendChild(ifr);\
+             var inner = ifr.contentWindow;\
+             var log = [];\
+                          var setter = Object.getOwnPropertyDescriptor(inner.ShadowRoot.prototype, 'innerHTML');\
+             log.push('setter:' + (setter && typeof setter.set === 'function' ? 'fn' : 'missing'));\
+                          class MainBaz extends HTMLElement {}\
+             customElements.define('x-r366', MainBaz);\
+             class InnerBaz extends inner.HTMLElement {}\
+             inner.customElements.define('x-r366', InnerBaz);\
+             var host = inner.document.createElement('div');\
+             document.body.appendChild(host);\
+             var shadow = host.attachShadow({ mode: 'open' });\
+             setter.set.call(shadow, '<p></p><x-r366></x-r366>');\
+             var p = shadow.querySelector('p');\
+             log.push('pMain:' + (p instanceof HTMLParagraphElement ? 'main' : 'wrong'));\
+             var baz = shadow.querySelector('x-r366');\
+             log.push('bazMain:' + (baz instanceof customElements.get('x-r366') ? 'main' : 'wrong'));\
+                          var host2 = inner.document.createElement('div');\
+             document.body.appendChild(host2);\
+             var shadow2 = host2.attachShadow({ mode: 'open' });\
+             shadow2.innerHTML = '<x-r366></x-r366>';\
+             var baz2 = shadow2.querySelector('x-r366');\
+             log.push('baz2Main:' + (baz2 instanceof customElements.get('x-r366') ? 'main' : 'wrong'));\
+                          var host3 = inner.document.createElement('div');\
+             inner.document.body && inner.document.body.appendChild(host3);\
+             var shadow3 = host3.attachShadow({ mode: 'open' });\
+             shadow3.innerHTML = '<x-r366></x-r366>';\
+             var baz3 = shadow3.querySelector('x-r366');\
+             log.push('baz3Inner:' + (baz3 instanceof inner.customElements.get('x-r366') ? 'inner' : (baz3 ? 'wrong' : 'miss')));\
+                          var host4 = document.createElement('div');\
+             var shadow4 = host4.attachShadow({ mode: 'open' });\
+             shadow4.innerHTML = '<p></p>';\
+             log.push('plainGet:' + (shadow4.innerHTML === '<p></p>' ? 'ok' : shadow4.innerHTML));\
+             globalThis.__r366e = log.join('|');\
+             } catch (err) { globalThis.__r366e = 'ERR:' + err.message; }",
+        )
+        .unwrap();
+    let out = sandbox.execute("globalThis.__r366e").unwrap().value;
+    assert_eq!(
+        out, "setter:fn|pMain:main|bazMain:main|baz2Main:main|baz3Inner:inner|plainGet:ok",
+        "R366 ShadowRoot.prototype innerHTML：子 realm accessor 可达、adopted host 走主 registry、工厂 own setter 委托、inner doc 走 inner registry、原型 getter 可读"
+    );
+}

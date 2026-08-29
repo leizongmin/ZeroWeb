@@ -1385,11 +1385,6 @@
           get firstChild() { return this.childNodes.length ? this.childNodes[0] : null; },
           get lastChild() { return this.childNodes.length ? this.childNodes[this.childNodes.length - 1] : null; },
           hasChildNodes: function () { return this.childNodes.length > 0; },
-          querySelector: function (s) {
-            var a = this.querySelectorAll(s);
-            return a.length ? a[0] : null;
-          },
-          querySelectorAll: function () { return []; },
         };
         // R194（js-dom M4）：原型接 ShadowRoot.prototype（WPT attach-shadow-realm-
         // after-adoption 的 `shadow instanceof ShadowRoot`——工厂元素宿主的轻量 shadow
@@ -1399,6 +1394,12 @@
             Object.setPrototypeOf(shadow, globalThis.ShadowRoot.prototype);
           }
         } catch (_e194sp) {}
+        // R366（js-dom M1/M4 CE registry 专项 slice 2b）：innerHTML 委托原型 accessor
+        //（ShadowRoot.prototype 的 node-document 路由 setter——R365 三法则 + per-realm
+        // registry 升级）。WPT create-element-realm-after-adoption 经
+        // `inner.ShadowRoot.prototype` 的 setter `.call(shadow, …)` 直调——own 遮蔽分支
+        // 消费 **this**（shadow），与 getter 遮蔽移除（R356 同族教训）同构。
+        // host 印记：路由源 = host.ownerDocument（工厂 host 的 own 字段）。
         Object.defineProperty(shadow, 'innerHTML', {
           configurable: true,
           get: function () {
@@ -1412,11 +1413,14 @@
             return out;
           },
           set: function (v) {
-            var tree = null;
-            try { tree = _zwMBuildBodyTree(String(v == null ? '' : v)); } catch (_e179s) {}
-            this.childNodes = tree ? tree.childNodes : [];
-            for (var j = 0; j < this.childNodes.length; j++) {
-              try { this.childNodes[j].parentNode = shadow; } catch (_e179p) {}
+            var protoDesc = Object.getOwnPropertyDescriptor(
+              Object.getPrototypeOf(this) || {}, 'innerHTML');
+            try { this.host._zwCreatorDoc = el._zwCreatorDoc; } catch (_e366h) {}
+            if (protoDesc && typeof protoDesc.set === 'function'
+                && protoDesc.set !== globalThis.ShadowRoot.prototype.innerHTML) {
+              protoDesc.set.call(this, v);
+            } else {
+              try { globalThis.ShadowRoot.prototype.innerHTML = v; } catch (_e366f) {}
             }
           },
         });
@@ -2581,6 +2585,13 @@
       DOMImplementation: globalThis.DOMImplementation,
       Range: globalThis.Range,
       StaticRange: globalThis.StaticRange,
+      // R366（js-dom M1/M4 CE registry 专项 slice 2b）：ShadowRoot 构造器转发——WPT
+      // create-element-realm-after-adoption 的
+      // `Object.getOwnPropertyDescriptor(inner.ShadowRoot.prototype, 'innerHTML').set`
+      //（子 realm prototype 上的 accessor 直调）。旧缺转发 → inner 侧
+      // undefined.prototype 崩（R179 Range/DOMImplementation 转发同模式）。单 realm
+      // polyfill：直接引用主 window 构造器（R140/R179 同源）。
+      ShadowRoot: globalThis.ShadowRoot,
       fetch: iframeFetch,
       XMLHttpRequest: IframeXMLHttpRequest,
       ServiceWorker: globalThis.ServiceWorker,
