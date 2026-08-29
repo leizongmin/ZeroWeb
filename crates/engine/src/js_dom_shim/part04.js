@@ -5024,10 +5024,46 @@
         if (prop === 'replaceWith') {
           return function() {
             if (sel) {
+              // R371（js-dom M4）：**移除后 pending 归属重键**——replaceWith = 前插参数 +
+              // 移除自身。参数经 _insertAdjacentVariadic('#target','beforebegin') 入桶时
+              // 记在**被替换者**的桶/反链下（parentSel='#target'）；随后 __zw_remove 移除
+              // target，这些兄弟的真父是 target 的**父容器**——但桶键/反链仍指已移除的
+              // '#target' → 容器作用域查询（querySelector('script') 等）的 R322 归并查
+              // '#container' 桶恒 miss（WPT remove-next-sibling-during-replace-with 的
+              // `container.querySelector('script')` null 根因）。修：移除前取父 sel，移除
+              // 后把桶 added 项与本轮插入的反链重键到父 sel。
+              var _r371ParentSel = null;
+              try { if (typeof __zw_parent === 'function') _r371ParentSel = __zw_parent(sel) || null; } catch (_e371p) {}
               _insertAdjacentVariadic(sel, 'beforebegin', arguments, false);
               _zwRemoveIframeWindowClientForNode(_makeProxy(sel, handle));
               if (handle) __zw_remove_handle(handle);
               else __zw_remove(sel);
+              // 重键（仅 sel 父形态；桶/反链缺项时 no-op）。
+              try {
+                if (_r371ParentSel && _r371ParentSel !== sel && typeof _zwPendingByParent !== 'undefined') {
+                  var _r371src = _zwPendingByParent.get(sel);
+                  var _r371dst = _zwPendingByParent.get(_r371ParentSel);
+                  if (_r371src && _r371src.added.length) {
+                    if (!_r371dst) { _r371dst = _r371src; _zwPendingByParent.set(_r371ParentSel, _r371dst); }
+                    else {
+                      for (var _r371i = 0; _r371i < _r371src.added.length; _r371i++) {
+                        var _r371n = _r371src.added[_r371i];
+                        if (_r371n && !_r371dst.addedSet.has(_r371n)) { _r371dst.added.push(_r371n); _r371dst.addedSet.add(_r371n); }
+                      }
+                    }
+                    _zwPendingByParent.delete(sel);
+                    if (typeof _zwNodeParent !== 'undefined' && _zwNodeParent) {
+                      for (var _r371j = 0; _r371j < _r371dst.added.length; _r371j++) {
+                        var _r371m = _r371dst.added[_r371j];
+                        if (_r371m && _r371m.__zwHandle && _zwNodeParent[_r371m.__zwHandle]
+                            && _zwNodeParent[_r371m.__zwHandle].parentSel === sel) {
+                          _zwNodeParent[_r371m.__zwHandle].parentSel = _r371ParentSel;
+                        }
+                      }
+                    }
+                  }
+                }
+              } catch (_e371rk) {}
               return undefined;
             }
             // R117：handle 路径（createElement 容器内的 comment/text/元素——sel 为 null 旧整体
@@ -5666,12 +5702,15 @@
               if (_r309fused) return _zwMakeCollection(_r309fused, false);
               try {
                 var all = __zw_query_all_sub(sel, String(q));
-                // R310（js-dom M4/L2）：**pending-removed 过滤**——同步 turn 内 removeChild/
-                // remove 的子树经 host 异步 apply，快照查询仍含已移除元素（spec
-                // `dom-parentnode-queryselectorall` 查 live 树——WPT removed-elements 同源
-                // 语义的 remove 形态；probe 实证 `afterRemove=a1,a2` a2 残留）。本容器桶的
-                // removed 子树（`_zwHCCollectSubtree` 展开）有 sel 的条目从 host 结果剔除。
-                if (all) {
+                // R371（js-dom M4）：**空 host 结果不短路 pending 归并**——`if (all)` 对
+                // 空串（host 子树查询 0 命中，本容器 pending 桶非空的形态：R368 盖章
+                // append 的整棵 JS registry 子树不在 host 快照里）直接跳过 R310/R322
+                // 归并 → 恒返空（WPT querySelector-mixed-case 的
+                // `container.querySelectorAll("[viewBox]")`：容器 sel 域 + pending 19
+                // 节点 + host EMPTY → R322 探针复刻 mg=4 但实际路径未达）。空串是
+                // **合法查询结果**（0 命中）而非错误——只有 null/undefined（回调缺席/
+                // 异常）才跳过归并。
+                if (all !== null && all !== undefined) {
                   var _r310list = all.split('|').filter(Boolean);
                   var _r310b2 = _zwPendingByParent.get(sel);
                   if (_r310b2 && _r310b2.removed.length) {
