@@ -1929,13 +1929,14 @@ fn ascent_ratio_lookup(overrides: &HashMap<NodeId, f32>, node_id: NodeId, is_ahe
 #[cfg(test)]
 mod tests;
 
-/// R3766：`line-clamp: auto` 的截断行数（css-overflow-4）。
+/// R3766：`line-clamp: auto` 的块尺寸约束（px，css-overflow-4）。
 ///
-/// 块尺寸约束 = max(min-height, max-height)（auto-013/014：min>max 取 max、min<max 不变），
-/// height definite 时也构成约束（auto-005）取 min；行数 = floor(约束 / used line-height)。
-/// 约束不可测（auto/%）→ None（不截断）；n=0 合法（max-height:0 / <1lh，auto-011/037）。
-/// R3768：供 IFC layout 与跨块盒 clamp postprocess 双方共用（同一数学保证一致性）。
-pub(crate) fn line_clamp_auto_max_lines(style: &ComputedStyle) -> Option<usize> {
+/// 约束 = max(min-height, max-height)（auto-013/014：min>max 取 max、min<max 不变），
+/// height definite 时也构成约束（auto-005）取 min。约束不可测（auto/%）→ None。
+/// R3780：从 `line_clamp_auto_max_lines` 抽出——跨块 clamp postprocess 的容器高度
+/// 收缩需要约束 px 本身（auto-032：max-height calc(4lh+2*5px) = 138px 是容器收缩下限，
+/// 行数 n=floor(约束/lh) 丢失了边界 margin 信息）。
+pub(crate) fn line_clamp_auto_constraint_px(style: &ComputedStyle) -> Option<f64> {
     use zero_css_parser::values::LengthValue;
     let font_size = resolve_inline_font_size_px(style) as f64;
     let lh_px = container_used_line_height_px(style, font_size)?;
@@ -1990,9 +1991,18 @@ pub(crate) fn line_clamp_auto_max_lines(style: &ComputedStyle) -> Option<usize> 
             c
         }
     };
-    if constraint < 0.0 {
-        return None;
-    }
+    (constraint >= 0.0).then_some(constraint)
+}
+
+/// R3766：`line-clamp: auto` 的截断行数（css-overflow-4）。
+///
+/// 行数 = floor(块尺寸约束 / used line-height)；约束不可测 → None（不截断）；
+/// n=0 合法（max-height:0 / <1lh，auto-011/037）。
+/// R3768：供 IFC layout 与跨块盒 clamp postprocess 双方共用（同一数学保证一致性）。
+pub(crate) fn line_clamp_auto_max_lines(style: &ComputedStyle) -> Option<usize> {
+    let constraint = line_clamp_auto_constraint_px(style)?;
+    let font_size = resolve_inline_font_size_px(style) as f64;
+    let lh_px = container_used_line_height_px(style, font_size)?;
     let n = (constraint / lh_px).floor();
     // n=0 合法（max-height:0 / <1lh → 0 行可见，auto-011/037）。
     (n >= 0.0).then_some(n as usize)

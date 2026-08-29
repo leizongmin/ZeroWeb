@@ -2000,6 +2000,7 @@ pub(super) fn apply_cross_block_line_clamp(
         ellipsis_host: &mut Option<(usize, usize)>,
         doc: &zero_dom::Document,
         boundary_y: &mut f32,
+        zero_margin_extent: &mut f32,
     ) -> bool {
         let child_count = b.children.len();
         let mut exhausted = false;
@@ -2159,6 +2160,18 @@ pub(super) fn apply_cross_block_line_clamp(
                 // 031 的 .rel（含 abspos 后代）y=138 > 128 → 隐藏（abspos 随 hide_subtree
                 // 一并清零，Chromium assert「.rel after the clamp point → abspos won't
                 // be visible」）。
+                // R3780：零高盒的 margin-box 记入 `zero_margin_extent`——恰在边界上的
+                // 自塌盒（auto-032 collapse-through y=133 ≤ 约束 138）其 bottom margin
+                // 延伸 clamp 边界（assert「bottom margins … end at the clamp boundary」），
+                // 容器收缩须保留该 margin（extent 只计 border-box 会少计）；真在边界后
+                // 的（031 y=138+5=143 > 约束 128）由消费侧 min(constraint) 截掉。
+                {
+                    let z = &b.children[idx];
+                    let mb = z.y + z.height + z.margin_bottom;
+                    if mb > *zero_margin_extent {
+                        *zero_margin_extent = mb;
+                    }
+                }
                 hide_subtree(&mut b.children[idx]);
                 exhausted = true;
                 continue;
@@ -2190,6 +2203,7 @@ pub(super) fn apply_cross_block_line_clamp(
                 let before = *remaining;
                 let mut inner_host: Option<(usize, usize)> = None;
                 let mut inner_boundary = *boundary_y;
+                let mut inner_zero_margin = 0.0f32;
                 exhausted = walk_children(
                     &mut b.children[idx],
                     styles,
@@ -2197,12 +2211,20 @@ pub(super) fn apply_cross_block_line_clamp(
                     &mut inner_host,
                     doc,
                     &mut inner_boundary,
+                    &mut inner_zero_margin,
                 );
                 // R3775：递归内部的 clamp 边界（其内部坐标系）换算回本层（子 y 相对
                 // 本层内容盒顶）。
                 let inner_abs = b.children[idx].y + inner_boundary;
                 if inner_abs > *boundary_y {
                     *boundary_y = inner_abs;
+                }
+                // R3780：内部零高自塌盒 margin 上抛（内部坐标 → 本层坐标）。
+                if inner_zero_margin > 0.0 {
+                    let abs = b.children[idx].y + inner_zero_margin;
+                    if abs > *zero_margin_extent {
+                        *zero_margin_extent = abs;
+                    }
                 }
                 // R3770b：递归内部用尽预算时，ellipsis host 责任在内部——若内部消耗了
                 // 预算（last visible line 在嵌套盒内），由内部层标记（其自身 host 已在
@@ -2222,10 +2244,15 @@ pub(super) fn apply_cross_block_line_clamp(
                 {
                     let c = &mut b.children[idx];
                     let pb = c.padding_top + c.padding_bottom + c.border_top + c.border_bottom;
+                    // R3780：extent 只计 **in-flow** 子——abspos/fixed 脱流不贡献 auto 高
+                    //（CSS §10.6.3）。旧 fold 含 oof 子 → clamp 边界处的 abspos（其静态
+                    // 位置在边界、本体可见，R3770b 豁免）把 extent 推到自身底边
+                    //（auto-032：abspos h=100 静态位 y=133 → 容器收缩到 233 而非约束
+                    // 138，橙色背景高出 95px = 13.70% diff 主源）。
                     let extent = c
                         .children
                         .iter()
-                        .filter(|g| !g.line_clamp_hidden)
+                        .filter(|g| !g.line_clamp_hidden && !g.is_absolute && !g.is_fixed)
                         .map(|g| g.y + g.height)
                         .fold(0.0f32, f32::max);
                     if extent > 0.0 && extent + pb < c.height - 0.5 {
@@ -2335,6 +2362,15 @@ pub(super) fn apply_cross_block_line_clamp(
         // 不计数）由本 pass 的独立 BFC 子盒豁免正确处理，故移除 gate。
 
         let Some(limit) = limit_of(style) else { return };
+        // R3780：Auto 约束 px（含边界 margin 信息，n=floor(px/lh) 已丢失）——容器收缩
+        // 用 min(收缩前高, 约束)（auto-032：clamp 边界处的 margin 延伸进约束 138px，
+        // extent 只计子盒 border-box 会少 2×5px margin）。
+        let auto_constraint_px = match &style.line_clamp {
+            zero_style_system::property::types::LineClampComputedValue::Auto => {
+                crate::inline::line_clamp_auto_constraint_px(style)
+            }
+            _ => None,
+        };
         // R3768 范围限定：flex/grid 容器跳过（-webkit-box legacy 语义 = flow-root 化 +
         // 子项堆叠后再 clamp，ZW 未做该转换，flex 几何下跨块隐藏产生错误结果——
         // webkit-line-clamp-008 曾由本 pass 误伤回归）。
@@ -2348,17 +2384,38 @@ pub(super) fn apply_cross_block_line_clamp(
         let mut remaining = limit;
         let mut ellipsis_host: Option<(usize, usize)> = None;
         let mut boundary_y = 0.0f32;
-        let exhausted = walk_children(b, styles, &mut remaining, &mut ellipsis_host, doc, &mut boundary_y);
+        let mut zero_margin_extent = 0.0f32;
+        let exhausted = walk_children(
+            b,
+            styles,
+            &mut remaining,
+            &mut ellipsis_host,
+            doc,
+            &mut boundary_y,
+            &mut zero_margin_extent,
+        );
         if exhausted && style.height == LengthValue::Auto && b.declared_height_auto {
             // 收缩容器到可见内容 extent（隐藏盒已清零，max 取可见子底边）。
+            // R3780：extent 只计 in-flow 子（CSS §10.6.3 abspos/fixed 不贡献 auto 高）
+            // ——auto-032 的边界处可见 abspos（h=100）旧被计入 → 容器 233 而非约束 138。
+            // Auto（约束 definite）时收缩下限含边界上的**零高自塌盒 margin-box**
+            //（collapse-through 的 bottom margin 延伸 clamp 边界，auto-032 assert
+            // 「bottom margins … end at the clamp boundary」）；真在边界后的（031 型）
+            // 经 min(constraint) 截掉。Count(n) 无约束语义，保持纯 extent 收缩。
             let pb = b.padding_top + b.padding_bottom + b.border_top + b.border_bottom;
             let extent = b
                 .children
                 .iter()
-                .filter(|c| !c.line_clamp_hidden)
+                .filter(|c| !c.line_clamp_hidden && !c.is_absolute && !c.is_fixed)
                 .map(|c| c.y + c.height)
-                .fold(0.0f32, f32::max);
-            let new_content = extent.max(0.0);
+                .fold(0.0f32, f32::max)
+                .max(0.0);
+            let new_content = if let Some(constraint) = auto_constraint_px {
+                let constraint = constraint as f32;
+                extent.max(zero_margin_extent.min(constraint))
+            } else {
+                extent
+            };
             if (new_content - b.content_height).abs() > 0.5 {
                 b.content_height = new_content;
                 b.height = new_content + pb;
