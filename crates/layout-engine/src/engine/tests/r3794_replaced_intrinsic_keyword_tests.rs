@@ -314,3 +314,30 @@ fn r3795_definite_cb_keeps_aspect_ratio_transfer() {
         "R3795: definite CB 下 % height 叶盒保留 ar transferred（child 100×100），实际 outer h={h}（误清 ar → 0）"
     );
 }
+
+/// R3796（replaced-element-048 驱动案）：带 HTML width/height 属性的替换元素（canvas 100×50，
+/// 属性比 2:1）+ CSS `width:max-content; height:500px; max-height:max-content; aspect-ratio:1`
+/// ——max-content 高 = 固有宽 / 有效比 = 100，钳 500 → 100×100（旧 max-height 关键字无解析，
+/// 500×500 红满屏）。
+#[test]
+fn r3796_max_height_max_content_clamps_definite_height() {
+    let html = r#"<!DOCTYPE html><html><body style="margin:0">
+<canvas width="100" height="50" style="display: block; width: max-content; height: 500px; max-height: max-content; aspect-ratio: 1; background: green;"></canvas>
+</body></html>"#;
+    let doc = zero_dom::parse_html(html);
+    let mut sys = zero_style_system::StyleSystem::new();
+    sys.set_viewport(800.0, 600.0);
+    let styles = sys.compute_styles(&doc, &[]);
+    let canvas = doc
+        .get_elements_by_tag_name("canvas")
+        .into_iter()
+        .next()
+        .expect("canvas");
+    let mut engine = LayoutEngine::new(800.0, 600.0);
+    let result = engine.compute(&doc, &styles);
+    let (w, h) = find_box(&result.root, canvas).expect("canvas box");
+    assert!(
+        (w - 100.0).abs() < 1.5 && (h - 100.0).abs() < 1.5,
+        "R3796: max-height:max-content = 固有宽/ar = 100 钳 height 500 → 100×100，实际 {w}×{h}（旧 max-height 关键字无解析 → 500×500）"
+    );
+}

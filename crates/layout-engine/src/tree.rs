@@ -510,8 +510,15 @@ fn apply_replaced_element_sizing(
 
             // 设置 aspect_ratio（如果 CSS 没有显式设置）。R325：仅当至少一侧 CSS 尺寸为
             // auto 时才设（两侧都显式时 taffy 会强制比例覆盖显式 height，见 _ 分支注释）。
-            let css_w_auto = matches!(computed.width, LengthValue::Auto);
-            let css_h_auto = matches!(computed.height, LengthValue::Auto);
+            // R3796：intrinsic 关键字（min/max/fit-content）与 auto 同类（R3794 语义一致）。
+            let is_w_autoish = |v: &LengthValue| {
+                matches!(
+                    v,
+                    LengthValue::Auto | LengthValue::MinContent | LengthValue::MaxContent | LengthValue::FitContent(_)
+                )
+            };
+            let css_w_auto = is_w_autoish(&computed.width);
+            let css_h_auto = is_w_autoish(&computed.height);
             if computed.aspect_ratio.is_none() && (css_w_auto || css_h_auto) {
                 taffy_style.aspect_ratio = Some(w / h);
             }
@@ -524,6 +531,26 @@ fn apply_replaced_element_sizing(
             if css_w_auto && css_h_auto {
                 taffy_style.size.width = taffy::style::Dimension::length(w);
                 taffy_style.size.height = taffy::style::Dimension::length(h);
+            } else if css_w_auto && !css_h_auto {
+                // R3796（css-sizing-3 §5.2 + csswg #12333）：width content 关键字 + height
+                // 显式 + max-height content 关键字——max-content 高 = 固有宽 / 属性比
+                //（replaced-element-048：canvas 100×50 + width:max-content + height:500 +
+                // max-height:max-content → max-content 高 = 100/(100/50)=50？ar:1 覆盖 →
+                // eff_ratio 用 CSS ar 1 → 100。钳 500→100，width=100×1）。eff_ratio 在此
+                // 作用域为属性比 w/h；CSS aspect-ratio 已设 taffy_style.aspect_ratio，
+                // taffy 再按其从 width 反推——故此处 width 设固有宽 100，height 设钳后值。
+                let max_height_kw = matches!(
+                    computed.max_height,
+                    LengthValue::MinContent | LengthValue::MaxContent | LengthValue::FitContent(_)
+                );
+                if max_height_kw {
+                    let css_ar = computed.aspect_ratio.unwrap_or(w / h);
+                    let max_content_h = w / css_ar;
+                    let used_h = max_content_h
+                        .min(resolve_tree_definite_real_length(&computed.height, computed).unwrap_or(f32::INFINITY));
+                    taffy_style.size.height = taffy::style::Dimension::length(used_h.max(0.5));
+                    taffy_style.size.width = taffy::style::Dimension::length(w.max(0.5));
+                }
             }
             // 一侧 auto、一侧显式：不设 auto 侧尺寸，taffy 按 aspect_ratio 推导
         }
@@ -715,13 +742,30 @@ fn apply_replaced_element_sizing(
                     && !height_auto
                     && let Some(ch) = resolve_tree_definite_real_length(&computed.height, computed)
                 {
-                    // height 显式，width auto：width = ch * eff_ratio
-                    // R1363 对称：flex column item 的 main(height) 可能被 min-size:auto 钳制，
-                    // 跳过预推 width（留 auto + aspect_ratio），让 taffy 按钳制后 main 推 cross。
-                    taffy_style.size.height = taffy::style::Dimension::length(ch);
+                    // R3796（css-sizing-3 §5.2 + csswg #12333）：height 显式 + max-height 为
+                    // content 关键字（max-height:max-content）——max-content 高度 = 固有宽 /
+                    // 有效比（width:max-content = 固有宽 100，ar 1 → max-content 高 100）。
+                    // definite height 500 先钳到 100，再 transferred width = 100 × 1 = 100
+                    //（replaced-element-048：旧无 max-height 解析 → 500×500 红满屏，应
+                    // 100×100 绿方块）。仅 width 也为 content 关键字时（该链才有 max-content
+                    // 宽 = 固有宽）；flex column item 跳过同 R1363。
+                    let max_height_kw = matches!(
+                        computed.max_height,
+                        LengthValue::MinContent | LengthValue::MaxContent | LengthValue::FitContent(_)
+                    );
+                    let width_kw = matches!(
+                        computed.width,
+                        LengthValue::MinContent | LengthValue::MaxContent | LengthValue::FitContent(_)
+                    );
+                    let used_h = if max_height_kw && width_kw {
+                        (w / eff_ratio).min(ch)
+                    } else {
+                        ch
+                    };
+                    taffy_style.size.height = taffy::style::Dimension::length(used_h);
                     let skip_for_flex_col = is_flex_col_item && taffy_style.aspect_ratio.is_some();
                     if !skip_for_flex_col {
-                        taffy_style.size.width = taffy::style::Dimension::length((ch * eff_ratio).max(0.5));
+                        taffy_style.size.width = taffy::style::Dimension::length((used_h * eff_ratio).max(0.5));
                     }
                 }
                 // 两侧都显式：由 converter 从 CSS 处理，不干预
