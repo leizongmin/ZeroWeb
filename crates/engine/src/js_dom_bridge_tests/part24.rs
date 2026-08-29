@@ -2507,3 +2507,50 @@ fn test_children_live_collection_and_snapshot_reset_r358() {
         "R358 children live 集合 + 快照换代清桶：#sc 恰 1 子、held 集合随 append/remove 反映、跨容器不误并、getElementsByClassName live 保持"
     );
 }
+
+/// R359（js-dom M1 d3d-r3 blast-radius 探针收口）：iframe 工厂元素 own QSA 的
+/// **compound 形态**——探针实证 `div.x.y`/`p.x` 恒 0（R181 简单形态匹配器不支持，
+/// 且工厂域查询走 own QSA 不经 `_zwMQueryAll` JSON 往返）。修：解析失败先走
+/// `_zwParseCompoundSel`（R171 共用解析器），本树 walk 逐节点 compound 判定。
+/// https://dom.spec.whatwg.org/#dom-parentnode-queryselectorall
+#[test]
+fn test_iframe_factory_element_compound_qsa_r359() {
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let mut sandbox = V8Sandbox::with_config(zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    })
+    .unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> =
+        Arc::new(Mutex::new("<html><body></body></html>".to_string()));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+    sandbox
+        .execute(
+            "try {\
+             // iframe 工厂域（_zwIframeCreateElement 产物——R359 探针实证 compound MISS 的域）
+             var ifr = document.createElement('iframe');             document.body.appendChild(ifr);             var idoc = ifr.contentDocument;             var root = idoc.createElement('div'); root.id = 'r';             idoc.body.appendChild(root);             var p1 = idoc.createElement('p'); p1.id = 'pa'; p1.className = 'x'; root.appendChild(p1);             var p2 = idoc.createElement('p'); p2.id = 'pb'; root.appendChild(p2);             var d2 = idoc.createElement('div'); d2.className = 'x y'; root.appendChild(d2);             var sp = idoc.createElement('span'); d2.appendChild(sp);             var out = [];\
+             out.push('cmpTag:' + root.querySelectorAll('p.x').length);\
+             out.push('cmpMulti:' + root.querySelectorAll('.x.y').length);\
+             out.push('cmpId:' + (root.querySelector('#pa') === p1 ? 'identity' : 'wrong'));\
+             out.push('cmpFull:' + (root.querySelector('p#pa.x') === p1 ? 'identity' : 'wrong'));\
+             out.push('cmpAttr:' + root.querySelectorAll('[id]').length);\
+             out.push('cmpAttrV:' + root.querySelectorAll('[id=pb]').length);\
+             out.push('combinator:' + root.querySelectorAll('div > p').length);
+             out.push('pseudo:' + root.querySelectorAll('p:first-child').length);\
+             out.push('qSame:' + (root.querySelector('.x.y') === root.querySelectorAll('.x.y')[0] ? 'same' : 'DIFF'));
+             globalThis.__r359e = out.join('|');\
+             } catch (err) { globalThis.__r359e = 'ERR:' + err.message; }",
+        )
+        .unwrap();
+    let out = sandbox.execute("globalThis.__r359e").unwrap().value;
+    assert_eq!(
+        out, "cmpTag:1|cmpMulti:1|cmpId:identity|cmpFull:identity|cmpAttr:2|cmpAttrV:1|combinator:0|pseudo:0|qSame:same",
+        "R359 iframe 工厂元素 compound QSA：tag+class/多类/id/attr 形态命中、组合器伪类仍回落空、qS===QSA[0]"
+    );
+}

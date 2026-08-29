@@ -1708,17 +1708,66 @@
         // R199：**输入预处理 NUL→U+FFFD**（css-syntax §5.3.3 input preprocessing，
         // 与 host 侧 preprocess_selector 同步）——JS 侧匹配前归一，`#<NUL>` 与
         // `#<FFFD>` 命中同一 id。
+        // R359（js-dom M1）：**compound 形态支持**——d3d-r3 blast-radius 探针实证
+        // iframe 工厂元素子树查询的 compound（`div.x.y`/`p.x`）恒 0（R181 简单形态
+        // 匹配器不支持，且工厂域查询走 own QSA 不经 `_zwMQueryAll` 的 JSON 往返——
+        // 探针 ifr.qClsMulti=MISS/qsaCmp=0 vs det/main identity 全绿）。修：解析失败
+        // （简单形态 miss）先走 `_zwParseCompoundSel`（R171 共用解析器：tag/#id/
+        // .class×n/[attr]/[attr=v] 组合；含空白/组合器/伪类返 undefined）——解析成功
+        // 则本树 walk 逐节点 compound 判定（与 detached-doc `_queryTreeByCompound`
+        // 同语义：tag 大小写折叠 + id + class 全含 + attr =/存在性）；解析仍失败
+        // （组合器/伪类）回落空（headless 近似语义不变）。
         var _r181Sel = String(s == null ? '' : s).replace(/\x00/g, '\u{FFFD}');
         var _r181Simple = /^([a-zA-Z][a-zA-Z0-9-]*|\*|#([^\s.#:>\[+,]+)|\.([^\s.#:>\[+,]+))$/;
         var m = _r181Simple.exec(_r181Sel.trim());
-        if (!m) return out;
+        var comp359 = null;
+        if (!m) {
+          try {
+            if (typeof _zwParseCompoundSel === 'function') {
+              // R359：属性值无引号形态（`[id=pb]`）预加引号——共用解析器的值文法只认
+              // 引号形式（doc 级消费面遇之落 JSON 由 host 权威处理；本 face 无 JSON
+              // 回落，本地归一零共享面风险）。
+              var sel359 = _r181Sel.trim().replace(/\[([A-Za-z_][\w-]*)=([^\s\]"'`]+)\]/g,
+                function (_m359, n359, v359) { return '[' + n359 + '="' + v359 + '"]'; });
+              comp359 = _zwParseCompoundSel(sel359);
+            }
+          } catch (_e359p) { comp359 = null; }
+          if (!comp359) return out;
+        }
+        var want359 = comp359 && comp359.tag ? String(comp359.tag).toUpperCase() : '*';
         (function walk(n) {
           var kids = n.childNodes || [];
           for (var i = 0; i < kids.length; i++) {
             var k = kids[i];
             if (k && k.nodeType === 1) {
               var hit = false;
-              if (m[1] === '*') hit = true;
+              if (comp359) {
+                // compound 判定（_queryTreeByCompound 同语义）
+                hit = want359 === '*' || String(k.nodeName || '').toUpperCase() === want359;
+                if (hit && comp359.id) {
+                  var cid359 = '';
+                  try { cid359 = String(k.id != null ? k.id : (k.getAttribute ? k.getAttribute('id') : '')); } catch (_e359i) {}
+                  if (cid359 !== comp359.id) hit = false;
+                }
+                if (hit && comp359.classes && comp359.classes.length) {
+                  var cc359 = '';
+                  try { cc359 = String(k.getAttribute && (k.getAttribute('class') != null ? k.getAttribute('class') : (k.className != null ? k.className : ''))); } catch (_e359c) {}
+                  var have359 = ' ' + cc359.replace(/\s+/g, ' ').trim() + ' ';
+                  for (var ci359 = 0; ci359 < comp359.classes.length; ci359++) {
+                    if (have359.indexOf(' ' + comp359.classes[ci359] + ' ') < 0) { hit = false; break; }
+                  }
+                }
+                if (hit && comp359.attrs && comp359.attrs.length) {
+                  for (var ai359 = 0; ai359 < comp359.attrs.length && hit; ai359++) {
+                    var at359 = comp359.attrs[ai359];
+                    var av359 = null;
+                    try { av359 = k.getAttribute ? k.getAttribute(at359.name) : null; } catch (_e359a) { av359 = null; }
+                    if (av359 == null) { hit = false; break; }
+                    if (at359.op === '=') { if (String(av359) !== at359.value) hit = false; }
+                    // 其它运算符留 JSON（host 权威）——compound 解析只产 '=' 与存在性
+                  }
+                }
+              } else if (m[1] === '*') hit = true;
               else if (m[2]) { try { hit = k.getAttribute && String(k.getAttribute('id')) === m[2]; } catch (_e181i) {} }
               else if (m[3]) {
                 try {
