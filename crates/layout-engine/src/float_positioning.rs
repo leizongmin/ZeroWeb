@@ -430,6 +430,86 @@ pub(crate) fn shrink_inline_blocks_to_content(
                 box_node.width = intrinsic_bb;
             }
         }
+
+        // R3794c（css-flexbox §9.4.4 + css-sizing-4 §4.1）：column flex 容器的 item transferred
+        // cross。taffy 第一趟在容器宽度尚未收缩（auto→可用宽）时做 cross-stretch，item 宽被拉到
+        // 可用宽（784）；上方 shrink 只缩容器自身（读 item CSS main=50），不回写 item cross——
+        // flex-aspect-ratio-013/014/024：容器缩到 50/100 但 item 仍 784。此处对**列方向** flex
+        // 容器的 item（aspect-ratio + cross CSS auto）按 flex 主轴拉伸后的 main（= 容器内容高，
+        // flex-grow≥1 拉伸到行尺寸）transferred：cross = stretched_main × ratio；容器 cross 取
+        // max(item cross)。013：item h 拉伸 100 → w=100，容器 100×100 绿方块。
+        // 仅 item cross CSS auto（显式宽由 converter 处理）；仅水平书写模式。
+        let is_column_flex = box_node.node_id.and_then(|id| styles.get(&id)).is_some_and(|s| {
+            // 仅 inline-level flex 容器（shrink-to-fit 语义，§10.3.10）：block-level flex
+            // width:auto 拉满可用宽（R1015 契约——r1015_block_flex_column_auto_width_no_shrink），
+            // item cross = 容器 stretch，不 transferred、不收缩容器。
+            matches!(s.display, DisplayValue::InlineFlex)
+                && matches!(
+                    s.flex_direction,
+                    FlexDirectionValue::Column | FlexDirectionValue::ColumnReverse
+                )
+        });
+        if is_column_flex && own_horizontal {
+            // 容器宽度 CSS definite（显式 Px 等）时 item cross 以容器为上限（align-stretch 语义）；
+            // auto（shrink-to-fit）时 transferred 可超当前宽并把容器撑到 max(item cross)。
+            let container_width_definite = box_node
+                .node_id
+                .and_then(|id| styles.get(&id))
+                .is_some_and(|s| !matches!(s.width, LengthValue::Auto));
+            let inner_w = box_node.content_width;
+            let mut max_cross = 0.0f32;
+            for item in &mut box_node.children {
+                let Some(item_id) = item.node_id else { continue };
+                let Some(item_style) = styles.get(&item_id) else {
+                    continue;
+                };
+                if !matches!(item_style.width, LengthValue::Auto) {
+                    continue;
+                }
+                // transferred 来源：item 解析后的主轴（border-box 高，taffy 拉伸后）× ratio。
+                let Some(ratio) = item_style.aspect_ratio.filter(|&r| r > 0.0) else {
+                    continue;
+                };
+                let item_frame = item.padding_left + item.padding_right + item.border_left + item.border_right;
+                let main =
+                    (item.height - item.padding_top - item.padding_bottom - item.border_top - item.border_bottom)
+                        .max(0.0);
+                if main <= 0.5 {
+                    continue;
+                }
+                // box-sizing 决定 aspect-ratio 作用盒（css-sizing-4 §4.1）：border-box →
+                // ratio 作用于 border-box，cross_bb = main_bb × ratio（main 已是 border-box 高，
+                // 不加 frame——flex-item-transferred-sizes-padding-border-sizing：border-box +
+                // padL/R 25 + min-height 100 + ratio 1 应 100 宽，+frame 会双计 padding 150）。
+                // content-box → ratio 作用于 content-box，cross_bb = main_content × ratio + frame。
+                let cross_raw = if matches!(
+                    item_style.box_sizing,
+                    zero_style_system::property::types::BoxSizingValue::BorderBox
+                ) {
+                    main * ratio
+                } else {
+                    main * ratio + item_frame
+                };
+                let cross = if container_width_definite {
+                    cross_raw.min(inner_w.max(1.0))
+                } else {
+                    cross_raw
+                };
+                if cross > 0.5 && (item.width - cross).abs() > 0.5 {
+                    item.width = cross;
+                    item.content_width = (cross - item_frame).max(0.0);
+                }
+                max_cross = max_cross.max(cross);
+            }
+            // 容器 shrink-to-fit 收敛到 item transferred cross 的最大者（双向：013 容器 50 应
+            // 100 需 grow；definite 容器不动）。
+            if !container_width_definite && max_cross > 0.5 && (box_node.width - max_cross).abs() > 0.5 {
+                let container_frame =
+                    box_node.padding_left + box_node.padding_right + box_node.border_left + box_node.border_right;
+                box_node.width = max_cross;
+                box_node.content_width = (max_cross - container_frame).max(0.0);
+            }
+        }
     }
 
     for child in &mut box_node.children {

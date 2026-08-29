@@ -198,3 +198,63 @@ fn r3794_flex_item_min_width_not_used_as_definite_base() {
         "R3794: flex item min-width:100 + flex:1 → base 不受 min 影响，最终 ~100（min floor），实际 {w}（误 definite base → 150）"
     );
 }
+
+/// R3794c（flex-aspect-ratio-013 驱动案）：column inline-flex（height:100px）内 item
+/// aspect-ratio:1/1 + height:50px + flex:1——flex 主轴拉伸后 main=100，transferred cross
+/// 应 100（item 100×100、容器 shrink-to-fit 100×100 绿方块）。旧 item cross 保持 taffy
+/// 第一趟拉伸伪影 784、容器 50。
+#[test]
+fn r3794c_column_flex_stretched_main_transfers_to_cross() {
+    let html = r#"<html><body style="margin:0">
+<div style="display: inline-flex; flex-direction: column; flex-wrap: wrap; height: 100px;">
+  <div style="background: green; aspect-ratio: 1/1; min-height: 0; height: 50px; flex: 1;"></div>
+</div>
+</body></html>"#;
+    let doc = zero_dom::parse_html(html);
+    let mut sys = zero_style_system::StyleSystem::new();
+    sys.set_viewport(800.0, 600.0);
+    let styles = sys.compute_styles(&doc, &[]);
+    let container = doc
+        .get_elements_by_tag_name("div")
+        .into_iter()
+        .next()
+        .expect("container");
+    let mut engine = LayoutEngine::new(800.0, 600.0);
+    let result = engine.compute(&doc, &styles);
+    let (w, h) = find_box(&result.root, container).expect("container box");
+    assert!((h - 100.0).abs() < 1.0, "R3794c: 容器高应 100（CSS 显式），实际 {h}");
+    assert!(
+        (w - 100.0).abs() < 1.5,
+        "R3794c: item 主轴拉伸 100 × ratio 1 → transferred cross 100，容器 shrink-to-fit 100，实际 {w}（旧 item 784 / 容器 50）"
+    );
+}
+
+/// R3794c 守卫（flex-item-transferred-sizes-padding-border-sizing）：border-box item
+/// （padL/R 25 + min-height:100 + ratio 1）transferred cross = main × ratio（border-box），
+/// 不加 frame 双计 padding（150 应 100）。
+#[test]
+fn r3794c_border_box_transfer_does_not_double_count_padding() {
+    // 注：layout-engine 单测不经 WPT harness 的 merge_page_css，`<style>` 块不参与级联——
+    // 样式一律用 style="" 属性表达（同 r3792 契约）。
+    let html = r#"<html><body style="margin:0">
+<div style="display: inline-flex; flex-direction: column; box-sizing: border-box;">
+  <div style="min-height: 100px; aspect-ratio: 1/1; padding-left: 25px; padding-right: 25px; box-sizing: border-box;"></div>
+</div>
+</body></html>"#;
+    let doc = zero_dom::parse_html(html);
+    let mut sys = zero_style_system::StyleSystem::new();
+    sys.set_viewport(800.0, 600.0);
+    let styles = sys.compute_styles(&doc, &[]);
+    let item = doc
+        .get_elements_by_tag_name("div")
+        .into_iter()
+        .nth(1)
+        .expect("item div");
+    let mut engine = LayoutEngine::new(800.0, 600.0);
+    let result = engine.compute(&doc, &styles);
+    let (w, _h) = find_box(&result.root, item).expect("item box");
+    assert!(
+        (w - 100.0).abs() < 1.5,
+        "R3794c: border-box transferred cross = main × ratio = 100，实际 {w}（+frame 双计 padding → 150）"
+    );
+}
