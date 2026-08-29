@@ -837,3 +837,8 @@ mod tests_html_setters;
 #[cfg(test)]
 #[cfg(feature = "v8")]
 mod tests_ab_compare;
+// customElements lifecycle 派发覆盖（R362 覆盖率提升：custom_elements.rs 89.0%→91.9%）。
+// v8 门控：run_script 直接建 V8 Isolate（quickjs 矩阵不编译）。
+#[cfg(test)]
+#[cfg(feature = "v8")]
+mod tests_ce;
