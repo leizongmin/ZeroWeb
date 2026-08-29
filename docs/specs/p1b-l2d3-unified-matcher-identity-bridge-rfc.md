@@ -1,8 +1,8 @@
 # RFC：P1b L2-d3 统一查询匹配器 + identity 桥（polyfill-live 合一收口设计）
 
-**版本**: v0.2（v0.1→v0.2：d3a–d3c 落地进展 + d3d 负结果定格 + R331/R338 新材料合并——2026-08-28 R341）
-**日期**: 2026-08-22（v0.1）/ 2026-08-28（v0.2）
-**状态**: Partially-landed（d3a/d3b/d3c 已落；d3d 元素上下文回退[负结果 R171]；d3e 未启动。doc 上下文已收口 = M1 实用收口点[R171]；全量收口待 L2 主线重启）
+**版本**: v0.3（v0.2→v0.3：§6 L2 深水区专项总装——R350–R353 性能证据入册 + d3 重启路线切片分解——2026-08-29 R354）
+**日期**: 2026-08-22（v0.1）/ 2026-08-28（v0.2）/ 2026-08-29（v0.3）
+**状态**: Partially-landed（d3a/d3b/d3c 已落；d3d 元素上下文回退[负结果 R171，重启路线见 §6 路线 A]；d3e 未启动。doc 上下文已收口 = M1 实用收口点[R171]；全量收口按 §6 总装推进）
 **父 RFC**: `docs/specs/p1b-v8-native-bindings-rfc.md` §3.7 L2（本文件是 L2 的 JS 侧细化）
 **goal**: `docs/goal/js-dom.md` M1（L2 polyfill-live 合一）
 
@@ -223,9 +223,70 @@ d3b 依赖 d3a 的登记点，d3d 依赖 d3b 的归一，其余正交）。
 
 ---
 
-## 6. 修订历史
+## 6. v0.3 增补：L2 深水区专项总装（R350–R353 性能证据 + d3 重启路线，2026-08-29 R354）
+
+> **背景**：R350–R353 四轮对 `Range-mutations` data 族超时的性能归因（evidence/
+> 2026-08-29-r350…r353）把四类「L2 消除对象」的成本量化落地，与 §3 的 d3 重启前置
+> 合并后，L2 主线的重启路线首次完整。本节是执行总装：**立项证据 → 切片分解 →
+> 验证门**，供后续每轮直接按片领取。
+
+### 6.1 立项证据（全部量化，2026-08-29 实测）
+
+| # | 成本对象 | 量化 | 来源 | L2 消除机制 |
+|---|----------|------|------|-------------|
+| E1 | live-range adjust 扫描的每条目键读/根比较 | trap 键读 78µs/读（R98 分支）；根 walk 每跳 ~5µs；已修后仍 0.35ms/条（形态依赖） | R350/R351/R353 | live doc 直读：注册表语义被原生路径替代，扫描整个消失 |
+| E2 | `cont.parentNode` host 往返 | 每跳 ~5µs，walk 3 跳 ~15µs；textEl 键匹配分支每条目触发 | R350 W21/W15 | live doc：parentNode 为 plain 字段 |
+| E3 | R98 分支（每字符串属性读） | getPrototypeOf + CE 检查 78µs/读；内部键已顶部短路[R351]，页面属性读仍付 | R351 W8/W9 | live doc 域统一后 proxy 产物面收缩 |
+| E4 | 游离树堆积下的查询/文档生命周期 | setupRangeTests 每轮 querySelector+removeChild，树堆积后 qs+rm 32ms/iter | R352/R353 W2/W4 | live doc：查询直读，无游离面（真浏览器等价：游离节点 GC） |
+
+**共同根因**：polyfill 桥的 JS↔host 双源架构（快照 re-parse + JSON 往返 + proxy trap
+面）。这正是父 RFC §3.7 L2 的定义——两翼（host 侧已收口[R102/R103]；JS 侧 = 本 RFC）
+合拢后 E1–E4 全部消除。
+
+### 6.2 切片总装（含新增性能片；每片独立 land）
+
+**路线 A——d3 重启（identity 维度，前置已明确）**：
+
+| 片 | 内容 | 前置 | 验证门 |
+|----|------|------|--------|
+| **d3d-r1 产物归一路径统一** | element/fragment 查询的**归一缓存键构造**统一为单一 helper（消 R171 的 `:enabled` +2 时序机制——两路径键命中不同步的根因）；key 双形态兼容[§2.4-1]纳入 helper | 无（纯重构，行为等价） | 全量双路径逐计数一致 + Element-matches 文件级 |
+| **d3d-r2 iframe 树源统一** | part05 iframe 工厂与 `_makeDetachedDocument` 的 bodyHtml 空态收口[§2.4-2]（src-iframe 树/查询单一来源） | d3d-r1 | 同上 + case/createElementNS 文件级 |
+| **d3d-r3 element/fragment 本树化重启** | `_zwMQueryAll`/fragment QSA 纯 tag+compound 以调用元素为根遍历（复用 `_queryTreeByCompound` + 守卫），产物经桥 | d3d-r1 + d3d-r2 | 全量双路径 net≥0 + Element-matches/`#id-li-duplicate` 文件级 |
+| **d3e 组合器本树化** | 组合器形态走 part05 `_matchComplexAgainst`（nodeInfo 从各自树构）；attr 其它运算符同步 | d3d-r3 | 同上 + traversal 文件级 |
+
+**路线 B——性能片（E1–E4 消除；依赖路线 A 的 live doc 直读面）**：
+
+| 片 | 内容 | 目标（量化） | 验证门 |
+|----|------|--------------|--------|
+| **P1 range adjust 退化** | live doc 直读后，R260/R262/R263 的注册表扫描改为**活节点直接遍历**（`doc.live_ranges` per-node 表——真浏览器等价形态），删除跨树键比对 | dataChange/replaceData 尾部 0.35ms/条 → O(节点 range 数)；五文件全绿 | data 族 declared 100% + 全量双路径 net≥0 |
+| **P2 游离堆积查询** | live doc 查询天然不扫游离子树；验证 setupRangeTests 形态 qs+rm 段恒定 | qs+rm 段 32ms/iter → 恒定 <2ms | data 族文件级 + W2 探针复测 |
+| **P3 trap 面收缩** | live doc 域统一后，页面属性读的 R98 分支触发面统计复测 | E3 78µs/读的触发频次下降比 | 属性读微基准 + sweep |
+
+**顺序**：A 先（identity 维度是 d3d 历史失败的根因），B 随 A 的面自然接续；P1 依赖
+live doc 基建（属 M1 完整方案的 host+JS 两翼合拢），非独立可达——在 A 完成前 P1–P3
+挂起，不设轮次预期。
+
+### 6.3 每片统一验证序（继承 §3）
+
+`make test`（test-guard 包裹）→ 全量 dom WPT 双路径逐计数（net≥0）→ `cargo test -p
+zero-engine` + fmt + clippy（含 quickjs 矩阵）→ 单测带 identity/形态门断言。**回滚**：
+每片一 commit，net<0 即 revert。
+
+### 6.4 明确不属本 RFC（边界重申）
+
+- 普通 append 域的 QSA 同 turn 语义（R309 刻意取舍[R338]）——归 M1 完整方案，
+  d3d-r3 不得触碰该域判定。
+- dataChange/replaceData 尾部的 P1 前置（live doc 基建）在路线 A 完成前**不再单独立
+  轮次切片**（R353 定案：WPT mega-case 特化形态，非真实页面瓶颈）。
+- host 侧（`with_query_doc_live_aware` 等）已收口[R102/R103]，本 RFC 全部改动仍限
+  JS shim 内部。
+
+---
+
+## 7. 修订历史
 
 | 版本 | 日期 | 内容 |
 |------|------|------|
 | v0.1 | 2026-08-22 | R165 结论成文化：四对象域盘点 + identity 桥设计 + d3a–d3e 切片计划（js-dom R166） |
 | v0.2 | 2026-08-28 | d3a–d3c 落地状态回填（R166/R167/R168/R170）+ d3d 负结果定格（R171：element 上下文回退、重启前置 = 归一路径统一）+ §2.4 落地后新证据（key 双形态/iframe 双工厂/R331 反查正交面/R309 QSA 域边界/R338 现状锚定）（js-dom R341） |
+| v0.3 | 2026-08-29 | **L2 深水区专项总装（§6 新增）**：R350–R353 四轮性能证据入册（E1 adjust 扫描 0.35ms/条形态依赖 / E2 parentNode host 往返 / E3 R98 78µs / E4 游离堆积查询）→ 切片总装（路线 A = d3d-r1 归一路径统一 → d3d-r2 iframe 树源 → d3d-r3 本树化重启 → d3e；路线 B = P1–P3 性能片随 A 接续）；边界重申（R309 QSA 域/dataChange 尾部不再独立切片）（js-dom R354） |

@@ -1,8 +1,9 @@
 # JS/DOM 原生化 — 主控面板（master.md）
 
 **入口文档**: [../js-dom.md](../js-dom.md)（长期 Mission / Done Criteria / 执行协议 / 文档治理规则）
-**关联 RFC**: [../../specs/p1b-v8-native-bindings-rfc.md](../../specs/p1b-v8-native-bindings-rfc.md) + [../../specs/p1b-l2d3-unified-matcher-identity-bridge-rfc.md](../../specs/p1b-l2d3-unified-matcher-identity-bridge-rfc.md)（R166 新增——L2-d3 统一匹配器 + identity 桥设计；**v0.2 @ R341**：d3a-c 已落、d3d 元素上下文回退定格[重启前置 = 归一路径统一]、§2.4 落地后新证据）
+**关联 RFC**: [../../specs/p1b-v8-native-bindings-rfc.md](../../specs/p1b-v8-native-bindings-rfc.md) + [../../specs/p1b-l2d3-unified-matcher-identity-bridge-rfc.md](../../specs/p1b-l2d3-unified-matcher-identity-bridge-rfc.md)（R166 新增——L2-d3 统一匹配器 + identity 桥设计；**v0.3 @ R354**：§6 L2 深水区专项总装——R350-R353 性能证据入册[E1-E4]+ d3 重启路线切片分解[d3d-r1/r2/r3 → d3e → P1-P3 性能片随 A 接续]）
 **创建日期**: 2026-08-13（goal 拆分 bootstrap）
+**本轮**: R354 — **M1/L2：L2 深水区专项总装——L2-d3 RFC v0.2→v0.3（§6 新增：R350-R353 四轮性能证据入册 E1-E4 + d3 重启路线切片总装 d3d-r1/r2/r3→d3e→P1-P3）**：R353 定案「data 族尾部并入 L2 专项」后，本轮把散落材料总装成可执行路线（纯文档，零源码改动）。**§6.1 立项证据四条全量化**——E1 adjust 扫描（键读 78µs/读、根 walk 5µs/跳、已修后形态依赖 0.35ms/条）/ E2 `cont.parentNode` host 往返（每跳 ~5µs）/ E3 R98 分支（每字符串属性读 78µs，内部键已短路[R351]页面读仍付）/ E4 游离树堆积查询（qs+rm 32ms/iter）；**共同根因 = polyfill 桥 JS↔host 双源架构**（正是父 RFC §3.7 L2 定义）。**§6.2 切片总装**——路线 A（identity 维度，d3d 历史失败根因）：d3d-r1 归一缓存键构造统一 helper（消 R171 `:enabled` +2 时序机制，纯重构行为等价可独立 land）→ d3d-r2 iframe 树源统一[§2.4-2] → d3d-r3 element/fragment 本树化重启 → d3e 组合器本树化；路线 B（性能片）：P1 range adjust 活节点遍历化（目标 data 族五文件全绿）/ P2 游离堆积查询恒定化 / P3 trap 面收缩统计——**P1-P3 依赖 A 的 live doc 直读面，A 完成前挂起不设轮次预期**。**边界重申**：R309 QSA 同 turn 域不属 d3d-r3；dataChange 尾部不再独立切片[R353 定案]。**价值**：L2 主线从「深水区无轻量切片」的观望态转为**按片领取**的执行态——下轮可直接领 d3d-r1（行为等价纯重构，验证门 = 全量双路径逐计数一致）。→ RFC v0.3 §6
 **本轮**: R353 — **M4/ranges：dataChange 尾部收口前归因（诊断轮，零 land）——增长完全由 range 创建驱动（noRange 对照 0.65ms vs full 32ms），R262 对「每轮先摘」形态 stale 注册表线性 0.35ms/条（W6：40→100 条 = 14→31ms），定性为 WPT mega-case 特化形态、转 L2 专项合并**：R352 定案「查询面」后收口前归因——W1 实测 `querySelector("#test")` 单价 0.014ms（**修正 R352 的查询面猜想：查询不是瓶颈**）；W2 分段唯一增长段 = qs+rm；W3 四分差锁定 range 创建驱动；W4/W5 插桩 removeChild 35.3ms 中 R262 单次调用占 34.9ms（calls=1）；W6 规模扫描线性 0.35ms/条。**形态依赖性**：「每轮先摘」（= setupRangeTests 真实形态）vs「堆积不摘」（R352 W15：60 条 0.06ms）两形态下 removed/容器根关系相反、快道走向相反，但差 3 个数量级——0.35ms/条成本不在已测的键读/根比较（均 ns 级[W11]），候选 = R262 超大 try/catch 函数的 V8 deopt 或未覆盖 trap 读，留 L2 专项。**ROI 判定**：真实页面不会堆积百个游离树+百个 range（WPT mega-case 特化），declared 已 448（91%）；插桩完全移除（part03 与 R352 落地态逐字节一致），零 land 归档。**方法论教训**：W15（0.06ms）与 W6（0.35ms/条）都是真测量——测量形态决定 removed-容器根关系与快道分支走向；性能归因最终确认必须在**与真实用例逐字节同构的形态**下做。→ evidence/2026-08-29-r353-detached-shape-attribution.md
 
 **本轮**: R351 — **M4/ranges：R350 的延续收口——proxy get trap 内部键读的 R98 分支顶部短路 + 条目级根缓存（**+1333 Pass、Range-mutations-{appendData,deleteData,insertData} 三文件自导入以来首次全绿、真实 Fail 20→17、零回归**）**：R350 后残余（data 族每文件仍差 6-30 test）归因续挖。探针链：W6 adjust ON/OFF（OFF 快 35x——成本确在 adjust 内）；W8 分解定位唯一贵点 = **proxy get trap 的任意属性读 78µs/次**（非键读非根 walk——`__zwHandle` 读也在此面）；W9/W10 锁定根因 = **R98 分支**（part03 get trap 对每个字符串属性读先付 `Object.getPrototypeOf(_makeProxy(..))` + customElements.getName ≈ 78µs，然后才轮到 10360 行的 `__zwHandle` 返回）。**修复两件**（part03.js）：① `__zwHandle`/`__zwSelector` 提到 get trap **顶部**（R95 constructor 短路之前）——shim 私有锚定键与 CE accessor/反射属性零交集，顶部直返零语义变化（调整扫描每条目 2 容器 × 1-2 键读从 78µs 降 ns 级）；② **条目级根缓存** `_zwEntryRootOf`（`_rzk0/_rzr0/_rzk1/_rzr1` 挂 range 条目，identity 校验防 stale，R262 重写 container 时同步刷）——根比较从每次现算（root walk 穿 proxy）降为 plain 字段比较。**A/B**：探测循环 rm 96→27ms/iter（-72%）、build 187→30ms（-84%）；全量 dom sweep **Pass +1333（54057→55390 非探针口径）、仅 baseline 有 = 空集（零 subtest 丢失）、appendData 384P/deleteData 564P/insertData 382P 三文件历史性全绿**、dataChange/replaceData declared 273→426/316→701（2.2x，仍文件级 Timeout 差最后一批）。**教训**：proxy get trap 的属性读成本 = trap 内部**分支序**的函数——热门内部键必须顶部短路；「等价替换 A/B 定位函数级总量差」之后，还要「属性读微基准」定位分支级成本（W8 的 nodeType/__zwHandle 统一 78µs 即分支序证据）。→ evidence/2026-08-29-r351-trap-key-hoist.md
@@ -534,6 +535,7 @@
 
 | 日期 | 轮次 | 证据 | 结果 |
 |------|------|------|------|
+| 2026-08-29 | R354 | L2 深水区专项总装（L2-d3 RFC v0.2→v0.3：§6 立项证据 E1-E4 入册 + 切片总装[路线 A d3d-r1/r2/r3→d3e + 路线 B P1-P3 随 A 接续] + 边界重申）| **纯文档轮**：L2 主线转「按片领取」执行态；下轮首选 d3d-r1（归一缓存键统一 helper，行为等价纯重构） |
 | 2026-08-29 | R353 | dataChange 尾部收口前归因（W1 查询单价 0.014ms 修正 R352 猜想；W3 四分差锁定 range 创建驱动；W6 线性 0.35ms/条；W15 形态对照）+ evidence/2026-08-29-r353-detached-shape-attribution.md | **零 land 诊断轮**：定性 WPT mega-case 特化形态（declared 91%），收口并入 L2 专项；插桩完全移除零残留 |
 | 2026-08-29 | R352 | data 族残余归因反转（W15 等价 stub：干净页面 R262 扫描 0.06ms——瓶颈实为游离树堆积下的查询面，转 L2/文档生命周期域）+ removed-marked 容器快道 `_zwDeadContainer352`（plain 反链上行查 removed 表，接入四比较器）+ evidence/2026-08-29-r352-removed-container-guard.md | dataChange declared 426→428（噪声级）；三绿文件保持全绿、既有套件零回归；归因定案 + 防御性收尾 |
 | 2026-08-29 | R351 | proxy get trap 内部键读 R98 分支顶部短路（`__zwHandle`/`__zwSelector` 提到 trap 顶部）+ 条目级根缓存 `_zwEntryRootOf`（identity 校验）+ evidence/2026-08-29-r351-trap-key-hoist.md | **+1333 Pass、Range-mutations-{appendData,deleteData,insertData} 三文件自导入以来首次全绿（384/564/382P）、真实 Fail 20→17 零新增**；dataChange/replaceData declared 2.2x；探测循环 rm -72% / build -84% |
@@ -812,11 +814,12 @@
 ---
 
 ## 下一步计划
-0. **R353 下一步（R352 后，按 ROI）**：
-   - **(a) L2 深水区专项**（identity 桥统一——R338 确认无轻量切片；**立项证据已饱和**：R350/R351/R352/R353 四轮 data 族归因——游离树堆积查询、`cont.parentNode` host 往返 ~5µs/跳、R98 getPrototypeOf 78µs/读、R262 循环体 0.35ms/条未分解项——全部是 L2 消除对象）。**dataChange/replaceData 完整收口并入此专项**（R353 定案：尾部为 WPT mega-case 特化形态，非真实页面瓶颈，不再单独立切片）。
-   - **(b) events 备档集巡检续**（Event-dispatch-target-moved sel 移动锚点失配随 L2；Event-dispatch-click pending:1 低优先级单 subtest）。
-   - **(c) DC-7 第 4 项 default-on = M7**：待用户点名（改 Mission 级单向门）。
-0. **R352 下一步（R351 后，已执行→R353）**：
+0. **R354 下一步（R353 后，按 ROI）**：
+   - **(a) 领取 d3d-r1「产物归一路径统一」**（RFC v0.3 §6.2 路线 A 首片）：element/fragment 查询的归一缓存键构造统一为单一 helper（`_zwWrapCached` 与 fragment `_zwQWrapMap` 两处键构造合流），key 双形态兼容（`.tag||.tagName`/`.outer||.outerHTML`）纳入 helper——纯重构行为等价，验证门 = 全量双路径逐计数一致 + Element-matches 文件级。**这是 d3d 重启两前置之一**，下轮首选。
+   - **(b) d3d-r2 iframe 树源统一**（第二前置）：part05 iframe 工厂与 `_makeDetachedDocument` 的 bodyHtml 空态收口——依赖 (a) 或独立评估后启动。
+   - **(c) events 备档集巡检续**（Event-dispatch-target-moved sel 移动锚点失配随 d3d/L2；Event-dispatch-click pending:1 低优先级单 subtest）。
+   - **(d) DC-7 第 4 项 default-on = M7**：待用户点名（改 Mission 级单向门）。
+0. **R353 下一步（R352 后，已执行→R354）**：
    - **(a) make test 全量常态化**：A/B 清单固定含 browser/renderer crate（R333 教训延续执行）。
    - **(b) L2 深水区专项**（identity 桥统一——R338 确认无轻量切片；立项材料已齐：R324 四环节 + R328 残余 + R299 indoc + tagName 动态大写 + R338 QSA 同 turn 域）。
    - **(c) 架构项立项材料**：动画时钟 pump（events 备档收口前提）——**R341 立项细化**：基建四件已存在[engine `pipeline.pending_animation_events` 产生于 render 管线 compute_styles 后 / webview `take_pending_*_events` 取用 / renderer `page_scripts::dispatch_{transition,animation}_events` 派发 / transition_clock+animation_clock 时钟]；**缺口 = runner `take_probe` 循环无 re-style+tick 泵**（run_page_scripts 只跑脚本不重渲染，style 变更后无第二轮 compute_styles → 时钟无 tick → 事件永不产生）；切片形态 = ① pipeline 加 `tick_animation_clock`（re-compute + tick + 收集）② webview 包装 `pump_animation_clock` ③ runner take_probe 循环调用 + 复用 renderer dispatch 函数 ④ 时钟源用真实时间（probe 间隔自然推进 30ms/100ms 测试动画）。涉及 pipeline/webview/runner 三层 ~200 行，测试基建（不改 Mission）可自主推进。
@@ -1625,6 +1628,7 @@
 
 > 已完成的 milestone/切片记录到 `archive/`。
 
+- R354：M1/L2 **L2 深水区专项总装**（L2-d3 RFC v0.2→v0.3：§6 立项证据 E1-E4 全量化入册 + 切片总装[路线 A：d3d-r1 归一路径统一 → d3d-r2 iframe 树源 → d3d-r3 本树化重启 → d3e；路线 B：P1-P3 性能片随 A 接续挂起] + 边界重申[R309 QSA 域/dataChange 尾部不独立切片]；纯文档零源码改动）→ RFC v0.3 §6
 - R353：M4/ranges **dataChange 尾部收口前归因**（W1 修正 R352 查询面猜想[查询单价 0.014ms]；W3 四分差锁定 range 创建驱动[noRange 0.65 vs full 32ms]；W6 线性 0.35ms/条；定性 WPT mega-case 特化形态、declared 91%、收口并入 L2 专项；零 land、插桩零残留）→ evidence/2026-08-29-r353-detached-shape-attribution.md
 - R352：M4/ranges **data 族残余归因反转 + removed-marked 容器快道**（W15 等价 stub 终局反转：干净页面 R262 扫描 0.06ms，瓶颈=游离树堆积查询面转 L2 域；`_zwDeadContainer352` plain 反链查 removed 表接入四比较器；dataChange declared 426→428 噪声级、三绿文件保持全绿零回归）→ evidence/2026-08-29-r352-removed-container-guard.md
 - R351：M4/ranges **R350 延续收口——trap 内部键读 R98 分支顶部短路 + 条目级根缓存**（`__zwHandle`/`__zwSelector` 提到 get trap 顶部避开 R98 getPrototypeOf+CE 检查 78µs/读；`_zwEntryRootOf` identity 校验根缓存；+1333 Pass、appendData/deleteData/insertData 三文件自导入以来首次全绿、真实 Fail 20→17 零新增）→ evidence/2026-08-29-r351-trap-key-hoist.md
