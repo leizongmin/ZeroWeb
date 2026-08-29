@@ -1621,8 +1621,12 @@ pub(crate) fn remeasure_text_with_float_exclusions(
             .collect();
 
         // 如果有排除区域且容器有行内级内容
-        if !exclusions.is_empty()
-            && let Some(dom_id) = box_node.node_id
+        // R3783：旧 gate `!exclusions.is_empty()`——float 子此刻 h=0（未测量）时 exclusion
+        // 被 h<=0 过滤 → exclusions 空 → 整个 IFC 重测 + 底边扩展被跳过 → [文本 + float +
+        // 文本] 容器高度塌 0（float 在本 pass 之后才获得自身高度，容器永不补扩；
+        // line-clamp-auto-015 整页塌 0 = 20.94%）。现改为只要容器有 float 子 + 行内内容
+        // 就跑（exclusions 空时 IFC 照常重测，text_height 正确）。
+        if let Some(dom_id) = box_node.node_id
             && has_inline_content(doc, styles, dom_id)
         {
             // 收集 inline-block 子元素的 LayoutBox 尺寸

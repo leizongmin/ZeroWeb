@@ -184,3 +184,35 @@ fn r3782_multicol_container_line_clamp_disabled() {
         "multicol 容器内 line-clamp 无效：9 个 p 全可见（旧 clamp 裁掉 7 个）"
     );
 }
+
+/// R3783：[文本 + float 子 + 文本] 容器高度塌 0 修复——remeasure 的 exclusion gate 在
+/// float 子尚未测量（h=0）时把 exclusion 过滤空 → 整个 IFC 重测 + 底边扩展被跳过 →
+/// 容器 h=0（float 本 pass 之后才获得自身高度，永不补扩）。
+/// driving: line-clamp-auto-015（整页塌 0 = 20.94%）。
+#[test]
+fn r3783_float_text_container_not_collapsed() {
+    let html = "<html><body style=\"margin:0\">\
+<div style=\"width: 200px;\">Line 1 Line 2\
+<div style=\"float: left; width: 300px;\">F</div>Line 3</div>\
+</body></html>";
+    let doc = zero_dom::parse_html(html);
+    let mut sys = StyleSystem::new();
+    sys.set_viewport(800.0, 600.0);
+    let styles = sys.compute_styles(&doc, &[]);
+    let mut engine = LayoutEngine::new(800.0, 600.0);
+    let result = engine.compute(&doc, &styles);
+    fn text_div(b: &LayoutBox) -> Option<&LayoutBox> {
+        // 结构唯一：width:200px 的文本容器（float 子 w=300 排除）。
+        if (b.width - 200.0).abs() < 0.5 && b.height > 0.5 {
+            return Some(b);
+        }
+        b.children.iter().find_map(text_div)
+    }
+    let h = text_div(&result.root)
+        .map(|b| b.height)
+        .expect("text+float container box");
+    assert!(
+        h > 18.0,
+        "[文本 + float + 文本] 容器应含文本行高（≥1 行 18.6px），实际 {h}（旧塌 0）"
+    );
+}
