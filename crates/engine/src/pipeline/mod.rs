@@ -2041,19 +2041,49 @@ pub(crate) fn inject_pseudo_text_nodes(
     // 渲染为 inline 替换图片。
     for (parent, is_before, url, mut pseudo_style) in pending_img {
         pseudo_style.content = ContentComputedValue::Normal;
+        // R3806：伪元素带盒语义（border/padding/position/float/display != inline）时，注入
+        // 「zw-pseudo 盒（持伪元素样式）> <img>（干净 inline 样式）」两级结构——镜像
+        // `pseudo-element-inline-box` ref 的 `<span border><img></span>`：边框属伪元素盒，
+        // 图片是其内容。旧实现把伪元素样式（含 border）clone 到 <img> 上，图片与边框
+        // 结构错位（+Url gate 打开后该族 3% 失配实证）。
+        let has_box_semantics = pseudo_style.position != PositionValue::Static
+            || pseudo_style.float != FloatValue::None
+            || pseudo_style.display != DisplayValue::Inline
+            || pseudo_style.border_top_style != zero_style_system::property::types::BorderStyleValue::None
+            || pseudo_style.border_right_style != zero_style_system::property::types::BorderStyleValue::None
+            || pseudo_style.border_bottom_style != zero_style_system::property::types::BorderStyleValue::None
+            || pseudo_style.border_left_style != zero_style_system::property::types::BorderStyleValue::None;
         let img_id = doc.create_element("img");
         doc.set_attribute(img_id, "src", &url);
-        styles.insert(img_id, pseudo_style);
+        let insert_target = if has_box_semantics {
+            let box_id = doc.create_element("zw-pseudo");
+            styles.insert(box_id, pseudo_style);
+            // img 自身干净替换元素样式（UA img 语义：InlineBlock；border/padding/margin 归零，
+            // 边框属外层伪元素盒）——尺寸由 image_sizes 固有注入（build_img_intrinsic_all）。
+            let mut img_style = zero_style_system::ComputedStyle::default();
+            img_style.display = DisplayValue::InlineBlock;
+            styles.insert(img_id, img_style);
+            box_id
+        } else {
+            styles.insert(img_id, pseudo_style);
+            img_id
+        };
+        if let Some(st) = styles.get_mut(&insert_target) {
+            st.content = ContentComputedValue::Normal;
+        }
         let inserted = if is_before {
             match doc.get(parent).and_then(|n| n.children.first().copied()) {
-                Some(fc) => doc.insert_before(parent, img_id, fc).is_ok(),
-                None => doc.append_child(parent, img_id).is_ok(),
+                Some(fc) => doc.insert_before(parent, insert_target, fc).is_ok(),
+                None => doc.append_child(parent, insert_target).is_ok(),
             }
         } else {
-            doc.append_child(parent, img_id).is_ok()
+            doc.append_child(parent, insert_target).is_ok()
         };
         if !inserted {
             styles.remove(&img_id);
+        } else if insert_target != img_id {
+            // img 是 zw-pseudo 的子节点：append（insert_before 仅在 is_before 定 pseudo 位置时相关）
+            let _ = doc.append_child(insert_target, img_id);
         }
     }
 }

@@ -191,3 +191,4 @@ css/css-overflow/line-clamp/webkit-line-clamp-001.html css/css-overflow/line-cla
 css/CSS2/tables/table-backgrounds-bc-cell-001.xht css/CSS2/tables/table-backgrounds-bc-cell-001-ref.xht == 2026-08-29 R3803 修复 collapse 胜出边 transparent 颜色误黑——color_value_to_u32 保留 alpha + currentColor 解析
 css/CSS2/margin-padding-clear/margin-bottom-043.xht css/CSS2/margin-padding-clear/margin-bottom-043-ref.xht == 2026-08-29 R3804 修复样式键缓存对兄弟组合器（+/~）误判安全——StyleKey 无兄弟依赖位致同键兄弟复用首兄弟样式
 css/CSS2/borders/border-left-width-applies-to-004.xht css/reference/ref-filled-black-96px-square.xht == 2026-08-29 R3805 修复 Row 边框未参与 collapse 左右缘冲突（§17.6.2.1 Cell>Row>RowGroup）+ Column/ColumnGroup 参与接线
+css/css-content/pseudo-element-inline-box.html css/css-content/pseudo-element-inline-box-ref.html == 2026-08-30 R3806 content:url() 伪元素三段修复（Url gate + 两级注入 + IFC both-unknown 固有尺寸）

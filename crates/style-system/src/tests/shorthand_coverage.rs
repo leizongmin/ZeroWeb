@@ -292,6 +292,21 @@ fn test_before_pseudo_computed_from_content() {
     assert!(s.after_pseudo.is_none(), "无 ::after 规则时 after_pseudo 应为 None");
 }
 
+// R3806：content:url() 的 ::before 伪元素样式须保留（旧 gate 漏 Url → 整体失配，
+// pipeline 无法注入 <img>，content-004 族 driving）。
+#[test]
+fn test_before_pseudo_computed_from_url_content() {
+    let (doc, _html, _body, div, _p) = make_test_dom();
+    let css = r#"div:before { content: url("green_box.png"); }"#;
+    let s = compute_style_from_css(&doc, css, div);
+    let before = s.before_pseudo.expect("content:url() 的 before 伪元素样式应保留");
+    assert!(
+        matches!(before.content, crate::property::types::ContentComputedValue::Url(_)),
+        "before content 应为 Url，实际 {:?}",
+        before.content
+    );
+}
+
 #[test]
 fn test_before_pseudo_computed_from_counter_content() {
     let (doc, _html, _body, div, _p) = make_test_dom();

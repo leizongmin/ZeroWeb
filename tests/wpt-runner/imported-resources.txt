@@ -28,3 +28,4 @@ css/css-fonts/resources/vs/NotoSansJP-Regular_with-cmap14-subset.ttf
 css/css-fonts/resources/vs/MPLUS1-Regular_without-cmap14-subset.ttf
 css/css-fonts/resources/vs/STIXTwoMath-Regular_with-cmap14-subset.ttf
 css/css-fonts/resources/vs/NotoSansMath-Regular_without-cmap14-subset.ttf
+css/css-content/resources/rect.svg

@@ -1995,3 +1995,30 @@ fn test_anim_delay_seek_iteration_r342() {
     assert_eq!(evs.len(), 1, "end after second seek, got {evs:?}");
     assert_eq!(evs[0].kind.as_event_type(), "animationend");
 }
+
+/// R3806：`::before { content: url() }` → 注入 <img> 并产出图片图元（三段修复联测）：
+/// ① style-system Url gate（before_pseudo 保留）；② pipeline pending_img 注入；
+/// ③ IFC both-unknown 固有尺寸回退（collect_items）。image_sizes 由宿主预置
+///（harness extract_image_metrics 同源 key：simple_hash(raw url)）。
+#[test]
+fn content_url_pseudo_element_renders_image() {
+    let mut pipeline = RenderPipeline::new(800.0, 600.0);
+    let html = "<html><body><p>x</p><div></div></body></html>";
+    let css = "div:before { content: url(\"green_box.png\"); }";
+    let key = crate::paint::image_resource_key("green_box.png", None);
+    let mut sizes = std::collections::HashMap::new();
+    sizes.insert(key, (100.0f32, 100.0f32));
+    pipeline.set_image_sizes(sizes);
+    let result = pipeline.render_html(html, css);
+    let imgs: Vec<_> = result
+        .primitives()
+        .images
+        .iter()
+        .map(|i| (i.rect.right() - i.rect.left(), i.rect.bottom() - i.rect.top()))
+        .collect();
+    assert!(
+        imgs.iter()
+            .any(|&(w, h)| (w - 100.0).abs() < 1.0 && (h - 100.0).abs() < 1.0),
+        "::before content:url() 应产出 100×100 图片图元，实际 {imgs:?}"
+    );
+}

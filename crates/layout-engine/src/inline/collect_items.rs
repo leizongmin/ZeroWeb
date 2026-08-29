@@ -443,6 +443,20 @@ impl InlineFormattingContext {
                                     w = (h * eff_ratio).max(0.5);
                                 }
                             }
+                            // R3806：两侧均未知（attrs 缺 + CSS auto，如 ::before content:url()
+                            // 注入的 <img>）→ 用解码固有尺寸双向补齐，与 final path
+                            // apply_replaced_element_sizing 的 both-auto 臂（tree.rs 同名逻辑）
+                            // 一致。旧实现直接跳过收集 → img 降级零宽 TextRun、content:url()
+                            // 伪元素图片整体不渲染（content-004 族 driving）。
+                            if w <= 0.0
+                                && h <= 0.0
+                                && let Some(&(iw, ih)) = self.img_intrinsic_sizes.get(&child_id)
+                                && iw > 0.0
+                                && ih > 0.0
+                            {
+                                w = iw;
+                                h = ih;
+                            }
                             if w > 0.0 && h > 0.0 {
                                 let img_style = styles.get(&child_id);
                                 let vertical_align = img_style

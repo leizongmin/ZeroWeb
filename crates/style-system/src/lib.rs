@@ -645,12 +645,16 @@ impl StyleSystem {
                 }
                 self.custom_properties = saved_custom;
 
+                // R3806：Url（content:url() 图片）也保留——pipeline inject_pseudo_text_nodes
+                // 据此注入 <img>（R1988 机制），旧 gate 漏 Url 致 ::before/::after content:url()
+                // 整体失配（content-004 族 driving）。
                 if matches!(
                     before.content,
                     property::types::ContentComputedValue::String(_)
                         | property::types::ContentComputedValue::Attr(_)
                         | property::types::ContentComputedValue::Counter { .. }
                         | property::types::ContentComputedValue::List(_)
+                        | property::types::ContentComputedValue::Url(_)
                 ) {
                     computed.before_pseudo = Some(Box::new(before));
                 } else if is_q
@@ -667,6 +671,7 @@ impl StyleSystem {
                         | property::types::ContentComputedValue::Attr(_)
                         | property::types::ContentComputedValue::Counter { .. }
                         | property::types::ContentComputedValue::List(_)
+                        | property::types::ContentComputedValue::Url(_)
                 ) {
                     computed.after_pseudo = Some(Box::new(after));
                 } else if is_q
