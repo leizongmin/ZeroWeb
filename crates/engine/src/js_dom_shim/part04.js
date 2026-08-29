@@ -684,7 +684,16 @@
               if (_cl) return _cl;
               return [];
             })();
-            return _zwMakeCollection(_r81Kids.filter(function (k) { return k && k.nodeType === 1; }), true);
+            // R358（js-dom M1）：handle 容器 scoped liveSpec——held 集合随 append/remove
+            // 反映（WPT live collection 断言面）；快照换代由 `__zw_reset_pending_state`
+            // 清桶（R357 被哨兵拦截的 stale 根因已消）。
+            return _zwMakeCollection(_r81Kids.filter(function (k) { return k && k.nodeType === 1; }), true, {
+              matches: function (el358ch) {
+                return !!el358ch && el358ch.nodeType === 1;
+              },
+              scopeHandle: handle,
+              scopeSel: null,
+            });
           }
           // R318（js-dom M4）：sel 父优先走融合 childNodes 视图（同 childElementCount 的
           // R317 路由——同 turn append 后立即可见；WPT Element-children edge cases 在
@@ -696,12 +705,19 @@
               if (_r318fk[_r318i] && _r318fk[_r318i].nodeType === 1) _r318ek.push(_r318fk[_r318i]);
             }
             if (_r318ek.length || _childNodeList(sel, null).length) {
-              // R357 评估（已回退）：scoped liveSpec 使 held children 集合随 append 反映
-              //（ParentNode-children 1F 可修），但 tab R2930 surroundContents 后新快照读
-              // #sc.children 把 pending 桶的 stale 条目（surround 移动的 span）并进集合
-              // （3≠1）——桶条目缺「快照换代失效」语义，须先补桶的代际清理才可重开。
-              // 同 turn 可见性维持融合视图重建（R333 本语义）。
-              return _zwMakeCollection(_r318ek, true);
+              // R358（js-dom M1）：**scoped liveSpec 重引入**（R357 评估回退的前置已补）——
+              // held children 集合随 append/remove 反映（WPT ParentNode-children "should
+              // be a live collection"：var children = ul.children 后 appendChild(li) 期望
+              // length 增长，旧恒快照值）。R357 被哨兵拦截的 stale 根因 =
+              // `__zw_reset_pending_state` 缺失（SetDomSnapshot 换代不清桶）；现挂钩后
+              // 桶残留随换代清空，R333 门（mutation 容器 === 作用域容器）继续防跨容器。
+              return _zwMakeCollection(_r318ek, true, {
+                matches: function (el358c) {
+                  return !!el358c && el358c.nodeType === 1;
+                },
+                scopeHandle: null,
+                scopeSel: sel || null,
+              });
             }
           }
           return sel && typeof __zw_element_children === 'function'

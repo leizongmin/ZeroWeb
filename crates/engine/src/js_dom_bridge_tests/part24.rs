@@ -2425,3 +2425,85 @@ fn test_getelementsbyclassname_sel_live_collection_r357() {
         "R357 getElementsByClassName live 集合（handle + sel 双容器形态）：append 并入 / 跨容器不误并 / 类名过滤 / remove 剔除"
     );
 }
+
+/// R358（js-dom M1）：children 集合的 **scoped liveSpec 重引入**（前置 =
+/// `__zw_reset_pending_state` 快照换代清桶，R357 被 R2930 哨兵拦截的 stale 根因）。
+/// 断言四面：held 集合随 append/remove 反映（WPT ParentNode-children live 断言面）、
+/// 跨容器插入不并（R2929 哨兵）、快照换代清桶（`__zw_reset_pending_state` 后重建集合
+/// 不再含旧批条目——R2930 哨兵的 shim 级等价形态）、getElementsByClassName live 保持。
+#[test]
+fn test_children_live_collection_and_snapshot_reset_r358() {
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let mut sandbox = V8Sandbox::with_config(zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    })
+    .unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><div id='sc'><span>A</span><span>B</span></div></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+    // Turn 1: surround 形态（R2930 等价）——#sc 内容包 wrap，clone 落 #w。
+    sandbox
+        .execute(
+            "try {\
+             var sc = document.getElementById('sc');\
+             var a = sc.children[0]; var b = sc.children[1];\
+             var w = document.createElement('div'); w.id = 'w';\
+             sc.appendChild(w);\
+             w.appendChild(a); w.appendChild(b);\
+             globalThis.__r358t1 = 'ok';\
+             } catch (err) { globalThis.__r358t1 = 'ERR:' + err.message; }",
+        )
+        .unwrap();
+    let t1 = sandbox.execute("globalThis.__r358t1").unwrap().value;
+    assert_eq!(t1, "ok", "R358 turn-1 surround 形态执行");
+    // 模拟 SetDomSnapshot：host 快照替换为 surround 后形态 + __zw_reset_pending_state。
+    {
+        let mut snap = dom_html.lock().unwrap();
+        *snap = "<html><body><div id='sc'><div id='w'><span>A</span><span>B</span></div></div></body></html>".to_string();
+    }
+    sandbox.execute("__zw_reset_pending_state && __zw_reset_pending_state();").unwrap();
+    // Turn 2: 新快照读 #sc.children —— stale 桶条目不得并入（R2930 哨兵 shim 级等价）。
+    sandbox
+        .execute(
+            "try {\
+             var sc2 = document.getElementById('sc');\
+             globalThis.__r358t2 = sc2.children.length + ':' + sc2.children[0].id;\
+             // live 断言面：held 集合随 append/remove 反映
+             var ul = document.createElement('ul');\
+             document.body.appendChild(ul);\
+             var li1 = document.createElement('li'); ul.appendChild(li1);\
+             var kids = ul.children;\
+             var k0 = kids.length;\
+             var li2 = document.createElement('li'); ul.appendChild(li2);\
+             var k1 = kids.length;\
+             // 跨容器插入不并（R2929 哨兵）
+             var other = document.createElement('div'); document.body.appendChild(other);\
+             var li3 = document.createElement('li'); other.appendChild(li3);\
+             var k2 = kids.length;\
+             ul.removeChild(li2);\
+             var k3 = kids.length;\
+             // getElementsByClassName live 保持（R357）
+             var ca = document.createElement('div'); document.body.appendChild(ca);\
+             var cb = document.createElement('b'); cb.className = 'foo'; ca.appendChild(cb);\
+             var cl = ca.getElementsByClassName('foo');\
+             var c0 = cl.length;\
+             var cc = document.createElement('c'); cc.className = 'foo'; ca.appendChild(cc);\
+             var c1 = cl.length;\
+             globalThis.__r358t2 += '|' + [k0, k1, k2, k3, c0, c1].join(',');\
+             } catch (err) { globalThis.__r358t2 = 'ERR:' + err.message; }",
+        )
+        .unwrap();
+    let t2 = sandbox.execute("globalThis.__r358t2").unwrap().value;
+    assert_eq!(
+        t2, "1:w|1,2,2,1,1,2",
+        "R358 children live 集合 + 快照换代清桶：#sc 恰 1 子、held 集合随 append/remove 反映、跨容器不误并、getElementsByClassName live 保持"
+    );
+}

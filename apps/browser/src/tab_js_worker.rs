@@ -361,6 +361,10 @@ fn js_worker_main(
                 if let Ok(mut u) = page_url.lock() {
                     *u = url;
                 }
+                // R358（js-dom M1）：快照换代即清 JS 侧 pending 记账（bucket/live 集合/child
+                // 缓存/id 覆盖表）——新快照替换 host 真相后旧批衍生物是 stale 源（同 URL
+                // 替换也要清；真导航走 reset_context 全新 shim 不经此）。
+                let _ = sandbox.execute("__zw_reset_pending_state && __zw_reset_pending_state();");
                 if url_changed {
                     // P1a form input：URL 变化（导航）→ 清 shim value 缓存，防跨页同选择器 stale value。
                     // 与 renderer 路径（js_worker.rs）一致——闭合 R3058/R3059 双路径 form-reset 不一致。

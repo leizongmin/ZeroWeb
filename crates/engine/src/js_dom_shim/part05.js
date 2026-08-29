@@ -7454,6 +7454,25 @@
   // R51c：pending 按 parentSel 分桶（childNodes overlay 查询用——见 _zwOverlayPendingChildNodes）。
   // key 为 null（handle 父 mutation）时桶键 '_h:' + parentHandle。
   var _zwPendingByParent = new Map();
+  // R358（js-dom M1）：**快照换代失效钩子**——`SetDomSnapshot`（tab_js_worker/renderer
+  // js_worker）替换 host 快照后调用。JS 侧 pending 记账（bucket/live 集合/child 缓存）
+  // 是**旧快照 + 旧 mutation 批**的衍生物：新快照替换 host 真相后，bucket 残留条目对
+  // 新快照的融合视图/集合构建期并入是 stale 源（R357 children liveSpec 重引入被 R2930
+  // 哨兵拦截的根因——surround 移动的 span 在快照换代后仍留桶里，新读 #sc.children 把
+  // 它并进集合）。**换代即清**（真导航另有 reset_context 全新 shim；本钩子覆盖同 URL
+  // 快照替换形态）。id 覆盖表同源清理（旧快照的 id 变更对新文档无意义）。
+  globalThis.__zw_reset_pending_state = function () {
+    _zwLiveCollections.length = 0;
+    _zwPendingAdded.length = 0;
+    _zwPendingRemoved.length = 0;
+    _zwPendingAddedSet = null;
+    _zwPendingRemovedSet = null;
+    _zwPendingByParent.clear();
+    _zwPendingAddedById.clear();
+    _zwIdOverrides.clear();
+    try { if (typeof globalThis._zwChildBaseInvalidateAll === 'function') globalThis._zwChildBaseInvalidateAll(); } catch (_e358cb) {}
+    try { if (typeof globalThis._zwSiblingBaseInvalidateAll === 'function') globalThis._zwSiblingBaseInvalidateAll(); } catch (_e358sb) {}
+  };
   // R51c：pending added 按 id 索引（querySelector('#id') host-miss 回落 O(1)；invalidate
   // 记账时维护——added 入对桶、对冲剔除时同步删）。
   var _zwPendingAddedById = new Map();

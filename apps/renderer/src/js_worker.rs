@@ -500,6 +500,8 @@ fn js_worker_main(
                 if let Ok(mut u) = page_url.lock() {
                     *u = url;
                 }
+                // R358（js-dom M1）：快照换代即清 JS 侧 pending 记账（与 tab_js_worker 同款）。
+                let _ = sandbox.execute("__zw_reset_pending_state && __zw_reset_pending_state();");
                 if url_changed {
                     let _ = sandbox.execute("__zw_reset_form_state && __zw_reset_form_state();");
                     // R3059：导航 → 清旧页 _hist_entries（pushState/hash-setter 残留），新页 location.href
