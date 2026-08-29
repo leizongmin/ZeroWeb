@@ -258,3 +258,59 @@ fn r3794c_border_box_transfer_does_not_double_count_padding() {
         "R3794c: border-box transferred cross = main × ratio = 100，实际 {w}（+frame 双计 padding → 150）"
     );
 }
+
+/// R3795（block-aspect-ratio-058 驱动案）：shrink-to-fit CB（width:min-content + max-height）
+/// 内 `height:100%; aspect-ratio:1/1` 叶盒——% height compute-to-auto 后 taffy 不得用第一趟
+/// 拉伸 cross（784 伪影）经 aspect_ratio 反推 main（旧渲 784×784 红满屏，应 content 0）。
+#[test]
+fn r3795_intrinsic_cb_percent_height_leaf_does_not_transfer_from_artifact_cross() {
+    // DOCTYPE 必需：无 doctype → quirks 模式 → R2016 % height 走 ICB 解析（非本 pass 路径）。
+    let html = r#"<!DOCTYPE html><html><body style="margin:0">
+<div style="width: min-content; max-height: 100px; background: red;">
+  <div style="aspect-ratio: 1/1; height: 100%;"></div>
+</div>
+</body></html>"#;
+    let doc = zero_dom::parse_html(html);
+    let mut sys = zero_style_system::StyleSystem::new();
+    sys.set_viewport(800.0, 600.0);
+    let styles = sys.compute_styles(&doc, &[]);
+    let outer = doc
+        .get_elements_by_tag_name("div")
+        .into_iter()
+        .next()
+        .expect("outer div");
+    let mut engine = LayoutEngine::new(800.0, 600.0);
+    let result = engine.compute(&doc, &styles);
+    let (_w, h) = find_box(&result.root, outer).expect("outer box");
+    assert!(
+        h < 1.0,
+        "R3795: shrink-to-fit CB 下 % height 叶盒 content 高 0 → outer 塌缩（bugzilla 1918576：max-height 不建立 % basis），实际 h={h}（旧 ar 反推伪影 cross → 784）"
+    );
+}
+
+/// R3795 守卫（block-aspect-ratio-030）：definite CB（width:100px）内同款叶盒**保留**
+/// aspect_ratio transferred——child 拉伸 cross 100 definite → h=100（100×100 绿方块）。
+#[test]
+fn r3795_definite_cb_keeps_aspect_ratio_transfer() {
+    let html = r#"<!DOCTYPE html><html><body style="margin:0">
+<div style="width: 100px; background: red;">
+  <div style="background: green; height: 100%; aspect-ratio: 1/1;"></div>
+</div>
+</body></html>"#;
+    let doc = zero_dom::parse_html(html);
+    let mut sys = zero_style_system::StyleSystem::new();
+    sys.set_viewport(800.0, 600.0);
+    let styles = sys.compute_styles(&doc, &[]);
+    let outer = doc
+        .get_elements_by_tag_name("div")
+        .into_iter()
+        .next()
+        .expect("outer div");
+    let mut engine = LayoutEngine::new(800.0, 600.0);
+    let result = engine.compute(&doc, &styles);
+    let (_w, h) = find_box(&result.root, outer).expect("outer box");
+    assert!(
+        (h - 100.0).abs() < 1.5,
+        "R3795: definite CB 下 % height 叶盒保留 ar transferred（child 100×100），实际 outer h={h}（误清 ar → 0）"
+    );
+}

@@ -422,6 +422,12 @@ impl LayoutEngine {
             b: &LayoutBox,
             cb_definite: Option<f32>,
             parent_is_flex_grid: bool,
+            // R3795：包含块宽度是否为 intrinsic 关键字（min-content/max-content/fit-content）。
+            // 此上下文中 % height compute-to-auto 的叶盒不得保留 taffy aspect_ratio——
+            // shrink-to-fit CB 下 cross 是第一趟可用宽伪影（058 outer 784），ar 反推 main
+            // 会撑出 784×784（应 content 0）。definite CB（030 width:100px）保留 ar 供
+            // transferred（child 100×100 ✓）。
+            cb_width_intrinsic: bool,
             // R2101：当前 box 是否处于 table-cell 子树内（含自身为 table-cell）。
             // CSS Quirks §percentage-height：百分比高度 quirk（不明确 CB 按 ICB 解析）**不适用**
             // 于 table-cell 的后代——后代 height:% 须 compute-to-auto（standards 行为）。
@@ -526,6 +532,20 @@ impl LayoutEngine {
                                         && let Ok(mut st) = taffy_tree.style(tid).cloned()
                                     {
                                         st.size.height = taffy::style::Dimension::auto();
+                                        // R3795（css-sizing-4 §4.1 + bugzilla 1918576）：%
+                                        // height compute-to-auto 的叶盒，shrink-to-fit CB
+                                        //（width:min/max/fit-content——block-aspect-ratio-058
+                                        // `.outer{width:min-content; max-height:100px}` 内
+                                        // `.target{height:100%; aspect-ratio:1/1}`）下第一趟
+                                        // cross 是可用宽伪影（784），taffy 经 aspect_ratio 反推
+                                        // main → 784×784 红满屏（chromium 不 transfer，应
+                                        // content 0）。清 aspect_ratio 阻断。definite CB
+                                        //（030 width:100px → child 拉伸 cross 100 definite）保留
+                                        // ar 供 transferred（100×100 ✓）。仅叶盒 + 非替换
+                                        //（替换元素 ar 供固有尺寸回退）。
+                                        if cb_width_intrinsic && b.children.is_empty() && !b.is_replaced {
+                                            st.aspect_ratio = None;
+                                        }
                                         // 替换元素补设固有绝对尺寸：taffy 需要绝对值才能
                                         // 在两侧 auto 时定尺寸（aspect_ratio 只够推导比例）。
                                         if b.is_replaced
@@ -592,11 +612,21 @@ impl LayoutEngine {
             // 否则透传继承（auto 盒不阻断）。供 quirks 百分比高度按 first definite ancestor 解析。
             let child_quirks_nearest = my_definite.or(quirks_nearest_definite);
 
+            // R3795：子代 CB = 本盒；本盒 width 为 intrinsic 关键字时子代处于 shrink-to-fit
+            // CB（% height + ar 反推伪影来源）。
+            let child_cb_width_intrinsic = style.is_some_and(|s| {
+                matches!(
+                    s.width,
+                    LengthValue::MinContent | LengthValue::MaxContent | LengthValue::FitContent(_)
+                )
+            });
+
             for child in &b.children {
                 changed |= walk(
                     child,
                     my_definite,
                     child_parent_flex_grid,
+                    child_cb_width_intrinsic,
                     child_inside_table_cell,
                     child_inside_flex_grid,
                     child_quirks_nearest,
@@ -615,6 +645,7 @@ impl LayoutEngine {
         walk(
             root,
             Some(viewport_height),
+            false,
             false,
             false,
             false,
