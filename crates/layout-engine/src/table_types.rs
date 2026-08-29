@@ -283,6 +283,33 @@ pub(crate) fn get_cell_box<'a>(row_box: &'a LayoutBox, cell: &TableCell) -> Opti
 /// 2. 如果 cell_box.width 接近 0（taffy 将子元素也约束为 0），
 ///    从 DOM 文本内容和字体大小估算 min-content 宽度
 /// 3. 否则用字体大小估算单字符宽度作为最小宽度
+///
+/// R3814：style 的水平 margin 中 calc px 残差（% 按 0——intrinsic sizing，CSS Sizing §5）。
+/// cell 自身样式 + 匿名 cell 包裹的块级子样式一并计入。
+fn calc_style_margin_px(own: Option<&ComputedStyle>, children: &[&ComputedStyle]) -> f32 {
+    use zero_css_parser::values::{CalcExpr, LengthValue};
+    fn walk(e: &CalcExpr) -> f32 {
+        match e {
+            CalcExpr::Length(LengthValue::Px(px)) => *px as f32,
+            CalcExpr::BinaryOp(l, _, r) => walk(l) + walk(r),
+            CalcExpr::Min(list) | CalcExpr::Max(list) => list.iter().map(walk).fold(0.0, f32::max),
+            _ => 0.0,
+        }
+    }
+    fn style_px(s: &zero_style_system::ComputedStyle) -> f32 {
+        // 仅 calc 表达式贡献 px 残差（普通 Px margin 的核算在既有路径，重复计入会
+        // 使带 px margin 的 cell 固有宽虚增——c42-ibx-pad 等回归根因）。
+        fn one(v: &zero_css_parser::values::LengthValue) -> f32 {
+            match v {
+                LengthValue::Calc(expr) => walk(expr).max(0.0),
+                _ => 0.0,
+            }
+        }
+        one(&s.margin_left).max(0.0) + one(&s.margin_right).max(0.0)
+    }
+    own.map(style_px).unwrap_or(0.0) + children.iter().map(|c| style_px(c)).sum::<f32>()
+}
+
 pub(crate) fn compute_cell_intrinsic_width(
     cell_box: &LayoutBox,
     styles: &HashMap<NodeId, ComputedStyle>,
@@ -292,7 +319,16 @@ pub(crate) fn compute_cell_intrinsic_width(
     let padding = cell_box.padding_left + cell_box.padding_right;
     let is_zero_width = cell_box.width < 2.0;
 
-    // 尝试从子元素计算内容宽度
+    // R3814：cell 自身水平 margin 的 calc px 残差计入固有宽（CSS Sizing §5：intrinsic
+    // sizing 时 calc() 的 % 分量按 0 解析，px 分量保留——calc-margins-table-caption：
+    // margin-left calc(10% + 100px) → 固有宽贡献 100）。taffy/converter 路径只保留 %
+    // 分量（converter:512），px 残差在 intrinsic 语境丢失。
+    let child_styles: Vec<&zero_style_system::ComputedStyle> = cell_box
+        .children
+        .iter()
+        .filter_map(|c| c.node_id.and_then(|id| styles.get(&id)))
+        .collect();
+    let calc_margin_px = calc_style_margin_px(cell_box.node_id.and_then(|id| styles.get(&id)), &child_styles);
     let mut content_width = 0.0f32;
     let mut has_explicit_child = false;
 
@@ -332,7 +368,11 @@ pub(crate) fn compute_cell_intrinsic_width(
         // 旧实现漏掉 border，致含显式宽子元素（如 `<td><div style="width:50px">`）的
         // cell 列宽 = content+padding（55）而非 border-box（59），separated 表整体偏窄、
         // 行背景右侧短缺（table-backgrounds-bs-row-001：aqua 行 bg 宽 287 vs ref 303）。
-        return content_width.max(direct_text_w) + padding + cell_box.border_left + cell_box.border_right;
+        return content_width.max(direct_text_w)
+            + padding
+            + cell_box.border_left
+            + cell_box.border_right
+            + calc_margin_px;
     }
 
     // 当 cell_box.width 接近 0 时，taffy 将所有子元素也约束为 0，
@@ -366,9 +406,9 @@ pub(crate) fn compute_cell_intrinsic_width(
             intrinsic.max(direct_text_w)
         };
         if result > 0.0 {
-            return result;
+            return result + calc_margin_px;
         }
-        return char_width * text_len as f32 + padding;
+        return char_width * text_len as f32 + padding + calc_margin_px;
     }
 
     // R1153：无直接文本也无直接显式宽子元素时，用递归 max-content 捕获**嵌套**显式宽后代。
@@ -401,11 +441,11 @@ pub(crate) fn compute_cell_intrinsic_width(
     if all_block_children {
         let recursed = crate::intrinsic_sizing::box_content_max_width(cell_box, doc, styles);
         if recursed > char_width + padding {
-            return recursed;
+            return recursed + calc_margin_px;
         }
     }
 
-    char_width + padding
+    char_width + padding + calc_margin_px
 }
 
 /// R1001：测量 cell 的**直接文本节点**子元素的 max-content 宽度（cell 的匿名 inline 内容）。

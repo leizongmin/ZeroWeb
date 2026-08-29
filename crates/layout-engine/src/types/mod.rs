@@ -213,6 +213,9 @@ pub struct LayoutBox {
     /// 此标记让该元素在 establishes_bfc 中被视为匿名 table（建立 BFC，隔离 margin 折叠
     /// + 包含浮动），由 mark_anonymous_table_roots 预处理在 adjust_float_positions 之前设置。
     pub is_anon_table_root: bool,
+    /// R3814：table-caption 盒（CSS2 §17.4.1：caption 建立独立格式化上下文——子元素
+    /// margin 不与 caption 自身 margin 折叠，内部 margin 链 contained）。
+    pub is_table_caption: bool,
     /// 多列容器的列间距（column-gap），由 layout 层设置，paint 层用于裁剪。
     /// 非 multicol 容器为 0.0。
     pub column_gap: f32,
@@ -492,6 +495,7 @@ impl Default for LayoutBox {
             scroll_y: 0.0,
             is_flow_root: false,
             is_multicol: false,
+            is_table_caption: false,
             multicol_overflow_column_count: None,
             is_nested_spanner_wrapper: false,
             nested_spanner_col_bg: Vec::new(),

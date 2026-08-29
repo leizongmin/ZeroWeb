@@ -72,6 +72,14 @@ pub fn establishes_bfc(box_node: &LayoutBox) -> bool {
         return true;
     }
 
+    // R3814：table-caption 建立独立格式化上下文（CSS2 §17.4.1——caption 的子元素
+    // margin 不与 caption 自身 margin 折叠，内部 margin 链 contained；
+    // margin-collapsing-in-table-caption-002：caption 内 div mt 100 应 contained
+    // 为 caption 内部空间，chromium caption 100×100；ZW 旧坍穿致 caption 高 0）。
+    if box_node.is_table_caption {
+        return true;
+    }
+
     false
 }
 

@@ -1630,11 +1630,16 @@ fn build_subtree(
         // flow-root），本轮仅纳入 contain 系（net +2 contain independent-formatting-context
         // 翻绿 + contain-content-002 19.60→14.70），flow-root/inline-block float-adjacent
         // BFC narrowing 留待 float_positioning 深路径专项。
-        let establishes_bfc = (computed.contain.has_layout() || computed.contain.has_paint())
-            && !matches!(
-                computed.display,
-                DisplayValue::Inline | DisplayValue::Contents | DisplayValue::None
-            );
+        // R3814：table-caption 同样抑制 taffy 内部父子 margin 折叠（CSS2 §17.4.1
+        // caption 建立独立格式化上下文——margin-collapsing-in-table-caption-002：caption
+        // 内 div mt 100 应 contained 为 caption 内部空间（chromium caption 100×100），
+        // taffy 折叠后 caption h=0）。
+        let establishes_bfc = matches!(computed.display, DisplayValue::TableCaption)
+            || ((computed.contain.has_layout() || computed.contain.has_paint())
+                && !matches!(
+                    computed.display,
+                    DisplayValue::Inline | DisplayValue::Contents | DisplayValue::None
+                ));
         if establishes_bfc && !matches!(taffy_style.overflow.y, taffy::style::Overflow::Scroll) {
             taffy_style.overflow.x = taffy::style::Overflow::Hidden;
             taffy_style.overflow.y = taffy::style::Overflow::Hidden;

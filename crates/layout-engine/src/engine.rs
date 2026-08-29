@@ -1349,6 +1349,8 @@ impl LayoutEngine {
             !matches!(s.column_count, ColumnCountComputedValue::Auto)
                 || !matches!(s.column_width, ColumnWidthComputedValue::Auto)
         });
+        // R3814：table-caption 盒标记（establishes_bfc 用——caption 内子 margin 不外塌）。
+        let is_table_caption = computed.is_some_and(|s| matches!(s.display, DisplayValue::TableCaption));
         let is_layout_container = computed.is_some_and(|s| {
             matches!(
                 s.display,
@@ -1582,6 +1584,7 @@ impl LayoutEngine {
             scroll_y: 0.0,
             is_flow_root,
             is_multicol,
+            is_table_caption,
             multicol_overflow_column_count: None,
             is_nested_spanner_wrapper: false,
             nested_spanner_col_bg: Vec::new(),
