@@ -374,6 +374,33 @@ pub fn cascade<'a>(declarations: Vec<CascadedDeclaration<'a>>, quirks: bool) -> 
             by_property.entry("-webkit-line-clamp").or_default().push(decl);
             continue;
         }
+        // R3791：legacy `-webkit-box` display **块化**——解析器无对应 DisplayValue（声明
+        // 被丢），未知元素（049 的自定义 `<clamp>`）used display 回退 initial inline →
+        // R3776 inline 容器 clamp 排除命中 → clamp 完全不生效（5 行全显，应 4 行+省略号）。
+        // css-overflow-3/046 assert：「-webkit-line-clamp causes display:-webkit-box to
+        // create a block box」——vertical + clamp 上下文里 -webkit-box 创建**块盒**。
+        // 现 legacy 上下文成立时把 display 声明改写为真实值（-webkit-box→block、
+        // -webkit-inline-box→inline-block）作同 order 虚拟声明入槽——若同槽有更高优先级的
+        // 普通 display 声明则照常胜出（作者显式 display 不被覆盖），否则块化生效。
+        // 046（无 orient，非 legacy 上下文）不块化——其期望（flex 式单行居中）属 -webkit-box
+        // 水平语义，独立 legacy 切片。
+        if decl.property.eq_ignore_ascii_case("display") && has_legacy_webkit_box {
+            let mapped = if is_legacy_webkit_box_value(decl.value) {
+                if decl.value.trim().eq_ignore_ascii_case("-webkit-inline-box") {
+                    "inline-block"
+                } else {
+                    "block"
+                }
+            } else {
+                decl.value
+            };
+            by_property.entry(canonical).or_default().push(CascadedDeclaration {
+                property: decl.property,
+                value: mapped,
+                order: decl.order,
+            });
+            continue;
+        }
         by_property.entry(canonical).or_default().push(decl);
     }
 
@@ -600,6 +627,92 @@ pub fn collect_declarations<'a>(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// R3791：legacy `-webkit-box` display 块化。legacy clamp 上下文（display:-webkit-box
+    /// 加 -webkit-box-orient:vertical 加 -webkit-line-clamp）中 display 声明改写为真实值
+    /// （-webkit-box 映射 block、-webkit-inline-box 映射 inline-block），使未知元素（used
+    /// display 回退 initial inline）块化，R3776 inline clamp 排除不再命中。driving:
+    /// webkit-line-clamp-049（`<clamp>` 元素 5 行全显应 4 行加省略号）。
+    #[test]
+    fn r3791_legacy_webkit_box_blockifies_display() {
+        let order = CascadeOrder::new(Origin::Author, None, (0, 0, 1), 0, false);
+        let decls = vec![
+            CascadedDeclaration {
+                property: "display",
+                value: "-webkit-box",
+                order: order.clone(),
+            },
+            CascadedDeclaration {
+                property: "-webkit-box-orient",
+                value: "vertical",
+                order: order.clone(),
+            },
+            CascadedDeclaration {
+                property: "-webkit-line-clamp",
+                value: "4",
+                order: order.clone(),
+            },
+        ];
+        let result = cascade(decls, false);
+        // -webkit-box 无 DisplayValue（原被丢），块化后 display=block 入结果。
+        assert_eq!(result.get("display"), Some(&"block".to_string()));
+        // clamp 声明经门控合并进入标准槽位。
+        assert_eq!(result.get("line-clamp"), Some(&"4".to_string()));
+    }
+
+    /// R3791：-webkit-inline-box 块化为 inline-block；作者显式 display 声明（更高优先级）
+    /// 不被覆盖。
+    #[test]
+    fn r3791_legacy_webkit_inline_box_and_author_display_priority() {
+        let order = CascadeOrder::new(Origin::Author, None, (0, 0, 1), 0, false);
+        // ① inline-box → inline-block
+        let decls = vec![
+            CascadedDeclaration {
+                property: "display",
+                value: "-webkit-inline-box",
+                order: order.clone(),
+            },
+            CascadedDeclaration {
+                property: "-webkit-box-orient",
+                value: "vertical",
+                order: order.clone(),
+            },
+            CascadedDeclaration {
+                property: "-webkit-line-clamp",
+                value: "3",
+                order: order.clone(),
+            },
+        ];
+        let result = cascade(decls, false);
+        assert_eq!(result.get("display"), Some(&"inline-block".to_string()));
+
+        // ② 同槽更后声明的普通 display（flex，position 1 > 0）胜——作者显式值不被块化覆盖。
+        let later = CascadeOrder::new(Origin::Author, None, (0, 0, 1), 1, false);
+        let decls2 = vec![
+            CascadedDeclaration {
+                property: "display",
+                value: "-webkit-box",
+                order: order.clone(),
+            },
+            CascadedDeclaration {
+                property: "display",
+                value: "flex",
+                order: later,
+            },
+            CascadedDeclaration {
+                property: "-webkit-box-orient",
+                value: "vertical",
+                order: order.clone(),
+            },
+            CascadedDeclaration {
+                property: "-webkit-line-clamp",
+                value: "3",
+                order,
+            },
+        ];
+        let result2 = cascade(decls2, false);
+        assert_eq!(result2.get("display"), Some(&"flex".to_string()));
+    }
 
     #[test]
     fn test_cascade_origin_priority_normal() {
