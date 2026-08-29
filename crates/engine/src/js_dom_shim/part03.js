@@ -3705,6 +3705,30 @@
         _r187Ev.filename = '';
         _r187Ev.lineno = 0;
         _r187Ev.colno = 0;
+        // R372（js-dom M4）：**per-realm in-flight event 上报段**——inner-invoke 把
+        // in-flight event 记在 **handler（callback）关联 realm** 的 global 上：二级
+        // handler 期间 `frames[1].event` = 本上报事件（WPT
+        // event-global-is-still-set-when-reporting-exception-onerror 的 f 断言
+        // `.error.name === "ReferenceError"`）。handler 的 realm 印记从 on* fn 读
+        // （R370 后 BoundFunction 产物有印记）；无印记（主 realm handler）不动——
+        // 主槽由 R114 legacy 段管理。目标 realm（realmWin）槽**不**动——e 断言
+        // frames[0].event 保持一级事件的 in-flight 值。
+        // https://webidl.spec.whatwg.org/#invoke-a-callback-function
+        try {
+          var _r372onFn = realmWin['on' + 'error'];
+          var _r372hRealm = null;
+          try { _r372hRealm = (_r372onFn && (typeof _r372onFn === 'function')) ? _r372onFn._zwRealmWin : null; } catch (_e372hs) {}
+          if (_r372hRealm && _r372hRealm !== globalThis) {
+            var _r372wPrev = _r372hRealm.event;
+            try { _r372hRealm.event = _r187Ev; } catch (_e372ws) {}
+            try {
+              realmWin.dispatchEvent(_r187Ev);
+            } finally {
+              try { _r372hRealm.event = _r372wPrev; } catch (_e372wr2) {}
+            }
+            return;
+          }
+        } catch (_e372rw0) {}
         realmWin.dispatchEvent(_r187Ev);
         return;
       } catch (_e187d) {} finally {
@@ -3840,7 +3864,9 @@
       // R187：安全读 listener 的 realm 印记——revoked Proxy 上属性 Get 抛，一律 try
       //（WPT cross-realm #4/#5：listener 本身 revoked 仍按创建 realm 上报）。
       var _r187Stamp = null;
-      try { _r187Stamp = (fn && typeof fn === 'object') ? fn._zwRealmWin : null; } catch (_e187s) {}
+      // R372 勘误：函数 listener 也是印记载体（R302/R370 同款勘误——BoundFunction
+      // 产物是函数，`typeof === 'object'` 把函数 listener 的 realm 印记排除在外）。
+      try { _r187Stamp = fn ? ((typeof fn === 'object' || typeof fn === 'function') ? fn._zwRealmWin : null) : null; } catch (_e187s) {}
       var _r187Realm = _r187Stamp;
       if (typeof fn !== 'function') {
         // 对象 listener：Get handleEvent（每次派发都 Get，spec invoke 步骤）。非对象/null handleEvent → 跳过
@@ -3875,9 +3901,43 @@
         // listener，WPT EventTarget-dispatchEvent "Exceptions from event listeners must
         // not be propagated"：第一个 throw 后第二个 listener 仍须跑、dispatchEvent 返 true）。
         try {
-          // 函数 listener: this=currentTarget；对象 listener: this=对象本身（spec EventListener invoke）。
-          callable.call(typeof fn !== 'function' ? fn : ctx, event);
-        } catch (_e106) {
+          // R372（js-dom M4）：印记 listener 的 **per-realm in-flight event**——WebIDL
+          // inner-invoke 把 in-flight event 记在 callback 关联 realm 的 global 上：调用
+          // 期间 realm win 的 `event` 槽 = 本 event、主 realm 的 `window.event` 恢复外层
+          // in-flight（`event._zwOuterEvent`，dispatch 级挂载）；调用后双槽复原。主 realm
+          // listener（无印记）维持外层 dispatch 级 set（R33/R114 语义零变化）。
+          // https://webidl.spec.whatwg.org/#invoke-a-callback-function
+          var _r372gPrev = undefined, _r372wPrev, _r372hasW = false;
+          if (_r187Realm && _r187Realm !== globalThis) {
+            _r372gPrev = globalThis.event;
+            try {
+              _r372wPrev = _r187Realm.event;
+              _r372hasW = true;
+              _r187Realm.event = event;
+            } catch (_e372w) { _r372hasW = false; }
+            try { globalThis.event = event._zwOuterEvent; } catch (_e372g) {}
+          }
+          var _r372pend = null;
+          try {
+            // 函数 listener: this=currentTarget；对象 listener: this=对象本身（spec EventListener invoke）。
+            callable.call(typeof fn !== 'function' ? fn : ctx, event);
+          } catch (_e372ex) {
+            // R372：印记 listener（callback 关联 realm ≠ 主 realm）的「report the
+            // exception」在 per-realm 槽**复原前**执行（spec：report 嵌套在 inner-invoke
+            // 内——二级 handler 期间一级 realm 的 in-flight 仍在栈上：frames[0].event
+            // 保持一级事件、主槽保持外层 in-flight）。上报后置 null，外层路径跳过。
+            if (_r187Realm && _r187Realm !== globalThis) {
+              _zwReportListenerError(globalThis._zwWrapCallError(_e372ex, _r187Realm), _r187Realm);
+            } else {
+              _r372pend = _e372ex;
+            }
+          } finally {
+            if (_r187Realm && _r187Realm !== globalThis) {
+              try { globalThis.event = _r372gPrev; } catch (_e372gr) {}
+              if (_r372hasW) { try { _r187Realm.event = _r372wPrev; } catch (_e372wr) {} }
+            }
+          }
+          if (_r372pend !== null) {
           // js-dom M4 R113：spec inner invoke 步骤 11「report the exception」——spec
           // `report the exception` 的标准形态是 **fire an error event at window**（HTML
           // 「reporting exceptions」/runtime-script-error：ErrorEvent，message + error 字段），
@@ -3886,10 +3946,11 @@
           // 的 **error 事件**（addEventListener 路径）超时。现改经 `_zwReportListenerError`
           // 统一上报（error 事件派发 + onerror 属性调用 + console.error 兜底），异常不传播
           //（继续后续 listener），WPT Event-dispatch-throwing 的 onerror 计数语义保持。
-          _zwReportListenerError(globalThis._zwWrapCallError(_e106, _r187Realm),
+          _zwReportListenerError(globalThis._zwWrapCallError(_r372pend, _r187Realm),
             // R187：listener 执行异常同按归属 realm 上报（对象 listener 印记 / 函数
             // listener 无印记走主 window；revoked 形态印记读取在 try 内——_r187Realm）。
             _r187Realm);
+          }
         } finally {
           if (entry.passive) event._zwInPassive = Math.max(0, (event._zwInPassive || 1) - 1);
         }
@@ -4533,6 +4594,16 @@
     var prevEvent = globalThis.event;
     var _r114Suppress = _r114ShadowDepth > 0;
     globalThis.event = _r114Suppress ? undefined : event;
+    // R372（js-dom M4）：**per-realm in-flight event**——spec WebIDL inner-invoke 把
+    // 「in-flight event」记在 **callback 关联 realm 的 global** 上（非 target realm）：
+    // frames[0] realm 的 listener 被调用期间，`frames[0].event` = 本 event、而主 realm
+    // 的 `window.event` 保持外层 in-flight（WPT event-global-is-still-set-when-
+    // reporting-exception-onerror：`top.event === onLoadEvent` 且
+    // `frames[0].event === myEvent` 同帧成立）。外层 dispatch 级 `globalThis.event =
+    // event` 只服务**主 realm listener**（既有 R33/R114 语义零变化）；印记 listener
+    // 的 realm win 槽在 fire 点按 realm 设置（见 _dispatchToListeners fire）。外层
+    // in-flight 值挂 event 本体（`_zwOuterEvent`）供 fire 点恢复主槽。
+    try { event._zwOuterEvent = prevEvent; } catch (_e372o) {}
     // js-dom M4 R34：stop propagation flag 兼容——polyfill Event 设 `_propagationStopped`，native Event
     // （ZW_NATIVE_DOM=1 叠加，dispatch 仍走此 polyfill 路径，未解问题 #9）设 `__zw_stop`。两 flag 都须认。
     var bubbleStopped = function() { return event._propagationStopped || event.__zw_stop === true; };
@@ -4636,6 +4707,8 @@
       // js-dom M4 R33：dispatch 结束 restore 外层 event（嵌套 dispatch 正确）；顶层 dispatch 后回 undefined
       //（WPT event-global "undefined after dispatch"）。须先于 _propagationStopped 重置，保证 restore 与 set 配对。
       globalThis.event = prevEvent;
+      // R372：dispatch 末清 per-realm 锚（event 对象可能被复用/再派发——防 stale 外层值）。
+      try { delete event._zwOuterEvent; } catch (_e372d) {}
       // js-dom M4 R29：spec `concept-event-dispatch` 末步——dispatch 结束 unset stop propagation flag
       //（+ 步骤清其他 dispatch flags）。reset 后 cancelBubble getter（后端 _propagationStopped）返 false
       //（WPT Event-cancelBubble "cancelBubble must be false after an event has been dispatched"）。

@@ -2687,7 +2687,13 @@
       var previousEvent = globalThis.event;
       event.target = win;
       event.currentTarget = win;
-      globalThis.event = event;
+      // R372（js-dom M4）：**不覆盖外层 in-flight**——嵌套上报（listener 异常的 report
+      // 在一级 dispatch 的 per-realm 窗口内）时主槽保持外层 in-flight（WPT
+      // event-global-is-still-set-when-reporting-exception-onerror 的 d 断言
+      // `top.event === onLoadEvent`——二级 handler 期间主槽 = 外层 load 事件）。无外层
+      // in-flight（主槽空）时维持旧行为（standalone iframe dispatch 的 window.event 可见）。
+      // https://html.spec.whatwg.org/multipage/webappapis.html#current-event
+      if (!globalThis.event) globalThis.event = event;
       try {
         var list = (win._et_listeners[String(event.type)] || []).slice();
         for (var i = 0; i < list.length; i++) {
