@@ -8330,11 +8330,16 @@
       // js-dom M4 R81：Document 元数据族（WPT Node-properties foreignDoc.URL/compatMode/
       // characterSet/inputEncoding/documentURI/charset——detached doc 旧全 undefined）。
       // spec：createHTMLDocument 的 URL = about:blank + CSS1Compat + UTF-8；XML doc 无 compatMode。
-      get URL() { return 'about:blank'; },
+      // R360（js-dom M1）：URL 读 `_zwURL` 槽优先——iframe 子文档加载后槽由
+      // `_zwFinishIframeEntry` 设为（重定向后的）最终 URL（spec Document.URL 反映当前
+      // 文档地址，WPT Document-URL "with redirect"）；detached/createHTMLDocument 从不
+      // 设槽 → 'about:blank' 缺省语义不变（spec 非浏览上下文文档 URL）。
+      get URL() { try { if (doc._zwURL) return String(doc._zwURL); } catch (_e360u) {} return 'about:blank'; },
+      get documentURI() { try { if (doc._zwURL) return String(doc._zwURL); } catch (_e360u2) {} return 'about:blank'; },
       // R130（js-dom M4）：`doc.location`（WPT createHTMLDocument "document location getter
       // is null"——spec：非浏览上下文文档的 location getter 返 null；旧 undefined ≠ null）。
       get location() { return null; },
-      get documentURI() { return 'about:blank'; },
+
       // R81 spec 纠正：XML/HTML 文档 compatMode 恒 CSS1Compat（spec dom-document-compatmode：
       // 没有 quirks 触发条件（backwards-compatible 解析）时恒 "CSS1Compat"；XML 文档无 quirks
       // 模式——WPT Node-properties xmlDoc.compatMode 期望 "CSS1Compat"）。

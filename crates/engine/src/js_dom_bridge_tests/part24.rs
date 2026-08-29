@@ -2554,3 +2554,52 @@ fn test_iframe_factory_element_compound_qsa_r359() {
         "R359 iframe 工厂元素 compound QSA：tag+class/多类/id/attr 形态命中、组合器伪类仍回落空、qS===QSA[0]"
     );
 }
+
+/// R360（js-dom M4）：**X-Zero-Final-URL 消费**——iframe 加载响应携带重定向最终 URL 头
+/// （runner fetch handler 的 redirect.py 等价生成器附）时，`_zwFinishIframeEntry` 覆盖
+/// effective URL（`doc._zwURL` 槽 + entry.url），iframe doc 的 URL/documentURI getter 读
+/// 槽返回最终地址（spec Document.URL 反映当前文档地址；detached/createHTMLDocument 从不
+/// 设槽 → 'about:blank' 缺省不变）。
+/// https://html.spec.whatwg.org/multipage/nav-history-apis.html#document-object
+#[test]
+fn test_iframe_final_url_header_r360() {
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let mut sandbox = V8Sandbox::with_config(zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    })
+    .unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> =
+        Arc::new(Mutex::new("<html><body></body></html>".to_string()));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+    // 模拟 iframe 加载：__zw_fetch 返回带 X-Zero-Final-URL 头的 wire（头分隔 \x1e，域分隔 \x1f）。
+    sandbox.register_callback(
+        "__zw_fetch",
+        Box::new(|_args: &[String]| -> String {
+            // __zwfr: status \u{1f} statusText \u{1f} headers(name\u{1e}value...) \u{1f} body
+            "__zwfr:200\u{1f}OK\u{1f}X-Zero-Final-URL\u{1e}https://wpt.test/common/blank.html\u{1f}<html><head><title>Blank</title></head><body></body></html".to_string()
+        }),
+    );
+    sandbox
+        .execute(
+            "try {\
+             var ifr = document.createElement('iframe');\
+             ifr.setAttribute('src', '/common/redirect.py?location=/common/blank.html');\
+             document.body.appendChild(ifr);\
+             var doc = ifr.contentDocument;\
+             globalThis.__r360e = [String(doc.URL), String(doc.documentURI)].join('|');\
+             } catch (err) { globalThis.__r360e = 'ERR:' + err.message; }",
+        )
+        .unwrap();
+    let out = sandbox.execute("globalThis.__r360e").unwrap().value;
+    assert_eq!(
+        out, "https://wpt.test/common/blank.html|https://wpt.test/common/blank.html",
+        "R360 iframe 加载 X-Zero-Final-URL 头覆盖 doc._zwURL → URL/documentURI 反映最终地址"
+    );
+}

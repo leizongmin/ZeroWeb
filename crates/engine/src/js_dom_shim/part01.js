@@ -477,9 +477,24 @@
       // \x1f headers \x1f body——FIELD_SEP=\x1f，body 是末字段（原样保真）。
       var parts = String(wire).split('\x1f');
       var body = parts.length > 3 ? parts.slice(3).join('\x1f') : '';
+      // R360（js-dom M4）：**X-Zero-Final-URL 消费**——runner fetch handler 对重定向生成器
+      //（common/redirect.py 等）附最终 URL 头；重定向后 contentDocument.URL 须为最终 URL
+      //（spec：Document.URL 反映当前文档地址，WPT Document-URL "with redirect"）。头 wire
+      // 形态 name\x1evalue\x1e…（fetch_bridge encode_headers）；命中即覆盖 effective url
+      //（doc._zwURL 槽 + entry.url——history/URL 面同源）。
+      var effectiveUrl = url;
+      if (parts.length > 2) {
+        var hdrs360 = String(parts[2] || '').split('\x1e');
+        for (var h360 = 0; h360 + 1 < hdrs360.length; h360 += 2) {
+          if (hdrs360[h360] === 'X-Zero-Final-URL' && hdrs360[h360 + 1]) {
+            effectiveUrl = String(hdrs360[h360 + 1]);
+            break;
+          }
+        }
+      }
       var kind = _zwIframeKindFromUrl(url);
       entry.doc = _zwMakeIframeDoc(kind, body);
-      try { entry.doc._zwURL = url; } catch (_e115u) {}
+      try { entry.doc._zwURL = effectiveUrl; } catch (_e115u) {}
       try { if (entry._zwSwClientId) entry.doc._zwSwClientId = entry._zwSwClientId; } catch (_e115c) {}
       // R160：fragment URL 槽（`:target` 判定——WPT :target 簇的
       // iframe 子文档 src 带 #target，doc 查询传 host 侧 set_url）。
@@ -488,7 +503,7 @@
       entry.win = _zwMakeIframeWin(entry.doc, frameKey, entry.flags || {}, previousWin);
       try { if (entry.doc.__r115SetWin) entry.doc.__r115SetWin(entry.win); } catch (_eW) {}
       entry.state = 'done';
-      entry.url = url;
+      entry.url = typeof effectiveUrl === 'string' && effectiveUrl ? effectiveUrl : url;
       _zwObserveIframeWindowClient(entry, frameKey, url);
       try { entry.win.__r206State = entry.state; } catch (_eR206m) {}
       try { _zwRunIframeScripts(entry.win, entry.doc, body, url); } catch (_eR206s) {}
