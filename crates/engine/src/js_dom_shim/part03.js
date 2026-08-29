@@ -6669,6 +6669,22 @@
     }
     return cur350;
   }
+  // R351（js-dom M4）：**条目级根缓存**——adjust 扫描对每条目容器的根判定此前每次
+  // 现算（root walk 穿 proxy parentNode，每跳 host 往返 ~5µs[W21 探针]，跨树条目
+  // inRemovedSubtree 每容器 ~3 跳 ≈ 15µs[W3]）。缓存挂在 range 条目对象上
+  //（`_rzk<slot>` = 容器对象，`_rzr<slot>` = 其根），读取侧以 **identity 校验**防
+  // stale：`rg._rzk0 === cont` 不成立（容器被 R262/R191 等重写）则现算回填。写侧重
+  // （R262 重写 startContainer/endContainer）无需逐点失效——identity 校验天然覆盖。
+  // slot：0 = startContainer，1 = endContainer。
+  function _zwEntryRootOf(rg351, cont351, slot351) {
+    if (!cont351) return null;
+    var kKey351 = slot351 === 0 ? '_rzk0' : '_rzk1';
+    var rKey351 = slot351 === 0 ? '_rzr0' : '_rzr1';
+    if (rg351[kKey351] === cont351) return rg351[rKey351];
+    var root351 = _zwRangeRootOf(cont351);
+    try { rg351[kKey351] = cont351; rg351[rKey351] = root351; } catch (_e351c) {}
+    return root351;
+  }
   function _zwRangeRootDiffers(a350, b350) {
     if (!a350 || !b350) return false; // 缺容器（未初始化 range）不跳过，走旧路径兜底
     try { return _zwRangeRootOf(a350) !== _zwRangeRootOf(b350); } catch (_e350r) { return false; }
@@ -6722,14 +6738,12 @@
       };
       // R350：**键命中后根验证**——跨树同键（selector/handle 字符串巧合相等）条目不得
       // 应用调整（探针实证旧树死条目可被新树同键误命中并篡改 offset——真 bug）。
-      // 根验证（root walk 穿 proxy parentNode，每跳 host 往返 ~5µs）从「每条目前置」
-      // 改为「sameNode 命中后」执行——常态路径 identity/键 miss 短路，root walk 只在
-      // 罕见的键命中时付（W21 实测：前置式 60 条目 × 2 容器 root walk = 1.66ms/append；
-      // 后置式 ≈ 0）。同树（同根）命中行为与旧路径一致。
-      var sameNode260Verified = function (cont) {
+      // R351：根验证经**条目级根缓存**（identity 校验，见 `_zwEntryRootOf`）——首次
+      // 现算回填，之后 plain 字段比较；同树条目（data 变更的主档场景）第二次起 O(1)。
+      var sameNode260Verified = function (cont, rg351, slot351) {
         if (!sameNode260(cont)) return false;
         if (cont === node260) return true;
-        return !_zwRangeRootDiffers(cont, nodeRoot260);
+        return _zwEntryRootOf(rg351, cont, slot351) === nodeRoot260;
       };
       for (var i260 = 0; i260 < regs260.length; i260++) {
         var rg260 = regs260[i260];
@@ -6739,8 +6753,8 @@
         // ① off ≤ offset 不动；② offset < off ≤ offset+count → 收到 offset
         //（被替换区间内的边界点折叠到替换起点——非 offset+insertLen）；
         // ③ off > offset+count → + insertLen − count。
-        var adj260 = function (cont, off) {
-          if (!sameNode260Verified(cont)) return off;
+        var adj260 = function (cont, off, slot351) {
+          if (!sameNode260Verified(cont, rg260, slot351)) return off;
           if (off <= offset260) return off;
           if (off <= offset260 + count260) return offset260;
           return off + insertLen260 - count260;
@@ -6750,9 +6764,9 @@
           // 即生效；_mode.kind==='node'（selectNode 形态）的现算路径不受影响
           //（其 _base 只是 fallback）。
           rg260._startOffsetBase = adj260(rg260.startContainer,
-            rg260._startOffsetBase != null ? rg260._startOffsetBase : rg260.startOffset);
+            rg260._startOffsetBase != null ? rg260._startOffsetBase : rg260.startOffset, 0);
           rg260._endOffsetBase = adj260(rg260.endContainer,
-            rg260._endOffsetBase != null ? rg260._endOffsetBase : rg260.endOffset);
+            rg260._endOffsetBase != null ? rg260._endOffsetBase : rg260.endOffset, 1);
         } catch (_e260r) {}
       }
     } catch (_e260a) {}
@@ -6819,7 +6833,14 @@
       // spec「node is removed node or a descendant of it」——沿 parentNode 上行
       //（128 跳防环；proxy 域 parentNode 经 trap 返父 proxy，identity 由父级
       // sameNode262 判定）。
-      var inRemovedSubtree262 = function (cont) {
+      // R351：**根快道前置**——条目容器的根经条目级缓存（identity 校验，见
+      // `_zwEntryRootOf`）与被移除树根比较：不同根 → 整棵祖先链都不含 removed
+      // （identity 与键命中均不可能跨树成立），直接 false，免 3-4 跳 parentNode
+      // host 往返（W3 实测 100 条跨树条目单次 removeChild 2.9ms ≈ 每容器 15µs 全花
+      // 在上行）。同根才进逐跳 walk（行为与旧路径一致）。
+      var inRemovedSubtree262 = function (cont, rg351, slot351) {
+        if (!cont) return false;
+        if (_zwEntryRootOf(rg351, cont, slot351) !== rmRoot262) return false;
         var cur = cont, hops = 0;
         while (cur && hops++ < 128) {
           if (sameNode262Verified(cur)) return true;
@@ -6850,19 +6871,23 @@
         try {
           // ① 边界在被移除子树内 → (oldParent, oldIndex)。须重写 container（清
           // _mode 锚点——selectNode 形态的现算路径会覆盖写入值）。
-          if (inRemovedSubtree262(rg262.startContainer)) {
+          // R351：重写 container 后同步刷条目根缓存（identity 校验自愈，但写侧
+          // 直更免一次回填现算）。
+          if (inRemovedSubtree262(rg262.startContainer, rg262, 0)) {
             rg262.startContainer = oldParent262;
             rg262._startOffsetBase = oldIndex262;
             rg262._mode = null;
+            rg262._rzk0 = oldParent262; rg262._rzr0 = rmRoot262;
           } else if (sameParent262Verified(rg262.startContainer)) {
             // ② 边界在 oldParent 且 offset > oldIndex → −1。
             var so262 = rg262._startOffsetBase != null ? rg262._startOffsetBase : rg262.startOffset;
             if (so262 > oldIndex262) rg262._startOffsetBase = so262 - 1;
           }
-          if (inRemovedSubtree262(rg262.endContainer)) {
+          if (inRemovedSubtree262(rg262.endContainer, rg262, 1)) {
             rg262.endContainer = oldParent262;
             rg262._endOffsetBase = oldIndex262;
             rg262._mode = null;
+            rg262._rzk1 = oldParent262; rg262._rzr1 = rmRoot262;
           } else if (sameParent262Verified(rg262.endContainer)) {
             var eo262 = rg262._endOffsetBase != null ? rg262._endOffsetBase : rg262.endOffset;
             if (eo262 > oldIndex262) rg262._endOffsetBase = eo262 - 1;
@@ -6918,20 +6943,25 @@
       // R350：sameParent 命中后根验证（跨树同键条目不得应用——与 R262 同设计；
       // root walk 穿 proxy parentNode 每跳 host 往返 ~5µs[W21]，从「每条目前置」
       // 改为「键命中后」，常态路径 O(1)）。
-      var sameParent263Verified = function (cont) {
+      // R351：**根快道前置**（与 R262 inRemovedSubtree 同款）——键读之前先比条目
+      // 容器的缓存根（identity 校验）：与插入树根不同 → 键命中必为跨树巧合，直接
+      // false，省去每条目 2 容器 × 键读 trap（跨树条目主档成本，见 `_zwEntryRootOf`）。
+      var sameParent263Verified = function (cont, rg351, slot351) {
+        if (!cont) return false;
+        if (_zwEntryRootOf(rg351, cont, slot351) !== insRoot263) return false;
         if (!sameParent263(cont)) return false;
         if (cont === newParent263) return true;
-        return !_zwRangeRootDiffers(cont, insRoot263);
+        return true; // 同根 + 键命中——root walk 已被缓存根比较替代
       };
       for (var _r263r = 0; _r263r < regs263.length; _r263r++) {
         var rg263 = regs263[_r263r];
         if (!rg263) continue;
         try {
-          if (sameParent263Verified(rg263.startContainer)) {
+          if (sameParent263Verified(rg263.startContainer, rg263, 0)) {
             var so263 = rg263._startOffsetBase != null ? rg263._startOffsetBase : rg263.startOffset;
             if (so263 > newIndex263) rg263._startOffsetBase = so263 + 1;
           }
-          if (sameParent263Verified(rg263.endContainer)) {
+          if (sameParent263Verified(rg263.endContainer, rg263, 1)) {
             var eo263 = rg263._endOffsetBase != null ? rg263._endOffsetBase : rg263.endOffset;
             if (eo263 > newIndex263) rg263._endOffsetBase = eo263 + 1;
           }
@@ -10238,6 +10268,15 @@
         return false;
       },
       get: function(_t, prop) {
+        // R351（js-dom M4）：**shim 内部键顶部短路**——`__zwHandle`/`__zwSelector` 是
+        // shim 私有锚定键（adjust 扫描、identity 桥、testdriver stub 的高频读取面）。
+        // 此前它们落在 R98 分支（每字符串属性读先付 `Object.getPrototypeOf(_makeProxy(..))`
+        // + customElements.getName 检查 ≈ 78µs/读，R351 探针 W8 实测）之后——adjust
+        // 扫描每条目 2 容器 × 1-2 键读时成本被放大 O(注册表 × ops)。两键语义与
+        // CE accessor / 反射属性零交集（shim 内部约定名，消费者全在 shim 内部），
+        // 顶部直返不改变任何外部可观测行为。
+        if (prop === '__zwHandle') return handle;
+        if (prop === '__zwSelector') return sel;
         // js-dom M3 R95：`constructor` 顶部短路（原型链 own 命中，限 8 层）。真实 DOM 中
         // `el.constructor` 沿原型链命中（custom element 返用户类）——lit ReactiveElement 的
         // 实例方法 `_$E_` 读 `this.constructor.elementProperties`（e2e 实证：旧 get trap 对
@@ -10327,8 +10366,8 @@
         if (prop === 'toString') {
           return function() { return sel ? sel : String(handle); };
         }
-        if (prop === '__zwHandle') return handle;
-        if (prop === '__zwSelector') return sel;
+        // R351：`__zwHandle`/`__zwSelector` 已提到 trap 顶部（见顶部注记）——此处原
+        // 分支删除，语义不变（同一返回值，仅执行位置前移）。
         // R34xx：Symbol.toStringTag 按元素 tag 返接口名（2d.canvas.host.type.name 的
         // Object.prototype.toString.call(canvas) === '[object HTMLCanvasElement]'；
         // 此前无 toStringTag → '[object Object]'。generic：全部元素受益）。

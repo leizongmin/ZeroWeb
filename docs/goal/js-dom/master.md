@@ -3,6 +3,8 @@
 **入口文档**: [../js-dom.md](../js-dom.md)（长期 Mission / Done Criteria / 执行协议 / 文档治理规则）
 **关联 RFC**: [../../specs/p1b-v8-native-bindings-rfc.md](../../specs/p1b-v8-native-bindings-rfc.md) + [../../specs/p1b-l2d3-unified-matcher-identity-bridge-rfc.md](../../specs/p1b-l2d3-unified-matcher-identity-bridge-rfc.md)（R166 新增——L2-d3 统一匹配器 + identity 桥设计；**v0.2 @ R341**：d3a-c 已落、d3d 元素上下文回退定格[重启前置 = 归一路径统一]、§2.4 落地后新证据）
 **创建日期**: 2026-08-13（goal 拆分 bootstrap）
+**本轮**: R351 — **M4/ranges：R350 的延续收口——proxy get trap 内部键读的 R98 分支顶部短路 + 条目级根缓存（**+1333 Pass、Range-mutations-{appendData,deleteData,insertData} 三文件自导入以来首次全绿、真实 Fail 20→17、零回归**）**：R350 后残余（data 族每文件仍差 6-30 test）归因续挖。探针链：W6 adjust ON/OFF（OFF 快 35x——成本确在 adjust 内）；W8 分解定位唯一贵点 = **proxy get trap 的任意属性读 78µs/次**（非键读非根 walk——`__zwHandle` 读也在此面）；W9/W10 锁定根因 = **R98 分支**（part03 get trap 对每个字符串属性读先付 `Object.getPrototypeOf(_makeProxy(..))` + customElements.getName ≈ 78µs，然后才轮到 10360 行的 `__zwHandle` 返回）。**修复两件**（part03.js）：① `__zwHandle`/`__zwSelector` 提到 get trap **顶部**（R95 constructor 短路之前）——shim 私有锚定键与 CE accessor/反射属性零交集，顶部直返零语义变化（调整扫描每条目 2 容器 × 1-2 键读从 78µs 降 ns 级）；② **条目级根缓存** `_zwEntryRootOf`（`_rzk0/_rzr0/_rzk1/_rzr1` 挂 range 条目，identity 校验防 stale，R262 重写 container 时同步刷）——根比较从每次现算（root walk 穿 proxy）降为 plain 字段比较。**A/B**：探测循环 rm 96→27ms/iter（-72%）、build 187→30ms（-84%）；全量 dom sweep **Pass +1333（54057→55390 非探针口径）、仅 baseline 有 = 空集（零 subtest 丢失）、appendData 384P/deleteData 564P/insertData 382P 三文件历史性全绿**、dataChange/replaceData declared 273→426/316→701（2.2x，仍文件级 Timeout 差最后一批）。**教训**：proxy get trap 的属性读成本 = trap 内部**分支序**的函数——热门内部键必须顶部短路；「等价替换 A/B 定位函数级总量差」之后，还要「属性读微基准」定位分支级成本（W8 的 nodeType/__zwHandle 统一 78µs 即分支序证据）。→ evidence/2026-08-29-r351-trap-key-hoist.md
+
 **本轮**: R350 — **M4/ranges：Range-mutations data 族文件级 Timeout 根因修复——live-range 注册表扫描的每条目 proxy trap/host 往返（+789 subtest 落入 90s 窗口；上轮中断注释的「per-op 线性成本」误判勘误）**：上轮 429 打断的 R350 半成品（testharness.rs 注释）接手，探针实测推翻其「per-op 线性 ~0.6ms」假设——单 op 仅 0.004-0.019ms，真凶是 `__zwLiveRanges` 注册表（8192 环形缓冲）线性累积后 R260/R262/R263 三处 adjust 对全部历史条目逐条比对，比对中 `__zwHandle`/`__zwSelector`/`parentNode` 读走 **proxy get trap → host 回调**（键读 ~0.5µs/次、parentNode 上行每跳 ~5µs[W21]），且 R263 在循环内每条目重读 newParent263 的恒定键。**修复三件**（part03.js 三处 adjust）：① **键域快道**——mutation 节点/插入父无 handle/sel 键时（plain 工厂域）跨域键比对必不命中 → identity-only O(1)/条目；② **恒定键读提出循环外**（newParent263/oldParent262 的键每函数一次）；③ **键命中后根验证**——前置 root walk 改为 sameNodeVerified/sameParentVerified 后置（identity/键 miss 短路，仅键字符串相等才付 root walk），**语义不变 + 顺带修真 bug**：跨树同 selector 字符串的旧死条目此前可被键匹配误命中并篡改 offset。**A/B**：等价轻量实现对照 11.93ms→0.21ms/append（57x）；探测循环 97ms/iter→3ms/iter；全量 dom sweep **真实 Fail 集合 20=20 恒等零回归**，Pass 净 +8（已知 Timeout 轮转族），data 族完成 subtest 88→273/198/225/217(全量)/316——五文件仍文件级 Timeout（完成率 90-100% 差最后 6-30 test），残余 = 注册表条目 GC 压力 + textEl 分支 `cont.parentNode` host 往返，随 L2 落地自然消解。**教训**：① shim 热扫描循环内属性读不是纯内存访问——proxy 产物字段读即 trap，可能 host 往返；② 循环不变量（他对象的键）必须提出循环外——trap 域是 50x 级差异；③ 单段微基准可能全部「不慢」（缓存/短路掩盖），需等价轻量实现整体替换的 A/B 得到总量差再逐段加回。→ evidence/2026-08-29-r350-range-registry-scan.md + docs/learnings/bugs/2026-08/2026-08-29-proxy-trap-in-hot-scan-loop.md
 
 **本轮**: R349 — **M4/events：register 路径审计 + events 剩余聚类归因（诊断轮，零生产改动）**：① **register_dom_callbacks 全调用点审计**（R348 bug 类排查）——webview 3 处（execute_script_with_dom/dispatch_event/execute 路径）均绑 shared_mutations ✓、user_actions 两处已由 R348 闭合 ✓、tab_js_worker/renderer js_worker 为多进程架构自有队列（消费方同体）✓——**无同类残留**。② **Event-dispatch-click pending:1 确认 pre-existing**：R342 基线与当前 sweep 逐字节同态（32 Pass/0 Fail/文件 Timeout），非本轮动画基建回归；33 注册 = 25 async_test + 4 test + 4 loop-generated，可枚举候选名全部在 recorded 集——缺失者为难以静态枚举的注册形态，单 subtest 非簇低优先级记档。③ **Event-dispatch-target-moved 文件级 crash 归因**：事件派发中 listener 移动 #target（removeChild+appendChild）后，sel 锚定的 insert 类 mutation 以 #target 为参照但父子关系已变 → `insert_nodes_at_position` 锚点失配 → apply 硬错中止整批——sel 移动语义（R334 wire 锚点移动后失效）× 派发中 mutation 交互，非轻量可达，随 L2 主线（身份/锚点统一）处理记档。全量 sweep 54179P/54F/16T（含本轮探针清理噪声 1 条；真实态同 R348）。→ evidence/2026-08-29-r349-audit-and-diagnosis.md
@@ -530,6 +532,7 @@
 
 | 日期 | 轮次 | 证据 | 结果 |
 |------|------|------|------|
+| 2026-08-29 | R351 | proxy get trap 内部键读 R98 分支顶部短路（`__zwHandle`/`__zwSelector` 提到 trap 顶部）+ 条目级根缓存 `_zwEntryRootOf`（identity 校验）+ evidence/2026-08-29-r351-trap-key-hoist.md | **+1333 Pass、Range-mutations-{appendData,deleteData,insertData} 三文件自导入以来首次全绿（384/564/382P）、真实 Fail 20→17 零新增**；dataChange/replaceData declared 2.2x；探测循环 rm -72% / build -84% |
 | 2026-08-29 | R350 | Range-mutations data 族 Timeout 根因修复（part03 三处 adjust：键域快道 + 恒定键读提出循环外 + 键命中后根验证）+ R349 中断注释误判勘误 + evidence/2026-08-29-r350-range-registry-scan.md | **+789 subtest 落入 90s 窗口**（data 族 88→273/198/225/217/316）；全量 sweep 真实 Fail 集合 20=20 恒等零回归、Pass 净 +8（Timeout 轮转）；顺带修跨树同键误命中真 bug |
 | 2026-08-28 | R332 | normalize childList MO record 双容器修复（part04 `_r184NormArr` 逐步 record + sel 容器合并/移除/record 三件）+ part24 `test_normalize_childlist_mo_records_r332` + evidence/2026-08-28-r332-normalize-mo-records.md | **MutationObserver-childList pending 13→11、normalize 双用例 Pass**（Node-normalize 4P 维持）；MO 全族 fail 集恒等；engine 2471/quickjs 1466 绿 |
 | 2026-08-28 | R341 | L2-d3 RFC v0.2（docs/specs/p1b-l2d3-unified-matcher-identity-bridge-rfc.md：切片状态表 + §2.4 新证据 + 修订历史）+ master.md 头部 RFC 注记同步 | **L2 重启设计输入单点化**（d3a-c 已落/d3d 定格[重启前置 = 归一路径统一 + iframe 树源统一]/d3e 未启动）；零源码改动 |
@@ -805,12 +808,12 @@
 ---
 
 ## 下一步计划
-0. **R350 下一步（R349 后，按 ROI）**：
-   - **(a) data 族最后 6-30 test 收口**：注册表**条目级键缓存**（`_makeRange` push 时缓存 startContainer/endContainer 的 {handle,sel} 键 + identity 校验防 stale——W20 实测 trap 读 295ns/次 × 60 条 × 8 op/轮仍可省）或随 L2 落地自然消解；残余增长（V4 探针 300 轮 70→236ms/iter）含 GC 压力成分，L2 消 proxy/host 往返后复测定性。
-   - **(b) L2 深水区专项**（identity 桥统一——R338 确认无轻量切片；R350 的 data 族残余为又一立项证据：扫描循环内 cont.parentNode host 往返 ~5µs/跳是 L2 消除对象）。
+0. **R351 下一步（R350 后，按 ROI）**：
+   - **(a) dataChange/replaceData 收口**：declared 已 426/701（2.2x）仍文件级 Timeout——残余 = R98 分支对**其他** trap 读（`__zwIsText`/`nodeType`/`parentNode` host 往返）的成本 + GC。可再评估：同款顶部短路扩展到 `__zwIsText`/`__zwChildIndex`（part05 wrapper 产物是 plain 对象，需先验证其消费路径是否走 part03 trap）；或随 L2 落地自然消解。
+   - **(b) L2 深水区专项**（identity 桥统一——R338 确认无轻量切片；R350/R351 两轮的 data 族残余为立项证据：`cont.parentNode` host 往返 ~5µs/跳、R98 分支的 getPrototypeOf 成本，均为 L2 消除对象）。
    - **(c) events 备档集巡检续**（Event-dispatch-target-moved sel 移动锚点失配随 L2；Event-dispatch-click pending:1 低优先级单 subtest）。
    - **(d) DC-7 第 4 项 default-on = M7**：待用户点名（改 Mission 级单向门）。
-0. **R341 下一步（R340 后，已执行）**：
+0. **R350 下一步（R349 后，已执行→R351）**：
    - **(a) make test 全量常态化**：A/B 清单固定含 browser/renderer crate（R333 教训延续执行）。
    - **(b) L2 深水区专项**（identity 桥统一——R338 确认无轻量切片；立项材料已齐：R324 四环节 + R328 残余 + R299 indoc + tagName 动态大写 + R338 QSA 同 turn 域）。
    - **(c) 架构项立项材料**：动画时钟 pump（events 备档收口前提）——**R341 立项细化**：基建四件已存在[engine `pipeline.pending_animation_events` 产生于 render 管线 compute_styles 后 / webview `take_pending_*_events` 取用 / renderer `page_scripts::dispatch_{transition,animation}_events` 派发 / transition_clock+animation_clock 时钟]；**缺口 = runner `take_probe` 循环无 re-style+tick 泵**（run_page_scripts 只跑脚本不重渲染，style 变更后无第二轮 compute_styles → 时钟无 tick → 事件永不产生）；切片形态 = ① pipeline 加 `tick_animation_clock`（re-compute + tick + 收集）② webview 包装 `pump_animation_clock` ③ runner take_probe 循环调用 + 复用 renderer dispatch 函数 ④ 时钟源用真实时间（probe 间隔自然推进 30ms/100ms 测试动画）。涉及 pipeline/webview/runner 三层 ~200 行，测试基建（不改 Mission）可自主推进。
@@ -1619,6 +1622,7 @@
 
 > 已完成的 milestone/切片记录到 `archive/`。
 
+- R351：M4/ranges **R350 延续收口——trap 内部键读 R98 分支顶部短路 + 条目级根缓存**（`__zwHandle`/`__zwSelector` 提到 get trap 顶部避开 R98 getPrototypeOf+CE 检查 78µs/读；`_zwEntryRootOf` identity 校验根缓存；+1333 Pass、appendData/deleteData/insertData 三文件自导入以来首次全绿、真实 Fail 20→17 零新增）→ evidence/2026-08-29-r351-trap-key-hoist.md
 - R350：M4/ranges **Range-mutations data 族 Timeout 根因修复**（live-range 注册表扫描每条目 proxy trap/host 往返；键域快道 + 恒定键读提出循环外 + 键命中后根验证三件；+789 subtest 落入 90s 窗口、全量 Fail 集合 20=20 恒等零回归、顺带修跨树同键误命中真 bug；上轮中断注释「per-op 线性」误判勘误）→ evidence/2026-08-29-r350-range-registry-scan.md
 - R349：M4 **register 路径审计 + events 剩余聚类归因**（全调用点审计无同类残留；Event-dispatch-click pending:1 确认 pre-existing；target-moved crash = sel 移动锚点失配记档随 L2）→ evidence/2026-08-29-r349-audit-and-diagnosis.md
 - R348：M4 **user action 后恢复共享 mutation 队列绑定**（execute_dom_script fresh Arc 覆盖共享队列捕获 → 用户动作后页面元素静默消失；重绑回 shared_mutations + live doc 刷新；disabled-elements 9/9 全绿、sweep 54180P 零回归）→ evidence/2026-08-29-r348-user-action-queue-restore.json
