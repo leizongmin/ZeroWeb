@@ -656,6 +656,15 @@ pub fn apply_dom_mutations_full(
     // 前序改名，其他 stale selector 仍走原错误路径不掩盖真 bug）。SetText 的 lenient no-op（R3076）
     // 保持不变。
     let mut pending: std::collections::VecDeque<DomMutation> = mutations.iter().cloned().collect();
+    // R361（js-dom M4）：**批内 detach→insert 移动语义的 detached-stash**——同一 dispatch
+    // 内 listener 执行 `parent.removeChild(target); other.appendChild(target)`（WPT
+    // Event-dispatch-target-moved）产生两条 wire：Remove{'#target'} 使 target 脱离文档 →
+    // 后续 InsertAdjacentSelElement 的 child `find_by_selector('#target')` 失配（detach
+    // 节点不在文档）→ 硬错中止整批。spec：两操作引用**同一节点对象**，insert 应复用该
+    // NodeId（reparent 移动语义）。Remove 应用时把 (selector → NodeId) 存入本批 stash；
+    // insert 类 child 解析失配时查 stash 复用（consume 后移除）。批结束即弃（跨批 stale
+    // 引用不复活——stash 生命周期 = 一批 mutation，与 handles 同级）。
+    let mut detached_stash: std::collections::HashMap<String, NodeId> = std::collections::HashMap::new();
     while let Some(mutation) = pending.pop_front() {
         // js-dom M3 R100：handle 变体在 ephemeral map 未命中时，先经持久表翻译成
         // selector 变体（重新入队；翻译产物走 selector 分支的常规校验路径）。命中
@@ -803,6 +812,9 @@ pub fn apply_dom_mutations_full(
                     && let Some(parent) = doc.get(node).and_then(|n| n.parent)
                 {
                     doc.remove_child(parent, node).map_err(|e| e.to_string())?;
+                    // R361：detached-stash 记账（selector → NodeId，本批内 insert 类
+                    // 变体 child 失配时复用——同批 detach→insert = 同一节点移动）。
+                    detached_stash.insert(selector.clone(), node);
                 }
             }
             DomMutation::CreateElement { handle, tag } => {
@@ -1063,8 +1075,14 @@ pub fn apply_dom_mutations_full(
             } => {
                 let node = find_by_selector(doc, &selector)
                     .ok_or_else(|| format!("insert_adjacent_sel_element: no match for {selector}"))?;
-                let child = find_by_selector(doc, &child_selector)
-                    .ok_or_else(|| format!("insert_adjacent_sel_element: no child match for {child_selector}"))?;
+                let child = match find_by_selector(doc, &child_selector) {
+                    Some(c) => c,
+                    // R361：child 失配（同批前序 Remove 已 detach）→ stash 复用该 NodeId
+                    //（移动语义——spec removeChild+appendChild 引用同一节点对象）。
+                    None => detached_stash
+                        .remove(child_selector.as_str())
+                        .ok_or_else(|| format!("insert_adjacent_sel_element: no child match for {child_selector}"))?,
+                };
                 insert_nodes_at_position(doc, &[child], node, &position)?;
             }
             DomMutation::SetOuterHtml { selector, html } => {

@@ -3,6 +3,8 @@
 **入口文档**: [../js-dom.md](../js-dom.md)（长期 Mission / Done Criteria / 执行协议 / 文档治理规则）
 **关联 RFC**: [../../specs/p1b-v8-native-bindings-rfc.md](../../specs/p1b-v8-native-bindings-rfc.md) + [../../specs/p1b-l2d3-unified-matcher-identity-bridge-rfc.md](../../specs/p1b-l2d3-unified-matcher-identity-bridge-rfc.md)（R166 新增——L2-d3 统一匹配器 + identity 桥设计；**v0.3 @ R354**：§6 L2 深水区专项总装——R350-R353 性能证据入册[E1-E4]+ d3 重启路线切片分解[d3d-r1/r2/r3 → d3e → P1-P3 性能片随 A 接续]；**d3d-r1 已落 @ R355**[`_zwQueryKey` 键统一 helper]；**d3d-r2 前置子片（iframe realm timer）已落 @ R356**——原「树源统一」前提经探针普查确认已由 R296-R310 收口；**d3d-r3/d3e 实用收口 @ R359**——三域探针实证无本树化收益面，M1 JS 侧实用收口达成）
 **创建日期**: 2026-08-13（goal 拆分 bootstrap）
+**本轮**: R361 — **M4：批内 detach→insert 移动语义 detached-stash（14→13——Event-dispatch-target-moved 文件级 crash 转绿）+ M2/S6 前置重估（superseded-by-default-on，M2 收口）**：巡检续——target-moved 的 R349 归因落地：同 dispatch 内 listener `parent.removeChild(target); table_row.appendChild(target)` 产生 Remove + InsertAdjacentSelElement 两条 wire，insert 的 child `find_by_selector` 在 target 已 detach 时失配硬错中止整批。修：apply 批内 **detached-stash**（Remove 记账 selector→NodeId，insert 类 child 失配查 stash 复用——spec 两操作引用同一节点对象 = reparent 移动语义；stash 生命周期 = 一批，跨批 stale 不复活）。**M2 重估**（ZW_NATIVE_DOM=1 实测：native 工厂面已装但页面 document 仍 shim 所有[R9 维持]）——S6「shim 改调 native」在 default-on 前不可达（在将被 M5/M7 删除的路径上建一次性桥），**S6 记 superseded-by-default-on 随用户点名一并达成，M2 收口**。**验证**：全量 sweep **55484P/15F/16T**（Fail 集合恰 -1 零新增）、target-moved 1P/0F、Node-removeChild/appendChild/insertBefore 全持平、host 级 +1 单测（stash 全链断言）、engine v8 2487/quickjs 1472、tab 38P/renderer 152P/integration 781P、clippy 双矩阵零警告、fmt 无 diff。→ evidence/2026-08-29-r361-target-moved-stash-s6-reeval.md
+
 **本轮**: R360 — **M4：已知 Fail 集合巡检——Document-URL 重定向语义修复（15→14——X-Zero-Final-URL 消费链三件：runner redirect.py 生成器 + shim iframe 加载头消费 + doc URL getter 读槽）；Node-isConnected iframe 语义探针深挖转档**：巡检 15 集合逐个定域——Document-URL 为唯一轻件（redirect.py 无静态文件 + shim 从不消费最终 URL 头 + detached doc URL getter 硬编码 about:blank 三层链）；修复三件（runner fetch handler 内置 redirect.py 等价生成器[同 R141 encoding.py 模式，读 location= 附 X-Zero-Final-URL]→ `_zwFinishIframeEntry` 解析头域覆盖 `doc._zwURL`+entry.url → detached doc `URL`/`documentURI` getter 读槽优先缺省不变）。**Node-isConnected 深挖转档**：探针实证 iframe 子文档 connected 缺三层独立链路（proxy append 串行合并无链/stamp 经 proxy trap 不可达/plain 工厂子不回链）——原型验证不达按边界整组回退，转档专项记档。**验证**：全量 sweep **55484P/16F/15T**（Fail 集合恰 -1 零新增）、Document-URL 1P/0F、engine v8 2486（+1 单测）/quickjs 1471、integration 781P、clippy engine+wpt-runner 双矩阵零警告、fmt 无 diff。→ evidence/2026-08-29-r360-document-url-redirect.md
 
 **本轮**: R359 — **M1/L2：d3d-r3 blast-radius 探针复核（实用收口裁定）+ iframe 工厂元素 compound QSA 收口（探针暴露唯一实缺口的轻量修复；sweep 55484P/17F/14T 零回归 +4 净正）**：按 R358 下一步 (a) 以 WPT 同构探针复核 d3d-r3 三域三点——**detached/主文档域 compound identity 全绿**（R167/R308 桥 + R322 归并已覆盖）、**主文档 append 域 host 快照语义 = R309 刻意取舍**、查询单价 19µs/次（R353 同结论：查询不是瓶颈）；唯一实缺口 = **iframe 工厂元素 own QSA 不支持 compound**（R181 简单匹配器 + 工厂域不经 JSON 往返）。**d3d-r3「本树化」按 R356 同款处理记「实用收口点」结项，d3e 随之失去独立收益面备档——L2-d3 路线 A 的 d3d 系全部收口，M1 的 JS 侧实用收口达成**。修复：own QSA 简单形态 miss 时走 `_zwParseCompoundSel` 本树 walk（`_queryTreeByCompound` 同语义；组合器/伪类仍回落空）；`[id=pb]` 无引号属性值本地预加引号（共用解析器值文法限制，零共享面风险）。**教训**：域误判第三次（`document.createElement` handle proxy 走 trap vs `iframeDoc.createElement` plain 走 own QSA——验证面必须与修复面同域）。**验证**：全量 sweep Fail 15=15 恒等、Pass +4、Timeout -4；WPT 探针复跑 MISS 面全闭；Range-mutations 全族持平；文件级门全保持；engine v8 2485（+1 单测）/quickjs 1471；clippy 双矩阵零警告；fmt 无 diff。→ evidence/2026-08-29-r359-d3dr3-blast-radius-and-compound-qsa.md
@@ -546,6 +548,7 @@
 
 | 日期 | 轮次 | 证据 | 结果 |
 |------|------|------|------|
+| 2026-08-29 | R361 | 批内 detach→insert 移动语义 detached-stash（js_dom_bridge.rs apply）+ M2/S6 前置重估（ZW_NATIVE_DOM=1 实测：页面 DOM 仍 shim 所有——S6 记 superseded-by-default-on，M2 收口）+ evidence/2026-08-29-r361-target-moved-stash-s6-reeval.md | **sweep 55484P/15F/16T——Fail 集合 14→13（target-moved 转绿）零回归**；Node-removeChild/appendChild/insertBefore 持平；host +1 单测；engine 2487/quickjs 1472/tab 38P/renderer 152P/integration 781P 绿 |
 | 2026-08-29 | R360 | 已知 Fail 集合巡检（15 集合逐个定域表）+ Document-URL 重定向语义三件链（runner redirect.py 生成器 + shim 头消费 + URL getter 读槽）+ Node-isConnected iframe 语义探针深挖转档 + evidence/2026-08-29-r360-document-url-redirect.md | **sweep 55484P/16F/15T——Fail 集合 15→14（Document-URL 转绿）零回归**；engine 2486/quickjs 1471/integration 781 绿；Node-isConnected 三层链路转档专项 |
 | 2026-08-29 | R359 | d3d-r3 blast-radius 探针复核（三域三点：detached/main identity 全绿 + 19µs/次——实用收口裁定，d3d-r3/d3e 结项备档）+ iframe 工厂元素 own QSA compound 支持（`_zwParseCompoundSel` 本树 walk + 无引号属性值归一）+ evidence/2026-08-29-r359-d3dr3-blast-radius-and-compound-qsa.md | **sweep 55484P/17F/14T——Fail 15=15 恒等零回归、Pass +4 净正**；WPT 探针 MISS 面全闭；Range-mutations 全族持平；engine 2485/quickjs 1471 绿；M1 JS 侧实用收口达成 |
 | 2026-08-29 | R358 | children 集合 scoped liveSpec 重引入 + `__zw_reset_pending_state` 快照换代清桶（part05 钩子 + 两 worker SetDomSnapshot 挂钩 + children 两分支 liveSpec）+ evidence/2026-08-29-r358-children-live-snapshot-reset.md | **sweep 55480P/17F/18T——Fail 集合 16→15（ParentNode-children 转绿）零回归**；tab R2929/R2930 + renderer 152P + single-activation 132P 哨兵全绿；browser 410P（唯一 X11 预存）；integration 781P；engine 2484/quickjs 1471 绿 |
@@ -831,6 +834,9 @@
 ---
 
 ## 下一步计划
+0. **R361 下一步（R360 后，已执行→本轮）**：
+   - **(a) 已知 Fail 集合余 13**：全部深结构/基建域（realm 族 5、MO parse-time 3、Node-isConnected iframe 专项、sel/pseudo/replacement 3）——逐项需专项立项，无轻量可达面。
+   - **(b) 主线剩余**：M5/M7 default-on（待用户点名）；M3 已达成（R100/R339）；M4 基线持续维护；M2 已收口（S6 superseded @ R361）。
 0. **R360 下一步（R359 后，已执行→本轮）**：
    - **(a) 已知 Fail 集合余 14**：全部深结构/基建域（realm 族 5、MO parse-time 3、Node-isConnected iframe 语义[本轮转档专项]、sel 锚点、pseudo、Range data 族 Timeout 2、event-global-onerror、replace-with 克隆 script）——逐个需专项立项，无轻量可达面。
    - **(b) M2（S6 高层 API 去字符串）前置重估**：M1 JS 侧实用收口后 S6 的收益面/依赖状态评估。
@@ -1665,6 +1671,7 @@
 
 > 已完成的 milestone/切片记录到 `archive/`。
 
+- R361：M4 **批内 detach→insert 移动语义 detached-stash**（Remove 记账 selector→NodeId + InsertAdjacentSelElement child 失配 stash 复用 = reparent 移动语义；14→13 已知集、sweep 55484P 零回归；M2/S6 前置重估收口[superseded-by-default-on]；engine v8 2487 +1 host 单测）→ evidence/2026-08-29-r361-target-moved-stash-s6-reeval.md
 - R360：M4 **Document-URL 重定向语义**（X-Zero-Final-URL 消费链三件：runner redirect.py 生成器 + `_zwFinishIframeEntry` 头解析 + URL/documentURI getter 读槽；15→14 已知集、sweep 55484P 零回归；Node-isConnected iframe 语义三层链路探针深挖转档专项；engine v8 2486 +1 单测）→ evidence/2026-08-29-r360-document-url-redirect.md
 - R359：M1/L2 **d3d-r3 blast-radius 复核（实用收口结项）+ iframe 工厂元素 compound QSA**（探针三域三点实证 d3d-r3 无本树化收益面、唯一实缺口 = 工厂元素 own QSA compound；`_zwParseCompoundSel` 本树 walk + 无引号 attr 归一；sweep 55484P Fail 15=15 恒等 +4 净正；engine v8 2485 +1 单测；L2-d3 d3d 系全收口、M1 JS 侧实用收口达成）→ evidence/2026-08-29-r359-d3dr3-blast-radius-and-compound-qsa.md
 - R358：M4 **children 集合 scoped liveSpec 重引入 + 快照换代清桶**（`__zw_reset_pending_state` 钩子 + 两 worker SetDomSnapshot 挂钩 + children 两分支 liveSpec；16→15 已知集、sweep 55480P 零回归、R2929/R2930/single-activation 哨兵全绿、engine v8 2484 +1 单测）→ evidence/2026-08-29-r358-children-live-snapshot-reset.md

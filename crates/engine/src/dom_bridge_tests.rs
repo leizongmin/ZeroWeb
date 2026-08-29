@@ -1395,3 +1395,42 @@ fn test_polyfill_contains_navigator() {
     let polyfill = generate_dom_api_polyfill();
     assert!(polyfill.contains("globalThis.navigator"));
 }
+
+/// R361（js-dom M4）：批内 detach→insert 移动语义的 detached-stash——同一 dispatch 内
+/// listener 执行 `parent.removeChild(target); other.appendChild(target)`（WPT
+/// Event-dispatch-target-moved）产生 Remove + InsertAdjacentSelElement 两条 wire；
+/// insert 的 child selector 在 target 已 detach 时 `find_by_selector` 失配（旧硬错中止
+/// 整批）。Remove 应用时记账 (selector → NodeId)，insert 类 child 失配查 stash 复用
+///（spec：两操作引用同一节点对象，insert 复用 = reparent 移动语义）。
+#[test]
+fn test_apply_detached_stash_move_semantics_r361() {
+    use crate::js_dom_bridge::{DomMutation, apply_dom_mutations_full, find_by_selector};
+    let html = "<html><body>\
+                <div id='parent'><div id='target'></div></div>\
+                <div id='other'></div>\
+                </body></html>";
+    let mutations = vec![
+        // ① listener: parent.removeChild(target) → target 脱离文档
+        DomMutation::Remove {
+            selector: "#target".to_string(),
+        },
+        // ② listener: other.appendChild(target)（R334 sel-child wire 形态）
+        DomMutation::InsertAdjacentSelElement {
+            selector: "#other".to_string(),
+            position: "beforeend".to_string(),
+            child_selector: "#target".to_string(),
+        },
+    ];
+    // 旧版：第 ② 条 child 失配 → Err("insert_adjacent_sel_element: no child match for
+    // #target") 中止整批。新版：stash 复用 detach 时的 NodeId → 成功（target 移入 #other）。
+    let mut doc = zero_dom::parse_html(html);
+    let result = apply_dom_mutations_full(&mut doc, &mutations, None, None);
+    assert!(
+        result.is_ok(),
+        "R361 批内 detach→insert 应复用 stash NodeId（移动语义），旧版硬错: {:?}",
+        result.err()
+    );
+    // target 现挂 #other 下（不在 #parent）。
+    let moved = find_by_selector(&doc, "#other #target");
+    assert!(moved.is_some(), "R361 target 应已在 #other 子树内（移动语义落地）");
+}
