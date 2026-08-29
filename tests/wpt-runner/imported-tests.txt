@@ -193,3 +193,4 @@ css/CSS2/margin-padding-clear/margin-bottom-043.xht css/CSS2/margin-padding-clea
 css/CSS2/borders/border-left-width-applies-to-004.xht css/reference/ref-filled-black-96px-square.xht == 2026-08-29 R3805 修复 Row 边框未参与 collapse 左右缘冲突（§17.6.2.1 Cell>Row>RowGroup）+ Column/ColumnGroup 参与接线
 css/css-content/pseudo-element-inline-box.html css/css-content/pseudo-element-inline-box-ref.html == 2026-08-30 R3806 content:url() 伪元素三段修复（Url gate + 两级注入 + IFC both-unknown 固有尺寸）
 css/CSS2/floats/zero-width-floats.html css/reference/ref-filled-green-200px-square.html == 2026-08-30 R3807 零位移 float 不构成 BFC 回避约束——负 margin BFC 流内求解修复
+css/CSS2/borders/border-left-width-applies-to-005.xht css/reference/ref-filled-black-96px-square.xht == 2026-08-30 R3810 col/colgroup 边框参与列宽 accounting（R3805 临时元组 bug 修复 + 列宽半宽 floor）

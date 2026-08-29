@@ -6,3 +6,4 @@ mod dirty;
 mod paint;
 mod pipeline;
 mod pipeline_inline;
+mod r3810_col_border_width_tests;

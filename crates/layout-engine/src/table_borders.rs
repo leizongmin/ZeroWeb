@@ -22,6 +22,127 @@ use crate::types::LayoutBox;
 /// 处理两类冲突：
 /// - 外边缘：table 边框与 cell 边框
 /// - 内部边缘：相邻 cell 之间的边框（包括 hidden/none 样式处理）
+///
+/// R3810：collapse 模式下每列左右缘的 col/colgroup 边框半宽（§17.5.2.1 列宽从
+/// 左 border 中心到右 border 中心——覆盖元素的边框一半计入该列宽度）。
+/// 来源优先级 §17.6.2.1：col > colgroup（R3805 同构）。返回 None = 非 collapse。
+/// 仅读 col 源自身边框（不与 cell/table 冲突解析）——保守：与 cell 边框竞争时
+/// chromium 取胜出边的一半，此处 cell 边框半宽已由既有 explicit-width 路径计入，
+/// 不会重复少算驱动案（border-*-width-applies-to-005/006：空 cell + colgroup 96px
+/// border-left → 列宽 floor = 48）。
+pub(crate) fn col_border_width_halves(
+    table_box: &LayoutBox,
+    grid: &TableGrid,
+    styles: &HashMap<NodeId, ComputedStyle>,
+    doc: &zero_dom::Document,
+) -> Option<Vec<(f32, f32)>> {
+    use crate::table::{get_display, get_span};
+    use zero_css_parser::values::DisplayValue;
+
+    let table_style = table_box.node_id.and_then(|id| styles.get(&id))?;
+    if !matches!(
+        table_style.border_collapse,
+        zero_style_system::BorderCollapseValue::Collapse
+    ) {
+        return None;
+    }
+    if grid.col_count == 0 {
+        return None;
+    }
+
+    // 每列的覆盖 (colgroup, col)——游标推进与 resolve_collapsed_borders 的 col_cover 同构。
+    let mut col_cover: Vec<(Option<NodeId>, Option<NodeId>)> = vec![(None, None); grid.col_count];
+    let mut cursor = 0usize;
+    for child in &table_box.children {
+        if cursor >= grid.col_count {
+            break;
+        }
+        match get_display(child, styles) {
+            Some(DisplayValue::TableColumnGroup) => {
+                let has_inner_cols = child
+                    .children
+                    .iter()
+                    .any(|c| get_display(c, styles) == Some(DisplayValue::TableColumn));
+                let rg_span = if has_inner_cols {
+                    child
+                        .children
+                        .iter()
+                        .filter(|c| get_display(c, styles) == Some(DisplayValue::TableColumn))
+                        .map(|c| get_span(c, doc))
+                        .sum::<usize>()
+                } else {
+                    get_span(child, doc)
+                };
+                let start = cursor.min(grid.col_count);
+                let end = (cursor + rg_span).min(grid.col_count);
+                let rg_id = child.node_id;
+                for slot in col_cover.iter_mut().take(end).skip(start) {
+                    slot.0 = rg_id;
+                }
+                let mut inner_cursor = cursor;
+                for inner in &child.children {
+                    if get_display(inner, styles) != Some(DisplayValue::TableColumn) {
+                        continue;
+                    }
+                    let cspan = get_span(inner, doc);
+                    let istart = inner_cursor.min(grid.col_count);
+                    let iend = (inner_cursor + cspan).min(grid.col_count);
+                    let col_id = inner.node_id;
+                    for slot in col_cover.iter_mut().take(iend).skip(istart) {
+                        slot.1 = col_id;
+                    }
+                    inner_cursor += cspan;
+                }
+                cursor += rg_span;
+            }
+            Some(DisplayValue::TableColumn) => {
+                let cspan = get_span(child, doc);
+                let start = cursor.min(grid.col_count);
+                let end = (cursor + cspan).min(grid.col_count);
+                let col_id = child.node_id;
+                for slot in col_cover.iter_mut().take(end).skip(start) {
+                    slot.1 = col_id;
+                }
+                cursor += cspan;
+            }
+            _ => {}
+        }
+    }
+
+    // 元素某侧的边框半宽（none/hidden 样式为 0；col > colgroup 优先级——先组后列，
+    // 列非零则覆盖组的值）。
+    let edge_half = |elem: Option<NodeId>, right: bool| -> f32 {
+        let Some(id) = elem else { return 0.0 };
+        let Some(es) = styles.get(&id) else { return 0.0 };
+        let (w, st) = if right {
+            (length_to_px(&es.border_right_width, es), &es.border_right_style)
+        } else {
+            (length_to_px(&es.border_left_width, es), &es.border_left_style)
+        };
+        if w <= 0.0 || matches!(st, BorderStyleValue::None | BorderStyleValue::Hidden) {
+            return 0.0;
+        }
+        w / 2.0
+    };
+
+    let mut halves = Vec::with_capacity(grid.col_count);
+    for cover in &col_cover {
+        // col 覆盖优先：col 有边框值用 col 的，否则回落 colgroup。
+        let lh = {
+            let g = edge_half(cover.0, false);
+            let c = edge_half(cover.1, false);
+            if c > 0.0 { c } else { g }
+        };
+        let rh = {
+            let g = edge_half(cover.0, true);
+            let c = edge_half(cover.1, true);
+            if c > 0.0 { c } else { g }
+        };
+        halves.push((lh, rh));
+    }
+    Some(halves)
+}
+
 pub(crate) fn resolve_collapsed_borders(
     table_box: &mut LayoutBox,
     grid: &TableGrid,
@@ -466,9 +587,17 @@ pub(crate) fn resolve_collapsed_borders(
                 let mut win_color = color_value_to_u32(&table_style.border_left_color, &table_style.color);
                 let mut win_src = BorderSource::Table;
                 // R3805：ColumnGroup → Column 依次解析（col 覆盖列的列级来源优先于组级）。
+                // R3810：改为就地可变元组——旧代码传 `&mut (win_w, win_s.clone(), …)` 临时
+                // 副本，resolve_element_side 的胜出结果随临时值丢弃，col/colgroup 边框从未
+                // 真正进入 winner（border-*-width-applies-to-005/006 的 col 边框失权根因）。
                 let cover = col_cover.get(cell.col_start).copied().unwrap_or((None, None));
-                resolve_element_side(&mut (win_w, win_s.clone(), win_color, win_src), cover.0, 3, styles);
-                resolve_element_side(&mut (win_w, win_s.clone(), win_color, win_src), cover.1, 3, styles);
+                let mut cover_win = (win_w, win_s.clone(), win_color, win_src);
+                resolve_element_side(&mut cover_win, cover.0, 3, styles);
+                resolve_element_side(&mut cover_win, cover.1, 3, styles);
+                win_w = cover_win.0;
+                win_s = &cover_win.1;
+                win_color = cover_win.2;
+                win_src = cover_win.3;
                 if let Some((rg_w, rg_s, rg_c)) = rg_info {
                     let winner = resolve_border((win_w, win_s, win_src), (rg_w, rg_s, BorderSource::RowGroup));
                     if winner == BorderSource::RowGroup {
@@ -583,10 +712,16 @@ pub(crate) fn resolve_collapsed_borders(
                 let (mut win_w, mut win_s) = (table_br, &table_style.border_right_style as &BorderStyleValue);
                 let mut win_color = color_value_to_u32(&table_style.border_right_color, &table_style.color);
                 let mut win_src = BorderSource::Table;
-                // R3805：ColumnGroup → Column 依次解析（镜像左缘）。
+                // R3805：ColumnGroup → Column 依次解析（镜像左缘）。R3810 同左缘改就地
+                // 可变元组（临时副本丢弃胜出结果的同根因）。
                 let cover = col_cover.get(cell.col_start).copied().unwrap_or((None, None));
-                resolve_element_side(&mut (win_w, win_s.clone(), win_color, win_src), cover.0, 1, styles);
-                resolve_element_side(&mut (win_w, win_s.clone(), win_color, win_src), cover.1, 1, styles);
+                let mut cover_win = (win_w, win_s.clone(), win_color, win_src);
+                resolve_element_side(&mut cover_win, cover.0, 1, styles);
+                resolve_element_side(&mut cover_win, cover.1, 1, styles);
+                win_w = cover_win.0;
+                win_s = &cover_win.1;
+                win_color = cover_win.2;
+                win_src = cover_win.3;
                 if let Some((rg_w, rg_s, rg_c)) = rg_info {
                     let winner = resolve_border((win_w, win_s, win_src), (rg_w, rg_s, BorderSource::RowGroup));
                     if winner == BorderSource::RowGroup {

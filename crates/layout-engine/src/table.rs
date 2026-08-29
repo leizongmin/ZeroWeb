@@ -791,6 +791,19 @@ fn compute_column_widths(
         }
     }
 
+    // R3810：collapse 模式下列左右缘 col/colgroup 边框半宽计入列宽（CSS2 §17.5.2.1
+    // 列宽从左 border 中心到右 border 中心；§17.6.2.1 col 边框参与列缘冲突）。
+    // border-*-width-applies-to-005/006：空 cell（auto 宽 0）+ colgroup border-left
+    // 1in → 列 0 宽 = 右半 48，表宽 = 外半 48 + 48 = 96（chromium CDP 实证）。
+    let col_border_halves = crate::table_borders::col_border_width_halves(table_box, grid, styles, doc);
+    if let Some(ref halves) = col_border_halves {
+        for (i, (lh, rh)) in halves.iter().enumerate() {
+            if i < col_count {
+                col_max_widths[i] = col_max_widths[i].max(lh + rh);
+            }
+        }
+    }
+
     // Pass 1：非跨列单元格设置列宽
     for row in &grid.rows {
         let Some(row_box) = get_row_box(table_box, row) else {
