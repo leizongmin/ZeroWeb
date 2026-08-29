@@ -2436,6 +2436,11 @@ fn run_testharness_html_inner(
         // 截断为 ScriptError::Timeout，单用例 Fail 收场，不再卡死整套 runner（case
         // 级 CASE_TIMEOUT 只在 run_page_scripts 返回后 tick，同步脚本死循环拦不到）。
         // 阈值取 CASE_TIMEOUT_LONG 同量级放宽（90s > 60s mega-case 正常脚本段）。
+        // R350 实测（探针归档 evidence/2026-08-29-r350-range-registry-scan.md）：
+        // Range-mutations dataChange 族 90s 截断的根因是 shim `__zwLiveRanges` 注册表
+        // 随用例序列线性增长后，R260/R262/R263 adjust 对全部历史条目全量扫描 → 每用例
+        // 二次方累积（非固定 per-op 成本，放宽超时无解）；同轮已在 shim 侧加跨树根守卫
+        // 修复，90s 对修复后的单用例余量充足。
         script_timeout_ms: 90_000,
         // R34xx：headless 图片源——wpt.test/images/* 映射到本地 wpt-data 目录
         //（testharness 无网络；G5 DOM img 源解锁依赖图片加载）。

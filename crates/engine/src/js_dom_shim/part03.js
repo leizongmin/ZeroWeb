@@ -6645,10 +6645,40 @@
   // 的 insertData/deleteData/replaceData（注册表 __zwLiveRanges 由 part06
   // _makeRange 登记，跨 part 经 globalThis 交付）。
   // https://dom.spec.whatwg.org/#concept-node-replace-data
+  // R350（js-dom M4）：**跨树 range 条目的根守卫**——R350 探针实测 Range-mutations
+  // dataChange 族 90s 截断的根因不是 per-op 固定成本，而是 `__zwLiveRanges` 注册表
+  // （8192 环形缓冲）随用例序列线性增长后，R260/R262/R263 三处 adjust 对**全部历史
+  // 条目**逐条做 `inRemovedSubtree`/sameNode 键比对（每条目高至 128 跳 parentNode
+  // 遍历 + try/catch 属性读）→ 每用例 O(注册表 × ops) 二次方累积（实测 150 迭代
+  // 9s → 500 迭代 >100s，90s 截断）。**守卫语义**：boundary point 不在 mutation
+  // 节点所在树（两者上行到无父节点的"根"不同）的 range 条目，三域身份键
+  //（identity/__zwHandle/__zwSelector+ChildIndex）都不可能命中——identity 需同对象，
+  // sel/handle 键是文档内锚定字符串，跨树同为巧合而非同节点。跨树条目直接跳过：
+  // ① 消除死条目（前代树重建后的孤儿 range——testDiv 每轮 removeChild 重建形态）
+  // 的全量扫描成本；② 顺带修掉一个真 bug：跨树同 selector 字符串的旧条目此前可被
+  // 键匹配误命中并篡改其 offset。守卫保守性：同树（含 detached 子树与 mutation
+  // 节点同根，如 detachedPara1 域）不跳过，行为与旧路径完全一致。
+  // https://dom.spec.whatwg.org/#concept-node-replace-data
+  function _zwRangeRootOf(node350) {
+    var cur350 = node350, hops350 = 0;
+    while (cur350 && hops350++ < 512) {
+      var p350 = null;
+      try { p350 = cur350.parentNode; } catch (_e350p) { return cur350; }
+      if (!p350) return cur350;
+      cur350 = p350;
+    }
+    return cur350;
+  }
+  function _zwRangeRootDiffers(a350, b350) {
+    if (!a350 || !b350) return false; // 缺容器（未初始化 range）不跳过，走旧路径兜底
+    try { return _zwRangeRootOf(a350) !== _zwRangeRootOf(b350); } catch (_e350r) { return false; }
+  }
   function _zwAdjustRangesForData(node260, offset260, count260, insertLen260) {
     try {
       var regs260 = globalThis.__zwLiveRanges;
       if (!regs260 || !regs260.length) return;
+      // R350：mutation 节点所在树之外的条目不可能匹配（见 _zwRangeRootDiffers 文档）。
+      var nodeRoot260 = _zwRangeRootOf(node260);
       // R260：文本节点的跨形态逻辑身份匹配——三域三键：
       // ① identity（plain 域，_zwMText 等闭包对象稳定）；
       // ② __zwHandle 字符串（handle/proxy 域，单次 get trap 产物 identity 不稳定）；
@@ -6670,9 +6700,15 @@
           }
         }
       } catch (_e260p) {}
+      // R350：键域快道——mutation 节点无 handle/sel 键时（plain 工厂域），跨域键比对
+      // 必不命中（R350 探针 W17/W18：条目容器 `__zwHandle` 读走 proxy get trap 全链，
+      // ~0.5-1.7µs/读 × 每条目 2 容器 × 2 键，注册表长时为扫描成本主体）。快道下
+      // 仅 identity 可命中——O(1)/条目。键读只发生在「mutation 节点确有键」时
+      //（handle/proxy 域，真实键比对才有语义）。
+      var keyed260 = h260 != null || p260sel != null || p260ph != null;
       var sameNode260 = function (cont) {
         if (cont === node260) return true;
-        if (!cont) return false;
+        if (!cont || !keyed260) return false;
         try {
           if (h260 != null && typeof cont.__zwHandle === 'string' && cont.__zwHandle === h260) return true;
           if ((p260sel != null || p260ph != null) && cont.__zwIsText
@@ -6684,6 +6720,17 @@
         } catch (_e260c) {}
         return false;
       };
+      // R350：**键命中后根验证**——跨树同键（selector/handle 字符串巧合相等）条目不得
+      // 应用调整（探针实证旧树死条目可被新树同键误命中并篡改 offset——真 bug）。
+      // 根验证（root walk 穿 proxy parentNode，每跳 host 往返 ~5µs）从「每条目前置」
+      // 改为「sameNode 命中后」执行——常态路径 identity/键 miss 短路，root walk 只在
+      // 罕见的键命中时付（W21 实测：前置式 60 条目 × 2 容器 root walk = 1.66ms/append；
+      // 后置式 ≈ 0）。同树（同根）命中行为与旧路径一致。
+      var sameNode260Verified = function (cont) {
+        if (!sameNode260(cont)) return false;
+        if (cont === node260) return true;
+        return !_zwRangeRootDiffers(cont, nodeRoot260);
+      };
       for (var i260 = 0; i260 < regs260.length; i260++) {
         var rg260 = regs260[i260];
         if (!rg260) continue;
@@ -6693,7 +6740,7 @@
         //（被替换区间内的边界点折叠到替换起点——非 offset+insertLen）；
         // ③ off > offset+count → + insertLen − count。
         var adj260 = function (cont, off) {
-          if (!sameNode260(cont)) return off;
+          if (!sameNode260Verified(cont)) return off;
           if (off <= offset260) return off;
           if (off <= offset260 + count260) return offset260;
           return off + insertLen260 - count260;
@@ -6724,6 +6771,9 @@
     try {
       var regs262 = globalThis.__zwLiveRanges;
       if (!regs262 || !regs262.length || !removed262) return;
+      // R350：被移除节点所在树之外的条目不可能匹配（跨树守卫，见 _zwRangeRootDiffers 文档；
+      // 调用时机契约 = 先于树状态变化，被移除节点此时仍在树内，根即当前树）。
+      var rmRoot262 = _zwRangeRootOf(removed262);
       // 移除前快照（调用时机契约：先于树状态变化）。
       var oldParent262 = null, oldIndex262 = -1;
       try {
@@ -6736,10 +6786,20 @@
       } catch (_e262p) {}
       if (!oldParent262 || oldIndex262 < 0) return;
       // 四域身份键（与 _zwAdjustRangesForData 的 sameNode260 同源）。
+      // R350：键域快道——removed 节点无 handle/sel 键时（plain 工厂域），跨域键比对
+      // 必不命中（探针 W17/W18：条目容器键读走 proxy get trap 全链 ~0.5-1.7µs/读，
+      // 注册表长时为扫描成本主体）；快道下 identity-only，O(1)/条目。键读（oldParent
+      // 的 handle/sel）提出循环外——旧实现 sameParent262 每条目重读一次。
       var h262 = null;
       try { h262 = typeof removed262.__zwHandle === 'string' ? removed262.__zwHandle : null; } catch (_e262h) {}
       var s262 = null;
       try { s262 = typeof removed262.__zwSelector === 'string' ? removed262.__zwSelector : null; } catch (_e262s) {}
+      var keyed262 = h262 != null || s262 != null;
+      var ph262 = null, ps262 = null;
+      if (keyed262) {
+        try { ph262 = typeof oldParent262.__zwHandle === 'string' ? oldParent262.__zwHandle : null; } catch (_e262ph) {}
+        try { ps262 = typeof oldParent262.__zwSelector === 'string' ? oldParent262.__zwSelector : null; } catch (_e262ps) {}
+      }
       var sameNode262 = function (cont) {
         if (cont === removed262) return true;
         if (!cont) return false;
@@ -6749,13 +6809,20 @@
         } catch (_e262c) {}
         return false;
       };
+      // R350：键命中后根验证（跨树同键条目不得应用——与 R260 sameNode260Verified 同设计；
+      // root walk 只在键命中时付，常态路径 identity/键 miss 短路）。
+      var sameNode262Verified = function (cont) {
+        if (!sameNode262(cont)) return false;
+        if (cont === removed262) return true;
+        return !_zwRangeRootDiffers(cont, rmRoot262);
+      };
       // spec「node is removed node or a descendant of it」——沿 parentNode 上行
       //（128 跳防环；proxy 域 parentNode 经 trap 返父 proxy，identity 由父级
       // sameNode262 判定）。
       var inRemovedSubtree262 = function (cont) {
         var cur = cont, hops = 0;
         while (cur && hops++ < 128) {
-          if (sameNode262(cur)) return true;
+          if (sameNode262Verified(cur)) return true;
           try { cur = cur.parentNode; } catch (_e262u) { return false; }
         }
         return false;
@@ -6763,18 +6830,19 @@
       // 边界容器是否逻辑等于 oldParent（三键：identity / handle / sel）。
       var sameParent262 = function (cont) {
         if (cont === oldParent262) return true;
-        if (!cont) return false;
+        if (!cont || !keyed262) return false;
         try {
-          if (h262 == null && s262 == null) return false;
-          if (h262 != null && typeof cont.__zwHandle === 'string' && cont.__zwHandle === h262) return false;
-          if (s262 != null && typeof cont.__zwSelector === 'string' && cont.__zwSelector === s262) return false;
-          var ph = null, ps = null;
-          try { ph = typeof oldParent262.__zwHandle === 'string' ? oldParent262.__zwHandle : null; } catch (_e262ph) {}
-          try { ps = typeof oldParent262.__zwSelector === 'string' ? oldParent262.__zwSelector : null; } catch (_e262ps) {}
-          if (ph != null && typeof cont.__zwHandle === 'string') return cont.__zwHandle === ph;
-          if (ps != null && typeof cont.__zwSelector === 'string') return cont.__zwSelector === ps;
+          if (ph262 == null && ps262 == null) return false;
+          if (ph262 != null && typeof cont.__zwHandle === 'string') return cont.__zwHandle === ph262;
+          if (ps262 != null && typeof cont.__zwSelector === 'string') return cont.__zwSelector === ps262;
         } catch (_e262pc) {}
         return false;
+      };
+      // R350：sameParent 命中后根验证（同上——防跨树同 selector 键误命中）。
+      var sameParent262Verified = function (cont) {
+        if (!sameParent262(cont)) return false;
+        if (cont === oldParent262) return true;
+        return !_zwRangeRootDiffers(cont, rmRoot262);
       };
       for (var _r262r = 0; _r262r < regs262.length; _r262r++) {
         var rg262 = regs262[_r262r];
@@ -6786,7 +6854,7 @@
             rg262.startContainer = oldParent262;
             rg262._startOffsetBase = oldIndex262;
             rg262._mode = null;
-          } else if (sameParent262(rg262.startContainer)) {
+          } else if (sameParent262Verified(rg262.startContainer)) {
             // ② 边界在 oldParent 且 offset > oldIndex → −1。
             var so262 = rg262._startOffsetBase != null ? rg262._startOffsetBase : rg262.startOffset;
             if (so262 > oldIndex262) rg262._startOffsetBase = so262 - 1;
@@ -6795,7 +6863,7 @@
             rg262.endContainer = oldParent262;
             rg262._endOffsetBase = oldIndex262;
             rg262._mode = null;
-          } else if (sameParent262(rg262.endContainer)) {
+          } else if (sameParent262Verified(rg262.endContainer)) {
             var eo262 = rg262._endOffsetBase != null ? rg262._endOffsetBase : rg262.endOffset;
             if (eo262 > oldIndex262) rg262._endOffsetBase = eo262 - 1;
           }
@@ -6817,6 +6885,8 @@
     try {
       var regs263 = globalThis.__zwLiveRanges;
       if (!regs263 || !regs263.length || !inserted263) return;
+      // R350：插入节点所在树之外的条目不可能匹配（跨树守卫，同上）。
+      var insRoot263 = _zwRangeRootOf(inserted263);
       var newParent263 = null, newIndex263 = -1;
       try {
         newParent263 = inserted263.parentNode || null;
@@ -6828,27 +6898,40 @@
       } catch (_e263p) {}
       if (!newParent263 || newIndex263 < 0) return;
       // 父匹配（与 R262 sameParent262 同款三键：identity / handle / sel）。
+      // R350：键读提出循环外 + 键域快道——newParent 无 handle/sel 键时（plain 工厂域
+      // append；探针 W7/W18 实测 60 条目 × 30 append：native 9.86ms vs 快道 0.21ms）
+      // 跨域键比对必不命中，identity-only O(1)/条目；键读（proxy trap 链 ~0.5-1.7µs/读）
+      // 只发生在「newParent 确有键」时，且不再每条目重读 newParent 的键。
+      var ph263 = null, ps263 = null;
+      try { ph263 = typeof newParent263.__zwHandle === 'string' ? newParent263.__zwHandle : null; } catch (_e263ph) {}
+      try { ps263 = typeof newParent263.__zwSelector === 'string' ? newParent263.__zwSelector : null; } catch (_e263ps) {}
+      var keyed263 = ph263 != null || ps263 != null;
       var sameParent263 = function (cont) {
         if (cont === newParent263) return true;
-        if (!cont) return false;
+        if (!cont || !keyed263) return false;
         try {
-          var ph263 = null, ps263 = null;
-          try { ph263 = typeof newParent263.__zwHandle === 'string' ? newParent263.__zwHandle : null; } catch (_e263ph) {}
-          try { ps263 = typeof newParent263.__zwSelector === 'string' ? newParent263.__zwSelector : null; } catch (_e263ps) {}
           if (ph263 != null && typeof cont.__zwHandle === 'string') return cont.__zwHandle === ph263;
           if (ps263 != null && typeof cont.__zwSelector === 'string') return cont.__zwSelector === ps263;
         } catch (_e263pc) {}
         return false;
       };
+      // R350：sameParent 命中后根验证（跨树同键条目不得应用——与 R262 同设计；
+      // root walk 穿 proxy parentNode 每跳 host 往返 ~5µs[W21]，从「每条目前置」
+      // 改为「键命中后」，常态路径 O(1)）。
+      var sameParent263Verified = function (cont) {
+        if (!sameParent263(cont)) return false;
+        if (cont === newParent263) return true;
+        return !_zwRangeRootDiffers(cont, insRoot263);
+      };
       for (var _r263r = 0; _r263r < regs263.length; _r263r++) {
         var rg263 = regs263[_r263r];
         if (!rg263) continue;
         try {
-          if (sameParent263(rg263.startContainer)) {
+          if (sameParent263Verified(rg263.startContainer)) {
             var so263 = rg263._startOffsetBase != null ? rg263._startOffsetBase : rg263.startOffset;
             if (so263 > newIndex263) rg263._startOffsetBase = so263 + 1;
           }
-          if (sameParent263(rg263.endContainer)) {
+          if (sameParent263Verified(rg263.endContainer)) {
             var eo263 = rg263._endOffsetBase != null ? rg263._endOffsetBase : rg263.endOffset;
             if (eo263 > newIndex263) rg263._endOffsetBase = eo263 + 1;
           }
