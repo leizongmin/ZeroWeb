@@ -1259,6 +1259,32 @@
   // 自身（_zwQWrapMap 槽），树变更经 setAttribute/appendChild 等方法面惰性失效
   //（key 含 outer——树变更后 outer 变化自然 miss；map 代际由 root 的 mutation
   // 方法不直接 hook，靠 outer-key 差异近似 + Map 上限防爆增长：>512 清空）。
+  // R355（js-dom M1 L2-d3d-r1，RFC v0.3 §6.2 路线 A 首片）：**归一缓存键统一
+  // helper**——此前三处键构造各自为政：① `_zwWrapCached`（doc 级，R170 双形态
+  // 兼容但**无** empty-ns 剥离、**无** dup-seq）；② `_zwMWrapCached`（element
+  // 级，单形态读 `.tag`/`.outer`，有剥离有 dup-seq）；③ `_zwMFindRealNode` 的
+  // walk 键（真节点字段名 `nodeName`/`outerHTML` + 剥离）。键空间分裂使跨面
+  // 归一依赖各处约定——R171 的 `:enabled` +2（两路径归一缓存键命中不同步）即
+  // 此机制的实证。本 helper 为**唯一**键构造入口：双形态入参（JSON `.tag`/`.outer`
+  // 与真节点 `.tagName`/`.outerHTML`）+ empty-ns 标记剥离（R307）+ `_zwDupSeq`
+  // 后缀（R188）。行为等价性：① 剥离对不含标记的 host `.outer` 无操作（R307
+  // 已证），对真节点 `outerHTML` 使键与 walk 键对齐（消一处键空间分裂，方向
+  // 与 R307 相同）；② dup-seq 由 info._zwDupSeq 是否存在驱动——doc 级路径从不
+  // 设置该字段，行为不变。
+  function _zwQueryKey(info355) {
+    var tag355 = '', id355 = '', outer355 = '';
+    if (info355 && typeof info355 === 'object') {
+      tag355 = String(info355.tag != null && info355.tag !== '' ? info355.tag : (info355.tagName || '')).toLowerCase();
+      id355 = String(info355.id || '');
+      outer355 = String(info355.outer != null ? info355.outer : (info355.outerHTML != null ? info355.outerHTML : ''));
+    }
+    // R307：empty-ns 标记剥离（真节点 outerHTML 含 `data-zw-empty-ns=""`，
+    // host JSON info.outer 不含——键空间统一以剥离后形态为准）。
+    var key355 = tag355 + '\x1f' + id355 + '\x1f' + outer355.split(' data-zw-empty-ns=""').join('');
+    // R188：同键出现序号后缀（仅 element 级 QSA 对同构重复元素设置）。
+    if (info355 && info355._zwDupSeq) key355 += '\x1f#' + info355._zwDupSeq;
+    return key355;
+  }
   // R167（js-dom M1 L2-d3b）：root 子树真实节点索引——键 tag+id+outer（与
   // wrapper 缓存/桥同键空间；R163 fragment nodeIdx 的共用化提取）。挂 root 槽
   // `_zwNodeIdx`，首次访问 DFS 建一次；key 含 outer 使树变更后查 miss → 上层
@@ -1307,7 +1333,9 @@
         var _r307El = n.nodeType === 1;
         if (_r307El) {
           try {
-            var nk = String(n.nodeName || '').toLowerCase() + '\x1f' + String(n.id || '') + '\x1f' + _r307Strip(n.outerHTML || n._zwOuterFallback || '');
+            // R355（d3d-r1）：walk 键经统一 helper——真节点字段（tagName/outerHTML）
+            // 形态 + outer 回落（`_zwOuterFallback`）经 helper 的 outer 兜底读取。
+            var nk = _zwQueryKey({ tagName: n.nodeName, id: n.id, outer: (n.outerHTML != null ? n.outerHTML : n._zwOuterFallback), _zwDupSeq: 0 });
             if (nk) {
               // R188：同键多真节点存数组（DFS 序）——id-li-duplicate 等同构元素的
               // identity 分离（querySelectorAll 的 _zwDupSeq 语义）。
@@ -1351,12 +1379,9 @@
       map = new Map();
       try { root._zwQWrapMap = map; } catch (_e158m) {}
     }
-    var key = String(info && info.tag || '') + '\x1f' + String(info && info.id || '') + '\x1f' + String(info && info.outer || '').split(' data-zw-empty-ns=""').join('')
-      // R188：重复键出现序（querySelectorAll 的同构多元素 identity 分离——见
-      // Element.prototype.querySelectorAll 的 _zwDupSeq 注释）。
-      // R307：outer 段 empty-ns 标记归一（与 _zwMFindRealNode 的 walk 键同源——
-      // 真节点 outerHTML 含标记 vs JSON info.outer 不含，键恒 miss）。
-      + (info && info._zwDupSeq ? '\x1f#' + info._zwDupSeq : '');
+    // R355（d3d-r1）：键构造统一走 `_zwQueryKey`（双形态 + empty-ns 剥离 +
+    // dup-seq；原内联三段键构造删除——语义逐字段等价，见 helper 文档）。
+    var key = _zwQueryKey(info);
     // R167（js-dom M1 L2-d3b）：**桥归一前置**——wrapper 构造前先在 root 子树找
     // 同键真实节点（mutTree `_zwMEl`，d3a 起已入桥），命中即返其桥对象（首登
     // 者胜 = 节点本体）。查询产物与 traverse/mutation 面跨面 identity 统一
@@ -1417,7 +1442,9 @@
       // 字段——真节点读 `.tag` undefined）。
       if (_r188Info && _r188Info.tag !== undefined) {
         try {
-          _r188Key = String(_r188Info.tag || '') + '\x1f' + String(_r188Info.id || '') + '\x1f' + String(_r188Info.outer || '');
+          // R355（d3d-r1）：seen 键同走统一 helper（此分支 info 恒 JSON 形态
+          // [上方 .tag !== undefined 守卫]，helper 的双形态/剥离对此等价）。
+          _r188Key = _zwQueryKey(_r188Info);
         } catch (_e188k) { _r188Key = null; }
       }
       if (_r188Key != null) {
@@ -7647,7 +7674,12 @@
       // compound/tag 门直出真节点后再经本函数二次包装）。旧版只读 `.tag`：真节点
       // 入参时 tag 段空 → 键撞车命中无关缓存（gate-on 下 getElementById 返空壳
       // 的根因，R170 probe DBG 实证 N:DIV 直出正常、外层包装后变空）。
-      var key = String(info && (info.tag || (info.tagName || '').toLowerCase()) || '') + '\x1f' + String(info && info.id || '') + '\x1f' + String(info && (info.outer != null ? info.outer : info.outerHTML) || '');
+      // R355（d3d-r1）：键构造统一走 `_zwQueryKey`（helper 内含双形态 + empty-ns
+      // 剥离 + dup-seq）。行为等价性：host JSON `.outer` 从不含 empty-ns 标记
+      // [R307]，剥离为无操作；真节点 `outerHTML` 含标记时键与 `_zwMFindRealNode`
+      // 的 walk 键对齐（消一处键空间分裂，方向同 R307）；doc 级路径从不设置
+      // `_zwDupSeq`，dup-seq 分支不触发。
+      var key = _zwQueryKey(info);
       // R296（js-dom M4）：**结构元素桥归一**——wrapper 的 tag 是 html/body/head
       // 时直返 doc 视图对象（documentElement/body/head——与 traverse 树遍历
       // firstChild/nextSibling 读到的 identity 一致；WPT ParentNode-querySelector

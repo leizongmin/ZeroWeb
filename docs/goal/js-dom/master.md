@@ -1,8 +1,9 @@
 # JS/DOM 原生化 — 主控面板（master.md）
 
 **入口文档**: [../js-dom.md](../js-dom.md)（长期 Mission / Done Criteria / 执行协议 / 文档治理规则）
-**关联 RFC**: [../../specs/p1b-v8-native-bindings-rfc.md](../../specs/p1b-v8-native-bindings-rfc.md) + [../../specs/p1b-l2d3-unified-matcher-identity-bridge-rfc.md](../../specs/p1b-l2d3-unified-matcher-identity-bridge-rfc.md)（R166 新增——L2-d3 统一匹配器 + identity 桥设计；**v0.3 @ R354**：§6 L2 深水区专项总装——R350-R353 性能证据入册[E1-E4]+ d3 重启路线切片分解[d3d-r1/r2/r3 → d3e → P1-P3 性能片随 A 接续]）
+**关联 RFC**: [../../specs/p1b-v8-native-bindings-rfc.md](../../specs/p1b-v8-native-bindings-rfc.md) + [../../specs/p1b-l2d3-unified-matcher-identity-bridge-rfc.md](../../specs/p1b-l2d3-unified-matcher-identity-bridge-rfc.md)（R166 新增——L2-d3 统一匹配器 + identity 桥设计；**v0.3 @ R354**：§6 L2 深水区专项总装——R350-R353 性能证据入册[E1-E4]+ d3 重启路线切片分解[d3d-r1/r2/r3 → d3e → P1-P3 性能片随 A 接续]；**d3d-r1 已落 @ R355**[`_zwQueryKey` 键统一 helper]）
 **创建日期**: 2026-08-13（goal 拆分 bootstrap）
+**本轮**: R355 — **M1/L2：d3d-r1「产物归一路径统一」land——`_zwQueryKey` 归一缓存键统一 helper（四处键构造合流；全量双路径逐计数一致零回归；L2-d3 RFC v0.3 §6.2 路线 A 首片完成）**：四处键构造（`_zwWrapCached` doc 级[双形态无剥离无 dup-seq]、`_zwMWrapCached` element 级[单形态有剥离有 dup-seq]、`_zwMFindRealNode` walk 键[真节点字段+剥离]、Element QSA `_r188Seen`[单形态]）合流为单一 helper `_zwQueryKey(info)`：双形态入参（`.tag`/`.tagName` + `.outer`/`.outerHTML`，R170 语义）+ empty-ns 剥离（R307）+ `_zwDupSeq` 后缀（R188）。**行为等价性论证**：host `.outer` 不含标记（剥离 no-op）；`_zwWrapCached` 真节点入参的 outerHTML 此前键含标记、现与 walk 键对齐——消一处键空间分裂（R307 同向修复而非回归）；doc 级不设 `_zwDupSeq`（分支不触发）；`_zwMWrapCached` 真节点入参路径今天不存在（helper 双形态读取为 d3d-r3 前置铺路）。**验证（d3d-r1 门）**：全量 dom sweep 55480P/19F/16T——真实 Fail 集合 17=17 已知集合恒等零新增零丢失、Pass -4 为 Timeout 轮转族；文件级门 QSA 1976P / Element-matches 675P / appendData 384P / MO-attributes 42P 逐计数一致；make test 仅 XOpenDisplayFailed 环境项；fmt 无 diff；v8 clippy `-D warnings` 零警告；quickjs 矩阵 clippy 零警告 + quickjs engine lib 1471 passed。**价值**：d3d 重启前置之一完成——R171 的 `:enabled` +2 时序机制的键空间分裂根源收口，d3d-r2（iframe 树源）具备启动条件。→ evidence/2026-08-29-r355-d3dr1-query-key-unification.md
 **本轮**: R354 — **M1/L2：L2 深水区专项总装——L2-d3 RFC v0.2→v0.3（§6 新增：R350-R353 四轮性能证据入册 E1-E4 + d3 重启路线切片总装 d3d-r1/r2/r3→d3e→P1-P3）**：R353 定案「data 族尾部并入 L2 专项」后，本轮把散落材料总装成可执行路线（纯文档，零源码改动）。**§6.1 立项证据四条全量化**——E1 adjust 扫描（键读 78µs/读、根 walk 5µs/跳、已修后形态依赖 0.35ms/条）/ E2 `cont.parentNode` host 往返（每跳 ~5µs）/ E3 R98 分支（每字符串属性读 78µs，内部键已短路[R351]页面读仍付）/ E4 游离树堆积查询（qs+rm 32ms/iter）；**共同根因 = polyfill 桥 JS↔host 双源架构**（正是父 RFC §3.7 L2 定义）。**§6.2 切片总装**——路线 A（identity 维度，d3d 历史失败根因）：d3d-r1 归一缓存键构造统一 helper（消 R171 `:enabled` +2 时序机制，纯重构行为等价可独立 land）→ d3d-r2 iframe 树源统一[§2.4-2] → d3d-r3 element/fragment 本树化重启 → d3e 组合器本树化；路线 B（性能片）：P1 range adjust 活节点遍历化（目标 data 族五文件全绿）/ P2 游离堆积查询恒定化 / P3 trap 面收缩统计——**P1-P3 依赖 A 的 live doc 直读面，A 完成前挂起不设轮次预期**。**边界重申**：R309 QSA 同 turn 域不属 d3d-r3；dataChange 尾部不再独立切片[R353 定案]。**价值**：L2 主线从「深水区无轻量切片」的观望态转为**按片领取**的执行态——下轮可直接领 d3d-r1（行为等价纯重构，验证门 = 全量双路径逐计数一致）。→ RFC v0.3 §6
 **本轮**: R353 — **M4/ranges：dataChange 尾部收口前归因（诊断轮，零 land）——增长完全由 range 创建驱动（noRange 对照 0.65ms vs full 32ms），R262 对「每轮先摘」形态 stale 注册表线性 0.35ms/条（W6：40→100 条 = 14→31ms），定性为 WPT mega-case 特化形态、转 L2 专项合并**：R352 定案「查询面」后收口前归因——W1 实测 `querySelector("#test")` 单价 0.014ms（**修正 R352 的查询面猜想：查询不是瓶颈**）；W2 分段唯一增长段 = qs+rm；W3 四分差锁定 range 创建驱动；W4/W5 插桩 removeChild 35.3ms 中 R262 单次调用占 34.9ms（calls=1）；W6 规模扫描线性 0.35ms/条。**形态依赖性**：「每轮先摘」（= setupRangeTests 真实形态）vs「堆积不摘」（R352 W15：60 条 0.06ms）两形态下 removed/容器根关系相反、快道走向相反，但差 3 个数量级——0.35ms/条成本不在已测的键读/根比较（均 ns 级[W11]），候选 = R262 超大 try/catch 函数的 V8 deopt 或未覆盖 trap 读，留 L2 专项。**ROI 判定**：真实页面不会堆积百个游离树+百个 range（WPT mega-case 特化），declared 已 448（91%）；插桩完全移除（part03 与 R352 落地态逐字节一致），零 land 归档。**方法论教训**：W15（0.06ms）与 W6（0.35ms/条）都是真测量——测量形态决定 removed-容器根关系与快道分支走向；性能归因最终确认必须在**与真实用例逐字节同构的形态**下做。→ evidence/2026-08-29-r353-detached-shape-attribution.md
 
@@ -535,6 +536,7 @@
 
 | 日期 | 轮次 | 证据 | 结果 |
 |------|------|------|------|
+| 2026-08-29 | R355 | d3d-r1 产物归一路径统一 land（`_zwQueryKey` 归一缓存键统一 helper：四处键构造合流，双形态+empty-ns 剥离+dup-seq）+ evidence/2026-08-29-r355-d3dr1-query-key-unification.md | **全量 sweep 真实 Fail 17=17 已知集合恒等零回归**；文件级门 QSA 1976P/Element-matches 675P/appendData 384P/MO-attributes 42P 逐计数一致；quickjs 矩阵 clippy+engine lib 1471P 绿；d3d 重启前置之一完成 |
 | 2026-08-29 | R354 | L2 深水区专项总装（L2-d3 RFC v0.2→v0.3：§6 立项证据 E1-E4 入册 + 切片总装[路线 A d3d-r1/r2/r3→d3e + 路线 B P1-P3 随 A 接续] + 边界重申）| **纯文档轮**：L2 主线转「按片领取」执行态；下轮首选 d3d-r1（归一缓存键统一 helper，行为等价纯重构） |
 | 2026-08-29 | R353 | dataChange 尾部收口前归因（W1 查询单价 0.014ms 修正 R352 猜想；W3 四分差锁定 range 创建驱动；W6 线性 0.35ms/条；W15 形态对照）+ evidence/2026-08-29-r353-detached-shape-attribution.md | **零 land 诊断轮**：定性 WPT mega-case 特化形态（declared 91%），收口并入 L2 专项；插桩完全移除零残留 |
 | 2026-08-29 | R352 | data 族残余归因反转（W15 等价 stub：干净页面 R262 扫描 0.06ms——瓶颈实为游离树堆积下的查询面，转 L2/文档生命周期域）+ removed-marked 容器快道 `_zwDeadContainer352`（plain 反链上行查 removed 表，接入四比较器）+ evidence/2026-08-29-r352-removed-container-guard.md | dataChange declared 426→428（噪声级）；三绿文件保持全绿、既有套件零回归；归因定案 + 防御性收尾 |
@@ -814,12 +816,11 @@
 ---
 
 ## 下一步计划
-0. **R354 下一步（R353 后，按 ROI）**：
-   - **(a) 领取 d3d-r1「产物归一路径统一」**（RFC v0.3 §6.2 路线 A 首片）：element/fragment 查询的归一缓存键构造统一为单一 helper（`_zwWrapCached` 与 fragment `_zwQWrapMap` 两处键构造合流），key 双形态兼容（`.tag||.tagName`/`.outer||.outerHTML`）纳入 helper——纯重构行为等价，验证门 = 全量双路径逐计数一致 + Element-matches 文件级。**这是 d3d 重启两前置之一**，下轮首选。
-   - **(b) d3d-r2 iframe 树源统一**（第二前置）：part05 iframe 工厂与 `_makeDetachedDocument` 的 bodyHtml 空态收口——依赖 (a) 或独立评估后启动。
-   - **(c) events 备档集巡检续**（Event-dispatch-target-moved sel 移动锚点失配随 d3d/L2；Event-dispatch-click pending:1 低优先级单 subtest）。
-   - **(d) DC-7 第 4 项 default-on = M7**：待用户点名（改 Mission 级单向门）。
-0. **R353 下一步（R352 后，已执行→R354）**：
+0. **R355 下一步（R354 后，按 ROI）**：
+   - **(a) 领取 d3d-r2「iframe 树源统一」**（路线 A 第二前置）：part05 iframe 工厂与 `_makeDetachedDocument` 的 bodyHtml 空态收口[§2.4-2]——src-iframe 的树/查询单一来源。完成两前置后 d3d-r3 本树化重启具备条件。
+   - **(b) events 备档集巡检续**（Event-dispatch-target-moved sel 移动锚点失配随 d3d/L2；Event-dispatch-click pending:1 低优先级单 subtest）。
+   - **(c) DC-7 第 4 项 default-on = M7**：待用户点名（改 Mission 级单向门）。
+0. **R354 下一步（R353 后，已执行→R355）**：
    - **(a) make test 全量常态化**：A/B 清单固定含 browser/renderer crate（R333 教训延续执行）。
    - **(b) L2 深水区专项**（identity 桥统一——R338 确认无轻量切片；立项材料已齐：R324 四环节 + R328 残余 + R299 indoc + tagName 动态大写 + R338 QSA 同 turn 域）。
    - **(c) 架构项立项材料**：动画时钟 pump（events 备档收口前提）——**R341 立项细化**：基建四件已存在[engine `pipeline.pending_animation_events` 产生于 render 管线 compute_styles 后 / webview `take_pending_*_events` 取用 / renderer `page_scripts::dispatch_{transition,animation}_events` 派发 / transition_clock+animation_clock 时钟]；**缺口 = runner `take_probe` 循环无 re-style+tick 泵**（run_page_scripts 只跑脚本不重渲染，style 变更后无第二轮 compute_styles → 时钟无 tick → 事件永不产生）；切片形态 = ① pipeline 加 `tick_animation_clock`（re-compute + tick + 收集）② webview 包装 `pump_animation_clock` ③ runner take_probe 循环调用 + 复用 renderer dispatch 函数 ④ 时钟源用真实时间（probe 间隔自然推进 30ms/100ms 测试动画）。涉及 pipeline/webview/runner 三层 ~200 行，测试基建（不改 Mission）可自主推进。
@@ -1628,6 +1629,7 @@
 
 > 已完成的 milestone/切片记录到 `archive/`。
 
+- R355：M1/L2 **d3d-r1 产物归一路径统一 land**（`_zwQueryKey` 归一缓存键统一 helper：`_zwWrapCached`/`_zwMWrapCached`/`_zwMFindRealNode` walk 键/Element QSA seen 键四处合流；双形态+empty-ns 剥离+dup-seq；全量 sweep 真实 Fail 17=17 恒等零回归、文件级门逐计数一致、quickjs 矩阵绿；d3d 重启前置之一完成）→ evidence/2026-08-29-r355-d3dr1-query-key-unification.md
 - R354：M1/L2 **L2 深水区专项总装**（L2-d3 RFC v0.2→v0.3：§6 立项证据 E1-E4 全量化入册 + 切片总装[路线 A：d3d-r1 归一路径统一 → d3d-r2 iframe 树源 → d3d-r3 本树化重启 → d3e；路线 B：P1-P3 性能片随 A 接续挂起] + 边界重申[R309 QSA 域/dataChange 尾部不独立切片]；纯文档零源码改动）→ RFC v0.3 §6
 - R353：M4/ranges **dataChange 尾部收口前归因**（W1 修正 R352 查询面猜想[查询单价 0.014ms]；W3 四分差锁定 range 创建驱动[noRange 0.65 vs full 32ms]；W6 线性 0.35ms/条；定性 WPT mega-case 特化形态、declared 91%、收口并入 L2 专项；零 land、插桩零残留）→ evidence/2026-08-29-r353-detached-shape-attribution.md
 - R352：M4/ranges **data 族残余归因反转 + removed-marked 容器快道**（W15 等价 stub 终局反转：干净页面 R262 扫描 0.06ms，瓶颈=游离树堆积查询面转 L2 域；`_zwDeadContainer352` plain 反链查 removed 表接入四比较器；dataChange declared 426→428 噪声级、三绿文件保持全绿零回归）→ evidence/2026-08-29-r352-removed-container-guard.md
