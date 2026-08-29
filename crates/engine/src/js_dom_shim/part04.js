@@ -696,12 +696,11 @@
               if (_r318fk[_r318i] && _r318fk[_r318i].nodeType === 1) _r318ek.push(_r318fk[_r318i]);
             }
             if (_r318ek.length || _childNodeList(sel, null).length) {
-              // R333：不再携带 liveSpec——融合视图每次读 children 时重建（R318 本语义），
-              // live 集合的 matches 并入（R318 首版 nodeType 单判定）会把**其他容器**的
-              // 插入（#ic.insertNode(b) 并进 #cc.children，R2929 形态）和**子孙节点**
-              //（#w 内克隆 span 并进 #sc.children，R2930 形态）错收进来。同 turn
-              // 可见性由融合视图重建保证；live collection 断言面（ParentNode-children
-              // 「length 4→5 after append」）由融合视图 + pending overlay 覆盖。
+              // R357 评估（已回退）：scoped liveSpec 使 held children 集合随 append 反映
+              //（ParentNode-children 1F 可修），但 tab R2930 surroundContents 后新快照读
+              // #sc.children 把 pending 桶的 stale 条目（surround 移动的 span）并进集合
+              // （3≠1）——桶条目缺「快照换代失效」语义，须先补桶的代际清理才可重开。
+              // 同 turn 可见性维持融合视图重建（R333 本语义）。
               return _zwMakeCollection(_r318ek, true);
             }
           }
@@ -5729,17 +5728,60 @@
             if (parts.length === 0) return _zwMakeCollection([], true);
             q = '.' + parts.join('.');
             if (sel && typeof __zw_query_all_sub === 'function') {
+              var _r357Snap = [];
               try {
                 var all = __zw_query_all_sub(sel, q);
-                if (all) return _zwMakeCollection(all.split('|').filter(Boolean).map(_wrapSelector), true);
+                if (all) _r357Snap = all.split('|').filter(Boolean).map(_wrapSelector);
               } catch (_e) {}
-              return _zwMakeCollection([], true);
+              // R357（js-dom M1）：**sel 分支 liveSpec**——同 turn append 的类名命中
+              // handle 子并入集合（WPT Element-getElementsByClassName "should be a
+              // live collection"：静态 a 建集合 [b.foo] 后 appendChild(c.foo) 期望
+              // length 2，旧无 liveSpec 恒 1）。matches = 类名全含判定（候选经
+              // _hClassesOf 反射读 + _zwSplitClassList ASCII 分词）；候选源 =
+              // R333 **作用域桶**（scopeSel 限定本容器 pending 子）——R318 首版
+              // 败因（matches 只判类名 + 全局 _zwPendingAdded 扫描 → 其它容器同
+              // 名类元素错并进集合，single-activation 61F）已被 R333 的桶归因
+              // 消解：其它容器的插入不进本桶，matches 无跨容器误判面。
+              // 空快照也带 liveSpec（handle 子全部 pending 时快照恒空——`if (all)`
+              // 早退结构使 liveSpec 在主消费形态丢失，len0=0 的根因）。
+              // https://dom.spec.whatwg.org/#dom-element-getelementsbyclassname
+              return _zwMakeCollection(_r357Snap, true, {
+                matches: function (el357) {
+                  if (!el357 || el357.nodeType !== 1) return false;
+                  var have357 = null;
+                  try { have357 = _hClassesOf(el357); } catch (_e357c) { have357 = []; }
+                  if (!have357.length) return false;
+                  for (var pi357 = 0; pi357 < parts.length; pi357++) {
+                    if (have357.indexOf(parts[pi357]) < 0) return false;
+                  }
+                  return true;
+                },
+                scopeHandle: null,
+                scopeSel: sel || null,
+              });
             }
             // R318（js-dom M4）：live 维护——matches 回调按类名全含判定（同 getElementsByTagName
             // 的 liveSpec 接线），childList mutation 后集合并入/剔除新元素（WPT
             // Element-getElementsByClassName "should be a live collection"：append c.foo 后
             // l.length 期望 2，静态快照恒 1）。
-            if (handle) return _zwMakeCollection(_handleQueryAll(handle, q), true);
+            // R357（js-dom M1）：**handle 分支 liveSpec**——createElement 容器（handle
+            // proxy，WPT 用例本体 `a = document.createElement("a")`）的类名集合同样须
+            // live：matches 与 sel 分支同源（类名全含），scopeHandle 限定本容器
+            //（mutation 容器 === 作用域容器才并入——R333 门）。
+            if (handle) return _zwMakeCollection(_handleQueryAll(handle, q), true, {
+              matches: function (el357h) {
+                if (!el357h || el357h.nodeType !== 1) return false;
+                var have357h = null;
+                try { have357h = _hClassesOf(el357h); } catch (_e357ch) { have357h = []; }
+                if (!have357h.length) return false;
+                for (var pi357h = 0; pi357h < parts.length; pi357h++) {
+                  if (have357h.indexOf(parts[pi357h]) < 0) return false;
+                }
+                return true;
+              },
+              scopeHandle: handle,
+              scopeSel: null,
+            });
             return _zwMakeCollection([], true);
           };
         }

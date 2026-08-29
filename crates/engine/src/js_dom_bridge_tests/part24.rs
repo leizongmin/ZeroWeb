@@ -2354,3 +2354,74 @@ fn test_iframe_factory_element_collections_r356() {
         "R356 iframe 工厂元素集合查询：子树作用域 tag/class 匹配 + HTMLCollection 承载"
     );
 }
+
+/// R357（js-dom M1）：`getElementsByClassName` **sel 分支 liveSpec**——同 turn append 的
+/// 类名命中 handle 子并入集合（WPT Element-getElementsByClassName "should be a live
+/// collection"：静态容器建集合后 appendChild(c.foo) 期望 length 2，removeChild 后回 1）。
+/// 旧 sel 分支无 liveSpec 恒返快照长度。候选源 = R333 作用域桶（R318 首版败因——全局
+/// _zwPendingAdded 扫描使其它容器同名类元素错并——已被桶归因消解）。
+/// https://dom.spec.whatwg.org/#dom-element-getelementsbyclassname
+#[test]
+fn test_getelementsbyclassname_sel_live_collection_r357() {
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let mut sandbox = V8Sandbox::with_config(zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    })
+    .unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><div id='a'></div><div id='other'></div></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+    let exec = sandbox.execute(
+            "try {\
+             // WPT 本体形态：容器本身是 createElement 产物（handle proxy，append 进 body）
+             var ha = document.createElement('div');\
+             document.body.appendChild(ha);\
+             var b = document.createElement('b'); b.className = 'foo';\
+             var c = document.createElement('c');\
+             ha.appendChild(b);\
+             var l = ha.getElementsByClassName('foo');\
+             var len0 = l.length;\
+             c.className = 'foo';\
+             ha.appendChild(c);\
+             var len1 = l.length;\
+             // 同名类元素 append 到**其它容器** → 不得并入（R318 回归哨兵：scope 归因）
+             var d = document.createElement('d'); d.className = 'foo';\
+             var other = document.createElement('div');\
+             document.body.appendChild(other);\
+             other.appendChild(d);\
+             var len2 = l.length;\
+             // 非命中类子 → 不并入
+             var e = document.createElement('e'); e.className = 'bar';\
+             ha.appendChild(e);\
+             var len3 = l.length;\
+             // remove → 剔除（live 移除语义）
+             ha.removeChild(c);\
+             var len4 = l.length;\
+             // sel 容器形态（静态元素）也 live
+             var sa = document.getElementById('a');\
+             var sb = document.createElement('b'); sb.className = 'foo';\
+             sa.appendChild(sb);\
+             var sl = sa.getElementsByClassName('foo');\
+             var slen0 = sl.length;\
+             var sc = document.createElement('b'); sc.className = 'foo';\
+             sa.appendChild(sc);\
+             var slen1 = sl.length;\
+             globalThis.__r357e = [len0, len1, len2, len3, len4, slen0, slen1].join(',');\
+             } catch (err357) { globalThis.__r357e = 'ERR:' + err357.message; }",
+        );
+    if let Err(ref e) = exec { panic!("execute failed: {e}"); }
+    drop(exec);
+    let out = sandbox.execute("globalThis.__r357e").unwrap().value;
+    assert_eq!(
+        out, "1,2,2,2,1,1,2",
+        "R357 getElementsByClassName live 集合（handle + sel 双容器形态）：append 并入 / 跨容器不误并 / 类名过滤 / remove 剔除"
+    );
+}
