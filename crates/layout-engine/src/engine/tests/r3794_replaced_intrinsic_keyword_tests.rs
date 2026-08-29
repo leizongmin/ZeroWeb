@@ -406,3 +406,37 @@ fn r3800_constraints_win_over_ratio_on_conflict() {
         "R3800: 约束冲突 w→h→w 链收敛 75×75，实际 {w}×{h}"
     );
 }
+
+/// R3801（box-sizing-replaced-002 驱动案，CSS Sizing §5.3）：border-box 替换元素约束
+/// 作用于 border-box 尺寸——内容 75×75 + pad 5/border 5（frame 20）→ bb 固有 95，
+/// min-w80/max-w125/min-h65/max-h140 区间含 95 → 95×95（content 75×75，与 content-box
+/// ref 像素一致）。旧存储 content 值被 taffy BorderBox 误当 bb（content 55）。
+#[test]
+fn r3801_border_box_constraints_apply_to_border_box_dims() {
+    let html = r#"<!DOCTYPE html><html><body style="margin:0">
+<img src="x.png" style="padding: 5px; border: 5px solid blue; box-sizing: border-box; min-width: 80px; max-width: 125px; min-height: 65px; max-height: 140px;">
+</body></html>"#;
+    let (doc, result) = compute_with_intrinsic(html, 75.0, 75.0);
+    let img = doc.get_elements_by_tag_name("img").into_iter().next().expect("img");
+    let (w, h) = find_box(&result.root, img).expect("img box");
+    assert!(
+        (w - 95.0).abs() < 1.0 && (h - 95.0).abs() < 1.0,
+        "R3801: border-box bb = content 75 + frame 20 = 95，约束区间含 95 → 95×95（content 75×75），实际 {w}×{h}"
+    );
+}
+
+/// R3801 守卫（corner-shape-img-border）：显式 CSS width/height（border-box 语义下已是
+/// bb）+ 无 min/max——不得加 frame 双重计数（200×200 保持，误加 → 240×240）。
+#[test]
+fn r3801_explicit_css_dims_not_frame_adjusted() {
+    let html = r#"<!DOCTYPE html><html><body style="margin:0">
+<img src="x.png" width="200" height="200" style="width: 200px; height: 200px; box-sizing: border-box; border: 20px solid blue;">
+</body></html>"#;
+    let (doc, result) = compute_with_intrinsic(html, 200.0, 200.0);
+    let img = doc.get_elements_by_tag_name("img").into_iter().next().expect("img");
+    let (w, h) = find_box(&result.root, img).expect("img box");
+    assert!(
+        (w - 200.0).abs() < 1.0 && (h - 200.0).abs() < 1.0,
+        "R3801: 显式 CSS 尺寸（bb 语义）+ 无 min/max → 不加 frame，实际 {w}×{h}（误加 → 240）"
+    );
+}

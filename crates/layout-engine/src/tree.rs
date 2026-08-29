@@ -417,6 +417,8 @@ fn apply_replaced_element_sizing(
     use zero_style_system::property::types::WritingModeValue;
     // R3800：no-ratio 分支是否触发（其 size 来自 default object size 回退，非真实比）。
     let mut no_ratio_fired = false;
+    // R3801：存储 size 是否确为 content 固有（attr 双属性 / decoded both-abs 写入）。
+    let mut stored_is_content_intrinsic = false;
     let (is_flex_row_item, is_flex_col_item) = match doc.parent_node(dom_id).and_then(|p| styles.get(&p)) {
         Some(ps)
             if matches!(ps.display, DisplayValue::Flex | DisplayValue::InlineFlex)
@@ -531,6 +533,7 @@ fn apply_replaced_element_sizing(
             // 无条件设为 HTML 属性值，致 <canvas width=10 height=10 style="height:100%">
             // 的 width 仍为 HTML 值 10（应按 1:1 比例从 height 100px 推导为 100px）。
             if css_w_auto && css_h_auto {
+                stored_is_content_intrinsic = true;
                 taffy_style.size.width = taffy::style::Dimension::length(w);
                 taffy_style.size.height = taffy::style::Dimension::length(h);
             } else if css_w_auto && !css_h_auto {
@@ -624,6 +627,7 @@ fn apply_replaced_element_sizing(
                 }
                 // 两侧都显式：由 converter 处理，不干预
             } else if let Some(&(w, h)) = img_intrinsic_sizes.get(&dom_id) {
+                stored_is_content_intrinsic = true;
                 // both-abs SVG / PNG / JPEG：真固有尺寸（pixmap w/h 有效）。CSS 规范：
                 // 替换元素无显式尺寸时使用固有尺寸（intrinsic size）。
                 let w = w.max(1.0);
@@ -715,8 +719,15 @@ fn apply_replaced_element_sizing(
                         //（replaced-elements-min-height-20：固有 50×25 + min-height:20 保持
                         // 50×25；replaced-aspect-ratio-intrinsic-size-001：1×1 + min-height:100
                         // → 100×100）。
+                        // R3801：border-box 跳过 min-transfer——bb 固有 + frame 折算与
+                        // min/max 解析由 §10.4 约束表统一处理（transfer 先写约束值会让表
+                        // 把 transferred 当固有再叠 frame 双重计数：002 img1 80→100 实证）。
+                        let border_box_defer = matches!(
+                            computed.box_sizing,
+                            zero_style_system::property::types::BoxSizingValue::BorderBox
+                        );
                         match transferred {
-                            Some((th, tw)) if th > h || tw > w => {
+                            Some((th, tw)) if !border_box_defer && (th > h || tw > w) => {
                                 taffy_style.size.height = taffy::style::Dimension::length(th.max(0.5));
                                 taffy_style.size.width = taffy::style::Dimension::length(tw.max(0.5));
                             }
@@ -860,16 +871,10 @@ fn apply_replaced_element_sizing(
         }
     }
 
-    // CSS Flexbox §4.5 / csswg #5663：替换元素 flex item 的 min-size:auto。
-    // taffy 0.7 把 leaf flex item 的 auto-min 当作其 definite 主尺寸（width:999→min 999），
-    // 致替换 flex item 无法 flex-shrink（flex-minimum-width-flex-items-013 82% diff：
-    // img 999×500 溢出 flex width:0 容器，应被 min-width:auto=100 floor 后收缩到 100）。
-    // spec：auto-min = min(content suggestion, transferred suggestion)，transferred =
-    // 明确 cross size × 固有比。此处仅当父是 flex 容器且有明确 cross size 时计算
-    // transferred 并设 min_size.main（row + column 对称，仅水平书写模式）。
-    apply_flex_transferred_min_size(taffy_style, computed, doc, styles, dom_id);
-
-    // R3800（CSS2 §10.4）：min/max 约束违反解析表（ratio 保持重推导）。
+    // R3800/R3801（CSS2 §10.4）：min/max 约束违反解析表（ratio 保持重推导）——置于
+    // R3794 min-transfer **之前**：以纯净属性/解码固有尺寸起手（transfer 会先用约束改写
+    // size，再叠加 frame 折算会双重计数——002 img1 80×80→100×100 实证）。表运行后 size
+    // 已合规（≥min ≤max），R3794 的 floor 条件自然 no-op。
     // no-ratio SVG 跳过——其 size 来自 default object size 回退（w0/h0 非真实比，
     // 以假比推导会污染：min-width-80 的 width-50-no-ratio 80×150 被推成 80×240）。
     // flex item 亦跳过——min/max 是 flex base 的钳制非 base 本身，flex 算法（taffy）
@@ -879,8 +884,16 @@ fn apply_replaced_element_sizing(
         .and_then(|p| styles.get(&p))
         .is_some_and(|ps| matches!(ps.display, DisplayValue::Flex | DisplayValue::InlineFlex));
     if !no_ratio_fired && !parent_is_flex_ctx {
-        apply_replaced_min_max_constraint_table(taffy_style, computed);
+        apply_replaced_min_max_constraint_table(taffy_style, computed, stored_is_content_intrinsic);
     }
+    // CSS Flexbox §4.5 / csswg #5663：替换元素 flex item 的 min-size:auto。
+    // taffy 0.7 把 leaf flex item 的 auto-min 当作其 definite 主尺寸（width:999→min 999），
+    // 致替换 flex item 无法 flex-shrink（flex-minimum-width-flex-items-013 82% diff：
+    // img 999×500 溢出 flex width:0 容器，应被 min-width:auto=100 floor 后收缩到 100）。
+    // spec：auto-min = min(content suggestion, transferred suggestion)，transferred =
+    // 明确 cross size × 固有比。此处仅当父是 flex 容器且有明确 cross size 时计算
+    // transferred 并设 min_size.main（row + column 对称，仅水平书写模式）。
+    apply_flex_transferred_min_size(taffy_style, computed, doc, styles, dom_id);
 }
 
 /// R3800（CSS2 §10.4）：替换元素 min/max 约束违反解析表。
@@ -897,14 +910,12 @@ fn apply_replaced_element_sizing(
 /// 仅 content-box（border-box 约束作用于 border-box 尺寸，需折算 frame——002 簇后续切片）。
 /// 仅当至少一轴有 definite 约束时运行；结果设回 taffy size（definite），taffy 钳制成为
 /// no-op（结果已合规）。box-sizing-replaced-003 全 20 变体均应收敛 75×75。
-fn apply_replaced_min_max_constraint_table(taffy_style: &mut taffy::Style, computed: &ComputedStyle) {
+fn apply_replaced_min_max_constraint_table(
+    taffy_style: &mut taffy::Style,
+    computed: &ComputedStyle,
+    stored_is_content_intrinsic: bool,
+) {
     use zero_css_parser::values::LengthValue;
-    if matches!(
-        computed.box_sizing,
-        zero_style_system::property::types::BoxSizingValue::BorderBox
-    ) {
-        return;
-    }
     // 提取 definite min/max（Auto/百分比/关键字 → None）。
     let resolve = |v: &LengthValue| -> Option<f32> {
         match v {
@@ -932,7 +943,41 @@ fn apply_replaced_min_max_constraint_table(taffy_style: &mut taffy::Style, compu
     let maxw = resolve(&computed.max_width);
     let minh = resolve(&computed.min_height);
     let maxh = resolve(&computed.max_height);
+    let border_box = matches!(
+        computed.box_sizing,
+        zero_style_system::property::types::BoxSizingValue::BorderBox
+    );
+    // R3801：border-box 无约束也要做 bb 折算——存储的 content 固有值在 taffy BorderBox
+    // 语义下被误当 bb（img0 无约束：content 75 渲成 bb 75 → content 55，应 bb 95）。
+    // 仅 width/height CSS 均 Auto（纯固有路径，存储值确为 content 尺寸）——显式 CSS 尺寸
+    //（corner-shape-img-border width:200 border-box + border 20）已是 bb 语义，加 frame
+    // 会双重计数（240 实证）。
     if minw.is_none() && maxw.is_none() && minh.is_none() && maxh.is_none() {
+        let css_dims_auto = matches!(computed.width, LengthValue::Auto) && matches!(computed.height, LengthValue::Auto);
+        // stored_is_content_intrinsic：存储 size 须确为 content 固有（attr 双属性或 decoded
+        // both-abs）——ratio-only SVG 的 R2054-C2 size 来自容器宽（bb 语义），加 frame 双重
+        // 计数（intrinsic-ratio-replaced-box-sizing 100→120 实证）。
+        if border_box && css_dims_auto && stored_is_content_intrinsic {
+            let px = |v: &LengthValue| -> f32 { other_px(v) };
+            let fx = px(&computed.padding_left)
+                + px(&computed.padding_right)
+                + px(&computed.border_left_width)
+                + px(&computed.border_right_width);
+            let fy = px(&computed.padding_top)
+                + px(&computed.padding_bottom)
+                + px(&computed.border_top_width)
+                + px(&computed.border_bottom_width);
+            if let (Some(iw0), Some(ih0)) = (
+                taffy_style.size.width.into_option(),
+                taffy_style.size.height.into_option(),
+            ) {
+                let (bw, bh) = (iw0 + fx, ih0 + fy);
+                if (bw, bh) != (iw0, ih0) {
+                    taffy_style.size.width = taffy::style::Dimension::length(bw.max(0.5));
+                    taffy_style.size.height = taffy::style::Dimension::length(bh.max(0.5));
+                }
+            }
+        }
         return;
     }
     // 起手固有尺寸（内容盒）：此前分支写入的 size（属性/解码固有值）。
@@ -953,12 +998,45 @@ fn apply_replaced_min_max_constraint_table(taffy_style: &mut taffy::Style, compu
     // 约束冲突时约束胜过 ratio（blink 同款）；box-sizing-replaced-003 全 20 变体
     // 经该链逐一验算收敛 75×75（img10 300×375 minw75 maxw150 maxh75：
     // w1=150 → h1=187.5→75 → w2=clamp(60,75,150)=75 ✓）。
+    //
+    // R3801（border-box）：约束作用于 border-box 尺寸（CSS Sizing §5.3 box-sizing）——
+    // 固有内容尺寸折算 border-box（+ frame），以 border-box 比走同一链条，结果直接是
+    // taffy BorderBox 语义下的 size。box-sizing-replaced-002（pad 5 + border 5 → frame
+    // 20/轴；内容 75×75 → bb 95×95，全部 20 约束区间含 95 → 95×95，content 75×75 与
+    // ref content-box 75×75 像素一致）。
+    let border_box = matches!(
+        computed.box_sizing,
+        zero_style_system::property::types::BoxSizingValue::BorderBox
+    );
+    let (iw_used, r) = if border_box {
+        let px = |v: &LengthValue| -> f32 { resolve(v).unwrap_or(0.0) };
+        let fx = px(&computed.padding_left)
+            + px(&computed.padding_right)
+            + px(&computed.border_left_width)
+            + px(&computed.border_right_width);
+        let fy = px(&computed.padding_top)
+            + px(&computed.padding_bottom)
+            + px(&computed.border_top_width)
+            + px(&computed.border_bottom_width);
+        let bb_w = iw + fx;
+        let bb_h = ih + fy;
+        (bb_w, taffy_style.aspect_ratio.unwrap_or(bb_w / bb_h))
+    } else {
+        (iw, r)
+    };
+    if !r.is_finite() || r <= 0.0 {
+        return;
+    }
     let clamp = |v: f32, lo: Option<f32>, hi: Option<f32>| v.min(hi.unwrap_or(f32::INFINITY)).max(lo.unwrap_or(0.0));
-    let w1 = clamp(iw, minw, maxw);
+    let w1 = clamp(iw_used, minw, maxw);
     let h1 = clamp(w1 / r, minh, maxh);
     let w2 = clamp(h1 * r, minw, maxw);
     let (w, h) = (w2, h1);
     if (w, h) != (iw, ih) {
+        // 变更判定对照**存储值**（iw,ih，content 尺寸）：border-box 时 bb 固有
+        //（iw_used = content+frame）经折算本就不同于存储值——即使约束链无钳制也要写回
+        // bb（taffy BorderBox 语义下存储的 content 值会被误当 bb：img1 约束链无钳制
+        // (95,95)==iw_used 相等跳写 → 渲染保持 content 75 实证）。
         taffy_style.size.width = taffy::style::Dimension::length(w.max(0.5));
         taffy_style.size.height = taffy::style::Dimension::length(h.max(0.5));
     }
