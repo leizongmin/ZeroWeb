@@ -1350,6 +1350,7 @@ impl InlineFormattingContext {
                         margin_left: 0.0,
                         margin_right: 0.0,
                         margin_top: 0.0,
+                        margin_bottom: 0.0,
                         baseline: box_info.baseline,
                     });
 
@@ -1589,9 +1590,30 @@ impl InlineFormattingContext {
                             baseline_y - run.baseline
                         }
                     }
-                    VerticalAlignValue::Top | VerticalAlignValue::TextTop => 0.0,
+                    // R3809：原子行内级盒（font_size==0 标识）带垂直 margin 时，top/bottom
+                    // 对齐边是 margin box（CSS §10.8.1：top/bottom 把盒的顶/底对齐行盒顶/底，
+                    // 原子盒参与行内布局的即 margin box——行盒高度已含 mt+mb，break_lines.rs:430）。
+                    // chromium 实证（margin-applies-to-012：inline-block 200×200 margin 50
+                    // va:bottom 于 abspos shrink-wrap）：border box 顶 = margin_top（bottom 对齐
+                    // 把 margin-box 底贴行底 → border y = line_height − height − margin_bottom）。
+                    // 旧实现按 border box 对齐 → border y 多下移一个 margin_bottom（012/014 族
+                    // +50px）。文本运行（margin_top=0）与 Middle 不受影响（对称 margin 下
+                    // Middle 公式等价，R1720 既有实证）。
+                    VerticalAlignValue::Top | VerticalAlignValue::TextTop => {
+                        if run.font_size == 0.0 {
+                            run.margin_top
+                        } else {
+                            0.0
+                        }
+                    }
                     VerticalAlignValue::Middle => (line_height - run.height) / 2.0,
-                    VerticalAlignValue::Bottom | VerticalAlignValue::TextBottom => line_height - run.height,
+                    VerticalAlignValue::Bottom | VerticalAlignValue::TextBottom => {
+                        if run.font_size == 0.0 {
+                            line_height - run.height - run.margin_bottom
+                        } else {
+                            line_height - run.height
+                        }
+                    }
                     VerticalAlignValue::Sub => {
                         // 下标：基线下移 font_size × 0.3
                         let offset = run.font_size * 0.3;
@@ -1906,6 +1928,7 @@ impl InlineFormattingContext {
                     margin_left: run.margin_left,
                     margin_right: run.margin_right,
                     margin_top: run.margin_top,
+                    margin_bottom: run.margin_bottom,
                     baseline: run.baseline,
                 })
             })

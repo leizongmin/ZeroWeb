@@ -178,6 +178,7 @@ mod r3793_fieldset_clamp_skip_tests;
 mod r3794_replaced_intrinsic_keyword_tests;
 mod r3807_bfc_zero_shift_float_plain_flow_tests;
 mod r3808_clear_mt_leak_revert_tests;
+mod r3809_va_margin_box_align_tests;
 mod r717_flex_ratio_img_tests;
 mod table_layout_tests;
 mod tests_1;

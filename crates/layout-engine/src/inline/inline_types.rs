@@ -330,6 +330,9 @@ pub struct TextFragment {
     /// （CSS：inline-block margin box 参与行盒，margin_top 把盒内容下移）。
     /// 文本/inline 元素为 0。
     pub margin_top: f32,
+    /// inline-block 的下 margin（px）—— R3809：top/bottom 对齐边是 margin box，
+    /// bottom 对齐需扣除 margin_bottom。文本/inline 元素为 0。
+    pub margin_bottom: f32,
     /// 基线高度（px）— 从片段顶部到基线的距离。
     ///
     /// - 文本运行：baseline = font_size（ascent 近似）

@@ -150,6 +150,7 @@ impl InlineFormattingContext {
                             margin_left: run.margin_left,
                             margin_right: run.margin_right,
                             margin_top: 0.0,
+                            margin_bottom: 0.0,
                             baseline: run.font_size,
                         });
                         if run.margin_right > 0.0 {
@@ -227,6 +228,7 @@ impl InlineFormattingContext {
                                 margin_left: 0.0,
                                 margin_right: 0.0,
                                 margin_top: 0.0,
+                            margin_bottom: 0.0,
                                 baseline: run.font_size,
                             });
                             current_x += tab_advance;
@@ -458,6 +460,7 @@ impl InlineFormattingContext {
                                     margin_left: run.margin_left,
                                     margin_right: run.margin_right,
                                     margin_top: 0.0,
+                            margin_bottom: 0.0,
                                     baseline: run.font_size,
                                 });
 
@@ -486,6 +489,7 @@ impl InlineFormattingContext {
                                 margin_left: run.margin_left,
                                 margin_right: run.margin_right,
                                 margin_top: 0.0,
+                            margin_bottom: 0.0,
                                 baseline: run.font_size,
                             });
 
@@ -568,6 +572,7 @@ impl InlineFormattingContext {
                         margin_left: m_left,
                         margin_right: m_right,
                         margin_top: m_top,
+                        margin_bottom: m_bot,
                         baseline: box_info.baseline,
                     });
 
@@ -841,6 +846,7 @@ impl InlineFormattingContext {
                         margin_left: run.margin_left,
                         margin_right: run.margin_right,
                         margin_top: 0.0,
+                            margin_bottom: 0.0,
                         baseline: run.font_size,
                     });
 
@@ -875,6 +881,7 @@ impl InlineFormattingContext {
                         margin_left: segment.run.margin_left,
                         margin_right: segment.run.margin_right,
                         margin_top: 0.0,
+                            margin_bottom: 0.0,
                         baseline: segment.run.font_size,
                     });
 
