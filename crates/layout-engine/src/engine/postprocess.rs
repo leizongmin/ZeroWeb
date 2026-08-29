@@ -2051,6 +2051,24 @@ pub(super) fn apply_cross_block_line_clamp(
                 }
             }
             if !is_in_flow_block && !is_inline_flow_carrier {
+                // R3788：预算已耗尽（remaining==0）但 `exhausted` 尚未置位时到达的
+                // **float** 子——其源序位置在 clamp point 之后（css-overflow-4
+                // with-floats-004 assert「floats … always hidden if they come after the
+                // clamp point」）。旧 exhausted 仅在本子之后由后续子的 cap 置位：clamp
+                // point 恰落在前序子末行末（004 的 .pre 恰耗尽 4 行预算）时，其后的
+                // float 被遍历到时 exhausted 还没置 true → 漏隐藏（float 可见 + 容器被
+                // float_bottom 撑高 189 应 135）。remaining==0 = 预算已在前序子处用尽 →
+                // 本 float 必在点后 → 隐藏。remaining>0 时 clamp point 未达，float 可见
+                //（with-floats-006：float 在 clamp 点前，照常渲染 + 容器裁剪）。
+                // abspos/fixed 不适用（其可见性由 CB 位置语义决定，R3770b）。
+                if !exhausted {
+                    let child = &b.children[idx];
+                    let is_float = !matches!(child.float, FloatValue::None);
+                    if is_float && *remaining == 0 && !child.is_absolute && !child.is_fixed {
+                        hide_subtree(&mut b.children[idx]);
+                        continue;
+                    }
+                }
                 if exhausted {
                     // R3770b：abspos/fixed 豁免本处隐藏。其 containing block = 本盒 b
                     //（或更近 positioned 祖先）——b 含 clamp point（预算在 b 内部某
