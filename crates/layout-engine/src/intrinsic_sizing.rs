@@ -152,23 +152,44 @@ pub(crate) fn box_content_max_width(
         .node_id
         .and_then(|id| styles.get(&id))
         .filter(|s| {
-            matches!(s.width, LengthValue::Auto)
-                && !matches!(
-                    s.display,
-                    DisplayValue::TableRow
-                        | DisplayValue::TableRowGroup
-                        | DisplayValue::TableHeaderGroup
-                        | DisplayValue::TableFooterGroup
-                        | DisplayValue::TableCell
-                        | DisplayValue::TableCaption
-                        | DisplayValue::TableColumn
-                        | DisplayValue::TableColumnGroup
-                )
+            // R3794：intrinsic 尺寸关键字（min/max/fit-content）与 auto 同为 content-based
+            // 宽——transferred 同样适用（intrinsic-size-014：`width:min-content; height:100px;
+            // aspect-ratio:1/1` 子对 min-content 父应贡献 100px，旧 gate 仅认 Auto → 子测 0
+            // → 父满宽）。converter 把关键字映射 length(0)，非 transferred 不可。
+            matches!(
+                s.width,
+                LengthValue::Auto | LengthValue::MinContent | LengthValue::MaxContent | LengthValue::FitContent(_)
+            ) && !matches!(
+                s.display,
+                DisplayValue::TableRow
+                    | DisplayValue::TableRowGroup
+                    | DisplayValue::TableHeaderGroup
+                    | DisplayValue::TableFooterGroup
+                    | DisplayValue::TableCell
+                    | DisplayValue::TableCaption
+                    | DisplayValue::TableColumn
+                    | DisplayValue::TableColumnGroup
+            )
         })
         .and_then(|s| s.aspect_ratio.filter(|&r| r > 0.0))
         .and_then(|ratio| {
             let s = box_node.node_id.and_then(|id| styles.get(&id));
-            let main = s.and_then(|s| resolve_intrinsic_real_length(&s.height, s));
+            // R3794：definite main 来源扩百分比 height——CSS height:100% 在第一趟 taffy 已对
+            // definite-CB 链解析到 LayoutBox.height（border-box）。intrinsic-size-006/008：
+            // `height:100%; aspect-ratio:1/1` 叶盒 CSS 解析 None → 旧测 0 → min-content 父
+            // 满宽。R1018 flex_row 容器 cross 同款回退（读第一趟 border-box 减 frame）。
+            // 仅叶盒回退：有 in-flow 子时子内容才决定 main（上方 children_inner 分支），
+            // 避免把 taffy 对整棵子树解析的 border-box 高误当 transferred 源。
+            let main = s.and_then(|s| resolve_intrinsic_real_length(&s.height, s)).or_else(|| {
+                if !has_in_flow_child {
+                    let vframe =
+                        box_node.padding_top + box_node.padding_bottom + box_node.border_top + box_node.border_bottom;
+                    let resolved = (box_node.height - vframe).max(0.0);
+                    (resolved > 0.5).then_some(resolved)
+                } else {
+                    None
+                }
+            });
             main.map(|main| aspect_ratio_transferred_width(s.unwrap(), box_node, main, ratio))
         })
         .unwrap_or(0.0);

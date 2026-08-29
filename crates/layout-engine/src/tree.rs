@@ -598,8 +598,21 @@ fn apply_replaced_element_sizing(
                 // 替换元素无显式尺寸时使用固有尺寸（intrinsic size）。
                 let w = w.max(1.0);
                 let h = h.max(1.0);
-                let width_auto = matches!(computed.width, LengthValue::Auto);
-                let height_auto = matches!(computed.height, LengthValue::Auto);
+                // R3794：`width:min-content/max-content/fit-content`（intrinsic 尺寸关键字）
+                // 与 auto 同类——均为 content-based sizing。converter 把关键字映射 length(0)
+                //（converter:526），旧代码此处 `width_auto` 只认 Auto，关键字落入「两侧都显式」
+                // 分支不干预 → img 宽塌缩 0（intrinsic-size-020..025：img height:100px +
+                // width:min-content + 固有 1:1，应 transferred 100px，旧渲 0×100；父
+                // `width:min/max-content` 收缩测 0 回退满宽）。css-sizing-4 §4.1：transferred
+                // size = definite height × 固有比，min/max-content 关键字按 transferred 解析。
+                let width_auto = matches!(
+                    computed.width,
+                    LengthValue::Auto | LengthValue::MinContent | LengthValue::MaxContent | LengthValue::FitContent(_)
+                );
+                let height_auto = matches!(
+                    computed.height,
+                    LengthValue::Auto | LengthValue::MinContent | LengthValue::MaxContent | LengthValue::FitContent(_)
+                );
                 // R325：CSS §10 替换元素——仅当【恰好一侧为 auto】时才用固有宽高比推导该 auto 侧。
                 // 两侧都显式时【不得】设 aspect_ratio，否则 taffy 会强制比例，把显式 height
                 // 拉到 width 比例（如 <img style="width:200px;height:50px"> 渲染成 200×200
@@ -637,9 +650,52 @@ fn apply_replaced_element_sizing(
                 } else {
                     computed.aspect_ratio.unwrap_or(w / h)
                 }; // width/height
+                // R3794：width 关键字纳入 auto 类后，both-auto 分支的 raw intrinsic (1×1)
+                // 会抢先于 min-size 传输语义。replaced-aspect-ratio-intrinsic-size-001
+                //（img 1×1 + min-height:100 + width:max-content 应 100×100）：CSS §4.1——height
+                // 不确定时 transferred size 由 definite min block size 传输。min 是**地板**：
+                // 只抬不降（replaced-elements-min-height-20：SVG 固有 50×25 + min-height:20
+                // 地板 no-op，保持 50×25——floor 低于固有不得缩）。taffy 0.7 对 replaced 关键字宽
+                // length(0) 不做此推导。
+                let transferred = [
+                    resolve_tree_definite_real_length(&computed.min_height, computed).map(|mh| (mh, mh * eff_ratio)),
+                    resolve_tree_definite_real_length(&computed.min_width, computed).map(|mw| (mw / eff_ratio, mw)),
+                ]
+                .into_iter()
+                .flatten()
+                .max_by(|a, b| a.0.total_cmp(&b.0));
                 if width_auto && height_auto {
-                    taffy_style.size.width = taffy::style::Dimension::length(w);
-                    taffy_style.size.height = taffy::style::Dimension::length(h);
+                    // R3794：flex item 判定不依赖上面的 HorizontalTb 门（vertical-lr 容器也走
+                    // 此臂——col-008：vertical-lr flex 容器的 img 若落 min-transfer 臂会误传
+                    // 输）。
+                    let parent_is_flex_item_ctx = doc
+                        .parent_node(dom_id)
+                        .and_then(|p| styles.get(&p))
+                        .is_some_and(|ps| matches!(ps.display, DisplayValue::Flex | DisplayValue::InlineFlex));
+                    if is_flex_row_item || is_flex_col_item || parent_is_flex_item_ctx {
+                        // flex item 保留旧行为：both-auto 直接设 raw intrinsic（flex base 语义
+                        // 由 flex 算法处理；不写 definite 会让 flex-aspect-ratio-img-row-003 类
+                        // item 塌 h=0）。min transfer 不做——min-width/min-height 是 flex base
+                        // 的 floor 非 base 本身（row-007：写 definite 会把 base 抬到 min，
+                        // flex:1 grow 越过 floor，img 150 应 100）。
+                        taffy_style.size.width = taffy::style::Dimension::length(w);
+                        taffy_style.size.height = taffy::style::Dimension::length(h);
+                    } else {
+                        // R3794：min transfer——min 是**地板**只抬不降
+                        //（replaced-elements-min-height-20：固有 50×25 + min-height:20 保持
+                        // 50×25；replaced-aspect-ratio-intrinsic-size-001：1×1 + min-height:100
+                        // → 100×100）。
+                        match transferred {
+                            Some((th, tw)) if th > h || tw > w => {
+                                taffy_style.size.height = taffy::style::Dimension::length(th.max(0.5));
+                                taffy_style.size.width = taffy::style::Dimension::length(tw.max(0.5));
+                            }
+                            _ => {
+                                taffy_style.size.width = taffy::style::Dimension::length(w);
+                                taffy_style.size.height = taffy::style::Dimension::length(h);
+                            }
+                        }
+                    }
                 } else if !width_auto
                     && height_auto
                     && let Some(cw) = resolve_tree_definite_real_length(&computed.width, computed)

@@ -175,6 +175,7 @@ mod r3779_float_no_ghost_line_tests;
 mod r3780_cross_block_extent_inflow_tests;
 mod r3792_aspect_ratio_intrinsic_tests;
 mod r3793_fieldset_clamp_skip_tests;
+mod r3794_replaced_intrinsic_keyword_tests;
 mod r717_flex_ratio_img_tests;
 mod table_layout_tests;
 mod tests_1;
