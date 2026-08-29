@@ -2154,12 +2154,23 @@ fn stylesheet_cache_safe(stylesheets: &[Stylesheet]) -> bool {
 }
 
 fn rules_cache_safe(rules: &[zero_css_parser::ast::Rule]) -> bool {
-    use zero_css_parser::ast::{AtRuleBody, Rule, SubclassSelector};
+    use zero_css_parser::ast::{AtRuleBody, Combinator, Rule, SubclassSelector};
     for rule in rules {
         match rule {
             Rule::Style(st) => {
                 for sel in &st.selectors {
-                    for (compound, _) in &sel.complex.parts {
+                    for (compound, combinator) in &sel.complex.parts {
+                        // R3804：兄弟组合器（+ / ~）引入 StyleKey 键外的「前一元素兄弟
+                        // 匹配」依赖——同 tag/class/id 的兄弟元素 StyleKey 相同，缓存会
+                        // 把首个兄弟的计算样式错误复用到后续兄弟（div + div 失配实锤，
+                        // margin-bottom-043/044/055/056 族 driving）。父/祖先组合器
+                        //（ descendant / >）由 key.parent 链覆盖，仍安全。
+                        if matches!(
+                            combinator,
+                            Some(Combinator::NextSibling) | Some(Combinator::SubsequentSibling)
+                        ) {
+                            return false;
+                        }
                         for sub in &compound.subclass_selectors {
                             match sub {
                                 SubclassSelector::Id(_) | SubclassSelector::Class(_) => {}
@@ -2286,6 +2297,25 @@ mod style_cache_tests {
         };
 
         assert!(!stylesheet_cache_safe(&[stylesheet]));
+    }
+
+    // R3804：兄弟组合器（+ / ~）选择器使样式键缓存失格——StyleKey 只含
+    // tag/class/id/parent 链，同键兄弟会错误复用首兄弟的计算样式（`div + div`
+    // 对第二 div 不生效实锤；margin-bottom-043 族 / background-026 族 driving）。
+    #[test]
+    fn stylesheet_cache_safe_rejects_sibling_combinators() {
+        for css in ["div + div { color: red; }", "h1 ~ p { color: red; }"] {
+            let stylesheet = zero_css_parser::Parser::parse_stylesheet(css);
+            assert!(
+                !stylesheet_cache_safe(&[stylesheet]),
+                "{css} must disable the style-key cache"
+            );
+        }
+        // 父/祖先组合器由 key.parent 链覆盖，保持安全（缓存语义不回退）。
+        let descendant = zero_css_parser::Parser::parse_stylesheet("div p { color: red; }");
+        assert!(stylesheet_cache_safe(&[descendant]));
+        let child = zero_css_parser::Parser::parse_stylesheet("div > p { color: red; }");
+        assert!(stylesheet_cache_safe(&[child]));
     }
 }
 
