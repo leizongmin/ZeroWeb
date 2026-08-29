@@ -28,8 +28,9 @@ var plain = __zw_native_create_element('div');
 var body = __zw_native_get_body();
 body.appendChild(ce);
 body.appendChild(plain);
-var afterConnect = __ceCalls.join(',');
 // 嵌套子树：custom 内嵌 custom（collect_custom_subtree 多层 pre-order）。
+// R363：不做两段 join 拼接（join(',')+join('|') 会让首条元素双渲染——上一版期望的
+// 「双 connect」即此装配伪影，非 registry 簿记行为）；全量单次 join 断言。
 var inner = __zw_native_create_element('my-inner');
 ce.appendChild(inner);
 body.removeChild(ce);
@@ -40,18 +41,18 @@ var ce2 = __zw_native_create_element('my-el');
 body.appendChild(ce2);
 var det = __zw_native_create_element('section');
 det.appendChild(ce2);
-var afterDisconnect = __ceCalls.join('|');
-afterConnect + '|' + afterDisconnect;
+__ceCalls.join('|');
 "#;
     let out = run_script(r#"<html><body></body></html>"#, script);
-    // 记录行为（R362 观测）：嵌套 insert（ce.appendChild(inner)）触发父子双 connect——
-    // my-el 的重复 connect 是 **registry 簿记 finding**（spec：每连接态真转恰一次；
-    // mark/unmark 的 is_custom_connected 检查疑似未覆盖嵌套 append 路径），转 CE 专项
-    // 记档；本测试锚定现状供回归对照。
+    // R363 勘误：此前记录的「嵌套 insert 双 connect finding」是**测试装配伪影**——
+    // afterConnect 用 join(',') 截取首段后，afterDisconnect 又对全量 join('|')，首条
+    // connect:my-el 被双渲染。最小序列复刻（body.append(ce) → body.append(div) →
+    // ce.append(inner) 逐段读数）实证每连接态真转恰一次派发（C:my-el / C:my-inner 各一），
+    // mark/unmark 簿记 spec-correct，无 registry 专项 finding。全量期望：每个元素恰
+    // 一次 connect + 一次 disconnect（ce2 的移动形态再各一次）。
     assert_eq!(
-        out,
-        "connect:my-el|connect:my-el|connect:my-inner|disconnect:my-el|disconnect:my-inner|connect:my-el|disconnect:my-el",
-        "R362 CE lifecycle：connect 派发 + 嵌套子树逐层 disconnect（含重复 connect finding 锚定）"
+        out, "connect:my-el|connect:my-inner|disconnect:my-el|disconnect:my-inner|connect:my-el|disconnect:my-el",
+        "R362/R363 CE lifecycle：每连接态真转恰一次派发（勘误双 connect 为装配伪影）"
     );
 }
 

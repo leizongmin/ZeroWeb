@@ -24,12 +24,12 @@ custom_elements.rs 89.0%（154/173）是覆盖率矩阵最后一个 <90% 文件�
    div fast-path（无连字符 tag 不派发）对照。
 3. **守卫臂**——polyfill hook 未注册时全路径静默不抛。
 
-## 3. 观测 finding（转 CE 专项记档）
+## 3. 观测 finding（⚠️ R363 勘误撤销）
 
-嵌套 insert（`ce.appendChild(inner)`）触发父子双 connect——`connect:my-el` 出现两次，
-spec 每连接态真转恰一次。疑 mark/unmark 的 `is_custom_connected` 检查未覆盖嵌套 append
-路径（connected 父下 append 不应重派发父自身的 connect）。回调幂等时无观察差异，但对
-计数型回调（如 lit 的 hydration 计数）是行为风险——转 CE registry 专项记档。
+~~嵌套 insert（`ce.appendChild(inner)`）触发父子双 connect~~ → **R363 勘误：装配伪影**
+（两段 join 拼接使首条元素双渲染，见 evidence/2026-08-29-r363-ce-double-connect-erratum.md
+——逐段读数复刻实证每连接态真转恰一次派发，mark/unmark 簿记 spec-correct，无 registry
+簿记缺陷）。CE registry 专项中本项删除；专项剩余内容 = per-realm registry 路由。
 
 ## 4. 验证
 
