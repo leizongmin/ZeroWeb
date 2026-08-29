@@ -1604,6 +1604,7 @@ impl LayoutEngine {
             line_clamp_clamped: false,
             line_clamp_cap: None,
             line_clamp_hidden: false,
+            line_clamp_clip: false,
             text_node_font_sizes: Default::default(),
             text_node_is_ahem: Default::default(),
             text_node_ws_overrides: Default::default(),

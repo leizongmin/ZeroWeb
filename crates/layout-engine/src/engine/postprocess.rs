@@ -2499,6 +2499,10 @@ pub(super) fn apply_cross_block_line_clamp(
                 b.content_height = new_content;
                 b.height = new_content + pb;
             }
+            // R3790：clamp 容器内容裁剪标志——容器收缩后其高度即 clamp 边界，clamp 点前
+            // float 溢出边界部分由 paint 裁到 padding-box（css-overflow-4 with-floats-006
+            // 「clipped to the line-clamp container's content edge」）。
+            b.line_clamp_clip = true;
         }
     }
     walk(root, styles, doc);

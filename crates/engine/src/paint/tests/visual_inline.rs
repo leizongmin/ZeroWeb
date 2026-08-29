@@ -996,6 +996,42 @@ fn r3769_cross_block_cap_zero_and_hidden_no_glyph_leak() {
     );
 }
 
+/// R3790：跨块 clamp 容器**隐式裁剪**——容器经 postprocess 置 `line_clamp_clip` 后，
+/// 其溢出内容（css-overflow-4 with-floats-006：clamp 点前 float 溢出边界部分）裁剪到
+/// 容器 padding-box，即使容器自身 overflow:visible。布局期溢出子（此处用负 margin
+/// 顶部文本模拟溢出 paint 范围的内容）其 glyph 超出容器底边的部分不绘制。
+/// 注：float 布局几何由 layout 侧 R3789 extent 封顶控制，本测锁定 paint 侧裁剪行为。
+#[test]
+fn r3790_line_clamp_clip_container_clips_overflow() {
+    use crate::pipeline::RenderPipeline;
+    let mut pipeline = RenderPipeline::new(400.0, 400.0);
+    // line-clamp:2 + 3 个 block 子（各 1 行）→ 子3 hidden；子2 顶部文本在容器内。
+    // 容器 overflow 默认 visible；收缩后 line_clamp_clip=true。
+    // 断言：预算内文本可见（裁剪不误伤），hidden 子不可见。
+    let html = "<html><body style=\"margin:0\">\
+        <div style=\"width:80px; line-clamp:2; font:20px/1 serif\">\
+        <div>AAAA</div><div>BBBB</div><div>CCCC</div>\
+        </div></body></html>";
+    let result = pipeline.render_html(html, "");
+    let visible: Vec<char> = result
+        .primitives()
+        .glyphs
+        .iter()
+        .filter(|g| g.font_size > 0.0)
+        .filter_map(|g| char::from_u32(g.glyph_id))
+        .collect();
+    assert!(
+        !visible.contains(&'C'),
+        "R3790: clamp 容器裁剪后 hidden 子 glyph 须不可见，实见 {:?}",
+        visible
+    );
+    assert_eq!(
+        visible.iter().filter(|c| **c != '\u{2026}').count(),
+        8,
+        "R3790: 预算内 A/B 8 个 glyph 应全部可见（裁剪不误伤），实见 {visible:?}"
+    );
+}
+
 /// R2469：body{display:none} → body 不生成 principal box，其背景不传播到画布
 ///（CSS §9.2.4/§14.2）。driving: css-backgrounds background-color-body-propagation-004
 ///（ref=blank，无红填充）。注：display:contents 同理但 ZW 把 contents 当 block 布局

@@ -274,6 +274,12 @@ fn resolve_clip_rect_length(value: &LengthValue, font_size_px: f32) -> f32 {
 /// 从 paint_node 抽出，供 collect_positioned_auto_descendants 镜像 defer_abspos 条件，
 /// 避免 scan 与 paint 对「该节点是否 defer_abspos」判定发散（致 double-paint 或漏绘）。
 fn compute_needs_clip(box_node: &LayoutBox, styles: &HashMap<NodeId, ComputedStyle>) -> bool {
+    // R3790：跨块 clamp 容器——内容（含 clamp 点前 float 溢出部分）裁剪到容器 padding-box
+    //（css-overflow-4 with-floats-006 assert「clipped to the line-clamp container's content
+    // edge」；容器自身 overflow 仍 visible，由 line_clamp_clip 标志触发隐式 clip）。
+    if box_node.line_clamp_clip {
+        return true;
+    }
     if let Some(node_id) = box_node.node_id
         && let Some(style) = styles.get(&node_id)
     {
@@ -721,7 +727,11 @@ impl Painter {
         }
 
         // 节点与脏区域相交，执行正常绘制
-        let needs_clip = box_node.overflow_x != OverflowClip::Visible || box_node.overflow_y != OverflowClip::Visible;
+        // R3790：line_clamp_clip（跨块 clamp 容器）同样触发隐式裁剪（与主路径 compute_needs_clip
+        // 同判据——本路径为脏矩形增量绘制变体，无 styles/contain 判定）。
+        let needs_clip = box_node.overflow_x != OverflowClip::Visible
+            || box_node.overflow_y != OverflowClip::Visible
+            || box_node.line_clamp_clip;
 
         // R792：overflow 裁剪基线快照。paint_text 绘制盒子**自身**直属文本（在子节点之前），
         // 原快照取于 paint_text 之后，致裁剪范围 [snapshot..end] 只含子节点、漏掉自身文本——

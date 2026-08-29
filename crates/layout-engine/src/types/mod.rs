@@ -297,6 +297,11 @@ pub struct LayoutBox {
     /// 被整体「跳过」（css-overflow-4：后续盒子不渲染不占位）。几何已清零（height 0 +
     /// inline_layout 清空），此标志供 paint 跳过整棵子树（防红/背景照绘）。
     pub line_clamp_hidden: bool,
+    /// R3790：跨块 clamp 容器标志——容器经 `apply_cross_block_line_clamp` 收缩后，其
+    /// 内容（含 clamp 点前的 float 溢出部分）裁剪到容器 padding-box（css-overflow-4
+    /// with-floats-006 assert「clipped to the line-clamp container's content edge」；
+    /// 容器自身 overflow 仍 visible，paint 据此加隐式 clip）。由 postprocess walk 尾置位。
+    pub line_clamp_clip: bool,
     /// 文本节点的 font_size 映射（来自 layout engine 的 IFC 运行）。
     ///
     /// paint 系统在运行空 styles IFC 后，使用这些正确的 font_size 值
@@ -509,6 +514,7 @@ impl Default for LayoutBox {
             line_clamp_clamped: false,
             line_clamp_cap: None,
             line_clamp_hidden: false,
+            line_clamp_clip: false,
             text_node_font_sizes: NodeIdMap::default(),
             text_node_is_ahem: NodeIdMap::default(),
             text_node_ws_overrides: NodeIdMap::default(),
