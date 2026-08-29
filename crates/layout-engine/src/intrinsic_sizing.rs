@@ -140,6 +140,38 @@ pub(crate) fn box_content_max_width(
         .and_then(|id| styles.get(&id))
         .and_then(|s| resolve_intrinsic_real_length(&s.width, s))
         .unwrap_or(0.0);
+    // R3792：aspect-ratio transferred width（css-sizing-4 §4.1 transferred size）——
+    // width:auto + aspect_ratio + definite height（Px）的块盒，其 intrinsic 宽贡献 =
+    // height × ratio（intrinsic-size-001：`height:100px; aspect-ratio:1/1` 子对
+    // `width:min-content` 父的 min-content 贡献应 100px，旧测 0 → 父回退 Auto 满宽）。
+    // flex item 路径已有同逻辑（flex_item_base_size 2.5，R1015），此处补块内路径。
+    // css-sizing-4：「aspect-ratio does not apply to internal table boxes」——table 内部盒
+    //（cell/row/row-group/caption/column 等）排除（table-element-001：td height:50px +
+    // ratio 4/1 不 transferred 200px 宽红条）。
+    let own_ar = box_node
+        .node_id
+        .and_then(|id| styles.get(&id))
+        .filter(|s| {
+            matches!(s.width, LengthValue::Auto)
+                && !matches!(
+                    s.display,
+                    DisplayValue::TableRow
+                        | DisplayValue::TableRowGroup
+                        | DisplayValue::TableHeaderGroup
+                        | DisplayValue::TableFooterGroup
+                        | DisplayValue::TableCell
+                        | DisplayValue::TableCaption
+                        | DisplayValue::TableColumn
+                        | DisplayValue::TableColumnGroup
+                )
+        })
+        .and_then(|s| s.aspect_ratio.filter(|&r| r > 0.0))
+        .and_then(|ratio| {
+            let s = box_node.node_id.and_then(|id| styles.get(&id));
+            let main = s.and_then(|s| resolve_intrinsic_real_length(&s.height, s));
+            main.map(|main| aspect_ratio_transferred_width(s.unwrap(), box_node, main, ratio))
+        })
+        .unwrap_or(0.0);
     let inner = if !has_in_flow_child {
         // 叶盒：显式宽或文本内容宽（Round C）。纯文本 item（无 LayoutBox 子元素）
         // 之前测 0，现按 DOM 文本内容度量。取 max 避免显式宽被文本低估。
@@ -151,7 +183,8 @@ pub(crate) fn box_content_max_width(
         own_explicit
     } else {
         children_inner
-    };
+    }
+    .max(own_ar);
 
     inner + box_node.padding_left + box_node.padding_right + box_node.border_left + box_node.border_right
 }
