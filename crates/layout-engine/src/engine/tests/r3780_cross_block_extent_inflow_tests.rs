@@ -153,3 +153,34 @@ fn r3781_flow_root_child_at_boundary_consumes_normally() {
         "偏移恰在 flow-root 边界：完整消耗，容器 224"
     );
 }
+
+/// R3782：multicol 容器中 line-clamp 无效（css-overflow-4 line-clamp-039：collapse 值
+/// 在 multicol 中同 auto 初始值，多列分片接管行盒分布）。columns:3 + line-clamp:2 的
+/// 9 行内容应 3 列完整渲染、不裁行。
+#[test]
+fn r3782_multicol_container_line_clamp_disabled() {
+    let html = "<html><body style=\"margin:0\">\
+<div style=\"line-clamp: 2; columns: 3;\">\
+<p>Line 1</p><p>Line 2</p><p>Line 3</p>\
+<p>Line 4</p><p>Line 5</p><p>Line 6</p>\
+<p>Line 7</p><p>Line 8</p><p>Line 9</p></div>\
+</body></html>";
+    let doc = zero_dom::parse_html(html);
+    let mut sys = StyleSystem::new();
+    sys.set_viewport(800.0, 600.0);
+    let styles = sys.compute_styles(&doc, &[]);
+    let mut engine = LayoutEngine::new(800.0, 600.0);
+    let result = engine.compute(&doc, &styles);
+    // 9 个 p 全可见（无 line_clamp_hidden）：旧实现跨块 clamp 把 p3+ 裁到 0 高。
+    fn count_hidden(b: &LayoutBox) -> usize {
+        b.children
+            .iter()
+            .map(|c| usize::from(c.line_clamp_hidden) + count_hidden(c))
+            .sum()
+    }
+    assert_eq!(
+        count_hidden(&result.root),
+        0,
+        "multicol 容器内 line-clamp 无效：9 个 p 全可见（旧 clamp 裁掉 7 个）"
+    );
+}

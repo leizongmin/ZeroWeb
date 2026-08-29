@@ -2210,7 +2210,10 @@ pub(super) fn apply_cross_block_line_clamp(
             if has_block_grandchildren || is_inline_flow_carrier {
                 let before = *remaining;
                 let mut inner_host: Option<(usize, usize)> = None;
-                let mut inner_out = WalkOutput { boundary_y: out.boundary_y, zero_margin_extent: 0.0 };
+                let mut inner_out = WalkOutput {
+                    boundary_y: out.boundary_y,
+                    zero_margin_extent: 0.0,
+                };
 
                 exhausted = walk_children(
                     &mut b.children[idx],
@@ -2406,10 +2409,20 @@ pub(super) fn apply_cross_block_line_clamp(
         ) {
             return;
         }
+        // R3782：multicol 容器跳过（css-overflow-4 line-clamp-039：`line-clamp` 的
+        // collapse 值在 multicol 中同 auto 初始值 → **multicol 容器中 line-clamp 无效**
+        //——多列分片语义接管行盒分布，clamp 不适用）。column-count/column-width 任一
+        // 非 auto 即 multicol（与 multicol::compute_column_info 同判据）。
+        if crate::multicol::compute_column_info(style, b.content_width).is_some() {
+            return;
+        }
         // 自身 IFC 已由 R2431 cap 过（容器有直接 inline 文本时），此处只处理跨块预算。
         let mut remaining = limit;
         let mut ellipsis_host: Option<(usize, usize)> = None;
-        let mut out = WalkOutput { boundary_y: 0.0, zero_margin_extent: 0.0 };
+        let mut out = WalkOutput {
+            boundary_y: 0.0,
+            zero_margin_extent: 0.0,
+        };
         let exhausted = walk_children(
             b,
             styles,
