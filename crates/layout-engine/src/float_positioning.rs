@@ -1352,6 +1352,14 @@ pub(crate) fn adjust_float_positions_with_context(
                                 // 左浮动：将 BFC 元素推到浮动元素的 margin-box 右侧
                                 // float_x 是边框盒左边，加上边框宽度和右 margin
                                 let avoidance_x = float_x + float_border_w + float_margin_r;
+                                // R3807：零位移左 float（avoidance_x ≤ 0）不构成 BFC 回避约束
+                                //（CSS2 §9.5 chromium 实证：0 宽左 float 在容器左缘时
+                                // float offset 与无 float 同值 → BFC 走普通 §10.3.3 流内求解，
+                                // 负 margin 求解语义保留——zero-width-floats.html：float 0 宽
+                                // 时 BFC 仍应 x=ml=-50、w=cb−ml−mr=200，而非被钉在 band）。
+                                if avoidance_x <= 0.0 {
+                                    continue;
+                                }
                                 let declared_or_layout_width = child.declared_width_px.unwrap_or(child.width);
                                 // R1369：definite-width BFC（width 未填满容器）若 overflow 容器
                                 //（child.x + width > container_width），应推到 float 下方（CSS §9.5：
@@ -1408,6 +1416,14 @@ pub(crate) fn adjust_float_positions_with_context(
                             FloatValue::Right => {
                                 let declared_or_layout_width = child.declared_width_px.unwrap_or(child.width);
                                 if child.x + declared_or_layout_width <= *float_x {
+                                    continue;
+                                }
+                                // R3807：零位移右 float（float_x ≥ 容器宽）不构成 BFC 回避约束
+                                //（CSS2 §9.5 chromium 实证：0 宽右 float 在容器右缘时
+                                // float offset 与无 float 同值 → 普通流内求解；
+                                // zero-width-floats.html 的两个 0 宽 float 均零位移 → BFC 保持
+                                // x=ml=-50、w=cb−ml−mr=200 的流内几何）。
+                                if *float_x >= container_width - 0.5 {
                                     continue;
                                 }
                                 // R1722：float:right definite-width BFC 放不下 float 左侧可用宽
