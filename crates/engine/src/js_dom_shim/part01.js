@@ -1919,7 +1919,11 @@
             obs._callback(records, obs);
           } catch (_e302) {
             var _r302Realm = null;
-            try { _r302Realm = (obs._callback && typeof obs._callback === 'object') ? obs._callback._zwRealmWin : null; } catch (_e302s) {}
+            // R370 勘误：callback 是**函数**——旧 `typeof === 'object'` 检查使函数回调的
+            // `_zwRealmWin` 印记永远读不到（R302 只覆盖对象形态回调），全部落主 window
+            //（WPT MutationObserver-cross-realm-callback-report-exception 的
+            // onerrorCalls expected ["frame1"] got ["top"]）。
+            try { _r302Realm = (obs._callback && (typeof obs._callback === 'object' || typeof obs._callback === 'function')) ? obs._callback._zwRealmWin : null; } catch (_e302s) {}
             if (!_r302Realm && globalThis.__zwRealmOf) {
               try { _r302Realm = globalThis.__zwRealmOf.get(obs._callback) || null; } catch (_e302m) {}
             }

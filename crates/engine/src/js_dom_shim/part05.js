@@ -2522,15 +2522,19 @@
       // `_zwRealmWin` + 入 `__zwRealmOf` 注册表（WPT MutationObserver-cross-realm-
       // callback-report-exception：`new frames[1].Function(...)` 造的 MO 回调抛错
       // 须上报到 frame1 的 onerror——回调按创建 realm 定向，R187 Object 同款）。
+      // R370 勘误：本 IIFE 在 win 字面量求值期执行，`var win302 = win` 捕获的是
+      // **undefined**（字面量尚未赋给 win）——印记恒 undefined（falsy），flush 时
+      // 域反查 miss → 异常全部落主 window（expected ["frame1"] got ["top"]）。改
+      // **调用时读闭包 `win`**（字面量求值完成后 win 已赋值， BoundFunction 调用
+      // 发生在页面脚本期）。
       Function: (function () {
-        var win302 = win;
         function BoundFunction() {
           var args302 = Array.prototype.slice.call(arguments);
           var fn302 = Function.apply(null, args302);
           try {
-            fn302._zwRealmWin = win302;
+            fn302._zwRealmWin = win;
             if (!globalThis.__zwRealmOf) globalThis.__zwRealmOf = new globalThis.Map();
-            globalThis.__zwRealmOf.set(fn302, win302);
+            globalThis.__zwRealmOf.set(fn302, win);
           } catch (_e302f) {}
           return fn302;
         }

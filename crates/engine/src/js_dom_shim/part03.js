@@ -7692,6 +7692,45 @@
     return !event._defaultPrevented;
   }
 
+  // R370（js-dom M4）：detached/iframe 子文档 body 的 childList 独立派发（R189 轻量
+  // 元素同款模式——observe() 经 R189 分支注册 `__r189:BODY:<seq>` 键后，本形态 body
+  // 的本地 appendChild/removeChild 无 sel/handle 标识，主汇流点 _mo_notify 无法寻址；
+  // 独立扫描 observers 中注册了该键者直接入列 + flush）。仅 R189 键命中的观察者受
+  // 影响——既有 sel/handle/doc 站投递路径零变化。
+  function _r370NotifyBodyChildList(container, target, removed, added) {
+    try {
+      if (!globalThis.__zw_mo_observers || !globalThis.__zw_mo_observers.length) return;
+      if (!container || container._zwSeq === undefined) return;
+      var key370 = '__r189:' + String(container.tagName) + ':' + String(container._zwSeq);
+      var hit370 = false;
+      for (var oi370 = 0; oi370 < globalThis.__zw_mo_observers.length; oi370++) {
+        var obs370 = globalThis.__zw_mo_observers[oi370];
+        if (obs370._targets && (obs370._targets['h:' + key370] || obs370._targets[key370])) {
+          hit370 = true;
+          break;
+        }
+      }
+      if (!hit370) return;
+      for (var oj370 = 0; oj370 < globalThis.__zw_mo_observers.length; oj370++) {
+        var ob370 = globalThis.__zw_mo_observers[oj370];
+        if (!ob370._targets || !(ob370._targets['h:' + key370] || ob370._targets[key370])) continue;
+        var rec370 = Object.create(globalThis.MutationRecord.prototype);
+        rec370.type = 'childList';
+        rec370.target = target != null ? target : container;
+        rec370.addedNodes = added || [];
+        rec370.removedNodes = removed || [];
+        rec370.previousSibling = null;
+        rec370.nextSibling = null;
+        rec370.attributeName = null;
+        rec370.attributeNamespace = null;
+        rec370.oldValue = null;
+        ob370._records.push(rec370);
+      }
+      if (typeof globalThis.__zw_mo_flush_lite === 'function') {
+        try { globalThis.__zw_mo_flush_lite(); } catch (_e370fl) {}
+      }
+    } catch (_e370n) {}
+  }
   function _makeDetachedDocument(title) {
     var bodyHtml = '';
     var _tree = null; // R3017：cached mutable body 树（首次 childNodes 访问建，innerHTML setter 失效）
@@ -8275,10 +8314,21 @@
                 }
               })(c);
             } catch (_e368ab) {}
+            _r370NotifyBodyChildList(body, c, [], [c]);
             return c;
           } catch (_e112d) { /* 回落通用路径 */ }
         }
         ensureTree(); var r = _tree.appendChild(c); if (c && c.parentNode === _tree) c.parentNode = body;
+        // R370（js-dom M4）：detached/iframe 子文档 body 的 childList **独立派发**——
+        // observe() 对本形态 body（无 sel/handle）落 `__r189:BODY:<seq>` 键（R189 分支），
+        // 但本 appendChild 两条路径（串行合并 / 通用树）此前均不投递 → observe 后
+        // append 永无 record（WPT MutationObserver-cross-realm-callback-report-exception
+        // 的 `frames[0].document.body` 观察根因——R302「工厂 body 可观察 id」域）。
+        // 按 R189 轻量元素同款「独立派发」模式：扫 observers 中注册了本 body R189 键的
+        // 观察者直接入列（removed/added 由调用方快照传入）。仅 R189 键命中者受影响，
+        // 既有 sel/handle/doc 站零变化。
+        // https://dom.spec.whatwg.org/#mutationobserver
+        _r370NotifyBodyChildList(body, c, [], [c]);
         // R191（js-dom M4）：iframe doc 的 body appendChild 的 **adopt 子树传播**
         //（spec concept-node-adopt——跨 realm appendChild 时子树 ownerDocument 重指本
         // doc；WPT node-realm-mixed-across-adoption "Element parsed into an adopted
@@ -9886,15 +9936,27 @@
           }
           if (mode === 'prepend') {
             // best-effort：逆序 insertBefore 首子（无 ref → appendChild 前置近似）。
+            // R370（js-dom M4）：字符串参数转 Text（spec ParentNode prepend/append 的
+            // convert-nodes-into-a-node 步骤——`target.append("foo")` 旧版对字符串静默
+            // 丢弃，WPT MutationObserver-crossrealm-callback-report-exception 的
+            // `frames[0].document.body.append("foo")` 不产生任何 mutation → observer
+            // 回调永不触发）。
             for (var b = arguments.length - 1; b >= 0; b--) {
               var n = arguments[b];
               if (n && typeof n === 'object') { try { target.insertBefore ? target.insertBefore(n, target.firstChild || null) : target.appendChild(n); } catch (_e) {} }
+              else if (typeof n === 'string' && target.ownerDocument && target.ownerDocument.createTextNode) {
+                try { var _r370tp = target.ownerDocument.createTextNode(n); target.insertBefore ? target.insertBefore(_r370tp, target.firstChild || null) : target.appendChild(_r370tp); } catch (_e370t) {}
+              }
             }
             return;
           }
           for (var c = 0; c < arguments.length; c++) {
             var nn = arguments[c];
             if (nn && typeof nn === 'object') { try { target.appendChild(nn); } catch (_e2) {} }
+            // R370：字符串参数转 Text（spec convert-nodes-into-a-node；同 prepend 段）。
+            else if (typeof nn === 'string' && target.ownerDocument && target.ownerDocument.createTextNode) {
+              try { target.appendChild(target.ownerDocument.createTextNode(nn)); } catch (_e370a) {}
+            }
           }
         };
       };
@@ -10669,6 +10731,16 @@
         // 顶部直返不改变任何外部可观测行为。
         if (prop === '__zwHandle') return handle;
         if (prop === '__zwSelector') return sel;
+        // R370（js-dom M4）：**内部键顶部短路扩展**（R351 同款，补 `__zwIsText`/
+        // `__zwChildIndex`）——R260/R262/R263 live-range adjust 扫描对每条目容器读
+        // `__zwIsText`（判定文本节点形态），条目容器常是元素 proxy → 每读付完整 R98
+        // 原型走查（78µs/读，R351 探针实测）→ O(注册表 × ops) 二次方尾（WPT
+        // Range-mutations-{dataChange,replaceData} 文件级 Timeout 尾批）。proxy 产物
+        // **从不**own 这两键（写点全在 plain wrapper：part05 `_wrapNodeEntry` 6847/7094
+        // + part03 7453；set trap 落 target 的 `__zwIsText` 形态经查不存在）——顶部直返
+        // undefined 行为等价（truthy 判定恒 false 与 R98 走查回落一致）。
+        if (prop === '__zwIsText') return undefined;
+        if (prop === '__zwChildIndex') return undefined;
         // js-dom M3 R95：`constructor` 顶部短路（原型链 own 命中，限 8 层）。真实 DOM 中
         // `el.constructor` 沿原型链命中（custom element 返用户类）——lit ReactiveElement 的
         // 实例方法 `_$E_` 读 `this.constructor.elementProperties`（e2e 实证：旧 get trap 对
