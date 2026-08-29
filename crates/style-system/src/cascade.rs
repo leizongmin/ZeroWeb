@@ -332,6 +332,21 @@ pub fn cascade<'a>(declarations: Vec<CascadedDeclaration<'a>>, quirks: bool) -> 
         && declarations.iter().any(|d| {
             d.property.eq_ignore_ascii_case("-webkit-box-orient") && d.value.trim().eq_ignore_ascii_case("vertical")
         });
+    // R3798：legacy `-webkit-box` **水平语义**上下文——display:-webkit-box/-webkit-inline-box
+    // 存在但无 `-webkit-box-orient: vertical`（webkit-line-clamp-046：clamp 不适用，-webkit-box
+    // 保持 flex 式行为——chromium ref 用 display:flex + justify-content:center 表达期望）。
+    // 门控收窄：仅当元素同时声明 `-webkit-box-pack`/`-webkit-box-align`（flex 布局意图）
+    // 才映射 flex——002（box + clamp、无 pack/align）ref 为**普通块**（5 行不收缩），映射
+    // flex 会误单行化（-1 回归实证）。
+    let has_legacy_box_horizontal = declarations
+        .iter()
+        .any(|d| d.property.eq_ignore_ascii_case("display") && is_legacy_webkit_box_value(d.value))
+        && !declarations.iter().any(|d| {
+            d.property.eq_ignore_ascii_case("-webkit-box-orient") && d.value.trim().eq_ignore_ascii_case("vertical")
+        })
+        && declarations.iter().any(|d| {
+            d.property.eq_ignore_ascii_case("-webkit-box-pack") || d.property.eq_ignore_ascii_case("-webkit-box-align")
+        });
     // 按属性名分组（遗留别名先规范化为标准名——见 canonical_property_name）。
     // by_property 键借用声明自身的 property（&'a str，不克隆）——热路径每属性省 1 次
     // String 分配；分组内声明也是借用（构造侧已省克隆，见 collect_declarations）。
@@ -363,6 +378,46 @@ pub fn cascade<'a>(declarations: Vec<CascadedDeclaration<'a>>, quirks: bool) -> 
             continue;
         }
         let canonical = canonical_property_name(decl.property);
+        // R3798：legacy `-webkit-box` **水平语义**映射（无 vertical orient 上下文）——
+        // ① display 声明改写为真实 flex 值（-webkit-box→flex、-webkit-inline-box→inline-flex）
+        //   作同 order 虚拟声明（同槽更高优先级作者显式 display 照常胜出，R3791 同款）；
+        // ② `-webkit-box-pack:<v>` → `justify-content:<v>`、`-webkit-box-align:<v>` →
+        //   `align-items:<v>`（值语法 046 用 center 与现代值一致；046 ref 即 flex + center）。
+        // 有子盒普通 display 声明时不覆盖（级联决定）。仅水平语义上下文（vertical 走 R3791 块化）。
+        if has_legacy_box_horizontal {
+            if decl.property.eq_ignore_ascii_case("display") && is_legacy_webkit_box_value(decl.value) {
+                let mapped = if decl.value.trim().eq_ignore_ascii_case("-webkit-inline-box") {
+                    "inline-flex"
+                } else {
+                    "flex"
+                };
+                by_property.entry(canonical).or_default().push(CascadedDeclaration {
+                    property: decl.property,
+                    value: mapped,
+                    order: decl.order,
+                });
+                continue;
+            }
+            if decl.property.eq_ignore_ascii_case("-webkit-box-pack") {
+                by_property
+                    .entry("justify-content")
+                    .or_default()
+                    .push(CascadedDeclaration {
+                        property: "justify-content",
+                        value: decl.value,
+                        order: decl.order,
+                    });
+                continue;
+            }
+            if decl.property.eq_ignore_ascii_case("-webkit-box-align") {
+                by_property.entry("align-items").or_default().push(CascadedDeclaration {
+                    property: "align-items",
+                    value: decl.value,
+                    order: decl.order,
+                });
+                continue;
+            }
+        }
         // R3771：`-webkit-line-clamp` 走门控分组——非 legacy 上下文整条丢弃（no-op）；
         // legacy 上下文保留原名（不 canonical 化，与标准 `line-clamp` 分槽入组，由下方
         // 合并步骤按 CascadeOrder 确定性决出唯一胜者）。CSS-wide 关键字值交由通用
@@ -1967,5 +2022,66 @@ mod tests {
         let type_sel = CascadeOrder::new(Origin::Author, None, (0, 0, 1), 0, false);
         assert!(id_sel > class_sel, "ID 选择器应胜过类选择器");
         assert!(class_sel > type_sel, "类选择器应胜过类型选择器");
+    }
+
+    /// R3798：legacy `-webkit-box` **水平语义**映射（无 vertical orient + 有 box-pack/align
+    /// flex 意图）——display 改写 flex/-inline-flex，`-webkit-box-pack` → `justify-content`、
+    /// `-webkit-box-align` → `align-items`。driving: webkit-line-clamp-046（ref 即 flex +
+    /// justify-content:center）。
+    #[test]
+    fn r3798_legacy_webkit_box_horizontal_maps_to_flex() {
+        let order = CascadeOrder::new(Origin::Author, None, (0, 0, 1), 0, false);
+        let decls = vec![
+            CascadedDeclaration {
+                property: "display",
+                value: "-webkit-box",
+                order: order.clone(),
+            },
+            CascadedDeclaration {
+                property: "-webkit-line-clamp",
+                value: "4",
+                order: order.clone(),
+            },
+            CascadedDeclaration {
+                property: "-webkit-box-align",
+                value: "center",
+                order: order.clone(),
+            },
+            CascadedDeclaration {
+                property: "-webkit-box-pack",
+                value: "center",
+                order: order.clone(),
+            },
+        ];
+        let result = cascade(decls, false);
+        // display 改写 flex（水平语义）；pack/align 映射现代属性。
+        assert_eq!(result.get("display"), Some(&"flex".to_string()));
+        assert_eq!(result.get("justify-content"), Some(&"center".to_string()));
+        assert_eq!(result.get("align-items"), Some(&"center".to_string()));
+        // 无 orient:vertical → clamp 不适用（046 assert：仅 vertical 时 clamp 建立块盒）。
+        assert_eq!(result.get("line-clamp"), None);
+    }
+
+    /// R3798 守卫（webkit-line-clamp-002）：box + clamp **无** pack/align（无 flex 意图）——
+    /// 不映射 flex，display 声明照旧被丢（used 回退 block），ref 为普通块 5 行。
+    #[test]
+    fn r3798_legacy_webkit_box_without_pack_align_stays_dropped() {
+        let order = CascadeOrder::new(Origin::Author, None, (0, 0, 1), 0, false);
+        let decls = vec![
+            CascadedDeclaration {
+                property: "display",
+                value: "-webkit-box",
+                order: order.clone(),
+            },
+            CascadedDeclaration {
+                property: "-webkit-line-clamp",
+                value: "3",
+                order: order.clone(),
+            },
+        ];
+        let result = cascade(decls, false);
+        assert_eq!(result.get("display"), None, "无 pack/align 时 -webkit-box 不改写 flex");
+        assert_eq!(result.get("justify-content"), None);
+        assert_eq!(result.get("align-items"), None);
     }
 }
