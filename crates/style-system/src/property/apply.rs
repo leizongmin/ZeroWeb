@@ -1027,7 +1027,11 @@ pub fn apply_property_value_with_quirks(
                     Ok(v) => v,
                     Err(_) => return false,
                 };
-                if !w.is_finite() || !h.is_finite() || w < 0.0 || h <= 0.0 {
+                if !w.is_finite() || !h.is_finite() || w <= 0.0 || h <= 0.0 {
+                    // R3797：w==0 退化比（aspect-ratio:0/1，csswg #4572）——transferred
+                    // height = width/0 = inf，taffy 全链 NaN 污染（zero-or-infinity-001：
+                    // 红盒 100×inf，绿方块 y=NaN 不绘制）。css-sizing-4 §4.2 退化比按
+                    // 无 ratio 处理（content-based sizing）——解析拒绝 = aspect_ratio None。
                     return false;
                 }
                 w / h

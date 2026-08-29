@@ -341,3 +341,34 @@ fn r3796_max_height_max_content_clamps_definite_height() {
         "R3796: max-height:max-content = 固有宽/ar = 100 钳 height 500 → 100×100，实际 {w}×{h}（旧 max-height 关键字无解析 → 500×500）"
     );
 }
+
+/// R3797（zero-or-infinity-001 驱动案）：退化比 `aspect-ratio: 0/1`（csswg #4572）——
+/// 解析拒绝按无 ratio 处理（css-sizing-4 §4.2），红盒塌缩 100×0 不遮挡绿方块；
+/// 旧 Some(0.0) 使 transferred height = width/0 = inf，全链 NaN 污染（绿方块 y=NaN
+/// 不绘制）。
+#[test]
+fn r3797_degenerate_ratio_treated_as_no_ratio() {
+    let html = r#"<!DOCTYPE html><html><body style="margin:0">
+<div style="background: red; width: 100px; aspect-ratio: 0/1;"></div>
+<div style="background: green; width: 100px; height: 100px;"></div>
+</body></html>"#;
+    let doc = zero_dom::parse_html(html);
+    let mut sys = zero_style_system::StyleSystem::new();
+    sys.set_viewport(800.0, 600.0);
+    let styles = sys.compute_styles(&doc, &[]);
+    let red = doc.get_elements_by_tag_name("div").into_iter().next().expect("red div");
+    let green = doc
+        .get_elements_by_tag_name("div")
+        .into_iter()
+        .nth(1)
+        .expect("green div");
+    let mut engine = LayoutEngine::new(800.0, 600.0);
+    let result = engine.compute(&doc, &styles);
+    let (rw, rh) = find_box(&result.root, red).expect("red box");
+    let (_gw, gh) = find_box(&result.root, green).expect("green box");
+    assert!(
+        rh < 1.0 && rw > 99.0,
+        "R3797: 退化比 0/1 按无 ratio 处理 → 红盒 100×0（content 0），实际 {rw}×{rh}（旧 Some(0.0) → h=inf + NaN 级联）"
+    );
+    assert!((gh - 100.0).abs() < 1.0, "R3797: 绿方块高 100 不受 NaN 污染，实际 {gh}");
+}
