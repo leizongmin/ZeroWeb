@@ -2603,3 +2603,60 @@ fn test_iframe_final_url_header_r360() {
         "R360 iframe 加载 X-Zero-Final-URL 头覆盖 doc._zwURL → URL/documentURI 反映最终地址"
     );
 }
+
+/// R364（js-dom M1/M4 CE registry 专项首片）：**per-realm registry 实例**——iframe win 的
+/// customElements 为独立实例（own 状态 + 参数化 helper 共享校验/waiter），inner.define("x")
+/// 不再注册进主 registry → 主 define("x") 不再误碰「already used」（WPT
+/// create-element-realm-after-adoption / node-realm-mixed-across-adoption 的 define 冲突簇）。
+/// spec：每 Realm 一个 CustomElementRegistry。
+/// https://html.spec.whatwg.org/multipage/custom-elements.html#customelementregistry
+#[test]
+fn test_per_realm_ce_registry_r364() {
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let mut sandbox = V8Sandbox::with_config(zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    })
+    .unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> =
+        Arc::new(Mutex::new("<html><body></body></html>".to_string()));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+    sandbox
+        .execute(
+            "try {\
+             var ifr = document.createElement('iframe');\
+             document.body.appendChild(ifr);\
+             var inner = ifr.contentWindow;\
+             var log = [];\
+             // inner realm define + main realm define 同名——旧转发模型主 define 误碰 already-used
+             class InnerEl extends inner.HTMLElement {}\
+             inner.customElements.define('x-r364', InnerEl);\
+             log.push('innerDefined:' + (inner.customElements.get('x-r364') === InnerEl ? 'same' : 'wrong'));\
+             class MainEl extends HTMLElement {}\
+             customElements.define('x-r364', MainEl);\
+             log.push('mainDefined:' + (customElements.get('x-r364') === MainEl ? 'same' : 'wrong'));\
+             log.push('innerIsolation:' + (inner.customElements.get('x-r364') === InnerEl ? 'kept' : 'clobbered'));\
+             log.push('getName:' + customElements.getName(MainEl));\
+             // whenDefined per-realm
+             var p = inner.customElements.whenDefined('x-r364');\
+             log.push('whenDefined:' + (p instanceof Promise ? 'promise' : 'wrong'));\
+             // inner 二次 define 同名仍撞（per-realm 冲突检测语义保持）
+             var dup = 'no';\
+             try { inner.customElements.define('x-r364', InnerEl); } catch (e) { dup = e.message.indexOf('already been used') >= 0 ? 'already-used' : 'other'; }\
+             log.push('innerDup:' + dup);\
+             globalThis.__r364e = log.join('|');\
+             } catch (err) { globalThis.__r364e = 'ERR:' + err.message; }",
+        )
+        .unwrap();
+    let out = sandbox.execute("globalThis.__r364e").unwrap().value;
+    assert_eq!(
+        out, "innerDefined:same|mainDefined:same|innerIsolation:kept|getName:x-r364|whenDefined:promise|innerDup:already-used",
+        "R364 per-realm registry：内外 realm 同名 define 互不冲突、各自 get/getName/whenDefined 独立、per-realm 冲突检测保持"
+    );
+}

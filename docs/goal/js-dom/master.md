@@ -3,6 +3,8 @@
 **入口文档**: [../js-dom.md](../js-dom.md)（长期 Mission / Done Criteria / 执行协议 / 文档治理规则）
 **关联 RFC**: [../../specs/p1b-v8-native-bindings-rfc.md](../../specs/p1b-v8-native-bindings-rfc.md) + [../../specs/p1b-l2d3-unified-matcher-identity-bridge-rfc.md](../../specs/p1b-l2d3-unified-matcher-identity-bridge-rfc.md)（R166 新增——L2-d3 统一匹配器 + identity 桥设计；**v0.3 @ R354**：§6 L2 深水区专项总装——R350-R353 性能证据入册[E1-E4]+ d3 重启路线切片分解[d3d-r1/r2/r3 → d3e → P1-P3 性能片随 A 接续]；**d3d-r1 已落 @ R355**[`_zwQueryKey` 键统一 helper]；**d3d-r2 前置子片（iframe realm timer）已落 @ R356**——原「树源统一」前提经探针普查确认已由 R296-R310 收口；**d3d-r3/d3e 实用收口 @ R359**——三域探针实证无本树化收益面，M1 JS 侧实用收口达成）
 **创建日期**: 2026-08-13（goal 拆分 bootstrap）
+**本轮**: R364 — **CE registry 专项首片：per-realm registry 实例（define 冲突分离；realm 族 5 共同前置第一片）**：`_zwMakeCERegistry()` 工厂（part03）——子 realm registry own 三态 + 校验/waiter 逻辑经参数化 helper（`_ceDefine`[含 R98 observedAttributes Get + R149 主文档 upgrade + waiter resolve；子实例 noUpgrade]/`_ceWhenDefined`）共享；主实例字面量读既有三变量（20 处读点零改动）；iframe win 转发点（R181）改独立实例——旧转发使 `inner.define("x")` 注册进主表、主 define 误碰「already used」（两目标文件 define 冲突簇根因）。**过程回归**：首版 `_ceDefine` 遗漏 waiter resolve——r2813 哨兵当场红，补入转绿（参数化重构的「逻辑搬家」须逐段核对原体尾部）。**验证**：全量 sweep **55485P/18F/16T——Fail 集合 13=13 恒等**（create-element-realm-after-adoption 0P/1F page-throw→1P/4F subtests 解锁；node-realm-mixed 3P/1F 余路由断言）、Pass +1；engine v8 2491（+1 单测）/quickjs 1472；clippy 双矩阵零警告；fmt 无 diff。**后续片**：创建路由（owner-doc realm 查表）→ realm 族核心两文件的直接解。→ evidence/2026-08-29-r364-per-realm-ce-registry.md
+
 **本轮**: R363 — **勘误轮：R362「嵌套 insert 双 connect finding」为测试装配伪影（零生产改动；tests_ce.rs 装配去除 + 期望修正 7→6 条目）**：逐段读数复刻（最小序列 + 全序列双跑确定性验证）实证 mark/unmark 簿记 **spec-correct**——每连接态真转恰一次派发，无 registry 簿记缺陷。伪影机制 = lifecycle 脚本两段 join 拼接（首段 join(',') + 全量 join('|') 使首条元素双渲染，6 条目呈现 7 段）。**更正**：R362 evidence finding 撤销注记；CE registry 专项材料删「嵌套双 connect」项（专项剩余 = per-realm registry 路由，realm 族 5 前置）。**教训**：分段 join 装配是观测伪影经典来源——读数与数组内容不符时先排除装配层再怀疑被观测系统。**验证**：engine v8 2490/quickjs 1472 全绿；clippy 双矩阵零警告；fmt 无 diff。→ evidence/2026-08-29-r363-ce-double-connect-erratum.md
 
 **本轮**: R362 — **DC-4 覆盖率提升：custom_elements.rs 89.0%→91.9%（<90% 候选清单清零）+ 嵌套 insert 重复 connect finding 记档**：已知 Fail 集合余 13 全深结构后转 DC-4 线——custom_elements.rs 是覆盖率矩阵最后一个 <90% 文件。新增 `tests_ce.rs`（原生沙箱直连 Rust 侧 CE 模块，v8 门控）：① connect/disconnect lifecycle（含 R3271 fast-path、嵌套子树 pre-order、**已连元素移入 detached 容器的 disconnect 臂**[insert-into-detached 形态]）；② attribute 派发三态（old 预读 null→v1→v2→null + div fast-path 对照）；③ 守卫臂（无 hook 静默）。**finding**：嵌套 insert 触发父子双 connect（⚠️ **R363 勘误撤销**——装配伪影非簿记缺陷，见 R363 记录）。**验证**：dom_bindings 源码 94.35%→**94.43%**、custom_elements 91.9%、全部 96.12%；engine v8 2490（+3）/quickjs 1472；clippy 双矩阵零警告；fmt 无 diff。→ evidence/2026-08-29-r362-ce-coverage-lift.md
@@ -552,6 +554,7 @@
 
 | 日期 | 轮次 | 证据 | 结果 |
 |------|------|------|------|
+| 2026-08-29 | R364 | CE registry 专项首片：per-realm registry 实例（part03 `_zwMakeCERegistry` 工厂 + define/whenDefined 参数化 + part05 iframe win 独立实例接线；首版遗漏 waiter resolve 被 r2813 哨兵抓回当轮修）+ evidence/2026-08-29-r364-per-realm-ce-registry.md | **sweep 55485P/18F/16T——Fail 集合 13=13 恒等、Pass +1**；create-element-realm-after-adoption 0P/1F→1P/4F（subtests 解锁）、node-realm-mixed 3P/1F；engine 2491/quickjs 1472 绿 |
 | 2026-08-29 | R363 | 勘误轮：R362「嵌套双 connect finding」为测试装配伪影（两段 join 双渲染；逐段读数复刻实证每真转恰一次派发）+ tests_ce.rs 装配去除 + evidence/2026-08-29-r363-ce-double-connect-erratum.md | **零生产改动**；CE registry 专项删「双 connect」项（剩余 = per-realm registry 路由）；engine 2490/quickjs 1472 绿 |
 | 2026-08-29 | R362 | DC-4 覆盖率提升：tests_ce.rs 新增（原生沙箱 CE lifecycle/attr/守卫三测试，v8 门控）+ 嵌套 insert 重复 connect finding 记档 + evidence/2026-08-29-r362-ce-coverage-lift.md | **custom_elements.rs 89.0%→91.9%（<90% 清单清零）；dom_bindings 源码 94.43%、全部 96.12%**；engine 2490/quickjs 1472 绿；clippy 双矩阵零警告 |
 | 2026-08-29 | R361 | 批内 detach→insert 移动语义 detached-stash（js_dom_bridge.rs apply）+ M2/S6 前置重估（ZW_NATIVE_DOM=1 实测：页面 DOM 仍 shim 所有——S6 记 superseded-by-default-on，M2 收口）+ evidence/2026-08-29-r361-target-moved-stash-s6-reeval.md | **sweep 55484P/15F/16T——Fail 集合 14→13（target-moved 转绿）零回归**；Node-removeChild/appendChild/insertBefore 持平；host +1 单测；engine 2487/quickjs 1472/tab 38P/renderer 152P/integration 781P 绿 |
@@ -840,6 +843,10 @@
 ---
 
 ## 下一步计划
+0. **R364 下一步（R363 后，已执行→本轮）**：
+   - **(a) CE registry 专项第二片：创建路由**——parse/create 时按 owner-doc realm 查表升级（create-element-realm-after-adoption 4F + node-realm-mixed 1F 的直接解）；随片补 iframe 文档 createElement 的 registry 查表 + native CE hooks per-realm。
+   - **(b) 已知 Fail 集合余 13**（其余 11 项维持深结构/基建域定性）。
+   - **(c) 主线剩余**：M5/M7 default-on（待用户点名）；M3 已达成；M4 基线持续维护；M2 已收口。
 0. **R361 下一步（R360 后，已执行→本轮）**：
    - **(a) 已知 Fail 集合余 13**：全部深结构/基建域（realm 族 5、MO parse-time 3、Node-isConnected iframe 专项、sel/pseudo/replacement 3）——逐项需专项立项，无轻量可达面。
    - **(b) 主线剩余**：M5/M7 default-on（待用户点名）；M3 已达成（R100/R339）；M4 基线持续维护；M2 已收口（S6 superseded @ R361）。
@@ -1677,6 +1684,7 @@
 
 > 已完成的 milestone/切片记录到 `archive/`。
 
+- R364：M1/M4 **CE registry 专项首片——per-realm registry 实例**（`_zwMakeCERegistry` 工厂 own 三态 + `_ceDefine`/`_ceWhenDefined` 参数化共享 + iframe win 独立实例；define 冲突分离、两目标文件 subtests 解锁；首版遗漏 waiter resolve 被 r2813 哨兵抓回；sweep 55485P Fail 13=13 恒等 +1 净正；engine v8 2491 +1 单测）→ evidence/2026-08-29-r364-per-realm-ce-registry.md
 - R363：**勘误 R362「嵌套双 connect finding」= 测试装配伪影**（两段 join 双渲染；逐段读数复刻实证 mark/unmark 簿记 spec-correct 每真转恰一次；tests_ce.rs 装配去除 + 期望修正；CE registry 专项删该项；零生产改动）→ evidence/2026-08-29-r363-ce-double-connect-erratum.md
 - R362：DC-4 **覆盖率提升 custom_elements.rs 89.0%→91.9%**（tests_ce.rs 新增三测试：CE lifecycle connect/disconnect 双臂 + attribute 三态 + 守卫臂；<90% 候选清单清零、dom_bindings 源码 94.43%；嵌套 insert 双 connect finding 转 CE 专项；engine v8 2490 +3）→ evidence/2026-08-29-r362-ce-coverage-lift.md
 - R361：M4 **批内 detach→insert 移动语义 detached-stash**（Remove 记账 selector→NodeId + InsertAdjacentSelElement child 失配 stash 复用 = reparent 移动语义；14→13 已知集、sweep 55484P 零回归；M2/S6 前置重估收口[superseded-by-default-on]；engine v8 2487 +1 host 单测）→ evidence/2026-08-29-r361-target-moved-stash-s6-reeval.md

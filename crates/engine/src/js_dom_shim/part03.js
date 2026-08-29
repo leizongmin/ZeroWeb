@@ -2085,9 +2085,43 @@
   // element 实例化 upgrade（element 创建路径 `__zw_create_element` 返 generic Proxy，非 ctor 实例）+
   // connectedCallback/disconnectedCallback/attributeChangedCallback（需 mutation 观察）——深项，记后续 slice。
   // 本 slice 提供 feature-detection + 注册 + 查询 + whenDefined await（库 bootstrap 高频），不谎称 upgrade 生效。
+  // R364（js-dom M1/M4 CE registry 专项首片）：**registry 实例工厂**——注册状态
+  //（name→{ctor,options} / ctor→name 反查 / whenDefined 挂起表）从模块级单例改为
+  // **实例闭包**；`globalThis.customElements` = 主文档实例（消费面零变化——既有
+  // `_ce_registry` 等 20 处读点改读主实例状态）。iframe win 的 customElements 改为
+  // **独立实例**（part05 R181 转发点）：inner.define("x") 不再注册进主 registry →
+  // 主 define("x") 不再「already used」误碰（WPT create-element-realm-after-adoption /
+  // node-realm-mixed-across-adoption 的 define 冲突簇）。spec：每个 Realm 一个
+  // CustomElementRegistry（https://html.spec.whatwg.org/multipage/custom-elements.html#customelementregistry）。
+  // 升级路由本片维持主 registry（主文档 parse/upgrade 语义不变）；iframe 文档内的
+  // 升级路由（owner-doc realm 查表）为后续片。native CE hooks（`__zw_native_ce_*`）面向
+  // 主文档 native 路径，保持读主实例状态。
+  // 主实例状态（下方 globalThis.customMethods 字面量 + 20 处既有读点消费）。
   var _ce_registry = {};       // name → { ctor, options }
   var _ce_byCtor = new Map();  // ctor → name（getName 反查）
   var _ce_pending = {};        // name → [resolve]（whenDefined 挂起，define 时触发）
+  // 子 realm registry 工厂：own 状态 + 校验/waiter 逻辑经参数化 helper 共享（_ceDefine/_ceWhenDefined
+  // 定义于字面量之后）。子实例 **不** 注册进主状态——per-realm 冲突分离的本体。
+  function _zwMakeCERegistry() {
+    var child_registry = {};
+    var child_byCtor = new Map();
+    var child_pending = {};
+    return {
+      define: function (name, ctor, options) {
+        return _ceDefine(child_registry, child_byCtor, child_pending, name, ctor, options, { noUpgrade: true });
+      },
+      get: function (name) {
+        var entry = child_registry[name];
+        return entry ? entry.ctor : undefined;
+      },
+      getName: function (ctor) {
+        return child_byCtor.get(ctor) || null;
+      },
+      whenDefined: function (name) {
+        return _ceWhenDefined(child_registry, child_pending, name);
+      },
+    };
+  }
   // js-dom M3 R94：对既有元素执行用户 ctor 体（Proxy-ctor 桥）。设 `_zwCeExisting = el`（HTMLElement
   // hook 的 super() 返回它 → this=el）→ `new ctor()` → finally 清（ctor 抛错防泄漏到后续 new）。
   // derived ctor（`class X extends HTMLElement`）：super() 消费 existing，用户体以 this=el 执行——
@@ -2122,48 +2156,55 @@
     if (typeof name !== 'string') return false;
     return /^[a-z][a-z0-9.-]*-[a-z0-9.-]*$/.test(name) && !_CE_RESERVED[name];
   }
-  globalThis.customElements = globalThis.customElements || {
-    define: function (name, ctor, options) {
-      if (!_ce_validName(name)) {
-        throw new Error("Failed to execute 'define' on 'CustomElementRegistry': \"" + name + "\" is not a valid custom element name");
-      }
-      if (typeof ctor !== 'function') {
-        throw new TypeError("Failed to execute 'define' on 'CustomElementRegistry': parameter 2 is not a constructor");
-      }
-      if (_ce_registry[name]) {
-        throw new Error("Failed to execute 'define' on 'CustomElementRegistry': the name \"" + name + "\" has already been used with this registry");
-      }
-      if (_ce_byCtor.has(ctor)) {
-        throw new Error("Failed to execute 'define' on 'CustomElementRegistry': this constructor has already been used with this registry");
-      }
-      _ce_registry[name] = { ctor: ctor, options: options || {} };
-      _ce_byCtor.set(ctor, name);
-      // js-dom M3 R98：spec `custom-element-registration` define step 5——Get(ctor,
-      // 'observedAttributes')。真浏览器在 define 时读该静态 getter：lit 的
-      // observedAttributes getter 内调 `this.finalize()` → createProperty 在
-      // prototype 上 defineProperty get/set（setter 内 this.requestUpdate——响应式
-      // 更新链的触发器）。旧 define 不读 → finalize 不跑 → accessor 从未装（e2e
-      // 实证 GreetingEl.prototype 无 'name' descriptor，property set 不触发
-      // requestUpdate）。Get 本身还驱动 polyfill 组件（非 lit）的静态初始化面。
-      // getter 抛错吞（spec 是 rethrow，但 polyfill best-effort 与注册解耦）。
-      try { void ctor.observedAttributes; } catch (_eObs) {}
-      // R149（js-dom M4）：spec `custom-element-registration` define 末步——升级文档中
-      // 已存在的同名元素（parser 先建 `<my-el>` 后 define 的序：define 时元素已在树中，
-      // 升级 = ctor 体 + connectedCallback 立即触发）。旧 define 只注册不升级——
-      // WPT EventTarget-add-listener-platform-object：`customElements.define` 后
-      // 既有 `<my-custom-click>` 的 connectedCallback 永不跑（addEventListener 未注册）。
-      // 同步执行（spec 是 upgrade queue 微任务；headless 同步等价——whenDefined waiter
-      // 在 resolve 前，时序无依赖冲突）。
+  // R364：参数化 define 主体（主实例 + 子 realm 实例共享——校验/冲突/waiter 逻辑单点）。
+  // opts.noUpgrade = 子实例不驱动主文档 upgrade 子树（iframe 文档升级路由为后续片）。
+  function _ceDefine(reg, byCtor, pending, name, ctor, options, opts) {
+    opts = opts || {};
+    if (!_ce_validName(name)) {
+      throw new Error("Failed to execute 'define' on 'CustomElementRegistry': \"" + name + "\" is not a valid custom element name");
+    }
+    if (typeof ctor !== 'function') {
+      throw new TypeError("Failed to execute 'define' on 'CustomElementRegistry': parameter 2 is not a constructor");
+    }
+    if (reg[name]) {
+      throw new Error("Failed to execute 'define' on 'CustomElementRegistry': the name \"" + name + "\" has already been used with this registry");
+    }
+    if (byCtor.has(ctor)) {
+      throw new Error("Failed to execute 'define' on 'CustomElementRegistry': this constructor has already been used with this registry");
+    }
+    reg[name] = { ctor: ctor, options: options || {} };
+    byCtor.set(ctor, name);
+    try { void ctor.observedAttributes; } catch (_eObs) {}
+    if (!opts.noUpgrade) {
       try {
         if (globalThis.document && globalThis.document.documentElement) {
           _ceUpgradeSubtree(globalThis.document);
         }
       } catch (_e149u) {}
-      var waiters = _ce_pending[name];
-      if (waiters) {
-        delete _ce_pending[name];
-        for (var i = 0; i < waiters.length; i++) { try { waiters[i](ctor); } catch (_e) {} }
-      }
+    }
+    // waiter resolve（spec define 末步——whenDefined 挂起者按注册序以 ctor resolve）。
+    var waiters = pending[name];
+    if (waiters) {
+      delete pending[name];
+      for (var i = 0; i < waiters.length; i++) { try { waiters[i](ctor); } catch (_e) {} }
+    }
+  }
+  // R364：参数化 whenDefined（主/子共享）。
+  function _ceWhenDefined(reg, pending, name) {
+    if (!_ce_validName(name)) {
+      return Promise.reject(new Error("Failed to execute 'whenDefined' on 'CustomElementRegistry': \"" + name + "\" is not a valid custom element name"));
+    }
+    var entry = reg[name];
+    if (entry) return Promise.resolve(entry.ctor);
+    return new Promise(function (resolve) {
+      (pending[name] = pending[name] || []).push(resolve);
+    });
+  }
+  globalThis.customElements = globalThis.customElements || {
+    define: function (name, ctor, options) {
+      // R364：逻辑经 _ceDefine 参数化共享（主实例 + 子 realm 实例单点；含 R98
+      // observedAttributes Get / R149 upgrade 子树 / waiter resolve——原注释随 helper）。
+      _ceDefine(_ce_registry, _ce_byCtor, _ce_pending, name, ctor, options);
     },
     get: function (name) {
       var entry = _ce_registry[name];
@@ -2175,14 +2216,7 @@
     // whenDefined(name)：valid name → Promise<ctor>（已定义立即 resolve，否则挂起至 define 触发）；
     // invalid name → Promise reject（spec 一致，不同步抛）。Promise resolve 异步（microtask）。
     whenDefined: function (name) {
-      if (!_ce_validName(name)) {
-        return Promise.reject(new Error("Failed to execute 'whenDefined' on 'CustomElementRegistry': \"" + name + "\" is not a valid custom element name"));
-      }
-      var entry = _ce_registry[name];
-      if (entry) return Promise.resolve(entry.ctor);
-      return new Promise(function (resolve) {
-        (_ce_pending[name] = _ce_pending[name] || []).push(resolve);
-      });
+      return _ceWhenDefined(_ce_registry, _ce_pending, name);
     },
     // upgrade(root)（R3269）：spec `custom-elements-upgrade`——遍历 root 子树（含 root 自身），对每个 tag
     // 命中已注册 custom element 名的元素，`Object.setPrototypeOf(el, ctor.prototype)` 升级为 custom 实例

@@ -2573,7 +2573,17 @@
       // R181（js-dom M4）：customElements 转发（WPT node-realm-mixed-across-adoption 的
       // `innerA.customElements.define(...)`——旧缺转发报 "Cannot read properties of
       // undefined (reading 'define')"；polyfill 单 registry 近似）。
-      win.customElements = globalThis.customElements;
+      // R364（js-dom M1/M4 CE registry 专项首片）：**per-realm registry 实例**——旧转发
+      // 主 registry（单实例近似）使 inner.define("x") 注册进主表，主 define("x") 误碰
+      // 「already used」（WPT create-element-realm-after-adoption /
+      // node-realm-mixed-across-adoption 的 define 冲突簇根因）。子实例 own 状态 +
+      // 校验/waiter 逻辑经参数化 helper 共享（part03 `_zwMakeCERegistry`）；spec 每 Realm
+      // 一个 CustomElementRegistry。升级路由本片维持主 registry（主文档语义不变；
+      // iframe 文档内升级路由 = 后续片）。
+      // https://html.spec.whatwg.org/multipage/custom-elements.html#customelementregistry
+      win.customElements = typeof _zwMakeCERegistry === 'function'
+        ? _zwMakeCERegistry()
+        : globalThis.customElements;
       var _r181Table = globalThis.__zwHtmlTagIface || {};
       for (var _r181Tag in _r181Table) {
         if (!Object.prototype.hasOwnProperty.call(_r181Table, _r181Tag)) continue;
