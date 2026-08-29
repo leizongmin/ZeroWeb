@@ -251,7 +251,32 @@
   AbortSignal.timeout = function (ms) {
     var s = new AbortSignal();
     if (typeof setTimeout === 'function') {
-      setTimeout(function () { _zw_abort_signal(s, undefined); }, Number(ms) || 0);
+      var handle = setTimeout(function () { _zw_abort_signal(s, undefined); }, Number(ms) || 0);
+      // R373：主 realm 调用也登记（当前 global 的可取消集合）——iframe 域走 _zwTimeoutFor。
+      try {
+        if (!globalThis.__zwAbortTimerIds) globalThis.__zwAbortTimerIds = [];
+        globalThis.__zwAbortTimerIds.push(handle);
+      } catch (_e373t) {}
+    }
+    return s;
+  };
+  // R373（js-dom M4/DC-3）：**frame-scoped timeout**——iframe realm 调用的
+  // AbortSignal.timeout(ms) 其定时器归属该 realm 的 window：frame detach（iframe 移除）
+  // 取消定时器 → signal.aborted 保持 false（spec：AbortSignal.timeout 的定时器与
+  // 「当前全局」关联；WPT dom/abort abort-signal-timeout "not aborted after frame
+  // detach"）。_zwRemoveIframeWindowClientsForNodes（part01，iframe 移除路径）按
+  // `win.__zwAbortTimerIds` 取消。
+  // https://dom.spec.whatwg.org/#abortsignal-timeout
+  AbortSignal._zwTimeoutFor = function (win, ms) {
+    var s = new AbortSignal();
+    if (typeof setTimeout === 'function') {
+      var handle = setTimeout(function () { _zw_abort_signal(s, undefined); }, Number(ms) || 0);
+      try {
+        if (win) {
+          if (!win.__zwAbortTimerIds) win.__zwAbortTimerIds = [];
+          win.__zwAbortTimerIds.push(handle);
+        }
+      } catch (_e373tf) {}
     }
     return s;
   };

@@ -565,6 +565,21 @@
       try {
         if ((nodeSel || nodeHandle) && _realTag(nodeSel, nodeHandle) === 'IFRAME') {
           _zwRemoveIframeWindowClient(nodeKey);
+          // R373（js-dom M4/DC-3）：frame detach 取消该 realm 的 AbortSignal.timeout
+          // 定时器（spec `abortsignal-timeout` 定时器归属当前全局——iframe 移除后其
+          // window 的定时器不再触发，WPT dom/abort abort-signal-timeout）。帧 win 的
+          // `__zwAbortTimerIds`（part05 包装的 _zwTimeoutFor 登记）逐个 clearTimeout。
+          try {
+            var _r373entry = _iframeDocCache[nodeKey];
+            var _r373win = _r373entry && _r373entry.win;
+            var _r373ids = _r373win && _r373win.__zwAbortTimerIds;
+            if (_r373ids && _r373ids.length && typeof globalThis.clearTimeout === 'function') {
+              for (var _r373ti = 0; _r373ti < _r373ids.length; _r373ti++) {
+                try { globalThis.clearTimeout(_r373ids[_r373ti]); } catch (_e373tc) {}
+              }
+              _r373win.__zwAbortTimerIds = [];
+            }
+          } catch (_e373ta) {}
         }
       } catch (_eTag) {}
       try {

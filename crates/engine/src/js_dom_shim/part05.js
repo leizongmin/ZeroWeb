@@ -2491,6 +2491,29 @@
       CharacterData: globalThis.CharacterData,
       Event: globalThis.Event,
       DOMException: globalThis.DOMException,
+      // R373（js-dom M4/DC-3）：AbortSignal/AbortController 转发（fetch 中止域的 realm
+      // 面——WPT dom/abort 的 `iframe.contentWindow.AbortSignal.abort()/.timeout()`
+      // 旧 undefined：iframe win 字面量无此名）。AbortSignal 用 **per-realm 包装**：
+      // `.timeout(ms)` 走 `_zwTimeoutFor(win, ms)`（定时器归属本 realm window——frame
+      // detach 取消，spec `abortsignal-timeout`）；`.abort`/实例语义转发主构造器
+      //（prototype 链接保持 instanceof）。AbortController 纯转发（其 signal 无定时器）。
+      AbortSignal: (function () {
+        var main373 = globalThis.AbortSignal;
+        function IframeAbortSignal() { return main373.apply(this, arguments); }
+        try {
+          IframeAbortSignal.prototype = main373.prototype;
+          Object.defineProperty(IframeAbortSignal, 'prototype', { writable: false, configurable: false });
+        } catch (_e373p) {}
+        IframeAbortSignal.abort = function (reason) { return main373.abort(reason); };
+        IframeAbortSignal.timeout = function (ms) {
+          return (typeof main373._zwTimeoutFor === 'function')
+            ? main373._zwTimeoutFor(win, ms)
+            : main373.timeout(ms);
+        };
+        IframeAbortSignal._zwTimeoutFor = main373._zwTimeoutFor;
+        return IframeAbortSignal;
+      })(),
+      AbortController: globalThis.AbortController,
       // R302（js-dom M4）：iframe realm 的 MutationObserver 构造器（WPT
       // MutationObserver-cross-realm-callback-report-exception 的
       // `new frames[0].MutationObserver(...)`——旧 win 无此名 "not a

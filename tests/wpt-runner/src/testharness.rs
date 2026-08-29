@@ -120,6 +120,9 @@ pub const DOM_TEST_SUBDIRS: &[&str] = &[
     "dom/collections",
     "dom/traversal",
     "dom/ranges",
+    // R373（js-dom M4/DC-3 扩展）：dom/abort——AbortSignal/AbortController 域（与 fetch
+    // shim 的 AbortSignal 基建同域；5 个真实用例：timeout/reason/any-crash + any.js 变体）。
+    "dom/abort",
 ];
 
 /// IndexedDB goal pinned upstream `.any.js` subset.
