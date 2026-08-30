@@ -207,6 +207,25 @@ pub(super) fn build_and_register(scope: &mut v8::PinScope, global: v8::Local<v8:
         // 只读 name 拦截（FunctionTemplate 产物的 name 属性 non-writable），须用
         // `Function::set_name` C++ 侧改名。
         f.set_name(key);
+        // R384（js-dom M5）：DOMException 原型链挂 Error.prototype（spec WebIDL：
+        // DOMException inherits Error——`instanceof Error` 语义；QuickJS 侧
+        // quickjs_dom_bindings 的同名构造器以 `Object.create(Error.prototype)` 建
+        // 原型链，双引擎对齐）。M5 flip 前此差异被 polyfill 桥遮蔽（shim DOMException
+        // 自建链含 Error）；flip 后 globalThis.DOMException = 本构造器，shim reject
+        // 路径 `new (globalThis.DOMException || Error)` 产物 instanceof Error 恒 false
+        // （webview navigator_registration 断言 "true|true" 的右半失败根因）。
+        if let Some(proto) = proto_obj {
+            let err_proto = v8::String::new(scope, "Error")
+                .and_then(|ek| global.get(scope, ek.into()))
+                .and_then(|ev| {
+                    v8::Local::<v8::Function>::try_from(ev)
+                        .ok()
+                        .and_then(|ef| v8::String::new(scope, "prototype").and_then(|pk| ef.get(scope, pk.into())))
+                });
+            if let Some(ep) = err_proto {
+                let _ = proto.set_prototype(scope, ep);
+            }
+        }
         let _ = global.set(scope, key.into(), f.into());
     }
 }

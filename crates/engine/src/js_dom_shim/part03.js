@@ -241,25 +241,55 @@
   //（polyfill-only 路径）三者未定义 → polyfill 定义 stub + 建原型链（Node→Element→HTMLElement）供 polyfill
   // 元素 proxy 的 instanceof 校验。HTMLFormElement 等子类经 `Object.create(HTMLElement.prototype)` 继承——
   // native_dom 下继承 native HTMLElement.prototype（含 R3268 接口），polyfill-only 下继承 polyfill stub prototype。
-  var _zwBuiltNodeChain = !globalThis.HTMLElement; // polyfill 是否自建三者（native 已注册则 false）
+  // R384（js-dom M5）：`_zwBuiltNodeChain` 改判「三者是否已由本 shim 先前自建」——
+  // M5 flip 后 native HTMLElement 在 execute_script 前注册全局，旧判 `!HTMLElement`
+  // 恒 false → shim 原型链不建 → 页面 CE/lit 链断（下方无条件重申配合）。以
+  // HTMLElement.prototype 是否 shim 自建（含 ctor 桥的 _zwCeExisting 消费形态）为据。
+  var _zwBuiltNodeChain = !(globalThis.HTMLElement && globalThis.HTMLElement.prototype
+    && globalThis.HTMLElement.prototype.__zwShimCtorBridge);
   if (!globalThis.Node) globalThis.Node = function Node() {};
   if (!globalThis.Element) globalThis.Element = function Element() {};
-  // js-dom M3 R94：HTMLElement 装载 **ctor 桥 hook**（仅 polyfill 自建路径——native_dom 模式 native
-  // HTMLElement 已在全局，走 native S5b upgrade slot，本桥不参与）。derived class 的 `super()` 调本
+  // js-dom M3 R94：HTMLElement 装载 **ctor 桥 hook**（R384 起无条件重申，见下方）。
+  // derived class 的 `super()` 调本
   // ctor 时：若 `_zwCeExisting` 已设（createElement/upgrade 正在把既有元素升级为 custom 实例），
   // **返回该元素**（spec derived-ctor 语义：base ctor 返回对象 → 成为整条 ctor 链的 this）→ 用户
   // ctor 体以 this=既有元素继续执行（`this.state=5` 落在元素 proxy 上）。未设 → 普通空对象（旧
   // stub 行为）。这闭合 R90 已知限制「class ctor 体不可重放」——不是重放，是经 super() 返回值
   // 注入 this（探针实证：inst === el、方法/instanceof/嵌套 create/异常消费 全部正确）。
   var _zwCeExisting = null; // createElement/upgrade 在途的既有元素（消费即清，单发）
-  if (!globalThis.HTMLElement) {
+  // R384（js-dom M5）：shim HTMLElement **无条件重申**全局——native install（M5 flip
+  // 后 run_page_scripts 前置）注册的 V8 FunctionTemplate 构造器不能承载 shim CE
+  // upgrade 的「base ctor 返回既有元素」语义（API 构造器 this 预分配、返回值被忽略，
+  // Lit/Vue 的 super() 链收到 plain this → 字段落错对象 → renderRoot undefined）。
+  // 页面 document 路径仍是 shim 权威（R9 边界）；native HTMLElement 构造器继续服务
+  // native 侧工厂/升级面（引擎单测序 = shim 先装、native 后装 → 测试态 native 胜出
+  // 不变；生产态 shim 后装 → 页面 CE 链保持）。翻转的是全局名，不是 native 内部面。
+  {
     globalThis.HTMLElement = function HTMLElement() {
+      // R384（js-dom M5）：**native S5b upgrade 委托**——native factory
+      // （`__zw_native_create_element`）的 CE upgrade 经 Reflect.construct(用户 ctor)
+      // 时，ctor 链的 super() 命中本 shim ctor（页面类 extends shim HTMLElement）。在途
+      // 判据 = `__zw_native_upgrade_ffi()` 非空 → 取 native 元素对象**返回**（spec
+      // derived-ctor：base 返回对象成为整条 ctor 链的 this）——用户 ctor 体与后续
+      // el.* 读均落 native 对象（nodeType/接口面完整），native slot 语义与 shim 返回值
+      // 语义合流。非在途 → 原有 shim upgrade 消费（_zwCeExisting）。
+      try {
+        if (typeof __zw_native_upgrade_ffi === 'function') {
+          var _r384ffi = __zw_native_upgrade_ffi();
+          if (_r384ffi && typeof __zw_native_element_for_ffi === 'function') {
+            var _r384native = __zw_native_element_for_ffi(_r384ffi);
+            if (_r384native) return _r384native;
+          }
+        }
+      } catch (_e384n) {}
       if (_zwCeExisting) {
         var _zwCeEl = _zwCeExisting;
         _zwCeExisting = null;
         return _zwCeEl;
       }
     };
+    // R384：shim 自建标记（`_zwBuiltNodeChain` 复判依据，防止 shim 二次装载时误判）。
+    try { globalThis.HTMLElement.prototype.__zwShimCtorBridge = true; } catch (_e) {}
   }
   // prototype 链仅当 polyfill 自建三者时设（native 已注册则不重设——避免破坏 native prototype）。
   if (_zwBuiltNodeChain) {

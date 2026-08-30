@@ -183,7 +183,20 @@ fn try_upgrade_custom_element<'s>(
     set_upgrade_node_id(Some(id));
     let instance = ctor.new_instance(scope, &[]);
     clear_upgrade_node_id();
-    instance
+    let instance = instance?;
+    // R384（js-dom M5）：shim ctor 桥委托产物是 **native 模板对象**（原型 = native
+    // Element template），未挂 new.target（registered ctor）的 prototype →
+    // `instanceof MyEl` false（R3270 断言面）。桥返回后此处按 ctor.prototype 重挂
+    // 原型——V8 API 对象的模板 accessor 经 internal 拦截面可达（不依赖 JS 原型链），
+    // set_prototype 后 nodeType 等 native getter 保持（R3270 断言 nodeType=1 仍过），
+    // 同时 instanceof/ctorRan（用户 ctor 体落 native this）成立。
+    let proto_val = v8::String::new(scope, "prototype")
+        .and_then(|pk| ctor.get(scope, pk.into()))
+        .filter(|v| v.is_object());
+    if let Some(proto_obj) = proto_val.and_then(|pv| v8::Local::<v8::Object>::try_from(pv).ok()) {
+        let _ = instance.set_prototype(scope, proto_obj.into());
+    }
+    Some(instance)
 }
 
 /// `document.createElementNS(ns, qualifiedName)`（spec `dom-document-createelementns`）：造带命名空间

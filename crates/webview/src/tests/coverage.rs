@@ -751,9 +751,9 @@ fn test_native_dom_bindings_wiring_quickjs_s0q() {
     );
 }
 
-// R381（js-dom M7）：默认值按引擎分域——V8 路径默认关（M5 未启动）；QuickJS 路径
-// default-on（用户 2026-08-30 批复 GB-20260829 ③）。测试相应分域断言：
-// v8（或组合态）→ undefined；quickjs-only → 'function'。
+// R381（js-dom M7）→ R384（js-dom M5）：双页面引擎路径 native_dom 均 default-on
+//（QuickJS = 用户 2026-08-30 批复 GB-20260829 ③；V8 = 用户 2026-08-19 批复 ⚡ 块，
+// R383 执行）。分域测试各自断言工厂已安装。
 #[cfg(all(feature = "quickjs", not(feature = "v8")))]
 #[test]
 fn test_native_dom_enabled_by_default_quickjs_m7() {
@@ -776,8 +776,8 @@ fn test_native_dom_enabled_by_default_quickjs_m7() {
 
 #[cfg(not(all(feature = "quickjs", not(feature = "v8"))))]
 #[test]
-fn test_native_dom_disabled_by_default_r3097() {
-    // 默认关（V8 路径，M5 未启动）：__zw_native_element_for_id 未安装 → 'undefined'。
+fn test_native_dom_enabled_by_default_v8_m5() {
+    // M5 default-on（用户 2026-08-19 批复，R383 执行）：V8 路径工厂已安装 → 'function'。
     let mut wv = crate::WebViewBuilder::new().build();
     wv.load_html(
         "<html><body><div id=\"a\"></div>\
@@ -786,11 +786,11 @@ fn test_native_dom_disabled_by_default_r3097() {
         None,
     );
     let r = wv.run_page_scripts_strict();
-    assert!(r.is_ok(), "默认（native_dom 关）无异常");
+    assert!(r.is_ok(), "M5 默认（native_dom 开）无异常");
     assert_eq!(
         wv.execute_script("String(globalThis.__has)").unwrap(),
-        "undefined",
-        "默认 native_dom 关 → 工厂未安装（零回归）"
+        "function",
+        "M5 V8 default-on → 工厂已安装（原生绑定生产路径）"
     );
 }
 
@@ -1507,5 +1507,31 @@ fn test_native_custom_element_upgrade_attr_change_multi_r3274() {
         wv.execute_script("String(globalThis.__log.join(','))").unwrap(),
         "a=1",
         "R3274/R149: upgrade 仅对存在的 observed 属性派发初始 attr change（a=1 pre-set；b/c 未设无回调）"
+    );
+}
+
+// R384（js-dom M5 flip A/B）：iframe AbortSignal.reason 的 per-realm 断言面
+//（dom/abort/reason-constructor.html 的 wire 形态）。M5 flip 后 shim 词法
+// `new DOMException` 产物不再是 globalThis（native）构造器实例——abort 默认
+// reason 改经 `globalThis.DOMException || DOMException`（R9/R382 wrong-global
+// 先例），本测试锁定该 realm 语义在 flip 后不退化。
+#[test]
+fn test_abort_signal_reason_realm_identity_r384() {
+    let mut wv = crate::WebViewBuilder::new().build();
+    wv.load_html(
+        "<html><body><iframe id=\"ifr\"></iframe><script>\
+         var w = document.getElementById('ifr').contentWindow;\
+         var r = w.AbortSignal.abort();\
+         globalThis.__res = String(r.reason.constructor === w.DOMException) + '|' +\
+           String(r.reason.name) + '|' + String(r.reason instanceof w.DOMException);\
+         </script></body></html>",
+        None,
+    );
+    let r = wv.run_page_scripts_strict();
+    assert!(r.is_ok(), "{r:?}");
+    assert_eq!(
+        wv.execute_script("globalThis.__res").unwrap(),
+        "true|AbortError|true",
+        "abort 默认 reason 为 iframe realm 的 DOMException（AbortError）"
     );
 }

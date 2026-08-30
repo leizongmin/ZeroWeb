@@ -225,18 +225,29 @@
   AbortSignal.prototype.dispatchEvent = function () { return true; };
   AbortSignal.prototype.throwIfAborted = function () {
     if (this._aborted) {
-      throw (this._reason instanceof DOMException)
+      // R384（js-dom M5）：**globalThis 优先**（R9/R382 wrong-global 先例）——M5 flip 后
+      // globalThis.DOMException = 原生构造器，词法 `new DOMException` 落 shim 闭包内
+      // 构造器 → `reason.constructor === iframeWin.DOMException`（= 全局原生构造器）
+      // 恒 false（dom/abort/reason-constructor）。裸名仅作 globalThis 未装时的回落。
+      var _r384DE = globalThis.DOMException || DOMException;
+      throw (this._reason instanceof _r384DE)
         ? this._reason
-        : new DOMException('signal is aborted without reason', 'AbortError');
+        : new _r384DE('signal is aborted without reason', 'AbortError');
     }
   };
   // 统一 abort 逻辑（controller.abort 与 AbortSignal.abort 共用）。
   function _zw_abort_signal(signal, reason) {
     if (signal._aborted) return; // 重复 abort 静默 no-op（spec）
     signal._aborted = true;
-    signal._reason = (typeof reason === 'undefined')
-      ? new DOMException('signal is aborted without reason', 'AbortError')
-      : reason;
+    if (typeof reason === 'undefined') {
+      // R384（js-dom M5）：globalThis 优先——flip 后 abort 默认 reason 须为全局
+      //（原生）构造器实例，iframe realm 断言 `reason.constructor === win.DOMException`
+      // 才成立（同 throwIfAborted 注释）。
+      var _r384DE2 = globalThis.DOMException || DOMException;
+      signal._reason = new _r384DE2('signal is aborted without reason', 'AbortError');
+    } else {
+      signal._reason = reason;
+    }
     var ls = signal._listeners.slice();
     signal._listeners = [];
     for (var i = 0; i < ls.length; i++) {

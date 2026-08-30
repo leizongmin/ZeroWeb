@@ -40,7 +40,7 @@ use zero_dom::{Document, NodeId};
 // 仅 slot 映射助手（cache/cached/encode/decode/node_exists/element_template_local + 模板/DOM 源 setter）留此。
 use gc::{
     cache_native_element, cached_native_element, decode_node_id, drop_cached_native_element, element_template_local,
-    encode_node_id, node_exists, set_dom_source, set_element_template, with_dom,
+    encode_node_id, node_exists, set_dom_source, set_element_template, upgrade_node_id, with_dom,
 };
 
 /// P1b 原生 DOM 绑定 kill-switch 环境变量名（默认关）。
@@ -95,7 +95,23 @@ pub fn install_dom_bindings_from_html(scope: &mut v8::PinScope, ctx: v8::Local<v
 /// 默认关路径（`native_dom=false`）不调本函数——shim 无 Rust↔V8 Handle 生命周期耦合，零回归。
 pub fn reset_native_state() {
     gc::reset();
+    NATIVE_STATE_GEN.fetch_add(1, std::sync::atomic::Ordering::Release);
 }
+
+/// 线程局部绑定状态代际（R384，js-dom M5）——每次 [`reset_native_state`] 递增。
+///
+/// M5 flip 后同线程多 WebView 全部 native：V8 模板/身份缓存线程局部（gc.rs）持有的
+/// `Global` Handle 绑定**创建它的 Isolate**——WebView B install 时若缓存还是 WebView A
+/// 的 Isolate 产物，`Local::new(scope, old_global)` 即 "Handle hosted by disposed
+/// Isolate" panic（webview cache_storage/indexed_db_owner 双 WebView 共存测试实测）。
+/// WebView 侧持自身见过的代际：install 前代际不符 → 先 reset 再装（旧 Isolate 的缓存
+/// 清掉、当前 Isolate 重建）；代际相符 → 缓存复用（同 WebView 跨 execute 的对象 identity
+/// 语义保留，R3107/R3117 断言面）。
+pub fn state_generation() -> u64 {
+    NATIVE_STATE_GEN.load(std::sync::atomic::Ordering::Acquire)
+}
+
+static NATIVE_STATE_GEN: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 
 /// 安装原生 DOM 绑定到指定 V8 上下文。
 ///
@@ -703,6 +719,59 @@ pub fn install_dom_bindings(scope: &mut v8::PinScope, ctx: v8::Local<v8::Context
     let gdri_key = v8::String::new(scope, "__zw_native_doc_root_id");
     if let (Some(f), Some(key)) = (gdri_fn, gdri_key) {
         let _ = global.set(scope, key.into(), f.into());
+    }
+    // R384（js-dom M5）：`__zw_native_upgrade_ffi()` → S5b upgrade 在途 NodeId 的 ffi
+    // 字符串（无在途 → 空串）。shim HTMLElement ctor 桥消费：native factory 的 CE
+    // upgrade 经 Reflect.construct(用户 ctor) 时，ctor 链的 super() = shim ctor（页面
+    // 类 extends shim HTMLElement——M5 flip 后 shim 无条件重申全局），shim ctor 读本
+    // 探针在途即取 native 元素对象返回（derived-ctor 返回值注入 this）——双 ctor 语义
+    // 合流（native slot 承载 + shim 返回值语义）。
+    let nuf = v8::FunctionTemplate::builder(native_upgrade_ffi_invoke).build(scope);
+    let nuf_fn = nuf.get_function(scope);
+    let nuf_key = v8::String::new(scope, "__zw_native_upgrade_ffi");
+    if let (Some(f), Some(key)) = (nuf_fn, nuf_key) {
+        let _ = global.set(scope, key.into(), f.into());
+    }
+    // R384：`__zw_native_element_for_ffi(ffiStr)` → NodeId(ffi) 对应 native 元素对象
+    //（get_or_create 语义：weak 缓存命中复用 / 重建）。shim ctor 桥的 S5b 委托消费面。
+    let nef = v8::FunctionTemplate::builder(native_element_for_ffi_invoke).build(scope);
+    let nef_fn = nef.get_function(scope);
+    let nef_key = v8::String::new(scope, "__zw_native_element_for_ffi");
+    if let (Some(f), Some(key)) = (nef_fn, nef_key) {
+        let _ = global.set(scope, key.into(), f.into());
+    }
+}
+
+/// `__zw_native_element_for_ffi(ffiStr)`（R384）：ffi 字符串 → native 元素（stale/非法 → null）。
+fn native_element_for_ffi_invoke(
+    scope: &mut v8::PinScope,
+    args: v8::FunctionCallbackArguments,
+    mut rv: v8::ReturnValue<v8::Value>,
+) {
+    let s = string_arg(scope, &args, 0);
+    let id = decode_node_id(s.parse::<u64>().unwrap_or(0));
+    if !node_exists(id) {
+        rv.set(v8::null(scope).into());
+        return;
+    }
+    if let Some(obj) = get_or_create_native_element(scope, id) {
+        rv.set(obj.into());
+    } else {
+        rv.set(v8::null(scope).into());
+    }
+}
+
+/// `__zw_native_upgrade_ffi()`（R384）：S5b upgrade 在途 NodeId 的 ffi 字符串（无 → 空）。
+fn native_upgrade_ffi_invoke(
+    scope: &mut v8::PinScope,
+    _args: v8::FunctionCallbackArguments,
+    mut rv: v8::ReturnValue<v8::Value>,
+) {
+    let s = upgrade_node_id()
+        .map(|id| encode_node_id(id).to_string())
+        .unwrap_or_default();
+    if let Some(v) = v8::String::new(scope, &s) {
+        rv.set(v.into());
     }
 }
 

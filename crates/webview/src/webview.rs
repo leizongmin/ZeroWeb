@@ -240,13 +240,14 @@ impl Default for WebViewConfig {
             service_worker_script_fetcher: None,
             image_source_fetcher: None,
             fetch_handler: None,
-            // js-dom M7（用户 2026-08-30 批复，GB-20260829 ③）：QuickJS 页面引擎路径
-            // native_dom default-on；V8 路径（M5）维持默认关。字段本体无双 cfg 形态
-            //（struct 字段不能按 feature 给不同默认文档），默认值在此分域。
+            // js-dom M7/M5（用户 2026-08-19/30 批复）：双页面引擎路径 native_dom 均
+            // default-on——QuickJS（M7，GB-20260829 ③）与 V8（M5，2026-08-19 ⚡ 块）。
+            // cfg 双分支均为 true，分支保留以锚定「分域语义」文档位（M5/M7 收尾子片
+            // 删 kill-switch 时一并清理）。
             #[cfg(all(feature = "quickjs", not(feature = "v8")))]
             native_dom: true,
             #[cfg(not(all(feature = "quickjs", not(feature = "v8"))))]
-            native_dom: false,
+            native_dom: true,
         }
     }
 }
@@ -453,6 +454,13 @@ pub struct WebView {
     /// DOM shim（generate_js_dom_shim）是否已注入沙箱（M2：幂等保护——
     /// 重复执行会重置 _nodeMap 丢失监听器，故只注入一次）。
     js_shim_initialized: bool,
+    /// R384（js-dom M5）：本 WebView 最近一次 install 时的引擎 native 线程局部代际
+    ///（`dom_bindings::state_generation`）。install 前不符 → 缓存属于别的 Isolate，
+    /// 先 reset 再装（跨 WebView 双缓存 panic 闭合）；相符 → 复用（同 WebView 跨
+    /// execute 的 native 对象 identity 保留）。仅 V8 路径消费（QuickJS 绑定无
+    /// Isolate 绑定模板缓存，安装即全量重建）。
+    #[cfg(feature = "v8")]
+    native_state_gen: Option<u64>,
     /// 外部 JS 执行器（专用 JS 线程）。
     external_script: Option<ExternalScriptExecutor>,
     /// 外链脚本源获取器（进程内/headless 路径 fetch 外链脚本源）。
@@ -598,6 +606,8 @@ impl WebView {
             async_navigation_results,
             service_worker_event_backlog,
             js_shim_initialized: false,
+            #[cfg(feature = "v8")]
+            native_state_gen: None,
             external_script,
             script_source_fetcher,
             service_worker_script_fetcher,
@@ -1910,6 +1920,13 @@ impl WebView {
         if !self.config.native_dom {
             return;
         }
+        // R384（js-dom M5）：线程局部代际校验——缓存属别的 Isolate 时先 reset 再装
+        // （跨 WebView 模板 Global 复用 panic 闭合）；相符则复用（同 WebView 跨
+        // execute identity 保留）。
+        let state_gen = zero_engine::dom_bindings::state_generation();
+        if self.native_state_gen != Some(state_gen) {
+            zero_engine::dom_bindings::reset_native_state();
+        }
         let Some(sandbox) = self.js_sandbox.as_mut() else {
             return;
         };
@@ -1924,6 +1941,8 @@ impl WebView {
             }
         }));
         tracing::debug!(live = live_some, "native DOM bindings installed (native_dom=true)");
+        // R384：记录装完后的代际（install 本身不 bump——只有 reset 才 bump）。
+        self.native_state_gen = Some(zero_engine::dom_bindings::state_generation());
     }
 
     /// js-dom goal M6 S0q：QuickJS 版 [`Self::install_native_dom_bindings`]（镜像 V8 逻辑，
