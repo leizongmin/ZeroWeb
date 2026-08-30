@@ -8,6 +8,11 @@
 //!
 //! 用法：
 //!     test-guard [--compile-first] [--per-proc-mem <GB>] [--total-mem <GB>] [--time-limit <sec>] -- <cmd> [args...]
+//!
+//! 环境变量：
+//!   ZW_GUARD_RUNNER_PREFIX  每个测试 artifact 的启动前缀命令（空格分词，如
+//!                           "xvfb-run -a"）。仅 --compile-first 路径生效；用于
+//!                           无头环境为需要 X display 的 winit 用例提供 display。
 //! 默认：单进程 6 GB，总量 16 GB，超时 1800 s。
 //!
 //! 退出码：正常 = 透传子进程退出码；内存/超时触发 = 124；参数错误 = 2；
@@ -316,6 +321,19 @@ fn main() -> std::process::ExitCode {
         };
         let runner_args = test_runner_args(&cmd);
         let test_filter = cargo_test_filter(&cmd);
+        // R385（js-dom）：`ZW_GUARD_RUNNER_PREFIX` 允许每个测试 artifact 经指定前缀
+        // 命令启动（如 `xvfb-run -a`，为需要 X display 的 winit 用例提供无头
+        // display）。test-guard 自身仍逐 artifact 监管内存/超时；前缀进程只是
+        // 启动方式变化。未设置时行为与之前逐字节一致。
+        let runner_prefix: Vec<String> = std::env::var("ZW_GUARD_RUNNER_PREFIX")
+            .ok()
+            .map(|raw| {
+                raw.split_whitespace()
+                    .filter(|s| !s.is_empty())
+                    .map(str::to_string)
+                    .collect()
+            })
+            .unwrap_or_default();
         for artifact in artifacts {
             let status = Command::new(&executable)
                 .args([
@@ -326,8 +344,9 @@ fn main() -> std::process::ExitCode {
                     "--time-limit".to_string(),
                     time_limit_s.to_string(),
                     "--".to_string(),
-                    artifact,
                 ])
+                .args(&runner_prefix)
+                .arg(&artifact)
                 .args(test_filter.iter())
                 .args(&runner_args)
                 .status();

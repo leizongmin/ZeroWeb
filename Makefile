@@ -216,10 +216,17 @@ test: target-disk-guard target/test-guard
 	#   quickjs feature 组合产物（与 v8 产物不冲突），cargo 各自持锁；v8 测试
 	#   （~50s）时长覆盖 clippy 编译，总时长省一个编译段。cargo test 先无约束编译，
 	#   再由 test-guard 仅监管运行阶段；clippy 本身不受内存阈值限制。
-	ZERO_NOPROXY=1 ./target/test-guard --compile-first --per-proc-mem 4 --total-mem 8 --time-limit 900 -- cargo test --workspace --exclude zero-renderer -- --skip gpu::renderer:: --skip surface::tests::test_gpu_cpu_rendering_consistency_solid_fill & test_pid=$$!; \
+	# R385（js-dom）：`window_surface_present_smoke` 需要可用 X display（winit event
+	# loop），无头环境（CI / rally 无人值守）XOpenDisplayFailed 恒败——多轮记录的
+	# 唯一非语义红灯。ZW_GUARD_RUNNER_PREFIX="xvfb-run -a"（test-guard 支持）为
+	# zero-browser 测试 artifact 提供 Xvfb display，实测全套 411P（~0.2s/用例，
+	# 无额外 wgpu adapter 需求）；有 display 的环境该前缀同样工作（xvfb-run
+	# 独立起 display，不影响结果语义）。
+	ZERO_NOPROXY=1 ./target/test-guard --compile-first --per-proc-mem 4 --total-mem 8 --time-limit 900 -- cargo test --workspace --exclude zero-browser --exclude zero-renderer -- --skip gpu::renderer:: --skip surface::tests::test_gpu_cpu_rendering_consistency_solid_fill & test_pid=$$!; \
 	cargo clippy --no-default-features --features quickjs $(addprefix -p ,$(QUICKJS_CLIPPY_CRATES)) --all-targets -- -D warnings & clippy_pid=$$!; \
 	rc=0; wait $$test_pid || rc=$$?; wait $$clippy_pid || rc=$$?; exit $$rc
 	ZERO_NOPROXY=1 ./target/test-guard --compile-first --per-proc-mem 4 --total-mem 8 --time-limit 900 -- cargo test -p zero-renderer --bin zero-renderer -- --test-threads=1
+	ZERO_NOPROXY=1 ZW_GUARD_RUNNER_PREFIX="xvfb-run -a" ./target/test-guard --compile-first --per-proc-mem 4 --total-mem 8 --time-limit 900 -- cargo test -p zero-browser --bin zero-browser -- --test-threads=1
 	@if ZERO_NOPROXY=1 ./target/test-guard --compile-first --per-proc-mem 4 --total-mem 8 --time-limit 120 -- cargo test -p zero-render-foundation gpu::renderer::tests::test_gpu_renderer_headless_creation -- --exact --test-threads=1 >/dev/null 2>&1; then \
 		echo "wgpu adapter available; running adapter-only GPU tests"; \
 		ZERO_NOPROXY=1 ./target/test-guard --compile-first --per-proc-mem 4 --total-mem 8 --time-limit 900 -- cargo test -p zero-render-foundation gpu::renderer:: -- --test-threads=1; \

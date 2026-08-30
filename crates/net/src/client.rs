@@ -368,7 +368,46 @@ impl HttpClient {
             if let Some(body) = body.clone() {
                 builder = builder.body(body);
             }
-            let response = builder.send().await.map_err(map_reqwest_error)?;
+            // R385（js-dom）：与 blocking 测试路径 `send_with_local_retry` 同型——
+            // 并发负载（cargo test 多二进制并行 / CI runner）下偶发本地 connect
+            // 瞬态失败（`NetError::Network`，连接级，非语义错误，见 CI-GUARD-20260816
+            // run 4 etag flake 归因）。仅对「非重定向推进中的幂等 GET（无 body）」
+            // 的 Network 错误做有限次退避重试：请求从头重建（同 loop 头部），GET
+            // 幂等安全；POST 等带 body 方法不重试以免重复提交。Timeout/Proxy/
+            // TooManyRedirects/Http 等立即返回，不掩盖真实失败。
+            let response = match builder.send().await {
+                Ok(response) => response,
+                Err(error) => {
+                    let mapped = map_reqwest_error(error);
+                    let retriable = matches!(mapped, NetError::Network(_))
+                        && redirect_count == 0
+                        && method == crate::HttpMethod::Get
+                        && body.is_none();
+                    if !retriable {
+                        return Err(mapped);
+                    }
+                    let mut response = None;
+                    let mut last = mapped;
+                    for attempt in 0..3_u32 {
+                        tokio::time::sleep(std::time::Duration::from_millis(20 * (attempt as u64 + 1))).await;
+                        let mut retry_builder = client.request(method.to_reqwest(), &current_url);
+                        for (name, value) in &active_headers {
+                            retry_builder = retry_builder.header(name, value);
+                        }
+                        match retry_builder.send().await {
+                            Ok(ok) => {
+                                response = Some(ok);
+                                break;
+                            }
+                            Err(error) => last = map_reqwest_error(error),
+                        }
+                    }
+                    match response {
+                        Some(ok) => ok,
+                        None => return Err(last),
+                    }
+                }
+            };
             let status_code = response.status().as_u16();
 
             if matches!(status_code, 301 | 302 | 303 | 307 | 308) {
