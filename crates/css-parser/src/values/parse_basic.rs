@@ -189,6 +189,23 @@ pub fn parse_list_style_type(value: &str) -> Option<ListStyleTypeValue> {
         "upper-roman" => Some(ListStyleTypeValue::UpperRoman),
         "lower-alpha" | "lower-latin" => Some(ListStyleTypeValue::LowerAlpha),
         "upper-alpha" | "upper-latin" => Some(ListStyleTypeValue::UpperAlpha),
+        // R3835：§6.2 limited CJK/日/韩预定义（与 parse_misc 同表；本函数为 shorthand
+        // 子集解析路径，basic 面保持最小可用）。
+        "japanese-informal" => Some(ListStyleTypeValue::JapaneseInformal),
+        "japanese-formal" => Some(ListStyleTypeValue::JapaneseFormal),
+        "simp-chinese-informal" => Some(ListStyleTypeValue::SimpChineseInformal),
+        "simp-chinese-formal" => Some(ListStyleTypeValue::SimpChineseFormal),
+        "trad-chinese-informal" => Some(ListStyleTypeValue::TradChineseInformal),
+        "trad-chinese-formal" => Some(ListStyleTypeValue::TradChineseFormal),
+        "korean-hangul-formal" => Some(ListStyleTypeValue::KoreanHangulFormal),
+        "korean-hanja-informal" => Some(ListStyleTypeValue::KoreanHanjaInformal),
+        "korean-hanja-formal" => Some(ListStyleTypeValue::KoreanHanjaFormal),
+        "cjk-earthly-branch" => Some(ListStyleTypeValue::CjkEarthlyBranch),
+        "cjk-heavenly-stem" => Some(ListStyleTypeValue::CjkHeavenlyStem),
+        "hiragana" => Some(ListStyleTypeValue::Hiragana),
+        "hiragana-iroha" => Some(ListStyleTypeValue::HiraganaIroha),
+        "katakana" => Some(ListStyleTypeValue::Katakana),
+        "katakana-iroha" => Some(ListStyleTypeValue::KatakanaIroha),
         "none" => Some(ListStyleTypeValue::None),
         _ => None,
     }

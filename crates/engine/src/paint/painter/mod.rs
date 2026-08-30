@@ -130,6 +130,12 @@ pub struct Painter {
     /// `scroll` 对待（transform 建立包含块，fixed 定位区被拉进变换坐标系）。driving:
     /// background-attachment-fixed-inside-transform-1（transform 祖先内 fixed 须同 scroll）。
     pub(crate) transform_depth: u32,
+    /// R3835：`list-style-position: inside` 文本型 marker 的步进宽度（li NodeId → advance）。
+    /// CSS Lists 3 §list-style-position：inside marker 是首行行盒的第一个 inline，内容排
+    /// 其后——paint 侧 marker 独立绘字，首片段须右移 marker 宽度避免重叠
+    ///（css-counter-styles css3-counter-styles-024 等：`1AAA` 重叠）。由
+    /// `paint_list_marker` 填充，`paint_text` 首片段消费（remove = 只首行缩进一次）。
+    pub(crate) list_inside_marker_advance: HashMap<NodeId, f32>,
 }
 
 fn is_positioned_child(box_node: &LayoutBox) -> bool {
@@ -449,6 +455,7 @@ impl Painter {
             document_url: None,
             counter_styles: HashMap::new(),
             transform_depth: 0,
+            list_inside_marker_advance: HashMap::new(),
         }
     }
 

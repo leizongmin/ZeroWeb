@@ -569,6 +569,15 @@ impl super::Painter {
             .collect();
 
         let content_x = abs_x + box_node.border_left + box_node.padding_left;
+        // R3835：inside 文本型 marker → 内容起点右移 marker 步进宽度（CSS Lists 3
+        // §list-style-position：inside marker 是首行行盒第一个 inline，内容排其后）。
+        // remove 消费一次；paint_list_marker（先于本函数执行）已按 li NodeId 填充。
+        // 近似说明：IFC 起点全市偏移会使多行 li 的后续行同样缩进（chromium 仅首行），
+        // 但 ZW block-IFC 无逐行 marker 模型；现状（marker 与内容重叠）远劣于此。
+        let content_x = match box_node.node_id {
+            Some(id) => content_x + self.list_inside_marker_advance.remove(&id).unwrap_or(0.0),
+            None => content_x,
+        };
         // R1717：+ valign_offset — 表格单元格文本的 vertical-align 内容偏移（仅 table-cell，
         // table.rs position_cells 设置；其他盒默认 0.0，零影响）。
         let content_y = abs_y + box_node.border_top + box_node.padding_top + box_node.valign_offset;

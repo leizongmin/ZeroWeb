@@ -203,3 +203,7 @@ css/css-transforms/preserve3d-pseudo-element.html css/css-transforms/preserve3d-
 css/css-transforms/transform-fixed-bg-005.html css/css-transforms/transform-fixed-bg-ref.html == 2026-08-30 R3834 CSS Transforms 1 §2 transform 内 fixed=scroll（no-op transform 臂）
 css/css-transforms/transform-fixed-bg-006.html css/css-transforms/transform-fixed-bg-ref.html == 2026-08-30 R3834 CSS Transforms 1 §2 transform 内 fixed=scroll（intermediate transform 臂）
 css/css-transforms/transform-fixed-bg-007.html css/css-transforms/transform-fixed-bg-ref.html == 2026-08-30 R3834 CSS Transforms 1 §2 transform 内 fixed=scroll（root transform 臂）
+css/css-counter-styles/upper-roman/css3-counter-styles-024.html css/css-counter-styles/upper-roman/css3-counter-styles-024-ref.html == 2026-08-30 R3835 inside 文本型 marker 内容偏移（CSS Lists §list-style-position：marker 是首行首 inline）——修复 1AAA 重叠
+css/css-counter-styles/simp-chinese-formal/css3-counter-styles-076.html css/css-counter-styles/simp-chinese-formal/css3-counter-styles-076-ref.html == 2026-08-30 R3835 CSS Counter Styles §6.2 simp-chinese-formal builtin（壹贰叁…+、suffix）+ inside marker 偏移
+css/css-counter-styles/katakana/css3-counter-styles-036.html css/css-counter-styles/katakana/css3-counter-styles-036-ref.html == 2026-08-30 R3835 §6.1 katakana alphabetic builtin + inside marker 偏移
+css/css-counter-styles/cjk-earthly-branch/css3-counter-styles-201.html css/css-counter-styles/cjk-earthly-branch/css3-counter-styles-201-ref.html == 2026-08-30 R3835 §6.2 cjk-earthly-branch cyclic builtin（子丑寅…12 符号循环）

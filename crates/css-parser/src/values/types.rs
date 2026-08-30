@@ -395,6 +395,37 @@ pub enum ListStyleTypeValue {
     /// cjk-decimal（CJK ideographic digits 〇一二...九，非连续 → lookup table；CSS Counter
     /// Styles 3 §6.1 预定义 numeric system，digit 0=U+3007 / 1-9=U+4E00,U+4E8C...）。R2472。
     CjkDecimal,
+    /// R3835：CSS Counter Styles 3 §6.2 limited CJK/日韩预定义（additive-numeric 语义，
+    /// 按家族符号表 + leading-one/zero-mid 规则合成；详见 text_list.rs `to_cjk_formal`）。
+    JapaneseInformal,
+    /// japanese-formal（大字，壱弐参…；§6.2）。R3835。
+    JapaneseFormal,
+    /// simp-chinese-informal（简写中文，一二三…；§6.2）。R3835。
+    SimpChineseInformal,
+    /// simp-chinese-formal（大写中文，壹贰叁…；§6.2）。R3835。
+    SimpChineseFormal,
+    /// trad-chinese-informal（繁写中文，一二三…；§6.2）。R3835。
+    TradChineseInformal,
+    /// trad-chinese-formal（大写繁体，壹貳參…；§6.2）。R3835。
+    TradChineseFormal,
+    /// korean-hangul-formal（韩文谚文일이삼…；§6.2）。R3835。
+    KoreanHangulFormal,
+    /// korean-hanja-informal（韩文汉字一二三…；§6.2）。R3835。
+    KoreanHanjaInformal,
+    /// korean-hanja-formal（韩文大写汉字壹貳參…；§6.2）。R3835。
+    KoreanHanjaFormal,
+    /// cjk-earthly-branch（地支循环 子丑寅…，system: cyclic 12 符号；§6.2）。R3835。
+    CjkEarthlyBranch,
+    /// cjk-heavenly-stem（天干循环 甲乙丙…，system: cyclic 10 符号；§6.2）。R3835。
+    CjkHeavenlyStem,
+    /// hiragana（あいうえお…，system: alphabetic 48 符号；§6.2）。R3835。
+    Hiragana,
+    /// hiragana-iroha（いろはにほへと…，alphabetic 47 符号；§6.2）。R3835。
+    HiraganaIroha,
+    /// katakana（アイウエオ…，alphabetic 48 符号；§6.2）。R3835。
+    Katakana,
+    /// katakana-iroha（イロハニホヘト…，alphabetic 47 符号；§6.2）。R3835。
+    KatakanaIroha,
     /// disclosure-open（CSS Counter Styles 3 预定义，符号依 writing-mode/direction 变化）。R3745。
     DisclosureOpen,
     /// disclosure-closed（CSS Counter Styles 3 预定义，符号依 writing-mode/direction 变化）。R3745。

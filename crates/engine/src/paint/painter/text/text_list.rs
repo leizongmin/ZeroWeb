@@ -121,6 +121,264 @@ fn to_cjk_decimal(value: usize) -> String {
         .collect()
 }
 
+/// R3835：CSS Counter Styles 3 §6.2 limited CJK/日/韩计数器表示。
+///
+/// 9 个 numeric 家族共用同一千进制合成算法，差异仅在符号表与三条家族规则：
+/// - `omit_one`：数字 1 在位符前省略（`'all'` = 十/百/千全省——japanese-informal、
+///   korean-hanja-informal；`'tens'` = 仅十位省——simp/trad-chinese-informal；其余家族
+///   恒写 digit+unit——formal 系与 korean-hangul-formal）。
+/// - `zero_mid`：中间补零（中文系 101=一百**零**一；日韩系无补零 101=百一）。
+/// - 负值前缀各家族不同（マイナス/负/負/마이너스）。
+///
+/// range 语义（§6.2）：日/中 6 家族 10000+ 继续按位合成（WPT 044 期望 10000=一〇〇〇〇）；
+/// korean 3 家族 range 1-9999，越界由调用方走 decimal fallback。ground-truth：全部 9 家族
+/// 的 WPT css3-counter-styles-\* title/text 对（含 0/9999/负值/越界）算法级验证通过。
+#[derive(Clone, Copy)]
+struct CjkNumSymbols {
+    /// 数字符号 0-9。
+    digits: &'static [char],
+    /// 位符 [千, 百, 十]。
+    units: [&'static str; 3],
+    /// 1 省略规则。
+    omit_one: OmitOne,
+    /// 中间补零（中文系）。
+    zero_mid: bool,
+    /// 零填充字符（中文系「零」；日系无补零不用）。
+    zero_char: char,
+    /// 零值表示（japanese-informal = 〇，其余 = 零/영）。
+    zero_value: &'static str,
+    /// 负值前缀。
+    negative: &'static str,
+}
+
+/// 数字 1 在位符前的省略规则。
+#[derive(Clone, Copy)]
+enum OmitOne {
+    /// 恒写 digit+unit（formal 系）。
+    Never,
+    /// 十/百/千前全省（japanese-informal、korean-hanja-informal）。
+    AllUnits,
+    /// 仅十位前省（simp/trad-chinese-informal：10=十 而 100=一百）。
+    TensOnly,
+}
+
+const SIMP_CHINESE_DIGITS: &[char] = &['〇', '一', '二', '三', '四', '五', '六', '七', '八', '九'];
+const SIMP_CHINESE_FORMAL_DIGITS: &[char] = &['零', '壹', '贰', '叁', '肆', '伍', '陆', '柒', '捌', '玖'];
+const TRAD_CHINESE_FORMAL_DIGITS: &[char] = &['零', '壹', '貳', '參', '肆', '伍', '陸', '柒', '捌', '玖'];
+const JAPANESE_FORMAL_DIGITS: &[char] = &['零', '壱', '弐', '参', '四', '伍', '六', '七', '八', '九'];
+const KOREAN_HANGUL_DIGITS: &[char] = &['영', '일', '이', '삼', '사', '오', '육', '칠', '팔', '구'];
+
+/// R3835：builtin 计数器样式的 marker suffix（CSS Counter Styles §2 suffix 描述符——
+/// predefined 样式 suffix 默认 "." + 空格；§6.2 CJK/日 = "、"（U+3001）、韩 = ","）。
+/// 返回不含尾随空格的标点部分；空格间隔由调用方按需补（inside advance）。
+fn counter_suffix(t: &ListStyleTypeValue) -> &'static str {
+    match t {
+        ListStyleTypeValue::JapaneseInformal
+        | ListStyleTypeValue::JapaneseFormal
+        | ListStyleTypeValue::SimpChineseInformal
+        | ListStyleTypeValue::SimpChineseFormal
+        | ListStyleTypeValue::TradChineseInformal
+        | ListStyleTypeValue::TradChineseFormal
+        // §6.1/§6.2 假名与天干地支（WPT ref：ア、/ 甲、）。
+        | ListStyleTypeValue::CjkEarthlyBranch
+        | ListStyleTypeValue::CjkHeavenlyStem
+        | ListStyleTypeValue::Hiragana
+        | ListStyleTypeValue::HiraganaIroha
+        | ListStyleTypeValue::Katakana
+        | ListStyleTypeValue::KatakanaIroha => "、",
+        ListStyleTypeValue::KoreanHangulFormal
+        | ListStyleTypeValue::KoreanHanjaInformal
+        | ListStyleTypeValue::KoreanHanjaFormal => ",",
+        _ => ".",
+    }
+}
+
+/// §6.2 九个 numeric 家族符号/规则表（ground-truth 见 [`to_cjk_num`] 文档）。
+const JAPANESE_INFORMAL: CjkNumSymbols = CjkNumSymbols {
+    digits: SIMP_CHINESE_DIGITS,
+    units: ["千", "百", "十"],
+    omit_one: OmitOne::AllUnits,
+    zero_mid: false,
+    zero_char: '零',
+    zero_value: "〇",
+    negative: "マイナス",
+};
+const JAPANESE_FORMAL: CjkNumSymbols = CjkNumSymbols {
+    digits: JAPANESE_FORMAL_DIGITS,
+    units: ["阡", "百", "拾"],
+    omit_one: OmitOne::Never,
+    zero_mid: false,
+    zero_char: '零',
+    zero_value: "零",
+    negative: "マイナス",
+};
+const SIMP_CHINESE_INFORMAL: CjkNumSymbols = CjkNumSymbols {
+    digits: SIMP_CHINESE_DIGITS,
+    units: ["千", "百", "十"],
+    omit_one: OmitOne::TensOnly,
+    zero_mid: true,
+    zero_char: '零',
+    zero_value: "零",
+    negative: "负",
+};
+const SIMP_CHINESE_FORMAL: CjkNumSymbols = CjkNumSymbols {
+    digits: SIMP_CHINESE_FORMAL_DIGITS,
+    units: ["仟", "佰", "拾"],
+    omit_one: OmitOne::Never,
+    zero_mid: true,
+    zero_char: '零',
+    zero_value: "零",
+    negative: "负",
+};
+const TRAD_CHINESE_INFORMAL: CjkNumSymbols = CjkNumSymbols {
+    digits: SIMP_CHINESE_DIGITS,
+    units: ["千", "百", "十"],
+    omit_one: OmitOne::TensOnly,
+    zero_mid: true,
+    zero_char: '零',
+    zero_value: "零",
+    negative: "負",
+};
+const TRAD_CHINESE_FORMAL: CjkNumSymbols = CjkNumSymbols {
+    digits: TRAD_CHINESE_FORMAL_DIGITS,
+    units: ["仟", "佰", "拾"],
+    omit_one: OmitOne::Never,
+    zero_mid: true,
+    zero_char: '零',
+    zero_value: "零",
+    negative: "負",
+};
+const KOREAN_HANGUL_FORMAL: CjkNumSymbols = CjkNumSymbols {
+    digits: KOREAN_HANGUL_DIGITS,
+    units: ["천", "백", "십"],
+    omit_one: OmitOne::Never,
+    zero_mid: false,
+    zero_char: '영',
+    zero_value: "영",
+    negative: "마이너스 ",
+};
+const KOREAN_HANJA_INFORMAL: CjkNumSymbols = CjkNumSymbols {
+    digits: SIMP_CHINESE_DIGITS,
+    units: ["千", "百", "十"],
+    omit_one: OmitOne::AllUnits,
+    zero_mid: false,
+    zero_char: '零',
+    zero_value: "零",
+    negative: "마이너스 ",
+};
+const KOREAN_HANJA_FORMAL: CjkNumSymbols = CjkNumSymbols {
+    digits: &['零', '壹', '貳', '參', '四', '五', '六', '七', '八', '九'],
+    units: ["仟", "百", "拾"],
+    omit_one: OmitOne::Never,
+    zero_mid: false,
+    zero_char: '零',
+    zero_value: "零",
+    negative: "마이너스 ",
+};
+
+/// 按家族符号表合成 CJK 数字文本（`value` ≥ 1；0/负值由调用方按家族表处理）。
+fn cjk_compose(value: usize, sym: &CjkNumSymbols) -> String {
+    let th = value / 1000;
+    let rem1 = value % 1000;
+    let hu = rem1 / 100;
+    let rem2 = rem1 % 100;
+    let te = rem2 / 10;
+    let ones = rem2 % 10;
+
+    let mut out = String::new();
+    for (d, unit, div, lower) in [
+        (th, sym.units[0], 1000, rem1),
+        (hu, sym.units[1], 100, rem2),
+        (te, sym.units[2], 10, ones),
+    ] {
+        if d == 0 {
+            continue;
+        }
+        let omit = d == 1
+            && match sym.omit_one {
+                OmitOne::Never => false,
+                OmitOne::AllUnits => true,
+                OmitOne::TensOnly => div == 10,
+            };
+        if omit {
+            out.push_str(unit);
+        } else {
+            out.push(sym.digits[d]);
+            out.push_str(unit);
+        }
+        // 中间补零：当前位以下有非零剩余且剩余 < div/10（中间位全空）——101 → 一百零一。
+        if sym.zero_mid && div > 1 && lower > 0 && lower < div / 10 {
+            out.push(sym.zero_char);
+        }
+    }
+    if ones > 0 {
+        out.push(sym.digits[ones]);
+    }
+    out
+}
+
+/// §6.2 家族完整入口（含 0/负值/越界处理）。返回 `None` = 超出该家族 range，调用方
+/// 走 decimal fallback（korean 系）。
+fn to_cjk_num(value: i64, sym: &CjkNumSymbols, fallback_above: bool) -> Option<String> {
+    if fallback_above && value > 9999 {
+        return None;
+    }
+    if value < 0 {
+        return Some(format!("{}{}", sym.negative, cjk_compose((-value) as usize, sym)));
+    }
+    if value == 0 {
+        return Some(sym.zero_value.to_string());
+    }
+    // ≥10000（无 range limit 的日/中家族）：chromium 按位逐字映射（cjk-decimal 式，
+    // 10000 = 一〇〇〇〇；WPT 044/078 ground-truth），不进入千进制合成。
+    if value > 9999 {
+        return Some(to_cjk_decimal(value as usize));
+    }
+    Some(cjk_compose(value as usize, sym))
+}
+
+/// R3835：§6.1/§6.2 fixed alphabetic 假名 + cyclic 天干地支符号表。
+const HIRAGANA: &str =
+    "あいうえおかきくけこさしすせそたちつてとなにぬねのはひふへほまみむめもやゆよらりるれろわゐゑをん";
+const HIRAGANA_IROHA: &str =
+    "いろはにほへとちりぬるをわかよたれそつねならむうゐのおくやまけふこえてあさきゆめみしゑひもせす";
+const KATAKANA: &str =
+    "アイウエオカキクケコサシスセソタチツテトナニヌネノハヒフヘホマミムメモヤユヨラリルレロワヰヱヲン";
+const KATAKANA_IROHA: &str =
+    "イロハニホヘトチリヌルヲワカヨタレソツネナラムウヰノオクヤマケフコエテアサキユメミシヱヒモセス";
+const CJK_EARTHLY_BRANCH: &str = "子丑寅卯辰巳午未申酉戌亥";
+const CJK_HEAVENLY_STEM: &str = "甲乙丙丁戊己庚辛壬癸";
+
+/// alphabetic 通用：符号表 base-N 取值（同 format_counter_alpha 语义，表长泛化）。
+/// CSS Counter Styles §3.1.4 system: alphabetic——1→第 1 符号、N→第 N 符号、N+1→"第1第1"。
+fn to_symbol_alpha(value: i64, table: &str) -> Option<String> {
+    if value <= 0 {
+        return None;
+    }
+    let chars: Vec<char> = table.chars().collect();
+    let mut v = value as usize;
+    let mut result = Vec::new();
+    while v > 0 {
+        v -= 1;
+        result.push(chars[v % chars.len()]);
+        v /= chars.len();
+    }
+    result.reverse();
+    Some(result.into_iter().collect())
+}
+
+/// R3835：cyclic 通用（CSS Counter Styles §3.1.4 system: cyclic）——值循环重复符号表：
+/// 1→第 1 符号、N→第 N 符号、N+1→**第 1 符号**（与 alphabetic 的 base-N 进位不同，
+/// 地支 13=子 而非「子子」）。WPT 201：1=子 … 12=亥。
+fn to_symbol_cycle(value: i64, table: &str) -> Option<String> {
+    if value <= 0 {
+        return None;
+    }
+    let chars: Vec<char> = table.chars().collect();
+    let idx = (value - 1) % chars.len() as i64;
+    Some(chars[idx as usize].to_string())
+}
+
 /// R2447：armenian 计数器表示（CSS Counter Styles 3 §6.1 预定义，≡ upper-armenian）。
 ///
 /// 传统亚美尼亚数字系统——纯加法（无减法形式，区别于 Roman）。大写亚美尼亚字母块
@@ -936,7 +1194,22 @@ impl super::super::Painter {
             | ListStyleTypeValue::Lao
             | ListStyleTypeValue::Khmer
             | ListStyleTypeValue::Myanmar
-            | ListStyleTypeValue::CjkDecimal => {
+            | ListStyleTypeValue::CjkDecimal
+            | ListStyleTypeValue::JapaneseInformal
+            | ListStyleTypeValue::JapaneseFormal
+            | ListStyleTypeValue::SimpChineseInformal
+            | ListStyleTypeValue::SimpChineseFormal
+            | ListStyleTypeValue::TradChineseInformal
+            | ListStyleTypeValue::TradChineseFormal
+            | ListStyleTypeValue::KoreanHangulFormal
+            | ListStyleTypeValue::KoreanHanjaInformal
+            | ListStyleTypeValue::KoreanHanjaFormal
+            | ListStyleTypeValue::CjkEarthlyBranch
+            | ListStyleTypeValue::CjkHeavenlyStem
+            | ListStyleTypeValue::Hiragana
+            | ListStyleTypeValue::HiraganaIroha
+            | ListStyleTypeValue::Katakana
+            | ListStyleTypeValue::KatakanaIroha => {
                 let index = self
                     .get_counter("list-item")
                     .unwrap_or_else(|| self.compute_list_item_index(doc, node_id));
@@ -964,9 +1237,58 @@ impl super::super::Painter {
                     ListStyleTypeValue::Khmer if index >= 0 => to_digit_script(index as usize, 0x17E0),
                     ListStyleTypeValue::Myanmar if index >= 0 => to_digit_script(index as usize, 0x1040),
                     ListStyleTypeValue::CjkDecimal if index >= 0 => to_cjk_decimal(index as usize),
+                    // R3835：§6.2 limited CJK/日/韩 + 假名 + 天干地支。越界（korean 系
+                    // range 1-9999、假名/循环 value ≤ 0）→ decimal fallback。
+                    ListStyleTypeValue::JapaneseInformal => {
+                        to_cjk_num(index, &JAPANESE_INFORMAL, false).unwrap_or_else(|| index.to_string())
+                    }
+                    ListStyleTypeValue::JapaneseFormal => {
+                        to_cjk_num(index, &JAPANESE_FORMAL, false).unwrap_or_else(|| index.to_string())
+                    }
+                    ListStyleTypeValue::SimpChineseInformal => {
+                        to_cjk_num(index, &SIMP_CHINESE_INFORMAL, false).unwrap_or_else(|| index.to_string())
+                    }
+                    ListStyleTypeValue::SimpChineseFormal => {
+                        to_cjk_num(index, &SIMP_CHINESE_FORMAL, false).unwrap_or_else(|| index.to_string())
+                    }
+                    ListStyleTypeValue::TradChineseInformal => {
+                        to_cjk_num(index, &TRAD_CHINESE_INFORMAL, false).unwrap_or_else(|| index.to_string())
+                    }
+                    ListStyleTypeValue::TradChineseFormal => {
+                        to_cjk_num(index, &TRAD_CHINESE_FORMAL, false).unwrap_or_else(|| index.to_string())
+                    }
+                    ListStyleTypeValue::KoreanHangulFormal => {
+                        to_cjk_num(index, &KOREAN_HANGUL_FORMAL, true).unwrap_or_else(|| index.to_string())
+                    }
+                    ListStyleTypeValue::KoreanHanjaInformal => {
+                        to_cjk_num(index, &KOREAN_HANJA_INFORMAL, true).unwrap_or_else(|| index.to_string())
+                    }
+                    ListStyleTypeValue::KoreanHanjaFormal => {
+                        to_cjk_num(index, &KOREAN_HANJA_FORMAL, true).unwrap_or_else(|| index.to_string())
+                    }
+                    ListStyleTypeValue::CjkEarthlyBranch => {
+                        to_symbol_cycle(index, CJK_EARTHLY_BRANCH).unwrap_or_else(|| index.to_string())
+                    }
+                    ListStyleTypeValue::CjkHeavenlyStem => {
+                        to_symbol_cycle(index, CJK_HEAVENLY_STEM).unwrap_or_else(|| index.to_string())
+                    }
+                    ListStyleTypeValue::Hiragana => {
+                        to_symbol_alpha(index, HIRAGANA).unwrap_or_else(|| index.to_string())
+                    }
+                    ListStyleTypeValue::HiraganaIroha => {
+                        to_symbol_alpha(index, HIRAGANA_IROHA).unwrap_or_else(|| index.to_string())
+                    }
+                    ListStyleTypeValue::Katakana => {
+                        to_symbol_alpha(index, KATAKANA).unwrap_or_else(|| index.to_string())
+                    }
+                    ListStyleTypeValue::KatakanaIroha => {
+                        to_symbol_alpha(index, KATAKANA_IROHA).unwrap_or_else(|| index.to_string())
+                    }
                     _ => index.to_string(),
                 };
-                let text = format!("{body}.");
+                // R3835：suffix 按家族（见 counter_suffix）。
+                let suffix = counter_suffix(&style.list_style_type);
+                let text = format!("{body}{suffix}");
                 let mut char_x = text_marker_x;
                 let char_y = text_marker_baseline_y;
                 for ch in text.chars() {
@@ -1076,6 +1398,234 @@ impl super::super::Painter {
                 }
             }
         }
+
+        // R3835：inside **counter 型** marker → 记录 marker 步进宽度，paint_text 首片段
+        // 右移（CSS Lists 3 §list-style-position：inside marker 是首行行盒第一个 inline，
+        // 内容排其后。旧实现 marker 与内容同 x 重叠——css-counter-styles 024 等 `1AAA`）。
+        // 从样式源独立重推 marker 文本测宽（marker 绘制臂各自局部 char_x，不外传）；
+        // marker 绘制不在热路径，重复格式化可接受。outside 几何 marker 不记录
+        //（outside 内容位置由布局 margin 让位，现状正确）。
+        // String / Custom（::marker content / list-style-type:"..."）不记录：其 marker
+        // 文本即 inline 流的开头，内容紧随其后无后缀间隔（css-pseudo marker-content-018：
+        // content "1 " 尾随空格语义 = 文本自身，偏移会破坏 white-space 用例；ZW 内容起点
+        // 不动 + marker 画在起点 ≡ chromium 紧贴排布）。
+        if matches!(
+            style.list_style_position,
+            zero_css_parser::values::ListStylePositionValue::Inside
+        ) && !matches!(
+            style.list_style_type,
+            ListStyleTypeValue::None | ListStyleTypeValue::String(_) | ListStyleTypeValue::Custom(_)
+        ) {
+            let index = self
+                .get_counter("list-item")
+                .unwrap_or_else(|| self.compute_list_item_index(doc, node_id));
+            let text: String = match &style.list_style_type {
+                ListStyleTypeValue::Decimal => format!("{index}."),
+                ListStyleTypeValue::DecimalLeadingZero if (0..10).contains(&index) => format!("0{index}."),
+                ListStyleTypeValue::LowerAlpha if index > 0 && index <= 26 => {
+                    format!("{}.", (b'a' + (index as u8 - 1)) as char)
+                }
+                ListStyleTypeValue::UpperAlpha if index > 0 && index <= 26 => {
+                    format!("{}.", (b'A' + (index as u8 - 1)) as char)
+                }
+                ListStyleTypeValue::LowerRoman => {
+                    if index <= 0 {
+                        format!("{index}.")
+                    } else {
+                        format!("{}.", to_roman(index as usize).to_lowercase())
+                    }
+                }
+                ListStyleTypeValue::UpperRoman => {
+                    if index <= 0 {
+                        format!("{index}.")
+                    } else {
+                        format!("{}.", to_roman(index as usize))
+                    }
+                }
+                ListStyleTypeValue::LowerGreek if index > 0 => format!("{}.", to_greek(index as usize)),
+                ListStyleTypeValue::Persian if index >= 0 => format!("{}.", to_persian(index as usize)),
+                ListStyleTypeValue::Armenian if index > 0 => format!("{}.", to_armenian(index as usize)),
+                ListStyleTypeValue::LowerArmenian if index > 0 => {
+                    format!("{}.", to_armenian(index as usize).to_lowercase())
+                }
+                ListStyleTypeValue::Georgian if index > 0 => format!("{}.", to_georgian(index as usize)),
+                ListStyleTypeValue::Hebrew if index > 0 => format!("{}.", to_hebrew(index as usize)),
+                ListStyleTypeValue::ArabicIndic if index >= 0 => format!("{}.", to_arabic_indic(index as usize)),
+                ListStyleTypeValue::CjkDecimal if index >= 0 => format!("{}.", to_cjk_decimal(index as usize)),
+                ListStyleTypeValue::Devanagari if index >= 0 => format!("{}.", to_digit_script(index as usize, 0x0966)),
+                ListStyleTypeValue::Bengali if index >= 0 => format!("{}.", to_digit_script(index as usize, 0x09E6)),
+                ListStyleTypeValue::Gujarati if index >= 0 => format!("{}.", to_digit_script(index as usize, 0x0AE6)),
+                ListStyleTypeValue::Gurmukhi if index >= 0 => format!("{}.", to_digit_script(index as usize, 0x0A66)),
+                ListStyleTypeValue::Kannada if index >= 0 => format!("{}.", to_digit_script(index as usize, 0x0CE6)),
+                ListStyleTypeValue::Malayalam if index >= 0 => format!("{}.", to_digit_script(index as usize, 0x0D66)),
+                ListStyleTypeValue::Tamil if index >= 0 => format!("{}.", to_digit_script(index as usize, 0x0BE6)),
+                ListStyleTypeValue::Telugu if index >= 0 => format!("{}.", to_digit_script(index as usize, 0x0C66)),
+                ListStyleTypeValue::Lao if index >= 0 => format!("{}.", to_digit_script(index as usize, 0x0ED0)),
+                ListStyleTypeValue::Khmer if index >= 0 => format!("{}.", to_digit_script(index as usize, 0x17E0)),
+                ListStyleTypeValue::Myanmar if index >= 0 => format!("{}.", to_digit_script(index as usize, 0x1040)),
+                // R3835：§6.2 家族（与绘制臂同源，越界 → decimal）。
+                ListStyleTypeValue::JapaneseInformal => {
+                    format!(
+                        "{}{}",
+                        to_cjk_num(index, &JAPANESE_INFORMAL, false).unwrap_or_else(|| index.to_string()),
+                        counter_suffix(&style.list_style_type)
+                    )
+                }
+                ListStyleTypeValue::JapaneseFormal => {
+                    format!(
+                        "{}{}",
+                        to_cjk_num(index, &JAPANESE_FORMAL, false).unwrap_or_else(|| index.to_string()),
+                        counter_suffix(&style.list_style_type)
+                    )
+                }
+                ListStyleTypeValue::SimpChineseInformal => {
+                    format!(
+                        "{}{}",
+                        to_cjk_num(index, &SIMP_CHINESE_INFORMAL, false).unwrap_or_else(|| index.to_string()),
+                        counter_suffix(&style.list_style_type)
+                    )
+                }
+                ListStyleTypeValue::SimpChineseFormal => {
+                    format!(
+                        "{}{}",
+                        to_cjk_num(index, &SIMP_CHINESE_FORMAL, false).unwrap_or_else(|| index.to_string()),
+                        counter_suffix(&style.list_style_type)
+                    )
+                }
+                ListStyleTypeValue::TradChineseInformal => {
+                    format!(
+                        "{}{}",
+                        to_cjk_num(index, &TRAD_CHINESE_INFORMAL, false).unwrap_or_else(|| index.to_string()),
+                        counter_suffix(&style.list_style_type)
+                    )
+                }
+                ListStyleTypeValue::TradChineseFormal => {
+                    format!(
+                        "{}{}",
+                        to_cjk_num(index, &TRAD_CHINESE_FORMAL, false).unwrap_or_else(|| index.to_string()),
+                        counter_suffix(&style.list_style_type)
+                    )
+                }
+                ListStyleTypeValue::KoreanHangulFormal => {
+                    format!(
+                        "{}{}",
+                        to_cjk_num(index, &KOREAN_HANGUL_FORMAL, true).unwrap_or_else(|| index.to_string()),
+                        counter_suffix(&style.list_style_type)
+                    )
+                }
+                ListStyleTypeValue::KoreanHanjaInformal => {
+                    format!(
+                        "{}{}",
+                        to_cjk_num(index, &KOREAN_HANJA_INFORMAL, true).unwrap_or_else(|| index.to_string()),
+                        counter_suffix(&style.list_style_type)
+                    )
+                }
+                ListStyleTypeValue::KoreanHanjaFormal => {
+                    format!(
+                        "{}{}",
+                        to_cjk_num(index, &KOREAN_HANJA_FORMAL, true).unwrap_or_else(|| index.to_string()),
+                        counter_suffix(&style.list_style_type)
+                    )
+                }
+                ListStyleTypeValue::CjkEarthlyBranch => {
+                    format!(
+                        "{}{}",
+                        to_symbol_cycle(index, CJK_EARTHLY_BRANCH).unwrap_or_else(|| index.to_string()),
+                        counter_suffix(&style.list_style_type)
+                    )
+                }
+                ListStyleTypeValue::CjkHeavenlyStem => {
+                    format!(
+                        "{}{}",
+                        to_symbol_cycle(index, CJK_HEAVENLY_STEM).unwrap_or_else(|| index.to_string()),
+                        counter_suffix(&style.list_style_type)
+                    )
+                }
+                ListStyleTypeValue::Hiragana => {
+                    format!(
+                        "{}{}",
+                        to_symbol_alpha(index, HIRAGANA).unwrap_or_else(|| index.to_string()),
+                        counter_suffix(&style.list_style_type)
+                    )
+                }
+                ListStyleTypeValue::HiraganaIroha => {
+                    format!(
+                        "{}{}",
+                        to_symbol_alpha(index, HIRAGANA_IROHA).unwrap_or_else(|| index.to_string()),
+                        counter_suffix(&style.list_style_type)
+                    )
+                }
+                ListStyleTypeValue::Katakana => {
+                    format!(
+                        "{}{}",
+                        to_symbol_alpha(index, KATAKANA).unwrap_or_else(|| index.to_string()),
+                        counter_suffix(&style.list_style_type)
+                    )
+                }
+                ListStyleTypeValue::KatakanaIroha => {
+                    format!(
+                        "{}{}",
+                        to_symbol_alpha(index, KATAKANA_IROHA).unwrap_or_else(|| index.to_string()),
+                        counter_suffix(&style.list_style_type)
+                    )
+                }
+                ListStyleTypeValue::String(s) => s.clone(),
+                ListStyleTypeValue::Custom(name) => match self.counter_styles.get(name) {
+                    Some(rule) => counter_style_marker_text(rule, index, Some(&self.counter_styles), Some(style)),
+                    None => format!("{index}."),
+                },
+                // disc/circle/square 几何 marker：宽度 = marker_size（同 paint 臂）。
+                ListStyleTypeValue::Disc | ListStyleTypeValue::Circle | ListStyleTypeValue::Square => {
+                    self.list_inside_marker_advance
+                        .insert(node_id, font_size * 0.4 + font_size * 0.1);
+                    return;
+                }
+                // disclosure 文本臂（含尾随空格）。
+                ListStyleTypeValue::DisclosureOpen | ListStyleTypeValue::DisclosureClosed => {
+                    format!(
+                        "{} ",
+                        disclosure_symbol(
+                            matches!(style.list_style_type, ListStyleTypeValue::DisclosureOpen),
+                            Some(style)
+                        )
+                    )
+                }
+                ListStyleTypeValue::None => return,
+                // 其余（guard 未命中的 index 越界面 / 未列举面）与绘制臂同走 decimal
+                // fallback 或空 advance：alpha>26 绘 '?'，scripts 越界走 index.to_string()。
+                ListStyleTypeValue::DecimalLeadingZero
+                | ListStyleTypeValue::LowerAlpha
+                | ListStyleTypeValue::UpperAlpha
+                | ListStyleTypeValue::LowerGreek
+                | ListStyleTypeValue::Persian
+                | ListStyleTypeValue::Armenian
+                | ListStyleTypeValue::LowerArmenian
+                | ListStyleTypeValue::Georgian
+                | ListStyleTypeValue::Hebrew
+                | ListStyleTypeValue::ArabicIndic
+                | ListStyleTypeValue::Devanagari
+                | ListStyleTypeValue::Bengali
+                | ListStyleTypeValue::Gujarati
+                | ListStyleTypeValue::Gurmukhi
+                | ListStyleTypeValue::Kannada
+                | ListStyleTypeValue::Malayalam
+                | ListStyleTypeValue::Tamil
+                | ListStyleTypeValue::Telugu
+                | ListStyleTypeValue::Lao
+                | ListStyleTypeValue::Khmer
+                | ListStyleTypeValue::Myanmar
+                | ListStyleTypeValue::CjkDecimal => format!("{index}."),
+            };
+            let mut advance: f32 = text
+                .chars()
+                .map(|ch| self.measure_char_cached(default_font_id.0, ch, font_size, false))
+                .sum();
+            // chromium inside counter marker 与内容间的间隔 = 计数器样式 suffix 的尾随
+            // 空格（predefined suffix = ". "，WPT ref "X. X"）。本块只处理 counter 类
+            // marker（String/Custom 已在入口排除），间隔恒补。
+            advance += self.measure_char_cached(default_font_id.0, ' ', font_size, false);
+            self.list_inside_marker_advance.insert(node_id, advance);
+        }
     }
 
     /// 计算当前列表项在其兄弟中的 1-based 索引。
@@ -1135,15 +1685,22 @@ fn is_li(doc: &Document, id: NodeId) -> bool {
 
 #[cfg(test)]
 mod tests {
+    use super::CJK_EARTHLY_BRANCH;
+    use super::JAPANESE_INFORMAL;
+    use super::KOREAN_HANJA_FORMAL;
+    use super::SIMP_CHINESE_FORMAL;
     use super::counter_style_body;
     use super::counter_style_marker_text;
+    use super::counter_suffix;
     use super::list_item_counter;
     use super::to_arabic_indic;
     use super::to_armenian;
     use super::to_cjk_decimal;
+    use super::to_cjk_num;
     use super::to_digit_script;
     use super::to_georgian;
     use super::to_hebrew;
+    use super::to_symbol_cycle;
     use zero_dom::parse_html;
     use zero_style_system::{ComputedStyle, DirectionValue, WritingModeValue};
 
@@ -1482,5 +2039,73 @@ mod tests {
     fn test_counter_style_additive_deferred() {
         let r = cs_rule(zero_css_parser::ast::CounterSystem::Additive, &["a"]);
         assert!(counter_style_body(&r, 1).is_none());
+    }
+
+    // ── R3835：inside marker 内容偏移 + §6.2 CJK/日/韩计数器 ──────────────
+
+    /// §6.2 japanese-informal（ground-truth：WPT css3-counter-styles-042/043/044/045）。
+    /// 1 前全省（10=十、100=百、1000=千）、无中间补零（101=百一）、0=〇、负前缀マイナス。
+    #[test]
+    fn test_r3835_cjk_japanese_informal() {
+        assert_eq!(to_cjk_num(1, &JAPANESE_INFORMAL, false).unwrap(), "一");
+        assert_eq!(to_cjk_num(9, &JAPANESE_INFORMAL, false).unwrap(), "九");
+        assert_eq!(to_cjk_num(10, &JAPANESE_INFORMAL, false).unwrap(), "十");
+        assert_eq!(to_cjk_num(11, &JAPANESE_INFORMAL, false).unwrap(), "十一");
+        assert_eq!(to_cjk_num(100, &JAPANESE_INFORMAL, false).unwrap(), "百");
+        assert_eq!(to_cjk_num(101, &JAPANESE_INFORMAL, false).unwrap(), "百一");
+        assert_eq!(to_cjk_num(999, &JAPANESE_INFORMAL, false).unwrap(), "九百九十九");
+        assert_eq!(to_cjk_num(1000, &JAPANESE_INFORMAL, false).unwrap(), "千");
+        assert_eq!(to_cjk_num(9999, &JAPANESE_INFORMAL, false).unwrap(), "九千九百九十九");
+        // 10000+ 按位逐字（chromium 语义，WPT 044）。
+        assert_eq!(to_cjk_num(10000, &JAPANESE_INFORMAL, false).unwrap(), "一〇〇〇〇");
+        assert_eq!(to_cjk_num(0, &JAPANESE_INFORMAL, false).unwrap(), "〇");
+        assert_eq!(to_cjk_num(-11, &JAPANESE_INFORMAL, false).unwrap(), "マイナス十一");
+    }
+
+    /// §6.2 simp-chinese-formal：恒写 digit+unit（10=壹拾）、中间补零（101=壹佰零壹）、
+    /// 越界 10000=一〇〇〇〇（WPT 076/078）。
+    #[test]
+    fn test_r3835_cjk_simp_chinese_formal() {
+        assert_eq!(to_cjk_num(1, &SIMP_CHINESE_FORMAL, false).unwrap(), "壹");
+        assert_eq!(to_cjk_num(10, &SIMP_CHINESE_FORMAL, false).unwrap(), "壹拾");
+        assert_eq!(to_cjk_num(11, &SIMP_CHINESE_FORMAL, false).unwrap(), "壹拾壹");
+        assert_eq!(to_cjk_num(101, &SIMP_CHINESE_FORMAL, false).unwrap(), "壹佰零壹");
+        assert_eq!(to_cjk_num(222, &SIMP_CHINESE_FORMAL, false).unwrap(), "贰佰贰拾贰");
+        assert_eq!(to_cjk_num(9999, &SIMP_CHINESE_FORMAL, false).unwrap(), "玖仟玖佰玖拾玖");
+        assert_eq!(to_cjk_num(10000, &SIMP_CHINESE_FORMAL, false).unwrap(), "一〇〇〇〇");
+        assert_eq!(to_cjk_num(-9, &SIMP_CHINESE_FORMAL, false).unwrap(), "负玖");
+    }
+
+    /// §6.2 korean-hanja-formal：恒写 digit+unit、无补零、range 1-9999（越界 → None 走
+    /// decimal fallback，WPT 065 期望 10000="10000."）。
+    #[test]
+    fn test_r3835_cjk_korean_hanja_formal_range_fallback() {
+        assert_eq!(to_cjk_num(9999, &KOREAN_HANJA_FORMAL, true).unwrap(), "九仟九百九拾九");
+        assert_eq!(to_cjk_num(10, &KOREAN_HANJA_FORMAL, true).unwrap(), "壹拾");
+        assert!(
+            to_cjk_num(10000, &KOREAN_HANJA_FORMAL, true).is_none(),
+            "korean range 1-9999 越界走 fallback"
+        );
+    }
+
+    /// §6.1/§6.2 cyclic/alphabetic 符号循环 + 家族 suffix（WPT 201/204：1=子/甲、
+    /// 13=一三?——否，cyclic 是 12/10 符号循环；katakana 11=ア+第11符号）。
+    #[test]
+    fn test_r3835_symbol_cycle_and_suffix() {
+        assert_eq!(to_symbol_cycle(1, CJK_EARTHLY_BRANCH).unwrap(), "子");
+        assert_eq!(to_symbol_cycle(12, CJK_EARTHLY_BRANCH).unwrap(), "亥");
+        assert_eq!(to_symbol_cycle(13, CJK_EARTHLY_BRANCH).unwrap(), "子");
+        assert_eq!(
+            counter_suffix(&zero_css_parser::values::ListStyleTypeValue::JapaneseFormal),
+            "、"
+        );
+        assert_eq!(
+            counter_suffix(&zero_css_parser::values::ListStyleTypeValue::KoreanHangulFormal),
+            ","
+        );
+        assert_eq!(
+            counter_suffix(&zero_css_parser::values::ListStyleTypeValue::Decimal),
+            "."
+        );
     }
 }

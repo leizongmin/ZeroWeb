@@ -263,6 +263,23 @@ pub fn parse_list_style_type(value: &str) -> Option<ListStyleTypeValue> {
         // R2472：cjk-decimal（CJK ideographic digits，非连续 lookup）。cambodian ≡ khmer 别名。
         "cjk-decimal" => Some(ListStyleTypeValue::CjkDecimal),
         "cambodian" => Some(ListStyleTypeValue::Khmer),
+        // R3835：CSS Counter Styles 3 §6.2 limited CJK/日/韩预定义 + §6.1 fixed 日文假名
+        //（cyclic 地支/天干、alphabetic 假名）。
+        "japanese-informal" => Some(ListStyleTypeValue::JapaneseInformal),
+        "japanese-formal" => Some(ListStyleTypeValue::JapaneseFormal),
+        "simp-chinese-informal" => Some(ListStyleTypeValue::SimpChineseInformal),
+        "simp-chinese-formal" => Some(ListStyleTypeValue::SimpChineseFormal),
+        "trad-chinese-informal" => Some(ListStyleTypeValue::TradChineseInformal),
+        "trad-chinese-formal" => Some(ListStyleTypeValue::TradChineseFormal),
+        "korean-hangul-formal" => Some(ListStyleTypeValue::KoreanHangulFormal),
+        "korean-hanja-informal" => Some(ListStyleTypeValue::KoreanHanjaInformal),
+        "korean-hanja-formal" => Some(ListStyleTypeValue::KoreanHanjaFormal),
+        "cjk-earthly-branch" => Some(ListStyleTypeValue::CjkEarthlyBranch),
+        "cjk-heavenly-stem" => Some(ListStyleTypeValue::CjkHeavenlyStem),
+        "hiragana" => Some(ListStyleTypeValue::Hiragana),
+        "hiragana-iroha" => Some(ListStyleTypeValue::HiraganaIroha),
+        "katakana" => Some(ListStyleTypeValue::Katakana),
+        "katakana-iroha" => Some(ListStyleTypeValue::KatakanaIroha),
         // https://drafts.csswg.org/css-counter-styles-3/#disclosure-open
         "disclosure-open" => Some(ListStyleTypeValue::DisclosureOpen),
         "disclosure-closed" => Some(ListStyleTypeValue::DisclosureClosed),
