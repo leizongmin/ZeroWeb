@@ -7,7 +7,7 @@
 
 use std::collections::HashMap;
 
-use zero_css_parser::values::DisplayValue;
+use zero_css_parser::values::{DisplayValue, FloatValue};
 use zero_dom::NodeId;
 use zero_style_system::ComputedStyle;
 
@@ -20,6 +20,31 @@ use crate::types::LayoutBox;
 /// - `table > tr > td` — 直接子元素是 table-row
 /// - `table > tbody > tr > td` — 直接子元素是 table-row-group
 /// - `table > td` — 直接子元素是 table-cell（匿名行生成）
+///
+/// R3815：文档结构元素（html/body）判定——display:table 的结构子元素不参与匿名 cell 包裹。
+fn is_document_structure_child(child: &LayoutBox, doc: &zero_dom::Document) -> bool {
+    child.node_id.is_some_and(|id| {
+        doc.get(id).is_some_and(|n| {
+            matches!(&n.kind, zero_dom::NodeKind::Element(e)
+                if matches!(e.local_name().to_ascii_lowercase().as_str(), "html" | "body"))
+        })
+    })
+}
+
+/// R3815：table 内部盒 display 判定（匿名 cell 包裹臂的排除集）。
+fn is_table_internal_display(d: &DisplayValue) -> bool {
+    matches!(
+        d,
+        DisplayValue::TableRow
+            | DisplayValue::TableRowGroup
+            | DisplayValue::TableHeaderGroup
+            | DisplayValue::TableFooterGroup
+            | DisplayValue::TableCell
+            | DisplayValue::TableColumn
+            | DisplayValue::TableColumnGroup
+    )
+}
+
 pub(crate) fn build_grid(
     table_box: &LayoutBox,
     doc: &zero_dom::Document,
@@ -337,8 +362,57 @@ pub(crate) fn build_grid(
                 direct_col_cursor = col_end;
                 max_cols = max_cols.max(col_end);
             }
+            // R3815：table 直接子元素中的非表格内部块级盒 → 匿名 cell（CSS2 §17.2.1
+            // 匿名盒规则：display:table 的块级子元素包入匿名 cell + 匿名行）。
+            // calc-margins-table-caption：table 内普通 div（margin calc(10%+100px)）→
+            // 匿名 cell 固有宽含 margin px 残差 → 列宽 100（旧跳过致表宽 0）。
+            // 限定：html/body 结构子元素不包裹（root-degenerate 场景破坏
+            // shrink_table_to_block_content / margin:auto 居中既有路径）；caption/
+            // column/colgroup/inline/none/contents 排除。
+            Some(d)
+                if !is_table_internal_display(d)
+                    && !matches!(
+                        d,
+                        DisplayValue::Inline
+                            | DisplayValue::None
+                            | DisplayValue::Contents
+                            | DisplayValue::TableCaption
+                    )
+                    && !is_document_structure_child(child, doc)
+                    // 浮动子元素不包裹（float-anon-table 机制 R1382 处理，wrap 会
+                    // 扰动 float-applies-to-row-group 几何）。
+                    && !matches!(child.float, FloatValue::None) =>
+            {
+                if !direct_cells.is_empty() {
+                    max_cols = max_cols.max(direct_col_cursor);
+                    rows.push(TableRow {
+                        child_index: direct_first_child_idx,
+                        row_group_index: None,
+                        cells: std::mem::take(&mut direct_cells),
+                        is_anonymous: true,
+                    });
+                    direct_col_cursor = 0;
+                }
+                let col_start = direct_col_cursor;
+                let col_end = col_start + 1;
+                rows.push(TableRow {
+                    child_index: *child_idx,
+                    row_group_index: None,
+                    cells: vec![TableCell {
+                        child_index: *child_idx,
+                        colspan: 1,
+                        rowspan: 1,
+                        col_start,
+                        col_end,
+                        parent_rg_idx: None,
+                    }],
+                    is_anonymous: true,
+                });
+                direct_col_cursor = col_end;
+                max_cols = max_cols.max(col_end);
+            }
             _ => {
-                // 其他类型（caption、column 等）— 跳过
+                // 其他类型（caption、column、inline 子等）— 跳过
             }
         }
     }
