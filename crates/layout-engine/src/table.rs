@@ -734,8 +734,12 @@ fn compute_column_widths(
                             if let Some(mn) = gmin {
                                 col_max_widths[idx] = col_max_widths[idx].max(mn);
                             }
+                            // R3830：min-width 优先于 max-width（CSS §10.4）——
+                            // clamp 顺序先 max 后 min。col max-width:0 + min-width:100
+                            // → col = 100（col-definite-max-size-001 表 2，chromium
+                            // 451px 宽表；旧 min(mx) 后置致 0）。
                             if let Some(mx) = gmax {
-                                col_max_widths[idx] = col_max_widths[idx].min(mx);
+                                col_max_widths[idx] = col_max_widths[idx].min(mx).max(gmin.unwrap_or(0.0));
                             }
                         }
                     }
@@ -756,8 +760,9 @@ fn compute_column_widths(
                                 if let Some(mn) = cmin {
                                     col_max_widths[idx] = col_max_widths[idx].max(mn);
                                 }
+                                // R3830：min-width 优先于 max-width（CSS §10.4，同上）。
                                 if let Some(mx) = cmax {
-                                    col_max_widths[idx] = col_max_widths[idx].min(mx);
+                                    col_max_widths[idx] = col_max_widths[idx].min(mx).max(cmin.unwrap_or(0.0));
                                 }
                             }
                         }
@@ -780,8 +785,9 @@ fn compute_column_widths(
                         if let Some(mn) = cmin {
                             col_max_widths[idx] = col_max_widths[idx].max(mn);
                         }
+                        // R3830：min-width 优先于 max-width（CSS §10.4，同上）。
                         if let Some(mx) = cmax {
-                            col_max_widths[idx] = col_max_widths[idx].min(mx);
+                            col_max_widths[idx] = col_max_widths[idx].min(mx).max(cmin.unwrap_or(0.0));
                         }
                     }
                 }
