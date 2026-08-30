@@ -1,8 +1,8 @@
 # RFC：JS-DOM pending-apply 生命周期（host apply 异步滞后与 JS 同步视图的边界收口）
 
-**版本**: v0.1（立项——材料收集完成，切片分解待评审）
+**版本**: v0.2（v0.1→v0.2：pa1 审计落地 + R377 §1.2 勘误，2026-08-30 R379）
 **日期**: 2026-08-30
-**状态**: Draft（立项材料齐备，待评审切片分解）
+**状态**: Draft（pa1 已完成；pa2 设计输入齐备，待 land）
 **goal**: `docs/goal/js-dom.md` M4 基线维护延伸（已知 Fail 深项同根归因）
 **证据锚点**: `docs/goal/js-dom/evidence/2026-08-30-r373-abort-domain-import.md`（parse-time 评估）/ `2026-08-30-r377-inserted-script-execution.md`（fused innerHTML 实验 + 探针）/ R371（replaceWith 重键 + 探针链）
 
@@ -93,7 +93,32 @@ apply 后 host 发布新快照（`SetDomSnapshot`），shim 经 R358
 | pa3 | fused innerHTML 重落：pending 桶非空时从 `_childNodeList` 序列化（依赖 pa1/pa2 标记语义） | remove-next-sibling 全绿 + innerHTML 哨兵（Range-mutations 全族） |
 | pa4 | parse-segment 回放：runner 分段 + host delta + shim record 合成 | MutationObserver-document 3 断言面 |
 
-## 3. 修订历史
+## 3. pa1 审计结论（R379 落地，§1.2 勘误）
 
+pa1 零行为探针轮（临时插桩 + 三轮递进探针，跑后 checkout 全量恢复）产出：
+
+- **双身份矩阵**：sel mark 5 处（removeChild/replaceChild/remove/outerHTML/document
+  级移除）+ **M6 缺失**（`replaceWith` sel 路径只 `__zw_remove(sel)` 无 mark——与
+  remove 族不对称）；sel unmark 3 站点全在 part04 append/insert 路径；handle
+  mark 4 处；工厂域 unmark 3 处**只清 handle 维度**（R368 双身份盖章后为潜在
+  stale 源，未爆记录）。
+- **§1.2 勘误**：探针实证 `_zwRemovedSels` 在 replaceWith 全流程**从未被写入**
+  （sels=[] 全程）——不存在「清除点」，R377 的「标记在读时已空」是误读：b 经
+  `querySelector` 返 handle proxy，其 remove 走 handle 维度；且 R377 插入期
+  脚本钩子因 fragment 展开未随迁 text 子到 `_handleChildren` 而 **registry 空
+  源 no-op**（script 从未执行、b 从未被 JS 移除）。Fail 实际形态 = innerHTML
+  读 host 快照旧树（fused 序列化缺失，即 pa3 面向的缺口本身）。
+- **pa2 设计输入**：`execute_script` 尾部 `apply_pending_shared_mutations` 三
+  调用点均无 shim 通知（SetDomSnapshot 钩子只覆盖导航形态）；shim 侧换代语义 =
+  标记表清空 + pending 桶清空 + 融合缓存失效（现有钩子体扩展）。
+- **M6 补 mark** 随 pa2 或独立轻量小片 land（kill-switch 下零生产风险）。
+- **pa3 前置修正项新增**：R377 钩子 registry 空源（fragment 展开随迁 text 子）。
+
+详见 `docs/goal/js-dom/evidence/2026-08-30-r379-pa1-mark-lifecycle-audit.md`。
+
+## 4. 修订历史
+
+- v0.2（2026-08-30 R379）：pa1 审计落地——§1.2 勘误（「清除点」不存在，标记从未
+  写入）+ 双身份矩阵入册 + M6 缺失定位 + pa2 设计输入齐备 + pa3 前置修正项新增。
 - v0.1（2026-08-30 R378）：立项——R373/R377/R371 材料入册 + 探针记录
   （§1.2）+ 切片草案（§2）。切片分解待评审；pa1 审计可先行（零风险）。
