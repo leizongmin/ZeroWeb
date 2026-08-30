@@ -1865,17 +1865,25 @@ fn update_row_group_positions(table_box: &mut LayoutBox, grid: &TableGrid, style
         let mut total_h = 0.0f32;
         let mut found_first = false;
 
+        // R3825：collapsed 行的邻接 border-spacing 一并剔除（CSS Tables §4.1——折叠
+        // track 视同不存在，spacing 仅存在于相邻可见 track 之间）。行位循环已跳过折叠行
+        // spacing（上段 row_y 累计），本处行组盒高度此前仍按「每行 +spacing」累计 →
+        // 折叠行残留一段 spacing 高（visibility-collapse-border-spacing-001：tbody 盒
+        // 多 10px，outline/背景错位，chromium 无此带）。
+        let mut last_row_collapsed = false;
         for &visual_idx in visual_indices {
+            let row_collapsed = grid.collapsed_rows.get(visual_idx).copied().unwrap_or(false);
             if let Some(&(ry, rh)) = row_positions.get(visual_idx) {
                 if !found_first {
                     first_row_y = ry;
                     found_first = true;
                 }
-                total_h += rh + spacing_y;
+                total_h += rh + if row_collapsed { 0.0 } else { spacing_y };
+                last_row_collapsed = row_collapsed;
             }
         }
-        // 最后一行之后不需要额外的 spacing
-        if total_h > 0.0 && spacing_y > 0.0 {
+        // 最后一行之后不需要额外的 spacing（仅当末个贡献行是可见行——折叠行未加 spacing）
+        if total_h > 0.0 && spacing_y > 0.0 && !last_row_collapsed {
             total_h -= spacing_y;
         }
 
