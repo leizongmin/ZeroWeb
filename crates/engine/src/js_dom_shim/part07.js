@@ -704,4 +704,41 @@
   if (globalThis.navigator && !globalThis.navigator.storageBuckets) {
     globalThis.navigator.storageBuckets = new globalThis.StorageBucketManager();
   }
+  // R376（js-dom M4/DC-3）：**WebIDL 接口全局属性形态归一**——spec 全局接口对象是
+  // ① 不可枚举（`for (var p in window)` 不含接口名，WPT dom/interface-objects
+  // "Interface objects properties should not be Enumerable"——旧经普通赋值/defineProperty
+  // 默认 enumerable 的构造器被 for-in 枚举）；② 可配置可删除（`delete window[iface]`
+  // 返 true 且删除生效——同文件 "Should be able to delete" 族）；③ 缺失接口补位
+  //（NodeIterator/TreeWalker 构造器——createTreeWalker/createNodeIterator 的产物
+  // 不经构造器创建，但接口对象本身须存在于 window）。
+  // https://webidl.spec.whatwg.org/#es-interfaces（[LegacyWindowAlias]/属性特性
+  // writable:true, enumerable:false, configurable:true）
+  (function () {
+    var _r376ifaces = [
+      'Event', 'CustomEvent', 'EventTarget', 'AbortController', 'AbortSignal',
+      'Node', 'Document', 'DOMImplementation', 'DocumentFragment',
+      'ProcessingInstruction', 'DocumentType', 'Element', 'Attr', 'CharacterData',
+      'Text', 'Comment', 'NodeIterator', 'TreeWalker', 'NodeFilter', 'NodeList',
+      'HTMLCollection', 'DOMTokenList',
+    ];
+    // 缺失接口补位（简单占位构造器——spec 语义面由既有工厂承载）。
+    ['NodeIterator', 'TreeWalker', 'DOMTokenList'].forEach(function (name376) {
+      if (!globalThis[name376]) {
+        try { globalThis[name376] = new Function('return function ' + name376 + '() {}')(); } catch (_e376m) {}
+      }
+    });
+    for (var i376 = 0; i376 < _r376ifaces.length; i376++) {
+      var name376b = _r376ifaces[i376];
+      var desc376 = Object.getOwnPropertyDescriptor(globalThis, name376b);
+      if (!desc376) continue;
+      if (desc376.enumerable && desc376.configurable) {
+        try {
+          Object.defineProperty(globalThis, name376b, {
+            value: desc376.value, writable: desc376.writable,
+            enumerable: false, configurable: true,
+          });
+        } catch (_e376d) {}
+      }
+    }
+  })();
 })();

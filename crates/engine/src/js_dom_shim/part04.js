@@ -1239,6 +1239,16 @@
         var isComment = handle && _commentHandles[handle];
         var isText = handle && _textHandles[handle];
         var isPI = handle && _piHandles[handle];
+        // R376（js-dom M4/DC-3）：**Element 反射族不对 text/comment/PI handle 暴露**——
+        // spec 这些 IDL 成员在 Element（text 的 proto 链无此名，`in` 与直读均 undefined；
+        // WPT dom/historical "Node member must be removed" 全族：attributes/namespaceURI/
+        // prefix/localName/hasAttributes/isSupported 对 text/doc/doctype 期望 undefined；
+        // 旧 proxy get trap 对任意 handle 服务元素反射面 → text 直读得对象/null）。
+        // https://dom.spec.whatwg.org/#interface-node
+        if ((isText || isComment)
+            && (prop === 'attributes' || prop === 'hasAttributes' || prop === 'isSupported')) {
+          return undefined;
+        }
         // R129（js-dom M4）：CharacterData/PI 是叶子节点——mutation 族方法一律
         // HierarchyRequestError（spec `dom-node-pre-insert`「parent 不是 Element/Document/
         // DocumentFragment」步骤；WPT CharacterData-appendChild/insertBefore/replaceChild
@@ -3632,8 +3642,17 @@
             // R177：Document 不能作 child（spec `dom-node-pre-insert` 步骤 1「node 是
             // Document → HierarchyRequestError」；WPT "Appending a document"
             // `document.body.appendChild(frameDoc)` 期望 throw——旧静默 no-op）。
+            // R376：**Attr 不能作 child**（spec `concept-node-tree`：Attr 节点不参与
+            // children 树——append/insert/replace Attr 子 → HierarchyRequestError；
+            // WPT dom/attributes-are-nodes "appendChild/replaceChild with an attribute
+            // as the child should fail"——旧静默穿透/误挂）。
             if (child.nodeType === 9) {
               throw _zwDomException('Nodes of type 9 cannot be inserted.', 'HierarchyRequestError');
+            }
+            if (child.nodeType === 2) {
+              throw _zwDomException(
+                "Failed to execute 'appendChild' on 'Node': Attr nodes cannot be inserted as children.",
+                'HierarchyRequestError');
             }
             // R368（js-dom M4）：**无身份 plain 元素的 host 身份盖章**——iframe 工厂/detached
             // doc createElement 产物（纯 JS plain 对象，无 `__zwSelector`/`__zwHandle`）append
@@ -4272,6 +4291,12 @@
             if (newNode && (newNode === _makeProxy(sel, handle) || _zwIsAncestorOf(newNode, sel, handle))) {
               throw _zwDomException('A Node cannot be inserted before itself or its descendant.', 'HierarchyRequestError');
             }
+            // R376：Attr 不能作 child（spec `concept-node-tree`；同 appendChild 的 R376 gate）。
+            if (newNode && newNode.nodeType === 2) {
+              throw _zwDomException(
+                "Failed to execute 'insertBefore' on 'Node': Attr nodes cannot be inserted as children.",
+                'HierarchyRequestError');
+            }
             // R300（js-dom M4）：spec `dom-node-pre-insert` **步骤 3 先于步骤 4-6**——
             // child 非 null 且其 parent 非 parent → NotFoundError（WPT
             // pre-insertion-validation-notfound 顺序断言族 "Should check whether
@@ -4675,6 +4700,12 @@
             // HierarchyRequestError（与 pre-insert 同族校验）。
             if (newChild && _zwIsAncestorOf(newChild, sel, handle)) {
               throw _zwDomException('A Node cannot replace its descendant.', 'HierarchyRequestError');
+            }
+            // R376：Attr 不能作 child（spec `concept-node-tree`；同 appendChild 的 R376 gate）。
+            if (newChild && newChild.nodeType === 2) {
+              throw _zwDomException(
+                "Failed to execute 'replaceChild' on 'Node': Attr nodes cannot be inserted as children.",
+                'HierarchyRequestError');
             }
             // js-dom M4 R117：步骤 1——parent 类型校验（Element/Document/DocumentFragment 外
             // 的节点不可有子 → HierarchyRequestError；WPT pre-insertion-validation-notfound

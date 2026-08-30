@@ -126,6 +126,11 @@ pub const DOM_TEST_SUBDIRS: &[&str] = &[
     // R374（js-dom M4/DC-3 扩展）：dom/lists——DOMTokenList 域（classList 同域；5 个
     // 真实用例：Iterable/iteration/stringifier/value/coverage-for-attributes）。
     "dom/lists",
+    // R375（js-dom M4/DC-3 扩展）：dom 根目录散用例（interface-objects /
+    // window-extends-event-target / attributes-are-nodes / xpath-result /
+    // eventPathRemoved / svg-insert-crash / historical 域——read_dir 单层扫描，
+    // 子目录由各自条目覆盖）。
+    "dom",
 ];
 
 /// IndexedDB goal pinned upstream `.any.js` subset.

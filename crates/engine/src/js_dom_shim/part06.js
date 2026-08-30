@@ -3171,12 +3171,11 @@
       } catch (_e) {}
     });
   };
-  globalThis.window.attachEvent = function(type, fn) {
-    _attachEventForKey(_elKey('html', null), type, fn);
-  };
-  globalThis.window.detachEvent = function(type, fn) {
-    _detachEventForKey(_elKey('html', null), type, fn);
-  };
+  // R376（js-dom M4/DC-3）：**window 级 attachEvent/detachEvent 移除**——spec 已从
+  // Window 删除（IE 专有遗留；WPT dom/historical "Window member must be removed:
+  // attachEvent/detachEvent" 期望 window 上不存在）。元素 proxy 的 attachEvent
+  // （part04 get trap）保留——legacy 页面在元素上的 IE 兼容调用面不受影响。
+  // https://dom.spec.whatwg.org/#interface-window（无此成员）
   // R2932 window IDL on-event handler 属性（onload/onerror/onmessage/onpopstate/onhashchange/onpageshow/...）。
   // window===globalThis 为 V8 内置全局对象（非 Proxy，无法拦截 on* 赋值）→ 经 Object.defineProperty 为每个
   // 标准 window 事件类型定义 getter/setter：setter 把 fn 经 _globalAddEventListener 注册为 listener（先移除旧），
