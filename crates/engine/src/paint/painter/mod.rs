@@ -714,6 +714,17 @@ impl Painter {
             return;
         }
 
+        // R3831：奇异 transform（CSS Transforms：矩阵不可逆）→ 元素及其子树整体不渲染
+        //（同 paint_node，transform3d-scale-004）。
+        if box_node
+            .node_id
+            .and_then(|id| styles.get(&id))
+            .map(super::helpers::is_singular_transform)
+            .unwrap_or(false)
+        {
+            return;
+        }
+
         // R3768：跨块盒 line-clamp 中被「跳过」的 in-flow 子盒（clamp point 之后）——
         // 布局期几何已清零并标记，paint 整子树跳过（否则其背景/边框/文本照绘，如
         // line-clamp-008 的 `.red` 盒与 table）。
@@ -930,6 +941,17 @@ impl Painter {
         // 须整子树跳过——R3768 只加了 paint_node_in_rect（脏矩形路径），本路径（常规
         // paint 递归）漏检，容器无 overflow:hidden 时隐藏子盒文本/背景照绘。
         if box_node.line_clamp_hidden {
+            return;
+        }
+
+        // R3831：奇异 transform（CSS Transforms：变换矩阵不可逆）→ 元素及其子树整体
+        // 不渲染（chrome 同此，transform3d-scale-004：scale3d(2,2,0) 全不可见）。
+        if box_node
+            .node_id
+            .and_then(|id| styles.get(&id))
+            .map(super::helpers::is_singular_transform)
+            .unwrap_or(false)
+        {
             return;
         }
 

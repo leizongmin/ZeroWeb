@@ -52,6 +52,30 @@ pub fn apply_transform_offset(style: &ComputedStyle, _abs_x: f32, _abs_y: f32) -
 /// 3. 平移回
 ///
 /// 返回 None 如果变换为 None 或全部是 identity。
+/// R3831：检测 transform 是否产生奇异 3D 矩阵（CSS Transforms 1 §: 变换矩阵不可逆时
+/// 元素及其内容不渲染——chrome 同此，transform3d-scale-004：`scale3d(2,2,0)` z=0 →
+/// 整元素不可见，`Nothing should appear except this text`）。
+///
+/// 覆盖可判定奇异面（保守）：`scale3d(_, _, 0)`（z 缩放 0）、`scale(0,_)`/`scaleX(0)`/
+/// `scaleY(0)`（轴缩放 0）。`rotate3d`/`matrix3d` 的奇异判定需完整 3D 矩阵（ZW 无 3D
+/// 矩阵合成，缺失维恒等）不在本 helper 范围。
+pub fn is_singular_transform(style: &ComputedStyle) -> bool {
+    let funcs = match &style.transform {
+        TransformValue::None => return false,
+        TransformValue::List(f) => f,
+    };
+    funcs.iter().any(|f| match f {
+        TransformFunction::Scale3d(_, _, sz) => *sz == 0.0,
+        TransformFunction::Scale(sx, sy) => *sx == 0.0 || sy.is_some_and(|sy| sy == 0.0),
+        TransformFunction::ScaleX(sx) => *sx == 0.0,
+        TransformFunction::ScaleY(sy) => *sy == 0.0,
+        _ => false,
+    })
+}
+
+/// 将 `style.transform` 函数列表合成为 2D 仿射变换图元（含 transform-origin）。
+///
+/// 仅 translate 的列表返回 `None`（由 offset 路径处理）。
 pub fn compute_transform_matrix(style: &ComputedStyle, rect: &Rect) -> Option<TransformPrimitive> {
     let funcs = match &style.transform {
         TransformValue::None => return None,
