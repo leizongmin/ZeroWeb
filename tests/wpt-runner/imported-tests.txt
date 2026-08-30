@@ -198,3 +198,8 @@ css/CSS2/margin-padding-clear/margin-applies-to-015.xht css/CSS2/margin-padding-
 css/css-sizing/calc-margins-table-caption.html css/reference/ref-filled-green-100px-square-only.html == 2026-08-30 R3817 匿名 cell 包裹 float 条件写反修正（样式源 float 判定 + 真表容器 gate + abspos 表水平 auto-margin 居中）
 css/CSS2/backgrounds/background-root-007.xht css/CSS2/backgrounds/background-root-007-ref.xht == 2026-08-30 R3818 canvas 传播背景 anchor 改根 padding-box 原点（CSS2 §14.2 positioning area = root padding box）
 css/CSS2/backgrounds/background-root-010.xht css/CSS2/backgrounds/background-root-010-ref.xht == 2026-08-30 R3818 canvas 传播背景 anchor 改根 padding-box 原点（html image 传播侧同规则）
+css/css-backgrounds/background-attachment-fixed-inside-transform-1.html css/css-backgrounds/background-attachment-fixed-inside-transform-1-ref.html == 2026-08-30 R3834 CSS Transforms 1 §2：transform 影响的元素（自身或祖先）background-attachment:fixed 按 scroll 对待——painter transform_depth 追踪
+css/css-transforms/preserve3d-pseudo-element.html css/css-transforms/preserve3d-pseudo-element-ref.html == 2026-08-30 R3834 R3833 退化兜底 transform-origin 重算修正——rotX(90) 兜底不再产生 spurious ty 位移（伪元素 rotX(90)×2 链可见绿色方块）
+css/css-transforms/transform-fixed-bg-005.html css/css-transforms/transform-fixed-bg-ref.html == 2026-08-30 R3834 CSS Transforms 1 §2 transform 内 fixed=scroll（no-op transform 臂）
+css/css-transforms/transform-fixed-bg-006.html css/css-transforms/transform-fixed-bg-ref.html == 2026-08-30 R3834 CSS Transforms 1 §2 transform 内 fixed=scroll（intermediate transform 臂）
+css/css-transforms/transform-fixed-bg-007.html css/css-transforms/transform-fixed-bg-ref.html == 2026-08-30 R3834 CSS Transforms 1 §2 transform 内 fixed=scroll（root transform 臂）

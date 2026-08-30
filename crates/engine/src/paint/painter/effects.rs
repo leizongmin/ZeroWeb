@@ -164,6 +164,15 @@ impl super::Painter {
             self.paint_background_image(box_node, abs_x, abs_y, style);
             return;
         }
+        // R3834：CSS Transforms 1 §2 —— 受 transform 影响的元素（自身或任一祖先 transform
+        // ≠ none）且背景未传播到画布时，`background-attachment: fixed` 按 `scroll` 对待
+        //（transform 建立所有后代的包含块，fixed 的定位区被拉进变换坐标系）。driving:
+        // background-attachment-fixed-inside-transform-1（R3833 rotate 投影后 fixed 与
+        // scroll 分歧暴露本缺口）。
+        if self.transform_depth > 0 {
+            self.paint_background_image(box_node, abs_x, abs_y, style);
+            return;
+        }
         if style.background_image.is_empty() {
             return;
         }

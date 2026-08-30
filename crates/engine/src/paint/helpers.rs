@@ -209,14 +209,17 @@ pub fn compute_transform_matrix(style: &ComputedStyle, rect: &Rect) -> Option<Tr
     // 对 affine [a,b,c,d,tx,ty] 来说：
     // new_tx = origin_x * (1 - a) - origin_y * c + tx
     // new_ty = -origin_x * b + origin_y * (1 - d) + ty
-    let final_tx = origin_x * (1.0 - a) - origin_y * c + tx;
-    let final_ty = -origin_x * b + origin_y * (1.0 - d) + ty;
+    let mut final_tx = origin_x * (1.0 - a) - origin_y * c + tx;
+    let mut final_ty = -origin_x * b + origin_y * (1.0 - d) + ty;
 
     // R3833 退化兜底：rotateX/rotateY 的 2D 投影在 θ=±90° 时行列式为 0（内容坍缩为
     // 线）。3D 链中 rotX(±90) 常成对出现（rotX(90) … rotX(-90) 平面旋转后复位，
     // transform3d-scale-002/005/006：夹在中间的 scale3d 应作用于 x/y），逐函数 2D 近似
     // 的中间 scaleY(0) 会把整链坍缩。检测 |det| ≈ 0 且链含 rotX/rotY → 以 rotX/rotY
     // 恒等重算（回退 R3833 前的近似语义，保住成对抵消链）。
+    // R3834：兜底重算后 final_tx/final_ty 也须按重算后的矩阵重新应用 transform-origin
+    //（旧实现沿用坍缩矩阵求得的 origin 项，rotX(90) 200×200 盒产生 spurious ty=+100
+    // 位移——preserve3d-pseudo-element 内容离位全白、scale-002#0/stair 离位）。
     let det_2d = a * d - b * c;
     if det_2d.abs() < 1e-6
         && funcs
@@ -300,6 +303,9 @@ pub fn compute_transform_matrix(style: &ComputedStyle, rect: &Rect) -> Option<Tr
             tx = new_tx;
             ty = new_ty;
         }
+        // R3834：按重算后的矩阵重新应用 transform-origin（公式与主路径一致）。
+        final_tx = origin_x * (1.0 - a) - origin_y * c + tx;
+        final_ty = -origin_x * b + origin_y * (1.0 - d) + ty;
     }
 
     // 检查是否为 identity 变换
@@ -1189,6 +1195,57 @@ mod tests {
         let rect = Rect::new(0.0, 0.0, 100.0, 100.0);
         // translate-only should NOT generate TransformPrimitive
         assert!(compute_transform_matrix(&style, &rect).is_none());
+    }
+
+    // ── R3834：退化兜底 transform-origin 重算 ─────────────────────────────
+
+    /// rotX(90°)（θ=±90 投影 det≈0）触发退化兜底后矩阵须为**纯恒等**（含 origin 项）。
+    /// 旧实现兜底重算 a/b/c/d/tx/ty 但沿用坍缩矩阵求得的 final_tx/final_ty，200×200 盒
+    /// 产生 spurious ty=+100 位移（preserve3d-pseudo-element 内容离位全白）。
+    /// driving: css-transforms preserve3d-pseudo-element.html。
+    #[test]
+    fn test_r3834_rotx90_degenerate_fallback_is_pure_identity() {
+        let mut style = ComputedStyle::default();
+        style.transform = TransformValue::List(vec![TransformFunction::RotateX(90.0)]);
+        let rect = Rect::new(0.0, 0.0, 200.0, 200.0);
+        // 默认 transform-origin 50% 50% = (100,100)：兜底恒等 → 纯恒等 → None（无图元）。
+        assert!(
+            compute_transform_matrix(&style, &rect).is_none(),
+            "rotX(90) 兜底后应无剩余变换（旧实现残留 ty=origin_y=+100）"
+        );
+    }
+
+    /// rotX(180°)（投影 = scaleY(-1)，非退化）不受兜底影响：镜像语义保持，origin 居中时
+    /// final_ty = origin_y·(1−d) = 100·(1−(−1)) = 200（镜像后平移回原盒）。
+    #[test]
+    fn test_r3834_rotx180_mirror_unchanged_by_fallback() {
+        let mut style = ComputedStyle::default();
+        style.transform = TransformValue::List(vec![TransformFunction::RotateX(180.0)]);
+        let rect = Rect::new(0.0, 0.0, 200.0, 200.0);
+        let tp = compute_transform_matrix(&style, &rect).expect("rotX(180) 非退化应有变换");
+        assert!((tp.d + 1.0).abs() < 1e-4, "d = cos(180°) = -1, got {}", tp.d);
+        assert!((tp.ty - 200.0).abs() < 1e-3, "镜像平移 ty=200, got {}", tp.ty);
+    }
+
+    /// rotX(90) 抵消对（rotX(90) … rotX(-90)）夹 scale：兜底以 rotX/rotY 恒等重算后
+    /// 剩余 = 夹层 scale 的 2D 投影，且 origin 项按重算矩阵求解（R3833 语义保持）。
+    /// driving: transform3d-scale-002/005/006 成对抵消链。
+    #[test]
+    fn test_r3834_rotx_cancel_pair_keeps_intermediate_scale() {
+        let mut style = ComputedStyle::default();
+        style.transform = TransformValue::List(vec![
+            TransformFunction::RotateX(90.0),
+            TransformFunction::Scale3d(2.0, 1.0, 2.0),
+            TransformFunction::RotateX(-90.0),
+        ]);
+        let rect = Rect::new(0.0, 0.0, 100.0, 100.0);
+        style.transform_origin_x = LengthValue::Px(0.0);
+        style.transform_origin_y = LengthValue::Px(0.0);
+        let tp = compute_transform_matrix(&style, &rect).expect("含 scale3d 的抵消链应有变换");
+        // 兜底：rotX 恒等 × scale(2,1) × rotX 恒等 = scaleX(2)
+        assert!((tp.a - 2.0).abs() < 1e-4, "a=2, got {}", tp.a);
+        assert!((tp.d - 1.0).abs() < 1e-4, "d=1, got {}", tp.d);
+        assert!(tp.tx.abs() < 1e-4 && tp.ty.abs() < 1e-4, "origin 0 0 无平移");
     }
 
     #[test]

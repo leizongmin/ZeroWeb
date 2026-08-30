@@ -124,6 +124,12 @@ pub struct Painter {
     /// `@counter-style` 自定义计数器样式注册表（name → 定义）。driving: R2392。
     /// 由管线从 stylesheets 收集（镜像 @keyframes 注册）；空 = 无自定义样式（builtin 行为不变）。
     pub(crate) counter_styles: HashMap<String, zero_css_parser::ast::CounterStyleRule>,
+    /// R3834：当前绘制节点受 transform 影响的深度（自身或任一祖先 transform ≠ none 时 > 0）。
+    /// CSS Transforms 1 §2（Transform Rendering Model）：受 transform 影响的元素（自身或
+    /// 任一祖先有 transform）且背景未传播到画布时，`background-attachment: fixed` 按
+    /// `scroll` 对待（transform 建立包含块，fixed 定位区被拉进变换坐标系）。driving:
+    /// background-attachment-fixed-inside-transform-1（transform 祖先内 fixed 须同 scroll）。
+    pub(crate) transform_depth: u32,
 }
 
 fn is_positioned_child(box_node: &LayoutBox) -> bool {
@@ -442,6 +448,7 @@ impl Painter {
             inline_heights: HashMap::new(),
             document_url: None,
             counter_styles: HashMap::new(),
+            transform_depth: 0,
         }
     }
 
@@ -921,6 +928,26 @@ impl Painter {
     /// 子节点产生的图元会被裁剪到内容盒范围内。
     /// 当传入 `doc` 时，使用行内格式化上下文处理文本换行。
     fn paint_node(
+        &mut self,
+        box_node: &LayoutBox,
+        styles: &HashMap<NodeId, ComputedStyle>,
+        offset_x: f32,
+        offset_y: f32,
+        doc: Option<&Document>,
+        is_root_scope: bool,
+    ) {
+        // R3834：非奇异 transform ≠ none → 递增 transform_depth（本节点及其子树的
+        // background-attachment: fixed 降级为 scroll，见 transform_depth 字段文档）；
+        // 函数返回时恢复。子树绘制全部经由本包装器递归，深度贯穿所有收集/flush 路径。
+        let self_transformed = box_node.node_id.and_then(|id| styles.get(&id)).is_some_and(|style| {
+            !matches!(style.transform, TransformValue::None) && !super::helpers::is_singular_transform(style)
+        });
+        self.transform_depth += u32::from(self_transformed);
+        self.paint_node_inner(box_node, styles, offset_x, offset_y, doc, is_root_scope);
+        self.transform_depth -= u32::from(self_transformed);
+    }
+
+    fn paint_node_inner(
         &mut self,
         box_node: &LayoutBox,
         styles: &HashMap<NodeId, ComputedStyle>,
