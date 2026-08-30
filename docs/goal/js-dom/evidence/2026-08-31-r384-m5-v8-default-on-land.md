@@ -103,3 +103,25 @@ R9（createElement/PI 校验路径）+ R382（SW register reject）同族「wron
 - kill-switch 删除单片（R382 勘误的耦合时序：env + 回退死代码 +
   `install_dom_bindings_if_enabled`，双 feature 全量回归守门）→ DC-1 第二项闭合。
 - bench-gate flip 后对照跑（net≥0，真空窗法）。
+
+---
+
+## 5. R384b — kill-switch 删除（同轮续片，DC-1 第二项闭合）
+
+M5 land 后的收尾子片（R382 勘误的耦合时序兑现）。双引擎 default-on 后回退开关即死代码，
+按 DC-1「kill-switch 已移除（用户已决策）」单片删除：
+
+| 删除面 | 位置 |
+|--------|------|
+| `ZW_NATIVE_DOM` env 常量 + `native_dom_enabled()` + `install_dom_bindings_if_enabled()`（无外部调用方） | `crates/engine/src/dom_bindings/mod.rs` |
+| `WebViewConfig::native_dom` 字段（quickjs-only / 非-quickjs 双 cfg 分支）+ Debug impl 行 | `crates/webview/src/webview.rs` |
+| `WebViewBuilder::native_dom()` | `crates/webview/src/webview_builder.rs` |
+| install 守卫 ×2（v8/quickjs install_native_dom_bindings）+ `sync_render_after_native_dom` 守卫 + `dispatch_event` native 派发守卫 + user_actions `execute_dom_input` 守卫 | `webview.rs` + `webview/user_actions.rs` |
+| Drop reset 守卫（v8 与 quickjs-only 两 Drop impl 均无条件化） | `webview.rs` |
+| runner `check_js_executes_ok_native` 改默认构造（与 `check_js_executes_ok` 形态一致，保留双检查维持断言面） | `tests/wpt-runner/src/runner/mod.rs` |
+| testharness env 读删（默认配置即 native；`make testharness-dom-native` 的 env 前缀成无害 no-op，目标保留维持命令面） | `tests/wpt-runner/src/testharness.rs` |
+| coverage.rs 24 处 `.native_dom(true)` builder 调用（默认即 native） | `crates/webview/src/tests/coverage.rs` |
+
+**验证**：workspace v8 全量 **16814P/0F**（X11 无头预存项 skip）；quickjs 矩阵（webview 612 / integration 763 / script-sandbox 144）全绿；engine v8 2511 / quickjs 1484；wpt-runner 191P；integration v8 781P；env 复跑 sanity（`ZW_NATIVE_DOM=1` 与默认跑 reason-constructor 同结果）确认 env 成 no-op；clippy 双矩阵 `-D warnings` 零警告；fmt 无 diff。net -80 行（53+/133-）。
+
+**DC-1 状态**：全部五项子条件达成（双 feature default-on / kill-switch 移除 / L2+live Document / S6 superseded / 死代码删除）。
