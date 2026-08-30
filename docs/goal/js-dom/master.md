@@ -1731,7 +1731,7 @@
 | 事项 | 触发条件 | 状态 |
 |------|----------|------|
 | V8 `ZW_NATIVE_DOM` default-on（改 Mission 级单向门，M5） | M1–M4 完成、V8 native 路径生产就绪 | **方向已获 2026-08-19 用户批复启动**（zero-web ⚡ 块：P1b default-on 拍板，"js-dom 侧同门 = M5 V8 default-on"）；触发条件 M1–M4 完成仍待，M5 启动时点按 zero-web ⚡ 块执行序（先 default-off 全量基线 → 翻开关 → 双流守门 A/B net≥0）执行，无需再征询方向 |
-| QuickJS `ZW_NATIVE_DOM` default-on（改 Mission 级单向门，M7） | M6 QuickJS native 移植完成 | **触发条件已满足（R340 勘误：M6 于 R75 全量收口）**——**已征询（2026-08-29 GB-20260829，飞书 msg `om_x100b661af7f528a0ddcc30321f2b44a`，建议同 M5 口径按「先基线→翻开关→A/B net≥0」执行序）**，待用户批复后启动 |
+| QuickJS `ZW_NATIVE_DOM` default-on（改 Mission 级单向门，M7） | M6 QuickJS native 移植完成 | **✅ 已批准（2026-08-30 用户对话批复，GB-20260829 征询 ③）**——触发条件 R340 勘误确认满足（M6 于 R75 全量收口、双路径对等差 0.02pp）。**执行序（同 M5 口径）**：① 建 default-off 全量基线（`make test` 双 feature + `make product-smoke` + `make bench-gate`）② 翻 QuickJS 路径 `ZW_NATIVE_DOM` 默认开关 ③ `make test` + scoped reftest A/B **net≥0 才 land**；reftest 基线互毁按 run-rules §9 碰头处理；kill-switch 删除留 M7 收尾子片。与 M5（V8）相互独立，M5 触发条件仍待不受影响。决策块见 `docs/goal/zero-web/master.md` 顶部 2026-08-30 批复落档。 |
 
 > 本轮 A/B 对照门骨架为纯测试新增，不触发上述门禁。
 

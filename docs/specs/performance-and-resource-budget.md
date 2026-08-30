@@ -88,6 +88,12 @@ record-bench-baseline.sh（基线，手动）→ docs/perf/baselines/<platform_c
 - **自动收紧**（weekly CI `record-bench-trend.sh --auto-tighten`）：实测 p95 低于基线 →
   就地收紧（仅收紧永远合法，无需 justification）。
 
+**2026-08-30 两平台基线 re-capture 放行记录（用户批复，GB-20260829 征询 ①，待执行）**：
+- **放行内容**：CI benchmarks **9V74** 与 **EPYC 7763** 两平台基线各**自独立**一次性 re-capture（`record-bench-baseline.sh --relax` 显式执行 + justification 记录本批复），消除 8/20 起 12 轮平台调度绑定漂移（9V74 40/113 指标 1.3-1.5× 超限、12 零改动 crate；7763 transform_chain_100/webview_builder_create 边缘超限 1.05-1.08×）造成的每轮预存 FAIL 噪声。
+- **证据链**：CI-GUARD-20260820 起累计 13 个数据点同签名；第十一轮 rerun 同 SHA 换平台（9V74→7763）即收敛至 2 项边缘超限；第十二轮再落 7763 同两项同幅度；各轮代码窗口均不含失败指标所在 crate 的预算敏感路径——平台调度绑定归因，非代码回归。
+- **护栏**：① 两平台不共用一组数，各自重建 ② 沿用 GB-20260821 口径「重建后仍超预算者单列报告再议」③ 属重建基线非放宽阈值——绝对预算语义不动（`total_ms` hard tier 2000ms 绝对值、budget tier 公式均不变），仅基线参考值按各平台实测更新 ④ 执行轮仍须跑全量 bench-gate 验证 NEW=0 收敛。
+- **执行时点**：下轮 ZRG / CI-GUARD 轮按本批复执行，无需再征询；执行后在本节补记新值与验证结果。
+
 **2026-08-22 基线重建记录（用户放行，GB-20260821）**：
 - **旧值**：2026-08-08 初始基线（112 指标，`linux-x86_64.json`；justification「初始基线（性能门禁体系上线，2026-08-08）」）。
 - **新值**：2026-08-22 重建基线（113 指标，新增 `mb/zero-render-foundation/full_scene/raster_1500_fills_1080p`；`record-bench-baseline.sh --relax` 显式执行，justification 记录放行依据）。绝对预算语义不变：`total_ms` hard tier = 2000ms 绝对值不动；`first_paint_wall_ms`/`peak_rss_mb` budget tier 公式（`p95×1.15+40` / `p95×1.2+128`）不动，仅基线参考值更新。
