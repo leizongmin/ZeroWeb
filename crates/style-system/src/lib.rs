@@ -1506,6 +1506,21 @@ impl StyleSystem {
             }
         }
 
+        // 9. CSS Display 3 §2.6「The Root Element's Principal Box」：根元素的 display 类型恒
+        //    块化，且 `display: contents` 在根元素上 **computes to block**——根元素必有主盒
+        //    （初始包含块的子），contents 的「不生成盒」语义对根不适用。driving: WPT
+        //    css-display display-contents-root-background（:root{display:contents;
+        //    background-image} 应铺满画布，ref=html{background:green}——旧实现 contents 盒
+        //    未生成/背景传播被 R2469 no_principal_box 抑制 → 99.98% fail）。
+        //    判定：父节点为 Document 根的元素（HTML 文档中即 <html>）。
+        if pseudo.is_none()
+            && tag_name.as_deref() == Some("html")
+            && doc.parent_node(element) == Some(doc.root())
+            && matches!(resolved.display, zero_css_parser::values::DisplayValue::Contents)
+        {
+            resolved.display = zero_css_parser::values::DisplayValue::Block;
+        }
+
         resolve_font_variant_alternates(&mut resolved, &self.font_feature_values);
         if parent_style.is_none() && pseudo.is_none() {
             let root_font_size = match &resolved.font_size {

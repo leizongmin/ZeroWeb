@@ -1305,3 +1305,54 @@ fn test_grid_default_values_no_css() {
     assert_eq!(div_style.grid_auto_rows, None);
     assert_eq!(div_style.grid_auto_columns, None);
 }
+
+/// R3849：CSS Display 3 §2.6——根元素上 `display: contents` **computes to block**
+///（根元素必有主盒）。driving: WPT display-contents-root-background。
+#[test]
+fn test_root_display_contents_blockifies_to_block() {
+    let mut doc = Document::new();
+    let root = doc.root();
+    let html = doc.create_element("html");
+    doc.append_child(root, html).unwrap();
+    let body = doc.create_element("body");
+    doc.append_child(html, body).unwrap();
+    let mut sys = StyleSystem::new();
+
+    let stylesheets = vec![Stylesheet {
+        rules: vec![Rule::Style(StyleRule {
+            selectors: vec![make_tag_selector("html")],
+            declarations: vec![Declaration {
+                property: "display".to_string(),
+                value: "contents".to_string(),
+                important: false,
+            }],
+        })],
+    }];
+
+    let styles = sys.compute_styles(&doc, &stylesheets);
+    let html_style = styles.get(&html).expect("html 应该有样式");
+    assert_eq!(html_style.display, DisplayValue::Block);
+}
+
+/// R3849 对照：非根元素上 `display: contents` 保持 contents。
+#[test]
+fn test_non_root_display_contents_stays_contents() {
+    let (doc, html, body, div, _p) = make_test_dom();
+    let _ = html;
+    let mut sys = StyleSystem::new();
+
+    let stylesheets = vec![Stylesheet {
+        rules: vec![Rule::Style(StyleRule {
+            selectors: vec![make_tag_selector("div")],
+            declarations: vec![Declaration {
+                property: "display".to_string(),
+                value: "contents".to_string(),
+                important: false,
+            }],
+        })],
+    }];
+
+    let styles = sys.compute_styles(&doc, &stylesheets);
+    let div_style = styles.get(&div).expect("div 应该有样式");
+    assert_eq!(div_style.display, DisplayValue::Contents);
+}
