@@ -1,8 +1,8 @@
 # RFC：JS-DOM pending-apply 生命周期（host apply 异步滞后与 JS 同步视图的边界收口）
 
-**版本**: v0.2（v0.1→v0.2：pa1 审计落地 + R377 §1.2 勘误，2026-08-30 R379）
+**版本**: v0.3（v0.2→v0.3：pa2 land——M6 补 mark + pa2a 换代清理 + pa2b apply 完成钩子，2026-08-30 R379 续轮）
 **日期**: 2026-08-30
-**状态**: Draft（pa1 已完成；pa2 设计输入齐备，待 land）
+**状态**: Draft（pa1/pa2 已 land；剩余 pa3[fused innerHTML 重落]、pa4[parse-segment 回放，独立]）
 **goal**: `docs/goal/js-dom.md` M4 基线维护延伸（已知 Fail 深项同根归因）
 **证据锚点**: `docs/goal/js-dom/evidence/2026-08-30-r373-abort-domain-import.md`（parse-time 评估）/ `2026-08-30-r377-inserted-script-execution.md`（fused innerHTML 实验 + 探针）/ R371（replaceWith 重键 + 探针链）
 
@@ -118,6 +118,12 @@ pa1 零行为探针轮（临时插桩 + 三轮递进探针，跑后 checkout 全
 
 ## 4. 修订历史
 
+- v0.3（2026-08-30 R379 续轮）：pa2 land——M6（replaceWith sel/handle 双路径补移除标记，
+  pa1 矩阵缺失闭合）+ pa2a（`__zw_reset_pending_state` 清除移除标记）+ pa2b（新钩子
+  `__zw_apply_generation_bump`：host `apply_pending_shared_mutations`/
+  `apply_mutations_subset` 尾部调用，只作废标记表+融合基底缓存、**不动 pending 桶**
+  ——identity 记账供后续同对象 re-append 消费）。A/B dom/nodes 12791P 净 +1、
+  Fail 集合 5=5 恒等零回归；perf-gate 定向 26 指标全 PASS。
 - v0.2（2026-08-30 R379）：pa1 审计落地——§1.2 勘误（「清除点」不存在，标记从未
   写入）+ 双身份矩阵入册 + M6 缺失定位 + pa2 设计输入齐备 + pa3 前置修正项新增。
 - v0.1（2026-08-30 R378）：立项——R373/R377/R371 材料入册 + 探针记录
