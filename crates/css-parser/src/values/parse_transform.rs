@@ -363,6 +363,8 @@ pub enum TransformFunction {
     ScaleX(f64),
     /// scaleY(sy)。
     ScaleY(f64),
+    /// scaleZ(sz) — 三维 z 缩放（2D 投影恒等，但参与奇异判定，R3832）。
+    ScaleZ(f64),
     /// skew(ax, ay) — 角度（度数）。
     Skew(f64, Option<f64>),
     /// rotateX(angle) — 绕 X 轴旋转（度数）。
@@ -559,6 +561,17 @@ fn parse_transform_function(name: &str, args: &str) -> Option<TransformFunction>
             let ty = parse_translate_length_number(parts[1])?;
             let tz = parse_translate_length_number(parts[2])?;
             Some(TransformFunction::Translate3d(tx, ty, tz))
+        }
+        // R3832：scaleZ(sz) — 2D 投影恒等，但函数必须可解析（否则整个 transform list
+        // 按语法失效被丢弃 → scaleX(2) scaleY(2) scaleZ(2) 整体不应用，transform3d-
+        // scale-003 谱系）。
+        "scalez" => {
+            let parts = split_top_level_comma_args(args)?;
+            if parts.len() != 1 {
+                return None;
+            }
+            let sz = parse_transform_number(parts[0])?;
+            Some(TransformFunction::ScaleZ(sz))
         }
         "scale3d" => {
             let parts = split_top_level_comma_args(args)?;

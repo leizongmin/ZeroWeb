@@ -210,6 +210,8 @@ pub struct WebViewConfig {
     /// - 显式构造时该字段始终以调用方为准（kill-switch 语义保留至 M7 收尾子片）。
     #[cfg(all(feature = "quickjs", not(feature = "v8")))]
     pub native_dom: bool,
+    /// 非 QuickJS 专属构建（V8 路径 / 双 feature）下的 `native_dom` 开关字段——
+    /// 语义同上（QuickJS 臂）字段；M7 起默认 true（GB-20260829）。
     #[cfg(not(all(feature = "quickjs", not(feature = "v8"))))]
     pub native_dom: bool,
     /// js-dom R201：页面脚本执行的 V8 看门狗超时（毫秒，0 = 无超时，默认）。

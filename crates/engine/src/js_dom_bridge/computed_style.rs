@@ -3298,6 +3298,7 @@ fn transform_function_to_css(f: &TransformFunction) -> String {
         },
         Tf::ScaleX(sx) => format!("scaleX({})", format_num(*sx, "")),
         Tf::ScaleY(sy) => format!("scaleY({})", format_num(*sy, "")),
+        Tf::ScaleZ(sz) => format!("scaleZ({})", format_num(*sz, "")),
         Tf::Skew(ax, ay) => match ay {
             Some(ay) => format!("skew({}deg, {}deg)", format_num(*ax, ""), format_num(*ay, "")),
             None => format!("skew({}deg)", format_num(*ax, "")),

@@ -69,6 +69,8 @@ pub fn is_singular_transform(style: &ComputedStyle) -> bool {
         TransformFunction::Scale(sx, sy) => *sx == 0.0 || sy.is_some_and(|sy| sy == 0.0),
         TransformFunction::ScaleX(sx) => *sx == 0.0,
         TransformFunction::ScaleY(sy) => *sy == 0.0,
+        // R3832：scaleZ(0) → 3D 矩阵 z 分量 0 → 奇异（同 scale3d z=0）。
+        TransformFunction::ScaleZ(sz) => *sz == 0.0,
         _ => false,
     })
 }
@@ -149,6 +151,9 @@ pub fn compute_transform_matrix(style: &ComputedStyle, rect: &Rect) -> Option<Tr
             }
             TransformFunction::ScaleX(sx) => (*sx as f32, 0.0, 0.0, 1.0, 0.0, 0.0),
             TransformFunction::ScaleY(sy) => (1.0, 0.0, 0.0, *sy as f32, 0.0, 0.0),
+            // R3832：scaleZ 在 2D 投影中恒等（z 缩放不改变 x/y 投影），但函数存在性
+            // 影响奇异判定（is_singular_transform：scaleZ(0) → 奇异 → 不渲染）。
+            TransformFunction::ScaleZ(_) => (1.0, 0.0, 0.0, 1.0, 0.0, 0.0),
             TransformFunction::Skew(ax, ay) => {
                 let tan_ax = ax.to_radians().tan() as f32;
                 let tan_ay = ay.map(|v| v.to_radians().tan() as f32).unwrap_or(0.0);
