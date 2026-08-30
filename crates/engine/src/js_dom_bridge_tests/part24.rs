@@ -2913,3 +2913,61 @@ fn test_iframe_inner_body_connected_chain_r369() {
         "R369 iframe 子文档 body 记账：串行合并分支重接父链 + serialKids 登记；isConnected innerBody 包含判定（append=true / removeChild=false / remove()=false）"
     );
 }
+
+// R379 (js-dom M4, pending-apply RFC pa2) — M6 补 mark + pa2a/pa2b apply 代际换代。
+// 三件：① replaceWith sel 路径「remove 自身」步骤补移除标记（与 remove() 同语义——
+// 同步脚本内标记中元素的 parentNode 立即返 null；pa1 审计 M6 缺失）；② 移除标记
+// 纳入 `__zw_reset_pending_state` 快照换代清理；③ 新钩子 `__zw_apply_generation_bump`
+// （host apply 完成通知——清标记 + 融合缓存失效，不动 pending 桶）。
+// https://dom.spec.whatwg.org/#dom-childnode-replacewith
+#[test]
+fn r379_replacewith_mark_and_generation_bump() {
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let mut sandbox = V8Sandbox::with_config(zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    })
+    .unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><div id='container'><div id='target'></div><b></b></div></body></html>"
+            .to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+    sandbox
+        .execute(
+            "try {\
+             var log = [];\
+             var target = globalThis.document.getElementById('target');\
+             var replacement = globalThis.document.createElement('i');\
+             // M6：replaceWith 的 remove 步骤须立即打标记——parentNode 同步返 null\
+             //（host mutation 异步应用，快照仍含该元素）。
+             target.replaceWith(replacement);\
+             log.push('pw:' + (target.parentNode === null ? 'null' : 'non-null'));\
+             // pa2a：快照换代清标记（模拟 SetDomSnapshot 钩子调用）。
+             globalThis.__zw_reset_pending_state && globalThis.__zw_reset_pending_state();\
+             log.push('rst:' + typeof globalThis.__zwPa2ClearRemovedTables);\
+             // pa2b：apply 代际钩子存在且可调（幂等）。
+             var bumpOk = 'fn';\
+             try { globalThis.__zw_apply_generation_bump(); globalThis.__zw_apply_generation_bump(); } catch (e) { bumpOk = 'err'; }\
+             log.push('bump:' + (typeof globalThis.__zw_apply_generation_bump) + ':' + bumpOk);\
+             // 标记中元素对 _zwIsRemovedNode 可见（查询门/迭代器扫描的消费面语义）。
+             var marked = globalThis.document.createElement('span');\
+             globalThis.document.body.appendChild(marked);\
+             marked.remove();\
+             log.push('rm:' + (marked.parentNode === null ? 'null' : 'non-null'));\
+             globalThis.__r379m = log.join('|');\
+             } catch (err) { globalThis.__r379m = 'ERR:' + err.message; }",
+        )
+        .unwrap();
+    let out = sandbox.execute("globalThis.__r379m").unwrap().value;
+    assert_eq!(
+        out, "pw:null|rst:function|bump:function:fn|rm:null",
+        "R379 M6 replaceWith 移除标记同步生效 + pa2a 换代清理钩子接线 + pa2b apply 代际钩子幂等可调"
+    );
+}

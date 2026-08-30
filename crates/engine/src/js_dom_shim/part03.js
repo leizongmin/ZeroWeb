@@ -5433,6 +5433,26 @@
   var _zwRemovedHandles = {};
   function _zwMarkRemovedHandle(h) { if (h) _zwRemovedHandles[h] = true; }
   function _zwUnmarkRemovedHandle(h) { if (h) delete _zwRemovedHandles[h]; }
+  // R379/pa2a（js-dom M4）：**apply 代际令牌**（pending-apply RFC §2 pa2 的 shim 侧
+  // 半边）——host apply 完成（`apply_pending_shared_mutations` 落活 DOM + 快照换代）
+  // 后调用 `__zw_apply_generation_bump`：host 真相已更新，本 turn 内的同步补偿状态
+  // **整体作废**（pending-apply RFC：「补偿状态比 host 真相更旧/更新」的窗口在此
+  // 关闭）。语义 = pa1 审计 §4.3 设计输入：标记表清空 + pending 桶/表清空 + 融合
+  // 缓存失效（复用 `__zw_reset_pending_state` 钩子体——此前只挂 SetDomSnapshot 导航
+  // 形态，`execute_script` 尾部 apply 对 shim 完全无感是 pa1 实证的空白）。
+  // **幂等安全**：标记清空对「host apply 已真移除」的节点是正确语义（补偿已无用）；
+  // 对「同 turn 后续还会 re-append」的节点由 U1/U2/U3 站点的 unmark 已覆盖。
+  // 标记表暴露到 globalThis 供 part05 钩子读取（shim 单 IIFE 共享作用域下 var 声明
+  // 本可直达，此处走 globalThis 是为 host 侧 dump/审计探针可达 + part05 独立加载形态）。
+  try {
+    globalThis.__zwPa2RemovedTables = function () { return { sels: _zwRemovedSels, handles: _zwRemovedHandles }; };
+  } catch (_ePa2pub) {}
+  try {
+    globalThis.__zwPa2ClearRemovedTables = function () {
+      for (var k1 in _zwRemovedSels) { if (Object.prototype.hasOwnProperty.call(_zwRemovedSels, k1)) delete _zwRemovedSels[k1]; }
+      for (var k2 in _zwRemovedHandles) { if (Object.prototype.hasOwnProperty.call(_zwRemovedHandles, k2)) delete _zwRemovedHandles[k2]; }
+    };
+  } catch (_ePa2clr) {}
   function _zwIsRemovedNode(node) {
     if (!node) return false;
     if (node.__zwSelector && _zwRemovedSels[node.__zwSelector]) return true;

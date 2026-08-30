@@ -5119,8 +5119,14 @@
               try { if (typeof __zw_parent === 'function') _r371ParentSel = __zw_parent(sel) || null; } catch (_e371p) {}
               _insertAdjacentVariadic(sel, 'beforebegin', arguments, false);
               _zwRemoveIframeWindowClientForNode(_makeProxy(sel, handle));
-              if (handle) __zw_remove_handle(handle);
-              else __zw_remove(sel);
+              if (handle) { __zw_remove_handle(handle); if (typeof _zwMarkRemovedHandle === 'function') _zwMarkRemovedHandle(handle); }
+              else { __zw_remove(sel); if (typeof _zwMarkRemoved === 'function') _zwMarkRemoved(sel); }
+              // R379（js-dom M4）：replaceWith 的「remove 自身」步骤补移除标记（spec
+              // `dom-childnode-replacewith` = insert-then-remove 两步，remove 步语义与
+              // remove() 同——同步脚本内标记中元素的 parentNode/查询门须立即反映；
+              // pa1 审计 M6 缺失：此前本路径只调 host wire 无标记，同步视图半覆盖，
+              // 依赖 R371 重键 + pending 桶补偿但两套机制有缝隙）。
+              // https://dom.spec.whatwg.org/#dom-childnode-replacewith
               // 重键（仅 sel 父形态；桶/反链缺项时 no-op）。
               try {
                 if (_r371ParentSel && _r371ParentSel !== sel && typeof _zwPendingByParent !== 'undefined') {

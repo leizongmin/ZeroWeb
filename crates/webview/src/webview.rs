@@ -1664,6 +1664,11 @@ impl WebView {
         if let Some(mutated) = html_snapshot {
             self.cached_html = mutated;
         }
+        // R379/pa2b：与 apply_pending_shared_mutations 同款换代通知（两步 apply 的结构
+        // 批/样式批各通知一次——第二次 no-op 幂等，标记表已空）。
+        let _ = self.execute_script(
+            "if (typeof globalThis.__zw_apply_generation_bump === 'function') globalThis.__zw_apply_generation_bump();",
+        );
     }
 
     /// 执行 JavaScript。
@@ -2882,6 +2887,13 @@ impl WebView {
         self.last_render = Some(render_result_to_webview(&render_result));
         // R150：apply 后重渲染，布局已变——刷新 gBCR 快照。
         self.refresh_layout_rect_snapshot();
+        // R379/pa2b（js-dom M4，pending-apply RFC）：apply 代际换代通知——host 真相
+        // 已更新，shim 侧同步补偿状态（移除标记 + 融合基底缓存）整体作废。此前
+        // apply 完成对 shim 完全无感（pa1 审计 §4.3 实证的空白；SetDomSnapshot 钩子
+        // 只覆盖导航形态）。失败静默（钩子缺失 = 旧 shim 版本，零影响）。
+        let _ = self.execute_script(
+            "if (typeof globalThis.__zw_apply_generation_bump === 'function') globalThis.__zw_apply_generation_bump();",
+        );
         Ok(())
     }
 

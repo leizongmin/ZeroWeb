@@ -7614,8 +7614,26 @@
     _zwPendingByParent.clear();
     _zwPendingAddedById.clear();
     _zwIdOverrides.clear();
+    // R379/pa2a：移除标记纳入换代清理（pa1 审计 §2.4 实证「标记不在清桶范围」——
+    // 快照换代后 host 真相已含/已不含该节点，标记的同步补偿语义作废）。
+    try { if (typeof globalThis.__zwPa2ClearRemovedTables === 'function') globalThis.__zwPa2ClearRemovedTables(); } catch (_ePa2rst) {}
     try { if (typeof globalThis._zwChildBaseInvalidateAll === 'function') globalThis._zwChildBaseInvalidateAll(); } catch (_e358cb) {}
     try { if (typeof globalThis._zwSiblingBaseInvalidateAll === 'function') globalThis._zwSiblingBaseInvalidateAll(); } catch (_e358sb) {}
+  };
+  // R379/pa2b（js-dom M4）：**apply 代际换代钩子**——host `apply_pending_shared_mutations`
+  // 完成后调用（pending-apply RFC pa2 的 host→shim 回调链半边）。与
+  // `__zw_reset_pending_state` 的差异：**不动 pending 桶**。apply 后快照已含本 turn
+  // 的 mutation 结果，但 pending added/removed 的 identity 记账（`_zwNodeParent`
+  // 反链、bucket 归属、`_zwSelPendingParent` 槽）仍被后续同对象操作消费（re-append
+  // 移动语义、live collection 并入）——全清会破坏 R51c/R334 的补偿链。**只作废**：
+  // ① 移除标记（host apply 后「同步视图移除」补偿已完成使命——快照层已真移除）；
+  // ② 融合基底缓存（`_zwChildBaseInvalidateAll`——快照换代后旧基底是 stale 源，
+  // R55 失效点 ②同源）；③ sibling 基底缓存。id 覆盖表保留（R125 语义：host 快照
+  // 不反映同 turn setAttribute('id')，apply 后仍不反映——覆盖表是唯一事实源）。
+  globalThis.__zw_apply_generation_bump = function () {
+    try { if (typeof globalThis.__zwPa2ClearRemovedTables === 'function') globalThis.__zwPa2ClearRemovedTables(); } catch (_ePa2agb) {}
+    try { if (typeof globalThis._zwChildBaseInvalidateAll === 'function') globalThis._zwChildBaseInvalidateAll(); } catch (_ePa2ci) {}
+    try { if (typeof globalThis._zwSiblingBaseInvalidateAll === 'function') globalThis._zwSiblingBaseInvalidateAll(); } catch (_ePa2si) {}
   };
   // R51c：pending added 按 id 索引（querySelector('#id') host-miss 回落 O(1)；invalidate
   // 记账时维护——added 入对桶、对冲剔除时同步删）。
