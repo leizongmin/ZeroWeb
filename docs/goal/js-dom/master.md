@@ -879,7 +879,7 @@
 ## 下一步计划
 0. **R382 下一步（M7 flip 已 land→本轮后）**：
    - **(a) M7 收尾补跑 ✅ 已闭合**：bench-gate 定向 flip 后 GATE PASS 42/42（NEW=0，net≥0）——空窗复跑法（load1≤1 才起跑；前两跑 INCONCLUSIVE[并行流污染，守卫正确触发]/22 FAIL[带载噪声] 均不可信被拒，空窗法有效性双向实证）。
-   - **(b) M7 收尾子片**：kill-switch 移除（`ZW_NATIVE_DOM` env + `native_dom=false` 回退死代码全删——DC-1 硬条件「双 feature 均默认开启后无一键回退」的 QuickJS 半边；V8 半边等 M5）；polyfill 桥 QuickJS 不再消费部分萎缩评估。
+   - **(b) M7 收尾子片（kill-switch 移除）——时序勘误（R382 复核）**：kill-switch 删除与 M5 **耦合不可拆**——`ZW_NATIVE_DOM` env 同时被 V8 侧 `native_dom_enabled()`（dom_bindings/mod.rs）与 wpt-runner `testharness-dom-native` A/B 入口（DC-3 度量工具）消费；QuickJS 已 default-on 而强行删 env 会让 V8 路径提前失去 default-off 基线协议（M5 执行序第一步依赖 kill-switch 关态）。正确时序 = **M5（V8 flip）land 后单片删除**（env + `native_dom=false` 回退 + `install_dom_bindings_if_enabled` 死代码一次清完，双 feature 全量回归守门）。DC-1 的 kill-switch 项在 M5 前保持「QuickJS 生产路径已 default-on、共享开关待 M5 后删」形态。
    - **(c) 主线剩余**：M5（V8 default-on，方向已批、触发条件待）；M4 基线持续维护；pa3 handle 域容器序列化补全面 + pa4（pending-apply RFC 剩余）；M1/M2/M3/M8 已收口。
 
 0. **R379 下一步（R378 后，已执行→本轮后）**：
