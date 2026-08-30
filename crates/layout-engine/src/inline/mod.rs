@@ -1158,8 +1158,14 @@ impl InlineFormattingContext {
     /// 算法（按 `node_id` 连续段分组）：
     /// 1. 每组记录 `gap_before`（组首片段 x − 前组末尾 x）与组占宽；
     /// 2. 反转**组序**（组内片段保持字符反转后的视觉序不动）；
-    /// 3. 从行内容左缘重排 x：每组的前导间隙随组保留（折叠空格 advance、物理
-    ///    margin 不换边，CSS2.1 §8.3），组内片段 x = 组基 + 原组内偏移。
+    /// 3. 从行内容左缘重排 x。**间隙归属（R3838 修订）**：物理 margin 不换边
+    ///    （CSS2.1 §8.3）——margin_left 留在组自身视觉左侧、margin_right 留在组自身
+    ///    视觉右侧，跨组**镜像的是「组对间隙」**（折叠空格 advance + 前组 margin_right
+    ///    与后组 margin_left 的剥离重组）。break 阶段把前组 margin_right 并入后组
+    ///    lead_gap、后组 margin_left 留在自身 lead_gap，故镜像对的间隙 =
+    ///    `lead_gap(R[j+1]) − margin_right(R[j]) + margin_left(R[j+1])`；末组（x 序
+    ///    最后 = 逻辑首组）的 margin_right 保留为行尾（apply_text_alignment 的
+    ///    tail_box 消费），中间组的 margin_right 在镜像对间隙中已剥离并显式重加。
     fn reverse_lines_for_rtl_override(&mut self) {
         // 预计算每行内容区左缘（float 排除后），作为反转重排的 cursor 起点。
         let line_areas: Vec<(f32, f32)> = self
@@ -1190,6 +1196,8 @@ impl InlineFormattingContext {
             struct GroupLayout {
                 gap_before: f32,
                 offsets: Vec<f32>,
+                margin_left: f32,
+                margin_right: f32,
             }
             let mut metas: Vec<GroupLayout> = Vec::with_capacity(groups.len());
             let mut prev_end = area_left;
@@ -1198,21 +1206,47 @@ impl InlineFormattingContext {
                 metas.push(GroupLayout {
                     gap_before: group_x - prev_end,
                     offsets: line.runs[start..end].iter().map(|r| r.x - group_x).collect(),
+                    // 组级 margin：取组内任一片段的字段（同组同源 inline 元素；文本组恒 0）。
+                    margin_left: line.runs[start].margin_left,
+                    margin_right: line.runs[start].margin_right,
                 });
                 prev_end = line.runs[end - 1].x + line.runs[end - 1].width;
             }
             // 反转组序（组内片段序不动），从行内容左缘重排 x。
+            let n = groups.len();
             let mut reordered: Vec<TextFragment> = Vec::with_capacity(line.runs.len());
             let mut cursor = area_left;
-            for (&(start, end), meta) in groups.iter().rev().zip(metas.iter().rev()) {
-                cursor += meta.gap_before;
-                for (run, offset) in line.runs[start..end].iter().zip(meta.offsets.iter()) {
+            for j in 0..n {
+                let gi = n - 1 - j; // 原组索引（反转序）
+                let meta = &metas[gi];
+                if j == 0 {
+                    // 新行首组：前导间隙 = 0（原行首间隙 g0 镜像到行尾，随行尾组
+                    // margin_right/tail 语义由对齐宽度自然吸收）。
+                } else {
+                    // 镜像对间隙：break 阶段 gap_before(G_i) = ws 折叠 advance +
+                    // ml(G_i) + mr(G_{i-1}) 三者混合（margin_right 并入后组 lead_gap）。
+                    // 镜像后物理边不换边（CSS2.1 §8.3）：ml(G_{i-1}) 留在其组视觉左
+                    // 侧、ws 随组对镜像 ——
+                    //   between(G_i→G_{i-1}) = gap_before(G_i) − ml(G_i) − mr(G_{i-1})
+                    //                        + ml(G_{i-1})。
+                    // 022 实证：60 − 0 − 40 + 0 = 20 ✓；013：20 − 0 − 0 + 40 = 60 ✓
+                    // （ref 条带 First 与 dnoceS 间 60px）；三组 ml 案：10−10−0+0=0 ✓。
+                    let prev_meta = &metas[gi + 1];
+                    cursor += prev_meta.gap_before - prev_meta.margin_left - meta.margin_right + meta.margin_left;
+                }
+                for (run, offset) in line.runs[groups[gi].0..groups[gi].1].iter().zip(meta.offsets.iter()) {
                     let mut frag = run.clone();
                     frag.x = cursor + offset;
                     reordered.push(frag);
                 }
                 let last = &reordered[reordered.len() - 1];
                 cursor = last.x + last.width;
+                // 中间组的 margin_right 显式重加（break 阶段它曾并入后组 lead_gap，
+                // 镜像对间隙中已剥离）；x 序末组（= 逻辑首组）的 margin_right 保留为
+                // 片段字段，由 tail_box 计入对齐宽，不在此推进（防双计）。
+                if j < n - 1 && meta.margin_right > 0.0 {
+                    cursor += meta.margin_right;
+                }
             }
             line.runs = reordered;
         }

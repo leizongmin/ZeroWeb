@@ -54,8 +54,12 @@ fn rtl_override_multi_run_line_reverses_display_order_with_gaps() {
 
     ctx.reverse_lines_for_rtl_override();
     let line = &ctx.lines[0];
-    // 反转后：显示序 c b a；gap 随 run 镜像（b 的 margin 现在在 b 与 a 之间）。
+    // 反转后：显示序 c b a。R3838 pair-gap 镜像：物理 margin 不换边（CSS2.1 §8.3）。
     // Ahem advance = font_size = 20px/字符，3 字符 run 宽 60。
+    // 原布局：a@0..60（lead 0）、b@70..130（lead 10 = ml(b)）、c@130..190（lead 0）。
+    // 镜像：c@0..60；between(c→b) = gap_before(b)10 − ml(b)10 − mr(b)0 + ml(b)10 = 10
+    // → b@70..130；between(b→a) = gap_before(a)0 − 0 − 0 + 0 = 0 → a@130..190。
+    // ml(b) 单次出现（留 b 视觉左侧），行总占宽 190 不变。
     assert_eq!(line.runs[0].text, "ccc");
     assert_eq!(line.runs[1].text, "bbb");
     assert_eq!(line.runs[2].text, "aaa");
