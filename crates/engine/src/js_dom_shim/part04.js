@@ -616,6 +616,35 @@
             if (_isContainerHandle(handle)) return '';
             return __zw_get_inner_html_handle(handle);
           }
+          // R380/pa3（js-dom M4，pending-apply RFC）：**sel 域融合 innerHTML**——pending
+          // 桶非空（同 turn 内 replaceWith/removeChild/appendChild 等已记账、host 快照
+          // 未换代）时，host 字符串是 apply 滞后旧树；从融合 childNodes 视图序列化
+          // （`_childNodeList` 的 overlay 已并入 pending added / 剔除 pending removed，
+          // R51/R309/R322 补偿链；R379 pa1/pa2 后移除标记语义已正确——标记中子不出现
+          // 在融合视图）。桶空时保持 host 直读零变化（热路径不受影响）。
+          // 序列化：text 转义 / comment / 元素递归 outerHTML（pending 新子经 part05
+          // outerHTML handle 分支或自身融合序列化——R377 实验「子序列化依赖 outerHTML
+          // 对 pending 新子递归正确」在本轮 R380 registry 随迁后成立：克隆子的后代已
+          // 在 `_handleChildren`，outerHTML 的 handle 分支可读）。
+          var _r380Bucket = (typeof _zwPendingByParent === 'object' && _zwPendingByParent)
+            ? _zwPendingByParent.get(sel) : null;
+          if (_r380Bucket && (_r380Bucket.added.length || _r380Bucket.removed.length)) {
+            try {
+              var _r380Kids = _childNodeList(sel, null);
+              var _r380Out = '';
+              for (var _r380i = 0; _r380i < _r380Kids.length; _r380i++) {
+                var _r380n = _r380Kids[_r380i];
+                if (!_r380n) continue;
+                if (_r380n.nodeType === 3) _r380Out += _zwMEscapeText(_r380n.nodeValue != null ? _r380n.nodeValue : (_r380n.data != null ? _r380n.data : ''));
+                else if (_r380n.nodeType === 8) _r380Out += '<!--' + (_r380n.nodeValue != null ? _r380n.nodeValue : _r380n.data) + '-->';
+                else if (_r380n.nodeType === 1) {
+                  if (typeof _zwIsRemovedNode === 'function' && _zwIsRemovedNode(_r380n)) continue;
+                  _r380Out += _r380n.outerHTML || '';
+                }
+              }
+              if (_r380Out !== '') return _r380Out;
+            } catch (_e380ih) { /* 序列化失败回落 host 快照 */ }
+          }
           return __zw_get_inner_html(sel);
         }
         // `element.outerHTML`（getter）：含自身 tag/属性 + 子树序列化。sel-based（已挂载）经 host
@@ -3540,6 +3569,14 @@
                   // `getContainer(parent).appendChild(target)` 的 container 查询空 →
                   // undefined.appendChild 崩）。与 set trap innerHTML 分支同源
                   // （_zwFragmentAdded 解析 + 宿主印章），此处仅对含 markup 的值填充。
+                  // R380（js-dom M4，pending-apply RFC pa3 前置）：**纯文本内容补 text
+                  // registry 子**——旧版只填 markup 形态（`ih.indexOf('<') >= 0`），
+                  // 纯文本 innerHTML（script 源码 / `<span>New </span>` 的 "New " 文本）
+                  // 落 else 分支清空 registry → 克隆 script 的 `_handleChildren[scriptH]`
+                  // 恒空 → R377 插入期脚本钩子源码收集失败 no-op（R379 pa1 探针实证
+                  // r377-kids:(empty)，remove-next-sibling 的 `b.remove()` 不发生）。
+                  // 非 markup 非空 = 恰一个 text 子（createTextNode + _textHandles 印记，
+                  // 与 appendChild 的 text 子同形态）。
                   try {
                     if (typeof _zwFragmentAdded === 'function' && ih.indexOf('<') >= 0) {
                       _handleChildren[nh] = _zwFragmentAdded(ih, nh);
@@ -3599,6 +3636,13 @@
                         for (var _r190j = 0; _r190j < _r190Kids.length; _r190j++) {
                           _r190FixNs(_r190Kids[_r190j], _elKey(null, nh));
                         }
+                      }
+                    } else if (ih !== '' && typeof __zw_create_text === 'function') {
+                      // R380：纯文本内容 → 单 text registry 子（空串才清空）。
+                      var _r380tn = __zw_create_text(ih);
+                      if (_r380tn) {
+                        _textHandles[_r380tn] = true;
+                        _handleChildren[nh] = [_wrapHandle(_r380tn)];
                       }
                     } else if (_handleChildren[nh]) {
                       _handleChildren[nh] = [];
