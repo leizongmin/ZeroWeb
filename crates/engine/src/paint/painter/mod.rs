@@ -1051,6 +1051,13 @@ impl Painter {
                 // 其 border/background 已下放到匿名块片段（带 fragment_node_ids），由片段
                 // 收缩到文本宽后绘制。父盒只作为结构包裹，绘制装饰会画全宽（错）。
                 let skip_split_inline_deco = box_node.is_r109_split && box_node.fragment_node_ids.is_none();
+                // R3848：`display: contents` 元素无 principal box（CSS Display 3 §2.3）——
+                // 其背景/边框/阴影永不绘制。命中场景：R3848 虚拟匿名块（tree 侧 text-only
+                // contents 的承接盒，装饰已在 taffy 样式清零，但 paint 走 ComputedStyle——
+                // 如 first-letter-002 的 span{display:contents;background-color:red} 旧把
+                // 红底画满虚拟盒宽）。树中(contents 装饰盒)已由 R3846/R3845 展开消除，此为
+                // 虚拟盒 + 未来路径的统一规范守卫。
+                let skip_contents_deco = matches!(style.display, DisplayValue::Contents);
 
                 // -1. backdrop-filter（对元素背后内容应用滤镜，在自身绘制之前）
                 if !is_table_internal {
@@ -1058,7 +1065,7 @@ impl Painter {
                 }
 
                 // 0. box-shadow（位于背景之下，行组/行无盒模型故无阴影）
-                if !is_table_internal && !skip_split_inline_deco {
+                if !is_table_internal && !skip_split_inline_deco && !skip_contents_deco {
                     self.paint_box_shadow(box_node, abs_x, abs_y, style);
                 }
 
@@ -1075,12 +1082,16 @@ impl Painter {
                     && !box_node.is_fixed
                     && box_node.height > inline_fs_px * 1.5
                     && doc.is_some_and(|d| text::has_direct_paintable_text(d, node_id, Some(styles)));
-                if style.background_color != ColorValue::Transparent && !skip_split_inline_deco && !skip_inline_box_bg {
+                if style.background_color != ColorValue::Transparent
+                    && !skip_split_inline_deco
+                    && !skip_inline_box_bg
+                    && !skip_contents_deco
+                {
                     self.paint_background(box_node, abs_x, abs_y, style, styles);
                 }
 
                 // 1b. 背景图片（行组/行仍可渲染背景图片）
-                if !skip_split_inline_deco {
+                if !skip_split_inline_deco && !skip_contents_deco {
                     // R2063：attachment:fixed → 视口锚定平铺、裁剪到元素盒；否则元素盒锚定。
                     if matches!(style.background_attachment, BackgroundAttachmentComputedValue::Fixed) {
                         self.paint_background_image_fixed(box_node, abs_x, abs_y, style);

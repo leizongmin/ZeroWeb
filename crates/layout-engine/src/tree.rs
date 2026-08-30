@@ -2110,39 +2110,91 @@ fn build_subtree(
                     //（不一致 = 双绘或丢绘，R3846 试验 +9/-3 的 linebox-022/text-only-001/
                     // suppression-dynamic-001 翻红根因即两处判定分叉）。
                     let contents_expand_on = block_flow_contents_unbox_on(doc, styles, dom_id);
+                    // R3848：文本子提升（env `ZW_CONTENTS_TEXT_HOIST`，default-on；`=0` 关闭回
+                    // R3846 行为）——容器过 unbox gate 时，contents 穿透途中遇到的**文本子**提升
+                    // 为容器的匿名 taffy leaf（context = 文本节点 id，flex/grid 分支 R3845 同构），
+                    // 使其参与 taffy 堆叠（占位）并经 anonymous text item 路径绘制。此前这些文本
+                    // 被直接丢弃（无盒无绘制）：display-contents-text-inherit 的 "Two\nlines" 与
+                    // white-space-applies-to-text-001 的六个左列文本整体消失（均 <1% 阈值假通过）。
+                    // 已知限制（probe 记录）：anon leaf 的 measure/paint（paint_anonymous_text_item）
+                    // 按 trim 后单行处理——pre/换行文本（text-inherit 的 `\n`）折行语义不完整，
+                    // 本 probe 只回收「文本整体消失」，行断归属仍归后续切片。
+                    let text_hoist_on =
+                        contents_expand_on && std::env::var("ZW_CONTENTS_TEXT_HOIST").as_deref() != Ok("0");
                     let mut layout_children: Vec<NodeId> = Vec::new();
+                    // R3848：提升项（文档序，与元素子交错）。Element = 非 contents 元素子
+                    //（R3846 语义原样）；Text = contents 穿透途中的散文本节点；VirtualBox =
+                    // text-only contents 元素（整体作虚拟匿名块，context = contents 元素 id，
+                    // measure/paint 走完整 IFC，pre 折行正确）。
+                    // (child_index, k)：child_index = children_dom 下标（元素子与提升项同一
+                    // 排序键保 DOM 交错序），k = 同一 contents 子内收集序。
+                    enum HoistedItem {
+                        Element(NodeId),
+                        Text(NodeId),
+                        VirtualBox(NodeId),
+                    }
                     fn collect_block_flow_items(
                         doc: &Document,
                         styles: &HashMap<NodeId, ComputedStyle>,
                         dom_id: NodeId,
-                        out: &mut Vec<NodeId>,
+                        out: &mut Vec<HoistedItem>,
+                        text_hoist: bool,
                     ) {
                         let Some(data) = doc.get(dom_id) else {
                             return;
                         };
-                        if !matches!(&data.kind, NodeKind::Element(_)) {
-                            return;
-                        }
-                        let is_contents = styles
-                            .get(&dom_id)
-                            .is_some_and(|s| matches!(s.display, DisplayValue::Contents));
-                        if is_contents {
-                            for &grandchild in &data.children {
-                                collect_block_flow_items(doc, styles, grandchild, out);
+                        match &data.kind {
+                            NodeKind::Text(t) => {
+                                if text_hoist && !t.content.trim().is_empty() {
+                                    out.push(HoistedItem::Text(dom_id));
+                                }
                             }
-                        } else {
-                            out.push(dom_id);
+                            NodeKind::Element(_) => {
+                                let is_contents = styles
+                                    .get(&dom_id)
+                                    .is_some_and(|s| matches!(s.display, DisplayValue::Contents));
+                                if is_contents {
+                                    let all_text_children = !data.children.is_empty()
+                                        && data.children.iter().all(|&gc| {
+                                            doc.get(gc).is_some_and(|gn| matches!(&gn.kind, NodeKind::Text(_)))
+                                        });
+                                    if text_hoist && all_text_children {
+                                        // 虚拟盒：整个 contents 元素作为一个匿名块（其全部文本
+                                        // 子经 context=contents 元素的完整 IFC 布局/绘制）。
+                                        out.push(HoistedItem::VirtualBox(dom_id));
+                                        return;
+                                    }
+                                    for &grandchild in &data.children {
+                                        collect_block_flow_items(doc, styles, grandchild, out, text_hoist);
+                                    }
+                                } else {
+                                    out.push(HoistedItem::Element(dom_id));
+                                }
+                            }
+                            _ => {}
                         }
                     }
-                    for &child_dom in &children_dom {
-                        if contents_expand_on {
-                            collect_block_flow_items(doc, styles, child_dom, &mut layout_children);
+                    let mut hoisted_items: Vec<(usize, HoistedItem)> = Vec::new();
+                    for (child_index, &child_dom) in children_dom.iter().enumerate() {
+                        let is_contents_el = styles
+                            .get(&child_dom)
+                            .is_some_and(|s| matches!(s.display, DisplayValue::Contents));
+                        if contents_expand_on && is_contents_el {
+                            let mut items: Vec<HoistedItem> = Vec::new();
+                            collect_block_flow_items(doc, styles, child_dom, &mut items, text_hoist_on);
+                            // 所有提升项（含 Element）都携带 contents 子的下标序（child_index
+                            // *1000 + 收集序 k）——提升元素不在 children_dom 中，下方 per-child
+                            // 循环的 position() 查不到它们（unwrap_or(0) 会错排到最前，CV 案
+                            // content-visibility-on-display-contents 的方盒先于 p 即此因）。
+                            for (k, it) in items.into_iter().enumerate() {
+                                hoisted_items.push((child_index * 1000 + k, it));
+                            }
                         } else {
                             layout_children.push(child_dom);
                         }
                     }
 
-                    let mut children_with_order: Vec<(NodeId, i32)> = Vec::new();
+                    let mut children_with_order: Vec<(NodeId, i32, usize)> = Vec::new();
                     for &child_dom in &layout_children {
                         let child_data = doc.get(child_dom);
                         if child_data.is_some_and(|n| matches!(&n.kind, NodeKind::Element(_))) {
@@ -2210,14 +2262,96 @@ fn build_subtree(
                                 continue;
                             }
                             let order = styles.get(&child_dom).map_or(0, |s| s.order);
-                            children_with_order.push((child_dom, order));
+                            // 排序键 = (order, child_index)：直接元素子以自身 children_dom
+                            // 下标作稳定序。
+                            let child_index = children_dom.iter().position(|&c| c == child_dom).unwrap_or(0);
+                            children_with_order.push((child_dom, order, child_index * 1000));
                         }
                     }
+                    // R3848：提升项（Element/Text/VirtualBox）携 contents 子下标序入同一排序流。
+                    // 提升元素同样经过下方 per-child skip gate（br-inline/R2156/R2160）。
+                    for (seq, item) in hoisted_items {
+                        let node_id = match &item {
+                            HoistedItem::Element(id) | HoistedItem::Text(id) | HoistedItem::VirtualBox(id) => *id,
+                        };
+                        if let HoistedItem::Element(_) = item {
+                            let is_el = doc
+                                .get(node_id)
+                                .is_some_and(|n| matches!(&n.kind, NodeKind::Element(_)));
+                            if is_el {
+                                // br-inline gate：hoisted br 语义同直接 br（跳盒让 IFC 处理）
+                                if ctx.flags.br_inline_no_node()
+                                    && br_is_inline_only(doc, styles, node_id)
+                                    && br_parent_has_following_inflow_sibling(doc, styles, node_id)
+                                {
+                                    continue;
+                                }
+                                // R2156 coherence：nested-atomic inline 提升后同样跳 taffy 节点
+                                if ctx.flags.inline_box_model_coherence()
+                                    && matches!(own_writing_mode, WritingModeValue::HorizontalTb)
+                                    && styles.get(&node_id).is_some_and(|s| {
+                                        matches!(s.display, DisplayValue::Inline)
+                                            && !matches!(s.position, PositionValue::Absolute | PositionValue::Fixed)
+                                    })
+                                    && crate::inline::InlineFormattingContext::inline_elem_has_nested_inline_block(
+                                        doc, styles, node_id,
+                                    )
+                                    && !crate::inline::InlineFormattingContext::inline_subtree_has_ooflow_descendant(
+                                        doc, styles, node_id,
+                                    )
+                                {
+                                    continue;
+                                }
+                                if multi_inline_block_skip && phasea_multi_inline_eligible(doc, styles, node_id) {
+                                    continue;
+                                }
+                            }
+                        }
+                        let order = styles.get(&node_id).map_or(0, |s| s.order);
+                        children_with_order.push((node_id, order, seq));
+                    }
 
-                    // 按 order 稳定排序（相同 order 保持 DOM 顺序）
-                    children_with_order.sort_by_key(|(_, order)| *order);
+                    // 按 (order, seq) 稳定排序（相同 order 保持 DOM 顺序）
+                    children_with_order.sort_by_key(|&(_, order, seq)| (order, seq));
 
-                    for &(child_dom, _) in &children_with_order {
+                    for &(child_dom, _, _) in &children_with_order {
+                        // R3848：提升文本类 → 匿名 taffy leaf。虚拟盒（contents 元素）装饰清零
+                        //（contents 无 principal box 装饰）且 context=元素 id（完整 IFC，pre
+                        // 折行正确）；散文本 context=文本节点 id（flex/grid 同构，单行 trim）。
+                        let is_virtual_box = styles
+                            .get(&child_dom)
+                            .is_some_and(|s| matches!(s.display, DisplayValue::Contents));
+                        let is_text_node = doc.get(child_dom).is_some_and(|n| matches!(&n.kind, NodeKind::Text(_)));
+                        if is_virtual_box || is_text_node {
+                            let anon_style = if is_virtual_box {
+                                let mut virtual_style = computed_style_to_taffy(
+                                    &computed_style_for_layout(styles, child_dom),
+                                    None,
+                                    viewport_w,
+                                    viewport_h,
+                                );
+                                virtual_style.display = taffy::style::Display::Block;
+                                virtual_style.border = taffy::geometry::Rect::zero();
+                                virtual_style.padding = taffy::geometry::Rect::zero();
+                                virtual_style.margin = taffy::geometry::Rect::zero();
+                                virtual_style
+                            } else {
+                                taffy::Style {
+                                    display: taffy::style::Display::Block,
+                                    ..taffy::Style::default()
+                                }
+                            };
+                            let anon_taffy = ctx
+                                .taffy
+                                .new_leaf_with_context(anon_style, child_dom)
+                                .unwrap_or_else(|_| ctx.taffy.new_leaf(taffy::Style::default()).unwrap());
+                            if let Some(node_map) = &mut ctx.node_map {
+                                node_map.insert(child_dom, anon_taffy);
+                            }
+                            ctx.taffy_to_dom.insert(anon_taffy, child_dom);
+                            child_taffy_ids.push(anon_taffy);
+                            continue;
+                        }
                         let child_taffy = build_subtree(
                             ctx,
                             doc,
