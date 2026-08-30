@@ -161,7 +161,20 @@ pub fn compute_transform_matrix(style: &ComputedStyle, rect: &Rect) -> Option<Tr
             }
             // 3D 变换函数降级为 2D 近似
             TransformFunction::Translate3d(dx, dy, _) => (1.0, 0.0, 0.0, 1.0, *dx as f32, *dy as f32),
-            TransformFunction::RotateX(_) | TransformFunction::RotateY(_) => (1.0, 0.0, 0.0, 1.0, 0.0, 0.0),
+            // R3833：rotateX/rotateY 的 2D 投影（CSS Transforms 2 §: 绕轴旋转把内容平面
+            // 沿轴压缩/镜像）。rotX(180deg) = scaleY(-1)（transform3d-scale-007：test 页
+            // rotatex(180) scaleZ(-1) 的正确 2D 投影 = scaleY(-1)，与 ref 的 scaleY(-1)
+            // 一致）；旧恒等近似致 test 页不镜像。θ=90/270 投影为线（scale 0）。
+            // 已知局限：3D 链（如 rotX(90) scale3d rotX(-90) 抵消对，transform3d-scale-002）
+            // 逐函数 2D 近似因中间 scaleY(0) 退化坍缩——需全 3D 合成（见 master.md R3833）。
+            TransformFunction::RotateX(deg) => {
+                let cos = (*deg as f32).to_radians().cos();
+                (1.0, 0.0, 0.0, cos, 0.0, 0.0)
+            }
+            TransformFunction::RotateY(deg) => {
+                let cos = (*deg as f32).to_radians().cos();
+                (cos, 0.0, 0.0, 1.0, 0.0, 0.0)
+            }
             TransformFunction::RotateZ(deg) => {
                 let rad = deg.to_radians() as f32;
                 let cos = rad.cos();
@@ -198,6 +211,96 @@ pub fn compute_transform_matrix(style: &ComputedStyle, rect: &Rect) -> Option<Tr
     // new_ty = -origin_x * b + origin_y * (1 - d) + ty
     let final_tx = origin_x * (1.0 - a) - origin_y * c + tx;
     let final_ty = -origin_x * b + origin_y * (1.0 - d) + ty;
+
+    // R3833 退化兜底：rotateX/rotateY 的 2D 投影在 θ=±90° 时行列式为 0（内容坍缩为
+    // 线）。3D 链中 rotX(±90) 常成对出现（rotX(90) … rotX(-90) 平面旋转后复位，
+    // transform3d-scale-002/005/006：夹在中间的 scale3d 应作用于 x/y），逐函数 2D 近似
+    // 的中间 scaleY(0) 会把整链坍缩。检测 |det| ≈ 0 且链含 rotX/rotY → 以 rotX/rotY
+    // 恒等重算（回退 R3833 前的近似语义，保住成对抵消链）。
+    let det_2d = a * d - b * c;
+    if det_2d.abs() < 1e-6
+        && funcs
+            .iter()
+            .any(|f| matches!(f, TransformFunction::RotateX(_) | TransformFunction::RotateY(_)))
+    {
+        a = 1.0;
+        b = 0.0;
+        c = 0.0;
+        d = 1.0;
+        tx = 0.0;
+        ty = 0.0;
+        for func in funcs {
+            let (fa, fb, fc, fd, ftx, fty) = match func {
+                TransformFunction::Translate(dx, dy) => (1.0, 0.0, 0.0, 1.0, *dx as f32, *dy as f32),
+                TransformFunction::TranslateMixed(tx, txp, ty, typ) => {
+                    let fx = if *txp {
+                        rect.size.width * (*tx as f32) / 100.0
+                    } else {
+                        *tx as f32
+                    };
+                    let fy = if *typ {
+                        rect.size.height * (*ty as f32) / 100.0
+                    } else {
+                        *ty as f32
+                    };
+                    (1.0, 0.0, 0.0, 1.0, fx, fy)
+                }
+                TransformFunction::TranslateXMixed(tx, _) => {
+                    (1.0, 0.0, 0.0, 1.0, rect.size.width * (*tx as f32) / 100.0, 0.0)
+                }
+                TransformFunction::TranslateYMixed(ty, _) => {
+                    (1.0, 0.0, 0.0, 1.0, 0.0, rect.size.height * (*ty as f32) / 100.0)
+                }
+                TransformFunction::TranslateX(dx) => (1.0, 0.0, 0.0, 1.0, *dx as f32, 0.0),
+                TransformFunction::TranslateY(dy) => (1.0, 0.0, 0.0, 1.0, 0.0, *dy as f32),
+                TransformFunction::Rotate(deg) => {
+                    let rad = deg.to_radians() as f32;
+                    let cos = rad.cos();
+                    let sin = rad.sin();
+                    (cos, sin, -sin, cos, 0.0, 0.0)
+                }
+                TransformFunction::Scale(sx, sy) => {
+                    let sy = sy.unwrap_or(*sx) as f32;
+                    (*sx as f32, 0.0, 0.0, sy, 0.0, 0.0)
+                }
+                TransformFunction::ScaleX(sx) => (*sx as f32, 0.0, 0.0, 1.0, 0.0, 0.0),
+                TransformFunction::ScaleY(sy) => (1.0, 0.0, 0.0, *sy as f32, 0.0, 0.0),
+                TransformFunction::Skew(ax, ay) => {
+                    let tan_ax = ax.to_radians().tan() as f32;
+                    let tan_ay = ay.map(|v| v.to_radians().tan() as f32).unwrap_or(0.0);
+                    (1.0, tan_ay, tan_ax, 1.0, 0.0, 0.0)
+                }
+                TransformFunction::Translate3d(dx, dy, _) => (1.0, 0.0, 0.0, 1.0, *dx as f32, *dy as f32),
+                // 退化回退路径：rotX/rotY 恒等（成对抵消链语义，R3833 兜底）。
+                TransformFunction::RotateX(_) | TransformFunction::RotateY(_) => (1.0, 0.0, 0.0, 1.0, 0.0, 0.0),
+                TransformFunction::RotateZ(deg) => {
+                    let rad = deg.to_radians() as f32;
+                    let cos = rad.cos();
+                    let sin = rad.sin();
+                    (cos, sin, -sin, cos, 0.0, 0.0)
+                }
+                TransformFunction::Rotate3d(_, _, _, _) => (1.0, 0.0, 0.0, 1.0, 0.0, 0.0),
+                TransformFunction::Scale3d(sx, sy, _) => (*sx as f32, 0.0, 0.0, *sy as f32, 0.0, 0.0),
+                TransformFunction::ScaleZ(_) => (1.0, 0.0, 0.0, 1.0, 0.0, 0.0),
+                TransformFunction::Perspective(_) => (1.0, 0.0, 0.0, 1.0, 0.0, 0.0),
+                TransformFunction::Matrix(ma, mb, mc, md, me, mf) => {
+                    (*ma as f32, *mb as f32, *mc as f32, *md as f32, *me as f32, *mf as f32)
+                }
+            };
+            let new_a = a * fa + c * fb;
+            let new_b = b * fa + d * fb;
+            let new_c = a * fc + c * fd;
+            let new_d = b * fc + d * fd;
+            let new_tx = a * ftx + c * fty + tx;
+            let new_ty = b * ftx + d * fty + ty;
+            a = new_a;
+            b = new_b;
+            c = new_c;
+            d = new_d;
+            tx = new_tx;
+            ty = new_ty;
+        }
+    }
 
     // 检查是否为 identity 变换
     let is_identity = (a - 1.0).abs() < 1e-6

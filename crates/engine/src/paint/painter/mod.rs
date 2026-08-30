@@ -12,7 +12,7 @@ mod text_image;
 
 use std::collections::{HashMap, HashSet};
 
-use zero_css_parser::values::{ColorValue, FloatValue, LengthValue, VisibilityValue};
+use zero_css_parser::values::{ColorValue, FloatValue, LengthValue, TransformValue, VisibilityValue};
 use zero_dom::{Document, NodeId, NodeKind};
 use zero_layout_engine::LayoutBox;
 use zero_layout_engine::types::OverflowClip;
@@ -715,12 +715,11 @@ impl Painter {
         }
 
         // R3831：奇异 transform（CSS Transforms：矩阵不可逆）→ 元素及其子树整体不渲染
-        //（同 paint_node，transform3d-scale-004）。
-        if box_node
-            .node_id
-            .and_then(|id| styles.get(&id))
-            .map(super::helpers::is_singular_transform)
-            .unwrap_or(false)
+        //（同 paint_node，transform3d-scale-004）。快速路径：transform: none 直接跳过
+        //（多数元素无 transform，避免逐节点函数调用开销——R3831 bench-gate 教训）。
+        if let Some(style) = box_node.node_id.and_then(|id| styles.get(&id))
+            && !matches!(style.transform, TransformValue::None)
+            && super::helpers::is_singular_transform(style)
         {
             return;
         }
@@ -946,11 +945,10 @@ impl Painter {
 
         // R3831：奇异 transform（CSS Transforms：变换矩阵不可逆）→ 元素及其子树整体
         // 不渲染（chrome 同此，transform3d-scale-004：scale3d(2,2,0) 全不可见）。
-        if box_node
-            .node_id
-            .and_then(|id| styles.get(&id))
-            .map(super::helpers::is_singular_transform)
-            .unwrap_or(false)
+        // 快速路径同上（transform: none 直接跳过）。
+        if let Some(style) = box_node.node_id.and_then(|id| styles.get(&id))
+            && !matches!(style.transform, TransformValue::None)
+            && super::helpers::is_singular_transform(style)
         {
             return;
         }

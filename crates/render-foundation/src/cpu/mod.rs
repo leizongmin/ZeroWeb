@@ -1212,9 +1212,6 @@ fn apply_transform_post(fb: &mut FrameBuffer, transform: &TransformPrimitive, sc
     let inv_d = transform.a * inv_det;
     let inv_ty = (transform.b * transform.tx - transform.a * transform.ty) * inv_det;
 
-    let ox = transform.origin_x * scale;
-    let oy = transform.origin_y * scale;
-
     // 保存原始像素
     let w = (right - left) as usize;
     let h = (bottom - top) as usize;
@@ -1233,14 +1230,19 @@ fn apply_transform_post(fb: &mut FrameBuffer, transform: &TransformPrimitive, sc
     }
 
     // 反向采样
+    // R3833：inv_tx/inv_ty 已是「含 origin 的全矩阵」的逆平移分量（由 tx/ty 推得，
+    // tx/ty 在 helpers 层已并入 origin 项），故源采样 = inv*p + inv_t——旧实现再做
+    // 一次 (p - o) + o 的 origin 补偿 = 双重补偿，origin ≠ (0,0) 且矩阵含 d<0 /
+    // 镜像等时源点采样越界 → 内容丢失（scaleY(-1) 镜像渲染全白，
+    // transform3d-scale-007 ref 页；chromium 镜像就位）。
     for y in top..bottom {
         for x in left..right {
-            let px = x as f32 - ox;
-            let py = y as f32 - oy;
+            let px = x as f32;
+            let py = y as f32;
 
             // 应用逆变换
-            let src_x = inv_a * px + inv_c * py + inv_tx + ox;
-            let src_y = inv_b * px + inv_d * py + inv_ty + oy;
+            let src_x = inv_a * px + inv_c * py + inv_tx;
+            let src_y = inv_b * px + inv_d * py + inv_ty;
 
             let sx = src_x.round() as i32;
             let sy = src_y.round() as i32;
