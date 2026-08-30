@@ -14,8 +14,8 @@ use zero_style_system::{ComputedStyle, WritingModeValue};
 
 use crate::converter::{GridAreaMap, computed_style_to_taffy, parse_grid_template_areas};
 use crate::inline_block_split::{
-    InlineBlockSegment, block_container_has_mixed_content, compute_block_container_split, compute_inline_block_split,
-    inline_has_block_child, is_whitespace_only_inline_segment,
+    InlineBlockSegment, block_container_has_mixed_content, block_flow_contents_unbox_on, compute_block_container_split,
+    compute_inline_block_split, inline_has_block_child, is_whitespace_only_inline_segment,
 };
 use runtime_flags::TreeRuntimeFlags;
 use style_borrow::computed_style_for_layout;
@@ -2104,14 +2104,12 @@ fn build_subtree(
                     // 的匿名块拆分链 A/B 实测 net 负）。R109 mixed（inline+block 混排）同样
                     // 抑制：inline_block_split 层旧已跳过 contents，提升的 block 子不会出现在
                     // 拆分序列 → 提升反而丢子。纯元素子容器（contents 族主形态）照常展开。
-                    let has_direct_text_child = children_dom.iter().any(|&c| {
-                        doc.get(c)
-                            .is_some_and(|n| matches!(&n.kind, NodeKind::Text(t) if !t.content.trim().is_empty()))
-                    });
-                    let r109_split = r109_wired()
-                        && (inline_has_block_child(doc, styles, dom_id)
-                            || block_container_has_mixed_content(doc, styles, dom_id));
-                    let contents_expand_on = !has_direct_text_child && !r109_split;
+                    // R3847：谓词抽为 `block_flow_contents_unbox_on` 共享——IFC 收集
+                    // （collect_inline_items）与 paint 探测（has_direct_paintable_text）对同一
+                    // 容器用同一判定，保证 contents 子「无盒」⇔「内容归容器 IFC」判定一致
+                    //（不一致 = 双绘或丢绘，R3846 试验 +9/-3 的 linebox-022/text-only-001/
+                    // suppression-dynamic-001 翻红根因即两处判定分叉）。
+                    let contents_expand_on = block_flow_contents_unbox_on(doc, styles, dom_id);
                     let mut layout_children: Vec<NodeId> = Vec::new();
                     fn collect_block_flow_items(
                         doc: &Document,

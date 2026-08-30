@@ -234,6 +234,39 @@ pub(crate) fn compute_block_container_split(
     compute_child_split_impl(doc, styles, container_id)
 }
 
+/// R3847：block 流容器对 `display: contents` 子元素的「穿透（unbox）」判定——
+/// tree 侧 `build_subtree`（tree.rs collect_block_flow_items）、IFC 侧
+/// `collect_inline_items`、paint 侧 `has_direct_paintable_text` 三处共用同一谓词，
+/// 保证「contents 元素有无自己的盒」与「容器 IFC 是否收集其子级内容」判定一致，
+/// 防双绘（R3846 试验教训：tree gate ON 时 IFC 也递归 → 同一文本两处渲染）。
+///
+/// 谓词 = 容器无**非空白直接文本子** 且 非 R109 mixed（inline 含 block 子 / block 容器
+/// 文本+块混排）。R109 mixed 时 inline_block_split 层旧已跳过 contents（提升的块子不在
+/// 拆分序列），穿透反而丢子。限 horizontal-tb（vertical = R1043 域，维持旧行为）。
+pub fn block_flow_contents_unbox_on(
+    doc: &Document,
+    styles: &HashMap<NodeId, ComputedStyle>,
+    container_id: NodeId,
+) -> bool {
+    use zero_style_system::property::types::WritingModeValue;
+    if styles.get(&container_id).is_some_and(|s| {
+        matches!(
+            s.writing_mode,
+            WritingModeValue::VerticalRl | WritingModeValue::VerticalLr
+        )
+    }) {
+        return false;
+    }
+    let has_direct_text_child = doc.child_nodes(container_id).iter().any(|&c| {
+        doc.get(c)
+            .is_some_and(|n| matches!(&n.kind, NodeKind::Text(t) if !t.content.trim().is_empty()))
+    });
+    if has_direct_text_child {
+        return false;
+    }
+    !(inline_has_block_child(doc, styles, container_id) || block_container_has_mixed_content(doc, styles, container_id))
+}
+
 /// 诊断：遍历布局树，对 R109 触发元素（inline 含 block 子元素）打印其拆分片段。
 /// **仅 eprintln，不改变任何布局状态**。env `R109_DBG=1` 启用。
 pub(crate) fn debug_dump_inline_block_splits(
