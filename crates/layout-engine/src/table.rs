@@ -1760,10 +1760,31 @@ fn apply_table_size_constraints(
     let width_correct = (edge_w / 2.0).min(final_width.max(0.0));
     let height_correct = edge_h.min(final_height.max(0.0));
 
+    let old_border_width = table_box.width;
     table_box.content_width = (final_width - width_correct).max(0.0);
     table_box.width = table_box.content_width + padding_border_w;
     table_box.content_height = (final_height - height_correct).max(0.0);
     table_box.height = table_box.content_height + padding_border_h;
+
+    // R3817：CSS §10.3.7 / §17.5.2——width:auto 的 abspos display:table（left+right
+    // 确定 + margin-left/right auto）收缩到列宽和后，over-constrained 方程的 leftover
+    // 应由两侧 auto margin 均分水平居中。taffy 在收缩前（表仍填满 CB）已把 auto margin
+    // 解析为 0，收缩后未重新居中（position-absolute-center-006：表收 100 后 x 留
+    // left=0，应居中于 200px CB 的 x=50）。镜像 shrink_table_to_block_content 尾部的
+    // 同款居中臂（该臂只覆盖 grid 为空的早返路径）；仅 abspos 直接子需要——非 abspos
+    // 表的 auto margin 居中由 taffy 处理，且仅水平（垂直居中见
+    // recenter_abspos_table_vertically）。
+    let both_margins_auto = style.is_some_and(|s| {
+        matches!(s.margin_left, zero_css_parser::values::LengthValue::Auto)
+            && matches!(s.margin_right, zero_css_parser::values::LengthValue::Auto)
+    });
+    let new_border_width = table_box.width;
+    if table_box.is_absolute && both_margins_auto && new_border_width + 0.5 < old_border_width {
+        let margin = (old_border_width - new_border_width) / 2.0;
+        table_box.x += margin;
+        table_box.margin_left = margin;
+        table_box.margin_right = margin;
+    }
 }
 
 /// 更新行组的位置，使其包含所有子行。

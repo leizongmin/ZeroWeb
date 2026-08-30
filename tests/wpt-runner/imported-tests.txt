@@ -195,3 +195,4 @@ css/css-content/pseudo-element-inline-box.html css/css-content/pseudo-element-in
 css/CSS2/floats/zero-width-floats.html css/reference/ref-filled-green-200px-square.html == 2026-08-30 R3807 零位移 float 不构成 BFC 回避约束——负 margin BFC 流内求解修复
 css/CSS2/borders/border-left-width-applies-to-005.xht css/reference/ref-filled-black-96px-square.xht == 2026-08-30 R3810 col/colgroup 边框参与列宽 accounting（R3805 临时元组 bug 修复 + 列宽半宽 floor）
 css/CSS2/margin-padding-clear/margin-applies-to-015.xht css/CSS2/margin-padding-clear/margin-applies-to-009-ref.xht == 2026-08-30 R3813 table-caption margin-bottom 计入表高（abspos wrapper shrink-wrap 高差 50）
+css/css-sizing/calc-margins-table-caption.html css/reference/ref-filled-green-100px-square-only.html == 2026-08-30 R3817 匿名 cell 包裹 float 条件写反修正（样式源 float 判定 + 真表容器 gate + abspos 表水平 auto-margin 居中）

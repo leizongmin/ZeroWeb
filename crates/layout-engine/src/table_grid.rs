@@ -74,6 +74,20 @@ pub(crate) fn build_grid(
     // 稳定排序保留同优先级内的 DOM 顺序
     children_with_priority.sort_by_key(|(_, _, display)| display.as_ref().map_or(3, row_group_sort_priority));
 
+    // R3817：匿名 cell 包裹臂仅限「真表容器」上下文。build_grid 也会对孤立
+    // table-internal 盒（table-cell/table-row/table-row-group 的 retrofit 路径）
+    // 调用——此时其块级子元素是普通流内内容（§17.2.1 匿名 cell 只为 display:table
+    // 的子元素生成），包裹会把 cell 内容错误压入单列表致 12 案回归
+    //（table-cell-overflow/outline/dynamic-cell-height/abspos 等）。
+    // 孤立 table-internal 盒经 mark_anonymous_table_roots 也带 is_anon_table_root
+    //（但持有 node_id）；合成匿名 table 包装盒（merge_orphan_table_run）无 node_id——
+    // 以 node_id.is_none() 区分二者。
+    let container_is_true_table = table_box
+        .node_id
+        .and_then(|id| styles.get(&id))
+        .is_some_and(|s| matches!(s.display, DisplayValue::Table | DisplayValue::InlineTable))
+        || (table_box.is_anon_table_root && table_box.node_id.is_none());
+
     let mut orphan_anonymous_cells: Vec<TableCell> = Vec::new();
     let mut orphan_first_child_idx = 0usize;
     let mut orphan_col_cursor = 0usize;
@@ -370,7 +384,8 @@ pub(crate) fn build_grid(
             // shrink_table_to_block_content / margin:auto 居中既有路径）；caption/
             // column/colgroup/inline/none/contents 排除。
             Some(d)
-                if !is_table_internal_display(d)
+                if container_is_true_table
+                    && !is_table_internal_display(d)
                     && !matches!(
                         d,
                         DisplayValue::Inline
@@ -379,9 +394,19 @@ pub(crate) fn build_grid(
                             | DisplayValue::TableCaption
                     )
                     && !is_document_structure_child(child, doc)
-                    // 浮动子元素不包裹（float-anon-table 机制 R1382 处理，wrap 会
-                    // 扰动 float-applies-to-row-group 几何）。
-                    && !matches!(child.float, FloatValue::None) =>
+                    // R3817：仅包裹非浮动块子（float 按样式判——权威源；box.float
+                    // 会被 adjust_float_positions 清零，R3816 的「互斥」结论即源于
+                    // 读到清零后的 box.float：r1382 的浮动 #test 被误判非浮动而在
+                    // #table 层被包成 cell，宽 800 非 96）。浮动块子（块化
+                    // table-row-group+float）由 R1382 孤立 run 合并机制处理——其
+                    // table-internal 后代走 §17.2.1.1 匿名 table 包装 + shrink-to-fit
+                    //（float-applies-to-001 期望 96×96）；非浮动块子（calc-margins-
+                    // table-caption）才走匿名 cell 包裹 + 列宽 accounting（R3814 的
+                    // calc px 残差由此计入固有宽）。
+                    && child
+                        .node_id
+                        .and_then(|id| styles.get(&id))
+                        .is_some_and(|s| matches!(s.float, FloatValue::None)) =>
             {
                 if !direct_cells.is_empty() {
                     max_cols = max_cols.max(direct_col_cursor);
