@@ -16,6 +16,8 @@ fn test_convert_length_ch_unit() {
 #[test]
 fn test_convert_length_to_lp_vmax_and_ch() {
     let style = ComputedStyle {
+        // 垂直 padding 机制须用 block 上下文（display 默认 Inline，§10.8.1 垂直 padding 归零）。
+        display: DisplayValue::Block,
         padding_top: LengthValue::Vmax(5.0),
         padding_left: LengthValue::Ch(1.5),
         ..ComputedStyle::default()

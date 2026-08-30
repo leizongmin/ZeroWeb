@@ -223,11 +223,28 @@ pub fn computed_style_to_taffy(
         padding: if is_table_internal || is_collapsed_table {
             taffy::geometry::Rect::zero()
         } else {
+            // CSS 2.1 §10.8.1 + §8.4：非替换 inline 元素的垂直 padding/border 只绘制（向 line
+            // box 上下方延伸），不影响 line box 高度。childless inline 子（Phase A eligible 之外
+            // 保留 taffy 节点者）的 taffy 盒若带入垂直 padding，taffy 把 content 高度（单行
+            // line-height）加成 line-height+pt+pb → 块内容高度错误增长（`<span padding:16px>`
+            // 撑高段落 32px，chromium 同页高度不变）。垂直 padding 归零与 R1058 垂直 margin
+            // 归零同构；水平 padding 保留（inline 水平 padding 有效，作用于 IFC 内片段宽度）。
+            // 渲染侧 padding 外延（R1442 bleed）从 owner_style 读取，不依赖本 taffy 值。
+            let inline_vpadding_zero = matches!(style.display, DisplayValue::Inline);
+            let zero_lp = || taffy::style::LengthPercentage::length(0.0_f32);
             taffy::geometry::Rect {
                 left: convert_length_to_lp(&style.padding_left, vw, vh),
                 right: convert_length_to_lp(&style.padding_right, vw, vh),
-                top: convert_length_to_lp(&style.padding_top, vw, vh),
-                bottom: convert_length_to_lp(&style.padding_bottom, vw, vh),
+                top: if inline_vpadding_zero {
+                    zero_lp()
+                } else {
+                    convert_length_to_lp(&style.padding_top, vw, vh)
+                },
+                bottom: if inline_vpadding_zero {
+                    zero_lp()
+                } else {
+                    convert_length_to_lp(&style.padding_bottom, vw, vh)
+                },
             }
         },
         border: if is_table_internal {
@@ -1493,6 +1510,8 @@ mod inline_tests {
     #[test]
     fn test_computed_style_to_taffy_padding() {
         let mut style = ComputedStyle::default();
+        // 垂直 padding 机制须用 block 上下文（display 默认 Inline，§10.8.1 垂直 padding 归零）。
+        style.display = DisplayValue::Block;
         style.padding_top = LengthValue::Px(10.0);
         style.padding_right = LengthValue::Px(20.0);
         style.padding_bottom = LengthValue::Px(30.0);
@@ -1861,6 +1880,8 @@ mod inline_tests {
     #[test]
     fn test_computed_style_padding_percentage() {
         let mut style = ComputedStyle::default();
+        // 垂直 padding 机制须用 block 上下文（display 默认 Inline，§10.8.1 垂直 padding 归零）。
+        style.display = DisplayValue::Block;
         style.padding_top = LengthValue::Percentage(10.0);
         let result = computed_style_to_taffy(&style, None, 800.0, 600.0);
         assert_eq!(result.padding.top, taffy::style::LengthPercentage::percent(0.1));
@@ -1874,5 +1895,28 @@ mod inline_tests {
         style.margin_bottom = LengthValue::Percentage(25.0);
         let result = computed_style_to_taffy(&style, None, 800.0, 600.0);
         assert_eq!(result.margin.bottom, taffy::style::LengthPercentageAuto::percent(0.25));
+    }
+
+    // CSS 2.1 §10.8.1 + §8.4：非替换 inline 的垂直 padding 不影响 line box 高度——taffy 盒
+    // 垂直 padding 归零（与 R1058 垂直 margin 归零同构）。水平 padding 保留。
+    #[test]
+    fn test_computed_style_inline_vertical_padding_zeroed() {
+        let mut style = ComputedStyle::default();
+        style.display = DisplayValue::Inline;
+        style.padding_top = LengthValue::Px(16.0);
+        style.padding_bottom = LengthValue::Px(16.0);
+        style.padding_left = LengthValue::Px(8.0);
+        style.padding_right = LengthValue::Px(8.0);
+        let result = computed_style_to_taffy(&style, None, 800.0, 600.0);
+        assert_eq!(result.padding.top, taffy::style::LengthPercentage::length(0.0));
+        assert_eq!(result.padding.bottom, taffy::style::LengthPercentage::length(0.0));
+        // 水平 padding 有效（作用于 IFC 内 inline 片段宽度）
+        assert_eq!(result.padding.left, taffy::style::LengthPercentage::length(8.0));
+        assert_eq!(result.padding.right, taffy::style::LengthPercentage::length(8.0));
+        // block 上下文不受影响（对照）
+        style.display = DisplayValue::Block;
+        let result = computed_style_to_taffy(&style, None, 800.0, 600.0);
+        assert_eq!(result.padding.top, taffy::style::LengthPercentage::length(16.0));
+        assert_eq!(result.padding.bottom, taffy::style::LengthPercentage::length(16.0));
     }
 }
