@@ -2090,8 +2090,62 @@ fn build_subtree(
                         });
                     let multi_inline_block_skip =
                         phasea_multi_inline_on && eligible_inline_count >= 2 && !has_non_eligible_inline;
-                    let mut children_with_order: Vec<(NodeId, i32)> = Vec::new();
+
+                    // R3846：`display: contents` 子级穿透展开（CSS Display 3 §2.3）——
+                    // block 流同 R3845 flex/grid 分支模式：contents 元素自身不生成盒，
+                    // 其子级提升为容器的直接布局子（嵌套 contents 递归穿透；文本子不生成
+                    // 盒，照旧经父 IFC 从 DOM 收集）。此前 contents 元素在此循环被当普通
+                    // 元素子 build_subtree（converter 映射 Display::Block），其 border/
+                    // background 被误绘（driving: display-contents-block-001 3.41%、
+                    // inline-001 3.55%、first-letter-002 2.93% 的红边/红底即 contents 盒）。
+                    // **bounded gate**：容器有直接文本子时抑制展开——contents 提升的文本子
+                    // 不生成盒，但 IFC 文本收集/折叠归属按 DOM 直属链走，展开后 pre/nowrap
+                    // 文本的行归属变化（text-inherit 的 pre 折行、white-space-applies-to-text
+                    // 的匿名块拆分链 A/B 实测 net 负）。R109 mixed（inline+block 混排）同样
+                    // 抑制：inline_block_split 层旧已跳过 contents，提升的 block 子不会出现在
+                    // 拆分序列 → 提升反而丢子。纯元素子容器（contents 族主形态）照常展开。
+                    let has_direct_text_child = children_dom.iter().any(|&c| {
+                        doc.get(c)
+                            .is_some_and(|n| matches!(&n.kind, NodeKind::Text(t) if !t.content.trim().is_empty()))
+                    });
+                    let r109_split = r109_wired()
+                        && (inline_has_block_child(doc, styles, dom_id)
+                            || block_container_has_mixed_content(doc, styles, dom_id));
+                    let contents_expand_on = !has_direct_text_child && !r109_split;
+                    let mut layout_children: Vec<NodeId> = Vec::new();
+                    fn collect_block_flow_items(
+                        doc: &Document,
+                        styles: &HashMap<NodeId, ComputedStyle>,
+                        dom_id: NodeId,
+                        out: &mut Vec<NodeId>,
+                    ) {
+                        let Some(data) = doc.get(dom_id) else {
+                            return;
+                        };
+                        if !matches!(&data.kind, NodeKind::Element(_)) {
+                            return;
+                        }
+                        let is_contents = styles
+                            .get(&dom_id)
+                            .is_some_and(|s| matches!(s.display, DisplayValue::Contents));
+                        if is_contents {
+                            for &grandchild in &data.children {
+                                collect_block_flow_items(doc, styles, grandchild, out);
+                            }
+                        } else {
+                            out.push(dom_id);
+                        }
+                    }
                     for &child_dom in &children_dom {
+                        if contents_expand_on {
+                            collect_block_flow_items(doc, styles, child_dom, &mut layout_children);
+                        } else {
+                            layout_children.push(child_dom);
+                        }
+                    }
+
+                    let mut children_with_order: Vec<(NodeId, i32)> = Vec::new();
+                    for &child_dom in &layout_children {
                         let child_data = doc.get(child_dom);
                         if child_data.is_some_and(|n| matches!(&n.kind, NodeKind::Element(_))) {
                             // R1311b：纯 inline 上下文的 `<br>`（无 block 同胞）且其父块有后续
