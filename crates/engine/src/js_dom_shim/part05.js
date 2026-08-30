@@ -8100,6 +8100,33 @@
   //（每插一项后参考子/兄弟前移）；beforebegin（before）正序即可（参考 = target 固定）。
   function _insertAdjacentVariadic(sel, position, args, reverseOrder) {
     if (!sel || typeof __zw_insert_adjacent_element !== 'function') return;
+    // R377（js-dom M4）：**插入期脚本执行**（R328 遗留「克隆 script 插入期执行」的
+    // shim 侧落点）——script 节点（handle）入树后收集其 registry 文本子，按 classic
+    // 脚本语义执行（全局作用域 eval；异常按 report-the-exception 上报主 window）。
+    // run-once 标记（`_zwRanScripts`）防重插重跑（spec a "script is not executed
+    // again if it is already in a Document"——clone 产物是全新脚本节点，首插必跑）。
+    // https://html.spec.whatwg.org/multipage/scripting.html#becomes-ready-to-be-script-executed
+    var _r377runScript = function (scriptHandle) {
+      try {
+        if (!scriptHandle || globalThis._zwRanScripts && globalThis._zwRanScripts[scriptHandle]) return;
+        var tag = (typeof _realTag === 'function') ? String(_realTag(null, scriptHandle) || '').toUpperCase() : '';
+        if (tag !== 'SCRIPT') return;
+        var kids = _handleChildren[scriptHandle] || [];
+        var src377 = '';
+        for (var s377 = 0; s377 < kids.length; s377++) {
+          var k377 = kids[s377];
+          if (k377 && k377.nodeType === 3) src377 += String(k377.data != null ? k377.data : (k377.nodeValue != null ? k377.nodeValue : ''));
+        }
+        if (!src377) return;
+        if (!globalThis._zwRanScripts) globalThis._zwRanScripts = {};
+        globalThis._zwRanScripts[scriptHandle] = true;
+        (0, eval).call(globalThis, src377);
+      } catch (_e377run) {
+        if (typeof globalThis._zwReportListenerError === 'function') {
+          try { globalThis._zwReportListenerError(_e377run, null); } catch (_e377rp) {}
+        }
+      }
+    };
     var items = [];
     for (var i = 0; i < args.length; i++) {
       var a = args[i];
@@ -8152,6 +8179,8 @@
                 }
               } catch (_e321pl) {}
               ceInserted.push(_r321c);
+              // R377：插入期脚本执行（fragment 展开路径——template clone 的 script 子）。
+              _r377runScript(_r321c.__zwHandle);
             } else if (typeof _r321c.data === 'string' && _r321c.nodeType === 3) {
               __zw_insert_adjacent_text(sel, position, String(_r321c.data));
             }
@@ -8161,6 +8190,8 @@
         if (item && typeof item === 'object' && item.__zwHandle) {
           __zw_insert_adjacent_element(sel, position, item.__zwHandle);
           ceInserted.push(item);
+          // R377：插入期脚本执行（直接 script 项路径）。
+          _r377runScript(item.__zwHandle);
         } else {
           // R117：null/undefined → WebIDL DOMString（'null'/'undefined' 文本节点）。
           __zw_insert_adjacent_text(sel, position, String(item));
