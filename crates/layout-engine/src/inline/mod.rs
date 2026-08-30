@@ -217,6 +217,11 @@ pub struct InlineFormattingContext {
     /// 导致所有 margin 回退为 0。此覆盖确保 paint IFC 使用正确的 margin 值。
     /// margin 不影响行断（仅影响水平偏移），因此传递此覆盖不会改变行断行为。
     pub margin_overrides: NodeIdMap<(f32, f32)>,
+    /// R3837：inline 元素的 (padding_left, padding_right) 覆盖（paint IFC 使用）。
+    ///
+    /// key 为文本节点/inline 元素 NodeId，value 为 (padding_left, padding_right)。
+    /// 水平 padding 参与 inline 轴推进（CSS2.1 §8.4），须与 margin 同通道恢复。
+    pub padding_overrides: NodeIdMap<(f32, f32)>,
     /// R109 §9.2.1.1 匿名块盒的片段文本节点覆盖。
     ///
     /// 当此 IFC 为匿名块盒（inline 元素被 block 子元素拆分后的一个片段）服务时，
@@ -317,6 +322,7 @@ impl InlineFormattingContext {
             inline_element_metrics: NodeIdMap::default(),
             baseline_overrides: HashMap::new(),
             margin_overrides: NodeIdMap::default(),
+            padding_overrides: NodeIdMap::default(),
             fragment_node_ids: None,
             font_metric_provider: None,
             advance_source: None,
@@ -713,6 +719,11 @@ impl InlineFormattingContext {
     /// margin 不影响行断（仅影响水平偏移），因此传递此覆盖是安全的。
     pub fn with_margin_overrides(mut self, margins: NodeIdMap<(f32, f32)>) -> Self {
         self.margin_overrides = margins;
+        self
+    }
+    /// R3837：设置 inline 元素的 (padding_left, padding_right) 覆盖（paint IFC 使用）。
+    pub fn with_padding_overrides(mut self, paddings: NodeIdMap<(f32, f32)>) -> Self {
+        self.padding_overrides = paddings;
         self
     }
     /// 设置末行对齐方式（CSS text-align-last）。
@@ -1247,8 +1258,18 @@ impl InlineFormattingContext {
             // 计算行内内容的总宽度（最后一个片段的右边界）
             // R1338：pre-wrap 扣除行尾悬挂空白，使对齐按可见内容计算。
             let raw_right = line.runs.last().map(|r| r.x + r.width).unwrap_or(0.0);
+            // R3837：行尾 inline 盒的尾随 margin/padding 计入对齐宽度（CSS2.1 §8.3/§8.4
+            // —— inline 布局按 margin box 推进，center/right 对齐对齐的是行的完整内容宽，
+            // bidi-box-model-019/021/022/023/024：`text-align:right` + span margin-right:2em
+            // 旧行为漏掉 40px → 行右移过头）。只在行尾片段上消费（中间片段的 margin/padding
+            // 已含在后续片段 x 中）。
+            let tail_box = line
+                .runs
+                .last()
+                .map(|r| r.margin_right + r.padding_right)
+                .unwrap_or(0.0);
             let hang = if hang_prewrap { hang_widths[i] } else { 0.0 };
-            let content_width = (raw_right - hang).max(0.0);
+            let content_width = (raw_right + tail_box - hang).max(0.0);
 
             // 使用预计算的有效可用宽度
             let (left_offset, avail_width) = line_areas[i];
@@ -1429,6 +1450,8 @@ impl InlineFormattingContext {
                         letter_spacing: 0.0,
                         margin_left: 0.0,
                         margin_right: 0.0,
+                        padding_left: 0.0,
+                        padding_right: 0.0,
                         margin_top: 0.0,
                         margin_bottom: 0.0,
                         baseline: box_info.baseline,
@@ -2007,6 +2030,8 @@ impl InlineFormattingContext {
                     letter_spacing: run.letter_spacing,
                     margin_left: run.margin_left,
                     margin_right: run.margin_right,
+                    padding_left: run.padding_left,
+                    padding_right: run.padding_right,
                     margin_top: run.margin_top,
                     margin_bottom: run.margin_bottom,
                     baseline: run.baseline,

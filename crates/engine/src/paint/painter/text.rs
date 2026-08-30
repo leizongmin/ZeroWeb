@@ -872,6 +872,8 @@ impl super::Painter {
 
                 let inline_metrics = box_node.inline_element_metrics.clone();
                 let margin_overrides = box_node.inline_element_margins.clone();
+                // R3837：inline 水平 padding 与 margin 同通道恢复（CSS2.1 §8.4）。
+                let padding_overrides = box_node.inline_element_paddings.clone().unwrap_or_default();
 
                 let mut ctx = InlineFormattingContext::new(ifc_width)
                     // ZRG-2026-08-15 修复 A：paint IFC 也注入 font resolver——否则
@@ -927,6 +929,7 @@ impl super::Painter {
                     .with_text_transform_overrides(parent_text_transforms)
                     .with_inline_element_metrics(inline_metrics)
                     .with_margin_overrides(margin_overrides)
+                    .with_padding_overrides(padding_overrides)
                     .with_inline_block_sizes(collect_atomic_inline_sizes(box_node, styles));
                 ctx = with_shaped_layout(
                     ctx,

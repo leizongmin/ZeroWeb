@@ -24,6 +24,8 @@ fn ctx_with_lines(n_runs: usize) -> InlineFormattingContext {
             word_spacing: 0.0,
             margin_left: 0.0,
             margin_right: 0.0,
+            padding_left: 0.0,
+            padding_right: 0.0,
             padding_top: 0.0,
             padding_bottom: 0.0,
             border_top: 0.0,

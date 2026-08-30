@@ -371,6 +371,11 @@ pub struct LayoutBox {
     /// 供 paint IFC 在处理内联元素时使用正确的 margin 值。
     /// margin 不影响行断（仅影响水平偏移），因此传递到 paint IFC 是安全的。
     pub inline_element_margins: NodeIdMap<(f32, f32)>,
+    /// R3837：内联元素的 (padding_left, padding_right) 映射（来自 layout IFC 的片段）。
+    ///
+    /// paint IFC 传入空的 styles HashMap，无法获取 inline 元素的水平 padding。
+    /// 水平 padding 参与 inline 轴推进（CSS2.1 §8.4），与 margin 同通道恢复。
+    pub inline_element_paddings: Option<NodeIdMap<(f32, f32)>>,
     /// 从 taffy 布局缓存中提取的 first_baseline（y 分量）。
     ///
     /// 仅对 flex/inline-flex/grid/inline-grid 容器有值。
@@ -531,6 +536,7 @@ impl Default for LayoutBox {
             text_node_font_size_adjust: NodeIdMap::default(),
             inline_element_metrics: NodeIdMap::default(),
             inline_element_margins: NodeIdMap::default(),
+            inline_element_paddings: None,
             taffy_baseline: None,
             fragment_node_ids: None,
             is_r109_split: false,

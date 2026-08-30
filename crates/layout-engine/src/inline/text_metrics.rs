@@ -621,18 +621,32 @@ fn bidi_reorder_with_direction(text: &str, preserve_all_paragraphs: bool, is_rtl
     }
 
     // 检查是否需要 BiDi 处理：含 RTL 脚本字符 **或** bidi 控制码（R2019）**或** CSS direction:rtl。
-    let needs_bidi = is_rtl
-        || text.chars().any(|ch| {
-            let cp = ch as u32;
-            (0x0590..=0x05FF).contains(&cp)
-                || (0x0600..=0x06FF).contains(&cp)
-                || (0x0700..=0x074F).contains(&cp)
-                || (0x08A0..=0x08FF).contains(&cp)
-                || (0xFB50..=0xFDFF).contains(&cp)
-                || (0xFE70..=0xFEFF).contains(&cp)
-                || (0x202A..=0x202E).contains(&cp)
-                || (0x2066..=0x2069).contains(&cp)
-        });
+    let has_rtl_script = text.chars().any(|ch| {
+        let cp = ch as u32;
+        (0x0590..=0x05FF).contains(&cp)
+            || (0x0600..=0x06FF).contains(&cp)
+            || (0x0700..=0x074F).contains(&cp)
+            || (0x08A0..=0x08FF).contains(&cp)
+            || (0xFB50..=0xFDFF).contains(&cp)
+            || (0xFE70..=0xFEFF).contains(&cp)
+            || (0x202A..=0x202E).contains(&cp)
+            || (0x2066..=0x2069).contains(&cp)
+    });
+    let needs_bidi = is_rtl || has_rtl_script;
+
+    // R3837：RTL 段落基方向下的**纯 LTR run**（每字符均为 ASCII 字母数字或空白，无中性
+    // 字符/RTL 脚本/控制码）→ identity 映射。UAX #9 L2 不会重排纯 LTR run（强 L 解析为
+    // 偶数 level 2，其间中性字符随 L 上下文同为 level 2 → 恒等）；唯一会改变布局的是 L1
+    // 的「行尾空白回到段落 level」——本函数按 **run**（文本节点/inline 元素）调用而非整行，
+    // run 末尾 ≠ 行末尾，L1 在此误触发：尾随空格降到 RTL 段 level 1 → L2 重排把空格搬到
+    // 视觉首位 → 分词折行后 run 间的空格 advance 丢失（bidi-box-model-021/023/024：RTL
+    // 容器中 `First <span>Second</span>` 的词间距塌陷）。含中性字符（如 ▴）时 UBA 重排
+    // 真实有效（vertical bidi generated-prefix 序）不放行；真实的行末空白由 CSS 折行阶段
+    // 折叠（trailing_space_width 剥离），不受 identity 影响 → 零回归面。
+    // https://unicode.org/reports/tr9/#L1
+    if is_rtl && !has_rtl_script && text.chars().all(|ch| ch.is_ascii_alphanumeric() || ch.is_whitespace()) {
+        return identity_bidi_mapping(text);
+    }
 
     if !needs_bidi {
         return identity_bidi_mapping(text);

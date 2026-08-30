@@ -154,6 +154,8 @@ impl InlineFormattingContext {
                                 word_spacing,
                                 margin_left: 0.0,
                                 margin_right: 0.0,
+                                padding_left: 0.0,
+                                padding_right: 0.0,
                                 padding_top: 0.0,
                                 padding_bottom: 0.0,
                                 border_top: 0.0,
@@ -548,6 +550,14 @@ impl InlineFormattingContext {
                         let margin_right = style
                             .map(|s| Self::resolve_inline_margin(&s.margin_right, s))
                             .unwrap_or_else(|| self.margin_overrides.get(&child_id).map(|(_, mr)| *mr).unwrap_or(0.0));
+                        // R3837：inline 水平 padding 参与 inline 轴推进（CSS2.1 §8.4）。
+                        // paint IFC（无 style）经 padding_overrides 恢复（fragment 级存储）。
+                        let padding_left = style
+                            .map(|s| Self::resolve_inline_padding(&s.padding_left, s))
+                            .unwrap_or_else(|| self.padding_overrides.get(&child_id).map(|(pl, _)| *pl).unwrap_or(0.0));
+                        let padding_right = style
+                            .map(|s| Self::resolve_inline_padding(&s.padding_right, s))
+                            .unwrap_or_else(|| self.padding_overrides.get(&child_id).map(|(_, pr)| *pr).unwrap_or(0.0));
                         let is_ahem_font = style
                             .map(|s| s.font_family.iter().any(|f| f.trim_matches('"').eq_ignore_ascii_case("Ahem")))
                             .unwrap_or_else(|| self.is_ahem_overrides.get(&child_id).copied().unwrap_or(false));
@@ -566,6 +576,8 @@ impl InlineFormattingContext {
                                 word_spacing,
                                 margin_left,
                                 margin_right,
+                                padding_left,
+                                padding_right,
                                 padding_top,
                                 padding_bottom,
                                 border_top,
@@ -605,6 +617,8 @@ impl InlineFormattingContext {
                                 word_spacing: 0.0,
                                 margin_left,
                                 margin_right,
+                                padding_left,
+                                padding_right,
                                 padding_top,
                                 padding_bottom,
                                 border_top,
@@ -662,5 +676,12 @@ impl InlineFormattingContext {
                 if px.is_finite() { px as f32 } else { 0.0 }
             }
         }
+    }
+
+    /// R3837：inline 水平 padding 解析（px）。百分比按 containing-block 内联轴应基于
+    /// 容器宽，但此处沿 margin 同款 font-size 基近似（与 `extract_inline_box_metrics`
+    /// 的垂直 padding 域一致）；em/rem 经 resolve_length 按元素字号解析。
+    fn resolve_inline_padding(value: &LengthValue, style: &ComputedStyle) -> f32 {
+        Self::resolve_inline_margin(value, style)
     }
 }

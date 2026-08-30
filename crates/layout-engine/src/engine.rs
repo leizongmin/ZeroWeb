@@ -1629,6 +1629,7 @@ impl LayoutEngine {
             text_node_font_size_adjust: Default::default(),
             inline_element_metrics: Default::default(),
             inline_element_margins: Default::default(),
+            inline_element_paddings: Default::default(),
             taffy_baseline: None,
             fragment_node_ids,
             is_r109_split,

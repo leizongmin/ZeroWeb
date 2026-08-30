@@ -49,6 +49,11 @@ pub struct TextRun {
     pub margin_left: f32,
     /// inline 元素的水平 margin（px）。文本节点为 0。
     pub margin_right: f32,
+    /// inline 元素的左内边距（px）。文本节点为 0。R3837：参与 inline 轴推进
+    ///（CSS2.1 §8.4：inline 水平 padding 计入行内布局宽度）。
+    pub padding_left: f32,
+    /// inline 元素的右内边距（px）。文本节点为 0。
+    pub padding_right: f32,
     /// inline 元素的上内边距（px）。文本节点为 0。
     /// CSS 2.1 规范要求 inline 元素的 padding 参与行盒高度计算。
     pub padding_top: f32,
@@ -115,6 +120,8 @@ impl TextRun {
             word_spacing: 0.0,
             margin_left: 0.0,
             margin_right: 0.0,
+            padding_left: 0.0,
+            padding_right: 0.0,
             padding_top: 0.0,
             padding_bottom: 0.0,
             border_top: 0.0,
@@ -326,6 +333,10 @@ pub struct TextFragment {
     pub margin_left: f32,
     /// inline 元素的水平 margin（px）。文本节点为 0。
     pub margin_right: f32,
+    /// R3837：inline 元素左内边距（px）。文本片段为 0；参与对齐宽度（CSS2.1 §8.4）。
+    pub padding_left: f32,
+    /// R3837：inline 元素右内边距（px）。文本片段为 0；参与对齐宽度（CSS2.1 §8.4）。
+    pub padding_right: f32,
     /// inline-block 的上 margin（px）—— apply_vertical_alignment 据此偏移盒的 Y
     /// （CSS：inline-block margin box 参与行盒，margin_top 把盒内容下移）。
     /// 文本/inline 元素为 0。

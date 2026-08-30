@@ -149,6 +149,8 @@ impl InlineFormattingContext {
                             letter_spacing: 0.0,
                             margin_left: run.margin_left,
                             margin_right: run.margin_right,
+                            padding_left: run.padding_left,
+                            padding_right: run.padding_right,
                             margin_top: 0.0,
                             margin_bottom: 0.0,
                             baseline: run.font_size,
@@ -178,6 +180,13 @@ impl InlineFormattingContext {
                     // 在第一个词之前添加 margin-left
                     if run.margin_left > 0.0 {
                         current_x += run.margin_left;
+                    }
+                    // R3837：inline 水平 padding 参与 inline 轴推进（CSS2.1 §8.4）——
+                    // 旧实现只建模垂直 padding，水平 padding 静默丢失（bidi-box-model-028/033：
+                    // span padding-left:2em 的 40px 未推进后续内容）。行内所有词共享同一
+                    // padding-left，仅在首词前推进一次。
+                    if run.padding_left > 0.0 {
+                        current_x += run.padding_left;
                     }
 
                     for (word_idx, word) in words.iter().enumerate() {
@@ -227,6 +236,8 @@ impl InlineFormattingContext {
                                 letter_spacing: 0.0,
                                 margin_left: 0.0,
                                 margin_right: 0.0,
+                                padding_left: 0.0,
+                                padding_right: 0.0,
                                 margin_top: 0.0,
                             margin_bottom: 0.0,
                                 baseline: run.font_size,
@@ -459,6 +470,8 @@ impl InlineFormattingContext {
                                     letter_spacing: run.letter_spacing,
                                     margin_left: run.margin_left,
                                     margin_right: run.margin_right,
+                                    padding_left: run.padding_left,
+                                    padding_right: run.padding_right,
                                     margin_top: 0.0,
                             margin_bottom: 0.0,
                                     baseline: run.font_size,
@@ -488,6 +501,8 @@ impl InlineFormattingContext {
                                 letter_spacing: run.letter_spacing,
                                 margin_left: run.margin_left,
                                 margin_right: run.margin_right,
+                                padding_left: run.padding_left,
+                                padding_right: run.padding_right,
                                 margin_top: 0.0,
                             margin_bottom: 0.0,
                                 baseline: run.font_size,
@@ -502,6 +517,10 @@ impl InlineFormattingContext {
                     // 在最后一个词之后添加 margin-right
                     if run.margin_right > 0.0 {
                         current_x += run.margin_right;
+                    }
+                    // R3837：inline 水平 padding 右侧推进（CSS2.1 §8.4，同 padding_left）。
+                    if run.padding_right > 0.0 {
+                        current_x += run.padding_right;
                     }
                 }
                 InlineItem::InlineBlock(box_info) => {
@@ -571,6 +590,8 @@ impl InlineFormattingContext {
                         letter_spacing: 0.0,
                         margin_left: m_left,
                         margin_right: m_right,
+                        padding_left: 0.0,
+                        padding_right: 0.0,
                         margin_top: m_top,
                         margin_bottom: m_bot,
                         baseline: box_info.baseline,
@@ -845,6 +866,8 @@ impl InlineFormattingContext {
                         letter_spacing: run.letter_spacing,
                         margin_left: run.margin_left,
                         margin_right: run.margin_right,
+                        padding_left: run.padding_left,
+                        padding_right: run.padding_right,
                         margin_top: 0.0,
                             margin_bottom: 0.0,
                         baseline: run.font_size,
@@ -880,6 +903,8 @@ impl InlineFormattingContext {
                         letter_spacing: segment.run.letter_spacing,
                         margin_left: segment.run.margin_left,
                         margin_right: segment.run.margin_right,
+                        padding_left: segment.run.padding_left,
+                        padding_right: segment.run.padding_right,
                         margin_top: 0.0,
                             margin_bottom: 0.0,
                         baseline: segment.run.font_size,

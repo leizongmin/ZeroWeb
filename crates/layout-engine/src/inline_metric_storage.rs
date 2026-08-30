@@ -106,6 +106,12 @@ fn store_font_sizes_from_ifc_mode(
         box_node
             .inline_element_margins
             .insert(frag.node_id, (frag.margin_left, frag.margin_right));
+        if frag.padding_left != 0.0 || frag.padding_right != 0.0 {
+            box_node
+                .inline_element_paddings
+                .get_or_insert_with(crate::NodeIdMap::default)
+                .insert(frag.node_id, (frag.padding_left, frag.padding_right));
+        }
     };
 
     if dedup {
@@ -155,6 +161,8 @@ mod tests {
             letter_spacing: font_size / 10.0,
             margin_left: font_size,
             margin_right: height,
+            padding_left: font_size,
+            padding_right: height,
             margin_top: 0.0,
             margin_bottom: 0.0,
             baseline: font_size,

@@ -134,3 +134,36 @@ fn bidi_box_model_013_dom_reverses_visual_order() {
         "expected text (tsriF) left of span (dnoceS): first_x={first_x} span_x={span_x}"
     );
 }
+
+/// R3837 BUG D：inline 水平 padding 参与 inline 轴推进（CSS2.1 §8.4）——
+/// bidi-box-model-033：span padding-left:40 → 后续片段 x 右移 40。
+#[test]
+fn inline_padding_left_advances_inline_axis() {
+    let mut doc = zero_dom::Document::new();
+    let n = doc.create_text_node("");
+    let mut run = TextRun::simple("ab".to_string(), n, 20.0, 20.0, VerticalAlignValue::Baseline);
+    run.is_ahem_font = true;
+    run.padding_left = 40.0;
+    let mut ctx = InlineFormattingContext::new(800.0);
+    ctx.break_into_lines(vec![run]);
+    let frag = &ctx.lines[0].runs[0];
+    // 片段 x = 内容起点（padding 在片段之前消费），占宽推进给后续内容。
+    assert_eq!(frag.x, 40.0);
+    assert_eq!(ctx.lines[0].runs[0].width, 40.0);
+}
+
+/// R3837 BUG A：行尾 inline 盒的尾随 margin/padding 计入对齐宽度
+///（bidi-box-model-019：text-align:right + span margin-right:40 → 行整体左移 40）。
+#[test]
+fn trailing_margin_counts_into_right_align_width() {
+    let mut doc = zero_dom::Document::new();
+    let n = doc.create_text_node("");
+    let mut run = TextRun::simple("ab".to_string(), n, 20.0, 20.0, VerticalAlignValue::Baseline);
+    run.is_ahem_font = true;
+    run.margin_right = 40.0;
+    let mut ctx = InlineFormattingContext::new(400.0).with_text_align(TextAlign::Right);
+    ctx.break_into_lines(vec![run]);
+    let frag = &ctx.lines[0].runs[0];
+    // 内容宽 40 + margin 40 = 80 → right-align 起点 x = 400 − 80 = 320。
+    assert_eq!(frag.x, 320.0);
+}
