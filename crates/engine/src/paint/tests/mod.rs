@@ -15,6 +15,7 @@ mod effects_visual;
 mod helpers;
 mod interaction_indicators;
 mod r2311_background_multilayer_tests;
+mod r3818_canvas_bg_anchor_tests;
 mod ui_indicators;
 mod visual;
 mod visual_inline;
