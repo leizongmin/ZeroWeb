@@ -626,9 +626,16 @@
           // outerHTML handle 分支或自身融合序列化——R377 实验「子序列化依赖 outerHTML
           // 对 pending 新子递归正确」在本轮 R380 registry 随迁后成立：克隆子的后代已
           // 在 `_handleChildren`，outerHTML 的 handle 分支可读）。
+          // R381：**代际门**——`stamp === _zwApplyGeneration()` 校验桶是「apply 前
+          // stale 补偿」。pa2b 设计 apply 后不清桶（identity 记账供后续操作消费），
+          // 故桶非空不再隐含快照 stale：vue_mount_lands 的 execute#2 innerHTML 读时
+          // 桶仍是 mount 时记账（apply 已发生、快照已含子），无代际门会把快照已含的
+          // 子经 overlay 重复并入（双份 `<p class="msg">`——R309 identity 双源教训的
+          // 代际表述）。时间戳在 `_zwHCLiveInvalidate` 记账时盖（每批 mutation 刷新）。
           var _r380Bucket = (typeof _zwPendingByParent === 'object' && _zwPendingByParent)
             ? _zwPendingByParent.get(sel) : null;
-          if (_r380Bucket && (_r380Bucket.added.length || _r380Bucket.removed.length)) {
+          if (_r380Bucket && (_r380Bucket.added.length || _r380Bucket.removed.length)
+              && (!globalThis._zwApplyGeneration || _r380Bucket.stamp === globalThis._zwApplyGeneration())) {
             try {
               var _r380Kids = _childNodeList(sel, null);
               var _r380Out = '';

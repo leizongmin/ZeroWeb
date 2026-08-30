@@ -7630,7 +7630,15 @@
   // ② 融合基底缓存（`_zwChildBaseInvalidateAll`——快照换代后旧基底是 stale 源，
   // R55 失效点 ②同源）；③ sibling 基底缓存。id 覆盖表保留（R125 语义：host 快照
   // 不反映同 turn setAttribute('id')，apply 后仍不反映——覆盖表是唯一事实源）。
+  // R381：**apply 代际计数递增**——`_zwApplyGeneration` 与桶时间戳（`_zwHCLiveInvalidate`
+  // 记账时盖 `_pb.stamp`）配对。消费面（R380 融合 innerHTML 等「桶非空 ⇒ 快照 stale」
+  // 判据）须同时校验 `stamp === _zwApplyGeneration()`：apply 后桶为 identity 记账保留
+  // （非 stale 补偿），不校验会把快照已含的子经 overlay 重复并入（vue_mount_lands
+  // 双份 `<p class="msg">` 回归根因——R309 identity 双源教训的代际表述）。
+  var _zwApplyGenCounter = 0;
+  globalThis._zwApplyGeneration = function () { return _zwApplyGenCounter; };
   globalThis.__zw_apply_generation_bump = function () {
+    _zwApplyGenCounter++;
     try { if (typeof globalThis.__zwPa2ClearRemovedTables === 'function') globalThis.__zwPa2ClearRemovedTables(); } catch (_ePa2agb) {}
     try { if (typeof globalThis._zwChildBaseInvalidateAll === 'function') globalThis._zwChildBaseInvalidateAll(); } catch (_ePa2ci) {}
     try { if (typeof globalThis._zwSiblingBaseInvalidateAll === 'function') globalThis._zwSiblingBaseInvalidateAll(); } catch (_ePa2si) {}
@@ -7768,6 +7776,10 @@
     // R51c：分桶入账（mutSel/mutHandle = mutation 目标父）。removed 先入（同批先删后加语义不变）。
     if (mutSel != null || mutHandle != null) {
       var _pb = _zwPendBucket(mutSel, mutHandle);
+      // R381：桶代际时间戳——记账时的 apply 代际。消费面（R380 融合 innerHTML）以
+      // `stamp === _zwApplyGeneration()` 判「桶是 apply 前 stale 补偿」；apply 后
+      // 桶仅剩 identity 记账语义（pa2b 不清桶），stale 判据不成立。
+      _pb.stamp = (typeof globalThis._zwApplyGeneration === 'function') ? globalThis._zwApplyGeneration() : 0;
       // R51c：桶 removed 压实（同全局表语义——handle-only 死条目丢弃，512 软上限）。
       if (_pb.removed.length > 512) {
         var _bc = [];
