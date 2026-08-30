@@ -751,9 +751,33 @@ fn test_native_dom_bindings_wiring_quickjs_s0q() {
     );
 }
 
+// R381（js-dom M7）：默认值按引擎分域——V8 路径默认关（M5 未启动）；QuickJS 路径
+// default-on（用户 2026-08-30 批复 GB-20260829 ③）。测试相应分域断言：
+// v8（或组合态）→ undefined；quickjs-only → 'function'。
+#[cfg(all(feature = "quickjs", not(feature = "v8")))]
+#[test]
+fn test_native_dom_enabled_by_default_quickjs_m7() {
+    // M7 default-on：工厂已安装 → typeof 'function'（QuickJS 原生绑定进生产路径）。
+    let mut wv = crate::WebViewBuilder::new().build();
+    wv.load_html(
+        "<html><body><div id=\"a\"></div>\
+         <script>globalThis.__has = (typeof __zw_native_element_for_id);</script>\
+         </body></html>",
+        None,
+    );
+    let r = wv.run_page_scripts_strict();
+    assert!(r.is_ok(), "M7 默认（native_dom 开）无异常");
+    assert_eq!(
+        wv.execute_script("String(globalThis.__has)").unwrap(),
+        "function",
+        "M7 QuickJS default-on → 工厂已安装（原生绑定生产路径）"
+    );
+}
+
+#[cfg(not(all(feature = "quickjs", not(feature = "v8"))))]
 #[test]
 fn test_native_dom_disabled_by_default_r3097() {
-    // 默认关：__zw_native_element_for_id 未安装 → typeof 'undefined'（polyfill 桥不受影响）。
+    // 默认关（V8 路径，M5 未启动）：__zw_native_element_for_id 未安装 → 'undefined'。
     let mut wv = crate::WebViewBuilder::new().build();
     wv.load_html(
         "<html><body><div id=\"a\"></div>\

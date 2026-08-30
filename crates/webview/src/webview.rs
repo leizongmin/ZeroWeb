@@ -199,9 +199,18 @@ pub struct WebViewConfig {
     /// P1b S2：启用原生 DOM 绑定（RFC `p1b-v8-native-bindings-rfc.md`）。
     ///
     /// 开启时，`run_page_scripts` 在 polyfill 桥之上额外安装原生 `nodeType`/`tagName` 等
-    /// getter（`engine::dom_bindings`，经 `Sandbox::install_native_bindings` escape-hatch），
-    /// 从 re-parsed `Document` 直读（不经 shim 字符串桥）。默认关 → 零回归。生产接线为
-    /// read-only 快照（re-parse cached_html；mutation 同步为后续写入切片）。
+    /// getter（`engine::dom_bindings` / `quickjs_dom_bindings`，经 `Sandbox::
+    /// install_native_bindings*` escape-hatch），从 live Document 直读（不经 shim 字符串桥）。
+    ///
+    /// **默认值按引擎分域（js-dom goal M5/M7，用户 2026-08-19/30 批复）**：
+    /// - QuickJS 页面引擎路径（`--features quickjs`，无 v8）默认 `true`（M7 default-on
+    ///   已批准——GB-20260829 ③；default-off 基线 + 翻开关 A/B net≥0 见
+    ///   `docs/goal/js-dom/master.md`）。
+    /// - V8 路径默认 `false`（M5 触发条件仍待，方向已批但执行时点未到）。
+    /// - 显式构造时该字段始终以调用方为准（kill-switch 语义保留至 M7 收尾子片）。
+    #[cfg(all(feature = "quickjs", not(feature = "v8")))]
+    pub native_dom: bool,
+    #[cfg(not(all(feature = "quickjs", not(feature = "v8"))))]
     pub native_dom: bool,
     /// js-dom R201：页面脚本执行的 V8 看门狗超时（毫秒，0 = 无超时，默认）。
     ///
@@ -229,6 +238,12 @@ impl Default for WebViewConfig {
             service_worker_script_fetcher: None,
             image_source_fetcher: None,
             fetch_handler: None,
+            // js-dom M7（用户 2026-08-30 批复，GB-20260829 ③）：QuickJS 页面引擎路径
+            // native_dom default-on；V8 路径（M5）维持默认关。字段本体无双 cfg 形态
+            //（struct 字段不能按 feature 给不同默认文档），默认值在此分域。
+            #[cfg(all(feature = "quickjs", not(feature = "v8")))]
+            native_dom: true,
+            #[cfg(not(all(feature = "quickjs", not(feature = "v8"))))]
             native_dom: false,
         }
     }

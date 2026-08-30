@@ -1233,14 +1233,30 @@ fn navigator_controller_tracks_document_and_skip_waiting_replacement() {
             "globalThis.__controllerChange = 'pending';
              globalThis.__firstController = navigator.serviceWorker.controller;
              navigator.serviceWorker.addEventListener('controllerchange', function(event) {
-               globalThis.__controllerChange = [
+               // R381 flaky 修复：事件事实（target/currentTarget/instanceof/scriptURL/
+               // controller.state）在事件点即时定格；旧 controller 的 redundant 转换
+               // 走宿主 setTimeout 线程（每 timer 一个 OS 线程，无 FIFO 保证），与
+               // controllerchange 事件派发是**线程级竞争**（flaky 观测到 redundant 与
+               // activated 双态）。契约在 __firstController.state 变 'redundant' 后
+               // 才 finalize（setInterval 轮询，bounded）——spec 语义冗余态必然到达，
+               // 只是时点不与 controllerchange 构成 happens-before；20s 宿主 deadline
+               // 兜底（Rust 侧同款 deadline）。
+               var eventFacts = [
                  event.target === navigator.serviceWorker,
                  event.currentTarget === navigator.serviceWorker,
                  event.target instanceof ServiceWorkerContainer,
                  navigator.serviceWorker.controller.scriptURL.endsWith('/app/sw-v2.js'),
-                 navigator.serviceWorker.controller.state,
-                 globalThis.__firstController.state
+                 navigator.serviceWorker.controller.state
                ].join('|');
+               var polls = 0;
+               var iv = setInterval(function () {
+                 polls++;
+                 if (globalThis.__firstController.state === 'redundant' || polls > 2000) {
+                   clearInterval(iv);
+                   globalThis.__controllerChange =
+                     eventFacts + '|' + globalThis.__firstController.state;
+                 }
+               }, 5);
              });
              navigator.serviceWorker.register('/app/sw-v2.js', {scope:'/app/'}).catch(function(error) {
                globalThis.__controllerChange = 'error:' + String(error);

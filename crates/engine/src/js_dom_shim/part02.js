@@ -3363,7 +3363,9 @@
           if (!wire || !wire.ok) {
             var message = wire && wire.error || 'Service Worker update failed';
             if (wire && wire.errorName === 'SecurityError') {
-              return Promise.reject(new DOMException(message, 'SecurityError'));
+              // M7：`globalThis.DOMException`（R9 wrong-global 先例）——native 路径下裸
+              // DOMException 解析到 shim 闭包构造器，instanceof 检查解析到 globalThis（native）→ 恒 false。
+              return Promise.reject(new (globalThis.DOMException || Error)(message, 'SecurityError'));
             }
             return Promise.reject(new TypeError(message));
           }
@@ -3791,7 +3793,8 @@
         if (!wire || !wire.ok) {
           var message = wire && wire.error || 'Service Worker registration failed';
           if (wire && wire.errorName === 'SecurityError') {
-            return Promise.reject(new DOMException(message, 'SecurityError'));
+            // M7：globalThis.DOMException（R9 先例，同上）。
+            return Promise.reject(new (globalThis.DOMException || Error)(message, 'SecurityError'));
           }
           return Promise.reject(new TypeError(message));
         }

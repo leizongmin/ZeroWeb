@@ -86,9 +86,17 @@ inspect_page() {
     fi
     inspect_font_urls "${stylesheet}" "${page} -> ${href}" "${stylesheet_relative}"
   done < <(
+    # 只取**真实 stylesheet link**（`rel="stylesheet"` 在同一 <link> 标签内）——
+    # 裸 grep `href="…css…"` 会命中 <script> 内 JS 字符串字面量的 CSS 文本
+    #（R381 实测：dom/nodes/processing-instruction-attributes.html 的 PI data
+    # `type="text/css" href="style.css"` 是测试断言字符串而非依赖，style.css 上游
+    # 不存在，假阳性使 fetch-wpt-data 整步 fatal）。
     {
-      grep -Eo 'href="[^"]+\.css[^"]*"' "${file}" || true
-      grep -Eo "href='[^']+\\.css[^']*'" "${file}" || true
+      grep -Eo '<link[^>]*rel="stylesheet"[^>]*>' "${file}" | grep -Eo 'href="[^"]+\.css[^"]*"' || true
+      grep -Eo "<link[^>]*rel='stylesheet'[^>]*>" "${file}" | grep -Eo "href='[^']+\\.css[^']*'" || true
+      # rel 在 href 之后的标签序（<link href=… rel=stylesheet>）
+      grep -Eo '<link[^>]*href="[^"]+\.css[^"]*"[^>]*rel="stylesheet"[^>]*>' "${file}" | grep -Eo 'href="[^"]+\.css[^"]*"' || true
+      grep -Eo "<link[^>]*href='[^']+\\.css[^']*'[^>]*rel='stylesheet'[^>]*>" "${file}" | grep -Eo "href='[^']+\\.css[^']*'" || true
     } | sort -u
   )
 }
