@@ -578,7 +578,11 @@ jobs:
             echo "Perf baseline committed and pushed."
           fi
 
+      # if: always()（2026-08-30，CI-GUARD-20260830 第十三轮）：GATE FAIL 轮也须保留
+      # bench 报告工件——两平台基线 re-capture（GB-20260829 ① 已批复）依赖失败轮的
+      # platform 实测 JSON，缺 always() 时 gate 非零退出会跳过上传，re-capture 无数据可依。
       - name: Upload benchmark results
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: benchmark-results
@@ -586,6 +590,7 @@ jobs:
           retention-days: 14
 
       - name: Upload perf docs
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: perf-docs
