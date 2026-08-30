@@ -881,6 +881,15 @@ impl InlineFormattingContext {
         }
         let items = self.collect_inline_items(doc, container, styles);
         self.break_items_into_lines(items);
+        // R3836：容器级 RTL bidi-override 的行级 run 序反转（UAX #9 L2——重排按行
+        // 反转整个显示序，非仅 run 内字符）。旧实现逐 run 反转字符但 run 序保持逻辑序，
+        // 多 run 行（如 bidi-box-model-013 的 [span:dnoceS][␣tsriF]）视觉序错误
+        //（chromium 真值：tsriF 在左）。LTR override / 非 override 路径不受影响。
+        // 对齐之前反转：center/right 按**反转后**的行内容定位（chromium 同序）。
+        if self.bidi_override_direction == Some(true) {
+            self.reverse_lines_for_rtl_override();
+            self.apply_text_alignment();
+        }
         // R2431 line-clamp（CSS Overflow 4）：容器声明 `line-clamp: Count(n)` 时，把行夹到 N。
         // R3766：`line-clamp: auto` 按块尺寸约束截断（css-overflow-4）——约束 =
         // max(min-height, max-height)，height definite 时再封顶（auto-005）；行数 =
@@ -1125,6 +1134,77 @@ impl InlineFormattingContext {
             }
         }
         total
+    }
+
+    /// R3836：容器级 RTL bidi-override 的行级 run 序反转（UAX #9 L2）。
+    ///
+    /// `break_items_into_lines` 已逐 run 反转字符（`BidiFragmentCursor::with_override`），
+    /// 单个源 run 的词片段因此**已处视觉序**——不可再反转片段序（会二次反转，
+    /// bidi-glyph-mirroring-001 paint 回归即此）。需要修复的是**源 run 之间**：
+    /// 相邻 inline 元素（013 的 `<span>dnoceS</span> tsriF`）各自的片段组以逻辑序进入
+    /// 行盒，整行须按源 run 组反转显示序。
+    ///
+    /// 算法（按 `node_id` 连续段分组）：
+    /// 1. 每组记录 `gap_before`（组首片段 x − 前组末尾 x）与组占宽；
+    /// 2. 反转**组序**（组内片段保持字符反转后的视觉序不动）；
+    /// 3. 从行内容左缘重排 x：每组的前导间隙随组保留（折叠空格 advance、物理
+    ///    margin 不换边，CSS2.1 §8.3），组内片段 x = 组基 + 原组内偏移。
+    fn reverse_lines_for_rtl_override(&mut self) {
+        // 预计算每行内容区左缘（float 排除后），作为反转重排的 cursor 起点。
+        let line_areas: Vec<(f32, f32)> = self
+            .lines
+            .iter()
+            .map(|line| self.effective_content_area(line.y, line.height))
+            .collect();
+        for (line, (area_left, _)) in self.lines.iter_mut().zip(line_areas) {
+            if line.runs.len() < 2 {
+                continue;
+            }
+            // 按连续相同 node_id 切组（源 run 边界 = inline 元素/文本节点边界）。
+            let mut groups: Vec<(usize, usize)> = Vec::new();
+            for (i, run) in line.runs.iter().enumerate() {
+                let same_as_last = groups
+                    .last()
+                    .is_some_and(|&(start, _)| line.runs[start].node_id == run.node_id);
+                if same_as_last {
+                    groups.last_mut().unwrap().1 = i + 1;
+                } else {
+                    groups.push((i, i + 1));
+                }
+            }
+            if groups.len() < 2 {
+                continue;
+            }
+            // 组元数据：前导间隙 + 组内片段偏移（相对组首 x）。
+            struct GroupLayout {
+                gap_before: f32,
+                offsets: Vec<f32>,
+            }
+            let mut metas: Vec<GroupLayout> = Vec::with_capacity(groups.len());
+            let mut prev_end = area_left;
+            for &(start, end) in &groups {
+                let group_x = line.runs[start].x;
+                metas.push(GroupLayout {
+                    gap_before: group_x - prev_end,
+                    offsets: line.runs[start..end].iter().map(|r| r.x - group_x).collect(),
+                });
+                prev_end = line.runs[end - 1].x + line.runs[end - 1].width;
+            }
+            // 反转组序（组内片段序不动），从行内容左缘重排 x。
+            let mut reordered: Vec<TextFragment> = Vec::with_capacity(line.runs.len());
+            let mut cursor = area_left;
+            for (&(start, end), meta) in groups.iter().rev().zip(metas.iter().rev()) {
+                cursor += meta.gap_before;
+                for (run, offset) in line.runs[start..end].iter().zip(meta.offsets.iter()) {
+                    let mut frag = run.clone();
+                    frag.x = cursor + offset;
+                    reordered.push(frag);
+                }
+                let last = &reordered[reordered.len() - 1];
+                cursor = last.x + last.width;
+            }
+            line.runs = reordered;
+        }
     }
 
     /// 根据当前 text_align 设置，调整每行中片段的 x 坐标。
