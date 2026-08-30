@@ -1745,14 +1745,43 @@ fn build_subtree(
             // Flex/Grid 容器：文本节点成为匿名 flex/grid 项参与布局。
             // CSS Flexbox §4：每个连续的文本运行生成一个匿名 flex item。
             // 收集所有子节点（元素 + 文本），为文本节点创建匿名 taffy 节点。
+            //
+            // R3845：`display: contents` 子级穿透（CSS Display 3 §2.3）——contents
+            // 元素自身不生成盒（不是 flex item），其子级提升为容器的直接 flex item；
+            // 嵌套 contents 递归展开。此前 contents 元素被 build_subtree 当普通子树
+            // 建 taffy 节点占一个 item 位（converter 映射 Display::Block），flex 布局
+            // 中产生多余 item 与错位（driving: display-contents-flex-003 1.10%、
+            // dynamic-flex ×2；flex-001/002 因 contents 盒恰不敏感而通过）。
             let mut children_with_order: Vec<(NodeId, i32)> = Vec::new();
 
-            for &child_dom in &children_dom {
-                let child_data = doc.get(child_dom);
-                if let Some(data) = child_data {
-                    match &data.kind {
-                        NodeKind::Element(_) => {
-                            let order = styles.get(&child_dom).map_or(0, |s| {
+            // 穿透展开：contents 元素 → 递归压入其子级；非 contents → 压入自身。
+            fn collect_items(
+                doc: &Document,
+                styles: &HashMap<NodeId, ComputedStyle>,
+                dom_id: NodeId,
+                out: &mut Vec<(NodeId, i32)>,
+            ) {
+                let node_data = doc.get(dom_id);
+                let Some(data) = node_data else {
+                    return;
+                };
+                match &data.kind {
+                    NodeKind::Text(text_data) => {
+                        if !text_data.content.trim().is_empty() {
+                            // 匿名 flex item 的 order 默认为 0
+                            out.push((dom_id, 0));
+                        }
+                    }
+                    NodeKind::Element(_) => {
+                        let is_contents = styles
+                            .get(&dom_id)
+                            .is_some_and(|s| matches!(s.display, DisplayValue::Contents));
+                        if is_contents {
+                            for &grandchild in &data.children {
+                                collect_items(doc, styles, grandchild, out);
+                            }
+                        } else {
+                            let order = styles.get(&dom_id).map_or(0, |s| {
                                 // CSS Flexbox §8.1：`order` 只重排 in-flow flex item。
                                 // abspos（position:absolute/fixed）不是 flex item，其
                                 // 绘制顺序遵循 DOM 顺序（CSS Appendix E step 6），不受
@@ -1768,15 +1797,15 @@ fn build_subtree(
                                     s.order
                                 }
                             });
-                            children_with_order.push((child_dom, order));
+                            out.push((dom_id, order));
                         }
-                        NodeKind::Text(text_data) if !text_data.content.trim().is_empty() => {
-                            // 匿名 flex item 的 order 默认为 0
-                            children_with_order.push((child_dom, 0));
-                        }
-                        _ => {}
                     }
+                    _ => {}
                 }
+            }
+
+            for &child_dom in &children_dom {
+                collect_items(doc, styles, child_dom, &mut children_with_order);
             }
 
             // 按 order 稳定排序（相同 order 保持 DOM 顺序）
