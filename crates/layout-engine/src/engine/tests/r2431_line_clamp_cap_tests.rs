@@ -33,6 +33,7 @@ fn ctx_with_lines(n_runs: usize) -> InlineFormattingContext {
             is_ahem_font: false,
             font_id: None,
             is_rtl: false,
+            bidi_override: None,
             is_plaintext_bidi: false,
             ws_override: None,
         })

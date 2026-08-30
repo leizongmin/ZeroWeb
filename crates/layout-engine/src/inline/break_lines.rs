@@ -95,7 +95,9 @@ impl InlineFormattingContext {
                     // plaintext 必须先按逻辑内容断行，再逐行应用段落方向；整段预重排会把
                     // 后续 Latin 词搬到 RTL 段首，改变软换行结果。
                     let logical_plaintext = plaintext_enabled && run.is_plaintext_bidi;
-                    let mut source_cursor = if let Some(is_rtl) = self.bidi_override_direction {
+                    // R3840：元素级 bidi-override 优先于容器级（自身子树强制方向，
+                    // UAX #9 X2/X3；容器级 R3319 兜底其余 run）。
+                    let mut source_cursor = if let Some(is_rtl) = run.bidi_override.or(self.bidi_override_direction) {
                         BidiFragmentCursor::with_override(&run.text, is_rtl)
                     } else if logical_plaintext {
                         BidiFragmentCursor::logical(&run.text)
@@ -786,7 +788,8 @@ impl InlineFormattingContext {
             });
         }
 
-        let mut source_cursor = if let Some(is_rtl) = self.bidi_override_direction {
+        // R3840：元素级 bidi-override 优先于容器级（同水平路径）。
+        let mut source_cursor = if let Some(is_rtl) = first.bidi_override.or(self.bidi_override_direction) {
             BidiFragmentCursor::with_override(&combined, is_rtl)
         } else {
             BidiFragmentCursor::with_direction(&combined, first.is_rtl, first.is_plaintext_bidi)

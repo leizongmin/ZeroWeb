@@ -27,6 +27,7 @@ fn test_text_indent_first_line_offset() {
         is_ahem_font: false,
         font_id: None,
         is_rtl: false,
+        bidi_override: None,
         is_plaintext_bidi: false,
         ws_override: None,
     }];
@@ -66,6 +67,7 @@ fn test_text_indent_only_first_line() {
         is_ahem_font: false,
         font_id: None,
         is_rtl: false,
+        bidi_override: None,
         is_plaintext_bidi: false,
         ws_override: None,
     }];
@@ -111,6 +113,7 @@ fn test_text_indent_zero_no_offset() {
         is_ahem_font: false,
         font_id: None,
         is_rtl: false,
+        bidi_override: None,
         is_plaintext_bidi: false,
         ws_override: None,
     }];
@@ -147,6 +150,7 @@ fn test_text_indent_negative() {
         is_ahem_font: false,
         font_id: None,
         is_rtl: false,
+        bidi_override: None,
         is_plaintext_bidi: false,
         ws_override: None,
     }];
@@ -188,6 +192,7 @@ fn test_text_indent_with_text_align_center() {
         is_ahem_font: false,
         font_id: None,
         is_rtl: false,
+        bidi_override: None,
         is_plaintext_bidi: false,
         ws_override: None,
     }];

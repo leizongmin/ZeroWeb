@@ -349,6 +349,9 @@ pub struct LayoutBox {
     pub text_node_text_transform: NodeIdMap<zero_style_system::TextTransformValue>,
     /// paint Path B 空 styles IFC 中需要恢复 `unicode-bidi: plaintext` 的 inline owner。
     pub plaintext_bidi_nodes: NodeIdSet,
+    /// R3840：元素级 `unicode-bidi: bidi-override` 映射（key = inline owner 元素
+    /// NodeId，value = 方向 rtl?）。paint Path B 空 styles 恢复 per-run 字符反转。
+    pub text_node_bidi_overrides: NodeIdMap<bool>,
     /// R1464：文本节点的 font-family 映射（key = 文本节点 NodeId，value = 父元素的
     /// font_family 列表）。paint Path B 空 styles 下无法读 per-fragment font-family，
     /// 导致非-Ahem webfont/跨字体 inline 全回落容器字体（R1464 root cause）。layout 期
@@ -532,6 +535,7 @@ impl Default for LayoutBox {
             text_node_line_heights: NodeIdMap::default(),
             text_node_text_transform: NodeIdMap::default(),
             plaintext_bidi_nodes: NodeIdSet::default(),
+            text_node_bidi_overrides: NodeIdMap::default(),
             text_node_font_families: NodeIdMap::default(),
             text_node_font_size_adjust: NodeIdMap::default(),
             inline_element_metrics: NodeIdMap::default(),

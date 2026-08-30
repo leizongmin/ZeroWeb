@@ -76,6 +76,13 @@ pub struct TextRun {
     /// CSS `direction` 属性：true = rtl, false = ltr（默认）。
     /// 用于 BiDi 段落基方向（UBA paragraph level）。
     pub is_rtl: bool,
+    /// R3840：该 run 所属 inline 元素自身的 `unicode-bidi: bidi-override`。
+    ///
+    /// `Some(is_rtl)` = 元素级 override（其文本按 UAX #9 X2/X3 强制方向逐字符反转，
+    /// 与容器级 `bidi_override_direction` 独立）；`None` = 无元素级 override（沿用
+    /// 容器级/逻辑路径）。R3319 只实现了容器级；inline span 自身的 bidi-override
+    /// 静默丢失（bidi-box-model-019/028 族 test div 的 span.rtol）。
+    pub bidi_override: Option<bool>,
     /// CSS `unicode-bidi: plaintext` — 强制 BiDi 段落方向从文本内容自动检测，
     /// 忽略 CSS `direction`（UAX #9 HL4 / CSS Writing Modes §2.2）。
     pub is_plaintext_bidi: bool,
@@ -129,6 +136,7 @@ impl TextRun {
             is_ahem_font: false,
             font_id: None,
             is_rtl: false,
+            bidi_override: None,
             is_plaintext_bidi: false,
             ws_override: None,
         }

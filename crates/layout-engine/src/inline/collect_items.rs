@@ -172,6 +172,11 @@ impl InlineFormattingContext {
                                 is_rtl: style.is_some_and(|s| {
                                     matches!(s.direction, zero_style_system::DirectionValue::Rtl)
                                 }),
+                                // R3840：paint Path B（空 styles）经 text_node_bidi_overrides
+                                // 恢复元素级 bidi-override（layout 期按文本节点 id 存储）。
+                                bidi_override: Self::element_bidi_override(style).or_else(|| {
+                                    parent_id.and_then(|pid| self.text_node_bidi_overrides.get(&pid).copied())
+                                }),
                                 is_plaintext_bidi: style
                                     .map(|s| {
                                         matches!(s.unicode_bidi, zero_style_system::UnicodeBidiValue::Plaintext)
@@ -594,6 +599,9 @@ impl InlineFormattingContext {
                                 is_rtl: style.is_some_and(|s| {
                                     matches!(s.direction, zero_style_system::DirectionValue::Rtl)
                                 }),
+                                // R3840：元素级 unicode-bidi:bidi-override——其文本按 UAX #9
+                                // X2/X3 强制方向逐字符反转（R3319 只实现容器级）。
+                                bidi_override: Self::element_bidi_override(style),
                                 is_plaintext_bidi: style
                                     .map(|s| {
                                         matches!(s.unicode_bidi, zero_style_system::UnicodeBidiValue::Plaintext)
@@ -628,6 +636,7 @@ impl InlineFormattingContext {
                                 is_rtl: style.is_some_and(|s| {
                                     matches!(s.direction, zero_style_system::DirectionValue::Rtl)
                                 }),
+                                bidi_override: Self::element_bidi_override(style),
                                 is_plaintext_bidi: style
                                     .map(|s| {
                                         matches!(s.unicode_bidi, zero_style_system::UnicodeBidiValue::Plaintext)
@@ -683,5 +692,12 @@ impl InlineFormattingContext {
     /// 的垂直 padding 域一致）；em/rem 经 resolve_length 按元素字号解析。
     fn resolve_inline_padding(value: &LengthValue, style: &ComputedStyle) -> f32 {
         Self::resolve_inline_margin(value, style)
+    }
+
+    /// R3840：元素级 `unicode-bidi: bidi-override` → Some(方向 rtl?)；非 override → None。
+    /// 文本节点分支（paint Path B）经 `text_node_bidi_overrides` 映射恢复。
+    fn element_bidi_override(style: Option<&ComputedStyle>) -> Option<bool> {
+        style.filter(|s| matches!(s.unicode_bidi, zero_style_system::UnicodeBidiValue::BidiOverride))
+            .map(|s| matches!(s.direction, zero_style_system::DirectionValue::Rtl))
     }
 }

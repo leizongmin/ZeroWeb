@@ -890,6 +890,8 @@ impl super::Painter {
                         ),
                     )
                     .with_plaintext_bidi_overrides(box_node.plaintext_bidi_nodes.clone())
+                    // R3840：元素级 bidi-override 恢复（layout 期按文本节点 id 存储）。
+                    .with_text_node_bidi_overrides(box_node.text_node_bidi_overrides.clone())
                     // R3778：run 级有效 white-space 覆盖——inline 包裹层声明的 pre 等在
                     // 容器级标志近似下丢失（line-clamp-014 类），layout 期按文本节点存储，
                     // 此处恢复使 paint IFC 行断与 layout 一致。

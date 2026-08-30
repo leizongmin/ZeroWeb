@@ -171,3 +171,80 @@ fn trailing_margin_counts_into_right_align_width() {
     // 内容宽 40 + margin 40 = 80 → right-align 起点 x = 400 − 80 = 320。
     assert_eq!(frag.x, 320.0);
 }
+
+/// R3840（BUG B）：inline 元素自身的 `unicode-bidi: bidi-override` 逐 run 字符反转
+/// ——R3319 只实现容器级；bidi-box-model-019/028 族 test div 的 span.rtol 由此覆盖。
+#[test]
+fn inline_level_bidi_override_reverses_chars() {
+    let doc = parse_html(
+        "<div style=\"text-align: right\"><span style=\"direction: rtl; unicode-bidi: bidi-override\">dnoceS</span></div>",
+    );
+    let html = doc.first_child(doc.root()).unwrap();
+    let body = doc.last_child(html).unwrap();
+    let div = doc
+        .child_nodes(body)
+        .iter()
+        .copied()
+        .find(|id| doc.get(*id).is_some_and(|n| matches!(n.kind, NodeKind::Element(_))))
+        .expect("div");
+    let span = doc
+        .child_nodes(div)
+        .iter()
+        .copied()
+        .find(|id| doc.get(*id).is_some_and(|n| matches!(n.kind, NodeKind::Element(_))))
+        .expect("span");
+
+    // 容器 LTR（无 override）；仅 span 自身 override RTL。
+    let mut span_style = zero_style_system::ComputedStyle::default();
+    span_style.unicode_bidi = zero_style_system::UnicodeBidiValue::BidiOverride;
+    span_style.direction = zero_style_system::DirectionValue::Rtl;
+    let styles = std::collections::HashMap::from([(span, span_style)]);
+
+    let mut ctx = InlineFormattingContext::new(400.0);
+    ctx.layout(&doc, div, &styles);
+    assert_eq!(ctx.bidi_override_direction, None, "容器级须不受影响");
+
+    let span_text: String = ctx
+        .all_fragments()
+        .iter()
+        .filter(|f| f.node_id == span)
+        .flat_map(|f| f.text.chars())
+        .collect();
+    // 逻辑 "dnoceS" 在 RTL override 下视觉反转为 "Second"。
+    assert_eq!(span_text, "Second", "inline 级 override 须逐字符反转");
+}
+
+/// R3840：元素级 override 的 LTR 方向（`direction: ltr` + bidi-override）不反转。
+#[test]
+fn inline_level_bidi_override_ltr_keeps_order() {
+    let doc = parse_html("<div><span style=\"direction: ltr; unicode-bidi: bidi-override\">abc</span></div>");
+    let html = doc.first_child(doc.root()).unwrap();
+    let body = doc.last_child(html).unwrap();
+    let div = doc
+        .child_nodes(body)
+        .iter()
+        .copied()
+        .find(|id| doc.get(*id).is_some_and(|n| matches!(n.kind, NodeKind::Element(_))))
+        .expect("div");
+    let span = doc
+        .child_nodes(div)
+        .iter()
+        .copied()
+        .find(|id| doc.get(*id).is_some_and(|n| matches!(n.kind, NodeKind::Element(_))))
+        .expect("span");
+
+    let mut span_style = zero_style_system::ComputedStyle::default();
+    span_style.unicode_bidi = zero_style_system::UnicodeBidiValue::BidiOverride;
+    span_style.direction = zero_style_system::DirectionValue::Ltr;
+    let styles = std::collections::HashMap::from([(span, span_style)]);
+
+    let mut ctx = InlineFormattingContext::new(400.0);
+    ctx.layout(&doc, div, &styles);
+    let span_text: String = ctx
+        .all_fragments()
+        .iter()
+        .filter(|f| f.node_id == span)
+        .flat_map(|f| f.text.chars())
+        .collect();
+    assert_eq!(span_text, "abc", "LTR override 保持逻辑序");
+}

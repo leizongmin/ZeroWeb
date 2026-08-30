@@ -25,6 +25,7 @@ fn test_vertical_align_middle_in_line() {
         is_ahem_font: false,
         font_id: None,
         is_rtl: false,
+        bidi_override: None,
         is_plaintext_bidi: false,
         ws_override: None,
     }];
@@ -72,6 +73,7 @@ fn test_vertical_align_sub_in_line() {
         is_ahem_font: false,
         font_id: None,
         is_rtl: false,
+        bidi_override: None,
         is_plaintext_bidi: false,
         ws_override: None,
     }];
@@ -120,6 +122,7 @@ fn test_vertical_align_super_in_line() {
         is_ahem_font: false,
         font_id: None,
         is_rtl: false,
+        bidi_override: None,
         is_plaintext_bidi: false,
         ws_override: None,
     }];
@@ -164,6 +167,7 @@ fn test_vertical_align_text_top_same_as_top() {
         is_ahem_font: false,
         font_id: None,
         is_rtl: false,
+        bidi_override: None,
         is_plaintext_bidi: false,
         ws_override: None,
     }];
@@ -189,6 +193,7 @@ fn test_vertical_align_text_top_same_as_top() {
         is_ahem_font: false,
         font_id: None,
         is_rtl: false,
+        bidi_override: None,
         is_plaintext_bidi: false,
         ws_override: None,
     }];
@@ -229,6 +234,7 @@ fn test_vertical_align_text_bottom_same_as_bottom() {
         is_ahem_font: false,
         font_id: None,
         is_rtl: false,
+        bidi_override: None,
         is_plaintext_bidi: false,
         ws_override: None,
     }];
@@ -254,6 +260,7 @@ fn test_vertical_align_text_bottom_same_as_bottom() {
         is_ahem_font: false,
         font_id: None,
         is_rtl: false,
+        bidi_override: None,
         is_plaintext_bidi: false,
         ws_override: None,
     }];
@@ -351,6 +358,7 @@ fn test_break_into_lines_called_twice_resets_state() {
         is_ahem_font: false,
         font_id: None,
         is_rtl: false,
+        bidi_override: None,
         is_plaintext_bidi: false,
         ws_override: None,
     }];
@@ -379,6 +387,7 @@ fn test_break_into_lines_called_twice_resets_state() {
         is_ahem_font: false,
         font_id: None,
         is_rtl: false,
+        bidi_override: None,
         is_plaintext_bidi: false,
         ws_override: None,
     }];
@@ -424,6 +433,7 @@ fn test_zero_font_size_no_panic() {
         is_ahem_font: false,
         font_id: None,
         is_rtl: false,
+        bidi_override: None,
         is_plaintext_bidi: false,
         ws_override: None,
     }];
@@ -463,6 +473,7 @@ fn test_zero_line_height_no_panic() {
         is_ahem_font: false,
         font_id: None,
         is_rtl: false,
+        bidi_override: None,
         is_plaintext_bidi: false,
         ws_override: None,
     }];
@@ -512,6 +523,7 @@ fn test_mixed_font_sizes_on_same_line() {
             is_ahem_font: false,
             font_id: None,
             is_rtl: false,
+            bidi_override: None,
             is_plaintext_bidi: false,
             ws_override: None,
         },
@@ -534,6 +546,7 @@ fn test_mixed_font_sizes_on_same_line() {
             is_ahem_font: false,
             font_id: None,
             is_rtl: false,
+            bidi_override: None,
             is_plaintext_bidi: false,
             ws_override: None,
         },
@@ -604,6 +617,7 @@ fn test_single_word_exceeds_container_width() {
         is_ahem_font: false,
         font_id: None,
         is_rtl: false,
+        bidi_override: None,
         is_plaintext_bidi: false,
         ws_override: None,
     }];
@@ -657,6 +671,7 @@ fn test_empty_container_width_first_word_still_placed() {
         is_ahem_font: false,
         font_id: None,
         is_rtl: false,
+        bidi_override: None,
         is_plaintext_bidi: false,
         ws_override: None,
     }];
@@ -710,6 +725,7 @@ fn test_multiple_lines_line_height_max_per_line() {
             is_ahem_font: false,
             font_id: None,
             is_rtl: false,
+            bidi_override: None,
             is_plaintext_bidi: false,
             ws_override: None,
         },
@@ -732,6 +748,7 @@ fn test_multiple_lines_line_height_max_per_line() {
             is_ahem_font: false,
             font_id: None,
             is_rtl: false,
+            bidi_override: None,
             is_plaintext_bidi: false,
             ws_override: None,
         },
@@ -754,6 +771,7 @@ fn test_multiple_lines_line_height_max_per_line() {
             is_ahem_font: false,
             font_id: None,
             is_rtl: false,
+            bidi_override: None,
             is_plaintext_bidi: false,
             ws_override: None,
         },
@@ -802,6 +820,7 @@ fn test_whitespace_only_text_no_lines() {
         is_ahem_font: false,
         font_id: None,
         is_rtl: false,
+        bidi_override: None,
         is_plaintext_bidi: false,
         ws_override: None,
     }];
@@ -859,6 +878,7 @@ fn test_inline_block_on_same_line() {
             is_ahem_font: false,
             font_id: None,
             is_rtl: false,
+            bidi_override: None,
             is_plaintext_bidi: false,
             ws_override: None,
         }),
@@ -892,6 +912,7 @@ fn test_inline_block_on_same_line() {
             is_ahem_font: false,
             font_id: None,
             is_rtl: false,
+            bidi_override: None,
             is_plaintext_bidi: false,
             ws_override: None,
         }),
@@ -970,6 +991,7 @@ fn test_inline_block_wraps_to_next_line() {
             is_ahem_font: false,
             font_id: None,
             is_rtl: false,
+            bidi_override: None,
             is_plaintext_bidi: false,
             ws_override: None,
         }),
@@ -1035,6 +1057,7 @@ fn test_inline_block_height_contributes_to_line() {
             is_ahem_font: false,
             font_id: None,
             is_rtl: false,
+            bidi_override: None,
             is_plaintext_bidi: false,
             ws_override: None,
         }),
@@ -1206,6 +1229,7 @@ fn test_mixed_ascii_cjk_line_breaking() {
         is_ahem_font: false,
         font_id: None,
         is_rtl: false,
+        bidi_override: None,
         is_plaintext_bidi: false,
         ws_override: None,
     }];
@@ -1232,6 +1256,7 @@ fn test_mixed_ascii_cjk_line_breaking() {
         is_ahem_font: false,
         font_id: None,
         is_rtl: false,
+        bidi_override: None,
         is_plaintext_bidi: false,
         ws_override: None,
     }];
@@ -1331,6 +1356,7 @@ fn test_br_forces_line_break() {
             is_ahem_font: false,
             font_id: None,
             is_rtl: false,
+            bidi_override: None,
             is_plaintext_bidi: false,
             ws_override: None,
         }),
@@ -1354,6 +1380,7 @@ fn test_br_forces_line_break() {
             is_ahem_font: false,
             font_id: None,
             is_rtl: false,
+            bidi_override: None,
             is_plaintext_bidi: false,
             ws_override: None,
         }),
@@ -1419,6 +1446,7 @@ fn test_br_at_start_of_line() {
             is_ahem_font: false,
             font_id: None,
             is_rtl: false,
+            bidi_override: None,
             is_plaintext_bidi: false,
             ws_override: None,
         }),
@@ -1474,6 +1502,7 @@ fn test_br_at_end_of_line() {
             is_ahem_font: false,
             font_id: None,
             is_rtl: false,
+            bidi_override: None,
             is_plaintext_bidi: false,
             ws_override: None,
         }),
@@ -1568,6 +1597,7 @@ fn test_br_with_inline_blocks() {
             is_ahem_font: false,
             font_id: None,
             is_rtl: false,
+            bidi_override: None,
             is_plaintext_bidi: false,
             ws_override: None,
         }),
@@ -1602,6 +1632,7 @@ fn test_br_with_inline_blocks() {
             is_ahem_font: false,
             font_id: None,
             is_rtl: false,
+            bidi_override: None,
             is_plaintext_bidi: false,
             ws_override: None,
         }),
@@ -1791,6 +1822,7 @@ fn test_text_align_last_none_justify_falls_back_to_left() {
         is_ahem_font: false,
         font_id: None,
         is_rtl: false,
+        bidi_override: None,
         is_plaintext_bidi: false,
         ws_override: None,
     }];
@@ -1837,6 +1869,7 @@ fn test_text_align_last_center_on_last_line() {
         is_ahem_font: false,
         font_id: None,
         is_rtl: false,
+        bidi_override: None,
         is_plaintext_bidi: false,
         ws_override: None,
     }];
@@ -1889,6 +1922,7 @@ fn test_text_align_last_right_on_last_line() {
         is_ahem_font: false,
         font_id: None,
         is_rtl: false,
+        bidi_override: None,
         is_plaintext_bidi: false,
         ws_override: None,
     }];
@@ -1935,6 +1969,7 @@ fn test_text_align_last_justify_on_last_line() {
         is_ahem_font: false,
         font_id: None,
         is_rtl: false,
+        bidi_override: None,
         is_plaintext_bidi: false,
         ws_override: None,
     }];
@@ -1986,6 +2021,7 @@ fn test_text_align_last_single_line_treated_as_last() {
         is_ahem_font: false,
         font_id: None,
         is_rtl: false,
+        bidi_override: None,
         is_plaintext_bidi: false,
         ws_override: None,
     }];
@@ -2027,6 +2063,7 @@ fn test_text_align_left_no_align_last_no_offset() {
         is_ahem_font: false,
         font_id: None,
         is_rtl: false,
+        bidi_override: None,
         is_plaintext_bidi: false,
         ws_override: None,
     }];

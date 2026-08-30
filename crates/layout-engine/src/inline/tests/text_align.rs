@@ -40,6 +40,7 @@ fn test_text_align_center() {
         is_ahem_font: false,
         font_id: None,
         is_rtl: false,
+        bidi_override: None,
         is_plaintext_bidi: false,
         ws_override: None,
     }];
@@ -81,6 +82,7 @@ fn test_text_align_right() {
         is_ahem_font: false,
         font_id: None,
         is_rtl: false,
+        bidi_override: None,
         is_plaintext_bidi: false,
         ws_override: None,
     }];
@@ -120,6 +122,7 @@ fn test_text_align_left_no_offset() {
         is_ahem_font: false,
         font_id: None,
         is_rtl: false,
+        bidi_override: None,
         is_plaintext_bidi: false,
         ws_override: None,
     }];
@@ -158,6 +161,7 @@ fn test_text_align_justify_distributes_space() {
         is_ahem_font: false,
         font_id: None,
         is_rtl: false,
+        bidi_override: None,
         is_plaintext_bidi: false,
         ws_override: None,
     }];
@@ -203,6 +207,7 @@ fn test_text_align_justify_last_line_not_stretched() {
         is_ahem_font: false,
         font_id: None,
         is_rtl: false,
+        bidi_override: None,
         is_plaintext_bidi: false,
         ws_override: None,
     }];
@@ -244,6 +249,7 @@ fn test_text_align_center_multiline() {
         is_ahem_font: false,
         font_id: None,
         is_rtl: false,
+        bidi_override: None,
         is_plaintext_bidi: false,
         ws_override: None,
     }];
@@ -289,6 +295,7 @@ fn test_text_align_right_multiline() {
         is_ahem_font: false,
         font_id: None,
         is_rtl: false,
+        bidi_override: None,
         is_plaintext_bidi: false,
         ws_override: None,
     }];
@@ -331,6 +338,7 @@ fn test_text_align_justify_single_fragment_line() {
         is_ahem_font: false,
         font_id: None,
         is_rtl: false,
+        bidi_override: None,
         is_plaintext_bidi: false,
         ws_override: None,
     }];
@@ -362,6 +370,7 @@ fn test_text_align_does_not_affect_total_height() {
         is_ahem_font: false,
         font_id: None,
         is_rtl: false,
+        bidi_override: None,
         is_plaintext_bidi: false,
         ws_override: None,
     }];
@@ -406,6 +415,7 @@ fn test_text_align_does_not_change_line_count() {
         is_ahem_font: false,
         font_id: None,
         is_rtl: false,
+        bidi_override: None,
         is_plaintext_bidi: false,
         ws_override: None,
     }];

@@ -59,6 +59,10 @@ pub struct InlineFormattingContext {
     pub plaintext_bidi_override: bool,
     /// paint IFC 无 style map 时按 inline owner 恢复 plaintext。
     pub plaintext_bidi_overrides: NodeIdSet,
+    /// R3840：paint Path B 恢复元素级 `unicode-bidi: bidi-override`（key = inline
+    /// owner 元素 NodeId，value = 方向 rtl?）。layout 期经
+    /// `LayoutBox.text_node_bidi_overrides` 存储。
+    pub text_node_bidi_overrides: NodeIdMap<bool>,
     /// 末行对齐方式（CSS text-align-last）。None 表示跟随 text-align。
     pub text_align_last: Option<TextAlign>,
     /// 是否允许在单词内断行（overflow-wrap: break-word / anywhere）。
@@ -286,6 +290,7 @@ impl InlineFormattingContext {
             bidi_override_direction: None,
             plaintext_bidi_override: false,
             plaintext_bidi_overrides: NodeIdSet::default(),
+            text_node_bidi_overrides: NodeIdMap::default(),
             text_align_last: None,
             break_word: false,
             no_wrap: false,
@@ -724,6 +729,11 @@ impl InlineFormattingContext {
     /// R3837：设置 inline 元素的 (padding_left, padding_right) 覆盖（paint IFC 使用）。
     pub fn with_padding_overrides(mut self, paddings: NodeIdMap<(f32, f32)>) -> Self {
         self.padding_overrides = paddings;
+        self
+    }
+    /// R3840：设置元素级 bidi-override 覆盖（paint IFC 使用，key = inline owner）。
+    pub fn with_text_node_bidi_overrides(mut self, overrides: NodeIdMap<bool>) -> Self {
+        self.text_node_bidi_overrides = overrides;
         self
     }
     /// 设置末行对齐方式（CSS text-align-last）。

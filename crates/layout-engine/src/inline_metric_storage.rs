@@ -66,6 +66,14 @@ fn store_font_sizes_from_ifc_mode(
             {
                 box_node.plaintext_bidi_nodes.insert(owner);
             }
+            // R3840：元素级 bidi-override——按文本节点 id 存方向，paint Path B 恢复
+            // per-run 字符反转（collect 的 text-node 分支按 owner 键读取）。
+            if matches!(style.unicode_bidi, zero_style_system::UnicodeBidiValue::BidiOverride) {
+                box_node.text_node_bidi_overrides.insert(
+                    frag.node_id,
+                    matches!(style.direction, zero_style_system::DirectionValue::Rtl),
+                );
+            }
         }
         box_node.text_node_is_ahem.insert(frag.node_id, frag.is_ahem);
         // R3778：run 级有效 white-space 存储供 paint Path B 重跑 IFC 恢复行断。
