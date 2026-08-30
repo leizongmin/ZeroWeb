@@ -88,11 +88,16 @@ record-bench-baseline.sh（基线，手动）→ docs/perf/baselines/<platform_c
 - **自动收紧**（weekly CI `record-bench-trend.sh --auto-tighten`）：实测 p95 低于基线 →
   就地收紧（仅收紧永远合法，无需 justification）。
 
-**2026-08-30 两平台基线 re-capture 放行记录（用户批复，GB-20260829 征询 ①，待执行）**：
+**2026-08-30 两平台基线 re-capture 放行记录（用户批复，GB-20260829 征询 ①，7763 已执行 / 9V74 待执行）**：
 - **放行内容**：CI benchmarks **9V74** 与 **EPYC 7763** 两平台基线各**自独立**一次性 re-capture（`record-bench-baseline.sh --relax` 显式执行 + justification 记录本批复），消除 8/20 起 12 轮平台调度绑定漂移（9V74 40/113 指标 1.3-1.5× 超限、12 零改动 crate；7763 transform_chain_100/webview_builder_create 边缘超限 1.05-1.08×）造成的每轮预存 FAIL 噪声。
 - **证据链**：CI-GUARD-20260820 起累计 13 个数据点同签名；第十一轮 rerun 同 SHA 换平台（9V74→7763）即收敛至 2 项边缘超限；第十二轮再落 7763 同两项同幅度；各轮代码窗口均不含失败指标所在 crate 的预算敏感路径——平台调度绑定归因，非代码回归。
 - **护栏**：① 两平台不共用一组数，各自重建 ② 沿用 GB-20260821 口径「重建后仍超预算者单列报告再议」③ 属重建基线非放宽阈值——绝对预算语义不动（`total_ms` hard tier 2000ms 绝对值、budget tier 公式均不变），仅基线参考值按各平台实测更新 ④ 执行轮仍须跑全量 bench-gate 验证 NEW=0 收敛。
 - **执行时点**：下轮 ZRG / CI-GUARD 轮按本批复执行，无需再征询；执行后在本节补记新值与验证结果。
+
+**2026-08-30 7763 基线 re-capture 执行记录（本批复第一次执行，CI-GUARD-20260830 第十三轮）**：
+- **新值**：`github-ubuntu-latest-amd-epyc-7763-64-core.json` 113 指标全量重建（`record-bench-baseline.sh --relax`，justification 记录本批复；报告 = run 33314616513 head `da06a5cad`，`benchmark_20260830_133625.json`，GATE FAIL 轮实测——该轮起 benchmarks job 的 artifact upload 带 `if: always()`，失败轮亦可取证，commit `da06a5cad`）。关键漂移项新基线：`mb/zero-canvas/transform_chain_100` 26544.6→36690.4ns、`mb/zero-webview/webview_builder_create` 5515.2→8104.3ns（正是 12 轮边缘超限的两项，随重建自然消解）。
+- **验证（护栏④）**：同一份 GATE FAIL 报告对新基线本地复跑 `perf-gate.sh` → **GATE PASS，113/113，NEW=0**——原失败轮全部指标收敛，符合「重建后仍超预算者单列报告再议」检查（本轮无残留超预算项）。
+- **9V74 待执行**：本轮调度直落 7763，未取得 9V74 实测报告；护栏①两平台不共用一组数，9V74 re-capture 待下轮落 9V74 的 benchmarks 报告（失败轮工件现已可取）独立执行，不阻塞 main。
 
 **2026-08-22 基线重建记录（用户放行，GB-20260821）**：
 - **旧值**：2026-08-08 初始基线（112 指标，`linux-x86_64.json`；justification「初始基线（性能门禁体系上线，2026-08-08）」）。
