@@ -2479,15 +2479,12 @@ fn run_testharness_html_inner(
             zero_engine::PageScript::External(_) | zero_engine::PageScript::ExternalModule(_) => 0,
         })
         .collect::<Vec<_>>();
-    // js-dom goal DC-3「native 路径对照」：env `ZW_NATIVE_DOM=1` 时 runner 走原生绑定路径
-    //（WebViewConfig.native_dom=true），而非默认 polyfill 字符串桥。用于建立 native 通过率
-    // 基线，让 R2/R3/R4 native 修复（classList/createElement/node mutation DOMException）的基线
-    // 价值可见。env 进程级（testharness 一次跑一个路径，无混跑）。
-    let native_dom = std::env::var("ZW_NATIVE_DOM").as_deref() == Ok("1");
+    // js-dom M5/M7 收尾（R384）：kill-switch `ZW_NATIVE_DOM` env 已删——原生绑定是唯一
+    // 生产路径，runner 经默认配置即走 native（testharness-dom-native 入口的 env 前缀
+    // 成为无害 no-op，Makefile 目标保留以维持既有命令面）。
     let mut webview = WebView::new(WebViewConfig {
         width: 800,
         height: 600,
-        native_dom,
         // js-dom R201：V8 看门狗——页面脚本层死循环（mutation 视图失同步自旋，
         // Range-mutations-insertBefore 的 indexOf while 自旋）经 terminate_execution
         // 截断为 ScriptError::Timeout，单用例 Fail 收场，不再卡死整套 runner（case

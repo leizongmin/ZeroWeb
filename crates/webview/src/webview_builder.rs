@@ -80,15 +80,8 @@ impl WebViewBuilder {
         self
     }
 
-    /// P1b S2：启用原生 DOM 绑定（`engine::dom_bindings`，read-only 快照）。
-    ///
-    /// 开启时 `run_page_scripts` 在 polyfill 桥之上额外安装原生 `nodeType`/`tagName` 等
-    /// getter，从 re-parsed `Document` 直读（不经 shim 字符串桥）。默认关 → 零回归。
-    /// 详见 [`WebViewConfig::native_dom`]。
-    pub fn native_dom(mut self, enabled: bool) -> Self {
-        self.config.native_dom = enabled;
-        self
-    }
+    // R384（js-dom M5 收尾）：`native_dom(enabled)` builder 方法已随 kill-switch 字段删除——
+    // 原生 DOM 绑定无条件安装（双引擎唯一生产路径，DC-1）。
 
     /// 使用宿主提供的 IndexedDB owner。
     pub fn indexed_db_owner(mut self, owner: IndexedDbOwner) -> Self {

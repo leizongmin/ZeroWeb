@@ -172,17 +172,14 @@ fn check_js_executes_ok(html: &str, ctx: &TestContext) -> Result<(), String> {
 }
 
 /// R3332：`check_js_executes_ok` 的 **native-dom 路径** 变体——`WebViewConfig.native_dom=true`
-/// 经 V8 原生 dom_bindings（P1b S0–S5）真实执行内联 `<script>`，而非默认关的 polyfill shim 路径。
-/// 与 [`check_js_executes_ok`]（shim 路径）互补：本变体锁 P1b 原生路径与 shim 路径的 **行为对等**
-/// （native path 不得静默回归——S0–S5 原生绑定无 CI 变体覆盖，靠本门防漂移）。不依赖 env
-/// （`ZW_NATIVE_DOM`）——直接经 `native_dom=true` flag 入口（webview `install_native_dom_bindings`
-/// 调 `install_dom_bindings` 非 env-gated `_if_enabled`），故测试无全局副作用、可并行。
+/// 经 V8 原生 dom_bindings（P1b S0–S5）真实执行内联 `<script>`——js-dom M5/M7 收尾后
+/// 原生绑定是唯一生产路径（kill-switch 已删），本检查与 [`check_js_executes_ok`] 的
+/// WebView 构造形态一致（默认配置即 native 路径），保留双检查以维持既有断言面。
 #[cfg(all(test, feature = "v8"))]
 fn check_js_executes_ok_native(html: &str, ctx: &TestContext) -> Result<(), String> {
     let mut wv = zero_webview::WebView::new(zero_webview::WebViewConfig {
         width: ctx.viewport_width as u32,
         height: ctx.viewport_height as u32,
-        native_dom: true,
         ..Default::default()
     });
     wv.load_html(html, None);

@@ -7,7 +7,7 @@
 //! - RFC：`docs/specs/p1b-v8-native-bindings-rfc.md`（方案 C 混合 DOM-Node）。
 //! - 架构决策：绑定置于 `engine`（拥有 DOM），engine 加 feature-gated `v8` dep；getter
 //!   经线程局部 DOM 源（`gc.rs`）读真实 DOM。
-//! - 接线：[`install_dom_bindings_if_enabled`] kill-switch 门控（默认关 → 零回归）；
+//! - 接线：webview `install_native_dom_bindings`（双引擎 default-on，kill-switch 已删 @ R384）；
 //!   run_page_scripts 生产接线（live Document 共享 + V8Sandbox 上下文安装）为下一切片。
 //!
 //! spec：`nodeType` https://dom.spec.whatwg.org/#dom-node-nodetype（Element=1）；
@@ -43,38 +43,8 @@ use gc::{
     encode_node_id, node_exists, set_dom_source, set_element_template, upgrade_node_id, with_dom,
 };
 
-/// P1b 原生 DOM 绑定 kill-switch 环境变量名（默认关）。
-pub const ZW_NATIVE_DOM_ENV: &str = "ZW_NATIVE_DOM";
-
-/// kill-switch 是否开启（env `ZW_NATIVE_DOM=1|true`）。默认关 → 零回归。
-///
-/// 进程级静态缓存（`OnceLock`）避免每次安装读 env；env 在进程启动时确定。
-pub fn native_dom_enabled() -> bool {
-    use std::sync::OnceLock;
-    static FLAG: OnceLock<bool> = OnceLock::new();
-    *FLAG.get_or_init(|| {
-        std::env::var(ZW_NATIVE_DOM_ENV)
-            .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
-            .unwrap_or(false)
-    })
-}
-
-/// 生产入口：kill-switch 开启时安装原生 DOM 绑定；关闭时 no-op（零回归）。
-///
-/// 返回是否实际安装（开启且管线就绪）。bench / 单测直接调 [`install_dom_bindings`]
-/// 验证管线（不经 kill-switch）。
-pub fn install_dom_bindings_if_enabled(
-    scope: &mut v8::PinScope,
-    ctx: v8::Local<v8::Context>,
-    dom: Rc<RefCell<Document>>,
-) -> bool {
-    if !native_dom_enabled() {
-        return false;
-    }
-    install_dom_bindings(scope, ctx, dom);
-    true
-}
-
+// R384（js-dom M5 收尾）：kill-switch `ZW_NATIVE_DOM` env 与 `install_dom_bindings_if_enabled`
+// 门控已删——双引擎 default-on 后原生绑定是唯一生产路径（DC-1；用户 2026-08-19/30 批复）。
 /// 从 HTML 文本解析 `Document` + 安装原生绑定（webview 接线封装 parse）。
 ///
 /// 供 webview `run_page_scripts` 经 `Sandbox::install_native_bindings` escape-hatch 调用，

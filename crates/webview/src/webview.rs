@@ -196,24 +196,10 @@ pub struct WebViewConfig {
     /// ok:false stub——浏览器路径由 app 层 `FetchBridge` 注册异步 `__zw_fetch`，二者互斥）。
     /// 经本配置注册的 `__zw_fetch` 走**同步返回**契约（回调直接返 wire；shim R34xx 支持）。
     pub fetch_handler: Option<zero_engine::fetch_bridge::FetchHandler>,
-    /// P1b S2：启用原生 DOM 绑定（RFC `p1b-v8-native-bindings-rfc.md`）。
-    ///
-    /// 开启时，`run_page_scripts` 在 polyfill 桥之上额外安装原生 `nodeType`/`tagName` 等
-    /// getter（`engine::dom_bindings` / `quickjs_dom_bindings`，经 `Sandbox::
-    /// install_native_bindings*` escape-hatch），从 live Document 直读（不经 shim 字符串桥）。
-    ///
-    /// **默认值按引擎分域（js-dom goal M5/M7，用户 2026-08-19/30 批复）**：
-    /// - QuickJS 页面引擎路径（`--features quickjs`，无 v8）默认 `true`（M7 default-on
-    ///   已批准——GB-20260829 ③；default-off 基线 + 翻开关 A/B net≥0 见
-    ///   `docs/goal/js-dom/master.md`）。
-    /// - V8 路径默认 `false`（M5 触发条件仍待，方向已批但执行时点未到）。
-    /// - 显式构造时该字段始终以调用方为准（kill-switch 语义保留至 M7 收尾子片）。
-    #[cfg(all(feature = "quickjs", not(feature = "v8")))]
-    pub native_dom: bool,
-    /// 非 QuickJS 专属构建（V8 路径 / 双 feature）下的 `native_dom` 开关字段——
-    /// 语义同上（QuickJS 臂）字段；M7 起默认 true（GB-20260829）。
-    #[cfg(not(all(feature = "quickjs", not(feature = "v8"))))]
-    pub native_dom: bool,
+    // R384（js-dom M5 收尾）：kill-switch `native_dom` 字段已删——双引擎 default-on 后
+    // 原生绑定是唯一生产路径（DC-1；用户 2026-08-19/30 批复）。原生 DOM 绑定安装见
+    // `install_native_dom_bindings`（`engine::dom_bindings` / `quickjs_dom_bindings`，
+    // 经 `Sandbox::install_native_bindings*` escape-hatch，从 live Document 直读）。
     /// js-dom R201：页面脚本执行的 V8 看门狗超时（毫秒，0 = 无超时，默认）。
     ///
     /// 每次脚本执行（`run_page_scripts` 的每段 `<script>` / `execute_script`）经
@@ -240,14 +226,7 @@ impl Default for WebViewConfig {
             service_worker_script_fetcher: None,
             image_source_fetcher: None,
             fetch_handler: None,
-            // js-dom M7/M5（用户 2026-08-19/30 批复）：双页面引擎路径 native_dom 均
-            // default-on——QuickJS（M7，GB-20260829 ③）与 V8（M5，2026-08-19 ⚡ 块）。
-            // cfg 双分支均为 true，分支保留以锚定「分域语义」文档位（M5/M7 收尾子片
-            // 删 kill-switch 时一并清理）。
-            #[cfg(all(feature = "quickjs", not(feature = "v8")))]
-            native_dom: true,
-            #[cfg(not(all(feature = "quickjs", not(feature = "v8"))))]
-            native_dom: true,
+            // R384（js-dom M5/M7 收尾）：kill-switch 字段已删，原生绑定无条件安装。
         }
     }
 }
@@ -270,7 +249,6 @@ impl std::fmt::Debug for WebViewConfig {
             )
             .field("image_source_fetcher", &self.image_source_fetcher.is_some())
             .field("fetch_handler", &self.fetch_handler.is_some())
-            .field("native_dom", &self.native_dom)
             .finish()
     }
 }
@@ -1917,9 +1895,6 @@ impl WebView {
     /// （`__zw_native_element_for_id` 未定义 → R3107 de-inert 测试 red）。详见 RFC §3.7。
     #[cfg(feature = "v8")]
     fn install_native_dom_bindings(&mut self) {
-        if !self.config.native_dom {
-            return;
-        }
         // R384（js-dom M5）：线程局部代际校验——缓存属别的 Isolate 时先 reset 再装
         // （跨 WebView 模板 Global 复用 panic 闭合）；相符则复用（同 WebView 跨
         // execute identity 保留）。
@@ -1953,9 +1928,6 @@ impl WebView {
     /// 构建不变。
     #[cfg(all(feature = "quickjs", not(feature = "v8")))]
     fn install_native_dom_bindings(&mut self) {
-        if !self.config.native_dom {
-            return;
-        }
         let Some(sandbox) = self.js_sandbox.as_mut() else {
             return;
         };
@@ -2078,9 +2050,6 @@ impl WebView {
     /// 或 native 未改 → no-op（零额外开销）。详见 `docs/specs/p1b-v8-native-bindings-rfc.md` §3.7。
     #[cfg(feature = "v8")]
     fn sync_render_after_native_dom(&mut self) {
-        if !self.config.native_dom {
-            return;
-        }
         let live_html = match self.pipeline.cached_doc_shared() {
             Some(doc_rc) => {
                 let doc = doc_rc.borrow();
@@ -2782,13 +2751,11 @@ impl WebView {
         sandbox
             .execute(&script)
             .map_err(|e| WebViewError::Script(format!("dispatch {event_type}: {e}")))?;
-        // P1b host→page native 派发（R3121）：native_dom 开 → 经原生绑定派发到 native LISTENERS
+        // P1b host→page native 派发（R3121）：经原生绑定派发到 native LISTENERS
         //（polyfill __zw_dispatch_event 不达）。native 回调直改 live doc，下方 apply 空尾
-        // 分支的 sync_render_after_native_dom 拾取重渲染。native_dom 关（默认）→ 跳过，零回归。
+        // 分支的 sync_render_after_native_dom 拾取重渲染。（js-dom M5 收尾：无条件执行。）
         #[cfg(feature = "v8")]
-        if self.config.native_dom {
-            let _ = sandbox.execute(&script_dispatch_native_event(selector, event_type));
-        }
+        let _ = sandbox.execute(&script_dispatch_native_event(selector, event_type));
         let pending = {
             let guard = self.shared_mutations.lock().unwrap_or_else(|e| e.into_inner());
             guard.len() > self.applied_mutations
@@ -4985,32 +4952,28 @@ fn escape_js_string(s: &str) -> String {
 // V8 Isolate 随 WebView 销毁，但线程局部（gc.rs：DOM 源 / ObjectTemplate 缓存 / 对象身份映射）
 // 仍持指向**已销毁 Isolate** 的 `v8::Global`/`v8::Weak` Handle；同线程建第二个 native WebView 时
 // getter 经线程局部读到旧 Handle → `v8::handle.rs "Handle hosted by disposed Isolate"` panic
-//（R3332 实测定位；多标签生产 = 多 WebView 同进程，故 native 默认开前必修）。Drop 时 reset 使下一
-// WebView 干净启动。默认关路径（native_dom=false）不触——shim 无 Handle 耦合，零回归。
+//（R3332 实测定位；多标签生产 = 多 WebView 同进程）。Drop 时 reset 使下一
+// WebView 干净启动。（js-dom M5 收尾：native 为唯一生产路径，无条件 reset。）
 #[cfg(feature = "v8")]
 impl Drop for WebView {
     fn drop(&mut self) {
-        if self.config.native_dom {
-            zero_engine::dom_bindings::reset_native_state();
-            // js-dom R84：v8+quickjs 组合态时 QuickJS reset 并入此处（独立 quickjs Drop
-            // impl 会重复定义）。
-            #[cfg(feature = "quickjs")]
-            zero_engine::quickjs_dom_bindings::reset_quickjs_state();
-        }
+        zero_engine::dom_bindings::reset_native_state();
+        // js-dom R84：v8+quickjs 组合态时 QuickJS reset 并入此处（独立 quickjs Drop
+        // impl 会重复定义）。
+        #[cfg(feature = "quickjs")]
+        zero_engine::quickjs_dom_bindings::reset_quickjs_state();
     }
 }
 
 // js-dom goal M6 S0q：QuickJS 版 Drop reset（镜像 V8 侧 R3334 语义）。QuickJS Runtime 随
 // WebView 销毁，但 quickjs_dom_bindings 的线程局部（DOM 源 / Persistent 对象身份缓存）仍持
 // 指向**已销毁 Runtime** 的 Persistent 值；同线程建第二个 native WebView 时 restore 读旧值
-// → UnrelatedRuntime/悬垂。Drop 时清空使下一 WebView 干净启动。默认关路径不触（零回归）。
+// → UnrelatedRuntime/悬垂。Drop 时清空使下一 WebView 干净启动。（M7 收尾：无条件 reset。）
 // js-dom R84：v8+quickjs 组合态 Drop 重复实现（E0119）——并入 v8 版 Drop（两 reset 都调，
 // feature 各自 gate），quickjs-only 构建保留独立 Drop。
 #[cfg(all(feature = "quickjs", not(feature = "v8")))]
 impl Drop for WebView {
     fn drop(&mut self) {
-        if self.config.native_dom {
-            zero_engine::quickjs_dom_bindings::reset_quickjs_state();
-        }
+        zero_engine::quickjs_dom_bindings::reset_quickjs_state();
     }
 }

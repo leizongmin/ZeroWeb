@@ -373,7 +373,7 @@ impl WebView {
         let script = script_dispatch_dom_event(&selector, &event.event_type, detail.as_ref());
         let result = self.execute_dom_script(executor, &script)?;
         #[cfg(feature = "v8")]
-        if executor.is_none() && self.config.native_dom {
+        if executor.is_none() {
             let native =
                 self.execute_dom_script(executor, &script_dispatch_native_event(&selector, &event.event_type))?;
             return Ok((result.value.trim() != "prevented", result.changed || native.changed));

@@ -633,7 +633,7 @@ fn test_transitive_module_graph_r3094() {
 #[cfg(feature = "v8")]
 #[test]
 fn test_native_dom_bindings_wiring_r3097() {
-    let mut wv = crate::WebViewBuilder::new().native_dom(true).build();
+    let mut wv = crate::WebViewBuilder::new().build();
     wv.load_html(
         "<html><body>\
          <div id=\"a\"><span id=\"b\">x</span></div>\
@@ -677,7 +677,7 @@ fn test_native_dom_bindings_wiring_r3097() {
 #[cfg(all(feature = "quickjs", not(feature = "v8")))]
 #[test]
 fn test_native_dom_bindings_wiring_quickjs_s0q() {
-    let mut wv = crate::WebViewBuilder::new().native_dom(true).build();
+    let mut wv = crate::WebViewBuilder::new().build();
     wv.load_html(
         "<html><body>\
          <div id=\"a\" class=\"box main\"><span id=\"b\">x</span></div>\
@@ -803,7 +803,7 @@ fn test_native_dom_enabled_by_default_v8_m5() {
 #[cfg(feature = "v8")]
 #[test]
 fn test_native_dom_live_document_de_inert_r3107() {
-    let mut wv = crate::WebViewBuilder::new().native_dom(true).build();
+    let mut wv = crate::WebViewBuilder::new().build();
     wv.load_html("<html><body><div id=\"a\" data-x=\"1\"></div></body></html>", None);
     let r = wv.run_page_scripts_strict();
     assert!(r.is_ok(), "native_dom live 接线无异常, got: {:?}", r.err());
@@ -829,7 +829,7 @@ fn test_native_dom_live_document_de_inert_r3107() {
 #[cfg(feature = "v8")]
 #[test]
 fn test_native_dom_exception_identity_overlap_r6() {
-    let mut wv = crate::WebViewBuilder::new().native_dom(true).build();
+    let mut wv = crate::WebViewBuilder::new().build();
     wv.load_html(
         "<html><body><div id=\"a\"></div>\
          <script>\
@@ -873,7 +873,7 @@ fn test_native_dom_exception_identity_overlap_r6() {
 #[cfg(feature = "v8")]
 #[test]
 fn test_native_dom_write_triggers_rerender_r3108() {
-    let mut wv = crate::WebViewBuilder::new().native_dom(true).build();
+    let mut wv = crate::WebViewBuilder::new().build();
     wv.load_html("<html><body><div id=\"a\"></div></body></html>", None);
     wv.run_page_scripts_strict().unwrap();
     let glyphs_before = wv.last_render().expect("initial render").primitives.glyphs.len();
@@ -910,7 +910,7 @@ fn test_native_dom_write_triggers_rerender_r3108() {
 #[cfg(feature = "v8")]
 #[test]
 fn test_native_event_target_r3109() {
-    let mut wv = crate::WebViewBuilder::new().native_dom(true).build();
+    let mut wv = crate::WebViewBuilder::new().build();
     wv.load_html("<html><body><div id=\"a\"></div></body></html>", None);
     wv.run_page_scripts_strict().unwrap();
     // 注册 click 监听器 + 派发 → listener 设全局。
@@ -948,7 +948,7 @@ fn test_native_event_target_r3109() {
 #[cfg(feature = "v8")]
 #[test]
 fn test_native_host_dispatch_event_r3121() {
-    let mut wv = crate::WebViewBuilder::new().native_dom(true).build();
+    let mut wv = crate::WebViewBuilder::new().build();
     wv.load_html("<html><body><div id=\"b\"></div></body></html>", None);
     // 经 native 元素（__zw_native_element_for_id）注册 click 监听器，设全局标记。
     wv.execute_script(
@@ -973,7 +973,7 @@ fn test_native_host_dispatch_event_r3121() {
 #[cfg(feature = "v8")]
 #[test]
 fn test_native_dispatch_event_enriched_r3124() {
-    let mut wv = crate::WebViewBuilder::new().native_dom(true).build();
+    let mut wv = crate::WebViewBuilder::new().build();
     wv.load_html("<html><body><div id=\"b\"></div></body></html>", None);
     // native 监听器捕获 event，记录 type/target===el/currentTarget===el/bubbles。
     wv.execute_script(
@@ -998,7 +998,7 @@ fn test_native_dispatch_event_enriched_r3124() {
 #[cfg(feature = "v8")]
 #[test]
 fn test_native_dispatch_event_bubbles_r3125() {
-    let mut wv = crate::WebViewBuilder::new().native_dom(true).build();
+    let mut wv = crate::WebViewBuilder::new().build();
     wv.load_html(
         "<html><body><div id=\"parent\"><div id=\"child\"></div></div></body></html>",
         None,
@@ -1026,7 +1026,7 @@ fn test_native_dispatch_event_bubbles_r3125() {
 #[cfg(feature = "v8")]
 #[test]
 fn test_native_attr_node_r3122() {
-    let mut wv = crate::WebViewBuilder::new().native_dom(true).build();
+    let mut wv = crate::WebViewBuilder::new().build();
     wv.load_html("<html><body><div id=\"a\" class=\"row\"></div></body></html>", None);
     // Attr 节点面：nodeType=2、name=nodeName、value live、ownerElement===owner 元素。
     assert_eq!(
@@ -1059,7 +1059,7 @@ fn test_native_attr_node_r3122() {
 #[cfg(feature = "v8")]
 #[test]
 fn test_native_node_navigation_r3110() {
-    let mut wv = crate::WebViewBuilder::new().native_dom(true).build();
+    let mut wv = crate::WebViewBuilder::new().build();
     wv.load_html(
         "<html><body><div id=\"root\"><span id=\"s1\">hi</span><span id=\"s2\"></span></div></body></html>",
         None,
@@ -1095,7 +1095,7 @@ fn test_native_node_navigation_r3110() {
 #[cfg(feature = "v8")]
 #[test]
 fn test_native_node_value_write_rerenders_r3111() {
-    let mut wv = crate::WebViewBuilder::new().native_dom(true).build();
+    let mut wv = crate::WebViewBuilder::new().build();
     wv.load_html("<html><body><div id=\"a\">old</div></body></html>", None);
     wv.run_page_scripts_strict().unwrap();
     // native nodeValue 写：改 div 文本子节点。
@@ -1114,7 +1114,7 @@ fn test_native_node_value_write_rerenders_r3111() {
 #[cfg(feature = "v8")]
 #[test]
 fn test_native_attributes_namednodemap_r3112() {
-    let mut wv = crate::WebViewBuilder::new().native_dom(true).build();
+    let mut wv = crate::WebViewBuilder::new().build();
     wv.load_html(
         "<html><body><div id=\"a\" class=\"row\" data-x=\"42\"></div></body></html>",
         None,
@@ -1139,7 +1139,7 @@ fn test_native_attributes_namednodemap_r3112() {
 #[cfg(feature = "v8")]
 #[test]
 fn test_native_inner_outer_html_r3113() {
-    let mut wv = crate::WebViewBuilder::new().native_dom(true).build();
+    let mut wv = crate::WebViewBuilder::new().build();
     wv.load_html("<html><body><div id=\"a\"><b>hi</b>!</div></body></html>", None);
     wv.run_page_scripts_strict().unwrap();
     assert_eq!(
@@ -1164,7 +1164,7 @@ fn test_native_inner_outer_html_r3113() {
 #[cfg(feature = "v8")]
 #[test]
 fn test_native_inner_html_setter_rerenders_r3123() {
-    let mut wv = crate::WebViewBuilder::new().native_dom(true).build();
+    let mut wv = crate::WebViewBuilder::new().build();
     wv.load_html("<html><body><div id=\"a\"><span>old</span></div></body></html>", None);
     wv.run_page_scripts_strict().unwrap();
     // native innerHTML 写：解析 `<b>new</b>` 替换 span。
@@ -1182,7 +1182,7 @@ fn test_native_inner_html_setter_rerenders_r3123() {
 #[cfg(feature = "v8")]
 #[test]
 fn test_native_outer_html_setter_rerenders_r3123() {
-    let mut wv = crate::WebViewBuilder::new().native_dom(true).build();
+    let mut wv = crate::WebViewBuilder::new().build();
     wv.load_html(
         "<html><body><div id=\"p\"><span id=\"a\">old</span></div></body></html>",
         None,
@@ -1205,7 +1205,7 @@ fn test_native_outer_html_setter_rerenders_r3123() {
 #[cfg(feature = "v8")]
 #[test]
 fn test_native_clone_node_r3114() {
-    let mut wv = crate::WebViewBuilder::new().native_dom(true).build();
+    let mut wv = crate::WebViewBuilder::new().build();
     wv.load_html(
         "<html><body><div id=\"a\" class=\"x\"><span>hi</span></div></body></html>",
         None,
@@ -1236,7 +1236,7 @@ fn test_native_clone_node_r3114() {
 #[cfg(feature = "v8")]
 #[test]
 fn test_native_contains_r3115() {
-    let mut wv = crate::WebViewBuilder::new().native_dom(true).build();
+    let mut wv = crate::WebViewBuilder::new().build();
     wv.load_html(
         "<html><body><div id=\"a\"><div id=\"b\"><span id=\"c\">x</span></div></div></body></html>",
         None,
@@ -1294,7 +1294,7 @@ fn test_load_html_then_fail() {
 #[cfg(feature = "v8")]
 #[test]
 fn test_native_custom_element_e2e_upgrade_r3270() {
-    let mut wv = crate::WebViewBuilder::new().native_dom(true).build();
+    let mut wv = crate::WebViewBuilder::new().build();
     wv.load_html(
         "<html><body><div id=\"host\"></div>\
          <script>\
@@ -1329,7 +1329,7 @@ fn test_native_custom_element_e2e_upgrade_r3270() {
 #[cfg(feature = "v8")]
 #[test]
 fn test_native_custom_element_e2e_lifecycle_r3270() {
-    let mut wv = crate::WebViewBuilder::new().native_dom(true).build();
+    let mut wv = crate::WebViewBuilder::new().build();
     wv.load_html(
         "<html><body>\
          <script>\
@@ -1359,7 +1359,7 @@ fn test_native_custom_element_e2e_lifecycle_r3270() {
 #[cfg(feature = "v8")]
 #[test]
 fn test_native_custom_element_e2e_attr_change_r3270() {
-    let mut wv = crate::WebViewBuilder::new().native_dom(true).build();
+    let mut wv = crate::WebViewBuilder::new().build();
     wv.load_html(
         "<html><body>\
          <script>\
@@ -1391,7 +1391,7 @@ fn test_native_custom_element_e2e_attr_change_r3270() {
 #[cfg(feature = "v8")]
 #[test]
 fn test_native_custom_element_e2e_interface_r3270() {
-    let mut wv = crate::WebViewBuilder::new().native_dom(true).build();
+    let mut wv = crate::WebViewBuilder::new().build();
     wv.load_html(
         "<html><body>\
          <script>\
@@ -1440,7 +1440,7 @@ fn test_native_custom_element_e2e_interface_r3270() {
 #[cfg(feature = "v8")]
 #[test]
 fn test_native_custom_element_upgrade_attr_change_r3274() {
-    let mut wv = crate::WebViewBuilder::new().native_dom(true).build();
+    let mut wv = crate::WebViewBuilder::new().build();
     // native 元素（__zw_native_create_element，未注册 tag → 普通 native 元素）pre-set observed 属性 'foo=bar'，
     // define 后 upgrade(el) → spec 派发 attributeChangedCallback('foo', null, 'bar')。
     wv.load_html(
@@ -1478,7 +1478,7 @@ fn test_native_custom_element_upgrade_attr_change_r3274() {
 #[cfg(feature = "v8")]
 #[test]
 fn test_native_custom_element_upgrade_attr_change_multi_r3274() {
-    let mut wv = crate::WebViewBuilder::new().native_dom(true).build();
+    let mut wv = crate::WebViewBuilder::new().build();
     // 单 pre-set 属性 'a=1'，observedAttributes=['a','b','c'] → upgrade 仅对 'a' 派发
     // （b/c 未设——真实浏览器无回调；null 回调是不存在的属性变更，无初始化语义）。
     wv.load_html(
