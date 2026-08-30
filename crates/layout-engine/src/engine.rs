@@ -628,14 +628,23 @@ impl LayoutEngine {
         // 定位 border-box。taffy 把根节点固定在 (0,0)（根无父级提供定位上下文），根的
         // 声明 margin-top/left 不被应用，致 `<html style="margin:50px">` 的边框盒落在
         // 视口原点而非 (50,50)（abspos-containing-block-initial-009a 簇）。此处补上根
-        // 固定 margin 的位置偏移（auto 已由上方居中逻辑处理；百分比保守跳过）。
+        // 固定 margin 的位置偏移（auto 已由上方居中逻辑处理）。R3821：百分比 margin 亦
+        // 应用——CSS §8.3 margin % 相对包含块 inline size（根 = 视口宽），WPT
+        // background-root-013a（`* {margin: 1em 5%}` 含 html）实证 chromium x=40 vs 旧 ZW x=0。
         if matches!(root_box.writing_mode, WritingModeValue::HorizontalTb) {
+            use zero_css_parser::values::LengthValue;
             let root_style = root_box.node_id.and_then(|id| styles.get(&id));
             if let Some(s) = root_style {
-                if let Some(px) = resolve_definite_real_length_for_style(&s.margin_left, s) {
+                let resolve_root_margin = |value: &LengthValue| -> Option<f32> {
+                    match value {
+                        LengthValue::Percentage(pct) => Some(self.viewport_width * (*pct as f32 / 100.0)),
+                        _ => resolve_definite_real_length_for_style(value, s),
+                    }
+                };
+                if let Some(px) = resolve_root_margin(&s.margin_left) {
                     root_box.x += px;
                 }
-                if let Some(px) = resolve_definite_real_length_for_style(&s.margin_top, s) {
+                if let Some(px) = resolve_root_margin(&s.margin_top) {
                     root_box.y += px;
                 }
             }

@@ -799,6 +799,31 @@ fn r3620_root_margin_resolves_residual_real_lengths() {
     );
 }
 
+/// R3821：根元素百分比 margin 亦定位 border-box——CSS §8.3 margin % 相对包含块 inline
+/// size（根 = 视口宽）。WPT background-root-013a（`* {margin: 1em 5%}` 含 html）实证：
+/// chromium html 边框盒 x=40（5%×800），旧实现百分比保守跳过 → x=0。
+#[test]
+fn r3821_root_margin_percentage_offsets_border_box() {
+    let html = r#"<html style="margin:40px 5%;border:10px solid black"><body></body></html>"#;
+    let doc = zero_dom::parse_html(html);
+    let mut sys = StyleSystem::new();
+    sys.set_viewport(800.0, 600.0);
+    let styles = sys.compute_styles(&doc, &[]);
+    let mut engine = LayoutEngine::new(800.0, 600.0);
+    let result = engine.compute(&doc, &styles);
+    assert!(
+        (result.root.x - 40.0).abs() < 1.0,
+        "R3821: root margin-left 5% should resolve to 40 (5%×800), got {}",
+        result.root.x
+    );
+    // margin-top 40px（Px 分支不回归）
+    assert!(
+        (result.root.y - 40.0).abs() < 1.0,
+        "R3821: root margin-top 40px should offset y to 40, got {}",
+        result.root.y
+    );
+}
+
 /// R1304：`width:min-content` 的 block 容器应收缩到其 min-content 宽度，而非塌缩为 0
 ///（converter MinContent→length(0)；R1018 intrinsic gate 旧仅放行 MaxContent，MinContent
 /// block 被跳过 → 塌缩）。R1304 扩 gate 经 block_max_content_width 测（固定宽/原子内容
