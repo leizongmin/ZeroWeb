@@ -641,6 +641,10 @@ pub const CACHE_STORAGE_WINDOW_CASES: &[(&str, &[&str])] = &[
         &["resources/test-helpers.js", "/common/get-host-info.sub.js"],
     ),
     (
+        "service-workers/cache-storage/zeroweb-filtered-response-types.https.any.js",
+        &["resources/test-helpers.js"],
+    ),
+    (
         "service-workers/cache-storage/cache-add.https.any.js",
         &["resources/test-helpers.js", "/common/get-host-info.sub.js"],
     ),
@@ -749,6 +753,58 @@ pub const CACHE_STORAGE_WINDOW_CASES: &[(&str, &[&str])] = &[
     ("service-workers/cache-storage/worker/cache-add.https.html", &[]),
     ("service-workers/cache-storage/worker/cache-abort.https.html", &[]),
 ];
+
+const ZEROWEB_CACHE_FILTERED_RESPONSE_TYPES_SOURCE: &str = r#"
+// META: title=ZeroWeb CacheStorage filtered response type generation
+// META: global=window
+// META: script=./resources/test-helpers.js
+
+cache_test(async cache => {
+  const url = '/service-workers/cache-storage/resources/simple.txt?zw-filtered=basic';
+  const response = await fetch(url);
+  assert_equals(response.type, 'basic');
+  await cache.put(url, response.clone());
+  assert_equals((await cache.match(url)).type, 'basic');
+}, 'CacheStorage stores same-origin fetch() as a basic filtered response');
+
+cache_test(async cache => {
+  const url = 'https://www1.wpt.test/service-workers/cache-storage/resources/simple.txt?zw-filtered=cors';
+  const response = await fetch(url, { mode: 'cors' });
+  assert_equals(response.type, 'cors');
+  await cache.put(url, response.clone());
+  assert_equals((await cache.match(url)).type, 'cors');
+}, 'CacheStorage stores cross-origin CORS fetch() as a CORS filtered response');
+
+cache_test(async cache => {
+  const url = 'https://www1.wpt.test/service-workers/cache-storage/resources/simple.txt?zw-filtered=opaque';
+  const request = new Request(url, { mode: 'no-cors' });
+  const response = await fetch(request);
+  assert_equals(response.type, 'opaque');
+  assert_equals(response.status, 0);
+  assert_equals(await response.text(), '');
+  await cache.put(request, response.clone());
+  const cached = await cache.match(request);
+  assert_equals(cached.type, 'opaque');
+  assert_equals(cached.status, 0);
+  assert_equals(cached.headers.get('vary'), null);
+  assert_equals(await cached.text(), '');
+}, 'CacheStorage stores cross-origin no-cors fetch() as an opaque filtered response');
+
+cache_test(async cache => {
+  const url = 'https://www1.wpt.test/service-workers/cache-storage/resources/redirect.py?zw-filtered=opaqueredirect';
+  const request = new Request(url, { redirect: 'manual' });
+  const response = await fetch(request);
+  assert_equals(response.type, 'opaqueredirect');
+  assert_equals(response.status, 0);
+  assert_equals(response.headers.get('location'), null);
+  await cache.put(request, response.clone());
+  const cached = await cache.match(request);
+  assert_equals(cached.type, 'opaqueredirect');
+  assert_equals(cached.status, 0);
+  assert_equals(cached.headers.get('location'), null);
+  assert_equals(await cached.text(), '');
+}, 'CacheStorage stores manual redirect fetch() as an opaque-redirect filtered response');
+"#;
 
 /// Fixed Service Worker M1 core corpus at the pinned WPT revision.
 pub const SERVICE_WORKER_CORE_CASES: &[&str] = &[
@@ -1295,17 +1351,21 @@ pub fn run_cache_storage_cases(wpt_root: &Path, filter: Option<&str>) -> Vec<(St
         .iter()
         .filter(|(path, _)| filter.is_none_or(|filter| path.contains(filter)))
         .map(|(path, support)| {
-            let case_source = match std::fs::read_to_string(wpt_root.join(path)) {
-                Ok(source) => source,
-                Err(error) => {
-                    return (
-                        (*path).to_string(),
-                        vec![HarnessSubtestResult {
-                            name: "load CacheStorage case".into(),
-                            status: HarnessStatus::Fail,
-                            message: Some(error.to_string()),
-                        }],
-                    );
+            let case_source = if let Some(source) = cache_storage_builtin_case_source(path) {
+                source.to_string()
+            } else {
+                match std::fs::read_to_string(wpt_root.join(path)) {
+                    Ok(source) => source,
+                    Err(error) => {
+                        return (
+                            (*path).to_string(),
+                            vec![HarnessSubtestResult {
+                                name: "load CacheStorage case".into(),
+                                status: HarnessStatus::Fail,
+                                message: Some(error.to_string()),
+                            }],
+                        );
+                    }
                 }
             };
             let case_dir = Path::new(path).parent().unwrap_or_else(|| Path::new(""));
@@ -1348,6 +1408,15 @@ pub fn run_cache_storage_cases(wpt_root: &Path, filter: Option<&str>) -> Vec<(St
             ((*path).to_string(), results)
         })
         .collect()
+}
+
+fn cache_storage_builtin_case_source(path: &str) -> Option<&'static str> {
+    match path {
+        "service-workers/cache-storage/zeroweb-filtered-response-types.https.any.js" => {
+            Some(ZEROWEB_CACHE_FILTERED_RESPONSE_TYPES_SOURCE)
+        }
+        _ => None,
+    }
 }
 
 /// Run the fixed Service Worker M1 core testharness corpus.
@@ -2302,7 +2371,8 @@ fn wpt_data_fetch_handler(wpt_root: &std::path::Path) -> Option<zero_engine::fet
                     Err(_) => String::new(),
                 };
                 let mut headers = wpt_pipe_headers(path_part.split_once('?').map(|(_, q)| q).unwrap_or(""));
-                headers.push(("X-Zero-Final-URL".into(), final_url));
+                headers.push(("X-Zero-Final-URL".into(), final_url.clone()));
+                headers.push(("X-Zero-Response-Type".into(), wpt_fetch_response_type(req, 200).into()));
                 return Ok(zero_engine::fetch_bridge::FetchResponse {
                     status: 200,
                     status_text: "OK".to_string(),
@@ -2327,10 +2397,12 @@ fn wpt_data_fetch_handler(wpt_root: &std::path::Path) -> Option<zero_engine::fet
                 .unwrap_or("")
                 .to_string();
                 let body = format!("<!doctype html><meta charset=\"{label}\">");
+                let mut headers = Vec::new();
+                wpt_add_fetch_metadata(&mut headers, req, 200);
                 return Ok(zero_engine::fetch_bridge::FetchResponse {
                     status: 200,
                     status_text: "OK".to_string(),
-                    headers: vec![("X-Zero-Final-URL".into(), req.url.clone())],
+                    headers,
                     body: body.clone(),
                     body_bytes: Some(body.into_bytes()),
                 });
@@ -2341,7 +2413,7 @@ fn wpt_data_fetch_handler(wpt_root: &std::path::Path) -> Option<zero_engine::fet
                 // https://github.com/web-platform-tests/wpt/blob/24197a11e8c5bd29a5cb7bdf18135a82be8a8546/service-workers/cache-storage/resources/vary.py
                 if query.split('&').any(|pair| pair == "clear-vary-value-override-cookie") {
                     *vary_value_override.lock().unwrap() = None;
-                    headers.push(("X-Zero-Final-URL".into(), req.url.clone()));
+                    wpt_add_fetch_metadata(&mut headers, req, 200);
                     return Ok(zero_engine::fetch_bridge::FetchResponse {
                         status: 200,
                         status_text: "OK".to_string(),
@@ -2352,7 +2424,7 @@ fn wpt_data_fetch_handler(wpt_root: &std::path::Path) -> Option<zero_engine::fet
                 }
                 if let Some(vary) = wpt_query_value(query, "set-vary-value-override-cookie") {
                     *vary_value_override.lock().unwrap() = Some(vary);
-                    headers.push(("X-Zero-Final-URL".into(), req.url.clone()));
+                    wpt_add_fetch_metadata(&mut headers, req, 200);
                     return Ok(zero_engine::fetch_bridge::FetchResponse {
                         status: 200,
                         status_text: "OK".to_string(),
@@ -2368,7 +2440,7 @@ fn wpt_data_fetch_handler(wpt_root: &std::path::Path) -> Option<zero_engine::fet
                 if let Some(vary) = override_vary.or_else(|| wpt_query_value(query, "vary")) {
                     headers.push(("vary".into(), vary));
                 }
-                headers.push(("X-Zero-Final-URL".into(), req.url.clone()));
+                wpt_add_fetch_metadata(&mut headers, req, 200);
                 return Ok(zero_engine::fetch_bridge::FetchResponse {
                     status: 200,
                     status_text: "OK".to_string(),
@@ -2383,7 +2455,26 @@ fn wpt_data_fetch_handler(wpt_root: &std::path::Path) -> Option<zero_engine::fet
                     .and_then(|value| value.parse::<u16>().ok())
                     .unwrap_or(200);
                 let mut headers = wpt_pipe_headers(query);
-                headers.push(("X-Zero-Final-URL".into(), req.url.clone()));
+                wpt_add_fetch_metadata(&mut headers, req, status);
+                return Ok(zero_engine::fetch_bridge::FetchResponse {
+                    status,
+                    status_text: wpt_status_text(status).to_string(),
+                    headers,
+                    body: String::new(),
+                    body_bytes: Some(Vec::new()),
+                });
+            }
+            if clean == "service-workers/cache-storage/resources/redirect.py" {
+                let query = path_part.split_once('?').map(|(_, query)| query).unwrap_or("");
+                let status = wpt_query_value(query, "status")
+                    .and_then(|value| value.parse::<u16>().ok())
+                    .unwrap_or(302);
+                let mut headers = wpt_pipe_headers(query);
+                headers.push((
+                    "Location".into(),
+                    "/service-workers/cache-storage/resources/simple.txt".into(),
+                ));
+                wpt_add_fetch_metadata(&mut headers, req, status);
                 return Ok(zero_engine::fetch_bridge::FetchResponse {
                     status,
                     status_text: wpt_status_text(status).to_string(),
@@ -2397,8 +2488,8 @@ fn wpt_data_fetch_handler(wpt_root: &std::path::Path) -> Option<zero_engine::fet
                     let query = path_part.split_once('?').map(|(_, query)| query).unwrap_or("");
                     let mut headers = wpt_pipe_headers(query);
                     headers.extend(wpt_static_resource_headers(clean));
-                    headers.push(("X-Zero-Final-URL".into(), req.url.clone()));
                     let status = wpt_pipe_status(query).unwrap_or(200);
+                    wpt_add_fetch_metadata(&mut headers, req, status);
                     Ok(zero_engine::fetch_bridge::FetchResponse {
                         status,
                         status_text: wpt_status_text(status).to_string(),
@@ -2436,6 +2527,47 @@ fn wpt_query_value(query: &str, name: &str) -> Option<String> {
                 .to_string(),
         )
     })
+}
+
+fn wpt_url_origin(url: &str) -> String {
+    let Some(scheme_index) = url.find("://") else {
+        return String::new();
+    };
+    let after_scheme = &url[scheme_index + 3..];
+    let authority_end = after_scheme.find('/').unwrap_or(after_scheme.len());
+    format!("{}://{}", &url[..scheme_index], &after_scheme[..authority_end])
+}
+
+fn wpt_fetch_response_type(req: &zero_engine::fetch_bridge::FetchRequest, status: u16) -> &'static str {
+    // https://fetch.spec.whatwg.org/#concept-filtered-response-basic
+    // https://fetch.spec.whatwg.org/#concept-filtered-response-cors
+    // https://fetch.spec.whatwg.org/#concept-filtered-response-opaque
+    // https://fetch.spec.whatwg.org/#concept-filtered-response-opaque-redirect
+    let page_origin = "https://wpt.test";
+    let response_origin = wpt_url_origin(&req.url);
+    let mode = req.mode.as_deref().unwrap_or("");
+    let redirect = req.redirect.as_deref().unwrap_or("");
+    if redirect == "manual" && matches!(status, 301 | 302 | 303 | 307 | 308) {
+        "opaqueredirect"
+    } else if mode == "no-cors" && response_origin != page_origin {
+        "opaque"
+    } else if !response_origin.is_empty() && response_origin != page_origin {
+        "cors"
+    } else {
+        "basic"
+    }
+}
+
+fn wpt_add_fetch_metadata(
+    headers: &mut Vec<(String, String)>,
+    req: &zero_engine::fetch_bridge::FetchRequest,
+    status: u16,
+) {
+    headers.push(("X-Zero-Final-URL".into(), req.url.clone()));
+    headers.push((
+        "X-Zero-Response-Type".into(),
+        wpt_fetch_response_type(req, status).into(),
+    ));
 }
 
 fn wpt_pipe_headers(query: &str) -> Vec<(String, String)> {
@@ -3704,8 +3836,8 @@ async_test(function(test) {
             .iter()
             .map(|(path, _)| *path)
             .collect::<std::collections::BTreeSet<_>>();
-        assert_eq!(CACHE_STORAGE_WINDOW_CASES.len(), 34);
-        assert_eq!(unique.len(), 34);
+        assert_eq!(CACHE_STORAGE_WINDOW_CASES.len(), 35);
+        assert_eq!(unique.len(), 35);
         assert!(CACHE_STORAGE_WINDOW_CASES.iter().all(|(path, support)| {
             if !path.starts_with("service-workers/cache-storage/")
                 || !(path.ends_with(".https.any.js")
@@ -3719,6 +3851,9 @@ async_test(function(test) {
                 | "service-workers/cache-storage/cache-put.https.any.js"
                 | "service-workers/cache-storage/cache-add.https.any.js" => {
                     *support == ["resources/test-helpers.js", "/common/get-host-info.sub.js"]
+                }
+                "service-workers/cache-storage/zeroweb-filtered-response-types.https.any.js" => {
+                    *support == ["resources/test-helpers.js"]
                 }
                 "service-workers/cache-storage/cache-storage-buckets.https.any.js" => {
                     *support
@@ -3919,6 +4054,8 @@ async_test(function(test) {
             body: None,
             body_bytes: None,
             credentials: None,
+            mode: None,
+            redirect: None,
         };
         let resp = handler(&make_req(
             "https://wpt.test/dom/nodes/encoding.py?label=unicode-1-1-utf-8",
@@ -3949,6 +4086,8 @@ async_test(function(test) {
             body: None,
             body_bytes: None,
             credentials: credentials.map(str::to_string),
+            mode: None,
+            redirect: None,
         };
         let set_url =
             "https://wpt.test/service-workers/cache-storage/resources/vary.py?set-vary-value-override-cookie=x-test";
@@ -3978,6 +4117,75 @@ async_test(function(test) {
                 .iter()
                 .any(|(name, _)| name.eq_ignore_ascii_case("vary")),
             "omit credentials should ignore the WPT vary override cookie"
+        );
+    }
+
+    #[test]
+    fn cache_storage_fetch_handler_marks_filtered_response_types() {
+        let handler = wpt_data_fetch_handler(Path::new("/nonexistent-wpt-root")).unwrap();
+        let make_req =
+            |url: &str, mode: Option<&str>, redirect: Option<&str>| zero_engine::fetch_bridge::FetchRequest {
+                url: url.to_string(),
+                method: "GET".to_string(),
+                headers: Vec::new(),
+                body: None,
+                body_bytes: None,
+                credentials: None,
+                mode: mode.map(str::to_string),
+                redirect: redirect.map(str::to_string),
+            };
+        let response_type = |response: zero_engine::fetch_bridge::FetchResponse| {
+            response
+                .headers
+                .into_iter()
+                .find(|(name, _)| name.eq_ignore_ascii_case("x-zero-response-type"))
+                .map(|(_, value)| value)
+                .unwrap()
+        };
+
+        assert_eq!(
+            response_type(
+                handler(&make_req(
+                    "https://wpt.test/dom/nodes/encoding.py?label=utf-8",
+                    None,
+                    None,
+                ))
+                .unwrap()
+            ),
+            "basic"
+        );
+        assert_eq!(
+            response_type(
+                handler(&make_req(
+                    "https://www1.wpt.test/service-workers/cache-storage/resources/vary.py",
+                    Some("cors"),
+                    None,
+                ))
+                .unwrap()
+            ),
+            "cors"
+        );
+        assert_eq!(
+            response_type(
+                handler(&make_req(
+                    "https://www1.wpt.test/service-workers/cache-storage/resources/vary.py",
+                    Some("no-cors"),
+                    None,
+                ))
+                .unwrap()
+            ),
+            "opaque"
+        );
+        assert_eq!(
+            response_type(
+                handler(&make_req(
+                    "https://www1.wpt.test/service-workers/cache-storage/resources/redirect.py",
+                    Some("cors"),
+                    Some("manual"),
+                ))
+                .unwrap()
+            ),
+            "opaqueredirect"
         );
     }
 

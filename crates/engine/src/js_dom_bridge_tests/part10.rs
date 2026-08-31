@@ -2421,6 +2421,67 @@ fn test_fetch_no_cors_request_from_url_object_is_opaque() {
 }
 
 #[test]
+fn test_fetch_filtered_response_type_matrix() {
+    // https://fetch.spec.whatwg.org/#concept-filtered-response-basic
+    // https://fetch.spec.whatwg.org/#concept-filtered-response-cors
+    // https://fetch.spec.whatwg.org/#concept-filtered-response-opaque
+    // https://fetch.spec.whatwg.org/#concept-filtered-response-opaque-redirect
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new("<html><body></body></html>".to_string()));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("https://example.com/page.html".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+
+    sandbox.register_callback(
+        "__zw_fetch",
+        Box::new(move |args| {
+            let url = args.get(2).cloned().unwrap_or_default();
+            if url.contains("redirect.txt") {
+                return format!(
+                    "__zwfr:302\u{001f}Found\u{001f}Location\u{001e}https://remote.example/final.txt\u{001e}X-Zero-Final-URL\u{001e}{url}\u{001f}redirect"
+                );
+            }
+            if url.contains("remote.example") {
+                return format!(
+                    "__zwfr:200\u{001f}OK\u{001f}Content-Type\u{001e}text/plain\u{001e}Access-Control-Allow-Origin\u{001e}*\u{001e}X-Zero-Final-URL\u{001e}{url}\u{001f}remote"
+                );
+            }
+            format!(
+                "__zwfr:200\u{001f}OK\u{001f}Content-Type\u{001e}text/plain\u{001e}X-Zero-Final-URL\u{001e}{url}\u{001f}same"
+            )
+        }),
+    );
+
+    sandbox
+        .execute(
+            "Promise.all([\
+               fetch('/same.txt').then(function (r) { return [r.type, r.status, r.ok, r.headers.get('content-type'), r.url].join('/'); }),\
+               fetch('https://remote.example/cors.txt', {mode: 'cors'}).then(function (r) { return [r.type, r.status, r.ok, r.headers.get('content-type'), r.url].join('/'); }),\
+               fetch('https://remote.example/opaque.txt', {mode: 'no-cors'}).then(function (r) { return r.text().then(function (body) { return [r.type, r.status, r.ok, r.headers.get('content-type'), body, r.url].join('/'); }); }),\
+               fetch('https://remote.example/redirect.txt', {redirect: 'manual'}).then(function (r) { return r.text().then(function (body) { return [r.type, r.status, r.ok, r.headers.get('location'), body, r.url].join('/'); }); })\
+             ]).then(function (values) { globalThis.__filteredTypes = values.join('|'); });",
+        )
+        .unwrap();
+    for i in 0..8 {
+        sandbox.execute(&format!("globalThis.__filteredTypesPump = {i};")).unwrap();
+    }
+
+    assert_eq!(
+        sandbox.execute("globalThis.__filteredTypes").unwrap().value,
+        "basic/200/true/text/plain/https://example.com/same.txt|cors/200/true/text/plain/https://remote.example/cors.txt|opaque/0/false///https://remote.example/opaque.txt|opaqueredirect/0/false///https://remote.example/redirect.txt"
+    );
+}
+
+#[test]
 fn test_request_headers_guard_r3223() {
     // R3223：Headers guard 系统（Fetch §5.1/§5.2/§6.2/§6.3）——request guard 在 fill 前设（§6.3 step 31-32），
     // append/set/delete 写侧阻断禁止请求头（闭合 R3222 已知限①）；response guard 写侧阻断 Set-Cookie（闭合限③）；

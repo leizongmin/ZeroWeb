@@ -448,7 +448,7 @@ fn validate_cache_put(request: &CacheRequest, response: &CacheResponse) -> Resul
             "Cache.put request URL must be an HTTP(S) URL".to_string(),
         ));
     }
-    if response.response_type.eq_ignore_ascii_case("opaque") {
+    if is_opaque_like_response(response) {
         return Ok(());
     }
     if response.status == 206 {
@@ -481,7 +481,7 @@ fn cache_vary_matches(
     if options.ignore_vary {
         return true;
     }
-    if response.response_type.eq_ignore_ascii_case("opaque") {
+    if is_opaque_like_response(response) {
         return true;
     }
     let Some(vary) = header_value(&response.headers, "vary") else {
@@ -506,6 +506,11 @@ fn header_value<'a>(headers: &'a HashMap<String, String>, name: &str) -> Option<
         .iter()
         .find(|(header_name, _)| header_name.eq_ignore_ascii_case(name))
         .map(|(_, value)| value.as_str())
+}
+
+fn is_opaque_like_response(response: &CacheResponse) -> bool {
+    response.response_type.eq_ignore_ascii_case("opaque")
+        || response.response_type.eq_ignore_ascii_case("opaqueredirect")
 }
 
 fn request_header_value(headers: &[(String, String)], name: &str) -> Option<String> {
@@ -831,7 +836,7 @@ mod tests {
     }
 
     #[test]
-    fn test_cache_put_accepts_opaque_internal_uncacheable_metadata() {
+    fn test_cache_put_accepts_opaque_like_internal_uncacheable_metadata() {
         let mut cache = Cache::new("v1");
         let request = CacheRequest::new("https://example.com/opaque");
         cache
@@ -847,6 +852,21 @@ mod tests {
         assert_eq!(matched.response_type, "opaque");
         assert_eq!(matched.status, 206);
         assert_eq!(matched.body, b"hidden".to_vec());
+
+        let redirect_request = CacheRequest::new("https://example.com/redirect");
+        cache
+            .put(
+                redirect_request.clone(),
+                CacheResponse::new(302, b"redirect-hidden".to_vec())
+                    .with_response_type("opaqueredirect")
+                    .with_header("Vary", "*"),
+            )
+            .unwrap();
+
+        let redirect_matched = cache.match_request(&redirect_request).unwrap();
+        assert_eq!(redirect_matched.response_type, "opaqueredirect");
+        assert_eq!(redirect_matched.status, 302);
+        assert_eq!(redirect_matched.body, b"redirect-hidden".to_vec());
     }
 
     #[test]

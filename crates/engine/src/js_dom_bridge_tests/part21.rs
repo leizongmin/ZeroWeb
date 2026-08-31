@@ -1211,7 +1211,7 @@ fn test_cache_api_page_shim_puts_error_response() {
     assert!(calls[1].contains(r#""type":"error""#));
 }
 
-/// Cache.put validates the WebIDL Response argument and keeps opaque filtered
+/// Cache.put validates the WebIDL Response argument and keeps opaque-like filtered
 /// responses cacheable even when their internal response has normally
 /// uncacheable HTTP metadata.
 #[test]
@@ -1263,9 +1263,20 @@ fn test_cache_api_page_shim_put_response_validation_and_opaque_internal_response
                opaque._zwOpaqueStatusText = 'Partial Content';\
                opaque._zwOpaqueHeaders = new Headers({'Vary': '*'});\
                opaque._zwOpaqueBodyText = 'hidden';\
+               var opaqueredirect = new Response('redirect-hidden');\
+               opaqueredirect.type = 'opaqueredirect';\
+               opaqueredirect.status = 0;\
+               opaqueredirect.ok = false;\
+               opaqueredirect._bodyText = '';\
+               opaqueredirect._bodyNull = true;\
+               opaqueredirect._zwOpaqueStatus = 302;\
+               opaqueredirect._zwOpaqueStatusText = 'Found';\
+               opaqueredirect._zwOpaqueHeaders = new Headers({'Location': '/next'});\
+               opaqueredirect._zwOpaqueBodyText = 'redirect-hidden';\
                return Promise.all([\
                  cache.put('https://example.com/bad.txt', 'not response').then(function () { return 'bad-resolved'; }, function (e) { return e instanceof TypeError ? 'bad-rejected' : 'bad-other'; }),\
                  cache.put('https://example.com/opaque.txt', opaque).then(function () { return 'opaque-resolved'; }, function (e) { return 'opaque-rejected:' + e.message; }),\
+                 cache.put('https://example.com/redirect.txt', opaqueredirect).then(function () { return 'opaqueredirect-resolved'; }, function (e) { return 'opaqueredirect-rejected:' + e.message; }),\
                  cache.put('https://example.com/consume.txt', consumed).then(function () {\
                    var readerResult = 'unset';\
                    try { consumed.body.getReader(); readerResult = 'reader-open'; }\
@@ -1287,20 +1298,26 @@ fn test_cache_api_page_shim_put_response_validation_and_opaque_internal_response
 
     assert_eq!(
         sandbox.execute("globalThis.__cachePutValidation").unwrap().value,
-        "bad-rejected|opaque-resolved|used:true/reader-locked|empty-used:false"
+        "bad-rejected|opaque-resolved|opaqueredirect-resolved|used:true/reader-locked|empty-used:false"
     );
     let calls = calls.lock().unwrap();
     let put_calls = calls
         .iter()
         .filter(|call| call.contains(r#""op":"put""#))
         .collect::<Vec<_>>();
-    assert_eq!(put_calls.len(), 3);
+    assert_eq!(put_calls.len(), 4);
     let opaque_put = put_calls
         .iter()
         .find(|call| call.contains(r#""type":"opaque""#))
         .expect("opaque put request should be sent to the host");
     assert!(opaque_put.contains(r#""status":206"#));
     assert!(opaque_put.contains(r#""vary\u001e*""#));
+    let opaqueredirect_put = put_calls
+        .iter()
+        .find(|call| call.contains(r#""type":"opaqueredirect""#))
+        .expect("opaque-redirect put request should be sent to the host");
+    assert!(opaqueredirect_put.contains(r#""status":302"#));
+    assert!(opaqueredirect_put.contains(r#""location\u001e/next""#));
 }
 
 /// Cache API shim 在没有宿主 bridge 时应 reject，而不是悬挂 Promise。

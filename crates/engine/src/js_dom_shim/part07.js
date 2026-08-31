@@ -37,6 +37,11 @@
     return out;
   }
 
+  function _zwCacheIsOpaqueLikeType(responseType) {
+    responseType = String(responseType || '');
+    return responseType === 'opaque' || responseType === 'opaqueredirect';
+  }
+
   function _zwCacheResponseFromWire(raw) {
     if (typeof raw !== 'string' || (raw.indexOf('__zwcr2:') !== 0 && raw.indexOf('__zwcr:') !== 0 && raw.indexOf('__zwfr:') !== 0)) {
       throw new TypeError('malformed Cache response');
@@ -74,6 +79,21 @@
     var response = new Response(bodyArg, { status: status, statusText: statusText, headers: headers });
     response.type = String(responseType || 'default');
     response.url = responseUrl;
+    if (_zwCacheIsOpaqueLikeType(response.type)) {
+      response._zwOpaqueStatus = status;
+      response._zwOpaqueStatusText = statusText;
+      response._zwOpaqueHeaders = response.headers;
+      response._zwOpaqueBodyText = response._bodyText;
+      response._zwOpaqueBodyBytes = response._bodyBytes;
+      response.status = 0;
+      response.statusText = '';
+      response.ok = false;
+      response.headers = new Headers();
+      response.headers._guard = 'response';
+      response._bodyText = '';
+      response._bodyBytes = null;
+      response._bodyNull = true;
+    }
     return response;
   }
 
@@ -282,7 +302,8 @@
   }
 
   function _zwCacheResponseWire(response) {
-    var isOpaque = String(response.type || 'default') === 'opaque';
+    var responseType = String(response.type || 'default');
+    var isOpaque = _zwCacheIsOpaqueLikeType(responseType);
     var status = isOpaque && response._zwOpaqueStatus !== undefined ? response._zwOpaqueStatus : response.status;
     var statusText = isOpaque && response._zwOpaqueStatusText !== undefined ? response._zwOpaqueStatusText : response.statusText;
     var headers = isOpaque && response._zwOpaqueHeaders ? response._zwOpaqueHeaders : response.headers;
@@ -293,7 +314,7 @@
       url: String(response.url || ''),
       status: status | 0,
       statusText: String(statusText || ''),
-      type: String(response.type || 'default'),
+      type: responseType,
       headers: _zwCacheHeadersToWire(headers),
       body: bodyIsBytes ? _zwCacheEncodeBytesPrefix(bodyBytes) : String(bodyText || ''),
       bodyIsBytes: bodyIsBytes

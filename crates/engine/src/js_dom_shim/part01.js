@@ -1169,6 +1169,46 @@
     var m = String(url).match(/^([A-Za-z][A-Za-z0-9+.-]*:\/\/[^\/?#]*)/);
     return m ? m[1] : '';
   }
+  function _zwFetchRedirectStatus(status) {
+    status = status | 0;
+    return status === 301 || status === 302 || status === 303 || status === 307 || status === 308;
+  }
+  function _zwFetchMakeOpaqueLike(response, type) {
+    response._zwOpaqueStatus = response.status;
+    response._zwOpaqueStatusText = response.statusText;
+    response._zwOpaqueHeaders = response.headers;
+    response._zwOpaqueBodyText = response._bodyText;
+    response._zwOpaqueBodyBytes = response._bodyBytes;
+    response.type = type;
+    response.status = 0;
+    response.statusText = '';
+    response.ok = false;
+    response.headers = new Headers();
+    response.headers._guard = 'response';
+    response._bodyText = '';
+    response._bodyBytes = null;
+    response._bodyNull = true;
+    return response;
+  }
+  function _zwFetchApplyFilteredResponse(response, requestUrl, mode, redirect) {
+    // https://fetch.spec.whatwg.org/#concept-filtered-response-basic
+    // https://fetch.spec.whatwg.org/#concept-filtered-response-cors
+    // https://fetch.spec.whatwg.org/#concept-filtered-response-opaque
+    // https://fetch.spec.whatwg.org/#concept-filtered-response-opaque-redirect
+    var responseUrl = response && response.url ? response.url : requestUrl;
+    var requestOrigin = _zwUrlOrigin(_zwCurrentHref());
+    var responseOrigin = _zwUrlOrigin(responseUrl || requestUrl);
+    if (redirect === 'manual' && _zwFetchRedirectStatus(response.status)) {
+      return _zwFetchMakeOpaqueLike(response, 'opaqueredirect');
+    }
+    if (mode === 'no-cors' && responseOrigin !== requestOrigin) {
+      return _zwFetchMakeOpaqueLike(response, 'opaque');
+    }
+    if (!response.type || response.type === 'default') {
+      response.type = responseOrigin !== requestOrigin ? 'cors' : 'basic';
+    }
+    return response;
+  }
 
   // R2923 fetch 完整化：`fetch(input, init)` 透传 method/headers/body → host 返 status/headers/body。
   // input = URL 字符串或 Request-like（.url/.method/.headers/.body）；init = { method, headers, body }。
@@ -1205,6 +1245,7 @@
       // https://fetch.spec.whatwg.org/#concept-request-credentials-mode
       var credentials = String(init.credentials || (isRequestLike ? input.credentials : '') || 'same-origin');
       var headersWire = _headersToWire(init.headers) || (isRequestLike ? _headersToWire(input.headers) : '');
+      var redirect = String(init.redirect || (isRequestLike ? input.redirect : '') || 'follow');
       var body = '';
       // R3014/R3015/R3020：body 类型分发——FormData（multipart）/ URLSearchParams（urlencoded）/ Blob（字节）/
       // string（原样）。各专用类型在用户未设 Content-Type 时设默认值（缺省 Content-Type 不覆写用户显式值）。
@@ -1252,23 +1293,7 @@
           if (typeof globalThis.__zwServiceWorkerFetchSettled === 'function') {
             try { globalThis.__zwServiceWorkerFetchSettled(); } catch (_eSwFetchSettled) {}
           }
-          if (mode === 'no-cors' && _zwUrlOrigin(url) !== _zwUrlOrigin(_zwCurrentHref())) {
-            response._zwOpaqueStatus = response.status;
-            response._zwOpaqueStatusText = response.statusText;
-            response._zwOpaqueHeaders = response.headers;
-            response._zwOpaqueBodyText = response._bodyText;
-            response._zwOpaqueBodyBytes = response._bodyBytes;
-            response.type = 'opaque';
-            response.status = 0;
-            response.statusText = '';
-            response.ok = false;
-            response.headers = new Headers();
-            response.headers._guard = 'response';
-            response._bodyText = '';
-            response._bodyBytes = null;
-            response._bodyNull = true;
-          }
-          return response;
+          return _zwFetchApplyFilteredResponse(response, url, mode, redirect);
         };
         globalThis.__zw_pending[id] = function(raw) {
           if (settled) return;
@@ -1292,8 +1317,8 @@
             body,
             String(globalThis.__zwFetchClientId || ''),
             String(globalThis.__zwFetchReferrer || ''),
-            '',
-            '',
+            mode,
+            redirect,
             credentials
           );
           // R34xx：同步返回契约——headless/testharness 宿主（webview fetch_handler）同步返 wire；

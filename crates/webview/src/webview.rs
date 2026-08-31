@@ -2257,6 +2257,8 @@ impl WebView {
                                 body: None,
                                 body_bytes: None,
                                 credentials: None,
+                                mode: None,
+                                redirect: None,
                             };
                             handler(&req).ok()
                         });
@@ -2347,6 +2349,12 @@ impl WebView {
                         body,
                         body_bytes,
                         credentials: args.get(9).filter(|value| !value.is_empty()).cloned(),
+                        mode: (!fetch_id.starts_with("r115iframe:"))
+                            .then(|| args.get(7).filter(|value| !value.is_empty()).cloned())
+                            .flatten(),
+                        redirect: (!fetch_id.starts_with("r115iframe:"))
+                            .then(|| args.get(8).filter(|value| !value.is_empty()).cloned())
+                            .flatten(),
                     };
                     let page_url = sw_page_url.lock().map(|url| url.clone()).unwrap_or_default();
                     let fetch_client_id = args.get(5).filter(|value| !value.is_empty()).cloned();
@@ -4062,6 +4070,8 @@ impl WebView {
                 body: request.body.clone(),
                 body_bytes: request.body.as_ref().map(|body| body.as_bytes().to_vec()),
                 credentials: request.credentials.clone(),
+                mode: None,
+                redirect: None,
             })?;
             return Ok(ServiceWorkerFetchResponse {
                 status: response.status,

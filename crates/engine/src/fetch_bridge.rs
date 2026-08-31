@@ -42,6 +42,10 @@ pub struct FetchRequest {
     pub body_bytes: Option<Vec<u8>>,
     /// Fetch credentials mode when projected from a higher-level Request.
     pub credentials: Option<String>,
+    /// Fetch request mode (`cors`/`no-cors`/`same-origin`/etc.) when projected from JS.
+    pub mode: Option<String>,
+    /// Fetch redirect mode (`follow`/`error`/`manual`) when projected from JS.
+    pub redirect: Option<String>,
 }
 
 /// JS `fetch` 响应——status/status_text/headers/body。
@@ -243,7 +247,7 @@ impl FetchBridge {
         }
     }
 
-    /// 注册 `__zw_fetch(id, method, url, headersWire, body, ..., credentials)` 回调——JS `fetch(input, init)` 经 shim 调此。
+    /// 注册 `__zw_fetch(id, method, url, headersWire, body, clientId, referrer, mode, redirect, credentials)` 回调——JS `fetch(input, init)` 经 shim 调此。
     /// **非阻塞（有界）**：回调锁内克隆 handler Option（`FetchHandler=Arc` 廉价）+ 同步获取并发许可
     /// （满则阻塞 = 反压），acquire 后 `std::thread::spawn` 抓取（`h(&req)`）+ `resolver.resolve` 回投——
     /// JS worker 不在单个 fetch 期间冻结。handler 未注入时子线程 resolve 错误标记。
@@ -272,6 +276,8 @@ impl FetchBridge {
                 } else {
                     (Some(body_raw), None)
                 };
+                let mode = args.get(7).filter(|value| !value.is_empty()).cloned();
+                let redirect = args.get(8).filter(|value| !value.is_empty()).cloned();
                 let credentials = args.get(9).filter(|value| !value.is_empty()).cloned();
                 let req = FetchRequest {
                     url,
@@ -280,6 +286,8 @@ impl FetchBridge {
                     body,
                     body_bytes,
                     credentials,
+                    mode,
+                    redirect,
                 };
                 let handler_opt: Option<FetchHandler> = handler_cell.lock().ok().and_then(|c| c.as_ref().cloned());
                 let resolver = resolver.clone();
@@ -421,12 +429,13 @@ mod tests {
     }
 
     #[test]
-    fn fetch_bridge_preserves_credentials_wire() {
+    fn fetch_bridge_preserves_fetch_modes_wire() {
         let (tx, rx) = std::sync::mpsc::channel();
         let resolver = AsyncResolver::new(|_, _| {});
         let bridge = FetchBridge::new(resolver);
         bridge.set_handler(Arc::new(move |req: &FetchRequest| -> Result<FetchResponse, String> {
-            tx.send(req.credentials.clone()).expect("credentials sent");
+            tx.send((req.mode.clone(), req.redirect.clone(), req.credentials.clone()))
+                .expect("fetch modes sent");
             Ok(FetchResponse::ok(""))
         }));
 
@@ -472,15 +481,19 @@ mod tests {
             "".into(),
             "".into(),
             "".into(),
-            "".into(),
-            "".into(),
+            "no-cors".into(),
+            "manual".into(),
             "omit".into(),
         ]);
 
         assert_eq!(
             rx.recv_timeout(std::time::Duration::from_secs(2))
                 .expect("fetch handler saw request"),
-            Some("omit".to_string())
+            (
+                Some("no-cors".to_string()),
+                Some("manual".to_string()),
+                Some("omit".to_string())
+            )
         );
     }
 
