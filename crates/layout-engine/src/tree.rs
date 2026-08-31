@@ -1455,11 +1455,33 @@ fn build_subtree(
             .collect();
         if let Some(idx) = in_flow_block.iter().position(|&s| s == dom_id) {
             let zero = taffy::style::LengthPercentageAuto::length(0.0_f32);
+            // R3872：自折叠子（css-box-4：h=0 且无 border/padding → mt/mb 折叠穿透合一）
+            // 的**穿透合计 margin** 才是与容器边缘折叠的对象——trim 须两侧同归零，仅归零
+            // edge 侧会留下另一侧穿透 margin（driving: block-container-block-end/start-
+            // self-collapsing-item-has-larger-block-start/end 四案）。bounded：height 指定
+            // Px(0)（auto 自折叠需内容空判定，FIXME）；有 border/padding 不折叠。
+            let self_collapsing = matches!(computed.height, LengthValue::Px(v) if v == 0.0)
+                && matches!(
+                    computed.border_top_style,
+                    zero_style_system::property::types::BorderStyleValue::None
+                )
+                && matches!(
+                    computed.border_bottom_style,
+                    zero_style_system::property::types::BorderStyleValue::None
+                )
+                && matches!(computed.padding_top, LengthValue::Px(v) if v == 0.0)
+                && matches!(computed.padding_bottom, LengthValue::Px(v) if v == 0.0);
             if idx == 0 && ps.margin_trim.block_start {
                 taffy_style.margin.top = zero;
+                if self_collapsing {
+                    taffy_style.margin.bottom = zero;
+                }
             }
             if idx + 1 == in_flow_block.len() && ps.margin_trim.block_end {
                 taffy_style.margin.bottom = zero;
+                if self_collapsing {
+                    taffy_style.margin.top = zero;
+                }
             }
         }
     }
