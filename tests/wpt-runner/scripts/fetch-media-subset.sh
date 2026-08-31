@@ -70,7 +70,35 @@ fetch_dir() {
 fetch_raw "common/media.js"
 
 # 主目录顶层 testharness 白名单（语义面非解码面）。
+# media-elements M3 扩批（event_* 族——M2 headless 加载序列落地后事件断言可跑；
+# 上游用例断言 loadstart/progress/loadedmetadata/loadeddata/canplay/canplaythrough/
+# play/pause/playing/durationchange/resize 时序与状态）。
 TOP_FILES=(
+  "event_canplay.html"
+  "event_canplay_noautoplay.html"
+  "event_canplaythrough.html"
+  "event_canplaythrough_noautoplay.html"
+  "event_loadeddata.html"
+  "event_loadeddata_noautoplay.html"
+  "event_loadedmetadata.html"
+  "event_loadedmetadata_noautoplay.html"
+  "event_loadstart.html"
+  "event_loadstart_noautoplay.html"
+  "event_order_canplay_canplaythrough.html"
+  "event_order_canplay_playing.html"
+  "event_order_durationchange_resize_loadedmetadata.html"
+  "event_order_loadedmetadata_loadeddata.html"
+  "event_order_loadstart_progress.html"
+  "event_pause.html"
+  "event_pause_noautoplay.html"
+  "event_play.html"
+  "event_play_noautoplay.html"
+  "event_playing.html"
+  "event_playing_noautoplay.html"
+  "event_timeupdate.html"
+  "event_timeupdate_noautoplay.html"
+  "event_progress.html"
+  "event_progress_noautoplay.html"
   "mime-types/canPlayType.html"
   "error-codes/error.html"
   "src_reflects_attribute_not_source_elements.html"

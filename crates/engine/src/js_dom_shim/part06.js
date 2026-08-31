@@ -6764,8 +6764,9 @@
     ms.playing = true;
     _zwMediaFire(sel, handle, key, 'play');
     _zwMediaFire(sel, handle, key, 'playing');
+    _zwMediaFire(sel, handle, key, 'timeupdate'); // 播放推进首帧（event_timeupdate* 断言面）
   }
-  function _zwMediaLoadSequence(sel, handle, key) {
+  function _zwMediaLoadSequence(sel, handle, key, tag) {
     var ms = _mediaState[key] || (_mediaState[key] = {});
     ms.networkState = 2; // NETWORK_LOADING——loadstart/progress 期间断言面
     _zwMediaFire(sel, handle, key, 'loadstart');
@@ -6773,6 +6774,9 @@
     ms.readyState = 1;
     if (ms.duration == null) ms.duration = 600; // headless 元数据定值（无真解码；用例只断言可写/类型面）
     _zwMediaFire(sel, handle, key, 'durationchange');
+    // spec resize：视频尺寸变为已知时派发（audio 无此事件）——时序在 durationchange 后、
+    // loadedmetadata 前（event_order_durationchange_resize_loadedmetadata 断言面）。
+    if (tag === 'video') _zwMediaFire(sel, handle, key, 'resize');
     _zwMediaFire(sel, handle, key, 'loadedmetadata');
     ms.readyState = 2;
     _zwMediaFire(sel, handle, key, 'loadeddata');
@@ -6825,7 +6829,7 @@
     }
     // M2：media 元素资源成功加载 → 派加载事件序列（error 已在上方 error 分支派发）。
     if ((tag === 'audio' || tag === 'video') && outcome !== 'error') {
-      _zwMediaLoadSequence(sel, handle, key);
+      _zwMediaLoadSequence(sel, handle, key, tag);
     }
     return true;
   }

@@ -270,13 +270,18 @@ fn test_audio_constructor_and_media_methods_r2835() {
         "new Audio('beep.mp3') src 反射"
     );
 
-    // play() 返 resolved Promise（spec 一致）；pause()/load()/canPlayType() no-op 不抛。
-    // 经 microtask checkpoint（execute 末）派发 .then，下 execute 可读 __played。
+    // play() 返 pending Promise（spec：resolve 于播放推进）；pause() 后 load()/canPlayType()
+    // no-op 不抛。R2835 原断言「play 后立刻 pause 仍 resolved」已随 M3 pending-promise
+    // 语义修正——spec：pause() 会 reject 未决 play promise（event_play_noautoplay 断言面）。
+    // 本测改为验证 pending→pause→reject 链（无宿主定时器时 pause() 直接 reject）。
     sandbox
         .execute(
             "globalThis.__au2 = new Audio('x.mp3');\
              globalThis.__playType = typeof globalThis.__au2.play;\
-             globalThis.__au2.play().then(function(){ globalThis.__played = 'yes'; });\
+             globalThis.__playResult = '';\
+             globalThis.__au2.play().then(\
+               function(){ globalThis.__playResult = 'resolved'; },\
+               function(e){ globalThis.__playResult = 'rejected:' + (e && e.name || ''); });\
              globalThis.__au2.pause();\
              globalThis.__au2.load();\
              globalThis.__cpt = globalThis.__au2.canPlayType('audio/mpeg');",
@@ -295,9 +300,22 @@ fn test_audio_constructor_and_media_methods_r2835() {
     // play().then 回调经 microtask checkpoint 派发——下个 execute 读到 __played。
     sandbox.execute("void 0").unwrap(); // 触发 microtask checkpoint
     assert_eq!(
+        sandbox.execute("String(globalThis.__playResult)").unwrap().value,
+        "rejected:AbortError",
+        "play() pending promise 被 pause() reject（AbortError，spec 一致）"
+    );
+    // 已播放中再 play() → resolved Promise（spec：already playing 无事件，直接 resolve）。
+    sandbox
+        .execute(
+            "globalThis.__played = '';\
+             globalThis.__au2.play().then(function(){ globalThis.__played = 'yes'; });",
+        )
+        .unwrap();
+    sandbox.execute("void 0").unwrap();
+    assert_eq!(
         sandbox.execute("String(globalThis.__played)").unwrap().value,
         "yes",
-        "audio.play().then 回调经 microtask 派发（resolved Promise）"
+        "already-playing play() 返 resolved Promise"
     );
 
     // sel-based <video> 元素亦有 media 方法（play no-op 不抛）。

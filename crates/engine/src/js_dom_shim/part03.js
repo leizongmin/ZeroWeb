@@ -11309,26 +11309,43 @@
         // play 返 resolved Promise（spec：HTMLMediaElement.play() 返 Promise），pause/load no-op，
         // canPlayType 返 ''（保守「不可播放」）。使 `new Audio(url).play().then(...)` 不抛（媒体 UI 主模式）。
         if (prop === 'play' && (_realTag(sel, handle) === 'AUDIO' || _realTag(sel, handle) === 'VIDEO')) {
-          // media-elements M2：play() 语义面——paused → playing=true + 派 play → playing
-          //（readyState 已达 HAVE_FUTURE_DATA 即 headless 恒真）。already playing → 无事件。
-          // spec pause() 后紧跟 play() 恢复播放。返回 resolved Promise（spec）。
+          // media-elements M2/M3：play() 语义面——paused → playing=true + 派 play → playing
+          // → timeupdate。返回**pending** Promise（spec：resolve 于播放真正推进）——
+          // headless 近似：setTimeout(0) 后仍 playing → resolve；pause() 先行 → pause()
+          // 直接 reject AbortError（spec「pause() rejects all pending play Promises」，
+          // event_play/pause_noautoplay 断言面）。
           return function () {
             var _pTag = _realTag(sel, handle);
-            if (_pTag === 'AUDIO' || _pTag === 'VIDEO') {
-              var _pKey = _elKey(sel, handle);
-              var _pMs = _mediaState[_pKey] || (_mediaState[_pKey] = {});
-              if (!_pMs.playing) {
-                _pMs.playing = true;
-                _pMs.ended = false;
-                _dispatchWithBubble(_pKey, sel, handle, _makeEvent('play', { bubbles: false, cancelable: false }));
-                _dispatchWithBubble(_pKey, sel, handle, _makeEvent('playing', { bubbles: false, cancelable: false }));
-              }
+            var _pKey = _elKey(sel, handle);
+            var _pMs = _mediaState[_pKey] || (_mediaState[_pKey] = {});
+            if (_pMs.playing) return Promise.resolve(undefined);
+            _pMs.playing = true;
+            _pMs.ended = false;
+            _dispatchWithBubble(_pKey, sel, handle, _makeEvent('play', { bubbles: false, cancelable: false }));
+            _dispatchWithBubble(_pKey, sel, handle, _makeEvent('playing', { bubbles: false, cancelable: false }));
+            _dispatchWithBubble(_pKey, sel, handle, _makeEvent('timeupdate', { bubbles: false, cancelable: false }));
+            var entry = null;
+            var promise = new Promise(function (resolve, reject) {
+              entry = { resolve: resolve, reject: reject };
+            });
+            _pMs.playPromise = entry;
+            if (typeof setTimeout === 'function') {
+              setTimeout(function () {
+                if (_pMs.playPromise !== entry) return; // 已被 pause() settle
+                delete _pMs.playPromise;
+                if (_pMs.playing) entry.resolve(undefined);
+                else entry.reject(new (globalThis.DOMException || Error)('play() was interrupted by pause()', 'AbortError'));
+              }, 0);
+            } else {
+              delete _pMs.playPromise;
+              entry.resolve(undefined);
             }
-            return Promise.resolve(undefined);
+            return promise;
           };
         }
         if (prop === 'pause' && (_realTag(sel, handle) === 'AUDIO' || _realTag(sel, handle) === 'VIDEO')) {
-          // pause()：!paused → playing=false + 派 pause（spec：已暂停时调用无事件）。
+          // pause()：!paused → playing=false + 派 pause（spec：已暂停时调用无事件）；
+          // pending play promise → reject AbortError（spec 一致）。
           return function () {
             var _pTag = _realTag(sel, handle);
             if (_pTag === 'AUDIO' || _pTag === 'VIDEO') {
@@ -11337,6 +11354,11 @@
               if (_pMs && _pMs.playing) {
                 _pMs.playing = false;
                 _dispatchWithBubble(_pKey, sel, handle, _makeEvent('pause', { bubbles: false, cancelable: false }));
+              }
+              if (_pMs && _pMs.playPromise) {
+                var entry = _pMs.playPromise;
+                delete _pMs.playPromise;
+                entry.reject(new (globalThis.DOMException || Error)('play() was interrupted by pause()', 'AbortError'));
               }
             }
           };
