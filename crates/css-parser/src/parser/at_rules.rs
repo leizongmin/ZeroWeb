@@ -854,21 +854,25 @@ impl<'a> Parser<'a> {
         // driving: WPT css-supports-033/034 `not ({ ... })`；selector() regression。
         let mut prelude = String::new();
         let mut depth = 0i32;
+        // R3880：多余右括号（如 `(margin: 0))`）会把 depth 压到负值（闭括号多于开括号），
+        // 若守卫用 `== 0` 则后续顶层 `;`/`{` 全部失配 → prelude 吞掉其后所有合法规则
+        //（at-supports-023/028/031 实证：畸形 @supports 后的绿规则整条消失）。守卫改
+        // `<= 0`（闭括号超发后视为顶层）+ 闭括号钳零，双层免疫。
         loop {
             match self.peek() {
-                Token::LBrace if depth == 0 => break,
+                Token::LBrace if depth <= 0 => break,
                 // `@supports` 是块 at-rule（须有 `{...}`）。prelude 收集期间遇顶层 `;`
                 //（depth==0，无块）= 畸形语句 → 返回 None（不消耗 `;`），由 consume_rule
                 // 的 skip_malformed_qualified_rule 消耗 `;` 后继续下一条规则。否则 prelude
                 // 会越过 `;` 吞掉紧跟其后的合法规则。driving: WPT at-supports-024 `@supports;`。
-                Token::Semicolon if depth == 0 => return None,
+                Token::Semicolon if depth <= 0 => return None,
                 Token::LParen | Token::Function(_) | Token::LBracket | Token::LBrace => {
                     depth += 1;
                     prelude.push_str(&format!("{}", self.peek()));
                     self.advance();
                 }
                 Token::RParen | Token::RBracket | Token::RBrace => {
-                    depth = depth.saturating_sub(1);
+                    depth = (depth - 1).max(0);
                     prelude.push_str(&format!("{}", self.peek()));
                     self.advance();
                 }

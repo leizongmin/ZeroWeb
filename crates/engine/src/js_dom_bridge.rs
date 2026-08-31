@@ -3228,6 +3228,26 @@ fn eval_supports_cond_ast(
     match cond {
         SupportsCondition::Property(prop, val) => decl_supported(style, prop, val),
         SupportsCondition::Selector(_) => true,
+        // R3880：font-format()/font-tech() 为浏览器级能力谓词（CSS Fonts 4 §11），
+        // 与元素样式无关——opentype/truetype/woff/woff2/collection 与
+        // features-opentype/color-colrv0/v1 等主流技术恒支持（与 style-system
+        // evaluate_supports_condition 同语义）。
+        SupportsCondition::FontFormat(f) => {
+            matches!(f.as_str(), "opentype" | "truetype" | "woff" | "woff2" | "collection")
+        }
+        SupportsCondition::FontTech(t) => matches!(
+            t.as_str(),
+            "features-opentype"
+                | "color-colrv0"
+                | "color-colrv1"
+                | "color-sbix"
+                | "color-cbdt"
+                | "color-svg"
+                | "variations"
+                | "palettes"
+                | "incremental"
+                | "font-metrics-offset"
+        ),
         SupportsCondition::And(conds) => conds.iter().all(|c| eval_supports_cond_ast(c, style)),
         SupportsCondition::Or(conds) => conds.iter().any(|c| eval_supports_cond_ast(c, style)),
         SupportsCondition::Not(c) => !eval_supports_cond_ast(c, style),

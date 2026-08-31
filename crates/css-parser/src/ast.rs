@@ -480,6 +480,10 @@ pub enum SupportsCondition {
     Property(String, String),
     /// 选择器测试：`selector(<selector>)`。
     Selector(String),
+    /// 字体格式测试：`font-format(<font-format>)`（CSS Fonts 4 §11.1）。
+    FontFormat(String),
+    /// 字体技术测试：`font-tech(<font-tech>)`（CSS Fonts 4 §11.2）。
+    FontTech(String),
     /// 逻辑与：`<cond1> and <cond2>`。
     And(Vec<SupportsCondition>),
     /// 逻辑或：`<cond1> or <cond2>`。

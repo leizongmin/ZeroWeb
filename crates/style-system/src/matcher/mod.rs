@@ -1089,6 +1089,8 @@ fn evaluate_supports_condition(condition: &zero_css_parser::ast::SupportsConditi
                 false
             }
         }
+        SupportsCondition::FontFormat(format) => font_format_supported(format),
+        SupportsCondition::FontTech(tech) => font_tech_supported(tech),
         SupportsCondition::And(conditions) => conditions.iter().all(evaluate_supports_condition),
         SupportsCondition::Or(conditions) => conditions.iter().any(evaluate_supports_condition),
         SupportsCondition::Not(inner) => !evaluate_supports_condition(inner),
@@ -1180,6 +1182,36 @@ const SUPPORTED_SIMPLE_PSEUDO_CLASSES: &[&str] = &[
     "valid",
     "visited",
 ];
+
+/// `@supports font-format()` 接受的字体格式（CSS Fonts 4 §11.1 `<font-format>`；
+/// parse 侧已归一小写）。chrome 150 全接受；`svg`（已废弃格式关键字）不作支持。
+const SUPPORTED_FONT_FORMATS: &[&str] = &["opentype", "truetype", "woff", "woff2", "collection"];
+
+/// `@supports font-tech()` 接受的字体技术（CSS Fonts 4 §11.2 `<font-tech>`；
+/// parse 侧已归一小写，`color-COLRv0` → `color-colrv0`）。chrome 150 支持 COLRv0/v1、
+/// OpenType features 等主流项；AAT/Graphite 为非 chrome 主线技术 → 不支持。
+const SUPPORTED_FONT_TECHS: &[&str] = &[
+    "features-opentype",
+    "color-colrv0",
+    "color-colrv1",
+    "color-sbix",
+    "color-cbdt",
+    "color-svg",
+    "variations",
+    "palettes",
+    "incremental",
+    "font-metrics-offset",
+];
+
+/// font-format() 谓词求值（CSS Fonts 4 §11.1）。
+fn font_format_supported(format: &str) -> bool {
+    SUPPORTED_FONT_FORMATS.contains(&format)
+}
+
+/// font-tech() 谓词求值（CSS Fonts 4 §11.2）。
+fn font_tech_supported(tech: &str) -> bool {
+    SUPPORTED_FONT_TECHS.contains(&tech)
+}
 
 /// 顶层（括号外）逗号检测——selector() 参数为单个 complex selector，选择器列表非法。
 fn has_top_level_comma(input: &str) -> bool {

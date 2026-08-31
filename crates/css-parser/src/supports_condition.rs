@@ -201,6 +201,29 @@ fn parse_primary(input: &str) -> Option<SupportsCondition> {
         return Some(SupportsCondition::Selector(inner.trim().to_string()));
     }
 
+    // font-format()/font-tech() 函数（CSS Fonts 4 §11：@supports 字体能力谓词）。
+    // 参数 = 单个 <font-format>/<font-tech> 关键字；空参/带引号/多关键字（空格或逗号
+    // 分隔）均非法 → 不构成谓词（落 general-enclosed=false；driving:
+    // at-supports-font-format-001/-tech-001 的 not font-format() 变体）。
+    if let Some(rest) = strip_function_prefix(input, "font-format")
+        && let Some(inner) = rest.strip_suffix(')')
+    {
+        let arg = inner.trim();
+        if is_single_unquoted_keyword(arg) {
+            return Some(SupportsCondition::FontFormat(arg.to_ascii_lowercase()));
+        }
+        return Some(SupportsCondition::GeneralEnclosed(input.to_string()));
+    }
+    if let Some(rest) = strip_function_prefix(input, "font-tech")
+        && let Some(inner) = rest.strip_suffix(')')
+    {
+        let arg = inner.trim();
+        if is_single_unquoted_keyword(arg) {
+            return Some(SupportsCondition::FontTech(arg.to_ascii_lowercase()));
+        }
+        return Some(SupportsCondition::GeneralEnclosed(input.to_string()));
+    }
+
     // 括号包裹：单个匹配括号对
     if let Some(inner) = strip_one_paren_pair(input) {
         let inner = inner.trim();
@@ -242,6 +265,16 @@ fn strip_function_prefix<'a>(input: &'a str, name: &str) -> Option<&'a str> {
         return Some(&input[prefix_len..]);
     }
     None
+}
+
+/// 参数是否为单个无引号关键字（`opentype` ✓、`"opentype"` ✗、`a b` ✗、`a,b` ✗、空 ✗）。
+/// font-format()/font-tech() 的合法参数形（CSS Fonts 4 §11）。
+fn is_single_unquoted_keyword(arg: &str) -> bool {
+    !arg.is_empty()
+        && !arg.contains('"')
+        && !arg.contains('\'')
+        && !arg.contains(',')
+        && !arg.contains(char::is_whitespace)
 }
 
 /// 在顶层（不在括号内）按关键字分割字符串。
@@ -288,6 +321,39 @@ mod tests {
     fn test_parse_selector_condition() {
         let cond = parse_supports_condition("selector(.a > .b)").unwrap();
         assert_eq!(cond, SupportsCondition::Selector(".a > .b".to_string()));
+    }
+
+    /// R3880：font-format()/font-tech() 谓词解析（CSS Fonts 4 §11）。
+    /// 单个无引号关键字合法（大小写归一）；空参/引号/多关键字/逗号 → general-enclosed。
+    #[test]
+    fn test_parse_font_format_tech_predicates() {
+        use SupportsCondition::*;
+        assert_eq!(
+            parse_supports_condition("font-format(opentype)").unwrap(),
+            FontFormat("opentype".to_string())
+        );
+        // 关键字 ASCII 大小写不敏感（TrueType/Woff 变体）
+        assert_eq!(
+            parse_supports_condition("font-format(TrueType)").unwrap(),
+            FontFormat("truetype".to_string())
+        );
+        assert_eq!(
+            parse_supports_condition("font-tech(color-COLRv0)").unwrap(),
+            FontTech("color-colrv0".to_string())
+        );
+        // 非法参数形 → general-enclosed（恒 false）
+        for bad in [
+            "font-format()",
+            "font-format(\"opentype\")",
+            "font-format(truetype opentype)",
+            "font-tech(features-opentype, color-colrv0)",
+        ] {
+            assert_eq!(
+                parse_supports_condition(bad).unwrap(),
+                GeneralEnclosed(bad.to_string()),
+                "{bad} 应该落 general-enclosed"
+            );
+        }
     }
 
     #[test]
@@ -511,4 +577,29 @@ mod tests {
         }
         assert!(parse_supports_condition("(((display: grid)))").is_some());
     }
+}
+
+/// R3880：多余右括号的 @supports 须整条丢弃且不吞掉其后规则（CSS Syntax 恢复语义）。
+///
+/// `(margin: 0))` 闭括号多于开括号，条件非法 → 规则丢弃；其后合法规则须存活。
+/// 实证 bug：prelude 扫描的顶层守卫用 `== 0`，负 depth 使 `;`/`{` 全部失配，
+/// prelude 吞到 EOF（at-supports-023/028/031 的绿规则消失根因）。
+#[test]
+fn test_extra_close_paren_recovery() {
+    let ss =
+        crate::Parser::parse_stylesheet("@supports (margin: 0)) {}\n@supports (margin:0) { div { color: green } }");
+    assert_eq!(ss.rules.len(), 1, "畸形 @supports 丢弃，其后规则存活");
+    match ss.rules.first() {
+        Some(crate::ast::Rule::Supports(supports)) => {
+            assert_eq!(
+                supports.condition,
+                SupportsCondition::Property("margin".to_string(), "0".to_string())
+            );
+        }
+        other => panic!("应为 @supports 规则，实际 {:?}", other.map(std::mem::discriminant)),
+    }
+
+    // 无块 + 分号恢复变体
+    let ss = crate::Parser::parse_stylesheet("@supports (margin: 0));\ndiv { color: red }");
+    assert_eq!(ss.rules.len(), 1, "分号恢复后 div 规则存活");
 }
