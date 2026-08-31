@@ -590,6 +590,7 @@ impl WebView {
             js_shim_initialized: false,
             #[cfg(feature = "v8")]
             native_state_gen: None,
+            #[cfg(feature = "v8")]
             native_installed_for_gen: false,
             external_script,
             script_source_fetcher,
