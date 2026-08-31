@@ -1009,8 +1009,148 @@ pub(super) fn is_cc_control_char(ch: char) -> bool {
     ((cp <= 0x1F) || (0x7F..=0x9F).contains(&cp)) && !matches!(cp, 0x09 | 0x0A | 0x0C | 0x0D)
 }
 
+/// R3868：`::first-letter` 首字母单元的 P*（Unicode 标点类）判定——css-pseudo-4
+/// 「first typographic letter unit = 前导 P* + 首字母 + 后随 P*（除 Ps/Pd）」。
+/// 无 unicode-general-category 依赖，按常用标点块的范围近似：
+/// ASCII 标点、Latin-1 补充标点、General Punctuation（U+2010–U+205E，含 Pc/Pd/Ps/Pe/Pi/Pf/Po）、
+/// Aegean 词分隔符（U+10100–U+10102，driving test 用例）等。范围外标点暂不吸收（FIXME：
+/// 需全量 Unicode category 数据源）。
+pub(super) fn is_first_letter_punct(ch: char) -> bool {
+    matches!(ch,
+        // ASCII：! " ' , . : ; ? 与括号/方括号/花括号/连接符
+        '!' | '"' | '\'' | ',' | '.' | ':' | ';' | '?' | '(' | ')' | '[' | ']' | '{' | '}' | '_' | '-' | '/' | '\\'
+        // Latin-1 补充：¡ § ¶ · ¿ 与 guillemets « »（Pi/Pf）
+        | '\u{00A1}' | '\u{00A7}' | '\u{00B6}' | '\u{00B7}' | '\u{00AB}' | '\u{00BB}' | '\u{00BF}'
+        // General Punctuation：U+2010–U+2027（Pd/Ps/Pe/Pi/Pf/Po：–—―‘’“”†‡•… 等）
+        | '\u{2010}'..='\u{2027}'
+        // U+2030–U+205E（‰ ′ ″ ‹›※ 单双注音连接符 U+203F/U+2040 等 Po/Pc）
+        | '\u{2030}'..='\u{205E}'
+        // Aegean word separators（Po，css-pseudo-4 driving 用例）
+        | '\u{10100}'..='\u{10102}'
+    )
+}
+
+/// R3868：Zs 类排版空格中「非词分隔符」的判定——css-pseudo-4 assert：
+/// trailing 方向词分隔符（U+0020 / U+00A0）终止吸收；其他排版空格（emsp 等
+/// U+2000–U+200A、U+205F、U+3000、U+1680）仅在与后随可吸收标点相邻时桥接。
+/// leading 方向所有排版空格均吸收（«&nbsp;T → « nbsp T 全入）。
+pub(super) fn is_first_letter_word_separator(ch: char) -> bool {
+    matches!(ch, ' ' | '\u{00A0}')
+}
+
+/// R3868：非词分隔符排版空格（Zs 其余成员的常用块近似）。
+pub(super) fn is_first_letter_typographic_space(ch: char) -> bool {
+    matches!(
+        ch,
+        '\u{1680}' | '\u{2000}'..='\u{200A}' | '\u{202F}' | '\u{205F}' | '\u{3000}'
+    )
+}
+
+/// R3868：`::first-letter` 在单个文本片段内应吸收的字符数（css-pseudo-4
+/// #first-letter-pseudo 的同片段近似）：
+/// 1. **leading**：自片段首起，吸收所有 P* 与排版空格，直到（并含）首个字母；
+/// 2. **trailing**：首字母之后继续吸收 P*，但排除 Ps（开括号）与 Pd（连破折号）；
+///    词分隔符（空格/nbsp）终止吸收；非词分隔符排版空格仅当其后紧随可吸收标点时桥接吸收。
+///
+/// 片段不含字母时返回 0（无首字母，不覆色）。跨片段簇（如折叠后标点落入后续片段）
+/// 为已知近似（FIXME：需 IFC 级跨片段状态）。
+pub(super) fn first_letter_cluster_len(text: &str) -> usize {
+    let chars: Vec<char> = text.chars().collect();
+    if chars.is_empty() {
+        return 0;
+    }
+    // css-pseudo-4「typographic letter unit」= 字母/音节文字/表意文字 + 数字。
+    let is_letter = |c: char| (c.is_alphabetic() || c.is_numeric()) && !is_first_letter_punct(c);
+    // leading：跳过 P* 与排版空格
+    let mut i = 0;
+    while i < chars.len()
+        && (is_first_letter_punct(chars[i])
+            || is_first_letter_word_separator(chars[i])
+            || is_first_letter_typographic_space(chars[i]))
+    {
+        i += 1;
+    }
+    // 无字母（片段全是标点/空格）→ 无首字母（后续片段另判）
+    if i >= chars.len() || !is_letter(chars[i]) {
+        return 0;
+    }
+    // 含首字母
+    i += 1;
+    // trailing：吸收 P*（除 Ps/Pd）；词分隔符终止；其他排版空格桥接（须后随可吸收标点才连同吸收）
+    let trailing_absorbable = |c: char| is_first_letter_punct(c) && !is_first_letter_open_or_dash(c);
+    while i < chars.len() {
+        let c = chars[i];
+        if trailing_absorbable(c) {
+            i += 1;
+        } else if is_first_letter_typographic_space(c) && i + 1 < chars.len() && trailing_absorbable(chars[i + 1]) {
+            i += 2;
+        } else {
+            break;
+        }
+    }
+    i
+}
+
+/// R3868：Ps（开括号类）与 Pd（连破折号类）——trailing 方向不吸收的 P* 子类。
+/// （leading 方向全部吸收：`–Test` 的 – 属于首字母单元。）
+fn is_first_letter_open_or_dash(ch: char) -> bool {
+    matches!(
+        ch,
+        '(' | '[' | '{'
+        | '\u{FF08}' | '\u{FF3B}' | '\u{FF5B}' | '\u{207D}' | '\u{208D}'
+        // Pd：- – — ― 与 U+2010–U+2015 连字符/破折号块
+        | '-' | '\u{2010}'..='\u{2015}'
+    )
+}
+
 pub(super) fn paint_ifc_baseline_offset(fragment_height: f32) -> f32 {
     fragment_height
+}
+
+#[cfg(test)]
+mod first_letter_cluster_tests {
+    use super::*;
+
+    /// 纯字母片段：簇 = 首字母自身。
+    #[test]
+    fn test_bare_letter() {
+        assert_eq!(first_letter_cluster_len("Test"), 1);
+    }
+
+    /// css-pseudo-4 driving 用例 first-letter-trailing-punctuation 各行的同片段簇：
+    /// 前导 P*（含 Ps/Pd）+ 字母 + 后随 P*（除 Ps/Pd），词分隔符 trailing 终止。
+    #[test]
+    fn test_trailing_punctuation_cases() {
+        // (T)est → (T)
+        assert_eq!(first_letter_cluster_len("(T)est"), 3);
+        // “T”est → “T”
+        assert_eq!(first_letter_cluster_len("\u{201C}T\u{201D}est"), 3);
+        // _T_est → _T_
+        assert_eq!(first_letter_cluster_len("_T_est"), 3);
+        // –Test → –T（leading Pd 吸收）
+        assert_eq!(first_letter_cluster_len("\u{2013}Test"), 2);
+        // T(rail → T（trailing Ps 不吸收）
+        assert_eq!(first_letter_cluster_len("T(rail"), 1);
+        // T–rail → T（trailing Pd 不吸收）
+        assert_eq!(first_letter_cluster_len("T\u{2013}rail"), 1);
+        // «nbspTnbsp»est → «nbspT（leading 空格吸收；trailing nbsp 终止）
+        assert_eq!(first_letter_cluster_len("\u{00AB}\u{00A0}T\u{00A0}\u{00BB}est"), 3);
+        // U+10100T U+10100 est（Aegean Po）→ 全簇
+        assert_eq!(first_letter_cluster_len("\u{10100}T\u{10100}est"), 3);
+        // T&emsp;.est（同片段形态）→ T+emsp+. 桥接
+        assert_eq!(first_letter_cluster_len("T\u{2003}.est"), 3);
+        // T.&emsp;est → T.（末标点后单独空格不吸收）
+        assert_eq!(first_letter_cluster_len("T.\u{2003}est"), 2);
+    }
+
+    /// 片段无字母（全标点/空格）→ 0（无首字母，不覆色）。
+    #[test]
+    fn test_no_letter_returns_zero() {
+        assert_eq!(first_letter_cluster_len("(\" — "), 0);
+        assert_eq!(first_letter_cluster_len(""), 0);
+        // 数字不是字母：纯数字片段按「非标点非空格」视作字母单元起点（含自身）
+        assert_eq!(first_letter_cluster_len("123"), 1);
+    }
 }
 
 #[cfg(test)]

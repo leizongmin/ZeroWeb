@@ -1282,15 +1282,25 @@ impl super::Painter {
                 } else {
                     // 非多列布局：统一处理存储片段和 IFC 片段
                     // 宏化渲染逻辑，避免重复代码
-                    // ::first-letter（CSS2 §5.12.2）：块容器首个格式化行的首字母按伪元素样式绘制
-                    //（穿透嵌套 inline——首字母所在片段属于子 span，但伪元素样式挂在块容器上）。
+                    // ::first-letter（CSS2 §5.12.2 / css-pseudo-4）：块容器首个格式化行的首字母
+                    // 单元按伪元素样式绘制（穿透嵌套 inline——首字母所在片段属于子 span，但伪元素
+                    // 样式挂在块容器上）。首字母单元 = 前导 P* + 首字母 + 后随 P*（除 Ps/Pd），
+                    // 词分隔符在 trailing 方向终止吸收（first_letter_cluster_len）。
                     // paint 侧逐字形覆色（切片范围 = color；font/metrics 类属性需 IFC 分词切片
                     // 改几何，FIXME 挂账）。多列分支暂不应用（FIXME）。
                     let first_letter_color: Option<Color> = style
                         .first_letter_pseudo
                         .as_deref()
                         .map(|s| color_value_to_render(&s.color));
+                    // Some((期望字符序列, 已消费数))——仅首个含非空白字符的片段携带；
+                    // 字形与期望字符不匹配（shaping 变体/分裂）即放弃，防止错染。
+                    let mut first_letter_expected: Option<(Vec<char>, usize)> = None;
                     let mut first_letter_applied = false;
+                    let first_letter_bg_color: Option<Color> = style
+                        .first_letter_pseudo
+                        .as_deref()
+                        .filter(|s| s.background_color != ColorValue::Transparent)
+                        .map(|s| color_value_to_render(&s.background_color));
                     macro_rules! render_fragment {
                         ($frag_x:expr, $frag_y:expr, $frag_width:expr, $baseline_offset:expr, $frag_fs:expr, $frag_text:expr, $frag_nid:expr, $is_ahem:expr, $frag_source:expr) => {{
                             // CSS 2.1 §9.2.1.1: an inline-block is an atomic inline-level box.
@@ -1412,6 +1422,40 @@ impl super::Painter {
                                     if ch == ' ' { w + word_spacing } else { w }
                                 })
                                 .sum();
+                            // R3868：::first-letter 首字母单元簇（前导 P* + 字母 + 后随 P*，除 Ps/Pd）
+                            // 的 lazy 判定与伪元素 background 绘制——fill 在 glyph 之前入队（同 R639
+                            // 「bg 在 glyph 下」次序）。宽 = 簇字符 advance 和；盒 = fs 上行高近似
+                            //（ascent≈fs，行盒 1.164 同 R639 默认）。多列/垂直不应用（FIXME）。
+                            if first_letter_color.is_some()
+                                && !first_letter_applied
+                                && first_letter_expected.is_none()
+                                && !char_advance_is_y
+                            {
+                                let fl_len = text_shaping::first_letter_cluster_len(&transformed);
+                                if fl_len > 0 {
+                                    first_letter_expected =
+                                        Some((transformed.chars().take(fl_len).collect(), 0));
+                                    if let Some(bg) = first_letter_bg_color {
+                                        let cluster_w: f32 = transformed
+                                            .chars()
+                                            .take(fl_len)
+                                            .map(|ch| {
+                                                self.measure_char_cached(frag_font_id.0, ch, $frag_fs, $is_ahem)
+                                                    + letter_spacing
+                                            })
+                                            .sum();
+                                        self.primitives.add_fill(
+                                            Rect::new(
+                                                frag_base_x,
+                                                frag_base_y - $frag_fs,
+                                                cluster_w,
+                                                $frag_fs * 1.164,
+                                            ),
+                                            bg,
+                                        );
+                                    }
+                                }
+                            }
                             // R1689：ruby per-segment annotation —— 每个 rt 居中于其前 base 段
                             //（替代 R1688 整 base 扁平化居中，解 per-kanji Japanese ruby）。水平 only。
                             if !char_advance_is_y
@@ -1640,12 +1684,35 @@ impl super::Painter {
                                     if let Some(fl) = first_letter_color
                                         && !first_letter_applied
                                     {
-                                        let first_nonws = transformed
-                                            .chars()
-                                            .find(|c| !c.is_whitespace());
-                                        if first_nonws == Some(ch) {
-                                            c = fl;
-                                            first_letter_applied = true;
+                                        // 首个含非空白字符的片段：初始化期望簇（懒执行，保证是
+                                        // 容器文档序第一个非空白片段而非任一空片段）。
+                                        if first_letter_expected.is_none() {
+                                            let len =
+                                                text_shaping::first_letter_cluster_len(&transformed);
+                                            if len > 0 {
+                                                first_letter_expected =
+                                                    Some((transformed.chars().take(len).collect(), 0));
+                                            } else {
+                                                // 片段全是标点/空格（无字母）→ 不染，等后续片段
+                                            }
+                                        }
+                                        if let Some((chars, pos)) = &mut first_letter_expected {
+                                            if chars.get(*pos) == Some(&ch) {
+                                                c = fl;
+                                                *pos += 1;
+                                                if *pos == chars.len() {
+                                                    first_letter_expected = None;
+                                                    first_letter_applied = true;
+                                                }
+                                            } else {
+                                                // 字形与期望字符错位（shaping 合并/变体）→ 放弃
+                                                first_letter_expected = None;
+                                                first_letter_applied = true;
+                                            }
+                                        } else if first_letter_applied {
+                                            // 已完成或已放弃
+                                        } else {
+                                            first_letter_applied = true; // 簇为空且非空片段（防御：勿再试后续片段）
                                         }
                                     }
                                     c
