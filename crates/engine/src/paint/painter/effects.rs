@@ -568,6 +568,37 @@ impl super::Painter {
         self.primitives.add_filter(FilterPrimitive { rect, filters });
     }
 
+    /// R3851：`filter: drop-shadow()` 投影发射（Filter Effects §5.3）。
+    ///
+    /// drop-shadow = 源 alpha 轮廓 offset 平移 + blur 模糊 + flood-color 着色，合成在源之下。
+    /// CPU 侧在元素自身图元之前发射 ShadowPrimitive（轮廓近似 = border-box 矩形），复用
+    /// box-shadow 的三遍 box-blur 渲染器（cpu/shadow.rs render_shadow）——阴影绘制在前、
+    /// 元素背景绘制在后覆盖交叠区，正是「合成在源之下」。filter 列表中的 DropShadow 项在
+    /// CPU apply_filter 为 no-op（注释保留），无二次绘制。currentColor 按元素 color 解析
+    ///（≡ paint_box_shadow 的 R-series currentColor 处理）。
+    pub(super) fn paint_drop_shadow(&mut self, box_node: &LayoutBox, abs_x: f32, abs_y: f32, style: &ComputedStyle) {
+        for filter in &style.filter {
+            let FilterComputedValue::DropShadow(dx, dy, blur, color) = filter else {
+                continue;
+            };
+            let shadow_color = if matches!(color, ColorValue::CurrentColor) {
+                color_value_to_render(&style.color)
+            } else {
+                color_value_to_render(color)
+            };
+            let rect = Rect::new(abs_x, abs_y, box_node.width, box_node.height);
+            self.primitives.add_shadow(ShadowPrimitive {
+                rect,
+                color: shadow_color,
+                offset_x: *dx,
+                offset_y: *dy,
+                blur_radius: *blur,
+                spread_radius: 0.0,
+                inset: false,
+            });
+        }
+    }
+
     /// 应用 CSS backdrop-filter（对元素背后内容应用滤镜）。
     ///
     /// backdrop-filter 在元素自身内容绘制之前应用，影响该元素区域内的所有已绘制内容。

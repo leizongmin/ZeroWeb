@@ -1064,6 +1064,18 @@ impl Painter {
                     self.apply_backdrop_filter(box_node, abs_x, abs_y, style);
                 }
 
+                // R3851：`filter: drop-shadow()` 投影（Filter Effects §5.3）——drop-shadow 语义 =
+                // 源 alpha 轮廓经 offset 平移、blur 模糊、flood-color 着色后合成在源**之下**。
+                // CPU 滤镜管线（FilterPrimitive 帧缓冲后处理）无法把阴影插到已绘制元素之下，
+                // 故在元素绘制前发射 ShadowPrimitive（轮廓近似 = border-box 矩形；复用 box-shadow
+                // 的三遍 box-blur 高斯近似渲染器 cpu/shadow.rs render_shadow）。solid-box 家族
+                //（filters-drop-shadow-* 等 WPT 断言阴影覆盖偏移区）此近似与 spec 一致；文本/
+                // 图片轮廓的 alpha 级精确建模为后续深化。filter 列表中的 DropShadow 项仍保留
+                //（CPU apply_filter 对其 no-op，无双绘）。多个 drop-shadow 按列表序逐个发射。
+                if !is_table_internal && !skip_split_inline_deco && !skip_contents_deco {
+                    self.paint_drop_shadow(box_node, abs_x, abs_y, style);
+                }
+
                 // 0. box-shadow（位于背景之下，行组/行无盒模型故无阴影）
                 if !is_table_internal && !skip_split_inline_deco && !skip_contents_deco {
                     self.paint_box_shadow(box_node, abs_x, abs_y, style);
