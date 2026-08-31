@@ -5,8 +5,9 @@
 > 布局契约：`<分类>/<YYYY-MM>/<YYYY-MM-DD>-<topic>.md`，日期以 frontmatter 为准。
 > 方法论蒸馏层见 `.agents/skills/zeroweb-guidelines/SKILL.md`。
 
-## Bugs — 踩坑记录（根因 + 修复 + 如何避免）（94）
+## Bugs — 踩坑记录（根因 + 修复 + 如何避免）（95）
 
+- 2026-08-31 [Iframe navigation pending ids and load ordering](bugs/2026-08/2026-08-31-iframe-navigation-pending-id-and-load-order.md) — engine, webview, service-worker
 - 2026-08-29 [R1743 父高回填纳入 inline 子底边两次判据收窄均 net-negative（014 负结果记录）](bugs/2026-08/2026-08-29-r1743-inline-child-backfill-net-negative.md) — layout-engine,rendering-compat
 - 2026-08-29 [js_dom_shim 热扫描循环内的 proxy trap 读是隐形单点瓶颈（R350）](bugs/2026-08/2026-08-29-proxy-trap-in-hot-scan-loop.md) — zero-engine
 - 2026-08-29 [IFC white-space 标志只读容器样式——inline 子元素声明的 white-space 被忽略](bugs/2026-08/2026-08-29-ifc-white-space-container-only.md) — layout-engine,rendering-compat
