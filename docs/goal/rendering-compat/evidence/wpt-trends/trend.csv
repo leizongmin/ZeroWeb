@@ -13,3 +13,4 @@
 2026-08-31,upstream,v1.10,16814,13941,82.9,failed=2873;skipped=0,2a0d6968b,R3872 margin-trim self-collapsing edge child trims both margins (net +3, zero regressions)
 2026-08-31,upstream,v1.10,16814,13940,82.9,failed=2874;skipped=0,9df7774fc,R3873-P margin-trim sibling trio attributed to collapse-through modeling gap (predicate extension net 0 reverted; RFC-gated with R3804 interlock)
 2026-08-31,upstream,v1.10,16814,13940,82.9,failed=2874;skipped=0,f5edf40c3,R3874 @media not unknown -> always-match (MQ4; net 0); cascade-order corruption discovered (in-order walk prototype net -96 reverted, separate slice)
+2026-08-31,upstream,v1.10,16814,13940,82.9,failed=2874;skipped=0,df8b09bcf,R3875-P shallow-scatter five clusters attributed (abspos %margins -> taffy RFC batch; origin-005/008 rounding; quotes/marker feature-gated)
