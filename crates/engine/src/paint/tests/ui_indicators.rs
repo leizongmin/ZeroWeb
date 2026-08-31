@@ -493,6 +493,7 @@ fn test_appearance_with_accent_color_override() {
         "native checkbox 不应叠加通用 accent-color 色块"
     );
 
+    // Chrome 真值（R3877，2026-08-31 GUI Chrome 151 探针）：焦点态不调暗 accent 填充。
     let mut focused_painter = Painter::new();
     focused_painter.set_focused_node(Some(elem));
     focused_painter.paint(&layout, &styles, Some(&doc));
@@ -501,8 +502,16 @@ fn test_appearance_with_accent_color_override() {
             .primitives()
             .fills
             .iter()
+            .any(|fill| fill.color.g == 128 && fill.color.r == 0),
+        "focused checkbox 应保持原 accent-color（不调暗）"
+    );
+    assert!(
+        !focused_painter
+            .primitives()
+            .fills
+            .iter()
             .any(|fill| fill.color.g == 92 && fill.color.r == 0),
-        "focused checkbox 应使用 native 聚焦态 accent-color"
+        "focused checkbox 不应出现 ×18/25 调暗色"
     );
 }
 

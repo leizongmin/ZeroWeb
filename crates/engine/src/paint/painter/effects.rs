@@ -829,7 +829,10 @@ impl super::Painter {
         }
 
         // 使用 accent-color 或默认蓝色
-        let mut accent = match &style.accent_color {
+        // Chrome 真值（2026-08-31 GUI Chrome 151 双探针 + generic-page parity 5 步）：焦点态
+        // 不改变 checkbox/radio 的 accent 填充色（焦点指示是外圈 ring，非填色调暗）——
+        // 旧实现按 ×18/25 调暗聚焦控件填充，与 Chrome 不一致（R3877）。
+        let accent = match &style.accent_color {
             AccentColorComputedValue::Auto => Color {
                 r: 0,
                 g: 117,
@@ -838,11 +841,6 @@ impl super::Painter {
             },
             AccentColorComputedValue::Color(c) => color_value_to_render(c),
         };
-        if box_node.node_id == self.focused_node {
-            accent.r = ((accent.r as u16 * 18) / 25) as u8;
-            accent.g = ((accent.g as u16 * 18) / 25) as u8;
-            accent.b = ((accent.b as u16 * 18) / 25) as u8;
-        }
 
         let cx = abs_x + box_node.border_left;
         let cy = abs_y + box_node.border_top;

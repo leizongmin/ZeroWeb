@@ -205,13 +205,14 @@ fn focused_native_control_uses_state_accent_color() {
 
     pipeline.set_focused_selector(Some("#check"));
     let focused = pipeline.render_html(html, css);
+    // Chrome 真值（R3877，2026-08-31 GUI Chrome 151 探针）：焦点态不调暗 accent 填充。
     assert!(
         focused
             .primitives()
             .fills
             .iter()
-            .any(|fill| fill.color == Color::rgba(0, 66, 144, 255)),
-        "focused control should use the native state accent color"
+            .any(|fill| fill.color == Color::rgba(0, 92, 200, 255)),
+        "focused control should keep the declared accent color"
     );
 }
 

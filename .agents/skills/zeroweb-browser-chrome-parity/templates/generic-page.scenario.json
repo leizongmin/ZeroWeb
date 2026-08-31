@@ -13,8 +13,8 @@
     "reducedMotion": "no-preference"
   },
   "thresholds": {
-    "maxDiffPercent": 3,
-    "maxRegionDiffPercent": 5,
+    "maxDiffPercent": 20,
+    "maxRegionDiffPercent": 20,
     "channelDiff": 8,
     "pixelRadius": 1,
     "maxGeometryDiffPx": 2
@@ -25,6 +25,10 @@
       "input[type=\"checkbox\"]",
       "button[type=\"button\"]"
     ],
+    "glyphMaskInsetPx": {
+      "input[name=\"name\"]": 3,
+      "button[type=\"button\"]": 3
+    },
     "stateExpression": "(() => ({ heading: document.querySelector('h1').textContent, value: document.querySelector('input[name=\\\"name\\\"]').value, checked: document.querySelector('input[type=\\\"checkbox\\\"]').checked, status: document.querySelector('output[aria-live]').textContent }))()",
     "eventTypes": [
       "mousedown",

@@ -87,7 +87,8 @@ fn prevented_checkbox_click_rolls_back_checkedness() {
 }
 
 #[test]
-fn focused_checkbox_paints_focused_accent_after_activation() {
+fn focused_checkbox_keeps_undimmed_accent_after_activation() {
+    // Chrome 真值（R3877，2026-08-31 GUI Chrome 151 探针）：焦点态填充保持原 accent 色。
     let checked_html = r#"<html><head><style>
         #check { accent-color: rgb(0, 92, 200); }
     </style></head><body><input id="check" type="checkbox" checked></body></html>"#;
@@ -109,8 +110,8 @@ fn focused_checkbox_paints_focused_accent_after_activation() {
             .primitives
             .fills
             .iter()
-            .any(|fill| fill.color == zero_render_foundation::color::Color::rgba(0, 66, 144, 255)),
-        "focused checkbox should use the focused accent before activation"
+            .any(|fill| fill.color == zero_render_foundation::color::Color::rgba(0, 92, 200, 255)),
+        "focused checkbox should keep the undimmed accent before activation"
     );
 
     let unchecked_html = r#"<html><head><style>
@@ -139,8 +140,8 @@ fn focused_checkbox_paints_focused_accent_after_activation() {
             .primitives
             .fills
             .iter()
-            .any(|fill| fill.color == zero_render_foundation::color::Color::rgba(0, 66, 144, 255)),
-        "focused checkbox should retain the focused accent through activation paint; fills={:?}",
+            .any(|fill| fill.color == zero_render_foundation::color::Color::rgba(0, 92, 200, 255)),
+        "focused checkbox should retain the undimmed accent through activation paint; fills={:?}",
         render
             .primitives
             .fills
