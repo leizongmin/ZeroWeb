@@ -36,11 +36,22 @@
               if (typeof setTimeout === 'function') setTimeout(_vcFire, 0);
               else _vcFire();
             } else if (p === 'playbackRate') {
-              if (isNaN(_mv)) _mv = 1;
+              // spec dom-media-playbackrate 步 2：非有限 → TypeError（M3 扩批 V——
+              // 旧静默回落 1 与 volume TypeError 同款缺口）。
+              // https://html.spec.whatwg.org/multipage/media.html#dom-media-playbackrate
+              if (isNaN(_mv) || _mv === Infinity || _mv === -Infinity) {
+                throw new globalThis.TypeError(
+                  "Failed to set the 'playbackRate' property on 'HTMLMediaElement': The provided value is non-finite.");
+              }
               _mst.playbackRate = _mv;
               _mediaFireSel(sel, handle, key, 'ratechange');
             } else if (p === 'defaultPlaybackRate') {
-              if (isNaN(_mv)) _mv = 1;
+              // spec dom-media-defaultplaybackrate：非有限 → TypeError（同 playbackRate）。
+              // https://html.spec.whatwg.org/multipage/media.html#dom-media-defaultplaybackrate
+              if (isNaN(_mv) || _mv === Infinity || _mv === -Infinity) {
+                throw new globalThis.TypeError(
+                  "Failed to set the 'defaultPlaybackRate' property on 'HTMLMediaElement': The provided value is non-finite.");
+              }
               _mst.defaultPlaybackRate = _mv;
             } else if (p === 'currentTime') {
               _mst.currentTime = isNaN(_mv) ? 0 : _mv;

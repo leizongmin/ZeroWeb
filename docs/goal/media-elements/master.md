@@ -2,8 +2,8 @@
 
 **入口文档**: [../media-elements.md](../media-elements.md)
 **创建日期**: 2026-08-17（goal 拆分 bootstrap）
-**最后更新**: 2026-09-01（M3 扩批 IV 落地——controlsList IDL + video-tabindex 导入 →
-**90.1%**，60 用例 Fail/Timeout 保持双清零）
+**最后更新**: 2026-09-01（M3 扩批 V 落地——playbackRate/defaultPlaybackRate 非有限
+TypeError spec 缺口修复；90.1% 维持，60 用例 Fail/Timeout 保持双清零）
 
 ---
 
@@ -98,6 +98,15 @@ already-playing resolved 断言。**88.3%**（324P/0F/2T/41PF，+80 subtest 全�
 - **决策记录**：audio_volume_check/video_volume_check **不导入**——越界值期望
   IndexSizeError 是 Intel 旧 spec 时代断言，与现行 spec（clamp 不抛）及已导入的
   volume_nonfinite.html 冲突，导入即制造假失败面。
+
+**M3 扩批 V 已落地（2026-09-01，playbackRate 非有限 TypeError）**：
+- `playbackRate`/`defaultPlaybackRate` IDL setter：非有限数值 → TypeError
+  （spec dom-media-playbackrate / dom-media-defaultplaybackrate 步 2；旧静默回落 1
+  与 volume TypeError 修复同款缺口）。合法值照常设置 + ratechange 派发不变。
+- 上游 playbackRate.html 断言面不含非有限值（7P 全绿零回归）——纯 spec 对齐修复，
+  无新用例可导入（WPT 无对应断言用例）。单测
+  `test_media_playback_rate_non_finite_r394`（3 断言组）。evidence：
+  `evidence/2026-09-01-media-playbackrate-typeerror.json`（90.1% 维持）。
 
 **与兄弟 goal 的边界**：
 - media-playback — 解码/帧渲染归其管（RFC 门控）；本目标的 readyState 真实驱动源由其

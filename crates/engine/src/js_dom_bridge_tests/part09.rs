@@ -3214,3 +3214,57 @@ fn test_media_controls_list_r393() {
         "div 无 controlsList（gate-miss → undefined）"
     );
 }
+
+#[test]
+fn test_media_playback_rate_non_finite_r394() {
+    // media-elements M3 扩批 V：playbackRate/defaultPlaybackRate IDL setter——
+    // 非有限数值 → TypeError（spec dom-media-playbackrate / dom-media-defaultplaybackrate
+    // 步 2；旧静默回落 1 与 volume TypeError 修复同款缺口）。合法值照常设置 + ratechange
+    // 派发（playbackRate）。
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new("<html><body></body></html>".to_string()));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("https://wpt.test/t.html".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+
+    sandbox.execute(
+        "var v = document.createElement('video');\
+         globalThis.__v = v;\
+         globalThis.__r = [];\
+         var bad = [NaN, Infinity, -Infinity];\
+         for (var i = 0; i < bad.length; i++) {\
+           try { v.playbackRate = bad[i]; __r.push('pr:no-throw'); }\
+           catch (err) { __r.push('pr:' + err.name); }\
+           try { v.defaultPlaybackRate = bad[i]; __r.push('dpr:no-throw'); }\
+           catch (err) { __r.push('dpr:' + err.name); }\
+         }\
+         var rc = 0;\
+         v.onratechange = function () { rc++; };\
+         v.playbackRate = 2;\
+         globalThis.__prAfter = v.playbackRate;\
+         globalThis.__rcCount = rc;",
+    ).unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__r.join(',')").unwrap().value,
+        "pr:TypeError,dpr:TypeError,pr:TypeError,dpr:TypeError,pr:TypeError,dpr:TypeError",
+        "playbackRate/defaultPlaybackRate 非有限三值全抛 TypeError"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__prAfter)").unwrap().value,
+        "2",
+        "合法值照常设置（0.5/2/0 等仍可写）"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__rcCount)").unwrap().value,
+        "1",
+        "playbackRate 合法设置仍派 ratechange"
+    );
+}
