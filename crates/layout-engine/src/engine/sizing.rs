@@ -223,10 +223,15 @@ impl LayoutEngine {
                 //（flex-aspect-ratio-img-column-006 / row-004 需 fixup 才 <1%，min-size 不改变语义）。
                 // R993 driving case（aspect-ratio-intrinsic-size-007 SVG img）+ R994 +2（CSS aspect-ratio
                 // leaf 无 min-size）均不受影响。
+                // R3862：`min-*: 0`（显式零）不算 definite min 约束——R1013 skip 的本意是
+                // 「真实非零 min 约束驱动 transferred-size」（其 driving 案 min-height:100px）；
+                // 显式 0 不约束任何东西，却把 item 推进 skip 分支、错过 R1364 stretch-cross
+                // 传递（flex-aspect-ratio-009：容器 height:100 + item aspect 1/1 +
+                // min-width:0 → stretched cross 100 应传 main width=100，ZW 塌 0 宽）。
                 let main_has_definite_min = if is_column {
-                    resolve_sizing_definite_real_length(&item_style.min_height, item_style).is_some()
+                    resolve_sizing_definite_real_length(&item_style.min_height, item_style).is_some_and(|v| v > 0.0)
                 } else {
-                    resolve_sizing_definite_real_length(&item_style.min_width, item_style).is_some()
+                    resolve_sizing_definite_real_length(&item_style.min_width, item_style).is_some_and(|v| v > 0.0)
                 };
                 // R3859：R1013 skip 分支的**最小侵入补强**——非替换 leaf + main auto +
                 // main min definite 时不做 cross→main 反向推导（R1013），但「definite min
@@ -236,7 +241,11 @@ impl LayoutEngine {
                 // min-width:100 → item min main(height) 应 = 100×1，ZW 塌 0 高）。
                 // padding 守卫沿用 R1364（cross 轴有 padding 时 transfer 基准偏移，跳过保 R1013
                 // baseline）。仅提升 min（max()），不覆盖 size——taffy 以 min 钳自然求解。
-                if main_is_auto && main_has_definite_min && !b.is_replaced {
+                // R3862 修订：本分支的触发键是「definite min **cross** > 0」（min 传递的
+                // 语义源），非 main min definite——main min 零与否只决定 R1364 stretch
+                // 传递是否适用（R3862 已把零 main min 让路给 R1364）。035（min-height:0 +
+                // min-width:100）靠本分支而非 main-min 门。
+                if main_is_auto && !b.is_replaced {
                     let definite_min_cross = if is_column {
                         resolve_sizing_definite_real_length(&item_style.min_width, item_style)
                     } else {
@@ -283,11 +292,21 @@ impl LayoutEngine {
                     // 驱动 flex-aspect-ratio-img-row-006：img 固有 200x200 + width/height auto +
                     // 容器 height:100 → main(width) 应 = 100×ratio(1)=100，非固有 200×1=200。
                     // 仅 item cross CSS-auto（未显式指定，将被 stretch）+ 容器 definite cross 时覆盖。
-                    let item_cross_is_auto = if is_column {
+                    // R3862：cross 轴 **auto margin** 优先吸收空间 → item 不被 stretch，
+                    // cross 停留在 content 尺寸——用容器 cross 推 main 即错（flex-010：
+                    // `margin: auto 0` 垂直居中场景 cross 保持 0，误传 main=容器高）。
+                    let cross_margin_auto = if is_column {
+                        matches!(item_style.margin_left, LengthValue::Auto)
+                            || matches!(item_style.margin_right, LengthValue::Auto)
+                    } else {
+                        matches!(item_style.margin_top, LengthValue::Auto)
+                            || matches!(item_style.margin_bottom, LengthValue::Auto)
+                    };
+                    let item_cross_is_auto = (if is_column {
                         matches!(item_style.width, LengthValue::Auto)
                     } else {
                         matches!(item_style.height, LengthValue::Auto)
-                    };
+                    }) && !cross_margin_auto;
                     let parent_cross_definite = if is_column {
                         resolve_sizing_definite_real_length(&ps.width, ps)
                     } else {
