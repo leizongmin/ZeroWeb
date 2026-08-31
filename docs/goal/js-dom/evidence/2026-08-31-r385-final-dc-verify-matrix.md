@@ -74,3 +74,25 @@
 6. ✅ RFC v0.3 与 master.md 一致；TBD-5 已更新为双引擎并关闭
 
 **判定：DONE 允许条件 1–6 全部满足。**
+
+---
+
+## R386 附录（2026-08-31 续轮）— DC-1「唯一生产路径」多进程面补片
+
+R385 收官后接续核对发现一处 verify 盲区：DC-1 的 default-on/kill-switch 子项已闭合，
+但「生产路径默认安装并使用原生绑定」实际只覆盖 **webview 进程内路径**——生产浏览器的
+页面脚本走多进程 worker 沙箱（`tab_js_worker` / renderer `js_worker`），二者从未调用
+`install_native_bindings*`，页面 JS↔DOM 仍只走 polyfill 桥（`external_script` 早 return
+使 webview 安装面不可达）。
+
+**R386 补片**（commits `513a1345d`/`ff092140b`/`a3b2d7459`；详见
+[2026-08-31-r386-multiprocess-worker-native-bindings.md](2026-08-31-r386-multiprocess-worker-native-bindings.md)）：
+
+- worker bootstrap 从 `dom_html` 快照 re-parse 安装原生绑定（双引擎 escape-hatch）；
+- `SetDomSnapshot` refresh-only 快路径（engine 新 API；quickjs 全量重 install 会覆盖
+  shim `Event`/`DOMException` 全局——`form.reset` preventDefault 回归实证后修复）；
+- `ResetDocumentState`/`Shutdown` 清绑定线程局部（R3334/R74 悬垂家族 worker 版）；
+- 顺带修 renderer js_worker v8+quickjs 组合态 `js_config` 双 move（R84 同款）。
+
+**验证**：`make test` 18504P/0F（EXIT 0）；worker native 测试双 feature ad-hoc 全绿；
+clippy v8/quickjs/组合三矩阵零警告。DC-1 多进程生产路径形态与 webview 路径对齐。
