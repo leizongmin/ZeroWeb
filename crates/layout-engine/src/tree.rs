@@ -1565,6 +1565,64 @@ fn build_subtree(
         &ctx.img_intrinsic_no_ratio,
     );
 
+    // R3854：CSS Sizing 4 §3.1 `aspect-ratio: auto && <ratio>` 的 ratio 恒作用于 **content box**
+    //（裸 `<ratio>` 作用于 box-sizing 指定的盒；两值语义 spec 明文分立）。apply 层剥掉 auto 只留
+    // ratio float，taffy 在 box_sizing=BorderBox 时把 ratio 施于 border-box → `auto <ratio>` +
+    // border-box + padding/border 时 transferred 尺寸错误（block-aspect-ratio-004：ratio auto 1/1
+    // + width:100 + pl:50 应 content 50/1=50，旧按 bb 100/1=100）。修：非替换元素（替换元素走
+    // apply_replaced_element_sizing 固有比覆盖，032 实证不可同路）+ auto-flag + BorderBox + 单侧
+    // Px/auto + min/max unset 时，taffy 输入降为 content-box 语义——Px 侧减 padding+border、
+    // box_sizing 改 ContentBox（taffy 按 content-box 施 ratio，bb = content + pb 还原正确 bb）。
+    // 仅水平书写模式（垂直轴交换在 apply_vertical_writing_mode 处理，语义正交）。
+    {
+        let is_replaced_tag = doc.get(dom_id).is_some_and(|n| {
+            matches!(&n.kind, NodeKind::Element(e)
+                if matches!(e.local_name(), "img" | "canvas" | "video" | "embed" | "object" | "applet" | "iframe" | "svg"))
+        });
+        let max_w_unset = matches!(computed.max_width, LengthValue::Auto)
+            || matches!(computed.max_width, LengthValue::Px(v) if v.is_infinite());
+        let max_h_unset = matches!(computed.max_height, LengthValue::Auto)
+            || matches!(computed.max_height, LengthValue::Px(v) if v.is_infinite());
+        if computed.aspect_ratio_auto
+            && computed.aspect_ratio.is_some()
+            && !is_replaced_tag
+            && taffy_style.box_sizing == taffy::style::BoxSizing::BorderBox
+            && matches!(computed.writing_mode, WritingModeValue::HorizontalTb)
+            && !computed.contain.has_size()
+            && matches!(computed.min_width, LengthValue::Auto)
+            && matches!(computed.min_height, LengthValue::Auto)
+            && max_w_unset
+            && max_h_unset
+        {
+            let fs = zero_style_system::computed::resolve_length(&computed.font_size, 16.0, None, None);
+            let px = |l: &LengthValue| -> f64 {
+                match l {
+                    LengthValue::Auto => 0.0,
+                    other => zero_style_system::computed::resolve_length(other, fs, None, None),
+                }
+            };
+            let pbw = px(&computed.padding_left)
+                + px(&computed.padding_right)
+                + px(&computed.border_left_width)
+                + px(&computed.border_right_width);
+            let pbh = px(&computed.padding_top)
+                + px(&computed.padding_bottom)
+                + px(&computed.border_top_width)
+                + px(&computed.border_bottom_width);
+            match (&computed.width, &computed.height) {
+                (LengthValue::Px(w), LengthValue::Auto) => {
+                    taffy_style.size.width = taffy::style::Dimension::length((*w - pbw).max(0.0) as f32);
+                    taffy_style.box_sizing = taffy::style::BoxSizing::ContentBox;
+                }
+                (LengthValue::Auto, LengthValue::Px(h)) => {
+                    taffy_style.size.height = taffy::style::Dimension::length((*h - pbh).max(0.0) as f32);
+                    taffy_style.box_sizing = taffy::style::BoxSizing::ContentBox;
+                }
+                _ => {}
+            }
+        }
+    }
+
     // R1365：flex item 的 flex-basis 为百分比且容器 main 尺寸不明确时，item 的 main-size
     // 属性（height/width）不应被当 definite（CSS-Flexbox §9 + §7.1：百分比 flex-basis 对不明确
     // 容器回退到 content，显式 main-size 属性被忽略）。converter 已从 main-size 属性设了 definite

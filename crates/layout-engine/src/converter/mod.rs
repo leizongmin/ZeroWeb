@@ -341,6 +341,9 @@ pub fn computed_style_to_taffy(
         flex_shrink: if collapsed { 0.0 } else { style.flex_shrink as f32 },
         ..taffy::Style::default()
     }
+    // R3854 note：`aspect-ratio: auto && <ratio>`（ratio 恒作用于 content box，区别于裸 <ratio>
+    // 作用于 box-sizing 指定盒）的转移语义在 tree.rs build_subtree 内处理——需替换元素判定 +
+    // computed style 上下文（converter 无 doc/tag 访问）。
 }
 
 /// 对垂直书写模式下的元素交换 taffy 属性的水平/垂直轴。
