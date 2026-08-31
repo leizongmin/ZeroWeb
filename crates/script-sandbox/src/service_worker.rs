@@ -307,13 +307,63 @@ const SERVICE_WORKER_BOOTSTRAP: &str = r#"
       this.port2._other = this.port1;
     }
   }
+  function eventInit(init) {
+    return init === undefined || init === null ? {} : Object(init);
+  }
+  function isMessageEventSource(value) {
+    return value === null || value instanceof MessagePort || value instanceof Client || value instanceof ServiceWorker;
+  }
+  function messageEventInit(type, init) {
+    init = eventInit(init);
+    const event = {
+      type: String(type),
+      bubbles: Boolean(init.bubbles),
+      cancelable: Boolean(init.cancelable),
+      defaultPrevented: false,
+      data: init.data === undefined ? null : init.data,
+      origin: init.origin === undefined ? '' : String(init.origin),
+      lastEventId: init.lastEventId === undefined ? '' : String(init.lastEventId),
+      source: init.source === undefined ? null : init.source,
+      ports: init.ports === undefined ? [] : init.ports
+    };
+    if (!isMessageEventSource(event.source)) {
+      throw new TypeError('MessageEvent source must be Client, ServiceWorker, MessagePort, or null');
+    }
+    if (!Array.isArray(event.ports)) {
+      throw new TypeError('MessageEvent ports must be an array');
+    }
+    for (let i = 0; i < event.ports.length; i++) {
+      if (!(event.ports[i] instanceof MessagePort)) {
+        throw new TypeError('MessageEvent ports entries must be MessagePort');
+      }
+    }
+    return event;
+  }
   class MessageEvent extends ExtendableEvent {
     constructor(type, init) {
-      super(type);
-      this.data = init.data;
-      this.origin = '';
-      this.source = null;
-      this.ports = init.ports || [];
+      const event = messageEventInit(type, init);
+      super(event.type);
+      this.bubbles = event.bubbles;
+      this.cancelable = event.cancelable;
+      this.data = event.data;
+      this.origin = event.origin;
+      this.lastEventId = event.lastEventId;
+      this.source = event.source;
+      this.ports = event.ports.slice();
+    }
+  }
+  // https://w3c.github.io/ServiceWorker/#extendablemessageevent-interface
+  class ExtendableMessageEvent extends ExtendableEvent {
+    constructor(type, init) {
+      const event = messageEventInit(type, init);
+      super(event.type);
+      this.bubbles = event.bubbles;
+      this.cancelable = event.cancelable;
+      this.data = event.data;
+      this.origin = event.origin;
+      this.lastEventId = event.lastEventId;
+      this.source = event.source;
+      this.ports = event.ports.slice();
     }
   }
   class DOMException extends Error {
@@ -1656,6 +1706,7 @@ const SERVICE_WORKER_BOOTSTRAP: &str = r#"
   globalThis.ServiceWorkerGlobalScope = ServiceWorkerGlobalScope;
   globalThis.ExtendableEvent = ExtendableEvent;
   globalThis.InstallEvent = InstallEvent;
+  globalThis.ExtendableMessageEvent = ExtendableMessageEvent;
   globalThis.MessageEvent = MessageEvent;
   globalThis.MessagePort = MessagePort;
   globalThis.MessageChannel = MessageChannel;
@@ -1845,7 +1896,23 @@ const SERVICE_WORKER_BOOTSTRAP: &str = r#"
   }
   globalThis.Clients = Clients;
   globalThis.clients = new Clients();
+  const serviceWorkerToken = {};
+  class ServiceWorker {
+    constructor(scriptURL, state, token) {
+      if (token !== serviceWorkerToken) throw new TypeError('Illegal constructor');
+      Object.defineProperties(this, {
+        scriptURL: {value: String(scriptURL), enumerable: true},
+        state: {value: String(state), enumerable: true}
+      });
+      this.onstatechange = null;
+    }
+    postMessage(data, transfer) {
+      queueOutbound(data, transfer, null, null);
+    }
+  }
+  Object.defineProperty(ServiceWorker.prototype, Symbol.toStringTag, {value: 'ServiceWorker'});
   const registration = {
+    active: new ServiceWorker('', 'activated', serviceWorkerToken),
     update: function() {
       let response;
       try {
@@ -1860,6 +1927,7 @@ const SERVICE_WORKER_BOOTSTRAP: &str = r#"
       ));
     }
   };
+  globalThis.ServiceWorker = ServiceWorker;
   globalThis.registration = registration;
   function importScriptsNetworkError(message) {
     return new globalThis.DOMException(String(message), 'NetworkError');
@@ -4681,6 +4749,87 @@ mod tests {
                  if (location.search !== '?key=value') throw new Error('wrong search');
                  if (String(location) !== location.href) throw new Error('wrong string conversion');",
                 "https://example.test:8443/workers/sw.js?key=value",
+            )
+            .unwrap();
+        assert!(matches!(
+            runtime.recv_timeout(Duration::from_secs(5)).unwrap(),
+            ServiceWorkerEvent::Evaluated { .. }
+        ));
+    }
+
+    #[test]
+    fn extendable_message_event_constructor_applies_default_and_init_values() {
+        let mut runtime = ServiceWorkerRuntime::new(test_config()).unwrap();
+        runtime
+            .evaluate(
+                "const empty = new ExtendableMessageEvent('type');
+                 if (empty.type !== 'type') throw new Error('wrong type');
+                 if (empty.bubbles !== false) throw new Error('wrong default bubbles');
+                 if (empty.cancelable !== false) throw new Error('wrong default cancelable');
+                 if (empty.data !== null) throw new Error('wrong default data');
+                 if (empty.origin !== '') throw new Error('wrong default origin');
+                 if (empty.lastEventId !== '') throw new Error('wrong default lastEventId');
+                 if (empty.source !== null) throw new Error('wrong default source');
+                 if (!Array.isArray(empty.ports) || empty.ports.length !== 0) {
+                   throw new Error('wrong default ports');
+                 }
+                 const channel = new MessageChannel();
+                 const payload = {value: 7};
+                 const filled = new ExtendableMessageEvent('type', {
+                   bubbles: 1,
+                   cancelable: true,
+                   data: payload,
+                   origin: 123,
+                   lastEventId: null,
+                   source: registration.active,
+                   ports: [channel.port1]
+                 });
+                 if (filled.bubbles !== true) throw new Error('wrong bubbles');
+                 if (filled.cancelable !== true) throw new Error('wrong cancelable');
+                 if (filled.data !== payload) throw new Error('wrong data');
+                 if (filled.origin !== '123') throw new Error('wrong origin');
+                 if (filled.lastEventId !== 'null') throw new Error('wrong lastEventId');
+                 if (filled.source !== registration.active) throw new Error('wrong source');
+                 if (filled.ports.length !== 1 || filled.ports[0] !== channel.port1) {
+                   throw new Error('wrong ports');
+                 }",
+                "https://example.test/sw.js",
+            )
+            .unwrap();
+        assert!(matches!(
+            runtime.recv_timeout(Duration::from_secs(5)).unwrap(),
+            ServiceWorkerEvent::Evaluated { .. }
+        ));
+    }
+
+    #[test]
+    fn extendable_message_event_constructor_rejects_invalid_source_and_ports() {
+        let mut runtime = ServiceWorkerRuntime::new(test_config()).unwrap();
+        runtime
+            .evaluate(
+                "let invalidSource = false;
+                 try {
+                   new ExtendableMessageEvent('type', {source: self});
+                 } catch (error) {
+                   invalidSource = error instanceof TypeError;
+                 }
+                 if (!invalidSource) throw new Error('invalid source was accepted');
+                 let invalidPorts = false;
+                 try {
+                   new ExtendableMessageEvent('type', {ports: [1]});
+                 } catch (error) {
+                   invalidPorts = error instanceof TypeError;
+                 }
+                 if (!invalidPorts) throw new Error('invalid ports were accepted');
+                 let getterThrown = {name: 'Error'};
+                 try {
+                   new ExtendableMessageEvent('type', {get data() { throw getterThrown; }});
+                 } catch (error) {
+                   if (error !== getterThrown) throw new Error('wrong getter error');
+                   getterThrown.caught = true;
+                 }
+                 if (!getterThrown.caught) throw new Error('getter throw was not propagated');",
+                "https://example.test/sw.js",
             )
             .unwrap();
         assert!(matches!(

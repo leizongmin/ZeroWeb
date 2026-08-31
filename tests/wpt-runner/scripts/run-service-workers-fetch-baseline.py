@@ -10,8 +10,8 @@ import subprocess
 import sys
 from pathlib import Path
 
-EXPECTED_CASES = 24
-EXPECTED_SUBTESTS = 57
+EXPECTED_CASES = 25
+EXPECTED_SUBTESTS = 67
 
 
 def parse_args() -> argparse.Namespace:
@@ -77,7 +77,7 @@ def render_markdown(summary: dict) -> str:
     status = summary["status"]
     return "\n".join(
         [
-            "# Service Worker Fetch WPT Baseline",
+            "# Service Worker Fetch/Message WPT Baseline",
             "",
             "- Date: 2026-08-31",
             "- WPT revision: `04067ce9c7c2165e71ad7d0dde10a4c5cb394a83`",
@@ -99,10 +99,15 @@ def render_markdown(summary: dict) -> str:
             "",
             "## Scope",
             "",
-            "This pinned Service Worker M2 fetch/interception baseline covers twenty-four cases. "
+            "This pinned Service Worker fetch/message baseline covers twenty-five cases. "
             "`fetch-on-the-right-interface.https.any.js` verifies that `fetch` is inherited "
             "from `WorkerGlobalScope.prototype` rather than installed as an own property on "
-            "`ServiceWorkerGlobalScope`, and `historical.https.any.js` verifies that the "
+            "`ServiceWorkerGlobalScope`. "
+            "`extendable-message-event-constructor.https.html` verifies the Service Worker "
+            "global `ExtendableMessageEvent` constructor defaults, initializer conversion, "
+            "valid ServiceWorker/MessagePort sources, and invalid source/ports `TypeError` "
+            "boundaries. "
+            "`historical.https.any.js` verifies that the "
             "historical `FetchEvent.prototype.targetClientId` member is absent. "
             "`request-end-to-end.https.html` registers a real service worker, loads a "
             "controlled iframe, dispatches a FetchEvent, and validates the Request "
