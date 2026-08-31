@@ -1,8 +1,8 @@
 # RFC：JS-DOM pending-apply 生命周期（host apply 异步滞后与 JS 同步视图的边界收口）
 
-**版本**: v0.3（v0.2→v0.3：pa2 land——M6 补 mark + pa2a 换代清理 + pa2b apply 完成钩子，2026-08-30 R379 续轮）
+**版本**: v0.4（v0.3→v0.4：pa3 sel 域 @ R380 + pa4-lite @ R387 land + R388 定性合并——剩余统一为 parse-position 可见性深项，2026-08-31）
 **日期**: 2026-08-30
-**状态**: Draft（pa1/pa2 已 land；剩余 pa3[fused innerHTML 重落]、pa4[parse-segment 回放，独立]）
+**状态**: Draft（pa1/pa2/pa3-sel/pa4-lite 已 land；剩余 = parse-position 可见性深项[MutationObserver-document 余 2F，R388 定性合并——深结构挂账，非 goal DC 阻塞]；pa3 handle 域补全面无 driving Fail，speculative 保留）
 **goal**: `docs/goal/js-dom.md` M4 基线维护延伸（已知 Fail 深项同根归因）
 **证据锚点**: `docs/goal/js-dom/evidence/2026-08-30-r373-abort-domain-import.md`（parse-time 评估）/ `2026-08-30-r377-inserted-script-execution.md`（fused innerHTML 实验 + 探针）/ R371（replaceWith 重键 + 探针链）
 
@@ -118,6 +118,7 @@ pa1 零行为探针轮（临时插桩 + 三轮递进探针，跑后 checkout 全
 
 ## 4. 修订历史
 
+- v0.4（2026-08-31）：pa3 sel 域融合 innerHTML @ R380 land（remove-next-sibling 52 轮 Fail 终端收口；handle 域补全面无 driving Fail 转 speculative）+ pa4-lite @ R387 land（**方案修正**：无需 host 分段 delta——shim 侧以 `document.currentScript`（R3258）为锚 + 融合 childNodes 视图合成解析积压 record[body 直下段、止于下一 script]；附带发现并修复动态 classic 脚本 appendChild 不执行缺口[spec prepare-the-script-element，源码读融合 textContent getter——textContent= 走文本注册表非 `_handleChildren`]）；R388 探针证伪「剩余 previousSibling 失败 = L2 身份域」——childNodes 条目本就 id-selector 且 proxy 同一，真实差距 = parse-position 可见性，MutationObserver-document 余 2F 与 removal 同根因合并挂账（深结构）。基线：MutationObserver 全族 136P/2F；dom/nodes 12791P/3F；全量 sweep 55808P/11F/16T。
 - v0.3（2026-08-30 R379 续轮）：pa2 land——M6（replaceWith sel/handle 双路径补移除标记，
   pa1 矩阵缺失闭合）+ pa2a（`__zw_reset_pending_state` 清除移除标记）+ pa2b（新钩子
   `__zw_apply_generation_bump`：host `apply_pending_shared_mutations`/
