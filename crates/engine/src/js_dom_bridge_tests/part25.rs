@@ -13,6 +13,45 @@
 // 锁定该回归不复发（replaceWith(fragment) 后 connected 传播终止）。
 
 #[test]
+fn r387_dynamic_script_append_executes() {
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let mut sandbox = V8Sandbox::with_config(zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    })
+    .unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><div id='host'></div></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+    // R387：动态 classic 脚本插入期执行——createElement('script') + textContent= + appendChild
+    // 入文档即同步跑（spec prepare-the-script-element；SPA 加载器/分析 SDK 标准路径）。
+    // run-once：重复 append 不重跑（`_zwRanScripts` 标记，R377 同源语义）。
+    sandbox.execute(
+        "try {\
+         var s = globalThis.document.createElement('script');\
+         s.textContent = \"globalThis.__r387ran = 'yes';\";\
+         globalThis.document.getElementById('host').appendChild(s);\
+         var first = String(globalThis.__r387ran);\
+         globalThis.__r387ran = 'second';\
+         globalThis.document.getElementById('host').appendChild(s);\
+         globalThis.__r387a = first + ':' + String(globalThis.__r387ran);\
+         } catch (err) { globalThis.__r387a = 'ERR:' + err.message; }",
+    ).unwrap();
+    let out = sandbox.execute("globalThis.__r387a").unwrap().value;
+    assert_eq!(
+        out, "yes:second",
+        "R387：动态 script appendChild 同步执行 + run-once 不重跑"
+    );
+}
+
+#[test]
 fn r380_fused_innerhtml_and_text_registry_children() {
     use std::sync::{Arc, Mutex};
     use zero_script_sandbox::{Sandbox, V8Sandbox};

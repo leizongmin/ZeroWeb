@@ -4091,6 +4091,36 @@
                 }
               } catch (_eR263in) {}
             }
+            // R387（js-dom M4，pending-apply RFC 延伸）：**动态 classic 脚本插入期执行**——
+            // createElement('script') + textContent/src + appendChild 入文档后按 spec
+            // 「prepare the script element」同步执行（无 async/defer 的 classic 脚本在
+            // 「becomes ready」即跑——SPA 加载器/分析 SDK 的标准装载路径）。源码优先读
+            // 融合 textContent getter（R81 注册表文本/解析子融合读，textContent= 路径经
+            // `_zwRegisterTextEl` 落注册表而非 `_handleChildren`——R377 的
+            // `_handleChildren` 收集对 textContent 形态恒空，探针实证）；run-once 标记
+            // （`_zwRanScripts`）防重插重跑（复用 R377 语义，eval 全局作用域 + 异常上报）。
+            // 仅 handle 子（动态创建形态）；sel 静态子（解析产物再挂载）不在此执行
+            //（解析期已跑过）。https://html.spec.whatwg.org/multipage/scripting.html#prepare-the-script-element
+            if (child && child.nodeType === 1 && child.__zwHandle
+                && String(child.tagName || '').toUpperCase() === 'SCRIPT') {
+              try {
+                var _r387src = '';
+                try { _r387src = String(child.textContent || ''); } catch (_e387tc) {}
+                if (!_r387src && typeof _r377runScript === 'function') {
+                  // 融合读失败回落 R377 registry 收集路径（run-once 标记同源）。
+                  _r377runScript(child.__zwHandle);
+                }
+                if (_r387src && !(globalThis._zwRanScripts && globalThis._zwRanScripts[child.__zwHandle])) {
+                  if (!globalThis._zwRanScripts) globalThis._zwRanScripts = {};
+                  globalThis._zwRanScripts[child.__zwHandle] = true;
+                  (0, eval).call(globalThis, _r387src);
+                }
+              } catch (_e387run) {
+                if (typeof globalThis._zwReportListenerError === 'function') {
+                  try { globalThis._zwReportListenerError(_e387run, null); } catch (_e387rp) {}
+                }
+              }
+            }
             return child;
           };
         }

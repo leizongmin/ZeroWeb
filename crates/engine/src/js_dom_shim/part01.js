@@ -1859,6 +1859,61 @@
     }
     if (ev) { try { elem.dispatchEvent(ev); } catch (_e343) {} }
   };
+  // R387（js-dom M4，pa4-lite）：解析积压回放（设计注记见 observe() 调用点）。以
+  // document.currentScript 为位置锚，合成「注册点之后的解析插入」childList record。
+  function _moReplayParseBacklog() {
+    try {
+      if (typeof document === 'undefined' || !document.currentScript) return;
+      var cs = document.currentScript;
+      var parent = cs.parentNode;
+      if (!parent || (parent.nodeType !== 1)) return;
+      var parentSel = parent.__zwSelector, parentHandle = parent.__zwHandle;
+      if (!parentSel && !parentHandle) return;
+      // 保守门②：仅 body 直下脚本回放（嵌套脚本——如 div 内 script——的后续兄弟在流式
+      // 解析下尚未插入，回放会引入测试不期望的 spurious record；removal 用例的剩余断言面
+      // 属 parse-position 可见性架构域，见 R387 注记）。
+      if (_realTag(parentSel, parentHandle) !== 'BODY') return;
+      var kids = _childNodeList(parentSel, parentHandle);
+      if (!kids || !kids.length) return;
+      // 定位 currentScript：proxy 缓存使 identity 可靠；sel/handle 串比较兜底。
+      var csIdx = -1;
+      for (var i = 0; i < kids.length; i++) {
+        if (kids[i] === cs
+            || (cs.__zwSelector && kids[i].__zwSelector === cs.__zwSelector)
+            || (cs.__zwHandle && kids[i].__zwHandle === cs.__zwHandle)) { csIdx = i; break; }
+      }
+      if (csIdx < 0) return;
+      var parentProxy = _makeProxy(parentSel, parentHandle);
+      var prev = cs;
+      for (var j = csIdx + 1; j < kids.length; j++) {
+        var el = kids[j];
+        if (!el) continue;
+        _mo_deliverToId('doc', {
+          type: 'childList',
+          _r188Target: parentProxy,
+          addedNodes: [el],
+          removedNodes: [],
+          previousSibling: prev,
+        }, true);
+        // 段内元素若为 script：其解析期文本子（script 的代码内容）单发一条
+        // target=script 的 record（流式解析下 script 元素插入与其文本子插入是两条记录）。
+        if (_realTag(el.__zwSelector, el.__zwHandle) === 'SCRIPT') {
+          var scriptKids = _childNodeList(el.__zwSelector, el.__zwHandle);
+          if (scriptKids && scriptKids.length && scriptKids[0].nodeType === 3) {
+            _mo_deliverToId('doc', {
+              type: 'childList',
+              _r188Target: el,
+              addedNodes: [scriptKids[0]],
+              removedNodes: [],
+            }, true);
+          }
+          break; // 段边界：含首个 script 后止
+        }
+        prev = el;
+      }
+    } catch (_e387r) { /* 回放失败静默（保守——不阻断 observe 注册） */ }
+  }
+
   function _mo_notify(sel, handle, baseRecord) {
     var id = _mo_id(handle, sel);
     // R188：document 站 record.target 用 mutation 容器 proxy（_makeProxy(sel, handle)）
@@ -2034,6 +2089,22 @@
     if (id == null) return;
     this._targets[id] = options || {};
     this._targetProxies[id] = target;
+    // R387（js-dom M4，pending-apply RFC pa4-lite）：document 级 subtree+childList 观测的
+    // **解析积压回放**——本仓架构是「整树解析完 → 按文档序执行脚本」，解析插入先于脚本，
+    // `_mo_notify` 只在 JS mutation 时发声：解析期插入（`<p id=n00>` 等位于当前脚本之后的
+    // 元素）永不产生 record（WPT MutationObserver-document "parser insertion mutations"
+    // assert_unreached 直接根因）。真实浏览器流式解析下，注册点之后的解析插入会产生记录。
+    // 回放 = 注册时以 `document.currentScript`（R3258）为位置锚，枚举**同父下当前脚本之后、
+    // 直至（含）下一个 `<script>` 元素**的段内节点，按序合成 childList record（addedNodes=[
+    // 节点]、previousSibling=前驱、target=父容器；段尾 script 的解析期文本子单发一条
+    // target=script 的 record）投递到 'doc' 站（requireSubtree 语义不变）。段边界取下一
+    // script 的依据：流式解析的微任务 checkpoint 恰在脚本执行间——注册脚本可见的「未来
+    // 插入」止于下一个脚本元素自身。保守门：仅 document 目标 + subtree+childList + 存在
+    // currentScript + 同父段非空；跨父段（嵌套脚本之外的后续兄弟树）不回放（removal 用例
+    // 的 parse-position 可见性面仍属架构域，见 master.md 挂账）。
+    if (id === 'doc' && o.subtree && o.childList) {
+      _moReplayParseBacklog();
+    }
   };
   globalThis.MutationObserver.prototype.disconnect = function() {
     this._targets = {};
