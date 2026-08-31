@@ -3268,3 +3268,50 @@ fn test_media_playback_rate_non_finite_r394() {
         "playbackRate 合法设置仍派 ratechange"
     );
 }
+
+#[test]
+fn test_media_preload_setter_roundtrip_r395() {
+    // media-elements M3 扩批 VI：preload IDL setter——enumerated 反射（写 preload 内容
+    // 属性原样值；getter 归一 invalid → 'metadata'，缺省 → 'metadata'）。旧无 setter
+    // 分支 → 落 expando 吞、attr 不写 → set→get round-trip 断。WPT preload_reflects_
+    // none_autoplay 反射面 + spec dom-media-preload。
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new("<html><body></body></html>".to_string()));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("https://wpt.test/t.html".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+
+    sandbox.execute(
+        "var v = document.createElement('video');\
+         globalThis.__v = v;\
+         globalThis.__r = [];\
+         globalThis.__r.push('init:' + v.preload);\
+         v.preload = 'none';\
+         globalThis.__r.push('none:' + v.preload + '/' + v.getAttribute('preload'));\
+         v.preload = 'auto';\
+         globalThis.__r.push('auto:' + v.preload);\
+         v.preload = 'bogus';\
+         globalThis.__r.push('bogus-read:' + v.preload + '/attr:' + v.getAttribute('preload'));\
+         var a = document.createElement('audio');\
+         a.preload = 'metadata';\
+         globalThis.__r.push('audio:' + a.preload);",
+    ).unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__r.join(',')").unwrap().value,
+        "init:metadata,none:none/none,auto:auto,bogus-read:metadata/attr:bogus,audio:metadata",
+        "preload set→get round-trip + attr 反射 + invalid 原样写/getter 归一"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__v.getAttribute('preload'))").unwrap().value,
+        "bogus",
+        "invalid value 原样写内容属性（getter 归一面分离）"
+    );
+}

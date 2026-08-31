@@ -2,8 +2,8 @@
 
 **入口文档**: [../media-elements.md](../media-elements.md)
 **创建日期**: 2026-08-17（goal 拆分 bootstrap）
-**最后更新**: 2026-09-01（M3 扩批 V 落地——playbackRate/defaultPlaybackRate 非有限
-TypeError spec 缺口修复；90.1% 维持，60 用例 Fail/Timeout 保持双清零）
+**最后更新**: 2026-09-01（M3 扩批 VI 落地——preload IDL setter 反射补缺 + 全 IDL
+setter sweep 巡检收口；90.1% 维持，60 用例 Fail/Timeout 保持双清零）
 
 ---
 
@@ -108,6 +108,16 @@ already-playing resolved 断言。**88.3%**（324P/0F/2T/41PF，+80 subtest 全�
   `test_media_playback_rate_non_finite_r394`（3 断言组）。evidence：
   `evidence/2026-09-01-media-playbackrate-typeerror.json`（90.1% 维持）。
 
+**M3 扩批 VI 已落地（2026-09-01，preload setter 补缺 + sweep 巡检收口）**：
+- `preload` IDL setter：enumerated 反射（写 preload 内容属性原样值——invalid 原样写、
+  getter 归一 'metadata' 分离面；DOMString 非 nullable，null→'null' 串）。旧无 setter
+  分支 → 落 expando 吞、attr 不写 → set→get round-trip 断。
+- **全 IDL setter sweep 巡检**（探针实证）：controls/loop/autoplay/playsInline/
+  crossOrigin/defaultMuted/muted/currentTime/volume/track.kind/label/srclang/src/
+  media.src 全部 round-trip 正确——语义面 setter 缺口清零，巡检收口。
+- 单测 `test_media_preload_setter_roundtrip_r395`（2 断言组）。evidence：
+  `evidence/2026-09-01-media-preload-setter.json`（90.1% 维持 0 回归）。
+
 **与兄弟 goal 的边界**：
 - media-playback — 解码/帧渲染归其管（RFC 门控）；本目标的 readyState 真实驱动源由其
   供给（接口契约记录于两流 master.md）
@@ -173,9 +183,11 @@ already-playing resolved 断言。**88.3%**（324P/0F/2T/41PF，+80 subtest 全�
   → 扩批第二批（同日，source-child + error 码）**334/375 = 89.1%**
   → 扩批 III（同日，volume/muted + Audio 构造器）**369/410 = 90.0%**
   → 扩批 IV（同日，controlsList + the-video-element）**372/413 = 90.1%**
+  → 扩批 V/VI（同日，playbackRate TypeError + preload setter 补缺）**90.1% 维持**
   （Fail 0 / **Timeout 0** / PF 41）
 - 入口：`make testharness-media`（FILTER 透传，`--json` 捕获 evidence）
 - 质量门禁：`cargo fmt` + `cargo clippy --workspace --all-targets -- -D warnings` 全过
 - evidence：`evidence/2026-08-31-media-baseline.md`（+ 同名 .json 机读版）、
   `evidence/2026-09-01-media-event-family.json`、`evidence/2026-09-01-media-source-child.json`、
-  `evidence/2026-09-01-media-volume-audio.json`、`evidence/2026-09-01-media-controlslist.json`
+  `evidence/2026-09-01-media-volume-audio.json`、`evidence/2026-09-01-media-controlslist.json`、
+  `evidence/2026-09-01-media-playbackrate-typeerror.json`、`evidence/2026-09-01-media-preload-setter.json`

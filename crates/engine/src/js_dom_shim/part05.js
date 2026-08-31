@@ -127,6 +127,16 @@
             if (typeof setTimeout === 'function') setTimeout(_muFire, 0);
             else _muFire();
           }
+        } else if (p === 'preload' && (_realTag(sel, handle) === 'AUDIO' || _realTag(sel, handle) === 'VIDEO')) {
+          // media-elements M3 扩批 VI：`media.preload = x` IDL setter——enumerated 反射
+          // （写 preload 内容属性原样值；getter 归一——invalid value 读回 'metadata'）。
+          // 旧无 setter 分支 → 落 expando 吞、attr 不写 → set→get round-trip 断
+          //（getter 走 part04 media 段读 attr）。DOMString 非 nullable → null 转 "null" 串。
+          // https://html.spec.whatwg.org/multipage/media.html#dom-media-preload
+          var _plTag = _realTag(sel, handle);
+          var _plStr = (value === null || value === undefined) ? 'null' : String(value);
+          if (handle) __zw_set_attr_handle(handle, 'preload', _plStr);
+          else { __zw_set_attr(sel, 'preload', _plStr); moAttr = 'preload'; }
         } else if (p === 'crossOrigin') {
           // `media.crossOrigin = x`——enumerated 反射 setter：null → removeAttribute；
           // 其余原样写属性（spec：IDL getter 归一，setter 存原始值——invalid value 'foo'
