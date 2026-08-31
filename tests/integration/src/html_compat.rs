@@ -1165,7 +1165,10 @@ fn image_load_state_and_event_are_coherent() {
 
 #[test]
 fn media_resource_fetch_state_is_observable() {
-    // Fetch success alone does not claim media metadata decoding: readyState remains HAVE_NOTHING.
+    // media-elements M2 headless 近似驱动：fetch 成功即提交资源状态并派 media 加载事件序列
+    // （loadstart→…→canplaythrough；无真解码，事件序同步就绪），readyState 推进至
+    // HAVE_ENOUGH_DATA。spec：真浏览器仅在解析出元数据/帧数据后推进——真值化归
+    // media-playback 解码层（goal 契约：语义层不返工，替换驱动源）。
     let html = r#"<html><body>
         <audio id="audio" src="ok.mp3"></audio>
         <video id="direct" src="ok.mp4"><source src="missing-ignored.webm"></video>
@@ -1202,7 +1205,7 @@ fn media_resource_fetch_state_is_observable() {
                   d.networkState,d.currentSrc,f.networkState,f.currentSrc,t.readyState].join('|')",
             )
             .unwrap(),
-        "track:load|2|1|0|true|1|https://zero.test/resources/ok.mp4|1|https://zero.test/resources/ok.webm|2"
+        "track:load|2|1|4|true|1|https://zero.test/resources/ok.mp4|1|https://zero.test/resources/ok.webm|2"
     );
 }
 

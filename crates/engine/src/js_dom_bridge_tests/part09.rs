@@ -2732,3 +2732,78 @@ fn test_media_metadata_idl_face_r388() {
         "track.src 绝对 URL 解析（base=页面 URL）"
     );
 }
+
+#[test]
+fn test_media_load_event_sequence_r389() {
+    // media-elements M2：动态 `.src=` 的 headless 加载模拟——setTimeout(0) 后提交资源状态
+    // 并派事件序列（loadstart→progress→durationchange→loadedmetadata→loadeddata→canplay→
+    // canplaythrough），readyState 推进至 HAVE_ENOUGH_DATA、networkState 稳态 NETWORK_IDLE；
+    // on* handler 与 addEventListener 双路径均触发。runner timer stub 语义下验证（与
+    // testharness probe 泵同构）。
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new("<html><body></body></html>".to_string()));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("https://wpt.test/t.html".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+
+    // runner timer stub（prepare_harness_html 同构）——setTimer 进可泵表。
+    sandbox.execute(
+        "globalThis.__zw_pending = {}; globalThis.__zw_timers = [];\
+         globalThis.__zw_setTimeout = function(id, delay) {\
+           globalThis.__zw_timers.push({ id: id, at: Date.now() + (delay | 0) }); };\
+         globalThis.__zw_fire_due_timers = function() {\
+           var now = Date.now(); var rest = [], due = [];\
+           var timers = globalThis.__zw_timers || [];\
+           for (var i = 0; i < timers.length; i++) {\
+             if (timers[i].at <= now) due.push(timers[i]); else rest.push(timers[i]); }\
+           globalThis.__zw_timers = rest;\
+           for (var d = 0; d < due.length; d++) {\
+             var fn = globalThis.__zw_pending[due[d].id];\
+             if (fn) { delete globalThis.__zw_pending[due[d].id]; try { fn(); } catch (_e) {} } } };",
+    ).unwrap();
+
+    sandbox.execute(
+        "globalThis.__log = [];\
+         var v = document.createElement('video');\
+         globalThis.__vprobe = v;\
+         v.onloadedmetadata = function () { globalThis.__log.push('loadedmetadata'); };\
+         v.addEventListener('canplay', function () { globalThis.__log.push('canplay'); });\
+         v.src = '/media/movie_5.mp4';\
+         globalThis.__timersArmed = (globalThis.__zw_timers || []).length;\
+         globalThis.__readyBefore = v.readyState;",
+    ).unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__timersArmed)").unwrap().value,
+        "1",
+        "src= 即排程 headless 加载模拟定时器"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__readyBefore)").unwrap().value,
+        "0",
+        "定时器未泵前 readyState 恒 HAVE_NOTHING"
+    );
+
+    // 泵定时器（同 runner probe loop）。
+    let _ = sandbox.execute("globalThis.__zw_fire_due_timers()");
+    let _ = sandbox.execute("globalThis.__zw_fire_due_timers()");
+    let log = sandbox.execute("globalThis.__log.join(',')").unwrap().value;
+    assert_eq!(log, "loadedmetadata,canplay", "on* handler + addEventListener 双路径按序触发");
+    assert_eq!(
+        sandbox.execute("String(globalThis.__vprobe.readyState)").unwrap().value,
+        "4",
+        "序列后 readyState = HAVE_ENOUGH_DATA"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__vprobe.networkState)").unwrap().value,
+        "1",
+        "加载完成 networkState = NETWORK_IDLE"
+    );
+}

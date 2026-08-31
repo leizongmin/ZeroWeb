@@ -6728,8 +6728,87 @@
   // FR-009：提交资源最终状态，并按元素种类派发 non-bubbling/non-cancelable 事件。
   // https://html.spec.whatwg.org/multipage/embedded-content.html#updating-the-image-data
   // https://html.spec.whatwg.org/multipage/media.html#concept-media-load-resource
+  // media-elements M2：audio/video settle 成功时派 media 专有加载事件序列（headless 近似
+  // 驱动——无真解码，元数据/数据即刻「可用」，事件按 spec 序同步派发）：
+  //   loadstart（networkState=LOADING）→ progress（仍 LOADING）→ durationchange + loadedmetadata
+  //   （readyState HAVE_METADATA，duration 定值）→ loadeddata（HAVE_CURRENT_DATA）→ canplay
+  //   （HAVE_FUTURE_DATA）→ canplaythrough（HAVE_ENOUGH_DATA）；autoplay 属性存在则续派
+  //   play → playing（spec autoplay 面加载完成后自动播放）。
+  // https://html.spec.whatwg.org/multipage/media.html#media-elements-processing-model
+  function _zwMediaFire(sel, handle, key, type) {
+    try {
+      if (typeof _makeEvent !== 'function') return;
+      var ev = _makeEvent(type, { bubbles: false, cancelable: false });
+      var invoked = false;
+      try { invoked = _dispatchWithBubble(key, sel, handle, ev) !== false; } catch (_eMediaD) {}
+      // on* 属性 handler 兜底（同 _mediaFireSel——handle-only 元素 on* 错位防护）。
+      if (!invoked) {
+        var el = (typeof _makeProxy === 'function') ? _makeProxy(sel, handle) : null;
+        if (el) {
+          var h = el['on' + type];
+          if (typeof h === 'function') { try { h.call(el, ev); } catch (_eMediaH) {} }
+        }
+      }
+    } catch (_eMediaEv) {}
+  }
+  function _zwMediaAutoplay(sel, handle, key) {
+    var hasAutoplay = false;
+    try {
+      hasAutoplay = handle
+        ? __zw_has_attr_handle(handle, 'autoplay') === '1'
+        : (typeof __zw_has_attr === 'function') && __zw_has_attr(sel, 'autoplay') === '1';
+    } catch (_eAuto) {}
+    if (!hasAutoplay) return;
+    var ms = _mediaState[key] || (_mediaState[key] = {});
+    if (ms.playing) return;
+    ms.playing = true;
+    _zwMediaFire(sel, handle, key, 'play');
+    _zwMediaFire(sel, handle, key, 'playing');
+  }
+  function _zwMediaLoadSequence(sel, handle, key) {
+    var ms = _mediaState[key] || (_mediaState[key] = {});
+    ms.networkState = 2; // NETWORK_LOADING——loadstart/progress 期间断言面
+    _zwMediaFire(sel, handle, key, 'loadstart');
+    _zwMediaFire(sel, handle, key, 'progress');
+    ms.readyState = 1;
+    if (ms.duration == null) ms.duration = 600; // headless 元数据定值（无真解码；用例只断言可写/类型面）
+    _zwMediaFire(sel, handle, key, 'durationchange');
+    _zwMediaFire(sel, handle, key, 'loadedmetadata');
+    ms.readyState = 2;
+    _zwMediaFire(sel, handle, key, 'loadeddata');
+    ms.readyState = 3;
+    _zwMediaFire(sel, handle, key, 'canplay');
+    ms.readyState = 4;
+    _zwMediaFire(sel, handle, key, 'canplaythrough');
+    ms.networkState = 1; // NETWORK_IDLE——加载完成无错误（spec networkState 稳态）
+    _zwMediaAutoplay(sel, handle, key);
+  }
+  // M2：动态 `.src=` 设置的 headless 加载模拟——runner/生产页脚本设 src 后宿主未必有
+  // media fetch 通路（testharness 页面无 async_load 媒体抓取），由 shim 侧 setTimeout(0)
+  // 提交状态并派事件序列（幂等：_resourceStates 已有则跳过）。handle/sel 双身份——
+  // detached createElement 元素为 handle-only，key 须含 handle（_elKey(sel, handle)）。
+  function _zwMediaScheduleLoad(sel, handle, tag, absUrl, isEmptySrc) {
+    var key = _elKey(sel, handle);
+    if (typeof setTimeout !== 'function') return;
+    // 空 src（剥离 C0/space 后 ''）→ spec「empty src attribute」：资源选择失败——仅派
+    // loadstart（headless 近似），不提交资源状态（currentSrc 恒 ''），networkState 复位
+    // NETWORK_EMPTY。
+    if (isEmptySrc === true) {
+      setTimeout(function () {
+        var ms = _mediaState[key] || (_mediaState[key] = {});
+        ms.networkState = 0;
+        _zwMediaFire(sel, handle, key, 'loadstart');
+      }, 0);
+      return;
+    }
+    setTimeout(function () {
+      _zwSettleResourceKey(key, sel, handle, tag, absUrl, 'loaded', 0, 0);
+    }, 0);
+  }
   function _zwSettleResourceSelector(sel, tag, url, outcome, width, height) {
-    var key = _elKey(sel, null);
+    return _zwSettleResourceKey(_elKey(sel, null), sel, null, tag, url, outcome, width, height);
+  }
+  function _zwSettleResourceKey(key, sel, handle, tag, url, outcome, width, height) {
     if (_resourceStates[key]) return false; // 每个资源请求只 settle / 派发一次。
     var state = {
       url: String(url), outcome: String(outcome),
@@ -6743,6 +6822,10 @@
     else if ((tag === 'source' || tag === 'audio' || tag === 'video') && outcome === 'error') eventType = 'error';
     if (eventType) {
       _dispatchWithBubble(key, sel, null, _makeEvent(eventType, { bubbles: false, cancelable: false }));
+    }
+    // M2：media 元素资源成功加载 → 派加载事件序列（error 已在上方 error 分支派发）。
+    if ((tag === 'audio' || tag === 'video') && outcome !== 'error') {
+      _zwMediaLoadSequence(sel, handle, key);
     }
     return true;
   }

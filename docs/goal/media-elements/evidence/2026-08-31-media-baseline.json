@@ -232,5 +232,111 @@
         "Pass": 2
       }
     }
+  },
+  "after_m2": {
+    "totals": {
+      "Pass": 214,
+      "Timeout": 2,
+      "Fail": 12,
+      "PreconditionFailed": 41
+    },
+    "pass_rate": 79.6,
+    "cases": {
+      "html/semantics/embedded-content/media-elements/error-codes/error.html": {
+        "Pass": 4,
+        "Timeout": 1
+      },
+      "html/semantics/embedded-content/media-elements/historical.html": {
+        "Pass": 53,
+        "Fail": 1
+      },
+      "html/semantics/embedded-content/media-elements/interfaces/HTMLElement/HTMLMediaElement/addTextTrack.html": {
+        "Pass": 2,
+        "Fail": 9
+      },
+      "html/semantics/embedded-content/media-elements/interfaces/HTMLElement/HTMLMediaElement/crossOrigin.html": {
+        "Pass": 11
+      },
+      "html/semantics/embedded-content/media-elements/interfaces/HTMLElement/HTMLMediaElement/textTracks.html": {
+        "Fail": 1
+      },
+      "html/semantics/embedded-content/media-elements/interfaces/HTMLElement/HTMLTrackElement/default.html": {
+        "Pass": 7
+      },
+      "html/semantics/embedded-content/media-elements/interfaces/HTMLElement/HTMLTrackElement/kind.html": {
+        "Pass": 20
+      },
+      "html/semantics/embedded-content/media-elements/interfaces/HTMLElement/HTMLTrackElement/label.html": {
+        "Pass": 11
+      },
+      "html/semantics/embedded-content/media-elements/interfaces/HTMLElement/HTMLTrackElement/readyState.html": {
+        "Pass": 2
+      },
+      "html/semantics/embedded-content/media-elements/interfaces/HTMLElement/HTMLTrackElement/src.html": {
+        "Pass": 11
+      },
+      "html/semantics/embedded-content/media-elements/interfaces/HTMLElement/HTMLTrackElement/srclang.html": {
+        "Pass": 11
+      },
+      "html/semantics/embedded-content/media-elements/interfaces/HTMLElement/HTMLTrackElement/track.html": {
+        "Fail": 1
+      },
+      "html/semantics/embedded-content/media-elements/location-of-the-media-resource/currentSrc.html": {
+        "Pass": 10,
+        "Timeout": 1
+      },
+      "html/semantics/embedded-content/media-elements/mime-types/canPlayType.html": {
+        "Pass": 19,
+        "PreconditionFailed": 41
+      },
+      "html/semantics/embedded-content/media-elements/networkState_during_loadstart.html": {
+        "Pass": 2
+      },
+      "html/semantics/embedded-content/media-elements/networkState_during_progress.html": {
+        "Pass": 4
+      },
+      "html/semantics/embedded-content/media-elements/networkState_initial.html": {
+        "Pass": 2
+      },
+      "html/semantics/embedded-content/media-elements/offsets-into-the-media-resource/currentTime.html": {
+        "Pass": 3
+      },
+      "html/semantics/embedded-content/media-elements/offsets-into-the-media-resource/duration.html": {
+        "Pass": 1
+      },
+      "html/semantics/embedded-content/media-elements/paused_false_during_play.html": {
+        "Pass": 4
+      },
+      "html/semantics/embedded-content/media-elements/paused_true_during_pause.html": {
+        "Pass": 4
+      },
+      "html/semantics/embedded-content/media-elements/playing-the-media-resource/playbackRate.html": {
+        "Pass": 7
+      },
+      "html/semantics/embedded-content/media-elements/preload_reflects_none_autoplay.html": {
+        "Pass": 2
+      },
+      "html/semantics/embedded-content/media-elements/readyState_during_canplay.html": {
+        "Pass": 4
+      },
+      "html/semantics/embedded-content/media-elements/readyState_during_canplaythrough.html": {
+        "Pass": 4
+      },
+      "html/semantics/embedded-content/media-elements/readyState_during_loadeddata.html": {
+        "Pass": 4
+      },
+      "html/semantics/embedded-content/media-elements/readyState_during_loadedmetadata.html": {
+        "Pass": 4
+      },
+      "html/semantics/embedded-content/media-elements/readyState_during_playing.html": {
+        "Pass": 4
+      },
+      "html/semantics/embedded-content/media-elements/readyState_initial.html": {
+        "Pass": 2
+      },
+      "html/semantics/embedded-content/media-elements/src_reflects_attribute_not_source_elements.html": {
+        "Pass": 2
+      }
+    }
   }
 }

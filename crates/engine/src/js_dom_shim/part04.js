@@ -95,6 +95,8 @@
           }[prop];
         }
         if ((resourceTag === 'AUDIO' || resourceTag === 'VIDEO') && prop === 'networkState') {
+          var _nsMs = _mediaState[key];
+          if (_nsMs && _nsMs.networkState != null) return _nsMs.networkState;
           if (resourceState) return resourceState.outcome === 'error' ? 3 : 1;
           var mediaSrc = handle ? __zw_get_attr_handle(handle, 'src') : __zw_get_attr(sel, 'src');
           if (mediaSrc) return 2;
@@ -103,7 +105,10 @@
             return mediaSources && mediaSources.length ? 2 : 0;
           } catch (_e) { return 0; }
         }
-        if ((resourceTag === 'AUDIO' || resourceTag === 'VIDEO') && prop === 'readyState') return 0;
+        if ((resourceTag === 'AUDIO' || resourceTag === 'VIDEO') && prop === 'readyState') {
+          var _rsMs = _mediaState[key];
+          return _rsMs ? (_rsMs.readyState | 0) : 0;
+        }
         if ((resourceTag === 'AUDIO' || resourceTag === 'VIDEO') && prop === 'error') {
           return resourceState && resourceState.outcome === 'error' ? resourceState.error : null;
         }
@@ -120,7 +125,15 @@
           if (prop === 'playbackRate') return _ms ? _ms.playbackRate : 1;
           if (prop === 'defaultPlaybackRate') return _ms ? _ms.defaultPlaybackRate : 1;
           if (prop === 'volume') return _ms ? _ms.volume : 1;
-          if (prop === 'seeking') return false; // HAVE_NOTHING 无 seek 进行（spec：seeking 在无可 seek 媒体恒 false）
+          if (prop === 'seeking') return _ms ? !!_ms.seeking : false; // HAVE_NOTHING 无 seek（spec：无可 seek 媒体恒 false）
+          // src IDL getter：URL 属性——反射 + base 解析为绝对 URL（同 a.href / track.src 语义）。
+          if (prop === 'src') {
+            var _mvHas = (handle ? __zw_has_attr_handle(handle, 'src') : (typeof __zw_has_attr_lw === 'function' ? __zw_has_attr_lw(sel, 'src') : __zw_has_attr(sel, 'src'))) === '1';
+            if (!_mvHas) return '';
+            var _mvRaw = handle ? __zw_get_attr_handle(handle, 'src') : (typeof __zw_get_attr_lw === 'function' ? __zw_get_attr_lw(sel, 'src') : __zw_get_attr(sel, 'src'));
+            var _mvClean = String(_mvRaw == null ? '' : _mvRaw).replace(/^[\x00-\x20]+/, '').replace(/[\x00-\x20]+$/, '');
+            return _zwResolveFetchUrl(_mvClean);
+          }
           if (prop === 'paused') return _ms ? !_ms.playing : true;
           if (prop === 'ended') return _ms ? !!_ms.ended : false;
           if (prop === 'defaultMuted') {

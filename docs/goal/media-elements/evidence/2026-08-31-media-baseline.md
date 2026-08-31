@@ -122,3 +122,42 @@ commit `feat(engine): media metadata IDL face + track reflection`：
 
 **验证**：make test 65 套件全绿、`cargo fmt --all -- --check` 干净、
 `cargo clippy --workspace --all-targets -- -D warnings` 零警告。
+
+---
+
+## M2 增量（F4 media 事件序列 headless 近似驱动，2026-08-31 同轮）
+
+- **实现**：
+  - part06 `_zwSettleResourceSelector` 泛化为 `_zwSettleResourceKey`（handle/sel 双身份）；
+    audio/video settle 成功即派 headless 事件序列：loadstart → progress → durationchange +
+    loadedmetadata（readyState=HAVE_METADATA，duration 定值 600）→ loadeddata → canplay →
+    canplaythrough（HAVE_ENOUGH_DATA）；autoplay 属性续派 play → playing；序列前后
+    networkState LOADING→IDLE。
+  - 动态 `.src=`（JS 设置）：shim 侧 setTimeout(0) 加载模拟（runner 无媒体 fetch 通路）；
+    精确空串 src → 仅派 loadstart（资源选择失败语义，currentSrc 恒 ''）。
+  - play()/pause() 语义面：playing 态镜像 + play/playing/pause 事件派发（幂等）。
+  - currentTime setter：readyState≥1 时 seeking=true + seeking/timeupdate 派发，seeked
+    异步回落；volume/playbackRate setter 派 volumechange/ratechange。
+  - `_mediaFireSel`/`_zwMediaFire` 带 on* 属性兜底派发（detached handle 元素键位防护）。
+  - src IDL getter（AUDIO/VIDEO/TRACK）：绝对 URL 解析 + C0/space 剥离。
+  - FR-009 集成测试契约更新（readyState 0→4 = 新 headless 契约；error 路径断言不变，
+    资源失败用例零改动通过 = A/B 佐证）。
+- **新增单测**：`test_media_load_event_sequence_r389`（定时器排程/双路径派发/readyState/
+  networkState 断言）。
+
+### M2 后总通过率：214/269 subtest = **79.6%**（基线 46.5% → 切片3 73.1% → **M2 79.6%**）
+
+| 状态 | 基线 | 切片3 | M2 | 变化 |
+|---|---|---|---|---|
+| Pass | 114 | 179 | 214 | **+35** |
+| Fail | 77 | 12 | 12 | 0（TextTrack 家族） |
+| Timeout | 13 | 13 | **2** | **-11**（F4 基本闭合） |
+| PreconditionFailed | 41 | 41 | 41 | 0（能力表决策后自愈） |
+
+### 余账（2 Timeout + 12 Fail）
+
+- Timeout：currentSrc（source 子元素插入触发资源选择 = DOM mutation 面，defer 至 M3 后）、
+  error（错误码语义 = 真错误注入面，随解码层）
+- Fail：12 全部 TextTrack 家族（addTextTrack 9 + textTracks 1 + track 1 + historical 1）
+
+**验证**：make test 65 套件全绿、fmt 干净、strict clippy 零警告。

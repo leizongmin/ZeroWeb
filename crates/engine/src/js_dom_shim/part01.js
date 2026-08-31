@@ -87,6 +87,32 @@
   // defaultPlaybackRate 1 / volume 1 / paused true）。play()/pause() 方法段（part03）同读写此表。
   // 与 _resourceStates 同生命周期（page-local，导航清空）。
   var _mediaState = {};
+  // M2：media 专有事件派发便捷封装（non-bubbling/non-cancelable；sel/handle 双身份）。
+  // 声明于 part01 顶层（shim IIFE 闭包）——set trap / play()/pause() / 动态加载模拟共用；
+  // 函数声明提升使 part05/part06 的调用点可达。
+  function _mediaFireSel(sel, handle, key, type) {
+    try {
+      if (typeof _makeEvent !== 'function') return;
+      var ev = _makeEvent(type, { bubbles: false, cancelable: false });
+      var invoked = false;
+      if (typeof _dispatchWithBubble === 'function') {
+        try {
+          invoked = _dispatchWithBubble(key, sel, handle, ev) !== false;
+        } catch (_eMFd) {}
+      }
+      // on* 属性 handler 兜底——detached createElement（handle-only）元素的 listener 槽位
+      // 与 on* 注册键可能错位；直接读 'on'+type（get trap 返已设 handler）调用。
+      if (!invoked) {
+        var el = (typeof _makeProxy === 'function') ? _makeProxy(sel, handle) : null;
+        if (el) {
+          var h = el['on' + type];
+          if (typeof h === 'function') {
+            try { h.call(el, ev); } catch (_eMFh) {}
+          }
+        }
+      }
+    } catch (_eMF) {}
+  }
   // R3049：textarea defaultValue 追踪（闭合 R3048 限制①）。textarea.value ↔ live textContent，无独立初值缓存
   //（区别 INPUT value 属性 / OUTPUT _outputDefault）→ form.reset 无法还原 textarea。本 map 惰性捕获 textarea 初值
   //（getter 首读 / value setter 首写前），供 defaultValue getter + form.reset 还原。同 _outputDefault 经 reset 清空。

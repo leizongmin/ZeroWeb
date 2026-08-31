@@ -12,14 +12,30 @@
             if (p === 'volume') {
               if (isNaN(_mv)) _mv = 1;
               _mst.volume = _mv < 0 ? 0 : (_mv > 1 ? 1 : _mv);
+              _mediaFireSel(sel, handle, key, 'volumechange');
             } else if (p === 'playbackRate') {
               if (isNaN(_mv)) _mv = 1;
               _mst.playbackRate = _mv;
+              _mediaFireSel(sel, handle, key, 'ratechange');
             } else if (p === 'defaultPlaybackRate') {
               if (isNaN(_mv)) _mv = 1;
               _mst.defaultPlaybackRate = _mv;
-            } else {
+            } else if (p === 'currentTime') {
               _mst.currentTime = isNaN(_mv) ? 0 : _mv;
+              // spec seek：媒体可 seek（headless：已加载 readyState>=1）→ seeking=true +
+              // 派 seeking，随后 seeked 异步回落（setTimeout 队列，runner/沙箱均可触发）。
+              if ((_mst.readyState | 0) >= 1) {
+                _mst.seeking = true;
+                _mediaFireSel(sel, handle, key, 'seeking');
+                _mediaFireSel(sel, handle, key, 'timeupdate');
+                var _stSeeked = function () {
+                  _mst.seeking = false;
+                  _mediaFireSel(sel, handle, key, 'timeupdate');
+                  _mediaFireSel(sel, handle, key, 'seeked');
+                };
+                if (typeof setTimeout === 'function') setTimeout(_stSeeked, 0);
+                else _stSeeked();
+              }
             }
           }
         } else if (p === 'defaultMuted') {
@@ -77,6 +93,33 @@
             } else if (!handle && typeof __zw_remove_attr === 'function') {
               __zw_remove_attr(sel, 'default'); moAttr = 'default';
             }
+          }
+        } else if (p === 'src' && (_realTag(sel, handle) === 'AUDIO' || _realTag(sel, handle) === 'VIDEO')) {
+          // `media.src = x`（HTMLMediaElement，M2）——写属性 + headless 加载模拟：setTimeout(0)
+          // 后提交资源状态并派事件序列（loadstart→...→canplaythrough；autoplay 续派 play/playing）。
+          // URL 属性语义：null → removeAttribute（spec）；'' → 解析为页面 URL 触发加载。
+          var _mTag = _realTag(sel, handle);
+          var _mKey = _elKey(sel, handle);
+          if (value === null || value === undefined) {
+            try { _zwAttrInstRemoveNS(_mKey, null, 'src'); } catch (_eMSRm) {}
+            if (handle && typeof __zw_remove_attr_handle === 'function') {
+              __zw_remove_attr_handle(handle, 'src');
+            } else if (!handle && typeof __zw_remove_attr === 'function') {
+              __zw_remove_attr(sel, 'src'); moAttr = 'src';
+            }
+            delete _resourceStates[_mKey]; // spec：src 移除 → 资源选择重置（headless 清状态可重载）
+          } else {
+            var _mSrc = String(value);
+            if (handle) __zw_set_attr_handle(handle, 'src', _mSrc);
+            else { __zw_set_attr(sel, 'src', _mSrc); moAttr = 'src'; }
+            var _mAbs = _mSrc;
+            try {
+              if (typeof _zwResolveFetchUrl === 'function') _mAbs = _zwResolveFetchUrl(_mSrc);
+            } catch (_eMSR) {}
+            // 仅**精确空串**走「空 src 资源选择失败」路径；' ' 等空白串按 URL spec 剥离后
+            // 解析为 base，是正常资源（WPT currentSrc ' ' case 期望 currentSrc = 页面 URL）。
+            _zwMediaScheduleLoad(sel, handle, _mTag.toLowerCase(), _mAbs, _mSrc === '');
+            _mAbs = undefined;
           }
         } else if (p === 'src' && _realTag(sel, handle) === 'TRACK') {
           // `track.src = x`——URL 属性 setter（原始串写属性；绝对化在 getter）。
@@ -10284,3 +10327,4 @@
       return resp.text();
     }).then(function (text) {
       if (self._closed) return;
+

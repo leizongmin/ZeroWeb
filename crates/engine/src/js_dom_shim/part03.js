@@ -11309,10 +11309,37 @@
         // play 返 resolved Promise（spec：HTMLMediaElement.play() 返 Promise），pause/load no-op，
         // canPlayType 返 ''（保守「不可播放」）。使 `new Audio(url).play().then(...)` 不抛（媒体 UI 主模式）。
         if (prop === 'play' && (_realTag(sel, handle) === 'AUDIO' || _realTag(sel, handle) === 'VIDEO')) {
-          return function () { return Promise.resolve(undefined); };
+          // media-elements M2：play() 语义面——paused → playing=true + 派 play → playing
+          //（readyState 已达 HAVE_FUTURE_DATA 即 headless 恒真）。already playing → 无事件。
+          // spec pause() 后紧跟 play() 恢复播放。返回 resolved Promise（spec）。
+          return function () {
+            var _pTag = _realTag(sel, handle);
+            if (_pTag === 'AUDIO' || _pTag === 'VIDEO') {
+              var _pKey = _elKey(sel, handle);
+              var _pMs = _mediaState[_pKey] || (_mediaState[_pKey] = {});
+              if (!_pMs.playing) {
+                _pMs.playing = true;
+                _pMs.ended = false;
+                _dispatchWithBubble(_pKey, sel, handle, _makeEvent('play', { bubbles: false, cancelable: false }));
+                _dispatchWithBubble(_pKey, sel, handle, _makeEvent('playing', { bubbles: false, cancelable: false }));
+              }
+            }
+            return Promise.resolve(undefined);
+          };
         }
         if (prop === 'pause' && (_realTag(sel, handle) === 'AUDIO' || _realTag(sel, handle) === 'VIDEO')) {
-          return function () {};
+          // pause()：!paused → playing=false + 派 pause（spec：已暂停时调用无事件）。
+          return function () {
+            var _pTag = _realTag(sel, handle);
+            if (_pTag === 'AUDIO' || _pTag === 'VIDEO') {
+              var _pKey = _elKey(sel, handle);
+              var _pMs = _mediaState[_pKey];
+              if (_pMs && _pMs.playing) {
+                _pMs.playing = false;
+                _dispatchWithBubble(_pKey, sel, handle, _makeEvent('pause', { bubbles: false, cancelable: false }));
+              }
+            }
+          };
         }
         if (prop === 'load' && (_realTag(sel, handle) === 'AUDIO' || _realTag(sel, handle) === 'VIDEO')) {
           return function () {};
