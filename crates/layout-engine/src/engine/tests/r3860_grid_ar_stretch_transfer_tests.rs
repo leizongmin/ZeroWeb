@@ -70,3 +70,30 @@ fn r3860_grid_justify_stretch_transfers_block_via_ratio() {
         item.height
     );
 }
+
+/// R3861：block-stretch + inline **definite 长度**（width:%）→ ratio 忽略、双钳 track
+///（css-sizing-4：一轴 stretch + 另轴 definite = 双轴约束；034/035 aspect 2/1 或 1/2
+/// + width:100% → 100×100 而非 taffy ratio 高/宽）。
+#[test]
+fn r3861_grid_align_stretch_with_definite_inline_ignores_ratio() {
+    let html = r#"<html><body>
+<div id="g" style="display:grid; grid-template: 100px / 100px">
+  <div id="item" style="aspect-ratio: 2/1; align-self: stretch; width: 100%; background: green"></div>
+</div>
+</body></html>"#;
+    let doc = zero_dom::parse_html(html);
+    let mut sys = StyleSystem::new();
+    sys.set_viewport(800.0, 600.0);
+    let styles = sys.compute_styles(&doc, &[]);
+    let item_id = doc.get_element_by_id("item").expect("item");
+    let mut engine = LayoutEngine::new(800.0, 600.0);
+    let result = engine.compute(&doc, &styles);
+    let item = find(&result.root, item_id).unwrap();
+    assert!(
+        (item.width - 100.0).abs() < 0.5 && (item.height - 100.0).abs() < 0.5,
+        "R3861: block-stretch + definite inline → ratio 忽略双钳 track（100×100），\
+         got {}x{}（taffy ratio 高 50 为错）",
+        item.width,
+        item.height
+    );
+}

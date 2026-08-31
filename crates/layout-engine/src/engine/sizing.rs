@@ -389,7 +389,7 @@ impl LayoutEngine {
                 && let Some(ps) = parent_style
                 && matches!(ps.display, DisplayValue::Grid | DisplayValue::InlineGrid)
                 && let Some(item_style) = my_style
-                && matches!(item_style.width, LengthValue::Auto)
+                && matches!(item_style.width, LengthValue::Auto | LengthValue::Percentage(_))
                 && matches!(item_style.height, LengthValue::Auto)
                 && let Some(&tid) = dom_to_taffy.get(&id)
                 && let Some(parent_tid) = parent_taffy_id
@@ -422,7 +422,22 @@ impl LayoutEngine {
                 let justify_stretch = matches!(st.justify_self.map(|j| j.keyword), Some(AlignItemsKeyword::Stretch));
                 let item_overflowing_row = row_definite.is_some_and(|r| (b.height - r).abs() > 0.5);
                 let item_overflowing_col = col_definite.is_some_and(|c| (b.width - c).abs() > 0.5);
+                // R3861：block-stretch + inline **definite 长度**（px 或 %→col track）→
+                // ratio 忽略（css-sizing-4：一轴 stretch + 另轴 definite 长度 = 双轴约束），
+                // 双钳 track（034/035：aspect 2/1 或 1/2 + width:100% → 100×100 而非 ratio 高）。
+                let inline_definite = matches!(item_style.width, LengthValue::Percentage(_));
                 if align_stretch
+                    && !justify_stretch
+                    && inline_definite
+                    && let (Some(row_h), Some(col_w)) = (row_definite, col_definite)
+                    && (item_overflowing_row || item_overflowing_col)
+                {
+                    st.size.height = taffy::style::Dimension::length(row_h.max(0.5));
+                    st.size.width = taffy::style::Dimension::length(col_w.max(0.5));
+                    let _ = taffy_tree.set_style(tid, st);
+                    let _ = taffy_tree.mark_dirty(tid);
+                    changed = true;
+                } else if align_stretch
                     && !justify_stretch
                     && let Some(row_h) = row_definite
                     && item_overflowing_row
