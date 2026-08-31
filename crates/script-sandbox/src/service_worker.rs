@@ -695,8 +695,34 @@ const SERVICE_WORKER_BOOTSTRAP: &str = r#"
   }
 
   // https://fetch.spec.whatwg.org/#headers-class
+  function isHeaderNameChar(code) {
+    return (code >= 0x30 && code <= 0x39)
+      || (code >= 0x41 && code <= 0x5a)
+      || (code >= 0x61 && code <= 0x7a)
+      || code === 0x21 || code === 0x23 || code === 0x24 || code === 0x25
+      || code === 0x26 || code === 0x27 || code === 0x2a || code === 0x2b
+      || code === 0x2d || code === 0x2e || code === 0x5e || code === 0x5f
+      || code === 0x60 || code === 0x7c || code === 0x7e;
+  }
   function normalizeHeaderName(name) {
-    return String(name).toLowerCase().trim();
+    name = String(name).toLowerCase().trim();
+    // https://fetch.spec.whatwg.org/#concept-header-name
+    if (name.length === 0) throw new TypeError('invalid header name');
+    for (let i = 0; i < name.length; i++) {
+      if (!isHeaderNameChar(name.charCodeAt(i))) throw new TypeError('invalid header name');
+    }
+    return name;
+  }
+  function normalizeHeaderValue(value) {
+    value = String(value);
+    // https://fetch.spec.whatwg.org/#concept-header-value
+    for (let i = 0; i < value.length; i++) {
+      const code = value.charCodeAt(i);
+      if ((code < 0x20 && code !== 0x09) || code === 0x7f) {
+        throw new TypeError('invalid header value');
+      }
+    }
+    return value;
   }
   function isForbiddenResponseHeader(name) {
     return name === 'set-cookie' || name === 'set-cookie2';
@@ -729,8 +755,9 @@ const SERVICE_WORKER_BOOTSTRAP: &str = r#"
         throw new TypeError('Headers are immutable');
       }
       name = normalizeHeaderName(name);
+      value = normalizeHeaderValue(value);
       if (isHiddenResponseHeader(this, name)) return;
-      this._pairs.push([name, String(value)]);
+      this._pairs.push([name, value]);
     }
     delete(name) {
       if (this._guard === 'immutable') {
@@ -759,9 +786,10 @@ const SERVICE_WORKER_BOOTSTRAP: &str = r#"
         throw new TypeError('Headers are immutable');
       }
       name = normalizeHeaderName(name);
+      value = normalizeHeaderValue(value);
       if (isHiddenResponseHeader(this, name)) return;
       this._pairs = this._pairs.filter(pair => pair[0] !== name);
-      this._pairs.push([name, String(value)]);
+      this._pairs.push([name, value]);
     }
     forEach(callback, thisArg) {
       for (const pair of this._pairs) {
@@ -3945,8 +3973,54 @@ fn validate_fetch_response_fields(response: &ServiceWorkerFetchResponse) -> Resu
                 "Service Worker fetch response header exceeds the size limit".into(),
             ));
         }
+        validate_fetch_header_name(name)?;
+        validate_fetch_header_value(value)?;
     }
     Ok(())
+}
+
+// https://fetch.spec.whatwg.org/#concept-header-name
+fn validate_fetch_header_name(name: &str) -> Result<(), ScriptError> {
+    if name.is_empty() || !name.bytes().all(is_http_token_byte) {
+        return Err(ScriptError::InvalidInput(
+            "Service Worker fetch response header name is invalid".into(),
+        ));
+    }
+    Ok(())
+}
+
+// https://fetch.spec.whatwg.org/#concept-header-value
+fn validate_fetch_header_value(value: &str) -> Result<(), ScriptError> {
+    if value.bytes().any(|byte| (byte < 0x20 && byte != b'\t') || byte == 0x7f) {
+        return Err(ScriptError::InvalidInput(
+            "Service Worker fetch response header value is invalid".into(),
+        ));
+    }
+    Ok(())
+}
+
+fn is_http_token_byte(byte: u8) -> bool {
+    matches!(
+        byte,
+        b'0'..=b'9'
+            | b'A'..=b'Z'
+            | b'a'..=b'z'
+            | b'!'
+            | b'#'
+            | b'$'
+            | b'%'
+            | b'&'
+            | b'\''
+            | b'*'
+            | b'+'
+            | b'-'
+            | b'.'
+            | b'^'
+            | b'_'
+            | b'`'
+            | b'|'
+            | b'~'
+    )
 }
 
 fn fetch_request_json(request: &ServiceWorkerFetchRequest) -> serde_json::Value {
@@ -4134,6 +4208,8 @@ fn parse_fetch_result(value: &serde_json::Value) -> Result<Option<ServiceWorkerF
                 "Service Worker fetch response headers exceed the size limit".into(),
             ));
         }
+        validate_fetch_header_name(&name)?;
+        validate_fetch_header_value(&value)?;
         headers.push((name, value));
     }
     Ok(Some(ServiceWorkerFetchResponse {
@@ -5809,6 +5885,75 @@ mod tests {
                 message: String::new(),
             }
         );
+    }
+
+    #[test]
+    fn fetch_event_rejects_invalid_response_header_value() {
+        let mut runtime = ServiceWorkerRuntime::new(test_config()).unwrap();
+        runtime
+            .evaluate(
+                "addEventListener('fetch', event => {
+                   event.respondWith(new Promise(resolve => {
+                     const headers = new Headers();
+                     headers.append('foo', 'foo');
+                     headers.append('foo', 'b\\0r');
+                     resolve(new Response('bad', {headers}));
+                   }));
+                 });",
+                "https://example.test/sw.js",
+            )
+            .unwrap();
+        let _ = runtime.recv_timeout(Duration::from_secs(5)).unwrap();
+
+        runtime
+            .dispatch_fetch(
+                44,
+                ServiceWorkerFetchRequest {
+                    url: "https://example.test/app/invalid-header".into(),
+                    method: "GET".into(),
+                    headers: Vec::new(),
+                    body: None,
+                    credentials: None,
+                    client_id: Some("client-1".into()),
+                    resulting_client_id: None,
+                    referrer: None,
+                    is_reload_navigation: false,
+                    is_history_navigation: false,
+                },
+            )
+            .unwrap();
+        let event = runtime.recv_timeout(Duration::from_secs(5)).unwrap();
+        assert!(matches!(
+            event,
+            ServiceWorkerEvent::FetchSettled {
+                event_id: 44,
+                response: None,
+                failed: true,
+                ref message,
+                ..
+            } if message.contains("invalid header value")
+        ));
+    }
+
+    #[test]
+    fn fetch_response_validation_rejects_invalid_header_wire_fields() {
+        let invalid_name = ServiceWorkerFetchResponse {
+            status: 200,
+            status_text: "OK".into(),
+            response_type: "default".into(),
+            headers: vec![("bad name".into(), "ok".into())],
+            body: String::new(),
+        };
+        assert!(validate_fetch_response(&invalid_name).is_err());
+
+        let invalid_value = ServiceWorkerFetchResponse {
+            status: 200,
+            status_text: "OK".into(),
+            response_type: "default".into(),
+            headers: vec![("x-test".into(), "bad\r\nvalue".into())],
+            body: String::new(),
+        };
+        assert!(validate_fetch_response(&invalid_value).is_err());
     }
 
     #[test]

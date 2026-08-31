@@ -1271,7 +1271,51 @@ fn validate_service_worker_response_fields(response: &ServiceWorkerFetchResponse
     {
         return Err("Service Worker response fields are invalid");
     }
+    for (name, value) in &response.headers {
+        validate_service_worker_header_name(name)?;
+        validate_service_worker_header_value(value)?;
+    }
     Ok(())
+}
+
+// https://fetch.spec.whatwg.org/#concept-header-name
+fn validate_service_worker_header_name(name: &str) -> Result<(), &'static str> {
+    if name.is_empty() || !name.bytes().all(is_http_token_byte) {
+        return Err("Service Worker response header name is invalid");
+    }
+    Ok(())
+}
+
+// https://fetch.spec.whatwg.org/#concept-header-value
+fn validate_service_worker_header_value(value: &str) -> Result<(), &'static str> {
+    if value.bytes().any(|byte| (byte < 0x20 && byte != b'\t') || byte == 0x7f) {
+        return Err("Service Worker response header value is invalid");
+    }
+    Ok(())
+}
+
+fn is_http_token_byte(byte: u8) -> bool {
+    matches!(
+        byte,
+        b'0'..=b'9'
+            | b'A'..=b'Z'
+            | b'a'..=b'z'
+            | b'!'
+            | b'#'
+            | b'$'
+            | b'%'
+            | b'&'
+            | b'\''
+            | b'*'
+            | b'+'
+            | b'-'
+            | b'.'
+            | b'^'
+            | b'_'
+            | b'`'
+            | b'|'
+            | b'~'
+    )
 }
 
 fn validate_service_worker_cache_name(name: &str) -> Result<(), &'static str> {

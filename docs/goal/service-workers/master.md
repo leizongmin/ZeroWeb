@@ -28,9 +28,9 @@ M2 fetch/interception 上游 WPT
 `fetch-event-throws-after-respond-with.https.html`、`fetch-on-the-right-interface.https.any.js`、
 `historical.https.any.js`、`fetch-event-handled.https.html`、
 `fetch-event-after-navigation-within-page.https.html` 与
-`intercepted-referrer.https.html`、`controller-with-no-fetch-event-handler.https.html` 与
-`fetch-with-body.https.html` 已形成独立 runner 与
-22 case / 55 subtest / 55 Pass 确定性
+`intercepted-referrer.https.html`、`controller-with-no-fetch-event-handler.https.html`、
+`fetch-with-body.https.html` 与 `invalid-header.https.html` 已形成独立 runner 与
+23 case / 56 subtest / 56 Pass 确定性
 baseline；SW CacheStorage
 serviceworker wrapper 已
 扩展到 `cache-storage`、`cache-storage-keys`、`cache-delete`、`cache-keys`、`cache-matchAll`、
@@ -491,6 +491,12 @@ JSON，private profile 继续只保留内存态。
   client 的 `fetch(new Request(..., {method: "POST", body}))` 经 worker
   `respondWith(fetch(event.request))` 转发时保留 method/body，动态 WPT fixture
   能按请求体有无返回 200/400。
+- ✅ M2-37：Service Worker fetch/interception WPT baseline 扩展到
+  `service-workers/service-worker/invalid-header.https.html`；fetch-wave
+  资产清单扩展到 61 asset，runner 双跑 23 case / 56 subtest /
+  56 Pass / 0 Fail / 0 Timeout / deterministic true。该切片固定
+  `Headers.append()` 与 Service Worker fetch response Rust/IPC 边界拒绝非法
+  header name/value，含 NUL/CR/LF 的 synthetic response header 会产生 network error。
 
 ## 缺口清单
 
@@ -498,7 +504,7 @@ JSON，private profile 继续只保留内存态。
 |---|------|------|
 | S1 | SW 执行环境架构与独立 runtime | ✅ production browser owner + renderer discovery 真链路 |
 | S2 | scriptURL 不下载执行 | ✅ production navigator 经 browser fetch/evaluate |
-| S3 | fetch 拦截为零 | 🚧 M2-2 production 页面 fetch respondWith/pass-through 已接入；M2-3/4/5/6 `caches.match()`、`caches.open()`、`Cache.put()`、`Cache.matchAll()`、`Cache.keys()` 与 `ignoreSearch`/`ignoreMethod` 桥接已接入；M2-7 worker-global `fetch()`、SW runtime `Cache.add/addAll` 与 CacheStorage `Response.type` 保真已接入；M2-9 `Cache.delete()` 与 `CacheStorage.delete/has/keys` 已接入；registration-local CacheStorage 持久化已接入；`Response.error()` 可作为 CacheStorage 条目保存/读回，但 FetchEvent 响应结算仍拒绝 status 0；SW fetch/interception WPT baseline 已扩展到 request projection + async fetch listener registration + respondWith timing/value validation + synthetic Latin-1 response header over iframe XHR + controlled-window `Cache.add()` interception + worker-internal fetch/cache non-self-interception + synthetic custom Response body matrix + `FetchEvent.handled` resolve/reject + same-document iframe navigation interception + intercepted navigation `document.referrer` preservation + controlled client no-fetch-handler CORS/no-cors fallback + controlled client POST body forwarding + `respondWith()` stopImmediatePropagation + throw-after-respondWith iframe navigation + uncontrolled page scope bypass + message-time `clients.claim()` iframe control + claim longest-match boundary + unregister incumbent-controller retention + worker-global fetch prototype placement + historical FetchEvent targetClientId absence，22/55 Pass；SW CacheStorage serviceworker wrapper 扩展到 12/157 Pass，并覆盖 cached `Response.url`、Blob/FileReader、Cache.put cacheability、Cache.addAll duplicate/Vary atomicity、AbortError rejection、no-cors opaque readback、navigation request attributes 与 credentialed request URL cache keys；broader fetch/cache 基线未完成 |
+| S3 | fetch 拦截为零 | 🚧 M2-2 production 页面 fetch respondWith/pass-through 已接入；M2-3/4/5/6 `caches.match()`、`caches.open()`、`Cache.put()`、`Cache.matchAll()`、`Cache.keys()` 与 `ignoreSearch`/`ignoreMethod` 桥接已接入；M2-7 worker-global `fetch()`、SW runtime `Cache.add/addAll` 与 CacheStorage `Response.type` 保真已接入；M2-9 `Cache.delete()` 与 `CacheStorage.delete/has/keys` 已接入；registration-local CacheStorage 持久化已接入；`Response.error()` 可作为 CacheStorage 条目保存/读回，但 FetchEvent 响应结算仍拒绝 status 0；SW fetch/interception WPT baseline 已扩展到 request projection + async fetch listener registration + respondWith timing/value validation + synthetic Latin-1 response header over iframe XHR + invalid response header network error + controlled-window `Cache.add()` interception + worker-internal fetch/cache non-self-interception + synthetic custom Response body matrix + `FetchEvent.handled` resolve/reject + same-document iframe navigation interception + intercepted navigation `document.referrer` preservation + controlled client no-fetch-handler CORS/no-cors fallback + controlled client POST body forwarding + `respondWith()` stopImmediatePropagation + throw-after-respondWith iframe navigation + uncontrolled page scope bypass + message-time `clients.claim()` iframe control + claim longest-match boundary + unregister incumbent-controller retention + worker-global fetch prototype placement + historical FetchEvent targetClientId absence，23/56 Pass；SW CacheStorage serviceworker wrapper 扩展到 12/157 Pass，并覆盖 cached `Response.url`、Blob/FileReader、Cache.put cacheability、Cache.addAll duplicate/Vary atomicity、AbortError rejection、no-cors opaque readback、navigation request attributes 与 credentialed request URL cache keys；broader fetch/cache 基线未完成 |
 | S4 | 事件为 setTimeout 模拟 | ✅ manager transition log 为状态源；timer 只执行页面 task 投影 |
 | S5 | WPT 覆盖为零 | ✅ core 37/37 case、162/162 Pass、0 Fail/Timeout/Unsupported |
 
@@ -599,7 +605,7 @@ second（replacement）worker 只处理 awaitInstallEvent（messageSequence=1）
   `make test-wpt-service-workers-import-dynamic-wave-assets` 固化篡改/修复回归
 - Import-event-wave 资产恢复/审计：3 assets / 5 subtest；
   `make test-wpt-service-workers-import-event-wave-assets` 固化篡改/修复回归
-- Fetch-wave 资产恢复/审计：58 assets / 55 subtest；
+- Fetch-wave 资产恢复/审计：61 assets / 56 subtest；
   `make test-wpt-service-workers-fetch-wave-assets` 固化篡改/修复回归
 - CacheStorage serviceworker-wave 资产恢复/审计：35 assets / 157 subtest；
   `make test-wpt-service-workers-cache-storage-wave-assets` 固化篡改/修复回归
@@ -678,9 +684,10 @@ second（replacement）worker 只处理 awaitInstallEvent（messageSequence=1）
   `historical.https.any.js` +
   `intercepted-referrer.https.html` +
   `controller-with-no-fetch-event-handler.https.html` +
-  `fetch-with-body.https.html` 独立 runner、资产清单与 22/55
+  `fetch-with-body.https.html` +
+  `invalid-header.https.html` 独立 runner、资产清单与 23/56
   deterministic baseline 见
-  [Service Worker Fetch WPT Baseline](evidence/2026-08-31-m2-fetch-with-body-baseline.md)
+  [Service Worker Fetch WPT Baseline](evidence/2026-08-31-m2-fetch-invalid-header-baseline.md)
 - M2-22 fetch custom-response 定向验证：
   - `./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit 300 -- cargo test -p zero-script-sandbox fetch_event_respond_with_serializes_buffer_source_and_form_data_response -- --nocapture`：1 passed
   - `./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit 300 -- cargo test -p zero-engine test_response_body_used_redirect_and_blob_formdata_cache_put_support -- --nocapture`：1 passed
@@ -750,6 +757,16 @@ second（replacement）worker 只处理 awaitInstallEvent（messageSequence=1）
   、[M2 Cache.add WPT Expansion](../storage-cache-api/evidence/2026-08-22-m2-cache-add-wpt-expansion.md)
   、[M2 CacheStorage Worker Sharing WPT Expansion](../storage-cache-api/evidence/2026-08-22-m2-cache-worker-sharing-wpt-expansion.md)
   和 [M2 CacheStorage Nested Worker WPT Expansion](../storage-cache-api/evidence/2026-08-22-m2-cache-nested-worker-wpt-expansion.md)
+- M2-37 fetch invalid-header baseline：
+  [Service Worker Fetch WPT Baseline](evidence/2026-08-31-m2-fetch-invalid-header-baseline.md)
+- M2-37 fetch invalid-header 定向验证：
+  - `./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit 300 -- env BINDGEN_EXTRA_CLANG_ARGS=-I/usr/lib/gcc/x86_64-linux-gnu/13/include cargo test -p zero-protocol service_worker_fetch_response_rejects_invalid_header_fields`：1 passed
+  - `./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit 300 -- env BINDGEN_EXTRA_CLANG_ARGS=-I/usr/lib/gcc/x86_64-linux-gnu/13/include cargo test -p zero-script-sandbox fetch_event_rejects_invalid_response_header_value --no-default-features --features quickjs`：1 passed
+  - `WPT_ASSET_MANIFEST=$PWD/docs/goal/service-workers/evidence/2026-08-22-m2-fetch-request-end-to-end-assets.tsv WPT_EXPECTED_ASSET_COUNT=61 WPT_CORPUS_LABEL="Service Worker fetch wave" ./tests/wpt-runner/scripts/fetch-service-workers-tier-a.sh --verify-only`：61 assets matched pinned manifest
+  - `./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit 300 -- env BINDGEN_EXTRA_CLANG_ARGS=-I/usr/lib/gcc/x86_64-linux-gnu/13/include cargo test -p zero-wpt-runner service_worker_fetch_manifest_has_request_end_to_end_case`：1 passed
+  - `./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit 300 -- env BINDGEN_EXTRA_CLANG_ARGS=-I/usr/lib/gcc/x86_64-linux-gnu/13/include cargo test -p zero-wpt-runner service_worker_fetch_runner_reports_every_case_when_harness_is_missing`：1 passed
+  - `./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit 300 -- env BINDGEN_EXTRA_CLANG_ARGS=-I/usr/lib/gcc/x86_64-linux-gnu/13/include cargo run -p zero-wpt-runner -- testharness-service-workers-fetch invalid-header --wpt-data tests/wpt-runner/wpt-data/.service-workers-tier-a-root --json`：1 Pass
+  - `./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit 420 -- make baseline-wpt-service-workers-fetch OUTPUT=docs/goal/service-workers/evidence/2026-08-31-m2-fetch-invalid-header-baseline.json SUMMARY=docs/goal/service-workers/evidence/2026-08-31-m2-fetch-invalid-header-baseline.md`：23 cases / 56 subtests / 56 Pass，double-run deterministic
 - M3 registration-local CacheStorage persistence：active registration `CacheStorage` snapshot/
   restore、normal profile mutation dirtying 与 owner 重建读回见
   [M3 Service Worker CacheStorage Persistence](evidence/2026-08-22-m3-registration-cache-storage-persistence.md)
@@ -959,6 +976,7 @@ second（replacement）worker 只处理 awaitInstallEvent（messageSequence=1）
 | 2026-08-31 | M2 fetch intercepted-referrer baseline | `intercepted-referrer.https.html` 纳入 fetch runner；SW 合成 iframe navigation response 保留父页面 `document.referrer`；20 case / 49 subtest 全绿 |
 | 2026-08-31 | M2 fetch no-handler controller baseline | `controller-with-no-fetch-event-handler.https.html` 纳入 fetch runner；有 controller 但无 fetch handler 时跨源 fetch 保持 CORS/no-cors 处理；21 case / 54 subtest 全绿 |
 | 2026-08-31 | M2 fetch request-body forwarding baseline | `fetch-with-body.https.html` 纳入 fetch runner；`respondWith(fetch(event.request))` 保留受控 client 的 POST method/body；22 case / 55 subtest 全绿 |
+| 2026-08-31 | M2 fetch invalid-header baseline | `invalid-header.https.html` 纳入 fetch runner；`Headers.append()` 与 Rust/IPC response 校验拒绝非法 header name/value，NUL response header 转 network error；23 case / 56 subtest 全绿 |
 | 2026-08-21 | M2-1 fetch runtime foundation | `FetchEvent`/`Request`/`Response` MVP；manager longest-scope dispatch；browser/renderer IPC command/event；生产页面 fetch/Cache 集成仍待后续 |
 | 2026-08-19 | 三方案对比 | 拒绝同线程 context（无调度隔离）；拒绝从零线程（复制安全基建）；推荐抽取 Worker 线程核 |
 | 2026-08-19 | owner | production browser process 单一 owner；WebView 只做同算法 in-process adapter |

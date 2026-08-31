@@ -1297,6 +1297,68 @@ fn service_worker_host_fetch_command_and_event_round_trip() {
 }
 
 #[test]
+fn service_worker_fetch_response_rejects_invalid_header_fields() {
+    assert!(
+        ServiceWorkerHostCommandParams {
+            registration_id: 8,
+            command: ServiceWorkerHostCommand::CompleteFetch {
+                request_id: 10,
+                result: Ok(ServiceWorkerFetchResponseWire {
+                    status: 200,
+                    status_text: "OK".into(),
+                    response_type: "default".into(),
+                    headers: vec![("bad name".into(), "value".into())],
+                    body: String::new(),
+                }),
+            },
+        }
+        .validate()
+        .is_err()
+    );
+
+    assert!(
+        ServiceWorkerHostEventParams {
+            registration_id: 8,
+            event: ServiceWorkerHostEvent::FetchSettled {
+                event_id: 21,
+                request_url: "https://example.test/app/data".into(),
+                response: Some(ServiceWorkerFetchResponseWire {
+                    status: 200,
+                    status_text: "OK".into(),
+                    response_type: "default".into(),
+                    headers: vec![("x-test".into(), "bad\0value".into())],
+                    body: String::new(),
+                }),
+                failed: false,
+                message: String::new(),
+            },
+        }
+        .validate()
+        .is_err()
+    );
+
+    assert!(
+        ServiceWorkerHostCommandParams {
+            registration_id: 8,
+            command: ServiceWorkerHostCommand::CompleteCacheStorage {
+                request_id: 5,
+                result: Ok(ServiceWorkerCacheStorageResultWire::Match(Some(
+                    ServiceWorkerFetchResponseWire {
+                        status: 200,
+                        status_text: "OK".into(),
+                        response_type: "default".into(),
+                        headers: vec![("x-test".into(), "bad\r\nvalue".into())],
+                        body: String::new(),
+                    },
+                ))),
+            },
+        }
+        .validate()
+        .is_err()
+    );
+}
+
+#[test]
 fn service_worker_host_event_round_trips() {
     let message = IpcMessage {
         id: 52,
