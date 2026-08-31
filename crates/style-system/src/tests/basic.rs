@@ -1092,6 +1092,95 @@ fn test_supports_selector_invalid() {
     );
 }
 
+/// R3879：selector() 对未知伪元素须报不支持（CSS Conditional §11）。
+///
+/// css-parser 容错解析把 `-` 前缀伪元素（含假名 `::-webkit-unknown-pseudo`）放行，
+/// 旧逻辑「解析成功即支持」使 `not selector(::-webkit-unknown-pseudo)` 误判 false
+/// （chrome：未知伪元素不支持 → not() = true）。driving: at-supports-selector-003。
+#[test]
+fn test_supports_selector_unknown_pseudo_element() {
+    let (doc, _html, _body, div, _p) = make_test_dom();
+    let mut sys = StyleSystem::new();
+
+    // @supports not selector(::-webkit-unknown-pseudo) { div { color: green; } }
+    let stylesheets = vec![Stylesheet {
+        rules: vec![Rule::Supports(zero_css_parser::ast::SupportsRule {
+            condition: zero_css_parser::ast::SupportsCondition::Not(Box::new(
+                zero_css_parser::ast::SupportsCondition::Selector("::-webkit-unknown-pseudo".to_string()),
+            )),
+            rules: vec![Rule::Style(StyleRule {
+                selectors: vec![make_tag_selector("div")],
+                declarations: vec![Declaration {
+                    property: "color".to_string(),
+                    value: "green".to_string(),
+                    important: false,
+                }],
+            })],
+        })],
+    }];
+
+    let styles = sys.compute_styles(&doc, &stylesheets);
+    let div_style = styles.get(&div).expect("div should have style");
+    assert_eq!(
+        div_style.color,
+        ColorValue::Rgba(0, 128, 0, 255),
+        "not selector(未知伪元素) 应该评估为 true，颜色应为绿色"
+    );
+}
+
+/// R3879：selector() 顶层逗号（选择器列表）语法非法 → false；括号内逗号（`:is(a, b)`）
+/// 与已知伪类/伪元素（chrome 接受面）→ true。
+#[test]
+fn test_supports_selector_list_and_known_names() {
+    let (doc, _html, _body, div, _p) = make_test_dom();
+    let mut sys = StyleSystem::new();
+
+    let make = |cond: zero_css_parser::ast::SupportsCondition| Stylesheet {
+        rules: vec![Rule::Supports(zero_css_parser::ast::SupportsRule {
+            condition: cond,
+            rules: vec![Rule::Style(StyleRule {
+                selectors: vec![make_tag_selector("div")],
+                declarations: vec![Declaration {
+                    property: "color".to_string(),
+                    value: "green".to_string(),
+                    important: false,
+                }],
+            })],
+        })],
+    };
+    use zero_css_parser::ast::SupportsCondition as C;
+
+    // selector(div, div)：顶层逗号 → false。
+    let styles = sys.compute_styles(&doc, std::slice::from_ref(&make(C::Selector("div, div".to_string()))));
+    assert_eq!(
+        styles.get(&div).expect("div").color,
+        ColorValue::Rgba(0, 0, 0, 255),
+        "selector(div, div) 选择器列表应该评估为 false"
+    );
+
+    // selector(:is(div, span))：括号内逗号合法 → true。
+    let styles = sys.compute_styles(
+        &doc,
+        std::slice::from_ref(&make(C::Selector(":is(div, span)".to_string()))),
+    );
+    assert_eq!(
+        styles.get(&div).expect("div").color,
+        ColorValue::Rgba(0, 128, 0, 255),
+        "selector(:is(div, span)) 应该评估为 true"
+    );
+
+    // selector(a:link.class#ident)：chrome 接受的复合选择器（动态态伪类 :link）→ true。
+    let styles = sys.compute_styles(
+        &doc,
+        std::slice::from_ref(&make(C::Selector("a:link.class#ident".to_string()))),
+    );
+    assert_eq!(
+        styles.get(&div).expect("div").color,
+        ColorValue::Rgba(0, 128, 0, 255),
+        "selector(a:link.class#ident) 应该评估为 true"
+    );
+}
+
 /// 测试 selector() 在完整规则中的端到端应用。
 #[test]
 fn test_supports_selector_in_rule() {

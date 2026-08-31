@@ -1067,12 +1067,24 @@ fn evaluate_supports_condition(condition: &zero_css_parser::ast::SupportsConditi
     match condition {
         SupportsCondition::Property(property, value) => is_property_supported(property, value),
         SupportsCondition::Selector(selector_text) => {
+            // selector() 参数是单个 complex selector（CSS Conditional §11）；顶层逗号
+            // （多选择器列表）为语法非法 → 不支持（driving: at-supports-selector-004
+            // `selector(div, div)` 须 false）。括号内的逗号（如 `:is(div, span)`）合法。
+            if has_top_level_comma(selector_text) {
+                return false;
+            }
             // 尝试解析选择器，能解析即为支持
             let css = format!("{selector_text} {{ }}");
             let stylesheet = zero_css_parser::Parser::parse_stylesheet(&css);
             if let Some(zero_css_parser::ast::Rule::Style(style_rule)) = stylesheet.rules.first() {
                 // 额外验证：检查解析结果没有因为容错解析产生无效结构
                 is_valid_selector_parse(selector_text, &style_rule.selectors)
+                    // selector() 语义 = UA 支持「选择器的全部组成」。容错解析器把任意
+                    // `::name` 收为 Standard(String)，未知伪元素/伪类（::-webkit-unknown-pseudo、
+                    // ::picker() 等）会被误判为支持（CSS Conditional §11：不识别即不支持）。
+                    // driving: at-supports-selector-003（not selector(::-webkit-unknown-pseudo)
+                    // 须为 true）。
+                    && style_rule.selectors.iter().all(selector_features_supported)
             } else {
                 false
             }
@@ -1083,6 +1095,133 @@ fn evaluate_supports_condition(condition: &zero_css_parser::ast::SupportsConditi
         // general-enclosed（`(@page)` / `()` 等）恒求值为 false（CSS Conditional §7）。
         SupportsCondition::GeneralEnclosed(_) => false,
     }
+}
+
+/// selector() 接受的伪元素名单（Chrome 150 定向探针矩阵，2026-09-01）。
+///
+/// 语义是「UA 是否识别该伪元素」（CSS Conditional §11），非 ZW 是否消费——
+/// chrome 对 `selector(::placeholder)` 报 true（探针绿）即使实现层不同。名单外
+/// （`::-webkit-asdf` 假名、`::picker`（chrome 150 默认关）、`::details-content-before`
+/// 等不存在名）→ false；driving: at-supports-selector-003/004/picker-icon 等。
+const SUPPORTED_PSEUDO_ELEMENTS: &[&str] = &[
+    // 标准 ::before/::after/排版/UI/高亮/草案
+    "before",
+    "after",
+    "first-line",
+    "first-letter",
+    "selection",
+    "placeholder",
+    "marker",
+    "backdrop",
+    "cue",
+    "file-selector-button",
+    "details-content",
+    "picker-icon",
+    "search-text",
+    "target-text",
+    "highlight",
+    "grammar-error",
+    "spelling-error",
+    "view-transition",
+    // ::-webkit-* chrome 仍识别的滚动条/表单部件族（css-parser 容许 `-` 前缀通过解析，
+    // 支持性由本名单按 chrome 探针矩阵裁决）
+    "-webkit-scrollbar",
+    "-webkit-scrollbar-button",
+    "-webkit-scrollbar-thumb",
+    "-webkit-scrollbar-track",
+    "-webkit-scrollbar-track-piece",
+    "-webkit-scrollbar-corner",
+    "-webkit-resizer",
+    "-webkit-inner-spin-button",
+    "-webkit-search-cancel-button",
+    "-webkit-search-decoration",
+    "-webkit-search-results-button",
+    "-webkit-slider-thumb",
+    "-webkit-slider-runnable-track",
+    "-webkit-progress-bar",
+];
+
+/// selector() 接受的简单伪类名单（Chrome 150 接受面：标准 Selectors L1-L4 伪类全集，
+/// 含 `:hover`/`:focus` 等动态态伪类——selector() 语义是「UA 识别」，chrome 均接受；
+/// ZW matcher 静态匹配面见 `PseudoClassSelector::Simple` match 臂，两者是不同问题）。
+const SUPPORTED_SIMPLE_PSEUDO_CLASSES: &[&str] = &[
+    "active",
+    "any-link",
+    "blank",
+    "checked",
+    "default",
+    "defined",
+    "disabled",
+    "empty",
+    "enabled",
+    "first-child",
+    "first-of-type",
+    "focus",
+    "focus-visible",
+    "focus-within",
+    "hover",
+    "in-range",
+    "indeterminate",
+    "invalid",
+    "link",
+    "last-child",
+    "last-of-type",
+    "only-child",
+    "only-of-type",
+    "optional",
+    "out-of-range",
+    "placeholder-shown",
+    "read-only",
+    "read-write",
+    "required",
+    "root",
+    "scope",
+    "target",
+    "valid",
+    "visited",
+];
+
+/// 顶层（括号外）逗号检测——selector() 参数为单个 complex selector，选择器列表非法。
+fn has_top_level_comma(input: &str) -> bool {
+    let mut depth = 0i32;
+    for ch in input.chars() {
+        match ch {
+            '(' | '[' => depth += 1,
+            ')' | ']' => depth = depth.saturating_sub(1),
+            ',' if depth == 0 => return true,
+            _ => {}
+        }
+    }
+    false
+}
+
+/// 检查单个选择器的全部组成是否为 ZW 支持（selector() 求值用）。
+///
+/// CSS Conditional §11：selector() 仅当「UA 对该选择器的支持与对整个样式表相同」
+/// 时为 true——容错解析成功的未知伪类/伪元素不构成支持。
+fn selector_features_supported(selector: &zero_css_parser::ast::Selector) -> bool {
+    use zero_css_parser::ast::{PseudoClassSelector, SubclassSelector};
+    for (compound, _) in &selector.complex.parts {
+        for sub in &compound.subclass_selectors {
+            match sub {
+                SubclassSelector::PseudoElement(zero_css_parser::ast::PseudoElementSelector::Standard(name)) => {
+                    if !SUPPORTED_PSEUDO_ELEMENTS.contains(&name.as_str()) {
+                        return false;
+                    }
+                }
+                SubclassSelector::PseudoClass(PseudoClassSelector::Simple(name))
+                    if !SUPPORTED_SIMPLE_PSEUDO_CLASSES.contains(&name.as_str()) =>
+                {
+                    return false;
+                }
+                // 功能性伪类（:not/:is/:where/:has/nth-*/lang/dir）与 id/class/attr
+                // 均已实现；其内部嵌套选择器不再递归（@supports 语境下边缘情形
+                // `:has(::-webkit-x)` 影响可忽略）。
+                _ => {}
+            }
+        }
+    }
+    true
 }
 
 /// 验证解析后的选择器是否忠实于输入文本。
