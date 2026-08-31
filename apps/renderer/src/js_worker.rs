@@ -387,6 +387,78 @@ impl Drop for RendererJsWorker {
     }
 }
 
+/// js-dom R386：worker 沙箱装原生 DOM 绑定（[`js_worker_main`] bootstrap 调用）。
+///
+/// 经 `Sandbox::install_native_bindings*` escape-hatch 进入持久 Context 安装
+/// `dom_bindings`/`quickjs_dom_bindings`（与 webview `install_native_dom_bindings` 同一
+/// 生产路径形态）。worker 无 live Document，从 `dom_html` 快照 re-parse——后续快照换代
+/// 由 [`refresh_worker_native_dom_source`] 刷新 DOM 源（与 tab_js_worker 镜像）。
+fn install_worker_native_dom_bindings(
+    sandbox: &mut dyn zero_script_sandbox::Sandbox,
+    dom_html: &std::sync::Mutex<String>,
+) {
+    let html = dom_html.lock().map(|s| s.clone()).unwrap_or_default();
+    #[cfg(feature = "v8")]
+    {
+        let installed = sandbox.install_native_bindings(Box::new(move |scope, ctx| {
+            zero_engine::dom_bindings::install_dom_bindings_from_html(scope, ctx, &html);
+        }));
+        if !installed {
+            tracing::debug!("renderer worker: native DOM bindings install unavailable (non-persistent context)");
+        }
+    }
+    #[cfg(all(feature = "quickjs", not(feature = "v8")))]
+    {
+        let installed = sandbox.install_native_bindings_quickjs(Box::new(move |ctx| {
+            zero_engine::quickjs_dom_bindings::install_dom_bindings_quickjs_from_html(ctx, &html);
+        }));
+        if !installed {
+            tracing::debug!("renderer worker: QuickJS native DOM bindings install unavailable");
+        }
+    }
+}
+
+/// js-dom R386：快照换代刷新 worker 原生绑定的 DOM 源（`SetDomSnapshot`/`ResetDocumentState`
+/// 消费方调用；镜像 tab_js_worker 同名 helper）。
+///
+/// 同代际（绑定全局已装）走 refresh-only 快路径（仅换 DOM 源，**不重跑全局注册**——
+/// quickjs 全量 install 会重挂 `globalThis.Event` 等 JS 胶水构造器覆盖 shim 同名全局，
+/// shim `_dispatchWithBubble` 读 native 实例缺失的 `_defaultPrevented` 恒 true →
+/// form.reset() 的 preventDefault 失效；R386 renderer 测试实证）。跨代际
+/// （`reset_context` 后 context 重建、全局工厂丢失）重新全量 install。
+fn refresh_worker_native_dom_source(
+    sandbox: &mut dyn zero_script_sandbox::Sandbox,
+    html: &str,
+    native_installed: &mut bool,
+) {
+    #[cfg(feature = "v8")]
+    {
+        if *native_installed {
+            // 同代际：全局工厂/模板在位，仅刷新 DOM 源（re-parse 快照 → Rc 交换）。
+            zero_engine::dom_bindings::refresh_dom_source_from_html(html);
+            return;
+        }
+        let html_owned = html.to_string();
+        let installed = sandbox.install_native_bindings(Box::new(move |scope, ctx| {
+            zero_engine::dom_bindings::install_dom_bindings_from_html(scope, ctx, &html_owned);
+        }));
+        *native_installed = installed;
+    }
+    #[cfg(all(feature = "quickjs", not(feature = "v8")))]
+    {
+        if *native_installed {
+            let dom = std::rc::Rc::new(std::cell::RefCell::new(zero_dom::parse_html(html)));
+            zero_engine::quickjs_dom_bindings::refresh_quickjs_dom_source(dom);
+            return;
+        }
+        let html_owned = html.to_string();
+        let installed = sandbox.install_native_bindings_quickjs(Box::new(move |ctx| {
+            zero_engine::quickjs_dom_bindings::install_dom_bindings_quickjs_from_html(ctx, &html_owned);
+        }));
+        *native_installed = installed;
+    }
+}
+
 #[allow(clippy::too_many_arguments)] // Thread-owned bridges are explicit at the single worker bootstrap boundary.
 fn js_worker_main(
     cmd_rx: Receiver<JsWorkerCommand>,
@@ -407,10 +479,12 @@ fn js_worker_main(
         timeout_ms: TAB_JS_EXEC_TIMEOUT_MS,
         ..Default::default()
     };
+    // js-dom R386：v8+quickjs 组合态（workspace feature 并集）下 `js_config` 双 move——
+    // v8 分支 clone（镜像 tab_js_worker R84 同款修法；CI 单 feature 矩阵掩盖组合态编译断）。
     #[cfg(feature = "v8")]
     let mut sandbox: Box<dyn zero_script_sandbox::Sandbox> =
-        Box::new(zero_script_sandbox::V8Sandbox::with_config(js_config).expect("V8 sandbox init"));
-    #[cfg(feature = "quickjs")]
+        Box::new(zero_script_sandbox::V8Sandbox::with_config(js_config.clone()).expect("V8 sandbox init"));
+    #[cfg(all(feature = "quickjs", not(feature = "v8")))]
     let mut sandbox: Box<dyn zero_script_sandbox::Sandbox> =
         Box::new(zero_script_sandbox::QuickJSSandbox::with_config(js_config).expect("QuickJS sandbox init"));
     let dom_html: Arc<std::sync::Mutex<String>> = Arc::new(std::sync::Mutex::new(String::new()));
@@ -418,6 +492,13 @@ fn js_worker_main(
     let canvas_registry: std::sync::Arc<std::sync::Mutex<zero_engine::js_dom_bridge::CanvasRegistry>> =
         std::sync::Arc::new(std::sync::Mutex::new(zero_engine::js_dom_bridge::CanvasRegistry::new()));
     register_dom_callbacks(&mut *sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+    // js-dom R386（DC-1 多进程生产路径收口）：worker 沙箱装原生 DOM 绑定——镜像 webview
+    // `install_native_dom_bindings`（R384 default-on），使 renderer worker 的页面 JS↔DOM
+    // 桥不再只走 polyfill 字符串桥。worker 的 DOM 真相是 `dom_html` 快照字符串（live
+    // `Rc<RefCell<Document>>` 属 renderer 进程 webview 线程，不能跨线程），故从快照
+    // re-parse（与 RectBridge handler 的确定性同源）。快照换代经 `SetDomSnapshot`/
+    // `ResetDocumentState` 消费方刷新。
+    install_worker_native_dom_bindings(&mut *sandbox, &dom_html);
     let indexed_db_bridge = zero_engine::IndexedDbBridge::new(indexed_db_handler);
     indexed_db_bridge.register(&mut *sandbox, &page_url);
     if let Some(client) = service_worker_client {
@@ -468,6 +549,10 @@ fn js_worker_main(
     if raf_frame_driven_enabled() {
         let _ = sandbox.execute("globalThis.__ZW_RAF_FRAME_DRIVEN = true;");
     }
+    // js-dom R386：原生绑定 install 踪迹（bootstrap install 置 true）。renderer worker 的
+    // `ResetDocumentState` 走 `sandbox.reset_context()`（context 销毁重建）→ 置 false，
+    // 下一快照换代全量重 install。
+    let mut native_installed = true;
     let shim = generate_js_dom_shim();
     if let Err(e) = sandbox.execute(shim) {
         tracing::error!("JS DOM shim init failed: {e}");
@@ -495,6 +580,9 @@ fn js_worker_main(
                 // P1a form input：URL 变化（导航）→ 清 shim value 缓存，防跨页同选择器 stale value。
                 let url_changed = page_url.lock().map(|u| *u != url).unwrap_or(true);
                 if let Ok(mut snap) = dom_html.lock() {
+                    // js-dom R386：快照换代同步刷新原生绑定 DOM 源（native 路径与 polyfill
+                    // 桥同源读到新快照；首代 bootstrap 已 install → 走 refresh 快路径）。
+                    refresh_worker_native_dom_source(&mut *sandbox, &html, &mut native_installed);
                     *snap = html;
                 }
                 if let Ok(mut u) = page_url.lock() {
@@ -529,6 +617,14 @@ fn js_worker_main(
                 // A cross-document navigation creates a new global object. Keeping the
                 // renderer worker is an implementation detail, not page-visible state.
                 sandbox.reset_context();
+                // js-dom R386：QuickJS context 丢弃即释放其对象——绑定线程局部
+                // （NODE_OBJECTS 等 Persistent）持已释放对象引用（webview Drop R3334/R74
+                // 同族悬垂），须随 context 重建清空；下一快照换代全量重 install。
+                #[cfg(all(feature = "quickjs", not(feature = "v8")))]
+                zero_engine::quickjs_dom_bindings::reset_quickjs_state();
+                // js-dom R386：context 重建后全局工厂丢失，标记失效——下一快照换代
+                // 全量重 install（V8 线程局部缓存仍属本 Isolate，复用安全）。
+                native_installed = false;
                 if raf_frame_driven_enabled() {
                     let _ = sandbox.execute("globalThis.__ZW_RAF_FRAME_DRIVEN = true;");
                 }
@@ -552,7 +648,16 @@ fn js_worker_main(
                 let result = sandbox.execute(&script).map(|_| ()).map_err(|error| error.to_string());
                 let _ = reply.send(result);
             }
-            JsWorkerCommand::Shutdown => break,
+            JsWorkerCommand::Shutdown => {
+                // js-dom R386：worker 退出前清原生绑定线程局部（镜像 webview Drop
+                // R3334/R74——QuickJS Runtime/V8 Isolate 随沙箱销毁，线程局部残留
+                // 指向已释放对象；本进程后续 worker 线程仍需干净 DOM 源）。
+                #[cfg(feature = "v8")]
+                zero_engine::dom_bindings::reset_native_state();
+                #[cfg(all(feature = "quickjs", not(feature = "v8")))]
+                zero_engine::quickjs_dom_bindings::reset_quickjs_state();
+                break;
+            }
         }
     }
 }
@@ -751,6 +856,58 @@ impl zero_page_runtime::JsExecutor for RendererJsWorker {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// js-dom R386（DC-1 多进程生产路径）：RendererJsWorker 沙箱装原生 DOM 绑定——
+    /// `__zw_native_*` 工厂在 worker context 可用，且读 `set_dom_snapshot` 快照 +
+    /// 换代刷新。镜像 tab_js_worker `tab_js_worker_native_bindings_installed_r386`。
+    #[test]
+    fn renderer_js_worker_native_bindings_installed_r386() {
+        let mut worker = RendererJsWorker::spawn(61);
+        worker.set_dom_snapshot(
+            "<html><body><div id='main' class='c'>t</div></body></html>",
+            "about:blank",
+        );
+        assert_eq!(
+            worker
+                .execute_script_direct("typeof __zw_native_element_for_id")
+                .unwrap(),
+            "function",
+            "worker 沙箱须装原生绑定工厂"
+        );
+        assert_eq!(
+            worker
+                .execute_script_direct("__zw_native_element_for_id('main').nodeType")
+                .unwrap(),
+            "1",
+            "native 工厂读快照 DOM 元素"
+        );
+        assert_eq!(
+            worker
+                .execute_script_direct("__zw_native_element_for_id('main').tagName")
+                .unwrap(),
+            "DIV"
+        );
+        // 快照换代刷新 DOM 源。
+        worker.set_dom_snapshot("<html><body><p id='next'>n</p></body></html>", "about:blank");
+        assert_eq!(
+            worker
+                .execute_script_direct("__zw_native_element_for_id('next').tagName")
+                .unwrap(),
+            "P",
+            "快照换代后 native DOM 源刷新"
+        );
+        // ResetDocumentState 销毁重建 context → 下一快照换代全量重 install。
+        worker.reset_document_state();
+        worker.set_dom_snapshot("<html><body><span id='post'>s</span></body></html>", "about:blank");
+        assert_eq!(
+            worker
+                .execute_script_direct("__zw_native_element_for_id('post').tagName")
+                .unwrap(),
+            "SPAN",
+            "reset_context 后下一快照重 install 原生绑定"
+        );
+        worker.shutdown();
+    }
 
     /// P1b S3 incr-d（镜像 browser tab_js_worker）：非阻塞 fetch 的 resolve 时机异步——
     /// 轮询 `globalThis.{key}` 直到非 undefined（或超时返当前值）。子线程抓取 → generous

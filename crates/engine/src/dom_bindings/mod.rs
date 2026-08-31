@@ -91,6 +91,15 @@ pub fn refresh_dom_source(dom: Rc<RefCell<Document>>) {
     gc::set_dom_source(dom);
 }
 
+/// R386（js-dom 多进程 worker 路径）：从 HTML 文本刷新线程局部 DOM 源（封装 parse）。
+///
+/// worker 沙箱（tab_js_worker / renderer js_worker）的 DOM 真相是快照字符串，快照换代
+/// 时经本函数重建 `Document` 并 `Rc` 交换——同 [`refresh_dom_source`] 但不要求调用方
+/// 依赖 `zero_dom`（镜像 [`install_dom_bindings_from_html`] 的依赖边界理由）。
+pub fn refresh_dom_source_from_html(html: &str) {
+    gc::set_dom_source(Rc::new(RefCell::new(zero_dom::parse_html(html))));
+}
+
 static NATIVE_STATE_GEN: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 
 /// 安装原生 DOM 绑定到指定 V8 上下文。

@@ -79,6 +79,18 @@ fn with_dom_mut<R>(f: impl FnOnce(&mut Document) -> R) -> Option<R> {
     Some(f(&mut doc))
 }
 
+/// R386（js-dom 多进程 worker 路径）：仅刷新线程局部 DOM 源（镜像 V8 `refresh_dom_source`）。
+///
+/// worker 沙箱的快照换代（`SetDomSnapshot`）场景：绑定全局已装（bootstrap install），
+/// 只需换 `Document`——不重跑 `install_dom_bindings_quickjs` 的全局注册。后者会把
+/// `globalThis.Event`/`CustomEvent`/`DOMException` 等 JS 胶水构造器重挂到全局，
+/// **覆盖 shim bootstrap 之后建立的同名全局**（shim Event 含 `_defaultPrevented` 私字段，
+/// native 胶水实例缺失 → shim `_dispatchWithBubble` 的 `!event._defaultPrevented` 恒 true
+/// → form.reset() 的 preventDefault 失效，R386 renderer 测试实证）。
+pub fn refresh_quickjs_dom_source(dom: Rc<RefCell<Document>>) {
+    DOM_SOURCE.with(|c| *c.borrow_mut() = Some(dom));
+}
+
 /// 清空全部绑定状态（reset_context / 导航重建 / WebView Drop 时调用；镜像 V8 reset_native_state）。
 pub fn reset_quickjs_state() {
     DOM_SOURCE.with(|c| *c.borrow_mut() = None);
