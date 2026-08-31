@@ -679,6 +679,7 @@ pub const CACHE_STORAGE_WINDOW_CASES: &[(&str, &[&str])] = &[
     ("service-workers/cache-storage/common.https.window.js", &[]),
     ("service-workers/cache-storage/common.https.html", &[]),
     ("service-workers/cache-storage/cache-api-nested-worker.https.html", &[]),
+    ("service-workers/cache-storage/sandboxed-iframes.https.html", &[]),
     (
         "service-workers/cache-storage/window/cache-storage.https.html",
         &["../resources/test-helpers.js", "../script-tests/cache-storage.js"],
@@ -3898,8 +3899,8 @@ async_test(function(test) {
             .iter()
             .map(|(path, _)| *path)
             .collect::<std::collections::BTreeSet<_>>();
-        assert_eq!(CACHE_STORAGE_WINDOW_CASES.len(), 35);
-        assert_eq!(unique.len(), 35);
+        assert_eq!(CACHE_STORAGE_WINDOW_CASES.len(), 36);
+        assert_eq!(unique.len(), 36);
         assert!(CACHE_STORAGE_WINDOW_CASES.iter().all(|(path, support)| {
             if !path.starts_with("service-workers/cache-storage/")
                 || !(path.ends_with(".https.any.js")
@@ -3927,7 +3928,8 @@ async_test(function(test) {
                 }
                 "service-workers/cache-storage/common.https.window.js"
                 | "service-workers/cache-storage/common.https.html"
-                | "service-workers/cache-storage/cache-api-nested-worker.https.html" => support.is_empty(),
+                | "service-workers/cache-storage/cache-api-nested-worker.https.html"
+                | "service-workers/cache-storage/sandboxed-iframes.https.html" => support.is_empty(),
                 "service-workers/cache-storage/window/cache-abort.https.html" => {
                     *support
                         == [

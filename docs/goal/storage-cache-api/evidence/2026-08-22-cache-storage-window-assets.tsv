@@ -21,6 +21,7 @@ service-workers/cache-storage/cache-put.https.any.js	testharness	case	1	16193	no
 service-workers/cache-storage/common.https.window.js	testharness	case	1	1609	no	eba312c273de149ae9007d69bb4796b147e03841	04067ce9c7c2165e71ad7d0dde10a4c5cb394a83
 service-workers/cache-storage/common.https.html	testharness	case	1	1842	no	c06e1f13a67f145c5d0bfb3b0555236db515d3f5	24197a11e8c5bd29a5cb7bdf18135a82be8a8546
 service-workers/cache-storage/cache-api-nested-worker.https.html	testharness	case	1	641	no	769200f66aa377840ba9c827d374c9cfaff7ec60	04067ce9c7c2165e71ad7d0dde10a4c5cb394a83
+service-workers/cache-storage/sandboxed-iframes.https.html	testharness	case	1	2224	no	098fa89daf446f57da6313c865e53a0a67983059	04067ce9c7c2165e71ad7d0dde10a4c5cb394a83
 service-workers/cache-storage/cache-api-nested-worker1.js	support	worker-script	1	110	no	eb5c5cd90bb4f352f97071a3201d163039a10cb3	04067ce9c7c2165e71ad7d0dde10a4c5cb394a83
 service-workers/cache-storage/cache-api-nested-worker2.js	support	worker-script	1	79	no	0af8c3eebfeffb8eab2b33e1b78083f3fa9f1031	04067ce9c7c2165e71ad7d0dde10a4c5cb394a83
 service-workers/cache-storage/worker/cache-storage.https.html	testharness	case	1	355	no	0899609e4aeb46463baf719cbeaea50a3523940e	24197a11e8c5bd29a5cb7bdf18135a82be8a8546
