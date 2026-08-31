@@ -847,7 +847,11 @@ mod tests {
         let mut worker = TabJsWorkerHandle::spawn(TabId(4));
         worker.set_dom_snapshot("<html><body></body></html>", "about:blank");
         worker.set_fetch_handler(Arc::new(|req: &FetchRequest| {
-            Ok(FetchResponse::ok(format!("body:{}", req.url)))
+            let mut response = FetchResponse::ok(format!("body:{}", req.url));
+            response
+                .headers
+                .push(("Access-Control-Allow-Origin".to_string(), "*".to_string()));
+            Ok(response)
         }));
         worker
             .execute_script_direct(
@@ -881,7 +885,11 @@ mod tests {
         let mut worker = TabJsWorkerHandle::spawn(TabId(7));
         worker.set_dom_snapshot("<html><body></body></html>", "about:blank");
         worker.set_fetch_handler(Arc::new(|_req: &FetchRequest| {
-            Ok(FetchResponse::ok("{\"key\":\"value\",\"n\":42}".to_string()))
+            let mut response = FetchResponse::ok("{\"key\":\"value\",\"n\":42}".to_string());
+            response
+                .headers
+                .push(("Access-Control-Allow-Origin".to_string(), "*".to_string()));
+            Ok(response)
         }));
         worker
             .execute_script_direct(
@@ -914,7 +922,7 @@ mod tests {
                 let _ = stream.read(&mut buf); // 丢弃请求行
                 let body = "hello-from-server";
                 let resp = format!(
-                    "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                    "HTTP/1.1 200 OK\r\nAccess-Control-Allow-Origin: *\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
                     body.len(),
                     body
                 );
@@ -953,7 +961,10 @@ mod tests {
             Ok(FetchResponse {
                 status: 201,
                 status_text: "Created".to_string(),
-                headers: vec![("X-Test".to_string(), "r2923".to_string())],
+                headers: vec![
+                    ("Access-Control-Allow-Origin".to_string(), "*".to_string()),
+                    ("X-Test".to_string(), "r2923".to_string()),
+                ],
                 body: format!(
                     "{}|{}|{}|{}",
                     req.method,

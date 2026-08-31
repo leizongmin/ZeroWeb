@@ -131,7 +131,9 @@ fn fetch_sync_wire_preserves_response_contract() {
     .unwrap();
     sandbox.register_callback(
         "__zw_fetch",
-        Box::new(|_| "__zwfr:201\u{001f}Created\u{001f}content-type\u{001e}text/plain\u{001f}body".to_string()),
+        Box::new(|_| {
+            "__zwfr:201\u{001f}Created\u{001f}content-type\u{001e}text/plain\u{001e}Access-Control-Allow-Origin\u{001e}*\u{001f}body".to_string()
+        }),
     );
     sandbox.execute(generate_js_dom_shim()).unwrap();
     sandbox

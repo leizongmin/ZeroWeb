@@ -1237,6 +1237,13 @@
     if (mode === 'no-cors' && responseOrigin !== requestOrigin) {
       return _zwFetchMakeOpaqueLike(response, 'opaque');
     }
+    if (mode === 'cors' && responseOrigin !== requestOrigin && response && response.headers && typeof response.headers.get === 'function') {
+      // https://fetch.spec.whatwg.org/#cors-check
+      var allowOrigin = response.headers.get('access-control-allow-origin');
+      if (allowOrigin !== '*' && allowOrigin !== requestOrigin) {
+        throw new TypeError('Failed to fetch');
+      }
+    }
     if (!response.type || response.type === 'default') {
       response.type = responseOrigin !== requestOrigin ? 'cors' : 'basic';
     }
@@ -1328,10 +1335,14 @@
           }
           return _zwFetchApplyFilteredResponse(response, url, mode, redirect);
         };
-        globalThis.__zw_pending[id] = function(raw) {
+        var settleFetch = function(raw) {
           if (settled) return;
           settled = true;
-          resolve(finishFetch(raw));
+          delete globalThis.__zw_pending[id];
+          try { resolve(finishFetch(raw)); } catch (error) { reject(error); }
+        };
+        globalThis.__zw_pending[id] = function(raw) {
+          settleFetch(raw);
         };
         if (signal) {
           signal.addEventListener('abort', function() {
@@ -1365,15 +1376,10 @@
               // Headless 同步 host response 也必须给同一 task 内的 abort() 抢先拒绝机会。
               var _syncRaw = _sync;
               _defer(function() {
-                if (settled) return;
-                settled = true;
-                delete globalThis.__zw_pending[id];
-                resolve(finishFetch(_syncRaw));
+                settleFetch(_syncRaw);
               });
             } else {
-              settled = true;
-              delete globalThis.__zw_pending[id];
-              resolve(finishFetch(_sync));
+              settleFetch(_sync);
             }
           }
         } catch (_e) {

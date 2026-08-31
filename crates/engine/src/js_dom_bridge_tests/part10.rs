@@ -649,8 +649,8 @@ fn test_response_body_readable_stream_r2967() {
         .unwrap();
     let id = captured_id.lock().unwrap().clone();
     assert!(!id.is_empty(), "__zw_fetch 被调用且 id 已捕获");
-    // wire：status=200 / statusText=OK / headersWire='' / body='Hello Streams'（\x1f 分隔）。
-    let wire = "__zwfr:200\u{001f}OK\u{001f}\u{001f}Hello Streams";
+    // wire：status=200 / statusText=OK / headersWire / body='Hello Streams'（\x1f 分隔）。
+    let wire = "__zwfr:200\u{001f}OK\u{001f}Access-Control-Allow-Origin\u{001e}*\u{001f}Hello Streams";
     sandbox.resolve_async_callback(&id, wire);
 
     // 读 response.body 流：首 chunk 为 UTF-8 Uint8Array，TextDecoder 解码 == body；次 read done=true。
@@ -862,7 +862,10 @@ fn test_fetch_abort_signal_r3044() {
         .unwrap();
     let id4 = cap4.lock().unwrap().clone();
     assert!(!id4.is_empty(), "signal present 未 abort → __zw_fetch 被调用");
-    sandbox.resolve_async_callback(&id4, "__zwfr:200\u{001f}OK\u{001f}\u{001f}");
+    sandbox.resolve_async_callback(
+        &id4,
+        "__zwfr:200\u{001f}OK\u{001f}Access-Control-Allow-Origin\u{001e}*\u{001f}",
+    );
     sandbox.execute("1;").unwrap();
     assert_eq!(
         sandbox.execute("globalThis.__ok").unwrap().value,
@@ -880,7 +883,7 @@ fn test_fetch_abort_signal_r3044() {
             if let Some(id) = args.first() {
                 *cap5c.lock().unwrap() = id.clone();
             }
-            "__zwfr:200\u{001f}OK\u{001f}\u{001f}sync".to_string()
+            "__zwfr:200\u{001f}OK\u{001f}Access-Control-Allow-Origin\u{001e}*\u{001f}sync".to_string()
         }),
     );
     sandbox
@@ -2250,7 +2253,7 @@ fn test_fetch_forbidden_headers_r3221_r3222() {
     // wire：status=200 / statusText=OK / headersWire=双 Set-Cookie + Content-Type / body=hi
     sandbox.resolve_async_callback(
         &id,
-        "__zwfr:200\u{001f}OK\u{001f}Set-Cookie\u{001e}a=1\u{001e}Set-Cookie\u{001e}b=2\u{001e}Content-Type\u{001e}text/plain\u{001f}hi",
+        "__zwfr:200\u{001f}OK\u{001f}Set-Cookie\u{001e}a=1\u{001e}Set-Cookie\u{001e}b=2\u{001e}Content-Type\u{001e}text/plain\u{001e}Access-Control-Allow-Origin\u{001e}*\u{001f}hi",
     );
 
     // get/has 经 response guard 不暴露 Set-Cookie（Fetch §3.4.5）。
@@ -2279,8 +2282,8 @@ fn test_fetch_forbidden_headers_r3221_r3222() {
     // 迭代（entries）排除 Set-Cookie。
     assert_eq!(
         sandbox.execute("String(globalThis.__names)").unwrap().value,
-        "content-type",
-        "R3222: 迭代须排除 Set-Cookie，仅含 content-type"
+        "content-type,access-control-allow-origin",
+        "R3222: 迭代须排除 Set-Cookie，并保留其他响应头"
     );
     // Response.clone() 保 Set-Cookie（raw _h 拷贝 + 新 Response guard）。
     assert_eq!(
@@ -2478,6 +2481,54 @@ fn test_fetch_filtered_response_type_matrix() {
     assert_eq!(
         sandbox.execute("globalThis.__filteredTypes").unwrap().value,
         "basic/200/true/text/plain/https://example.com/same.txt|cors/200/true/text/plain/https://remote.example/cors.txt|opaque/0/false///https://remote.example/opaque.txt|opaqueredirect/0/false///https://remote.example/redirect.txt"
+    );
+}
+
+#[test]
+fn test_fetch_cross_origin_cors_requires_allow_origin_header() {
+    // https://fetch.spec.whatwg.org/#cors-check
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new("<html><body></body></html>".to_string()));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("https://example.com/page.html".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+
+    sandbox.register_callback(
+        "__zw_fetch",
+        Box::new(move |args| {
+            let url = args.get(2).cloned().unwrap_or_default();
+            format!(
+                "__zwfr:200\u{001f}OK\u{001f}Content-Type\u{001e}text/plain\u{001e}X-Zero-Final-URL\u{001e}{url}\u{001f}remote"
+            )
+        }),
+    );
+
+    sandbox
+        .execute(
+            "Promise.all([\
+               fetch('https://remote.example/cors-denied.txt', { mode: 'cors' })\
+                 .then(function () { return 'resolved'; }, function (error) { return error instanceof TypeError ? 'TypeError' : String(error); }),\
+               fetch('https://remote.example/no-cors.txt', { mode: 'no-cors' })\
+                 .then(function (response) { return [response.type, response.status, response.ok, response.headers.get('content-type')].join('/'); })\
+             ]).then(function (values) { globalThis.__corsCheck = values.join('|'); });",
+        )
+        .unwrap();
+    for i in 0..8 {
+        sandbox.execute(&format!("globalThis.__corsCheckPump = {i};")).unwrap();
+    }
+
+    assert_eq!(
+        sandbox.execute("globalThis.__corsCheck").unwrap().value,
+        "TypeError|opaque/0/false/"
     );
 }
 

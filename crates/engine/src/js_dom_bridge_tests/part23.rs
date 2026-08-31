@@ -533,7 +533,7 @@ fn test_fetch_passes_request_credentials_to_host() {
                 args.get(2).cloned().unwrap_or_default(),
                 args.get(9).cloned().unwrap_or_default()
             ));
-            "__zwfr:200\x1fOK\x1f\x1fbody".to_string()
+            "__zwfr:200\x1fOK\x1fAccess-Control-Allow-Origin\x1e*\x1fbody".to_string()
         }),
     );
 

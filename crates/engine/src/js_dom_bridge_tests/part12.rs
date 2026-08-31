@@ -1343,7 +1343,7 @@ fn test_fetch_response_binary_body_r3021() {
     let id = captured_id.lock().unwrap().clone();
     assert!(!id.is_empty(), "__zw_fetch 被调用且 id 已捕获");
     // wire：status=200 / statusText=OK / headersWire='' / body=__zw_bytes:255,0,128,72,105（非 UTF-8 字节）。
-    let wire = "__zwfr:200\u{001f}OK\u{001f}\u{001f}__zw_bytes:255,0,128,72,105";
+    let wire = "__zwfr:200\u{001f}OK\u{001f}Access-Control-Allow-Origin\u{001e}*\u{001f}__zw_bytes:255,0,128,72,105";
     sandbox.resolve_async_callback(&id, wire);
     // 多级 .then 链须额外 microtask flush。
     sandbox.execute("0;").unwrap();
