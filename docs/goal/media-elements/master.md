@@ -2,7 +2,7 @@
 
 **入口文档**: [../media-elements.md](../media-elements.md)
 **创建日期**: 2026-08-17（goal 拆分 bootstrap）
-**最后更新**: 2026-08-31（M1 + 切片 3 + M2 落地——基线 46.5% → 73.1% → **79.6%**，F2/F6/F4 闭合）
+**最后更新**: 2026-08-31（M1 + 切片3 + M2 + M3 落地——基线 46.5% → 73.1% → 79.6% → **84.0%**，F1/F2/F3/F4/F6 闭合，余账 2T）
 
 ---
 
@@ -28,8 +28,14 @@ playbackRate/volume clamp/seeking/paused/preload/crossOrigin 枚举反射 + has-
 canplaythrough，networkState LOADING→IDLE）+ 动态 `.src=` setTimeout 模拟（精确空串仅
 loadstart）+ play/pause 事件面 + seeking/volumechange/ratechange + on* 兜底派发。
 **79.6%**（214P/12F/2T/41PF）。单测 `test_media_load_event_sequence_r389`；FR-009 集成
-测试契约更新（error 路径断言零改动通过 = A/B 佐证）。余账：12 Fail 全 TextTrack 家族
-（M3）；2 Timeout（source 插入触发资源选择 = mutation 面 defer；error 错误码语义随解码层）。
+测试契约更新（error 路径断言零改动通过 = A/B 佐证）。
+
+**M3 已落地（同日，TextTrack 家族）**：TextTrack/TextTrackCueList/TextTrackList/TextTrackCue
+接口声明（Illegal constructor + 工厂原型链）+ `addTextTrack`（枚举精确校验 + WebIDL
+DOMString 转换）+ `textTracks`（same-object + 增量同步）+ `track.track`（身份缓存 +
+default→showing）。**84.0%**（226P/0F/2T/41PF）——**Fail 清零**。单测
+`test_text_track_family_r390`。余账 2 Timeout 均深域：error 错误码语义（随资源选择/解码层）、
+currentSrc 的 source-child 插入触发（mutation 面）。
 
 **与兄弟 goal 的边界**：
 - media-playback — 解码/帧渲染归其管（RFC 门控）；本目标的 readyState 真实驱动源由其
@@ -63,21 +69,19 @@ loadstart）+ play/pause 事件面 + seeking/volumechange/ratechange + on* 兜�
 | M2g | load 算法 + 状态机（事件序列派发） | ✅ M2 落地（13T→2T，余 2T 归 mutation 面/解码层） | F4 基本闭合 |
 | M3g | 事件序列 headless 近似驱动 | ✅（同 M2g；source-child 触发面 defer） | F4 余账 |
 | M4g-a | 媒体元数据 IDL 反射（初值面） | ✅ 切片 3 落地 | F2 闭合（-9 Fail） |
-| M4g-b | `<track>` 反射 + TextTrack 最小面 | 🔄 部分（track 反射 ✅；TextTrack 接口/集合 ⬜ = 当前余账 12 Fail） | F1 余/F3 |
+| M4g-b | `<track>` 反射 + TextTrack 最小面 | ✅ M3 落地（TextTrack 接口/addTextTrack/textTracks/track.track 全绿） | F1/F3 闭合 |
 | M4g-c | track.src URL 解析 + \0 剥离 | ✅ 切片 3 落地（含 `<a href="">` 修复） | F6 闭合（-6 Fail） |
 | M4g-d | canPlayType 能力表（空表→选型面更新） | ⬜ 等 media-playback M0 选型 | F5（41 PF，非 bug） |
 
 ## 下一步计划
 
-1. **M3（下一轮首选，当前唯一源码余账）**：TextTrack 最小接口（kind/label/language/mode/
-   cues TextTrackCueList）+ `track.track` TextTrack 实例 + `addTextTrack`（TypeError 参数
-   校验面）/`textTracks` 集合面 → 余账 12 Fail → 0（顺带闭合 historical TextTrackCue
-   TypeError——接口存在但 constructor illegal）。落点 part01b（接口声明）+ part04（track
-   实例面）+ part03（media 方法扩展）。
-2. **扩大导入面**：追加 event_* 族 17 用例（事件序列已可跑）+ the-video-element/
-   the-audio-element 反射面 → 扩大基线盘子。
-3. **source-child 资源选择触发**（MutationObserver 式 source 插入 → 资源重选）：mutation
-   面 defer，随 M3 或独立小切片。
+1. **扩大导入面（下一轮首选）**：追加 event_* 族 17 用例（事件序列已可跑——M2 后
+   readyState_during_*/paused_*/networkState_during_* 全绿实证）+ the-video-element/
+   the-audio-element 反射面用例 → 扩大基线盘子并暴露下一层缺口。
+2. **source-child 资源选择触发**（source 元素插入 → 资源重选派 loadstart）：mutation 面，
+   currentSrc 余账 Timeout 的闭合路径。
+3. **error 错误码语义**：资源选择失败注入 MEDIA_ERR_SRC_NOT_SUPPORTED——依赖真资源
+   加载判定，随解码层（media-playback）或独立资源选择切片。
 4. **M4g-d**：canPlayType 能力表等 media-playback M0 选型落地后联动更新（跨 goal 依赖）。
 
 **碰撞管理**：js-dom 流已归档；媒体段（part01b.js 常量 + part03 方法段 + part06 settle）
@@ -89,7 +93,7 @@ loadstart）+ play/pause 事件面 + seeking/volumechange/ratechange + on* 兜�
 |--------|------|
 | M1 — WPT 基线 + 摸底 | ✅ 完成（2026-08-31，46.5% 基线 + 切片 3 → 73.1%） |
 | M2 — 状态机与事件序列 | ✅ 完成（2026-08-31，13T→2T） |
-| M3 — API 语义 + track 面 + 播放层衔接 | 🔄 **下一轮首选**（TextTrack 家族 12 Fail） |
+| M3 — API 语义 + track 面 + 播放层衔接 | ✅ 完成（2026-08-31，12F→0F，84.0%） |
 
 ## 待用户决策
 
@@ -100,7 +104,8 @@ loadstart）+ play/pause 事件面 + seeking/volumechange/ratechange + on* 兜�
 ## 验证基线
 
 - 基线时点：2026-08-31，WPT rev `3159769338`；基线 **114/245 = 46.5%** → 切片 3
-  **179/245 = 73.1%** → M2 **214/245 = 79.6%**（Fail 12 / Timeout 2 / PF 41）
+  **179/245 = 73.1%** → M2 **214/245 = 79.6%** → M3 **226/245 = 84.0%**（Fail 0 /
+  Timeout 2 / PF 41）
 - 入口：`make testharness-media`（FILTER 透传，`--json` 捕获 evidence）
 - 质量门禁：`cargo fmt` + `cargo clippy --workspace --all-targets -- -D warnings` 全过
 - evidence：`evidence/2026-08-31-media-baseline.md`（+ 同名 .json 机读版）

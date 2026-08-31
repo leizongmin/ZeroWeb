@@ -17,6 +17,51 @@
   MediaError.prototype.MEDIA_ERR_ABORTED = 1; MediaError.prototype.MEDIA_ERR_NETWORK = 2;
   MediaError.prototype.MEDIA_ERR_DECODE = 3; MediaError.prototype.MEDIA_ERR_SRC_NOT_SUPPORTED = 4;
   globalThis.MediaError = globalThis.MediaError || MediaError;
+  // media-elements M3：TextTrack 家族最小接口面——构造器均 Illegal constructor（spec：
+  // TextTrack/TextTrackCueList/TextTrackList 由元素 API 产出，脚本不可直接 new；
+  // TextTrackCue 历史构造器 r7742 移除——new 亦 TypeError，historical 用例断言面）。
+  // 实例经 _zwMakeTextTrack / _zwMakeTextTrackCueList / _zwMakeTextTrackList 工厂
+  // （Object.create(prototype) + own props）产出，instanceof 走原型链。
+  function TextTrack() { throw new TypeError('Illegal constructor'); }
+  globalThis.TextTrack = globalThis.TextTrack || TextTrack;
+  function TextTrackCueList() { throw new TypeError('Illegal constructor'); }
+  globalThis.TextTrackCueList = globalThis.TextTrackCueList || TextTrackCueList;
+  function TextTrackList() { throw new TypeError('Illegal constructor'); }
+  globalThis.TextTrackList = globalThis.TextTrackList || TextTrackList;
+  function TextTrackCue() { throw new TypeError('Illegal constructor'); }
+  globalThis.TextTrackCue = globalThis.TextTrackCue || TextTrackCue;
+  // 工厂：TextTrack（kind/label/language/mode/cues）。cues 为空 TextTrackCueList（headless
+  // 无 VTT 解析——cue 面随字幕解析需求追加）。
+  globalThis._zwMakeTextTrackCueList = function () {
+    var list = Object.create(globalThis.TextTrackCueList.prototype);
+    list.length = 0;
+    list.item = function (i) { i = Number(i) | 0; return (i >= 0 && i < list.length) ? list[i] : null; };
+    return list;
+  };
+  globalThis._zwMakeTextTrack = function (kind, label, language, mode) {
+    var track = Object.create(globalThis.TextTrack.prototype);
+    track.kind = String(kind);
+    track.label = String(label == null ? '' : label);
+    track.language = String(language == null ? '' : language);
+    track.mode = String(mode || 'disabled');
+    track.cues = globalThis._zwMakeTextTrackCueList();
+    return track;
+  };
+  globalThis._zwMakeTextTrackList = function (tracks) {
+    var list = Object.create(globalThis.TextTrackList.prototype);
+    var arr = tracks || [];
+    for (var i = 0; i < arr.length; i++) list[i] = arr[i];
+    list.length = arr.length;
+    list.item = function (i) { i = Number(i) | 0; return (i >= 0 && i < list.length) ? list[i] : null; };
+    list.getTrackById = function (id) {
+      for (var j = 0; j < list.length; j++) {
+        if (list[j] && list[j].id === String(id)) return list[j];
+      }
+      return null;
+    };
+    return list;
+  };
+
   function _zwMediaError(code, message) {
     var error = Object.create(globalThis.MediaError.prototype);
     error.code = Number(code) || 0; error.message = String(message || '');

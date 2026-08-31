@@ -2807,3 +2807,108 @@ fn test_media_load_event_sequence_r389() {
         "加载完成 networkState = NETWORK_IDLE"
     );
 }
+
+#[test]
+fn test_text_track_family_r390() {
+    // media-elements M3：TextTrack 家族最小接口面。
+    // 验证：① addTextTrack 枚举校验（invalid/缺省/大写 → TypeError；omitted/undefined
+    // label/language → ''；null → 'null'）；② textTracks same-object + length；③ track.track
+    // same-object + instanceof + 属性同步；④ TextTrackCueList/TextTrackList instanceof；
+    // ⑤ new TextTrackCue 抛 TypeError（historical 面）。
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new("<html><body></body></html>".to_string()));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("https://wpt.test/t.html".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+
+    // ① addTextTrack 语义面。
+    sandbox.execute(
+        "globalThis.__v = document.createElement('video');\
+         globalThis.__t1 = __v.addTextTrack('subtitles', 'foo', 'bar');\
+         globalThis.__r1 = [__t1.kind, __t1.label, __t1.language, __t1.mode, __t1.cues instanceof TextTrackCueList, __t1.cues.length].join(',');\
+         globalThis.__t2 = __v.addTextTrack('subtitles', null, null);\
+         globalThis.__r2 = [__t2.label, __t2.language].join(',');\
+         globalThis.__t3 = __v.addTextTrack('subtitles');\
+         globalThis.__r3 = [__t3.label, __t3.language].join(',');\
+         try { __v.addTextTrack('SUBTITLES'); globalThis.__r4 = 'no-throw'; } catch (e) { globalThis.__r4 = 'TypeError'; }\
+         try { __v.addTextTrack('bogus'); globalThis.__r5 = 'no-throw'; } catch (e) { globalThis.__r5 = 'TypeError'; }\
+         try { __v.addTextTrack(null); globalThis.__r6 = 'no-throw'; } catch (e) { globalThis.__r6 = 'TypeError'; }",
+    ).unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__r1)").unwrap().value,
+        "subtitles,foo,bar,hidden,true,0",
+        "addTextTrack 基本语义（kind/label/language/mode/cues 空列表）"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__r2)").unwrap().value,
+        "null,null",
+        "label/language null → 'null'（WebIDL DOMString）"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__r3)").unwrap().value,
+        ",",
+        "label/language omitted → 缺省空串"
+    );
+    for (name, idx) in [("uppercase rejected", "__r4"), ("bogus rejected", "__r5"), ("null kind rejected", "__r6")] {
+        assert_eq!(
+            sandbox.execute(&format!("String(globalThis.{})" , idx)).unwrap().value,
+            "TypeError",
+            "addTextTrack 枚举校验（{}）",
+            name
+        );
+    }
+
+    // ② textTracks same-object + 增量同步。
+    sandbox.execute(
+        "globalThis.__same = __v.textTracks === __v.textTracks;\
+         globalThis.__len = __v.textTracks.length;",
+    ).unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__same)").unwrap().value,
+        "true",
+        "textTracks same object"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__len)").unwrap().value,
+        "3",
+        "textTracks 增量同步（3 次 addTextTrack 后 length=3）"
+    );
+    assert_eq!(
+        sandbox.execute("String(__v.textTracks instanceof TextTrackList)").unwrap().value,
+        "true",
+        "textTracks instanceof TextTrackList"
+    );
+
+    // ③ track.track same-object + instanceof + default→showing。
+    sandbox.execute(
+        "var tr = document.createElement('track');\
+         tr.setAttribute('kind', 'captions');\
+         tr.setAttribute('default', '');\
+         globalThis.__tt1 = tr.track;\
+         globalThis.__tt2 = tr.track;\
+         globalThis.__tr = [__tt1 === __tt2, __tt1 instanceof TextTrack, __tt1.kind, __tt1.mode].join(',');",
+    ).unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__tr)").unwrap().value,
+        "true,true,captions,showing",
+        "track.track same-object + instanceof + kind/default 属性"
+    );
+
+    // ⑤ historical：new TextTrackCue 抛 TypeError（接口存在但 illegal constructor）。
+    sandbox.execute(
+        "try { new TextTrackCue(0, 0, ''); globalThis.__cue = 'no-throw'; } catch (e) { globalThis.__cue = e.name; }",
+    ).unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__cue)").unwrap().value,
+        "TypeError",
+        "new TextTrackCue 抛 TypeError（historical 面）"
+    );
+}

@@ -442,7 +442,7 @@
             || prop === 'paused' || prop === 'ended' || prop === 'preload'
             || prop === 'kind' || prop === 'label' || prop === 'srclang'
             || prop === 'default' || prop === 'src' || prop === 'textTracks'
-            || prop === 'addTextTrack') {
+            || prop === 'addTextTrack' || prop === 'track') {
           return true;
         }
         // R184（js-dom M4）：Node 接口常量 + DOCUMENT_POSITION 常量的 `in` 可见性（spec

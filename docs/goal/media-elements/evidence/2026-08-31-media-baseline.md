@@ -161,3 +161,40 @@ commit `feat(engine): media metadata IDL face + track reflection`：
 - Fail：12 全部 TextTrack 家族（addTextTrack 9 + textTracks 1 + track 1 + historical 1）
 
 **验证**：make test 65 套件全绿、fmt 干净、strict clippy 零警告。
+
+---
+
+## M3 增量（TextTrack 家族接口面，2026-08-31 同轮）
+
+- **实现**：
+  - part01b：TextTrack / TextTrackCueList / TextTrackList / TextTrackCue 接口声明
+    （均 Illegal constructor——脚本不可直接 new；TextTrackCue 历史移除面 = historical
+    用例 TypeError 断言）+ 工厂 `_zwMakeTextTrack`/`_zwMakeTextTrackCueList`/
+    `_zwMakeTextTrackList`（Object.create 原型链 → instanceof 生效）。
+  - part03：`addTextTrack(kind, label?, language?)`（kind 枚举精确匹配，大小写敏感，
+    非法/缺省 → TypeError；label/language optional DOMString——omitted/undefined → ''，
+    null → 'null'；mode 缺省 'hidden'）+ `textTracks`（TextTrackList same-object 身份，
+    addTextTrack 增量同步 length/索引）。
+  - part04：`track.track`——HTMLTrackElement 关联 TextTrack（same-object 缓存；kind/
+    label/srclang 反射同步；default 属性 → mode 'showing'，否则 'disabled'）。
+  - has-trap 白名单补 `track`。
+- **新增单测**：`test_text_track_family_r390`（枚举校验/DOMString 转换/身份缓存/
+  instanceof/historical TypeError，7 组断言）。
+
+### M3 后总通过率：226/269 subtest = **84.0%**（基线 46.5% → 切片3 73.1% → M2 79.6% → **M3 84.0%**）
+
+| 状态 | 基线 | 切片3 | M2 | M3 | 变化 |
+|---|---|---|---|---|---|
+| Pass | 114 | 179 | 214 | 226 | **+12** |
+| Fail | 77 | 12 | 12 | **0** | **-12（TextTrack 家族全闭合）** |
+| Timeout | 13 | 13 | 2 | 2 | 0 |
+| PreconditionFailed | 41 | 41 | 41 | 41 | 0（能力表决策后自愈） |
+
+### 余账（2 Timeout，全部深域 defer）
+
+- error.html：错误码语义（MEDIA_ERR_SRC_NOT_SUPPORTED 注入）——依赖真资源选择失败
+  判定，随解码层（media-playback）或资源选择算法深化
+- currentSrc.html：source 子元素**插入**触发资源重选——MutationObserver 式 mutation 面
+  （src 属性 set 触发已闭合，仅 DOM 插入路径缺）
+
+**验证**：make test 65 套件全绿、fmt 干净、strict clippy（zero-engine）零警告。

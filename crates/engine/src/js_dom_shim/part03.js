@@ -11347,6 +11347,38 @@
         if (prop === 'canPlayType' && (_realTag(sel, handle) === 'AUDIO' || _realTag(sel, handle) === 'VIDEO')) {
           return function () { return ''; };
         }
+        // media-elements M3：textTracks（TextTrackList，same object 身份）+ addTextTrack
+        //（kind 枚举精确匹配——大小写敏感，非枚举值/缺省 → TypeError；label/language 为
+        // optional DOMString：omitted 或 undefined → 缺省 ''，null → 'null'（WebIDL 转换）；
+        // mode 缺省 'hidden'——脚本添加的轨道默认隐藏）。headless 无 VTT 解析——cues 恒空。
+        // https://html.spec.whatwg.org/multipage/media.html#dom-media-addtexttrack
+        if ((prop === 'textTracks' || prop === 'addTextTrack') &&
+            (_realTag(sel, handle) === 'AUDIO' || _realTag(sel, handle) === 'VIDEO')) {
+          var _ttKey = key;
+          var _ttEntry = _textTracksCache[_ttKey] || (_textTracksCache[_ttKey] = { tracks: [], list: null });
+          if (prop === 'textTracks') {
+            if (!_ttEntry.list) _ttEntry.list = globalThis._zwMakeTextTrackList(_ttEntry.tracks);
+            return _ttEntry.list;
+          }
+          return function (kind, label, language) {
+            var _kinds = ['subtitles', 'captions', 'descriptions', 'chapters', 'metadata'];
+            var _k = (kind == null) ? '' : String(kind);
+            if (_kinds.indexOf(_k) < 0) {
+              throw new TypeError("Failed to execute 'addTextTrack': parameter " + (kind == null ? '1' : '1') + " is not of any valid enum value.");
+            }
+            // optional DOMString：undefined（含 omitted）→ 缺省 ''；null → 'null'（WebIDL DOMString 转换）。
+            var _label = (label === undefined) ? '' : String(label);
+            var _lang = (language === undefined) ? '' : String(language);
+            var _track = globalThis._zwMakeTextTrack(_k, _label, _lang, 'hidden');
+            _ttEntry.tracks.push(_track);
+            // list 已存在（textTracks 先读过）→ 增量同步索引/length（same object 语义）。
+            if (_ttEntry.list) {
+              _ttEntry.list[_ttEntry.list.length] = _track;
+              _ttEntry.list.length = _ttEntry.list.length + 1;
+            }
+            return _track;
+          };
+        }
         // HTMLAnchorElement/HTMLAreaElement URL 分解 IDL 属性（href/pathname/search/hash/host/hostname/port/
         // protocol/origin/username/password，R2838）——经 `__zw_parse_url`（R2778 url crate）解析 href 属性
         // （base = 页面 location.href）取组件。`a.href` getter 返**绝对** URL（区别 getAttribute('href') 返

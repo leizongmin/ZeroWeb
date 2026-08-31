@@ -159,6 +159,36 @@
             (prop === 'NONE' || prop === 'LOADING' || prop === 'LOADED' || prop === 'ERROR')) {
           return { NONE: 0, LOADING: 1, LOADED: 2, ERROR: 3 }[prop];
         }
+        // media-elements M3：`track.track`——HTMLTrackElement 关联的 TextTrack 实例（same
+        // object 身份缓存）。mode 按 spec：default 属性存在 → 'showing'，否则 'disabled'。
+        // kind/label/srclang 反射值同步进 TextTrack（headless 无 VTT 加载——cues 恒空）。
+        // https://html.spec.whatwg.org/multipage/media.html#dom-trackelement-track
+        if (resourceTag === 'TRACK' && prop === 'track') {
+          var _tkInst = _elementTextTrack[key];
+          if (!_tkInst) {
+            var _tkAttrKind = (function () {
+              try {
+                var _raw = handle ? __zw_get_attr_handle(handle, 'kind') : (typeof __zw_get_attr_lw === 'function' ? __zw_get_attr_lw(sel, 'kind') : __zw_get_attr(sel, 'kind'));
+                var _lo = String(_raw == null ? '' : _raw).toLowerCase();
+                return (_lo === 'subtitles' || _lo === 'captions' || _lo === 'descriptions' ||
+                        _lo === 'chapters' || _lo === 'metadata') ? _lo
+                  : (_raw == null || _raw === '' ? 'subtitles' : 'metadata');
+              } catch (_eTk) { return 'subtitles'; }
+            })();
+            var _tkLabel = (function () {
+              try { return handle ? (__zw_get_attr_handle(handle, 'label') || '') : ((typeof __zw_get_attr_lw === 'function' ? __zw_get_attr_lw(sel, 'label') : __zw_get_attr(sel, 'label')) || ''); } catch (_eTl) { return ''; }
+            })();
+            var _tkLang = (function () {
+              try { return handle ? (__zw_get_attr_handle(handle, 'srclang') || '') : ((typeof __zw_get_attr_lw === 'function' ? __zw_get_attr_lw(sel, 'srclang') : __zw_get_attr(sel, 'srclang')) || ''); } catch (_eTg) { return ''; }
+            })();
+            var _tkDefault = (function () {
+              try { return (handle ? __zw_has_attr_handle(handle, 'default') : __zw_has_attr(sel, 'default')) === '1'; } catch (_eTd) { return false; }
+            })();
+            _tkInst = globalThis._zwMakeTextTrack(_tkAttrKind, _tkLabel, _tkLang, _tkDefault ? 'showing' : 'disabled');
+            _elementTextTrack[key] = _tkInst;
+          }
+          return _tkInst;
+        }
         if (resourceTag === 'TRACK' && prop === 'readyState') {
           if (!resourceState) {
             var trackSrc = handle ? __zw_get_attr_handle(handle, 'src') : __zw_get_attr(sel, 'src');

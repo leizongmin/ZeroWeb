@@ -87,6 +87,12 @@
   // defaultPlaybackRate 1 / volume 1 / paused true）。play()/pause() 方法段（part03）同读写此表。
   // 与 _resourceStates 同生命周期（page-local，导航清空）。
   var _mediaState = {};
+  // media-elements M3：TextTrack 集合身份缓存（element key → { list: TextTrackList,
+  // tracks: [] }）——`video.textTracks === video.textTracks` 同一对象（spec same object）；
+  // addTextTrack 追加 tracks 并重建 list（length/索引同步）。`track.track` 的 TextTrack
+  // 实例身份单独缓存（_elementTextTrack）。
+  var _textTracksCache = {};
+  var _elementTextTrack = {};
   // M2：media 专有事件派发便捷封装（non-bubbling/non-cancelable；sel/handle 双身份）。
   // 声明于 part01 顶层（shim IIFE 闭包）——set trap / play()/pause() / 动态加载模拟共用；
   // 函数声明提升使 part05/part06 的调用点可达。
