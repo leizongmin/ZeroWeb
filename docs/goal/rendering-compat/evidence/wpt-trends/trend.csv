@@ -5,3 +5,4 @@
 2026-08-15,upstream,v1.10,16269,13265,81.5,failed=3004;skipped=0,238e1db,
 2026-08-22,upstream,v1.10,319,292,91.5,failed=27;skipped=0,37f5b8a,
 2026-08-31,upstream,v1.10,16814,13931,82.9,failed=2883;skipped=0,a037a3cea,R3866 mismatch threshold 0.5%->0.01% (upstream semantics alignment; +79 flips 0 regressions; engine unchanged)
+2026-08-31,upstream,v1.10,16814,13939,82.9,failed=2875;skipped=0,1965b2077,R3867 ::first-letter paint-side color slice (+8 flips 0 regressions; stack-frame hardening for compute_styles_recursive)
