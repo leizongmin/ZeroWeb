@@ -1325,6 +1325,22 @@ impl super::Painter {
                             } else {
                                 $frag_nid
                             };
+                            // R3871：荷兰语 ij/IJ 双字母组语境——沿 owner 祖先链找最近 lang 属性，
+                            // nl 前缀（nl / nl-NL / nl-SR…）即启用（与 style-system effective_lang
+                            // 同语义）。doc 在此已为 &Document（paint_text 的 if-let 解包）。
+                            let dutch_digraph = {
+                                let mut found = false;
+                                let mut cur = Some(owner_id);
+                                while let Some(id) = cur {
+                                    if let Some(lang) = doc.get_attribute(id, "lang") {
+                                        let l = lang.to_ascii_lowercase();
+                                        found = l == "nl" || l.starts_with("nl-");
+                                        break;
+                                    }
+                                    cur = doc.parent_node(id);
+                                }
+                                found
+                            };
                             let frag_color = styles
                                 .and_then(|s| s.get(&owner_id))
                                 .filter(|s| {
@@ -1431,7 +1447,10 @@ impl super::Painter {
                                 && first_letter_expected.is_none()
                                 && !char_advance_is_y
                             {
-                                let fl_len = text_shaping::first_letter_cluster_len(&transformed);
+                                let fl_len = text_shaping::first_letter_cluster_len_digraph(
+                                    &transformed,
+                                    dutch_digraph,
+                                );
                                 if fl_len > 0 {
                                     first_letter_expected =
                                         Some((transformed.chars().take(fl_len).collect(), 0));
@@ -1687,8 +1706,12 @@ impl super::Painter {
                                         // 首个含非空白字符的片段：初始化期望簇（懒执行，保证是
                                         // 容器文档序第一个非空白片段而非任一空片段）。
                                         if first_letter_expected.is_none() {
-                                            let len =
-                                                text_shaping::first_letter_cluster_len(&transformed);
+                                            // R3871：簇已在上方 bg 块以 digraph 语义初始化；此处兜底
+                                            // 仅处理「簇为 0」（片段无字母）放弃情形。
+                                            let len = text_shaping::first_letter_cluster_len_digraph(
+                                                &transformed,
+                                                dutch_digraph,
+                                            );
                                             if len > 0 {
                                                 first_letter_expected =
                                                     Some((transformed.chars().take(len).collect(), 0));

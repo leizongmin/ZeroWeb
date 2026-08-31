@@ -1054,7 +1054,10 @@ pub(super) fn is_first_letter_typographic_space(ch: char) -> bool {
 ///
 /// 片段不含字母时返回 0（无首字母，不覆色）。跨片段簇（如折叠后标点落入后续片段）
 /// 为已知近似（FIXME：需 IFC 级跨片段状态）。
-pub(super) fn first_letter_cluster_len(text: &str) -> usize {
+/// R3871：荷兰语 ij/IJ 双字母组（digraph）扩展——css-pseudo-4 + selectors-3：
+/// `lang="nl*"` 语境下 `ij` 视作单个首字母单元（driving: first-letter-digraph，
+/// 「both I and J are green」）。非 nl 语境或首两字母非 ij/IJ 时与基础版一致。
+pub(super) fn first_letter_cluster_len_digraph(text: &str, dutch_digraph: bool) -> usize {
     let chars: Vec<char> = text.chars().collect();
     if chars.is_empty() {
         return 0;
@@ -1076,6 +1079,16 @@ pub(super) fn first_letter_cluster_len(text: &str) -> usize {
     }
     // 含首字母
     i += 1;
+    // R3871：荷兰语 ij/IJ 双字母组——首字母为 i/I 且次字母为 j/J 时再吞一个字母
+    //（大小写各自成对：ij、IJ、Ij？spec 用例只含 ij/IJ——严格小配对）。
+    if dutch_digraph
+        && i < chars.len()
+        && matches!(chars[i - 1], 'i' | 'I')
+        && matches!(chars[i], 'j' | 'J')
+        && chars[i - 1].is_uppercase() == chars[i].is_uppercase()
+    {
+        i += 1;
+    }
     // trailing：吸收 P*（除 Ps/Pd）；词分隔符终止；其他排版空格桥接（须后随可吸收标点才连同吸收）
     let trailing_absorbable = |c: char| is_first_letter_punct(c) && !is_first_letter_open_or_dash(c);
     while i < chars.len() {
@@ -1114,7 +1127,21 @@ mod first_letter_cluster_tests {
     /// 纯字母片段：簇 = 首字母自身。
     #[test]
     fn test_bare_letter() {
-        assert_eq!(first_letter_cluster_len("Test"), 1);
+        assert_eq!(first_letter_cluster_len_digraph("Test", false), 1);
+    }
+
+    /// R3871：荷兰语 ij/IJ 双字母组——digraph 开启时吞两字母，关闭时只吞 I。
+    #[test]
+    fn test_dutch_digraph() {
+        assert_eq!(first_letter_cluster_len_digraph("IJsselmeer", true), 2);
+        assert_eq!(first_letter_cluster_len_digraph("ijsselmeer", true), 2);
+        assert_eq!(first_letter_cluster_len_digraph("\u{201C}IJsselmeer\u{201D}", true), 3);
+        // 非 nl 语境：只有 I 绿
+        assert_eq!(first_letter_cluster_len_digraph("IJsselmeer", false), 1);
+        // nl 语境但非 ij 开头：只吞 1
+        assert_eq!(first_letter_cluster_len_digraph("Jssel", true), 1);
+        // 大小写不配对（Ij）不吞
+        assert_eq!(first_letter_cluster_len_digraph("Ijsselmeer", true), 1);
     }
 
     /// css-pseudo-4 driving 用例 first-letter-trailing-punctuation 各行的同片段簇：
@@ -1122,34 +1149,37 @@ mod first_letter_cluster_tests {
     #[test]
     fn test_trailing_punctuation_cases() {
         // (T)est → (T)
-        assert_eq!(first_letter_cluster_len("(T)est"), 3);
+        assert_eq!(first_letter_cluster_len_digraph("(T)est", false), 3);
         // “T”est → “T”
-        assert_eq!(first_letter_cluster_len("\u{201C}T\u{201D}est"), 3);
+        assert_eq!(first_letter_cluster_len_digraph("\u{201C}T\u{201D}est", false), 3);
         // _T_est → _T_
-        assert_eq!(first_letter_cluster_len("_T_est"), 3);
+        assert_eq!(first_letter_cluster_len_digraph("_T_est", false), 3);
         // –Test → –T（leading Pd 吸收）
-        assert_eq!(first_letter_cluster_len("\u{2013}Test"), 2);
+        assert_eq!(first_letter_cluster_len_digraph("\u{2013}Test", false), 2);
         // T(rail → T（trailing Ps 不吸收）
-        assert_eq!(first_letter_cluster_len("T(rail"), 1);
+        assert_eq!(first_letter_cluster_len_digraph("T(rail", false), 1);
         // T–rail → T（trailing Pd 不吸收）
-        assert_eq!(first_letter_cluster_len("T\u{2013}rail"), 1);
+        assert_eq!(first_letter_cluster_len_digraph("T\u{2013}rail", false), 1);
         // «nbspTnbsp»est → «nbspT（leading 空格吸收；trailing nbsp 终止）
-        assert_eq!(first_letter_cluster_len("\u{00AB}\u{00A0}T\u{00A0}\u{00BB}est"), 3);
+        assert_eq!(
+            first_letter_cluster_len_digraph("\u{00AB}\u{00A0}T\u{00A0}\u{00BB}est", false),
+            3
+        );
         // U+10100T U+10100 est（Aegean Po）→ 全簇
-        assert_eq!(first_letter_cluster_len("\u{10100}T\u{10100}est"), 3);
+        assert_eq!(first_letter_cluster_len_digraph("\u{10100}T\u{10100}est", false), 3);
         // T&emsp;.est（同片段形态）→ T+emsp+. 桥接
-        assert_eq!(first_letter_cluster_len("T\u{2003}.est"), 3);
+        assert_eq!(first_letter_cluster_len_digraph("T\u{2003}.est", false), 3);
         // T.&emsp;est → T.（末标点后单独空格不吸收）
-        assert_eq!(first_letter_cluster_len("T.\u{2003}est"), 2);
+        assert_eq!(first_letter_cluster_len_digraph("T.\u{2003}est", false), 2);
     }
 
     /// 片段无字母（全标点/空格）→ 0（无首字母，不覆色）。
     #[test]
     fn test_no_letter_returns_zero() {
-        assert_eq!(first_letter_cluster_len("(\" — "), 0);
-        assert_eq!(first_letter_cluster_len(""), 0);
+        assert_eq!(first_letter_cluster_len_digraph("(\" — ", false), 0);
+        assert_eq!(first_letter_cluster_len_digraph("", false), 0);
         // 数字不是字母：纯数字片段按「非标点非空格」视作字母单元起点（含自身）
-        assert_eq!(first_letter_cluster_len("123"), 1);
+        assert_eq!(first_letter_cluster_len_digraph("123", false), 1);
     }
 }
 

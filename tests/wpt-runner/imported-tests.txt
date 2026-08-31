@@ -209,3 +209,4 @@ css/css-counter-styles/katakana/css3-counter-styles-036.html css/css-counter-sty
 css/css-counter-styles/cjk-earthly-branch/css3-counter-styles-201.html css/css-counter-styles/cjk-earthly-branch/css3-counter-styles-201-ref.html == 2026-08-30 R3835 §6.2 cjk-earthly-branch cyclic builtin（子丑寅…12 符号循环）
 css/CSS2/bidi-text/bidi-box-model-013.xht css/CSS2/bidi-text/bidi-box-model-010-ref.xht == 2026-08-30 R3836 RTL bidi-override 行级 run 序反转
 css/CSS2/selectors/first-letter-nested-001.xht css/CSS2/selectors/first-letter-nested-001-ref.xht == 2026-08-31 R3867 ::first-letter 伪元素 paint 侧首字形覆色（color 切片）
+css/css-pseudo/first-letter-digraph.html css/css-pseudo/reference/first-letter-digraph-ref.html == 2026-08-31 R3871 ::first-letter 荷兰语 ij 双字母组（lang 语境）
