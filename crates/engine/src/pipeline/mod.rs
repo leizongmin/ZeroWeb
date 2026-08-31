@@ -1946,6 +1946,32 @@ pub(crate) fn paint_cull_viewport(
 /// `ComputedStyle` 写入 `styles`，使测量/绘制按该样式渲染（颜色、字号等）。
 ///
 /// 复用全部既有机制（文本测量、匿名盒包裹、绘制）——伪元素合成节点即普通文本子节点。
+/// R3884：counter 名是否处于「布局前可确定值」语境——元素自身或祖先链的
+/// `counter-increment`/`counter-set`/`counter-reset` 涉及该名时，真实值依赖计数器
+/// 状态（布局期 paint 侧才可求），布局前注入固定 0 值会显示错值（content-counter-009/010
+/// false-pass 显形教训）；仅「无任何 counter 动作」的页面，counter 隐式初值恒 0
+///（CSS Lists §counter），注入 0 值表示是正确语义（at-supports/media-content-004 driving）。
+fn counter_value_is_layout_dependent(
+    doc: &Document,
+    nid: NodeId,
+    counter_name: &str,
+    styles: &HashMap<NodeId, ComputedStyle>,
+) -> bool {
+    let mut current = Some(nid);
+    while let Some(id) = current {
+        if let Some(st) = styles.get(&id) {
+            let involved = |actions: &[zero_css_parser::values::CounterActionValue]| {
+                actions.iter().any(|a| a.name.eq_ignore_ascii_case(counter_name))
+            };
+            if involved(&st.counter_reset) || involved(&st.counter_set) || involved(&st.counter_increment) {
+                return true;
+            }
+        }
+        current = doc.get(id).and_then(|n| n.parent);
+    }
+    false
+}
+
 pub(crate) fn inject_pseudo_text_nodes(
     doc: &mut Document,
     styles: &mut HashMap<NodeId, ComputedStyle>,
@@ -1982,8 +2008,24 @@ pub(crate) fn inject_pseudo_text_nodes(
                     zero_dom::NodeKind::Element(elem) => elem.get_attribute(name).as_deref().map(str::to_string),
                     _ => None,
                 }),
-                ContentComputedValue::Counter { style, .. } => {
-                    pseudo_disclosure_counter_text(style, pseudo_style, &counter_styles)
+                // R3884：通用 counter 表示（与 paint 侧 format_counter_text 同源）——
+                // 注入发生在布局前、无计数器状态，值取隐式初值 0（CSS Lists §counter：
+                // 未 reset/increment 的 counter 引用即 0）。此前仅 disclosure 特例，
+                // 其余 counter-style 的 ::before/::after 全部无文本（content-004 驱动）。
+                // 布局依赖语境（自身/祖先链有 counter 动作涉该名）不注入——维持既有
+                // 行为（真实值须 paint 期求，注入固定 0 = 错值）。
+                ContentComputedValue::Counter { name, style } => {
+                    if counter_value_is_layout_dependent(doc, nid, name, styles) {
+                        pseudo_disclosure_counter_text(style, pseudo_style, &counter_styles)
+                    } else {
+                        let text = crate::paint::painter::text::text_list::format_counter_text(
+                            0,
+                            style,
+                            pseudo_style,
+                            &counter_styles,
+                        );
+                        (!text.is_empty()).then_some(text)
+                    }
                 }
                 ContentComputedValue::Counters { .. } => None,
                 ContentComputedValue::List(items) => {
@@ -1991,8 +2033,25 @@ pub(crate) fn inject_pseudo_text_nodes(
                     for item in items {
                         match item {
                             ContentListItem::Str(value) => text.push_str(value),
-                            ContentListItem::Counter { style, .. } => {
-                                text.push_str(&pseudo_disclosure_counter_text(style, pseudo_style, &counter_styles)?);
+                            ContentListItem::Counter { name, style } => {
+                                // R3884：与单 Counter 分支同源——disclosure 特例（writing-mode
+                                // 相关符号）优先；布局依赖语境跳过该项，否则通用表示（隐式值 0）。
+                                match pseudo_disclosure_counter_text(style, pseudo_style, &counter_styles) {
+                                    Some(t) => text.push_str(&t),
+                                    None if counter_value_is_layout_dependent(doc, nid, name, styles) => {}
+                                    None => {
+                                        let t = crate::paint::painter::text::text_list::format_counter_text(
+                                            0,
+                                            style,
+                                            pseudo_style,
+                                            &counter_styles,
+                                        );
+                                        if t.is_empty() {
+                                            return None;
+                                        }
+                                        text.push_str(&t);
+                                    }
+                                }
                             }
                             ContentListItem::Counters { .. } => return None,
                         }

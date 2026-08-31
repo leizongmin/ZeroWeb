@@ -7,7 +7,7 @@ mod border;
 mod controls;
 mod effects;
 mod effects_indicators;
-mod text;
+pub(crate) mod text;
 mod text_image;
 
 use std::collections::{HashMap, HashSet};

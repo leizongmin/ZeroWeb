@@ -820,7 +820,12 @@ pub(super) fn format_counter_roman(value: i64, upper: bool) -> String {
 }
 
 /// 按计数器样式格式化整数值为 content 文本。
-fn format_counter_text(
+///
+/// R3884：counter 表示单源入口——inject_pseudo_text_nodes（布局前合成文本）与 paint
+/// 侧 resolve_generated_content_text 共用同一格式化（内置样式、@counter-style 注册表、
+/// fallback 十进制），避免双轨实现漂移。此前 inject 只认 disclosure 特例，普通 counter
+/// 的 ::before 全部无文本。
+pub(crate) fn format_counter_text(
     value: i64,
     counter_style: &Option<String>,
     style: &ComputedStyle,

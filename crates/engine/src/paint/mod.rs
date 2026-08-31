@@ -2,7 +2,7 @@
 
 mod color;
 mod helpers;
-mod painter;
+pub(crate) mod painter;
 
 // Re-export all public items so `pub use paint::*` in lib.rs works unchanged.
 pub use color::*;
