@@ -165,8 +165,18 @@ pub struct ReftestConfig {
     pub category: ReftestCategory,
     /// Per-test fuzzy 容差覆盖（来自 WPT MANIFEST.json）。
     pub fuzzy_override: Option<FuzzyMeta>,
-    /// mismatch 模式的最小差异率阈值（默认 0.005 = 0.5%）。
+    /// mismatch 模式的最小差异率阈值（默认 0.0001 = 0.01%，48px @ 800×600）。
     /// 差异率超过此值才认为是不匹配通过。
+    ///
+    /// R3866：旧值 0.005（0.5%）严于上游语义——WPT mismatch 只要求两页渲染
+    /// **有差异**（上游 harness 逐像素比较，任何非零 diff 即 mismatch 通过）。
+    /// 0.5% 在 800×600 视口 = 2400px，把「小面积装饰差异」类 mismatch 系统性
+    /// 误判为 fail（146 fail 中 82 案 diff ∈ (0, 0.5%)：underline 条 186px ≈ 0.04%、
+    /// rotate 文本位移 236px ≈ 0.05%、transform-origin 平移等）。通道噪声已由
+    /// `compare_pixels_labeled` 的 max_channel_diff（5/8/15）过滤——实测 63 翻绿案
+    /// subpixel-dominated（channel==1 占比 >50%）为 0，全为结构性像素差（maxch=255）。
+    /// 新值 0.0001（48px）保留绝对下限防 ch>8 的 AA 聚类伪差；对 match 模式零影响
+    ///（阈值只作用于 mismatch 判定，严格单调 fail→pass，零回归风险）。
     pub min_mismatch_ratio: f64,
     /// 渲染媒体类型（DC-12 @media print/screen 级联过滤；R1991）。默认 `Screen` = 零行为变更。
     pub media_type: zero_css_parser::media_query::MediaType,
@@ -187,7 +197,7 @@ impl Default for ReftestConfig {
             category: ReftestCategory::Unknown,
             wpt_root: None,
             fuzzy_override: None,
-            min_mismatch_ratio: 0.005,
+            min_mismatch_ratio: 0.0001,
             media_type: zero_css_parser::media_query::MediaType::Screen,
         }
     }
@@ -357,7 +367,8 @@ pub fn run_reftest_with_base(case: &ReftestCase, config: &ReftestConfig, base_di
         )
     } else {
         format!(
-            "Mismatch failed: only {}/{} pixels differ ({:.2}%), expected > 1%",
+            "Mismatch failed: only {}/{} pixels differ ({:.2}%), expected > {:.2}%",
+            config.min_mismatch_ratio * 100.0,
             diff_pixels,
             total_pixels,
             diff_ratio * 100.0
@@ -450,7 +461,8 @@ pub fn run_reftest_gpu_with_base(case: &ReftestCase, config: &ReftestConfig, bas
         )
     } else {
         format!(
-            "Mismatch failed: only {}/{} pixels differ ({:.2}%), expected > 1%",
+            "Mismatch failed: only {}/{} pixels differ ({:.2}%), expected > {:.2}%",
+            config.min_mismatch_ratio * 100.0,
             diff_pixels,
             total_pixels,
             diff_ratio * 100.0
