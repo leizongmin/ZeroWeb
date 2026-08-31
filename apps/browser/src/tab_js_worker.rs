@@ -687,6 +687,9 @@ mod tests {
     /// （native DOM 源 = worker 快照 re-parse，与 polyfill 桥同源）。锁定 worker
     /// bootstrap 的 native install 接线（此前 worker 沙箱从未调用
     /// `install_native_bindings*`，页面 JS↔DOM 只走 polyfill 字符串桥）。
+    // 仅在有原生引擎 feature 时跑（bare `cargo test -p zero-browser` 无 v8/quickjs——沙箱为
+    // test-cfg QuickJS 且 engine 无绑定模块，install 面不存在；生产以 --features v8 构建验证）。
+    #[cfg(any(feature = "v8", all(feature = "quickjs", not(feature = "v8"))))]
     #[test]
     fn tab_js_worker_native_bindings_installed_r386() {
         let mut worker = TabJsWorkerHandle::spawn(TabId(911));
