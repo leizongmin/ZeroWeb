@@ -439,6 +439,10 @@ pub struct WebView {
     /// Isolate 绑定模板缓存，安装即全量重建）。
     #[cfg(feature = "v8")]
     native_state_gen: Option<u64>,
+    /// R384 性能：本 WebView 在当前代际已完成全量 install（模板/全局就位）——后续
+    /// install 走 `refresh_dom_source` 快路径（仅刷 DOM 源，不重建模板）。
+    #[cfg(feature = "v8")]
+    native_installed_for_gen: bool,
     /// 外部 JS 执行器（专用 JS 线程）。
     external_script: Option<ExternalScriptExecutor>,
     /// 外链脚本源获取器（进程内/headless 路径 fetch 外链脚本源）。
@@ -586,6 +590,7 @@ impl WebView {
             js_shim_initialized: false,
             #[cfg(feature = "v8")]
             native_state_gen: None,
+            native_installed_for_gen: false,
             external_script,
             script_source_fetcher,
             service_worker_script_fetcher,
@@ -1908,6 +1913,15 @@ impl WebView {
         let live = self.pipeline.cached_doc_shared();
         let html = self.cached_html.clone();
         let live_some = live.is_some();
+        // R384 性能：同代际 + 本 WebView 已装过 → 仅刷 DOM 源（Rc 交换，ns 级），
+        // 跳过模板重建 + 全局重注册（webview_render/load 系微基准 2-4× 退化的根因——
+        // flip 后每次 execute_script 都走全量 install）。跨代际/首次 → 全量 install。
+        if self.native_state_gen == Some(state_gen) && self.native_installed_for_gen {
+            if let Some(doc) = live {
+                zero_engine::dom_bindings::refresh_dom_source(doc);
+            }
+            return;
+        }
         let _ = sandbox.install_native_bindings(Box::new(move |scope, ctx| {
             if let Some(doc) = live {
                 zero_engine::dom_bindings::install_dom_bindings(scope, ctx, doc);
@@ -1918,6 +1932,7 @@ impl WebView {
         tracing::debug!(live = live_some, "native DOM bindings installed (native_dom=true)");
         // R384：记录装完后的代际（install 本身不 bump——只有 reset 才 bump）。
         self.native_state_gen = Some(zero_engine::dom_bindings::state_generation());
+        self.native_installed_for_gen = true;
     }
 
     /// js-dom goal M6 S0q：QuickJS 版 [`Self::install_native_dom_bindings`]（镜像 V8 逻辑，

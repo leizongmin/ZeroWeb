@@ -81,6 +81,16 @@ pub fn state_generation() -> u64 {
     NATIVE_STATE_GEN.load(std::sync::atomic::Ordering::Acquire)
 }
 
+/// R384 快路径：仅刷新线程局部 DOM 源（`Rc` 交换，ns 级）——不重建模板/不重注册全局。
+///
+/// WebView 每 `execute_script` 前调 install 的原语义中，模板重建是主要开销（M5 flip 后
+/// 每次 install 都跑，webview_render/load 系微基准 2-4× 退化实测）。代际相符时（同一
+/// Isolate、绑定已装）调用方改走本函数：live Document 指针照常刷新（getter 读当前文档），
+/// 模板与全局复用首次 install 产物。
+pub fn refresh_dom_source(dom: Rc<RefCell<Document>>) {
+    gc::set_dom_source(dom);
+}
+
 static NATIVE_STATE_GEN: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 
 /// 安装原生 DOM 绑定到指定 V8 上下文。
