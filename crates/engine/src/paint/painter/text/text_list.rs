@@ -783,16 +783,14 @@ fn counter_style_raw_body(
 /// R2392：从 stylesheets 收集 `@counter-style` 定义为注册表（name → rule，大小写敏感保留）。
 /// 镜像 `animation::register_from_stylesheets` 的 @keyframes 收集模式。
 pub(crate) fn build_counter_style_registry(
-    stylesheets: &[zero_css_parser::Stylesheet],
+    rules: &[zero_css_parser::ast::Rule],
 ) -> std::collections::HashMap<String, zero_css_parser::ast::CounterStyleRule> {
     use zero_css_parser::ast::Rule;
     let mut map = std::collections::HashMap::new();
-    for ss in stylesheets {
-        for rule in &ss.rules {
-            if let Rule::CounterStyle(cs) = rule {
-                // CSS Counter Styles 3：计数器名大小写敏感（counter-name-case-sensitive）。
-                map.entry(cs.name.clone()).or_insert_with(|| cs.clone());
-            }
+    for rule in rules {
+        if let Rule::CounterStyle(cs) = rule {
+            // CSS Counter Styles 3：计数器名大小写敏感（counter-name-case-sensitive）。
+            map.entry(cs.name.clone()).or_insert_with(|| cs.clone());
         }
     }
     map

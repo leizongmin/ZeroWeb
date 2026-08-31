@@ -335,15 +335,109 @@ pub type ExtractedFontFace = (
     Vec<(u32, u32)>,
 );
 
+/// 递归展开样式表顶层规则中**条件成立的** @media / @supports 块（CSS Conditional 3
+/// §contents-of：条件规则体内的 @font-face/@keyframes/@counter-style 等语句级 at-rule
+/// 按外层条件生效）。
+///
+/// 返回克隆展平后的规则序列（FontFace/Keyframes/CounterStyle 等 body 规则体量小，
+/// 注册路径低频，克隆成本可忽略）。@media 用 `media_ctx` 求值；@supports 委托
+/// style-system 的 [`zero_style_system::evaluate_supports_condition`]（属性支持表 +
+/// R3879 selector() 门控 + R3880 font 谓词的单源实现）。嵌套条件块递归。
+///
+/// driving: at-supports-content-002/003/004、at-media-content-002/003/004——此前
+/// `extract_font_faces` / `register_from_stylesheets` / `register_counter_styles`
+/// 只扫顶层规则，条件块内的语句级 at-rule 全部丢失。
+pub fn flatten_conditional_rules(
+    stylesheets: &[zero_css_parser::Stylesheet],
+    media_ctx: &zero_css_parser::media_query::MediaContext,
+) -> Vec<zero_css_parser::ast::Rule> {
+    use zero_css_parser::ast::{AtRuleBody, Rule};
+
+    fn walk(rules: &[Rule], ctx: &mut MediaCtx, out: &mut Vec<Rule>) {
+        for rule in rules {
+            match rule {
+                Rule::At(at_rule) => {
+                    let AtRuleBody::Block(inner) = &at_rule.body else {
+                        continue;
+                    };
+                    let name = at_rule.name.as_str();
+                    if name.eq_ignore_ascii_case("media") {
+                        let Some(queries) = zero_css_parser::media_query::parse_media_query(&at_rule.prelude) else {
+                            continue;
+                        };
+                        if queries
+                            .iter()
+                            .any(|q| zero_css_parser::media_query::evaluate_media_query(q, ctx.media))
+                        {
+                            walk(inner, ctx, out);
+                        }
+                    } else if name.eq_ignore_ascii_case("supports") {
+                        // 解析失败的 prelude（畸形条件）→ 条件视为不成立，整块丢弃
+                        //（与 consume_supports_rule 的 None→丢弃语义一致）。
+                        let Some(condition) =
+                            zero_css_parser::supports_condition::parse_supports_condition(&at_rule.prelude)
+                        else {
+                            continue;
+                        };
+                        if (ctx.supports_eval)(&condition) {
+                            walk(inner, ctx, out);
+                        }
+                    }
+                    // 其余块 at-rule（@layer/@container/@page…）不展开——与各消费方
+                    // 既有顶层扫描行为一致，本切片不扩。
+                }
+                // 顶层 @supports 经专用解析器产出 Rule::Supports（非 Rule::At）。
+                Rule::Supports(supports_rule) => {
+                    if (ctx.supports_eval)(&supports_rule.condition) {
+                        walk(&supports_rule.rules, ctx, out);
+                    }
+                }
+                other => out.push(other.clone()),
+            }
+        }
+    }
+
+    struct MediaCtx<'a> {
+        media: &'a zero_css_parser::media_query::MediaContext,
+        supports_eval: &'a mut dyn FnMut(&zero_css_parser::ast::SupportsCondition) -> bool,
+    }
+
+    let mut ctx = MediaCtx {
+        media: media_ctx,
+        supports_eval: &mut |cond| zero_style_system::evaluate_supports_condition(cond),
+    };
+    let mut out = Vec::new();
+    for ss in stylesheets {
+        walk(&ss.rules, &mut ctx, &mut out);
+    }
+    out
+}
+
 /// 从 CSS 文本提取所有有效的 `@font-face` 规则。
+///
+/// 条件块（@media/@supports）内条件成立的 @font-face 一并提取（R3881，见
+/// [`flatten_conditional_rules`]）。
 pub fn extract_font_faces(css: &str) -> Vec<ExtractedFontFace> {
-    use zero_css_parser::ast::Rule as CssRule;
+    let stylesheet = zero_css_parser::Parser::parse_stylesheet(css);
+    extract_font_faces_from_rules(&flatten_conditional_rules(
+        std::slice::from_ref(&stylesheet),
+        &media_context_default(),
+    ))
+}
+
+/// 无视口默认媒体上下文（font 提取的 @media 语义 = 媒体类型/all 恒真 + 静态偏好；
+/// 带视口的调用方走 [`extract_font_faces_in_context`]）。
+pub fn media_context_default() -> zero_css_parser::media_query::MediaContext {
+    zero_css_parser::media_query::MediaContext::new(0.0, 0.0)
+}
+
+/// 从（已条件展开的）规则序列提取 `@font-face` 描述符。
+fn extract_font_faces_from_rules(rules: &[zero_css_parser::ast::Rule]) -> Vec<ExtractedFontFace> {
     use zero_css_parser::values::types::FontStyleValue;
-    zero_css_parser::Parser::parse_stylesheet(css)
-        .rules
+    rules
         .iter()
         .filter_map(|rule| match rule {
-            CssRule::FontFace(ff) => {
+            zero_css_parser::ast::Rule::FontFace(ff) => {
                 let is_italic = matches!(
                     ff.style,
                     Some(FontStyleValue::Italic) | Some(FontStyleValue::Oblique(_))
@@ -363,6 +457,16 @@ pub fn extract_font_faces(css: &str) -> Vec<ExtractedFontFace> {
             _ => None,
         })
         .collect()
+}
+
+/// 带视口/媒体上下文的 `@font-face` 提取（webview 生产路径用，媒体特性按真 viewport
+/// 求值）。
+pub fn extract_font_faces_in_context(
+    css: &str,
+    media_ctx: &zero_css_parser::media_query::MediaContext,
+) -> Vec<ExtractedFontFace> {
+    let stylesheet = zero_css_parser::Parser::parse_stylesheet(css);
+    extract_font_faces_from_rules(&flatten_conditional_rules(std::slice::from_ref(&stylesheet), media_ctx))
 }
 
 /// 将 CSS feature settings 转为字体整形层输入。

@@ -152,7 +152,10 @@ impl RenderPipeline {
                     painter.set_font_resolver(self.font_resolver.clone());
                     painter.set_document_url(self.document_url.as_deref());
                     painter.set_canvas_registry(self.canvas_registry.clone());
-                    painter.register_counter_styles(&session.stylesheets);
+                    painter.register_counter_styles(&crate::pipeline::flatten_conditional_rules(
+                        &session.stylesheets,
+                        &self.media_context(),
+                    ));
                     painter.viewport_w = self.viewport_width;
                     painter.viewport_h = self.viewport_height;
                     painter.paint_skip_nodes = layout.paint_skip_node_ids.clone();

@@ -581,6 +581,11 @@ impl RenderPipeline {
         self.layout_engine.set_viewport(width, height);
     }
 
+    /// 当前视口的媒体查询上下文（R3881 条件规则展开用；静态偏好取引擎默认）。
+    pub(crate) fn media_context(&self) -> zero_css_parser::media_query::MediaContext {
+        zero_css_parser::media_query::MediaContext::new(self.viewport_width as f64, self.viewport_height as f64)
+    }
+
     /// 获取动画时钟的可变引用。
     pub fn animation_clock_mut(&mut self) -> &mut AnimationClock {
         &mut self.animation_clock
@@ -674,7 +679,8 @@ impl RenderPipeline {
         stylesheets: &[zero_css_parser::Stylesheet],
         current_time: f64,
     ) -> HashMap<NodeId, ComputedStyle> {
-        self.animation_clock.register_from_stylesheets(stylesheets);
+        self.animation_clock
+            .register_from_stylesheets(stylesheets, &self.media_context());
         let mut styles = self.style_system.compute_styles(doc, stylesheets);
 
         // 4b. 过渡检测：比较新旧基础样式，启动必要的过渡
@@ -837,7 +843,8 @@ impl RenderPipeline {
         self.layout_engine.set_print_horizontal_margins(m_left, m_right);
 
         // 3. 注册 @keyframes 到动画时钟
-        self.animation_clock.register_from_stylesheets(&stylesheets);
+        self.animation_clock
+            .register_from_stylesheets(&stylesheets, &self.media_context());
 
         // 4. 计算样式
         let style_start = Instant::now();
@@ -873,7 +880,7 @@ impl RenderPipeline {
         painter.set_font_resolver(self.font_resolver.clone());
         painter.set_document_url(self.document_url.as_deref());
         painter.set_canvas_registry(self.canvas_registry.clone());
-        painter.register_counter_styles(&stylesheets);
+        painter.register_counter_styles(&flatten_conditional_rules(&stylesheets, &self.media_context()));
         painter.viewport_w = self.viewport_width;
         painter.viewport_h = self.viewport_height;
         painter.paint_skip_nodes = layout_result.paint_skip_node_ids.clone();
@@ -1067,7 +1074,7 @@ impl RenderPipeline {
         painter.set_font_resolver(self.font_resolver.clone());
         painter.set_document_url(self.document_url.as_deref());
         painter.set_canvas_registry(self.canvas_registry.clone());
-        painter.register_counter_styles(&stylesheets);
+        painter.register_counter_styles(&flatten_conditional_rules(&stylesheets, &self.media_context()));
         painter.viewport_w = self.viewport_width;
         painter.viewport_h = self.viewport_height;
         painter.paint_skip_nodes = layout_result.paint_skip_node_ids.clone();
@@ -2989,6 +2996,34 @@ mod font_face_extract_tests {
     fn extract_font_faces_empty() {
         assert!(extract_font_faces("p { color: red; }").is_empty());
         assert!(extract_font_faces("").is_empty());
+    }
+
+    /// R3881：条件块（@media/@supports）内条件成立的 @font-face 须提取，
+    /// 条件不成立的须排除（CSS Conditional 3 §contents-of）。
+    /// driving: at-supports-content-002、at-media-content-002。
+    #[test]
+    fn extract_font_faces_in_conditional_blocks() {
+        let css = r#"
+            @supports (color: blue) {
+                @font-face { font-family: 'CondYes'; src: url(yes.woff); }
+            }
+            @supports not (color: blue) {
+                @font-face { font-family: 'CondNo'; src: url(no.woff); }
+            }
+            @media all {
+                @font-face { font-family: 'MediaYes'; src: url(media.woff); }
+            }
+            @media not all {
+                @font-face { font-family: 'MediaNo'; src: url(media-no.woff); }
+            }
+        "#;
+        let faces = extract_font_faces(css);
+        let families: Vec<&str> = faces.iter().map(|f| f.0.as_str()).collect();
+        assert_eq!(
+            families,
+            vec!["CondYes", "MediaYes"],
+            "仅条件成立的块内 @font-face 生效"
+        );
     }
 
     /// FR-001：纯投影——extract_font_faces 输出与直接解析 FontFaceRule 一致（不额外过滤）。

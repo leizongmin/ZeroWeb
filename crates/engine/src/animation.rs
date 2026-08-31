@@ -423,12 +423,17 @@ impl AnimationClock {
     }
 
     /// 从样式表提取并注册所有 @keyframes 规则。
-    pub fn register_from_stylesheets(&mut self, stylesheets: &[zero_css_parser::Stylesheet]) {
-        for ss in stylesheets {
-            for rule in &ss.rules {
-                if let zero_css_parser::ast::Rule::Keyframes(kf) = rule {
-                    self.register_keyframes(kf);
-                }
+    ///
+    /// R3881：条件块（@media/@supports）内条件成立的 @keyframes 一并注册
+    ///（CSS Conditional 3 §contents-of；经 [`crate::pipeline::extract::flatten_conditional_rules`] 展开）。
+    pub fn register_from_stylesheets(
+        &mut self,
+        stylesheets: &[zero_css_parser::Stylesheet],
+        media_ctx: &zero_css_parser::media_query::MediaContext,
+    ) {
+        for rule in crate::pipeline::flatten_conditional_rules(stylesheets, media_ctx) {
+            if let zero_css_parser::ast::Rule::Keyframes(kf) = rule {
+                self.register_keyframes(&kf);
             }
         }
     }
@@ -1899,7 +1904,7 @@ mod tests {
         "#;
         let ss = zero_css_parser::Parser::parse_stylesheet(css);
         let mut clock = AnimationClock::new();
-        clock.register_from_stylesheets(&[ss]);
+        clock.register_from_stylesheets(&[ss], &zero_css_parser::media_query::MediaContext::new(800.0, 600.0));
 
         let names = clock.registered_keyframe_names();
         assert!(names.contains(&"slide"));

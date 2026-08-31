@@ -1061,7 +1061,7 @@ fn evaluate_container_condition(
 /// 对于属性值测试 `(property: value)`，检查解析器是否能识别该属性和值。
 /// 对于 `selector()`，检查解析器是否能解析该选择器。
 /// 对于逻辑组合，递归评估子条件。
-fn evaluate_supports_condition(condition: &zero_css_parser::ast::SupportsCondition) -> bool {
+pub fn evaluate_supports_condition(condition: &zero_css_parser::ast::SupportsCondition) -> bool {
     use zero_css_parser::ast::SupportsCondition;
 
     match condition {

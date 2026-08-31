@@ -5,8 +5,6 @@
 
 use std::path::{Path, PathBuf};
 
-use zero_css_parser::ast::Rule as CssRule;
-use zero_css_parser::parser::Parser as CssParser;
 use zero_render_foundation::font::loader::FontLoader;
 
 /// 创建加载了系统字体和 Ahem 测试字体的 FontLoader。
@@ -175,35 +173,11 @@ type FontFaceSpec = (
 
 /// 从 CSS 文本中提取所有 `@font-face` 规则的 face 列表。
 ///
-/// 用 `zero_css_parser` 解析样式表，收集 `Rule::FontFace`（含 R2417 `weight` + R2493 `is_italic`）。
+/// R3881：委托 [`zero_engine::extract_font_faces`]（单源实现——含条件块展开：
+/// @media/@supports 内条件成立的 @font-face 一并提取，与 engine 渲染路径同语义）。
 /// 解析失败或无规则时返回空。
 pub(super) fn extract_font_faces(css: &str) -> Vec<FontFaceSpec> {
-    use zero_css_parser::values::types::FontStyleValue;
-    let stylesheet = CssParser::parse_stylesheet(css);
-    stylesheet
-        .rules
-        .iter()
-        .filter_map(|rule| match rule {
-            CssRule::FontFace(ff) => {
-                let is_italic = matches!(
-                    ff.style,
-                    Some(FontStyleValue::Italic) | Some(FontStyleValue::Oblique(_))
-                );
-                Some((
-                    ff.family.clone(),
-                    ff.sources.clone(),
-                    ff.weight,
-                    is_italic,
-                    ff.stretch,
-                    ff.size_adjust,
-                    ff.feature_settings.clone(),
-                    ff.variation_settings.clone(),
-                    ff.unicode_ranges.clone(),
-                ))
-            }
-            _ => None,
-        })
-        .collect()
+    zero_engine::extract_font_faces(css)
 }
 
 /// 提取 HTML 中所有 `<style>` 元素的文本内容（与 engine `collect_stylesheets` 同源）。

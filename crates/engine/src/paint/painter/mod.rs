@@ -546,8 +546,10 @@ impl Painter {
     }
 
     /// R2392：从 stylesheets 收集 `@counter-style` 定义注册到 painter。
-    pub fn register_counter_styles(&mut self, stylesheets: &[zero_css_parser::Stylesheet]) {
-        self.counter_styles = text::text_list::build_counter_style_registry(stylesheets);
+    /// R3881：接受条件展开后的规则序列（调用方经 `flatten_conditional_rules` 求值
+    /// @media/@supports 后传入），使条件块内的 @counter-style 生效。
+    pub fn register_counter_styles(&mut self, rules: &[zero_css_parser::ast::Rule]) {
+        self.counter_styles = text::text_list::build_counter_style_registry(rules);
     }
 
     /// 设置 CSS font-family 查找表。
