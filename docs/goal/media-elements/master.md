@@ -118,6 +118,22 @@ already-playing resolved 断言。**88.3%**（324P/0F/2T/41PF，+80 subtest 全�
 - 单测 `test_media_preload_setter_roundtrip_r395`（2 断言组）。evidence：
   `evidence/2026-09-01-media-preload-setter.json`（90.1% 维持 0 回归）。
 
+**里程碑归档（2026-09-01）**：M1~M3 与六轮扩批的过程记录、排除用例决策清单已归档至
+[archive/2026-08-31_m1-m3-and-2026-09-01_batches.md](archive/2026-08-31_m1-m3-and-2026-09-01_batches.md)
+（只追加不修改；本控制面保留最新态与缺口清单）。
+
+**DC 达成审计（2026-09-01）**：DC-1~4 实质满足——① 60 用例导入 + 8 份 evidence JSON
+（基线演进 46.5→90.1 全程可追溯）；② 状态机/事件序列 WPT 断言面全绿（headless 近似
+驱动逐项记录）；③ API 语义面全对齐（canPlayType 空表 + M4g-d 显式记录为跨 goal 依赖项；
+play-pause 异常/元数据 setter/track 面全绿）；④ make test 65 套件全绿 + clippy 零警告 +
+每修复带单测与用例资产化。
+**治理注记**：入口文档 DC-1 第三条「经 `make import-wpt` 记入 imported-tests.txt」字面
+指 reftest 通道；media 用例的资产化通道实际为 testharness-media pin（fetch 白名单 +
+MEDIA_TEST_FILES + evidence JSON 序列）——两通道并行为 CLAUDE.md 测试资产化规则的
+等价实现，差异在此记录，不改入口文档。**完成度**：语义面在当前 headless 驱动形态下
+已达饱和（可导入面吃尽）；进一步提升依赖兄弟目标解锁（media-playback 解码层真值化
+→ videoWidth/buffered/真 seek 面重评导入）。
+
 **与兄弟 goal 的边界**：
 - media-playback — 解码/帧渲染归其管（RFC 门控）；本目标的 readyState 真实驱动源由其
   供给（接口契约记录于两流 master.md）
