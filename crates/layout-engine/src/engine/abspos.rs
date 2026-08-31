@@ -651,6 +651,176 @@ pub(super) fn resolve_abspos_against_root_cb(
     }
 }
 
+/// R3858：abspos 最近 positioned 祖先为**非根**元素时的 inset 重解析（CSS §10.1.2）。
+///
+/// taffy 0.7 把 absolute 子的 inset 相对其**静态父**解析；当 static 中间层隔在 abspos
+/// 与最近 positioned 祖先之间时（如 `div.relative > div > p > span{position:absolute;
+/// bottom:0}`），CB 应为 positioned 祖先的 padding-box，taffy 却按静态父（p）解析——
+/// `bottom:0` 落到 p 底而非 positioned 祖先底（driving：inline-replaced-width-015 的
+/// 绿色覆盖 span 落 y=166.6 而非 216.6，红 img 露出）。
+///
+/// 机制与 `resolve_abspos_against_root_cb` 同谱系：递归携带最近 positioned 祖先的
+/// padding-box（origin + size）；对「直接父非 positioned」的 absolute 子重解析
+/// left/top/right/bottom + 百分比尺寸，再转回父 content 相对坐标。直接父即 positioned
+/// 祖先的（taffy 已正确，inline-replaced-width-014 `top:0` 直连场景）不触，防回归。
+/// 根 positioned 场景由 11.7 root-CB 专项 pass 处理——本 pass 仅在根非 positioned 时
+/// 启用（engine.rs 调用点 gate），避免双应用。视口 CB（无 positioned 祖先）由 11.5
+/// `adjust_absolute_pct_to_viewport` 处理，cb=None 不触。
+///
+/// kill-switch `ZW_ABSPOS_NESTED_CB=0` 回退（入口单次读取，避免逐节点 env 查询——
+/// bench-gate block_layout_1000_elements 曾因递归内每层 env::var 读取 ~40% 回归）。
+pub(super) fn resolve_abspos_against_nested_cb(
+    box_node: &mut LayoutBox,
+    current_box_origin_x: f32,
+    current_box_origin_y: f32,
+    cb: Option<(f32, f32, f32, f32)>,
+    styles: &HashMap<NodeId, ComputedStyle>,
+) {
+    let enabled = std::env::var("ZW_ABSPOS_NESTED_CB").as_deref() != Ok("0");
+    resolve_abspos_against_nested_cb_inner(
+        box_node,
+        current_box_origin_x,
+        current_box_origin_y,
+        cb,
+        styles,
+        enabled,
+    );
+}
+
+fn resolve_abspos_against_nested_cb_inner(
+    box_node: &mut LayoutBox,
+    current_box_origin_x: f32,
+    current_box_origin_y: f32,
+    cb: Option<(f32, f32, f32, f32)>,
+    styles: &HashMap<NodeId, ComputedStyle>,
+    enabled: bool,
+) {
+    use zero_css_parser::values::LengthValue;
+    if !enabled {
+        return;
+    }
+    let box_is_positioned = box_node.is_absolute || box_node.is_fixed || box_node.is_relative || box_node.is_sticky;
+    for child in &mut box_node.children {
+        // 仅当本盒非 positioned（存在 static 中间层）且已有 positioned 祖先 CB 时重解析；
+        // 本盒即 CB（直接子场景）时 taffy 已按正确基解析，跳过。
+        if let Some((cb_origin_x, cb_origin_y, cb_width, cb_height)) = cb
+            && !box_is_positioned
+            && child.is_absolute
+            && let Some(style) = child.node_id.and_then(|nid| styles.get(&nid))
+        {
+            // 百分比尺寸：相对 CB（R1227 box-sizing 感知，同 root-CB pass）。
+            if let LengthValue::Percentage(p) = &style.width {
+                let is_bb = matches!(style.box_sizing, zero_css_parser::values::BoxSizingValue::BorderBox);
+                let (w, cw) = resolve_abspos_pct(
+                    *p as f32,
+                    cb_width,
+                    child.border_left,
+                    child.border_right,
+                    child.padding_left,
+                    child.padding_right,
+                    is_bb,
+                );
+                child.width = w;
+                child.content_width = cw;
+            }
+            if let LengthValue::Percentage(p) = &style.height {
+                let is_bb = matches!(style.box_sizing, zero_css_parser::values::BoxSizingValue::BorderBox);
+                let (h, ch) = resolve_abspos_pct(
+                    *p as f32,
+                    cb_height,
+                    child.border_top,
+                    child.border_bottom,
+                    child.padding_top,
+                    child.padding_bottom,
+                    is_bb,
+                );
+                child.height = h;
+                child.content_height = ch;
+            }
+            // auto 尺寸 + 全长度 inset → stretch（§10.3.18/§10.6.4，仅非替换）。
+            if matches!(style.width, LengthValue::Auto)
+                && !child.is_replaced
+                && let (Some(left), Some(right)) = (
+                    resolve_abspos_real_length(&style.left, &style.font_size, cb_width, cb_height),
+                    resolve_abspos_real_length(&style.right, &style.font_size, cb_width, cb_height),
+                )
+            {
+                child.width = (cb_width - left - right).max(0.0);
+                child.content_width =
+                    (child.width - child.border_left - child.border_right - child.padding_left - child.padding_right)
+                        .max(0.0);
+            }
+            if matches!(style.height, LengthValue::Auto)
+                && !child.is_replaced
+                && let (Some(top), Some(bottom)) = (
+                    resolve_abspos_real_length(&style.top, &style.font_size, cb_width, cb_height),
+                    resolve_abspos_real_length(&style.bottom, &style.font_size, cb_width, cb_height),
+                )
+            {
+                child.height = (cb_height - top - bottom).max(0.0);
+                child.content_height =
+                    (child.height - child.border_top - child.border_bottom - child.padding_top - child.padding_bottom)
+                        .max(0.0);
+            }
+            // left/top（% 或长度）：目标视口绝对坐标 = cb_origin + inset，转回父相对坐标。
+            if let LengthValue::Percentage(p) = &style.left {
+                child.x = cb_origin_x + *p as f32 / 100.0 * cb_width
+                    - current_box_origin_x
+                    - box_node.border_left
+                    - box_node.padding_left;
+            }
+            if let LengthValue::Percentage(p) = &style.top {
+                child.y = cb_origin_y + *p as f32 / 100.0 * cb_height
+                    - current_box_origin_y
+                    - box_node.border_top
+                    - box_node.padding_top;
+            }
+            if let Some(px) = resolve_abspos_real_length(&style.left, &style.font_size, cb_width, cb_height) {
+                child.x = cb_origin_x + px - current_box_origin_x - box_node.border_left - box_node.padding_left;
+            }
+            if let Some(px) = resolve_abspos_real_length(&style.top, &style.font_size, cb_width, cb_height) {
+                child.y = cb_origin_y + px - current_box_origin_y - box_node.border_top - box_node.padding_top;
+            }
+            // right/bottom 且 left/top 为 auto：右/下边对齐 CB 右/下缘（§10.3.18 rule 2）。
+            if matches!(style.left, LengthValue::Auto)
+                && let Some(right) = resolve_abspos_real_length(&style.right, &style.font_size, cb_width, cb_height)
+            {
+                let target_x = cb_origin_x + cb_width - right - child.width;
+                child.x = target_x - current_box_origin_x - box_node.border_left - box_node.padding_left;
+            }
+            if matches!(style.top, LengthValue::Auto)
+                && let Some(bottom) = resolve_abspos_real_length(&style.bottom, &style.font_size, cb_width, cb_height)
+            {
+                let target_y = cb_origin_y + cb_height - bottom - child.height;
+                child.y = target_y - current_box_origin_y - box_node.border_top - box_node.padding_top;
+            }
+        }
+
+        // 递归：positioned 子成为其后代的最近 positioned 祖先（padding-box = border-box
+        // 内缘）；否则继承当前 CB。child 坐标是相对本盒 content 的偏移。
+        let child_box_origin_x = current_box_origin_x + box_node.border_left + box_node.padding_left + child.x;
+        let child_box_origin_y = current_box_origin_y + box_node.border_top + box_node.padding_top + child.y;
+        let child_cb = if child.is_absolute || child.is_fixed || child.is_relative || child.is_sticky {
+            Some((
+                child_box_origin_x + child.border_left,
+                child_box_origin_y + child.border_top,
+                (child.width - child.border_left - child.border_right).max(0.0),
+                (child.height - child.border_top - child.border_bottom).max(0.0),
+            ))
+        } else {
+            cb
+        };
+        resolve_abspos_against_nested_cb_inner(
+            child,
+            child_box_origin_x,
+            child_box_origin_y,
+            child_cb,
+            styles,
+            enabled,
+        );
+    }
+}
+
 /// R2062：abspos 元素垂直 margin:auto 居中（CSS §10.6.4 over-constrained 方程）。
 ///
 /// taffy 0.12 不对 positioned-ancestor-CB 的 abspos（top+bottom 均 Px + height 非 auto

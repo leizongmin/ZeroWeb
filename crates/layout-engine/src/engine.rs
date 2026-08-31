@@ -802,6 +802,20 @@ impl LayoutEngine {
                 styles,
                 true,
             );
+        } else {
+            // 11.7a R3858：根非 positioned 时，最近 positioned 祖先为非根元素的 abspos
+            // inset 重解析（CSS §10.1.2）——taffy 按静态父解析，static 中间层场景错位
+            //（inline-replaced-width-015）。根 positioned 场景已由上方 root-CB pass 处理，
+            // 此处不触防双应用；视口 CB（无 positioned 祖先）由 11.5 处理（cb=None 不触）。
+            // OPTIMIZATION：预扫描 styles 是否含 positioned 元素——无则整棵树 CB 恒 None，
+            // 走空转，直接跳过（bench-gate block_layout_1000_elements 实测无 positioned
+            // 页面全树 LayoutBox 指针追踪 ~0.7ms 超预算；contiguous HashMap 扫描 ~20µs）。
+            let has_positioned = styles
+                .values()
+                .any(|s| !matches!(s.position, zero_css_parser::values::PositionValue::Static));
+            if has_positioned {
+                resolve_abspos_against_nested_cb(&mut root_box, 0.0, 0.0, None, styles);
+            }
         }
 
         // 11.8 后处理（R1371）：abspos flex 容器（top+bottom 拉出 definite height）内替换

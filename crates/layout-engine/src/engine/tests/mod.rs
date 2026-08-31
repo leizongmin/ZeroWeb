@@ -180,6 +180,8 @@ mod r3807_bfc_zero_shift_float_plain_flow_tests;
 mod r3808_clear_mt_leak_revert_tests;
 mod r3809_va_margin_box_align_tests;
 mod r3817_anon_cell_center_tests;
+/// R3858 abspos 非根 positioned 祖先 CB 重解析测试。
+mod r3858_abspos_nested_cb_tests;
 mod r717_flex_ratio_img_tests;
 mod table_layout_tests;
 mod tests_1;
