@@ -214,3 +214,5 @@ css/css-box/margin-trim/block-container-block-end-self-collapsing-item-has-large
 css/css-box/margin-trim/block-container-block-start-self-collapsing-item-has-larger-block-end.html css/css-box/margin-trim/block-container-block-start-self-collapsing-item-has-larger-block-end-ref.html == 2026-08-31 R3872 margin-trim 自折叠子两侧 margin 同裁（block-start 对称）
 css/css-conditional/at-supports-content-002.html css/css-conditional/at-supports-001-ref.html == 2026-09-01 R3881 条件块（@media/@supports）内语句级 at-rule（@font-face/@keyframes/@counter-style）条件成立时展开生效
 css/css-conditional/at-media-content-002.html css/css-conditional/at-supports-001-ref.html == 2026-09-01 R3881 条件块（@media/@supports）内语句级 at-rule（@font-face/@keyframes/@counter-style）条件成立时展开生效
+css/css-conditional/at-supports-content-003.html css/css-conditional/at-supports-001-ref.html == 2026-09-01 R3882 渲染路径静态动画首帧（t=0 无状态求值）+ @keyframes background 简写插值
+css/css-conditional/at-media-content-003.html css/css-conditional/at-supports-001-ref.html == 2026-09-01 R3882 渲染路径静态动画首帧（t=0 无状态求值）+ @keyframes background 简写插值

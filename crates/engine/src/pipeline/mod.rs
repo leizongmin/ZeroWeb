@@ -1038,6 +1038,28 @@ impl RenderPipeline {
         self.style_system
             .set_viewport(self.viewport_width as f64, self.viewport_height as f64);
         let mut styles = self.style_system.compute_styles(&doc, &stylesheets);
+
+        // 3.2 R3882：静态动画首帧（CSS Animations §4 未知时间轴下的渲染近似）——
+        // `render_html` 是无时间轴的静态渲染路径（reftest 截图、首帧绘制），对声明了
+        // animation-name 的元素按 t=0 求值一次插值（fill-mode/backwards 与负 delay
+        // seek 生效），使 `animation: green 4s both` 这类动画的起始帧可见。
+        // 状态纪律：在 clone 的 AnimationClock 上求值后**丢弃**——主时钟的活跃动画
+        // 状态不受污染，`tick_animation_clock`（webview 泵，真实时间轴）仍是唯一状态
+        // 权威；keyframes 注册是纯注册（无动画状态），先在主时钟注册再 clone。
+        // driving: at-supports-content-003 / at-media-content-003、css-backgrounds/animations 族。
+        if styles
+            .values()
+            .any(|s| s.animation_name.iter().any(|n| !n.is_empty() && n != "none"))
+        {
+            self.animation_clock
+                .register_from_stylesheets(&stylesheets, &self.media_context());
+            let mut static_clock = self.animation_clock.clone();
+            for (nid, kind, _name, _elapsed) in apply_animation_overrides(&mut static_clock, &mut styles, 0.0) {
+                // 事件丢弃（t=0 求值是渲染近似，非真实时间轴事件）；
+                // 只保留插值对 styles 的叠加。
+                let _ = (nid, kind);
+            }
+        }
         let style_ms = style_start.elapsed().as_secs_f64() * 1000.0;
 
         // 3.5 把 ::before/::after 伪元素的 content 文本注入为合成文本子节点（doc 每帧

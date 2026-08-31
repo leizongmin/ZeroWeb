@@ -638,3 +638,31 @@ fn test_webkit_border_radius_alias_not_canonicalized() {
     assert_eq!(result.len(), 1);
     assert_eq!(result[0].0, "-webkit-border-radius");
 }
+
+/// R3882：负 delay 是合法简写成分（CSS Animations §animation-delay——负值使动画
+/// 在时间轴上前跳）。旧实现 is_time_value 复用非负的 duration 解析 → 负 delay 落
+/// animation-name 分支失败 → 整条 shorthand 被丢弃。driving: css-backgrounds/animations
+/// 负 delay 中点截图族（`animation: bgcolor 1000000s cubic-bezier(0,1,1,0) -500000s`）。
+#[test]
+fn test_animation_shorthand_negative_delay() {
+    let result = expand_one(
+        "animation",
+        "bgcolor 1000000s cubic-bezier(0,1,1,0) -500000s",
+        false,
+        (0, 0, 1),
+    );
+    assert_eq!(result.len(), 8);
+    assert_eq!(result[0].1, "bgcolor"); // name
+    assert_eq!(result[1].1, "1000000s"); // duration
+    assert_eq!(result[2].1, "cubic-bezier(0,1,1,0)"); // timing
+    assert_eq!(result[3].1, "-500000s"); // delay
+}
+
+/// R3882：负 duration 仍非法（只有 delay 可负）——单独负时间不是合法简写。
+#[test]
+fn test_animation_rejects_negative_duration_only() {
+    assert!(expand_one("animation", "-1s", false, (0, 0, 1)).is_empty());
+    assert!(expand_one("transition", "-1s", false, (0, 0, 1)).is_empty());
+    // duration 位为负、delay 位为负的组合同样拒绝（首时间位负）
+    assert!(expand_one("animation", "fade -1s -2s", false, (0, 0, 1)).is_empty());
+}

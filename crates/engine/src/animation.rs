@@ -257,7 +257,10 @@ pub fn interpolate_property_value(property: &str, from: &str, to: &str, t: f64) 
             let to_f = parse_f64(to).unwrap_or(1.0);
             format!("{:.4}", lerp(from_f, to_f, t))
         }
-        "background-color" | "color" | "border-color" => {
+        // R3882：`background` 简写常见于 @keyframes（如 `from { background: green }`），
+        // 键名按声明原名进插值——颜色臂须含简写名（css-backgrounds-3 §background 简写
+        // 的颜色分量插值等价 background-color）。
+        "background-color" | "background" | "color" | "border-color" => {
             let from_c = parse_color(from);
             let to_c = parse_color(to);
             let (r, g, b, a) = lerp_color(from_c, to_c, t);
@@ -319,7 +322,9 @@ fn parse_color(s: &str) -> Rgba {
         }
     }
 
-    // rgb(r, g, b)
+    // rgb(r, g, b) —— R3882：兼收 legacy 4 参数形 rgb(r, g, b, a)（CSS Color 4 允许
+    // rgb/rgba 前缀与 3/4 参数自由组合；@keyframes 里 `rgb(0, 200, 0, 0)` 这类写法
+    // 上游常见，此前 4 参数 rgb() 解析失败回落黑色不透明，插值输出整体变黑）。
     if let Some(rest) = s.strip_prefix("rgb(").and_then(|r| r.strip_suffix(')')) {
         let parts: Vec<&str> = rest.split(',').map(|p| p.trim()).collect();
         if parts.len() == 3 {
@@ -328,6 +333,14 @@ fn parse_color(s: &str) -> Rgba {
                 parts[1].parse().unwrap_or(0.0),
                 parts[2].parse().unwrap_or(0.0),
                 1.0,
+            );
+        }
+        if parts.len() == 4 {
+            return (
+                parts[0].parse().unwrap_or(0.0),
+                parts[1].parse().unwrap_or(0.0),
+                parts[2].parse().unwrap_or(0.0),
+                parts[3].parse().unwrap_or(1.0),
             );
         }
     }
@@ -883,7 +896,9 @@ fn apply_single_property(name: &str, value: &str, style: &mut ComputedStyle) {
                 style.opacity = v.clamp(0.0, 1.0);
             }
         }
-        "background-color" => {
+        // R3882：`background` 简写（@keyframes 常见形）取其颜色分量——只覆盖
+        // background_color，图片分量另行处理（与 background-image 独立属性一致）。
+        "background-color" | "background" => {
             let (r, g, b, a) = parse_color(value);
             style.background_color = ColorValue::Rgba(r as u8, g as u8, b as u8, (a * 255.0) as u8);
         }
@@ -2044,6 +2059,20 @@ mod tests {
     fn test_parse_color_unknown() {
         let (r, g, b, a) = parse_color("somecolor");
         assert_eq!((r, g, b, a), (0.0, 0.0, 0.0, 1.0)); // 默认黑色
+    }
+
+    /// R3882：legacy 4 参数 rgb()（CSS Color 4 允许 rgb/rgba 前缀与 3/4 参数自由组合）
+    /// ——此前解析失败回落黑色不透明，插值输出整体变黑。
+    /// driving: css-backgrounds/animations zero-alpha 族（`rgb(0, 200, 0, 0)`）。
+    #[test]
+    fn test_parse_color_rgb_four_args() {
+        let (r, g, b, a) = parse_color("rgb(0, 200, 0, 0)");
+        assert_eq!((r, g, b, a), (0.0, 200.0, 0.0, 0.0));
+        let (r, g, b, a) = parse_color("rgb(100, 100, 0, 0.5)");
+        assert_eq!((r, g, b, a), (100.0, 100.0, 0.0, 0.5));
+        // 3 参数形不受影响
+        let (r, g, b, a) = parse_color("rgb(1, 2, 3)");
+        assert_eq!((r, g, b, a), (1.0, 2.0, 3.0, 1.0));
     }
 
     #[test]

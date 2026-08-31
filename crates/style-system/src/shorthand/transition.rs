@@ -102,6 +102,11 @@ fn parse_single_transition(entry: &str) -> Option<(String, String, String, Strin
         if is_time_value(t) {
             found_time_count += 1;
             if found_time_count == 1 {
+                // R3882：第一个时间位是 duration——非负（CSS Animations/Transitions：
+                // duration 负值非法）。is_time_value 放宽负号是为第二个位（delay）。
+                if zero_css_parser::values::parse_time(t).is_some_and(|secs| secs < 0.0) {
+                    return None;
+                }
                 duration = t.to_string();
             } else if found_time_count == 2 {
                 delay = t.to_string();
@@ -152,8 +157,14 @@ fn split_top_level_commas(s: &str) -> Vec<String> {
 }
 
 /// 检查字符串是否为 CSS 时间值。
+///
+/// R3882：接受**负**时间——`animation`/`transition` 简写的第二个时间位是 delay，
+/// 负 delay 合法（CSS Animations §animation-delay：负值使动画在时间轴上前跳）。
+/// 旧实现复用 parse_animation_duration（非负把关）→ 简写里的负 delay 落到
+/// animation-name 分支失败 → 整条 shorthand 被丢弃。负 duration 仍被 longhand
+/// 解析（parse_animation_duration ≥0）拒绝，回退默认 0s，语义不受影响。
 fn is_time_value(s: &str) -> bool {
-    zero_css_parser::values::parse_animation_duration(s).is_some()
+    zero_css_parser::values::parse_time(s).is_some()
 }
 
 // https://drafts.csswg.org/css-transitions-1/#transition-property-property
@@ -303,6 +314,11 @@ fn parse_single_animation(entry: &str) -> Option<(String, String, String, String
         if is_time_value(t) {
             found_time_count += 1;
             if found_time_count == 1 {
+                // R3882：第一个时间位是 duration——非负（CSS Animations/Transitions：
+                // duration 负值非法）。is_time_value 放宽负号是为第二个位（delay）。
+                if zero_css_parser::values::parse_time(t).is_some_and(|secs| secs < 0.0) {
+                    return None;
+                }
                 duration = t.to_string();
             } else if found_time_count == 2 {
                 delay = t.to_string();
