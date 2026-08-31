@@ -1413,6 +1413,26 @@ const SERVICE_WORKER_BOOTSTRAP: &str = r#"
       this.clientId = init.clientId || '';
       this.resultingClientId = init.resultingClientId || '';
       this._respondWith = null;
+      this._handledSettled = false;
+      let handledResolve;
+      let handledReject;
+      // https://w3c.github.io/ServiceWorker/#dom-fetchevent-handled
+      Object.defineProperty(this, 'handled', {
+        value: new Promise(function(resolve, reject) {
+          handledResolve = resolve;
+          handledReject = reject;
+        }),
+        enumerable: true
+      });
+      this._settleHandled = function(succeeded, error) {
+        if (this._handledSettled) return;
+        this._handledSettled = true;
+        if (succeeded) {
+          handledResolve(undefined);
+        } else {
+          handledReject(error || new TypeError('FetchEvent handling failed'));
+        }
+      };
     }
     respondWith(value) {
       if (typeof this._respondWith !== 'function') {
@@ -1987,6 +2007,7 @@ const SERVICE_WORKER_BOOTSTRAP: &str = r#"
           result.response = null;
           result.settled = true;
           result.message = 'respondWith already called';
+          event._settleHandled(false, new DOMException('respondWith already called', 'InvalidStateError'));
           throw new DOMException('respondWith already called', 'InvalidStateError');
         }
         respondWithCalled = true;
@@ -2019,6 +2040,7 @@ const SERVICE_WORKER_BOOTSTRAP: &str = r#"
         result.response = null;
         result.settled = true;
         if (!result.message) result.message = String(error && error.message || error);
+        if (event && typeof event._settleHandled === 'function') event._settleHandled(!result.failed, error);
         return;
       }
     }
@@ -2030,6 +2052,9 @@ const SERVICE_WORKER_BOOTSTRAP: &str = r#"
         result.response = null;
         result.responded = false;
         result.message = 'FetchEvent default action was prevented without respondWith';
+        event._settleHandled(false, new TypeError(result.message));
+      } else {
+        event._settleHandled(true);
       }
       result.settled = true;
     }, function(error) {
@@ -2038,6 +2063,7 @@ const SERVICE_WORKER_BOOTSTRAP: &str = r#"
       result.responded = false;
       result.settled = true;
       result.message = String(error && error.message || error);
+      event._settleHandled(false, error);
     });
   };
 })();
@@ -7920,6 +7946,102 @@ mod tests {
                 ..
             } if message.contains("prevented without respondWith")
         ));
+    }
+
+    #[test]
+    fn fetch_event_handled_reports_final_fetch_settlement() {
+        let mut runtime = ServiceWorkerRuntime::new(test_config()).unwrap();
+        runtime
+            .evaluate(
+                "let port;
+                 addEventListener('message', event => { port = event.data.port; });
+                 addEventListener('fetch', event => {
+                   event.handled.then(
+                     () => port.postMessage('RESOLVED:' + new URL(event.request.url).search),
+                     () => port.postMessage('REJECTED:' + new URL(event.request.url).search));
+                   const search = new URL(event.request.url).search;
+                   if (search === '?prevent-default') {
+                     event.preventDefault();
+                   } else if (search === '?invalid-response') {
+                     event.respondWith(Promise.resolve('invalid response'));
+                   }
+                 });",
+                "https://example.test/sw.js",
+            )
+            .unwrap();
+        let _ = runtime.recv_timeout(Duration::from_secs(5)).unwrap();
+
+        runtime
+            .dispatch_message_with_ports(
+                25,
+                r#"{"port":{"__zwServiceWorkerTransferredPortIndex":0}}"#,
+                "client-1",
+                "https://example.test/page",
+                &ServiceWorkerMessagePorts {
+                    transferred_port_ids: vec![2],
+                    data_port_index: None,
+                    target_port_id: None,
+                },
+            )
+            .unwrap();
+        assert!(matches!(
+            runtime.recv_timeout(Duration::from_secs(5)).unwrap(),
+            ServiceWorkerEvent::MessageDispatched {
+                event_id: 25,
+                outbound,
+                ..
+            } if outbound.is_empty()
+        ));
+
+        for (event_id, query, expected) in [
+            (57, "", "\"RESOLVED:\""),
+            (58, "?prevent-default", "\"REJECTED:?prevent-default\""),
+            (59, "?invalid-response", "\"REJECTED:?invalid-response\""),
+        ] {
+            runtime
+                .dispatch_fetch(
+                    event_id,
+                    ServiceWorkerFetchRequest {
+                        url: format!("https://example.test/app/data{query}"),
+                        method: "GET".into(),
+                        headers: Vec::new(),
+                        body: None,
+                        credentials: None,
+                        client_id: Some("client-1".into()),
+                        resulting_client_id: None,
+                        referrer: None,
+                        is_reload_navigation: false,
+                        is_history_navigation: false,
+                    },
+                )
+                .unwrap();
+
+            let mut saw_fetch = false;
+            let mut saw_handled = false;
+            let deadline = std::time::Instant::now() + Duration::from_secs(5);
+            while !saw_fetch || !saw_handled {
+                match runtime.recv_timeout(deadline.saturating_duration_since(std::time::Instant::now())) {
+                    Ok(ServiceWorkerEvent::FetchSettled {
+                        event_id: settled_id,
+                        failed,
+                        ..
+                    }) if settled_id == event_id => {
+                        assert_eq!(failed, expected.contains("REJECTED"));
+                        saw_fetch = true;
+                    }
+                    Ok(ServiceWorkerEvent::ClientMessagesEmitted { outbound }) => {
+                        if outbound
+                            .iter()
+                            .any(|message| message.port_id == Some(2) && message.data_json == expected)
+                        {
+                            saw_handled = true;
+                        }
+                    }
+                    Ok(other) => panic!("unexpected runtime event: {other:?}"),
+                    Err(error) => panic!("runtime event timed out: {error}"),
+                }
+            }
+        }
     }
 
     #[test]
