@@ -10,8 +10,8 @@ import subprocess
 import sys
 from pathlib import Path
 
-EXPECTED_CASES = 14
-EXPECTED_SUBTESTS = 33
+EXPECTED_CASES = 17
+EXPECTED_SUBTESTS = 38
 
 
 def parse_args() -> argparse.Namespace:
@@ -79,7 +79,7 @@ def render_markdown(summary: dict) -> str:
         [
             "# Service Worker Fetch WPT Baseline",
             "",
-            "- Date: 2026-08-23",
+            "- Date: 2026-08-31",
             "- WPT revision: `04067ce9c7c2165e71ad7d0dde10a4c5cb394a83`",
             "- Additional WPT revision: `24197a11e8c5bd29a5cb7bdf18135a82be8a8546` "
             "for `fetch-event-within-sw.https.html`, "
@@ -99,7 +99,11 @@ def render_markdown(summary: dict) -> str:
             "",
             "## Scope",
             "",
-            "This pinned Service Worker M2 fetch/interception baseline covers fourteen cases. "
+            "This pinned Service Worker M2 fetch/interception baseline covers seventeen cases. "
+            "`fetch-on-the-right-interface.https.any.js` verifies that `fetch` is inherited "
+            "from `WorkerGlobalScope.prototype` rather than installed as an own property on "
+            "`ServiceWorkerGlobalScope`, and `historical.https.any.js` verifies that the "
+            "historical `FetchEvent.prototype.targetClientId` member is absent. "
             "`request-end-to-end.https.html` registers a real service worker, loads a "
             "controlled iframe, dispatches a FetchEvent, and validates the Request "
             "projection returned via `respondWith(new Response(...))`. "

@@ -793,6 +793,8 @@ pub const SERVICE_WORKER_CORE_CASES: &[&str] = &[
 
 /// Fixed Service Worker M2 fetch/interception corpus at the pinned WPT revision.
 pub const SERVICE_WORKER_FETCH_CASES: &[&str] = &[
+    "service-workers/service-worker/ServiceWorkerGlobalScope/fetch-on-the-right-interface.https.any.js",
+    "service-workers/service-worker/historical.https.any.js",
     "service-workers/service-worker/request-end-to-end.https.html",
     "service-workers/service-worker/fetch-event-add-async.https.html",
     "service-workers/service-worker/fetch-event-async-respond-with.https.html",
@@ -1402,6 +1404,10 @@ fn run_service_worker_case_set(
         .into_iter()
         .map(|path| {
             let results = match std::fs::read_to_string(wpt_root.join(path)) {
+                Ok(source) if path.ends_with(".https.any.js") => {
+                    let html = service_worker_any_js_wrapper(path, &source);
+                    run_testharness_html(wpt_root, path, &html, &harness_source, CASE_TIMEOUT)
+                }
                 Ok(source) => run_testharness_html(wpt_root, path, &source, &harness_source, CASE_TIMEOUT),
                 Err(error) => vec![HarnessSubtestResult {
                     name: "load Service Worker WPT case".into(),
@@ -1438,6 +1444,36 @@ fn any_js_window_wrapper(path: &str, support: &[(&str, &str)], case_source: &str
          <script src=\"/resources/testharnessreport.js\"></script>\
          <script>{source}</script>"
     )
+}
+
+fn service_worker_any_js_wrapper(path: &str, case_source: &str) -> String {
+    let timeout_meta = if wpt_js_has_long_timeout(case_source) {
+        "<meta name=\"timeout\" content=\"long\">"
+    } else {
+        ""
+    };
+    let script = serde_json::to_string(&format!("/{path}")).unwrap_or_else(|_| "\"\"".into());
+    let scope = serde_json::to_string(&format!("/{path}.scope/")).unwrap_or_else(|_| "\"\"".into());
+    let description = serde_json::to_string(path).unwrap_or_else(|_| "\"Service Worker any.js\"".into());
+    format!(
+        "<!doctype html><meta charset=\"utf-8\">{timeout_meta}\
+         <script src=\"/resources/testharness.js\"></script>\
+         <script src=\"/resources/testharnessreport.js\"></script>\
+         <script>\
+         promise_test(async function(test) {{\
+           const registration = await navigator.serviceWorker.register({script}, {{scope: {scope}}});\
+           test.add_cleanup(function() {{ return registration.unregister(); }});\
+           const worker = registration.installing || registration.waiting || registration.active;\
+           assert_true(!!worker, 'registration exposes a worker');\
+           await fetch_tests_from_worker(worker);\
+         }}, {description});\
+         </script>"
+    )
+}
+
+fn service_worker_any_js_source(case_source: &str) -> String {
+    let case_source = apply_wpt_substitutions(case_source);
+    format!("importScripts('/resources/testharness.js');\n{case_source}")
 }
 
 fn wpt_js_has_long_timeout(source: &str) -> bool {
@@ -2111,6 +2147,8 @@ fn wpt_data_service_worker_script_fetcher(
                 .replace("{{ports[https][0]}}", "443");
             if clean.ends_with("/script-tests/cache-abort.js") {
                 format!("{CACHE_ABORT_FETCH_FIXTURE}\n{source}").into_bytes()
+            } else if clean.ends_with(".https.any.js") {
+                service_worker_any_js_source(&source).into_bytes()
             } else {
                 source.into_bytes()
             }
@@ -3585,8 +3623,12 @@ async_test(function(test) {
             .iter()
             .copied()
             .collect::<std::collections::BTreeSet<_>>();
-        assert_eq!(SERVICE_WORKER_FETCH_CASES.len(), 15);
-        assert_eq!(unique.len(), 15);
+        assert_eq!(SERVICE_WORKER_FETCH_CASES.len(), 17);
+        assert_eq!(unique.len(), 17);
+        assert!(SERVICE_WORKER_FETCH_CASES.contains(
+            &"service-workers/service-worker/ServiceWorkerGlobalScope/fetch-on-the-right-interface.https.any.js"
+        ));
+        assert!(SERVICE_WORKER_FETCH_CASES.contains(&"service-workers/service-worker/historical.https.any.js"));
         assert!(SERVICE_WORKER_FETCH_CASES.contains(&"service-workers/service-worker/request-end-to-end.https.html"));
         assert!(
             SERVICE_WORKER_FETCH_CASES.contains(&"service-workers/service-worker/fetch-event-add-async.https.html")
@@ -3820,6 +3862,31 @@ async_test(function(test) {
             br#"echo1 = "a value";
 "#
         );
+    }
+
+    #[test]
+    fn service_worker_fixture_fetcher_wraps_any_js_with_worker_harness() {
+        let nonce = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let root = std::env::temp_dir().join(format!("zero-wpt-runner-any-js-{}-{nonce}", std::process::id()));
+        let case_path = root
+            .join("service-workers/service-worker/ServiceWorkerGlobalScope/fetch-on-the-right-interface.https.any.js");
+        std::fs::create_dir_all(case_path.parent().unwrap()).unwrap();
+        std::fs::write(&case_path, "test(() => {}, 'worker side');\n").unwrap();
+
+        let fetcher = wpt_data_service_worker_script_fetcher(&root).unwrap();
+        let response = fetcher(
+            "https://wpt.test/page",
+            "https://wpt.test/service-workers/service-worker/ServiceWorkerGlobalScope/fetch-on-the-right-interface.https.any.js",
+        )
+        .unwrap();
+        let source = String::from_utf8(response.body).unwrap();
+        assert!(source.starts_with("importScripts('/resources/testharness.js');\n"));
+        assert!(source.contains("test(() => {}, 'worker side');"));
+
+        std::fs::remove_dir_all(&root).unwrap();
     }
 
     #[test]

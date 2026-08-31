@@ -1676,7 +1676,7 @@ const SERVICE_WORKER_BOOTSTRAP: &str = r#"
     }
     return Promise.resolve();
   };
-  globalThis.fetch = function(input, init) {
+  function workerGlobalFetch(input, init) {
     let request;
     try {
       request = new Request(input, init);
@@ -1731,7 +1731,13 @@ const SERVICE_WORKER_BOOTSTRAP: &str = r#"
         }
       }
     });
-  };
+  }
+  // https://fetch.spec.whatwg.org/#fetch-method
+  Object.defineProperty(WorkerGlobalScope.prototype, 'fetch', {
+    value: workerGlobalFetch,
+    configurable: true,
+    writable: true
+  });
   class Clients {
     // https://w3c.github.io/ServiceWorker/#clients-get
     get(id) {
@@ -4507,6 +4513,26 @@ mod tests {
             .evaluate(
                 "if (!(self instanceof ServiceWorkerGlobalScope)) throw new Error('missing service worker brand');
                  if (!(self instanceof WorkerGlobalScope)) throw new Error('missing worker brand');",
+                "https://example.test/sw.js",
+            )
+            .unwrap();
+        assert!(matches!(
+            runtime.recv_timeout(Duration::from_secs(5)).unwrap(),
+            ServiceWorkerEvent::Evaluated { .. }
+        ));
+    }
+
+    #[test]
+    fn fetch_lives_on_worker_global_scope_prototype() {
+        let mut runtime = ServiceWorkerRuntime::new(test_config()).unwrap();
+        runtime
+            .evaluate(
+                "if (self.hasOwnProperty('fetch')) throw new Error('fetch is an own property');
+                 const workerProto = Object.getPrototypeOf(Object.getPrototypeOf(self));
+                 if (!Object.prototype.hasOwnProperty.call(workerProto, 'fetch')) {
+                   throw new Error('WorkerGlobalScope.prototype missing fetch');
+                 }
+                 if (self.fetch !== workerProto.fetch) throw new Error('fetch identity mismatch');",
                 "https://example.test/sw.js",
             )
             .unwrap();
