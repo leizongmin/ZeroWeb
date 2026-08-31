@@ -3953,12 +3953,20 @@
   globalThis.Image = globalThis.Image || Image;
 
   // `new Audio([src])`（HTMLAudioElement 构造器，R2835）——音效/播客/通知音频构造高频（`new Audio(url).play()`）。
-  // 返 createElement('audio') proxy（镜像 Image R2834），设 src；允许 new 与无 new。headless 无音频设备——
-  // play/pause/load 为 no-op（play 返 resolved Promise，spec），经下方 HTMLMediaElement 方法桩。`instanceof
+  // 返 createElement('audio') proxy（镜像 Image R2834），设 src；**无 new 调用抛 TypeError**
+  //（spec WebIDL constructor 语义——WPT the-audio-element/audio_constructor 断言面）；设
+  // preload='auto'（spec「The Audio() constructor must set the preload attribute to auto」）。
+  // headless 无音频设备——play/pause/load 语义桩见 part03 媒体方法段。`instanceof
   // Audio`=false（shim 返 Proxy，同 Image/Option 谱，documented）。
+  // https://html.spec.whatwg.org/multipage/media.html#dom-audio
   function Audio(src) {
+    if (!new.target && (!this || this.constructor !== Audio)) {
+      throw new globalThis.TypeError("Failed to construct 'Audio': Please use the 'new' operator, this DOM object constructor cannot be called as a function.");
+    }
     var el = globalThis.document.createElement('audio');
-    if (src !== undefined) { try { el.setAttribute('src', String(src)); } catch (_e) {} }
+    try { el.setAttribute('preload', 'auto'); } catch (_eAP) {}
+    if (src !== undefined && src !== null) { try { el.setAttribute('src', String(src)); } catch (_e) {} }
+    else if (src === null) { try { el.setAttribute('src', 'null'); } catch (_eAS) {} }
     return el;
   }
   globalThis.Audio = globalThis.Audio || Audio;

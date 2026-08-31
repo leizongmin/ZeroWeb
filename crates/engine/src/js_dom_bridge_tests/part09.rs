@@ -343,11 +343,16 @@ fn test_audio_constructor_and_media_methods_r2835() {
         "div 无 play（gate 仅 AUDIO/VIDEO）"
     );
 
-    // 无 new 调用亦返 audio proxy。
+    // 无 new 调用抛 TypeError（media-elements M3 扩批 III spec 纠正——WebIDL constructor
+    // 语义；WPT the-audio-element/audio_constructor「Calling Audio should throw」断言面。
+    // 旧断言「无 new 亦返 proxy」与 spec 冲突，随 audio_constructor 用例导入一并修正）。
+    sandbox
+        .execute("try { Audio(); globalThis.__callNoNew = 'no-throw'; } catch (err) { globalThis.__callNoNew = err.name; }")
+        .unwrap();
     assert_eq!(
-        sandbox.execute("String(Audio().tagName)").unwrap().value,
-        "AUDIO",
-        "Audio() 无 new 亦返 AUDIO proxy"
+        sandbox.execute("String(globalThis.__callNoNew)").unwrap().value,
+        "TypeError",
+        "Audio() 无 new 抛 TypeError（spec WebIDL constructor 语义）"
     );
 }
 
@@ -3015,5 +3020,128 @@ fn test_media_source_child_and_error_code_r391() {
         sandbox.execute("String(globalThis.__e2.error instanceof MediaError)").unwrap().value,
         "true",
         "error 为 MediaError 实例"
+    );
+}
+
+#[test]
+fn test_media_volume_muted_semantics_r392() {
+    // media-elements M3 扩批 III：volume/muted IDL setter spec 语义——
+    // ① 非有限 volume → TypeError（spec dom-media-volume 步 2）；
+    // ② 同值写入不派 volumechange（spec：状态变更才 queued）；
+    // ③ muted IDL setter 现值读法 = dirty 优先/attr presence 回落（attr 已设时
+    //    `e.muted = true` 值未变不派）；
+    // ④ load() 清除 queued volumechange（spec dom-media-load「pending events 丢弃」）。
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new("<html><body></body></html>".to_string()));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("https://wpt.test/t.html".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+
+    // runner timer stub（prepare_harness_html 同构）。
+    sandbox.execute(
+        "globalThis.__zw_pending = {}; globalThis.__zw_timers = [];\
+         globalThis.__zw_setTimeout = function(id, delay) {\
+           globalThis.__zw_timers.push({ id: id, at: Date.now() + (delay | 0) }); };\
+         globalThis.__zw_fire_due_timers = function() {\
+           var now = Date.now(); var rest = [], due = [];\
+           var timers = globalThis.__zw_timers || [];\
+           for (var i = 0; i < timers.length; i++) {\
+             if (timers[i].at <= now) due.push(timers[i]); else rest.push(timers[i]); }\
+           globalThis.__zw_timers = rest;\
+           for (var d = 0; d < due.length; d++) {\
+             var fn = globalThis.__zw_pending[due[d].id];\
+             if (fn) { delete globalThis.__zw_pending[due[d].id]; try { fn(); } catch (_e) {} } } };",
+    ).unwrap();
+
+    // ① 非有限 volume → TypeError；合法值 clamp [0,1]。
+    sandbox.execute(
+        "globalThis.__r = [];\
+         var e = document.createElement('audio');\
+         globalThis.__e = e;\
+         try { e.volume = NaN; __r.push('NaN:no-throw'); } catch (err) { __r.push('NaN:' + err.name); }\
+         try { e.volume = Infinity; __r.push('Inf:no-throw'); } catch (err) { __r.push('Inf:' + err.name); }\
+         e.volume = 2; __r.push('clamp:' + e.volume);\
+         e.volume = -1; __r.push('negclamp:' + e.volume);",
+    ).unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__r.join(',')").unwrap().value,
+        "NaN:TypeError,Inf:TypeError,clamp:1,negclamp:0",
+        "volume 非有限抛 TypeError + 合法值 clamp"
+    );
+
+    // ② muted IDL setter：attr 已设时同值写入不派事件；值变才派（deferred）。
+    sandbox.execute(
+        "var e2 = document.createElement('audio');\
+         e2.setAttribute('muted', '');\
+         var n2 = 0;\
+         e2.onvolumechange = function () { n2++; };\
+         e2.muted = true;\
+         globalThis.__sameSet = n2;\
+         e2.muted = false;\
+         globalThis.__beforePump = n2;\
+         globalThis.__zw_fire_due_timers();\
+         globalThis.__afterPump = n2;",
+    ).unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__sameSet)").unwrap().value,
+        "0",
+        "attr 已设时 muted=true 值未变不派 volumechange"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__beforePump)").unwrap().value,
+        "0",
+        "volumechange deferred（赋值同步点不派）"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__afterPump)").unwrap().value,
+        "1",
+        "定时器泵后 volumechange 派发 1 次"
+    );
+
+    // ③ load() 清除 queued volumechange。
+    sandbox.execute(
+        "var e3 = document.createElement('video');\
+         var n3 = 0;\
+         e3.volume = 0.5;\
+         e3.load();\
+         e3.onvolumechange = function () { n3++; };\
+         globalThis.__zw_fire_due_timers();\
+         globalThis.__n3 = n3;",
+    ).unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__n3)").unwrap().value,
+        "0",
+        "load() 清除 queued volumechange"
+    );
+
+    // ④ Audio 构造器 spec 面：preload='auto' + 无 new 抛 TypeError。
+    sandbox.execute(
+        "var a4 = new Audio('x.mp3');\
+         globalThis.__a4 = [a4.tagName, a4.getAttribute('preload'), a4.getAttribute('src')].join(',');\
+         try { Audio(); globalThis.__callErr = 'no-throw'; } catch (err) { globalThis.__callErr = err.name; }\
+         try { HTMLAudioElement(); globalThis.__ifaceErr = 'no-throw'; } catch (err) { globalThis.__ifaceErr = err.name; }",
+    ).unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__a4)").unwrap().value,
+        "AUDIO,auto,x.mp3",
+        "new Audio(src) 设 preload=auto + src 反射"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__callErr)").unwrap().value,
+        "TypeError",
+        "Audio() 无 new 抛 TypeError"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__ifaceErr)").unwrap().value,
+        "TypeError",
+        "HTMLAudioElement() 无 new 抛 TypeError"
     );
 }

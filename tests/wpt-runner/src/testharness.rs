@@ -1309,6 +1309,8 @@ pub const MEDIA_TEST_FILES: &[&str] = &[
     "html/semantics/embedded-content/media-elements/event_playing_noautoplay.html",
     "html/semantics/embedded-content/media-elements/event_progress.html",
     "html/semantics/embedded-content/media-elements/event_progress_noautoplay.html",
+    "html/semantics/embedded-content/media-elements/event_volumechange.html",
+    "html/semantics/embedded-content/media-elements/volume_nonfinite.html",
     "html/semantics/embedded-content/media-elements/event_timeupdate.html",
     "html/semantics/embedded-content/media-elements/event_timeupdate_noautoplay.html",
     "html/semantics/embedded-content/media-elements/error-codes/error.html",
@@ -1316,6 +1318,9 @@ pub const MEDIA_TEST_FILES: &[&str] = &[
     "html/semantics/embedded-content/media-elements/interfaces/HTMLElement/HTMLMediaElement/addTextTrack.html",
     "html/semantics/embedded-content/media-elements/interfaces/HTMLElement/HTMLMediaElement/crossOrigin.html",
     "html/semantics/embedded-content/media-elements/interfaces/HTMLElement/HTMLMediaElement/textTracks.html",
+    // M3 扩批 III：the-audio-element 反射面（Audio 构造器 spec 语义——preload=auto +
+    // 无 new TypeError + HTMLAudioElement illegal-constructor 调用面）。
+    "html/semantics/embedded-content/the-audio-element/audio_constructor.html",
     "html/semantics/embedded-content/media-elements/interfaces/HTMLElement/HTMLTrackElement/default.html",
     "html/semantics/embedded-content/media-elements/interfaces/HTMLElement/HTMLTrackElement/kind.html",
     "html/semantics/embedded-content/media-elements/interfaces/HTMLElement/HTMLTrackElement/label.html",

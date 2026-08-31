@@ -69,6 +69,10 @@ fetch_dir() {
 # 扩展名——headless 语义层不真解码，URL 仅作字符串断言面）。
 fetch_raw "common/media.js"
 
+# the-audio-element 反射面（M3 扩批 III：Audio 构造器 spec 语义——preload=auto +
+# 无 new TypeError；兄弟目录，路径前缀同级）。
+fetch_raw "html/semantics/embedded-content/the-audio-element/audio_constructor.html"
+
 # 主目录顶层 testharness 白名单（语义面非解码面）。
 # media-elements M3 扩批（event_* 族——M2 headless 加载序列落地后事件断言可跑；
 # 上游用例断言 loadstart/progress/loadedmetadata/loadeddata/canplay/canplaythrough/
@@ -99,6 +103,8 @@ TOP_FILES=(
   "event_timeupdate_noautoplay.html"
   "event_progress.html"
   "event_progress_noautoplay.html"
+  "event_volumechange.html"
+  "volume_nonfinite.html"
   "mime-types/canPlayType.html"
   "error-codes/error.html"
   "src_reflects_attribute_not_source_elements.html"

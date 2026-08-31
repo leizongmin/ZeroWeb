@@ -2,17 +2,39 @@
         } else if (p === 'currentTime' || p === 'playbackRate' || p === 'defaultPlaybackRate' || p === 'volume') {
           // media-elements M1 切片 3：HTMLMediaElement 播放状态 setter——per-element
           // `_mediaState` 镜像（get trap 同源读回）。仅 AUDIO/VIDEO。volume clamp [0,1]
-          //（spec「volume must be clamped」，静默 clamp 非 throw——spec IndexSizeError 仅
-          // 非有限数值，这里 NaN/Infinity 亦 clamp 边界）；currentTime/playbackRate 数值化。
-          // ratechange 事件派发 defer（headless 无播放时钟，事件序列面 M2 接）。
+          //（spec「volume must be clamped」）；非有限数值 → TypeError（spec `dom-media-volume`
+          // 步 2——volume_nonfinite 断言面）；同值写入不派 volumechange（spec：state 变更
+          // 才 queued「fire an event named volumechange」——event_volumechange 断言面）。
+          // currentTime/playbackRate 数值化；ratechange 事件派发 defer（headless 无播放时钟）。
           var _mt = _realTag(sel, handle);
           if (_mt === 'AUDIO' || _mt === 'VIDEO') {
             var _mst = _mediaState[key] || (_mediaState[key] = {});
             var _mv = Number(value);
             if (p === 'volume') {
-              if (isNaN(_mv)) _mv = 1;
-              _mst.volume = _mv < 0 ? 0 : (_mv > 1 ? 1 : _mv);
-              _mediaFireSel(sel, handle, key, 'volumechange');
+              // https://html.spec.whatwg.org/multipage/media.html#dom-media-volume
+              if (isNaN(_mv) || _mv === Infinity || _mv === -Infinity) {
+                throw new globalThis.TypeError(
+                  "Failed to set the 'volume' property on 'HTMLMediaElement': The volume provided is outside the range [0, 1].");
+              }
+              var _nv = _mv < 0 ? 0 : (_mv > 1 ? 1 : _mv);
+              if ((_mst.volume != null ? _mst.volume : 1) === _nv) return true; // 同值不派事件
+              _mst.volume = _nv;
+              // spec：volumechange 走 media element task source（queued，非同步派发）——
+              // 同一 turn 内后注册的 onvolumechange 也须收到（event_volumechange
+              // 「repeatedly fires」断言面：4 次赋值后才挂 handler）。setTimeout(0) defer；
+              // pending 标记入 _mediaState[key].pendingVc——load() 清除之（spec dom-media-load
+              // 「queued tasks and pending events 被丢弃」；load-removes-queued-error-event
+              // 同族语义，event_volumechange「before load will not fire」断言面）。
+              _mst.pendingVc = (_mst.pendingVc || 0) + 1;
+              var _vcFire = function () {
+                var _vcMs = _mediaState[key];
+                if (_vcMs && _vcMs.pendingVc > 0) {
+                  _vcMs.pendingVc--;
+                  _mediaFireSel(sel, handle, key, 'volumechange');
+                }
+              };
+              if (typeof setTimeout === 'function') setTimeout(_vcFire, 0);
+              else _vcFire();
             } else if (p === 'playbackRate') {
               if (isNaN(_mv)) _mv = 1;
               _mst.playbackRate = _mv;
@@ -51,6 +73,48 @@
             } else if (!handle && typeof __zw_remove_attr === 'function') {
               __zw_remove_attr(sel, 'muted'); moAttr = 'muted';
             }
+          }
+        } else if (p === 'muted' && (_realTag(sel, handle) === 'AUDIO' || _realTag(sel, handle) === 'VIDEO')) {
+          // media-elements M3 扩批 III：`media.muted = x` IDL setter——boolean 反射 `muted`
+          // 属性 + 音频状态变更 → volumechange（spec：muted state 变更 queued volumechange；
+          // event_volumechange 断言面。同值短路——「setting to the same value does not fire」）。
+          // 现值读法与 getter 同源：dirty 镜像优先，未写回落 attr presence（spec：IDL setter
+          // 与 IDL getter 比对——attr 已设时 `e.muted = true` 值未变不派事件；content attribute
+          // 变更本身永不派 volumechange）。getter 走 part04 的 muted 分支（dirty 优先/attr 回落）。
+          // https://html.spec.whatwg.org/multipage/media.html#dom-media-muted
+          var _muTag = _realTag(sel, handle);
+          var _muKey = _elKey(sel, handle);
+          var _muMs = _mediaState[_muKey];
+          var _muAttr = (handle ? __zw_has_attr_handle(handle, 'muted')
+            : (typeof __zw_has_attr_lw === 'function' ? __zw_has_attr_lw(sel, 'muted') : __zw_has_attr(sel, 'muted'))) === '1';
+          var _muCur = (_muMs && _muMs.muted !== undefined) ? !!_muMs.muted : _muAttr;
+          var _muNow = !!value;
+          if (_muCur !== _muNow) {
+            // 属性反射面（attr presence 恒同步——IDL muted= 与 content attribute 独立，
+            // spec：IDL setter 不改 content attribute，这里同步写attr保持反射面一致 +
+            // R3040 attr getter 面兼容（dirty 未锚定时的读回落）。
+            if (_muNow) {
+              if (handle) __zw_set_attr_handle(handle, 'muted', '');
+              else { __zw_set_attr(sel, 'muted', ''); moAttr = 'muted'; }
+            } else if (handle && typeof __zw_remove_attr_handle === 'function') {
+              __zw_remove_attr_handle(handle, 'muted');
+            } else if (!handle && typeof __zw_remove_attr === 'function') {
+              __zw_remove_attr(sel, 'muted'); moAttr = 'muted';
+            }
+            _muMs = _mediaState[_muKey] || (_mediaState[_muKey] = {});
+            _muMs.muted = _muNow;
+            // spec：volumechange queued（media element task source）——defer 同 volume=；
+            // pendingVc 标记使 load() 可清除（同 volume= 分支注释）。
+            _muMs.pendingVc = (_muMs.pendingVc || 0) + 1;
+            var _muFire = function () {
+              var _vcMs = _mediaState[_muKey];
+              if (_vcMs && _vcMs.pendingVc > 0) {
+                _vcMs.pendingVc--;
+                _mediaFireSel(sel, handle, _muKey, 'volumechange');
+              }
+            };
+            if (typeof setTimeout === 'function') setTimeout(_muFire, 0);
+            else _muFire();
           }
         } else if (p === 'crossOrigin') {
           // `media.crossOrigin = x`——enumerated 反射 setter：null → removeAttribute；
@@ -436,7 +500,7 @@
             || prop === 'nextElementSibling'
             // media-elements M1 切片 3：HTMLMediaElement/HTMLTrackElement IDL 属性 `in` 可见性
             //（WPT crossOrigin.html 首断言 `'crossOrigin' in video`——has 白名单缺列使恒 false）。
-            || prop === 'crossOrigin' || prop === 'defaultMuted'
+            || prop === 'crossOrigin' || prop === 'defaultMuted' || prop === 'muted'
             || prop === 'currentTime' || prop === 'duration' || prop === 'playbackRate'
             || prop === 'defaultPlaybackRate' || prop === 'volume' || prop === 'seeking'
             || prop === 'paused' || prop === 'ended' || prop === 'preload'

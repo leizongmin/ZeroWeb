@@ -2,8 +2,8 @@
 
 **入口文档**: [../media-elements.md](../media-elements.md)
 **创建日期**: 2026-08-17（goal 拆分 bootstrap）
-**最后更新**: 2026-09-01（M3 扩批两批落地——event_* 族 25 用例 84.0%→88.3%；source-child
-资源选择触发 + 空 src error 码 + source.src URL 绝对化 → **89.1%，Fail/Timeout 双清零**）
+**最后更新**: 2026-09-01（M3 扩批 III 落地——volume/muted IDL setter spec 语义 + Audio
+构造器 spec 面 + 导入 3 用例 → **90.0%**，58 用例 Fail/Timeout 双清零）
 
 ---
 
@@ -64,6 +64,27 @@ already-playing resolved 断言。**88.3%**（324P/0F/2T/41PF，+80 subtest 全�
 单测 `test_media_source_child_and_error_code_r391`。**89.1%**（334P/0F/**0T**/41PF，
 +10 subtest 全绿，Timeout 清零）。evidence：`evidence/2026-09-01-media-source-child.json`。
 
+**M3 扩批 III 已落地（2026-09-01，volume/muted + Audio 构造器）**：
+- **volume IDL setter spec 语义**（part05）：非有限数值 → TypeError（spec dom-media-volume
+  步 2，volume_nonfinite 断言面）；同值短路不派事件；volumechange 改 **queued** 派发
+  （media element task source——同 turn 内后注册 handler 也收到，event_volumechange
+  「repeatedly fires」断言面）；`_mediaState[key].pendingVc` 标记 + **load() 清除**
+  （spec dom-media-load「pending events 丢弃」——「before load will not fire」断言面）。
+- **volume getter 缺省守卫**（part04）：`_mediaState` entry 可被 muted setter 先建
+  （volume 字段未写）→ `!= null` 守卫防 undefined 漏出（1-volume=NaN→TypeError）。
+- **muted IDL setter + getter**（part04/part05）：setter 增分支（此前落 expando 吞）——
+  现值读法与 getter 同源（dirty 镜像优先/attr presence 回落，attr 已设时 `e.muted=true`
+  值未变不派）；值变 → attr 反射同步 + queued volumechange；has-trap 白名单补 'muted'。
+- **Audio 构造器 spec 面**（part02/part01b/part03）：设 preload='auto'（spec dom-audio）+
+  无 new 调用抛 TypeError（WebIDL constructor 语义）；HTMLAudioElement 接口构造器
+  Illegal constructor + prototype 链补接（audio_constructor 断言面 11 subtest 全绿）。
+- R2835 旧断言「Audio() 无 new 亦返 proxy」与 spec 冲突——随用例导入一并修正。
+- 导入 volume_nonfinite.html / event_volumechange.html / the-audio-element/
+  audio_constructor.html（fetch 脚本 + MEDIA_TEST_FILES 同步）。
+- 单测 `test_media_volume_muted_semantics_r392`（6 断言组）。**90.0%**
+  （369P/0F/0T/41PF，+35 新通过 0 回归）。evidence：
+  `evidence/2026-09-01-media-volume-audio.json`。
+
 **与兄弟 goal 的边界**：
 - media-playback — 解码/帧渲染归其管（RFC 门控）；本目标的 readyState 真实驱动源由其
   供给（接口契约记录于两流 master.md）
@@ -92,7 +113,7 @@ already-playing resolved 断言。**88.3%**（324P/0F/2T/41PF，+80 subtest 全�
 
 | # | 缺口 | 状态 | 失败聚类 |
 |---|------|------|----------|
-| M1g | WPT media-elements 用例覆盖 | ✅ 55 用例已导入（含 event_* 族 25），**89.1%** | — |
+| M1g | WPT media-elements 用例覆盖 | ✅ 58 用例已导入（含 event_* 族 25 + volume/Audio 构造器面），**90.0%** | — |
 | M2g | load 算法 + 状态机（事件序列派发） | ✅ M2 落地（13T→**0T**） | F4 闭合 |
 | M3g | 事件序列 headless 近似驱动 | ✅（同 M2g；source-child 触发已落地） | F4 闭合 |
 | M4g-a | 媒体元数据 IDL 反射（初值面） | ✅ 切片 3 落地 | F2 闭合（-9 Fail） |
@@ -102,9 +123,9 @@ already-playing resolved 断言。**88.3%**（324P/0F/2T/41PF，+80 subtest 全�
 
 ## 下一步计划
 
-1. **扩大导入面（下一轮首选）**：the-video-element/the-audio-element 反射面用例 +
-   media-elements 剩余可跑子目录（ready network/seeking 面视语义支撑情况）→ 扩大基线
-   盘子并暴露下一层缺口。media-elements 主目录语义面已基本覆盖（Fail/Timeout 双清零）。
+1. **扩大导入面（下一轮首选）**：the-video-element 反射面（video-tabindex / video_crash_empty_src
+   等）+ media-elements 剩余可跑面（loading-the-media-resource 的 resource-selection
+   pointer 族——依赖真网络 fetch 判定，视 mutation 面支撑情况）→ 扩大基线盘子。
 2. **M4g-d**：canPlayType 能力表等 media-playback M0 选型落地后联动更新（跨 goal 依赖）。
 
 ## 里程碑状态
@@ -127,8 +148,10 @@ already-playing resolved 断言。**88.3%**（324P/0F/2T/41PF，+80 subtest 全�
   **179/245 = 73.1%** → M2 **214/245 = 79.6%** → M3 **226/245 = 84.0%**（Fail 0 /
   Timeout 2 / PF 41）→ M3 扩批（2026-09-01，event_* 族）**324/367 = 88.3%**
   → 扩批第二批（同日，source-child + error 码）**334/375 = 89.1%**
+  → 扩批 III（同日，volume/muted + Audio 构造器）**369/410 = 90.0%**
   （Fail 0 / **Timeout 0** / PF 41）
 - 入口：`make testharness-media`（FILTER 透传，`--json` 捕获 evidence）
 - 质量门禁：`cargo fmt` + `cargo clippy --workspace --all-targets -- -D warnings` 全过
 - evidence：`evidence/2026-08-31-media-baseline.md`（+ 同名 .json 机读版）、
-  `evidence/2026-09-01-media-event-family.json`、`evidence/2026-09-01-media-source-child.json`
+  `evidence/2026-09-01-media-event-family.json`、`evidence/2026-09-01-media-source-child.json`、
+  `evidence/2026-09-01-media-volume-audio.json`

@@ -1,6 +1,12 @@
   // FR-009：媒体资源状态接口常量。元素 proxy 的实例读由 get trap 提供；构造器仅暴露
   // Web IDL 静态常量，MediaError 实例用于失败状态。
   function HTMLMediaElement() { throw new TypeError('Illegal constructor'); }
+  // HTMLAudioElement：接口构造器（spec：无 new 调用抛 TypeError——WPT audio_constructor
+  // 断言面；实例经 `new Audio(src)` 工厂产出）。globalThis 守卫幂等，位于 part03 的
+  // _zwHtmlElementIfaces 循环之前（`if (!globalThis[...])` 跳过既有定义）。
+  // https://html.spec.whatwg.org/multipage/media.html#dom-audio
+  function HTMLAudioElement() { throw new TypeError('Illegal constructor'); }
+  globalThis.HTMLAudioElement = globalThis.HTMLAudioElement || HTMLAudioElement;
   HTMLMediaElement.NETWORK_EMPTY = 0; HTMLMediaElement.NETWORK_IDLE = 1;
   HTMLMediaElement.NETWORK_LOADING = 2; HTMLMediaElement.NETWORK_NO_SOURCE = 3;
   HTMLMediaElement.HAVE_NOTHING = 0; HTMLMediaElement.HAVE_METADATA = 1;

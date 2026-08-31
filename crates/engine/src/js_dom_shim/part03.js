@@ -849,6 +849,10 @@
       globalThis[_zn].prototype = (_zn === 'HTMLElement')
         ? globalThis.HTMLElement.prototype
         : Object.create(globalThis.HTMLElement.prototype);
+    } else if (_zn === 'HTMLAudioElement' && !globalThis[_zn].prototype) {
+      // media-elements M3 扩批 III：HTMLAudioElement 已由 part01b 定义（Illegal constructor），
+      // 此处补 prototype 链（→ HTMLElement.prototype，同占位 ctor 形态——instanceof 面依赖）。
+      globalThis[_zn].prototype = Object.create(globalThis.HTMLElement.prototype);
     }
   }
   // R290（js-dom M4）：接口原型的 **constructor 自反属性**（spec WebIDL「interface
@@ -11364,7 +11368,16 @@
           };
         }
         if (prop === 'load' && (_realTag(sel, handle) === 'AUDIO' || _realTag(sel, handle) === 'VIDEO')) {
-          return function () {};
+          // media-elements M3 扩批 III：load() 语义——spec `dom-media-load` 同步段「queued
+          // tasks and pending events 被丢弃」。headless：清 pendingVc（volumechange deferred
+          // 队列，volume=/muted= setter 派发标记）——event_volumechange「before load will
+          // not fire」断言面；load-removes-queued-error-event.html 同族语义。
+          // https://html.spec.whatwg.org/multipage/media.html#dom-media-load
+          return function () {
+            var _ldKey = _elKey(sel, handle);
+            var _ldMs = _mediaState[_ldKey];
+            if (_ldMs) _ldMs.pendingVc = 0;
+          };
         }
         if (prop === 'canPlayType' && (_realTag(sel, handle) === 'AUDIO' || _realTag(sel, handle) === 'VIDEO')) {
           return function () { return ''; };

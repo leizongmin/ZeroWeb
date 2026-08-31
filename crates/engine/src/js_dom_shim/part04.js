@@ -132,9 +132,11 @@
           var _ms = _mediaState[key];
           if (prop === 'currentTime') return _ms ? _ms.currentTime : 0;
           if (prop === 'duration') return (_ms && _ms.duration != null) ? _ms.duration : NaN;
-          if (prop === 'playbackRate') return _ms ? _ms.playbackRate : 1;
-          if (prop === 'defaultPlaybackRate') return _ms ? _ms.defaultPlaybackRate : 1;
-          if (prop === 'volume') return _ms ? _ms.volume : 1;
+          if (prop === 'playbackRate') return (_ms && _ms.playbackRate != null) ? _ms.playbackRate : 1;
+          if (prop === 'defaultPlaybackRate') return (_ms && _ms.defaultPlaybackRate != null) ? _ms.defaultPlaybackRate : 1;
+          // volume：缺省 1（spec）；`_mediaState` entry 可由 muted setter 先建（volume 字段
+          // 尚未写）——`!= null` 守卫防 undefined 漏出（1 - volume = NaN → setter TypeError）。
+          if (prop === 'volume') return (_ms && _ms.volume != null) ? _ms.volume : 1;
           if (prop === 'seeking') return _ms ? !!_ms.seeking : false; // HAVE_NOTHING 无 seek（spec：无可 seek 媒体恒 false）
           // src IDL getter：URL 属性——反射 + base 解析为绝对 URL（同 a.href / track.src 语义）。
           if (prop === 'src') {
@@ -146,6 +148,12 @@
           }
           if (prop === 'paused') return _ms ? !_ms.playing : true;
           if (prop === 'ended') return _ms ? !!_ms.ended : false;
+          // muted IDL getter：dirty 态镜像优先（IDL muted= setter 写 `_mediaState.muted`），
+          // 未写回落 attr presence（spec：muted content attribute 设初始 defaultMuted 态）。
+          if (prop === 'muted') {
+            if (_ms && _ms.muted !== undefined) return !!_ms.muted;
+            return (handle ? __zw_has_attr_handle(handle, 'muted') : (typeof __zw_has_attr_lw === 'function' ? __zw_has_attr_lw(sel, 'muted') : __zw_has_attr(sel, 'muted'))) === '1';
+          }
           if (prop === 'defaultMuted') {
             return (handle ? __zw_has_attr_handle(handle, 'muted') : (typeof __zw_has_attr_lw === 'function' ? __zw_has_attr_lw(sel, 'muted') : __zw_has_attr(sel, 'muted'))) === '1';
           }
