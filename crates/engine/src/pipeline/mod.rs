@@ -1951,25 +1951,52 @@ pub(crate) fn paint_cull_viewport(
 /// 状态（布局期 paint 侧才可求），布局前注入固定 0 值会显示错值（content-counter-009/010
 /// false-pass 显形教训）；仅「无任何 counter 动作」的页面，counter 隐式初值恒 0
 ///（CSS Lists §counter），注入 0 值表示是正确语义（at-supports/media-content-004 driving）。
-fn counter_value_is_layout_dependent(
+fn counter_value_before_paint(
     doc: &Document,
     nid: NodeId,
     counter_name: &str,
     styles: &HashMap<NodeId, ComputedStyle>,
-) -> bool {
+) -> Option<i64> {
+    // R3885：沿祖先链（元素自身 → 根）静态求 counter 值——仅当路径上**无 increment**
+    // 时值可布局前确定：最内层（离元素最近）的 reset/set 决定值；无任何动作 → 隐式
+    // 初值 0（CSS Lists §counter）。有 increment → 真实值依赖计数器状态推进（paint 期
+    // update_counters 才可求），返回 None（调用方不注入，避免固定 0 错值——
+    // content-counter-009/010 false-pass 显形教训）。
+    // 注：多作用域/兄弟累计等复杂语境由 None 兜底（不注入），与 R3884 守卫一致。
+    let mut value: Option<i64> = Some(0);
     let mut current = Some(nid);
     while let Some(id) = current {
         if let Some(st) = styles.get(&id) {
-            let involved = |actions: &[zero_css_parser::values::CounterActionValue]| {
-                actions.iter().any(|a| a.name.eq_ignore_ascii_case(counter_name))
-            };
-            if involved(&st.counter_reset) || involved(&st.counter_set) || involved(&st.counter_increment) {
-                return true;
+            let mut has_reset_or_set = false;
+            for action in &st.counter_reset {
+                if action.name.eq_ignore_ascii_case(counter_name) {
+                    value = Some(action.value.unwrap_or(0));
+                    has_reset_or_set = true;
+                }
+            }
+            for action in &st.counter_set {
+                if action.name.eq_ignore_ascii_case(counter_name) {
+                    value = Some(action.value.unwrap_or(0));
+                    has_reset_or_set = true;
+                }
+            }
+            if has_reset_or_set {
+                // 离元素最近的 reset/set 生效——更远的祖先不再影响该作用域链。
+                // 但若**本元素链**上 reset 之后又有 set（更内层），上面循环已按声明
+                // 顺序覆盖（reset → set 同元素时 spec 顺序生效，set 胜出）。
+                break;
+            }
+            if st
+                .counter_increment
+                .iter()
+                .any(|a| a.name.eq_ignore_ascii_case(counter_name))
+            {
+                return None;
             }
         }
         current = doc.get(id).and_then(|n| n.parent);
     }
-    false
+    value
 }
 
 pub(crate) fn inject_pseudo_text_nodes(
@@ -2012,19 +2039,20 @@ pub(crate) fn inject_pseudo_text_nodes(
                 // 注入发生在布局前、无计数器状态，值取隐式初值 0（CSS Lists §counter：
                 // 未 reset/increment 的 counter 引用即 0）。此前仅 disclosure 特例，
                 // 其余 counter-style 的 ::before/::after 全部无文本（content-004 驱动）。
-                // 布局依赖语境（自身/祖先链有 counter 动作涉该名）不注入——维持既有
-                // 行为（真实值须 paint 期求，注入固定 0 = 错值）。
+                // R3885：布局前可静态求值（reset/set 确定或隐式 0）→ 注入真实值；
+                // increment 语境返回 None 不注入（固定 0 = 错值，维持既有行为）。
                 ContentComputedValue::Counter { name, style } => {
-                    if counter_value_is_layout_dependent(doc, nid, name, styles) {
-                        pseudo_disclosure_counter_text(style, pseudo_style, &counter_styles)
-                    } else {
-                        let text = crate::paint::painter::text::text_list::format_counter_text(
-                            0,
-                            style,
-                            pseudo_style,
-                            &counter_styles,
-                        );
-                        (!text.is_empty()).then_some(text)
+                    match counter_value_before_paint(doc, nid, name, styles) {
+                        Some(v) => {
+                            let text = crate::paint::painter::text::text_list::format_counter_text(
+                                v,
+                                style,
+                                pseudo_style,
+                                &counter_styles,
+                            );
+                            (!text.is_empty()).then_some(text)
+                        }
+                        None => pseudo_disclosure_counter_text(style, pseudo_style, &counter_styles),
                     }
                 }
                 ContentComputedValue::Counters { .. } => None,
@@ -2034,22 +2062,23 @@ pub(crate) fn inject_pseudo_text_nodes(
                         match item {
                             ContentListItem::Str(value) => text.push_str(value),
                             ContentListItem::Counter { name, style } => {
-                                // R3884：与单 Counter 分支同源——disclosure 特例（writing-mode
-                                // 相关符号）优先；布局依赖语境跳过该项，否则通用表示（隐式值 0）。
+                                // R3885：与单 Counter 分支同源——disclosure 特例（writing-mode
+                                // 相关符号）优先；否则按静态可求值注入（increment 语境跳过该项）。
                                 match pseudo_disclosure_counter_text(style, pseudo_style, &counter_styles) {
                                     Some(t) => text.push_str(&t),
-                                    None if counter_value_is_layout_dependent(doc, nid, name, styles) => {}
                                     None => {
-                                        let t = crate::paint::painter::text::text_list::format_counter_text(
-                                            0,
-                                            style,
-                                            pseudo_style,
-                                            &counter_styles,
-                                        );
-                                        if t.is_empty() {
-                                            return None;
+                                        if let Some(v) = counter_value_before_paint(doc, nid, name, styles) {
+                                            let t = crate::paint::painter::text::text_list::format_counter_text(
+                                                v,
+                                                style,
+                                                pseudo_style,
+                                                &counter_styles,
+                                            );
+                                            if t.is_empty() {
+                                                return None;
+                                            }
+                                            text.push_str(&t);
                                         }
-                                        text.push_str(&t);
                                     }
                                 }
                             }

@@ -324,7 +324,16 @@ fn to_cjk_num(value: i64, sym: &CjkNumSymbols, fallback_above: bool) -> Option<S
         return None;
     }
     if value < 0 {
-        return Some(format!("{}{}", sym.negative, cjk_compose((-value) as usize, sym)));
+        // R3885：绝对值 ≥10000 与正值同轨（千进制合成表只有 3 单位位阶，≥10000
+        // 进 compose 会 digits 越界——counter-reset n -100000 实证 panic）。chromium
+        // 语义 = 负号 + cjk-decimal 式逐字映射。
+        let abs = (-value) as usize;
+        let body = if abs > 9999 {
+            to_cjk_decimal(abs)
+        } else {
+            cjk_compose(abs, sym)
+        };
+        return Some(format!("{}{}", sym.negative, body));
     }
     if value == 0 {
         return Some(sym.zero_value.to_string());
@@ -819,6 +828,79 @@ pub(super) fn format_counter_roman(value: i64, upper: bool) -> String {
     if upper { s } else { s.to_lowercase() }
 }
 
+/// R3885：内置（predefined）counter-style 表示——按 [`ListStyleTypeValue`] 生成 body
+/// 文本（不含 suffix）。此前只在 paint_list_marker 内联（list-item marker 路径），
+/// `content: counter(n, japanese-formal)` 这类显式 counter-style 引用走 format_counter_text
+/// 的 registry（仅 @counter-style 声明）→ miss 后 fallback 十进制。本函数供两路共用。
+pub(crate) fn format_builtin_list_style(value: i64, list_style_type: &ListStyleTypeValue) -> String {
+    let index = value;
+    match list_style_type {
+        ListStyleTypeValue::LowerGreek if index > 0 => to_greek(index as usize),
+        ListStyleTypeValue::Persian if index >= 0 => to_persian(index as usize),
+        ListStyleTypeValue::Armenian if index > 0 => to_armenian(index as usize),
+        ListStyleTypeValue::LowerArmenian if index > 0 => to_armenian(index as usize).to_lowercase(),
+        ListStyleTypeValue::Georgian if index > 0 => to_georgian(index as usize),
+        ListStyleTypeValue::Hebrew if index > 0 => to_hebrew(index as usize),
+        ListStyleTypeValue::ArabicIndic if index >= 0 => to_arabic_indic(index as usize),
+        ListStyleTypeValue::Devanagari if index >= 0 => to_digit_script(index as usize, 0x0966),
+        ListStyleTypeValue::Bengali if index >= 0 => to_digit_script(index as usize, 0x09E6),
+        ListStyleTypeValue::Gujarati if index >= 0 => to_digit_script(index as usize, 0x0AE6),
+        ListStyleTypeValue::Gurmukhi if index >= 0 => to_digit_script(index as usize, 0x0A66),
+        ListStyleTypeValue::Kannada if index >= 0 => to_digit_script(index as usize, 0x0CE6),
+        ListStyleTypeValue::Malayalam if index >= 0 => to_digit_script(index as usize, 0x0D66),
+        ListStyleTypeValue::Tamil if index >= 0 => to_digit_script(index as usize, 0x0BE6),
+        ListStyleTypeValue::Telugu if index >= 0 => to_digit_script(index as usize, 0x0C66),
+        ListStyleTypeValue::Lao if index >= 0 => to_digit_script(index as usize, 0x0ED0),
+        ListStyleTypeValue::Khmer if index >= 0 => to_digit_script(index as usize, 0x17E0),
+        ListStyleTypeValue::Myanmar if index >= 0 => to_digit_script(index as usize, 0x1040),
+        ListStyleTypeValue::CjkDecimal if index >= 0 => to_cjk_decimal(index as usize),
+        // R3835：§6.2 limited CJK/日/韩 + 假名 + 天干地支。越界（korean 系
+        // range 1-9999、假名/循环 value ≤ 0）→ decimal fallback。
+        ListStyleTypeValue::JapaneseInformal => {
+            to_cjk_num(index, &JAPANESE_INFORMAL, false).unwrap_or_else(|| index.to_string())
+        }
+        ListStyleTypeValue::JapaneseFormal => {
+            to_cjk_num(index, &JAPANESE_FORMAL, false).unwrap_or_else(|| index.to_string())
+        }
+        ListStyleTypeValue::SimpChineseInformal => {
+            to_cjk_num(index, &SIMP_CHINESE_INFORMAL, false).unwrap_or_else(|| index.to_string())
+        }
+        ListStyleTypeValue::SimpChineseFormal => {
+            to_cjk_num(index, &SIMP_CHINESE_FORMAL, false).unwrap_or_else(|| index.to_string())
+        }
+        ListStyleTypeValue::TradChineseInformal => {
+            to_cjk_num(index, &TRAD_CHINESE_INFORMAL, false).unwrap_or_else(|| index.to_string())
+        }
+        ListStyleTypeValue::TradChineseFormal => {
+            to_cjk_num(index, &TRAD_CHINESE_FORMAL, false).unwrap_or_else(|| index.to_string())
+        }
+        ListStyleTypeValue::KoreanHangulFormal => {
+            to_cjk_num(index, &KOREAN_HANGUL_FORMAL, true).unwrap_or_else(|| index.to_string())
+        }
+        ListStyleTypeValue::KoreanHanjaInformal => {
+            to_cjk_num(index, &KOREAN_HANJA_INFORMAL, true).unwrap_or_else(|| index.to_string())
+        }
+        ListStyleTypeValue::KoreanHanjaFormal => {
+            to_cjk_num(index, &KOREAN_HANJA_FORMAL, true).unwrap_or_else(|| index.to_string())
+        }
+        ListStyleTypeValue::CjkEarthlyBranch => {
+            to_symbol_cycle(index, CJK_EARTHLY_BRANCH).unwrap_or_else(|| index.to_string())
+        }
+        ListStyleTypeValue::CjkHeavenlyStem => {
+            to_symbol_cycle(index, CJK_HEAVENLY_STEM).unwrap_or_else(|| index.to_string())
+        }
+        ListStyleTypeValue::Hiragana => to_symbol_alpha(index, HIRAGANA).unwrap_or_else(|| index.to_string()),
+        ListStyleTypeValue::HiraganaIroha => {
+            to_symbol_alpha(index, HIRAGANA_IROHA).unwrap_or_else(|| index.to_string())
+        }
+        ListStyleTypeValue::Katakana => to_symbol_alpha(index, KATAKANA).unwrap_or_else(|| index.to_string()),
+        ListStyleTypeValue::KatakanaIroha => {
+            to_symbol_alpha(index, KATAKANA_IROHA).unwrap_or_else(|| index.to_string())
+        }
+        _ => index.to_string(),
+    }
+}
+
 /// 按计数器样式格式化整数值为 content 文本。
 ///
 /// R3884：counter 表示单源入口——inject_pseudo_text_nodes（布局前合成文本）与 paint
@@ -841,7 +923,13 @@ pub(crate) fn format_counter_text(
         Some(name) => registry
             .get(name)
             .and_then(|rule| counter_style_body_with_registry(rule, value, Some(registry), Some(style)))
-            .unwrap_or_else(|| value.to_string()),
+            .unwrap_or_else(|| {
+                // R3885：非 @counter-style 声明的内置样式名（CSS Counter Styles §6 预定义，
+                // japanese-formal/georgian/armenian 等）→ 按内置表示生成（此前 fallback 十进制）。
+                zero_css_parser::values::parse_list_style_type(name)
+                    .map(|lst| format_builtin_list_style(value, &lst))
+                    .unwrap_or_else(|| value.to_string())
+            }),
         _ => value.to_string(),
     }
 }
@@ -1220,75 +1308,7 @@ impl super::super::Painter {
                 // U+0531→U+0561 等；Rust 用 Unicode case folding，ground-truth 验证 1=ա/9999=քջղթ）。
                 // R2471 numeric scripts：base = 该脚本 DIGIT ZERO 码点（U+0966/09E6/0AE6/0A66/
                 // 0CE6/0D66/0BE6/0C66/0ED0/17E0/1040）。
-                let body = match style.list_style_type {
-                    ListStyleTypeValue::LowerGreek if index > 0 => to_greek(index as usize),
-                    ListStyleTypeValue::Persian if index >= 0 => to_persian(index as usize),
-                    ListStyleTypeValue::Armenian if index > 0 => to_armenian(index as usize),
-                    ListStyleTypeValue::LowerArmenian if index > 0 => to_armenian(index as usize).to_lowercase(),
-                    ListStyleTypeValue::Georgian if index > 0 => to_georgian(index as usize),
-                    ListStyleTypeValue::Hebrew if index > 0 => to_hebrew(index as usize),
-                    ListStyleTypeValue::ArabicIndic if index >= 0 => to_arabic_indic(index as usize),
-                    ListStyleTypeValue::Devanagari if index >= 0 => to_digit_script(index as usize, 0x0966),
-                    ListStyleTypeValue::Bengali if index >= 0 => to_digit_script(index as usize, 0x09E6),
-                    ListStyleTypeValue::Gujarati if index >= 0 => to_digit_script(index as usize, 0x0AE6),
-                    ListStyleTypeValue::Gurmukhi if index >= 0 => to_digit_script(index as usize, 0x0A66),
-                    ListStyleTypeValue::Kannada if index >= 0 => to_digit_script(index as usize, 0x0CE6),
-                    ListStyleTypeValue::Malayalam if index >= 0 => to_digit_script(index as usize, 0x0D66),
-                    ListStyleTypeValue::Tamil if index >= 0 => to_digit_script(index as usize, 0x0BE6),
-                    ListStyleTypeValue::Telugu if index >= 0 => to_digit_script(index as usize, 0x0C66),
-                    ListStyleTypeValue::Lao if index >= 0 => to_digit_script(index as usize, 0x0ED0),
-                    ListStyleTypeValue::Khmer if index >= 0 => to_digit_script(index as usize, 0x17E0),
-                    ListStyleTypeValue::Myanmar if index >= 0 => to_digit_script(index as usize, 0x1040),
-                    ListStyleTypeValue::CjkDecimal if index >= 0 => to_cjk_decimal(index as usize),
-                    // R3835：§6.2 limited CJK/日/韩 + 假名 + 天干地支。越界（korean 系
-                    // range 1-9999、假名/循环 value ≤ 0）→ decimal fallback。
-                    ListStyleTypeValue::JapaneseInformal => {
-                        to_cjk_num(index, &JAPANESE_INFORMAL, false).unwrap_or_else(|| index.to_string())
-                    }
-                    ListStyleTypeValue::JapaneseFormal => {
-                        to_cjk_num(index, &JAPANESE_FORMAL, false).unwrap_or_else(|| index.to_string())
-                    }
-                    ListStyleTypeValue::SimpChineseInformal => {
-                        to_cjk_num(index, &SIMP_CHINESE_INFORMAL, false).unwrap_or_else(|| index.to_string())
-                    }
-                    ListStyleTypeValue::SimpChineseFormal => {
-                        to_cjk_num(index, &SIMP_CHINESE_FORMAL, false).unwrap_or_else(|| index.to_string())
-                    }
-                    ListStyleTypeValue::TradChineseInformal => {
-                        to_cjk_num(index, &TRAD_CHINESE_INFORMAL, false).unwrap_or_else(|| index.to_string())
-                    }
-                    ListStyleTypeValue::TradChineseFormal => {
-                        to_cjk_num(index, &TRAD_CHINESE_FORMAL, false).unwrap_or_else(|| index.to_string())
-                    }
-                    ListStyleTypeValue::KoreanHangulFormal => {
-                        to_cjk_num(index, &KOREAN_HANGUL_FORMAL, true).unwrap_or_else(|| index.to_string())
-                    }
-                    ListStyleTypeValue::KoreanHanjaInformal => {
-                        to_cjk_num(index, &KOREAN_HANJA_INFORMAL, true).unwrap_or_else(|| index.to_string())
-                    }
-                    ListStyleTypeValue::KoreanHanjaFormal => {
-                        to_cjk_num(index, &KOREAN_HANJA_FORMAL, true).unwrap_or_else(|| index.to_string())
-                    }
-                    ListStyleTypeValue::CjkEarthlyBranch => {
-                        to_symbol_cycle(index, CJK_EARTHLY_BRANCH).unwrap_or_else(|| index.to_string())
-                    }
-                    ListStyleTypeValue::CjkHeavenlyStem => {
-                        to_symbol_cycle(index, CJK_HEAVENLY_STEM).unwrap_or_else(|| index.to_string())
-                    }
-                    ListStyleTypeValue::Hiragana => {
-                        to_symbol_alpha(index, HIRAGANA).unwrap_or_else(|| index.to_string())
-                    }
-                    ListStyleTypeValue::HiraganaIroha => {
-                        to_symbol_alpha(index, HIRAGANA_IROHA).unwrap_or_else(|| index.to_string())
-                    }
-                    ListStyleTypeValue::Katakana => {
-                        to_symbol_alpha(index, KATAKANA).unwrap_or_else(|| index.to_string())
-                    }
-                    ListStyleTypeValue::KatakanaIroha => {
-                        to_symbol_alpha(index, KATAKANA_IROHA).unwrap_or_else(|| index.to_string())
-                    }
-                    _ => index.to_string(),
-                };
+                let body = format_builtin_list_style(index, &style.list_style_type);
                 // R3835：suffix 按家族（见 counter_suffix）。
                 let suffix = counter_suffix(&style.list_style_type);
                 let text = format!("{body}{suffix}");
