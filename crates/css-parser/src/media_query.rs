@@ -286,7 +286,18 @@ fn parse_single_media_query(input: &str) -> Option<MediaQuery> {
     // 按 no-match 处理（与既有 `@media screen` / `(condition)` 行为不变——那些 media_type 非 None
     // 或 after_prefix 以 `(` 开头）。
     if media_type.is_none() && !after_prefix.is_empty() && !after_prefix.starts_with('(') {
-        return None;
+        // R3874：`not <unknown-type>` 语义修正——MQ4 §3.6 unknown type 整条查询求值 false，
+        // 前缀 not 取反后**恒匹配**。旧实现无论 not 与否一律 return None（no-match），
+        // `@media not unknown` 块被丢弃（at-media-001 test3 缺绿）。规范化为恒匹配：
+        // media_type=All、negated 复位（残余条件对结果无影响——unknown 已使整体为 false，
+        // not 后恒 true）。
+        if negated {
+            media_type = Some(MediaType::All);
+            negated = false;
+            remaining = "";
+        } else {
+            return None;
+        }
     }
 
     // 解析括号内的条件
@@ -745,6 +756,20 @@ mod tests {
     }
 
     // ── 解析测试 ──
+
+    /// R3874：`not <unknown-type>` 规范化为恒匹配（MQ4 §3.6 unknown → false，not 取反 → true）。
+    /// 旧实现 return None（no-match）致块被丢弃（at-media-001）。
+    #[test]
+    fn test_not_unknown_type_normalizes_to_match() {
+        let q = first_query("not unknown");
+        assert_eq!(q.media_type, Some(MediaType::All));
+        assert!(!q.negated);
+        assert!(q.conditions.is_empty());
+        // 已知 type 的 not 语义不受影响
+        let q2 = first_query("not screen");
+        assert!(q2.negated);
+        assert_eq!(q2.media_type, Some(MediaType::Screen));
+    }
 
     #[test]
     fn test_parse_simple_min_width() {
