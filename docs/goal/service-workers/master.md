@@ -57,7 +57,10 @@ delete-dooming 生命周期、DOMString code-unit name wire、Vary/`ignoreVary`�
 `CacheStorage.match()`、cached `Response.type`/`Response.url` 读回保真、`Cache.put()`
 body consumption、opaque 内部 206 / `Vary: *` 可缓存、`Response.redirect()` 与 Blob/FormData
 response body、`Cache.addAll()` undefined entry 拒绝与 Vary-aware duplicate 判定等共享语义
-以及 Window/Dedicated Worker/nested Dedicated Worker 共享同一 CacheStorage owner 的 WPT 路径已落地。该 sibling 的 page/WebView `StorageManager` owner 现已支持
+以及 Window/Dedicated Worker/nested Dedicated Worker 共享同一 CacheStorage owner 的 WPT 路径已落地。
+后续 sibling baseline 已扩展到 37 case / 439 subtest / 439 Pass / 0 Fail，继续覆盖
+filtered response 类型矩阵、sandboxed iframe CacheStorage 安全边界，以及 top-level
+credentialed request URL cache key 往返。该 sibling 的 page/WebView `StorageManager` owner 现已支持
 per-origin CacheStorage 持久化和跨 WebView 重建读回，Browser normal profile 使用 sibling
 CacheStorage 目录且 private profile 保持内存。SW active registration 的 registration-local
 `CacheStorage` 现已纳入 `ServiceWorkerPersistentRegistration` snapshot/restore；normal profile
@@ -734,13 +737,15 @@ second（replacement）worker 只处理 awaitInstallEvent（messageSequence=1）
 - storage-cache-api shared Cache response type readback：CacheStorage 专属 `__zwcr:` wire、
   page `Response.type` / `clone().type` 保真与 host type validation 见
   [M2 Cache Response Type Readback](../storage-cache-api/evidence/2026-08-22-m2-cache-response-type-readback.md)
-- storage-cache-api CacheStorage window WPT 扩面：23 case / 293 subtest 全绿，并校正
+- storage-cache-api CacheStorage window WPT 扩面：37 case / 439 subtest 全绿，并校正
   `Response.error()` 可作为 CacheStorage 条目保存/读回、FetchEvent 响应结算仍拒绝 status 0
   的共享边界，以及 `Cache.match()` 对 `Response.url`、fetched MIME、cross-host fixture 和
   opaque response Vary 匹配、`Cache.put()` body consumption、opaque 内部 206 / `Vary: *`、
   `Response.redirect()`、Blob/FormData response body、body-less request consumption、
   `Cache.addAll()` undefined entry 拒绝、Vary-aware duplicate 判定和 Window/Dedicated
-  Worker/nested Dedicated Worker 共享 CacheStorage owner 的页面侧语义，见
+  Worker/nested Dedicated Worker 共享 CacheStorage owner、filtered response 类型矩阵、
+  sandboxed iframe CacheStorage 安全边界与 top-level credentialed request URL cache key
+  的页面侧语义，见
   [M2 CacheStorage Window WPT Expansion](../storage-cache-api/evidence/2026-08-22-m2-cache-window-expansion.md)
   、[M2 Cache.add WPT Expansion](../storage-cache-api/evidence/2026-08-22-m2-cache-add-wpt-expansion.md)
   、[M2 CacheStorage Worker Sharing WPT Expansion](../storage-cache-api/evidence/2026-08-22-m2-cache-worker-sharing-wpt-expansion.md)
