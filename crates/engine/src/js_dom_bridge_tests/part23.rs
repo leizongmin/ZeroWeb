@@ -286,6 +286,103 @@ fn test_iframe_history_pushstate_updates_fetch_base_url() {
 }
 
 #[test]
+fn test_iframe_document_referrer_uses_parent_page_url() {
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+
+    let mut sandbox = V8Sandbox::with_config(zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    })
+    .unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><iframe src=\"resources/referrer-scope/navigated.html\"></iframe></body></html>"
+            .to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "https://wpt.test/service-workers/service-worker/intercepted-referrer.https.html"
+            .to_string(),
+    ));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+    sandbox.register_callback(
+        "__zw_fetch",
+        Box::new(move |_args| {
+            "__zwfr:200\x1fOK\x1fcontent-type\x1etext/html\x1f<!doctype html><script>window.addEventListener('load', function(){ window.__loadReferrer = document.referrer; });</script>"
+                .to_string()
+        }),
+    );
+
+    assert_eq!(
+        sandbox
+            .execute(
+                "JSON.stringify({\
+                   doc: document.querySelector('iframe').contentDocument.referrer,\
+                   load: document.querySelector('iframe').contentWindow.__loadReferrer\
+                 })",
+            )
+            .unwrap()
+            .value,
+        r#"{"doc":"https://wpt.test/service-workers/service-worker/intercepted-referrer.https.html","load":"https://wpt.test/service-workers/service-worker/intercepted-referrer.https.html"}"#
+    );
+}
+
+#[test]
+fn test_iframe_load_can_post_message_to_parent_window() {
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+
+    let mut sandbox = V8Sandbox::with_config(zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    })
+    .unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> =
+        Arc::new(Mutex::new("<html><body></body></html>".to_string()));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "https://wpt.test/service-workers/service-worker/intercepted-referrer.https.html"
+            .to_string(),
+    ));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+    sandbox.register_callback(
+        "__zw_fetch",
+        Box::new(move |_args| {
+            "__zwfr:200\x1fOK\x1fcontent-type\x1etext/html\x1f<!doctype html><script>window.addEventListener('load', function(){ parent.postMessage({ source: 'sw-intercepted', referrer: document.referrer, url: location.href }, '*'); });</script>"
+                .to_string()
+        }),
+    );
+
+    sandbox
+        .execute(
+            "globalThis.__iframeMessage = 'pending';\
+             window.addEventListener('message', function (event) {\
+               globalThis.__iframeMessage = JSON.stringify(event.data);\
+             }, { once: true });\
+             var frame = document.createElement('iframe');\
+             frame.src = 'resources/referrer-scope/navigated.html';\
+             document.body.append(frame);",
+        )
+        .unwrap();
+    sandbox.execute("0").unwrap();
+
+    assert_eq!(
+        sandbox
+            .execute("String(globalThis.__iframeMessage)")
+            .unwrap()
+            .value,
+        r#"{"source":"sw-intercepted","referrer":"https://wpt.test/service-workers/service-worker/intercepted-referrer.https.html","url":"https://wpt.test/service-workers/service-worker/resources/referrer-scope/navigated.html"}"#,
+        "iframe load listener should be able to post a message to the parent window"
+    );
+}
+
+#[test]
 fn test_iframe_inline_script_function_is_exposed_on_content_window() {
     use std::sync::{Arc, Mutex};
     use zero_script_sandbox::{Sandbox, V8Sandbox};

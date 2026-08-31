@@ -10,8 +10,8 @@ import subprocess
 import sys
 from pathlib import Path
 
-EXPECTED_CASES = 19
-EXPECTED_SUBTESTS = 48
+EXPECTED_CASES = 20
+EXPECTED_SUBTESTS = 49
 
 
 def parse_args() -> argparse.Namespace:
@@ -99,7 +99,7 @@ def render_markdown(summary: dict) -> str:
             "",
             "## Scope",
             "",
-            "This pinned Service Worker M2 fetch/interception baseline covers nineteen cases. "
+            "This pinned Service Worker M2 fetch/interception baseline covers twenty cases. "
             "`fetch-on-the-right-interface.https.any.js` verifies that `fetch` is inherited "
             "from `WorkerGlobalScope.prototype` rather than installed as an own property on "
             "`ServiceWorkerGlobalScope`, and `historical.https.any.js` verifies that the "
@@ -125,6 +125,8 @@ def render_markdown(summary: dict) -> str:
             "`fetch-event-after-navigation-within-page.https.html` verifies that a "
             "controlled iframe remains fetch-intercepted after same-document hash "
             "and history.pushState navigations. "
+            "`intercepted-referrer.https.html` verifies that a Service Worker "
+            "synthetic navigation response preserves the new document's referrer. "
             "`fetch-event-respond-with-stops-propagation.https.html` covers the "
             "FetchEvent rule that `respondWith()` invokes `stopImmediatePropagation()` "
             "and keeps later fetch listeners from observing the same request. "

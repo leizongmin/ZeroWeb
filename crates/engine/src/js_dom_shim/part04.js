@@ -4062,23 +4062,7 @@
               var cePconn = _ceParentConnected(sel, handle);
               for (var ci = 0; ci < ceAdded.length; ci++) {
                 _ceApplyConn(ceAdded[ci], cePconn);
-                if (cePconn && ceAdded[ci] &&
-                    String(ceAdded[ci].tagName || '').toUpperCase() === 'IFRAME') {
-                  (function(frame) {
-                    _defer(function() {
-                      try { frame.contentWindow; } catch (_eIframeStart) {}
-                      _zwWhenIframeSettled(frame, function() {
-                        try {
-                          var _zwIframeWin = frame.contentWindow;
-                          if (_zwIframeWin && typeof _zwIframeWin.__zwRunInlineScripts === 'function') {
-                            _zwIframeWin.__zwRunInlineScripts();
-                          }
-                        } catch (_eIframeScript) {}
-                        try { frame.dispatchEvent(new globalThis.Event('load')); } catch (_eIframeLoad) {}
-                      });
-                    });
-                  })(ceAdded[ci]);
-                }
+                _zwStartConnectedIframe(ceAdded[ci], cePconn);
               }
               // R263：insert 段边界调整（spec concept-node-pre-insert 末段——插入后
               // 调用，读插入后 newParent/newIndex；与开头的 remove 段成对构成移动
@@ -5327,8 +5311,14 @@
             if (added.length > 0) {
               _mo_notify(sel, handle, { type: 'childList', addedNodes: added, removedNodes: [] });
               // R2994 connectedCallback：新增子按父连接态传播（text 节点非元素，_ceApplyConn 内安全跳过）。
+              // https://html.spec.whatwg.org/multipage/iframe-embed-object.html#the-iframe-element
+              // `ParentNode.append()` 插入已连接 iframe 时同样启动子浏览上下文导航；appendChild 分支
+              // 已覆盖，append 需复用相同 deferred load 路径。
               var cePconn = _ceParentConnected(sel, handle);
-              for (var ci = 0; ci < added.length; ci++) _ceApplyConn(added[ci], cePconn);
+              for (var ci = 0; ci < added.length; ci++) {
+                _ceApplyConn(added[ci], cePconn);
+                _zwStartConnectedIframe(added[ci], cePconn);
+              }
             }
             return undefined;
           };

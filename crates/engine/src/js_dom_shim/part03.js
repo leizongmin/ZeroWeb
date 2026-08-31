@@ -8905,6 +8905,8 @@
       // 设槽 → 'about:blank' 缺省语义不变（spec 非浏览上下文文档 URL）。
       get URL() { try { if (doc._zwURL) return String(doc._zwURL); } catch (_e360u) {} return 'about:blank'; },
       get documentURI() { try { if (doc._zwURL) return String(doc._zwURL); } catch (_e360u2) {} return 'about:blank'; },
+      // https://html.spec.whatwg.org/multipage/dom.html#dom-document-referrer
+      get referrer() { try { return doc._zwReferrer ? String(doc._zwReferrer) : ''; } catch (_eReferrer) { return ''; } },
       // R130（js-dom M4）：`doc.location`（WPT createHTMLDocument "document location getter
       // is null"——spec：非浏览上下文文档的 location getter 返 null；旧 undefined ≠ null）。
       get location() { return null; },

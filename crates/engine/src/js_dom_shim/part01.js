@@ -495,6 +495,8 @@
       var kind = _zwIframeKindFromUrl(url);
       entry.doc = _zwMakeIframeDoc(kind, body);
       try { entry.doc._zwURL = effectiveUrl; } catch (_e115u) {}
+      // https://html.spec.whatwg.org/multipage/dom.html#dom-document-referrer
+      try { entry.doc._zwReferrer = _zwCurrentHref(); } catch (_e115r) {}
       try { if (entry._zwSwClientId) entry.doc._zwSwClientId = entry._zwSwClientId; } catch (_e115c) {}
       // R160：fragment URL 槽（`:target` 判定——WPT :target 簇的
       // iframe 子文档 src 带 #target，doc 查询传 host 侧 set_url）。
@@ -511,6 +513,11 @@
       _zwObserveIframeWindowClient(entry, frameKey, url);
       try { entry.win.__r206State = entry.state; } catch (_eR206m) {}
       try { _zwRunIframeScripts(entry.win, entry.doc, body, url); } catch (_eR206s) {}
+      try {
+        if (entry.win && typeof entry.win.dispatchEvent === 'function') {
+          entry.win.dispatchEvent(new Event('load'));
+        }
+      } catch (_eR206l) {}
       _zwFlushIframeSettledCallbacks(entry);
     } catch (_e115f) {
       entry.state = 'error';
@@ -837,6 +844,32 @@
     try { _defer(function() { try { frame.dispatchEvent(new globalThis.Event('load')); } catch (_eL2) {} }); } catch (_eLoad) {}
     return entry;
   };
+  function _zwStartConnectedIframe(frame, connected) {
+    if (!connected || !frame) return;
+    var tag = '';
+    try {
+      tag = typeof _realTag === 'function'
+        ? _realTag(frame.__zwSelector || null, frame.__zwHandle || null)
+        : String(frame.tagName || '');
+    } catch (_eIframeTag) {
+      tag = String(frame.tagName || '');
+    }
+    if (String(tag || frame.tagName || '').toUpperCase() !== 'IFRAME') return;
+    // https://html.spec.whatwg.org/multipage/iframe-embed-object.html#the-iframe-element
+    // Dynamic insertion of a connected iframe starts navigation asynchronously.
+    _defer(function() {
+      try { frame.contentWindow; } catch (_eIframeStart) {}
+      _zwWhenIframeSettled(frame, function() {
+        try {
+          var _zwIframeWin = frame.contentWindow;
+          if (_zwIframeWin && typeof _zwIframeWin.__zwRunInlineScripts === 'function') {
+            _zwIframeWin.__zwRunInlineScripts();
+          }
+        } catch (_eIframeScript) {}
+        try { frame.dispatchEvent(new globalThis.Event('load')); } catch (_eIframeLoad) {}
+      });
+    });
+  }
   // js-dom M4 R116：per-attribute NS 元数据（elKey → { qualifiedName → {ns, prefix, local} }）——
   // setAttributeNS 写入；Attr 节点字段（prefix/localName/namespaceURI）与 NS 读（按 ns+local 匹配
   // 任意 prefix 的存储名）消费。host 侧属性存储是扁平限定名（无 ns），NS 语义须 JS 端登记。
