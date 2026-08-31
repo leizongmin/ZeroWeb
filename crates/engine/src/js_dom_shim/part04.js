@@ -107,6 +107,41 @@
         if ((resourceTag === 'AUDIO' || resourceTag === 'VIDEO') && prop === 'error') {
           return resourceState && resourceState.outcome === 'error' ? resourceState.error : null;
         }
+        // media-elements M1 切片 3（F2）：HTMLMediaElement 元数据 IDL 面——headless 无解码器时的
+        // spec 合法初值/状态镜像。状态数值面（paused/seeking/currentTime/playbackRate/volume）存
+        // `_mediaState[key]`（set trap 写，get trap 读；未写走默认值）。duration 在 HAVE_NOTHING
+        // 恒 NaN（spec「media element load algorithm」未取到元数据前 duration 为 NaN）。
+        // https://html.spec.whatwg.org/multipage/media.html#ready-states
+        // https://html.spec.whatwg.org/multipage/media.html#offsets-into-the-media-resource
+        if (resourceTag === 'AUDIO' || resourceTag === 'VIDEO') {
+          var _ms = _mediaState[key];
+          if (prop === 'currentTime') return _ms ? _ms.currentTime : 0;
+          if (prop === 'duration') return (_ms && _ms.duration != null) ? _ms.duration : NaN;
+          if (prop === 'playbackRate') return _ms ? _ms.playbackRate : 1;
+          if (prop === 'defaultPlaybackRate') return _ms ? _ms.defaultPlaybackRate : 1;
+          if (prop === 'volume') return _ms ? _ms.volume : 1;
+          if (prop === 'seeking') return false; // HAVE_NOTHING 无 seek 进行（spec：seeking 在无可 seek 媒体恒 false）
+          if (prop === 'paused') return _ms ? !_ms.playing : true;
+          if (prop === 'ended') return _ms ? !!_ms.ended : false;
+          if (prop === 'defaultMuted') {
+            return (handle ? __zw_has_attr_handle(handle, 'muted') : (typeof __zw_has_attr_lw === 'function' ? __zw_has_attr_lw(sel, 'muted') : __zw_has_attr(sel, 'muted'))) === '1';
+          }
+          // preload：enumerated 反射（缺省 → 'metadata'——HTML spec missing value default；无效值 → 映射表回落）。
+          if (prop === 'preload') {
+            var _plRaw = handle ? __zw_get_attr_handle(handle, 'preload') : (typeof __zw_get_attr_lw === 'function' ? __zw_get_attr_lw(sel, 'preload') : __zw_get_attr(sel, 'preload'));
+            var _pl = String(_plRaw == null ? '' : _plRaw).toLowerCase();
+            return (_pl === 'none' || _pl === 'metadata' || _pl === 'auto') ? _pl : 'metadata';
+          }
+          // crossOrigin：enumerated 反射（missing → null；'' / invalid → 'anonymous'；大小写不敏感；
+          // use-credentials 原样）。setter（set trap）null → removeAttribute，余 → 写属性。
+          if (prop === 'crossOrigin') {
+            var _coHas = (handle ? __zw_has_attr_handle(handle, 'crossorigin') : (typeof __zw_has_attr_lw === 'function' ? __zw_has_attr_lw(sel, 'crossorigin') : __zw_has_attr(sel, 'crossorigin'))) === '1';
+            if (!_coHas) return null;
+            var _coRaw = handle ? __zw_get_attr_handle(handle, 'crossorigin') : (typeof __zw_get_attr_lw === 'function' ? __zw_get_attr_lw(sel, 'crossorigin') : __zw_get_attr(sel, 'crossorigin'));
+            var _co = String(_coRaw == null ? '' : _coRaw).toLowerCase();
+            return _co === 'use-credentials' ? 'use-credentials' : 'anonymous';
+          }
+        }
         if (resourceTag === 'TRACK' &&
             (prop === 'NONE' || prop === 'LOADING' || prop === 'LOADED' || prop === 'ERROR')) {
           return { NONE: 0, LOADING: 1, LOADED: 2, ERROR: 3 }[prop];
@@ -117,6 +152,37 @@
             return trackSrc ? 1 : 0;
           }
           return resourceState.outcome === 'error' ? 3 : 2;
+        }
+        // media-elements M1 切片 3（F1/F6）：HTMLTrackElement IDL 反射面。kind 为 enumerated
+        // （missing → 'subtitles'；invalid/大小写归一后不命中 → 'metadata'——spec 表含土耳其
+        // ı/İ 大小写变体的 case-insensitive 归一用 toLowerCase 即可覆盖）；label/srclang 为
+        // 纯 DOMString 反射（missing → ''）；default 为布尔反射（presence）；src 为 URL 属性
+        // （反射 + base 解析为绝对 URL——同 R2838 a.href / R3047 iframe.src 模式；URL 解析前
+        // 剥离首尾 C0 control/space 且 \0 编码 %00 由 URL 构造器承担）。
+        // https://html.spec.whatwg.org/multipage/media.html#the-track-element
+        if (resourceTag === 'TRACK') {
+          if (prop === 'kind') {
+            var _tkRaw = handle ? __zw_get_attr_handle(handle, 'kind') : (typeof __zw_get_attr_lw === 'function' ? __zw_get_attr_lw(sel, 'kind') : __zw_get_attr(sel, 'kind'));
+            var _tk = String(_tkRaw == null ? '' : _tkRaw).toLowerCase();
+            return (_tk === 'subtitles' || _tk === 'captions' || _tk === 'descriptions' ||
+                    _tk === 'chapters' || _tk === 'metadata') ? _tk : (_tkRaw == null || _tkRaw === '' ? 'subtitles' : 'metadata');
+          }
+          if (prop === 'label' || prop === 'srclang') {
+            var _tlRaw = handle ? __zw_get_attr_handle(handle, prop) : (typeof __zw_get_attr_lw === 'function' ? __zw_get_attr_lw(sel, prop) : __zw_get_attr(sel, prop));
+            return _tlRaw == null ? '' : String(_tlRaw);
+          }
+          if (prop === 'default') {
+            return (handle ? __zw_has_attr_handle(handle, 'default') : (typeof __zw_has_attr_lw === 'function' ? __zw_has_attr_lw(sel, 'default') : __zw_has_attr(sel, 'default'))) === '1';
+          }
+          if (prop === 'src') {
+            var _tsHas = (handle ? __zw_has_attr_handle(handle, 'src') : (typeof __zw_has_attr_lw === 'function' ? __zw_has_attr_lw(sel, 'src') : __zw_has_attr(sel, 'src'))) === '1';
+            if (!_tsHas) return '';
+            var _tsRaw = handle ? __zw_get_attr_handle(handle, 'src') : (typeof __zw_get_attr_lw === 'function' ? __zw_get_attr_lw(sel, 'src') : __zw_get_attr(sel, 'src'));
+            // URL 属性：C0 control/space 首尾剥离（URL spec）后经 _zwResolveFetchUrl 解析 base
+            //（'' 也解析——空输入 + base = base 自身，与 a.href 同语义）。
+            var _tsClean = String(_tsRaw == null ? '' : _tsRaw).replace(/^[\x00-\x20]+/, '').replace(/[\x00-\x20]+$/, '');
+            return _zwResolveFetchUrl(_tsClean);
+          }
         }
         // reflected unsigned-long 维度属性（R2851）：IMG/IFRAME `.width`/`.height`（反射 width/height 内容属性
         // 为非负整数，缺省/不可解析 → 0；spec「reflect unsigned long」算法）+ IMG `.naturalWidth`/`.naturalHeight`.

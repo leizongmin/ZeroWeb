@@ -67,7 +67,7 @@
 | F1 | **`<track>` IDL 反射面整体缺失** | `track.kind/label/srclang/default` 全 undefined；`track.track` 抛 `TextTrack is not defined` | part03 get trap 无 TRACK 分支；TextTrack/TextTrackList 接口未建 | 49 Fail（7 用例） |
 | F2 | **HTMLMediaElement 元数据 IDL 缺失** | `currentTime/playbackRate/preload` 读返 undefined；`crossOrigin` 反射值无 anonymous/us e-credentials 归一 | 同上——media 段只有 R2835 四方法，无 IDL 属性面 | 9 Fail（4 用例） |
 | F3 | **`addTextTrack`/`textTracks` 缺失** | `video.addTextTrack is not a function`；`textTracks.length` undefined | TextTrack 集合面未建（依赖 F1 的 TextTrack 接口） | 10 Fail（2 用例） |
-| F4 | **媒体事件序列未派发**（headless 近似驱动缺口） | `loadstart/canplay/loadedmetadata` 等从不触发 → async_test 全部 case-level Timeout（subtest 本身断言正确） | 宿主 FR-009 资源 settle 只派 img/track/source 的 load/error；media 专有事件序列（load 算法）未接 | 11 case Timeout |
+| F4 | **媒体事件序列未派发**（headless 近似驱动缺口） | `loadstart/canplay/loadedmetadata` 等从不触发 → async_test 全部 case-level Timeout。注：Timeout 用例里的 2 Pass subtest 是外层同步 `test()` 包装（async_test 声明处），内层 async_test 恒 pending——通过率为表面值 | 宿主 FR-009 资源 settle 只派 img/track/source 的 load/error；media 专有事件序列（load 算法）未接 | 11 case Timeout |
 | F5 | **canPlayType 空表的连锁** | 41 PreconditionFailed（assert_implements_optional）+ 少量 Fail | 空表本身是 spec 允许的保守实现（R2835 记录在案），但 `'audio/mp4'→''` 使 optional 断言前置失败——非 bug，能力表决策后自愈 | 41 PF |
 | F6 | **`track.src` IDL 解析缺失** | 返原始属性串，未按 base 解析为绝对 URL；`\0` 未按 spec 剥离 | track.src 为 URL 属性（同 R2838 a.href 模式），未接 `__zw_parse_url` | 6 Fail |
 

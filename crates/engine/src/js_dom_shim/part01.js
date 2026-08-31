@@ -81,6 +81,12 @@
   // FR-009：资源元素最终状态（key → {url,outcome,width,height,error}）。
   // host 在 fetch/decode settle 后提交；导航与其它 page-local 状态一并清空。
   var _resourceStates = {};
+  // media-elements M1 切片 3：HTMLMediaElement 播放状态镜像（key → {currentTime, duration,
+  // playbackRate, defaultPlaybackRate, volume, playing, ended}）。headless 无解码器——set trap
+  // 写入、get trap 读出（未写走 spec 默认值：currentTime 0 / duration NaN / playbackRate 与
+  // defaultPlaybackRate 1 / volume 1 / paused true）。play()/pause() 方法段（part03）同读写此表。
+  // 与 _resourceStates 同生命周期（page-local，导航清空）。
+  var _mediaState = {};
   // R3049：textarea defaultValue 追踪（闭合 R3048 限制①）。textarea.value ↔ live textContent，无独立初值缓存
   //（区别 INPUT value 属性 / OUTPUT _outputDefault）→ form.reset 无法还原 textarea。本 map 惰性捕获 textarea 初值
   //（getter 首读 / value setter 首写前），供 defaultValue getter + form.reset 还原。同 _outputDefault 经 reset 清空。

@@ -1,4 +1,87 @@
           }
+        } else if (p === 'currentTime' || p === 'playbackRate' || p === 'defaultPlaybackRate' || p === 'volume') {
+          // media-elements M1 切片 3：HTMLMediaElement 播放状态 setter——per-element
+          // `_mediaState` 镜像（get trap 同源读回）。仅 AUDIO/VIDEO。volume clamp [0,1]
+          //（spec「volume must be clamped」，静默 clamp 非 throw——spec IndexSizeError 仅
+          // 非有限数值，这里 NaN/Infinity 亦 clamp 边界）；currentTime/playbackRate 数值化。
+          // ratechange 事件派发 defer（headless 无播放时钟，事件序列面 M2 接）。
+          var _mt = _realTag(sel, handle);
+          if (_mt === 'AUDIO' || _mt === 'VIDEO') {
+            var _mst = _mediaState[key] || (_mediaState[key] = {});
+            var _mv = Number(value);
+            if (p === 'volume') {
+              if (isNaN(_mv)) _mv = 1;
+              _mst.volume = _mv < 0 ? 0 : (_mv > 1 ? 1 : _mv);
+            } else if (p === 'playbackRate') {
+              if (isNaN(_mv)) _mv = 1;
+              _mst.playbackRate = _mv;
+            } else if (p === 'defaultPlaybackRate') {
+              if (isNaN(_mv)) _mv = 1;
+              _mst.defaultPlaybackRate = _mv;
+            } else {
+              _mst.currentTime = isNaN(_mv) ? 0 : _mv;
+            }
+          }
+        } else if (p === 'defaultMuted') {
+          // `media.defaultMuted = x`——boolean 反射 `muted` 属性（dirty 态：设后不回落，同
+          // R2998 defaultChecked 模式——这里简化为 presence 反射，dirty 区分 M2 播放控制时补）。
+          var _dmTag = _realTag(sel, handle);
+          if (_dmTag === 'AUDIO' || _dmTag === 'VIDEO') {
+            if (value) {
+              if (handle) __zw_set_attr_handle(handle, 'muted', '');
+              else { __zw_set_attr(sel, 'muted', ''); moAttr = 'muted'; }
+            } else if (handle && typeof __zw_remove_attr_handle === 'function') {
+              __zw_remove_attr_handle(handle, 'muted');
+            } else if (!handle && typeof __zw_remove_attr === 'function') {
+              __zw_remove_attr(sel, 'muted'); moAttr = 'muted';
+            }
+          }
+        } else if (p === 'crossOrigin') {
+          // `media.crossOrigin = x`——enumerated 反射 setter：null → removeAttribute；
+          // 其余原样写属性（spec：IDL getter 归一，setter 存原始值——invalid value 'foo'
+          // 写属性 'foo'，getter 返 'anonymous'）。
+          var _coTag = _realTag(sel, handle);
+          if (_coTag === 'AUDIO' || _coTag === 'VIDEO' || _coTag === 'IMG') {
+            if (value === null || value === undefined) {
+              // 与 removeAttribute 同步 R122 实例层（removeAttribute 路径本身有清理；IDL setter
+              // 直呼 host remove 回调绕过了它——不清理则 hasAttribute 读实例层 stale true）。
+              try { _zwAttrInstRemoveNS(key, null, 'crossorigin'); } catch (_eCoRm) {}
+              if (handle && typeof __zw_remove_attr_handle === 'function') {
+                __zw_remove_attr_handle(handle, 'crossorigin');
+              } else if (!handle && typeof __zw_remove_attr === 'function') {
+                __zw_remove_attr(sel, 'crossorigin'); moAttr = 'crossorigin';
+              }
+            } else {
+              if (handle) __zw_set_attr_handle(handle, 'crossorigin', String(value));
+              else { __zw_set_attr(sel, 'crossorigin', String(value)); moAttr = 'crossorigin'; }
+            }
+          }
+        } else if (p === 'kind' || p === 'label' || p === 'srclang') {
+          // `track.kind/label/srclang = x`（HTMLTrackElement，M1 切片 3）——字符串反射 setter
+          // （写同名内容属性；kind 的归一在 getter）。仅 TRACK。
+          if (_realTag(sel, handle) === 'TRACK') {
+            var _tls = (value == null) ? '' : String(value);
+            if (handle) __zw_set_attr_handle(handle, p, _tls);
+            else { __zw_set_attr(sel, p, _tls); moAttr = p; }
+          }
+        } else if (p === 'default' && _realTag(sel, handle) === 'TRACK') {
+          // `track.default = x`——boolean 反射（truthy → presence；falsy → 移除）。移除同步
+          // R122 实例层（同 crossOrigin——防 hasAttribute/getAttribute 读 stale 实例记录）。
+          if (value) {
+            if (handle) __zw_set_attr_handle(handle, 'default', '');
+            else { __zw_set_attr(sel, 'default', ''); moAttr = 'default'; }
+          } else {
+            try { _zwAttrInstRemoveNS(key, null, 'default'); } catch (_eDfRm) {}
+            if (handle && typeof __zw_remove_attr_handle === 'function') {
+              __zw_remove_attr_handle(handle, 'default');
+            } else if (!handle && typeof __zw_remove_attr === 'function') {
+              __zw_remove_attr(sel, 'default'); moAttr = 'default';
+            }
+          }
+        } else if (p === 'src' && _realTag(sel, handle) === 'TRACK') {
+          // `track.src = x`——URL 属性 setter（原始串写属性；绝对化在 getter）。
+          if (handle) __zw_set_attr_handle(handle, 'src', String(value));
+          else { __zw_set_attr(sel, 'src', String(value)); moAttr = 'src'; }
         } else if (p === 'defaultValue') {
           // `input.defaultValue = x`（R2840）——反射 `value` 属性（初始值；attr 名映射 defaultValue→value）。
           // 仅设 value 属性，不联动 .value 当前态（spec 仅当当前值等于旧 defaultValue 时联动——罕见 defer）。
@@ -307,7 +390,16 @@
             // `"childElementCount" in parentEl`）。
             || prop === 'children' || prop === 'firstElementChild' || prop === 'lastElementChild'
             || prop === 'childElementCount' || prop === 'previousElementSibling'
-            || prop === 'nextElementSibling') {
+            || prop === 'nextElementSibling'
+            // media-elements M1 切片 3：HTMLMediaElement/HTMLTrackElement IDL 属性 `in` 可见性
+            //（WPT crossOrigin.html 首断言 `'crossOrigin' in video`——has 白名单缺列使恒 false）。
+            || prop === 'crossOrigin' || prop === 'defaultMuted'
+            || prop === 'currentTime' || prop === 'duration' || prop === 'playbackRate'
+            || prop === 'defaultPlaybackRate' || prop === 'volume' || prop === 'seeking'
+            || prop === 'paused' || prop === 'ended' || prop === 'preload'
+            || prop === 'kind' || prop === 'label' || prop === 'srclang'
+            || prop === 'default' || prop === 'src' || prop === 'textTracks'
+            || prop === 'addTextTrack') {
           return true;
         }
         // R184（js-dom M4）：Node 接口常量 + DOCUMENT_POSITION 常量的 `in` 可见性（spec

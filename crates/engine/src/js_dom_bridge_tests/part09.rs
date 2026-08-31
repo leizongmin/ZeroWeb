@@ -2604,3 +2604,131 @@ fn test_pointer_capture_api_r3068() {
         "多 pointerId 独立：release 1 后 hasPointerCapture(1)=false, (2)=true"
     );
 }
+
+#[test]
+fn test_media_metadata_idl_face_r388() {
+    // media-elements M1 切片 3：HTMLMediaElement 元数据 IDL 面 + HTMLTrackElement 反射。
+    // 验证：① media 初值（currentTime 0 / duration NaN / playbackRate 1 / volume 1 / paused
+    // true / seeking false）；② setter round-trip（currentTime=5 回读 5；volume clamp）；③
+    // preload/crossOrigin enumerated 反射；④ track.kind/label/srclang/default/src 反射；
+    // ⑤ track.src 绝对 URL 解析。
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("https://wpt.test/t.html".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+
+    // ① media 初值（spec：HAVE_NOTHING 时 duration NaN、currentTime 0、playbackRate 1、
+    // volume 1、paused true、seeking false）。
+    sandbox
+        .execute(
+            "globalThis.__v = document.createElement('video');\
+             globalThis.__init = [__v.currentTime, __v.duration, __v.playbackRate, __v.volume, __v.paused, __v.seeking].join(',');",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__init)").unwrap().value,
+        "0,NaN,1,1,true,false",
+        "media 初值面（spec headless 合法值）"
+    );
+
+    // ② setter round-trip + volume clamp [0,1]（spec silent clamp）。
+    sandbox
+        .execute(
+            "globalThis.__v.currentTime = 5;\
+             globalThis.__v.volume = 1.7;\
+             globalThis.__v.playbackRate = 3;\
+             globalThis.__rt = [__v.currentTime, __v.volume, __v.playbackRate].join(',');",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__rt)").unwrap().value,
+        "5,1,3",
+        "setter round-trip（volume 1.7 → clamp 1）"
+    );
+
+    // ③ preload/crossOrigin enumerated 反射。
+    sandbox
+        .execute(
+            "globalThis.__v.setAttribute('preload', 'none');\
+             globalThis.__v.setAttribute('crossorigin', 'ANONYMOUS');\
+             globalThis.__enum = [__v.preload, __v.crossOrigin].join(',');\
+             globalThis.__v2 = document.createElement('video');\
+             globalThis.__enum2 = [String(__v2.crossOrigin), __v2.preload].join(',');",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__enum)").unwrap().value,
+        "none,anonymous",
+        "preload 'none' 反射 + crossOrigin ANONYMOUS→anonymous 归一"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__enum2)").unwrap().value,
+        "null,metadata",
+        "crossOrigin missing→null；preload missing→metadata 缺省"
+    );
+    // crossOrigin setter：null → removeAttribute（同步 R122 实例层——hasAttribute 不 stale）。
+    sandbox
+        .execute(
+            "globalThis.__v.crossOrigin = null;\
+             globalThis.__coGone = __v.hasAttribute('crossorigin');",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__coGone)").unwrap().value,
+        "false",
+        "crossOrigin = null → removeAttribute"
+    );
+
+    // ④ track.kind/label/srclang/default 反射（kind 缺省 subtitles、invalid→metadata）。
+    sandbox
+        .execute(
+            "globalThis.__t = document.createElement('track');\
+             globalThis.__tInit = [__t.kind, __t.label, __t.srclang, __t.default].join(',');\
+             __t.setAttribute('kind', 'CAPTIONS');\
+             __t.setAttribute('label', 'EN');\
+             __t.setAttribute('default', '');\
+             globalThis.__tSet = [__t.kind, __t.label, __t.default].join(',');\
+             __t.setAttribute('kind', 'bogus');\
+             globalThis.__tInvalid = __t.kind;",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__tInit)").unwrap().value,
+        "subtitles,,,false",
+        "track 初值：kind subtitles / label '' / srclang '' / default false"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__tSet)").unwrap().value,
+        "captions,EN,true",
+        "track 属性反射（CAPTIONS→captions 归一 + default presence）"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__tInvalid)").unwrap().value,
+        "metadata",
+        "track kind invalid → metadata"
+    );
+
+    // ⑤ track.src URL 属性：绝对化解析（base = 页面 URL）。
+    sandbox
+        .execute(
+            "globalThis.__t.setAttribute('src', 'cap.vtt');\
+             globalThis.__ts = __t.src;",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__ts)").unwrap().value,
+        "https://wpt.test/cap.vtt",
+        "track.src 绝对 URL 解析（base=页面 URL）"
+    );
+}

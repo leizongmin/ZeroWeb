@@ -11332,7 +11332,14 @@
              prop === 'host' || prop === 'hostname' || prop === 'port' || prop === 'protocol' ||
              prop === 'origin' || prop === 'username' || prop === 'password')) {
           var aRaw = handle ? __zw_get_attr_handle(handle, 'href') : __zw_get_attr(sel, 'href');
-          if (!aRaw) return '';
+          if (!aRaw) {
+            // media-elements M1 切片 3：href 属性**存在但为空串**不是 missing——'' 解析为页
+            // 面绝对 URL（URL spec：空输入 + base = base 自身）。旧 !aRaw 恒返 '' 使
+            // `<a href="">.href` 为 ''（real browser = 页面 URL）。missing（无属性）仍返 ''。
+            var aEmptyPresent = (handle ? __zw_has_attr_handle(handle, 'href') : __zw_has_attr(sel, 'href')) === '1';
+            if (!aEmptyPresent || prop !== 'href') return '';
+            aRaw = '';
+          }
           if (typeof __zw_parse_url !== 'function') return prop === 'href' ? aRaw : '';
           try {
             var aBase = globalThis.location ? globalThis.location.href : '';
