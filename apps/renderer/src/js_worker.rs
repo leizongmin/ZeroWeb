@@ -447,8 +447,7 @@ fn refresh_worker_native_dom_source(
     #[cfg(all(feature = "quickjs", not(feature = "v8")))]
     {
         if *native_installed {
-            let dom = std::rc::Rc::new(std::cell::RefCell::new(zero_dom::parse_html(html)));
-            zero_engine::quickjs_dom_bindings::refresh_quickjs_dom_source(dom);
+            zero_engine::quickjs_dom_bindings::refresh_quickjs_dom_source_from_html(html);
             return;
         }
         let html_owned = html.to_string();

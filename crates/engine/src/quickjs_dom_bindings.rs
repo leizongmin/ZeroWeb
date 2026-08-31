@@ -91,6 +91,12 @@ pub fn refresh_quickjs_dom_source(dom: Rc<RefCell<Document>>) {
     DOM_SOURCE.with(|c| *c.borrow_mut() = Some(dom));
 }
 
+/// R386：从 HTML 文本刷新线程局部 DOM 源（封装 parse，worker 快照换代快路径；
+/// 依赖边界同 [`install_dom_bindings_quickjs_from_html`]——调用方不直接依赖 `zero_dom`）。
+pub fn refresh_quickjs_dom_source_from_html(html: &str) {
+    refresh_quickjs_dom_source(Rc::new(RefCell::new(zero_dom::parse_html(html))));
+}
+
 /// 清空全部绑定状态（reset_context / 导航重建 / WebView Drop 时调用；镜像 V8 reset_native_state）。
 pub fn reset_quickjs_state() {
     DOM_SOURCE.with(|c| *c.borrow_mut() = None);
