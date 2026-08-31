@@ -98,7 +98,10 @@ record-bench-baseline.sh（基线，手动）→ docs/perf/baselines/<platform_c
 - **新值**：`github-ubuntu-latest-amd-epyc-7763-64-core.json` 113 指标全量重建（`record-bench-baseline.sh --relax`，justification 记录本批复；报告 = run 33314616513 head `da06a5cad`，`benchmark_20260830_133625.json`，GATE FAIL 轮实测——该轮起 benchmarks job 的 artifact upload 带 `if: always()`，失败轮亦可取证，commit `da06a5cad`）。关键漂移项新基线：`mb/zero-canvas/transform_chain_100` 26544.6→36690.4ns、`mb/zero-webview/webview_builder_create` 5515.2→8104.3ns（正是 12 轮边缘超限的两项，随重建自然消解）。
 - **验证（护栏④）**：同一份 GATE FAIL 报告对新基线本地复跑 `perf-gate.sh` → **GATE PASS，113/113，NEW=0**——原失败轮全部指标收敛，符合「重建后仍超预算者单列报告再议」检查（本轮无残留超预算项）。
 - **CI 侧验证（2026-08-30 补记）**：run 33315920346（head `5830357cb`，UTC 14:05 触发）调度落 7763 → benchmarks **GATE PASS 113/113 NEW=0，run conclusion = success**——重建基线有效性获 CI 实证（8/20 起 13 轮 benchmarks 连续 FAIL 后首次全绿收口）。
-- **9V74 待执行**：本轮调度直落 7763，未取得 9V74 实测报告；护栏①两平台不共用一组数，9V74 re-capture 待下轮落 9V74 的 benchmarks 报告（失败轮工件现已可取）独立执行，不阻塞 main。
+- **9V74 re-capture 执行记录（本批复第二次执行，CI-GUARD 2026-08-31 轮）**：
+  - **新值**：`github-ubuntu-latest-amd-epyc-9v74-80-core.json` 113 指标全量重建（`record-bench-baseline.sh --relax`，justification 记录本批复；报告 = run 33394629672 head `b56b26de6`，`benchmark_20260831_130055.json`，GATE FAIL 轮实测，suspect=false）。本轮 38/113 指标 FAIL，94 个 mb/* 实测/基线 ratio 分布 min 1.12 / 中位数 1.33 / max 1.84、无一 ≤1.10——均匀漂移签名，横跨 14 个 crate 且代码窗口多为 docs/test 提交，非代码回归。
+  - **验证（护栏④）**：同一份 GATE FAIL 报告对新基线本地复跑 `perf-gate.sh` → **GATE PASS，113/113，NEW=0**，无残留超预算项。
+  - 批复至此全部执行完毕（7763 + 9V74 两平台基线均已按护栏①独立重建）。
 
 **2026-08-22 基线重建记录（用户放行，GB-20260821）**：
 - **旧值**：2026-08-08 初始基线（112 指标，`linux-x86_64.json`；justification「初始基线（性能门禁体系上线，2026-08-08）」）。
