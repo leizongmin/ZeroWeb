@@ -82,6 +82,7 @@ renderer 默认 feature = v8，且其 lib 测试不在 `make test` 批内（work
 | renderer lib（v8 + quickjs） | 153P × 2 |
 | clippy v8 / quickjs / v8+quickjs 组合（`-D warnings`） | 全零警告 |
 | fmt | 无 diff |
+| bench-gate 定向（`ZERO_WEB_BENCH_CRATES=zero-engine,zero-webview,zero-script-sandbox`，load1=0.5 近空窗） | **GATE PASS 42/42（NEW=0）**——首轮 load1≈6.0（并行流负载）跑出 2 FAIL（paint/compositing ns 级指标），按 R383/R385 噪声判据不采纳，空窗复跑全 PASS；R386 refresh-only 快路径在 JS 桥热路径上 net≥0 |
 
 ## 5. DC-1 状态影响
 
