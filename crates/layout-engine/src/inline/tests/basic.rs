@@ -1915,9 +1915,11 @@ fn r817_is_ahem_font_propagated_per_fragment() {
         "serif 片段 is_ahem 应为 false（实际字体非 Ahem）"
     );
 
-    // A3 不变量：line-height:1（run.height == font_size）时 Phase 2 v_offset 公式退化为 0。
-    // v_offset = baseline_y_abs - font_size - frag.y；line-height:1 下 frag.y = baseline_y - font_size，
-    // line.y=0 → baseline_y_abs = baseline_y → v_offset = baseline_y - font_size - (baseline_y - font_size) = 0。
+    // R3856 基线契约不变量：paint v_offset = baseline_y_abs - frag.y → glyph_y = 行基线绝对 y
+    //（Ahem 方块由 raster 放到 [baseline−0.8em, baseline+0.2em]，Skia 同）。
+    // line-height:1 下 frag.y = baseline_y - run.height = 80 - 100 = -20，line.y=0 →
+    // baseline_y_abs = baseline_y = 80 → glyph_y = 80 - (-20) + 0 = 100？不对：glyph_y =
+    // content_y + frag.y + v_offset = 0 + (-20) + 100 = 80 = baseline_y ✓。
     let mut single = InlineFormattingContext::new(800.0);
     let mut r = TextRun::simple(
         "X".to_string(),
@@ -1930,10 +1932,11 @@ fn r817_is_ahem_font_propagated_per_fragment() {
     single.break_into_lines(vec![r]);
     let f = &single.lines[0].runs[0];
     let baseline_y = single.lines[0].baseline_y;
-    let v_offset = baseline_y - f.font_size - f.y; // line.y = 0
+    let v_offset = baseline_y - f.y; // line.y = 0 → baseline_y_abs = baseline_y
+    let glyph_y = f.y + v_offset; // content_y = 0
     assert!(
-        v_offset.abs() < 0.001,
-        "line-height:1 时 Phase 2 v_offset 应退化为 0（A3），实际 {v_offset}"
+        (glyph_y - baseline_y).abs() < 0.001,
+        "R3856 基线契约：glyph_y 应等于行基线，实际 {glyph_y} vs {baseline_y}"
     );
 }
 

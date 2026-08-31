@@ -1009,12 +1009,6 @@ pub(super) fn is_cc_control_char(ch: char) -> bool {
     ((cp <= 0x1F) || (0x7F..=0x9F).contains(&cp)) && !matches!(cp, 0x09 | 0x0A | 0x0C | 0x0D)
 }
 
-/// Ahem 在 half-leading 近零时使用 em-box 定位。
-pub(super) fn ahem_uses_embox_position(line_height: f32, font_size: f32) -> bool {
-    let half_leading = (line_height - font_size) / 2.0;
-    half_leading.abs() < 0.5
-}
-
 pub(super) fn paint_ifc_baseline_offset(fragment_height: f32) -> f32 {
     fragment_height
 }

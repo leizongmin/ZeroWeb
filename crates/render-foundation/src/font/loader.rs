@@ -449,6 +449,11 @@ impl FontLoader {
     ///
     /// Ahem 是 WPT 标准测试字体，每个字符应渲染为边长 = font_size 的实心方块。
     /// fontdue 的光栅化结果与 Skia（Chrome）存在差异，直接生成方块可确保像素级对齐。
+    ///
+    /// Ahem 度量（W3C 官方字体，upem=1000）：ascent = 0.8em、descent = 0.2em；
+    /// 字形方块跨骑基线 [baseline − 0.8em, baseline + 0.2em]（Skia 同）。坐标约定
+    /// `y_offset = bitmap_top − height`（见下方 freetype 端到端测试注释）下
+    /// `y_offset = −(ascent + size)`。
     fn rasterize_ahem_glyph(&self, font_id: u32, code_point: char, size: f32) -> Result<GlyphBitmap, FontError> {
         let font = self.fontdue_font(font_id)?;
 
@@ -468,7 +473,7 @@ impl FontLoader {
                 width: w,
                 height: h,
                 x_offset: 0,
-                y_offset: -(ascent.ceil() as i16),
+                y_offset: ahem_square_y_offset(ascent, h),
                 advance: size,
             });
         }
@@ -494,8 +499,7 @@ impl FontLoader {
             width: w,
             height: h,
             x_offset: 0,
-            // y_offset 为负值表示从基线向上偏移，覆盖完整 em 方块
-            y_offset: -(ascent.ceil() as i16),
+            y_offset: ahem_square_y_offset(ascent, h),
             advance: size,
         })
     }
@@ -701,6 +705,18 @@ fn is_ahem_disclosure_triangle(code_point: char) -> bool {
     matches!(code_point, '\u{25B8}' | '\u{25C2}' | '\u{25BE}' | '\u{25B4}')
 }
 
+/// Ahem 方块的 `y_offset`（坐标约定 `y_offset = bitmap_top − height`，基线系）。
+///
+/// raster 落位 `top = glyph.y − y_offset − height`（glyph.y = 基线）。Ahem 方块跨骑基线：
+/// 顶 = baseline − ascent（0.8em）、底 = baseline + descent（0.2em），故
+/// `y_offset = −(height − ascent)`（= fontdue `metrics.ymin`，descendant 侧露出 0.2em）。
+/// 旧实现 `−ascent` 使位图整体上移 0.2em（方块落在 [baseline − 1.0em, baseline]，
+/// test/ref 双侧同移致自源 reftest 互相抵消，仅 blocks-020 等「方块须对齐盒边」案暴露
+/// 红/绿错位）。
+fn ahem_square_y_offset(ascent: f32, height: u16) -> i16 {
+    -((height as f32 - ascent).round() as i16)
+}
+
 fn ahem_disclosure_triangle_bitmap(code_point: char, width: u16, height: u16) -> Option<Vec<u8>> {
     if !is_ahem_disclosure_triangle(code_point) {
         return None;
@@ -870,6 +886,33 @@ fn decode_utf16be(data: &[u8]) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// R3856 Ahem em-box 落位契约：方块跨骑基线 [baseline − 0.8em, baseline + 0.2em]
+    ///（Skia/chromium 同）。坐标约定 `y_offset = bitmap_top − height`，raster 落位
+    /// `top = glyph.y − y_offset − height`（glyph.y = 基线）。driving：blocks-020/021/022
+    /// ——旧 `−ascent` 让方块整体高 0.2em（[b−1.0em, b]），test/ref 双侧同移致自源 reftest
+    /// 互相抵消，仅「方块须精确对齐盒边」案（绿色 XXX 须盖满 300×100 红色 outer）暴露。
+    #[test]
+    fn ahem_square_y_offset_places_bitmap_across_baseline() {
+        // Ahem upem=1000：ascent 0.8em。size=100px → h=100、ascent=80。
+        for (size, ascent) in [(100.0_f32, 80.0_f32), (20.0, 16.0), (16.0, 12.8)] {
+            let h = size.ceil() as u16;
+            let y_offset = ahem_square_y_offset(ascent, h);
+            let baseline = 1000.0_f32;
+            let top = baseline - y_offset as f32 - f32::from(h);
+            let bottom = top + f32::from(h);
+            assert!(
+                (top - (baseline - ascent)).abs() <= 1.0,
+                "size={size}: bitmap top 应 = baseline − ascent（{:.1}），实际 {top}",
+                baseline - ascent
+            );
+            assert!(
+                (bottom - (baseline + (size - ascent))).abs() <= 1.0,
+                "size={size}: bitmap bottom 应 = baseline + descent（{:.1}），实际 {bottom}",
+                baseline + (size - ascent)
+            );
+        }
+    }
 
     /// 查找一个可用的系统字体文件
     fn find_system_font() -> Option<std::path::PathBuf> {
