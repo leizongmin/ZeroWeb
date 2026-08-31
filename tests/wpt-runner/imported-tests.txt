@@ -216,3 +216,4 @@ css/css-conditional/at-supports-content-002.html css/css-conditional/at-supports
 css/css-conditional/at-media-content-002.html css/css-conditional/at-supports-001-ref.html == 2026-09-01 R3881 条件块（@media/@supports）内语句级 at-rule（@font-face/@keyframes/@counter-style）条件成立时展开生效
 css/css-conditional/at-supports-content-003.html css/css-conditional/at-supports-001-ref.html == 2026-09-01 R3882 渲染路径静态动画首帧（t=0 无状态求值）+ @keyframes background 简写插值
 css/css-conditional/at-media-content-003.html css/css-conditional/at-supports-001-ref.html == 2026-09-01 R3882 渲染路径静态动画首帧（t=0 无状态求值）+ @keyframes background 简写插值
+css/css-backgrounds/animations/background-color-animation-three-keyframes2.html css/css-backgrounds/animations/background-color-animation-three-keyframes2-ref.html == 2026-09-01 R3883 per-keyframe animation-timing-function（帧内 timing 段内应用）

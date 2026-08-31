@@ -24,6 +24,9 @@ pub struct KeyframePoint {
     pub offset: f64,
     /// 声明的属性名→原始值字符串。
     pub properties: HashMap<String, String>,
+    /// R3883：该帧声明的 animation-timing-function（CSS Animations §keyframes——
+    /// 应用于**从该帧到下一帧的段**；None = 回落到动画的 animation-timing-function）。
+    pub timing: Option<TimingFunctionValue>,
 }
 
 /// 活跃的动画实例。
@@ -216,10 +219,24 @@ pub struct InterpolatedProperty {
     pub value: String,
 }
 
-/// 对两个关键帧之间的属性值进行插值。
+/// 对两个关键帧之间的属性值进行插值（线性，无 timing——测试/纯几何辅助用）。
 ///
 /// 返回插值后的属性列表。
 pub fn interpolate_between(from: &KeyframePoint, to: &KeyframePoint, progress: f64) -> Vec<InterpolatedProperty> {
+    interpolate_between_with_timing(from, to, progress, &TimingFunctionValue::Linear)
+}
+
+/// R3883：带 timing 的关键帧段插值——**段起点帧**声明的 animation-timing-function
+/// 优先（CSS Animations §keyframes：帧内 timing 应用于该帧→下一帧的段），未声明时
+/// 回落动画全局 timing。timing 应用在**段内归一化 progress** 上（旧实现把全局 timing
+/// 应用到整体 [0,1] 进度，多段动画语义错误——0-10%-100% 三帧案全局 timing 会先扭曲
+/// 段选址再扭曲段内插值）。
+pub fn interpolate_between_with_timing(
+    from: &KeyframePoint,
+    to: &KeyframePoint,
+    progress: f64,
+    global_timing: &TimingFunctionValue,
+) -> Vec<InterpolatedProperty> {
     let mut result = Vec::new();
     let span = to.offset - from.offset;
     if span.abs() < 1e-9 {
@@ -233,8 +250,10 @@ pub fn interpolate_between(from: &KeyframePoint, to: &KeyframePoint, progress: f
         return result;
     }
 
-    // 局部进度归一化到 [0,1]
-    let local = ((progress - from.offset) / span).clamp(0.0, 1.0);
+    // 局部进度归一化到 [0,1]，再按段 timing 映射
+    let normalized = ((progress - from.offset) / span).clamp(0.0, 1.0);
+    let timing = from.timing.as_ref().unwrap_or(global_timing);
+    let local = apply_timing_function(normalized, timing);
 
     // 插值 to 中声明的所有属性
     for (name, to_value) in &to.properties {
@@ -422,6 +441,7 @@ impl AnimationClock {
                 KeyframePoint {
                     offset: 0.0,
                     properties: HashMap::new(),
+                    timing: None,
                 },
             );
         }
@@ -429,6 +449,7 @@ impl AnimationClock {
             points.push(KeyframePoint {
                 offset: 1.0,
                 properties: HashMap::new(),
+                timing: None,
             });
         }
 
@@ -626,7 +647,7 @@ impl AnimationClock {
                 });
                 // 计算最终帧进度（考虑方向）
                 let final_progress = final_animation_progress(anim);
-                let props = interpolate_keyframes(&anim.keyframes, final_progress);
+                let props = interpolate_keyframes(&anim.keyframes, final_progress, &anim.timing_function);
                 all_props.extend(props);
                 continue;
             }
@@ -659,11 +680,10 @@ impl AnimationClock {
             // 应用方向
             let directed = apply_direction(iter_progress, anim.iteration, &anim.direction);
 
-            // 应用 timing function
-            let timed = apply_timing_function(directed, &anim.timing_function);
-
-            // 在关键帧之间插值
-            let props = interpolate_keyframes(&anim.keyframes, timed);
+            // R3883：timing function 改为段内应用——interpolate_keyframes 选段后按
+            // 段起点帧的 timing（回落全局）映射段内归一化进度（CSS Animations §keyframes）。
+            // 全局 timing 不再扭曲整体进度（多段动画的段选址须用线性进度）。
+            let props = interpolate_keyframes(&anim.keyframes, directed, &anim.timing_function);
             all_props.extend(props);
         }
 
@@ -782,13 +802,28 @@ fn block_to_point(block: &KeyframeBlock) -> KeyframePoint {
             .unwrap_or(0.0)
     };
 
+    // R3883：帧内 `animation-timing-function` 是**段 timing**（应用于本帧→下一帧），
+    // 不是可插值属性——从 properties 剥离单独存储，避免落入插值/应用名单被丢弃或误用。
+    // 值解析失败（畸形 timing）→ None（回落动画全局 timing）。
+    let mut timing = None;
     let properties: HashMap<String, String> = block
         .declarations
         .iter()
+        .filter(|d| {
+            if d.property.eq_ignore_ascii_case("animation-timing-function") {
+                timing = zero_css_parser::values::parse_timing_function(d.value.trim());
+                return false;
+            }
+            true
+        })
         .map(|d| (d.property.clone(), d.value.clone()))
         .collect();
 
-    KeyframePoint { offset, properties }
+    KeyframePoint {
+        offset,
+        properties,
+        timing,
+    }
 }
 
 /// 应用动画方向。
@@ -814,7 +849,11 @@ fn apply_direction(progress: f64, iteration: u64, direction: &AnimationDirection
 }
 
 /// 在关键帧序列中找到当前进度对应的两个帧并插值。
-fn interpolate_keyframes(keyframes: &[KeyframePoint], progress: f64) -> Vec<InterpolatedProperty> {
+fn interpolate_keyframes(
+    keyframes: &[KeyframePoint],
+    progress: f64,
+    global_timing: &TimingFunctionValue,
+) -> Vec<InterpolatedProperty> {
     if keyframes.is_empty() {
         return Vec::new();
     }
@@ -840,7 +879,7 @@ fn interpolate_keyframes(keyframes: &[KeyframePoint], progress: f64) -> Vec<Inte
     }
     let to_idx = (from_idx + 1).min(keyframes.len() - 1);
 
-    interpolate_between(&keyframes[from_idx], &keyframes[to_idx], progress)
+    interpolate_between_with_timing(&keyframes[from_idx], &keyframes[to_idx], progress, global_timing)
 }
 
 /// 生成动画最后一帧的属性（用于 fill-mode: forwards）。
@@ -1092,10 +1131,12 @@ mod tests {
         let from = KeyframePoint {
             offset: 0.0,
             properties: HashMap::from([("opacity".to_string(), "1.0".to_string())]),
+            timing: None,
         };
         let to = KeyframePoint {
             offset: 1.0,
             properties: HashMap::from([("opacity".to_string(), "0.0".to_string())]),
+            timing: None,
         };
 
         let result = interpolate_between(&from, &to, 0.5);
@@ -1113,6 +1154,7 @@ mod tests {
                 ("opacity".to_string(), "1.0".to_string()),
                 ("width".to_string(), "100px".to_string()),
             ]),
+            timing: None,
         };
         let to = KeyframePoint {
             offset: 1.0,
@@ -1120,6 +1162,7 @@ mod tests {
                 ("opacity".to_string(), "0.5".to_string()),
                 ("width".to_string(), "200px".to_string()),
             ]),
+            timing: None,
         };
 
         let result = interpolate_between(&from, &to, 0.5);
@@ -1137,11 +1180,82 @@ mod tests {
         let pt = KeyframePoint {
             offset: 0.5,
             properties: HashMap::from([("opacity".to_string(), "0.5".to_string())]),
+            timing: None,
         };
 
         let result = interpolate_between(&pt, &pt, 0.5);
         assert_eq!(result.len(), 1);
         assert_eq!(result[0].name, "opacity");
+    }
+
+    /// R3883：帧内 animation-timing-function 应用于**段内归一化进度**（CSS Animations
+    /// §keyframes）——用 ease-in（x=0.5 → y≈0.315）验证段 timing 确实改变了线性插值。
+    /// driving: css-backgrounds/animations three-keyframes1..3。
+    #[test]
+    fn test_per_keyframe_timing_applies_to_segment() {
+        let from = KeyframePoint {
+            offset: 0.0,
+            properties: HashMap::from([("opacity".to_string(), "0.0".to_string())]),
+            timing: Some(TimingFunctionValue::EaseIn),
+        };
+        let to = KeyframePoint {
+            offset: 1.0,
+            properties: HashMap::from([("opacity".to_string(), "1.0".to_string())]),
+            timing: None,
+        };
+
+        // 段 timing 生效：local 0.5 → ease-in(0.5) ≈ 0.315（≠ 线性 0.5）
+        let result = interpolate_between_with_timing(&from, &to, 0.5, &TimingFunctionValue::Linear);
+        let val: f64 = result[0].value.parse().unwrap();
+        assert!((val - 0.315).abs() < 0.02, "segment timing must apply (got {val})");
+
+        // 帧未声明 timing → 回落全局 timing（同样 ease-in → ≈0.315）
+        let from_no_timing = KeyframePoint {
+            timing: None,
+            ..from.clone()
+        };
+        let result = interpolate_between_with_timing(&from_no_timing, &to, 0.5, &TimingFunctionValue::EaseIn);
+        let val: f64 = result[0].value.parse().unwrap();
+        assert!(
+            (val - 0.315).abs() < 0.02,
+            "global timing fallback must apply (got {val})"
+        );
+
+        // 无 timing（Linear）→ 线性 0.5
+        let result = interpolate_between_with_timing(&from_no_timing, &to, 0.5, &TimingFunctionValue::Linear);
+        let val: f64 = result[0].value.parse().unwrap();
+        assert!((val - 0.5).abs() < 0.01, "linear fallback must be linear (got {val})");
+    }
+
+    /// R3883：帧内 `animation-timing-function` 声明从可插值 properties 剥离
+    ///（它不是动画属性——旧实现落入 properties 后被插值/应用名单静默丢弃）。
+    #[test]
+    fn test_block_to_point_strips_timing_declaration() {
+        let block = KeyframeBlock {
+            selectors: vec![KeyframeSelector::Percentage(10.0)],
+            declarations: vec![
+                Declaration {
+                    property: "background-color".to_string(),
+                    value: "rgb(200, 0, 0)".to_string(),
+                    important: false,
+                },
+                Declaration {
+                    property: "animation-timing-function".to_string(),
+                    value: "cubic-bezier(0,1,1,0)".to_string(),
+                    important: false,
+                },
+            ],
+        };
+        let pt = block_to_point(&block);
+        assert!(
+            !pt.properties.contains_key("animation-timing-function"),
+            "timing must be stripped"
+        );
+        assert_eq!(
+            pt.properties.get("background-color").map(String::as_str),
+            Some("rgb(200, 0, 0)")
+        );
+        assert_eq!(pt.timing, Some(TimingFunctionValue::CubicBezier(0.0, 1.0, 1.0, 0.0)));
     }
 
     // ── 颜色解析测试 ──
@@ -2030,7 +2144,7 @@ mod tests {
 
     #[test]
     fn test_interpolate_keyframes_empty() {
-        let result = interpolate_keyframes(&[], 0.5);
+        let result = interpolate_keyframes(&[], 0.5, &TimingFunctionValue::Linear);
         assert!(result.is_empty());
     }
 
@@ -2039,8 +2153,9 @@ mod tests {
         let pt = KeyframePoint {
             offset: 0.5,
             properties: HashMap::from([("opacity".to_string(), "0.5".to_string())]),
+            timing: None,
         };
-        let result = interpolate_keyframes(&[pt], 0.3);
+        let result = interpolate_keyframes(&[pt], 0.3, &TimingFunctionValue::Linear);
         assert_eq!(result.len(), 1);
         assert_eq!(result[0].value, "0.5");
     }

@@ -30,3 +30,4 @@ css/css-fonts/resources/vs/STIXTwoMath-Regular_with-cmap14-subset.ttf
 css/css-fonts/resources/vs/NotoSansMath-Regular_without-cmap14-subset.ttf
 css/css-content/resources/rect.svg
 fonts/fail.woff
+css/css-backgrounds/animations/background-color-animation-three-keyframes2-ref.html
