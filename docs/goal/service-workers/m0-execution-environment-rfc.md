@@ -382,7 +382,7 @@ M1-3 首次改变 `navigator.serviceWorker` 行为，必须同提交带 driving 
 
 - `crates/css-parser/**`、`style-system/**`、`layout-engine/**`、`render-foundation/**`：
   与 SW 无关且属于并行 rendering 域。
-- `docs/goal/js-dom/**`、`docs/goal/storage-cache-api/**`：只读取依赖状态，不代改其他 goal 控制面。
+- `docs/goal/archive/js-dom/**`、`docs/goal/storage-cache-api/**`：只读取依赖状态，不代改其他 goal 控制面。
 - js-dom S6 未 land 前禁止修改 fetch bridge 主路径。
 
 ### 8.3 实现来源

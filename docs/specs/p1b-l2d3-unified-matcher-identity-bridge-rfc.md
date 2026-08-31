@@ -4,7 +4,7 @@
 **日期**: 2026-08-22（v0.1）/ 2026-08-28（v0.2）/ 2026-08-29（v0.3）
 **状态**: **实用收口（Practically-closed）**（d3a/d3b/d3c/d3d-r1 已落；d3d-r2 达成[R356]；**d3d-r3/d3e 结项**[R359 探针裁定：三域 compound identity 全绿 + 查询单价 19µs——本树化无正确性/性能收益面，唯一实缺口 iframe 工厂元素 compound QSA 已补面修复]；M1 JS 侧实用收口达成，剩余 = M2 S6/M5 default-on 主线）
 **父 RFC**: `docs/specs/p1b-v8-native-bindings-rfc.md` §3.7 L2（本文件是 L2 的 JS 侧细化）
-**goal**: `docs/goal/js-dom.md` M1（L2 polyfill-live 合一）
+**goal**: `docs/goal/archive/js-dom.md` M1（L2 polyfill-live 合一）
 
 ---
 

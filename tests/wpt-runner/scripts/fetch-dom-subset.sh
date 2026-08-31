@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Fetch a pinned subset of the upstream WPT dom/ tests (testharness style)
-# used by the JS/DOM nativization goal (docs/goal/js-dom.md, M4 / DC-3).
+# used by the JS/DOM nativization goal (docs/goal/archive/js-dom.md, M4 / DC-3).
 #
 # Strategy: first batch = main-thread .html cases of dom/nodes/ (the core
 # Node/Element/Document surface — directly exercises native DOM bindings vs

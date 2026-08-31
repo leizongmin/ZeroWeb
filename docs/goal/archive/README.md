@@ -12,5 +12,6 @@
 | [html-compat.md](./html-compat.md) + [html-compat/](./html-compat/)（master/test-matrix/completion-audit） | 2026-08-17 | 已完成（M0-M4 ✅：FR-001~012 / NFR-001~008 / IF-001~005 / 门禁全项 complete，completion-audit 2026-08-13；完成日 2026-08-13） |
 | form-validation（模式 B 入口自归档——入口在 [../form-validation/archive/form-validation-goal-v1-2026-08-17.md](../form-validation/archive/form-validation-goal-v1-2026-08-17.md)，master/evidence 原地保留） | 2026-08-17 | 已完成（M1-M3 ✅：constraints 919 Pass / 0 Fail、提交阻断全链路；完成日 2026-08-17，归档由该流 commit `eb44f905e` 执行，本表补登记） |
 | [storage-indexeddb.md](./storage-indexeddb.md) + [storage-indexeddb/](./storage-indexeddb/)（模式 A：master/evidence/archive） | 2026-08-19 | 已完成（DC-1~4 ✅：固定 WPT revision imported 168/210 文件、1073/1073 Pass、零 skip；Rust host 接线、Browser ownership、跨会话持久化与错误回滚完成） |
+| [js-dom.md](./js-dom.md) + [js-dom/](./js-dom/)（模式 A：master/evidence/archive，108 归档切片 + 130+ evidence） | 2026-08-31 | 已完成（DC-1~8 ✅：双引擎 native default-on + kill-switch 删除、Vue/lit/WC e2e、WPT dom 上游 8 域 55808P/99.95%、roundRect panic 修复；R385 判定矩阵 DONE，完成日 2026-08-31） |
 
 `rendering-compat/` 子目录的已完成设计稿见 [`../rendering-compat/archive/`](../rendering-compat/archive/)。

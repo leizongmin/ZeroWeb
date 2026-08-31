@@ -106,7 +106,7 @@ const CANVAS_SKIP_FILES: &[&str] = &[
 /// canvas-tests.js 的 WPT 内路径（prepare 时内联替换）。
 const CANVAS_TESTS_JS_PATH: &str = "html/canvas/resources/canvas-tests.js";
 
-/// DOM 专项（docs/goal/js-dom.md，M4 / DC-3）导入的上游 `dom/` 子目录面。
+/// DOM 专项（docs/goal/archive/js-dom.md，M4 / DC-3）导入的上游 `dom/` 子目录面。
 ///
 /// 由 `tests/wpt-runner/scripts/fetch-dom-subset.sh` 维护（wpt-data gitignored，
 /// 用例按需 fetch、不入库）；新子目录随 M4 切片扩展追加。dom 用例只需

@@ -12,7 +12,7 @@
 > |---|------|------|----------|
 > | ① | **CI benchmarks 9V74 + 7763 两平台基线一次性 re-capture**（GB-20260826 起维持征询，累计 12 轮平台绑定证据） | ✅ **放行** | 9V74 与 7763 **各自独立** re-capture（不共用一组数）；`record-bench-baseline.sh --relax` 显式执行 + justification 记录本批复；沿用 GB-20260821 口径「重建后仍超预算者单列报告再议」；属重建基线非放宽阈值，绝对预算语义（hard tier / budget tier 公式）不动。落档于 `docs/specs/performance-and-resource-budget.md` §4 放行记录。 |
 > | ② | **物理 GPU 机 P3 复测**（zero-web Done Criteria 唯一未勾选项，第 10 轮挂起） | ⏸ **暂缓** | 维持挂起记录，继续等用户安排带独显物理机；不阻塞任何流。P3 复测内容（内存预算判定 271.5/256 MiB + parity 复测）与 Xvfb/llvmpipe 假阳性假设记录不变。 |
-> | ③ | **js-dom M7（QuickJS `ZW_NATIVE_DOM` default-on）启动** | ✅ **批准**（同 M5 口径，2026-08-19 批复先例） | 按「先 default-off 全量基线 → 翻开关 → 双流守门 A/B net≥0」执行序：① 建 default-off 全量基线（`make test` 双 feature + `make product-smoke` + `make bench-gate`）② 翻 QuickJS 路径 `ZW_NATIVE_DOM` 默认开关 ③ `make test` + scoped reftest A/B **net≥0 才 land**；reftest 基线互毁按 run-rules §9 碰头处理；kill-switch 删除留 M7 收尾子片。**与 M5（V8 default-on）相互独立**——M5 触发条件仍待（M2 收口等），不受本批复影响，到达时点仍按既有流程征询。执行归 js-dom 流（详单见 `docs/goal/js-dom/master.md` 待决策清单）。 |
+> | ③ | **js-dom M7（QuickJS `ZW_NATIVE_DOM` default-on）启动** | ✅ **批准**（同 M5 口径，2026-08-19 批复先例） | 按「先 default-off 全量基线 → 翻开关 → 双流守门 A/B net≥0」执行序：① 建 default-off 全量基线（`make test` 双 feature + `make product-smoke` + `make bench-gate`）② 翻 QuickJS 路径 `ZW_NATIVE_DOM` 默认开关 ③ `make test` + scoped reftest A/B **net≥0 才 land**；reftest 基线互毁按 run-rules §9 碰头处理；kill-switch 删除留 M7 收尾子片。**与 M5（V8 default-on）相互独立**——M5 触发条件仍待（M2 收口等），不受本批复影响，到达时点仍按既有流程征询。执行归 js-dom 流（详单见 `docs/goal/archive/js-dom/master.md` 待决策清单（goal 已完成归档，2026-08-31；M5/M7 均已落地））。 |
 >
 > 批复渠道：Claude 对话（与 8/19、8/21 历次批复同渠道；飞书 bot 征询按 run-rules §7 仅为告知）。
 

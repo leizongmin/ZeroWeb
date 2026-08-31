@@ -3,8 +3,8 @@
 **版本**: v0.4（v0.3→v0.4：pa3 sel 域 @ R380 + pa4-lite @ R387 land + R388 定性合并——剩余统一为 parse-position 可见性深项，2026-08-31）
 **日期**: 2026-08-30
 **状态**: Draft（pa1/pa2/pa3-sel/pa4-lite 已 land；剩余 = parse-position 可见性深项[MutationObserver-document 余 2F，R388 定性合并——深结构挂账，非 goal DC 阻塞]；pa3 handle 域补全面无 driving Fail，speculative 保留）
-**goal**: `docs/goal/js-dom.md` M4 基线维护延伸（已知 Fail 深项同根归因）
-**证据锚点**: `docs/goal/js-dom/evidence/2026-08-30-r373-abort-domain-import.md`（parse-time 评估）/ `2026-08-30-r377-inserted-script-execution.md`（fused innerHTML 实验 + 探针）/ R371（replaceWith 重键 + 探针链）
+**goal**: `docs/goal/archive/js-dom.md` M4 基线维护延伸（已知 Fail 深项同根归因）
+**证据锚点**: `docs/goal/archive/js-dom/evidence/2026-08-30-r373-abort-domain-import.md`（parse-time 评估）/ `2026-08-30-r377-inserted-script-execution.md`（fused innerHTML 实验 + 探针）/ R371（replaceWith 重键 + 探针链）
 
 ---
 
@@ -114,7 +114,7 @@ pa1 零行为探针轮（临时插桩 + 三轮递进探针，跑后 checkout 全
 - **M6 补 mark** 随 pa2 或独立轻量小片 land（kill-switch 下零生产风险）。
 - **pa3 前置修正项新增**：R377 钩子 registry 空源（fragment 展开随迁 text 子）。
 
-详见 `docs/goal/js-dom/evidence/2026-08-30-r379-pa1-mark-lifecycle-audit.md`。
+详见 `docs/goal/archive/js-dom/evidence/2026-08-30-r379-pa1-mark-lifecycle-audit.md`。
 
 ## 4. 修订历史
 
