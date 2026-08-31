@@ -28,6 +28,9 @@ service-workers/service-worker/resources/iso-latin1-header-worker.js	support	wor
 service-workers/service-worker/invalid-header.https.html	testharness	case	1	1512	no	1bc976979046c127ad3d2f4282ce297e997b903d	04067ce9c7c2165e71ad7d0dde10a4c5cb394a83
 service-workers/service-worker/resources/invalid-header-worker.js	support	worker-script	1	430	no	850874b8116dabc2a86de9c183ca430b2a415f06	04067ce9c7c2165e71ad7d0dde10a4c5cb394a83
 service-workers/service-worker/resources/invalid-header-iframe.https.html	support	iframe-document	1	699	no	8f0e6baca1757cfc18c929438b72750920303343	04067ce9c7c2165e71ad7d0dde10a4c5cb394a83
+service-workers/service-worker/invalid-blobtype.https.html	testharness	case	1	1517	no	1c5920fb039101b18fc3c39e53f7cbb9b5e1ebfc	04067ce9c7c2165e71ad7d0dde10a4c5cb394a83
+service-workers/service-worker/resources/invalid-blobtype-worker.js	support	worker-script	1	311	no	865dc30d428228d9fc5c0161d669360f84df7660	04067ce9c7c2165e71ad7d0dde10a4c5cb394a83
+service-workers/service-worker/resources/invalid-blobtype-iframe.https.html	support	iframe-document	1	822	no	04a9cb515e092153ee016fa9a3e3da63635c55b1	04067ce9c7c2165e71ad7d0dde10a4c5cb394a83
 service-workers/service-worker/fetch-event-respond-with-custom-response.https.html	testharness	case	1	2957	no	645a29c9b4f146b8c4024650c358c8325663cbac	24197a11e8c5bd29a5cb7bdf18135a82be8a8546
 service-workers/service-worker/resources/fetch-event-respond-with-custom-response-worker.js	support	worker-script	1	1043	no	ff24aed1282c8cf69b801cb4841594aef19db613	24197a11e8c5bd29a5cb7bdf18135a82be8a8546
 service-workers/service-worker/fetch-event-handled.https.html	testharness	case	1	3183	no	08b88ce3773d036cf1ea3a9f321f87b26d54fffd	04067ce9c7c2165e71ad7d0dde10a4c5cb394a83

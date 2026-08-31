@@ -630,18 +630,18 @@ test-wpt-service-workers-clients-matchall-evaluation-wave-assets: fetch-wpt-serv
 .PHONY: fetch-wpt-service-workers-fetch-wave audit-wpt-service-workers-fetch-wave test-wpt-service-workers-fetch-wave-assets testharness-service-workers-fetch baseline-wpt-service-workers-fetch
 fetch-wpt-service-workers-fetch-wave:
 	WPT_ASSET_MANIFEST="$(CURDIR)/docs/goal/service-workers/evidence/2026-08-22-m2-fetch-request-end-to-end-assets.tsv" \
-		WPT_EXPECTED_ASSET_COUNT=61 WPT_CORPUS_LABEL="Service Worker fetch wave" \
+		WPT_EXPECTED_ASSET_COUNT=64 WPT_CORPUS_LABEL="Service Worker fetch wave" \
 		$(WPT_BASH) tests/wpt-runner/scripts/fetch-service-workers-tier-a.sh
 
 audit-wpt-service-workers-fetch-wave:
 	WPT_ASSET_MANIFEST="$(CURDIR)/docs/goal/service-workers/evidence/2026-08-22-m2-fetch-request-end-to-end-assets.tsv" \
-		WPT_EXPECTED_ASSET_COUNT=61 WPT_CORPUS_LABEL="Service Worker fetch wave" \
+		WPT_EXPECTED_ASSET_COUNT=64 WPT_CORPUS_LABEL="Service Worker fetch wave" \
 		$(WPT_BASH) tests/wpt-runner/scripts/fetch-service-workers-tier-a.sh --verify-only
 
 test-wpt-service-workers-fetch-wave-assets: fetch-wpt-service-workers-fetch-wave
 	WPT_SERVICE_WORKER_SOURCE="$(CURDIR)/tests/wpt-runner/wpt-data/.service-workers-tier-a-root" \
 		WPT_ASSET_MANIFEST="$(CURDIR)/docs/goal/service-workers/evidence/2026-08-22-m2-fetch-request-end-to-end-assets.tsv" \
-		WPT_EXPECTED_ASSET_COUNT=61 WPT_CORPUS_LABEL="Service Worker fetch wave" \
+		WPT_EXPECTED_ASSET_COUNT=64 WPT_CORPUS_LABEL="Service Worker fetch wave" \
 		WPT_TAMPER_ASSET="service-workers/service-worker/resources/fetch-event-async-respond-with-worker.js" \
 		$(WPT_BASH) tests/wpt-runner/scripts/test-service-workers-tier-a-assets.sh
 

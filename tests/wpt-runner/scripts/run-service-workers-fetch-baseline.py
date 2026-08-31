@@ -10,8 +10,8 @@ import subprocess
 import sys
 from pathlib import Path
 
-EXPECTED_CASES = 23
-EXPECTED_SUBTESTS = 56
+EXPECTED_CASES = 24
+EXPECTED_SUBTESTS = 57
 
 
 def parse_args() -> argparse.Namespace:
@@ -99,7 +99,7 @@ def render_markdown(summary: dict) -> str:
             "",
             "## Scope",
             "",
-            "This pinned Service Worker M2 fetch/interception baseline covers twenty-three cases. "
+            "This pinned Service Worker M2 fetch/interception baseline covers twenty-four cases. "
             "`fetch-on-the-right-interface.https.any.js` verifies that `fetch` is inherited "
             "from `WorkerGlobalScope.prototype` rather than installed as an own property on "
             "`ServiceWorkerGlobalScope`, and `historical.https.any.js` verifies that the "
@@ -145,6 +145,9 @@ def render_markdown(summary: dict) -> str:
             "XMLHttpRequest path. "
             "`invalid-header.https.html` covers synthetic `respondWith()` response "
             "headers with an invalid NUL byte value becoming a network error. "
+            "`invalid-blobtype.https.html` covers synthetic `respondWith()` "
+            "responses constructed from a Blob with an invalid MIME type, ensuring "
+            "the invalid type does not become a `Content-Type` header. "
             "`uncontrolled-page.https.html` covers the scope boundary that a page outside "
             "the registered Service Worker scope remains uncontrolled and its XMLHttpRequest "
             "fetches bypass that worker's fetch handler. "

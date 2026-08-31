@@ -872,6 +872,7 @@ pub const SERVICE_WORKER_FETCH_CASES: &[&str] = &[
     "service-workers/service-worker/fetch-event-respond-with-argument.https.html",
     "service-workers/service-worker/iso-latin1-header.https.html",
     "service-workers/service-worker/invalid-header.https.html",
+    "service-workers/service-worker/invalid-blobtype.https.html",
     "service-workers/service-worker/uncontrolled-page.https.html",
     "service-workers/service-worker/claim-fetch.https.html",
     "service-workers/service-worker/claim-not-using-registration.https.html",
@@ -3812,8 +3813,8 @@ async_test(function(test) {
             .iter()
             .copied()
             .collect::<std::collections::BTreeSet<_>>();
-        assert_eq!(SERVICE_WORKER_FETCH_CASES.len(), 23);
-        assert_eq!(unique.len(), 23);
+        assert_eq!(SERVICE_WORKER_FETCH_CASES.len(), 24);
+        assert_eq!(unique.len(), 24);
         assert!(SERVICE_WORKER_FETCH_CASES.contains(
             &"service-workers/service-worker/ServiceWorkerGlobalScope/fetch-on-the-right-interface.https.any.js"
         ));
@@ -3861,6 +3862,7 @@ async_test(function(test) {
         );
         assert!(SERVICE_WORKER_FETCH_CASES.contains(&"service-workers/service-worker/iso-latin1-header.https.html"));
         assert!(SERVICE_WORKER_FETCH_CASES.contains(&"service-workers/service-worker/invalid-header.https.html"));
+        assert!(SERVICE_WORKER_FETCH_CASES.contains(&"service-workers/service-worker/invalid-blobtype.https.html"));
         assert!(SERVICE_WORKER_FETCH_CASES.contains(&"service-workers/service-worker/uncontrolled-page.https.html"));
         assert!(SERVICE_WORKER_FETCH_CASES.contains(&"service-workers/service-worker/claim-fetch.https.html"));
         assert!(
