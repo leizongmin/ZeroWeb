@@ -1290,6 +1290,7 @@
 
 ## Document Control / Archive Policy
 
+> **▶ CSS2/normal-flow 家族图谱（R3855-P 调查轮——66 fail 全归因，0 net code·2026-08-31）**：normal-flow 746 案 680 pass 91%。66 fail 家族拆解：svg-replaced ×14（inline SVG 无固有宽/比 → §10.3.2 默认 300px + 形状渲染，goal-line out-of-scope defer）；block-in-inline-* ×7（动态重排 × R109 split 深域）；**blocks-017/020/021/022/025 ×5**（uniform ~2.4%）——blocks-020 深挖：LAYOUT_DUMP 实证**布局正确**（.inner 200%×200% = 600×200 @ 正确位）但 paint 绿色仅铺 ~292 宽 = **paint 层 % 尺寸子盒背景宽裁剪线索**（paint_background 尺寸来源/clip），primitives dump 立案下轮；min/max applies-to ×10 离散；inline-table ×4；shrink-to-fit 精度 ×10；replaced-intrinsic ×6。无单主导机制，probe 不落码，corpus 同值 13784。本 goal 仍未达到 95% upstream WPT reftest 完成标准。
 > **📄 2026-07-29 结构性精简**：本文件从 982 行精简到 ~460 行。详细内容转子文档：DC 进度→ [`dc-progress.md`](rendering-compat/dc-progress.md)、当前能力/缺口基线→ [`current-baseline.md`](rendering-compat/current-baseline.md)、已完成里程碑→ [`archive/milestones-history.md`](rendering-compat/archive/milestones-history.md)。**精简前完整原文（982 行，零删减保底）→ [`archive/rendering-compat-pre-slimdown-2026-07-29.md`](rendering-compat/archive/rendering-compat-pre-slimdown-2026-07-29.md)**。`master.md` 同期精简（750→~135 行），完整原文→ [`archive/master-pre-slimdown-2026-07-29.md`](rendering-compat/archive/master-pre-slimdown-2026-07-29.md)。
 
 ### 文档控制平面
