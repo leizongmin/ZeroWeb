@@ -220,3 +220,4 @@ css/css-backgrounds/animations/background-color-animation-three-keyframes2.html 
 css/css-conditional/at-supports-content-004.html css/css-conditional/at-supports-001-ref.html == 2026-09-01 R3884 ::before/::after counter 通用表示注入（布局依赖语境守卫）
 css/css-conditional/at-media-content-004.html css/css-conditional/at-supports-001-ref.html == 2026-09-01 R3884 ::before/::after counter 通用表示注入（布局依赖语境守卫）
 css/css-counter-styles/japanese-formal/counter-japanese-formal.html css/css-counter-styles/japanese-formal/counter-japanese-formal-ref.html == 2026-09-01 R3885 counter 静态求值（reset-only 语境注入真实值）+ 内置样式名 fallback + 负值越界修复
+css/CSS2/generated-content/content-counter-009.xht css/CSS2/generated-content/content-counter-009-ref.xht == 2026-09-01 R3887 全文档树序 counter 模拟——increment 语境伪元素真值注入

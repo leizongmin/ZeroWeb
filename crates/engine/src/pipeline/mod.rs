@@ -1951,7 +1951,7 @@ pub(crate) fn paint_cull_viewport(
 /// 状态（布局期 paint 侧才可求），布局前注入固定 0 值会显示错值（content-counter-009/010
 /// false-pass 显形教训）；仅「无任何 counter 动作」的页面，counter 隐式初值恒 0
 ///（CSS Lists §counter），注入 0 值表示是正确语义（at-supports/media-content-004 driving）。
-fn counter_value_before_paint(
+fn counter_value_before_paint_by_name(
     doc: &Document,
     nid: NodeId,
     counter_name: &str,
@@ -2002,6 +2002,161 @@ fn counter_value_before_paint(
     Some(value.unwrap_or(0))
 }
 
+/// R3887：全文档树序计数器模拟——与 paint 期 update_counters/pop_counter_scopes 完全
+/// 同构（reset → set → increment 顺序；reset 开新作用域压栈、子树结束弹出），对每个
+/// 元素记录其 ::before/::after 时刻的 counter 值快照（CSS2 §12.4：伪元素 counter 继承
+/// 含宿主自身 increment 后的值）。文档静态 → 布局前即可精确求值，inject 据此注入真值
+/// （取代 R3885 的逐元素启发式 counter_value_before_paint——后者无法覆盖兄弟累计，
+/// content-counter-009 的 28 个 span 序列即此）。
+/// 返回 (宿主元素 id → (::before 值表, ::after 值表))，值表为 counter 名 → 值。
+fn simulate_document_counters(doc: &Document, styles: &HashMap<NodeId, ComputedStyle>) -> CounterValueMaps {
+    use zero_style_system::property::types::ContentComputedValue;
+
+    // 预收集「需要 counter 值的宿主元素」——walk 只需在这些元素的 ::before/::after
+    // 时刻快照（全量快照浪费内存）。
+    let mut need_names: HashMap<NodeId, (Vec<String>, Vec<String>)> = HashMap::new();
+    for (&nid, st) in styles {
+        let collect = |items: &[zero_css_parser::values::ContentListItem]| -> Vec<String> {
+            items
+                .iter()
+                .filter_map(|item| match item {
+                    zero_css_parser::values::ContentListItem::Counter { name, .. } => Some(name.clone()),
+                    zero_css_parser::values::ContentListItem::Counters { name, .. } => Some(name.clone()),
+                    _ => None,
+                })
+                .collect()
+        };
+        let mut before_names = Vec::new();
+        let mut after_names = Vec::new();
+        if let Some(before) = &st.before_pseudo {
+            match &before.content {
+                ContentComputedValue::Counter { name, .. } => before_names.push(name.clone()),
+                ContentComputedValue::Counters { name, .. } => before_names.push(name.clone()),
+                ContentComputedValue::List(items) => before_names.extend(collect(items)),
+                _ => {}
+            }
+        }
+        if let Some(after) = &st.after_pseudo {
+            match &after.content {
+                ContentComputedValue::Counter { name, .. } => after_names.push(name.clone()),
+                ContentComputedValue::Counters { name, .. } => after_names.push(name.clone()),
+                ContentComputedValue::List(items) => after_names.extend(collect(items)),
+                _ => {}
+            }
+        }
+        if !before_names.is_empty() || !after_names.is_empty() {
+            need_names.insert(nid, (before_names, after_names));
+        }
+    }
+    if need_names.is_empty() {
+        return HashMap::new();
+    }
+
+    // 树序遍历。counter 状态 = 名 → 作用域栈（栈顶为当前值）。
+    // 关键：先到达元素自身时应用其 reset/set/increment，再快照 ::before（继承含自身
+    // increment 后的值），子树遍历完毕弹出本元素 reset 的作用域。
+    fn walk(
+        doc: &Document,
+        id: NodeId,
+        styles: &HashMap<NodeId, ComputedStyle>,
+        counters: &mut HashMap<String, Vec<i64>>,
+        need_names: &HashMap<NodeId, (Vec<String>, Vec<String>)>,
+        out: &mut CounterValueMaps,
+    ) {
+        let Some(node) = doc.get(id) else { return };
+        let is_element = matches!(node.kind, zero_dom::NodeKind::Element(_));
+        let children: Vec<NodeId> = node.children.clone();
+        let my_resets: Vec<String> = if is_element {
+            styles
+                .get(&id)
+                .map(|st| st.counter_reset.iter().map(|a| a.name.clone()).collect())
+                .unwrap_or_default()
+        } else {
+            Vec::new()
+        };
+
+        if is_element {
+            // 1. 应用本元素 counter 动作（reset → set → increment；spec 顺序）。
+            if let Some(st) = styles.get(&id) {
+                for action in &st.counter_reset {
+                    counters
+                        .entry(action.name.clone())
+                        .or_default()
+                        .push(action.value.unwrap_or(0));
+                }
+                for action in &st.counter_set {
+                    let stack = counters.entry(action.name.clone()).or_default();
+                    match stack.last_mut() {
+                        Some(top) => *top = action.value.unwrap_or(0),
+                        None => stack.push(action.value.unwrap_or(0)),
+                    }
+                }
+                for action in &st.counter_increment {
+                    let v = action.value.unwrap_or(1);
+                    let stack = counters.entry(action.name.clone()).or_default();
+                    match stack.last_mut() {
+                        Some(top) => *top += v,
+                        None => stack.push(v),
+                    }
+                }
+            }
+            // 2. 快照本元素 ::before 时刻的 counter 值（含自身 increment 后）。
+            if let Some((before_names, _)) = need_names.get(&id) {
+                let mut snapshot: HashMap<String, i64> = HashMap::new();
+                for name in before_names {
+                    if let Some(v) = counters.get(name).and_then(|s| s.last()).copied() {
+                        snapshot.insert(name.clone(), v);
+                    }
+                }
+                if !snapshot.is_empty() {
+                    out.insert(id, (snapshot, HashMap::new()));
+                }
+            }
+        }
+
+        // 3. 递归子树（文档序）。
+        for child in &children {
+            walk(doc, *child, styles, counters, need_names, out);
+        }
+
+        // 4. ::after 快照（子树结束、作用域弹出前——本元素 reset 的作用域仍存活）。
+        if is_element
+            && let Some((_, after_names)) = need_names.get(&id)
+            && !after_names.is_empty()
+        {
+            let mut snapshot: HashMap<String, i64> = HashMap::new();
+            for name in after_names {
+                if let Some(v) = counters.get(name).and_then(|s| s.last()).copied() {
+                    snapshot.insert(name.clone(), v);
+                }
+            }
+            if let Some(entry) = out.get_mut(&id) {
+                entry.1 = snapshot;
+            } else if !snapshot.is_empty() {
+                out.insert(id, (HashMap::new(), snapshot));
+            }
+        }
+
+        // 5. 弹出本元素 reset 的作用域（CSS2 §12.4.1）。
+        for name in my_resets {
+            if let Some(stack) = counters.get_mut(&name) {
+                stack.pop();
+                if stack.is_empty() {
+                    counters.remove(&name);
+                }
+            }
+        }
+    }
+
+    let mut counters: HashMap<String, Vec<i64>> = HashMap::new();
+    let mut out: CounterValueMaps = HashMap::new();
+    walk(doc, doc.root(), styles, &mut counters, &need_names, &mut out);
+    out
+}
+
+/// R3887：文档树序 counter 模拟输出——宿主元素 → (::before 时刻值表, ::after 时刻值表)。
+type CounterValueMaps = HashMap<NodeId, (HashMap<String, i64>, HashMap<String, i64>)>;
+
 pub(crate) fn inject_pseudo_text_nodes(
     doc: &mut Document,
     styles: &mut HashMap<NodeId, ComputedStyle>,
@@ -2020,6 +2175,10 @@ pub(crate) fn inject_pseudo_text_nodes(
         }
     }
 
+    // R3887：全文档树序 counter 模拟——为 increment 语境的伪元素求真值（兄弟累计、
+    // 同元素 reset+increment 组合均精确；与 paint 期 update_counters 同构）。
+    let counter_value_maps = simulate_document_counters(doc, styles);
+
     // 先收集待注入项，避免在遍历 styles 时变更它。
     // (parent, is_before, text, pseudo_style)
     let mut pending: Vec<(NodeId, bool, String, ComputedStyle)> = Vec::new();
@@ -2031,68 +2190,85 @@ pub(crate) fn inject_pseudo_text_nodes(
         // 属性值（CSS generated content 的 attr() 函数，如 `content: attr(bgcolor)`
         // 显示属性值）；counter()/counters() 在布局前注入为文本，使 ::before/::after
         // 的 measured width 与绘制一致。
-        let resolve_text = |content: &ContentComputedValue, pseudo_style: &ComputedStyle| -> Option<String> {
-            match content {
-                ContentComputedValue::String(s) => Some(s.clone()),
-                ContentComputedValue::Attr(name) => doc.get(nid).and_then(|n| match &n.kind {
-                    zero_dom::NodeKind::Element(elem) => elem.get_attribute(name).as_deref().map(str::to_string),
-                    _ => None,
-                }),
-                // R3884：通用 counter 表示（与 paint 侧 format_counter_text 同源）——
-                // 注入发生在布局前、无计数器状态，值取隐式初值 0（CSS Lists §counter：
-                // 未 reset/increment 的 counter 引用即 0）。此前仅 disclosure 特例，
-                // 其余 counter-style 的 ::before/::after 全部无文本（content-004 驱动）。
-                // R3885：布局前可静态求值（reset/set 确定或隐式 0）→ 注入真实值；
-                // increment 语境返回 None 不注入（固定 0 = 错值，维持既有行为）。
-                ContentComputedValue::Counter { name, style } => {
-                    match counter_value_before_paint(doc, nid, name, styles) {
-                        Some(v) => {
-                            let text = crate::paint::painter::text::text_list::format_counter_text(
-                                v,
-                                style,
-                                pseudo_style,
-                                &counter_styles,
-                            );
-                            (!text.is_empty()).then_some(text)
+        let resolve_text =
+            |content: &ContentComputedValue, pseudo_style: &ComputedStyle, is_before: bool| -> Option<String> {
+                match content {
+                    ContentComputedValue::String(s) => Some(s.clone()),
+                    ContentComputedValue::Attr(name) => doc.get(nid).and_then(|n| match &n.kind {
+                        zero_dom::NodeKind::Element(elem) => elem.get_attribute(name).as_deref().map(str::to_string),
+                        _ => None,
+                    }),
+                    // R3884：通用 counter 表示（与 paint 侧 format_counter_text 同源）。
+                    // 此前仅 disclosure 特例，其余 counter-style 的 ::before/::after 全部
+                    // 无文本（content-004 驱动）。
+                    // R3887：值优先取全文档树序模拟快照（兄弟累计/同元素组合全精确）；
+                    // 模拟无值（无任何 counter 动作涉该名）→ 隐式初值 0（CSS Lists §counter）；
+                    // R3885 的 counter_value_before_paint（逐元素启发式）仅作模拟缺席时的
+                    // 静态兜底。
+                    ContentComputedValue::Counter { name, style } => {
+                        let sim = counter_value_maps
+                            .get(&nid)
+                            .and_then(|(b, a)| if is_before { b.get(name) } else { a.get(name) })
+                            .copied();
+                        let value = match sim {
+                            Some(v) => Some(v),
+                            None => counter_value_before_paint_by_name(doc, nid, name, styles),
+                        };
+                        match value {
+                            Some(v) => {
+                                let text = crate::paint::painter::text::text_list::format_counter_text(
+                                    v,
+                                    style,
+                                    pseudo_style,
+                                    &counter_styles,
+                                );
+                                (!text.is_empty()).then_some(text)
+                            }
+                            None => pseudo_disclosure_counter_text(style, pseudo_style, &counter_styles),
                         }
-                        None => pseudo_disclosure_counter_text(style, pseudo_style, &counter_styles),
                     }
-                }
-                ContentComputedValue::Counters { .. } => None,
-                ContentComputedValue::List(items) => {
-                    let mut text = String::new();
-                    for item in items {
-                        match item {
-                            ContentListItem::Str(value) => text.push_str(value),
-                            ContentListItem::Counter { name, style } => {
-                                // R3885：与单 Counter 分支同源——disclosure 特例（writing-mode
-                                // 相关符号）优先；否则按静态可求值注入（increment 语境跳过该项）。
-                                match pseudo_disclosure_counter_text(style, pseudo_style, &counter_styles) {
-                                    Some(t) => text.push_str(&t),
-                                    None => {
-                                        if let Some(v) = counter_value_before_paint(doc, nid, name, styles) {
-                                            let t = crate::paint::painter::text::text_list::format_counter_text(
-                                                v,
-                                                style,
-                                                pseudo_style,
-                                                &counter_styles,
-                                            );
-                                            if t.is_empty() {
-                                                return None;
+                    ContentComputedValue::Counters { .. } => None,
+                    ContentComputedValue::List(items) => {
+                        let mut text = String::new();
+                        for item in items {
+                            match item {
+                                ContentListItem::Str(value) => text.push_str(value),
+                                ContentListItem::Counter { name, style } => {
+                                    // R3887：与单 Counter 分支同源——树序模拟值优先，静态兜底。
+                                    let sim = counter_value_maps
+                                        .get(&nid)
+                                        .and_then(|(b, a)| if is_before { b.get(name) } else { a.get(name) })
+                                        .copied();
+                                    let value = match sim {
+                                        Some(v) => Some(v),
+                                        None => counter_value_before_paint_by_name(doc, nid, name, styles),
+                                    };
+                                    match pseudo_disclosure_counter_text(style, pseudo_style, &counter_styles) {
+                                        Some(t) => text.push_str(&t),
+                                        None => {
+                                            if let Some(v) = value {
+                                                let t = crate::paint::painter::text::text_list::format_counter_text(
+                                                    v,
+                                                    style,
+                                                    pseudo_style,
+                                                    &counter_styles,
+                                                );
+                                                if t.is_empty() {
+                                                    return None;
+                                                }
+                                                text.push_str(&t);
                                             }
-                                            text.push_str(&t);
                                         }
                                     }
                                 }
+                                ContentListItem::Counters { .. } => return None,
                             }
-                            ContentListItem::Counters { .. } => return None,
                         }
+                        Some(text)
                     }
-                    Some(text)
+                    _ => None,
                 }
-                _ => None,
-            }
-        };
+            };
         // R1988：content:url() → 图片 url。
         let resolve_url = |content: &ContentComputedValue| -> Option<String> {
             match content {
@@ -2101,14 +2277,14 @@ pub(crate) fn inject_pseudo_text_nodes(
             }
         };
         if let Some(b) = st.before_pseudo.as_ref() {
-            if let Some(t) = resolve_text(&b.content, b) {
+            if let Some(t) = resolve_text(&b.content, b, true) {
                 pending.push((nid, true, t, (**b).clone()));
             } else if let Some(u) = resolve_url(&b.content) {
                 pending_img.push((nid, true, u, (**b).clone()));
             }
         }
         if let Some(a) = st.after_pseudo.as_ref() {
-            if let Some(t) = resolve_text(&a.content, a) {
+            if let Some(t) = resolve_text(&a.content, a, false) {
                 pending.push((nid, false, t, (**a).clone()));
             } else if let Some(u) = resolve_url(&a.content) {
                 pending_img.push((nid, false, u, (**a).clone()));
