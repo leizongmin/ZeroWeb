@@ -8,3 +8,4 @@
 2026-08-31,upstream,v1.10,16814,13939,82.9,failed=2875;skipped=0,1965b2077,R3867 ::first-letter paint-side color slice (+8 flips 0 regressions; stack-frame hardening for compute_styles_recursive)
 2026-08-31,upstream,v1.10,16814,13939,82.9,failed=2875;skipped=0,903957054,R3868 ::first-letter typographic letter unit cluster (zero verdict flips; driving 4.41->1.70 capped by pre-existing ref-side inline-span bug, new slice filed)
 2026-08-31,upstream,v1.10,16814,13938,82.9,failed=2876;skipped=0,95f4800cd,R3869-P investigation round (0 net code; block-leading inline span bg occlusion root-caused; two unification experiments reverted net<=0; narrow-gate design filed)
+2026-08-31,upstream,v1.10,16814,13938,82.9,failed=2876;skipped=0,95f4800cd,R3870-P narrow-gate implementation falsified (4 iterations best net -5, all reverted; bug escalated to inline-bg full fragment-ization RFC)
