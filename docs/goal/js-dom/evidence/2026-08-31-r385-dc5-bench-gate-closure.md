@@ -88,3 +88,23 @@ resource peak_rss PASS。全量档的基线 re-capture 归 perf-gate 体系常�
 3. **定向口径的可比性**：flip A/B 的判定必须与历史判定同口径（R382 用定向 42 指标），
    拿全量 113 档的新数字对定向 42 档的旧结论做比较会得出「回归」假象——其实是
    基线陈旧（9 天/230 提交 geo-mean 1.5x）+ 噪声，不是 flip 退化。
+
+---
+
+## 补充（R385 续轮，全量档真空窗复跑确认）
+
+后续轮次在同一共享机上以三窗空窗判据（load1≤1 + load5≤2 + load15≤3，持续双检确认）等待约
+7 小时后于 **2026-08-31 08:35 真空窗（load1=0.56/load5=1.23/load15=2.30 起跑）完成
+bench-gate 全量 113 档复跑**：
+
+| 门 | 结果 |
+|----|------|
+| bench-gate 全量（16 crates，113 指标，含 42 定向档全集） | **GATE PASS——113/113 全部在预算内（NEW=0，FAIL=0）** |
+| 判定 | net≥0 成立——全量档亦无任何退化项；R385 §2 的「基线陈旧 geo-mean 1.5x」在此轮真空窗下未复现（0 FAIL），进一步证实此前 4 跑的 FAIL 集（46/44/INCONCLUSIVE/52 轮换）为并发负载噪声而非真实回归 |
+
+- 涉及 JS→DOM 桥的 webview 全部 8 指标 PASS（builder_create 4842ns / complex_page 482µs / inject_css 145µs / load_html_simple 72µs / load_html_with_css 96µs / render 142µs / resize_and_render 143µs）。
+- page 系 13 指标（welcome/medium/morning 的 parse/style/layout/paint/total + first_paint_wall）全 PASS。
+- resource/peak_rss 160.75MB（基线 155.29，预算 314.35）PASS。
+- 本轮跑commit 时点 `a97c95fb3`（R385 final）之后、零源码改动，可视为 R385 收口态的**全量档独立复证**。
+
+**DC-5 判定维持 ✅**：定向 38/38（R385 主轮）+ 全量 113/113（本补充）双口径闭合。
