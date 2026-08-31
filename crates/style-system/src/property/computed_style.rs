@@ -562,6 +562,11 @@ pub struct ComputedStyle {
     /// `::marker` 伪元素的计算样式（CSS Lists 3；仅 `<li>` 计算，继承自本元素 → 默认
     /// color 等同本元素，paint_list_marker 据此应用 `::marker { color/content }` 覆盖）。
     pub marker_pseudo: Option<Box<ComputedStyle>>,
+    /// `::first-letter` 伪元素的计算样式（CSS2 §5.12.2）。仅当级联存在 `::first-letter`
+    /// 声明且**样式可 paint 侧应用**（当前切片：color 与元素不同）时存储。
+    /// paint 侧把块容器首个文本片段的首字符按本样式绘制（不改几何——font/metrics
+    /// 类属性需 IFC 分词切片，FIXME 挂账）。伪元素不参与继承传播。
+    pub first_letter_pseudo: Option<Box<ComputedStyle>>,
 }
 
 impl ComputedStyle {

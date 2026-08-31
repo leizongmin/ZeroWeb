@@ -1282,6 +1282,15 @@ impl super::Painter {
                 } else {
                     // 非多列布局：统一处理存储片段和 IFC 片段
                     // 宏化渲染逻辑，避免重复代码
+                    // ::first-letter（CSS2 §5.12.2）：块容器首个格式化行的首字母按伪元素样式绘制
+                    //（穿透嵌套 inline——首字母所在片段属于子 span，但伪元素样式挂在块容器上）。
+                    // paint 侧逐字形覆色（切片范围 = color；font/metrics 类属性需 IFC 分词切片
+                    // 改几何，FIXME 挂账）。多列分支暂不应用（FIXME）。
+                    let first_letter_color: Option<Color> = style
+                        .first_letter_pseudo
+                        .as_deref()
+                        .map(|s| color_value_to_render(&s.color));
+                    let mut first_letter_applied = false;
                     macro_rules! render_fragment {
                         ($frag_x:expr, $frag_y:expr, $frag_width:expr, $baseline_offset:expr, $frag_fs:expr, $frag_text:expr, $frag_nid:expr, $is_ahem:expr, $frag_source:expr) => {{
                             // CSS 2.1 §9.2.1.1: an inline-block is an atomic inline-level box.
@@ -1624,6 +1633,23 @@ impl super::Painter {
                                 } else {
                                     (char_pos + glyph.x_offset, frag_base_y - glyph.y_offset)
                                 };
+                                // ::first-letter 逐字形覆色：本片段是容器首个含非空白字符的文本片段、
+                                // 且该字形是其中第一个非空白字符时，用伪元素 color（CSS2 §5.12.2）。
+                                let glyph_color = {
+                                    let mut c = frag_color;
+                                    if let Some(fl) = first_letter_color
+                                        && !first_letter_applied
+                                    {
+                                        let first_nonws = transformed
+                                            .chars()
+                                            .find(|c| !c.is_whitespace());
+                                        if first_nonws == Some(ch) {
+                                            c = fl;
+                                            first_letter_applied = true;
+                                        }
+                                    }
+                                    c
+                                };
 
                                 for &(shadow_ox, shadow_oy, shadow_color) in &active_text_shadows {
                                     self.primitives.add_glyph(GlyphPrimitive {
@@ -1647,7 +1673,7 @@ impl super::Painter {
                                     x: glyph_x,
                                     y: glyph_y,
                                     font_size: glyph_font_size,
-                                    color: frag_color,
+                                    color: glyph_color,
                                     glyph_id: ch as u32,
                                     font_glyph_index: glyph.font_glyph_index,
                                     source: glyph.source.clone(),

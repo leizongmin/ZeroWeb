@@ -7,6 +7,7 @@ mod basic;
 mod color_scheme_synthesis;
 mod coverage_round3;
 mod edge;
+mod first_letter;
 mod font_feature_values;
 mod helpers;
 mod inline_style;

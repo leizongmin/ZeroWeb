@@ -468,7 +468,7 @@ impl StyleSystem {
             let mut parent_custom: HashMap<String, String> = HashMap::new();
             for &cid in &chain {
                 if matches!(doc.get(cid).map(|n| &n.kind), Some(NodeKind::Element(_))) {
-                    let s = self.compute_element_style_internal(
+                    let s = *self.compute_element_style_internal(
                         doc,
                         cid,
                         stylesheets,
@@ -567,9 +567,9 @@ impl StyleSystem {
                         None,
                     );
                     if let Some(k) = &cache_key {
-                        style_cache.insert(k.clone(), c.clone());
+                        style_cache.insert(k.clone(), (*c).clone());
                     }
-                    c
+                    *c
                 }
             };
             // 计算伪元素（::before/::after）：继承自本元素的计算样式。save/restore
@@ -598,7 +598,7 @@ impl StyleSystem {
             if has_pseudo_rules || is_q {
                 let saved_custom = self.custom_properties.clone();
                 let elem_style = computed.clone();
-                let before = self.compute_element_style_internal(
+                let before = *self.compute_element_style_internal(
                     doc,
                     node,
                     stylesheets,
@@ -608,7 +608,7 @@ impl StyleSystem {
                     quirks_mode,
                     Some("before"),
                 );
-                let after = self.compute_element_style_internal(
+                let after = *self.compute_element_style_internal(
                     doc,
                     node,
                     stylesheets,
@@ -627,7 +627,7 @@ impl StyleSystem {
                     NodeKind::Element(e) if e.local_name().eq_ignore_ascii_case("li")
                 );
                 if is_li {
-                    let marker = self.compute_element_style_internal(
+                    let marker = *self.compute_element_style_internal(
                         doc,
                         node,
                         stylesheets,
@@ -642,6 +642,32 @@ impl StyleSystem {
                     {
                         computed.marker_pseudo = Some(Box::new(marker));
                     }
+                }
+                // ::first-letter 伪元素（CSS2 §5.12.2）：样式作用于块容器首个格式化行的首字母
+                //（穿透嵌套 inline，first-letter-nested-001..007 族）。compute_element_style_internal
+                // 的伪元素收集对 first-letter 通用（PseudoElementSelector::Standard 路由已存在）。
+                // 先廉价探测是否有 `::first-letter` 声明匹配——compute 内部对空匹配返回
+                // ComputedStyle::default()（color 黑），无法与「真实声明把 color 设为黑」之外的
+                // 无匹配路径区分（background-image-first-line 回归：同页 ::first-line 规则使
+                // has_pseudo_rules 为真 → 对 color:transparent 元素存了 default 黑 → 首字符变黑）。
+                // 探测为空直接跳过（零存储零 paint 影响）；非空才走完整级联（届时 compute 重复
+                // 收集一次——仅 ::first-letter 真实使用的页面，罕见路径）。
+                // 存储 gate = color ≠ 元素 color（paint 侧当前切片只应用 color；font/metrics 类
+                // 需 IFC 分词切片改几何，FIXME 挂账不存储）。
+                // **帧体量纪律（R3867）**：本块抽为独立 helper——compute_styles_recursive 的 debug
+                // 栈帧已 ~90KB（20 层嵌套即触 2MB 测试线程栈顶），帧内任何新增大局部（哪怕位于
+                // 运行时不可达分支）都会把 test_pipeline_deeply_nested_html 推过临界。helper 的
+                // 局部进 helper 自己的帧。
+                if let Some(fl) = self.compute_first_letter_pseudo(
+                    doc,
+                    node,
+                    stylesheets,
+                    rule_index,
+                    &elem_style,
+                    &saved_custom,
+                    quirks_mode,
+                ) {
+                    computed.first_letter_pseudo = Some(fl);
                 }
                 self.custom_properties = saved_custom;
 
@@ -741,6 +767,60 @@ impl StyleSystem {
         }
     }
 
+    /// R3867：`::first-letter`（CSS2 §5.12.2）伪元素计算——独立 helper 保持
+    /// [`Self::compute_styles_recursive`] 的 debug 栈帧体量（该帧已 ~90KB，深嵌套页
+    /// 逼近 2MB 测试线程栈顶；见调用点「帧体量纪律」注释）。
+    ///
+    /// 无 `::first-letter` 声明匹配时返回 `None`（compute 内部对空匹配返回 default，
+    /// 无法与真实声明区分——background-image-first-line 回归：同页 `::first-line`
+    /// 规则使 has_pseudo_rules 为真，default 黑被误存为伪元素色 → color:transparent
+    /// 元素首字符被染黑）。故先廉价探测声明非空，再走完整级联。
+    #[allow(clippy::too_many_arguments)]
+    fn compute_first_letter_pseudo(
+        &mut self,
+        doc: &Document,
+        element: NodeId,
+        stylesheets: &[Stylesheet],
+        rule_index: &matcher::StylesheetIndex,
+        elem_style: &ComputedStyle,
+        parent_custom: &HashMap<String, String>,
+        quirks_mode: QuirksMode,
+    ) -> Option<Box<ComputedStyle>> {
+        let fl_media_ctx = match (self.viewport_width, self.viewport_height) {
+            (Some(w), Some(h)) => {
+                let mut ctx = zero_css_parser::media_query::MediaContext::new(w, h);
+                ctx.prefers_color_scheme = self.prefers_color_scheme;
+                ctx.media_type = self.media_type;
+                Some(ctx)
+            }
+            _ => None,
+        };
+        if matcher::collect_pseudo_declarations_with_media(
+            doc,
+            element,
+            stylesheets,
+            rule_index,
+            fl_media_ctx.as_ref(),
+            None,
+            "first-letter",
+        )
+        .is_empty()
+        {
+            return None;
+        }
+        let first_letter = *self.compute_element_style_internal(
+            doc,
+            element,
+            stylesheets,
+            rule_index,
+            Some(elem_style),
+            parent_custom,
+            quirks_mode,
+            Some("first-letter"),
+        );
+        (first_letter.color != elem_style.color).then(|| Box::new(first_letter))
+    }
+
     /// 为单个元素计算样式。
     ///
     /// 完整流程：选择器匹配 → 级联 → 继承 → 计算值。
@@ -754,7 +834,7 @@ impl StyleSystem {
         self.registered_properties = collect_registered_properties(stylesheets);
         self.font_feature_values = collect_font_feature_values(stylesheets);
         let rule_index = matcher::build_stylesheet_index(stylesheets);
-        self.compute_element_style_internal(
+        *self.compute_element_style_internal(
             doc,
             element,
             stylesheets,
@@ -782,7 +862,11 @@ impl StyleSystem {
         parent_custom: &HashMap<String, String>,
         quirks_mode: QuirksMode,
         pseudo: Option<&str>,
-    ) -> ComputedStyle {
+    ) -> Box<ComputedStyle> {
+        // R3867：返回 Box——把 3.3KB 的 ComputedStyle 返回值从调用方（compute_styles_recursive，
+        // 每元素递归一帧）的 sret 栈槽移到堆。深嵌套页 debug 构建的递归帧曾逼近 2MB 测试线程栈顶
+        //（test_pipeline_deeply_nested_html 20 层即栈溢出），帧内每份 ComputedStyle 临时 +8B 字段
+        // 即破临界。Box 化后调用方帧仅持 8B 指针。
         // 0. 构建媒体查询上下文
         let media_ctx = match (self.viewport_width, self.viewport_height) {
             (Some(w), Some(h)) => {
@@ -825,7 +909,7 @@ impl StyleSystem {
         // 伪元素无匹配规则时直接返回默认值（content: Normal），跳过整条级联/继承/计算
         // 管线——避免对无伪元素规则的元素产生 2× 额外开销。调用方据 content 判定是否合成盒。
         if pseudo.is_some() && matching.is_empty() {
-            return ComputedStyle::default();
+            return Box::new(ComputedStyle::default());
         }
 
         // 1.5. 展开简写属性（保留层索引）
@@ -1533,7 +1617,7 @@ impl StyleSystem {
             self.root_ch_width = Some(root_font_size * root_metrics.map_or(0.5, |metrics| metrics.ch_width));
             self.root_ic_width = Some(root_font_size * root_metrics.map_or(1.0, |metrics| metrics.ic_width));
         }
-        resolved
+        Box::new(resolved)
     }
 }
 
