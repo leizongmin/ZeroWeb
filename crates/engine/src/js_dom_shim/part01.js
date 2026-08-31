@@ -452,6 +452,7 @@
   // win }）——静态 `<iframe src="/common/dummy.xml|.xhtml">` 用例族（Document-createElement /
   // case / createElementNS 等 ~750 subtest）经此取子文档。导航清空（页级）。
   var _iframeDocCache = {};
+  var _zwIframeFetchSeq = 0;
   function _zwIframeKindFromUrl(url) {
     return /\.xhtml(\?|#|$)/i.test(url) ? 'xhtml'
       : (/\.html?(\?|#|$)/i.test(url) ? 'html'
@@ -510,6 +511,7 @@
       try { if (entry.win && entry.win.customElements) entry.doc._zwCERegistry = entry.win.customElements; } catch (_e365r) {}
       entry.state = 'done';
       entry.url = typeof effectiveUrl === 'string' && effectiveUrl ? effectiveUrl : url;
+      _zwSyncIframeWindowHistory(entry);
       _zwObserveIframeWindowClient(entry, frameKey, url);
       try { entry.win.__r206State = entry.state; } catch (_eR206m) {}
       try { _zwRunIframeScripts(entry.win, entry.doc, body, url); } catch (_eR206s) {}
@@ -534,6 +536,46 @@
     }
     entry._settleCallbacks = entry._settleCallbacks || [];
     entry._settleCallbacks.push(callback);
+  }
+  function _zwWhenIframeEntrySettled(frameKey, entry, callback) {
+    if (!entry || entry.state !== 'loading') {
+      callback();
+      return;
+    }
+    entry._settleCallbacks = entry._settleCallbacks || [];
+    entry._settleCallbacks.push(function() {
+      if (!frameKey || _iframeDocCache[frameKey] === entry) callback();
+    });
+  }
+  // https://html.spec.whatwg.org/multipage/iframe-embed-object.html#process-the-iframe-attributes
+  // Setting `iframe.src` on a detached element updates the attribute; navigation starts once
+  // the element has a browsing context through insertion into a connected tree.
+  function _zwIframeNavigationConnected(sel, handle) {
+    if (sel) {
+      if (typeof __zw_contains === 'function') {
+        try { return __zw_contains('html', sel) === '1'; } catch (_eIframeNavSel) { return true; }
+      }
+      return true;
+    }
+    if (!handle || typeof _zwNodeParent === 'undefined' || !_zwNodeParent) return false;
+    var link = _zwNodeParent[handle];
+    var guard = 0;
+    while (link && guard++ < 64) {
+      if (link.parentSel) return true;
+      if (link.innerBody) return true;
+      var parentHandle = link.parentHandle;
+      if (!parentHandle) return false;
+      if (typeof _ceConn !== 'undefined' && _ceConn && _ceConn[_elKey(null, parentHandle)]) return true;
+      var shadowMeta = typeof _shadowHandleMeta !== 'undefined' && _shadowHandleMeta
+        ? _shadowHandleMeta[parentHandle]
+        : null;
+      if (shadowMeta) {
+        if (shadowMeta.hostSel) return true;
+        parentHandle = shadowMeta.hostHandle;
+      }
+      link = parentHandle ? _zwNodeParent[parentHandle] : null;
+    }
+    return false;
   }
   function _zwObserveIframeWindowClient(entry, key, url) {
     if (!entry || entry._zwSwClientId || entry._zwSwDestroyed || !key || !url ||
@@ -760,7 +802,7 @@
       // 消除 async fetch 与 window load 的竞态（用例 load 后 getWin 读 documentElement）。
       var _r115Url = _zwResolveIframeSrc(_r115Src);
       try {
-        var _r115PendingId = 'r115iframe:' + frameKey;
+        var _r115PendingId = 'r115iframe:' + frameKey + ':' + (++_zwIframeFetchSeq);
         _zwObserveIframeWindowClient(_r115Entry, frameKey, _r115Url);
         _r115Entry.url = _r115Url;
         var _r115ClientId = _r115Entry._zwSwClientId || ('iframe:' + String(frameKey));
@@ -815,6 +857,17 @@
     }
     return _r115Entry;
   }
+  function _zwSyncIframeWindowHistory(entry) {
+    if (!entry || !entry.win || !entry.win.history || !entry.history || !entry.history.length) return;
+    try {
+      entry.win.history._entries = entry.history.map(function(url) {
+        return { state: null, url: String(url) };
+      });
+      entry.win.history._cursor = entry.win.history._entries.length
+        ? entry.win.history._entries.length - 1
+        : 0;
+    } catch (_eIframeHistorySyncWin) {}
+  }
   globalThis.__zw_reload_iframe = globalThis.__zw_reload_iframe || function(frame, rawSrc, flags) {
     if (!frame) return null;
     var frameKey = frame.__zwHandle ? _elKey(null, frame.__zwHandle) : _elKey(frame.__zwSelector || null, null);
@@ -831,6 +884,10 @@
     } else if (entry.url && (!entry.history.length || entry.history[entry.history.length - 1] !== entry.url)) {
       entry.history.push(entry.url);
     }
+    // https://html.spec.whatwg.org/multipage/nav-history-apis.html#session-history
+    // Cross-document iframe navigations replace the Window but preserve the nested
+    // browsing context's session history for history.go()/back().
+    _zwSyncIframeWindowHistory(entry);
     try { if (entry.win && typeof entry.win.__zwRunInlineScripts === 'function') entry.win.__zwRunInlineScripts(); } catch (_eScripts) {}
     // R288（js-dom M4）：load 事件派发**延迟到 microtask**——spec（HTML「the end」
     // + `event-loop-processing-model`）iframe 加载完成是异步任务：`.src = ...`
@@ -841,7 +898,12 @@
     // 超长 IndexSizeError）。`_defer`（microtask）在当前脚本任务末尾派发，
     // 此时 onload handler 已赋值、referenceDoc 已填充。R288 实测：insertNode/
     // surroundContents 16,x 46F×2 全解。
-    try { _defer(function() { try { frame.dispatchEvent(new globalThis.Event('load')); } catch (_eL2) {} }); } catch (_eLoad) {}
+    try {
+      entry._zwFrameElementLoadQueued = true;
+      _zwWhenIframeEntrySettled(frameKey, entry, function() {
+        _defer(function() { try { frame.dispatchEvent(new globalThis.Event('load')); } catch (_eL2) {} });
+      });
+    } catch (_eLoad) {}
     return entry;
   };
   function _zwStartConnectedIframe(frame, connected) {
@@ -858,8 +920,12 @@
     // https://html.spec.whatwg.org/multipage/iframe-embed-object.html#the-iframe-element
     // Dynamic insertion of a connected iframe starts navigation asynchronously.
     _defer(function() {
+      var frameKey = frame.__zwHandle ? _elKey(null, frame.__zwHandle) : _elKey(frame.__zwSelector || null, null);
       try { frame.contentWindow; } catch (_eIframeStart) {}
-      _zwWhenIframeSettled(frame, function() {
+      var entry = frameKey ? _iframeDocCache[frameKey] : null;
+      if (entry && entry._zwFrameElementLoadQueued) return;
+      if (entry) entry._zwFrameElementLoadQueued = true;
+      _zwWhenIframeEntrySettled(frameKey, entry, function() {
         try {
           var _zwIframeWin = frame.contentWindow;
           if (_zwIframeWin && typeof _zwIframeWin.__zwRunInlineScripts === 'function') {

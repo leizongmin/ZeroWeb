@@ -101,3 +101,82 @@ fn r380_fused_innerhtml_and_text_registry_children() {
         "R380：克隆 script 经纯文本 registry 分支有源码 + replaceWith 同步标记 + sel 域 innerHTML 融合序列化与 WPT 期望串全等"
     );
 }
+
+#[test]
+fn r388_iframe_history_navigation_preserves_session_history() {
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let mut sandbox = V8Sandbox::with_config(zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    })
+    .unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><iframe src='../resources/blank.html?name=isHistoryNavigation'></iframe></body></html>"
+            .to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "https://wpt.test/service-workers/cache-storage/serviceworker/cache-keys-attributes-for-service-worker.https.html"
+            .to_string(),
+    ));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+    let fetches: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
+    let fetches_for_callback = fetches.clone();
+    sandbox.register_callback(
+        "__zw_fetch",
+        Box::new(move |args| {
+            let url = args.get(2).cloned().unwrap_or_default();
+            let reload = args.get(7).cloned().unwrap_or_default();
+            let history = args.get(8).cloned().unwrap_or_default();
+            fetches_for_callback
+                .lock()
+                .unwrap()
+                .push(format!("{url}|reload={reload}|history={history}"));
+            "__zwfr:200\x1fOK\x1fcontent-type\x1etext/html\x1f<!doctype html><body>loaded</body>"
+                .to_string()
+        }),
+    );
+    // https://html.spec.whatwg.org/multipage/nav-history-apis.html#traverse-the-history-by-a-delta
+    // Cross-document iframe `src` navigation creates a replacement Window; history.go(-1)
+    // still traverses the iframe element's session history and marks the fetch as a history navigation.
+    sandbox
+        .execute(
+            "try {\
+             var frame = document.querySelector('iframe');\
+             var first = frame.contentWindow;\
+             frame.src = '../resources/blank.html?ignore';\
+             var second = frame.contentWindow;\
+             second.history.go(-1);\
+             var third = frame.contentWindow;\
+             globalThis.__r388a = JSON.stringify({\
+               same12: first === second,\
+               same23: second === third,\
+               href: third.location.href,\
+               historyLength: third.history.length\
+             });\
+             } catch (err) { globalThis.__r388a = 'ERR:' + err.message; }",
+        )
+        .unwrap();
+
+    assert_eq!(
+        sandbox.execute("globalThis.__r388a").unwrap().value,
+        r#"{"same12":false,"same23":false,"href":"https://wpt.test/service-workers/cache-storage/resources/blank.html?name=isHistoryNavigation","historyLength":1}"#,
+        "R388：iframe history.go(-1) 回到前一跨文档 entry，且新 Window 继承修剪后的 session history"
+    );
+    assert_eq!(
+        fetches.lock().unwrap().as_slice(),
+        &[
+            "https://wpt.test/service-workers/cache-storage/resources/blank.html?name=isHistoryNavigation|reload=|history="
+                .to_string(),
+            "https://wpt.test/service-workers/cache-storage/resources/blank.html?ignore|reload=|history="
+                .to_string(),
+            "https://wpt.test/service-workers/cache-storage/resources/blank.html?name=isHistoryNavigation|reload=|history=1"
+                .to_string(),
+        ],
+        "R388：history traversal fetch 必须携带 isHistoryNavigation 标记"
+    );
+}

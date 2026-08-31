@@ -254,7 +254,9 @@
           if (handle) __zw_set_attr_handle(handle, _refAttr, String(value));
           else __zw_set_attr(sel, _refAttr, String(value));
           if (_refAttr === 'src' && _realTag(sel, handle) === 'IFRAME' &&
-              typeof globalThis.__zw_reload_iframe === 'function' && _elConnected(proxy)) {
+              typeof globalThis.__zw_reload_iframe === 'function' &&
+              typeof _zwIframeNavigationConnected === 'function' &&
+              _zwIframeNavigationConnected(sel, handle)) {
             globalThis.__zw_reload_iframe(proxy, String(value), {});
           }
           moAttr = _refAttr;
@@ -2447,14 +2449,26 @@
         } catch (_eIframeScript) {}
       }
     }
+    var initialHistoryEntries = [{ state: null, url: doc && doc._zwURL ? String(doc._zwURL) : 'about:blank' }];
+    try {
+      var cachedHistoryEntry = frameKey && _iframeDocCache[frameKey];
+      if (cachedHistoryEntry && cachedHistoryEntry.history && cachedHistoryEntry.history.length) {
+        initialHistoryEntries = cachedHistoryEntry.history.map(function(url) {
+          return { state: null, url: String(url) };
+        });
+      }
+    } catch (_eIframeHistoryInit) {}
     var win = {
       document: doc,
       parent: globalThis,
       top: globalThis.top || globalThis,
       location: iframeLocation(),
       history: {
-        _entries: [{ state: null, url: doc && doc._zwURL ? String(doc._zwURL) : 'about:blank' }],
-        _cursor: 0,
+        // https://html.spec.whatwg.org/multipage/nav-history-apis.html#session-history
+        // A same iframe element keeps its session history when a navigation creates a
+        // replacement Window object.
+        _entries: initialHistoryEntries,
+        _cursor: initialHistoryEntries.length ? initialHistoryEntries.length - 1 : 0,
         get length() { return this._entries.length; },
         get state() { return this._entries[this._cursor] ? this._entries[this._cursor].state : null; },
         get scrollRestoration() { return 'auto'; },

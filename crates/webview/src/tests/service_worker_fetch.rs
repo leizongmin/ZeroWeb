@@ -119,6 +119,126 @@ fn controlled_iframe_fetch_event_exposes_navigation_request_projection() {
 
 #[test]
 #[serial_test::serial(service_worker_runtime)]
+fn controlled_iframe_reload_and_history_navigation_flags() {
+    const PAGE_URL: &str = "https://example.test/service-workers/cache-storage/serviceworker/cache-keys-attributes-for-service-worker.https.html";
+    let fallback_requests = Arc::new(Mutex::new(Vec::new()));
+    let fallback_log = Arc::clone(&fallback_requests);
+    let mut webview = crate::WebView::new(WebViewConfig {
+        service_worker_script_fetcher: Some(Arc::new(|_, script| {
+            if script
+                != "https://example.test/service-workers/cache-storage/resources/cache-keys-attributes-for-service-worker.js"
+            {
+                return Err(format!("unexpected script URL: {script}"));
+            }
+            Ok(zero_net::HttpResponse {
+                status_code: 200,
+                headers: vec![("Content-Type".into(), "application/javascript".into())],
+                body: "addEventListener('fetch', event => {
+                         if (new URL(event.request.url).searchParams.has('ignore')) {
+                           return;
+                         }
+                         event.respondWith(new Response(
+                           event.request.url + '|' +
+                           event.request.isReloadNavigation + '|' +
+                           event.request.isHistoryNavigation
+                         ));
+                       });"
+                .as_bytes()
+                .to_vec(),
+                url: script.to_string(),
+                redirect_count: 0,
+            })
+        })),
+        fetch_handler: Some(Arc::new(move |request| {
+            fallback_log.lock().unwrap().push(request.url.clone());
+            Ok(FetchResponse {
+                status: 200,
+                status_text: "OK".into(),
+                headers: vec![("content-type".into(), "text/html".into())],
+                body: "fallback".into(),
+                body_bytes: None,
+            })
+        })),
+        ..Default::default()
+    });
+
+    webview.load_url(PAGE_URL);
+    let registration_id = webview
+        .register_service_worker_runtime(
+            "../resources/cache-keys-attributes-for-service-worker.js",
+            Some("../resources/blank.html"),
+            PAGE_URL,
+        )
+        .unwrap();
+    wait_for_state(&mut webview, registration_id, ServiceWorkerState::Activated);
+
+    webview.complete_load(
+        "<body>
+         <script>
+           globalThis.__navFlagLog = [];
+           function wait_frame(url) {
+             return new Promise(resolve => {
+               const frame = document.createElement('iframe');
+               frame.onload = function() { resolve(frame); };
+               frame.src = url;
+               document.body.appendChild(frame);
+             });
+           }
+           wait_frame('../resources/blank.html?name=isHistoryNavigation').then(frame => {
+             globalThis.__navFlagLog.push(frame.contentDocument.body.textContent);
+             return new Promise(resolve => {
+               frame.onload = function() { resolve(frame); };
+               frame.contentWindow.location.reload();
+             });
+           }).then(frame => {
+             globalThis.__navFlagLog.push(frame.contentDocument.body.textContent);
+             return new Promise(resolve => {
+               frame.onload = function() { resolve(frame); };
+               frame.src = '../resources/blank.html?ignore';
+             });
+           }).then(frame => {
+             globalThis.__navFlagLog.push(frame.contentDocument.body.textContent);
+             return new Promise(resolve => {
+               frame.onload = function() { resolve(frame); };
+               frame.contentWindow.history.go(-1);
+             });
+           }).then(frame => {
+             globalThis.__navFlagLog.push(frame.contentDocument.body.textContent);
+           }).catch(error => {
+             globalThis.__navFlagLog.push('ERR:' + error.message);
+           });
+         </script>",
+        None,
+    );
+    webview.run_page_scripts_strict().unwrap();
+    let deadline = Instant::now() + Duration::from_secs(20);
+    loop {
+        let value = webview
+            .execute_script("String(globalThis.__navFlagLog.length)")
+            .unwrap();
+        if value == "4" {
+            break;
+        }
+        assert!(Instant::now() < deadline, "iframe reload/history navigation timed out");
+        std::thread::sleep(Duration::from_millis(10));
+    }
+
+    let observed = webview
+        .execute_script("JSON.stringify(globalThis.__navFlagLog)")
+        .unwrap();
+    assert_eq!(
+        observed,
+        r#"["https://example.test/service-workers/cache-storage/resources/blank.html?name=isHistoryNavigation|false|false","https://example.test/service-workers/cache-storage/resources/blank.html?name=isHistoryNavigation|true|false","fallback","https://example.test/service-workers/cache-storage/resources/blank.html?name=isHistoryNavigation|false|true"]"#,
+        "iframe reload/history navigation fetches should expose the correct Request flags"
+    );
+    assert_eq!(
+        fallback_requests.lock().unwrap().as_slice(),
+        &["https://example.test/service-workers/cache-storage/resources/blank.html?ignore".to_string()]
+    );
+}
+
+#[test]
+#[serial_test::serial(service_worker_runtime)]
 fn controlled_iframe_fetch_delivers_async_respond_with_result_message() {
     const PAGE_URL: &str =
         "https://example.test/service-workers/service-worker/fetch-event-async-respond-with.https.html";
