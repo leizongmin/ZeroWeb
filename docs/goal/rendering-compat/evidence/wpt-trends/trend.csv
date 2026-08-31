@@ -11,3 +11,4 @@
 2026-08-31,upstream,v1.10,16814,13938,82.9,failed=2876;skipped=0,95f4800cd,R3870-P narrow-gate implementation falsified (4 iterations best net -5, all reverted; bug escalated to inline-bg full fragment-ization RFC)
 2026-08-31,upstream,v1.10,16814,13939,82.9,failed=2875;skipped=0,436d879c6,R3871 ::first-letter Dutch ij digraph recognition (zero regressions; selection logic correct, residual = ref-side font/AA drift)
 2026-08-31,upstream,v1.10,16814,13941,82.9,failed=2873;skipped=0,2a0d6968b,R3872 margin-trim self-collapsing edge child trims both margins (net +3, zero regressions)
+2026-08-31,upstream,v1.10,16814,13940,82.9,failed=2874;skipped=0,9df7774fc,R3873-P margin-trim sibling trio attributed to collapse-through modeling gap (predicate extension net 0 reverted; RFC-gated with R3804 interlock)
