@@ -2,7 +2,7 @@
 
 **入口文档**: [../media-elements.md](../media-elements.md)
 **创建日期**: 2026-08-17（goal 拆分 bootstrap）
-**最后更新**: 2026-08-31（M1 完成——WPT 首批导入 + 基线 46.5% + 失败聚类 F1~F6）
+**最后更新**: 2026-08-31（M1 完成 + 切片 3 落地——基线 46.5% → **73.1%**，F2/F6 闭合）
 
 ---
 
@@ -15,6 +15,13 @@ headless 近似驱动先行，兄弟目标建成后替换驱动源。
 **M1 已完成（2026-08-31）**：`make testharness-media` 基础设施落地（fetch-media-subset.sh
 + runner `testharness-media` 子命令 + Makefile 目标）；首批 30 用例 / 245 subtest 基线
 **46.5%**（114P/77F/13T/41PF）；失败聚类 F1~F6 成文（见 evidence/2026-08-31-media-baseline.md）。
+
+**M1 切片 3 已落地（同日，F2/F6）**：媒体元数据 IDL 面（currentTime/duration NaN/
+playbackRate/volume clamp/seeking/paused/preload/crossOrigin 枚举反射 + has-trap 白名单）
++ HTMLTrackElement 反射（kind/label/srclang/default/src + setter + R122 实例层同步）
++ `<a href="">` 空串解析修复。**73.1%**（179P/12F/13T/41PF，+26.6pp）；余账 12 Fail
+全部为 TextTrack 家族（M3 域）。单测 `test_media_metadata_idl_face_r388`；make test
+65 套件全绿、fmt/clippy 干净。
 
 **与兄弟 goal 的边界**：
 - media-playback — 解码/帧渲染归其管（RFC 门控）；本目标的 readyState 真实驱动源由其
@@ -44,27 +51,26 @@ headless 近似驱动先行，兄弟目标建成后替换驱动源。
 
 | # | 缺口 | 状态 | 失败聚类 |
 |---|------|------|----------|
-| M1g | WPT media-elements 用例覆盖 | ✅ 首批 30 用例已导入，基线 46.5% | — |
-| M2g | load 算法 + 状态机（事件序列派发） | ⬜ M2 | F4（11 case Timeout） |
-| M3g | 事件序列 headless 近似驱动 | ⬜ M2 | F4 |
-| M4g-a | 媒体元数据 IDL 反射（初值面，spec 无解码器时合法值） | 🔄 **下一轮首选** | F2（9 Fail） |
-| M4g-b | `<track>` 反射 + TextTrack 最小面 | ⬜ M3 | F1+F3（59 Fail） |
-| M4g-c | track.src URL 解析 + \0 剥离 | 🔄 **下一轮（随 M4g-a）** | F6（6 Fail） |
+| M1g | WPT media-elements 用例覆盖 | ✅ 首批 30 用例已导入，**73.1%** | — |
+| M2g | load 算法 + 状态机（事件序列派发） | ⬜ **下一轮首选** | F4（13 case Timeout，最大桶） |
+| M3g | 事件序列 headless 近似驱动 | ⬜ M2（随 M2g） | F4 |
+| M4g-a | 媒体元数据 IDL 反射（初值面） | ✅ 切片 3 落地 | F2 闭合（-9 Fail） |
+| M4g-b | `<track>` 反射 + TextTrack 最小面 | 🔄 部分（track 反射 ✅；TextTrack 接口/集合 ⬜ = 当前余账 12 Fail） | F1 余/F3 |
+| M4g-c | track.src URL 解析 + \0 剥离 | ✅ 切片 3 落地（含 `<a href="">` 修复） | F6 闭合（-6 Fail） |
 | M4g-d | canPlayType 能力表（空表→选型面更新） | ⬜ 等 media-playback M0 选型 | F5（41 PF，非 bug） |
 
 ## 下一步计划
 
-1. **M1 切片 3（下一轮首选）**：F2 元数据 IDL 初值面——currentTime=0 / duration=NaN /
-   playbackRate=1 / defaultPlaybackRate=1 / volume=1 / preload 缺省映射表 / crossOrigin
-   null·anonymous·use-credentials 归一 + seeking=false / paused=true 初值 + F6 track.src
-   绝对 URL 解析（`__zw_parse_url`，同 R2838）。落点 part03 媒体段（R2835 四方法旁），
-   碰撞面已核对安全。验收 = F2/F6 的 15 Fail → 0。
-2. **M2**：load 算法骨架 + readyState/networkState 推进 + 事件序列 headless 近似驱动
-   （宿主 FR-009 settle 扩展 media 事件序列——loadstart/progress/suspend/loadedmetadata/
-   loadeddata/canplay/canplaythrough；autoplay 挂 play/playing）→ F4 的 11 case Timeout
-   转绿。之后追加 event_* 族用例进 MEDIA_TEST_FILES。
-3. **M3**：F1 track 反射（kind 归一表/subtitles 缺省/metadata invalid 映射）+ TextTrack
-   最小接口 + F3 addTextTrack/textTracks 集合面。
+1. **M2（下一轮首选，最大桶）**：load 算法骨架 + 事件序列 headless 近似驱动——宿主
+   FR-009 资源 settle 后派 media 专有序列（loadstart → progress → suspend →
+   loadedmetadata → loadeddata → canplay → canplaythrough；play/playing 挂 play() 调用；
+   durationchange 挂元数据面）。落点：shim `_zwSettleResourceSelector`（part06）扩展
+   media 分支 + `_mediaState` 真值推进。验收 = F4 的 13 case Timeout → 转绿；随后追加
+   event_* 族用例进 MEDIA_TEST_FILES（首轮筛选时有意排除的 17 个事件序列用例）。
+2. **M3（其后）**：TextTrack 最小接口（kind/label/language/mode/cues TextTrackCueList）+
+   `track.track` TextTrack 实例 + `addTextTrack`/`textTracks` 集合面 → 余账 12 Fail → 0
+   （顺带闭合 historical TextTrackCue TypeError）。
+3. **M4g-d**：canPlayType 能力表等 media-playback M0 选型落地后联动更新（跨 goal 依赖）。
 
 **碰撞管理**：js-dom 流已归档；媒体段（part01b.js 常量 + part03 方法段 + part06 settle）
 近 14 天仅 sw 流 iframe 改动（1b6c87303），与本 goal 无重叠。
@@ -73,9 +79,9 @@ headless 近似驱动先行，兄弟目标建成后替换驱动源。
 
 | 里程碑 | 状态 |
 |--------|------|
-| M1 — WPT 基线 + 摸底 | ✅ 完成（2026-08-31，46.5% 基线 + F1~F6 聚类） |
-| M2 — 状态机与事件序列 | ⬜ 下一切片：M1 切片 3（F2/F6）先行 |
-| M3 — API 语义 + track 面 + 播放层衔接 | ⬜ |
+| M1 — WPT 基线 + 摸底 | ✅ 完成（2026-08-31，46.5% 基线 + 切片 3 → 73.1%） |
+| M2 — 状态机与事件序列 | 🔄 **下一轮首选**（F4 = 最大余账桶） |
+| M3 — API 语义 + track 面 + 播放层衔接 | ⬜（TextTrack 家族 12 Fail） |
 
 ## 待用户决策
 
@@ -85,8 +91,8 @@ headless 近似驱动先行，兄弟目标建成后替换驱动源。
 
 ## 验证基线
 
-- 基线时点：2026-08-31，WPT rev `3159769338`；**subtest 114/245 = 46.5%**（Fail 77 /
-  Timeout 13 / PF 41）
+- 基线时点：2026-08-31，WPT rev `3159769338`；基线 **114/245 = 46.5%** → 切片 3 后
+  **179/245 = 73.1%**（Fail 12 / Timeout 13 / PF 41）
 - 入口：`make testharness-media`（FILTER 透传，`--json` 捕获 evidence）
 - 质量门禁：`cargo fmt` + `cargo clippy --workspace --all-targets -- -D warnings` 全过
 - evidence：`evidence/2026-08-31-media-baseline.md`（+ 同名 .json 机读版）

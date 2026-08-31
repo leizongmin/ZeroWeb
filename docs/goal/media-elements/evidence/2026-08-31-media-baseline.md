@@ -83,3 +83,42 @@
 1. **M1 完成**：基线 46.5%（114/245）成文；失败聚类 F1~F6 入账。
 2. **M1 切片 3（下一轮）**：F2 元数据 IDL 反射面（currentTime=0/duration=NaN/playbackRate=1/preload/crossOrigin 归一）+ F6 track.src URL 解析——根因清楚、headless 值有 spec 定义（无解码器时的合法初值），轻量修复优先级最高。
 3. **M2（其后）**：F1 track 反射 + TextTrack 最小面 → F3 集合面 → F4 load 算法骨架 + headless 近似事件序列（clearTimeout 面，需宿主资源 settle 扩展 media 事件）。
+
+---
+
+## M1 切片 3 增量（F2/F6 落地，2026-08-31 同轮）
+
+commit `feat(engine): media metadata IDL face + track reflection`：
+
+- **F2 修复**：AUDIO/VIDEO 元数据 IDL 面——currentTime/duration(NaN)/playbackRate/
+  defaultPlaybackRate/volume（[0,1] clamp）/seeking/paused/ended/defaultMuted 初值与
+  setter round-trip；preload 枚举反射（缺省 metadata）；crossOrigin 枚举反射
+  （missing→null / ''·invalid→anonymous / use-credentials，setter null→removeAttribute）；
+  has-trap 白名单（`'crossOrigin' in video` 可见）。
+- **F1 部分修复**：HTMLTrackElement 反射——kind（缺省 subtitles / invalid→metadata /
+  大小写归一）、label/srclang（DOMString）、default（布尔）、src（URL 属性绝对解析 +
+  C0/space 剥离）+ 全部 setter（移除同步 R122 实例层）。
+- **F6 附带修复**：`<a href="">.href` 空串按 URL spec 解析为页面绝对 URL（属性存在但空
+  ≠ 属性缺失）。
+- **新增单测**：`test_media_metadata_idl_face_r388`（5 组断言：初值面 / round-trip 与
+  clamp / 枚举反射 / track 反射 / src 绝对解析）。
+
+### 增量后总通过率：179/245 subtest = **73.1%**（基线 46.5% → **+26.6pp**）
+
+| 状态 | 基线 | 切片 3 后 | 变化 |
+|---|---|---|---|
+| Pass | 114 | 179 | **+65** |
+| Fail | 77 | 12 | **-65** |
+| Timeout | 13 | 13 | 0（F4 域，M2） |
+| PreconditionFailed | 41 | 41 | 0（F5 域，能力表决策后自愈） |
+
+### 余账（12 Fail，全部 M3 TextTrack 家族）
+
+- addTextTrack 9 Fail（`video.addTextTrack is not a function`——需 TextTrack 接口）
+- textTracks 1 Fail（集合面）
+- track.track 1 Fail（TextTrack 构造器）
+- historical 1 Fail（TextTrackCue `new` 应抛 TypeError——现 ReferenceError；TextTrack
+  接口落地时顺带闭合）
+
+**验证**：make test 65 套件全绿、`cargo fmt --all -- --check` 干净、
+`cargo clippy --workspace --all-targets -- -D warnings` 零警告。
