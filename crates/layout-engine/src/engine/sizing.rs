@@ -228,6 +228,49 @@ impl LayoutEngine {
                 } else {
                     resolve_sizing_definite_real_length(&item_style.min_width, item_style).is_some()
                 };
+                // R3859：R1013 skip 分支的**最小侵入补强**——非替换 leaf + main auto +
+                // main min definite 时不做 cross→main 反向推导（R1013），但「definite min
+                // **cross** × ratio → min main」（CSS Flexbox §4 transferred size suggestion，
+                // css-sizing-4 §4）仍须喂给 taffy：taffy 自身不解 min-cross→min-main 传递，
+                // min main = 0 时 aspect 主轴塌缩（flex-aspect-ratio-035：容器 width:0 +
+                // min-width:100 → item min main(height) 应 = 100×1，ZW 塌 0 高）。
+                // padding 守卫沿用 R1364（cross 轴有 padding 时 transfer 基准偏移，跳过保 R1013
+                // baseline）。仅提升 min（max()），不覆盖 size——taffy 以 min 钳自然求解。
+                if main_is_auto && main_has_definite_min && !b.is_replaced {
+                    let definite_min_cross = if is_column {
+                        resolve_sizing_definite_real_length(&item_style.min_width, item_style)
+                    } else {
+                        resolve_sizing_definite_real_length(&item_style.min_height, item_style)
+                    };
+                    let cross_has_no_box = if is_column {
+                        LayoutEngine::is_zeroish_len(&item_style.padding_left)
+                            && LayoutEngine::is_zeroish_len(&item_style.padding_right)
+                    } else {
+                        LayoutEngine::is_zeroish_len(&item_style.padding_top)
+                            && LayoutEngine::is_zeroish_len(&item_style.padding_bottom)
+                    };
+                    if let (Some(min_cross), true) = (definite_min_cross, cross_has_no_box) {
+                        let transferred_min_main = min_cross * ratio;
+                        if let Ok(mut st) = taffy_tree.style(tid).cloned() {
+                            let cur = if is_column {
+                                st.min_size.height
+                            } else {
+                                st.min_size.width
+                            };
+                            let cur_px = if cur.is_auto() { 0.0 } else { cur.value() };
+                            if transferred_min_main > cur_px + 0.5 {
+                                if is_column {
+                                    st.min_size.height = taffy::style::Dimension::length(transferred_min_main);
+                                } else {
+                                    st.min_size.width = taffy::style::Dimension::length(transferred_min_main);
+                                }
+                                let _ = taffy_tree.set_style(tid, st);
+                                let _ = taffy_tree.mark_dirty(tid);
+                                changed = true;
+                            }
+                        }
+                    }
+                }
                 if main_is_auto && (!main_has_definite_min || b.is_replaced) {
                     // column: main=height, cross=width；row: main=width, cross=height。
                     let (main_resolved, cross_resolved) = if is_column {

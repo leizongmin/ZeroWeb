@@ -182,6 +182,8 @@ mod r3809_va_margin_box_align_tests;
 mod r3817_anon_cell_center_tests;
 /// R3858 abspos 非根 positioned 祖先 CB 重解析测试。
 mod r3858_abspos_nested_cb_tests;
+/// R3859 flex item min-cross→min-main transferred size 测试。
+mod r3859_flex_ar_transferred_min_tests;
 mod r717_flex_ratio_img_tests;
 mod table_layout_tests;
 mod tests_1;
