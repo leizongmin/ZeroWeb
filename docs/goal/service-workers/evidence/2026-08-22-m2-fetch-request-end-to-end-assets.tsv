@@ -36,6 +36,9 @@ service-workers/service-worker/resources/intercepted-referrer-sw.js	support	work
 service-workers/service-worker/controller-with-no-fetch-event-handler.https.html	testharness	case	1	1826	no	d947139c9e213a51e8810aacb3bb40a08cfdc937	04067ce9c7c2165e71ad7d0dde10a4c5cb394a83
 service-workers/service-worker/resources/cors-approved.txt	support	fetch-body	1	10	no	1cd89bb14d6077f07bad3607737ed8f63268c271	04067ce9c7c2165e71ad7d0dde10a4c5cb394a83
 service-workers/service-worker/resources/cors-denied.txt	support	fetch-body	1	112	no	ff333bd97da4c6949a3142ac8789cb2e45d41b86	04067ce9c7c2165e71ad7d0dde10a4c5cb394a83
+service-workers/service-worker/fetch-with-body.https.html	testharness	case	1	1209	no	21ded3f3272566e5a31fea08c2358bed1438bd29	04067ce9c7c2165e71ad7d0dde10a4c5cb394a83
+service-workers/service-worker/resources/fetch-with-body-worker.js	support	worker-script	1	113	no	bef899c1b0007e46993fb575b398f16734bd865c	04067ce9c7c2165e71ad7d0dde10a4c5cb394a83
+service-workers/service-worker/resources/fetch-with-body-worker.py	support	fetch-body	1	118	no	c5eeba0d67ccfdecc98db722be1a371a3eb70c04	04067ce9c7c2165e71ad7d0dde10a4c5cb394a83
 service-workers/service-worker/fetch-event-respond-with-stops-propagation.https.html	testharness	case	1	1346	no	31fd616b6d6f509b7dcb6b56f45e9c2e12e9b8e6	24197a11e8c5bd29a5cb7bdf18135a82be8a8546
 service-workers/service-worker/resources/fetch-event-respond-with-stops-propagation-worker.js	support	worker-script	1	354	no	18da049d69f4fbf94dca596a3de8139dfc5cc1f9	24197a11e8c5bd29a5cb7bdf18135a82be8a8546
 service-workers/service-worker/fetch-event-throws-after-respond-with.https.html	testharness	case	1	1392	no	d98fb22ff423271dd84460200ebdb60573ed6371	24197a11e8c5bd29a5cb7bdf18135a82be8a8546

@@ -10,8 +10,8 @@ import subprocess
 import sys
 from pathlib import Path
 
-EXPECTED_CASES = 21
-EXPECTED_SUBTESTS = 54
+EXPECTED_CASES = 22
+EXPECTED_SUBTESTS = 55
 
 
 def parse_args() -> argparse.Namespace:
@@ -99,7 +99,7 @@ def render_markdown(summary: dict) -> str:
             "",
             "## Scope",
             "",
-            "This pinned Service Worker M2 fetch/interception baseline covers twenty-one cases. "
+            "This pinned Service Worker M2 fetch/interception baseline covers twenty-two cases. "
             "`fetch-on-the-right-interface.https.any.js` verifies that `fetch` is inherited "
             "from `WorkerGlobalScope.prototype` rather than installed as an own property on "
             "`ServiceWorkerGlobalScope`, and `historical.https.any.js` verifies that the "
@@ -130,6 +130,8 @@ def render_markdown(summary: dict) -> str:
             "`controller-with-no-fetch-event-handler.https.html` verifies that a "
             "controlled client still uses ordinary Fetch CORS/no-cors processing "
             "when its active Service Worker has no fetch event handler. "
+            "`fetch-with-body.https.html` verifies that `fetch(event.request)` preserves "
+            "a controlled client's POST request body across the worker-global fetch bridge. "
             "`fetch-event-respond-with-stops-propagation.https.html` covers the "
             "FetchEvent rule that `respondWith()` invokes `stopImmediatePropagation()` "
             "and keeps later fetch listeners from observing the same request. "

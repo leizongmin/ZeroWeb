@@ -860,6 +860,7 @@ pub const SERVICE_WORKER_FETCH_CASES: &[&str] = &[
     "service-workers/service-worker/fetch-event-after-navigation-within-page.https.html",
     "service-workers/service-worker/intercepted-referrer.https.html",
     "service-workers/service-worker/controller-with-no-fetch-event-handler.https.html",
+    "service-workers/service-worker/fetch-with-body.https.html",
     "service-workers/service-worker/fetch-event-respond-with-stops-propagation.https.html",
     "service-workers/service-worker/fetch-event-throws-after-respond-with.https.html",
     "service-workers/service-worker/fetch-event-network-error.https.html",
@@ -2324,14 +2325,30 @@ fn wpt_data_fetch_handler(wpt_root: &std::path::Path) -> Option<zero_engine::fet
     let vary_value_override = std::sync::Arc::new(std::sync::Mutex::new(None::<String>));
     Some(std::sync::Arc::new(
         move |req: &zero_engine::fetch_bridge::FetchRequest| {
-            if req.method != "GET" {
-                return Err(format!("method not supported: {}", req.method));
-            }
             let path_part = wpt_url_path(&req.url);
             let path_part = path_part.strip_prefix('/').unwrap_or(path_part);
             let clean = path_part.split(['?', '#']).next().unwrap_or(path_part);
             if clean.is_empty() {
                 return Err("empty path".to_string());
+            }
+            if clean == "service-workers/service-worker/resources/fetch-with-body-worker.py" {
+                // https://github.com/web-platform-tests/wpt/blob/04067ce9c7c2165e71ad7d0dde10a4c5cb394a83/service-workers/service-worker/resources/fetch-with-body-worker.py
+                let has_body = req.body_bytes.as_ref().is_some_and(|bytes| !bytes.is_empty())
+                    || req.body.as_ref().is_some_and(|body| !body.is_empty());
+                let status = if has_body { 200 } else { 400 };
+                let body = if has_body { "BODY" } else { "NO BODY" };
+                let mut headers = wpt_pipe_headers(path_part.split_once('?').map(|(_, query)| query).unwrap_or(""));
+                wpt_add_fetch_metadata(&mut headers, req, status);
+                return Ok(zero_engine::fetch_bridge::FetchResponse {
+                    status,
+                    status_text: wpt_status_text(status).to_string(),
+                    headers,
+                    body: body.to_string(),
+                    body_bytes: Some(body.as_bytes().to_vec()),
+                });
+            }
+            if req.method != "GET" {
+                return Err(format!("method not supported: {}", req.method));
             }
             // js-dom R141：dom/nodes/encoding.py（Document-characterSet-normalization 两文件
             // 654 subtest 经 `<iframe src="encoding.py?label=X">` 取子文档）——上游是
@@ -3789,8 +3806,8 @@ async_test(function(test) {
             .iter()
             .copied()
             .collect::<std::collections::BTreeSet<_>>();
-        assert_eq!(SERVICE_WORKER_FETCH_CASES.len(), 21);
-        assert_eq!(unique.len(), 21);
+        assert_eq!(SERVICE_WORKER_FETCH_CASES.len(), 22);
+        assert_eq!(unique.len(), 22);
         assert!(SERVICE_WORKER_FETCH_CASES.contains(
             &"service-workers/service-worker/ServiceWorkerGlobalScope/fetch-on-the-right-interface.https.any.js"
         ));
@@ -3820,6 +3837,7 @@ async_test(function(test) {
             SERVICE_WORKER_FETCH_CASES
                 .contains(&"service-workers/service-worker/controller-with-no-fetch-event-handler.https.html")
         );
+        assert!(SERVICE_WORKER_FETCH_CASES.contains(&"service-workers/service-worker/fetch-with-body.https.html"));
         assert!(
             SERVICE_WORKER_FETCH_CASES
                 .contains(&"service-workers/service-worker/fetch-event-respond-with-stops-propagation.https.html")
@@ -4162,6 +4180,29 @@ async_test(function(test) {
                 .any(|(name, _)| name.eq_ignore_ascii_case("vary")),
             "omit credentials should ignore the WPT vary override cookie"
         );
+    }
+
+    #[test]
+    fn fetch_with_body_fixture_distinguishes_empty_and_non_empty_request_bodies() {
+        let handler = wpt_data_fetch_handler(Path::new("/nonexistent-wpt-root")).unwrap();
+        let make_req = |method: &str, body: Option<&str>| zero_engine::fetch_bridge::FetchRequest {
+            url: "https://wpt.test/service-workers/service-worker/resources/fetch-with-body-worker.py".to_string(),
+            method: method.to_string(),
+            headers: Vec::new(),
+            body: body.map(str::to_string),
+            body_bytes: None,
+            credentials: None,
+            mode: None,
+            redirect: None,
+        };
+
+        let get = handler(&make_req("GET", None)).unwrap();
+        assert_eq!(get.status, 400);
+        assert_eq!(get.body, "NO BODY");
+
+        let post = handler(&make_req("POST", Some("BODY"))).unwrap();
+        assert_eq!(post.status, 200);
+        assert_eq!(post.body, "BODY");
     }
 
     #[test]
