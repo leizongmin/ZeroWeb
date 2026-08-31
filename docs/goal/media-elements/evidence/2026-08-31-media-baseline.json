@@ -1,0 +1,120 @@
+{
+  "date": "2026-08-31",
+  "wpt_rev": "315976933870b34d6ea30e3f6643403edae678ba",
+  "totals": {
+    "Pass": 114,
+    "Timeout": 13,
+    "Fail": 77,
+    "PreconditionFailed": 41
+  },
+  "pass_rate": 46.5,
+  "cases": {
+    "html/semantics/embedded-content/media-elements/error-codes/error.html": {
+      "Pass": 2,
+      "Timeout": 1
+    },
+    "html/semantics/embedded-content/media-elements/historical.html": {
+      "Pass": 53,
+      "Fail": 1
+    },
+    "html/semantics/embedded-content/media-elements/interfaces/HTMLElement/HTMLMediaElement/addTextTrack.html": {
+      "Pass": 2,
+      "Fail": 9
+    },
+    "html/semantics/embedded-content/media-elements/interfaces/HTMLElement/HTMLMediaElement/crossOrigin.html": {
+      "Fail": 5,
+      "Pass": 6
+    },
+    "html/semantics/embedded-content/media-elements/interfaces/HTMLElement/HTMLMediaElement/textTracks.html": {
+      "Fail": 1
+    },
+    "html/semantics/embedded-content/media-elements/interfaces/HTMLElement/HTMLTrackElement/default.html": {
+      "Fail": 7
+    },
+    "html/semantics/embedded-content/media-elements/interfaces/HTMLElement/HTMLTrackElement/kind.html": {
+      "Fail": 20
+    },
+    "html/semantics/embedded-content/media-elements/interfaces/HTMLElement/HTMLTrackElement/label.html": {
+      "Fail": 11
+    },
+    "html/semantics/embedded-content/media-elements/interfaces/HTMLElement/HTMLTrackElement/readyState.html": {
+      "Pass": 2
+    },
+    "html/semantics/embedded-content/media-elements/interfaces/HTMLElement/HTMLTrackElement/src.html": {
+      "Pass": 5,
+      "Fail": 6
+    },
+    "html/semantics/embedded-content/media-elements/interfaces/HTMLElement/HTMLTrackElement/srclang.html": {
+      "Fail": 11
+    },
+    "html/semantics/embedded-content/media-elements/interfaces/HTMLElement/HTMLTrackElement/track.html": {
+      "Fail": 1
+    },
+    "html/semantics/embedded-content/media-elements/location-of-the-media-resource/currentSrc.html": {
+      "Pass": 2,
+      "Timeout": 1
+    },
+    "html/semantics/embedded-content/media-elements/mime-types/canPlayType.html": {
+      "Pass": 19,
+      "PreconditionFailed": 41
+    },
+    "html/semantics/embedded-content/media-elements/networkState_during_loadstart.html": {
+      "Timeout": 1
+    },
+    "html/semantics/embedded-content/media-elements/networkState_during_progress.html": {
+      "Pass": 2,
+      "Timeout": 1
+    },
+    "html/semantics/embedded-content/media-elements/networkState_initial.html": {
+      "Pass": 2
+    },
+    "html/semantics/embedded-content/media-elements/offsets-into-the-media-resource/currentTime.html": {
+      "Fail": 2,
+      "Timeout": 1
+    },
+    "html/semantics/embedded-content/media-elements/offsets-into-the-media-resource/duration.html": {
+      "Pass": 1
+    },
+    "html/semantics/embedded-content/media-elements/paused_false_during_play.html": {
+      "Pass": 2,
+      "Timeout": 1
+    },
+    "html/semantics/embedded-content/media-elements/paused_true_during_pause.html": {
+      "Pass": 2,
+      "Timeout": 1
+    },
+    "html/semantics/embedded-content/media-elements/playing-the-media-resource/playbackRate.html": {
+      "Fail": 1,
+      "Timeout": 1
+    },
+    "html/semantics/embedded-content/media-elements/preload_reflects_none_autoplay.html": {
+      "Fail": 2
+    },
+    "html/semantics/embedded-content/media-elements/readyState_during_canplay.html": {
+      "Pass": 2,
+      "Timeout": 1
+    },
+    "html/semantics/embedded-content/media-elements/readyState_during_canplaythrough.html": {
+      "Pass": 2,
+      "Timeout": 1
+    },
+    "html/semantics/embedded-content/media-elements/readyState_during_loadeddata.html": {
+      "Pass": 2,
+      "Timeout": 1
+    },
+    "html/semantics/embedded-content/media-elements/readyState_during_loadedmetadata.html": {
+      "Pass": 2,
+      "Timeout": 1
+    },
+    "html/semantics/embedded-content/media-elements/readyState_during_playing.html": {
+      "Pass": 2,
+      "Timeout": 1
+    },
+    "html/semantics/embedded-content/media-elements/readyState_initial.html": {
+      "Pass": 2
+    },
+    "html/semantics/embedded-content/media-elements/src_reflects_attribute_not_source_elements.html": {
+      "Pass": 2
+    }
+  }
+}

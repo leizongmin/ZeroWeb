@@ -1276,6 +1276,80 @@ fn case_variants(source: &str) -> Vec<String> {
     out
 }
 
+/// Media elements goal（docs/goal/media-elements.md，M1 / DC-1）导入的上游
+/// `html/semantics/embedded-content/media-elements` testharness 用例面。
+///
+/// 由 `tests/wpt-runner/scripts/fetch-media-subset.sh` 维护（wpt-data gitignored，
+/// 用例按需 fetch、不入库）；首批判定标准 = 只断言 JS 可观察语义（反射/canPlayType/
+/// 元数据初值/track 反射），不依赖真实媒体解码。依赖真解码/播放驱动的用例
+/// （event_* 族、autoplay、seeking/）随语义层落地逐批追加。
+pub const MEDIA_TEST_FILES: &[&str] = &[
+    "html/semantics/embedded-content/media-elements/error-codes/error.html",
+    "html/semantics/embedded-content/media-elements/historical.html",
+    "html/semantics/embedded-content/media-elements/interfaces/HTMLElement/HTMLMediaElement/addTextTrack.html",
+    "html/semantics/embedded-content/media-elements/interfaces/HTMLElement/HTMLMediaElement/crossOrigin.html",
+    "html/semantics/embedded-content/media-elements/interfaces/HTMLElement/HTMLMediaElement/textTracks.html",
+    "html/semantics/embedded-content/media-elements/interfaces/HTMLElement/HTMLTrackElement/default.html",
+    "html/semantics/embedded-content/media-elements/interfaces/HTMLElement/HTMLTrackElement/kind.html",
+    "html/semantics/embedded-content/media-elements/interfaces/HTMLElement/HTMLTrackElement/label.html",
+    "html/semantics/embedded-content/media-elements/interfaces/HTMLElement/HTMLTrackElement/readyState.html",
+    "html/semantics/embedded-content/media-elements/interfaces/HTMLElement/HTMLTrackElement/src.html",
+    "html/semantics/embedded-content/media-elements/interfaces/HTMLElement/HTMLTrackElement/srclang.html",
+    "html/semantics/embedded-content/media-elements/interfaces/HTMLElement/HTMLTrackElement/track.html",
+    "html/semantics/embedded-content/media-elements/location-of-the-media-resource/currentSrc.html",
+    "html/semantics/embedded-content/media-elements/mime-types/canPlayType.html",
+    "html/semantics/embedded-content/media-elements/networkState_during_loadstart.html",
+    "html/semantics/embedded-content/media-elements/networkState_during_progress.html",
+    "html/semantics/embedded-content/media-elements/networkState_initial.html",
+    "html/semantics/embedded-content/media-elements/offsets-into-the-media-resource/currentTime.html",
+    "html/semantics/embedded-content/media-elements/offsets-into-the-media-resource/duration.html",
+    "html/semantics/embedded-content/media-elements/paused_false_during_play.html",
+    "html/semantics/embedded-content/media-elements/paused_true_during_pause.html",
+    "html/semantics/embedded-content/media-elements/playing-the-media-resource/playbackRate.html",
+    "html/semantics/embedded-content/media-elements/preload_reflects_none_autoplay.html",
+    "html/semantics/embedded-content/media-elements/readyState_during_canplay.html",
+    "html/semantics/embedded-content/media-elements/readyState_during_canplaythrough.html",
+    "html/semantics/embedded-content/media-elements/readyState_during_loadeddata.html",
+    "html/semantics/embedded-content/media-elements/readyState_during_loadedmetadata.html",
+    "html/semantics/embedded-content/media-elements/readyState_during_playing.html",
+    "html/semantics/embedded-content/media-elements/readyState_initial.html",
+    "html/semantics/embedded-content/media-elements/src_reflects_attribute_not_source_elements.html",
+];
+
+/// Run the pinned upstream media-elements testharness subset.
+pub fn run_media_cases(wpt_root: &Path, filter: Option<&str>) -> Vec<(String, Vec<HarnessSubtestResult>)> {
+    let harness_source = match std::fs::read_to_string(wpt_root.join("resources/testharness.js")) {
+        Ok(source) => source,
+        Err(error) => {
+            return vec![(
+                "resources/testharness.js".to_string(),
+                vec![HarnessSubtestResult {
+                    name: "load testharness.js".into(),
+                    status: HarnessStatus::Fail,
+                    message: Some(error.to_string()),
+                }],
+            )];
+        }
+    };
+
+    MEDIA_TEST_FILES
+        .iter()
+        .filter(|path| filter.is_none_or(|filter| path.contains(filter)))
+        .map(|path| {
+            let source = std::fs::read_to_string(wpt_root.join(path));
+            let results = match source {
+                Ok(source) => run_testharness_html(wpt_root, path, &source, &harness_source, CASE_TIMEOUT),
+                Err(error) => vec![HarnessSubtestResult {
+                    name: "load WPT case".into(),
+                    status: HarnessStatus::Fail,
+                    message: Some(error.to_string()),
+                }],
+            };
+            ((*path).to_string(), results)
+        })
+        .collect()
+}
+
 /// Run the pinned upstream IndexedDB `.any.js` subset.
 pub fn run_indexeddb_cases(wpt_root: &Path, filter: Option<&str>) -> Vec<(String, Vec<HarnessSubtestResult>)> {
     let harness_source = match std::fs::read_to_string(wpt_root.join("resources/testharness.js")) {
