@@ -213,6 +213,79 @@ fn test_iframe_inline_script_xhr_uses_iframe_window_location() {
 }
 
 #[test]
+fn test_iframe_history_pushstate_updates_fetch_base_url() {
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+
+    let mut sandbox = V8Sandbox::with_config(zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    })
+    .unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><iframe src=\"resources/fetch-event-after-navigation-within-page-iframe.html?pushState\"></iframe></body></html>"
+            .to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "https://wpt.test/service-workers/service-worker/fetch-event-after-navigation-within-page.https.html"
+            .to_string(),
+    ));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+    let fetches: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
+    let fetches_for_callback = fetches.clone();
+    sandbox.register_callback(
+        "__zw_fetch",
+        Box::new(move |args| {
+            let url = args.get(2).cloned().unwrap_or_default();
+            fetches_for_callback.lock().unwrap().push(url.clone());
+            if url.contains("fetch-event-after-navigation-within-page-iframe.html") {
+                "__zwfr:200\x1fOK\x1f\x1f<script></script>".to_string()
+            } else {
+                "__zwfr:200\x1fOK\x1f\x1fbody".to_string()
+            }
+        }),
+    );
+
+    sandbox
+        .execute(
+            "var win = document.querySelector('iframe').contentWindow;\
+             win.history.pushState({page: 1}, '', 'bar');\
+             win.fetch('simple.txt');",
+        )
+        .unwrap();
+    for _ in 0..4 {
+        sandbox.execute("0").unwrap();
+    }
+
+    assert_eq!(
+        sandbox
+            .execute(
+                "JSON.stringify({\
+                   href: document.querySelector('iframe').contentWindow.location.href,\
+                   state: document.querySelector('iframe').contentWindow.history.state.page,\
+                   length: document.querySelector('iframe').contentWindow.history.length\
+                 })",
+            )
+            .unwrap()
+            .value,
+        r#"{"href":"https://wpt.test/service-workers/service-worker/resources/bar","state":1,"length":2}"#
+    );
+    assert_eq!(
+        fetches.lock().unwrap().as_slice(),
+        &[
+            "https://wpt.test/service-workers/service-worker/resources/fetch-event-after-navigation-within-page-iframe.html?pushState"
+                .to_string(),
+            "https://wpt.test/service-workers/service-worker/resources/simple.txt".to_string(),
+        ],
+        "iframe fetch should continue resolving relative URLs against the iframe document after pushState"
+    );
+}
+
+#[test]
 fn test_iframe_inline_script_function_is_exposed_on_content_window() {
     use std::sync::{Arc, Mutex};
     use zero_script_sandbox::{Sandbox, V8Sandbox};

@@ -2251,6 +2251,29 @@
       }
       globalThis.__zw_reload_iframe(frame, targetUrl, flags || {});
     }
+    function iframeResolveHistoryUrl(url) {
+      if (url == null) return doc && doc._zwURL ? String(doc._zwURL) : 'about:blank';
+      try {
+        if (typeof globalThis.URL === 'function') {
+          return new globalThis.URL(String(url), doc && doc._zwURL ? doc._zwURL : undefined).href;
+        }
+      } catch (_eIframeHistoryUrl) {}
+      return String(url);
+    }
+    function iframeSetCurrentHistoryUrl(url) {
+      if (!doc) return;
+      try { doc._zwURL = url; } catch (_eIframeHistoryDocUrl) {}
+      try { doc._zwFragmentUrl = url; } catch (_eIframeHistoryFragUrl) {}
+      try {
+        if (frameKey && _iframeDocCache[frameKey]) _iframeDocCache[frameKey].url = url;
+      } catch (_eIframeHistoryEntryUrl) {}
+    }
+    function iframeSyncHistoryEntries(history) {
+      try {
+        if (!frameKey || !_iframeDocCache[frameKey]) return;
+        _iframeDocCache[frameKey].history = history._entries.map(function(entry) { return entry.url; });
+      } catch (_eIframeHistorySync) {}
+    }
     function iframeLocation() {
       function href() {
         return doc && doc._zwURL ? String(doc._zwURL) : 'about:blank';
@@ -2430,6 +2453,31 @@
       top: globalThis.top || globalThis,
       location: iframeLocation(),
       history: {
+        _entries: [{ state: null, url: doc && doc._zwURL ? String(doc._zwURL) : 'about:blank' }],
+        _cursor: 0,
+        get length() { return this._entries.length; },
+        get state() { return this._entries[this._cursor] ? this._entries[this._cursor].state : null; },
+        get scrollRestoration() { return 'auto'; },
+        set scrollRestoration(_v) {},
+        // https://html.spec.whatwg.org/multipage/nav-history-apis.html#dom-history-pushstate
+        pushState: function(state, _unused, url) {
+          var current = this._entries[this._cursor] || { state: null, url: doc && doc._zwURL ? String(doc._zwURL) : 'about:blank' };
+          var nextUrl = url != null ? iframeResolveHistoryUrl(url) : current.url;
+          this._entries = this._entries.slice(0, this._cursor + 1);
+          this._entries.push({ state: state, url: nextUrl });
+          this._cursor = this._entries.length - 1;
+          iframeSetCurrentHistoryUrl(nextUrl);
+          iframeSyncHistoryEntries(this);
+        },
+        // https://html.spec.whatwg.org/multipage/nav-history-apis.html#dom-history-replacestate
+        replaceState: function(state, _unused, url) {
+          var current = this._entries[this._cursor] || { state: null, url: doc && doc._zwURL ? String(doc._zwURL) : 'about:blank' };
+          current.state = state;
+          if (url != null) current.url = iframeResolveHistoryUrl(url);
+          this._entries[this._cursor] = current;
+          iframeSetCurrentHistoryUrl(current.url);
+          iframeSyncHistoryEntries(this);
+        },
         go: function(delta) {
           var d = (delta == null) ? -1 : (delta | 0);
           if (d === -1) iframeReload({ history: true });

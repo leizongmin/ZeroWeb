@@ -857,6 +857,7 @@ pub const SERVICE_WORKER_FETCH_CASES: &[&str] = &[
     "service-workers/service-worker/fetch-event-within-sw.https.html",
     "service-workers/service-worker/fetch-event-respond-with-custom-response.https.html",
     "service-workers/service-worker/fetch-event-handled.https.html",
+    "service-workers/service-worker/fetch-event-after-navigation-within-page.https.html",
     "service-workers/service-worker/fetch-event-respond-with-stops-propagation.https.html",
     "service-workers/service-worker/fetch-event-throws-after-respond-with.https.html",
     "service-workers/service-worker/fetch-event-network-error.https.html",
@@ -3756,8 +3757,8 @@ async_test(function(test) {
             .iter()
             .copied()
             .collect::<std::collections::BTreeSet<_>>();
-        assert_eq!(SERVICE_WORKER_FETCH_CASES.len(), 18);
-        assert_eq!(unique.len(), 18);
+        assert_eq!(SERVICE_WORKER_FETCH_CASES.len(), 19);
+        assert_eq!(unique.len(), 19);
         assert!(SERVICE_WORKER_FETCH_CASES.contains(
             &"service-workers/service-worker/ServiceWorkerGlobalScope/fetch-on-the-right-interface.https.any.js"
         ));
@@ -3778,6 +3779,10 @@ async_test(function(test) {
                 .contains(&"service-workers/service-worker/fetch-event-respond-with-custom-response.https.html")
         );
         assert!(SERVICE_WORKER_FETCH_CASES.contains(&"service-workers/service-worker/fetch-event-handled.https.html"));
+        assert!(
+            SERVICE_WORKER_FETCH_CASES
+                .contains(&"service-workers/service-worker/fetch-event-after-navigation-within-page.https.html")
+        );
         assert!(
             SERVICE_WORKER_FETCH_CASES
                 .contains(&"service-workers/service-worker/fetch-event-respond-with-stops-propagation.https.html")

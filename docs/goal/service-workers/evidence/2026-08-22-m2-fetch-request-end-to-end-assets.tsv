@@ -29,6 +29,8 @@ service-workers/service-worker/fetch-event-respond-with-custom-response.https.ht
 service-workers/service-worker/resources/fetch-event-respond-with-custom-response-worker.js	support	worker-script	1	1043	no	ff24aed1282c8cf69b801cb4841594aef19db613	24197a11e8c5bd29a5cb7bdf18135a82be8a8546
 service-workers/service-worker/fetch-event-handled.https.html	testharness	case	1	3183	no	08b88ce3773d036cf1ea3a9f321f87b26d54fffd	04067ce9c7c2165e71ad7d0dde10a4c5cb394a83
 service-workers/service-worker/resources/fetch-event-handled-worker.js	support	worker-script	1	1103	no	53ee1493743d79768908a3ac4c47ca0b84243f4e	04067ce9c7c2165e71ad7d0dde10a4c5cb394a83
+service-workers/service-worker/fetch-event-after-navigation-within-page.https.html	testharness	case	1	2504	no	4812d8a91551edae84b5e2805804fc9d8899f3e9	04067ce9c7c2165e71ad7d0dde10a4c5cb394a83
+service-workers/service-worker/resources/fetch-event-after-navigation-within-page-iframe.html	support	iframe-document	1	730	no	bf8a6d5ce51facdd65f30ce5750417c7fcf2ef02	04067ce9c7c2165e71ad7d0dde10a4c5cb394a83
 service-workers/service-worker/fetch-event-respond-with-stops-propagation.https.html	testharness	case	1	1346	no	31fd616b6d6f509b7dcb6b56f45e9c2e12e9b8e6	24197a11e8c5bd29a5cb7bdf18135a82be8a8546
 service-workers/service-worker/resources/fetch-event-respond-with-stops-propagation-worker.js	support	worker-script	1	354	no	18da049d69f4fbf94dca596a3de8139dfc5cc1f9	24197a11e8c5bd29a5cb7bdf18135a82be8a8546
 service-workers/service-worker/fetch-event-throws-after-respond-with.https.html	testharness	case	1	1392	no	d98fb22ff423271dd84460200ebdb60573ed6371	24197a11e8c5bd29a5cb7bdf18135a82be8a8546
@@ -36,7 +38,7 @@ service-workers/service-worker/resources/respond-then-throw-worker.js	support	wo
 service-workers/service-worker/uncontrolled-page.https.html	testharness	case	1	1290	no	e22ca8f0a91adf9fbcf64c77cd3d1d4df27956f3	24197a11e8c5bd29a5cb7bdf18135a82be8a8546
 service-workers/service-worker/resources/fail-on-fetch-worker.js	support	worker-script	1	142	no	517f289fbc8e43b1d540a47761538fe84b121c48	24197a11e8c5bd29a5cb7bdf18135a82be8a8546
 service-workers/service-worker/resources/worker-testharness.js	support	worker-script-harness	1	1768	no	73e97be1eaa44bbe96f8801e0c76c37772ac7d1f	24197a11e8c5bd29a5cb7bdf18135a82be8a8546
-service-workers/service-worker/resources/simple.txt	support	network-resource	2	19	no	9e3cb91fb9b95d6e51de85b82e6f86e92f59ac6d	24197a11e8c5bd29a5cb7bdf18135a82be8a8546
+service-workers/service-worker/resources/simple.txt	support	network-resource	3	19	no	9e3cb91fb9b95d6e51de85b82e6f86e92f59ac6d	24197a11e8c5bd29a5cb7bdf18135a82be8a8546
 service-workers/service-worker/claim-fetch.https.html	testharness	case	1	2898	no	ae0082df06bf794d02990a7c0b7213e0d81114cb	24197a11e8c5bd29a5cb7bdf18135a82be8a8546
 service-workers/service-worker/resources/claim-worker.js	support	worker-script	1	623	no	18004079475e2bbd9d1a8d25ae4b26c7638de58e	24197a11e8c5bd29a5cb7bdf18135a82be8a8546
 service-workers/service-worker/resources/blank.html	support	iframe-document	1	41	no	a3c3a4689a62b45b1e429f6b7a94690e556a1259	24197a11e8c5bd29a5cb7bdf18135a82be8a8546
@@ -46,4 +48,4 @@ service-workers/service-worker/resources/empty-worker.js	support	worker-script	1
 service-workers/service-worker/claim-using-registration.https.html	testharness	case	1	3983	no	8a2a6ff25c82d8d6de26cca521da99f8ef6d5fbf	24197a11e8c5bd29a5cb7bdf18135a82be8a8546
 service-workers/service-worker/unregister-controller.https.html	testharness	case	1	3733	no	3bf4cff7200e71a7ad157f97f60e0bca45693485	24197a11e8c5bd29a5cb7bdf18135a82be8a8546
 service-workers/service-worker/resources/unregister-controller-page.html	support	iframe-document	1	445	no	18a95ee892b1c9ee7ca597cb2655e6c4504a7912	24197a11e8c5bd29a5cb7bdf18135a82be8a8546
-service-workers/service-worker/resources/simple-intercept-worker.js	support	worker-script	1	174	no	f8b5f8c5cb77b153bc98703821e13f00d8702fd7	24197a11e8c5bd29a5cb7bdf18135a82be8a8546
+service-workers/service-worker/resources/simple-intercept-worker.js	support	worker-script	2	174	no	f8b5f8c5cb77b153bc98703821e13f00d8702fd7	24197a11e8c5bd29a5cb7bdf18135a82be8a8546

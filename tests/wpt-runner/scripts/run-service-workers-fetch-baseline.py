@@ -10,8 +10,8 @@ import subprocess
 import sys
 from pathlib import Path
 
-EXPECTED_CASES = 18
-EXPECTED_SUBTESTS = 46
+EXPECTED_CASES = 19
+EXPECTED_SUBTESTS = 48
 
 
 def parse_args() -> argparse.Namespace:
@@ -43,11 +43,11 @@ def run_once(runner: Path, wpt_data: Path) -> list:
 
 
 def normalized(cases: list) -> list[tuple[str, str, str]]:
-    return [
+    return sorted(
         (case, result["name"], result["status"])
         for case, results in cases
         for result in results
-    ]
+    )
 
 
 def validate_shape(cases: list) -> None:
@@ -99,7 +99,7 @@ def render_markdown(summary: dict) -> str:
             "",
             "## Scope",
             "",
-            "This pinned Service Worker M2 fetch/interception baseline covers eighteen cases. "
+            "This pinned Service Worker M2 fetch/interception baseline covers nineteen cases. "
             "`fetch-on-the-right-interface.https.any.js` verifies that `fetch` is inherited "
             "from `WorkerGlobalScope.prototype` rather than installed as an own property on "
             "`ServiceWorkerGlobalScope`, and `historical.https.any.js` verifies that the "
@@ -122,6 +122,9 @@ def render_markdown(summary: dict) -> str:
             "`fetch-event-handled.https.html` covers `FetchEvent.handled` resolving "
             "for pass-through and successful `respondWith()` requests, and rejecting "
             "for canceled pass-through or rejected/invalid `respondWith()` promises. "
+            "`fetch-event-after-navigation-within-page.https.html` verifies that a "
+            "controlled iframe remains fetch-intercepted after same-document hash "
+            "and history.pushState navigations. "
             "`fetch-event-respond-with-stops-propagation.https.html` covers the "
             "FetchEvent rule that `respondWith()` invokes `stopImmediatePropagation()` "
             "and keeps later fetch listeners from observing the same request. "
