@@ -1311,6 +1311,7 @@ pub const MEDIA_TEST_FILES: &[&str] = &[
     "html/semantics/embedded-content/media-elements/event_progress_noautoplay.html",
     "html/semantics/embedded-content/media-elements/event_volumechange.html",
     "html/semantics/embedded-content/media-elements/volume_nonfinite.html",
+    "html/semantics/embedded-content/media-elements/controlsList.tentative.html",
     "html/semantics/embedded-content/media-elements/event_timeupdate.html",
     "html/semantics/embedded-content/media-elements/event_timeupdate_noautoplay.html",
     "html/semantics/embedded-content/media-elements/error-codes/error.html",
@@ -1321,6 +1322,8 @@ pub const MEDIA_TEST_FILES: &[&str] = &[
     // M3 扩批 III：the-audio-element 反射面（Audio 构造器 spec 语义——preload=auto +
     // 无 new TypeError + HTMLAudioElement illegal-constructor 调用面）。
     "html/semantics/embedded-content/the-audio-element/audio_constructor.html",
+    // M3 扩批 IV：the-video-element 反射面（属性不凭空出现——UA 面不加 tabindex）。
+    "html/semantics/embedded-content/the-video-element/video-tabindex.html",
     "html/semantics/embedded-content/media-elements/interfaces/HTMLElement/HTMLTrackElement/default.html",
     "html/semantics/embedded-content/media-elements/interfaces/HTMLElement/HTMLTrackElement/kind.html",
     "html/semantics/embedded-content/media-elements/interfaces/HTMLElement/HTMLTrackElement/label.html",

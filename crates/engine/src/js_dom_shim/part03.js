@@ -3496,10 +3496,15 @@
   //（force 参被忽略——常见 `classList.toggle('x', cond)` 模式失效）、`replace`、`item`、`length`、indexed 访问、
   // `forEach`、`toString`/`value`、variadic add/remove、`Symbol.iterator`。modern 框架/库高频用 length/indexed/
   // forEach 迭代 + replace + toggle(cond) 条件切换。Proxy 暴露动态 length + indexed 访问（每次读 live 列表）。
-  function _classListProxy(sel, handle, attrName) {
+  function _classListProxy(sel, handle, attrName, supportedTokens) {
     // R374（js-dom M4/DC-3）：attrName 参数化（默认 'class'）——relList/sandbox/sizes/
     // htmlFor(output) 同为 DOMTokenList 反射（WPT dom/lists
     // DOMTokenList-coverage-for-attributes 全族）。缓存键带 attr 后缀防同元素多列表互踩。
+    // media-elements M3 扩批 IV：supportedTokens 参数（controlsList 专用）——`supports(token)`
+    // 对表内 token 返 true（spec controlsList：nodownload/nofullscreen/noplaybackrate/
+    // noremoteplayback 大小写敏感精确匹配）；未传时 supports 返 false（spec 其它
+    // DOMTokenList 属性无 supported tokens 定义——WPT dom/lists 基线不测 supports）。
+    // https://html.spec.whatwg.org/multipage/media.html#dom-media-controlslist
     attrName = attrName || 'class';
     // R374：默认 'class' 保持**无后缀键**——_classCache 的其余写点（className setter/
     // host merge/R358 清桶等）全用无后缀键，后缀化会使同脚本内 class 读/写分裂两个
@@ -3618,6 +3623,17 @@
         // 集，会把单个 Unicode 空白字符类名（U+00A0 等合法 token）误拒。
         if (c === '' || /[ \t\n\f\r]/.test(c)) return false;
         return cur().indexOf(c) >= 0;
+      },
+      // media-elements M3 扩批 IV：`supports(token)`——仅 supportedTokens 表传入的列表
+      //（controlsList）返回真值判定；其余列表无 supported tokens 定义，恒 false
+      //（spec `dom-domtokenlist-supports`：非关联 supported tokens 集 → 返 false）。
+      supports: function (token) {
+        if (!supportedTokens) return false;
+        var t = String(token);
+        for (var i = 0; i < supportedTokens.length; i++) {
+          if (supportedTokens[i] === t) return true;
+        }
+        return false;
       },
       toggle: function (c, force) {
         c = String(c);

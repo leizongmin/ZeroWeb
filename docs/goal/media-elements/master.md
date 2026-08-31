@@ -2,8 +2,8 @@
 
 **入口文档**: [../media-elements.md](../media-elements.md)
 **创建日期**: 2026-08-17（goal 拆分 bootstrap）
-**最后更新**: 2026-09-01（M3 扩批 III 落地——volume/muted IDL setter spec 语义 + Audio
-构造器 spec 面 + 导入 3 用例 → **90.0%**，58 用例 Fail/Timeout 双清零）
+**最后更新**: 2026-09-01（M3 扩批 IV 落地——controlsList IDL + video-tabindex 导入 →
+**90.1%**，60 用例 Fail/Timeout 保持双清零）
 
 ---
 
@@ -85,6 +85,20 @@ already-playing resolved 断言。**88.3%**（324P/0F/2T/41PF，+80 subtest 全�
   （369P/0F/0T/41PF，+35 新通过 0 回归）。evidence：
   `evidence/2026-09-01-media-volume-audio.json`。
 
+**M3 扩批 IV 已落地（2026-09-01，controlsList + the-video-element 起步）**：
+- **controlsList IDL**（part03/part04/part05）：`_classListProxy` 增 supportedTokens
+  参数——`supports(token)` 精确匹配四值表（nodownload/nofullscreen/noplaybackrate/
+  noremoteplayback，大小写敏感；未传表恒 false，spec 其它 DOMTokenList 无 supported
+  tokens 定义）；get trap 增 controlsList 分支（gate：HTML ns 的 audio/video，R374
+  gate-miss → undefined 同款）；has-trap 白名单补列。
+- 导入 controlsList.tentative.html（2 subtest）+ the-video-element/video-tabindex.html
+  （1 subtest，UA 面不凭空加 tabindex）。
+- 单测 `test_media_controls_list_r393`（6 断言组）。**90.1%**（372P/0F/0T/41PF，
+  +3 新通过 0 回归）。evidence：`evidence/2026-09-01-media-controlslist.json`。
+- **决策记录**：audio_volume_check/video_volume_check **不导入**——越界值期望
+  IndexSizeError 是 Intel 旧 spec 时代断言，与现行 spec（clamp 不抛）及已导入的
+  volume_nonfinite.html 冲突，导入即制造假失败面。
+
 **与兄弟 goal 的边界**：
 - media-playback — 解码/帧渲染归其管（RFC 门控）；本目标的 readyState 真实驱动源由其
   供给（接口契约记录于两流 master.md）
@@ -113,7 +127,7 @@ already-playing resolved 断言。**88.3%**（324P/0F/2T/41PF，+80 subtest 全�
 
 | # | 缺口 | 状态 | 失败聚类 |
 |---|------|------|----------|
-| M1g | WPT media-elements 用例覆盖 | ✅ 58 用例已导入（含 event_* 族 25 + volume/Audio 构造器面），**90.0%** | — |
+| M1g | WPT media-elements 用例覆盖 | ✅ 60 用例已导入（含 event_* 族 25 + volume/Audio 构造器 + controlsList 面），**90.1%** | — |
 | M2g | load 算法 + 状态机（事件序列派发） | ✅ M2 落地（13T→**0T**） | F4 闭合 |
 | M3g | 事件序列 headless 近似驱动 | ✅（同 M2g；source-child 触发已落地） | F4 闭合 |
 | M4g-a | 媒体元数据 IDL 反射（初值面） | ✅ 切片 3 落地 | F2 闭合（-9 Fail） |
@@ -149,9 +163,10 @@ already-playing resolved 断言。**88.3%**（324P/0F/2T/41PF，+80 subtest 全�
   Timeout 2 / PF 41）→ M3 扩批（2026-09-01，event_* 族）**324/367 = 88.3%**
   → 扩批第二批（同日，source-child + error 码）**334/375 = 89.1%**
   → 扩批 III（同日，volume/muted + Audio 构造器）**369/410 = 90.0%**
+  → 扩批 IV（同日，controlsList + the-video-element）**372/413 = 90.1%**
   （Fail 0 / **Timeout 0** / PF 41）
 - 入口：`make testharness-media`（FILTER 透传，`--json` 捕获 evidence）
 - 质量门禁：`cargo fmt` + `cargo clippy --workspace --all-targets -- -D warnings` 全过
 - evidence：`evidence/2026-08-31-media-baseline.md`（+ 同名 .json 机读版）、
   `evidence/2026-09-01-media-event-family.json`、`evidence/2026-09-01-media-source-child.json`、
-  `evidence/2026-09-01-media-volume-audio.json`
+  `evidence/2026-09-01-media-volume-audio.json`、`evidence/2026-09-01-media-controlslist.json`

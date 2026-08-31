@@ -72,6 +72,8 @@ fetch_raw "common/media.js"
 # the-audio-element 反射面（M3 扩批 III：Audio 构造器 spec 语义——preload=auto +
 # 无 new TypeError；兄弟目录，路径前缀同级）。
 fetch_raw "html/semantics/embedded-content/the-audio-element/audio_constructor.html"
+# the-video-element 反射面（M3 扩批 IV：属性不凭空出现——UA 面不加 tabindex）。
+fetch_raw "html/semantics/embedded-content/the-video-element/video-tabindex.html"
 
 # 主目录顶层 testharness 白名单（语义面非解码面）。
 # media-elements M3 扩批（event_* 族——M2 headless 加载序列落地后事件断言可跑；
@@ -105,6 +107,7 @@ TOP_FILES=(
   "event_progress_noautoplay.html"
   "event_volumechange.html"
   "volume_nonfinite.html"
+  "controlsList.tentative.html"
   "mime-types/canPlayType.html"
   "error-codes/error.html"
   "src_reflects_attribute_not_source_elements.html"

@@ -825,7 +825,8 @@
         // 字符串反射/undefined。空串/缺失时 spec 仍返**空 DOMTokenList**（非 undefined，
         // coverage 测试对 sup 表内组合断言 class_string；表外组合走原路径 undefined）。
         // https://html.spec.whatwg.org/multipage/common-microsyntaxes.html#ordered-set
-        if ((prop === 'relList' || prop === 'sandbox' || prop === 'sizes' || prop === 'htmlFor')
+        if ((prop === 'relList' || prop === 'sandbox' || prop === 'sizes' || prop === 'htmlFor'
+             || prop === 'controlsList')
             && typeof _classListProxy === 'function') {
           var _r374clTag = '', _r374clNs = 'http://www.w3.org/1999/xhtml';
           try {
@@ -860,13 +861,22 @@
           if (prop === 'htmlFor' && _r374isHtmlNs && _r374clTag === 'output') {
             return _classListProxy(sel, handle, 'for');
           }
+          // media-elements M3 扩批 IV：`controlsList`（HTMLMediaElement，tentative spec）——
+          // DOMTokenList 反射 controlslist 属性 + supported tokens 面（supports() 四值表）。
+          // gate：HTML ns 的 audio/video（spec controlsList 属 HTMLMediaElement 接口）。
+          // https://html.spec.whatwg.org/multipage/media.html#dom-media-controlslist
+          if (prop === 'controlsList' && _r374isHtmlNs
+              && (_r374clTag === 'audio' || _r374clTag === 'video')) {
+            return _classListProxy(sel, handle, 'controlslist',
+              ['nodownload', 'nofullscreen', 'noplaybackrate', 'noremoteplayback']);
+          }
           // R374：四属性 gate-miss（错误元素/错误 ns）→ undefined（spec：这些 IDL
           // 属性只存在于特定接口；generic 反射回落属性串 "" 不可接受——coverage
           // 表外组合全族期望 undefined）。label.htmlFor 例外（R2840 字符串反射）。
           if (prop === 'htmlFor' && _r374clTag !== 'label') {
             return undefined;
           }
-          if (prop === 'relList' || prop === 'sandbox' || prop === 'sizes') {
+          if (prop === 'relList' || prop === 'sandbox' || prop === 'sizes' || prop === 'controlsList') {
             return undefined;
           }
         }

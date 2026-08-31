@@ -3145,3 +3145,72 @@ fn test_media_volume_muted_semantics_r392() {
         "HTMLAudioElement() 无 new 抛 TypeError"
     );
 }
+
+#[test]
+fn test_media_controls_list_r393() {
+    // media-elements M3 扩批 IV：controlsList IDL（HTMLMediaElement，tentative spec）——
+    // ① DOMTokenList 反射 controlslist 属性（同 relList/sandbox 的 attrName 参数化路径）；
+    // ② supports() 四个 supported tokens 精确匹配（nodownload/nofullscreen/noplaybackrate/
+    //    noremoteplayback，大小写敏感）；非表内 token/未传 supportedTokens 的其它列表 → false；
+    // ③ gate：仅 audio/video（HTML ns）；div 等无此属性（undefined，R374 gate-miss 同款）。
+    // WPT controlsList.tentative.html 断言面。
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new("<html><body></body></html>".to_string()));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("https://wpt.test/t.html".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+
+    sandbox.execute(
+        "var v = document.createElement('video');\
+         globalThis.__cl = v.controlsList;\
+         globalThis.__sup = ['nodownload','nofullscreen','noplaybackrate','noremoteplayback']\
+           .map(function (t) { return __cl.supports(t); }).join(',');\
+         globalThis.__unsup = __cl.supports('download') + ',' + __cl.supports('nodownload2')\
+           + ',' + __cl.supports('NODOWNLOAD');\
+         var a = document.createElement('audio');\
+         globalThis.__aOk = !!a.controlsList && a.controlsList.supports('nodownload');\
+         globalThis.__clStr = v.controlsList === v.controlsList;\
+         v.controlsList.add('nodownload');\
+         globalThis.__attrAfterAdd = v.getAttribute('controlslist');\
+         var d = document.createElement('div');\
+         globalThis.__divCl = typeof d.controlsList;",
+    ).unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__sup)").unwrap().value,
+        "true,true,true,true",
+        "controlsList.supports 四个 supported tokens 全 true"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__unsup)").unwrap().value,
+        "false,false,false",
+        "非表内 token + 大小写变体 → false（精确匹配）"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__aOk)").unwrap().value,
+        "true",
+        "audio 亦有 controlsList（HTMLMediaElement 接口）"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__clStr)").unwrap().value,
+        "true",
+        "controlsList same-object（DOMTokenList identity）"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__attrAfterAdd)").unwrap().value,
+        "nodownload",
+        "add() 反射 controlslist 内容属性"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__divCl)").unwrap().value,
+        "undefined",
+        "div 无 controlsList（gate-miss → undefined）"
+    );
+}
