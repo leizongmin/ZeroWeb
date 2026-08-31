@@ -472,7 +472,7 @@
 
 **M0 状态**: 项 1/2/3/4/5/6 ✅ **全部完成**（R30 补齐项 4：cargo-llvm-cov 已装 + dom_bindings 口径 93.14% 源码）。**M0 里程碑收口完成**，转入 M4 推进（入口文档允许 M4 与 M1–M3 早期并行）。
 
-**当前推进: DC-1~DC-8 全部达成（R385 收口 DC-5 尾项 bench-gate GATE PASS + make test 无头全绿 18502P/0F）+ M4 基线持续维护**——M0/M1/M2/M3/M5/M6/M7/M8 均已收口或达成（M5 @ R384+R384b，M7 QuickJS default-on @ R382）；剩余 = 收官巡检（DC 逐项 verify + 文档/RFC 状态对齐）+ M4 sweep 随轮刷新 + pa3 handle 域/pa4（pending-apply RFC 剩余为深项挂账，非 DC 阻塞）。
+**当前推进: ✅ 收官——DC-1~DC-8 全部达成（终局判定矩阵见 evidence/2026-08-31-r385-final-dc-verify-matrix.md；DONE 允许条件 1–6 全满足）**。R385 收口 DC-5 尾项（bench-gate 真空窗 GATE PASS 38/38）+ make test 无头全绿（18502P/0F）+ RFC v0.3（TBD-5 双引擎关闭）+ M4 sweep 快照（55808P/99.95% subtest 级）。后续轮次如进入本 goal：仅 M4 基线随轮刷新 + pa3 handle 域/pa4（pending-apply RFC 深项挂账，非 DC 阻塞）+ linux-x86_64 全量 bench 基线 re-capture（GB 流域）。
 - R1 已建：`testharness-dom` 子命令 + `fetch-dom-subset.sh` + `DOM_TEST_SUBDIRS=["dom/nodes"]`；基线 41.25%
 - R2 已修：classList token 校验抛 DOMException（双路径）+ native DOMException 构造器。polyfill 41.25% → 56.08%
 - R3 已修：createElement 非法标签名抛 InvalidCharacterError（双路径）。polyfill 56.08% → 56.45%
