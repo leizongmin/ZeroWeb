@@ -1957,46 +1957,49 @@ fn counter_value_before_paint(
     counter_name: &str,
     styles: &HashMap<NodeId, ComputedStyle>,
 ) -> Option<i64> {
-    // R3885：沿祖先链（元素自身 → 根）静态求 counter 值——仅当路径上**无 increment**
-    // 时值可布局前确定：最内层（离元素最近）的 reset/set 决定值；无任何动作 → 隐式
-    // 初值 0（CSS Lists §counter）。有 increment → 真实值依赖计数器状态推进（paint 期
-    // update_counters 才可求），返回 None（调用方不注入，避免固定 0 错值——
-    // content-counter-009/010 false-pass 显形教训）。
-    // 注：多作用域/兄弟累计等复杂语境由 None 兜底（不注入），与 R3884 守卫一致。
-    let mut value: Option<i64> = Some(0);
+    // R3885：沿祖先链（元素自身 → 根）静态求 counter 值。两遍语义：
+    // ① 任何链上元素（含自身）声明了涉该名的 increment → 值依赖计数器推进
+    //    （paint 期 update_counters 才可求），返回 None 不注入——注入固定值 = 错值
+    //   （content-counter-009 教训：span inline `counter-reset: c 19` + 规则
+    //   `counter-increment: c` 同元素并存，spec 顺序 reset→increment，真值 20；
+    //   首版「遇 reset 即 break」漏检同元素 increment 注入了 19）。
+    // ② 无 increment 时：离元素最近的 reset/set 决定值（spec 顺序同元素 set 胜出）；
+    //    无任何动作 = 隐式初值 0（CSS Lists §counter）。
+    // 注：兄弟累计/多作用域复杂语境由 ① 的 increment 缺席 + 最近 reset 近似兜底；
+    // 纯兄弟 increment（无自身 increment）语境父级不可静态求——由 None 兜底不覆盖，
+    // 与 R3884 守卫一致。
+    let mut has_increment = false;
+    let mut value: Option<i64> = None;
     let mut current = Some(nid);
     while let Some(id) = current {
         if let Some(st) = styles.get(&id) {
-            let mut has_reset_or_set = false;
-            for action in &st.counter_reset {
-                if action.name.eq_ignore_ascii_case(counter_name) {
-                    value = Some(action.value.unwrap_or(0));
-                    has_reset_or_set = true;
-                }
-            }
-            for action in &st.counter_set {
-                if action.name.eq_ignore_ascii_case(counter_name) {
-                    value = Some(action.value.unwrap_or(0));
-                    has_reset_or_set = true;
-                }
-            }
-            if has_reset_or_set {
-                // 离元素最近的 reset/set 生效——更远的祖先不再影响该作用域链。
-                // 但若**本元素链**上 reset 之后又有 set（更内层），上面循环已按声明
-                // 顺序覆盖（reset → set 同元素时 spec 顺序生效，set 胜出）。
-                break;
-            }
             if st
                 .counter_increment
                 .iter()
                 .any(|a| a.name.eq_ignore_ascii_case(counter_name))
             {
-                return None;
+                has_increment = true;
+            }
+            if value.is_none() {
+                // spec 求值顺序 reset → set：同元素两者并存时 set 胜出。
+                for action in &st.counter_reset {
+                    if action.name.eq_ignore_ascii_case(counter_name) {
+                        value = Some(action.value.unwrap_or(0));
+                    }
+                }
+                for action in &st.counter_set {
+                    if action.name.eq_ignore_ascii_case(counter_name) {
+                        value = Some(action.value.unwrap_or(0));
+                    }
+                }
             }
         }
         current = doc.get(id).and_then(|n| n.parent);
     }
-    value
+    if has_increment {
+        return None;
+    }
+    Some(value.unwrap_or(0))
 }
 
 pub(crate) fn inject_pseudo_text_nodes(
