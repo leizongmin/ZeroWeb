@@ -2,7 +2,8 @@
 
 **入口文档**: [../media-elements.md](../media-elements.md)
 **创建日期**: 2026-08-17（goal 拆分 bootstrap）
-**最后更新**: 2026-09-01（M3 扩批 event_* 族 25 用例接入——84.0% → **88.3%**，play pending-promise 语义 + resize/timeupdate 时序补齐，余账 2T）
+**最后更新**: 2026-09-01（M3 扩批两批落地——event_* 族 25 用例 84.0%→88.3%；source-child
+资源选择触发 + 空 src error 码 + source.src URL 绝对化 → **89.1%，Fail/Timeout 双清零**）
 
 ---
 
@@ -49,7 +50,19 @@ currentSrc 的 source-child 插入触发（mutation 面）。
 单测 `test_audio_constructor_and_media_methods_r2835` 扩展 pending→pause→reject 链 +
 already-playing resolved 断言。**88.3%**（324P/0F/2T/41PF，+80 subtest 全绿）。evidence：
 `evidence/2026-09-01-media-event-family.json`。make test 65 套件 18555 全绿、fmt/clippy 干净。
-余账 2 Timeout 不变（error 错误码 / currentSrc source-child 触发）。
+
+**M3 扩批第二批已落地（2026-09-01，余账 2T 清零）**：
+- **source-child 资源选择触发**（appendChild 钩子，part04.js）：source 子插入 audio/video
+  父（handle 父、无自身 src、资源未 settle）→ `_zwMediaScheduleLoad` 以 source 的 src
+  调度加载序列——父元素 loadstart + currentSrc 真值化（WPT currentSrc「adding source
+  element」族 8 subtest）。
+- **空 src 错误码语义**（`_zwSettleResourceKey` 增 errorCode 参数）：空 src 资源选择失败
+  → error 事件 + `error.code = MEDIA_ERR_SRC_NOT_SUPPORTED(4)` + MediaError 实例 +
+  currentSrc 恒空（WPT error-codes「empty string」族 4 subtest）。
+- **source.src URL 绝对化**（get trap 增 SOURCE 分支）：URL 属性反射 + base 解析 +
+  C0/space 剥离（同 track.src / a.href 模式；WPT currentSrc 断言 `e.currentSrc === s.src` 面）。
+单测 `test_media_source_child_and_error_code_r391`。**89.1%**（334P/0F/**0T**/41PF，
++10 subtest 全绿，Timeout 清零）。evidence：`evidence/2026-09-01-media-source-child.json`。
 
 **与兄弟 goal 的边界**：
 - media-playback — 解码/帧渲染归其管（RFC 门控）；本目标的 readyState 真实驱动源由其
@@ -79,9 +92,9 @@ already-playing resolved 断言。**88.3%**（324P/0F/2T/41PF，+80 subtest 全�
 
 | # | 缺口 | 状态 | 失败聚类 |
 |---|------|------|----------|
-| M1g | WPT media-elements 用例覆盖 | ✅ 55 用例已导入（含 event_* 族 25），**88.3%** | — |
-| M2g | load 算法 + 状态机（事件序列派发） | ✅ M2 落地（13T→2T，余 2T 归 mutation 面/解码层） | F4 基本闭合 |
-| M3g | 事件序列 headless 近似驱动 | ✅（同 M2g；source-child 触发面 defer） | F4 余账 |
+| M1g | WPT media-elements 用例覆盖 | ✅ 55 用例已导入（含 event_* 族 25），**89.1%** | — |
+| M2g | load 算法 + 状态机（事件序列派发） | ✅ M2 落地（13T→**0T**） | F4 闭合 |
+| M3g | 事件序列 headless 近似驱动 | ✅（同 M2g；source-child 触发已落地） | F4 闭合 |
 | M4g-a | 媒体元数据 IDL 反射（初值面） | ✅ 切片 3 落地 | F2 闭合（-9 Fail） |
 | M4g-b | `<track>` 反射 + TextTrack 最小面 | ✅ M3 落地（TextTrack 接口/addTextTrack/textTracks/track.track 全绿） | F1/F3 闭合 |
 | M4g-c | track.src URL 解析 + \0 剥离 | ✅ 切片 3 落地（含 `<a href="">` 修复） | F6 闭合（-6 Fail） |
@@ -90,13 +103,9 @@ already-playing resolved 断言。**88.3%**（324P/0F/2T/41PF，+80 subtest 全�
 ## 下一步计划
 
 1. **扩大导入面（下一轮首选）**：the-video-element/the-audio-element 反射面用例 +
-   media-elements 剩余可跑子目录（playing-the-media-resource 已有 playbackRate；
-   ready network/seeking 面视语义支撑情况）→ 扩大基线盘子并暴露下一层缺口。
-2. **source-child 资源选择触发**（source 元素插入 → 资源重选派 loadstart）：mutation 面，
-   currentSrc 余账 Timeout 的闭合路径。
-3. **error 错误码语义**：资源选择失败注入 MEDIA_ERR_SRC_NOT_SUPPORTED——依赖真资源
-   加载判定，随解码层（media-playback）或独立资源选择切片。
-4. **M4g-d**：canPlayType 能力表等 media-playback M0 选型落地后联动更新（跨 goal 依赖）。
+   media-elements 剩余可跑子目录（ready network/seeking 面视语义支撑情况）→ 扩大基线
+   盘子并暴露下一层缺口。media-elements 主目录语义面已基本覆盖（Fail/Timeout 双清零）。
+2. **M4g-d**：canPlayType 能力表等 media-playback M0 选型落地后联动更新（跨 goal 依赖）。
 
 ## 里程碑状态
 
@@ -117,8 +126,9 @@ already-playing resolved 断言。**88.3%**（324P/0F/2T/41PF，+80 subtest 全�
 - 基线时点：2026-08-31，WPT rev `3159769338`；基线 **114/245 = 46.5%** → 切片 3
   **179/245 = 73.1%** → M2 **214/245 = 79.6%** → M3 **226/245 = 84.0%**（Fail 0 /
   Timeout 2 / PF 41）→ M3 扩批（2026-09-01，event_* 族）**324/367 = 88.3%**
-  （Fail 0 / Timeout 2 / PF 41）
+  → 扩批第二批（同日，source-child + error 码）**334/375 = 89.1%**
+  （Fail 0 / **Timeout 0** / PF 41）
 - 入口：`make testharness-media`（FILTER 透传，`--json` 捕获 evidence）
 - 质量门禁：`cargo fmt` + `cargo clippy --workspace --all-targets -- -D warnings` 全过
 - evidence：`evidence/2026-08-31-media-baseline.md`（+ 同名 .json 机读版）、
-  `evidence/2026-09-01-media-event-family.json`
+  `evidence/2026-09-01-media-event-family.json`、`evidence/2026-09-01-media-source-child.json`

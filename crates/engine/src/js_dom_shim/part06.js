@@ -6794,14 +6794,17 @@
   function _zwMediaScheduleLoad(sel, handle, tag, absUrl, isEmptySrc) {
     var key = _elKey(sel, handle);
     if (typeof setTimeout !== 'function') return;
-    // 空 src（剥离 C0/space 后 ''）→ spec「empty src attribute」：资源选择失败——仅派
-    // loadstart（headless 近似），不提交资源状态（currentSrc 恒 ''），networkState 复位
-    // NETWORK_EMPTY。
+    // 空 src（剥离 C0/space 后 ''）→ spec「empty src attribute」：资源选择失败——loadstart
+    // 后派 error（code=MEDIA_ERR_SRC_NOT_SUPPORTED，error IDL 面置 MediaError 实例），
+    // networkState 复位 NETWORK_EMPTY、不提交资源状态（currentSrc 恒 ''）。
+    // https://html.spec.whatwg.org/multipage/media.html#concept-media-load-algorithm（failed
+    // with attribute 阶段：error 事件排队 + 「set the error code to MEDIA_ERR_SRC_NOT_SUPPORTED」）。
     if (isEmptySrc === true) {
       setTimeout(function () {
         var ms = _mediaState[key] || (_mediaState[key] = {});
         ms.networkState = 0;
         _zwMediaFire(sel, handle, key, 'loadstart');
+        _zwSettleResourceKey(key, sel, handle, tag, '', 'error', 0, 0, 4);
       }, 0);
       return;
     }
@@ -6812,12 +6815,14 @@
   function _zwSettleResourceSelector(sel, tag, url, outcome, width, height) {
     return _zwSettleResourceKey(_elKey(sel, null), sel, null, tag, url, outcome, width, height);
   }
-  function _zwSettleResourceKey(key, sel, handle, tag, url, outcome, width, height) {
+  function _zwSettleResourceKey(key, sel, handle, tag, url, outcome, width, height, errorCode) {
     if (_resourceStates[key]) return false; // 每个资源请求只 settle / 派发一次。
     var state = {
       url: String(url), outcome: String(outcome),
       width: Math.max(0, Number(width) || 0), height: Math.max(0, Number(height) || 0),
-      error: outcome === 'error' ? _zwMediaError(2, 'Error loading resource: ' + String(url)) : null
+      // errorCode 缺省 2（NETWORK_ERROR——fetch 失败路径）；空 src 资源选择失败路径
+      // 传 4（MEDIA_ERR_SRC_NOT_SUPPORTED，spec「failed with attribute」步）。
+      error: outcome === 'error' ? _zwMediaError(Number(errorCode) || 2, 'Error loading resource: ' + String(url)) : null
     };
     _resourceStates[key] = state;
     var eventType = '';

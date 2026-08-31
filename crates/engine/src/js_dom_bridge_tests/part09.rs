@@ -2930,3 +2930,90 @@ fn test_text_track_family_r390() {
         "new TextTrackCue 抛 TypeError（historical 面）"
     );
 }
+
+#[test]
+fn test_media_source_child_and_error_code_r391() {
+    // media-elements M3 扩批：① source 子插入 media 父 → 资源选择触发（loadstart 派发 +
+    // currentSrc 真值化，WPT currentSrc「adding source element」族）；② 空 src 资源选择
+    // 失败 → error 事件 + MEDIA_ERR_SRC_NOT_SUPPORTED=4（WPT error-codes「empty string」族）。
+    // runner timer stub 语义下验证（与 testharness probe 泵同构，R389 同款）。
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new("<html><body></body></html>".to_string()));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("https://wpt.test/t.html".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+
+    // runner timer stub（prepare_harness_html 同构）。
+    sandbox.execute(
+        "globalThis.__zw_pending = {}; globalThis.__zw_timers = [];\
+         globalThis.__zw_setTimeout = function(id, delay) {\
+           globalThis.__zw_timers.push({ id: id, at: Date.now() + (delay | 0) }); };\
+         globalThis.__zw_fire_due_timers = function() {\
+           var now = Date.now(); var rest = [], due = [];\
+           var timers = globalThis.__zw_timers || [];\
+           for (var i = 0; i < timers.length; i++) {\
+             if (timers[i].at <= now) due.push(timers[i]); else rest.push(timers[i]); }\
+           globalThis.__zw_timers = rest;\
+           for (var d = 0; d < due.length; d++) {\
+             var fn = globalThis.__zw_pending[due[d].id];\
+             if (fn) { delete globalThis.__zw_pending[due[d].id]; try { fn(); } catch (_e) {} } } };",
+    ).unwrap();
+
+    // ① source 子插入（src 先设后插）→ 泵后 loadstart + currentSrc = 解析后 URL。
+    sandbox.execute(
+        "globalThis.__log = [];\
+         var a = document.createElement('audio');\
+         globalThis.__a = a;\
+         var s = document.createElement('source');\
+         s.src = './sound.mp3';\
+         a.appendChild(s);\
+         a.addEventListener('loadstart', function () { globalThis.__log.push('loadstart'); });",
+    ).unwrap();
+    let _ = sandbox.execute("globalThis.__zw_fire_due_timers()");
+    let _ = sandbox.execute("globalThis.__zw_fire_due_timers()");
+    assert_eq!(
+        sandbox.execute("globalThis.__log.join(',')").unwrap().value,
+        "loadstart",
+        "source 子插入 → 父元素 loadstart 派发"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__a.currentSrc)").unwrap().value,
+        "https://wpt.test/sound.mp3",
+        "source 子资源选择后父 currentSrc 真值化（base 解析）"
+    );
+
+    // ② 空 src → error 事件 + error.code = 4（MEDIA_ERR_SRC_NOT_SUPPORTED）。
+    sandbox.execute(
+        "globalThis.__elog = [];\
+         var e2 = document.createElement('video');\
+         globalThis.__e2 = e2;\
+         e2.src = '';\
+         e2.addEventListener('error', function () {\
+           globalThis.__elog.push(e2.error ? ('code:' + e2.error.code) : 'no-error-obj'); });",
+    ).unwrap();
+    let _ = sandbox.execute("globalThis.__zw_fire_due_timers()");
+    let _ = sandbox.execute("globalThis.__zw_fire_due_timers()");
+    assert_eq!(
+        sandbox.execute("globalThis.__elog.join(',')").unwrap().value,
+        "code:4",
+        "空 src 资源选择失败 → error.code = MEDIA_ERR_SRC_NOT_SUPPORTED"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__e2.currentSrc)").unwrap().value,
+        "",
+        "空 src 失败后 currentSrc 恒空串"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__e2.error instanceof MediaError)").unwrap().value,
+        "true",
+        "error 为 MediaError 实例"
+    );
+}

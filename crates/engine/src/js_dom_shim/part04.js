@@ -85,6 +85,16 @@
         if ((resourceTag === 'IMG' || resourceTag === 'AUDIO' || resourceTag === 'VIDEO') && prop === 'currentSrc') {
           return resourceState ? resourceState.url : '';
         }
+        // media-elements M3 扩批：`source.src` IDL getter——URL 属性反射 + base 解析为绝对 URL
+        //（同 track.src / a.href 模式；URL 解析前剥离首尾 C0 control/space）。缺省返 ''。
+        // https://html.spec.whatwg.org/multipage/embedded-content.html#dom-source-src
+        if (resourceTag === 'SOURCE' && prop === 'src') {
+          var _soHas = (handle ? __zw_has_attr_handle(handle, 'src') : (typeof __zw_has_attr_lw === 'function' ? __zw_has_attr_lw(sel, 'src') : __zw_has_attr(sel, 'src'))) === '1';
+          if (!_soHas) return '';
+          var _soRaw = handle ? __zw_get_attr_handle(handle, 'src') : (typeof __zw_has_attr_lw === 'function' ? __zw_get_attr_lw(sel, 'src') : __zw_get_attr(sel, 'src'));
+          var _soClean = String(_soRaw == null ? '' : _soRaw).replace(/^[\x00-\x20]+/, '').replace(/[\x00-\x20]+$/, '');
+          return _zwResolveFetchUrl(_soClean);
+        }
         if ((resourceTag === 'AUDIO' || resourceTag === 'VIDEO') &&
             (prop === 'NETWORK_EMPTY' || prop === 'NETWORK_IDLE' || prop === 'NETWORK_LOADING' ||
              prop === 'NETWORK_NO_SOURCE' || prop === 'HAVE_NOTHING' || prop === 'HAVE_METADATA' ||
@@ -4125,6 +4135,29 @@
                   globalThis._zwLiveNLSync[sel]();
                 }
               } catch (_e140sa) {}
+              // media-elements M3 扩批：source 子入 media 父 → 资源选择触发（headless 近似）。
+              // https://html.spec.whatwg.org/multipage/media.html#concept-media-load-algorithm
+              // spec：插入 source 子后「等待稳定」重跑 resource selection——当前无媒体 src 属性
+              // 且无已 settle 资源时，取该 source 的 src 调度加载序列（loadstart→…，父元素
+              // currentSrc 真值化 + 事件监听面）。WPT currentSrc「adding source element」族。
+              if (child && child.nodeType === 1
+                  && String(child.tagName || '').toLowerCase() === 'source'
+                  && typeof _realTag === 'function'
+                  && (_realTag(sel, handle) === 'AUDIO' || _realTag(sel, handle) === 'VIDEO')
+                  && typeof _zwMediaScheduleLoad === 'function'
+                  && typeof __zw_has_attr_handle === 'function'
+                  && __zw_has_attr_handle(handle, 'src') !== '1'
+                  && !_resourceStates[_elKey(sel, handle)]) {
+                try {
+                  var _mSrcAttr = '';
+                  try { _mSrcAttr = String(child.getAttribute('src') || ''); } catch (_eMsa) {}
+                  var _mSrcAbs = _mSrcAttr;
+                  try {
+                    if (typeof _zwResolveFetchUrl === 'function') _mSrcAbs = _zwResolveFetchUrl(_mSrcAttr);
+                  } catch (_eMsr2) {}
+                  _zwMediaScheduleLoad(sel, handle, _realTag(sel, handle).toLowerCase(), _mSrcAbs, _mSrcAttr === '');
+                } catch (_eMsl2) {}
+              }
               // R2927/R2928：handle 父（任意 handle 元素，非仅容器）同步记录子节点到 registry。
               // 容器（shadow/fragment）的 childNodes 读 registry；R2928 querySelector 亦遍历完整
               // handle 子树（须递归普通 created 元素的 handle 子），故所有 handle 父都记录。
