@@ -1048,3 +1048,74 @@ fn r3805_row_border_left_participates_in_collapse() {
         cell.border_left
     );
 }
+
+/// R3857：replaced 盒（is_replaced）旁 float 放不下时**保持全宽下推到 float 底**，
+/// 不收缩宽度（CSS2 §10.3.2 replaced 用 width 指定值 + §9.5 replaced 不得与 float 重叠
+/// 的 clear 语义）。driving：inline-replaced-width-012（img.flow width:100% 曾被收缩为
+/// float 剩余宽并留在 float 旁）。width:auto 的 BFC 仍走收缩（R1733 语义不变，对照断言）。
+#[test]
+fn r3857_replaced_beside_float_pushes_below_at_full_width() {
+    use crate::types::LayoutBox;
+    // 容器 400px；左 float 100x50 @ y=0；replaced flow-root 350x50（100+350=450 > 400
+    // 放不下 → 触发 push-below）。
+    let float_box = LayoutBox {
+        width: 100.0,
+        height: 50.0,
+        content_width: 100.0,
+        float: FloatValue::Left,
+        ..Default::default()
+    };
+    let replaced = LayoutBox {
+        y: 0.0,
+        width: 350.0,
+        height: 50.0,
+        content_width: 350.0,
+        is_flow_root: true,
+        is_replaced: true,
+        ..Default::default()
+    };
+    let mut container = LayoutBox {
+        width: 400.0,
+        content_width: 400.0,
+        children: vec![float_box.clone(), replaced.clone()],
+        ..Default::default()
+    };
+    crate::float_positioning::apply_inline_block_float_avoidance(&mut container);
+
+    let fl = &container.children[0];
+    let flw = &container.children[1];
+    assert!(
+        (flw.width - 350.0).abs() < 0.5,
+        "replaced 不可收缩：width 应保持 350，实际 {}",
+        flw.width
+    );
+    let float_bottom = fl.y + fl.height;
+    assert!(
+        flw.y >= float_bottom - 0.5,
+        "replaced 旁 float 放不下应下推到 float 底（clear 语义）：y={}, float_bottom={}",
+        flw.y,
+        float_bottom
+    );
+
+    // 对照：width:auto 的 BFC（declared None、非 replaced）仍被收缩到 float 剩余宽。
+    let bfc = LayoutBox {
+        width: 350.0,
+        height: 50.0,
+        content_width: 350.0,
+        is_flow_root: true,
+        ..Default::default()
+    };
+    let mut container2 = LayoutBox {
+        width: 400.0,
+        content_width: 400.0,
+        children: vec![float_box, bfc],
+        ..Default::default()
+    };
+    crate::float_positioning::apply_inline_block_float_avoidance(&mut container2);
+    let bfc_out = &container2.children[1];
+    assert!(
+        (bfc_out.width - 300.0).abs() < 0.5,
+        "width:auto BFC 仍走收缩（R1733 语义）：应收缩到 float 剩余 300，实际 {}",
+        bfc_out.width
+    );
+}

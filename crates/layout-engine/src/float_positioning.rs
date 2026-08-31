@@ -75,6 +75,12 @@ pub(crate) fn apply_inline_block_float_avoidance(box_node: &mut LayoutBox) {
                 // 可行则置 x_lo；不可行（float 占满致旁无空）则**保持原位**（勿错位，如 002r-inline
                 // 原 x=[11,210] 匹配 chromium，per-float 错移到 [311,410]）。
                 let used_width = child.declared_width_px.unwrap_or(child.width);
+                // R3857：替换元素（CSS2 §10.3.2/§10.3.4：replaced 用 width 指定值，不可收缩）
+                // 旁 float 放不下时**下推到 float 底**（§9.5 replaced 排斥的 clear 语义），
+                // 不收缩宽度。width:auto 的 BFC 仍可收缩（R1733 原语义，floats-wrap-bfc-* 簇）；
+                // definite-width BFC 块维持既有收缩/复位行为（floats-wrap-top-below-bfc-* 调优域，
+                // 贸然 push-below 曾致 001r/003r/intrinsic-size 回归）。
+                let is_definite = child.is_replaced;
                 let mut x_lo = 0.0_f32;
                 let mut x_hi = (container_w - used_width).max(0.0);
                 for (fd, fx, _fy, fw, _fh, fmr) in &overlapping {
@@ -88,11 +94,20 @@ pub(crate) fn apply_inline_block_float_avoidance(box_node: &mut LayoutBox) {
                     child.x = x_lo;
                     let max_w = (container_w - child.x).max(0.0);
                     if used_width > max_w {
-                        child.width = max_w;
+                        if is_definite {
+                            // 放不下且不可收缩 → 下推到 float 群底（保持全宽）。
+                            child.y = overlapping
+                                .iter()
+                                .map(|(_, _, fy, _, fh, _)| fy + fh)
+                                .fold(child.y, f32::max);
+                        } else {
+                            child.width = max_w;
+                            shrink_bfc_content_width(child);
+                        }
                     } else {
                         child.width = used_width;
+                        shrink_bfc_content_width(child);
                     }
-                    shrink_bfc_content_width(child);
                 } else if let Some(width) = child.declared_width_px {
                     child.width = width;
                     shrink_bfc_content_width(child);
@@ -102,28 +117,39 @@ pub(crate) fn apply_inline_block_float_avoidance(box_node: &mut LayoutBox) {
                 // 单 float：per-float（左推右、右收缩宽）。
                 let (fd, fx, _fy, fw, _fh, fmr) = overlapping[0];
                 let used_width = child.declared_width_px.unwrap_or(child.width);
+                // R3857：同上——仅替换元素走 push-below，BFC 保持既有收缩语义。
+                let is_definite = child.is_replaced;
                 match fd {
                     FloatValue::Left => {
                         let avoidance_x = *fx + *fw + *fmr;
                         if avoidance_x > child.x {
-                            child.x = avoidance_x;
-                            let max_w = (container_w - child.x).max(0.0);
-                            if used_width > max_w {
-                                child.width = max_w;
+                            let max_w = (container_w - avoidance_x).max(0.0);
+                            if used_width > max_w && is_definite {
+                                // 放不下且不可收缩 → 下推到 float 底（保持全宽）。
+                                child.y = (_fy + _fh).max(child.y);
                             } else {
-                                child.width = used_width;
+                                child.x = avoidance_x;
+                                if used_width > max_w {
+                                    child.width = max_w;
+                                } else {
+                                    child.width = used_width;
+                                }
+                                shrink_bfc_content_width(child);
                             }
-                            shrink_bfc_content_width(child);
                         }
                     }
                     FloatValue::Right if *fx < child.x + used_width => {
                         let new_w = (*fx - child.x).max(0.0);
-                        if used_width > new_w {
+                        if used_width > new_w && is_definite {
+                            // 右 float 侧放不下且不可收缩 → 下推到 float 底（保持全宽）。
+                            child.y = (_fy + _fh).max(child.y);
+                        } else if used_width > new_w {
                             child.width = new_w;
+                            shrink_bfc_content_width(child);
                         } else {
                             child.width = used_width;
+                            shrink_bfc_content_width(child);
                         }
-                        shrink_bfc_content_width(child);
                     }
                     _ => {}
                 }
