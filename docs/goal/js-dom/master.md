@@ -890,11 +890,8 @@
    - **(c) M4 基线持续维护**（sweep 随轮刷新）；pa3 handle 域容器序列化补全面 + pa4（pending-apply RFC 剩余深项挂账，非 DC 阻塞）。
    - **(d) linux-x86_64 全量 bench 基线 re-capture**：真空窗（geo-mean 1.5x 陈旧 + 9 天未换）建议 GB 流排期——非 js-dom 域，记录不阻塞。
 0. **R384 下一步（M5 land 后）**：
-0. **R383 下一步（M5 已启动→R384 已执行）**：
-   - **(a) M5 步骤①收尾**：bench-gate default-off 基线真空窗补跑（自证采纳：GATE PASS 单跑即闭合——负载噪声只产生假 FAIL 不产生假 PASS）。
-   - **(b) M5 步骤②③**：flip（v8 分支 `native_dom: true`，cfg 门控与 M7 对偶）→ 全量 A/B（make test + reftest + product-smoke + bench-gate 空窗）net≥0 才 land。
-   - **(c) M5 land 后**：kill-switch 单片删除（env + 回退死代码 + `install_dom_bindings_if_enabled`，双 feature 全量回归守门）——DC-1 的 kill-switch 项随之闭合。
-   - **(d) 主线剩余**：M4 基线持续维护；pa3 handle 域容器序列化补全面 + pa4（pending-apply RFC 剩余）；M1/M2/M3/M6/M7/M8 已收口。
+   - **(a) M5 land 后单片：kill-switch 删除（现可执行）**——`ZW_NATIVE_DOM` env（dom_bindings `native_dom_enabled`/`ZW_NATIVE_DOM_ENV` + `install_dom_bindings_if_enabled` 死代码）+ `native_dom=false` 回退路径 + wpt-runner `ZW_NATIVE_DOM` env 消费点（testharness-dom-native 双路径 A/B 入口保留与 kill-switch 删除的边界需先厘清：度量工具面 vs 生产开关面）+ 双 feature 全量回归守门——DC-1 的 kill-switch 项随之闭合。
+   - **(b) 主线剩余**：M4 基线持续维护；pa3 handle 域容器序列化补全面 + pa4（pending-apply RFC 剩余）；M1/M2/M3/M5/M6/M7/M8 全部收口——DC-1 的 milestone 路径全部走完，剩余 DC 缺口集中于 (a) kill-switch 删除与文档治理收尾。
 
 0. **R379 下一步（R378 后，已执行→本轮后）**：
    - **(a) pending-apply 专项推进**：pa2 apply 代际令牌（host apply 完成回调 → shim 换代钩子——设计输入已由 pa1 齐备：换代点 = `apply_pending_shared_mutations` 三调用点 + SetDomSnapshot 已挂钩；shim 侧 = 标记表清空 + pending 桶清空 + 融合缓存失效）；**M6 补 mark（replaceWith sel 路径）**随 pa2 或独立轻量小片（kill-switch 下零生产风险）。
