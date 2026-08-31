@@ -346,6 +346,127 @@ impl LayoutEngine {
         walk(root, None, taffy_tree, dom_to_taffy, styles)
     }
 
+    /// R3860：grid item「definite 单 row × stretch × aspect-ratio → cross 钳到 row、
+    /// main 传递」（css-grid §6.6 + css-sizing-4 §3.2 transferred size）。
+    ///
+    /// taffy 0.12 grid 布局对带 aspect_ratio 的 item 先按 ratio（cross=列宽）解 main，
+    /// 再被 align-self:stretch 拉伸时**不回传 ratio**——driving grid-aspect-ratio-028：
+    /// `grid-template: 100px / 200px` + item `aspect-ratio:1/1; align-self:stretch` →
+    /// ZW item 200×200 溢出 100px row（chromium 100×100：stretch 钳 height=row，ratio
+    /// 传递 width=height×ratio）。
+    ///
+    /// 作用域（守卫收紧防误伤）：水平书写 + 父 grid + item 有 ratio + item CSS
+    /// width/height 均 auto + **单条 definite 长度 row** + align-self（或容器 align_items
+    /// 回退）为 stretch 语义（Stretch / Normal / Auto）+ taffy 已算高度 ≠ row（溢出
+    /// 签名）→ 钳 st.size.height = row、st.size.width = row × ratio（min/max 尺寸
+    /// 留给 taffy 钳）。align-start/content 对齐 item 的内容尺寸合法性不受影响。
+    /// kill-switch `ZW_AR_GRID_STRETCH=0`（default-on）。
+    pub(super) fn apply_grid_aspect_ratio_item_size(
+        taffy_tree: &mut TaffyTree<NodeId>,
+        root: &LayoutBox,
+        dom_to_taffy: &HashMap<NodeId, taffy::NodeId>,
+        styles: &HashMap<NodeId, ComputedStyle>,
+    ) -> bool {
+        use zero_css_parser::values::{DisplayValue, LengthValue};
+        if std::env::var("ZW_AR_GRID_STRETCH").as_deref() == Ok("0") {
+            return false;
+        }
+        fn walk(
+            b: &LayoutBox,
+            parent_style: Option<&ComputedStyle>,
+            parent_taffy_id: Option<taffy::NodeId>,
+            taffy_tree: &mut TaffyTree<NodeId>,
+            dom_to_taffy: &HashMap<NodeId, taffy::NodeId>,
+            styles: &HashMap<NodeId, ComputedStyle>,
+        ) -> bool {
+            if !matches!(b.writing_mode, WritingModeValue::HorizontalTb) {
+                return false;
+            }
+            let mut changed = false;
+            let my_style = b.node_id.and_then(|id| styles.get(&id));
+            let my_taffy_id = b.node_id.and_then(|id| dom_to_taffy.get(&id).copied());
+            if let Some(id) = b.node_id
+                && let Some(ps) = parent_style
+                && matches!(ps.display, DisplayValue::Grid | DisplayValue::InlineGrid)
+                && let Some(item_style) = my_style
+                && matches!(item_style.width, LengthValue::Auto)
+                && matches!(item_style.height, LengthValue::Auto)
+                && let Some(&tid) = dom_to_taffy.get(&id)
+                && let Some(parent_tid) = parent_taffy_id
+                && let Ok(mut st) = taffy_tree.style(tid).cloned()
+                && let Some(ratio) = st.aspect_ratio
+                && ratio > 0.0
+                && let Ok(parent_tstyle) = taffy_tree.style(parent_tid).cloned()
+            {
+                // 单条 definite 长度 row（grid-template 单 track；repeat/多 track 不触）。
+                let row_definite = match parent_tstyle.grid_template_rows.as_slice() {
+                    [taffy::style::GridTemplateComponent::Single(f)] => f
+                        .max_sizing_function()
+                        .definite_value(None, |_, _| 0.0)
+                        .or_else(|| f.min_sizing_function().definite_value(None, |_, _| 0.0)),
+                    _ => None,
+                };
+                // 列 definite（单 track）同 row 提取——inline-axis stretch 传递需要。
+                let col_definite = match parent_tstyle.grid_template_columns.as_slice() {
+                    [taffy::style::GridTemplateComponent::Single(f)] => f
+                        .max_sizing_function()
+                        .definite_value(None, |_, _| 0.0)
+                        .or_else(|| f.min_sizing_function().definite_value(None, |_, _| 0.0)),
+                    _ => None,
+                };
+                use taffy::style::AlignItemsKeyword;
+                // 仅**显式** stretch 关键字触发（normal/auto 在 inline 轴经 ratio 传递，
+                // 不作为 track 拉伸——css-sizing-4「block-axis stretch preferred over
+                // inline-axis normal」028/029；inline-axis stretch 对称 030）。
+                let align_stretch = matches!(st.align_self.map(|a| a.keyword), Some(AlignItemsKeyword::Stretch));
+                let justify_stretch = matches!(st.justify_self.map(|j| j.keyword), Some(AlignItemsKeyword::Stretch));
+                let item_overflowing_row = row_definite.is_some_and(|r| (b.height - r).abs() > 0.5);
+                let item_overflowing_col = col_definite.is_some_and(|c| (b.width - c).abs() > 0.5);
+                if align_stretch
+                    && !justify_stretch
+                    && let Some(row_h) = row_definite
+                    && item_overflowing_row
+                {
+                    // block-axis stretch 胜 inline normal：height=row、width=ratio 传递
+                    //（可溢出列轨，029 列 50 item 100）。
+                    st.size.height = taffy::style::Dimension::length(row_h.max(0.5));
+                    st.size.width = taffy::style::Dimension::length((row_h * ratio).max(0.5));
+                    let _ = taffy_tree.set_style(tid, st);
+                    let _ = taffy_tree.mark_dirty(tid);
+                    changed = true;
+                } else if justify_stretch
+                    && !align_stretch
+                    && let Some(col_w) = col_definite
+                    && item_overflowing_col
+                {
+                    // inline-axis stretch 胜 block normal：width=column、height 反向传递。
+                    st.size.width = taffy::style::Dimension::length(col_w.max(0.5));
+                    st.size.height = taffy::style::Dimension::length((col_w / ratio).max(0.5));
+                    let _ = taffy_tree.set_style(tid, st);
+                    let _ = taffy_tree.mark_dirty(tid);
+                    changed = true;
+                } else if align_stretch
+                    && justify_stretch
+                    && let (Some(row_h), Some(col_w)) = (row_definite, col_definite)
+                    && (item_overflowing_row || item_overflowing_col)
+                {
+                    // 双轴显式 stretch：两轴都被 track 约束，ratio 让位（css-grid §6.6）。
+                    st.size.height = taffy::style::Dimension::length(row_h.max(0.5));
+                    st.size.width = taffy::style::Dimension::length(col_w.max(0.5));
+                    let _ = taffy_tree.set_style(tid, st);
+                    let _ = taffy_tree.mark_dirty(tid);
+                    changed = true;
+                }
+            }
+
+            for c in &b.children {
+                changed |= walk(c, my_style, my_taffy_id, taffy_tree, dom_to_taffy, styles);
+            }
+            changed
+        }
+        walk(root, None, None, taffy_tree, dom_to_taffy, styles)
+    }
+
     /// R2171：flex/grid **容器**自身 cross 尺寸从 aspect-ratio + Auto-main 推导（taffy 0.12.1 gap）。
     /// 驱动 flex-aspect-ratio-cross-size-002：outer{display:flex; aspect-ratio:4}（width:auto→200，
     /// height:auto）taffy 给 height=0，应 width/ratio=200/4=50。实测 taffy 仅在 main **显式** Px 时

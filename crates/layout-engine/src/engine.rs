@@ -495,7 +495,8 @@ impl LayoutEngine {
         // 在 flex 容器内——第一趟 taffy 对 leaf 项无法从 aspect_ratio + Auto-cross 推导 main
         // 尺寸（ collapses）。此处按解析出的 cross 尺寸 + ratio 推导 main（CSS §10.3.2 + Flexbox §4.5）。
         let changed_ratio_img =
-            Self::apply_flex_aspect_ratio_item_size(&mut taffy_tree, &root_box, &dom_to_taffy, styles);
+            Self::apply_flex_aspect_ratio_item_size(&mut taffy_tree, &root_box, &dom_to_taffy, styles)
+                || Self::apply_grid_aspect_ratio_item_size(&mut taffy_tree, &root_box, &dom_to_taffy, styles);
         // R1018：四趟后处理 pass 共用同一 first-pass root_box，各自独立 set taffy style。
         // 原先 `||` 短路求值会在前三趟任一 fire 时跳过 apply_intrinsic_content_sizing，
         // 致 flex 容器 shrink-to-fit / block max-content 在含 aspect-ratio/百分比 padding/不明确

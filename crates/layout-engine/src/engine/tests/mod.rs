@@ -184,6 +184,8 @@ mod r3817_anon_cell_center_tests;
 mod r3858_abspos_nested_cb_tests;
 /// R3859 flex item min-cross→min-main transferred size 测试。
 mod r3859_flex_ar_transferred_min_tests;
+/// R3860 grid item stretch 轴钳制 + ratio 传递测试。
+mod r3860_grid_ar_stretch_transfer_tests;
 mod r717_flex_ratio_img_tests;
 mod table_layout_tests;
 mod tests_1;
