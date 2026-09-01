@@ -3273,9 +3273,10 @@ impl WebView {
                         timeout_secs,
                     )?;
                     Ok(match completed {
-                        ServiceWorkerEvaluationResult::UpdateChecked { registration_id, .. } => {
-                            (registration_id, false)
-                        }
+                        ServiceWorkerEvaluationResult::UpdateChecked {
+                            registration_id,
+                            changed,
+                        } => (registration_id, !changed),
                         ServiceWorkerEvaluationResult::Evaluated => (registration_id, false),
                     })
                 })();

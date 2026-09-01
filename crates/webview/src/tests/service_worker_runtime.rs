@@ -206,6 +206,58 @@ fn default_scope_uses_script_directory() {
 
 #[test]
 #[serial_test::serial(service_worker_runtime)]
+fn navigator_register_update_via_cache_noop_keeps_active_projection() {
+    let mut webview = WebViewBuilder::new()
+        .url("https://example.test/page.html")
+        .script_source_fetcher(Arc::new(|_, _| {
+            Ok("addEventListener('install', event => {
+                    event.waitUntil(Promise.resolve());
+                });
+                addEventListener('activate', event => {
+                    event.waitUntil(Promise.resolve());
+                });"
+            .to_string())
+        }))
+        .build();
+
+    webview
+        .execute_script(
+            "globalThis.__swUpdateViaCacheNoop = 'pending';
+             (async function () {
+               var first = await navigator.serviceWorker.register('/sw.js', {scope: '/app/'});
+               await navigator.serviceWorker.ready;
+               var second = await navigator.serviceWorker.register('/sw.js', {
+                 scope: '/app/',
+                 updateViaCache: 'all'
+               });
+               globalThis.__swUpdateViaCacheNoop = [
+                 String(first === second),
+                 second.updateViaCache,
+                 second.installing === null ? 'null' : second.installing.state,
+                 second.waiting === null ? 'null' : second.waiting.state,
+                 second.active && second.active.state
+               ].join('|');
+             })().catch(function(error) {
+               globalThis.__swUpdateViaCacheNoop = 'error:' + error;
+             });
+             'started';",
+        )
+        .unwrap();
+
+    let deadline = Instant::now() + Duration::from_secs(5);
+    loop {
+        let value = webview.execute_script("globalThis.__swUpdateViaCacheNoop").unwrap();
+        if value != "pending" {
+            assert_eq!(value, "true|all|null|null|activated");
+            break;
+        }
+        assert!(Instant::now() < deadline, "updateViaCache no-op registration timed out");
+        std::thread::sleep(Duration::from_millis(10));
+    }
+}
+
+#[test]
+#[serial_test::serial(service_worker_runtime)]
 fn rejected_install_marks_registration_redundant() {
     let mut webview = WebViewBuilder::new()
         .script_source_fetcher(Arc::new(|_, _| {

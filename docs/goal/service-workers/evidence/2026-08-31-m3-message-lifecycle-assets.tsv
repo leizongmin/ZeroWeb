@@ -1,0 +1,8 @@
+path	manifest_type	roles	referenced_by	bytes	templated	git_blob_sha	source_revision
+resources/testharness.js	support	harness	2	198291	no	c7ce4f51e1db075809f861255417c27478b2c179	04067ce9c7c2165e71ad7d0dde10a4c5cb394a83
+resources/testharnessreport.js	support	harness-report	2	1231	no	405a2d8b06f00fe8292e0e9d5b917e193cfd416c	04067ce9c7c2165e71ad7d0dde10a4c5cb394a83
+service-workers/service-worker/resources/test-helpers.sub.js	support	page-script	2	10485	yes	74301523e7355ad8d62bcb568280edbc23fdaacf	04067ce9c7c2165e71ad7d0dde10a4c5cb394a83
+service-workers/service-worker/registration-events.https.html	testharness	case	1	1516	no	5bcfd66846bce5b93bf09d05b65c2e352b51ffab	04067ce9c7c2165e71ad7d0dde10a4c5cb394a83
+service-workers/service-worker/resources/events-worker.js	support	worker-script	1	281	no	80a2188677ba5a9cc728158dbf10fd973bbc0f27	04067ce9c7c2165e71ad7d0dde10a4c5cb394a83
+service-workers/service-worker/registration-end-to-end.https.html	testharness	case	1	3347	no	1af4582d387412f47d82a94b2fe7050a5994644a	04067ce9c7c2165e71ad7d0dde10a4c5cb394a83
+service-workers/service-worker/resources/end-to-end-worker.js	support	worker-script	1	202	no	d45a50556a93c7e38d94ac05b90d2d733c04896a	04067ce9c7c2165e71ad7d0dde10a4c5cb394a83

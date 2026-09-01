@@ -3820,7 +3820,9 @@
         scheduleClientMessagePoll(reg._worker);
         var registrationPromise = Promise.resolve(reg);
         registrationPromise.then(function (registration) {
-          scheduleRegistrationPoll(registration);
+          if (wire.existing === false) {
+            scheduleRegistrationPoll(registration);
+          }
         });
         return registrationPromise;
       };
