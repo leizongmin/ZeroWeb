@@ -2002,6 +2002,57 @@ fn counter_value_before_paint_by_name(
     Some(value.unwrap_or(0))
 }
 
+/// R3888：静态（无 Painter 状态）counter 动作应用——reset 压栈 / set 覆盖 / increment
+/// 累加（spec 求值顺序），记录压栈的作用域名供 `pop_counter_scopes_static` 弹出。
+fn apply_counter_actions(
+    counters: &mut HashMap<String, Vec<i64>>,
+    resets: &[zero_css_parser::values::CounterActionValue],
+    sets: &[zero_css_parser::values::CounterActionValue],
+    increments: &[zero_css_parser::values::CounterActionValue],
+    pushed: &mut Vec<String>,
+) {
+    for action in resets {
+        counters
+            .entry(action.name.clone())
+            .or_default()
+            .push(action.value.unwrap_or(0));
+        pushed.push(action.name.clone());
+    }
+    for action in sets {
+        let stack = counters.entry(action.name.clone()).or_default();
+        match stack.last_mut() {
+            Some(top) => *top = action.value.unwrap_or(0),
+            None => {
+                stack.push(action.value.unwrap_or(0));
+                pushed.push(action.name.clone());
+            }
+        }
+    }
+    for action in increments {
+        let v = action.value.unwrap_or(1);
+        let stack = counters.entry(action.name.clone()).or_default();
+        match stack.last_mut() {
+            Some(top) => *top += v,
+            None => {
+                stack.push(v);
+                pushed.push(action.name.clone());
+            }
+        }
+    }
+}
+
+/// R3888：弹出 `apply_counter_actions` 压入的作用域（伪元素无子树 → 快照后立即弹）。
+fn pop_counter_scopes_static(counters: &mut HashMap<String, Vec<i64>>, pushed: &[String]) {
+    for name in pushed {
+        if let Some(stack) = counters.get_mut(name) {
+            stack.pop();
+            if stack.is_empty() {
+                counters.remove(name);
+            }
+        }
+    }
+}
+
 /// R3887：全文档树序计数器模拟——与 paint 期 update_counters/pop_counter_scopes 完全
 /// 同构（reset → set → increment 顺序；reset 开新作用域压栈、子树结束弹出），对每个
 /// 元素记录其 ::before/::after 时刻的 counter 值快照（CSS2 §12.4：伪元素 counter 继承
@@ -2101,13 +2152,30 @@ fn simulate_document_counters(doc: &Document, styles: &HashMap<NodeId, ComputedS
                 }
             }
             // 2. 快照本元素 ::before 时刻的 counter 值（含自身 increment 后）。
+            //    R3888：::before 自身的 counter-reset/set/increment 先应用再快照
+            //   （CSS2 §12.4.1：伪元素可携带 counter 动作，如
+            //   `#one:before { counter-reset: one 1; content: counter(one) }` → 显示 1；
+            //    旧实现未模拟 → 注入隐式 0，'0' vs '1' 宽度近似致 false-pass）。
+            //    伪元素无子树 → 动作作用域在快照后立即弹出，不影响后续文档。
             if let Some((before_names, _)) = need_names.get(&id) {
+                let pseudo_actions = styles.get(&id).and_then(|st| st.before_pseudo.as_deref());
+                let mut pushed: Vec<String> = Vec::new();
+                if let Some(pseudo) = pseudo_actions {
+                    apply_counter_actions(
+                        counters,
+                        &pseudo.counter_reset,
+                        &pseudo.counter_set,
+                        &pseudo.counter_increment,
+                        &mut pushed,
+                    );
+                }
                 let mut snapshot: HashMap<String, i64> = HashMap::new();
                 for name in before_names {
                     if let Some(v) = counters.get(name).and_then(|s| s.last()).copied() {
                         snapshot.insert(name.clone(), v);
                     }
                 }
+                pop_counter_scopes_static(counters, &pushed);
                 if !snapshot.is_empty() {
                     out.insert(id, (snapshot, HashMap::new()));
                 }
@@ -2120,16 +2188,29 @@ fn simulate_document_counters(doc: &Document, styles: &HashMap<NodeId, ComputedS
         }
 
         // 4. ::after 快照（子树结束、作用域弹出前——本元素 reset 的作用域仍存活）。
+        //    R3888：::after 自身的 counter 动作同 ::before 语义（快照前应用、快照后弹出）。
         if is_element
             && let Some((_, after_names)) = need_names.get(&id)
             && !after_names.is_empty()
         {
+            let pseudo_actions = styles.get(&id).and_then(|st| st.after_pseudo.as_deref());
+            let mut pushed: Vec<String> = Vec::new();
+            if let Some(pseudo) = pseudo_actions {
+                apply_counter_actions(
+                    counters,
+                    &pseudo.counter_reset,
+                    &pseudo.counter_set,
+                    &pseudo.counter_increment,
+                    &mut pushed,
+                );
+            }
             let mut snapshot: HashMap<String, i64> = HashMap::new();
             for name in after_names {
                 if let Some(v) = counters.get(name).and_then(|s| s.last()).copied() {
                     snapshot.insert(name.clone(), v);
                 }
             }
+            pop_counter_scopes_static(counters, &pushed);
             if let Some(entry) = out.get_mut(&id) {
                 entry.1 = snapshot;
             } else if !snapshot.is_empty() {
