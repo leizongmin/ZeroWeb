@@ -1364,6 +1364,11 @@ impl WebView {
         self.cached_image_ratios.clear();
         self.cached_image_no_ratio.clear();
         self.image_cache.clear();
+        // media-playback DC-4 资源生命周期：导航离开释放解码资源（player/音频解码器/
+        // 源字节）——旧页媒体不跨文档泄漏（注册表 Arc 共享给宿主桥/帧泵，就地清空）。
+        if let Ok(mut reg) = self.video_players.lock() {
+            reg.clear();
+        }
         self.current_url = Some(page_url.to_string());
         self.set_page_url_wire(page_url);
         self.loading = true;

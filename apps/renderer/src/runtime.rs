@@ -295,6 +295,10 @@ impl RendererRuntime {
         // R2202 U1b-wiring 生产接通：注入 per-family 行度量（env-gated ZW_PERFONT_LINEHEIGHT=1，
         // 默认 dormant 零回归；激活后 line-height:normal 走真实 ascent−descent+line_gap）。
         webview.set_font_metric_map(font_loader.build_line_metric_map());
+        // M2c 后续（镜像 browser tab_worker）：播放器注册表注入 js_worker——
+        // `__zwVideoBridge` 宿主桥（多进程路径媒体播放真值面；async_load settle 写入
+        // 与桥读取同一 Arc 实例）。
+        js_worker.set_video_players(webview.video_players());
         Self {
             outbound,
             inbound_rx,

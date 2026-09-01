@@ -69,6 +69,12 @@ enum JsWorkerCommand {
     SetFetchHandler {
         handler: FetchHandler,
     },
+    /// media-playback M2c 后续：注入播放器注册表（镜像 browser tab_js_worker 同名命令
+    /// ——多进程路径的 `__zwVideoBridge` 宿主桥一致性；renderer 主循环在 WebView 初始化
+    /// 后发送）。
+    SetVideoPlayers {
+        registry: std::sync::Arc<std::sync::Mutex<zero_webview::video_registry::VideoPlayerRegistry>>,
+    },
     ResetDocumentState {
         reply: Sender<()>,
     },
@@ -352,6 +358,16 @@ impl RendererJsWorker {
         let _ = self.cmd_tx.send(JsWorkerCommand::SetFetchHandler { handler });
     }
 
+    /// media-playback M2c 后续：注入播放器注册表（renderer 主循环 WebView 初始化后调用；
+    /// worker 注册 `__zwVideoBridge` 宿主桥——镜像 browser tab_js_worker，多进程路径
+    /// 与 tabworker 路径的媒体播放真值面一致）。
+    pub fn set_video_players(
+        &self,
+        registry: std::sync::Arc<std::sync::Mutex<zero_webview::video_registry::VideoPlayerRegistry>>,
+    ) {
+        let _ = self.cmd_tx.send(JsWorkerCommand::SetVideoPlayers { registry });
+    }
+
     pub fn dispatch_indexed_db_connection_event(
         &self,
         connection_id: u64,
@@ -610,6 +626,11 @@ fn js_worker_main(
             JsWorkerCommand::SetFetchHandler { handler } => {
                 // P1b S3：注入 fetch handler（renderer 在 WebView 初始化后发送）。
                 fetch_bridge.set_handler(handler);
+            }
+            JsWorkerCommand::SetVideoPlayers { registry } => {
+                // M2c 后续：注册宿主桥回调族 + 注入 __zwVideoBridge JS 门面（镜像
+                // browser tab_js_worker 同名分支——多进程路径媒体播放真值面）。
+                zero_webview::video_registry::register_video_bridge_callbacks(&mut *sandbox, registry);
             }
             JsWorkerCommand::ResetDocumentState { reply } => {
                 // https://html.spec.whatwg.org/multipage/browsing-the-web.html#navigate

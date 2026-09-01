@@ -11357,6 +11357,14 @@
                   if (typeof globalThis.__zwVideoBridge.setRate === 'function') {
                     try { globalThis.__zwVideoBridge.setRate(_pAbs, _pMs.playbackRate || 1); } catch (_eVbR2) {}
                   }
+                  // M2c 后续：起播时同步既有增益（play 前设的 volume/muted 经桥生效——
+                  // 该两 setter 的桥推 gated on bridgeOn，首播前设置只落 _mediaState）。
+                  if (typeof globalThis.__zwVideoBridge.setGain === 'function') {
+                    try {
+                      globalThis.__zwVideoBridge.setGain(
+                        _pAbs, (_pMs.volume != null ? _pMs.volume : 1), _pMs.muted === true);
+                    } catch (_eVbG0) {}
+                  }
                 }
               } catch (_eVbP) {}
             }

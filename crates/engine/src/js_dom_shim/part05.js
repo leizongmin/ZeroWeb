@@ -19,6 +19,11 @@
               var _nv = _mv < 0 ? 0 : (_mv > 1 ? 1 : _mv);
               if ((_mst.volume != null ? _mst.volume : 1) === _nv) return true; // 同值不派事件
               _mst.volume = _nv;
+              // M2c 后续：宿主桥增益（音频面真值；video 面 reserved）。
+              if (_mst.bridgeOn && _mst.bridgeSrc && typeof globalThis.__zwVideoBridge === 'object'
+                  && typeof globalThis.__zwVideoBridge.setGain === 'function') {
+                try { globalThis.__zwVideoBridge.setGain(_mst.bridgeSrc, _nv, _mst.muted === true); } catch (_eVbG1) {}
+              }
               // spec：volumechange 走 media element task source（queued，非同步派发）——
               // 同一 turn 内后注册的 onvolumechange 也须收到（event_volumechange
               // 「repeatedly fires」断言面：4 次赋值后才挂 handler）。setTimeout(0) defer；
@@ -126,6 +131,13 @@
             }
             _muMs = _mediaState[_muKey] || (_mediaState[_muKey] = {});
             _muMs.muted = _muNow;
+            // M2c 后续：宿主桥增益（muted → 0 增益；音频面真值）。
+            if (_muMs.bridgeOn && _muMs.bridgeSrc && typeof globalThis.__zwVideoBridge === 'object'
+                && typeof globalThis.__zwVideoBridge.setGain === 'function') {
+              try {
+                globalThis.__zwVideoBridge.setGain(_muMs.bridgeSrc, (_muMs.volume != null ? _muMs.volume : 1), _muNow);
+              } catch (_eVbG2) {}
+            }
             // spec：volumechange queued（media element task source）——defer 同 volume=；
             // pendingVc 标记使 load() 可清除（同 volume= 分支注释）。
             _muMs.pendingVc = (_muMs.pendingVc || 0) + 1;

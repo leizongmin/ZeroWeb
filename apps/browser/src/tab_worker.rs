@@ -873,7 +873,13 @@ fn tab_worker_main(
                 let changed = wv
                     .video_players()
                     .lock()
-                    .map(|mut reg| reg.tick_all(now_ms, wv.image_cache()))
+                    .map(|mut reg| {
+                        let frames = reg.tick_all(now_ms, wv.image_cache());
+                        // M2c 后续：音频实时节奏解码（NullSink 写入；增益联动）——
+                        // 音频写入不改变帧内容，不触发重渲染。
+                        reg.audio_advance_all(now_ms);
+                        frames
+                    })
                     .unwrap_or(false);
                 if changed && wv.last_render().is_some() {
                     with_measure(&font_loader, font_id, || {

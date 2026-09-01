@@ -1198,20 +1198,35 @@ impl AsyncPageLoad {
             //（webm/VP9 头 + 首帧；其余格式 None/0——语义层回落 headless 近似）。
             // 真值经 ResourceElementEvent 链喂语义层 duration/videoWidth（RFC §3.1）；
             // 首帧 RGBA 注入 ImageCache（painter video 通路同键）——生产侧出图。
+            // M2c 后续：settle 同时登记播放注册表——video 源字节（video 面）+ audio
+            // 源（symphonia 面内 mp3/vorbis；`<audio>` 与纯音频 video 共用）——切片 5a
+            // 契约落地（此前生产调用方缺失，桥 play 仅测试面可达）。
             let (media_duration_ms, natural_width, natural_height) = match (fetched, kind) {
-                (Some(bytes), MediaResourceElementKind::Video) => match probe_video_media_meta(bytes) {
-                    Some((duration_ms, w, h, rgba)) => {
-                        // 帧上屏注入（M1b harness 同款两段式）：键 = image_resource_key
-                        //（绝对 URL，与 painter document_url 解析后一致）。
-                        let frame_key = ImageKey::new(image_resource_key(url, None));
-                        if let Ok(data) = zero_render_foundation::image_cache::ImageData::from_rgba(rgba, w, h) {
-                            webview.image_cache().insert_with_key(frame_key, data);
-                            *changed = true;
-                        }
-                        (Some(duration_ms), w, h)
+                (Some(bytes), MediaResourceElementKind::Video) => {
+                    if let Ok(mut reg) = webview.video_players().lock() {
+                        reg.register_source(url, bytes.clone());
+                        reg.register_audio_source(url, bytes.clone());
                     }
-                    None => (None, 0, 0),
-                },
+                    match probe_video_media_meta(bytes) {
+                        Some((duration_ms, w, h, rgba)) => {
+                            // 帧上屏注入（M1b harness 同款两段式）：键 = image_resource_key
+                            //（绝对 URL，与 painter document_url 解析后一致）。
+                            let frame_key = ImageKey::new(image_resource_key(url, None));
+                            if let Ok(data) = zero_render_foundation::image_cache::ImageData::from_rgba(rgba, w, h) {
+                                webview.image_cache().insert_with_key(frame_key, data);
+                                *changed = true;
+                            }
+                            (Some(duration_ms), w, h)
+                        }
+                        None => (None, 0, 0),
+                    }
+                }
+                (Some(bytes), MediaResourceElementKind::Audio) => {
+                    if let Ok(mut reg) = webview.video_players().lock() {
+                        reg.register_audio_source(url, bytes.clone());
+                    }
+                    (None, 0, 0)
+                }
                 _ => (None, 0, 0),
             };
             self.resource_settled.push((
@@ -2173,5 +2188,58 @@ mod tests {
         assert_eq!((events[0].natural_width, events[0].natural_height), (0, 0));
         let frame_key = ImageKey::new(image_resource_key("https://example.com/media/clip.mp4", None));
         assert!(wv.image_cache().get(&frame_key).is_none(), "非 webm 不注入帧");
+    }
+
+    #[test]
+    fn media_settle_registers_playback_registry_m2c() {
+        // M2c 后续：settle → 播放注册表登记（切片 5a 契约的生产链路补全）——
+        // video settle 后 `play` 即成功（帧面 + 音频面双登记）；`<audio>` settle 后
+        // 音频条目可 play；非 symphonia 面内音频（oga-opus）不登记（headless 回落）。
+        // 导航清理（clear）由 webview prepare_document_state 面（tab_worker 导航
+        // 命令消费），registry_clear_drops_all_for_navigation 单测覆盖。
+        let webm = media_fixture_bytes("sample-webm-vp9.webm");
+        let html = r#"<html><body><video src="sample-webm-vp9.webm"></video></body></html>"#;
+        let mut load = AsyncPageLoad::from_html("https://example.com/media/", html.to_string());
+        let mut wv = WebView::new(WebViewConfig::default());
+        let mut host = MockFetchHost::new().with_bytes(webm);
+        while load.is_active() {
+            let _ = load.tick(&mut wv, &mut host, 500.0);
+        }
+        let video_url = "https://example.com/media/sample-webm-vp9.webm";
+        {
+            let registry = wv.video_players();
+            let mut reg = registry.lock().unwrap_or_else(|e| e.into_inner());
+            assert!(reg.play(video_url, 0), "video settle 后 play 即成功（切片 5a 契约）");
+            assert!(reg.is_playing(video_url));
+        }
+        // `<audio>` settle：symphonia 面内 mp3 → 音频条目登记 + play。
+        let mp3 = media_fixture_bytes("sample-mp3.mp3");
+        let html = r#"<html><body><audio src="tone.mp3"></audio></body></html>"#;
+        let mut load = AsyncPageLoad::from_html("https://example.com/media/", html.to_string());
+        let mut host = MockFetchHost::new().with_bytes(mp3);
+        while load.is_active() {
+            let _ = load.tick(&mut wv, &mut host, 500.0);
+        }
+        let audio_url = "https://example.com/media/tone.mp3";
+        {
+            let registry = wv.video_players();
+            let mut reg = registry.lock().unwrap_or_else(|e| e.into_inner());
+            assert!(reg.audio_play(audio_url, 0), "audio settle 后音频 play 成功");
+            assert!(reg.audio_is_playing(audio_url));
+        }
+        // 非 symphonia 面内音频（oga-opus）：不登记 → play false（回落 headless）。
+        let opus = media_fixture_bytes("sample-ogg-opus.oga");
+        let html = r#"<html><body><audio src="song.oga"></audio></body></html>"#;
+        let mut load = AsyncPageLoad::from_html("https://example.com/media/", html.to_string());
+        let mut host = MockFetchHost::new().with_bytes(opus);
+        while load.is_active() {
+            let _ = load.tick(&mut wv, &mut host, 500.0);
+        }
+        let registry = wv.video_players();
+        let mut reg = registry.lock().unwrap_or_else(|e| e.into_inner());
+        assert!(
+            !reg.audio_play("https://example.com/media/song.oga", 0),
+            "opus 不在面内，不登记（headless 回落）"
+        );
     }
 }
