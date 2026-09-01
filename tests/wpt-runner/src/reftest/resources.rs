@@ -319,31 +319,39 @@ pub(super) fn expand_at_imports(
         // 跳过 string literal（原样输出，不在串内匹配 @import）
         if c == b'"' || c == b'\'' {
             let quote = c;
-            out.push(c as char);
+            let start = i;
             i += 1;
             while i < n {
                 let cc = bytes[i];
-                out.push(cc as char);
                 i += 1;
                 if cc == quote {
                     break;
                 }
+                if cc >= 0x80 {
+                    i = (i - 1 + utf8_seq_len(cc)).min(n);
+                }
             }
+            // 整段按字节切片复制（含引号），保持非 ASCII 内容的 UTF-8 完整性（R3900）。
+            out.push_str(&css[start..i.min(n)]);
             continue;
         }
         // 跳过 block comment（原样输出）
         if c == b'/' && i + 1 < n && bytes[i + 1] == b'*' {
-            out.push_str("/*");
+            let start = i;
             i += 2;
             while i + 1 < n {
                 if bytes[i] == b'*' && bytes[i + 1] == b'/' {
-                    out.push_str("*/");
                     i += 2;
                     break;
                 }
-                out.push(bytes[i] as char);
-                i += 1;
+                if bytes[i] >= 0x80 {
+                    i += utf8_seq_len(bytes[i]);
+                } else {
+                    i += 1;
+                }
             }
+            // 整段按字节切片复制，保持非 ASCII 注释内容的 UTF-8 完整性（R3900）。
+            out.push_str(&css[start..i.min(n)]);
             continue;
         }
         // 检测 @import（大小写不敏感；前置须非 ident 边界，后置须非 ident-char）
@@ -434,10 +442,33 @@ pub(super) fn expand_at_imports(
                 }
             }
         }
+        // 非 ASCII 字节：UTF-8 多字节序列须**整段**透传。旧 `out.push(c as char)` 把每
+        // 个字节当独立码点（0xC3→Ã、0xA9→©），`é`（U+00E9，2 字节）被拆成 `Ã©` →
+        // `.tést` 选择器变 `.tÃ©st` 失配（WPT at-charset-071~077 / character-encoding-031~037
+        // 3.10% 恒 diff，R3900）。取该字节序列的 UTF-8 字符长度，按字节切片复制。
+        if c >= 0x80 {
+            let len = utf8_seq_len(c);
+            let end = (i + len).min(n);
+            out.push_str(&css[i..end]);
+            i = end;
+            continue;
+        }
         out.push(c as char);
         i += 1;
     }
     out
+}
+
+/// 返回以 `first` 为首字节的 UTF-8 序列总长度（1-4）。畸形首字节按 1 处理（原样透传，
+/// 不在 harness 内做合法性修复——解码层已保证合法 UTF-8 输入）。
+fn utf8_seq_len(first: u8) -> usize {
+    match first {
+        0x00..=0x7F => 1,
+        0xC0..=0xDF => 2,
+        0xE0..=0xEF => 3,
+        0xF0..=0xF7 => 4,
+        _ => 1,
+    }
 }
 
 /// 解析 `@import` body（@import 之后、`;` 之前的内容）为 `(url, supports, media_query_list)`。
@@ -1244,6 +1275,38 @@ mod tests {
         let out2 = expand_at_imports(css2, &dir, &ctx, &mut chain);
         assert!(!out2.contains(".test"), "选择器后 @import 须丢弃: {out2}");
         assert!(out2.contains("div { color: blue }"), "既有规则原样保留: {out2}");
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// R3900：expand_at_imports 须保持非 ASCII 内容的 UTF-8 完整性。旧实现逐字节
+    /// `as char` 复制，多字节字符（如 `é` U+00E9 = 0xC3 0xA9）被拆成两个 Latin-1 码点
+    ///（`Ã©`）→ `.tést` 选择器失配（WPT at-charset-071~077 / character-encoding-031~037,041）
+    /// 且 quotes 属性里的引号字形（U+201C 等）变乱码（quotes-028/029/031）。
+    #[test]
+    fn expand_at_imports_preserves_utf8_multibyte() {
+        let ctx = zero_css_parser::media_query::MediaContext::new(800.0, 600.0);
+        let mut chain = std::collections::HashSet::new();
+        let dir = std::env::temp_dir().join(format!("zw_reftest_utf8_{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+
+        // 无 @import 的纯透传（序言 @charset + 含多字节字符的规则）须逐字符等值。
+        let css = "@charset \"iso-8859-1\";\n.t\u{E9}st { color: white; background: green; }";
+        let out = expand_at_imports(css, &dir, &ctx, &mut chain);
+        assert_eq!(out, css, "无 @import 时输出须与输入逐字符一致（UTF-8 不破坏）");
+
+        // string literal 与 block comment 内的多字节字符同样须保持。
+        let css2 = "body { quotes: \"\u{201C}\" \"\u{201D}\"; } /* cömment\u{2028} */\n.t\u{E9}st { color: green }";
+        let out2 = expand_at_imports(css2, &dir, &ctx, &mut chain);
+        assert_eq!(out2, css2, "string/comment 内多字节字符不破坏");
+
+        // 带 @import 的展开：导入内容与被展开文本的多字节字符均保持。
+        std::fs::write(dir.join("u.css"), ".im\u{E9}port\u{201C}d { background: green }").unwrap();
+        let css3 = "@import \"u.css\";\n.t\u{E9}st { color: green }";
+        let out3 = expand_at_imports(css3, &dir, &ctx, &mut chain);
+        assert!(out3.contains(".im\u{E9}port\u{201C}d"), "导入内容 UTF-8 保持: {out3}");
+        assert!(out3.contains(".t\u{E9}st"), "展开后文本 UTF-8 保持: {out3}");
 
         let _ = std::fs::remove_dir_all(&dir);
     }

@@ -124,7 +124,10 @@ pub fn parse_color_with_scheme(value: &str, dark: bool) -> Option<ColorValue> {
     // 支持 srgb/srgb-linear/lab/lch/oklab/oklch/xyz（其他色彩空间 xyz-d50/display-p3 defer）。
     // 存为未解析 ColorValue::Mix——currentColor 在 paint 时按元素色解析，支持 inherit 透传。
     // driving: css-color color-mix-currentcolor-001。
-    if value.len() >= 10 && value[..10].eq_ignore_ascii_case("color-mix(") {
+    // R3900：经 lower 判定（与其余函数 dispatch 同式）——旧 `value[..10]` 字节切片在
+    // 值前缀含多字节字符时非 char boundary panic（driving: css-variables
+    // variable-declaration-42 的 `var(--a-长-…)` 未定义变量整串落到这里）。
+    if lower.starts_with("color-mix(") {
         return parse_color_mix(value);
     }
 
@@ -1250,6 +1253,21 @@ fn parse_hwb_alpha(s: &str) -> Option<f64> {
 mod tests {
     use super::*;
     use crate::values::parse_misc::*;
+
+    // ── R3900：多字节前缀值不得 panic（color-mix dispatch 经 lower，非字节切片）──
+
+    #[test]
+    fn test_multibyte_prefix_no_panic() {
+        // driving: css-variables variable-declaration-42 —— 未定义 var() 引用整串落到
+        // parse_color；`--a-长-…` 使旧 `value[..10]` 切进 3 字节 '长' 中间 panic。
+        // 现经 lower.starts_with 判定（to_ascii_lowercase 不改 UTF-8 序列长度，安全）。
+        let v = "var(--a-\u{957F}-name-that-might-be-longer-than-you\\27 d-normally-use)";
+        assert_eq!(parse_color(v), None, "未解析 var() 串非合法颜色 → None，且不得 panic");
+        // 纯 CJK 命名（非合法颜色）同样 None 不 panic。
+        assert_eq!(parse_color("红色"), None);
+        // color-mix 正常路径不受影响。
+        assert!(parse_color("color-mix(in srgb, red, blue)").is_some());
+    }
 
     // ── parse_hsl_function 现代/遗留语法（R2253，CSS Color 4）─────────────
 
