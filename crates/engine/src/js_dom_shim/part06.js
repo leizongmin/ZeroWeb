@@ -6817,6 +6817,14 @@
       return;
     }
     setTimeout(function () {
+      // media-elements M3 扩批 VIII：about:（about:blank 等）非空 src——spec 资源获取
+      // 面不产出可播媒体资源（not a supported media container）→ 资源选择失败路径
+      //（error 事件 + code 4，同空 src 面；video_crash_empty_src 断言 error 到达不 crash）。
+      // https://html.spec.whatwg.org/multipage/media.html#concept-media-load-algorithm
+      if (String(absUrl).indexOf('about:') === 0) {
+        _zwSettleResourceKey(key, sel, handle, tag, '', 'error', 0, 0, 4);
+        return;
+      }
       _zwSettleResourceKey(key, sel, handle, tag, absUrl, 'loaded', 0, 0);
     }, 0);
   }

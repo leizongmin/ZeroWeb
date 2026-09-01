@@ -74,6 +74,9 @@ fetch_raw "common/media.js"
 fetch_raw "html/semantics/embedded-content/the-audio-element/audio_constructor.html"
 # the-video-element 反射面（M3 扩批 IV：属性不凭空出现——UA 面不加 tabindex）。
 fetch_raw "html/semantics/embedded-content/the-video-element/video-tabindex.html"
+# M3 扩批 VIII：空 src 容错面（about:blank/"" src → error 事件不 crash——
+# M3 扩批 II 的空 src 错误码语义 + 动态 .src= 模拟覆盖面）。
+fetch_raw "html/semantics/embedded-content/the-video-element/video_crash_empty_src.html"
 
 # 主目录顶层 testharness 白名单（语义面非解码面）。
 # media-elements M3 扩批（event_* 族——M2 headless 加载序列落地后事件断言可跑；

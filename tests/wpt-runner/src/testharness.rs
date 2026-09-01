@@ -1324,6 +1324,8 @@ pub const MEDIA_TEST_FILES: &[&str] = &[
     "html/semantics/embedded-content/the-audio-element/audio_constructor.html",
     // M3 扩批 IV：the-video-element 反射面（属性不凭空出现——UA 面不加 tabindex）。
     "html/semantics/embedded-content/the-video-element/video-tabindex.html",
+    // M3 扩批 VIII：空 src 容错面（error 事件不 crash）。
+    "html/semantics/embedded-content/the-video-element/video_crash_empty_src.html",
     "html/semantics/embedded-content/media-elements/interfaces/HTMLElement/HTMLTrackElement/default.html",
     "html/semantics/embedded-content/media-elements/interfaces/HTMLElement/HTMLTrackElement/kind.html",
     "html/semantics/embedded-content/media-elements/interfaces/HTMLElement/HTMLTrackElement/label.html",

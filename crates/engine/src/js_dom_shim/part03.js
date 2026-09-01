@@ -11373,27 +11373,30 @@
             // playing」）——**异步**派发，play() 返回后注册的 onplaying/listener
             // 仍能收到（pause-remove-from-document 的 v.onplaying 在 play() 之后
             // 挂；同步派发致 handler 错过 → pending 挂起）。paused 状态同步翻转
-            // （spec dom-media-paused）。无 setTimeout 环境（纯同步沙箱）回落同步。
-            var _pf = function () {
-              _dispatchWithBubble(_pKey, sel, handle, _makeEvent('play', { bubbles: false, cancelable: false }));
-              _dispatchWithBubble(_pKey, sel, handle, _makeEvent('playing', { bubbles: false, cancelable: false }));
-              _dispatchWithBubble(_pKey, sel, handle, _makeEvent('timeupdate', { bubbles: false, cancelable: false }));
-            };
-            if (typeof setTimeout === 'function') setTimeout(_pf, 0);
-            else _pf();
+            // （spec dom-media-paused）。
+            // play Promise 的 settle 与事件派发**同一个 queued task**（无独立
+            // setTimeout——宿主 __zw_setTimeout 每定时器独立线程投递，两个 0ms
+            // 定时器顺序不保证，竞态下 promise-check 先于事件派发跑会把仍 playing
+            // 的 promise 误 resolve、丢 AbortError 契约——event_play_noautoplay
+            // 断言面）。task 内序：先派事件（listener 可能 pause() → 同步 reject
+            // playPromise），后检查 playPromise 身份再 resolve。
+            // 无 setTimeout 环境（纯同步沙箱）回落同步路径。
             var entry = null;
             var promise = new Promise(function (resolve, reject) {
               entry = { resolve: resolve, reject: reject };
             });
             _pMs.playPromise = entry;
-            if (typeof setTimeout === 'function') {
-              setTimeout(function () {
-                if (_pMs.playPromise !== entry) return; // 已被 pause() settle
-                delete _pMs.playPromise;
-                if (_pMs.playing) entry.resolve(undefined);
-                else entry.reject(new (globalThis.DOMException || Error)('play() was interrupted by pause()', 'AbortError'));
-              }, 0);
-            } else {
+            var _pf = function () {
+              _dispatchWithBubble(_pKey, sel, handle, _makeEvent('play', { bubbles: false, cancelable: false }));
+              _dispatchWithBubble(_pKey, sel, handle, _makeEvent('playing', { bubbles: false, cancelable: false }));
+              _dispatchWithBubble(_pKey, sel, handle, _makeEvent('timeupdate', { bubbles: false, cancelable: false }));
+              if (_pMs.playPromise !== entry) return; // 已被 pause() settle
+              delete _pMs.playPromise;
+              if (_pMs.playing) entry.resolve(undefined);
+              else entry.reject(new (globalThis.DOMException || Error)('play() was interrupted by pause()', 'AbortError'));
+            };
+            if (typeof setTimeout === 'function') setTimeout(_pf, 0);
+            else {
               delete _pMs.playPromise;
               entry.resolve(undefined);
             }
