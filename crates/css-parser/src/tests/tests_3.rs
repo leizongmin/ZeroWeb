@@ -156,11 +156,17 @@ fn test_parse_list_style_type() {
         parse_list_style_type("arabic-indic"),
         Some(ListStyleTypeValue::ArabicIndic)
     );
+    // R3889：oriya/mongolian/tibetan/thai（§6.1 numeric 脚本族补全——thai 此前未实现，
+    // 落 Custom fallback decimal；现按 builtin 脚本数字映射渲染）。
+    assert_eq!(parse_list_style_type("thai"), Some(ListStyleTypeValue::Thai));
+    assert_eq!(parse_list_style_type("oriya"), Some(ListStyleTypeValue::Oriya));
+    assert_eq!(parse_list_style_type("mongolian"), Some(ListStyleTypeValue::Mongolian));
+    assert_eq!(parse_list_style_type("tibetan"), Some(ListStyleTypeValue::Tibetan));
     // R2392：未实现的自定义计数器名（合法 `<custom-ident>`）→ Custom(name)，
     // 渲染时查 CounterStyleRegistry，未命中走 decimal fallback（CSS Counter Styles 3）。
     assert_eq!(
-        parse_list_style_type("thai"),
-        Some(ListStyleTypeValue::Custom("thai".to_string()))
+        parse_list_style_type("my-custom-style"),
+        Some(ListStyleTypeValue::Custom("my-custom-style".to_string()))
     );
     // 大小写不敏感
     assert_eq!(parse_list_style_type("DISC"), Some(ListStyleTypeValue::Disc));

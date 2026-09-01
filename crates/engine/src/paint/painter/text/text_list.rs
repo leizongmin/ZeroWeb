@@ -850,6 +850,11 @@ pub(crate) fn format_builtin_list_style(value: i64, list_style_type: &ListStyleT
         ListStyleTypeValue::Malayalam if index >= 0 => to_digit_script(index as usize, 0x0D66),
         ListStyleTypeValue::Tamil if index >= 0 => to_digit_script(index as usize, 0x0BE6),
         ListStyleTypeValue::Telugu if index >= 0 => to_digit_script(index as usize, 0x0C66),
+        // R3889：oriya/mongolian/tibetan/thai（§6.1 numeric 脚本族补全）。
+        ListStyleTypeValue::Oriya if index >= 0 => to_digit_script(index as usize, 0x0B66),
+        ListStyleTypeValue::Mongolian if index >= 0 => to_digit_script(index as usize, 0x1810),
+        ListStyleTypeValue::Tibetan if index >= 0 => to_digit_script(index as usize, 0x1040),
+        ListStyleTypeValue::Thai if index >= 0 => to_digit_script(index as usize, 0x0E50),
         ListStyleTypeValue::Lao if index >= 0 => to_digit_script(index as usize, 0x0ED0),
         ListStyleTypeValue::Khmer if index >= 0 => to_digit_script(index as usize, 0x17E0),
         ListStyleTypeValue::Myanmar if index >= 0 => to_digit_script(index as usize, 0x1040),
@@ -1282,6 +1287,10 @@ impl super::super::Painter {
             | ListStyleTypeValue::Malayalam
             | ListStyleTypeValue::Tamil
             | ListStyleTypeValue::Telugu
+            | ListStyleTypeValue::Oriya
+            | ListStyleTypeValue::Mongolian
+            | ListStyleTypeValue::Tibetan
+            | ListStyleTypeValue::Thai
             | ListStyleTypeValue::Lao
             | ListStyleTypeValue::Khmer
             | ListStyleTypeValue::Myanmar
@@ -1483,6 +1492,11 @@ impl super::super::Painter {
                 ListStyleTypeValue::Malayalam if index >= 0 => format!("{}.", to_digit_script(index as usize, 0x0D66)),
                 ListStyleTypeValue::Tamil if index >= 0 => format!("{}.", to_digit_script(index as usize, 0x0BE6)),
                 ListStyleTypeValue::Telugu if index >= 0 => format!("{}.", to_digit_script(index as usize, 0x0C66)),
+                // R3889：oriya/mongolian/tibetan/thai（§6.1 numeric 脚本族补全）。
+                ListStyleTypeValue::Oriya if index >= 0 => format!("{}.", to_digit_script(index as usize, 0x0B66)),
+                ListStyleTypeValue::Mongolian if index >= 0 => format!("{}.", to_digit_script(index as usize, 0x1810)),
+                ListStyleTypeValue::Tibetan if index >= 0 => format!("{}.", to_digit_script(index as usize, 0x1040)),
+                ListStyleTypeValue::Thai if index >= 0 => format!("{}.", to_digit_script(index as usize, 0x0E50)),
                 ListStyleTypeValue::Lao if index >= 0 => format!("{}.", to_digit_script(index as usize, 0x0ED0)),
                 ListStyleTypeValue::Khmer if index >= 0 => format!("{}.", to_digit_script(index as usize, 0x17E0)),
                 ListStyleTypeValue::Myanmar if index >= 0 => format!("{}.", to_digit_script(index as usize, 0x1040)),
@@ -1634,6 +1648,10 @@ impl super::super::Painter {
                 | ListStyleTypeValue::Malayalam
                 | ListStyleTypeValue::Tamil
                 | ListStyleTypeValue::Telugu
+                | ListStyleTypeValue::Oriya
+                | ListStyleTypeValue::Mongolian
+                | ListStyleTypeValue::Tibetan
+                | ListStyleTypeValue::Thai
                 | ListStyleTypeValue::Lao
                 | ListStyleTypeValue::Khmer
                 | ListStyleTypeValue::Myanmar

@@ -386,6 +386,14 @@ pub enum ListStyleTypeValue {
     Tamil,
     /// telugu 数字 ౦-౯（U+0C66+，numeric）。R2471。
     Telugu,
+    /// R3889：oriya 数字 ୦-୯（U+0B66+，numeric；CSS Counter Styles 3 §6.1 预定义）。
+    Oriya,
+    /// R3889：mongolian 数字 ᠐-᠙（U+1810+，numeric；CSS Counter Styles 3 §6.1 预定义）。
+    Mongolian,
+    /// R3889：tibetan 数字 ༠-༩（U+1040+，numeric；CSS Counter Styles 3 §6.1 预定义）。
+    Tibetan,
+    /// R3889：thai 数字 ๐-๙（U+0E50+，numeric；CSS Counter Styles 3 §6.1 预定义）。
+    Thai,
     /// lao 数字 ໐-໙（U+0ED0+，numeric）。R2471。
     Lao,
     /// khmer 数字 ០-៩（U+17E0+，numeric）。R2471。

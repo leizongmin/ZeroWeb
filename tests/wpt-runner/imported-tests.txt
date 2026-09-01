@@ -222,3 +222,4 @@ css/css-conditional/at-media-content-004.html css/css-conditional/at-supports-00
 css/css-counter-styles/japanese-formal/counter-japanese-formal.html css/css-counter-styles/japanese-formal/counter-japanese-formal-ref.html == 2026-09-01 R3885 counter 静态求值（reset-only 语境注入真实值）+ 内置样式名 fallback + 负值越界修复
 css/CSS2/generated-content/content-counter-009.xht css/CSS2/generated-content/content-counter-009-ref.xht == 2026-09-01 R3887 全文档树序 counter 模拟——increment 语境伪元素真值注入
 css/CSS2/generated-content/counters-multi-000.xht css/CSS2/generated-content/counters-multi-000-ref.html == 2026-09-01 R3888 伪元素自身 counter 动作模拟（::before/::after reset/set/increment 快照前应用后弹出）
+css/css-counter-styles/mongolian/css3-counter-styles-138.html css/css-counter-styles/mongolian/css3-counter-styles-138-ref.html == 2026-09-01 R3889 numeric 脚本族补全（oriya/mongolian/tibetan/thai）
