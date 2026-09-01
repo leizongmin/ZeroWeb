@@ -20,8 +20,8 @@ use zero_style_system::{
     BackgroundImageComputedValue, BackgroundOriginComputedValue, BackgroundPositionComputedValue,
     BackgroundRepeatComputedValue, BackgroundSizeComputedValue, BgSizeComponentComputed, CaretColorComputedValue,
     ComputedStyle, FilterComputedValue, HyphensComputedValue, LineClampComputedValue, MixBlendModeComputedValue,
-    QuotesComputedValue, ResizeValue, ScrollbarGutterComputedValue, ScrollbarWidthComputedValue,
-    TextDecorationStyleValue, TextWrapComputedValue,
+    ResizeValue, ScrollbarGutterComputedValue, ScrollbarWidthComputedValue, TextDecorationStyleValue,
+    TextWrapComputedValue,
 };
 
 use super::super::color::color_value_to_render;
@@ -1062,86 +1062,6 @@ impl super::Painter {
         };
         self.primitives
             .add_fill(Rect::new(line_x, line_y, line_width, 1.0), hyphen_color);
-    }
-
-    /// 绘制 CSS quotes 引号标记。
-    ///
-    /// quotes 属性定义了嵌套引号对。渲染为文本内容前后的引号 glyph。
-    /// 支持嵌套层级：第一层使用第一对引号，第二层使用第二对，以此类推。
-    pub(super) fn paint_quotes(
-        &mut self,
-        box_node: &LayoutBox,
-        abs_x: f32,
-        abs_y: f32,
-        style: &ComputedStyle,
-        _nesting_depth: usize,
-    ) {
-        let (open_q, close_q) = match &style.quotes {
-            QuotesComputedValue::None => return,
-            QuotesComputedValue::Auto => ("«".to_string(), "»".to_string()),
-            QuotesComputedValue::Pairs(pairs) => {
-                if pairs.is_empty() {
-                    return;
-                }
-                // 根据嵌套深度选择引号对
-                let idx = _nesting_depth.min(pairs.len() - 1);
-                (pairs[idx].0.clone(), pairs[idx].1.clone())
-            }
-        };
-
-        let font_size: f32 = match style.font_size {
-            zero_css_parser::values::LengthValue::Px(s) => s as f32,
-            _ => 12.0,
-        };
-        let color = color_value_to_render(&style.color);
-        let default_font_id = self.resolve_style_font_id(&style.font_family, style).0;
-        let variations = crate::text_metrics::paint_font_variations(&style.font_variation_settings);
-        let font_variation_id = self.primitives.intern_font_variations(&variations);
-
-        let content_x = abs_x + box_node.border_left + box_node.padding_left;
-        let content_y = abs_y + box_node.border_top + box_node.padding_top;
-
-        // 开引号
-        for (i, ch) in open_q.chars().enumerate() {
-            self.primitives
-                .add_glyph(zero_render_foundation::primitive::GlyphPrimitive {
-                    x: content_x + i as f32 * font_size * 0.6,
-                    y: content_y + font_size,
-                    font_size,
-                    color,
-                    glyph_id: ch as u32,
-                    font_glyph_index: None,
-                    source: None,
-                    font_id: default_font_id,
-                    font_variation_id,
-                    bitmap_width: None,
-                    bitmap_height: None,
-                    rotation: 0.0,
-                    synthetic_italic: false,
-                });
-        }
-
-        // 闭引号
-        let text_width = box_node.content_width;
-        let close_x = content_x + text_width - close_q.chars().count() as f32 * font_size * 0.6;
-        for (i, ch) in close_q.chars().enumerate() {
-            self.primitives
-                .add_glyph(zero_render_foundation::primitive::GlyphPrimitive {
-                    x: close_x + i as f32 * font_size * 0.6,
-                    y: content_y + font_size,
-                    font_size,
-                    color,
-                    glyph_id: ch as u32,
-                    font_glyph_index: None,
-                    source: None,
-                    font_id: default_font_id,
-                    font_variation_id,
-                    bitmap_width: None,
-                    bitmap_height: None,
-                    rotation: 0.0,
-                    synthetic_italic: false,
-                });
-        }
     }
 
     /// 应用 CSS text-wrap 到 InlineFormattingContext 配置。

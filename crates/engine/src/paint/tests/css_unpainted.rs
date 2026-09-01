@@ -263,11 +263,14 @@ fn test_hyphens_none_no_indicator() {
 }
 
 // === quotes 测试 ===
+// R3895：quotes 是纯求值属性（CSS Content 3 §2.2），paint 层不做盒级引号绘制；
+// <q> 标记由 inline 侧 resolve_q_quotes 注入文本流（R2246）。
 
 #[test]
-fn test_quotes_pairs_generates_glyphs() {
+fn test_quotes_pairs_no_box_level_glyphs() {
+    // quotes: Pairs 的盒子自身不绘制引号 glyph（标记只来自 <q> 内容注入）
     let mut doc = zero_dom::Document::new();
-    let elem = doc.create_element("q");
+    let elem = doc.create_element("p");
     let layout = make_box(Some(elem), 0.0, 0.0, 100.0, 30.0);
 
     let mut styles = HashMap::new();
@@ -279,13 +282,12 @@ fn test_quotes_pairs_generates_glyphs() {
     painter.paint(&layout, &styles, None);
 
     let prims = painter.primitives();
-    // 应生成开引号和闭引号 glyph
     let open_quote_code = '\u{201C}' as u32;
     let close_quote_code = '\u{201D}' as u32;
     let has_open = prims.glyphs.iter().any(|g| g.glyph_id == open_quote_code);
     let has_close = prims.glyphs.iter().any(|g| g.glyph_id == close_quote_code);
-    assert!(has_open, "quotes: Pairs 应生成开引号 glyph");
-    assert!(has_close, "quotes: Pairs 应生成闭引号 glyph");
+    assert!(!has_open, "quotes: Pairs 盒级不绘制开引号 glyph");
+    assert!(!has_close, "quotes: Pairs 盒级不绘制闭引号 glyph");
 }
 
 #[test]

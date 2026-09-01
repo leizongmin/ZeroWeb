@@ -23,8 +23,7 @@ use zero_style_system::{
     AccentColorComputedValue, AppearanceComputedValue, BackgroundAttachmentComputedValue, BackgroundClipComputedValue,
     BorderCollapseValue, CaretColorComputedValue, ClipPathComputedValue, ComputedStyle, ContainComputedValue,
     HyphensComputedValue, ImageRenderingValue, IsolationValue, MixBlendModeComputedValue, OverscrollBehaviorValue,
-    PointerEventsValue, QuotesComputedValue, ResizeValue, ScrollbarGutterComputedValue, TouchActionValue,
-    UserSelectValue,
+    PointerEventsValue, ResizeValue, ScrollbarGutterComputedValue, TouchActionValue, UserSelectValue,
 };
 
 use super::color::resolve_color_current;
@@ -1672,13 +1671,9 @@ impl Painter {
                 self.paint_hyphens_indicator(box_node, abs_x, abs_y, style);
             }
 
-            // CSS quotes — 引号标记
-            if let Some(node_id) = box_node.node_id
-                && let Some(style) = styles.get(&node_id)
-                && matches!(style.quotes, QuotesComputedValue::Pairs(_))
-            {
-                self.paint_quotes(box_node, abs_x, abs_y, style, 0);
-            }
+            // CSS quotes — 不做盒级绘制：quotes 是纯求值属性（CSS Content 3 §2.2），
+            // 仅向 open-quote/close-quote 提供值；<q> 标记由 inline 侧 resolve_q_quotes
+            // 注入文本流（R2246），盒级绘制只会产生多余引号 glyph（R3895 quotes-028/029/031）。
 
             // CSS cursor — 光标类型指示器
             if let Some(node_id) = box_node.node_id

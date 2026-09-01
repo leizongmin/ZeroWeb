@@ -1128,6 +1128,15 @@ impl super::Painter {
                                     fragment.node_id
                                 };
                                 self.painted_inline_nodes.insert(owner_id);
+                                // R3895：扁平化片段补标 inline 包装链（同 render_fragment! 处）。
+                                if let Some(styles) = styles {
+                                    mark_inline_wrapper_chain_painted(
+                                        &mut self.painted_inline_nodes,
+                                        doc,
+                                        styles,
+                                        owner_id,
+                                    );
+                                }
                                 let owner_style = styles.and_then(|s| s.get(&owner_id));
                                 let owner_variations = crate::text_metrics::paint_font_variations(
                                     &owner_style.unwrap_or(style).font_variation_settings,
@@ -1383,6 +1392,15 @@ impl super::Painter {
                             // inline-block's own box must still paint its text.
                             if !$frag_text.is_empty() {
                                 self.painted_inline_nodes.insert($frag_nid);
+                                // R3895：扁平化片段补标 inline 包装链（内层 span/q 等不再自绘）。
+                                if let Some(styles) = styles {
+                                    mark_inline_wrapper_chain_painted(
+                                        &mut self.painted_inline_nodes,
+                                        doc,
+                                        styles,
+                                        $frag_nid,
+                                    );
+                                }
                             }
 
                             // R358：per-fragment color（带 abs-pos guard）。
@@ -2297,6 +2315,41 @@ impl super::Painter {
             });
             char_x += self.measure_char_cached(default_font_id.0, ch, font_size, is_ahem);
         }
+    }
+}
+
+/// R3895：片段渲染后沿 inline 包装链下探补标 painted_inline_nodes。
+///
+/// layout IFC 对嵌套 inline 元素做文本扁平化（collect_inline_items 的
+/// `text_content(child_id)` 分支把子树文本合成到外层元素 id 的单个 TextRun），
+/// 内层 inline 包装元素自身永远不作为片段 node_id 出现，也就不会被
+/// painted_inline_nodes 标记。其自身 paint_text 的 dedup 查不到 id → 放行 →
+/// 重跑无度量覆盖的 Path B IFC（text_node_font_sizes 只存了外层键）→
+/// 以默认 16px 在错误位置双绘文本（quotes-028/029/031 每层嵌套 `<q>` 双绘引号）。
+///
+/// CSS2 §9.4.1：嵌套 inline 盒的文本由最近 IFC 一次性排版渲染，包装层不再自绘。
+/// 片段渲染后把 `$frag_nid` 元素之下的**纯 inline 元素后代链**（不跨 block/文本边界，
+/// 不含 atomic inline-block 等自绘盒）一并标记，使这些包装层的 paint_text 被 dedup
+/// 早退。styles 缺失时不下探（无法判定 inline 边界，保守回退旧行为）。
+pub(super) fn mark_inline_wrapper_chain_painted(
+    painted: &mut std::collections::HashSet<NodeId>,
+    doc: &Document,
+    styles: &HashMap<NodeId, ComputedStyle>,
+    root: NodeId,
+) {
+    let is_inline_display = |id: NodeId| -> bool {
+        styles
+            .get(&id)
+            .is_some_and(|s| matches!(s.display, DisplayValue::Inline))
+    };
+    let mut stack: Vec<NodeId> = doc.child_nodes(root);
+    while let Some(id) = stack.pop() {
+        // 仅沿 inline 元素下探；文本/非 inline（block、inline-block 等自绘盒）停止。
+        if !is_inline_display(id) {
+            continue;
+        }
+        painted.insert(id);
+        stack.extend(doc.child_nodes(id));
     }
 }
 
