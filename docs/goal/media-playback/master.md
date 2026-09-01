@@ -15,6 +15,15 @@ M3 AV1 解码切片解锁（dav1d 绑定 + `open_webm` V_AV1 路由，以
 
 **专项定位**：媒体方向三拆之二（门控流）。视频解码与帧渲染——「占位框 → 能播放」的一跳。
 **M0 已收口**：RFC 获批（2026-09-01，路线 C「VP9/AV1 开源先行 + 进程内 crate」）。
+**M3 AV1 解码切片已落地（2026-09-02，D-RFC-2）**：`crates/media` 新模块
+`av1_decode`（feature `decode-av1` 门控）——dav1d 安全 Rust 绑定（系统 libdav1d
+1.5.1）+ Matroska V_AV1 轨 low-overhead OBU 喂入；`decode.rs` VideoCodec enum
+codec 自路由（新 `open_webm`：V_VP9 → rusty_vp9 / V_AV1 → dav1d，feature 关闭
+回落 NoVideoTrack 占位面；`open_webm_vp9` 原样保留零回归）；YUV→RGBA 提为通用
+`planes_to_rgba`（VP9/AV1 共用，M2 色度面单点维护）；webview `video_registry.play`
+切换 `open_webm`（生产播放面 codec 无关）。fixture `sample-webm-av1.webm` 48 帧
+全解、PTS 单调、首帧 RGB 均值与 ffmpeg 7.1.5 RGBA 参照（123.26）同窗对齐 ±15。
+media 40 单测（default）/ 42（decode-av1）全绿、webview 678 全绿、clippy 双态零警告。
 **M1a 已落地**（2026-09-01）：`crates/media`（`zero-media`）解码管线全通——
 `VideoDecoder::open_webm_vp9` → 逐帧 `next_frame()` → `DecodedVideoFrame`（RGBA +
 pts_ms）；fixture 48 帧全解、PTS 单调、首帧与 ffmpeg 7.1.5 rawvideo 参照**逐字节一致**

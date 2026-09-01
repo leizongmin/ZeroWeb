@@ -331,11 +331,12 @@ fn webm_av1_decode_full_stream() {
         count += 1;
     }
     assert_eq!(count, 48, "全流帧数（与容器块数一致）");
-    // 首帧非空非纯色（testsrc2 纹样锚点——窗口 ±20，与 ffmpeg 参照面无对齐要求：
-    // dav1d 输出经同一 planes_to_rgba 面，色彩声明以位流 seq header 为准）。
+    // 首帧 testsrc2 纹样锚点：与 ffmpeg 7.1.5 RGBA 参照（实测 123.26）同窗收紧
+    //——dav1d 输出经同一 planes_to_rgba 面，色彩声明以位流 seq header 为准
+    //（libaom testsrc2 声明 BT.709 limited，与 VP9 fixture 声明面一致）。
     assert!(
-        (60.0..=200.0).contains(&first_mean),
-        "AV1 首帧 RGB 均值合理窗（got {first_mean}）"
+        (first_mean - 123.26).abs() <= 15.0,
+        "AV1 首帧 RGB 均值对齐 ffmpeg 参照窗 ±15（got {first_mean}）"
     );
 }
 
