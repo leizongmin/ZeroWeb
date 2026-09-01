@@ -8,6 +8,7 @@
 |---|---|---|---|---|---|---|
 | `sample-mp4-h264.mp4` | mp4 | H.264 (baseline, yuv420p) | AAC LC | 320x240 / 44.1kHz 单声道 | 2s | 92KB |
 | `sample-webm-vp9.webm` | webm | VP9 (yuv420p) | 无 | 320x240 | 2s | 41KB |
+| `sample-webm-vp9-vorbis.webm` | webm | VP9 (yuv420p) | Vorbis (q4) | 320x240 / 44.1kHz 单声道 | 2s | 49KB |
 | `sample-mp3.mp3` | mp3 | 无 | MP3 (libmp3lame 64k) | 44.1kHz 单声道 | 2s | 16KB |
 | `sample-ogg-opus.oga` | ogg | 无 | Opus (48k) | 48kHz 单声道 | 2s | 14KB |
 | `sample-ogg-vorbis.oga` | ogg | 无 | Vorbis (q4) | 44.1kHz 单声道 | 2s | 7KB |
@@ -24,6 +25,13 @@ ffmpeg -f lavfi -i "testsrc2=size=320x240:rate=24:duration=2" \
 # VP9（webm）——开源编解码路线（RFC 三路线之「开源先行」的评估对象）
 ffmpeg -f lavfi -i "testsrc2=size=320x240:rate=24:duration=2" \
        -c:v libvpx-vp9 -b:v 200k -pix_fmt yuv420p -y sample-webm-vp9.webm
+
+# VP9 + Vorbis（webm 双轨——media-playback M2 切片 D：A/V 同源 demux +
+# 音频时钟主时钟的 e2e 输入；`open_webm_audio_track` 的验证资产）
+ffmpeg -f lavfi -i "testsrc2=size=320x240:rate=24:duration=2" \
+       -f lavfi -i "sine=frequency=440:duration=2" \
+       -c:v libvpx-vp9 -b:v 200k -pix_fmt yuv420p \
+       -c:a libvorbis -q:a 4 -shortest -y sample-webm-vp9-vorbis.webm
 
 # Vorbis（音频，media-playback M2c——symphonia 纯 Rust 解码面；opus 不在其 0.6
 # 编解码面内，oga-opus fixture 保留作后续选型对照）

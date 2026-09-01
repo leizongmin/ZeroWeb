@@ -9,7 +9,10 @@
 
 use std::collections::HashMap;
 use zero_engine::image_resource_key;
-use zero_media::{AudioDecoder, AudioFormat, AudioSink, NullSink, VideoClock, VideoDecoder, VideoPlayer};
+use zero_media::{
+    AudioDecoder, AudioFormat, AudioSink, NullSink, VideoClock, VideoDecoder, VideoPlayer, WebmAudioTrack,
+    open_webm_audio_track,
+};
 use zero_render_foundation::image_cache::{ImageCache, ImageData, ImageKey};
 
 /// 音频播放条目 — 解码器 + NullSink（可观测）+ 增益（M2c 后续：播放管线接 sink）。
@@ -94,6 +97,69 @@ impl AudioEntry {
     }
 }
 
+/// A/V pair 音频条目 — webm 双轨源的视频伴生音频轨（M2 切片 D）。
+///
+/// 与 [`AudioEntry`]（纯音频源）分立：解码数据来自 `WebmAudioTrack`（OGG 页重封装
+/// + symphonia），生命周期跟随 video player（play 时懒建，pause/clear 释放）。
+struct WebmAudioEntry {
+    track: WebmAudioTrack,
+    sink: NullSink,
+    playing: bool,
+    /// 已解码累计游标（毫秒）——audio clock 主时钟的媒体时间真值面。
+    cursor_ms: u64,
+    last_tick_ms: Option<u64>,
+    volume: f32,
+    muted: bool,
+}
+
+impl WebmAudioEntry {
+    fn new(track: WebmAudioTrack) -> Self {
+        Self {
+            track,
+            sink: NullSink::new(),
+            playing: false,
+            cursor_ms: 0,
+            last_tick_ms: None,
+            volume: 1.0,
+            muted: false,
+        }
+    }
+
+    /// 推进到墙钟 `now_ms`（实时节奏解码写 sink；增益同 AudioEntry 面）。
+    fn advance_to(&mut self, now_ms: u64) -> bool {
+        if !self.playing {
+            return false;
+        }
+        let last = self.last_tick_ms.unwrap_or(now_ms);
+        self.last_tick_ms = Some(now_ms);
+        let target = self.cursor_ms + now_ms.saturating_sub(last);
+        let gain = if self.muted { 0.0 } else { self.volume };
+        let mut wrote = false;
+        while self.cursor_ms < target {
+            let Ok(Some(batch)) = self.track.next_batch() else {
+                // 流末：解码停止（ended 面归语义层）；playing 置假停泵。
+                self.playing = false;
+                break;
+            };
+            self.cursor_ms = batch.pts_ms
+                + (batch.samples.len() as u64 * 1000)
+                    / (u64::from(batch.sample_rate) * u64::from(batch.channels).max(1));
+            if gain == 1.0 {
+                let _ = self.sink.write(&batch.samples);
+            } else {
+                let gained: Vec<f32> = batch.samples.iter().map(|s| s * gain).collect();
+                let _ = self.sink.write(&gained);
+            }
+            wrote = true;
+            // 批次越过 target（包粒度 > 剩余）——停在本包末（包不可分割）。
+            if self.cursor_ms >= target {
+                break;
+            }
+        }
+        wrote
+    }
+}
+
 /// 每元素播放器注册表（键 = 资源绝对 URL 的 painter 同款哈希）。
 #[derive(Default)]
 pub struct VideoPlayerRegistry {
@@ -102,6 +168,8 @@ pub struct VideoPlayerRegistry {
     players: HashMap<u64, VideoPlayer>,
     /// 音频面（M2c 后续）：`<audio>` 元素/settle 判定为纯音频的源。
     audio_entries: HashMap<u64, AudioEntry>,
+    /// A/V pair（M2 切片 D）：webm 双轨源的伴生音频轨（video play 时懒建）。
+    av_audio_entries: HashMap<u64, WebmAudioEntry>,
 }
 
 impl VideoPlayerRegistry {
@@ -121,6 +189,7 @@ impl VideoPlayerRegistry {
         self.players.remove(&key);
         self.sources.remove(&key);
         self.audio_entries.remove(&key);
+        self.av_audio_entries.remove(&key);
     }
 
     /// settle 时登记音频源（`<audio>` settle 面；解码器立即构建——音频探测轻量）。
@@ -145,6 +214,7 @@ impl VideoPlayerRegistry {
         self.sources.clear();
         self.players.clear();
         self.audio_entries.clear();
+        self.av_audio_entries.clear();
     }
 
     /// 音频 play（桥面；已登记源 → 播放态 + 时钟锚点）。
@@ -211,6 +281,11 @@ impl VideoPlayerRegistry {
             entry.volume = volume.clamp(0.0, 1.0);
             entry.muted = muted;
         }
+        // A/V pair 伴生轨同步增益（video 元素的 volume/muted setter 桥推面）。
+        if let Some(entry) = self.av_audio_entries.get_mut(&key) {
+            entry.volume = volume.clamp(0.0, 1.0);
+            entry.muted = muted;
+        }
     }
 
     /// 音频播放中检查。
@@ -220,6 +295,11 @@ impl VideoPlayerRegistry {
     }
 
     /// play：懒建 player（源未 settle 时 no-op false——元素无资源可播）。
+    ///
+    /// M2 切片 D（A/V 同步）：webm 含 A_VORBIS 音频轨时同步起播音频面——
+    /// `WebmAudioTrack` 与视频轨同源 demux，音频写入 NullSink 与视频帧推进共用
+    /// 同一时钟注入（audio clock 主时钟的 registry 侧承载；跨轨 drift 校正为
+    /// media-audio M2 后续切片）。
     pub fn play(&mut self, abs_src: &str, now_ms: u64) -> bool {
         let key = image_resource_key(abs_src, None);
         if !self.players.contains_key(&key) {
@@ -230,19 +310,39 @@ impl VideoPlayerRegistry {
                 return false;
             };
             self.players.insert(key, VideoPlayer::new(decoder));
+            // 音频轨伴生（A/V pair）：symphonia 面内 vorbis 轨存在时构建；纯视频
+            // webm 构建失败静默（视频面照常）。
+            if self.av_audio_entries.remove(&key).is_none()
+                && let Ok(track) = open_webm_audio_track(&bytes)
+            {
+                let mut entry = WebmAudioEntry::new(track);
+                let _ = entry.sink.start(AudioFormat {
+                    sample_rate: entry.track.sample_rate(),
+                    channels: entry.track.channels(),
+                });
+                self.av_audio_entries.insert(key, entry);
+            }
         }
         if let Some(player) = self.players.get_mut(&key) {
             player.play(now_ms);
-            return true;
         }
-        false
+        // 音频伴生起播（与视频同锚点时钟）。
+        if let Some(entry) = self.av_audio_entries.get_mut(&key) {
+            entry.playing = true;
+            entry.last_tick_ms = Some(now_ms);
+        }
+        self.players.contains_key(&key)
     }
 
-    /// pause：保持位置（未播放/不存在 no-op）。
+    /// pause：保持位置（未播放/不存在 no-op）；A/V pair 音频同步暂停。
     pub fn pause(&mut self, abs_src: &str) {
         let key = image_resource_key(abs_src, None);
         if let Some(player) = self.players.get_mut(&key) {
             player.pause();
+        }
+        if let Some(entry) = self.av_audio_entries.get_mut(&key) {
+            entry.playing = false;
+            entry.last_tick_ms = None;
         }
     }
 
@@ -297,7 +397,9 @@ impl VideoPlayerRegistry {
 
     /// 快速检查：是否存在播放中的 player（渲染泵门禁——无播放时零开销跳过 tick）。
     pub fn is_any_playing(&self) -> bool {
-        self.players.values().any(|p| p.is_playing()) || self.audio_entries.values().any(|e| e.playing)
+        self.players.values().any(|p| p.is_playing())
+            || self.audio_entries.values().any(|e| e.playing)
+            || self.av_audio_entries.values().any(|e| e.playing)
     }
 
     /// 音频泵推进（tab_worker 帧泵同节拍调用）：所有播放中的音频条目按实时节奏
@@ -307,6 +409,15 @@ impl VideoPlayerRegistry {
         let mut wrote = false;
         for key in keys {
             if let Some(entry) = self.audio_entries.get_mut(&key)
+                && entry.advance_to(now_ms)
+            {
+                wrote = true;
+            }
+        }
+        // A/V pair 伴生音频轨同步推进（M2 切片 D）。
+        let av_keys: Vec<u64> = self.av_audio_entries.keys().copied().collect();
+        for key in av_keys {
+            if let Some(entry) = self.av_audio_entries.get_mut(&key)
                 && entry.advance_to(now_ms)
             {
                 wrote = true;
@@ -355,6 +466,7 @@ mod tests {
 
     const SRC: &str = "https://example.com/media/sample-webm-vp9.webm";
     const MP3: &str = "https://example.com/media/sample-mp3.mp3";
+    const AV: &str = "https://example.com/media/sample-webm-vp9-vorbis.webm";
 
     #[test]
     fn registry_play_requires_settled_source() {
@@ -440,6 +552,28 @@ mod tests {
         assert!(!reg.is_any_playing(), "清空后无播放条目");
         assert!(!reg.play(SRC, 100), "video 源已释放");
         assert!(!reg.audio_play(MP3, 100), "audio 条目已释放");
+    }
+
+    /// M2 切片 D：A/V pair——webm 双轨源 play 时伴生音频轨同锚起播、泵推进写
+    /// sink、增益联动、pause 冻结；纯视频源 play 不受影响（无音频轨静默）。
+    #[test]
+    fn registry_av_pair_play_advances_audio_with_video() {
+        let mut reg = VideoPlayerRegistry::new();
+        reg.register_source(AV, fixture_bytes_named("sample-webm-vp9-vorbis.webm"));
+        assert!(reg.play(AV, 0), "双轨源 play 成功");
+        assert!(reg.is_playing(AV));
+        assert!(reg.is_any_playing());
+        // 音频泵推进（与帧泵同节拍）：伴生轨写 sink（440Hz sine）。
+        assert!(reg.audio_advance_all(500), "A/V 伴生轨应写 sink");
+        reg.pause(AV);
+        assert!(!reg.audio_advance_all(10_000), "pause 后伴生轨冻结");
+        // 纯视频源：play 照常（无音频轨静默——不 panic 不误报）。
+        reg.register_source(SRC, fixture_bytes());
+        assert!(reg.play(SRC, 0));
+        assert!(
+            !reg.audio_advance_all(500) || reg.audio_advance_all(0),
+            "纯视频源无声轨写入"
+        );
     }
 }
 

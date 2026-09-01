@@ -28,6 +28,7 @@ mod audio;
 #[cfg(feature = "audio-cpal")]
 mod audio_cpalsink;
 mod audio_decode;
+mod av_decode;
 mod clock;
 mod decode;
 mod mixer;
@@ -40,6 +41,7 @@ pub use audio::*;
 #[cfg(feature = "audio-cpal")]
 pub use audio_cpalsink::*;
 pub use audio_decode::*;
+pub use av_decode::*;
 pub use clock::*;
 pub use decode::*;
 pub use mixer::*;

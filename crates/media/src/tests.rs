@@ -230,3 +230,74 @@ fn audio_non_audio_bytes_rejected() {
     let garbage = b"definitely not an audio container".to_vec();
     assert!(AudioDecoder::open(&garbage).is_err());
 }
+
+#[test]
+fn webm_av_vorbis_track_decode_chain() {
+    // M2 切片 D：webm 双轨（VP9 + Vorbis）的音频面全链——`open_webm_audio_track`
+    // demux A_VORBIS 轨 + CodecPrivate 三段头 → OGG 页重封装 → symphonia 解码
+    // f32 PCM → NullSink。锚点：44.1kHz 单声道 2s ≈ 88200 帧 + 440Hz 过零率 880
+    //（audio clock 主时钟的解码数据源，media-audio M2 契约）。
+    use crate::audio::{AudioFormat, AudioSink, NullSink};
+    use crate::av_decode::open_webm_audio_track;
+
+    let data = fs::read(fixture_path("sample-webm-vp9-vorbis.webm")).unwrap();
+    let mut track = open_webm_audio_track(&data).unwrap();
+    assert_eq!(track.sample_rate(), 44100);
+    assert_eq!(track.channels(), 1);
+
+    let mut sink = NullSink::new();
+    sink.start(AudioFormat {
+        sample_rate: track.sample_rate(),
+        channels: track.channels(),
+    })
+    .unwrap();
+    let mut batches = 0u32;
+    while let Some(batch) = track.next_batch().unwrap() {
+        sink.write(&batch.samples).unwrap();
+        batches += 1;
+        assert!(batches <= 500, "runaway batch count");
+    }
+    assert!(batches > 0, "音频轨应产出数据包");
+
+    let frames = sink.frames_written();
+    let expect = u64::from(track.sample_rate()) * 2;
+    assert!(
+        (frames as i64 - expect as i64).abs() < (expect as i64 / 20),
+        "webm vorbis 写入帧数应 ≈ 2s 采样数：got {frames}, expect ≈{expect}"
+    );
+    let zcr = sink.zero_crossings_per_second().expect("写入后应有过零率");
+    assert!((zcr - 880.0).abs() < 90.0, "440Hz sine 过零率应 ≈880，got {zcr}");
+}
+
+#[test]
+fn webm_av_video_track_still_decodes() {
+    // 同 fixture 的视频面不受音频轨影响——VP9 主链零回归（双轨 demux 选择面）。
+    let data = fs::read(fixture_path("sample-webm-vp9-vorbis.webm")).unwrap();
+    let mut dec = VideoDecoder::open_webm_vp9(&data).unwrap();
+    let f0 = dec.next_frame().unwrap().expect("双轨 webm 的 VP9 轨应可解");
+    assert_eq!((f0.width, f0.height), (320, 240));
+    let mut count = 1u32;
+    let mut last = f0.pts_ms;
+    while let Some(frame) = dec.next_frame().unwrap() {
+        assert!(frame.pts_ms >= last, "PTS 单调性");
+        last = frame.pts_ms;
+        count += 1;
+        assert!(count <= 100, "runaway frame count");
+    }
+    assert_eq!(count, 48, "双轨 fixture 视频轨仍 48 帧 @ 24fps");
+}
+
+#[test]
+fn webm_av_audio_track_absent_rejected() {
+    // 纯视频 webm（无音频轨）→ open_webm_audio_track 报 NoTrack（feature-detect 面）。
+    use crate::av_decode::open_webm_audio_track;
+    let data = fs::read(fixture_path("sample-webm-vp9.webm")).unwrap();
+    let err = match open_webm_audio_track(&data) {
+        Err(e) => e,
+        Ok(_) => panic!("无音频轨的 webm 应构建失败"),
+    };
+    assert!(
+        matches!(err, crate::audio_decode::AudioDecodeError::NoTrack),
+        "无音频轨应报 NoTrack"
+    );
+}
