@@ -1302,6 +1302,32 @@ impl LayoutEngine {
             })
         });
         let is_sticky = computed.is_some_and(|s| matches!(s.position, PositionValue::Sticky));
+        // R3902（CSS Containment §3.1/§4.1）：contain:layout/paint（content/strict 含之）
+        // 使元素成为 absolute/fixed 后代的包含块，与 positioned 祖先同等进入 abspos CB 链。
+        let is_abspos_cb = computed.is_some_and(|s| {
+            !matches!(s.position, PositionValue::Static)
+                || ((s.contain.has_layout() || s.contain.has_paint())
+                    && !matches!(
+                        s.display,
+                        // CSS Contain §3.1：containment 不适用于 table **内部非原子**盒
+                        //（row/row-group/header/footer-group/column/column-group）。
+                        // 原子例外 table-cell/table-caption **适用**（chromium 同此，
+                        // contain-layout-013/014）。driving: contain-layout-009（row-group
+                        // + contain:layout，abspos 仍相对外层 positioned 祖先）。
+                        DisplayValue::TableRow
+                            | DisplayValue::TableColumn
+                            | DisplayValue::TableColumnGroup
+                            | DisplayValue::TableRowGroup
+                            | DisplayValue::TableHeaderGroup
+                            | DisplayValue::TableFooterGroup
+                    )
+                    // CSS Contain §4.1：paint/layout containment 不适用于非原子 inline
+                    //（span 等 display:inline 不建 CB）。driving: contain-paint-011/024。
+                    && !matches!(
+                        s.display,
+                        DisplayValue::Inline | DisplayValue::Contents | DisplayValue::None
+                    ))
+        });
         let float = computed.map_or(FloatValue::None, |s| {
             // CSS Logical §float-clear：`inline-start`/`inline-end` 按元素 direction（继承自
             // containing block）解析为物理 left/right（LTR: start=left,end=right；RTL 反之）。
@@ -1598,6 +1624,7 @@ impl LayoutEngine {
             fixed_x_insets_all_auto,
             fixed_y_insets_all_auto,
             is_sticky,
+            is_abspos_cb,
             float,
             clear,
             overflow_x,

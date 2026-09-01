@@ -136,6 +136,14 @@ pub struct LayoutBox {
     pub fixed_y_insets_all_auto: bool,
     /// 是否为 sticky 定位（需宿主层在滚动时动态调整偏移）。
     pub is_sticky: bool,
+    /// 是否为 abspos/fixed 后代的 containing block（R3902）。
+    ///
+    /// CSS Containment §3.1：`contain: layout` 使元素成为 absolute/fixed 后代的包含块；
+    /// §4.1：`contain: paint` 同（`content`/`strict` 含之）。engine.rs 提取时 =
+    /// positioned（absolute/fixed/relative/sticky）|| contain.has_layout()。
+    /// abspos 重定位线程（abspos.rs）按本旗标更新 CB 链——此前仅 positioned 祖先算 CB，
+    /// contain:layout 中间的 static 盒被跳过（contain-layout-006 绿块逃逸到视口 CB）。
+    pub is_abspos_cb: bool,
     /// Float 方向（None 表示非浮动元素）。
     pub float: FloatValue,
     /// Clear 方向（清除哪一侧的浮动元素）。
@@ -499,6 +507,7 @@ impl Default for LayoutBox {
             fixed_x_insets_all_auto: false,
             fixed_y_insets_all_auto: false,
             is_sticky: false,
+            is_abspos_cb: false,
             float: FloatValue::None,
             clear: ClearValue::None,
             overflow_x: OverflowClip::Visible,
