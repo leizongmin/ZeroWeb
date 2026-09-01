@@ -2227,7 +2227,8 @@ mod tests {
             assert!(reg.audio_play(audio_url, 0), "audio settle 后音频 play 成功");
             assert!(reg.audio_is_playing(audio_url));
         }
-        // 非 symphonia 面内音频（oga-opus）：不登记 → play false（回落 headless）。
+        // opus（非 symphonia 面内）：M2c opus 接线后经 opus-decoder 纯 Rust 面登记
+        // → settle 后 play 可达（泵推进写 sink）。
         let opus = media_fixture_bytes("sample-ogg-opus.oga");
         let html = r#"<html><body><audio src="song.oga"></audio></body></html>"#;
         let mut load = AsyncPageLoad::from_html("https://example.com/media/", html.to_string());
@@ -2238,8 +2239,9 @@ mod tests {
         let registry = wv.video_players();
         let mut reg = registry.lock().unwrap_or_else(|e| e.into_inner());
         assert!(
-            !reg.audio_play("https://example.com/media/song.oga", 0),
-            "opus 不在面内，不登记（headless 回落）"
+            reg.audio_play("https://example.com/media/song.oga", 0),
+            "opus 纯 Rust 面登记成功（settle → 桥 play 可达）"
         );
+        assert!(reg.audio_advance_all(500), "opus 泵推进应写 sink");
     }
 }

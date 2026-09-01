@@ -301,3 +301,50 @@ fn webm_av_audio_track_absent_rejected() {
         "无音频轨应报 NoTrack"
     );
 }
+
+#[test]
+fn audio_ogg_opus_decode_chain() {
+    // M2c opus 面：`opus-decoder` 纯 Rust 解码链全通——symphonia ogg reader 容器
+    // demux（OpusHead 声道/pre-skip 解析 + OpusTags 跳过）→ opus 位流逐包 f32 PCM。
+    // 锚点：fixture 440Hz sine 单声道 2s @48kHz ≈ 96000 帧 + 过零率 ≈880（2×频率，
+    // NullSink 可观测契约——与 mp3/vorbis 链同款断言面）。
+    use crate::audio::{AudioFormat, AudioSink, NullSink};
+    use crate::opus_decode::open_ogg_opus;
+
+    let data = fs::read(fixture_path("sample-ogg-opus.oga")).unwrap();
+    let mut track = open_ogg_opus(&data).unwrap();
+    assert_eq!(track.sample_rate(), 48_000, "Opus 规范输出率 48kHz");
+    assert_eq!(track.channels(), 1);
+
+    let mut sink = NullSink::new();
+    sink.start(AudioFormat {
+        sample_rate: track.sample_rate(),
+        channels: track.channels(),
+    })
+    .unwrap();
+    let mut batches = 0u32;
+    while let Some(batch) = track.next_batch().unwrap() {
+        assert_eq!(batch.sample_rate, 48_000);
+        sink.write(&batch.samples).unwrap();
+        batches += 1;
+        assert!(batches <= 500, "runaway batch count");
+    }
+    assert!(batches > 0, "opus 轨应产出数据包");
+
+    let frames = sink.frames_written();
+    let expect = 48_000u64 * 2;
+    assert!(
+        (frames as i64 - expect as i64).abs() < (expect as i64 / 20),
+        "opus 写入帧数应 ≈2s 采样数：got {frames}, expect ≈{expect}"
+    );
+    let zcr = sink.zero_crossings_per_second().expect("写入后应有过零率");
+    assert!((zcr - 880.0).abs() < 90.0, "440Hz sine 过零率应 ≈880，got {zcr}");
+}
+
+#[test]
+fn audio_ogg_opus_garbage_rejected() {
+    // 非 Ogg Opus 字节 → open_ogg_opus 报错（probe 面）。
+    use crate::opus_decode::open_ogg_opus;
+    let garbage = b"definitely not an opus container".to_vec();
+    assert!(open_ogg_opus(&garbage).is_err());
+}

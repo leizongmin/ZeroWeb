@@ -2,11 +2,11 @@
 
 **入口文档**: [../media-playback.md](../media-playback.md)
 **创建日期**: 2026-08-17（goal 拆分 bootstrap）
-**最后更新**: 2026-09-01（**M2 切片 D+E 落地**——A/V 同步（audio clock 主时钟）：
-切片 D = webm 双轨（VP9+Vorbis）伴生音频面（`open_webm_audio_track` OGG 页重封装 →
-symphonia 解码 + registry 伴生起播/泵推进/增益联动）；切片 E = 视频帧调度对齐音频
-游标（`sync_to_media_time` drift 构造校正）+ seek 双轨对齐 + currentTime 组合时钟。
-media 36+1 / webview 677 / engine 2546 全绿）
+**最后更新**: 2026-09-01（**M2c opus 面落地**——`opus-decoder 0.1.1` 纯 Rust
+（RFC 6716/8251，零 unsafe 零 FFI，MIT OR Apache-2.0）补齐 symphonia 0.6 缺位：
+`opus_decode::open_ogg_opus`（symphonia ogg reader 容器 demux + OpusHead extra_data
+解析 + pre-skip 丢弃）→ registry 双面回落登记（symphonia → opus）。`sample-ogg-opus
+.oga` 从「不登记回落」转正为可播面。media 38+1 / webview 677 / engine 2546 全绿）
 
 ---
 
@@ -189,7 +189,10 @@ engine 2539 / media 27 / webview 668 全绿；testharness-media 372P/0F/41PF 维
 - ✅ crate 生态调研数据：symphonia 0.6（纯 Rust 容器+音频）/ dav1d 0.11（AV1 绑定）/
   openh264 0.9 / ffmpeg-next 9.0 / rav1e 0.8（crates.io 实测版本）；M1a 实测补充——
   `rusty_vp9 0.1.1`（纯 Rust VP9，Apache-2.0，MSRV 1.85）首帧与 ffmpeg 逐字节一致，
-  `matroska-demuxer 0.8.1`（Zlib OR MIT OR Apache-2.0）API 干净（双许可证均兼容工作区 MIT）
+  `matroska-demuxer 0.8.1`（Zlib OR MIT OR Apache-2.0）API 干净（双许可证均兼容工作区 MIT）；
+  M2c opus 面实测补充——`opus-decoder 0.1.1`（纯 Rust RFC 6716/8251 decoder，零 unsafe
+  零 FFI，仅依赖 thiserror，MIT OR Apache-2.0，MSRV 1.85，conformance 测试常驻）入
+  workspace 依赖
 - ✅ **生产侧帧注入 + 播放桥（M2a 切片 4/5 + M2c 后续 A/B）**：settle 首帧注入
   ImageCache + 源字节登记；`VideoPlayerRegistry` + `__zwVideoBridge` 宿主桥 +
   tab_worker 帧泵（切片 5a/5b）；settle 登记生产链路补全 + renderer 多进程路径
@@ -239,8 +242,10 @@ engine 2539 / media 27 / webview 668 全绿；testharness-media 372P/0F/41PF 维
 2. **A/V 同步精化余项**：音频设备面（media-audio M1 切片 CpalSink 真出声——
    NullSink 可观测断言已常驻）；A/V pair 流末同步 ended（当前音频先尽即停泵，
    视频独立走 ended——组合 ended 事件归语义层）。
-3. **opus 解码选型注记**：symphonia 0.6 无 opus（纯 Rust 面缺位）——后续评估
-   （对称面： webinar/opusic 等 pure-Rust crate 成熟度，或维持 mp3+vorbis 面）。
+3. ~~**opus 解码选型注记**~~ ✅ 2026-09-01 落地（`opus-decoder 0.1.1` 纯 Rust 面——
+   评估结论：libopus 绑定族全部违反路线 C；pure-Rust 候选对比后选 opus-decoder
+  （RFC 8251 conformant + conformance 常驻 + 零依赖）；音频输出格式面收口为
+   mp3 + vorbis + opus 三编解码）。
 
 ## 里程碑状态
 

@@ -16,6 +16,7 @@ audio-cpal = ["dep:cpal"]
 [dependencies]
 cpal = { workspace = true, optional = true }
 symphonia = { workspace = true }
+opus-decoder = { workspace = true }
 tracing = { workspace = true }
 matroska-demuxer = { workspace = true }
 rusty_vp9 = { workspace = true }

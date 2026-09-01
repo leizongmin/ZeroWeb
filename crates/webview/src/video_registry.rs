@@ -10,10 +10,41 @@
 use std::collections::HashMap;
 use zero_engine::image_resource_key;
 use zero_media::{
-    AudioDecoder, AudioFormat, AudioSink, NullSink, VideoClock, VideoDecoder, VideoPlayer, WebmAudioTrack,
-    open_webm_audio_track,
+    AudioDecoder, AudioFormat, AudioSink, NullSink, OpusAudioTrack, VideoClock, VideoDecoder, VideoPlayer,
+    WebmAudioTrack, open_ogg_opus, open_webm_audio_track,
 };
+
 use zero_render_foundation::image_cache::{ImageCache, ImageData, ImageKey};
+
+/// 音频解码流源 — symphonia 面（mp3/vorbis）与 opus 面（opus-decoder）的统一契约
+/// （M2c opus 接线：`sample_rate`/`channels`/`next_batch` 透传；单测面在 zero-media）。
+enum AudioStreamDecoder {
+    Symphonia(AudioDecoder),
+    Opus(Box<OpusAudioTrack>),
+}
+
+impl AudioStreamDecoder {
+    fn sample_rate(&self) -> u32 {
+        match self {
+            Self::Symphonia(d) => d.sample_rate(),
+            Self::Opus(t) => t.sample_rate(),
+        }
+    }
+
+    fn channels(&self) -> u16 {
+        match self {
+            Self::Symphonia(d) => d.channels(),
+            Self::Opus(t) => t.channels(),
+        }
+    }
+
+    fn next_batch(&mut self) -> Result<Option<zero_media::DecodedAudio>, zero_media::AudioDecodeError> {
+        match self {
+            Self::Symphonia(d) => d.next_batch(),
+            Self::Opus(t) => t.next_batch(),
+        }
+    }
+}
 
 /// 音频播放条目 — 解码器 + NullSink（可观测）+ 增益（M2c 后续：播放管线接 sink）。
 ///
@@ -22,7 +53,7 @@ use zero_render_foundation::image_cache::{ImageCache, ImageData, ImageKey};
 /// 预解）。增益对齐 media-elements IDL 面：`muted` → 0 增益、`volume` [0,1] 乘法
 /// （muted/volume setter 桥推与 play 起播同步，切片 5b 同款）。
 struct AudioEntry {
-    decoder: AudioDecoder,
+    decoder: AudioStreamDecoder,
     sink: NullSink,
     /// 播放中（时钟推进门）。
     playing: bool,
@@ -38,7 +69,7 @@ struct AudioEntry {
 }
 
 impl AudioEntry {
-    fn new(decoder: AudioDecoder) -> Self {
+    fn new(decoder: AudioStreamDecoder) -> Self {
         let (rate, channels) = (decoder.sample_rate(), decoder.channels());
         let mut sink = NullSink::new();
         let _ = sink.start(AudioFormat {
@@ -208,18 +239,22 @@ impl VideoPlayerRegistry {
     /// settle 时登记音频源（`<audio>` settle 面；解码器立即构建——音频探测轻量）。
     pub fn register_audio_source(&mut self, abs_src: &str, bytes: Vec<u8>) {
         let key = image_resource_key(abs_src, None);
-        match AudioDecoder::open(&bytes) {
-            Ok(decoder) => {
-                // seek 重建解码器需要源字节——留存（与 video sources 面同键共享）。
-                self.sources.insert(key, bytes);
-                self.audio_entries.insert(key, AudioEntry::new(decoder));
-            }
-            // 非 symphonia 面内格式（oga-opus 等）：不登记——shim 桥 play 返 false
-            // 回落 headless（与 video 非 webm 面同策略）。
-            Err(_) => {
-                self.audio_entries.remove(&key);
-            }
-        }
+        let decoder = match AudioDecoder::open(&bytes) {
+            Ok(d) => AudioStreamDecoder::Symphonia(d),
+            // symphonia 面外（oga-opus 等）→ opus 纯 Rust 面（M2c opus 接线）。
+            Err(_) => match open_ogg_opus(&bytes) {
+                Ok(t) => AudioStreamDecoder::Opus(Box::new(t)),
+                // 两面皆不识别：不登记——shim 桥 play 返 false 回落 headless
+                // （与 video 非 webm 面同策略）。
+                Err(_) => {
+                    self.audio_entries.remove(&key);
+                    return;
+                }
+            },
+        };
+        // seek 重建解码器需要源字节——留存（与 video sources 面同键共享）。
+        self.sources.insert(key, bytes);
+        self.audio_entries.insert(key, AudioEntry::new(decoder));
     }
 
     /// 释放全部资源（导航离开——DC-4：player/音频解码器/源字节不跨文档泄漏）。
@@ -270,9 +305,15 @@ impl VideoPlayerRegistry {
             return false;
         };
         // 解码器重建需要源字节——register_audio_source 留存于 sources（同键共享）。
-        if let Some(bytes) = self.sources.get(&key)
-            && let Ok(decoder) = AudioDecoder::open(bytes)
-        {
+        // 双面回落序与登记同：先 symphonia，面外再 opus（oga-opus seek 重建面）。
+        if let Some(bytes) = self.sources.get(&key) {
+            let decoder = match AudioDecoder::open(bytes) {
+                Ok(d) => AudioStreamDecoder::Symphonia(d),
+                Err(_) => match open_ogg_opus(bytes) {
+                    Ok(t) => AudioStreamDecoder::Opus(Box::new(t)),
+                    Err(_) => return false,
+                },
+            };
             let (rate, channels) = (decoder.sample_rate(), decoder.channels());
             entry.decoder = decoder;
             let _ = entry.sink.start(AudioFormat {
@@ -998,16 +1039,19 @@ mod audio_tests {
         );
     }
 
-    /// opus（非 symphonia 面）登记失败 → 不入注册表（桥 play 返 false 回落 headless）。
+    /// opus 面（M2c opus 接线）：oga-opus 经 opus 纯 Rust 面登记成功 → play 可达
+    /// （opus-decoder 解码链；负例移至 garbage 面在 zero-media 单测）。
     #[test]
-    fn audio_opus_source_not_registered() {
+    fn audio_opus_source_registered_and_plays() {
         let mut reg = VideoPlayerRegistry::new();
         let opus = fixture_bytes("sample-ogg-opus.oga");
         reg.register_audio_source("https://example.com/media/song.oga", opus);
         assert!(
-            !reg.audio_play("https://example.com/media/song.oga", 0),
-            "opus 不在 symphonia 面内，登记应失败"
+            reg.audio_play("https://example.com/media/song.oga", 0),
+            "opus 纯 Rust 面登记成功，play 应可达"
         );
+        // 实时节奏推进写 sink（440Hz sine）。
+        assert!(reg.audio_advance_all(500), "opus 泵推进应写 sink");
     }
 
     /// 非音频字节拒收。

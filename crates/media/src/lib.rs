@@ -32,6 +32,7 @@ mod av_decode;
 mod clock;
 mod decode;
 mod mixer;
+mod opus_decode;
 mod player;
 
 #[cfg(test)]
@@ -45,4 +46,5 @@ pub use av_decode::*;
 pub use clock::*;
 pub use decode::*;
 pub use mixer::*;
+pub use opus_decode::*;
 pub use player::*;

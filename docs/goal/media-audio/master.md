@@ -63,8 +63,10 @@ volume/muted 真控制。**双重启动门控均已解除**：① M0 音频环�
   seek 追赶区静默（skip_until_ms 丢弃线）；导航离开 `clear()` 释放（DC-4）；
   tabworker/renderer 双路径对齐（SetVideoPlayers 注入）。e2e 三面常驻
   （webm video / mp3 audio / oga-opus 不登记负例）
-- ⚠️ opus 解码不在面内（symphonia 0.6 无 opus——libopus 为 C 依赖，违反路线 C）；
-  `sample-ogg-opus.oga` 留待后续选型
+- ✅ opus 解码面（2026-09-01 M2c opus 接线落地，跨 goal：media-playback 流）——
+  `opus-decoder 0.1.1` 纯 Rust（RFC 6716/8251，零 unsafe 零 FFI）补齐 symphonia 缺位；
+  `zero-media::opus_decode::open_ogg_opus`（symphonia ogg 容器 + OpusHead 解析 +
+  pre-skip 丢弃）；`sample-ogg-opus.oga` 转正可播（registry 双面回落登记 + 泵推进）
 - ⚠️ 重采样/混音接线未实施——播放管线把解码帧喂 Mixer 的宿主侧接线待做
 - ✅ 选型已对齐（media-playback RFC 获批：路线 C，symphonia 音频解码面归 M2c）
 - ✅ 音频 e2e 资产：`tests/fixtures/media/`（sample-mp3.mp3 / sample-ogg-opus.oga，
