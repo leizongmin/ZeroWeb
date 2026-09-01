@@ -239,9 +239,9 @@ engine 2539 / media 27 / webview 668 全绿；testharness-media 372P/0F/41PF 维
 
 1. **M3 多格式收尾**（当前首选）：AV1（dav1d 绑定，D-RFC-2）与 H.264 立项
    （D-RFC-3）；上游 WPT 可执行子集导入。
-2. **A/V 同步精化余项**：音频设备面（media-audio M1 切片 CpalSink 真出声——
-   NullSink 可观测断言已常驻）；A/V pair 流末同步 ended（当前音频先尽即停泵，
-   视频独立走 ended——组合 ended 事件归语义层）。
+2. ~~**A/V 同步精化余项**~~ ✅ 2026-09-01 收口：ended 面回归守卫落地
+   （切片 F——伴音流末 video player 走到 Ended、泵停）；音频设备面（CpalSink
+   真出声）挂 media-audio M1 可选切片。
 3. ~~**opus 解码选型注记**~~ ✅ 2026-09-01 落地（`opus-decoder 0.1.1` 纯 Rust 面——
    评估结论：libopus 绑定族全部违反路线 C；pure-Rust 候选对比后选 opus-decoder
   （RFC 8251 conformant + conformance 常驻 + 零依赖）；音频输出格式面收口为
