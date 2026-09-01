@@ -2,10 +2,10 @@
 
 **入口文档**: [../media-elements.md](../media-elements.md)
 **创建日期**: 2026-08-17（goal 拆分 bootstrap）
-**最后更新**: 2026-09-01（M3 扩批 VIII 落地——**about: src 资源选择失败路径 +
-play() promise 单 task settle（定时器竞态修复）**；导入
-video_crash_empty_src.html（2 subtest）；**389P/0F/0T/27PF（389/416 = 93.5%）**
-四连跑稳定）
+**最后更新**: 2026-09-01（M3 扩批 IX 落地——**pause-on-removal adopt/move 守卫**：
+appendChild 移动（同文档/adopt）不触发移除暂停（`_zwIsRemovedNode` tick 检查）；
+导入 pause-move-within-document.html；pause-move-to-other-document 决策不导入
+（iframe adopt 面未实施——fetch 脚本注记）；**390P/0F/0T/27PF（390/417 = 93.5%）**）
 
 ---
 
@@ -136,6 +136,15 @@ already-playing resolved 断言。**88.3%**（324P/0F/2T/41PF，+80 subtest 全�
   **教训**：全量跑与 FILTER 跑不一致 = 定时器竞态信号，不是用例间状态泄漏。
 - **389P/0F/0T/27PF（389/416 = 93.5%）四连跑稳定**；engine 2544 全绿。
 
+**M3 扩批 IX 已落地（2026-09-01，adopt/move 守卫）**：
+- pause-on-removal hook tick1 增 `_zwIsRemovedNode` 检查——被 appendChild 移动
+  （adopt）的元素仍 related → 不置停不派 pause（spec「pause on removal」限定
+  移除文档面）。导入 pause-move-within-document.html（Pass）。
+- **决策注记**：pause-move-to-other-document 不导入——跨 iframe 文档 adopt 在
+  shim 融合视图下 appendChild 静默落空（元素保持 detached → 暂停语义正确但
+  用例期望不暂停），实施需 iframe 文档 adopt 面（深结构，待用户点名方向）。
+- **390P/0F/0T/27PF（390/417 = 93.5%）**；engine 2546 全绿。
+
 **M3 扩批 VI 已落地（2026-09-01，preload setter 补缺 + sweep 巡检收口）**：
 - `preload` IDL setter：enumerated 反射（写 preload 内容属性原样值——invalid 原样写、
   getter 归一 'metadata' 分离面；DOMString 非 nullable，null→'null' 串）。旧无 setter
@@ -201,10 +210,12 @@ MEDIA_TEST_FILES + evidence JSON 序列）——两通道并行为 CLAUDE.md 测
 
 ## 下一步计划
 
-1. **扩大导入面（下一轮首选）**：the-video-element 反射面（video_crash_empty_src
-   的 error 事件面 / video_initially_paused reftest 面——后者依赖真解码，视兄弟目标
-   进度）+ playing-the-media-resource 剩余面（pause-move-to-other-document /
-   play-in-detached-document 的 document 移动语义）→ 扩大基线盘子。
+1. **扩大导入面（余面收口）**：playing-the-media-resource 剩余
+  （play-in-detached-document——需 detached 文档播放时钟推进，依赖兄弟目标
+   media-playback 播放钟接语义层；loop-from-ended.tentative / fragmented-mp4-end
+   同域）；the-video-element 反射余面（video-loading-* preload 语义族——视
+   lazy-loading 支撑面）。**headless 可导入面已吃尽（93.5%）**——后续增量依赖
+   兄弟目标解锁（media-playback 解码/时钟真值化 → 真播放推进面用例）。
 2. ~~**M4g-d**：canPlayType 能力表联动更新~~ ✅ 2026-09-01 兑现（能力表真值化——
    后续新增解码面（AV1/H.264，media-playback M3）时同步扩表）。
 
