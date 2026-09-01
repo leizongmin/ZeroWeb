@@ -1345,6 +1345,9 @@ pub const MEDIA_TEST_FILES: &[&str] = &[
     "html/semantics/embedded-content/media-elements/playing-the-media-resource/playbackRate.html",
     // M3 扩批 VII：移除文档暂停面（spec「media elements pause on removal」）。
     "html/semantics/embedded-content/media-elements/playing-the-media-resource/pause-remove-from-document.html",
+    // M3 扩批 IX：移动面（同文档移动仍 related → 不暂停）。
+    // pause-move-to-other-document 不导入——iframe adopt 面未实施（fetch 脚本注记）。
+    "html/semantics/embedded-content/media-elements/playing-the-media-resource/pause-move-within-document.html",
     "html/semantics/embedded-content/media-elements/preload_reflects_none_autoplay.html",
     "html/semantics/embedded-content/media-elements/readyState_during_canplay.html",
     "html/semantics/embedded-content/media-elements/readyState_during_canplaythrough.html",

@@ -4509,7 +4509,13 @@
                     //（afterStableState 的 volumechange 回调内 `paused after stable
                     // state` 断言此时已真）；tick2 派 pause 事件（回调内挂的 onpause
                     // 仍能收到——「paused in pause event」断言面）。
+                    // spec「pause on removal」限定「移除文档」——**adopt/move**（被
+                    // appendChild 到其它父，含 iframe 文档）后元素仍 related → 不暂停
+                    //（pause-move-within/to-other-document 断言面）。tick1 检查
+                    // `_zwIsRemovedNode`：已重挂/被移动 → 不置停不派事件。
                     var _rmStop = function () {
+                      if (typeof _zwIsRemovedNode === 'function'
+                          && !_zwIsRemovedNode(child)) return;
                       var _smMs = _mediaState[_rmKey];
                       if (_smMs && _smMs.playing) _smMs.playing = false;
                     };
