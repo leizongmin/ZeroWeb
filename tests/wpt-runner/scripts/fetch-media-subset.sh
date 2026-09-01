@@ -125,6 +125,9 @@ TOP_FILES=(
   "paused_true_during_pause.html"
   "preload_reflects_none_autoplay.html"
   "playing-the-media-resource/playbackRate.html"
+  # M3 扩批 VII：移除文档暂停面（spec「media elements pause on removal」——
+  # 同步 paused 面保持 + stable state 后 pause 事件 + 重插不续播）。
+  "playing-the-media-resource/pause-remove-from-document.html"
   "offsets-into-the-media-resource/duration.html"
   "offsets-into-the-media-resource/currentTime.html"
   "location-of-the-media-resource/currentSrc.html"

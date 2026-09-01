@@ -1341,6 +1341,8 @@ pub const MEDIA_TEST_FILES: &[&str] = &[
     "html/semantics/embedded-content/media-elements/paused_false_during_play.html",
     "html/semantics/embedded-content/media-elements/paused_true_during_pause.html",
     "html/semantics/embedded-content/media-elements/playing-the-media-resource/playbackRate.html",
+    // M3 扩批 VII：移除文档暂停面（spec「media elements pause on removal」）。
+    "html/semantics/embedded-content/media-elements/playing-the-media-resource/pause-remove-from-document.html",
     "html/semantics/embedded-content/media-elements/preload_reflects_none_autoplay.html",
     "html/semantics/embedded-content/media-elements/readyState_during_canplay.html",
     "html/semantics/embedded-content/media-elements/readyState_during_canplaythrough.html",

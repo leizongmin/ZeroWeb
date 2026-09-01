@@ -11368,9 +11368,19 @@
                 }
               } catch (_eVbP) {}
             }
-            _dispatchWithBubble(_pKey, sel, handle, _makeEvent('play', { bubbles: false, cancelable: false }));
-            _dispatchWithBubble(_pKey, sel, handle, _makeEvent('playing', { bubbles: false, cancelable: false }));
-            _dispatchWithBubble(_pKey, sel, handle, _makeEvent('timeupdate', { bubbles: false, cancelable: false }));
+            // media-elements M3 扩批 VII：play/playing/timeupdate 走 queued task
+            //（spec dom-media-play：「queue a media element task to fire play/
+            // playing」）——**异步**派发，play() 返回后注册的 onplaying/listener
+            // 仍能收到（pause-remove-from-document 的 v.onplaying 在 play() 之后
+            // 挂；同步派发致 handler 错过 → pending 挂起）。paused 状态同步翻转
+            // （spec dom-media-paused）。无 setTimeout 环境（纯同步沙箱）回落同步。
+            var _pf = function () {
+              _dispatchWithBubble(_pKey, sel, handle, _makeEvent('play', { bubbles: false, cancelable: false }));
+              _dispatchWithBubble(_pKey, sel, handle, _makeEvent('playing', { bubbles: false, cancelable: false }));
+              _dispatchWithBubble(_pKey, sel, handle, _makeEvent('timeupdate', { bubbles: false, cancelable: false }));
+            };
+            if (typeof setTimeout === 'function') setTimeout(_pf, 0);
+            else _pf();
             var entry = null;
             var promise = new Promise(function (resolve, reject) {
               entry = { resolve: resolve, reject: reject };

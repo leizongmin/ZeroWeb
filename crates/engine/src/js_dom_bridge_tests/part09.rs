@@ -3600,3 +3600,104 @@ fn test_media_can_play_type_capability_table_m4gd() {
     assert_eq!(get("noSemis"), "maybe", "悬空分号 = 无 codecs → maybe");
     assert_eq!(get("agree"), "true", "audio/video canPlayType 一致（WPT 断言面）");
 }
+
+#[test]
+fn test_media_pause_on_removal_m3b7() {
+    // media-elements M3 扩批 VII（spec「media elements pause on removal」）：
+    // 播放中 media 元素移除文档 → 同步 paused 保持 false → stable state（异步）
+    // 后 paused=true + pause 事件；重插文档不自动续播。
+    // WPT playing-the-media-resource/pause-remove-from-document.html 断言面。
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new("<html><body><video></video></body></html>".to_string()));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("https://wpt.test/t.html".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+
+    // runner timer stub（同 r389 探针）。
+    sandbox.execute(
+        "globalThis.__zw_pending = {}; globalThis.__zw_timers = [];\
+         globalThis.__zw_setTimeout = function(id, delay) {\
+           globalThis.__zw_timers.push({ id: id, at: Date.now() + (delay | 0) }); };\
+         globalThis.__zw_fire_due_timers = function() {\
+           var now = Date.now(); var rest = [], due = [];\
+           var timers = globalThis.__zw_timers || [];\
+           for (var i = 0; i < timers.length; i++) {\
+             if (timers[i].at <= now) due.push(timers[i]); else rest.push(timers[i]); }\
+           globalThis.__zw_timers = rest;\
+           for (var j = 0; j < due.length; j++) {\
+             try { (due[j].id)(); } catch (_e) {} }\
+           return due.length; };\
+         globalThis.setTimeout = function(fn, delay) {\
+           var id = function() { fn(); };\
+           globalThis.__zw_setTimeout(id, delay || 0);\
+           return globalThis.__zw_timers.length; };",
+    ).unwrap();
+
+    sandbox.execute(
+        "var v = document.querySelector('video');\
+         globalThis.__log = [];\
+         v.onplaying = function () { globalThis.__log.push('playing:' + v.paused); };\
+         v.play();\
+         globalThis.__pausedSyncAfterPlay = v.paused;\
+         v.parentNode.removeChild(v);\
+         globalThis.__pausedSyncAfterRemove = v.paused;\
+         globalThis.__fireTimers = function () { return globalThis.__zw_fire_due_timers(); };",
+    ).unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__pausedSyncAfterPlay)").unwrap().value,
+        "false",
+        "play() 后 paused=false"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__pausedSyncAfterRemove)").unwrap().value,
+        "false",
+        "移除后同步 paused 仍 false（spec：异步转暂停）"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__log)").unwrap().value,
+        "",
+        "play() 同步返回时事件未派（queued task 面——defer 到 timer pump）"
+    );
+    // stable state：泵第一 tick——play/playing 事件先派 + paused 置真（removal stop 落地）；此时与
+    // 上游序一致：同 tick 的 afterStableState volumechange 回调里
+    // 「paused after stable state」断言可观测 true。
+    sandbox.execute("globalThis.__fireTimers();").unwrap();
+    assert_eq!(
+        sandbox.execute("String(v.paused)").unwrap().value,
+        "true",
+        "第一 tick 后 paused=true（removal stop 落地）"
+    );
+    // 模拟 afterStableState 回调时序：此刻挂 onpause（同 WPT 用例序），再泵
+    // 第二 tick——pause 事件到达且 handler 内 paused=true。
+    sandbox.execute(
+        "v.onpause = function () { globalThis.__log.push('pause:' + v.paused); };\
+         globalThis.__fireTimers();",
+    ).unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__log)").unwrap().value,
+        "playing:false,pause:true",
+        "第一 tick 派 play/playing（onplaying 捕获 paused=false）+ 第二 tick 派 pause"
+    );
+    // pause 事件只派一次（幂等）。
+    sandbox.execute("globalThis.__fireTimers();").unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__log)").unwrap().value,
+        "playing:false,pause:true",
+        "pause 事件不重复派发"
+    );
+    // 重插文档不自动续播（paused 保持 true）。
+    sandbox.execute("document.body.appendChild(v); globalThis.__fireTimers();").unwrap();
+    assert_eq!(
+        sandbox.execute("String(v.paused)").unwrap().value,
+        "true",
+        "重插后保持 paused（不自动续播）"
+    );
+}

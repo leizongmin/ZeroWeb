@@ -4492,6 +4492,46 @@
             // ① host Remove mutation（渲染侧最终应用）② sel 移除标记（parentNode/查询门
             // 同步读）③ childList record（MO/CE/live-collection 汇流）。
             if (child && child.__zwSelector && !child.__zwIsText) {
+              // media-elements M3 扩批 VII（spec「media elements pause on removal」）：
+              // 播放中的 media 元素被移除文档 → **异步**转暂停（同步 paused 面保持
+              // false——WPT pause-remove-from-document 断言「paused after removing」
+              // 仍 false；stable state 后 paused=true + pause 事件 + 重插不自动续播）。
+              // sel 路径（querySelector 产物）与 handle 路径双覆盖；载荷幂等。
+              // https://html.spec.whatwg.org/multipage/media.html#dom-media-paused
+              try {
+                var _rmTag = _realTag(child.__zwSelector, child.__zwHandle);
+                if (_rmTag === 'AUDIO' || _rmTag === 'VIDEO') {
+                  var _rmKey = _elKey(child.__zwSelector, child.__zwHandle);
+                  var _rmMs = _mediaState[_rmKey];
+                  if (_rmMs && _rmMs.playing) {
+                    // 两段 defer（与上游 Chromium 观察序一致——WPT
+                    // pause-remove-from-document 断言面）：tick1 置 paused=true
+                    //（afterStableState 的 volumechange 回调内 `paused after stable
+                    // state` 断言此时已真）；tick2 派 pause 事件（回调内挂的 onpause
+                    // 仍能收到——「paused in pause event」断言面）。
+                    var _rmStop = function () {
+                      var _smMs = _mediaState[_rmKey];
+                      if (_smMs && _smMs.playing) _smMs.playing = false;
+                    };
+                    var _rmFire = function () {
+                      var _fmMs = _mediaState[_rmKey];
+                      if (_fmMs && !_fmMs.playing && !_fmMs.removedPauseFired) {
+                        _fmMs.removedPauseFired = true;
+                        _mediaFireSel(child.__zwSelector, child.__zwHandle, _rmKey, 'pause');
+                      }
+                    };
+                    if (typeof setTimeout === 'function') {
+                      setTimeout(function () {
+                        _rmStop();
+                        setTimeout(_rmFire, 0);
+                      }, 0);
+                    } else {
+                      _rmStop();
+                      _rmFire();
+                    }
+                  }
+                }
+              } catch (_eMediaRm) {}
               if (globalThis._zwNotifyIteratorsRemove) {
                 try { globalThis._zwNotifyIteratorsRemove(child); } catch (_eR125i) {}
               }
