@@ -498,6 +498,76 @@ impl super::Painter {
         });
     }
 
+    /// 绘制 `<video>` 元素的当前帧（media-playback M1b 帧上屏通路）。
+    ///
+    /// R3268 canvas 同款两段式：painter 只按 `src` 的资源哈希发 [`ImagePrimitive`]；
+    /// 像素由调用方（reftest harness / 渲染线程）经 `zero-media` 解码后注入
+    /// `ImageCache`（key = `image_resource_key(src)`）。无解码像素时无图元——
+    /// 元素盒装饰（背景/边框）照常绘制，保持占位行为不变。
+    ///
+    /// https://html.spec.whatwg.org/multipage/media.html#the-video-element
+    /// （帧内容按 `object-fit` 适配容器，与 `<img>` 同一 replaced 元素语义）。
+    pub(crate) fn paint_video_element(
+        &mut self,
+        box_node: &LayoutBox,
+        abs_x: f32,
+        abs_y: f32,
+        style: &ComputedStyle,
+        doc: &Document,
+    ) {
+        let Some(node_id) = box_node.node_id else {
+            return;
+        };
+        let Some(node) = doc.get(node_id) else {
+            return;
+        };
+        let NodeKind::Element(elem) = &node.kind else {
+            return;
+        };
+        if elem.local_name() != "video" {
+            return;
+        }
+        let Some(src) = elem.get_attribute("src").filter(|s| !s.is_empty()) else {
+            return;
+        };
+        let url_hash = super::super::helpers::image_resource_key(&src, self.document_url.as_deref());
+        // 仅当调用方已注入解码像素（固有尺寸可用，canvas snapshot 同款 gate）时才
+        // 发图元——无解码像素时保持占位行为（元素盒装饰照常，零回归）。
+        let Some((decoded_w, decoded_h)) = self.get_image_size(url_hash) else {
+            return;
+        };
+        let container_w = box_node.content_width;
+        let container_h = box_node.content_height;
+        if container_w <= 0.0 || container_h <= 0.0 {
+            return;
+        }
+
+        let content_x = abs_x + box_node.border_left + box_node.padding_left;
+        let content_y = abs_y + box_node.border_top + box_node.padding_top;
+
+        let image_key = ImageKey::new(url_hash);
+        // 固有尺寸 = 解码首帧尺寸；退化（0 维）时回退容器尺寸（1:1 填充语义）。
+        let intrinsic_w = if decoded_w > 0.0 { decoded_w } else { container_w };
+        let intrinsic_h = if decoded_h > 0.0 { decoded_h } else { container_h };
+
+        let (img_x, img_y, img_w, img_h) = compute_object_fit_rect(
+            &style.object_fit,
+            &style.object_position,
+            container_w,
+            container_h,
+            intrinsic_w,
+            intrinsic_h,
+            content_x,
+            content_y,
+        );
+
+        self.primitives.add_image(ImagePrimitive {
+            rect: Rect::new(img_x, img_y, img_w, img_h),
+            image_key,
+            clip: Some(Rect::new(content_x, content_y, container_w, container_h)),
+        });
+    }
+
     /// 绘制文本内容（生成多字符 GlyphPrimitive）。
     pub fn paint_text(
         &mut self,

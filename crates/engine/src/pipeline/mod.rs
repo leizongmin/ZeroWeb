@@ -460,6 +460,19 @@ impl RenderPipeline {
             let h = Self::parse_nonnegative_int_attr(doc.get_attribute(canvas_id, "height")).unwrap_or(150.0);
             sizes.insert(canvas_id, (w, h));
         }
+        // media-playback M1b：video 固有尺寸 = 解码首帧尺寸（image_sizes 键 =
+        // image_resource_key(src)）。仅当调用方注入了解码尺寸时生效——生产侧尚未
+        // 接解码器时 map 为空，video 布局保持占位行为（零回归）。
+        // https://html.spec.whatwg.org/multipage/media.html#video-media-elements
+        //（videoWidth/videoHeight = 媒体资源的固有尺寸）。
+        for video_id in doc.get_elements_by_tag_name("video") {
+            if let Some(src) = doc.get_attribute(video_id, "src").filter(|s| !s.trim().is_empty()) {
+                let key = crate::paint::image_resource_key(&src, self.document_url.as_deref());
+                if let Some(&size) = self.image_sizes.get(&key) {
+                    sizes.insert(video_id, size);
+                }
+            }
+        }
         (sizes, ratios, no_ratio)
     }
 
@@ -3171,6 +3184,84 @@ mod canvas_display_tests {
         let html = r#"<html><body><canvas data-zw-canvas-ctx="1" width="2" height="2"></canvas></body></html>"#;
         let result = pipeline.render_html(html, "");
         assert!(result.canvas_images.is_empty(), "空白画布不应产出图元（无内容快照）");
+    }
+}
+
+#[cfg(test)]
+mod video_frame_display_tests {
+    use super::*;
+
+    /// media-playback M1b：`<video src>`（解码尺寸已注入）→ ImagePrimitive
+    ///（key = image_resource_key(src)）——canvas/img 同款两段式上屏通路。
+    #[test]
+    fn video_with_src_bridges_to_image_primitive() {
+        let mut pipeline = RenderPipeline::new(400.0, 300.0);
+        let src = "sample.webm";
+        let key = crate::paint::image_resource_key(src, None);
+        pipeline.set_image_sizes(std::iter::once((key, (320.0f32, 240.0f32))).collect());
+        let html = format!(r#"<html><body><video src="{src}" style="width:320px;height:240px"></video></body></html>"#);
+        let result = pipeline.render_html(&html, "");
+        let img = result
+            .display_list
+            .primitives
+            .images
+            .iter()
+            .find(|img| img.image_key.0 == key)
+            .expect("video 应产出 ImagePrimitive");
+        // 固有尺寸注入后按 1:1 绘制（320x240 内容区）。
+        assert!(
+            (img.rect.right() - img.rect.left() - 320.0).abs() < 0.5
+                && (img.rect.bottom() - img.rect.top() - 240.0).abs() < 0.5,
+            "video 帧应按固有尺寸绘制，got {:?}",
+            img.rect
+        );
+    }
+
+    /// 无解码像素（image_sizes 无该 key）→ 无图元——占位行为不变（零回归面）。
+    #[test]
+    fn video_without_decoded_pixels_produces_no_primitive() {
+        let mut pipeline = RenderPipeline::new(400.0, 300.0);
+        let html = r#"<html><body><video src="sample.webm" style="width:320px;height:240px"></video></body></html>"#;
+        let result = pipeline.render_html(html, "");
+        assert!(
+            result.display_list.primitives.images.is_empty(),
+            "无解码像素时不应产出 video ImagePrimitive"
+        );
+    }
+
+    /// 无 src → 无图元（video 元素无资源可绘）。
+    #[test]
+    fn video_without_src_produces_no_primitive() {
+        let mut pipeline = RenderPipeline::new(400.0, 300.0);
+        let html = r#"<html><body><video style="width:320px;height:240px"></video></body></html>"#;
+        let result = pipeline.render_html(html, "");
+        assert!(result.display_list.primitives.images.is_empty(), "无 src 不应产出图元");
+    }
+
+    /// M1b 布局面：解码尺寸注入后 video 进 intrinsic sizes（build_img_intrinsic_all
+    /// video 段）——auto 尺寸 video 的布局盒应取得固有尺寸而非占位 300x150。
+    #[test]
+    fn video_intrinsic_size_feeds_layout() {
+        let mut pipeline = RenderPipeline::new(400.0, 300.0);
+        let src = "sample.webm";
+        let key = crate::paint::image_resource_key(src, None);
+        pipeline.set_image_sizes(std::iter::once((key, (320.0f32, 240.0f32))).collect());
+        let html = format!(r#"<html><body><video src="{src}"></video></body></html>"#);
+        let result = pipeline.render_html(&html, "");
+        // 布局树中存在尺寸 320x240 的盒（video 元素盒，replaced sizing）。
+        fn walk(b: &zero_layout_engine::types::LayoutBox, out: &mut Vec<(f32, f32)>) {
+            out.push((b.content_width, b.content_height));
+            for c in &b.children {
+                walk(c, out);
+            }
+        }
+        let mut dims = Vec::new();
+        walk(&result.layout.root, &mut dims);
+        assert!(
+            dims.iter()
+                .any(|&(w, h)| (w - 320.0).abs() < 0.5 && (h - 240.0).abs() < 0.5),
+            "video 盒应取得解码固有尺寸 320x240，got {dims:?}"
+        );
     }
 }
 

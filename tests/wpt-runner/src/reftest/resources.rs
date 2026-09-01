@@ -38,6 +38,68 @@ fn extract_img_srcs(html: &str) -> Vec<String> {
     srcs
 }
 
+/// 从 HTML 中提取所有 `<video src="...">` 的 URL（media-playback M1b）。
+///
+/// 形态与 [`extract_img_srcs`] 相同（逐标签扫描 + 引号感知）；`src` 属性由
+/// `zero-media` 解码首帧后注入 ImageCache（key = `simple_hash(url)`，与 painter
+/// `image_resource_key` 一致）。仅扫 `<video>` 自身 src——`<source>` 子元素的
+/// 候选选择面归生产加载协调器，reftest e2e 面不涉及。
+fn extract_video_srcs(html: &str) -> Vec<String> {
+    let mut srcs = Vec::new();
+    let mut pos = 0;
+    while let Some(idx) = html[pos..].find("<video") {
+        let tag_start = pos + idx;
+        let Some(tag_end) = find_tag_end(&html[tag_start..]) else {
+            break;
+        };
+        let tag = &html[tag_start..tag_start + tag_end];
+        if let Some(src_start) = tag.find("src=\"").or_else(|| tag.find("src='")) {
+            let quote = &tag[src_start + 4..src_start + 5];
+            let value_start = src_start + 5;
+            if let Some(value_end) = tag[value_start..].find(quote) {
+                let src_value = &tag[value_start..value_start + value_end];
+                if !src_value.is_empty() {
+                    srcs.push(src_value.to_string());
+                }
+            }
+        }
+        pos = tag_start + tag_end + 1;
+    }
+    srcs
+}
+
+/// 加载 `<video src>` 资源首帧并注入缓存（media-playback M1b）。
+///
+/// webm/VP9（RFC 路线 C 首期面）经 `zero-media` 解码首帧 RGBA；解码成功时
+/// 写入 `ImageKey(simple_hash(url))`——painter 发的 `ImagePrimitive`
+///（image_resource_key 同键）在渲染侧取到像素，e2e 帧上屏。固有尺寸由
+/// `ImageData` 携带，`extract_image_metrics` 的 video 扩展面读取。
+/// 非 webm / 解码失败：静默跳过（无像素 → painter 无图元 → 占位行为）。
+fn load_video_first_frames(cache: &mut ImageCache, html: &str, base_dir: Option<&Path>) {
+    for url in extract_video_srcs(html) {
+        let Some(base) = base_dir else {
+            continue;
+        };
+        let decoded = percent_decode(url.as_bytes()).decode_utf8_lossy();
+        let path = base.join(decoded.trim_start_matches('/'));
+        let Ok(bytes) = std::fs::read(&path) else {
+            continue;
+        };
+        let mut decoder = match zero_media::VideoDecoder::open_webm_vp9(&bytes) {
+            Ok(d) => d,
+            // 非 webm/VP9（mp4 等选型后续面）——reftest e2e 当前仅覆盖 VP9 面。
+            Err(_) => continue,
+        };
+        let Ok(Some(frame)) = decoder.next_frame() else {
+            continue;
+        };
+        let Ok(data) = ImageData::from_rgba(frame.rgba, frame.width, frame.height) else {
+            continue;
+        };
+        cache.insert_with_key(ImageKey::new(simple_hash(&url)), data);
+    }
+}
+
 /// 找到 HTML 标签的真正结束位置（> 在引号外）。
 /// 返回 > 字符的偏移量（相对于起始位置）。
 fn find_tag_end(html: &str) -> Option<usize> {
@@ -639,6 +701,10 @@ pub(super) fn build_image_cache(html: &str, base_dir: Option<&Path>) -> ImageCac
         }
     }
 
+    // media-playback M1b：<video src> 首帧解码注入（固有尺寸由 ImageData 携带，
+    // extract_image_metrics 的 video 扩展面读取）。
+    load_video_first_frames(&mut cache, html, base_dir);
+
     cache
 }
 
@@ -772,6 +838,9 @@ pub(super) fn extract_image_metrics(
 
     let mut all_urls = extract_img_srcs(html);
     all_urls.extend(extract_css_urls(html));
+    // media-playback M1b：video 首帧固有尺寸（解码已写入 ImageCache）进 sizes——
+    // pipeline 据 (NodeId → size) 做 video replaced sizing。
+    all_urls.extend(extract_video_srcs(html));
     all_urls.sort_unstable();
     all_urls.dedup();
 

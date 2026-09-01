@@ -6776,6 +6776,7 @@ dependencies = [
  "zero-dom",
  "zero-engine",
  "zero-layout-engine",
+ "zero-media",
  "zero-net",
  "zero-page-runtime",
  "zero-render-foundation",

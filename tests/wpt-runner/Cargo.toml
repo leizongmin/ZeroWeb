@@ -22,6 +22,8 @@ zero-layout-engine = { workspace = true }
 zero-render-foundation = { workspace = true }
 zero-script-sandbox = { workspace = true }
 zero-webview = { workspace = true }
+# media-playback M1b：<video> 首帧解码注入 ImageCache（reftest e2e 通路）
+zero-media = { workspace = true }
 png = "0.17"
 rayon = "1"
 base64 = "0.22"

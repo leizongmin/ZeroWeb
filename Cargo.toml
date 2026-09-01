@@ -152,6 +152,7 @@ zero-style-system = { path = "crates/style-system" }
 zero-layout-engine = { path = "crates/layout-engine" }
 zero-engine = { path = "crates/engine", default-features = false }
 zero-canvas = { path = "crates/canvas" }
+zero-media = { path = "crates/media" }
 zero-render-foundation = { path = "crates/render-foundation" }
 zero-host-runtime = { path = "crates/host-runtime" }
 zero-net = { path = "crates/net" }

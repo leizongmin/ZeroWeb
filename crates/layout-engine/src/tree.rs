@@ -476,14 +476,16 @@ fn apply_replaced_element_sizing(
 
     // 处理 <img> 和 <canvas>：都是替换元素，HTML width/height 属性给出固有尺寸
     // （canvas 的 bitmap 大小）。R784：canvas 此前未处理→被当普通 block 拉伸填满父宽
-    // （aspect-ratio-intrinsic-size 簇 canvas 渲染 784px）。video/iframe 等暂无 driving
-    // reftest，不处理。
+    // （aspect-ratio-intrinsic-size 簇 canvas 渲染 784px）。
+    // media-playback M1b：+ <video>——解码首帧尺寸经 img_intrinsic_sizes 注入
+    //（NodeId → 解码 (w,h)，仅当解码像素已就位时非空；无解码时 map 无 entry，video
+    // 两侧 auto 落默认行为零回归）。iframe 等暂无 driving reftest，不处理。
     // 注：<svg> 替换元素 sizing（CSS §10.3.2 默认 300px）经实测对 driving reftest 0-effect
     // （inline-replaced-width 簇依赖 inline SVG 形状渲染，goal line 118 out of scope），暂不处理。
     // R1683：+ <embed>/<object>/<applet>（同为替换元素，HTML width/height 属性定 viewport 固有
     // 尺寸）。此前三者走早返回 → embed 渲成 784×0、object/applet 按 fallback 内容宽。仅当元素
     // 显式带 width/height 属性时应用（无属性回落原行为，避免默认 300×150 改动 ripple）。
-    if tag != "img" && tag != "canvas" && tag != "embed" && tag != "object" && tag != "applet" {
+    if tag != "img" && tag != "canvas" && tag != "video" && tag != "embed" && tag != "object" && tag != "applet" {
         return;
     }
 

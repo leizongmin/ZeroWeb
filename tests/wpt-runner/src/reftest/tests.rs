@@ -1758,3 +1758,77 @@ fn test_r988_background_root_render_after_mutation() {
         "101 head+body sibling selector must paint green canvas after head.class mutation (got {pct101}%) — sibling-selector or serializer regression"
     );
 }
+
+/// media-playback M1b（首帧上屏 e2e）：`<video src="...webm">` 经 zero-media 解码
+/// 首帧 → ImageCache（key=resource hash）→ painter ImagePrimitive → CPU 光栅化
+/// 像素上屏。断言真实文件像素（testsrc2 纹样首帧的 RGB 均值窗口，同
+/// zero-media 单测锚点）+ 320x240 固有尺寸 1:1 落位。
+#[test]
+fn m1b_video_first_frame_renders_to_framebuffer() {
+    let fixture =
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tests/fixtures/media/sample-webm-vp9.webm");
+    if !fixture.exists() {
+        eprintln!("[M1b] fixture missing, skipping video first-frame e2e");
+        return;
+    }
+    let base = fixture
+        .parent()
+        .and_then(std::path::Path::parent)
+        .map(std::path::Path::to_path_buf);
+    let base = base.as_deref();
+    let html = r#"<html><body style="margin:0"><video src="media/sample-webm-vp9.webm" style="width:320px;height:240px;display:block"></video></body></html>"#;
+    let cfg = ReftestConfig::default();
+    let fb = render_to_framebuffer_with_base(html, "", &cfg, base);
+
+    // 帧区（(0,0)-(320,240)）采样：testsrc2 纹样 RGB 均值 ≈153.5（zero-media 单测
+    // 实测锚点，窗口 ±15）。占位行为（无解码像素）下该区为白底 → 均值 ≈255。
+    let (mut sum, mut n) = (0u64, 0u64);
+    for y in (0..240).step_by(4) {
+        for x in (0..320).step_by(4) {
+            let i = ((y * fb.width as usize) + x) * 4;
+            if i + 2 < fb.data.len() {
+                sum += u64::from(fb.data[i]) + u64::from(fb.data[i + 1]) + u64::from(fb.data[i + 2]);
+                n += 1;
+            }
+        }
+    }
+    let mean = sum as f64 / (n.max(1) as f64 * 3.0);
+    assert!(
+        (138.0..=168.0).contains(&mean),
+        "video first frame should paint decoded pixels (RGB mean {mean:.1}, expect ~153.5); \
+         placeholder-white would be ~255 — decode/inject/primitive chain broken"
+    );
+
+    // 帧区外（y>250）应保持背景白——帧未越界绘制。
+    let i = ((260 * fb.width as usize) + 160) * 4;
+    if i + 2 < fb.data.len() {
+        assert_eq!(
+            [fb.data[i], fb.data[i + 1], fb.data[i + 2]],
+            [255, 255, 255],
+            "area below video box must stay background white"
+        );
+    }
+}
+
+/// M1b 负例对照：非 webm 的 src（解码失败）→ 无像素 → 占位（帧区白底）。
+/// 与正例共同锁定「像素来自真实解码」而非碰巧背景色。
+#[test]
+fn m1b_video_undecodable_src_stays_placeholder() {
+    let fixture = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tests/fixtures/media/sample-mp3.mp3");
+    if !fixture.exists() {
+        return;
+    }
+    let base = fixture
+        .parent()
+        .and_then(std::path::Path::parent)
+        .map(std::path::Path::to_path_buf);
+    let html = r#"<html><body style="margin:0"><video src="media/sample-mp3.mp3" style="width:320px;height:240px;display:block"></video></body></html>"#;
+    let cfg = ReftestConfig::default();
+    let fb = render_to_framebuffer_with_base(html, "", &cfg, base.as_deref());
+    let i = ((100 * fb.width as usize) + 160) * 4;
+    assert_eq!(
+        [fb.data[i], fb.data[i + 1], fb.data[i + 2]],
+        [255, 255, 255],
+        "non-webm src must not paint (placeholder stays white)"
+    );
+}

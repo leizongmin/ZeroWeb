@@ -1188,6 +1188,10 @@ impl Painter {
                     // ImagePrimitive → 渲染侧 ImageCache）
                     self.paint_canvas_element(box_node, abs_x, abs_y, doc);
 
+                    // 4b0b. <video> 当前帧绘制（media-playback M1b——解码像素 →
+                    // ImagePrimitive → 渲染侧 ImageCache，canvas/img 同款通路）
+                    self.paint_video_element(box_node, abs_x, abs_y, style, doc);
+
                     // 4b2. <input> value 文本绘制（submit/reset/button 标签 + text/password
                     // 预填值；R1660 form-control slice-2）。input 是 void 无文本子节点，value
                     // 属性须显式 paint（R1659 已给正确几何宽）。
