@@ -228,3 +228,6 @@ css/css-content/quotes-first-letter-002.html css/css-content/reference/quotes-fi
 css/css-content/quotes-first-letter-005.html css/css-content/reference/quotes-first-letter-002-ref.html == 2026-09-01 R3893 block 容器混合内容拆分宿主 paint_text 抑制（§9.2.1.1 ②）——同根因簇（siblings 变体）
 css/css-backgrounds/border-image-width-009.html css/css-backgrounds/reference/border-image-width-009-ref.html == 2026-09-02 R3906 border-width:0 不禁用 border-image（CSS B&B3 §6.1）
 css/css-backgrounds/background-clip/clip-border-area-solid.html css/css-backgrounds/background-clip/clip-border-area-solid-ref.html == 2026-09-02 R3908 background-clip:border-area 环带裁剪（css-backgrounds-4 §2.1）
+css/css-backgrounds/border-image-outset-003.html css/css-backgrounds/border-image-outset-003-ref.html == 2026-09-02 R3909 border-image gradient source 9-slice + 简写渐变 source 槽 + border-style 替换
+css/css-backgrounds/border-image-image-type-003.htm css/css-backgrounds/reference/border-image-image-type-003-ref.html == 2026-09-02 R3909 border-image gradient source 9-slice + 简写渐变 source 槽
+css/css-backgrounds/border-image-width-should-extend-to-padding.html css/css-backgrounds/border-image-width-should-extend-to-padding-ref.html == 2026-09-02 R3909 border-image gradient source（linear-gradient + 零边框 width 延伸）

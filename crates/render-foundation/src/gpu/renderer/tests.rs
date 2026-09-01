@@ -961,6 +961,7 @@ fn test_gpu_full_scene_gradient() {
             },
         ],
         repeating: false,
+        clip: None,
     });
     let font_loader = FontLoader::new();
     let mut glyph_cache = GlyphCache::new(64);

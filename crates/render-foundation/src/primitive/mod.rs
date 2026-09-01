@@ -241,6 +241,13 @@ pub struct GradientPrimitive {
     pub repeating: bool,
     /// 颜色插值配置（CSS Color 4 `in <colorspace>`）。默认 Srgb = 既有行为。
     pub interpolation: GradientInterpolation,
+    /// 可选裁剪窗口（R3909 border-image 渐变源 9-slice 切片）。
+    ///
+    /// 语义与 [`ImagePrimitive::clip`] 一致 = **裁剪（crop）非重缩放**：仅绘制 rect
+    /// 与此窗口的交集，但渐变参数（kind 坐标、色标 t 值）仍按完整 rect 定义——
+    /// 渐变无固有尺寸，切片窗口不改变渐变的绝对坐标定义。None = 无裁剪，
+    /// 绘制整个 rect（既有构造点零变更）。
+    pub clip: Option<Rect>,
 }
 
 /// 阴影图元

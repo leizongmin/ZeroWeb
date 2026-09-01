@@ -10,10 +10,22 @@ pub fn render_gradient(fb: &mut FrameBuffer, gradient: &GradientPrimitive, scale
         return;
     }
 
-    let left = (gradient.rect.left() * scale).floor().max(0.0) as u32;
-    let top = (gradient.rect.top() * scale).floor().max(0.0) as u32;
-    let right = (gradient.rect.right() * scale).ceil().min(fb.width as f32) as u32;
-    let bottom = (gradient.rect.bottom() * scale).ceil().min(fb.height as f32) as u32;
+    // R3909：clip 窗口 = crop 语义（与 render_image 的 clip 一致）——绘制区域收窄为
+    // rect ∩ clip，渐变参数（kind 坐标/t 值）仍按完整 rect 定义（渐变无固有尺寸，
+    // 窗口不改变绝对坐标）。
+    let visible = match &gradient.clip {
+        Some(c) => gradient.rect.intersection(c),
+        None => Some(gradient.rect),
+    };
+    let visible = match visible {
+        Some(r) if r.size.width > 0.0 && r.size.height > 0.0 => r,
+        _ => return,
+    };
+
+    let left = (visible.left() * scale).floor().max(0.0) as u32;
+    let top = (visible.top() * scale).floor().max(0.0) as u32;
+    let right = (visible.right() * scale).ceil().min(fb.width as f32) as u32;
+    let bottom = (visible.bottom() * scale).ceil().min(fb.height as f32) as u32;
 
     if left >= right || top >= bottom {
         return;

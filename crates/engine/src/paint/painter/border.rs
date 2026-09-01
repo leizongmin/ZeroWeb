@@ -295,9 +295,13 @@ impl super::Painter {
         let url = match &style.border_image_source {
             BorderImageSourceComputedValue::None => return,
             BorderImageSourceComputedValue::Url(u) => u.clone(),
-            // gradient border-image-source：getComputedStyle 序列化已支持（R2753），但 paint 层将
-            // 渐变采样为 9-slice 边框图属复杂渲染（暂未实现），暂不绘制（等同 none，不 panic）。
-            BorderImageSourceComputedValue::Gradient(_) => return,
+            // R3909：gradient 源按同款 9-slice 几何切分绘制（css-backgrounds-3 §6.1）。
+            // 渐变无固有尺寸——一次构造覆盖**整个 border-image 绘制区**（含 outset）的
+            // 基础图元，随后逐片以 clip 窗口发射（crop 语义，渐变绝对坐标定义不变）。
+            BorderImageSourceComputedValue::Gradient(gradient) => {
+                self.paint_border_image_gradient(box_node, abs_x, abs_y, style, gradient);
+                return;
+            }
         };
 
         let bt = box_node.border_top;
@@ -511,6 +515,155 @@ impl super::Painter {
                 bt, // 自然 tile 高度 = 上边框高度
                 v_mode,
             );
+        }
+    }
+
+    /// R3909：gradient border-image-source 的 9-slice 绘制（css-backgrounds-3 §6.1）。
+    ///
+    /// 渐变无固有尺寸——slice 参照源图的语义对渐变退化为「源 = 绘制区本身」，与
+    /// chromium 行为一致（`border-image: linear-gradient(...) 1 fill` 即整图 9 等分）。
+    /// 实现：按 URL 路径同款的 border-image-width/outset/repeat 计算出各片 dest rect，
+    /// 基础渐变图元覆盖**整个绘制区**（含 outset 外扩矩形），每片发射一个 clip = 片
+    /// rect 的克隆（GradientPrimitive.clip = crop 语义，渲染器只画交集、t 值仍按完整
+    /// 绘制区解析——切片不重定义渐变坐标）。
+    fn paint_border_image_gradient(
+        &mut self,
+        box_node: &LayoutBox,
+        abs_x: f32,
+        abs_y: f32,
+        style: &ComputedStyle,
+        gradient: &zero_css_parser::values::GradientValue,
+    ) {
+        use super::super::helpers::gradient_to_primitive_with_font_size;
+
+        let bt = box_node.border_top;
+        let br = box_node.border_right;
+        let bb = box_node.border_bottom;
+        let bl = box_node.border_left;
+
+        // 边框区域（含 outset 外扩）——与 URL 路径同公式（CSS Backgrounds 3 §7.2）。
+        let outset_px = |c: &BorderImageOutsetComputedComponent, bw: f32| -> f32 {
+            match c {
+                BorderImageOutsetComputedComponent::Number(n) => n * bw,
+                BorderImageOutsetComputedComponent::Length(l) => *l,
+            }
+        };
+        let o_top = outset_px(&style.border_image_outset.top, bt);
+        let o_right = outset_px(&style.border_image_outset.right, br);
+        let o_bottom = outset_px(&style.border_image_outset.bottom, bb);
+        let o_left = outset_px(&style.border_image_outset.left, bl);
+        let bx = abs_x - o_left;
+        let by = abs_y - o_top;
+        let w = box_node.width + o_left + o_right;
+        let h = box_node.height + o_top + o_bottom;
+
+        // border-image-width（§7.3）——与 URL 路径同公式。
+        let width_px = |c: &BorderImageWidthComputedComponent, bw: f32, box_dim: f32| -> f32 {
+            match c {
+                BorderImageWidthComputedComponent::Auto => bw,
+                BorderImageWidthComputedComponent::Number(n) => n * bw,
+                BorderImageWidthComputedComponent::Length(l) => *l,
+                BorderImageWidthComputedComponent::Percent(p) => (p / 100.0) * box_dim,
+            }
+        };
+        let bt = width_px(&style.border_image_width.top, bt, h);
+        let br = width_px(&style.border_image_width.right, br, w);
+        let bb = width_px(&style.border_image_width.bottom, bb, h);
+        let bl = width_px(&style.border_image_width.left, bl, w);
+
+        let area = Rect::new(bx, by, w, h);
+        let font_size = zero_style_system::computed::resolve_length(&style.font_size, 16.0, None, None);
+        let base = match gradient_to_primitive_with_font_size(gradient, &area, &style.color, font_size as f32) {
+            Some(g) => g,
+            None => return, // conic 等不支持的渐变类型：等同 none（不 panic）
+        };
+        let emit = |p: &mut Self, rect: Rect| {
+            if rect.size.width <= 0.0 || rect.size.height <= 0.0 {
+                return;
+            }
+            let mut piece = base.clone();
+            piece.rect = rect;
+            piece.clip = Some(rect);
+            p.primitives.add_gradient(piece);
+        };
+
+        let edge_h_w = (w - bl - br).max(0.0);
+        let edge_v_h = (h - bt - bb).max(0.0);
+        let h_mode = &style.border_image_repeat.horizontal;
+        let v_mode = &style.border_image_repeat.vertical;
+
+        // 四角（始终 stretch；repeat 只作用于边）
+        if bl > 0.0 && bt > 0.0 {
+            emit(self, Rect::new(bx, by, bl, bt));
+        }
+        if br > 0.0 && bt > 0.0 {
+            emit(self, Rect::new(bx + w - br, by, br, bt));
+        }
+        if br > 0.0 && bb > 0.0 {
+            emit(self, Rect::new(bx + w - br, by + h - bb, br, bb));
+        }
+        if bl > 0.0 && bb > 0.0 {
+            emit(self, Rect::new(bx, by + h - bb, bl, bb));
+        }
+
+        // 中心（fill 关键字；始终 stretch 覆盖中央区域）
+        if style.border_image_slice.fill && edge_h_w > 0.0 && edge_v_h > 0.0 {
+            emit(self, Rect::new(bx + bl, by + bt, edge_h_w, edge_v_h));
+        }
+
+        // 四条边：沿边轴按 repeat 模式划分 tile 序列，每 tile 独立 clip 发射。
+        // tile 的自然尺寸取对应边框厚度（渐变源无 tile 内在尺寸，与 URL 路径同取法）。
+        let tiles_on_axis = |total: f32, tile: f32, mode: &BorderImageRepeatComputedMode| -> Vec<(f32, f32)> {
+            match mode {
+                BorderImageRepeatComputedMode::Stretch => vec![(total, 0.0)],
+                BorderImageRepeatComputedMode::Repeat => {
+                    let n = (total / tile).ceil().max(1.0) as usize;
+                    let total_tiles = n as f32 * tile;
+                    let start = (total - total_tiles) / 2.0;
+                    (0..n).map(|i| (tile, start + i as f32 * tile)).collect()
+                }
+                BorderImageRepeatComputedMode::Round => {
+                    let n = (total / tile).round().max(1.0) as usize;
+                    let stretched = total / n as f32;
+                    (0..n).map(|i| (stretched, i as f32 * stretched)).collect()
+                }
+                BorderImageRepeatComputedMode::Space => {
+                    let n = (total / tile).floor().max(0.0) as usize;
+                    if n <= 1 {
+                        vec![(total, 0.0)]
+                    } else {
+                        let gap = (total - n as f32 * tile) / (n + 1) as f32;
+                        (0..n).map(|i| (tile, gap + i as f32 * (tile + gap))).collect()
+                    }
+                }
+            }
+        };
+
+        // 上/下边（水平轴 tile 划分；tile 间按边框区域裁剪不越界）
+        for (edge_y, edge_h) in [(by, bt), (by + h - bb, bb)] {
+            if edge_h <= 0.0 || edge_h_w <= 0.0 {
+                continue;
+            }
+            for (tile_w, off) in tiles_on_axis(edge_h_w, bl, h_mode) {
+                let tx = (bx + bl + off).max(bx + bl);
+                let right = (tx + tile_w).min(bx + bl + edge_h_w);
+                if right > tx {
+                    emit(self, Rect::new(tx, edge_y, right - tx, edge_h));
+                }
+            }
+        }
+        // 左/右边（垂直轴 tile 划分）
+        for (edge_x, edge_w) in [(bx, bl), (bx + w - br, br)] {
+            if edge_w <= 0.0 || edge_v_h <= 0.0 {
+                continue;
+            }
+            for (tile_h, off) in tiles_on_axis(edge_v_h, bt, v_mode) {
+                let ty = (by + bt + off).max(by + bt);
+                let bottom = (ty + tile_h).min(by + bt + edge_v_h);
+                if bottom > ty {
+                    emit(self, Rect::new(edge_x, ty, edge_w, bottom - ty));
+                }
+            }
         }
     }
 

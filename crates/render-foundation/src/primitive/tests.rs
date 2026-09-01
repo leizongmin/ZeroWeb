@@ -168,6 +168,7 @@ fn test_gradient_primitive() {
             },
         ],
         repeating: false,
+        clip: None,
     });
     assert_eq!(p.gradients.len(), 1);
 }
@@ -496,6 +497,7 @@ fn test_bounding_box_with_gradient() {
         },
         stops: vec![],
         repeating: false,
+        clip: None,
     });
     let bb = p.bounding_box().unwrap();
     assert_eq!(bb.right(), 200.0);
@@ -611,6 +613,7 @@ fn test_len_all_primitive_types() {
         },
         stops: vec![],
         repeating: false,
+        clip: None,
     });
     p.add_shadow(ShadowPrimitive {
         rect: Rect::new(0.0, 0.0, 10.0, 10.0),
@@ -952,6 +955,7 @@ fn test_gradient_primitive_linear_in_primitives() {
             },
         ],
         repeating: false,
+        clip: None,
     });
     assert_eq!(p.gradients.len(), 1);
 }
@@ -980,6 +984,7 @@ fn test_gradient_primitive_radial_in_primitives() {
             },
         ],
         repeating: false,
+        clip: None,
     });
     assert_eq!(p.gradients.len(), 1);
     if let GradientKind::Radial {
@@ -1022,6 +1027,7 @@ fn test_gradient_bounding_box() {
             },
         ],
         repeating: false,
+        clip: None,
     });
     let bb = p.bounding_box().unwrap();
     assert_eq!(bb.left(), 10.0);
@@ -1045,6 +1051,7 @@ fn test_multiple_gradients_bounding_box() {
         },
         stops: vec![],
         repeating: false,
+        clip: None,
     });
     p.add_gradient(GradientPrimitive {
         interpolation: Default::default(),
@@ -1057,6 +1064,7 @@ fn test_multiple_gradients_bounding_box() {
         },
         stops: vec![],
         repeating: false,
+        clip: None,
     });
     let bb = p.bounding_box().unwrap();
     assert_eq!(bb.left(), 10.0);
@@ -1093,6 +1101,7 @@ fn test_gradient_stops_order() {
             },
         ],
         repeating: false,
+        clip: None,
     });
     let stops = &p.gradients[0].stops;
     assert_eq!(stops.len(), 3);

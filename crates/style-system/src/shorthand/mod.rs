@@ -838,6 +838,22 @@ fn expand_one(property: &str, value: &str, important: bool, specificity: (u32, u
     }
 }
 
+/// R3909：border-image 简写 source 槽的渐变函数识别（css-backgrounds-3 §5.1：
+/// `border-image-source: <image>`，gradient 函数均为 <image>）。函数名大小写不敏感。
+fn is_gradient_source_token(t: &str) -> bool {
+    let lower = t.to_ascii_lowercase();
+    let name = lower.split('(').next().unwrap_or("");
+    matches!(
+        name,
+        "linear-gradient"
+            | "radial-gradient"
+            | "conic-gradient"
+            | "repeating-linear-gradient"
+            | "repeating-radial-gradient"
+            | "repeating-conic-gradient"
+    )
+}
+
 /// 展开 border-image 简写。
 ///
 /// CSS `border-image` 简写格式为：
@@ -845,7 +861,7 @@ fn expand_one(property: &str, value: &str, important: bool, specificity: (u32, u
 ///
 /// 简化实现：
 /// - 若值为 "none" → border-image-source: none
-/// - 若值含 url(...) → 提取为 source
+/// - 若值含 url(...) 或渐变函数 → 提取为 source（R3909：渐变同为 <image>）
 /// - 解析 slice、width（/ 后第一组）、outset（/ 后第二组）、repeat 关键字
 fn expand_border_image(value: &str, important: bool, specificity: (u32, u32, u32)) -> Vec<MatchingDecl> {
     let value = value.trim();
@@ -884,8 +900,14 @@ fn expand_border_image(value: &str, important: bool, specificity: (u32, u32, u32
         }
         // https://drafts.csswg.org/css-values-4/#urls
         // R2354：none 关键字与 url() 函数名大小写不敏感；URL 内容保持原样。
+        // R3909：gradient 函数（linear/radial/conic/repeating-*-gradient）同为 source ——
+        // 此前只识别 url()/none，渐变 token 落入 remaining 被并进 slice 组 →
+        // parse_border_image_slice 失败 → 整条简写被丢（driving: outset-003
+        // linear-gradient 源 + border-image-image-type-003 简写源）。
         if source.is_none()
-            && (t.get(..4).is_some_and(|prefix| prefix.eq_ignore_ascii_case("url(")) || t.eq_ignore_ascii_case("none"))
+            && (t.get(..4).is_some_and(|prefix| prefix.eq_ignore_ascii_case("url("))
+                || t.eq_ignore_ascii_case("none")
+                || (t.ends_with(')') && is_gradient_source_token(t)))
         {
             source = Some(t.to_string());
         } else {

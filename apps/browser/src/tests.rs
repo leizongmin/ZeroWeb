@@ -2572,6 +2572,7 @@ fn transform_webview_primitives_applies_scale_and_offset_to_all_types() {
         },
         stops: Vec::new(),
         repeating: false,
+        clip: None,
     });
     p.gradients.push(GradientPrimitive {
         interpolation: Default::default(),
@@ -2584,6 +2585,7 @@ fn transform_webview_primitives_applies_scale_and_offset_to_all_types() {
         },
         stops: Vec::new(),
         repeating: false,
+        clip: None,
     });
     p.gradients.push(GradientPrimitive {
         interpolation: Default::default(),
@@ -2595,6 +2597,7 @@ fn transform_webview_primitives_applies_scale_and_offset_to_all_types() {
         },
         stops: Vec::new(),
         repeating: false,
+        clip: None,
     });
     p.shadows.push(ShadowPrimitive {
         rect: Rect::new(1.0, 2.0, 10.0, 10.0),
@@ -2740,6 +2743,7 @@ fn transform_webview_primitives_extra_skips_fills_glyphs_keeps_others() {
         },
         stops: Vec::new(),
         repeating: false,
+        clip: None,
     });
     p.strokes.push(StrokePrimitive {
         x1: 1.0,
@@ -2842,6 +2846,7 @@ fn transform_webview_primitives_culls_primitives_outside_viewport() {
         },
         stops: Vec::new(),
         repeating: false,
+        clip: None,
     });
     p.add_path_fill(
         vec![1000.0, 1000.0, 1010.0, 1000.0, 1010.0, 1010.0],

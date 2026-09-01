@@ -219,6 +219,9 @@ pub struct IpcGradient {
     /// 颜色插值配置（CSS Color 4 `in <colorspace>`，R2289）。serde default 保旧消息兼容。
     #[serde(default)]
     pub interpolation: IpcGradientInterpolation,
+    /// 可选裁剪窗口（R3909 border-image 渐变源 9-slice 切片）。serde default 保旧消息兼容。
+    #[serde(default)]
+    pub clip: Option<IpcRect>,
 }
 
 /// IPC 渐变颜色插值色彩空间（镜像 render-foundation GradientColorSpace）。

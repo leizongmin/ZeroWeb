@@ -202,6 +202,7 @@ pub fn to_render_primitives(params: &PaintSnapshotParams) -> RenderPrimitives {
                 .collect(),
             repeating: g.repeating,
             interpolation: ipc_interpolation_to_interpolation(g.interpolation),
+            clip: g.clip.map(ipc_rect_to_rect),
         });
     }
     for shadow in &params.shadows {

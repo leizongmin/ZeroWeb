@@ -974,6 +974,7 @@ pub fn gradient_to_primitive_with_font_size(
                 kind,
                 stops,
                 repeating: lg.repeating,
+                clip: None,
             })
         }
         GradientValue::Radial(rg) => {
@@ -1016,6 +1017,7 @@ pub fn gradient_to_primitive_with_font_size(
                 },
                 stops,
                 repeating: rg.repeating,
+                clip: None,
             })
         }
         GradientValue::Conic(cg) => {
@@ -1029,6 +1031,7 @@ pub fn gradient_to_primitive_with_font_size(
                 kind: GradientKind::Conic { cx, cy, start_angle },
                 stops,
                 repeating: cg.repeating,
+                clip: None,
             })
         }
     }

@@ -207,6 +207,7 @@ pub fn apply_paint_snapshot(snap: &mut TabSnapshot, params: PaintSnapshotParams)
                 .collect(),
             repeating: g.repeating,
             interpolation: ipc_interpolation_to_interpolation(g.interpolation),
+            clip: g.clip.map(ipc_rect_to_rect),
         });
     }
     for shadow in params.shadows {

@@ -85,6 +85,7 @@ fn build_basic_scene() -> (RenderPrimitives, ImageCache) {
             space: crate::primitive::GradientColorSpace::Srgb,
             hue: crate::primitive::HueMethod::Shorter,
         },
+        clip: None,
     });
     // 4. 描边线段（绿，4px 实线；宽度避开像素中心边界——
     //    CPU 像素中心判定含边界、GPU 光栅化 top-left 规则不含右/下边缘）
@@ -622,6 +623,7 @@ fn parity_repeating_gradient_first_offset_matches_cpu() {
             space: crate::primitive::GradientColorSpace::Srgb,
             hue: crate::primitive::HueMethod::Shorter,
         },
+        clip: None,
     });
     let cpu_fb = render_cpu(32, 16, &p, None);
     let gpu_px = render_gpu(32, 16, &p, None);
@@ -662,6 +664,7 @@ fn parity_repeating_gradient_first_zero_offset_matches_cpu() {
             space: crate::primitive::GradientColorSpace::Srgb,
             hue: crate::primitive::HueMethod::Shorter,
         },
+        clip: None,
     });
     let cpu_fb = render_cpu(32, 16, &p, None);
     let gpu_px = render_gpu(32, 16, &p, None);
@@ -700,6 +703,7 @@ fn parity_repeating_gradient_percent_first_zero_matches_cpu() {
             space: crate::primitive::GradientColorSpace::Srgb,
             hue: crate::primitive::HueMethod::Shorter,
         },
+        clip: None,
     });
     let cpu_fb = render_cpu(32, 16, &p, None);
     let gpu_px = render_gpu(32, 16, &p, None);

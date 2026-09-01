@@ -405,6 +405,7 @@ fn gradient_linear_red_to_blue() {
             },
         ],
         repeating: false,
+        clip: None,
     });
 
     let font_loader = FontLoader::new();
@@ -514,6 +515,7 @@ fn gradient_radial_center_to_edge() {
             },
         ],
         repeating: false,
+        clip: None,
     });
 
     let font_loader = FontLoader::new();
@@ -565,6 +567,7 @@ fn gradient_linear_repeating() {
             },
         ],
         repeating: true,
+        clip: None,
     });
 
     let font_loader = FontLoader::new();
@@ -632,6 +635,7 @@ fn gradient_radial_repeating() {
             },
         ],
         repeating: true,
+        clip: None,
     });
 
     let font_loader = FontLoader::new();
@@ -698,6 +702,7 @@ fn gradient_linear_repeating_subrange_stops() {
             },
         ],
         repeating: true,
+        clip: None,
     });
 
     let font_loader = FontLoader::new();
@@ -777,6 +782,7 @@ fn conic_gradient_angle_convention_top_clockwise() {
             },
         ],
         repeating: false,
+        clip: None,
     });
 
     let font_loader = FontLoader::new();
@@ -1533,6 +1539,7 @@ fn full_scene_renders_multiple_primitives() {
             },
         ],
         repeating: false,
+        clip: None,
     });
 
     // 线段
@@ -2353,6 +2360,7 @@ fn scroll_blit_matches_full_render() {
             },
         ],
         repeating: false,
+        clip: None,
     });
     scene.strokes.push(StrokePrimitive {
         x1: 0.0,

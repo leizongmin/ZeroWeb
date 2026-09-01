@@ -1740,6 +1740,7 @@ mod tests {
             rect: Rect::new(0.0, 0.0, 100.0, 100.0),
             stops: vec![],
             repeating: false,
+            clip: None,
         };
         assert_eq!(compute_gradient_mask_alpha(&gradient), 1.0);
     }
@@ -1767,6 +1768,7 @@ mod tests {
                 },
             ],
             repeating: false,
+            clip: None,
         };
         assert!((compute_gradient_mask_alpha(&gradient) - 1.0).abs() < 0.001);
     }
@@ -1794,6 +1796,7 @@ mod tests {
                 },
             ],
             repeating: false,
+            clip: None,
         };
         let expected = 128.0 / 255.0;
         assert!((compute_gradient_mask_alpha(&gradient) - expected).abs() < 0.01);

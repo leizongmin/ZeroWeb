@@ -368,3 +368,181 @@ fn test_border_image_zero_border_width_default_still_skips() {
         "default border-image-width (1x border-width=0) must not draw"
     );
 }
+
+/// R3909：gradient border-image-source 按 9-slice 绘制（css-backgrounds-3 §6.1）。
+///
+/// 此前 Gradient 源在 paint 层直接 return（等同 none），且 border-image 简写的 source
+/// 槽只识别 url()/none——渐变 token 落入 slice 组解析失败整条简写被丢。修复后：
+/// gradient 源按同款 border-image-width/outset/repeat 计算绘制区，每片以 clip 窗口
+/// 发射渐变（GradientPrimitive.clip = crop 语义）。
+#[test]
+fn test_border_image_gradient_source_nine_slice() {
+    use zero_css_parser::values::{
+        ColorValue, GradientColorStop, GradientDirection, GradientValue, LengthValue, LinearGradient,
+    };
+    use zero_render_foundation::geometry::Rect;
+    use zero_style_system::BorderImageSourceComputedValue;
+
+    let mut doc = zero_dom::Document::new();
+    let nid = doc.create_element("div");
+    // 100×100 盒、边框 20px → 默认 width=Number(1.0)=边框厚度
+    let mut layout = make_box(Some(nid), 0.0, 0.0, 100.0, 100.0);
+    layout.border_top = 20.0;
+    layout.border_right = 20.0;
+    layout.border_bottom = 20.0;
+    layout.border_left = 20.0;
+
+    let mut style = ComputedStyle::default();
+    style.border_image_source = BorderImageSourceComputedValue::Gradient(GradientValue::Linear(LinearGradient {
+        interpolation: Default::default(),
+        direction: GradientDirection::ToBottom,
+        stops: vec![
+            GradientColorStop {
+                color: ColorValue::Rgba(0, 255, 0, 255),
+                position: Some(LengthValue::Px(0.0)),
+            },
+            GradientColorStop {
+                color: ColorValue::Rgba(0, 255, 0, 255),
+                position: Some(LengthValue::Px(100.0)),
+            },
+        ],
+        repeating: false,
+    }));
+    let mut styles = HashMap::new();
+    styles.insert(nid, style);
+    let mut painter = Painter::new();
+    painter.paint(&layout, &styles, None);
+
+    // URL 源路径产出 image 图元；gradient 源路径产出 gradient 图元（clip = 片 rect）。
+    assert!(
+        painter.primitives().images.is_empty(),
+        "gradient source must not emit image primitives"
+    );
+    let grads = &painter.primitives().gradients;
+    assert!(!grads.is_empty(), "gradient source must emit gradient primitives");
+    // 每片 clip = 自身 rect（crop 语义），且全部落在绘制区（= border box）内。
+    for g in grads {
+        let clip = g.clip.expect("each piece must carry a clip window");
+        assert!((clip.origin.x - g.rect.origin.x).abs() < 0.01 && (clip.origin.y - g.rect.origin.y).abs() < 0.01);
+        assert!((clip.size.width - g.rect.size.width).abs() < 0.01);
+        // 四角片 = 20×20（默认厚度 = 边框宽度）
+        // 绘制区 = border box (0,0,100,100)；无片越过边界。
+        assert!(clip.origin.x >= -0.01 && clip.origin.y >= -0.01);
+        assert!(clip.origin.x + clip.size.width <= 100.01);
+        assert!(clip.origin.y + clip.size.height <= 100.01);
+    }
+    // 四角存在：至少各一片 20×20 角片（clip 精确等于角 rect）。
+    let corners = [
+        Rect::new(0.0, 0.0, 20.0, 20.0),
+        Rect::new(80.0, 0.0, 20.0, 20.0),
+        Rect::new(80.0, 80.0, 20.0, 20.0),
+        Rect::new(0.0, 80.0, 20.0, 20.0),
+    ];
+    for c in corners {
+        assert!(
+            grads.iter().any(|g| g.clip.is_some_and(|clip| {
+                (clip.origin.x - c.origin.x).abs() < 0.01
+                    && (clip.origin.y - c.origin.y).abs() < 0.01
+                    && (clip.size.width - c.size.width).abs() < 0.01
+                    && (clip.size.height - c.size.height).abs() < 0.01
+            })),
+            "missing corner piece {c:?} in {:?}",
+            grads.iter().map(|g| g.clip).collect::<Vec<_>>()
+        );
+    }
+    // fill 关键字缺省 → 无中心片。
+    let center = Rect::new(20.0, 20.0, 60.0, 60.0);
+    assert!(
+        !grads.iter().any(|g| g.clip.is_some_and(|clip| {
+            (clip.origin.x - center.origin.x).abs() < 0.01 && (clip.origin.y - center.origin.y).abs() < 0.01
+        })),
+        "no center piece without fill keyword"
+    );
+}
+
+/// R3909 对称面：border-image-source 非 none 时常规 border-style 边框不再绘制
+///（css-backgrounds-3 §6.1「applied instead of the border-style」）。此前 border
+/// 从图像条带下方露出（driving: outset-003 黑框 / border-image-006 红框）。
+#[test]
+fn test_border_image_replaces_border_style_painting() {
+    use zero_css_parser::values::{
+        ColorValue, GradientColorStop, GradientDirection, GradientValue, LengthValue, LinearGradient,
+    };
+    use zero_style_system::{BorderImageSourceComputedValue, BorderStyleValue};
+
+    let mut doc = zero_dom::Document::new();
+    let nid = doc.create_element("div");
+    let mut layout = make_box(Some(nid), 0.0, 0.0, 100.0, 100.0);
+    layout.border_top = 20.0;
+    layout.border_right = 20.0;
+    layout.border_bottom = 20.0;
+    layout.border_left = 20.0;
+
+    let mut style = ComputedStyle::default();
+    style.border_top_style = BorderStyleValue::Solid;
+    style.border_right_style = BorderStyleValue::Solid;
+    style.border_bottom_style = BorderStyleValue::Solid;
+    style.border_left_style = BorderStyleValue::Solid;
+    style.border_top_color = ColorValue::Rgba(255, 0, 0, 255);
+    style.border_right_color = ColorValue::Rgba(255, 0, 0, 255);
+    style.border_bottom_color = ColorValue::Rgba(255, 0, 0, 255);
+    style.border_left_color = ColorValue::Rgba(255, 0, 0, 255);
+    style.border_image_source = BorderImageSourceComputedValue::Gradient(GradientValue::Linear(LinearGradient {
+        interpolation: Default::default(),
+        direction: GradientDirection::ToBottom,
+        stops: vec![
+            GradientColorStop {
+                color: ColorValue::Rgba(0, 255, 0, 255),
+                position: Some(LengthValue::Px(0.0)),
+            },
+            GradientColorStop {
+                color: ColorValue::Rgba(0, 255, 0, 255),
+                position: Some(LengthValue::Px(100.0)),
+            },
+        ],
+        repeating: false,
+    }));
+    let mut styles = HashMap::new();
+    styles.insert(nid, style);
+    let mut painter = Painter::new();
+    painter.paint(&layout, &styles, None);
+
+    // 常规 border-style 面不画（无 fill 图元带红色 border 色）。
+    let red_fills: Vec<_> = painter
+        .primitives()
+        .fills
+        .iter()
+        .filter(|f| f.color.r == 255 && f.color.g == 0 && f.color.b == 0 && f.color.a == 255)
+        .collect();
+    assert!(
+        red_fills.is_empty(),
+        "border-style faces must be suppressed when border-image is present"
+    );
+    // border-image 渐变片照画。
+    assert!(!painter.primitives().gradients.is_empty());
+}
+
+/// R3909：border-image 简写 source 槽识别 gradient 函数（此前只认 url()/none，
+/// 渐变 token 落入 slice 组 → parse_border_image_slice 失败 → 整条简写被丢，
+/// driving: border-image-outset-003 / border-image-image-type-003）。
+#[test]
+fn test_border_image_shorthand_gradient_source_expands() {
+    let decls = zero_style_system::shorthand::expand_shorthands(&[(
+        "border-image".to_string(),
+        "linear-gradient(green, green) 1 fill / 10px".to_string(),
+        false,
+        (0, 0, 0),
+    )]);
+    let source = decls.iter().find(|(p, _, _, _)| p == "border-image-source");
+    assert!(
+        source.is_some_and(|(_, v, _, _)| v.contains("linear-gradient")),
+        "gradient token must land in border-image-source, got {decls:?}"
+    );
+    let slice = decls.iter().find(|(p, _, _, _)| p == "border-image-slice");
+    assert!(
+        slice.is_some_and(|(_, v, _, _)| v == "1 fill"),
+        "slice must not swallow the gradient"
+    );
+    let width = decls.iter().find(|(p, _, _, _)| p == "border-image-width");
+    assert!(width.is_some_and(|(_, v, _, _)| v == "10px"));
+}

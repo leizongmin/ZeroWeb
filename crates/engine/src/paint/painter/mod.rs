@@ -21,9 +21,10 @@ use zero_render_foundation::primitive::{RenderPrimitives, RoundedRectPrimitive};
 use zero_style_system::property::types::DisplayValue;
 use zero_style_system::{
     AccentColorComputedValue, AppearanceComputedValue, BackgroundAttachmentComputedValue, BackgroundClipComputedValue,
-    BorderCollapseValue, CaretColorComputedValue, ClipPathComputedValue, ComputedStyle, ContainComputedValue,
-    HyphensComputedValue, ImageRenderingValue, IsolationValue, MixBlendModeComputedValue, OverscrollBehaviorValue,
-    PointerEventsValue, ResizeValue, ScrollbarGutterComputedValue, TouchActionValue, UserSelectValue,
+    BorderCollapseValue, BorderImageSourceComputedValue, CaretColorComputedValue, ClipPathComputedValue, ComputedStyle,
+    ContainComputedValue, HyphensComputedValue, ImageRenderingValue, IsolationValue, MixBlendModeComputedValue,
+    OverscrollBehaviorValue, PointerEventsValue, ResizeValue, ScrollbarGutterComputedValue, TouchActionValue,
+    UserSelectValue,
 };
 
 use super::color::resolve_color_current;
@@ -878,7 +879,11 @@ impl Painter {
                             legend_width,
                             legend_height,
                         );
-                    } else {
+                    } else if matches!(style.border_image_source, BorderImageSourceComputedValue::None) {
+                        // R3909：border-image-source 非 none 时按 css-backgrounds-3 §6.1
+                        // 「applied instead of the border-style」替换常规边框绘制——
+                        // border-style 边框不再画出（此前 border 从图像条带下方露出，
+                        // driving: border-image-outset-003 黑框 + border-image-006 红框）。
                         self.paint_borders(box_node, abs_x, abs_y, style);
                     }
                 }
@@ -1149,7 +1154,11 @@ impl Painter {
                             legend_width,
                             legend_height,
                         );
-                    } else {
+                    } else if matches!(style.border_image_source, BorderImageSourceComputedValue::None) {
+                        // R3909：border-image-source 非 none 时按 css-backgrounds-3 §6.1
+                        // 「applied instead of the border-style」替换常规边框绘制——
+                        // border-style 边框不再画出（此前 border 从图像条带下方露出，
+                        // driving: border-image-outset-003 黑框 + border-image-006 红框）。
                         self.paint_borders(box_node, abs_x, abs_y, style);
                     }
                 }

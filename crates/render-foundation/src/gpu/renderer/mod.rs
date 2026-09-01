@@ -1861,7 +1861,11 @@ impl GpuRenderer {
                 ],
             });
 
-            let r = &grad.rect;
+            let r = grad
+                .clip
+                .and_then(|c| grad.rect.intersection(&c))
+                .filter(|v| v.size.width > 0.0 && v.size.height > 0.0)
+                .unwrap_or(grad.rect);
             let l = r.left() * scale;
             let t = r.top() * scale;
             let right = r.right() * scale;

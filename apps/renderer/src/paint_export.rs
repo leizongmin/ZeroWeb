@@ -325,6 +325,7 @@ pub fn paint_snapshot_from_primitives(
                         HueMethod::Decreasing => IpcHueMethod::Decreasing,
                     },
                 },
+                clip: g.clip.as_ref().map(rect_to_ipc),
             })
             .collect(),
         shadows: primitives
