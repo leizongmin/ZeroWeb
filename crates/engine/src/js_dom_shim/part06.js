@@ -7014,12 +7014,23 @@
   };
   // track 元素 src 的 headless 加载模拟——data:text/vtt 解析填 cue + load 事件；
   // 非 data: URL 同样派 load（headless 无真字幕抓取， cues 空）。幂等：per-track 一次。
-  globalThis._zwTrackScheduleLoad = function (sel, handle) {
+  globalThis._zwTrackScheduleLoad = function (sel, handle, opts) {
     var key = _elKey(sel, handle);
     if (typeof setTimeout !== 'function') return;
     var _msTrack = _mediaState[key] || (_mediaState[key] = {});
-    if (_msTrack.trackSettled) return;
-    _msTrack.trackSettled = true;
+    var _isChange = !!(opts && opts.srcChange);
+    if (_isChange) {
+      // M3 扩批 XIII：src 变更——清既有 cue（spec「track URL 变更」cue list 置空，
+      // src-clear-cues 断言面）+ 重置 settle 面后按新 URL 重跑。**首调度前变更**
+      //（track 从未挂 media 父/未设 src，src-clear-cues 用例形态）同样清。
+      try {
+        var _scTT = _elementTextTrack[key];
+        if (_scTT && typeof _scTT._zwClearCues === 'function') _scTT._zwClearCues();
+      } catch (_eTsCc) {}
+      try { if (_resourceStates && _resourceStates[key]) delete _resourceStates[key]; } catch (_eTsRs) {}
+    }
+    if (_msTrack.trackScheduled) return;
+    _msTrack.trackScheduled = true;
     var _deferCont = function (fn) {
       if (typeof queueMicrotask === 'function') queueMicrotask(fn);
       else setTimeout(fn, 0);
@@ -7038,6 +7049,7 @@
             for (var i = 0; i < cues.length; i++) tt.addCue(cues[i]);
           }
         }
+        // M3 扩批 XIII：settle 幂等已按需重置——重调度路径重新提交资源状态。
         _zwSettleResourceKey(key, sel, handle, 'track', _abs, 'loaded', 0, 0);
       } catch (_eTs) {}
     });

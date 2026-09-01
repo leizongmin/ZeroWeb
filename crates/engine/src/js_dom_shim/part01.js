@@ -191,8 +191,19 @@
         var _stList = _stEntry.list;
         var _stHolder = _stList._zwHolder;
         if (_stHolder) {
+          // M3 扩批 XIII：增量 addtrack 派发——以 **list holder 现内容** 为基线（而非
+          // entry.tracks——appendChild 同步钩子已先行记账，首读时 tracks 段非增量）。
+          // list 首读（holder 空）→ 全量异步派发（spec：list changes queued task，
+          // 观察者注册后均可见——track-add-track 断言面）。
+          var _stAdded = [];
+          for (var _stn = 0; _stn < _stAll.length; _stn++) {
+            if (_stHolder.arr.indexOf(_stAll[_stn]) < 0) _stAdded.push(_stAll[_stn]);
+          }
           _stHolder.arr = _stAll.slice();
           globalThis._zwSyncListHolder(_stHolder);
+          if (_stAdded.length && typeof globalThis._zwFireTracksAdded === 'function') {
+            globalThis._zwFireTracksAdded(_stList, _stAdded);
+          }
         }
       }
     } catch (_eStSync) {}

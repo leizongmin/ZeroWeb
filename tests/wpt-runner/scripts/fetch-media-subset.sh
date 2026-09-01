@@ -190,6 +190,16 @@ TRACK_ELEMENT_FILES=(
   "track/track-element/track-node-add-remove.html"
   "track/track-element/track-id.html"
   "track/track-element/track-element-dom-change.html"
+  # M3 扩批 XIII：VTTCue 定位选项 IDL 面（headless 仅存储不做视觉布局）+
+  # data:text/vtt 加载（crossorigin 属性三态——headless 不区分 CORS 模式）+
+  # addtrack 异步派发 / cue order 排序断言 / src 变更清 cue。
+  # track-change-event 不导入：change 事件广播需 TextTrackList↔TextTrack 反向链 +
+  # 模式变更前 list 未暴露的 pending 重放（深结构）——见 master.md 排除清单。
+  "track/track-element/vtt-cue-float-precision.html"
+  "track/track-element/track-data-url.html"
+  "track/track-element/track-add-track.html"
+  "track/track-element/track-cue-order.html"
+  "track/track-element/src-clear-cues.html"
 )
 for relative in "${TRACK_ELEMENT_FILES[@]}"; do
   fetch_raw "${BASE}/${relative}"

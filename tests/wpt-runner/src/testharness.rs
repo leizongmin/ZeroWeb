@@ -1383,6 +1383,14 @@ pub const MEDIA_TEST_FILES: &[&str] = &[
     "html/semantics/embedded-content/media-elements/track/track-element/track-node-add-remove.html",
     "html/semantics/embedded-content/media-elements/track/track-element/track-id.html",
     "html/semantics/embedded-content/media-elements/track/track-element/track-element-dom-change.html",
+    // M3 扩批 XIII：VTTCue 定位选项 IDL 面（line/position/size/align/vertical/
+    // snapToLines——headless 仅存储不做视觉布局）+ data:text/vtt 加载（onload 后
+    // cue 值断言；crossorigin 属性三态）。
+    "html/semantics/embedded-content/media-elements/track/track-element/vtt-cue-float-precision.html",
+    "html/semantics/embedded-content/media-elements/track/track-element/track-data-url.html",
+    "html/semantics/embedded-content/media-elements/track/track-element/track-add-track.html",
+    "html/semantics/embedded-content/media-elements/track/track-element/track-cue-order.html",
+    "html/semantics/embedded-content/media-elements/track/track-element/src-clear-cues.html",
     // M3 扩批 VII：移除文档暂停面（spec「media elements pause on removal」）。
     "html/semantics/embedded-content/media-elements/playing-the-media-resource/pause-remove-from-document.html",
     // M3 扩批 IX：移动面（同文档移动仍 related → 不暂停）。

@@ -11543,10 +11543,13 @@
           var _ttEntry = _textTracksCache[_ttKey] || (_textTracksCache[_ttKey] = { tracks: [], list: null, manual: [] });
           if (prop === 'textTracks') {
             // 扩批 X：track 子树序段 + 手动段全量重排（list 身份不变）。
+            // M3 扩批 XIII：list **先建后同步**——首读的 track 子增量走
+            // _zwSyncTextTracksFromChildren 的 added 派发段（track-add-track 断言面：
+            // 注册 onaddtrack 后 appendChild 的 track 子仍异步收到 addtrack）。
+            if (!_ttEntry.list) _ttEntry.list = globalThis._zwMakeTextTrackList([]);
             if (typeof globalThis._zwSyncTextTracksFromChildren === 'function') {
               globalThis._zwSyncTextTracksFromChildren(sel, handle, _ttKey);
             }
-            if (!_ttEntry.list) _ttEntry.list = globalThis._zwMakeTextTrackList(_ttEntry.tracks);
             return _ttEntry.list;
           }
           return function (kind, label, language) {
@@ -11566,11 +11569,15 @@
             _ttEntry.manual.push(_track);
             _ttEntry.tracks.push(_track);
             // list 已存在（textTracks 先读过）→ 增量同步（M3 扩批 XII：经 holder——
-            // list 是索引只读 Proxy，直写索引被 set trap 拒绝）。
+            // list 是索引只读 Proxy，直写索引被 set trap 拒绝）。M3 扩批 XIII：异步
+            // addtrack 派发（track-add-track 断言面）。
             if (_ttEntry.list && _ttEntry.list._zwHolder) {
               var _attHolder = _ttEntry.list._zwHolder;
               _attHolder.arr.push(_track);
               globalThis._zwSyncListHolder(_attHolder);
+              if (typeof globalThis._zwFireTracksAdded === 'function') {
+                globalThis._zwFireTracksAdded(_ttEntry.list, [_track]);
+              }
             }
             return _track;
           };

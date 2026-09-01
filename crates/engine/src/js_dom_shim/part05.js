@@ -233,11 +233,12 @@
         } else if (p === 'src' && _realTag(sel, handle) === 'TRACK') {
           // `track.src = x`——URL 属性 setter（原始串写属性；绝对化在 getter）。
           // M3 扩批 XII：headless 加载模拟——data:text/vtt 解析填 cue + load 事件
-          //（TextTrackCue parsed-cue 子测断言面）。
+          //（TextTrackCue parsed-cue 子测断言面）。M3 扩批 XIII：srcChange 标记
+          //（重调度清 cue——src-clear-cues 断言面）。
           if (handle) __zw_set_attr_handle(handle, 'src', String(value));
           else { __zw_set_attr(sel, 'src', String(value)); moAttr = 'src'; }
           if (typeof _zwTrackScheduleLoad === 'function') {
-            try { _zwTrackScheduleLoad(sel, handle); } catch (_eTsl) {}
+            try { _zwTrackScheduleLoad(sel, handle, { srcChange: true }); } catch (_eTsl) {}
           }
         } else if (p === 'defaultValue') {
           // `input.defaultValue = x`（R2840）——反射 `value` 属性（初始值；attr 名映射 defaultValue→value）。

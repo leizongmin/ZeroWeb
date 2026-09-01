@@ -4044,4 +4044,44 @@ fn test_media_text_track_cue_face_m3xii() {
             "data:text/vtt settle 面可达（got: {s}）"
         );
     }
+
+    // ⑦ VTTCue 定位选项 IDL 面（vtt-cue-float-precision 断言面——headless 仅存储）+
+    // addtrack 异步派发（track-add-track 断言面：首读 list 的 track 子段异步补发）+
+    // track.src 变更清 cue（src-clear-cues 断言面——detached track 形态）+
+    // readyState settle 前 NONE。
+    sandbox.execute(
+        "var tr7 = document.createElement('track');\
+         var t7 = tr7.track;\
+         t7.mode = 'showing';\
+         t7.addCue(new VTTCue(0, 1, 'a'));\
+         var lenBefore = t7.cues.length;\
+         tr7.src = 'data:,x';\
+         var lenAfter = t7.cues.length;\
+         var rs = tr7.readyState;\
+         globalThis.__r7 = [String(new VTTCue(0,1,'').line), String(new VTTCue(0,1,'').position), String(new VTTCue(0,1,'').size), String(new VTTCue(0,1,'').align), String(new VTTCue(0,1,'').vertical), String(new VTTCue(0,1,'').snapToLines)].join(',');\
+         globalThis.__r7b = [lenBefore, lenAfter, rs].join(',');\
+         var v7b = document.createElement('video');\
+         var tr7b = document.createElement('track');\
+         v7b.appendChild(tr7b);\
+         var fired = 0;\
+         v7b.textTracks.onaddtrack = function () { fired++; };\
+         void 0;",
+    ).unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__r7").unwrap().value,
+        "auto,auto,100,center,,true",
+        "VTTCue 定位选项缺省面（line/position auto + size 100 + align center + vertical '' + snapToLines true）"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__r7b").unwrap().value,
+        "1,0,0",
+        "track.src 变更同步清 cue + settle 前 readyState NONE(0)"
+    );
+    // addtrack 异步派发：register execute 末 checkpoint 排空（同批次 XI microtask 模型）。
+    sandbox.execute("globalThis.__fired = fired; void 0").unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__fired)").unwrap().value,
+        "1",
+        "首读 textTracks 的 track 子段异步派 addtrack（handler 注册后仍收到）"
+    );
 }

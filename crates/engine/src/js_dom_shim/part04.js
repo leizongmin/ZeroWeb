@@ -214,10 +214,11 @@
           return _zwTextTrackForElement(sel, handle, key);
         }
         if (resourceTag === 'TRACK' && prop === 'readyState') {
-          if (!resourceState) {
-            var trackSrc = handle ? __zw_get_attr_handle(handle, 'src') : __zw_get_attr(sel, 'src');
-            return trackSrc ? 1 : 0;
-          }
+          // M3 扩批 XIII：readyState 只由 settle 事实驱动（NONE 0 → LOADED 2 / ERROR 3）。
+          // 旧 `src 有值 → LOADING(1)` 同步分支断 track-add-track 断言面：`track.src=...`
+          // setter 同步后立即读 readyState 期望 NONE（track 加载算法在 queued task 上，
+          // LOADING 态对脚本不可观察即被 LOADED/ERROR 替代——headless settle 前恒 NONE）。
+          if (!resourceState) return 0;
           return resourceState.outcome === 'error' ? 3 : 2;
         }
         // media-elements M1 切片 3（F1/F6）：HTMLTrackElement IDL 反射面。kind 为 enumerated
@@ -2192,10 +2193,11 @@
               } catch (_eSaM) {}
             }
             // media-elements M3 扩批 XII：setAttribute('src') 入 track → headless 字幕
-            // 加载模拟（data:text/vtt 解析 + load 事件）。
+            // 加载模拟（data:text/vtt 解析 + load 事件）。M3 扩批 XIII：标记 srcChange
+            // （重调度——清 cue + 重置 settle，src-clear-cues 断言面）。
             if (n === 'src' && typeof _realTag === 'function' && _realTag(sel, handle) === 'TRACK'
                 && typeof _zwTrackScheduleLoad === 'function') {
-              try { _zwTrackScheduleLoad(sel, handle); } catch (_eSaT) {}
+              try { _zwTrackScheduleLoad(sel, handle, { srcChange: true }); } catch (_eSaT) {}
             }
             // R125：id 变更的同步可见性——① sel-based 元素记覆盖表（host 快照不反映
             // 同批 id 变更，getElementById 的 querySelector 路径会命中 stale id）；

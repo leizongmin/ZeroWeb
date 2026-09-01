@@ -53,6 +53,14 @@
     cue._zwId = '';
     cue._zwPauseOnExit = false;
     cue._zwTrack = null;
+    // WebVTT region/line 定位选项缺省面（vttcue-interface；headless 不做视觉布局，
+    // 仅 IDL 存储——track-add-remove-cue / vtt-cue-float-precision 断言面）。
+    cue._zwVertical = '';
+    cue._zwSnapToLines = true;
+    cue._zwLine = 'auto';
+    cue._zwPosition = 'auto';
+    cue._zwSize = 100;
+    cue._zwAlign = 'center';
     globalThis._zwCueEnsureEventTarget(cue);
     return cue;
   }
@@ -79,7 +87,11 @@
       });
       TrackEvent.prototype = _teProto;
     }
-    var ev = (typeof _makeEvent === 'function') ? _makeEvent(type, options) : {};
+    // 构造基座：globalThis.Event（运行时已就绪——part05 定义）。**不可用 _makeEvent**——
+    // 该 helper 是 part03 IIFE 私有，本 part 作用域不可见（静默回落 {} 丢 type 面）。
+    var ev = (typeof globalThis.Event === 'function')
+      ? new globalThis.Event(type, options)
+      : { type: type };
     Object.setPrototypeOf(ev, _teProto);
     var o = (options == null || typeof options !== 'object') ? {} : options;
     // spec：init dict track member（nullable TextTrack；缺省/非对象 → null——
@@ -112,11 +124,21 @@
         var l = _cueListeners[i];
         if (l.target === target && l.type === type) snapshot.push(l.fn);
       }
-      for (var j = 0; j < snapshot.length; j++) {
-        if (typeof snapshot[j] === 'function') { try { snapshot[j].call(target, ev); } catch (_eCe) {} }
+      // M3 扩批 XIII：spec concept-event-dispatch——dispatch 期间 target/currentTarget
+      // 指向**exposed 视图**（TextTrackList 为索引只读 Proxy——holder.self；track-add-track
+      // 断言 event.target === video.textTracks 面），派发后复原（NONE 态）。
+      var _exposed = (target._zwHolder && target._zwHolder.self) || target;
+      var _oldTarget = ev.target, _oldCur = ev.currentTarget, _oldPhase = ev.eventPhase;
+      try {
+        if (ev) { ev.target = _exposed; ev.currentTarget = _exposed; ev.eventPhase = 2; }
+        for (var j = 0; j < snapshot.length; j++) {
+          if (typeof snapshot[j] === 'function') { try { snapshot[j].call(target, ev); } catch (_eCe) {} }
+        }
+        var h = target['on' + type];
+        if (typeof h === 'function') { try { h.call(target, ev); } catch (_eCh) {} }
+      } finally {
+        if (ev) { ev.target = _oldTarget; ev.currentTarget = _oldCur; ev.eventPhase = _oldPhase; }
       }
-      var h = target['on' + type];
-      if (typeof h === 'function') { try { h.call(target, ev); } catch (_eCh) {} }
       return true;
     };
   };
@@ -199,6 +221,62 @@
       configurable: true,
     });
   });
+  // WebVTT cue 定位选项 IDL 面（vttcue-interface——headless 仅存储不做视觉布局）：
+  // vertical 枚举（''/rl/lr，invalid 保留旧值——枚举 reflected setter 语义）；
+  // snapToLines boolean；line double|'auto'（NaN 非法回落——spec WebIDL (double or
+  // AutoKeyword)，double NaN → TypeError 面）；position long|'auto'；size double
+  //（clamp [0,100]）；align 枚举（start/center/end/left/right，invalid 保留）。
+  // https://w3c.github.io/webvtt/#dom-vttcue-vertical
+  (function () {
+    Object.defineProperty(VTTCue.prototype, 'vertical', {
+      get: function () { return this._zwVertical; },
+      set: function (v) {
+        var s = String(v == null ? '' : v);
+        if (s === '' || s === 'rl' || s === 'lr') this._zwVertical = s;
+      },
+      configurable: true,
+    });
+    Object.defineProperty(VTTCue.prototype, 'snapToLines', {
+      get: function () { return !!this._zwSnapToLines; },
+      set: function (v) { this._zwSnapToLines = !!v; },
+      configurable: true,
+    });
+    var _isAuto = function (v) { return v === 'auto'; };
+    Object.defineProperty(VTTCue.prototype, 'line', {
+      get: function () { return this._zwLine; },
+      set: function (v) {
+        if (typeof v === 'number' && isNaN(v)) return; // NaN → 保留（invalid double）
+        this._zwLine = (v == null || _isAuto(v)) ? 'auto'
+          : (typeof v === 'number' ? v : (parseFloat(v) == null || isNaN(parseFloat(v)) ? 'auto' : parseFloat(v)));
+      },
+      configurable: true,
+    });
+    Object.defineProperty(VTTCue.prototype, 'position', {
+      get: function () { return this._zwPosition; },
+      set: function (v) {
+        if (typeof v === 'number' && isNaN(v)) return;
+        this._zwPosition = (v == null || _isAuto(v)) ? 'auto' : v;
+      },
+      configurable: true,
+    });
+    Object.defineProperty(VTTCue.prototype, 'size', {
+      get: function () { return this._zwSize; },
+      set: function (v) {
+        var n = Number(v);
+        if (isNaN(n)) return; // invalid → 保留旧值
+        this._zwSize = Math.min(100, Math.max(0, n)); // clamp [0,100]
+      },
+      configurable: true,
+    });
+    Object.defineProperty(VTTCue.prototype, 'align', {
+      get: function () { return this._zwAlign; },
+      set: function (v) {
+        var s = String(v == null ? '' : v);
+        if (s === 'start' || s === 'center' || s === 'end' || s === 'left' || s === 'right') this._zwAlign = s;
+      },
+      configurable: true,
+    });
+  })();
   // 工厂：TextTrack（kind/label/language/mode/cues/activeCues + addCue/removeCue——M3 扩批
   // XII）。cues/activeCues：mode==='disabled' → null，否则 same-object TextTrackCueList
   //（cues 按 startTime 升序动态排序——「changing order」断言；activeCues headless 近似 =
@@ -297,13 +375,20 @@
     var _ttMode = String(mode || 'disabled');
     var _ttId = String(id == null ? '' : id);
     // M3 扩批 XII：cues 可用性 gate（track 元素产物）——track 资源未 settle 时
-    // cues/activeCues 恒 null（spec：track 数据未加载 cue list 不可用；cues「default
-    // attribute」断言面）。settle 由 _zwTrackScheduleLoad（data:/普通 URL 均派）提交。
+    // cues 恒 null（spec：cue list 由 parent media element 加载循环启动，启动前不可用；
+    // cues「default attribute」断言面）。settle 由 _zwTrackScheduleLoad（data:/普通 URL
+    // 均派）提交。M3 扩批 XIII 收窄：**仅 track 子仍挂 media 父下**时 gate 生效——
+    // detached track 元素（createElement 产物、无 media 父）cue list 即可用（spec 轨道
+    // 无 media 父时不参与 media 加载循环、track URL 缺失即「启动完成」——src-clear-cues
+    // 断言面：detached track track.track.cues 非 null）。
     var _cuesGate = function () {
       if (!ownerEl) return true; // addTextTrack 产物——cue list 即可用
       try {
         var _ogKey = (typeof _elKey === 'function') ? _elKey(ownerEl.__zwSelector || null, ownerEl.__zwHandle || null) : '';
-        if (_ogKey && typeof _resourceStates !== 'undefined') return !!_resourceStates[_ogKey];
+        if (_ogKey && typeof _resourceStates !== 'undefined' && _resourceStates[_ogKey]) return true;
+        if (typeof globalThis._zwParentMediaProxy === 'function') {
+          return !globalThis._zwParentMediaProxy(ownerEl.__zwSelector || null, ownerEl.__zwHandle || null);
+        }
       } catch (_eCg) {}
       return true;
     };
@@ -414,6 +499,15 @@
       if (cue._zwTrack === track) cue._zwTrack = null;
       globalThis._zwTextTrackRebuildCueList(_cuesHolder, _cueArr);
     };
+    // M3 扩批 XIII：track URL 变更 → cue list 清空（spec「track URL 变更」处理——
+    // src-clear-cues 断言面；宿主 _zwTrackScheduleLoad 重调度时调用）。
+    track._zwClearCues = function () {
+      for (var i = 0; i < _cueArr.length; i++) {
+        if (_cueArr[i] && _cueArr[i]._zwTrack === track) _cueArr[i]._zwTrack = null;
+      }
+      _cueArr.length = 0;
+      globalThis._zwTextTrackRebuildCueList(_cuesHolder, _cueArr);
+    };
     // EventTarget 面（oncuechange 断言面——on* 初值 null + 身份断言需 accessor）。
     globalThis._zwEnsureEventTarget(track);
     globalThis._zwDefineTargetOnHandler(track, 'cuechange');
@@ -429,6 +523,10 @@
     // M3 扩批 XII：TextTrackList 亦经索引只读 Proxy（video.textTracks[0]='foo' strict
     // TypeError——TextTrackList-getter「no indexed set/create (strict)」断言面）。
     var holder = { arr: arr.slice(), target: Object.create(globalThis.TextTrackList.prototype) };
+    // M3 扩批 XIII：exposed 视图 = 索引只读 Proxy——dispatch 期 ev.target 须指 **exposed
+    // proxy**（track-add-track 断言 event.target === video.textTracks 面；target 记号经
+    // holder.self 供 _zwEnsureEventTarget 使用）。
+    holder.self = globalThis._zwMakeIndexedListProxy(holder, globalThis.TextTrackList);
     var list = holder.target;
     // holder 引用暴露给内部同步面（addTextTrack 增量段 / 集合重建经 list._zwHolder.arr 写）。
     list._zwHolder = holder;
@@ -445,7 +543,30 @@
     globalThis._zwEnsureEventTarget(list);
     globalThis._zwDefineTargetOnHandler(list, 'addtrack');
     globalThis._zwDefineTargetOnHandler(list, 'removetrack');
-    return globalThis._zwMakeIndexedListProxy(holder, globalThis.TextTrackList);
+    return holder.self;
+  };
+  // M3 扩批 XIII：TextTrackList 增量 addtrack 派发（queued task——spec
+  // text-tracks-in-media-elements；track-add-track 断言面：注册 handler 后 addTextTrack
+  // 的同步增量仍异步收到）。event.track = 新增 TextTrack（TrackEvent init dict）。
+  globalThis._zwFireTracksAdded = function (list, added) {
+    var _deferFire = function (fn) {
+      if (typeof queueMicrotask === 'function') queueMicrotask(fn);
+      else if (typeof setTimeout === 'function') setTimeout(fn, 0);
+      else fn();
+    };
+    for (var i = 0; i < added.length; i++) {
+      (function (track) {
+        _deferFire(function () {
+          try {
+            var ev = (typeof globalThis.TrackEvent === 'function')
+              ? new globalThis.TrackEvent('addtrack', { track: track })
+              : null;
+            if (!ev) return;
+            if (typeof list.dispatchEvent === 'function') list.dispatchEvent(ev);
+          } catch (_eFta) {}
+        });
+      })(added[i]);
+    }
   };
 
   function _zwMediaError(code, message) {
