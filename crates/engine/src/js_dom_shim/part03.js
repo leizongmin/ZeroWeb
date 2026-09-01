@@ -11338,6 +11338,15 @@
             var _pTag = _realTag(sel, handle);
             var _pKey = _elKey(sel, handle);
             var _pMs = _mediaState[_pKey] || (_mediaState[_pKey] = {});
+            // media-elements M3 扩批 XI（spec resource selection）——无 src 候选时
+            // play() 亦触发资源选择（invoke：同步段 NO_SOURCE；稳定态无候选回落 EMPTY，
+            // 不派 loadstart——无加载发生）。
+            // https://html.spec.whatwg.org/multipage/media.html#dom-media-play
+            if (typeof _zwMediaResourceSelect === 'function'
+                && (handle ? __zw_has_attr_handle(handle, 'src') !== '1' : __zw_has_attr(sel, 'src') !== '1')
+                && !_resourceStates[_pKey]) {
+              _zwMediaResourceSelect(sel, handle, _pKey);
+            }
             if (_pMs.playing) return Promise.resolve(undefined);
             _pMs.playing = true;
             _pMs.ended = false;
@@ -11406,10 +11415,19 @@
         if (prop === 'pause' && (_realTag(sel, handle) === 'AUDIO' || _realTag(sel, handle) === 'VIDEO')) {
           // pause()：!paused → playing=false + 派 pause（spec：已暂停时调用无事件）；
           // pending play promise → reject AbortError（spec 一致）。
+          // media-elements M3 扩批 XI：pause() 亦 invoke 资源选择（spec 资源选择算法的
+          // 「wait for the element to become... paused」等待面——无论 paused 态，调用即
+          // invoke；无 src 候选时同步 NO_SOURCE → 稳定态 EMPTY，同 play() 面）。
+          // https://html.spec.whatwg.org/multipage/media.html#concept-media-load-algorithm
           return function () {
             var _pTag = _realTag(sel, handle);
             if (_pTag === 'AUDIO' || _pTag === 'VIDEO') {
               var _pKey = _elKey(sel, handle);
+              if (typeof _zwMediaResourceSelect === 'function'
+                  && (handle ? __zw_has_attr_handle(handle, 'src') !== '1' : __zw_has_attr(sel, 'src') !== '1')
+                  && !_resourceStates[_pKey]) {
+                _zwMediaResourceSelect(sel, handle, _pKey);
+              }
               var _pMs = _mediaState[_pKey];
               if (_pMs && _pMs.playing) {
                 _pMs.playing = false;
@@ -11437,6 +11455,35 @@
             var _ldKey = _elKey(sel, handle);
             var _ldMs = _mediaState[_ldKey];
             if (_ldMs) _ldMs.pendingVc = 0;
+            // media-elements M3 扩批 XI：load() 即**重跑** media load 算法（spec
+            // dom-media-load：「invoke the media element's resource selection
+            // algorithm」）——无条件重调度 headless 加载模拟（既有 _resourceStates
+            // 清除——currentSrc/状态重置；含空 src 失败面与 source 候选重试）。
+            // https://html.spec.whatwg.org/multipage/media.html#dom-media-load
+            if (typeof _zwMediaScheduleLoad === 'function') {
+              try {
+                var _ldHas = handle ? __zw_has_attr_handle(handle, 'src') === '1' : __zw_has_attr(sel, 'src') === '1';
+                delete _resourceStates[_ldKey]; // 重载：状态重置（spec「set networkState to NETWORK_EMPTY」）
+                if (_ldHas) {
+                  var _ldTag = (_realTag(sel, handle) || '').toLowerCase();
+                  var _ldRaw = String((handle ? __zw_get_attr_handle(handle, 'src') : __zw_get_attr(sel, 'src')) || '');
+                  var _ldAbs = _ldRaw;
+                  try { if (typeof _zwResolveFetchUrl === 'function') _ldAbs = _zwResolveFetchUrl(_ldRaw.replace(/^[\x00-\x20]+/, '').replace(/[\x00-\x20]+$/, '')); } catch (_eLdR2) {}
+                  _zwMediaScheduleLoad(sel, handle, _ldTag, _ldAbs, _ldRaw === '', (_ldMs && _ldMs.lastSourceChild) || null);
+                } else if (typeof _zwMediaResourceSelect === 'function') {
+                  // 无 src 属性：仅资源选择同步段（NO_SOURCE → 稳定态 EMPTY），无加载模拟；
+                  // 但 load() 前的 source 子候选仍在 → 重试该候选（spec：load 重跑资源选择——
+                  // load-removes-queued-error-event「source error event」断言面）。
+                  var _ldChild = (_ldMs && _ldMs.lastSourceChild) || null;
+                  if (_ldChild != null && typeof _zwMediaScheduleLoad === 'function') {
+                    var _ldTag2 = (_realTag(sel, handle) || '').toLowerCase();
+                    _zwMediaScheduleLoad(sel, handle, _ldTag2, '', true, _ldChild);
+                  } else {
+                    _zwMediaResourceSelect(sel, handle, _ldKey);
+                  }
+                }
+              } catch (_eLdS) {}
+            }
           };
         }
         if (prop === 'canPlayType' && (_realTag(sel, handle) === 'AUDIO' || _realTag(sel, handle) === 'VIDEO')) {

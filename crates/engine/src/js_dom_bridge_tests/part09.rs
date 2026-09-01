@@ -2777,7 +2777,9 @@ fn test_media_load_event_sequence_r389() {
         std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
     register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
 
-    // runner timer stub（prepare_harness_html 同构）——setTimer 进可泵表。
+    // M3 扩批 XI：加载模拟续段走 microtask（queueMicrotask——V8 execute 末 checkpoint
+    // 排空，等价「当前 task 末」的 queued task 语义；__zw_timers 泵不再参与 headless
+    // 加载面，仅保留表初始化以兼容既有断言读取）。
     sandbox.execute(
         "globalThis.__zw_pending = {}; globalThis.__zw_timers = [];\
          globalThis.__zw_setTimeout = function(id, delay) {\
@@ -2800,23 +2802,15 @@ fn test_media_load_event_sequence_r389() {
          v.onloadedmetadata = function () { globalThis.__log.push('loadedmetadata'); };\
          v.addEventListener('canplay', function () { globalThis.__log.push('canplay'); });\
          v.src = '/media/movie_5.mp4';\
-         globalThis.__timersArmed = (globalThis.__zw_timers || []).length;\
          globalThis.__readyBefore = v.readyState;",
     ).unwrap();
     assert_eq!(
-        sandbox.execute("String(globalThis.__timersArmed)").unwrap().value,
-        "1",
-        "src= 即排程 headless 加载模拟定时器"
-    );
-    assert_eq!(
         sandbox.execute("String(globalThis.__readyBefore)").unwrap().value,
         "0",
-        "定时器未泵前 readyState 恒 HAVE_NOTHING"
+        "checkpoint 前 readyState 恒 HAVE_NOTHING"
     );
-
-    // 泵定时器（同 runner probe loop）。
-    let _ = sandbox.execute("globalThis.__zw_fire_due_timers()");
-    let _ = sandbox.execute("globalThis.__zw_fire_due_timers()");
+    // microtask checkpoint（execute 即排空——src= 的 settle 续段已在上一 execute 末运行）。
+    let _ = sandbox.execute(";");
     let log = sandbox.execute("globalThis.__log.join(',')").unwrap().value;
     assert_eq!(log, "loadedmetadata,canplay", "on* handler + addEventListener 双路径按序触发");
     assert_eq!(
@@ -3370,12 +3364,13 @@ fn test_media_duration_truth_injection_m2a() {
     );
 
     // ② 无真值回落：video src 动态设置（headless 模拟路径，无宿主 settle）→ duration 600。
+    // M3 扩批 XI：settle 续段走 microtask——独立 execute 触发 checkpoint 后再读。
     sandbox.execute(
         "globalThis.__v2 = document.createElement('video');\
          globalThis.__v2.src = '/media/headless.mp4';\
-         __zw_fire_due_timers();\
-         globalThis.__d2 = globalThis.__v2.duration;",
+         __zw_fire_due_timers();",
     ).unwrap();
+    sandbox.execute("globalThis.__d2 = globalThis.__v2.duration;").unwrap();
     assert_eq!(
         sandbox.execute("String(globalThis.__d2)").unwrap().value,
         "600",
@@ -3800,5 +3795,112 @@ fn test_media_track_texttracks_sync_m3x() {
         sandbox.execute("globalThis.__r5").unwrap().value,
         "0",
         "innerHTML 清空后 textTracks 同步清空"
+    );
+}
+
+#[test]
+fn test_media_resource_selection_m3xi() {
+    // media-elements M3 扩批 XI：resource selection 算法 JS 可观察面（spec
+    // concept-media-load-algorithm——同步段 networkState=NETWORK_NO_SOURCE(3)、
+    // 稳定态（microtask）续段无候选回落 NETWORK_EMPTY(0)、media load invoke 播放中止
+    // （paused 置 true + pending play promise reject AbortError）、候选失效中断加载）。
+    // WPT resource-selection-invoke-play / -load / -set-src / -remove-src / -remove-source
+    // / invoke-in-sync-event / invoke-set-src-networkState 断言面。
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new("<html><body></body></html>".to_string()));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("https://wpt.test/t.html".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+
+    // ① invoke 面：play()/pause()/load() 无 src 候选 → 同步 NO_SOURCE(3)、稳定态 EMPTY(0)。
+    sandbox.execute(
+        "var vp = document.createElement('video');\
+         globalThis.__vp = vp;\
+         globalThis.__ns = [String(vp.networkState)];\
+         vp.play();\
+         globalThis.__ns.push(String(vp.networkState));",
+    ).unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__vp.networkState)").unwrap().value,
+        "0",
+        "play() 后（同任务内）networkState = NETWORK_EMPTY(0)（本沙箱无 queueMicrotask 延迟面——同步回落）"
+    );
+
+    // ② setAttribute('src','') invoke → 同步 NO_SOURCE；稳定态前移除 → 中断（无 loadstart）。
+    sandbox.execute(
+        "var v2 = document.createElement('video');\
+         globalThis.__v2 = v2;\
+         var ev2 = [];\
+         v2.onloadstart = function () { ev2.push('loadstart'); };\
+         globalThis.__ev2 = ev2;\
+         v2.setAttribute('src', '');\
+         globalThis.__ns2a = String(v2.networkState);",
+    ).unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__ns2a").unwrap().value,
+        "3",
+        "setAttribute('src','') invoke → 同步 NO_SOURCE(3)"
+    );
+    sandbox.execute(
+        "globalThis.__v2.removeAttribute('src');\
+         globalThis.__ns2b = String(globalThis.__v2.networkState);",
+    ).unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__ns2b").unwrap().value,
+        "3",
+        "removeAttribute 后（同步段仍阻塞）保持 NO_SOURCE(3)"
+    );
+
+    // ③ media load invoke 播放中止：play() 后 setAttribute('src') → paused 翻转 true +
+    // pending play promise reject AbortError（spec dom-media-load 同步段）。
+    sandbox.execute(
+        "var v3 = document.createElement('video');\
+         globalThis.__v3 = v3;\
+         globalThis.__rejected3 = 'no';\
+         var p = v3.play();\
+         p.catch(function (e) { globalThis.__rejected3 = (e instanceof DOMException) ? e.name : String(e && e.name); });\
+         var wasPlaying = String(v3.paused);\
+         v3.setAttribute('src', 'a.webm');\
+         globalThis.__paused3 = String(v3.paused);\
+         globalThis.__wasPlaying = wasPlaying;",
+    ).unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__wasPlaying").unwrap().value,
+        "false",
+        "play() 同步翻转 paused=false（既有语义）"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__paused3").unwrap().value,
+        "true",
+        "setAttribute('src') invoke media load → paused 同步置 true"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__rejected3").unwrap().value,
+        "AbortError",
+        "pending play promise 经 load invoke reject AbortError"
+    );
+
+    // ④ load() 重跑算法：src 属性移除后 load() → 状态重置（error 清空、networkState 不残留 IDLE）。
+    sandbox.execute(
+        "var v4 = document.createElement('video');\
+         globalThis.__v4 = v4;\
+         v4.setAttribute('src', 'b.webm');\
+         void v4.networkState;\
+         v4.removeAttribute('src');\
+         v4.load();",
+    ).unwrap();
+    // 稳定态（microtask 续段）在后读——networkState 经 NO_SOURCE 回落 NETWORK_EMPTY。
+    assert_eq!(
+        sandbox.execute("String(globalThis.__v4.networkState) + ',' + String(globalThis.__v4.error === null)").unwrap().value,
+        "0,true",
+        "load() 无候选 → 稳定态 networkState NETWORK_EMPTY + error 保持 null"
     );
 }

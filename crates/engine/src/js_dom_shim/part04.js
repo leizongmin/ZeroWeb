@@ -2173,6 +2173,24 @@
             }
             if (handle) __zw_set_attr_handle(handle, n, v);
             else __zw_set_attr(sel, n, v);
+            // media-elements M3 扩批 XI：setAttribute('src') 入 audio/video（HTML ns）→
+            // invoke media load 算法（resource-selection-invoke-set-src 族断言 loadstart；
+            // setAttribute 是内容属性路径——IDL src= setter 同语义，part05）。非法 ns 的
+            // src（setAttributeNS('bogus','src')——invoke-set-src-in-namespace 断言 NOT
+            // invoke）不触发：本钩子仅挂 setAttribute（HTML ns 无 NS 写法）；NS 变体
+            // 走 setAttributeNS 分支（不挂钩）。
+            // https://html.spec.whatwg.org/multipage/media.html#concept-media-load-algorithm
+            if (n === 'src' && typeof _realTag === 'function'
+                && (_realTag(sel, handle) === 'AUDIO' || _realTag(sel, handle) === 'VIDEO')
+                && typeof _zwMediaScheduleLoad === 'function'
+                && !_resourceStates[_elKey(sel, handle)]) {
+              try {
+                var _saTag = _realTag(sel, handle).toLowerCase();
+                var _saAbs = String(v);
+                try { if (typeof _zwResolveFetchUrl === 'function') _saAbs = _zwResolveFetchUrl(_saAbs); } catch (_eSaR) {}
+                _zwMediaScheduleLoad(sel, handle, _saTag, _saAbs, v === '');
+              } catch (_eSaM) {}
+            }
             // R125：id 变更的同步可见性——① sel-based 元素记覆盖表（host 快照不反映
             // 同批 id 变更，getElementById 的 querySelector 路径会命中 stale id）；
             // ② handle 元素重挂 pending-ID 索引新键（与 .id= setter 对称——appendChild
@@ -4164,6 +4182,10 @@
               // spec：插入 source 子后「等待稳定」重跑 resource selection——当前无媒体 src 属性
               // 且无已 settle 资源时，取该 source 的 src 调度加载序列（loadstart→…，父元素
               // currentSrc 真值化 + 事件监听面）。WPT currentSrc「adding source element」族。
+              // M3 扩批 XI：source 子自身**无 src**时（resource-selection-invoke-insert-source
+              // 断言 loadstart 到达——无 src 的 source 不阻塞），仍以触发点为父资源选择
+              //（loadstart 派发面——headless 近似：以空候选调度，父 networkState 走
+              // 同步段 NO_SOURCE 面）。有 src 时行为不变。
               if (child && child.nodeType === 1
                   && String(child.tagName || '').toLowerCase() === 'source'
                   && typeof _realTag === 'function'
@@ -4171,6 +4193,10 @@
                   && typeof _zwMediaScheduleLoad === 'function'
                   && typeof __zw_has_attr_handle === 'function'
                   && __zw_has_attr_handle(handle, 'src') !== '1'
+                  // M3 扩批 XI：仅 HTML ns 的 source 是候选（createElementNS('bogus','source')
+                  // 非 candidate——invoke-insert-source-in-namespace 断言 NOT invoke）。
+                  // _nsHandles 印记仅 NS 创建元素有；无印记 = HTML ns。
+                  && !(child.__zwHandle && typeof _nsHandles !== 'undefined' && _nsHandles[child.__zwHandle])
                   && !_resourceStates[_elKey(sel, handle)]) {
                 try {
                   var _mSrcAttr = '';
@@ -4179,7 +4205,7 @@
                   try {
                     if (typeof _zwResolveFetchUrl === 'function') _mSrcAbs = _zwResolveFetchUrl(_mSrcAttr);
                   } catch (_eMsr2) {}
-                  _zwMediaScheduleLoad(sel, handle, _realTag(sel, handle).toLowerCase(), _mSrcAbs, _mSrcAttr === '');
+                  _zwMediaScheduleLoad(sel, handle, _realTag(sel, handle).toLowerCase(), _mSrcAbs, _mSrcAttr === '', child);
                 } catch (_eMsl2) {}
               }
               // R2927/R2928：handle 父（任意 handle 元素，非仅容器）同步记录子节点到 registry。

@@ -6793,30 +6793,141 @@
     ms.readyState = 4;
     _zwMediaFire(sel, handle, key, 'canplaythrough');
     ms.networkState = 1; // NETWORK_IDLE——加载完成无错误（spec networkState 稳态）
+    // M3 扩批 XI：suspend——「once the entire media resource has been fetched」
+    //（headless：加载序列完成即全量已取；load-removes-queued-error-event 断言面）。
+    // https://html.spec.whatwg.org/multipage/media.html#event-media-suspend
+    _zwMediaFire(sel, handle, key, 'suspend');
     _zwMediaAutoplay(sel, handle, key);
   }
   // M2：动态 `.src=` 设置的 headless 加载模拟——runner/生产页脚本设 src 后宿主未必有
   // media fetch 通路（testharness 页面无 async_load 媒体抓取），由 shim 侧 setTimeout(0)
   // 提交状态并派事件序列（幂等：_resourceStates 已有则跳过）。handle/sel 双身份——
   // detached createElement 元素为 handle-only，key 须含 handle（_elKey(sel, handle)）。
-  function _zwMediaScheduleLoad(sel, handle, tag, absUrl, isEmptySrc) {
+  // media-elements M3 扩批 XI（resource-selection 族）：media load 算法同步段「await a
+  // stable state」——invoke（资源选择启动）后阻塞期间 networkState = NETWORK_NO_SOURCE(3)；
+  // 稳定态续段找不到候选（无 src 且无 source 子）→ NETWORK_EMPTY(0)。
+  // runner/生产页面稳定态 = 当前脚本任务末（V8 perform_microtask_checkpoint）——
+  // queueMicrotask 续段使「同任务内 NO_SOURCE / 下个 <script> 已 EMPTY」断言面成立。
+  // 仅翻转 networkState，不派事件（无加载发生；_zwMediaScheduleLoad 负责真加载面）。
+  // https://html.spec.whatwg.org/multipage/media.html#concept-media-load-algorithm
+  // （synchronous section：await a stable state → 「If no candidate... set networkState
+  // to NETWORK_EMPTY and return」）
+  globalThis._zwMediaResourceSelect = function (sel, handle, key) {
+    var _rsMs = _mediaState[key] || (_mediaState[key] = {});
+    _rsMs.networkState = 3; // NETWORK_NO_SOURCE——同步段阻塞期间
+    if (typeof queueMicrotask !== 'function') return;
+    queueMicrotask(function () {
+      var _rsPost = _mediaState[key];
+      if (!_rsPost || _rsPost.networkState !== 3) return; // 已被后续加载序列/error settle 推进
+      var _hasSrc = false;
+      try {
+        _hasSrc = handle ? __zw_has_attr_handle(handle, 'src') === '1'
+          : ((typeof __zw_has_attr_lw === 'function' ? __zw_has_attr_lw(sel, 'src') : __zw_has_attr(sel, 'src')) === '1');
+      } catch (_eRsH) {}
+      var _hasSource = false;
+      try {
+        var _rsKids = (handle && _handleChildren[handle]) ? _handleChildren[handle]
+          : (typeof _childNodeList === 'function' ? _childNodeList(sel, handle) : []);
+        for (var _rsi = 0; _rsi < _rsKids.length; _rsi++) {
+          var _rsKid = _rsKids[_rsi];
+          if (_rsKid && _rsKid.nodeType === 1 && String(_rsKid.tagName || '').toLowerCase() === 'source') { _hasSource = true; break; }
+        }
+      } catch (_eRsK) {}
+      if (!_hasSrc && !_hasSource) _rsPost.networkState = 0; // 无候选 → NETWORK_EMPTY
+      else _rsPost.networkState = 2; // 有候选 → fetch 启动（headless：LOADING 面）
+    });
+  };
+  function _zwMediaScheduleLoad(sel, handle, tag, absUrl, isEmptySrc, sourceChild) {
     var key = _elKey(sel, handle);
     if (typeof setTimeout !== 'function') return;
+    var ms = _mediaState[key] || (_mediaState[key] = {});
+    // M3 扩批 XI（spec dom-media-load 同步段）：media load invoke → 播放中止——paused
+    // 置 true（同步面）、pending play promises reject AbortError、timeupdate + pause
+    //（「If paused is false... fire timeupdate, fire pause」）。set-src-networkState
+    // 断言面（play() 后 setAttribute('src') → paused === true）。
+    // https://html.spec.whatwg.org/multipage/media.html#dom-media-load
+    if (ms.playing) {
+      ms.playing = false;
+      if (ms.playPromise) {
+        var _ldEntry = ms.playPromise;
+        delete ms.playPromise;
+        try { _ldEntry.reject(new (globalThis.DOMException || Error)('The play() request was interrupted by a call to load().', 'AbortError')); } catch (_eLdR) {}
+      }
+      _zwMediaFire(sel, handle, key, 'timeupdate');
+      _zwMediaFire(sel, handle, key, 'pause');
+    }
+    ms.lastSourceChild = sourceChild || null; // load() 重调度时恢复 source 候选身份
+    // M3 扩批 XI：load() 纪元——spec dom-media-load「queued tasks and pending events 被
+    // 丢弃」——loadstart handler 内的 load() 使本续段余下步骤（候选 error settle）作废
+    //（load-removes-queued-error-event 断言 [loadstart, loadstart, error] 序）。
+    ms.loadEpoch = (ms.loadEpoch || 0) + 1;
+    var _ldMyEpoch = ms.loadEpoch;
+    // M3 扩批 XI：加载触发同置资源选择同步段语义（invoke 后同步 NO_SOURCE）。
+    if (typeof globalThis._zwMediaResourceSelect === 'function') {
+      globalThis._zwMediaResourceSelect(sel, handle, key);
+    }
+    // M3 扩批 XI：settle 触发时**重验候选**（spec 同步段「await a stable state」后续段——
+    // stable state 前候选被移除（removeAttribute('src') / source 子被移除）→ 加载中断，
+    // 不派 loadstart/不 settle；resource-selection-remove-src / -remove-source /
+    // -resumes-onload 断言面）。host setTimeout 为真实线程投递（约 0ms，与后续脚本
+    // 执行竞态），重验是唯一可靠的取消点。
+    var _stillCandidate = function () {
+      try {
+        if (sourceChild != null) {
+          // source 子候选：仍须是本 media 父的直接子（被移除 → 候选失效）
+          var _scKids = (handle && _handleChildren[handle]) ? _handleChildren[handle]
+            : (typeof _childNodeList === 'function' ? _childNodeList(sel, handle) : []);
+          var _found = false;
+          for (var _sci = 0; _sci < _scKids.length; _sci++) {
+            if (_scKids[_sci] === sourceChild) { _found = true; break; }
+          }
+          return _found;
+        }
+        // 属性**存在性**判定（src="" 是 present-empty——合法失败候选，非「已移除」；
+        // R3187 has/get 两段式——get_attr 对缺省与空值均返 ''，须 has_attr 区分）。
+        var _present = handle ? __zw_has_attr_handle(handle, 'src') === '1'
+          : ((typeof __zw_has_attr_lw === 'function' ? __zw_has_attr_lw(sel, 'src') : __zw_has_attr(sel, 'src')) === '1');
+        if (!_present) return false; // 属性已移除 → 候选失效
+        if (isEmptySrc === true) return true; // 空 src 候选：存在即继续（失败面）
+        var _cur = handle ? __zw_get_attr_handle(handle, 'src') : (typeof __zw_get_attr_lw === 'function' ? __zw_get_attr_lw(sel, 'src') : __zw_get_attr(sel, 'src'));
+        _cur = String(_cur == null ? '' : _cur).replace(/^[\x00-\x20]+/, '').replace(/[\x00-\x20]+$/, '');
+        var _curAbs = _cur;
+        try { if (typeof _zwResolveFetchUrl === 'function') _curAbs = _zwResolveFetchUrl(_cur); } catch (_eRsC) {}
+        return _curAbs === absUrl; // 属性被改成其它 URL → 旧加载作废
+      } catch (_eRsC2) { return true; }
+    };
     // 空 src（剥离 C0/space 后 ''）→ spec「empty src attribute」：资源选择失败——loadstart
     // 后派 error（code=MEDIA_ERR_SRC_NOT_SUPPORTED，error IDL 面置 MediaError 实例），
     // networkState 复位 NETWORK_EMPTY、不提交资源状态（currentSrc 恒 ''）。
     // https://html.spec.whatwg.org/multipage/media.html#concept-media-load-algorithm（failed
     // with attribute 阶段：error 事件排队 + 「set the error code to MEDIA_ERR_SRC_NOT_SUPPORTED」）。
+    // M3 扩批 XI：续段走 microtask（queueMicrotask）——与资源选择续段同一检查点排空，
+    // 「loadstart 先于 window load」与同步段候选重验均确定性成立（host 真实线程定时器
+    // 与后续脚本执行竞态，曾致 invoke-set-src 族非确定性假失败）。
+    var _deferCont = function (fn) {
+      if (typeof queueMicrotask === 'function') queueMicrotask(fn);
+      else setTimeout(fn, 0);
+    };
     if (isEmptySrc === true) {
-      setTimeout(function () {
+      _deferCont(function () {
+        if (!_stillCandidate()) return; // stable state 前候选已移除 → 中断
         var ms = _mediaState[key] || (_mediaState[key] = {});
-        ms.networkState = 0;
+        ms.networkState = 3; // NO_SOURCE——loadstart 同步段（error 在其后排队）
         _zwMediaFire(sel, handle, key, 'loadstart');
-        _zwSettleResourceKey(key, sel, handle, tag, '', 'error', 0, 0, 4);
-      }, 0);
+        if ((ms.loadEpoch || 0) !== _ldMyEpoch) return; // load() 已重调度 → 余下作废
+        if (sourceChild != null) {
+          // source 子候选失败：error 派在 source 元素上（spec「failed to find a candidate
+          // resource」——候选 source 触发 onerror，父级 error 仅在全候选耗尽后面）。
+          _zwSettleResourceKey(_elKey(sourceChild.__zwSelector || null, sourceChild.__zwHandle || null), sourceChild.__zwSelector || null, sourceChild.__zwHandle || null, 'source', '', 'error', 0, 0, 4);
+          delete _resourceStates[key]; // 父级无状态（等待下一候选）
+        } else {
+          _zwSettleResourceKey(key, sel, handle, tag, '', 'error', 0, 0, 4);
+        }
+      });
       return;
     }
-    setTimeout(function () {
+    _deferCont(function () {
+      if (!_stillCandidate()) return; // 同上——stable state 前候选失效
       // media-elements M3 扩批 VIII：about:（about:blank 等）非空 src——spec 资源获取
       // 面不产出可播媒体资源（not a supported media container）→ 资源选择失败路径
       //（error 事件 + code 4，同空 src 面；video_crash_empty_src 断言 error 到达不 crash）。
@@ -6826,7 +6937,7 @@
         return;
       }
       _zwSettleResourceKey(key, sel, handle, tag, absUrl, 'loaded', 0, 0);
-    }, 0);
+    });
   }
   function _zwSettleResourceSelector(sel, tag, url, outcome, width, height, durationMs) {
     return _zwSettleResourceKey(_elKey(sel, null), sel, null, tag, url, outcome, width, height, undefined, durationMs);
@@ -6844,6 +6955,14 @@
       error: outcome === 'error' ? _zwMediaError(Number(errorCode) || 2, 'Error loading resource: ' + String(url)) : null
     };
     _resourceStates[key] = state;
+    // media-elements M3 扩批 XI：资源选择失败（error settle）→ networkState =
+    // NETWORK_NO_SOURCE(3)（spec「failed with attribute/media resource」终态——
+    // 等待更多候选；resource-selection-invoke-pause-networkState 断言面）。
+    // 成功 settle → _zwMediaLoadSequence 置 LOADING→IDLE（下方）。
+    if ((tag === 'audio' || tag === 'video') && outcome === 'error') {
+      var _seMs = _mediaState[key] || (_mediaState[key] = {});
+      _seMs.networkState = 3;
+    }
     var eventType = '';
     if (tag === 'img') eventType = outcome === 'error' ? 'error' : 'load';
     else if (tag === 'track') eventType = outcome === 'error' ? 'error' : 'load';

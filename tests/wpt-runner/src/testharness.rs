@@ -1356,6 +1356,37 @@ pub const MEDIA_TEST_FILES: &[&str] = &[
     // M3 扩批 IX：移动面（同文档移动仍 related → 不暂停）。
     // pause-move-to-other-document 不导入——iframe adopt 面未实施（fetch 脚本注记）。
     "html/semantics/embedded-content/media-elements/playing-the-media-resource/pause-move-within-document.html",
+    // M3 扩批 XI：resource selection 算法 JS 可观察面（loading-the-media-resource 逐文件
+    // 白名单——networkState 同步段 NO_SOURCE/稳定态 EMPTY、invoke 面（play/pause/load/
+    // set-src/insert source）、src 移除不触发；_zwMediaResourceSelect microtask 续段）。
+    // 依赖真资源失败时序的 pointer/candidate/source-media 族与 MSE/iframe/manual 变体
+    // 不导入（master.md 排除清单）。data:, 两案（invoke-pause/remove-networkState）
+    // 期望 error settle——与 headless 即时 loaded settle 的 currentSrc 契约冲突，排除。
+    "html/semantics/embedded-content/media-elements/loading-the-media-resource/autoplay-overrides-preload.html",
+    "html/semantics/embedded-content/media-elements/loading-the-media-resource/load-removes-queued-error-event.html",
+    "html/semantics/embedded-content/media-elements/loading-the-media-resource/resource-selection-candidate-insert-before.html",
+    "html/semantics/embedded-content/media-elements/loading-the-media-resource/resource-selection-invoke-audio-constructor-no-src.html",
+    "html/semantics/embedded-content/media-elements/loading-the-media-resource/resource-selection-invoke-audio-constructor.html",
+    "html/semantics/embedded-content/media-elements/loading-the-media-resource/resource-selection-invoke-in-sync-event.html",
+    "html/semantics/embedded-content/media-elements/loading-the-media-resource/resource-selection-invoke-insert-fragment-into-document.html",
+    "html/semantics/embedded-content/media-elements/loading-the-media-resource/resource-selection-invoke-insert-into-document.html",
+    "html/semantics/embedded-content/media-elements/loading-the-media-resource/resource-selection-invoke-insert-parent-into-document.html",
+    "html/semantics/embedded-content/media-elements/loading-the-media-resource/resource-selection-invoke-insert-source-in-div.html",
+    "html/semantics/embedded-content/media-elements/loading-the-media-resource/resource-selection-invoke-insert-source-in-namespace.html",
+    "html/semantics/embedded-content/media-elements/loading-the-media-resource/resource-selection-invoke-insert-source-not-in-document.html",
+    "html/semantics/embedded-content/media-elements/loading-the-media-resource/resource-selection-invoke-insert-source.html",
+    "html/semantics/embedded-content/media-elements/loading-the-media-resource/resource-selection-invoke-load.html",
+    "html/semantics/embedded-content/media-elements/loading-the-media-resource/resource-selection-invoke-pause.html",
+    "html/semantics/embedded-content/media-elements/loading-the-media-resource/resource-selection-invoke-play.html",
+    "html/semantics/embedded-content/media-elements/loading-the-media-resource/resource-selection-invoke-remove-from-document.html",
+    "html/semantics/embedded-content/media-elements/loading-the-media-resource/resource-selection-invoke-remove-src.html",
+    "html/semantics/embedded-content/media-elements/loading-the-media-resource/resource-selection-invoke-set-src-in-namespace.html",
+    "html/semantics/embedded-content/media-elements/loading-the-media-resource/resource-selection-invoke-set-src-networkState.html",
+    "html/semantics/embedded-content/media-elements/loading-the-media-resource/resource-selection-invoke-set-src-not-in-document.html",
+    "html/semantics/embedded-content/media-elements/loading-the-media-resource/resource-selection-invoke-set-src.html",
+    "html/semantics/embedded-content/media-elements/loading-the-media-resource/resource-selection-remove-source.html",
+    "html/semantics/embedded-content/media-elements/loading-the-media-resource/resource-selection-remove-src.html",
+    "html/semantics/embedded-content/media-elements/loading-the-media-resource/resource-selection-resumes-onload.html",
     "html/semantics/embedded-content/media-elements/preload_reflects_none_autoplay.html",
     "html/semantics/embedded-content/media-elements/readyState_during_canplay.html",
     "html/semantics/embedded-content/media-elements/readyState_during_canplaythrough.html",

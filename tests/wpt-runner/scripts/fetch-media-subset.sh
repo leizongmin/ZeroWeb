@@ -149,6 +149,40 @@ fetch_dir "${BASE}/interfaces/HTMLElement/HTMLTrackElement"
 
 # M3 扩批 X：track 子元素 ↔ video.textTracks 集合同步断言面（逐文件白名单——
 # track-element 目录整体含大量 VTT 解析/cue 渲染用例，依赖真字幕加载，不整目录）。
+# M3 扩批 XI：resource selection 算法 JS 可观察面（逐文件白名单——networkState
+# 同步段/稳定态、invoke 面、src 移除不触发；依赖真资源失败时序的 pointer/candidate/
+# source-media 族 + MSE/iframe/manual + data:, error settle 两案不导入，见 master.md）。
+RS_FILES=(
+  "autoplay-overrides-preload.html"
+  "load-removes-queued-error-event.html"
+  "resource-selection-candidate-insert-before.html"
+  "resource-selection-invoke-audio-constructor-no-src.html"
+  "resource-selection-invoke-audio-constructor.html"
+  "resource-selection-invoke-in-sync-event.html"
+  "resource-selection-invoke-insert-fragment-into-document.html"
+  "resource-selection-invoke-insert-into-document.html"
+  "resource-selection-invoke-insert-parent-into-document.html"
+  "resource-selection-invoke-insert-source-in-div.html"
+  "resource-selection-invoke-insert-source-in-namespace.html"
+  "resource-selection-invoke-insert-source-not-in-document.html"
+  "resource-selection-invoke-insert-source.html"
+  "resource-selection-invoke-load.html"
+  "resource-selection-invoke-pause.html"
+  "resource-selection-invoke-play.html"
+  "resource-selection-invoke-remove-from-document.html"
+  "resource-selection-invoke-remove-src.html"
+  "resource-selection-invoke-set-src-in-namespace.html"
+  "resource-selection-invoke-set-src-networkState.html"
+  "resource-selection-invoke-set-src-not-in-document.html"
+  "resource-selection-invoke-set-src.html"
+  "resource-selection-remove-source.html"
+  "resource-selection-remove-src.html"
+  "resource-selection-resumes-onload.html"
+)
+for relative in "${RS_FILES[@]}"; do
+  fetch_raw "${BASE}/loading-the-media-resource/${relative}"
+done
+
 TRACK_ELEMENT_FILES=(
   "track/track-element/track-api-texttracks.html"
   "track/track-element/track-addtrack-kind.html"
