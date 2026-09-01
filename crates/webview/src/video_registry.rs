@@ -107,6 +107,8 @@ struct WebmAudioEntry {
     playing: bool,
     /// 已解码累计游标（毫秒）——audio clock 主时钟的媒体时间真值面。
     cursor_ms: u64,
+    /// seek 追赶区静默线（毫秒；目标前采样不入 sink——AudioEntry 同面）。
+    skip_until_ms: u64,
     last_tick_ms: Option<u64>,
     volume: f32,
     muted: bool,
@@ -119,6 +121,7 @@ impl WebmAudioEntry {
             sink: NullSink::new(),
             playing: false,
             cursor_ms: 0,
+            skip_until_ms: 0,
             last_tick_ms: None,
             volume: 1.0,
             muted: false,
@@ -126,6 +129,7 @@ impl WebmAudioEntry {
     }
 
     /// 推进到墙钟 `now_ms`（实时节奏解码写 sink；增益同 AudioEntry 面）。
+    /// `skip_until_ms` ≥ 0 时为 seek 追赶区静默线（目标前采样不入 sink）。
     fn advance_to(&mut self, now_ms: u64) -> bool {
         if !self.playing {
             return false;
@@ -144,6 +148,11 @@ impl WebmAudioEntry {
             self.cursor_ms = batch.pts_ms
                 + (batch.samples.len() as u64 * 1000)
                     / (u64::from(batch.sample_rate) * u64::from(batch.channels).max(1));
+            // seek 追赶区（batch 末 ≤ 丢弃线）：静默解码，不入 sink（spec
+            // precise-seek——与 AudioEntry 同面）。
+            if self.cursor_ms <= self.skip_until_ms {
+                continue;
+            }
             if gain == 1.0 {
                 let _ = self.sink.write(&batch.samples);
             } else {
@@ -170,6 +179,9 @@ pub struct VideoPlayerRegistry {
     audio_entries: HashMap<u64, AudioEntry>,
     /// A/V pair（M2 切片 D）：webm 双轨源的伴生音频轨（video play 时懒建）。
     av_audio_entries: HashMap<u64, WebmAudioEntry>,
+    /// A/V pair 源字节留存（切片 E）：伴生轨 seek 重建 `WebmAudioTrack` 所需——
+    /// play 消费 sources 后双轨源的字节保到这里（release/clear 同步清理）。
+    av_sources: HashMap<u64, Vec<u8>>,
 }
 
 impl VideoPlayerRegistry {
@@ -190,6 +202,7 @@ impl VideoPlayerRegistry {
         self.sources.remove(&key);
         self.audio_entries.remove(&key);
         self.av_audio_entries.remove(&key);
+        self.av_sources.remove(&key);
     }
 
     /// settle 时登记音频源（`<audio>` settle 面；解码器立即构建——音频探测轻量）。
@@ -215,6 +228,7 @@ impl VideoPlayerRegistry {
         self.players.clear();
         self.audio_entries.clear();
         self.av_audio_entries.clear();
+        self.av_sources.clear();
     }
 
     /// 音频 play（桥面；已登记源 → 播放态 + 时钟锚点）。
@@ -312,15 +326,15 @@ impl VideoPlayerRegistry {
             self.players.insert(key, VideoPlayer::new(decoder));
             // 音频轨伴生（A/V pair）：symphonia 面内 vorbis 轨存在时构建；纯视频
             // webm 构建失败静默（视频面照常）。
-            if self.av_audio_entries.remove(&key).is_none()
-                && let Ok(track) = open_webm_audio_track(&bytes)
-            {
+            if let Ok(track) = open_webm_audio_track(&bytes) {
                 let mut entry = WebmAudioEntry::new(track);
                 let _ = entry.sink.start(AudioFormat {
                     sample_rate: entry.track.sample_rate(),
                     channels: entry.track.channels(),
                 });
                 self.av_audio_entries.insert(key, entry);
+                // 双轨源字节留存（切片 E）：伴生轨 seek 重建 `WebmAudioTrack` 所需。
+                self.av_sources.insert(key, bytes);
             }
         }
         if let Some(player) = self.players.get_mut(&key) {
@@ -356,11 +370,16 @@ impl VideoPlayerRegistry {
     }
 
     /// seek：精确 seek（关键帧定位 + 前向解码）；播放态保持（时钟锚点重置在
-    /// player 内）。返回是否作用于存在的 player。
+    /// player 内）。A/V pair 同步重建伴生音频轨至 target（audio clock 主时钟
+    /// 契约——seek 后视频对齐音频游标，master clock 面不脱轨）。
+    /// 返回是否作用于存在的 player。
     pub fn seek(&mut self, abs_src: &str, target_ms: u64) -> bool {
         let key = image_resource_key(abs_src, None);
+        let mut player_ok = false;
         match self.players.get_mut(&key) {
-            Some(player) => player.seek_to_ms(target_ms).is_ok(),
+            Some(player) => {
+                player_ok = player.seek_to_ms(target_ms).is_ok();
+            }
             // 未建 player（未 play 过）：登记源存在时建之再 seek——spec seekable
             // 面（ HAVE_METADATA 即可 seek）。
             None => {
@@ -369,17 +388,41 @@ impl VideoPlayerRegistry {
                     //（HAVE_METADATA 可 seek 面，未起播）。
                     self.pause(abs_src);
                     if let Some(player) = self.players.get_mut(&key) {
-                        return player.seek_to_ms(target_ms).is_ok();
+                        player_ok = player.seek_to_ms(target_ms).is_ok();
                     }
                 }
-                false
             }
         }
+        // 伴生音频轨 seek（重建 + 追赶区静默）——master clock 游标对齐 target，
+        // 后续 tick 视频 sync_to_media_time 跟随（不脱轨）。
+        if player_ok
+            && self.av_audio_entries.contains_key(&key)
+            && let Some(bytes) = self.av_sources.get(&key)
+            && let Ok(track) = open_webm_audio_track(bytes)
+        {
+            let (rate, channels) = (track.sample_rate(), track.channels());
+            if let Some(entry) = self.av_audio_entries.get_mut(&key) {
+                entry.track = track;
+                let _ = entry.sink.start(AudioFormat {
+                    sample_rate: rate,
+                    channels,
+                });
+                entry.cursor_ms = target_ms;
+                entry.skip_until_ms = target_ms;
+                entry.last_tick_ms = None;
+            }
+        }
+        player_ok
     }
 
     /// currentTime 真值（秒；未播放/不存在 → 0——spec HAVE_NOTHING 语义面）。
+    /// A/V pair：audio clock 主时钟游标优先（media-audio M2 契约——currentTime
+    /// 由组合时钟驱动；无伴生轨回落视频位置）。
     pub fn current_time(&self, abs_src: &str) -> f64 {
         let key = image_resource_key(abs_src, None);
+        if let Some(cursor_ms) = self.av_audio_entries.get(&key).map(|e| e.cursor_ms) {
+            return cursor_ms as f64 / 1000.0;
+        }
         self.players.get(&key).map(|p| p.current_time()).unwrap_or(0.0)
     }
 
@@ -428,14 +471,37 @@ impl VideoPlayerRegistry {
 
     /// 渲染泵推进：tick 所有播放中的 player，新帧注入 `image_cache`（painter 同键）。
     /// 返回是否有帧更新（宿主据此触发增量渲染）。
+    ///
+    /// A/V 同步（M2 切片 E——audio clock 主时钟）：伴生轨先于视频推进（主时钟
+    /// 先走），视频帧调度经 `sync_to_media_time` 对齐音频游标——drift 由构造校正
+    /// （位置每 tick 派生自主时钟，不积累墙钟差）。纯视频源回落墙钟 tick（零回归）。
     pub fn tick_all(&mut self, now_ms: u64, image_cache: &mut ImageCache) -> bool {
+        // 主时钟先行：伴音频轨按实时节奏解码（游标即媒体时间真值）。
+        let av_keys: Vec<u64> = self
+            .av_audio_entries
+            .keys()
+            .copied()
+            .filter(|k| self.players.contains_key(k))
+            .collect();
+        for key in av_keys {
+            if let Some(entry) = self.av_audio_entries.get_mut(&key) {
+                entry.advance_to(now_ms);
+            }
+        }
         let mut changed = false;
         let keys: Vec<u64> = self.players.keys().copied().collect();
         for key in keys {
             let Some(player) = self.players.get_mut(&key) else {
                 continue;
             };
-            let Ok(Some(frame)) = player.tick(now_ms) else {
+            // A/V pair：视频对齐音频主时钟；纯视频：墙钟 tick。
+            let ticked = if self.av_audio_entries.contains_key(&key) {
+                let media_ms = self.av_audio_entries.get(&key).map(|e| e.cursor_ms).unwrap_or(0);
+                player.sync_to_media_time(media_ms as f64)
+            } else {
+                player.tick(now_ms)
+            };
+            let Ok(Some(frame)) = ticked else {
                 continue;
             };
             if let Ok(data) = ImageData::from_rgba(frame.rgba, frame.width, frame.height) {
@@ -526,6 +592,41 @@ mod tests {
         assert!(!reg.is_playing(SRC), "seek 不改 paused（spec）");
         // 未登记源 seek 失败。
         assert!(!reg.seek("https://x/nope.webm", 500));
+    }
+
+    #[test]
+    fn registry_av_pair_master_clock_video_slaves_to_audio() {
+        // M2 切片 E（A/V 同步，audio clock 主时钟）：伴音游标驱动视频帧调度——
+        // 视频呈现 pts 追随音频游标；currentTime 反映主时钟；seek 双轨对齐。
+        let mut reg = VideoPlayerRegistry::new();
+        reg.register_source(AV, fixture_bytes_named("sample-webm-vp9-vorbis.webm"));
+        assert!(reg.play(AV, 0));
+        let mut cache = ImageCache::new(16, 64 * 1024 * 1024);
+        // 主时钟先行推进（tick_all 内部序）：音频游标 ≈500ms 后视频应已呈现
+        // ≈500ms 前的帧（pts 单调追随游标）。
+        let mut now = 0u64;
+        while now < 500 {
+            now += 100;
+            reg.tick_all(now, &mut cache);
+        }
+        let media_now = reg.current_time(AV);
+        assert!(
+            (media_now - 0.5).abs() < 0.35,
+            "主时钟游标应 ≈0.5s（音频解码粒度），got {media_now}"
+        );
+        // 帧注入发生过（视频面活着）。
+        let key = ImageKey::new(image_resource_key(AV, None));
+        assert!(cache.get(&key).is_some(), "A/V 播放期应有帧注入");
+        // currentTime = 主时钟游标（audio clock 主时钟——组合时钟驱动）。
+        assert!(media_now > 0.0, "currentTime 由主时钟游标驱动");
+        // seek 对齐双轨：游标重置到 target、泵继续推进。
+        assert!(reg.seek(AV, 1000), "A/V pair seek 成功");
+        let after_seek = reg.current_time(AV);
+        assert!(after_seek >= 1.0, "seek 后主时钟游标 ≥ 1s，got {after_seek}");
+        now += 200;
+        reg.tick_all(now, &mut cache);
+        let after_tick = reg.current_time(AV);
+        assert!(after_tick >= after_seek, "seek 后游标继续前进而非回退");
     }
 
     #[test]

@@ -119,7 +119,29 @@ impl VideoPlayer {
         self.last_tick_ms = Some(now_ms);
         let delta = now_ms.saturating_sub(last) as f64;
         self.position_ms += delta * self.playback_rate;
+        self.present_pending()
+    }
 
+    /// 主时钟对齐呈现（A/V 同步——audio clock 主时钟，media-audio M2 契约）：
+    /// 把播放位置对齐到外部主时钟游标后按同一帧调度呈现。
+    ///
+    /// 位置只前进不回退（播放期主时钟游标单调）；`media_ms` 落后时保持现位置
+    /// （主时钟停 → 视频帧调度停——master clock 语义）。drift 由构造校正：位置
+    /// 每 tick 派生自主时钟游标，不积累墙钟差。
+    /// https://html.spec.whatwg.org/multipage/media.html#synchronising-multiple-media-elements
+    pub fn sync_to_media_time(&mut self, media_ms: f64) -> Result<Option<DecodedVideoFrame>, crate::DecodeError> {
+        if self.state != PlayerState::Playing {
+            return Ok(None);
+        }
+        if media_ms > self.position_ms {
+            self.position_ms = media_ms;
+        }
+        self.present_pending()
+    }
+
+    /// 帧调度共用核：弹出 `pts ≤ position` 的帧并返回最新可展示帧（tick 与
+    /// sync_to_media_time 的公共尾部）。
+    fn present_pending(&mut self) -> Result<Option<DecodedVideoFrame>, crate::DecodeError> {
         let mut newest: Option<DecodedVideoFrame> = None;
         loop {
             match self.decoder.next_frame()? {
@@ -294,6 +316,32 @@ mod tests {
         let mut p = fixture_player();
         p.seek_to_ms(99_999).unwrap();
         assert!((p.current_time() - 2.0).abs() < 1e-6, "越界 seek clamp 到 duration");
+    }
+
+    #[test]
+    fn player_sync_to_media_time_follows_master_clock() {
+        // A/V 同步（audio clock 主时钟）：视频呈现对齐外部游标——每 tick 位置
+        // 派生自主时钟（构造 drift 校正），主时钟停则视频帧调度停。
+        let mut p = fixture_player();
+        p.play(1000);
+        // 主时钟游标 20ms → 呈现首帧（pts 0 ≤ 20；下一帧 41.7 未到）。
+        let f = p.sync_to_media_time(20.0).unwrap().expect("pts 0 ≤ 20ms");
+        assert_eq!(f.pts_ms, 0);
+        // 主时钟推进到 120ms → 呈现 ≥120ms 前最新帧（pts ≈41.7/83.3）。
+        let f2 = p.sync_to_media_time(120.0).unwrap().expect("后续帧");
+        assert!(f2.pts_ms > 0, "游标推进后应呈现后续帧");
+        assert!((p.current_time() - 0.120).abs() < 1e-9, "位置 = 主时钟游标");
+        // 主时钟停滞（游标不前进）→ 不再弹出新帧（位置不回退也不自走）。
+        let held = p.sync_to_media_time(120.0).unwrap();
+        assert!(held.is_none() || p.current_time() <= 0.120, "主时钟停 → 位置停");
+        assert!((p.current_time() - 0.120).abs() < 1e-9, "位置不回退");
+        // 主时钟倒退（异常序）：保持现位置（只前进不回退）。
+        let _ = p.sync_to_media_time(10.0).unwrap();
+        assert!((p.current_time() - 0.120).abs() < 1e-9, "游标倒退不回退位置");
+        // Ready（未播放）态 no-op。
+        let mut q = fixture_player();
+        assert!(q.sync_to_media_time(100.0).unwrap().is_none());
+        assert_eq!(q.current_time(), 0.0, "未播放时 sync 不动位置");
     }
 
     #[test]
