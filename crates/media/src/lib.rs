@@ -22,11 +22,13 @@
 //!
 //! [docs/specs/video-decode-playback-spec-rfc.md]: ../../../docs/specs/video-decode-playback-spec-rfc.md
 
+mod audio;
 mod clock;
 mod decode;
 
 #[cfg(test)]
 mod tests;
 
+pub use audio::*;
 pub use clock::*;
 pub use decode::*;
