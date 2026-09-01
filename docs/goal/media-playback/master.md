@@ -6,7 +6,7 @@
 切片 D = webm 双轨（VP9+Vorbis）伴生音频面（`open_webm_audio_track` OGG 页重封装 →
 symphonia 解码 + registry 伴生起播/泵推进/增益联动）；切片 E = 视频帧调度对齐音频
 游标（`sync_to_media_time` drift 构造校正）+ seek 双轨对齐 + currentTime 组合时钟。
-media 36+1 / webview 676 / engine 2542 全绿）
+media 36+1 / webview 677 / engine 2546 全绿）
 
 ---
 
@@ -248,7 +248,7 @@ engine 2539 / media 27 / webview 668 全绿；testharness-media 372P/0F/41PF 维
 |--------|------|
 | M0 — 解码器选型 RFC（门控） | ✅ 完成并获批（2026-09-01，路线 C） |
 | M1 — 首个视频帧上屏 | ✅ 完成（2026-09-01：M1a 解码管线 + M1b 帧上屏通路 + e2e 常驻） |
-| M2 — 连续播放 + 语义驱动 | 🔄 M2a + M2b + M2c + 切片 C/D/E 收口（播放/真值/桥/帧泵/seek/变速 + 音频面生产链路/增益/导航释放/renderer 对齐 + 色彩面全对齐 + A/V 同步 audio clock 主时钟）；余组合 ended 事件（语义层）与音频设备面（media-audio M1） |
+| M2 — 连续播放 + 语义驱动 | 🔄 M2a + M2b + M2c + 切片 C/D/E/F 收口（播放/真值/桥/帧泵/seek/变速 + 音频面生产链路/增益/导航释放/renderer 对齐 + 色彩面全对齐 + A/V 同步 audio clock 主时钟 + A/V pair ended 面回归守卫）；余音频设备面（media-audio M1 CpalSink，可选） |
 | M3 — 多格式 + 稳定 + 收尾 | ⬜（含 AV1 dav1d（D-RFC-2）与 H.264 立项（D-RFC-3）） |
 
 ## 验证基线
