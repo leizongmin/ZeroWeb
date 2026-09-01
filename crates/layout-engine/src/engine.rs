@@ -837,6 +837,10 @@ impl LayoutEngine {
         // 11.9 R2062：abspos 垂直 margin:auto 居中（§10.6.4）。taffy 不对 positioned-ancestor-CB
         // 的 definite-height abspos（top+bottom Px + margin:auto）做垂直居中。初始 CB：
         // root positioned → root padding-box；否则 ICB（viewport）。kill-switch ZW_ABSPOS_VCENTER=0。
+        // R3910：先行 fix_abspos_height_content_keyword——height 内容关键字（fit-content/
+        // max-content/min-content）的 abspos 盒在 converter 被映射 length(0) 塌缩，
+        // 居中方程依赖修复后的 height，故本 pass 必须在 recenter 之前执行。
+        fix_abspos_height_content_keyword(&mut root_box, styles);
         let initial_cb_height = if root_is_positioned {
             (root_box.height - root_box.border_top - root_box.border_bottom).max(0.0)
         } else {

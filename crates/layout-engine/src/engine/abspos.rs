@@ -830,6 +830,47 @@ fn resolve_abspos_against_nested_cb_inner(
 /// 递归携带最近 positioned 祖先的 padding-box 高度（CB height）。遇到 positioned 元素时
 /// 更新 CB 为其 padding-box。shift 以 delta 形式加到 `child.y`（任意祖先坐标系下「下移
 /// delta」等价，因父子 y 轴同向同尺度）。
+/// R3910：abspos + height 内容关键字（`fit-content`〔bare，parser 映射 MaxContent〕/
+/// `max-content` / `min-content` / `fit-content(…)`）shrink-to-fit 修复。
+///
+/// converter 把 height 关键字映射为 `length(0)`（convert_length_to_dimension 的
+/// MinContent/MaxContent 臂，R181c width-gate 语义）→ abspos 盒塌缩为零高
+///（driving: css-sizing div-fit-content-auto-margin ×20 @4.79%，`inset:0; margin:auto;
+/// block-size:fit-content` 应 shrink-to-fit 到内容高度 200px 后由 auto margin 居中）。
+///
+/// 修：taffy 后（children 已定位）content_h = max child bottom 相对 content origin，
+/// box height < content 高度则 lift 到 content 高度（shrink-to-fit）。须在
+/// `recenter_abspos_margin_auto_vertically` **之前**执行——居中方程
+/// `leftover = CB − top − bottom − height` 依赖修复后的 height。
+/// max-height 关键字 cap（拉伸过高方向）仍归 R2057（apply_calc_size_adjustments）。
+pub(super) fn fix_abspos_height_content_keyword(box_node: &mut LayoutBox, styles: &HashMap<NodeId, ComputedStyle>) {
+    use zero_css_parser::values::LengthValue;
+    for child in &mut box_node.children {
+        if child.is_absolute
+            && let Some(id) = child.node_id
+            && let Some(s) = styles.get(&id)
+            && matches!(
+                &s.height,
+                LengthValue::FitContent(_) | LengthValue::MaxContent | LengthValue::MinContent
+            )
+        {
+            let content_top = child.padding_top + child.border_top;
+            let pb = child.padding_top + child.padding_bottom + child.border_top + child.border_bottom;
+            let content_h = child
+                .children
+                .iter()
+                .map(|c| (c.y + c.height - content_top).max(0.0))
+                .fold(0.0_f32, f32::max);
+            let target = content_h + pb;
+            if target > 0.0 && child.height < target - 0.5 {
+                child.height = target;
+                child.content_height = content_h;
+            }
+        }
+        fix_abspos_height_content_keyword(child, styles);
+    }
+}
+
 pub(super) fn recenter_abspos_margin_auto_vertically(
     box_node: &mut LayoutBox,
     cb_height: f32,
@@ -987,6 +1028,51 @@ mod r2062_tests {
         assert_eq!(img.margin_top, 50.0);
         assert_eq!(img.margin_bottom, 50.0);
         assert_eq!(img.height, 100.0, "img height unchanged");
+    }
+
+    /// R3910：height 内容关键字（fit-content → MaxContent）塌缩的 abspos 盒在
+    /// recenter 之前 lift 到内容高度，随后 both-auto margin 正确居中。
+    #[test]
+    fn r3910_abspos_height_content_keyword_lift_then_center() {
+        let (mut parent, styles) =
+            make_parent_with_abspos_img(LengthValue::Auto, LengthValue::Auto, LengthValue::MaxContent);
+        // 模拟 taffy 对 height 关键字的 length(0) 映射：盒塌缩为 0 高。
+        parent.children[0].height = 0.0;
+        // 子内容 200px 高（content bottom = 200）。
+        let inner = LayoutBox {
+            height: 200.0,
+            y: 0.0,
+            ..Default::default()
+        };
+        parent.children[0].children = vec![inner];
+
+        fix_abspos_height_content_keyword(&mut parent, &styles);
+        assert_eq!(
+            parent.children[0].height, 200.0,
+            "collapsed abspos lifts to content height"
+        );
+
+        recenter_abspos_margin_auto_vertically(&mut parent, 200.0, 800.0, 600.0, &styles);
+        let img = &parent.children[0];
+        // leftover = 200 − 0 − 0 − 200 = 0 → 居中 no-op（贴 top）。
+        assert_eq!(img.y, 0.0);
+    }
+
+    /// R3910：height 内容关键字但盒未塌缩（taffy 拉伸 ≥ 内容高）→ no-op（cap 归 R2057）。
+    #[test]
+    fn r3910_abspos_height_content_keyword_stretched_untouched() {
+        let (mut parent, styles) =
+            make_parent_with_abspos_img(LengthValue::Auto, LengthValue::Auto, LengthValue::MaxContent);
+        parent.children[0].height = 300.0; // 已被 taffy 拉伸超过内容高
+        let inner = LayoutBox {
+            height: 200.0,
+            y: 0.0,
+            ..Default::default()
+        };
+        parent.children[0].children = vec![inner];
+
+        fix_abspos_height_content_keyword(&mut parent, &styles);
+        assert_eq!(parent.children[0].height, 300.0, "stretched box left to R2057 cap");
     }
 
     /// R2068：仅 margin-top auto（mb 非 auto）→ 本 pass **不再处理**（交回 taffy）。

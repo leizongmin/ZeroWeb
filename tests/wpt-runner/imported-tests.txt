@@ -231,3 +231,5 @@ css/css-backgrounds/background-clip/clip-border-area-solid.html css/css-backgrou
 css/css-backgrounds/border-image-outset-003.html css/css-backgrounds/border-image-outset-003-ref.html == 2026-09-02 R3909 border-image gradient source 9-slice + 简写渐变 source 槽 + border-style 替换
 css/css-backgrounds/border-image-image-type-003.htm css/css-backgrounds/reference/border-image-image-type-003-ref.html == 2026-09-02 R3909 border-image gradient source 9-slice + 简写渐变 source 槽
 css/css-backgrounds/border-image-width-should-extend-to-padding.html css/css-backgrounds/border-image-width-should-extend-to-padding-ref.html == 2026-09-02 R3909 border-image gradient source（linear-gradient + 零边框 width 延伸）
+css/css-sizing/div-fit-content-auto-margin.tentative.html css/css-sizing/div-auto-margin-ref.html == 2026-09-02 R3910 abspos height 内容关键字 shrink-to-fit（css-position-3 §abspos-auto-size）
+css/css-sizing/fit-content-block-size-abspos.html css/css-sizing/div-auto-margin-ref.html == 2026-09-02 R3910 abspos height fit-content shrink-to-fit
