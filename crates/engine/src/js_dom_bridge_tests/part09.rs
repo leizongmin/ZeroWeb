@@ -3394,3 +3394,73 @@ fn test_media_duration_truth_injection_m2a() {
         "显式 null（非 webm-VP9）应回落 headless 定值"
     );
 }
+
+#[test]
+fn test_media_video_width_height_truth_m2a() {
+    // media-playback M2a：videoWidth/videoHeight——settle 链写入的解码器探针尺寸
+    // 真值（slice 2 的 natural_width/height 已入 _resourceStates）；未 settle 元素
+    // 恒 0（spec：元数据未就绪）；audio 元素无 videoWidth 面（undefined——HTMLMediaElement
+    // 无此接口成员，仅 HTMLVideoElement 有）。
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><video id=\"v\" src=\"/media/movie.webm\"></video><audio id=\"a\" src=\"/media/song.mp3\"></audio></body></html>"
+            .to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("https://wpt.test/t.html".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+
+    // ① 未 settle：videoWidth/videoHeight 恒 0（spec 元数据未就绪面）。
+    assert_eq!(
+        sandbox.execute("String(document.querySelector('#v').videoWidth)").unwrap().value,
+        "0",
+        "未 settle 的 video videoWidth 应为 0（spec 元数据未就绪）"
+    );
+    assert_eq!(
+        sandbox.execute("String(document.querySelector('#v').videoHeight)").unwrap().value,
+        "0",
+        "未 settle 的 video videoHeight 应为 0"
+    );
+
+    // ② settle 后：探针尺寸真值（320x240）经 _resourceStates 喂 IDL。
+    sandbox.execute(
+        "__zw_commit_resource_element_state('video', 'https://wpt.test/media/movie.webm', 'loaded', 320, 240, 2000);",
+    ).unwrap();
+    assert_eq!(
+        sandbox.execute("String(document.querySelector('#v').videoWidth)").unwrap().value,
+        "320",
+        "settle 后 videoWidth 应为探针真值 320"
+    );
+    assert_eq!(
+        sandbox.execute("String(document.querySelector('#v').videoHeight)").unwrap().value,
+        "240",
+        "settle 后 videoHeight 应为探针真值 240"
+    );
+
+    // ②b `in` 可见性：has 白名单 tag-gated——video true / audio false（spec 接口成员归属）。
+    assert_eq!(
+        sandbox.execute("String('videoWidth' in document.querySelector('#v'))").unwrap().value,
+        "true",
+        "'videoWidth' in video 应为 true（HTMLVideoElement 接口成员）"
+    );
+    assert_eq!(
+        sandbox.execute("String('videoWidth' in document.querySelector('#a'))").unwrap().value,
+        "false",
+        "'videoWidth' in audio 应为 false（tag-gated 白名单）"
+    );
+
+    // ③ audio 元素：HTMLMediaElement 无 videoWidth 接口成员 → undefined。
+    assert_eq!(
+        sandbox.execute("String(document.querySelector('#a').videoWidth)").unwrap().value,
+        "undefined",
+        "audio 元素不应有 videoWidth（HTMLVideoElement 专属）"
+    );
+}

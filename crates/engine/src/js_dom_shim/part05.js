@@ -530,6 +530,14 @@
             || prop === 'addTextTrack' || prop === 'track' || prop === 'controlsList') {
           return true;
         }
+        // media-playback M2a：videoWidth/videoHeight——HTMLVideoElement 专属接口成员
+        //（audio 元素 `'videoWidth' in audio` 须 false——spec 接口成员归属）。tag-gated
+        //（_realTag 与 get trap 同源），避免全局白名单误把 audio 拉进 video 接口面。
+        // https://html.spec.whatwg.org/multipage/media.html#dom-video-videowidth
+        if ((prop === 'videoWidth' || prop === 'videoHeight')
+            && (function () { try { return _realTag(sel, handle) === 'VIDEO'; } catch (_eVw) { return false; } })()) {
+          return true;
+        }
         // R184（js-dom M4）：Node 接口常量 + DOCUMENT_POSITION 常量的 `in` 可见性（spec
         // dom-node-constants——常量定义在 Node 接口上、**实例经继承可枚举命中**；WPT
         // Node-constants 对 Element/Text 实例 `'ELEMENT_NODE' in el` 断言——get trap 返回

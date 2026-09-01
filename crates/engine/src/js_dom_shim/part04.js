@@ -130,6 +130,14 @@
         // https://html.spec.whatwg.org/multipage/media.html#offsets-into-the-media-resource
         if (resourceTag === 'AUDIO' || resourceTag === 'VIDEO') {
           var _ms = _mediaState[key];
+          // media-playback M2a：videoWidth/videoHeight——解码器探针真值（settle 链写入
+          // _resourceStates.width/height）；元数据未就绪（未 settle/readyState <
+          // HAVE_METADATA）恒 0（spec video-media-elements：「videoWidth … must return 0」
+          // 直至已知）。audio 元素无视频轨，不在此分支（resourceTag==='VIDEO' gate）。
+          // https://html.spec.whatwg.org/multipage/media.html#dom-video-videowidth
+          if (resourceTag === 'VIDEO' && (prop === 'videoWidth' || prop === 'videoHeight')) {
+            return resourceState ? (resourceState[prop === 'videoWidth' ? 'width' : 'height'] | 0) : 0;
+          }
           if (prop === 'currentTime') return _ms ? _ms.currentTime : 0;
           if (prop === 'duration') return (_ms && _ms.duration != null) ? _ms.duration : NaN;
           if (prop === 'playbackRate') return (_ms && _ms.playbackRate != null) ? _ms.playbackRate : 1;

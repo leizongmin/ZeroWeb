@@ -2,11 +2,10 @@
 
 **入口文档**: [../media-playback.md](../media-playback.md)
 **创建日期**: 2026-08-17（goal 拆分 bootstrap）
-**最后更新**: 2026-09-01（**M2a 切片 2 落地**——duration 真值注入链：webview
-async_load 对 video 资源做容器头/首帧探针（`zero-media`，webview 新依赖）→
-ResourceElementEvent.media_duration_ms → script_gen/shim settle 链 →
-`_mediaState.duration` 真值（spec 秒）；无真值回落 headless 定值（测试零回归，
-testharness-media 372P/0F/0T/41PF 维持）。VideoPlayer 真值喂语义层的首条通路接通）
+**最后更新**: 2026-09-01（**M2a 切片 3 落地**——videoWidth/videoHeight IDL 真值面：
+get trap VIDEO-gated 读 `_resourceStates.width/height`（切片 2 探针真值）+ has 白名单
+tag-gated（audio 无此接口成员）；未 settle 恒 0（spec 元数据未就绪）。单测 5 断言组
+常驻；testharness-media 372P/0F/0T/41PF 维持零回归）
 
 ---
 
@@ -35,8 +34,12 @@ video 资源 fetch 成功后经 `probe_video_media_meta`（容器时长 + 首帧
 .durationMs` → `_zwMediaLoadSequence` 以真值（ms→spec 秒）设 `duration`；无真值
 （非 webm-VP9/headless 路径）回落定值 600——**testharness-media 372P/0F/0T/41PF
 维持（零回归）**，单测 `test_media_duration_truth_injection_m2a` 3 断言组常驻。
-**下一切片：生产侧帧注入（ImageCache 接线）+ videoWidth/videoHeight IDL 面（尺寸
-真值已在 `_resourceStates.width/height` 就位）**。
+**M2a 切片 3 已落地**（同日）：`videoWidth`/`videoHeight` IDL getter（part04 get
+trap，VIDEO-gated 读 `_resourceStates.width/height`——切片 2 探针真值；未 settle 恒 0
+per spec 元数据未就绪）+ has 白名单 tag-gated 分支（part05，`'videoWidth' in audio`
+恒 false——接口成员归属面）。单测 `test_media_video_width_height_truth_m2a` 5 断言组
+常驻；testharness-media 372P/0F/0T/41PF 维持（零回归）。**下一切片：生产侧帧注入
+（ImageCache 接线）+ currentTime 真值推进**。
 
 **与兄弟 goal 的边界**：
 - media-elements — 语义面（状态机/事件/canPlayType）归其管；本目标产出 readyState 真实
@@ -96,14 +99,13 @@ video 资源 fetch 成功后经 `probe_video_media_meta`（容器时长 + 首帧
 
 ## 下一步计划
 
-1. **M2a 切片 3（下一项）**：生产侧帧注入——webview/async_load 媒体字节 → 解码 →
-   ImageCache（harness 通路 M1b 已通，生产渲染线程接线）；顺接 videoWidth/videoHeight
-   IDL 面（尺寸真值已在 `_resourceStates.width/height` 就位）。
-2. **M2a 切片 4**：currentTime 真值推进——`VideoPlayer` 挂 rAF event loop，语义层
+1. **M2a 切片 4（下一项）**：生产侧帧注入——webview/async_load 媒体字节 → 解码 →
+   生产渲染线程 ImageCache（harness 通路 M1b 已通；生产侧接线使 `<video>` 实际出图）。
+2. **M2a 切片 5**：currentTime 真值推进——`VideoPlayer` 挂 rAF event loop，语义层
    `_mediaState.currentTime` 从 player 读真值（RFC §3.1 驱动源替换完成面）。
-4. **M2b**：seek（关键帧粒度）+ playbackRate 变速语义；**M2c**：音频解码（symphonia）+
+3. **M2b**：seek（关键帧粒度）+ playbackRate 变速语义；**M2c**：音频解码（symphonia）+
    AudioSink/Mixer 接入（media-audio 输出面三切片已备）。
-5. **M2 解码精化项**（M1b 揭示）：WebM Colour 元素解析（colourRange/matrix）→
+4. **M2 解码精化项**（M1b 揭示）：WebM Colour 元素解析（colourRange/matrix）→
    limited-range 与 BT.709 自适应转换（replaced-element-003 unmask 面收口）。
 
 ## 里程碑状态
