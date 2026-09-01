@@ -2,9 +2,10 @@
 
 **入口文档**: [../media-elements.md](../media-elements.md)
 **创建日期**: 2026-08-17（goal 拆分 bootstrap）
-**最后更新**: 2026-09-01（**M3 扩批 X**——track 子元素 ↔ textTracks 集合同步：
-树序段 + addTextTrack 尾段 + append/remove/innerHTML 同步钩子 + TextTrack.id
-readonly；导入 track/track-element 6 用例。**400P/0F/0T/25PF（400/425 = 94.1%）**）
+**最后更新**: 2026-09-02（**M3 扩批 XI**——resource selection 算法 JS 可观察面：
+loading-the-media-resource 资源选择族 30 用例导入，networkState 同步段 NO_SOURCE/
+稳定态 EMPTY + invoke 面 + load() 重跑 + 候选失效中断。**430P/0F/0T/25PF
+（430/455 = 94.5%）**）
 
 ---
 
@@ -179,6 +180,45 @@ already-playing resolved 断言。**88.3%**（324P/0F/2T/41PF，+80 subtest 全�
 [archive/2026-08-31_m1-m3-and-2026-09-01_batches.md](archive/2026-08-31_m1-m3-and-2026-09-01_batches.md)
 （只追加不修改；本控制面保留最新态与缺口清单）。
 
+**M3 扩批 XI 已落地（2026-09-02，resource selection 算法面——Mission 覆盖范围第 1 条
+「load 算法（resource selection algorithm）」的正题收口）**：
+- **背景**：上一轮 session 被限额打断前抓取的 6 个 resource-selection 探针揭示
+  「可导入面吃尽」判断漏了 loading-the-media-resource 资源选择族（47 文件）；本轮
+  拉全族分类——27 案 headless 可行 / 20 案排除（真资源失败时序 / MSE / iframe /
+  manual / data:, 契约冲突）。
+- **同步段语义**（`_zwMediaResourceSelect`，part06）：invoke（资源选择启动）后阻塞
+  期间 networkState = NETWORK_NO_SOURCE(3)；稳定态续段（queueMicrotask——V8 execute
+  末 checkpoint 排空，等价「当前 task 末」）重查候选，无 src 且无 source 子 →
+  NETWORK_EMPTY(0)，有候选 → LOADING(2)。
+- **加载模拟改 microtask**：`_zwMediaScheduleLoad` 的 settle 续段从 host 真实线程
+  setTimeout 改 queueMicrotask（同检查点排空）——消除「loadstart 先于 window load」
+  与后续脚本执行的竞态假失败（**教训**：host __zw_setTimeout 真实线程投递 ~0ms 与
+  脚本执行竞态，全量跑与 FILTER 单跑不一致的又一形态）。
+- **settle 触发时重验候选**（spec 同步段「await a stable state」续段语义）：src 属性
+  移除/改写或 source 子被移除 → 加载中断（不派 loadstart/不 settle）；
+  resource-selection-remove-src/-remove-source/-resumes-onload 断言面。
+- **source 子候选失败语义**：error 派在 source 元素上（onerror），父级 error 仅全
+  候选耗尽后；父级不落 _resourceStates（等待下一候选）。
+- **media load invoke 播放中止**（spec dom-media-load 同步段）：paused 同步置 true +
+  pending play promise reject AbortError + timeupdate/pause 派发；
+  invoke-set-src-networkState 断言面。
+- **load() 重跑算法**：`_resourceStates` 重置 + 现行 src（含空串失败面与
+  `lastSourceChild` 重试）重调度；`loadEpoch` 纪元使 loadstart handler 内 load() 作废
+  本续段余下事件（[loadstart,loadstart,error] 序断言面）。
+- **加载序列尾部补 suspend**（「once the entire media resource has been fetched」
+  ——headless 全量已取语义；load-removes-queued-error-event 断言面）。
+- **setAttribute('src') HTML-ns 钩子**（part04）：内容属性路径 invoke media load
+  （IDL src= setter 同语义；setAttributeNS 非 HTML ns 不触发）。
+- **appendChild source 钩子补强**：仅 HTML ns source 是候选（createElementNS('bogus',
+  'source') 非候选）；source 子自身无 src 时仍触发父资源选择（loadstart 面）。
+- **单测**：`test_media_resource_selection_m3xi`（invoke 面 / load 中止 / AbortError /
+  load 重置 4 断言组）；r389 / m2a 既有单测同步 microtask 模型（`__zw_timers` 泵不再
+  参与 headless 加载面）。
+- 导入 loading-the-media-resource 25 文件（fetch 脚本逐文件白名单 + MEDIA_TEST_FILES
+  同步）。**430P/0F/0T/25PF（430/455 = 94.5%）**（+30 subtest 全绿 0 回归）。evidence：
+  `evidence/2026-09-02-media-resource-selection.json`。make test 66 套件 18665 全绿、
+  fmt/clippy 干净、reftest 687/687。
+
 **DC 达成审计（2026-09-01）**：DC-1~4 实质满足——① 60 用例导入 + 8 份 evidence JSON
 （基线演进 46.5→90.1 全程可追溯）；② 状态机/事件序列 WPT 断言面全绿（headless 近似
 驱动逐项记录）；③ API 语义面全对齐（canPlayType 空表 + M4g-d 显式记录为跨 goal 依赖项；
@@ -219,7 +259,7 @@ MEDIA_TEST_FILES + evidence JSON 序列）——两通道并行为 CLAUDE.md 测
 
 | # | 缺口 | 状态 | 失败聚类 |
 |---|------|------|----------|
-| M1g | WPT media-elements 用例覆盖 | ✅ 66 用例已导入（含 event_* 族 25 + volume/Audio 构造器 + controlsList + track-element 6），**94.1%** | — |
+| M1g | WPT media-elements 用例覆盖 | ✅ 91 用例已导入（含 event_* 族 25 + volume/Audio 构造器 + controlsList + track-element 6 + resource-selection 族 25），**94.5%** | — |
 | M2g | load 算法 + 状态机（事件序列派发） | ✅ M2 落地（13T→**0T**） | F4 闭合 |
 | M3g | 事件序列 headless 近似驱动 | ✅（同 M2g；source-child 触发已落地） | F4 闭合 |
 | M4g-a | 媒体元数据 IDL 反射（初值面） | ✅ 切片 3 落地 | F2 闭合（-9 Fail） |
@@ -227,6 +267,7 @@ MEDIA_TEST_FILES + evidence JSON 序列）——两通道并行为 CLAUDE.md 测
 | M4g-c | track.src URL 解析 + \0 剥离 | ✅ 切片 3 落地（含 `<a href="">` 修复） | F6 闭合（-6 Fail） |
 | M4g-d | canPlayType 能力表（空表→选型面更新） | ✅ 2026-09-01 落地（media-playback 流代行——跨 goal 联动兑现）：能力表由解码面真值驱动（webm/ogg 容器 maybe + vp9/vorbis/mp3 probably，VP8/Opus/Theora/H.264/AAC 域外诚实 ''）；单测 `test_media_can_play_type_capability_table_m4gd`（18 断言面） | F5（41→27 PF，in-face 全转 Pass） |
 | M4g-e | play()/pause() 生命周期语义（queued task + 移除暂停） | ✅ M3 扩批 VII 落地（2026-09-01）：play/playing/timeupdate 改 queued task 派发（play() 后注册的 handler 仍收到）；pause-on-removal 两段 defer（tick1 paused=true → tick2 pause 事件，幂等）；导入 pause-remove-from-document.html（387/414 = 93.5%）；单测 `test_media_pause_on_removal_m3b7` | — |
+| M4g-f | resource selection 算法（load 算法正题） | ✅ M3 扩批 XI 落地（2026-09-02）：networkState 同步段 NO_SOURCE(3)/稳定态 EMPTY(0) microtask 续段 + invoke 面（play/pause/load/setAttr-src/insert-source）+ load() 重跑（重置/重调度/epoch）+ 候选失效中断 + source 子 error 面；单测 `test_media_resource_selection_m3xi` | — |
 
 ## 下一步计划
 
@@ -234,10 +275,12 @@ MEDIA_TEST_FILES + evidence JSON 序列）——两通道并行为 CLAUDE.md 测
   （play-in-detached-document——需 detached 文档播放时钟推进，依赖兄弟目标
    media-playback 播放钟接语义层；loop-from-ended.tentative / fragmented-mp4-end
    同域）；the-video-element 反射余面（video-loading-* preload 语义族——视
-   lazy-loading 支撑面）。**headless 可导入面已吃尽（93.5%）**——后续增量依赖
+   lazy-loading 支撑面）。**headless 可导入面已吃尽（94.5%）**——后续增量依赖
    兄弟目标解锁（media-playback 解码/时钟真值化 → 真播放推进面用例）。
 2. ~~**M4g-d**：canPlayType 能力表联动更新~~ ✅ 2026-09-01 兑现（能力表真值化——
    后续新增解码面（AV1/H.264，media-playback M3）时同步扩表）。
+3. ~~**M4g-f**：resource selection 算法面~~ ✅ 2026-09-02 兑现（M3 扩批 XI——
+   上一轮「吃尽」判断漏了 loading-the-media-resource 族，本轮 30 案全绿）。
 
 ## 里程碑状态
 
@@ -267,10 +310,12 @@ MEDIA_TEST_FILES + evidence JSON 序列）——两通道并行为 CLAUDE.md 测
   opus）**392/417 = 94.0%**（PF 41→25）
   → 扩批 X（同日，track 子 ↔ textTracks 集合同步）**400/425 = 94.1%**
   （+8 subtest 全绿；Fail 0 / Timeout 0 / PF 25）
+  → 扩批 XI（2026-09-02，resource selection 算法族）**430/455 = 94.5%**
+  （+30 subtest 全绿；Fail 0 / Timeout 0 / PF 25）
 - 入口：`make testharness-media`（FILTER 透传，`--json` 捕获 evidence）
 - 质量门禁：`cargo fmt` + `cargo clippy --workspace --all-targets -- -D warnings` 全过
 - evidence：`evidence/2026-08-31-media-baseline.md`（+ 同名 .json 机读版）、
   `evidence/2026-09-01-media-event-family.json`、`evidence/2026-09-01-media-source-child.json`、
   `evidence/2026-09-01-media-volume-audio.json`、`evidence/2026-09-01-media-controlslist.json`、
   `evidence/2026-09-01-media-playbackrate-typeerror.json`、`evidence/2026-09-01-media-preload-setter.json`、
-  `evidence/2026-09-01-media-track-sync.json`
+  `evidence/2026-09-01-media-track-sync.json`、`evidence/2026-09-02-media-resource-selection.json`
