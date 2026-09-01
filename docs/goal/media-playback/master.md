@@ -2,14 +2,13 @@
 
 **入口文档**: [../media-playback.md](../media-playback.md)
 **创建日期**: 2026-08-17（goal 拆分 bootstrap）
-**最后更新**: 2026-09-01（**M2c 后续切片 A+B 落地**——① 生产链路补全：async_load
-settle → `register_source`/`register_audio_source`（切片 5a 契约此前无生产调用方，
-桥 play 恒 headless——本片接通后 settle → play 全链可达）；② 导航资源释放：
-`prepare_document_state` → `registry.clear()`（DC-4）+ 追赶区静默线（seek 后前向
-解码不入 sink）；③ 增益联动：shim play() 起播同步 setGain（对称 setRate）+ volume/
-muted setter 桥推；④ renderer 多进程路径对齐：SetVideoPlayers 注入（镜像 tabworker）。
-e2e 三面常驻（webm video / mp3 audio / oga-opus 负例）；webview 674 / engine 2540 /
-make test 18636 全绿；testharness-media 372P 基线维持）
+**最后更新**: 2026-09-01（**M2 切片 C 色度精化落地**——WebM Colour 元素解析
+（matrix/range）+ limited-range/BT.709 自适应 YUV→RGBA + 两处旧解码缺陷根因修复
+（色度采样索引除数误用 chroma 维致 4:2:0 坍缩、limited 源按 full-range 误释）。
+**replaced-element-003（false-pass unmask 唯一净 delta）转 ✓ PASS**——reftest-upstream
+13981/16730 = 83.6%（基线 83.4%，+31 净涨零回归）；M2c 后续切片 A+B 同日落地
+（settle 登记生产链路 + 增益联动 + 导航释放 + renderer 对齐）。testharness-media
+372P 基线维持）
 
 ---
 
@@ -69,6 +68,23 @@ bridgeOn 标记）/`pause()` 桥停/`currentTime`/`duration` getter 桥真值优
 + engine shim 契约测试（JS stub 桥：play 传绝对 URL / currentTime 1.25 / duration 2 /
 pause 记录）；engine 2539 / webview 667 / browser 411 全绿；testharness-media 372
 基线维持。**M2a 全部切片收口**。
+**M2 切片 C 色度精化已落地**（2026-09-01，commit `f05493a07`）：`zero-media` 解码层
+色彩面全对齐——
+① **WebM Colour 解析**：`ColorSpace`（matrix/full_range）开流时经
+`TrackEntry.Video.Colour` 解析一次（matroska-demuxer `colour()` API）；identity（GBR）
+通道直传、BT.709/BT.601 矩阵选择、limited [16,235] 值域归一（ITU-R BT.601-7 §2.5/
+BT.709-6 §2.5 标准形）；缺省：matrix None→BT.709 声明语义、range 非 Full→limited。
+② **色度采样索引坍缩根因修复**：定点索引除数误用 chroma 维（应为 luma 维）——4:2:0
+全行/列只采样前两个色度样点；旧锚点 153.5 为「全范围误释 + 该缺陷」叠加伪值，修正后
+RGB 均值 123.3 与 ffmpeg swscale RGBA 参照对齐。
+③ **值域误释修复**：声明 limited 的源此前按 full-range 数学转换（亮度 +25% 失真）。
+④ **reftest-upstream 实证**：replaced-element-003（2x2-green.webm = identity+full，
+位面真值 (0,127,0) vs ref #008000 差 1 ≤ fuzzy 0-30）✓ PASS——**R3881 以来唯一净
+delta 的 false-pass unmask 案收口**；13950→13981/16730 = 83.6%（+31 净涨零回归）；
+product-smoke 23.37% 逐字节同值（welcome 无 video，非回归）+ struct PASS。
+⑤ 测试锚点同步：zero-media 新增 2 件（identity 直传位面真值 + limited 不削顶），
+138-168 窗口更正 108-138（media 单测 + M1b e2e）。
+
 **M2c 后续切片 A+B 已落地**（同日）：播放管线接 AudioSink 的生产侧全通——
 ① **settle 登记接通**（核心缺口修复）：`async_load::poll_element_resources` 对
 video 源 `register_source` + `register_audio_source` 双登记、audio 源音频登记——
@@ -161,8 +177,9 @@ engine 2539 / media 27 / webview 668 全绿；testharness-media 372P/0F/41PF 维
 - ✅ **音频播放面（M2c 后续 A/B）**：`<audio>` settle 登记 → 桥 play → 音频泵实时
   节奏解码写 NullSink + volume/muted 增益联动（IDL setter 桥推 + play 起播同步）+
   seek 追赶区静默；导航释放（DC-4）
-- ⚠️ 色度元数据精化：WebM Colour 元素（range/matrix）未读，固定 BT.601 full-range——
-  replaced-element-003 unmask 案揭示（M2 解码层精化项）
+- ✅ **色彩面（M2 切片 C）**：WebM Colour 解析 + identity/BT.709/BT.601 矩阵 +
+  limited/full 值域自适应转换；色度采样索引与值域两处旧缺陷修复——与 ffmpeg
+  swscale 参照对齐；replaced-element-003 unmask 收口
 - ⚠️ AV1（dav1d 绑定）与 H.264 未引入——M3（D-RFC-2 / D-RFC-3 决议）
 
 ## 缺口清单
@@ -175,6 +192,7 @@ engine 2539 / media 27 / webview 668 全绿；testharness-media 372P/0F/41PF 维
 | V4 | readyState 真值驱动接口未建 | ✅ 5b 落地：duration/videoWidth/currentTime 真值 + 宿主桥 play/pause + 帧泵（readyState 推进面仍 headless 序列——语义层契约不返工） |
 | V5 | 播放 e2e 资产为零 | ✅ fixture 已落地 + M1b 帧上屏 e2e 常驻 |
 | V6 | 帧上屏通路（video 元素盒 → 图元）缺失 | ✅ M1b（harness 全链）+ 切片 4（生产 settle 注入）+ 切片 5b（播放帧泵） |
+| V7 | 色度元数据精化（Colour 元素/limited-range/BT.709） | ✅ M2 切片 C 落地（2026-09-01）——replaced-element-003 unmask 收口，reftest-upstream 83.6% |
 
 ## 待用户决策
 
@@ -185,13 +203,12 @@ engine 2539 / media 27 / webview 668 全绿；testharness-media 372P/0F/41PF 维
 
 ## 下一步计划
 
-1. **M2 解码精化项**（M1b 揭示，当前首选）：WebM Colour 元素解析（colourRange/
-   matrix）→ limited-range 与 BT.709 自适应转换（replaced-element-003 unmask 面收口）。
-2. **A/V 同步**（media-audio M2 契约）：audio clock 主时钟——视频帧调度对齐音频时间
-   戳 + drift 校正；currentTime 组合时钟驱动（依赖面：本流 M2a/M2c 时钟与音频面已齐）。
-3. **M3 多格式收尾**：AV1（dav1d 绑定，D-RFC-2）与 H.264 立项（D-RFC-3）；上游 WPT
+1. **A/V 同步**（media-audio M2 契约，当前首选）：audio clock 主时钟——视频帧调度
+   对齐音频时间戳 + drift 校正；currentTime 组合时钟驱动（依赖面：本流 M2a/M2c
+   时钟与音频面已齐）。
+2. **M3 多格式收尾**：AV1（dav1d 绑定，D-RFC-2）与 H.264 立项（D-RFC-3）；上游 WPT
    可执行子集导入。
-4. **opus 解码选型注记**：symphonia 0.6 无 opus（纯 Rust 面缺位）——后续评估
+3. **opus 解码选型注记**：symphonia 0.6 无 opus（纯 Rust 面缺位）——后续评估
    （对称面： webinar/opusic 等 pure-Rust crate 成熟度，或维持 mp3+vorbis 面）。
 
 ## 里程碑状态
@@ -200,7 +217,7 @@ engine 2539 / media 27 / webview 668 全绿；testharness-media 372P/0F/41PF 维
 |--------|------|
 | M0 — 解码器选型 RFC（门控） | ✅ 完成并获批（2026-09-01，路线 C） |
 | M1 — 首个视频帧上屏 | ✅ 完成（2026-09-01：M1a 解码管线 + M1b 帧上屏通路 + e2e 常驻） |
-| M2 — 连续播放 + 语义驱动 | 🔄 M2a + M2b + M2c 后续 A/B 收口（播放/真值/桥/帧泵/seek/变速 + 音频面生产链路/增益/导航释放/renderer 对齐）；余 A/V 同步（media-audio M2 契约） |
+| M2 — 连续播放 + 语义驱动 | 🔄 M2a + M2b + M2c 后续 A/B + M2 色度精化（切片 C）收口（播放/真值/桥/帧泵/seek/变速 + 音频面生产链路/增益/导航释放/renderer 对齐 + 色彩面全对齐）；余 A/V 同步（media-audio M2 契约） |
 | M3 — 多格式 + 稳定 + 收尾 | ⬜（含 AV1 dav1d（D-RFC-2）与 H.264 立项（D-RFC-3）） |
 
 ## 验证基线
@@ -211,7 +228,7 @@ engine 2539 / media 27 / webview 668 全绿；testharness-media 372P/0F/41PF 维
   回落面零回归实证）
 - 解码正确性锚点：fixture `sample-webm-vp9.webm` 首帧与 ffmpeg 7.1.5 rawvideo 参照
   逐字节一致（YUV 面）；全流 48 帧（2s @ 24fps）PTS 单调（0→1958ms）
-- 上屏 e2e 锚点：帧区 RGB 均值 138-168（testsrc2 ≈153.5）+ 帧界外白底 + 不可解码
-  src 占位负例；reftest-upstream 13950/16730（83.4%，唯一净 delta = replaced-element-003
-  false-pass unmask，见 evidence）
+- 上屏 e2e 锚点：帧区 RGB 均值 108-138（testsrc2 ≈123.3，M2 切片 C 后与 ffmpeg
+  swscale 一致）+ 帧界外白底 + 不可解码 src 占位负例；reftest-upstream
+  13981/16730（**83.6%**，replaced-element-003 unmask 已收口 ✓）
 - 质量门禁：`cargo fmt` + `cargo clippy --workspace --all-targets -- -D warnings` 全过
