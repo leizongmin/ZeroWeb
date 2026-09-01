@@ -676,6 +676,28 @@ mod tests {
             "纯视频源无声轨写入"
         );
     }
+    /// M2 切片 F（A/V pair ended 面）：伴音轨流末后视频须能走到 Ended——
+    /// 音频游标冻结后视频帧调度回落墙钟 tick（主时钟源已尽），否则 player
+    /// 恒 Playing、渲染泵空转（is_any_playing 永真）。
+    #[test]
+    fn registry_av_pair_reaches_ended_after_audio_exhausted() {
+        let mut reg = VideoPlayerRegistry::new();
+        reg.register_source(AV, fixture_bytes_named("sample-webm-vp9-vorbis.webm"));
+        assert!(reg.play(AV, 0));
+        let mut cache = ImageCache::new(16, 64 * 1024 * 1024);
+        let mut now = 0u64;
+        // 快进到双轨流末（2s fixture；500ms 步进必越界）。
+        while reg.is_playing(AV) && now < 60_000 {
+            now += 500;
+            reg.tick_all(now, &mut cache);
+        }
+        assert!(now < 60_000, "runaway loop——A/V pair 未走完（ended 面断）");
+        assert!(!reg.is_playing(AV), "流末后 video player 应转 Ended");
+        assert!(!reg.is_any_playing(), "无残留播放条目（泵应停）");
+        // ended 后 tick 不再有帧更新。
+        let now2 = now + 500;
+        assert!(!reg.tick_all(now2, &mut cache), "ended 后无帧更新");
+    }
 }
 
 /// 宿主桥 — 在 sandbox 上注册 `__zw_video_*` 回调族并注入 `__zwVideoBridge` JS 对象
