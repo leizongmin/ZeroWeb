@@ -2,13 +2,11 @@
 
 **入口文档**: [../media-playback.md](../media-playback.md)
 **创建日期**: 2026-08-17（goal 拆分 bootstrap）
-**最后更新**: 2026-09-01（**M2 切片 C 色度精化落地**——WebM Colour 元素解析
-（matrix/range）+ limited-range/BT.709 自适应 YUV→RGBA + 两处旧解码缺陷根因修复
-（色度采样索引除数误用 chroma 维致 4:2:0 坍缩、limited 源按 full-range 误释）。
-**replaced-element-003（false-pass unmask 唯一净 delta）转 ✓ PASS**——reftest-upstream
-13981/16730 = 83.6%（基线 83.4%，+31 净涨零回归）；M2c 后续切片 A+B 同日落地
-（settle 登记生产链路 + 增益联动 + 导航释放 + renderer 对齐）。testharness-media
-372P 基线维持）
+**最后更新**: 2026-09-01（**M2 切片 D+E 落地**——A/V 同步（audio clock 主时钟）：
+切片 D = webm 双轨（VP9+Vorbis）伴生音频面（`open_webm_audio_track` OGG 页重封装 →
+symphonia 解码 + registry 伴生起播/泵推进/增益联动）；切片 E = 视频帧调度对齐音频
+游标（`sync_to_media_time` drift 构造校正）+ seek 双轨对齐 + currentTime 组合时钟。
+media 36+1 / webview 676 / engine 2542 全绿）
 
 ---
 
@@ -119,6 +117,28 @@ nullsink_zero_crossing_chain` / `audio_ogg_vorbis_decode_to_nullsink_chain`—�
 （440Hz sine）→ 解码 → NullSink 过零率 ≈880（2×频率锚点）+ 采样数 ≈2s 容差面；
 media 30 全绿。**余：A/V 同步（media-audio M2，audio clock 主时钟）+ 播放管线接
 AudioSink（video play 时同步音频面——M2c 后续切片）**。
+**M2 切片 D+E 已落地**（同日，A/V 同步——media-audio M2 契约兑现）：
+① **切片 D（webm 双轨伴生音频面）**：`zero-media::av_decode::open_webm_audio_track`
+——Matroska demux A_VORBIS 轨 + CodecPrivate 三段 Xiph 头拆解 → OGG 页重封装
+（RFC 3533 纯字节操作，零 C 依赖，路线 C 保持）→ symphonia ogg/vorbis 解码 f32 PCM
+（与独立音频面同契约）。granule 语义注记：symphonia ogg reader 按页 granule 对包做
+端部裁剪，granule 小于包累计时长会把采样整段裁空（实测 0 样本缺陷）——本轨无 seek，
+每页取 (i+1)×16384 保守高估使裁剪恒零；数据页不设 EOS 位（symphonia 以 EOF 判流末）。
+fixture `sample-webm-vp9-vorbis.webm`（VP9+Vorbis 双轨 2s）。registry 增
+`WebmAudioEntry` 伴生条目：video play 懒建、同锚起播、泵推进写 NullSink、增益联动、
+pause 冻结；纯视频 webm 无音频轨静默。
+② **切片 E（audio clock 主时钟）**：`VideoPlayer::sync_to_media_time`——视频帧调度
+对齐外部主时钟游标（位置每 tick 派生自主时钟——drift 构造校正不积累墙钟差；位置只
+前进不回退；帧调度核抽 `present_pending` 供 tick/sync 共用，墙钟路径零回归）。
+`tick_all` 主时钟先行序（伴音频轨先推进 → A/V pair 视频 sync 追随游标 → 纯视频回落
+墙钟 tick）。currentTime 组合时钟：A/V pair 优先报音频游标。seek 双轨对齐：
+`av_sources` 字节留存 + 伴生轨重建（游标/静默线对齐 target）——master clock 面不脱轨。
+`WebmAudioEntry` 补 `skip_until_ms` 追赶区静默（AudioEntry 同面）。
+③ 测试：zero-media 36+1（av_decode 3 件：解码链 44.1kHz 2s≈88200 帧 + 440Hz 过零率
+880 锚点 / 双轨下 VP9 视频轨 48 帧零回归 / 无音频轨 NoTrack feature-detect；player
+sync 4 面断言）；webview 676（registry AV pair master-clock e2e + seek 对齐续进）；
+engine 2542 全绿。
+
 **M2b 已落地**（同日）：精确 seek + 变速桥接全链——
 ① `VideoDecoder::seek_to_ms`：两阶段精确 seek——phase ① demuxer Cues 定位 +
   **keyframe 落点验证**（`block.is_keyframe` gate：cue 点即 keyframe；非 keyframe
@@ -180,6 +200,9 @@ engine 2539 / media 27 / webview 668 全绿；testharness-media 372P/0F/41PF 维
 - ✅ **色彩面（M2 切片 C）**：WebM Colour 解析 + identity/BT.709/BT.601 矩阵 +
   limited/full 值域自适应转换；色度采样索引与值域两处旧缺陷修复——与 ffmpeg
   swscale 参照对齐；replaced-element-003 unmask 收口
+- ✅ **A/V 同步面（M2 切片 D+E）**：webm 双轨伴生音频（OGG 重封装 → symphonia）+
+  audio clock 主时钟（视频帧调度 sync_to_media_time 对齐音频游标）+ currentTime
+  组合时钟 + seek 双轨对齐（media-audio M2 契约兑现——drift 构造校正）
 - ⚠️ AV1（dav1d 绑定）与 H.264 未引入——M3（D-RFC-2 / D-RFC-3 决议）
 
 ## 缺口清单
@@ -193,6 +216,7 @@ engine 2539 / media 27 / webview 668 全绿；testharness-media 372P/0F/41PF 维
 | V5 | 播放 e2e 资产为零 | ✅ fixture 已落地 + M1b 帧上屏 e2e 常驻 |
 | V6 | 帧上屏通路（video 元素盒 → 图元）缺失 | ✅ M1b（harness 全链）+ 切片 4（生产 settle 注入）+ 切片 5b（播放帧泵） |
 | V7 | 色度元数据精化（Colour 元素/limited-range/BT.709） | ✅ M2 切片 C 落地（2026-09-01）——replaced-element-003 unmask 收口，reftest-upstream 83.6% |
+| V8 | A/V 同步（audio clock 主时钟）缺失 | ✅ M2 切片 D+E 落地（2026-09-01）——webm 双轨伴生音频 + 视频帧调度对齐音频游标 + currentTime 组合时钟 + seek 双轨对齐（media-audio M2 契约） |
 
 ## 待用户决策
 
@@ -203,11 +227,11 @@ engine 2539 / media 27 / webview 668 全绿；testharness-media 372P/0F/41PF 维
 
 ## 下一步计划
 
-1. **A/V 同步**（media-audio M2 契约，当前首选）：audio clock 主时钟——视频帧调度
-   对齐音频时间戳 + drift 校正；currentTime 组合时钟驱动（依赖面：本流 M2a/M2c
-   时钟与音频面已齐）。
-2. **M3 多格式收尾**：AV1（dav1d 绑定，D-RFC-2）与 H.264 立项（D-RFC-3）；上游 WPT
-   可执行子集导入。
+1. **M3 多格式收尾**（当前首选）：AV1（dav1d 绑定，D-RFC-2）与 H.264 立项
+   （D-RFC-3）；上游 WPT 可执行子集导入。
+2. **A/V 同步精化余项**：音频设备面（media-audio M1 切片 CpalSink 真出声——
+   NullSink 可观测断言已常驻）；A/V pair 流末同步 ended（当前音频先尽即停泵，
+   视频独立走 ended——组合 ended 事件归语义层）。
 3. **opus 解码选型注记**：symphonia 0.6 无 opus（纯 Rust 面缺位）——后续评估
    （对称面： webinar/opusic 等 pure-Rust crate 成熟度，或维持 mp3+vorbis 面）。
 
@@ -217,7 +241,7 @@ engine 2539 / media 27 / webview 668 全绿；testharness-media 372P/0F/41PF 维
 |--------|------|
 | M0 — 解码器选型 RFC（门控） | ✅ 完成并获批（2026-09-01，路线 C） |
 | M1 — 首个视频帧上屏 | ✅ 完成（2026-09-01：M1a 解码管线 + M1b 帧上屏通路 + e2e 常驻） |
-| M2 — 连续播放 + 语义驱动 | 🔄 M2a + M2b + M2c 后续 A/B + M2 色度精化（切片 C）收口（播放/真值/桥/帧泵/seek/变速 + 音频面生产链路/增益/导航释放/renderer 对齐 + 色彩面全对齐）；余 A/V 同步（media-audio M2 契约） |
+| M2 — 连续播放 + 语义驱动 | 🔄 M2a + M2b + M2c + 切片 C/D/E 收口（播放/真值/桥/帧泵/seek/变速 + 音频面生产链路/增益/导航释放/renderer 对齐 + 色彩面全对齐 + A/V 同步 audio clock 主时钟）；余组合 ended 事件（语义层）与音频设备面（media-audio M1） |
 | M3 — 多格式 + 稳定 + 收尾 | ⬜（含 AV1 dav1d（D-RFC-2）与 H.264 立项（D-RFC-3）） |
 
 ## 验证基线

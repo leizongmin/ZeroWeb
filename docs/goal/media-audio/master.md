@@ -2,11 +2,11 @@
 
 **入口文档**: [../media-audio.md](../media-audio.md)
 **创建日期**: 2026-08-17（goal 拆分 bootstrap）
-**最后更新**: 2026-09-01（M2c 后续切片 A+B 落地（media-playback 流）——播放管线
-宿主侧接线兑现本档「下一步 #1」主体：`<audio>` settle 登记 → 桥 play → 音频泵实时
-节奏解码写 NullSink + volume/muted 增益联动（IDL setter 桥推 + play 起播同步）+
-seek 追赶区静默 + 导航资源释放；tabworker 与 renderer 双路径对齐。余：Mixer 多源
-混音接线（当前 NullSink 直连）+ A/V 同步（M2））
+**最后更新**: 2026-09-01（**M2 A/V 同步主体由 media-playback 流切片 D+E 兑现**——
+webm 双轨（VP9+Vorbis）伴生音频解码（OGG 重封装 → symphonia）+ audio clock 主时钟
+（视频帧调度 `sync_to_media_time` 对齐音频游标，drift 构造校正）+ currentTime 组合
+时钟（A/V pair 优先报音频游标）+ seek 双轨对齐。本档余：Mixer 多源混音接线 +
+CpalSink 真出声冒烟）
 
 ---
 
@@ -77,7 +77,7 @@ volume/muted 真控制。**双重启动门控均已解除**：① M0 音频环�
 | A1 | 音频环境验证 + headless 验证策略 | ✅ M0 收口（2026-09-01） |
 | A2 | 解码选型未对齐（外部门控：media-playback M0） | ✅ 已对齐（RFC 获批，2026-09-01） |
 | A3 | 零音频管线（解码/重采样/混音/输出） | 🔄 M1 切片 1-3 + M2c 解码面 + M2c 后续宿主接线落地（NullSink/CpalSink/Mixer/symphonia + 播放管线增益联动）；余重采样与 Mixer 多源接线（当前注册表内 NullSink 直连） |
-| A4 | A/V 同步机制缺失 | ⬜ M2（依赖 media-playback M2 视频时钟） |
+| A4 | A/V 同步机制缺失 | 🔄 M2 主体落地（2026-09-01，media-playback 流切片 D+E）——audio clock 主时钟（webm 双轨伴生音频解码 + 视频帧调度对齐音频游标 + drift 构造校正 + currentTime 组合时钟 + seek 双轨对齐）；余设备面真输出（CpalSink 冒烟，可选） |
 | A5 | 音频 e2e 资产 | ✅ 真解码链 e2e 落地（mp3 + vorbis fixture → NullSink 过零率锚点常驻）+ 合成源面 |
 
 ## 待用户决策
@@ -102,7 +102,7 @@ volume/muted 真控制。**双重启动门控均已解除**：① M0 音频环�
 |--------|------|
 | M0 — 环境验证 + 验证策略（门控） | ✅ 完成（2026-09-01，含 D2 后 cpal 编译实测补录） |
 | M1 — 首个声音输出 | 🔄 切片 1-3 + 解码链 e2e + 播放管线宿主接线落地（2026-09-01）；余 Mixer 多源混音接线 |
-| M2 — A/V 同步 + 控制 | ⬜ |
+| M2 — A/V 同步 + 控制 | 🔄 主体落地（2026-09-01，media-playback 流切片 D+E：audio clock 主时钟 + 组合时钟 + seek 对齐）；余 CpalSink 真出声冒烟（可选） |
 | M3 — `<audio>` 全路径 + Web Audio 评估 | ⬜ |
 
 ## 验证基线
